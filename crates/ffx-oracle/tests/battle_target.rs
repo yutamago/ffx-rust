@@ -6157,6 +6157,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let mut r17 = Xorshift(0x17e5_0001 ^ u32::from(synthetic));
     let mut r18m = Xorshift(0x18e5_0101 ^ u32::from(synthetic));
     let mut r19 = Xorshift(0x19e5_0001 ^ u32::from(synthetic));
+    let mut r20 = Xorshift(0x20e5_0001 ^ u32::from(synthetic));
     // a special stage's work (round 18): matrices, the sea's, angles
     let work = scratch(a, b, 0x870);
     // Ch_ModelCreatePacket's stub (round 18) and its record
@@ -6172,6 +6173,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let brec = scratch(a, b, (EXCHANGE_REC * 15) as usize);
     // the setup leaves' stub records and heap block (round 19)
     let grec2 = scratch(a, b, (EXCHANGE_REC * 2) as usize);
+    let erec2 = scratch(a, b, (EXCHANGE_REC * 27) as usize);
     let heap = scratch(a, b, 0x8a90);
     for o in [&mut *a, &mut *b] {
         logging_stub(
@@ -6232,6 +6234,12 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         if r19.below(4) == 0 {
             setup_leaves(a, b, &mut r19, grec2, heap, out);
+        }
+        if r19.below(4) == 0 {
+            exe_leaves(a, b, &mut r19, erec2, heap, out);
+        }
+        if r20.below(4) == 0 {
+            read_leaves(a, b, &mut r20, &w, erec2, out);
         }
     }
     // the teardown last (it clears the actors and the script managers)
@@ -7605,4 +7613,416 @@ fn setup_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, he
     for ((at, _), v) in regions.into_iter().zip(kept) {
         poke(a, b, at, &v);
     }
+}
+
+/// Returns `table[count & 3]` (the table at `rec + 8`), counting calls at
+/// `rec`: `f` replaced by it at `at` unless 0 (then only the code, for a
+/// function pointer).
+fn counting_stub(o: &mut Oracle, f: u32, at: u32, rec: u32) {
+    let mut code = vec![0xa1];
+    code.extend(rec.to_le_bytes());
+    code.extend([0xff, 0x05]);
+    code.extend(rec.to_le_bytes());
+    code.extend([0x83, 0xe0, 0x03, 0x8b, 0x04, 0x85]);
+    code.extend((rec + 8).to_le_bytes());
+    code.push(0xc3);
+    o.write(rec, &[0; 4]).unwrap();
+    let at = o.rebase(at);
+    o.write(at, &code).unwrap();
+    if f != 0 {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+}
+
+/// `MsBattleExe`'s leaves (round 20): the CD object (`GetCD`'s, its
+/// directory, size and name methods stubs, the sizes from a table),
+/// `MsGetCheckEnglish`, the effects', sound's and assertion's callees
+/// stubbed for the call (records from `rec`, [`EXCHANGE_REC`] each), the
+/// heap handing out `heap`; then put back with the battle's globals.
+fn exe_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, heap: u32, out: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::getmem::bridge as gm;
+    use ffx_battle::state::bridge as st;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let regions = [
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x0231_0c00), 0x900),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let base = BRIDGE_STUBS + 0x20 * 8 + 0x40 * 16;
+    let cdobj = out + 0x40;
+    let callees = [
+        (gm::GET_CD, 0u8),
+        (gm::MS_GET_CHECK_ENGLISH, 0),
+        (gm::YI_ASSERT, 4),
+        (gm::MS_REG_SE_PLAY2, 2),
+        (gm::OP_ET_ENCOUNT_EFFECT_ON, 2),
+        (gm::OP_ET_BATTLE_EFFECT_INIT, 0),
+        (gm::USER_MALLOC, 1),
+    ];
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, (f, n)) in (0u32..).zip(callees) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, base + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+        // the CD object's methods: +0x10 directory, +0x58 name (logging),
+        // +0x14 size (counting), and the event effect's function
+        logging_stub(o, 0, base + 0x40 * 7, rec + EXCHANGE_REC * 7, 1, 0);
+        logging_stub(
+            o,
+            0,
+            base + 0x40 * 8,
+            rec + EXCHANGE_REC * 8,
+            1,
+            0x00b5_4790,
+        );
+        counting_stub(o, 0, base + 0x40 * 9, rec + EXCHANGE_REC * 9);
+        logging_stub(o, 0, base + 0x40 * 10, rec + EXCHANGE_REC * 10, 1, 0);
+        for (slot, k) in [(0x10u32, 7u32), (0x58, 8), (0x14, 9), (8, 10)] {
+            let f = o.rebase(base + 0x40 * k);
+            o.write(cdobj + slot, &f.to_le_bytes()).unwrap();
+        }
+        let f = o.rebase(base + 0x40 * 10);
+        o.write(out + 0xa4, &f.to_le_bytes()).unwrap();
+        saved.push(mine);
+    }
+    poke(a, b, rec + 4, &cdobj.to_le_bytes());
+    let english = [0u32, u32::MAX][rng.below(2) as usize];
+    poke(a, b, rec + EXCHANGE_REC + 4, &english.to_le_bytes());
+    poke(a, b, rec + EXCHANGE_REC * 6 + 4, &heap.to_le_bytes());
+    let sizes: Vec<u8> = (0..4)
+        .flat_map(|_| [rng.below(0x9000), rng.next()][rng.below(2) as usize].to_le_bytes())
+        .collect();
+    poke(a, b, rec + EXCHANGE_REC * 9 + 8, &sizes);
+    // the file sizes and the index
+    for _ in 0..2 {
+        let (dir, dir2, file) = ([0xe, 3][rng.below(2) as usize], 0xb, rng.below(0x400));
+        twin(
+            "MsGetFileSize",
+            a,
+            b,
+            0x0078_2a20,
+            &[dir, dir2, file],
+            ALL,
+            |m| dm(m, |m| gm::ms_get_file_size(m, &mut call, dir, dir2, file)),
+        );
+        same("MsGetFileSize", a, b);
+        let both = rng.below(2);
+        twin(
+            "MsBattleExeSetIndex",
+            a,
+            b,
+            0x0078_1550,
+            &[both, file],
+            ALL,
+            |m| dm(m, |m| gm::ms_battle_exe_set_index(m, &mut call, both, file)),
+        );
+        same("MsBattleExeSetIndex", a, b);
+    }
+    // the event effect: none, or one still running (its table's function
+    // the stub at base + 10, or no table)
+    set(
+        a,
+        b,
+        st::EVENT_EFFECT_STAT,
+        [0i8, 3, 1][rng.below(3) as usize],
+    );
+    set(a, b, st::EVENT_EFFECT_B, rng.next());
+    set(
+        a,
+        b,
+        st::EVENT_EFFECT_A,
+        [0, out + 0xa0][rng.below(2) as usize],
+    );
+    twin("MsEventEffectFree", a, b, 0x0078_8b90, &[], ALL, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            gm::ms_event_effect_free(m, &mut s)
+        })
+    });
+    same("MsEventEffectFree", a, b);
+    twin("MsBtlChrGetMem", a, b, 0x0079_3530, &[], 0, |m| {
+        dm(m, |m| gm::ms_btl_chr_get_mem(m, &mut call));
+        0
+    });
+    same("MsBtlChrGetMem", a, b);
+    // a field list of the image or snapshot (MsBtlListField clamps)
+    for _ in 0..3 {
+        let field = [0, rng.below(4), rng.next()][rng.below(3) as usize];
+        poke(a, b, out + 0x80, &rng.range(-2, 6).to_le_bytes());
+        poke(a, b, out + 0x84, &rng.range(-2, 6).to_le_bytes());
+        let args = [field, out + 0x80, out + 0x84];
+        if ffx_battle::misc::bridge::FIELD_TABLE2.get(b) == 0 {
+            break;
+        }
+        twin("MsBtlListCDpos", a, b, 0x0079_d0e0, &args, ALL, |m| {
+            gm::ms_btl_list_cd_pos(m, field, out + 0x80, out + 0x84)
+        });
+        same("MsBtlListCDpos", a, b);
+    }
+    set(
+        a,
+        b,
+        ffx_battle::process::bridge::RESET_WAIT,
+        [0, 0, 5][rng.below(3) as usize],
+    );
+    set(
+        a,
+        b,
+        gm::ENCOUNT_EFFECTS,
+        u8::try_from(rng.below(0x100)).unwrap(),
+    );
+    let (kind, se) = (rng.below(4), rng.below(0x100));
+    twin(
+        "MsEtEffectEncount",
+        a,
+        b,
+        0x0079_e5e0,
+        &[kind, se],
+        ALL,
+        |m| dm(m, |m| gm::ms_et_effect_encount(m, &mut call, kind, se)),
+    );
+    same("MsEtEffectEncount", a, b);
+    set(a, b, ffx_battle::misc::bridge::ET_EFFECT_READ, rng.next());
+    twin("MsEtEffectSet", a, b, 0x0079_e7a0, &[], ALL, |m| {
+        dm(m, |m| gm::ms_et_effect_set(m, &mut call))
+    });
+    same("MsEtEffectSet", a, b);
+    exe(a, b, rng, rec, out);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
+}
+
+/// `MsBattleExe`'s other callees (round 20), stubbed for one call after
+/// [`exe_leaves`]' (records from `rec + 11 *`).
+const EXE_CALLEES: [(u32, u8); 16] = {
+    use ffx_battle::exe::bridge as ex;
+    [
+        (ex::FFX_IS_DEBUG, 0),
+        (ex::SS_SET_PROJECT_BASE, 1),
+        (ex::SG_MEM_SET_ALIGN, 1),
+        (ex::SG_BLUR, 1),
+        (ex::MS_SCREEN_FOCUS_RESET_ALL, 0),
+        (ex::SG_FADE_IN, 1),
+        (ex::SG_SET_EXEC_FRAMES, 1),
+        (ex::SG_SET_PLAYER, 1),
+        (ex::SG_MALLOC_A, 4),
+        (ex::SG_SET_KEEP_FPS, 1),
+        (ex::ATEL_EVENT_SET_UP_FOR_BATTLE_MUSIC, 1),
+        (ex::TO_INIT_BTL_WINDOW, 0),
+        (ex::MS_BTL_READ_MANAGE, 0),
+        (ex::MS_DEBUG_SET_SCENE, 4),
+        (ex::MS_SET_ITEM_WINDOW, 0),
+        (ex::MS_BTL_START_AP, 0),
+    ]
+};
+
+/// `MsBattleExe` on the snapshot's field list (the image has none): from
+/// an event or the field (out of battle, so the battle before is not
+/// freed), debug or not.
+fn exe(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, out: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::exe::bridge as ex;
+    if ffx_battle::misc::bridge::FIELD_TABLE2.get(b) == 0 {
+        return;
+    }
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    let base = BRIDGE_STUBS + 0x20 * 8 + 0x40 * 27;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, (f, n)) in (0u32..).zip(EXE_CALLEES) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, base + 0x40 * k, rec + EXCHANGE_REC * (11 + k), n, 0);
+        }
+        saved.push(mine);
+    }
+    let debug = u32::from(rng.below(3) == 0);
+    poke(a, b, rec + EXCHANGE_REC * 11 + 4, &debug.to_le_bytes());
+    poke(
+        a,
+        b,
+        rec + EXCHANGE_REC * (11 + 8) + 4,
+        &(out + 0xc0).to_le_bytes(),
+    );
+    poke(
+        a,
+        b,
+        rec + EXCHANGE_REC * (11 + 12) + 4,
+        &0x5eu32.to_le_bytes(),
+    );
+    set(a, b, ffx_battle::state::bridge::STATUS, 0);
+    set(a, b, ffx_battle::state::bridge::EXE, 3);
+    // the encounter type and no soft reset waiting (the encounter effect runs)
+    set(
+        a,
+        b,
+        ffx_battle::exe::bridge::ENCOUNT_TYPE,
+        [-1i8, 0, 1, 2, 5][rng.below(5) as usize],
+    );
+    set(a, b, ffx_battle::process::bridge::RESET_WAIT, 0);
+    let rec0 = ffx_battle::atel::bridge::SCRIPT_RECORDS.ptr(b).addr + 4;
+    poke(
+        a,
+        b,
+        rec0,
+        &[0, out + 0xe0][rng.below(2) as usize].to_le_bytes(),
+    );
+    let args = [
+        rng.below(2),
+        [0, rng.below(4), rng.next()][rng.below(3) as usize],
+        rng.range(-1, 5).cast_unsigned(),
+        rng.range(-1, 9).cast_unsigned(),
+    ];
+    twin("MsBattleExe", a, b, 0x0078_1020, &args, ALL, |m| {
+        dm(m, |m| {
+            let mut s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+            ex::ms_battle_exe(m, &mut s, args[0], args[1], args[2], args[3])
+        })
+    });
+    same(&format!("MsBattleExe {args:x?}"), a, b);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+}
+
+/// `MsBtlReadManage`'s leaves (round 20): the scene read (`GetCD`'s
+/// object, `Sg_MallocA` stubbed for the call, records from `rec`), the
+/// loading wait, the monsters placed, the event hide flags.
+fn read_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32, out: u32) {
+    use ffx_battle::read::bridge as rd;
+    let h = host();
+    let mut call = game_call;
+    let regions = [
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x0231_0c00), 0x900),
+        (w.actor(0), (ACTORS * ACTOR) as usize),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let base = BRIDGE_STUBS + 0x20 * 8 + 0x40 * 43;
+    let cdobj = out + 0x40;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, (f, n)) in (0u32..).zip([
+            (ffx_battle::getmem::bridge::GET_CD, 0u8),
+            (rd::SG_MALLOC_A, 4),
+        ]) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, base + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+        for (k, n) in [(2u32, 4u8), (3, 1), (4, 1)] {
+            logging_stub(o, 0, base + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+        for (slot, k) in [(0u32, 2u32), (0x10, 3), (0x14, 4)] {
+            let f = o.rebase(base + 0x40 * k);
+            o.write(cdobj + slot, &f.to_le_bytes()).unwrap();
+        }
+        saved.push(mine);
+    }
+    poke(a, b, rec + 4, &cdobj.to_le_bytes());
+    poke(a, b, rec + EXCHANGE_REC + 4, &(out + 0xc0).to_le_bytes());
+    poke(a, b, rec + EXCHANGE_REC * 2 + 4, &rng.next().to_le_bytes());
+    poke(
+        a,
+        b,
+        rec + EXCHANGE_REC * 4 + 4,
+        &rng.below(0x8000).to_le_bytes(),
+    );
+    let file = rng.below(0x200);
+    twin("MsBtlReadScene", a, b, 0x0078_3d80, &[file], ALL, |m| {
+        dm(m, |m| rd::ms_btl_read_scene(m, &mut call, file))
+    });
+    same("MsBtlReadScene", a, b);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+    for k in 0..ACTORS {
+        poke(a, b, w.actor(k) + 0x433, &[u8::from(rng.below(12) == 0)]);
+        poke(a, b, w.actor(k) + 0x407, &[u8::from(rng.below(3) == 0)]);
+    }
+    twin("MsGetRamChrCTBbasic", a, b, 0x0078_4220, &[], ALL, |m| {
+        rd::ms_get_ram_chr_ctb_basic(m).cast_unsigned()
+    });
+    same("MsGetRamChrCTBbasic", a, b);
+    if placed(a, b, w, out) {
+        twin("MsCalcChrDirAll", a, b, 0x0079_3cb0, &[], 0, |m| {
+            dm(m, |m| rd::ms_calc_chr_dir_all(m, &h, Some(HARNESS)));
+            0
+        });
+        local_words(a, b);
+        rect_words(a, b);
+        same("MsCalcChrDirAll", a, b);
+        zero_stack(a);
+        twin(
+            "MsPlaceMonsters_00784420",
+            a,
+            b,
+            0x0078_4420,
+            &[],
+            ALL,
+            |m| dm(m, |m| rd::ms_place_monsters(m, &h, &mut call)),
+        );
+        local_words(a, b);
+        same("MsPlaceMonsters_00784420", a, b);
+    }
+    for _ in 0..2 {
+        let i = [rng.below(ACTORS), rng.below(0x100), rng.next()][rng.below(3) as usize];
+        let flags = rng.below(8);
+        twin(
+            "MsSetChrVisibleEvent",
+            a,
+            b,
+            0x0079_67f0,
+            &[i, flags],
+            ALL,
+            |m| dm(m, |m| rd::ms_set_chr_visible_event(m, &mut call, i, flags)),
+        );
+        same("MsSetChrVisibleEvent", a, b);
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
+    // the originals' stack as the later steps expect it (MsEffectStart
+    // reads a local it never writes)
+    zero_stack(a);
 }

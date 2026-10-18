@@ -4797,9 +4797,9 @@
 0x00780d00 function MsBattleDraw              # fh v3:cg2 0x780dd0
 0x00780d10 function MsBattleEncountExe        # random encounter roll; on a hit writes field 0x0112c256, group 0x0112c258, formation 0x0112c259, raises 0x0112a8e2; was Enc_Check
 0x00780ff0 function ResetEncountExe           # cdecl(full): resets the encounter step counters; was Enc_Reset
-0x00781020 function MsBattleExe               # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up; was Battle_Load
+0x00781020 function MsBattleExe               # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up; was Battle_Load; ported (battle round 20)
 0x00781530 function MsBattleExeClear          # fh v3:exact 0x00781600
-0x00781550 function MsBattleExeSetIndex       # (mode, index): reads PS2 file index of category 0xe (battle/btl/<field>_<nn>/<field>_<nn>.bin), index from Enc_FormationIndex; was Battle_RequestFile
+0x00781550 function MsBattleExeSetIndex       # (mode, index): reads PS2 file index of category 0xe (battle/btl/<field>_<nn>/<field>_<nn>.bin), index from Enc_FormationIndex; was Battle_RequestFile; ported (battle round 20)
 0x00781590 function MsBattleFree              # fh v3:exact 0x00781660; ported (battle round 19)
 0x00781630 function MsBattleGetChrDisposeFlag # fh v3:bsim1.00 0x00781700
 0x00781680 function MsBattleGetFontAddress    # fh v3:exact 0x00781750
@@ -4826,7 +4826,7 @@
 0x00782970 function MsGetBattleScene          # *0x0112a9f0 << 16 | *0x0112a9fc while in battle (0x0112a8e0), else 0; ?field index << 16 | formation (battle scripts compare it to e.g. 0x2050000); was Battle_GetBattleId
 0x007829b0 function MsBtlEncountEffect_007829b0 # (kind, &out) -> -1/0 for kind -1, 1/0x65 (3/0x3f under water: AtelGetWaterBattleEffect) for kinds 1-3, else 0/0x31 (2/0x31); out unless null; MsBattleExe's callee; name ours; ported (battle round 19)
 0x00782a10 function MsGetEncountType          # fh v3:bsim1.00 0x00782ad0
-0x00782a20 function MsGetFileSize             # fh v3:exact 0x00782ae0
+0x00782a20 function MsGetFileSize             # fh v3:exact 0x00782ae0; ported (battle round 20)
 0x00782ae0 function MsGetMapCenter            # fh v3:exact 0x00782ba0
 0x00782c00 function MsSetCountryName          # fh v3:exact 0x00782cc0
 0x00782d40 function MsSetDebugMagic              # layout: alphabetical run between MsSetCountryName and getExcelBinSize (2 unnamed in the gap); Switch 0x710033a5f0 MsSetDebugMagic is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -4842,14 +4842,15 @@
 0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84
 0x00783b90 function MsBtlReadPlayerModelProcess # fh v3:exact 0x00783c40
 0x00783bc0 function MsBtlReadPlayerProcess    # fh v3:exact 0x00783c70
-0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData
+0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData; ported (battle round 20)
 0x00783e00 function MsBtlReadSceneFree        # fh v3:exact 0x00783eb0; ours: g_BtlRead3 freed (Sg_FreeA(p, 5)) and cleared; ported (battle round 14)
 0x00783e20 function MsBtlReadSetScene         # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); was Battle_InitSections
 0x00783f60 function MsBtlReadWeapon              # layout+callees: sorts between MsBtlReadSetScene and MsCDreadWeapon, and its named callees match the Switch 0x710036eda0 MsBtlReadWeapon's (similarity 1.00: MsCDreadWeapon, MsGetChr); symbols from Fahrenheit's server export
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
 0x00784120 function MsCDreadWeapon            # fh v3:exact 0x007841d0
-0x00784220 function MsGetRamChrCTBbasic          # layout+callees: sorts between MsCDreadWeapon and readBtlMonsterName, and its named callees match the Switch 0x710036b910 MsGetRamChrCTBbasic's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
+0x00784220 function MsGetRamChrCTBbasic          # layout+callees: sorts between MsCDreadWeapon and readBtlMonsterName, and its named callees match the Switch 0x710036b910 MsGetRamChrCTBbasic's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export; ported (battle round 20)
 0x00784260 function Mon_GetName               # kernel monster record string 0
+0x00784420 function MsPlaceMonsters_00784420  # () -> count: each monster (actors 0x14-0x1b) with a model shown to the event (Ch_SetHideEvent(chr, 0)), placed at its battle position (MsGetChrBtlPos, Ch_SetPos3), made visible unless +0x407 (MsSetChrVisibleAppear(i, 0)); MsBtlReadManage's callee; name ours; ported (battle round 20)
 0x007844c0 function readBtlMonsterName        # fh v3:exact 0x00784570
 0x007845e0 function MsAddLoveParam            # fh v3:exact 0x00784690
 0x007846e0 function MsCheatPlayerPowerfulOff  # fh v3:cg2 0x784790
@@ -4978,7 +4979,7 @@
 0x00788b20 function MsEffectWaitFlag             # layout: alphabetical run between MsEffectTerminate and MsEffectWeaponFree (1 unnamed in the gap); Switch 0x71003514e0 MsEffectWaitFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00788b30 function MsEffectWeaponFree        # fh v3:exact 0x00788bf0
 0x00788b70 function MsEffectWeaponInit        # fh v3:exact 0x00788c30
-0x00788b90 function MsEventEffectFree         # fh v3:exact 0x00788c50
+0x00788b90 function MsEventEffectFree         # fh v3:exact 0x00788c50; ported (battle round 20)
 0x00788bd0 function MsEventEffectGetStat      # fh v3:bsim1.00 0x00788c90
 0x00788be0 function MsEventEffectInit         # fh v3:exact 0x00788ca0
 0x00788c00 function MsEventEffectProcess      # fh v3:exact 0x00788cc0; ours: state 6 with a table at 0x01133360: table+4 called with 0, MsEffectCameraEnd(1), op_ovl_effect_free, state 0, table 0, MagicFile_Stop, Sg_SetKeepFps((i8)0x0112c9f9); ported (battle round 14)
@@ -5188,7 +5189,7 @@
 0x00793410 function MsBtlChrFree              # fh v3:exact 0x00793420; ours: (i, flags) hidden, bind/status effects off, script i+5 cancelled, model and weapons disposed by flags; ported (battle round 13)
 0x00793480 function MsBtlChrFreeAll           # fh v3:exact 0x00793490; ported (battle round 18)
 0x00793500 function MsBtlChrFreeMem           # fh v3:exact 0x00793510; ported (battle round 18)
-0x00793530 function MsBtlChrGetMem            # fh v3:exact 0x00793540
+0x00793530 function MsBtlChrGetMem            # fh v3:exact 0x00793540; ported (battle round 20)
 0x00793570 function MsBtlChrInfoFree          # fh v3:exact 0x00793580
 0x007935b0 function MsBtlChrInit              # fh v3:exact 0x007935c0
 0x00793630 function MsBtlChrInitMem              # layout: alphabetical run between MsBtlChrInit and MsBtlChrNumCheck (1 unnamed in the gap); Switch 0x71003459c0 MsBtlChrInitMem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5196,7 +5197,7 @@
 0x00793670 function MsBtlChrRegist            # fh v3:exact 0x00793680
 0x007938e0 function MsBtlWeaponRegist         # fh v3:exact 0x007938f0
 0x00793ba0 function MsCalcChrDir              # fh v3:exact 0x00793bb0
-0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0
+0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0; ported (battle round 20)
 0x00793cf0 function MsChangeMonsterDir        # fh v3:exact 0x00793d00
 0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0; ported (battle round 18)
 0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10; ours: (all): 0x5d records +0x30 = 1, +0x28 = 0xff; with all each actor reset (head target, MsEffectEndMotion 0, normals, matrix, specular, visible); ran-away petrified out of place: MsStoneMove; ported (battle round 12)
@@ -5276,7 +5277,7 @@
 0x007966a0 function MsSetChrVisibleAppear     # fh v3:bsim1.00 0x007966b0; ours: msSetChrVisibleReq(i, 1, v); ported (battle round 12)
 0x007967a0 function MsSetChrVisibleCamera     # fh switch:bsim1.00 0x71003480b0
 0x007967c0 function MsSetChrVisibleCameraAll  # fh v3:exact 0x007967d0
-0x007967f0 function MsSetChrVisibleEvent      # fh v3:exact 0x00796800
+0x007967f0 function MsSetChrVisibleEvent      # fh v3:exact 0x00796800; ported (battle round 20)
 0x00796860 function MsSetChrVisibleMain       # fh switch:bsim1.00 0x7100347040
 0x007968e0 function MsSetChrWeight            # fh v3:exact 0x007968f0
 0x00796940 function MsSetDirThetaMode         # fh v3:exact 0x00796950
@@ -5416,7 +5417,7 @@
 0x0079cdf0 function MsMessageCueProcess       # fh v3:exact+call.cs 0x0079ce10 cdecl
 0x0079cfd0 function MsMessageCueRegist        # fh v3:bsim1.00+call.cs 0x0079cff0 cdecl
 0x0079d050 function MsSystemMessageCheck      # fh v3:exact 0x0079d070
-0x0079d0e0 function MsBtlListCDpos            # (field, &group, &formation) -> field.first + sum of earlier groups' counts + formation, clamped; was Enc_FormationIndex
+0x0079d0e0 function MsBtlListCDpos            # (field, &group, &formation) -> field.first + sum of earlier groups' counts + formation, clamped; was Enc_FormationIndex; ported (battle round 20)
 0x0079d170 function MsBtlListEncount          # field index -> its encounter block: u8 formation total, u8 group count, groups (*0x0112a9cc + field +2); was Enc_FieldGroups
 0x0079d190 function MsBtlListField            # field index (clamped) -> 14-byte entry: i16 map, i16 block offset, i16 first formation, char[8] name; was Enc_Field
 0x0079d1c0 function MsBtlListFieldNum         # map number -> index in the battle field table *0x0112a9c8 (count 0x0112a9d0, 14-byte entries); was Enc_FieldIndex
@@ -5442,12 +5443,12 @@
 0x0079e4f0 function MsEffectSendSignal           # layout: alphabetical run between MsDeathSEfadeAll and MsEtEffectEncount (3 unnamed in the gap); Switch 0x7100353860 MsEffectSendSignal is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079e510 function MsEffectSetGuard             # layout: alphabetical run between MsDeathSEfadeAll and MsEtEffectEncount (3 unnamed in the gap); Switch 0x71003538a0 MsEffectSetGuard is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079e590 function MsEtCriticalEffect           # layout: alphabetical run between MsDeathSEfadeAll and MsEtEffectEncount (3 unnamed in the gap); Switch 0x71003520b0 MsEtCriticalEffect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0079e5e0 function MsEtEffectEncount         # fh v3:exact 0x0079e600
+0x0079e5e0 function MsEtEffectEncount         # fh v3:exact 0x0079e600; ported (battle round 20)
 0x0079e630 function MsEtEffectFree            # fh v3:exact 0x0079e650
 0x0079e670 function MsEtEffectInit            # fh v3:exact 0x0079e690
 0x0079e6a0 function MsEtEffectRead            # fh v3:exact 0x0079e6c0
 0x0079e730 function MsEtEffectReadInit        # fh v3:bsim1.00 0x0079e750
-0x0079e7a0 function MsEtEffectSet             # fh v3:exact 0x0079e7c0
+0x0079e7a0 function MsEtEffectSet             # fh v3:exact 0x0079e7c0; ported (battle round 20)
 0x0079e7b0 function MsEtEffectStop            # fh v3:cg2 0x79e7d0; ported (battle round 18)
 0x0079e7c0 function MsGetStatusLook           # (i) -> bits: 1 +0x606 bit 1, 2 +0xdce, 4 +0x606 bit 9, 8 +0x613, 0x10 +0x614, 0x20 +0x616 bit 10; MsStatusEffectCheck (into +0x6f8, op_et_astatus_effect_change); name ours
 0x0079e830 function MsMagicEffectEnd          # fh v3:exact 0x0079e850; ours: (i): the prayer effect +0xea0 ends (op_et_prayeff_send_read_through); kind 8 (+0xdea) ends 0x10's and 0x11's first; ported (battle round 12)
@@ -15553,14 +15554,17 @@
 0x0112c022 label g_BtlLimitTypeCue         # u8: 1 when overdrive modes may be announced (MsLimitTypeProcess)
 0x0112c023 label g_BtlCommandStarted       # u8: set when a command starts (MsCommandCueProcess), cleared when an aeon is called (MsParseCommand)
 0x0112c024 label g_BtlResetWait            # u32: a soft reset waits while set (MsCheckSoftResetOk)
+0x0112c028 label g_BtlEncountEffects       # u8: encounter effects started (MsEtEffectEncount's MsGetEffID group, counted up); name ours
 0x0112c029 label g_SepTransFlag            # u16 cleared by MsSEPtransInit
 0x0112c02a label g_SepTransScene           # u8 scene sound transfers running (MsSEPtransProcess: at 0 g_SepTransFlag = 1, MsBtlReadSceneFree); name ours
 0x0112c02b label g_BtlLimitLearnt          # u8 set when MsLimitTidusLearn teaches an overdrive
 0x0112c02c label g_SepTransTable           # 0x80 words cleared by MsSEPtransInit
 0x0112c22c label g_EffectCameraBuf         # 8 words cleared by MsEffectCameraBufInit
+0x0112c254 label g_BtlBattleMusic          # u16: the formation's group bytes 2 and 1 (MsBattleExe), AtelEventSetUpForBattleMusic's argument; name ours
 0x0112c256 label g_BtlFieldIndex             # i16, the current battle field's record (MsBattleGetNum: its ID << 16 + the group ID)
 0x0112c258 label g_BtlGroupIndex           # u8: the encounter's group (MsBattleLabelExe from MsFldGetScene; MsBattleExe)
 0x0112c259 label g_BtlSlotIndex            # u8: the formation's slot in its group (MsBattleLabelExe from MsFldGetScene; MsBattleExe)
+0x0112c25a label g_BtlSceneName            # char[9]: "<map>_<nn>", the field record's 8 name bytes and the formation number (MsBattleExe's sprintf "%s_%02d"); name ours
 0x0112c526 label g_BtlWeaponList             # u16 list MsGetSaveWeaponList (0x007abd10) fills with 0x5000 + equipment slot
 0x0112c6b6 label g_BtlItemWindow              # 0x70 x u16, battle-usable items (kernel flag 2, not 0x400) in inventory order, 0xff after (MsSetItemWindow)
 0x0112c796 label g_BtlItemWindow2             # 0x70 x u16, the same for items with flag 0x400 (MsSetItemWindow)
