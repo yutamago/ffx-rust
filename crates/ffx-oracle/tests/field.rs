@@ -13642,3 +13642,224 @@ fn r1b_on_a_snapshot_matches_the_original() {
     }
     eprintln!("{seen} characters");
 }
+
+// ---- field agent r1, group C: an effect object's matrices ----
+
+/// Group C on `t`: synthetic effect objects over every flag combination,
+/// hanging from a parent object, a character (`i` in `chars`) or a display
+/// object.
+fn r1c_cases(t: &mut Twin, rng: &mut Xorshift, chars: &[u32], dobjs: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (obj, parent, out) = (t.alloc(0x300), t.alloc(0x300), t.alloc(0x40));
+    let work = t.stack_scratch(0x200);
+    // scratch the emulated VU0 registers keep from the callers' stacks
+    // (rcbgScaleVector's quadword copy of its float argument)
+    let skip = [(t.b.rebase(0x00c8_f974), 12)];
+    for k in 0..300u32 {
+        t.fill(obj, 0x300, rng);
+        for w in 0..0xc0 {
+            t.put(obj + 4 * w, rng.float());
+            t.put(parent + 4 * w, rng.float());
+        }
+        for w in 0..16 {
+            t.put(out + 4 * w, rng.float());
+        }
+        let flags = (k & 0xff) | if k & 0x100 != 0 { 0x1000 } else { 0 } | (rng.next() & 0x100);
+        t.put(obj + 0xbc, flags);
+        t.put(obj + 0xc0, if rng.below(3) == 0 { 0 } else { parent });
+        let i = chars[rng.below(u32::try_from(chars.len()).unwrap()) as usize];
+        t.put(
+            obj + 0x270,
+            if flags & 0x16 == 4 {
+                rng.below(dobjs)
+            } else {
+                i
+            },
+        );
+        t.put(obj + 0x274, rng.below(3));
+        if rng.below(3) == 0 {
+            // a vertical row 2 flattens to zero: the identity branch
+            for p in [parent + 0x1f0 + 0x20, parent + 0x1f0 + 0x28] {
+                t.put(p, 0u32);
+            }
+        }
+        t.same_but(
+            "rcefObjCalcParentMatrix",
+            &skip,
+            |o| o.void(0x0092_fc60, &[obj, out]),
+            |m| task::bridge::rcef_obj_calc_parent_matrix(m, obj, out, work, call),
+        );
+        t.same_but(
+            "rcefObjCalcWorldMatrix",
+            &skip,
+            |o| o.eax(0x0092_fe30, &[obj]),
+            |m| task::bridge::rcef_obj_calc_world_matrix(m, obj, work, call),
+        );
+    }
+}
+
+/// Group C on the image: the handles, character matrices and display
+/// objects stood in.
+#[test]
+fn r1c_obj_matrices_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00c1_0001);
+    let (chrs, mats, dmats) = (t.alloc(0x2000), t.alloc(0x40 * 16), t.alloc(0x40 * 16));
+    // small floats: Ch_GetRot wraps its angle a turn at a time
+    for w in 0..0x800 {
+        #[allow(clippy::cast_precision_loss)]
+        let x = rng.range(-4000, 4000) as f32 / 1000.0;
+        t.put(chrs + 4 * w, x.to_bits());
+    }
+    for w in 0..0x100 {
+        t.put(mats + 4 * w, rng.float());
+        t.put(dmats + 4 * w, rng.float());
+    }
+    t.cave(&[
+        (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+        (
+            Some(task::ATEL_CHAR_FROM_BIND_PC),
+            handle_stub(chrs + 0x1000),
+        ),
+        (
+            Some(task::CH_ELEM_GET_MATRIX),
+            table_stub(mats, 0x40, 15, [0, 1, 2]),
+        ),
+        (
+            Some(task::YI_GET_MATRIX_DOBJ),
+            table_stub(dmats, 0x40, 15, [0, 0, 1]),
+        ),
+    ]);
+    for battle in [0i8, 1] {
+        t.set(ffx_battle::state::bridge::STATUS, battle);
+        r1c_cases(&mut t, &mut rng, &[0, 1, 2, 3, 9, 0x8000_0001], 16);
+    }
+}
+
+/// Group C on the snapshot (`FFX_SNAPSHOT`): the game's characters and
+/// display objects.
+#[test]
+fn r1c_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c1_0002);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    // asked of both: the handle lookup writes game state
+    let chars: Vec<u32> = (0..40)
+        .filter(|&i| {
+            task::bridge::rcef_get_chr_handle(&mut t.a, i, call);
+            task::bridge::rcef_get_chr_handle(&mut t.b, i, call) != 0
+        })
+        .collect();
+    if chars.is_empty() {
+        return;
+    }
+    r1c_cases(&mut t, &mut rng, &chars, 4);
+}
+
+/// `return table[arg k & mask]` (a word table).
+fn word_table_stub(table: u32, mask: u32, k: u8) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 4 + 4 * k, 0x25];
+    c.extend_from_slice(&mask.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x04, 0x85]);
+    c.extend_from_slice(&table.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// The CLUT tint factors: small and large, negative, zero.
+fn r1c_tints(t: &mut Twin, rng: &mut Xorshift, add: u32, mul: u32) {
+    for j in 0..4 {
+        #[allow(clippy::cast_precision_loss)]
+        let a = match rng.below(4) {
+            0 => 0.0,
+            1 => rng.range(-300, 300) as f32,
+            _ => rng.range(-64, 64) as f32 / 4.0,
+        };
+        #[allow(clippy::cast_precision_loss)]
+        let m = match rng.below(5) {
+            0 => 1.0,
+            1 => f32::from_bits(rng.float()),
+            _ => rng.range(-100, 400) as f32 / 128.0,
+        };
+        t.put(add + 4 * j, a.to_bits());
+        t.put(mul + 4 * j, m.to_bits());
+    }
+}
+
+/// `rcefChgChrClut` on the image: CLUT counts, sizes and buffers stood in
+/// (the live CLUT sometimes over the original).
+#[test]
+fn r1c_chg_chr_clut_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00c1_0003);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (chrs, nb, sizes, orgs, ptrs) = (
+        t.alloc(0x2000),
+        t.alloc(4),
+        t.alloc(32),
+        t.alloc(32),
+        t.alloc(32),
+    );
+    let (buf, add, mul) = (t.alloc(0x4000), t.alloc(0x10), t.alloc(0x10));
+    t.cave(&[
+        (Some(task::MS_GET_CHR_HANDLE), handle_stub(chrs)),
+        (
+            Some(task::ATEL_CHAR_FROM_BIND_PC),
+            handle_stub(chrs + 0x1000),
+        ),
+        (Some(task::CH_CLUT_GET_NB), word_table_stub(nb, 0, 0)),
+        (Some(task::CH_CLUT_GET_SIZE), word_table_stub(sizes, 7, 1)),
+        (Some(task::CH_CLUT_GET_ORG_PTR), word_table_stub(orgs, 7, 1)),
+        (Some(task::CH_CLUT_GET_PTR), word_table_stub(ptrs, 7, 1)),
+    ]);
+    for k in 0..200u32 {
+        t.set(ffx_battle::state::bridge::STATUS, i8::from(k % 2 == 0));
+        t.fill(buf, 0x4000, &mut rng);
+        t.put(nb, rng.range(-2, 8));
+        for c in 0..8 {
+            t.put(sizes + 4 * c, rng.range(-1, 0x40));
+            t.put(orgs + 4 * c, buf + 0x400 * c);
+            let p = if rng.below(4) == 0 {
+                buf + 0x400 * c + 4 * rng.below(3)
+            } else {
+                buf + 0x2000 + 0x400 * (c & 7)
+            };
+            t.put(ptrs + 4 * c, p.min(buf + 0x3c00));
+        }
+        r1c_tints(&mut t, &mut rng, add, mul);
+        let i = rng.below(16);
+        t.same(
+            "rcefChgChrClut",
+            |o| o.eax(0x0092_dd30, &[i, add, mul]),
+            |m| task::bridge::rcef_chg_chr_clut(m, i, add, mul, call),
+        );
+    }
+}
+
+/// `rcefChgChrClut` on the snapshot (`FFX_SNAPSHOT`): the characters' own
+/// CLUTs.
+#[test]
+fn r1c_chg_chr_clut_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c1_0004);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (add, mul) = (t.alloc(0x10), t.alloc(0x10));
+    for i in 0..40 {
+        task::bridge::rcef_get_chr_handle(&mut t.a, i, call);
+        if task::bridge::rcef_get_chr_handle(&mut t.b, i, call) == 0 {
+            continue;
+        }
+        for _ in 0..3 {
+            r1c_tints(&mut t, &mut rng, add, mul);
+            t.same(
+                "rcefChgChrClut",
+                |o| o.eax(0x0092_dd30, &[i, add, mul]),
+                |m| task::bridge::rcef_chg_chr_clut(m, i, add, mul, call),
+            );
+        }
+    }
+}

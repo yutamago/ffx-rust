@@ -11615,7 +11615,7 @@
 0x0092d870 function op_et_bindeff_draw_on_thunk # g_MagicImports slot 455 (1 overlay): jmp op_et_bindeff_draw_on; hidden from the dump
 0x0092d880 function SetGlobals_0092d880          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x025d5c38] = a0; u32[&0x025d5c3c] = a1; u32[&0x025d5c40] = a2; u32[&0x025d5c44] = 0x0; u32[&0x025d5c48] = 0x1; return a2; callers: no direct caller; name ours
 0x0092dcd0 function rcefCalcRotMatrix            # layout+callees: sorts between rcbgTrxSetTag and rcefChgChrClut, and its named callees match the Switch 0x71005581b0 rcefCalcRotMatrix's (similarity 0.67: FFXVu0UnitMatrix, op_rt_m_yxz); symbols from Fahrenheit's server export
-0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340
+0x0092dd30 function rcefChgChrClut            # fh switch:cg2 0x7100557340; ported (field r1 C): (i, add f32[4], mul f32[4]): every CLUT colour channel = ftol((add[j] + original byte) * mul[j]) clamped 0..255 into Ch_ClutGetPtr; eax: the count when <= 0, else the last CLUT's mul pointer (or its Ch_ClutGetPtr when empty)
 0x0092de30 function rcefDirToAngle               # (float) -> 3pi/2 (double 0x00b67e18) - x, as f32; from 0x00924a20 (g_MagicImports)
 0x0092de50 function rcMat4fSetScale001           # (m) -> identity scaled by 0.01 (0x00b1f2b0); FFXVu0UnitMatrix's eax
 0x0092de80 function rcMat4fSetScale0001          # (m) -> identity scaled by 0.001 (0x00b368a4)
@@ -11696,8 +11696,8 @@
 0x0092f970 function rcefObjAttachChr          # fh v3:exact 0x0092f970
 0x0092f9a0 function rcefObjAttachChrOpt       # fh v3:exact 0x0092f9a0; ported (field r1 B)
 0x0092f9d0 function rcefObjCalcLocalMatrix    # fh v3:exact 0x0092f9d0
-0x0092fc60 function rcefObjCalcParentMatrix   # fh v3:exact 0x0092fc60
-0x0092fe30 function rcefObjCalcWorldMatrix    # fh v3:exact 0x0092fe30
+0x0092fc60 function rcefObjCalcParentMatrix   # fh v3:exact 0x0092fc60; ported (field r1 C): by +0xbc: parent +0xc0's +0x1f0 / identity, flag 2 rcefGetChrMatrix(+0x270, +0x274), 4 yiGetMatrixDObj(+0x270); 0x20 row 2 flattened (all zero: identity) with rows 0/1 by cross products; 0x10 identity turned by -Ch_GetRot * 651.9 - 1024 (f64 0x00b51590, 0x00b51ba8) at the old translation (op_rt_m_yxz); 0x40 rotation reset; no 0x80: rows normalised
+0x0092fe30 function rcefObjCalcWorldMatrix    # fh v3:exact 0x0092fe30; ported (field r1 C): parent into +0x230 (once: flag 0x1000, again with 0x100), +0x1f0 = +0x230 x +0x1b0 (FFXVu0MulMatrix's eax)
 0x0092fe90 function rcefObjCreate                # layout: alphabetical run between rcefObjCalcWorldMatrix and rcefObjFini (2 unnamed in the gap); Switch 0x710054cd60 rcefObjCreate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0092feb0 function rcefObjDelete                # layout: alphabetical run between rcefObjCalcWorldMatrix and rcefObjFini (2 unnamed in the gap); Switch 0x710054cc50 rcefObjDelete is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0092fee0 function rcefObjFini               # fh v3:exact 0x0092fee0

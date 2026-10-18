@@ -286,6 +286,33 @@ pub const VU0_SUB_D720: u32 = 0x0092_d720;
 pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
 /// `rcVec3fNormalize(v)` (`0x00921360`).
 pub const VEC3F_NORMALIZE: u32 = 0x0092_1360;
+/// `Ch_ClutGetNb(chr)` (`0x0083c9a0`).
+pub const CH_CLUT_GET_NB: u32 = 0x0083_c9a0;
+/// `Ch_ClutGetSize(chr, c)` (`0x0083c9f0`).
+pub const CH_CLUT_GET_SIZE: u32 = 0x0083_c9f0;
+/// `Ch_ClutGetOrgPtr(chr, c)` (`0x0083c9b0`).
+pub const CH_CLUT_GET_ORG_PTR: u32 = 0x0083_c9b0;
+/// `Ch_ClutGetPtr(chr, c)` (`0x0083c9d0`).
+pub const CH_CLUT_GET_PTR: u32 = 0x0083_c9d0;
+/// `FFXVu0UnitMatrix(m)` (`0x006ed9a0`).
+pub const UNIT_MATRIX: u32 = 0x006e_d9a0;
+/// `FFXVu0CopyMatrix(dst, src)` (`0x006ed360`).
+pub const COPY_MATRIX: u32 = 0x006e_d360;
+/// `FFXVu0MulMatrix(dst, a, b)` (`0x006ed5c0`).
+pub const MUL_MATRIX: u32 = 0x006e_d5c0;
+/// `yiGetMatrixDObj(index, out)` (`0x00908df0`).
+pub const YI_GET_MATRIX_DOBJ: u32 = 0x0090_8df0;
+/// `rcCopyQword_0092f850(dst, src)` (`0x0092f850`).
+pub const COPY_QWORD_F850: u32 = 0x0092_f850;
+/// `rcVec3fMul(out, a, b)` (`0x009212c0`), the cross product.
+pub const VEC3F_MUL: u32 = 0x0092_12c0;
+/// `op_rt_m_yxz(dst, src, angles, t)` (`0x007e9a30`).
+pub const OP_RT_M_YXZ: u32 = 0x007e_9a30;
+/// 651.9 (`f64`, `.rdata`): `rcefObjCalcParentMatrix`'s turn per unit of
+/// `Ch_GetRot`.
+pub const ROT_SCALE: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_1590);
+/// 1024.0 (`f64`, `.rdata`): the quarter turn it takes off.
+pub const ROT_BIAS: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_1ba8);
 /// 10.0 as an `f64` (`.rdata`): `rcefGetChrWidth`, `rcefGetChrEyeHeight`.
 pub const TEN: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b9_22b0);
 /// 10.0 as an `f32` (`.rdata`): `rcefGetChrElemOff`'s scale.
@@ -1817,6 +1844,177 @@ pub mod bridge {
         let e = call(mem, f, &[h, n, 0]);
         let f = mem.rebase(super::OBJ_ATTACH_CHR);
         call(mem, f, &[obj, i, e]);
+    }
+
+    /// `rcefChgChrClut(i, add, mul)` (`0x0092dd30`): every colour of every
+    /// CLUT of the character (`Ch_ClutGetNb`, `Ch_ClutGetSize`), from its
+    /// original (`Ch_ClutGetOrgPtr`) into the live one (`Ch_ClutGetPtr`):
+    /// channel `j` = (`add[j]` + original) * `mul[j]` (`f32` arrays of
+    /// four), `_ftol2_sse` and clamped to 0..=255. Returns what the
+    /// original leaves in `eax`: the count when not positive, else the last
+    /// CLUT's `mul` pointer when it has colours, or its `Ch_ClutGetPtr`.
+    pub fn rcef_chg_chr_clut<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        add: u32,
+        mul: u32,
+        call: &mut C,
+    ) -> u32 {
+        let h = rcef_get_chr_handle(mem, i, call);
+        let f = mem.rebase(super::CH_CLUT_GET_NB);
+        let nb = call(mem, f, &[h]).cast_signed();
+        let mut eax = nb.cast_unsigned();
+        for c in 0..nb.max(0).cast_unsigned() {
+            let f = mem.rebase(super::CH_CLUT_GET_SIZE);
+            let n = call(mem, f, &[h, c]).cast_signed();
+            let f = mem.rebase(super::CH_CLUT_GET_ORG_PTR);
+            let mut org = call(mem, f, &[h, c]);
+            let f = mem.rebase(super::CH_CLUT_GET_PTR);
+            let mut ptr = call(mem, f, &[h, c]);
+            eax = ptr;
+            for _ in 0..n.max(0) {
+                for j in 0..4u32 {
+                    let o = f64::from(mem.read::<u8>(org.wrapping_add(j)));
+                    let a = crate::x87::load(mem.read::<u32>(add.wrapping_add(4 * j)));
+                    let m = crate::x87::load(mem.read::<u32>(mul.wrapping_add(4 * j)));
+                    let v = ffx_bridge::x87::ftol(&*mem, (a + o) * m).cast_signed();
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // clamped
+                    mem.write(ptr.wrapping_add(j), v.clamp(0, 0xff) as u8);
+                }
+                org = org.wrapping_add(4);
+                ptr = ptr.wrapping_add(4);
+                eax = mul;
+            }
+        }
+        eax
+    }
+
+    // ---- field agent r1, group C: an effect object's matrices ----
+
+    /// `rcefObjCalcParentMatrix(obj, out)` (`0x0092fc60`): the matrix an
+    /// effect object hangs from, by its flags (`+0xbc`):
+    /// - neither 2 nor 4: the parent object's world matrix (`+0xc0`,
+    ///   its `+0x1f0`; `FFXVu0CopyMatrix`), or the identity without one;
+    /// - 2: the character's (`rcefGetChrMatrix(+0x270, +0x274)`); 4 alone:
+    ///   the display object's (`yiGetMatrixDObj(+0x270)`);
+    /// - then 0x20: row 2 flattened (y = 0) and normalised; all zero gives
+    ///   the identity, else row 2 is it, row 0 = row 2 x (0, 1, 0) and
+    ///   row 1 = row 0 x row 2 (`rcVec3fMul`);
+    /// - 0x10: the identity turned about y by -`Ch_GetRot` * 651.9 - 1024
+    ///   (`.rdata` `f64`s) and moved to the old translation
+    ///   (`op_rt_m_yxz`);
+    /// - 0x40: the rotation rows reset to the identity;
+    /// - without 0x80: rows 0..2 normalised.
+    ///
+    /// `work` is 0x20 bytes (the original's frame: two vectors).
+    #[allow(clippy::too_many_lines)] // one flag after another
+    pub fn rcef_obj_calc_parent_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        out: u32,
+        work: u32,
+        call: &mut C,
+    ) {
+        let flags = |mem: &M| mem.read::<u32>(obj.wrapping_add(0xbc));
+        let unit = mem.rebase(super::UNIT_MATRIX);
+        let fl = flags(mem);
+        if fl & 6 == 0 {
+            let p = mem.read::<u32>(obj.wrapping_add(0xc0));
+            if p == 0 {
+                call(mem, unit, &[out]);
+            } else {
+                let f = mem.rebase(super::COPY_MATRIX);
+                call(mem, f, &[out, p.wrapping_add(0x1f0)]);
+            }
+        } else {
+            let a = mem.read::<u32>(obj.wrapping_add(0x270));
+            if fl & 2 == 0 {
+                let f = mem.rebase(super::YI_GET_MATRIX_DOBJ);
+                call(mem, f, &[a, out]);
+            } else {
+                let e = mem.read::<u32>(obj.wrapping_add(0x274));
+                rcef_get_chr_matrix(mem, a, e, out, call);
+            }
+        }
+        let copy = mem.rebase(super::COPY_QWORD_F850);
+        let norm = mem.rebase(super::VEC3F_NORMALIZE);
+        let (t, v) = (work.wrapping_add(0x10), work);
+        if flags(mem) & 0x20 != 0 {
+            let row2 = out.wrapping_add(0x20);
+            call(mem, copy, &[t, row2]);
+            mem.write(t.wrapping_add(4), 0u32);
+            call(mem, norm, &[t]);
+            let zero =
+                |mem: &M, k: u32| crate::x87::load(mem.read::<u32>(t.wrapping_add(4 * k))) == 0.0;
+            #[allow(clippy::float_cmp)] // fucom: exact
+            if zero(mem, 0) && zero(mem, 1) && zero(mem, 2) {
+                call(mem, unit, &[out]);
+            } else {
+                call(mem, copy, &[row2, t]);
+                for (k, w) in (0u32..).zip([0u32, 0x3f80_0000, 0, 0]) {
+                    mem.write(v.wrapping_add(4 * k), w);
+                }
+                let mul = mem.rebase(super::VEC3F_MUL);
+                call(mem, mul, &[out, t, v]);
+                call(mem, mul, &[out.wrapping_add(0x10), out, row2]);
+            }
+        }
+        if flags(mem) & 0x10 != 0 {
+            let (s, a) = (v, t);
+            call(mem, copy, &[s, out.wrapping_add(0x30)]);
+            for k in 0..4 {
+                mem.write(a.wrapping_add(4 * k), 0u32);
+            }
+            let i = mem.read::<u32>(obj.wrapping_add(0x270));
+            let h = rcef_get_chr_handle(mem, i, call);
+            let rot = f64::from(ffx_chara::chr::bridge::ch_get_rot(&*mem, h));
+            let (k, b) = (super::ROT_SCALE.get(mem), super::ROT_BIAS.get(mem));
+            mem.write(a.wrapping_add(4), crate::x87::store(-rot * k - b));
+            call(mem, unit, &[out]);
+            let f = mem.rebase(super::OP_RT_M_YXZ);
+            call(mem, f, &[out, out, a, s]);
+        }
+        if flags(mem) & 0x40 != 0 {
+            for k in 0..12u32 {
+                let w = if k % 5 == 0 { 0x3f80_0000u32 } else { 0 };
+                mem.write(out.wrapping_add(4 * k), w);
+            }
+        }
+        if flags(mem) & 0x80 == 0 {
+            for r in 0..3u32 {
+                call(mem, norm, &[out.wrapping_add(0x10 * r)]);
+            }
+        }
+    }
+
+    /// `rcefObjCalcWorldMatrix(obj)` (`0x0092fe30`): without flag 0x1000,
+    /// or with 0x100, the parent matrix into `+0x230`
+    /// ([`rcef_obj_calc_parent_matrix`]) and flag 0x1000 set; then
+    /// `+0x1f0` = `+0x230` x `+0x1b0` (`FFXVu0MulMatrix`, whose `eax` it
+    /// returns).
+    pub fn rcef_obj_calc_world_matrix<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let at = obj.wrapping_add(0xbc);
+        let fl = mem.read::<u32>(at);
+        if fl & 0x1000 == 0 || fl & 0x100 != 0 {
+            rcef_obj_calc_parent_matrix(mem, obj, obj.wrapping_add(0x230), work, call);
+            let v = mem.read::<u32>(at) | 0x1000;
+            mem.write(at, v);
+        }
+        let f = mem.rebase(super::MUL_MATRIX);
+        call(
+            mem,
+            f,
+            &[
+                obj.wrapping_add(0x1f0),
+                obj.wrapping_add(0x230),
+                obj.wrapping_add(0x1b0),
+            ],
+        )
     }
 }
 

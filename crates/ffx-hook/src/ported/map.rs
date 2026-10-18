@@ -2612,6 +2612,20 @@ ported! {
     rcefDisposeChrClut @ 0x0092_df10 => extern "C" fn shim_rcef_dispose_chr_clut(i: u32) -> u32 {
         task::bridge::rcef_dispose_chr_clut(&mut mem(), i, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcefObjCalcParentMatrix(obj, out)` (field agent r1, group C).
+    rcefObjCalcParentMatrix @ 0x0092_fc60 => extern "C" fn shim_rcef_obj_calc_parent_matrix(obj: u32, out: u32) {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_obj_calc_parent_matrix(&mut mem(), obj, out, w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcefObjCalcWorldMatrix(obj)`.
+    rcefObjCalcWorldMatrix @ 0x0092_fe30 => extern "C" fn shim_rcef_obj_calc_world_matrix(obj: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_obj_calc_world_matrix(&mut mem(), obj, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefChgChrClut(i, add, mul)`.
+    rcefChgChrClut @ 0x0092_dd30 => extern "C" fn shim_rcef_chg_chr_clut(i: u32, add: u32, mul: u32) -> u32 {
+        task::bridge::rcef_chg_chr_clut(&mut mem(), i, add, mul, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcefObjAttachChrOpt(obj, i, n)`.
     rcefObjAttachChrOpt @ 0x0092_f9a0 => extern "C" fn shim_rcef_obj_attach_chr_opt(obj: u32, i: u32, n: u32) {
         task::bridge::rcef_obj_attach_chr_opt(&mut mem(), obj, i, n, &mut |_, f, a| call_cdecl(f, a));
