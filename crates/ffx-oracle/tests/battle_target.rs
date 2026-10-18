@@ -6194,6 +6194,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let battle_init_dest = scratch(a, b, 0x1000);
     let battle_init_data = scratch(a, b, 0x80);
     let mut binit_rng = Xorshift(0x21e5_0301 ^ u32::from(synthetic));
+    let mut process_rng = Xorshift(0x21e5_0401 ^ u32::from(synthetic));
     let mut init_rng = Xorshift(0x21e5_0101 ^ u32::from(synthetic));
     for o in [&mut *a, &mut *b] {
         logging_stub(
@@ -6277,6 +6278,16 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 &mut binit_rng,
                 battle_init_rec,
                 [iheap, sblock, battle_init_dest, battle_init_data],
+            );
+        }
+        if process_rng.below(2) == 0 {
+            battle_process(
+                a,
+                b,
+                &mut process_rng,
+                &w,
+                battle_init_rec,
+                battle_init_data + 0x60,
             );
         }
     }
@@ -8619,6 +8630,12 @@ fn init_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, hea
         a.write(request, &r).unwrap();
         same(&format!("MsMenuReadText {i:#x} {load}"), a, b);
     }
+    // the start list: the game's (kernel texts only) or CD texts, whose
+    // size `load` decides while English
+    if rng.below(2) == 0 {
+        poke(a, b, b.rebase(ini::START_TEXTS), &[2, 0xd, 2, 0xff]);
+        poke(a, b, stub(9) + 4, &1u32.to_le_bytes());
+    }
     for _ in 0..2 {
         let k = rng.below(10);
         twin(
@@ -8634,8 +8651,9 @@ fn init_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, hea
         a.write(request, &r).unwrap();
         same(&format!("MsMenuReadStartText_00782b70 {k}"), a, b);
     }
-    // the special stage's kinds
+    // the special stage's kinds (its work block not cleared before)
     let kind = pick!(rng, &[0, 1, 1, 2, 3, 4, u32::MAX]);
+    fill(a, b, rng, heap, 0x870);
     poke(a, b, stub(12) + 4, &rng.next().to_le_bytes());
     twin(
         "MsBattleSpecialInit",
@@ -8991,6 +9009,256 @@ fn battle_init(
     let r = b.read(data + 0x40, 0x10).unwrap();
     a.write(data + 0x40, &r).unwrap();
     same("MsBattleInit", a, b);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
+}
+
+/// `MsBattleProcess`'s callees (round 21, `ffx_battle::process`), all
+/// through the game, with their logged argument counts.
+fn battle_process_callees() -> Vec<(u32, u8)> {
+    use ffx_battle::process::bridge as p;
+    let mut v = vec![
+        (p::MS_BTL_READ_MANAGE, 0),
+        (p::MS_DEBUG_CAMERA_SLEEP, 1),
+        (p::FFX_IS_DEBUG, 0),
+        (p::TK_GET_CONTROLER_HIST, 3),
+        (p::MS_DEBUG_GET_FIELD_NUM, 0),
+        (p::DBG_PRINTF, 3),
+        (p::TO_ALL_CLEAR_MESSAGE_WINDOW, 0),
+        (p::MS_BATTLE_LABEL_EXE, 3),
+        (p::MS_BATTLE_EXE, 4),
+        (p::MS_EVENT_EFFECT_PROCESS, 0),
+        (p::TO_DEBUG_GET_PAD_PRINT_FLAG, 0),
+        (p::MS_BATTLE_PROCESS_DEBUG_STATUS, 0),
+        (p::MS_SEP_3D_PROCESS, 0),
+        (p::MS_MENU_CLOSE_TITLE_WINDOW, 1),
+        (p::MS_CHECK_PLY_BTL_POS_ALL, 0),
+        (p::MS_RESET_NORMAL_CALC, 0),
+        (p::MS_SEP_TRANS_PROCESS, 0),
+        (p::MS_BATTLE_PROCESS_ORDER, 0),
+        (p::MS_BATTLE_PROCESS_CHR_DAMAGE, 0),
+        (p::MS_SET_DEATH_ALL, 0),
+        (p::MS_STONE_EFFECT_PROCESS, 0),
+        (p::MS_CHECK_CHR_HIT_MOTION_ALL, 0),
+        (p::MS_BATTLE_PROCESS_STATUS, 0),
+        (p::MS_BATTLE_PROCESS_INPUT_CUE, 0),
+        (p::TK_CHECK_SOFT_WARE_RESET, 0),
+        (p::MS_CHECK_SOFT_RESET_OK, 0),
+        (p::OPD_EXIT_FROM_OVL, 0),
+        (p::MS_NOW_MUSIC_STOP, 0),
+        (p::MS_CAMERA_INIT, 0),
+        (p::MS_SET_SAVE_DATA, 0),
+        (p::MS_BATTLE_FREE, 0),
+        (p::ATEL_BATTLE_END_CALLBACK, 4),
+    ];
+    v.extend(p::FRAME_STEPS.map(|f| (f, 0)));
+    v.extend(p::DEBUG_RESTART_STEPS.map(|f| (f, 0)));
+    for (f, args) in p::END_STEPS {
+        if !v.iter().any(|&(g, _)| g == f) {
+            v.push((f, u8::try_from(args.len()).unwrap()));
+        }
+    }
+    v
+}
+
+/// `MsBattleProcess` (round 21): a frame in and out of battle, every
+/// callee a logging stub (from `INIT_STUBS` on, records from `rec`;
+/// results drawn: the pad with and without the debug combination, the
+/// debug build, the waits), the frame's counters and holds drawn, the
+/// scene's field and group at `data`. The battle's globals, the leader's
+/// HP word and the draw environment flag put back after.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap
+)]
+fn battle_process(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    rec: u32,
+    data: u32,
+) {
+    use ffx_battle::process::bridge as p;
+    macro_rules! pick {
+        ($rng:expr, $v:expr $(,)?) => {{
+            let v: &[u32] = $v;
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let mut call = game_call_o;
+    let regions = [
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x00c4_2000), 0x500),
+        (p::DEF_DRAW_ENV2.ptr(b).addr, 1),
+        (w.actor(0) + 0x5d0, 4),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let callees = battle_process_callees();
+    assert!(callees.len() <= BATTLE_INIT_RECS as usize);
+    let stub = |k: usize| rec + EXCHANGE_REC * u32::try_from(k).unwrap();
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, &(f, n)) in callees.iter().enumerate() {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(
+                o,
+                f,
+                INIT_STUBS + 0x40 * u32::try_from(k).unwrap(),
+                stub(k),
+                n,
+                0,
+            );
+        }
+        saved.push(mine);
+    }
+    let ret = |f: u32| stub(callees.iter().position(|&(g, _)| g == f).unwrap()) + 4;
+    // the stubs' results
+    let combo = p::DEBUG_COMBO;
+    let pad = pick!(
+        rng,
+        &[
+            0,
+            rng.below(0x1_0000),
+            combo,
+            combo | p::DEBUG_RESTART,
+            0x880,
+            0x880 | combo,
+            0x880 | combo | 0x20,
+            0x800
+        ]
+    );
+    poke(
+        a,
+        b,
+        ret(p::TK_GET_CONTROLER_HIST),
+        &(pad | (rng.next() << 16)).to_le_bytes(),
+    );
+    for f in [
+        p::FFX_IS_DEBUG,
+        p::TO_DEBUG_GET_PAD_PRINT_FLAG,
+        p::MS_CHECK_PLY_BTL_POS_ALL,
+        p::TK_CHECK_SOFT_WARE_RESET,
+        p::MS_CHECK_SOFT_RESET_OK,
+    ] {
+        poke(
+            a,
+            b,
+            ret(f),
+            &pick!(rng, &[0, 0, 1, u32::MAX]).to_le_bytes(),
+        );
+    }
+    for f in [
+        p::MS_SEP_3D_PROCESS,
+        p::MS_DEBUG_GET_FIELD_NUM,
+        p::MS_CHECK_CHR_HIT_MOTION_ALL,
+    ] {
+        poke(a, b, ret(f), &pick!(rng, &[0, 0, rng.next()]).to_le_bytes());
+    }
+    // the frame's state: status, the draw environment, counters, holds
+    let status = pick!(rng, &[0, 0, 1, 1, 1, 0x21, 0x21, 4, 0x15]);
+    set(a, b, ffx_battle::state::bridge::STATUS, status as u8 as i8);
+    set(a, b, p::DEF_DRAW_ENV2, pick!(rng, &[1, 1, 0]) as u8 as i8);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::EXE,
+        pick!(rng, &[0, 1]) as u8 as i8,
+    );
+    poke(
+        a,
+        b,
+        w.actor(0) + 0x5d0,
+        &pick!(rng, &[0, 1, u32::MAX, 0x500]).to_le_bytes(),
+    );
+    set(a, b, p::PAUSE, pick!(rng, &[0, 0, 1, 5]) as u8);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::TITLE_WINDOW,
+        [pick!(rng, &[0, 1, 2, 0x80]) as u8 as i8, rng.byte() as i8],
+    );
+    set(
+        a,
+        b,
+        ffx_battle::parse::bridge::PARTY_LEAVES,
+        pick!(rng, &[0, 1]) as u8,
+    );
+    set(a, b, p::HIT_MOTION, pick!(rng, &[0, 0, 1]) as u8);
+    for g in [
+        ffx_battle::battle_end::bridge::END_FADE,
+        ffx_battle::battle_end::bridge::END_FADE_OUT,
+    ] {
+        set(a, b, g, pick!(rng, &[0, 0, 1, 3]) as u8);
+    }
+    set(
+        a,
+        b,
+        ffx_battle::battle_end::bridge::END_KIND,
+        pick!(rng, &[0, 0, 1, 5, 6]) as u8 as i8,
+    );
+    set(a, b, p::NO_SAVE, pick!(rng, &[0, 1]) as u8);
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::MESSAGE_CUE_COUNT,
+        pick!(rng, &[0, 0, 0, 1]) as u8,
+    );
+    set(
+        a,
+        b,
+        ffx_battle::atel::bridge::CAMERA_STATE,
+        pick!(rng, &[0, 0, 0, 1]) as u8,
+    );
+    set(
+        a,
+        b,
+        ffx_battle::parse::bridge::COMMAND_HOLD,
+        pick!(rng, &[0, 0, 0, 1]) as u8,
+    );
+    set(
+        a,
+        b,
+        ffx_battle::flow::bridge::LIMIT_LEARNT,
+        pick!(rng, &[0, 0, 0, 1]) as u8,
+    );
+    set(
+        a,
+        b,
+        ffx_battle::action::bridge::TURN_END_ACTOR,
+        pick!(rng, &[0xff, 0xff, 0xff, 3]) as u8,
+    );
+    set(a, b, ffx_battle::state::bridge::ENCOUNT_TYPE, rng.byte());
+    poke(a, b, data, &(rng.next() as u16).to_le_bytes());
+    poke(a, b, data + 4, &[rng.byte()]);
+    set(a, b, ffx_battle::state::bridge::SCENE_FIELD, data);
+    set(a, b, ffx_battle::state::bridge::SCENE_GROUP, data + 4);
+    twin(
+        &format!("MsBattleProcess {status:#x} {pad:#x}"),
+        a,
+        b,
+        0x0079_0c10,
+        &[],
+        0,
+        |m| {
+            p::ms_battle_process(m, &mut call);
+            0
+        },
+    );
+    same(&format!("MsBattleProcess {status:#x} {pad:#x}"), a, b);
     for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
         for (f, v) in mine {
             let at = o.rebase(f);

@@ -738,6 +738,35 @@ for kinds 1-3 (the boat's roll step 0.002 from `0x00b54ca4`, map objects
 named `g_KernelSummonGrow` in ffx.sym: `MsBattleInit` reads directory
 0xd's file 0xe into the first and 0x2f's file 6 into the second.
 
+`MsBattleProcess` (`0x00790c10`, `ffx_battle::process`), the battle
+module's frame, is ported (round 21); every callee goes through the game
+(the battle's are hooked ports), only the state it reads and writes
+itself is Rust. Each frame: `MsBtlReadManage`, `g_BtlLeaderAlive` 1 and,
+with `g_GsDefDrawEnv2` 1, the debug camera sleep. Outside a battle
+(status 0) a debug build's pad combination L1+R1+L2+R2+X (`0x4f`) starts
+the debug field's battle (`MsBattleLabelExe`), `g_BtlExe` starts a
+battle (`MsBattleExe(0, field, group, slot)`) and the event effect runs.
+In a battle: the debug status print, `g_BtlLeaderAlive` (actor 0's
+`+0x5d0` above 0), `g_BtlPad`, the 3D sounds (their result in
+`0x0112ca01`), the command frame count, the per-frame clears, the pause,
+title window and party position counters, the sound transfers; while
+`MsBattleCanProgress` the order (at status 1); damage, deaths, stone
+effects, hit motions, the two end fades; while it can progress and the
+first fade is 0 the status step, and at status 1 the input cue; then
+the window, command cue, overdrive, message cue, numbers, movement,
+motion positions and `MsEffectStart`. The original keeps the first fade's
+new value in `cl` across `MsBattleCanProgress`, which leaves `ecx` alone.
+A soft reset ends the battle (kind 6). A debug build with
+`g_GsDefDrawEnv2` 1 ends it on Start+Square (status 1,
+`g_BtlEndForced` 5); at status 1 the combination restarts the battle
+(with Triangle the whole module: free, init, `MsEtEffectRead`) and
+returns before the pad is kept; when it was checked and not held, the
+status 0x21 end check is skipped. Status 0x21 or end kind 5 or 6 end the
+battle (camera, reverb, fps, windows, `MsBtlGetTerm`, the save unless
+`g_BtlNoSave`, `MsBattleFree`, `AtelBattleEndCallback(encounter type,
+field << 16 | group, music, kind)`, the encounter type cleared). Then
+`g_BtlPadOld` and the event effect.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

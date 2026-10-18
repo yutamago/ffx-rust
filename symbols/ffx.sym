@@ -4812,6 +4812,7 @@
 0x00782670 function MsBtlScriptRecordShift_00782670 # (): g_BtlScriptRecords' second 0x20-byte record copied over the first (rep movs from 0x0112a9a4), g_BtlStatus 0, the second's +4 cleared; MsBattleInit's callee; name ours; ported (battle round 19)
 0x007826a0 function FFXGetAsiaMode            # (english) MsBattleInit prints it ("ASIA %d:%d"); Ghidra's name
 0x007826b0 function MsDebugInfoRead              # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'host0:/home/%s/%s'; Switch 0x7100337290 MsDebugInfoRead (symbols from Fahrenheit's server export)
+0x00782740 function MsEtEffectRead            # MsBattleProcess's debug restart, after MsBattleInit; Ghidra's name
 0x00782750 function MsEffectBufferFree_00782750 # (): user_free(g_BtlEffectBuffer), cleared; MsBattleFree's only call between Sg_IdSetEffectTableIndex and MsNumberFreeMem, inlined as a user_free in Switch's MsBattleFree (fh cg_switch calls); name ours; ported (battle round 18)
 0x00782770 function MsEnvInit                 # fh v3:exact 0x00782830
 0x007827f0 function MsFldGetScene             # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position; was Enc_FindFormation
@@ -5150,7 +5151,7 @@
 0x00790b30 function MsMonsterCapture          # fh v3:exact+call.cs 0x00790b80 cdecl
 0x00790b90 function AddMonsterCapture         # fh v3:exact 0x00790be0 +AddMonsterCapture
 0x00790be0 function MsSetMonsterCheck         # fh v3:bsim1.00 0x00790c30
-0x00790c10 function MsBattleProcess           # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load; was Battle_Update
+0x00790c10 function MsBattleProcess           # per frame; outside battle, a raised request flag 0x0112a8e2 starts Battle_Load; was Battle_Update; ported (battle round 21): MsBtlReadManage; status 0: debug combination (0x4f) label battle, g_BtlExe's MsBattleExe, MsEventEffectProcess; in battle: pad, counters, holds, order/status/input cue while MsBattleCanProgress, the frame's steps, soft reset (end kind 6), debug Start+Square end and combination restart, end at status 0x21 or kind 5/6 (AtelBattleEndCallback); docs/formats/battle.md
 0x00790fb0 function MsBattleProcess_Order_00790fb0 # (): with no pending input cue, MsOrderInit, MsOrderRegist of every ready character, MsOrderCalc and MsRegistInputCue, MsLimitTypeTurnCheck; caller MsBattleProcess; own name
 0x00791170 function MsCheckChrHold            # (i, actor, cue): actor +0x4b6 != 0; the turn driver 0x00792210 asks it for actor 5 only; name ours
 0x00791190 function MsBattleCanProgress       # ours: -1 when no pause (0x0112c9d0), hit motion, turn end, message, camera state, overdrive learnt, stone effect or command hold holds the battle (MsBattleProcess)
@@ -8842,6 +8843,7 @@
 0x0086c160 function AtelGetMyWorkSize         # fh v3:exact 0x0086c0f0
 0x0086c190 function AtelGetNamespaceNumber    # fh v3:cg4 0x86c120
 0x0086c1a0 function AtelGetNowCtrlTopId       # fh v3:exact 0x0086c130
+0x0086c1f0 function TkGetNowEventJumpMapNo    # MsBattleProcess calls it at a battle's end (result unused); Ghidra's name
 0x0086c200 function AtelGetOverlayStatus      # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_AtelOverlayStatus (u8, AtelSetOverlayStatus)
 0x0086c280 function AtelIsBattleEndStatusClear8# !(g_AtelBattleEndStatus bit 8); 0x007917d0
 0x0086c290 function AtelIsBattleEndStatusClear9# !(g_AtelBattleEndStatus bit 9); 0x007917d0
@@ -14684,6 +14686,7 @@
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
 0x00b548dc label g_BtlGroundInit           # f32 -14.0, MsBattleInit's g_BtlGround
 0x00b549f8 label s_BtlEffectReadError      # MsEffectRead's MsBattleError message (reading while an event effect plays or the actor reads already)
+0x00b54b58 label g_BtlDebugBattleMessage   # "## BATTLE %x %x\n" (MsBattleProcess's debug combination)
 0x00b54ba8 label s_BtlCommandCueError      # MsCommandCueProcess's MsBattleError message for an entry of a bad actor or list
 0x00b54ca4 label g_BtlSpecialRollStep      # f32 0.002, the boat stage's roll step (MsBattleSpecialInit +0x838)
 0x00b54cb8 label k_HundredthF64            # f64 0.01: MsSpecialChrMatrix_0079e030's scale of the actors' +0x3a0 scale to their matrices
@@ -15150,6 +15153,7 @@
 0x00c421e8 label g_BtlEffectReadClear      # u32 cleared after MsEffectRead starts a file it waits for
 0x00c421ec label g_BtlKeepAlive            # u32: in battle 0x159/0 actor 0x14's HP loss sets it, 0x17's clears it; meanwhile actor 0x15 keeps 1 HP (MsSubHP)
 0x00c421f0 label g_BtlAccuracyTable           # 9 x i8, DmgCalc_CheckHit's chance by clamp(accuracy*2/5 - evasion + 10, 0, 8)
+0x00c421fc label g_BtlLeaderAlive          # u32: 1 while actor 0's +0x5d0 (HP) is above 0 in a battle, else 1 (MsBattleProcess each frame)
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
@@ -15392,6 +15396,7 @@
 0x0112a916 label g_BtlLimitFrozen          # u8 set: MsLimitUp fills no overdrive gauge
 0x0112a918 label g_BtlDebugReadWait        # u8 debug menu toggle (0x007cf140 env table, button text); set: each MsBtlReadManage step waits g_BtlReadWait frames
 0x0112a919 label g_BtlReadWait             # u8 frames left before MsBtlReadManage's next step while g_BtlDebugReadWait; 0x3c after each camera request; MsBattleExe clears it
+0x0112a91a label g_BtlNoSave               # u8: MsBattleProcess skips MsSetSaveData at a battle's end
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
 0x0112a91c label g_BtlDebugEffectHold      # u8: the debug env menu's toggle (0x007c6e20, 0x007ce450); MsEffectStart's state 3 waits while set
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
@@ -15486,6 +15491,7 @@
 0x0112c8d4 label g_BtlMotionBusy           # bit per actor: MsCheckChrMotionAll marks the first actor found running a motion
 0x0112c8d8 label g_BtlParsedCommand        # u32: the command MsParseCommand parses (also 0x0112c8dc)
 0x0112c8dc label g_BtlParsedCommand2       # u32: copy of g_BtlParsedCommand (MsParseCommand)
+0x0112c8e0 label g_BtlFrameCleared         # u32 MsBattleProcess clears it each battle frame (with g_BtlLastSe)
 0x0112c8e4 label g_BtlLastSe              # u32: the sound MsRegSEplay played last (bit 31 set)
 0x0112c8e8 label g_BtlLastMagic2              # u32; The last magic of kind 2 (MsEffectGetLastMagicNum2).
 0x0112c8ec label g_BtlLastMagic            # u32: the magic effect MsEffectRead reads (with 0x0112c8e8)
@@ -15543,6 +15549,7 @@
 0x0112c9f3 label g_BtlEndWait              # u8 the closing waits on +0x432/+0x436 and op_et_battle_genko_counter_get; name ours
 0x0112c9f4 label g_BtlEndGameOver          # u8 end 1 with AtelIsBattleEndStatusClear9: game over music and event effect; name ours
 0x0112c9f5 label g_BtlPartyLeaves          # u8: set by a party swap (0x3002) or an escape (0x3018) in MsParseCommand; MsCommandCueProcess waits while set
+0x0112c9f6 label g_BtlPlyPosOk             # u8 MsCheckPlyBtlPosAll's last result while g_BtlPartyLeaves (MsBattleProcess); 0 clears it and resets the normals
 0x0112c9f7 label g_BtlSetCommandFlag       # u8, cleared by MsSetBtlCommand
 0x0112c9f9 label g_BtlKeepFps              # u8 Sg_SetKeepFps(1)'s result at MsEventEffectStart; name ours
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command

@@ -3632,6 +3632,11 @@ ported! {
         let at = request.at();
         init::ms_battle_init(&mut mem(), &mut call_ptr, at)
     }
+    /// `MsBattleProcess()`: one frame of the battle module; every callee
+    /// (the battle's hooked ports and the other modules') through the game.
+    MsBattleProcess @ 0x0079_0c10 => extern "C" fn ms_battle_process() {
+        process::ms_battle_process(&mut mem(), &mut call_ptr);
+    }
     /// `MsGetRamChrCTBbasic()`.
     MsGetRamChrCTBbasic @ 0x0078_4220 => extern "C" fn ms_get_ram_chr_ctb_basic() -> i32 {
         read::ms_get_ram_chr_ctb_basic(&mut mem())
