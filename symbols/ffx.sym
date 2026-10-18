@@ -4168,7 +4168,7 @@
 0x00763030 function KeThBP_Init               # (args): object args[0], segment count byte args[1] at +0x37; self +0x10, links cleared, +0x4c 1.0, +0x20 3n+2, +0x28 0x40000b0, GIF tag at +0x40 + 0x30n; returns 6n. Switch KeThBP_Init calls set_ptr32 7 times as this does (cg_switch), sorts before KeThBP_MkGifPk 0x00763100; callers KeThBP_Update, KeThCp_AddBp
 0x00763100 function KeThBP_MkGifPk            # fh v3:exact 0x007631f0
 0x007636c0 function KeThBP_Quit               # fh v3:exact 0x007637b0
-0x007637f0 function KeThBP_Update             # fh v3:bsim0.93 0x007638e0
+0x007637f0 function KeThBP_Update             # fh v3:bsim0.93 0x007638e0; (p) -> o+0x1c counter: the belt path p+0x40 (template p+0x4c, guide point o+0x14 linked by +0x1c, pool p+0x48): time o+0x18 += template +0x34, whole steps walked (capped by +0x42 unless running 0x20), head steered to the point (55b8 weight ramp between point +0x10/+0x18), wobbled by 0x00c3e730[rnd%3](0x010d5530, p, angle), follows +0x24; new segments get a random curl (+0x3c) and may spawn a child (KeThBP_Init); flags +0x3e 2/4/8/0x10/0x20/0x40/0x80/0x100/0x400/0x800/0x2000; span +0x38/+0x3c; scratch 0x010d5530..0x010d55fc; ported (field r5)
 0x007644d0 function KeThCp_AddBp              # fh v3:exact 0x007645c0
 0x007645e0 function KeThCp_Draw               # fh v3:exact 0x007646d0
 0x00764800 function KeThCp_Init               # fh v3:exact 0x007648f0

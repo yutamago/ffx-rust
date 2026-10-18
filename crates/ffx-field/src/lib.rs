@@ -33,6 +33,7 @@ pub mod freecam;
 pub mod geom;
 pub mod guide;
 pub mod ke;
+pub mod keth;
 pub mod model;
 pub mod nkz;
 pub mod packet;
