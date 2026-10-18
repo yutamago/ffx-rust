@@ -2105,6 +2105,17 @@ and leaks the first buffer. The originals copy a few stack bytes they
 never set into the head (`+0x16..+0x1c`) and tags (split: `+0x04`, and
 `+0x18` before a textured block); the ports write 0 there.
 
+Their caller `yiRectToOMDBuild` (`0x00912270`, name ours; the body of
+`yiRectToOMD` and `yiRectToOMD_old`) orders the rectangle's corners per
+component (after `FFXVu0ScaleVector(.., 1.0)`), then walks the map parts
+(`r +0x68788` of them, 0xb4 bytes from `r +0x6880e`; skipped for `u16
++0` 1 or `u16 +2` 3) and their VIF chains (`+0x26`, next `+0x4c`). A node
+whose centre (`+0x00`, through `m` with w 1.0 when given) plus or minus
+its radius `+0x2c` reaches the rectangle on x and z (`hi >= min`, `lo <=
+max`; a NaN fails) is linked through `+0x54`. With none, both packets
+that are not 0 get an empty head and it returns 0; else it builds them
+with capacities `size / 4` and returns the nodes taken.
+
 `KeLnsClm_Draw(e, flags)` (`0x007696c0`) draws a lens "column": one
 render record per element of its shape (byte `+8` of them, 8 bytes from
 `+0x10`: the frame state, then a weight `k`). It stamps the VFX program

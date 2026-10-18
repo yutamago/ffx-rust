@@ -21,6 +21,8 @@
 
 use ffx_bridge::Mem;
 
+use crate::x87;
+
 use crate::yi::bridge::{
     yi_free, yi_malloc_quiet, yi_poly_buf_clear, yi_poly_buf_exec_vif, yi_rect_tri_overlap_xz,
     yi_tri_colors_from_gif, yi_tri_colors_uv_from_gif,
@@ -491,4 +493,146 @@ pub fn yi_poly_select_rect_xz<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
     );
     s.finish_vertices(mem, cap, m, call);
     0
+}
+
+/// `FFXVu0ScaleVector(dst, src, k)` (`0x006ed8f0`).
+const SCALE_VECTOR: u32 = 0x006e_d8f0;
+
+/// [`yi_rect_to_omd_build`]'s scratch: the rectangle's corners (`+0x00`,
+/// `+0x10`), a transformed position (`+0x20`), the two capacities
+/// (`+0x30`, `+0x34`), then the split's [`SPLIT_WORK`] at `+0x40`.
+pub const BUILD_WORK: u32 = 0x40 + SPLIT_WORK;
+
+/// The map parts' table in the renderer (`+0x68788` their count, `0xb4`
+/// bytes each from `+0x6880e`).
+const PARTS: u32 = 0x6_880e;
+const PART_COUNT: u32 = 0x6_8788;
+
+/// `yiRectToOMD`'s body (`0x00912270`, name ours; `r` the renderer):
+/// gathers the VIF chains of every map part (not kind 1 at its `u16 +0`,
+/// not state 3 at `u16 +2`; chain from `+0x26`, linked by `+0x4c`) whose
+/// bounds touch the x/z rectangle from `a` to `b` (each corner's
+/// components ordered first, through `FFXVu0ScaleVector(.., 1.0)`): a
+/// node's centre (`+0x00..`, through `FFXVu0ApplyMatrix` by `m` with w 1.0
+/// when `m`) plus or minus its radius `+0x2c` must reach the rectangle
+/// on x and on z (`<=` / `>=`; a NaN fails the min side). They are linked
+/// through `+0x54` in that order. With none, both packets that are not 0
+/// get an empty head (0x400, the rest 0 but `+0x16..+0x1c`) and 0 is
+/// returned. Else [`yi_poly_select_rect_xz`] (no `outside` packet) or
+/// [`yi_poly_split_rect_xz`] build them with the capacities `size / 4`
+/// (kept in `work`), and the chain's length is returned.
+///
+/// `work` is [`BUILD_WORK`] bytes of scratch.
+#[allow(clippy::too_many_arguments)] // the original's nine
+pub fn yi_rect_to_omd_build<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+    mem: &mut M,
+    r: u32,
+    (inside, inside_size): (u32, u32),
+    (outside, outside_size): (u32, u32),
+    m: u32,
+    rect: [u32; 2],
+    unlimited: u32,
+    work: u32,
+    call: &mut C,
+) -> u32 {
+    let (lo, hi, v) = (work, work + 0x10, work + 0x20);
+    let f = mem.rebase(SCALE_VECTOR);
+    call(mem, f, &[lo, rect[0], 1f32.to_bits()]);
+    call(mem, f, &[hi, rect[1], 1f32.to_bits()]);
+    for i in 0..4 {
+        let (a, b) = (lo + 4 * i, hi + 4 * i);
+        let (x, y) = (mem.read::<u32>(a), mem.read::<u32>(b));
+        if x87::load(y) < x87::load(x) {
+            mem.write(a, x87::copy(y));
+            mem.write(b, x87::copy(x));
+        }
+    }
+    let ld = |mem: &M, at: u32| x87::load(mem.read(at));
+    let st = |x: f64| x87::load(x87::store(x));
+
+    let mut count = 0u32;
+    let mut first = 0u32;
+    let mut prev = 0u32;
+    let parts = mem.read::<u32>(r.wrapping_add(PART_COUNT));
+    for k in 0..parts {
+        let part = r.wrapping_add(PARTS + 0xb4 * k);
+        if mem.read::<u16>(part) == 1 || mem.read::<u16>(part + 2) == 3 {
+            continue;
+        }
+        let mut node = mem.read::<u32>(part + 0x26);
+        while node != 0 {
+            let radius = ld(mem, node + 0x2c);
+            let (x, z) = if m == 0 {
+                (ld(mem, node), ld(mem, node + 8))
+            } else {
+                for i in 0..3 {
+                    let c = x87::copy(mem.read(node + 4 * i));
+                    mem.write(v + 4 * i, c);
+                }
+                mem.write(v + 0xc, 1f32);
+                let f = mem.rebase(APPLY_MATRIX);
+                call(mem, f, &[v, m, v]);
+                (ld(mem, v), ld(mem, v + 8))
+            };
+            let (min_x, max_x) = (st(x - radius), st(radius + x));
+            let (min_z, max_z) = (st(z - radius), st(radius + z));
+            // fcompp on x87: a NaN takes the "below" branch of the first test
+            let reach = |lo: f64, hi: f64, min: f64, max: f64| {
+                !(hi < min || min.is_nan() || hi.is_nan()) && lo <= max
+            };
+            if reach(ld(mem, lo), ld(mem, hi), min_x, max_x)
+                && reach(ld(mem, lo + 8), ld(mem, hi + 8), min_z, max_z)
+            {
+                if first == 0 {
+                    first = node;
+                } else {
+                    mem.write(prev + 0x54, node);
+                }
+                count += 1;
+                prev = node;
+                mem.write(node + 0x54, 0u32);
+            }
+            node = mem.read::<u32>(node + 0x4c);
+        }
+    }
+    if first == 0 {
+        for p in [inside, outside] {
+            if p != 0 {
+                mem.write(p, [0x400u32, 0, 0, 0]);
+                mem.write(p + 0x10, 0u16);
+                mem.write(p + 0x12, 0u32);
+                mem.write(p + 0x1c, 0u32);
+            }
+        }
+        return 0;
+    }
+    let caps = [work + 0x30, work + 0x34];
+    mem.write(caps[0], inside_size >> 2);
+    if outside == 0 {
+        yi_poly_select_rect_xz(
+            mem,
+            first,
+            inside,
+            caps[0],
+            m,
+            [lo, hi],
+            unlimited,
+            work + 0x40,
+            call,
+        );
+    } else {
+        mem.write(caps[1], outside_size >> 2);
+        yi_poly_split_rect_xz(
+            mem,
+            first,
+            [inside, outside],
+            caps,
+            m,
+            [lo, hi],
+            unlimited,
+            work + 0x40,
+            call,
+        );
+    }
+    count
 }
