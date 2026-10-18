@@ -6157,6 +6157,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let mut r17 = Xorshift(0x17e5_0001 ^ u32::from(synthetic));
     let mut r18m = Xorshift(0x18e5_0101 ^ u32::from(synthetic));
     let mut r19 = Xorshift(0x19e5_0001 ^ u32::from(synthetic));
+    let mut r20 = Xorshift(0x20e5_0001 ^ u32::from(synthetic));
     // a special stage's work (round 18): matrices, the sea's, angles
     let work = scratch(a, b, 0x870);
     // Ch_ModelCreatePacket's stub (round 18) and its record
@@ -6236,6 +6237,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         if r19.below(4) == 0 {
             exe_leaves(a, b, &mut r19, erec2, heap, out);
+        }
+        if r20.below(4) == 0 {
+            read_leaves(a, b, &mut r20, &w, erec2, out);
         }
     }
     // the teardown last (it clears the actors and the script managers)
@@ -7873,6 +7877,15 @@ fn exe(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, out: u32) {
         &0x5eu32.to_le_bytes(),
     );
     set(a, b, ffx_battle::state::bridge::STATUS, 0);
+    set(a, b, ffx_battle::state::bridge::EXE, 3);
+    // the encounter type and no soft reset waiting (the encounter effect runs)
+    set(
+        a,
+        b,
+        ffx_battle::exe::bridge::ENCOUNT_TYPE,
+        [-1i8, 0, 1, 2, 5][rng.below(5) as usize],
+    );
+    set(a, b, ffx_battle::process::bridge::RESET_WAIT, 0);
     let rec0 = ffx_battle::atel::bridge::SCRIPT_RECORDS.ptr(b).addr + 4;
     poke(
         a,
@@ -7903,4 +7916,113 @@ fn exe(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, out: u32) {
             o.write(at, &v).unwrap();
         }
     }
+}
+
+/// `MsBtlReadManage`'s leaves (round 20): the scene read (`GetCD`'s
+/// object, `Sg_MallocA` stubbed for the call, records from `rec`), the
+/// loading wait, the monsters placed, the event hide flags.
+fn read_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32, out: u32) {
+    use ffx_battle::read::bridge as rd;
+    let h = host();
+    let mut call = game_call;
+    let regions = [
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x0231_0c00), 0x900),
+        (w.actor(0), (ACTORS * ACTOR) as usize),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let base = BRIDGE_STUBS + 0x20 * 8 + 0x40 * 43;
+    let cdobj = out + 0x40;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, (f, n)) in (0u32..).zip([
+            (ffx_battle::getmem::bridge::GET_CD, 0u8),
+            (rd::SG_MALLOC_A, 4),
+        ]) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, base + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+        for (k, n) in [(2u32, 4u8), (3, 1), (4, 1)] {
+            logging_stub(o, 0, base + 0x40 * k, rec + EXCHANGE_REC * k, n, 0);
+        }
+        for (slot, k) in [(0u32, 2u32), (0x10, 3), (0x14, 4)] {
+            let f = o.rebase(base + 0x40 * k);
+            o.write(cdobj + slot, &f.to_le_bytes()).unwrap();
+        }
+        saved.push(mine);
+    }
+    poke(a, b, rec + 4, &cdobj.to_le_bytes());
+    poke(a, b, rec + EXCHANGE_REC + 4, &(out + 0xc0).to_le_bytes());
+    poke(a, b, rec + EXCHANGE_REC * 2 + 4, &rng.next().to_le_bytes());
+    poke(
+        a,
+        b,
+        rec + EXCHANGE_REC * 4 + 4,
+        &rng.below(0x8000).to_le_bytes(),
+    );
+    let file = rng.below(0x200);
+    twin("MsBtlReadScene", a, b, 0x0078_3d80, &[file], ALL, |m| {
+        dm(m, |m| rd::ms_btl_read_scene(m, &mut call, file))
+    });
+    same("MsBtlReadScene", a, b);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+    for k in 0..ACTORS {
+        poke(a, b, w.actor(k) + 0x433, &[u8::from(rng.below(12) == 0)]);
+        poke(a, b, w.actor(k) + 0x407, &[u8::from(rng.below(3) == 0)]);
+    }
+    twin("MsGetRamChrCTBbasic", a, b, 0x0078_4220, &[], ALL, |m| {
+        rd::ms_get_ram_chr_ctb_basic(m).cast_unsigned()
+    });
+    same("MsGetRamChrCTBbasic", a, b);
+    if placed(a, b, w, out) {
+        twin("MsCalcChrDirAll", a, b, 0x0079_3cb0, &[], 0, |m| {
+            dm(m, |m| rd::ms_calc_chr_dir_all(m, &h, Some(HARNESS)));
+            0
+        });
+        local_words(a, b);
+        rect_words(a, b);
+        same("MsCalcChrDirAll", a, b);
+        zero_stack(a);
+        twin(
+            "MsPlaceMonsters_00784420",
+            a,
+            b,
+            0x0078_4420,
+            &[],
+            ALL,
+            |m| dm(m, |m| rd::ms_place_monsters(m, &h, &mut call)),
+        );
+        local_words(a, b);
+        same("MsPlaceMonsters_00784420", a, b);
+    }
+    for _ in 0..2 {
+        let i = [rng.below(ACTORS), rng.below(0x100), rng.next()][rng.below(3) as usize];
+        let flags = rng.below(8);
+        twin(
+            "MsSetChrVisibleEvent",
+            a,
+            b,
+            0x0079_67f0,
+            &[i, flags],
+            ALL,
+            |m| dm(m, |m| rd::ms_set_chr_visible_event(m, &mut call, i, flags)),
+        );
+        same("MsSetChrVisibleEvent", a, b);
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
+    // the originals' stack as the later steps expect it (MsEffectStart
+    // reads a local it never writes)
+    zero_stack(a);
 }

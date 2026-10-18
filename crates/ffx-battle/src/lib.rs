@@ -46,6 +46,7 @@ pub mod parse;
 pub mod pos;
 pub mod predict;
 pub mod process;
+pub mod read;
 pub mod rng;
 pub mod save;
 pub mod save_param;

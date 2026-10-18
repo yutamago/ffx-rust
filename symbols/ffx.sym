@@ -4834,14 +4834,15 @@
 0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84
 0x00783b90 function MsBtlReadPlayerModelProcess # fh v3:exact 0x00783c40
 0x00783bc0 function MsBtlReadPlayerProcess    # fh v3:exact 0x00783c70
-0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData
+0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData; ported (battle round 20)
 0x00783e00 function MsBtlReadSceneFree        # fh v3:exact 0x00783eb0; ours: g_BtlRead3 freed (Sg_FreeA(p, 5)) and cleared; ported (battle round 14)
 0x00783e20 function MsBtlReadSetScene         # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); was Battle_InitSections
 0x00783f60 function MsBtlReadWeapon              # layout+callees: sorts between MsBtlReadSetScene and MsCDreadWeapon, and its named callees match the Switch 0x710036eda0 MsBtlReadWeapon's (similarity 1.00: MsCDreadWeapon, MsGetChr); symbols from Fahrenheit's server export
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
 0x00784120 function MsCDreadWeapon            # fh v3:exact 0x007841d0
-0x00784220 function MsGetRamChrCTBbasic          # layout+callees: sorts between MsCDreadWeapon and readBtlMonsterName, and its named callees match the Switch 0x710036b910 MsGetRamChrCTBbasic's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
+0x00784220 function MsGetRamChrCTBbasic          # layout+callees: sorts between MsCDreadWeapon and readBtlMonsterName, and its named callees match the Switch 0x710036b910 MsGetRamChrCTBbasic's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export; ported (battle round 20)
 0x00784260 function Mon_GetName               # kernel monster record string 0
+0x00784420 function MsPlaceMonsters_00784420  # () -> count: each monster (actors 0x14-0x1b) with a model shown to the event (Ch_SetHideEvent(chr, 0)), placed at its battle position (MsGetChrBtlPos, Ch_SetPos3), made visible unless +0x407 (MsSetChrVisibleAppear(i, 0)); MsBtlReadManage's callee; name ours; ported (battle round 20)
 0x007844c0 function readBtlMonsterName        # fh v3:exact 0x00784570
 0x007845e0 function MsAddLoveParam            # fh v3:exact 0x00784690
 0x007846e0 function MsCheatPlayerPowerfulOff  # fh v3:cg2 0x784790
@@ -5188,7 +5189,7 @@
 0x00793670 function MsBtlChrRegist            # fh v3:exact 0x00793680
 0x007938e0 function MsBtlWeaponRegist         # fh v3:exact 0x007938f0
 0x00793ba0 function MsCalcChrDir              # fh v3:exact 0x00793bb0
-0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0
+0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0; ported (battle round 20)
 0x00793cf0 function MsChangeMonsterDir        # fh v3:exact 0x00793d00
 0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0; ported (battle round 18)
 0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10; ours: (all): 0x5d records +0x30 = 1, +0x28 = 0xff; with all each actor reset (head target, MsEffectEndMotion 0, normals, matrix, specular, visible); ran-away petrified out of place: MsStoneMove; ported (battle round 12)
@@ -5268,7 +5269,7 @@
 0x007966a0 function MsSetChrVisibleAppear     # fh v3:bsim1.00 0x007966b0; ours: msSetChrVisibleReq(i, 1, v); ported (battle round 12)
 0x007967a0 function MsSetChrVisibleCamera     # fh switch:bsim1.00 0x71003480b0
 0x007967c0 function MsSetChrVisibleCameraAll  # fh v3:exact 0x007967d0
-0x007967f0 function MsSetChrVisibleEvent      # fh v3:exact 0x00796800
+0x007967f0 function MsSetChrVisibleEvent      # fh v3:exact 0x00796800; ported (battle round 20)
 0x00796860 function MsSetChrVisibleMain       # fh switch:bsim1.00 0x7100347040
 0x007968e0 function MsSetChrWeight            # fh v3:exact 0x007968f0
 0x00796940 function MsSetDirThetaMode         # fh v3:exact 0x00796950

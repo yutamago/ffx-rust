@@ -19,6 +19,7 @@ use ffx_battle::motion::bridge as motion;
 use ffx_battle::parse::bridge as parse;
 use ffx_battle::predict::bridge as predict;
 use ffx_battle::process::bridge as process;
+use ffx_battle::read::bridge as read;
 use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
@@ -3550,5 +3551,30 @@ ported! {
         let mut m = mem();
         script!(s);
         exe::ms_battle_exe(&mut target::Dm::new(&mut m), &mut s, mode, field, group, slot)
+    }
+    /// `MsBtlReadScene(file)`: the CD object and `Sg_MallocA` through the
+    /// game.
+    MsBtlReadScene @ 0x0078_3d80 => extern "C" fn ms_btl_read_scene(file: u32) -> u32 {
+        read::ms_btl_read_scene(&mut mem(), &mut call_ptr, file)
+    }
+    /// `MsGetRamChrCTBbasic()`.
+    MsGetRamChrCTBbasic @ 0x0078_4220 => extern "C" fn ms_get_ram_chr_ctb_basic() -> i32 {
+        read::ms_get_ram_chr_ctb_basic(&mut mem())
+    }
+    /// `MsPlaceMonsters_00784420()`: its position vector in the port's
+    /// frame; chara through the game.
+    MsPlaceMonsters_00784420 @ 0x0078_4420 => extern "C" fn ms_place_monsters() -> u32 {
+        let mut m = mem();
+        read::ms_place_monsters(&mut target::Dm::new(&mut m), &host(), &mut call_ptr)
+    }
+    /// `MsCalcChrDirAll()`: the caller's registers (the direction's VU
+    /// words) are not known here.
+    MsCalcChrDirAll @ 0x0079_3cb0 => extern "C" fn ms_calc_chr_dir_all() {
+        let mut m = mem();
+        read::ms_calc_chr_dir_all(&mut target::Dm::new(&mut m), &host(), None);
+    }
+    /// `MsSetChrVisibleEvent(i, flags)`: chara through the game.
+    MsSetChrVisibleEvent @ 0x0079_67f0 => extern "C" fn ms_set_chr_visible_event(i: u32, flags: u32) -> u32 {
+        read::ms_set_chr_visible_event(&mut mem(), &mut call_ptr, i, flags)
     }
 }
