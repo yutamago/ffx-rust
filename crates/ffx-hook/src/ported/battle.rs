@@ -3637,6 +3637,14 @@ ported! {
     MsBattleProcess @ 0x0079_0c10 => extern "C" fn ms_battle_process() {
         process::ms_battle_process(&mut mem(), &mut call_ptr);
     }
+    /// `MsBtlReadMonster()`: the monster file read's request block in a
+    /// frame on this stack (the original's local); the CD object, the heap
+    /// and the unported monster loaders through the game.
+    MsBtlReadMonster @ 0x0078_3680 => extern "C" fn ms_btl_read_monster() -> u32 {
+        let mut request = super::StackFrame::<{ (read::MONSTER_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        read::ms_btl_read_monster(&mut mem(), &mut call_ptr, at)
+    }
     /// `MsGetRamChrCTBbasic()`.
     MsGetRamChrCTBbasic @ 0x0078_4220 => extern "C" fn ms_get_ram_chr_ctb_basic() -> i32 {
         read::ms_get_ram_chr_ctb_basic(&mut mem())

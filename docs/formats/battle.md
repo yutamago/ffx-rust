@@ -767,6 +767,24 @@ battle (camera, reverb, fps, windows, `MsBtlGetTerm`, the save unless
 field << 16 | group, music, kind)`, the encounter type cleared). Then
 `g_BtlPadOld` and the event effect.
 
+`MsBtlReadMonster` (`0x00783680`, `ffx_battle::read`) reads one monster
+file per call (status 0xd while it runs): from `g_BtlNextMonster` on, a
+slot with an ID (`+0xe` not 0xffff) and a file (directory 0x10, the size
+of `MsGetChrID`'s file) shares the data block of an earlier slot with the
+same ID (its `+0x48`; then `+0x11` is 0 and `+0x14` that slot + 0x14),
+gets `readBtlMonsterName` and three kernel texts (the record's `u16`
+string offsets 0, 2 and 6: name `+0x50`, 0x40 bytes cleared, at most 0x3f
+copied; `+0x90`, 0x100/0xff; `+0x190`, 0x200/0x1ff), from
+`g_KernelMonster1` for IDs below 0x65, `g_KernelMonster2` for 0x65-0xb4,
+else `g_KernelMonster3`. With `g_BtlFileKind` set, IDs 0xfe, 0x11c and
+0x11f set it to 8, 9 or 0xc (and take the third table); a kind above 1
+then replaces the name with that character's default name and becomes
+1. A shared slot is attached (`Mon_AttachData`) and the next one tried;
+otherwise its file is read asynchronously into a new `mon_data` block
+with a request block on the stack (`+0xc` the slot; the port's comes from
+the shim) and the function returns -1 with the next slot noted. With no
+slot left: `Mon_LoadAll`, status 0xe, 0.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

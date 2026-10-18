@@ -3,9 +3,10 @@
 //! actors across frames, and places and shows them when they are in.
 //!
 //! The CD object, the heap (`Sg_MallocA`), chara's functions with
-//! callbacks, the map's and graphics' loaders, sound and script, and the
-//! battle readers not ported yet (`MsBtlReadSetScene`, `MsBtlReadMonster`)
-//! go to the game's code through `call`.
+//! callbacks, the map's and graphics' loaders, sound and script, the
+//! battle readers not ported yet (`MsBtlReadSetScene`, the monster
+//! loaders) and `MsBtlReadMonster` from the state machine (its shim makes
+//! the request block) go to the game's code through `call`.
 
 /// The game's memory, through [`ffx_bridge::Mem`].
 pub mod bridge {
@@ -611,5 +612,148 @@ pub mod bridge {
                 &[],
             );
         });
+    }
+
+    /// The next monster slot to read (`i8`, 0-7; `MsBtlReadMonster`).
+    pub const NEXT_MONSTER: Global<i8> = Global::new(0x0112_a92a);
+    /// The monsters' kernel text tables: IDs below 0x65, 0x65-0xb4, the
+    /// rest (and the special three).
+    pub const MONSTER_TEXTS: [u32; 3] = [0x0112_ca6c, 0x0112_ca70, 0x0112_ca74];
+    /// `MsGetChrID(actor)`, `readBtlMonsterName()`, `Mon_AttachData(i)`,
+    /// `Mon_LoadAll()` (battle, not ported), `"mon_data"` and the monster
+    /// file read's completion (`0x00783990`).
+    pub const MS_GET_CHR_ID: u32 = 0x0079_a440;
+    pub const READ_BTL_MONSTER_NAME: u32 = 0x0078_44c0;
+    pub const MON_ATTACH_DATA: u32 = 0x0078_3b00;
+    pub const MON_LOAD_ALL: u32 = 0x0078_4070;
+    pub const MON_DATA_NAME: u32 = 0x00b5_4920;
+    pub const MONSTER_READ_DONE: u32 = 0x0078_3990;
+    /// The request block the monster file's read gets (`+0xc` the slot).
+    pub const MONSTER_REQUEST: u32 = 0x10;
+    /// The monster IDs whose name is a character's default name, by the
+    /// file kind they set (`g_BtlFileKind`).
+    pub const NAMED_MONSTERS: [(u32, u32); 3] = [(0xfe, 8), (0x11c, 9), (0x11f, 0xc)];
+
+    /// A text of at most `max` bytes from `from` into the cleared `len`
+    /// bytes at `to` (the original's `memset`, `strlen`, `memcpy`).
+    fn text(mem: &mut impl Mem, to: u32, len: u32, from: u32, max: u32) {
+        mem.write_bytes(to, &vec![0; len as usize]);
+        let mut n = 0;
+        while mem.read::<u8>(from.wrapping_add(n)) != 0 {
+            n += 1;
+        }
+        let n = n.min(max);
+        let mut bytes = vec![0; n as usize];
+        mem.read_bytes(from, &mut bytes);
+        mem.write_bytes(to, &bytes);
+    }
+
+    /// `MsBtlReadMonster()` (`0x00783680`): status 0xd; from slot
+    /// [`NEXT_MONSTER`] on, each monster with an ID (`+0xe`) and a file
+    /// (directory 0x10, `MsGetChrID`, CD `+0x14`) shares the data of an
+    /// earlier slot with the same ID (`+0x48`; then `+0x11` 0 and `+0x14`
+    /// that slot + 0x14), gets its battle name (`readBtlMonsterName`) and
+    /// its kernel texts (by ID: name `+0x50`, 0x3f bytes; help `+0x90`,
+    /// 0xff; scan `+0x190`, 0x1ff; the table by [`MONSTER_TEXTS`]), or for
+    /// the [`NAMED_MONSTERS`] while `g_BtlFileKind` is set, a character's
+    /// default name (the kind then 1). A shared one is attached
+    /// (`Mon_AttachData`) and the next slot tried; else its file is read
+    /// into a new block (`Sg_MallocA(n, 0x10, 5, "mon_data", -1)`, CD `+0`
+    /// with [`MONSTER_READ_DONE`] and `request`'s `+0xc` the slot), the
+    /// next slot noted, -1. With none left `Mon_LoadAll`, status 0xe, 0.
+    #[allow(clippy::too_many_lines)]
+    pub fn ms_btl_read_monster<M: Mem>(mem: &mut M, call: Call<'_, M>, request: u32) -> u32 {
+        use crate::actor::bridge::ms_get_mon;
+        let cd = |mem: &mut M, call: Call<'_, M>, slot: u32, args: &[u32]| {
+            let obj = game(mem, &mut *call, crate::getmem::bridge::GET_CD, &[]);
+            let f: u32 = mem.read(obj.wrapping_add(slot));
+            call(mem, f, args)
+        };
+        STATUS.set(mem, 0xd);
+        let mut i = i32::from(NEXT_MONSTER.get(mem));
+        while i < 8 {
+            let m = ms_get_mon(mem, i.cast_unsigned());
+            if mem.read::<u16>(m.wrapping_add(0xe)) == 0xffff {
+                i += 1;
+                continue;
+            }
+            cd(mem, &mut *call, 0x10, &[0x10]);
+            let id = game(mem, &mut *call, MS_GET_CHR_ID, &[m]);
+            let size = cd(mem, &mut *call, 0x14, &[id]);
+            if size == 0 {
+                i += 1;
+                continue;
+            }
+            let mut shared = 0;
+            for j in 0..i.max(0) {
+                let other = ms_get_mon(mem, j.cast_unsigned());
+                let same: u16 = mem.read(other.wrapping_add(0xe));
+                let data: u32 = mem.read(other.wrapping_add(0x48));
+                if same == mem.read::<u16>(m.wrapping_add(0xe)) && data != 0 {
+                    shared = data;
+                    mem.write(m.wrapping_add(0x11), 0u8);
+                    mem.write(m.wrapping_add(0x14), j.to_le_bytes()[0].wrapping_add(0x14));
+                    break;
+                }
+            }
+            game(mem, &mut *call, READ_BTL_MONSTER_NAME, &[]);
+            let named = if FILE_KIND.get(mem) == 0 {
+                None
+            } else {
+                NAMED_MONSTERS
+                    .iter()
+                    .find(|&&(k, _)| k == id)
+                    .map(|&(_, kind)| kind)
+            };
+            let table = match named {
+                Some(kind) => {
+                    FILE_KIND.set(mem, kind);
+                    MONSTER_TEXTS[2]
+                }
+                None if id.cast_signed() < 0x65 => MONSTER_TEXTS[0],
+                None if id.wrapping_sub(0x65) <= 0x4f => MONSTER_TEXTS[1],
+                None => MONSTER_TEXTS[2],
+            };
+            let table: u32 = Global::<u32>::new(table).get(mem);
+            if table != 0 {
+                let (r, strings) = ffx_kernel::bridge::excel_data(mem, id.cast_signed(), table);
+                for (field, at, len) in [
+                    (0u32, 0x50u32, 0x40u32),
+                    (2, 0x90, 0x100),
+                    (6, 0x190, 0x200),
+                ] {
+                    let from =
+                        u32::from(mem.read::<u16>(r.wrapping_add(2 * field))).wrapping_add(strings);
+                    text(mem, m.wrapping_add(at), len, from, len - 1);
+                }
+            }
+            let kind = FILE_KIND.get(mem);
+            if kind.cast_signed() > 1 {
+                let name = crate::save::bridge::get_default_chr_name(mem, kind);
+                text(mem, m.wrapping_add(0x50), 0x40, name, u32::MAX);
+                FILE_KIND.set(mem, 1);
+            }
+            if shared == 0 {
+                let tag = code(mem, MON_DATA_NAME);
+                let block = game(
+                    mem,
+                    &mut *call,
+                    crate::read::bridge::SG_MALLOC_A,
+                    &[size, 0x10, 5, tag, u32::MAX],
+                );
+                mem.write(m.wrapping_add(0x48), block);
+                mem.write(request.wrapping_add(0xc), i);
+                NEXT_MONSTER.set(mem, i.to_le_bytes()[0].cast_signed().wrapping_add(1));
+                let done = code(mem, MONSTER_READ_DONE);
+                cd(mem, call, 0, &[id, block, done, request]);
+                return u32::MAX;
+            }
+            mem.write(m.wrapping_add(0x48), shared);
+            game(mem, &mut *call, MON_ATTACH_DATA, &[i.cast_unsigned()]);
+            i += 1;
+        }
+        game(mem, call, MON_LOAD_ALL, &[]);
+        STATUS.set(mem, 0xe);
+        0
     }
 }

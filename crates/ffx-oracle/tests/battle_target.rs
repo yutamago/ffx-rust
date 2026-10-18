@@ -6195,6 +6195,8 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let battle_init_data = scratch(a, b, 0x80);
     let mut binit_rng = Xorshift(0x21e5_0301 ^ u32::from(synthetic));
     let mut process_rng = Xorshift(0x21e5_0401 ^ u32::from(synthetic));
+    let monster_tables = scratch(a, b, 0xc000);
+    let mut monster_rng = Xorshift(0x21e5_0501 ^ u32::from(synthetic));
     let mut init_rng = Xorshift(0x21e5_0101 ^ u32::from(synthetic));
     for o in [&mut *a, &mut *b] {
         logging_stub(
@@ -6288,6 +6290,16 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 &w,
                 battle_init_rec,
                 battle_init_data + 0x60,
+            );
+        }
+        if monster_rng.below(3) == 0 {
+            read_monster(
+                a,
+                b,
+                &mut monster_rng,
+                battle_init_rec,
+                monster_tables,
+                battle_init_dest,
             );
         }
     }
@@ -8848,7 +8860,7 @@ const BATTLE_INIT_CALLEES: [(u32, u8); 29] = {
         (ini::MS_DEBUG_FULL[3], 0),
     ]
 };
-const BATTLE_INIT_RECS: u32 = 58;
+const BATTLE_INIT_RECS: u32 = 59;
 
 /// `MsBattleInit` (round 21) on stubs: every game callee of it and of its
 /// ported leaves ([`INIT_CALLEES`], [`SAVE_START_CALLEES`] with
@@ -8894,7 +8906,7 @@ fn battle_init(
     }
     let k_load = u32::try_from(callees.len()).unwrap();
     let k_cd = k_load + 1;
-    assert!(k_cd + 5 <= BATTLE_INIT_RECS);
+    assert!(k_cd + 6 <= BATTLE_INIT_RECS);
     let seen = stub(k_cd + 4) + 0xc0;
     let mut saved = Vec::new();
     for o in [&mut *a, &mut *b] {
@@ -8917,6 +8929,19 @@ fn battle_init(
             let f = o.rebase(INIT_STUBS + 0x40 * k);
             o.write(data + slot, &f.to_le_bytes()).unwrap();
         }
+        // the directory stub: the size stub then returns the directory
+        // << 12 (sizes by directory; 0xd000 and up read signed)
+        let dir_at = o.rebase(INIT_STUBS + 0x40 * (k_cd + 5));
+        let dir_log = o.rebase(INIT_STUBS + 0x40 * k_cd);
+        let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x0c, 0xa3];
+        code.extend((stub(k_cd + 1) + 4).to_le_bytes());
+        code.push(0xe9);
+        code.extend(
+            dir_log
+                .wrapping_sub(dir_at + code.len() as u32 + 4)
+                .to_le_bytes(),
+        );
+        o.write(dir_at, &code).unwrap();
         let at = o.rebase(INIT_STUBS + 0x40 * (k_cd + 4));
         let log = o.rebase(INIT_STUBS + 0x40 * (k_cd + 2));
         let mut code = vec![
@@ -8928,6 +8953,7 @@ fn battle_init(
         o.write(at, &code).unwrap();
         o.write(seen, &[0; 4]).unwrap();
         o.write(data, &at.to_le_bytes()).unwrap();
+        o.write(data + 0x10, &dir_at.to_le_bytes()).unwrap();
         saved.push(mine);
     }
     let ret = |f: u32| -> u32 {
@@ -8993,6 +9019,12 @@ fn battle_init(
         b,
         ini::MEM_WORD,
         [0, 0, rng.next()][rng.below(3) as usize],
+    );
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::EXE,
+        [0, 1, -1][rng.below(3) as usize],
     );
     set(a, b, ini::DEBUG_FULL, u8::from(rng.below(4) == 0));
     set(a, b, ini::FFX_IS_DEBUG, i8::from(rng.below(3) == 0));
@@ -9133,6 +9165,8 @@ fn battle_process(
         &[
             0,
             rng.below(0x1_0000),
+            0x0f,
+            0x4e,
             combo,
             combo | p::DEBUG_RESTART,
             0x880,
@@ -9259,6 +9293,165 @@ fn battle_process(
         },
     );
     same(&format!("MsBattleProcess {status:#x} {pad:#x}"), a, b);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
+}
+
+/// `MsBtlReadMonster` (round 21, `ffx_battle::read`): the eight monster
+/// slots from a drawn start, IDs shared or not, files there or not; the
+/// IDs by a counting `MsGetChrID` (four of below 0x65, 0x65-0xb4, the
+/// named three and above); the three kernel text tables our own at
+/// `tables` (0x4000 bytes each, strings short and past the limits) or
+/// none; the CD object at `data`, the request block at `data + 0x40`.
+/// The other callees are logging stubs (records from `rec`). The battle's
+/// globals and the monsters put back after.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn read_monster(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rec: u32,
+    tables: u32,
+    data: u32,
+) {
+    use ffx_battle::read::bridge as rd;
+    let mut call = game_call_o;
+    let mon0 = ffx_battle::actor::bridge::ms_get_mon(b, 0);
+    if !readable(a, mon0, (8 * ACTOR) as usize) {
+        return;
+    }
+    let regions = [
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x0231_0c00), 0x900),
+        (mon0, (8 * ACTOR) as usize),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let callees: [(u32, u8); 6] = [
+        (ffx_battle::getmem::bridge::GET_CD, 0),
+        (rd::READ_BTL_MONSTER_NAME, 0),
+        (rd::MON_ATTACH_DATA, 1),
+        (rd::MON_LOAD_ALL, 0),
+        (rd::SG_MALLOC_A, 4),
+        (rd::MS_GET_CHR_ID, 1),
+    ];
+    let stub = |k: u32| rec + EXCHANGE_REC * k;
+    let seen = stub(10) + 0xc0;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for &(f, _) in &callees {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+        }
+        for (k, &(f, n)) in (0u32..).zip(&callees[..5]) {
+            logging_stub(o, f, INIT_STUBS + 0x40 * k, stub(k), n, 0);
+        }
+        counting_stub(o, rd::MS_GET_CHR_ID, INIT_STUBS + 0x40 * 5, stub(5));
+        for (k, (slot, n)) in (6u32..).zip([(0x10u32, 1u8), (0x14, 1), (0, 3)]) {
+            logging_stub(o, 0, INIT_STUBS + 0x40 * k, stub(k), n, 0);
+            let f = o.rebase(INIT_STUBS + 0x40 * k);
+            o.write(data + slot, &f.to_le_bytes()).unwrap();
+        }
+        let at = o.rebase(INIT_STUBS + 0x40 * 10);
+        let log = o.rebase(INIT_STUBS + 0x40 * 8);
+        let mut code = vec![
+            0x8b, 0x44, 0x24, 0x10, 0x85, 0xc0, 0x74, 0x08, 0x8b, 0x40, 0x0c, 0xa3,
+        ];
+        code.extend(seen.to_le_bytes());
+        code.push(0xe9);
+        code.extend(log.wrapping_sub(at + code.len() as u32 + 4).to_le_bytes());
+        o.write(at, &code).unwrap();
+        o.write(seen, &[0; 4]).unwrap();
+        o.write(data, &at.to_le_bytes()).unwrap();
+        saved.push(mine);
+    }
+    poke(a, b, stub(0) + 4, &data.to_le_bytes());
+    poke(a, b, stub(4) + 4, &(rng.next() | 0x10).to_le_bytes());
+    let ids: Vec<u8> = [
+        [0x10u32, 0x70, 0xfe, 0x200],
+        [0x64, 0x65, 0xb4, 0xb5],
+        [0x11c, 0x11f, 0xfe, 3],
+        [
+            rng.below(0x300),
+            rng.below(0x300),
+            rng.below(0x300),
+            rng.below(0x300),
+        ],
+    ][rng.below(4) as usize]
+        .iter()
+        .flat_map(|w| w.to_le_bytes())
+        .collect();
+    poke(a, b, stub(5) + 8, &ids);
+    poke(
+        a,
+        b,
+        stub(7) + 4,
+        &[0u32, 0x100, 0x2000][rng.below(3) as usize].to_le_bytes(),
+    );
+    // the text tables: records for IDs 0-0x2ff whose name, help and scan
+    // offsets point into a string area of short and long runs
+    for (k, &g) in rd::MONSTER_TEXTS.iter().enumerate() {
+        let t = tables + 0x4000 * u32::try_from(k).unwrap();
+        let mut bytes = excel_table(rng, 0x300, 0xe);
+        bytes.resize(0x4000, 0);
+        for (i, b) in bytes.iter_mut().enumerate().skip(0x2a20) {
+            // every other 0x300-byte stretch holds short strings, the
+            // others one long run (past all three limits)
+            let short = (i / 0x300) % 2 == 0 && rng.below(40) == 0;
+            *b = if i % 0x300 == 0 || short {
+                0
+            } else {
+                0x41 + rng.byte() % 26
+            };
+        }
+        for r in 0..0x300usize {
+            for f in [0usize, 2, 6] {
+                let at = 0x20 + 0xe * r + 2 * f;
+                let off = 0x2a00 + rng.below(0x1500) as u16;
+                bytes[at..at + 2].copy_from_slice(&off.to_le_bytes());
+            }
+        }
+        poke(a, b, t, &bytes);
+        let p = if rng.below(5) == 0 { 0 } else { t };
+        set(a, b, ffx_bridge::Global::<u32>::new(g), p);
+    }
+    // the slots: IDs (some the same), shared data or not
+    for i in 0..8 {
+        let m = mon0 + ACTOR * i;
+        let id = [0xffff, 7, 7, 9, rng.below(0x100)][rng.below(5) as usize] as u16;
+        poke(a, b, m + 0xe, &id.to_le_bytes());
+        poke(
+            a,
+            b,
+            m + 0x48,
+            &[0, 0, rng.next() | 1][rng.below(3) as usize].to_le_bytes(),
+        );
+    }
+    set(
+        a,
+        b,
+        rd::NEXT_MONSTER,
+        [0, 0, 0, 3, 7, 8][rng.below(6) as usize],
+    );
+    set(a, b, rd::FILE_KIND, [0, 0, 1, 2, 8][rng.below(5) as usize]);
+    for _ in 0..3 {
+        twin("MsBtlReadMonster", a, b, 0x0078_3680, &[], ALL, |m| {
+            rd::ms_btl_read_monster(m, &mut call, data + 0x40)
+        });
+        let r = b.read(data + 0x40, 0x10).unwrap();
+        a.write(data + 0x40, &r).unwrap();
+        same("MsBtlReadMonster", a, b);
+    }
     for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
         for (f, v) in mine {
             let at = o.rebase(f);
