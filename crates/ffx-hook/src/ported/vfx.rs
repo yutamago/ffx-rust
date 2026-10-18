@@ -1740,6 +1740,26 @@ ported! {
     opus_copy_1k_00800af0 @ 0x0080_0af0 => extern "C" fn opus_copy_1k_rev(src: u32, dst: u32) -> u32 {
         opus::bridge::copy_1k(&mut mem(), dst, src)
     }
+    /// `opf_normal(host, ptr)`.
+    opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
+        opus::bridge::opf_normal(&mut mem(), host, ptr)
+    }
+    /// `opu_eff_flag_008178f0(host, cmd)`.
+    opu_eff_flag_008178f0 @ 0x0081_78f0 => extern "C" fn opu_eff_flag(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_eff_flag(&mut mem(), host, cmd)
+    }
+    /// `opu_v_rev(host, cmd)`.
+    opu_v_rev @ 0x0081_9a20 => extern "C" fn opu_v_rev(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_rev(&mut mem(), host, cmd)
+    }
+    /// `opu_v_stop_008182f0(host, cmd)`.
+    opu_v_stop_008182f0 @ 0x0081_82f0 => extern "C" fn opu_v_stop(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_stop(&mut mem(), host, cmd)
+    }
+    /// `opu_motion_cb_0081b4d0(host, cmd)`.
+    opu_motion_cb_0081b4d0 @ 0x0081_b4d0 => extern "C" fn opu_motion_cb(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_motion_cb(&mut mem(), host, cmd)
+    }
     /// `opus_prog_on(set, list)`.
     opus_prog_on @ 0x0080_1700 => extern "C" fn opus_prog_on(set: u32, list: u32) -> u32 {
         opus::bridge::opus_prog_on(&mut mem(), set, list)

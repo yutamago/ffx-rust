@@ -570,6 +570,164 @@ pub mod bridge {
         src.wrapping_add(0x400)
     }
 
+    /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
+    /// plain unit (slot 0 of `0x00c492c8`): the emulated VU registers
+    /// `0x00c8f934..93c` take `0x00c8f53c..544`, `0x00c8f538` and
+    /// `0x00c8f930` = 1/16, and the unit's `+0x40..+0x4c` times 1/16 go to
+    /// `0x00c8f8e0..8ec` and the unit's `+0x90..+0x9c`. Returns `ptr`.
+    pub fn opf_normal(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let saved: [u32; 3] = mem.read(g(mem, 0x00c8_f53c));
+        mem.write(g(mem, 0x00c8_f934), saved);
+        let k = 0x3d80_0000u32;
+        mem.write(g(mem, 0x00c8_f538), k);
+        mem.write(g(mem, 0x00c8_f930), k);
+        for i in 0..4u32 {
+            let x: f32 = mem.read(unit.wrapping_add(0x40 + 4 * i));
+            let v = crate::x87::mul(x, f32::from_bits(k));
+            mem.write(g(mem, 0x00c8_f8e0) + 4 * i, v);
+            mem.write(unit.wrapping_add(0x90 + 4 * i), v);
+        }
+        ptr
+    }
+
+    /// `0x008178f0(host, cmd)` (`opu_eff_flag`): the flags word `+0xc` of
+    /// the unit's `g_EtEff` record (`u16 unit +0x14`) against the mask
+    /// `i16 +4 << 16 | i16 +2` (both sign-extended), by the flag nibble's
+    /// low three bits: 0 set (`cmd + 6`), 1 clear (`cmd + 6`), 2/3 jump by
+    /// `i16 +6` when any/none is set, else `cmd + 8`, 4/5 wait (`host
+    /// +0x210` = 1, returning `cmd`) while any/none is set, else `cmd + 6`;
+    /// 6 and 7 return `cmd`.
+    pub fn opu_eff_flag(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let e = u32::from(mem.read::<u16>(unit.wrapping_add(0x14)));
+        let at = EFF.ptr(mem).at(e).addr.wrapping_add(0xc);
+        let hi = i32::from(mem.read::<i16>(cmd.wrapping_add(4))).cast_unsigned();
+        let lo = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let mask = hi << 16 | lo;
+        let kind = (i32::from(mem.read::<i16>(host.wrapping_add(0x21a))) >> 12) & 7;
+        let flags: u32 = mem.read(at);
+        let any = flags & mask != 0;
+        let jump = || {
+            i32::from(mem.read::<i16>(cmd.wrapping_add(6)))
+                .cast_unsigned()
+                .wrapping_add(cmd)
+        };
+        match kind {
+            0 => {
+                mem.write(at, flags | mask);
+                cmd.wrapping_add(6)
+            }
+            1 => {
+                mem.write(at, flags & !mask);
+                cmd.wrapping_add(6)
+            }
+            2 | 3 if any == (kind == 2) => jump(),
+            2 | 3 => cmd.wrapping_add(8),
+            4 | 5 if any == (kind == 4) => {
+                mem.write(host.wrapping_add(0x210), 1u8);
+                cmd
+            }
+            4 | 5 => cmd.wrapping_add(6),
+            _ => cmd,
+        }
+    }
+
+    /// `fldz; fld m32; fsubr st, st(1); fstp m32`: `0 - x` in place.
+    fn neg0(mem: &mut impl Mem, at: u32) {
+        let x: f32 = mem.read(at);
+        let r = Reg::load_f32(0.0).mem(crate::x87::SUB, x).store();
+        mem.write(at, r);
+    }
+
+    /// `opu_v_rev(host, cmd)` (`0x00819a20`): negates (as `0 - x`, so +0
+    /// stays +0) the flagged x, y, z, w (flags 0x1000..0x8000) of the
+    /// unit's vector at the `i16` offset `0x00c49388[cmd+2 & 0xf]`; with
+    /// bit 15 of `cmd+2` also the flagged x, y, z of the unit's `+0x90`.
+    /// Returns `cmd + 4`.
+    pub fn opu_v_rev(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let fl: u16 = mem.read(host.wrapping_add(0x21a));
+        let arg: u16 = mem.read(cmd.wrapping_add(2));
+        let off: i16 = mem.read(g(mem, 0x00c4_9388) + 2 * u32::from(arg & 0xf));
+        let v = unit.wrapping_add(i32::from(off).cast_unsigned());
+        for (k, bit) in [0x1000u16, 0x2000, 0x4000, 0x8000].into_iter().enumerate() {
+            if fl & bit != 0 {
+                #[allow(clippy::cast_possible_truncation)] // 0..4
+                neg0(mem, v.wrapping_add(4 * k as u32));
+            }
+        }
+        if arg & 0x8000 != 0 {
+            for (k, bit) in [0x1000u16, 0x2000, 0x4000].into_iter().enumerate() {
+                if fl & bit != 0 {
+                    #[allow(clippy::cast_possible_truncation)] // 0..3
+                    neg0(mem, unit.wrapping_add(0x90 + 4 * k as u32));
+                }
+            }
+        }
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x008182f0(host, cmd)` (`opu_v_stop`): the unit's velocity to stop
+    /// in `n` frames (`u16 +2`, as `f32`): for flag bits 9..11 = 0 each
+    /// flagged x, y, z, w (0x1000..0x8000) of `+0x70` = `-(+0x50 / n)`, for
+    /// 1 those of `+0x80` = `-(+0x60 / n)` (`fchs`, so a NaN's sign flips
+    /// too). Returns `cmd + 4`.
+    pub fn opu_v_stop(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        const DIV: crate::x87::Op = |a, b| a / b;
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        #[allow(clippy::cast_precision_loss)] // fild, fstp m32
+        let n = f32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let fl: u16 = mem.read(host.wrapping_add(0x21a));
+        let (from, to) = match fl & 0xe00 {
+            0 => (0x50u32, 0x70u32),
+            0x200 => (0x60, 0x80),
+            _ => return cmd.wrapping_add(4),
+        };
+        for (k, bit) in [0x1000u16, 0x2000, 0x4000, 0x8000].into_iter().enumerate() {
+            // each flag is read again from the host
+            if mem.read::<u16>(host.wrapping_add(0x21a)) & bit != 0 {
+                #[allow(clippy::cast_possible_truncation)] // 0..4
+                let k = 4 * k as u32;
+                let x: f32 = mem.read(unit.wrapping_add(from + k));
+                let q = Reg::load_f32(x).reg(DIV, Reg::load_f32(n)).store();
+                mem.write(unit.wrapping_add(to + k), q.to_bits() ^ 0x8000_0000);
+            }
+        }
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x0081b4d0(host, cmd)` (`opu_motion_cb`): the unit's motion
+    /// callback byte `+0xba` = byte `cmd+2`, `u16 +0xa0`/`+0xa2` = `cmd+4`
+    /// /`+6`; for callbacks 8 and 9 the unit's `+0x40..+0x48` = its
+    /// `+0x90..+0x98` times 16, for 0xb `+0xa4`, `+0x44`, `+0x48` take
+    /// `+0x90..+0x98` (through the FPU). Returns `cmd + 8`.
+    pub fn opu_motion_cb(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let cb: u8 = mem.read(cmd.wrapping_add(2));
+        mem.write(unit.wrapping_add(0xba), cb);
+        let a: [u16; 2] = mem.read(cmd.wrapping_add(4));
+        mem.write(unit.wrapping_add(0xa0), a);
+        let cb: u8 = mem.read(unit.wrapping_add(0xba));
+        match cb {
+            8 | 9 => {
+                for k in 0..3u32 {
+                    let x: f32 = mem.read(unit.wrapping_add(0x90 + 4 * k));
+                    let v = Reg::load_f32(x).constant(MUL, 16.0).store();
+                    mem.write(unit.wrapping_add(0x40 + 4 * k), v);
+                }
+            }
+            0xb => {
+                for (from, to) in [(0x90u32, 0xa4u32), (0x94, 0x44), (0x98, 0x48)] {
+                    let x: u32 = mem.read(unit.wrapping_add(from));
+                    mem.write(unit.wrapping_add(to), crate::x87::load(x));
+                }
+            }
+            _ => {}
+        }
+        cmd.wrapping_add(8)
+    }
+
     /// `opu_et_no(obj, cmd)` (`0x008165d0`): the part at `+0x220` takes its
     /// effect's number (the effect's `u16` at `+0x1a`, bits 4-14) plus the
     /// command's `i16`.

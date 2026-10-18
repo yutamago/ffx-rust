@@ -11351,7 +11351,7 @@ fn round25_opu_commands_match_the_original() {
         let units = p.alloc(0x2000);
         let driver = p.alloc(0x60);
         let cmd = p.alloc(0x10);
-        let (a, b) = (p.alloc(0x400), p.alloc(0x400));
+        let (buf1, buf2) = (p.alloc(0x400), p.alloc(0x400));
         // the part driver's function: a recorder of its argument in the
         // code padding after .text
         deref_recorder(&mut p, HOST_HANDLERS, &[0]);
@@ -11389,15 +11389,70 @@ fn round25_opu_commands_match_the_original() {
                     &mut call_original,
                 ))
             });
-            p.fill(a, 0x400, &mut rng);
-            p.fill(b, 0x400, &mut rng);
-            let (d, s) = rng.pick(&[(a, b), (b, a), (a, a + 0x10), (a + 0x10, a)]);
+            p.fill(buf1, 0x400, &mut rng);
+            p.fill(buf2, 0x400, &mut rng);
+            let (d, s) = rng.pick(&[
+                (buf1, buf2),
+                (buf2, buf1),
+                (buf1, buf1 + 0x10),
+                (buf1 + 0x10, buf1),
+            ]);
             p.check("0x00800ab0", 0x0080_0ab0, &[d, s], |m| {
                 Some(opus::bridge::copy_1k(m, d, s))
             });
             p.check("0x00800af0", 0x0080_0af0, &[s, d], |m| {
                 Some(opus::bridge::copy_1k(m, d, s))
             });
+        }
+    }
+}
+
+#[test]
+fn round25d_opu_commands_match_the_original() {
+    type Op = fn(&mut Oracle, u32, u32) -> u32;
+    let cmds: [(&str, u32, Op); 5] = [
+        ("opf_normal", 0x0081_5050, opus::bridge::opf_normal),
+        ("0x008178f0", 0x0081_78f0, opus::bridge::opu_eff_flag),
+        ("opu_v_rev", 0x0081_9a20, opus::bridge::opu_v_rev),
+        ("0x008182f0", 0x0081_82f0, opus::bridge::opu_v_stop),
+        ("0x0081b4d0", 0x0081_b4d0, opus::bridge::opu_motion_cb),
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_9a20);
+        let host = p.alloc(0x400);
+        let unit = p.alloc(0x1100);
+        let cmd = p.alloc(0x10);
+        let eff = p.sym(et::bridge::EFF.sym);
+        let vu = p.sym(0x00c8_f500);
+        for round in 0..4000 {
+            p.fill(host, 0x400, &mut rng);
+            for k in 0..0x440 {
+                let v = rng.float();
+                p.set(unit + 4 * k, v);
+            }
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(vu, 0x480, &mut rng);
+            p.set(host + 0x220, unit);
+            let e = rng.below(512);
+            p.set(unit + 0x14, u16::try_from(e).unwrap());
+            p.set(eff + 0x20 * e + 0xc, rng.next() & rng.next());
+            let fl: u16 = (rng.next() & 0xfeff) as u16;
+            let fl = if round % 3 == 0 { fl & 0xf1ff } else { fl };
+            p.set(host + 0x21a, fl);
+            let (name, sym, f) = rng.pick(&cmds);
+            match name {
+                "0x008182f0" => {
+                    let n = rng.pick(&[0u16, 1, 3, 7, 0xffff]);
+                    p.set(cmd + 2, n);
+                }
+                "0x0081b4d0" => p.set(cmd + 2, u8::try_from(6 + rng.below(8)).unwrap()),
+                "0x008178f0" if rng.chance(50) => {
+                    p.set(cmd + 2, u16::try_from(1 << rng.below(16)).unwrap());
+                    p.set(cmd + 4, 0u16);
+                }
+                _ => {}
+            }
+            p.check(name, sym, &[host, cmd], |m| Some(f(m, host, cmd)));
         }
     }
 }
