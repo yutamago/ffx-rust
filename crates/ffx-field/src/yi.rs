@@ -5192,4 +5192,162 @@ pub mod bridge {
         }
         u32::from(!q(mem, 4) && q(mem, 5))
     }
+
+    // ---- field agent r1, group A: the VU1 render parameters ----
+
+    /// 2048.0 and 128.0 as `f64`s (`.rdata`): `yiRender_setupparamVU1`'s
+    /// screen centre and guard band.
+    pub const VU1_CENTRE: u32 = 0x00b5_1bc0;
+    /// See [`VU1_CENTRE`].
+    pub const VU1_GUARD: u32 = 0x00b4_c170;
+    /// 0.0 as an `f64` (`.rdata`).
+    pub const VU1_ZERO: u32 = 0x00b0_db90;
+
+    /// `yiRender_setupparamVU1(r)` (`0x0090da90`): the fog parameters
+    /// ([`yi_render_setup_fog_param`]), then the VU1 parameter block at
+    /// `+0x676a8`: a DMA tag, MSKPATH3/UNPACK words, the clip window
+    /// from the screen offsets `+0x68368`/`+0x6836c` (each less 2048,
+    /// `_ftol2_sse`): `+0x676c8` = (0x800 - max(0, a, b)) - 128,
+    /// `+0x676cc` = (-0x800 - min(0, a, b)) + 128, `+0x676d0` 1.0;
+    /// `+0x68370` the larger of |a| and |b| (0 when both are 0); `+0x676d4`
+    /// the larger of `+0x67f38` and `+0x67f4c`; then copies of the fog,
+    /// matrix and colour words. Returns the last word copied (`+0x68228`).
+    pub fn yi_render_setupparam_vu1(mem: &mut impl Mem, r: u32) -> u32 {
+        yi_render_setup_fog_param(mem, r);
+        let at = |o: u32| r.wrapping_add(o);
+        let k = |mem: &_, a: u32| {
+            let a = Mem::rebase(mem, a);
+            Mem::read::<f64>(mem, a)
+        };
+        let ld = |mem: &_, o: u32| ffx_bridge::x87::load(Mem::read::<u32>(mem, at(o)));
+        for (i, w) in (0u32..).zip([
+            0x2000_0009u32,
+            0,
+            0,
+            0,
+            0x1100_0000,
+            0,
+            0x0100_0101,
+            0x6c08_0000,
+        ]) {
+            mem.write(at(0x676a8 + 4 * i), w);
+        }
+        let centre = k(&*mem, VU1_CENTRE);
+        let a = ftol(&*mem, ld(&*mem, 0x68368) - centre).cast_signed();
+        let b = ftol(&*mem, ld(&*mem, 0x6836c) - centre).cast_signed();
+        let hi = a.max(0).max(b);
+        let lo = a.min(0).min(b);
+        let guard = k(&*mem, VU1_GUARD);
+        let f1 = x87::store(f64::from(0x800i32.wrapping_sub(hi)));
+        mem.write(at(0x676c8), x87::store(ffx_bridge::x87::load(f1) - guard));
+        let f2 = x87::store(f64::from((-0x800i32).wrapping_sub(lo)));
+        mem.write(at(0x676cc), x87::store(guard + ffx_bridge::x87::load(f2)));
+        mem.write(at(0x676d0), 0x3f80_0000u32);
+        mem.write(at(0x68370), 0u32);
+        let zero = k(&*mem, VU1_ZERO);
+        let fa = x87::store(f64::from(a.wrapping_abs()));
+        if ffx_bridge::x87::load(fa) > zero {
+            mem.write(at(0x68370), fa);
+        }
+        let fb = x87::store(f64::from(b.wrapping_abs()));
+        if ffx_bridge::x87::load(fb) > ld(&*mem, 0x68370) {
+            mem.write(at(0x68370), fb);
+        }
+        let (p, q) = (mem.read::<u32>(at(0x67f38)), mem.read::<u32>(at(0x67f4c)));
+        let far = if ffx_bridge::x87::load(q) > ffx_bridge::x87::load(p) {
+            q
+        } else {
+            p
+        };
+        mem.write(at(0x676d4), x87::copy(far));
+        let mut last = 0;
+        for (dst, src, n) in [(0x676d8u32, 0x681a8u32, 8u32), (0x676f8, 0x68350, 4)] {
+            for i in 0..n {
+                last = mem.read::<u32>(at(src + 4 * i));
+                mem.write(at(dst + 4 * i), last);
+            }
+        }
+        for (i, w) in (0u32..).zip([0xa000u32, 0, 0, 0, 0xffff, 0, 0, 0]) {
+            mem.write(at(0x67708 + 4 * i), w);
+        }
+        for i in 0..8 {
+            last = mem.read::<u32>(at(0x6820c + 4 * i));
+            mem.write(at(0x67728 + 4 * i), last);
+        }
+        last
+    }
+
+    /// `yiRender_term(r)` (`0x0090dd00`, the Switch build's name for the
+    /// `yiRender.c` function of this size between `reset` and
+    /// `serchminmax`): [`yi_render_resetobj`], `+0x9c198`, `+0xbe0ac`,
+    /// `+0xbe0b0` 0, `+0x67f34` -1, the two packet buffers `+0xba3cc` and
+    /// `+0xba3dc` freed ([`yi_free`], even when null) and their four words
+    /// 0. Returns the second free's `eax`.
+    pub fn yi_render_term<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        r: u32,
+        call: &mut C,
+    ) -> u32 {
+        yi_render_resetobj(mem, r, call);
+        let p = mem.read::<u32>(r.wrapping_add(0xba3cc));
+        for o in [0x9c198u32, 0xbe0ac, 0xbe0b0] {
+            mem.write(r.wrapping_add(o), 0u32);
+        }
+        mem.write(r.wrapping_add(0x67f34), u32::MAX);
+        yi_free(mem, p, call);
+        let p = mem.read::<u32>(r.wrapping_add(0xba3dc));
+        let ret = yi_free(mem, p, call);
+        for o in [0xba3ccu32, 0xba3d0, 0xba3dc, 0xba3e0] {
+            mem.write(r.wrapping_add(o), 0u32);
+        }
+        ret
+    }
+
+    /// The matrices `yiRender_updatematrixp` packs: (packet offset, VIF
+    /// UNPACK word, source matrix offset).
+    pub const MATRIX_PACKETS: [(u32, u32, u32); 7] = [
+        (0x67ba8, 0x6c04_0008, 0x67f38),
+        (0x67c08, 0x6c04_000c, 0x67f78),
+        (0x67c68, 0x6c04_000c, 0x67fb8),
+        (0x67cc8, 0x6c04_000c, 0x67ff8),
+        (0x67de8, 0x6c04_0018, 0x680b8),
+        (0x67e48, 0x6c04_001c, 0x680f8),
+        (0x67ea8, 0x6c04_0020, 0x68078),
+    ];
+
+    /// `yiRender_updatematrixp(r)` (`0x0090dd80`, the Switch build's
+    /// `yiRender.c` name for a function of this size after
+    /// `makematrixpacket`; from `yiRender_draw`): each matrix of
+    /// [`MATRIX_PACKETS`] copied behind its three zero words and VIF
+    /// UNPACK word, then at `+0x67d88` (UNPACK `0x6c040010`) the scale
+    /// matrix: the identity with `+0x681f8`, `+0x681fc`, `+0x68200` on the
+    /// diagonal (through `fld`/`fstp`). Returns the identity's 1.0
+    /// (`Matrix_Identity`'s `eax`).
+    pub fn yi_render_updatematrixp(mem: &mut impl Mem, r: u32) -> u32 {
+        let at = |o: u32| r.wrapping_add(o);
+        let block = |mem: &mut dyn FnMut(u32, u32), off: u32, tag: u32| {
+            for (i, w) in (0u32..).zip([0u32, 0, 0, tag]) {
+                mem(off + 4 * i, w);
+            }
+        };
+        for (off, tag, src) in MATRIX_PACKETS {
+            block(&mut |o, w| mem.write(at(o), w), off, tag);
+            for i in 0..16 {
+                let v = mem.read::<u32>(at(src + 4 * i));
+                mem.write(at(off + 0x10 + 4 * i), v);
+            }
+        }
+        let mut m = [0u32; 16];
+        for i in [0usize, 5, 10, 15] {
+            m[i] = 0x3f80_0000;
+        }
+        for (i, o) in [(0usize, 0x681f8u32), (5, 0x681fc), (10, 0x68200)] {
+            m[i] = x87::copy(mem.read::<u32>(at(o)));
+        }
+        block(&mut |o, w| mem.write(at(o), w), 0x67d88, 0x6c04_0010);
+        for (i, w) in (0u32..).zip(m) {
+            mem.write(at(0x67d98 + 4 * i), w);
+        }
+        0x3f80_0000
+    }
 }
