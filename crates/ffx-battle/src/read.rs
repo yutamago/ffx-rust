@@ -4,9 +4,10 @@
 //!
 //! The CD object, the heap (`Sg_MallocA`), chara's functions with
 //! callbacks, the map's and graphics' loaders, sound and script, the
-//! battle readers not ported yet (`MsBtlReadSetScene`, the monster
-//! loaders) and `MsBtlReadMonster` from the state machine (its shim makes
-//! the request block) go to the game's code through `call`.
+//! battle functions not ported yet (`MsSetRamChrData`,
+//! `MsBtlBridgeEvent2Btl`, the monster loaders) and, from the state
+//! machine, `MsBtlReadSetScene` and `MsBtlReadMonster` (its shim makes the
+//! request block) go to the game's code through `call`.
 
 /// The game's memory, through [`ffx_bridge::Mem`].
 pub mod bridge {
@@ -152,6 +153,114 @@ pub mod bridge {
             }
         }
         r
+    }
+
+    /// The formation file's section 1 (`u32`, `MsBtlReadSetScene`): its
+    /// first byte goes to the second script record's `+0`.
+    pub const SECTION1: Global<u32> = Global::new(0x0112_a9b4);
+    /// The battle file's text table (`u32`, 0 without one; `+4i` holds a
+    /// `u16` offset from the table, `MsGetMenuChrInfo`), from
+    /// [`FILE_TEXT_DATA`].
+    pub const FILE_TEXT: Global<u32> = Global::new(0x0112_a9b8);
+    /// The battle file's loaded text and font (`u32` each, 0 when absent;
+    /// only `MsBtlReadSetScene` reads them) and whether the file is not
+    /// [`SYSTEM_FILE`] (`u32` 1/0).
+    pub const FILE_TEXT_DATA: Global<u32> = Global::new(0x0231_12c4);
+    pub const FILE_FONT_DATA: Global<u32> = Global::new(0x0231_12c0);
+    pub const NOT_SYSTEM_FILE: Global<u32> = Global::new(0x0231_12bc);
+    /// `"system_01"` (`.rdata`), the battle file without its own text.
+    pub const SYSTEM_FILE: u32 = 0x00b5_48f0;
+    /// `TOFTCTransfer(font)` (system), `MsSetRamChrData()`,
+    /// `MsBtlBridgeEvent2Btl()` (battle, not ported),
+    /// `AtelEventRemoveForBattle(map)`, `TkGetNowEventJumpMapNo()` (script),
+    /// `Sg_SetPlayer(n)`, `Sg_IdSetEffectTableIndex(i)` (main).
+    pub const TO_FTC_TRANSFER: u32 = 0x008a_c130;
+    pub const MS_SET_RAM_CHR_DATA: u32 = 0x0079_c110;
+    pub const MS_BTL_BRIDGE_EVENT2BTL: u32 = 0x0078_24e0;
+    pub const ATEL_EVENT_REMOVE_FOR_BATTLE: u32 = 0x0086_5dc0;
+    pub const TK_GET_NOW_EVENT_JUMP_MAP_NO: u32 = 0x0086_c1f0;
+
+    /// The C string at `at` (at most 0x40 bytes).
+    fn c_string(mem: &impl Mem, at: u32) -> Vec<u8> {
+        (0..0x40)
+            .map(|i| mem.read::<u8>(at.wrapping_add(i)))
+            .take_while(|&c| c != 0)
+            .collect()
+    }
+
+    /// `MsBtlReadSetScene()` (`0x00783e20`), the battle file's sections
+    /// once it is read (`docs/formats/battle.md`, "Formation files"): the
+    /// script, section 1 (its first byte into the second script record),
+    /// the formation ([`VOICE_EVENT`](crate::state::bridge::VOICE_EVENT);
+    /// byte 3 the underwater flag) and the positions; the file's text table
+    /// and font (`TOFTCTransfer`) when it brought them, and whether it is
+    /// not `system_01`. With `MsBattleExe`'s mode set the battle status
+    /// becomes 0 and that is all (0). Else the battle's actions, its
+    /// monsters (`MsSetRamChrData`), positions and the event's actors
+    /// (`MsBtlBridgeEvent2Btl`) are set up, the event map's script actors
+    /// removed, player 0 and effect table 1 selected, and the status is 10
+    /// when the event jumps to the battle's map (`g_BtlBattleMusic`, signed)
+    /// or 8; it is returned. `MsGetSaveConfigEnglish` and `FFXIsDebug`,
+    /// which the original calls with mode 0 and ignores, are not called
+    /// (the first is `xor eax, eax`, the second reads a flag).
+    pub fn ms_btl_read_set_scene<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
+        use crate::exe::bridge::{BATTLE_MUSIC, FILE_BUFFER, SG_SET_PLAYER};
+        use crate::state::bridge::{UNDERWATER, VOICE_EVENT};
+        let file = FILE_BUFFER.get(mem);
+        let section =
+            |mem: &M, k: u32| mem.read::<u32>(file.wrapping_add(4 * k)).wrapping_add(file);
+        let (script, first, formation, positions) = (
+            section(mem, 1),
+            section(mem, 2),
+            section(mem, 3),
+            section(mem, 4),
+        );
+        SCENE_SCRIPT.set(mem, script);
+        SECTION1.set(mem, first);
+        VOICE_EVENT.set(mem, formation);
+        crate::pos::bridge::POS_FILE.set(mem, positions);
+        FILE_TEXT.set(mem, 0);
+        crate::misc::bridge::FONT.set(mem, 0);
+        let mode = EXE_MODE.get(mem);
+        let text = FILE_TEXT_DATA.get(mem);
+        if text != 0 {
+            FILE_TEXT.set(mem, text);
+            let font = FILE_FONT_DATA.get(mem);
+            if font != 0 {
+                crate::misc::bridge::FONT.set(mem, font);
+                game(mem, &mut *call, TO_FTC_TRANSFER, &[font]);
+            }
+        }
+        let name = c_string(mem, code(mem, FILE_NAME));
+        let system = c_string(mem, code(mem, SYSTEM_FILE));
+        NOT_SYSTEM_FILE.set(mem, u32::from(name != system));
+        let record1 = crate::getmem::bridge::SCRIPT_RECORD1.ptr(mem).addr;
+        let b: u8 = mem.read(first);
+        mem.write(record1, b);
+        let underwater: i8 = mem.read(formation.wrapping_add(3));
+        UNDERWATER.set(mem, underwater);
+        if mode != 0 {
+            STATUS.set(mem, 0);
+            return 0;
+        }
+        crate::misc::bridge::ms_action_init(mem);
+        game(mem, &mut *call, MS_SET_RAM_CHR_DATA, &[]);
+        crate::minor::bridge::ms_push_btl_pos_all(mem);
+        game(mem, &mut *call, MS_BTL_BRIDGE_EVENT2BTL, &[]);
+        let map = i32::from(BATTLE_MUSIC.get(mem).cast_signed()).cast_unsigned();
+        game(mem, &mut *call, ATEL_EVENT_REMOVE_FOR_BATTLE, &[map]);
+        game(mem, &mut *call, SG_SET_PLAYER, &[0]);
+        game(
+            mem,
+            &mut *call,
+            crate::free::bridge::SG_ID_SET_EFFECT_TABLE_INDEX,
+            &[1],
+        );
+        let jump = game(mem, call, TK_GET_NOW_EVENT_JUMP_MAP_NO, &[]);
+        let map = i32::from(BATTLE_MUSIC.get(mem).cast_signed()).cast_unsigned();
+        let status: i8 = if jump == map { 10 } else { 8 };
+        STATUS.set(mem, status);
+        status.cast_unsigned().into()
     }
 
     /// The debug menu's read wait (`u8`, on: [`READ_WAIT`] frames pass

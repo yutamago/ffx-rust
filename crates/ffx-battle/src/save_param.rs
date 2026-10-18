@@ -38,9 +38,10 @@ pub mod bridge {
     /// `Sg_FreeA(p, kind)` (system).
     pub const SG_FREE_A: u32 = 0x0083_f090;
 
-    /// The aeons' stat floors by battles fought (battle resource 0xe,
-    /// `MsBattleInit`): records of `u16` HP and MP, then bytes.
-    pub const SUMMON_GROW: Global<u32> = Global::new(0x0112_a948);
+    /// The aeons' stat floors by battles fought (`g_KernelSumAssure`, the
+    /// kernel's `sum_assure.bin`, directory 0xd file 0xe of `MsBattleInit`):
+    /// records of `u16` HP and MP, then bytes.
+    pub const SUM_ASSURE: Global<u32> = Global::new(0x0112_a948);
     /// The record of one character in the save.
     pub const PLY_SAVE_SIZE: u32 = 0x94;
 
@@ -101,7 +102,7 @@ pub mod bridge {
     /// An aeon's stats before its own save bonuses (`MsSetSaveParam` from
     /// 8 on): from Yuna's (character 1) HP, MP and stats by the aeon's
     /// `ply_rom` record, raised to the floors for the battles fought
-    /// ([`SUMMON_GROW`], one step every 30 up to 20).
+    /// ([`SUM_ASSURE`], one step every 30 up to 20).
     fn aeon_stats(mem: &mut impl Mem, i: u32) -> [i32; 10] {
         let rom = crate::menu::bridge::PLY_ROM.get(mem);
         let (rec, _) = excel_data(mem, i.cast_signed(), rom);
@@ -153,7 +154,7 @@ pub mod bridge {
             let id = i
                 .cast_signed()
                 .wrapping_add(n.wrapping_mul(5).wrapping_sub(9).wrapping_mul(2));
-            let grow = SUMMON_GROW.get(mem);
+            let grow = SUM_ASSURE.get(mem);
             let (q, _) = excel_data(mem, id, grow);
             hpn = hpn.max(i32::from(mem.read::<u16>(q)));
             mpn = mpn.max(i32::from(mem.read::<u16>(q.wrapping_add(2))));

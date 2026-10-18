@@ -4841,7 +4841,7 @@
 0x00783bc0 function MsBtlReadPlayerProcess    # fh v3:exact 0x00783c70
 0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData; ported (battle round 20)
 0x00783e00 function MsBtlReadSceneFree        # fh v3:exact 0x00783eb0; ours: g_BtlRead3 freed (Sg_FreeA(p, 5)) and cleared; ported (battle round 14)
-0x00783e20 function MsBtlReadSetScene         # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); was Battle_InitSections
+0x00783e20 function MsBtlReadSetScene         # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); was Battle_InitSections; the file's text/font, "system_01" check; with g_BtlExeMode status 0 and 0, else the set-up and status 10 (event jump map = battle map) or 8; ported (battle round 22, ffx_battle::read)
 0x00783f60 function MsBtlReadWeapon              # layout+callees: sorts between MsBtlReadSetScene and MsCDreadWeapon, and its named callees match the Switch 0x710036eda0 MsBtlReadWeapon's (similarity 1.00: MsCDreadWeapon, MsGetChr); symbols from Fahrenheit's server export
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
 0x00784120 function MsCDreadWeapon            # fh v3:exact 0x007841d0
@@ -5329,10 +5329,12 @@
 0x00798950 function Rng_ClockSeed              # XOR of the GetSystemTime bytes + 1; wrapped by the harness (FFX_HARNESS_SEED)
 0x007989a0 function rnd                       # seed = seed * 0x5d588b65 + 0x3c35, rotated by 16; returns 31 bits; was Rng_Global
 0x00798a00 function MsApUp                    # fh v3:exact+call.cs 0x00798a10 cdecl
+0x00798a90 function MsGetAbilityGroup_00798a90 # (ability) -> g_KernelAAbility record (ability & 0xfff) byte +0x69 (BattleRewards_AddGear gives gear one ability per group), -1 for 0; own name; ported (battle round 22, ffx_battle::reward)
 0x00798ac0 function BattleRewards_AddItem     # fh v3:exact 0x00798ad0 +BattleRewards_AddItem
 0x00798b60 function MsBtlGetInit              # fh v3:bsim1.00 0x00798b70; ported (battle round 21): MsBtlGetClear_007993e0(&g_BtlCountsBattle, 7); eax 8
 0x00798b70 function MsBtlGetTerm              # fh v3:exact 0x00798b80
-0x00798c10 function BattleRewards_AddGear     # fh v3:exact+call.cs 0x00798c20 cdecl
+0x00798bd0 function BattleRewards_NewGear_00798bd0 # (spoils) -> the next of the spoils' 8 gear records (i8 count +0xd2, 0x16-byte records from +0xfe), cleared (MsStructClear) and counted; -1 with 8 taken; callers BattleRewards_AddGear, msFieldItemGet; own name; ported (battle round 22, ffx_battle::reward)
+0x00798c10 function BattleRewards_AddGear     # fh v3:exact+call.cs 0x00798c20 cdecl; ported (battle round 22, ffx_battle::reward)
 0x00798e90 function MsBtlStartAP              # fh v3:exact 0x00798ea0
 0x00798eb0 function MsCalcWeaponCap           # fh v3:exact 0x00798ec0
 0x00798f10 function MsDebugAddWeapon             # layout: alphabetical run between MsCalcWeaponCap and MsFieldItemFree (1 unnamed in the gap); Switch 0x7100358a50 MsDebugAddWeapon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5340,7 +5342,7 @@
 0x00798fd0 function MsFieldItemGet            # fh v3:bsim1.00+call.cs 0x00798fe0 cdecl
 0x00798ff0 function MsFieldItemGetMes         # fh v3:exact 0x00799000
 0x00799020 function MsFieldItemRead           # fh v3:exact 0x00799030; ported (battle round 21): directory 0xd files 0x19, 0x1a (sizes 0x01135ff0, 0x01135ff8) into g_BtlFieldItem, g_BtlFieldItem2 (aligned user_malloc, MsMemCheckRegist, CD +0)
-0x007990d0 function MsGetItem                 # gil, AP, two drop slots, overkill drops, bribe (spoils section 4); was Battle_GiveRewards
+0x007990d0 function MsGetItem                 # gil, AP, two drop slots, overkill drops, bribe (spoils section 4); was Battle_GiveRewards; (chr, actor, rewards, overkill, flags); ported (battle round 22, ffx_battle::reward)
 0x007993b0 function MsSetWeaponName           # fh call.cs cdecl
 0x007993e0 function MsBtlGetClear_007993e0    # (p, kind) -> 8: MsStructClear(p, 0x1b0), halfwords +0xee.. = kind << 12 | i for i < 8; MsBtlGetInit's callee; name ours; ported (battle round 21)
 0x00799420 function msFieldItemGet            # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item; was Treasure_Give
@@ -5509,13 +5511,13 @@
 0x007a0a30 function MsSEP3Dregist             # fh v3:exact 0x007a0a50; ours: (kind, i, se, once, pos): node in g_Sep3dList (existing se, else first free of 16 at 0x011361b0), position by kind (0: pos via the EE register 0x00c8f588), op_3d_vol_pan_get, SndSepPlay; ported (battle round 13)
 0x007a0b90 function MsSEP3DFind               # (se) -> the first node of g_Sep3dList (0x011361a0) whose +8 is se, else 0; callers MsSEP3DfadeOut; name ours; ported (battle round 13)
 0x007a0bb0 function MsSEP3DPos                # ours: (kind, i, vec): kind & ~0x100: 1 MsGetChrPos, 2 MsGetChrTopPos, 3 MsGetChrCenterPos, 4 MsGetChrBottomPos; ported (battle round 13)
-0x007a0c20 function MsGearHasAbility_007a0c20    # (gear, ability) -> 1 when one of the gear's 4 auto-ability slots (u16 at +0xe) is ability; callers MsWeaponNameNum_Weapon/Armor; own name
+0x007a0c20 function MsGearHasAbility_007a0c20    # (gear, ability) -> 1 when one of the gear's 4 auto-ability slots (u16 at +0xe) is ability; callers MsWeaponNameNum_Weapon/Armor; own name; ported (battle round 22, ffx_battle::gear)
 0x007a0c50 function MsWeaponName              # fh v3:exact+call.cs 0x007a0c70 cdecl
 0x007a0cb0 function TrophyManager_DestroyInstance # fh switch:bsim1.00 0x710023fd20 TrophyManager::DestroyInstance
 0x007a0cd0 function MsBtlInitItemMem_007a0cd0 # fh switch:bsim1.00 0x7100367af0
-0x007a0cf0 function MsWeaponNameNum           # fh v3:exact+call.cs 0x007a0d10 cdecl
-0x007a0d10 function MsWeaponNameNum_Weapon_007a0d10 # (gear) -> the name id (0x50xx) of a weapon from its auto-abilities (elemental strikes 0x8021/0x8025/0x8029/0x802d, 0x8052/0x8053, ...); MsWeaponNameNum calls it for gear with +5 set (the Switch's 14332-byte MsWeaponNameNum inlines both halves); own name
-0x007a1c00 function MsWeaponNameNum_Armor_007a1c00 # (gear) -> the name id of armour from its auto-abilities (0x8062..0x8069, 0x8047, 0x8000, 0x801e, ...); MsWeaponNameNum calls it for gear with +5 clear; own name
+0x007a0cf0 function MsWeaponNameNum           # fh v3:exact+call.cs 0x007a0d10 cdecl; ported (battle round 22, ffx_battle::gear)
+0x007a0d10 function MsWeaponNameNum_Armor_007a0d10 # (gear) -> armour's name id (0x504a-0x509e) from its auto-abilities; MsWeaponNameNum calls it for gear with +5 set (the Switch's 14332-byte MsWeaponNameNum inlines both halves); armour, not a weapon (round 22, was MsWeaponNameNum_Weapon): it tests only armour abilities by the kernel's a_ability.bin names (Ribbon 0x8080, Break HP/MP Limit 0x8017/0x8018, Auto-Phoenix/Med/Potion 0x800a-0x8008, the eaters/proofs 0x8020-0x802d, Defense/Magic Def/HP/MP +x% 0x806a-0x8079, SOS 0x8059-0x8061); own name; ported (battle round 22, ffx_battle::gear)
+0x007a1c00 function MsWeaponNameNum_Weapon_007a1c00 # (gear) -> a weapon's name id (0x5000-0x5046) from its flags (+3 bits 4, 8) and auto-abilities; MsWeaponNameNum calls it for gear with +5 clear; a weapon, not armour (round 22, was MsWeaponNameNum_Armor): it tests only weapon abilities by the kernel's a_ability.bin names (Capture 0x807a, Break Damage Limit 0x8019, Sensor 0x8000, First Strike 0x8001, Piercing 0x800b, the elemental strikes 0x801e/0x8022/0x8026/0x802a, the status strikes/touches, Strength/Magic +x% 0x8062-0x8069, Distill 0x807c-0x807f); own name; ported (battle round 22, ffx_battle::gear)
 0x007a2600 function MsWeaponNameRead          # fh v3:exact 0x007a2620; ported (battle round 21): getExcelBinSize("w_name") into a 0x25800 buffer, copied into g_WeaponNameTable (made the first time), size g_BtlItemMem3
 0x007a2670 function MsStoneEffectCheck        # fh v3:exact 0x007a2690
 0x007a2690 function MsStoneEffectProcess      # fh v3:exact 0x007a26b0
@@ -15393,6 +15395,8 @@
 0x0112a90f label g_BtlDebugDamage10000        # u8, DmgCalc: every HP/MP hit does 10000; debug native case 0xf
 0x0112a910 label g_BtlDebugDamage100000       # u8, DmgCalc: every HP/MP hit does 100000; debug native case 0x10
 0x0112a911 label g_BtlDebugRareSteal          # u8, Battle_Steal always takes the rare item
+0x0112a912 label g_BtlDebugApX100          # u8 debug toggle: MsGetItem multiplies a monster's AP by 100; own name
+0x0112a913 label g_BtlDebugGilX100         # u8 debug toggle: MsGetItem multiplies a monster's gil by 100; own name
 0x0112a914 label g_BtlNoOverkill          # u8: set, no kill counts as an overkill (MsDamageCheckDeath)
 0x0112a915 label g_BtlMenuLook             # u8 set: MsMenuCheckLook always reports a looker
 0x0112a916 label g_BtlLimitFrozen          # u8 set: MsLimitUp fills no overdrive gauge
@@ -15414,15 +15418,15 @@
 0x0112a938 label    g_KernelPlyRom
 0x0112a940 label    g_KernelItem
 0x0112a944 label    g_KernelAAbility
-0x0112a948 label g_KernelSummonGrow        # battle resource 0xe (MsBattleInit 0x00781700): the aeons' stat floors by battles fought, an MsGetExcelData table (u16 HP, MP, then bytes) read by MsSetSaveParam at i + (5n - 9) * 2, n = battles / 30 up to 20
+0x0112a948 label g_KernelSumAssure         # kernel sum_assure.bin (MsBattleInit 0x00781700 reads directory 0xd file 0xe here; its loaded size 0x980 in 0x0112a972 on both snapshots is sum_assure.bin's 2420 bytes rounded up to 64, while sum_grow.bin's 636 -> 0x280 is 0x0112a97e, directory 0x2f file 6, block 0x0112a960); the aeons' stat floors by battles fought, an MsGetExcelData table (u16 HP, MP, then bytes) read by MsSetSaveParam at i + (5n - 9) * 2, n = battles / 30 up to 20
 0x0112a94c label g_KernelCtbBase               # battle resource 0xb (MsBattleInit 0x00781700); MsGetRomCTBbase/CTBcount
 0x0112a950 label g_BtlEffectFiles          # pointer to u16 first file numbers per effect, the next one's ending it (MsEffectFileNumber)
 0x0112a954 label g_BtlMotBin               # pointer to the motion binary: u16 count, u16 offsets (MsSetMotBinAddress sets actor +0x4f8 from entry i)
 0x0112a958 label g_StatusRom               # kernel table MsMenuStatusNum reads
 0x0112a95c label g_BtlEffectOwner          # u32, the owner op_et_eff gets in MsStatusEffect
-0x0112a960 label g_KernelSummonGrow            # battle resource 6 (MsBattleInit); MsGetRomSummonGrow
+0x0112a960 label g_KernelSummonGrow            # kernel sum_grow.bin: directory 0x2f file 6 (MsBattleInit; size 0x280 = 636 rounded up to 64, 0x0112a97e); MsGetRomSummonGrow
 0x0112a964 label g_KernelKaizou                # battle resource 5 (MsBattleInit); MsGetRomKaizou
-0x0112a972 label g_BtlFile0eSize           # u16 directory 0xd file 0xe's size (MsBattleInit; block 0x0112a948)
+0x0112a972 label g_KernelSumAssureSize     # u16 directory 0xd file 0xe's (sum_assure.bin) size (MsBattleInit; block 0x0112a948)
 0x0112a974 label g_KernelCtbBaseSize       # u16 directory 0xd file 0xb's size (MsBattleInit)
 0x0112a976 label g_BtlEffectFilesSize      # u16 directory 0xd file 0x1c's size (MsBattleInit)
 0x0112a978 label g_StatusRomSize           # u16 directory 0xd file 0x1d's size (MsBattleInit)
@@ -15434,6 +15438,8 @@
 0x0112a9a4 label g_BtlScriptRecord1        # the second of g_BtlScriptRecords' two 0x20-byte records (MsBtlScriptRecordShift_00782670 moves it to the first)
 0x0112a9ac label g_BtlSceneScript          # u32 the formation file's section 0 (MsBtlReadSetScene); MsBtlReadManage's second MsAtelRegist in manager 0
 0x0112a9b0 label g_BtlPosFile              # pointer to the battle map's position file: flag, i8 group count, records of 0x20 (flag set) or 3 x 0x20 per group (MsBtlGetPos)
+0x0112a9b4 label g_BtlSection1             # u32 the formation file's section 1 (MsBtlReadSetScene: base + word +8); its first byte goes to g_BtlScriptRecord1 +0; own name
+0x0112a9b8 label g_BtlFileText             # u32 the battle file's text table, 0 without one (MsBtlReadSetScene copies 0x023112c4; MsGetMenuChrInfo reads u16 offsets at +4i from it); own name
 0x0112a9bc label g_BtlFont                    # u32; The battle font (MsBattleGetFontAddress).
 0x0112a9c0 label g_BtlVoiceEvent             # pointer to a byte flag; MsGetVoiceEventFlag (0x007986a0) is 1 when it is set and g_BtlVoiceMute is not
 0x0112a9c4 label g_BtlFieldList               # u32; The battle field list (MsBtlListInit): the loaded file, its records' count and the two tables in it.
@@ -16283,6 +16289,9 @@
 0x02311060 label g_BtlHideQueue            # u32 characters queued to hide (index from 1)
 0x023110a0 label g_DefaultChrNames           # 0x14 bytes per character (getDefaultChrName 0x00787320)
 0x02311240 label g_BtlDamageRates             # 4 bytes per actor: physical, magic damage dealt bonus %, physical, magic damage taken reduction % (DmgCalc_StatBoostAbility)
+0x023112bc label g_BtlNotSystemFile        # u32 1 unless g_BtlFileName is "system_01" (MsBtlReadSetScene); own name
+0x023112c0 label g_BtlFileFontData         # u32 the battle file's font, 0 when none (MsBtlReadSetScene hands it to TOFTCTransfer and keeps it in g_BtlFont); own name
+0x023112c4 label g_BtlFileTextData         # u32 the battle file's text, 0 when none (MsBtlReadSetScene -> g_BtlFileText); own name
 0x023112e0 label g_BtlFileName             # char[] the battle file's name (CD object +0x58), MsBtlReadManage copies it; strstr'd for "sins07_07", "znkd09_00"
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)

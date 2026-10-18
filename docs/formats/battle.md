@@ -347,7 +347,7 @@ stats come from Yuna's (character 1) through its `ply_rom` record
 (`+0x18`-`+0x29`: per stat a divisor of the sum `t` of Yuna's stats, HP/100
 and MP/10, and a multiplier of her stat, /10), Luck (`0x34`) is Yuna's, and
 once 30 battles are fought (`0x011307a4`) the floors of
-`g_KernelSummonGrow` (`0x0112a948`, record `i + (5n − 9) · 2` for
+`g_KernelSumAssure` (`0x0112a948`, the kernel's `sum_assure.bin`, record `i + (5n − 9) · 2` for
 `n` = battles / 30 up to 20) raise HP, MP and the stats but Luck; its own
 record's `+4`-`+0x13` are added on top. A zero divisor faults the original
 (a monster's record has them, so it is never called for one); the port
@@ -734,9 +734,12 @@ from 0 on (`MsEtEffectNumber_0079f1c0`: entries of 4 bytes up to three
 zero bytes; byte 0 0xff is skipped; past 0x18 `MsBattleError("eff_id")`).
 `MsBattleSpecialInit(kind)` (`0x0079de60`) makes the special stage's work
 for kinds 1-3 (the boat's roll step 0.002 from `0x00b54ca4`, map objects
-0x1c-0x1e's animations disposed). `0x0112a948` and `0x0112a960` are both
-named `g_KernelSummonGrow` in ffx.sym: `MsBattleInit` reads directory
-0xd's file 0xe into the first and 0x2f's file 6 into the second.
+0x1c-0x1e's animations disposed). `MsBattleInit` reads directory 0xd's file 0xe into `0x0112a948` and
+0x2f's file 6 into `0x0112a960` (round 22: both were named
+`g_KernelSummonGrow`). Their loaded sizes on both snapshots, 0x980 and
+0x280, are `sum_assure.bin`'s 2420 bytes and `sum_grow.bin`'s 636 rounded
+up to 64: the first is `g_KernelSumAssure` (the aeons' stat floors,
+`MsSetSaveParam`), the second `g_KernelSummonGrow` (`MsGetRomSummonGrow`).
 
 `MsBattleProcess` (`0x00790c10`, `ffx_battle::process`), the battle
 module's frame, is ported (round 21); every callee goes through the game
@@ -784,6 +787,85 @@ otherwise its file is read asynchronously into a new `mon_data` block
 with a request block on the stack (`+0xc` the slot; the port's comes from
 the shim) and the function returns -1 with the next slot noted. With no
 slot left: `Mon_LoadAll`, status 0xe, 0.
+
+## Round 22
+
+`MsBtlReadSetScene` (`0x00783e20`, `ffx_battle::read`) sets the battle
+file's section globals ("Formation files" above: the script, section 1,
+whose first byte goes to the second script record, the formation, whose
+byte 3 is `g_BtlUnderwater`, the positions) and clears the file's text
+table (`g_BtlFileText`) and `g_BtlFont`; when the file brought a text
+(`0x023112c4`) the table is set and, with a font (`0x023112c0`) too, the
+font is kept and handed to `TOFTCTransfer`. `0x023112bc` is 1 unless the
+file's name is `system_01`. With `MsBattleExe`'s mode set the status
+becomes 0 and it returns 0; else `MsActionInit`, `MsSetRamChrData`,
+`MsPushBtlPosAll`, `MsBtlBridgeEvent2Btl`, `AtelEventRemoveForBattle`
+(the battle map `g_BtlBattleMusic`, sign-extended), `Sg_SetPlayer(0)`,
+`Sg_IdSetEffectTableIndex(1)`, and the status (returned) is 10 when
+`TkGetNowEventJumpMapNo` is that map, else 8. The original also calls
+`MsGetSaveConfigEnglish` and `FFXIsDebug` with mode 0 and drops both
+results; the port does not call them.
+
+### Rewards
+
+`MsGetItem(chr, actor, rewards, overkill, flags)` (`0x007990d0`,
+`ffx_battle::reward`; from `MsDamageCheckDeath` with the victim's `+0xf88`
+record, `+0xf5f` overkill and the killing hit's `+0x616` flags) pays a dead
+monster's record:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `0x00` | `u16` | Gil |
+| `0x02`, `0x04` | `u16` | AP; with overkill |
+| `0x08`, `0x09` | `u8` | The two drop slots' chances (of 255) |
+| `0x0b` | `u8` | Gear chance |
+| `0x0c` | `u16` × 4 | Drops: slot 1 normal, rare; slot 2 normal, rare (`0x18` with overkill) |
+| `0x14` | `u8` × 4 | Their counts (`0x20` with overkill) |
+| `0x2a` | `u16` | The bribe's item |
+| `0x2c` | `u8` | The bribe's factor |
+| `0x2d` | `u8` | Gear slots byte |
+| `0x2e`-`0x30` | `u8` | Copied to the gear's `+8`, `+0xa`, `+9` |
+| `0x31` | `u8` | Gear ability count byte |
+| `0x32` | `u16` × 8 × 2 × 7 | Per character a weapon's then armour's abilities (the first always given) |
+
+The AP (×100 with debug `0x0112a912`) goes to the 18 characters through
+`MsApUp`, each handed the previous result (1 first). A bribed monster
+(actor `+0x701` 2) gives its bribe item: `(r % 11 + 20) · sqrt(gil paid,
++0x708) · factor / 16 / 25`, plus 0 or 1, within 1-99 (x87 at 53 bits; the
+root and the sum stored as `f32`, `_ftol2_sse`). Otherwise the gil (×100
+with `0x0112a913`) times the last `MsApUp` result goes to the gil won
+(at most 999999999) and each drop slot rolls `brnd(10) % 255 < chance`
+(any chance above 0 with `g_BtlDebugAlwaysHit`), rare when `brnd(11) & 0xff
+< 0x20` or `g_BtlDebugRareSteal`; the hit's flags 2, 4, 8 (and 0x20 without
+0x10) replace the item with 0x2046-0x2049. Under language 0xb item 0x2065
+becomes 0x2032 (4, or 8 with overkill; the bribe: 0x2048 written back, 4).
+Last the gear chance: `BattleRewards_AddGear(chr, rewards, spoils)`
+(`0x00798c10`) takes the spoils' next gear record (`0x00798bd0`, 8 at
+most) and gives it an owner (one of the joined of the first seven
+characters, the killer three times more when it is one of them), weapon or
+armour at random (`+5`), `(slots byte + 1..8 − 5) / 4` slots within 1-4
+and `(ability byte + 1..8 − 5) / 8` draws from the owner's list, each
+ability taken when the gear has none of its group (`g_KernelAAbility`
+byte `+0x69`, `0x00798a90`); then its name and icon.
+
+### Gear names
+
+`MsWeaponNameNum(gear)` (`0x007a0cf0`, `ffx_battle::gear`) names a weapon
+(`+5` 0) in `0x007a1c00` and armour in `0x007a0d10`; until round 22
+ffx.sym had the two halves' names swapped (the first tests only weapon
+abilities, the second only armour's, by the kernel's `a_ability.bin`
+names). Each is a fixed list of tests over the four abilities (`+0xe`),
+the slot count (`+0xb`) and, for weapons, the flags (`+3` bits 4 and 8:
+names 0x5000, 0x5001); the first that holds gives the name (weapons
+0x5000-0x5046, armour 0x504a-0x509e). The port keeps the list as a table
+in the original's order (`weapon_name`, `armor_name`).
+
+### Test stubs
+
+`battle_target`'s stub area from `Ms_Gui_BattleConsoleProc` to
+`Ms_Gui_BattleConfigProc`'s end (`0x007c86e0`) is full; round 22's stubs
+go to `Ms_Gui_BattleChr2Proc` (`0x007de790`, 5369 bytes, a debug window's
+procedure no code calls): `GUI_STUBS` in the test.
 
 ## M2 remaining
 

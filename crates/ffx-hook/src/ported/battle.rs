@@ -13,6 +13,7 @@ use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exe::bridge as exe;
 use ffx_battle::exec::bridge as exec;
 use ffx_battle::free::bridge as free;
+use ffx_battle::gear::bridge as gear;
 use ffx_battle::getmem::bridge as getmem;
 use ffx_battle::init::bridge as init;
 use ffx_battle::input::bridge as input;
@@ -21,6 +22,7 @@ use ffx_battle::parse::bridge as parse;
 use ffx_battle::predict::bridge as predict;
 use ffx_battle::process::bridge as process;
 use ffx_battle::read::bridge as read;
+use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
@@ -3664,5 +3666,42 @@ ported! {
     /// `MsSetChrVisibleEvent(i, flags)`: chara through the game.
     MsSetChrVisibleEvent @ 0x0079_67f0 => extern "C" fn ms_set_chr_visible_event(i: u32, flags: u32) -> u32 {
         read::ms_set_chr_visible_event(&mut mem(), &mut call_ptr, i, flags)
+    }
+    /// `MsBtlReadSetScene()`: the battle file's sections; the battle's
+    /// set-up callees through the game.
+    MsBtlReadSetScene @ 0x0078_3e20 => extern "C" fn ms_btl_read_set_scene() -> u32 {
+        read::ms_btl_read_set_scene(&mut mem(), &mut call_ptr)
+    }
+    /// `MsGetItem(chr, actor, rewards, overkill, flags)`.
+    MsGetItem @ 0x0079_90d0 => extern "C" fn ms_get_item(chr: u32, actor: u32, rewards: u32, overkill: u32, flags: u32) {
+        reward::ms_get_item(&mut mem(), &mut call_ptr, chr, actor, rewards, overkill, flags);
+    }
+    /// `BattleRewards_AddGear(chr, rewards, spoils)`.
+    BattleRewards_AddGear @ 0x0079_8c10 => extern "C" fn battle_rewards_add_gear(chr: u32, rewards: u32, spoils: u32) -> u32 {
+        reward::battle_rewards_add_gear(&mut mem(), chr, rewards, spoils)
+    }
+    /// `BattleRewards_NewGear_00798bd0(spoils)`.
+    BattleRewards_NewGear_00798bd0 @ 0x0079_8bd0 => extern "C" fn battle_rewards_new_gear(spoils: u32) -> i32 {
+        reward::new_gear(&mut mem(), spoils)
+    }
+    /// `MsGetAbilityGroup_00798a90(ability)`.
+    MsGetAbilityGroup_00798a90 @ 0x0079_8a90 => extern "C" fn ms_get_ability_group(ability: u32) -> u32 {
+        reward::ability_group(&mem(), ability)
+    }
+    /// `MsGearHasAbility_007a0c20(gear, id)`.
+    MsGearHasAbility_007a0c20 @ 0x007a_0c20 => extern "C" fn ms_gear_has_ability(at: u32, id: u32) -> u32 {
+        gear::ms_gear_has_ability(&mem(), at, id)
+    }
+    /// `MsWeaponNameNum(gear)`.
+    MsWeaponNameNum @ 0x007a_0cf0 => extern "C" fn ms_weapon_name_num(at: u32) -> u32 {
+        gear::ms_weapon_name_num(&mem(), at)
+    }
+    /// `MsWeaponNameNum_Armor_007a0d10(gear)`.
+    MsWeaponNameNum_Armor_007a0d10 @ 0x007a_0d10 => extern "C" fn ms_weapon_name_num_armor(at: u32) -> u32 {
+        gear::ms_weapon_name_num_armor(&mem(), at)
+    }
+    /// `MsWeaponNameNum_Weapon_007a1c00(gear)`.
+    MsWeaponNameNum_Weapon_007a1c00 @ 0x007a_1c00 => extern "C" fn ms_weapon_name_num_weapon(at: u32) -> u32 {
+        gear::ms_weapon_name_num_weapon(&mem(), at)
     }
 }
