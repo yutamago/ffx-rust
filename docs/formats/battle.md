@@ -526,20 +526,18 @@ result, or the count when there are no works.
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.
 
-**427 functions, 102241 bytes** (261 named). By blockers: 0: 253, 1: 104, 2: 41, 3: 8, 4: 8, 5: 2, 6: 2, 7: 1, 9: 1, 11: 2, 12: 1, 13: 2, 15: 1, 18: 1.
+**421 functions, 98734 bytes** (257 named). By blockers: 0: 250, 1: 102, 2: 41, 3: 7, 4: 8, 5: 2, 6: 2, 7: 1, 9: 1, 10: 1, 11: 1, 12: 1, 13: 2, 15: 1, 18: 1.
 
 The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` and `MsBattleExe` set a battle up; encounters and rewards):
 
 | Function | Address | Bytes | Blockers |
 |---|---|---|---|
-| `MsBattleProcess` | `0x00790c10` | 913 | 11 |
+| `MsBattleProcess` | `0x00790c10` | 913 | 10 |
 | `MsBattleInit` | `0x00781700` | 1353 | 18 |
 | `MsBattleExe` | `0x00781020` | 1288 | 13 |
 | `MsBattleFree` | `0x00781590` | 159 | 11 |
 | `MsBtlReadManage` | `0x00783020` | 1529 | 12 |
 | `MsBattleAllFree` | `0x00780b40` | 293 | 5 |
-| `MsMoveChr` | `0x007aab80` | 181 | 1 |
-| `MsGetChrPredictPos` | `0x007aa2a0` | 2073 | 3 |
 | `MsGetItem` | `0x007990d0` | 728 | 1 |
 | `BattleRewards_AddGear` | `0x00798c10` | 630 | 3 |
 
@@ -692,8 +690,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 0 | 86 | `0x0079a020` | `FUN_0079a020` |  |
 | 0 | 87 | `0x007ab2a0` | `MsSetBtlPosReset` |  |
 | 0 | 88 | `0x0078d620` | `MsResetAvoidFlag` |  |
-| 0 | 90 | `0x00797350` | `FUN_00797350` |  |
-| 0 | 90 | `0x007973b0` | `FUN_007973b0` |  |
 | 0 | 91 | `0x00782ae0` | `MsGetMapCenter` |  |
 | 0 | 91 | `0x007ab910` | `FUN_007ab910` |  |
 | 0 | 91 | `0x007c4f50` | `MsCameraResetShake` |  |
@@ -725,7 +721,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 0 | 126 | `0x00796bb0` | `FUN_00796bb0` |  |
 | 0 | 132 | `0x0079ccf0` | `MsRegMotionRead` |  |
 | 0 | 132 | `0x007abeb0` | `FUN_007abeb0` |  |
-| 0 | 134 | `0x007ab0b0` | `MsMoveSplineRegist` |  |
 | 0 | 134 | `0x00874130` | `FUN_00874130` |  |
 | 0 | 135 | `0x007a9fc0` | `MsSetMove` |  |
 | 0 | 135 | `0x007cf860` | `FUN_007cf860` |  |
@@ -867,7 +862,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 1 | 165 | `0x007b7d70` | `MsEffectChrMotionIn` | MsSetWeaponEffectAttribute |
 | 1 | 168 | `0x00796f70` | `FUN_00796f70` | Ch_EngineSetFast |
 | 1 | 173 | `0x0078f700` | `MsCheckLeftWindow` | MsGetCommandUse |
-| 1 | 181 | `0x007aab80` | `MsMoveChr` | MsGetChrPredictPos |
 | 1 | 187 | `0x00782a20` | `MsGetFileSize` | MsGetSaveConfigEnglish |
 | 1 | 189 | `0x0078fcf0` | `MsMenuGetText` | MsGetSaveConfigEnglish |
 | 1 | 189 | `0x007b1910` | `FUN_007b1910` | FUN_007b19d0 |
@@ -900,7 +894,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 1 | 599 | `0x0079f380` | `MsCalcCursorPos` | graphicProject3DPointOntoScreenConsider2DScene |
 | 1 | 728 | `0x007990d0` | `MsGetItem` | BattleRewards_AddGear |
 | 1 | 880 | `0x007c0120` | `FUN_007c0120` | spline_get_near_point |
-| 1 | 939 | `0x007b78c0` | `MsSetBallSpline` | MsMoveSplineRegist |
 | 1 | 1393 | `0x007afe00` | `MsMenuLimitSet` | MsGetTargetRandomList |
 | 1 | 2555 | `0x007a1c00` | `MsWeaponNameNum_Armor_007a1c00` | MsGearHasAbility_007a0c20 |
 | 1 | 3811 | `0x007a0d10` | `MsWeaponNameNum_Weapon_007a0d10` | MsGearHasAbility_007a0c20 |
@@ -952,7 +945,6 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 3 | 374 | `0x0079e030` | `FUN_0079e030` | MsRotMatrixY, MsRotMatrixZ, MsRotMatrixX |
 | 3 | 615 | `0x00793670` | `MsBtlChrRegist` | Ch_Allocate, MsChrCreatePacket, FUN_00796f70 |
 | 3 | 630 | `0x00798c10` | `BattleRewards_AddGear` | FUN_00798bd0, MsWeaponNameNum, FUN_00798a90 |
-| 3 | 2073 | `0x007aa2a0` | `MsGetChrPredictPos` | TkMtCalcSpline, TkMtCalcSplineTangent, MsSetBallSpline |
 | 4 | 167 | `0x007b74d0` | `FUN_007b74d0` | FUN_007b77c0, FUN_007b75c0, FUN_007b7680, FUN_007b7650 |
 | 4 | 315 | `0x00783e20` | `MsBtlReadSetScene` | MsBtlBridgeEvent2Btl, AtelEventRemoveForBattle, MsSetRamChrData, MsGetSaveConfigEnglish |
 | 4 | 766 | `0x00795250` | `MsGetChrLimitBarFlag` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796d10, MesSetChrTargetPosToLimitSparePosy, getSparedLmtPos |
@@ -967,8 +959,8 @@ The battle loop's top level (`MsBattleProcess` runs each frame; `MsBattleInit` a
 | 6 | 2355 | `0x0079d430` | `MsBattleSpecial` | MsRotMatrixY, MsRotMatrixZ, FUN_0079df90, FUN_0079e030, yiSetRotTransDObj, MsRotMatrixX |
 | 7 | 347 | `0x007824e0` | `MsBtlBridgeEvent2Btl` | AtelGetEventElemCharIDFromID, AtelSetEventActorLinkWork, AtelGetEventElemHandleFromID, FUN_0086b440, AtelGetEventBindIdFromID, AtelGetEventActorLinkWork, AtelGetEventCharIDFromID |
 | 9 | 302 | `0x00782090` | `MsBattleReadDataNB` | MsImportantRead, MsBattleExe, MsWeaponNameRead, MsBtlReadSetScene, Kernel_LoadTables, eiAbmSetLang, FUN_00782670, FUN_00782b70, MsGetSaveConfigEnglish |
+| 10 | 913 | `0x00790c10` | `MsBattleProcess` | MsBattleInit, MsBattleFree, TOControlBtlWindow, TODebugGetPadPrintFlag, MsBtlReadManage, MsBattleExe, MsBattleAllFree, TkCheckSoftWareReset, AtelBattleEndCallback, opd_exit_from_ovl |
 | 11 | 159 | `0x00781590` | `MsBattleFree` | MsBtlChrFreeMem, MsBtlChrFreeAll, MsNumberFreeMem, MsAtelRegistFree, MsEtEffectStop, FUN_00782640, MsEffectEnvFree, FUN_00782750, MsBattleSpecialFree, MsBtlBridgeBtl2Event, MsBtlFreeItemMem |
-| 11 | 913 | `0x00790c10` | `MsBattleProcess` | MsMoveChr, MsBattleInit, MsBattleFree, TOControlBtlWindow, TODebugGetPadPrintFlag, MsBtlReadManage, MsBattleExe, MsBattleAllFree, TkCheckSoftWareReset, AtelBattleEndCallback, opd_exit_from_ovl |
 | 12 | 1529 | `0x00783020` | `MsBtlReadManage` | yiFieldMapReadNB, MsBtlReadMonster, TOInitBattleFontPath, MsBtlReadScene, MsGetRamChrCTBbasic, FUN_00784420, MsBtlReadSetScene, yiBattleMapReadNB, MsCalcChrDirAll, MsBattleExeSetIndex, MsSetChrVisibleEvent, Ch_CheckNbBattleChr |
 | 13 | 746 | `0x007821f0` | `MsBtlBridgeBtl2Event` | MsChrCreatePacket, AtelSetEventElemPosFromID, AtelSetEventElemCharIDFromID, AtelGetEventActorLinkWork, AtelSetEventActorLinkWork, AtelGetHideStatusFromID, AtelGetEventElemStatus, AtelGetEventCharIDFromID, AtelSetEventElemStatus, AtelSetEventElemHandleFromID, AtelSetEventCharHandleFromID, AtelGetKeepBattlePartyFromID, AtelGetEventBindIdFromID |
 | 13 | 1288 | `0x00781020` | `MsBattleExe` | MsBattleFree, MsEventEffectFree, MsEtEffectSet, MsBtlReadManage, FUN_007829b0, MsNumberGetMem, MsBtlChrGetMem, MsBtlGetItemMem, AtelEventSetUpForBattleMusic, MsBattleExeSetIndex, MsBtlListCDpos, MsEtEffectEncount, TOInitBtlWindow |
