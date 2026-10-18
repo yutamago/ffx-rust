@@ -4240,11 +4240,14 @@
 0x0076c410 function CDfileSize_CD_EX          # fh v3:exact 0x0076c520
 0x0076c440 function cd_file_size_bytes # cdecl(n): (sectors to the next entry * 0x100 - top byte) * 8 for entry n + g_CdLib+0x20, 0 when absent (bit 23); caller Cd_QueueRead; name ours
 0x0076c560 function CdEnvInit                 # fh v3:exact 0x0076c670
+0x0076ce20 function CdQueueSector_0076ce20       # (sector) -> CdQueueSectorRead_0076ce40(sector, 0, 0); g_CdLib slot +0x8c (CdEnvInit, _DAT_02310ccc); ported (system round 33); name ours
+0x0076ce40 function CdQueueSectorRead_0076ce40   # (sector, a, b) -> id: the first free g_CdChannels request (+0x31 busy): +0x1c sector, +0x28 a, +8 b, +0x30/+0x31 set, the rest zeroed, +0x24 the next g_CdReadId (1 past 0xffff); all 64 busy: movie_err("q_cnt != READ_Q_CNT", libmscd.c, 0x96d) and request 64 written anyway; Ghidra's void is wrong (eax is the id); ported (system round 33); name ours
 0x0076cfa0 function CdSetC40e19_0076cfa0 # cdecl(n): byte 0x00c40e19 = (n != 1); caller CdEnvInit; name ours
 0x0076cfc0 function SetGlobal_01128ac4 # cdecl(v): *0x01128ac4 = v, returns v; caller 0x0088e880; name ours
 0x0076cfd0 function FileReadMain              # fh v3:bsim1.00 0x0076d0f0
 0x0076d0d0 function GetCD                     # fh v3:bsim1.00 0x0076d1e0
 0x0076d0e0 function cd_channel_state_0076d0e0 # cdecl(file, archive) -> 0/1/2: first of the 64 g_CdChannels in use (+0x31) with file +0x28 and archive +8: 2 when g_CdLib+0x70 is set and +0x74 is its index, else 1; 0 for none; no direct caller; name ours; ported (system round 31)
+0x0076d140 function CdReadDirect_0076d140       # (sector, size, buffer, mode) -> sceCdRead(sector, size / 2048, buffer, mode) after hdd_state_clear and FlushCache(0); keeps the read at 0x01128acc, clears 0x01128a87/0x01128ab0, "not 64byte align" warning, "sceCdRead()" with g_FFXHddMode; CdEnvInit 0x0076c560 reads the sector table with it; ported (system round 33); name ours
 0x0076d200 function Sa_CdRead_task               # str-match switch: only user of 4 string(s) held once by both builds, e.g. 'sceCdBreak() %d\\n'; Switch 0x710031eaa0 Sa_CdRead_task (symbols from Fahrenheit's server export)
 0x0076d440 function cd_decode_data               # layout+callees: sorts between Sa_CdRead_task and cd_file_sector, and its named callees match the Switch 0x710031eec0 cd_decode_data's (similarity 1.00: sa_decode, sa_meth01dec2_ex, sa_meth01dec_ex); symbols from Fahrenheit's server export; cdecl(req) -> eax: req +4 data, +0x2c size, unpacked size = unaligned u32 at data+1; <= 0x1800: memcpy to [0x01128ac8], sa_decode(data, buf); else last 0x1800 bytes to the buffer, head (size-0x1800) moved up byte-wise to end at data+unpacked, method byte 1/2 -> sa_meth01dec_ex/2_ex(block, data, n, buf), other: eax = byte-2; ported (system round 31)
 0x0076d510 function cd_file_sector            # fh v3:exact 0x0076d620
@@ -15469,6 +15472,7 @@
 0x01128aac label    g_Cd_DiskOpenCheck        # byte: disk_open_check_set; CdEnvInit clears it; the read loop 0x0076ccb0 reads it
 0x01128ab4 label    g_Cd_SectorBase           # added to every cdrom.mdg start sector (cd_file_sector); CdEnvInit: the disc's first sector less the table's own
 0x01128ab8 label    g_Cd_HddInstallCount      # hdd_install_check(g_Cd_HddInstall) (CdEnvInit); check_ex_file_size loops over that many
+0x01128acc label    g_CdDirectRead               # 4 words: sector, size, buffer, [mode] of the last CdReadDirect_0076d140; name ours
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
 0x0112a008 label    g_WaitFramesByTime         # with it set Native_WaitFrames_Poll_0000 (0x0085c6b0) counts down by 0x00645d90() while 0x0076efc0() holds
 0x0112a07c label    g_EmptyName               # u8 0 (.bss): what Kernel_GetItemName and 0x00774720 (ability names) return for ID 0

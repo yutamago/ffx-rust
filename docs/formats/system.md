@@ -1388,3 +1388,18 @@ pushed as literals (no relocation entries), not addresses.
   - 0xe: `'0'..'3'` set the icon mode; mode 3 with `'A'` moves the pen
     5.0; `'@'` sets mode 3, `'A'` mode 1.
   - 8, 0xc, 0xd and other codes do nothing.
+- The CD read queue's `CdQueueSectorRead_0076ce40(sector, a, b)` takes
+  the first free `g_CdChannels` request and returns its id (Ghidra's
+  `void` is wrong): `+0x1c` sector, `+0x28 a`, `+8 b`, `+0x30`/`+0x31`
+  set, `+4`, `+0xc..+0x18`, `+0`, `+0x20`, `+0x2c` and the `u16` `+0x34`
+  zeroed, `+0x24` the next `g_CdReadId` (1 after 0xffff). With all 64
+  busy it calls `movie_err("q_cnt != READ_Q_CNT", libmscd.c, 0x96d)` and
+  fills request 64 anyway, which starts at `g_CdReadId` (the old id is
+  read before that request's `+0` is cleared). `0x0076ce20(sector)`
+  passes `a = b = 0`.
+- `CdReadDirect_0076d140(sector, size, buffer, mode)` clears `0x01128a87`
+  (byte) and `0x01128ab0`, warns about a buffer off 64 bytes, keeps
+  `sector, size, buffer, [mode]` at `0x01128acc`, runs `hdd_state_clear`
+  and `FlushCache(0)`, and returns `sceCdRead(sector, size / 2048, buffer,
+  mode)` (signed division); with `g_FFXHddMode` set it prints
+  `"sceCdRead()"` between rules.

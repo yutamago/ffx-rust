@@ -1393,6 +1393,18 @@ ported! {
         let scratch = frame.at();
         tolib::bridge::set_draw_info(&mut mem(), [code, window, pen], scratch, call_sym, fcall);
     }
+    /// `CdQueueSectorRead_0076ce40(sector, a, b)`.
+    CdQueueSectorRead_0076ce40 @ 0x0076_ce40 => extern "C" fn cd_queue_sector_read(sector: u32, a: u32, b: u32) -> u32 {
+        cd::bridge::queue_sector_read(&mut mem(), [sector, a, b], call_sym)
+    }
+    /// `CdQueueSector_0076ce20(sector)`.
+    CdQueueSector_0076ce20 @ 0x0076_ce20 => extern "C" fn cd_queue_sector(sector: u32) -> u32 {
+        cd::bridge::queue_sector(&mut mem(), sector, call_sym)
+    }
+    /// `CdReadDirect_0076d140(sector, size, buffer, mode)`.
+    CdReadDirect_0076d140 @ 0x0076_d140 => extern "C" fn cd_read_direct(sector: u32, size: u32, buffer: u32, mode: u32) -> u32 {
+        cd::bridge::read_direct(&mut mem(), [sector, size, buffer, mode], call_sym)
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)

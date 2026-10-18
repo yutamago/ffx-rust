@@ -632,4 +632,125 @@ pub mod bridge {
         }
         out
     }
+    /// `g_CdChannels`: the 64 read requests (0x38 bytes: busy byte
+    /// `+0x31`); a 65th starts at [`READ_ID`].
+    pub const CD_CHANNELS: u32 = 0x0112_7c80;
+    /// `g_CdReadId`: the last read-request id (1..=0xffff).
+    pub const READ_ID: Global<i32> = Global::new(0x0112_8a80);
+    /// `movie_err(text, file, line)`.
+    pub const MOVIE_ERR: u32 = 0x0076_efa0;
+    /// `"q_cnt != READ_Q_CNT"` and `"..\program\lib\src\libmscd.c"`.
+    pub const QUEUE_FULL_TEXT: u32 = 0x00b5_1f04;
+    pub const LIBMSCD_FILE: u32 = 0x00b5_1d30;
+
+    /// `CdQueueSectorRead_0076ce40(sector, a, b)`: takes the first free
+    /// read request of [`CD_CHANNELS`] (request 64, over [`READ_ID`] and
+    /// what follows, after `movie_err("q_cnt != READ_Q_CNT", libmscd.c,
+    /// 0x96d)` when all are busy) and fills it: `+8 = b`, `+0x28 = a`,
+    /// busy `+0x31` and `+0x30` set, `+0x1c = sector`, everything else it
+    /// owns zeroed; the id `+0x24` is [`READ_ID`] plus 1 (1 past 0xffff),
+    /// stored back and returned. The fields are written in the original's
+    /// order, the old id read first (request 64's `+0` is the id).
+    pub fn queue_sector_read<M: Mem>(
+        mem: &mut M,
+        [sector, a, b]: [u32; 3],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let channels = mem.rebase(CD_CHANNELS);
+        let n = (0..64u32)
+            .find(|&n| mem.read::<u8>(channels.wrapping_add(n * 0x38 + 0x31)) == 0)
+            .unwrap_or(64);
+        if n == 64 {
+            let text = mem.rebase(QUEUE_FULL_TEXT);
+            let file = mem.rebase(LIBMSCD_FILE);
+            call(mem, MOVIE_ERR, &[text, file, 0x96d]);
+        }
+        let r = channels.wrapping_add(n * 0x38);
+        let at = |off: u32| r.wrapping_add(off);
+        mem.write(at(8), b);
+        mem.write(at(0x28), a);
+        let old = READ_ID.get(mem);
+        mem.write(at(0x31), 1u8);
+        mem.write(at(4), 0u32);
+        for off in [0xc, 0x10, 0x14, 0x18, 0, 0x20] {
+            mem.write(at(off), 0u32);
+        }
+        let mut id = old.wrapping_add(1);
+        READ_ID.set(mem, id);
+        if id > 0xffff {
+            id = 1;
+            READ_ID.set(mem, id);
+        }
+        mem.write(at(0x24), id);
+        mem.write(at(0x30), 1u8);
+        mem.write(at(0x34), 0u16);
+        mem.write(at(0x2c), 0u32);
+        mem.write(at(0x1c), sector);
+        id.cast_unsigned()
+    }
+
+    /// `CdQueueSector_0076ce20(sector)`: [`queue_sector_read`] with `a`
+    /// and `b` 0.
+    pub fn queue_sector<M: Mem>(
+        mem: &mut M,
+        sector: u32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        queue_sector_read(mem, [sector, 0, 0], call)
+    }
+
+    /// The last direct read `CdReadDirect_0076d140` starts: sector, size,
+    /// buffer and the mode's first word (`0x01128acc`..).
+    pub const DIRECT_READ: u32 = 0x0112_8acc;
+    /// `FlushCache(n)` and `sceCdRead(sector, sectors, buffer, mode)`.
+    pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    pub const SCE_CD_READ: u32 = 0x00a4_47c0;
+    /// `g_FFXHddMode` (a byte).
+    pub const FFX_HDD_MODE: u32 = 0x0133_c913;
+    /// The rule, `"warning error !!! not 64byte align\n"` and
+    /// `"sceCdRead()\n"` (`dbgPrintf` texts).
+    pub const RULE_TEXT: u32 = 0x00b5_1d88;
+    pub const ALIGN_TEXT: u32 = 0x00b5_1dd4;
+    pub const CD_READ_TEXT: u32 = 0x00b5_1df8;
+
+    /// `CdReadDirect_0076d140(sector, size, buffer, mode)`: clears the byte
+    /// `0x01128a87` and the word `0x01128ab0`, prints a ruled "not 64byte
+    /// align" warning for a buffer not on 64 bytes, keeps the read in
+    /// [`DIRECT_READ`] (`[mode]` read first), runs `hdd_state_clear` and
+    /// `FlushCache(0)`, then returns `sceCdRead(sector, size / 2048
+    /// (signed, toward zero), buffer, mode)`; with [`FFX_HDD_MODE`] set a
+    /// ruled `"sceCdRead()"` follows. `call` takes `ffx.sym` addresses.
+    pub fn read_direct<M: Mem>(
+        mem: &mut M,
+        [sector, size, buffer, mode]: [u32; 4],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let ruled = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, text: u32| {
+            let rule = mem.rebase(RULE_TEXT);
+            let text = mem.rebase(text);
+            call(mem, DBG_PRINTF, &[rule]);
+            call(mem, DBG_PRINTF, &[text]);
+            call(mem, DBG_PRINTF, &[rule]);
+        };
+        mem.write(mem.rebase(0x0112_8a87), 0u8);
+        mem.write(mem.rebase(0x0112_8ab0), 0u32);
+        if buffer & 0x3f != 0 {
+            ruled(mem, &mut call, ALIGN_TEXT);
+        }
+        let mode_word: u32 = mem.read(mode);
+        let last = mem.rebase(DIRECT_READ);
+        mem.write(last, [sector, size, buffer, mode_word]);
+        hdd_state_clear(mem);
+        call(mem, FLUSH_CACHE, &[0]);
+        let sectors = size.cast_signed() / 2048;
+        let r = call(
+            mem,
+            SCE_CD_READ,
+            &[sector, sectors.cast_unsigned(), buffer, mode],
+        );
+        if mem.read::<u8>(mem.rebase(FFX_HDD_MODE)) != 0 {
+            ruled(mem, &mut call, CD_READ_TEXT);
+        }
+        r
+    }
 }

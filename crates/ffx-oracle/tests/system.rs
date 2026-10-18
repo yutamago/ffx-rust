@@ -18740,3 +18740,124 @@ fn round33_set_draw_info_matches_the_original_on_the_snapshot() {
     };
     round33_set_draw_info(&mut a, &mut b, &mut Xorshift(0x4033_0052));
 }
+
+/// Round 33 group F: the CD read queue's sector request
+/// (`0x0076ce40`/`0x0076ce20`) and the direct read (`0x0076d140`) over
+/// logging stand-ins for `movie_err`, `dbgPrintf`, `FlushCache` and
+/// `sceCdRead`.
+fn round33_cd_queue(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use cd::bridge as c;
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    let stands: Vec<Stand> = vec![
+        (c::MOVIE_ERR, vec![0, 1, 2], vec![], vec![]),
+        (c::DBG_PRINTF, vec![0], vec![], vec![]),
+        (c::FLUSH_CACHE, vec![0], vec![], vec![]),
+        (c::SCE_CD_READ, vec![0, 1, 2, 3], vec![], ret_cell(cells)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let channels = a.rebase(c::CD_CHANNELS);
+    // everything from the requests to the direct read's words
+    let span = (a.rebase(c::DIRECT_READ) + 0x10 - channels) / 4;
+    let saved: Vec<u32> = (0..span).map(|w| Mem::read(a, channels + 4 * w)).collect();
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        let full = k % 10 == 0;
+        for w in 0..span {
+            put(a, b, channels + 4 * w, rng.next());
+        }
+
+        for n in 0..64 {
+            let busy = full || !rng.next().is_multiple_of(8);
+            put(
+                a,
+                b,
+                channels + 0x38 * n + 0x31,
+                u8::from(busy) * [1u8, 2, 0xff][(rng.next() % 3) as usize],
+            );
+        }
+        set(
+            a,
+            b,
+            c::READ_ID,
+            [0i32, 5, 0xfffe, 0xffff, 0x10000, -1, -5][(rng.next() % 7) as usize],
+        );
+        let args = [rng.next(), rng.next(), rng.next()];
+        if k % 2 == 0 {
+            assert_eq!(
+                eax(a, 0x0076_ce40, &args),
+                c::queue_sector_read(b, args, call),
+                "queue {k}"
+            );
+        } else {
+            assert_eq!(
+                eax(a, 0x0076_ce20, &args[..1]),
+                c::queue_sector(b, args[0], call),
+                "queue1 {k}"
+            );
+        }
+        same_memory(&format!("queue {k}"), a, b);
+        for (w, v) in (0u32..).zip(&saved) {
+            put(a, b, channels + 4 * w, *v);
+        }
+    }
+    let mode = alloc(a, b, 4);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        put(a, b, mode, rng.next());
+        put(
+            a,
+            b,
+            a.rebase(c::FFX_HDD_MODE),
+            [0u8, 0, 1, 0x80][(rng.next() % 4) as usize],
+        );
+        put(a, b, a.rebase(0x0112_8a84), [rng.next(), rng.next()]);
+        put(a, b, a.rebase(0x0112_8ab0), rng.next());
+        let size = [
+            0u32,
+            0x7ff,
+            0x800,
+            0x801,
+            0x1_0000,
+            0xffff_f800,
+            0xffff_f7ff,
+            u32::MAX,
+            rng.next(),
+        ][(rng.next() % 9) as usize];
+        let buffer = [0x1000u32, 0x1040, 0x1001, 0x103f, rng.next()][(rng.next() % 5) as usize];
+        let args = [rng.next(), size, buffer, mode];
+        assert_eq!(
+            eax(a, 0x0076_d140, &args),
+            c::read_direct(b, args, call),
+            "direct {k}"
+        );
+        same_memory(&format!("direct {k}"), a, b);
+    }
+}
+
+#[test]
+fn round33_cd_queue_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_cd_queue(&mut a, &mut b, &mut Xorshift(0x4033_0061));
+}
+
+#[test]
+fn round33_cd_queue_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_cd_queue(&mut a, &mut b, &mut Xorshift(0x4033_0062));
+}
