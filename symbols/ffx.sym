@@ -11106,6 +11106,7 @@
 0x00901660 function TOMkpCrossEasyStrFontSClut # fh v3:exact+call.cs 0x00901660 cdecl
 0x009016b0 function TOMkpCrossExtMesFontLClut # fh v3:exact+call.cs 0x009016b0 cdecl
 0x00901700 function TOMkpCrossExtMesFontLClutTypeRGBA # fh v3:exact+call.cs 0x00901700 cdecl
+0x009019f0 function TOAdpCrossNumber_009019f0   # cdecl(value, x, y, colour, scale, gap): sprintf("%d") then TOAdpCrossFontM_FFX per glyph (9 words), right-aligned on x with (gap + 10) * scale per glyph; ported (system round 34); name ours
 0x00901c50 function TOMkpEasyMesFontLCenter   # fh v3:exact 0x00901c50
 0x00901f40 function TOMkpEasyStrFontM         # fh v3:bsim1.00 0x00901f40
 0x00902040 function TOMkpEasyStrFontS         # fh v3:exact 0x00902040

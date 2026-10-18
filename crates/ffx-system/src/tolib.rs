@@ -12495,4 +12495,57 @@ pub mod bridge {
             }
         }
     }
+
+    /// The text [`cross_number`] formats into (the original's 32-byte
+    /// stack buffer).
+    pub const CROSS_NUMBER_TEXT: u32 = 0x20;
+
+    /// `TOAdpCrossNumber_009019f0(value, x, y, colour, scale, gap)`:
+    /// `value` as `"%d"` (`sprintf(text, fmt, value)`, passed in; the format
+    /// `0x00b5f090`) drawn glyph by glyph with `TOAdpCrossFontM_FFX(p, x, y,
+    /// colour, 0x80, 0x80, 0x80, 0x80, scale)`, ending at `x`: the pen starts
+    /// at `x - scale * (n * (gap + 10) - gap)` for `n` characters (each
+    /// operation at 53 bits, stored as `f32`) and moves `(gap + 10) * scale`
+    /// (kept at 53 bits) per glyph, `TOSkipCode` stepping the text. `call`
+    /// takes `ffx.sym` addresses.
+    #[allow(clippy::many_single_char_names)] // the original's arguments
+    pub fn cross_number<M: Mem>(
+        mem: &mut M,
+        [value, x, y, colour, scale, gap]: [u32; 6],
+        text: u32,
+        sprintf: impl FnOnce(&mut M, [u32; 3]),
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87;
+        let fmt = mem.rebase(0x00b5_f090);
+        sprintf(mem, [text, fmt, value]);
+        let mut n = 0u32;
+        while mem.read::<u8>(text.wrapping_add(n)) != 0 {
+            n += 1;
+        }
+        let load = |bits: u32| x87::load(bits);
+        let (s, gap) = (load(scale), load(gap));
+        let wide = x87::add(10.0, gap);
+        // fild, then fstp dword
+        let count = f64::from(f32::from_bits(x87::store(f64::from(n.cast_signed()))));
+        let back = x87::mul(x87::sub(x87::mul(count, wide), gap), s);
+        let mut pen = x87::store(x87::sub(load(x), back));
+        // ("%d" gives at least one character)
+        if mem.read::<u8>(text) == 0 {
+            return;
+        }
+        let step = x87::mul(wide, s);
+        let y = x87::round_trip(f32::from_bits(y)).to_bits();
+        let scale = x87::round_trip(f32::from_bits(scale)).to_bits();
+        let mut p = text;
+        loop {
+            let args = [p, pen, y, colour, 0x80, 0x80, 0x80, 0x80, scale];
+            call(mem, 0x008e_c720, &args);
+            pen = x87::store(x87::add(load(pen), step));
+            p = call(mem, 0x008d_fd80, &[p]);
+            if mem.read::<u8>(p) == 0 {
+                return;
+            }
+        }
+    }
 }

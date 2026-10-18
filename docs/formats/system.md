@@ -1451,3 +1451,8 @@ pushed as literals (no relocation entries), not addresses.
     shadow and face and move x by the record's width `+0x1c` + 1.0; `0xb n`
     draws `0x008e9970(cursor, n, ftol(x), ftol(y))` and adds 22; returns
     `cursor` for an empty text.
+- `TOAdpCrossNumber_009019f0(value, x, y, colour, scale, gap)` formats
+  `"%d"` into a 32-byte local and draws each glyph with
+  `TOAdpCrossFontM_FFX(p, x, y, colour, 0x80, 0x80, 0x80, 0x80, scale)`
+  from `x - scale * (n * (gap + 10) - gap)` (each step at 53 bits, stored
+  `f32`), stepping `(gap + 10) * scale`, a double that is never stored.

@@ -19268,3 +19268,100 @@ fn round34_mes_writers_match_the_original_on_the_snapshot() {
     };
     round34_mes_writers(&mut a, &mut b, &mut Xorshift(0x4034_0022));
 }
+
+/// Round 34 group C: `TOAdpCrossNumber_009019f0` with the CRT `sprintf`
+/// (through its import slot) and logging stand-ins for the glyph writer
+/// (its text logged by its first word) and `TOSkipCode` (one byte).
+#[allow(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round34_cross_number(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    // the glyph's first byte only: what follows the NUL is the original's
+    // stack (mov eax, [esp+4]; movzx eax, byte [eax]; mov ecx, [cursor];
+    // mov [ecx], eax; add dword [cursor], 4)
+    let mut first_byte = vec![0x8b, 0x44, 0x24, 0x04, 0x0f, 0xb6, 0x00, 0x8b, 0x0d];
+    first_byte.extend_from_slice(&cursor.to_le_bytes());
+    first_byte.extend_from_slice(&[0x89, 0x01, 0x83, 0x05]);
+    first_byte.extend_from_slice(&cursor.to_le_bytes());
+    first_byte.push(4);
+    let s = stand_in8(
+        a,
+        b,
+        0,
+        &pick_logger(cursor, 0xc720, &[1, 2, 3, 4, 5, 6, 7, 8], &[], &first_byte),
+    );
+    redirect(a, b, 0x008e_c720, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x80,
+        &pick_logger(cursor, 0xfd80, &[], &[], &[0x8b, 0x44, 0x24, 0x04, 0x40]),
+    );
+    redirect(a, b, 0x008d_fd80, s);
+    let slot = a.rebase(0x00b0_c3dc);
+    let sprintf = |m: &mut Oracle, args: [u32; 3]| {
+        let f: u32 = Mem::read(m, slot);
+        m.call(f, Conv::Cdecl, &args).unwrap();
+    };
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let text = alloc(a, b, tolib::bridge::CROSS_NUMBER_TEXT as usize);
+    let quiet = |f: f32| if f.is_nan() { f32::NAN } else { f };
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        let value =
+            [0u32, 7, 42, 99_999, u32::MAX, 0x8000_0000, rng.next()][(rng.next() % 7) as usize];
+        let x = quiet(
+            [
+                (rng.next() % 4000) as f32 / 3.0,
+                f32::from_bits(rng.next()),
+                1e8,
+            ][(rng.next() % 3) as usize],
+        );
+        let y = quiet((rng.next() % 600) as f32 - 100.0);
+        let scale = quiet(
+            [
+                0.65f32,
+                1.0,
+                0.5,
+                (rng.next() % 100) as f32 / 37.0,
+                f32::from_bits(rng.next()),
+            ][(rng.next() % 5) as usize],
+        );
+        let gap = quiet(
+            [0.0f32, -1.5, 2.0, (rng.next() % 100) as f32 / 9.0 - 5.0][(rng.next() % 4) as usize],
+        );
+        let args = [
+            value,
+            x.to_bits(),
+            y.to_bits(),
+            rng.next(),
+            scale.to_bits(),
+            gap.to_bits(),
+        ];
+        eax(a, 0x0090_19f0, &args);
+        tolib::bridge::cross_number(b, args, text, sprintf, call);
+        let t: [u32; 8] = Mem::read(b, text);
+        Mem::write(a, text, t);
+        same_memory(&format!("cross number {k}"), a, b);
+    }
+}
+
+#[test]
+fn round34_cross_number_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round34_cross_number(&mut a, &mut b, &mut Xorshift(0x4034_0031));
+}
+
+#[test]
+fn round34_cross_number_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round34_cross_number(&mut a, &mut b, &mut Xorshift(0x4034_0032));
+}

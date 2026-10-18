@@ -1453,6 +1453,23 @@ ported! {
     TOAddPktMesFont1612_008ea060 @ 0x008e_a060 => extern "C" fn to_add_pkt_mes_font_1612(cursor: u32, text: u32, x: u32, y: u32, colour: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
         tolib::bridge::mes_font_1612(&mut mem(), [cursor, text, x, y, colour, r, g, b, a], call_sym)
     }
+    /// `TOAdpCrossNumber_009019f0(value, x, y, colour, scale, gap)`.
+    TOAdpCrossNumber_009019f0 @ 0x0090_19f0 => extern "C" fn to_adp_cross_number(value: u32, x: u32, y: u32, colour: u32, scale: u32, gap: u32) {
+        let mut frame = super::StackFrame::<8>::new();
+        let text = frame.at();
+        tolib::bridge::cross_number(
+            &mut mem(),
+            [value, x, y, colour, scale, gap],
+            text,
+            |m, args| {
+                #[allow(clippy::cast_possible_truncation)] // 32-bit process
+                let slot = crate::rebase(0x00b0_c3dc) as u32;
+                let f: u32 = m.read(slot);
+                call_ptr(m, f, &args);
+            },
+            call_sym,
+        );
+    }
     /// `Md5Digest_Less(b)`.
     Md5Digest_Less @ 0x0061_d6e0 => extern "thiscall" fn md5_digest_less(this: u32, b: u32) -> bool {
         vbf::bridge::less(&mem(), this, b)
