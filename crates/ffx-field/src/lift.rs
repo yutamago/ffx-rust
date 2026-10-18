@@ -42,8 +42,23 @@ impl Regs {
         self.res().cast_signed() < 0
     }
     pub(crate) fn pf(&self) -> bool {
-        (self.res() & 0xff).count_ones() % 2 == 0
+        (self.res() & 0xff).count_ones().is_multiple_of(2)
     }
+    /// `ja`: unsigned above (`cmp`), else not zero.
+    pub(crate) fn above(&self) -> bool {
+        if self.cmp {
+            self.flag.0 > self.flag.1
+        } else {
+            !self.zf()
+        }
+    }
+
+    #[allow(dead_code)] // the lifts so far test only above
+    /// `jb`: unsigned below (`cmp`); a test clears the carry.
+    pub(crate) fn below(&self) -> bool {
+        self.cmp && self.flag.0 < self.flag.1
+    }
+
     pub(crate) fn lt(&self) -> bool {
         if self.cmp {
             self.flag.0.cast_signed() < self.flag.1.cast_signed()
@@ -72,6 +87,7 @@ pub(crate) fn set(st: &mut [f64], i: usize, v: f64) {
 
 /// `fcom`: the condition bits of `a` against `b` (C0 below, C3 equal,
 /// all three unordered).
+#[allow(clippy::float_cmp)] // fcom: exact
 pub(crate) fn fcom(a: f64, b: f64) -> u8 {
     if a.is_nan() || b.is_nan() {
         0x45

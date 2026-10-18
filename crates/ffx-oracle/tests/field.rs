@@ -14741,3 +14741,91 @@ fn r1h_on_a_snapshot_matches_the_original() {
     let real = ffx_field::abmap::ABMAP.get(&t.b) != 0;
     r1h_cases(&mut t, &mut rng, !real);
 }
+
+/// The node kinds `AbmapDrawMap` tells apart, and two others.
+const R1H_KINDS: [u16; 9] = [
+    0x40, 0x2710, 0x2f00, 0x3000, 0x3200, 0x3500, 0x3600, 0x2f80, 0x3100,
+];
+
+/// `AbmapDrawMap` on `t`: a synthetic ability map (node count and
+/// records, node data blocks through the table at `0x01a85f78`, the view
+/// matrix), the packet buffer, the element draws copied.
+fn r1h_map_cases(t: &mut Twin, rng: &mut Xorshift) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (copies, pkt, ab, blocks) = (
+        t.alloc(4 + 0x84 * 64),
+        t.alloc(0x4_0000),
+        t.alloc(0x1_4000),
+        t.alloc(0x4_0000),
+    );
+    t.cave_from(
+        0x600,
+        &[(Some(0x0063_e930), abmap_element_stub(copies + 4))],
+    );
+    t.set(ffx_field::abmap::ABMAP, ab);
+    let (pp, table) = (t.b.rebase(0x01a8_60ec), t.b.rebase(0x01a8_5f78));
+    for i in 0..4u32 {
+        t.put(table + 4 * i, blocks + 0x1_0000 * i);
+    }
+    let work = t.stack_scratch(0x800);
+    let skip = [(t.b.rebase(0x00c8_f970), 0x30)];
+    let mut drawn = 0;
+    for k in 0..60u32 {
+        t.put(copies, 0u32);
+        t.put(pp, pkt);
+        t.fill(pkt, 0x100, rng);
+        // each node's kind (`+0x10`, also the offset of its data block)
+        for i in 0..4u32 {
+            let kind = R1H_KINDS[rng.below(9) as usize];
+            let p = blocks + 0x1_0000 * i;
+            t.put(p + 0x10, kind);
+            let d = p + u32::from(kind);
+            for w in 0..0x10u32 {
+                #[allow(clippy::cast_possible_truncation)]
+                t.put(d + 0x20 + 2 * w, rng.range(-300, 300) as i16);
+            }
+        }
+        let n = u16::try_from(k % 5).unwrap();
+        t.put(ab, n);
+        #[allow(clippy::cast_possible_truncation)]
+        for j in 0..8u32 {
+            let rec = ab + 8 + 0x10 * j;
+            for h in 0..8u32 {
+                t.put(rec + 2 * h, rng.range(-400, 400) as i16);
+            }
+            t.put(rec + 6, u16::try_from(rng.below(4)).unwrap());
+        }
+        for w in 0..0x10u32 {
+            let ident = if w % 5 == 0 { 1.0f32 } else { 0.0 };
+            #[allow(clippy::cast_precision_loss)]
+            let x = ident + rng.range(-100, 100) as f32 / 400.0;
+            t.put(ab + 0x113e0 + 4 * w, x.to_bits());
+        }
+        t.same_but(
+            "AbmapDrawMap",
+            &skip,
+            |o| o.eax(0x00a4_ce20, &[]),
+            |m| ffx_field::abmap_lift::abmap_draw_map(m, work, call),
+        );
+        drawn += t.b.read::<u32>(copies);
+    }
+    assert!(drawn > 20, "the cases draw elements ({drawn})");
+}
+
+/// `AbmapDrawMap` on the image.
+#[test]
+fn r1h_abmap_map_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0081_0003);
+    r1h_map_cases(&mut t, &mut rng);
+}
+
+/// `AbmapDrawMap` on the snapshot (`FFX_SNAPSHOT`), over a synthetic map.
+#[test]
+fn r1h_abmap_map_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0081_0004);
+    r1h_map_cases(&mut t, &mut rng);
+}

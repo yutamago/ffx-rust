@@ -12432,6 +12432,7 @@
 0x00a49440 function AbmapItemNodeEffect       # (node, ctx): AbmapItemUsableAt's callback: special kinds via 0x00a5d120, else the item's ability bits in the node's excel row unless activated for chr or hidden, ORed into ctx+0xc; name ours
 0x00a49590 function LoadSaveAbmap             # fh v3:exact 0x00a49590 +LoadSaveAbmap
 0x00a49f10 function AbmapDrawGridMarks        # (): the ability map's 17 x 20 grid marks (g_Abmap + 0x12e60, a byte a cell, origin g_Abmap + 0x1182c): a GS sprite packet per set cell at 0x01a860ec and graphicDrawUIAbmapElement(verts 0x80 bytes, scratch, 10) with the pulse of g_Abmap + 0x11698 & 0x1ff; from 0x00a54660; name ours; ported (field r3 H, lifted)
+0x00a4ce20 function AbmapDrawMap              # (): the ability map's main pass: per node (count i16 at g_Abmap, 16-byte records from +8, data through the table 0x01a85f78) AbmapMakeNodeMatrix, the view matrix g_Abmap + 0x113e0 through the emulated VU0 registers, GS packets at 0x01a860ec (Vec2SubScalarsFlags clipping), graphicDrawUIAbmapElement(verts, 0, 2); from 0x00a54660; name ours; ported (field r3 I, lifted)
 0x00a53570 function eiAbmCalc                 # fh v3:exact 0x00a53570
 0x00a53de0 function eiAbmDataInit             # fh v3:exact 0x00a53de0
 0x00a545a0 function eiAbmDraw                 # fh v3:exact 0x00a545a0

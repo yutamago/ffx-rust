@@ -34,6 +34,9 @@ pub const WORK: u32 = 0x300;
     clippy::unreadable_literal,
     clippy::match_same_arms,
     clippy::needless_late_init,
+    clippy::eq_op,
+    clippy::nonminimal_bool,
+    clippy::if_not_else,
     unused_braces,
     unused_assignments
 )]
