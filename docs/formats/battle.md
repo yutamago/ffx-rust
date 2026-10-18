@@ -875,6 +875,41 @@ then the first eight characters, the living monsters. The count of kind
 5 is 10 although its list is filled to 0x1f. `MsGetChrStatusBits_0078f930`
 returns an actor's `+0x606` in `ax`, the actor pointer's upper half above.
 
+### Party actors, treasures and random target lists
+
+`MsSetRamChrParam(chr)` (`0x0079c5f0`, `ffx_battle::save_param`) sets a
+party actor from its save record (`g_PlySave`, 0x94 bytes): maximum HP
+and MP (`+0x24`, `+0x28`, also the bases), the eight stats (`+0x5a8`: the
+base at `+0x5b0` plus the save's `+0x2f`, within 1-255, the seventh
+0-255), the weapon and armour (`+0x2d`, `+0x2e`). It clears the ability
+fields (`+0x5d8`-`+0x605`, `+0x62a`-`+0x63c`, `+0x641`-`+0x65b`,
+`+0x6bc`-`+0x6c1`; formula 1, power 0x10), then for each piece held
+(`MsGetSaveWeapon`) adds the weapon's formula and power (`+8`, `+9`), the
+critical bonus (`+0xa`) and each auto-ability's record: flags `+0x11`-
+`+0x15` into `+0x5d9`-`+0x5dd`, bytes `+0x16` (25) and `+0x2f` (13)
+added to `+0x5de` and `+0x5f7` within 0-0xfe, `+0x5e` into `+0x604`, the
+element words `+0x58`-`+0x5c` into `+0x630` (or `+0x636` with `+0x10`
+bit 0, setting `+0x63c`), bytes `+0x3c` (25) to `+0x641` within 0-0xff,
+the words `+0x60`-`+0x66` into `+0x65a`, `+0x6bc`, `+0x6be`, `+0x6c0`.
+Then `MsLimitStatusProcess` and HP, MP within the maxima (the MP is left
+in `eax`).
+
+`msFieldItemGet(i, spoils)` (`0x00799420`) hands out treasure `i` of the
+`takara` table (kind, amount, `u16` ID): kind 2 an item, 5 a piece of
+equipment from the `buki_get` table (0x10-byte records: the gear's bytes
+3-5 and 8-0xa, slots byte 7 but at least the abilities held, four
+abilities from `+8`, 0 as 0xff), 10 a key item (`+0xd1`, `+0xec`), any
+other kind gil (amount × 100 to `+0xcc`). Under language 0xb the record's
+item 0x2065 is written back as 0x2060 first.
+
+`MsGetTargetRandomList(chr, &n, shuffle)` (`0x007b7170`,
+`ffx_battle::cue`) lists each of the actor's targets
+(`MsGetTargetList`) once per hit it has left (`MsGetDamageInfo`) at the
+actor's `+0xd80`, at most 0x40
+(`MsBattleError("list_over")` past them, which hangs); with `shuffle`, n
+swaps of `i = brnd(0x10) % n` and `j = (i + 1 + (n < 3 ? 0 : brnd(0x10) %
+(n − 2))) % n`.
+
 ### Test stubs
 
 `battle_target`'s stub area from `Ms_Gui_BattleConsoleProc` to

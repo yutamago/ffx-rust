@@ -9391,6 +9391,9 @@ fn read_set_scene(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, 
     let font = [0, rng.next() | 1][rng.below(2) as usize];
     set(a, b, rd::FILE_TEXT_DATA, text);
     set(a, b, rd::FILE_FONT_DATA, font);
+    // a stale font and text table (cleared first)
+    set(a, b, ffx_battle::misc::bridge::FONT, rng.next() | 1);
+    set(a, b, rd::FILE_TEXT, rng.next() | 1);
     set(a, b, rd::EXE_MODE, [0, 0, 0, 1, -1][rng.below(5) as usize]);
     let music = [
         0x0010u16,

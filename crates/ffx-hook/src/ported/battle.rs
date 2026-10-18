@@ -3708,6 +3708,19 @@ ported! {
     MsGetChrStatusBits_0078f930 @ 0x0078_f930 => extern "C" fn ms_get_chr_status_bits(chr: u32) -> u32 {
         menu::ms_get_chr_status_bits(&mem(), chr)
     }
+    /// `MsSetRamChrParam(chr)`: a party actor from the save.
+    MsSetRamChrParam @ 0x0079_c5f0 => extern "C" fn ms_set_ram_chr_param(chr: u32) -> i32 {
+        sparam::ms_set_ram_chr_param(&mut mem(), chr)
+    }
+    /// `MsGetTargetRandomList(chr, &n, shuffle)`: `MsBattleError`
+    /// through the game.
+    MsGetTargetRandomList @ 0x007b_7170 => extern "C" fn ms_get_target_random_list(chr: u32, n: u32, shuffle: u32) -> u32 {
+        cue::ms_get_target_random_list(&mut mem(), &mut call_ptr, chr, n, shuffle)
+    }
+    /// `msFieldItemGet(i, spoils)`: `TOGetFFXLangJmp` through the game.
+    msFieldItemGet @ 0x0079_9420 => extern "C" fn ms_field_item_get(i: u32, spoils: u32) {
+        reward::ms_field_item_get(&mut mem(), &mut call_ptr, i, spoils);
+    }
     /// `MsWeaponNameNum_Weapon_007a1c00(gear)`.
     MsWeaponNameNum_Weapon_007a1c00 @ 0x007a_1c00 => extern "C" fn ms_weapon_name_num_weapon(at: u32) -> u32 {
         gear::ms_weapon_name_num_weapon(&mem(), at)

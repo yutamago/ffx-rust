@@ -347,6 +347,15 @@ pub mod bridge {
     /// first in party order, then the rest by index, 0xff after; `n` their
     /// number. Null, and `n` 0, for no actor.
     pub fn ms_get_target_list(mem: &mut impl Mem, chr: u32, n: u32) -> u32 {
+        let (list, count) = target_list(mem, chr);
+        if n != 0 {
+            mem.write(n, count);
+        }
+        list
+    }
+
+    /// [`ms_get_target_list`]'s list and count.
+    fn target_list(mem: &mut impl Mem, chr: u32) -> (u32, u32) {
         let c = chr & 0xff;
         let mut count = 0u32;
         let mut list = 0;
@@ -377,6 +386,66 @@ pub mod bridge {
             }
             for k in count..0x1f {
                 mem.write(list.wrapping_add(k), 0xffu8);
+            }
+        }
+        (list, count)
+    }
+
+    /// The most entries of a random target list.
+    pub const RANDOM_LIST_MAX: u32 = 0x40;
+    /// `"list_over"` (`.rdata`), `MsBattleError`'s message past
+    /// [`RANDOM_LIST_MAX`].
+    pub const LIST_OVER: u32 = 0x00b5_50a4;
+
+    /// `MsGetTargetRandomList(chr, &n, shuffle)` (`0x007b7170`): `chr`'s
+    /// (low byte) weighted target list at its `+0xd80`: each target of
+    /// [`ms_get_target_list`] as many times as its hits are left
+    /// ([`ms_get_damage_info`]), at most [`RANDOM_LIST_MAX`] (past them
+    /// `MsBattleError("list_over")`, which hangs). With `shuffle`, as many
+    /// swaps as entries: `i = brnd(0x10) % n`, `j = (i + 1 + (n < 3 ? 0 :
+    /// brnd(0x10) % (n − 2))) % n`. Their number into `n` unless null; the
+    /// list, null for no actor.
+    pub fn ms_get_target_random_list<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        chr: u32,
+        n: u32,
+        shuffle: u32,
+    ) -> u32 {
+        use crate::rng::bridge::brnd;
+        let c = chr & 0xff;
+        let mut count = 0i32;
+        let mut list = 0;
+        if ms_btl_chr_num_check(c) != 0 {
+            list = ms_get_chr(mem, c).wrapping_add(0xd80);
+            let (targets, k) = target_list(mem, c);
+            for t in 0..k {
+                let target: u8 = mem.read(targets.wrapping_add(t));
+                let hits = ms_get_damage_info(mem, c, target.into(), [0; 3]);
+                for _ in 0..hits.max(0) {
+                    if count.cast_unsigned() < RANDOM_LIST_MAX {
+                        mem.write(list.wrapping_add(count.cast_unsigned()), target);
+                        count += 1;
+                    } else {
+                        let msg = mem.rebase(LIST_OVER);
+                        crate::input::bridge::ms_battle_error(mem, &mut *call, msg);
+                    }
+                }
+            }
+            if shuffle != 0 {
+                let at = |k: i32| list.wrapping_add(k.cast_unsigned());
+                for _ in 0..count {
+                    let i = brnd(mem, 0x10).cast_signed() % count;
+                    let step = if count < 3 {
+                        0
+                    } else {
+                        brnd(mem, 0x10).cast_signed() % (count - 2)
+                    };
+                    let j = (step + 1 + i) % count;
+                    let (a, b): (u8, u8) = (mem.read(at(i)), mem.read(at(j)));
+                    mem.write(at(i), b);
+                    mem.write(at(j), a);
+                }
             }
         }
         if n != 0 {

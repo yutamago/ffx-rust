@@ -186,11 +186,25 @@ fn reward_record(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32) {
             &[[0, 0xff, 0x80, rng.byte()][rng.below(4) as usize]],
         );
     }
-    for k in 0..8 {
-        let item = [0u16, 0x2065, 0x2001, rng.word().to_le_bytes()[0].into()]
-            [rng.below(4) as usize]
-            | 0x2000;
-        poke(a, b, rec + 0xc + 2 * k, &item.to_le_bytes());
+    // drops (normal, rare per slot) at +0xc and, with overkill, +0x18;
+    // their counts at +0x14 and +0x20
+    for (items, counts) in [(0xc, 0x14), (0x18, 0x20)] {
+        for k in 0..4 {
+            let item = [
+                0x2065u16,
+                0x2065,
+                0x2001,
+                rng.word().to_le_bytes()[0].into(),
+            ][rng.below(4) as usize]
+                | 0x2000;
+            poke(a, b, rec + items + 2 * k, &item.to_le_bytes());
+            poke(
+                a,
+                b,
+                rec + counts + k,
+                &[u8::try_from(rng.below(5)).unwrap()],
+            );
+        }
     }
     let bribe = [0x2065u16, 0x2048, 0x2010][rng.below(3) as usize];
     poke(a, b, rec + 0x2a, &bribe.to_le_bytes());
@@ -203,13 +217,39 @@ fn reward_record(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32) {
         );
     }
     for k in 0..14 * 8 {
-        let id = match rng.below(6) {
+        let id = match rng.below(8) {
             0 => 0,
+            // other high bits (the group lookup keeps the low 12)
+            1 => u16::try_from(0x9000 + rng.below(0x81)).unwrap(),
+            2 => rng.word().to_le_bytes()[0].into(),
             _ => u16::try_from(0x8000 + rng.below(0x81)).unwrap(),
         };
         poke(a, b, rec + 0x32 + 2 * k, &id.to_le_bytes());
     }
 }
+
+/// Bribe factors and gil whose count depends on the x87 rounding the
+/// square root or the sum to `f32` (found by search: the count differs
+/// from one kept as a double, for one of the scales 20-30).
+const BRIBE_EDGES: [(u8, i32); 17] = [
+    (19, 3251),
+    (23, 3666),
+    (27, 3666),
+    (7, 33_238),
+    (9, 32_994),
+    (4, 74_571),
+    (5, 100_186),
+    (2, 298_284),
+    (3, 296_946),
+    (3, 88_191),
+    (2, 142_071),
+    (3, 163_975),
+    (3, 213_356),
+    (2, 246_310),
+    (2, 281_716),
+    (1, 351_166),
+    (1, 395_102),
+];
 
 /// `MsGetItem` and its parts for a monster killed by `chr`.
 fn rewards(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32) {
@@ -270,6 +310,13 @@ fn rewards(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
     );
     let paid = [0, 1, 1000, 123_456, -5, rng.next().cast_signed()][rng.below(6) as usize];
     poke(a, b, victim + 0x708, &paid.to_le_bytes());
+    // a bribe's factor and gil where the f32 roundings of the square root
+    // or the sum decide the count (for one of the 11 scales each)
+    if rng.below(2) == 0 {
+        let (factor, gil) = BRIBE_EDGES[rng.below(17) as usize];
+        poke(a, b, rec + 0x2c, &[factor]);
+        poke(a, b, victim + 0x708, &gil.to_le_bytes());
+    }
     let chr = [0, 3, 6, 7, 8, 0x13, rng.below(0x20)][rng.below(7) as usize];
     let overkill = [0, 1, 0x100, rng.next()][rng.below(4) as usize];
     let flags = rng.below(0x40) * [1, 1, 0x101][rng.below(3) as usize];
@@ -307,10 +354,68 @@ fn rewards(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u
         |m| r::new_gear(m, spoils).cast_unsigned(),
     );
     same("BattleRewards_NewGear", a, b);
-    let id = [0, 0x8000 + rng.below(0x81), rng.below(0x81)][rng.below(3) as usize];
+    let id = [0, 0x8000 + rng.below(0x81), rng.below(0x81), rng.word()][rng.below(4) as usize];
     twin("MsGetAbilityGroup", a, b, 0x0079_8a90, &[id], ALL, |m| {
         r::ability_group(m, id)
     });
+}
+
+/// `msFieldItemGet` (round 22) for treasure `i` into `spoils` (0x200
+/// bytes): the treasure table's records (kind, amount, ID) and the
+/// equipment table's, fake ones redrawn on the image; the gear count
+/// sometimes full; the language 1 or 0xb.
+fn field_items(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, spoils: u32) {
+    let mut call = game_call;
+    if synthetic {
+        let t = r::FIELD_ITEMS.get(b);
+        for k in 0..0x40 {
+            let kind = [0u8, 2, 5, 10, rng.byte()][rng.below(5) as usize];
+            let id = match kind {
+                5 => u16::try_from(rng.below(0x40)).unwrap(),
+                _ => [
+                    0x2065u16,
+                    0x2010,
+                    0xa000,
+                    rng.word().to_le_bytes()[0].into(),
+                ][rng.below(4) as usize],
+            };
+            let rec = [[kind, rng.byte()], id.to_le_bytes()].concat();
+            poke(a, b, t + 0x20 + 4 * k, &rec);
+        }
+        let e = r::FIELD_EQUIPMENT.get(b);
+        for k in 0..0x40 {
+            fill(a, b, rng, e + 0x20 + 0x10 * k, 8);
+            poke(
+                a,
+                b,
+                e + 0x20 + 0x10 * k + 7,
+                &[u8::try_from(rng.below(6)).unwrap()],
+            );
+            for slot in 0..4 {
+                let ability = match rng.below(4) {
+                    0 => 0,
+                    1 => 0xff,
+                    _ => u16::try_from(0x8000 + rng.below(0x81)).unwrap(),
+                };
+                poke(a, b, e + 0x28 + 0x10 * k + 2 * slot, &ability.to_le_bytes());
+            }
+        }
+    }
+    fill(a, b, rng, spoils, 0x200);
+    let gears = [0u8, 3, 7, 8, 0x80][rng.below(5) as usize];
+    poke(a, b, spoils + 0xd2, &[gears]);
+    poke(a, b, spoils + 0xd0, &[u8::try_from(rng.below(10)).unwrap()]);
+    let lang = [1, 0xb][rng.below(2) as usize];
+    for o in [&mut *a, &mut *b] {
+        let at = o.rebase(TO_GET_FFX_LANG);
+        o.stub_return(at, lang).unwrap();
+    }
+    let i = rng.below(0x40);
+    twin("msFieldItemGet", a, b, 0x0079_9420, &[i, spoils], 0, |m| {
+        r::ms_field_item_get(m, &mut call, i, spoils);
+        0
+    });
+    same("msFieldItemGet", a, b);
 }
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
@@ -335,8 +440,16 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         let t = battle_common::world::fake_records(a, b, rng, 0x100, 0x50);
         set(a, b, names_table, t);
     }
+    // the field's treasure and equipment tables, fake on the image
+    for (t, stride) in [(r::FIELD_ITEMS, 4), (r::FIELD_EQUIPMENT, 0x10)] {
+        if w.synthetic || !readable(a, t.get(b), 0x20) {
+            let f = battle_common::world::fake_records(a, b, rng, 0x40, stride);
+            set(a, b, t, f);
+        }
+    }
     let rec = scratch(a, b, 0x200);
     let gear = scratch(a, b, 0x20);
+    let spoils = scratch(a, b, 0x200);
     let families = families();
     for _ in 0..30_000 {
         names(a, b, rng, gear, &families);
@@ -345,6 +458,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     for round in 0..1500 {
         w.shuffle(a, b, rng, round);
         rewards(a, b, rng, &w, rec);
+        field_items(a, b, rng, w.synthetic, spoils);
     }
 }
 

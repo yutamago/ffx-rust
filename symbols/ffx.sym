@@ -5362,7 +5362,7 @@
 0x007990d0 function MsGetItem                 # gil, AP, two drop slots, overkill drops, bribe (spoils section 4); was Battle_GiveRewards; (chr, actor, rewards, overkill, flags); ported (battle round 22, ffx_battle::reward)
 0x007993b0 function MsSetWeaponName           # fh call.cs cdecl
 0x007993e0 function MsBtlGetClear_007993e0    # (p, kind) -> 8: MsStructClear(p, 0x1b0), halfwords +0xee.. = kind << 12 | i for i < 8; MsBtlGetInit's callee; name ours; ported (battle round 21)
-0x00799420 function msFieldItemGet            # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item; was Treasure_Give
+0x00799420 function msFieldItemGet            # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item; was Treasure_Give; any kind but 2/5/10 is gil (+0xcc); language 0xb writes item 0x2065 back as 0x2060; equipment slots = max(record byte 7, abilities held); ported (battle round 22, ffx_battle::reward)
 0x007995c0 function MsCheckSameSide           # (i, bits): MsGetRamChrMonster(i) == that of the first actor in bits, 1 when none; MsSetChrMimic; name ours
 0x00799610 function MsCheckTargetsGone        # (bits, command): 1 when an actor in bits lacks +0xdc8/+0xdd9 or is KO'd (unless command +0x1a bit 6), or bits empty; MsSetChrMimic; name ours
 0x00799690 function MsGetCommandFar           # fh v3:exact 0x007996a0
@@ -5426,7 +5426,7 @@
 0x0079c070 function MsSetRamChrCommand           # (chr, id, on): sets/clears bit id & 0xf of u16 word (id & 0xfff) >> 4 of the chr's command bitset +0x664 (MsGetChr); Switch MsSetRamChrCommand (0x71003694e0, 88 bytes, calls MsGetChr) sorts between MsSetRamChrAbility and MsSetRamChrData, as here; the battle porter's MsSetChrCommandFlag
 0x0079c0c0 function MsSetRamChrCommandUse        # layout: alphabetical run between MsSetRamChrAbility and MsSetRamChrData (2 unnamed in the gap); Switch 0x7100369540 MsSetRamChrCommandUse is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079c110 function MsSetRamChrData           # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty); was Battle_SetUpActors
-0x0079c5f0 function MsSetRamChrParam          # party actor from ply_save and equipment: weapon formula/power -> +0x5c1/+0x5c7, crit -> +0x5d8, a_ability records applied; was Battle_InitPartyActor
+0x0079c5f0 function MsSetRamChrParam          # party actor from ply_save and equipment: weapon formula/power -> +0x5c1/+0x5c7, crit -> +0x5d8, a_ability records applied; was Battle_InitPartyActor; eax at return: the clamped MP (MsCheckRange's last); ported (battle round 22, ffx_battle::save_param)
 0x0079cb10 function MsSetRamMonData           # fh v3:exact 0x0079cb30
 0x0079cb40 function MsMotBinFrame             # fh v3:exact 0x0079cb60
 0x0079ccd0 function MsRegMotionInit           # fh v3:bsim1.00 0x0079ccf0
@@ -6046,7 +6046,7 @@
 0x007b6c50 function MsGetBattleList           # fh v3:exact 0x007b6bd0
 0x007b6fb0 function MsGetTargetLinkList       # fh v3:exact 0x007b6f30
 0x007b7090 function MsGetTargetList           # fh v3:exact 0x007b7010
-0x007b7170 function MsGetTargetRandomList     # fh v3:exact 0x007b70f0
+0x007b7170 function MsGetTargetRandomList     # fh v3:exact 0x007b70f0; (chr, &n, shuffle) -> actor +0xd80: each target once per hit left, at most 0x40 (MsBattleError "list_over" past them), shuffled by n swaps; ported (battle round 22, ffx_battle::cue)
 0x007b7280 function MsGetTargetRandomList2    # fh switch:cg4 0x710037d720
 0x007b72c0 function MsGetTargetSortList       # fh v3:exact 0x007b7240
 0x007b78c0 function MsSetBallSpline           # fh v3:exact 0x007b7840; cdecl(i): move spline 2 rebuilt as the ball's arc for thrower i to catcher +0x14 by the ball state +0x420 (0/1 to 40 units in front of the catcher or its first target's move position + g_BtlBallOffset, moved on by the distance when the result is 1; 2/3 to the catcher's optional position 11; 7 midpoints each); ported (ffx_battle::predict, battle round 17)
@@ -15833,9 +15833,9 @@
 0x01135df0 label g_AtelCamOn               # u8; with 2 words after and 5 at 0x01134518, cleared by MsAtelCamInit
 0x01135e00 label g_BtlAbilityMap           # 8 x 0x1c bytes cleared by MsInitChrAbilityMap
 0x01135ff0 label g_BtlFieldItemSize        # u32 the size of directory 0xd file 0x19 (MsFieldItemRead)
-0x01135ff4 label g_BtlFieldItem            # u32: a buffer MsFieldItemFree frees and clears; name ours
+0x01135ff4 label g_BtlFieldItem            # u32: a buffer MsFieldItemFree frees and clears: the treasure (takara) table msFieldItemGet reads (kind, amount, u16 ID); name ours
 0x01135ff8 label g_BtlFieldItem2Size       # u32 the size of directory 0xd file 0x1a (MsFieldItemRead)
-0x01135ffc label g_BtlFieldItem2           # u32: the second buffer MsFieldItemFree frees and clears; name ours
+0x01135ffc label g_BtlFieldItem2           # u32: the second buffer MsFieldItemFree frees and clears: the treasures' equipment table (buki_get, 0x10-byte records: gear bytes 0-2, 4-6, slots 7, four abilities +8) msFieldItemGet reads; name ours
 0x01136000 label g_BtlMemCheck               # i32 work memory booked, from 0x40; MsMemCheckRegist (0x00799f00) adds size + 0x4f rounded to 64
 0x01136004 label g_BtlMemCheck2              # cleared by MsMemCheckInit (0x00799ee0)
 0x01136008 label g_BtlNoCommand            # MsGetComData's record for IDs of no table (kinds 0, 1, 5, 7, 9-0xb)

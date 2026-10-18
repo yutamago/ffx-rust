@@ -336,4 +336,90 @@ pub mod bridge {
             battle_rewards_add_gear(mem, chr, rewards, spoils);
         }
     }
+
+    /// The field's treasure table (`takara`, `g_BtlFieldItem`) and the
+    /// equipment it hands out (`buki_get`, `g_BtlFieldItem2`), both
+    /// `MsGetExcelData` tables.
+    pub const FIELD_ITEMS: Global<u32> = Global::new(0x0113_5ff4);
+    pub const FIELD_EQUIPMENT: Global<u32> = Global::new(0x0113_5ffc);
+
+    /// `msFieldItemGet(i, spoils)` (`0x00799420`): treasure `i`
+    /// ([`FIELD_ITEMS`]: kind byte `+0`, amount `+1`, `u16` ID `+2`) into
+    /// `spoils`. Under language 0xb ID 0x2065 is written back as 0x2060
+    /// first. Kind 2 an item (`BattleRewards_AddItem`), 5 a piece of
+    /// equipment ([`field_gear`]), 10 a key item (`+0xd1` set, ID at
+    /// `+0xec`), any other gil (amount × 100 added to `+0xcc`).
+    pub fn ms_field_item_get<M: Mem>(mem: &mut M, call: Call<'_, M>, i: u32, spoils: u32) {
+        let table = FIELD_ITEMS.get(mem);
+        let r = ffx_kernel::bridge::ms_get_excel_data(mem, i.cast_signed(), table, 0);
+        if game(mem, call, TO_GET_FFX_LANG_JMP, &[]) == 0xb
+            && r != 0
+            && mem.read::<u16>(r.wrapping_add(2)) == 0x2065
+        {
+            mem.write(r.wrapping_add(2), 0x2060u16);
+        }
+        let amount: u8 = mem.read(r.wrapping_add(1));
+        let id: u16 = mem.read(r.wrapping_add(2));
+        match mem.read::<u8>(r) {
+            2 => battle_rewards_add_item(mem, id.into(), amount.into(), spoils),
+            5 => field_gear(mem, id, spoils),
+            10 => {
+                mem.write(spoils.wrapping_add(0xd1), 1u8);
+                mem.write(spoils.wrapping_add(0xec), id);
+            }
+            _ => {
+                let gil: u32 = mem.read(spoils.wrapping_add(0xcc));
+                let gil = gil.wrapping_add(u32::from(amount) * 100);
+                mem.write(spoils.wrapping_add(0xcc), gil);
+            }
+        }
+    }
+
+    /// A treasure's piece of equipment: [`FIELD_EQUIPMENT`] record `id`
+    /// into the spoils' next gear record ([`new_gear`], none when full):
+    /// count byte `+2` 1, the record's bytes 0-2 at `+3`-`+5`, `+6` 0xff,
+    /// bytes 4-6 at `+8`-`+0xa`, its four abilities (`+8`, 0 as 0xff) and
+    /// slots (byte 7, at least the abilities' number); then its name and
+    /// the name's icon.
+    fn field_gear(mem: &mut impl Mem, id: u16, spoils: u32) {
+        let k = new_gear(mem, spoils);
+        if k < 0 {
+            return;
+        }
+        let table = FIELD_EQUIPMENT.get(mem);
+        let r = ffx_kernel::bridge::ms_get_excel_data(mem, i32::from(id), table, 0);
+        let gear = spoils
+            .wrapping_add(GEAR_RECORDS)
+            .wrapping_add(k.cast_unsigned().wrapping_mul(GEAR_RECORD));
+        mem.write(gear.wrapping_add(2), 1u8);
+        for (to, from) in [(3, 0), (4, 1), (5, 2), (8, 4), (9, 5), (0xa, 6)] {
+            let v: u8 = mem.read(r.wrapping_add(from));
+            mem.write(gear.wrapping_add(to), v);
+        }
+        mem.write(gear.wrapping_add(6), 0xffu8);
+        let mut held = 0u8;
+        for slot in 0..4 {
+            let ability = match mem.read::<u16>(r.wrapping_add(8 + 2 * slot)) {
+                0 => 0xff,
+                a => a,
+            };
+            mem.write(gear.wrapping_add(0xe + 2 * slot), ability);
+            if ability != 0xff {
+                held += 1;
+            }
+        }
+        let slots = mem.read::<u8>(r.wrapping_add(7)).max(held);
+        mem.write(gear.wrapping_add(0xb), slots);
+        let name = crate::gear::bridge::ms_weapon_name_num(mem, gear).to_le_bytes();
+        let name = u16::from_le_bytes([name[0], name[1]]);
+        mem.write(gear, name);
+        let owner: u8 = mem.read(gear.wrapping_add(4));
+        crate::menu::bridge::ms_weapon_name(
+            mem,
+            name.into(),
+            owner.into(),
+            0,
+            gear.wrapping_add(0xc),
+        );
+    }
 }

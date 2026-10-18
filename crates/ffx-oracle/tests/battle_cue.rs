@@ -190,6 +190,37 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, out: u32) {
         |m| cue::ms_get_target_list(m, c, outs[1]),
     );
     same("cue", a, b);
+    // the weighted target list (round 22), unless it would pass 0x40
+    // entries: the original then hangs in MsBattleError. The total from
+    // the same list and hits (both read-only here).
+    let list = cue::ms_get_target_list(b, c, 0);
+    if list != 0 {
+        let targets = b.read(list, 0x1f).unwrap();
+        let total: i32 = targets
+            .iter()
+            .take_while(|&&t| t != 0xff)
+            .map(|&t| cue::ms_get_damage_info(b, c, t.into(), [0; 3]).max(0))
+            .sum();
+        if total > 0x40 {
+            return;
+        }
+    }
+    let shuffle = [0, 1, rng.next()][rng.below(3) as usize];
+    twin(
+        "MsGetTargetRandomList",
+        a,
+        b,
+        0x007b_7170,
+        &[c, outs[1], shuffle],
+        ALL,
+        |m| {
+            let mut call = |m: &mut Oracle, f: u32, args: &[u32]| {
+                m.call(f, ffx_oracle::Conv::Cdecl, args).unwrap().eax
+            };
+            cue::ms_get_target_random_list(m, &mut call, c, outs[1], shuffle)
+        },
+    );
+    same("MsGetTargetRandomList", a, b);
 }
 
 fn commands(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, cmd: u32) {

@@ -432,4 +432,151 @@ pub mod bridge {
             crate::exchange::bridge::ms_btl_read_cue_regist(mem, s, 3, i, i, 0, 9);
         }
     }
+
+    /// The lowest value of each of a party actor's eight stats (`+0x5a8`:
+    /// the base at `+0x5b0` plus the save's `+0x2f` on, at most 255); the
+    /// seventh (`+0x5ae`) may be 0.
+    const STAT_FLOORS: [i32; 8] = [1, 1, 1, 1, 1, 1, 0, 1];
+
+    /// `*at |= v` (a byte).
+    fn or_byte(mem: &mut impl Mem, at: u32, v: u8) {
+        let old: u8 = mem.read(at);
+        mem.write(at, old | v);
+    }
+
+    /// `*at |= v` (a `u16`).
+    fn or_word(mem: &mut impl Mem, at: u32, v: u16) {
+        let old: u16 = mem.read(at);
+        mem.write(at, old | v);
+    }
+
+    /// The `n` bytes at `to` plus those at `from`, each within `0..=hi`.
+    fn add_bytes(mem: &mut impl Mem, to: u32, from: u32, n: u32, hi: i32) {
+        for k in 0..n {
+            let sum = i32::from(byte(mem, from, k)) + i32::from(byte(mem, to, k));
+            let v = ms_check_range(sum, 0, hi).to_le_bytes()[0];
+            mem.write(to.wrapping_add(k), v);
+        }
+    }
+
+    /// One auto-ability record's (`g_KernelAAbility`) effects added to a
+    /// party actor: flag bytes `+0x11`-`+0x15` into `+0x5d9`-`+0x5dd`;
+    /// `+0x16` (25 bytes) and `+0x2f` (13) added to `+0x5de` and `+0x5f7`
+    /// (each within 0-0xfe); `+0x5e` into `+0x604`; the words `+0x58`,
+    /// `+0x5a`, `+0x5c` into `+0x630`-`+0x634`, or with bit 0 of `+0x10`
+    /// into `+0x636`-`+0x63a` (and `+0x63c` set); `+0x3c` (25 bytes) added
+    /// to `+0x641` (within 0-0xff); the words `+0x60`-`+0x66` into
+    /// `+0x65a`, `+0x6bc`, `+0x6be`, `+0x6c0`.
+    fn add_auto_ability(mem: &mut impl Mem, actor: u32, r: u32) {
+        let at = |o: u32| actor.wrapping_add(o);
+        for k in 0..5 {
+            let v = byte(mem, r, 0x11 + k);
+            or_byte(mem, at(0x5d9 + k), v);
+        }
+        add_bytes(mem, at(0x5de), r.wrapping_add(0x16), 0x19, 0xfe);
+        add_bytes(mem, at(0x5f7), r.wrapping_add(0x2f), 0xd, 0xfe);
+        let v: u16 = mem.read(r.wrapping_add(0x5e));
+        or_word(mem, at(0x604), v);
+        let elements = if byte(mem, r, 0x10) & 1 != 0 {
+            mem.write(at(0x63c), 1u8);
+            0x636
+        } else {
+            0x630
+        };
+        for k in 0..3 {
+            let v: u16 = mem.read(r.wrapping_add(0x58 + 2 * k));
+            or_word(mem, at(elements + 2 * k), v);
+        }
+        add_bytes(mem, at(0x641), r.wrapping_add(0x3c), 0x19, 0xff);
+        for (to, from) in [(0x65a, 0x60), (0x6bc, 0x62), (0x6be, 0x64), (0x6c0, 0x66)] {
+            let v: u16 = mem.read(r.wrapping_add(from));
+            or_word(mem, at(to), v);
+        }
+    }
+
+    /// `MsSetRamChrParam(chr)` (`0x0079c5f0`): party actor `chr` from its
+    /// save record (`g_PlySave`, 0x94 bytes): maximum HP and MP (`+0x24`,
+    /// `+0x28` into `+0x594`/`+0x598` and the bases `+0x59c`/`+0x5a0`), the
+    /// stats (`+0x5a8`, [`STAT_FLOORS`]), the weapon and armour (`+0x2d`,
+    /// `+0x2e` into `+0x592`/`+0x593`). The equipment fields cleared
+    /// (formula 1 `+0x5c1`, power 0x10 `+0x5c7`), then for each piece the
+    /// save holds (`MsGetSaveWeapon`): the weapon's formula and power
+    /// (`+8`, `+9`), each piece's critical bonus (`+0xa`, a byte added to
+    /// `+0x5d8`) and each of its four auto-abilities but 0 and 0xff
+    /// ([`add_auto_ability`]). Then the overdrive statuses
+    /// (`MsLimitStatusProcess`, kept) and HP, MP within the maxima; the MP
+    /// is what the original leaves in `eax`.
+    pub fn ms_set_ram_chr_param(mem: &mut impl Mem, chr: u32) -> i32 {
+        let actor = ms_get_chr(mem, chr);
+        let at = |o: u32| actor.wrapping_add(o);
+        let save = PLY_SAVE
+            .ptr(mem)
+            .addr
+            .wrapping_add(chr.wrapping_mul(PLY_SAVE_SIZE));
+        let hp: u32 = mem.read(save.wrapping_add(0x24));
+        let mp: u32 = mem.read(save.wrapping_add(0x28));
+        for (o, v) in [(0x594, hp), (0x598, mp), (0x59c, hp), (0x5a0, mp)] {
+            mem.write(at(o), v);
+        }
+        for (k, floor) in (0u32..).zip(STAT_FLOORS) {
+            let sum = i32::from(byte(mem, actor, 0x5b0 + k)) + i32::from(byte(mem, save, 0x2f + k));
+            let v = ms_check_range(sum, floor, 0xff).to_le_bytes()[0];
+            mem.write(at(0x5a8 + k), v);
+        }
+        let equipment = [byte(mem, save, 0x2d), byte(mem, save, 0x2e)];
+        mem.write(at(0x592), equipment[0]);
+        mem.write(at(0x593), equipment[1]);
+        let pieces = equipment.map(|id| ms_get_save_weapon(mem, id.into(), 0));
+        mem.write(at(0x5c1), 1u8);
+        mem.write(at(0x5c7), 0x10u8);
+        // the ability fields: +0x5d8..+0x605, +0x62a..+0x63c,
+        // +0x641..+0x65b, +0x6bc..+0x6c1
+        for (from, to) in [
+            (0x5d8, 0x606),
+            (0x62a, 0x63d),
+            (0x641, 0x65c),
+            (0x6bc, 0x6c2),
+        ] {
+            mem.write_bytes(
+                at(from),
+                &vec![0; usize::try_from(to - from).unwrap_or_default()],
+            );
+        }
+        for (k, &piece) in pieces.iter().enumerate() {
+            if piece == 0 {
+                continue;
+            }
+            if k == 0 {
+                let formula = byte(mem, piece, 8);
+                let power = byte(mem, piece, 9);
+                mem.write(at(0x5c1), formula);
+                mem.write(at(0x5c7), power);
+            }
+            let critical = byte(mem, actor, 0x5d8).wrapping_add(byte(mem, piece, 0xa));
+            mem.write(at(0x5d8), critical);
+            for slot in 0..4 {
+                let ability: u16 = mem.read(piece.wrapping_add(0xe + 2 * slot));
+                if ability == 0 || ability == 0xff {
+                    continue;
+                }
+                let table = ffx_kernel::bridge::A_ABILITY.get(mem);
+                let r = ffx_kernel::bridge::ms_get_excel_data(
+                    mem,
+                    i32::from(ability & 0xfff),
+                    table,
+                    0,
+                );
+                add_auto_ability(mem, actor, r);
+            }
+        }
+        crate::flow::bridge::ms_limit_status_process(mem, actor, -1);
+        let mut last = 0;
+        for (value, max) in [(0x5d0, 0x594), (0x5d4, 0x598)] {
+            let v: i32 = mem.read(at(value));
+            let hi: i32 = mem.read(at(max));
+            last = ms_check_range(v, 0, hi);
+            mem.write(at(value), last);
+        }
+        last
+    }
 }
