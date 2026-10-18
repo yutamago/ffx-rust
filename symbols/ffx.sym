@@ -15415,6 +15415,8 @@
 0x011a0063 label    g_OpEtChrShow             # byte: the last op_et_chr_show argument
 0x011a0065 label    g_OpEtBindOff             # byte: while set op_et_bindeff (and op_et_bindeff2's encounter part) do nothing
 0x011a0067 label    g_OpWotTrigger               # set by op_wot_triger, read by op_ot_draw
+0x011a006a label    g_OpOvlEffectOn           # byte: op_ovl_effect_init (0x007fcdd0) sets 1, op_ovl_effect_free clears it; the mdc transfer cues run only while set
+0x011a006c label    g_OpusCameraLimit         # i16: an opus camera command (case 9) sets 0x1000 + its depth, case 10 and op_ovl_effect_init clear it; nonzero turns on the screen-depth limit
 0x011a0080 label    g_EtBindDefault           # u16 bind flags; op_et_bind_default_water keeps the water bits (0x3400) at 0x800
 0x011a0083 label    g_OpOef2BattleStreamPlaying # byte, op_oef2_se_on / op_oef2_se_3d_on set it to 1 before starting a battle stream
 0x011a03a0 label    g_OpOef2ClutCues             # ring of 64 CLUT masks (op_oef2_tex_clut_cue_check, op_oef2_tex_clut_cue_trans)

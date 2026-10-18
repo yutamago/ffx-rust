@@ -181,6 +181,11 @@ pub mod bridge {
         op_func_ot_set(mem, func, a, b, c, 0x40)
     }
 
+    /// `op_func_final_set(func, a, b, c)` (`0x007eb410`): list 0x60.
+    pub fn op_func_final_set(mem: &mut impl Mem, func: u32, a: u32, b: u32, c: u32) -> i32 {
+        op_func_ot_set(mem, func, a, b, c, 0x60)
+    }
+
     /// `op_func_before_ot_free(slot)` (`0x007eb350`): list 0.
     pub fn op_func_before_ot_free(mem: &mut impl Mem, slot: u32) {
         op_func_ot_free(mem, slot, 0);
@@ -1112,6 +1117,35 @@ pub mod bridge {
     /// `g_OpOef2BattleStreamPlaying` (`0x011a0083`): set by
     /// `op_oef2_se_on` when it starts a battle stream.
     pub const BATTLE_STREAM_ON: Global<u8> = Global::new(0x011a_0083);
+    /// `g_OpOvlEffectOn` (`0x011a006a`): set by `op_ovl_effect_init`,
+    /// cleared by `op_ovl_effect_free`; the mdc transfer cues run only
+    /// while it is set.
+    pub const OVL_EFFECT_ON: Global<u8> = Global::new(0x011a_006a);
+    /// `g_OpusCameraLimit` (`0x011a006c`): 0x1000 plus the camera command
+    /// 9's depth while the camera limit is on, 0 when off.
+    pub const CAMERA_LIMIT: Global<u16> = Global::new(0x011a_006c);
+
+    /// `op_ovl_effect_init()` (`0x007fcdd0`): every texture/CLUT overlay
+    /// and oef2 sound slot freed (`op_oef2_tex_clut_ovl_clear(0xffff)`,
+    /// `op_oef2_sep_free_all(0xffff)`), the mdc transfer cues dropped,
+    /// battle clipping turned off (`opus_clip_off_all_in_battle`), then
+    /// [`OVL_EFFECT_ON`] = 1, [`CAMERA_LIMIT`] = 0 and
+    /// [`BATTLE_STREAM_ON`] = 0. Its `dbgPrintf` is a bare `ret`. Returns
+    /// `eax` as left: 0.
+    pub fn op_ovl_effect_init<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        op_oef2_tex_clut_ovl_clear(mem, 0xffff);
+        op_oef2_sep_free_all(mem, 0xffff, call);
+        op_mdc_mem_transfer_cue_free_all(mem);
+        crate::opus::bridge::opus_clip_off_all_in_battle(mem, call);
+        OVL_EFFECT_ON.set(mem, 1);
+        CAMERA_LIMIT.set(mem, 0);
+        BATTLE_STREAM_ON.set(mem, 0);
+        0
+    }
+
     /// `g_OpOef2SoundCueHead`/`Count` (`0x023c3640`/`0x023c3642`) and the
     /// 32-entry ring of cues (`0x023c3540`) and their arguments
     /// (`0x023c35c0`).

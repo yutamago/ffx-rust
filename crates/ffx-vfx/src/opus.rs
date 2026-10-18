@@ -62,6 +62,47 @@ pub mod bridge {
         u32::from(nz)
     }
 
+    /// `opus_mimic_check(chr)` (`0x0080f630`): the `g_EtChr` record of
+    /// character `chr` (`opus_get_chr_status_index(chr, 0, 0)`, the record
+    /// before the table for none) when its number (`+4`) is one of the
+    /// mimic models 0x10fb, 0x10fc, 0x10fd or 0x1100; else 0.
+    pub fn opus_mimic_check(mem: &mut impl Mem, chr: u32) -> u32 {
+        let i = crate::et::bridge::opus_get_chr_status_index(mem, chr, 0, 0, &mut |_, _, _| 0);
+        let rec = crate::et::bridge::CHR
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.cast_unsigned().wrapping_mul(0x20));
+        let no: u32 = mem.read(rec.wrapping_add(4));
+        if matches!(no, 0x10fb..=0x10fd | 0x1100) {
+            rec
+        } else {
+            0
+        }
+    }
+
+    /// `Ch_GetRootGlobalMatrix(chr, out)`, called through `call`.
+    const CH_GET_ROOT_GLOBAL_MATRIX: u32 = 0x0083_3f80;
+
+    /// `opus_chara_root_m_get(out, chr)` (`0x00805400`): a character's
+    /// original matrix (`Ch_GetOrgMatrix`: the pointer at `chr + 0x10c`)
+    /// copied to `out` when it has one (`op_m_copy`), else its root
+    /// global matrix (`Ch_GetRootGlobalMatrix(chr, out)`). Returns `eax`
+    /// as left: the original matrix's address, or the callee's result.
+    pub fn opus_chara_root_m_get<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let org: u32 = mem.read(chr.wrapping_add(0x10c));
+        if org != 0 {
+            crate::op::bridge::op_m_copy(mem, out, org);
+            return org;
+        }
+        let f = Global::<u32>::new(CH_GET_ROOT_GLOBAL_MATRIX).ptr(mem).addr;
+        call(mem, f, &[chr, out])
+    }
+
     /// `Ch_OptposGetElement(chr, i, out)`, called through `call`.
     const CH_OPTPOS_GET_ELEMENT: u32 = 0x0083_5660;
     /// `Ch_ElemGetBaseMatrix(chr, e, out)`, called through `call`.
@@ -788,6 +829,41 @@ pub mod bridge {
                 let c: u16 = mem.read(set.wrapping_add(0x38));
                 mem.write(set.wrapping_add(0x38), c.wrapping_add(1));
                 return 0;
+            }
+            i = i.wrapping_add(1);
+        }
+        u32::MAX
+    }
+
+    /// `opus_prog_on(set, list)` (`0x00801700`): like
+    /// [`opus_list_add`], but the id put into the first free (negative)
+    /// `i16` of list `list` is the first part (0x100 bytes from `[set +
+    /// 0x20]`, among the same `u16 +0x34` - 1) whose first word is 0
+    /// (`is_ptr32_null`), and `u16 +0x38` up by one. Both indexes are
+    /// `i16`. Returns that part's number in `ax` over the list address's
+    /// high half (`eax` as left); -1 when no list entry or no part is
+    /// free.
+    pub fn opus_prog_on(mem: &mut impl Mem, set: u32, list: u32) -> u32 {
+        let count = u32::from(mem.read::<u16>(set.wrapping_add(0x34)).wrapping_sub(1)).cast_signed();
+        let table: u32 = mem.read(set.wrapping_add(0x10).wrapping_add(list.wrapping_mul(4)));
+        let idx = |i: i16| i32::from(i).cast_unsigned();
+        let mut i = 0i16;
+        while i32::from(i) < count {
+            let at = table.wrapping_add(idx(i).wrapping_mul(2));
+            if mem.read::<i16>(at) < 0 {
+                let mut k = 0i16;
+                while i32::from(k) < count {
+                    let parts: u32 = mem.read(set.wrapping_add(0x20));
+                    let first: u32 = mem.read(parts.wrapping_add(idx(k) << 8));
+                    if first == 0 {
+                        mem.write(at, k);
+                        let c: u16 = mem.read(set.wrapping_add(0x38));
+                        mem.write(set.wrapping_add(0x38), c.wrapping_add(1));
+                        return table & 0xffff_0000 | u32::from(k.cast_unsigned());
+                    }
+                    k = k.wrapping_add(1);
+                }
+                return u32::MAX;
             }
             i = i.wrapping_add(1);
         }

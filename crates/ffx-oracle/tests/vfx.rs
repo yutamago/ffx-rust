@@ -2365,6 +2365,7 @@ fn program_table_matches_the_original() {
 const OP_FUNC_BEFORE_OT_SET: u32 = 0x007e_b370;
 const OP_FUNC_AFTER_OT3D_SET: u32 = 0x007e_b320;
 const OP_FUNC_BEFORE_WOT_SET: u32 = 0x007e_b3c0;
+const OP_FUNC_FINAL_SET: u32 = 0x007e_b410;
 const OP_FUNC_BEFORE_OT_FREE: u32 = 0x007e_b350;
 const OP_FUNC_AFTER_OT3D_FREE: u32 = 0x007e_b300;
 const OP_FUNC_BEFORE_WOT_FREE: u32 = 0x007e_b3a0;
@@ -2375,7 +2376,7 @@ type OtSet = fn(&mut Oracle, u32, u32, u32, u32) -> i32;
 #[test]
 fn op_wrappers_match_the_original() {
     use op::bridge as o;
-    let sets: [(&str, u32, OtSet); 3] = [
+    let sets: [(&str, u32, OtSet); 4] = [
         (
             "op_func_before_ot_set",
             OP_FUNC_BEFORE_OT_SET,
@@ -2391,6 +2392,7 @@ fn op_wrappers_match_the_original() {
             OP_FUNC_BEFORE_WOT_SET,
             o::op_func_before_wot_set,
         ),
+        ("op_func_final_set", OP_FUNC_FINAL_SET, o::op_func_final_set),
     ];
     let frees: [(&str, u32, ById); 3] = [
         (
@@ -6883,6 +6885,20 @@ fn round10b_helpers_match_the_original() {
                     )
                 },
             );
+            // opus_mimic_check: the same table, now and then a mimic
+            for i in 0..240u32 {
+                let no = if rng.chance(40) {
+                    rng.pick(&[0x10fa, 0x10fb, 0x10fc, 0x10fd, 0x10fe, 0x1100, 0x1101])
+                } else {
+                    rng.next()
+                };
+                p.set(chr_tab + 0x20 * i + 4, no);
+            }
+            let no = rng.pick(&[0x10fbu32, 0x1100, 0x10ff, 7]);
+            p.set(chr_tab - 0x1c, no);
+            p.check("opus_mimic_check", 0x0080_f630, &[chr], |m| {
+                Some(opus::bridge::opus_mimic_check(m, chr))
+            });
             // op_xyz_scale
             for i in 0..4 {
                 let x = rng.float();
@@ -7280,6 +7296,9 @@ fn round10e_helpers_match_the_original() {
             (0x0078_0cb0, &[], Some(cells)),
             (0x0082_aa30, &[0, 0], None),
             (0x00a5_e2b0, &[0, 0], None),
+            // op_oef2_sep_free_all's sound calls (op_ovl_effect_init)
+            (0x0088_6eb0, &[0], None),
+            (0x0088_6d80, &[0], None),
         ] {
             deref_recorder_with(&mut p, sym, words, ret);
         }
@@ -7331,6 +7350,26 @@ fn round10e_helpers_match_the_original() {
                     m,
                     &mut call_original,
                 ))
+            });
+            // op_ovl_effect_init: the same clipping, with overlays, sound
+            // slots and mdc cues to free
+            let ovl = p.sym(op::bridge::OEF2_CLUT_OVL.sym);
+            for k in 0..64 {
+                p.set(ovl + 4 * k, if rng.chance(50) { 0 } else { rng.next() });
+            }
+            let seps = p.sym(op::bridge::OEF2_SEPS.sym);
+            for k in 0..32u32 {
+                p.set(seps + 8 * k, rng.next());
+                p.set(seps + 8 * k + 4, 1u32 << rng.below(17));
+            }
+            let cues = p.sym(op::bridge::MDC_TRANSFER_CUES.sym);
+            p.fill(cues, 0x80, &mut rng);
+            for g in [0x011a_006au32, 0x011a_006c, 0x011a_0083] {
+                let s = p.sym(g);
+                p.set(s, rng.next());
+            }
+            p.check("op_ovl_effect_init", 0x007f_cdd0, &[], |m| {
+                Some(op::bridge::op_ovl_effect_init(m, &mut call_original))
             });
             // op_ivec4_to_fvec4
             p.fill(src, 0x10, &mut rng);
@@ -8633,6 +8672,7 @@ fn round18_helpers_match_the_original() {
         let (out, v) = (p.alloc(0x10), p.alloc(0x10));
         let chr = p.sym(0x012a_22c0);
         let (set, list) = (p.alloc(0x40), p.alloc(0x40));
+        let parts = p.alloc(0x2100);
         for _ in 0..3000 {
             // 0x00749050
             p.fill(out, 0x10, &mut rng);
@@ -8678,6 +8718,16 @@ fn round18_helpers_match_the_original() {
                     id as u16,
                     k,
                 ))
+            });
+            // opus_prog_on: the same list, parts with a free one now and then
+            for i in 0..0x21u32 {
+                let w = if rng.chance(6) { 0 } else { rng.next() | 1 };
+                p.set(parts + 0x100 * i, w);
+            }
+            p.set(set + 0x20, parts);
+            p.set(set + 0x34, rng.pick(&[0u16, 1, 2, 9, 0x20, 0x21]));
+            p.check("opus_prog_on", 0x0080_1700, &[set, k], |o| {
+                Some(opus::bridge::opus_prog_on(&mut Capped::new(o), set, k))
             });
         }
     }
@@ -10735,6 +10785,56 @@ fn opus_mdc_packets_match_the_original() {
                     None
                 },
             );
+        }
+    }
+}
+
+#[test]
+fn opus_chara_root_m_get_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_5400);
+        let out = p.alloc(0x40);
+        let org = p.alloc(0x40);
+        let fake = p.alloc(0x200);
+        // real characters on a snapshot: the g_EtChr handles
+        let chr_at = p.sym(et::bridge::CHR.sym);
+        let mut handles = Vec::new();
+        if p.snapshot() {
+            for i in 0..et::bridge::CHRS {
+                let h: u32 = p.get(chr_at + 0x20 * i);
+                if h != 0 && !handles.contains(&h) {
+                    handles.push(h);
+                }
+            }
+        }
+        if handles.is_empty() {
+            // Ch_GetRootGlobalMatrix stands in: a result, no matrix
+            let root = p.sym(0x0083_3f80);
+            for o in [&mut p.a, &mut p.b] {
+                o.stub_return(root, 0x1234_5678).unwrap();
+            }
+        }
+        for _ in 0..200 {
+            p.fill(out, 0x40, &mut rng);
+            p.fill(org, 0x40, &mut rng);
+            let chr = if !handles.is_empty() && rng.chance(60) {
+                rng.pick(&handles)
+            } else {
+                // with real characters a made-up one takes only the copy:
+                // Ch_GetRootGlobalMatrix would read its garbage
+                p.fill(fake, 0x200, &mut rng);
+                let no_org = handles.is_empty() && rng.chance(50);
+                p.set(fake + 0x10c, if no_org { 0 } else { org });
+                fake
+            };
+            p.check("opus_chara_root_m_get", 0x0080_5400, &[out, chr], |m| {
+                Some(opus::bridge::opus_chara_root_m_get(
+                    m,
+                    out,
+                    chr,
+                    &mut call_original,
+                ))
+            });
         }
     }
 }

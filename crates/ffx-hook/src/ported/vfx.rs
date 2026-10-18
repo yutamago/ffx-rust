@@ -1332,6 +1332,10 @@ ported! {
     opus_chr_width_00800cd0 @ 0x0080_0cd0 => extern "C" fn opus_chr_width(chr: u32, battle: u32) -> f32 {
         opus::bridge::opus_chr_width(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `op_ovl_effect_init()`.
+    op_ovl_effect_init @ 0x007f_cdd0 => extern "C" fn op_ovl_effect_init() -> u32 {
+        op::bridge::op_ovl_effect_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opus_clip_off_all_in_battle()`.
     opus_clip_off_all_in_battle @ 0x0080_0bb0 => extern "C" fn opus_clip_off_all_in_battle() -> u32 {
         opus::bridge::opus_clip_off_all_in_battle(&mut mem(), &mut |_, f, a| call_ptr(f, a))
@@ -1630,6 +1634,10 @@ ported! {
     /// `op_et_chr_slot_007fead0(chr)`.
     op_et_chr_slot_007fead0 @ 0x007f_ead0 => extern "C" fn op_et_chr_slot(chr: u32) -> u32 {
         et::bridge::op_et_chr_slot(&mem(), chr)
+    }
+    /// `opus_prog_on(set, list)`.
+    opus_prog_on @ 0x0080_1700 => extern "C" fn opus_prog_on(set: u32, list: u32) -> u32 {
+        opus::bridge::opus_prog_on(&mut mem(), set, list)
     }
     /// `opus_list_add_00801780(set, id, list)`.
     opus_list_add_00801780 @ 0x0080_1780 => extern "C" fn opus_list_add(set: u32, id: u32, list: u32) -> u32 {
@@ -2254,6 +2262,14 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32;
         opus::bridge::opus_get_bone_matrix(&mut mem(), out, chr, bone, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_mimic_check(chr)`.
+    opus_mimic_check @ 0x0080_f630 => extern "C" fn opus_mimic_check(chr: u32) -> u32 {
+        opus::bridge::opus_mimic_check(&mut mem(), chr)
+    }
+    /// `opus_chara_root_m_get(out, chr)`.
+    opus_chara_root_m_get @ 0x0080_5400 => extern "C" fn opus_chara_root_m_get(out: u32, chr: u32) -> u32 {
+        opus::bridge::opus_chara_root_m_get(&mut mem(), out, chr, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opus_rt_m_chara(m, chr, k, angles, trans, battle)`.
     opus_rt_m_chara @ 0x0080_62c0 => extern "C" fn opus_rt_m_chara(m: u32, chr: u32, k: u32, angles: u32, trans: u32, battle: u32) {
         // the original's 16-byte scale local, at [ebp - 0x20]
@@ -2361,6 +2377,10 @@ ported! {
     /// `op_func_before_wot_set(func, a, b, c)`.
     op_func_before_wot_set @ 0x007e_b3c0 => extern "C" fn op_func_before_wot_set(func: u32, a: u32, b: u32, c: u32) -> i32 {
         op::bridge::op_func_before_wot_set(&mut mem(), func, a, b, c)
+    }
+    /// `op_func_final_set(func, a, b, c)`.
+    op_func_final_set @ 0x007e_b410 => extern "C" fn op_func_final_set(func: u32, a: u32, b: u32, c: u32) -> i32 {
+        op::bridge::op_func_final_set(&mut mem(), func, a, b, c)
     }
     /// `op_func_before_ot_free(slot)`.
     op_func_before_ot_free @ 0x007e_b350 => extern "C" fn op_func_before_ot_free(slot: u32) {
