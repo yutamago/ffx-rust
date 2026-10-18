@@ -450,4 +450,186 @@ pub mod bridge {
         let f = mem.rebase(decoder);
         call(mem, f, &[block, data, packed, buffer])
     }
+
+    /// The file name `PcFileName_00a42c00` builds.
+    pub const PC_FILE_NAME: u32 = 0x01a8_5c30;
+    /// Set by `SetGlobal_01a85ba4` (a debug tweak): use the 200-thunder
+    /// `kami0400.ebp`.
+    pub const THUNDER_200: Global<u32> = Global::new(0x01a8_5ba4);
+    /// `Sg_GetUserName2()`.
+    pub const SG_GET_USER_NAME2: u32 = 0x0082_0620;
+    /// `ReturnGlobalSx8_006bc960()`: the sign-extended byte at `0x00cccab8`.
+    pub const RETURN_GLOBAL_SX8: u32 = 0x006b_c960;
+    /// `dbgPrintf(format, ...)`.
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    /// `"Virtuos ERR: bad filename location (loc var?), loc = %d\n"`.
+    pub const BAD_LOC_FORMAT: u32 = 0x00b7_ad5c;
+    /// `"file name NULL !!!!!\n"`.
+    pub const NAME_NULL_FORMAT: u32 = 0x00b7_ad98;
+    /// The three name rewrites at the end of `PcFileName_00a42c00`: the
+    /// file and the prefix put before it.
+    pub const NAME_PREFIXES: [(&[u8], &[u8]); 3] = [
+        (b"nagi0000.ebp", b"dbg_"),
+        (b"kami0400.ebp", b"200thunder_"),
+        (b"nagi0700.ebp", b"full_"),
+    ];
+
+    /// The C string at `s`: `out[j..]` gets every byte of it, the NUL
+    /// included, each re-read after the store before it (the original's
+    /// loop); returns `j` past the NUL.
+    fn copy_name(mem: &mut impl Mem, out: u32, mut j: u32, s: u32) -> u32 {
+        let first: u8 = mem.read(s);
+        mem.write(out.wrapping_add(j), first);
+        j = j.wrapping_add(1);
+        if mem.read::<u8>(s) != 0 {
+            let mut p = s;
+            loop {
+                let c: u8 = mem.read(p.wrapping_add(1));
+                p = p.wrapping_add(1);
+                mem.write(out.wrapping_add(j), c);
+                j = j.wrapping_add(1);
+                if mem.read::<u8>(p) == 0 {
+                    break;
+                }
+            }
+        }
+        j
+    }
+
+    /// Whether `$USER$` starts at `at` (bytes read up to the first that
+    /// differs).
+    fn user_tag_at(mem: &impl Mem, at: u32) -> bool {
+        (0..6).all(|k: u32| mem.read::<u8>(at.wrapping_add(k)) == b"$USER$"[k as usize])
+    }
+
+    /// `strstr(out, name)`, then `sprintf(out, "%s%s%s", head, prefix,
+    /// name)` with `head` the bytes before the match: `prefix` goes in
+    /// before the first `name` and whatever followed `name` is cut. The
+    /// original copies `head` to a 256-byte local first (`strncpy` over a
+    /// zeroed buffer; a head of 256 bytes or more overruns it).
+    fn put_prefix(mem: &mut impl Mem, out: u32, name: &[u8], prefix: &[u8]) {
+        let mut text = Vec::new();
+        loop {
+            let c: u8 = mem.read(out.wrapping_add(u32::try_from(text.len()).unwrap_or(u32::MAX)));
+            if c == 0 {
+                break;
+            }
+            text.push(c);
+        }
+        let Some(pos) = text.windows(name.len()).position(|w| w == name) else {
+            return;
+        };
+        let mut at = out.wrapping_add(u32::try_from(pos).unwrap_or(u32::MAX));
+        for &c in prefix.iter().chain(name).chain(&[0]) {
+            mem.write(at, c);
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// `PcFileName_00a42c00(loc)`: the PC file name of entry `loc` of the
+    /// file-name table (`[GetCD() + 0x30]`: a count, then offsets from the
+    /// table; entry `loc` runs from offset `loc` to offset `loc + 1`),
+    /// built in [`PC_FILE_NAME`], which it returns. `$USER$` becomes
+    /// `Sg_GetUserName2()` (unless that is null) and each set read-name
+    /// substitution its replacement; then `dbg_` goes before
+    /// `nagi0000.ebp` when `ReturnGlobalSx8_006bc960()`, `200thunder_`
+    /// before `kami0400.ebp` with [`THUNDER_200`], `full_` before
+    /// `nagi0700.ebp` with [`FULL_ARENA_LOCALIZATION`]. Returns 0 after
+    /// `dbgPrintf("file name NULL")` without a table, for an empty entry
+    /// or one at address 0; a `loc` at or past the count (signed) prints
+    /// the bad location first.
+    ///
+    /// Each substitution overwrites the name from the byte that matched
+    /// (the copy's NUL included), and the scan goes on from the last byte
+    /// matched and the last byte written: the later substitutions are
+    /// tried from there, and the next byte is copied after them. `call`
+    /// takes an `ffx.sym` address.
+    pub fn pc_file_name<M: Mem>(
+        mem: &mut M,
+        loc: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table: u32 = mem.read(get_cd(mem).wrapping_add(0x30));
+        let mut src = 0;
+        if table != 0 {
+            if loc < mem.read::<i32>(table) {
+                let entry = table.wrapping_add(loc.cast_unsigned().wrapping_mul(4));
+                let start: u32 = mem.read(entry.wrapping_add(4));
+                let end: u32 = mem.read(entry.wrapping_add(8));
+                if end.wrapping_sub(start).cast_signed() > 0 {
+                    src = start.wrapping_add(table);
+                }
+            } else {
+                let format = mem.rebase(BAD_LOC_FORMAT);
+                call(mem, DBG_PRINTF, &[format, loc.cast_unsigned()]);
+            }
+        }
+        if src == 0 {
+            let format = mem.rebase(NAME_NULL_FORMAT);
+            call(mem, DBG_PRINTF, &[format]);
+            return 0;
+        }
+        let user = call(mem, SG_GET_USER_NAME2, &[]);
+        let out = mem.rebase(PC_FILE_NAME);
+        let first: u8 = mem.read(src);
+        mem.write(out, first);
+        // `out[j]` holds the copy of `src[i]`
+        let (mut i, mut j) = (0u32, 0u32);
+        if mem.read::<u8>(src) != 0 {
+            loop {
+                if user_tag_at(mem, src.wrapping_add(i)) {
+                    if user != 0 {
+                        j = copy_name(mem, out, j, user).wrapping_sub(2);
+                        i = i.wrapping_add(5);
+                    }
+                } else {
+                    let from_table = CHGNAME_FROM.ptr(mem).addr;
+                    let to_table = CHGNAME_TO.ptr(mem).addr;
+                    for t in 0..16u32 {
+                        let from: u32 = mem.read(from_table.wrapping_add(4 * t));
+                        if from == 0 {
+                            continue;
+                        }
+                        let at = src.wrapping_add(i);
+                        let mut k = 0u32;
+                        if mem.read::<u8>(at) != 0 {
+                            loop {
+                                let c: u8 = mem.read(from.wrapping_add(k));
+                                if c == 0 || mem.read::<u8>(at.wrapping_add(k)) != c {
+                                    break;
+                                }
+                                k = k.wrapping_add(1);
+                                if mem.read::<u8>(at.wrapping_add(k)) == 0 {
+                                    break;
+                                }
+                            }
+                        }
+                        if mem.read::<u8>(from.wrapping_add(k)) == 0 {
+                            let to: u32 = mem.read(to_table.wrapping_add(4 * t));
+                            j = copy_name(mem, out, j, to).wrapping_sub(2);
+                            i = i.wrapping_add(k).wrapping_sub(1);
+                        }
+                    }
+                }
+                i = i.wrapping_add(1);
+                j = j.wrapping_add(1);
+                let c: u8 = mem.read(src.wrapping_add(i));
+                mem.write(out.wrapping_add(j), c);
+                if mem.read::<u8>(src.wrapping_add(i)) == 0 {
+                    break;
+                }
+            }
+        }
+        let [(nagi0000, dbg), (kami0400, thunder), (nagi0700, full)] = NAME_PREFIXES;
+        if call(mem, RETURN_GLOBAL_SX8, &[]) != 0 {
+            put_prefix(mem, out, nagi0000, dbg);
+        }
+        if THUNDER_200.get(mem) != 0 {
+            put_prefix(mem, out, kami0400, thunder);
+        }
+        if FULL_ARENA_LOCALIZATION.get(mem) != 0 {
+            put_prefix(mem, out, nagi0700, full);
+        }
+        out
+    }
 }

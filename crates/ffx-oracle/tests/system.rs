@@ -18159,3 +18159,184 @@ fn round33_keth_and_clusters_match_the_original_on_the_snapshot() {
     };
     round33_keth_and_clusters(&mut a, &mut b, &mut Xorshift(0x4033_0012), false);
 }
+
+/// Round 33 group B: `PcFileName_00a42c00` over stand-ins for
+/// `Sg_GetUserName2`, `ReturnGlobalSx8_006bc960` and `dbgPrintf`. No
+/// empty substitution pattern: one makes the original loop forever (it
+/// matches without advancing), and it is the only way to reach the
+/// scan's "at the NUL" branch. Heads stay under the original's 256-byte
+/// local.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round33_pc_file_name(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, real_table: bool) {
+    let log = alloc(a, b, 0x2000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x10);
+    // the format only: the "file name NULL" print passes no second word
+    let s = stand_in8(a, b, 0x200, &copy_logger(cursor, 0xf500, 1, &[]));
+    redirect(a, b, cd::bridge::DBG_PRINTF, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x280,
+        &copy_logger(cursor, 0x0620, 0, &ret_cell(cells)),
+    );
+    redirect(a, b, cd::bridge::SG_GET_USER_NAME2, s);
+    let s = stand_in8(
+        a,
+        b,
+        0x300,
+        &copy_logger(cursor, 0xc960, 0, &ret_cell(cells + 4)),
+    );
+    redirect(a, b, cd::bridge::RETURN_GLOBAL_SX8, s);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let cd_table = cd::bridge::get_cd(a) + 0x30;
+    let strings = alloc(a, b, 0x400);
+    let text = |a: &mut Oracle, b: &mut Oracle, at: &mut u32, s: &[u8]| {
+        let p = *at;
+        a.write(p, s).unwrap();
+        b.write(p, s).unwrap();
+        put(a, b, p + s.len() as u32, 0u8);
+        *at += s.len() as u32 + 1;
+        p
+    };
+    let mut at = strings;
+    let users = [
+        text(a, b, &mut at, b"tidus"),
+        text(a, b, &mut at, b""),
+        text(a, b, &mut at, b"x"),
+    ];
+    let pattern_texts: [&[u8]; 6] = [b"ab", b"c", b"nagi", b"$USE", b"bc", b"0000"];
+    let patterns: Vec<u32> = pattern_texts
+        .iter()
+        .map(|s| text(a, b, &mut at, s))
+        .collect();
+    let replacement_texts: [&[u8]; 4] = [b"Q", b"", b"long_", b"ab"];
+    let replacements: Vec<u32> = replacement_texts
+        .iter()
+        .map(|s| text(a, b, &mut at, s))
+        .collect();
+    let pieces: [&[u8]; 12] = [
+        b"ab",
+        b"c",
+        b"$USER$",
+        b"$USE",
+        b"$USER",
+        b"/x/",
+        b"nagi0000.ebp",
+        b"kami0400.ebp",
+        b"nagi0700.ebp",
+        b"bc",
+        b"0000",
+        b"nagi",
+    ];
+    let set_flags = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift| {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            [0, users[0], users[1], users[2]][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 4,
+            [0u32, 1, 0xffff_ff80][(rng.next() % 3) as usize],
+        );
+        set(a, b, cd::bridge::THUNDER_200, rng.next() % 2);
+        set(a, b, cd::bridge::FULL_ARENA_LOCALIZATION, rng.next() % 2);
+        for t in 0..16 {
+            let p = if rng.next().is_multiple_of(3) {
+                (
+                    patterns[(rng.next() % 6) as usize],
+                    replacements[(rng.next() % 4) as usize],
+                )
+            } else {
+                (0, rng.next())
+            };
+            put(a, b, cd::bridge::CHGNAME_FROM.ptr(a).addr + 4 * t, p.0);
+            put(a, b, cd::bridge::CHGNAME_TO.ptr(a).addr + 4 * t, p.1);
+        }
+    };
+    if real_table {
+        // the snapshot's own table, with and without substitutions
+        let table: u32 = Mem::read(a, cd_table);
+        let count: i32 = if table == 0 { 0 } else { Mem::read(a, table) };
+        for k in 0..count.clamp(0, 400) {
+            set_flags(a, b, rng);
+            if k % 2 == 0 {
+                for t in 0..16 {
+                    put(a, b, cd::bridge::CHGNAME_FROM.ptr(a).addr + 4 * t, 0u32);
+                }
+            }
+            assert_eq!(
+                eax(a, 0x00a4_2c00, &[k.cast_unsigned()]),
+                cd::bridge::pc_file_name(b, k, call),
+                "real name {k}"
+            );
+            same_memory(&format!("real name {k}"), a, b);
+        }
+    }
+    let table = alloc(a, b, 0x800) + 0x20;
+    for k in 0..600u32 {
+        set_flags(a, b, rng);
+        let n = rng.next() % 6 + 1;
+        put(a, b, table, n);
+        let mut off = 4 * (n + 3);
+        let mut at = table + off;
+        for e in 0..=n {
+            put(a, b, table + 4 + 4 * e, off);
+            if e == n {
+                break;
+            }
+            // the byte before an entry: 0 or not
+            put(a, b, at - 1, (rng.next() % 2) as u8 * b'z');
+            let mut name = Vec::new();
+            for _ in 0..rng.next() % 6 {
+                name.extend_from_slice(pieces[(rng.next() % 12) as usize]);
+            }
+            name.push(0);
+            a.write(at, &name).unwrap();
+            b.write(at, &name).unwrap();
+            at += name.len() as u32 + 1;
+            off += name.len() as u32 + 1;
+        }
+        let mut loc: i32 = (rng.next() % (n + 3)).cast_signed() - 1;
+        match k % 20 {
+            // an empty entry and a reversed one
+            3 => put(a, b, table + 8, Mem::read::<u32>(a, table + 4)),
+            4 => put(a, b, table + 8, Mem::read::<u32>(a, table + 4) - 1),
+            // an entry at address 0
+            5 => put(a, b, table + 4, table.wrapping_neg()),
+            // no table
+            6 => put(a, b, cd_table, 0u32),
+            _ => put(a, b, cd_table, table),
+        }
+        if (3..=5).contains(&(k % 20)) {
+            loc = 0;
+            put(a, b, cd_table, table);
+        }
+        assert_eq!(
+            eax(a, 0x00a4_2c00, &[loc.cast_unsigned()]),
+            cd::bridge::pc_file_name(b, loc, call),
+            "file name {k} ({loc})"
+        );
+        same_memory(&format!("file name {k} ({loc})"), a, b);
+    }
+}
+
+#[test]
+fn round33_pc_file_name_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round33_pc_file_name(&mut a, &mut b, &mut Xorshift(0x4033_0021), false);
+}
+
+#[test]
+fn round33_pc_file_name_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round33_pc_file_name(&mut a, &mut b, &mut Xorshift(0x4033_0022), true);
+}

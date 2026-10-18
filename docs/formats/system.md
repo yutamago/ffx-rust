@@ -1312,3 +1312,21 @@ pushed as literals (no relocation entries), not addresses.
   header's `+0x18` (`+0x20` for pointer arrays, the low byte of the flag
   word) or `+0x1c`; `records` starts at `[out + 4]` and advances 16 or 28
   bytes per entry. Both return 0.
+- `PcFileName_00a42c00(loc)` builds the PC file name of entry `loc` of the
+  CD's name table (`[GetCD() + 0x30]`: a count, then `count + 1` offsets
+  from the table) in `0x01a85c30` and returns it (Ghidra's `void` is
+  wrong; `CDfileName_PC` and the file-size readers use the result), or 0
+  after `dbgPrintf("file name NULL !!!!!\n")` when there is no table, the
+  entry is empty or reversed, or its address is 0; a `loc` at or past the
+  count first prints `"Virtuos ERR: bad filename location ..."`. While
+  copying, `$USER$` becomes `Sg_GetUserName2()` (skipped when that is
+  null) and every set read-name substitution (`set_read_chgname`'s 16
+  pairs) its replacement. A substitution overwrites the copy from the
+  matched byte with the replacement and its NUL and resumes at the last
+  byte matched and written, so the later pairs are tried there too. An
+  empty pattern never advances: the original loops forever. Afterwards
+  `dbg_` goes before `nagi0000.ebp` when `ReturnGlobalSx8_006bc960()`,
+  `200thunder_` before `kami0400.ebp` with `0x01a85ba4`, and `full_`
+  before `nagi0700.ebp` with `g_FullArenaLocalization`
+  (`sprintf("%s%s%s", head, prefix, name)`: anything after the name is
+  cut).

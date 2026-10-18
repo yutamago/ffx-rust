@@ -1358,6 +1358,10 @@ ported! {
     Cluster_UnpackPointerFixups @ 0x0060_db20 => extern "C" fn cluster_unpack_pointer_fixups(out: u32, cursor: u32, lists: u32) -> u32 {
         fixup::bridge::unpack_pointer_fixups(&mut mem(), out, cursor, lists, call_sym)
     }
+    /// `PcFileName_00a42c00(loc)`.
+    PcFileName_00a42c00 @ 0x00a4_2c00 => extern "C" fn pc_file_name(loc: i32) -> u32 {
+        cd::bridge::pc_file_name(&mut mem(), loc, call_sym)
+    }
     /// `updateVFXKeThSetPoint(mesh, i)`.
     updateVFXKeThSetPoint @ 0x0076_69c0 => extern "C" fn update_vfx_keth_set_point(mesh: u32, i: i32) -> u32 {
         render::bridge::keth_set_point(&mut mem(), mesh, i)
