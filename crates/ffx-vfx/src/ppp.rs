@@ -283,6 +283,59 @@ pub mod bridge {
         p.set(mem, v.to_bits());
     }
 
+    /// The packet buffer `pppSendPacket` fills (`0x010d5640`): a 0x14-byte
+    /// head, then the data.
+    pub const SEND_PACKET: Global<u32> = Global::new(0x010d_5640);
+    /// The RPC client `pppSendPacket` calls (`0x010e7644`).
+    pub const SEND_CLIENT: Global<u32> = Global::new(0x010e_7644);
+
+    /// `pppSendPacket(rpc, tag, data, n)` (`0x0076b3d0`): waits for
+    /// [`WAIT_DONE`], then builds the packet at [`SEND_PACKET`]: `u16 +0` =
+    /// the size `n + 0x14` (also `rpc +8`, `rpc +0x10` = the packet), `u16
+    /// +2` = 0, `u16 +4` = `rpc +4`, `u16 +6` = 0x4845, `+8`/`+0xc` = 0,
+    /// `+0x10` the four bytes at `tag`, the `n` data bytes after
+    /// (`memcpy`). [`WAIT_DONE`] = 0 around `FlushCache(0)` and
+    /// `FFXSifCallRpc(client, 1, 0, packet, size, 0, 0, 0, 0)` (through
+    /// `call`), then 1. Returns 0.
+    pub fn ppp_send_packet<M: Mem>(
+        mem: &mut M,
+        rpc: u32,
+        tag: u32,
+        data: u32,
+        n: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        while WAIT_DONE.get(mem) == 0 {
+            // another thread clears the wait (pppClearWait)
+            std::hint::spin_loop();
+            std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+        }
+        let pk = SEND_PACKET.ptr(mem).addr;
+        mem.write(rpc.wrapping_add(0x10), pk);
+        mem.write(rpc.wrapping_add(8), n.wrapping_add(0x14));
+        let size: u32 = mem.read(rpc.wrapping_add(8));
+        let id: u32 = mem.read(rpc.wrapping_add(4));
+        #[allow(clippy::cast_possible_truncation)] // the u16 fields
+        mem.write(pk, [size as u16, 0, id as u16, 0x4845]);
+        mem.write(pk.wrapping_add(8), [0u32; 2]);
+        let t: [u8; 4] = mem.read(tag);
+        mem.write(pk.wrapping_add(0x10), t);
+        for i in 0..n {
+            let b: u8 = mem.read(data.wrapping_add(i));
+            mem.write(pk.wrapping_add(0x14 + i), b);
+        }
+        WAIT_DONE.set(mem, 0);
+        let flush = Global::<u32>::new(0x0062_f4c0).ptr(mem).addr;
+        call(mem, flush, &[0]);
+        let size: u32 = mem.read(rpc.wrapping_add(8));
+        let at: u32 = mem.read(rpc.wrapping_add(0x10));
+        let client = SEND_CLIENT.ptr(mem).addr;
+        let rpc_call = Global::<u32>::new(0x00a4_4750).ptr(mem).addr;
+        call(mem, rpc_call, &[client, 1, 0, at, size, 0, 0, 0, 0]);
+        WAIT_DONE.set(mem, 1);
+        0
+    }
+
     /// `pppClearWait()` (`0x0076b200`).
     pub fn ppp_clear_wait(mem: &mut impl Mem) {
         WAIT_DONE.set(mem, 1);
