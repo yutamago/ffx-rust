@@ -737,6 +737,75 @@ pub mod bridge {
         ptr
     }
 
+    /// `opf_sph(host, ptr)` (`0x008155b0`): the unit on a sphere around the
+    /// unit `opus_no_get(host +0x300, unit, u16 +0xa0)`: the host's matrix
+    /// (`+0`) = identity turned by the unit's angles `+0x30` and moved to
+    /// that unit's `+0x90` (`op_unit_m`, `op_rt_m`); `host +0x40` = the
+    /// unit's `+0x40` / 16 (`op_xyz_scale`) through that matrix
+    /// (`op_apply_m_w1`), copied to the emulated `v0` (`0x00c8f528`) and
+    /// to the unit's `+0x90..+0x98` (the first two at the byte offset
+    /// `g_pppColorConShift`, which is then cleared). Returns `ptr`.
+    pub fn opf_sph(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        use crate::op::bridge as op;
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let no = u32::from(mem.read::<u16>(unit.wrapping_add(0xa0)));
+        let base = opus_no_get(mem, host.wrapping_add(0x300), unit, no);
+        crate::small::bridge::op_unit_m(mem, host);
+        op::op_rt_m_zyx(
+            mem,
+            host,
+            host,
+            unit.wrapping_add(0x30),
+            base.wrapping_add(0x90),
+        );
+        let k: u32 = mem.read(g(mem, 0x00b5_8354));
+        let v = host.wrapping_add(0x40);
+        op::op_xyz_scale(mem, v, unit.wrapping_add(0x40), crate::x87::load(k));
+        op::op_apply_m_w1(mem, v, host, v);
+        let w: [u32; 4] = mem.read(v);
+        mem.write(g(mem, 0x00c8_f528), w);
+        let shift = crate::rand::bridge::COLOR_CON_SHIFT.get(mem);
+        mem.write(shift.wrapping_add(unit).wrapping_add(0x90), w[0]);
+        let shift = crate::rand::bridge::COLOR_CON_SHIFT.get(mem);
+        let w1: u32 = mem.read(g(mem, 0x00c8_f52c));
+        mem.write(shift.wrapping_add(unit).wrapping_add(0x94), w1);
+        let w2: u32 = mem.read(g(mem, 0x00c8_f530));
+        crate::rand::bridge::COLOR_CON_SHIFT.set(mem, 0);
+        mem.write(unit.wrapping_add(0x98), w2);
+        ptr
+    }
+
+    /// `opf_spl_gw(host, ptr)` (`0x00815670`): the unit on the spline of
+    /// the unit `opus_no_get(host +0x300, unit, u16 +0xa0)` (its record at
+    /// `+0xbc`: `i16` point count `+0`, flag byte `+7`, points `+8`, tangents
+    /// `+0xc`) at `t` = the unit's float at the signed byte offset `+0xa2`
+    /// / 256 (rounded to `f32`): `op_spline_xyz` into the host's `+0`, then
+    /// scaled into the unit's `+0x90` by 16 when the flag is set, else 1
+    /// (`op_xyz_scale`). Returns 0.
+    pub fn opf_spl_gw(mem: &mut impl Mem, host: u32, ptr: u32) -> u32 {
+        use crate::op::bridge as op;
+        let _ = ptr;
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let no = u32::from(mem.read::<u16>(unit.wrapping_add(0xa0)));
+        let base = opus_no_get(mem, host.wrapping_add(0x300), unit, no);
+        let sp: u32 = mem.read(base.wrapping_add(0xbc));
+        let n = i32::from(mem.read::<i16>(sp)).cast_unsigned();
+        let off = i32::from(mem.read::<i8>(unit.wrapping_add(0xa2))).cast_unsigned();
+        let c: f64 = mem.read(g(mem, 0x00b5_0198));
+        let t = Reg::load_f32(f(mem, off.wrapping_add(unit)))
+            .constant(MUL, c)
+            .store();
+        let (pts, tan): (u32, u32) = (mem.read(sp.wrapping_add(8)), mem.read(sp.wrapping_add(0xc)));
+        op::op_spline_xyz(mem, host, crate::x87::load_f32(t), pts, tan, n);
+        let k = if mem.read::<u8>(sp.wrapping_add(7)) != 0 {
+            crate::x87::load(mem.read(g(mem, 0x00b9_231c)))
+        } else {
+            1.0f32.to_bits()
+        };
+        op::op_xyz_scale(mem, unit.wrapping_add(0x90), host, k);
+        0
+    }
+
     /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
     /// plain unit (slot 0 of `0x00c492c8`): the emulated VU registers
     /// `0x00c8f934..93c` take `0x00c8f53c..544`, `0x00c8f538` and

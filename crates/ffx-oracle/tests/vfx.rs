@@ -11527,3 +11527,95 @@ fn opf_circles_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn opf_sph_and_spl_gw_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_55b0);
+        let host = p.alloc(0x400);
+        let parts = p.alloc(0x1000);
+        let idx = p.alloc(0x60);
+        let spl2 = p.alloc(0x10);
+        let (spl, pts, xs, scratch) = (
+            p.alloc(0x10),
+            p.alloc(0x100),
+            p.alloc(0x100),
+            p.alloc(0x100),
+        );
+        let ptr = rng.next();
+        for round in 0..3000 {
+            p.fill(host, 0x400, &mut rng);
+            for k in 0..0x400 {
+                let v = rng.float();
+                p.set(parts + 4 * k, v);
+            }
+            let list = host + 0x300;
+            p.set(list + 0x20, parts);
+            for (k, at) in [0x14u32, 0x10, 0x18].into_iter().enumerate() {
+                let l = idx + 0x20 * u32::try_from(k).unwrap();
+                p.set(list + at, l);
+                p.set(l, 0xffffu16);
+            }
+            for i in 0..16 {
+                let u = parts + 0x100 * i;
+                p.set(u + 0x1a, u16::try_from(rng.below(8)).unwrap());
+                p.set(u + 0x1c, u16::try_from(rng.below(16)).unwrap());
+                p.set(u + 0x1e, u8::try_from(rng.below(2)).unwrap());
+                p.set(u + 0xbc, if rng.chance(50) { spl } else { spl2 });
+                if rng.chance(20) {
+                    p.set(u, 0u32);
+                }
+            }
+            let unit = parts + 0x100 * (1 + rng.below(15));
+            p.set(host + 0x220, unit);
+            let n = rng.below(8) + 2;
+            p.set(unit + 0xa0, rng.pick(&[0xff00u16, 0xffff, 0, 3]));
+            if round % 2 == 0 {
+                // a shift keeps the first two stores inside the unit
+                p.put(
+                    rand::bridge::COLOR_CON_SHIFT,
+                    rng.pick(&[0u32, 0, 4, 8, 0x10]),
+                );
+                p.check("opf_sph", 0x0081_55b0, &[host, ptr], |m| {
+                    Some(opus::bridge::opf_sph(m, host, ptr))
+                });
+                continue;
+            }
+            // spline records: n knots, slopes, the flag byte
+            p.set(spl2, u16::try_from(rng.below(8) + 2).unwrap());
+            p.set(spl2 + 7, u8::from(rng.chance(50)));
+            p.set(spl2 + 8, pts + 0x10);
+            p.set(spl2 + 0xc, xs);
+            p.set(spl, u16::try_from(n).unwrap());
+            p.set(spl + 7, u8::from(rng.chance(50)));
+            p.set(spl + 8, pts);
+            p.set(spl + 0xc, xs);
+            let mut x = 0f32;
+            for i in 0..16 {
+                x += f32::from_bits(finite(&mut rng)).abs().min(50.0);
+                p.set(xs + 4 * i, x);
+            }
+            for i in 16..48 {
+                let d = finite(&mut rng);
+                p.set(xs + 4 * i, d);
+            }
+            for i in 0..0x40 {
+                let v = finite(&mut rng);
+                p.set(pts + 4 * i, v);
+            }
+            let o = rng.pick(&[0x40i8, 0x4c, -0x10]);
+            p.set(unit + 0xa2, o);
+            let any = f32::from_bits(finite(&mut rng));
+            let tv = rng.pick(&[0.0f32, x * 85.0, any]);
+            let at = (i32::from(o) + i32::try_from(unit).unwrap()).cast_unsigned();
+            p.set(at, tv);
+            p.put(op::bridge::SPR_TOP, 0i8);
+            let spr = p.sym(op::bridge::SPR_STACK.sym);
+            p.set(spr, scratch);
+            p.check("opf_spl_gw", 0x0081_5670, &[host, ptr], |m| {
+                Some(opus::bridge::opf_spl_gw(m, host, ptr))
+            });
+        }
+    }
+}
