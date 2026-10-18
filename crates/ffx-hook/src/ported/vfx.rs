@@ -1907,6 +1907,18 @@ ported! {
     op_ot_draw @ 0x007e_c470 => extern "C" fn op_ot_draw() {
         op::bridge::op_ot_draw(&mut mem(), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `op_oef2_tex_clut_ovl_trans(mask)`.
+    op_oef2_tex_clut_ovl_trans @ 0x007e_4e80 => extern "C" fn op_oef2_tex_clut_ovl_trans(mask: u32) {
+        op::bridge::op_oef2_tex_clut_ovl_trans(&mut mem(), mask, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_mdc_free(oef, chr, heap, second)`.
+    opus_mdc_free @ 0x0080_61a0 => extern "C" fn opus_mdc_free(oef: u32, chr: u32, heap: u32, second: u32) {
+        opus::bridge::opus_mdc_free(&mut mem(), oef, chr, heap, second, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_et_astatus_effect_off(chr)`.
+    op_et_astatus_effect_off @ 0x007f_b000 => extern "C" fn op_et_astatus_effect_off(chr: u32) {
+        et::bridge::op_et_astatus_effect_off(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)

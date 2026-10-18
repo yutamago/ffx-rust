@@ -1515,6 +1515,51 @@ pub mod bridge {
         e
     }
 
+    /// `opus_mdc_free(oef, chr, heap, second)` (`0x008061a0`): for a
+    /// character with a status record (`opus_get_chr_status_index(chr, 0,
+    /// 0)`), its mdc number (byte `+0x14`, or `+0x15` with `second`) taken
+    /// (set to 0xff), its texture CLUT and image bases reset
+    /// (`Ch_TextureSetClutBase`, `Ch_TextureSetImageBase` with -1, -1),
+    /// and an mdc it had in `oef`'s table 4 freed (`op_free(heap, it)`,
+    /// `op_oef2_a_set(oef, 4, no, 0)`). Callees other than the table lookup
+    /// through `call`.
+    pub fn opus_mdc_free<M: Mem>(
+        mem: &mut M,
+        oef: u32,
+        chr: u32,
+        heap: u32,
+        second: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if chr == 0 {
+            return;
+        }
+        let index = g(mem, 0x007f_e970);
+        let Ok(i) = u32::try_from(call(mem, index, &[chr, 0, 0]).cast_signed()) else {
+            return;
+        };
+        let rec = crate::et::bridge::CHR.ptr(mem).at(i).addr;
+        let at = rec.wrapping_add(if second == 0 { 0x14 } else { 0x15 });
+        let no = mem.read::<u8>(at);
+        mem.write(at, 0xffu8);
+        for f in [0x0083_13c0, 0x0083_1390] {
+            let f = g(mem, f);
+            call(mem, f, &[chr, u32::MAX, u32::MAX]);
+        }
+        if no == 0xff {
+            return;
+        }
+        let no = u32::from(no);
+        let mdc = crate::op::bridge::op_oef2_a_get(mem, oef, 4, no);
+        if mdc == 0 {
+            return;
+        }
+        let free = g(mem, 0x007f_f1d0);
+        call(mem, free, &[heap, mdc]);
+        let set = g(mem, 0x007e_38a0);
+        call(mem, set, &[oef, 4, no, 0]);
+    }
+
     /// `opf_normal(host, ptr)` (`0x00815050`): the motion callback for a
     /// plain unit (slot 0 of `0x00c492c8`): the emulated VU registers
     /// `0x00c8f934..93c` take `0x00c8f53c..544`, `0x00c8f538` and

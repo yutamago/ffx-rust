@@ -295,6 +295,48 @@ pub mod bridge {
         }
     }
 
+    /// `op_et_astatus_effect_off(chr)` (`0x007fb000`): for a character in
+    /// [`CHR`], its units freed (`opu_unit_free_by_id(g_OpusBattle,
+    /// 0x60004000 + i)`), its colours back to neutral (`+0x10` and `+0x18`
+    /// 0x80808080, `opus_chara_rgba_set(chr, 0x80808080, w)`,
+    /// `opus_chara_status_rgb_set(chr, w)`, `w` whether
+    /// `MsBattleChrStart()` is nonzero), and a CLUT it holds (bit 0 of
+    /// `+0x17`) disposed of (`Ch_ClutDispose(+0)`); `+0x17` cleared.
+    /// Callees through `call`.
+    pub fn op_et_astatus_effect_off<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if chr == 0 {
+            return;
+        }
+        let Some(i) = (0..CHRS).find(|&i| mem.read::<u32>(CHR.ptr(mem).at(i).addr) == chr) else {
+            return;
+        };
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let rec = CHR.ptr(mem).at(i).addr;
+        let free = g(mem, 0x007f_de30);
+        let list = OPUS_BATTLE.get(mem);
+        call(mem, free, &[list, 0x6000_4000 + i]);
+        let start = g(mem, 0x0078_0cb0);
+        let weapons = u32::from(call(mem, start, &[]) != 0);
+        mem.write(rec.wrapping_add(0x10), 0x8080_8080u32);
+        mem.write(rec.wrapping_add(0x18), 0x8080_8080u32);
+        let rgba = g(mem, 0x0080_a560);
+        call(mem, rgba, &[chr, 0x8080_8080, weapons]);
+        let rgb = g(mem, 0x0080_aa00);
+        call(mem, rgb, &[chr, weapons]);
+        let flags = mem.read::<u8>(rec.wrapping_add(0x17));
+        if flags & 1 != 0 {
+            mem.write(rec.wrapping_add(0x17), flags & 0xfe);
+            let dispose = g(mem, 0x0083_c810);
+            let clut: u32 = mem.read(rec);
+            call(mem, dispose, &[clut]);
+        }
+        mem.write(rec.wrapping_add(0x17), 0u8);
+    }
+
     /// The draw flag index of character `h`'s record, if it has one.
     fn draw_index(mem: &impl Mem, h: u32) -> Option<u32> {
         let i = find_chr(mem, h)?;

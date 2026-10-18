@@ -388,6 +388,37 @@ pub mod bridge {
         count
     }
 
+    /// `op_oef2_tex_clut_ovl_trans(mask)` (`0x007e4e80`): while texture
+    /// loading is on ([`TEX_VDISP_LOAD`]), each overlay CLUT up to
+    /// [`OEF2_CLUT_OVL_COUNT`] (re-read each turn) in `mask` is reloaded:
+    /// a plain one (flag 0) by `op_oef2_texture_load(record, 1)`; a flagged
+    /// one without a record only reported (`dbgPrintf`). Callees through
+    /// `call`.
+    pub fn op_oef2_tex_clut_ovl_trans<M: Mem>(
+        mem: &mut M,
+        mask: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if TEX_VDISP_LOAD.get(mem) == 0 {
+            return;
+        }
+        let load = Global::<u32>::new(0x007e_5030).ptr(mem).addr;
+        let print = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
+        let msg = Global::<u32>::new(0x00b5_81b0).ptr(mem).addr;
+        let mut i = 0u32;
+        while i < u32::from(OEF2_CLUT_OVL_COUNT.get(mem)) {
+            if OEF2_CLUT_OVL.ptr(mem).at(i).get(mem) & mask != 0 {
+                let rec = OEF2_CLUT_OVL_RECS.ptr(mem).at(i).get(mem);
+                if OEF2_CLUT_OVL_FLAGS.ptr(mem).at(i).get(mem) == 0 {
+                    call(mem, load, &[rec, 1]);
+                } else if rec == 0 {
+                    call(mem, print, &[msg]);
+                }
+            }
+            i += 1;
+        }
+    }
+
     /// `op_oef2_tex_clut_cue_check(mask)` (`0x007e46d0`): -1 when a queued
     /// CLUT shares a bit with `mask`, else 0.
     pub fn op_oef2_tex_clut_cue_check(mem: &impl Mem, mask: u32) -> i32 {

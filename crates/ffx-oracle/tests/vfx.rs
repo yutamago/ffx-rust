@@ -12788,3 +12788,120 @@ fn round27e_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round27f_helpers_match_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_61a0);
+        let (index, start) = (p.alloc(4), p.alloc(4));
+        // op_oef2_texture_load, dbgPrintf, Ch_TextureSetClutBase,
+        // Ch_TextureSetImageBase, op_free, op_oef2_a_set,
+        // opu_unit_free_by_id, opus_chara_rgba_set,
+        // opus_chara_status_rgb_set and Ch_ClutDispose recorded;
+        // opus_get_chr_status_index and MsBattleChrStart answer from cells
+        for (sym, words, ret) in [
+            (0x007e_5030u32, &[0u8, 0][..], None),
+            (0x0062_f500, &[0], None),
+            // 0x30 apart: the first stub records only the character so it
+            // ends before the second
+            (0x0083_1390, &[0], None),
+            (0x0083_13c0, &[0, 0, 0], None),
+            (0x007f_f1d0, &[0, 0], None),
+            (0x007e_38a0, &[0, 0, 0, 0], None),
+            (0x007f_de30, &[0, 0], None),
+            (0x0080_a560, &[0, 0, 0], None),
+            (0x0080_aa00, &[0, 0], None),
+            (0x0083_c810, &[0], None),
+            (0x007f_e970, &[0, 0, 0], Some(index)),
+            (0x0078_0cb0, &[], Some(start)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let chr_tab = p.sym(et::bridge::CHR.sym);
+        let oef = p.alloc(0x600);
+        for round in 0..2000 {
+            // op_oef2_tex_clut_ovl_trans
+            p.put(o::TEX_VDISP_LOAD, u8::from(rng.chance(80)));
+            let n = rng.pick(&[0u16, 1, 5, 64]);
+            p.put(o::OEF2_CLUT_OVL_COUNT, n);
+            for i in 0..64 {
+                let m = rng.pick(&[0u32, 1, 2, 0x8000_0000, 3]);
+                p.set(p.sym(o::OEF2_CLUT_OVL.sym) + 4 * i, m);
+                p.set(
+                    p.sym(o::OEF2_CLUT_OVL_FLAGS.sym) + i,
+                    rng.pick(&[0u8, 0, 1, 0x80]),
+                );
+                let any = rng.next();
+                p.set(
+                    p.sym(o::OEF2_CLUT_OVL_RECS.sym) + 4 * i,
+                    rng.pick(&[0u32, any]),
+                );
+            }
+            let mask = rng.pick(&[0u32, 1, 2, 3, u32::MAX]);
+            p.check(
+                &format!("op_oef2_tex_clut_ovl_trans round {round}"),
+                0x007e_4e80,
+                &[mask],
+                |m| {
+                    o::op_oef2_tex_clut_ovl_trans(m, mask, &mut call_original);
+                    None
+                },
+            );
+            // the character table
+            for i in 0..240u32 {
+                let r = chr_tab + 0x20 * i;
+                p.fill(r, 0x20, &mut rng);
+                p.set(
+                    r,
+                    if rng.chance(20) {
+                        0x100 + rng.below(8)
+                    } else {
+                        0
+                    },
+                );
+            }
+            // opus_mdc_free: table 4 of the block, 0x10 records
+            p.fill(oef, 0x600, &mut rng);
+            p.set(oef + 0x10, 0x100u32);
+            for k in 0..0x30u32 {
+                if rng.chance(30) {
+                    p.set(oef + 0x100 + 4 * k, 0u32);
+                }
+            }
+            let i = rng.pick(&[-1i32, 0, 3, 239]);
+            p.set(index, i.cast_unsigned());
+            if let Ok(i) = u32::try_from(i) {
+                let r = chr_tab + 0x20 * i;
+                let no = rng.pick(&[0xffu8, 0, 5, 0x2f]);
+                p.set(r + 0x14, no);
+                let no = rng.pick(&[0xffu8, 0, 5, 0x2f]);
+                p.set(r + 0x15, no);
+            }
+            let chr = rng.pick(&[0u32, 0x100, 0x105]);
+            let (heap, second) = (rng.next(), rng.pick(&[0u32, 1, 0x100]));
+            p.check(
+                &format!("opus_mdc_free round {round}"),
+                0x0080_61a0,
+                &[oef, chr, heap, second],
+                |m| {
+                    opus::bridge::opus_mdc_free(m, oef, chr, heap, second, &mut call_original);
+                    None
+                },
+            );
+            // op_et_astatus_effect_off
+            p.set(start, rng.pick(&[0u32, 1, 0x100]));
+            let chr = rng.pick(&[0u32, 0x100, 0x103, 0x107, 0x200]);
+            p.check(
+                &format!("op_et_astatus_effect_off round {round}"),
+                0x007f_b000,
+                &[chr],
+                |m| {
+                    et::bridge::op_et_astatus_effect_off(m, chr, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
