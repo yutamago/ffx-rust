@@ -2182,6 +2182,14 @@ ported! {
         let mut m = mem();
         camera::ms_cam_set_btl(&mut target::Dm::new(&mut m), &host(), id, mode, side, ch, other, other_ch, None)
     }
+    /// `MsCameraAddLineFilter_007bf0b0(id, side, kind, x0, y0, x1, y1, w)`.
+    MsCameraAddLineFilter_007bf0b0 @ 0x007b_f0b0 => extern "C" fn ms_camera_add_line_filter(id: u32, side: u32, kind: u32, x0: u32, y0: u32, x1: u32, y1: u32, w: u32) {
+        camera::ms_camera_add_line_filter(&mut mem(), id, side, kind, [x0, y0], [x1, y1], w);
+    }
+    /// `MsCameraSetDepthMaskMode_007bcf50(id, mode)`.
+    MsCameraSetDepthMaskMode_007bcf50 @ 0x007b_cf50 => extern "C" fn ms_camera_set_depth_mask_mode(id: u32, mode: u32) -> u32 {
+        camera::ms_camera_set_depth_mask_mode(&mut mem(), id, mode)
+    }
     /// `MsCameraMoveAcc(id, side, mode, accel, hold, decel, curve)`: the
     /// byte and halfword arguments take their dwords' low parts.
     MsCameraMoveAcc @ 0x007b_d860 => extern "C" fn ms_camera_move_acc(id: u32, side: u32, mode: u32, accel: u32, hold: u32, decel: u32, curve: u32) -> u32 {

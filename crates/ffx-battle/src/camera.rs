@@ -1580,6 +1580,74 @@ pub mod bridge {
         Short,
     }
 
+    /// `MsCameraAddLineFilter_007bf0b0(id, side, kind, x0, y0, x1, y1, w)`
+    /// (`0x007bf0b0`, name ours): one more filter record (up to five, 0x20
+    /// bytes each from the channel's `+0x90`, the count `+4`) for camera
+    /// request `id`'s channel of side `side & 1`: the segment from
+    /// `(x0, y0)` to `(x1, y1)` in the xz plane: `+0` 2 with a `kind`,
+    /// else 0; `+0x10`/`+0x14` its direction `(dx, dy)` (stored); `+0x18`/
+    /// `+0x1c` its start; `+4` `-x0 dx - y0 dy`; `+8` `dx² + dy²`; `+0xc`
+    /// `w`. Nothing without the request or with five already.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_add_line_filter(
+        mem: &mut impl Mem,
+        id: u32,
+        side: u32,
+        kind: u32,
+        [x0, y0]: [u32; 2],
+        [x1, y1]: [u32; 2],
+        w: u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        if ms_camera_id_check(mem, id) == 0 {
+            return;
+        }
+        let ch = camera_base(mem, id)
+            .wrapping_add(0xf0 + (side & 1) * 0x61c)
+            .wrapping_add(0x130 * ((id >> 8) & 0xff));
+        let count: u8 = mem.read(ch.wrapping_add(4));
+        if count >= 5 {
+            return;
+        }
+        let rec = ch.wrapping_add(0x90 + 0x20 * u32::from(count));
+        let dx = store(sub(load(x1), load(x0)));
+        let dy = store(sub(load(y1), load(y0)));
+        mem.write(rec, if kind == 0 { 0u32 } else { 2 });
+        mem.write(rec.wrapping_add(0x10), [dx, dy, x87_copy(x0), x87_copy(y0)]);
+        let (dx, dy) = (load(dx), load(dy));
+        let offset = store(sub(mul(-load(x0), dx), mul(load(y0), dy)));
+        let length = store(add(mul(dy, dy), mul(dx, dx)));
+        mem.write(rec.wrapping_add(4), [offset, length, x87_copy(w)]);
+        mem.write(ch.wrapping_add(4), count.wrapping_add(1));
+    }
+
+    /// `MsCameraSetDepthMaskMode_007bcf50(id, mode)` (`0x007bcf50`, name
+    /// ours; `Native_CamSetDepthMaskMode`'s): for camera request `id`, the
+    /// camera's `+0xca8` set to 1 and its channel's mode (`+0xcc8` + 0x30
+    /// channel) to `mode` (negative: the old one with bit 1); when `id`
+    /// is the current request the camera's `+0xcac` too (returns the
+    /// camera; else the current request, 0 without `id`).
+    pub fn ms_camera_set_depth_mask_mode(mem: &mut impl Mem, id: u32, mode: u32) -> u32 {
+        if ms_camera_id_check(mem, id) == 0 {
+            return 0;
+        }
+        let cam = camera_base(mem, id);
+        mem.write(cam.wrapping_add(0xca8), 1u32);
+        let at = cam.wrapping_add(0xcc8 + 0x30 * ((id >> 8) & 0xff));
+        let mode = if mode.cast_signed() < 0 {
+            mem.read::<u32>(at) | 2
+        } else {
+            mode
+        };
+        mem.write(at, mode);
+        let current = current_request(mem, id);
+        if current != id {
+            return current;
+        }
+        mem.write(cam.wrapping_add(0xcac), mode);
+        cam
+    }
+
     /// `MsCameraMoveAcc(id, side, mode, accel, hold, decel, curve)`
     /// (`0x007bd860`): for the camera's current request `id`, side
     /// `side & 1` starts an accelerated move (mode byte `+1`): each lane

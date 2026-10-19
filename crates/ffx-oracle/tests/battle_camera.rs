@@ -178,6 +178,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                     moves(a, b, rng, slots, c, base);
                 }
             }
+            _ if rng.below(2) == 0 => {
+                for _ in 0..4 {
+                    filters(a, b, rng, slots, c);
+                }
+            }
             _ => match rng.below(3) {
                 0 => {
                     // the yaw of the camera in use, through a local
@@ -239,7 +244,15 @@ fn start_pos(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, base:
 /// flags at random.
 fn moves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32, base: u32) {
     use battle_common::crt::stand_in;
-    // often the current request (the moves need it)
+    // often the current request (the moves need it), at times moved to
+    // channel 4 or 5 (whose records reach the side's lanes)
+    if rng.below(3) == 0 {
+        let n = cam::ms_camera_get_num(b, c);
+        let at = slots + 8 * n;
+        let w = u32::from_le_bytes(a.read(at, 4).unwrap().try_into().unwrap());
+        let w = (w & !0xff00) | (4 + rng.below(2)) << 8;
+        poke(a, b, at, &w.to_le_bytes());
+    }
     let id = if rng.below(2) == 0 {
         cam::ms_camera_get_id(b, c)
     } else {
@@ -297,6 +310,47 @@ fn moves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32,
     let lanes = a.rebase(0x00c8_f814);
     let words = a.read(lanes, 12).unwrap();
     b.write(lanes, &words).unwrap();
+}
+
+/// `MsCameraAddLineFilter_007bf0b0` and `MsCameraSetDepthMaskMode_007bcf50`
+/// (round 26) on camera `c` (its slots at `slots`): requests of its
+/// slots or made up, the channels' filter counts small.
+fn filters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32) {
+    let id = if rng.below(2) == 0 {
+        cam::ms_camera_get_id(b, c)
+    } else {
+        request(a, rng, slots, c)
+    };
+    let side = rng.below(4);
+    if rng.below(2) == 0 {
+        let kind = [0, 1, rng.next()][rng.below(3) as usize];
+        let p = [float(rng), float(rng)];
+        let q = [float(rng), float(rng)];
+        let w = float(rng);
+        twin(
+            "MsCameraAddLineFilter_007bf0b0",
+            a,
+            b,
+            0x007b_f0b0,
+            &[id, side, kind, p[0], p[1], q[0], q[1], w],
+            0,
+            |m| {
+                cam::ms_camera_add_line_filter(m, id, side, kind, p, q, w);
+                0
+            },
+        );
+    } else {
+        let mode = [rng.below(8), rng.next(), u32::MAX][rng.below(3) as usize];
+        twin(
+            "MsCameraSetDepthMaskMode_007bcf50",
+            a,
+            b,
+            0x007b_cf50,
+            &[id, mode],
+            u32::MAX,
+            |m| cam::ms_camera_set_depth_mask_mode(m, id, mode),
+        );
+    }
 }
 
 /// The three aims of `MsCameraProcess` (round 26) on a made-up side at
