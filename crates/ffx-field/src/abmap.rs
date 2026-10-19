@@ -2387,6 +2387,48 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// `AbmapFlagConnectedLinks(flag)` (`0x00a58df0`) and
+    /// `AbmapCalcMoveCost(node, cost)` (`0x00a47560`).
+    pub const MOVE_COSTS_CALLS: [u32; 2] = [0x00a5_8df0, 0x00a4_7560];
+
+    /// `AbmapCalcMoveCosts(node, limit, bit)` (`0x00a474d0`): every node
+    /// with a kind (`+6` not `0xffff`) loses its cost (`+0x24` = `0xffff`),
+    /// every link the low nibble of its flags (`+0xa816`), the connected
+    /// links are flagged (`AbmapFlagConnectedLinks(2)`), then the walk
+    /// starts from `node` (`AbmapCalcMoveCost(node, 0)`) with the limit
+    /// `limit` (`u16`) * 4 ([`super::MOVE_LIMIT`]), the mask `1 << bit`
+    /// (low 5 bits; [`super::MOVE_MASK`] as a word) and the step 0
+    /// ([`super::MOVE_STEP`]). Returns the walk's `eax`.
+    pub fn abmap_calc_move_costs<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [node, limit, bit]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let nodes = mem.read::<i16>(g.wrapping_add(2));
+        let mut at = g.wrapping_add(layout::NODES);
+        for _ in 0..i32::from(nodes).cast_unsigned() {
+            if mem.read::<u16>(at.wrapping_add(6)) != 0xffff {
+                mem.write(at.wrapping_add(0x24), 0xffffu16);
+            }
+            at = at.wrapping_add(layout::NODE_SIZE);
+        }
+        let g = ABMAP.get(mem);
+        let links = mem.read::<i16>(g.wrapping_add(layout::LINK_COUNT));
+        let mut at = g.wrapping_add(layout::LINK_FLAGS);
+        for _ in 0..i32::from(links).cast_unsigned() {
+            mem.write(at, mem.read::<u8>(at) & 0xf0);
+            at = at.wrapping_add(layout::LINK_SIZE);
+        }
+        let [flag_links, walk] = MOVE_COSTS_CALLS.map(|f| mem.rebase(f));
+        call(mem, flag_links, &[2]);
+        super::MOVE_LIMIT.set(mem, ((limit & 0xffff) << 2).cast_signed());
+        let mask = super::MOVE_MASK.ptr(mem).addr;
+        mem.write(mask, 1u32 << (bit & 0x1f));
+        super::MOVE_STEP.set(mem, 0);
+        call(mem, walk, &[node, 0])
+    }
+
     /// The state [`abmap_select_node`] sets while homing (`0x00a5a020`).
     pub const STATE_SELECT_HOMING: u32 = 0x00a5_a020;
 

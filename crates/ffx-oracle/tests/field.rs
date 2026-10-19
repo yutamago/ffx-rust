@@ -20340,3 +20340,69 @@ fn r13ii_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_a302);
     r13ii_cases(&mut t, &mut rng, 250);
 }
+
+// ---- field agent r13, group j: the move costs reset ----
+
+/// Group j (r13) on `t` over the grid `g`: `AbmapCalcMoveCosts` over up
+/// to 64 nodes (some without a kind) and links, any limit and bit;
+/// `AbmapFlagConnectedLinks` and `AbmapCalcMoveCost` are logged
+/// stand-ins.
+fn r13jj_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::{self, bridge as ab};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(0x100), t.alloc(4));
+    let [flag_links, walk] = ab::MOVE_COSTS_CALLS;
+    t.cave(&[
+        (Some(flag_links), log_stub(log, rv, 1, 1)),
+        (Some(walk), log_stub(log, rv, 2, 2)),
+    ]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let (nodes, links) = (rng.below(65), rng.below(65));
+        t.put(g + 2, u16::try_from(nodes).unwrap());
+        t.put(g + 4, u16::try_from(links).unwrap());
+        t.fill(g + 0x808, 0x28 * 66, rng);
+        for i in 0..66 {
+            if rng.below(4) == 0 {
+                t.put(g + 0x808 + 0x28 * i + 6, 0xffffu16);
+            }
+        }
+        t.fill(g + 0xa808, 0x14 * 66, rng);
+        for gl in [
+            abmap::MOVE_LIMIT.ptr(&t.b).addr,
+            abmap::MOVE_STEP.ptr(&t.b).addr,
+            abmap::MOVE_MASK.ptr(&t.b).addr,
+        ] {
+            t.put(gl, rng.next());
+        }
+        let a = [rng.next(), rng.next(), rng.next()];
+        t.same(
+            "AbmapCalcMoveCosts",
+            |o| o.eax(0x00a4_74d0, &a),
+            |m| ab::abmap_calc_move_costs(m, a, call),
+        );
+    }
+}
+
+/// Group j (r13) on the image.
+#[test]
+fn r13jj_calc_move_costs_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a401);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13jj_cases(&mut t, &mut rng, g, 300);
+}
+
+/// Group j (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13jj_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a402);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13jj_cases(&mut t, &mut rng, g, 150);
+}

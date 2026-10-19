@@ -4005,6 +4005,10 @@ ported! {
     yiLoadFieldParticle @ 0x0090_9190 => extern "C" fn shim_yi_load_field_particle(textures: u32, effects: u32) -> u32 {
         yi::bridge::yi_load_field_particle(&mut mem(), [textures, effects], &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapCalcMoveCosts(node, limit, bit)`.
+    AbmapCalcMoveCosts @ 0x00a4_74d0 => extern "C" fn shim_abmap_calc_move_costs(node: u32, limit: u32, bit: u32) -> u32 {
+        abmap::bridge::abmap_calc_move_costs(&mut mem(), [node, limit, bit], &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapSelectNode_00a48e40(node, t)`.
     AbmapSelectNode_00a48e40 @ 0x00a4_8e40 => extern "C" fn shim_abmap_select_node(node: u32, t: u32) -> u32 {
         abmap::bridge::abmap_select_node(&mut mem(), [node, t], &mut |_, f, a| call_cdecl(f, a))
