@@ -3980,6 +3980,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `initEventList()`.
+    initEventList @ 0x0090_7f50 => extern "C" fn shim_init_event_list() {
+        yi::bridge::init_event_list(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `yiSplitPath_009161d0(path, dir, name, ext)`.
     yiSplitPath_009161d0 @ 0x0091_61d0 => extern "C" fn shim_yi_split_path(path: u32, dir: u32, name: u32, ext: u32) -> u32 {
         yi::bridge::yi_split_path(&mut mem(), [path, dir, name, ext])

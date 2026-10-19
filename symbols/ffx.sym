@@ -11268,7 +11268,7 @@
 0x00907e60 function Native_9000 # 0x9000: an "atel_test_print!" line through the empty dbgPrintf; 0; ported in native_mods (script round 21); name ours
 0x00907e70 function yiGetMapName              # (out): sprintf "%s" of the current map's name (table 0x025d5888, count 0x01934ec8)
 0x00907f00 function yiMapGetSection              # (map, index) -> map + section offset (+0x10 + 4 index) for data tagged MAP1, else 0; loadPhyreFieldMap, yiMapReadMaster, yiObjReadCallback, yiSetIDPage, yiSetPreBgPage
-0x00907f50 function initEventList             # fh v3:exact 0x00907f50
+0x00907f50 function initEventList             # fh v3:exact 0x00907f50 +initEventList; (): once (0x01934ecc): Sg_PcRead("/ffx/proj/event/header/eventid.bin" 0x00b5b8e4), count = first i32 / 8 (toward zero), user_malloc(count << 4) to 0x025d5888, each 16-byte entry sprintf'd (CRT slot 0x00b0c3dc) with file + offset[2i] as the format and its index at +0xc; count to 0x01934ec8, 0x01934ecc = 1; eax left alone when built, 0 without the file; ported (field r13, ffx_field::yi)
 0x00908000 function loadPhyreFieldMap         # fh v3:exact 0x00908000
 0x00908100 function mapChange                    # layout: alphabetical run between loadPhyreFieldMap and yiAttachAnimDObj (4 unnamed in the gap); Switch 0x710052d4f0 mapChange is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00908190 function yiAddRotTransDObj            # layout: alphabetical run between loadPhyreFieldMap and yiAttachAnimDObj (4 unnamed in the gap); Switch 0x710052c100 yiAddRotTransDObj is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)

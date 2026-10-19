@@ -20097,3 +20097,66 @@ fn r13ff_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_a002);
     r13ff_cases(&mut t, &mut rng, 500);
 }
+
+// ---- field agent r13, group g: the map name table ----
+
+/// Group g (r13) on `t`: `initEventList` already built or not, the file
+/// missing or not, its first offset giving a count of -2..11 (rounded
+/// toward zero); `Sg_PcRead`, `user_malloc` and `sprintf` are logged
+/// stand-ins.
+fn r13gg_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::{model, yi};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, file_v, table_v) = (t.alloc(0x800), t.alloc(4), t.alloc(4), t.alloc(4));
+    let stubs = t.cave(&[
+        (Some(yi::bridge::SG_PC_READ), log_stub(log, file_v, 1, 1)),
+        (Some(model::USER_MALLOC), log_stub(log, table_v, 2, 1)),
+        (None, log_stub(log, rv, 3, 2)),
+    ]);
+    t.put(t.b.rebase(yi::CRT_SPRINTF), stubs[2]);
+    let (file, table) = (t.alloc(0x100), t.alloc(0x100));
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(file, 0x100, rng);
+        t.fill(table, 0x100, rng);
+        let first = rng.below(100).cast_signed() - 16;
+        t.put(file, first);
+        t.put(file_v, if rng.below(6) == 0 { 0 } else { file });
+        t.put(table_v, table);
+        let ready = u32::from(rng.below(5) == 0);
+        yi::bridge::MAP_NAMES_READY.set(&mut t.a, ready);
+        yi::bridge::MAP_NAMES_READY.set(&mut t.b, ready);
+        for g in [yi::MAP_NAMES, yi::MAP_NAME_COUNT] {
+            let v = rng.next();
+            g.set(&mut t.a, v);
+            g.set(&mut t.b, v);
+        }
+        t.same(
+            "initEventList",
+            |o| {
+                let e = o.eax(0x0090_7f50, &[]);
+                (ready == 0).then_some(e)
+            },
+            |m| yi::bridge::init_event_list(m, call),
+        );
+    }
+}
+
+/// Group g (r13) on the image.
+#[test]
+fn r13gg_init_event_list_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a101);
+    r13gg_cases(&mut t, &mut rng, 500);
+}
+
+/// Group g (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13gg_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a102);
+    r13gg_cases(&mut t, &mut rng, 250);
+}

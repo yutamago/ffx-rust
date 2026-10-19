@@ -5693,4 +5693,55 @@ pub mod bridge {
             i = i.wrapping_add(1);
         }
     }
+
+    // ---- field r13, the event list ----
+
+    /// `Sg_PcRead(path)` (`0x0083ae30`).
+    pub const SG_PC_READ: u32 = 0x0083_ae30;
+    /// "/ffx/proj/event/header/eventid.bin" (`0x00b5b8e4`).
+    pub const EVENT_ID_PATH: u32 = 0x00b5_b8e4;
+    /// Non-zero once [`super::MAP_NAMES`] is built (`0x01934ecc`).
+    pub const MAP_NAMES_READY: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0193_4ecc);
+
+    /// `initEventList()` (`0x00907f50`): builds the map name table once.
+    /// `eventid.bin` ([`EVENT_ID_PATH`], `Sg_PcRead`) starts with a table
+    /// of `(offset, _)` pairs whose first offset, over 8, is the count;
+    /// each entry of the `user_malloc`ed table ([`super::MAP_NAMES`], 16
+    /// bytes) gets its name through the CRT's `sprintf` with the name as
+    /// the format, and its index at `+0xc`. The count goes to
+    /// [`super::MAP_NAME_COUNT`] and [`MAP_NAMES_READY`] is 1. Returns the
+    /// `eax` it ends with (`None` when it leaves the caller's: already
+    /// built).
+    pub fn init_event_list<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> Option<u32> {
+        if MAP_NAMES_READY.get(mem) != 0 {
+            return None;
+        }
+        let f = mem.rebase(SG_PC_READ);
+        let path = mem.rebase(EVENT_ID_PATH);
+        let file = call(mem, f, &[path]);
+        if file == 0 {
+            return Some(0);
+        }
+        // `/ 8` rounding toward zero, as the original's `cdq`/`sar`
+        let count = mem.read::<i32>(file) / 8;
+        let f = mem.rebase(crate::model::USER_MALLOC);
+        let mut eax = call(mem, f, &[count.cast_unsigned().wrapping_shl(4)]);
+        super::MAP_NAMES.set(mem, eax);
+        let sprintf = mem.read::<u32>(mem.rebase(super::CRT_SPRINTF));
+        for i in 0..count.max(0).cast_unsigned() {
+            let entry = super::MAP_NAMES.get(mem).wrapping_add(i.wrapping_mul(0x10));
+            let name = mem
+                .read::<u32>(file.wrapping_add(i.wrapping_mul(8)))
+                .wrapping_add(file);
+            call(mem, sprintf, &[entry, name]);
+            eax = super::MAP_NAMES.get(mem);
+            mem.write(eax.wrapping_add(i.wrapping_mul(0x10)).wrapping_add(0xc), i);
+        }
+        super::MAP_NAME_COUNT.set(mem, count.cast_unsigned());
+        MAP_NAMES_READY.set(mem, 1);
+        Some(eax)
+    }
 }
