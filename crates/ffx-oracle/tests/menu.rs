@@ -9189,6 +9189,8 @@ fn menu_round22_sell_window_ctrl_matches_the_original() {
         let r = t.rng.next();
         record_n(&mut t, f, n, r);
     }
+    // MsGetGIL: 0, 1, 2, ...
+    return_counter(&mut t, 0x0078_4e80, 0);
     for round in 0..3000u32 {
         let window = t.alloc_random(0x80);
         let state = t.rng.pick_or_any(&[0, 1, 2, 3, 3, 3, 4, 5, 6, 7, 8]);
@@ -9221,6 +9223,23 @@ fn menu_round22_sell_window_ctrl_matches_the_original() {
             VOID,
             |o| {
                 tk::menu_shop_sell_window_ctrl(o, window, &mut callback);
+                0
+            },
+        );
+        // the buy window: the gil a counter, the price never 0
+        let price = t.rng.pick_or_any(&[1, 2, 10, 50, 0x8000_0000]).max(1);
+        t.put(window + 0x60, price);
+        let owned = t.rng.pick_or_any(&[0, 1, 50, 89, 98, 99, 120]);
+        t.put(window + 0x64, owned);
+        t.put(window + 0x28, state);
+        t.put(window + 0x48, n);
+        t.twin(
+            "MenuShop_BuyWindowCtrl",
+            0x008d_9bd0,
+            &[window],
+            VOID,
+            |o| {
+                tk::menu_shop_buy_window_ctrl(o, window, &mut callback);
                 0
             },
         );

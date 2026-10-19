@@ -9664,31 +9664,26 @@ pub mod bridge {
         }
     }
 
-    /// `MenuShop_SellWindowCtrl(window)` (`0x008d9e20`, own name; the
-    /// `+0xc` callback `MenuShop_OpenSellWindow` installs): the item shop
-    /// sell window's input. `TOMenuGetControlPad()` (dropped), the repeat
-    /// and trigger pads, then by state `+0x28`: 0 becomes 1; 1 goes on as
-    /// 2, 2 stores 3 and goes on as 3; in 3 a trigger `0x20` sells (state
-    /// 4: `+0x45` 1, sound `0x8000000e`, `MsSaveItemUse(+0x5c, -amount)`,
-    /// `MsPayGIL(-(amount * +0x60))`, state 5), `0x40` cancels (state 6:
-    /// `+0x45` `0xff`, sound `0x80000004`, state 7); otherwise the repeat
-    /// pad moves the amount (`i16 +0x48`, from 1 to the `+0x64` most, sound
-    /// `0x80000001` on a move): `0x4000` −10 (at least 1), `0x1000` +10 (at
-    /// most the most), `0x8000` −1, `0x2000` +1. States 5, 7 and others do
-    /// nothing. The caller never reads `eax`.
-    pub fn menu_shop_sell_window_ctrl<M: Mem>(
+    /// The item shop amount windows' state machine (`MenuShop_BuyWindowCtrl`,
+    /// `MenuShop_SellWindowCtrl`), by state `+0x28`: 0 becomes 1; 1 goes
+    /// on as 2, 2 stores 3 and goes on as 3; in 3 a trigger `0x20` deals
+    /// (state 4: `+0x45` 1, sound `0x8000000e`, `MsSaveItemUse(+0x5c, ±n)`,
+    /// `MsPayGIL(±n * +0x60)`, minus when selling, state 5), `0x40` cancels
+    /// (state 6: `+0x45` `0xff`, sound `0x80000004`, state 7); otherwise
+    /// the repeat pad moves the amount `n` (`i16 +0x48`, from 1 to `most`,
+    /// sound `0x80000001` on a move): `0x4000` −10 (at least 1), `0x1000`
+    /// +10 (at most `most`), `0x8000` −1, `0x2000` +1. States 5, 7 and
+    /// others do nothing.
+    fn shop_amount_ctrl<M: Mem>(
         mem: &mut M,
         window: u32,
+        [rep, trg]: [u32; 2],
+        most: i32,
+        sell: bool,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
         let at = |o: u32| window.wrapping_add(o);
-        let pad = mem.rebase(0x008b_e410);
-        call(mem, pad, &[]);
-        let rep = mem.rebase(0x008b_e470);
-        let rep = call(mem, rep, &[]) & 0xffff;
-        let trg = mem.rebase(0x008b_e4b0);
-        let trg = call(mem, trg, &[]) & 0xffff;
-        let most = mem.read::<u32>(at(0x64)).cast_signed();
+        let sign = |v: i32| if sell { v.wrapping_neg() } else { v };
         let sound = mem.rebase(0x0088_6e80);
         let amount = |mem: &M| mem.read::<i16>(at(0x48));
         let mut state = mem.read::<u32>(at(0x28));
@@ -9743,15 +9738,11 @@ pub mod bridge {
                     let item: u32 = mem.read(at(0x5c));
                     let n = i32::from(amount(mem));
                     let item_use = mem.rebase(0x0079_0550);
-                    call(mem, item_use, &[item, n.wrapping_neg().cast_unsigned()]);
+                    call(mem, item_use, &[item, sign(n).cast_unsigned()]);
                     let n = i32::from(amount(mem));
                     let price = mem.read::<u32>(at(0x60)).cast_signed();
                     let pay = mem.rebase(0x0078_59a0);
-                    call(
-                        mem,
-                        pay,
-                        &[n.wrapping_mul(price).wrapping_neg().cast_unsigned()],
-                    );
+                    call(mem, pay, &[sign(n.wrapping_mul(price)).cast_unsigned()]);
                     mem.write(at(0x28), 5u32);
                     return;
                 }
@@ -9764,6 +9755,59 @@ pub mod bridge {
                 _ => return,
             }
         }
+    }
+
+    /// `TOMenuGetControlPad()` (dropped), then the repeat and trigger
+    /// pads (`u16`).
+    fn shop_pads<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> [u32; 2] {
+        let pad = mem.rebase(0x008b_e410);
+        call(mem, pad, &[]);
+        let rep = mem.rebase(0x008b_e470);
+        let rep = call(mem, rep, &[]) & 0xffff;
+        let trg = mem.rebase(0x008b_e4b0);
+        let trg = call(mem, trg, &[]) & 0xffff;
+        [rep, trg]
+    }
+
+    /// `MenuShop_SellWindowCtrl(window)` (`0x008d9e20`, own name; the
+    /// `+0xc` callback `MenuShop_OpenSellWindow` installs): the item shop
+    /// sell window's input, [`shop_amount_ctrl`] selling, up to `+0x64`
+    /// (the count owned). The caller never reads `eax`.
+    pub fn menu_shop_sell_window_ctrl<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let pads = shop_pads(mem, call);
+        let most = mem.read::<u32>(window.wrapping_add(0x64)).cast_signed();
+        shop_amount_ctrl(mem, window, pads, most, true, call);
+    }
+
+    /// `MenuShop_BuyWindowCtrl(window)` (`0x008d9bd0`, own name; the `+0xc`
+    /// callback `MenuShop_OpenBuyWindow` installs): the item shop buy
+    /// window's input, [`shop_amount_ctrl`] buying, up to what the gil
+    /// pays for, `MsGetGIL() / +0x60` (signed), and at most 99 with the
+    /// count owned (`+0x64`): above that `99 - owned`. A zero price (or
+    /// `i32::MIN / -1`) faults the original; here it allows 0. The caller
+    /// never reads `eax`.
+    pub fn menu_shop_buy_window_ctrl<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let price = mem.read::<u32>(window.wrapping_add(0x60)).cast_signed();
+        let pads = shop_pads(mem, call);
+        let gil = mem.rebase(0x0078_4e80);
+        let gil = call(mem, gil, &[]).cast_signed();
+        let mut most = gil.checked_div(price).unwrap_or(0);
+        let owned = mem.read::<u32>(window.wrapping_add(0x64)).cast_signed();
+        if owned.wrapping_add(most) > 99 {
+            most = 99i32.wrapping_sub(owned);
+        }
+        shop_amount_ctrl(mem, window, pads, most, false, call);
     }
 }
 

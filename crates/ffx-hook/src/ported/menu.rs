@@ -3906,4 +3906,8 @@ ported! {
     MenuShop_SellWindowCtrl @ 0x008d_9e20 => extern "C" fn menu_shop_sell_window_ctrl(window: u32) {
         tk::menu_shop_sell_window_ctrl(&mut mem(), window, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuShop_BuyWindowCtrl(window)`: void (the dispatcher never reads eax).
+    MenuShop_BuyWindowCtrl @ 0x008d_9bd0 => extern "C" fn menu_shop_buy_window_ctrl(window: u32) {
+        tk::menu_shop_buy_window_ctrl(&mut mem(), window, &mut |_, f, a| call_ptr(f, a));
+    }
 }
