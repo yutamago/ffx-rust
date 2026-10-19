@@ -10181,7 +10181,13 @@ fn camera_set_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bo
             } else {
                 rng.below(5)
             };
-            let id = c | rng.below(6) << 8 | level << 16;
+            // channels 0-5, at times beyond (8-15)
+            let sub = if rng.below(8) == 0 {
+                8 + rng.below(8)
+            } else {
+                rng.below(6)
+            };
+            let id = c | sub << 8 | level << 16;
             ids.push(id);
             let mut s = id.to_le_bytes().to_vec();
             s.extend([
@@ -10270,4 +10276,136 @@ fn camera_set_btl_matches_the_original_on_a_snapshot() {
         return;
     };
     camera_set_btl_check(&mut a, &mut b, &mut Xorshift(0x26ca_0402), false);
+}
+
+/// `MsCameraAtelFocus_007c0560` (round 26) on a made-up side and move at
+/// `buf`: script actors only on a snapshot (the image runs no script).
+fn atel_focus(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, script: bool) {
+    let h = host();
+    let (side, mv) = (buf, buf + 0x100);
+    poke(a, b, side, &floats(rng, 0x20));
+    poke(a, b, mv, &floats(rng, 0x18));
+    for k in 0..2 {
+        let actor: u16 = if script && rng.below(4) != 0 {
+            u16::try_from(rng.below(4)).unwrap()
+        } else {
+            0xffff
+        };
+        poke(a, b, mv + 0xc + 2 * k, &actor.to_le_bytes());
+    }
+    zero_stack(a);
+    twin(
+        "MsCameraAtelFocus_007c0560",
+        a,
+        b,
+        0x007c_0560,
+        &[side, mv],
+        0,
+        |m| {
+            dm(m, |m| {
+                ffx_battle::camera::bridge::ms_camera_atel_focus(m, &h, side, mv);
+            });
+            0
+        },
+    );
+    same("MsCameraAtelFocus_007c0560", a, b);
+}
+
+/// The special stage's camera (round 26): `MsBattleSpecialCameraKind_0079dd70`,
+/// `MsTransSpPos` and `MsSpCameraProcess` on a made-up stage work
+/// (`work`, 0x870 bytes of floats) and three vectors at `buf`; the port's
+/// matrix (the original's local) at `buf + 0x80`, cleared after.
+fn sp_camera(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, work: u32) {
+    use ffx_battle::special::bridge as sp;
+    poke(a, b, work, &floats(rng, 0x870 / 4));
+    set(a, b, ffx_battle::free::bridge::SPECIAL_MEM, work);
+    let kind = [0i8, 1, 1, 2, 3, 4, -1][rng.below(7) as usize];
+    set(a, b, ffx_battle::free::bridge::SPECIAL_KIND, kind);
+    set(
+        a,
+        b,
+        ffx_battle::process::bridge::LIMIT_TYPE_CUE,
+        [0u8, 1, 1, 2][rng.below(4) as usize],
+    );
+    set(
+        a,
+        b,
+        ffx_battle::misc::bridge::SPECIAL_CAMERA,
+        u8::from(rng.below(3) == 0),
+    );
+    set(a, b, sp::SP_CAMERA_ON, u8::from(rng.below(4) != 0));
+    poke(a, b, buf, &floats(rng, 12));
+    let matrix = buf + 0x80;
+    zero_stack(a);
+    // the last rotation's (MsRotMatrixX/Z) uninitialized row lanes in VU
+    // register 4 and 5 (as battle_vector.rs): x last unless inverse
+    let mut last_x = true;
+    match rng.below(3) {
+        0 => twin(
+            "MsBattleSpecialCameraKind_0079dd70",
+            a,
+            b,
+            0x0079_dd70,
+            &[],
+            ALL,
+            |m| sp::ms_battle_special_camera_kind(m).cast_unsigned(),
+        ),
+        1 => {
+            let inverse = [0, 1, rng.next()][rng.below(3) as usize];
+            let v = buf + 0x10 * rng.below(3);
+            last_x = inverse == 0;
+            twin("MsTransSpPos", a, b, 0x0079_e1b0, &[inverse, v], 0, |m| {
+                sp::ms_trans_sp_pos(m, &stand_in, inverse, v, matrix);
+                0
+            });
+        }
+        _ => {
+            let v = [buf, buf + 0x10, buf + 0x20];
+            twin("MsSpCameraProcess", a, b, 0x0079_dfe0, &v, 0, |m| {
+                sp::ms_sp_camera_process(m, &stand_in, v, matrix);
+                0
+            });
+        }
+    }
+    poke(a, b, matrix, &[0; 0x40]);
+    if kind == 1 {
+        let free = if last_x {
+            [0x810u32, 0x81c, 0x820, 0x82c]
+        } else {
+            [0x818, 0x81c, 0x828, 0x82c]
+        };
+        for o in free {
+            let at = a.rebase(0x00c8_f000 + o);
+            let w = a.read(at, 4).unwrap();
+            b.write(at, &w).unwrap();
+        }
+    }
+    same("the special camera", a, b);
+}
+
+fn camera_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    let work = scratch(a, b, 0x870);
+    dressed_check(a, b, rng, synthetic, (150, 4), |a, b, rng, _, buf| {
+        if rng.below(2) == 0 {
+            atel_focus(a, b, rng, buf, !synthetic);
+        } else {
+            sp_camera(a, b, rng, buf, work);
+        }
+    });
+}
+
+#[test]
+fn camera_leaves_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    camera_leaves(&mut a, &mut b, &mut Xorshift(0x26ca_0501), true);
+}
+
+#[test]
+fn camera_leaves_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    camera_leaves(&mut a, &mut b, &mut Xorshift(0x26ca_0502), false);
 }

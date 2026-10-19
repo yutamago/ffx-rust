@@ -453,4 +453,105 @@ pub mod bridge {
         }
         last
     }
+
+    /// `MsBattleSpecialCameraKind_0079dd70()` (`0x0079dd70`, name ours;
+    /// `MsCameraProcess`'s): the special stage's kind
+    /// (`free::SPECIAL_KIND`, sign-extended) while `0x0112c022` is 1 and
+    /// `misc::SPECIAL_CAMERA` is not set, else 0.
+    pub fn ms_battle_special_camera_kind(mem: &impl Mem) -> i32 {
+        let on = crate::process::bridge::LIMIT_TYPE_CUE.get(mem) == 1;
+        if on && crate::misc::bridge::SPECIAL_CAMERA.get(mem) == 0 {
+            i32::from(crate::free::bridge::SPECIAL_KIND.get(mem))
+        } else {
+            0
+        }
+    }
+
+    /// `MsTransSpPos(inverse, v)` (`0x0079e1b0`): point `v` from the
+    /// battle's frame into the special stage's (`inverse` 0) or back. Kind
+    /// 1 (a tilting stage): `v.y` less the work's `+0x844` (stored), then
+    /// `v` times the unit matrix turned about z by `+0x808` and x by
+    /// `+0x800` (inverse: x by `-+0x800`, then z by `-+0x808`;
+    /// `MsRotMatrixX`/`Z`). Kinds 2 and 3 (the sea): the sea's matrix
+    /// (`+0x7c0`) with its translation (`+0x7f0`..`+0x7f8`) cleared.
+    /// Others leave `v`. `matrix` stands for the original's 64-byte local.
+    pub fn ms_trans_sp_pos(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(Trig, u32) -> u32,
+        inverse: u32,
+        v: u32,
+        matrix: u32,
+    ) {
+        use ffx_bridge::x87::{load, store, sub};
+        let work = crate::free::bridge::SPECIAL_MEM.get(mem);
+        let m = match crate::free::bridge::SPECIAL_KIND.get(mem) {
+            1 => {
+                let unit: [[u32; 4]; 4] = std::array::from_fn(|r| {
+                    std::array::from_fn(|c| if r == c { 1.0f32.to_bits() } else { 0 })
+                });
+                mem.write(matrix, unit);
+                let y = v.wrapping_add(4);
+                let drop: u32 = mem.read(work.wrapping_add(0x844));
+                let lowered = store(sub(load(mem.read(y)), load(drop)));
+                mem.write(y, lowered);
+                let angle = |mem: &mut _, o: u32, negate: bool| {
+                    let a: u32 = ffx_bridge::Mem::read(&*mem, work.wrapping_add(o));
+                    if negate {
+                        store(-load(a))
+                    } else {
+                        crate::camera::x87_copy(a)
+                    }
+                };
+                let neg = inverse != 0;
+                let first = if neg {
+                    (Axis::X, 0x800)
+                } else {
+                    (Axis::Z, 0x808)
+                };
+                let second = if neg {
+                    (Axis::Z, 0x808)
+                } else {
+                    (Axis::X, 0x800)
+                };
+                for (axis, o) in [first, second] {
+                    let a = angle(&mut *mem, o, neg);
+                    ms_rot_matrix(mem, trig, axis, matrix, matrix, a);
+                }
+                matrix
+            }
+            2 | 3 => {
+                let zero = 0.0f32.to_bits();
+                mem.write(work.wrapping_add(0x7f0), [zero; 3]);
+                work.wrapping_add(0x7c0)
+            }
+            _ => return,
+        };
+        crate::vector::bridge::ms_apply_matrix(mem, v, m, v);
+    }
+
+    /// `MsSpCameraProcess(eye, at, up)` (`0x0079dfe0`): while
+    /// `0x0112c9fc` is set, the camera's eye and look-at
+    /// ([`ms_trans_sp_pos`]) and its up vector (kept as the work's
+    /// `+0x810`, reset by `MsSetNormalUpVector`, then turned) into the
+    /// special stage's frame.
+    pub fn ms_sp_camera_process(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(Trig, u32) -> u32,
+        [eye, at, up]: [u32; 3],
+        matrix: u32,
+    ) {
+        if SP_CAMERA_ON.get(mem) == 0 {
+            return;
+        }
+        ms_trans_sp_pos(mem, trig, 0, eye, matrix);
+        ms_trans_sp_pos(mem, trig, 0, at, matrix);
+        let work = crate::free::bridge::SPECIAL_MEM.get(mem);
+        mem.write(work.wrapping_add(0x810), up);
+        crate::vector::bridge::ms_set_normal_up_vector(mem, up);
+        ms_trans_sp_pos(mem, trig, 0, up, matrix);
+    }
+
+    /// Set: `MsSpCameraProcess` moves the camera into the special stage's
+    /// frame.
+    pub const SP_CAMERA_ON: Global<u8> = Global::new(0x0112_c9fc);
 }

@@ -2208,6 +2208,29 @@ ported! {
         let at = local.at();
         camera::ms_camera_aim_polar3(&mut mem(), &crt_trig, side, mv, at);
     }
+    /// `MsCameraAtelFocus_007c0560(side, mv)`: the script actors'
+    /// positions through the game.
+    MsCameraAtelFocus_007c0560 @ 0x007c_0560 => extern "C" fn ms_camera_atel_focus(side: u32, mv: u32) {
+        let mut m = mem();
+        camera::ms_camera_atel_focus(&mut target::Dm::new(&mut m), &host(), side, mv);
+    }
+    /// `MsBattleSpecialCameraKind_0079dd70()`.
+    MsBattleSpecialCameraKind_0079dd70 @ 0x0079_dd70 => extern "C" fn ms_battle_special_camera_kind() -> i32 {
+        special::ms_battle_special_camera_kind(&mem())
+    }
+    /// `MsTransSpPos(inverse, v)`: its matrix in this call's frame.
+    MsTransSpPos @ 0x0079_e1b0 => extern "C" fn ms_trans_sp_pos(inverse: u32, v: u32) {
+        let mut local = super::StackFrame::<16>::new();
+        let at = local.at();
+        special::ms_trans_sp_pos(&mut mem(), &crt_trig, inverse, v, at);
+    }
+    /// `MsSpCameraProcess(eye, at, up)`: `MsTransSpPos`'s matrix in this
+    /// call's frame.
+    MsSpCameraProcess @ 0x0079_dfe0 => extern "C" fn ms_sp_camera_process(eye: u32, at: u32, up: u32) {
+        let mut local = super::StackFrame::<16>::new();
+        let m = local.at();
+        special::ms_sp_camera_process(&mut mem(), &crt_trig, [eye, at, up], m);
+    }
     /// `MsCameraFocusWeights_007c0ae0(side, mv)`.
     MsCameraFocusWeights_007c0ae0 @ 0x007c_0ae0 => extern "C" fn ms_camera_focus_weights(side: u32, mv: u32) {
         camera::ms_camera_focus_weights(&mut mem(), side, mv);

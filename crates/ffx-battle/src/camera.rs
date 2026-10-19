@@ -1580,6 +1580,47 @@ pub mod bridge {
         Short,
     }
 
+    /// `MsCameraAtelFocus_007c0560(side, mv)` (`0x007c0560`, name ours;
+    /// `MsCameraProcess`'s): the side's position (`+0x50`) is the move's
+    /// offset (`mv + 0x30`) plus the mean position of up to two script
+    /// actors (`mv + 0xc`, `+0xe`; 0xffff none; `AtelGetActorPos`, the
+    /// sums stored as `f32`, divided only for two); `+0x6c` 0.
+    pub fn ms_camera_atel_focus(
+        mem: &mut crate::target::bridge::Dm<'_>,
+        host: &crate::target::bridge::Host<'_>,
+        side: u32,
+        mv: u32,
+    ) {
+        use ffx_bridge::x87::{add, div, load, store};
+        mem.frame(0x10, |mem, f| {
+            let zero = 0.0f32.to_bits();
+            let mut sum = [zero; 3];
+            let mut n = 0u32;
+            for k in 0..2 {
+                let actor: u16 = mem.read(mv.wrapping_add(0xc + 2 * k));
+                if actor == 0xffff {
+                    continue;
+                }
+                (host.atel_pos)(mem, u32::from(actor), f, f + 4, f + 8);
+                let p: [u32; 3] = mem.read(f);
+                for (s, v) in sum.iter_mut().zip(p) {
+                    *s = store(add(load(*s), load(v)));
+                }
+                n += 1;
+            }
+            if n > 1 {
+                // fild, then fstp dword twice
+                #[allow(clippy::cast_precision_loss)] // 2
+                let count = load(store(f64::from(n as f32)));
+                sum = sum.map(|s| store(div(load(s), count)));
+            }
+            let offset: [u32; 3] = mem.read(mv.wrapping_add(0x30));
+            let pos: [u32; 3] = std::array::from_fn(|k| store(add(load(offset[k]), load(sum[k]))));
+            mem.write(side.wrapping_add(0x50), pos);
+            mem.write(side.wrapping_add(0x6c), zero);
+        });
+    }
+
     /// The distance `len` over the `f32` at `at`, unless that is 0
     /// (`fucom`: a NaN divides).
     fn share(mem: &impl Mem, len: f64, at: u32) -> Option<f64> {

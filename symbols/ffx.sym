@@ -5455,14 +5455,15 @@
 0x0079d290 function MsComBufInit              # fh v3:bsim1.00 0x0079d2b0
 0x0079d2f0 function MsGetMagicEffNum          # fh v3:exact 0x0079d310
 0x0079d430 function MsBattleSpecial           # fh v3:exact 0x0079d450; ported (battle round 19)
+0x0079dd70 function MsBattleSpecialCameraKind_0079dd70 # ours: () -> g_BtlSpecialKind (sign-extended) while 0x0112c022 is 1 and g_BtlSpecialCamera is 0, else 0; caller MsCameraProcess; ported (ffx_battle::special, battle round 26)
 0x0079dd90 function MsBattleSpecialCameraFree # fh v3:exact 0x0079ddb0
 0x0079ddb0 function MsBattleSpecialCameraPause # fh v3:exact 0x0079ddd0
 0x0079dde0 function MsBattleSpecialFree       # fh v3:exact 0x0079de00; ported (battle round 18)
 0x0079de60 function MsBattleSpecialInit       # fh v3:exact 0x0079de80; ported (battle round 21): g_BtlSpecialMem (0x870, user_malloc) and kind: 1 Yn_PSimTest, Yn_SeaCreate, +0x838 = 0.002 (0x00b54ca4), the rest 0, objects 0x1c-0x1e yiDisposeAnimDObj(i, -1); 2, 3 +0x810 and +0x844 cleared; else kind 0
 0x0079df90 function MsSpecialSeaMatrix_0079df90 # (chr, id, work): Ch_OptposGetMatrix(chr, id, 0, work+0x7c0), its rows normalized (MsVectorNormal), Yn_SeaSetMatrix; MsBattleSpecial's kinds 2 (id 0xe) and 3 (id 5) on actor 0x14's model; name ours; ported (battle round 18)
-0x0079dfe0 function MsSpCameraProcess            # layout+callees: sorts between MsBattleSpecialInit and MsTransSpPos, and its named callees match the Switch 0x71003797d0 MsSpCameraProcess's (similarity 1.00: MsSetNormalUpVector, MsTransSpPos); symbols from Fahrenheit's server export
+0x0079dfe0 function MsSpCameraProcess            # layout+callees: sorts between MsBattleSpecialInit and MsTransSpPos, and its named callees match the Switch 0x71003797d0 MsSpCameraProcess's (similarity 1.00: MsSetNormalUpVector, MsTransSpPos); symbols from Fahrenheit's server export; (eye, at, up): while g_BtlSpCameraOn, MsTransSpPos(0, eye), (0, at), g_BtlSpecialMem+0x810 = up, MsSetNormalUpVector(up), MsTransSpPos(0, up); ported (ffx_battle::special, battle round 26)
 0x0079e030 function MsSpecialChrMatrix_0079e030 # (angles): each shown, unridden actor's matrix at g_BtlSpecialMem + 0x40 i: scale 0.01, MsRotMatrixY(dir + pi/2), Z(angles[2]), X(angles[0]), its position turned likewise; Ch_SetOrgMatrix; MsBattleSpecial kind 1's last call; name ours; ported (battle round 18)
-0x0079e1b0 function MsTransSpPos                 # callees: its named callees match the Switch 0x71003796e0 MsTransSpPos's (similarity 1.00: FFXVu0UnitMatrix, MsApplyMatrix, MsRotMatrixX, MsRotMatrixZ); symbols from Fahrenheit's server export
+0x0079e1b0 function MsTransSpPos                 # callees: its named callees match the Switch 0x71003796e0 MsTransSpPos's (similarity 1.00: FFXVu0UnitMatrix, MsApplyMatrix, MsRotMatrixX, MsRotMatrixZ); symbols from Fahrenheit's server export; (inverse, v): g_BtlSpecialKind 1: v.y -= work+0x844, v times the unit matrix turned z by +0x808 then x by +0x800 (inverse: x by -+0x800, z by -+0x808); 2, 3: work+0x7f0..0x7f8 = 0, v times the sea matrix +0x7c0; else nothing; ported (ffx_battle::special, battle round 26)
 0x0079e310 function MsCheckStat               # fh v3:cg2 0x79e330
 0x0079e320 function MsCheckStat2              # fh v3:bsim1.00 0x0079e340
 0x0079e330 function MsCheckStatCount          # byte 3 of entry i of the counter statuses' table 0x00c42464; Switch MsCheckStatCount sits with MsCheckStat, MsCheckStat2, MsCheckWrongStatus; ported
@@ -6298,6 +6299,7 @@
 0x007c04b0 function MsGetCameraMatrix         # fh v3:bsim1.00 0x007c0430
 0x007c04c0 function MsNearRag                 # fh v3:exact 0x007c0440
 0x007c0540 function MsScreenInit              # fh v3:bsim1.00 0x007c04c0
+0x007c0560 function MsCameraAtelFocus_007c0560 # ours: (side, mv): side+0x50 = mv+0x30 + the mean of up to two script actors' positions (mv+0xc/+0xe u16, 0xffff none; 0x0086b1e0, sums stored as f32, divided only for two), side+0x6c = 0; caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)
 0x007c06d0 function MsSetCameraMatrix         # fh v3:exact 0x007c0650
 0x007c0790 function MsSetCheckChange          # fh v3:exact 0x007c0710
 0x007c0910 function MsCameraAimPolar_007c0910 # ours: (side, mv): MsVectorRect2Polar(mv+0x30, side+0x8c base, side+0x60 yaw, a dropped local, the distance); side+0x64 = mv+0x44 (+ distance / mv+0x54 unless 0; a NaN divides), +0x68 = mv+0x48 (+ distance / mv+0x58 likewise), +0x6c = 0; caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)
@@ -15826,6 +15828,7 @@
 0x0112c9f9 label g_BtlKeepFps              # u8 Sg_SetKeepFps(1)'s result at MsEventEffectStart; name ours
 0x0112c9fa label g_BtlReflected            # u8, set by MsCalcCommandTarget when a target reflected the command
 0x0112c9fb label g_BtlGuardTook            # u8, set by MsCalcCommandTarget when a guard took a hit for its target
+0x0112c9fc label g_BtlSpCameraOn            # u8: set, MsSpCameraProcess turns the camera's eye, look-at and up vector into the special stage's frame (MsTransSpPos); MsBattleExe sets it to 1; name ours
 0x0112c9fe label g_BtlCameraHides          # u8, set by MsSetChrVisibleCamera; MsReturnCameraVisible shows all again and clears it (the shows set it again)
 0x0112c9ff label g_BtlEscapeRule              # i8, set by battle script (0x007a77a0): 1 no escape, 2 always (MsCalcEscape)
 0x0112ca00 label g_BtlMenuSkipOn           # u8 set: actors' skip command (+0x6c8) counts (MsMenuGetChrSkipCommand)
