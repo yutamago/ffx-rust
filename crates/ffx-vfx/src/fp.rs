@@ -282,6 +282,113 @@ pub mod bridge {
         POINT_LIGHT_B.set(mem, 0);
     }
 
+    /// `pppFpPointLightProc()` (`0x00729f90`): the scene's point lights
+    /// follow [`POINT_LIGHT_A`] (how many the field effects want). More
+    /// than [`POINT_LIGHT_CAP`]: the defined ones are saved (position,
+    /// radius, colour, light, attenuation through `Sg_PLightGet*`, 0x24
+    /// bytes each in a `user_malloc` block), disposed of
+    /// (`Sg_PLightDispose_thunk`), the new number allocated
+    /// (`Sg_PLightAllocate`) and taken as the cap, the saved ones defined
+    /// again (`Sg_PLightDefine`, `Sg_PLightSetAttenuation`) and the rest
+    /// switched off (`Sg_PLightSetEnable(i, 0)`), the block freed. Fewer:
+    /// those past the wanted number switched off. Then with any defined,
+    /// every character (`Ch_HandleRewind`, `Ch_HandleGetNext`) gets
+    /// `Ch_PLightSetEnable(h, POINT_LIGHT_B)`. Callees through `call`
+    /// (`fcall` for those returning in ST0). Returns the original's eax:
+    /// 0 after the character walk, else the cap.
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)] // counts as the original's signed words
+    pub fn ppp_fp_point_light_proc<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use crate::x87::load;
+        use ffx_bridge::x87::store;
+        fn r(mem: &impl Mem, a: u32) -> u32 {
+            Global::<u32>::new(a).ptr(mem).addr
+        }
+        let cap = POINT_LIGHT_CAP.get(mem);
+        let want = POINT_LIGHT_A.get(mem) as i32;
+        if want > cap {
+            let n = cap;
+            let mut saved = 0u32;
+            let mut count = want as u32;
+            if n > 0 {
+                saved = call(mem, r(mem, 0x0068_7020), &[(n as u32).wrapping_mul(0x24)]);
+                for i in 0..n as u32 {
+                    let rec = saved.wrapping_add(0x24 * i);
+                    call(mem, r(mem, 0x0083_1b30), &[i, rec, rec + 4, rec + 8]);
+                    let radius = fcall(mem, r(mem, 0x0083_1b80), &[i]);
+                    mem.write(rec + 0xc, store(radius));
+                    call(
+                        mem,
+                        r(mem, 0x0083_1a60),
+                        &[i, rec + 0x10, rec + 0x14, rec + 0x18],
+                    );
+                    let light = call(mem, r(mem, 0x0083_1b00), &[i]);
+                    mem.write(rec + 0x1c, light);
+                    let att = fcall(mem, r(mem, 0x0083_1a40), &[i]);
+                    mem.write(rec + 0x20, store(att));
+                }
+                call(mem, r(mem, 0x0083_1a30), &[]);
+                count = POINT_LIGHT_A.get(mem);
+            }
+            call(mem, r(mem, 0x0083_1950), &[count]);
+            let now = POINT_LIGHT_A.get(mem);
+            POINT_LIGHT_CAP.set(mem, now as i32);
+            let mut i = 0i32;
+            if n > 0 {
+                for k in 0..n as u32 {
+                    let rec = saved.wrapping_add(0x24 * k);
+                    let w: [u32; 9] = mem.read(rec);
+                    let args = [
+                        k,
+                        load(w[0]),
+                        load(w[1]),
+                        load(w[2]),
+                        load(w[3]),
+                        w[4],
+                        w[5],
+                        w[6],
+                        w[7],
+                    ];
+                    call(mem, r(mem, 0x0083_19b0), &args);
+                    call(mem, r(mem, 0x0083_1bf0), &[k, load(w[8])]);
+                }
+                i = n;
+            }
+            while i < POINT_LIGHT_A.get(mem) as i32 {
+                call(mem, r(mem, 0x0083_1c60), &[i as u32, 0]);
+                i += 1;
+            }
+            if saved != 0 {
+                call(mem, r(mem, 0x0068_7010), &[saved]);
+            }
+        } else if want < cap {
+            let mut i = want;
+            loop {
+                call(mem, r(mem, 0x0083_1c60), &[i as u32, 0]);
+                i += 1;
+                if i >= POINT_LIGHT_CAP.get(mem) {
+                    break;
+                }
+            }
+        }
+        let cap = POINT_LIGHT_CAP.get(mem);
+        if cap <= 0 {
+            return cap as u32;
+        }
+        call(mem, r(mem, 0x0082_6db0), &[]);
+        loop {
+            let h = call(mem, r(mem, 0x0082_6d70), &[]);
+            if h == 0 {
+                return 0;
+            }
+            let on = POINT_LIGHT_B.get(mem);
+            call(mem, r(mem, 0x0083_0ae0), &[h, on]);
+        }
+    }
+
     /// `pppFpSaveStat(out)` (`0x0072a180`): every entry's state as two
     /// bits ([`super::save_stat`]); running is the first entry with the
     /// same ID started and not ended.
@@ -418,6 +525,38 @@ pub mod bridge {
             _ => math::mul4x4(mem, view, camera, world),
         }
         vu0::matrix_copy(mem, r(mem, VIEW_MATRIX_COPY), view)
+    }
+
+    /// `pppFpSetWoodMatrix()` (`0x0072a690`): `g_pppFpWoodMatrix`, the
+    /// camera-facing rotation the "wood" effects draw with
+    /// ([`ppp_fp_set_draw_matrix`] mode 2), built in `frame` (0x30 bytes,
+    /// the original's three local vectors): row 1 = the camera matrix's
+    /// row 1 (`w` 0) normalized, row 0 = its (`y`, `-x`, 0, 0)
+    /// normalized, row 2 = row 0 x row 1 normalized, row 3 = the camera's
+    /// position row (`FFXVu0Normalize`, `FFXVu0CopyVector`,
+    /// `FFXVu0OuterProduct`). Returns the last copy's eax (the position's
+    /// `w`).
+    pub fn ppp_fp_set_wood_matrix(mem: &mut impl Mem, frame: u32) -> u32 {
+        use crate::x87::load;
+        use ffx_ps2::vu0::bridge as vu0;
+        fn r(mem: &impl Mem, a: u32) -> u32 {
+            Global::<u32>::new(a).ptr(mem).addr
+        }
+        let (side, up, fwd) = (frame, frame + 0x10, frame + 0x20);
+        let wood = r(mem, FP_WOOD_MATRIX);
+        let cam: [u32; 3] = mem.read(r(mem, CAMERA_MATRIX) + 0x10);
+        mem.write(up, [load(cam[0]), load(cam[1]), load(cam[2]), 0]);
+        vu0::normalize(mem, up, up);
+        vu0::copy_vector(mem, wood + 0x10, up);
+        let [x, y]: [u32; 2] = mem.read(up);
+        mem.write(side, [load(y), load(x) ^ 0x8000_0000, 0, 0]);
+        vu0::normalize(mem, side, side);
+        vu0::copy_vector(mem, wood, side);
+        vu0::outer_product(mem, fwd, side, up);
+        vu0::normalize(mem, fwd, fwd);
+        vu0::copy_vector(mem, wood + 0x20, fwd);
+        let pos = r(mem, CAMERA_MATRIX) + 0x30;
+        vu0::copy_vector(mem, wood + 0x30, pos)
     }
 
     /// `g_pppFpHeapDisplaySet` (`0x00cec218`): set by

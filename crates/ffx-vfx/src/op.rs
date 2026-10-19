@@ -1641,6 +1641,38 @@ pub mod bridge {
         mem.write(dst, o);
     }
 
+    /// `op_rot_m_y_apply_007e7be0(dst, src, angle)` (`0x007e7be0`): `dst` =
+    /// `src` turned by `angle` about Y: a unit matrix built in `frame`
+    /// (0x40 bytes, the original's local; every word first the emulated
+    /// `r0`'s, then 1.0 at `frame + g_pppColorConShift`, `r2` = (1.0, 0) in
+    /// its low words, 1.0 down the rest of the diagonal and the shift
+    /// cleared), `op_rot_m_y(m, m, angle)` (through `call`), then
+    /// [`op_apply_m_w1`]`(dst, m, src)`.
+    pub fn op_rot_m_y_apply<M: Mem>(
+        mem: &mut M,
+        dst: u32,
+        src: u32,
+        angle: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        for i in 0..4 {
+            mem.write(frame + 0x10 * i, r0);
+        }
+        let shift = crate::rand::bridge::COLOR_CON_SHIFT.get(mem);
+        mem.write(frame.wrapping_add(shift), 1.0f32);
+        mem.write(g(mem, 0x00c8_f528), [1.0f32.to_bits(), 0]);
+        for at in [0x14u32, 0x28, 0x3c] {
+            mem.write(frame + at, 1.0f32);
+        }
+        crate::rand::bridge::COLOR_CON_SHIFT.set(mem, 0);
+        let rot = g(mem, 0x007e_9670);
+        call(mem, rot, &[frame, frame, crate::x87::load(angle)]);
+        op_apply_m_w1(mem, dst, frame, src);
+    }
+
     /// The emulated VU0 registers `op_mul_m` uses besides those of
     /// `op_apply_m_w1`: the right matrix and the result at `0x00c8f910`.
     const MULM_C: u32 = 0x00c8_f910;
@@ -3435,6 +3467,57 @@ pub mod bridge {
         }
         op_func_ot(mem, 0x40, call);
         op_func_ot(mem, 0x60, call);
+    }
+
+    /// `g_OpLoopCount` (`0x023328d4`) and `g_OpLoopCount2` (`0x023328d0`):
+    /// frame counters `op_loop_ffx_after` advances (the first read by the
+    /// op and debug code).
+    pub const LOOP_COUNTS: [Global<u32>; 2] = [Global::new(0x0233_28d4), Global::new(0x0233_28d0)];
+    /// Two pairs `op_loop_ffx_after` copies each frame: `0x02332e8c` =
+    /// `0x02332e90` (written by `0x007ec890`) and `0x02332e80` = `0x02332e84`.
+    pub const LOOP_LATCHES: [(u32, u32); 2] =
+        [(0x0233_2e8c, 0x0233_2e90), (0x0233_2e80, 0x0233_2e84)];
+
+    /// `op_loop_ffx_after()` (`0x007ff680`): the op layer's end of frame:
+    /// [`LOOP_COUNTS`] advanced; the GS draw environment set for this frame
+    /// (`op_gs1_init(dc, frame & 1)` on a copy of the two 0x60-byte halves
+    /// of `Sg_GetDBuffDC(&frame)` at `+0x60` and `+0x190`, kept in `frame`:
+    /// `+0` the frame number, `+4` the copy's base, 0x1e4 bytes as the
+    /// original's locals; the original's frame puts the copy at a 16-byte
+    /// boundary, and the game needs `frame + 4` so aligned); both pads' history into the debug pad records
+    /// (`op_pad_set(pad, TkGetControlerHist(pad, 0, 0) & 0xffff)`);
+    /// `0x007ec4f0()`; [`LOOP_LATCHES`] copied; in debug mode
+    /// `KaGDebFirstCall()`. Callees other than `op_pad_set` through `call`.
+    pub fn op_loop_ffx_after<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        for c in LOOP_COUNTS {
+            let v = c.get(mem).wrapping_add(1);
+            c.set(mem, v);
+        }
+        let dc = call(mem, g(mem, 0x0082_0530), &[frame]);
+        let env = frame + 4;
+        for (from, to) in [(0x60u32, 0x60u32), (0x190, 0x120)] {
+            let half: [u32; 0x18] = mem.read(dc.wrapping_add(from));
+            mem.write(env + to, half);
+        }
+        let odd = mem.read::<u32>(frame) & 1;
+        call(mem, g(mem, 0x007e_b570), &[env, odd]);
+        for pad in 0..2 {
+            let hist = call(mem, g(mem, 0x0088_8d70), &[pad, 0, 0]) & 0xffff;
+            op_pad_set(mem, pad, hist);
+        }
+        call(mem, g(mem, 0x007e_c4f0), &[]);
+        for (to, from) in LOOP_LATCHES {
+            let v: u32 = mem.read(g(mem, from));
+            mem.write(g(mem, to), v);
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            call(mem, g(mem, 0x00a5_bd80), &[]);
+        }
     }
 
     /// `g_OpCharClass` (`0x0113fb58`): the op script tokenizer's class of
