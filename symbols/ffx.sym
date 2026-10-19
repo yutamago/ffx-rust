@@ -4181,7 +4181,7 @@
 0x007645e0 function KeThCp_Draw               # fh v3:exact 0x007646d0
 0x00764800 function KeThCp_Init               # fh v3:exact 0x007648f0
 0x00764820 function KeThCp_Reset                 # layout: alphabetical run between KeThCp_Init and KeThCp_Update (1 unnamed in the gap); Switch 0x710030b1f0 KeThCp_Reset is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007649a0 function KeThCp_Update             # fh v3:exact 0x00764a90
+0x007649a0 function KeThCp_Update             # fh v3:exact 0x00764a90; (t) -> t[0]: object t[0] flag bit 1 (+4) taken (running 0x20 for belt paths with +0x3e bit 8); each belt path of the object list (get_ptr32_func): +0x3e bit 9 copies t[4]/t[5] into segments +0x34 and +0x34+2 (KeVu0CopyVecXYZ), KeThBP_Update(unit matrix, bp, t[1], t[3], t[2]); dead (bit 4) ones unlinked (+0 next, +4 back link), KeThBP_Quit, pushed on the free list t[3]+4; 0x02305840 = byte t[3][0], 0x02305844 = object; ported (field r12, ffx_field::keth)
 0x00764b70 function KeThResHd_BPAlloc            # layout+callees: sorts between KeThCp_Update and KeThResHd_Init, and its named callees match the Switch 0x710030aee0 KeThResHd_BPAlloc's (similarity 1.00: is_ptr32_null); symbols from Fahrenheit's server export
 0x00764bb0 function KeThResHd_Init            # fh v3:exact 0x00764ca0
 0x00764c40 function KeAddScaledColor          # (out, base, step, k): out[i] = step[i] * k + base[i] as f32, clamped to 0..=255 (KeThBP_MkGifPk's colours)
@@ -11747,7 +11747,7 @@
 0x009209e0 function rcbgSceneInit             # fh v3:exact 0x009209e0
 0x00920b00 function rcbgSceneProcLayer           # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'genk12'; Switch 0x7100546ec0 rcbgSceneProcLayer (symbols from Fahrenheit's server export)
 0x00920c00 function rcbgSceneSetMatrix        # fh v3:exact 0x00920c00
-0x00920e40 function rcbgSceneSetMatrix_Cross  # fh switch:cg2 0x7100547310
+0x00920e40 function rcbgSceneSetMatrix_Cross  # fh switch:cg2 0x7100547310; () -> 1/0: rcbgSceneSetMatrix for the map system's own view (g_YnMapSystem[0]+8 with +4 set), without MsSetCameraMatrix; 0 without a view or with field of view 0; ported (field r12, ffx_field::camera)
 0x009210a0 function rcbgSceneSetPal           # fh switch:bsim1.00 0x71005472b0
 0x009210e0 function rcbgSceneWaveC0Update     # (scene): while +0xc0: sin-table swing of phase +0xd4 (* -65536 / 2pi), faded over +0xc8 frames for modes 3/4, times +0xcc (+ rand() % +0xd0) into +0xb8 (odd) or +0xbc; phase += +0xc4, +0xd8++, rcbgSceneWaveC0Stop after the frames, rcbgSceneSetMatrix; from 0x00920aa0; name ours
 0x00921200 function rcbgSceneWaveC0Stop          # (scene): +0xb8, +0xbc = 0.0, +0xc0 = 0: ends the wave Yn_SceneSetC0 starts (update 0x009210e0)
@@ -11976,7 +11976,7 @@
 0x0092ad20 function rcbgLayerInit             # fh v3:exact 0x0092ad20
 0x0092ad80 function rcbgLayerProc             # fh switch:bsim1.00 0x7100553930
 0x0092aed0 function rcbgClipCodeAnd              # (out, a, b, c, d) -> out: out = (a & c, b & d); rcbgClipVertex
-0x0092af60 function rcbgClipVertex            # fh v3:cg2 0x92af60
+0x0092af60 function rcbgClipVertex            # fh v3:cg2 0x92af60; (m, verts, n) -> code: m into VU0 0x00c8f7d0.., each vertex (at least one) into 0x00c8f810 through pppVu0MulX/MaddaY/MaddaZ/MaddW (acc 0x00c8f790, out 0x00c8f820); code 0x3f ANDed with the clip flags 0x00c8facc (copied to EE 0x00c8f538; no vclip sets them here) per vertex, 0 stops; ported (field r12, ffx_field::model)
 0x0092b0d0 function rcbgSetClipMatrix         # fh v3:exact 0x0092b0d0
 0x0092b140 function rcbgSetWorldMatrix        # fh v3:bsim1.00 0x0092b140
 0x0092b160 function rcbgUpdateMatrix          # fh v3:exact 0x0092b160
@@ -12853,7 +12853,7 @@
 0x00a48d70 function AbmapInitHoming           # fh v3:exact 0x00a48d70 +AbmapInitHoming
 0x00a48f20 function AbmapPadStartSlideIn      # (pad): unless shown (+0x23 set) and idle, counter +0x29 = 0, step +0x34 = AbmapPadSlideInStep; name ours
 0x00a48f50 function AbmapCtrlTilt             # fh v3:cg2 0xa48f50 +AbmapCtrlTilt
-0x00a490c0 function AbmapCtrlZoom             # fh v3:exact 0x00a490c0 +AbmapCtrlZoom
+0x00a490c0 function AbmapCtrlZoom             # fh v3:exact 0x00a490c0 +AbmapCtrlZoom; (): pad +0x2700 < 0 and button bit 8 (+0x1166e): zoom level +0x115cc steps 0..2 (wrapping), 30-frame change +0x115d0 from +0x11350 (kept +0x115dc) to AbmapZoomScale() (+0x115e0); each frame +0x11350/54/58 = from + (to - from) sin[((30-left)<<14)/30>>4 & 0xfff], <= 0.375 sets +0x116b0 -2 (NaN neither) unless negative, >= 0.375 sets 2 unless positive, +0x116ac 0 -> 1; last frame: to, +0x115c7 = 1; eax g_Abmap or the count; ported (field r12, ffx_field::abmap)
 0x00a49310 function AbmapItemUsableAt         # (chr, node, item) -> bits: 0 unless held (MsGetSaveItemNum), else the ability bits the item grants chr over its nodes (AbmapForEachNode/AbmapForNodeAndLinked with AbmapItemNodeEffect); name ours
 0x00a493b0 function AbmapItemEffectAtNode     # (chr, node, item) -> bits: AbmapItemUsableAt for one node index: 0 unless held, else AbmapItemNodeEffect(g_Abmap +0x808 + 0x28 node, ctx); from AbmapTryUseItem; name ours
 0x00a49440 function AbmapItemNodeEffect       # (node, ctx): AbmapItemUsableAt's callback: special kinds via 0x00a5d120, else the item's ability bits in the node's excel row unless activated for chr or hidden, ORed into ctx+0xc; name ours

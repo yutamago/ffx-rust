@@ -437,6 +437,83 @@ pub mod bridge {
         r
     }
 
+    /// `AbmapZoomScale()` (`0x00a56820`, in `ST0`): the zoom for the level.
+    pub const ZOOM_SCALE: u32 = 0x00a5_6820;
+
+    /// `AbmapCtrlZoom()` (`0x00a490c0`): with the pad's `+0x2700` (`i16`)
+    /// negative and button bit 8 (`+0x1166e`), the zoom level (`+0x115cc`,
+    /// 0..=2) steps up, wrapping, and a 30-frame change (`+0x115d0`) starts
+    /// from the zoom (`+0x11350`, kept at `+0x115dc`) to `AbmapZoomScale()`
+    /// (`+0x115e0`). Each frame of a change the three zoom words
+    /// (`+0x11350..+0x11358`) get `from + (to - from) * sin_table[((30 -
+    /// left) << 14) / 30 >> 4 & 0xfff]` (on the x87, stored once); at most
+    /// 0.375 (not NaN) sets `+0x116b0` to -2 unless negative, at least 0.375
+    /// sets it to 2 unless positive, and `+0x116ac` 0 becomes 1. On the
+    /// last frame they are `to` and `+0x115c7` is set. Returns the `eax` it
+    /// ends with: `g_Abmap`, or the frame count when no change runs.
+    pub fn abmap_ctrl_zoom<M, F>(mem: &mut M, fcall: &mut F) -> u32
+    where
+        M: Mem,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        let g = ABMAP.get(mem);
+        let pad = super::TILT_PAD.get(mem);
+        let pressed = mem.read::<i16>(pad.wrapping_add(0x2700)) < 0
+            && mem.read::<u16>(g.wrapping_add(0x1166e)) & 0x100 != 0;
+        if pressed {
+            let level = g.wrapping_add(0x115cc);
+            let l = mem.read::<u8>(level).wrapping_add(1);
+            mem.write(level, if l > 2 { 0 } else { l });
+            mem.write(g.wrapping_add(0x115d0), 30u16);
+            let zoom = x87::copy(mem.read::<u32>(g.wrapping_add(0x11350)));
+            mem.write(g.wrapping_add(0x115dc), zoom);
+            let f = mem.rebase(ZOOM_SCALE);
+            let to = fcall(mem, f, crate::camera::FArgs::Stack(&[]));
+            mem.write(ABMAP.get(mem).wrapping_add(0x115e0), x87::store(to));
+        }
+        let g = ABMAP.get(mem);
+        let left = mem.read::<i16>(g.wrapping_add(0x115d0));
+        if left <= 0 {
+            return u32::from(left.cast_unsigned());
+        }
+        let left = left - 1;
+        mem.write(g.wrapping_add(0x115d0), left);
+        let zooms = [0x11358, 0x11354, 0x11350];
+        if left == 0 {
+            let to = x87::copy(mem.read::<u32>(g.wrapping_add(0x115e0)));
+            for o in zooms {
+                mem.write(g.wrapping_add(o), to);
+            }
+            mem.write(g.wrapping_add(0x115c7), 1u8);
+            return g;
+        }
+        let k = ((30 - i32::from(left)) << 14) / 30;
+        #[allow(clippy::cast_sign_loss)] // masked to 12 bits
+        let i = ((k >> 4) & 0xfff) as u32;
+        let sin = x87::load(mem.read::<u32>(mem.rebase(super::SIN_TABLE) + 4 * i));
+        let to = x87::load(mem.read::<u32>(g.wrapping_add(0x115e0)));
+        let from = x87::load(mem.read::<u32>(g.wrapping_add(0x115dc)));
+        let zoom = x87::store((to - from) * sin + from);
+        for o in zooms {
+            mem.write(g.wrapping_add(o), zoom);
+        }
+        let near = x87::load(mem.read::<u32>(mem.rebase(super::ZOOM_NEAR)));
+        let z = x87::load(zoom);
+        let level = g.wrapping_add(0x116b0);
+        // a NaN zoom sets neither
+        if z <= near && mem.read::<i32>(level) >= 0 {
+            mem.write(level, -2i32);
+        }
+        if near <= z && mem.read::<i32>(level) <= 0 {
+            mem.write(level, 2i32);
+        }
+        let shown = g.wrapping_add(0x116ac);
+        if mem.read::<u32>(shown) == 0 {
+            mem.write(shown, 1u32);
+        }
+        g
+    }
+
     /// Copies the camera's four words (`+0x112b8`) to `+0x11308`; returns
     /// the last.
     fn sync_camera(mem: &mut impl Mem) -> u32 {

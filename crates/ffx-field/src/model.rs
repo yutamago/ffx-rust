@@ -792,6 +792,70 @@ pub mod bridge {
         out
     }
 
+    /// `pppVu0MulX(dst, v, vec)`, `pppVu0MaddaY(acc, v, vec)`,
+    /// `pppVu0MaddaZ(acc, v, vec)` and `pppVu0MaddW(dst, v, vec)` (the
+    /// vector by value), as [`rcbg_clip_vertex`] calls them.
+    pub const VU0_MUL_X: u32 = 0x0072_c6a0;
+    pub const VU0_MADDA_Y: u32 = 0x0072_c590;
+    pub const VU0_MADDA_Z: u32 = 0x0072_c5f0;
+    pub const VU0_MADD_W: u32 = 0x0072_c650;
+
+    /// `rcbgClipVertex(m, verts, n)` (`0x0092af60`): the matrix `m` into
+    /// the emulated VU0 registers `0x00c8f7d0..0x00c8f80f`, then each of
+    /// the `n` vertices (16 bytes each; at least one) into `0x00c8f810`
+    /// and through it as macro code (`pppVu0MulX`, `pppVu0MaddaY`/`Z` on
+    /// the accumulator `0x00c8f790`, `pppVu0MaddW` into `0x00c8f820`).
+    /// The clip code starts at 0x3f and keeps only the bits of the VU0 clip flags
+    /// `0x00c8facc` (copied to the EE register `0x00c8f538`) per vertex;
+    /// the PS2's `vclip` that set those flags is gone, so they are
+    /// whatever the last clip test left. Returns the code, 0 as soon as it
+    /// is 0.
+    pub fn rcbg_clip_vertex<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        verts: u32,
+        n: i32,
+        call: &mut C,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let rows = r(mem, 0x00c8_f7d0);
+        for k in 0..4 {
+            let row = mem.read::<[u32; 4]>(m.wrapping_add(0x10 * k));
+            mem.write(rows + 0x10 * k, row);
+        }
+        let (vec, acc, out) = (
+            r(mem, 0x00c8_f810),
+            r(mem, 0x00c8_f790),
+            r(mem, 0x00c8_f820),
+        );
+        let (flags, ee) = (r(mem, 0x00c8_facc), r(mem, 0x00c8_f538));
+        let mut code = 0x3fu32;
+        let mut left = n;
+        let mut at = verts;
+        loop {
+            let v = mem.read::<[u32; 4]>(at);
+            mem.write(vec, v);
+            at = at.wrapping_add(0x10);
+            for (f, dst, row) in [
+                (VU0_MUL_X, acc, 0),
+                (VU0_MADDA_Y, acc, 1),
+                (VU0_MADDA_Z, acc, 2),
+                (VU0_MADD_W, out, 3),
+            ] {
+                let [x, y, z, w] = mem.read::<[u32; 4]>(vec);
+                let f = r(mem, f);
+                call(mem, f, &[dst, rows + 0x10 * row, x, y, z, w]);
+            }
+            let clip = mem.read::<u32>(flags);
+            mem.write(ee, clip);
+            code &= clip;
+            left -= 1;
+            if code == 0 || left <= 0 {
+                return code;
+            }
+        }
+    }
+
     /// `rcfxParticleResetForce(p)` (`0x00928970`): each of its `+0x34`
     /// forces (array at `+0x38`) with a reset function (`+0x10`) gets
     /// `call(mem, function, force, p)`, then [`rcfx_particle_clear_forces`].
