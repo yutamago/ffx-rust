@@ -3745,4 +3745,13 @@ ported! {
     MsGetMenuChrInfo @ 0x0078_f7c0 => extern "C" fn ms_get_menu_chr_info(chr: u32, k: u32) -> u32 {
         menu::ms_get_menu_chr_info(&mut mem(), chr, k)
     }
+    /// `MsEffectTerminate(id)`: an effect's end (`MsBattleError` through
+    /// the game).
+    MsEffectTerminate @ 0x0078_8920 => extern "C" fn ms_effect_terminate(id: u32) {
+        effect::ms_effect_terminate(&mut mem(), &mut call_ptr, id);
+    }
+    /// `SwapSaveGear(first, second)`: two equipment slots trade places.
+    SwapSaveGear @ 0x007a_b9f0 => extern "C" fn swap_save_gear(first: u32, second: u32) -> i32 {
+        save::swap_save_gear(&mut mem(), first, second)
+    }
 }

@@ -961,6 +961,20 @@ as ported, not hookable.
   (`u16` at `4 * (kana + 2 * line)` plus the table); without one, a
   character reads `ply_rom`, a monster its actor's `+0x90` or `+0x190`.
 
+### Effect ends, gear swaps, script motions
+
+- `MsEffectTerminate(id)` (`0x00788920`): the switch is on `(id >> 8) &
+  0xff` through a byte table; the effect camera mode is cleared when
+  `g_BtlEffectCameraCall` equals `id` (`sete`, `dec`, `and`: the mode
+  stays for every other effect). Without actors (`MsGetChrTop` 0) the
+  actor is null and the kinds that touch it read address 0.
+- `SwapSaveGear(first, second)` (`0x007ab9f0`): the two slots trade
+  their 0x16 bytes; the characters wearing either piece (`ply_save`
+  `+0x2d` weapon, `+0x2e` armour) follow it and the slot gets them as
+  owner (`+6`). A `0x7000` ID among the two takes both pieces off (0xff
+  in the save and the slot) and compares whole, so it never matches a
+  worn byte.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

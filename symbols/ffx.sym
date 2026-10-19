@@ -4989,7 +4989,7 @@
 0x007883f0 function MsEffectSetMotionFlag     # fh switch:bsim1.00 0x71003514a0
 0x00788430 function MsEffectSetSpeed          # fh v3:exact+call.cs 0x007884f0 cdecl
 0x00788480 function MsEffectStart             # fh v3:exact+call.cs 0x00788540 cdecl
-0x00788920 function MsEffectTerminate         # fh v3:exact 0x007889e0
+0x00788920 function MsEffectTerminate         # fh v3:exact 0x007889e0; ported (battle round 23): (id) actor id&0xff (0 without MsGetChrTop), kind (id>>8)&0xff: 2 +0xdfb 5->6 else MsBattleError("effect does not ready call" 0x00b54a00); 4 +0x3f7/+0x436 cleared when both set; 7/8 +0xe12/+0xe13 down to 0; 9 +0xea4 cleared when == id; 10 g_BtlResetWait cleared; 0xe g_BtlCommandHold2 down; 0xf as 4 plus g_BtlStoneStarted down, +0xe17 = 1; 0x80 g_BtlEventEffectStat 6; then g_BtlEffectCameraMode cleared when g_BtlEffectCameraCall == id (sete/dec/and); eax garbage (void)
 0x00788b20 function MsEffectWaitFlag             # layout: alphabetical run between MsEffectTerminate and MsEffectWeaponFree (1 unnamed in the gap); Switch 0x71003514e0 MsEffectWaitFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00788b30 function MsEffectWeaponFree        # fh v3:exact 0x00788bf0
 0x00788b70 function MsEffectWeaponInit        # fh v3:exact 0x00788c30
@@ -5902,7 +5902,7 @@
 0x007ab870 function MsGetExcelData            # (id, table, &strings) -> record; defines the container (docs/formats/kernel.md); was Kernel_FindRecord
 0x007ab8f0 function MsGetExcelDataNum         # fh v3:exact 0x007ab910
 0x007ab970 function MsEquipSaveWeapon         # fh v3:exact 0x007ab990
-0x007ab9f0 function SwapSaveGear              # fh call.cs cdecl
+0x007ab9f0 function SwapSaveGear              # fh call.cs cdecl; ported (battle round 23): (first, second) -1 when either is 0xff; MsGetSaveWeapon slots trade 0x16 bytes; every ply_save +0x2d/+0x2e equal to an ID (12 bits; a 0x7000 ID whole) moves to the other and the slot it lies in gets the character as owner (+6); with a 0x7000 ID among the two both become 0xff; 0
 0x007abb70 function MsGetSaveChrArmorModel    # fh v3:cg2 0x7abb90
 0x007abba0 function MsGetSaveChrWeaponModel   # fh v3:cg2 0x7abbc0
 0x007abbd0 function MsGetSaveWeapon           # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c; was Equip_Get
@@ -14842,6 +14842,7 @@
 0x00b548dc label g_BtlGroundInit           # f32 -14.0, MsBattleInit's g_BtlGround
 0x00b54920 label g_BtlMonDataName          # "mon_data", MsBtlReadMonster's Sg_MallocA tag
 0x00b549f8 label s_BtlEffectReadError      # MsEffectRead's MsBattleError message (reading while an event effect plays or the actor reads already)
+0x00b54a00 label s_BtlEffectNotReady       # "effect does not ready call", MsEffectTerminate's MsBattleError message (kind 2 without +0xdfb 5); name ours
 0x00b54b58 label g_BtlDebugBattleMessage   # "## BATTLE %x %x\n" (MsBattleProcess's debug combination)
 0x00b54ba8 label s_BtlCommandCueError      # MsCommandCueProcess's MsBattleError message for an entry of a bad actor or list
 0x00b54ca4 label g_BtlSpecialRollStep      # f32 0.002, the boat stage's roll step (MsBattleSpecialInit +0x838)
