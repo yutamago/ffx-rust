@@ -9,7 +9,7 @@
 #   --lang      game language (default en, or $FFX_LANG)
 #   --log-opens log every file the game reads to ffx-hook.log
 #   --harness P test harness on 127.0.0.1:P (see crates/ffx-hook/src/harness.rs)
-#   --background show the window without taking the focus
+#   --background show the window without taking the focus, behind other windows
 #   --home DIR  the game's Documents folder (settings, saves) is DIR (harness only)
 #   --hook-disable LIST  hooks not to install (names, comma-separated;
 #               "replacements" = every pure replacement, for replay parity)
