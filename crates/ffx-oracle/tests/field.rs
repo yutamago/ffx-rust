@@ -17639,3 +17639,102 @@ fn r12d_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0012_d002);
     r12d_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r13, group A: the sphere grid's warp state ----
+
+/// Group A (r13) on `t` over the grid `g`: `AbmapState_Warping` in every
+/// phase (unknown ones too), fade frames across the 40-frame end and the
+/// byte wrap, the warp part running or done, and the move's progress
+/// below, at and past 1.0 (NaN too). The sound, ppp and player tag calls
+/// are logged; the marker and cursor camera run as the originals.
+fn r13a_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap;
+    let (log, rv, tabv) = (t.alloc(4 + 0x20 * 16), t.alloc(4), t.alloc(4));
+    t.cave_from(
+        0,
+        &[
+            (Some(abmap::SND_SEP_PLAY_SIMPLE), log_stub(log, rv, 1, 1)),
+            (Some(abmap::PPP_CREATE_HEAP), log_stub(log, rv, 2, 3)),
+            (Some(abmap::GET_PTR32_FUNC), log_stub(log, tabv, 3, 1)),
+            (Some(abmap::PPP_START_PART), log_stub(log, rv, 4, 5)),
+            (
+                Some(abmap::bridge::POSITION_PLY_TAG),
+                log_stub(log, rv, 5, 1),
+            ),
+        ],
+    );
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (tab, data, slot) = (t.alloc(0x40), t.alloc(0x20), t.alloc(4));
+    t.put(t.b.rebase(abmap::PPP_ENV_SLOT), slot);
+    t.put(t.b.rebase(abmap::ABMAP_PPP_DATA), data);
+    t.put(tabv, tab);
+    let busy = t.b.rebase(abmap::ABMAP_WARP_PART) + 0x1e;
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(tab, 0x40, rng);
+        t.fill(data, 0x20, rng);
+        t.fill(g + 0x11000, 0x700, rng);
+        for n in 0..40 {
+            let node = g + 0x808 + 0x28 * n;
+            t.fill(node, 0x28, rng);
+            t.put(node + 6, u16::try_from(rng.below(8)).unwrap());
+        }
+        let phase = match rng.below(8) {
+            0 => u8::try_from(rng.below(256)).unwrap(),
+            k => u8::try_from(k % 3).unwrap(),
+        };
+        t.put(g + 0x1164c, phase);
+        let frame = match rng.below(4) {
+            0 => u8::try_from(rng.below(256)).unwrap(),
+            1 => 0xff,
+            _ => u8::try_from(rng.range(36, 44)).unwrap(),
+        };
+        t.put(g + 0x1164d, frame);
+        t.put(busy, u16::from(rng.below(2) != 0));
+        let chr = rng.below(7);
+        t.put(g + 0x11638, u8::try_from(chr).unwrap());
+        t.put(g + 0x115bc, u8::try_from(rng.below(7)).unwrap());
+        t.put(g + 0x11634, u16::try_from(rng.below(40)).unwrap());
+        let progress = match rng.below(6) {
+            0 => 1.0f32.to_bits(),
+            1 => (1.0f32 - 1.0 / 12.0).to_bits(),
+            2 => 0x7fc0_0000,
+            _ => r6b_fine(rng, -0.1, 1.2),
+        };
+        t.put(g + 0x11620, progress);
+        t.put(g + 0x1163c, float_in(rng, -2000, 2000));
+        t.put(g + 0x11640, float_in(rng, -2000, 2000));
+        t.same(
+            "AbmapState_Warping",
+            |o| o.eax(0x00a4_7f00, &[]),
+            |m| abmap::bridge::abmap_state_warping(m, call),
+        );
+    }
+}
+
+/// Group A (r13) on the image.
+#[test]
+fn r13a_warping_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a001);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13a_cases(&mut t, &mut rng, g, 600);
+}
+
+/// Group A (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid
+/// when the snapshot has none.
+#[test]
+fn r13a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a002);
+    let mut g = ffx_field::abmap::ABMAP.get(&t.b);
+    if g == 0 {
+        g = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, g);
+    }
+    r13a_cases(&mut t, &mut rng, g, 300);
+}

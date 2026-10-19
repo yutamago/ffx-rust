@@ -2224,4 +2224,166 @@ pub mod bridge {
         let f = mem.rebase(TO_MAKE_DIGIT_RIGHT_ABMAP);
         call(mem, f, &[a, fx, fy, d, c1, c2])
     }
+
+    // ---- field r13 ----
+
+    /// `AbmapPositionPlyTag(chr)` (`0x00a58080`, in `ffx-pcui`).
+    pub const POSITION_PLY_TAG: u32 = 0x00a5_8080;
+    /// 1/12 (an `f64` in `.rdata`, the `f32` value widened): the warp's
+    /// step per frame.
+    pub const WARP_STEP: u32 = 0x00b4_b448;
+
+    /// The fade byte (`+0x115c6`) for frame `n` of a 40-frame fade:
+    /// `(n << 7) / 40`, its low byte, at least `0x80` kept at `0x80`.
+    /// Also returns the low word of the division's `imul` (left in `eax`
+    /// by the fade-in).
+    fn warp_fade(n: u8) -> (u8, u32) {
+        let x = u32::from(n) << 7;
+        #[allow(clippy::cast_possible_truncation)] // the low byte is stored
+        let q = (x / 40) as u8;
+        (q, 0x6666_6667u32.wrapping_mul(x))
+    }
+
+    /// `AbmapState_Warping()` (`0x00a47f00`, the state
+    /// [`abmap_start_warp`] installs), by its phase (`+0x1164c`):
+    /// - 0: the fade-out: frame `+0x1164d` counts up, the fade
+    ///   (`+0x115c6`) is `0x80 - (n << 7) / 40` (a byte; `0x80` from
+    ///   `0x80` up); once the warp part ([`super::ABMAP_WARP_PART`]
+    ///   `+0x1e`) is done the character's marker word `+0x110c4 + 0x50
+    ///   chr` is 0.0, phase 1 and the fade 0.
+    /// - 1: the move: the progress (`+0x11620`) steps by 1/12; below 1.0
+    ///   (or NaN) the camera x, y (`+0x11308`) are `FFXVu0InterVectorXYZ`
+    ///   from the start (`+0x1163c`) to the target node (`+0x11634`).
+    ///   From 1.0: phase 2, the frame 0, the warp sound, the camera at the
+    ///   node (x, y, 0.0, 1.0), the grid's ppp heap again, part 1 of the
+    ///   warp effect there (scale 0.5), the character (`+0x11638`) on the
+    ///   node (`+0x110cc + 0x50 chr`), its marker and player tag placed,
+    ///   `+0x115c7` set, the cursor camera reset.
+    /// - 2: the fade-in: `(n << 7) / 40`; once the part is done the fade
+    ///   is `0x80` and the saved state and draw hooks (`+0x115b0`,
+    ///   `+0x115b4`) come back to `+0x115a8`/`+0x115ac` (and are cleared).
+    ///
+    /// Returns the `eax` it ends with: the grid, the cursor camera's
+    /// result, the phase minus 2 for an unknown phase, and in the
+    /// fade-out's running frames the division's `imul` low word with the
+    /// fade in its low byte.
+    pub fn abmap_state_warping<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let part_running =
+            |mem: &M| mem.read::<u16>(mem.rebase(super::ABMAP_WARP_PART).wrapping_add(0x1e)) != 0;
+        match mem.read::<u8>(g.wrapping_add(0x1164c)) {
+            0 => {
+                let frame = g.wrapping_add(0x1164d);
+                mem.write(frame, mem.read::<u8>(frame).wrapping_add(1));
+                let g = ABMAP.get(mem);
+                let (q, low) = warp_fade(mem.read::<u8>(g.wrapping_add(0x1164d)));
+                let fade = 0x80u8.wrapping_sub(q);
+                mem.write(g.wrapping_add(0x115c6), fade);
+                let g = ABMAP.get(mem);
+                if mem.read::<u8>(g.wrapping_add(0x115c6)) >= 0x80 {
+                    mem.write(g.wrapping_add(0x115c6), 0x80u8);
+                }
+                if part_running(mem) {
+                    return (low & !0xff) | u32::from(fade);
+                }
+                let g = ABMAP.get(mem);
+                let chr = u32::from(mem.read::<u8>(g.wrapping_add(0x11638)));
+                mem.write(g.wrapping_add(0x110c4 + 0x50 * chr), 0u32);
+                let g = ABMAP.get(mem);
+                mem.write(g.wrapping_add(0x1164c), 1u8);
+                let g = ABMAP.get(mem);
+                mem.write(g.wrapping_add(0x115c6), 0u8);
+                g
+            }
+            1 => warp_move(mem, g, call),
+            2 => {
+                let frame = g.wrapping_add(0x1164d);
+                mem.write(frame, mem.read::<u8>(frame).wrapping_add(1));
+                let g = ABMAP.get(mem);
+                let (q, _) = warp_fade(mem.read::<u8>(g.wrapping_add(0x1164d)));
+                mem.write(g.wrapping_add(0x115c6), q);
+                let g = ABMAP.get(mem);
+                if mem.read::<u8>(g.wrapping_add(0x115c6)) >= 0x80 {
+                    mem.write(g.wrapping_add(0x115c6), 0x80u8);
+                }
+                let g = ABMAP.get(mem);
+                if part_running(mem) {
+                    return g;
+                }
+                mem.write(g.wrapping_add(0x115c6), 0x80u8);
+                for (hook, saved) in [(0x115a8, 0x115b0), (0x115ac, 0x115b4)] {
+                    let g = ABMAP.get(mem);
+                    let v = mem.read::<u32>(g.wrapping_add(saved));
+                    mem.write(g.wrapping_add(hook), v);
+                    let g = ABMAP.get(mem);
+                    mem.write(g.wrapping_add(saved), 0u32);
+                }
+                ABMAP.get(mem)
+            }
+            phase => u32::from(phase) - 2,
+        }
+    }
+
+    /// Phase 1 of [`abmap_state_warping`] (`g` the grid it started with).
+    fn warp_move<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        g: u32,
+        call: &mut C,
+    ) -> u32 {
+        let node = u32::from(mem.read::<u16>(g.wrapping_add(0x11634)));
+        let at = g
+            .wrapping_add(layout::NODES)
+            .wrapping_add(node * layout::NODE_SIZE);
+        let x = f32::from(mem.read::<i16>(at));
+        let y = f32::from(mem.read::<i16>(at.wrapping_add(2)));
+        let step = mem.read::<f64>(mem.rebase(WARP_STEP));
+        let t = x87::store(x87::load(mem.read::<u32>(g.wrapping_add(0x11620))) + step);
+        mem.write(g.wrapping_add(0x11620), t);
+        let t = f32::from_bits(t);
+        // fcom: below 1.0 or unordered keeps moving
+        if t < 1.0 || t.is_nan() {
+            let start = g.wrapping_add(0x1163c);
+            let bx = mem.read::<f32>(start);
+            let by = mem.read::<f32>(start.wrapping_add(4));
+            let rx = ffx_ps2::vu0::inter_xyz(0, x, bx, t);
+            let ry = ffx_ps2::vu0::inter_xyz(1, y, by, t);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x11308), x87::copy(rx.to_bits()));
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x1130c), x87::copy(ry.to_bits()));
+            return g;
+        }
+        mem.write(g.wrapping_add(0x1164c), 2u8);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1164d), 0u8);
+        let f = mem.rebase(super::SND_SEP_PLAY_SIMPLE);
+        call(mem, f, &[0x8000_0070]);
+        let g = ABMAP.get(mem);
+        let camera = [x.to_bits(), y.to_bits(), 0, 1.0f32.to_bits()];
+        mem.write(g.wrapping_add(0x11308), camera);
+        let f = mem.rebase(super::PPP_CREATE_HEAP);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let heap = mem.rebase(super::ABMAP_PPP_HEAP);
+        call(mem, f, &[env, heap, 0x7d000]);
+        let h = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(super::WARP_PART_SCALE)))
+            .to_bits();
+        let part = mem.rebase(super::ABMAP_WARP_PART);
+        let (x, y) = (x.to_bits(), y.to_bits());
+        abmap_start_part(mem, [part, 1, x, y, 0, 0, 0, 0, h, h, h], call);
+        let g = ABMAP.get(mem);
+        let chr = u32::from(mem.read::<u8>(g.wrapping_add(0x11638)));
+        let target = mem.read::<u16>(g.wrapping_add(0x11634));
+        mem.write(g.wrapping_add(0x110cc + 0x50 * chr), target);
+        let chr = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x11638)));
+        abmap_set_chr_marker(mem, chr);
+        let chr = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x11638)));
+        let f = mem.rebase(POSITION_PLY_TAG);
+        call(mem, f, &[chr]);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115c7), 1u8);
+        abmap_reset_cursor_camera(mem)
+    }
 }

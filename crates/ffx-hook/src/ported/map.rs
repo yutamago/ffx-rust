@@ -3952,6 +3952,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapState_Warping()`.
+    AbmapState_Warping @ 0x00a4_7f00 => extern "C" fn shim_abmap_state_warping() -> u32 {
+        abmap::bridge::abmap_state_warping(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
 
     /// `rcAngle2D(x0, y0, x1, y1)` (a float in `ST0`).
     rcAngle2D @ 0x007e_6d80 => extern "C" fn shim_rc_angle_2d(x0: u32, y0: u32, x1: u32, y1: u32) -> f32 {
