@@ -2456,6 +2456,12 @@ ported! {
             &mut |_, f, a| call_float(f, a),
         );
     }
+    /// `rcbgSceneSetMatrix_Cross()`.
+    rcbgSceneSetMatrix_Cross @ 0x0092_0e40 => extern "C" fn shim_rcbg_scene_set_matrix_cross() -> u32 {
+        let mut work = CameraWork([0; camera::WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        camera::bridge::rcbg_scene_set_matrix_cross(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
     /// `rcbgModelCreate(model, desc)`.
     rcbgModelCreate @ 0x0092_7be0 => extern "C" fn shim_rcbg_model_create(m: u32, desc: u32) -> u32 {
         model::bridge::rcbg_model_create(&mut mem(), m, desc, &mut |_, f, a| call_cdecl(f, a))

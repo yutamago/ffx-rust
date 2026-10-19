@@ -6738,11 +6738,23 @@ fn float_in(rng: &mut Xorshift, lo: i32, hi: i32) -> u32 {
 /// battle camera matrices and `FFXSamp0ViewScreenMatrix` run as the
 /// original, `Ch_SetClipZ` and the renderer's camera setters logged).
 #[test]
-#[allow(clippy::too_many_lines)] // one function after another
 fn round9_camera_matches_the_original() {
     let Some(mut t) = Twin::image() else { return };
+    round9_camera_cases(&mut t, Xorshift(0x0009_0001));
+}
+
+/// The camera group on the snapshot (`FFX_SNAPSHOT`; field agent r12).
+#[test]
+fn round9_camera_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    round9_camera_cases(&mut t, Xorshift(0x0009_0002));
+}
+
+#[allow(clippy::too_many_lines)] // one function after another
+fn round9_camera_cases(t: &mut Twin, mut rng: Xorshift) {
     t.install_trig();
-    let mut rng = Xorshift(0x0009_0001);
     let (log, rv) = (t.alloc(4 + 0x20 * 256), t.alloc(4));
     // Ch_SetClipZ(chr, z): [chr + 0x174] = z, 1.0 in ST0
     let clip = vec![
@@ -6775,10 +6787,11 @@ fn round9_camera_matches_the_original() {
     let chr = t.alloc(0x200);
     let (v, out, dst) = (t.alloc(0xc0), t.alloc(0x40), t.alloc(0x40));
     let (eye, at, up, distance) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10), t.alloc(4));
+    let cross = [t.alloc(8), t.alloc(0x10)];
     for k in 0..40u32 {
         t.put(log, 0u32);
         // the vector helpers
-        finite_floats(&mut t, v, 4, &mut rng);
+        finite_floats(t, v, 4, &mut rng);
         let s = rng.float();
         let (x, y, z) = (rng.next(), rng.next(), rng.next());
         for (f, name) in [
@@ -6903,6 +6916,19 @@ fn round9_camera_matches_the_original() {
             |o| o.void(0x0092_0c00, &[v]),
             |m| camera::bridge::rcbg_scene_set_matrix(m, v, work, call, fcall),
         );
+        // field agent r12 C: the same for the map system's own view
+        let (sys2, map2) = (cross[0], cross[1]);
+        t.set(guide::YN_MAP_SYSTEM, if k % 9 == 4 { 0 } else { sys2 });
+        t.put(sys2, if k % 9 == 5 { 0 } else { map2 });
+        t.put(map2 + 8, if k % 9 == 6 { 0 } else { v });
+        t.put(v + 4, if k % 9 == 7 { 0 } else { rng.next() | 1 });
+        t.same_but(
+            "rcbgSceneSetMatrix_Cross",
+            &view_skip,
+            |o| o.eax(0x0092_0e40, &[]),
+            |m| camera::bridge::rcbg_scene_set_matrix_cross(m, work, call, fcall),
+        );
+        t.set(guide::YN_MAP_SYSTEM, sys);
     }
 }
 
