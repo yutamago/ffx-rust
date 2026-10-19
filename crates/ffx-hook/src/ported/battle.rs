@@ -3733,4 +3733,37 @@ ported! {
     MsWeaponNameNum_Weapon_007a1c00 @ 0x007a_1c00 => extern "C" fn ms_weapon_name_num_weapon(at: u32) -> u32 {
         gear::ms_weapon_name_num_weapon(&mem(), at)
     }
+    /// `MsMenuGetText(i, id, second)`: a menu text's name.
+    MsMenuGetText @ 0x0078_fcf0 => extern "C" fn ms_menu_get_text(i: u32, id: u32, second: u32) -> u32 {
+        menu::ms_menu_get_text(&mem(), i, id, second)
+    }
+    /// `MsMenuGetHelp(i, id, second)`: a menu text's help line.
+    MsMenuGetHelp @ 0x0078_fbb0 => extern "C" fn ms_menu_get_help(i: u32, id: u32, second: u32) -> u32 {
+        menu::ms_menu_get_help(&mem(), i, id, second)
+    }
+    /// `MsGetMenuChrInfo(chr, k)`: a name or help line of an actor or ID.
+    MsGetMenuChrInfo @ 0x0078_f7c0 => extern "C" fn ms_get_menu_chr_info(chr: u32, k: u32) -> u32 {
+        menu::ms_get_menu_chr_info(&mut mem(), chr, k)
+    }
+    /// `MsEffectTerminate(id)`: an effect's end (`MsBattleError` through
+    /// the game).
+    MsEffectTerminate @ 0x0078_8920 => extern "C" fn ms_effect_terminate(id: u32) {
+        effect::ms_effect_terminate(&mut mem(), &mut call_ptr, id);
+    }
+    /// `SwapSaveGear(first, second)`: two equipment slots trade places.
+    SwapSaveGear @ 0x007a_b9f0 => extern "C" fn swap_save_gear(first: u32, second: u32) -> i32 {
+        save::swap_save_gear(&mut mem(), first, second)
+    }
+    /// `Battle_ScriptPlayMotion(worker, args, stack, flag)`: a script's
+    /// actor plays a motion (script and chara calls through the game).
+    Battle_ScriptPlayMotion @ 0x007a_8fc0 => extern "C" fn battle_script_play_motion(worker: u32, _args: u32, stack: u32, flag: u32) -> u32 {
+        motion::battle_script_play_motion(&mut mem(), &mut call_ptr, worker, stack, flag.to_le_bytes()[0])
+    }
+    /// `getExcelBinSize(name, buffer)`: a kernel file read whole (its
+    /// path in a frame of ours; the language and file layer through the
+    /// game).
+    getExcelBinSize @ 0x0078_2df0 => extern "C" fn get_excel_bin_size(name: u32, buffer: u32) -> u32 {
+        let mut path = super::StackFrame::<{ (init::KERNEL_PATH_SIZE / 4) as usize }>::new();
+        init::get_excel_bin_size(&mut mem(), &mut call_ptr, name, buffer, path.at())
+    }
 }
