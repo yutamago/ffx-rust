@@ -9212,6 +9212,62 @@ pub mod bridge {
         let [left, top, w, height] = remapped_rect(mem, at, [22.0, 263.0, 522.0, 32.0], remap);
         call(mem, gil_plate, &[left, top, w, height, left_over])
     }
+
+    /// The legend-ability tables of `TkSetLegendAbility`, by character
+    /// (0..=17): four `u16` abilities per level, 8 bytes per level.
+    pub const LEGEND_ABILITY_TABLES: [u32; 18] = [
+        0x00c8_6d00,
+        0x00c8_6d10,
+        0x00c8_6d60,
+        0x00c8_6d20,
+        0x00c8_6d30,
+        0x00c8_6d40,
+        0x00c8_6d50,
+        0x00c8_6d70,
+        0x00c8_6d80,
+        0x00c8_6d90,
+        0x00c8_6da0,
+        0x00c8_6db0,
+        0x00c8_6dc0,
+        0x00c8_6de0,
+        0x00c8_6dd0,
+        0x00c8_6df0,
+        0x00c8_6e00,
+        0x00c8_6e10,
+    ];
+
+    /// `TkSetLegendAbility(chr, level)` (`0x008c3170`, Fahrenheit's name):
+    /// the four abilities of `chr`'s legend weapon (`TkFindLegendWeapon(chr)`,
+    /// called for any `chr`) become those of [`LEGEND_ABILITY_TABLES`]`[chr]`
+    /// at `level` (8 bytes per level, signed), the weapon's `u16` at
+    /// `+0xe..+0x14`; then `MsSetSaveParamAll()` and 1. Returns 0 without a
+    /// weapon or for `chr` above 17.
+    pub fn tk_set_legend_ability<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        level: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = usize::try_from(chr)
+            .ok()
+            .and_then(|i| LEGEND_ABILITY_TABLES.get(i))
+            .map(|&t| mem.rebase(t).wrapping_add(level.wrapping_mul(8)));
+        let find = mem.rebase(0x008c_30e0);
+        let weapon = call(mem, find, &[chr]);
+        let Some(abilities) = table else {
+            return 0;
+        };
+        if weapon == 0 {
+            return 0;
+        }
+        for k in 0..4u32 {
+            let a: u16 = mem.read(abilities.wrapping_add(2 * k));
+            mem.write(weapon.wrapping_add(0xe + 2 * k), a);
+        }
+        let save_all = mem.rebase(0x008c_30d0);
+        call(mem, save_all, &[]);
+        1
+    }
 }
 
 #[cfg(test)]

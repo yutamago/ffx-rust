@@ -86,6 +86,8 @@ pub fn clamp_choices(flags: u16, mode: u32, c: Cursors) -> (u32, Cursors) {
 pub mod bridge {
     use ffx_bridge::{Global, Mem};
 
+    use ffx_script::vm::bridge::native_msg::LAST_SET_MSG;
+
     use super::{Cursors, ENTRY, clamp_choices, resolve};
 
     /// The script context (`+0x34` the event's message table, `+0x38` the
@@ -232,6 +234,129 @@ pub mod bridge {
         mem.write(w + 0x14, 3u16);
         close(mem, window);
         true
+    }
+
+    /// `AtelPopStackInteger(worker, stack)` (`0x0086df00`) through `call`.
+    fn pop_int<M: Mem>(
+        mem: &mut M,
+        [worker, stack]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0086_df00);
+        call(mem, f, &[worker, stack])
+    }
+
+    /// `AtelPushStackInteger(worker, stack, v)` (`0x0086e3f0`) through `call`.
+    fn push_int<M: Mem>(
+        mem: &mut M,
+        [worker, stack]: [u32; 2],
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x0086_e3f0);
+        call(mem, f, &[worker, stack, v]);
+    }
+
+    /// `AtelGetMesWinWork(i)` (`0x0086be90`) of the window id popped next.
+    fn popped_window<M: Mem>(
+        mem: &mut M,
+        ws: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = pop_int(mem, ws, call);
+        let f = mem.rebase(0x0086_be90);
+        call(mem, f, &[id])
+    }
+
+    /// `AtelOpenChoiceWindow(worker, args, stack, mode)` (`0x00860b00`, own
+    /// name; the start of natives `0x0139` (mode 0) and `0x013a` (mode 8)):
+    /// a message window with choices from eight script stack words,
+    /// popped as `x, y, anchor, choice, cancel, cursor, message, window`
+    /// (top first). Each step goes through the script stack the way the
+    /// original's inlined natives do (`AtelPushStackInteger` /
+    /// `AtelPopStackInteger`, all with `worker`/`stack`):
+    /// `Native_MsgSetPos(window, x, y, anchor)`; the window
+    /// (`AtelGetMesWinWork`) gets style byte `+0x20` 0; `g_AtelLastSetMsg`
+    /// = `message`, `+8`/`+0xc` its `Msg_Text`, `+0x16` its
+    /// `Msg_Flags(message, MsGetSaveConfigEnglish())`; `+0x18` 0; `+0x22`
+    /// `cancel`, `+0x23` `choice` (bytes), `+0x24` `cursor`; then
+    /// `Native_MsgOpen(window, mode | 0x42)` and `Native_MsgSelect(window)`,
+    /// whose result is returned.
+    #[allow(clippy::cast_possible_truncation)] // byte and halfword stores
+    pub fn atel_open_choice_window<M: Mem>(
+        mem: &mut M,
+        [worker, args, stack]: [u32; 3],
+        mode: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let ws = [worker, stack];
+        let native = [worker, args, stack];
+        let x = pop_int(mem, ws, call);
+        let y = pop_int(mem, ws, call);
+        let anchor = pop_int(mem, ws, call);
+        let choice = pop_int(mem, ws, call);
+        let cancel = pop_int(mem, ws, call);
+        let cursor = pop_int(mem, ws, call);
+        let message = pop_int(mem, ws, call);
+        let window = pop_int(mem, ws, call);
+
+        for v in [window, anchor, y, x] {
+            push_int(mem, ws, v, call);
+        }
+        let set_pos = mem.rebase(0x0085_80c0);
+        call(mem, set_pos, &native);
+
+        // the style byte
+        push_int(mem, ws, window, call);
+        push_int(mem, ws, 0, call);
+        let style = pop_int(mem, ws, call);
+        let w = popped_window(mem, ws, call);
+        mem.write(w.wrapping_add(0x20), style as u8);
+
+        // the message
+        push_int(mem, ws, window, call);
+        push_int(mem, ws, message, call);
+        let message = pop_int(mem, ws, call);
+        let id = pop_int(mem, ws, call);
+        LAST_SET_MSG.set(mem, message);
+        let win_work = mem.rebase(0x0086_be90);
+        let w = call(mem, win_work, &[id]);
+        let msg_text = mem.rebase(0x0086_bf30);
+        let text = call(mem, msg_text, &[message]);
+        mem.write(w.wrapping_add(8), text);
+        mem.write(w.wrapping_add(0xc), text);
+        let english = mem.rebase(0x0086_bbc0);
+        let english = call(mem, english, &[]);
+        let msg_flags = mem.rebase(0x0086_bf10);
+        let flags = call(mem, msg_flags, &[message, english]);
+        mem.write(w.wrapping_add(0x16), flags as u16);
+
+        // the word at +0x18
+        push_int(mem, ws, window, call);
+        push_int(mem, ws, 0, call);
+        let v = pop_int(mem, ws, call);
+        let w = popped_window(mem, ws, call);
+        mem.write(w.wrapping_add(0x18), v);
+
+        // the choices
+        for v in [window, cancel, choice, cursor] {
+            push_int(mem, ws, v, call);
+        }
+        let cursor = pop_int(mem, ws, call);
+        let choice = pop_int(mem, ws, call);
+        let cancel = pop_int(mem, ws, call);
+        let w = popped_window(mem, ws, call);
+        mem.write(w.wrapping_add(0x22), cancel as u8);
+        mem.write(w.wrapping_add(0x24), cursor);
+        mem.write(w.wrapping_add(0x23), choice as u8);
+
+        push_int(mem, ws, window, call);
+        push_int(mem, ws, mode | 0x42, call);
+        let open = mem.rebase(0x0085_8b50);
+        call(mem, open, &native);
+        push_int(mem, ws, window, call);
+        let select = mem.rebase(0x0085_9710);
+        call(mem, select, &native)
     }
 }
 

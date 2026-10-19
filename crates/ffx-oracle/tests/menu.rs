@@ -208,6 +208,40 @@ impl Twins {
     }
 }
 
+impl Twins {
+    /// Like [`Twins::twin`] for an original returning a float in `ST0`:
+    /// the same bits (any NaN for a NaN) and the same memory.
+    fn twin_f(
+        &mut self,
+        what: &str,
+        sym: u32,
+        args: &[u32],
+        rust: impl FnOnce(&mut Oracle) -> f32,
+    ) {
+        self.drain_x87();
+        let r = self
+            .a
+            .call(self.a.rebase(sym), Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"));
+        let want = r
+            .st0
+            .unwrap_or_else(|| panic!("{what} {args:x?}: no float in ST0"));
+        let got = f64::from(rust(&mut self.b));
+        assert!(
+            want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
+            "{what} {args:x?}: {want} vs {got}"
+        );
+        assert_eq!(
+            self.a.diff(&mut self.b).unwrap(),
+            [],
+            "{what} {args:x?}: memory"
+        );
+        self.a.clear_dirty();
+        self.b.clear_dirty();
+        self.calls += 1;
+    }
+}
+
 const VOID: u64 = 0;
 const U16: u64 = 0xffff;
 const U32: u64 = 0xffff_ffff;
@@ -6586,7 +6620,7 @@ fn menu_out_pointer_callers_match_the_original() {
 
 /// `f` replaced in both oracles by a recorder appending its first `n`
 /// argument words at `*log` (128 KiB of them); returns `ret`. The code
-/// takes `13 + 7n` bytes: `f` must be at least that long.
+/// takes `19 + 7n` bytes: `f` must be at least that long.
 fn record_n(t: &mut Twins, f: u32, n: u8, ret: u32) -> u32 {
     let buf = t.alloc(&vec![0; 0x2_0000]);
     let log = t.alloc(&buf.to_le_bytes());
@@ -8687,4 +8721,115 @@ fn digit_width(t: &mut Twins) -> u32 {
         o.write(at, &code).unwrap();
     }
     cell
+}
+
+#[test]
+fn menu_round22_legend_choice_and_segment_match_the_original() {
+    use ffx_menu::{msg::bridge as msg, tk::bridge as tk};
+    let Some(mut t) = setup_any(0x0022_3170) else {
+        return;
+    };
+    // TkSetLegendAbility: the weapon finder and the save refresh recorded
+    // (no weapon in the last rounds)
+    let weapon = t.alloc_random(0x20);
+    record_n(&mut t, 0x008c_30e0, 1, weapon);
+    // MsSetSaveParamAll is a 5-byte jump before it: a call counter fits
+    return_counter(&mut t, 0x008c_30d0, 0);
+    for round in 0..80u32 {
+        if round == 60 {
+            return_const(&mut t, 0x008c_30e0, 0);
+        }
+        let chr = t
+            .rng
+            .pick_or_any(&[0, 1, 2, 3, 12, 13, 14, 17, 18, 0xffff_ffff]);
+        let level = t.rng.pick(&[0, 1, 2, 3, 7, 0xffff_ffff, 0xffff_fffe]);
+        t.twin("TkSetLegendAbility", 0x008c_3170, &[chr, level], U32, |o| {
+            w(tk::tk_set_legend_ability(o, chr, level, &mut callback))
+        });
+    }
+    // AtelOpenChoiceWindow: the script stack as a counter, the natives and
+    // message lookups recorded
+    let window = t.alloc_random(0x40);
+    let start = t.rng.next();
+    return_counter(&mut t, 0x0086_df00, start);
+    for (f, n) in [
+        (0x0086_e3f0u32, 3u8),
+        (0x0085_80c0, 3),
+        (0x0085_8b50, 3),
+        (0x0085_9710, 3),
+        (0x0086_bf30, 1),
+        (0x0086_bbc0, 0),
+        (0x0086_bf10, 2),
+        (0x0086_be90, 1),
+    ] {
+        let r = if f == 0x0086_be90 {
+            window
+        } else {
+            t.rng.next()
+        };
+        record_n(&mut t, f, n, r);
+    }
+    for round in 0..20u32 {
+        t.scramble(0x0132_5ac0, 4);
+        let (worker, args, stack) = (t.rng.next(), t.rng.next(), t.rng.next());
+        let mode = if round % 2 == 0 {
+            0
+        } else {
+            t.rng.pick_or_any(&[8])
+        };
+        t.twin(
+            "AtelOpenChoiceWindow",
+            0x0086_0b00,
+            &[worker, args, stack, mode],
+            U32,
+            |o| {
+                w(msg::atel_open_choice_window(
+                    o,
+                    [worker, args, stack],
+                    mode,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    // Math_SegmentNearestT: points on and off the segment, degenerate
+    // segments, NaNs and infinities
+    let coord = |t: &mut Twins| -> f32 {
+        match t.rng.below(10) {
+            0 => f32::NAN,
+            1 => f32::INFINITY,
+            2 => 0.0,
+            3 => f32::from_bits(t.rng.next() & 0x7f7f_ffff),
+            _ => f32::from(i16::try_from(t.rng.below(400)).unwrap_or(0) - 200) / 8.0,
+        }
+    };
+    for round in 0..400u32 {
+        let mut pts = [[0f32; 4]; 3];
+        for p in &mut pts {
+            for c in p.iter_mut() {
+                *c = coord(&mut t);
+            }
+        }
+        if round % 4 == 0 {
+            pts[2] = pts[1]; // a zero-length segment
+        }
+        if round % 7 == 0 {
+            pts[0] = pts[1];
+        }
+        let addr: Vec<u32> = pts
+            .iter()
+            .map(|p| {
+                let b: Vec<u8> = p.iter().flat_map(|c| c.to_le_bytes()).collect();
+                t.alloc(&b)
+            })
+            .collect();
+        if round % 9 == 0 {
+            t.scramble(0x00c0_a004, 16);
+        }
+        t.scramble(0x00c8_f788, 4);
+        t.twin_f("Math_SegmentNearestT", 0x0088_a040, &addr, |o| {
+            ffx_menu::math::bridge::math_segment_nearest_t(o, addr[0], addr[1], addr[2])
+        });
+    }
+    eprintln!("{} calls", t.calls);
 }

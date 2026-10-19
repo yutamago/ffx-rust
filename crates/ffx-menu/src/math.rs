@@ -206,6 +206,104 @@ pub mod bridge {
         let t = SIN_QUARTER.ptr(mem);
         super::sin_table(angle, |i| t.at(i).get(mem))
     }
+
+    /// `g_Vu0` scratch registers the segment helper uses, 16 bytes each:
+    /// the inputs `a`, `b`, `c` from `0x00c8f7d0`, then `c - b`, `b - a`
+    /// and the work register.
+    pub const VU0_SEGMENT_REGS: Global<[u32; 4]> = Global::new(0x00c8_f7d0);
+    /// `g_Vu0_Q` (an `f32`'s bits).
+    pub const VU0_Q: Global<u32> = Global::new(0x00c8_f788);
+
+    /// The float bits of lane `k` of the register at `reg`.
+    fn lane(mem: &impl Mem, reg: u32, k: u32) -> u32 {
+        mem.read(reg.wrapping_add(4 * k))
+    }
+
+    /// `dst.xyz = p.xyz - q.xyz` (`Vec3SubScalars`, `q` read first), then
+    /// `restoreVf00Register`.
+    fn vu_sub3(mem: &mut impl Mem, dst: u32, p: u32, q: u32) {
+        use ffx_bridge::x87::{load, store, sub};
+        let q: [u32; 4] = mem.read(q);
+        for k in 0..3 {
+            let v = store(sub(load(lane(mem, p, k)), load(q[k as usize])));
+            mem.write(dst.wrapping_add(4 * k), v);
+        }
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+    }
+
+    /// `dst.x = p·q`: the lane products into `dst.xyz` (`vfx_vec3_scale3`),
+    /// then `x + y` and `+ z` (`pppVu0AddY`, `pppVu0AddZ`), each stored.
+    fn vu_dot3(mem: &mut impl Mem, dst: u32, p: u32, q: u32) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let q: [u32; 4] = mem.read(q);
+        for k in 0..3 {
+            let v = store(mul(load(lane(mem, p, k)), load(q[k as usize])));
+            mem.write(dst.wrapping_add(4 * k), v);
+        }
+        for k in [1, 2] {
+            let w: [u32; 4] = mem.read(dst);
+            mem.write(dst, store(add(load(w[0]), load(w[k]))));
+        }
+    }
+
+    /// `Math_SegmentNearestT(a, b, c)` (`0x0088a040`, own name): where
+    /// along the segment `b`→`c` the point nearest `a` lies, as
+    /// `t = clamp(-((c - b)·(b - a)) / |c - b|², 0, 1)`, computed the way
+    /// the emulated VU0 code does it in its registers ([`VU0_SEGMENT_REGS`]
+    /// and [`VU0_Q`], left as the original leaves them): the three inputs
+    /// copied (four words each), `d = c - b` and `e = b - a`, `|d|²` in the
+    /// work register's `x`; 0 when that is negative or NaN. Otherwise `Q`
+    /// = `vf00.w / |d|²` (0 for a zero length; the quotient rounded to a
+    /// double, then a float), `d·e` times `Q`, then `vf00.x - ` that
+    /// (`restoreVf00Register` after), kept below `vf00.w` and above
+    /// `vf00.x` the way `Math_StoreMin`/`Math_StoreMax` compare (a NaN
+    /// becomes the bound). Every step is a float store; the result is
+    /// returned in `ST0`.
+    #[allow(clippy::many_single_char_names)] // the segment's points
+    pub fn math_segment_nearest_t(mem: &mut impl Mem, a: u32, b: u32, c: u32) -> f32 {
+        use ffx_bridge::x87::{div, load, mul, store, sub};
+        use ffx_ps2::ee::bridge::{VF00, restore_vf00};
+        let regs = VU0_SEGMENT_REGS.ptr(mem);
+        let [ra, rb, rc, rd, re, work] = [0, 1, 2, 3, 4, 5].map(|i| regs.at(i).addr);
+        for (reg, src) in [(ra, a), (rb, b), (rc, c)] {
+            let v: [u32; 4] = mem.read(src);
+            mem.write(reg, v);
+        }
+        vu_sub3(mem, rd, rc, rb);
+        vu_sub3(mem, re, rb, ra);
+        vu_dot3(mem, work, rd, rd);
+        let length2 = load(lane(mem, work, 0));
+        // fcomp against 0.0: below or unordered gives 0
+        if length2
+            .partial_cmp(&0.0)
+            .is_none_or(std::cmp::Ordering::is_lt)
+        {
+            return 0.0;
+        }
+        let vf00 = VF00.ptr(mem).addr;
+        let quotient = if length2 == 0.0 {
+            0
+        } else {
+            store(div(load(lane(mem, vf00, 3)), length2))
+        };
+        VU0_Q.set(mem, quotient);
+        vu_dot3(mem, work, rd, re);
+        let scaled = store(mul(load(lane(mem, work, 0)), load(VU0_Q.get(mem))));
+        mem.write(work, scaled);
+        let negated = store(sub(load(lane(mem, vf00, 0)), load(scaled)));
+        mem.write(work, negated);
+        restore_vf00(mem);
+        // Math_StoreMin with vf00.w, Math_StoreMax with vf00.x
+        let x = lane(mem, work, 0);
+        let upper = lane(mem, vf00, 3);
+        let x = if load(upper) > load(x) { x } else { upper };
+        mem.write(work, store(load(x)));
+        let x = lane(mem, work, 0);
+        let lower = lane(mem, vf00, 0);
+        let x = if load(lower) < load(x) { x } else { lower };
+        mem.write(work, store(load(x)));
+        f32::from_bits(lane(mem, work, 0))
+    }
 }
 
 /// `Math_CrossHeightGap(p1, p2, p3, p4)` (`0x00889e90`): where segments

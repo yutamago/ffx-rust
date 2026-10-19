@@ -3658,4 +3658,16 @@ ported! {
         let width = frame.at();
         tk::tk_mn2_buy_sell_window(&mut mem(), [f32::from_bits(x), f32::from_bits(y)], [item, price, owned_count, amount, gil], width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkSetLegendAbility(chr, level)`: 1 when the abilities were set.
+    TkSetLegendAbility @ 0x008c_3170 => extern "C" fn tk_set_legend_ability(chr: u32, level: u32) -> u32 {
+        tk::tk_set_legend_ability(&mut mem(), chr, level, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `AtelOpenChoiceWindow(worker, args, stack, mode)`: `Native_MsgSelect`'s eax.
+    AtelOpenChoiceWindow @ 0x0086_0b00 => extern "C" fn atel_open_choice_window(worker: u32, args: u32, stack: u32, mode: u32) -> u32 {
+        msg::atel_open_choice_window(&mut mem(), [worker, args, stack], mode, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Math_SegmentNearestT(a, b, c)`: the parameter in `ST0`.
+    Math_SegmentNearestT @ 0x0088_a040 => extern "C" fn math_segment_nearest_t(a: u32, b: u32, c: u32) -> f32 {
+        ffx_menu::math::bridge::math_segment_nearest_t(&mut mem(), a, b, c)
+    }
 }

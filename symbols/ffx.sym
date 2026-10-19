@@ -8795,6 +8795,7 @@
 0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
 0x00860a90 function getMegasAdding            # fh v3:bsim1.00 0x00860a30
 0x00860aa0 function Msg_PollClose             # (i): 1 when AtelGetMesWinWork(i) +0x14 is 0 or 4; state 2 with TOGetMessageStatus(i) == 3 closes it (Msg_CloseWindow) when AtelGetCurCtrlWork() bit 2 is set (cleared); else 0; callers 0x00860e40, 0x00860f30; name ours
+0x00860b00 function AtelOpenChoiceWindow # cdecl(worker, args, stack, mode) -> Native_MsgSelect's eax: pops x, y, anchor, choice, cancel, cursor, message, window and replays Native_MsgSetPos, the style/message/choice fields of AtelGetMesWinWork(window) (+0x20, +8/+0xc/+0x16, +0x18, +0x22/+0x23/+0x24) through push/pop pairs, Native_MsgOpen(window, mode | 0x42), Native_MsgSelect(window); callers Native_0139 (mode 0), Native_013a (mode 8); ported in menu round 22; name ours
 0x00860f20 function setMegasAdding            # Fahrenheit's Switch name (fh switch BSim on a tiny function, kept because the content agrees): g_MegasAdding = v (getMegasAdding 0x00860a90)
 0x00860f50 function AtelAllClearBindMask      # fh v3:exact 0x00860ef0; ported in helpers (script round 13)
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
@@ -9690,6 +9691,7 @@
 0x00889bb0 function Math_SegmentsCross       # (a, b, c, d) xz at +0/+8: 0 unless Math_Det3Points(a,b,c)*(a,b,d) <= 0 and (c,d,a)*(c,d,b) <= 0 (products at 53 bits, NaN fails); then 1 when det(a,b,d) > 0 else -1; name ours
 0x00889e70 function CIatan2                   # (y, x) _CIatan2 (y in ST1, x in ST0) stored to a float; own name beside CIcos/CIsin/CItan
 0x00889e90 function Math_CrossHeightGap       # (p1, p2, p3, p4) -> ST0: |y1 - y2| where segments p1-p2 and p3-p4 cross in x-z, -1 when parallel; each step a float; after FUN_00889bb0 (the crossing test); name ours
+0x0088a040 function Math_SegmentNearestT # cdecl(a, b, c) -> f32 in ST0: clamp(-((c-b).(b-a)) / |c-b|^2, 0, 1) through the emulated VU0 registers 0x00c8f7d0..0x00c8f82f and g_Vu0_Q (0 for a negative/NaN length), Vec3SubScalars, vfx_vec3_scale3, pppVu0AddY/Z, KeVu0MulX/SubX, Math_StoreMin/Max; 21 callers (0x008684b0, 0x00876950, ...); ported in menu round 22; name ours
 0x0088a3a0 function Math_PolarToVector       # (out, r, yaw, pitch): pitch Math_WrapAngle'd, beyond +-pi/2 turned back (pi - p or p + pi) with yaw + pi; yaw wrapped; out = (cos(yaw) h, sin(p) r, sin(yaw) h, 1) with h = cos(p) r (CIsin/CIcos, each a float); name ours
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
@@ -10517,7 +10519,7 @@
 0x008c3070 function TkMsSetSaveParam             # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8120 TkMsSetSaveParam's (similarity 1.00: MsSetSaveParam, TkMenuGetHP, TkMenuGetMP, TkMenuGetMaxHP, TkMenuGetMaxMP); symbols from Fahrenheit's server export
 0x008c30d0 function TkMsSetSaveParamAll       # jmp MsSetSaveParamAll (5 bytes); name ours, after TkMsSetSaveParam
 0x008c30e0 function TkFindLegendWeapon_008c30e0  # (kind) -> the saved weapon whose flags +3 bit 2 (legend) are set and +4 == kind, from MsGetSaveWeaponList; dbgPrintf "TK:Found Legend weapon(%d)" / "not found"; only caller TkSetLegendAbility (the Switch inlines it there, hence the string match); own name
-0x008c3170 function TkSetLegendAbility        # fh call.cs cdecl
+0x008c3170 function TkSetLegendAbility        # fh call.cs cdecl; (chr, level): the legend weapon (TkFindLegendWeapon(chr)) +0xe..+0x14 = the four u16 at table[chr] (0x00c86d00.., 18 tables) + 8 level, MsSetSaveParamAll, 1; 0 without a weapon or chr > 17; ported in menu round 22
 0x008c32d0 function MenuItem_Plus10           # (p) p + 0x10; no caller; own name
 0x008c32e0 function Gs_Pack4b                 # copy of Gs_Pack4; own name
 0x008c3300 function Gs_Pack5b                 # copy of Gs_Pack5; own name
