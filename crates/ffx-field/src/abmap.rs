@@ -2387,6 +2387,90 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// `AbmapItemApplyAt(chr, node, item, mark)` (`0x00a5b400`).
+    pub const ITEM_APPLY_AT: u32 = 0x00a5_b400;
+    /// `AbmapFindNearestNode(dist, pos, filter)` (`0x00a56a40`).
+    pub const FIND_NEAREST_NODE: u32 = 0x00a5_6a40;
+    /// `abmCalcChrMoveCurMoveCheck` (`0x00a45000`), its filter.
+    pub const MOVE_CHECK: u32 = 0x00a4_5000;
+    /// The grid's item-target state and draw hooks (`0x00a452d0`,
+    /// `0x00a45500`, a copy of `AbmapSetHelpMessage`).
+    pub const ITEM_TARGET_HOOKS: [u32; 2] = [0x00a4_52d0, 0x00a4_5500];
+
+    /// `AbmapShowItemTargets(chr, node, item, work)` (`0x00a5b980`, from
+    /// the item menu's handler; name ours): every node with a kind loses
+    /// its marks (bits 0..1 of `+0x22`), `AbmapItemApplyAt(chr, node, item,
+    /// 3)` marks where the item applies, `+0x116a0`/`+0x1169c` 0, the
+    /// state and draw hooks are [`ITEM_TARGET_HOOKS`], and the cursor
+    /// homes ([`abmap_init_homing`], 0.5) on the node nearest the current
+    /// character (`AbmapFindNearestNode(work, its marker, MOVE_CHECK)`)
+    /// unless it is on it (`+0x112fc`) or there is none, saving the state
+    /// for `AbmapState_HomeOnNode` when none is saved. `+0x115c3` is set.
+    /// Returns the `eax` it ends with.
+    pub fn abmap_show_item_targets<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [chr, node, item]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(2)));
+        let mut at = g.wrapping_add(layout::NODES);
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            if mem.read::<u16>(at.wrapping_add(6)) != 0xffff {
+                let marks = at.wrapping_add(0x22);
+                mem.write(marks, mem.read::<u8>(marks) & 0xfc);
+            }
+            at = at.wrapping_add(layout::NODE_SIZE);
+        }
+        let f = mem.rebase(ITEM_APPLY_AT);
+        call(mem, f, &[chr, node, item, 3]);
+        let [state, draw] = ITEM_TARGET_HOOKS.map(|f| mem.rebase(f));
+        for (o, v) in [
+            (0x116a0, 0),
+            (0x1169c, 0),
+            (0x115a8, state),
+            (0x115ac, draw),
+        ] {
+            mem.write(ABMAP.get(mem).wrapping_add(o), v);
+        }
+        let markers = ABMAP.get(mem).wrapping_add(0x11088);
+        let current = u32::from(mem.read::<u8>(markers.wrapping_add(0x534)));
+        let f = mem.rebase(FIND_NEAREST_NODE);
+        let filter = mem.rebase(MOVE_CHECK);
+        let found = call(
+            mem,
+            f,
+            &[work, markers.wrapping_add(current * 0x50), filter],
+        );
+        let g = ABMAP.get(mem);
+        let offset = found
+            .wrapping_sub(g)
+            .wrapping_sub(layout::NODES)
+            .cast_signed();
+        let index = (offset / 0x28).cast_unsigned();
+        let mut eax = 0x6666_6667u32.wrapping_mul(offset.cast_unsigned());
+        if found != 0 {
+            let on = u32::from(mem.read::<u16>(g.wrapping_add(0x112fc)));
+            eax = on;
+            if index != on {
+                let half = x87::copy(mem.read::<u32>(mem.rebase(super::WARP_PART_SCALE)));
+                eax = abmap_init_homing(mem, index, half);
+                let g = ABMAP.get(mem);
+                if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+                    let state = mem.read::<u32>(g.wrapping_add(0x115a8));
+                    mem.write(g.wrapping_add(0x115b0), state);
+                    let home = mem.rebase(super::STATE_HOME_ON_NODE);
+                    mem.write(ABMAP.get(mem).wrapping_add(0x115a8), home);
+                    eax = ABMAP.get(mem);
+                }
+            }
+        }
+        mem.write(ABMAP.get(mem).wrapping_add(0x115c3), 1u8);
+        eax
+    }
+
     /// The sphere grid file's buffer (`0x01740870`): `+0` `'1'` when
     /// loaded, `+2`/`+4`/`+6` the kind, node and link counts (`u16`),
     /// the records from `+0x10`.

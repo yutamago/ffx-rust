@@ -3962,6 +3962,12 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapShowItemTargets(chr, node, item)`: the nearest node's
+    /// distance in a frame.
+    AbmapShowItemTargets @ 0x00a5_b980 => extern "C" fn shim_abmap_show_item_targets(chr: u32, node: u32, item: u32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        abmap::bridge::abmap_show_item_targets(&mut mem(), [chr, node, item], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `LoadAbmap()`.
     LoadAbmap @ 0x00a4_5570 => extern "C" fn shim_load_abmap() -> u32 {
         abmap::bridge::load_abmap(&mut mem(), &mut |_, f, a| call_cdecl(f, a))

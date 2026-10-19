@@ -12932,6 +12932,7 @@
 0x00a5b4c0 function AbmapGetNodePosRadius     # fh v3:exact 0x00a5b4c0 +AbmapGetNodePosRadius
 0x00a5b7b0 function AbmapInitChoosingMoveTarget # fh v3:exact 0x00a5b7b0 +AbmapInitChoosingMoveTarget
 0x00a5b930 function AbmapResetHelp            # (): +0x115a8 = state 0x00a45010, +0x115ac = AbmapSetHelpMessage, +0x115c3/+0x115c4 cleared
+0x00a5b980 function AbmapShowItemTargets      # (chr, node, item) -> eax: from the item menu's handler (name ours): nodes with a kind lose marks (+0x22 & 0xfc), AbmapItemApplyAt(chr, node, item, 3), +0x116a0/+0x1169c 0, state/draw hooks 0x00a452d0/0x00a45500, then AbmapFindNearestNode(&d, current marker, abmCalcChrMoveCurMoveCheck): a node other than +0x112fc gets AbmapInitHoming(i, 0.5) and, with none saved, AbmapState_HomeOnNode (state saved to +0x115b0); +0x115c3 = 1; ported (field r13, ffx_field::abmap)
 0x00a5bad0 function AbmapStartPart            # (part, n, x, y, z, a, b, c, d, e, f) -> trunc c: env 0x01a86034, pppStartPart(part, 0x1000, get_ptr32_func(*0x02305800 +0x10)[n], 1, 0), +0x1e 1, +0x40 x y z 1.0, +0x50 trunc a b c, +0x5c 1, +0x60 d e f, +0x6c 1.0; name ours
 0x00a5bb70 function AbmapStoreSave            # (): node byte pairs (+0x80e/+0x829), link flags (+0xa814) from +0xa00, seven characters' u16s (+0x110cc) at +0xf00, +0x115cb/cc at +0xf18 into MsGetSaveAbilityMap's block; name ours
 0x00a5bca0 function AbmapTryUseItem           # fh v3:exact 0x00a5bca0 +AbmapTryUseItem

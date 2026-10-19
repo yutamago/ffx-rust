@@ -18664,3 +18664,87 @@ fn r13k_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_b102);
     r13k_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group L: the item's target nodes ----
+
+/// Group L (r13) on `t` over the grid `g`: `AbmapShowItemTargets` with
+/// 0..40 nodes (kinds 0xffff or not), the nearest node none, the one the
+/// cursor is on or another (and odd offsets), a state saved or not. The
+/// item marking and the nearest-node search are logged stand-ins;
+/// `AbmapInitHoming` runs as the original.
+fn r13l_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::bridge as ab;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, nodev) = (t.alloc(4 + 0x20 * 4), t.alloc(4), t.alloc(4));
+    t.cave(&[
+        (Some(ab::ITEM_APPLY_AT), log_stub(log, rv, 1, 4)),
+        (
+            Some(ab::FIND_NEAREST_NODE),
+            log_stub_from(log, nodev, 2, 1, 2),
+        ),
+    ]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let n = rng.below(41);
+        t.put(g + 2, u16::try_from(n).unwrap());
+        for i in 0..40 {
+            let node = g + 0x808 + 0x28 * i;
+            t.fill(node, 0x28, rng);
+            let kind = if rng.below(4) == 0 {
+                0xffff
+            } else {
+                u16::try_from(rng.below(8)).unwrap()
+            };
+            t.put(node + 6, kind);
+        }
+        t.fill(g + 0x11000, 0x700, rng);
+        // the zoom AbmapInitHoming copies through the x87 (no signalling
+        // NaNs: the emulator keeps them)
+        t.put(g + 0x112f4, float_in(rng, 0, 4));
+        t.put(g + 0x115bc, u8::try_from(rng.below(7)).unwrap());
+        let on = rng.below(40);
+        t.put(g + 0x112fc, u16::try_from(on).unwrap());
+        let nearest = match rng.below(6) {
+            0 => 0,
+            // below the first node: a negative offset (toward-zero index)
+            5 => g + 0x808 - 0x28 * rng.range(1, 10).cast_unsigned() - rng.below(0x28),
+            1 => g + 0x808 + 0x28 * on,
+            2 => g + 0x808 + 0x28 * rng.below(40) + rng.below(0x28),
+            _ => g + 0x808 + 0x28 * rng.below(40),
+        };
+        t.put(nodev, nearest);
+        if rng.below(2) == 0 {
+            t.put(g + 0x115b0, 0u32);
+        }
+        let a = [rng.below(7), rng.below(40), rng.next() & 0xffff];
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "AbmapShowItemTargets",
+            |o| o.eax(0x00a5_b980, &a),
+            |m| ab::abmap_show_item_targets(m, a, work, call),
+        );
+    }
+}
+
+/// Group L (r13) on the image.
+#[test]
+fn r13l_show_item_targets_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_c101);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13l_cases(&mut t, &mut rng, g, 500);
+}
+
+/// Group L (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13l_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_c102);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13l_cases(&mut t, &mut rng, g, 250);
+}
