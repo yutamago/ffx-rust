@@ -2574,6 +2574,20 @@ ported! {
     rcefGetChrMatrixOpt @ 0x0092_e270 => extern "C" fn shim_rcef_get_chr_matrix_opt(i: u32, n: u32, out: u32) {
         task::bridge::rcef_get_chr_matrix_opt(&mut mem(), i, n, out, &mut |_, f, a| call_cdecl(f, a));
     }
+    /// `rcefMainProcRunAfter(e)`.
+    rcefMainProcRunAfter @ 0x0092_5440 => extern "C" fn shim_rcef_main_proc_run_after(e: u32) -> u32 {
+        task::bridge::rcef_main_proc_run_after(&mut mem(), e, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefColorUpdate(w)`: the colour in a frame.
+    rcefColorUpdate @ 0x0092_4c70 => extern "C" fn shim_rcef_color_update(w: u32) -> u32 {
+        let mut f = super::StackFrame::<4>::new();
+        task::bridge::rcef_color_update(&mut mem(), w, f.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefSetTargets(e, opt, te, topt)`: the two positions in a frame.
+    rcefSetTargets @ 0x0092_4a20 => extern "C" fn shim_rcef_set_targets(e: u32, opt: u32, te: u32, topt: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_set_targets(&mut mem(), [e, opt, te, topt], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
     /// `rcefGetChrPos(i, e, out)`.
     rcefGetChrPos @ 0x0092_e2f0 => extern "C" fn shim_rcef_get_chr_pos(i: u32, e: u32, out: u32) -> u32 {
         let mut w = super::StackFrame::<16>::new();
@@ -2860,6 +2874,15 @@ ported! {
     yiPolyTexMapXZ @ 0x0091_2b70 => extern "C" fn shim_yi_poly_tex_map_xz(packet: u32, min: u32, max: u32, _unused: u32, height: u32, tbp: u32, u: u32, v: u32) {
         let tex = ffx_field::yipoly::TexRegion { height, tbp, u, v };
         ffx_field::yipoly::yi_poly_tex_map_xz(&mut mem(), packet, min, max, tex);
+    }
+    /// `yiSetDrawFrame()`: the state word and packet in a 16-byte aligned
+    /// local.
+    yiSetDrawFrame @ 0x0091_2590 => extern "C" fn shim_yi_set_draw_frame() -> u32 {
+        #[repr(C, align(16))]
+        struct FrameWork([u8; ffx_field::yipoly::DRAW_FRAME_WORK as usize]);
+        let mut work = FrameWork([0; ffx_field::yipoly::DRAW_FRAME_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_set_draw_frame(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiTexTargetClear(frame, u, v, h)`.
     yiTexTargetClear @ 0x0091_26f0 => extern "C" fn shim_yi_tex_target_clear(frame: u32, u: u32, v: u32, h: u32) -> u32 {
@@ -3160,6 +3183,11 @@ ported! {
     /// `rcbgPSimAddGravity(psim, g)`.
     rcbgPSimAddGravity @ 0x0091_f7c0 => extern "C" fn shim_rcbg_psim_add_gravity(psim: u32, g: u32) {
         model::bridge::rcbg_psim_add_gravity(&mut mem(), psim, g, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcbgPSimAddNail(psim, alt, ids, n)`: the centre in a frame.
+    rcbgPSimAddNail @ 0x0091_f850 => extern "C" fn shim_rcbg_psim_add_nail(psim: u32, alt: u32, ids: u32, n: u32) {
+        let mut w = super::StackFrame::<4>::new();
+        model::bridge::rcbg_psim_add_nail(&mut mem(), [psim, alt, ids, n], w.at(), &mut |_, f, a| call_cdecl(f, a));
     }
     /// `rcbgPalProc(pal)`.
     rcbgPalProc @ 0x0092_9b60 => extern "C" fn shim_rcbg_pal_proc(pal: u32) {
@@ -3952,7 +3980,149 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcRandomDirXZ_0092e4f0(v)`.
+    rcRandomDirXZ_0092e4f0 @ 0x0092_e4f0 => extern "C" fn shim_rc_random_dir_xz(v: u32) {
+        model::bridge::rc_random_dir_xz(&mut mem(), v, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `initEventList()`.
+    initEventList @ 0x0090_7f50 => extern "C" fn shim_init_event_list() {
+        yi::bridge::init_event_list(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `yiSplitPath_009161d0(path, dir, name, ext)`.
+    yiSplitPath_009161d0 @ 0x0091_61d0 => extern "C" fn shim_yi_split_path(path: u32, dir: u32, name: u32, ext: u32) -> u32 {
+        yi::bridge::yi_split_path(&mut mem(), [path, dir, name, ext])
+    }
+    /// `rcfxParticleCalc(sys)`: the vector in a frame.
+    rcfxParticleCalc @ 0x0092_8710 => extern "C" fn shim_rcfx_particle_calc(sys: u32) -> u32 {
+        let mut w = super::StackFrame::<4>::new();
+        model::bridge::rcfx_particle_calc(&mut mem(), sys, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `pppPmcomDataQueue_0075ff00(data)`.
+    pppPmcomDataQueue_0075ff00 @ 0x0075_ff00 => extern "C" fn shim_ppp_pmcom_data_queue(data: u32) -> u32 {
+        ke::bridge::ppp_pmcom_data_queue(&mut mem(), data)
+    }
+    /// `yiLoadFieldParticle(textures, effects)`.
+    yiLoadFieldParticle @ 0x0090_9190 => extern "C" fn shim_yi_load_field_particle(textures: u32, effects: u32) -> u32 {
+        yi::bridge::yi_load_field_particle(&mut mem(), [textures, effects], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefEffectReady(on)`.
+    rcefEffectReady @ 0x0092_dfb0 => extern "C" fn shim_rcef_effect_ready(on: u32) -> u32 {
+        task::bridge::rcef_effect_ready(&mut mem(), on, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefSetDamage(a, b)`.
+    rcefSetDamage @ 0x0092_e9a0 => extern "C" fn shim_rcef_set_damage(a: u32, b: u32) -> u32 {
+        task::bridge::rcef_set_damage(&mut mem(), [a, b], &mut |_, f, args| call_cdecl(f, args))
+    }
+    /// `rcefResetMotion(e)`.
+    rcefResetMotion @ 0x0092_e780 => extern "C" fn shim_rcef_reset_motion(e: u32) -> u32 {
+        task::bridge::rcef_reset_motion(&mut mem(), e, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiDObjToOMD(out, part)`.
+    yiDObjToOMD @ 0x0090_8420 => extern "C" fn shim_yi_dobj_to_omd(out: u32, part: u32) -> u32 {
+        yi::bridge::yi_dobj_to_omd(&mut mem(), [out, part], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsSePitchDirect(kind, id)`.
+    SqsSePitchDirect @ 0x0081_e4a0 => extern "C" fn shim_sqs_se_pitch_direct(_kind: u32, id: u32) -> u32 {
+        nkz::bridge::sqs_se_pitch(&mut mem(), false, id, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsSePitchTranslate(kind, id)`.
+    SqsSePitchTranslate @ 0x0081_e4c0 => extern "C" fn shim_sqs_se_pitch_translate(_kind: u32, id: u32) -> u32 {
+        nkz::bridge::sqs_se_pitch(&mut mem(), true, id, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsSetPlayPause(flags, id)`.
+    SqsSetPlayPause @ 0x0081_ea90 => extern "C" fn shim_sqs_set_play_pause(flags: u32, id: u32) {
+        nkz::bridge::sqs_set_play_pause(&mut mem(), [flags, id], &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `rcuiRotateX(out, m, angle)`: the rotation in a frame.
+    rcuiRotateX @ 0x0093_d5a0 => extern "C" fn shim_rcui_rotate_x(out: u32, m: u32, angle: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        rcui::bridge::rcui_rotate(&mut mem(), rcui::bridge::Axis::X, [out, m, angle], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, x| call_float(f, x))
+    }
+    /// `rcuiRotateY(out, m, angle)`: the rotation in a frame.
+    rcuiRotateY @ 0x0093_d620 => extern "C" fn shim_rcui_rotate_y(out: u32, m: u32, angle: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        rcui::bridge::rcui_rotate(&mut mem(), rcui::bridge::Axis::Y, [out, m, angle], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, x| call_float(f, x))
+    }
+    /// `rcuiRotateZ(out, m, angle)`: the rotation in a frame.
+    rcuiRotateZ @ 0x0093_d690 => extern "C" fn shim_rcui_rotate_z(out: u32, m: u32, angle: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        rcui::bridge::rcui_rotate(&mut mem(), rcui::bridge::Axis::Z, [out, m, angle], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, x| call_float(f, x))
+    }
+    /// `mapChange(name)`.
+    mapChange @ 0x0090_8100 => extern "C" fn shim_map_change(name: u32) -> u32 {
+        yi::bridge::map_change(&mut mem(), name, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapDrawScrollBar(x, y, height, first, total, shown)`.
+    AbmapDrawScrollBar @ 0x00a4_6120 => extern "C" fn shim_abmap_draw_scroll_bar(x: u32, y: u32, height: u32, first: u32, total: u32, shown: u32) -> u32 {
+        ffx_field::abmap_draw::abmap_draw_scroll_bar(&mut mem(), [x, y, height, first, total, shown], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapCalcMoveCosts(node, limit, bit)`.
+    AbmapCalcMoveCosts @ 0x00a4_74d0 => extern "C" fn shim_abmap_calc_move_costs(node: u32, limit: u32, bit: u32) -> u32 {
+        abmap::bridge::abmap_calc_move_costs(&mut mem(), [node, limit, bit], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapSelectNode_00a48e40(node, t)`.
+    AbmapSelectNode_00a48e40 @ 0x00a4_8e40 => extern "C" fn shim_abmap_select_node(node: u32, t: u32) -> u32 {
+        abmap::bridge::abmap_select_node(&mut mem(), [node, t], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapSpreadPlyTags()`: the seven boxes in a frame.
+    AbmapSpreadPlyTags @ 0x00a5_a4b0 => extern "C" fn shim_abmap_spread_ply_tags() -> u32 {
+        let mut w = super::StackFrame::<28>::new();
+        abmap::bridge::abmap_spread_ply_tags(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `abmap_cheng_panel(kind, node)`.
+    abmap_cheng_panel @ 0x00a4_8740 => extern "C" fn shim_abmap_cheng_panel(kind: u32, node: u32) -> u32 {
+        abmap::bridge::abmap_cheng_panel(&mut mem(), [kind, node], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapRectsOverlap(a, b)`.
+    AbmapRectsOverlap @ 0x00a4_9270 => extern "C" fn shim_abmap_rects_overlap(a: u32, b: u32) -> u32 {
+        abmap::bridge::abmap_rects_overlap(&mut mem(), [a, b], &mut |_, f, args| call_cdecl(f, args))
+    }
+    /// `AbmapRunPart(part)`.
+    AbmapRunPart @ 0x00a4_5930 => extern "C" fn shim_abmap_run_part(part: u32) -> u32 {
+        abmap::bridge::abmap_run_part(&mut mem(), part, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapShowChangeMessage(kind, node)`: the two string bases in a
+    /// frame.
+    AbmapShowChangeMessage @ 0x00a5_a640 => extern "C" fn shim_abmap_show_change_message(kind: u32, node: u32) -> u32 {
+        let mut w = super::StackFrame::<2>::new();
+        abmap::bridge::abmap_show_change_message(&mut mem(), [kind, node], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapCalcLinkPoints()`: the three positions in a frame.
+    AbmapCalcLinkPoints @ 0x00a5_a800 => extern "C" fn shim_abmap_calc_link_points() -> u32 {
+        let mut w = super::StackFrame::<12>::new();
+        abmap::bridge::abmap_calc_link_points(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
+    /// `AbmapDrawChrFace(x, y)`.
+    AbmapDrawChrFace @ 0x00a4_61b0 => extern "C" fn shim_abmap_draw_chr_face(x: u32, y: u32) -> u32 {
+        ffx_field::abmap_draw::abmap_draw_chr_face(&mut mem(), x, y, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapDrawBar(x0, y0, x1, y1, look)`: the element and paths in a
+    /// frame of the original's size.
+    AbmapDrawBar @ 0x00a4_5e30 => extern "C" fn shim_abmap_draw_bar(x0: u32, y0: u32, x1: u32, y1: u32, look: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::abmap_draw::BAR_WORK as usize / 4 }>::new();
+        ffx_field::abmap_draw::abmap_draw_bar(&mut mem(), [x0, y0, x1, y1, look], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapShowItemTargets(chr, node, item)`: the nearest node's
+    /// distance in a frame.
+    AbmapShowItemTargets @ 0x00a5_b980 => extern "C" fn shim_abmap_show_item_targets(chr: u32, node: u32, item: u32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        abmap::bridge::abmap_show_item_targets(&mut mem(), [chr, node, item], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `LoadAbmap()`.
+    LoadAbmap @ 0x00a4_5570 => extern "C" fn shim_load_abmap() -> u32 {
+        abmap::bridge::load_abmap(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `AbmapState_Warping()`.
+    AbmapState_Warping @ 0x00a4_7f00 => extern "C" fn shim_abmap_state_warping() -> u32 {
+        abmap::bridge::abmap_state_warping(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
 
+    /// `op_circle_cross_007e6e50(x0, y0, r, x1, y1, x2, y2, xs, ys)`: the
+    /// turned offset in a frame.
+    op_circle_cross_007e6e50 @ 0x007e_6e50 => extern "C" fn shim_op_circle_cross(x0: u32, y0: u32, r: u32, x1: u32, y1: u32, x2: u32, y2: u32, xs: u32, ys: u32) -> u32 {
+        let mut w = super::StackFrame::<2>::new();
+        geom::bridge::op_circle_cross(&mut mem(), [x0, y0, r, x1, y1, x2, y2, xs, ys], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
     /// `rcAngle2D(x0, y0, x1, y1)` (a float in `ST0`).
     rcAngle2D @ 0x007e_6d80 => extern "C" fn shim_rc_angle_2d(x0: u32, y0: u32, x1: u32, y1: u32) -> f32 {
         geom::bridge::rc_angle_2d(&mut mem(), [x0, y0, x1, y1], |_, f, a| call_float(f, a))
@@ -3971,6 +4141,35 @@ ported! {
     /// `rcfxNailUpdate(fx, ctx)`.
     rcfxNailUpdate @ 0x0092_9190 => extern "C" fn shim_rcfx_nail_update(fx: u32, ctx: u32) -> u32 {
         model::bridge::rcfx_nail_update(&mut mem(), fx, ctx)
+    }
+    /// `rcbgFPm097Proc001(part)`: its locals in a frame of the original's
+    /// size.
+    rcbgFPm097Proc001 @ 0x0092_2600 => extern "C" fn shim_rcbg_fpm097_proc001(part: u32) -> u32 {
+        let mut w = super::StackFrame::<{ model::bridge::FPM097_FRAME as usize / 4 }>::new();
+        model::bridge::rcbg_fpm097_proc001(&mut mem(), part, w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
+    /// `rcbgFPm565Proc001()`: its locals in a frame of the original's size.
+    rcbgFPm565Proc001 @ 0x0092_2fe0 => extern "C" fn shim_rcbg_fpm565_proc001() -> u32 {
+        let mut w = super::StackFrame::<{ model::bridge::FPM565_FRAME as usize / 4 }>::new();
+        model::bridge::rcbg_fpm565_proc001(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcfxWindCalc(wind, sys)`: its two vectors in a frame.
+    rcfxWindCalc @ 0x0092_96d0 => extern "C" fn shim_rcfx_wind_calc(wind: u32, sys: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        model::bridge::rcfx_wind_calc(&mut mem(), wind, sys, w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
+    /// `rcbgTrxDraw(trx)`.
+    rcbgTrxDraw @ 0x0092_d230 => extern "C" fn shim_rcbg_trx_draw(t: u32) -> u32 {
+        model::bridge::rcbg_trx_draw(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcfxNailCalc(nail, sys)`: its two vectors in a frame.
+    rcfxNailCalc @ 0x0092_8f40 => extern "C" fn shim_rcfx_nail_calc(nail: u32, sys: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        model::bridge::rcfx_nail_calc(&mut mem(), nail, sys, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcfxSpringCalc(s, sys)`.
+    rcfxSpringCalc @ 0x0092_8aa0 => extern "C" fn shim_rcfx_spring_calc(s: u32, sys: u32) -> u32 {
+        model::bridge::rcfx_spring_calc(&mut mem(), s, sys)
     }
 
     /// `AbmapCheckAchievements()`.
@@ -4141,6 +4340,26 @@ ported! {
         nkz::bridge::sqs_cmd_set_c4_c6(&mut mem(), ctx, cmd)
     }
 
+    /// `SqsCmdAnmm(ctx, cmd)`.
+    SqsCmdAnmm @ 0x0081_bbc0 => extern "C" fn shim_sqs_cmd_anmm(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_anmm(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsCmdAnmmMode(ctx, cmd)`.
+    SqsCmdAnmmMode @ 0x0081_ca60 => extern "C" fn shim_sqs_cmd_anmm_mode(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_anmm_mode(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsCmdAnmmOef(ctx, cmd)`.
+    SqsCmdAnmmOef @ 0x0081_b8d0 => extern "C" fn shim_sqs_cmd_anmm_oef(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_anmm_oef(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsCmdAnmmParam(ctx, cmd)`.
+    SqsCmdAnmmParam @ 0x0081_c160 => extern "C" fn shim_sqs_cmd_anmm_param(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_anmm_param(&mut mem(), ctx, cmd, &mut |_, f, a| call_float(f, a))
+    }
+
     /// `Sqs_DecodeAdpcm(src, dst)`.
     Sqs_DecodeAdpcm @ 0x0081_cc70 => extern "C" fn shim_sqs_decode_adpcm(src: u32, dst: u32) -> u32 {
         nkz::bridge::sqs_decode_adpcm(&mut mem(), src, dst)
@@ -4179,6 +4398,16 @@ ported! {
         let mut v = Verts([0; 16]);
         let wk = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
         rcui::bridge::rc_prim_box(&mut mem(), [x, y, w, h, colour, ui], wk, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcPrimBatu(x, y, size, colour, ui)`: the vertices in a local
+    /// (aligned like the original's).
+    rcPrimBatu @ 0x0092_59c0 => extern "C" fn shim_rc_prim_batu(x: u32, y: u32, size: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 16]);
+        let mut v = Verts([0; 16]);
+        let wk = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_batu(&mut mem(), [x, y, size, colour, ui], wk, &mut |_, f, a| call_cdecl(f, a))
     }
 
     /// `rcPrimTri(x, y, r, angle, colour, ui)`: the vertices in a local

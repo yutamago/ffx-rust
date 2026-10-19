@@ -347,6 +347,70 @@ pub mod bridge {
         uniform_scale(mem, m, super::SCALE_0001)
     }
 
+    /// `rcAngle2D` (`0x007e6d80`) and `op_rot_point_007ea9d0` (`0x007ea9d0`),
+    /// the calls of [`op_circle_cross`].
+    pub const CIRCLE_CROSS_CALLS: [u32; 2] = [0x007e_6d80, 0x007e_a9d0];
+
+    /// `op_circle_cross_007e6e50(x0, y0, r, x1, y1, x2, y2, xs, ys)`
+    /// (`0x007e6e50`, from `0x007e8fd0`; name ours): where the line through
+    /// `(x1, y1)` and `(x2, y2)` (`f32`s) crosses the circle of radius `r`
+    /// about `(x0, y0)`. With `a = rcAngle2D(x1, y1, x2, y2)` (stored as
+    /// `f32`), the centre's offset from `(x1, y1)` turned by `-a`
+    /// (`op_rot_point_007ea9d0` about 0, into `work`: x, y) gives the
+    /// distance `d` (its y) from the line: farther than `r` returns 0.
+    /// Else `s = f32(sqrt(r² - d²))` and the points `(x0 + s, y0 - d)` and
+    /// (unless `s` is 0) `(x0 - s, y0 - d)`, turned by `a` about the
+    /// centre, go to `xs[i]`/`ys[i]`; returns how many.
+    pub fn op_circle_cross<M, C, F>(
+        mem: &mut M,
+        args: [u32; 9],
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use ffx_bridge::x87::{load, store};
+        let [x0, y0, r, x1, y1, x2, y2, xs, ys] = args;
+        let [angle_2d, rot_point] = CIRCLE_CROSS_CALLS.map(|f| mem.rebase(f));
+        let copy = |v: u32| x87::copy(v);
+        let a = store(fcall(
+            mem,
+            angle_2d,
+            crate::camera::FArgs::Stack(&[copy(x1), copy(y1), copy(x2), copy(y2)]),
+        ));
+        let dy = store(load(y0) - load(y1));
+        let dx = store(load(x0) - load(x1));
+        let (lx, ly) = (work, work.wrapping_add(4));
+        let minus_a = a ^ 0x8000_0000;
+        call(mem, rot_point, &[0, 0, minus_a, dx, dy, lx, ly]);
+        let d = load(mem.read::<u32>(ly));
+        let radius = load(r);
+        // fcom, C0 alone: r below |d| (unordered goes on)
+        if radius < d.abs() {
+            return 0;
+        }
+        let s = store((radius * radius - d * d).sqrt());
+        let py = store(load(y0) - d);
+        let px = store(load(x0) + load(s));
+        call(mem, rot_point, &[copy(x0), copy(y0), a, px, py, xs, ys]);
+        // fucom: s equal to 0.0 (not NaN) gives one point
+        if load(s) == 0.0 {
+            return 1;
+        }
+        let px = store(load(x0) - load(s));
+        let next = |p: u32| p.wrapping_add(4);
+        call(
+            mem,
+            rot_point,
+            &[copy(x0), copy(y0), a, px, py, next(xs), next(ys)],
+        );
+        2
+    }
+
     /// `rcAngle2D(x0, y0, x1, y1)` (`0x007e6d80`, from `0x007e6e50`; name
     /// ours): the direction of `(x1 - x0, y1 - y0)` (both `f32`) in
     /// `0..2π`: the quadrant `q` (0 for x, y >= 0, 1 for x < 0 <= y, 2 for

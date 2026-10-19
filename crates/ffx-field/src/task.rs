@@ -205,6 +205,36 @@ pub mod target {
     pub const HEIGHT: u32 = 0x10;
     /// The delay a reached target waits (`u16`, `rcefTargetSetDelay`).
     pub const DELAY: ffx_bridge::Global<u16> = ffx_bridge::Global::new(0x025d_5ea2);
+    /// The targets' count (`i16`, at most 16; `rcefSetTargets`).
+    pub const COUNT: ffx_bridge::Global<i16> = ffx_bridge::Global::new(0x025d_5ea0);
+    /// The caster's facing as an angle (`f32`).
+    pub const CASTER_ANGLE: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x025d_5ea4);
+    /// The targets' centre (a vector, summed then averaged).
+    pub const CENTRE: ffx_bridge::Global<[u32; 4]> = ffx_bridge::Global::new(0x025d_5ea8);
+    /// The effect's caster (a character).
+    pub const CASTER: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x025d_5bb8);
+    /// How many targets the effect lists.
+    pub const SOURCE_COUNT: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x025d_5bbc);
+    /// The listed targets (characters, 16 words).
+    pub const SOURCES: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x025d_5bc0);
+    /// `rcefGetChrDir(chr)` (`0x0092dfd0`, in `ST0`).
+    pub const GET_CHR_DIR: u32 = 0x0092_dfd0;
+    /// `rcefDirToAngle(dir)` (`0x0092de30`, in `ST0`).
+    pub const DIR_TO_ANGLE: u32 = 0x0092_de30;
+    /// `rcefGetChrPos(i, e, out)` (`0x0092e2f0`).
+    pub const GET_CHR_POS: u32 = 0x0092_e2f0;
+    /// `rcefGetChrPosOpt(i, n, out)` (`0x0092e340`).
+    pub const GET_CHR_POS_OPT: u32 = 0x0092_e340;
+    /// `rcVu0Add_00924770(out, a, b)`.
+    pub const VU0_ADD: u32 = 0x0092_4770;
+    /// `rcVu0Sub_00924860(out, a, b)`.
+    pub const VU0_SUB: u32 = 0x0092_4860;
+    /// `rcVec3fLength(v)` (`0x00921250`, in `ST0`).
+    pub const VEC3F_LENGTH: u32 = 0x0092_1250;
+    /// `rcefVecToAngle(v)` (`0x0092ec20`, in `ST0`).
+    pub const VEC_TO_ANGLE: u32 = 0x0092_ec20;
+    /// `rcbgScaleVector_009247d0(out, v, s)`.
+    pub const SCALE_VECTOR: u32 = 0x0092_47d0;
 }
 
 /// Offsets in the effect main object (`rcefMainInit`).
@@ -1156,6 +1186,202 @@ pub mod bridge {
         rcef_work_set(mem, w, work, work.wrapping_add(0x10), args[8]);
     }
 
+    /// `rcCopyQword_009250a0(dst, src)`, `rcVu0Sub4(out, a, b)`,
+    /// `rcbgScaleVector4_00925040(out, v, s)` and `rcVu0Add4(out, a, b)`:
+    /// the vector helpers of [`rcef_color_update`].
+    pub const COLOR_HELPERS: [u32; 4] = [0x0092_50a0, 0x0092_50d0, 0x0092_5040, 0x0092_4fc0];
+    /// `graphicAddScreenFadeTask(r, g, b, a, after)` (`0x00639240`).
+    pub const ADD_SCREEN_FADE_TASK: u32 = 0x0063_9240;
+    /// 1/128 and 255.0 (`f64`s, `.rdata`): the fade's alpha and colour
+    /// scales.
+    pub const COLOR_SCALES: [u32; 2] = [0x00b1_70b8, 0x00b1_70c0];
+
+    /// `fist` under a truncating control word: `x` toward zero, or the
+    /// integer indefinite (`i32::MIN`) when out of range or NaN.
+    fn fist_chop(x: f64) -> i32 {
+        let t = x.trunc();
+        if (-2_147_483_648.0..=2_147_483_647.0).contains(&t) {
+            #[allow(clippy::cast_possible_truncation)] // in range
+            let i = t as i32;
+            i
+        } else {
+            i32::MIN
+        }
+    }
+
+    /// `rcefColorUpdate(w)` (`0x00924c70`, from `rcefMainProcRunAfter`
+    /// on the effect main object and through `rcefWorkCall_00924c70` on
+    /// [`COLOR_WORK`]; name ours): the colour (in `work`, the
+    /// original's 16-byte local) is `+0x1c4` at frame 0, `+0x1d4` at the
+    /// last frame (`+0x1e4`), else `(to - from) * f32(frame / frames) +
+    /// from` through the VU0 helpers ([`COLOR_HELPERS`], frame `+0x1e8`).
+    /// `graphicAddScreenFadeTask(r / 255, g / 255, b / 255, a / 128, 0)`
+    /// gets it, the alpha 0.0 when its truncated value's low byte is 0.
+    /// While running (`+0x1f0`) the frame steps on, stopping at the last.
+    /// Returns the `eax` it ends with: the fade task's, or the frame count
+    /// when running.
+    pub fn rcef_color_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        w: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use crate::x87::{load, store};
+        let [copy, sub, scale, add] = COLOR_HELPERS.map(|f| mem.rebase(f));
+        let (from, to) = (w.wrapping_add(0x1c4), w.wrapping_add(0x1d4));
+        let frame = mem.read::<i32>(w.wrapping_add(0x1e8));
+        let frames = mem.read::<i32>(w.wrapping_add(0x1e4));
+        if frame == 0 {
+            call(mem, copy, &[work, from]);
+        } else if frame == frames {
+            call(mem, copy, &[work, to]);
+        } else {
+            let a = load(store(f64::from(frame)));
+            let b = load(store(f64::from(frames)));
+            let t = store(a / b);
+            call(mem, sub, &[work, to, from]);
+            call(mem, scale, &[work, work, t]);
+            call(mem, add, &[work, work, from]);
+        }
+        let [alpha_scale, colour_scale] = COLOR_SCALES.map(|c| mem.read::<f64>(mem.rebase(c)));
+        let [r, g, b, a] = mem.read::<[u32; 4]>(work).map(load);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low byte
+        let alpha = if fist_chop(a) as u8 == 0 {
+            0
+        } else {
+            store(a * alpha_scale)
+        };
+        let [r, g, b] = [r, g, b].map(|c| store(c / colour_scale));
+        let f = mem.rebase(ADD_SCREEN_FADE_TASK);
+        let mut eax = call(mem, f, &[r, g, b, alpha, 0]);
+        if mem.read::<u32>(w.wrapping_add(0x1f0)) != 0 {
+            let frames = mem.read::<i32>(w.wrapping_add(0x1e4));
+            let at = w.wrapping_add(0x1e8);
+            let next = mem.read::<i32>(at).wrapping_add(1);
+            mem.write(at, next);
+            if next > frames {
+                mem.write(at, frames);
+                mem.write(w.wrapping_add(0x1f0), 0u32);
+            }
+            eax = frames.cast_unsigned();
+        }
+        eax
+    }
+
+    /// `MsEffectReady(e, on)` (`0x00788200`), `MsSetDamage(e, a, b)`
+    /// (`0x0078d980`) and `MsEffectEndMotion(e, kind)` (`0x00787950`).
+    pub const PRAY_CALLS: [u32; 3] = [0x0078_8200, 0x0078_d980, 0x0078_7950];
+
+    /// `rcefEffectReady(on)` (`0x0092dfb0`): `MsEffectReady(the pray
+    /// effect, on != 0)`, whose `eax` it returns.
+    pub fn rcef_effect_ready<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        on: u32,
+        call: &mut C,
+    ) -> u32 {
+        let e = PRAY_EFFECT.get(mem);
+        let f = mem.rebase(PRAY_CALLS[0]);
+        call(mem, f, &[e, u32::from(on != 0)])
+    }
+
+    /// `rcefSetDamage(a, b)` (`0x0092e9a0`): `MsSetDamage(the pray effect,
+    /// a, b)`, whose `eax` it returns.
+    pub fn rcef_set_damage<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let e = PRAY_EFFECT.get(mem);
+        let f = mem.rebase(PRAY_CALLS[1]);
+        call(mem, f, &[e, a, b])
+    }
+
+    /// `rcefResetMotion(e)` (`0x0092e780`): `MsEffectEndMotion(e, 0)`,
+    /// whose `eax` it returns.
+    pub fn rcef_reset_motion<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(PRAY_CALLS[2]);
+        call(mem, f, &[e, 0])
+    }
+
+    /// `MsCopyCameraMatrix(out)`, `MsCopyScreenMatrix(out)`,
+    /// `FFXVu0CopyMatrix(dst, src)`, `FFXVu0InversMatrix(out, m)`,
+    /// `rcefTaskCtrlProc(ctrl)`, `MsEffectTerminate(id)`,
+    /// `rcefColorUpdate(e)`, `rcefScreenShake(e)` and `rcefBlurUpdate(e)`:
+    /// [`rcef_main_proc_run_after`]'s calls.
+    pub const RUN_AFTER_CALLS: [u32; 9] = [
+        0x007c_0070,
+        0x007b_ba50,
+        0x006e_d360,
+        0x006e_d450,
+        0x0093_0300,
+        0x0078_8920,
+        0x0092_4c70,
+        0x0092_4df0,
+        0x0092_4bf0,
+    ];
+    /// `g_pppScreenMatrix` and `g_PppPacketPos`.
+    pub const PPP_SCREEN_MATRIX: u32 = 0x0230_fe60;
+    /// See [`PPP_SCREEN_MATRIX`].
+    pub const PPP_PACKET_POS: u32 = 0x0230_fd2c;
+
+    /// `rcefMainProcRunAfter(e)` (`0x00925440`, the effect main object's
+    /// per-frame step): the ppp environment slot gets `e +0x10`, the ppp
+    /// camera and screen matrices are copied from the game's
+    /// (`MsCopyCameraMatrix`, `MsCopyScreenMatrix`), the effect base
+    /// matrix ([`super::RCEF_BASE_MATRIX`]) is the inverse of the camera's
+    /// rotation (its translation zeroed first), the packet position
+    /// `g_PppPacketPos` is `e +0xc`; the task controller (`+0x1c`) runs and,
+    /// once it ends, `MsEffectTerminate(e +4)`; then without `+0x1f4` the
+    /// colour fade ([`rcef_color_update`]), the screen shake and the blur,
+    /// and `+0x22c` counts the frame. Returns the blur's `eax`.
+    pub fn rcef_main_proc_run_after<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [
+            camera_copy,
+            screen_copy,
+            copy,
+            invert,
+            ctrl_proc,
+            terminate,
+            colour,
+            shake,
+            blur,
+        ] = RUN_AFTER_CALLS.map(|f| mem.rebase(f));
+        let slot = super::main::ENV_SLOT.get(mem);
+        let env = mem.read::<u32>(e.wrapping_add(0x10));
+        mem.write(slot, env);
+        let camera = mem.rebase(super::PPP_CAMERA_MATRIX);
+        call(mem, camera_copy, &[camera]);
+        call(mem, screen_copy, &[mem.rebase(PPP_SCREEN_MATRIX)]);
+        let base = mem.rebase(super::RCEF_BASE_MATRIX);
+        call(mem, copy, &[base, camera]);
+        mem.write(base + 0x30, [0u32; 3]);
+        call(mem, invert, &[base, base]);
+        let pos = mem.read::<u32>(e.wrapping_add(0xc));
+        mem.write(mem.rebase(PPP_PACKET_POS), pos);
+        let ctrl = e.wrapping_add(0x1c);
+        call(mem, ctrl_proc, &[ctrl]);
+        if rcef_task_ctrl_is_end(mem, ctrl) {
+            let id = mem.read::<u32>(e.wrapping_add(4));
+            call(mem, terminate, &[id]);
+        }
+        if mem.read::<u32>(e.wrapping_add(0x1f4)) == 0 {
+            call(mem, colour, &[e]);
+        }
+        call(mem, shake, &[e]);
+        let eax = call(mem, blur, &[e]);
+        let frames = e.wrapping_add(0x22c);
+        mem.write(frames, mem.read::<u32>(frames).wrapping_add(1));
+        eax
+    }
+
     // ---- round 26 ----
 
     /// `rcefScreenShake(e)` (`0x00924df0`, from `rcefMainProcRunAfter`;
@@ -1721,6 +1947,96 @@ pub mod bridge {
     ) {
         let e = rcef_get_chr_elem_no(mem, i, n, call);
         rcef_get_chr_matrix(mem, i, e, out, call);
+    }
+
+    /// `rcefSetTargets(e, opt, te, topt)` (`0x00924a20`, name ours): the
+    /// effect target table ([`super::target::TABLE`], 600 bytes from it
+    /// cleared) from the caster ([`super::target::CASTER`]) and its
+    /// listed targets ([`super::target::SOURCES`], at most 16 of
+    /// [`super::target::SOURCE_COUNT`], kept as an `i16` at
+    /// [`super::target::COUNT`]). The caster's facing
+    /// (`rcefDirToAngle(rcefGetChrDir(..))`) goes to
+    /// [`super::target::CASTER_ANGLE`], its position (element `e`, or
+    /// option position `e` with `opt`: `rcefGetChrPos`/`rcefGetChrPosOpt`)
+    /// to `work`. Each target `i` gets its character at `+4`, its position
+    /// (element `te`, with `topt` an option position) added to the centre
+    /// ([`super::target::CENTRE`], `rcVu0Add_00924770`), and the offset
+    /// from the caster (`rcVu0Sub_00924860` at `+0x14`) split: `+0x10`
+    /// its y, `+0x18`/`+0x20` 0, `+8` the length (`rcVec3fLength`), then
+    /// normalised and `+0xc` its angle (`rcefVecToAngle`). The centre is
+    /// scaled by `1 / count` (`rcbgScaleVector_009247d0`), whose `eax` it
+    /// returns. `work` holds the two positions (0x20 bytes).
+    pub fn rcef_set_targets<M, C, F>(
+        mem: &mut M,
+        [e, opt, te, topt]: [u32; 4],
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use super::target as t;
+        use crate::camera::FArgs;
+        use crate::x87;
+        let table = t::TABLE.ptr(mem).addr;
+        for i in 0..600 / 4 {
+            mem.write(table + 4 * i, 0u32);
+        }
+        #[allow(clippy::cast_possible_truncation)] // the low word
+        let count = (t::SOURCE_COUNT.get(mem) as u16).cast_signed().min(16);
+        t::COUNT.set(mem, count);
+        let caster = t::CASTER.get(mem);
+        let f = mem.rebase(t::GET_CHR_DIR);
+        let dir = x87::store(fcall(mem, f, FArgs::Stack(&[caster])));
+        let f = mem.rebase(t::DIR_TO_ANGLE);
+        let angle = x87::store(fcall(mem, f, FArgs::Stack(&[dir])));
+        mem.write(t::CASTER_ANGLE.ptr(mem).addr, angle);
+        let get_pos = |opt: u32| {
+            if opt == 0 {
+                t::GET_CHR_POS
+            } else {
+                t::GET_CHR_POS_OPT
+            }
+        };
+        let (from, to) = (work, work.wrapping_add(0x10));
+        let caster = t::CASTER.get(mem);
+        let f = mem.rebase(get_pos(opt));
+        call(mem, f, &[caster, e, from]);
+        let centre = t::CENTRE.ptr(mem).addr;
+        let mut i = 0i16;
+        while i < t::COUNT.get(mem) {
+            let k = u32::from(i.cast_unsigned());
+            let entry = table + t::SIZE * k;
+            let chr = mem.read::<u32>(t::SOURCES.ptr(mem).addr + 4 * k);
+            mem.write(entry + 4, chr);
+            let f = mem.rebase(get_pos(topt));
+            call(mem, f, &[chr, te, to]);
+            let f = mem.rebase(t::VU0_ADD);
+            call(mem, f, &[centre, centre, to]);
+            let v = entry + 0x14;
+            let f = mem.rebase(t::VU0_SUB);
+            call(mem, f, &[v, to, from]);
+            let y = x87::copy(mem.read::<u32>(entry + 0x18));
+            mem.write(entry + t::HEIGHT, y);
+            mem.write(entry + 0x20, 0u32);
+            mem.write(entry + 0x18, 0u32);
+            let f = mem.rebase(t::VEC3F_LENGTH);
+            let len = x87::store(fcall(mem, f, FArgs::Stack(&[v])));
+            mem.write(entry + t::DIST, len);
+            let f = mem.rebase(super::VEC3F_NORMALIZE);
+            call(mem, f, &[v]);
+            let f = mem.rebase(t::VEC_TO_ANGLE);
+            let a = x87::store(fcall(mem, f, FArgs::Stack(&[v])));
+            mem.write(entry + t::ANGLE, a);
+            i += 1;
+        }
+        let n = f64::from(t::COUNT.get(mem));
+        let scale = x87::store(1.0 / n);
+        let f = mem.rebase(t::SCALE_VECTOR);
+        call(mem, f, &[centre, centre, scale])
     }
 
     /// `rcefGetChrPos(i, e, out)` (`0x0092e2f0`): element `e`'s matrix

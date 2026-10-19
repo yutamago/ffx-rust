@@ -977,3 +977,179 @@ where
     let f = reg(mem, MD_DRAW);
     call(mem, f, &[model, request, 8, layer]);
 }
+
+/// The CRT's `sprintf` (import slot `0x00b0c3dc`).
+pub const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+/// `fiosUnifyFilename(path, out, size)` (`0x00679820`).
+pub const FIOS_UNIFY_FILENAME: u32 = 0x0067_9820;
+/// `graphicDrawUIElement(element, texture, a, b, c)` (`0x0063eee0`).
+pub const DRAW_UI_ELEMENT: u32 = 0x0063_eee0;
+/// `g_PppPacketPos`, moved on by each UI element.
+pub const PPP_PACKET_POS: u32 = 0x0230_fd2c;
+/// `"%s/dat00/%s/14080_19.dds.phyre"` and `"%s/dat12/%s/14080_19.dds.phyre"`
+/// (`.rdata`), by the grid's layer (`g_Abmap +0x116a4`, 0 or 2).
+pub const BAR_TEXTURE_FORMATS: [u32; 2] = [0x00b7_b484, 0x00b7_b4a4];
+/// `"/FFX_Data/GameData/PS3Data/menu/abmap"` and `"tex/D3D11"`.
+pub const BAR_TEXTURE_PARTS: [u32; 2] = [0x00b7_b45c, 0x00b7_b450];
+/// The bar's texture corners (`f32`s, `.rdata`): `u0, v0, u1, v1` for the
+/// two looks (the last argument 0 or not).
+pub const BAR_UVS: [[u32; 4]; 2] = [
+    [0x00b7_b644, 0x00b7_b5dc, 0x00b7_b648, 0x00b6_5620],
+    [0x00b7_b64c, 0x00b7_b5dc, 0x00b7_b650, 0x00b7_b5e8],
+];
+/// The bytes of [`abmap_draw_bar`]'s frame: the element (0x98), the
+/// unified path (0x100), the path (0x100).
+pub const BAR_WORK: u32 = 0x298;
+
+/// `AbmapDrawBar(x0, y0, x1, y1, look)` (`0x00a45e30`, from `0x00a46120`;
+/// name ours): a UI element in `work` (the original's frame, see
+/// [`BAR_WORK`]): corners `(x0, y0)` and `(x1, y1)` as floats (`+0`,
+/// `+0x20`), their texture corners ([`BAR_UVS`], by `look`) at `+8`/`+0x28`,
+/// each corner's four colour words 0x80, `+0x88`, `+0x90`, `+0x94` 0 (the
+/// rest is never set); the texture path from [`BAR_TEXTURE_FORMATS`] for
+/// layer 0 or 2 (another layer leaves the path buffer as it is) through
+/// `fiosUnifyFilename`, then `graphicDrawUIElement(element, path, 1, 0,
+/// 0)`, whose `eax` it returns, and `g_PppPacketPos` moves on 0x60.
+pub fn abmap_draw_bar<M, C>(mem: &mut M, args: [u32; 5], work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let [x0, y0, x1, y1, look] = args;
+    let (element, unified, path) = (work, work.wrapping_add(0x98), work.wrapping_add(0x198));
+    let int_float = |v: u32| x87::store(f64::from(v.cast_signed()));
+    let uv = BAR_UVS[usize::from(look != 0)].map(|c| x87::copy(mem.read::<u32>(mem.rebase(c))));
+    for (corner, (x, y), (u, v)) in [
+        (element, (x0, y0), (uv[0], uv[1])),
+        (element.wrapping_add(0x20), (x1, y1), (uv[2], uv[3])),
+    ] {
+        mem.write(corner, [int_float(x), int_float(y), u, v]);
+        mem.write(corner.wrapping_add(0x10), [0x80u32; 4]);
+    }
+    for o in [0x88, 0x90, 0x94] {
+        mem.write(element.wrapping_add(o), 0u32);
+    }
+    let layer = mem.read::<u32>(ABMAP.get(mem).wrapping_add(0x116a4));
+    let format = match layer {
+        0 => Some(BAR_TEXTURE_FORMATS[0]),
+        2 => Some(BAR_TEXTURE_FORMATS[1]),
+        _ => None,
+    };
+    if let Some(format) = format {
+        let f = mem.read::<u32>(mem.rebase(SPRINTF_SLOT));
+        let [dir, kind] = BAR_TEXTURE_PARTS.map(|s| mem.rebase(s));
+        let format = mem.rebase(format);
+        call(mem, f, &[path, format, dir, kind]);
+    }
+    let f = mem.rebase(FIOS_UNIFY_FILENAME);
+    call(mem, f, &[path, unified, 0x100]);
+    let f = mem.rebase(DRAW_UI_ELEMENT);
+    let eax = call(mem, f, &[element, unified, 1, 0, 0]);
+    let pos = mem.rebase(PPP_PACKET_POS);
+    mem.write(pos, mem.read::<u32>(pos).wrapping_add(0x60));
+    eax
+}
+
+/// `0x008efd90(pkt, chr, x, y, r, g, b, alpha, kind)` (the menu code): a
+/// character's face into the packet, returning the packet's end.
+pub const FACE_PACKET: u32 = 0x008e_fd90;
+
+/// `AbmapDrawChrFace(x, y)` (`0x00a461b0`, from `0x00a4fbe0`; name ours):
+/// the current character's (`+0x115bc`) face at `(x, y)`, with the grid's
+/// fade (`+0x115b9`) as alpha, through [`FACE_PACKET`] at
+/// `g_PppPacketPos + 0x10` (the position set to each end). While a change
+/// of character slides (`+0x115be` 1 or 2, frame `+0x115bf` counting up
+/// to 4), the previous character (`+0x115bd`) is drawn first in place and
+/// the current one offset by `(frame * 0x5b) / 4 - 0x50` (direction 1) or
+/// `0x50 -` that (direction 2), the frame from before the step; the fifth
+/// frame ends the slide (`+0x115be` 0). Returns the last packet end.
+pub fn abmap_draw_chr_face<M, C>(mem: &mut M, x: u32, y: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let face = mem.rebase(FACE_PACKET);
+    let byte = |mem: &M, o: u32| u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(o)));
+    let mut draw = |mem: &mut M, chr: u32, x: u32| {
+        let alpha = byte(mem, 0x115b9);
+        let pkt = crate::ke::PACKET_POS.get(mem).wrapping_add(0x10);
+        let end = call(mem, face, &[pkt, chr, x, y, 0x80, 0x80, 0x80, alpha, 6]);
+        crate::ke::PACKET_POS.set(mem, end);
+        end
+    };
+    let slide = |frame: u8| (i32::from(frame) * 0x5b) / 4;
+    let offset = match byte(mem, 0x115be) {
+        1 => Some(slide(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bf))) - 0x50),
+        2 => Some(0x50 - slide(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bf)))),
+        _ => None,
+    };
+    if let Some(offset) = offset {
+        let at = ABMAP.get(mem).wrapping_add(0x115bf);
+        let frame = mem.read::<u8>(at).wrapping_add(1);
+        mem.write(at, frame);
+        if frame <= 4 {
+            let previous = byte(mem, 0x115bd);
+            draw(mem, previous, x);
+            let current = byte(mem, 0x115bc);
+            return draw(mem, current, offset.cast_unsigned().wrapping_add(x));
+        }
+        mem.write(ABMAP.get(mem).wrapping_add(0x115be), 0u8);
+    }
+    let current = byte(mem, 0x115bc);
+    draw(mem, current, x)
+}
+
+// ---- field r13, the scroll bar ----
+
+/// `AbmapDrawBar` (`0x00a45e30`), [`abmap_draw_scroll_bar`]'s call.
+pub const DRAW_BAR: u32 = 0x00a4_5e30;
+
+/// `AbmapDrawScrollBar(x, y, height, first, total, shown)` (`0x00a46120`,
+/// from `0x00a58900`; name ours): a list's scroll bar. With `h` the
+/// height less 4 (as an `i16`) and `top = y + 1`, the track is
+/// [`abmap_draw_bar`] look 0 from `(x + 1, top)` to `(x + 3, top + h)`,
+/// the thumb look 1 from `top + h * first / total` to `top + h * (first +
+/// shown) / total` (truncating divisions, the ends as `i16`), at least
+/// one high. Returns the second bar's `eax`. A zero `total` faults in the
+/// original; here the divisions give 0.
+pub fn abmap_draw_scroll_bar<M, C>(mem: &mut M, args: [u32; 6], call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let [x, y, height, first, total, shown] = args;
+    #[allow(clippy::cast_possible_truncation)] // the original's 16-bit values
+    let short = |v: u32| i32::from((v as u16).cast_signed());
+    let h = short(height.wrapping_sub(4));
+    let top = y.wrapping_add(1);
+    let (x0, x1) = (short(x).wrapping_add(1), short(x).wrapping_add(3));
+    let f = mem.rebase(DRAW_BAR);
+    let track = [
+        x0.cast_unsigned(),
+        short(top).cast_unsigned(),
+        x1.cast_unsigned(),
+        h.wrapping_add(short(top)).cast_unsigned(),
+        0,
+    ];
+    call(mem, f, &track);
+    let at = |n: i32| {
+        let q = h
+            .wrapping_mul(n)
+            .checked_div(total.cast_signed())
+            .unwrap_or(0);
+        short(q.cast_unsigned().wrapping_add(top))
+    };
+    let start = at(first.cast_signed());
+    let mut end = at(shown.wrapping_add(first).cast_signed());
+    if end <= start {
+        end = short(start.cast_unsigned().wrapping_add(1));
+    }
+    let thumb = [
+        x0.cast_unsigned(),
+        start.cast_unsigned(),
+        x1.cast_unsigned(),
+        end.cast_unsigned(),
+        1,
+    ];
+    call(mem, f, &thumb)
+}

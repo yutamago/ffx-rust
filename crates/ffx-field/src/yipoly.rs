@@ -798,6 +798,42 @@ pub const DEFAULT_FRAME: u32 = 0x0208_00d0;
 /// `0x00912690(packet, qwc)`: sends a DMA packet on channel 2 (path 3)
 /// after syncing the MFIFO and the GS paths; returns `sceGsSyncPath`'s.
 pub const SEND_GS_PACKET: u32 = 0x0091_2690;
+/// `Sg_GetDBuffDC(out)` (`0x00820530`): the double buffer's state, its
+/// first byte's bit 0 the shown buffer.
+pub const SG_GET_DBUFF_DC: u32 = 0x0082_0530;
+/// [`yi_set_draw_frame`]'s scratch: the buffer state word, then the
+/// packet (4 quadwords) from `+0x10` (16-byte aligned).
+pub const DRAW_FRAME_WORK: u32 = 0x50;
+
+/// `yiSetDrawFrame()` (`0x00912590`, from `0x00911fc0`; name ours): a
+/// 4-quadword A+D packet back to the frame buffer being drawn
+/// (`Sg_GetDBuffDC` into `work`; buffer 0 when bit 0 of its first byte
+/// is set, else 0x68, width 8, format 0x10: `FRAME_1`), `SCISSOR_1`
+/// `0x2000000` and `XYOFFSET_1` `0x7000`, sent with [`SEND_GS_PACKET`],
+/// whose `eax` it returns.
+pub fn yi_set_draw_frame<M, C>(mem: &mut M, work: u32, call: &mut C) -> u32
+where
+    M: ffx_bridge::Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let f = mem.rebase(SG_GET_DBUFF_DC);
+    call(mem, f, &[work]);
+    let shown = mem.read::<u8>(work) & 1 != 0;
+    let frame = (if shown { 0 } else { 0x34000u32 }) >> 11 | 0x0108_0000;
+    let packet = work.wrapping_add(0x10);
+    let quads = [
+        [0x8003, 0x1000_0000, 0xe, 0],
+        [frame, 0, FRAME_1, 0],
+        [0x0200_0000, 0, SCISSOR_1, 0],
+        [0x7000, 0, XYOFFSET_1, 0],
+    ];
+    for (i, q) in (0u32..).zip(quads) {
+        mem.write(packet.wrapping_add(16 * i), q);
+    }
+    let f = mem.rebase(SEND_GS_PACKET);
+    call(mem, f, &[packet, 4])
+}
+
 /// [`yi_tex_target_clear`]'s scratch: the packet, up to 0x150 bytes
 /// (16-byte aligned for the DMA).
 pub const CLEAR_WORK: u32 = 0x150;
