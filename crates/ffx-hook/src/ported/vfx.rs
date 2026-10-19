@@ -4612,4 +4612,32 @@ ported! {
     opus_end_all_sub @ 0x007f_e6c0 => extern "C" fn opus_end_all_sub(k: u32) {
         et::bridge::opus_end_all_sub(&mut mem(), k, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `op_segment_circle_cross_007e8fd0(x0, y0, r, x1, y1, x2, y2, out, out2)`.
+    op_segment_circle_cross_007e8fd0 @ 0x007e_8fd0 => extern "C" fn op_segment_circle_cross(x0: u32, y0: u32, r: u32, x1: u32, y1: u32, x2: u32, y2: u32, out: u32, out2: u32) -> u32 {
+        // the original's locals: the crossings and the three lengths
+        let mut frame = super::StackFrame::<8>::new();
+        let at = frame.at();
+        let p = [x0, y0, r, x1, y1, x2, y2].map(f32::from_bits);
+        op::bridge::op_segment_circle_cross(&mut mem(), p, out, out2, at, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `vu_apply_matrix_0074bff0(out, m, v)`.
+    vu_apply_matrix_0074bff0 @ 0x0074_bff0 => extern "C" fn vu_apply_matrix_0074bff0(out: u32, m: u32, v: u32) -> u32 {
+        vec::bridge::vu_apply_matrix(&mut mem(), out, m, v)
+    }
+    /// `vu_apply_matrix_0074cff0(out, m, v)`.
+    vu_apply_matrix_0074cff0 @ 0x0074_cff0 => extern "C" fn vu_apply_matrix_0074cff0(out: u32, m: u32, v: u32) -> u32 {
+        vec::bridge::vu_apply_matrix(&mut mem(), out, m, v)
+    }
+    /// `vu_apply_matrix_0074dff0(out, m, v)`.
+    vu_apply_matrix_0074dff0 @ 0x0074_dff0 => extern "C" fn vu_apply_matrix_0074dff0(out: u32, m: u32, v: u32) -> u32 {
+        vec::bridge::vu_apply_matrix(&mut mem(), out, m, v)
+    }
+    /// `vu_apply_matrix_0074f030(out, m, v)`.
+    vu_apply_matrix_0074f030 @ 0x0074_f030 => extern "C" fn vu_apply_matrix_0074f030(out: u32, m: u32, v: u32) -> u32 {
+        vec::bridge::vu_apply_matrix(&mut mem(), out, m, v)
+    }
+    /// `vu_apply_matrix_00753310(out, m, v)`.
+    vu_apply_matrix_00753310 @ 0x0075_3310 => extern "C" fn vu_apply_matrix_00753310(out: u32, m: u32, v: u32) -> u32 {
+        vec::bridge::vu_apply_matrix(&mut mem(), out, m, v)
+    }
 }

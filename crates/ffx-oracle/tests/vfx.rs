@@ -16300,3 +16300,106 @@ fn round31a_et_inits_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+fn round31b_segment_circle_and_vu_apply_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_8fd0);
+        let (out, out2, frame) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x20));
+        let (mtx, v) = (p.alloc(0x40), p.alloc(0x10));
+        let small = |rng: &mut Xorshift| (rng.below(41) as f32) - 20.0;
+        for round in 0..3000 {
+            p.fill(out, 0x10, &mut rng);
+            p.fill(out2, 0x10, &mut rng);
+            p.fill(p.sym(0x00c8_f508), 0x10, &mut rng);
+            p.fill(p.sym(0x00c8_f528), 0x10, &mut rng);
+            let (x0, y0) = (small(&mut rng), small(&mut rng));
+            let r = rng.pick(&[1.0f32, 3.0, 5.0, 10.0, 0.0, -1.0]);
+            let mut pts = [0f32; 4].map(|_| small(&mut rng));
+            match rng.below(6) {
+                // a tangent: the horizontal line at y0 + r
+                0 => {
+                    pts[1] = y0 + r;
+                    pts[3] = y0 + r;
+                }
+                // through the centre
+                1 => {
+                    pts[2] = 2.0 * x0 - pts[0];
+                    pts[3] = 2.0 * y0 - pts[1];
+                }
+                // both crossings behind p1, seen from p2
+                2 => {
+                    pts = [x0 + r + 1.0, y0, x0 + r + 9.0, y0];
+                }
+                3 if rng.chance(10) => pts[rng.below(4) as usize] = f32::NAN,
+                _ => {}
+            }
+            let args = [x0, y0, r, pts[0], pts[1], pts[2], pts[3]];
+            let mut words: Vec<u32> = args.iter().map(|x| x.to_bits()).collect();
+            words.extend([out, out2]);
+            p.check(
+                &format!("op_segment_circle_cross round {round}"),
+                0x007e_8fd0,
+                &words,
+                |m| {
+                    let keep = m.read(frame, 0x20).unwrap();
+                    let r = op::bridge::op_segment_circle_cross(
+                        m,
+                        args,
+                        out,
+                        out2,
+                        frame,
+                        &mut call_original,
+                        &mut call_original_f,
+                    );
+                    // (the scratch stands for the original's stack)
+                    m.write(frame, &keep).unwrap();
+                    Some(r)
+                },
+            );
+            // the VU0 matrix application and its copies
+            for i in 0..16 {
+                let x = if rng.chance(2) {
+                    f32::NAN
+                } else {
+                    (rng.below(2001) as f32 - 1000.0) / 7.0
+                };
+                p.set(mtx + 4 * i, x);
+            }
+            for i in 0..4 {
+                let x = if rng.chance(2) {
+                    f32::INFINITY
+                } else {
+                    (rng.below(2001) as f32 - 1000.0) / 3.0
+                };
+                p.set(v + 4 * i, x);
+            }
+            let (o, mm, vv) = match rng.below(8) {
+                // the output over the matrix or the vector
+                0 => (mtx, mtx, v),
+                1 => (v, mtx, v),
+                // the matrix in the emulated registers themselves
+                2 => (out, p.sym(0x00c8_f940), v),
+                3 => (out, mtx, p.sym(0x00c8_f980)),
+                // a vector over the register's next word or the accumulator
+                4 => (out, mtx, p.sym(0x00c8_f984)),
+                5 => (out, mtx, p.sym(0x00c8_f790)),
+                _ => (out, mtx, v),
+            };
+            let at = rng.pick(&[
+                0x0074_bff0u32,
+                0x0074_cff0,
+                0x0074_dff0,
+                0x0074_f030,
+                0x0075_3310,
+            ]);
+            p.check(
+                &format!("vu_apply_matrix {at:#x} round {round}"),
+                at,
+                &[o, mm, vv],
+                |m| Some(vec::bridge::vu_apply_matrix(m, o, mm, vv)),
+            );
+        }
+    }
+}
