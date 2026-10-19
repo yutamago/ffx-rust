@@ -20868,3 +20868,143 @@ fn round36_setup_window_matches_the_original_on_the_snapshot() {
     };
     round36_setup_window(&mut a, &mut b, &mut Xorshift(0x4036_0042));
 }
+
+/// Round 36 group E: `TOBtlDrawCtbWindow` over the original remaps, every
+/// drawing callee a logging stand-in, the CTB entries test records.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round36_ctb_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x10000);
+    let cursor = alloc(a, b, 4);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let ret = alloc(a, b, 4);
+    let stands: Vec<Stand> = vec![
+        (0x008f_9230, all(4), vec![], ret_cell(ret)),
+        (0x008f_41b0, all(5), vec![], vec![]),
+        (0x0089_e660, all(5), vec![], vec![]),
+        (0x008e_6cc0, all(7), vec![], vec![]),
+        (0x008e_8980, all(4), vec![], vec![]),
+        (0x0090_3bb0, all(9), vec![], vec![]),
+        (0x008a_16d0, all(4), vec![], vec![]),
+        (0x008f_dee0, all(4), vec![], vec![]),
+        (0x0090_3a10, all(3), vec![], vec![]),
+        (0x0090_3ee0, all(11), vec![], vec![]),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let stand = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), stand);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let records = alloc(a, b, 32 * 0x20);
+    let sliding = a.rebase(0x008a_2b10);
+    let g = |o: &Oracle, at: u32| o.rebase(at);
+    let (hidden, scroll, row) = (g(a, 0x0133_d6e0), g(a, 0x0134_0446), g(a, 0x0134_0448));
+    let (targets, entries, depth) = (g(a, 0x0134_0470), g(a, 0x0134_0478), g(a, 0x023c_c092));
+    let open = g(a, 0x0133_c952);
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(a, b, ret, rng.next());
+        put(a, b, hidden, [0u32, 0, 0, 1, 2][(rng.next() % 5) as usize]);
+        put(
+            a,
+            b,
+            scroll,
+            [0u8, 1, 9, 10, 0x80, 5][(rng.next() % 6) as usize],
+        );
+        put(
+            a,
+            b,
+            row,
+            [0u16, 0, 1, 3, 0xffff, rng.next() as u16][(rng.next() % 6) as usize],
+        );
+        put(a, b, targets, rng.next());
+        let d = (rng.next() % 3) as u8;
+        put(a, b, depth, d);
+        let window_open = rng.next().is_multiple_of(2);
+        for j in 0..3u32 {
+            let v = if j != u32::from(d) {
+                [0u8, 2, 1][(rng.next() % 3) as usize]
+            } else if window_open {
+                1
+            } else {
+                [0u8, 2][(rng.next() % 2) as usize]
+            };
+            put(a, b, open + 0xf0 * j, v);
+        }
+        for j in 0..32u32 {
+            let rec = records + 0x20 * j;
+            for w in 0..8 {
+                put(a, b, rec + 4 * w, rng.next());
+            }
+            put(
+                a,
+                b,
+                rec + 1,
+                [0u8, 5, 0x13, 0x14, 0x20, 0x80, 0xff][(rng.next() % 7) as usize],
+            );
+            put(
+                a,
+                b,
+                rec + 0x10,
+                ((rng.next() % 900) as u16).wrapping_sub(300),
+            );
+            put(
+                a,
+                b,
+                rec + 0x12,
+                ((rng.next() % 1000) as u16).wrapping_sub(300),
+            );
+            if rng.next().is_multiple_of(4) {
+                put(a, b, rec + 0x14, sliding);
+            }
+            // null entries only where the second pass never reads them
+            let null = (j >= 16 || !window_open) && rng.next().is_multiple_of(3);
+            put(a, b, entries + 4 * j, if null { 0 } else { rec });
+        }
+        let x = [rng.next(), rng.next() % 640, 0x8000_0000][(rng.next() % 3) as usize];
+        let y = rng.next();
+        let want = eax(a, 0x008a_0590, &[x, y]);
+        let mut window = btl::bridge::CtbWindow {
+            mem: b,
+            remap,
+            call,
+        };
+        let got = window.draw(x.cast_signed(), y);
+        if Mem::read::<u32>(a, hidden) != 1 {
+            assert_eq!(want, got, "ctb {k}");
+        }
+        same_memory(&format!("ctb {k}"), a, b);
+    }
+}
+
+#[test]
+fn round36_ctb_window_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round36_ctb_window(&mut a, &mut b, &mut Xorshift(0x4036_0051));
+}
+
+#[test]
+fn round36_ctb_window_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round36_ctb_window(&mut a, &mut b, &mut Xorshift(0x4036_0052));
+}

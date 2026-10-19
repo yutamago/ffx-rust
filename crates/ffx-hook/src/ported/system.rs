@@ -1509,6 +1509,15 @@ ported! {
         let scratch = frame.at();
         tolib::bridge::setup_message_window(&mut mem(), w, scratch, call_ptr, fcall)
     }
+    /// `TOBtlDrawCtbWindow(x, y)`.
+    TOBtlDrawCtbWindow @ 0x008a_0590 => extern "C" fn to_btl_draw_ctb_window(x: i32, y: u32) -> u32 {
+        btl::bridge::CtbWindow {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+        }
+        .draw(x, y)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {

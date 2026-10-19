@@ -1593,3 +1593,18 @@ pushed as literals (no relocation entries), not addresses.
   With `+0x1e` 1, `TOLayoutMessageChoices_008b9a60(w, 1)` follows and its
   `eax` is returned. The x position is stored as `f32` before `ftol`, the
   y sum is not.
+- `TOBtlDrawCtbWindow(x, y)` draws the battle turn-order (CTB) window
+  unless `0x0133d6e0` is 1. Its frame spans `X2(1637)`, `Y2(194)` to
+  `X2(1765)`, `Y2(482)`: a net window 8 units outside it, scroll arrows
+  0x1b6 (scroll `i8 0x01340446` positive) and 0x1b7 (below 10), the scroll
+  bar and the window scissor. Each of the 32 CTB records at `0x01340478`
+  (`+1` character, `+4` icon, `+0x10`/`+0x12` `i16` offsets, `+0x14` the
+  step callback, `0x008a2b10` while sliding) that is not sliding is drawn
+  by `TODrawBtlCtbParts` at `X2(15) + left + dx` and `Y2(dy / 22 * 48 +
+  row * 48 / 22) + top` (row `i16 0x01340448`); the first one, at row 0,
+  gets the highlight shape 0x1d8. While the command window at
+  `g_BtlActionDepth` is open, it adds a packet scissor and, for each of
+  the first 16 rows whose character bit is set in `0x01340470`, the
+  cursor 0x1d6 at `ftol(x + left + 8)`, `y` and the target frame 0x190
+  (UVs by character below 0x14 or monster). It ends with the full-screen
+  scissor and returns that call's `eax`.
