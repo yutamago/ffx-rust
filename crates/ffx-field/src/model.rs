@@ -552,6 +552,50 @@ pub mod bridge {
             .wrapping_add(mem.read(t + trx::ENTRIES))
     }
 
+    /// `sceDmaGetChan(n)`, `FlushCache(n)`, `sceDmaSend(chan, packet)` and
+    /// `sceDmaSync(chan, mode, timeout)` (`0x0062f6e0`, `0x0062f4c0`,
+    /// `0x0062f710`, `0x0062f730`): [`rcbg_trx_draw`]'s DMA calls.
+    pub const TRX_DMA_CALLS: [u32; 4] = [0x0062_f6e0, 0x0062_f4c0, 0x0062_f710, 0x0062_f730];
+
+    /// `rcbgTrxDraw(trx)` (`0x0092d230`): the transfer's upload packet at
+    /// the GIF packet buffer ([`super::REF_GIF_TAG`]): a 5-quad A+D GIF tag
+    /// (`0x10000005`), `BITBLTBUF` (0x50, the transfer's `+0x18`/`+0x1c`),
+    /// `TRXPOS` (0x51, `+0x20`/`+0x24`), `TRXREG` (0x52, `+0x28`/`+0x2c`),
+    /// `TRXDIR` (0x53, 0), then an image tag of `+0x34 / 16` quads (toward
+    /// zero, `u16`) pointing at entry `+0x3c` ([`rcbg_trx_get_entry`]),
+    /// sent on DMA channel 2 (`sceDmaGetChan`, `FlushCache(0)`,
+    /// `sceDmaSend`, `sceDmaSync(chan, 0, 0)`, whose `eax` it returns).
+    pub fn rcbg_trx_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [get_chan, flush, send, sync] = TRX_DMA_CALLS.map(|f| mem.rebase(f));
+        let p = mem.read::<u32>(mem.rebase(super::REF_GIF_TAG));
+        let w = |mem: &M, o: u32| mem.read::<u32>(t.wrapping_add(o));
+        let regs = [
+            [0x1000_0005, 0, 0, 0],
+            [w(mem, 0x18), w(mem, 0x1c), 0x50, 0],
+            [w(mem, 0x20), w(mem, 0x24), 0x51, 0],
+            [w(mem, 0x28), w(mem, 0x2c), 0x52, 0],
+            [0, 0, 0x53, 0],
+        ];
+        for (i, q) in (0u32..).zip(regs) {
+            mem.write(p.wrapping_add(16 * i), q);
+        }
+        let bytes = mem.read::<i32>(t.wrapping_add(0x34));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low word
+        mem.write(p.wrapping_add(0x50), (bytes / 16) as u16);
+        mem.write(p.wrapping_add(0x52), 0u16);
+        let entry = rcbg_trx_get_entry(mem, t, w(mem, 0x3c));
+        mem.write(p.wrapping_add(0x54), [entry, 0, 0]);
+        let chan = call(mem, get_chan, &[2]);
+        call(mem, flush, &[0]);
+        let packet = mem.read::<u32>(mem.rebase(super::REF_GIF_TAG));
+        call(mem, send, &[chan, packet]);
+        call(mem, sync, &[chan, 0, 0])
+    }
+
     /// `rcbgTrxGetEntryData(trx, n)` (`0x0092d4f0`).
     pub fn rcbg_trx_get_entry_data(mem: &impl Mem, t: u32, n: u32) -> u32 {
         rcbg_trx_get_entry(mem, t, n).wrapping_add(0x10)

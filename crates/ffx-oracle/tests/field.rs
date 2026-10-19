@@ -18748,3 +18748,56 @@ fn r13l_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13l_cases(&mut t, &mut rng, g, 250);
 }
+
+// ---- field agent r13, group M: a transfer's upload ----
+
+/// Group M (r13) on `t`: `rcbgTrxDraw` with random transfer registers,
+/// sizes on both sides of 0 (the quad count rounds toward zero) and entry
+/// numbers; the DMA calls are logged stand-ins.
+fn r13m_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, chanv) = (t.alloc(4 + 0x20 * 8), t.alloc(4), t.alloc(4));
+    let [get_chan, flush, send, sync] = model::bridge::TRX_DMA_CALLS;
+    t.cave(&[
+        (Some(get_chan), log_stub(log, chanv, 1, 1)),
+        (Some(flush), log_stub(log, rv, 2, 1)),
+        (Some(send), log_stub(log, rv, 3, 2)),
+        (Some(sync), log_stub(log, rv, 4, 3)),
+    ]);
+    let (trx, packet) = (t.alloc(0x40), t.alloc(0x60));
+    t.put(t.b.rebase(model::REF_GIF_TAG), packet);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(chanv, rng.next());
+        t.fill(trx, 0x40, rng);
+        t.fill(packet, 0x60, rng);
+        if rng.below(2) == 0 {
+            t.put(trx + 0x34, rng.range(-0x100, 0x100));
+        }
+        t.same(
+            "rcbgTrxDraw",
+            |o| o.eax(0x0092_d230, &[trx]),
+            |m| model::bridge::rcbg_trx_draw(m, trx, call),
+        );
+    }
+}
+
+/// Group M (r13) on the image.
+#[test]
+fn r13m_trx_draw_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_d101);
+    r13m_cases(&mut t, &mut rng, 400);
+}
+
+/// Group M (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13m_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_d102);
+    r13m_cases(&mut t, &mut rng, 200);
+}

@@ -12043,7 +12043,7 @@
 0x0092c0c0 function rcdtParseSetMode          # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0092c0d0 function rcdtParseSetPos           # fh switch:cg2 0x71008bfbc8
 0x0092c0f0 function rcdtParseAddSeparators       # (parse, chars): parse +0xc[c] = 1 for every byte of the C string
-0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0
+0x0092d230 function rcbgTrxDraw               # fh switch:cg3 0x71005557c0; (trx) -> sceDmaSync's eax: the upload packet at *0x00c498dc: A+D GIF tag 0x10000005, BITBLTBUF (+0x18/+0x1c), TRXPOS (+0x20/+0x24), TRXREG (+0x28/+0x2c), TRXDIR 0, image tag of +0x34/16 quads at rcbgTrxGetEntry(trx, +0x3c); sceDmaGetChan(2), FlushCache(0), sceDmaSend, sceDmaSync(chan, 0, 0); ported (field r13, ffx_field::model)
 0x0092d320 function rcbgTrxSetRegsAlloc       # (t, a..g, n): rcbgTrxSetRegs + rcbgTrxAllocEntries(t, c, f, g, n); rcbgPalAlloc
 0x0092d360 function rcbgTrxSetRegs               # (t, a..g i16) -> g: +0x1c = ((c << 8 | b) << 16) | a, +0x24 = e << 16 | d, +0x28 = f, +0x2c = g | f >> 31, +0x18 = +0x20 = 0 (sign-extended); 0x0092d320 (rcbgPalAlloc)
 0x0092d3e0 function rcbgTrxAllocEntries       # (t, format, w, h, n): entry size (4wh+16 or wh+16), n entries rcAlloc'ed to +0x38 (rcbgTrx.c 0x72), +0x10 |= 1

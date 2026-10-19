@@ -4018,6 +4018,10 @@ ported! {
         let mut w = super::StackFrame::<8>::new();
         model::bridge::rcfx_wind_calc(&mut mem(), wind, sys, w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
     }
+    /// `rcbgTrxDraw(trx)`.
+    rcbgTrxDraw @ 0x0092_d230 => extern "C" fn shim_rcbg_trx_draw(t: u32) -> u32 {
+        model::bridge::rcbg_trx_draw(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcfxSpringCalc(s, sys)`.
     rcfxSpringCalc @ 0x0092_8aa0 => extern "C" fn shim_rcfx_spring_calc(s: u32, sys: u32) -> u32 {
         model::bridge::rcfx_spring_calc(&mut mem(), s, sys)
