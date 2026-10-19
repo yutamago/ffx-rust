@@ -4474,4 +4474,49 @@ pub mod bridge {
         mem.write(out.wrapping_add(len), 0u8);
         total
     }
+
+    /// `op_mdc_mem_transfer()` (`0x00803610`): with the effect overlay on
+    /// (`0x011a006a`), every [`MDC_TRANSFER_CUES`] entry with a character
+    /// (`+0`) walks its list (`+4`: `u16 +4` items of 16 bytes from `+0x10`,
+    /// the count read again each turn): the target `t` (`ptr32` of the
+    /// item's `+0`) takes `Ch_ModelGetVtexPtr(chr, part) - t` at `+8` and
+    /// `Ch_ModelGetNromPtr(chr, part) - t` at `+0xc` (`part` the item's `u16
+    /// +0xa`), the item `+4` = `Ch_ModelGetBaseMatrix(chr, part, 0)`.
+    /// Callees through `call`.
+    pub fn op_mdc_mem_transfer<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_system::stub::ptr32;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if mem.read::<u8>(g(mem, 0x011a_006a)) == 0 {
+            return;
+        }
+        let (vtex, nrom, base) = (
+            g(mem, 0x0082_ae10),
+            g(mem, 0x0082_adf0),
+            g(mem, 0x0083_0500),
+        );
+        for e in 0..8 {
+            let entry = MDC_TRANSFER_CUES.ptr(mem).at(e).addr;
+            let chr: u32 = mem.read(entry);
+            if chr == 0 {
+                continue;
+            }
+            let list: u32 = mem.read(entry + 4);
+            let mut k = 0u32;
+            while k < u32::from(mem.read::<u16>(list.wrapping_add(4))) {
+                let item = list.wrapping_add(0x10 + 0x10 * k);
+                let t = ptr32(mem.read(item));
+                let part = |mem: &M| u32::from(mem.read::<u16>(item.wrapping_add(0xa)));
+                let n = call(mem, vtex, &[chr, part(mem)]);
+                mem.write(t.wrapping_add(8), n.wrapping_sub(t));
+                let n = call(mem, nrom, &[chr, part(mem)]);
+                mem.write(t.wrapping_add(0xc), n.wrapping_sub(t));
+                let m = call(mem, base, &[chr, part(mem), 0]);
+                mem.write(item.wrapping_add(4), ptr32(m));
+                k += 1;
+            }
+        }
+    }
 }

@@ -1637,4 +1637,94 @@ pub mod bridge {
         mem.write(out + 4, store(div(load(sy), load(nf))));
         mem.write(out + 8, store(div(load(sz), load(nf))));
     }
+
+    /// `op_et_battle_effect_init()` (`0x007fb1e0`): a debug line, the byte
+    /// at `0x011a0082` set (so `op_ovl_effect_free` keeps the separation
+    /// effects), `op_ovl_effect_free`, and byte `+0x3a` of the battle's opus
+    /// list cleared when there is one. Callees through `call`. Returns the
+    /// list (the original's eax).
+    pub fn op_et_battle_effect_init<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let (print, msg) = (at(mem, 0x0062_f500), at(mem, 0x00b5_8430));
+        call(mem, print, &[msg]);
+        mem.write(at(mem, 0x011a_0082), 1u8);
+        let free = at(mem, 0x007f_cd60);
+        call(mem, free, &[]);
+        let list = OPUS_BATTLE.get(mem);
+        if list != 0 {
+            mem.write(list + 0x3a, 0u8);
+        }
+        list
+    }
+
+    /// `op_et_monster_free(h)` (`0x007fc650`): the character record of `h`
+    /// (index -1 without one, the record before the table) loses its bound
+    /// effects (`op_et_bindeff_off`, `op_et_bindeff2_off`,
+    /// `op_et_astatus_effect_off`, each on its `+0`) and its mdc transfer
+    /// cue (`op_mdc_mem_transfer_cue_free(h)`). Unless more than two records
+    /// share its character number (`op_et_chr_count_same_no_007feb20`), a
+    /// monster oef2 at `+8` known to `opus_get_monster_index` has its
+    /// separation effects freed (`op_oef2_sep_free_all(0x10000 << k)`, `k`
+    /// its slot among the 16 words at `[0x00c88a90] + 0x60`, 0 without
+    /// one), its units freed (`opu_unit_free_by_oef2(g_OpusBattle,
+    /// g_OpusMonsters[m])`), the monster slot and its flag cleared and
+    /// `opus_mdc_free(oef, h, [p + 0xa8], u16 [p] == 1)`. Then the record is
+    /// reset (`op_et_chr_reset_007feec0(index)`). Callees through `call`.
+    pub fn op_et_monster_free<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let index = if h == 0 {
+            None
+        } else {
+            (0..CHRS).find(|&i| mem.read::<u32>(CHR.ptr(mem).at(i).addr) == h)
+        }
+        .unwrap_or(u32::MAX);
+        let rec = CHR.ptr(mem).at(index).addr;
+        for f in [0x007f_bb90, 0x007f_b6d0, 0x007f_b000] {
+            let (f, word) = (at(mem, f), mem.read::<u32>(rec));
+            call(mem, f, &[word]);
+        }
+        let cue_free = at(mem, 0x0080_3730);
+        call(mem, cue_free, &[h]);
+        let (count, word) = (at(mem, 0x007f_eb20), mem.read::<u32>(rec));
+        let same = call(mem, count, &[word]);
+        let oef: u32 = mem.read(rec.wrapping_add(8));
+        if same.cast_signed() <= 2 && oef != 0 {
+            let index_of = at(mem, 0x0080_0e80);
+            let slot_m = call(mem, index_of, &[oef]);
+            if slot_m.cast_signed() >= 0 {
+                let oef: u32 = mem.read(rec.wrapping_add(8));
+                let pp: u32 = mem.read(at(mem, 0x00c8_8a90));
+                let kk = if oef == 0 {
+                    0xff
+                } else {
+                    (0..16u32)
+                        .find(|&kk| mem.read::<u32>(pp.wrapping_add(0x60 + 4 * kk)) == oef)
+                        .unwrap_or(0xff)
+                };
+                let mask = if kk < 16 { 0x1_0000u32 << kk } else { 0 };
+                let sep_free = at(mem, 0x007f_ff30);
+                call(mem, sep_free, &[mask]);
+                let slot = at(mem, 0x0119_fed0).wrapping_add(4 * slot_m);
+                let (list, unit) = (OPUS_BATTLE.get(mem), mem.read::<u32>(slot));
+                let free = at(mem, 0x007f_df70);
+                call(mem, free, &[list, unit]);
+                mem.write(slot, 0u32);
+                mem.write(at(mem, 0x0119_fef0).wrapping_add(slot_m), 0u8);
+                let second = u32::from(mem.read::<u16>(pp) == 1);
+                let heap: u32 = mem.read(pp.wrapping_add(0xa8));
+                let oef: u32 = mem.read(rec.wrapping_add(8));
+                let mdc_free = at(mem, 0x0080_61a0);
+                call(mem, mdc_free, &[oef, h, heap, second]);
+            }
+        }
+        let reset = at(mem, 0x007f_eec0);
+        call(mem, reset, &[index]);
+    }
 }

@@ -2349,6 +2349,18 @@ ported! {
         let at = frame.at();
         et::bridge::op_et_battle_target_center(&mut mem(), out, at, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `op_et_battle_effect_init()`.
+    op_et_battle_effect_init @ 0x007f_b1e0 => extern "C" fn op_et_battle_effect_init() -> u32 {
+        et::bridge::op_et_battle_effect_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_monster_free(h)`.
+    op_et_monster_free @ 0x007f_c650 => extern "C" fn op_et_monster_free(h: u32) {
+        et::bridge::op_et_monster_free(&mut mem(), h, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_mdc_mem_transfer()`.
+    op_mdc_mem_transfer @ 0x0080_3610 => extern "C" fn op_mdc_mem_transfer() {
+        op::bridge::op_mdc_mem_transfer(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

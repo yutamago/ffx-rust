@@ -15248,3 +15248,126 @@ fn round29m_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round29n_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_c650);
+        let cells: Vec<u32> = (0..8).map(|_| p.alloc(4)).collect();
+        let (same_ret, index_ret, base_ret, vtex_ret, nrom_ret) =
+            (cells[0], cells[1], cells[2], cells[3], cells[4]);
+        let (vtex_log, nrom_log) = (cells[5], cells[6]);
+        for (sym, words, ret) in [
+            (0x007f_cd60u32, &[][..], None),
+            (0x007f_bb90, &[0], None),
+            (0x007f_b6d0, &[0], None),
+            (0x007f_b000, &[0], None),
+            (0x0080_3730, &[0], None),
+            (0x007f_eb20, &[0], Some(same_ret)),
+            (0x0080_0e80, &[0], Some(index_ret)),
+            (0x007f_ff30, &[0], None),
+            (0x007f_df70, &[0, 0], None),
+            (0x0080_61a0, &[0, 0, 0, 0], None),
+            (0x007f_eec0, &[0], None),
+            (0x0083_0500, &[0, 0, 0], Some(base_ret)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // Ch_ModelGetVtexPtr / Ch_ModelGetNromPtr sit 0x20 apart: short
+        // stand-ins keeping the part (mov eax, [esp+8]; mov [log], eax;
+        // mov eax, [ret]; ret)
+        for (sym, log, ret) in [
+            (0x0082_ae10u32, vtex_log, vtex_ret),
+            (0x0082_adf0, nrom_log, nrom_ret),
+        ] {
+            let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0xa3];
+            c.extend(log.to_le_bytes());
+            c.push(0xa1);
+            c.extend(ret.to_le_bytes());
+            c.push(0xc3);
+            stub_code(&mut p, sym, &c);
+        }
+        let chr = p.sym(et::bridge::CHR.sym);
+        let holder = p.alloc(0xb0);
+        let cues = p.sym(op::bridge::MDC_TRANSFER_CUES.sym);
+        let (lists, targets) = (p.alloc(8 * 0x50), p.alloc(8 * 4 * 0x10));
+        for round in 0..500 {
+            // op_et_battle_effect_init
+            let list = rng.pick(&[0u32, holder]);
+            p.put(et::bridge::OPUS_BATTLE, list);
+            p.fill(holder, 0xb0, &mut rng);
+            p.check(
+                &format!("op_et_battle_effect_init round {round}"),
+                0x007f_b1e0,
+                &[],
+                |o| Some(et::bridge::op_et_battle_effect_init(o, &mut call_original)),
+            );
+            // op_et_monster_free
+            for i in 0..241u32 {
+                let at = chr + 0x20 * i - 0x20;
+                p.fill(at, 0x20, &mut rng);
+            }
+            let hd = rng.pick(&[0u32, 0x3001, 0x3002]);
+            let oef = rng.pick(&[0u32, 0x4444, 0x5555]);
+            if rng.chance(70) {
+                let ci = rng.below(240);
+                p.set(chr + 0x20 * ci, 0x3001u32);
+                p.set(chr + 0x20 * ci + 8, oef);
+            }
+            p.set(p.sym(0x00c8_8a90), holder);
+            let second = rng.pick(&[0u16, 1, 2]);
+            p.set(holder, second);
+            for kk in 0..16u32 {
+                let word = if rng.chance(15) { oef } else { rng.next() };
+                p.set(holder + 0x60 + 4 * kk, word);
+            }
+            p.fill(p.sym(0x0119_fed0), 0x28, &mut rng);
+            let same = rng.pick(&[0u32, 2, 3, u32::MAX]);
+            p.set(same_ret, same);
+            let slot = rng.pick(&[u32::MAX, 0, 3, 7]);
+            p.set(index_ret, slot);
+            p.put(et::bridge::OPUS_BATTLE, rng.next());
+            p.check(
+                &format!("op_et_monster_free round {round}"),
+                0x007f_c650,
+                &[hd],
+                |o| {
+                    et::bridge::op_et_monster_free(o, hd, &mut call_original);
+                    None
+                },
+            );
+            // op_mdc_mem_transfer
+            let on = rng.pick(&[0u8, 1, 1]);
+            p.set(p.sym(0x011a_006a), on);
+            for e in 0..8u32 {
+                let entry = cues + 0x10 * e;
+                p.fill(entry, 0x10, &mut rng);
+                let who = rng.pick(&[0u32, 0x6001]);
+                p.set(entry, who);
+                let list_at = lists + 0x50 * e;
+                p.set(entry + 4, list_at);
+                p.fill(list_at, 0x50, &mut rng);
+                let items = rng.pick(&[0u16, 1, 4]);
+                p.set(list_at + 4, items);
+                for kk in 0..4u32 {
+                    let item = list_at + 0x10 + 0x10 * kk;
+                    p.set(item, targets + 0x40 * e + 0x10 * kk);
+                }
+            }
+            p.fill(targets, 8 * 4 * 0x10, &mut rng);
+            for cell in [vtex_ret, nrom_ret, base_ret] {
+                p.set(cell, rng.next());
+            }
+            p.check(
+                &format!("op_mdc_mem_transfer round {round}"),
+                0x0080_3610,
+                &[],
+                |o| {
+                    op::bridge::op_mdc_mem_transfer(o, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
