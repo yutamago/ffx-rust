@@ -865,4 +865,48 @@ pub mod bridge {
         STATUS.set(mem, 0xe);
         0
     }
+
+    /// `MsMonShuffleVariants_007842f0()` (`0x007842f0`, name ours; caller
+    /// `Mon_LoadAll`): the monsters (0x14-0x1b) sharing a model each get
+    /// their own variant (`+0x424`). For each shown monster (`+0x10`,
+    /// `+0x11`) with later ones whose model owner (`+0x14`) it is, `n`
+    /// (1 plus those) variants `(brnd & 3) + 8 m` are drawn (`m` from 0,
+    /// the generator of `MsGetRndChr(monster, 0)`); then every monster
+    /// from it on that it owns takes one of the left ones at random
+    /// (`brnd % n`, its own generator), which leaves the list.
+    pub fn ms_mon_shuffle_variants(mem: &mut impl Mem) {
+        use crate::damage::bridge::ms_get_rnd_chr;
+        use crate::rng::bridge::brnd;
+        fn owner(mem: &impl Mem, j: u32) -> u32 {
+            u32::from(mem.read::<u8>(ms_get_chr(mem, j).wrapping_add(0x14)))
+        }
+        for k in 0x14..0x1c {
+            let a = ms_get_chr(mem, k);
+            if mem.read::<u8>(a.wrapping_add(0x10)) == 0
+                || mem.read::<u8>(a.wrapping_add(0x11)) == 0
+            {
+                continue;
+            }
+            let mut n = 1 + (k + 1..0x1c).filter(|&j| owner(mem, j) == k).count();
+            if n <= 1 {
+                continue;
+            }
+            let mut left = [0u8; 8];
+            for (m, v) in (0u8..).zip(left.iter_mut().take(n)) {
+                let r = brnd(mem, ms_get_rnd_chr(mem, k, 0));
+                *v = (r.to_le_bytes()[0] & 3).wrapping_add(m << 3);
+            }
+            for j in k..0x1c {
+                let b = ms_get_chr(mem, j);
+                if u32::from(mem.read::<u8>(b.wrapping_add(0x14))) != k {
+                    continue;
+                }
+                let r = brnd(mem, ms_get_rnd_chr(mem, j, 0));
+                let pick = r as usize % n;
+                n -= 1;
+                mem.write(b.wrapping_add(0x424), left[pick]);
+                left.copy_within(pick + 1..=n, pick);
+            }
+        }
+    }
 }

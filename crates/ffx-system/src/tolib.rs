@@ -11166,6 +11166,94 @@ pub mod bridge {
         }
     }
 
+    /// The battle windows' wait functions that hand a frame to a pad
+    /// handler once the window has opened far enough (`f32 w + 0xe0`).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum WaitBtlWin {
+        /// `TOWaitBtlWinLeft(w)` (`0x008a8a40`): `TOBtlGetLeftPad` from
+        /// 0.45 on (the double constant holds 0.45f32); returns 0.
+        Left,
+        /// `TOWaitBtlWinRight_008a8af0(w)`: `TOBtlGetRightPad` from 0.45;
+        /// returns 0.
+        Right,
+        /// `TOWaitBtlWinStd_008a8b20(w)`: `TOBtlGetStdPad` from 0.3
+        /// (`f32`); returns 0.
+        Std,
+        /// `TOWaitBtlWinPrepare_008a8ac0(w)`: `TOGetPadStatusPrepare` from
+        /// 0.3; returns 1.
+        Prepare,
+    }
+
+    /// One [`WaitBtlWin`] frame of window `w`: the handler runs unless the
+    /// opening (`f32 w + 0xe0`) is below the threshold (a NaN runs it).
+    /// Callees through `call` (`ffx.sym` addresses).
+    pub fn wait_btl_win<M: Mem>(
+        mem: &mut M,
+        kind: WaitBtlWin,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let open: f32 = mem.read(w.wrapping_add(0xe0));
+        let (below, handler, result) = match kind {
+            WaitBtlWin::Left => (open < 0.45f32, 0x008a_22f0, 0),
+            WaitBtlWin::Right => (open < 0.45f32, 0x008a_2690, 0),
+            WaitBtlWin::Std => (0.3f32 > open, 0x0089_cde0, 0),
+            WaitBtlWin::Prepare => (0.3f32 > open, 0x0089_d610, 1),
+        };
+        if !below {
+            call(mem, handler, &[w]);
+        }
+        result
+    }
+
+    /// `TOOpenBtlWinLeft()` (`0x008a8620`) and `TOOpenBtlWinRight()`
+    /// (`0x008a86d0`): `TOSeqStartScene(2, "bleftwlay" / "brightwlay")`
+    /// (the strings at `0x00b5f070` / `0x00b5f07c`); return 1.
+    pub fn open_btl_win_side<M: Mem>(
+        mem: &mut M,
+        right: bool,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let name = mem.rebase(if right { 0x00b5_f07c } else { 0x00b5_f070 });
+        call(mem, 0x008a_f0d0, &[2, name]);
+        1
+    }
+
+    /// `TOFuncPadMessageNormal(w)` (`0x008b64a0`): with trigger bit 0x20
+    /// (`0x025d09d4`) the message window's `+0xf8` function
+    /// (`TOMessageCallF8_008b8ca0(w)`); then on an Eternal Calm map
+    /// (`isEternalCalmScene(g_GraphicMapId)`) `TOTimedMacroMessage(w)`,
+    /// whose `eax` it returns (else `isEternalCalmScene`'s 0).
+    pub fn func_pad_message_normal<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u8>(mem.rebase(0x025d_09d4)) & 0x20 != 0 {
+            call(mem, 0x008b_8ca0, &[w]);
+        }
+        let map: u32 = mem.read(mem.rebase(0x0133_0844));
+        let eternal_calm = call(mem, 0x0067_ab50, &[map]);
+        if eternal_calm == 0 {
+            return 0;
+        }
+        call(mem, 0x008b_9220, &[w])
+    }
+
+    /// `TOMenuEndScreenX2_008e2790(w)` (own name): `w + 0x1c` cleared,
+    /// `TkMenuSetScreenX2Flag(0)` (its `eax` returned), the byte
+    /// `0x01340858` set to 1.
+    pub fn menu_end_screen_x2<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(w.wrapping_add(0x1c), 0u32);
+        let eax = call(mem, 0x008a_b020, &[0]);
+        mem.write(mem.rebase(0x0134_0858), 1u8);
+        eax
+    }
+
     /// `TOBtlGetLeftPad(w)` (`0x008a22f0`, `cancel` 0x2000) and
     /// `TOBtlGetRightPad(w)` (`0x008a2690`, `cancel` 0x8000): one frame of
     /// the battle command window `w` opened to that side. Libra's auto mode
@@ -12289,6 +12377,28 @@ pub mod bridge {
         );
         mem.write(pkt_cursor, p);
         p
+    }
+
+    /// `TODrawFont3d80String_008ee060(cursor, text, x, y, nibbles, c0, c1,
+    /// c2, c3)` (own name): the NUL-terminated `text` drawn character by
+    /// character through `TODrawFont3d80Glyph_008eeee0` (each cursor fed
+    /// to the next), 10 units apart from `x`, after passing `cursor`
+    /// through `Identity_008f2f70`. Returns the last cursor. Callees
+    /// through `call` (`ffx.sym` addresses).
+    pub fn draw_font_3d80_string<M: Mem>(
+        mem: &mut M,
+        [cursor, text, x, y, nibbles, c0, c1, c2, c3]: [u32; 9],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut cursor = call(mem, 0x008f_2f70, &[cursor]);
+        let (mut text, mut x) = (text, x);
+        while mem.read::<u8>(text) != 0 {
+            let args = [cursor, text, x, y, nibbles, c0, c1, c2, c3];
+            cursor = call(mem, 0x008e_eee0, &args);
+            text = text.wrapping_add(1);
+            x = x.wrapping_add(10);
+        }
+        cursor
     }
 
     /// Bytes [`draw_font_3d80_glyph`] needs as scratch: the 0x98-byte

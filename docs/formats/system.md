@@ -1608,3 +1608,129 @@ pushed as literals (no relocation entries), not addresses.
   cursor 0x1d6 at `ftol(x + left + 8)`, `y` and the target frame 0x190
   (UVs by character below 0x14 or monster). It ends with the full-screen
   scissor and returns that call's `eax`.
+
+## Round 37
+
+- `TOMenuDrawChrLayoutPlate_008f0a70(cursor, chr, x, y)` (caller
+  `0x008c11e0`, packet cursor in, new cursor out) stores `cursor` in
+  `g_TOPktCursor` and draws a character plate placed by the menu layout
+  words `TOSeqInitParam` fills (`i16` `(y, x)` pairs at `0x025d1652`
+  MP text, `0x025d1656` MP label, `0x025d165a` HP text, `0x025d165e` HP
+  label, `0x025d1662` name; Sphere Level at `0x025d164a`/`0x025d164c`,
+  AP at `0x025d164e`/`0x025d1650`; colours `0x025d166c`/`0x025d1668`).
+  Positions are `x`/`y` plus the words, made `f32`; label sizes go
+  through the 1280x720 remaps `graphicUiRemapX`/`Y`. A party member
+  (`chr` below 8, unsigned) gets the frame (shapes 4 and 5, 142 and 40
+  wide, the second at `x + 0x8e` with colour `0x025d1668` twice, read
+  again after the first), the name (`ToMakeBtlEasyFont`, alpha
+  `MenuPlayer_DamageClass`), the HP and MP labels with `"%5d/%5d"` and
+  `"%4d/%4d"` (`TOMkpCrossEasyStrFontSClut`, colour 0x25, scale 1), the
+  gauge row of sheet 0x107 (at `x + 0x14c`, then `x + 315/295/342/438`
+  at double precision) and two `TOAdpCrossNumber_009019f0` numbers: the
+  Sphere Levels and the AP still needed (scale 1, gap -3). Any other
+  number gets the empty plate: `0x008f5e90(0xcc, 0xcd, x, y, width
+  0x025d1672, colours)`, labels 0xe9 and 0xea, the bar 0xe7 across the
+  screen and label 0x107. It returns `g_TOPktCursor` as the callees left
+  it.
+- `TOMenuDrawChrSmallPlate_008f51e0(chr, x, y)` (caller `0x008c1260`,
+  `x`/`y` floats) is the top half of `TOMenuDrawChrStatusPlate_008ff490`
+  without the right panel and gauge row: every part of the name row sits
+  one `ry` unit lower (name 10, overdrive label 8, HP 9, Sphere Level
+  label 35, MP 37), and language 11's gap of 11 goes inside the numbers'
+  remap (`rx(gap + 604)`) instead of after it. `chr` below 8 is unsigned
+  here: party members get the clear sheet and water or the dark sheet,
+  then the name row; every other number the dark sheet and the two empty
+  labels. It returns the last call's `eax`.
+- `TOMakePktSeqPrimLayout_008fe0b0(prim)` draws a menu-sequence
+  primitive of type 6 (caller `0x00a7bbc0`). The primitive holds four
+  colour bytes at `+4..+7` (and the words `+4`, `+8` as corner colours),
+  the position `i16 +0xc`/`+0xe`, the scale in percent `i16
+  +0x10`/`+0x12` (100 = none) and the shape `u16 +0x14`. Shapes 0x19b,
+  0x19c, 0x19f, 0x1a3 and 0x1fb draw nothing (`eax` the shape). 0x1a1 is
+  the gauge quad `TOMkpShapeXYWHUVC2(-1, x0 - X2(w / 2), Y2(535 - h /
+  2), X2(w), Y2(h), 1759, 1, 1835, 77, +4, +8)` with `w`, `h` = 120 x
+  the scale (the scale stored as `f32` first, the products kept at
+  double precision) and `x0` 160 at `x` 0x74, else 388; it draws nothing
+  below `y` 0x14a (`eax` 0x14a). 0xf0 is shape 200 at `(x - X2(10), y -
+  Y2(185))`, `X2(89)` x `Y2(186)`. Other shapes below 600 draw window
+  layout `shape` (`TOCopyWindowLayout_008fa7d0(shape)` below 200,
+  `(shape - 200)` below 400, sheet 0x3e00; `_008fa450(shape - 400)` on
+  sheet 0x3f00 below 600; `TOGetImageWH` gives the sheet size). Each
+  12-byte part (`u`, `v`, `i8 dx`, `i8 dy`, `u16 w`, `h`, two flip
+  words) becomes a 0x98-byte UI record: corners `ftol(dx / 100 * scale)`
+  and `ftol((w + dx) / 100 * scale)` plus `x` (likewise for y), swapped
+  when the flip word is 1; UVs `u / width`, `(u + w - 1) / width` (the
+  sum stored as `f32` first), `v` likewise; the colour bytes at both
+  corners; `+0x80`, `+0x88`, `+0x90`, `+0x94` zeroed once. 0x19e and
+  0x1fc pass the record through `ShapeDataModify(record, 0x102d /
+  0x1fc)` first; then `graphicDrawUIElement(record, texture, 1, 0, 0)`.
+  0x19d draws only the first part, as the cursor `0x008f59c0(ftol(x *
+  1920 / 512 - 21), ftol(y * 1080 / 416 - 18), 0x14c, 0x20, 0x112, 0x3d,
+  a, a)` and shape 400 beside it (`a` the colour byte `+7`, colour `a <<
+  24 | 0x808080`), unless the corner's `y` is past 300 (`eax` is then the
+  x87 status word of that comparison, 0x3000 plus sticky flags). 0x1f7
+  draws the first part as shape 400 left of and above its corner.
+  `eax`: the layout pointer after the parts, the colour byte `+7` for an
+  empty layout. From 600 up the original reads a stale stack word as the
+  layout; the port draws nothing.
+- `fix_mappic(map)` gives the picture the PC save list shows for a save
+  made on `map` (`m%d`, or `m%d_1` for 1000 up; the caller turns 0 into
+  999 when `isNeedShowJapanLogo`). Maps outside 1..=0x15c give 0; 26 maps
+  (2, 0x2e, 0x32, ... 0x152) show the previous map's picture; 3 gives 1,
+  7 0x120, 0x13 0x11; 0x59, 0x147..=0x14a, 0x14e and 0x14f give 0;
+  0xaf..=0xb1 0xad; 0xe8/0xe9 0xe6; 0x100 0xfe. On 0xd8, 0x1f, 0x101,
+  0x11c, 0x81/0x15c, 0xf4/0xf5 and 0xf6/0xf7 it compares the player's
+  position (`g_SaveData_PlayerPos`, `0x00ccb9a8`, which `SaveData_Update`
+  copies each frame) with two fixed points: the squared distances (x87
+  double sums stored as `f32`) pick `map + 1000` when the player is
+  nearer the second picture's point, else `map` (ties and NaNs too).
+  Any other map is its own picture.
+- Small ones: `TODrawFont3d80String_008ee060(cursor, text, x, y,
+  nibbles, c0..c3)` passes `cursor` through `Identity_008f2f70`, then
+  draws each byte of the NUL-terminated `text` with
+  `TODrawFont3d80Glyph_008eeee0` 10 units apart, feeding each returned
+  cursor to the next, and returns the last. `TOMenuGetSaveMes`,
+  `TOMenuGetStatusHelp` and `TOMenuGetSummonHelp(id)` are
+  `MsMenuGetText(3, ...)` / `MsMenuGetHelp(11 or 12, id,
+  MsGetSaveConfigHiragana())`. `BtlEnd_InitState_008bdeb0(kind)` sets
+  `0x01869f08` by the low byte of `kind` (1: 0x1d, 2: 0, else 1 after
+  `AtelSetBattleEndKeepRecoverType(kind)`), clears `0x01869f0c`,
+  `g_TkBtlEndFlag` and the byte `0x00c5a068`, and tail-calls
+  `BtlEnd_BuildList_008bde00`.
+- The battle windows' table functions without direct callers:
+  `TOWaitBtlWinLeft`/`Right_008a8af0` run `TOBtlGetLeftPad`/`RightPad`
+  unless the window's opening (`f32 +0xe0`) is below 0.45 (stored as a
+  double holding `0.45f32`), returning 0; `TOWaitBtlWinStd_008a8b20` and
+  `TOWaitBtlWinPrepare_008a8ac0` run `TOBtlGetStdPad` /
+  `TOGetPadStatusPrepare` unless it is below `0.3f32`, returning 0 and 1.
+  A NaN opening runs the handler. `TOOpenBtlWinLeft`/`Right` start scene
+  `"bleftwlay"`/`"brightwlay"` in slot 2 and return 1.
+  `TOFuncPadMessageNormal(w)` runs the message window's `+0xf8` function
+  on trigger bit 0x20 and, on an Eternal Calm map, `TOTimedMacroMessage`
+  (tail call, `w` its argument). `TOMenuEndScreenX2_008e2790(w)` clears
+  `w + 0x1c`, turns the X2 screen flag off and sets the byte
+  `0x01340858`.
+- Battle menu lists and the info window. `TOBtlInitChrNum` and
+  `TOBtlCtrlChrNum` (the same code) copy the character lists of
+  `MsGetSaveWindow(0, 9)` and `(0, 0xb)` without their trailing 0xff
+  entries (counts `0x0133f0d8`/`0x0133f0ec`, `u16` entries from
+  `0x0133f0dc`/`0x0133f0f0`); their `eax` is the second list's pointer
+  with the last copied entry in its low half. `TOBtlMakeStatusBuff(chr,
+  out)` writes `chr`'s status message ids (0x1006 + bit for status bits
+  0..10, 0x1011 when `MsGetStatusThreat` is 1, 0x1012 + i for the 13
+  counters, 0x1020 + bit for the 15 `MsMenuBitStatus` bits) and returns
+  their number; `TOBtlSetInfoWinParam(chr)` builds the same list (bit 11
+  as a plain bit, no threat entry) in the info window's status cycle
+  (`0x0133f5c0`: `i16` chr, `u16` timer 0x14, shown entry, count, ids),
+  stores the HP and maximum as `u16`s at `0x0133f614`, and sets the
+  first line (mode 2, `ftol` width, text, `0x0133f688` 1).
+  `TOBtlDrawInfoWinStatus(_, x, y)` steps the cycle every 0x14 frames
+  and draws the shown entry's text (`MsMenuGetText(1, id, 1)`) centred
+  in `X2(380)` from `x` at scale 0.78. `TOBtlSetInfoWinMes(chr)` sets
+  the first line from `MsGetMenuChrInfo(chr, 1)` (mode 8 when its width
+  is below `i16 0x0133f61e`, else 2; position from `0x0133f68c`/`690`).
+  `TOBtlSetChangeHelpMes(n)` fills `g_BtlHelpText` (cleared, then an
+  unbounded copy) from `MsGetMenuChrInfo(n, 0)` for 0..=0x11 or
+  `MsGetComData(0x30ff)`'s text for 0x30ff and measures it.
+  `TOBtlDrawLibraRight(x)` draws the Libra target's name at `X2(915) +
+  x`, `Y2(590)` (`TOMkpCrossExtMesFontLClut`, 0.64, 0.5).

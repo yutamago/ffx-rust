@@ -173,6 +173,16 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                     |m| cam::ms_camera_reset(m, id, side),
                 );
             }
+            _ if rng.below(3) == 0 => {
+                for _ in 0..3 {
+                    moves(a, b, rng, slots, c, base);
+                }
+            }
+            _ if rng.below(2) == 0 => {
+                for _ in 0..4 {
+                    filters(a, b, rng, slots, c);
+                }
+            }
             _ => match rng.below(3) {
                 0 => {
                     // the yaw of the camera in use, through a local
@@ -183,6 +193,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                     poke(a, b, buf, &[0; 4]);
                 }
                 1 => start_pos(a, b, rng, buf, base),
+                2 if rng.below(2) == 0 => {
+                    for _ in 0..4 {
+                        aims(a, b, rng, buf);
+                    }
+                }
                 _ => process_helpers(a, b, rng, buf, list),
             },
         }
@@ -221,6 +236,166 @@ fn start_pos(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, base:
     let lanes = a.rebase(0x00c8_f814);
     let w = a.read(lanes, 12).unwrap();
     b.write(lanes, &w).unwrap();
+}
+
+/// `MsCameraMoveAcc` and `MsCameraMoveFrame` (round 26) on camera `c`
+/// (at `base`, its slots at `slots`): requests of its slots or made up,
+/// a quiet NaN-free side for `MsCameraSetStartPos`, the channel's lane
+/// flags at random.
+fn moves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32, base: u32) {
+    use battle_common::crt::stand_in;
+    // often the current request (the moves need it), at times moved to
+    // channel 4 or 5 (whose records reach the side's lanes)
+    if rng.below(3) == 0 {
+        let n = cam::ms_camera_get_num(b, c);
+        let at = slots + 8 * n;
+        let w = u32::from_le_bytes(a.read(at, 4).unwrap().try_into().unwrap());
+        let w = (w & !0xff00) | (4 + rng.below(2)) << 8;
+        poke(a, b, at, &w.to_le_bytes());
+    }
+    let id = if rng.below(2) == 0 {
+        cam::ms_camera_get_id(b, c)
+    } else {
+        request(a, rng, slots, c)
+    };
+    let side = rng.below(4);
+    // the side's base vectors: none or the other side's position
+    for k in 0..2 {
+        let s = base + 0x30 + k * 0x61c;
+        let v = [0, base + 0x30 + (1 - k) * 0x61c + 0x50][rng.below(2) as usize];
+        poke(a, b, s + 0x8c, &v.to_le_bytes());
+    }
+    let s = base + 0x30 + (side & 1) * 0x61c;
+    let ch = s + 0xc0 + 0x130 * ((id >> 8) & 0xff);
+    if readable(a, ch + 7, 1) {
+        poke(a, b, ch + 7, &[rng.byte() & 0x1f]);
+    }
+    set(a, b, cam::EE_R0, [0; 4]);
+    let mode = rng.byte();
+    let w = |rng: &mut Xorshift| u16::try_from(rng.below(0x10000)).unwrap();
+    if rng.below(2) == 0 {
+        let (f, curve) = ([w(rng), w(rng), w(rng)], w(rng));
+        let args = [
+            id,
+            side,
+            u32::from(mode) | rng.next() << 8,
+            u32::from(f[0]),
+            u32::from(f[1]),
+            u32::from(f[2]),
+            u32::from(curve),
+        ];
+        twin("MsCameraMoveAcc", a, b, 0x007b_d860, &args, u32::MAX, |m| {
+            cam::ms_camera_move_acc(m, &stand_in, id, side, mode, f, curve)
+        });
+    } else {
+        let (frames, kind) = (w(rng), w(rng));
+        let args = [
+            id,
+            side,
+            u32::from(mode),
+            u32::from(frames) | rng.next() << 16,
+            u32::from(kind),
+        ];
+        twin(
+            "MsCameraMoveFrame",
+            a,
+            b,
+            0x007b_de50,
+            &args,
+            u32::MAX,
+            |m| cam::ms_camera_move_frame(m, &stand_in, id, side, mode, frames, kind),
+        );
+    }
+    // VU register 4's yzw: MsCameraSetStartPos' stray words
+    let lanes = a.rebase(0x00c8_f814);
+    let words = a.read(lanes, 12).unwrap();
+    b.write(lanes, &words).unwrap();
+}
+
+/// `MsCameraAddLineFilter_007bf0b0` and `MsCameraSetDepthMaskMode_007bcf50`
+/// (round 26) on camera `c` (its slots at `slots`): requests of its
+/// slots or made up, the channels' filter counts small.
+fn filters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32) {
+    // the current request at times on channel 4 or 5
+    if rng.below(3) == 0 {
+        let n = cam::ms_camera_get_num(b, c);
+        let at = slots + 8 * n;
+        let w = u32::from_le_bytes(a.read(at, 4).unwrap().try_into().unwrap());
+        let w = (w & !0xff00) | (4 + rng.below(2)) << 8;
+        poke(a, b, at, &w.to_le_bytes());
+    }
+    let id = if rng.below(2) == 0 {
+        cam::ms_camera_get_id(b, c)
+    } else {
+        request(a, rng, slots, c)
+    };
+    let side = rng.below(4);
+    if rng.below(2) == 0 {
+        let kind = [0, 1, rng.next()][rng.below(3) as usize];
+        let p = [float(rng), float(rng)];
+        let q = [float(rng), float(rng)];
+        let w = float(rng);
+        twin(
+            "MsCameraAddLineFilter_007bf0b0",
+            a,
+            b,
+            0x007b_f0b0,
+            &[id, side, kind, p[0], p[1], q[0], q[1], w],
+            0,
+            |m| {
+                cam::ms_camera_add_line_filter(m, id, side, kind, p, q, w);
+                0
+            },
+        );
+    } else {
+        let mode = [rng.below(8), rng.next(), u32::MAX][rng.below(3) as usize];
+        twin(
+            "MsCameraSetDepthMaskMode_007bcf50",
+            a,
+            b,
+            0x007b_cf50,
+            &[id, mode],
+            u32::MAX,
+            |m| cam::ms_camera_set_depth_mask_mode(m, id, mode),
+        );
+    }
+}
+
+/// The three aims of `MsCameraProcess` (round 26) on a made-up side at
+/// `buf + 0x10` (its base vector at `buf + 0x100`, or none) and move at
+/// `buf + 0x180`; the port's two scratch words (the original's stack) at
+/// `buf + 0x1f0`, cleared after.
+fn aims(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32) {
+    use battle_common::crt::stand_in;
+    let side = buf + 0x10;
+    poke(a, b, side, &floats(rng, 0x24));
+    poke(a, b, buf + 0x100, &floats(rng, 4));
+    let origin = if rng.below(3) == 0 { 0 } else { buf + 0x100 };
+    poke(a, b, side + 0x8c, &origin.to_le_bytes());
+    let mv = buf + 0x180;
+    poke(a, b, mv, &floats(rng, 0x18));
+    for o in [0x54, 0x58] {
+        if rng.below(3) == 0 {
+            let z = [0u32, 0x8000_0000][rng.below(2) as usize];
+            poke(a, b, mv + o, &z.to_le_bytes());
+        }
+    }
+    let scratch = buf + 0x1f0;
+    let k = rng.below(3);
+    let (name, sym) = [
+        ("MsCameraAimPolar_007c0910", 0x007c_0910),
+        ("MsCameraAimPolar2_007c09b0", 0x007c_09b0),
+        ("MsCameraAimPolar3_007c0a30", 0x007c_0a30),
+    ][k as usize];
+    twin(name, a, b, sym, &[side, mv], 0, |m| {
+        match k {
+            0 => cam::ms_camera_aim_polar(m, &stand_in, side, mv, scratch),
+            1 => cam::ms_camera_aim_polar2(m, &stand_in, side, mv, scratch),
+            _ => cam::ms_camera_aim_polar3(m, &stand_in, side, mv, scratch),
+        }
+        0
+    });
+    poke(a, b, scratch, &[0; 8]);
 }
 
 /// `MsCameraFocusWeights_007c0ae0` on a made-up side (`buf + 0x10`), move

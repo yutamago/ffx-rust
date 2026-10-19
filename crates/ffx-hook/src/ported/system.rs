@@ -6,8 +6,8 @@ use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
     accessor, btl, cd, chr_plate, cmdwin, config, container, daps, dtor, files, fixup, heap,
-    instance, intl, math, menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub,
-    sync, tolib, vbf, window,
+    instance, intl, math, menu, msg, names, pad, pkt, plate, render, save, scene, seq_prim, sort,
+    stl, stub, sync, tolib, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -1174,6 +1174,156 @@ ported! {
             scratch,
             |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
             call_ptr,
+        )
+    }
+    /// `TOMenuDrawChrLayoutPlate_008f0a70(cursor, chr, x, y)`.
+    TOMenuDrawChrLayoutPlate_008f0a70 @ 0x008f_0a70 => extern "C" fn to_menu_draw_chr_layout_plate(cursor: u32, chr: u32, x: u32, y: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let text = frame.at();
+        chr_plate::bridge::draw_layout_plate(
+            &mut mem(),
+            [cursor, chr, x, y],
+            text,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y(v) } else { ffx_graphic::ui::remap_x(v) },
+            call_ptr,
+        )
+    }
+    /// `TOMenuDrawChrSmallPlate_008f51e0(chr, x, y)`.
+    TOMenuDrawChrSmallPlate_008f51e0 @ 0x008f_51e0 => extern "C" fn to_menu_draw_chr_small_plate(chr: u32, x: u32, y: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let text = frame.at();
+        chr_plate::bridge::draw_chr_small_plate(
+            &mut mem(),
+            [chr, x, y],
+            text,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_ptr,
+        )
+    }
+    /// `TOMakePktSeqPrimLayout_008fe0b0(prim)`.
+    TOMakePktSeqPrimLayout_008fe0b0 @ 0x008f_e0b0 => extern "C" fn to_make_pkt_seq_prim_layout(prim: u32) -> u32 {
+        let mut frame = super::StackFrame::<40>::new();
+        let scratch = frame.at();
+        seq_prim::bridge::make_pkt_seq_prim_layout(
+            &mut mem(),
+            prim,
+            scratch,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_ptr,
+        )
+    }
+    /// `fix_mappic(map)`.
+    fix_mappic @ 0x006e_f6f0 => extern "C" fn fix_mappic(map: u32) -> u32 {
+        save::bridge::fix_mappic(&mem(), map)
+    }
+    /// `TODrawFont3d80String_008ee060(cursor, text, x, y, nibbles, c0, c1, c2, c3)`.
+    TODrawFont3d80String_008ee060 @ 0x008e_e060 => extern "C" fn to_draw_font_3d80_string(cursor: u32, text: u32, x: u32, y: u32, nibbles: u32, c0: u32, c1: u32, c2: u32, c3: u32) -> u32 {
+        tolib::bridge::draw_font_3d80_string(&mut mem(), [cursor, text, x, y, nibbles, c0, c1, c2, c3], call_sym)
+    }
+    /// `TOMenuGetSaveMes(id)`.
+    TOMenuGetSaveMes @ 0x008b_ee30 => extern "C" fn to_menu_get_save_mes(id: u32) -> u32 {
+        menu::bridge::get_save_mes(&mut mem(), id, call_sym)
+    }
+    /// `TOMenuGetStatusHelp(id)`.
+    TOMenuGetStatusHelp @ 0x008b_ee50 => extern "C" fn to_menu_get_status_help(id: u32) -> u32 {
+        menu::bridge::get_status_help(&mut mem(), id, call_sym)
+    }
+    /// `TOMenuGetSummonHelp(id)`.
+    TOMenuGetSummonHelp @ 0x008b_ee90 => extern "C" fn to_menu_get_summon_help(id: u32) -> u32 {
+        menu::bridge::get_summon_help(&mut mem(), id, call_sym)
+    }
+    /// `BtlEnd_InitState_008bdeb0(kind)`.
+    BtlEnd_InitState_008bdeb0 @ 0x008b_deb0 => extern "C" fn btl_end_init_state(kind: u32) -> u32 {
+        btl::bridge::btl_end_init_state(&mut mem(), kind, call_sym)
+    }
+    /// `TOWaitBtlWinLeft(w)`.
+    TOWaitBtlWinLeft @ 0x008a_8a40 => extern "C" fn to_wait_btl_win_left(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Left, w, call_sym)
+    }
+    /// `TOWaitBtlWinRight_008a8af0(w)`.
+    TOWaitBtlWinRight_008a8af0 @ 0x008a_8af0 => extern "C" fn to_wait_btl_win_right(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Right, w, call_sym)
+    }
+    /// `TOWaitBtlWinStd_008a8b20(w)`.
+    TOWaitBtlWinStd_008a8b20 @ 0x008a_8b20 => extern "C" fn to_wait_btl_win_std(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Std, w, call_sym)
+    }
+    /// `TOWaitBtlWinPrepare_008a8ac0(w)`.
+    TOWaitBtlWinPrepare_008a8ac0 @ 0x008a_8ac0 => extern "C" fn to_wait_btl_win_prepare(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Prepare, w, call_sym)
+    }
+    /// `TOOpenBtlWinLeft()`.
+    TOOpenBtlWinLeft @ 0x008a_8620 => extern "C" fn to_open_btl_win_left() -> u32 {
+        tolib::bridge::open_btl_win_side(&mut mem(), false, call_sym)
+    }
+    /// `TOOpenBtlWinRight()`.
+    TOOpenBtlWinRight @ 0x008a_86d0 => extern "C" fn to_open_btl_win_right() -> u32 {
+        tolib::bridge::open_btl_win_side(&mut mem(), true, call_sym)
+    }
+    /// `TOFuncPadMessageNormal(w)`.
+    TOFuncPadMessageNormal @ 0x008b_64a0 => extern "C" fn to_func_pad_message_normal(w: u32) -> u32 {
+        tolib::bridge::func_pad_message_normal(&mut mem(), w, call_sym)
+    }
+    /// `TOMenuEndScreenX2_008e2790(w)`.
+    TOMenuEndScreenX2_008e2790 @ 0x008e_2790 => extern "C" fn to_menu_end_screen_x2(w: u32) -> u32 {
+        tolib::bridge::menu_end_screen_x2(&mut mem(), w, call_sym)
+    }
+    /// `TOBtlInitChrNum()`.
+    TOBtlInitChrNum @ 0x0089_79d0 => extern "C" fn to_btl_init_chr_num() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let count = frame.at();
+        btl::bridge::btl_chr_num(&mut mem(), count, call_sym)
+    }
+    /// `TOBtlCtrlChrNum()`.
+    TOBtlCtrlChrNum @ 0x0089_1140 => extern "C" fn to_btl_ctrl_chr_num() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let count = frame.at();
+        btl::bridge::btl_chr_num(&mut mem(), count, call_sym)
+    }
+    /// `TOBtlMakeStatusBuff(chr, out)`.
+    TOBtlMakeStatusBuff @ 0x0089_8260 => extern "C" fn to_btl_make_status_buff(chr: u32, out: u32) -> u32 {
+        btl::bridge::btl_make_status_buff(&mut mem(), chr, out, call_sym)
+    }
+    /// `TOBtlSetChangeHelpMes(n)`.
+    TOBtlSetChangeHelpMes @ 0x0089_97c0 => extern "C" fn to_btl_set_change_help_mes(n: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let out = frame.at();
+        btl::bridge::btl_set_change_help_mes(&mut mem(), n, out, call_sym)
+    }
+    /// `TOBtlSetInfoWinMes(chr)`.
+    TOBtlSetInfoWinMes @ 0x0089_9f20 => extern "C" fn to_btl_set_info_win_mes(chr: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let size = frame.at();
+        btl::bridge::btl_set_info_win_mes(&mut mem(), chr, size, call_sym)
+    }
+    /// `TOBtlDrawLibraRight(x)`.
+    TOBtlDrawLibraRight @ 0x0089_c7d0 => extern "C" fn to_btl_draw_libra_right(x: i32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let size = frame.at();
+        btl::bridge::btl_draw_libra_right(
+            &mut mem(),
+            x,
+            size,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_sym,
+        )
+    }
+    /// `TOBtlSetInfoWinParam(chr)`.
+    TOBtlSetInfoWinParam @ 0x0089_9fd0 => extern "C" fn to_btl_set_info_win_param(chr: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let size = frame.at();
+        btl::bridge::btl_set_info_win_param(&mut mem(), chr, size, call_sym)
+    }
+    /// `TOBtlDrawInfoWinStatus(_, x, y)`.
+    TOBtlDrawInfoWinStatus @ 0x0089_5240 => extern "C" fn to_btl_draw_info_win_status(_unused: u32, x: i32, y: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        btl::bridge::btl_draw_info_win_status(
+            &mut mem(),
+            [x, y],
+            width,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_sym,
         )
     }
     /// `sce::Vectormath::Scalar::Aos::inverse(out, m)`.

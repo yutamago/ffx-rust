@@ -413,4 +413,49 @@ pub mod bridge {
         }
         1
     }
+
+    /// `MsChrDelExtraCommand_007acb40(chr, command, selector)`
+    /// (`0x007acb40`, name ours): `command` (a `u16`; a larger value
+    /// matches nothing) leaves the extra commands of each actor `selector`
+    /// picks (`MsGetChrBit(chr, selector, 0, 1)`): out of the actor's four
+    /// (`+0x71a`, the rest moved up, the last slot 0xff, the count `+0x6cb`
+    /// one less) and, when it was there, out of the eight of its second
+    /// menu list (`g_BtlItemMem2` `+0x28` + 0x478 per actor, likewise).
+    /// Returns how many actors were picked.
+    pub fn ms_chr_del_extra_command(
+        mem: &mut impl Mem,
+        chr: u32,
+        command: u32,
+        selector: u32,
+    ) -> u32 {
+        // the first of `n` u16 slots at `at` holding `command` moved out
+        fn remove(mem: &mut impl Mem, at: u32, n: u32, command: u32) -> bool {
+            let Some(k) = (0..n).find(|&k| u32::from(mem.read::<u16>(at + 2 * k)) == command)
+            else {
+                return false;
+            };
+            for j in k..n - 1 {
+                let next: u16 = mem.read(at + 2 * (j + 1));
+                mem.write(at + 2 * j, next);
+            }
+            mem.write(at + 2 * (n - 1), 0xffu16);
+            true
+        }
+        let picked = crate::actor::bridge::ms_get_chr_bit(mem, chr, selector, 0, 1);
+        let mut count = 0;
+        for i in 0..31 {
+            if picked.cast_signed() >> i & 1 == 0 {
+                continue;
+            }
+            let a = ms_get_chr(mem, i);
+            if remove(mem, a.wrapping_add(0x71a), 4, command) {
+                let extra: u8 = mem.read(a.wrapping_add(0x6cb));
+                mem.write(a.wrapping_add(0x6cb), extra.wrapping_sub(1));
+                let list = ITEM_MEM2.get(mem).wrapping_add(0x28 + 0x478 * i);
+                remove(mem, list, 8, command);
+            }
+            count += 1;
+        }
+        count
+    }
 }

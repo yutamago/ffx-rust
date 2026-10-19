@@ -929,6 +929,26 @@ pub mod bridge {
         }
     }
 
+    /// `0x007aaac0(id)` (battle): whether character `id`'s byte `+0x415`
+    /// (`MsGetChr`) is set.
+    pub const MS_CHR_FLAG_415: u32 = 0x007a_aac0;
+
+    /// `rcEffectTaskChrWait_00930460(task)` (`0x00930460`, name ours): a
+    /// sequence that returns (`rcefTaskRetSeqCont`) once the current
+    /// level's first argument's character has byte `+0x415` clear
+    /// (`0x007aaac0`).
+    pub fn rc_effect_task_chr_wait<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) {
+        let a: u32 = mem.read(args_slot(t, level(mem, t)));
+        let f = mem.rebase(MS_CHR_FLAG_415);
+        if call(mem, f, &[a]) == 0 {
+            rcef_task_ret_seq_cont(mem, t);
+        }
+    }
+
     /// `rcefSetChrDirTarget(chr, a, b)` (`0x0092e750`, name ours):
     /// `MsSetChrDirTarget(chr, 1, 0, 0, a, b)`, its `eax`.
     pub fn rcef_set_chr_dir_target<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
@@ -2939,6 +2959,341 @@ pub mod bridge {
         }
         let f = mem.rebase(super::CH_SET_ORG_MATRIX);
         call(mem, f, &[h, dst]);
+    }
+
+    // ---- field r14 ----
+
+    /// The effect heap's debug record (`rcefMemDebugInit`): the heap's
+    /// base and size, its highest use in percent (`f32`), the packet
+    /// buffer's base and size, its highest use (`0x0193c12c..0x0193c140`).
+    pub const MEM_DEBUG: u32 = 0x0193_c12c;
+    /// 100.0 (`f64`, `.rdata`): [`rcef_mem_debug_disp`]'s percent scale.
+    pub const PERCENT: u32 = 0x00b9_22e0;
+
+    /// `rcefMemDebugInit(heap, heap_size, packets, packet_size)`
+    /// (`0x009374f0`): the four into [`MEM_DEBUG`] (`+0`, `+4`, `+0xc`,
+    /// `+0x10`), both highest uses (`+8`, `+0x14`) 0.0. The original then
+    /// prints them with `rcPrint`, a `ret` on PC (not called here). Returns
+    /// `packet_size` (left in `eax`).
+    pub fn rcef_mem_debug_init(
+        mem: &mut impl Mem,
+        [heap, heap_size, packets, packet_size]: [u32; 4],
+    ) -> u32 {
+        let d = mem.rebase(MEM_DEBUG);
+        mem.write(d.wrapping_add(0x14), 0f32);
+        mem.write(d.wrapping_add(8), 0f32);
+        for (o, v) in [
+            (0u32, heap),
+            (4, heap_size),
+            (0xc, packets),
+            (0x10, packet_size),
+        ] {
+            mem.write(d.wrapping_add(o), v);
+        }
+        packet_size
+    }
+
+    /// `rcefMemDebugDisp(heap_used, packets_used)` (`0x00937440`): each use
+    /// as a percentage of its size (both integers stored as `f32`, divided,
+    /// times 100.0 at 53 bits, stored as `f32`); a percentage above the
+    /// highest so far (`+8`, `+0x14` of [`MEM_DEBUG`]; not when either is
+    /// NaN) becomes the highest. The original then prints them with
+    /// `rcPrint`, a `ret` on PC (not called here); its `eax` is a status
+    /// word over junk, which no caller reads.
+    pub fn rcef_mem_debug_disp(mem: &mut impl Mem, heap_used: u32, packets_used: u32) {
+        use ffx_bridge::x87::{div, load, mul, store};
+        let d = mem.rebase(MEM_DEBUG);
+        let scale = mem.read::<f64>(mem.rebase(PERCENT));
+        let as_f32 = |v: u32| load(store(f64::from(v.cast_signed())));
+        for (used, size_at, max_at) in [(heap_used, 4u32, 8u32), (packets_used, 0x10, 0x14)] {
+            let size = as_f32(mem.read::<u32>(d.wrapping_add(size_at)));
+            let p = store(mul(div(as_f32(used), size), scale));
+            let max = d.wrapping_add(max_at);
+            if load(mem.read::<u32>(max)) < load(p) {
+                mem.write(max, p);
+            }
+        }
+    }
+
+    /// `MsGetMoveTargetDist` (`0x007ab540`, battle's), which
+    /// [`rcef_ms_get_move_target_dist`] calls.
+    pub const MS_GET_MOVE_TARGET_DIST: u32 = 0x007a_b540;
+
+    /// `rcefMsGetMoveTargetDist_0092eb20(a1, ..., a11)` (`0x0092eb20`, in the
+    /// rcef function table, slot `0x00c65480`; name ours): `MsGetMoveTargetDist` with the
+    /// same eleven words, the fourth and the last four (`f32`s) copied
+    /// through the x87. Returns its `eax`.
+    pub fn rcef_ms_get_move_target_dist<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        mut args: [u32; 11],
+        call: &mut C,
+    ) -> u32 {
+        for i in [3usize, 7, 8, 9, 10] {
+            args[i] = crate::x87::copy(args[i]);
+        }
+        let f = mem.rebase(MS_GET_MOVE_TARGET_DIST);
+        call(mem, f, &args)
+    }
+
+    /// [`rcef_main_init`]'s calls: `pppInitEnv(env, 0, a, b)`,
+    /// `pppMemAlloc(env, heap, size)`, `rcefTaskCtrlInit(ctrl)`,
+    /// `rcefIsBattle()`, `MsGetEff2Chr(chr)`, `MsGetTargetSortList(chr,
+    /// &count, 0)`, `op_oef2_set2(oef)`, `op_oef2_a_get(oef, 8, i)`,
+    /// `pppInitData(data, src, 0)`, `FFXIsDebug()`, `sceGsSetDefDrawEnv2()`,
+    /// `op_oef2_tex_clut_cue_multi(oef, 0, 1000, 0x800)` and
+    /// `op_oef2_sound_cue_multi(oef, 0, 1000, 0x800)`.
+    pub const MAIN_INIT_CALLS: [u32; 13] = [
+        0x0071_69d0,
+        0x0071_6a30,
+        0x0093_0290,
+        0x0092_e620,
+        0x0078_8de0,
+        0x007b_72c0,
+        0x007e_3e30,
+        0x007e_3810,
+        0x0071_1fa0,
+        0x0088_7c50,
+        0x0088_7c60,
+        0x007e_4830,
+        0x0080_02c0,
+    ];
+    /// The effect `rcefMainInit` keeps for the debug view (`0x01b0003c`).
+    /// The image has no relocation for this store (`0x00925362`), so a
+    /// rebased game writes to this absolute address, not the global's
+    /// rebased one.
+    pub const DEBUG_MAIN: u32 = 0x01b0_003c;
+
+    /// `rcefMainInit(main, chr, oef, a, b, c, n, data, env)` (`0x00925210`):
+    /// an effect's main record.
+    /// - The ppp environment `env` is set up (`pppInitEnv(env, 0, a, b)`)
+    ///   and made current (`*g_pppEnvSlot`); `+0` 0, `+4` `chr`, `+8`
+    ///   `oef`, `+0xc` `c`, `+0x10` `env`, `+0x14` `n`, `+0x18` an array of
+    ///   `n` words from the ppp heap (`pppMemAlloc`), the task control at
+    ///   `+0x1c` initialised (`rcefTaskCtrlInit`).
+    /// - In battle (`rcefIsBattle`) `+0x198` is `MsGetEff2Chr(chr)` and the
+    ///   target list (`MsGetTargetSortList(chr, +0x19c, 0)`, its count at
+    ///   `+0x19c`) is copied to `+0x1a0` as sign-extended bytes.
+    /// - `+0x1ec` byte 0x44, `+0x22c` 0; each of the `n` parts is fetched
+    ///   (`op_oef2_set2(oef)`, `op_oef2_a_get(oef, 8, i)`) into the array,
+    ///   its `+0x14`, `+0x18`, `+0x1c` pointers (`get_ptr32_func`, the
+    ///   identity) to the environment's `+0x20..+0x28`, and its data set up
+    ///   (`pppInitData(part, data[i], 0)`).
+    /// - In a debug build with the debug switch on the record is kept at
+    ///   [`DEBUG_MAIN`] (not rebased); then the effect's textures and sounds are cued
+    ///   (`op_oef2_tex_clut_cue_multi`, `op_oef2_sound_cue_multi(oef, 0,
+    ///   1000, 0x800)`, whose `eax` it returns).
+    pub fn rcef_main_init<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [main, chr, oef, a, b, c, n, data, env]: [u32; 9],
+        call: &mut C,
+    ) -> u32 {
+        let [
+            init_env,
+            mem_alloc,
+            ctrl_init,
+            is_battle,
+            eff2_chr,
+            sort_list,
+            oef_set2,
+            oef_a_get,
+            init_data,
+            is_debug,
+            debug_switch,
+            tex_cue,
+            sound_cue,
+        ] = MAIN_INIT_CALLS.map(|f| mem.rebase(f));
+        let field = |mem: &M, o: u32| mem.read::<u32>(main.wrapping_add(o));
+        call(mem, init_env, &[env, 0, a, b]);
+        mem.write(PPP_ENV_SLOT.get(mem), env);
+        for (o, v) in [
+            (4u32, chr),
+            (8, oef),
+            (0xc, c),
+            (0, 0),
+            (0x10, env),
+            (0x14, n),
+        ] {
+            mem.write(main.wrapping_add(o), v);
+        }
+        let slot = mem.read::<u32>(PPP_ENV_SLOT.get(mem));
+        let parts = call(
+            mem,
+            mem_alloc,
+            &[slot, slot.wrapping_add(0x10), n.wrapping_mul(4)],
+        );
+        mem.write(main.wrapping_add(0x18), parts);
+        call(mem, ctrl_init, &[main.wrapping_add(0x1c)]);
+        if call(mem, is_battle, &[]) != 0 {
+            let e = call(mem, eff2_chr, &[chr]);
+            mem.write(main.wrapping_add(0x198), e);
+            let count = main.wrapping_add(0x19c);
+            let list = call(mem, sort_list, &[chr, count, 0]);
+            let mut i = 0i32;
+            while i < mem.read::<i32>(count) {
+                let k = i.cast_unsigned();
+                let v = i32::from(mem.read::<i8>(list.wrapping_add(k)));
+                mem.write(main.wrapping_add(0x1a0 + 4 * k), v);
+                i += 1;
+            }
+        }
+        mem.write(main.wrapping_add(0x1ec), 0x44u8);
+        mem.write(main.wrapping_add(0x22c), 0u32);
+        let mut i = 0i32;
+        while i < n.cast_signed() {
+            let k = i.cast_unsigned();
+            call(mem, oef_set2, &[field(mem, 8)]);
+            let part = call(mem, oef_a_get, &[field(mem, 8), 8, k]);
+            mem.write(field(mem, 0x18).wrapping_add(4 * k), part);
+            for (from, to) in [(0x14u32, 0x20u32), (0x18, 0x24), (0x1c, 0x28)] {
+                let part = mem.read::<u32>(field(mem, 0x18).wrapping_add(4 * k));
+                let p = ffx_system::stub::ptr32(mem.read::<u32>(part.wrapping_add(from)));
+                mem.write(field(mem, 0x10).wrapping_add(to), p);
+            }
+            let src = mem.read::<u32>(data.wrapping_add(4 * k));
+            let part = mem.read::<u32>(field(mem, 0x18).wrapping_add(4 * k));
+            call(mem, init_data, &[part, src, 0]);
+            i += 1;
+        }
+        if call(mem, is_debug, &[]) != 0 && call(mem, debug_switch, &[]) != 0 {
+            mem.write(DEBUG_MAIN, main);
+        }
+        call(mem, tex_cue, &[field(mem, 8), 0, 1000, 0x800]);
+        call(mem, sound_cue, &[field(mem, 8), 0, 1000, 0x800])
+    }
+
+    /// [`rcef_chr_new`]'s calls: `rcefGetChrHandle(id)`,
+    /// `op_chara_packet_size_get(chr, mode, visible)`, `pppMemAlloc(env,
+    /// heap, size)`, `set_ptr32(p)`, `Ch_TextureSetClutBase(chr, -1, base)`,
+    /// `Ch_TextureSetImageBase(chr, -1, base)`, the packet makers
+    /// `0x00803220` (`visible` 0) and `0x00803360` (both `(packet, chr,
+    /// mode, dma)`), `Ch_GetRootGlobalMatrix(chr, out)` and
+    /// `Ch_DrawEnEffect(chr, on)`.
+    pub const CHR_NEW_CALLS: [u32; 10] = [
+        0x0092_e1c0,
+        0x0080_37c0,
+        0x0071_6a30,
+        0x00a4_4700,
+        0x0083_13c0,
+        0x0083_1390,
+        0x0080_3220,
+        0x0080_3360,
+        0x0083_3f80,
+        0x0082_eb60,
+    ];
+    /// The DMA buffer pointer the packet makers get (`0x00c498dc`).
+    pub const DMA_BUFFER: u32 = 0x00c4_98dc;
+
+    /// `rcefChrNew(obj, id, mode, visible)` (`0x00930550`): an effect's
+    /// character: its handle (`rcefGetChrHandle(id)`) at `+4`, a packet of
+    /// `op_chara_packet_size_get(chr, mode, visible)` bytes from the ppp
+    /// heap (`pppMemAlloc(*g_pppEnvSlot, *g_pppEnvSlot + 0x10, size)`,
+    /// `set_ptr32`) at `+8`, its texture bases set (clut 0x3c00, image
+    /// 12000), the packet made (`0x00803220`, or `0x00803360` when
+    /// `visible`, with `(packet, chr, mode, *0x00c498dc)`; `get_ptr32_func`
+    /// is the identity), its root matrix copied to `+0xc0`
+    /// (`Ch_GetRootGlobalMatrix`) and its effect drawing switched on
+    /// (`Ch_DrawEnEffect(chr, 1)`, whose `eax` it returns).
+    pub fn rcef_chr_new<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [obj, id, mode, visible]: [u32; 4],
+        call: &mut C,
+    ) -> u32 {
+        let [
+            get_handle,
+            packet_size,
+            mem_alloc,
+            set_ptr32,
+            clut_base,
+            image_base,
+            make_hidden,
+            make_visible,
+            root_matrix,
+            en_effect,
+        ] = CHR_NEW_CALLS.map(|f| mem.rebase(f));
+        let chr = |mem: &M| mem.read::<u32>(obj.wrapping_add(4));
+        let h = call(mem, get_handle, &[id]);
+        mem.write(obj.wrapping_add(4), h);
+        let size = call(mem, packet_size, &[h, mode, visible]);
+        let env = mem.read::<u32>(PPP_ENV_SLOT.get(mem));
+        let block = call(mem, mem_alloc, &[env, env.wrapping_add(0x10), size]);
+        let packet = call(mem, set_ptr32, &[block]);
+        mem.write(obj.wrapping_add(8), packet);
+        call(mem, clut_base, &[chr(mem), u32::MAX, 0x3c00]);
+        call(mem, image_base, &[chr(mem), u32::MAX, 12000]);
+        let dma = mem.read::<u32>(mem.rebase(DMA_BUFFER));
+        let packet = ffx_system::stub::ptr32(mem.read::<u32>(obj.wrapping_add(8)));
+        let make = if visible == 0 {
+            make_hidden
+        } else {
+            make_visible
+        };
+        call(mem, make, &[packet, chr(mem), mode, dma]);
+        call(mem, root_matrix, &[chr(mem), obj.wrapping_add(0xc0)]);
+        call(mem, en_effect, &[chr(mem), 1])
+    }
+
+    /// [`rcef_chr_draw`]'s calls: `FFXVu0MulMatrix(out, a, b)`,
+    /// `Ch_TextureLoadImage(chr, -1)`, `Ch_TextureLoadClut(chr, -1)`,
+    /// `Ch_DrawSetSituation(chr, 1)`, `Ch_DrawMainEffect(1)`,
+    /// `Ch_GetChrRenderInstance(chr, ...)` and
+    /// `graphicCharacterInstanceSetMeshColor(list, chr, r, g, b, a)`.
+    pub const CHR_DRAW_CALLS: [u32; 7] = [
+        0x006e_d5c0,
+        0x0083_1300,
+        0x0083_11d0,
+        0x0083_0160,
+        0x0082_6950,
+        0x0082_6b70,
+        0x0063_bb30,
+    ];
+    /// `g_CameraMatrix` (`0x02311440`).
+    pub const CAMERA_MATRIX: u32 = 0x0231_1440;
+    /// 1/128 (`f64`, `.rdata` `0x00b170b8`): a colour byte's scale.
+    pub const COLOUR_SCALE: u32 = 0x00b1_70b8;
+
+    /// `rcefChrDraw_00930630(obj)` (`0x00930630`, name ours): the effect
+    /// character's view matrix (`+0x80` = the camera matrix times its root
+    /// matrix `+0xc0`), its textures loaded, its draw situation 1, the main
+    /// effect pass on, then its render instance
+    /// (`Ch_GetChrRenderInstance(chr)`) gets the colour of bytes
+    /// `+0x28..+0x2b` over 128 (`f32`s; the original passes them to both
+    /// calls, the first taking only `chr`). Returns the mesh colour call's
+    /// `eax`.
+    pub fn rcef_chr_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        obj: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{mul, store};
+        let [
+            mul_matrix,
+            load_image,
+            load_clut,
+            situation,
+            main_effect,
+            instance,
+            mesh_colour,
+        ] = CHR_DRAW_CALLS.map(|f| mem.rebase(f));
+        let chr = |mem: &M| mem.read::<u32>(obj.wrapping_add(4));
+        let camera = mem.rebase(CAMERA_MATRIX);
+        call(
+            mem,
+            mul_matrix,
+            &[obj.wrapping_add(0x80), camera, obj.wrapping_add(0xc0)],
+        );
+        call(mem, load_image, &[chr(mem), u32::MAX]);
+        call(mem, load_clut, &[chr(mem), u32::MAX]);
+        call(mem, situation, &[chr(mem), 1]);
+        call(mem, main_effect, &[1]);
+        let h = chr(mem);
+        let scale = mem.read::<f64>(mem.rebase(COLOUR_SCALE));
+        let colour = [0x28u32, 0x29, 0x2a, 0x2b].map(|o| {
+            let byte = f64::from(mem.read::<u8>(obj.wrapping_add(o)));
+            store(mul(byte, scale))
+        });
+        let [r, g, b, a] = colour;
+        let list = call(mem, instance, &[h, h, r, g, b, a]);
+        call(mem, mesh_colour, &[list, h, r, g, b, a])
     }
 }
 
