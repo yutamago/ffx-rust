@@ -3563,7 +3563,7 @@
 0x0071dbd0 function updateVFXRenderData_NoiseBlur # fh switch:cg4 0x71002e3aa0
 0x0071e330 function updateVFXZBufClearRenderData # fh v3:exact 0x0071e410
 0x0071e460 function useExtendedAlpha          # fh v3:exact 0x0071e540
-0x0071e610 function useMultipleInstances_model   # layout+callees: sorts between useExtendedAlpha and useShaderPointLight, and its named callees match the Switch 0x71002d8de0 useMultipleInstances_model's (similarity 1.00: MagicFile_GetMagicId); symbols from Fahrenheit's server export
+0x0071e610 function useMultipleInstances_model   # layout+callees: sorts between useExtendedAlpha and useShaderPointLight, and its named callees match the Switch 0x71002d8de0 useMultipleInstances_model's (similarity 1.00: MagicFile_GetMagicId); symbols from Fahrenheit's server export; cdecl(model, instance) -> 1 when model byte bit 7 set, bit 2 clear, magic in {0x133,0x25d,0x6a,0x119,0x233,0x264,0x20a,0x1bd,0xa2,0x24a,0xe} and g_VfxPass; else 2 on maps 0x183/0x184/0x186 when instance i16 +0x10 >= 0x834; else 0; ported (system round 35)
 0x0071e6f0 function useShaderPointLight       # fh switch:bsim1.00 0x71002d8da0
 0x0071e810 function JobScheduleWait_pppPart_fillBuffer # fh v3:bsim1.00 0x0071e8f0
 0x0071ecd0 function JobSchedule_pppPart_clearFillBufferRequest # fh v3:exact+call.cs 0x0071edb0 cdecl
@@ -4195,7 +4195,7 @@
 0x00766770 function updateVFXKeThRenderData   # fh v3:exact 0x00766860
 0x007669c0 function updateVFXKeThSetPoint     # fh v3:exact 0x00766ab0
 0x00766ae0 function ScreenProjection # cdecl(m): FFXVu0UnitMatrix(m), then the perspective terms from g_Screens[0] (+8 near, +0xc far, +0x10/+0x14 w/h against 512/416, +0x1c focal); name ours
-0x00766b90 function prcPacketDataClose           # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'size <= self->m_size'; Switch 0x7100306940 prcPacketDataClose (symbols from Fahrenheit's server export)
+0x00766b90 function prcPacketDataClose           # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'size <= self->m_size'; Switch 0x7100306940 prcPacketDataClose (symbols from Fahrenheit's server export); cdecl(self) -> eax: 16-byte end tag 0x8000, 0x10000000, 0, 0 at the cursor self+4, cursor += 0x10, asserts size (cursor - self+0) <= self+8 (signed) through dbgPrintf; returns the size (or dbgPrintf's eax); ported (system round 35)
 0x00766be0 function prcPacketDataDraw         # fh switch:bsim1.00 0x71003069a0
 0x00766c20 function prcPacketDataDrawPtr      # fh switch:bsim1.00 0x71003069f0
 0x00766c50 function prcPrintMatrix               # str-match switch: only user of 2 string(s) held once by both builds, e.g. '---- FAMTRIX\\n'; Switch 0x7100306ce0 prcPrintMatrix (symbols from Fahrenheit's server export)
@@ -9851,7 +9851,7 @@
 0x008928b0 function TOBtlDrawChangeSeqAnm0    # fh v3:exact 0x00892820
 0x00892910 function TOBtlDrawCrossLimitGauge  # fh v3:exact 0x00892880
 0x00892cb0 function TOBtlDrawCrossParamPlate  # fh v3:cg13 0x892c20; (chr, x, y): battle HP/MP plate: frame, TOBtlDrawCrossLimitGauge(chr, x, y, w, h) (five words; Ghidra shows two), HP/MP labels 0xe9/0xea, ToMakeBtlEasyEdgeDigitRight (six words) with the HP colour from MsCalcWeakLevel; ported (system round 33, chr_plate.rs)
-0x00893290 function TOBtlDrawDamageValue2     # fh v3:exact 0x00893200
+0x00893290 function TOBtlDrawDamageValue2     # fh v3:exact 0x00893200; (): i16 count 0x0133f108 of 16-byte entries at 0x0133f110 (i16 x, y, kind, value, rgba); digits 0..9 TOMakePktBtlDamageNumRGBA, 0x3d..0x3a icons 0..3 TOMakePktBtlIconA; magic 0x11b skips kind 3; 9999/99999 flags 0x01133390/94 unlock achievements 0x12/0x15; returns 0; ported (system round 35)
 0x008933c0 function TOBtlDrawEnemyLimit       # fh v3:exact 0x00893330
 0x008934d0 function TOBtlDrawFirstStrikeEnemyMessageWindow # fh call.cs cdecl
 0x008934f0 function TOBtlDrawFirstStrikePlayerMessageWindow # fh call.cs cdecl
@@ -9892,7 +9892,7 @@
 0x00897dc0 function TOBtlLibraGetRects        # g_MagicImports slot 374 (1 overlay), before TOBtlOpenLibraWindow: TOSeqGetRect(2, "dum28"/"dum29", ...) and TOSeqGetPos-style 0x008ae450 calls into 0x0133f6a4..0x0133f744; hidden from the dump
 0x00897f00 function TOBtlInitLimitTimer          # structure: (): zeroes the limit timer state 0x0133f77c..0x0133f794, its position from TOSeqGetPoint(2, "dum201"), stops sound effect 0x8000004e if playing; callers are the Tidus/Auron/Lulu limit window init and control functions; Switch TOBtlInitLimitTimer (104 bytes) is the one unused name sorting between TOBtlInitInfoWinMes and TOBtlInitLuluLimitWindow here (with TOBtlInitLibraWindow, which is our TOBtlLibraGetRects 0x00897dc0)
 0x00897f70 function TOBtlInitLuluLimitWindow  # fh v3:exact 0x00897ee0; same start, 0x2c bytes 0x0133d708 cleared, point +2, u16 +6 = 0xc0, colours +8/+0xc, point +0x10
-0x00898010 function TOBtlInitStatusWin        # fh v3:exact 0x00897f80
+0x00898010 function TOBtlInitStatusWin        # fh v3:exact 0x00897f80; (): clears the three 0x90-byte status rows at 0x0133f7d8, party (3 u16) from MsGetSaveWindow(0, 0x12, &n) into 0x0133f7ac (n trimmed past trailing 0xff); per character HP +0xc/+0x10, MP +0x24/+0x28, limit gauge * i16 0x025d0aa4 / max at +0x34/+0x38, TOBtlMakeStatusBuff(c, row+0x42) at +0x40, 0x14 at +0x3c; returns 0x14 or 0xff (last slot); ported (system round 35)
 0x00898130 function TOBtlInitTargetBit        # fh switch:bsim1.00 0x710049aae0
 0x00898180 function TOBtlInitTidusLimitWindow # fh v3:exact 0x008980f0; same start, 6 words 0x0133d734 = 0, u16 +2/+4/+6 = ftol(graphicUiRemapX2/Y2/X2 of 0x00b5ef70/0x00b5ef98/0x00b5f010), colour +0x14
 0x00898230 function TODum225GetNum            # g_MagicImports slot 655 (10 overlays): TOInitPadData(); TOSeqGetNum(2, "dum225", 0x0133f778); byte 0x0133c93f = 0; hidden from the dump
@@ -9979,10 +9979,10 @@
 0x0089e660 function DrawCrossCtbIcon          # fh v3:exact 0x0089e5d0; cdecl(id, x, y, w, h) -> eax of the last call: battle command/CTB icon quads (TOMkpShapeXYWHUV 400) for ids 0x1b6..0x1d4; resetButtonData only for 0x1b6/0x1b7/unknown ids; ported (system round 28)
 0x0089eca0 function TOBtlCloseComWinChange    # fh switch:bsim1.00 0x71004b0aa0
 0x0089ece0 function TOBtlCtrlCtbWindow        # fh v3:bsim0.94 0x0089ec70
-0x0089f0e0 function TOBtlDrawChangePrim       # fh v3:exact 0x0089f070
+0x0089f0e0 function TOBtlDrawChangePrim       # fh v3:exact 0x0089f070; cdecl(chr, x, y ints) -> plate's eax: TOMkpShapePartIndexXYWHC2(part, 0, X2(20)+x, Y2(14)+y, X2(70), Y2(50), grey, grey), part 0x1c0 for chr >= 8, 0x1d4 for chr 6 while AtelGetScenarioFlag() < 0x434, else chr + 0x1b8; name at X2(210)+x - w/2 (scale 0.71); plate at X2(12)+x, Y2(62)+y; ported (system round 35)
 0x0089f370 function TOBtlDrawCommandWindow    # fh v3:exact+call.cs 0x0089f300 cdecl; (w) -> 0: battle command window: +0xe0 = graphicGetTime() - +0xdc (0 unless +0xdc > 0); with +0x38 cols >= 2 the cursor plate (alpha trunc(cos(5t)*32+96)), 3 plate rows sliding over 0.1 s each (row k at +0xe0 - 0.1k, gloss strip) and from +0xe0 >= 0.3 eight DrawWaterWaveShapeC2 ripples per row; DrawCrossMenuScrollParts, TOMakePktScissor(ftol +0x68..+0x74), +0x88(w); rows +0x40.. of the u16 list +0x20 (0xff none, TOCheckBtlCommandUse -4 hidden) with parts +0x2c (kind 1 icon, 2/4/5/6 counts, 7 weapon icon, 0x10 QuickRecoverMenuDraw label); ported (system round 30)
 0x008a0590 function TOBtlDrawCtbWindow        # fh v3:exact 0x008a0520
-0x008a0ba0 function TOBtlDrawSummonPrim       # fh v3:exact 0x008a0b30
+0x008a0ba0 function TOBtlDrawSummonPrim       # fh v3:exact 0x008a0b30; cdecl(chr, x, y ints) -> plate's eax: TODrawBtlNetWindowXYWHType(x, y, X2(344), Y2(114), 0), name (scale 0.8 width, 0.7 drawn) centred at Y2(16)+y, TOBtlDrawCrossParamPlate(chr, X2(15)+x, Y2(61)+y); ported (system round 35)
 0x008a0cd0 function TOBtlInitAnm              # fh v3:bsim1.00 0x008a0c60
 0x008a0ce0 function TOBtlInitCtbWindow        # fh v3:exact 0x008a0c70
 0x008a0de0 function TOBtlSetCallback          # fh v3:exact 0x008a0d70
@@ -10304,7 +10304,7 @@
 0x008b8510 function TOMacroSetValue_008b8510 # the same code as TOMacroSetValue 0x008b8980; callers 0x008c2c60, 0x00a59350; name ours
 0x008b8530 function TOIsMessageStatus3Pressed # (i) -> 1 when TOGetMessageStatus(i) == 3 and bit 0x20 of the pad byte 0x025d09d4; name ours
 0x008b8560 function TOOpenMessage_008b8560 # cdecl(i): message window i: +0 = 1, +0x2c = 0, its +0x100(window), +0x114 = +0x104, then a tail call of +0xf8(window); caller 0x008ade10; name ours
-0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
+0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic; (): returns the swap flag, or the swapped dictionary's last get_ptr32_func (Ghidra void); 0x01869ec0 the file read last, 0x01869eb4 the TODVDFileLoad(4, 4) dictionary when TOGetFFXLangSwapFlag() == 1; ported (system round 35)
 0x008b8680 function TOResetMessageVars_008b8680 # cdecl(i): g_MsgVars[i*32..]: type byte copied to +1, then type 0xff; name ours
 0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690; cdecl(bank): 0x018676f0[8] = 0x018663f0/0x01866d70 + 0x130k, 0x01868a90[8] = 0x01867710/0x018680d0 + 0x138k, 0x01869ab0[256] = 0x01868ab0/0x018692b0 + 8k
 0x008b8880 function TOSetMessageChoice        # cdecl(i, n, x, y, total): msg +0x1c = 2; line rec (0x01868a90[i]) +1/+4 = 0, +5 = n, +2/+3 clamped 0..n-1, per item cell at +0x38+8k: 1, total/n, x + k*(total/n), y; name ours
@@ -10349,6 +10349,7 @@
 0x008bda80 function BtlEnd_SelectedWeapon     # (): MsGetSaveWeapon(id, local): id u16 0x02310f8e[[0x0186a1a4]] (spoils) when [0x0186a19c] (inverted while [0x0186a1a8]) != 0, else u16 [0x025cc580][[0x0186a190] + [0x0186a1a0]]; caller TkBtlEndCtrl; name ours
 0x008bdb60 function BtlEnd_SetFlag            # 0x01869fbc = 1; own name
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
+0x008bde00 function BtlEnd_BuildList_008bde00 # (): 0x01869f19 = any counted character (g_BtlCountsBattle) with a nonzero g_TkBtlEndResults; one 14-byte g_TkBtlEndList entry per counted character (+0 BtlEnd_RowX(n, count), +2 6n, +6 chr, +8 TkMenuGetPlayerDamegedColor, +9 BtlEnd_InParty), count to 0x01869f18, then BtlEnd_CompactList (its eax); ported (system round 35); name ours
 0x008bdf10 function BtlEnd_InitGilStep        # 0x01869f14 = result 19 (the gil won), 0x01869f10 = its step (gil/189 | 1, +2 on a multiple of 5); own name
 0x008bdf60 function TOMenuFieldMusic_008bdf60 # (): after the menu: keep white in/out: nothing; clear 11: cross-fade to AtelGetMusicNumber (0x78), else AtelRegistMusicNumber(-1) and fade out; name ours
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours

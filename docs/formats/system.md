@@ -1505,3 +1505,51 @@ pushed as literals (no relocation entries), not addresses.
   `0x008ea000` is `0x008ea060` in grey; `0x008f2ff0(cursor, value, x, y,
   colour)` writes `TOValueToMesFontL(value, text, 0)` from a 32-byte
   local like `0x008ed0a0`.
+
+## Round 35
+
+- `prcPacketDataClose(self)` (`pppYanagi.c`, a packet descriptor: start
+  `+0`, cursor `+4`, size `+8`) writes the 16-byte end tag `0x8000`,
+  `0x1000_0000`, 0, 0 at the cursor, advances it by 0x10 and asserts
+  `size <= self->m_size` (signed) with `dbgPrintf`. It returns the size in
+  `eax`, or `dbgPrintf`'s result when the assertion fires.
+- `BtlEnd_BuildList_008bde00()` builds the battle-end list
+  (`g_TkBtlEndList`, 14-byte entries from `0x01869f20`): one entry per
+  character counted in `g_BtlCountsBattle`, with its row x
+  (`BtlEnd_RowX(n, count)`), `6n`, the character, its damaged colour and
+  whether it is in the party; `0x01869f19` is set when any counted
+  character has a nonzero `g_TkBtlEndResults` word. It ends in
+  `BtlEnd_CompactList` and returns its `eax`.
+- `useMultipleInstances_model(model, instance)` returns 1 for a model with
+  flag bit 7 set and bit 2 clear while one of eleven spells (0x133, 0x25d,
+  0x6a, 0x119, 0x233, 0x264, 0x20a, 0x1bd, 0xa2, 0x24a, 0xe) runs in an
+  effect pass (`g_VfxPass`); otherwise 2 on maps 0x183, 0x184 and 0x186
+  when the instance's `i16` at `+0x10` is at least 0x834; else 0.
+- `MacroDic_Load()` reads `"macrodic"` and turns its 16 section offsets
+  into pointers (0 for offsets below 1) in `g_MacroDic`; with the language
+  swap flag set it does the same for `TODVDFileLoad(4, 4)` into
+  `0x01869eb4`. It returns the swap flag, or that second dictionary's last
+  `get_ptr32_func` (Ghidra shows void).
+- `TOBtlDrawDamageValue2()` draws the queued damage numbers (16-byte
+  entries from `0x0133f110`, `i16` count at `0x0133f108`, cleared after):
+  values 0..=9 as digits in the entry's colour, 0x3d/0x3c/0x3b/0x3a as
+  battle icons 0..=3; in spell 0x11b kind-3 entries are skipped. Pending
+  9999/99999-damage flags unlock achievements 0x12 and 0x15 first.
+- `TOBtlDrawSummonPrim(chr, x, y)` and `TOBtlDrawChangePrim(chr, x, y)`
+  (integer positions) draw a battle swap window: a frame (the net window
+  `X2(344)` by `Y2(114)`, or shape part 0x1c0 for aeons, 0x1d4 for Yuna
+  (6) before scenario flag 0x434, else `chr + 0x1b8`, `X2(70)` by
+  `Y2(50)` at `(X2(20), Y2(14))`), the character's name (centred in
+  `X2(344)` at scale 0.8/0.7, or centred on `X2(210)` at 0.71, both at
+  `Y2(16)`), and `TOBtlDrawCrossParamPlate` at `(X2(15), Y2(61))` or
+  `(X2(12), Y2(62))`; they return the plate's `eax`. Each sum is
+  computed at double precision and stored as `f32`.
+- `TOBtlInitStatusWin()` sets up the battle status window: three 0x90-byte
+  rows at `0x0133f7d8` (cleared), the party's three `u16` characters from
+  `MsGetSaveWindow(0, 0x12, &n)` at `0x0133f7ac` (0xff for none; `n` is
+  trimmed past trailing 0xff entries but not used further). Each row
+  holds HP at `+0xc`/`+0x10`, MP at `+0x24`/`+0x28`, the limit gauge
+  scaled to the `i16` bar width at `0x025d0aa4` (`gauge * width / max`,
+  signed; a zero maximum faults in the original, the port gives 0) at
+  `+0x34`/`+0x38`, `TOBtlMakeStatusBuff(c, row + 0x42)` at `+0x40` and
+  0x14 at `+0x3c`. It returns 0x14 when the last slot is filled, else 0xff.
