@@ -2278,6 +2278,77 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a byte argument
         et::bridge::opus_get_eff_status_index(&mut mem(), id, kind as u8, create, at, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `vu_vec4_add_0074bf10(out, a, b)`.
+    vu_vec4_add_0074bf10 @ 0x0074_bf10 => extern "C" fn vu_vec4_add_0074bf10(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_add(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_add_0074cef0(out, a, b)`.
+    vu_vec4_add_0074cef0 @ 0x0074_cef0 => extern "C" fn vu_vec4_add_0074cef0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_add(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_add_0074def0(out, a, b)`.
+    vu_vec4_add_0074def0 @ 0x0074_def0 => extern "C" fn vu_vec4_add_0074def0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_add(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_add_0074ef50(out, a, b)`.
+    vu_vec4_add_0074ef50 @ 0x0074_ef50 => extern "C" fn vu_vec4_add_0074ef50(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_add(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_add_00753230(out, a, b)`.
+    vu_vec4_add_00753230 @ 0x0075_3230 => extern "C" fn vu_vec4_add_00753230(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_add(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_sub_0074c3b0(out, a, b)`.
+    vu_vec4_sub_0074c3b0 @ 0x0074_c3b0 => extern "C" fn vu_vec4_sub_0074c3b0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_sub(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_sub_0074d3b0(out, a, b)`.
+    vu_vec4_sub_0074d3b0 @ 0x0074_d3b0 => extern "C" fn vu_vec4_sub_0074d3b0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_sub(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_sub_0074e3b0(out, a, b)`.
+    vu_vec4_sub_0074e3b0 @ 0x0074_e3b0 => extern "C" fn vu_vec4_sub_0074e3b0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_sub(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_sub_0074f3f0(out, a, b)`.
+    vu_vec4_sub_0074f3f0 @ 0x0074_f3f0 => extern "C" fn vu_vec4_sub_0074f3f0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_sub(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_sub_007501d0(out, a, b)`.
+    vu_vec4_sub_007501d0 @ 0x0075_01d0 => extern "C" fn vu_vec4_sub_007501d0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_sub(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_sub_007519d0(out, a, b)`.
+    vu_vec4_sub_007519d0 @ 0x0075_19d0 => extern "C" fn vu_vec4_sub_007519d0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_sub(&mut mem(), out, a, b)
+    }
+    /// `vu_vec4_sub_00753db0(out, a, b)`.
+    vu_vec4_sub_00753db0 @ 0x0075_3db0 => extern "C" fn vu_vec4_sub_00753db0(out: u32, a: u32, b: u32) -> u32 {
+        vec::bridge::vu_vec4_sub(&mut mem(), out, a, b)
+    }
+    /// `ppp_obj_rot_pos_0074a760(rot, pos, r)`.
+    ppp_obj_rot_pos_0074a760 @ 0x0074_a760 => extern "C" fn ppp_obj_rot_pos_0074a760(rot: u32, pos: u32, r: u32) -> u32 {
+        part::bridge::ppp_obj_rot_pos(&mut mem(), rot, pos, r)
+    }
+    /// `ppp_obj_rot_pos_0074ad80(rot, pos, r)`.
+    ppp_obj_rot_pos_0074ad80 @ 0x0074_ad80 => extern "C" fn ppp_obj_rot_pos_0074ad80(rot: u32, pos: u32, r: u32) -> u32 {
+        part::bridge::ppp_obj_rot_pos(&mut mem(), rot, pos, r)
+    }
+    /// `ppp_obj_rot_pos_0074b540(rot, pos, r)`.
+    ppp_obj_rot_pos_0074b540 @ 0x0074_b540 => extern "C" fn ppp_obj_rot_pos_0074b540(rot: u32, pos: u32, r: u32) -> u32 {
+        part::bridge::ppp_obj_rot_pos(&mut mem(), rot, pos, r)
+    }
+    /// `hideDisplayOffParticle(part)`.
+    hideDisplayOffParticle @ 0x0072_8e40 => extern "C" fn hide_display_off_particle(part: u32) {
+        part::bridge::hide_display_off_particle(&mut mem(), part, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_et_battle_target_center_0081b300(out)`.
+    op_et_battle_target_center_0081b300 @ 0x0081_b300 => extern "C" fn op_et_battle_target_center(out: u32) {
+        // the original's count local
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        et::bridge::op_et_battle_target_center(&mut mem(), out, at, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

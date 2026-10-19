@@ -1398,4 +1398,85 @@ pub mod bridge {
         call(mem, g(mem, 0x006e_d450), &[frame, camera]);
         call(mem, g(mem, 0x006e_d2e0), &[out, frame, view]);
     }
+
+    /// `0x0074a760(rot, pos, r)` and its copies `0x0074ad80`, `0x0074b540`:
+    /// `r` = (object index, offset) into [`CURRENT_PART`]'s objects (`+0x3c`,
+    /// 16-byte records, `+4` the data through `get_ptr32_func`); index -1
+    /// gives `rot` (0, 0, _, 1) and `pos` (0, 0, _, _). Else, with `d` the
+    /// data plus the offset, `rot` = the three floats at `ptr32(d + 0xac)`
+    /// and the one at `d + 0xa8`, `pos` = the four `i16` at `ptr32(d +
+    /// 0xb0)` times the `f64` at `0x00b51550` (each rounded to `f32`).
+    /// Returns the original's eax: `pos` for index -1, else the fourth
+    /// `i16` sign-extended.
+    pub fn ppp_obj_rot_pos(mem: &mut impl Mem, rot: u32, pos: u32, r: u32) -> u32 {
+        use ffx_bridge::x87::{load, mul, store};
+        let id: u32 = mem.read(r);
+        if id == u32::MAX {
+            mem.write(rot + 0xc, 1.0f32.to_bits());
+            mem.write(rot, 0u32);
+            mem.write(rot + 4, 0u32);
+            mem.write(pos, 0u32);
+            mem.write(pos + 4, 0u32);
+            return pos;
+        }
+        let part = CURRENT_PART.get(mem);
+        let objs: u32 = mem.read(part.wrapping_add(0x3c));
+        let base = ptr32(mem.read(objs.wrapping_add(id.wrapping_mul(16)).wrapping_add(4)));
+        let off: u32 = mem.read(r + 4);
+        let d = off.wrapping_add(base);
+        let p = ptr32(mem.read(d.wrapping_add(0xac)));
+        let q = ptr32(mem.read(d.wrapping_add(0xb0)));
+        for i in 0..3u32 {
+            let v: u32 = mem.read(p.wrapping_add(4 * i));
+            mem.write(rot + 4 * i, store(load(v)));
+        }
+        let w: u32 = mem.read(d.wrapping_add(0xa8));
+        mem.write(rot + 0xc, store(load(w)));
+        let k: f64 = mem.read(Global::<u32>::new(0x00b5_1550).ptr(mem).addr);
+        let mut last = 0i16;
+        for i in 0..4u32 {
+            last = mem.read(q.wrapping_add(2 * i));
+            #[allow(clippy::cast_precision_loss)] // an i16: exact
+            let f = f32::from(last);
+            mem.write(pos + 4 * i, store(mul(f64::from(f), k)));
+        }
+        i32::from(last).cast_unsigned()
+    }
+
+    /// `hideDisplayOffParticle(part)` (`0x00728e40`): for each of the
+    /// part's objects (`+0x18` of them, signed; `+0x3c` the 16-byte records,
+    /// read again each turn) whose data `+4` is set: `a` = that data, `c` =
+    /// `ptr32(ptr32(a + 8))` (`get_ptr32_func`, the identity on PC), and
+    /// each of `c`'s `i16 +0x26` entries (16 bytes from `+0x28`) holding a
+    /// pointer gets `graphicVFXSetVisible(k, a, 0)` (a 64-bit id `a:k`;
+    /// through `call`).
+    pub fn hide_display_off_particle<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let set_visible = Global::<u32>::new(0x0064_5710).ptr(mem).addr;
+        let mut i = 0u32;
+        while i.cast_signed() < mem.read::<u32>(part.wrapping_add(0x18)).cast_signed() {
+            let objs: u32 = mem.read(part.wrapping_add(0x3c));
+            let rec = objs.wrapping_add(0x10 * i);
+            if objs != 0 && rec != 0 {
+                let data: u32 = mem.read(rec.wrapping_add(4));
+                if is_ptr32_null(data) == 0 {
+                    let a = ptr32(data);
+                    let b = ptr32(mem.read(a.wrapping_add(8)));
+                    let c = ptr32(mem.read(b));
+                    let mut k = 0u32;
+                    while k.cast_signed() < i32::from(mem.read::<i16>(c.wrapping_add(0x26))) {
+                        let e = ptr32(mem.read(c.wrapping_add(0x28 + 0x10 * k)));
+                        if e != 0 {
+                            call(mem, set_visible, &[k, a, 0]);
+                        }
+                        k += 1;
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
 }

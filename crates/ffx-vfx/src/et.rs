@@ -1593,4 +1593,48 @@ pub mod bridge {
         mem.write(rec + 9, 1u8);
         j
     }
+
+    /// `op_et_battle_target_center_0081b300(out)` (`0x0081b300`): the mean
+    /// position of the battle's targets: `MsGetBattleList(0x10, frame)`
+    /// (through `call`; the count it leaves at `frame`), and per listed
+    /// character (signed byte index into `g_EtChrHandles`) `out` reset from
+    /// the emulated `r0` and, with a handle, `Ch_GetPos(h, out, out + 4,
+    /// out + 8)`; the three sums (`f32`, from 0) over every listed one,
+    /// divided by their number (so a NaN for none). `out.w` is the last
+    /// reset's.
+    pub fn op_et_battle_target_center<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, div, load, store};
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let list = call(mem, at(mem, 0x007b_6c50), &[0x10, frame]);
+        let count = mem.read::<u32>(frame).cast_signed();
+        let zero = 0.0f32.to_bits();
+        let (mut sx, mut sy, mut sz) = (zero, zero, zero);
+        let mut n = 0i32;
+        let get_pos = at(mem, 0x0082_ac90);
+        for k in 0..count.max(0).cast_unsigned() {
+            let c = i32::from(mem.read::<u8>(list.wrapping_add(k)).cast_signed());
+            let r0: [u32; 4] = mem.read(at(mem, 0x00c8_f508));
+            mem.write(out, r0);
+            let slot = CHR_HANDLES.ptr(mem).addr.wrapping_add_signed(4 * c);
+            let h: u32 = mem.read(slot);
+            if h != 0 {
+                call(mem, get_pos, &[h, out, out + 4, out + 8]);
+            }
+            let p: [u32; 3] = mem.read(out);
+            sx = store(add(load(p[0]), load(sx)));
+            n += 1;
+            sy = store(add(load(sy), load(p[1])));
+            sz = store(add(load(p[2]), load(sz)));
+        }
+        #[allow(clippy::cast_precision_loss)] // as fild then fstp: rounded to f32
+        let nf = store(f64::from(n));
+        mem.write(out, store(div(load(sx), load(nf))));
+        mem.write(out + 4, store(div(load(sy), load(nf))));
+        mem.write(out + 8, store(div(load(sz), load(nf))));
+    }
 }

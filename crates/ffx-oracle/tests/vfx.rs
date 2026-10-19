@@ -15077,3 +15077,174 @@ fn round29l_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round29m_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_bf10);
+        let visible = deref_recorder(&mut p, 0x0064_5710, &[0, 0, 0]);
+        let (count, list_cell, list_log) = (p.alloc(4), p.alloc(4), p.alloc(4));
+        target_list_stub(&mut p, 0x007b_6c50, count, list_log, list_cell);
+        // Ch_GetPos(h, &x, &y, &z): the three floats from pos
+        let pos_cells = p.alloc(12);
+        let mut stub = Vec::new();
+        for k in 0..3u8 {
+            stub.extend([0x8b, 0x44, 0x24, 8 + 4 * k, 0x8b, 0x0d]); // mov eax, [esp+8+4k]; mov ecx, [cell]
+            stub.extend((pos_cells + 4 * u32::from(k)).to_le_bytes());
+            stub.extend([0x89, 0x08]); // mov [eax], ecx
+        }
+        stub.push(0xc3);
+        stub_code(&mut p, 0x0082_ac90, &stub);
+        let frame = p.b.stack_range().start + 0x100;
+        let vu_a = p.sym(0x00c8_f980);
+        let (out, va, vb) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x10));
+        let (part, objs, data) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x400));
+        let (floats, shorts, rot, pos) =
+            (p.alloc(0x40), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (hp, hobjs, ha, hb, hc) = (
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x100),
+        );
+        let (targets, handles) = (p.alloc(0x20), p.sym(et::bridge::CHR_HANDLES.sym));
+        let adds = [
+            0x0074_bf10u32,
+            0x0074_cef0,
+            0x0074_def0,
+            0x0074_ef50,
+            0x0075_3230,
+        ];
+        let subs = [
+            0x0074_c3b0u32,
+            0x0074_d3b0,
+            0x0074_e3b0,
+            0x0074_f3f0,
+            0x0075_01d0,
+            0x0075_19d0,
+            0x0075_3db0,
+        ];
+        for round in 0..300 {
+            // the VU vector copies, now and then on the registers themselves
+            for (k, &sym) in adds.iter().chain(&subs).enumerate() {
+                let is_add = k < adds.len();
+                for i in 0..4 {
+                    let x = finite(&mut rng);
+                    p.set(va + 4 * i, x);
+                    let y = finite(&mut rng);
+                    p.set(vb + 4 * i, y);
+                }
+                p.fill(vu_a - 0x18, 0x28, &mut rng);
+                p.fill(p.sym(0x00c0_a004), 0x10, &mut rng);
+                p.fill(out, 0x10, &mut rng);
+                let (a, b, o) = match rng.below(9) {
+                    0 => (vu_a, vb, out),
+                    1 => (va, vu_a, out),
+                    3 => (va, vu_a - 0x18, out),
+                    4 => (vu_a + 4, vb, out),
+                    5 => (va, vu_a - 0xc, out),
+                    6 => (vu_a - 4, vb, out),
+                    2 => (va, vb, va),
+                    _ => (va, vb, out),
+                };
+                p.check(&format!("{sym:#x} round {round}"), sym, &[o, a, b], |m| {
+                    Some(if is_add {
+                        vec::bridge::vu_vec4_add(m, o, a, b)
+                    } else {
+                        vec::bridge::vu_vec4_sub(m, o, a, b)
+                    })
+                });
+            }
+            // ppp_obj_rot_pos: the part's object records and their data
+            p.set(p.sym(prog::bridge::CURRENT_PART.sym), part);
+            p.set(part + 0x3c, objs);
+            for i in 0..4u32 {
+                p.set(objs + 0x10 * i + 4, data + 0x100 * i);
+                for off in [0u32, 0x10] {
+                    let d = data + 0x100 * i + off;
+                    let w = finite(&mut rng);
+                    p.set(d + 0xa8, w);
+                    p.set(d + 0xac, floats + 0x10 * (i % 4));
+                    p.set(d + 0xb0, shorts + 0x10 * (i % 4));
+                }
+            }
+            for i in 0..16 {
+                let x = finite(&mut rng);
+                p.set(floats + 4 * i, x);
+            }
+            p.fill(shorts, 0x40, &mut rng);
+            let refs = p.alloc(8);
+            let id = rng.pick(&[u32::MAX, 0, 1, 3]);
+            p.set(refs, id);
+            let off = rng.pick(&[0u32, 0x10]);
+            p.set(refs + 4, off);
+            for sym in [0x0074_a760u32, 0x0074_ad80, 0x0074_b540] {
+                p.fill(rot, 0x10, &mut rng);
+                p.fill(pos, 0x10, &mut rng);
+                p.check(
+                    &format!("{sym:#x} round {round}"),
+                    sym,
+                    &[rot, pos, refs],
+                    |m| Some(part::bridge::ppp_obj_rot_pos(m, rot, pos, refs)),
+                );
+            }
+            // hideDisplayOffParticle
+            let n = rng.pick(&[0u32, 1, 3, u32::MAX]);
+            p.set(hp + 0x18, n);
+            let table = rng.pick(&[0u32, hobjs, hobjs]);
+            p.set(hp + 0x3c, table);
+            for i in 0..3u32 {
+                let a = rng.pick(&[0u32, ha, ha]);
+                p.set(hobjs + 0x10 * i + 4, a);
+            }
+            p.set(ha + 8, hb);
+            p.set(hb, hc);
+            let entries = rng.pick(&[0i16, 2, 5, -1]);
+            p.set(hc + 0x26, entries);
+            for k in 0..5u32 {
+                let e = rng.pick(&[0u32, 0x1234]);
+                p.set(hc + 0x28 + 0x10 * k, e);
+            }
+            p.set(visible, 0u32);
+            p.check(
+                &format!("hideDisplayOffParticle round {round}"),
+                0x0072_8e40,
+                &[hp],
+                |m| {
+                    part::bridge::hide_display_off_particle(m, hp, &mut call_original);
+                    None
+                },
+            );
+            // op_et_battle_target_center
+            let listed = rng.pick(&[0u32, 1, 5, 16, u32::MAX]);
+            p.set(count, listed);
+            for k in 0..16 {
+                let c = rng.pick(&[0u8, 3, 7, 0xef, 0xff]);
+                p.set(targets + k, c);
+            }
+            p.set(list_cell, targets);
+            p.fill(handles - 4, 0xf4, &mut rng);
+            for c in [0u32, 3, 7] {
+                let h = rng.pick(&[0u32, 0x1001]);
+                p.set(handles + 4 * c, h);
+            }
+            for k in 0..3 {
+                let x = finite(&mut rng);
+                p.set(pos_cells + 4 * k, x);
+            }
+            p.fill(p.sym(0x00c8_f508), 0x10, &mut rng);
+            p.fill(out, 0x10, &mut rng);
+            p.check(
+                &format!("0x0081b300 round {round}"),
+                0x0081_b300,
+                &[out],
+                |m| {
+                    et::bridge::op_et_battle_target_center(m, out, frame, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}

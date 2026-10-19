@@ -180,4 +180,63 @@ pub mod bridge {
         }
         last.cast_unsigned()
     }
+
+    /// The emulated VU0 vector registers these copies work in.
+    const VU_A: u32 = 0x00c8_f980;
+    const VU_B: u32 = 0x00c8_f970;
+
+    /// `0x0074bf10(out, a, b)` and its copies `0x0074cef0`, `0x0074def0`,
+    /// `0x0074ef50`, `0x00753230`: the emulated register at `0x00c8f980` =
+    /// `a`, the one at `0x00c8f970` = `b`, the first += `b` per component
+    /// (`f32`; `x` read before `b` is), copied to `out`. Returns `out.w`'s
+    /// bits (the original's eax).
+    pub fn vu_vec4_add(mem: &mut impl Mem, out: u32, a: u32, b: u32) -> u32 {
+        vu_vec4_op(mem, out, a, b, ffx_bridge::x87::add, false)
+    }
+
+    /// `0x0074c3b0(out, a, b)` and its copies `0x0074d3b0`, `0x0074e3b0`,
+    /// `0x0074f3f0`, `0x007501d0`, `0x007519d0`, `0x00753db0`: as
+    /// [`vu_vec4_add`] with `a - b`, `restoreVf00Register` before the copy.
+    pub fn vu_vec4_sub(mem: &mut impl Mem, out: u32, a: u32, b: u32) -> u32 {
+        vu_vec4_op(mem, out, a, b, ffx_bridge::x87::sub, true)
+    }
+
+    fn vu_vec4_op(
+        mem: &mut impl Mem,
+        out: u32,
+        a: u32,
+        b: u32,
+        op: fn(f64, f64) -> f64,
+        restore: bool,
+    ) -> u32 {
+        use ffx_bridge::Global;
+        use ffx_bridge::x87::{load, store};
+        let va = Global::<u32>::new(VU_A).ptr(mem).addr;
+        let vb = Global::<u32>::new(VU_B).ptr(mem).addr;
+        // word by word, as the original copies: an overlapping source sees
+        // the words already written
+        for i in 0..4 {
+            let w: u32 = mem.read(a + 4 * i);
+            mem.write(va + 4 * i, w);
+        }
+        let x0: u32 = mem.read(va);
+        for i in 0..4 {
+            let w: u32 = mem.read(b + 4 * i);
+            mem.write(vb + 4 * i, w);
+        }
+        let bl: [u32; 4] = mem.read(b);
+        for (i, k) in (0u32..).zip(bl) {
+            let cur = if i == 0 { x0 } else { mem.read(va + 4 * i) };
+            mem.write(va + 4 * i, store(op(load(cur), load(k))));
+        }
+        if restore {
+            restore_vf00(mem);
+        }
+        let mut w = 0;
+        for i in 0..4 {
+            w = mem.read(va + 4 * i);
+            mem.write(out + 4 * i, w);
+        }
+        w
+    }
 }

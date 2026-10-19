@@ -3581,7 +3581,7 @@
 0x007289d0 function pppNull                   # a lone ret: the step, set-up and draw of 69 program table entries (the pppop_* records and others)
 0x00728a60 function vfx_vec3_scale3           # (dst, v, sx, sy, sz) dst.xyz = v.xyz * (sx, sy, sz)
 0x00728dd0 function pppViewOutCode           # ours: (x f32, y f32) -> outcode: 1 x < -8/9, 2 x >= 8/9 (the f32 8/9 as a double, 0x00b514e0/e8), 4 y < -0.5, 8 y >= 0.5; NaN none; pppCheckViewCylinder calls it for four corners
-0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl
+0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl ; (part): per object with data (+0x3c records, +4), each entry of ptr32(ptr32(data+8))+0x28 (i16 count +0x26) that is set gets graphicVFXSetVisible(k, data, 0) (part::bridge::hide_display_off_particle)
 0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
 0x00729060 function pppFpDispDebug               # str-match switch: only user of 6 string(s) held once by both builds, e.g. '---- FP Disp Status Start\\n\\n'; Switch 0x71002d72b0 pppFpDispDebug (symbols from Fahrenheit's server export)
@@ -3893,9 +3893,12 @@
 0x00749f90 function pppKeMdlTfdUv3Con         # ppp program table record "pppKeMdlTfdUv3" (0x00c3dde8) +0x1c set-up; "pppKeMdlTfdUv3" (0x00c3dde8) +0x20 second set-up
 0x00749ff0 function pppKeMdlTfdUv3Draw        # fh v3:exact 0x0074a0c0; ours: = mdl::bridge::ppp_ke_mdl_tfd_draw (Three, uv): mode = key +0x38..+0x3c OR-ed, zmat as Tfd3 (oracle parity)
 0x0074a1e0 function pppNeiDrawMdlPointLightDraw # ppp program table record "pppNeiDrawMdlPointLight" draw; not a function start in the Ghidra dump
+0x0074a760 function ppp_obj_rot_pos_0074a760   # ours, disasm: (rot, pos, ref): g_pppCurrentPart object ref [index, offset]: rot = 3 floats at ptr32(d+0xac) and d+0xa8, pos = 4 i16 at ptr32(d+0xb0) * f64 0x00b51550; index -1 zeroes them (w = 1); one of 3 copies (part::bridge::ppp_obj_rot_pos)
 0x0074a850 function pppNeiDrawMdlSemiPointLightDraw # ppp program table record "pppNeiDrawMdlSemiPointLight" draw; not a function start in the Ghidra dump
+0x0074ad80 function ppp_obj_rot_pos_0074ad80   # ours, disasm: (rot, pos, ref): g_pppCurrentPart object ref [index, offset]: rot = 3 floats at ptr32(d+0xac) and d+0xa8, pos = 4 i16 at ptr32(d+0xb0) * f64 0x00b51550; index -1 zeroes them (w = 1); one of 3 copies (part::bridge::ppp_obj_rot_pos)
 0x0074ae70 function pppNeiDrawMdlTsPointLightDraw # ppp program table record "pppNeiDrawMdlTsPointLight" draw; not a function start in the Ghidra dump
 0x0074b500 function pppNeiDrawMdlTsPointLightCon # ppp program table record "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x1c set-up; "pppNeiDrawMdlTsPointLight" (0x00c3de60) +0x20 second set-up
+0x0074b540 function ppp_obj_rot_pos_0074b540   # ours, disasm: (rot, pos, ref): g_pppCurrentPart object ref [index, offset]: rot = 3 floats at ptr32(d+0xac) and d+0xa8, pos = 4 i16 at ptr32(d+0xb0) * f64 0x00b51550; index -1 zeroes them (w = 1); one of 3 copies (part::bridge::ppp_obj_rot_pos)
 0x0074b630 function pppVu0AddY                # (dst, v, vec by value: .y at +0x14): dst.x = v.x + y (vaddy.x); leaves dst in eax
 0x0074b650 function pppVu0AddZ                # as pppVu0AddY with the z (+0x18)
 0x0074b670 function Vec3SubScalars_0074b670      # structure: (dst, src, x, y, z): dst.xyz = src.xyz - (x, y, z), then restoreVf00Register; the subtracting twin of Vec3AddScalars_00735100, next to pppVu0AddY/AddZ; name ours
@@ -3905,25 +3908,34 @@
 0x0074bde0 function pppVu0MaddW_copy_0074bde0    # the same code as pppVu0MaddW (0x0072c650; call targets equal), a copy the compiler kept; own name; ported with mat::bridge::ppp_vu0_madd, caller 0x007ed0c0
 0x0074be90 function Vec4SubScalars_0074be90    # ours: (dst, src, x, y, z, w): dst = src - (x, y, z, w), then restoreVf00Register
 0x0074bed0 function Vec4SubScalars_0074bed0   # ours: the same code as Vec4SubScalars_0074be90 (dst = src - (x,y,z,w), restoreVf00Register); callers in 0x00800000.c (vec::bridge::vec4_sub_scalars)
+0x0074bf10 function vu_vec4_add_0074bf10       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x0074c280 function pppFtoiRgba_0074c280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailDraw)
+0x0074c3b0 function vu_vec4_sub_0074c3b0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074c490 function pppKeShpTail              # ppp program table record "pppKeShpTail" step: area 0 a ring of positions (+0 length, +1 index, slots from +0x10), the object's +0x40 into the next slot (KeVu0CopyVecXYZ), every slot at frame 0 (w = 1.0)
 0x0074c540 function pppKeShpTailCon           # ppp program table record "pppKeShpTail" (0x00c3a8f0) +0x1c set-up; "pppKeShpTail" (0x00c3bf98) +0x1c set-up
 0x0074c570 function pppKeShpTailDraw          # ppp program table record "pppKeShpTail" draw; not a function start in the Ghidra dump
+0x0074cef0 function vu_vec4_add_0074cef0       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x0074d280 function pppFtoiRgba_0074d280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailXDraw)
+0x0074d3b0 function vu_vec4_sub_0074d3b0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074d490 function pppKeShpTailX             # ppp program table record "pppKeShpTailX" step: the same code as pppKeShpTail
 0x0074d540 function pppKeShpTailXCon          # ppp program table record "pppKeShpTailX" (0x00c3b228) +0x1c set-up; "pppKeShpTailX" (0x00c3c8d0) +0x1c set-up
 0x0074d570 function pppKeShpTailXDraw         # ppp program table record "pppKeShpTailX" draw; not a function start in the Ghidra dump
+0x0074def0 function vu_vec4_add_0074def0       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x0074e280 function pppFtoiRgba_0074e280       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2Draw)
+0x0074e3b0 function vu_vec4_sub_0074e3b0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074e490 function pppKeShpTail2             # ppp program table record "pppKeShpTail2" step: the same code as pppKeShpTail
 0x0074e540 function pppKeShpTail2Con          # ppp program table record "pppKeShpTail2" (0x00c3a918) +0x1c set-up; "pppKeShpTail2" (0x00c3bfc0) +0x1c set-up
 0x0074e570 function pppKeShpTail2Draw         # ppp program table record "pppKeShpTail2" draw; not a function start in the Ghidra dump
+0x0074ef50 function vu_vec4_add_0074ef50       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x0074f2c0 function pppFtoiRgba_0074f2c0       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail2XDraw)
+0x0074f3f0 function vu_vec4_sub_0074f3f0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x0074f4d0 function pppKeShpTail2X            # ppp program table record "pppKeShpTail2X" step: the same code as pppKeShpTail
 0x0074f580 function pppKeShpTail2XCon         # ppp program table record "pppKeShpTail2X" (0x00c3b480) +0x1c set-up; "pppKeShpTail2X" (0x00c3cb28) +0x1c set-up
 0x0074f5b0 function pppKeShpTail2XDraw        # ppp program table record "pppKeShpTail2X" draw; not a function start in the Ghidra dump
 0x00750020 function pppVec4Copy               # (dst, src) four floats through the FPU (fld/fstp)
 0x007500d0 function pppVu0MulX_007500d0       # the same arithmetic as pppVu0MulX, leaves v in eax (0x0091cb70, 0x00925040)
 0x00750130 function pppFtoiRgba_00750130       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3Draw)
+0x007501d0 function vu_vec4_sub_007501d0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x007502c0 function pppKeShpTail3             # fh v3:exact 0x00750390
 0x00750510 function pppKeShpTail3Con          # ppp program table record "pppKeShpTail3" +0x1c set-up: ring index +0x298, +0x294/+0x290 cleared, CRT rand() low half at +0x296, +0xa0..+0xcc cleared
 0x007505a0 function pppKeShpTail3Con2         # ppp program table record "pppKeShpTail3" (0x00c3ac38) +0x20 second set-up; "pppKeShpTail3" (0x00c3c2e0) +0x20 second set-up
@@ -3931,13 +3943,16 @@
 0x00751680 function pppKeShpTail3VfCopy_00751680 # ours: (dst) -> last word: the emulated VU0 registers 0x00c8f7b0..0x00c8f7ef (16 words) to dst + 0xc0; caller pppKeShpTail3Draw
 0x00751740 function pppKeShpTail3VfLoad_00751740 # ours: (src) -> src[0x4b] in eax (FPU untouched; Ghidra's float10 at the caller is stale ST0): emulated VU0 registers reloaded from a saved block, words 0..0x1f -> 0x00c8f830.., 0x20..0x27 -> 0x00c8f7f0.., 0x40..0x4b -> 0x00c8f930..; the inverse of pppKeShpTail3VfCopy_00751680; caller pppKeShpTail3Draw
 0x00751930 function pppFtoiRgba_00751930       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTail3XDraw)
+0x007519d0 function vu_vec4_sub_007519d0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x00751ab0 function pppKeShpTail3XVfLoad_00751ab0 # ours: the same code as pppKeShpTail3VfLoad_00751740 (byte-identical body), next to the draw that calls it; caller pppKeShpTail3XDraw (twice)
 0x00751ca0 function pppKeShpTail3X            # fh v3:exact 0x00751d80
 0x00751eb0 function pppKeShpTail3XCon         # ppp program table record "pppKeShpTail3X" +0x1c set-up: the same code as pppKeShpTail3Con
 0x00751f40 function pppKeShpTail3XCon2        # ppp program table record "pppKeShpTail3X" (0x00c3b868) +0x20 second set-up; "pppKeShpTail3X" (0x00c3cf10) +0x20 second set-up
 0x00751fc0 function pppKeShpTail3XDraw        # ppp program table record "pppKeShpTail3X" draw; not a function start in the Ghidra dump
 0x00753080 function pppKeShpTail3XVfCopy_00753080 # ours: (dst) -> last word: emulated VU0 registers 0x00c8f7b0..0x00c8f7ef to dst + 0xc0 and 0x00c8f930..0x00c8f95f to dst + 0x100; caller pppKeShpTail3XDraw (0x00752f89)
+0x00753230 function vu_vec4_add_00753230       # ours, disasm: (out, a, b) -> out.w bits: emulated VU regs 0x00c8f980 = a, 0x00c8f970 = b, the first += b, copied to out; one of 5 identical copies (vec::bridge::vu_vec4_add)
 0x007535a0 function pppFtoiRgba_007535a0       # ours: (dst, src) -> the last byte: four floats truncated (fistp, rounding set to chop) to their low bytes; one of seven identical copies (0x0074c280 the first), each next to the ppp draw that calls it (pppKeShpTailPhtDraw)
+0x00753db0 function vu_vec4_sub_00753db0       # ours, disasm: as vu_vec4_add with a - b and restoreVf00Register before the copy; one of 7 identical copies (vec::bridge::vu_vec4_sub)
 0x00753f10 function pppKeShpTailPht           # ppp program table record "pppKeShpTailPht" step: as pppKeShpTail3X (velocity, then position) with 27 slots, index +0x1f4, f32 motion at +0x1e0/+0x1e4/+0x1e8, key's halves at +0x30 and floats at +0x1c
 0x00754180 function pppKeShpTailPhtCon        # ppp program table record "pppKeShpTailPht" +0x1c set-up: as pppKeShpTail3Con, index +0x294, CRT rand() at +0x292, float motion +0x280.. cleared
 0x00754260 function pppKeShpTailPhtCon2       # ppp program table record "pppKeShpTailPht" +0x20 set-up: clears the ring index, seed and motion (no rand)
@@ -6944,6 +6959,7 @@
 0x0081b230 function opus_normaldeg_to_ffxdeg_0081b230 # ours: (x) -> ((0x400 - ftol(x)) & 0xfff) * k * k' as f32, the way back from opus_ffxdeg_to_normaldeg (opus::bridge::opus_normaldeg_to_ffxdeg)
 0x0081b270 function opus_set_chr_dirf            # callees: its named callees match the Switch 0x71003ff2b0 opus_set_chr_dirf's (similarity 1.00: Ch_SetDirF, MsBattleChrStart, MsSetChrDirF); symbols from Fahrenheit's server export; (chr, dir): MsSetChrDirF in battle, else Ch_SetDirF on its handle (opus::bridge::opus_set_chr_dirf)
 0x0081b2b0 function opus_set_chr_pos             # callees: its named callees match the Switch 0x71003ff220 opus_set_chr_pos's (similarity 1.00: Ch_SetPos3, MsBattleChrStart, MsSetChrPos); symbols from Fahrenheit's server export; (chr, pos): MsSetChrPos in battle, else Ch_SetPos3(h, x, y, z) (opus::bridge::opus_set_chr_pos)
+0x0081b300 function op_et_battle_target_center_0081b300 # ours: (out): mean Ch_GetPos of the MsGetBattleList(0x10) characters (g_EtChrHandles, reset from r0 each), f32 sums over every listed one divided by their number (et::bridge::op_et_battle_target_center)
 0x0081b3e0 function op_et_eff_target_center_0081b3e0 # ours: (eff, out, filter): mean Ch_GetPos of a g_EtEff record's target characters (byte +8 indices at +0x10, MsEffectGetTargetFlag filter), r0 for a missing handle; 0/0 gives NaN (et::bridge::op_et_eff_target_center)
 0x0081b4d0 function opu_motion_cb_0081b4d0    # (host, cmd): unit byte +0xba (the motion callback, 0x00c492c8) = cmd+2, u16 +0xa0/+0xa2 = cmd+4/+6; 8/9: +0x40.. = +0x90.. * 16; 0xb: +0xa4/+0x44/+0x48 = +0x90..; -> cmd + 8; name ours
 0x0081b560 function opu_spl                      # callees: its named callees match the Switch 0x7100401030 opu_spl's (similarity 0.88: op_free, op_malloc, op_mul_m, op_spline_xyz, op_spline_xyz_table); symbols from Fahrenheit's server export; ported (effects round 26): nibble 0 builds the spline record +0xbc on the heap [host+0x3a8], 1/2 place the unit on it at +0x4c/256 (2 also a second point and the unit matrix +0xc0), 3 sets callback 0xa; other nibbles pop the caller's esi/edi/ebx from the wrong slots in the original
