@@ -3028,7 +3028,7 @@
 0x006ee570 function sg_calcenvelope_asm       # fh v3:exact 0x006ee6b0
 0x006eee40 function sg_calcenvelope_asm_opt   # fh v3:exact 0x006eef80
 0x006ef2d0 function crossAssertIsValidFloat   # fh v3:exact 0x006ef410
-0x006ef6f0 function fix_mappic                # fh call.cs cdecl
+0x006ef6f0 function fix_mappic                # fh call.cs cdecl; (map) -> save-list picture number (m%d, m%d_1 from 1000): 0 outside 1..=0x15c, map - 1 for 26 maps, fixed ones for 3/7/0x13/0x59/0x147..0x14f/0xaf..0xb1/0xe8/0xe9/0x100, map + 1000 on 0xd8/0x1f/0x101/0x11c/0x81/0x15c/0xf4..0xf7 when the player (0x00ccb9a8) is nearer the second picture's point (f32 squared distances); ported (system round 37)
 0x006efbd0 function SaveDataMachine_CheckFile # load state 0xf: after the 30-frame timer 0x00ce72e4, SaveDataCheckCrc; bad: buffer zeroed, message 0x208, state 0x10; good: 0x11 (docs/formats/save.md); name ours
 0x006f0020 function SaveDataMachine_LoadDone # load state 0x11: closes the Flash screen, SaveDataSaveLoadSucceed(3), SaveDataSetDialogState(0), state 0xa, busy 0x00ce7310 = 0; name ours
 0x006f0070 function SaveDataMachine_ReadFile # load state 0xe (list entry): _wfopen/fread "%s%s%03d" (g_SaveFolder, "ffx_", g_SortedSaveTable slot) into 0x00ce7308, 0x00ce7304 bytes; timer 30, state 0xf; name ours
@@ -15494,6 +15494,7 @@
 0x00ccb998 label    g_SaveData_DialogState    # SaveDataGet/SetDialogState; also written by SaveDataSetScreenState, SaveDataToLoad
 0x00ccb99c label    g_SaveData_IsSave         # SaveDataSetSave writes, SaveDataIsSave: == 1
 0x00ccb9a4 label    g_SaveData_CrcCheckOff    # nonzero: SaveDataCheckCrc passes every save without computing TkCRC
+0x00ccb9a8 label    g_SaveData_PlayerPos      # f32 x, y, z: SaveData_Update copies the player's position every frame; fix_mappic picks a save picture by it
 0x00ccb9c0 label    g_PhyreScene3D            # byte PhyreScene_is3DScene returns; PhyreScene_isDrawingNonUI2DScene tests it
 0x00ccb9c2 label    g_PhyreSceneOpeningPlaying # byte PhyreScene_isOpeningScreenPlaying returns
 0x00ccb9cc label    g_pppSpecialPart          # set to 1 by pppRunPartStd for a part with 0x33 births or during spell 0x296

@@ -1673,3 +1673,15 @@ pushed as literals (no relocation entries), not addresses.
   `eax`: the layout pointer after the parts, the colour byte `+7` for an
   empty layout. From 600 up the original reads a stale stack word as the
   layout; the port draws nothing.
+- `fix_mappic(map)` gives the picture the PC save list shows for a save
+  made on `map` (`m%d`, or `m%d_1` for 1000 up; the caller turns 0 into
+  999 when `isNeedShowJapanLogo`). Maps outside 1..=0x15c give 0; 26 maps
+  (2, 0x2e, 0x32, ... 0x152) show the previous map's picture; 3 gives 1,
+  7 0x120, 0x13 0x11; 0x59, 0x147..=0x14a, 0x14e and 0x14f give 0;
+  0xaf..=0xb1 0xad; 0xe8/0xe9 0xe6; 0x100 0xfe. On 0xd8, 0x1f, 0x101,
+  0x11c, 0x81/0x15c, 0xf4/0xf5 and 0xf6/0xf7 it compares the player's
+  position (`g_SaveData_PlayerPos`, `0x00ccb9a8`, which `SaveData_Update`
+  copies each frame) with two fixed points: the squared distances (x87
+  double sums stored as `f32`) pick `map + 1000` when the player is
+  nearer the second picture's point, else `map` (ties and NaNs too).
+  Any other map is its own picture.

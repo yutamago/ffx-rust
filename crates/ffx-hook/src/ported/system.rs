@@ -1212,6 +1212,10 @@ ported! {
             call_ptr,
         )
     }
+    /// `fix_mappic(map)`.
+    fix_mappic @ 0x006e_f6f0 => extern "C" fn fix_mappic(map: u32) -> u32 {
+        save::bridge::fix_mappic(&mem(), map)
+    }
     /// `sce::Vectormath::Scalar::Aos::inverse(out, m)`.
     sce_Vectormath_Scalar_Aos_inverse @ 0x0057_3d00 => extern "C" fn sce_vectormath_inverse(out: u32, m: u32) -> u32 {
         math::bridge::inverse4(&mut mem(), out, m)

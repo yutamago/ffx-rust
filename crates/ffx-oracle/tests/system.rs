@@ -21442,3 +21442,81 @@ fn round37_seq_prim_layout_matches_the_original_on_the_snapshot() {
     };
     round37_seq_prim_layout(&mut a, &mut b, &mut Xorshift(0x4037_0032));
 }
+
+/// Round 37 group D: `fix_mappic` over every map number around the valid
+/// range, the player's position random, near and between the two
+/// pictures' points.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn round37_fix_mappic(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let pos = a.rebase(save::bridge::PLAYER_POSITION);
+    let points = [
+        [-443.13, 159.49, 658.23],
+        [-10.62, 13.39, 241.57],
+        [1301.0, -85.0, -1365.0],
+        [1620.0, -85.0, -1707.5],
+        [63.75, -117.39, -130.37],
+        [1.93, -155.28, -34.8],
+        [-13.93, -0.83, 156.05],
+        [13.86, 0.0, 1058.92],
+        [-63.35, -459.72, 105.54],
+        [153.26, -75.89, -972.12],
+        [-41.59, -1.0, -132.01],
+        [3.71, -20.88, -743.03],
+        [32.05, 95.34, 1249.66],
+        [34.7, 8.87, 261.22],
+        [0.0, 0.0, 0.0],
+    ];
+    for k in 0..12000u32 {
+        let map = match k % 3 {
+            0 => k / 3 % 0x170,
+            1 => [
+                0u32,
+                0x15c,
+                0x15d,
+                u32::MAX,
+                0xd8,
+                0x1f,
+                0x101,
+                0x11c,
+                0x81,
+                0x15c,
+                0xf4,
+                0xf5,
+                0xf6,
+                0xf7,
+            ][(rng.next() % 14) as usize],
+            _ => rng.next(),
+        };
+        for j in 0..3u32 {
+            let base = points[(rng.next() % points.len() as u32) as usize][j as usize];
+            let v = match rng.next() % 4 {
+                0 => f32::from_bits(rng.next() & 0x7f7f_ffff | (rng.next() & 0x8000_0000)),
+                1 => base,
+                _ => base + ((rng.next() % 4000) as f32 - 2000.0) / 3.0,
+            };
+            put(a, b, pos + 4 * j, v);
+        }
+        let want = eax(a, 0x006e_f6f0, &[map]);
+        assert_eq!(
+            want,
+            save::bridge::fix_mappic(b, map),
+            "fix_mappic {k} map {map:#x}"
+        );
+    }
+}
+
+#[test]
+fn round37_fix_mappic_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round37_fix_mappic(&mut a, &mut b, &mut Xorshift(0x4037_0041));
+}
+
+#[test]
+fn round37_fix_mappic_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round37_fix_mappic(&mut a, &mut b, &mut Xorshift(0x4037_0042));
+}
