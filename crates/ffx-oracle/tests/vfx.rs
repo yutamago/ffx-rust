@@ -13404,3 +13404,119 @@ fn opus_osu_set_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round29a_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_2140);
+        // op_error recorded (op_token's comment error); set_ptr32 recorded
+        deref_recorder(&mut p, 0x007e_1450, &[0, 0]);
+        deref_recorder(&mut p, 0x00a4_4700, &[0]);
+        let class = p.sym(op::bridge::CHAR_CLASS.sym);
+        let (src, out, pos) = (p.alloc(0x100), p.alloc(0x100), p.alloc(4));
+        let chars = [
+            b'a', b'b', b'1', b' ', b'"', b'(', b')', b',', b';', 0x82, 0xe0, b'\t',
+        ];
+        let host = p.alloc(0x400);
+        let parts = p.alloc(0x2300) + 0x100;
+        let (list, src_unit, cmd) = (p.alloc(0x40), p.alloc(0x100), p.alloc(0x10));
+        let r0 = p.sym(0x00c8_f508);
+        for round in 0..4000 {
+            // 0x007e2140: words, spaces, parentheses (class 6), a comma
+            // that ends it (class 8); bytes from 0x80 index the table
+            // backwards, so keep the 0x80 bytes before it plausible too
+            if round % 50 == 0 {
+                for c in 0..256u32 {
+                    let k = match u8::try_from(c).unwrap() {
+                        b'a' | b'b' | b'1' => 1,
+                        0x82 | 0xe0 => rng.pick(&[1u8, 2]),
+                        b'"' => 3,
+                        b' ' | b'\t' => 5,
+                        b'(' | b')' => 6,
+                        b',' => rng.pick(&[8u8, 6]),
+                        b';' => 7,
+                        0 => 0,
+                        _ => u8::try_from(rng.below(10)).unwrap(),
+                    };
+                    p.set(class + c, k);
+                }
+                p.fill(class - 0x80, 0x80, &mut rng);
+                for i in 0..0x80u32 {
+                    let k = rng.pick(&[0u8, 1, 5]);
+                    p.set(class - 0x80 + i, k);
+                }
+            }
+            // a line as the callers read it: `eol` bytes, then a
+            // terminator; `max` above it
+            let eol = 1 + rng.below(0xc0);
+            for i in 0..eol {
+                let c = rng.pick(&chars);
+                p.set(src + i, c);
+            }
+            p.set(src + eol, 0u8);
+            p.fill(out, 0x100, &mut rng);
+            p.set(out, 0u8);
+            p.set(pos, rng.below(eol));
+            p.put(op::bridge::COMMENT_DEPTH, 0u32);
+            p.put(op::bridge::IN_COMMENT, 0u32);
+            let max = 0x100;
+            p.check(
+                &format!("0x007e2140 round {round}"),
+                0x007e_2140,
+                &[src, out, pos, max, eol],
+                |o| {
+                    Some(op::bridge::op_token_expr(
+                        o,
+                        src,
+                        out,
+                        pos,
+                        max,
+                        eol,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // 0x0080ae30: the host's set at +0x300, list from +0x21a
+            p.fill(host, 0x400, &mut rng);
+            p.set(host + 0x212, rng.pick(&[0u16, 0, 0, 1, 2, 0x100]));
+            p.set(host + 0x220, src_unit);
+            p.fill(src_unit, 0x100, &mut rng);
+            p.fill(list, 0x40, &mut rng);
+            for i in 0..0x20u32 {
+                let x: i16 = if rng.chance(8) {
+                    -1
+                } else {
+                    i16::try_from(rng.below(0x100)).unwrap()
+                };
+                p.set(list + 2 * i, x);
+            }
+            let k = rng.below(4);
+            p.set(
+                host + 0x21a,
+                u16::try_from(k << 12 | rng.below(0x1000)).unwrap()
+                    | rng.pick(&[0u16, 0x4000, 0x8000, 0xc000]),
+            );
+            for kk in 0..4 {
+                p.set(host + 0x310 + 4 * kk, list);
+            }
+            p.fill(parts - 0x100, 0x2300, &mut rng);
+            for i in 0..0x21u32 {
+                let w = if rng.chance(6) { 0 } else { rng.next() | 1 };
+                p.set(parts + 0x100 * i, w);
+            }
+            p.set(host + 0x320, parts);
+            p.set(host + 0x334, rng.pick(&[0u16, 1, 2, 9, 0x20, 0x21]));
+            let serial = rng.pick(&[0u16, 0x7fff, 0xffef, 0xffff]);
+            p.set(host + 0x302, serial);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(r0, 16, &mut rng);
+            p.check(
+                &format!("0x0080ae30 round {round}"),
+                0x0080_ae30,
+                &[host, cmd],
+                |m| Some(opus::bridge::opu_osu_load(m, host, cmd, &mut call_original)),
+            );
+        }
+    }
+}

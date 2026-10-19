@@ -3748,4 +3748,88 @@ pub mod bridge {
         mem.write(pos, i);
         i32::from(ch.cast_signed()).cast_unsigned()
     }
+
+    /// Whether the C string at `a` equals the one at `b` (`strcmp == 0`).
+    fn c_str_eq(mem: &impl Mem, a: u32, b: u32) -> bool {
+        let mut k = 0u32;
+        loop {
+            let (x, y) = (
+                mem.read::<u8>(a.wrapping_add(k)),
+                mem.read::<u8>(b.wrapping_add(k)),
+            );
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            k += 1;
+        }
+    }
+
+    /// `op_token_expr_007e2140(src, out, pos, max, eol)` (`0x007e2140`):
+    /// tokens ([`op_token`]) appended to `out` while `*pos` is before
+    /// `eol` and the parentheses stay balanced: a class-1 token at the
+    /// start is read over again; class 6 `(` and `)` count the depth up
+    /// and down; class 8 ends it at depth 0 or less; a negative depth ends
+    /// it. The last token read is cut off again (`out` ends where it did
+    /// before that read), then trailing class-1 bytes are trimmed (the
+    /// class read with the byte sign-extended, as the original's `movsx`).
+    /// Returns the length kept before the trim, 0 for unbalanced `)`.
+    pub fn op_token_expr<M: Mem>(
+        mem: &mut M,
+        src: u32,
+        out: u32,
+        pos: u32,
+        max: u32,
+        eol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (open, close) = (
+            Global::<u32>::new(0x00b5_7fb8).ptr(mem).addr,
+            Global::<u32>::new(0x00b5_7fbc).ptr(mem).addr,
+        );
+        let mut depth = 0i32;
+        let mut len;
+        let mut cur = 0u32;
+        loop {
+            len = cur;
+            let at = out.wrapping_add(len);
+            let mut class = op_token(mem, src, at, pos, max.wrapping_sub(len), eol, call);
+            let mut next = true;
+            if class == 1 && len == 0 {
+                class = op_token(mem, src, out, pos, max, eol, call);
+            }
+            if class == 6 {
+                if at != 0 {
+                    if c_str_eq(mem, at, open) {
+                        depth += 1;
+                    }
+                    if c_str_eq(mem, at, close) {
+                        depth -= 1;
+                    }
+                }
+            } else if class == 8 && depth <= 0 {
+                next = false;
+            }
+            if !next || depth < 0 || mem.read::<i32>(pos) >= eol.cast_signed() {
+                break;
+            }
+            cur = op_strlen(mem, out);
+        }
+        mem.write(out.wrapping_add(len), 0u8);
+        let kept = if depth < 0 { 0 } else { len };
+        let mut n = op_strlen(mem, out);
+        let table = CHAR_CLASS.ptr(mem).addr;
+        while n > 0 {
+            let b = mem.read::<i8>(out.wrapping_add(n - 1));
+            let c: u8 = mem.read(table.wrapping_add(i32::from(b).cast_unsigned()));
+            if c != 1 {
+                break;
+            }
+            n -= 1;
+        }
+        mem.write(out.wrapping_add(n), 0u8);
+        kept
+    }
 }

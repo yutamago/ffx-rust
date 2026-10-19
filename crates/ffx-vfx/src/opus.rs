@@ -2153,8 +2153,24 @@ pub mod bridge {
         if i < 0 {
             return 0;
         }
+        osu_take(mem, set, i, src, ptr, call)
+    }
+
+    /// Unit `i` of `set` (0x100 bytes from `+0x20`, `i` sign-extended) set
+    /// up from `src` ([`opus_osu_init`], [`opus_osu_copy`]), numbered
+    /// (`+0x1a` = the set's `u16 +2`, which counts on and wraps from 0xfff0
+    /// to 0x8000) and pointed at `ptr` (`+0` = `set_ptr32(ptr)`, through
+    /// `call`); returns the unit.
+    fn osu_take<M: Mem>(
+        mem: &mut M,
+        set: u32,
+        i: i16,
+        src: u32,
+        ptr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
         let units: u32 = mem.read(set.wrapping_add(0x20));
-        let unit = units.wrapping_add(u32::from(i.cast_unsigned()) << 8);
+        let unit = units.wrapping_add((i32::from(i) << 8).cast_unsigned());
         opus_osu_init(mem, unit);
         opus_osu_copy(mem, set, unit, src);
         let serial: u16 = mem.read(set.wrapping_add(2));
@@ -2167,6 +2183,36 @@ pub mod bridge {
         let p = call(mem, g(mem, 0x00a4_4700), &[ptr]);
         mem.write(unit, p);
         unit
+    }
+
+    /// `opu_osu_load_0080ae30(host, cmd)` (`0x0080ae30`): with `u16 host
+    /// +0x212` set, `host +0` = `host` only. Otherwise a unit of the host's
+    /// set (`host + 0x300`) on index list `(i16 host +0x21a >> 12) & 3`
+    /// ([`opus_prog_on`]; its result is used unchecked, so none free gives
+    /// unit -1, 0x100 bytes before the first) is set up from the host's
+    /// unit (`+0x220`) as [`opus_osu_set`] does, pointed at `cmd + i16 cmd
+    /// +2`, and `host +0` = the unit. The original also fills a record
+    /// named `LoadedByOPU_UNIT` for `yonExtMapRegister` (list 1), a bare
+    /// `ret` in this build: left out. Returns `cmd + 4`.
+    pub fn opu_osu_load<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u16>(host.wrapping_add(0x212)) != 0 {
+            mem.write(host, host);
+            return cmd.wrapping_add(4);
+        }
+        let src: u32 = mem.read(host.wrapping_add(0x220));
+        let list = u32::from((mem.read::<i16>(host.wrapping_add(0x21a)) >> 12).cast_unsigned() & 3);
+        let set = host.wrapping_add(0x300);
+        #[allow(clippy::cast_possible_truncation)] // the u16 index in ax
+        let i = (opus_prog_on(mem, set, list) as u16).cast_signed();
+        let off = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let unit = osu_take(mem, set, i, src, cmd.wrapping_add(off), call);
+        mem.write(host, unit);
+        cmd.wrapping_add(4)
     }
 
     fn g(mem: &impl Mem, a: u32) -> u32 {

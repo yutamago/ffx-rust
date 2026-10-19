@@ -1985,6 +1985,14 @@ ported! {
         let _ = unused;
         opus::bridge::opus_osu_set(&mut mem(), set, src, ptr, list, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_token_expr_007e2140(src, out, pos, max, eol)`.
+    op_token_expr_007e2140 @ 0x007e_2140 => extern "C" fn op_token_expr(src: u32, out: u32, pos: u32, max: u32, eol: u32) -> u32 {
+        op::bridge::op_token_expr(&mut mem(), src, out, pos, max, eol, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_osu_load_0080ae30(host, cmd)`.
+    opu_osu_load_0080ae30 @ 0x0080_ae30 => extern "C" fn opu_osu_load(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_osu_load(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
