@@ -19094,3 +19094,58 @@ fn r13q_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_1102);
     r13q_cases(&mut t, &mut rng, 250);
 }
+
+// ---- field agent r13, group R: a nail on particles ----
+
+/// Group R (r13) on `t`: `rcbgPSimAddNail` with 0..8 particles of a
+/// system with 0..3 forces, either matrix; the allocator is the load
+/// environment's bump allocator, everything else runs as the original.
+fn r13r_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model;
+    let env = LoadEnv::install(t, rng);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (psim, ps, ids, positions) = (t.alloc(0xa0), t.alloc(0x40), t.alloc(0x20), t.alloc(0x100));
+    for _ in 0..cases {
+        env.reset(t, rng);
+        t.fill(psim, 0xa0, rng);
+        t.put(psim + 0x18, ps);
+        t.fill(ps, 0x40, rng);
+        t.put(ps + 0x24, positions);
+        t.put(ps + 0x34, 0u32);
+        t.put(ps + 0x38, 0u32);
+        for w in 0..64 {
+            t.put(positions + 4 * w, r6b_fine(rng, -100.0, 100.0));
+        }
+        let n = rng.below(9);
+        for i in 0..8 {
+            t.put(ids + 4 * i, rng.below(16));
+        }
+        let a = [psim, rng.below(2), ids, n];
+        let work = t.stack_scratch(0x100);
+        let vf = t.b.rebase(0x00c8_f974);
+        t.same_but(
+            "rcbgPSimAddNail",
+            &[(vf, 12)],
+            |o| o.void(0x0091_f850, &a),
+            |m| model::bridge::rcbg_psim_add_nail(m, a, work, call),
+        );
+    }
+}
+
+/// Group R (r13) on the image.
+#[test]
+fn r13r_psim_add_nail_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_2101);
+    r13r_cases(&mut t, &mut rng, 300);
+}
+
+/// Group R (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13r_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_2102);
+    r13r_cases(&mut t, &mut rng, 150);
+}

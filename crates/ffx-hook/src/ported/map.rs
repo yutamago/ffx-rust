@@ -3175,6 +3175,11 @@ ported! {
     rcbgPSimAddGravity @ 0x0091_f7c0 => extern "C" fn shim_rcbg_psim_add_gravity(psim: u32, g: u32) {
         model::bridge::rcbg_psim_add_gravity(&mut mem(), psim, g, &mut |_, f, a| call_cdecl(f, a));
     }
+    /// `rcbgPSimAddNail(psim, alt, ids, n)`: the centre in a frame.
+    rcbgPSimAddNail @ 0x0091_f850 => extern "C" fn shim_rcbg_psim_add_nail(psim: u32, alt: u32, ids: u32, n: u32) {
+        let mut w = super::StackFrame::<4>::new();
+        model::bridge::rcbg_psim_add_nail(&mut mem(), [psim, alt, ids, n], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `rcbgPalProc(pal)`.
     rcbgPalProc @ 0x0092_9b60 => extern "C" fn shim_rcbg_pal_proc(pal: u32) {
         model::bridge::rcbg_pal_proc(&mut mem(), pal);

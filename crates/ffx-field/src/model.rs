@@ -3641,6 +3641,71 @@ pub mod bridge {
         rcfx_particle_add_force(mem, ps, f, call);
     }
 
+    /// `rcVu0Add(out, a, b)`, `rcbgScaleVector_0091f6b0(out, v, s)`,
+    /// `rcVu0Sub(out, a, b)` and `rcCopyQword_0091f710(dst, src)`:
+    /// [`rcbg_psim_add_nail`]'s helpers.
+    pub const ADD_NAIL_HELPERS: [u32; 4] = [0x0091_f650, 0x0091_f6b0, 0x0091_f740, 0x0091_f710];
+
+    /// `rcbgPSimAddNail(psim, alt, ids, n)` (`0x0091f850`): a nail
+    /// (`rcfxNailNew`, `n` points: [`rcfx_nail_set_cnt`]) on `n` particles
+    /// (`ids`, `i32`s) of the simulation's system (`+0x18`, positions
+    /// `+0x24`): their centre (the sum through `rcVu0Add` scaled by
+    /// `f32(1 / f32(n))`, in `work`) is taken from each position, which is
+    /// copied as the nail's base point (`+0x24`); the ids are copied to
+    /// `+0x20`; the nail's matrix (`+0x38`) is the simulation's `+0x1c`
+    /// (or `+0x5c` with `alt`) set to a unit matrix moved to the centre.
+    /// The nail is added to the system ([`rcfx_particle_add_force`]).
+    pub fn rcbg_psim_add_nail<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [psim, alt, ids, n]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) {
+        let [add, scale, sub, copy] = ADD_NAIL_HELPERS.map(|f| mem.rebase(f));
+        let nail = rcfx_nail_new(mem, call);
+        let centre = work;
+        mem.write(centre, [0u32; 4]);
+        let sys = mem.read::<u32>(psim.wrapping_add(0x18));
+        let positions = mem.read::<u32>(sys.wrapping_add(0x24));
+        let count = n.cast_signed().max(0).cast_unsigned();
+        let particle = |mem: &M, i: u32| {
+            let id = mem.read::<u32>(ids.wrapping_add(4 * i));
+            positions.wrapping_add(id.wrapping_shl(4))
+        };
+        for i in 0..count {
+            let p = particle(mem, i);
+            call(mem, add, &[centre, centre, p]);
+        }
+        let k = crate::x87::load(crate::x87::store(f64::from(n.cast_signed())));
+        let s = crate::x87::store(1.0 / k);
+        call(mem, scale, &[centre, centre, s]);
+        rcfx_nail_set_cnt(mem, nail, n, call);
+        let mut base = mem.read::<u32>(nail.wrapping_add(0x24));
+        for i in 0..count {
+            let p = particle(mem, i);
+            call(mem, sub, &[p, p, centre]);
+            let p = particle(mem, i);
+            call(mem, copy, &[base, p]);
+            base = base.wrapping_add(0x10);
+        }
+        let to = mem.read::<u32>(nail.wrapping_add(0x20));
+        for b in 0..count * 4 {
+            let v = mem.read::<u8>(ids.wrapping_add(b));
+            mem.write(to.wrapping_add(b), v);
+        }
+        let m = psim.wrapping_add(if alt == 0 { 0x1c } else { 0x5c });
+        mem.write(nail.wrapping_add(0x38), m);
+        let unit = mem.rebase(super::fpm097::UNIT_MATRIX);
+        call(mem, unit, &[m]);
+        for i in 0..3u32 {
+            let v = crate::x87::copy(mem.read::<u32>(centre + 4 * i));
+            let m = mem.read::<u32>(nail.wrapping_add(0x38));
+            mem.write(m.wrapping_add(0x30 + 4 * i), v);
+        }
+        let sys = mem.read::<u32>(psim.wrapping_add(0x18));
+        rcfx_particle_add_force(mem, sys, nail, call);
+    }
+
     /// `rcbgPSimAddGravity(psim, g)` (`0x0091f7c0`): `g` replaced by the
     /// debug gravity (0, 1, -0.1, 0; two `rcPrint` messages, no-ops), a
     /// gravity force with it (`rcfxGravityNew`, `+0x1c`) added to the
