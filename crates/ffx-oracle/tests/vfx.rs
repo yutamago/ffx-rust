@@ -14192,3 +14192,87 @@ fn round29g_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::many_single_char_names)]
+fn round29h_helpers_match_the_original() {
+    use ffx_vfx::mat::Axis;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_99d0);
+        // FFXSamp0ViewScreenMatrix, set_ptr32 recorded; get_ptr32 a cell
+        let got = p.alloc(4);
+        for (sym, words, ret) in [
+            (0x0093_d960u32, &[0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0][..], None),
+            (0x00a4_4700, &[0], None),
+            (0x00a4_4650, &[0], Some(got)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let (m, src, ang, t) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (v, rec) = (p.alloc(0x10), p.alloc(0x40));
+        for round in 0..2000 {
+            for at in [src, ang, t] {
+                for i in 0..4 {
+                    let x = finite(&mut rng);
+                    p.set(at + 4 * i, x);
+                }
+            }
+            for i in 4..16 {
+                let x = finite(&mut rng);
+                p.set(src + 4 * i, x);
+            }
+            p.fill(m, 0x40, &mut rng);
+            let to = rng.pick(&[m, src]);
+            let (name, sym, order) = rng.pick(&[
+                ("op_rt_m_xzy", 0x007e_99d0u32, [Axis::X, Axis::Z, Axis::Y]),
+                ("op_rt_m_yzx", 0x007e_9a90, [Axis::Y, Axis::Z, Axis::X]),
+            ]);
+            p.check(
+                &format!("{name} round {round}"),
+                sym,
+                &[to, src, ang, t],
+                |o| Some(op::bridge::op_rt_m_order(o, to, src, ang, t, order)),
+            );
+            let x = rng.pick(&[0u32, 1, 0x7fff_ffff, 0x8000_0000, 0x0100_0001]);
+            let y = rng.next();
+            p.set(v, x);
+            p.set(v + 4, y);
+            let (sym, k_at) =
+                rng.pick(&[(0x007e_cc40u32, 0x00b5_0190u32), (0x007e_cca0, 0x00b9_21e0)]);
+            p.check(&format!("{sym:#x} round {round}"), sym, &[v, v], |o| {
+                op::bridge::op_ivec2_scale(o, v, k_at);
+                None
+            });
+            p.fill(p.sym(0x0113_fd50), 0x40, &mut rng);
+            p.check(
+                &format!("0x007ec990 round {round}"),
+                0x007e_c990,
+                &[],
+                |o| {
+                    op::bridge::op_view_screen_set(o, &mut call_original);
+                    None
+                },
+            );
+            p.fill(rec, 0x40, &mut rng);
+            let any = rng.next();
+            p.set(got, any);
+            let (n, a, b) = (rng.below(0x100), rng.next(), rng.next());
+            p.check(
+                &format!("0x00813950 round {round}"),
+                0x0081_3950,
+                &[rec, n, a, b],
+                |o| {
+                    Some(opus::bridge::opus_mdc_rec_init(
+                        o,
+                        rec,
+                        n,
+                        a,
+                        b,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}

@@ -2139,6 +2139,32 @@ ported! {
         let _ = unused;
         op::bridge::op_anm_tex0_set(&mut mem(), a, b, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_rt_m_xzy(m, src, angles, t)`.
+    op_rt_m_xzy @ 0x007e_99d0 => extern "C" fn op_rt_m_xzy(m: u32, src: u32, angles: u32, t: u32) -> u32 {
+        op::bridge::op_rt_m_order(&mut mem(), m, src, angles, t, [mat::Axis::X, mat::Axis::Z, mat::Axis::Y])
+    }
+    /// `op_rt_m_yzx(m, src, angles, t)`.
+    op_rt_m_yzx @ 0x007e_9a90 => extern "C" fn op_rt_m_yzx(m: u32, src: u32, angles: u32, t: u32) -> u32 {
+        op::bridge::op_rt_m_order(&mut mem(), m, src, angles, t, [mat::Axis::Y, mat::Axis::Z, mat::Axis::X])
+    }
+    /// `op_ivec2_scale_007ecc40(_, v)`.
+    op_ivec2_scale_007ecc40 @ 0x007e_cc40 => extern "C" fn op_ivec2_scale(unused: u32, v: u32) {
+        let _ = unused;
+        op::bridge::op_ivec2_scale(&mut mem(), v, 0x00b5_0190);
+    }
+    /// `op_ivec2_scale_007ecca0(_, v)`.
+    op_ivec2_scale_007ecca0 @ 0x007e_cca0 => extern "C" fn op_ivec2_scale_2(unused: u32, v: u32) {
+        let _ = unused;
+        op::bridge::op_ivec2_scale(&mut mem(), v, 0x00b9_21e0);
+    }
+    /// `op_view_screen_set_007ec990()`.
+    op_view_screen_set_007ec990 @ 0x007e_c990 => extern "C" fn op_view_screen_set() {
+        op::bridge::op_view_screen_set(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_mdc_rec_init_00813950(rec, n, a, b)`.
+    opus_mdc_rec_init_00813950 @ 0x0081_3950 => extern "C" fn opus_mdc_rec_init(rec: u32, n: u32, a: u32, b: u32) -> u32 {
+        opus::bridge::opus_mdc_rec_init(&mut mem(), rec, n, a, b, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

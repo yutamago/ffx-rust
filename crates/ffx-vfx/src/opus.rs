@@ -2284,6 +2284,30 @@ pub mod bridge {
         }
     }
 
+    /// `opus_mdc_rec_init_00813950(rec, n, a, b)` (`0x00813950`): a record
+    /// head: `u16 +0` 0, `+2` `n`, `+4` `a`, `+6` `b`, `+8` 0; `+0x18` =
+    /// `set_ptr32(rec + 0x20)`, `+0x1c` = `set_ptr32(get_ptr32(+0x18) + 32
+    /// n)` (through `call`). Returns the last `set_ptr32`'s eax.
+    pub fn opus_mdc_rec_init<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        n: u32,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 stores
+        let head = [0u16, n as u16, a as u16, b as u16, 0];
+        mem.write(rec, head);
+        let set = g(mem, 0x00a4_4700);
+        let first = call(mem, set, &[rec.wrapping_add(0x20)]);
+        mem.write(rec.wrapping_add(0x18), first);
+        let p = call(mem, g(mem, 0x00a4_4650), &[first]);
+        let end = call(mem, set, &[p.wrapping_add(n << 5)]);
+        mem.write(rec.wrapping_add(0x1c), end);
+        end
+    }
+
     /// `opus_copy_buffer_event_00808a60()` (`0x00808a60`): in the two
     /// magic files 0x11b and 0x1a6 (`MagicFile_GetMagicId`), a copy-buffer
     /// event (`graphicVFXAddCopyBufferEventWithClearRGB(0, 1)`), through

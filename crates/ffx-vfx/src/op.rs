@@ -342,6 +342,79 @@ pub mod bridge {
         t
     }
 
+    /// `op_rt_m_xzy(m, src, angles, t)` (`0x007e99d0`) and
+    /// `op_rt_m_yzx` (`0x007e9a90`): [`op_rt_m_xyz`] with the turns in
+    /// those orders.
+    pub fn op_rt_m_order(
+        mem: &mut impl Mem,
+        m: u32,
+        src: u32,
+        angles: u32,
+        t: u32,
+        order: [crate::mat::Axis; 3],
+    ) -> u32 {
+        use crate::mat::Axis;
+        for (k, axis) in order.into_iter().enumerate() {
+            let at = match axis {
+                Axis::X => 0u32,
+                Axis::Y => 4,
+                Axis::Z => 8,
+            };
+            let a: u32 = mem.read(angles.wrapping_add(at));
+            let from = if k == 0 { src } else { m };
+            op_rt_m(mem, m, from, f32::from_bits(x87::load(a)), axis);
+        }
+        for k in 0..3u32 {
+            let v = x87::add(
+                mem.read(t.wrapping_add(4 * k)),
+                mem.read(m.wrapping_add(0x30 + 4 * k)),
+            );
+            mem.write(m.wrapping_add(0x30 + 4 * k), v);
+        }
+        t
+    }
+
+    /// `op_ivec2_scale_007ecc40(_, v)` (`0x007ecc40`, `k` the `f64` at
+    /// `0x00b50190`) and `0x007ecca0` (`k` at `0x00b921e0`): `v`'s first
+    /// two words, read as `i32` (both before either is written), become
+    /// `f32(x) * k` and `f32(y) * k` (each `i32` rounded to `f32` first).
+    pub fn op_ivec2_scale(mem: &mut impl Mem, v: u32, k_at: u32) {
+        use ffx_bridge::x87::{mul, store};
+        let k: f64 = mem.read(Global::<u32>::new(k_at).ptr(mem).addr);
+        let [x, y]: [i32; 2] = mem.read(v);
+        #[allow(clippy::cast_precision_loss)] // fild, fstp m32
+        let (fx, fy) = (x as f32, y as f32);
+        mem.write(v, store(mul(f64::from(fx), k)));
+        mem.write(v.wrapping_add(4), store(mul(k, f64::from(fy))));
+    }
+
+    /// `op_view_screen_set_007ec990()` (`0x007ec990`): the op layer's view
+    /// screen matrix (`0x0113fd50`) from `FFXSamp0ViewScreenMatrix` with
+    /// the constants at `0x00b41d9c`, `0x00b34254`, `0x00b582fc`,
+    /// `0x00b51a20` (twice), 1.0, `0x00b51a24`, 1.0 and `0x00b43ddc`
+    /// (through `call`).
+    pub fn op_view_screen_set<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let c = |mem: &M, a: u32| x87::load(mem.read(g(mem, a)));
+        let one = 1.0f32.to_bits();
+        let args = [
+            g(mem, 0x0113_fd50),
+            c(mem, 0x00b4_1d9c),
+            c(mem, 0x00b3_4254),
+            c(mem, 0x00b5_82fc),
+            c(mem, 0x00b5_1a20),
+            c(mem, 0x00b5_1a20),
+            one,
+            c(mem, 0x00b5_1a24),
+            one,
+            c(mem, 0x00b4_3ddc),
+        ];
+        call(mem, g(mem, 0x0093_d960), &args);
+    }
+
     /// `op_func_before_ot_free(slot)` (`0x007eb350`): list 0.
     pub fn op_func_before_ot_free(mem: &mut impl Mem, slot: u32) {
         op_func_ot_free(mem, slot, 0);
