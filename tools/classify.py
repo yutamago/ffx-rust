@@ -275,6 +275,16 @@ REVIEWED = {
     0x00778550: ("platform", "hd_file_read_ex_th_main: PC loader-thread request handshake (system round 35)"),
     0x0076db40: ("dead", "file_offset_get: only caller gated by read-only .rdata byte 0x00b5ec4f == 0 (it is 1); sceCdSearchFile stub always 0 (system round 35)"),
     0x0081f210: ("dead", "SqsStraightStreamingDataSend: only caller is thunk 0x885ed0, whose only caller 0x77a8e0 is never reached (field round 13)"),
+    0x006c06e0: ("glue", "VfxShaderManager lookup (effects round 29)"),
+    0x00715dc0: ("glue", "graphicVFXCreate (effects round 29)"),
+    0x00717620: ("glue", "updateGuildMapRenderData (effects round 29)"),
+    0x00639390: ("glue", "C++ thiscall wrapper (effects round 29)"),
+    0x007f7360: ("glue", "opus_0706_acc_draw: sizes and mallocs a BrokenScreenEffect buffer (effects round 29)"),
+    0x006a1a70: ("platform", "std::map erase (effects round 29)"),
+    0x007e2ed0: ("platform", "op_file_read: sceOpen/Lseek/Read file IO (effects round 29)"),
+    0x006e96c0: ("platform", "InitIggyHelper: Iggy UI (field round 14)"),
+    0x006e93f0: ("platform", "IggyPlayerOpen: Iggy UI (field round 14)"),
+    0x006e9250: ("platform", "IggyPlayerOpenScaled: Iggy UI (field round 14)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

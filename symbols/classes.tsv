@@ -730,7 +730,7 @@
 0x00634610	platform	platform name (PC port: input, saves, loaders, app lifecycle): AssetListReader_dtor_AssetListReader
 0x00634700	dead	unreachable from the entry point and every pointer table
 0x00634790	glue	only called from glue code (graphicFinalize)
-0x00634830	logic	default (no rule: ported to be safe)
+0x00634830	platform	destructor only exception unwinding reaches
 0x00634850	glue	calls PhyreEngine Phyre_PCluster_dtor_PCluster
 0x00637440	dead	unreachable from the entry point and every pointer table
 0x00637490	dead	unreachable from the entry point and every pointer table
@@ -842,7 +842,7 @@
 0x00639360	glue	reviewed: forwarder (PC2 render/pc-ui round 1)
 0x00639370	glue	reviewed: forwarder (PC2 render/pc-ui round 1)
 0x00639380	logic	default (no rule: ported to be safe)
-0x00639390	logic	default (no rule: ported to be safe)
+0x00639390	glue	reviewed: C++ thiscall wrapper (effects round 29)
 0x006393a0	glue	thin wrapper: only forwards to glue code (BrokenScreenEffect_GetInstance)
 0x006393c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_BufferSize
 0x00639410	dead	unreachable from the entry point and every pointer table
@@ -2935,7 +2935,7 @@
 0x006a1660	glue	only called from glue code (0x69f580)
 0x006a1720	glue	only called from glue code (0x6a1660 and 1 more)
 0x006a19d0	logic	default (no rule: ported to be safe)
-0x006a1a70	logic	default (no rule: ported to be safe)
+0x006a1a70	platform	reviewed: std::map erase (effects round 29)
 0x006a1cd0	dead	unreachable from the entry point and every pointer table
 0x006a1d10	glue	only called from glue code (graphicCharacterUnloadTask)
 0x006a1d90	dead	unreachable from the entry point and every pointer table
@@ -3375,7 +3375,7 @@
 0x006c0630	dead	unreachable from the entry point and every pointer table
 0x006c0650	dead	unreachable from the entry point and every pointer table
 0x006c0670	dead	unreachable from the entry point and every pointer table
-0x006c06e0	logic	default (no rule: ported to be safe)
+0x006c06e0	glue	reviewed: VfxShaderManager lookup (effects round 29)
 0x006c07e0	dead	unreachable from the entry point and every pointer table
 0x006c0810	glue	only called from glue code (VfxShaderManager_loadShader and 1 more)
 0x006c0890	dead	unreachable from the entry point and every pointer table
@@ -3970,12 +3970,23 @@
 0x006e7d30	platform	only called from platform code (0x6e77d0)
 0x006e7f00	glue	calls PhyreEngine Phyre_PRendering_PRendererBase_renderMeshInstance, Phyre_PRendering_PRenderer_beginScene, Phyre_PRendering_PRenderer_endScene
 0x006e8020	glue	only called from glue code (PhyFMVPlayerManager_initialize)
-0x006e9250	logic	default (no rule: ported to be safe)
-0x006e93f0	logic	default (no rule: ported to be safe)
+0x006e90e0	dead	unreachable from the entry point and every pointer table
+0x006e90f0	dead	unreachable from the entry point and every pointer table
+0x006e9100	dead	unreachable from the entry point and every pointer table
+0x006e9110	dead	unreachable from the entry point and every pointer table
+0x006e9120	dead	unreachable from the entry point and every pointer table
+0x006e9130	dead	unreachable from the entry point and every pointer table
+0x006e9140	dead	unreachable from the entry point and every pointer table
+0x006e9180	dead	unreachable from the entry point and every pointer table
+0x006e91d0	dead	unreachable from the entry point and every pointer table
+0x006e91e0	dead	unreachable from the entry point and every pointer table
+0x006e91f0	platform	only called from platform code (0x6e8c80 and 1 more)
+0x006e9250	platform	reviewed: IggyPlayerOpenScaled: Iggy UI (field round 14)
+0x006e93f0	platform	reviewed: IggyPlayerOpen: Iggy UI (field round 14)
 0x006e9510	glue	calls Iggy _IggyPlayerCallbackResultPath@4, _IggyValueSetStringUTF8RS@20
 0x006e9570	logic	default (no rule: ported to be safe)
-0x006e9590	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete, security_check_cookie, std_Tree_lower_bound_string_006e9920)
-0x006e96c0	logic	default (no rule: ported to be safe)
+0x006e9590	glue	only called from glue code (IggyPlayerOpenScaled_006e9250 and 1 more)
+0x006e96c0	platform	reviewed: InitIggyHelper: Iggy UI (field round 14)
 0x006e9700	platform	only called from platform code (0x6e9870 and 1 more)
 0x006eb950	platform	only called from platform code (0x6ec5c0)
 0x006ebb40	dead	unreachable from the entry point and every pointer table
@@ -5069,7 +5080,7 @@
 0x00715810	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): createVFXRenderDataBufferShp_OShapeVu1
 0x00715a40	glue	reviewed: PC renderer frame-buffer data creator (graphicVFXCreate) (effects round 28)
 0x00715af0	logic	default (no rule: ported to be safe)
-0x00715dc0	logic	default (no rule: ported to be safe)
+0x00715dc0	glue	reviewed: graphicVFXCreate (effects round 29)
 0x00716050	glue	reviewed: PC renderer frame-buffer data creator (graphicVFXCreate) (effects round 28)
 0x00716110	logic	default (no rule: ported to be safe)
 0x007161f0	glue	only called from glue code (JobSchedule_pppPart_fillBuffer_drawMdl)
@@ -5096,7 +5107,7 @@
 0x007175f0	logic	default (no rule: ported to be safe)
 0x00717600	logic	default (no rule: ported to be safe)
 0x00717610	logic	default (no rule: ported to be safe)
-0x00717620	logic	default (no rule: ported to be safe)
+0x00717620	glue	reviewed: updateGuildMapRenderData (effects round 29)
 0x00717ba0	dead	unreachable from the entry point and every pointer table
 0x007185e0	glue	thin wrapper: only forwards to glue code (graphicTextureVideoPlay, graphicVFXGetRenderDataByInstance)
 0x00718610	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): updateVFXRenderData
@@ -8713,7 +8724,7 @@
 0x007e2d90	debug	only called from debug code (0x7e1010)
 0x007e2e30	logic	default (no rule: ported to be safe)
 0x007e2e80	dead	unreachable from the entry point and every pointer table
-0x007e2ed0	logic	default (no rule: ported to be safe)
+0x007e2ed0	platform	reviewed: op_file_read: sceOpen/Lseek/Read file IO (effects round 29)
 0x007e2f70	dead	unreachable from the entry point and every pointer table
 0x007e2fb0	logic	default (no rule: ported to be safe)
 0x007e3040	dead	unreachable from the entry point and every pointer table
@@ -8948,7 +8959,7 @@
 0x007f60b0	logic	default (no rule: ported to be safe)
 0x007f65d0	logic	default (no rule: ported to be safe)
 0x007f67c0	logic	default (no rule: ported to be safe)
-0x007f7360	logic	default (no rule: ported to be safe)
+0x007f7360	glue	reviewed: opus_0706_acc_draw: sizes and mallocs a BrokenScreenEffect buffer (effects round 29)
 0x007f73d0	logic	default (no rule: ported to be safe)
 0x007f7e30	logic	default (no rule: ported to be safe)
 0x007f81e0	logic	default (no rule: ported to be safe)
@@ -9110,7 +9121,7 @@
 0x007fff30	logic	default (no rule: ported to be safe)
 0x007fff80	logic	default (no rule: ported to be safe)
 0x007fffa0	logic	default (no rule: ported to be safe)
-0x00800030	logic	default (no rule: ported to be safe)
+0x00800030	debug	only called from debug code (0x844490 and 1 more)
 0x008000f0	logic	default (no rule: ported to be safe)
 0x00800170	logic	default (no rule: ported to be safe)
 0x008002c0	logic	default (no rule: ported to be safe)
@@ -9455,7 +9466,7 @@
 0x0081ca60	logic	default (no rule: ported to be safe)
 0x0081cbd0	logic	default (no rule: ported to be safe)
 0x0081cc20	logic	default (no rule: ported to be safe)
-0x0081cc70	logic	default (no rule: ported to be safe)
+0x0081cc70	dead	unreachable from the entry point and every pointer table
 0x0081ce70	logic	default (no rule: ported to be safe)
 0x0081cef0	logic	default (no rule: ported to be safe)
 0x0081cf40	logic	default (no rule: ported to be safe)
@@ -9553,8 +9564,8 @@
 0x0081f550	dead	unreachable from the entry point and every pointer table
 0x0081f6c0	logic	default (no rule: ported to be safe)
 0x0081f770	logic	default (no rule: ported to be safe)
-0x0081f800	logic	default (no rule: ported to be safe)
-0x0081f880	logic	default (no rule: ported to be safe)
+0x0081f800	dead	unreachable from the entry point and every pointer table
+0x0081f880	dead	unreachable from the entry point and every pointer table
 0x0081f900	dead	unreachable from the entry point and every pointer table
 0x0081f980	dead	unreachable from the entry point and every pointer table
 0x0081fa10	dead	unreachable from the entry point and every pointer table
@@ -10254,7 +10265,7 @@
 0x0083b140	dead	unreachable from the entry point and every pointer table
 0x0083b1d0	platform	reviewed: Sg_PcRead: file read (main round 8)
 0x0083b310	debug	reviewed: Shift-JIS to JIS conversion reached only from Sg_Assert (main round 13)
-0x0083b380	logic	default (no rule: ported to be safe)
+0x0083b380	dead	unreachable from the entry point and every pointer table
 0x0083b420	logic	default (no rule: ported to be safe)
 0x0083b460	logic	default (no rule: ported to be safe)
 0x0083b5f0	logic	default (no rule: ported to be safe)
@@ -12632,7 +12643,7 @@
 0x00887bd0	logic	default (no rule: ported to be safe)
 0x00887c20	logic	default (no rule: ported to be safe)
 0x00887c40	logic	default (no rule: ported to be safe)
-0x00887c50	logic	debug-sounding name, but used by logic: 0x91a8c0, AtelSetEventJump, AtelSetEventJump2
+0x00887c50	logic	debug-sounding name, but used by logic: AtelSetEventJump, AtelSetEventJump2, MsBattleDraw
 0x00887c60	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceGsSetDefDrawEnv2
 0x00887c70	debug	only called from debug code (Ms_Gui_BattleConsoleProc)
 0x00887c80	dead	unreachable from the entry point and every pointer table
@@ -15562,7 +15573,7 @@
 0x00925850	logic	default (no rule: ported to be safe)
 0x00925870	logic	default (no rule: ported to be safe)
 0x009258a0	platform	thin wrapper: only forwards to platform code (user_malloc)
-0x009258b0	logic	default (no rule: ported to be safe)
+0x009258b0	platform	thin wrapper: only forwards to platform code (user_malloc)
 0x009258f0	logic	default (no rule: ported to be safe)
 0x00925950	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x009259c0	logic	default (no rule: ported to be safe)
@@ -16099,7 +16110,7 @@
 0x0093d3d0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d440	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d490	dead	unreachable from the entry point and every pointer table
-0x0093d550	debug	only calls debug code (rcuiRotateX, rcuiRotateY, rcuiRotateZ)
+0x0093d550	debug	debug name: rcuiRotateZYX_0093d550
 0x0093d5a0	debug	debug name: rcuiRotateX
 0x0093d620	debug	debug name: rcuiRotateY
 0x0093d690	debug	debug name: rcuiRotateZ
@@ -16308,7 +16319,7 @@
 0x00946a10	dead	unreachable from the entry point and every pointer table
 0x00946b20	platform	imports EnterCriticalSection, InitializeCriticalSection, LeaveCriticalSection
 0x00946c40	platform	imports EnterCriticalSection
-0x00946cc0	platform	imports LeaveCriticalSection
+0x00946cc0	dead	unreachable from the entry point and every pointer table
 0x00946d30	dead	unreachable from the entry point and every pointer table
 0x00946d50	dead	unreachable from the entry point and every pointer table
 0x00946d70	dead	unreachable from the entry point and every pointer table
