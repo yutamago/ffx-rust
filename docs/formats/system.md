@@ -1608,3 +1608,27 @@ pushed as literals (no relocation entries), not addresses.
   cursor 0x1d6 at `ftol(x + left + 8)`, `y` and the target frame 0x190
   (UVs by character below 0x14 or monster). It ends with the full-screen
   scissor and returns that call's `eax`.
+
+## Round 37
+
+- `TOMenuDrawChrLayoutPlate_008f0a70(cursor, chr, x, y)` (caller
+  `0x008c11e0`, packet cursor in, new cursor out) stores `cursor` in
+  `g_TOPktCursor` and draws a character plate placed by the menu layout
+  words `TOSeqInitParam` fills (`i16` `(y, x)` pairs at `0x025d1652`
+  MP text, `0x025d1656` MP label, `0x025d165a` HP text, `0x025d165e` HP
+  label, `0x025d1662` name; Sphere Level at `0x025d164a`/`0x025d164c`,
+  AP at `0x025d164e`/`0x025d1650`; colours `0x025d166c`/`0x025d1668`).
+  Positions are `x`/`y` plus the words, made `f32`; label sizes go
+  through the 1280x720 remaps `graphicUiRemapX`/`Y`. A party member
+  (`chr` below 8, unsigned) gets the frame (shapes 4 and 5, 142 and 40
+  wide, the second at `x + 0x8e` with colour `0x025d1668` twice, read
+  again after the first), the name (`ToMakeBtlEasyFont`, alpha
+  `MenuPlayer_DamageClass`), the HP and MP labels with `"%5d/%5d"` and
+  `"%4d/%4d"` (`TOMkpCrossEasyStrFontSClut`, colour 0x25, scale 1), the
+  gauge row of sheet 0x107 (at `x + 0x14c`, then `x + 315/295/342/438`
+  at double precision) and two `TOAdpCrossNumber_009019f0` numbers: the
+  Sphere Levels and the AP still needed (scale 1, gap -3). Any other
+  number gets the empty plate: `0x008f5e90(0xcc, 0xcd, x, y, width
+  0x025d1672, colours)`, labels 0xe9 and 0xea, the bar 0xe7 across the
+  screen and label 0x107. It returns `g_TOPktCursor` as the callees left
+  it.

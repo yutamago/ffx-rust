@@ -21008,3 +21008,119 @@ fn round36_ctb_window_matches_the_original_on_the_snapshot() {
     };
     round36_ctb_window(&mut a, &mut b, &mut Xorshift(0x4036_0052));
 }
+
+/// Round 37 group A: `TOMenuDrawChrLayoutPlate_008f0a70` over the
+/// original `graphicUiRemapX`/`Y`, every callee a logging stand-in, the
+/// layout words and colours random.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round37_layout_plate(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use chr_plate::bridge as p;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x80);
+    let text = alloc(a, b, p::LAYOUT_TEXT_BYTES as usize);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let pkt = a.rebase(0x0187_16cc);
+    // the stand-ins move the packet cursor so the result shows it
+    let mut bump = vec![0x83, 0x05];
+    bump.extend_from_slice(&pkt.to_le_bytes());
+    bump.push(0x10);
+    let stands: Vec<Stand> = vec![
+        (0x0090_3bb0, all(9), vec![], bump.clone()),
+        (0x0090_3ee0, all(11), vec![], bump.clone()),
+        (0x0090_3a10, all(3), vec![], bump.clone()),
+        (0x0090_3b70, all(7), vec![], bump.clone()),
+        (0x008f_5e90, all(7), vec![], bump.clone()),
+        (0x008a_99f0, all(3), vec![], ret_cell(cells)),
+        (0x008a_c850, all(1), vec![], ret_cell(cells + 4)),
+        (0x0090_5ab0, all(6), vec![], bump.clone()),
+        (0x008a_98c0, all(1), vec![], ret_cell(cells + 8)),
+        (0x008a_9990, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x008a_9970, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x008a_99b0, all(1), vec![], ret_cell(cells + 0x14)),
+        (0x008a_9b80, all(1), vec![], ret_cell(cells + 0x18)),
+        (0x0078_4e90, all(1), vec![], ret_cell(cells + 0x1c)),
+        (0x0078_52b0, all(1), vec![], ret_cell(cells + 0x20)),
+        (0x0090_1660, vec![1, 2, 3, 4, 5], vec![0], bump.clone()),
+        (0x0090_19f0, all(6), vec![], bump),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let k = stands.len() as u32;
+    let s = stand_in8(
+        a,
+        b,
+        0x80 * k,
+        &pick_logger(
+            cursor,
+            0x5f,
+            &[1, 2, 3],
+            &[],
+            &store_through(0, cells + 0x24),
+        ),
+    );
+    put(a, b, a.rebase(0x00b0_c3dc), s);
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4800 } else { 0x0064_47c0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let words = a.rebase(0x025d_164a);
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for j in 0..0xa {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        for j in 0..0x15 {
+            let w = match rng.next() % 4 {
+                0 => rng.next() as u16,
+                _ => (rng.next() % 400) as u16,
+            };
+            put(a, b, words + 2 * j, w);
+        }
+        let chr = [0u32, 3, 7, 8, 12, 0x20, u32::MAX, rng.next() % 0x10][(rng.next() % 8) as usize];
+        let coord = |r: &mut Xorshift| match r.next() % 5 {
+            0 => r.next(),
+            1 => 0x7fff_fff0 + r.next() % 0x20,
+            _ => (r.next() % 1200).wrapping_sub(100),
+        };
+        let (x, y) = (coord(rng), coord(rng));
+        let cur = rng.next();
+        let want = eax(a, 0x008f_0a70, &[cur, chr, x, y]);
+        let got = p::draw_layout_plate(b, [cur, chr, x, y], text, remap, call);
+        assert_eq!(want, got, "layout plate {k}");
+        let t: [u32; 8] = Mem::read(b, text);
+        Mem::write(a, text, t);
+        same_memory(&format!("layout plate {k} chr {chr:#x}"), a, b);
+    }
+}
+
+#[test]
+fn round37_layout_plate_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round37_layout_plate(&mut a, &mut b, &mut Xorshift(0x4037_0011));
+}
+
+#[test]
+fn round37_layout_plate_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round37_layout_plate(&mut a, &mut b, &mut Xorshift(0x4037_0012));
+}

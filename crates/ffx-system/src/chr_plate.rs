@@ -715,4 +715,328 @@ pub mod bridge {
         p.cross_digits(mp, 305.0, 0);
         p.eax
     }
+
+    /// `TOMkpShapeXY(shape, x, y)` and `TOMkpShapeXYWHC2(shape, x, y, w,
+    /// h, c0, c1)` (integer positions).
+    const SHAPE_XY: u32 = 0x0090_3a10;
+    const SHAPE_XYWH_C2: u32 = 0x0090_3b70;
+    /// `MenuPlayer_DamageClass(chr)`: the name's alpha on the layout plate.
+    const DAMAGE_CLASS1: u32 = 0x008a_99f0;
+    /// `ToMakeBtlEasyFont(text, x, y, alpha, scale, extra)`.
+    const BTL_EASY_FONT: u32 = 0x0090_5ab0;
+    /// `TOAdpCrossNumber_009019f0(value, x, y, colour, scale, gap)`.
+    const CROSS_NUMBER: u32 = 0x0090_19f0;
+    /// The two sprites of an empty plate (`0x008f5e90(a, b, x, y, w, c0,
+    /// c1)`).
+    const EMPTY_SPRITES: u32 = 0x008f_5e90;
+    /// The packet write cursor (`g_TOPktCursor`).
+    const PKT_CURSOR: u32 = 0x0187_16cc;
+
+    /// Words of the menu layout `TOSeqInitParam` fills
+    /// (`0x025d164a..0x025d1672`) that place the layout plate's parts.
+    mod layout {
+        /// The Sphere Level number: x (with [`AP_X`]) and y (with
+        /// [`AP_Y`]).
+        pub const LEVEL_Y: u32 = 0x025d_164a;
+        pub const LEVEL_X: u32 = 0x025d_164c;
+        /// The AP number's offsets, and the 0x107 label's on the empty
+        /// plate.
+        pub const AP_Y: u32 = 0x025d_164e;
+        pub const AP_X: u32 = 0x025d_1650;
+        /// The MP number, the MP label (0x22 / 0xea), the HP number, the
+        /// HP label (0x21 / 0xe9) and the name: `(y, x)` pairs.
+        pub const MP_TEXT: u32 = 0x025d_1652;
+        pub const MP_LABEL: u32 = 0x025d_1656;
+        pub const HP_TEXT: u32 = 0x025d_165a;
+        pub const HP_LABEL: u32 = 0x025d_165e;
+        pub const NAME: u32 = 0x025d_1662;
+        /// The frame's two corner colours.
+        pub const COLOUR1: u32 = 0x025d_1668;
+        pub const COLOUR0: u32 = 0x025d_166c;
+        /// The empty plate's sprite width.
+        pub const EMPTY_WIDTH: u32 = 0x025d_1672;
+    }
+
+    /// One shape of the layout plate's gauge row: offset from `(x, y)`
+    /// (added at double precision), size (remapped or as is) and UVs.
+    struct GaugePart {
+        at: [f64; 2],
+        size: [f32; 2],
+        remapped: bool,
+        uv: [f32; 4],
+    }
+
+    /// The gauge row's two bars and two labels.
+    const GAUGE_PARTS: [GaugePart; 4] = [
+        GaugePart {
+            at: [315.0, -0.0],
+            size: [60.0, 60.0],
+            remapped: true,
+            uv: [a32(189.0), a32(24.0), a32(362.0), a32(200.0)],
+        },
+        GaugePart {
+            at: [295.0, 22.0],
+            size: [60.0, 20.0],
+            remapped: true,
+            uv: [a32(830.0), a32(70.0), a32(950.0), a32(115.0)],
+        },
+        GaugePart {
+            at: [342.0, 5.0],
+            size: [25.0, 16.0],
+            remapped: false,
+            uv: [a32(640.0), 0.0, a32(723.0), a32(52.0)],
+        },
+        GaugePart {
+            at: [438.0, 19.0],
+            size: [24.0, 15.0],
+            remapped: false,
+            uv: [a32(380.0), a32(64.0), a32(476.0), a32(120.0)],
+        },
+    ];
+
+    /// The layout plate being drawn: positions are integers `x + dx`
+    /// (layout words) turned into `f32`, sizes go through
+    /// `graphicUiRemapX`/`Y` (`remap(mem, y_axis, v)`).
+    struct LayoutPlate<'a, M, R, C> {
+        mem: &'a mut M,
+        remap: R,
+        call: C,
+        x: i32,
+        y: i32,
+    }
+
+    impl<M: Mem, R, C> LayoutPlate<'_, M, R, C>
+    where
+        R: FnMut(&mut M, bool, f32) -> f32,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        fn run(&mut self, sym: u32, args: &[u32]) -> u32 {
+            let f = self.mem.rebase(sym);
+            (self.call)(self.mem, f, args)
+        }
+
+        fn word(&self, at: u32) -> i32 {
+            i32::from(self.mem.read::<i16>(self.mem.rebase(at)))
+        }
+
+        fn dword(&self, at: u32) -> u32 {
+            self.mem.read(self.mem.rebase(at))
+        }
+
+        /// The `(x, y)` pair at layout `at` (y first, x next) added to
+        /// the plate's position, as `f32` (`fild`, `fstp dword`).
+        fn at(&self, at: u32) -> [f32; 2] {
+            let y = self.word(at).wrapping_add(self.y);
+            let x = self.word(at + 2).wrapping_add(self.x);
+            [int_f32(x), int_f32(y)]
+        }
+
+        /// A `TOMkpShapeXYWHUV` quad sized `remap(w)` x `remap(h)` (the
+        /// height first).
+        fn remapped(&mut self, shape: u32, [x, y]: [f32; 2], [w, h]: [f32; 2], uv: [f32; 4]) {
+            let h = (self.remap)(self.mem, true, h);
+            let w = (self.remap)(self.mem, false, w);
+            self.quad(shape, [x, y, w, h], uv);
+        }
+
+        fn quad(&mut self, shape: u32, [x, y, w, h]: [f32; 4], uv: [f32; 4]) {
+            let [u0, v0, u1, v1] = uv.map(f32::to_bits);
+            let args = [
+                shape,
+                x.to_bits(),
+                y.to_bits(),
+                w.to_bits(),
+                h.to_bits(),
+                u0,
+                v0,
+                u1,
+                v1,
+            ];
+            self.run(SHAPE, &args);
+        }
+
+        /// `sprintf(text, format, value, max)`, then the text at layout
+        /// `at` (`TOMkpCrossEasyStrFontSClut(text, x, y, 0x25, 1.0, 0)`).
+        fn ratio(&mut self, text: u32, format: u32, [value, max]: [u32; 2], at: u32) {
+            let sprintf: u32 = self.dword(SPRINTF_SLOT);
+            let format = self.mem.rebase(format);
+            (self.call)(self.mem, sprintf, &[text, format, value, max]);
+            let [x, y] = self.at(at);
+            let args = [text, x.to_bits(), y.to_bits(), 0x25, 1f32.to_bits(), 0];
+            self.run(CROSS_TEXT, &args);
+        }
+
+        /// A `TOAdpCrossNumber_009019f0` number at `(x, y)` (scale 1,
+        /// gap -3).
+        fn number(&mut self, value: u32, [x, y]: [i32; 2], colour: u32) {
+            let args = [
+                value,
+                int_f32(x).to_bits(),
+                int_f32(y).to_bits(),
+                colour,
+                1f32.to_bits(),
+                (-3f32).to_bits(),
+            ];
+            self.run(CROSS_NUMBER, &args);
+        }
+
+        /// A party member's plate.
+        fn member(&mut self, chr: u32, text: u32) {
+            let (fx, fy) = (int_f32(self.x), int_f32(self.y));
+            let colour0 = self.dword(layout::COLOUR0);
+            let colour1 = self.dword(layout::COLOUR1);
+            let frame = |shape: u32, x: f32, w: f32, u: [f32; 2], c: [u32; 2]| {
+                [
+                    shape,
+                    x.to_bits(),
+                    fy.to_bits(),
+                    w.to_bits(),
+                    38f32.to_bits(),
+                    u[0].to_bits(),
+                    0,
+                    u[1].to_bits(),
+                    a32(155.0).to_bits(),
+                    c[0],
+                    c[1],
+                ]
+            };
+            let args = frame(4, fx, 142.0, [0.0, a32(28.0)], [colour0, colour1]);
+            self.run(SHAPE_C2, &args);
+            let colour1 = self.dword(layout::COLOUR1);
+            let right = int_f32(self.x.wrapping_add(0x8e));
+            let args = frame(5, right, 40.0, [a32(32.0), a32(190.0)], [colour1, colour1]);
+            self.run(SHAPE_C2, &args);
+
+            let one = 1f32.to_bits();
+            let alpha = self.run(DAMAGE_CLASS1, &[chr, one, one]);
+            let [x, y] = self.at(layout::NAME);
+            let name = self.run(CHR_NAME, &[chr]);
+            let args = [name, x.to_bits(), y.to_bits(), alpha, one, one];
+            self.run(BTL_EASY_FONT, &args);
+
+            let at = self.at(layout::HP_LABEL);
+            let uv = [a32(382.0), a32(2.0), a32(454.0), a32(64.0)];
+            self.remapped(0x21, at, [46.0, 26.0], uv);
+            let max = self.run(MAX_HP, &[chr]);
+            let hp = self.run(HP, &[chr]);
+            self.ratio(text, HP_FORMAT, [hp, max], layout::HP_TEXT);
+            let at = self.at(layout::MP_LABEL);
+            let uv = [a32(505.0), a32(2.0), a32(586.0), a32(64.0)];
+            self.remapped(0x22, at, [46.0, 26.0], uv);
+            let max = self.run(MAX_MP, &[chr]);
+            let mp = self.run(MP, &[chr]);
+            self.ratio(text, MP_FORMAT, [mp, max], layout::MP_TEXT);
+
+            self.gauge_row(fx, fy);
+
+            // Sphere Levels and the AP still needed
+            let ly = self.word(layout::AP_Y);
+            let y = self
+                .word(layout::LEVEL_Y)
+                .wrapping_add(self.y)
+                .wrapping_add(ly);
+            let lx = self.word(layout::LEVEL_X).wrapping_add(self.x);
+            let x = self.word(layout::AP_X).wrapping_sub(13).wrapping_add(lx);
+            let sp = self.run(SP, &[chr]);
+            self.number(sp, [x, y], 0);
+            let y = self
+                .word(layout::AP_Y)
+                .wrapping_sub(15)
+                .wrapping_add(self.y);
+            let x = self
+                .word(layout::AP_X)
+                .wrapping_add(self.x.wrapping_add(0x8b));
+            let next = self.run(NEXT_AP, &[chr]);
+            let saved = self.run(SAVE_NEXT_AP, &[chr]);
+            self.number(next.wrapping_sub(saved), [x, y], 0x25);
+        }
+
+        /// The gauge row: frame, two bars and two labels (sheet 0x107).
+        fn gauge_row(&mut self, fx: f32, fy: f32) {
+            let at = [
+                int_f32(self.x.wrapping_add(0x14c)),
+                int_f32(self.y.wrapping_add(5)),
+            ];
+            let uv = [0.0, a32(832.0), a32(576.0), a32(880.0)];
+            self.quad(0x107, [at[0], at[1], 96.0, 14.0], uv);
+            let (fx, fy) = (f64::from(fx), f64::from(fy));
+            for part in GAUGE_PARTS {
+                let at = [dword(fx + part.at[0]), dword(fy + part.at[1])];
+                if part.remapped {
+                    self.remapped(0x107, at, part.size, part.uv);
+                } else {
+                    let [w, h] = part.size;
+                    self.quad(0x107, [at[0], at[1], w, h], part.uv);
+                }
+            }
+        }
+
+        /// Any other number: the two sprites, the HP and MP labels
+        /// (0xe9, 0xea), the bar 0xe7 across the screen and label 0x107.
+        fn empty(&mut self, width: i32) {
+            let (x, y) = (self.x.cast_unsigned(), self.y.cast_unsigned());
+            let colour0 = self.dword(layout::COLOUR0);
+            let colour1 = self.dword(layout::COLOUR1);
+            let w = width.cast_unsigned();
+            self.run(EMPTY_SPRITES, &[0xcc, 0xcd, x, y, w, colour0, colour1]);
+            for (shape, at) in [(0xe9, layout::HP_LABEL), (0xea, layout::MP_LABEL)] {
+                let sy = self.word(at).wrapping_add(self.y).cast_unsigned();
+                let sx = self.word(at + 2).wrapping_add(self.x).cast_unsigned();
+                self.run(SHAPE_XY, &[shape, sx, sy]);
+            }
+            self.run(SHAPE_XYWH_C2, &[0xe7, 0, y, 0x200, 0, GREY, GREY]);
+            let sy = self.word(layout::AP_Y).wrapping_add(self.y).cast_unsigned();
+            let sx = (self.word(layout::AP_X) + 0x68).wrapping_add(self.x);
+            self.run(SHAPE_XY, &[0x107, sx.cast_unsigned(), sy]);
+        }
+    }
+
+    /// An integer as the x87 stores it after `fild` (exact) and `fstp
+    /// dword`.
+    #[allow(clippy::cast_precision_loss)] // rounded as fstp rounds
+    fn int_f32(n: i32) -> f32 {
+        n as f32
+    }
+
+    /// The scratch text the layout plate formats its numbers in (32
+    /// bytes, `[ebp-0x24]`).
+    pub const LAYOUT_TEXT_BYTES: u32 = 0x20;
+
+    /// `TOMenuDrawChrLayoutPlate_008f0a70(cursor, chr, x, y)`
+    /// (`0x008f0a70`): a character plate placed by the menu layout words
+    /// (`TOSeqInitParam`), written at packet cursor `cursor` (stored in
+    /// `g_TOPktCursor` first). A party member (`chr` below 8, unsigned)
+    /// gets the frame (corner shapes 4 and 5 with the layout colours),
+    /// the name (`ToMakeBtlEasyFont`, alpha `MenuPlayer_DamageClass`),
+    /// the HP and MP labels and `HP/max`, `MP/max` (`"%5d/%5d"`,
+    /// `"%4d/%4d"` in `text`), the gauge row of sheet 0x107 and the
+    /// Sphere Level and next-AP numbers; any other number the empty
+    /// plate. Positions are integers made `f32`; sizes go through
+    /// `graphicUiRemapX`/`Y` (`remap(mem, y_axis, v)`); `call` takes
+    /// absolute addresses. Returns `g_TOPktCursor` after drawing (the
+    /// new cursor).
+    pub fn draw_layout_plate<M: Mem>(
+        mem: &mut M,
+        [cursor, chr, x, y]: [u32; 4],
+        text: u32,
+        remap: impl FnMut(&mut M, bool, f32) -> f32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let pkt = mem.rebase(PKT_CURSOR);
+        mem.write(pkt, cursor);
+        let mut p = LayoutPlate {
+            mem,
+            remap,
+            call,
+            x: x.cast_signed(),
+            y: y.cast_signed(),
+        };
+        let width = p.word(layout::EMPTY_WIDTH);
+        if chr < 8 {
+            p.member(chr, text);
+        } else {
+            p.empty(width);
+        }
+        p.mem.read(pkt)
+    }
 }
