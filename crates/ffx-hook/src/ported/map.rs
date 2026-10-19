@@ -3980,6 +3980,11 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapSpreadPlyTags()`: the seven boxes in a frame.
+    AbmapSpreadPlyTags @ 0x00a5_a4b0 => extern "C" fn shim_abmap_spread_ply_tags() -> u32 {
+        let mut w = super::StackFrame::<28>::new();
+        abmap::bridge::abmap_spread_ply_tags(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `abmap_cheng_panel(kind, node)`.
     abmap_cheng_panel @ 0x00a4_8740 => extern "C" fn shim_abmap_cheng_panel(kind: u32, node: u32) -> u32 {
         abmap::bridge::abmap_cheng_panel(&mut mem(), [kind, node], &mut |_, f, a| call_cdecl(f, a))

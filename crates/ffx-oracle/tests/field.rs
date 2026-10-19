@@ -19727,3 +19727,94 @@ fn r13aa_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13aa_cases(&mut t, &mut rng, g, 150);
 }
+
+// ---- field agent r13, group b: the sphere grid's name tags spread out ----
+
+/// An `AbmapPlyTagRect(tag, out)` stand-in: the `n`th call (counted at
+/// `count`, modulo 64) copies box `n` of `boxes` (16 bytes each) to `out`
+/// and logs `tag` at `tags + 16 n`.
+fn r13bb_rect_stub(count: u32, boxes: u32, tags: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[
+        0x83, 0xe1, 0x3f, 0xc1, 0xe1, 0x04, 0x8b, 0x44, 0x24, 0x04, 0x89, 0x81,
+    ]);
+    c.extend_from_slice(&tags.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x54, 0x24, 0x08]);
+    for w in 0..4u8 {
+        c.extend_from_slice(&[0x8b, 0x81]);
+        c.extend_from_slice(&(boxes + 4 * u32::from(w)).to_le_bytes());
+        c.extend_from_slice(&[0x89, 0x42, 4 * w]);
+    }
+    c.extend_from_slice(&[0x31, 0xc0, 0xc3]);
+    c
+}
+
+/// Group b (r13) on `t` over the grid `g`: `AbmapSpreadPlyTags` with the
+/// boxes from a table of a few values (so they touch and tie), some off
+/// screen, any current character; `AbmapPositionPlyTag` is a logged
+/// stand-in, `AbmapRectsOverlap` runs as the original.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)] // small values
+fn r13bb_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::bridge as ab;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(0x2000), t.alloc(4));
+    let (count, boxes, tags) = (t.alloc(4), t.alloc(0x400), t.alloc(0x400));
+    let [tag_rect, _] = ab::SPREAD_CALLS;
+    t.cave(&[
+        (Some(ab::POSITION_PLY_TAG), log_stub(log, rv, 1, 1)),
+        (Some(tag_rect), r13bb_rect_stub(count, boxes, tags)),
+    ]);
+    let work = t.stack_scratch(0x100);
+    let off = t.b.read::<u32>(t.b.rebase(ab::OFF_SCREEN));
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(count, 0u32);
+        t.put(rv, rng.next());
+        let spread = 2 + rng.below(6);
+        for i in 0..64 {
+            let x = rng.below(spread) as f32;
+            let y = rng.below(spread) as f32;
+            let w = [x, y, x + rng.below(3) as f32, y + rng.below(3) as f32];
+            for (k, v) in w.into_iter().enumerate() {
+                t.put(boxes + 16 * i + 4 * k as u32, v.to_bits());
+            }
+            if rng.below(10) == 0 {
+                t.put(boxes + 16 * i, off);
+            }
+        }
+        for chr in 0..7 {
+            t.put(g + 0x110d6 + 0x50 * chr, rng.next() as u8);
+        }
+        t.put(g + 0x115bc, [0u8, 3, 6, 7, 200][rng.below(5) as usize]);
+        t.same(
+            "AbmapSpreadPlyTags",
+            |o| o.eax(0x00a5_a4b0, &[]),
+            |m| ab::abmap_spread_ply_tags(m, work, call),
+        );
+    }
+}
+
+/// Group b (r13) on the image.
+#[test]
+fn r13bb_spread_ply_tags_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_9c01);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13bb_cases(&mut t, &mut rng, g, 300);
+}
+
+/// Group b (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13bb_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_9c02);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13bb_cases(&mut t, &mut rng, g, 150);
+}

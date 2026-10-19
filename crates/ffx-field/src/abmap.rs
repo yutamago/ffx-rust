@@ -2387,6 +2387,87 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// `AbmapPlyTagRect(tag, out)` (`0x00a482d0`) and `AbmapRectsOverlap`
+    /// (`0x00a49270`), [`abmap_spread_ply_tags`]'s calls.
+    pub const SPREAD_CALLS: [u32; 2] = [0x00a4_82d0, 0x00a4_9270];
+
+    /// `AbmapSpreadPlyTags(work)` (`0x00a5a4b0`, from `0x00a53570`; name
+    /// ours), `work` the original's seven boxes (`0x70` bytes): the seven
+    /// characters' name tags are reset (corner `+0x4e` 0,
+    /// `AbmapPositionPlyTag`), then, from the current character
+    /// (`+0x115bc`) round to it, each tag's box is taken
+    /// (`AbmapPlyTagRect`) and, while it overlaps one of the boxes taken
+    /// before it, the tag moves to its next corner and is taken again,
+    /// up to corner 7. A second round does the same against all six other
+    /// boxes. Returns the character after the last (left in `eax`).
+    pub fn abmap_spread_ply_tags<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let position = mem.rebase(POSITION_PLY_TAG);
+        for chr in 0..7u32 {
+            let corner = ABMAP.get(mem).wrapping_add(0x110d6 + 0x50 * chr);
+            mem.write(corner, 0u8);
+            call(mem, position, &[chr]);
+        }
+        let first = |mem: &M| u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bc)));
+        let next = |chr: u32| if chr + 1 > 6 { 0 } else { chr + 1 };
+        let mut chr = first(mem);
+        for n in 0..7 {
+            let tag = ply_tag(mem, chr);
+            let f = mem.rebase(SPREAD_CALLS[0]);
+            call(mem, f, &[tag, work.wrapping_add(0x10 * n)]);
+            settle_ply_tag(mem, [chr, n, work], |j| j < n, call);
+            chr = next(chr);
+        }
+        let mut chr = first(mem);
+        for m in 0..7 {
+            settle_ply_tag(mem, [chr, m, work], |j| j != m, call);
+            chr = next(chr);
+        }
+        chr
+    }
+
+    /// Character `chr`'s name tag (`g_Abmap + 0x11088`, `0x50` each).
+    fn ply_tag<M: Mem>(mem: &M, chr: u32) -> u32 {
+        ABMAP
+            .get(mem)
+            .wrapping_add(0x11088)
+            .wrapping_add(0x50 * chr)
+    }
+
+    /// [`abmap_spread_ply_tags`]'s step: while box `n` of `work` overlaps
+    /// one of the boxes `others` picks (in order, the first hit ends the
+    /// search), `chr`'s tag moves to its next corner and its box is taken
+    /// again; corner 7 ends it.
+    fn settle_ply_tag<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [chr, n, work]: [u32; 3],
+        others: impl Fn(u32) -> bool,
+        call: &mut C,
+    ) {
+        let position = mem.rebase(POSITION_PLY_TAG);
+        let [tag_rect, overlap] = SPREAD_CALLS.map(|f| mem.rebase(f));
+        let rect = |i: u32| work.wrapping_add(0x10 * i);
+        let tag = ply_tag(mem, chr);
+        let corner = tag.wrapping_add(0x4e);
+        loop {
+            let hit = (0..7)
+                .filter(|&j| others(j))
+                .any(|j| call(mem, overlap, &[rect(n), rect(j)]) != 0);
+            if !hit {
+                return;
+            }
+            mem.write(corner, mem.read::<u8>(corner).wrapping_add(1));
+            call(mem, position, &[chr]);
+            call(mem, tag_rect, &[tag, rect(n)]);
+            if mem.read::<u8>(corner) >= 7 {
+                return;
+            }
+        }
+    }
+
     /// `AbmapStartPart` (`0x00a5bad0`) and `AbmapShowChangeMessage`
     /// (`0x00a5a640`), [`abmap_cheng_panel`]'s calls.
     pub const CHENG_PANEL_CALLS: [u32; 2] = [0x00a5_bad0, 0x00a5_a640];
