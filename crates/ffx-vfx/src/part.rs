@@ -195,6 +195,58 @@ pub mod bridge {
         OT_DRAWING.set(mem, 0);
     }
 
+    /// `pppSetPartMatrix(camera, screen)` (`0x00762550`):
+    /// `g_pppCameraMatrix` and `g_pppScreenMatrix` copied from the two
+    /// matrices (`FFXVu0CopyMatrix`); returns the second copy's eax.
+    pub fn ppp_set_part_matrix(mem: &mut impl Mem, camera: u32, screen: u32) -> u32 {
+        use ffx_ps2::vu0::bridge as vu0;
+        let cam = CAMERA_MATRIX.ptr(mem).addr;
+        vu0::matrix_copy(mem, cam, camera);
+        let scr = SCREEN_MATRIX.ptr(mem).addr;
+        vu0::matrix_copy(mem, scr, screen)
+    }
+
+    /// `pppOtFunc_InitEnv(list)` (`0x00716b70`): an empty OT list: both
+    /// links (`+4`, then `+0`) `set_ptr32(list)` (through `call`), the
+    /// count `+0xc` 0. Returns 0.
+    pub fn ppp_ot_func_init_env<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let set = Global::<u32>::new(0x00a4_4700).ptr(mem).addr;
+        let p = call(mem, set, &[list]);
+        mem.write(list.wrapping_add(4), p);
+        let p = call(mem, set, &[list]);
+        mem.write(list, p);
+        mem.write(list.wrapping_add(0xc), 0u32);
+        0
+    }
+
+    /// `pppGetPartMatrix(camera, screen)` (`0x00761c40`): the camera and
+    /// screen matrices into the two buffers: with the word at
+    /// `0x00d4b7f8` = 1 (the battle's) `MsCopyScreenMatrix(screen)` and
+    /// `MsCopyCameraMatrix(camera)` (through `call`), else copies of
+    /// `g_pppCameraMatrix` and `g_pppScreenMatrix` (`FFXVu0CopyMatrix`).
+    /// Returns the last callee's eax.
+    pub fn ppp_get_part_matrix<M: Mem>(
+        mem: &mut M,
+        camera: u32,
+        screen: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_ps2::vu0::bridge as vu0;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if mem.read::<u32>(g(mem, 0x00d4_b7f8)) == 1 {
+            call(mem, g(mem, 0x007b_ba50), &[screen]);
+            return call(mem, g(mem, 0x007c_0070), &[camera]);
+        }
+        let cam = CAMERA_MATRIX.ptr(mem).addr;
+        vu0::matrix_copy(mem, camera, cam);
+        let scr = SCREEN_MATRIX.ptr(mem).addr;
+        vu0::matrix_copy(mem, screen, scr)
+    }
+
     /// `pppOtFunc_Lev(list, node)` (`0x00716ba0`): `node` unlinked (its
     /// neighbours, through `get_ptr32`, linked to each other) and the
     /// list's count (`+0xc`) one less.

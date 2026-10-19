@@ -2005,6 +2005,111 @@ ported! {
     op_spline_xyz_table @ 0x007e_a2d0 => extern "C" fn op_spline_xyz_table(x: u32, pts: u32, n: u32) {
         op::bridge::op_spline_xyz_table(&mut mem(), x, pts, n);
     }
+    /// `op_anm_tex0_reset()`.
+    op_anm_tex0_reset @ 0x007e_cf30 => extern "C" fn op_anm_tex0_reset() -> u32 {
+        op::bridge::op_anm_tex0_reset(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_event_effect_init()`.
+    op_event_effect_init @ 0x007f_cc20 => extern "C" fn op_event_effect_init() -> u32 {
+        op::bridge::op_event_effect_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_event_effect_free()`.
+    op_event_effect_free @ 0x007f_cbf0 => extern "C" fn op_event_effect_free() {
+        op::bridge::op_event_effect_free(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_tex_clut_reset2(oef)`.
+    op_oef2_tex_clut_reset2 @ 0x007e_3e70 => extern "C" fn op_oef2_tex_clut_reset2(oef: u32) {
+        op::bridge::op_oef2_tex_clut_reset2(&mut mem(), oef, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_num_pal_default()`.
+    op_num_pal_default @ 0x007e_64b0 => extern "C" fn op_num_pal_default() {
+        op::bridge::op_num_pal_default(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_num_init(x)`.
+    op_num_init @ 0x007e_6480 => extern "C" fn op_num_init(x: u32) {
+        op::bridge::op_num_forward(&mut mem(), 0x00a5_dda0, x, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_num_pal_set(x)`.
+    op_num_pal_set @ 0x007e_64d0 => extern "C" fn op_num_pal_set(x: u32) {
+        op::bridge::op_num_forward(&mut mem(), 0x00a5_de60, x, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_hd_ptr_get_00803200(base, i)`.
+    opus_hd_ptr_get_00803200 @ 0x0080_3200 => extern "C" fn opus_hd_ptr_get(base: u32, i: u32) -> u32 {
+        opus::bridge::opus_hd_ptr_get(&mut mem(), base, i, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_part_init_check(part)`.
+    op_part_init_check @ 0x0080_b650 => extern "C" fn op_part_init_check(part: u32) -> u32 {
+        opus::bridge::op_part_init_check(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_ffxfocus_off()`.
+    opus_ffxfocus_off @ 0x0080_abe0 => extern "C" fn opus_ffxfocus_off() -> u32 {
+        opus::bridge::opus_ffxfocus_off(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_ffxfocus_free()`.
+    opus_ffxfocus_free @ 0x0080_abb0 => extern "C" fn opus_ffxfocus_free() {
+        opus::bridge::opus_ffxfocus_free(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_chr_org_set_008053a0(chr, m)`.
+    opus_chr_org_set_008053a0 @ 0x0080_53a0 => extern "C" fn opus_chr_org_set(chr: u32, m: u32) {
+        opus::bridge::opus_chr_org_set(&mut mem(), chr, m, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_copy_buffer_event_00808a60()`.
+    opus_copy_buffer_event_00808a60 @ 0x0080_8a60 => extern "C" fn opus_copy_buffer_event() {
+        opus::bridge::opus_copy_buffer_event(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_all_clut_dispose()`.
+    opus_all_clut_dispose @ 0x0080_8a20 => extern "C" fn opus_all_clut_dispose() {
+        opus::bridge::opus_all_clut_dispose(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_clip_on_all_in_battle()`.
+    opus_clip_on_all_in_battle @ 0x0080_0be0 => extern "C" fn opus_clip_on_all_in_battle() {
+        opus::bridge::opus_clip_on_all_in_battle(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_chr_thickness_00800c90(chr, battle)`.
+    opus_chr_thickness_00800c90 @ 0x0080_0c90 => extern "C" fn opus_chr_thickness(chr: u32, battle: u32) -> f32 {
+        opus::bridge::opus_chr_thickness(&mut mem(), chr, battle, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opus_ffxdeg_to_normaldeg(x)`.
+    opus_ffxdeg_to_normaldeg @ 0x0081_b170 => extern "C" fn opus_ffxdeg_to_normaldeg(x: f32) -> f32 {
+        opus::bridge::opus_ffxdeg_to_normaldeg(&mem(), x)
+    }
+    /// `opus_normaldeg_to_ffxdeg_0081b230(x)`.
+    opus_normaldeg_to_ffxdeg_0081b230 @ 0x0081_b230 => extern "C" fn opus_normaldeg_to_ffxdeg(x: f32) -> f32 {
+        opus::bridge::opus_normaldeg_to_ffxdeg(&mem(), x)
+    }
+    /// `opus_set_chr_dirf(chr, dir)`.
+    opus_set_chr_dirf @ 0x0081_b270 => extern "C" fn opus_set_chr_dirf(chr: u32, dir: u32) -> u32 {
+        opus::bridge::opus_set_chr_dirf(&mut mem(), chr, dir, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_set_chr_pos(chr, pos)`.
+    opus_set_chr_pos @ 0x0081_b2b0 => extern "C" fn opus_set_chr_pos(chr: u32, pos: u32) -> u32 {
+        opus::bridge::opus_set_chr_pos(&mut mem(), chr, pos, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_encount4_size_get(oef, first, n)`.
+    opus_encount4_size_get @ 0x007f_8e30 => extern "C" fn opus_encount4_size_get(oef: u32, first: u32, n: i32) -> u32 {
+        opus::bridge::opus_encount4_size_get(&mem(), oef, first, n)
+    }
+    /// `pppSetPartMatrix(camera, screen)`.
+    pppSetPartMatrix @ 0x0076_2550 => extern "C" fn ppp_set_part_matrix(camera: u32, screen: u32) -> u32 {
+        part::bridge::ppp_set_part_matrix(&mut mem(), camera, screen)
+    }
+    /// `pppGetPartMatrix(camera, screen)`.
+    pppGetPartMatrix @ 0x0076_1c40 => extern "C" fn ppp_get_part_matrix(camera: u32, screen: u32) -> u32 {
+        part::bridge::ppp_get_part_matrix(&mut mem(), camera, screen, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppOtFunc_InitEnv(list)`.
+    pppOtFunc_InitEnv @ 0x0071_6b70 => extern "C" fn ppp_ot_func_init_env(list: u32) -> u32 {
+        part::bridge::ppp_ot_func_init_env(&mut mem(), list, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpInitHeapDisplay(heap)`.
+    pppFpInitHeapDisplay @ 0x0072_99e0 => extern "C" fn ppp_fp_init_heap_display(heap: u32) {
+        fp::bridge::ppp_fp_init_heap_display(&mut mem(), heap);
+    }
+    /// `Vec4SubScalars_0074bed0(dst, src, x, y, z, w)`: the same code as
+    /// `Vec4SubScalars_0074be90`.
+    Vec4SubScalars_0074bed0 @ 0x0074_bed0 => extern "C" fn vec4_sub_scalars_2(dst: u32, src: u32, x: f32, y: f32, z: f32, w: f32) {
+        vec::bridge::vec4_sub_scalars(&mut mem(), dst, src, [x, y, z, w]);
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

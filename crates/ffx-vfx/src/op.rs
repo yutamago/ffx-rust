@@ -3975,4 +3975,100 @@ pub mod bridge {
             return;
         }
     }
+
+    /// `dbgPrintf(msg)` through `call` (a bare `ret` in this build);
+    /// returns its eax.
+    fn debug_print<M: Mem>(
+        mem: &mut M,
+        msg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
+        let m = Global::<u32>::new(msg).ptr(mem).addr;
+        call(mem, f, &[m])
+    }
+
+    /// `op_anm_tex0_reset()` (`0x007ecf30`): only a debug line
+    /// (`dbgPrintf`, through `call`); returns its eax.
+    pub fn op_anm_tex0_reset<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        debug_print(mem, 0x00b5_8308, call)
+    }
+
+    /// `g_OpEventEffect` (`0x011a006b`): set by `op_event_effect_init`.
+    pub const EVENT_EFFECT: Global<u8> = Global::new(0x011a_006b);
+
+    /// `op_event_effect_init()` (`0x007fcc20`): a debug line, then
+    /// [`EVENT_EFFECT`] set; returns the debug call's eax.
+    pub fn op_event_effect_init<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = debug_print(mem, 0x00b5_8500, call);
+        EVENT_EFFECT.set(mem, 1);
+        r
+    }
+
+    /// `op_oef2_tex_clut_reset2(oef)` (`0x007e3e70`): a debug line when
+    /// `oef` is nonzero; nothing else.
+    pub fn op_oef2_tex_clut_reset2<M: Mem>(
+        mem: &mut M,
+        oef: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if oef != 0 {
+            debug_print(mem, 0x00b5_8120, call);
+        }
+    }
+
+    /// `op_num_pal_default()` (`0x007e64b0`): `opd_num_pal_default()` when
+    /// numbers are shown (`g_OpNumShow`), and again in debug mode (through
+    /// `call`).
+    pub fn op_num_pal_default<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = Global::<u32>::new(0x00a5_de50).ptr(mem).addr;
+        if mem.read::<u8>(Global::<u32>::new(0x0232_2794).ptr(mem).addr) != 0 {
+            call(mem, f, &[]);
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            call(mem, f, &[]);
+        }
+    }
+
+    /// `op_num_init(x)` (`0x007e6480`) and `op_num_pal_set(x)`
+    /// (`0x007e64d0`): the `opd_` function (`0x00a5dda0`, `0x00a5de60`)
+    /// with `x` when numbers are shown (`g_OpNumShow`), and again in
+    /// debug mode (through `call`).
+    pub fn op_num_forward<M: Mem>(
+        mem: &mut M,
+        opd: u32,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = Global::<u32>::new(opd).ptr(mem).addr;
+        if mem.read::<u8>(Global::<u32>::new(0x0232_2794).ptr(mem).addr) != 0 {
+            call(mem, f, &[x]);
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            call(mem, f, &[x]);
+        }
+    }
+
+    /// `op_event_effect_free()` (`0x007fcbf0`): a debug line; the bind
+    /// flags (`g_EtBindDefault`) lose 0x3400 and gain 0x800 (the low half
+    /// of the word rewritten); [`EVENT_EFFECT`] cleared.
+    pub fn op_event_effect_free<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        debug_print(mem, 0x00b5_8520, call);
+        let at = Global::<u32>::new(0x011a_0080).ptr(mem).addr;
+        let v: u16 = mem.read(at);
+        mem.write(at, (v & 0xcbff) | 0x800);
+        EVENT_EFFECT.set(mem, 0);
+    }
 }

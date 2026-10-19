@@ -683,6 +683,16 @@ pub mod bridge {
         stat(1).set(mem, 0);
     }
 
+    /// `pppFpInitHeapDisplay(heap)` (`0x007299e0`): the heap display
+    /// redone (`op_heap_display_clear(0x601)`,
+    /// `op_heap_display_set_par(heap, 0x8603)`) and [`HEAP_DISPLAY_SET`]
+    /// set.
+    pub fn ppp_fp_init_heap_display(mem: &mut impl Mem, heap: u32) {
+        crate::op::bridge::op_heap_display_clear(mem, 0x601);
+        crate::op::bridge::op_heap_display_set_par(mem, heap, 0x8603);
+        HEAP_DISPLAY_SET.set(mem, 1);
+    }
+
     /// `g_FpPointLightCap` (`0x00cec1f8`): how many point lights
     /// `pppFpPointLightProc` has defined (`Sg_PLightDefine`); `pppFpFree`
     /// disposes of them.
