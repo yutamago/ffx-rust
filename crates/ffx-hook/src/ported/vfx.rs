@@ -4640,4 +4640,16 @@ ported! {
     vu_apply_matrix_00753310 @ 0x0075_3310 => extern "C" fn vu_apply_matrix_00753310(out: u32, m: u32, v: u32) -> u32 {
         vec::bridge::vu_apply_matrix(&mut mem(), out, m, v)
     }
+    /// `op_et_astatus_effect_change(h, status)`.
+    op_et_astatus_effect_change @ 0x007f_aed0 => extern "C" fn op_et_astatus_effect_change(h: u32, status: u32) -> u32 {
+        et::bridge::op_et_astatus_effect_change(&mut mem(), h, status, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `ops_init_draw_work()`.
+    ops_init_draw_work @ 0x007e_c890 => extern "C" fn ops_init_draw_work() -> u32 {
+        op::bridge::ops_init_draw_work(&mut mem(), &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `pppStartPartFromYonish(part, rate, data, set_ups)`.
+    pppStartPartFromYonish @ 0x0071_2560 => extern "C" fn ppp_start_part_from_yonish(p: u32, rate: u32, data: u32, set_ups: u32) {
+        part::bridge::ppp_start_part_from_yonish(&mut mem(), p, rate, data, set_ups, &mut |_, f, a| call_ptr(f, a));
+    }
 }

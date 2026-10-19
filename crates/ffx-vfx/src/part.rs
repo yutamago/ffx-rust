@@ -762,6 +762,45 @@ pub mod bridge {
         let lang_fn = TO_GET_FFX_LANG.ptr(mem).addr;
         let lang = call(mem, lang_fn, &[]);
         let id = ffx_system::instance::bridge::magic_id(mem);
+        if !start_part(mem, part, rate, d, call_set_ups, call) {
+            return;
+        }
+        let w = |i: u32| part.wrapping_add(4 * i);
+        if rd(mem, w(6)) == 0x33 && lang == 0xb && id == 0x296 {
+            let a = ptr32(rd(mem, rd(mem, w(0xe)).wrapping_add(0x38)));
+            let b = ptr32(rd(mem, a.wrapping_add(0x70)));
+            mem.write(b.wrapping_add(0x10), 0xc37a_0000u32);
+            mem.write(b.wrapping_add(0x14), 0x4150_0000u32);
+        }
+    }
+
+    /// `pppStartPartFromYonish(part, rate, data, call_set_ups)`
+    /// (`0x00712560`): [`ppp_start_part`] on a data block given by its
+    /// address rather than a `ptr32`, without the localisation patch.
+    pub fn ppp_start_part_from_yonish<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        rate: u32,
+        data: u32,
+        call_set_ups: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        start_part(mem, part, rate, data, call_set_ups, call);
+    }
+
+    /// The body [`ppp_start_part`] and [`ppp_start_part_from_yonish`]
+    /// share, on the data block at `d`; false when the birth records
+    /// could not be allocated. A block without births faults in the
+    /// originals (the record loop writes through the null records
+    /// pointer); the port writes at 0 then.
+    fn start_part<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        rate: u32,
+        d: u32,
+        call_set_ups: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> bool {
         CURRENT_PART.set(mem, part);
         let w = |i: u32| part.wrapping_add(4 * i);
         mem.write(w(0x1e), 0u32);
@@ -789,7 +828,7 @@ pub mod bridge {
             mem.write(w(0xf), recs);
             if recs == 0 {
                 mem.write(part, 0xffff_f000u32);
-                return;
+                return false;
             }
         }
         if is_ptr32_null(rd(mem, chain)) == 0 {
@@ -821,12 +860,7 @@ pub mod bridge {
         if call_set_ups != 0 {
             ppp_part_call(mem, part, 0x10, call);
         }
-        if rd(mem, w(6)) == 0x33 && lang == 0xb && id == 0x296 {
-            let a = ptr32(rd(mem, rd(mem, w(0xe)).wrapping_add(0x38)));
-            let b = ptr32(rd(mem, a.wrapping_add(0x70)));
-            mem.write(b.wrapping_add(0x10), 0xc37a_0000u32);
-            mem.write(b.wrapping_add(0x14), 0x4150_0000u32);
-        }
+        true
     }
 
     /// `pppCallUsrFunc(part, table, arg)` (`0x00716710`): for each of the

@@ -4961,4 +4961,61 @@ pub mod bridge {
         put(mem, out, far);
         1
     }
+
+    /// `ops_init_draw_work()` (`0x007ec890`): once (the byte at
+    /// `0x011a0700`): the op draw pointers (`0x02332e90` = the work at
+    /// `0x011a1260`, `0x02332e84` = the absolute `0x01d00000`, which has no
+    /// relocation), four unit matrices at `0x011a00a0` + 0x40 k
+    /// (`FFXVu0UnitMatrix`), the counters at `0x02332870` and `0x02332878`
+    /// cleared (a dword at `+2`, then the word), the DMA channels 0, 1, 2,
+    /// 8 and 9 (`sceDmaGetChan`) into `0x023328e8` down to `0x023328d8`,
+    /// four 1.0 at `0x011a0878`, `0x80808080` at `0x011a0870`,
+    /// `g_OpFuncOtOrder` filled with -1 (`memset`) and the first words of
+    /// the 8 `g_OpFuncOt` slots cleared. Callees through `call`. Returns
+    /// the original's `eax`: 0x80, `None` when it ran before.
+    pub fn ops_init_draw_work<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let done = g(mem, 0x011a_0700);
+        if mem.read::<u8>(done) != 0 {
+            return None;
+        }
+        mem.write(done, 1u8);
+        let work = g(mem, 0x011a_1260);
+        mem.write(g(mem, 0x0233_2e90), work);
+        mem.write(g(mem, 0x0233_2e84), 0x01d0_0000u32);
+        let unit = g(mem, 0x006e_d9a0);
+        for k in 0..4 {
+            let m = g(mem, 0x011a_00a0) + 0x40 * k;
+            call(mem, unit, &[m]);
+        }
+        for at in [0x0233_2870, 0x0233_2878] {
+            mem.write(g(mem, at + 2), 0u32);
+            mem.write(g(mem, at), 0u16);
+        }
+        let chan = g(mem, 0x0062_f6e0);
+        for (k, at) in [
+            (0, 0x0233_28e8),
+            (1, 0x0233_28e4),
+            (2, 0x0233_28e0),
+            (8, 0x0233_28dc),
+            (9, 0x0233_28d8),
+        ] {
+            let c = call(mem, chan, &[k]);
+            mem.write(g(mem, at), c);
+        }
+        for at in [0x011a_0884, 0x011a_0880, 0x011a_087c, 0x011a_0878] {
+            mem.write(g(mem, at), 1.0f32);
+        }
+        mem.write(g(mem, 0x011a_0870), 0x8080_8080u32);
+        let (memset, order) = (g(mem, 0x0094_964c), g(mem, 0x011a_0960));
+        call(mem, memset, &[order, 0xff, 0x80]);
+        for k in 0..8 {
+            let slot = g(mem, 0x011a_09e0) + 0x10 * k;
+            mem.write(slot, 0u32);
+        }
+        Some(0x80)
+    }
 }

@@ -16403,3 +16403,177 @@ fn round31b_segment_circle_and_vu_apply_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round31c_et_astatus_effect_change_matches_the_original() {
+    use et::bridge as e;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_aed0);
+        let cells: Vec<u32> = (0..4).map(|_| p.alloc(4)).collect();
+        let (table_ret, ptr_ret) = (cells[0], cells[1]);
+        for (sym, words, ret) in [
+            (0x007f_d7f0u32, &[0u8, 0, 0, 0][..], None), // opu_et_unit
+            (0x007e_3b40, &[0, 0, 0], Some(table_ret)),  // op_oef2_obj_a_get
+            (0x00a4_4700, &[0], Some(ptr_ret)),          // set_ptr32
+        ] {
+            far_recorder(&mut p, sym, words, ret);
+        }
+        let units: Vec<u32> = (0..4).map(|_| p.alloc(0x100)).collect();
+        let table = p.alloc(0x10);
+        p.set(table_ret, table);
+        let chr = p.sym(e::CHR.sym);
+        let eff = p.sym(e::EFF.sym);
+        let handles = [0u32, 0x3001, 0x3002, 0x3003];
+        for round in 0..1500 {
+            for &u in &units {
+                p.fill(u, 0x100, &mut rng);
+                let old = rng.pick(&[0u8, 1, 8, 0x10, 0xff]);
+                p.set(u + 0xb0, old);
+            }
+            p.fill(table, 0x10, &mut rng);
+            for k in 0..2 {
+                p.set(table + 2 * k, rng.pick(&[0i16, 4, -2, 0x100]));
+            }
+            p.set(ptr_ret, rng.next());
+            p.put(e::BATTLE_OEF2, rng.next());
+            p.fill(p.sym(0x00c8_f508), 0x10, &mut rng);
+            p.set(p.sym(0x00c8_b500), rng.pick(&[0u32, 0x20, 0x40]));
+            p.set(p.sym(0x012a_12f8), rng.pick(&units));
+            for i in 0..e::CHRS {
+                let r = chr + 0x20 * i;
+                p.set(
+                    r,
+                    if rng.chance(95) {
+                        0
+                    } else {
+                        rng.pick(&handles)
+                    },
+                );
+            }
+            for i in 0..e::EFFS {
+                p.set(eff + 0x20 * i, 0u32);
+            }
+            let h = rng.pick(&handles);
+            let known = (0..e::CHRS).find(|&i| h != 0 && p.get::<u32>(chr + 0x20 * i) == h);
+            if rng.chance(60) {
+                let j = rng.pick(&[0u32, 1, 7, 0x1ff]);
+                let i = known.unwrap_or_else(|| rng.below(0xf0));
+                p.set(eff + 0x20 * j, 0x6000_4000 + i);
+                let u = rng.pick(&units);
+                p.set(eff + 0x20 * j + 4, u);
+            }
+            let status = rng.next() & 0x27;
+            p.check(
+                &format!("op_et_astatus_effect_change round {round}"),
+                0x007f_aed0,
+                &[h, status],
+                |m| e::op_et_astatus_effect_change(m, h, status, &mut call_original),
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round31c_start_part_and_draw_work_match_the_original() {
+    use part::bridge as pt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_2560);
+        let cells: Vec<u32> = (0..4).map(|_| p.alloc(4)).collect();
+        let chan_ret = cells[0];
+        for (sym, words, ret) in [
+            (0x006e_d9a0u32, &[0u8][..], None),  // FFXVu0UnitMatrix
+            (0x0062_f6e0, &[0], Some(chan_ret)), // sceDmaGetChan
+        ] {
+            far_recorder(&mut p, sym, words, ret);
+        }
+        // the programs' set-up functions
+        let (set_up, _) = deref_recorder_code(&mut p, &[0], None);
+        let set_up = {
+            let at = p.a.alloc_code(&set_up).unwrap();
+            assert_eq!(p.b.alloc_code(&set_up).unwrap(), at);
+            at
+        };
+        let (data, part, recs) = (p.alloc(0x200), p.alloc(0x80), p.alloc(0x100));
+        let (env, heap_mem) = (p.alloc(0x20), p.alloc(0x2000));
+        let env_cell = p.alloc(4);
+        let slot = p.sym(0x00c3_a4cc); // g_pppEnvSlot
+        for round in 0..600 {
+            // the environment's two heaps, sometimes too small
+            p.set(slot, env_cell);
+            p.set(env_cell, env);
+            for (k, size) in [
+                (0u32, rng.pick(&[0x30u32, 0x1000])),
+                (1, rng.pick(&[0x30u32, 0x1000])),
+            ] {
+                let (heap, memory) = (env + 0x10 * k, heap_mem + 0x1000 * k);
+                let last = memory + size - 0x10;
+                p.set(heap, [0u32, memory, last, 0]);
+                p.set(memory, [last, 0u32, 0, 0]);
+                p.set(last, [0u32, memory, 1, 0]);
+            }
+            // the data block: length, loop flag, programs, births
+            p.fill(data, 0x200, &mut rng);
+            p.set(data, rng.below(0x10000));
+            p.set(data + 4, u8::from(rng.chance(50)));
+            p.set(data + 8, 0x100u32);
+            p.set(data + 0xc, 0x140u32);
+            let n = rng.below(4);
+            p.set(data + 0x100, n);
+            for i in 0..4 {
+                p.set(data + 0x104 + 4 * i, recs + 0x20 * i);
+                p.fill(recs + 0x20 * i, 0x20, &mut rng);
+                let f = if rng.chance(50) { 0 } else { set_up };
+                p.set(recs + 0x20 * i + 0x10, f);
+            }
+            // (no births would fault in the original: its record loop
+            // writes the first record through the null pointer)
+            let nb = 1 + rng.below(4);
+            p.set(data + 0x140, nb);
+            let chain = rng.below(3) + 1;
+            for k in 0..chain {
+                let node = data + 0x10 + 0x20 * k;
+                p.set(node, if k + 1 == chain { 0 } else { node + 0x20 });
+            }
+            p.fill(part, 0x80, &mut rng);
+            let rate = rng.next();
+            let set_ups = rng.pick(&[0u32, 1, 0x100]);
+            p.check(
+                &format!("pppStartPartFromYonish round {round}"),
+                0x0071_2560,
+                &[part, rate, data, set_ups],
+                |m| {
+                    pt::ppp_start_part_from_yonish(
+                        m,
+                        part,
+                        rate,
+                        data,
+                        set_ups,
+                        &mut call_original,
+                    );
+                    None
+                },
+            );
+            // ops_init_draw_work, once or again
+            p.set(p.sym(0x011a_0700), u8::from(rng.chance(30)));
+            p.set(chan_ret, rng.next());
+            for (at, len) in [
+                (0x0233_2870u32, 0x10u32),
+                (0x0233_28d8, 0x14),
+                (0x0233_2e84, 0x10),
+                (0x011a_0870, 0x18),
+                (0x011a_0960, 0x80),
+                (0x011a_09e0, 0x80),
+            ] {
+                p.fill(p.sym(at), len, &mut rng);
+            }
+            p.check(
+                &format!("ops_init_draw_work round {round}"),
+                0x007e_c890,
+                &[],
+                |m| op::bridge::ops_init_draw_work(m, &mut call_original),
+            );
+        }
+    }
+}

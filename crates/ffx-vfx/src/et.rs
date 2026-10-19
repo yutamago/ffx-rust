@@ -2148,4 +2148,84 @@ pub mod bridge {
             call(mem, terminate, &[id]);
         }
     }
+
+    /// `g_Ee_Gpr` (`0x00c8f508`): the emulated R5900 `r0` quadword
+    /// [`op_et_astatus_effect_change`] clears its unit's pointer with.
+    const EE_R0: Global<[u32; 4]> = Global::new(0x00c8_f508);
+    /// `g_pppColorConShift` (`0x00c8b500`).
+    const COLOR_CON_SHIFT: Global<u32> = Global::new(0x00c8_b500);
+    /// `0x012a12f8`: the unit record the last [`opu_et_unit`] started.
+    const LAST_UNIT: Global<u32> = Global::new(0x012a_12f8);
+
+    /// `op_et_astatus_effect_change(h, status)` (`0x007faed0`): the status
+    /// effect unit of a known character (ID `0x60004000 + index`: its
+    /// `g_EtEff` object when it is there past record 0, else a new
+    /// `opu_et_unit(battle oef2, 0, 0x40, id)`'s record) shows the status
+    /// bits as unit flags (`u16 +0xb0`): 1 -> 2, 4 -> 1, 0x20 -> 4, 2 -> 8.
+    /// With flag 8 the program is the battle oef2's group-0 part-0x40
+    /// table's second entry (`op_oef2_obj_a_get`), else its first; unless
+    /// the unit's old flags have 8 (with 8) or any of 0xf (without), the
+    /// unit restarts on it: `+0..0xc` = the emulated `r0`, the word at
+    /// `g_pppColorConShift + 0x10` likewise (the shift then cleared), and
+    /// `+0` = `set_ptr32(entry + i16 [entry])`. Callees through `call`.
+    /// Returns the original's `eax` where defined (`None` for a null
+    /// handle): the end of `g_EtChr` for an unknown one, `set_ptr32`'s
+    /// result after a restart, else the table.
+    pub fn op_et_astatus_effect_change<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        status: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if h == 0 {
+            return None;
+        }
+        let Some(index) = find_chr(mem, h) else {
+            return Some(CHR.ptr(mem).at(CHRS).addr);
+        };
+        let id = 0x6000_4000 + index;
+        let unit = match find_eff(mem, id) {
+            Some(j) if j > 0 => mem.read(EFF.ptr(mem).at(j).addr + 4),
+            _ => {
+                let (f, oef2) = (OPU_ET_UNIT.ptr(mem).addr, BATTLE_OEF2.get(mem));
+                call(mem, f, &[oef2, 0, 0x40, id]);
+                LAST_UNIT.get(mem)
+            }
+        };
+        let mut flags = 0u16;
+        for (bit, flag) in [(1, 2), (4, 1), (0x20, 4), (2, 8)] {
+            if status & bit != 0 {
+                flags |= flag;
+            }
+        }
+        let a_get = at(mem, 0x007e_3b40);
+        let oef2 = BATTLE_OEF2.get(mem);
+        let table = call(mem, a_get, &[oef2, 0, 0x40]);
+        let old: u8 = mem.read(unit.wrapping_add(0xb0));
+        let (busy, entry) = if flags & 8 == 0 {
+            (old & 0xf != 0, table)
+        } else {
+            (old & 8 != 0, table.wrapping_add(2))
+        };
+        let mut r = table;
+        if !busy {
+            let off = mem.read::<i16>(entry);
+            let r0 = EE_R0.ptr(mem).addr;
+            for i in 0..4 {
+                let w: u32 = mem.read(r0 + 4 * i);
+                mem.write(unit.wrapping_add(4 * i), w);
+            }
+            let shift = COLOR_CON_SHIFT.get(mem);
+            let w: u32 = mem.read(r0);
+            mem.write(shift.wrapping_add(unit).wrapping_add(0x10), w);
+            COLOR_CON_SHIFT.set(mem, 0);
+            let set_ptr32 = at(mem, 0x00a4_4700);
+            let target = entry.wrapping_add(i32::from(off).cast_unsigned());
+            r = call(mem, set_ptr32, &[target]);
+            mem.write(unit, r);
+        }
+        mem.write(unit.wrapping_add(0xb0), flags);
+        Some(r)
+    }
 }
