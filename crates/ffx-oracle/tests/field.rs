@@ -22592,14 +22592,17 @@ fn r14qq_on_a_snapshot_matches_the_original() {
 /// A `FFXSifBindRpc(client, id, mode)` stand-in: the `n`th call (counted
 /// at `count`) returns `values[n]` and sets the client's server word
 /// (`+0x24`) to `servers[n]`.
-fn r14rr_bind_stub(count: u32, values: u32, servers: u32) -> Vec<u8> {
-    // mov ecx, [count]; inc dword [count]; mov eax, [esp + 4];
+fn r14rr_bind_stub(count: u32, values: u32, servers: u32, ids: u32) -> Vec<u8> {
+    // mov ecx, [count]; inc dword [count]; mov edx, [esp + 8];
+    // mov [ids + 4 ecx], edx; mov eax, [esp + 4];
     // mov edx, [servers + 4 ecx]; mov [eax + 0x24], edx;
     // mov eax, [values + 4 ecx]; ret
     let mut c = vec![0x8b, 0x0d];
     c.extend_from_slice(&count.to_le_bytes());
     c.extend_from_slice(&[0xff, 0x05]);
     c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x54, 0x24, 0x08, 0x89, 0x14, 0x8d]);
+    c.extend_from_slice(&ids.to_le_bytes());
     c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x14, 0x8d]);
     c.extend_from_slice(&servers.to_le_bytes());
     c.extend_from_slice(&[0x89, 0x50, 0x24, 0x8b, 0x04, 0x8d]);
@@ -22621,9 +22624,10 @@ fn r14rr_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
         t.alloc(0x100),
         t.alloc(0x100),
     );
+    let ids = t.alloc(0x100);
     let [bind, flush, call_rpc] = nb::INIT_IOP_CALLS;
     t.cave(&[
-        (Some(bind), r14rr_bind_stub(count, values, servers)),
+        (Some(bind), r14rr_bind_stub(count, values, servers, ids)),
         (Some(flush), log_stub(log, rv, 1, 1)),
         (Some(call_rpc), log_stub(log, rv, 2, 1)),
     ]);
@@ -22643,7 +22647,7 @@ fn r14rr_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
             t.put(
                 values + 4 * k,
                 if fail {
-                    rng.next() | 0x8000_0000
+                    [u32::MAX, rng.next() | 0x8000_0000][rng.below(2) as usize]
                 } else {
                     rng.below(0x8000_0000)
                 },
