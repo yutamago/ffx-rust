@@ -23038,3 +23038,653 @@ fn round38_kernel_tables_match_the_original_on_the_snapshot() {
     };
     round38_kernel_tables(&mut a, &mut b, &mut Xorshift(0x4038_0072));
 }
+
+/// Round 39 group A: `TOBtlCtrlInfoWin` and `TOBtlCtrlInfoWinMes` over
+/// logging stand-ins (the checks return words of a table; the two set-ups
+/// move the target cursor to the next table word, so the re-reads after
+/// them count), the target near the party slots 0x14..=0x1b, and the
+/// message lines in every state around the box's edges.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn round39_info_win(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x10);
+    let seq = round38_seq(counter, table);
+    let target = a.rebase(t::TARGET_CHR);
+    // the set-ups: the next table word to the target cursor (mov [target], eax)
+    let mut moves = seq.clone();
+    moves.push(0xa3);
+    moves.extend_from_slice(&target.to_le_bytes());
+    let mut time = vec![0xd9, 0x05];
+    time.extend_from_slice(&cells.to_le_bytes());
+    let stands: Vec<Stand> = vec![
+        (0x0078_f9e0, vec![], vec![], seq.clone()),
+        (0x0078_f990, vec![0], vec![], seq.clone()),
+        (0x0078_f970, vec![0], vec![], seq),
+        (0x0089_9fd0, vec![0], vec![], moves.clone()),
+        (0x0089_9f20, vec![0], vec![], moves),
+        (0x0064_1410, vec![], vec![], time),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let chr = |rng: &mut Xorshift| -> u32 {
+        let c = 0x12 + rng.next() % 12;
+        if rng.next().is_multiple_of(5) {
+            c | (rng.next() << 16)
+        } else {
+            c
+        }
+    };
+    // no signalling NaNs (the emulator keeps them where hardware quiets)
+    let float = |rng: &mut Xorshift| {
+        let f = rng.float();
+        if ffx_bridge::x87::is_snan(f.to_bits()) {
+            1.5
+        } else {
+            f
+        }
+    };
+    let lines = a.rebase(t::INFO_LINES);
+    let bx = a.rebase(0x0133_f694);
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x100 {
+            let v = match rng.next() % 4 {
+                0 => u32::MAX,
+                1 => 1,
+                2 => chr(rng),
+                _ => rng.next() % 3,
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        // a time (never a NaN: the oracle's st0 drops NaN payloads)
+        put(a, b, cells, ((rng.next() % 100_000) as f32 / 7.0).to_bits());
+        put(a, b, target, chr(rng));
+        for at in [t::INFO_PARAM_CHR, t::INFO_MES_CHR] {
+            let c = if rng.next().is_multiple_of(2) {
+                Mem::read::<u16>(a, target)
+            } else {
+                chr(rng) as u16
+            };
+            put(a, b, a.rebase(at), c);
+        }
+        for at in [t::INFO_SHOWN, t::INFO_MES_SHOWN] {
+            put(a, b, a.rebase(at), (rng.next() % 3) as u8);
+        }
+        let depth = (rng.next() % 3) as i8;
+        set(a, b, t::ACTION_DEPTH, depth);
+        for j in 0..3 {
+            let open = [0u8, 1, 1, 2][(rng.next() % 4) as usize];
+            put(a, b, a.rebase(0x0133_c952) + 0xf0 * j, open);
+        }
+        // the box and the lines around its edges
+        let left = (rng.next() % 200) as i16 - 50;
+        let right = left + 100 + (rng.next() % 600) as i16;
+        put(a, b, bx, left);
+        put(a, b, bx + 8, right);
+        for i in 0..4 {
+            let line = lines + 0x1c * i;
+            for j in 0..7 {
+                put(a, b, line + 4 * j, rng.next());
+            }
+            // now and then no line in use at all
+            let state = if k % 13 == 1 {
+                0
+            } else {
+                [0u16, 2, 2, 3, 3, 8, 1, 0x102][(rng.next() % 8) as usize]
+            };
+            put(a, b, line, state);
+            let width = (rng.next() % 400) as i16 - 20;
+            put(a, b, line + 0x14, width);
+            let edge = if rng.next().is_multiple_of(2) {
+                f32::from(left) - f32::from(width)
+            } else {
+                f32::from(right) - 80.0 - f32::from(width)
+            };
+            let x = match rng.next() % 6 {
+                0 => f32::NAN,
+                1 => edge,
+                2 => edge + 1.2,
+                _ => edge + (rng.next() % 64) as f32 * 0.37 - 6.0,
+            };
+            put(a, b, line + 0xc, x);
+            let y = if rng.next().is_multiple_of(9) {
+                f32::NAN
+            } else {
+                float(rng)
+            };
+            put(a, b, line + 0x10, y);
+        }
+        if k % 2 == 0 {
+            eax(a, 0x0089_1480, &[]);
+            t::ctrl_info_win(b, call, fcall);
+        } else {
+            eax(a, 0x0089_1580, &[]);
+            t::ctrl_info_win_mes(b, call);
+        }
+        same_memory(&format!("info win {k}"), a, b);
+    }
+}
+
+#[test]
+fn round39_info_win_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round39_info_win(&mut a, &mut b, &mut Xorshift(0x4039_0011));
+}
+
+#[test]
+fn round39_info_win_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round39_info_win(&mut a, &mut b, &mut Xorshift(0x4039_0012));
+}
+
+/// Round 39 group B: `TOMenuCtrlYesNoWindow` and `TOMenuDrawYesNoWindow`
+/// over logging stand-ins: the pad words from a table, the measures
+/// storing test floats, the remaps the argument times a test factor (so
+/// every remap's argument and order count), every state and icon.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn round39_yes_no(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use window::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x20);
+    let seq = round38_seq(counter, table);
+    let mut measure = store_through(2, cells);
+    measure.extend(store_through(3, cells + 4));
+    // fld dword [esp+4]; fmul dword [factor]
+    let remap = |factor: u32| {
+        let mut v = vec![0xd9, 0x44, 0x24, 0x04, 0xd8, 0x0d];
+        v.extend_from_slice(&factor.to_le_bytes());
+        v
+    };
+    let stands: Vec<Stand> = vec![
+        (0x008b_e410, vec![], vec![], seq.clone()),
+        (0x008b_e470, vec![], vec![], seq.clone()),
+        (0x008b_e4b0, vec![], vec![], seq),
+        (0x0088_6e80, vec![0], vec![], vec![]),
+        (0x008b_6cb0, vec![0, 1, 4, 5, 6, 7], vec![], measure),
+        (
+            0x0090_5290,
+            vec![0, 2, 3, 4],
+            vec![],
+            store_through(1, cells + 8),
+        ),
+        (0x008f_5f70, vec![0, 1, 2, 3, 4], vec![], vec![]),
+        (0x0090_3bb0, vec![0, 1, 2, 3, 4, 5, 6, 7, 8], vec![], vec![]),
+        (0x008a_f0d0, vec![0, 1], vec![], vec![]),
+        (0x008a_f060, vec![0, 1, 2, 3], vec![], vec![]),
+        (0x0090_16b0, vec![0, 1, 2, 3, 4, 5, 6], vec![], vec![]),
+        (0x008c_0670, vec![0, 1, 2], vec![], vec![]),
+        (0x0064_47e0, vec![0], vec![], remap(cells + 12)),
+        (0x0064_4820, vec![0], vec![], remap(cells + 16)),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let work = b.stack_range().start + 0x1000;
+    let win = alloc(a, b, 0x100);
+    let size = |rng: &mut Xorshift| match rng.next() % 8 {
+        0 => f32::NAN,
+        1 => 0.0,
+        2 => -3.5,
+        _ => (rng.next() % 600) as f32 * 0.73,
+    };
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x100 {
+            let v = [
+                0u32, 0x20, 0x40, 0x60, 0x1000, 0x4000, 0x1_0020, 0x8, 0xffff, 0x1_0000,
+            ][(rng.next() % 10) as usize];
+            let v = if rng.next().is_multiple_of(8) {
+                rng.next()
+            } else {
+                v
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        put(a, b, cells, size(rng));
+        put(a, b, cells + 4, size(rng));
+        put(a, b, cells + 8, size(rng));
+        for at in [cells + 12, cells + 16] {
+            let f = [1.0f32, 0.5, 1.25, 2.0, 3.0, 0.1][(rng.next() % 6) as usize];
+            put(a, b, at, f);
+        }
+        for j in 0..0x40 {
+            put(a, b, win + 4 * j, rng.next());
+        }
+        put(a, b, win + 0x28, rng.next() % 10);
+        put(a, b, win + 0x37, (rng.next() % 2) as u8);
+        put(a, b, win + 0x48, (rng.next() % 3) as u16);
+        put(
+            a,
+            b,
+            win + 0x58,
+            if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                rng.next()
+            },
+        );
+        let offset = match rng.next() % 4 {
+            0 => rng.next(),
+            _ => (rng.next() % 200).wrapping_sub(100),
+        };
+        put(a, b, win + 0x60, offset);
+        put(a, b, win + 0x90, rng.next() % 3);
+        put(a, b, win + 0x94, rng.next() % 4);
+        if k % 7 == 1 {
+            // an icon window exactly Y2(60) plus the margins high
+            let fy: f32 = Mem::read(a, cells + 16);
+            put(a, b, cells + 4, 60.0 * fy);
+            put(a, b, win + 0x58, 0u32);
+            put(a, b, win + 0x94, 1 + rng.next() % 2);
+        }
+        if k % 2 == 0 {
+            eax(a, 0x008e_2e20, &[win]);
+            t::menu_ctrl_yes_no_window(b, win, call);
+        } else {
+            eax(a, 0x008e_2f80, &[win]);
+            t::menu_draw_yes_no_window(b, win, work, call, fcall);
+        }
+        same_memory(&format!("yes/no {k}"), a, b);
+    }
+}
+
+#[test]
+fn round39_yes_no_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round39_yes_no(&mut a, &mut b, &mut Xorshift(0x4039_0021));
+}
+
+#[test]
+fn round39_yes_no_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round39_yes_no(&mut a, &mut b, &mut Xorshift(0x4039_0022));
+}
+
+/// Round 39 group C: `TOGetFontInfoInterMode` and `TOBtlSetTargetHelpMes`
+/// over logging stand-ins (the language, English and icon getters return
+/// table words; the text and name getters pointers to test strings of
+/// many lengths, past the original's 16-byte buffers too), glyph codes
+/// around every boundary.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round39_font_help(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let counter2 = alloc(a, b, 4);
+    let table2 = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x10);
+    let widths = alloc(a, b, 0x1000) + 0x40;
+    let strings = alloc(a, b, 0x400);
+    let text = alloc(a, b, 0x10);
+    let out = alloc(a, b, 0x40);
+    let seq = round38_seq(counter, table);
+    let seq2 = round38_seq(counter2, table2);
+    let stands: Vec<Stand> = vec![
+        (0x008a_c2f0, vec![], vec![], seq.clone()),
+        (0x0078_51d0, vec![], vec![], seq.clone()),
+        (0x008a_c3d0, vec![0], vec![], ret_cell(cells)),
+        (0x0078_fcf0, vec![0, 1, 2], vec![], seq2.clone()),
+        (0x0079_af10, vec![0], vec![], seq2),
+        (0x0079_ae30, vec![0], vec![], seq.clone()),
+        (0x0079_ae10, vec![0], vec![], seq),
+        (0x008b_9650, vec![0, 1, 2, 3, 4, 5], vec![], vec![]),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    put(a, b, cells, widths);
+    for j in 0..0xfc0 {
+        put(a, b, widths - 0x40 + j, (rng.next() & 0xff) as u8);
+    }
+    // strings of 0, 1, 3, 15, 16, 20, 40 and (the last, for names only:
+    // the help text then runs past its 0x80 bytes) 100 bytes
+    let lens = [0u32, 1, 3, 15, 16, 20, 40, 100];
+    for (k, &n) in (0u32..).zip(&lens) {
+        for j in 0..n {
+            put(
+                a,
+                b,
+                strings + 0x40 * k + j,
+                (0x20 + rng.next() % 0x5f) as u8,
+            );
+        }
+        put(a, b, strings + 0x40 * k + n, 0u8);
+    }
+    let codes = [
+        0u8, 4, 5, 6, 0x2b, 0x2c, 0x2d, 0x2f, 0x30, 0x31, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x7f, 0xff,
+        // after a 0x2c lead: glyphs 0xea, 0x103 and 0x104 (the slant's ends)
+        0x4a, 0x63, 0x64,
+    ];
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        put(a, b, counter2, 0u32);
+        for j in 0..0x100 {
+            let v = match rng.next() % 5 {
+                0 => [0u32, 1, 9, 10, 2][(rng.next() % 5) as usize],
+                1 => [0x14u32, 0x15, 0x16, 0x13, 0][(rng.next() % 5) as usize],
+                2 => rng.next() % 4,
+                3 => rng.next(),
+                _ => 0,
+            };
+            put(a, b, table + 4 * j, v);
+            // the texts fill the original's stack buffers 0x1047 (0x30
+            // bytes to the frame check), 0x1048 (0x10; at least two bytes:
+            // its second is raised, past a NUL the original reads stale
+            // stack) and 0x1049 (0x20)
+            let pick = match j {
+                1 => 2 + rng.next() % 2,
+                2 => rng.next() % 6,
+                0 => rng.next() % 7,
+                _ => rng.next() % 8,
+            };
+            put(a, b, table2 + 4 * j, strings + 0x40 * pick);
+        }
+        for j in 0..0x40 {
+            put(a, b, out + j, (rng.next() & 0xff) as u8);
+        }
+        if k % 2 == 0 {
+            // the language and English words
+            for j in 0..0x100 {
+                put(
+                    a,
+                    b,
+                    table + 4 * j,
+                    [0u32, 9, 10, 1, 0, 9, 10, 2][(rng.next() % 8) as usize],
+                );
+            }
+            for j in 0..4 {
+                let c = if rng.next().is_multiple_of(4) {
+                    (rng.next() & 0xff) as u8
+                } else {
+                    codes[(rng.next() % codes.len() as u32) as usize]
+                };
+                put(a, b, text + j, c);
+            }
+            let inter = [0u32, 1, 0x100][(rng.next() % 3) as usize];
+            let want = eax(a, 0x008b_78b0, &[text, out, inter]);
+            let got = tolib::bridge::to_get_font_info_inter_mode(b, text, out, inter, call);
+            assert_eq!(got, want, "font info inter mode {k}");
+        } else {
+            for j in 0..0x80 {
+                put(a, b, a.rebase(0x0133_f538) + j, (rng.next() & 0xff) as u8);
+            }
+            let chr = match rng.next() % 4 {
+                0 => 0xff,
+                1 => rng.next() % 0x14,
+                2 => 0x14 + rng.next() % 0x20,
+                _ => rng.next(),
+            };
+            eax(a, 0x0089_a8b0, &[chr]);
+            btl::bridge::btl_set_target_help_mes(b, chr, call);
+        }
+        same_memory(&format!("font/help {k}"), a, b);
+    }
+}
+
+#[test]
+fn round39_font_help_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round39_font_help(&mut a, &mut b, &mut Xorshift(0x4039_0031));
+}
+
+#[test]
+fn round39_font_help_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round39_font_help(&mut a, &mut b, &mut Xorshift(0x4039_0032));
+}
+
+/// Round 39 group D: `TOWaitBtlWinInputGil` and `TOInitBtlWinChange` over
+/// logging stand-ins (`TOBtlSetNextAction` and `TOGetSaveWindow` return
+/// table words), every pad bit, digits around both ends (0..=8: a higher
+/// top digit makes the original read past its table) and amounts around
+/// 0 and the most.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round39_gil(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge::{self as t, gil};
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let seq = round38_seq(counter, table);
+    let stands: Vec<Stand> = vec![
+        (0x0088_6ba0, vec![0], vec![], vec![]),
+        (0x0089_a330, vec![0, 1], vec![], seq.clone()),
+        (0x0089_a630, vec![], vec![], vec![]),
+        (0x0089_b5a0, vec![0, 1, 2], vec![], seq),
+        (0x008a_eec0, vec![0], vec![], vec![]),
+        (0x008a_f0d0, vec![0, 1], vec![], vec![]),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let w = alloc(a, b, 0x60);
+    let list = alloc(a, b, 0x10);
+    let r = |a: &Oracle, x: u32| a.rebase(x);
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x100 {
+            let v = if rng.next().is_multiple_of(3) {
+                rng.next()
+            } else {
+                rng.next() % 3
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        for j in 0..0x18 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        put(a, b, w + 0x20, list);
+        put(a, b, list, rng.next());
+        if k % 4 == 3 {
+            let want = eax(a, 0x008a_84d0, &[w]);
+            let got = t::init_btl_win_change(b, w, call);
+            assert_eq!(got, want, "win change {k}");
+            same_memory(&format!("win change {k}"), a, b);
+            continue;
+        }
+        let pad = [
+            0x8000u16, 0x2000, 0x1000, 0x4000, 0x20, 0x40, 0x9020, 0x5040, 0xa000, 0,
+        ][(rng.next() % 10) as usize]
+            | if rng.next().is_multiple_of(4) {
+                (rng.next() & 0xffff) as u16
+            } else {
+                0
+            };
+        put(a, b, r(a, 0x025d_09d6), pad);
+        put(
+            a,
+            b,
+            r(a, 0x0133_d6e0),
+            [0u32, 0, 0, 1, 2][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            r(a, 0x023c_c088),
+            [0xeu16, 0xe, 3, 0x10e][(rng.next() % 4) as usize],
+        );
+        let top = (rng.next() % 9) as i16;
+        put(a, b, r(a, gil::TOP_DIGIT), top);
+        let digit = [0i16, top, top + 1, -1, (rng.next() % 9) as i16][(rng.next() % 5) as usize];
+        put(a, b, r(a, gil::DIGIT), digit);
+        let most = [0i32, 1, 9, 10, 999, 100_000, -5][(rng.next() % 7) as usize];
+        put(a, b, r(a, gil::MOST), most);
+        let amount = [0i32, 1, -1, most, most - 1, most + 1, 50][(rng.next() % 7) as usize];
+        put(a, b, r(a, gil::AMOUNT), amount);
+        put(a, b, r(a, gil::OWNED), rng.next());
+        set(
+            a,
+            b,
+            btl::bridge::ACTION_DEPTH,
+            [0i8, 1, 2, -1][(rng.next() % 4) as usize],
+        );
+        let want = eax(a, 0x008a_87d0, &[w]);
+        let got = t::wait_btl_win_input_gil(b, w, call);
+        assert_eq!(got, want, "gil {k}");
+        same_memory(&format!("gil {k}"), a, b);
+    }
+}
+
+#[test]
+fn round39_gil_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round39_gil(&mut a, &mut b, &mut Xorshift(0x4039_0041));
+}
+
+#[test]
+fn round39_gil_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round39_gil(&mut a, &mut b, &mut Xorshift(0x4039_0042));
+}
+
+/// Round 39 group E: the VU0 point transform `0x009db270` on random
+/// matrices and points (no signalling NaNs) and
+/// `TORelayoutMessagesForLanguage_008b09b0` over logging stand-ins for its
+/// callees (English from a table), the eight message slots in every
+/// state.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round39_vu0_relayout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let seq = round38_seq(counter, table);
+    let stands: Vec<Stand> = vec![
+        (0x0078_51d0, vec![], vec![], seq),
+        (0x008b_8de0, vec![0], vec![], vec![]),
+        (0x008a_f850, vec![0, 1, 2, 3], vec![], vec![]),
+        (0x0090_6e90, vec![0], vec![], vec![]),
+        (0x008b_8d10, vec![0, 1, 2, 3, 4, 5], vec![], vec![]),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let float = |rng: &mut Xorshift| {
+        let f = rng.float();
+        if ffx_bridge::x87::is_snan(f.to_bits()) {
+            -0.25
+        } else {
+            f
+        }
+    };
+    let vec_in = alloc(a, b, 0x10);
+    let matrix = alloc(a, b, 0x40);
+    let out = alloc(a, b, 0x10);
+    let objs = alloc(a, b, 8 * 0x200);
+    let slots = a.rebase(0x0186_5b3c);
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x100 {
+            put(a, b, table + 4 * j, rng.next() % 3);
+        }
+        if k % 2 == 0 {
+            for j in 0..4 {
+                put(a, b, vec_in + 4 * j, float(rng));
+            }
+            for j in 0..16 {
+                put(a, b, matrix + 4 * j, float(rng));
+            }
+            if k % 8 == 0 {
+                put(a, b, a.rebase(0x00c0_a010), float(rng));
+            } else {
+                put(a, b, a.rebase(0x00c0_a010), 1.0f32);
+            }
+            let want = eax(a, 0x009d_b270, &[out, matrix, vec_in]);
+            let got = math::bridge::vu0_apply_point(b, out, matrix, vec_in);
+            assert_eq!(got, want, "vu0 apply {k}");
+        } else {
+            for i in 0..8u32 {
+                let slot = objs + 0x200 * i;
+                for j in 0..0x80 {
+                    put(a, b, slot + 4 * j, rng.next());
+                }
+                put(a, b, slots + 4 * i, slot);
+                put(a, b, slot + 0x10, slot + 0x40);
+                put(a, b, slot + 0x14, slot + 0x80);
+                let msg = slot + 0x80;
+                put(
+                    a,
+                    b,
+                    msg + 0x2c,
+                    [0i16, 1, 2, 3, 4, -1][(rng.next() % 6) as usize],
+                );
+                put(
+                    a,
+                    b,
+                    msg + 0x94,
+                    if rng.next().is_multiple_of(4) {
+                        0
+                    } else {
+                        rng.next()
+                    },
+                );
+                for o in [0x40u32, 0x42, 0x44, 0x46] {
+                    put(a, b, msg + o, (rng.next() % 600) as i16 - 100);
+                }
+                for o in [0x30u32, 0x34] {
+                    put(a, b, msg + o, (rng.next() % 4000) as f32 / 3.0 - 200.0);
+                }
+            }
+            eax(a, 0x008b_09b0, &[]);
+            window::bridge::relayout_messages_for_language(b, call);
+        }
+        same_memory(&format!("vu0/relayout {k}"), a, b);
+    }
+}
+
+#[test]
+fn round39_vu0_relayout_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round39_vu0_relayout(&mut a, &mut b, &mut Xorshift(0x4039_0051));
+}
+
+#[test]
+fn round39_vu0_relayout_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round39_vu0_relayout(&mut a, &mut b, &mut Xorshift(0x4039_0052));
+}

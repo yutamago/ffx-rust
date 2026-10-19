@@ -340,6 +340,118 @@ pub mod bridge {
         n
     }
 
+    /// `TOBtlSetTargetHelpMes(chr)` (`0x0089a8b0`): the battle help text
+    /// (`g_BtlHelpText`, `0x0133f538`, cleared) for the target `chr`
+    /// (nothing for 0xff): the character's name
+    /// (`MsGetRamChrName`), for a monster (`chr` from 0x14) after a tag
+    /// by `MsGetRamChrIconType(chr)` and `MsGetRamChrIconNumber(chr)` `n`:
+    /// 0x14 a letter (Japanese without English: `,` and the digit `n`;
+    /// languages 9/10 `n + 'Z'`, others `n + 'P'`) and menu text 0x1049;
+    /// 0x15 menu texts 0x1047 and 0x1049; 0x16 0x1047, 0x1048 with its
+    /// second byte raised by `n`, and 0x1049. Then measured
+    /// (`TOGetMessageWH(0, text, 0x0133f534, 0x0133f530, 0, 0)`). The
+    /// three menu texts (`MsMenuGetText(1, id, 0)`) are copied first, as
+    /// the original does, into its three 16-byte stack buffers (0x1047,
+    /// 0x1049, 0x1048 in that order in memory; a longer text runs on into
+    /// the next, past the last one the original corrupts its frame: here
+    /// it stops; with a 0x1048 shorter than two bytes the raised byte
+    /// is its NUL and the original reads on into stale stack, here
+    /// zeros). Callees through `call`.
+    pub fn btl_set_target_help_mes<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const MENU_GET_TEXT: u32 = 0x0078_fcf0;
+        const CHR_NAME: u32 = 0x0079_af10;
+        const ICON_TYPE: u32 = 0x0079_ae30;
+        const ICON_NUMBER: u32 = 0x0079_ae10;
+        const LANG: u32 = 0x008a_c2f0;
+        const ENGLISH: u32 = 0x0078_51d0;
+        const MESSAGE_WH: u32 = 0x008b_9650;
+        // the stack buffers' offsets: 0x1047, 0x1049, 0x1048
+        const MONSTER: usize = 0;
+        const OF: usize = 0x10;
+        const LETTER: usize = 0x20;
+        if chr == 0xff {
+            return;
+        }
+        let mut texts = [0u8; 0x30];
+        for (id, at) in [(0x1047, MONSTER), (0x1048, LETTER), (0x1049, OF)] {
+            let src = call(mem, MENU_GET_TEXT, &[1, id, 0]);
+            for (k, slot) in (0u32..).zip(texts[at..].iter_mut()) {
+                *slot = mem.read(src.wrapping_add(k));
+                if *slot == 0 {
+                    break;
+                }
+            }
+        }
+        // a text of the buffers, to its NUL
+        let local = |texts: &[u8; 0x30], at: usize| -> Vec<u8> {
+            let s = &texts[at..];
+            let end = s.iter().position(|&c| c == 0).map_or(s.len(), |n| n + 1);
+            s[..end].to_vec()
+        };
+        let text = mem.rebase(0x0133_f538);
+        mem.write_bytes(text, &[0u8; 0x80]);
+        // the end of the help text
+        let end = |mem: &M| {
+            let mut p = text;
+            while mem.read::<u8>(p) != 0 {
+                p = p.wrapping_add(1);
+            }
+            p
+        };
+        let name = call(mem, CHR_NAME, &[chr]);
+        if chr.cast_signed() >= 0x14 {
+            match call(mem, ICON_TYPE, &[chr]) {
+                0x14 => {
+                    #[allow(clippy::cast_possible_truncation)] // al
+                    let n = call(mem, ICON_NUMBER, &[chr]) as u8;
+                    if call(mem, LANG, &[]) == 0 && call(mem, ENGLISH, &[]) == 0 {
+                        mem.write_bytes(text, &[b',', n.wrapping_add(b'0'), 0]);
+                    } else {
+                        let letter = if call(mem, LANG, &[]) == 10 || call(mem, LANG, &[]) == 9 {
+                            b'Z'
+                        } else {
+                            b'P'
+                        };
+                        mem.write_bytes(text, &[n.wrapping_add(letter), 0]);
+                    }
+                    let at = end(mem);
+                    mem.write_bytes(at, &local(&texts, OF));
+                }
+                0x15 => {
+                    mem.write_bytes(text, &local(&texts, MONSTER));
+                    let at = end(mem);
+                    mem.write_bytes(at, &local(&texts, OF));
+                }
+                0x16 => {
+                    #[allow(clippy::cast_possible_truncation)] // al
+                    let n = call(mem, ICON_NUMBER, &[chr]) as u8;
+                    texts[LETTER + 1] = texts[LETTER + 1].wrapping_add(n);
+                    mem.write_bytes(text, &local(&texts, MONSTER));
+                    let at = end(mem);
+                    mem.write_bytes(at, &local(&texts, LETTER));
+                    let at = end(mem);
+                    mem.write_bytes(at, &local(&texts, OF));
+                }
+                _ => {}
+            }
+        }
+        // the name (strcat over game memory)
+        let mut len = 0u32;
+        while mem.read::<u8>(name.wrapping_add(len)) != 0 {
+            len += 1;
+        }
+        let mut bytes = vec![0u8; len as usize + 1];
+        mem.read_bytes(name, &mut bytes);
+        let at = end(mem);
+        mem.write_bytes(at, &bytes);
+        let (w, h) = (mem.rebase(0x0133_f534), mem.rebase(0x0133_f530));
+        call(mem, MESSAGE_WH, &[0, text, w, h, 0, 0]);
+    }
+
     /// `TOBtlSetChangeHelpMes(n)` (`0x008997c0`): for a character or aeon
     /// (`n` 0..=0x11) or command 0x30ff, the battle help text
     /// `g_BtlHelpText` (`0x0133f538`, 0x80 bytes) cleared and filled with
@@ -1070,6 +1182,212 @@ pub mod bridge {
                 mem.write(row + 0x38, bar);
             }
         }
+    }
+
+    /// The battle info window's two "shown" flags: the status line
+    /// (`0x0133c93e`) and the message lines ([`INFO_MES_SHOWN`], read by
+    /// `TOBtlDrawInfoWinMes`).
+    pub const INFO_SHOWN: u32 = 0x0133_c93e;
+    /// `g_BtlInfoWinShown`.
+    pub const INFO_MES_SHOWN: u32 = 0x0133_c93d;
+    /// The time the status line was last shown (`f32`, `graphicGetTime`).
+    pub const INFO_SHOWN_TIME: u32 = 0x0133_c944;
+    /// The character the target cursor is on (`u16`, the low half of the
+    /// word at `0x0133d1f4`).
+    pub const TARGET_CHR: u32 = 0x0133_d1f4;
+    /// The character the status line and the message lines were last set
+    /// up for (`i16`s).
+    pub const INFO_PARAM_CHR: u32 = 0x0133_f5b8;
+    pub const INFO_MES_CHR: u32 = 0x0133_f5bc;
+    /// `MsMenuCheckLook()`, `MsMenuCheckChrLook(chr)`,
+    /// `MsMenuCheckChrLive(chr)`, `TOBtlSetInfoWinParam(chr)`,
+    /// `TOBtlSetInfoWinMes(chr)` and `graphicGetTime()`.
+    const CHECK_LOOK: u32 = 0x0078_f9e0;
+    const CHECK_CHR_LOOK: u32 = 0x0078_f990;
+    const CHECK_CHR_LIVE: u32 = 0x0078_f970;
+    const SET_INFO_WIN_PARAM: u32 = 0x0089_9fd0;
+    const SET_INFO_WIN_MES: u32 = 0x0089_9f20;
+    const GET_TIME: u32 = 0x0064_1410;
+
+    /// The command window at the current action depth is open (the byte
+    /// `0x0133c952 + 0xf0 * g_BtlActionDepth` is 1).
+    fn command_window_open(mem: &impl Mem) -> bool {
+        let depth = i32::from(ACTION_DEPTH.get(mem));
+        let at = mem
+            .rebase(0x0133_c952)
+            .wrapping_add(depth.wrapping_mul(0xf0).cast_unsigned());
+        mem.read::<u8>(at) == 1
+    }
+
+    /// The target cursor's character as the callees get it (`movzx`).
+    fn target_chr(mem: &impl Mem) -> u32 {
+        u32::from(mem.read::<u16>(mem.rebase(TARGET_CHR)))
+    }
+
+    /// The target is a party member (characters 0x14..=0x1b are the
+    /// party slots, `(u16)(chr - 0x14) <= 7`).
+    fn target_in_party(mem: &impl Mem) -> bool {
+        (0x14..=0x1b).contains(&target_chr(mem))
+    }
+
+    /// The info window's lines follow the target: when it differs from
+    /// the character at `last`, `set(chr)` (through `call`) and `last` takes
+    /// the target, re-read after the call.
+    fn follow_target<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        last: u32,
+        set: u32,
+    ) {
+        let last = mem.rebase(last);
+        let chr = target_chr(mem);
+        #[allow(clippy::cast_possible_truncation)] // a u16
+        if mem.read::<u16>(last) != chr as u16 {
+            call(mem, set, &[chr]);
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(last, target_chr(mem) as u16);
+        }
+    }
+
+    /// `TOBtlCtrlInfoWin()` (`0x00891480`): one frame of the battle info
+    /// window's status line. Shown ([`INFO_SHOWN`] 1) only while the
+    /// command window is open and the target is a party member that is
+    /// either looked at (`MsMenuCheckLook()` -1 and
+    /// `MsMenuCheckChrLook(chr)` 1) or alive (`MsMenuCheckChrLive(chr)`
+    /// 1); a target other than [`INFO_PARAM_CHR`] sets the line up first
+    /// (`TOBtlSetInfoWinParam`). The frame it appears, the time
+    /// (`graphicGetTime`, through `fcall`) goes to [`INFO_SHOWN_TIME`].
+    /// Callees through `call`.
+    pub fn ctrl_info_win<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let shown = mem.rebase(INFO_SHOWN);
+        let was: u8 = mem.read(shown);
+        if !command_window_open(mem) {
+            mem.write(shown, 0u8);
+            return;
+        }
+        let call = &mut call;
+        let looked = call(mem, CHECK_LOOK, &[]) == u32::MAX
+            && target_in_party(mem)
+            && call(mem, CHECK_CHR_LOOK, &[target_chr(mem)]) == 1;
+        if looked {
+            follow_target(mem, call, INFO_PARAM_CHR, SET_INFO_WIN_PARAM);
+        }
+        mem.write(shown, u8::from(looked));
+        if call(mem, CHECK_CHR_LIVE, &[target_chr(mem)]) == 1 && target_in_party(mem) {
+            follow_target(mem, call, INFO_PARAM_CHR, SET_INFO_WIN_PARAM);
+            mem.write(shown, 1u8);
+        }
+        if was == 0 && mem.read::<u8>(shown) == 1 {
+            let now = ffx_bridge::x87::store(fcall(mem, GET_TIME, &[]));
+            mem.write(mem.rebase(INFO_SHOWN_TIME), now);
+        }
+    }
+
+    /// The info window's message lines (`g_BtlInfoWinLines`, four
+    /// records of 0x1c bytes from `0x0133f618`): `u16 +0` the state (0
+    /// unused, 2 scrolling in, 3 scrolling out, 8 a line that fits and
+    /// stands still), `f32 +0xc` x, `f32 +0x10` y, `i16 +0x14` the width,
+    /// `+0x18` the text; the count of lines in use is the `u16` at
+    /// `0x0133f688`.
+    pub const INFO_LINES: u32 = 0x0133_f618;
+    const INFO_LINE: u32 = 0x1c;
+    /// The info window's box (`g_BtlInfoWinBox`): `i16` left at `+0`,
+    /// right at `+8`.
+    const INFO_BOX: u32 = 0x0133_f694;
+
+    /// The right end of a line (`width + x`, at 53 bits).
+    fn line_end(mem: &impl Mem, line: u32) -> f64 {
+        let width = i32::from(mem.read::<i16>(line + 0x14));
+        ffx_bridge::x87::add(
+            f64::from(width),
+            ffx_bridge::x87::load(mem.read(line + 0xc)),
+        )
+    }
+
+    /// `TOBtlCtrlInfoWinMes()` (`0x00891580`): one frame of the battle
+    /// info window's message lines. [`INFO_MES_SHOWN`] follows the target
+    /// as in [`ctrl_info_win`] (looked at: `MsMenuCheckLook()` -1 alone;
+    /// alive: `MsMenuCheckChrLive(chr)` 1), the lines set up by
+    /// `TOBtlSetInfoWinMes` for a new target ([`INFO_MES_CHR`]). Then,
+    /// unless the first line stands still (state 8), the ticker: every
+    /// line in use moves left by 1.2 (the `f32` value); a line scrolling
+    /// in whose right end has passed 80 units inside the box's right edge
+    /// (`end < right - 80`) starts the next line over again at the right edge (the same
+    /// width, y and text) and scrolls out itself; a line scrolling out
+    /// whose end has passed the left edge is dropped; the lines in use
+    /// are packed to the front (the rest cleared) and counted. Callees
+    /// through `call`.
+    pub fn ctrl_info_win_mes<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87;
+        let shown = mem.rebase(INFO_MES_SHOWN);
+        if !command_window_open(mem) {
+            mem.write(shown, 0u8);
+            return;
+        }
+        let call = &mut call;
+        let looked = call(mem, CHECK_LOOK, &[]) == u32::MAX && target_in_party(mem);
+        if looked {
+            follow_target(mem, call, INFO_MES_CHR, SET_INFO_WIN_MES);
+        }
+        mem.write(shown, u8::from(looked));
+        if call(mem, CHECK_CHR_LIVE, &[target_chr(mem)]) == 1 && target_in_party(mem) {
+            follow_target(mem, call, INFO_MES_CHR, SET_INFO_WIN_MES);
+            mem.write(shown, 1u8);
+        }
+
+        let lines = mem.rebase(INFO_LINES);
+        let line = |i: u32| lines + INFO_LINE * i;
+        let state = |mem: &M, i: u32| mem.read::<u16>(line(i));
+        if state(mem, 0) == 8 {
+            return;
+        }
+        for i in 0..4 {
+            if state(mem, i) != 0 {
+                // the step is the double 0x3ff3333340000000, 1.2 as an f32
+                let x = x87::sub(x87::load(mem.read(line(i) + 0xc)), f64::from(1.2f32));
+                mem.write(line(i) + 0xc, x87::store(x));
+            }
+        }
+        let bx = mem.rebase(INFO_BOX);
+        let right = i32::from(mem.read::<i16>(bx + 8));
+        let left = f64::from(mem.read::<i16>(bx));
+        let start = f64::from(int_f32(right - 0x50));
+        for i in 0..3 {
+            let (this, next) = (line(i), line(i + 1));
+            if state(mem, i) == 2 && line_end(mem, this) < start {
+                mem.write(next, 2u16);
+                mem.write(next + 0xc, int_f32(right));
+                mem.write(next + 0x14, mem.read::<u16>(this + 0x14));
+                mem.write(next + 0x18, mem.read::<u32>(this + 0x18));
+                mem.write(next + 0x10, x87::store(x87::load(mem.read(this + 0x10))));
+                mem.write(this, 3u16);
+            }
+        }
+        for i in 0..4 {
+            if state(mem, i) == 3 && line_end(mem, line(i)) < left {
+                mem.write(line(i), 0u16);
+            }
+        }
+        let mut kept = [0u8; 4 * INFO_LINE as usize];
+        let mut n = 0u16;
+        for i in 0..4 {
+            if state(mem, i) != 0 {
+                let mut record = [0u8; INFO_LINE as usize];
+                mem.read_bytes(line(i), &mut record);
+                let at = usize::from(n) * INFO_LINE as usize;
+                kept[at..at + INFO_LINE as usize].copy_from_slice(&record);
+                n += 1;
+            }
+        }
+        mem.write_bytes(lines, &kept);
+        mem.write(mem.rebase(0x0133_f688), n);
     }
 
     /// The limit windows' shared callees: `TOSeqStartSceneDrawContinue(2,

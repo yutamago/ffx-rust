@@ -6963,6 +6963,103 @@ pub mod bridge {
         p.wrapping_add(1)
     }
 
+    /// `TOGetFontInfoInterMode(text, out, inter)` (`0x008b78b0`): as
+    /// [`to_get_font_info`] for the international mode's fonts. Outside
+    /// Japanese and languages 9/10 and with `inter` set, a code from 0x2c
+    /// is a glyph of width table 4 (page 0x3d40, the slant `+0x18` left as
+    /// it is) and code 6 a two-byte icon of table 5 (page 0x3d60, slant
+    /// 0); other codes are left to the caller (the same `text` back).
+    /// Else Japanese without English gets the fixed 10.0-wide box for
+    /// 0x5c..=0x5e (page 0x3c00); in languages 9/10 a `4` lead adds 0x410;
+    /// codes below 0x2c are left to the caller; codes from 0x2c are glyphs
+    /// of width table 0 (page 0x3c00), a lead below 0x30 picking the 0xd0
+    /// row (replacing the 0x410), slanted 2.0 for glyphs 0xea..=0x103.
+    /// `out` as in [`to_get_font_info`] (`+0`/`+2` the page and 0x14 as one
+    /// word). Returns the text after the glyph. Callees (`TOGetFFXLang`,
+    /// `TOGetFontWidthTblAdrs`, `MsGetSaveConfigEnglish`) through `call`.
+    pub fn to_get_font_info_inter_mode<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        out: u32,
+        inter: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const LANG: u32 = 0x008a_c2f0;
+        const WIDTH_TABLE: u32 = 0x008a_c3d0;
+        const ENGLISH: u32 = 0x0078_51d0;
+        let at = |off: u32| out.wrapping_add(off);
+        // a glyph of `table`: the page word, the width (a quarter of the
+        // width-table byte), the height 18 and the sheet cell
+        let glyph = |mem: &mut M, head: u32, table: u32, index: i32| {
+            mem.write(at(0), head);
+            let b: i8 = mem.read(table.wrapping_add(index.cast_unsigned()));
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            let width = (f64::from(b) * 0.25) as f32;
+            mem.write(at(0x1c), width);
+            mem.write(at(0x20), 18.0f32);
+            font_cell(mem, out, index, width);
+        };
+        let lang = call(mem, LANG, &[]);
+        let local =
+            lang != 0 && call(mem, LANG, &[]) != 9 && call(mem, LANG, &[]) != 10 && inter != 0;
+        if local {
+            let c: u8 = mem.read(text);
+            if c >= 0x2c {
+                let table = call(mem, WIDTH_TABLE, &[4]);
+                let index = i32::from(mem.read::<u8>(text)) - 0x30;
+                glyph(mem, 0x0014_3d40, table, index);
+                return text.wrapping_add(1);
+            }
+            if c != 6 {
+                return text;
+            }
+            let table = call(mem, WIDTH_TABLE, &[5]);
+            let index = i32::from(mem.read::<u8>(text.wrapping_add(1))) - 0x30;
+            mem.write(at(0x18), 0.0f32);
+            glyph(mem, 0x0014_3d60, table, index);
+            return text.wrapping_add(2);
+        }
+
+        let c: u8 = mem.read(text);
+        if call(mem, LANG, &[]) == 0 && call(mem, ENGLISH, &[]) == 0 && (0x5c..=0x5e).contains(&c) {
+            // the fixed box
+            mem.write(at(0x18), 0.0f32);
+            mem.write(at(0x1c), 10.0f32);
+            mem.write(at(0), 0x0014_3c00u32);
+            mem.write(at(4), 0u16);
+            mem.write(at(0x20), 18.0f32);
+            mem.write(at(8), 70.0f32);
+            mem.write(at(0xc), 0.0f32);
+            mem.write(at(0x10), 80.0f32);
+            mem.write(at(0x14), 18.0f32);
+            return text.wrapping_add(1);
+        }
+        let mut p = text;
+        let mut base = 0i32;
+        if matches!(call(mem, LANG, &[]), 9 | 10) && mem.read::<u8>(p) == 4 {
+            p = p.wrapping_add(1);
+            base = 0x410;
+        }
+        if mem.read::<u8>(p) < 0x2c {
+            return p;
+        }
+        let table = call(mem, WIDTH_TABLE, &[0]);
+        let lead: u8 = mem.read(p);
+        if lead < 0x30 {
+            base = (i32::from(lead) - 0x2b) * 0xd0;
+            p = p.wrapping_add(1);
+        }
+        let index = i32::from(mem.read::<u8>(p)) + base - 0x30;
+        let slant = if index.wrapping_sub(0xea).cast_unsigned() <= 0x19 {
+            2.0f32
+        } else {
+            0.0
+        };
+        mem.write(at(0x18), slant);
+        glyph(mem, 0x0014_3c00, table, index);
+        p.wrapping_add(1)
+    }
+
     /// Clears the 0x40-byte glyph record at `0x01841d50` that the battle
     /// text widths pass to `TOGetFontInfo` (the originals `memset` it).
     fn clear_glyph_record<M: Mem>(mem: &mut M) -> u32 {
@@ -11217,6 +11314,160 @@ pub mod bridge {
         let name = mem.rebase(if right { 0x00b5_f07c } else { 0x00b5_f070 });
         call(mem, 0x008a_f0d0, &[2, name]);
         1
+    }
+
+    /// The battle gil window (Bribe, Zanmato's pay): `i16 0x01340458`
+    /// the digit the cursor is on, `i16 0x01340456` the highest digit,
+    /// `i32 0x0134045c` the party's gil, `0x01340460` the most that can be
+    /// paid, `0x01340464` the amount, `0x01340468` what would be left.
+    pub mod gil {
+        pub const DIGIT: u32 = 0x0134_0458;
+        pub const TOP_DIGIT: u32 = 0x0134_0456;
+        pub const OWNED: u32 = 0x0134_045c;
+        pub const MOST: u32 = 0x0134_0460;
+        pub const AMOUNT: u32 = 0x0134_0464;
+        pub const LEFT: u32 = 0x0134_0468;
+    }
+
+    /// `TOWaitBtlWinInputGil(w)` (`0x008a87d0`): one frame of the gil
+    /// window on the battle pad trigger (`u16 0x025d09d6`; with
+    /// `0x0133d6e0` set no pad: character 0xe (`g_BtlWindowChr`) pays 1 at
+    /// once, others cancel). Left/right (0x8000/0x2000) move the digit,
+    /// wrapping between 0 and the highest; up/down (0x1000/0x4000) add or
+    /// take ten to the digit's power (a click while below the most / above
+    /// 0); the amount is kept in 0..=the most and the gil left updated.
+    /// Circle (0x20) asks `TOBtlSetNextAction(i16 w+8, *(i16 *)(w+0x20))`:
+    /// 1 takes the amount (`0x023cc038`, at least 1 for the automatic
+    /// character 0xe, and `0x01340440`) with a click, else the error click
+    /// 3. Cross (0x40) below the first action level clears both, steps back
+    /// (`TOBtlSetPrevAction`), counts `w+1` up and clicks 4. Returns 1 with
+    /// neither pressed, else 0. The digit stays in 0..=8 (a higher top
+    /// digit makes the original read its own stack past the powers of
+    /// ten). Callees (`SndPlayClick` and the two above) through `call`.
+    pub fn wait_btl_win_input_gil<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const CLICK: u32 = 0x0088_6ba0;
+        const NEXT_ACTION: u32 = 0x0089_a330;
+        const PREV_ACTION: u32 = 0x0089_a630;
+        let g = |mem: &M, a: u32| mem.rebase(a);
+        let automatic = mem.read::<u32>(g(mem, 0x0133_d6e0)) == 1;
+        let chr_0e = |mem: &M| mem.read::<u16>(g(mem, 0x023c_c088)) == 0xe;
+        let amount_at = g(mem, gil::AMOUNT);
+        let digit_at = g(mem, gil::DIGIT);
+        let mut pad: u16 = mem.read(g(mem, 0x025d_09d6));
+        if automatic {
+            pad = if chr_0e(mem) {
+                mem.write(amount_at, 1u32);
+                0x20
+            } else {
+                0x40
+            };
+        }
+        for (bit, step) in [(0x8000u16, 1i16), (0x2000, -1)] {
+            if pad & bit != 0 {
+                let d = mem.read::<i16>(digit_at).wrapping_add(step);
+                mem.write(digit_at, d);
+                call(mem, CLICK, &[1]);
+            }
+        }
+        let digit: i16 = mem.read(digit_at);
+        let top: i16 = mem.read(g(mem, gil::TOP_DIGIT));
+        if digit < 0 {
+            mem.write(digit_at, top);
+        } else if digit > top {
+            mem.write(digit_at, 0i16);
+        }
+        let most: i32 = mem.read(g(mem, gil::MOST));
+        // ten to the digit's power (the original's table of 1..=10^8)
+        let power = |mem: &M| {
+            u32::try_from(mem.read::<i16>(digit_at))
+                .ok()
+                .filter(|&d| d <= 8)
+                .map_or(0, |d| 10i32.pow(d))
+        };
+        let mut amount: i32 = mem.read(amount_at);
+        if pad & 0x1000 != 0 {
+            if amount < most {
+                call(mem, CLICK, &[1]);
+                amount = mem.read(amount_at);
+            }
+            amount = amount.wrapping_add(power(mem));
+            mem.write(amount_at, amount);
+        }
+        if pad & 0x4000 != 0 {
+            if amount > 0 {
+                call(mem, CLICK, &[1]);
+                amount = mem.read(amount_at);
+            }
+            amount = amount.wrapping_sub(power(mem));
+        }
+        let most: i32 = mem.read(g(mem, gil::MOST));
+        let amount = amount.min(most).max(0);
+        let owned: i32 = mem.read(g(mem, gil::OWNED));
+        mem.write(g(mem, gil::LEFT), owned.wrapping_sub(amount));
+        mem.write(amount_at, amount);
+
+        let (taken, shown) = (g(mem, 0x023c_c038), g(mem, 0x0134_0440));
+        if pad & 0x20 != 0 {
+            let list: u32 = mem.read(w.wrapping_add(0x20));
+            let target = i32::from(mem.read::<i16>(list)).cast_unsigned();
+            let window = i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+            if call(mem, NEXT_ACTION, &[window, target]) != 1 {
+                call(mem, CLICK, &[3]);
+                return 0;
+            }
+            let amount: i32 = mem.read(amount_at);
+            let automatic = mem.read::<u32>(g(mem, 0x0133_d6e0)) == 1;
+            let chosen = if automatic && chr_0e(mem) && amount < 1 {
+                1
+            } else {
+                amount
+            };
+            mem.write(taken, chosen);
+            mem.write(shown, amount);
+            call(mem, CLICK, &[1]);
+            return 0;
+        }
+        if pad & 0x40 == 0 {
+            return 1;
+        }
+        if crate::btl::bridge::ACTION_DEPTH.get(mem) > 0 {
+            mem.write(taken, 0u32);
+            mem.write(shown, 0u32);
+            call(mem, PREV_ACTION, &[]);
+            let n = mem.read::<u8>(w.wrapping_add(1)).wrapping_add(1);
+            mem.write(w.wrapping_add(1), n);
+            call(mem, CLICK, &[4]);
+        }
+        0
+    }
+
+    /// `TOInitBtlWinChange(w)` (`0x008a84d0`): the battle change window's
+    /// state (`0x01340800`, eight words) cleared, then `u16` 3 and the
+    /// window's `i16 w+8` at its start, `u16 w+0x42` 0, the party list
+    /// `TOGetSaveWindow(w+8, 10, 0x0134080c)` to `w+0x20`, and the
+    /// `bclose` scene (`0x00b5f094`) started on layer 2 after
+    /// `TOSeqInitScene(2)`. Returns 0.
+    pub fn init_btl_win_change<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let state = mem.rebase(0x0134_0800);
+        mem.write_bytes(state, &[0u8; 0x20]);
+        mem.write(state, 3u16);
+        mem.write(state + 2, mem.read::<u16>(w.wrapping_add(8)));
+        mem.write(w.wrapping_add(0x42), 0u16);
+        let window = i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        let list = call(mem, 0x0089_b5a0, &[window, 10, state + 0xc]);
+        mem.write(w.wrapping_add(0x20), list);
+        call(mem, 0x008a_eec0, &[2]);
+        let name = mem.rebase(0x00b5_f094);
+        call(mem, 0x008a_f0d0, &[2, name]);
+        0
     }
 
     /// `TOFuncPadMessageNormal(w)` (`0x008b64a0`): with trigger bit 0x20

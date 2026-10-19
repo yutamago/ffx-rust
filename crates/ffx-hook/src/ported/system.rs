@@ -1388,6 +1388,10 @@ ported! {
     MagicSqrt_009dbe10 @ 0x009d_be10 => extern "C" fn magic_sqrt(src: u32, dst: u32) -> u32 {
         math::bridge::magic_sqrt(&mut mem(), src, dst)
     }
+    /// `FFXVu0ApplyPoint_009db270(out, m, v)`.
+    FFXVu0ApplyPoint_009db270 @ 0x009d_b270 => extern "C" fn vu0_apply_point(out: u32, m: u32, v: u32) -> u32 {
+        math::bridge::vu0_apply_point(&mut mem(), out, m, v)
+    }
     /// `Kernel_LoadTables(kind)`.
     Kernel_LoadTables @ 0x0078_1d40 => extern "C" fn kernel_load_tables(kind: u32) -> u32 {
         files::bridge::kernel_load_tables(&mut mem(), kind, call_ptr)
@@ -1549,6 +1553,43 @@ ported! {
     /// `TOBtlCtrlLuluLimitWindow()`.
     TOBtlCtrlLuluLimitWindow @ 0x0089_1b80 => extern "C" fn to_btl_ctrl_lulu_limit_window() {
         btl::bridge::ctrl_lulu_limit_window(&mut mem(), call_sym, fcall);
+    }
+    /// `TOBtlCtrlInfoWin()`.
+    TOBtlCtrlInfoWin @ 0x0089_1480 => extern "C" fn to_btl_ctrl_info_win() {
+        btl::bridge::ctrl_info_win(&mut mem(), call_sym, fcall);
+    }
+    /// `TOBtlCtrlInfoWinMes()`.
+    TOBtlCtrlInfoWinMes @ 0x0089_1580 => extern "C" fn to_btl_ctrl_info_win_mes() {
+        btl::bridge::ctrl_info_win_mes(&mut mem(), call_sym);
+    }
+    /// `TOMenuCtrlYesNoWindow(win)`.
+    TOMenuCtrlYesNoWindow @ 0x008e_2e20 => extern "C" fn to_menu_ctrl_yes_no_window(win: u32) {
+        window::bridge::menu_ctrl_yes_no_window(&mut mem(), win, call_sym);
+    }
+    /// `TOMenuDrawYesNoWindow(win)`.
+    TOMenuDrawYesNoWindow @ 0x008e_2f80 => extern "C" fn to_menu_draw_yes_no_window(win: u32) {
+        let mut w = super::StackFrame::<{ window::bridge::DRAW_YES_NO_WORK as usize / 4 }>::new();
+        window::bridge::menu_draw_yes_no_window(&mut mem(), win, w.at(), call_sym, fcall);
+    }
+    /// `TOGetFontInfoInterMode(text, out, inter)`.
+    TOGetFontInfoInterMode @ 0x008b_78b0 => extern "C" fn to_get_font_info_inter_mode(text: u32, out: u32, inter: u32) -> u32 {
+        tolib::bridge::to_get_font_info_inter_mode(&mut mem(), text, out, inter, call_sym)
+    }
+    /// `TOBtlSetTargetHelpMes(chr)`.
+    TOBtlSetTargetHelpMes @ 0x0089_a8b0 => extern "C" fn to_btl_set_target_help_mes(chr: u32) {
+        btl::bridge::btl_set_target_help_mes(&mut mem(), chr, call_sym);
+    }
+    /// `TOWaitBtlWinInputGil(w)`.
+    TOWaitBtlWinInputGil @ 0x008a_87d0 => extern "C" fn to_wait_btl_win_input_gil(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win_input_gil(&mut mem(), w, call_sym)
+    }
+    /// `TOInitBtlWinChange(w)`.
+    TOInitBtlWinChange @ 0x008a_84d0 => extern "C" fn to_init_btl_win_change(w: u32) -> u32 {
+        tolib::bridge::init_btl_win_change(&mut mem(), w, call_sym)
+    }
+    /// `TORelayoutMessagesForLanguage_008b09b0()`.
+    TORelayoutMessagesForLanguage_008b09b0 @ 0x008b_09b0 => extern "C" fn to_relayout_messages_for_language() {
+        window::bridge::relayout_messages_for_language(&mut mem(), call_sym);
     }
     /// `TOSeqCtrl(i)`.
     TOSeqCtrl @ 0x008a_e0f0 => extern "C" fn to_seq_ctrl(i: i32) {

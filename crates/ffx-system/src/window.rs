@@ -909,6 +909,71 @@ pub mod bridge {
         open_message(mem, i, call)
     }
 
+    /// `TORelayoutMessagesForLanguage_008b09b0()` (`0x008b09b0`): after
+    /// the text language changes, every open message window (`*(slot +
+    /// 0x14)` in state 1..=3 at `i16 +0x2c`, with a text at `+0x94`) takes
+    /// its other text set: with English (`MsGetSaveConfigEnglish`) the
+    /// words `+0x74..+0x7c`, else `+0x5c..+0x64`, into `+0x90..+0x98`.
+    /// Then it is laid out again: `TOSetupMessageWindow_008b8de0(msg)`,
+    /// `TOSetMessageWindowPosition(i, slot +0xc, +8, +0xa)` (`i16`s),
+    /// `TOSnapWindowRect(*(slot + 0x10))`, and `TOWideWindowRect_008b8d10(i,
+    /// msg + 0x48, x, y, w, h)` with `w`, `h` the `i16`s at `+0x44`,
+    /// `+0x46` and `x`, `y` the text centred in the box `+0x40`, `+0x42`
+    /// from the origin `f32 +0x30`, `+0x34` (`(i16) ftol(f32((box - size)
+    /// / 2) + origin)`). Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn relayout_messages_for_language<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, ftol, load};
+        const ENGLISH: u32 = 0x0078_51d0;
+        let slots = MSG_WINDOW_SLOTS.ptr(mem).addr;
+        let slot = |mem: &M, i: u32| mem.read::<u32>(slots + 4 * i);
+        let message = |mem: &M, i: u32| mem.read::<u32>(slot(mem, i).wrapping_add(0x14));
+        let half = |mem: &M, at: u32| i32::from(mem.read::<i16>(at)).cast_unsigned();
+        for i in 0..8u32 {
+            let msg = message(mem, i);
+            let state: i16 = mem.read(msg.wrapping_add(0x2c));
+            if !(1..=3).contains(&state) || mem.read::<u32>(msg.wrapping_add(0x94)) == 0 {
+                continue;
+            }
+            let from = if call(mem, ENGLISH, &[]) == 0 {
+                0x5c
+            } else {
+                0x74
+            };
+            for k in 0..3 {
+                let msg = message(mem, i);
+                let v: u32 = mem.read(msg.wrapping_add(from + 4 * k));
+                mem.write(msg.wrapping_add(0x90 + 4 * k), v);
+            }
+            let msg = message(mem, i);
+            call(mem, 0x008b_8de0, &[msg]);
+            let s = slot(mem, i);
+            let (anchor, x, y) = (half(mem, s + 0xc), half(mem, s + 8), half(mem, s + 0xa));
+            call(mem, 0x008a_f850, &[i, anchor, x, y]);
+            let rect = mem.read::<u32>(slot(mem, i).wrapping_add(0x10));
+            call(mem, 0x0090_6e90, &[rect]);
+            let msg = message(mem, i);
+            let field = |off: u32| i32::from(mem.read::<i16>(msg.wrapping_add(off)));
+            let (w, h) = (field(0x44), field(0x46));
+            // the text centred in the box, from the window's origin
+            let centre = |mem: &M, room: i32, origin: u32| {
+                #[allow(clippy::cast_precision_loss)] // fild then fstp dword
+                let offset = f64::from(room as f32);
+                let at = add(offset, load(mem.read(msg.wrapping_add(origin))));
+                #[allow(clippy::cast_possible_truncation)] // cwde: the low half
+                let v = ftol(mem, at) as i16;
+                i32::from(v).cast_unsigned()
+            };
+            let y = centre(mem, (field(0x42) - h) / 2, 0x34);
+            let x = centre(mem, (field(0x40) - w) / 2, 0x30);
+            let (w, h) = (w.cast_unsigned(), h.cast_unsigned());
+            call(mem, 0x008b_8d10, &[i, msg.wrapping_add(0x48), x, y, w, h]);
+        }
+    }
+
     /// The open yes/no window `TOMenuCloseYesNoWindow` closes
     /// (`0x023cc120`, labelled `g_TkMn2ListMax2` after its other reader).
     pub const YES_NO_WINDOW: Global<u32> = Global::new(0x023c_c120);
@@ -930,6 +995,268 @@ pub mod bridge {
         mem.write(w.wrapping_add(0x41), 1u8);
         YES_NO_WINDOW.set(mem, 0);
         w
+    }
+
+    /// A yes/no window (the record `TOMenuCloseYesNoWindow` closes): `+0x24`
+    /// the message, `+0x28` the state, `u16 +0x2c` the answer, `+0x37` a
+    /// click on "yes", `+0x45` the outcome (0 open, 1 answered, 0xff
+    /// cancelled), `u16 +0x48` the cursor (0 the first choice), `+0x58`
+    /// and `+0x5c` the two choices (no first choice: a message the pad
+    /// dismisses), `i32 +0x60` the window's y offset, `+0x90` (not 1: any
+    /// press dismisses the message), `+0x94` the icon (1 the shape 0xf3, 2
+    /// the scene `scene7`).
+    mod yes_no {
+        pub const TEXT: u32 = 0x24;
+        pub const STATE: u32 = 0x28;
+        pub const ANSWER: u32 = 0x2c;
+        pub const CLICK_YES: u32 = 0x37;
+        pub const OUTCOME: u32 = 0x45;
+        pub const CURSOR: u32 = 0x48;
+        pub const YES: u32 = 0x58;
+        pub const NO: u32 = 0x5c;
+        pub const Y_OFFSET: u32 = 0x60;
+        pub const ANY_PRESS: u32 = 0x90;
+        pub const ICON: u32 = 0x94;
+        /// `TOMenuGetControlPad()`, `TOMenuGetControlPadRep()`,
+        /// `TOMenuGetControlPadTrg()` and `SndSepPlaySimple(sfx)`.
+        pub const GET_PAD: u32 = 0x008b_e410;
+        pub const GET_PAD_REP: u32 = 0x008b_e470;
+        pub const GET_PAD_TRG: u32 = 0x008b_e4b0;
+        pub const PLAY: u32 = 0x0088_6e80;
+        /// The cursor and confirm sound, the cancel sound.
+        pub const SFX_MOVE: u32 = 0x8000_0001;
+        pub const SFX_CANCEL: u32 = 0x8000_0004;
+    }
+
+    /// `TOMenuCtrlYesNoWindow(win)` (`0x008e2e20`): one frame of a yes/no
+    /// window's state machine, on the menu pad (`TOMenuGetControlPad()`,
+    /// then the repeat and trigger words). State 0 opens it (outcome 0,
+    /// cursor 1) and goes to 1 with choices, else to 2 (3 when `+0x90` is
+    /// 1). 1: circle (trigger bit 0x20, a click when `+0x37` is set) or
+    /// cross (0x40, the cancel sound) end it at once; else a repeated up
+    /// or down (0x5000) clicks and flips the cursor. 2 waits for any
+    /// trigger (a click), 3 not; both go to 4 for the next frame. 4: the
+    /// answer is the cursor, outcome 1, state 5; the cancel (6): answer
+    /// 1, outcome 0xff, state 7. 5, 7 and the rest do nothing. Callees
+    /// through `call`.
+    pub fn menu_ctrl_yes_no_window<M: Mem>(
+        mem: &mut M,
+        win: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use yes_no::{ANSWER, CURSOR, OUTCOME, PLAY, SFX_CANCEL, SFX_MOVE, STATE};
+        let at = |off: u32| win.wrapping_add(off);
+        call(mem, yes_no::GET_PAD, &[]);
+        let repeat = call(mem, yes_no::GET_PAD_REP, &[]);
+        let trigger = call(mem, yes_no::GET_PAD_TRG, &[]) & 0xffff;
+        let mut state: u32 = mem.read(at(STATE));
+        loop {
+            match state {
+                0 => {
+                    mem.write(at(OUTCOME), 0u8);
+                    mem.write(at(CURSOR), 1u16);
+                    let next = if mem.read::<u32>(at(yes_no::YES)) != 0 {
+                        1
+                    } else if mem.read::<u32>(at(yes_no::ANY_PRESS)) == 1 {
+                        2
+                    } else {
+                        3
+                    };
+                    mem.write(at(STATE), next);
+                    return;
+                }
+                1 => {
+                    if trigger & 0x20 != 0 {
+                        if mem.read::<u8>(at(yes_no::CLICK_YES)) != 0 {
+                            call(mem, PLAY, &[SFX_MOVE]);
+                        }
+                        state = 4;
+                    } else if trigger & 0x40 != 0 {
+                        call(mem, PLAY, &[SFX_CANCEL]);
+                        state = 6;
+                    } else {
+                        if repeat & 0x5000 != 0 {
+                            call(mem, PLAY, &[SFX_MOVE]);
+                            let cursor = mem.read::<u16>(at(CURSOR));
+                            mem.write(at(CURSOR), u16::from(cursor == 0));
+                        }
+                        return;
+                    }
+                }
+                2 | 3 => {
+                    if state == 2 {
+                        if trigger == 0 {
+                            return;
+                        }
+                        call(mem, PLAY, &[SFX_MOVE]);
+                    }
+                    mem.write(at(STATE), 4u32);
+                    return;
+                }
+                4 => {
+                    mem.write(at(OUTCOME), 1u8);
+                    mem.write(at(ANSWER), mem.read::<u16>(at(CURSOR)));
+                    mem.write(at(STATE), 5u32);
+                    state = 5;
+                }
+                6 => {
+                    mem.write(at(OUTCOME), 0xffu8);
+                    mem.write(at(ANSWER), 1u16);
+                    mem.write(at(STATE), 7u32);
+                    state = 7;
+                }
+                _ => return,
+            }
+        }
+    }
+
+    /// The scratch [`menu_draw_yes_no_window`] needs: the message's width
+    /// and height and the second choice's width (`f32`s).
+    pub const DRAW_YES_NO_WORK: u32 = 12;
+
+    /// `TOMenuDrawYesNoWindow(win)` (`0x008e2f80`): a yes/no window's
+    /// plate, icon, message and choices. The message is measured
+    /// (`TOGetMessageWH1612_008b6cb0(0, text, &w, &h, 0.78, 1, 0, 0)`);
+    /// with choices the height grows by two `Y2(48)` and the second
+    /// choice is measured (`ToGetBtlEasyFontWidth`). The plate is the text
+    /// plus a margin of `X2(34)`/`Y2(15)` a side (`X2(80)` more for an
+    /// icon, and at least `Y2(60)` plus the margins high, the text then
+    /// centred), centred on the 512×416 screen and moved down by `+0x60`
+    /// (`TODrawMenuPlateXYWHType(x, y, w, h, 10)`). Icon 1 is the shape
+    /// 0xf3 (`X2(60)`×`Y2(60)`) at the margin, 2 places `scene7` on layer
+    /// 1 (`TOSeqStartScene`, `TOSeqSetScenePosByName` at the plate's
+    /// corner, `ftol`). The message goes at the margin (raised by `Y2(3)`
+    /// without choices); the choices centred on the second one's width
+    /// `Y2(9)` below the message and `Y2(48)` apart, the cross cursor
+    /// (`TkMn2DrawCrossCursor(x - 5, y + 1, 0)`) by the one at `+0x48`.
+    /// Texts drawn by `TOMkpCrossExtMesFontLClut(0, text, x, y, 0, 0.78,
+    /// 1)`. All in x87 order (53-bit, `f32` at each store); the remaps
+    /// (`graphicUiRemapX2`/`Y2`) through `fcall`, the rest through `call`;
+    /// the sizes in `work` ([`DRAW_YES_NO_WORK`]).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn menu_draw_yes_no_window<M: Mem>(
+        mem: &mut M,
+        win: u32,
+        work: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, ftol, load, mul, round_trip, store, sub};
+        use yes_no::{CURSOR, ICON, NO, TEXT, YES};
+        const MESSAGE_WH: u32 = 0x008b_6cb0;
+        const EASY_WIDTH: u32 = 0x0090_5290;
+        const PLATE: u32 = 0x008f_5f70;
+        const SHAPE: u32 = 0x0090_3bb0;
+        const SEQ_START: u32 = 0x008a_f0d0;
+        const SEQ_SET_POS: u32 = 0x008a_f060;
+        const MES: u32 = 0x0090_16b0;
+        const CROSS_CURSOR: u32 = 0x008c_0670;
+        const REMAP_X2: u32 = 0x0064_47e0;
+        const REMAP_Y2: u32 = 0x0064_4820;
+        /// The text scale (`0x00b5ee10`).
+        const SCALE: f32 = 0.78;
+        let one = 1.0f32.to_bits();
+        let field = |mem: &M, off: u32| mem.read::<u32>(win.wrapping_add(off));
+        let mut remap = |mem: &mut M, y: bool, v: f32| {
+            fcall(mem, if y { REMAP_Y2 } else { REMAP_X2 }, &[v.to_bits()])
+        };
+        // f32 cells as bits; registers as f64
+        #[allow(clippy::cast_precision_loss)] // fild then fstp dword: rounded
+        let int_f32 = |v: i32| (v as f32).to_bits();
+        let (w_at, h_at, no_w_at) = (work, work + 4, work + 8);
+        mem.write(no_w_at, 0u32);
+        let (mut corner_x, mut corner_y) = (0u32, 0u32);
+
+        let text = field(mem, TEXT);
+        let scale = SCALE.to_bits();
+        call(mem, MESSAGE_WH, &[0, text, w_at, h_at, scale, one, 0, 0]);
+        let mut h: u32 = mem.read(h_at);
+        let text_h = round_trip(f32::from_bits(h)).to_bits();
+        if field(mem, YES) != 0 {
+            let lines = remap(mem, true, 48.0);
+            h = store(add(mul(lines, 2.0), load(h)));
+            let no = field(mem, NO);
+            call(mem, EASY_WIDTH, &[no, no_w_at, 0, scale, one]);
+        }
+        let mut margin_x = store(remap(mem, false, 34.0));
+        let mut margin_y = store(remap(mem, true, 15.0));
+        let mut w = store(add(mul(load(margin_x), 2.0), load(mem.read(w_at))));
+        let rows = mul(load(margin_y), 2.0);
+        h = store(add(rows, load(h)));
+        if field(mem, ICON) != 0 {
+            corner_x = round_trip(f32::from_bits(margin_x)).to_bits();
+            corner_y = round_trip(f32::from_bits(margin_y)).to_bits();
+            margin_x = store(add(remap(mem, false, 80.0), load(margin_x)));
+            w = store(add(remap(mem, false, 80.0), load(w)));
+            let shown = load(h);
+            if add(remap(mem, true, 60.0), rows) > shown {
+                // (the original stores the icon's y offset again here, the
+                // same value)
+                h = store(add(remap(mem, true, 60.0), rows));
+                margin_y = store(mul(sub(load(h), load(text_h)), 0.5));
+            }
+        }
+        let mut x = store(mul(sub(512.0, load(w)), 0.5));
+        let top = mul(sub(416.0, load(h)), 0.5);
+        let offset = int_f32(mem.read::<i32>(win.wrapping_add(yes_no::Y_OFFSET)));
+        let mut y = store(add(top, load(offset)));
+        call(mem, PLATE, &[x, y, w, h, 10]);
+
+        let icon = field(mem, ICON);
+        if icon == 1 {
+            let size_y = store(remap(mem, true, 60.0));
+            let size_x = store(remap(mem, false, 60.0));
+            let at_y = store(add(load(y), load(corner_y)));
+            let at_x = store(add(load(x), load(corner_x)));
+            // u0, v0, u1, v1: 0.92676, 0.22852, 0.99902, 0.30176 (the
+            // f32s at 0x00b65d5c, 0x00b65d54, 0x00b65d60, 0x00b65d58)
+            let uv = [0x3f6d_4000u32, 0x3e6a_0000, 0x3f7f_c000, 0x3e9a_8000];
+            call(
+                mem,
+                SHAPE,
+                &[0xf3, at_x, at_y, size_x, size_y, uv[0], uv[1], uv[2], uv[3]],
+            );
+        }
+        if field(mem, ICON) == 2 {
+            let name = mem.rebase(0x00b6_6904);
+            call(mem, SEQ_START, &[1, name]);
+            let sy = ftol(mem, load(y));
+            let sx = ftol(mem, load(x));
+            call(mem, SEQ_SET_POS, &[1, name, sx, sy]);
+        }
+
+        x = store(add(load(x), load(margin_x)));
+        let mut text_y = add(load(y), load(margin_y));
+        if field(mem, YES) == 0 {
+            text_y = sub(text_y, remap(mem, true, 3.0));
+        }
+        y = store(text_y);
+        let text = field(mem, TEXT);
+        call(mem, MES, &[0, text, x, y, 0, scale, one]);
+        if field(mem, YES) == 0 {
+            return;
+        }
+
+        // the choices
+        x = store(mul(sub(512.0, load(mem.read(no_w_at))), 0.5));
+        let gap = remap(mem, true, 9.0);
+        y = store(add(gap, add(load(y), load(text_h))));
+        let cursor = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, x, y| {
+            let cy = store(add(load(y), 1.0));
+            let cx = store(sub(load(x), 5.0));
+            call(mem, CROSS_CURSOR, &[cx, cy, 0]);
+        };
+        let yes = field(mem, YES);
+        call(mem, MES, &[0, yes, x, y, 0, scale, one]);
+        if mem.read::<u16>(win.wrapping_add(CURSOR)) == 0 {
+            cursor(mem, &mut call, x, y);
+        }
+        y = store(add(remap(mem, true, 48.0), load(y)));
+        let no = field(mem, NO);
+        call(mem, MES, &[0, no, x, y, 0, scale, one]);
+        if mem.read::<u16>(win.wrapping_add(CURSOR)) != 0 {
+            cursor(mem, &mut call, x, y);
+        }
     }
 
     /// `TOControlMessageWindowForMenu()` (`0x008ab9a0`): for each of the
