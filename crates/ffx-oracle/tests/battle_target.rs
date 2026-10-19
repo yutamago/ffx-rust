@@ -10134,3 +10134,137 @@ fn commands_and_variants_match_the_original_on_a_snapshot() {
     };
     command_and_variants(&mut a, &mut b, &mut Xorshift(0x26ca_0302), false);
 }
+
+/// `MsCameraSetBtl` (round 26) on three cameras of random floats (as
+/// `messages_and_cameras` fills them) over the dressed actors: requests
+/// of the cameras' slots or made up, battle actors' sets (id bits 16-19
+/// five) and on a snapshot the script actors' too.
+fn camera_set_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bool) {
+    use ffx_battle::camera::bridge as cam;
+    let h = host();
+    let cams = cam::CAMERAS.ptr(b).addr;
+    let words: Vec<u8> = (0..3 * cam::CAMERA_SIZE / 4)
+        .flat_map(|_| float(rng).to_le_bytes())
+        .collect();
+    poke(a, b, cams, &words);
+    let mut ids = Vec::new();
+    for c in 0..3 {
+        let base = cams + c * cam::CAMERA_SIZE;
+        for o in [0x31, 0x33, 0x31 + 0x61c, 0x33 + 0x61c] {
+            poke(a, b, base + o, &[u8::try_from(rng.below(3)).unwrap()]);
+        }
+        // each side's base vector (+0x8c): none, or the other side's position
+        for side in 0..2 {
+            let s = base + 0x30 + side * 0x61c;
+            let v = [0, base + 0x30 + (1 - side) * 0x61c + 0x50][rng.below(2) as usize];
+            poke(a, b, s + 0x8c, &v.to_le_bytes());
+        }
+        for o in [
+            0x5bc,
+            0x5cc,
+            0x5dc,
+            0x5bc + 0x61c,
+            0x5cc + 0x61c,
+            0x5dc + 0x61c,
+        ] {
+            let v = u16::from(rng.below(3) == 0);
+            poke(a, b, base + o, &v.to_le_bytes());
+        }
+        for n in 0..4 {
+            // the level's low nibble 5: battle actors (script ones only
+            // on a snapshot)
+            let level = if !script || rng.below(2) == 0 {
+                5 | rng.below(2) << 4
+            } else {
+                rng.below(5)
+            };
+            let id = c | rng.below(6) << 8 | level << 16;
+            ids.push(id);
+            let mut s = id.to_le_bytes().to_vec();
+            s.extend([
+                u8::from(rng.below(5) == 0),
+                u8::from(rng.below(5) == 0),
+                rng.byte() & 3,
+            ]);
+            poke(
+                a,
+                b,
+                cam::SLOTS_AT.ptr(b).addr + c * cam::CAMERA_SIZE + 8 * n,
+                &s,
+            );
+        }
+    }
+    let id = if rng.below(5) == 0 {
+        rng.next() & 0x05_0502 | if script { 0 } else { 0x5_0000 }
+    } else {
+        ids[rng.below(u32::try_from(ids.len()).unwrap()) as usize]
+    };
+    // the made-up channel's selectors as cam_set_btl draws them
+    let selector = |rng: &mut Xorshift| -> u32 {
+        if rng.below(4) == 0 {
+            0xffff
+        } else if script && id & 0xf_0000 != 0x5_0000 {
+            [0xffff_ffeb, 0xffff_fffb, 0xffff_fffe, 0, 1, 2][rng.below(6) as usize]
+        } else {
+            // (the special sets only on a snapshot: some read state the
+            // image alone lacks)
+            match rng.below(3) {
+                0 => 0x1000 + rng.below(0x40),
+                2 if script => rng.range(-27, 0).cast_unsigned(),
+                _ => rng.below(0x40),
+            }
+        }
+    };
+    set(a, b, cam::EE_R0, [0; 4]);
+    let side = rng.below(4);
+    let chr = rng.below(ACTORS);
+    let mode = rng.below(6);
+    let sets = [selector(rng), selector(rng)];
+    let lift = float(rng);
+    let polar = [float(rng), float(rng), float(rng)];
+    let args = [
+        id, side, chr, mode, sets[0], sets[1], lift, polar[0], polar[1], polar[2],
+    ];
+    zero_stack(a);
+    twin("MsCameraSetBtl", a, b, 0x007c_5c60, &args, ALL, |m| {
+        dm(m, |m| {
+            let mut c = game_call;
+            cam::ms_camera_set_btl(m, &h, &mut c, id, side, chr, mode, sets, lift, polar)
+        })
+    });
+    // MsGetChrInfo's caller ebx: the set's local
+    let at = ffx_battle::vector::bridge::VF_B.ptr(a).addr + 8;
+    let w = a.read(at, 4).unwrap();
+    b.write(at, &w).unwrap();
+    same("MsCameraSetBtl", a, b);
+}
+
+/// [`camera_set_btl`] on the dressed actors, `MsSetCheckChange`'s move
+/// step (`CAMERA_MOVE_STEP`, its splines and filters) a logging stub as in
+/// [`messages_and_cameras`].
+fn camera_set_btl_check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    let rec = scratch(a, b, EXCHANGE_REC as usize);
+    for o in [&mut *a, &mut *b] {
+        let f = ffx_battle::camera::bridge::CAMERA_MOVE_STEP;
+        logging_stub(o, f, START_STUBS2 + 0xc0 + 0x40 * 9, rec, 4, 0);
+    }
+    dressed_check(a, b, rng, synthetic, (200, 4), |a, b, rng, _, _| {
+        camera_set_btl(a, b, rng, !synthetic);
+    });
+}
+
+#[test]
+fn camera_set_btl_matches_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    camera_set_btl_check(&mut a, &mut b, &mut Xorshift(0x26ca_0401), true);
+}
+
+#[test]
+fn camera_set_btl_matches_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    camera_set_btl_check(&mut a, &mut b, &mut Xorshift(0x26ca_0402), false);
+}

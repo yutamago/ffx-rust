@@ -1434,6 +1434,94 @@ pub mod bridge {
             n
         })
     }
+
+    /// `MsCameraSetBtl(id, side, chr, mode, a, b, lift, turn, pitch,
+    /// scale)` (`0x007c5c60`): camera request `id` points side `side & 1`
+    /// at actor sets `a` and `b` (`sets`). Nothing without the request
+    /// (`MsCameraIDcheck` 0: returns 0).
+    ///
+    /// Channel `id >> 8` of the side gets the move: byte 0 polar (modes 3
+    /// and 4), its kind `+2` (modes 0-4: 0xb, 0xc, 0xd, 0xf, 0x10; another
+    /// mode keeps it), the selectors `+0x10`/`+0x12`, the sets `+0x14`/
+    /// `+0x18` (battle actors, `id` bits 16-19 five: `MsGetChrBit(chr, a |
+    /// b, 1, 1)`, else the selectors themselves), `lift` at `+0x5c`, with a
+    /// mode `turn`, `pitch`, `scale` at `+0x40`, `+0x44`, `+0x60`; the
+    /// other side's position (`+0x30` of it) as its saved one, `+6` set
+    /// and the saved yaw `+0x64` 0. While `id` is the camera's current
+    /// request the side goes there ([`ms_cam_set_btl`], the other side's
+    /// same channel as `other_ch`) and `MsSetCheckChange(id, side, 0, 0)`
+    /// follows (its result returned; else the current request).
+    /// `MsCamSetBtl`'s stray radius words are this function's `edi`,
+    /// `esi`, `ebx` there: the channel, the other side and `id`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_set_btl(
+        mem: &mut crate::target::bridge::Dm<'_>,
+        host: &crate::target::bridge::Host<'_>,
+        call: &mut dyn FnMut(&mut crate::target::bridge::Dm<'_>, u32, &[u32]) -> u32,
+        id: u32,
+        side: u32,
+        chr: u32,
+        mode: u32,
+        sets: [u32; 2],
+        lift: u32,
+        polar: [u32; 3],
+    ) -> u32 {
+        if ms_camera_id_check(mem, id) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let base = camera_base(mem, id).wrapping_add(0x30);
+        let this = base.wrapping_add(side * 0x61c);
+        let other = base.wrapping_add((1 - side) * 0x61c);
+        let channel = 0xc0 + 0x130 * ((id >> 8) & 0xff);
+        let (ch, other_ch) = (this.wrapping_add(channel), other.wrapping_add(channel));
+        mem.write(ch, 0u8);
+        let kind = match mode {
+            0 => Some(0xbu8),
+            1 => Some(0xc),
+            2 => Some(0xd),
+            3 => Some(0xf),
+            4 => Some(0x10),
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            mem.write(ch.wrapping_add(2), kind);
+            if kind >= 0xf {
+                mem.write(ch, 1u8);
+            }
+        }
+        let half = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        mem.write(ch.wrapping_add(0x10), half(sets[0]));
+        mem.write(ch.wrapping_add(0x12), half(sets[1]));
+        let bits = if id & 0xf_0000 == 0x5_0000 {
+            sets.map(|s| crate::actor::bridge::ms_get_chr_bit(mem, chr, s, 1, 1))
+        } else {
+            sets
+        };
+        mem.write(ch.wrapping_add(0x14), bits);
+        mem.write(ch.wrapping_add(0x5c), x87_copy(lift));
+        if mode != 0 {
+            let [turn, pitch, scale] = polar.map(x87_copy);
+            mem.write(ch.wrapping_add(0x40), [turn, pitch]);
+            mem.write(ch.wrapping_add(0x60), scale);
+        }
+        let saved: [u32; 3] = mem.read(other.wrapping_add(0x30));
+        mem.write(ch.wrapping_add(0x30), saved.map(x87_copy));
+        mem.write(ch.wrapping_add(6), 1u8);
+        mem.write(ch.wrapping_add(0x64), 0.0f32.to_bits());
+        let current = ms_camera_get_id(mem, id);
+        if current != id {
+            return current;
+        }
+        // its edi, esi and ebx at the call: the channel, the other side, id
+        let regs = crate::target::bridge::Regs {
+            edi: ch,
+            esi: other,
+            ebx: id,
+        };
+        ms_cam_set_btl(mem, host, id, mode, this, ch, other, other_ch, Some(regs));
+        ms_set_check_change(mem, call, id, side, 0, 0)
+    }
 }
 
 #[cfg(test)]

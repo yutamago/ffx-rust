@@ -2170,6 +2170,11 @@ ported! {
     MsCameraSetStartPos @ 0x007b_ff10 => extern "C" fn ms_camera_set_start_pos(cam: u32, side: u32, mv: u32) -> u32 {
         camera::ms_camera_set_start_pos(&mut mem(), &crt_trig, cam, side, mv)
     }
+    /// `MsCameraSetBtl(id, side, chr, mode, a, b, lift, turn, pitch, scale)`.
+    MsCameraSetBtl @ 0x007c_5c60 => extern "C" fn ms_camera_set_btl(id: u32, side: u32, chr: u32, mode: u32, a: u32, b: u32, lift: u32, turn: u32, pitch: u32, scale: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_camera_set_btl(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side, chr, mode, [a, b], lift, [turn, pitch, scale])
+    }
     /// `MsCamSetBtl(id, mode, side, ch, other, other_ch)`: the stray
     /// radius words as VU register 4 holds them (the caller's registers
     /// are not known here).
