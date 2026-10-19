@@ -437,6 +437,83 @@ pub mod bridge {
         r
     }
 
+    /// `AbmapZoomScale()` (`0x00a56820`, in `ST0`): the zoom for the level.
+    pub const ZOOM_SCALE: u32 = 0x00a5_6820;
+
+    /// `AbmapCtrlZoom()` (`0x00a490c0`): with the pad's `+0x2700` (`i16`)
+    /// negative and button bit 8 (`+0x1166e`), the zoom level (`+0x115cc`,
+    /// 0..=2) steps up, wrapping, and a 30-frame change (`+0x115d0`) starts
+    /// from the zoom (`+0x11350`, kept at `+0x115dc`) to `AbmapZoomScale()`
+    /// (`+0x115e0`). Each frame of a change the three zoom words
+    /// (`+0x11350..+0x11358`) get `from + (to - from) * sin_table[((30 -
+    /// left) << 14) / 30 >> 4 & 0xfff]` (on the x87, stored once); at most
+    /// 0.375 (not NaN) sets `+0x116b0` to -2 unless negative, at least 0.375
+    /// sets it to 2 unless positive, and `+0x116ac` 0 becomes 1. On the
+    /// last frame they are `to` and `+0x115c7` is set. Returns the `eax` it
+    /// ends with: `g_Abmap`, or the frame count when no change runs.
+    pub fn abmap_ctrl_zoom<M, F>(mem: &mut M, fcall: &mut F) -> u32
+    where
+        M: Mem,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        let g = ABMAP.get(mem);
+        let pad = super::TILT_PAD.get(mem);
+        let pressed = mem.read::<i16>(pad.wrapping_add(0x2700)) < 0
+            && mem.read::<u16>(g.wrapping_add(0x1166e)) & 0x100 != 0;
+        if pressed {
+            let level = g.wrapping_add(0x115cc);
+            let l = mem.read::<u8>(level).wrapping_add(1);
+            mem.write(level, if l > 2 { 0 } else { l });
+            mem.write(g.wrapping_add(0x115d0), 30u16);
+            let zoom = x87::copy(mem.read::<u32>(g.wrapping_add(0x11350)));
+            mem.write(g.wrapping_add(0x115dc), zoom);
+            let f = mem.rebase(ZOOM_SCALE);
+            let to = fcall(mem, f, crate::camera::FArgs::Stack(&[]));
+            mem.write(ABMAP.get(mem).wrapping_add(0x115e0), x87::store(to));
+        }
+        let g = ABMAP.get(mem);
+        let left = mem.read::<i16>(g.wrapping_add(0x115d0));
+        if left <= 0 {
+            return u32::from(left.cast_unsigned());
+        }
+        let left = left - 1;
+        mem.write(g.wrapping_add(0x115d0), left);
+        let zooms = [0x11358, 0x11354, 0x11350];
+        if left == 0 {
+            let to = x87::copy(mem.read::<u32>(g.wrapping_add(0x115e0)));
+            for o in zooms {
+                mem.write(g.wrapping_add(o), to);
+            }
+            mem.write(g.wrapping_add(0x115c7), 1u8);
+            return g;
+        }
+        let k = ((30 - i32::from(left)) << 14) / 30;
+        #[allow(clippy::cast_sign_loss)] // masked to 12 bits
+        let i = ((k >> 4) & 0xfff) as u32;
+        let sin = x87::load(mem.read::<u32>(mem.rebase(super::SIN_TABLE) + 4 * i));
+        let to = x87::load(mem.read::<u32>(g.wrapping_add(0x115e0)));
+        let from = x87::load(mem.read::<u32>(g.wrapping_add(0x115dc)));
+        let zoom = x87::store((to - from) * sin + from);
+        for o in zooms {
+            mem.write(g.wrapping_add(o), zoom);
+        }
+        let near = x87::load(mem.read::<u32>(mem.rebase(super::ZOOM_NEAR)));
+        let z = x87::load(zoom);
+        let level = g.wrapping_add(0x116b0);
+        // a NaN zoom sets neither
+        if z <= near && mem.read::<i32>(level) >= 0 {
+            mem.write(level, -2i32);
+        }
+        if near <= z && mem.read::<i32>(level) <= 0 {
+            mem.write(level, 2i32);
+        }
+        let shown = g.wrapping_add(0x116ac);
+        if mem.read::<u32>(shown) == 0 {
+            mem.write(shown, 1u32);
+        }
+        g
+    }
+
     /// Copies the camera's four words (`+0x112b8`) to `+0x11308`; returns
     /// the last.
     fn sync_camera(mem: &mut impl Mem) -> u32 {
@@ -2146,5 +2223,805 @@ pub mod bridge {
             DIGIT_RIGHT_CONSTS.map(|k| round_trip(mem.read::<f32>(mem.rebase(k))).to_bits());
         let f = mem.rebase(TO_MAKE_DIGIT_RIGHT_ABMAP);
         call(mem, f, &[a, fx, fy, d, c1, c2])
+    }
+
+    // ---- field r13 ----
+
+    /// `AbmapPositionPlyTag(chr)` (`0x00a58080`, in `ffx-pcui`).
+    pub const POSITION_PLY_TAG: u32 = 0x00a5_8080;
+    /// 1/12 (an `f64` in `.rdata`, the `f32` value widened): the warp's
+    /// step per frame.
+    pub const WARP_STEP: u32 = 0x00b4_b448;
+
+    /// The fade byte (`+0x115c6`) for frame `n` of a 40-frame fade:
+    /// `(n << 7) / 40`, its low byte, at least `0x80` kept at `0x80`.
+    /// Also returns the low word of the division's `imul` (left in `eax`
+    /// by the fade-in).
+    fn warp_fade(n: u8) -> (u8, u32) {
+        let x = u32::from(n) << 7;
+        #[allow(clippy::cast_possible_truncation)] // the low byte is stored
+        let q = (x / 40) as u8;
+        (q, 0x6666_6667u32.wrapping_mul(x))
+    }
+
+    /// `AbmapState_Warping()` (`0x00a47f00`, the state
+    /// [`abmap_start_warp`] installs), by its phase (`+0x1164c`):
+    /// - 0: the fade-out: frame `+0x1164d` counts up, the fade
+    ///   (`+0x115c6`) is `0x80 - (n << 7) / 40` (a byte; `0x80` from
+    ///   `0x80` up); once the warp part ([`super::ABMAP_WARP_PART`]
+    ///   `+0x1e`) is done the character's marker word `+0x110c4 + 0x50
+    ///   chr` is 0.0, phase 1 and the fade 0.
+    /// - 1: the move: the progress (`+0x11620`) steps by 1/12; below 1.0
+    ///   (or NaN) the camera x, y (`+0x11308`) are `FFXVu0InterVectorXYZ`
+    ///   from the start (`+0x1163c`) to the target node (`+0x11634`).
+    ///   From 1.0: phase 2, the frame 0, the warp sound, the camera at the
+    ///   node (x, y, 0.0, 1.0), the grid's ppp heap again, part 1 of the
+    ///   warp effect there (scale 0.5), the character (`+0x11638`) on the
+    ///   node (`+0x110cc + 0x50 chr`), its marker and player tag placed,
+    ///   `+0x115c7` set, the cursor camera reset.
+    /// - 2: the fade-in: `(n << 7) / 40`; once the part is done the fade
+    ///   is `0x80` and the saved state and draw hooks (`+0x115b0`,
+    ///   `+0x115b4`) come back to `+0x115a8`/`+0x115ac` (and are cleared).
+    ///
+    /// Returns the `eax` it ends with: the grid, the cursor camera's
+    /// result, the phase minus 2 for an unknown phase, and in the
+    /// fade-out's running frames the division's `imul` low word with the
+    /// fade in its low byte.
+    pub fn abmap_state_warping<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let part_running =
+            |mem: &M| mem.read::<u16>(mem.rebase(super::ABMAP_WARP_PART).wrapping_add(0x1e)) != 0;
+        match mem.read::<u8>(g.wrapping_add(0x1164c)) {
+            0 => {
+                let frame = g.wrapping_add(0x1164d);
+                mem.write(frame, mem.read::<u8>(frame).wrapping_add(1));
+                let g = ABMAP.get(mem);
+                let (q, low) = warp_fade(mem.read::<u8>(g.wrapping_add(0x1164d)));
+                let fade = 0x80u8.wrapping_sub(q);
+                mem.write(g.wrapping_add(0x115c6), fade);
+                let g = ABMAP.get(mem);
+                if mem.read::<u8>(g.wrapping_add(0x115c6)) >= 0x80 {
+                    mem.write(g.wrapping_add(0x115c6), 0x80u8);
+                }
+                if part_running(mem) {
+                    return (low & !0xff) | u32::from(fade);
+                }
+                let g = ABMAP.get(mem);
+                let chr = u32::from(mem.read::<u8>(g.wrapping_add(0x11638)));
+                mem.write(g.wrapping_add(0x110c4 + 0x50 * chr), 0u32);
+                let g = ABMAP.get(mem);
+                mem.write(g.wrapping_add(0x1164c), 1u8);
+                let g = ABMAP.get(mem);
+                mem.write(g.wrapping_add(0x115c6), 0u8);
+                g
+            }
+            1 => warp_move(mem, g, call),
+            2 => {
+                let frame = g.wrapping_add(0x1164d);
+                mem.write(frame, mem.read::<u8>(frame).wrapping_add(1));
+                let g = ABMAP.get(mem);
+                let (q, _) = warp_fade(mem.read::<u8>(g.wrapping_add(0x1164d)));
+                mem.write(g.wrapping_add(0x115c6), q);
+                let g = ABMAP.get(mem);
+                if mem.read::<u8>(g.wrapping_add(0x115c6)) >= 0x80 {
+                    mem.write(g.wrapping_add(0x115c6), 0x80u8);
+                }
+                let g = ABMAP.get(mem);
+                if part_running(mem) {
+                    return g;
+                }
+                mem.write(g.wrapping_add(0x115c6), 0x80u8);
+                for (hook, saved) in [(0x115a8, 0x115b0), (0x115ac, 0x115b4)] {
+                    let g = ABMAP.get(mem);
+                    let v = mem.read::<u32>(g.wrapping_add(saved));
+                    mem.write(g.wrapping_add(hook), v);
+                    let g = ABMAP.get(mem);
+                    mem.write(g.wrapping_add(saved), 0u32);
+                }
+                ABMAP.get(mem)
+            }
+            phase => u32::from(phase) - 2,
+        }
+    }
+
+    /// Phase 1 of [`abmap_state_warping`] (`g` the grid it started with).
+    fn warp_move<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        g: u32,
+        call: &mut C,
+    ) -> u32 {
+        let node = u32::from(mem.read::<u16>(g.wrapping_add(0x11634)));
+        let at = g
+            .wrapping_add(layout::NODES)
+            .wrapping_add(node * layout::NODE_SIZE);
+        let x = f32::from(mem.read::<i16>(at));
+        let y = f32::from(mem.read::<i16>(at.wrapping_add(2)));
+        let step = mem.read::<f64>(mem.rebase(WARP_STEP));
+        let t = x87::store(x87::load(mem.read::<u32>(g.wrapping_add(0x11620))) + step);
+        mem.write(g.wrapping_add(0x11620), t);
+        let t = f32::from_bits(t);
+        // fcom: below 1.0 or unordered keeps moving
+        if t < 1.0 || t.is_nan() {
+            let start = g.wrapping_add(0x1163c);
+            let bx = mem.read::<f32>(start);
+            let by = mem.read::<f32>(start.wrapping_add(4));
+            let rx = ffx_ps2::vu0::inter_xyz(0, x, bx, t);
+            let ry = ffx_ps2::vu0::inter_xyz(1, y, by, t);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x11308), x87::copy(rx.to_bits()));
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x1130c), x87::copy(ry.to_bits()));
+            return g;
+        }
+        mem.write(g.wrapping_add(0x1164c), 2u8);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1164d), 0u8);
+        let f = mem.rebase(super::SND_SEP_PLAY_SIMPLE);
+        call(mem, f, &[0x8000_0070]);
+        let g = ABMAP.get(mem);
+        let camera = [x.to_bits(), y.to_bits(), 0, 1.0f32.to_bits()];
+        mem.write(g.wrapping_add(0x11308), camera);
+        let f = mem.rebase(super::PPP_CREATE_HEAP);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let heap = mem.rebase(super::ABMAP_PPP_HEAP);
+        call(mem, f, &[env, heap, 0x7d000]);
+        let h = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(super::WARP_PART_SCALE)))
+            .to_bits();
+        let part = mem.rebase(super::ABMAP_WARP_PART);
+        let (x, y) = (x.to_bits(), y.to_bits());
+        abmap_start_part(mem, [part, 1, x, y, 0, 0, 0, 0, h, h, h], call);
+        let g = ABMAP.get(mem);
+        let chr = u32::from(mem.read::<u8>(g.wrapping_add(0x11638)));
+        let target = mem.read::<u16>(g.wrapping_add(0x11634));
+        mem.write(g.wrapping_add(0x110cc + 0x50 * chr), target);
+        let chr = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x11638)));
+        abmap_set_chr_marker(mem, chr);
+        let chr = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x11638)));
+        let f = mem.rebase(POSITION_PLY_TAG);
+        call(mem, f, &[chr]);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115c7), 1u8);
+        abmap_reset_cursor_camera(mem)
+    }
+
+    /// `AbmapFlagConnectedLinks(flag)` (`0x00a58df0`) and
+    /// `AbmapCalcMoveCost(node, cost)` (`0x00a47560`).
+    pub const MOVE_COSTS_CALLS: [u32; 2] = [0x00a5_8df0, 0x00a4_7560];
+
+    /// `AbmapCalcMoveCosts(node, limit, bit)` (`0x00a474d0`): every node
+    /// with a kind (`+6` not `0xffff`) loses its cost (`+0x24` = `0xffff`),
+    /// every link the low nibble of its flags (`+0xa816`), the connected
+    /// links are flagged (`AbmapFlagConnectedLinks(2)`), then the walk
+    /// starts from `node` (`AbmapCalcMoveCost(node, 0)`) with the limit
+    /// `limit` (`u16`) * 4 ([`super::MOVE_LIMIT`]), the mask `1 << bit`
+    /// (low 5 bits; [`super::MOVE_MASK`] as a word) and the step 0
+    /// ([`super::MOVE_STEP`]). Returns the walk's `eax`.
+    pub fn abmap_calc_move_costs<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [node, limit, bit]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let nodes = mem.read::<i16>(g.wrapping_add(2));
+        let mut at = g.wrapping_add(layout::NODES);
+        for _ in 0..i32::from(nodes).cast_unsigned() {
+            if mem.read::<u16>(at.wrapping_add(6)) != 0xffff {
+                mem.write(at.wrapping_add(0x24), 0xffffu16);
+            }
+            at = at.wrapping_add(layout::NODE_SIZE);
+        }
+        let g = ABMAP.get(mem);
+        let links = mem.read::<i16>(g.wrapping_add(layout::LINK_COUNT));
+        let mut at = g.wrapping_add(layout::LINK_FLAGS);
+        for _ in 0..i32::from(links).cast_unsigned() {
+            mem.write(at, mem.read::<u8>(at) & 0xf0);
+            at = at.wrapping_add(layout::LINK_SIZE);
+        }
+        let [flag_links, walk] = MOVE_COSTS_CALLS.map(|f| mem.rebase(f));
+        call(mem, flag_links, &[2]);
+        super::MOVE_LIMIT.set(mem, ((limit & 0xffff) << 2).cast_signed());
+        let mask = super::MOVE_MASK.ptr(mem).addr;
+        mem.write(mask, 1u32 << (bit & 0x1f));
+        super::MOVE_STEP.set(mem, 0);
+        call(mem, walk, &[node, 0])
+    }
+
+    /// The state [`abmap_select_node`] sets while homing (`0x00a5a020`).
+    pub const STATE_SELECT_HOMING: u32 = 0x00a5_a020;
+
+    /// `AbmapSelectNode_00a48e40(node, t)` (`0x00a48e40`; name ours): on
+    /// the cursor's node (`+0x112fc`) the command menu opens
+    /// ([`abmap_enter_command_menu`]); elsewhere the cursor homes on
+    /// `node` ([`abmap_init_homing`], `t`) and, with no state saved
+    /// (`+0x115b0`), the state goes to [`STATE_SELECT_HOMING`], the old one
+    /// saved. Returns the pad array or the grid (left in `eax`).
+    pub fn abmap_select_node<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [node, t]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        if node == u32::from(mem.read::<u16>(g.wrapping_add(0x112fc))) {
+            return abmap_enter_command_menu(mem, call);
+        }
+        abmap_init_homing(mem, node, t);
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+            let state = mem.read::<u32>(g.wrapping_add(0x115a8));
+            mem.write(g.wrapping_add(0x115b0), state);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x115a8), mem.rebase(STATE_SELECT_HOMING));
+            return g;
+        }
+        g
+    }
+
+    /// `AbmapPlyTagRect(tag, out)` (`0x00a482d0`) and `AbmapRectsOverlap`
+    /// (`0x00a49270`), [`abmap_spread_ply_tags`]'s calls.
+    pub const SPREAD_CALLS: [u32; 2] = [0x00a4_82d0, 0x00a4_9270];
+
+    /// `AbmapSpreadPlyTags(work)` (`0x00a5a4b0`, from `0x00a53570`; name
+    /// ours), `work` the original's seven boxes (`0x70` bytes): the seven
+    /// characters' name tags are reset (corner `+0x4e` 0,
+    /// `AbmapPositionPlyTag`), then, from the current character
+    /// (`+0x115bc`) round to it, each tag's box is taken
+    /// (`AbmapPlyTagRect`) and, while it overlaps one of the boxes taken
+    /// before it, the tag moves to its next corner and is taken again,
+    /// up to corner 7. A second round does the same against all six other
+    /// boxes. Returns the character after the last (left in `eax`).
+    pub fn abmap_spread_ply_tags<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let position = mem.rebase(POSITION_PLY_TAG);
+        for chr in 0..7u32 {
+            let corner = ABMAP.get(mem).wrapping_add(0x110d6 + 0x50 * chr);
+            mem.write(corner, 0u8);
+            call(mem, position, &[chr]);
+        }
+        let first = |mem: &M| u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bc)));
+        let next = |chr: u32| if chr + 1 > 6 { 0 } else { chr + 1 };
+        let mut chr = first(mem);
+        for n in 0..7 {
+            let tag = ply_tag(mem, chr);
+            let f = mem.rebase(SPREAD_CALLS[0]);
+            call(mem, f, &[tag, work.wrapping_add(0x10 * n)]);
+            settle_ply_tag(mem, [chr, n, work], |j| j < n, call);
+            chr = next(chr);
+        }
+        let mut chr = first(mem);
+        for m in 0..7 {
+            settle_ply_tag(mem, [chr, m, work], |j| j != m, call);
+            chr = next(chr);
+        }
+        chr
+    }
+
+    /// Character `chr`'s name tag (`g_Abmap + 0x11088`, `0x50` each).
+    fn ply_tag<M: Mem>(mem: &M, chr: u32) -> u32 {
+        ABMAP
+            .get(mem)
+            .wrapping_add(0x11088)
+            .wrapping_add(0x50 * chr)
+    }
+
+    /// [`abmap_spread_ply_tags`]'s step: while box `n` of `work` overlaps
+    /// one of the boxes `others` picks (in order, the first hit ends the
+    /// search), `chr`'s tag moves to its next corner and its box is taken
+    /// again; corner 7 ends it.
+    fn settle_ply_tag<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [chr, n, work]: [u32; 3],
+        others: impl Fn(u32) -> bool,
+        call: &mut C,
+    ) {
+        let position = mem.rebase(POSITION_PLY_TAG);
+        let [tag_rect, overlap] = SPREAD_CALLS.map(|f| mem.rebase(f));
+        let rect = |i: u32| work.wrapping_add(0x10 * i);
+        let tag = ply_tag(mem, chr);
+        let corner = tag.wrapping_add(0x4e);
+        loop {
+            let hit = (0..7)
+                .filter(|&j| others(j))
+                .any(|j| call(mem, overlap, &[rect(n), rect(j)]) != 0);
+            if !hit {
+                return;
+            }
+            mem.write(corner, mem.read::<u8>(corner).wrapping_add(1));
+            call(mem, position, &[chr]);
+            call(mem, tag_rect, &[tag, rect(n)]);
+            if mem.read::<u8>(corner) >= 7 {
+                return;
+            }
+        }
+    }
+
+    /// `AbmapStartPart` (`0x00a5bad0`) and `AbmapShowChangeMessage`
+    /// (`0x00a5a640`), [`abmap_cheng_panel`]'s calls.
+    pub const CHENG_PANEL_CALLS: [u32; 2] = [0x00a5_bad0, 0x00a5_a640];
+    /// The node change's draw hook (`0x00a51700`) and state
+    /// (`AbmapState_ChangingNode`, `0x00a47d50`).
+    pub const CHENG_PANEL_HOOKS: [u32; 2] = [0x00a5_1700, 0x00a4_7d50];
+
+    /// `abmap_cheng_panel(kind, node)` (`0x00a48740`, Fahrenheit's name):
+    /// node `node`'s panel starts changing to kind `kind`. The ppp heap
+    /// is made again and the warp part starts on the node (kind 5 when the
+    /// save menu's bits `0xc000` are `0x8000`, else 3; scale 0.5).
+    /// `+0x11628` and `+0x1162c` are the node's current kind's and the new
+    /// kind's radii (half the size word at `+0xf834`, records of `0x30`,
+    /// plus 3.0, [`super::HOMING_MARGIN`]); `+0x11650` 0,
+    /// `+0x1164c`/`+0x1164e` `kind`/`node`, `AbmapShowChangeMessage(kind,
+    /// node)`, then the draw hook and state are saved and set as in
+    /// [`abmap_start_warp`]. The node is read through the grid pointer
+    /// taken before the calls. Returns the `eax` it ends with.
+    pub fn abmap_cheng_panel<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [kind, node]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let at = ABMAP
+            .get(mem)
+            .wrapping_add(layout::NODES)
+            .wrapping_add(node.wrapping_mul(layout::NODE_SIZE));
+        let f = mem.rebase(super::MS_GET_SAVE_MENU);
+        let menu = call(mem, f, &[]);
+        let f = mem.rebase(super::PPP_CREATE_HEAP);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let heap = mem.rebase(super::ABMAP_PPP_HEAP);
+        call(mem, f, &[env, heap, 0x7d000]);
+        let h = x87::copy(mem.read::<u32>(mem.rebase(super::WARP_PART_SCALE)));
+        let look = if mem.read::<u32>(menu) & 0xc000 == 0x8000 {
+            5
+        } else {
+            3
+        };
+        let coord = |mem: &M, o: u32| f32::from(mem.read::<i16>(at.wrapping_add(o))).to_bits();
+        let (x, y) = (coord(mem, 0), coord(mem, 2));
+        let part = mem.rebase(super::ABMAP_WARP_PART);
+        let [start_part, show_message] = CHENG_PANEL_CALLS.map(|f| mem.rebase(f));
+        call(mem, start_part, &[part, look, x, y, 0, 0, 0, 0, h, h, h]);
+        let margin = super::HOMING_MARGIN.get(mem);
+        let radius = |mem: &M, kind: u32| {
+            let size = ABMAP
+                .get(mem)
+                .wrapping_add(layout::KIND_SIZE)
+                .wrapping_add(kind.wrapping_mul(layout::KIND_STRIDE));
+            x87::store(f64::from(mem.read::<i16>(size) >> 1) + margin)
+        };
+        let g = ABMAP.get(mem);
+        let old = u32::from(
+            mem.read::<u16>(
+                g.wrapping_add(layout::NODES + 6)
+                    .wrapping_add(node.wrapping_mul(layout::NODE_SIZE)),
+            ),
+        );
+        let v = radius(mem, old);
+        mem.write(g.wrapping_add(0x11628), v);
+        let v = radius(mem, kind);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1162c), v);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11650), 0u8);
+        #[allow(clippy::cast_possible_truncation)] // 16-bit kind and node
+        {
+            mem.write(ABMAP.get(mem).wrapping_add(0x1164c), kind as u16);
+            mem.write(ABMAP.get(mem).wrapping_add(0x1164e), node as u16);
+        }
+        let mut eax = call(mem, show_message, &[kind, node]);
+        let [draw, state] = CHENG_PANEL_HOOKS.map(|f| mem.rebase(f));
+        for (saved, slot, hook) in [(0x115b4, 0x115ac, draw), (0x115b0, 0x115a8, state)] {
+            let g = ABMAP.get(mem);
+            if mem.read::<u32>(g.wrapping_add(saved)) == 0 {
+                let v = mem.read::<u32>(g.wrapping_add(slot));
+                mem.write(g.wrapping_add(saved), v);
+                let g = ABMAP.get(mem);
+                mem.write(g.wrapping_add(slot), hook);
+                eax = g;
+            }
+        }
+        eax
+    }
+
+    /// `AbmapRangesOverlap(a, b, c, d)` (`0x00a57000`, floats).
+    pub const RANGES_OVERLAP: u32 = 0x00a5_7000;
+    /// `1e11` (`0x00b7b710`), `AbmapPlyTagRect`'s mark for a box that is
+    /// not on screen.
+    pub const OFF_SCREEN: u32 = 0x00b7_b710;
+
+    /// `AbmapRectsOverlap(a, b)` (`0x00a49270`, from `0x00a5a4b0`; name
+    /// ours): whether two `(x0, y0, x1, y1)` boxes from `AbmapPlyTagRect`
+    /// overlap. A box whose `x0` is [`OFF_SCREEN`] never does. The box
+    /// further left must reach the other's `x0` (`x1 >= x0`; equal or
+    /// unordered `x0`s pass), then the y ranges go to
+    /// `AbmapRangesOverlap(a.y0, a.y1, b.y0, b.y1)`. Returns 0 or 1.
+    pub fn abmap_rects_overlap<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let word = |mem: &M, at: u32, i: u32| mem.read::<u32>(at.wrapping_add(4 * i));
+        let float = |mem: &M, at: u32, i: u32| f32::from_bits(word(mem, at, i));
+        let off = f32::from_bits(mem.read::<u32>(mem.rebase(OFF_SCREEN)));
+        #[allow(clippy::float_cmp)] // `fucom`'s exact match
+        let off_screen = float(mem, a, 0) == off || float(mem, b, 0) == off;
+        if off_screen {
+            return 0;
+        }
+        let (ax, bx) = (float(mem, a, 0), float(mem, b, 0));
+        let reaches = if bx > ax {
+            float(mem, a, 2) >= bx
+        } else if bx < ax {
+            float(mem, b, 2) >= ax
+        } else {
+            true
+        };
+        if !reaches {
+            return 0;
+        }
+        // Passed through `fld`/`fstp`, which quiets a signalling NaN.
+        let args = [
+            word(mem, a, 1),
+            word(mem, a, 3),
+            word(mem, b, 1),
+            word(mem, b, 3),
+        ]
+        .map(x87::copy);
+        let f = mem.rebase(RANGES_OVERLAP);
+        u32::from(call(mem, f, &args) != 0)
+    }
+
+    /// `FFXVu0CopyMatrix`, `pppSetMatrix`, `FFXVu0MulMatrix`, `pppRunPart`
+    /// and `pppAllFreePObject` (`0x006ed360`, `0x00717410`, `0x006ed5c0`,
+    /// `0x00712250`, `0x00711f20`): [`abmap_run_part`]'s calls.
+    pub const RUN_PART_CALLS: [u32; 5] = [
+        0x006e_d360,
+        0x0071_7410,
+        0x006e_d5c0,
+        0x0071_2250,
+        0x0071_1f20,
+    ];
+    /// `g_pppScreenMatrix`, `g_pppCameraMatrix`, `g_pppViewMatrix`,
+    /// `g_pppWorldMatrix` and the view matrix copy (`0x0230fe20`).
+    pub const PPP_MATRICES: [u32; 5] = [
+        0x0230_fe60,
+        0x0230_ff60,
+        0x0230_ff20,
+        0x0230_ffa0,
+        0x0230_fe20,
+    ];
+    /// 29184.0 (`f64`, `.rdata`): added to the screen matrix's z.
+    pub const RUN_PART_DEPTH: u32 = 0x00b7_b6c8;
+
+    /// `AbmapRunPart(part)` (`0x00a45930`, a part's draw hook; name ours):
+    /// a running part (`+0x1e`) under the grid's matrices: the ppp screen
+    /// and camera matrices from `+0x113a0`/`+0x11420`, the screen's z
+    /// translation (`+0x38`) moved by 29184.0, `pppSetMatrix(part)`, the
+    /// view matrix (camera times world) and its copy, then
+    /// `pppRunPart(part, 0x30)` in the grid's ppp environment; a finished
+    /// part's objects are freed (`pppAllFreePObject`) and `+0x1e` cleared.
+    /// Returns 0 (the original leaves its caller's `eax` when the part is
+    /// not running).
+    pub fn abmap_run_part<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        part: u32,
+        call: &mut C,
+    ) -> u32 {
+        if mem.read::<u16>(part.wrapping_add(0x1e)) == 0 {
+            return 0;
+        }
+        let [copy, set_matrix, mul, run, free] = RUN_PART_CALLS.map(|f| mem.rebase(f));
+        let [screen, camera, view, world, view_copy] = PPP_MATRICES.map(|m| mem.rebase(m));
+        let g = ABMAP.get(mem);
+        call(mem, copy, &[screen, g.wrapping_add(0x113a0)]);
+        let g = ABMAP.get(mem);
+        call(mem, copy, &[camera, g.wrapping_add(0x11420)]);
+        let z = screen.wrapping_add(0x38);
+        let depth = mem.read::<f64>(mem.rebase(RUN_PART_DEPTH));
+        mem.write(z, x87::store(x87::load(mem.read::<u32>(z)) + depth));
+        call(mem, set_matrix, &[part]);
+        call(mem, mul, &[view, camera, world]);
+        call(mem, copy, &[view_copy, view]);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let slot = mem.read::<u32>(mem.rebase(super::PPP_ENV_SLOT));
+        mem.write(slot, env);
+        if call(mem, run, &[part, 0x30]) != 0 {
+            let slot = mem.read::<u32>(mem.rebase(super::PPP_ENV_SLOT));
+            mem.write(slot, env);
+            call(mem, free, &[part]);
+            mem.write(part.wrapping_add(0x1e), 0u16);
+        }
+        0
+    }
+
+    /// `MsGetSaveConfigHiragana()` (`0x007851f0`) and `MsMenuGetText(group,
+    /// id, kana)` (`0x0078fcf0`).
+    pub const CHANGE_MESSAGE_CALLS: [u32; 2] = [0x0078_51f0, 0x0078_fcf0];
+
+    /// `AbmapShowChangeMessage(kind, node)` (`0x00a5a640`, from
+    /// `abmap_cheng_panel`; name ours): the panel-change message: the
+    /// node's (`+0x80e`) and the new kind's node excel rows
+    /// (`MsGetExcelData` from [`super::NODE_EXCEL_TABLE`], their string
+    /// bases in `work`, two words), the timer `+0x11666` 0x78, `+0x11660`
+    /// 0, the text `MsMenuGetText(9, 0x22, kana)` at `+0x11654` and the two
+    /// names (each row's `u16` for the kana setting plus its base) at
+    /// `+0x11658`/`+0x1165c`, `+0x11664` 2. The kana setting is read anew
+    /// (`MsGetSaveConfigHiragana() & 1`) for each. Returns the grid.
+    pub fn abmap_show_change_message<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [kind, node]: [u32; 2],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [kana, text] = CHANGE_MESSAGE_CALLS.map(|f| mem.rebase(f));
+        let excel = mem.rebase(super::MS_GET_EXCEL_DATA);
+        let table = mem.read::<u32>(mem.rebase(super::NODE_EXCEL_TABLE));
+        let g = ABMAP.get(mem);
+        let old =
+            u32::from(mem.read::<u16>(g.wrapping_add(0x80e).wrapping_add(node.wrapping_mul(0x28))));
+        let (old_base, new_base) = (work, work.wrapping_add(4));
+        let old_row = call(mem, excel, &[old, table, old_base]);
+        let table = mem.read::<u32>(mem.rebase(super::NODE_EXCEL_TABLE));
+        let new_row = call(mem, excel, &[kind, table, new_base]);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11666), 0x78u16);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11660), 0u32);
+        let k = call(mem, kana, &[]) & 1;
+        let message = call(mem, text, &[9, 0x22, k]);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11654), message);
+        for (row, base, at) in [(old_row, old_base, 0x11658), (new_row, new_base, 0x1165c)] {
+            let base = mem.read::<u32>(base);
+            let k = call(mem, kana, &[]) & 1;
+            let name = u32::from(mem.read::<u16>(row.wrapping_add(4 * k))).wrapping_add(base);
+            mem.write(ABMAP.get(mem).wrapping_add(at), name);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11664), 2u16);
+        g
+    }
+
+    /// `AbmapGetNodePosRadius(node, out)` (`0x00a5b4c0`, in `ST0`),
+    /// `AbmapCalcLinkPointsStraight` (`0x00a581f0`) and
+    /// `AbmapCalcLinkPointsCurved` (`0x00a57710`).
+    pub const LINK_POINT_CALLS: [u32; 3] = [0x00a5_b4c0, 0x00a5_81f0, 0x00a5_7710];
+
+    /// `AbmapCalcLinkPoints()` (`0x00a5a800`): every link (`+0xa808`, `+4`
+    /// of them) gets the point buffer position `+0x11668` at `+0x10`, then
+    /// its points from its ends' positions and radii
+    /// (`AbmapGetNodePosRadius`, in `work`: 0x30 bytes, the radii stored
+    /// as `f32`): `AbmapCalcLinkPointsStraight(out, a, b, ra, rb, link
+    /// +0xd)` when its centre node (`+4`) is 0xffff, else
+    /// `AbmapCalcLinkPointsCurved(out, a, b, c, ra, rb, link +0xd)`; each
+    /// returns the next position, kept at `+0x11668`. Returns the grid.
+    pub fn abmap_calc_link_points<M, C, F>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use crate::camera::FArgs;
+        let [pos_radius, straight, curved] = LINK_POINT_CALLS.map(|f| mem.rebase(f));
+        let g = ABMAP.get(mem);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(4)));
+        let mut out = mem.read::<u32>(g.wrapping_add(0x11668));
+        let mut link = g.wrapping_add(0xa808);
+        let (a, b, c) = (work, work.wrapping_add(0x10), work.wrapping_add(0x20));
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            mem.write(link.wrapping_add(0x10), out);
+            let end = |mem: &M, o: u32| u32::from(mem.read::<u16>(link.wrapping_add(o)));
+            let n = end(mem, 0);
+            let ra = x87::store(fcall(mem, pos_radius, FArgs::Stack(&[n, a])));
+            let n = end(mem, 2);
+            let rb = x87::store(fcall(mem, pos_radius, FArgs::Stack(&[n, b])));
+            let centre = end(mem, 4);
+            let kind = link.wrapping_add(0xd);
+            out = if centre == 0xffff {
+                call(mem, straight, &[out, a, b, ra, rb, kind])
+            } else {
+                fcall(mem, pos_radius, FArgs::Stack(&[centre, c]));
+                call(mem, curved, &[out, a, b, c, ra, rb, kind])
+            };
+            link = link.wrapping_add(layout::LINK_SIZE);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11668), out);
+        g
+    }
+
+    /// `AbmapItemApplyAt(chr, node, item, mark)` (`0x00a5b400`).
+    pub const ITEM_APPLY_AT: u32 = 0x00a5_b400;
+    /// `AbmapFindNearestNode(dist, pos, filter)` (`0x00a56a40`).
+    pub const FIND_NEAREST_NODE: u32 = 0x00a5_6a40;
+    /// `abmCalcChrMoveCurMoveCheck` (`0x00a45000`), its filter.
+    pub const MOVE_CHECK: u32 = 0x00a4_5000;
+    /// The grid's item-target state and draw hooks (`0x00a452d0`,
+    /// `0x00a45500`, a copy of `AbmapSetHelpMessage`).
+    pub const ITEM_TARGET_HOOKS: [u32; 2] = [0x00a4_52d0, 0x00a4_5500];
+
+    /// `AbmapShowItemTargets(chr, node, item, work)` (`0x00a5b980`, from
+    /// the item menu's handler; name ours): every node with a kind loses
+    /// its marks (bits 0..1 of `+0x22`), `AbmapItemApplyAt(chr, node, item,
+    /// 3)` marks where the item applies, `+0x116a0`/`+0x1169c` 0, the
+    /// state and draw hooks are [`ITEM_TARGET_HOOKS`], and the cursor
+    /// homes ([`abmap_init_homing`], 0.5) on the node nearest the current
+    /// character (`AbmapFindNearestNode(work, its marker, MOVE_CHECK)`)
+    /// unless it is on it (`+0x112fc`) or there is none, saving the state
+    /// for `AbmapState_HomeOnNode` when none is saved. `+0x115c3` is set.
+    /// Returns the `eax` it ends with.
+    pub fn abmap_show_item_targets<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [chr, node, item]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(2)));
+        let mut at = g.wrapping_add(layout::NODES);
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            if mem.read::<u16>(at.wrapping_add(6)) != 0xffff {
+                let marks = at.wrapping_add(0x22);
+                mem.write(marks, mem.read::<u8>(marks) & 0xfc);
+            }
+            at = at.wrapping_add(layout::NODE_SIZE);
+        }
+        let f = mem.rebase(ITEM_APPLY_AT);
+        call(mem, f, &[chr, node, item, 3]);
+        let [state, draw] = ITEM_TARGET_HOOKS.map(|f| mem.rebase(f));
+        for (o, v) in [
+            (0x116a0, 0),
+            (0x1169c, 0),
+            (0x115a8, state),
+            (0x115ac, draw),
+        ] {
+            mem.write(ABMAP.get(mem).wrapping_add(o), v);
+        }
+        let markers = ABMAP.get(mem).wrapping_add(0x11088);
+        let current = u32::from(mem.read::<u8>(markers.wrapping_add(0x534)));
+        let f = mem.rebase(FIND_NEAREST_NODE);
+        let filter = mem.rebase(MOVE_CHECK);
+        let found = call(
+            mem,
+            f,
+            &[work, markers.wrapping_add(current * 0x50), filter],
+        );
+        let g = ABMAP.get(mem);
+        let offset = found
+            .wrapping_sub(g)
+            .wrapping_sub(layout::NODES)
+            .cast_signed();
+        let index = (offset / 0x28).cast_unsigned();
+        let mut eax = 0x6666_6667u32.wrapping_mul(offset.cast_unsigned());
+        if found != 0 {
+            let on = u32::from(mem.read::<u16>(g.wrapping_add(0x112fc)));
+            eax = on;
+            if index != on {
+                let half = x87::copy(mem.read::<u32>(mem.rebase(super::WARP_PART_SCALE)));
+                eax = abmap_init_homing(mem, index, half);
+                let g = ABMAP.get(mem);
+                if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+                    let state = mem.read::<u32>(g.wrapping_add(0x115a8));
+                    mem.write(g.wrapping_add(0x115b0), state);
+                    let home = mem.rebase(super::STATE_HOME_ON_NODE);
+                    mem.write(ABMAP.get(mem).wrapping_add(0x115a8), home);
+                    eax = ABMAP.get(mem);
+                }
+            }
+        }
+        mem.write(ABMAP.get(mem).wrapping_add(0x115c3), 1u8);
+        eax
+    }
+
+    /// The sphere grid file's buffer (`0x01740870`): `+0` `'1'` when
+    /// loaded, `+2`/`+4`/`+6` the kind, node and link counts (`u16`),
+    /// the records from `+0x10`.
+    pub const ABMAP_FILE: u32 = 0x0174_0870;
+
+    /// `count` bytes from `src` to `dst`, one at a time from the first.
+    fn copy_bytes(mem: &mut impl Mem, dst: u32, src: u32, count: u32) {
+        for i in 0..count {
+            let b = mem.read::<u8>(src.wrapping_add(i));
+            mem.write(dst.wrapping_add(i), b);
+        }
+    }
+
+    /// `LoadAbmap()` (`0x00a45570`): the save's grid kind (`MsGetSaveMenu`
+    /// bits 14..15) picks file 9, 10 or 11, read through `GetCD`'s
+    /// reader (`+0x10(0x25)`, `+0(file, buffer, 0, 0)`, `+8(0)`) into
+    /// [`ABMAP_FILE`]. When it starts with `'1'`, the three counts go to
+    /// the grid's `+0`, `+2`, `+4` and, from `+0x10` of the file in turn:
+    /// the kinds (16 bytes each, to `+8`), the nodes (12 bytes each to
+    /// `+0x808`, 0x28 apart; `+0x26` the low 10 bits of the nodes left
+    /// after it, bit-reversed, shifted up 6, and `+0xa` its cell
+    /// `(x + 0xa00) / 256 + 20 ((y + 0x920) / 256)`), the links (8 bytes
+    /// each to `+0xa808`, 0x14 apart, kept only when its two nodes differ
+    /// and both are below the node count, then [`abmap_link_cells`]; the
+    /// kept count to `+4`). Then [`abmap_collect_node_links`] and
+    /// [`abmap_calc_bounds`], whose result it returns.
+    pub fn load_abmap<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::MS_GET_SAVE_MENU);
+        let menu = call(mem, f, &[]);
+        let file = mem.rebase(ABMAP_FILE);
+        mem.write(file, 0u8);
+        let id = match mem.read::<u32>(menu).cast_signed() >> 14 & 3 {
+            0 => 9,
+            1 => 10,
+            _ => 11,
+        };
+        let f = mem.rebase(super::GET_CD);
+        let cd = call(mem, f, &[]);
+        let f = mem.read::<u32>(cd.wrapping_add(0x10));
+        call(mem, f, &[0x25]);
+        let f = mem.read::<u32>(cd);
+        call(mem, f, &[id, file, 0, 0]);
+        let f = mem.read::<u32>(cd.wrapping_add(8));
+        call(mem, f, &[0]);
+        if mem.read::<u8>(file) == b'1' {
+            load_records(mem, file);
+        }
+        abmap_collect_node_links(mem);
+        abmap_calc_bounds(mem)
+    }
+
+    /// The records of [`load_abmap`]'s file.
+    fn load_records(mem: &mut impl Mem, file: u32) {
+        for o in [0u32, 2, 4] {
+            let n = mem.read::<u16>(file.wrapping_add(2 + o));
+            mem.write(ABMAP.get(mem).wrapping_add(o), n);
+        }
+        let mut src = file.wrapping_add(0x10);
+        let g = ABMAP.get(mem);
+        let mut dst = g.wrapping_add(8);
+        let mut left = i32::from(mem.read::<i16>(g));
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            copy_bytes(mem, dst, src, 0x10);
+            src = src.wrapping_add(0x10);
+            dst = dst.wrapping_add(0x10);
+        }
+        let g = ABMAP.get(mem);
+        let mut node = g.wrapping_add(layout::NODES);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(2)));
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 10 bits
+            let flags = ((left.cast_unsigned() & 0x3ff) as u16).reverse_bits() >> 6;
+            copy_bytes(mem, node, src, 0xc);
+            src = src.wrapping_add(0xc);
+            let y = i32::from(mem.read::<i16>(node.wrapping_add(2)));
+            mem.write(node.wrapping_add(0x26), flags << 6);
+            let x = i32::from(mem.read::<i16>(node));
+            let cell = (x + 0xa00) / 0x100 + (y + 0x920) / 0x100 * 20;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low word
+            mem.write(node.wrapping_add(0xa), cell as u16);
+            node = node.wrapping_add(layout::NODE_SIZE);
+        }
+        let g = ABMAP.get(mem);
+        let mut link = g.wrapping_add(0xa808);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(4)));
+        let mut kept = 0u16;
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            copy_bytes(mem, link, src, 8);
+            src = src.wrapping_add(8);
+            let (a, b) = (mem.read::<u16>(link), mem.read::<u16>(link.wrapping_add(2)));
+            let nodes = i32::from(mem.read::<i16>(ABMAP.get(mem).wrapping_add(2)));
+            if a != b && i32::from(a) < nodes && i32::from(b) < nodes {
+                abmap_link_cells(mem, link);
+                link = link.wrapping_add(layout::LINK_SIZE);
+                kept = kept.wrapping_add(1);
+            }
+        }
+        mem.write(ABMAP.get(mem).wrapping_add(4), kept);
     }
 }

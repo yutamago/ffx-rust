@@ -46,6 +46,87 @@ pub mod bridge {
         u32::from(crate::instance::bridge::magic_id(mem) == super::POINT_LIGHT_MAGIC)
     }
 
+    /// The magic IDs whose effects draw a model several times
+    /// (`useMultipleInstances_model`, in the original's order).
+    pub const MULTI_INSTANCE_MAGIC: [u32; 11] = [
+        0x133, 0x25d, 0x6a, 0x119, 0x233, 0x264, 0x20a, 0x1bd, 0xa2, 0x24a, 0xe,
+    ];
+    /// The effect pass (`g_VfxPass`).
+    pub const VFX_PASS: Global<u32> = Global::new(0x0113_335c);
+    /// The field map number (`g_CurrentMapNo`).
+    pub const CURRENT_MAP_NO: Global<u32> = Global::new(0x012f_bc40);
+
+    /// `useMultipleInstances_model(model, instance)` (`0x0071e610`): 1 for
+    /// a model whose flag byte (`model+0`) has bit 7 set and bit 2 clear,
+    /// in one of [`MULTI_INSTANCE_MAGIC`]'s effects, during an effect pass
+    /// ([`VFX_PASS`]); else 2 on maps 0x183, 0x184 and 0x186 when the
+    /// instance's `i16` at `+0x10` is at least 0x834; else 0.
+    pub fn use_multiple_instances_model(mem: &impl Mem, model: u32, instance: u32) -> u32 {
+        let flags: u8 = mem.read(model);
+        if flags & 0x80 != 0
+            && flags & 4 == 0
+            && MULTI_INSTANCE_MAGIC.contains(&crate::instance::bridge::magic_id(mem))
+            && VFX_PASS.get(mem) != 0
+        {
+            return 1;
+        }
+        let map = CURRENT_MAP_NO.get(mem);
+        if matches!(map, 0x183 | 0x184 | 0x186) && mem.read::<i16>(instance + 0x10) >= 0x834 {
+            return 2;
+        }
+        0
+    }
+
+    /// `updateVFXZBufClearRenderData(lo, hi, z)` (`0x0071e330`): the
+    /// effect render data of instance (`lo`, `hi`)
+    /// (`graphicVFXGetRenderDataByInstance`) becomes one full-screen quad
+    /// at depth `z`: its geometry (`+0x94`) gets 4 vertices (`+4`) and 6
+    /// indices (`+8`); when `graphicDynGeoMemManagerGetBufferForSegment
+    /// (data, 0, 4, 6)` gives a buffer, the indices (`+0x1c`, `u16`) are 0,
+    /// 1, 2, 1, 3, 2, the positions (`+0xc`, three `f32` each) (-1, -1),
+    /// (1, -1), (-1, 1), (1, 1) at `z` (copied through x87), and
+    /// `graphicVFXSetVisible(lo, hi, 1)` follows. Every pointer is read
+    /// again before each store, as the original does. Returns 1, or 0
+    /// without render data or buffer. Callees through `call`.
+    pub fn update_vfx_zbuf_clear_render_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        z: f32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let data = call(mem, 0x0064_53d0, &[lo, hi]);
+        if data == 0 {
+            return 0;
+        }
+        let geometry = |m: &M| -> u32 { m.read(data + 0x94) };
+        let g = geometry(mem);
+        mem.write(g + 4, 4u32);
+        let g = geometry(mem);
+        mem.write(g + 8, 6u32);
+        let g = geometry(mem);
+        let vertices: u32 = mem.read(g + 4);
+        let indices: u32 = mem.read(g + 8);
+        if call(mem, 0x0063_fdb0, &[data, 0, vertices, indices]) == 0 {
+            return 0;
+        }
+        for (k, index) in (0u32..).zip([0u16, 1, 2, 1, 3, 2]) {
+            let list: u32 = mem.read(geometry(mem) + 0x1c);
+            mem.write(list + 2 * k, index);
+        }
+        let z = x87::round_trip(z);
+        let g = geometry(mem);
+        let corners = [(-1.0f32, -1.0f32), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)];
+        for (k, (x, y)) in (0u32..).zip(corners) {
+            for (j, v) in (0u32..).zip([x, y, z]) {
+                let positions: u32 = mem.read(g + 0xc);
+                mem.write(positions + 0xc * k + 4 * j, v);
+            }
+        }
+        call(mem, 0x0064_5710, &[lo, hi, 1]);
+        1
+    }
+
     /// `DepthBiasHooks::clearDepthBias()` (`0x006e40b0`): when dirty, every
     /// entry back to (0, 1.0, 0.0) and the count to 0.
     pub fn clear_depth_bias(mem: &mut impl Mem) {

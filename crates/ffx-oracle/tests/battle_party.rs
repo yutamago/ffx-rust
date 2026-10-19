@@ -1,7 +1,8 @@
 //! A party actor from the save (`ffx_battle::save_param`, round 22:
 //! `MsSetRamChrParam`) and party swaps (`ffx_battle::save`:
-//! `MsExchangeSaveParty` and its `MsGetSavePlyFix` bridge) against the
-//! original, as in
+//! `MsExchangeSaveParty` and its `MsGetSavePlyFix` bridge; round 23:
+//! `SwapSaveGear`, with the characters wearing the two pieces or near
+//! them) against the original, as in
 //! `battle.rs`: the shared battle world, random save records, equipment
 //! (pieces with no, empty and real auto-abilities) and party slots, on the
 //! image alone and on both snapshots.
@@ -94,6 +95,60 @@ fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     });
 }
 
+/// An equipment ID: the inventory's (in range or not), the 0x7000 and
+/// 0xb000 slots', 0xff, or anything.
+fn gear_id(rng: &mut Xorshift) -> u32 {
+    match rng.below(8) {
+        0 => 0x7000 | rng.below(10),
+        1 => 0xb000 | rng.below(10),
+        2 => 0xff,
+        3 => rng.next(),
+        4 => 0x5000 | rng.below(0x1000),
+        _ => [0x5000, 0, 0x2000, 0x7_5000][rng.below(4) as usize] | rng.below(8),
+    }
+}
+
+/// `SwapSaveGear`: two IDs, the characters' weapons and armor often one of
+/// their low bytes.
+fn swap(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_battle::save::bridge as sv;
+    let first = gear_id(rng);
+    let second = if rng.below(8) == 0 {
+        first
+    } else {
+        gear_id(rng)
+    };
+    for chr in 0..0x12 {
+        let at = PLY_SAVE.ptr(b).addr + chr * sp::PLY_SAVE_SIZE + 0x2d;
+        let piece = |rng: &mut Xorshift| -> u8 {
+            match rng.below(4) {
+                0 => first.to_le_bytes()[0],
+                1 => second.to_le_bytes()[0],
+                2 => 0xff,
+                _ => u8::try_from(rng.below(10)).unwrap(),
+            }
+        };
+        let pieces = [piece(rng), piece(rng)];
+        poke(a, b, at, &pieces);
+    }
+    for id in [first, second] {
+        if id != 0xff {
+            let slot = sv::ms_get_save_weapon(b, id, 0);
+            fill(a, b, rng, slot, 0x16);
+        }
+    }
+    twin(
+        "SwapSaveGear",
+        a,
+        b,
+        0x007a_b9f0,
+        &[first, second],
+        ALL,
+        |m| sv::swap_save_gear(m, first, second).cast_unsigned(),
+    );
+    same("SwapSaveGear", a, b);
+}
+
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
     let aab = ffx_kernel::bridge::A_ABILITY;
@@ -109,6 +164,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         });
         same("MsSetRamChrParam", a, b);
         exchange(a, b, rng);
+        swap(a, b, rng);
     }
 }
 

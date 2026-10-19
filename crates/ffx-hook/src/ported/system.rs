@@ -1439,6 +1439,85 @@ ported! {
     TOGetLangColonWidth_008df4f0 @ 0x008d_f4f0 => extern "C" fn to_get_lang_colon_width(kind: u32, font: u32) -> u32 {
         tolib::bridge::lang_colon_width(&mut mem(), kind, font, call_sym)
     }
+    /// `prcPacketDataClose(self)`.
+    prcPacketDataClose @ 0x0076_6b90 => extern "C" fn prc_packet_data_close(this: u32) -> u32 {
+        pkt::bridge::prc_packet_data_close(&mut mem(), this, call_sym)
+    }
+    /// `BtlEnd_BuildList_008bde00()`.
+    BtlEnd_BuildList_008bde00 @ 0x008b_de00 => extern "C" fn btl_end_build_list() -> u32 {
+        btl::bridge::btl_end_build_list(&mut mem(), call_sym)
+    }
+    /// `useMultipleInstances_model(model, instance)`.
+    useMultipleInstances_model @ 0x0071_e610 => extern "C" fn use_multiple_instances_model(model: u32, instance: u32) -> u32 {
+        render::bridge::use_multiple_instances_model(&mem(), model, instance)
+    }
+    /// `MacroDic_Load()`.
+    MacroDic_Load @ 0x008b_85c0 => extern "C" fn macro_dic_load() -> u32 {
+        window::bridge::macro_dic_load(&mut mem(), call_sym)
+    }
+    /// `TOBtlDrawDamageValue2()`.
+    TOBtlDrawDamageValue2 @ 0x0089_3290 => extern "C" fn to_btl_draw_damage_value2() -> u32 {
+        btl::bridge::draw_damage_value2(&mut mem(), call_sym)
+    }
+    /// `TOBtlDrawSummonPrim(chr, x, y)`.
+    TOBtlDrawSummonPrim @ 0x008a_0ba0 => extern "C" fn to_btl_draw_summon_prim(chr: u32, x: i32, y: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        btl::bridge::BtlPrim {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+            scratch,
+        }
+        .summon(chr, x, y)
+    }
+    /// `TOBtlDrawChangePrim(chr, x, y)`.
+    TOBtlDrawChangePrim @ 0x0089_f0e0 => extern "C" fn to_btl_draw_change_prim(chr: u32, x: i32, y: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        btl::bridge::BtlPrim {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+            scratch,
+        }
+        .change(chr, x, y)
+    }
+    /// `TOBtlInitStatusWin()`.
+    TOBtlInitStatusWin @ 0x0089_8010 => extern "C" fn to_btl_init_status_win() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let count = frame.at();
+        btl::bridge::init_status_win(&mut mem(), count, call_sym)
+    }
+    /// `updateVFXZBufClearRenderData(lo, hi, z)`.
+    updateVFXZBufClearRenderData @ 0x0071_e330 => extern "C" fn update_vfx_zbuf_clear_render_data(lo: u32, hi: u32, z: f32) -> u32 {
+        render::bridge::update_vfx_zbuf_clear_render_data(&mut mem(), lo, hi, z, call_sym)
+    }
+    /// `TOAddPktChrNameIcon_008eba80(cursor, chr, x, y, colour)`.
+    TOAddPktChrNameIcon_008eba80 @ 0x008e_ba80 => extern "C" fn to_add_pkt_chr_name_icon(cursor: u32, chr: u32, x: u32, y: u32, colour: u32) -> u32 {
+        tolib::bridge::add_pkt_chr_name_icon(&mut mem(), [cursor, chr, x, y, colour], call_sym)
+    }
+    /// `TODrawFont3d80Glyph_008eeee0(cursor, text, x, y, nibbles, c0, c1, c2, c3)`.
+    TODrawFont3d80Glyph_008eeee0 @ 0x008e_eee0 => extern "C" fn to_draw_font_3d80_glyph(cursor: u32, text: u32, x: u32, y: u32, nibbles: u32, c0: u32, c1: u32, c2: u32, c3: u32) -> u32 {
+        let mut frame = super::StackFrame::<42>::new();
+        let scratch = frame.at();
+        tolib::bridge::draw_font_3d80_glyph(&mut mem(), [cursor, text, x, y, nibbles, c0, c1, c2, c3], scratch, call_sym)
+    }
+    /// `TOSetupMessageWindow_008b8de0(w)`.
+    TOSetupMessageWindow_008b8de0 @ 0x008b_8de0 => extern "C" fn to_setup_message_window(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<3>::new();
+        let scratch = frame.at();
+        tolib::bridge::setup_message_window(&mut mem(), w, scratch, call_ptr, fcall)
+    }
+    /// `TOBtlDrawCtbWindow(x, y)`.
+    TOBtlDrawCtbWindow @ 0x008a_0590 => extern "C" fn to_btl_draw_ctb_window(x: i32, y: u32) -> u32 {
+        btl::bridge::CtbWindow {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+        }
+        .draw(x, y)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {

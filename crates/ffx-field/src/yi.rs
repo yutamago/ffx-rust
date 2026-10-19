@@ -5516,4 +5516,292 @@ pub mod bridge {
         }
         0x3f80_0000
     }
+
+    // ---- field r13 ----
+
+    /// `yiLoadFieldParticle(textures, effects)` (`0x00909190`): a field's
+    /// particle data from two files. The last read effect data goes
+    /// first (`pppFpFree`, [`state::MAP_READ`] 0, the buffer
+    /// [`super::MAP_READ_BUFFER`] freed). The `textures` file is read
+    /// whole ([`read_whole_file`]), opened once more only to seek to its
+    /// end, and when read handed to `pppSetFpTex` and freed; the `effects`
+    /// file's buffer, when read, becomes both [`super::MAP_READ_BUFFER`] and
+    /// [`state::MAP_READ`] and goes to `pppSetFpPdt`. The camera and map
+    /// ids end -1. Returns 0.
+    ///
+    /// [`state::MAP_READ`]: super::state::MAP_READ
+    pub fn yi_load_field_particle<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [textures, effects]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        if super::state::MAP_READ.get(mem) != 0 {
+            let f = mem.rebase(super::PPP_FP_FREE);
+            call(mem, f, &[]);
+            super::state::MAP_READ.set(mem, 0);
+            let b = super::MAP_READ_BUFFER.get(mem);
+            if b != 0 {
+                yi_free(mem, b, call);
+                super::MAP_READ_BUFFER.set(mem, 0);
+            }
+        }
+        let tex = read_whole_file(mem, textures, call);
+        let open = mem.rebase(super::SCE_OPEN);
+        let fd = call(mem, open, &[textures, 1]);
+        if fd != 0 {
+            let seek = mem.rebase(super::SCE_LSEEK);
+            call(mem, seek, &[fd, 0, 2]);
+            let close = mem.rebase(super::SCE_CLOSE);
+            call(mem, close, &[fd]);
+        }
+        if tex != 0 {
+            let f = mem.rebase(super::MAP_SECTION2_HANDLER);
+            call(mem, f, &[tex]);
+            yi_free(mem, tex, call);
+        }
+        let pdt = read_whole_file(mem, effects, call);
+        if pdt != 0 {
+            super::MAP_READ_BUFFER.set(mem, pdt);
+            super::state::MAP_READ.set(mem, pdt);
+            let f = mem.rebase(super::PPP_SET_FP_PDT);
+            call(mem, f, &[pdt]);
+        }
+        super::CAMERA_IDS.set(mem, [u32::MAX; 2]);
+        super::MAP_IDS.set(mem, [u32::MAX; 2]);
+        0
+    }
+
+    /// The file `path` read whole into a `yiMalloc` buffer (`sceOpen`
+    /// mode 1, its size from `sceLseek` to the end, back to the start,
+    /// `sceRead`, `sceClose`); 0 when it does not open.
+    fn read_whole_file<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        path: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::SCE_OPEN);
+        let fd = call(mem, f, &[path, 1]);
+        if fd == 0 {
+            return 0;
+        }
+        let seek = mem.rebase(super::SCE_LSEEK);
+        let size = call(mem, seek, &[fd, 0, 2]);
+        call(mem, seek, &[fd, 0, 0]);
+        let buf = crate::model::bridge::yi_malloc(mem, call, size);
+        let f = mem.rebase(super::SCE_READ);
+        call(mem, f, &[fd, buf, size]);
+        let f = mem.rebase(super::SCE_CLOSE);
+        call(mem, f, &[fd]);
+        buf
+    }
+
+    // ---- field r13, the path split ----
+
+    /// `yiSplitPath_009161d0(path, dir, name, ext)` (`0x009161d0`, from
+    /// `yiMapSetup`; name ours): `path` split at its last `/` (else its
+    /// first `:`) and the last `.` after that. `dir` (when given) gets the
+    /// part up to the separator (empty without one), `name` the rest
+    /// without the extension, `ext` the extension with its dot (empty
+    /// without one); each target is optional. The original puts a NUL at
+    /// the split points while copying and restores them. Returns the
+    /// `eax` it ends with: `ext` without a dot, else the dot's address,
+    /// its low byte 0 when a copy ran.
+    pub fn yi_split_path<M: Mem>(mem: &mut M, [path, dir, name, ext]: [u32; 4]) -> u32 {
+        let base = match c_strrchr(mem, path, b'/').or_else(|| c_strchr(mem, path, b':')) {
+            Some(sep) => {
+                let base = sep.wrapping_add(1);
+                if dir != 0 {
+                    let kept = mem.read::<u8>(base);
+                    mem.write(base, 0u8);
+                    c_strcpy(mem, dir, path);
+                    mem.write(base, kept);
+                }
+                base
+            }
+            None => {
+                if dir != 0 {
+                    mem.write(dir, 0u8);
+                }
+                path
+            }
+        };
+        let Some(dot) = c_strrchr(mem, base, b'.') else {
+            if name != 0 {
+                c_strcpy(mem, name, base);
+            }
+            if ext != 0 {
+                mem.write(ext, 0u8);
+            }
+            return ext;
+        };
+        mem.write(dot, 0u8);
+        if name != 0 {
+            c_strcpy(mem, name, base);
+        }
+        mem.write(dot, b'.');
+        if ext != 0 {
+            c_strcpy(mem, ext, dot);
+        }
+        if name != 0 || ext != 0 {
+            dot & !0xff
+        } else {
+            dot
+        }
+    }
+
+    /// The C string at `s`'s last byte `c` (`strrchr`).
+    fn c_strrchr<M: Mem>(mem: &M, s: u32, c: u8) -> Option<u32> {
+        let mut found = None;
+        let mut at = s;
+        loop {
+            let b = mem.read::<u8>(at);
+            if b == c {
+                found = Some(at);
+            }
+            if b == 0 {
+                return found;
+            }
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// The C string at `s`'s first byte `c` (`strchr`).
+    fn c_strchr<M: Mem>(mem: &M, s: u32, c: u8) -> Option<u32> {
+        let mut at = s;
+        loop {
+            let b = mem.read::<u8>(at);
+            if b == c {
+                return Some(at);
+            }
+            if b == 0 {
+                return None;
+            }
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// The C string at `src` copied to `dst`, its NUL included, a byte at a
+    /// time as the original's inline loop.
+    fn c_strcpy<M: Mem>(mem: &mut M, dst: u32, src: u32) {
+        let mut i = 0u32;
+        loop {
+            let b = mem.read::<u8>(src.wrapping_add(i));
+            mem.write(dst.wrapping_add(i), b);
+            if b == 0 {
+                return;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    // ---- field r13, the event list ----
+
+    /// `Sg_PcRead(path)` (`0x0083ae30`).
+    pub const SG_PC_READ: u32 = 0x0083_ae30;
+    /// "/ffx/proj/event/header/eventid.bin" (`0x00b5b8e4`).
+    pub const EVENT_ID_PATH: u32 = 0x00b5_b8e4;
+    /// Non-zero once [`super::MAP_NAMES`] is built (`0x01934ecc`).
+    pub const MAP_NAMES_READY: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0193_4ecc);
+
+    /// `initEventList()` (`0x00907f50`): builds the map name table once.
+    /// `eventid.bin` ([`EVENT_ID_PATH`], `Sg_PcRead`) starts with a table
+    /// of `(offset, _)` pairs whose first offset, over 8, is the count;
+    /// each entry of the `user_malloc`ed table ([`super::MAP_NAMES`], 16
+    /// bytes) gets its name through the CRT's `sprintf` with the name as
+    /// the format, and its index at `+0xc`. The count goes to
+    /// [`super::MAP_NAME_COUNT`] and [`MAP_NAMES_READY`] is 1. Returns the
+    /// `eax` it ends with (`None` when it leaves the caller's: already
+    /// built).
+    pub fn init_event_list<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> Option<u32> {
+        if MAP_NAMES_READY.get(mem) != 0 {
+            return None;
+        }
+        let f = mem.rebase(SG_PC_READ);
+        let path = mem.rebase(EVENT_ID_PATH);
+        let file = call(mem, f, &[path]);
+        if file == 0 {
+            return Some(0);
+        }
+        // `/ 8` rounding toward zero, as the original's `cdq`/`sar`
+        let count = mem.read::<i32>(file) / 8;
+        let f = mem.rebase(crate::model::USER_MALLOC);
+        let mut eax = call(mem, f, &[count.cast_unsigned().wrapping_shl(4)]);
+        super::MAP_NAMES.set(mem, eax);
+        let sprintf = mem.read::<u32>(mem.rebase(super::CRT_SPRINTF));
+        for i in 0..count.max(0).cast_unsigned() {
+            let entry = super::MAP_NAMES.get(mem).wrapping_add(i.wrapping_mul(0x10));
+            let name = mem
+                .read::<u32>(file.wrapping_add(i.wrapping_mul(8)))
+                .wrapping_add(file);
+            call(mem, sprintf, &[entry, name]);
+            eax = super::MAP_NAMES.get(mem);
+            mem.write(eax.wrapping_add(i.wrapping_mul(0x10)).wrapping_add(0xc), i);
+        }
+        super::MAP_NAME_COUNT.set(mem, count.cast_unsigned());
+        MAP_NAMES_READY.set(mem, 1);
+        Some(eax)
+    }
+
+    // ---- field r13, map change ----
+
+    /// MSVCR110's `strstr` import slot (`0x00b0c378`).
+    pub const CRT_STRSTR: u32 = 0x00b0_c378;
+    /// `AtelSetEventJump(event, _)` (`0x0086fec0`).
+    pub const ATEL_SET_EVENT_JUMP: u32 = 0x0086_fec0;
+
+    /// `mapChange(name)` (`0x00908100`): the debug map jump. The last
+    /// entry of [`super::MAP_NAMES`] whose name contains `name` (`strstr`)
+    /// gives the event; when `name` is part of "grid00"
+    /// ([`super::MAP_NAME_NONE`]) the jump goes to event 0 instead
+    /// (`AtelSetEventJump(event, 0)`); without either nothing happens.
+    /// Returns the jump's `eax`, else 0.
+    pub fn map_change<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        name: u32,
+        call: &mut C,
+    ) -> u32 {
+        let strstr = mem.read::<u32>(mem.rebase(CRT_STRSTR));
+        let mut event = u32::MAX;
+        let mut i = 0;
+        while i < super::MAP_NAME_COUNT.get(mem).cast_signed() {
+            let entry = super::MAP_NAMES
+                .get(mem)
+                .wrapping_add(i.cast_unsigned().wrapping_mul(0x10));
+            if call(mem, strstr, &[entry, name]) != 0 {
+                event = mem.read::<u32>(entry.wrapping_add(0xc));
+            }
+            i += 1;
+        }
+        let none = mem.rebase(super::MAP_NAME_NONE);
+        let jump = mem.rebase(ATEL_SET_EVENT_JUMP);
+        if call(mem, strstr, &[none, name]) != 0 {
+            return call(mem, jump, &[0, 0]);
+        }
+        if event == u32::MAX {
+            return 0;
+        }
+        call(mem, jump, &[event, 0])
+    }
+
+    // ---- field r13, yi wrappers ----
+
+    /// `yiPartChainToOMD(r, out, part)` (`0x00911ac0`).
+    pub const PART_CHAIN_TO_OMD: u32 = 0x0091_1ac0;
+    /// The renderer state `g_YiRender` (`0x01876e00`).
+    pub const YI_RENDER: u32 = 0x0187_6e00;
+
+    /// `yiDObjToOMD(out, part)` (`0x00908420`): `yiPartChainToOMD(
+    /// &g_YiRender, out, part)`, whose `eax` it returns.
+    pub fn yi_dobj_to_omd<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [out, part]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(PART_CHAIN_TO_OMD);
+        let r = mem.rebase(YI_RENDER);
+        call(mem, f, &[r, out, part])
+    }
 }

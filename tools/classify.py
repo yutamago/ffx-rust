@@ -268,6 +268,13 @@ REVIEWED = {
     0x004013b0: ("glue", "STL error_category::message (system round 34)"),
     0x006fb410: ("platform", "SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)"),
     0x006fb380: ("platform", "SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)"),
+    0x00715a40: ("glue", "PC renderer frame-buffer data creator (graphicVFXCreate) (effects round 28)"),
+    0x00716050: ("glue", "PC renderer frame-buffer data creator (graphicVFXCreate) (effects round 28)"),
+    0x008ad780: ("platform", "TOInitBattleFontPath: host0: to PS3Data paths (str_replace + fiosUnifyFilename) (system round 35)"),
+    0x00778610: ("platform", "hd_file_read_th: PC loader-thread request handshake (system round 35)"),
+    0x00778550: ("platform", "hd_file_read_ex_th_main: PC loader-thread request handshake (system round 35)"),
+    0x0076db40: ("dead", "file_offset_get: only caller gated by read-only .rdata byte 0x00b5ec4f == 0 (it is 1); sceCdSearchFile stub always 0 (system round 35)"),
+    0x0081f210: ("dead", "SqsStraightStreamingDataSend: only caller is thunk 0x885ed0, whose only caller 0x77a8e0 is never reached (field round 13)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

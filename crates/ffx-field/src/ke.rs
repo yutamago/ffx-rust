@@ -473,6 +473,46 @@ pub mod bridge {
         super::PMCOM_QUEUE_INDEX.set(mem, i & keep);
     }
 
+    /// The pmcom data blocks `pppPmcomDataInit_00760080` (`0x00760080`)
+    /// allots, by data kind: `(kinds, slot)`.
+    pub const PMCOM_DATA_BLOCKS: [(&[u32], u32); 5] = [
+        (&[4, 8], 0x00d4_b820),
+        (&[5, 9], 0x00d4_b824),
+        (&[6, 10], 0x00d4_ca38),
+        (&[7], 0x00d4_bc28),
+        (&[11, 12], 0x00d4_bc2c),
+    ];
+    /// What the kinds 11/12 block slot is reset to (`0x00d4be30`).
+    pub const PMCOM_DATA_NEXT: u32 = 0x00d4_be30;
+
+    /// `pppPmcomDataQueue_0075ff00(data)` (`0x0075ff00`, the pair of
+    /// `pppPmcomDataInit_00760080`; name ours): data of kind `+0x28` is
+    /// queued ([`ke_pmcom_queue_push`]) with its block from
+    /// [`PMCOM_DATA_BLOCKS`], whose slot is then 0 (kinds 11/12: the word
+    /// at [`PMCOM_DATA_NEXT`]); other kinds are queued with no block.
+    /// Returns the block, or that word for kinds 11/12 (left in `eax`).
+    pub fn ppp_pmcom_data_queue(mem: &mut impl Mem, data: u32) -> u32 {
+        let kind = mem.read::<u32>(data.wrapping_add(0x28));
+        let Some(&(_, slot)) = PMCOM_DATA_BLOCKS
+            .iter()
+            .find(|(kinds, _)| kinds.contains(&kind))
+        else {
+            ke_pmcom_queue_push(mem, kind, 0);
+            return ptr32(0);
+        };
+        let slot = mem.rebase(slot);
+        let block = mem.read::<u32>(slot);
+        ke_pmcom_queue_push(mem, kind, block);
+        if matches!(kind, 11 | 12) {
+            let next = mem.read::<u32>(mem.rebase(PMCOM_DATA_NEXT));
+            mem.write(slot, next);
+            next
+        } else {
+            mem.write(slot, 0u32);
+            ptr32(block)
+        }
+    }
+
     /// `KeLnsDefault_Init(obj)` (`0x0076a640`, `KeLnsFls_Init`'s code):
     /// the default shapes, no data; returns `set_ptr32(0)`.
     pub fn ke_lns_default_init(mem: &mut impl Mem, o: u32) -> u32 {

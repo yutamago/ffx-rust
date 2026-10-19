@@ -17,6 +17,7 @@ use ffx_battle::gear::bridge as gear;
 use ffx_battle::getmem::bridge as getmem;
 use ffx_battle::init::bridge as init;
 use ffx_battle::input::bridge as input;
+use ffx_battle::limit::bridge as limit;
 use ffx_battle::motion::bridge as motion;
 use ffx_battle::parse::bridge as parse;
 use ffx_battle::predict::bridge as predict;
@@ -24,8 +25,11 @@ use ffx_battle::process::bridge as process;
 use ffx_battle::read::bridge as read;
 use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
+use ffx_battle::screen::bridge as screen;
+use ffx_battle::shake::bridge as shake;
 use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
+use ffx_battle::view::bridge as view;
 use ffx_battle::visible::bridge as visible;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{
@@ -157,6 +161,42 @@ fn crt_trig(t: pos::Trig, x: u32) -> u32 {
     {
         let _ = (slot, x);
         unreachable!("the CRT's trigonometry runs in the 32-bit game")
+    }
+}
+
+/// MSVCR110's `_CIcos` or `_CIsin` through the game's import slot on a
+/// double (an angle the caller summed at 53 bits): loaded with `fld qword`,
+/// the result stored with `fstp dword`, as `MsCameraShakeProcess` does.
+fn crt_trig_f64(t: pos::Trig, x: f64) -> u32 {
+    let slot = match t {
+        pos::Trig::Cos => 0x00b0_c3b4,
+        pos::Trig::Sin => 0x00b0_c3b8,
+        pos::Trig::Atan => 0x00b0_c450,
+    };
+    // SAFETY: the slot holds the address of the CRT's intrinsic, which
+    // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the x87
+    // and SSE registers clobbered).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let f = (crate::rebase(slot) as *const usize).read();
+        let bits: u32;
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "sub esp, 4",
+            "fstp dword ptr [esp]",
+            "pop eax",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            lateout("eax") bits,
+            clobber_abi("C"),
+        );
+        bits
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (slot, x);
+        0
     }
 }
 
@@ -2032,6 +2072,119 @@ ported! {
     MsVectorPolar2Rect @ 0x007c_47c0 => extern "C" fn ms_vector_polar2_rect(out: u32, base: u32, yaw: u32, pitch: u32, r0: u32, r1: u32, r2: u32, r3: u32) {
         vector::ms_vector_polar2_rect(&mut mem(), &crt_trig, out, base, yaw, pitch, [r0, r1, r2, r3]);
     }
+    /// `MsCameraMatrix(out, eye, target, up, roll)`: `_CIcos` and `_CIsin`
+    /// through their import slots; `eax` as the original leaves it.
+    MsCameraMatrix @ 0x007c_1be0 => extern "C" fn ms_camera_matrix(out: u32, eye: u32, target: u32, up: u32, roll: u32) -> u32 {
+        view::ms_camera_matrix(&mut mem(), &crt_trig, out, eye, target, up, roll)
+    }
+    /// `MsScreenMatrix(out, screen)`.
+    MsScreenMatrix @ 0x007c_3d60 => extern "C" fn ms_screen_matrix(out: u32, screen: u32) -> u32 {
+        view::ms_screen_matrix(&mut mem(), out, screen)
+    }
+    /// `MsCameraCheckShake(cam, side)`.
+    MsCameraCheckShake @ 0x007c_4f10 => extern "C" fn ms_camera_check_shake(cam: u32, side: u32) -> i32 {
+        shake::ms_camera_check_shake(&mem(), cam, side)
+    }
+    /// `MsScreenCheckShake(i)`.
+    MsScreenCheckShake @ 0x007c_5680 => extern "C" fn ms_screen_check_shake(i: u32) -> i32 {
+        shake::ms_screen_check_shake(&mem(), i)
+    }
+    /// `MsCameraResetShake(id, side)`; `eax` as the original leaves it.
+    MsCameraResetShake @ 0x007c_4f50 => extern "C" fn ms_camera_reset_shake(id: u32, side: u32) -> u32 {
+        shake::ms_camera_reset_shake(&mut mem(), id, side)
+    }
+    /// `MsCameraShake(id, side, which, kind, value, length, amplitude, range)`;
+    /// `eax` as the original leaves it.
+    MsCameraShake @ 0x007c_4fc0 => extern "C" fn ms_camera_shake(id: u32, side: u32, which: u32, kind: u32, value: u32, length: u32, amplitude: u32, range: u32) -> u32 {
+        let start = shake::Start { kind: kind.to_le_bytes()[0], value, length: u16::from_le_bytes([length.to_le_bytes()[0], length.to_le_bytes()[1]]), amplitude: u16::from_le_bytes([amplitude.to_le_bytes()[0], amplitude.to_le_bytes()[1]]), range: range.to_le_bytes()[0] };
+        shake::ms_camera_shake(&mut mem(), id, side, which, start)
+    }
+    /// `MsScreenShake(i, which, kind, value, length, amplitude, range)`.
+    MsScreenShake @ 0x007c_56f0 => extern "C" fn ms_screen_shake(i: u32, which: u32, kind: u32, value: u32, length: u32, amplitude: u32, range: u32) {
+        let start = shake::Start { kind: kind.to_le_bytes()[0], value, length: u16::from_le_bytes([length.to_le_bytes()[0], length.to_le_bytes()[1]]), amplitude: u16::from_le_bytes([amplitude.to_le_bytes()[0], amplitude.to_le_bytes()[1]]), range: range.to_le_bytes()[0] };
+        shake::ms_screen_shake(&mut mem(), i, which, start);
+    }
+    /// `MsScreenShake2(i, which, kind, steps, length, speed, range, pull, fade)`.
+    MsScreenShake2 @ 0x007c_57b0 => extern "C" fn ms_screen_shake2(i: u32, which: u32, kind: u32, steps: u32, length: u32, speed: u32, range: i32, pull: u32, fade: u32) {
+        shake::ms_screen_shake2(&mut mem(), i, which, kind.to_le_bytes()[0], steps.to_le_bytes()[0], length, speed, range, pull, fade.to_le_bytes()[0]);
+    }
+    /// `MsCameraShakeProcess(shake, angle, out)`: `_CIcos`/`_CIsin` through
+    /// their import slots on a double.
+    MsCameraShakeProcess @ 0x007c_50f0 => extern "C" fn ms_camera_shake_process(rec: u32, angle: u32, out: u32) {
+        shake::ms_camera_shake_process(&mut mem(), &crt_trig_f64, rec, angle, out);
+    }
+    /// `MsScreenLinkSet(i, k, v)`.
+    MsScreenLinkSet @ 0x007b_bdd0 => extern "C" fn ms_screen_link_set(i: u32, k: u32, v: u32) {
+        screen::ms_screen_link_set(&mut mem(), i, k, v.to_le_bytes()[0]);
+    }
+    /// `MsScreenOffsetID(id, x, y)`; `eax` as the original leaves it.
+    MsScreenOffsetID @ 0x007b_c0e0 => extern "C" fn ms_screen_offset_id(id: u32, x: u32, y: u32) -> u32 {
+        screen::ms_screen_offset_id(&mut mem(), id, x, y)
+    }
+    /// `MsScreenMoveCheck(i, side)`.
+    MsScreenMoveCheck @ 0x007b_bfc0 => extern "C" fn ms_screen_move_check(i: u32, side: u32) -> u32 {
+        screen::ms_screen_move_check(&mem(), i, side)
+    }
+    /// `MsScreenMoveReset(i, side)`.
+    MsScreenMoveReset @ 0x007b_c010 => extern "C" fn ms_screen_move_reset(i: u32, side: u32) {
+        screen::ms_screen_move_reset(&mut mem(), i, side);
+    }
+    /// `MsScreenMove(i, side, total, kind)`.
+    MsScreenMove @ 0x007b_bdf0 => extern "C" fn ms_screen_move(i: u32, side: u32, total: u32, kind: u32) {
+        screen::ms_screen_move(&mut mem(), i, side, u16::from_le_bytes([total.to_le_bytes()[0], total.to_le_bytes()[1]]), u16::from_le_bytes([kind.to_le_bytes()[0], kind.to_le_bytes()[1]]));
+    }
+    /// `MsScreenMoveAcc(i, side, accel, cruise, brake)`.
+    MsScreenMoveAcc @ 0x007b_beb0 => extern "C" fn ms_screen_move_acc(i: u32, side: u32, accel: u32, cruise: u32, brake: u32) {
+        screen::ms_screen_move_acc(&mut mem(), i, side, u16::from_le_bytes([accel.to_le_bytes()[0], accel.to_le_bytes()[1]]), u16::from_le_bytes([cruise.to_le_bytes()[0], cruise.to_le_bytes()[1]]), u16::from_le_bytes([brake.to_le_bytes()[0], brake.to_le_bytes()[1]]));
+    }
+    /// `MsCameraResetFilter(id, side)`.
+    MsCameraResetFilter @ 0x007b_ed10 => extern "C" fn ms_camera_reset_filter(id: u32, side: u32) {
+        camera::ms_camera_reset_filter(&mut mem(), id, side);
+    }
+    /// `MsCameraMoveStat(id, side, v)`.
+    MsCameraMoveStat @ 0x007b_df90 => extern "C" fn ms_camera_move_stat(id: u32, side: u32, v: u32) {
+        camera::ms_camera_move_stat(&mut mem(), id, side, v.to_le_bytes()[0]);
+    }
+    /// `MsCameraMoveDivide(id, side, v0, v1, v2, v3)`.
+    MsCameraMoveDivide @ 0x007b_dde0 => extern "C" fn ms_camera_move_divide(id: u32, side: u32, v0: u32, v1: u32, v2: u32, v3: u32) {
+        camera::ms_camera_move_divide(&mut mem(), id, side, [v0, v1, v2, v3]);
+    }
+    /// `MsCameraSetSplineFilter(id, side, value, scale, kind)`.
+    MsCameraSetSplineFilter @ 0x007b_fe70 => extern "C" fn ms_camera_set_spline_filter(id: u32, side: u32, value: u32, scale: u32, kind: u32) {
+        camera::ms_camera_set_spline_filter(&mut mem(), id, side, value, scale, kind);
+    }
+    /// `MsCameraResetDirVector(id, side)`.
+    MsCameraResetDirVector @ 0x007b_ec90 => extern "C" fn ms_camera_reset_dir_vector(id: u32, side: u32) {
+        camera::ms_camera_reset_dir_vector(&mut mem(), id, side);
+    }
+    /// `MsCameraSetFocus(id, side, v)`.
+    MsCameraSetFocus @ 0x007b_f280 => extern "C" fn ms_camera_set_focus(id: u32, side: u32, v: u32) {
+        camera::ms_camera_set_focus(&mut mem(), id, side, v);
+    }
+    /// `MsCameraReset(id, side)`.
+    MsCameraReset @ 0x007b_eae0 => extern "C" fn ms_camera_reset(id: u32, side: u32) -> u32 {
+        camera::ms_camera_reset(&mut mem(), id, side)
+    }
+    /// `MsCameraSetStartPos(cam, side, mv)`: the CRT's trigonometry
+    /// through its import slots.
+    MsCameraSetStartPos @ 0x007b_ff10 => extern "C" fn ms_camera_set_start_pos(cam: u32, side: u32, mv: u32) -> u32 {
+        camera::ms_camera_set_start_pos(&mut mem(), &crt_trig, cam, side, mv)
+    }
+    /// `MsCameraGetYaw()`: the yaw through a word of this stack (the
+    /// original's local), the CRT's `_CIatan` through its import slot.
+    MsCameraGetYaw @ 0x007b_cf20 => extern "C" fn ms_camera_get_yaw() -> f32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        camera::ms_camera_get_yaw(&mut mem(), &crt_trig, at)
+    }
+    /// `MsCameraFocusWeights_007c0ae0(side, mv)`.
+    MsCameraFocusWeights_007c0ae0 @ 0x007c_0ae0 => extern "C" fn ms_camera_focus_weights(side: u32, mv: u32) {
+        camera::ms_camera_focus_weights(&mut mem(), side, mv);
+    }
+    /// `MsScaleAboutPoint_007c4d40(v, origin, scale)`.
+    MsScaleAboutPoint_007c4d40 @ 0x007c_4d40 => extern "C" fn ms_scale_about_point(v: u32, origin: u32, scale: u32) -> u32 {
+        vector::ms_scale_about_point(&mut mem(), v, origin, scale)
+    }
     /// `MsVectorNormal2(out, a, b, s)`.
     MsVectorNormal2 @ 0x007c_45e0 => extern "C" fn ms_vector_normal2(out: u32, a: u32, b: u32, s0: u32, s1: u32, s2: u32, s3: u32) {
         vector::ms_vector_normal2(&mut mem(), out, a, b, [s0, s1, s2, s3]);
@@ -3732,5 +3885,50 @@ ported! {
     /// `MsWeaponNameNum_Weapon_007a1c00(gear)`.
     MsWeaponNameNum_Weapon_007a1c00 @ 0x007a_1c00 => extern "C" fn ms_weapon_name_num_weapon(at: u32) -> u32 {
         gear::ms_weapon_name_num_weapon(&mem(), at)
+    }
+    /// `MsMenuGetText(i, id, second)`: a menu text's name.
+    MsMenuGetText @ 0x0078_fcf0 => extern "C" fn ms_menu_get_text(i: u32, id: u32, second: u32) -> u32 {
+        menu::ms_menu_get_text(&mem(), i, id, second)
+    }
+    /// `MsMenuGetHelp(i, id, second)`: a menu text's help line.
+    MsMenuGetHelp @ 0x0078_fbb0 => extern "C" fn ms_menu_get_help(i: u32, id: u32, second: u32) -> u32 {
+        menu::ms_menu_get_help(&mem(), i, id, second)
+    }
+    /// `MsGetMenuChrInfo(chr, k)`: a name or help line of an actor or ID.
+    MsGetMenuChrInfo @ 0x0078_f7c0 => extern "C" fn ms_get_menu_chr_info(chr: u32, k: u32) -> u32 {
+        menu::ms_get_menu_chr_info(&mut mem(), chr, k)
+    }
+    /// `MsEffectTerminate(id)`: an effect's end (`MsBattleError` through
+    /// the game).
+    MsEffectTerminate @ 0x0078_8920 => extern "C" fn ms_effect_terminate(id: u32) {
+        effect::ms_effect_terminate(&mut mem(), &mut call_ptr, id);
+    }
+    /// `SwapSaveGear(first, second)`: two equipment slots trade places.
+    SwapSaveGear @ 0x007a_b9f0 => extern "C" fn swap_save_gear(first: u32, second: u32) -> i32 {
+        save::swap_save_gear(&mut mem(), first, second)
+    }
+    /// `Battle_ScriptPlayMotion(worker, args, stack, flag)`: a script's
+    /// actor plays a motion (script and chara calls through the game).
+    Battle_ScriptPlayMotion @ 0x007a_8fc0 => extern "C" fn battle_script_play_motion(worker: u32, _args: u32, stack: u32, flag: u32) -> u32 {
+        motion::battle_script_play_motion(&mut mem(), &mut call_ptr, worker, stack, flag.to_le_bytes()[0])
+    }
+    /// `getExcelBinSize(name, buffer)`: a kernel file read whole (its
+    /// path in a frame of ours; the language and file layer through the
+    /// game).
+    getExcelBinSize @ 0x0078_2df0 => extern "C" fn get_excel_bin_size(name: u32, buffer: u32) -> u32 {
+        let mut path = super::StackFrame::<{ (init::KERNEL_PATH_SIZE / 4) as usize }>::new();
+        init::get_excel_bin_size(&mut mem(), &mut call_ptr, name, buffer, path.at())
+    }
+    /// `MsMenuLimitSet(chr, user, count)`: an overdrive's hits handed
+    /// out (its callees' out values in a frame of ours).
+    MsMenuLimitSet @ 0x007a_fe00 => extern "C" fn ms_menu_limit_set(chr: u32, user: u32, count: i32) -> u32 {
+        let mut frame = super::StackFrame::<{ limit::LIMIT_SCRATCH_WORDS as usize }>::new();
+        limit::ms_menu_limit_set(&mut mem(), &mut call_ptr, chr, user, count, frame.at())
+    }
+    /// `MsMenuLimitSet_007b0470(chr, count, x, y)`: a minigame's result
+    /// taken (the magic camera through the game).
+    MsMenuLimitSet_007b0470 @ 0x007b_0470 => extern "C" fn ms_menu_limit_start(chr: u32, count: u32, x: u32, y: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ limit::LIMIT_SCRATCH_WORDS as usize }>::new();
+        limit::ms_menu_limit_start(&mut mem(), &mut call_ptr, chr, count, x, y, frame.at())
     }
 }

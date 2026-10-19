@@ -3,7 +3,7 @@
 
 use ffx_bridge::{Global, Mem};
 
-use crate::abmap::ABMAP;
+use crate::abmap::{ABMAP, SIN_TABLE};
 use crate::x87;
 
 /// The GS packet buffer both draws fill (`0x01a860ec`, a pointer).
@@ -748,3 +748,408 @@ pub fn abmap_ply_tag_rect<M: Mem>(mem: &mut M, tag: u32, out: u32) {
 const FAR_AWAY: u32 = 0x00b7_b710;
 /// 10.0 (`f64`, `.rdata`).
 const TEN_F64: u32 = 0x00b9_22b0;
+
+/// `FFXVu0MulMatrix(out, a, b)` (`0x006ed5c0`).
+const MUL_MATRIX: u32 = 0x006e_d5c0;
+/// `op1_md_draw_eiabm(model, request, 4, layer)` (`0x00a657c0`).
+const MD_DRAW: u32 = 0x00a6_57c0;
+/// The ring models [`abmap_draw_chr_rings`] draws: the cursor's
+/// (`0x023057fc`) and the characters' (`0x023057f8`).
+const CURSOR_RING: u32 = 0x0230_57fc;
+const CHR_RING: u32 = 0x0230_57f8;
+/// The cursor ring's colours by character (`0x00c86580`) and each
+/// character's ring colour (`0x00c86660`), RGBA words.
+const CURSOR_COLORS: u32 = 0x00c8_6580;
+const RING_COLORS: u32 = 0x00c8_6660;
+/// The rings' render target (`0x01740870`).
+const RING_TARGET: u32 = 0x0174_0870;
+/// The emulated EE zero register (`0x00c8f508`, four words).
+const EE_R0: u32 = 0x00c8_f508;
+/// `.rdata` constants: the rings' depth (4, 3, 2: `f32`), the cursor's
+/// scale (3, 125, 1/1280: `f64`) and the characters' (1/800: `f64`).
+const RING_DEPTHS: [u32; 3] = [0x00b9_22f8, 0x00b3_eb94, 0x00b9_2268];
+const CURSOR_SCALE: [u32; 3] = [0x00b2_c5c8, 0x00b7_b6b8, 0x00b7_b628];
+const RING_SCALE: u32 = 0x00b7_b638;
+
+/// [`abmap_draw_chr_rings`]' scratch, laid out as the original's frame:
+/// the draw request (0x48 bytes) at 0, the model matrix at `+0x78`, the
+/// vertex block (eight vectors) at `+0xb8`.
+pub const RINGS_WORK: u32 = 0x138;
+const RINGS_MATRIX: u32 = 0x78;
+const RINGS_VERTS: u32 = 0xb8;
+
+/// `AbmapDrawChrRings()` (`0x00a4c8d0`, name ours; from the ability map's
+/// draws `0x00a54660` and `eiAbmDraw`): the rings under the cursor and the
+/// characters, each through `op1_md_draw_eiabm(model, request, 4, g_Abmap
+/// [+0x116a4])`. The request (`work`, see [`RINGS_WORK`]) holds kind
+/// (4, then 0x24), the target 0x01740870, 0x48, a colour word at `+0x18`
+/// (alpha byte `+0x1b`), the model matrix pointer `+0x20` and the vertex
+/// block's `+0x44`; its bytes `+0x0b` and `+0x30..+0x37` are left as they
+/// are (the original never sets them). The vertex block is the EE zero
+/// register (`0x00c8f508`) four times over, but vector 3 `(r0.x, r0.y,
+/// depth, 1)` and a scale matrix in vectors 4..7 (`s` on the diagonal, the
+/// zero register elsewhere, the position in row 7 with z 0, w 1), which
+/// `FFXVu0MulMatrix` takes times the view `g_Abmap + 0x113e0`.
+/// - The cursor: colour by the current character (`+0x115bc`) from
+///   `0x00c86580`, alpha `+0x115c5 / 3`, depth 4, `s = (pulse +0x115a4 * 3 +
+///   125) / 1280`, position `+0x11520`, model `0x023057fc`.
+/// - Each character `k` of 8 (records 0x50 bytes from `g_Abmap + 0x11088`:
+///   radius `+0x3c`, position `+0x00`, node `u16 +0x44`) with a radius
+///   above 0, unless it shares the current character's node and is neither
+///   it nor `k` 7: colour `0x00c86660[k]`, alpha `16 (1 + sin) + 0x60`
+///   (truncated; the sine at `(k << 13) + (frame +0x11698 << 11)` 16ths
+///   of the table), times the fade `+0x115f4` when it is below 1, depth 3
+///   (2 from `k` 7 on), `s = radius / 800`, model `0x023057f8`.
+pub fn abmap_draw_chr_rings<M, C>(mem: &mut M, work: u32, call: &mut C)
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let (ld, st) = (x87::load, x87::store);
+    let reg = |mem: &M, a: u32| mem.rebase(a);
+    let (request, matrix, verts) = (work, work + RINGS_MATRIX, work + RINGS_VERTS);
+    let g = ABMAP.get(mem);
+    let one = 0x3f80_0000u32;
+
+    // the request's fixed fields, written again before the characters
+    let fill_request = |mem: &mut M, kind: u32| {
+        mem.write(request, kind);
+        mem.write(request + 4, reg(mem, RING_TARGET));
+        mem.write(request + 8, 0x48u16);
+        mem.write(request + 0xa, 0u8);
+        for o in [0xc, 0x10, 0x14, 0x1c, 0x24, 0x28, 0x2c, 0x38, 0x3c, 0x40] {
+            mem.write(request + o, 0u32);
+        }
+        mem.write(request + 0x20, matrix);
+        mem.write(request + 0x44, verts);
+    };
+    // the vertex block: the zero register, but vector 3 and row 7
+    let fill_verts = |mem: &mut M, depth: u32| {
+        let r0 = read4(mem, reg(mem, EE_R0));
+        for k in 0..8 {
+            write4(mem, verts + 0x10 * k, r0);
+        }
+        mem.write(verts + 0x38, x87::copy(depth));
+        mem.write(verts + 0x3c, one);
+        mem.write(verts + 0x78, 0u32);
+        mem.write(verts + 0x7c, one);
+    };
+    // the scale matrix's diagonal and position, then the model matrix
+    let draw = |mem: &mut M, call: &mut C, s: u32, pos: [u32; 2], model: u32| {
+        mem.write(verts + 0x40, s);
+        mem.write(verts + 0x54, s);
+        mem.write(verts + 0x68, s);
+        mem.write(verts + 0x70, pos[0]);
+        mem.write(verts + 0x74, pos[1]);
+        let g = ABMAP.get(mem);
+        let f = reg(mem, MUL_MATRIX);
+        call(mem, f, &[matrix, g.wrapping_add(0x113e0), verts + 0x40]);
+        let layer = mem.read::<u32>(ABMAP.get(mem).wrapping_add(0x116a4));
+        let f = reg(mem, MD_DRAW);
+        call(mem, f, &[model, request, 4, layer]);
+    };
+
+    // the cursor
+    let depth = mem.read::<u32>(reg(mem, RING_DEPTHS[0]));
+    fill_request(mem, 4);
+    let chr = u32::from(mem.read::<u8>(g.wrapping_add(0x115bc)));
+    let color = mem.read::<u32>(reg(mem, CURSOR_COLORS) + 4 * chr);
+    mem.write(request + 0x18, color);
+    mem.write(request + 0x1b, mem.read::<u8>(g.wrapping_add(0x115c5)) / 3);
+    fill_verts(mem, depth);
+    let model = mem.read::<u32>(reg(mem, CURSOR_RING));
+    let [k3, k125, k1280] = CURSOR_SCALE.map(|a| mem.read::<f64>(reg(mem, a)));
+    let pulse = ld(mem.read::<u32>(g.wrapping_add(0x115a4)));
+    let s = st((pulse * k3 + k125) * k1280);
+    let pos = [0x11520, 0x11524].map(|o| mem.read::<u32>(g.wrapping_add(o)));
+    draw(mem, call, s, pos, model);
+
+    // the characters
+    let mut depth = mem.read::<u32>(reg(mem, RING_DEPTHS[1]));
+    let g2 = ABMAP.get(mem);
+    let frame = mem.read::<u16>(g2.wrapping_add(0x11698)).wrapping_shl(11);
+    let chr = u32::from(mem.read::<u8>(g2.wrapping_add(0x115bc)));
+    let chr_node = mem.read::<u16>(g2.wrapping_add(0x110cc + 0x50 * chr));
+    fill_request(mem, 0x24);
+    fill_verts(mem, depth);
+    let scale = mem.read::<f64>(reg(mem, RING_SCALE));
+    for k in 0..8u32 {
+        if k == 7 {
+            depth = mem.read::<u32>(reg(mem, RING_DEPTHS[2]));
+            mem.write(verts + 0x38, depth);
+        }
+        let rec = g.wrapping_add(0x110c4 + 0x50 * k);
+        let radius = ld(mem.read::<u32>(rec));
+        if radius.is_nan() || radius <= 0.0 {
+            continue;
+        }
+        let g = ABMAP.get(mem);
+        let current = u32::from(mem.read::<u8>(g.wrapping_add(0x115bc)));
+        if chr_node == mem.read::<u16>(rec + 8) && k != current && k != 7 {
+            continue;
+        }
+        let color = mem.read::<u32>(reg(mem, RING_COLORS) + 4 * k);
+        mem.write(request + 0x18, color);
+        let at = ((k << 13).wrapping_add(u32::from(frame)) >> 4) & 0xfff;
+        let sin = ld(mem.read::<u32>(reg(mem, SIN_TABLE) + 4 * at));
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        let alpha = (ffx_bridge::x87::cvttsd2si((1.0 + sin) * 16.0) as u8).wrapping_add(0x60);
+        mem.write(request + 0x1b, alpha);
+        let fade = ld(mem.read::<u32>(g.wrapping_add(0x115f4)));
+        if fade < 1.0 {
+            #[allow(clippy::cast_possible_truncation)] // the low byte
+            let a = ffx_bridge::x87::ftol(mem, fade * f64::from(alpha)) as u8;
+            mem.write(request + 0x1b, a);
+        }
+        let s = st(scale * radius);
+        let pos = [rec - 0x3c, rec - 0x38].map(|a| mem.read::<u32>(a));
+        let model = mem.read::<u32>(reg(mem, CHR_RING));
+        draw(mem, call, s, pos, model);
+    }
+}
+
+/// `FFXVu0UnitMatrix(m)` (`0x006ed9a0`).
+const UNIT_MATRIX: u32 = 0x006e_d9a0;
+/// The sphere grid's board models (`0x023056ec` for the expert grid,
+/// `0x023056f0` for the standard one).
+const BOARD_MODELS: [u32; 2] = [0x0230_56ec, 0x0230_56f0];
+/// 7.0 (`f32`, `.rdata`): the board's depth.
+const BOARD_DEPTH: u32 = 0x00b5_f2e8;
+/// [`abmap_draw_board`]'s scratch, laid out as the original's frame: the
+/// draw request (0x48 bytes) at 0, the model matrix at `+0x78`, the unit
+/// matrix at `+0xb8`, the vertex block (four vectors) at `+0xf8`.
+pub const BOARD_WORK: u32 = 0x138;
+
+/// `AbmapDrawBoard()` (`0x00a4c700`, name ours; from the ability map's
+/// draw `0x00a54660`): the grid's board model through
+/// `op1_md_draw_eiabm(model, request, 8, g_Abmap[+0x116a4])`: the
+/// expert grid's (`0x023056ec`, request `+0x08` 0x48) when the save menu
+/// word (`MsGetSaveMenu`) has bits 14..15 = 2, else the standard one's
+/// (`0x023056f0`, 0x44). The request is kind 0x34, the target 0x01740870,
+/// colour 0x40404040, the model matrix (`FFXVu0UnitMatrix` times the view
+/// `g_Abmap + 0x113e0`, `FFXVu0MulMatrix`) at `+0x20`, the unit matrix at
+/// `+0x2c`, the vertex block at `+0x44` (the EE zero register three
+/// times, then `(r0.x, r0.y, 7, 1)`); bytes `+0x0b`, `+0x30..+0x37` are
+/// never set. `work` is [`BOARD_WORK`] bytes, 16-byte aligned.
+pub fn abmap_draw_board<M, C>(mem: &mut M, work: u32, call: &mut C)
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let reg = |mem: &M, a: u32| mem.rebase(a);
+    let (request, matrix, unit, verts) = (work, work + 0x78, work + 0xb8, work + 0xf8);
+    let f = reg(mem, crate::abmap::MS_GET_SAVE_MENU);
+    let menu = call(mem, f, &[]);
+    let r0 = read4(mem, reg(mem, EE_R0));
+    let depth = mem.read::<u32>(reg(mem, BOARD_DEPTH));
+    for k in 0..3 {
+        write4(mem, verts + 0x10 * k, r0);
+    }
+    write4(
+        mem,
+        verts + 0x30,
+        [r0[0], r0[1], x87::copy(depth), 0x3f80_0000],
+    );
+    mem.write(request, 0x34u32);
+    mem.write(request + 4, reg(mem, RING_TARGET));
+    mem.write(request + 0xa, 0u8);
+    for o in [0xc, 0x10, 0x14, 0x1c, 0x24, 0x28, 0x38, 0x3c, 0x40] {
+        mem.write(request + o, 0u32);
+    }
+    mem.write(request + 0x18, 0x4040_4040u32);
+    mem.write(request + 0x20, matrix);
+    mem.write(request + 0x2c, unit);
+    mem.write(request + 0x44, verts);
+    let f = reg(mem, UNIT_MATRIX);
+    call(mem, f, &[unit]);
+    let view = ABMAP.get(mem).wrapping_add(0x113e0);
+    let f = reg(mem, MUL_MATRIX);
+    call(mem, f, &[matrix, view, unit]);
+    let expert = mem.read::<u32>(menu) & 0xc000 == 0x8000;
+    let (model, size) = if expert {
+        (BOARD_MODELS[0], 0x48u16)
+    } else {
+        (BOARD_MODELS[1], 0x44)
+    };
+    mem.write(request + 8, size);
+    let layer = mem.read::<u32>(ABMAP.get(mem).wrapping_add(0x116a4));
+    let model = mem.read::<u32>(reg(mem, model));
+    let f = reg(mem, MD_DRAW);
+    call(mem, f, &[model, request, 8, layer]);
+}
+
+/// The CRT's `sprintf` (import slot `0x00b0c3dc`).
+pub const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+/// `fiosUnifyFilename(path, out, size)` (`0x00679820`).
+pub const FIOS_UNIFY_FILENAME: u32 = 0x0067_9820;
+/// `graphicDrawUIElement(element, texture, a, b, c)` (`0x0063eee0`).
+pub const DRAW_UI_ELEMENT: u32 = 0x0063_eee0;
+/// `g_PppPacketPos`, moved on by each UI element.
+pub const PPP_PACKET_POS: u32 = 0x0230_fd2c;
+/// `"%s/dat00/%s/14080_19.dds.phyre"` and `"%s/dat12/%s/14080_19.dds.phyre"`
+/// (`.rdata`), by the grid's layer (`g_Abmap +0x116a4`, 0 or 2).
+pub const BAR_TEXTURE_FORMATS: [u32; 2] = [0x00b7_b484, 0x00b7_b4a4];
+/// `"/FFX_Data/GameData/PS3Data/menu/abmap"` and `"tex/D3D11"`.
+pub const BAR_TEXTURE_PARTS: [u32; 2] = [0x00b7_b45c, 0x00b7_b450];
+/// The bar's texture corners (`f32`s, `.rdata`): `u0, v0, u1, v1` for the
+/// two looks (the last argument 0 or not).
+pub const BAR_UVS: [[u32; 4]; 2] = [
+    [0x00b7_b644, 0x00b7_b5dc, 0x00b7_b648, 0x00b6_5620],
+    [0x00b7_b64c, 0x00b7_b5dc, 0x00b7_b650, 0x00b7_b5e8],
+];
+/// The bytes of [`abmap_draw_bar`]'s frame: the element (0x98), the
+/// unified path (0x100), the path (0x100).
+pub const BAR_WORK: u32 = 0x298;
+
+/// `AbmapDrawBar(x0, y0, x1, y1, look)` (`0x00a45e30`, from `0x00a46120`;
+/// name ours): a UI element in `work` (the original's frame, see
+/// [`BAR_WORK`]): corners `(x0, y0)` and `(x1, y1)` as floats (`+0`,
+/// `+0x20`), their texture corners ([`BAR_UVS`], by `look`) at `+8`/`+0x28`,
+/// each corner's four colour words 0x80, `+0x88`, `+0x90`, `+0x94` 0 (the
+/// rest is never set); the texture path from [`BAR_TEXTURE_FORMATS`] for
+/// layer 0 or 2 (another layer leaves the path buffer as it is) through
+/// `fiosUnifyFilename`, then `graphicDrawUIElement(element, path, 1, 0,
+/// 0)`, whose `eax` it returns, and `g_PppPacketPos` moves on 0x60.
+pub fn abmap_draw_bar<M, C>(mem: &mut M, args: [u32; 5], work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let [x0, y0, x1, y1, look] = args;
+    let (element, unified, path) = (work, work.wrapping_add(0x98), work.wrapping_add(0x198));
+    let int_float = |v: u32| x87::store(f64::from(v.cast_signed()));
+    let uv = BAR_UVS[usize::from(look != 0)].map(|c| x87::copy(mem.read::<u32>(mem.rebase(c))));
+    for (corner, (x, y), (u, v)) in [
+        (element, (x0, y0), (uv[0], uv[1])),
+        (element.wrapping_add(0x20), (x1, y1), (uv[2], uv[3])),
+    ] {
+        mem.write(corner, [int_float(x), int_float(y), u, v]);
+        mem.write(corner.wrapping_add(0x10), [0x80u32; 4]);
+    }
+    for o in [0x88, 0x90, 0x94] {
+        mem.write(element.wrapping_add(o), 0u32);
+    }
+    let layer = mem.read::<u32>(ABMAP.get(mem).wrapping_add(0x116a4));
+    let format = match layer {
+        0 => Some(BAR_TEXTURE_FORMATS[0]),
+        2 => Some(BAR_TEXTURE_FORMATS[1]),
+        _ => None,
+    };
+    if let Some(format) = format {
+        let f = mem.read::<u32>(mem.rebase(SPRINTF_SLOT));
+        let [dir, kind] = BAR_TEXTURE_PARTS.map(|s| mem.rebase(s));
+        let format = mem.rebase(format);
+        call(mem, f, &[path, format, dir, kind]);
+    }
+    let f = mem.rebase(FIOS_UNIFY_FILENAME);
+    call(mem, f, &[path, unified, 0x100]);
+    let f = mem.rebase(DRAW_UI_ELEMENT);
+    let eax = call(mem, f, &[element, unified, 1, 0, 0]);
+    let pos = mem.rebase(PPP_PACKET_POS);
+    mem.write(pos, mem.read::<u32>(pos).wrapping_add(0x60));
+    eax
+}
+
+/// `0x008efd90(pkt, chr, x, y, r, g, b, alpha, kind)` (the menu code): a
+/// character's face into the packet, returning the packet's end.
+pub const FACE_PACKET: u32 = 0x008e_fd90;
+
+/// `AbmapDrawChrFace(x, y)` (`0x00a461b0`, from `0x00a4fbe0`; name ours):
+/// the current character's (`+0x115bc`) face at `(x, y)`, with the grid's
+/// fade (`+0x115b9`) as alpha, through [`FACE_PACKET`] at
+/// `g_PppPacketPos + 0x10` (the position set to each end). While a change
+/// of character slides (`+0x115be` 1 or 2, frame `+0x115bf` counting up
+/// to 4), the previous character (`+0x115bd`) is drawn first in place and
+/// the current one offset by `(frame * 0x5b) / 4 - 0x50` (direction 1) or
+/// `0x50 -` that (direction 2), the frame from before the step; the fifth
+/// frame ends the slide (`+0x115be` 0). Returns the last packet end.
+pub fn abmap_draw_chr_face<M, C>(mem: &mut M, x: u32, y: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let face = mem.rebase(FACE_PACKET);
+    let byte = |mem: &M, o: u32| u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(o)));
+    let mut draw = |mem: &mut M, chr: u32, x: u32| {
+        let alpha = byte(mem, 0x115b9);
+        let pkt = crate::ke::PACKET_POS.get(mem).wrapping_add(0x10);
+        let end = call(mem, face, &[pkt, chr, x, y, 0x80, 0x80, 0x80, alpha, 6]);
+        crate::ke::PACKET_POS.set(mem, end);
+        end
+    };
+    let slide = |frame: u8| (i32::from(frame) * 0x5b) / 4;
+    let offset = match byte(mem, 0x115be) {
+        1 => Some(slide(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bf))) - 0x50),
+        2 => Some(0x50 - slide(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bf)))),
+        _ => None,
+    };
+    if let Some(offset) = offset {
+        let at = ABMAP.get(mem).wrapping_add(0x115bf);
+        let frame = mem.read::<u8>(at).wrapping_add(1);
+        mem.write(at, frame);
+        if frame <= 4 {
+            let previous = byte(mem, 0x115bd);
+            draw(mem, previous, x);
+            let current = byte(mem, 0x115bc);
+            return draw(mem, current, offset.cast_unsigned().wrapping_add(x));
+        }
+        mem.write(ABMAP.get(mem).wrapping_add(0x115be), 0u8);
+    }
+    let current = byte(mem, 0x115bc);
+    draw(mem, current, x)
+}
+
+// ---- field r13, the scroll bar ----
+
+/// `AbmapDrawBar` (`0x00a45e30`), [`abmap_draw_scroll_bar`]'s call.
+pub const DRAW_BAR: u32 = 0x00a4_5e30;
+
+/// `AbmapDrawScrollBar(x, y, height, first, total, shown)` (`0x00a46120`,
+/// from `0x00a58900`; name ours): a list's scroll bar. With `h` the
+/// height less 4 (as an `i16`) and `top = y + 1`, the track is
+/// [`abmap_draw_bar`] look 0 from `(x + 1, top)` to `(x + 3, top + h)`,
+/// the thumb look 1 from `top + h * first / total` to `top + h * (first +
+/// shown) / total` (truncating divisions, the ends as `i16`), at least
+/// one high. Returns the second bar's `eax`. A zero `total` faults in the
+/// original; here the divisions give 0.
+pub fn abmap_draw_scroll_bar<M, C>(mem: &mut M, args: [u32; 6], call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let [x, y, height, first, total, shown] = args;
+    #[allow(clippy::cast_possible_truncation)] // the original's 16-bit values
+    let short = |v: u32| i32::from((v as u16).cast_signed());
+    let h = short(height.wrapping_sub(4));
+    let top = y.wrapping_add(1);
+    let (x0, x1) = (short(x).wrapping_add(1), short(x).wrapping_add(3));
+    let f = mem.rebase(DRAW_BAR);
+    let track = [
+        x0.cast_unsigned(),
+        short(top).cast_unsigned(),
+        x1.cast_unsigned(),
+        h.wrapping_add(short(top)).cast_unsigned(),
+        0,
+    ];
+    call(mem, f, &track);
+    let at = |n: i32| {
+        let q = h
+            .wrapping_mul(n)
+            .checked_div(total.cast_signed())
+            .unwrap_or(0);
+        short(q.cast_unsigned().wrapping_add(top))
+    };
+    let start = at(first.cast_signed());
+    let mut end = at(shown.wrapping_add(first).cast_signed());
+    if end <= start {
+        end = short(start.cast_unsigned().wrapping_add(1));
+    }
+    let thumb = [
+        x0.cast_unsigned(),
+        start.cast_unsigned(),
+        x1.cast_unsigned(),
+        end.cast_unsigned(),
+        1,
+    ];
+    call(mem, f, &thumb)
+}

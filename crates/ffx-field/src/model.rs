@@ -245,6 +245,9 @@ pub const SPRING_FUNCTIONS: [u32; 3] = [0x0092_8c60, 0x0092_8d70, 0x0092_8aa0];
 pub const SPRING_STIFFNESS: u32 = 0x00b3_4254;
 /// A new spring's damping, 0.4 (`.rdata`, `0x00b10f3c`).
 pub const SPRING_DAMPING: u32 = 0x00b1_0f3c;
+/// 1000.0 (`f64`, `.rdata`): `rcfxSpringCalc` divides the rest length
+/// by it for the shortest length.
+pub const SPRING_REST_SCALE: u32 = 0x00b0_dba0;
 /// The debug gravity's z, -0.1 (`.rdata`, `0x00b59644`).
 pub const GRAVITY_Z: u32 = 0x00b5_9644;
 /// `rcbgSetReg(record)` (`0x00920450`), a `ret` in this build.
@@ -268,9 +271,72 @@ pub const RCBG_FPM_GET_MATRIX: u32 = 0x0092_2290;
 /// Map 0x61's FP list (`rcbgFPm097Proc000`: 9 entries at `0x00c5e4b8`)
 /// and its next step (`0x00922600`).
 pub const FPM097_START: [u32; 3] = [0x00c5_e4b8, 9, 0x0092_2600];
+/// The calls of map 0x61's FP step (`0x00922600`): `rcbgChrFindById`,
+/// `rcbgFPmGetElemMatrix`, `rcbgFpFadeInit`, `Yn_SeaGetPosPtr`,
+/// `rcbgScaleVector_009224b0`, `rcCopyQword_00922510`, `Ch_GetRot` (in
+/// `ST0`), `rcMat4fSetScaleVec3f` and `Yn_SeaFpFade`.
+pub mod fpm097 {
+    /// `rcbgChrFindById(id)`.
+    pub const CHR_FIND_BY_ID: u32 = 0x0092_e1e0;
+    /// `rcbgFPmGetElemMatrix(out, chr, elem)`.
+    pub const GET_ELEM_MATRIX: u32 = 0x0092_2350;
+    /// `rcbgFpFadeInit(fade, id, step, frames)`.
+    pub const FADE_INIT: u32 = 0x0092_2930;
+    /// `Yn_SeaGetPosPtr()`.
+    pub const SEA_GET_POS_PTR: u32 = 0x0091_ae10;
+    /// `rcbgScaleVector_009224b0(out, v, scale)`.
+    pub const SCALE_VECTOR: u32 = 0x0092_24b0;
+    /// `rcCopyQword_00922510(dst, src)`.
+    pub const COPY_QWORD: u32 = 0x0092_2510;
+    /// `Ch_GetRot(chr)`, a float in `ST0`.
+    pub const CH_GET_ROT: u32 = 0x0082_ace0;
+    /// `rcMat4fSetScaleVec3f(out, v)`.
+    pub const SET_SCALE_VEC3F: u32 = 0x0092_5820;
+    /// `Yn_SeaFpFade(fade)`.
+    pub const SEA_FP_FADE: u32 = 0x0092_2970;
+    /// `FFXVu0UnitMatrix(m)`, `FFXVu0MulMatrix(out, a, b)` and
+    /// `FFXVu0CopyMatrix(dst, src)`.
+    pub const UNIT_MATRIX: u32 = 0x006e_d9a0;
+    /// See [`UNIT_MATRIX`].
+    pub const MUL_MATRIX: u32 = 0x006e_d5c0;
+    /// See [`UNIT_MATRIX`].
+    pub const COPY_MATRIX: u32 = 0x006e_d360;
+    /// The two fades' steps, -0.15 and 0.15 (`f32`s, `.rdata`).
+    pub const FADE_STEPS: [u32; 2] = [0x00b6_78f4, 0x00b4_7c60];
+    /// 651.8986 (`f32`, `.rdata`): the sea's angle as a rotation.
+    pub const SEA_ANGLE_SCALE: u32 = 0x00b6_78f0;
+    /// 11.377778 (`f32`, `.rdata`): an FP's rotation scale.
+    pub const FP_ANGLE_SCALE: u32 = 0x00b6_78ec;
+    /// 651.8986 and 1024.0 (`f64`s, `.rdata`): a character's rotation
+    /// (`Ch_GetRot`) to the FP's y rotation, a quarter turn on.
+    pub const ROT_TO_ANGLE: [u32; 2] = [0x00b5_1590, 0x00b5_1ba8];
+    /// Bytes per FP list entry: `+0` the FP id, `+2` the character id,
+    /// `+4` the element (`i16`s), `+6` the kind (3 on the sea, 4 on a
+    /// character), `+8` the offset, `+0x18` the rotation, `+0x28` the
+    /// scale.
+    pub const ENTRY_SIZE: u32 = 0x38;
+}
+
 /// Map 0x235's FP list (`rcbgFPm565Proc000`: 3 entries at `0x00c5e6b0`)
 /// and its next step (`0x00922fe0`).
 pub const FPM565_START: [u32; 3] = [0x00c5_e6b0, 3, 0x0092_2fe0];
+/// The calls of map 0x235's FP step (`0x00922fe0`).
+pub mod fpm565 {
+    /// `Yn_SeaGetMatrix()`.
+    pub const SEA_GET_MATRIX: u32 = 0x0091_ae00;
+    /// `rcbgFpGetWork(id, part, k)`.
+    pub const FP_GET_WORK: u32 = 0x0092_3100;
+    /// `rcbgFPmGetPartData(id, n, part, k)`.
+    pub const GET_PART_DATA: u32 = 0x0092_3190;
+    /// `pppSetMatrix(run)`.
+    pub const PPP_SET_MATRIX: u32 = 0x0071_7410;
+    /// `g_pppWorldMatrix`.
+    pub const PPP_WORLD_MATRIX: u32 = 0x0230_ffa0;
+    /// `yiSetMatrixDObj(index, m)`.
+    pub const SET_MATRIX_DOBJ: u32 = 0x0090_a520;
+    /// 32768.0 (`f64`, `.rdata`): half a turn, the part's angles from.
+    pub const HALF_TURN: u32 = 0x00b5_1588;
+}
 /// `rcbgFPmRestart(fp, chr, bone)` (`0x00922300`).
 pub const RCBG_FPM_RESTART: u32 = 0x0092_2300;
 /// `Ch_OptposGetElement(chr, n, k)` (`0x00835660`).
@@ -484,6 +550,50 @@ pub mod bridge {
         let size = mem.read::<u32>(t + trx::ENTRY_SIZE);
         size.wrapping_mul(n)
             .wrapping_add(mem.read(t + trx::ENTRIES))
+    }
+
+    /// `sceDmaGetChan(n)`, `FlushCache(n)`, `sceDmaSend(chan, packet)` and
+    /// `sceDmaSync(chan, mode, timeout)` (`0x0062f6e0`, `0x0062f4c0`,
+    /// `0x0062f710`, `0x0062f730`): [`rcbg_trx_draw`]'s DMA calls.
+    pub const TRX_DMA_CALLS: [u32; 4] = [0x0062_f6e0, 0x0062_f4c0, 0x0062_f710, 0x0062_f730];
+
+    /// `rcbgTrxDraw(trx)` (`0x0092d230`): the transfer's upload packet at
+    /// the GIF packet buffer ([`super::REF_GIF_TAG`]): a 5-quad A+D GIF tag
+    /// (`0x10000005`), `BITBLTBUF` (0x50, the transfer's `+0x18`/`+0x1c`),
+    /// `TRXPOS` (0x51, `+0x20`/`+0x24`), `TRXREG` (0x52, `+0x28`/`+0x2c`),
+    /// `TRXDIR` (0x53, 0), then an image tag of `+0x34 / 16` quads (toward
+    /// zero, `u16`) pointing at entry `+0x3c` ([`rcbg_trx_get_entry`]),
+    /// sent on DMA channel 2 (`sceDmaGetChan`, `FlushCache(0)`,
+    /// `sceDmaSend`, `sceDmaSync(chan, 0, 0)`, whose `eax` it returns).
+    pub fn rcbg_trx_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        t: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [get_chan, flush, send, sync] = TRX_DMA_CALLS.map(|f| mem.rebase(f));
+        let p = mem.read::<u32>(mem.rebase(super::REF_GIF_TAG));
+        let w = |mem: &M, o: u32| mem.read::<u32>(t.wrapping_add(o));
+        let regs = [
+            [0x1000_0005, 0, 0, 0],
+            [w(mem, 0x18), w(mem, 0x1c), 0x50, 0],
+            [w(mem, 0x20), w(mem, 0x24), 0x51, 0],
+            [w(mem, 0x28), w(mem, 0x2c), 0x52, 0],
+            [0, 0, 0x53, 0],
+        ];
+        for (i, q) in (0u32..).zip(regs) {
+            mem.write(p.wrapping_add(16 * i), q);
+        }
+        let bytes = mem.read::<i32>(t.wrapping_add(0x34));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low word
+        mem.write(p.wrapping_add(0x50), (bytes / 16) as u16);
+        mem.write(p.wrapping_add(0x52), 0u16);
+        let entry = rcbg_trx_get_entry(mem, t, w(mem, 0x3c));
+        mem.write(p.wrapping_add(0x54), [entry, 0, 0]);
+        let chan = call(mem, get_chan, &[2]);
+        call(mem, flush, &[0]);
+        let packet = mem.read::<u32>(mem.rebase(super::REF_GIF_TAG));
+        call(mem, send, &[chan, packet]);
+        call(mem, sync, &[chan, 0, 0])
     }
 
     /// `rcbgTrxGetEntryData(trx, n)` (`0x0092d4f0`).
@@ -790,6 +900,70 @@ pub mod bridge {
     pub fn rcbg_clip_code_and(mem: &mut impl Mem, out: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
         mem.write(out, [a & c, b & d]);
         out
+    }
+
+    /// `pppVu0MulX(dst, v, vec)`, `pppVu0MaddaY(acc, v, vec)`,
+    /// `pppVu0MaddaZ(acc, v, vec)` and `pppVu0MaddW(dst, v, vec)` (the
+    /// vector by value), as [`rcbg_clip_vertex`] calls them.
+    pub const VU0_MUL_X: u32 = 0x0072_c6a0;
+    pub const VU0_MADDA_Y: u32 = 0x0072_c590;
+    pub const VU0_MADDA_Z: u32 = 0x0072_c5f0;
+    pub const VU0_MADD_W: u32 = 0x0072_c650;
+
+    /// `rcbgClipVertex(m, verts, n)` (`0x0092af60`): the matrix `m` into
+    /// the emulated VU0 registers `0x00c8f7d0..0x00c8f80f`, then each of
+    /// the `n` vertices (16 bytes each; at least one) into `0x00c8f810`
+    /// and through it as macro code (`pppVu0MulX`, `pppVu0MaddaY`/`Z` on
+    /// the accumulator `0x00c8f790`, `pppVu0MaddW` into `0x00c8f820`).
+    /// The clip code starts at 0x3f and keeps only the bits of the VU0 clip flags
+    /// `0x00c8facc` (copied to the EE register `0x00c8f538`) per vertex;
+    /// the PS2's `vclip` that set those flags is gone, so they are
+    /// whatever the last clip test left. Returns the code, 0 as soon as it
+    /// is 0.
+    pub fn rcbg_clip_vertex<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        verts: u32,
+        n: i32,
+        call: &mut C,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let rows = r(mem, 0x00c8_f7d0);
+        for k in 0..4 {
+            let row = mem.read::<[u32; 4]>(m.wrapping_add(0x10 * k));
+            mem.write(rows + 0x10 * k, row);
+        }
+        let (vec, acc, out) = (
+            r(mem, 0x00c8_f810),
+            r(mem, 0x00c8_f790),
+            r(mem, 0x00c8_f820),
+        );
+        let (flags, ee) = (r(mem, 0x00c8_facc), r(mem, 0x00c8_f538));
+        let mut code = 0x3fu32;
+        let mut left = n;
+        let mut at = verts;
+        loop {
+            let v = mem.read::<[u32; 4]>(at);
+            mem.write(vec, v);
+            at = at.wrapping_add(0x10);
+            for (f, dst, row) in [
+                (VU0_MUL_X, acc, 0),
+                (VU0_MADDA_Y, acc, 1),
+                (VU0_MADDA_Z, acc, 2),
+                (VU0_MADD_W, out, 3),
+            ] {
+                let [x, y, z, w] = mem.read::<[u32; 4]>(vec);
+                let f = r(mem, f);
+                call(mem, f, &[dst, rows + 0x10 * row, x, y, z, w]);
+            }
+            let clip = mem.read::<u32>(flags);
+            mem.write(ee, clip);
+            code &= clip;
+            left -= 1;
+            if code == 0 || left <= 0 {
+                return code;
+            }
+        }
     }
 
     /// `rcfxParticleResetForce(p)` (`0x00928970`): each of its `+0x34`
@@ -1481,6 +1655,274 @@ pub mod bridge {
         mem.write(fade, 0u32);
         mem.write(fade.wrapping_add(0xc), frames);
         mem.write(fade.wrapping_add(0x10), 0u32);
+    }
+
+    /// The original's frame for [`rcbg_fpm097_proc001`], at `work` (as
+    /// `ebp - 0x1ac`; [`FPM097_FRAME`] bytes).
+    mod frame097 {
+        /// The FP's matrix record (`pppFpGetMngPtr`'s output).
+        pub const MNG: u32 = 0x1ac;
+        /// An FP's own matrix (`rcbgFPmGetMatrix`).
+        pub const FP_MATRIX: u32 = 0x1a4;
+        /// The scale and rotation matrix.
+        pub const SCALE_MATRIX: u32 = 0x164;
+        /// The lift (a unit matrix moved up by the fade, `+0x14`).
+        pub const LIFT_MATRIX: u32 = 0x124;
+        /// The offset (a unit matrix moved by the entry's `+8`).
+        pub const PLACE_MATRIX: u32 = 0xe4;
+        /// The sea's matrix.
+        pub const SEA_MATRIX: u32 = 0xa4;
+        /// The character element's matrix, then the result.
+        pub const ELEM_MATRIX: u32 = 0x64;
+        /// The lift vector (its `y` the fade; the rest never set).
+        pub const LIFT: u32 = 0x34;
+        /// The zero translation (its `w` never set).
+        pub const ZERO: u32 = 0x24;
+        /// The rotation vector.
+        pub const ROTATION: u32 = 0x14;
+    }
+
+    /// The bytes of [`rcbg_fpm097_proc001`]'s frame.
+    pub const FPM097_FRAME: u32 = 0x1a8;
+
+    /// `rcbgFPm097Proc001(part)` (`0x00922600`, map 0x61's FP step that
+    /// `rcbgFPm097Proc000` installs; name ours), over the 9-entry list at
+    /// [`super::FPM097_START`] (layout [`super::fpm097::ENTRY_SIZE`]),
+    /// with its locals in `work` ([`FPM097_FRAME`] bytes, zeroed: the
+    /// original reads some it never sets, see the frame):
+    /// - Until `+0x10` is set: each kind 4 entry whose character is found
+    ///   (`rcbgChrFindById`) is restarted (`Fp_Restart`); the first one
+    ///   gets its element's matrix (unused), `+0x10` 1 and `+0x14` 0.0;
+    ///   if one was, the two fades start (`rcbgFpFadeInit(part +0x18, 1,
+    ///   -0.15, 30)`, `(part +0x2c, 4, 0.15, 30)`).
+    /// - With the sea's angle and position (`Yn_SeaGetAngPtr`,
+    ///   `Yn_SeaGetPosPtr`): the sea's matrix is a unit matrix through
+    ///   `op_rt_m_yxz` with its angle scaled by 651.8986 (x and y 0.0)
+    ///   and its position. Each kind 3 entry with an FP (`pppFpGetMngPtr`)
+    ///   gets its own matrix (`rcbgFPmGetMatrix`) times the sea's into the
+    ///   FP's `+0xc`; each kind 4 entry with an FP and a character gets
+    ///   the element matrix times the entry's scale and y rotation (its
+    ///   `+0x18` scaled by 11.377778, y less `Ch_GetRot * 651.8986 +
+    ///   1024.0`), its offset (`+8`), the lift by `+0x14` and the sea's,
+    ///   copied to the FP's `+0xc`. Then both fades run (`Yn_SeaFpFade`).
+    ///
+    /// Returns the `eax` it ends with: the last fade's, or the sea's
+    /// position when either pointer is null.
+    pub fn rcbg_fpm097_proc001<M, C, F>(
+        mem: &mut M,
+        part: u32,
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use super::fpm097 as k;
+        use frame097 as fr;
+        let at = |local: u32| work.wrapping_add(FPM097_FRAME + 4 - local);
+        let entry = |mem: &M, i: u32| mem.rebase(super::FPM097_START[0]) + i * k::ENTRY_SIZE;
+        let id = |mem: &M, e: u32, o: u32| i32::from(mem.read::<i16>(e + o)).cast_unsigned();
+        let mut run = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = mem.rebase(f);
+            call(mem, f, args)
+        };
+        if mem.read::<u32>(part.wrapping_add(0x10)) == 0 {
+            for i in 0..9 {
+                let e = entry(mem, i);
+                if mem.read::<u8>(e + 6) != 4 {
+                    continue;
+                }
+                let chr = run(mem, k::CHR_FIND_BY_ID, &[id(mem, e, 2)]);
+                if chr == 0 {
+                    continue;
+                }
+                let fp = u32::from(mem.read::<u16>(e));
+                run(mem, super::FP_RESTART, &[fp]);
+                if mem.read::<u32>(part.wrapping_add(0x10)) == 0 {
+                    let elem = id(mem, e, 4);
+                    run(mem, k::GET_ELEM_MATRIX, &[at(fr::LIFT_MATRIX), chr, elem]);
+                    mem.write(part.wrapping_add(0x10), 1u32);
+                    mem.write(part.wrapping_add(0x14), 0u32);
+                }
+            }
+            if mem.read::<u32>(part.wrapping_add(0x10)) != 0 {
+                for (fade, (fp, step)) in
+                    [(0x18, (1, k::FADE_STEPS[0])), (0x2c, (4, k::FADE_STEPS[1]))]
+                {
+                    let step = crate::x87::copy(mem.read::<u32>(mem.rebase(step)));
+                    run(
+                        mem,
+                        k::FADE_INIT,
+                        &[part.wrapping_add(fade), fp, step, 0x1e],
+                    );
+                }
+            }
+        }
+        let angle = run(mem, super::YN_SEA_GET_ANG_PTR, &[]);
+        let pos = run(mem, k::SEA_GET_POS_PTR, &[]);
+        if angle == 0 || pos == 0 {
+            return pos;
+        }
+        let scale = crate::x87::copy(mem.read::<u32>(mem.rebase(k::SEA_ANGLE_SCALE)));
+        run(mem, k::SCALE_VECTOR, &[at(fr::ROTATION), angle, scale]);
+        mem.write(at(fr::ROTATION - 4), 0u32);
+        mem.write(at(fr::ROTATION), 0u32);
+        let sea = at(fr::SEA_MATRIX);
+        run(mem, k::UNIT_MATRIX, &[sea]);
+        run(mem, super::OP_RT_M_YXZ, &[sea, sea, at(fr::ROTATION), pos]);
+        mem.write(at(fr::ZERO), [0u32; 3]);
+        for i in 0..9 {
+            let e = entry(mem, i);
+            let mng = at(fr::MNG);
+            match mem.read::<u8>(e + 6) {
+                3 => {
+                    run(mem, super::PPP_FP_GET_MNG_PTR, &[id(mem, e, 0), 0, mng]);
+                    let m = mem.read::<u32>(mng);
+                    if m != 0 {
+                        run(mem, super::RCBG_FPM_GET_MATRIX, &[e, at(fr::FP_MATRIX)]);
+                        let m = mem.read::<u32>(mng).wrapping_add(0xc);
+                        run(mem, k::MUL_MATRIX, &[m, sea, at(fr::FP_MATRIX)]);
+                    }
+                }
+                4 => {
+                    run(mem, super::PPP_FP_GET_MNG_PTR, &[id(mem, e, 0), 0, mng]);
+                    if mem.read::<u32>(mng) == 0 {
+                        continue;
+                    }
+                    let chr = run(mem, k::CHR_FIND_BY_ID, &[id(mem, e, 2)]);
+                    if chr == 0 {
+                        continue;
+                    }
+                    place_on_chr(mem, part, e, chr, work, &mut run, fcall);
+                }
+                _ => {}
+            }
+        }
+        run(mem, k::SEA_FP_FADE, &[part.wrapping_add(0x18)]);
+        run(mem, k::SEA_FP_FADE, &[part.wrapping_add(0x2c)])
+    }
+
+    /// A kind 4 entry `e` of [`rcbg_fpm097_proc001`] on its character.
+    fn place_on_chr<M, R, F>(
+        mem: &mut M,
+        part: u32,
+        e: u32,
+        chr: u32,
+        work: u32,
+        run: &mut R,
+        fcall: &mut F,
+    ) where
+        M: Mem,
+        R: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use super::fpm097 as k;
+        use crate::x87;
+        use frame097 as fr;
+        let at = |local: u32| work.wrapping_add(FPM097_FRAME + 4 - local);
+        let place = at(fr::PLACE_MATRIX);
+        run(mem, k::UNIT_MATRIX, &[place]);
+        run(mem, k::COPY_QWORD, &[place + 0x30, e + 8]);
+        mem.write(place + 0x3c, 1.0f32.to_bits());
+        let scale = x87::copy(mem.read::<u32>(mem.rebase(k::FP_ANGLE_SCALE)));
+        let rotation = at(fr::ROTATION);
+        run(mem, k::SCALE_VECTOR, &[rotation, e + 0x18, scale]);
+        let y = x87::load(mem.read::<u32>(rotation + 4));
+        let f = mem.rebase(k::CH_GET_ROT);
+        let rot = fcall(mem, f, crate::camera::FArgs::Stack(&[chr]));
+        let [kr, quarter] = k::ROT_TO_ANGLE.map(|c| mem.read::<f64>(mem.rebase(c)));
+        mem.write(rotation + 4, x87::store(y - (rot * kr + quarter)));
+        mem.write(rotation + 8, 0u32);
+        mem.write(rotation, 0u32);
+        let scaled = at(fr::SCALE_MATRIX);
+        run(mem, k::SET_SCALE_VEC3F, &[scaled, e + 0x28]);
+        run(
+            mem,
+            super::OP_RT_M_YXZ,
+            &[scaled, scaled, rotation, at(fr::ZERO)],
+        );
+        let elem = at(fr::ELEM_MATRIX);
+        let el = i32::from(mem.read::<i16>(e + 4)).cast_unsigned();
+        run(mem, k::GET_ELEM_MATRIX, &[elem, chr, el]);
+        let lift = x87::copy(mem.read::<u32>(part.wrapping_add(0x14)));
+        mem.write(at(fr::LIFT - 4), lift);
+        let lifted = at(fr::LIFT_MATRIX);
+        run(mem, k::UNIT_MATRIX, &[lifted]);
+        run(mem, k::COPY_QWORD, &[lifted + 0x30, at(fr::LIFT)]);
+        run(mem, k::MUL_MATRIX, &[elem, scaled, place]);
+        run(mem, k::MUL_MATRIX, &[elem, lifted, elem]);
+        run(mem, k::MUL_MATRIX, &[elem, at(fr::SEA_MATRIX), elem]);
+        let m = mem.read::<u32>(at(fr::MNG)).wrapping_add(0xc);
+        run(mem, k::COPY_MATRIX, &[m, elem]);
+    }
+
+    /// The bytes of [`rcbg_fpm565_proc001`]'s frame (as `ebp - 0x4c`: the
+    /// FP's run and matrix records, then a matrix).
+    pub const FPM565_FRAME: u32 = 0x48;
+
+    /// `rcbgFPm565Proc001()` (`0x00922fe0`, map 0x235's FP step that
+    /// `rcbgFPm565Proc000` installs; name ours): with the sea's matrix
+    /// (`Yn_SeaGetMatrix`), FP 0x5a's work (`rcbgFpGetWork(0x5a, 6, 2)`)
+    /// and part data (`rcbgFPmGetPartData(0x5a, 1, 6, 2)`): the work gets
+    /// the sea's matrix and `+0xe5` 1, the part data `+4` and `+0x10`
+    /// `32768 - ` the work's `+0xb8` and `+0xc4`; each kind 5 entry of the
+    /// 3-entry list ([`super::FPM565_START`]) with an FP (`pppFpGetMngPtr`)
+    /// gets `pppSetMatrix(run)` and the sea's matrix times
+    /// `g_pppWorldMatrix` in its record's `+0xc`; display object 10 gets
+    /// the sea's matrix without its translation (`yiSetMatrixDObj`).
+    /// `work` is the original's frame ([`FPM565_FRAME`] bytes). Returns the
+    /// `eax` it ends with.
+    pub fn rcbg_fpm565_proc001<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use super::fpm565 as k;
+        use crate::x87::{load, store};
+        let mut run = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = mem.rebase(f);
+            call(mem, f, args)
+        };
+        let (records, matrix) = (work, work.wrapping_add(8));
+        mem.write(records, [0u32; 2]);
+        let sea = run(mem, k::SEA_GET_MATRIX, &[]);
+        if sea == 0 {
+            return 0;
+        }
+        let fp = run(mem, k::FP_GET_WORK, &[0x5a, 6, 2]);
+        let part = run(mem, k::GET_PART_DATA, &[0x5a, 1, 6, 2]);
+        if fp == 0 || part == 0 {
+            return part;
+        }
+        run(mem, super::fpm097::COPY_MATRIX, &[fp, sea]);
+        mem.write(fp.wrapping_add(0xe5), 1u8);
+        run(mem, super::fpm097::COPY_MATRIX, &[matrix, sea]);
+        mem.write(matrix.wrapping_add(0x30), [0u32; 3]);
+        let half = mem.read::<f64>(mem.rebase(k::HALF_TURN));
+        let a = store(half - load(mem.read::<u32>(fp.wrapping_add(0xb8))));
+        mem.write(part.wrapping_add(4), a);
+        let c = store(half - load(mem.read::<u32>(fp.wrapping_add(0xc4))));
+        mem.write(part.wrapping_add(0x10), c);
+        for i in 0..3 {
+            let e = mem.rebase(super::FPM565_START[0]) + i * super::fpm097::ENTRY_SIZE;
+            if mem.read::<u8>(e + 6) != 5 {
+                continue;
+            }
+            let id = i32::from(mem.read::<i16>(e)).cast_unsigned();
+            run(mem, super::PPP_FP_GET_MNG_PTR, &[id, records, records + 4]);
+            let fp_run = mem.read::<u32>(records);
+            if fp_run == 0 {
+                continue;
+            }
+            run(mem, k::PPP_SET_MATRIX, &[fp_run]);
+            let m = mem.read::<u32>(records + 4).wrapping_add(0xc);
+            let world = mem.rebase(k::PPP_WORLD_MATRIX);
+            run(mem, super::fpm097::MUL_MATRIX, &[m, sea, world]);
+        }
+        run(mem, k::SET_MATRIX_DOBJ, &[10, matrix])
     }
 
     /// `rcbgChrFindById(id)` (`0x0092e1e0`): the first character whose
@@ -2684,6 +3126,247 @@ pub mod bridge {
         );
     }
 
+    /// 32767.0 and 2.0 (`f64`, `.rdata` `0x00b41d70`, `0x00b92270`):
+    /// [`rc_random_dir_xz`]'s scale.
+    pub const RANDOM_DIR_CONSTS: [u32; 2] = [0x00b4_1d70, 0x00b9_2270];
+    /// `rcVec3fNormalize(v)` (`0x00921360`).
+    pub const VEC3F_NORMALIZE: u32 = 0x0092_1360;
+
+    /// `rcRandomDirXZ_0092e4f0(v)` (`0x0092e4f0`; name ours): a random
+    /// direction in the XZ plane: x and z from `rand() / 32767.0 * 2.0 -
+    /// 1.0` (each `rand()` stored as an `f32` first), y and w 0.0, then
+    /// `rcVec3fNormalize(v)`; drawn again while x and z both end exactly
+    /// 0.0 (a NaN ends it). The `eax` it leaves is the FPU status word in
+    /// the normaliser's; callers drop it.
+    pub fn rc_random_dir_xz<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        v: u32,
+        call: &mut C,
+    ) {
+        use crate::x87::{load, store};
+        let rand = mem.read::<u32>(mem.rebase(super::RAND_IMPORT));
+        let [range, two] = RANDOM_DIR_CONSTS.map(|c| mem.read::<f64>(mem.rebase(c)));
+        let normalize = mem.rebase(VEC3F_NORMALIZE);
+        loop {
+            let mut unit = |mem: &mut M| {
+                let r = call(mem, rand, &[]).cast_signed();
+                // `fild`, then `fstp m32`
+                let r = store(f64::from(r));
+                store(load(r) / range * two - 1.0)
+            };
+            let x = unit(mem);
+            mem.write(v, x);
+            let z = unit(mem);
+            mem.write(v.wrapping_add(8), z);
+            mem.write(v.wrapping_add(0xc), 0u32);
+            mem.write(v.wrapping_add(4), 0u32);
+            call(mem, normalize, &[v]);
+            // `fucom` with 0.0: equal (not unordered) draws again
+            let zero = |mem: &M, o: u32| f32::from_bits(mem.read::<u32>(v.wrapping_add(o))) == 0.0;
+            if !zero(mem, 0) || !zero(mem, 8) {
+                return;
+            }
+        }
+    }
+
+    /// `rcbgScaleVector_00928600(out, v, s)` and `rcVu0Add_009285a0(out,
+    /// a, b)`, [`rcfx_particle_calc`]'s vector calls.
+    pub const PARTICLE_CALC_CALLS: [u32; 2] = [0x0092_8600, 0x0092_85a0];
+
+    /// `rcfxParticleCalc(sys)` (`0x00928710`, from `rcfxParticleSetTime`;
+    /// name ours): one step of a particle system. The step `dt` (`+8`,
+    /// `f64`, as `f32`), the mass (`+0x20`), the count (`+0x1c`) and the
+    /// position (`+0x24`), velocity (`+0x2c`) and force (`+0x30`) arrays
+    /// (16 bytes a particle) are taken first. The forces are zeroed, each
+    /// of the `+0x34` force objects (`+0x38` table) with a callback
+    /// (`+0x14`) runs it (`(force, sys)`), then each particle's velocity
+    /// gains `force * (dt / mass)` and its position `velocity * dt`; `+8`
+    /// is `dt` again, now exactly an `f32`. `work` is the original's
+    /// 16-byte vector. Returns the `eax` it ends with (the last add's,
+    /// else the last force object or callback result, else the force
+    /// array).
+    pub fn rcfx_particle_calc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        sys: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use crate::x87;
+        let field = |mem: &M, o: u32| mem.read::<u32>(sys.wrapping_add(o));
+        let mass = x87::copy(field(mem, 0x20));
+        let count = field(mem, 0x1c).cast_signed();
+        let forces = field(mem, 0x30);
+        let pos = field(mem, 0x24);
+        let dt = x87::store(mem.read::<f64>(sys.wrapping_add(8)));
+        let vel = field(mem, 0x2c);
+        // (with particles the last add's `eax` replaces this one)
+        let mut eax = forces;
+        for i in 0..count.max(0).cast_unsigned() {
+            mem.write(forces.wrapping_add(i.wrapping_mul(0x10)), [0u32; 4]);
+        }
+        let mut i = 0;
+        while i < field(mem, 0x34).cast_signed() {
+            let force =
+                mem.read::<u32>(field(mem, 0x38).wrapping_add(i.cast_unsigned().wrapping_mul(4)));
+            eax = force;
+            let callback = mem.read::<u32>(force.wrapping_add(0x14));
+            if callback != 0 {
+                eax = call(mem, callback, &[force, sys]);
+            }
+            i += 1;
+        }
+        let step = x87::store(x87::load(dt) / x87::load(mass));
+        let [scale, add] = PARTICLE_CALC_CALLS.map(|f| mem.rebase(f));
+        for i in 0..count.max(0).cast_unsigned() {
+            let at = |base: u32| base.wrapping_add(i.wrapping_mul(0x10));
+            call(mem, scale, &[work, at(forces), step]);
+            call(mem, add, &[at(vel), at(vel), work]);
+            call(mem, scale, &[work, at(vel), dt]);
+            eax = call(mem, add, &[at(pos), at(pos), work]);
+        }
+        mem.write(sys.wrapping_add(8), x87::load(dt));
+        eax
+    }
+
+    /// `rcfxSpringCalc(s, sys)` (`0x00928aa0`, the spring's `+0x14`
+    /// callback): for each of the `+0x1c` springs, the pair `(a, b)`
+    /// (`+0x20`, two `i32` particle indices) of the particle system's
+    /// positions (`sys +0x24`), velocities (`+0x2c`) and forces (`+0x30`,
+    /// 16 bytes a particle). With `d = pos[b] - pos[a]` (stored as `f32`s)
+    /// and `l` its length, at least the spring's rest length (`+0x24`
+    /// table) / 1000, the force is `d / l * (l - rest) * k` (`+0x28`) plus
+    /// `(vel[b] - vel[a]) * c` (`+0x2c`), added to `a` and taken from `b`.
+    /// The x87 order: `1 / l` and `(l - rest) * k` stored, `d * (1 / l) *
+    /// that` stored, the damped sum stored, each force word read and
+    /// written in turn (`a`'s x, y, z, then `b`'s). Returns the `eax` it
+    /// ends with: the force array, or the rest length table when there
+    /// are no springs.
+    pub fn rcfx_spring_calc(mem: &mut impl Mem, s: u32, sys: u32) -> u32 {
+        use crate::x87;
+        fn ld(mem: &impl Mem, at: u32) -> f64 {
+            x87::load(mem.read::<u32>(at))
+        }
+        let forces = mem.read::<u32>(sys.wrapping_add(0x30));
+        let pos = mem.read::<u32>(sys.wrapping_add(0x24));
+        let vel = mem.read::<u32>(sys.wrapping_add(0x2c));
+        let count = mem.read::<i32>(s.wrapping_add(0x1c));
+        let pairs = ptr32(mem.read::<u32>(s.wrapping_add(0x20)));
+        let rests = ptr32(mem.read::<u32>(s.wrapping_add(0x24)));
+        let k = x87::load(x87::copy(mem.read::<u32>(s.wrapping_add(0x28))));
+        let c = x87::load(x87::copy(mem.read::<u32>(s.wrapping_add(0x2c))));
+        if count <= 0 {
+            return rests;
+        }
+        let mut i = 0u32;
+        while i.cast_signed() < count {
+            let pair = pairs.wrapping_add(i.wrapping_mul(8));
+            let a = mem.read::<u32>(pair).wrapping_mul(0x10);
+            let b = mem.read::<u32>(pair.wrapping_add(4)).wrapping_mul(0x10);
+            let mut d = [0u32; 3];
+            for (j, w) in (0u32..).zip(&mut d) {
+                let at = 4 * j;
+                *w = x87::store(
+                    ld(mem, pos.wrapping_add(b + at)) - ld(mem, pos.wrapping_add(a + at)),
+                );
+            }
+            let len = f32::from_bits(crate::geom::length3(d));
+            let rests = ptr32(mem.read::<u32>(s.wrapping_add(0x24)));
+            let rest = ld(mem, rests.wrapping_add(4 * i));
+            let shortest = f32::from_bits(x87::store(
+                rest / mem.read::<f64>(mem.rebase(super::SPRING_REST_SCALE)),
+            ));
+            // fcom: the shortest only when above the length (not NaN)
+            let l = f64::from(if shortest > len { shortest } else { len });
+            let inv = x87::load(x87::store(1.0 / l));
+            let stretch = x87::load(x87::store((l - rest) * k));
+            let pull = d.map(|w| x87::load(x87::store(x87::load(w) * inv * stretch)));
+            let mut f = [0u32; 3];
+            for ((j, w), pull) in (0u32..).zip(&mut f).zip(pull) {
+                let at = 4 * j;
+                let dv = ld(mem, vel.wrapping_add(b + at)) - ld(mem, vel.wrapping_add(a + at));
+                *w = x87::store(dv * c + pull);
+            }
+            for (j, w) in (0u32..).zip(f) {
+                let at = forces.wrapping_add(a + 4 * j);
+                mem.write(at, x87::store(ld(mem, at) + x87::load(w)));
+            }
+            for (j, w) in (0u32..).zip(f) {
+                let at = forces.wrapping_add(b + 4 * j);
+                mem.write(at, x87::store(ld(mem, at) - x87::load(w)));
+            }
+            i += 1;
+        }
+        forces
+    }
+
+    /// `rcVec3fApplyMatrix(out, v, m)`, `rcCopyQword_00928eb0(dst, src)`,
+    /// `rcVu0Sub_00928ee0(out, a, b)`, `rcbgScaleVector_00928e50(out, v,
+    /// s)` and `rcVu0Add_00928df0(out, a, b)`: [`rcfx_nail_calc`]'s
+    /// helpers.
+    pub const NAIL_HELPERS: [u32; 5] = [
+        0x0092_1300,
+        0x0092_8eb0,
+        0x0092_8ee0,
+        0x0092_8e50,
+        0x0092_8df0,
+    ];
+
+    /// `rcfxNailCalc(nail, sys)` (`0x00928f40`, the nail's `+0x14`
+    /// callback; name ours): each of the `+0x1c` points' targets (`+0x28`)
+    /// is its base (`+0x24`) through the matrix `+0x38` (`rcVec3fApplyMatrix`)
+    /// or copied; with `t = (time - last) / (end - last)` (the system's
+    /// `+0`, `+0x10` and the nail's `+0x30`, `f64`s; stored as `f32`) and
+    /// `last` set to the time, each point (`+0x2c`) moves `t` of the way to
+    /// its target (in `work`, 0x20 bytes) and is copied to the system's
+    /// position (`sys +0x24`) of its particle (`+0x20` index), whose force
+    /// (`sys +0x30`) is zeroed. Returns the `eax` it ends with: the force
+    /// array, or the count with no points.
+    pub fn rcfx_nail_calc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        nail: u32,
+        sys: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [apply, copy, sub, scale, add] = NAIL_HELPERS.map(|f| mem.rebase(f));
+        let rd = |mem: &M, o: u32| mem.read::<u32>(nail.wrapping_add(o));
+        let forces = mem.read::<u32>(sys.wrapping_add(0x30));
+        let positions = mem.read::<u32>(sys.wrapping_add(0x24));
+        let (base, target, point) = (rd(mem, 0x24), rd(mem, 0x28), rd(mem, 0x2c));
+        let count = mem.read::<i32>(nail.wrapping_add(0x1c));
+        let n = count.max(0).cast_unsigned();
+        let matrix = rd(mem, 0x38);
+        for i in 0..n {
+            let (b, a) = (target.wrapping_add(16 * i), base.wrapping_add(16 * i));
+            if matrix == 0 {
+                call(mem, copy, &[b, a]);
+            } else {
+                let m = rd(mem, 0x38);
+                call(mem, apply, &[b, a, m]);
+            }
+        }
+        let time = mem.read::<f64>(sys);
+        let last = mem.read::<f64>(nail.wrapping_add(0x30));
+        let end = mem.read::<f64>(sys.wrapping_add(0x10));
+        let t = crate::x87::store((time - last) / (end - last));
+        mem.write(nail.wrapping_add(0x30), time);
+        if count <= 0 {
+            return count.cast_unsigned();
+        }
+        let (step, moved) = (work, work.wrapping_add(0x10));
+        for i in 0..n {
+            let k = mem.read::<u32>(rd(mem, 0x20).wrapping_add(4 * i));
+            let p = point.wrapping_add(16 * i);
+            call(mem, sub, &[step, target.wrapping_add(16 * i), p]);
+            call(mem, scale, &[moved, step, t]);
+            call(mem, add, &[p, p, moved]);
+            let at = k.wrapping_shl(4);
+            call(mem, copy, &[positions.wrapping_add(at), p]);
+            mem.write(forces.wrapping_add(at), [0u32; 4]);
+        }
+        forces
+    }
+
     /// `rcfxNailFini(nail)` (`0x00929090`): its four buffers
     /// (`+0x20..+0x2c`) freed and cleared.
     pub fn rcfx_nail_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
@@ -2712,6 +3395,85 @@ pub mod bridge {
             nail,
             &[(0x20, n.wrapping_mul(4)), (0x24, q), (0x28, q), (0x2c, q)],
         );
+    }
+
+    /// `rcbgScaleVector_00929640(out, v, s)`, `rcVu0Add_009295e0(out, a,
+    /// b)` and `rcVec3fDot(a, b)` (in `ST0`): [`rcfx_wind_calc`]'s helpers.
+    pub const WIND_HELPERS: [u32; 3] = [0x0092_9640, 0x0092_95e0, 0x0092_1220];
+    /// 32767.0, 2.0 and 3.0 (`f64`s, `.rdata`): the gust's random range
+    /// and the smoothstep's.
+    pub const WIND_CONSTS: [u32; 3] = [0x00b4_1d70, 0x00b9_2270, 0x00b2_c5c8];
+
+    /// `rcfxWindCalc(wind, sys)` (`0x009296d0`, the wind's `+0x14`
+    /// callback; name ours): once the system's time (`sys +0`, an `f64`)
+    /// passes the next gust (`+0x50`), that becomes the last (`+0x48`),
+    /// the next is a period (`+0x40`) on, the target strength (`+0x5c`)
+    /// becomes the start (`+0x58`) and a new one is `1 - 2 rand() /
+    /// 32767` (`f32`). The strength is `from + (to - from) s` with `s` the
+    /// smoothstep `u² (3 - 2u)` of `u = (time - last) / period` (stored as
+    /// `f32`), the wind `+0x1c + +0x2c * strength` (in `work`, 0x20 bytes:
+    /// the scaled vector, then the wind). Each of the `+0x1c` particles'
+    /// forces (`+0x30`) gets the wind, or with normals (`+0x28`) the
+    /// normal times `dot(wind, normal)`. Returns the `eax` it ends with.
+    pub fn rcfx_wind_calc<M, C, F>(
+        mem: &mut M,
+        wind: u32,
+        sys: u32,
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use crate::x87::{copy, load, store};
+        let [scale, add, dot] = WIND_HELPERS.map(|f| mem.rebase(f));
+        let [range, two, three] = WIND_CONSTS.map(|c| mem.read::<f64>(mem.rebase(c)));
+        let time = mem.read::<f64>(sys);
+        let normals = mem.read::<u32>(sys.wrapping_add(0x28));
+        let count = mem.read::<i32>(sys.wrapping_add(0x1c));
+        let mut force = mem.read::<u32>(sys.wrapping_add(0x30));
+        let at = |o: u32| wind.wrapping_add(o);
+        // fcom: only strictly past the next gust (not NaN)
+        if time > mem.read::<f64>(at(0x50)) {
+            let next = mem.read::<f64>(at(0x50));
+            mem.write(at(0x48), next);
+            let to = copy(mem.read::<u32>(at(0x5c)));
+            mem.write(at(0x58), to);
+            mem.write(at(0x50), next + mem.read::<f64>(at(0x40)));
+            let f = mem.read::<u32>(mem.rebase(super::RAND_IMPORT));
+            let r = call(mem, f, &[]).cast_signed();
+            let q = load(store(f64::from(r))) / range * two;
+            mem.write(at(0x5c), store(1.0 - q));
+        }
+        let u = (time - mem.read::<f64>(at(0x48))) / mem.read::<f64>(at(0x40));
+        let s = load(store((three - u * two) * (u * u)));
+        let from = load(mem.read::<u32>(at(0x58)));
+        let k = store(s * (load(mem.read::<u32>(at(0x5c))) - from) + from);
+        let (scaled, gust) = (work, work.wrapping_add(0x10));
+        call(mem, scale, &[scaled, at(0x2c), k]);
+        let mut eax = call(mem, add, &[gust, at(0x1c), scaled]);
+        if normals == 0 {
+            for _ in 0..count.max(0) {
+                eax = call(mem, add, &[force, force, gust]);
+                force = force.wrapping_add(0x10);
+            }
+            return if count > 0 { eax } else { normals };
+        }
+        if count <= 0 {
+            return normals;
+        }
+        let rel = normals.wrapping_sub(force);
+        for _ in 0..count {
+            let n = rel.wrapping_add(force);
+            let d = store(fcall(mem, dot, crate::camera::FArgs::Stack(&[gust, n])));
+            call(mem, scale, &[scaled, n, copy(d)]);
+            call(mem, add, &[force, force, scaled]);
+            force = force.wrapping_add(0x10);
+        }
+        rel
     }
 
     /// `rcfxWindSet(wind, dir, pos, power)` (`0x009298e0`): the two vectors
@@ -2979,6 +3741,71 @@ pub mod bridge {
         rcfx_wind_set(mem, f, dir, pos, crate::x87::copy(power));
         let ps = mem.read::<u32>(psim + 0x18);
         rcfx_particle_add_force(mem, ps, f, call);
+    }
+
+    /// `rcVu0Add(out, a, b)`, `rcbgScaleVector_0091f6b0(out, v, s)`,
+    /// `rcVu0Sub(out, a, b)` and `rcCopyQword_0091f710(dst, src)`:
+    /// [`rcbg_psim_add_nail`]'s helpers.
+    pub const ADD_NAIL_HELPERS: [u32; 4] = [0x0091_f650, 0x0091_f6b0, 0x0091_f740, 0x0091_f710];
+
+    /// `rcbgPSimAddNail(psim, alt, ids, n)` (`0x0091f850`): a nail
+    /// (`rcfxNailNew`, `n` points: [`rcfx_nail_set_cnt`]) on `n` particles
+    /// (`ids`, `i32`s) of the simulation's system (`+0x18`, positions
+    /// `+0x24`): their centre (the sum through `rcVu0Add` scaled by
+    /// `f32(1 / f32(n))`, in `work`) is taken from each position, which is
+    /// copied as the nail's base point (`+0x24`); the ids are copied to
+    /// `+0x20`; the nail's matrix (`+0x38`) is the simulation's `+0x1c`
+    /// (or `+0x5c` with `alt`) set to a unit matrix moved to the centre.
+    /// The nail is added to the system ([`rcfx_particle_add_force`]).
+    pub fn rcbg_psim_add_nail<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [psim, alt, ids, n]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) {
+        let [add, scale, sub, copy] = ADD_NAIL_HELPERS.map(|f| mem.rebase(f));
+        let nail = rcfx_nail_new(mem, call);
+        let centre = work;
+        mem.write(centre, [0u32; 4]);
+        let sys = mem.read::<u32>(psim.wrapping_add(0x18));
+        let positions = mem.read::<u32>(sys.wrapping_add(0x24));
+        let count = n.cast_signed().max(0).cast_unsigned();
+        let particle = |mem: &M, i: u32| {
+            let id = mem.read::<u32>(ids.wrapping_add(4 * i));
+            positions.wrapping_add(id.wrapping_shl(4))
+        };
+        for i in 0..count {
+            let p = particle(mem, i);
+            call(mem, add, &[centre, centre, p]);
+        }
+        let k = crate::x87::load(crate::x87::store(f64::from(n.cast_signed())));
+        let s = crate::x87::store(1.0 / k);
+        call(mem, scale, &[centre, centre, s]);
+        rcfx_nail_set_cnt(mem, nail, n, call);
+        let mut base = mem.read::<u32>(nail.wrapping_add(0x24));
+        for i in 0..count {
+            let p = particle(mem, i);
+            call(mem, sub, &[p, p, centre]);
+            let p = particle(mem, i);
+            call(mem, copy, &[base, p]);
+            base = base.wrapping_add(0x10);
+        }
+        let to = mem.read::<u32>(nail.wrapping_add(0x20));
+        for b in 0..count * 4 {
+            let v = mem.read::<u8>(ids.wrapping_add(b));
+            mem.write(to.wrapping_add(b), v);
+        }
+        let m = psim.wrapping_add(if alt == 0 { 0x1c } else { 0x5c });
+        mem.write(nail.wrapping_add(0x38), m);
+        let unit = mem.rebase(super::fpm097::UNIT_MATRIX);
+        call(mem, unit, &[m]);
+        for i in 0..3u32 {
+            let v = crate::x87::copy(mem.read::<u32>(centre + 4 * i));
+            let m = mem.read::<u32>(nail.wrapping_add(0x38));
+            mem.write(m.wrapping_add(0x30 + 4 * i), v);
+        }
+        let sys = mem.read::<u32>(psim.wrapping_add(0x18));
+        rcfx_particle_add_force(mem, sys, nail, call);
     }
 
     /// `rcbgPSimAddGravity(psim, g)` (`0x0091f7c0`): `g` replaced by the

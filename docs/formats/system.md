@@ -1505,3 +1505,106 @@ pushed as literals (no relocation entries), not addresses.
   `0x008ea000` is `0x008ea060` in grey; `0x008f2ff0(cursor, value, x, y,
   colour)` writes `TOValueToMesFontL(value, text, 0)` from a 32-byte
   local like `0x008ed0a0`.
+
+## Round 35
+
+- `prcPacketDataClose(self)` (`pppYanagi.c`, a packet descriptor: start
+  `+0`, cursor `+4`, size `+8`) writes the 16-byte end tag `0x8000`,
+  `0x1000_0000`, 0, 0 at the cursor, advances it by 0x10 and asserts
+  `size <= self->m_size` (signed) with `dbgPrintf`. It returns the size in
+  `eax`, or `dbgPrintf`'s result when the assertion fires.
+- `BtlEnd_BuildList_008bde00()` builds the battle-end list
+  (`g_TkBtlEndList`, 14-byte entries from `0x01869f20`): one entry per
+  character counted in `g_BtlCountsBattle`, with its row x
+  (`BtlEnd_RowX(n, count)`), `6n`, the character, its damaged colour and
+  whether it is in the party; `0x01869f19` is set when any counted
+  character has a nonzero `g_TkBtlEndResults` word. It ends in
+  `BtlEnd_CompactList` and returns its `eax`.
+- `useMultipleInstances_model(model, instance)` returns 1 for a model with
+  flag bit 7 set and bit 2 clear while one of eleven spells (0x133, 0x25d,
+  0x6a, 0x119, 0x233, 0x264, 0x20a, 0x1bd, 0xa2, 0x24a, 0xe) runs in an
+  effect pass (`g_VfxPass`); otherwise 2 on maps 0x183, 0x184 and 0x186
+  when the instance's `i16` at `+0x10` is at least 0x834; else 0.
+- `MacroDic_Load()` reads `"macrodic"` and turns its 16 section offsets
+  into pointers (0 for offsets below 1) in `g_MacroDic`; with the language
+  swap flag set it does the same for `TODVDFileLoad(4, 4)` into
+  `0x01869eb4`. It returns the swap flag, or that second dictionary's last
+  `get_ptr32_func` (Ghidra shows void).
+- `TOBtlDrawDamageValue2()` draws the queued damage numbers (16-byte
+  entries from `0x0133f110`, `i16` count at `0x0133f108`, cleared after):
+  values 0..=9 as digits in the entry's colour, 0x3d/0x3c/0x3b/0x3a as
+  battle icons 0..=3; in spell 0x11b kind-3 entries are skipped. Pending
+  9999/99999-damage flags unlock achievements 0x12 and 0x15 first.
+- `TOBtlDrawSummonPrim(chr, x, y)` and `TOBtlDrawChangePrim(chr, x, y)`
+  (integer positions) draw a battle swap window: a frame (the net window
+  `X2(344)` by `Y2(114)`, or shape part 0x1c0 for aeons, 0x1d4 for Yuna
+  (6) before scenario flag 0x434, else `chr + 0x1b8`, `X2(70)` by
+  `Y2(50)` at `(X2(20), Y2(14))`), the character's name (centred in
+  `X2(344)` at scale 0.8/0.7, or centred on `X2(210)` at 0.71, both at
+  `Y2(16)`), and `TOBtlDrawCrossParamPlate` at `(X2(15), Y2(61))` or
+  `(X2(12), Y2(62))`; they return the plate's `eax`. Each sum is
+  computed at double precision and stored as `f32`.
+- `TOBtlInitStatusWin()` sets up the battle status window: three 0x90-byte
+  rows at `0x0133f7d8` (cleared), the party's three `u16` characters from
+  `MsGetSaveWindow(0, 0x12, &n)` at `0x0133f7ac` (0xff for none; `n` is
+  trimmed past trailing 0xff entries but not used further). Each row
+  holds HP at `+0xc`/`+0x10`, MP at `+0x24`/`+0x28`, the limit gauge
+  scaled to the `i16` bar width at `0x025d0aa4` (`gauge * width / max`,
+  signed; a zero maximum faults in the original, the port gives 0) at
+  `+0x34`/`+0x38`, `TOBtlMakeStatusBuff(c, row + 0x42)` at `+0x40` and
+  0x14 at `+0x3c`. It returns 0x14 when the last slot is filled, else 0xff.
+
+## Round 36
+
+- `updateVFXZBufClearRenderData(lo, hi, z)` turns an effect instance's
+  render data into one full-screen quad at depth `z`: 4 vertices and 6
+  indices in its geometry (`+0x94`), buffer from
+  `graphicDynGeoMemManagerGetBufferForSegment(data, 0, 4, 6)`, indices 0,
+  1, 2, 1, 3, 2, corners (-1, -1), (1, -1), (-1, 1), (1, 1), then
+  `graphicVFXSetVisible(lo, hi, 1)`. Returns 1, or 0 without render data
+  or buffer. Every pointer is read again before each store.
+- `TOAddPktChrNameIcon_008eba80(cursor, chr, x, y, colour)` writes menu
+  icon 0x13 at (`x + 3`, `y + 1`) and the character's name in grey at
+  (`x + 0x16`, `y`), keeping `g_TOPktCursor` up to date after each; it
+  returns the final cursor.
+- `TODrawFont3d80Glyph_008eeee0(cursor, text, x, y, nibbles, c0..c3)`
+  draws one character of the 0x3d80 sheet twice through
+  `graphicFontDraw`: an 0x98-byte sprite record (two corners of x, y, u, v
+  and four words `c0..c3`, `+0x88` 0, `+0x90` the 8-byte size
+  `TOGetTextureName` writes). Character `c = *text - 0x20` (signed) sits
+  in column `(c % 32) / 2` (8 wide) and row `c / 32` (10 high, from 192);
+  odd characters take the second texture of a pair. The first draw
+  (texture `2 * (nibbles >> 4 & 0xf) + odd`, high flag 1) covers
+  (`x + 1`, `y`)..(`x + 11`, `y + 12`), the second (`2 * (nibbles & 0xf)
+  + odd`) (`x`, `y - 1`)..(`x + 10`, `y + 11`); UVs divide the cell (right
+  edge 3.5 in) by the image sizes, the second pair first. The original
+  leaves the record's `+0x40..+0x87` and `+0x8c` uninitialised.
+  It returns `cursor + 0x10`.
+- `TOSetupMessageWindow_008b8de0(w)` runs the window's callback (`+0xf4`)
+  and fits the window to its text (`+0x94`). Without a message (`+8` 0)
+  it sets the word counts, measures the text and centres the rect (y 1 in
+  message-window mode 1), returning `TOWideWindowRect_008b8d10`'s `eax`.
+  With one it counts the choices (`+0x24`, `+0x28` adding the macro text
+  `0x025d09bc`'s), measures the first line (flags `| 3`) and the whole
+  text (`| 1`). Choice style 1 (`+0x22`) adds the macro width to a
+  positive first-line width (kept as `+0x2a`) and widens the window by
+  it. It then sets `+0xa8` to the word count (with the macro text's for
+  style 1), `+2` to 1 when that equals the choices, and returns `+0xa8`.
+  With `+0x1e` 1, `TOLayoutMessageChoices_008b9a60(w, 1)` follows and its
+  `eax` is returned. The x position is stored as `f32` before `ftol`, the
+  y sum is not.
+- `TOBtlDrawCtbWindow(x, y)` draws the battle turn-order (CTB) window
+  unless `0x0133d6e0` is 1. Its frame spans `X2(1637)`, `Y2(194)` to
+  `X2(1765)`, `Y2(482)`: a net window 8 units outside it, scroll arrows
+  0x1b6 (scroll `i8 0x01340446` positive) and 0x1b7 (below 10), the scroll
+  bar and the window scissor. Each of the 32 CTB records at `0x01340478`
+  (`+1` character, `+4` icon, `+0x10`/`+0x12` `i16` offsets, `+0x14` the
+  step callback, `0x008a2b10` while sliding) that is not sliding is drawn
+  by `TODrawBtlCtbParts` at `X2(15) + left + dx` and `Y2(dy / 22 * 48 +
+  row * 48 / 22) + top` (row `i16 0x01340448`); the first one, at row 0,
+  gets the highlight shape 0x1d8. While the command window at
+  `g_BtlActionDepth` is open, it adds a packet scissor and, for each of
+  the first 16 rows whose character bit is set in `0x01340470`, the
+  cursor 0x1d6 at `ftol(x + left + 8)`, `y` and the target frame 0x190
+  (UVs by character below 0x14 or monster). It ends with the full-screen
+  scissor and returns that call's `eax`.
