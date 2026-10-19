@@ -19818,3 +19818,90 @@ fn r13bb_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13bb_cases(&mut t, &mut rng, g, 150);
 }
+
+// ---- field agent r13, group c: a field's particle files ----
+
+/// A stand-in returning `values[n]` on its `n`th call (counted at
+/// `count`) and logging its first two arguments at `args + 4 n` and
+/// `args + 0x40 + 4 n`.
+fn r13cc_seq_stub(count: u32, values: u32, args: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x89, 0x04, 0x8d]);
+    c.extend_from_slice(&args.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0x89, 0x04, 0x8d]);
+    c.extend_from_slice(&(args + 0x40).to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x04, 0x8d]);
+    c.extend_from_slice(&values.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Group c (r13) on `t`: `yiLoadFieldParticle` with or without a map
+/// read and its buffer, each `sceOpen` succeeding or not and the
+/// allocation failing or not; the file calls, the allocator and the ppp
+/// calls are logged stand-ins.
+fn r13cc_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::{model, yi};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, size, buf, rv) = (t.alloc(0x400), t.alloc(4), t.alloc(4), t.alloc(4));
+    let (count, fds, opened) = (t.alloc(4), t.alloc(0x10), t.alloc(0x80));
+    t.cave(&[
+        (Some(yi::SCE_OPEN), r13cc_seq_stub(count, fds, opened)),
+        (Some(yi::SCE_LSEEK), log_stub(log, size, 1, 3)),
+        (Some(yi::SCE_READ), log_stub(log, rv, 2, 3)),
+        (Some(yi::SCE_CLOSE), log_stub(log, rv, 3, 1)),
+        (Some(model::USER_MALLOC), log_stub(log, buf, 4, 1)),
+        (Some(model::USER_FREE), log_stub(log, rv, 5, 1)),
+        (Some(yi::PPP_FP_FREE), log_stub(log, rv, 6, 0)),
+        (Some(yi::MAP_SECTION2_HANDLER), log_stub(log, rv, 7, 1)),
+        (Some(yi::PPP_SET_FP_PDT), log_stub(log, rv, 8, 1)),
+    ]);
+    let pick = |rng: &mut Xorshift| if rng.below(3) == 0 { 0 } else { rng.next() | 1 };
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(count, 0u32);
+        for i in 0..4 {
+            t.put(fds + 4 * i, pick(rng));
+        }
+        t.put(size, rng.below(0x1000));
+        t.put(buf, pick(rng));
+        t.put(rv, rng.next());
+        yi::state::MAP_READ.set(&mut t.a, pick(rng));
+        yi::state::MAP_READ.set(&mut t.b, yi::state::MAP_READ.get(&t.a));
+        let b = pick(rng);
+        yi::MAP_READ_BUFFER.set(&mut t.a, b);
+        yi::MAP_READ_BUFFER.set(&mut t.b, b);
+        for ids in [yi::CAMERA_IDS, yi::MAP_IDS] {
+            let v = [rng.next(), rng.next()];
+            ids.set(&mut t.a, v);
+            ids.set(&mut t.b, v);
+        }
+        let (tex, pdt) = (rng.next(), rng.next());
+        t.same(
+            "yiLoadFieldParticle",
+            |o| o.eax(0x0090_9190, &[tex, pdt]),
+            |m| yi::bridge::yi_load_field_particle(m, [tex, pdt], call),
+        );
+    }
+}
+
+/// Group c (r13) on the image.
+#[test]
+fn r13cc_load_field_particle_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_9d01);
+    r13cc_cases(&mut t, &mut rng, 400);
+}
+
+/// Group c (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13cc_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_9d02);
+    r13cc_cases(&mut t, &mut rng, 200);
+}

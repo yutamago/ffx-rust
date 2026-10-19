@@ -3980,6 +3980,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `yiLoadFieldParticle(textures, effects)`.
+    yiLoadFieldParticle @ 0x0090_9190 => extern "C" fn shim_yi_load_field_particle(textures: u32, effects: u32) -> u32 {
+        yi::bridge::yi_load_field_particle(&mut mem(), [textures, effects], &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapSpreadPlyTags()`: the seven boxes in a frame.
     AbmapSpreadPlyTags @ 0x00a5_a4b0 => extern "C" fn shim_abmap_spread_ply_tags() -> u32 {
         let mut w = super::StackFrame::<28>::new();

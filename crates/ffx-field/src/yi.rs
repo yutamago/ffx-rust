@@ -5516,4 +5516,82 @@ pub mod bridge {
         }
         0x3f80_0000
     }
+
+    // ---- field r13 ----
+
+    /// `yiLoadFieldParticle(textures, effects)` (`0x00909190`): a field's
+    /// particle data from two files. The last read effect data goes
+    /// first (`pppFpFree`, [`state::MAP_READ`] 0, the buffer
+    /// [`super::MAP_READ_BUFFER`] freed). The `textures` file is read
+    /// whole ([`read_whole_file`]), opened once more only to seek to its
+    /// end, and when read handed to `pppSetFpTex` and freed; the `effects`
+    /// file's buffer, when read, becomes both [`super::MAP_READ_BUFFER`] and
+    /// [`state::MAP_READ`] and goes to `pppSetFpPdt`. The camera and map
+    /// ids end -1. Returns 0.
+    ///
+    /// [`state::MAP_READ`]: super::state::MAP_READ
+    pub fn yi_load_field_particle<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [textures, effects]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        if super::state::MAP_READ.get(mem) != 0 {
+            let f = mem.rebase(super::PPP_FP_FREE);
+            call(mem, f, &[]);
+            super::state::MAP_READ.set(mem, 0);
+            let b = super::MAP_READ_BUFFER.get(mem);
+            if b != 0 {
+                yi_free(mem, b, call);
+                super::MAP_READ_BUFFER.set(mem, 0);
+            }
+        }
+        let tex = read_whole_file(mem, textures, call);
+        let open = mem.rebase(super::SCE_OPEN);
+        let fd = call(mem, open, &[textures, 1]);
+        if fd != 0 {
+            let seek = mem.rebase(super::SCE_LSEEK);
+            call(mem, seek, &[fd, 0, 2]);
+            let close = mem.rebase(super::SCE_CLOSE);
+            call(mem, close, &[fd]);
+        }
+        if tex != 0 {
+            let f = mem.rebase(super::MAP_SECTION2_HANDLER);
+            call(mem, f, &[tex]);
+            yi_free(mem, tex, call);
+        }
+        let pdt = read_whole_file(mem, effects, call);
+        if pdt != 0 {
+            super::MAP_READ_BUFFER.set(mem, pdt);
+            super::state::MAP_READ.set(mem, pdt);
+            let f = mem.rebase(super::PPP_SET_FP_PDT);
+            call(mem, f, &[pdt]);
+        }
+        super::CAMERA_IDS.set(mem, [u32::MAX; 2]);
+        super::MAP_IDS.set(mem, [u32::MAX; 2]);
+        0
+    }
+
+    /// The file `path` read whole into a `yiMalloc` buffer (`sceOpen`
+    /// mode 1, its size from `sceLseek` to the end, back to the start,
+    /// `sceRead`, `sceClose`); 0 when it does not open.
+    fn read_whole_file<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        path: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::SCE_OPEN);
+        let fd = call(mem, f, &[path, 1]);
+        if fd == 0 {
+            return 0;
+        }
+        let seek = mem.rebase(super::SCE_LSEEK);
+        let size = call(mem, seek, &[fd, 0, 2]);
+        call(mem, seek, &[fd, 0, 0]);
+        let buf = crate::model::bridge::yi_malloc(mem, call, size);
+        let f = mem.rebase(super::SCE_READ);
+        call(mem, f, &[fd, buf, size]);
+        let f = mem.rebase(super::SCE_CLOSE);
+        call(mem, f, &[fd]);
+        buf
+    }
 }
