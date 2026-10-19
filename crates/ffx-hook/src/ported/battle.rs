@@ -263,6 +263,28 @@ fn host() -> target::Host<'static> {
     fn spline3_tangent(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
         spline_via_stack(m, 0x0088_aba0, out, points, n, t);
     }
+    fn near_point(m: &mut target::Dm<'_>, a: [u32; 8]) -> u32 {
+        // the three outputs may be a frame's locals, at addresses the game
+        // never maps: through this stack, holding their words first
+        use ffx_bridge::Mem;
+        let outs = [a[4], a[5], a[6]];
+        let mut buf = super::StackFrame::<3>::new();
+        let at = buf.at();
+        let held: [u32; 3] = outs.map(|o| m.read(o));
+        m.write(at, held);
+        // SAFETY: a cdecl function of this build taking eight words and
+        // returning an f32 in ST0.
+        let d = unsafe {
+            let f: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> f32 =
+                std::mem::transmute(crate::rebase(0x00a4_4120));
+            f(a[0], a[1], a[2], a[3], at, at + 4, at + 8, a[7])
+        };
+        let got: [u32; 3] = m.read(at);
+        for (o, word) in outs.into_iter().zip(got) {
+            m.write(o, word);
+        }
+        d.to_bits()
+    }
     fn neck_enable(m: &mut target::Dm<'_>, chr: u32, on: u32) {
         ffx_chara::chr::bridge::ch_neck_set_enable(
             m,
@@ -319,6 +341,7 @@ fn host() -> target::Host<'static> {
         spline_tangent: &tangent,
         spline3: &spline3,
         spline3_tangent: &spline3_tangent,
+        near_point: &near_point,
         cos: &crt_cos,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
@@ -2267,6 +2290,18 @@ ported! {
     MsCameraSplineMove_007bcb80 @ 0x007b_cb80 => extern "C" fn ms_camera_spline_move(id: u32, side_no: u32, _unused: u32, side: u32, mv: u32) {
         let mut m = mem();
         camera::ms_camera_spline_move(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side_no, side, mv);
+    }
+    /// `MsCameraMoveStep_007bcab0(side, other, chan, step)`: the
+    /// near-point search and the channel limits through the game; the
+    /// caller's registers (the radius words) are not known here.
+    MsCameraMoveStep_007bcab0 @ 0x007b_cab0 => extern "C" fn ms_camera_move_step(side: u32, other: u32, chan: u32, step: u32) -> u32 {
+        camera::ms_camera_move_step(&mut mem(), &crt_trig, &mut call_ptr, side, other, chan, step, None)
+    }
+    /// `MsCameraNearPoints_007c0d40(_, side, chan)`: the near-point search
+    /// through the game; the caller's registers are not known here.
+    MsCameraNearPoints_007c0d40 @ 0x007c_0d40 => extern "C" fn ms_camera_near_points(_unused: u32, side: u32, chan: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_camera_near_points(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, side, chan, None)
     }
     /// `MsCameraAtelFocus_007c0560(side, mv)`: the script actors'
     /// positions through the game.

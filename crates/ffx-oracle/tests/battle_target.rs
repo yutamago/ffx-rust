@@ -40,6 +40,23 @@ fn host() -> t::Host<'static> {
     fn spline3_tangent(m: &mut t::Dm<'_>, out: u32, points: u32, n: u32, x: u32) {
         spline_via(m, 0x0088_aba0, out, points, n, x);
     }
+    fn near_point(m: &mut t::Dm<'_>, a: [u32; 8]) -> u32 {
+        // the outputs are frame locals: through scratch in the oracle
+        let o = oracle(m);
+        let s = SCRATCH.with(std::cell::Cell::get);
+        let r = call(
+            o,
+            0x00a4_4120,
+            &[a[0], a[1], a[2], a[3], s, s + 4, s + 8, a[7]],
+        );
+        let v = o.read(s, 12).unwrap();
+        o.write(s, &[0; 12]).unwrap();
+        for k in 0..3 {
+            let w = u32::from_le_bytes(v[4 * k..4 * k + 4].try_into().unwrap());
+            ffx_bridge::Mem::write(m, a[4 + k], w);
+        }
+        f80_to_f32(r.st0_raw.unwrap())
+    }
     fn neck_enable(m: &mut t::Dm<'_>, chr: u32, on: u32) {
         call(oracle(m), 0x0083_4f60, &[chr, on]);
     }
@@ -94,6 +111,7 @@ fn host() -> t::Host<'static> {
         spline_tangent: &tangent,
         spline3: &spline3,
         spline3_tangent: &spline3_tangent,
+        near_point: &near_point,
         cos: &cos_stand_in,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
@@ -10557,16 +10575,137 @@ fn camera_spline_move(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u
     same("MsCameraSplineMove_007bcb80", a, b);
 }
 
+/// The harness's `EBP` (the oracle's), as a callee reading its caller's
+/// saved `ebp` sees it.
+const HARNESS_EBP: u32 = 0x4444_4444;
+
+/// A made-up camera side and channel at `buf` and `buf + 0x100` for the
+/// near-point steps: up to five filters of kinds 0-6 (at times others),
+/// the spline one of the dressed move splines; the side's base vector (`+0x8c`) none or the channel's start.
+fn near_channel(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32) -> (u32, u32) {
+    let (side, chan) = (buf, buf + 0x100);
+    poke(a, b, side, &floats(rng, 0x40));
+    poke(a, b, chan, &floats(rng, 0x130 / 4));
+    let base = [0, chan + 0x30][rng.below(2) as usize];
+    poke(a, b, side + 0x8c, &base.to_le_bytes());
+    let n = u8::try_from(rng.below(6)).unwrap();
+    poke(
+        a,
+        b,
+        chan,
+        &[
+            u8::try_from(rng.below(3)).unwrap(),
+            0,
+            0,
+            0,
+            n,
+            u8::from(rng.below(3) == 0),
+        ],
+    );
+    for k in 0..5 {
+        let kind = if rng.below(8) == 0 {
+            rng.next()
+        } else {
+            rng.below(7)
+        };
+        poke(a, b, chan + 0x90 + 0x20 * k, &kind.to_le_bytes());
+    }
+    // (no short splines: the near-point search's spline locals would keep
+    // the stack, which differs between the oracles there)
+    let sp = t::MOVE_SPLINES.ptr(b).addr + 0x210 * rng.below(4);
+    poke(a, b, chan + 8, &sp.to_le_bytes());
+    poke(
+        a,
+        b,
+        chan + 0x1d,
+        &[u8::from(rng.below(2) == 0), u8::from(rng.below(2) == 0)],
+    );
+    (side, chan)
+}
+
+/// `MsCameraMoveStep_007bcab0` and `MsCameraNearPoints_007c0d40` (round
+/// 27) on [`near_channel`]: the near-point search and the channel limits
+/// (`0x007c0120`) run as the originals in both oracles.
+fn camera_near(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32) {
+    use ffx_battle::camera::bridge as cam;
+    let h = host();
+    let (side, chan) = near_channel(a, b, rng, buf);
+    zero_stack(a);
+    if rng.below(2) == 0 {
+        let other = buf + 0x300;
+        poke(a, b, other, &floats(rng, 0x20));
+        let speed = match rng.below(4) {
+            0 => 0,
+            1 => (-0.0f32).to_bits(),
+            2 => 0x7fc0_0000,
+            _ => float(rng),
+        };
+        poke(a, b, other + 0x6c, &speed.to_le_bytes());
+        let step = [0, 1, 1, 2, rng.next()][rng.below(5) as usize];
+        let args = [side, other, chan, step];
+        twin(
+            "MsCameraMoveStep_007bcab0",
+            a,
+            b,
+            cam::CAMERA_MOVE_STEP,
+            &args,
+            ALL,
+            |m| {
+                let mut c = game_call_o;
+                let tail = Some([HARNESS.esi, HARNESS.ebx, HARNESS_EBP]);
+                cam::ms_camera_move_step(m, &stand_in, &mut c, side, other, chan, step, tail)
+            },
+        );
+        // the channel limits (0x007c0120, the original in both) pass
+        // MsMulVector and MsVectorGetSide vectors by value whose w words
+        // are their caller's stack: the move step's in `a`, the harness's
+        // in `b`
+        let lim = a.read(chan + 4, 2).unwrap();
+        if lim[0] != 0 && lim[1] == 0 {
+            let vb = ffx_battle::vector::bridge::VF_B.ptr(a).addr;
+            let vm = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+            for at in [vb + 0xc, vm + 0x1c] {
+                let w = a.read(at, 4).unwrap();
+                b.write(at, &w).unwrap();
+            }
+        }
+    } else {
+        let args = [rng.next(), side, chan];
+        twin(
+            "MsCameraNearPoints_007c0d40",
+            a,
+            b,
+            0x007c_0d40,
+            &args,
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    let mut c = game_call;
+                    let tail = Some([HARNESS.ebx, HARNESS.edi, HARNESS.esi]);
+                    cam::ms_camera_near_points(m, &h, &mut c, side, chan, tail)
+                })
+            },
+        );
+    }
+    // the near-point search's VU words holding its locals' addresses
+    local_words(a, b);
+    same("the camera's near points", a, b);
+}
+
 /// Round 27's camera steps on the dressed actors, `MsSetCheckChange`'s
 /// move step (`CAMERA_MOVE_STEP`) a logging stub as in
-/// [`camera_set_btl_check`].
+/// [`camera_set_btl_check`] for [`camera_spline_move`] (installed after
+/// [`camera_near`]'s runs, which call it as the original).
 fn camera_steps(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    let buf = scratch(a, b, 0x400);
+    dressed_check(a, b, rng, synthetic, (60, 4), |a, b, rng, _, _| {
+        camera_near(a, b, rng, buf);
+    });
     let rec = scratch(a, b, 0x80);
     for o in [&mut *a, &mut *b] {
         let f = ffx_battle::camera::bridge::CAMERA_MOVE_STEP;
         logging_stub(o, f, START_STUBS2 + 0xc0 + 0x40 * 9, rec, 4, 0);
     }
-    let buf = scratch(a, b, 0x400);
     dressed_check(a, b, rng, synthetic, (150, 4), |a, b, rng, _, _| {
         camera_spline_move(a, b, rng, buf, !synthetic);
     });

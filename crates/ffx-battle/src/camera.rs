@@ -452,6 +452,148 @@ pub mod bridge {
     /// position step and its spline, `spline_get_near_point_init`; not a
     /// battle port).
     pub const CAMERA_MOVE_STEP: u32 = 0x007b_cab0;
+    /// `spline_get_near_point_init(spline, x, y, z, kind)` (main).
+    pub const NEAR_POINT_INIT: u32 = 0x00a4_4420;
+    /// `0x007c0120(side, channel)`: the channel's limits on the side's
+    /// position (not ported); non-zero stops the move step.
+    pub const CAMERA_LIMITS: u32 = 0x007c_0120;
+
+    /// `f`, an address of this build, where the game is loaded.
+    fn game(mem: &impl Mem, f: u32) -> u32 {
+        f.wrapping_sub(ffx_bridge::IMAGE_BASE)
+            .wrapping_add(mem.image_base())
+    }
+
+    /// `MsVectorPolar2Rect(side + 0x50, side + 0x8c's base, yaw, pitch,
+    /// length)` from the side's polar form (`+0x60`..`+0x68`), as the
+    /// camera steps call it: the radius vector's other words are the
+    /// caller's three registers above the pushed arguments (`tail`), or
+    /// when they are not known the words VU register 4 holds.
+    fn side_polar<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        side: u32,
+        tail: Option<[u32; 3]>,
+    ) {
+        let at = |o: u32| side.wrapping_add(o);
+        let length = x87_copy(mem.read(at(0x68)));
+        let pitch = x87_copy(mem.read(at(0x64)));
+        let yaw = x87_copy(mem.read(at(0x60)));
+        let base: u32 = mem.read(at(0x8c));
+        let r = match tail {
+            Some([y, z, w]) => [length, y, z, w],
+            None => {
+                let vf = crate::vector::bridge::VF_M.ptr(mem).addr;
+                let mut w: [u32; 4] = mem.read(vf.wrapping_add(0x40));
+                w[0] = length;
+                w
+            }
+        };
+        crate::vector::bridge::ms_vector_polar2_rect(mem, trig, at(0x50), base, yaw, pitch, r);
+    }
+
+    /// The near-point search's start on the channel's spline (`chan + 8`)
+    /// from the side's position, kind `chan + 0x1e`; `chan + 0x1d` cleared.
+    fn near_point_init<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        side: u32,
+        chan: u32,
+    ) {
+        let kind = u32::from(mem.read::<u8>(chan.wrapping_add(0x1e)));
+        mem.write(chan.wrapping_add(0x1d), 0u8);
+        let [x, y, z] = [0x50, 0x54, 0x58].map(|o| x87_copy(mem.read(side.wrapping_add(o))));
+        let spline: u32 = mem.read(chan.wrapping_add(8));
+        let f = game(mem, NEAR_POINT_INIT);
+        call(mem, f, &[spline, x, y, z, kind]);
+    }
+
+    /// `MsCameraMoveStep_007bcab0(side, other, chan, step)` (`0x007bcab0`,
+    /// name ours; [`CAMERA_MOVE_STEP`]): step 1 first takes the side's
+    /// position from its polar form ([`side_polar`]; `tail` the caller's
+    /// `esi`, `ebx`, `ebp`); the position's x, y, z go to `other + 0x30`;
+    /// a pending near-point search (`chan + 0x1d`) starts; with channel
+    /// limits (`chan + 4` set, `+5` clear) that hold ([`CAMERA_LIMITS`]
+    /// non-zero) the step becomes 0. A speed at `other + 0x6c` other than
+    /// 0 (NaN too) is added to the side's y and returns 0, else the step.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_move_step<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        side: u32,
+        other: u32,
+        chan: u32,
+        step: u32,
+        tail: Option<[u32; 3]>,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, store};
+        if step == 1 {
+            side_polar(mem, trig, side, tail);
+        }
+        for k in 0..3 {
+            let v = x87_copy(mem.read(side.wrapping_add(0x50 + 4 * k)));
+            mem.write(other.wrapping_add(0x30 + 4 * k), v);
+        }
+        if mem.read::<u8>(chan.wrapping_add(0x1d)) != 0 {
+            near_point_init(mem, call, side, chan);
+        }
+        let mut step = step;
+        if mem.read::<u8>(chan.wrapping_add(4)) != 0 && mem.read::<u8>(chan.wrapping_add(5)) == 0 {
+            let f = game(mem, CAMERA_LIMITS);
+            if call(mem, f, &[side, chan]) != 0 {
+                step = 0;
+            }
+        }
+        let speed: u32 = mem.read(other.wrapping_add(0x6c));
+        if f32::from_bits(speed) == 0.0 {
+            return step;
+        }
+        let y = side.wrapping_add(0x54);
+        let v = store(add(load(mem.read(y)), load(speed)));
+        mem.write(y, v);
+        0
+    }
+
+    /// `MsCameraNearPoints_007c0d40(_, side, chan)` (`0x007c0d40`, name
+    /// ours; `MsCameraProcess`'s): for each of the channel's moves
+    /// (`chan + 4` of them, re-read; 0x20 bytes from `+0x90`) of kind 4 or
+    /// 5, with `chan` 1 the side's position from its polar form
+    /// ([`side_polar`]; `tail` the caller's `ebx`, `edi`, `esi`), a
+    /// near-point search on the channel's spline from it and its result
+    /// (`spline_get_near_point`, kind 5 given 1) at `chan + 0x24`. EAX:
+    /// how many moves were of those kinds.
+    pub fn ms_camera_near_points<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        call: &mut dyn FnMut(&mut crate::target::bridge::Dm<'d>, u32, &[u32]) -> u32,
+        side: u32,
+        chan: u32,
+        tail: Option<[u32; 3]>,
+    ) -> u32 {
+        let mut done = 0u32;
+        let mut slot = 0u32;
+        while slot < u32::from(mem.read::<u8>(chan.wrapping_add(4))) {
+            let kind: u32 = mem.read(chan.wrapping_add(0x90 + 0x20 * slot));
+            if kind == 4 || kind == 5 {
+                if mem.read::<u8>(chan) == 1 {
+                    side_polar(mem, host.trig, side, tail);
+                }
+                near_point_init(mem, call, side, chan);
+                let [x, y, z] =
+                    [0x50, 0x54, 0x58].map(|o| x87_copy(mem.read(side.wrapping_add(o))));
+                let spline: u32 = mem.read(chan.wrapping_add(8));
+                let d = mem.frame(0x10, |mem, at| {
+                    let args = [spline, x, y, z, at, at + 4, at + 8, u32::from(kind != 4)];
+                    (host.near_point)(mem, args)
+                });
+                mem.write(chan.wrapping_add(0x24), d);
+                done += 1;
+            }
+            slot += 1;
+        }
+        done
+    }
 
     /// The request in camera `cam`'s current slot (0 while the slot is
     /// held, `+4` or `+5`).
@@ -522,9 +664,7 @@ pub mod bridge {
                 let other = cam
                     .wrapping_sub(side.wrapping_mul(0x61c))
                     .wrapping_add(0x64c);
-                let f = CAMERA_MOVE_STEP
-                    .wrapping_sub(ffx_bridge::IMAGE_BASE)
-                    .wrapping_add(mem.image_base());
+                let f = game(mem, CAMERA_MOVE_STEP);
                 call(mem, f, &[s, other, chan, step]);
                 if !set {
                     return 0;
