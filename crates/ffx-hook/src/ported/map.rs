@@ -2728,6 +2728,18 @@ ported! {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::GRID_WORK as usize / 4 }>::new();
         ffx_field::abmap_draw::abmap_draw_grid_marks(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapGridMarkUVs()`.
+    AbmapGridMarkUVs @ 0x00a4_ac20 => extern "C" fn shim_abmap_grid_mark_uvs() {
+        ffx_field::abmap_draw::abmap_grid_mark_uvs(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `AbmapProjectGrid()`.
+    AbmapProjectGrid @ 0x00a4_7630 => extern "C" fn shim_abmap_project_grid() {
+        ffx_field::abmap_draw::abmap_project_grid(&mut mem());
+    }
+    /// `AbmapPlyTagRect(tag, out)`.
+    AbmapPlyTagRect @ 0x00a4_82d0 => extern "C" fn shim_abmap_ply_tag_rect(tag: u32, out: u32) {
+        ffx_field::abmap_draw::abmap_ply_tag_rect(&mut mem(), tag, out);
+    }
     /// `AbmapDrawMap()`.
     AbmapDrawMap @ 0x00a4_ce20 => extern "C" fn shim_abmap_draw_map() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::MAP_WORK as usize / 4 }>::new();
@@ -2802,6 +2814,20 @@ ported! {
             w,
             &mut |_, f, a| call_cdecl(f, a),
         )
+    }
+    /// `yiPolyTexMapXZ(packet, min, max, _, height, tbp, u, v)`.
+    yiPolyTexMapXZ @ 0x0091_2b70 => extern "C" fn shim_yi_poly_tex_map_xz(packet: u32, min: u32, max: u32, _unused: u32, height: u32, tbp: u32, u: u32, v: u32) {
+        let tex = ffx_field::yipoly::TexRegion { height, tbp, u, v };
+        ffx_field::yipoly::yi_poly_tex_map_xz(&mut mem(), packet, min, max, tex);
+    }
+    /// `yiTexTargetClear(frame, u, v, h)`.
+    yiTexTargetClear @ 0x0091_26f0 => extern "C" fn shim_yi_tex_target_clear(frame: u32, u: u32, v: u32, h: u32) -> u32 {
+        // 16-byte aligned: the packet goes to sceDmaSendN
+        #[repr(C, align(16))]
+        struct ClearWork([u8; ffx_field::yipoly::CLEAR_WORK as usize]);
+        let mut work = ClearWork([0; ffx_field::yipoly::CLEAR_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_tex_target_clear(&mut mem(), frame, (u, v), h, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiPolySelectRectXZ(r, list, packet, cap, m, a, b, unlimited)`.
     yiPolySelectRectXZ @ 0x0091_05b0 => extern "C" fn shim_yi_poly_select_rect_xz(_r: u32, list: u32, packet: u32, cap: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {

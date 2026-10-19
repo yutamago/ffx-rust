@@ -16659,3 +16659,443 @@ fn r9a_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0091_a002);
     r9a_cases(&mut t, &mut rng, 120);
 }
+
+// ---- field agent r10, group A: a split packet mapped onto a texture by x/z ----
+
+/// Group A (r10) on `t`: `yiPolyTexMapXZ` over packets of 0 to 6 group
+/// tags (untextured, textured, other kinds, an end tag) with 0 to 5
+/// triangles each, counts cut short or negative, rectangles of every
+/// size (empty ones too), and texture regions with and without buffer
+/// words and clamp ranges (zero widths, odd heights).
+fn r10a_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let packet = t.alloc(0x4000);
+    let (min, max) = (t.alloc(0x10), t.alloc(0x10));
+    for k in 0..cases {
+        t.fill(packet, 0x4000, rng);
+        // records from +0x20, vertices from +0x1000 (or near the records)
+        let verts = if rng.below(8) == 0 { 0x800 } else { 0x1000 };
+        t.put(packet + 8, verts);
+        let fine = rng.below(3) != 0;
+        for i in 0..0x300 {
+            let v = if fine {
+                r6b_fine(rng, -40.0, 40.0)
+            } else {
+                float_in(rng, -8, 8)
+            };
+            t.put(packet + verts + 4 * i, v);
+        }
+        let (mut at, mut records) = (packet + 0x20, 0i32);
+        for _ in 0..rng.below(7) {
+            let kind = match rng.below(9) {
+                0 => 0xff,
+                1 => u8::try_from(rng.below(0x100)).unwrap(),
+                2 | 3 => 0x20,
+                _ => 0x22,
+            };
+            let n = rng.below(6);
+            t.put(at + 1, kind);
+            t.put(at + 2, u16::try_from(n).unwrap());
+            at += 0x20;
+            records += 1;
+            if !matches!(kind, 0x20 | 0x22) {
+                continue;
+            }
+            for _ in 0..n {
+                if kind == 0x22 {
+                    for j in 0..3 {
+                        let index = u16::try_from(rng.below(0xc0)).unwrap();
+                        t.put(at + 0xc + 2 * j, index);
+                    }
+                }
+                at += if kind == 0x22 { 0x20 } else { 0x14 };
+                records += 1;
+            }
+        }
+        let records = match rng.below(6) {
+            0 => records - i32::try_from(rng.below(4)).unwrap(),
+            1 => -1 - i32::try_from(rng.below(3)).unwrap(),
+            _ => records,
+        };
+        t.put(packet + 0x10, i16::try_from(records).unwrap());
+        for v in [min, max] {
+            for i in 0..4 {
+                let c = if rng.below(10) == 0 {
+                    0
+                } else if fine {
+                    r6b_fine(rng, -50.0, 50.0)
+                } else {
+                    float_in(rng, -12, 12)
+                };
+                t.put(v + 4 * i, c);
+            }
+        }
+        if rng.below(10) == 0 {
+            t.put(max, Mem::read::<u32>(&t.a, min));
+        }
+        let height = match rng.below(5) {
+            0 => rng.next(),
+            1 => rng.below(0x900),
+            _ => 1 << rng.below(12),
+        };
+        let tbp = if rng.below(4) == 0 { 0 } else { rng.next() };
+        let u = if k % 4 == 0 { 0 } else { rng.next() };
+        let v = rng.next();
+        let tex = ffx_field::yipoly::TexRegion { height, tbp, u, v };
+        t.same(
+            "yiPolyTexMapXZ",
+            |o| {
+                o.void(
+                    0x0091_2b70,
+                    &[packet, min, max, rng.next(), height, tbp, u, v],
+                );
+            },
+            |o| ffx_field::yipoly::yi_poly_tex_map_xz(o, packet, min, max, tex),
+        );
+    }
+}
+
+/// Group A (r10) on the image.
+#[test]
+fn r10a_tex_map_xz_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_a001);
+    r10a_cases(&mut t, &mut rng, 600);
+}
+
+/// Group A (r10) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r10a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0010_a002);
+    r10a_cases(&mut t, &mut rng, 300);
+}
+
+// ---- field agent r10, group B: the render target's clear packet ----
+
+/// A stand-in for `0x00912690(packet, qwc)`: copies the packet's `qwc`
+/// quadwords to `log + 0x10` and `qwc` to `log`, returns `rv`; saves
+/// `esi`/`edi`.
+fn r10b_packet_stub(log: u32, rv: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0xbf];
+    c.extend_from_slice(&(log + 0x10).to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x10, 0xc1, 0xe1, 0x02, 0xf3, 0xa5]);
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x10, 0xa3]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.push(0xb8);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group B (r10) on `t`: `yiTexTargetClear` with and without a frame,
+/// with sizes (odd, negative, huge) or ranges, the packet logged by the
+/// sender's stand-in.
+fn r10b_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(0x200);
+    let rv = rng.next();
+    t.stub(
+        Some(ffx_field::yipoly::SEND_GS_PACKET),
+        0x800,
+        &r10b_packet_stub(log, rv),
+    );
+    let work = t.stack_scratch(0x400);
+    for k in 0..cases {
+        t.fill(log, 0x200, rng);
+        let frame = if rng.below(3) == 0 { 0 } else { rng.next() };
+        let u = match k % 3 {
+            0 => 0,
+            _ => rng.next(),
+        };
+        let size = |rng: &mut Xorshift| match rng.below(4) {
+            0 => rng.next(),
+            1 => rng.below(0x800),
+            _ => 1 << rng.below(11),
+        };
+        let (v, h) = (size(rng), size(rng));
+        t.same(
+            "yiTexTargetClear",
+            |o| o.eax(0x0091_26f0, &[frame, u, v, h]),
+            |o| ffx_field::yipoly::yi_tex_target_clear(o, frame, (u, v), h, work, call),
+        );
+    }
+}
+
+/// Group B (r10) on the image.
+#[test]
+fn r10b_tex_target_clear_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_b001);
+    r10b_cases(&mut t, &mut rng, 300);
+}
+
+/// Group B (r10) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r10b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0010_b002);
+    r10b_cases(&mut t, &mut rng, 150);
+}
+
+// ---- field agent r10, group C: the grid marks' texture coordinates ----
+
+/// Group C (r10) on `t`: `AbmapGridMarkUVs` over a work area at `ab`
+/// (random marks, frame counter and corner scales), the vertex info
+/// `"NoTexture"` a stand-in's, frames skipped now and then.
+fn r10c_cases(t: &mut Twin, rng: &mut Xorshift, ab: u32, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 4), t.alloc(4));
+    let (vi, uvs, pkt) = (t.alloc(0x100), t.alloc(0x40 * 400), t.alloc(0x200));
+    let info = t.alloc(0x40);
+    t.cave_from(
+        0x500,
+        &[(
+            Some(ffx_field::abmap_draw::GET_VERTEX_INFO),
+            log_stub(log, rv, 1, 2),
+        )],
+    );
+    t.put(rv, vi);
+    t.put(vi + 0x94, info);
+    t.put(info + 0x18, uvs);
+    let pp = t.b.rebase(0x01a8_60ec);
+    t.put(pp, pkt);
+    let skip = ffx_field::abmap_draw::SKIP_FRAME;
+    for k in 0..cases {
+        t.put(log, 0u32);
+        t.set(skip, if k % 7 == 3 { 1 << rng.below(32) } else { 0 });
+        let dense = rng.below(3);
+        for c in 0..(17 * 20) {
+            let mark = if rng.below(4) <= dense {
+                u8::try_from(1 + rng.below(255)).unwrap()
+            } else {
+                0
+            };
+            t.put(ab + 0x12e60 + c, mark);
+        }
+        t.put(ab + 0x11698, rng.next());
+        for w in 0..(18 * 0x150 / 4) {
+            let v = match (w % 4, rng.below(4)) {
+                (3, 0) => r6b_fine(rng, -1e6, 1e6),
+                (3, _) => float_in(rng, -3, 3),
+                _ => rng.next(),
+            };
+            t.put(ab + 0x116c0 + 4 * w, v);
+        }
+        t.same(
+            "AbmapGridMarkUVs",
+            |o| o.void(0x00a4_ac20, &[]),
+            |m| ffx_field::abmap_draw::abmap_grid_mark_uvs(m, call),
+        );
+    }
+}
+
+/// Group C (r10) on the image.
+#[test]
+fn r10c_grid_mark_uvs_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_c001);
+    let ab = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, ab);
+    r10c_cases(&mut t, &mut rng, ab, 60);
+}
+
+/// Group C (r10) on the snapshot (`FFX_SNAPSHOT`), over a synthetic work
+/// area when the snapshot has none.
+#[test]
+fn r10c_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0010_c002);
+    let mut ab = ffx_field::abmap::ABMAP.get(&t.b);
+    if ab == 0 {
+        ab = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, ab);
+    }
+    r10c_cases(&mut t, &mut rng, ab, 30);
+}
+
+// ---- field agent r10, group D: the sphere grid's corners projected ----
+
+/// A view matrix for group D: random (points behind the eye too), or a
+/// scaled, translated one whose projections land exactly on the screen
+/// box's edges at some grid points (the zero flags), with `w` from 0.5
+/// to 2 (or negative: every point dropped).
+fn r10d_matrix(rng: &mut Xorshift) -> [u32; 16] {
+    let mut m = [0u32; 16];
+    if rng.below(3) == 0 {
+        for (i, v) in m.iter_mut().enumerate() {
+            *v = if i % 5 == 0 || rng.below(3) == 0 {
+                r6b_fine(rng, -2.0, 2.0)
+            } else {
+                0
+            };
+        }
+        for v in &mut m[12..] {
+            *v = r6b_fine(rng, -3000.0, 3000.0);
+        }
+        if rng.below(4) == 0 {
+            // inf times the point's z 0: a NaN w, the point dropped
+            m[11 - rng.below(2) as usize * 3] = f32::INFINITY.to_bits();
+        }
+        return m;
+    }
+    let pick = |rng: &mut Xorshift, s: &[f32]| {
+        s[usize::try_from(rng.below(u32::try_from(s.len()).unwrap())).unwrap()]
+    };
+    let w = pick(rng, &[1.0, 1.0, 2.0, 0.5, -1.0]);
+    let (sx, sy) = (
+        pick(rng, &[0.25, 0.5, 0.125]),
+        pick(rng, &[0.25, 0.5, 0.125]),
+    );
+    let (ex, ey) = (pick(rng, &[1528.0, 2576.0]), pick(rng, &[1600.0, 2304.0]));
+    #[allow(clippy::cast_precision_loss)] // small
+    let (x0, y0) = (
+        -2560.0 + 256.0 * rng.below(21) as f32,
+        -2336.0 + 256.0 * rng.below(18) as f32,
+    );
+    m[0] = (sx * w).to_bits();
+    m[5] = (sy * w).to_bits();
+    m[10] = 1f32.to_bits();
+    m[12] = ((ex - sx * x0) * w).to_bits();
+    m[13] = ((ey - sy * y0) * w).to_bits();
+    m[14] = r6b_fine(rng, -100.0, 100.0);
+    m[15] = w.to_bits();
+    if rng.below(4) == 0 {
+        // w grows across the grid and is exactly 0 at its left edge
+        m[3] = (w / 2560.0).to_bits();
+    }
+    m
+}
+
+/// Group D (r10) on `t`: `AbmapProjectGrid` over a work area at `ab`
+/// (view matrices of [`r10d_matrix`]), with the emulated VU0 and EE
+/// registers it reads (vf00, the EE zero register, the status) random
+/// now and then.
+fn r10d_cases(t: &mut Twin, rng: &mut Xorshift, ab: u32, cases: u32) {
+    let vf00 = t.b.rebase(0x00c0_a004);
+    for k in 0..cases {
+        let m = r10d_matrix(rng);
+        for (i, v) in (0u32..).zip(m) {
+            t.put(ab + 0x113e0 + 4 * i, v);
+        }
+        t.fill(ab + 0x116c0, 18 * 0x150, rng);
+        t.fill(ab + 0x12e60, 17 * 20, rng);
+        let w = if k % 4 == 1 {
+            float_in(rng, 1, 3)
+        } else {
+            1f32.to_bits()
+        };
+        t.put(vf00, [0u32, 0, 0, w]);
+        if k % 5 == 2 {
+            t.put(vf00, float_in(rng, -2, 2));
+        }
+        t.put(t.b.rebase(0x00c8_f508), rng.next() & 0xff3f);
+        t.same(
+            "AbmapProjectGrid",
+            |o| o.void(0x00a4_7630, &[]),
+            ffx_field::abmap_draw::abmap_project_grid,
+        );
+    }
+}
+
+/// Group D (r10) on the image.
+#[test]
+fn r10d_project_grid_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_d001);
+    let ab = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, ab);
+    r10d_cases(&mut t, &mut rng, ab, 60);
+}
+
+/// Group D (r10) on the snapshot (`FFX_SNAPSHOT`), over a synthetic work
+/// area when the snapshot has none.
+#[test]
+fn r10d_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0010_d002);
+    let mut ab = ffx_field::abmap::ABMAP.get(&t.b);
+    if ab == 0 {
+        ab = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, ab);
+    }
+    r10d_cases(&mut t, &mut rng, ab, 30);
+}
+
+// ---- field agent r10, group F: a player tag's screen rectangle ----
+
+/// Group F (r10) on `t`: `AbmapPlyTagRect` for random tags (position,
+/// offsets, anchor corner) over a work area at `ab` (view matrices of
+/// [`r10d_matrix`], some zooms), the tag globals random.
+fn r10f_cases(t: &mut Twin, rng: &mut Xorshift, ab: u32, cases: u32) {
+    let (tag, out) = (t.alloc(0x60), t.alloc(0x10));
+    let vf00 = t.b.rebase(0x00c0_a004);
+    for k in 0..cases {
+        let m = r10d_matrix(rng);
+        for (i, v) in (0u32..).zip(m) {
+            t.put(ab + 0x113e0 + 4 * i, v);
+        }
+        let zoom = [0.5f32, 0.25, 0.125, 1.0, 0.375][rng.below(5) as usize];
+        t.put(ab + 0x11350, zoom.to_bits());
+        t.fill(tag, 0x60, rng);
+        t.fill(out, 0x10, rng);
+        #[allow(clippy::cast_precision_loss)] // small
+        for i in 0..2 {
+            let v = -2560.0 + 256.0 * rng.below(21) as f32 + 16.0 * rng.range(-8, 8) as f32;
+            t.put(tag + 0x10 + 4 * i, v.to_bits());
+        }
+        if k % 4 == 2 {
+            // at the grid's left edge, where some matrices put w at 0
+            t.put(tag + 0x10, (-2560f32).to_bits());
+        }
+        t.put(tag + 0x18, float_in(rng, -4, 4));
+        t.put(tag + 0x1c, 1f32.to_bits());
+        let w = if k % 4 == 1 {
+            float_in(rng, 1, 3)
+        } else {
+            1f32.to_bits()
+        };
+        t.put(vf00, [0u32, 0, 0, w]);
+        t.fill(t.b.rebase(0x0230_5804), 0x30, rng);
+        t.same(
+            "AbmapPlyTagRect",
+            |o| {
+                o.void(0x00a4_82d0, &[tag, out]);
+            },
+            |m| ffx_field::abmap_draw::abmap_ply_tag_rect(m, tag, out),
+        );
+    }
+}
+
+/// Group F (r10) on the image.
+#[test]
+fn r10f_ply_tag_rect_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0010_f001);
+    let ab = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, ab);
+    r10f_cases(&mut t, &mut rng, ab, 400);
+}
+
+/// Group F (r10) on the snapshot (`FFX_SNAPSHOT`), over a synthetic work
+/// area when the snapshot has none.
+#[test]
+fn r10f_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0010_f002);
+    let mut ab = ffx_field::abmap::ABMAP.get(&t.b);
+    if ab == 0 {
+        ab = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, ab);
+    }
+    r10f_cases(&mut t, &mut rng, ab, 200);
+}

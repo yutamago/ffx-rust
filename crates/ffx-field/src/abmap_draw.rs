@@ -68,33 +68,8 @@ where
 {
     let g = ABMAP.get(mem);
     let at = |o: u32| g.wrapping_add(o);
-    // the pulse: p runs -1..1 over 512 frames
-    #[allow(clippy::cast_possible_wrap)] // 9 bits
-    let frame = (mem.read::<u32>(at(0x11698)) & 0x1ff) as i32;
-    let frame = x87::load(x87::store(f64::from(frame)));
-    let p = x87::store(frame * 0.003_906_25 - 1.0);
+    let quads = mark_quads(mem);
     let (ld, st) = (x87::load, x87::store);
-    let q = st(ld(p) + 2.0);
-    let r = st(1.0 - ld(p));
-    let r5 = st(ld(r) + 0.5);
-    let s = st(ld(r) + 2.0);
-    let u = st(ld(r5) + 2.0);
-    let (one, zero) = (0x3f80_0000, 0);
-    // the texture quads of the two strips, corner by corner
-    let quads = [
-        [
-            [p, p, one, zero],
-            [q, p, one, zero],
-            [p, q, one, zero],
-            [q, q, one, zero],
-        ],
-        [
-            [r, r5, one, zero],
-            [s, r5, one, zero],
-            [r, u, one, zero],
-            [s, u, one, zero],
-        ],
-    ];
     let (elem, scratch) = (work, work.wrapping_add(0x80));
 
     for row in 0..GRID_ROWS {
@@ -157,6 +132,101 @@ where
         }
     }
     at(0x1182c + GRID_ROWS * CORNER_ROW)
+}
+
+/// `g_GraphicSkipFrame` (`0x012fb7d0`): set, a frame is skipped.
+pub const SKIP_FRAME: Global<u32> = Global::new(0x012f_b7d0);
+/// `graphicAbmapGetVertexInfo(name, n)` (`0x00638fd0`).
+pub const GET_VERTEX_INFO: u32 = 0x0063_8fd0;
+/// `g_StrNoTexture` (`0x00b41b50`): `"NoTexture"`.
+pub const NO_TEXTURE: u32 = 0x00b4_1b50;
+
+/// The grid marks' pulsing texture quads (two strips of four corners) for
+/// the frame counter `g_Abmap + 0x11698`: `p` runs -1..1 over 512 frames,
+/// the first strip spans `p..p + 2`, the second `1 - p .. 3 - p` across and
+/// that plus 0.5 down. Each step rounded to `f32` as the originals store.
+fn mark_quads(mem: &impl Mem) -> [[[u32; 4]; 4]; 2] {
+    let g = ABMAP.get(mem);
+    #[allow(clippy::cast_possible_wrap)] // 9 bits
+    let frame = (mem.read::<u32>(g.wrapping_add(0x11698)) & 0x1ff) as i32;
+    let frame = x87::load(x87::store(f64::from(frame)));
+    let p = x87::store(frame * 0.003_906_25 - 1.0);
+    let (ld, st) = (x87::load, x87::store);
+    let q = st(ld(p) + 2.0);
+    let r = st(1.0 - ld(p));
+    let r5 = st(ld(r) + 0.5);
+    let s = st(ld(r) + 2.0);
+    let u = st(ld(r5) + 2.0);
+    let (one, zero) = (0x3f80_0000, 0);
+    [
+        [
+            [p, p, one, zero],
+            [q, p, one, zero],
+            [p, q, one, zero],
+            [q, q, one, zero],
+        ],
+        [
+            [r, r5, one, zero],
+            [s, r5, one, zero],
+            [r, u, one, zero],
+            [s, u, one, zero],
+        ],
+    ]
+}
+
+/// `AbmapGridMarkUVs()` (`0x00a4ac20`, name ours; from `eiAbmDraw`
+/// `0x00a545a0`): the texture coordinates of the grid marks drawn through
+/// the vertex info `"NoTexture"` (`graphicAbmapGetVertexInfo("NoTexture",
+/// 10)`, its `+0x94`, the coordinates at its `+0x18`). Nothing while a
+/// frame is skipped ([`SKIP_FRAME`]). For each set cell of the 17 x 20
+/// grid (marks `g_Abmap + 0x12e60`) the eight pulsing quad corners of
+/// [`abmap_draw_grid_marks`] are scaled by their grid corner's scale
+/// (`+0xc` of the corner records at `g_Abmap + 0x116c0`) through the
+/// emulated VU0 registers (`0x00c8f7d0`, the scale at `0x00c8f7e0`) into
+/// the packet buffer [`PACKET`] (eight vectors), then the next 16
+/// coordinates get `x * 512` and `1 - y * 512` of each.
+pub fn abmap_grid_mark_uvs<M, C>(mem: &mut M, call: &mut C)
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let marks = ABMAP.get(mem).wrapping_add(MARKS);
+    if SKIP_FRAME.get(mem) != 0 {
+        return;
+    }
+    let (f, name) = (mem.rebase(GET_VERTEX_INFO), mem.rebase(NO_TEXTURE));
+    let info = call(mem, f, &[name, 10]);
+    let info = mem.read::<u32>(info.wrapping_add(0x94));
+    let quads = mark_quads(mem);
+    let corners = ABMAP.get(mem).wrapping_add(CORNERS);
+    let mut marked = 0u32;
+    for row in 0..GRID_ROWS {
+        for col in 0..GRID_COLS {
+            if mem.read::<u8>(marks.wrapping_add(row * GRID_COLS + col)) == 0 {
+                continue;
+            }
+            let c00 = corners.wrapping_add(row * CORNER_ROW + col * 0x10);
+            let corner = [c00, c00 + 0x10, c00 + CORNER_ROW, c00 + CORNER_ROW + 0x10];
+            let out = PACKET.get(mem);
+            let corners_twice = corner.iter().cycle();
+            for (k, (vec, &c)) in (0u32..).zip(quads.into_iter().flatten().zip(corners_twice)) {
+                let scale = mem.read::<u32>(c + 0xc);
+                let v = scale_vector(mem, vec, scale);
+                mem.write(out.wrapping_add(0x10 * k), v);
+            }
+            let uv = mem
+                .read::<u32>(info.wrapping_add(0x18))
+                .wrapping_add(0x40 * marked);
+            let (ld, st) = (x87::load, x87::store);
+            for k in 0..8u32 {
+                let x = mem.read::<u32>(out.wrapping_add(0x10 * k));
+                mem.write(uv.wrapping_add(8 * k), st(ld(x) * 512.0));
+                let y = mem.read::<u32>(out.wrapping_add(0x10 * k + 4));
+                mem.write(uv.wrapping_add(8 * k + 4), st(1.0 - ld(y) * 512.0));
+            }
+            marked += 1;
+        }
+    }
 }
 
 /// The scratch [`abmap_draw_map`] needs: the node's local matrix (0x40
@@ -463,3 +533,218 @@ where
 const fn base_of(k: u32) -> u32 {
     0x20 + 0x30 * k
 }
+
+/// The emulated VU0 registers [`abmap_project_grid`] leaves its work in:
+/// the transformed corner (`0x00c8f930`) and the grid point (`0x00c8f940`).
+const VU_930: u32 = 0x00c8_f930;
+/// `setZSFlag` (`0x0042ef30`) and `setSSFlag` (`0x0042ef20`): the sticky
+/// zero and sign bits of [`CLIP_FLAGS`].
+const ZS_FLAG: u32 = 0x40;
+const SS_FLAG: u32 = 0x80;
+
+/// The status bits a VU0 `vsub.xy` against `0` sets (`setZSFlag`,
+/// `setSSFlag`), then `restoreVf00Register` (`0x0042ef00`): vf00 back to
+/// `(0, 0, 0, 1)`. A NaN sets neither.
+fn vu_flags_xy<M: Mem>(mem: &mut M, d: [u32; 2]) {
+    let [a, b] = d.map(x87::load);
+    let flags = mem.rebase(CLIP_FLAGS);
+    if a == 0.0 || b == 0.0 {
+        mem.write(flags, mem.read::<u32>(flags) | ZS_FLAG);
+    }
+    if a < 0.0 || b < 0.0 {
+        mem.write(flags, mem.read::<u32>(flags) | SS_FLAG);
+    }
+    write4(mem, mem.rebase(VF00), [0, 0, 0, 0x3f80_0000]);
+}
+
+/// The grid of [`abmap_project_grid`]: 18 rows from y -2336 and 21
+/// columns from x -2560, 256 apart (map units).
+const GRID_POINTS: (u32, u32) = (18, 21);
+
+/// `AbmapProjectGrid()` (`0x00a47630`, name ours; first in the ability
+/// map's draw `0x00a54660`): the grid corners [`abmap_draw_grid_marks`]
+/// and [`abmap_grid_mark_uvs`] use. Each grid point `(x, y, 0)` goes through
+/// the view matrix `g_Abmap + 0x113e0` as VU0 macro code (point in
+/// `0x00c8f940` with w 1, matrix copied to `0x00c8f950`, accumulator
+/// `0x00c8f790`, result `0x00c8f930`; the last row times vf00.w). A point
+/// with `w <= 0` (or NaN) is left alone. Else `Q = vf00.w / w`
+/// (`0x00c8f788`), the point times `Q`, checked against the screen box
+/// (1528, 1600)..(2576, 2304) as the original's `vsub` pair does (status
+/// `0x00c8fac4` from the EE zero register, then the zero and sign bits;
+/// vf00 restored), and its corner record (`0x10` bytes from `g_Abmap +
+/// 0x116c0`) gets `x * 16`, `y * 16`, `z` (`ftol2_sse`) and `Q + vf00.x`;
+/// the registers keep the original's last values (`0x00c8f7d0`..,
+/// `0x00c8f800`.. the integers, `0x00c8f810` the projected point,
+/// `0x00c8f830` `Q + vf00.x`). Then all 340 grid marks (`g_Abmap +
+/// 0x12e60`) are set to 1.
+pub fn abmap_project_grid<M: Mem>(mem: &mut M) {
+    use ffx_bridge::x87::ftol;
+    let (ld, st) = (x87::load, x87::store);
+    let reg = |mem: &M, a: u32| mem.rebase(a);
+    let one = 0x3f80_0000u32;
+    let records = ABMAP.get(mem).wrapping_add(CORNERS);
+    // vf00.w as the original holds it: read at the start and again after
+    // each projected point (restoreVf00Register sets it to 1)
+    let mut vf00_w = ld(mem.read::<u32>(reg(mem, VF00) + 0xc));
+    let (rows, cols) = GRID_POINTS;
+    for row in 0..rows {
+        for col in 0..cols {
+            let record = records.wrapping_add(0x10 * (row * cols + col));
+            #[allow(clippy::cast_possible_wrap)] // small
+            let (x, y) = (
+                st(-2560.0 + 256.0 * f64::from(col as i32)),
+                st(-2336.0 + 256.0 * f64::from(row as i32)),
+            );
+            write4(mem, reg(mem, VU_OUT), [x, y, 0, one]);
+            let g = ABMAP.get(mem);
+            let view: [[u32; 4]; 4] = [0, 0x10, 0x20, 0x30].map(|o| read4(mem, g + 0x113e0 + o));
+            for (i, row) in (0u32..).zip(view) {
+                write4(mem, reg(mem, VU_LOCAL) + 0x10 * i, row);
+            }
+            let (p, acc) = vu_transform(view, [x, y, 0, st(vf00_w)]);
+            write4(mem, reg(mem, VU_ACC), acc);
+            write4(mem, reg(mem, VU_930), p);
+            // fcom: behind the eye, on it, or NaN
+            let w = ld(p[3]);
+            if w.is_nan() || w <= 0.0 {
+                continue;
+            }
+
+            // projected: Q = vf00.w / w
+            let q = st(vf00_w / w);
+            mem.write(reg(mem, VU_Q), q);
+            let qf = ld(q);
+            let proj = [
+                st(ld(p[0]) * qf),
+                st(ld(p[1]) * qf),
+                st(ld(p[2]) * qf),
+                st(ld(p[3]) * qf),
+            ];
+            let vf00_x = ld(mem.read::<u32>(reg(mem, VF00)));
+            let q_out = st(qf + vf00_x);
+            mem.write(reg(mem, VU_830), q_out);
+
+            // the screen box test, two vsub.xy against (1528, 1600) and
+            // (2576, 2304), as the original leaves the registers
+            let (box_min, box_max) = ([0x44bf_0000u32, 0x44c8_0000], [0x4521_0000u32, 0x4510_0000]);
+            write4(
+                mem,
+                reg(mem, VU0_VECTOR),
+                [box_min[0], box_min[1], proj[2], proj[3]],
+            );
+            mem.write(reg(mem, VU_E0), box_max[0]);
+            mem.write(reg(mem, VU_E0) + 4, box_max[1]);
+            write4(mem, reg(mem, VU_800), proj);
+            let ee_zero = mem.read::<u32>(reg(mem, EE_ZERO));
+            mem.write(reg(mem, CLIP_FLAGS), ee_zero);
+            let low = [
+                st(ld(proj[0]) - ld(box_min[0])),
+                st(ld(proj[1]) - ld(box_min[1])),
+            ];
+            vu_flags_xy(mem, low);
+            let high = [
+                st(ld(box_max[0]) - ld(proj[0])),
+                st(ld(box_max[1]) - ld(proj[1])),
+            ];
+            mem.write(reg(mem, VU_F0), high[0]);
+            mem.write(reg(mem, VU_F0) + 4, high[1]);
+            vu_flags_xy(mem, high);
+            write4(mem, reg(mem, VU_810), proj);
+
+            // the record: x and y in sixteenths, z, and Q + vf00.x
+            let ints = [
+                ftol(mem, ld(proj[0]) * 16.0),
+                ftol(mem, ld(proj[1]) * 16.0),
+                ftol(mem, ld(proj[2])),
+                ftol(mem, ld(proj[3])),
+            ];
+            write4(mem, reg(mem, VU_800), ints);
+            write4(mem, record, [ints[0], ints[1], ints[2], x87::copy(q_out)]);
+            vf00_w = ld(mem.read::<u32>(reg(mem, VF00) + 0xc));
+        }
+    }
+    let marks = ABMAP.get(mem).wrapping_add(MARKS);
+    for k in 0..GRID_ROWS * GRID_COLS {
+        mem.write(marks + k, 1u8);
+    }
+}
+
+/// `AbmapPlyTagRect(tag, out)` (`0x00a482d0`, name ours; three calls in
+/// `0x00a5a4b0`): a player tag's screen rectangle.
+/// [`crate::abmap::bridge::abmap_setup_ply_tag`] first (the tag's sizes
+/// into [`crate::abmap::PLY_TAG`]). The tag's position (`+0x10`, in
+/// `0x00c8f940`) goes through the view matrix `g_Abmap + 0x113e0` as VU0
+/// macro code (matrix copied to `0x00c8f950`, accumulator `0x00c8f790`,
+/// result `0x00c8f930`; the last row times vf00.w). Behind or on the eye
+/// (`w < 0` or `w == 0`, not NaN) `out[0]` gets 1e11 and nothing else.
+/// Else `Q = vf00.w / w` (`0x00c8f788`, `w` also at `0x00c8f7dc` and
+/// `0x00c8f7e0`), the projected point in `0x00c8f7d0`, offset by the tag's
+/// `i16 +0x46`/`+0x48 >> 4` over the zoom `g_Abmap + 0x11350`; the width
+/// global (`PLY_TAG + 0x24`) gets `ftol(10 / zoom + width)`, and `out` the
+/// rectangle `(x0, y0, x1, y1)` that has the point at the corner `+0x4e &
+/// 3` picks (0 bottom left, 1 bottom right, 2 top right, 3 top left), the
+/// height from `PLY_TAG + 0x20`.
+pub fn abmap_ply_tag_rect<M: Mem>(mem: &mut M, tag: u32, out: u32) {
+    let (ld, st) = (x87::load, x87::store);
+    let reg = |mem: &M, a: u32| mem.rebase(a);
+    crate::abmap::bridge::abmap_setup_ply_tag(mem, tag);
+    let g = ABMAP.get(mem);
+    let pos = read4(mem, tag.wrapping_add(0x10));
+    write4(mem, reg(mem, VU_OUT), pos);
+    let view: [[u32; 4]; 4] = [0, 0x10, 0x20, 0x30].map(|o| read4(mem, g + 0x113e0 + o));
+    for (i, row) in (0u32..).zip(view) {
+        write4(mem, reg(mem, VU_LOCAL) + 0x10 * i, row);
+    }
+    let vf00_w = mem.read::<u32>(reg(mem, VF00) + 0xc);
+    let (p, acc) = vu_transform(view, [pos[0], pos[1], pos[2], vf00_w]);
+    write4(mem, reg(mem, VU_ACC), acc);
+    write4(mem, reg(mem, VU_930), p);
+    let w = ld(p[3]);
+    if w <= 0.0 {
+        mem.write(out, x87::copy(mem.read::<u32>(reg(mem, FAR_AWAY))));
+        return;
+    }
+    mem.write(reg(mem, VU_E0), x87::copy(p[3]));
+    let q = st(ld(vf00_w) / w);
+    mem.write(reg(mem, VU_Q), q);
+    let qf = ld(q);
+    let proj = [
+        st(ld(p[0]) * qf),
+        st(ld(p[1]) * qf),
+        st(qf * ld(p[2])),
+        p[3],
+    ];
+    write4(mem, reg(mem, VU0_VECTOR), proj);
+
+    // the anchor point: the projection offset by the tag's own (12.4)
+    let zoom = ld(mem.read::<u32>(g.wrapping_add(0x11350)));
+    let offset = |mem: &M, at: u32| {
+        let v = i32::from(mem.read::<i16>(tag.wrapping_add(at)) >> 4);
+        ld(st(f64::from(v))) / zoom
+    };
+    let x = st(offset(mem, 0x46) + ld(proj[0]));
+    let y = st(offset(mem, 0x48) + ld(proj[1]));
+    let (width_at, height_at) = (
+        reg(mem, crate::abmap::PLY_TAG + 0x24),
+        reg(mem, crate::abmap::PLY_TAG + 0x20),
+    );
+    let ten = mem.read::<f64>(reg(mem, TEN_F64));
+    let width = mem.read::<i32>(width_at);
+    let width = ffx_bridge::x87::ftol(mem, ten / zoom + f64::from(width));
+    mem.write(width_at, width);
+    let int = |mem: &M, at: u32| ld(st(f64::from(mem.read::<i32>(at))));
+    let (tag_w, tag_h) = (int(mem, width_at), int(mem, height_at));
+    let (xf, yf) = (ld(x), ld(y));
+    let rect = match mem.read::<u8>(tag.wrapping_add(0x4e)) & 3 {
+        0 => [x, st(yf - tag_h), st(tag_w + xf), y],
+        1 => [st(xf - tag_w), st(yf - tag_h), x, y],
+        2 => [st(xf - tag_w), y, x, st(tag_h + yf)],
+        _ => [x, y, st(tag_w + xf), st(tag_h + yf)],
+    };
+    write4(mem, out, rect);
+}
+
+/// 1e11 (`f32`, `.rdata`): the "far away" x of a tag behind the eye.
+const FAR_AWAY: u32 = 0x00b7_b710;
+/// 10.0 (`f64`, `.rdata`).
+const TEN_F64: u32 = 0x00b9_22b0;
