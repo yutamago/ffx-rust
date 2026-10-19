@@ -9549,7 +9549,7 @@
 0x0081f100	dead	unreachable from the entry point and every pointer table
 0x0081f130	dead	unreachable from the entry point and every pointer table
 0x0081f160	dead	unreachable from the entry point and every pointer table
-0x0081f210	logic	default (no rule: ported to be safe)
+0x0081f210	dead	reviewed: SqsStraightStreamingDataSend: only caller is thunk 0x885ed0, whose only caller 0x77a8e0 is never reached (field round 13)
 0x0081f550	dead	unreachable from the entry point and every pointer table
 0x0081f6c0	logic	default (no rule: ported to be safe)
 0x0081f770	logic	default (no rule: ported to be safe)
@@ -16092,17 +16092,17 @@
 0x0093d060	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d090	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d160	dead	unreachable from the entry point and every pointer table
-0x0093d1b0	logic	ran in the coverage sessions, called by logic: 0x93d5a0, 0x93d620, 0x93d690
+0x0093d1b0	logic	ran in the coverage sessions, called by logic: FFXSamp0ViewScreenMatrix
 0x0093d290	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d2c0	dead	unreachable from the entry point and every pointer table
 0x0093d340	dead	unreachable from the entry point and every pointer table
 0x0093d3d0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d440	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d490	dead	unreachable from the entry point and every pointer table
-0x0093d550	logic	default (no rule: ported to be safe)
-0x0093d5a0	logic	default (no rule: ported to be safe)
-0x0093d620	logic	default (no rule: ported to be safe)
-0x0093d690	logic	default (no rule: ported to be safe)
+0x0093d550	debug	only calls debug code (rcuiRotateX, rcuiRotateY, rcuiRotateZ)
+0x0093d5a0	debug	debug name: rcuiRotateX
+0x0093d620	debug	debug name: rcuiRotateY
+0x0093d690	debug	debug name: rcuiRotateZ
 0x0093d710	debug	debug name: rcuiProjectToInt
 0x0093d7d0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d800	dead	unreachable from the entry point and every pointer table
