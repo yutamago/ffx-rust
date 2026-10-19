@@ -14443,7 +14443,7 @@
 0x008ed380	glue	GS packet API (TOAdpEasyShapeXYWHC2): appends to or kicks a packet; replaced by ffx-render
 0x008edfc0	glue	GS/DMA packet writer (TOAdpFontM_ASCII; writes no game state): replaced by ffx-render
 0x008ee010	dead	unreachable from the entry point and every pointer table
-0x008ee060	logic	default (no rule: ported to be safe)
+0x008ee060	glue	GS/DMA packet writer (TODrawFont3d80Glyph_008eeee0; writes no game state): replaced by ffx-render
 0x008ee0b0	dead	unreachable from the entry point and every pointer table
 0x008ee100	dead	unreachable from the entry point and every pointer table
 0x008ee150	dead	unreachable from the entry point and every pointer table
@@ -14454,7 +14454,7 @@
 0x008ee600	dead	unreachable from the entry point and every pointer table
 0x008ee9c0	dead	unreachable from the entry point and every pointer table
 0x008eed20	dead	unreachable from the entry point and every pointer table
-0x008eeee0	logic	default (no rule: ported to be safe)
+0x008eeee0	glue	GS packet API (TODrawFont3d80Glyph_008eeee0): appends to or kicks a packet; replaced by ffx-render
 0x008ef2b0	dead	unreachable from the entry point and every pointer table
 0x008ef670	glue	GS packet API (TOAdpALPHA): appends to or kicks a packet; replaced by ffx-render
 0x008ef6e0	dead	unreachable from the entry point and every pointer table
@@ -14524,7 +14524,7 @@
 0x008f3220	dead	unreachable from the entry point and every pointer table
 0x008f3280	glue	GS/DMA packet writer (calls the packet writers 0x8edfc0; writes no game state): replaced by ffx-render
 0x008f3300	glue	GS packet API (TOMkpBtlDigitRight_008f3300): appends to or kicks a packet; replaced by ffx-render
-0x008f3390	logic	default (no rule: ported to be safe)
+0x008f3390	glue	GS/DMA packet writer (calls the packet writers 0x8ee060; writes no game state): replaced by ffx-render
 0x008f3420	glue	GS packet API (TOMkpBtlDigitRight_008f3420): appends to or kicks a packet; replaced by ffx-render
 0x008f34c0	logic	default (no rule: ported to be safe)
 0x008f3820	logic	default (no rule: ported to be safe)
