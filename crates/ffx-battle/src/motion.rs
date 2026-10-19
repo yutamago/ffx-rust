@@ -10,6 +10,7 @@ pub mod bridge {
 
     use crate::actor::bridge::ms_get_chr;
     use crate::atel::bridge::Script;
+    use crate::exec::bridge::Call;
     use crate::pos::bridge::Trig;
     use crate::target::bridge::Dm;
 
@@ -19,6 +20,13 @@ pub mod bridge {
 
     fn half(mem: &impl Mem, p: u32, o: u32) -> u16 {
         mem.read(p.wrapping_add(o))
+    }
+
+    fn game<M: Mem>(mem: &mut M, call: Call<'_, M>, sym: u32, args: &[u32]) -> u32 {
+        let f = sym
+            .wrapping_sub(ffx_bridge::IMAGE_BASE)
+            .wrapping_add(mem.image_base());
+        call(mem, f, args)
     }
 
     /// `MsCalcMotionSpeed(actor)` (`0x0078ac20`): the actor's speed factor
@@ -184,5 +192,101 @@ pub mod bridge {
             mem.write(a.wrapping_add(0x428), 0u8);
             ms_set_motion(mem, s, i, 0, 0, 0, 1, 0, 0);
         }
+    }
+
+    /// `AtelPopStackInteger(worker, stack)` (script).
+    pub const ATEL_POP_STACK_INTEGER: u32 = 0x0086_df00;
+    /// `AtelGetBattleIdAdrs2(worker)` (script): the worker's actor index
+    /// (a byte, 0xff for none).
+    pub const ATEL_GET_BATTLE_ID_ADRS2: u32 = 0x0086_a990;
+    /// `Ch_ResetMotion(chr)` (chara).
+    pub const CH_RESET_MOTION: u32 = 0x0082_b080;
+    /// `Ch_SetSysMotion(chr, set, motion)` (chara).
+    pub const CH_SET_SYS_MOTION: u32 = 0x0083_7d00;
+    /// `Ch_MotionSetNextHokan(chr, frames)` (chara).
+    pub const CH_MOTION_SET_NEXT_HOKAN: u32 = 0x0082_b010;
+    /// `Ch_MotionSetHokan(chr, frames)` (chara).
+    pub const CH_MOTION_SET_HOKAN: u32 = 0x0082_afb0;
+    /// `Ch_GetSeqFrame(chr)` (chara).
+    pub const CH_GET_SEQ_FRAME: u32 = 0x0083_6af0;
+
+    /// `Battle_ScriptPlayMotion(worker, args, stack, flag)`
+    /// (`0x007a8fc0`): the script's actor (`AtelGetBattleIdAdrs2`; 1 for
+    /// none) plays the motion popped from the stack (bit 0x8000: no
+    /// blending; `ms_motion_trans` of the rest), when its model is there
+    /// (`+0`) and shown (`+0x38`), the motion is one (not negative) and the
+    /// actor's motion is not stopped (`+0x3f3`): the model's motion reset
+    /// and set (system set `+0x20`), its blend frames 0 or (unless
+    /// `+0x4ac` bit 7 keeps the next blend) the motion table's
+    /// ([`super::super::minor::bridge::ms_mot_bin_frame`] at the old motion
+    /// `+0x3f0`), a pending move reset (`+0x405`), the motion kept
+    /// (`+0x3f0`), `flag` (`+0x40a`), the speed recalculated. Returns the
+    /// motion's frames `<< 8` over the speed (`+0x402` with `+0x404` 1,
+    /// else `+0x3fc` times `+0x406` over 8, signed; not divided by 0),
+    /// `+0x434` (set meanwhile) cleared; 1 when it does not play or has no
+    /// frames.
+    pub fn battle_script_play_motion<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        worker: u32,
+        stack: u32,
+        flag: u8,
+    ) -> u32 {
+        let motion = game(mem, &mut *call, ATEL_POP_STACK_INTEGER, &[worker, stack]);
+        let id = game(mem, &mut *call, ATEL_GET_BATTLE_ID_ADRS2, &[worker]);
+        let i = u32::from(mem.read::<u8>(id));
+        if i == 0xff {
+            return 1;
+        }
+        let a = ms_get_chr(mem, i);
+        let chr: u32 = mem.read(a);
+        mem.write(a.wrapping_add(0x434), 1u8);
+        if chr == 0 || byte(mem, a, 0x38) == 0 {
+            return 1;
+        }
+        let no_blend = motion & 0x8000 != 0;
+        let m = crate::effect::bridge::ms_motion_trans(mem, &mut *call, a, motion & 0xffff_7fff);
+        if byte(mem, a, 0x3f3) != 0 || m.cast_signed() < 0 {
+            return 1;
+        }
+        game(mem, &mut *call, CH_RESET_MOTION, &[chr]);
+        let set = i32::from(mem.read::<i8>(a.wrapping_add(0x20))).cast_unsigned();
+        game(mem, &mut *call, CH_SET_SYS_MOTION, &[chr, set, m]);
+        if no_blend {
+            game(mem, &mut *call, CH_MOTION_SET_NEXT_HOKAN, &[chr, 0]);
+            game(mem, &mut *call, CH_MOTION_SET_HOKAN, &[chr, 0]);
+        } else {
+            if byte(mem, a, 0x4ac) & 0x80 == 0 {
+                game(mem, &mut *call, CH_MOTION_SET_NEXT_HOKAN, &[chr, 0]);
+            }
+            let old = u32::from(byte(mem, a, 0x3f0));
+            let frames = crate::minor::bridge::ms_mot_bin_frame(mem, a, m, old);
+            game(mem, &mut *call, CH_MOTION_SET_HOKAN, &[chr, frames]);
+        }
+        if byte(mem, a, 0x405) != 0 {
+            mem.write(a.wrapping_add(0x405), 0u8);
+            crate::misc::bridge::ms_move_reset(mem, a);
+        }
+        #[allow(clippy::cast_possible_truncation)] // the original's byte store
+        mem.write(a.wrapping_add(0x3f0), m as u8);
+        mem.write(a.wrapping_add(0x40a), flag);
+        ms_calc_motion_speed(mem, a);
+        let frames = game(mem, call, CH_GET_SEQ_FRAME, &[chr]).cast_signed();
+        if frames <= 0 {
+            return 1;
+        }
+        let speed = if byte(mem, a, 0x404) == 1 {
+            i32::from(half(mem, a, 0x402))
+        } else {
+            // signed, rounding towards 0 (never negative here)
+            i32::from(half(mem, a, 0x3fc)) * i32::from(byte(mem, a, 0x406)) / 8
+        };
+        let r = if speed == 0 {
+            frames
+        } else {
+            frames.wrapping_shl(8).wrapping_div(speed)
+        };
+        mem.write(a.wrapping_add(0x434), 0u8);
+        r.cast_unsigned()
     }
 }

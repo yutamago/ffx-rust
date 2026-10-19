@@ -3754,4 +3754,9 @@ ported! {
     SwapSaveGear @ 0x007a_b9f0 => extern "C" fn swap_save_gear(first: u32, second: u32) -> i32 {
         save::swap_save_gear(&mut mem(), first, second)
     }
+    /// `Battle_ScriptPlayMotion(worker, args, stack, flag)`: a script's
+    /// actor plays a motion (script and chara calls through the game).
+    Battle_ScriptPlayMotion @ 0x007a_8fc0 => extern "C" fn battle_script_play_motion(worker: u32, _args: u32, stack: u32, flag: u32) -> u32 {
+        motion::battle_script_play_motion(&mut mem(), &mut call_ptr, worker, stack, flag.to_le_bytes()[0])
+    }
 }

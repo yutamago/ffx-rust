@@ -974,6 +974,11 @@ as ported, not hookable.
   owner (`+6`). A `0x7000` ID among the two takes both pieces off (0xff
   in the save and the slot) and compares whole, so it never matches a
   worn byte.
+- `Battle_ScriptPlayMotion(worker, args, stack, flag)` (`0x007a8fc0`,
+  `ffx_battle::motion`) returns the motion's frames `<< 8` over the
+  speed (signed `idiv`; the frames themselves when the speed is 0), and
+  1 when the motion does not play or has no frames; `+0x434` stays set
+  then. Its script and chara callees go through the game.
 
 ## M2 remaining
 
