@@ -2280,6 +2280,162 @@ clip flags `0x00c8facc` per vertex, stopping at 0; the PS2's `vclip` that
 set those flags is not in the PC code, so the flags are left over from
 elsewhere and the transform's result is unused.
 
+## The warp, springs, the cross mark, map 0x61's FP step, the anmm ring and the grid load (field agent r13)
+
+`AbmapState_Warping()` (`0x00a47f00`), the state `AbmapStartWarp`
+installs, runs by its phase `g_Abmap +0x1164c`: 0 fades out (`+0x115c6 =
+0x80 - (n << 7) / 40`, a byte, `n` the frame `+0x1164d`) until the warp
+part (`0x01a86060`, `+0x1e`) is done, then clears the character's marker
+word `+0x110c4 + 0x50 chr` and goes to 1; 1 steps `+0x11620` by 1/12 and
+moves the camera x, y (`+0x11308`) from `+0x1163c` to the target node
+(`+0x11634`) with `FFXVu0InterVectorXYZ` while below 1.0 (NaN too), then
+goes to 2 with the warp sound, the camera on the node, the grid's ppp heap
+and part 1 of the warp effect there, the character on the node, its
+marker and player tag and the cursor camera; 2 fades in (`(n << 7) /
+40`) and, when the part is done, puts the saved state and draw hooks
+(`+0x115b0`, `+0x115b4`) back. Its `eax` in the fade-out's running
+frames is the division's `imul` low word with the fade in the low byte.
+
+`rcfxSpringCalc(s, sys)` (`0x00928aa0`) adds each spring's force to its
+pair of particles (`+0x20`, indices into the particle system's
+positions `+0x24`, velocities `+0x2c` and forces `+0x30`): with `d =
+pos[b] - pos[a]` and `l = max(|d|, rest / 1000)`, `d (1 / l) ((l - rest)
+k) + (vel[b] - vel[a]) c` (k `+0x28`, c `+0x2c`), added to `a`, taken
+from `b`; the stored steps are `d`, `|d|`, `1 / l`, `(l - rest) k`, the
+spring term and the sum.
+
+`rcPrimBatu(x, y, size, colour, ui)` (`0x009259c0`) draws the cross mark
+as two quads (`rcPrimDraw2D(0x44, verts, 4, colour)`) between
+`cgraphicSetNowUIType(2)` (with `ui`) and `(0)`: `h = size / 2`, `a =
+h * 0.6666667`, their heights scaled by `1.1666666 * 416 / 448`; the
+second quad keeps the first's `w` words.
+
+`rcbgFPm097Proc001(part)` (`0x00922600`, name ours) is map 0x61's FP
+step over its 9-entry list (`0x00c5e4b8`, 0x38 bytes: FP id, character
+id, element, kind 3 or 4, offset `+8`, rotation `+0x18`, scale `+0x28`).
+Until `+0x10` is set it restarts the FPs whose characters are found and
+starts two fades (-0.15 and 0.15 over 30 frames); with the sea it builds
+the sea's matrix (its angle times 651.9, x and y 0) and puts kind 3 FPs
+on it and kind 4 FPs on their character's element (scale, the y rotation
+less `Ch_GetRot * 651.9 + 1024`, the offset, a lift by `+0x14`, the
+sea), then runs both fades. The lift vector's x, z and w and the zero
+translation's w are never set: the port's frame starts zeroed.
+`rcbgScaleVector_009224b0` loads 16 bytes from its float argument on into
+the VU0 register `0x00c8f970` (the caller's stack past it), so the
+register's y, z, w are whatever the stack holds.
+
+`SqsCmdAnmm(ctx, cmd)` (`0x0081bbc0`, name ours after its message) is an
+IOP command on the context's record (`+0x220`), by `ctx +0x21a & 0x7000`:
+0 gives the record a ring of `cmd +2` entries of 0x50 bytes (`op_malloc`,
+`+0xbc`/`+0xa8`, state `+0xbb` 9) and adds the context's id to its list;
+0x1000 (the record) and 0x2000 (`opus_no_get`) append an entry to the
+target's ring (the next of `+2` modulo the size) with the command's jump
+target, the record's `+0x60`, `+0x80` and `+0x40` vectors (`+0x90` times
+16 with bit 15) and its offset from `ctx +0x320` / 256, unless `+0x212`
+is set; a ring that is not in state 9 prints "anmm should never be NULL
+in original PS2 version.". It returns the next command.
+
+`LoadAbmap()` (`0x00a45570`) reads file 9, 10 or 11 (by the save's grid
+kind) into `g_AbmapFile` (`0x01740870`); a file starting with `'1'` has
+the kind, node and link counts at `+2`, `+4`, `+6` and the records from
+`+0x10`: kinds of 16 bytes (to `+8`), nodes of 12 bytes (to `+0x808`,
+0x28 apart; `+0xa` gets the cell `(x + 0xa00) / 256 + 20 (y + 0x920) /
+256` and `+0x26` the node count left after it, its low 10 bits reversed,
+shifted up 6), links of 8 bytes (to `+0xa808`, kept only with two
+different ends below the node count; the kept count to `+4`). Then the
+node links are collected and the bounds computed.
+
+`SqsStraightStreamingDataSend` (`0x0081f210`) is the PS2 straight
+stream's SIF DMA upload: its one caller is the jump thunk at `0x00885ed0`,
+whose only caller `SndDataSendStraightStream_sub` (`0x0077a8e0`) nothing
+reaches; `tools/classify.py` counts it reachable because the thunk is not
+a function in the dump, so its code scan credits the jump to the function
+before it, `SndClearWave` (`0x00885ec0`). Proposed dead, not ported.
+
+### Effects, particles and helpers (r13, later groups)
+
+`rcefSetTargets(e, opt, te, topt)` (`0x00924a20`, name ours) fills
+`g_RcefTargets` (600 bytes, cleared first) from the caster (`0x025d5bb8`)
+and up to 16 listed targets (`0x025d5bc0`, count `0x025d5bbc`): the
+caster's angle (`rcefDirToAngle(rcefGetChrDir)`), the positions of
+element `e`/`te`, their centre (sum scaled by 1 / count), and per target
+its offset from the caster with length and angle (`rcVec3fLength`,
+`rcefVecToAngle`). `rcefColorUpdate(w)` (`0x00924c70`) fades a colour
+work from `+0x1c4` to `+0x1d4` over `+0x1e4` frames into
+`graphicAddScreenFadeTask` (alpha 0 when the truncated alpha's low byte
+is 0). `rcefMainProcRunAfter(e)` (`0x00925440`) is the effect main
+object's frame: ppp env and matrices, base matrix the camera's inverse
+rotation, task control, the colour update, screen shake and blur.
+
+`rcfxWindCalc` (`0x009296d0`) and `rcfxNailCalc` (`0x00928f40`) are force
+callbacks (`+0x14`) of the particle system; `rcfxParticleCalc(sys)`
+(`0x00928710`, name ours) is the step that runs them: the step `dt` (the
+`f64` at `+8`, as `f32`), mass `+0x20`, count `+0x1c` and the arrays are
+taken first, forces zeroed, the callbacks run, then `vel += force * (dt
+/ mass)` and `pos += vel * dt` through `rcbgScaleVector_00928600` and
+`rcVu0Add_009285a0`. `rcbgPSimAddNail` (`0x0091f850`) makes a nail over n
+particles about their centre. `rcbgFPm565Proc001` (`0x00922fe0`) is map
+0x235's FP step on the sea's matrix. `rcbgTrxDraw(trx)` (`0x0092d230`)
+uploads a texture with an A+D GIF packet on DMA channel 2.
+`rcRandomDirXZ_0092e4f0(v)` (`0x0092e4f0`) draws `x`, `z` as `rand() /
+32767 * 2 - 1`, normalises, and draws again while both are exactly 0
+(never, with integer `rand()`).
+
+`op_circle_cross_007e6e50` (`0x007e6e50`) intersects a line with a circle
+in the line's frame (0, 1 or 2 points). `rcuiRotateX`/`Y`/`Z(out, m,
+angle)` (`0x0093d5a0`, `0x0093d620`, `0x0093d690`) multiply `m` by a
+rotation built in an identity (`f32` `_CIcos`/`_CIsin`; `cos`, `-sin`,
+`sin`, `cos` at words 5/6/9/10, 0/2/8/10 and 0/1/4/5).
+
+### The sphere grid (r13, later groups)
+
+`AbmapShowItemTargets` (`0x00a5b980`) marks the nodes an item applies to
+and homes the cursor; `AbmapCalcLinkPoints` (`0x00a5a800`) gives every
+link its points from `AbmapGetNodePosRadius`; `AbmapDrawBar` (`0x00a45e30`)
+and `AbmapDrawScrollBar(x, y, height, first, total, shown)` (`0x00a46120`:
+track `(x+1, y+1)`-`(x+3, y+1+h)`, `h` the height less 4 as an `i16`;
+thumb from `h first / total` to `h (first + shown) / total`, at least one
+high, 16-bit ends); `AbmapDrawChrFace` (`0x00a461b0`) slides the faces on
+a character change. `AbmapShowChangeMessage(kind, node)` (`0x00a5a640`)
+and `abmap_cheng_panel(kind, node)` (`0x00a48740`) start a panel's change
+to `kind`: warp part look 5 or 3, the old and new kinds' radii (half the
+size word `+0xf834`, plus 3.0), then the change draw hook `0x00a51700`
+and `AbmapState_ChangingNode`. `AbmapRunPart(part)` (`0x00a45930`) runs a
+ppp part in the grid's matrices. `AbmapPlyTagRect` boxes are compared by
+`AbmapRectsOverlap` (`0x00a49270`: an off-screen box, x0 = 1e11, never
+overlaps; then the x reach and `AbmapRangesOverlap` on y), and
+`AbmapSpreadPlyTags` (`0x00a5a4b0`) moves each tag round its corners
+(up to 7) while it overlaps an earlier one, then against all others.
+`AbmapSelectNode_00a48e40(node, t)` opens the command menu on the
+cursor's node, else homes. `AbmapCalcMoveCosts(node, limit, bit)`
+(`0x00a474d0`) resets the costs and link nibbles before
+`AbmapCalcMoveCost` walks (limit * 4, mask `1 << bit`, step 0).
+
+### Map files and small wrappers (r13, later groups)
+
+`yiLoadFieldParticle(textures, effects)` (`0x00909190`) frees the last
+effect data, reads both files whole (`sceOpen`/`sceLseek`/`sceRead`/
+`sceClose` into `yiMalloc`), hands the textures to `pppSetFpTex` and
+frees them, keeps the effects as the map read buffer for `pppSetFpPdt`.
+`initEventList()` (`0x00907f50`) builds the map name table once from
+`eventid.bin` (count = first offset / 8, 16-byte entries `sprintf`ed with
+the name as the format, index at `+0xc`); `mapChange(name)`
+(`0x00908100`) jumps (`AtelSetEventJump`) to the last entry containing
+`name`, or to event 0 when `name` is in "grid00". `yiSplitPath_009161d0`
+(`0x009161d0`) splits `dir/name.ext`. `pppPmcomDataQueue_0075ff00`
+(`0x0075ff00`) queues pmcom data with its block (`KePmcomQueuePush`).
+`SqsCmdAnmmMode`/`Oef`/`Param` (`0x0081ca60`, `0x0081b8d0`, `0x0081c160`)
+are further IOP commands on the context's record. `rcefEffectReady`,
+`rcefSetDamage`, `rcefResetMotion`, `yiDObjToOMD`, `SqsSePitchDirect`/
+`Translate` (a "not implemented" line on stderr) and `SqsSetPlayPause`
+are one-call wrappers.
+
+Not ported: `rcbgFPm173ProcKieru` (`0x00922dc0`) and `0x00916130` read
+stack locals that are never written (positions after frame 0x4b, a CLUT
+word's green byte); `SqsSortCommonWave` (`0x0081ef40`) and `0x0090cee0`
+are `xor eax, eax; ret`, too small to hook; `rcbgGuideMapSave`
+(`0x006e9570`) is misnamed: it is an Iggy save-menu callback (UI).
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

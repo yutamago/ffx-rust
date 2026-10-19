@@ -996,4 +996,131 @@ pub mod bridge {
             call,
         )
     }
+
+    /// 0.6666667 (`f64`, `0x00b5def8`): `rcPrimBatu`'s inner corners.
+    pub const BATU_INNER: u32 = 0x00b5_def8;
+
+    /// `rcPrimBatu(x, y, size, colour, ui)` (`0x009259c0`): a cross (the
+    /// "batsu" mark) of two quads at `work` (0x40 bytes), drawn with
+    /// `rcPrimDraw2D(0x44, work, 4, colour)` each between
+    /// `cgraphicSetNowUIType(2)` (when `ui` is set) and
+    /// `cgraphicSetNowUIType(0)`, whose `eax` it returns. With `h =
+    /// f32(size * 0.5)`, `a = f32(h * 0.6666667)` and the heights `p`, `q`
+    /// of `h` and `a` (each `f32(v * 1.1666666 * 416 / 448)`, in `f64`), the
+    /// first quad is `(x - h, y - q)`, `(x - a, y - p)`, `(x + a, y + p)`,
+    /// `(x + h, y + q)` (depth 256.0, `w` 0), the second `(x + a, y - p)`,
+    /// `(x + h, y - q)`, `(x - h, y + q)`, `(x - a, y + p)` (its `w` words
+    /// left as the first draw leaves them). Coordinates are stored as
+    /// `f32`.
+    pub fn rc_prim_batu<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        args: [u32; 5],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let [x, y, size, colour, ui] = args;
+        let k = |mem: &M, at: u32| mem.read::<f64>(mem.rebase(at));
+        let h = load(store(mul(load(size), k(mem, BOX_HALF))));
+        let a = load(store(mul(h, k(mem, BATU_INNER))));
+        let [kb, kc, kd] = CIRCLE_FACTORS.map(|at| k(mem, at));
+        let height = |v: f64| load(store(mul(mul(v, kb), kc) / kd));
+        let (p, q) = (height(h), height(a));
+        let (x, y) = (load(x), load(y));
+        let depth = ffx_bridge::x87::round_trip(mem.read::<f32>(mem.rebase(PRIM_DEPTH))).to_bits();
+        let (left, right) = (store(sub(x, h)), store(add(x, h)));
+        let (inner_left, inner_right) = (store(sub(x, a)), store(add(x, a)));
+        let (top, bottom) = (store(sub(y, q)), store(add(y, q)));
+        let (inner_top, inner_bottom) = (store(sub(y, p)), store(add(y, p)));
+        let first = [
+            [left, top],
+            [inner_left, inner_top],
+            [inner_right, inner_bottom],
+            [right, bottom],
+        ];
+        for (i, [vx, vy]) in (0u32..).zip(first) {
+            mem.write(work.wrapping_add(16 * i), [vx, vy, depth, 0]);
+        }
+        let ui_type = mem.rebase(SET_NOW_UI_TYPE);
+        if ui != 0 {
+            call(mem, ui_type, &[2]);
+        }
+        let draw = mem.rebase(RC_PRIM_DRAW_2D);
+        call(mem, draw, &[0x44, work, 4, colour]);
+        let second = [
+            [inner_right, inner_top],
+            [right, top],
+            [left, bottom],
+            [inner_left, inner_bottom],
+        ];
+        for (i, [vx, vy]) in (0u32..).zip(second) {
+            mem.write(work.wrapping_add(16 * i), [vx, vy, depth]);
+        }
+        call(mem, draw, &[0x44, work, 4, colour]);
+        call(mem, ui_type, &[0])
+    }
+
+    // ---- field r13, axis rotations ----
+
+    /// `rcuiMulMatrix(out, a, b)` (`0x0093d1b0`).
+    pub const MUL_MATRIX: u32 = 0x0093_d1b0;
+
+    /// An axis for [`rcui_rotate`]: where `cos`, `-sin`, `sin`, `cos` go
+    /// in the 4x4 matrix (word indices).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Axis {
+        /// `0x0093d5a0`: rows/columns 1 and 2.
+        X,
+        /// `0x0093d620`: rows/columns 0 and 2, `-sin` above the diagonal.
+        Y,
+        /// `0x0093d690`: rows/columns 0 and 1.
+        Z,
+    }
+
+    impl Axis {
+        /// The word indices of `cos`, `-sin`, `sin` and `cos`.
+        const fn slots(self) -> [u32; 4] {
+            match self {
+                Self::X => [5, 6, 9, 10],
+                Self::Y => [0, 2, 8, 10],
+                Self::Z => [0, 1, 4, 5],
+            }
+        }
+    }
+
+    /// `rcuiRotate{X,Y,Z}(out, m, angle)` (`0x0093d5a0`, `0x0093d620`,
+    /// `0x0093d690`, from `0x0093d490` and `0x0093d550`; names ours): the
+    /// rotation by `angle` about `axis` (an identity in `work`, the
+    /// original's stack matrix, with `cos` and `sin` from `_CIcos` and
+    /// `_CIsin`, each stored as an `f32`, and `-sin`) times `m` into `out`
+    /// (`rcuiMulMatrix(out, rotation, m)`), whose `eax` it returns.
+    pub fn rcui_rotate<M: Mem, C, F>(
+        mem: &mut M,
+        axis: Axis,
+        [out, m, angle]: [u32; 3],
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        for i in 0..16u32 {
+            let one = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+            mem.write(work.wrapping_add(4 * i), one);
+        }
+        let a = Reg::load(f32::from_bits(angle)).value();
+        let f = mem.rebase(crate::vu0::CI_COS);
+        let c = Reg::constant(fcall(mem, f, crate::camera::FArgs::St0(a))).store();
+        let f = mem.rebase(crate::vu0::CI_SIN);
+        let s = Reg::constant(fcall(mem, f, crate::camera::FArgs::St0(a))).store();
+        let minus_s = (-Reg::load(s)).store();
+        let [i0, i1, i2, i3] = axis.slots();
+        for (i, v) in [(i0, c), (i1, minus_s), (i2, s), (i3, c)] {
+            mem.write(work.wrapping_add(4 * i), v);
+        }
+        let f = mem.rebase(MUL_MATRIX);
+        call(mem, f, &[out, work, m])
+    }
 }
