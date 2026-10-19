@@ -2926,16 +2926,6 @@
 0x006a0070	glue	only called from glue code (FfxFmod_initEventSystem and 1 more)
 0x006a0100	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassChrShaderRender_VertexInstanceSetup
 0x006a0360	glue	only called from glue code (0x69f440)
-0x006a1570	glue	only called from glue code (0x685840)
-0x006a1590	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassCharacterInstance_destroyClothInstances
-0x006a15e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassCharacterInstance_destroyMeshes
-0x006a1630	dead	unreachable from the entry point and every pointer table
-0x006a1640	dead	unreachable from the entry point and every pointer table
-0x006a1650	dead	unreachable from the entry point and every pointer table
-0x006a1660	glue	only called from glue code (0x69f580)
-0x006a1720	glue	only called from glue code (0x6a1660 and 1 more)
-0x006a19d0	logic	default (no rule: ported to be safe)
-0x006a1a70	platform	reviewed: std::map erase (effects round 29)
 0x006a1cd0	dead	unreachable from the entry point and every pointer table
 0x006a1d10	glue	only called from glue code (graphicCharacterUnloadTask)
 0x006a1d90	dead	unreachable from the entry point and every pointer table
@@ -8081,7 +8071,7 @@
 0x007b0470	logic	default (no rule: ported to be safe)
 0x007b0500	logic	default (no rule: ported to be safe)
 0x007b0520	logic	default (no rule: ported to be safe)
-0x007b055a	logic	default (no rule: ported to be safe)
+0x007b055a	dead	reviewed: not a function: MsSetRikkuLimit's tail (0x007b0520 jumps in at 0x007b0542 and it runs on that frame, ebp-based); ported with MsSetRikkuLimit, never entered on its own (battle round 27)
 0x007b06b0	logic	default (no rule: ported to be safe)
 0x007b06e0	logic	default (no rule: ported to be safe)
 0x007b0720	logic	default (no rule: ported to be safe)
@@ -16678,6 +16668,11 @@
 0x009df980	dead	unreachable from the entry point and every pointer table
 0x009df9c0	dead	unreachable from the entry point and every pointer table
 0x009df9f0	dead	unreachable from the entry point and every pointer table
+0x009dfa50	dead	unreachable from the entry point and every pointer table
+0x009dfa90	dead	unreachable from the entry point and every pointer table
+0x009dfad0	dead	unreachable from the entry point and every pointer table
+0x009dfb00	dead	unreachable from the entry point and every pointer table
+0x009dfb30	logic	default (no rule: ported to be safe)
 0x00a25860	glue	calls PhyreEngine Phyre_PBase_GetClassDescriptor
 0x00a258c0	logic	default (no rule: ported to be safe)
 0x00a25960	dead	unreachable from the entry point and every pointer table
