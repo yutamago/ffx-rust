@@ -3980,6 +3980,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `yiSplitPath_009161d0(path, dir, name, ext)`.
+    yiSplitPath_009161d0 @ 0x0091_61d0 => extern "C" fn shim_yi_split_path(path: u32, dir: u32, name: u32, ext: u32) -> u32 {
+        yi::bridge::yi_split_path(&mut mem(), [path, dir, name, ext])
+    }
     /// `rcfxParticleCalc(sys)`: the vector in a frame.
     rcfxParticleCalc @ 0x0092_8710 => extern "C" fn shim_rcfx_particle_calc(sys: u32) -> u32 {
         let mut w = super::StackFrame::<4>::new();

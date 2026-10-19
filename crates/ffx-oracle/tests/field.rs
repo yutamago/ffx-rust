@@ -20050,3 +20050,50 @@ fn r13ee_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_9f02);
     r13ee_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r13, group f: a path split into its parts ----
+
+/// Group f (r13) on `t`: `yiSplitPath_009161d0` over random short paths
+/// of `a`, `/`, `:`, `.` and `x` (with and without separators and dots),
+/// each target given or not.
+fn r13ff_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::yi::bridge as yb;
+    let path = t.alloc(0x40);
+    let outs = [t.alloc(0x40), t.alloc(0x40), t.alloc(0x40)];
+    for _ in 0..cases {
+        t.fill(path, 0x40, rng);
+        let n = rng.below(14);
+        for i in 0..n {
+            t.put(path + i, b"a/:.x"[rng.below(5) as usize]);
+        }
+        t.put(path + n, 0u8);
+        for o in outs {
+            t.fill(o, 0x40, rng);
+        }
+        let [dir, name, ext] = outs.map(|o| if rng.below(4) == 0 { 0 } else { o });
+        let a = [path, dir, name, ext];
+        t.same(
+            "yiSplitPath_009161d0",
+            |o| o.eax(0x0091_61d0, &a),
+            |m| yb::yi_split_path(m, a),
+        );
+    }
+}
+
+/// Group f (r13) on the image.
+#[test]
+fn r13ff_split_path_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a001);
+    r13ff_cases(&mut t, &mut rng, 1000);
+}
+
+/// Group f (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13ff_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a002);
+    r13ff_cases(&mut t, &mut rng, 500);
+}

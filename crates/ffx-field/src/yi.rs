@@ -5594,4 +5594,103 @@ pub mod bridge {
         call(mem, f, &[fd]);
         buf
     }
+
+    // ---- field r13, the path split ----
+
+    /// `yiSplitPath_009161d0(path, dir, name, ext)` (`0x009161d0`, from
+    /// `yiMapSetup`; name ours): `path` split at its last `/` (else its
+    /// first `:`) and the last `.` after that. `dir` (when given) gets the
+    /// part up to the separator (empty without one), `name` the rest
+    /// without the extension, `ext` the extension with its dot (empty
+    /// without one); each target is optional. The original puts a NUL at
+    /// the split points while copying and restores them. Returns the
+    /// `eax` it ends with: `ext` without a dot, else the dot's address,
+    /// its low byte 0 when a copy ran.
+    pub fn yi_split_path<M: Mem>(mem: &mut M, [path, dir, name, ext]: [u32; 4]) -> u32 {
+        let base = match c_strrchr(mem, path, b'/').or_else(|| c_strchr(mem, path, b':')) {
+            Some(sep) => {
+                let base = sep.wrapping_add(1);
+                if dir != 0 {
+                    let kept = mem.read::<u8>(base);
+                    mem.write(base, 0u8);
+                    c_strcpy(mem, dir, path);
+                    mem.write(base, kept);
+                }
+                base
+            }
+            None => {
+                if dir != 0 {
+                    mem.write(dir, 0u8);
+                }
+                path
+            }
+        };
+        let Some(dot) = c_strrchr(mem, base, b'.') else {
+            if name != 0 {
+                c_strcpy(mem, name, base);
+            }
+            if ext != 0 {
+                mem.write(ext, 0u8);
+            }
+            return ext;
+        };
+        mem.write(dot, 0u8);
+        if name != 0 {
+            c_strcpy(mem, name, base);
+        }
+        mem.write(dot, b'.');
+        if ext != 0 {
+            c_strcpy(mem, ext, dot);
+        }
+        if name != 0 || ext != 0 {
+            dot & !0xff
+        } else {
+            dot
+        }
+    }
+
+    /// The C string at `s`'s last byte `c` (`strrchr`).
+    fn c_strrchr<M: Mem>(mem: &M, s: u32, c: u8) -> Option<u32> {
+        let mut found = None;
+        let mut at = s;
+        loop {
+            let b = mem.read::<u8>(at);
+            if b == c {
+                found = Some(at);
+            }
+            if b == 0 {
+                return found;
+            }
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// The C string at `s`'s first byte `c` (`strchr`).
+    fn c_strchr<M: Mem>(mem: &M, s: u32, c: u8) -> Option<u32> {
+        let mut at = s;
+        loop {
+            let b = mem.read::<u8>(at);
+            if b == c {
+                return Some(at);
+            }
+            if b == 0 {
+                return None;
+            }
+            at = at.wrapping_add(1);
+        }
+    }
+
+    /// The C string at `src` copied to `dst`, its NUL included, a byte at a
+    /// time as the original's inline loop.
+    fn c_strcpy<M: Mem>(mem: &mut M, dst: u32, src: u32) {
+        let mut i = 0u32;
+        loop {
+            let b = mem.read::<u8>(src.wrapping_add(i));
+            mem.write(dst.wrapping_add(i), b);
+            if b == 0 {
+                return;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
 }

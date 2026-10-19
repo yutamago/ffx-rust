@@ -11445,6 +11445,7 @@
 0x00915120 function yiKeyFrameWrapAngles      # (v): four floats past pi less (1 - ftol(x / -2pi)) * 2pi, below -pi plus it (doubles 0x00b67118..38); yiKeyFrame_main; name ours
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
+0x009161d0 function yiSplitPath_009161d0     # (path, dir, name, ext) -> eax: from yiMapSetup (name ours): path split at its last '/' (strrchr 0x009497c4), else its first ':' (strchr 0x009498d4), and the last '.' after that; dir gets up to the separator (else empty), name the rest without the extension, ext the extension with its dot (else empty); each target optional; NULs put at the split points while copying, then restored; eax ext without a dot, else the dot's address (low byte 0 after a copy); ported (field r13, ffx_field::yi)
 0x00916290 function Yi_StrLower               # (s) tolower in place; own name
 0x009162c0 function Yi_StrUpper               # (s) toupper in place; own name
 0x009162f0 function yiGui_setfogparam_proc       # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'Fog parameter'; Switch 0x710053ad90 yiGui_setfogparam_proc (symbols from Fahrenheit's server export)
