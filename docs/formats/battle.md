@@ -347,7 +347,7 @@ stats come from Yuna's (character 1) through its `ply_rom` record
 (`+0x18`-`+0x29`: per stat a divisor of the sum `t` of Yuna's stats, HP/100
 and MP/10, and a multiplier of her stat, /10), Luck (`0x34`) is Yuna's, and
 once 30 battles are fought (`0x011307a4`) the floors of
-`g_KernelSummonGrow` (`0x0112a948`, record `i + (5n − 9) · 2` for
+`g_KernelSumAssure` (`0x0112a948`, the kernel's `sum_assure.bin`, record `i + (5n − 9) · 2` for
 `n` = battles / 30 up to 20) raise HP, MP and the stats but Luck; its own
 record's `+4`-`+0x13` are added on top. A zero divisor faults the original
 (a monster's record has them, so it is never called for one); the port
@@ -734,9 +734,12 @@ from 0 on (`MsEtEffectNumber_0079f1c0`: entries of 4 bytes up to three
 zero bytes; byte 0 0xff is skipped; past 0x18 `MsBattleError("eff_id")`).
 `MsBattleSpecialInit(kind)` (`0x0079de60`) makes the special stage's work
 for kinds 1-3 (the boat's roll step 0.002 from `0x00b54ca4`, map objects
-0x1c-0x1e's animations disposed). `0x0112a948` and `0x0112a960` are both
-named `g_KernelSummonGrow` in ffx.sym: `MsBattleInit` reads directory
-0xd's file 0xe into the first and 0x2f's file 6 into the second.
+0x1c-0x1e's animations disposed). `MsBattleInit` reads directory 0xd's file 0xe into `0x0112a948` and
+0x2f's file 6 into `0x0112a960` (round 22: both were named
+`g_KernelSummonGrow`). Their loaded sizes on both snapshots, 0x980 and
+0x280, are `sum_assure.bin`'s 2420 bytes and `sum_grow.bin`'s 636 rounded
+up to 64: the first is `g_KernelSumAssure` (the aeons' stat floors,
+`MsSetSaveParam`), the second `g_KernelSummonGrow` (`MsGetRomSummonGrow`).
 
 `MsBattleProcess` (`0x00790c10`, `ffx_battle::process`), the battle
 module's frame, is ported (round 21); every callee goes through the game
@@ -785,19 +788,164 @@ with a request block on the stack (`+0xc` the slot; the port's comes from
 the shim) and the function returns -1 with the next slot noted. With no
 slot left: `Mon_LoadAll`, status 0xe, 0.
 
+## Round 22
+
+`MsBtlReadSetScene` (`0x00783e20`, `ffx_battle::read`) sets the battle
+file's section globals ("Formation files" above: the script, section 1,
+whose first byte goes to the second script record, the formation, whose
+byte 3 is `g_BtlUnderwater`, the positions) and clears the file's text
+table (`g_BtlFileText`) and `g_BtlFont`; when the file brought a text
+(`0x023112c4`) the table is set and, with a font (`0x023112c0`) too, the
+font is kept and handed to `TOFTCTransfer`. `0x023112bc` is 1 unless the
+file's name is `system_01`. With `MsBattleExe`'s mode set the status
+becomes 0 and it returns 0; else `MsActionInit`, `MsSetRamChrData`,
+`MsPushBtlPosAll`, `MsBtlBridgeEvent2Btl`, `AtelEventRemoveForBattle`
+(the battle map `g_BtlBattleMusic`, sign-extended), `Sg_SetPlayer(0)`,
+`Sg_IdSetEffectTableIndex(1)`, and the status (returned) is 10 when
+`TkGetNowEventJumpMapNo` is that map, else 8. The original also calls
+`MsGetSaveConfigEnglish` and `FFXIsDebug` with mode 0 and drops both
+results; the port does not call them.
+
+### Rewards
+
+`MsGetItem(chr, actor, rewards, overkill, flags)` (`0x007990d0`,
+`ffx_battle::reward`; from `MsDamageCheckDeath` with the victim's `+0xf88`
+record, `+0xf5f` overkill and the killing hit's `+0x616` flags) pays a dead
+monster's record:
+
+| Offset | Type | Meaning |
+|---|---|---|
+| `0x00` | `u16` | Gil |
+| `0x02`, `0x04` | `u16` | AP; with overkill |
+| `0x08`, `0x09` | `u8` | The two drop slots' chances (of 255) |
+| `0x0b` | `u8` | Gear chance |
+| `0x0c` | `u16` × 4 | Drops: slot 1 normal, rare; slot 2 normal, rare (`0x18` with overkill) |
+| `0x14` | `u8` × 4 | Their counts (`0x20` with overkill) |
+| `0x2a` | `u16` | The bribe's item |
+| `0x2c` | `u8` | The bribe's factor |
+| `0x2d` | `u8` | Gear slots byte |
+| `0x2e`-`0x30` | `u8` | Copied to the gear's `+8`, `+0xa`, `+9` |
+| `0x31` | `u8` | Gear ability count byte |
+| `0x32` | `u16` × 8 × 2 × 7 | Per character a weapon's then armour's abilities (the first always given) |
+
+The AP (×100 with debug `0x0112a912`) goes to the 18 characters through
+`MsApUp`, each handed the previous result (1 first). A bribed monster
+(actor `+0x701` 2) gives its bribe item: `(r % 11 + 20) · sqrt(gil paid,
++0x708) · factor / 16 / 25`, plus 0 or 1, within 1-99 (x87 at 53 bits; the
+root and the sum stored as `f32`, `_ftol2_sse`). Otherwise the gil (×100
+with `0x0112a913`) times the last `MsApUp` result goes to the gil won
+(at most 999999999) and each drop slot rolls `brnd(10) % 255 < chance`
+(any chance above 0 with `g_BtlDebugAlwaysHit`), rare when `brnd(11) & 0xff
+< 0x20` or `g_BtlDebugRareSteal`; the hit's flags 2, 4, 8 (and 0x20 without
+0x10) replace the item with 0x2046-0x2049. Under language 0xb item 0x2065
+becomes 0x2032 (4, or 8 with overkill; the bribe: 0x2048 written back, 4).
+Last the gear chance: `BattleRewards_AddGear(chr, rewards, spoils)`
+(`0x00798c10`) takes the spoils' next gear record (`0x00798bd0`, 8 at
+most) and gives it an owner (one of the joined of the first seven
+characters, the killer three times more when it is one of them), weapon or
+armour at random (`+5`), `(slots byte + 1..8 − 5) / 4` slots within 1-4
+and `(ability byte + 1..8 − 5) / 8` draws from the owner's list, each
+ability taken when the gear has none of its group (`g_KernelAAbility`
+byte `+0x69`, `0x00798a90`); then its name and icon.
+
+### Gear names
+
+`MsWeaponNameNum(gear)` (`0x007a0cf0`, `ffx_battle::gear`) names a weapon
+(`+5` 0) in `0x007a1c00` and armour in `0x007a0d10`; until round 22
+ffx.sym had the two halves' names swapped (the first tests only weapon
+abilities, the second only armour's, by the kernel's `a_ability.bin`
+names). Each is a fixed list of tests over the four abilities (`+0xe`),
+the slot count (`+0xb`) and, for weapons, the flags (`+3` bits 4 and 8:
+names 0x5000, 0x5001); the first that holds gives the name (weapons
+0x5000-0x5046, armour 0x504a-0x509e). The port keeps the list as a table
+in the original's order (`weapon_name`, `armor_name`).
+
+### Menu window lists
+
+`MsGetSaveWindow(chr, kind, &count)` (`0x00785410`, `ffx_battle::menu`)
+returns the list a battle menu window shows and its count. Kinds 1-4, 7
+and 0xc-0xf are the character's own lists in `g_BtlItemMem2` (0x478 bytes
+each, character 0 for an invalid `chr`), 6, 0x11, 0x14 the item windows
+and the save's items, 0x15/0x16 one command (0x3121, 0x3122); 5, 8-0xb
+and 0x12 build a list (`0x0112c268`-`0x0112c376`, 0xff after): the aeons
+in (the first sister ends it with 0x30ff: the original sets its loop
+counter to 0x30ff), every actor in, the living party slots then the other
+living characters (0x12: only those able to switch, `+0xdd8`), the reserve
+then the first eight characters, the living monsters. The count of kind
+5 is 10 although its list is filled to 0x1f. `MsGetChrStatusBits_0078f930`
+returns an actor's `+0x606` in `ax`, the actor pointer's upper half above.
+
+### Party actors, treasures and random target lists
+
+`MsSetRamChrParam(chr)` (`0x0079c5f0`, `ffx_battle::save_param`) sets a
+party actor from its save record (`g_PlySave`, 0x94 bytes): maximum HP
+and MP (`+0x24`, `+0x28`, also the bases), the eight stats (`+0x5a8`: the
+base at `+0x5b0` plus the save's `+0x2f`, within 1-255, the seventh
+0-255), the weapon and armour (`+0x2d`, `+0x2e`). It clears the ability
+fields (`+0x5d8`-`+0x605`, `+0x62a`-`+0x63c`, `+0x641`-`+0x65b`,
+`+0x6bc`-`+0x6c1`; formula 1, power 0x10), then for each piece held
+(`MsGetSaveWeapon`) adds the weapon's formula and power (`+8`, `+9`), the
+critical bonus (`+0xa`) and each auto-ability's record: flags `+0x11`-
+`+0x15` into `+0x5d9`-`+0x5dd`, bytes `+0x16` (25) and `+0x2f` (13)
+added to `+0x5de` and `+0x5f7` within 0-0xfe, `+0x5e` into `+0x604`, the
+element words `+0x58`-`+0x5c` into `+0x630` (or `+0x636` with `+0x10`
+bit 0, setting `+0x63c`), bytes `+0x3c` (25) to `+0x641` within 0-0xff,
+the words `+0x60`-`+0x66` into `+0x65a`, `+0x6bc`, `+0x6be`, `+0x6c0`.
+Then `MsLimitStatusProcess` and HP, MP within the maxima (the MP is left
+in `eax`).
+
+`msFieldItemGet(i, spoils)` (`0x00799420`) hands out treasure `i` of the
+`takara` table (kind, amount, `u16` ID): kind 2 an item, 5 a piece of
+equipment from the `buki_get` table (0x10-byte records: the gear's bytes
+3-5 and 8-0xa, slots byte 7 but at least the abilities held, four
+abilities from `+8`, 0 as 0xff), 10 a key item (`+0xd1`, `+0xec`), any
+other kind gil (amount × 100 to `+0xcc`). Under language 0xb the record's
+item 0x2065 is written back as 0x2060 first.
+
+`MsGetTargetRandomList(chr, &n, shuffle)` (`0x007b7170`,
+`ffx_battle::cue`) lists each of the actor's targets
+(`MsGetTargetList`) once per hit it has left (`MsGetDamageInfo`) at the
+actor's `+0xd80`, at most 0x40
+(`MsBattleError("list_over")` past them, which hangs); with `shuffle`, n
+swaps of `i = brnd(0x10) % n` and `j = (i + 1 + (n < 3 ? 0 : brnd(0x10) %
+(n − 2))) % n`.
+
+### Damage merges and party swaps
+
+`MsMergeDamage(chr, target)` (`0x0079aff0`, `ffx_battle::cue`) folds the
+results left in each of the target's buffers for `chr`'s running command
+(from `+0` the next to `+1` the count) into one at the next's place,
+which becomes the last: a copy of the last result whose bytes `+2`, `+4`
+and words `+0x18`, `+0x1a` are the ORs of the folded ones', `+0x1c`-
+`+0x28` their sums, and hit kind `+1` 2 when one is 2, 0 when one is 0
+(before any 2), else 1. It returns how many it folded.
+
+`MsExchangeSaveParty(chr, slot)` (`0x00784d00`, `ffx_battle::save`) swaps
+`chr` into one of the 20 party slots (0-2 the front, 3-19 the reserve;
+entries above 7 count as none): `chr`'s own place is found in the reserve,
+then the front; a character in neither that may join (`ply_save` `+0x2c`
+bit 0) takes the first empty reserve slot, else the first empty front one.
+Neither `chr` nor the slot's character may be fixed (bit 2,
+`MsGetSavePlyFix`, `0x00785360`). It returns -1 when it swapped.
+
+### Test stubs
+
+`battle_target`'s stub area from `Ms_Gui_BattleConsoleProc` to
+`Ms_Gui_BattleConfigProc`'s end (`0x007c86e0`) is full; round 22's stubs
+go to `Ms_Gui_BattleChr2Proc` (`0x007de790`, 5369 bytes, a debug window's
+procedure no code calls): `GUI_STUBS` in the test.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.
 
-**360 functions, 80914 bytes** (211 named). By blockers: 0: 218, 1: 92, 2: 34, 3: 5, 4: 7, 5: 2, 7: 1, 15: 1.
+**344 functions, 68891 bytes** (198 named). By blockers: 0: 215, 1: 83, 2: 33, 3: 6, 4: 3, 5: 2, 7: 1, 15: 1.
 
-The battle loop's top level still open (ported: `MsBattleProcess`, the frame, and `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; open: the scene reader, encounters and rewards):
+The battle loop's top level still open (ported: `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below, with `MsMenuLimitSet`, the biggest function now without blockers but the camera's):
 
 | Function | Address | Bytes | Blockers |
 |---|---|---|---|
-| `MsBtlReadSetScene` | `0x00783e20` | 315 | 4 |
-| `MsGetItem` | `0x007990d0` | 728 | 1 |
-| `BattleRewards_AddGear` | `0x00798c10` | 630 | 3 |
+| `MsMenuLimitSet` | `0x007afe00` | 1393 | 0 |
 
 <details><summary>Every remaining function (blockers, then size)</summary>
 
@@ -829,11 +977,11 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 0 | 24 | `0x007b19d0` | `FUN_007b19d0` |  |
 | 0 | 24 | `0x007b7ed0` | `FUN_007b7ed0` |  |
 | 0 | 25 | `0x00784e40` | `MsGetBattleMessageFlag` |  |
-| 0 | 25 | `0x0078f930` | `FUN_0078f930` |  |
 | 0 | 25 | `0x0078fac0` | `FUN_0078fac0` |  |
 | 0 | 25 | `0x00795640` | `MsGetChrMotionLevel` |  |
 | 0 | 25 | `0x007aaff0` | `FUN_007aaff0` |  |
 | 0 | 25 | `0x00874200` | `MsSetSaveCommandWithPrefix` |  |
+| 0 | 26 | `0x00798fd0` | `MsFieldItemGet` |  |
 | 0 | 26 | `0x007a86e0` | `Clamp0To6_007a86e0` |  |
 | 0 | 27 | `0x0078fed0` | `MsMenuReadTextDone_0078fed0` |  |
 | 0 | 27 | `0x007b75a0` | `FUN_007b75a0` |  |
@@ -850,18 +998,19 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 0 | 35 | `0x007af2f0` | `MsCheckDefenseMotion` |  |
 | 0 | 36 | `0x007b7e80` | `MsEffectChrMotionSync` |  |
 | 0 | 37 | `0x00782940` | `FUN_00782940` |  |
+| 0 | 38 | `0x00786950` | `MsSetSavePartyMember` |  |
+| 0 | 38 | `0x00798ff0` | `MsFieldItemGetMes` |  |
 | 0 | 40 | `0x00786aa0` | `FUN_00786aa0` |  |
 | 0 | 40 | `0x007902a0` | `FUN_007902a0` |  |
 | 0 | 40 | `0x007b1a70` | `MsRestartMagicCamera` |  |
 | 0 | 41 | `0x00796880` | `FUN_00796880` |  |
 | 0 | 41 | `0x007968b0` | `FUN_007968b0` |  |
-| 0 | 41 | `0x007a0c20` | `MsGearHasAbility_007a0c20` |  |
 | 0 | 41 | `0x007a8c20` | `FUN_007a8c20` |  |
 | 0 | 42 | `0x007859d0` | `MsSaveAddHP` |  |
 | 0 | 42 | `0x00785ae0` | `FUN_00785ae0` |  |
+| 0 | 42 | `0x007993b0` | `MsSetWeaponName` |  |
 | 0 | 42 | `0x007a8c50` | `FUN_007a8c50` |  |
 | 0 | 42 | `0x007ad6e0` | `FUN_007ad6e0` |  |
-| 0 | 43 | `0x00798a90` | `FUN_00798a90` |  |
 | 0 | 43 | `0x007ad5b0` | `FUN_007ad5b0` |  |
 | 0 | 43 | `0x007bc0e0` | `MsScreenOffsetID` |  |
 | 0 | 44 | `0x007abb70` | `MsGetSaveChrArmorModel` |  |
@@ -895,7 +1044,6 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 0 | 61 | `0x00795d40` | `FUN_00795d40` |  |
 | 0 | 61 | `0x0079a080` | `FUN_0079a080` |  |
 | 0 | 62 | `0x007a8be0` | `FUN_007a8be0` |  |
-| 0 | 63 | `0x00798bd0` | `FUN_00798bd0` |  |
 | 0 | 64 | `0x007987b0` | `FUN_007987b0` |  |
 | 0 | 65 | `0x00776f00` | `FUN_00776f00` |  |
 | 0 | 65 | `0x00792a40` | `MsResetBtlTarget` |  |
@@ -909,6 +1057,7 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 0 | 69 | `0x0079d2a0` | `FUN_0079d2a0` |  |
 | 0 | 70 | `0x007c13c0` | `FUN_007c13c0` |  |
 | 0 | 71 | `0x007bed10` | `MsCameraResetFilter` |  |
+| 0 | 72 | `0x00788d10` | `MsEventEffectReadComplete` |  |
 | 0 | 72 | `0x007c1000` | `FUN_007c1000` |  |
 | 0 | 73 | `0x00796430` | `FUN_00796430` |  |
 | 0 | 73 | `0x007bdf90` | `MsCameraMoveStat` |  |
@@ -994,7 +1143,6 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 0 | 249 | `0x008be0d0` | `FUN_008be0d0` |  |
 | 0 | 250 | `0x007ac840` | `FUN_007ac840` |  |
 | 0 | 254 | `0x007b2c90` | `FUN_007b2c90` |  |
-| 0 | 259 | `0x007b7170` | `MsGetTargetRandomList` |  |
 | 0 | 262 | `0x00793f10` | `MsDetachWeapon` |  |
 | 0 | 264 | `0x00782c00` | `MsSetCountryName` |  |
 | 0 | 268 | `0x007848b0` | `MsDebugFullCommand` |  |
@@ -1002,13 +1150,11 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 0 | 294 | `0x007c57b0` | `MsScreenShake2` |  |
 | 0 | 296 | `0x007c4fc0` | `MsCameraShake` |  |
 | 0 | 297 | `0x007842f0` | `FUN_007842f0` |  |
-| 0 | 306 | `0x00784d00` | `MsExchangeSaveParty` |  |
 | 0 | 325 | `0x007acb40` | `FUN_007acb40` |  |
 | 0 | 332 | `0x00782df0` | `getExcelBinSize` |  |
 | 0 | 332 | `0x007b055a` | `FUN_007b055a` |  |
 | 0 | 336 | `0x00788920` | `MsEffectTerminate` |  |
 | 0 | 364 | `0x0079fe80` | `FUN_0079fe80` |  |
-| 0 | 379 | `0x0079aff0` | `MsMergeDamage` |  |
 | 0 | 380 | `0x007ab9f0` | `SwapSaveGear` |  |
 | 0 | 391 | `0x007a8fc0` | `Battle_ScriptPlayMotion` |  |
 | 0 | 429 | `0x007beae0` | `MsCameraReset` |  |
@@ -1017,9 +1163,8 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 0 | 806 | `0x0079f660` | `MsNumberDrawProcess` |  |
 | 0 | 844 | `0x007c3d60` | `MsScreenMatrix` |  |
 | 0 | 891 | `0x007c58e0` | `MsCamSetBtl` |  |
-| 0 | 1157 | `0x0079c5f0` | `MsSetRamChrParam` |  |
-| 0 | 1269 | `0x00785410` | `MsGetSaveWindow` |  |
 | 0 | 1385 | `0x007c50f0` | `MsCameraShakeProcess` |  |
+| 0 | 1393 | `0x007afe00` | `MsMenuLimitSet` |  |
 | 0 | 2366 | `0x007c1be0` | `MsCameraMatrix` |  |
 | 1 | 9 | `0x00790290` | `FUN_00790290` | MsEffectSetMotion |
 | 1 | 21 | `0x0078f8f0` | `MsGetRomBtlText` | MsMenuGetText |
@@ -1030,15 +1175,11 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 1 | 24 | `0x007ba9a0` | `MsBindCamera` | FUN_007baa50 |
 | 1 | 25 | `0x00780c70` | `FUN_00780c70` | Enc_ResetWeights |
 | 1 | 25 | `0x00784b60` | `MsDebugFullSummon` | MsSetSavePlyJoin |
-| 1 | 26 | `0x00798fd0` | `MsFieldItemGet` | msFieldItemGet |
 | 1 | 34 | `0x00783b90` | `MsBtlReadPlayerModelProcess` | MsBtlChrRegist |
 | 1 | 36 | `0x007b7650` | `FUN_007b7650` | MsResetAvoidFlag |
-| 1 | 38 | `0x00786950` | `MsSetSavePartyMember` | MsExchangeSaveParty |
 | 1 | 38 | `0x007873a0` | `resetDefaultPlayerNameStatus` | setDefaultPlayerName |
-| 1 | 38 | `0x00798ff0` | `MsFieldItemGetMes` | msFieldItemGet |
 | 1 | 40 | `0x0079cb10` | `MsSetRamMonData` | MsSetRamChr |
 | 1 | 41 | `0x0079eae0` | `FUN_0079eae0` | MsPauseChrEffect |
-| 1 | 42 | `0x007993b0` | `MsSetWeaponName` | MsWeaponNameNum |
 | 1 | 43 | `0x00782b40` | `FUN_00782b40` | Enc_ResetWeights |
 | 1 | 44 | `0x0079fcf0` | `FUN_0079fcf0` | FUN_0079fe80 |
 | 1 | 45 | `0x008be0a0` | `MsExchangeSaveWeapon` | SwapSaveGear |
@@ -1050,7 +1191,6 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 1 | 66 | `0x0079e590` | `MsEtCriticalEffect` | op_et_eff |
 | 1 | 67 | `0x0079dfe0` | `MsSpCameraProcess` | MsTransSpPos |
 | 1 | 69 | `0x0079fda0` | `FUN_0079fda0` | FUN_0079fe80 |
-| 1 | 72 | `0x00788d10` | `MsEventEffectReadComplete` | MagicFile_GetEffectOverlayTable |
 | 1 | 73 | `0x0079d090` | `FUN_0079d090` | MsGetBattleMessageFlag |
 | 1 | 75 | `0x0079fe30` | `FUN_0079fe30` | FUN_0079fd40 |
 | 1 | 79 | `0x007baa50` | `FUN_007baa50` | MsAtelGetCameraID |
@@ -1108,14 +1248,9 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 1 | 542 | `0x007bd860` | `MsCameraMoveAcc` | MsCameraSetStartPos |
 | 1 | 566 | `0x0079a200` | `MsGetCTBlist` | FUN_0079a020 |
 | 1 | 599 | `0x0079f380` | `MsCalcCursorPos` | graphicProject3DPointOntoScreenConsider2DScene |
-| 1 | 728 | `0x007990d0` | `MsGetItem` | BattleRewards_AddGear |
 | 1 | 880 | `0x007c0120` | `FUN_007c0120` | spline_get_near_point |
-| 1 | 1393 | `0x007afe00` | `MsMenuLimitSet` | MsGetTargetRandomList |
-| 1 | 2555 | `0x007a1c00` | `MsWeaponNameNum_Armor_007a1c00` | MsGearHasAbility_007a0c20 |
-| 1 | 3811 | `0x007a0d10` | `MsWeaponNameNum_Weapon_007a0d10` | MsGearHasAbility_007a0c20 |
 | 2 | 20 | `0x00780cc0` | `MsBattleCursorCalc` | MsNumberDrawProcess, MsCalcCursorPos |
 | 2 | 30 | `0x00796680` | `FUN_00796680` | FUN_00796880, FUN_007968b0 |
-| 2 | 30 | `0x007a0cf0` | `MsWeaponNameNum` | MsWeaponNameNum_Armor_007a1c00, MsWeaponNameNum_Weapon_007a0d10 |
 | 2 | 49 | `0x00783fc0` | `FUN_00783fc0` | MsBtlReadWeapon, FUN_00784000 |
 | 2 | 83 | `0x007a8f60` | `FUN_007a8f60` | MsGetSameTarget, FUN_00796430 |
 | 2 | 103 | `0x00784000` | `FUN_00784000` | MsRegistSEdata, MsEffectWeaponInit |
@@ -1138,9 +1273,9 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 2 | 249 | `0x007bf420` | `FUN_007bf420` | FUN_007c0a30, FUN_007c09b0 |
 | 2 | 270 | `0x007a89c0` | `MsSetChrVisibleBtl2Event` | FUN_007fae90, MsSetRamChr |
 | 2 | 275 | `0x007c0d40` | `FUN_007c0d40` | spline_get_near_point, spline_get_near_point_init |
+| 2 | 285 | `0x00787e00` | `MsEffectProcess` | op_effect_run_after, op_effect_run_before |
 | 2 | 308 | `0x007839b0` | `MsBtlReadMonsterProcess` | MsBtlChrRegist, MsSetChrTransparentVisible |
 | 2 | 408 | `0x007bb6a0` | `setCameraMatrixToPhyreScene` | MsAtelGetCameraID, FUN_0079e2a0 |
-| 2 | 412 | `0x00799420` | `msFieldItemGet` | FUN_00798bd0, MsWeaponNameNum |
 | 2 | 437 | `0x00783bc0` | `MsBtlReadPlayerProcess` | op_et_bindeff2, MsBtlChrRegist |
 | 2 | 615 | `0x00793670` | `MsBtlChrRegist` | Ch_Allocate, FUN_00796f70 |
 | 2 | 623 | `0x007976a0` | `MsAtelChrInit` | FUN_00798720, FUN_007987b0 |
@@ -1150,15 +1285,12 @@ The battle loop's top level still open (ported: `MsBattleProcess`, the frame, an
 | 3 | 206 | `0x007bb5d0` | `FUN_007bb5d0` | Cam_SetPolar, MsAtelGetCameraID, Cam_AddPolar |
 | 3 | 271 | `0x007bb410` | `MsAtelCameraEyeAddArea_007bb410` | MsAtelGetCameraID, FUN_007bf420, FUN_007bf330 |
 | 3 | 280 | `0x007b7680` | `FUN_007b7680` | FUN_0079fd40, FUN_0079eba0, MsEtCriticalEffect |
-| 3 | 285 | `0x00787e00` | `MsEffectProcess` | MagicFile_GetEffectOverlayTable, op_effect_run_after, op_effect_run_before |
-| 3 | 630 | `0x00798c10` | `BattleRewards_AddGear` | FUN_00798bd0, MsWeaponNameNum, FUN_00798a90 |
+| 3 | 302 | `0x00782090` | `MsBattleReadDataNB` | Kernel_LoadTables, eiAbmSetLang, MsGetSaveConfigEnglish |
+| 3 | 1624 | `0x0079b4f0` | `MsSetRamChr` | FUN_0079ca80, MsGetSaveConfigEnglish, MsSetCommandUse |
+| 3 | 7007 | `0x007b4b70` | `MsSetChrStatInfo` | MsSetSavePlyJoin, MsSetChrShadowMode, MsSetChrVisibleMain |
 | 4 | 167 | `0x007b74d0` | `FUN_007b74d0` | FUN_007b77c0, FUN_007b75c0, FUN_007b7680, FUN_007b7650 |
-| 4 | 302 | `0x00782090` | `MsBattleReadDataNB` | MsBtlReadSetScene, Kernel_LoadTables, eiAbmSetLang, MsGetSaveConfigEnglish |
-| 4 | 315 | `0x00783e20` | `MsBtlReadSetScene` | MsBtlBridgeEvent2Btl, AtelEventRemoveForBattle, MsSetRamChrData, MsGetSaveConfigEnglish |
 | 4 | 766 | `0x00795250` | `MsGetChrLimitBarFlag` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796d10, MesSetChrTargetPosToLimitSparePosy, getSparedLmtPos |
 | 4 | 1539 | `0x007bc110` | `MsScreenProcess` | Cam_Apply, MsScreenMatrix, MsCameraMatrix, MsCameraShakeProcess |
-| 4 | 1624 | `0x0079b4f0` | `MsSetRamChr` | FUN_0079ca80, MsSetRamChrParam, MsGetSaveConfigEnglish, MsSetCommandUse |
-| 4 | 7007 | `0x007b4b70` | `MsSetChrStatInfo` | MsSetSavePlyJoin, MsSetChrShadowMode, MsSetChrVisibleMain, MsSetRamChrParam |
 | 5 | 406 | `0x00787470` | `setDefaultPlayerName` | FUN_00875220, debugSetRikkuName, FUN_008c5370, FUN_00875370, MsMenuGetText |
 | 5 | 702 | `0x007938e0` | `MsBtlWeaponRegist` | ChN_DataDispose, Ch_Allocate, MsSetWeaponEffectAttribute, Ch_Dispose, FUN_00796f70 |
 | 7 | 347 | `0x007824e0` | `MsBtlBridgeEvent2Btl` | AtelGetEventElemCharIDFromID, AtelSetEventActorLinkWork, AtelGetEventElemHandleFromID, FUN_0086b440, AtelGetEventBindIdFromID, AtelGetEventActorLinkWork, AtelGetEventCharIDFromID |

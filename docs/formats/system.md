@@ -1423,3 +1423,85 @@ pushed as literals (no relocation entries), not addresses.
   `ftol2_sse`.
 - `Vec3At24_0061a7f0(out)` (thiscall, `ret 4`) copies the three floats
   at `+0x24` to `out` and returns `out`.
+
+## Round 34
+
+- `TOGetLangColonWidth_008df4f0(kind, font)` is `TOGetColonWidth_008dfe20
+  (font)` for kind 0 in language 2 and kind 1 in languages 1..=5, else 0.
+- `MagicFile_Init()` prints `"MagicFile: Init()\n"`, sets the magic id,
+  the handle, `0x00c64ca8` and `g_BtlCommandWait` to -1 and tail-jumps to
+  `MagicFile_ResetPreloaded` (its `eax`).
+- The 16x12 message writers share the pen `0x025d09a0` (colour bytes
+  `+0..+3`, x/y `f32` at `+4`/`+8`, `+0x1a` kind, `+0x1b` colour nibbles)
+  and the glyph record `0x01841d50`, both cleared first; the integer pen
+  is stored as `f32`. `TOGetGroup` gets the code byte in a register whose
+  upper bytes are left over (the last argument's for the first code in
+  `0x008e92a0`, 0 in `0x008ea060`, then the text pointer's).
+  - `TOAddPktBaseMesFontLClutTypeRGBA(cursor, key, text, x, y, colour,
+    kind, r, g, b, a)`: group 1 returns to the start x and adds 16 to y;
+    group 2: `7 0xe1..=0xef` moves x, `0xa` the colour nibbles, `0xb n`
+    the icon `0x008e99a0(cursor, n, ftol(x), ftol(y), r, g, b, a)` then x
+    `+= f32(TOGetButtonIconWidth(n)) * [0x00c5d778]` (codes other than 7
+    end with `resetButtonData`); group 3 `TOAddPktChangeMacro(key, text,
+    pen)` unless `key` is -1; group 4 the record, then for kind 1 edge and
+    face with `TOAddFontWidthSpace(pen, record, [0x00c5d784])`, else shadow
+    and face between `graphicSetUiDrawType(1/0)` and
+    `graphicFontSetUiShadowType(0/1)` with the space at 0.78.
+  - `0x008ea060(cursor, text, x, y, colour, r, g, b, a)`: glyphs get
+    shadow and face and move x by the record's width `+0x1c` + 1.0; `0xb n`
+    draws `0x008e9970(cursor, n, ftol(x), ftol(y))` and adds 22; returns
+    `cursor` for an empty text.
+- `TOAdpCrossNumber_009019f0(value, x, y, colour, scale, gap)` formats
+  `"%d"` into a 32-byte local and draws each glyph with
+  `TOAdpCrossFontM_FFX(p, x, y, colour, 0x80, 0x80, 0x80, 0x80, scale)`
+  from `x - scale * (n * (gap + 10) - gap)` (each step at 53 bits, stored
+  `f32`), stepping `(gap + 10) * scale`, a double that is never stored.
+- `ShapeDataModify(shape, id)` (shape record: corners `+0/+4`,
+  `+0x20/+0x24`; UVs `+8/+0xc`, `+0x28/+0x2c`; colour words
+  `+0x10..+0x18`, `+0x1c`, `+0x30..+0x38`, `+0x3c`) fixes shapes for the
+  HD port with `graphicUiRemapX/Y` (720p): 0x3e, 0x19b, 0x19c, 0x19f and
+  0x1fb get new corners (0x19b/0x19c/0x19f new UVs), 0x1f7 and 0x1fc move
+  up 10 (0x1fc also x0 + 15, x1 + 35, y1 + 0.0), 0x1023 narrows by its x0
+  and 25 and gets y 560..584, 0x1024/0x102d move up 20/30, take 25 off x1
+  and turn alphas from 0x46 into 0x80. 0x19b/0x19c clear both alphas when
+  the first colour is black, else grey both colours; with 0x1fb each
+  non-zero alpha then pulses as `ftol(f32(cos(graphicGetTime() * 3)) * 10
+  + 118)`.
+- `MsgExpandCodes_00776940(out, text, arg, &jump, &flag)` copies a
+  script message, evaluating the `0xb 0xf0..0xfa` codes (one-byte codes
+  are 3 and 0x30 up; the others take two):
+  `0xf0` pushes a comparison (16-byte record: `a` from getter `d1 &
+  0xffff`(`d1 >> 16`) / variable `d1 >> 16` / 0 by `d0`'s low byte, `b`
+  likewise from `d2` / `d3` by byte 2; operator byte 1: 1 `!=`, 2 `>=`, 3
+  `<=`, 4 `>`, 5 `<`, 6 `&`, else `==`, signed) on a 64-byte condition
+  stack; `0xf1` on a false top and `0xf3` on a true one skip to the
+  matching `0xf3`/`0xf2` (only `0xf1` stops at `0xf3`); `0xf2` pops
+  (`report_rangecheckfailure` past 64); `0xf4` runs
+  `MenuTextCode_00774860(&out, &p, arg)`; with `jump`: `0xf6` sets a
+  variable or calls a setter, `0xf7` stores its word +
+  `*0x0112a03c` at `0x0112a084`, sets `*jump` and returns 0, `0xf8` calls
+  the call table with a getter, a variable, 0 or `d2`; `0xf9` sets
+  `0x0112a074`; `0xfa` sets `*flag`. At the NUL it clears `*jump` and
+  returns the end past the NUL (Ghidra's `void` is wrong). Each code
+  first `yiAssert`s that `out` is under 0x4000 bytes into `*0x0112a02c`.
+- `TODrawMesBox_008ff370(text, x, y, extra)` draws a message box sized by
+  the `i16` pair at `0x025d1644` (width) / `0x025d1642` (height): a black
+  shadow (`TOMakePktBoxXYWHRGBA(x + 4, y + 4, w, h, 0, 0, 0, 0x80)`), the
+  frame (`0x008fd390(x, y, w, h, [0x025d163c], [0x025d1638])`) and the
+  text (`0x00901cb0(text, x + 15, y + 2, extra)`).
+  `TODrawMesBoxFit_008ff3e0` measures the text first (`TOGetMessageWH(0,
+  text, &w, &h, 0, 0)`) and uses `ftol(478 - w)` and `ftol(482 - w)` as
+  the widths.
+- `BtlDrawRatio_008955e0()` draws `0x00901490(f, x + 15, y - 20, colour)`
+  while `0x0133f77c` is set (`f` the `f32` at `0x0133f794`, `x`/`y` the
+  `i16` at `0x0133f780`/`0x0133f782`, `y` refreshed to
+  `ftol(graphicUiRemapY2(350))` when `0x0133c93f` is set); the colour is
+  `0x80008080` below 1.0 and `0x80808080` otherwise, NaN included (Ghidra's
+  `1.0 <= f` has NaN the other way).
+- The writers' wrappers: `0x008ed0a0(cursor, text, x, y, colour)` and
+  `0x008ed160(.., r, g, b, a)` pass key -1 and kind 0 to `0x008e92a0` (grey
+  for the first), `0x008ee210(cursor, key, ..)` passes its key, and
+  `0x008ed060(cursor, text, x, y)` key 0 and colour 0 in grey;
+  `0x008ea000` is `0x008ea060` in grey; `0x008f2ff0(cursor, value, x, y,
+  colour)` writes `TOValueToMesFontL(value, text, 0)` from a 32-byte
+  local like `0x008ed0a0`.

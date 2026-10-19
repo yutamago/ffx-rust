@@ -5212,7 +5212,7 @@ fn save_tables(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let t = fake_records(a, b, rng, 0x40, 0x68);
         set(a, b, ab, t);
     }
-    let grow = ffx_battle::save_param::bridge::SUMMON_GROW;
+    let grow = ffx_battle::save_param::bridge::SUM_ASSURE;
     if !readable(a, grow.get(b), 0x20) {
         let t = fake_records(a, b, rng, 0x80, 0xc);
         set(a, b, grow, t);
@@ -6197,6 +6197,10 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let mut process_rng = Xorshift(0x21e5_0401 ^ u32::from(synthetic));
     let monster_tables = scratch(a, b, 0xc000);
     let mut monster_rng = Xorshift(0x21e5_0501 ^ u32::from(synthetic));
+    // MsBtlReadSetScene's records and file (round 22)
+    let scene_rec = scratch(a, b, (EXCHANGE_REC * 7) as usize);
+    let scene_file = scratch(a, b, 0x200);
+    let mut scene_rng = Xorshift(0x22e5_0101 ^ u32::from(synthetic));
     let mut init_rng = Xorshift(0x21e5_0101 ^ u32::from(synthetic));
     for o in [&mut *a, &mut *b] {
         logging_stub(
@@ -6291,6 +6295,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 battle_init_rec,
                 battle_init_data + 0x60,
             );
+        }
+        if scene_rng.below(3) == 0 {
+            read_set_scene(a, b, &mut scene_rng, scene_rec, scene_file);
         }
         if monster_rng.below(3) == 0 {
             read_monster(
@@ -8429,6 +8436,30 @@ const INIT_CALLEES: [(u32, u8); 13] = {
 };
 const INIT_STUBS: u32 = READ_MANAGE_STUBS + 0x40 * 24;
 
+/// Code no test runs for round 22's stubs (0x40 bytes each, 83 of them):
+/// `Ms_Gui_BattleChr2Proc` (`0x007de790`, 5369 bytes), a debug window's
+/// procedure no code calls (the window table holds it). The area from
+/// [`SPECIAL_STUBS`] to `Ms_Gui_BattleConfigProc`'s end (`0x007c86e0`) is
+/// used up to [`INIT_STUBS`]` + 59`.
+const GUI_STUBS: u32 = 0x007d_e790;
+/// `MsBtlReadSetScene`'s callees (round 22) as logging stubs:
+/// `TOFTCTransfer(font)`, `MsSetRamChrData()`, `MsBtlBridgeEvent2Btl()`,
+/// `AtelEventRemoveForBattle(map)`, `Sg_SetPlayer(n)`,
+/// `Sg_IdSetEffectTableIndex(i)`, `TkGetNowEventJumpMapNo()` (last, its
+/// result drawn).
+const SET_SCENE_CALLEES: [(u32, u8); 7] = {
+    use ffx_battle::read::bridge as rd;
+    [
+        (rd::TO_FTC_TRANSFER, 1),
+        (rd::MS_SET_RAM_CHR_DATA, 0),
+        (rd::MS_BTL_BRIDGE_EVENT2BTL, 0),
+        (rd::ATEL_EVENT_REMOVE_FOR_BATTLE, 1),
+        (ffx_battle::exe::bridge::SG_SET_PLAYER, 1),
+        (ffx_battle::free::bridge::SG_ID_SET_EFFECT_TABLE_INDEX, 1),
+        (rd::TK_GET_NOW_EVENT_JUMP_MAP_NO, 0),
+    ]
+};
+
 /// `MsBattleInit`'s leaves (round 21, `ffx_battle::init`): the memory
 /// check, the gains record, the status effects' numbers (on a table of our
 /// own and the game's), the field items, the weapon names and key items,
@@ -9293,6 +9324,102 @@ fn battle_process(
         },
     );
     same(&format!("MsBattleProcess {status:#x} {pad:#x}"), a, b);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+    for ((at, _), v) in regions.into_iter().zip(kept) {
+        poke(a, b, at, &v);
+    }
+}
+
+/// `MsBtlReadSetScene` (round 22, `ffx_battle::read`): a battle file of
+/// our own in `file` (0x200 bytes: four section offsets, random
+/// sections), the file's name `system_01` or near it, its text and font
+/// there or not, `MsBattleExe`'s mode 0 or not and the event's jump map
+/// the battle's or not. Callees as [`SET_SCENE_CALLEES`]' logging stubs
+/// (records from `rec`) in [`GUI_STUBS`]; `MsActionInit` and
+/// `MsPushBtlPosAll` run as the originals and the ports. The battle's
+/// globals and the stubbed entries put back after.
+fn read_set_scene(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, file: u32) {
+    use ffx_battle::read::bridge as rd;
+    let mut call = game_call_o;
+    let regions = [
+        (b.rebase(0x0112_a800), 0xc800),
+        (b.rebase(0x0231_0c00), 0x900),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    let stub = |k: u32| rec + EXCHANGE_REC * k;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, &(f, n)) in (0u32..).zip(&SET_SCENE_CALLEES) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, GUI_STUBS + 0x40 * k, stub(k), n, 0);
+        }
+        saved.push(mine);
+    }
+    // the file: offsets of four sections inside it (some at its end)
+    let mut bytes = vec![0u8; 0x200];
+    for (i, v) in bytes.iter_mut().enumerate().skip(0x14) {
+        *v = if i % 7 == 0 { 0 } else { rng.byte() };
+    }
+    bytes[..4].copy_from_slice(&[4, 0, 0, 0]);
+    for k in 1..5 {
+        let off = 0x14 + rng.below(0x1e8);
+        bytes[4 * k..4 * k + 4].copy_from_slice(&off.to_le_bytes());
+    }
+    poke(a, b, file, &bytes);
+    set(a, b, ffx_battle::exe::bridge::FILE_BUFFER, file);
+    let names: [&[u8]; 6] = [
+        b"system_01\0",
+        b"system_01\0",
+        b"system_0\0",
+        b"system_011\0",
+        b"\0",
+        b"cdsp00_00\0",
+    ];
+    let name = names[rng.below(6) as usize];
+    poke(a, b, b.rebase(rd::FILE_NAME), name);
+    let text = [0, file + 0x100, rng.next() | 1][rng.below(3) as usize];
+    let font = [0, rng.next() | 1][rng.below(2) as usize];
+    set(a, b, rd::FILE_TEXT_DATA, text);
+    set(a, b, rd::FILE_FONT_DATA, font);
+    // a stale font and text table (cleared first)
+    set(a, b, ffx_battle::misc::bridge::FONT, rng.next() | 1);
+    set(a, b, rd::FILE_TEXT, rng.next() | 1);
+    set(a, b, rd::EXE_MODE, [0, 0, 0, 1, -1][rng.below(5) as usize]);
+    let music = [
+        0x0010u16,
+        0xfff0,
+        0x8000,
+        rng.word().to_le_bytes()[0].into(),
+    ][rng.below(4) as usize];
+    set(a, b, ffx_battle::exe::bridge::BATTLE_MUSIC, music);
+    let jump = match rng.below(3) {
+        0 => i32::from(music.cast_signed()).cast_unsigned(),
+        1 => u32::from(music),
+        _ => rng.next(),
+    };
+    poke(a, b, stub(6) + 4, &jump.to_le_bytes());
+    for _ in 0..2 {
+        twin(
+            "MsBtlReadSetScene",
+            a,
+            b,
+            rd::MS_BTL_READ_SET_SCENE,
+            &[],
+            ALL,
+            |m| rd::ms_btl_read_set_scene(m, &mut call),
+        );
+        same("MsBtlReadSetScene", a, b);
+    }
     for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
         for (f, v) in mine {
             let at = o.rebase(f);

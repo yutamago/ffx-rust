@@ -19,7 +19,7 @@
 0x00401330	glue	reviewed: STL error_code compare (system round 31)
 0x00401370	glue	reviewed: STL error_code compare (system round 31)
 0x004013a0	logic	default (no rule: ported to be safe)
-0x004013b0	logic	default (no rule: ported to be safe)
+0x004013b0	glue	reviewed: STL error_category::message (system round 34)
 0x00401430	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x00401480	logic	default (no rule: ported to be safe)
 0x00401490	logic	default (no rule: ported to be safe)
@@ -2053,7 +2053,7 @@
 0x00679330	dead	unreachable from the entry point and every pointer table
 0x00679370	dead	unreachable from the entry point and every pointer table
 0x006793e0	logic	default (no rule: ported to be safe)
-0x006794f0	logic	default (no rule: ported to be safe)
+0x006794f0	glue	reviewed: PhyreFIOS_UnloadMagicfilePrx: PhyreEngine forwarder (system round 34)
 0x00679500	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): fiosClearOps
 0x00679510	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): fiosClose
 0x00679560	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): fiosDeleteCompletedOps
@@ -4403,8 +4403,8 @@
 0x006fb160	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SyncManager_syncGetData
 0x006fb210	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): SyncManager_syncInit
 0x006fb320	dead	unreachable from the entry point and every pointer table
-0x006fb380	logic	default (no rule: ported to be safe)
-0x006fb410	logic	default (no rule: ported to be safe)
+0x006fb380	platform	reviewed: SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)
+0x006fb410	platform	reviewed: SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)
 0x006fb480	dead	unreachable from the entry point and every pointer table
 0x006fb4a0	dead	unreachable from the entry point and every pointer table
 0x006fb500	dead	unreachable from the entry point and every pointer table
@@ -14677,8 +14677,8 @@
 0x008ff140	logic	default (no rule: ported to be safe)
 0x008ff170	dead	unreachable from the entry point and every pointer table
 0x008ff260	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
-0x008ff370	logic	default (no rule: ported to be safe)
-0x008ff3e0	logic	default (no rule: ported to be safe)
+0x008ff370	glue	GS packet API (TODrawMesBox_008ff370): appends to or kicks a packet; replaced by ffx-render
+0x008ff3e0	glue	GS packet API (TODrawMesBoxFit_008ff3e0): appends to or kicks a packet; replaced by ffx-render
 0x008ff490	logic	default (no rule: ported to be safe)
 0x009008c0	dead	unreachable from the entry point and every pointer table
 0x00900f40	logic	default (no rule: ported to be safe)
@@ -14697,7 +14697,7 @@
 0x00901660	glue	reviewed: TOMkpCrossEasyStrFontSClut: only calls the packet writer TOAdpCrossEasyStrFontSClutRGBA (system round 25)
 0x009016b0	glue	GS packet API (TOMkpCrossExtMesFontLClut): appends to or kicks a packet; replaced by ffx-render
 0x00901700	glue	GS packet API (TOMkpCrossExtMesFontLClutTypeRGBA): appends to or kicks a packet; replaced by ffx-render
-0x009019f0	logic	default (no rule: ported to be safe)
+0x009019f0	glue	GS packet API (TOAdpCrossNumber_009019f0): appends to or kicks a packet; replaced by ffx-render
 0x00901af0	dead	unreachable from the entry point and every pointer table
 0x00901bb0	dead	unreachable from the entry point and every pointer table
 0x00901be0	dead	unreachable from the entry point and every pointer table

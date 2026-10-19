@@ -80,10 +80,13 @@ reported) and reports a name given to two addresses.
 
 `tools/verify-batch.py [BASE]` (BASE: the last pushed state, `origin/main`)
 runs only what the batch can affect: unit tests of the changed crates and of
-every crate depending on them, their `ffx-oracle` tests on the image alone
-and on both snapshots (all of them when `ffx-oracle/src` or `ffx-bridge`
-changed), the port checks, the hook build and the replays. The game-data
-tests that read the whole archive run separately, now and then.
+every crate depending on them; the `ffx-oracle` tests of the changed crates,
+of the changed test files and of the modules whose hook shims changed, on the
+image alone and on both snapshots side by side (all of them when
+`ffx-oracle/src` or `ffx-bridge` changed); the port checks, the hook build
+and the replays. Every fourth run, or with `--full`, the oracle tests of every
+dependent crate run too. The game-data tests that read the whole archive run
+separately, now and then.
 
 ## Progress and ownership
 

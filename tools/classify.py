@@ -264,6 +264,10 @@ REVIEWED = {
     0x008ad840: ("platform", "TOInitEventFontPath: PS3Data path mapping via fiosUnifyFilename (system round 33)"),
     0x0067a960: ("platform", "iSyncInitialize: operator new of the PC SyncManager (system round 33)"),
     0x00687070: ("debug", "StackWalker crash-report formatter (system round 33)"),
+    0x006794f0: ("glue", "PhyreFIOS_UnloadMagicfilePrx: PhyreEngine forwarder (system round 34)"),
+    0x004013b0: ("glue", "STL error_category::message (system round 34)"),
+    0x006fb410: ("platform", "SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)"),
+    0x006fb380: ("platform", "SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
