@@ -935,6 +935,684 @@ pub mod bridge {
         eax
     }
 
+    /// The battle status window's mode (`0x0133d782`): 0 HP, 1 MP, 2 the
+    /// statuses, 3 the limit gauges.
+    pub const STATUS_MODE: u32 = 0x0133_d782;
+    /// `TOBtlInitStatusWin()`.
+    const INIT_STATUS_WIN: u32 = 0x0089_8010;
+    /// The scratch [`ctrl_status_win`] needs: the save-window count and
+    /// `MsGetComData`'s second result.
+    pub const CTRL_STATUS_WORK: u32 = 8;
+
+    /// One shown value of a status row stepping to its target: `at` the
+    /// target, `at + 4` the shown value, `at + 8` the step, the byte
+    /// `frames` the steps left. A new target sets the step to a tenth of
+    /// the difference over 10 frames; then the shown value steps, or with
+    /// no frames left is the target.
+    fn step_to<M: Mem>(mem: &mut M, at: u32, frames: u32, value: u32) {
+        let target: u32 = mem.read(at);
+        if value != target {
+            let step = value.cast_signed().wrapping_sub(target.cast_signed()) / 10;
+            mem.write(at + 8, step);
+            mem.write(frames, 10u8);
+            mem.write(at, value);
+        }
+        let left: i8 = mem.read(frames);
+        if left > 0 {
+            let shown = mem.read::<u32>(at + 4).wrapping_add(mem.read(at + 8));
+            mem.write(at + 4, shown);
+            mem.write(frames, left - 1);
+        } else {
+            mem.write(at + 4, value);
+            mem.write(at + 8, 0u32);
+            mem.write(frames, 0u8);
+        }
+    }
+
+    /// `TOBtlCtrlStatusWin()` (`0x008920d0`): one frame of the battle
+    /// status window. The mode ([`STATUS_MODE`]) follows the current
+    /// command (`MsGetComData` of the `u16` at `0x0133c95c + 0xf0 *
+    /// g_BtlActionDepth`): with its `+0x22` bit 0 set, bits 1–2 (a change
+    /// first re-inits the window, `TOBtlInitStatusWin`); else, or with no
+    /// command (`0x023cc088` 0xff, no re-init), 3. The window is re-inited
+    /// when the party (`MsGetSaveWindow(0, 0x12, &n)`'s first three
+    /// `u16`s, `n` trimmed past trailing 0xff entries) differs from
+    /// [`STATUS_PARTY`]. Then each character's row ([`STATUS_ROWS`]) steps
+    /// its shown HP (`+0xc` target, `+0x10` shown, `+0x14` step, byte
+    /// `+0x18` frames) and MP (`+0x24`..`+0x30`) toward the current values,
+    /// sets the HP colour byte `+0x19` from `MsCalcWeakLevel(shown, max)`
+    /// (1 and 2: 2, 3: 0x53, else 0) and `+0x31` to 0, and moves the
+    /// shown limit gauge `+0x38` up by 6 a frame (never past) toward its
+    /// target `+0x34`: the gauge scaled to the `i16` width at
+    /// `0x025d0aa4` (`gauge * width / max`, 0 without a positive maximum;
+    /// a zero second maximum faults in the original, here it gives 0).
+    /// Callees through `call`; the counts at `work`
+    /// ([`CTRL_STATUS_WORK`]).
+    pub fn ctrl_status_win<M: Mem>(
+        mem: &mut M,
+        work: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let mode_at = mem.rebase(STATUS_MODE);
+        let mut mode = 3u8;
+        if ACTION_PREV_VALUE.get(mem) != 0xff {
+            let depth = i32::from(ACTION_DEPTH.get(mem));
+            let id_at = mem
+                .rebase(0x0133_c95c)
+                .wrapping_add(depth.wrapping_mul(0xf0).cast_unsigned());
+            let id = u32::from(mem.read::<u16>(id_at));
+            let command = call(mem, 0x0079_a4b0, &[id, work + 4]);
+            let flags: u8 = mem.read(command + 0x22);
+            if flags & 1 == 0 {
+                call(mem, INIT_STATUS_WIN, &[]);
+            } else {
+                mode = (flags >> 1) & 3;
+                if mem.read::<u8>(mode_at) != mode {
+                    call(mem, INIT_STATUS_WIN, &[]);
+                }
+            }
+        }
+        mem.write(mode_at, mode);
+
+        // the party, trimmed
+        mem.write(work, 0u32);
+        let window = call(mem, 0x0078_5410, &[0, 0x12, work]);
+        let mut n: i32 = mem.read(work);
+        while n > 0 && mem.read::<u16>(window.wrapping_add((2 * n - 2).cast_unsigned())) == 0xff {
+            n -= 1;
+            mem.write(work, n);
+        }
+        let party = mem.rebase(STATUS_PARTY);
+        if mem.read::<u32>(window) != mem.read::<u32>(party)
+            || mem.read::<u16>(window + 4) != mem.read::<u16>(party + 4)
+        {
+            call(mem, INIT_STATUS_WIN, &[]);
+        }
+
+        // each character's row
+        let rows = mem.rebase(STATUS_ROWS);
+        let width = mem.rebase(0x025d_0aa4);
+        for k in 0..3 {
+            let slot = party + 2 * k;
+            let row = rows + 0x90 * k;
+            let chr = |mem: &M| u32::from(mem.read::<u16>(slot));
+            if chr(mem) == 0xff {
+                continue;
+            }
+            let hp = call(mem, 0x0079_add0, &[chr(mem)]);
+            let mp = call(mem, 0x0079_ae50, &[chr(mem)]);
+            let hp_max = call(mem, 0x0079_adf0, &[chr(mem)]);
+            call(mem, 0x0079_ae70, &[chr(mem)]);
+            step_to(mem, row + 0xc, row + 0x18, hp);
+            let shown: u32 = mem.read(row + 0x10);
+            let colour = match call(mem, 0x0078_bf00, &[shown, hp_max]) {
+                1 | 2 => 2u8,
+                3 => 0x53,
+                _ => 0,
+            };
+            mem.write(row + 0x19, colour);
+            step_to(mem, row + 0x24, row + 0x30, mp);
+            mem.write(row + 0x31, 0u8);
+            let bar = if call(mem, 0x0079_5590, &[chr(mem)]).cast_signed() > 0 {
+                let gauge = call(mem, 0x0079_5550, &[chr(mem)]).cast_signed();
+                let scale = i32::from(mem.read::<i16>(width));
+                let max = call(mem, 0x0079_5590, &[chr(mem)]).cast_signed();
+                gauge.wrapping_mul(scale).checked_div(max).unwrap_or(0)
+            } else {
+                0
+            };
+            mem.write(row + 0x34, bar);
+            let shown: i32 = mem.read(row + 0x38);
+            if shown < bar {
+                mem.write(row + 0x38, shown.wrapping_add(6));
+            }
+            if mem.read::<i32>(row + 0x38) > bar {
+                mem.write(row + 0x38, bar);
+            }
+        }
+    }
+
+    /// The limit windows' shared callees: `TOSeqStartSceneDrawContinue(2,
+    /// name)`, `TOSeqCheckTermScene(2, name)`, `TOSeqStartScene(2, name)`,
+    /// `TOSeqStopScene(2, name)`, the limit timer's stops and start
+    /// (`0x0089ab20`, `0x0089aba0`, `0x0089ab50`), `SndPlayClick(n)`,
+    /// `MsMenuLimitSet_007b0470(kind, result, left, total)` and
+    /// `TOBtlInitLimitTimer()`.
+    mod limit {
+        pub const SEQ_START_CONTINUE: u32 = 0x008a_f1b0;
+        pub const SEQ_CHECK_TERM: u32 = 0x008a_e070;
+        pub const SEQ_START: u32 = 0x008a_f0d0;
+        pub const SEQ_STOP: u32 = 0x008a_f4f0;
+        pub const TIMER_STOP: u32 = 0x0089_ab20;
+        pub const TIMER_STOP2: u32 = 0x0089_aba0;
+        pub const TIMER_START: u32 = 0x0089_ab50;
+        pub const PLAY_CLICK: u32 = 0x0088_6ba0;
+        pub const LIMIT_SET: u32 = 0x007b_0470;
+        pub const INIT_TIMER: u32 = 0x0089_7f00;
+        /// The limit timer: the time left and the total (`f32`).
+        pub const TIME_LEFT: u32 = 0x0133_f790;
+        pub const TIME_TOTAL: u32 = 0x0133_f78c;
+        /// The scene names (`.rdata`).
+        pub const BAURO: u32 = 0x00b5_eccc;
+        pub const BAURO2: u32 = 0x00b5_ecd4;
+        pub const BGOOD: u32 = 0x00b5_ecdc;
+        pub const BTIDU: u32 = 0x00b5_ecec;
+        pub const BLULU: u32 = 0x00b5_ed14;
+        pub const BLULU2: u32 = 0x00b5_ed1c;
+        pub const BGOODL: u32 = 0x00b5_ed24;
+    }
+
+    /// A limit window's scene call `f(2, name)`.
+    fn scene<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        f: u32,
+        name: u32,
+    ) -> u32 {
+        let name = mem.rebase(name);
+        call(mem, f, &[2, name])
+    }
+
+    /// One step more of a limit window's state (`u16 +1`).
+    fn next_state(mem: &mut impl Mem, state: u32) {
+        let v = mem.read::<u16>(state).wrapping_add(1);
+        mem.write(state, v);
+    }
+
+    /// The time left is up (`fldz; fcomp`: a NaN is not).
+    fn time_up(mem: &impl Mem) -> bool {
+        mem.read::<f32>(mem.rebase(limit::TIME_LEFT)) <= 0.0
+    }
+
+    /// `MsMenuLimitSet_007b0470(kind, result, left, total)`, the times
+    /// copied through x87.
+    fn limit_set<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        kind: u32,
+        result: u32,
+    ) {
+        let copy = |mem: &M, a: u32| {
+            ffx_bridge::x87::store(ffx_bridge::x87::load(mem.read(mem.rebase(a))))
+        };
+        let (left, total) = (copy(mem, limit::TIME_LEFT), copy(mem, limit::TIME_TOTAL));
+        call(mem, limit::LIMIT_SET, &[kind, result, left, total]);
+    }
+
+    /// Auron's limit window: its state (`i16 0x0133d6f4`), the result
+    /// (`0x0133d6f2`), the button pressed (`u16 0x025d09d4`), the
+    /// combination's position (`i16 0x0133d6fc`), its buttons (`0x0133d704`,
+    /// `u16`s) and length (`i32 0x0133d700`).
+    pub const AURON_STATE: u32 = 0x0133_d6f4;
+    const AURON_RESULT: u32 = 0x0133_d6f2;
+
+    /// `TOBtlCtrlAuronLimitWindow()` (`0x00890f70`): Auron's limit
+    /// (Bushido) window, one state a frame: 1 the `bauro` scene
+    /// (result 0), 2 on its end `bauro2`, 3 the timer stops, 4 the timer
+    /// runs (time up: 7) while each button pressed must be the
+    /// combination's next (else a click 0x69 and back to its start); the
+    /// whole of it is 5: the timer stops, result 1, `bgood` and a click
+    /// 0x68, 6 waits for `bgood`'s end, 7 the timer stops with result 0,
+    /// 8 the scenes stop, 9 a frame, 10 the result to
+    /// `MsMenuLimitSet_007b0470(2, ..)` and the timer re-inits (0). Callees
+    /// through `call`.
+    pub fn ctrl_auron_limit_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let state = mem.rebase(AURON_STATE);
+        let result = mem.rebase(AURON_RESULT);
+        let call = &mut call;
+        match mem.read::<i16>(state) {
+            1 => {
+                mem.write(result, 0u8);
+                scene(mem, call, limit::SEQ_START_CONTINUE, limit::BAURO);
+                next_state(mem, state);
+            }
+            2 => {
+                if scene(mem, call, limit::SEQ_CHECK_TERM, limit::BAURO) == 1 {
+                    scene(mem, call, limit::SEQ_START, limit::BAURO2);
+                    next_state(mem, state);
+                }
+            }
+            3 => {
+                call(mem, limit::TIMER_STOP, &[]);
+                next_state(mem, state);
+            }
+            4 => {
+                call(mem, limit::TIMER_START, &[]);
+                if time_up(mem) {
+                    mem.write(state, 7u16);
+                    return;
+                }
+                let pressed: u16 = mem.read(mem.rebase(0x025d_09d4));
+                if pressed == 0 {
+                    return;
+                }
+                let at = mem.rebase(0x0133_d6fc);
+                let i: i16 = mem.read(at);
+                let buttons: u32 = mem.read(mem.rebase(0x0133_d704));
+                let want: u16 =
+                    mem.read(buttons.wrapping_add(i32::from(i).cast_unsigned().wrapping_mul(2)));
+                let i = if pressed == want {
+                    i.wrapping_add(1)
+                } else {
+                    call(mem, limit::PLAY_CLICK, &[0x69]);
+                    0
+                };
+                mem.write(at, i);
+                if i32::from(i) >= mem.read::<i32>(mem.rebase(0x0133_d700)) {
+                    mem.write(state, 5u16);
+                }
+            }
+            5 => {
+                call(mem, limit::TIMER_STOP2, &[]);
+                mem.write(result, 1u8);
+                scene(mem, call, limit::SEQ_START, limit::BGOOD);
+                call(mem, limit::PLAY_CLICK, &[0x68]);
+                mem.write(state, 6u16);
+            }
+            6 | 8 => {
+                if mem.read::<i16>(state) == 6
+                    && scene(mem, call, limit::SEQ_CHECK_TERM, limit::BGOOD) != 1
+                {
+                    return;
+                }
+                scene(mem, call, limit::SEQ_STOP, limit::BAURO);
+                scene(mem, call, limit::SEQ_STOP, limit::BAURO2);
+                mem.write(state, 9u16);
+            }
+            7 => {
+                call(mem, limit::TIMER_STOP2, &[]);
+                mem.write(result, 0u8);
+                mem.write(state, 8u16);
+            }
+            9 => next_state(mem, state),
+            10 => {
+                let r = i32::from(mem.read::<i8>(result)).cast_unsigned();
+                limit_set(mem, call, 2, r);
+                call(mem, limit::INIT_TIMER, &[]);
+                mem.write(state, 0u16);
+            }
+            _ => {}
+        }
+    }
+
+    /// Tidus's limit window: its state (`i16 0x0133d734`), the result
+    /// (`0x0133d6f3`), the bar (`i16`s from `0x0133d736`: the start, `+4`
+    /// the length, `+6`/`+8` the good part, `+0xc` the position, `+0xe`
+    /// the step).
+    pub const TIDUS_STATE: u32 = 0x0133_d734;
+    const TIDUS_RESULT: u32 = 0x0133_d6f3;
+
+    /// `TOBtlCtrlTidusLimitWindow()` (`0x00892320`): Tidus's limit (Swordplay)
+    /// window, its states as Auron's ([`ctrl_auron_limit_window`]) with
+    /// the `btidu` scene and `MsMenuLimitSet_007b0470(0, ..)`; state 4 moves
+    /// the marker by its step between the bar's ends (bouncing back and
+    /// turning the step at each); a press (`TkGetControlerTrigHist` bit
+    /// 0x20 of the held or new presses) inside the good part is state 5,
+    /// elsewhere a click 3, the marker back to the start and the step
+    /// forward again. Callees through `call`.
+    pub fn ctrl_tidus_limit_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let state = mem.rebase(TIDUS_STATE);
+        let result = mem.rebase(TIDUS_RESULT);
+        let call = &mut call;
+        match mem.read::<i16>(state) {
+            1 => {
+                mem.write(result, 0u8);
+                scene(mem, call, limit::SEQ_START_CONTINUE, limit::BTIDU);
+                next_state(mem, state);
+            }
+            2 => {
+                if scene(mem, call, limit::SEQ_CHECK_TERM, limit::BTIDU) == 1 {
+                    next_state(mem, state);
+                }
+            }
+            3 => {
+                call(mem, limit::TIMER_STOP, &[]);
+                next_state(mem, state);
+            }
+            4 => tidus_bar(mem, call, state),
+            5 => {
+                call(mem, limit::TIMER_STOP2, &[]);
+                mem.write(result, 1u8);
+                scene(mem, call, limit::SEQ_START, limit::BGOOD);
+                call(mem, limit::PLAY_CLICK, &[0x68]);
+                mem.write(state, 6u16);
+            }
+            6 | 8 => {
+                if mem.read::<i16>(state) == 6
+                    && scene(mem, call, limit::SEQ_CHECK_TERM, limit::BGOOD) != 1
+                {
+                    return;
+                }
+                scene(mem, call, limit::SEQ_STOP, limit::BTIDU);
+                mem.write(state, 9u16);
+            }
+            7 => {
+                call(mem, limit::TIMER_STOP2, &[]);
+                mem.write(result, 0u8);
+                mem.write(state, 8u16);
+            }
+            9 => next_state(mem, state),
+            10 => {
+                let r = i32::from(mem.read::<i8>(result)).cast_unsigned();
+                limit_set(mem, call, 0, r);
+                call(mem, limit::INIT_TIMER, &[]);
+                mem.write(state, 0u16);
+            }
+            _ => {}
+        }
+    }
+
+    /// Tidus's state 4 (see [`ctrl_tidus_limit_window`]).
+    fn tidus_bar<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        state: u32,
+    ) {
+        call(mem, limit::TIMER_START, &[]);
+        let held = call(mem, 0x0088_8e80, &[0, 0, u32::MAX]) & 0xffff;
+        let new = call(mem, 0x0088_8e80, &[0, 0, 0]) & 0xffff;
+        if time_up(mem) {
+            mem.write(state, 7u16);
+            return;
+        }
+        let at = |mem: &M, o: u32| mem.rebase(0x0133_d736 + o);
+        let (pos_at, step_at) = (at(mem, 0xc), at(mem, 0xe));
+        let (mut pos, step, start) = if held & 0x20 != 0 || new & 0x20 != 0 {
+            let p: i16 = mem.read(pos_at);
+            let good = (mem.read::<i16>(at(mem, 6)), mem.read::<i16>(at(mem, 8)));
+            if good.0 <= p && p <= good.1 {
+                mem.write(state, 5u16);
+                return;
+            }
+            call(mem, limit::PLAY_CLICK, &[3]);
+            let step = mem.read::<i16>(step_at).wrapping_abs();
+            let start: i16 = mem.read(at(mem, 0));
+            mem.write(step_at, step);
+            (start, step, start)
+        } else {
+            let step: i16 = mem.read(step_at);
+            (mem.read::<i16>(pos_at), step, mem.read::<i16>(at(mem, 0)))
+        };
+        let turn = |mem: &mut M| {
+            let s = mem.read::<i16>(step_at).wrapping_neg();
+            mem.write(step_at, s);
+        };
+        pos = pos.wrapping_add(step);
+        let length: i16 = mem.read(at(mem, 4));
+        mem.write(pos_at, pos);
+        if i32::from(pos) > i32::from(length) + i32::from(start) {
+            pos = length.wrapping_add(start).wrapping_mul(2).wrapping_sub(pos);
+            mem.write(pos_at, pos);
+            turn(mem);
+        }
+        if pos < start {
+            mem.write(pos_at, start.wrapping_mul(2).wrapping_sub(pos));
+            turn(mem);
+        }
+    }
+
+    /// Lulu's limit window: its state (`i16 0x0133d708`), the gauge (`i16
+    /// 0x0133d71c`) and its full width (`i16 0x0133d70e`), the presses
+    /// (`0x0133d71e`) and level (`0x0133d71f`, at most 16) against
+    /// [`LULU_LIMIT`], the directions so far (`0x0133d721`.., their count
+    /// `i8 0x0133d731`), the frame time and the last reset (`f32
+    /// 0x0133c920`, `0x0133c924`), the keyboard's two buttons (`0x0133c928`,
+    /// `0x0133c92c`), keyboard input on (`0x0133c930`) and the control mode
+    /// (`0x00c58ef0`, 0 the keyboard).
+    pub const LULU_STATE: u32 = 0x0133_d708;
+    mod lulu {
+        pub const GAUGE: u32 = 0x0133_d71c;
+        pub const WIDTH: u32 = 0x0133_d70e;
+        pub const PRESSES: u32 = 0x0133_d71e;
+        pub const LEVEL: u32 = 0x0133_d71f;
+        pub const DIRS: u32 = 0x0133_d721;
+        pub const COUNT: u32 = 0x0133_d731;
+        pub const NOW: u32 = 0x0133_c920;
+        pub const RESET: u32 = 0x0133_c924;
+        pub const KEY_A: u32 = 0x0133_c928;
+        pub const KEY_B: u32 = 0x0133_c92c;
+        pub const KEYBOARD: u32 = 0x0133_c930;
+        pub const CONTROL_MODE: u32 = 0x00c5_8ef0;
+        /// The circles a full turn makes, starting from each direction
+        /// (4..=7; the original's stack bytes, read at the first direction's
+        /// offset): turning one way, the other.
+        pub const TURNS: [u8; 16] = [7, 6, 5, 4, 7, 6, 5, 4, 4, 5, 6, 7, 4, 5, 6, 7];
+        /// The time between turns that resets the keyboard's buttons
+        /// (`f32 0x00b5edc8`, about 0.5001).
+        pub const RESET_TIME: u32 = 0x3f00_068e;
+    }
+
+    /// `TOBtlCtrlLuluLimitWindow()` (`0x00891b80`): Lulu's limit (Fury)
+    /// window. Every frame the time (`graphicGetTime`, through `fcall`) goes
+    /// to `0x0133c920` (and to the reset time when that is 0). States: 1
+    /// the `blulu` scene, 2 on its end `blulu2`, 3 the timer starts with
+    /// keyboard input on and the control mode read
+    /// (`getCurrentControlMode`), 4 (time up: 6) two passes reading the
+    /// stick (`TkGetControlerAnalogHist(0, 0, axis, all)`, held then new) or
+    /// the keyboard (`setLuluODKeyboardInput`): a direction 4–7 (right,
+    /// down, left, up by the stick's 0x60/0xa0 thresholds; none keeps the
+    /// last), the keyboard's buttons reset when idle past
+    /// about 0.5 ([`lulu::RESET_TIME`]); both keyboard buttons count a press at once
+    /// (a level more when `(presses + 1) / 2` reaches the level's table
+    /// entry); a new direction is appended. Five directions making a full
+    /// circle either way (see [`lulu::TURNS`]) start `bgoodl` and count a
+    /// press (a level when the presses reach the entry); the directions
+    /// shift by four. The gauge rises by 3 a frame toward `level * width /
+    /// 16`, or is set to it. 6 ends keyboard input
+    /// (`inputClearAllInputInfo`), stops and re-inits the timer and hands
+    /// the level to `MsMenuLimitSet_007b0470(5, ..)`; 7 a frame; 8 the
+    /// scenes stop; 9 done (0). Callees through `call`.
+    #[allow(clippy::too_many_lines)] // one state machine, as the original
+    pub fn ctrl_lulu_limit_window<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87;
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let call = &mut call;
+        let now = x87::store(fcall(mem, 0x0064_1410, &[]));
+        mem.write(r(mem, lulu::NOW), now);
+        if mem.read::<f32>(r(mem, lulu::RESET)) == 0.0 {
+            let t = x87::store(fcall(mem, 0x0064_1410, &[]));
+            mem.write(r(mem, lulu::RESET), t);
+        }
+        let elapsed = x87::load(x87::store(x87::sub(
+            x87::load(mem.read(r(mem, lulu::NOW))),
+            x87::load(mem.read(r(mem, lulu::RESET))),
+        )));
+        let state = r(mem, LULU_STATE);
+        match mem.read::<i16>(state) {
+            1 => {
+                scene(mem, call, limit::SEQ_START_CONTINUE, limit::BLULU);
+                next_state(mem, state);
+            }
+            2 => {
+                if scene(mem, call, limit::SEQ_CHECK_TERM, limit::BLULU) == 1 {
+                    scene(mem, call, limit::SEQ_START, limit::BLULU2);
+                    next_state(mem, state);
+                }
+            }
+            3 => {
+                call(mem, limit::TIMER_START, &[]);
+                mem.write(r(mem, lulu::KEYBOARD), 1u32);
+                let mode = call(mem, 0x0063_8e30, &[]);
+                next_state(mem, state);
+                mem.write(r(mem, lulu::CONTROL_MODE), mode);
+            }
+            4 => {
+                if time_up(mem) {
+                    mem.write(state, 6u16);
+                    return;
+                }
+                lulu_turns(mem, call, elapsed);
+            }
+            6 => {
+                if mem.read::<u32>(r(mem, lulu::KEYBOARD)) != 0 {
+                    call(mem, 0x0063_0c40, &[]);
+                    mem.write(r(mem, lulu::RESET), 0u32);
+                    for a in [lulu::KEYBOARD, lulu::KEY_A, lulu::KEY_B] {
+                        mem.write(r(mem, a), 0u32);
+                    }
+                }
+                call(mem, limit::TIMER_STOP2, &[]);
+                call(mem, limit::INIT_TIMER, &[]);
+                let level = u32::from(mem.read::<u8>(r(mem, lulu::LEVEL)));
+                limit_set(mem, call, 5, level);
+                mem.write(state, 7u16);
+            }
+            7 => next_state(mem, state),
+            8 => {
+                scene(mem, call, limit::SEQ_STOP, limit::BLULU);
+                scene(mem, call, limit::SEQ_STOP, limit::BLULU2);
+                next_state(mem, state);
+            }
+            9 => mem.write(state, 0u16),
+            _ => {}
+        }
+    }
+
+    /// One press more for Lulu's level: the presses count up (to 16 levels:
+    /// the level is held at 16); the level rises when `reached(presses)`
+    /// meets its [`LULU_LIMIT`] entry. Returns the level.
+    fn lulu_press<M: Mem>(mem: &mut M, reached: impl Fn(u8) -> u32) -> u8 {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let level: u8 = mem.read(at(mem, lulu::LEVEL));
+        if level >= 0x10 {
+            mem.write(at(mem, lulu::LEVEL), 0x10u8);
+            return 0x10;
+        }
+        let presses = mem.read::<u8>(at(mem, lulu::PRESSES)).wrapping_add(1);
+        mem.write(at(mem, lulu::PRESSES), presses);
+        let need = u32::from(mem.read::<u8>(LULU_LIMIT.ptr(mem).addr + u32::from(level)));
+        if reached(presses) >= need {
+            mem.write(at(mem, lulu::LEVEL), level + 1);
+            return level + 1;
+        }
+        level
+    }
+
+    /// Lulu's gauge rises by 3 toward `level * width / 16` (signed, the
+    /// width rounded toward 0), or is set to it (16-bit).
+    fn lulu_gauge(mem: &mut impl Mem, level: u8) {
+        let at = mem.rebase(lulu::GAUGE);
+        let per = i32::from(mem.read::<i16>(mem.rebase(lulu::WIDTH))) / 16;
+        let gauge: i16 = mem.read(at);
+        if i32::from(gauge) < i32::from(level).wrapping_mul(per) {
+            mem.write(at, gauge.wrapping_add(3));
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // the 16-bit product
+            mem.write(at, (i32::from(level).wrapping_mul(per)) as i16);
+        }
+    }
+
+    /// Lulu's state 4 (see [`ctrl_lulu_limit_window`]).
+    #[allow(clippy::too_many_lines)] // the two passes and the circle check
+    fn lulu_turns<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        elapsed: f64,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let (mut x, mut y, mut dir) = (0x80u8, 0x80u8, 0xffu8);
+        for pass in 0..2u32 {
+            if mem.read::<u32>(r(mem, lulu::CONTROL_MODE)) == 0 {
+                let keys = [r(mem, lulu::KEY_A), r(mem, lulu::KEY_B)];
+                call(mem, 0x0064_5eb0, &keys);
+            } else {
+                let all = if pass == 0 { u32::MAX } else { 0 };
+                #[allow(clippy::cast_possible_truncation)] // the low byte
+                {
+                    x = call(mem, 0x0088_8c20, &[0, 0, 0, all]) as u8;
+                    y = call(mem, 0x0088_8c20, &[0, 0, 1, all]) as u8;
+                }
+            }
+            // right, down, left, up
+            let picked = if x >= 0xa0 && y < 0x60 {
+                Some(4)
+            } else if x >= 0xa0 && y >= 0xa0 {
+                Some(5)
+            } else if x < 0x60 && y >= 0xa0 {
+                Some(6)
+            } else if x < 0x60 && y < 0x60 {
+                Some(7)
+            } else {
+                None
+            };
+            let mut both = false;
+            match picked {
+                Some(d) => {
+                    dir = d;
+                    both = true;
+                }
+                None if elapsed > f64::from(f32::from_bits(lulu::RESET_TIME)) => {
+                    let now: u32 = mem.read(r(mem, lulu::NOW));
+                    mem.write(r(mem, lulu::KEY_A), 0u32);
+                    mem.write(
+                        r(mem, lulu::RESET),
+                        ffx_bridge::x87::store(ffx_bridge::x87::load(now)),
+                    );
+                    mem.write(r(mem, lulu::KEY_B), 0u32);
+                }
+                None => both = true,
+            }
+            if both
+                && mem.read::<u32>(r(mem, lulu::KEY_A)) != 0
+                && mem.read::<u32>(r(mem, lulu::KEY_B)) != 0
+            {
+                // both keyboard buttons: a press at once
+                mem.write(r(mem, lulu::KEY_A), 0u32);
+                mem.write(r(mem, lulu::KEY_B), 0u32);
+                let level = lulu_press(mem, |p| u32::from(p).div_ceil(2));
+                lulu_gauge(mem, level);
+                break;
+            }
+            if dir != 0xff {
+                let count_at = r(mem, lulu::COUNT);
+                let count: i8 = mem.read(count_at);
+                if count == 0 {
+                    mem.write(r(mem, lulu::DIRS), dir);
+                    mem.write(count_at, 1u8);
+                } else {
+                    let at = r(mem, lulu::DIRS).wrapping_add(i32::from(count).cast_unsigned());
+                    if i32::from(mem.read::<i8>(at.wrapping_sub(1))) != i32::from(dir) {
+                        mem.write(at, dir);
+                        mem.write(count_at, count.wrapping_add(1));
+                    }
+                }
+            }
+        }
+
+        // five directions: a full circle either way
+        if mem.read::<i8>(r(mem, lulu::COUNT)) >= 5 {
+            let dirs = r(mem, lulu::DIRS);
+            let seen: [u8; 5] = mem.read(dirs);
+            // the game only stores 4..=7; the original reads its own frame
+            // at any first direction, the port knows only 0..=7
+            let first = usize::from(seen[0]);
+            let turn = |from: usize| -> [u8; 5] {
+                let t = &lulu::TURNS;
+                [t[from], t[from + 1], t[from + 2], t[from + 3], t[from + 4]]
+            };
+            // one way from the first direction (byte offset +4), or the other (7 - it)
+            if first < 8 && (seen == turn(first + 4) || seen == turn(7 - first)) {
+                scene(mem, call, limit::SEQ_START, limit::BGOODL);
+                lulu_press(mem, u32::from);
+            }
+            let rest: [u8; 12] = mem.read(dirs + 4);
+            mem.write(dirs, rest);
+            mem.write(r(mem, lulu::COUNT), 0u8);
+        }
+        let level: u8 = mem.read(r(mem, lulu::LEVEL));
+        lulu_gauge(mem, level);
+    }
+
     /// `TOBtlDrawCtbWindow(x, y)` (`0x008a0590`): the battle turn-order
     /// (CTB) window, unless `0x0133d6e0` is 1. In screen units remapped by
     /// `graphicUiRemapX2`/`Y2` (`remap(mem, y_axis, v)`, an `f32`) it spans

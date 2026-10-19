@@ -22251,3 +22251,431 @@ fn round38_keth_render_data_matches_the_original_on_the_snapshot() {
     };
     round38_keth_render_data(&mut a, &mut b, &mut Xorshift(0x4038_0022));
 }
+
+/// A stand-in tail: `eax` = the next word of `table` (the shared
+/// `counter` counts the calls).
+fn round38_seq(counter: u32, table: u32) -> Vec<u8> {
+    // mov ecx, [counter]; mov eax, [table + ecx*4]; inc dword [counter]
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&counter.to_le_bytes());
+    v.extend_from_slice(&[0x8b, 0x04, 0x8d]);
+    v.extend_from_slice(&table.to_le_bytes());
+    v.extend_from_slice(&[0xff, 0x05]);
+    v.extend_from_slice(&counter.to_le_bytes());
+    v
+}
+
+/// Logging stand-ins (`syms`: address, logged arguments, tail) in slots
+/// from `slot0`.
+fn round38_stands(a: &mut Oracle, b: &mut Oracle, cursor: u32, slot0: u32, stands: &[Stand]) {
+    for (k, (sym, args, texts, tail)) in (slot0..).zip(stands) {
+        let code = pick_logger(cursor, *sym, args, texts, tail);
+        let s = stand_in8(a, b, 0x80 * k, &code);
+        redirect(a, b, *sym, s);
+    }
+}
+
+/// Round 38 group B: `TOBtlCtrlStatusWin` over logging stand-ins (the
+/// value getters return words of a table of a few values, so the rows'
+/// targets are met now and then); the party, the rows and the mode random.
+#[allow(clippy::too_many_lines)]
+fn round38_ctrl_status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x10);
+    let seq = round38_seq(counter, table);
+    // MsGetSaveWindow(0, 0x12, &n): n = cells[0], returns cells[1]
+    let mut save = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d];
+    save.extend_from_slice(&cells.to_le_bytes());
+    save.extend_from_slice(&[0x89, 0x08, 0xa1]);
+    save.extend_from_slice(&(cells + 4).to_le_bytes());
+    let stands: Vec<Stand> = vec![
+        (0x0079_a4b0, vec![0], vec![], ret_cell(cells + 8)),
+        (0x0089_8010, vec![], vec![], vec![]),
+        (0x0078_5410, vec![0, 1], vec![], save),
+        (0x0079_add0, vec![0], vec![], seq.clone()),
+        (0x0079_ae50, vec![0], vec![], seq.clone()),
+        (0x0079_adf0, vec![0], vec![], seq.clone()),
+        (0x0079_ae70, vec![0], vec![], seq.clone()),
+        (0x0078_bf00, vec![0, 1], vec![], seq.clone()),
+        // the gauge maximum: one word a case (a zero second maximum faults)
+        (0x0079_5590, vec![0], vec![], ret_cell(cells + 12)),
+        (0x0079_5550, vec![0], vec![], seq),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let work = b.stack_range().start + 0x1000;
+    let command = alloc(a, b, 0x40);
+    let window = alloc(a, b, 0x10);
+    let few = [0u32, 1, 5, 7, 100, 9999, 0xffff_ffce, 3, 2];
+    let party = a.rebase(t::STATUS_PARTY);
+    let rows = a.rebase(t::STATUS_ROWS);
+    let pick = |rng: &mut Xorshift| few[(rng.next() % 9) as usize];
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x100 {
+            let v = if j % 7 == 6 { rng.next() } else { pick(rng) };
+            put(a, b, table + 4 * j, v);
+        }
+        let chr = |rng: &mut Xorshift| [0u16, 1, 2, 7, 0xff][(rng.next() % 5) as usize];
+        for j in 0..3 {
+            let c = chr(rng);
+            put(a, b, party + 2 * j, c);
+        }
+        for j in 0..3 * 0x90 / 4 {
+            let v = if j % 3 == 0 {
+                pick(rng)
+            } else {
+                rng.next() % 40
+            };
+            put(a, b, rows + 4 * j, v);
+        }
+        // the frame counts: some running, some done
+        for j in 0..3 {
+            for o in [0x18u32, 0x30] {
+                put(
+                    a,
+                    b,
+                    rows + 0x90 * j + o,
+                    (rng.next() % 4) as u8
+                        * if rng.next().is_multiple_of(3) {
+                            0x40
+                        } else {
+                            1
+                        },
+                );
+            }
+        }
+        // the party in the save window: often the same
+        for j in 0..3 {
+            let c = if rng.next().is_multiple_of(3) {
+                chr(rng)
+            } else {
+                Mem::read::<u16>(a, party + 2 * j)
+            };
+            put(a, b, window + 2 * j, c);
+        }
+        for j in 3..6 {
+            put(
+                a,
+                b,
+                window + 2 * j,
+                if rng.next().is_multiple_of(2) {
+                    0xffu16
+                } else {
+                    1
+                },
+            );
+        }
+        put(a, b, cells, rng.next() % 7);
+        put(a, b, cells + 4, window);
+        put(a, b, cells + 8, command);
+        put(
+            a,
+            b,
+            cells + 12,
+            [0xffff_ffffu32, 0, 7, 100, 1][(rng.next() % 5) as usize],
+        );
+        put(a, b, command + 0x22, (rng.next() & 0xff) as u8);
+        put(a, b, a.rebase(t::STATUS_MODE), (rng.next() % 5) as u8);
+        set(
+            a,
+            b,
+            t::ACTION_PREV_VALUE,
+            if rng.next().is_multiple_of(4) {
+                0xff
+            } else {
+                (rng.next() % 0x200) as u16
+            },
+        );
+        set(a, b, t::ACTION_DEPTH, (rng.next() % 3) as i8);
+        for j in 0..3 {
+            put(
+                a,
+                b,
+                a.rebase(0x0133_c95c) + 0xf0 * j,
+                (rng.next() & 0xffff) as u16,
+            );
+        }
+        put(
+            a,
+            b,
+            a.rebase(0x025d_0aa4),
+            (rng.next() & 0xffff) as u16 >> (rng.next() % 8),
+        );
+        eax(a, 0x0089_20d0, &[]);
+        t::ctrl_status_win(b, work, call);
+        same_memory(&format!("ctrl status {k}"), a, b);
+    }
+}
+
+#[test]
+fn round38_ctrl_status_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round38_ctrl_status(&mut a, &mut b, &mut Xorshift(0x4038_0031));
+}
+
+#[test]
+fn round38_ctrl_status_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round38_ctrl_status(&mut a, &mut b, &mut Xorshift(0x4038_0032));
+}
+
+/// The limit windows' callees as logging stand-ins: the scene calls
+/// (return words of the table), the timer, the click, the limit set,
+/// `TkGetControlerTrigHist`, `TkGetControlerAnalogHist`,
+/// `setLuluODKeyboardInput` (storing two table words), the control mode,
+/// `inputClearAllInputInfo` and `graphicGetTime` (an `f32` of `cells`).
+fn round38_limit_stands(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    cursor: u32,
+    counter: u32,
+    table: u32,
+    cells: u32,
+) {
+    let seq = round38_seq(counter, table);
+    // mov eax,[esp+4]; mov ecx,[cells+4]; mov [eax],ecx; mov eax,[esp+8]; mov ecx,[cells+8]; mov [eax],ecx
+    let mut keys = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    keys.extend_from_slice(&(cells + 4).to_le_bytes());
+    keys.extend_from_slice(&[0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    keys.extend_from_slice(&(cells + 8).to_le_bytes());
+    keys.extend_from_slice(&[0x89, 0x08]);
+    // fld dword [cells + 12 + 4 * (count & 1)]: two times in turn
+    let mut time = vec![0xa1];
+    time.extend_from_slice(&counter.to_le_bytes());
+    time.extend_from_slice(&[0x83, 0xe0, 0x01, 0xd9, 0x04, 0x85]);
+    time.extend_from_slice(&(cells + 12).to_le_bytes());
+    time.extend_from_slice(&[0xff, 0x05]);
+    time.extend_from_slice(&counter.to_le_bytes());
+    let stands: Vec<Stand> = vec![
+        (0x008a_f1b0, vec![0, 1], vec![], seq.clone()),
+        (0x008a_e070, vec![0, 1], vec![], seq.clone()),
+        (0x008a_f0d0, vec![0, 1], vec![], seq.clone()),
+        (0x008a_f4f0, vec![0, 1], vec![], seq.clone()),
+        (0x0089_ab20, vec![], vec![], vec![]),
+        (0x0089_aba0, vec![], vec![], vec![]),
+        (0x0089_ab50, vec![], vec![], vec![]),
+        (0x0088_6ba0, vec![0], vec![], vec![]),
+        (0x007b_0470, vec![0, 1, 2, 3], vec![], vec![]),
+        (0x0089_7f00, vec![], vec![], vec![]),
+        (0x0088_8e80, vec![0, 1, 2], vec![], seq.clone()),
+        (0x0088_8c20, vec![0, 1, 2, 3], vec![], seq.clone()),
+        (0x0064_5eb0, vec![0, 1], vec![], keys),
+        (0x0063_8e30, vec![], vec![], seq),
+        (0x0063_0c40, vec![], vec![], vec![]),
+        (0x0064_1410, vec![], vec![], time),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+}
+
+/// Round 38 group C: the Auron, Tidus and Lulu limit windows' state
+/// machines, every state and the out-of-range ones, over
+/// [`round38_limit_stands`].
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round38_limits(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x20);
+    round38_limit_stands(a, b, cursor, counter, table, cells);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args).unwrap().st0.unwrap()
+    };
+    let buttons = alloc(a, b, 0x20);
+    let r = |a: &Oracle, x: u32| a.rebase(x);
+    let time = |rng: &mut Xorshift| match rng.next() % 4 {
+        0 => 0.0f32,
+        1 => -1.5,
+        _ => f32::from(u16::try_from(rng.next() % 4000).unwrap()) / 16.0,
+    };
+    for k in 0..2400u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        // scene results 0..2, stick bytes around the thresholds, keys
+        for j in 0..0x100 {
+            let v = match rng.next() % 6 {
+                0 => rng.next(),
+                1 | 2 => rng.next() % 3,
+                _ => {
+                    [0x00u32, 0x5f, 0x60, 0x80, 0x9f, 0xa0, 0xff, 0x120][(rng.next() % 8) as usize]
+                }
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        put(a, b, cells + 4, rng.next() % 2);
+        put(a, b, cells + 8, rng.next() % 2);
+        put(a, b, cells + 12, time(rng).to_bits());
+        put(a, b, cells + 16, time(rng).to_bits());
+        put(a, b, r(a, 0x0133_f790), time(rng).to_bits());
+        put(a, b, r(a, 0x0133_f78c), time(rng).to_bits());
+        let state = (rng.next() % 12) as i16;
+        // Auron: the button and the combination
+        put(a, b, r(a, t::AURON_STATE), state);
+        put(
+            a,
+            b,
+            r(a, 0x0133_d6f2),
+            [0u8, 1, 2, 0x80, 0xff][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            r(a, 0x025d_09d4),
+            [0u16, 1, 2, 4][(rng.next() % 4) as usize],
+        );
+        put(a, b, r(a, 0x0133_d6fc), (rng.next() % 4) as u16);
+        put(a, b, r(a, 0x0133_d700), rng.next() % 5);
+        put(a, b, r(a, 0x0133_d704), buttons);
+        for j in 0..8 {
+            put(
+                a,
+                b,
+                buttons + 2 * j,
+                [1u16, 2, 4][(rng.next() % 3) as usize],
+            );
+        }
+        // Tidus: the bar
+        put(a, b, r(a, t::TIDUS_STATE), (rng.next() % 12) as i16);
+        put(
+            a,
+            b,
+            r(a, 0x0133_d6f3),
+            [0u8, 1, 2, 0x80, 0xff][(rng.next() % 5) as usize],
+        );
+        let start = (rng.next() % 50) as i16 - 10;
+        let length = (rng.next() % 200) as i16;
+        let good = (rng.next() % 200) as i16 + start;
+        let step = (rng.next() % 40) as i16 - 20;
+        for (o, v) in [
+            (0u32, start),
+            (4, length),
+            (6, good),
+            (8, good + (rng.next() % 30) as i16),
+            (
+                0xc,
+                match rng.next() % 6 {
+                    0 => good,
+                    // one step from either end
+                    1 => start + length - step,
+                    2 => start - step,
+                    _ => start + (rng.next() % 220) as i16 - 10,
+                },
+            ),
+            (0xe, step),
+        ] {
+            put(a, b, r(a, 0x0133_d736) + o, v);
+        }
+        // Lulu: the directions, the level and the gauge
+        // Lulu: half the time in state 4, the stick or keyboard turns
+        let lulu_state = if rng.next().is_multiple_of(2) {
+            4
+        } else {
+            (rng.next() % 11) as i16
+        };
+        put(a, b, r(a, t::LULU_STATE), lulu_state);
+        put(
+            a,
+            b,
+            r(a, 0x0133_c924),
+            if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                time(rng).to_bits()
+            },
+        );
+        put(a, b, r(a, 0x0133_c928), rng.next() % 2);
+        put(a, b, r(a, 0x0133_c92c), rng.next() % 2);
+        put(a, b, r(a, 0x0133_c930), rng.next() % 2);
+        put(a, b, r(a, 0x00c5_8ef0), rng.next() % 3);
+        let presses = (rng.next() % 40) as u8;
+        put(a, b, r(a, 0x0133_d71e), presses);
+        // the level: now and then full (16, or past it)
+        let level = if rng.next().is_multiple_of(3) {
+            16 + rng.next() % 2
+        } else {
+            rng.next() % 16
+        };
+        put(a, b, r(a, 0x0133_d71f), level as u8);
+        put(a, b, r(a, 0x0133_d71c), (rng.next() % 300) as i16);
+        put(a, b, r(a, 0x0133_d70e), (rng.next() % 600) as i16 - 100);
+        // a circle (either way) now and then, else random directions 4..=7
+        let count = [0u8, 1, 3, 4, 5, 6, 5, 6][(rng.next() % 8) as usize];
+        let first = (rng.next() % 4) as u8 + 4;
+        let way = rng.next() % 3;
+        for j in 0..16u8 {
+            let d = match way {
+                0 => 4 + (first - 4 + j) % 4,
+                1 => 4 + (first - 4 + 4 - j % 4) % 4,
+                _ => (rng.next() % 4) as u8 + 4,
+            };
+            put(
+                a,
+                b,
+                r(a, 0x0133_d721) + u32::from(j),
+                if j == 4 && way < 2 { first } else { d },
+            );
+        }
+        put(a, b, r(a, 0x0133_d731), count);
+        // the presses each level needs: often just reached
+        for j in 0..16 {
+            let need = if rng.next().is_multiple_of(2) {
+                presses / 2 + (rng.next() % 3) as u8
+            } else {
+                presses + (rng.next() % 3) as u8
+            };
+            put(a, b, a.rebase(0x0133_f798) + j, need);
+        }
+        // now and then exactly the keyboard's reset time since the last reset
+        if rng.next().is_multiple_of(8) {
+            let tiny = 2f32.powi(-20);
+            let now = f32::from_bits(0x3f00_068e) + tiny;
+            put(a, b, cells + 12, now.to_bits());
+            put(a, b, r(a, 0x0133_c924), tiny.to_bits());
+        }
+        match k % 3 {
+            0 => {
+                eax(a, 0x0089_0f70, &[]);
+                t::ctrl_auron_limit_window(b, call);
+            }
+            1 => {
+                eax(a, 0x0089_2320, &[]);
+                t::ctrl_tidus_limit_window(b, call);
+            }
+            _ => {
+                eax(a, 0x0089_1b80, &[]);
+                t::ctrl_lulu_limit_window(b, call, fcall);
+            }
+        }
+        same_memory(&format!("limit window {k}"), a, b);
+    }
+}
+
+#[test]
+fn round38_limits_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round38_limits(&mut a, &mut b, &mut Xorshift(0x4038_0041));
+}
+
+#[test]
+fn round38_limits_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round38_limits(&mut a, &mut b, &mut Xorshift(0x4038_0042));
+}
+

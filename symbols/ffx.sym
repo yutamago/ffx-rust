@@ -9860,7 +9860,7 @@
 0x00890ef0 function TOBtlCloseSimpleHelpMes   # fh v3:bsim1.00+call.cs 0x00890e60 cdecl
 0x00890f10 function TOBwakkStop               # g_MagicImports slot 649 (10 overlays): TOSeqStopScene(2, "bwakk"), 0x008e89d0(), byte 0x0133c93f = 0; hidden from the dump
 0x00890f30 function TOBtlCtrlActiveChrCursor     # (): advances the battle window's cursor angle 0x0133fa7c by 6 degrees (0.10471976) and wraps it past pi; only caller TOControlBtlWindow; Switch TOBtlCtrlActiveChrCursor (56 bytes, no callees) is the name sorting between TOBtlCloseSimpleHelpMes and TOBtlCtrlAuronLimitWindow here; was QuickConfigMenuCtrl (cg 2 votes; the Switch's is a 1880-byte touch menu); the system porter's TOBtlAdvanceAngle_00890f30
-0x00890f70 function TOBtlCtrlAuronLimitWindow # fh v3:exact 0x00890ee0
+0x00890f70 function TOBtlCtrlAuronLimitWindow # fh v3:exact 0x00890ee0; (): i16 state 0x0133d6f4 1..10: bauro scene (result 0x0133d6f2 = 0), on its end bauro2, timer stop, input (u16 0x025d09d4 must equal the combination 0x0133d704[i16 0x0133d6fc], else click 0x69 and back to 0; all i32 0x0133d700 done: 5; time 0x0133f790 <= 0: 7), 5 success (bgood, click 0x68, result 1), 6 wait, 7 fail, 8 stop scenes, 9, 10 MsMenuLimitSet_007b0470(2, i8 result, left, total) + TOBtlInitLimitTimer; eax unused by its caller TOControlBtlWindow; ported (system r38, btl::bridge::ctrl_auron_limit_window)
 0x00891140 function TOBtlCtrlChrNum           # fh v3:bsim1.00 0x008910b0; same code as TOBtlInitChrNum; ported (system round 37)
 0x00891220 function TOBtlCtrlEnemyLimit       # fh v3:exact 0x00891190
 0x008912e0 function TOBtlCtrlHelpWin          # fh v3:exact+call.cs 0x00891250 cdecl
@@ -9868,9 +9868,9 @@
 0x00891580 function TOBtlCtrlInfoWinMes       # fh v3:exact 0x008914f0
 0x00891a30 function TOBtlCtrlLibraWindow         # layout: alphabetical run between TOBtlCtrlInfoWinMes and TOBtlCtrlLimitTimer (1 unnamed in the gap); Switch 0x7100494f10 TOBtlCtrlLibraWindow is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00891ac0 function TOBtlCtrlLimitTimer       # fh v3:exact+call.cs 0x00891a30 cdecl; (): with 0x0133f77c == 2: frames 0x0133f788 += 1, left 0x0133f790 = limit 0x0133f78c - frames/30 (25 in video mode 1); left <= 0: left = shown 0x0133f794 = 0; else shown = (rnd()%10 - 10*ftol(left*-10))/100
-0x00891b80 function TOBtlCtrlLuluLimitWindow  # fh v3:exact 0x00891af0
-0x008920d0 function TOBtlCtrlStatusWin        # fh v3:exact 0x00892040
-0x00892320 function TOBtlCtrlTidusLimitWindow # fh v3:exact 0x00892290
+0x00891b80 function TOBtlCtrlLuluLimitWindow  # fh v3:exact 0x00891af0; (): time graphicGetTime -> 0x0133c920 (reset 0x0133c924 when 0); i16 state 0x0133d708: blulu/blulu2, timer start with keyboard input 0x0133c930 and getCurrentControlMode -> 0x00c58ef0, 4: two passes stick (TkGetControlerAnalogHist held/new, directions 4-7 by 0x60/0xa0) or keyboard (setLuluODKeyboardInput 0x0133c928/92c, reset after 0.5001 s idle); both keys a press ((presses+1)/2 vs g_BtlLuluLimitTbl[level]); directions 0x0133d721.. (count i8 0x0133d731): five forming a circle either way (stack bytes 07060504 07060504 04050607 04050607) start bgoodl and count a press, then shift by 4; gauge i16 0x0133d71c +3 toward level * (i16 0x0133d70e / 16); 6 end (inputClearAllInputInfo, MsMenuLimitSet_007b0470(5, level, ..)), 7, 8 stop, 9 done; ported (system r38, btl::bridge::ctrl_lulu_limit_window)
+0x008920d0 function TOBtlCtrlStatusWin        # fh v3:exact 0x00892040; (): mode 0x0133d782 from MsGetComData(cmd)+0x22 bits 1-2 when bit 0 (re-init on change, TOBtlInitStatusWin), else 3 (re-init unless 0x023cc088 is 0xff); re-init when MsGetSaveWindow(0, 0x12)'s party differs from 0x0133f7ac; rows 0x0133f7d8 (0x90 each): HP/MP shown values step a tenth over 10 frames toward the current, HP colour +0x19 from MsCalcWeakLevel (1,2: 2; 3: 0x53), limit bar +0x38 up by 6 toward gauge * i16 0x025d0aa4 / max; ported (system r38, btl::bridge::ctrl_status_win)
+0x00892320 function TOBtlCtrlTidusLimitWindow # fh v3:exact 0x00892290; (): i16 state 0x0133d734 as Auron's (btidu scene, result 0x0133d6f3, MsMenuLimitSet_007b0470(0, ..)); state 4: marker i16 0x0133d742 moves by step 0x0133d744 between start 0x0133d736 and start + length 0x0133d73a (bouncing, the step turned); a press (TkGetControlerTrigHist bit 0x20, held or new) inside 0x0133d73c..0x0133d73e is state 5, elsewhere click 3, marker back to the start, step made positive; ported (system r38, btl::bridge::ctrl_tidus_limit_window)
 0x00892590 function TOBtlDrawActiveChrCursor  # fh v3:exact 0x00892500
 0x00892740 function TOBtlDrawAuronLimitWindow # fh v3:exact 0x008926b0
 0x00892870 function TOBtlDrawCaptureMonsterMessageWindow # fh call.cs cdecl
@@ -16331,6 +16331,7 @@
 0x0133d6ec label g_BtlCommandMissed        # u32: set when MsSetTargetsMotion keeps no target, else cleared (MsCommandCueProcess)
 0x0133d6f0 label    g_BtlCurPosCount          # i16: cursor positions TOBtlSetCurPos pushed (at most 4) into g_BtlCurPos
 0x0133d74c label    g_BtlWindowState          # nine words zeroed by TOCloseBtlWindow
+0x0133d782 label    g_BtlStatusWinMode        # u8: the battle status window's mode, 0 HP, 1 MP, 2 statuses, 3 limit gauges (TOBtlCtrlStatusWin sets it, TOBtlDrawStatusWin draws by it); name ours
 0x0133f0d8 label    g_BtlChrNum               # TOBtlInitChrNum/CtrlChrNum: count of window 9's characters, u16 entries from 0x0133f0dc; window 0xb's at 0x0133f0ec/0x0133f0f0
 0x0133f510 label    g_BtlSimpleHelpMes        # TOBtlCloseSimpleHelpMes clears it
 0x0133f520 label    g_BtlSignWindow           # TOBtlCloseSignWindow clears it

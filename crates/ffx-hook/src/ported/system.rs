@@ -1525,6 +1525,23 @@ ported! {
     updateVFXKeThRenderData @ 0x0076_6770 => extern "C" fn update_vfx_keth_render_data(lo: u32, hi: u32, n: i32) -> u32 {
         render::bridge::update_vfx_keth_render_data(&mut mem(), lo, hi, n, call_sym)
     }
+    /// `TOBtlCtrlStatusWin()`.
+    TOBtlCtrlStatusWin @ 0x0089_20d0 => extern "C" fn to_btl_ctrl_status_win() {
+        let mut w = super::StackFrame::<{ btl::bridge::CTRL_STATUS_WORK as usize / 4 }>::new();
+        btl::bridge::ctrl_status_win(&mut mem(), w.at(), call_sym);
+    }
+    /// `TOBtlCtrlAuronLimitWindow()`.
+    TOBtlCtrlAuronLimitWindow @ 0x0089_0f70 => extern "C" fn to_btl_ctrl_auron_limit_window() {
+        btl::bridge::ctrl_auron_limit_window(&mut mem(), call_sym);
+    }
+    /// `TOBtlCtrlTidusLimitWindow()`.
+    TOBtlCtrlTidusLimitWindow @ 0x0089_2320 => extern "C" fn to_btl_ctrl_tidus_limit_window() {
+        btl::bridge::ctrl_tidus_limit_window(&mut mem(), call_sym);
+    }
+    /// `TOBtlCtrlLuluLimitWindow()`.
+    TOBtlCtrlLuluLimitWindow @ 0x0089_1b80 => extern "C" fn to_btl_ctrl_lulu_limit_window() {
+        btl::bridge::ctrl_lulu_limit_window(&mut mem(), call_sym, fcall);
+    }
     /// `TOSeqCtrl(i)`.
     TOSeqCtrl @ 0x008a_e0f0 => extern "C" fn to_seq_ctrl(i: i32) {
         scene::bridge::seq_ctrl(&mut mem(), i, call_sym);
