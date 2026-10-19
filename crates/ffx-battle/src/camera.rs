@@ -1230,6 +1230,210 @@ pub mod bridge {
         ];
         mem.write(side.wrapping_add(0x60), out);
     }
+
+    /// `MsCamSetBtl(id, mode, side, ch, other, other_ch)` (`0x007c58e0`):
+    /// points camera side `side` (its channel record `ch`) at up to two
+    /// sets of actors, as `MsCameraSetBtl` asks. Returns how many of the
+    /// two sets answered.
+    ///
+    /// When the other side's channel (`other_ch`) is polar (byte 0 one),
+    /// the other side's position (`+0x50`) is first rebuilt from its polar
+    /// form (`MsVectorPolar2Rect` of its base `+0x8c`, yaw, pitch and
+    /// length `+0x60`..`+0x68`).
+    ///
+    /// Each set `i` (`ch + 0x14` + 4i the actor bits, `ch + 0x10` + 2i the
+    /// script selector, `-1` none) is asked `MsGetChrInfo` kind 9 (camera
+    /// position) into a local, and when it answers, kinds 10 (camera
+    /// height), 7 (direction) and 11 (camera width) too; the kinds go to
+    /// the script actors (bit 0x100) unless `id`'s bits 16-19 are 5. The
+    /// answers are summed and averaged: the position goes to the side's
+    /// `+0x50`..`+0x58`, `y` less `ch + 0x5c` times the height. With no
+    /// answer the side takes the channel's saved position (`+0x30`).
+    ///
+    /// With a `mode`, the yaw is the direction from the first set to the
+    /// second (`MsVectorRect2Polar`, two sets of different bits), or for
+    /// script actors from `other`'s position to the side's (when the side
+    /// is on, byte 0, and the two differ in x or z), or else (two sets
+    /// that are not, or a channel kind 0xc on `other_ch` naming the same
+    /// actors) the channel's saved yaw (`+0x64`, taken from the yaw the
+    /// first time, `+6` set). The length is `ch + 0x60` times the width
+    /// (modes 2 and 4: 10.0 (`0x00b922b0`) times `ch + 0x60`, plus the
+    /// width). A
+    /// plain channel (`ch` byte 0 zero) moves the position by the polar
+    /// offset (yaw plus `ch + 0x40`, pitch `ch + 0x44`), a polar one keeps
+    /// the polar form (`+0x60`..`+0x68`) and rebuilds the position from
+    /// it. The channel saves the position (`+0x30`); the side's `+0x6c`
+    /// becomes 0.
+    ///
+    /// The original's three `MsVectorPolar2Rect` calls push five of its
+    /// eight words: the rest is `MsCamSetBtl`'s caller's `edi`, `esi`
+    /// and `ebx` (`regs`; `None` leaves VU register 4's as they were),
+    /// added to the result only when the base is null and `r0` is not.
+    /// Its `MsGetChrInfo` calls leave `id`'s actor flag (`edi`) and the
+    /// set's local (`ebx`) in `VF_B`.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::many_single_char_names
+    )]
+    pub fn ms_cam_set_btl(
+        mem: &mut crate::target::bridge::Dm<'_>,
+        host: &crate::target::bridge::Host<'_>,
+        id: u32,
+        mode: u32,
+        side: u32,
+        ch: u32,
+        other: u32,
+        other_ch: u32,
+        regs: Option<crate::target::bridge::Regs>,
+    ) -> u32 {
+        use crate::target::bridge::ms_get_chr_info;
+        use crate::vector::bridge::{VF_M, ms_vector_polar2_rect, ms_vector_rect2_polar};
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let word = |mem: &crate::target::bridge::Dm<'_>, at: u32| -> u32 { x87_copy(mem.read(at)) };
+        // the radius vector: its x, then the caller's registers
+        let radius = |mem: &crate::target::bridge::Dm<'_>, x: u32| match regs {
+            Some(r) => [x, r.edi, r.esi, r.ebx],
+            None => {
+                let mut w: [u32; 4] = mem.read(VF_M.ptr(mem).addr + 0x40);
+                w[0] = x;
+                w
+            }
+        };
+        let polar = |mem: &mut crate::target::bridge::Dm<'_>, s: u32, r: u32| {
+            let base: u32 = mem.read(s.wrapping_add(0x8c));
+            let (yaw, pitch) = (
+                word(mem, s.wrapping_add(0x60)),
+                word(mem, s.wrapping_add(0x64)),
+            );
+            let r = radius(mem, r);
+            ms_vector_polar2_rect(mem, host.trig, s.wrapping_add(0x50), base, yaw, pitch, r);
+        };
+        if mem.read::<u8>(other_ch) == 1 {
+            let r = word(mem, other.wrapping_add(0x68));
+            polar(mem, other, r);
+        }
+        let actors = if id & 0xf_0000 == 0x5_0000 { 0 } else { 0x100 };
+        mem.frame(0x50, |mem, f| {
+            // the two sets' positions, a property, the polar offset, the yaw
+            let (pos, tmp, offset, yaw_at) = ([f, f + 0x10], f + 0x20, f + 0x30, f + 0x40);
+            let zero = 0.0f32.to_bits();
+            let (mut height, mut width, mut yaw) = (zero, zero, zero);
+            let mut acc = [zero; 3];
+            let mut n = 0u32;
+            for i in 0..2u32 {
+                let k = i32::from(mem.read::<i16>(ch.wrapping_add(0x10 + 2 * i))).cast_unsigned();
+                let bits: u32 = mem.read(ch.wrapping_add(0x14 + 4 * i));
+                if k == u32::MAX {
+                    continue;
+                }
+                let at = pos[i as usize];
+                let caller = Some([actors, at]);
+                if ms_get_chr_info(mem, host, actors | 9, bits, k, at, caller).cast_signed() <= 0 {
+                    continue;
+                }
+                n += 1;
+                let p: [u32; 3] = mem.read(at);
+                for (s, v) in acc.iter_mut().zip(p) {
+                    *s = store(add(load(*s), load(v)));
+                }
+                let ask = |mem: &mut crate::target::bridge::Dm<'_>, kind: u32, sum: u32| {
+                    ms_get_chr_info(mem, host, actors | kind, bits, k, tmp, caller);
+                    store(add(load(mem.read(tmp)), load(sum)))
+                };
+                height = ask(mem, 0xa, height);
+                yaw = ask(mem, 7, yaw);
+                width = ask(mem, 0xb, width);
+            }
+            if n == 0 {
+                let saved: [u32; 3] = mem.read(ch.wrapping_add(0x30));
+                mem.write(side.wrapping_add(0x50), saved.map(x87_copy));
+                mem.write(side.wrapping_add(0x6c), zero);
+                return 0;
+            }
+            // fild, then fstp dword twice
+            #[allow(clippy::cast_precision_loss)] // 1 or 2
+            let count = load(store(f64::from(n as f32)));
+            let acc = acc.map(|v| store(div(load(v), count)));
+            let height = store(div(load(height), count));
+            yaw = store(div(load(yaw), count));
+            let mut width = store(div(load(width), count));
+            let lift: u32 = mem.read(ch.wrapping_add(0x5c));
+            let y = store(sub(load(acc[1]), mul(load(lift), load(height))));
+            mem.write(side.wrapping_add(0x50), [acc[0], y, acc[2]]);
+            if mode != 0 {
+                mem.write(yaw_at, yaw);
+                let bits_at = |m: &crate::target::bridge::Dm<'_>, r: u32| -> [u32; 2] {
+                    m.read(r.wrapping_add(0x14))
+                };
+                let [b0, b1] = bits_at(mem, ch);
+                // -1 none, 0 between the sets, 1 the same actors as the other side
+                let mut pair = -1;
+                if n >= 2 && b0 != b1 {
+                    ms_vector_rect2_polar(mem, host.trig, pos[0], pos[1], yaw_at, 0, 0);
+                    pair = 0;
+                } else if mem.read::<u8>(other_ch.wrapping_add(2)) == 0xc {
+                    let [o0, o1] = bits_at(mem, other_ch);
+                    if o1 | o0 == b1 | b0 {
+                        pair = 1;
+                    }
+                }
+                let differ = |mem: &crate::target::bridge::Dm<'_>, o: u32| {
+                    let s: u32 = mem.read(side.wrapping_add(o));
+                    let t: u32 = mem.read(other.wrapping_add(o));
+                    // fucompp: unordered counts as different
+                    #[allow(clippy::float_cmp)]
+                    let d = load(s) != load(t);
+                    d
+                };
+                if actors != 0
+                    && pair < 0
+                    && mem.read::<u8>(side) != 0
+                    && (differ(mem, 0x50) || differ(mem, 0x58))
+                {
+                    let (a, b) = (side.wrapping_add(0x50), other.wrapping_add(0x50));
+                    ms_vector_rect2_polar(mem, host.trig, a, b, yaw_at, 0, 0);
+                } else if actors != 0 && pair != 0 {
+                    let first = ch.wrapping_add(6);
+                    if mem.read::<u8>(first) == 0 {
+                        let saved = word(mem, ch.wrapping_add(0x64));
+                        mem.write(yaw_at, saved);
+                    } else {
+                        mem.write(first, 0u8);
+                        let y = word(mem, yaw_at);
+                        mem.write(ch.wrapping_add(0x64), y);
+                    }
+                }
+                let scale = load(mem.read(ch.wrapping_add(0x60)));
+                width = if mode == 2 || mode == 4 {
+                    let k = Global::<f64>::new(0x00b9_22b0).get(mem);
+                    store(add(mul(scale, k), load(width)))
+                } else {
+                    store(mul(scale, load(width)))
+                };
+                let turn = store(add(
+                    load(mem.read(ch.wrapping_add(0x40))),
+                    load(mem.read(yaw_at)),
+                ));
+                let pitch = word(mem, ch.wrapping_add(0x44));
+                if mem.read::<u8>(ch) == 0 {
+                    let r = radius(mem, width);
+                    ms_vector_polar2_rect(mem, host.trig, offset, 0, turn, pitch, r);
+                    let o: [u32; 3] = mem.read(offset);
+                    let p: [u32; 3] = mem.read(side.wrapping_add(0x50));
+                    let p: [u32; 3] = std::array::from_fn(|k| store(add(load(p[k]), load(o[k]))));
+                    mem.write(side.wrapping_add(0x50), p);
+                } else {
+                    mem.write(side.wrapping_add(0x60), [turn, pitch, width]);
+                    polar(mem, side, width);
+                }
+            }
+            let p: [u32; 3] = mem.read(side.wrapping_add(0x50));
+            mem.write(ch.wrapping_add(0x30), p.map(x87_copy));
+            mem.write(side.wrapping_add(0x6c), zero);
+            n
+        })
+    }
 }
 
 #[cfg(test)]

@@ -2170,6 +2170,13 @@ ported! {
     MsCameraSetStartPos @ 0x007b_ff10 => extern "C" fn ms_camera_set_start_pos(cam: u32, side: u32, mv: u32) -> u32 {
         camera::ms_camera_set_start_pos(&mut mem(), &crt_trig, cam, side, mv)
     }
+    /// `MsCamSetBtl(id, mode, side, ch, other, other_ch)`: the stray
+    /// radius words as VU register 4 holds them (the caller's registers
+    /// are not known here).
+    MsCamSetBtl @ 0x007c_58e0 => extern "C" fn ms_cam_set_btl(id: u32, mode: u32, side: u32, ch: u32, other: u32, other_ch: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_cam_set_btl(&mut target::Dm::new(&mut m), &host(), id, mode, side, ch, other, other_ch, None)
+    }
     /// `MsCameraGetYaw()`: the yaw through a word of this stack (the
     /// original's local), the CRT's `_CIatan` through its import slot.
     MsCameraGetYaw @ 0x007b_cf20 => extern "C" fn ms_camera_get_yaw() -> f32 {
