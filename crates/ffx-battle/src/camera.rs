@@ -1797,6 +1797,81 @@ pub mod bridge {
         mem.write(side.wrapping_add(0x50), p);
     }
 
+    /// `MsCameraSplineMove_007bcb80(id, side_no, _, side, mv)` (`0x007bcb80`,
+    /// name ours; `MsCameraProcess`'s): the move's spline position `mv +
+    /// 0x68` clamped to 0..1 (NaN kept), the spline (`mv + 8`) there
+    /// ([`ms_camera_spline_pos`]'s choice of curve) and with `mv + 0x1c`
+    /// bit 2 its tangent added (speed `mv + 0x6c` at least 0) or
+    /// subtracted; the point goes to `g_Ee_GprMove` and the side's
+    /// `+0x50`, its w is the roll ([`ms_camera_set_roll`]), the side's
+    /// `+0x6c` is 0 and the position steps by the speed. Clamped or at
+    /// speed 0, [`ms_camera_set_rect`] to the new point. The third
+    /// argument is not read; EAX is not kept.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_spline_move<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        call: &mut dyn FnMut(&mut crate::target::bridge::Dm<'d>, u32, &[u32]) -> u32,
+        id: u32,
+        side_no: u32,
+        side: u32,
+        mv: u32,
+    ) {
+        use ffx_bridge::x87::{add, load, store};
+        let at_t = mv.wrapping_add(0x68);
+        let at_speed = mv.wrapping_add(0x6c);
+        let t = f64::from(f32::from_bits(mem.read(at_t)));
+        let mut clamped = false;
+        if t < 0.0 {
+            mem.write(at_t, 0.0f32.to_bits());
+            clamped = true;
+        }
+        let t = f64::from(f32::from_bits(mem.read(at_t)));
+        if t > 1.0 {
+            mem.write(at_t, 1.0f32.to_bits());
+            clamped = true;
+        }
+        let flags = mem.read::<u8>(mv.wrapping_add(0x1c));
+        let three = flags & 3 == 3;
+        let spline: u32 = mem.read(mv.wrapping_add(8));
+        let points = spline.wrapping_add(0x10);
+        let p: [u32; 4] = mem.frame(0x20, |mem, base| {
+            let (out, tan) = (base.wrapping_add(0x10), base);
+            let t = x87_copy(mem.read(at_t));
+            let n: u32 = mem.read(spline);
+            let f = if three { host.spline3 } else { host.spline };
+            f(mem, out, points, n, t);
+            if flags & 4 != 0 {
+                let t = x87_copy(mem.read(at_t));
+                let n: u32 = mem.read(spline);
+                let f = if three {
+                    host.spline3_tangent
+                } else {
+                    host.spline_tangent
+                };
+                f(mem, tan, points, n, t);
+                let speed = f32::from_bits(mem.read(at_speed));
+                if speed >= 0.0 {
+                    crate::vector::bridge::ms_add_point(mem, out, out, tan);
+                } else {
+                    crate::vector::bridge::ms_sub_point(mem, out, out, tan);
+                }
+            }
+            mem.read(out)
+        });
+        EE_MOVE.set(mem, p);
+        let pos = side.wrapping_add(0x50);
+        mem.write(pos, p);
+        ms_camera_set_roll(mem, id, x87_copy(p[3]));
+        mem.write(side.wrapping_add(0x6c), 0.0f32.to_bits());
+        let speed: u32 = mem.read(at_speed);
+        let t = store(add(load(speed), load(mem.read(at_t))));
+        mem.write(at_t, t);
+        if clamped || f32::from_bits(mem.read(at_speed)) == 0.0 {
+            ms_camera_set_rect(mem, call, id, side_no, pos);
+        }
+    }
+
     /// `MsCameraAtelFocus_007c0560(side, mv)` (`0x007c0560`, name ours;
     /// `MsCameraProcess`'s): the side's position (`+0x50`) is the move's
     /// offset (`mv + 0x30`) plus the mean position of up to two script

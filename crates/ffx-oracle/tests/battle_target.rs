@@ -37,6 +37,9 @@ fn host() -> t::Host<'static> {
     fn spline3(m: &mut t::Dm<'_>, out: u32, points: u32, n: u32, x: u32) {
         spline_via(m, 0x0088_a4d0, out, points, n, x);
     }
+    fn spline3_tangent(m: &mut t::Dm<'_>, out: u32, points: u32, n: u32, x: u32) {
+        spline_via(m, 0x0088_aba0, out, points, n, x);
+    }
     fn neck_enable(m: &mut t::Dm<'_>, chr: u32, on: u32) {
         call(oracle(m), 0x0083_4f60, &[chr, on]);
     }
@@ -90,6 +93,7 @@ fn host() -> t::Host<'static> {
         spline: &spline,
         spline_tangent: &tangent,
         spline3: &spline3,
+        spline3_tangent: &spline3_tangent,
         cos: &cos_stand_in,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
@@ -10146,9 +10150,12 @@ fn commands_and_variants_match_the_original_on_a_snapshot() {
 /// `messages_and_cameras` fills them) over the dressed actors: requests
 /// of the cameras' slots or made up, battle actors' sets (id bits 16-19
 /// five) and on a snapshot the script actors' too.
-fn camera_set_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bool) {
+/// Three cameras of random floats at `CAMERAS` with four requests each
+/// (battle-actor levels, script ones only on a snapshot; channels 0-5,
+/// at times 8-15), moving flags and base vectors (`+0x8c`: none or the
+/// other side's position); one of the requests (at times a made-up id).
+fn camera_requests(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bool) -> u32 {
     use ffx_battle::camera::bridge as cam;
-    let h = host();
     let cams = cam::CAMERAS.ptr(b).addr;
     let words: Vec<u8> = (0..3 * cam::CAMERA_SIZE / 4)
         .flat_map(|_| float(rng).to_le_bytes())
@@ -10207,11 +10214,17 @@ fn camera_set_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bo
             );
         }
     }
-    let id = if rng.below(5) == 0 {
+    if rng.below(5) == 0 {
         rng.next() & 0x05_0f02 | if script { 0 } else { 0x5_0000 }
     } else {
         ids[rng.below(u32::try_from(ids.len()).unwrap()) as usize]
-    };
+    }
+}
+
+fn camera_set_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bool) {
+    use ffx_battle::camera::bridge as cam;
+    let h = host();
+    let id = camera_requests(a, b, rng, script);
     // the made-up channel's selectors as cam_set_btl draws them
     let selector = |rng: &mut Xorshift| -> u32 {
         if rng.below(4) == 0 {
@@ -10481,4 +10494,96 @@ fn camera_leaves_match_the_original_on_a_snapshot() {
         return;
     };
     camera_leaves(&mut a, &mut b, &mut Xorshift(0x26ca_0502), false);
+}
+
+/// A spline position: in 0..1, beyond, at the ends, or (`nan`) NaN.
+fn spline_time(rng: &mut Xorshift, nan: bool) -> u32 {
+    match rng.below(8) {
+        0 => 0,
+        1 => 1.0f32.to_bits(),
+        2 => (-0.0f32).to_bits(),
+        3 if nan => 0x7fc0_0000 | rng.below(0x40_0000),
+        4 => (f32::from(i16::try_from(rng.range(-400, 1400)).unwrap()) / 1000.0).to_bits(),
+        _ => (f32::from(u16::try_from(rng.below(1000)).unwrap()) / 1000.0).to_bits(),
+    }
+}
+
+/// `MsCameraSplineMove_007bcb80` (round 27) for a request of the dressed
+/// cameras ([`camera_requests`]) on a made-up side and move at `buf`, the
+/// spline one of the dressed move splines as in [`camera_tracks`].
+fn camera_spline_move(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, script: bool) {
+    let h = host();
+    let id = camera_requests(a, b, rng, script);
+    let (side, mv) = (buf, buf + 0x100);
+    poke(a, b, side, &floats(rng, 0x20));
+    poke(a, b, mv, &floats(rng, 0x20));
+    let sp = t::MOVE_SPLINES.ptr(b).addr + 0x210 * rng.below(4);
+    if rng.below(3) == 0 {
+        poke(a, b, sp, &rng.below(3).to_le_bytes());
+    }
+    poke(a, b, mv + 8, &sp.to_le_bytes());
+    poke(a, b, mv + 0x1c, &[rng.byte()]);
+    let nan_t = rng.below(2) == 0;
+    poke(a, b, mv + 0x68, &spline_time(rng, nan_t).to_le_bytes());
+    let speed = match rng.below(6) {
+        0 => 0,
+        1 => (-0.0f32).to_bits(),
+        2 if !nan_t => 0x7fc0_0000,
+        _ => (f32::from(i16::try_from(rng.range(-100, 100)).unwrap()) / 1000.0).to_bits(),
+    };
+    poke(a, b, mv + 0x6c, &speed.to_le_bytes());
+    let side_no = [0, 1, rng.next()][rng.below(3) as usize];
+    let args = [id, side_no, rng.next(), side, mv];
+    zero_stack(a);
+    twin(
+        "MsCameraSplineMove_007bcb80",
+        a,
+        b,
+        0x007b_cb80,
+        &args,
+        0,
+        |m| {
+            dm(m, |m| {
+                let mut c = game_call;
+                ffx_battle::camera::bridge::ms_camera_spline_move(
+                    m, &h, &mut c, id, side_no, side, mv,
+                );
+            });
+            0
+        },
+    );
+    // the splines' and MsAddPoint's VU words holding their locals' addresses
+    local_words(a, b);
+    same("MsCameraSplineMove_007bcb80", a, b);
+}
+
+/// Round 27's camera steps on the dressed actors, `MsSetCheckChange`'s
+/// move step (`CAMERA_MOVE_STEP`) a logging stub as in
+/// [`camera_set_btl_check`].
+fn camera_steps(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    let rec = scratch(a, b, 0x80);
+    for o in [&mut *a, &mut *b] {
+        let f = ffx_battle::camera::bridge::CAMERA_MOVE_STEP;
+        logging_stub(o, f, START_STUBS2 + 0xc0 + 0x40 * 9, rec, 4, 0);
+    }
+    let buf = scratch(a, b, 0x400);
+    dressed_check(a, b, rng, synthetic, (150, 4), |a, b, rng, _, _| {
+        camera_spline_move(a, b, rng, buf, !synthetic);
+    });
+}
+
+#[test]
+fn camera_steps_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    camera_steps(&mut a, &mut b, &mut Xorshift(0x27ca_0101), true);
+}
+
+#[test]
+fn camera_steps_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    camera_steps(&mut a, &mut b, &mut Xorshift(0x27ca_0102), false);
 }

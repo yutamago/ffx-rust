@@ -260,6 +260,9 @@ fn host() -> target::Host<'static> {
     fn spline3(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
         spline_via_stack(m, 0x0088_a4d0, out, points, n, t);
     }
+    fn spline3_tangent(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        spline_via_stack(m, 0x0088_aba0, out, points, n, t);
+    }
     fn neck_enable(m: &mut target::Dm<'_>, chr: u32, on: u32) {
         ffx_chara::chr::bridge::ch_neck_set_enable(
             m,
@@ -315,6 +318,7 @@ fn host() -> target::Host<'static> {
         spline: &spline,
         spline_tangent: &tangent,
         spline3: &spline3,
+        spline3_tangent: &spline3_tangent,
         cos: &crt_cos,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
@@ -2256,6 +2260,13 @@ ported! {
     MsCameraSplinePos_007bcd30 @ 0x007b_cd30 => extern "C" fn ms_camera_spline_pos(_cam: u32, _side_no: u32, side: u32, mv: u32, other: u32) {
         let mut m = mem();
         camera::ms_camera_spline_pos(&mut target::Dm::new(&mut m), &host(), side, mv, other);
+    }
+    /// `MsCameraSplineMove_007bcb80(id, side_no, _, side, mv)`: the splines
+    /// and tangents through the game (menu's), the move step through the
+    /// game.
+    MsCameraSplineMove_007bcb80 @ 0x007b_cb80 => extern "C" fn ms_camera_spline_move(id: u32, side_no: u32, _unused: u32, side: u32, mv: u32) {
+        let mut m = mem();
+        camera::ms_camera_spline_move(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side_no, side, mv);
     }
     /// `MsCameraAtelFocus_007c0560(side, mv)`: the script actors'
     /// positions through the game.
