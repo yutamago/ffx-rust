@@ -10111,6 +10111,18 @@ fn del_extra_command(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &Wor
         |m| ffx_battle::ability::bridge::ms_chr_del_extra_command(m, chr, command, sel),
     );
     same("MsChrDelExtraCommand_007acb40", a, b);
+    // and added (round 27): slots of both signs and past 7
+    let slot = [rng.range(-2, 10), 0, 7][rng.below(3) as usize];
+    twin(
+        "MsChrAddExtraCommand_007ac840",
+        a,
+        b,
+        0x007a_c840,
+        &[chr, command, sel, slot.cast_unsigned()],
+        ALL,
+        |m| ffx_battle::ability::bridge::ms_chr_add_extra_command(m, chr, command, sel, slot),
+    );
+    same("MsChrAddExtraCommand_007ac840", a, b);
 }
 
 /// `MsMonShuffleVariants_007842f0` (round 26) on the dressed actors: the

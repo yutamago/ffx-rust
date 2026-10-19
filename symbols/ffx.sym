@@ -5402,7 +5402,7 @@
 0x0079a4b0 function MsGetComData              # fh v3:exact+call.cs 0x0079a4c0 cdecl
 0x0079a5b0 function MsGetCommandUse           # fh v3:exact 0x0079a5c0
 0x0079a680 function MsGetDamageInfo           # fh v3:exact 0x0079a690
-0x0079a760 function MsGetDamageInfoNext          # layout: alphabetical run between MsGetDamageInfo and MsGetDamageResult (3 unnamed in the gap); Switch 0x710036bf00 MsGetDamageInfoNext is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0079a760 function MsGetDamageInfoNext       # layout: alphabetical run between MsGetDamageInfo and MsGetDamageResult (3 unnamed in the gap); Switch 0x710036bf00 MsGetDamageInfoNext is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (chr, target, &a, &b, &c) -> eax: over target's two damage buffers (+0x774, +0xa4c) for chr's running command, words +0x38/+0x3c/+0x40 of the next result (index +0) summed into the outputs (null skipped), returns the sum of count - next; no static callers; ported (ffx_battle::cue, battle round 27)
 0x0079a860 function MsGetDamageLimit             # layout: alphabetical run between MsGetDamageInfo and MsGetDamageResult (3 unnamed in the gap); Switch 0x710036c5f0 MsGetDamageLimit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079a8c0 function MsGetDamagePoint             # layout: alphabetical run between MsGetDamageInfo and MsGetDamageResult (3 unnamed in the gap); Switch 0x710036b990 MsGetDamagePoint is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079a920 function MsGetDamageResult         # fh v3:exact 0x0079a930
@@ -5935,6 +5935,7 @@
 0x007ac650 function MsPushBtlPos              # fh v3:bsim1.00 0x007ac670
 0x007ac680 function MsPushBtlPosAll           # fh v3:bsim1.00 0x007ac6a0
 0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0; ours: (i) the party back at their battle positions, the aeon i placed (body part 3 off, +0x4fd 0xd, sound +0xf76 faded) and its entrance or stand; ported (battle round 13)
+0x007ac840 function MsChrAddExtraCommand_007ac840 # ours: (chr, command, selector, slot) -> eax how many actors got it: each actor MsGetChrBit(chr, selector, 0, 1) picks with +0x6cb < 4 gets command (u16) at +0x71a + 2n, slot (clamped 0..7) at +0x722 + n, +0x6cb + 1, and in g_BtlItemMem2 +0x28 + 0x478 i (eight u16) at slot, later ones moved down (the last dropped); MsChrDelExtraCommand_007acb40's counterpart; caller Native_7037; ported (ffx_battle::ability, battle round 27)
 0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid; reads 5 words: its script callers (0x700b, 0x705a, 0x7117) push 3 and leave MsGetChrBit's last two arguments as the 4th and 5th (0, -1; 1, -1; 1, 0x40); a non-negative 5th goes to 0x01136a70, so the bridges pass them
 0x007acb00 function MsActionRequestSet        # (kind): if g_BtlAction != -1: 0x48-byte block 0x01136a78 cleared, its byte 0 = kind, 0x01136a6c/0x01136a70 = 0, returns 0; else -1; MsActionRequest; name ours
 0x007acb40 function MsChrDelExtraCommand_007acb40 # ours: (chr, command, selector) -> eax how many actors MsGetChrBit(chr, selector, 0, 1) picks: each loses command (u16) from its four extra commands +0x71a (moved up, 0xff last, +0x6cb one less) and then from its g_BtlItemMem2 second list (+0x28 + 0x478 i, 8 slots); caller Native_7038; ported (ffx_battle::ability, battle round 26)
@@ -6058,6 +6059,7 @@
 0x007b2ba0 function msVoiceCheckStanbyOff     # g_MagicImports slot 595 (2 overlays): with 0x0112c8f0 set, msVoiceCheckStanby(0) != 0 -> -1 (else continues); hidden from the dump
 0x007b2be0 function msVoiceIsStreaming        # g_MagicImports slot 594 (2 overlays): SndGetStreamState() != 0 -> 1; hidden from the dump
 0x007b2c10 function msVoiceCheckStanby        # fh v3:exact 0x007b2c20
+0x007b2c90 function MsGetChrMotionInfo_007b2c90 # ours: (i, k) -> ST0 f32: MsSetChrMotionInfo's float k (0 +0x4bc, 1 +0x4c0, 2 +0x4c8, 3 +0x4d4, 4 +0x4d8, 5 +0x4cc, 6 +0x4d0, 7 +0x4dc, 8 +0x4c4, 9 +0x4e4 width, else 0.0); k 0 and 1 +10.0 (0x00b922b0) while MsGetDamageResult(i, Battle_FirstSelectedActor(i, -16 = +0xdc0 target bits, 0, 1)) is 1; callers Native_70a7, Native_70ac; ported (ffx_battle::flow, battle round 27)
 0x007b2dc0 function MsGetChrStatInfo          # switch over ~340 actor properties; was Battle_GetActorProperty
 0x007b4a70 function Battle_ChrMoveFlags       # (actor) -> u32 actor +0x4ac (bits 0-1: a move under way), | 8 while +0x3fb; used by MsGetChrStatInfo and 0x007a4f80
 0x007b4a90 function MsSetChrMotionInfo        # (actor, property 0-9, float): writes actor dwords 0x12f-0x139; was Battle_SetActorFloatProperty

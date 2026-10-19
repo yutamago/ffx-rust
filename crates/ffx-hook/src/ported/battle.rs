@@ -1937,6 +1937,10 @@ ported! {
     MsGetDamageInfo @ 0x0079_a680 => extern "C" fn ms_get_damage_info(chr: u32, target: u32, a: u32, b: u32, c: u32) -> i32 {
         cue::ms_get_damage_info(&mut mem(), chr, target, [a, b, c])
     }
+    /// `MsGetDamageInfoNext(chr, target, &a, &b, &c)`.
+    MsGetDamageInfoNext @ 0x0079_a760 => extern "C" fn ms_get_damage_info_next(chr: u32, target: u32, a: u32, b: u32, c: u32) -> i32 {
+        cue::ms_get_damage_info_next(&mut mem(), chr, target, [a, b, c])
+    }
     /// `MsGetTargetList(chr, &n)`.
     MsGetTargetList @ 0x007b_7090 => extern "C" fn ms_get_target_list(chr: u32, n: u32) -> u32 {
         cue::ms_get_target_list(&mut mem(), chr, n)
@@ -2032,6 +2036,10 @@ ported! {
     /// `MsAtelRegistInit`.
     MsAtelRegistInit @ 0x0079_7ae0 => extern "C" fn ms_atel_regist_init() {
         flow::ms_atel_regist_init(&mut mem());
+    }
+    /// `MsGetChrMotionInfo_007b2c90(i, k)`: an `f32` in ST0.
+    MsGetChrMotionInfo_007b2c90 @ 0x007b_2c90 => extern "C" fn ms_get_chr_motion_info(i: u32, k: u32) -> f32 {
+        flow::ms_get_chr_motion_info(&mut mem(), i, k)
     }
     /// `MsSetChrMotionInfo`.
     MsSetChrMotionInfo @ 0x007b_4a90 => extern "C" fn ms_set_chr_motion_info(i: u32, k: u32, value: u32) {
@@ -2486,6 +2494,10 @@ ported! {
     /// `MsGetBattleList(kind, &count)`.
     MsGetBattleList @ 0x007b_6c50 => extern "C" fn ms_get_battle_list(kind: i32, count: u32) -> u32 {
         ffx_battle::ability::bridge::ms_get_battle_list(&mut mem(), kind, count)
+    }
+    /// `MsChrAddExtraCommand_007ac840(chr, command, selector, slot)`.
+    MsChrAddExtraCommand_007ac840 @ 0x007a_c840 => extern "C" fn ms_chr_add_extra_command(chr: u32, command: u32, selector: u32, slot: i32) -> u32 {
+        ffx_battle::ability::bridge::ms_chr_add_extra_command(&mut mem(), chr, command, selector, slot)
     }
     /// `MsChrDelExtraCommand_007acb40(chr, command, selector)`.
     MsChrDelExtraCommand_007acb40 @ 0x007a_cb40 => extern "C" fn ms_chr_del_extra_command(chr: u32, command: u32, selector: u32) -> u32 {

@@ -216,6 +216,39 @@ fn more(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
             0
         },
     );
+    // and read back, any kind (round 27); half the time the first actor
+    // of selector -16 holds a result 1 of the actor's running command
+    // (MsGetDamageResult: +10.0 for kinds 0 and 1)
+    // (selector -16: the actor's target bits +0xdc0)
+    if rng.below(2) == 0 {
+        poke(
+            a,
+            b,
+            actor + 0xdc0,
+            &(1u32 << rng.below(ACTORS)).to_le_bytes(),
+        );
+    }
+    let first = ffx_battle::body::bridge::battle_first_selected_actor(b, i, 0xffff_fff0, 0, 1);
+    if let Ok(t) = u32::try_from(first)
+        && t < ACTORS
+        && rng.below(2) == 0
+    {
+        let cmd = ffx_battle::actor::bridge::ms_get_chr_command(b, i);
+        let id = b.read(cmd + 2, 1).unwrap()[0];
+        let buf = w.actor(t) + [0x774, 0xa4c][rng.below(2) as usize];
+        poke(a, b, buf, &[0, 1, u8::try_from(i).unwrap(), id]);
+        poke(a, b, buf + 0x18, &[[1u8, 0, 2][rng.below(3) as usize]]);
+    }
+    let k = if rng.below(2) == 0 { k } else { rng.below(12) };
+    ftwin(
+        "MsGetChrMotionInfo_007b2c90",
+        a,
+        b,
+        0x007b_2c90,
+        &[i, k],
+        |m| f::ms_get_chr_motion_info(m, i, k).to_bits(),
+    );
+    same("MsGetChrMotionInfo_007b2c90", a, b);
     let v = rng.next();
     twin("MsChrSEfoot", a, b, 0x0079_fd20, &[i, v], 0, |m| {
         f::ms_chr_se_foot(m, i, v.to_le_bytes()[0]);
