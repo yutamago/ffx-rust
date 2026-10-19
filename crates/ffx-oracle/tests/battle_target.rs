@@ -3695,12 +3695,16 @@ fn threats(b: &mut Oracle, w: &World, them: &[u32]) -> Vec<bool> {
 /// again within the same call): that actor's first yaw (`+0x51c`) and the
 /// vector unit's rows are the original's stack garbage
 /// (`MsThreatProcess`), copied from `a` for each of them threatened
-/// before (`was`) or after.
+/// before (`was`) or after. A threatened actor's target gets its yaw from
+/// the same local and may lose Threaten again in the call too: as
+/// `MsThreatProcess` is the only writer of `+0x51c`, any of `them` whose
+/// yaw differs is copied as well (round 27).
 fn threatened(a: &mut Oracle, b: &mut Oracle, w: &World, them: &[u32], was: &[bool]) {
     let now = threats(b, w, them);
     for (k, &q) in them.iter().enumerate() {
-        if was[k] || now[k] {
-            copy_garbage(a, b, w.actor(q) + 0x51c, 4);
+        let at = w.actor(q) + 0x51c;
+        if was[k] || now[k] || a.read(at, 4).unwrap() != b.read(at, 4).unwrap() {
+            copy_garbage(a, b, at, 4);
         }
     }
 }
