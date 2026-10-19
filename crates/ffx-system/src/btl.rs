@@ -378,4 +378,127 @@ pub mod bridge {
         mem.write(count, 0u16);
         0
     }
+
+    /// `TOBtlDrawSummonPrim(chr, x, y)` (`0x008a0ba0`) and
+    /// `TOBtlDrawChangePrim(chr, x, y)` (`0x0089f0e0`): a battle window
+    /// at the integer position (`x`, `y`) with the name of character `chr`
+    /// centred in it and its HP/MP plate (`TOBtlDrawCrossParamPlate`).
+    /// `remap(mem, y_axis, v)` is `graphicUiRemapY2`/`X2` (an `f32`);
+    /// `scratch` is the 4-byte name width `ToGetBtlEasyFontWidth` writes;
+    /// callees through `call` (`ffx.sym` addresses). Returns the plate's
+    /// `eax`.
+    pub struct BtlPrim<'a, M, R, C> {
+        pub mem: &'a mut M,
+        pub remap: R,
+        pub call: C,
+        pub scratch: u32,
+    }
+
+    impl<M, R, C> BtlPrim<'_, M, R, C>
+    where
+        M: Mem,
+        R: FnMut(&mut M, bool, f32) -> f32,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        fn x(&mut self, v: f32) -> f64 {
+            f64::from((self.remap)(self.mem, false, v))
+        }
+
+        fn y(&mut self, v: f32) -> f64 {
+            f64::from((self.remap)(self.mem, true, v))
+        }
+
+        fn run(&mut self, sym: u32, args: &[u32]) -> u32 {
+            (self.call)(self.mem, sym, args)
+        }
+
+        /// The name width of `name` at `scale` (`ToGetBtlEasyFontWidth(name,
+        /// &w, 0, scale, 1.0)`).
+        fn name_width(&mut self, name: u32, scale: f32) -> f32 {
+            let args = [name, self.scratch, 0, scale.to_bits(), 1.0f32.to_bits()];
+            self.run(0x0090_5290, &args);
+            self.mem.read(self.scratch)
+        }
+
+        /// `ToMakeBtlEasyEdgeFont(name, x, y, 0, scale, 1.0)`.
+        fn edge_font(&mut self, name: u32, x: f32, y: f32, scale: f32) {
+            let args = [
+                name,
+                x.to_bits(),
+                y.to_bits(),
+                0,
+                scale.to_bits(),
+                1.0f32.to_bits(),
+            ];
+            self.run(0x0090_5930, &args);
+        }
+
+        /// `TOBtlDrawCrossParamPlate(chr, x, y)`; its `eax`.
+        fn plate(&mut self, chr: u32, x: f32, y: f32) -> u32 {
+            self.run(0x0089_2cb0, &[chr, x.to_bits(), y.to_bits()])
+        }
+
+        /// `TOBtlDrawSummonPrim`: the net window (`TODrawBtlNetWindowXYWHType
+        /// (x, y, X2(344), Y2(114), 0)`), the name at y `Y2(16) + y` in
+        /// width scale 0.8 centred in `X2(344)` (drawn at scale 0.7), the
+        /// plate at (`X2(15) + x`, `Y2(61) + y`).
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+        pub fn summon(&mut self, chr: u32, x: i32, y: i32) -> u32 {
+            let (fx, fy) = (x as f32, y as f32);
+            let h = self.y(114.0) as f32;
+            let w = self.x(344.0) as f32;
+            let window = [fx.to_bits(), fy.to_bits(), w.to_bits(), h.to_bits(), 0];
+            self.run(0x008f_41b0, &window);
+            let name = self.run(0x0089_76f0, &[chr]);
+            let width = self.name_width(name, 0.8);
+            let name_y = (self.y(16.0) + f64::from(fy)) as f32;
+            let name_x = ((self.x(344.0) - f64::from(width)) * 0.5 + f64::from(fx)) as f32;
+            self.edge_font(name, name_x, name_y, 0.7);
+            let plate_y = (self.y(61.0) + f64::from(fy)) as f32;
+            let plate_x = (self.x(15.0) + f64::from(fx)) as f32;
+            self.plate(chr, plate_x, plate_y)
+        }
+
+        /// `TOBtlDrawChangePrim`: the frame `TOMkpShapePartIndexXYWHC2(part,
+        /// 0, X2(20) + x, Y2(14) + y, X2(70), Y2(50), grey, grey)` with part
+        /// 0x1c0 for an aeon (`chr >= 8`), 0x1d4 for character 6 while
+        /// `AtelGetScenarioFlag() < 0x434` (signed), else `chr + 0x1b8`; the
+        /// name at y `Y2(16) + y` and x `X2(210) + x` less half its width
+        /// (scale 0.71 both); the plate at (`X2(12) + x`, `Y2(62) + y`).
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+        pub fn change(&mut self, chr: u32, x: i32, y: i32) -> u32 {
+            let part = if chr.cast_signed() >= 8 {
+                0x1c0
+            } else if chr == 6 && self.run(0x0086_c470, &[]).cast_signed() < 0x434 {
+                0x1d4
+            } else {
+                chr.wrapping_add(0x1b8)
+            };
+            let (fx, fy) = (x as f32, y as f32);
+            let h = self.y(50.0) as f32;
+            let w = self.x(70.0) as f32;
+            let top = (self.y(14.0) + f64::from(fy)) as f32;
+            let left = (self.x(20.0) + f64::from(fx)) as f32;
+            let grey = 0x8080_8080;
+            let frame = [
+                part,
+                0,
+                left.to_bits(),
+                top.to_bits(),
+                w.to_bits(),
+                h.to_bits(),
+                grey,
+                grey,
+            ];
+            self.run(0x0090_34b0, &frame);
+            let name = self.run(0x0089_76f0, &[chr]);
+            let width = self.name_width(name, 0.71);
+            let name_y = (self.y(16.0) + f64::from(fy)) as f32;
+            let name_x = (self.x(210.0) + f64::from(fx) - f64::from(width) * 0.5) as f32;
+            self.edge_font(name, name_x, name_y, 0.71);
+            let plate_y = (self.y(62.0) + f64::from(fy)) as f32;
+            let plate_x = (self.x(12.0) + f64::from(fx)) as f32;
+            self.plate(chr, plate_x, plate_y)
+        }
+    }
 }

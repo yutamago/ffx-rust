@@ -1535,3 +1535,12 @@ pushed as literals (no relocation entries), not addresses.
   values 0..=9 as digits in the entry's colour, 0x3d/0x3c/0x3b/0x3a as
   battle icons 0..=3; in spell 0x11b kind-3 entries are skipped. Pending
   9999/99999-damage flags unlock achievements 0x12 and 0x15 first.
+- `TOBtlDrawSummonPrim(chr, x, y)` and `TOBtlDrawChangePrim(chr, x, y)`
+  (integer positions) draw a battle swap window: a frame (the net window
+  `X2(344)` by `Y2(114)`, or shape part 0x1c0 for aeons, 0x1d4 for Yuna
+  (6) before scenario flag 0x434, else `chr + 0x1b8`, `X2(70)` by
+  `Y2(50)` at `(X2(20), Y2(14))`), the character's name (centred in
+  `X2(344)` at scale 0.8/0.7, or centred on `X2(210)` at 0.71, both at
+  `Y2(16)`), and `TOBtlDrawCrossParamPlate` at `(X2(15), Y2(61))` or
+  `(X2(12), Y2(62))`; they return the plate's `eax`. Each sum is
+  computed at double precision and stored as `f32`.

@@ -20163,3 +20163,107 @@ fn round35_group_b_matches_the_original_on_the_snapshot() {
     };
     round35_group_b(&mut a, &mut b, &mut Xorshift(0x4035_0022));
 }
+
+/// Round 35 group C: `TOBtlDrawSummonPrim` and `TOBtlDrawChangePrim` over
+/// the original remaps, with logging stand-ins for the window and frame,
+/// the name, its width (stored through the pointer), the edge font, the
+/// plate and the scenario flag.
+#[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+fn round35_prims(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x008f_41b0, all(5), vec![], vec![]),
+        (0x0089_76f0, all(1), vec![], ret_cell(cells)),
+        (
+            0x0090_5290,
+            vec![0, 2, 3, 4],
+            vec![],
+            store_through(1, cells + 4),
+        ),
+        (0x0090_5930, all(6), vec![], vec![]),
+        (0x0089_2cb0, all(3), vec![], ret_cell(cells + 8)),
+        (0x0090_34b0, all(8), vec![], vec![]),
+        (0x0086_c470, vec![], vec![], ret_cell(cells + 0xc)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let scratch = alloc(a, b, 4);
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, rng.next());
+        let width = match rng.next() % 4 {
+            0 => rng.float(),
+            _ => (rng.next() % 4000) as f32 / 9.0,
+        };
+        let width = if width.is_nan() { f32::NAN } else { width };
+        put(a, b, cells + 4, width);
+        put(a, b, cells + 8, rng.next());
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [0x433u32, 0x434, 0, u32::MAX, 0x8000_0000][(rng.next() % 5) as usize],
+        );
+        put(a, b, scratch, rng.next());
+        let chr =
+            [0u32, 5, 6, 6, 7, 8, 0x11, 0x12, u32::MAX, 0x8000_0000][(rng.next() % 10) as usize];
+        let (x, y) = match k % 8 {
+            0 => (rng.next(), rng.next()),
+            1 => (0x7fff_ffff, 0x8000_0000),
+            _ => (rng.next() % 1200, rng.next() % 900),
+        };
+        let summon = k % 2 == 0;
+        let sym = if summon { 0x008a_0ba0 } else { 0x0089_f0e0 };
+        let want = eax(a, sym, &[chr, x, y]);
+        let mut prim = btl::bridge::BtlPrim {
+            mem: b,
+            remap,
+            call,
+            scratch,
+        };
+        let got = if summon {
+            prim.summon(chr, x.cast_signed(), y.cast_signed())
+        } else {
+            prim.change(chr, x.cast_signed(), y.cast_signed())
+        };
+        assert_eq!(want, got, "prim {k}");
+        // the port's width goes to `scratch`, the original's to its stack
+        let width_bits: u32 = Mem::read(b, scratch);
+        Mem::write(a, scratch, width_bits);
+        same_memory(&format!("prim {k}"), a, b);
+    }
+}
+
+#[test]
+fn round35_prims_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round35_prims(&mut a, &mut b, &mut Xorshift(0x4035_0031));
+}
+
+#[test]
+fn round35_prims_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round35_prims(&mut a, &mut b, &mut Xorshift(0x4035_0032));
+}

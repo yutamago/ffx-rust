@@ -1459,6 +1459,30 @@ ported! {
     TOBtlDrawDamageValue2 @ 0x0089_3290 => extern "C" fn to_btl_draw_damage_value2() -> u32 {
         btl::bridge::draw_damage_value2(&mut mem(), call_sym)
     }
+    /// `TOBtlDrawSummonPrim(chr, x, y)`.
+    TOBtlDrawSummonPrim @ 0x008a_0ba0 => extern "C" fn to_btl_draw_summon_prim(chr: u32, x: i32, y: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        btl::bridge::BtlPrim {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+            scratch,
+        }
+        .summon(chr, x, y)
+    }
+    /// `TOBtlDrawChangePrim(chr, x, y)`.
+    TOBtlDrawChangePrim @ 0x0089_f0e0 => extern "C" fn to_btl_draw_change_prim(chr: u32, x: i32, y: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let scratch = frame.at();
+        btl::bridge::BtlPrim {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+            scratch,
+        }
+        .change(chr, x, y)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {
