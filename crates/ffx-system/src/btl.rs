@@ -1613,6 +1613,464 @@ pub mod bridge {
         lulu_gauge(mem, level);
     }
 
+    /// `TOBtlDrawStatusWin()` (`0x00896450`): the battle status window,
+    /// one row per party slot ([`STATUS_PARTY`], 0xff skipped) at `x0 =
+    /// X2(1231)`, `y0 = Y2(835 + 52 k)` in the mode of [`STATUS_MODE`]
+    /// (any other draws only nothing). Every row draws the character's
+    /// name (`MsGetRamChrName`, `ToMakeBtlEasyEdgeFont` at `X2(21) + x0`,
+    /// `y0 - Y2(4)` in the row's HP colour `+0x19`, 0.68). Mode 3 (the
+    /// limit gauges) first marks the character of the current command
+    /// (`0x023cc088`) with a frame and draws its gauge (`+0x38`,
+    /// `TOBtlDrawStatusLimitGauge`), then the HP and MP labels (shapes 0xe9
+    /// at `X2(240)`, 0xea at `X2(420)`; their sizes and offsets differ for
+    /// language 11, `TOGetFFXLang`) and the shown HP (`+0x10`) and MP
+    /// (`+0x28`, colour `+0x31`) values. Modes 0 and 1 mark the characters
+    /// of `0x0133d178`'s bits with the frame and draw the HP (0) or MP (1)
+    /// label, the shown value, "/" and the maximum (`MsGetRamChrHPmax` /
+    /// `MPmax`); mode 2 the marked frame and the row's statuses (`u16`
+    /// count `+0x40`, one shown at a time from `+0x42` for 20 frames,
+    /// `MsMenuGetText(1, id, 1)`, `ToMakeBtlEasyFont` at `X2(279)`, 0.78).
+    /// In screen units remapped by `graphicUiRemapX2`/`Y2` (`remap(mem,
+    /// y_axis, v)`); callees through `call` (`ffx.sym` addresses).
+    pub struct StatusWindow<'a, M, R, C> {
+        pub mem: &'a mut M,
+        pub remap: R,
+        pub call: C,
+    }
+
+    /// The frame shape's UVs (`f32`: 1536, 458, 2047, 510) and the
+    /// current command's (983, 95, 1584, 147).
+    const STATUS_FRAME_UV: [f32; 4] = [1536.0, 458.0, 2047.0, 510.0];
+    const STATUS_COMMAND_FRAME_UV: [f32; 4] = [983.0, 95.0, 1584.0, 147.0];
+
+    /// One label shape: (the shape, x at `X2(at)`, width `X2(w)`, height
+    /// `Y2(h)`, the UVs, the offsets subtracted from x and y), for
+    /// language 11 and for the others. The UVs (`.rdata` bits): HP 0.3613,
+    /// 0.0117, 0.4443, 0.0410 and 0.3477, 0.0146, 0.4258, 0.0400; MP 0.4883,
+    /// 0.0117, 0.5693, 0.0410 and 0.4980, 0.0146, 0.5566, 0.0400.
+    struct Label {
+        shape: u32,
+        w: f32,
+        h: f32,
+        /// As `f32` bits.
+        uv: [u32; 4],
+        back: (f64, f64),
+    }
+
+    const HP_LABEL: [Label; 2] = [
+        Label {
+            shape: 0xe9,
+            w: 68.0,
+            h: 24.0,
+            uv: [0x3eb9_0000, 0x3c40_0000, 0x3ee3_8000, 0x3d28_0000],
+            back: (3.0, 2.0),
+        },
+        Label {
+            shape: 0xe9,
+            w: 61.5,
+            h: 23.0,
+            uv: [0x3eb2_0000, 0x3c70_0000, 0x3eda_0000, 0x3d24_0000],
+            back: (0.0, 0.0),
+        },
+    ];
+    const MP_LABEL: [Label; 2] = [
+        Label {
+            shape: 0xea,
+            // 66.4 as `f32` (0x4284cccd)
+            w: 66.4,
+            h: 24.0,
+            uv: [0x3efa_0000, 0x3c40_0000, 0x3f11_c000, 0x3d28_0000],
+            back: (5.0, 2.0),
+        },
+        Label {
+            shape: 0xea,
+            w: 49.0,
+            h: 23.0,
+            uv: [0x3eff_0000, 0x3c70_0000, 0x3f0e_8000, 0x3d24_0000],
+            back: (0.0, 0.0),
+        },
+    ];
+    /// The "/" between a value and its maximum (`0x00b8f88c`).
+    const SLASH_TEXT: u32 = 0x00b8_f88c;
+
+    impl<M, R, C> StatusWindow<'_, M, R, C>
+    where
+        M: Mem,
+        R: FnMut(&mut M, bool, f32) -> f32,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        fn x(&mut self, v: f32) -> f64 {
+            f64::from((self.remap)(self.mem, false, v))
+        }
+
+        fn y(&mut self, v: f32) -> f64 {
+            f64::from((self.remap)(self.mem, true, v))
+        }
+
+        fn run(&mut self, sym: u32, args: &[u32]) -> u32 {
+            (self.call)(self.mem, sym, args)
+        }
+
+        /// `TOMkpShapeXYWHUV(shape, x, y, w, h, u0, v0, u1, v1)`.
+        fn shape(&mut self, shape: u32, xywh: [f32; 4], uv: [f32; 4]) {
+            let [x, y, w, h] = xywh.map(f32::to_bits);
+            let [u0, v0, u1, v1] = uv.map(f32::to_bits);
+            self.run(0x0090_3bb0, &[shape, x, y, w, h, u0, v0, u1, v1]);
+        }
+
+        /// A frame around the row (`-1`, `x0 - X2(65)`, `y0 - Y2(2)`,
+        /// `X2(680)`, `Y2(52)`).
+        #[allow(clippy::cast_possible_truncation)] // the f32 stores
+        fn frame(&mut self, x0: f32, y0: f32, uv: [f32; 4]) {
+            let h = self.y(52.0) as f32;
+            let w = self.x(680.0) as f32;
+            let y = (f64::from(y0) - self.y(2.0)) as f32;
+            let x = (f64::from(x0) - self.x(65.0)) as f32;
+            self.shape(u32::MAX, [x, y, w, h], uv);
+        }
+
+        /// The frame for characters marked in `0x0133d178`.
+        fn marked_frame(&mut self, chr: u16, x0: f32, y0: f32) {
+            let marks: u32 = self.mem.read(self.mem.rebase(0x0133_d178));
+            if marks & (1u32 << (chr & 0x1f)) != 0 {
+                self.frame(x0, y0, STATUS_FRAME_UV);
+            }
+        }
+
+        /// The name (`ToMakeBtlEasyEdgeFont(name, X2(21) + x0, y0 - Y2(4),
+        /// colour, 0.68, 1.0)`).
+        #[allow(clippy::cast_possible_truncation)] // the f32 stores
+        fn name(&mut self, slot: u32, row: u32, x0: f32, y0: f32) {
+            let colour = u32::from(self.mem.read::<u8>(row + 0x19));
+            let y = (f64::from(y0) - self.y(4.0)) as f32;
+            let x = (self.x(21.0) + f64::from(x0)) as f32;
+            let chr = u32::from(self.mem.read::<u16>(slot));
+            let name = self.run(0x0079_af10, &[chr]);
+            let args = [
+                x.to_bits(),
+                y.to_bits(),
+                colour,
+                0.68f32.to_bits(),
+                1.0f32.to_bits(),
+            ];
+            self.run(
+                0x0090_5930,
+                &[name, args[0], args[1], args[2], args[3], args[4]],
+            );
+        }
+
+        /// A label shape at `X2(at) + x0`, `Y2(5) + y0` (see [`Label`]).
+        #[allow(clippy::cast_possible_truncation)] // the f32 stores
+        fn label(&mut self, labels: &[Label; 2], at: f32, x0: f32, y0: f32) {
+            let lang = self.run(0x008a_c2f0, &[]);
+            let label = if lang == 0xb { &labels[0] } else { &labels[1] };
+            let height = self.y(label.h) as f32;
+            let width = self.x(label.w) as f32;
+            let top = (self.y(5.0) + f64::from(y0) - label.back.1) as f32;
+            let left = (self.x(at) + f64::from(x0) - label.back.0) as f32;
+            self.shape(
+                label.shape,
+                [left, top, width, height],
+                label.uv.map(f32::from_bits),
+            );
+        }
+
+        /// A number right-aligned at `X2(at) + x0`, `Y2(-2) + y0`
+        /// (`ToMakeBtlEasyEdgeDigitRight(value, x, y, colour, 0.65, 0)`).
+        #[allow(clippy::cast_possible_truncation)] // the f32 stores
+        fn digits(
+            &mut self,
+            value: impl FnOnce(&mut Self) -> u32,
+            colour: u32,
+            at: f32,
+            x0: f32,
+            y0: f32,
+        ) {
+            let y = (self.y(-2.0) + f64::from(y0)) as f32;
+            let x = (self.x(at) + f64::from(x0)) as f32;
+            let value = value(self);
+            let scale = 0.65f32.to_bits();
+            self.run(
+                0x0090_5890,
+                &[value, x.to_bits(), y.to_bits(), colour, scale, 0],
+            );
+        }
+
+        /// "/" at `X2(420) + x0`, `Y2(6) + y0`, then the maximum (`max`,
+        /// by character) at `X2(540)`.
+        #[allow(clippy::cast_possible_truncation)] // the f32 stores
+        fn slash_and_max(&mut self, max: u32, slot: u32, x0: f32, y0: f32) {
+            let y = (self.y(6.0) + f64::from(y0)) as f32;
+            let x = (self.x(420.0) + f64::from(x0)) as f32;
+            let text = self.mem.rebase(SLASH_TEXT);
+            let scale = 0.65f32.to_bits();
+            self.run(0x0090_1660, &[text, x.to_bits(), y.to_bits(), 0, scale, 0]);
+            self.digits(
+                |w| {
+                    let chr = u32::from(w.mem.read::<u16>(slot));
+                    w.run(max, &[chr])
+                },
+                0,
+                540.0,
+                x0,
+                y0,
+            );
+        }
+
+        /// Mode 2's statuses, one at a time (see the type).
+        #[allow(clippy::cast_possible_truncation)] // the f32 stores
+        fn statuses(&mut self, row: u32, k: u32, x0: f32, y0: f32) {
+            let count: i16 = self.mem.read(row + 0x40);
+            if count == 0 {
+                return;
+            }
+            let timer: i16 = self.mem.read(row + 0x3c);
+            self.mem.write(row + 0x3c, timer.wrapping_sub(1));
+            if timer <= 0 {
+                let shown = self.mem.read::<i16>(row + 0x3e).wrapping_add(1);
+                self.mem.write(row + 0x3e, shown);
+                self.mem.write(row + 0x3c, 0x14i16);
+                if self.mem.read::<i16>(row + 0x3e) >= count {
+                    self.mem.write(row + 0x3e, 0i16);
+                }
+            }
+            let y = (self.y(4.0) + f64::from(y0)) as f32;
+            let x = (self.x(279.0) + f64::from(x0)) as f32;
+            let shown =
+                i32::from(self.mem.read::<i16>(row + 0x3e)).wrapping_add((0x48 * k).cast_signed());
+            let ids = self.mem.rebase(STATUS_ROWS + 0x42);
+            let id = self
+                .mem
+                .read::<u16>(ids.wrapping_add(shown.cast_unsigned().wrapping_mul(2)));
+            let text = self.run(0x0078_fcf0, &[1, u32::from(id), 1]);
+            let args = [
+                x.to_bits(),
+                y.to_bits(),
+                0,
+                0.78f32.to_bits(),
+                1.0f32.to_bits(),
+            ];
+            self.run(
+                0x0090_5ab0,
+                &[text, args[0], args[1], args[2], args[3], args[4]],
+            );
+        }
+
+        /// The window (see the type).
+        #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)] // the f32 stores, fild
+        pub fn draw(&mut self) {
+            self.run(0x008f_dee0, &[0, 0, 0x200, 0x1a0]);
+            let party = self.mem.rebase(STATUS_PARTY);
+            let rows = self.mem.rebase(STATUS_ROWS);
+            for k in 0..3u32 {
+                let slot = party + 2 * k;
+                let row = rows + 0x90 * k;
+                let chr: u16 = self.mem.read(slot);
+                if chr == 0xff {
+                    continue;
+                }
+                let x0 = self.x(1231.0) as f32;
+                let y0 = self.y((0x343 + 0x34 * k) as f32) as f32;
+                let mode = self.mem.read::<i8>(self.mem.rebase(STATUS_MODE));
+                match mode {
+                    0 => {
+                        self.marked_frame(chr, x0, y0);
+                        self.name(slot, row, x0, y0);
+                        self.label(&HP_LABEL, 240.0, x0, y0);
+                        let colour = u32::from(self.mem.read::<u8>(row + 0x19));
+                        self.digits(|w| w.mem.read(row + 0x10), colour, 395.0, x0, y0);
+                        self.slash_and_max(0x0079_adf0, slot, x0, y0);
+                    }
+                    1 => {
+                        self.marked_frame(chr, x0, y0);
+                        self.name(slot, row, x0, y0);
+                        self.label(&MP_LABEL, 240.0, x0, y0);
+                        let colour = u32::from(self.mem.read::<u8>(row + 0x19));
+                        self.digits(|w| w.mem.read(row + 0x28), colour, 395.0, x0, y0);
+                        self.slash_and_max(0x0079_ae70, slot, x0, y0);
+                    }
+                    2 => {
+                        self.marked_frame(chr, x0, y0);
+                        self.name(slot, row, x0, y0);
+                        self.statuses(row, k, x0, y0);
+                    }
+                    3 => {
+                        let current = i32::from(ACTION_PREV_VALUE.get(self.mem).cast_signed());
+                        if current == i32::from(self.mem.read::<u16>(slot)) {
+                            self.frame(x0, y0, STATUS_COMMAND_FRAME_UV);
+                        }
+                        // the limit gauge
+                        let h = self.y(8.0) as f32;
+                        let w = self.x(520.0) as f32;
+                        let y = (self.y(35.0) + f64::from(y0)) as f32;
+                        let x = (self.x(21.0) + f64::from(x0)) as f32;
+                        let bar: u32 = self.mem.read(row + 0x38);
+                        let xywh = [x, y, w, h].map(f32::to_bits);
+                        self.run(0x0089_60e0, &[bar, xywh[0], xywh[1], xywh[2], xywh[3]]);
+                        self.name(slot, row, x0, y0);
+                        self.label(&HP_LABEL, 240.0, x0, y0);
+                        let colour = u32::from(self.mem.read::<u8>(row + 0x19));
+                        self.digits(|w| w.mem.read(row + 0x10), colour, 395.0, x0, y0);
+                        self.label(&MP_LABEL, 420.0, x0, y0);
+                        let colour = u32::from(self.mem.read::<u8>(row + 0x31));
+                        self.digits(|w| w.mem.read(row + 0x28), colour, 540.0, x0, y0);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    /// The scratch [`WeaponAbilityWindow::draw`] needs: the getters' second
+    /// results and the measured width.
+    pub const WEAPON_ABILITY_WORK: u32 = 8;
+
+    /// `TOBtlDrawWeaponAbilityWindow(weapon, x, y)` (`0x008f34c0`): the
+    /// abilities of a weapon (`MsGetSaveWeapon(weapon, &_)`, after
+    /// `MsCalcWeaponCap`; nothing without abilities: `+0xb` the count,
+    /// `u16`s from `+0xe`, 0xff an empty slot). The full-screen scissor;
+    /// the window is as wide as `X2(90)` plus the widest name
+    /// (`ToGetBtlEasyFontWidth`, 0.78, kept as a truncated `u16`) or at
+    /// least `ftol(X2(300))`, `Y2(52 n - 2)` high, raised by `Y2(52 (n -
+    /// 3))` past three rows (`TODrawBtlNetWindowXYWHType(x, y, w, h, 0)`).
+    /// Each row (`Y2(3 + 52 i)` from `y`): an empty slot "-" text
+    /// (`MsMenuGetText(1, 0x1005, 0)`) at `X2(16)`, an ability its icon
+    /// (`DrawCrossMenuIconXYWHRGBA` at `X2(11)`, `Y2(row + 4)`, `X2(29)` by
+    /// `Y2(36)`, the record's `+0x68`, grey 0x80) and name (`MsGetRomAbility`
+    /// text offset plus its base) at `X2(45)`; both with `ToMakeBtlEasyFont`
+    /// at 0.78. In screen units remapped by `graphicUiRemapX2`/`Y2`
+    /// (`remap(mem, y_axis, v)`); callees through `call` (`ffx.sym`
+    /// addresses); `work` holds [`WEAPON_ABILITY_WORK`] bytes.
+    pub struct WeaponAbilityWindow<'a, M, R, C> {
+        pub mem: &'a mut M,
+        pub remap: R,
+        pub call: C,
+        pub work: u32,
+    }
+
+    impl<M, R, C> WeaponAbilityWindow<'_, M, R, C>
+    where
+        M: Mem,
+        R: FnMut(&mut M, bool, f32) -> f32,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        fn x(&mut self, v: f32) -> f64 {
+            f64::from((self.remap)(self.mem, false, v))
+        }
+
+        fn y(&mut self, v: f32) -> f64 {
+            f64::from((self.remap)(self.mem, true, v))
+        }
+
+        fn run(&mut self, sym: u32, args: &[u32]) -> u32 {
+            (self.call)(self.mem, sym, args)
+        }
+
+        /// An ability's name: its record (`MsGetRomAbility(id, &base)`) and
+        /// the text (`u16 +0` plus the base).
+        fn ability(&mut self, id: u16) -> (u32, u32) {
+            let record = self.run(0x0079_0970, &[u32::from(id), self.work]);
+            let base: u32 = self.mem.read(self.work);
+            let text = u32::from(self.mem.read::<u16>(record)).wrapping_add(base);
+            (record, text)
+        }
+
+        /// `ToMakeBtlEasyFont(text, x, y, 0, 0.78, 1.0)`.
+        fn text(&mut self, text: u32, x: f32, y: f32) {
+            let scale = 0.78f32.to_bits();
+            let one = 1.0f32.to_bits();
+            self.run(
+                0x0090_5ab0,
+                &[text, x.to_bits(), y.to_bits(), 0, scale, one],
+            );
+        }
+
+        /// The window (see the type).
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_precision_loss,
+            clippy::many_single_char_names
+        )] // f32 stores, fild; x, y as the original's
+        pub fn draw(&mut self, weapon: u32, x: f32, y: f32) {
+            use ffx_bridge::x87::ftol;
+            let rec = self.run(0x007a_bbd0, &[weapon, self.work]);
+            self.run(0x0079_8eb0, &[rec]);
+            let count = |s: &Self| u32::from(s.mem.read::<u8>(rec + 0xb));
+            if count(self) == 0 {
+                return;
+            }
+            self.run(0x008f_9230, &[0, 0, 0x200, 0x1a0]);
+
+            // the widest name
+            let mut widest: u32 = 0;
+            let mut i = 0;
+            while i < count(self) {
+                let id: u16 = self.mem.read(rec + 0xe + 2 * i);
+                if id != 0xff {
+                    let (_, text) = self.ability(id);
+                    let width_at = self.work + 4;
+                    let args = [text, width_at, 0, 0.78f32.to_bits(), 1.0f32.to_bits()];
+                    self.run(0x0090_5290, &args);
+                    let width = f64::from(self.mem.read::<f32>(width_at));
+                    #[allow(clippy::cast_possible_truncation)] // the low half
+                    let shown = f64::from(widest as i16);
+                    if width > shown {
+                        widest = ftol(self.mem, width) & 0xffff;
+                    }
+                }
+                i += 1;
+            }
+            #[allow(clippy::cast_possible_truncation)] // the low half
+            let least = self.x(300.0);
+            let names = if least > f64::from(widest as i16) {
+                let again = self.x(300.0);
+                ftol(self.mem, again) & 0xffff
+            } else {
+                widest
+            };
+
+            // the window, raised past three rows
+            let n = count(self);
+            let mut y = y;
+            if n > 3 {
+                let up = self.y(((n - 3) * 0x34) as f32);
+                y = (f64::from(y) - up) as f32;
+            }
+            let h = self.y((n * 0x34 - 2) as f32) as f32;
+            #[allow(clippy::cast_possible_truncation)] // the low half
+            let width = (self.x(90.0) + f64::from(names as i16)) as f32;
+            let net = [x, y, width, h].map(f32::to_bits);
+            self.run(0x008f_41b0, &[net[0], net[1], net[2], net[3], 0]);
+
+            // the rows
+            let mut i = 0;
+            let mut row = 3u32;
+            while i < count(self) {
+                let id: u16 = self.mem.read(rec + 0xe + 2 * i);
+                if id == 0xff {
+                    let ty = (self.y(row as f32) + f64::from(y)) as f32;
+                    let tx = (self.x(16.0) + f64::from(x)) as f32;
+                    let text = self.run(0x0078_fcf0, &[1, 0x1005, 0]);
+                    self.text(text, tx, ty);
+                } else {
+                    let (record, text) = self.ability(id);
+                    let icon = u32::from(self.mem.read::<u8>(record + 0x68));
+                    let ih = self.y(36.0) as f32;
+                    let iw = self.x(29.0) as f32;
+                    let iy = (self.y((row + 4) as f32) + f64::from(y)) as f32;
+                    let ix = (self.x(11.0) + f64::from(x)) as f32;
+                    let [ix, iy, iw, ih] = [ix, iy, iw, ih].map(f32::to_bits);
+                    self.run(0x008e_6af0, &[ix, iy, iw, ih, icon, 0x80, 0x80, 0x80, 0x80]);
+                    let ty = (self.y(row as f32) + f64::from(y)) as f32;
+                    let tx = (self.x(45.0) + f64::from(x)) as f32;
+                    self.text(text, tx, ty);
+                }
+                i += 1;
+                row += 0x34;
+            }
+        }
+    }
+
     /// `TOBtlDrawCtbWindow(x, y)` (`0x008a0590`): the battle turn-order
     /// (CTB) window, unless `0x0133d6e0` is 1. In screen units remapped by
     /// `graphicUiRemapX2`/`Y2` (`remap(mem, y_axis, v)`, an `f32`) it spans

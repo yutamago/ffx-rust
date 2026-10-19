@@ -9898,7 +9898,7 @@
 0x00895940 function TOBtlDrawParamPlate       # fh v3:exact 0x008958b0
 0x00895ae0 function TOBtlDrawScanWinElementLamp # fh v3:cg4 0x895a50
 0x008960e0 function TOBtlDrawStatusLimitGauge # fh v3:exact 0x00896050
-0x00896450 function TOBtlDrawStatusWin        # fh v3:exact 0x008963c0
+0x00896450 function TOBtlDrawStatusWin        # fh v3:exact 0x008963c0; (): scissor, per party slot of 0x0133f7ac (x0 X2(1231), y0 Y2(835 + 52k)) by mode 0x0133d782: name (MsGetRamChrName, ToMakeBtlEasyEdgeFont 0.68), mode 3 command frame (0x023cc088), limit gauge TOBtlDrawStatusLimitGauge (+0x38), HP/MP labels 0xe9/0xea (language 11 sizes), shown HP/MP; modes 0/1 marked frame (0x0133d178 bits), label, value, '/' (0x00b8f88c) and max; mode 2 statuses cycling every 20 frames (MsMenuGetText(1, id, 1)); ported (system r38, btl::bridge::StatusWindow)
 0x00897200 function TOBtlDrawStdChrNameMessageWindow # fh call.cs cdecl
 0x00897240 function TOBtlDrawTidusLimitWindow # fh v3:exact 0x008971b0
 0x008974a0 function TOBtlDrawWakkaLimitWindow    # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004a1710 TOBtlDrawWakkaLimitWindow, 3 votes, round 1
@@ -11061,7 +11061,7 @@
 0x008f3170 function TOAdpValueFontLClutRightRGBA # layout+callees: sorts between TOAdpMenuIconWeaponName2 and TOBtlDrawWeaponAbilityWindow, and its named callees match the Switch 0x710050e9d0 TOAdpValueFontLClutRightRGBA's (similarity 1.00: MsGetSaveConfigEnglish, TOAddPktBaseMesFontLAbmap, TOGetFFXLang, TOValueToMesFontL); symbols from Fahrenheit's server export
 0x008f3300 function TOMkpBtlDigitRight_008f3300 # cdecl(ret, value, x, y, alpha) -> ret: ToMakeBtlEasyDigitRight(value, f32(x) + 4.0, f32(y) + dy, alpha, 0.8, 0.0), dy -3.0 or -2.0 for languages 1..8 and >= 12; caller 0x0076f850; name ours
 0x008f3420 function TOMkpBtlDigitRight_008f3420 # cdecl(ret, value, x, y, alpha) -> ret: ToMakeBtlEasyDigitRight(value, f32(x) + 0.0, f32(y) + dy, alpha, scale, 0.0); language 0 dy -5.5 scale 0.77, 9 dy -6.0, else dy -5.0, scale 0.8; caller 0x0076f850; name ours
-0x008f34c0 function TOBtlDrawWeaponAbilityWindow # fh v3:exact 0x008f34c0
+0x008f34c0 function TOBtlDrawWeaponAbilityWindow # fh v3:exact 0x008f34c0; cdecl(weapon, x, y): MsGetSaveWeapon + MsCalcWeaponCap; with abilities (+0xb, u16s from +0xe, 0xff empty): scissor, width X2(90) + max(widest name ToGetBtlEasyFontWidth 0.78 as u16, ftol X2(300)), Y2(52n - 2) high, raised by Y2(52(n-3)) past 3 rows (TODrawBtlNetWindowXYWHType); rows: '-' (MsMenuGetText(1, 0x1005, 0)) or icon (DrawCrossMenuIconXYWHRGBA, record +0x68, 0x80 grey) and name, ToMakeBtlEasyFont 0.78; ported (system r38, btl::bridge::WeaponAbilityWindow)
 0x008f3820 function TOBtlInitGS               # fh v3:bsim1.00 0x008f3820
 0x008f38c0 function RatioSquared # cdecl(a, b) -> float: ((float)a / (float)b)^2, f32 stores between; name ours
 0x008f3930 function TOClosePktbuff            # fh v3:bsim1.00 0x008f3930

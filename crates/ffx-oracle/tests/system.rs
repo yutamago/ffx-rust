@@ -22679,3 +22679,256 @@ fn round38_limits_match_the_original_on_the_snapshot() {
     round38_limits(&mut a, &mut b, &mut Xorshift(0x4038_0042));
 }
 
+/// Round 38 group D: `TOBtlDrawStatusWin` over logging stand-ins (the
+/// remaps the originals), every mode (and two it ignores), the party
+/// slots, marks, current command, language and status cycles random.
+#[allow(clippy::too_many_lines)]
+fn round38_status_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x10000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x008f_dee0, all(4), vec![], vec![]),
+        (0x0090_3bb0, all(9), vec![], vec![]),
+        (0x0090_5930, all(6), vec![], vec![]),
+        (0x0090_5890, all(6), vec![], vec![]),
+        (0x0090_1660, all(6), vec![], vec![]),
+        (0x0089_60e0, all(5), vec![], vec![]),
+        (0x0090_5ab0, all(6), vec![], vec![]),
+        (0x008a_c2f0, vec![], vec![], ret_cell(cells)),
+        (0x0079_af10, all(1), vec![], ret_cell(cells + 4)),
+        (0x0079_adf0, all(1), vec![], ret_cell(cells + 8)),
+        (0x0079_ae70, all(1), vec![], ret_cell(cells + 12)),
+        (0x0078_fcf0, all(3), vec![], ret_cell(cells + 16)),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        #[allow(clippy::cast_possible_truncation)] // an f32 in ST0
+        let r = m
+            .call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32;
+        r
+    };
+    let party = a.rebase(t::STATUS_PARTY);
+    let rows = a.rebase(t::STATUS_ROWS);
+    let marks = a.rebase(0x0133_d178);
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(
+            a,
+            b,
+            cells,
+            if rng.next().is_multiple_of(2) {
+                0xb
+            } else {
+                rng.next() % 12
+            },
+        );
+        for j in 1..8 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        for j in 0..3 {
+            let c = [0u16, 1, 2, 7, 0x1f, 0x20, 0xff][(rng.next() % 7) as usize];
+            put(a, b, party + 2 * j, c);
+        }
+        for j in 0..3 * 0x90 / 4 {
+            put(a, b, rows + 4 * j, rng.next());
+        }
+        // the status cycles: counts 0..=4, timers around 0, shown entries
+        for j in 0..3 {
+            let row = rows + 0x90 * j;
+            put(a, b, row + 0x40, (rng.next() % 5) as u16);
+            put(
+                a,
+                b,
+                row + 0x3c,
+                (rng.next() % 4) as u16
+                    * if rng.next().is_multiple_of(3) {
+                        0xffff
+                    } else {
+                        1
+                    },
+            );
+            put(a, b, row + 0x3e, (rng.next() % 5) as u16);
+        }
+        put(a, b, marks, rng.next());
+        put(
+            a,
+            b,
+            a.rebase(t::STATUS_MODE),
+            (rng.next() % 6) as u8
+                | if rng.next().is_multiple_of(8) {
+                    0x80
+                } else {
+                    0
+                },
+        );
+        let current = if rng.next().is_multiple_of(2) {
+            Mem::read::<u16>(a, party + 2 * (rng.next() % 3))
+        } else {
+            (rng.next() & 0xffff) as u16
+        };
+        set(a, b, t::ACTION_PREV_VALUE, current);
+        eax(a, 0x0089_6450, &[]);
+        t::StatusWindow {
+            mem: b,
+            remap,
+            call,
+        }
+        .draw();
+        same_memory(&format!("status window {k}"), a, b);
+    }
+}
+
+#[test]
+fn round38_status_window_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round38_status_window(&mut a, &mut b, &mut Xorshift(0x4038_0051));
+}
+
+#[test]
+fn round38_status_window_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round38_status_window(&mut a, &mut b, &mut Xorshift(0x4038_0052));
+}
+
+/// Round 38 group E: `TOBtlDrawWeaponAbilityWindow` over logging
+/// stand-ins (the remaps the originals, `ToGetBtlEasyFontWidth` storing
+/// widths around the window's minimum); 0..=6 slots, empty ones among them.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::many_single_char_names
+)]
+fn round38_weapon_abilities(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x10000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x200);
+    let cells = alloc(a, b, 0x20);
+    let weapon = alloc(a, b, 0x40);
+    let records = alloc(a, b, 0x400);
+    // MsGetSaveWeapon(i, &_) / MsGetRomAbility(id, &base): base = cells[1],
+    // the weapon / a record by id
+    let mut out_base = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d];
+    out_base.extend_from_slice(&(cells + 4).to_le_bytes());
+    out_base.extend_from_slice(&[0x89, 0x08]);
+    let mut save = out_base.clone();
+    save.push(0xa1);
+    save.extend_from_slice(&cells.to_le_bytes());
+    // eax = records + (id & 7) * 0x80
+    let mut rom = out_base;
+    rom.extend_from_slice(&[
+        0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x07, 0xc1, 0xe0, 0x07, 0x05,
+    ]);
+    rom.extend_from_slice(&records.to_le_bytes());
+    // the width: the next table word into [esp+8]
+    let mut width = vec![0x8b, 0x0d];
+    width.extend_from_slice(&counter.to_le_bytes());
+    width.extend_from_slice(&[0x8b, 0x04, 0x8d]);
+    width.extend_from_slice(&table.to_le_bytes());
+    width.extend_from_slice(&[0xff, 0x05]);
+    width.extend_from_slice(&counter.to_le_bytes());
+    width.extend_from_slice(&[0x8b, 0x4c, 0x24, 0x08, 0x89, 0x01]);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x007a_bbd0, all(1), vec![], save),
+        (0x0079_8eb0, all(1), vec![], vec![]),
+        (0x008f_9230, all(4), vec![], vec![]),
+        (0x0079_0970, all(1), vec![], rom),
+        (0x0090_5290, vec![0, 2, 3, 4], vec![], width),
+        (0x008f_41b0, all(5), vec![], vec![]),
+        (0x0078_fcf0, all(3), vec![], ret_cell(cells + 8)),
+        (0x0090_5ab0, all(6), vec![], vec![]),
+        (0x008e_6af0, all(9), vec![], vec![]),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        #[allow(clippy::cast_possible_truncation)] // an f32 in ST0
+        let r = m
+            .call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32;
+        r
+    };
+    let work = b.stack_range().start + 0x1000;
+    let least = remap(a, false, 300.0);
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        // widths around the minimum, a few huge or negative
+        for j in 0..0x80 {
+            let v = match rng.next() % 6 {
+                0 => least,
+                1 => least + 1.0,
+                2 => (rng.next() % 0x2_0000) as f32,
+                3 => -((rng.next() % 100) as f32),
+                _ => (rng.next() % 0x200) as f32 + 0.5,
+            };
+            put(a, b, table + 4 * j, v.to_bits());
+        }
+        put(a, b, cells, weapon);
+        put(a, b, cells + 4, rng.next() % 0x1000);
+        put(a, b, cells + 8, rng.next());
+        for j in 0..0x100 {
+            put(a, b, records + 4 * j, rng.next());
+        }
+        for j in 0..0x10 {
+            put(a, b, weapon + 4 * j, rng.next());
+        }
+        let n = [0u8, 1, 2, 3, 4, 6, 9][(rng.next() % 7) as usize];
+        put(a, b, weapon + 0xb, n);
+        for j in 0..9 {
+            let id = if rng.next().is_multiple_of(4) {
+                0xff
+            } else {
+                (rng.next() % 0x80) as u16
+            };
+            put(a, b, weapon + 0xe + 2 * j, id);
+        }
+        let i = rng.next() % 4;
+        let x = (rng.next() % 1000) as f32 / 4.0;
+        let y = (rng.next() % 1000) as f32 / 4.0;
+        eax(a, 0x008f_34c0, &[i, x.to_bits(), y.to_bits()]);
+        t::WeaponAbilityWindow {
+            mem: b,
+            remap,
+            call,
+            work,
+        }
+        .draw(i, x, y);
+        same_memory(&format!("weapon abilities {k}"), a, b);
+    }
+}
+
+#[test]
+fn round38_weapon_abilities_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round38_weapon_abilities(&mut a, &mut b, &mut Xorshift(0x4038_0061));
+}
+
+#[test]
+fn round38_weapon_abilities_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round38_weapon_abilities(&mut a, &mut b, &mut Xorshift(0x4038_0062));
+}
+

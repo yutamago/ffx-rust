@@ -1685,6 +1685,26 @@ ported! {
         let scratch = frame.at();
         tolib::bridge::setup_message_window(&mut mem(), w, scratch, call_ptr, fcall)
     }
+    /// `TOBtlDrawStatusWin()`.
+    TOBtlDrawStatusWin @ 0x0089_6450 => extern "C" fn to_btl_draw_status_win() {
+        btl::bridge::StatusWindow {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+        }
+        .draw();
+    }
+    /// `TOBtlDrawWeaponAbilityWindow(weapon, x, y)`.
+    TOBtlDrawWeaponAbilityWindow @ 0x008f_34c0 => extern "C" fn to_btl_draw_weapon_ability_window(weapon: u32, x: f32, y: f32) {
+        let mut w = super::StackFrame::<{ btl::bridge::WEAPON_ABILITY_WORK as usize / 4 }>::new();
+        btl::bridge::WeaponAbilityWindow {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+            work: w.at(),
+        }
+        .draw(weapon, x, y);
+    }
     /// `TOBtlDrawCtbWindow(x, y)`.
     TOBtlDrawCtbWindow @ 0x008a_0590 => extern "C" fn to_btl_draw_ctb_window(x: i32, y: u32) -> u32 {
         btl::bridge::CtbWindow {
