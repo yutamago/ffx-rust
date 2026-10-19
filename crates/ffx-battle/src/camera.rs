@@ -940,6 +940,296 @@ pub mod bridge {
         }
         1
     }
+
+    /// The move channel of request `id` on side `side & 1`: channel `id >>
+    /// 8 & 0xff` (0x130 bytes each from `+0xf0` of the side) of camera `id &
+    /// 0xff`.
+    fn channel(mem: &impl Mem, id: u32, side: u32) -> u32 {
+        let sub = (id.cast_signed() >> 8).cast_unsigned() & 0xff;
+        camera_base(mem, id) + (side & 1) * 0x61c + 0xf0 + sub * 0x130
+    }
+
+    /// `MsCameraResetFilter(id, side)` (`0x007bed10`): for a live request
+    /// ([`ms_camera_id_check`]) its channel's filter flag (`+4`) off.
+    pub fn ms_camera_reset_filter(mem: &mut impl Mem, id: u32, side: u32) {
+        if ms_camera_id_check(mem, id) != 0 {
+            let c = channel(mem, id, side);
+            mem.write(c + 4, 0u8);
+        }
+    }
+
+    /// `MsCameraMoveStat(id, side, v)` (`0x007bdf90`): for a live request
+    /// its channel's `+7` = `v`.
+    pub fn ms_camera_move_stat(mem: &mut impl Mem, id: u32, side: u32, v: u8) {
+        if ms_camera_id_check(mem, id) != 0 {
+            let c = channel(mem, id, side);
+            mem.write(c + 7, v);
+        }
+    }
+
+    /// `MsCameraMoveDivide(id, side, v)` (`0x007bdde0`): for a live request
+    /// its channel's `+0x70`..`+0x7c` = `v` (four floats).
+    pub fn ms_camera_move_divide(mem: &mut impl Mem, id: u32, side: u32, v: [u32; 4]) {
+        if ms_camera_id_check(mem, id) != 0 {
+            let c = channel(mem, id, side);
+            mem.write(c + 0x70, v.map(x87_copy));
+        }
+    }
+
+    /// `MsCameraSetSplineFilter(id, side, value, scale, kind)`
+    /// (`0x007bfe70`): for a live request, a channel with fewer than five
+    /// filters (`+4`) adds one: its kind (`+0x90` + 0x20 n) 5 for `kind` 3
+    /// (and `+0x1e` set), else 4 (`+0x1e` clear); `+8` = `value`, `+0x20`
+    /// = `scale`, `+0x24` = 0.0, `+0x1d` set.
+    pub fn ms_camera_set_spline_filter(
+        mem: &mut impl Mem,
+        id: u32,
+        side: u32,
+        value: u32,
+        scale: u32,
+        kind: u32,
+    ) {
+        if ms_camera_id_check(mem, id) == 0 {
+            return;
+        }
+        let c = channel(mem, id, side);
+        let n: u8 = mem.read(c + 4);
+        if n >= 5 {
+            return;
+        }
+        let spline = kind == 3;
+        mem.write(c + 0x1e, u8::from(spline));
+        mem.write(
+            c + 0x90 + 0x20 * u32::from(n),
+            if spline { 5u32 } else { 4 },
+        );
+        mem.write(c + 4, n + 1);
+        mem.write(c + 0x20, x87_copy(scale));
+        mem.write(c + 8, value);
+        mem.write(c + 0x24, 0u32);
+        mem.write(c + 0x1d, 1u8);
+    }
+
+    /// `MsCameraResetDirVector(id, side)` (`0x007bec90`): for the camera's
+    /// current request `id`, side `side & 1`'s `+0x33` flag off and its
+    /// `+0x70` vector (xyz) 0.0.
+    pub fn ms_camera_reset_dir_vector(mem: &mut impl Mem, id: u32, side: u32) {
+        if current_request(mem, id) != id {
+            return;
+        }
+        let s = camera_base(mem, id) + (side & 1) * 0x61c;
+        mem.write(s + 0x33, 0u8);
+        mem.write(s + 0x70, [0u32; 3]);
+    }
+
+    /// `MsCameraSetFocus(id, side, v)` (`0x007bf280`): for a live request,
+    /// camera `id & 0xff`'s focus flag (`+0xca8`) on and channel `id >> 8`'s
+    /// focus for the side (`+0xccc` + 0x30 channel + 4 side) = `v`; for
+    /// its current request the camera's focus now (`+0xcb0` + 4 side) too.
+    pub fn ms_camera_set_focus(mem: &mut impl Mem, id: u32, side: u32, v: u32) {
+        if ms_camera_id_check(mem, id) == 0 {
+            return;
+        }
+        let side = side & 1;
+        let sub = (id.cast_signed() >> 8).cast_unsigned() & 0xff;
+        let base = camera_base(mem, id);
+        mem.write(base + 0xca8, 1u32);
+        mem.write(base + 0xccc + 0x30 * sub + 4 * side, v);
+        if current_request(mem, id) == id {
+            mem.write(base + 0xcb0 + 4 * side, v);
+        }
+    }
+
+    /// `MsCameraGetYaw()` (`0x007bcf20`): the yaw of the camera in use
+    /// ([`CAMERA`]): `MsVectorRect2Polar` of its eye (`+0x50`) less its
+    /// look-at (`+0x66c`), the yaw into `local` (the original's stack
+    /// word), read back as the result (`fld`).
+    pub fn ms_camera_get_yaw(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        local: u32,
+    ) -> f32 {
+        let cam = CAMERA.get(mem);
+        crate::vector::bridge::ms_vector_rect2_polar(
+            mem,
+            trig,
+            cam.wrapping_add(0x50),
+            cam.wrapping_add(0x66c),
+            local,
+            0,
+            0,
+        );
+        f32::from_bits(x87_copy(mem.read(local)))
+    }
+
+    /// `MsCameraReset(id, side)` (`0x007beae0`): for the camera's current
+    /// request `id`, side `side` (not masked) goes to channel `id >> 8`'s
+    /// start (`+0x170` + 0x130 channel, through `g_Ee_GprMove`): its
+    /// position now (`+0x50`) and target (`+0x80`); side 1 also takes the
+    /// channel's roll (`+0xcd4` + 0x30 channel) as the camera's roll target
+    /// and value (`+0xc94`, `+0xc90`) and its depth (`+0xcd8`) likewise
+    /// (`+0xca0`, `+0xc9c`). Returns 0. (The original asks `Cam_IsMoving`
+    /// for a `dbgPrintf` line, empty in this build; neither changes
+    /// anything.)
+    pub fn ms_camera_reset(mem: &mut impl Mem, id: u32, side: u32) -> u32 {
+        if current_request(mem, id) != id {
+            return 0;
+        }
+        let sub = (id.cast_signed() >> 8).cast_unsigned() & 0xff;
+        let base = camera_base(mem, id);
+        let s = base.wrapping_add(side.wrapping_mul(0x61c));
+        let start: [u32; 4] = mem.read(s.wrapping_add(0x170 + 0x130 * sub));
+        EE_MOVE.set(mem, start);
+        mem.write(s.wrapping_add(0x50), start);
+        mem.write(s.wrapping_add(0x80), start);
+        if side == 1 {
+            let roll = x87_copy(mem.read(base + 0xcd4 + 0x30 * sub));
+            mem.write(base + 0xc94, roll);
+            mem.write(base + 0xc90, roll);
+            let depth = x87_copy(mem.read(base + 0xcd8 + 0x30 * sub));
+            mem.write(base + 0xca0, depth);
+            mem.write(base + 0xc9c, depth);
+        }
+        0
+    }
+
+    /// `MsCameraSetStartPos(cam, side, mv)` (`0x007bff10`): a move's start
+    /// for a camera side (`side`, a pointer). For a polar move (kind
+    /// `mv[0]` one) the side's yaw, pitch and length (`+0x60`..`+0x68`)
+    /// become the start (`+0x80`..`+0x88`) for each lane `mv[7]` bits 0-2
+    /// leave free, and when one did, the start position (`+0x70`) is
+    /// `MsVectorPolar2Rect` of base `+0x8c`, the yaw, pitch and length; for
+    /// any other move the position (`+0x50`..`+0x58`) becomes the start position
+    /// lane by lane and, when one did, the start's polar form
+    /// (`MsVectorRect2Polar`). With a camera, bits 3 and 4 free its roll
+    /// (`+0xc98` from `+0xc94`) and depth (`+0xca4` from `+0xca0`) starts.
+    /// Returns `cam` (`eax`).
+    ///
+    /// The original pushes only five of `MsVectorPolar2Rect`'s eight
+    /// words; the other three (its own saved `esi`, `ebp` and return
+    /// address) land in VU register 4's `yzw` (`0x00c8f814`..), and are
+    /// added to the result when `base` is null and `r0` is not: this
+    /// passes 0 for them.
+    pub fn ms_camera_set_start_pos(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        cam: u32,
+        side: u32,
+        mv: u32,
+    ) -> u32 {
+        let at = |o: u32| side.wrapping_add(o);
+        let flags: u8 = mem.read(mv.wrapping_add(7));
+        let free = |bit: u8| flags & bit == 0;
+        let polar = mem.read::<u8>(mv) == 1;
+        let (from, to) = if polar { (0x60, 0x80) } else { (0x50, 0x70) };
+        let mut any = false;
+        for (k, bit) in [(0, 1u8), (4, 2), (8, 4)] {
+            if free(bit) {
+                let v = x87_copy(mem.read(at(from + k)));
+                mem.write(at(to + k), v);
+                any = true;
+            }
+        }
+        if any {
+            let base: u32 = mem.read(at(0x8c));
+            if polar {
+                let [yaw, pitch, length] = [0x60, 0x64, 0x68].map(|o| x87_copy(mem.read(at(o))));
+                crate::vector::bridge::ms_vector_polar2_rect(
+                    mem,
+                    trig,
+                    at(0x70),
+                    base,
+                    yaw,
+                    pitch,
+                    [length, 0, 0, 0],
+                );
+            } else {
+                crate::vector::bridge::ms_vector_rect2_polar(
+                    mem,
+                    trig,
+                    at(0x50),
+                    base,
+                    at(0x80),
+                    at(0x84),
+                    at(0x88),
+                );
+            }
+        }
+        if cam != 0 {
+            if free(8) {
+                let v = x87_copy(mem.read(cam.wrapping_add(0xc94)));
+                mem.write(cam.wrapping_add(0xc98), v);
+            }
+            if free(0x10) {
+                let v = x87_copy(mem.read(cam.wrapping_add(0xca0)));
+                mem.write(cam.wrapping_add(0xca4), v);
+            }
+        }
+        cam
+    }
+
+    /// `MsCameraFocusWeights_007c0ae0(side, mv)` (`0x007c0ae0`, name ours):
+    /// a weighted blend of the move's focus records into the side's polar
+    /// start (`+0x60`..`+0x6c`). The list (`mv + 8`) holds a count, then
+    /// records of 0x30 bytes from `+0x10`: a point (`+0`), a divisor
+    /// (`+0xc`), a polar value (`+0x10`..`+0x18`, `+0x20`), the weight it
+    /// gets (`+0x1c`).
+    ///
+    /// First each record's distance from the side's position (`+0x30`, the
+    /// lanes `mv[3]` bits 1-3 set count as 0; the square sum at 53 bits,
+    /// its root stored) plus 1 (stored), squared when `mv[3]` bit 0 is
+    /// set, over the divisor: the record's weight, summed. Then each
+    /// record's share `total / weight` scales its value into four sums
+    /// and a share sum (each stored); the side gets `sum / shares`, the
+    /// first lane plus `mv + 0x40`.
+    pub fn ms_camera_focus_weights(mem: &mut impl Mem, side: u32, mv: u32) {
+        use ffx_bridge::x87::{add, div, load, mul, sqrt, store, sub};
+        let flags: u8 = mem.read(mv.wrapping_add(3));
+        let list: u32 = mem.read(mv.wrapping_add(8));
+        let count: i32 = mem.read(list);
+        let pos: [u32; 3] = mem.read(side.wrapping_add(0x30));
+        let mut total = 0.0f32.to_bits();
+        for i in 0..count.max(0).cast_unsigned() {
+            let rec = list.wrapping_add(0x10 + 0x30 * i);
+            let p: [u32; 3] = mem.read(rec);
+            let d: [u32; 3] = std::array::from_fn(|k| {
+                if flags & (2 << k) == 0 {
+                    store(sub(load(pos[k]), load(p[k])))
+                } else {
+                    0
+                }
+            });
+            let sq = |v: u32| mul(load(v), load(v));
+            let r = store(sqrt(add(add(sq(d[0]), sq(d[1])), sq(d[2]))));
+            let r1 = load(store(add(load(r), 1.0)));
+            let r1 = if flags & 1 == 0 { r1 } else { mul(r1, r1) };
+            let divisor: u32 = mem.read(rec.wrapping_add(0xc));
+            let weight = store(div(r1, load(divisor)));
+            mem.write(rec.wrapping_add(0x1c), weight);
+            total = store(add(load(weight), load(total)));
+        }
+        let zero = 0.0f32.to_bits();
+        let (mut sums, mut shares) = ([zero; 4], zero);
+        for i in 0..count.max(0).cast_unsigned() {
+            let rec = list.wrapping_add(0x10 + 0x30 * i);
+            let weight: u32 = mem.read(rec.wrapping_add(0x1c));
+            let share = store(div(load(total), load(weight)));
+            let value: [u32; 4] = [0x10, 0x14, 0x18, 0x20].map(|o| mem.read(rec.wrapping_add(o)));
+            for (s, v) in sums.iter_mut().zip(value) {
+                *s = store(add(mul(load(v), load(share)), load(*s)));
+            }
+            shares = store(add(load(share), load(shares)));
+        }
+        let n = load(shares);
+        let first: u32 = mem.read(mv.wrapping_add(0x40));
+        let out = [
+            store(add(div(load(sums[0]), n), load(first))),
+            store(div(load(sums[1]), n)),
+            store(div(load(sums[2]), n)),
+            store(div(load(sums[3]), n)),
+        ];
+        mem.write(side.wrapping_add(0x60), out);
+    }
 }
 
 #[cfg(test)]

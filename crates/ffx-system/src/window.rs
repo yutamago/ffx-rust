@@ -147,6 +147,65 @@ pub mod bridge {
         )
     }
 
+    /// The file `MacroDic_Load` reads last (`0x01869ec0`).
+    pub const MACRO_DIC_FILE: Global<u32> = Global::new(0x0186_9ec0);
+    /// The swapped-language macro dictionary (`0x01869eb4`, after
+    /// [`MACRO_DIC`]).
+    pub const MACRO_DIC_SWAP: Global<u32> = Global::new(0x0186_9eb4);
+
+    /// `MacroDic_Load()` (`0x008b85c0`): reads `"macrodic"`
+    /// (`TKMallocAndReadEventMessage`, `0x0088cac0`) into
+    /// [`MACRO_DIC_FILE`], keeps `set_ptr32` of it in [`MACRO_DIC`] and
+    /// turns its 16 section offsets into pointers (offset plus file, 0 for
+    /// offsets below 1). With `TOGetFFXLangSwapFlag() == 1` it does the same
+    /// for `TODVDFileLoad(4, 4)` into [`MACRO_DIC_SWAP`]. Callees through
+    /// `call`; returns what the original leaves in `eax` (the swap flag, or the
+    /// second dictionary's last `get_ptr32_func`).
+    pub fn macro_dic_load<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let name = mem.rebase(0x00b6_55d0);
+        let file = call(mem, 0x0088_cac0, &[name]);
+        load_macro_dic(mem, &mut call, file, MACRO_DIC);
+        let swap = call(mem, 0x008a_c390, &[]);
+        if swap != 1 {
+            return swap;
+        }
+        let file = call(mem, 0x008a_ba60, &[4, 4]);
+        load_macro_dic(mem, &mut call, file, MACRO_DIC_SWAP)
+    }
+
+    /// One dictionary of [`macro_dic_load`]: `file` into
+    /// [`MACRO_DIC_FILE`], `set_ptr32(file)` into `table`, then each of the
+    /// 16 words (the file and the table read again for each) through
+    /// `get_ptr32_func`. Returns the last `get_ptr32_func`.
+    fn load_macro_dic<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        file: u32,
+        table: Global<u32>,
+    ) -> u32 {
+        MACRO_DIC_FILE.set(mem, file);
+        let handle = call(mem, 0x00a4_4700, &[file]);
+        table.set(mem, handle);
+        let mut handle = handle;
+        let mut last = 0;
+        for k in (0..0x40).step_by(4) {
+            let file = MACRO_DIC_FILE.get(mem);
+            let offset: i32 = mem.read(file.wrapping_add(k));
+            let value = if offset > 0 {
+                offset.cast_unsigned().wrapping_add(file)
+            } else {
+                0
+            };
+            last = call(mem, 0x00a4_4650, &[handle]);
+            mem.write(last.wrapping_add(k), value);
+            handle = table.get(mem);
+        }
+        last
+    }
+
     /// `TOGetSaveDicAdrs(table)` (`0x008b7f60`): `+0x2c` of the dictionary.
     pub fn save_dic(mem: &impl Mem, table: i32) -> u32 {
         let d = crate::stub::ptr32(entry(mem, MACRO_DIC, table));

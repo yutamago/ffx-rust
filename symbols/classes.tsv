@@ -6071,7 +6071,7 @@
 0x0076d9c0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): dvd_cd_id_size
 0x0076da40	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): dvd_cd_unk7
 0x0076dac0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): dvd_cd_unk8
-0x0076db40	logic	default (no rule: ported to be safe)
+0x0076db40	dead	reviewed: file_offset_get: only caller gated by read-only .rdata byte 0x00b5ec4f == 0 (it is 1); sceCdSearchFile stub always 0 (system round 35)
 0x0076dc20	logic	default (no rule: ported to be safe)
 0x0076dc50	logic	default (no rule: ported to be safe)
 0x0076dc60	dead	unreachable from the entry point and every pointer table
@@ -6601,9 +6601,9 @@
 0x00777ed0	dead	unreachable from the entry point and every pointer table
 0x00777f00	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_ReadModuleFiles_00777f00
 0x007783f0	dead	unreachable from the entry point and every pointer table
-0x00778550	logic	default (no rule: ported to be safe)
+0x00778550	platform	reviewed: hd_file_read_ex_th_main: PC loader-thread request handshake (system round 35)
 0x007785e0	dead	unreachable from the entry point and every pointer table
-0x00778610	logic	default (no rule: ported to be safe)
+0x00778610	platform	reviewed: hd_file_read_th: PC loader-thread request handshake (system round 35)
 0x007786f0	logic	default (no rule: ported to be safe)
 0x007787b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): get_hdd_word_518
 0x007787c0	platform	only called from platform code (hdd_install_check)
@@ -9549,7 +9549,7 @@
 0x0081f100	dead	unreachable from the entry point and every pointer table
 0x0081f130	dead	unreachable from the entry point and every pointer table
 0x0081f160	dead	unreachable from the entry point and every pointer table
-0x0081f210	logic	default (no rule: ported to be safe)
+0x0081f210	dead	reviewed: SqsStraightStreamingDataSend: only caller is thunk 0x885ed0, whose only caller 0x77a8e0 is never reached (field round 13)
 0x0081f550	dead	unreachable from the entry point and every pointer table
 0x0081f6c0	logic	default (no rule: ported to be safe)
 0x0081f770	logic	default (no rule: ported to be safe)
@@ -13313,7 +13313,7 @@
 0x008acf30	logic	default (no rule: ported to be safe)
 0x008acf50	logic	default (no rule: ported to be safe)
 0x008ad4d0	logic	default (no rule: ported to be safe)
-0x008ad780	logic	default (no rule: ported to be safe)
+0x008ad780	platform	reviewed: TOInitBattleFontPath: host0: to PS3Data paths (str_replace + fiosUnifyFilename) (system round 35)
 0x008ad840	platform	reviewed: TOInitEventFontPath: PS3Data path mapping via fiosUnifyFilename (system round 33)
 0x008ad900	logic	default (no rule: ported to be safe)
 0x008ada30	logic	default (no rule: ported to be safe)
@@ -14443,7 +14443,7 @@
 0x008ed380	glue	GS packet API (TOAdpEasyShapeXYWHC2): appends to or kicks a packet; replaced by ffx-render
 0x008edfc0	glue	GS/DMA packet writer (TOAdpFontM_ASCII; writes no game state): replaced by ffx-render
 0x008ee010	dead	unreachable from the entry point and every pointer table
-0x008ee060	logic	default (no rule: ported to be safe)
+0x008ee060	glue	GS/DMA packet writer (TODrawFont3d80Glyph_008eeee0; writes no game state): replaced by ffx-render
 0x008ee0b0	dead	unreachable from the entry point and every pointer table
 0x008ee100	dead	unreachable from the entry point and every pointer table
 0x008ee150	dead	unreachable from the entry point and every pointer table
@@ -14454,7 +14454,7 @@
 0x008ee600	dead	unreachable from the entry point and every pointer table
 0x008ee9c0	dead	unreachable from the entry point and every pointer table
 0x008eed20	dead	unreachable from the entry point and every pointer table
-0x008eeee0	logic	default (no rule: ported to be safe)
+0x008eeee0	glue	GS packet API (TODrawFont3d80Glyph_008eeee0): appends to or kicks a packet; replaced by ffx-render
 0x008ef2b0	dead	unreachable from the entry point and every pointer table
 0x008ef670	glue	GS packet API (TOAdpALPHA): appends to or kicks a packet; replaced by ffx-render
 0x008ef6e0	dead	unreachable from the entry point and every pointer table
@@ -14524,7 +14524,7 @@
 0x008f3220	dead	unreachable from the entry point and every pointer table
 0x008f3280	glue	GS/DMA packet writer (calls the packet writers 0x8edfc0; writes no game state): replaced by ffx-render
 0x008f3300	glue	GS packet API (TOMkpBtlDigitRight_008f3300): appends to or kicks a packet; replaced by ffx-render
-0x008f3390	logic	default (no rule: ported to be safe)
+0x008f3390	glue	GS/DMA packet writer (calls the packet writers 0x8ee060; writes no game state): replaced by ffx-render
 0x008f3420	glue	GS packet API (TOMkpBtlDigitRight_008f3420): appends to or kicks a packet; replaced by ffx-render
 0x008f34c0	logic	default (no rule: ported to be safe)
 0x008f3820	logic	default (no rule: ported to be safe)
@@ -16092,17 +16092,17 @@
 0x0093d060	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d090	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d160	dead	unreachable from the entry point and every pointer table
-0x0093d1b0	logic	ran in the coverage sessions, called by logic: 0x93d5a0, 0x93d620, 0x93d690
+0x0093d1b0	logic	ran in the coverage sessions, called by logic: FFXSamp0ViewScreenMatrix
 0x0093d290	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d2c0	dead	unreachable from the entry point and every pointer table
 0x0093d340	dead	unreachable from the entry point and every pointer table
 0x0093d3d0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d440	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d490	dead	unreachable from the entry point and every pointer table
-0x0093d550	logic	default (no rule: ported to be safe)
-0x0093d5a0	logic	default (no rule: ported to be safe)
-0x0093d620	logic	default (no rule: ported to be safe)
-0x0093d690	logic	default (no rule: ported to be safe)
+0x0093d550	debug	only calls debug code (rcuiRotateX, rcuiRotateY, rcuiRotateZ)
+0x0093d5a0	debug	debug name: rcuiRotateX
+0x0093d620	debug	debug name: rcuiRotateY
+0x0093d690	debug	debug name: rcuiRotateZ
 0x0093d710	debug	debug name: rcuiProjectToInt
 0x0093d7d0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0093d800	dead	unreachable from the entry point and every pointer table
