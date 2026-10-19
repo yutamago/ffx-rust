@@ -19205,3 +19205,50 @@ fn r13s_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_3102);
     r13s_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group T: back to the drawn frame ----
+
+/// Group T (r13) on `t`: `yiSetDrawFrame` with either buffer shown
+/// (`Sg_GetDBuffDC` runs as the original over its global); the packet
+/// send is a stand-in that copies the packet out.
+fn r13t_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::yipoly;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let out = t.alloc(0x44);
+    // the packet copied out, then its quadword count at +0x40
+    let mut send = r13o_copy_stub(out, 0x10);
+    send.truncate(send.len() - 6); // mov eax, 0x77; ret
+    send.extend_from_slice(&[0x8b, 0x44, 0x24, 0x08, 0xa3]); // mov eax, [esp + 8]; mov [out + 0x40], eax
+    send.extend_from_slice(&(out + 0x40).to_le_bytes());
+    send.extend_from_slice(&[0xb8, 0x77, 0, 0, 0, 0xc3]);
+    t.cave(&[(Some(yipoly::SEND_GS_PACKET), send)]);
+    let dc = t.b.rebase(0x023c_bbf0);
+    for _ in 0..cases {
+        t.fill(out, 0x44, rng);
+        t.put(dc, rng.next());
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "yiSetDrawFrame",
+            |o| o.eax(0x0091_2590, &[]),
+            |m| yipoly::yi_set_draw_frame(m, work, call),
+        );
+    }
+}
+
+/// Group T (r13) on the image.
+#[test]
+fn r13t_set_draw_frame_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_4101);
+    r13t_cases(&mut t, &mut rng, 100);
+}
+
+/// Group T (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13t_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_4102);
+    r13t_cases(&mut t, &mut rng, 50);
+}

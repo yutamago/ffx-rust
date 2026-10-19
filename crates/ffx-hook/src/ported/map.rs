@@ -2875,6 +2875,15 @@ ported! {
         let tex = ffx_field::yipoly::TexRegion { height, tbp, u, v };
         ffx_field::yipoly::yi_poly_tex_map_xz(&mut mem(), packet, min, max, tex);
     }
+    /// `yiSetDrawFrame()`: the state word and packet in a 16-byte aligned
+    /// local.
+    yiSetDrawFrame @ 0x0091_2590 => extern "C" fn shim_yi_set_draw_frame() -> u32 {
+        #[repr(C, align(16))]
+        struct FrameWork([u8; ffx_field::yipoly::DRAW_FRAME_WORK as usize]);
+        let mut work = FrameWork([0; ffx_field::yipoly::DRAW_FRAME_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_set_draw_frame(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `yiTexTargetClear(frame, u, v, h)`.
     yiTexTargetClear @ 0x0091_26f0 => extern "C" fn shim_yi_tex_target_clear(frame: u32, u: u32, v: u32, h: u32) -> u32 {
         // 16-byte aligned: the packet goes to sceDmaSendN
