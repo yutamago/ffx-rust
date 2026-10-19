@@ -3497,7 +3497,7 @@
 0x00711610 function InitVFXRenderData_NoiseBlur  # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71002e45d0 InitVFXRenderData_NoiseBlur, 2 votes, round 1
 0x00711680 function InitVFXZBufClearRenderData # fh v3:exact 0x00711760
 0x00711910 function UpdatePhyreViewProjectionMatrix # fh v3:exact 0x007119f0
-0x007119d0 function VertexGroupApplyZMatZClip # fh v3:exact 0x00711ab0
+0x007119d0 function VertexGroupApplyZMatZClip # fh v3:exact 0x00711ab0 ; (m, a, b, c, d, flags) -> 0 drawn / 1 clipped: m = b*(a*m) style FFXVu0MulMatrix chain, screen depths of rows 0..3 through g_ScreenMatrix columns 2/3 with f32 rounding per step, clip when all lie outside [0, 2^23]; REVIEWED: not portable exactly: with flags bit 8 (from the shape data, *(short *)param_3 at its six call sites) the row-3 sum adds the never-written local at ebp-8 (local_18[3]), so the clip decision for rows 0..2 out of range comes from stack garbage (cf. field 0x922dc0)
 0x00711f20 function pppAllFreePObject         # fh v3:exact 0x00712000 _pppAllFreePObject
 0x00711fa0 function pppInitData               # fh v3:exact 0x00712080 _pppInitData
 0x007120f0 function pppInitPdt                # fh v3:exact 0x007121d0 _pppInitPdt
@@ -3844,6 +3844,7 @@
 0x0073fa10 function pppDrawMdlCameraLoopCon2  # ppp program table record "pppDrawMdlCameraLoop" (0x00c3b6b0) +0x20 second set-up; "pppDrawMdlCameraLoop" (0x00c3cd58) +0x20 second set-up
 0x0073fa40 function pppDrawMdlCameraLoopDes   # ppp program table record "pppDrawMdlCameraLoop" +0x24 destructor; not a function start in the Ghidra dump
 0x0073fa50 function pppDrawMdlCameraLoopDraw  # ppp program table record "pppDrawMdlCameraLoop" draw; not a function start in the Ghidra dump
+0x007400f0 function pppDrawMdlCameraLoopInit_007400f0 # ours: (rec, area): pppDrawMdlCameraLoopDraw's first-frame work area (its only caller, when area +0 is a null ptr32): +0 set_ptr32(rec), +4/+0x10 = rec +8/+0x14 (x87 copies), +8/+0xc/+0x14/+0x18 0, +0x1c = any of rec +0xc/+0x10/+0x18/+0x1c nonzero, +0x1d = rec +0x23, +0x1e/+0x1f = Yn_EmbeddedTrxGetCnt of Yn_FpTrxTexGet(rec +0x22) when rec +0x21 (after Yn_FpTrxTexSetAddr to the shape's image/CLUT) (mdl::bridge::ppp_draw_mdl_camera_loop_init)
 0x007403f0 function pppDrawMdlRevCon          # ppp program table record "pppDrawMdlRev" (0x00c3dcf8) +0x1c set-up
 0x00740410 function pppDrawMdlRevDraw         # ppp program table record "pppDrawMdlRev" draw; not a function start in the Ghidra dump
 0x00740960 function ppp_mdl_rev_random_flags_00740960 # ours: (rec, out): out[0] = 1; for each set byte rec +0xd..+0xf, out[1+j] = 1 when op_random(1.0) > 0; only caller pppDrawMdlRevDraw (mdl::bridge::ppp_mdl_rev_random_flags)
@@ -3859,22 +3860,27 @@
 0x00742b50 function pppDrawShapeFieldCon      # ppp program table record "pppDrawShapeField" +0x1c set-up; ours: unit matrix, null/zero words from +0x40, frame count (draw::bridge::shape_con FIELD_CON)
 0x00742bd0 function pppDrawShapeFieldDes      # ppp program table record "pppDrawShapeField" +0x24 destructor; ours: graphicVFXDestroy unless one of 9 level hashes, frees +0xe0/+0xe4/+0xf0 (draw::bridge::ppp_des FIELD_DES)
 0x00742cc0 function pppDrawShapeFieldDraw     # ppp program table record "pppDrawShapeField" draw
+0x00742f20 function pppDrawShapeFieldAlloc_00742f20 # ours: (obj, key, prog) -> 1/0: pppDrawShapeFieldDraw's (0x00742cc0) buffers: work +0x40 = pppMemAlloc([key+8] * 0xa0) cleared, +0x44 = 12 bytes, +0x50 = [work+0x54] * 8 cleared; 0 when is_ptr32_null; byte-identical to 0x00744260 (draw::bridge::shape_alloc FIELD_ALLOC)
 0x00743030 function pppShapeFieldRenderOn_00743030 # ours: () -> 0 when graphicLevelGetNameHash() is one of 0x76f, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139, else 1; 0x00741b90 and pppDrawShapeFieldDraw skip their shape-field render data on 0 (draw::bridge::shape_field_render_on)
 0x00743f00 function pppDrawShapeFieldRevCon   # ppp program table record "pppDrawShapeFieldRev" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_REV_CON)
 0x00743f80 function pppDrawShapeFieldRevDes   # ppp program table record "pppDrawShapeFieldRev" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_REV_DES)
 0x00744040 function pppDrawShapeFieldRevDraw  # ppp program table record "pppDrawShapeFieldRev" draw
+0x00744260 function pppDrawShapeFieldRevAlloc_00744260 # ours: pppDrawShapeFieldRevDraw's buffers; byte-identical copy of pppDrawShapeFieldAlloc_00742f20 (draw::bridge::shape_alloc FIELD_ALLOC)
 0x007450a0 function pppDrawShapeFieldSpdCon   # ppp program table record "pppDrawShapeFieldSpd" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_SPD_CON)
 0x00745130 function pppDrawShapeFieldSpdDes   # ppp program table record "pppDrawShapeFieldSpd" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_SPD_DES)
 0x00745210 function pppDrawShapeFieldSpdDraw  # ppp program table record "pppDrawShapeFieldSpd" draw
 0x00746200 function pppDrawShapeFieldGlobalCon # ppp program table record "pppDrawShapeFieldGlobal" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_GLOBAL_CON)
 0x00746280 function pppDrawShapeFieldGlobalDes # ppp program table record "pppDrawShapeFieldGlobal" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_GLOBAL_DES)
 0x00746320 function pppDrawShapeFieldGlobalDraw # ppp program table record "pppDrawShapeFieldGlobal" draw
+0x00746540 function pppDrawShapeFieldGlobalAlloc_00746540 # ours: (obj, key, prog) -> 1/0: pppDrawShapeFieldGlobalDraw's buffers: work +0x40 = [key+8] * 0xb0 cleared, +0x4c = [work+0x50] * 8 cleared (draw::bridge::shape_alloc FIELD_GLOBAL_ALLOC)
 0x00747410 function pppDrawShapeCameraCon     # ppp program table record "pppDrawShapeCamera" +0x1c set-up; ours: (draw::bridge::shape_con CAMERA_CON)
 0x00747490 function pppDrawShapeCameraDes     # ppp program table record "pppDrawShapeCamera" +0x24 destructor; ours: destroys the instance before and after the frees (draw::bridge::ppp_des CAMERA_DES)
 0x00747540 function pppDrawShapeCameraDraw    # ppp program table record "pppDrawShapeCamera" draw
+0x00747760 function pppDrawShapeCameraAlloc_00747760 # ours: pppDrawShapeCameraDraw's buffers: pppDrawShapeFieldGlobalAlloc_00746540 with 0xa0-byte records; byte-identical to 0x007489b0 (draw::bridge::shape_alloc CAMERA_ALLOC)
 0x00748660 function pppDrawShapeCameraDisPosCon # ppp program table record "pppDrawShapeCameraDisPos" +0x1c set-up; ours: (draw::bridge::shape_con CAMERA_CON)
 0x007486e0 function pppDrawShapeCameraDisPosDes # ppp program table record "pppDrawShapeCameraDisPos" +0x24 destructor; ours: (draw::bridge::ppp_des CAMERA_DES)
 0x00748790 function pppDrawShapeCameraDisPosDraw # ppp program table record "pppDrawShapeCameraDisPos" draw
+0x007489b0 function pppDrawShapeCameraDisPosAlloc_007489b0 # ours: pppDrawShapeCameraDisPosDraw's buffers; byte-identical copy of pppDrawShapeCameraAlloc_00747760 (draw::bridge::shape_alloc CAMERA_ALLOC)
 0x00748b00 function pppKeMdlBmpDraw_Body_00748b00 # (obj): the sprite part of pppKeMdlBmpDraw (op_spr_alloc/op_spr_free, the debug dump "PA= %d, %d, %d" ... "------"); those strings are the Switch pppKeMdlBmpDraw's, which inlines it; caller pppKeMdlBmpDraw; own name
 0x00749050 function op_ivec4_shr7_00749050      # ours: (out, v) -> last: four i16 >> 7 (arithmetic) as f32 into out; caller 0x007490d0
 0x007490b0 function pppKeMdlBmpCon            # ppp program table record "pppKeMdlBmp" +0x1c set-up; not a function start in the Ghidra dump
@@ -4176,8 +4182,10 @@
 0x00760610 function pppInitPmcomEnv           # (): 0x00d524a0 = 0x00d524a8, g_KePmcomNext = its base 0x00e524f0, pppInitEnv(0x010d4cfc, 0, 0x00fd24f0, 0x100000); name ours
 0x00760640 function KeResampleRgbaToRgb       # (src, sw, sh, dst, dw, dh): nearest-neighbour RGBA to bottom-up BGR bytes by Bresenham error terms; returns the row error; pppPartDraw; name ours
 0x007606f0 function pppDrawCrosshair         # (): unless 0x00d4b4e8 (x) is 0x7fff, a crosshair at (x, y) through the line packet writer 0x00760ce0 in 12.4 units around 0x800: grey verticals at x, x - 1 (y +-10), horizontal at y (x +-20); black copies one unit right/down; returns the last line's eax (0x7fff when none); from pppPartDraw, pppPartLoop; name ours; ported (field round 50)
+0x00760f30 function pppPacketStart_00760f30  # ours; REVIEWED: renderer glue: resets the ppp packet state (0x00d4ca3c, 0x0230fbc0/4, g_PppPacketPos = 0x01b00000) and, with 0x00d4b4d4 set, reads back the 16x16 depth block at g_PppCrosshair through sceGsSetDefStoreImage/sceGsExecStoreImage (stubs on PC: stale memory) into ppp_screen_to_world_007626d0 and pppSendPacket; callers 0x00760e30 and pppPartLoop
 0x007610a0 function dumpFvector               # fh switch:bsim1.00 0x71002d1e50
 0x007610e0 function dumpMatrix                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s=\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f'; Switch 0x71002d1db0 dumpMatrix (symbols from Fahrenheit's server export)
+0x00761170 function ppp_screen_to_fixed_00761170 # ours: (out, v) -> out.w: VU0 VFTOI4 x,y (* 16.0 from 0x00b313a0) and VFTOI0 z,w through ftol2_sse, v kept at 0x00c8f810, the result at 0x00c8f800 and out; caller 0x00761350 (part::bridge::ppp_screen_to_fixed)
 0x00761250 function pppDataLastPair_00761250 # ours: (data, a, b) -> b: the records from data + [data+4] (16-byte headers, kind i8 +1 until 0xff, i16 +2 entries of 20/28/32/40/24/32/40/48 bytes by kind 0..7): the +8/+0xc words of the last kind 2, 3, 6 or 7 record into a and b (0 for none); caller pppDataRcv
 0x007614a0 function pppDataRcv                # fh v3:exact 0x00761590
 0x00761c00 function pppDbgAlloc                  # layout: alphabetical run between pppDataRcv and pppGetPartMatrix (1 unnamed in the gap); Switch 0x71002d1eb0 pppDbgAlloc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -6401,6 +6409,7 @@
 0x007e1c30 function op_token_line_007e1c30     # ours: (file, src, out, pos, max, eol, flags) -> bytes stored: op_token_get_007e1d50 then again with flags | 2 after its output until it stores nothing; trailing g_OpCharClass class-1 bytes cut; only caller 0x007e15f0 (op::bridge::op_token_line)
 0x007e1cc0 function op_read_line_007e1cc0        # ours: (src, out, max) -> bytes stored: the op script reader's next line (src: [+0] bytes, +0xc position, +0x10 end) up to 0/0xff/CR/LF, two-byte characters (>= 0x80) kept whole, at most max-1 bytes and a NUL, position stepped back one; callers 0x007e1d50, 0x007e2270
 0x007e1d50 function op_token_get_007e1d50    # ours: (file, src, out, &pos, max, &eol, flags) -> out's length: op_token, joining a trailing \\ onto the next line (op_read_line) unless flags & 4, appending further tokens unless flags & 1 (op::bridge::op_token_get)
+0x007e1e90 function op_token_paren_007e1e90  # ours: (file, src, out, pos, max, eol): out empty; unless src[*pos] is '(' returns *pos; else past it op_token_get_007e1d50(.., 3) tokens into out until one is "(" or ")" (the original's depth drops for both), out ends there, returns out; a token storing nothing first is op_error 7 inline (code 8, returns dbgPrintf's eax); caller 0x007e15f0 (op::bridge::op_token_paren)
 0x007e1f80 function op_token_007e1f80          # ours: (src, out, &pos, max, eol) -> the first byte's class: the op script tokenizer by g_OpCharClass (word runs, two-byte runs, quoted runs, spaces, single characters, ; // /* */ comments with depth 0x0113fc64); callers 0x007e1d50, 0x007e2140, 0x007e2270, 0x007e2a60
 0x007e2140 function op_token_expr_007e2140   # ours: (src, out, &pos, max, eol) -> length: op_token_007e1f80 runs appended to out while the ( ) depth (class 6, strings 0x00b57fb8/0x00b57fbc) holds and pos < eol; class 8 ends at depth <= 0; the last token cut off, trailing class-1 bytes trimmed (movsx index); 0 for unbalanced ) (op::bridge::op_token_expr)
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
@@ -6514,7 +6523,7 @@
 0x007ea730 function op_unit_m_scale2             # structure: (m, v): zero, diagonal v.x, v.y, v.z, 1.0; Switch op_unit_m_scale2 (52 bytes) sorts between op_unit_m_scale and op_vector_m, as here
 0x007ea760 function op_vector_m                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '*** Calling op_vector_m() math.c:%d ***\\n'; Switch 0x71003dd0f0 op_vector_m (symbols from Fahrenheit's server export)
 0x007ea850 function op_xyz_scale                 # structure: VU0-emulated (dst, src, s): dst.xyz = src.xyz * s, dst.w = src.w; Switch op_xyz_scale (160 bytes) follows op_vector_m in the sorted names, as here; 27 callers
-0x007ea8f0 function op_xyzw_scale                # structure: VU0-emulated (dst, src, s): all four components scaled; Switch op_xyzw_scale (192 bytes) follows op_xyz_scale, as here
+0x007ea8f0 function op_xyzw_scale                # structure: VU0-emulated (dst, src, s): all four components scaled; Switch op_xyzw_scale (192 bytes) follows op_xyz_scale, as here ; -> w in eax; s through 0x00c8f75c and 0x00c8f538 (f32 store), the 4 words at 0x00c8f538 copied to 0x00c8f980 (op::bridge::op_xyzw_scale)
 0x007ea9d0 function op_rot_point_007ea9d0      # ours: (x0, y0, ang, x1, y1, *ox, *oy) -> oy: (x1, y1) turned by -ang about (x0, y0) with _CIcos/_CIsin (thunks 0x009498c2/0x009498c8), each f32; x0 + (c dx + s dy), (c dy - s dx) + y0
 0x007eaa60 function op_color_shift_store_half # (src, base) u16 base + g_pppColorConShift = *src; the shift cleared
 0x007eaa90 function op_log2_ceil              # (n) -> the smallest k with 2^k >= n (0 for n <= 1)
@@ -6702,6 +6711,7 @@
 0x007ff770 function op_loop_ffx_before        # fh v3:bsim1.00+call.cs 0x007ff690 cdecl
 0x007ff780 function op_malloc                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'op_malloc error (heap area over)\\n'; Switch 0x71003dfee0 op_malloc (symbols from Fahrenheit's server export)
 0x007ff8e0 function opd_exit_from_ovl         # fh v3:bsim1.00 0x007ff800
+0x007ff960 function op_init_ffx_state_007ff960 # ours: (): op layer start-up state, called by op_init_ffx: 0x02322780 0xa4 bytes cleared (g_OpNumShow kept when sceGsSetDefDrawEnv2 != 0), ops_init_spr, 0x0119fe90 0x100 bytes cleared, g_OpusWeaponNos -1, op_et_eff_init_all, opus_chr_handles_clear, op_et_chr_reset_all, 0x011a0060 0x40 cleared, u16 0x011a0063 0x101, 0x011a0066 1, op_et_bind_default_water, op_view_screen_set, CLUT and sound cue inits, 12 floats at 0x011a0030 (8,0,-32,128,0,255,0,255,0,0,128,128); 0x0232278d = Sg_GetUserName is "yonishi" (op::bridge::op_init_ffx_state)
 0x007ffa90 function op_3d_vol_pan_get         # fh v3:exact 0x007ff9b0
 0x007ffc60 function op_oef2_se_3d_move        # fh v3:exact 0x007ffb80
 0x007ffd20 function op_oef2_se_3d_on          # fh v3:exact 0x007ffc40

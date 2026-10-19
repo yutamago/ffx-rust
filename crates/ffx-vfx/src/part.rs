@@ -1370,6 +1370,27 @@ pub mod bridge {
         mem.write(countdown, c);
     }
 
+    /// `ppp_screen_to_fixed_00761170(out, v)` (`0x00761170`): VU0's
+    /// `VFTOI4` on `x`, `y` and `VFTOI0` on `z`, `w`: `v` is copied to
+    /// `0x00c8f810`, then `x * 16`, `y * 16`, `z` and `w` (at x87
+    /// precision) through `ftol2_sse` into `0x00c8f800..` and `out`.
+    /// Returns `out.w` (left in `eax`).
+    pub fn ppp_screen_to_fixed(mem: &mut impl Mem, out: u32, v: u32) -> u32 {
+        let src: [u32; 4] = mem.read(v);
+        mem.write(Global::<u32>::new(0x00c8_f810).ptr(mem).addr, src);
+        let dst = Global::<u32>::new(0x00c8_f800).ptr(mem).addr;
+        let mut fixed = [0u32; 4];
+        for (i, word) in fixed.iter_mut().enumerate() {
+            let x = f64::from(crate::x87::load_f32(f32::from_bits(src[i])));
+            // x and y times the image's 16.0 (`0x00b313a0`), exact
+            let x = if i < 2 { x * 16.0 } else { x };
+            *word = ffx_bridge::x87::ftol(mem, x);
+        }
+        mem.write(dst, fixed);
+        mem.write(out, fixed);
+        fixed[3]
+    }
+
     /// `ppp_screen_to_world_007626d0(out, p)` (`0x007626d0`): the screen
     /// point `p` back through `g_pppScreenMatrix` (`0x0230fe60`): `s = m[3][2]
     /// / (p.z - m[2][2])` (rounded to `f32`), view `(p.x / m[0][0] * s,

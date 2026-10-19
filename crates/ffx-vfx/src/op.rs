@@ -2407,6 +2407,44 @@ pub mod bridge {
         out[2]
     }
 
+    /// `op_xyzw_scale(dst, src, s)` (`0x007ea8f0`): [`op_xyz_scale`] for
+    /// all four lanes, the scalar going through `0x00c8f75c` and
+    /// `0x00c8f538` (stored as `f32`, signalling NaNs quieted) and the
+    /// four words from `0x00c8f538` copied to `0x00c8f980` on the way (as
+    /// VU0's `vf` scalar register). Returns `w` (left in `eax`).
+    pub fn op_xyzw_scale(mem: &mut impl Mem, dst: u32, src: u32, s: u32) -> u32 {
+        use x87::{MUL, Reg};
+        for (n, a) in [dst, src, s, 0].into_iter().enumerate() {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            ffx_ps2::ee::bridge::set_func_param(mem, n as u32, a);
+        }
+        let g = |a: u32| Global::<u32>::new(a);
+        let s = x87::load(s);
+        g(0x00c8_f75c).set(mem, s);
+        let vr = g(0x00c8_f970).ptr(mem).addr;
+        let v: [u32; 4] = mem.read(src);
+        mem.write(vr, v);
+        let scalar = g(0x00c8_f538).ptr(mem).addr;
+        mem.write(scalar, s);
+        let lanes: [u32; 4] = mem.read(scalar);
+        mem.write(g(0x00c8_f980).ptr(mem).addr, lanes);
+        let k = Reg::load(s);
+        let mut out = [0u32; 4];
+        for (i, lane) in (0u32..).zip(out.iter_mut()) {
+            let x = rf(mem, vr + 4 * i);
+            // x and w: `fmul m32` on the scalar; y and z: loaded, times it
+            let r = if i == 1 || i == 2 {
+                Reg::load_f32(x).reg(MUL, k)
+            } else {
+                k.mem(MUL, x)
+            };
+            *lane = r.store().to_bits();
+            mem.write(vr + 4 * i, *lane);
+        }
+        mem.write(dst, out);
+        out[3]
+    }
+
     /// `op_heap_display_clear(flags)` (`0x007ff260`): in debug mode,
     /// `opd_heap_display_clear(flags)` (a tail jump, so the caller's
     /// argument is the gauge: `pppSetFpPdt` passes 0x601).
@@ -3463,13 +3501,7 @@ pub mod bridge {
         ];
         let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
         let dbg = g(mem, 0x0062_f500);
-        for (at, fmt) in [(0x0113_fc58u32, 0x00b5_7e14u32), (0x0113_fc5c, 0x00b5_7e1c)] {
-            let v: u32 = mem.read(g(mem, at));
-            if v != 0 {
-                let f = g(mem, fmt);
-                call(mem, dbg, &[f, v]);
-            }
-        }
+        print_location(mem, call);
         if let Some(&m) = MSGS.get(code.wrapping_sub(1) as usize) {
             let f = g(mem, m);
             if code == 3 {
@@ -3481,6 +3513,75 @@ pub mod bridge {
         let r = code.wrapping_add(1);
         LAST_ERROR.set(mem, r);
         r
+    }
+
+    /// The op script's position for an error message, through `dbgPrintf`
+    /// (through `call`): the file name (`0x0113fc58`) and line
+    /// (`0x0113fc5c`), each when set.
+    fn print_location<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let dbg = g(mem, 0x0062_f500);
+        for (at, fmt) in [(0x0113_fc58u32, 0x00b5_7e14u32), (0x0113_fc5c, 0x00b5_7e1c)] {
+            let v: u32 = mem.read(g(mem, at));
+            if v != 0 {
+                let f = g(mem, fmt);
+                call(mem, dbg, &[f, v]);
+            }
+        }
+    }
+
+    /// `op_token_paren_007e1e90(file, src, out, pos, max, eol)`
+    /// (`0x007e1e90`): `out` empty; unless `src[*pos]` is `(` the result is
+    /// that position. Otherwise past the `(` it reads tokens
+    /// (`op_token_get_007e1d50(file, src, out + n, pos, max - n, eol, 3)`
+    /// through `call`) one after another into `out` until a token is `(`
+    /// or `)`: `out` ends before it and the result is `out`. A
+    /// token that stores nothing before that is an error: the file name
+    /// (`0x0113fc58`) and line (`0x0113fc5c`) when set, the message
+    /// `0x00b57efc` with `src` through `dbgPrintf`, the error code
+    /// (`0x0113e238`) 8, and the last print's result.
+    pub fn op_token_paren<M: Mem>(
+        mem: &mut M,
+        args: [u32; 6],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [file, src, out, pos, max, eol] = args;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        mem.write(out, 0u8);
+        let at: u32 = mem.read(pos);
+        if mem.read::<u8>(at.wrapping_add(src)) != b'(' {
+            return at;
+        }
+        mem.write(pos, at.wrapping_add(1));
+        let get = g(mem, 0x007e_1d50);
+        let mut len = 0u32;
+        loop {
+            let token = out.wrapping_add(len);
+            let n = call(
+                mem,
+                get,
+                &[file, src, token, pos, max.wrapping_sub(len), eol, 3],
+            );
+            // the original counts a depth that both `(` and `)` lower, so
+            // the first of either ends the group
+            let is = |mem: &M, c: u8| {
+                mem.read::<u8>(token) == c && mem.read::<u8>(token.wrapping_add(1)) == 0
+            };
+            if token != 0 && (is(mem, b'(') || is(mem, b')')) {
+                mem.write(token, 0u8);
+                return out;
+            }
+            if n == 0 {
+                // op_error(7, src) inline, keeping the print's result
+                print_location(mem, call);
+                let dbg = g(mem, 0x0062_f500);
+                let msg = g(mem, 0x00b5_7efc);
+                let r = call(mem, dbg, &[msg, src]);
+                LAST_ERROR.set(mem, 8);
+                return r;
+            }
+            len = len.wrapping_add(n);
+        }
     }
 
     /// `op_spline(t, y, x, d, n)` (`0x007e9e20`): the cubic spline through
@@ -4449,6 +4550,72 @@ pub mod bridge {
         call(mem, g(mem, 0x0071_69d0), &[env, 0, heap, 0x8_0000]);
         0
     }
+
+    /// `op_init_ffx_state_007ff960()` (`0x007ff960`): the op layer's state
+    /// at start-up (callees through `call`): the 0xa4 bytes at `0x02322780`
+    /// cleared, [`g_OpNumShow`](`0x02322794`) kept only when
+    /// `sceGsSetDefDrawEnv2` returns nonzero; `ops_init_spr`; the 0x100
+    /// bytes at `0x0119fe90` cleared and `g_OpusWeaponNos` (`0x0119fe9c`)
+    /// -1; `op_et_eff_init_all`, `opus_chr_handles_clear`,
+    /// `op_et_chr_reset_all`; the 0x40 bytes at `0x011a0060` cleared,
+    /// `g_OpEtChrShow` (`u16 0x011a0063`) 0x101 and the overlay flag
+    /// (`0x011a0066`) 1; `op_et_bind_default_water`,
+    /// `op_view_screen_set`, the CLUT cue and sound cue inits; the twelve
+    /// floats from `0x011a0030` ([`OP_DEFAULT_FLOATS`]); the debug byte
+    /// `0x0232278d` 1 when `Sg_GetUserName` is "yonishi" (seven bytes),
+    /// else 0.
+    pub fn op_init_ffx_state<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let keep = call(mem, g(mem, 0x0088_7c60), &[]) != 0;
+        let show: u8 = mem.read(g(mem, 0x0232_2794));
+        mem.write(g(mem, 0x0232_2780), [0u32; 0xa4 / 4]);
+        mem.write(g(mem, 0x0232_2794), if keep { show } else { 0 });
+        call(mem, g(mem, 0x007e_6c30), &[]);
+        mem.write(g(mem, 0x0119_fe90), [0u32; 0x40]);
+        mem.write(g(mem, 0x0119_fe9c), u32::MAX);
+        for f in [0x007f_ef70, 0x007f_edf0, 0x007f_ee10] {
+            call(mem, g(mem, f), &[]);
+        }
+        mem.write(g(mem, 0x011a_0060), [0u32; 0x10]);
+        mem.write(g(mem, 0x011a_0063), 0x101u16);
+        mem.write(g(mem, 0x011a_0066), 1u8);
+        for f in [0x007f_b870, 0x007e_c990, 0x007e_5680, 0x0080_0440] {
+            call(mem, g(mem, f), &[]);
+        }
+        mem.write(g(mem, 0x011a_0030), OP_DEFAULT_FLOATS);
+        let name = call(mem, g(mem, 0x0082_0610), &[]);
+        mem.write(g(mem, 0x0232_278d), 0u8);
+        if name != 0 {
+            let user = g(mem, 0x00c4_8d7c);
+            let same = (0..7).all(|i| {
+                mem.read::<u8>(user.wrapping_add(i)) == mem.read::<u8>(name.wrapping_add(i))
+            });
+            if same {
+                mem.write(g(mem, 0x0232_278d), 1u8);
+            }
+        }
+    }
+
+    /// The twelve `f32` words `op_init_ffx_state` puts at `0x011a0030`
+    /// (from the image's constants 8, -32, 128 and 255): 8, 0, -32, 128,
+    /// 0, 255, 0, 255, 0, 0, 128, 128.
+    pub const OP_DEFAULT_FLOATS: [u32; 12] = [
+        0x4100_0000,
+        0,
+        0xc200_0000,
+        0x4300_0000,
+        0,
+        0x437f_0000,
+        0,
+        0x437f_0000,
+        0,
+        0,
+        0x4300_0000,
+        0x4300_0000,
+    ];
 
     /// `op_rt_m_6(m, src, angles, t, order)` (`0x007e98b0`): the rotation
     /// in one of six turn orders, through `call`: 0 [`op_rt_m`]'s Z, Y, X

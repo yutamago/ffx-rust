@@ -2485,6 +2485,46 @@ ported! {
     pppDrawShapeCameraDisPosDes @ 0x0074_86e0 => extern "C" fn ppp_draw_shape_camera_dis_pos_des(obj: u32, prog: u32) -> u32 {
         draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::CAMERA_DES, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `pppDrawShapeFieldAlloc_00742f20(obj, key, prog)`.
+    pppDrawShapeFieldAlloc_00742f20 @ 0x0074_2f20 => extern "C" fn ppp_draw_shape_field_alloc(obj: u32, key: u32, prog: u32) -> u32 {
+        draw::bridge::shape_alloc(&mut mem(), obj, key, prog, draw::bridge::FIELD_ALLOC, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldRevAlloc_00744260(obj, key, prog)`.
+    pppDrawShapeFieldRevAlloc_00744260 @ 0x0074_4260 => extern "C" fn ppp_draw_shape_field_rev_alloc(obj: u32, key: u32, prog: u32) -> u32 {
+        draw::bridge::shape_alloc(&mut mem(), obj, key, prog, draw::bridge::FIELD_ALLOC, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldGlobalAlloc_00746540(obj, key, prog)`.
+    pppDrawShapeFieldGlobalAlloc_00746540 @ 0x0074_6540 => extern "C" fn ppp_draw_shape_field_global_alloc(obj: u32, key: u32, prog: u32) -> u32 {
+        draw::bridge::shape_alloc(&mut mem(), obj, key, prog, draw::bridge::FIELD_GLOBAL_ALLOC, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraAlloc_00747760(obj, key, prog)`.
+    pppDrawShapeCameraAlloc_00747760 @ 0x0074_7760 => extern "C" fn ppp_draw_shape_camera_alloc(obj: u32, key: u32, prog: u32) -> u32 {
+        draw::bridge::shape_alloc(&mut mem(), obj, key, prog, draw::bridge::CAMERA_ALLOC, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeCameraDisPosAlloc_007489b0(obj, key, prog)`.
+    pppDrawShapeCameraDisPosAlloc_007489b0 @ 0x0074_89b0 => extern "C" fn ppp_draw_shape_camera_dis_pos_alloc(obj: u32, key: u32, prog: u32) -> u32 {
+        draw::bridge::shape_alloc(&mut mem(), obj, key, prog, draw::bridge::CAMERA_ALLOC, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_token_paren_007e1e90(file, src, out, pos, max, eol)`.
+    op_token_paren_007e1e90 @ 0x007e_1e90 => extern "C" fn op_token_paren(file: u32, src: u32, out: u32, pos: u32, max: u32, eol: u32) -> u32 {
+        op::bridge::op_token_paren(&mut mem(), [file, src, out, pos, max, eol], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_init_ffx_state_007ff960()`.
+    op_init_ffx_state_007ff960 @ 0x007f_f960 => extern "C" fn op_init_ffx_state() {
+        op::bridge::op_init_ffx_state(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_xyzw_scale(dst, src, s)`.
+    op_xyzw_scale @ 0x007e_a8f0 => extern "C" fn op_xyzw_scale(dst: u32, src: u32, s: u32) -> u32 {
+        op::bridge::op_xyzw_scale(&mut mem(), dst, src, s)
+    }
+    /// `ppp_screen_to_fixed_00761170(out, v)`.
+    ppp_screen_to_fixed_00761170 @ 0x0076_1170 => extern "C" fn ppp_screen_to_fixed(out: u32, v: u32) -> u32 {
+        part::bridge::ppp_screen_to_fixed(&mut mem(), out, v)
+    }
+    /// `pppDrawMdlCameraLoopInit_007400f0(rec, area)`.
+    pppDrawMdlCameraLoopInit_007400f0 @ 0x0074_00f0 => extern "C" fn ppp_draw_mdl_camera_loop_init(rec: u32, area: u32) {
+        mdl::bridge::ppp_draw_mdl_camera_loop_init(&mut mem(), rec, area, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppDrawRainDes(obj, prog)`.
     pppDrawRainDes @ 0x0075_6270 => extern "C" fn ppp_draw_rain_des(obj: u32, prog: u32) -> u32 {
         draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::RAIN_DES, &mut |_, f, a| call_ptr(f, a))

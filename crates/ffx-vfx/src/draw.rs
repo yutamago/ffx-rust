@@ -326,6 +326,119 @@ pub mod bridge {
         n.cast_unsigned()
     }
 
+    /// How many bytes one buffer of a [`shape_alloc`] takes.
+    #[derive(Debug, Clone, Copy)]
+    pub enum Size {
+        /// The key's count (`[key +8]`) records of this many bytes.
+        PerKey(u32),
+        /// Eight bytes per the count at this work-area offset.
+        PerCount(u32),
+        /// A fixed size.
+        Fixed(u32),
+    }
+
+    /// A buffer of a [`shape_alloc`]: where its `set_ptr32` word goes, its
+    /// size, and whether it is cleared.
+    #[derive(Debug, Clone, Copy)]
+    pub struct Buffer {
+        /// Its offset in the work area.
+        pub off: u32,
+        /// Its size.
+        pub size: Size,
+        /// Cleared after the allocation.
+        pub clear: bool,
+    }
+
+    /// `pppDrawShapeFieldAlloc_00742f20` (`0x00742f20`) and
+    /// `pppDrawShapeFieldRevAlloc_00744260` (`0x00744260`), byte-identical.
+    pub const FIELD_ALLOC: &[Buffer] = &[
+        Buffer {
+            off: 0x40,
+            size: Size::PerKey(0xa0),
+            clear: true,
+        },
+        Buffer {
+            off: 0x44,
+            size: Size::Fixed(0xc),
+            clear: false,
+        },
+        Buffer {
+            off: 0x50,
+            size: Size::PerCount(0x54),
+            clear: true,
+        },
+    ];
+    /// `pppDrawShapeFieldGlobalAlloc_00746540` (`0x00746540`).
+    pub const FIELD_GLOBAL_ALLOC: &[Buffer] = &[
+        Buffer {
+            off: 0x40,
+            size: Size::PerKey(0xb0),
+            clear: true,
+        },
+        Buffer {
+            off: 0x4c,
+            size: Size::PerCount(0x50),
+            clear: true,
+        },
+    ];
+    /// `pppDrawShapeCameraAlloc_00747760` (`0x00747760`) and
+    /// `pppDrawShapeCameraDisPosAlloc_007489b0` (`0x007489b0`),
+    /// byte-identical; [`FIELD_GLOBAL_ALLOC`] with 0xa0-byte records.
+    pub const CAMERA_ALLOC: &[Buffer] = &[
+        Buffer {
+            off: 0x40,
+            size: Size::PerKey(0xa0),
+            clear: true,
+        },
+        Buffer {
+            off: 0x4c,
+            size: Size::PerCount(0x50),
+            clear: true,
+        },
+    ];
+
+    /// A `pppDrawShape*Alloc(obj, key, prog)`, the buffers a shape draw
+    /// makes on its first frame: each of `buffers` in turn comes from
+    /// `pppMemAlloc(env, env + 0x10, size)` (`env` = `[[g_pppEnvSlot]]`,
+    /// read again each time), its `set_ptr32` word is stored in the work
+    /// area `obj + 0xa0 + [[prog +0xc]]`, and when `is_ptr32_null` says it
+    /// failed the result is 0; else it is cleared (`memset` through
+    /// `get_ptr32_func`) when asked. Returns 1 when all were made. Callees
+    /// through `call`.
+    pub fn shape_alloc<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        buffers: &[Buffer],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let offsets: u32 = mem.read(prog.wrapping_add(0xc));
+        let area = obj.wrapping_add(0xa0).wrapping_add(mem.read(offsets));
+        for b in buffers {
+            let size = |mem: &M| match b.size {
+                Size::PerKey(n) => mem.read::<u32>(key.wrapping_add(8)).wrapping_mul(n),
+                Size::PerCount(at) => mem.read::<u32>(area.wrapping_add(at)) << 3,
+                Size::Fixed(n) => n,
+            };
+            let env: u32 = mem.read(mem.read::<u32>(g(mem, ENV_SLOT)));
+            let n = size(mem);
+            let p = call(mem, g(mem, 0x0071_6a30), &[env, env.wrapping_add(0x10), n]);
+            let word = call(mem, g(mem, SET_PTR32), &[p]);
+            mem.write(area.wrapping_add(b.off), word);
+            if call(mem, g(mem, 0x00a4_46a0), &[word]) != 0 {
+                return 0;
+            }
+            if b.clear {
+                let n = size(mem);
+                let word: u32 = mem.read(area.wrapping_add(b.off));
+                let at = call(mem, g(mem, GET_PTR32), &[word]);
+                call(mem, g(mem, 0x0094_964c), &[at, 0, n]);
+            }
+        }
+        1
+    }
+
     /// A pointer the tear-down releases.
     #[derive(Debug, Clone, Copy)]
     pub struct Free {

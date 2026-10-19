@@ -5574,6 +5574,29 @@ fn deref_recorder(p: &mut Pair, sym: u32, words: &[u8]) -> u32 {
 /// [`deref_recorder`] that returns the dword at `ret` (when given)
 /// instead of the count.
 fn deref_recorder_with(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let (c, log) = deref_recorder_code(p, words, ret);
+    let at = p.sym(sym);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
+/// [`deref_recorder_with`] in the oracles' code area with a jump to it at
+/// `sym`, for functions too close together to hold a recorder each.
+fn far_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let (c, log) = deref_recorder_code(p, words, ret);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+/// The code of a [`deref_recorder_with`] and its log.
+fn deref_recorder_code(p: &mut Pair, words: &[u8], ret: Option<u32>) -> (Vec<u8>, u32) {
     let log = p.alloc(4 + 0x100 * 64);
     let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
     c.extend(log.to_le_bytes());
@@ -5601,10 +5624,7 @@ fn deref_recorder_with(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -
     c.push(0xa1); // mov eax, [count] or [ret]
     c.extend(ret.unwrap_or(log).to_le_bytes());
     c.push(0xc3);
-    let at = p.sym(sym);
-    p.a.write(at, &c).unwrap();
-    p.b.write(at, &c).unwrap();
-    log
+    (c, log)
 }
 
 /// [`deref_recorder_with`] with 32-word entries (31 logged words), for
@@ -15674,6 +15694,241 @@ fn round30a_clut_cues_match_the_original() {
                         mask,
                         &mut call_original,
                     ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn round30b_shape_allocs_match_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_2f20);
+        let (get_ret, fail) = (p.alloc(4), p.alloc(4));
+        // pppMemAlloc returns its call count, set_ptr32 its argument xor
+        // 0x5a5a, is_ptr32_null 1 for the word at `fail`
+        let allocs = deref_recorder(&mut p, 0x0071_6a30, &[0, 0, 0]);
+        stub_code(
+            &mut p,
+            0x00a4_4700,
+            &[0x8b, 0x44, 0x24, 0x04, 0x35, 0x5a, 0x5a, 0, 0, 0xc3],
+        );
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x3b, 0x05]; // mov eax, [esp + 4]; cmp eax, [fail]
+        c.extend(fail.to_le_bytes());
+        c.extend([0x0f, 0x94, 0xc0, 0x0f, 0xb6, 0xc0, 0xc3]); // sete al; movzx eax, al; ret
+        stub_code(&mut p, 0x00a4_46a0, &c);
+        deref_recorder_with(&mut p, 0x00a4_4650, &[0], Some(get_ret));
+        deref_recorder(&mut p, 0x0094_964c, &[0, 0, 0]);
+        let (obj, key, prog, offsets, env) = (
+            p.alloc(0x200),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(4),
+            p.alloc(0x20),
+        );
+        let slot = p.alloc(4);
+        p.set(slot, env);
+        p.set(p.sym(d::ENV_SLOT), slot);
+        p.set(prog + 0xc, offsets);
+        let kinds: [(&str, u32, &[d::Buffer]); 5] = [
+            ("field", 0x0074_2f20, d::FIELD_ALLOC),
+            ("field rev", 0x0074_4260, d::FIELD_ALLOC),
+            ("field global", 0x0074_6540, d::FIELD_GLOBAL_ALLOC),
+            ("camera", 0x0074_7760, d::CAMERA_ALLOC),
+            ("camera dis pos", 0x0074_89b0, d::CAMERA_ALLOC),
+        ];
+        for round in 0..1000 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(env, 0x20, &mut rng);
+            p.set(offsets, rng.below(0x40) * 4);
+            p.set(key + 8, rng.pick(&[0u32, 1, 3, 0x100, 0x8000_0001]));
+            p.set(get_ret, rng.next());
+            let made: u32 = p.get(allocs);
+            p.set(fail, (made + rng.pick(&[1u32, 2, 3, 4])) ^ 0x5a5a);
+            let (name, sym, buffers) = rng.pick(&kinds);
+            p.check(
+                &format!("{name} alloc round {round}"),
+                sym,
+                &[obj, key, prog],
+                |o| {
+                    Some(d::shape_alloc(
+                        o,
+                        obj,
+                        key,
+                        prog,
+                        buffers,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round30b_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_1e90);
+        let cells: Vec<u32> = (0..8).map(|_| p.alloc(4)).collect();
+        let (print_ret, gs_ret, name_ret, shape_ret, ptr_ret, tex_ret, cnt_ret) = (
+            cells[0], cells[1], cells[2], cells[3], cells[4], cells[5], cells[6],
+        );
+        for (sym, words, ret) in [
+            (0x0062_f500u32, &[0u8, 0][..], Some(print_ret)),
+            (0x0088_7c60, &[], Some(gs_ret)),
+            (0x007e_6c30, &[], None),
+            (0x007f_ef70, &[], None),
+            (0x007f_edf0, &[], None),
+            (0x007f_ee10, &[], None),
+            (0x007f_b870, &[], None),
+            (0x007e_c990, &[], None),
+            (0x007e_5680, &[], None),
+            (0x0080_0440, &[], None),
+            (0x0082_0610, &[], Some(name_ret)),
+            (0x00a4_4650, &[0], Some(shape_ret)),
+            (0x00a4_4700, &[0], Some(ptr_ret)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // the Yn_FpTrx functions are 32 bytes apart
+        for (sym, words, ret) in [
+            (0x0091_9ba0u32, &[0u8][..], Some(tex_ret)),
+            (0x0091_9be0, &[0, 0, 0], None),
+            (0x0091_9bc0, &[0], Some(cnt_ret)),
+        ] {
+            far_recorder(&mut p, sym, words, ret);
+        }
+        let (idx, seq, log) = (p.alloc(4), p.alloc(0x40), p.alloc(0x40 * 7));
+        seq_stub(&mut p, 0x007e_1d50, 7, idx, seq, log);
+        let (src, out, pos) = (p.alloc(0x40), p.alloc(0x100), p.alloc(4));
+        let name = p.alloc(0x10);
+        let (v, dst) = (p.alloc(0x10), p.alloc(0x10));
+        let (rec, area, env, slot, shapes, shape) = (
+            p.alloc(0x30),
+            p.alloc(0x30),
+            p.alloc(0x40),
+            p.alloc(4),
+            p.alloc(0x100),
+            p.alloc(0x40),
+        );
+        p.set(slot, env);
+        p.set(p.sym(draw::bridge::ENV_SLOT), slot);
+        p.set(shape_ret, shape);
+        for round in 0..2000 {
+            // op_token_paren: tokens of the lengths in seq over a buffer
+            // of parens, letters and ends
+            p.set(idx, 0u32);
+            let tokens = 1 + rng.below(8);
+            for k in 0..16 {
+                let n = if k + 1 < tokens { 1 + rng.below(3) } else { 0 };
+                let n = if k + 1 == tokens && rng.chance(50) {
+                    1
+                } else {
+                    n
+                };
+                p.set(seq + 4 * k, n);
+            }
+            p.fill(log, 0x40 * 7, &mut rng);
+            for i in 0..0x100 {
+                let c = rng.pick(&[b'(', b')', b'a', b'(', 0u8, 0]);
+                p.set(out + i, c);
+            }
+            for i in 0..0x40 {
+                let c = rng.pick(&[b'(', b' ', b'x', 0u8]);
+                p.set(src + i, c);
+            }
+            p.set(pos, rng.below(0x20));
+            p.set(p.sym(0x0113_fc58), rng.pick(&[0u32, 0x1234]));
+            p.set(p.sym(0x0113_fc5c), rng.pick(&[0u32, 7]));
+            p.set(print_ret, rng.next());
+            let target = if rng.chance(95) { out } else { 0 };
+            let args = [rng.next(), src, target, pos, 0x80, rng.next()];
+            if target != 0 {
+                p.check(
+                    &format!("op_token_paren round {round}"),
+                    0x007e_1e90,
+                    &args,
+                    |o| Some(op::bridge::op_token_paren(o, args, &mut call_original)),
+                );
+            }
+            // op_init_ffx_state
+            if round % 4 == 0 {
+                p.fill(p.sym(0x0232_2780), 0xa4, &mut rng);
+                p.fill(p.sym(0x0119_fe90), 0x100, &mut rng);
+                p.fill(p.sym(0x011a_0030), 0x70, &mut rng);
+                p.set(gs_ret, rng.pick(&[0u32, 1, 0xffff_ffff]));
+                let user = rng.pick(&[*b"yonishi\0", *b"yonishiX", *b"yonisha\0", *b"Yonishi\0"]);
+                p.a.write(name, &user).unwrap();
+                p.b.write(name, &user).unwrap();
+                p.set(name_ret, if rng.chance(90) { name } else { 0 });
+                p.check(
+                    &format!("op_init_ffx_state round {round}"),
+                    0x007f_f960,
+                    &[],
+                    |o| {
+                        op::bridge::op_init_ffx_state(o, &mut call_original);
+                        None
+                    },
+                );
+            }
+            // op_xyzw_scale and ppp_screen_to_fixed over random floats
+            for i in 0..4 {
+                let f = rng.float();
+                p.set(v + 4 * i, f);
+            }
+            p.fill(p.sym(0x00c8_f538), 0x10, &mut rng);
+            let s = rng.float();
+            p.check(
+                &format!("op_xyzw_scale round {round}"),
+                0x007e_a8f0,
+                &[dst, v, s],
+                |o| Some(op::bridge::op_xyzw_scale(o, dst, v, s)),
+            );
+            for i in 0..4 {
+                let f = if rng.chance(50) {
+                    rng.float()
+                } else {
+                    (f32::from_bits(rng.next() & 0x00ff_ffff) - 6000.0).to_bits()
+                };
+                p.set(v + 4 * i, f);
+            }
+            p.check(
+                &format!("ppp_screen_to_fixed round {round}"),
+                0x0076_1170,
+                &[dst, v],
+                |o| Some(part::bridge::ppp_screen_to_fixed(o, dst, v)),
+            );
+            // pppDrawMdlCameraLoopInit
+            p.fill(rec, 0x30, &mut rng);
+            for off in [0xcu32, 0x10, 0x18, 0x1c] {
+                let f = rng.pick(&[0u32, 0, 0, 0x8000_0000, 0x3f80_0000, 0x7fc0_0000]);
+                p.set(rec + off, f);
+            }
+            p.set(rec + 4, rng.below(8));
+            // the two floats copied through the x87 (no signalling NaNs)
+            for off in [8u32, 0x14] {
+                let f = rng.float();
+                p.set(rec + off, f);
+            }
+            p.set(rec + 0x21, rng.pick(&[0u8, 1]));
+            p.fill(area, 0x30, &mut rng);
+            p.fill(env, 0x40, &mut rng);
+            p.set(env + 0x20, shapes);
+            p.fill(shapes, 0x100, &mut rng);
+            p.fill(shape, 0x40, &mut rng);
+            p.set(shape + 4, rng.below(0x20) & !3);
+            p.set(ptr_ret, rng.next());
+            p.set(tex_ret, rng.pick(&[0u32, 0x1234]));
+            p.set(cnt_ret, rng.next());
+            p.check(
+                &format!("pppDrawMdlCameraLoopInit round {round}"),
+                0x0074_00f0,
+                &[rec, area],
+                |o| {
+                    mdl::bridge::ppp_draw_mdl_camera_loop_init(o, rec, area, &mut call_original);
+                    None
                 },
             );
         }

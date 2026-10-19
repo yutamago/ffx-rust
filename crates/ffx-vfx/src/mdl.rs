@@ -1368,6 +1368,64 @@ pub mod bridge {
         call(mem, g(mem, KE_MDL_DRAW), &args)
     }
 
+    /// `pppDrawMdlCameraLoopInit_007400f0(rec, area)` (`0x007400f0`): the
+    /// work area of `pppDrawMdlCameraLoopDraw` on its first frame: `+0` =
+    /// `set_ptr32(rec)`, the floats `+4` = `rec +8` and `+0x10` = `rec
+    /// +0x14` (copied through the x87), `+8`, `+0xc`, `+0x14`, `+0x18` 0;
+    /// the byte `+0x1c` = 1 when any of the floats `rec +0xc`, `+0x10`,
+    /// `+0x18`, `+0x1c` is not 0 (a NaN is not), `+0x1d` = `rec +0x23` and
+    /// `u16 +0x1e` 0. With the byte `rec +0x21` set, the texture
+    /// `Yn_FpTrxTexGet(rec +0x22)` (when there is one) is pointed at the
+    /// image and CLUT words `+8`/`+0xc` past the shape record's (`[env
+    /// +0x20]` entry `rec +4`, through `get_ptr32_func`) header offset `+4`
+    /// (`Yn_FpTrxTexSetAddr`), and `+0x1e`, `+0x1f` take
+    /// `Yn_EmbeddedTrxGetCnt`'s byte. Callees through `call`.
+    pub fn ppp_draw_mdl_camera_loop_init<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        area: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let env: u32 = mem.read(mem.read::<u32>(g(mem, ENV_SLOT)));
+        let shapes: u32 = mem.read(env.wrapping_add(0x20));
+        let index: u32 = mem.read(rec.wrapping_add(4));
+        let word: u32 = mem.read((index << 5).wrapping_add(0x1c).wrapping_add(shapes));
+        let shape = call(mem, g(mem, GET_PTR32), &[word]);
+        let me = call(mem, g(mem, SET_PTR32), &[rec]);
+        mem.write(area, me);
+        let copy = |mem: &M, off: u32| crate::x87::load(mem.read(rec.wrapping_add(off)));
+        mem.write(at(area, 4), copy(mem, 8));
+        mem.write(at(area, 0x1c), 0u8);
+        mem.write(at(area, 0x10), copy(mem, 0x14));
+        for off in [0x18, 0x14, 0xc, 8] {
+            mem.write(at(area, off), 0u32);
+        }
+        let moving = [0xc, 0x10, 0x18, 0x1c]
+            .iter()
+            .any(|&off| f32::from_bits(mem.read(rec.wrapping_add(off))) != 0.0);
+        if moving {
+            mem.write(at(area, 0x1c), 1u8);
+        }
+        let b: u8 = mem.read(rec.wrapping_add(0x23));
+        mem.write(at(area, 0x1d), b);
+        mem.write(at(area, 0x1e), 0u16);
+        if mem.read::<u8>(rec.wrapping_add(0x21)) == 0 {
+            return;
+        }
+        let id = u32::from(mem.read::<u8>(rec.wrapping_add(0x22)));
+        let tex = call(mem, g(mem, 0x0091_9ba0), &[id]);
+        if tex == 0 {
+            return;
+        }
+        let header = shape.wrapping_add(mem.read(shape.wrapping_add(4)));
+        let image: u32 = mem.read(header.wrapping_add(8));
+        let clut: u32 = mem.read(header.wrapping_add(0xc));
+        call(mem, g(mem, 0x0091_9be0), &[tex, image, clut]);
+        #[allow(clippy::cast_possible_truncation)] // the byte the original keeps
+        let count = call(mem, g(mem, 0x0091_9bc0), &[tex]) as u8;
+        mem.write(at(area, 0x1e), [count, count]);
+    }
+
     /// `ppp_mdl_rev_random_flags_00740960(rec, out)` (`0x00740960`, from
     /// `pppDrawMdlRevDraw`): `out[0]` = 1; then for each of the bytes
     /// `rec +0xd..=+0xf` that is set, `op_random(1.0)` (through `fcall`)
