@@ -4894,7 +4894,7 @@
 0x00785140 function MsGetSaveCommandUse       # fh v3:exact 0x00785200
 0x007851b0 function BitTestOfGlobal_007851b0     # auto-port shape (bit test of global, cdecl): t0 = u32[&0x0113079c]; return ((t0 >>s 0x5) & 0x1); callers: ; name ours
 0x007851c0 function MsGetSaveConfigCursorSave # fh v3:exact 0x00785280
-0x007851d0 function MsGetSaveConfigEnglish    # fh v3:bsim1.00+call.cs 0x00785290 cdecl; 3 bytes (xor eax, eax; ret): too small to hook, the bridge is ffx_battle::getmem
+0x007851d0 function MsGetSaveConfigEnglish    # fh v3:bsim1.00+call.cs 0x00785290 cdecl; 3 bytes (xor eax, eax; ret): too small to hook, the bridge is ffx_battle::getmem; its callers MsMenuGetText, MsMenuGetHelp, MsGetMenuChrInfo (battle round 23) call the bridge directly; M2 tooling counts it ported
 0x007851f0 function MsGetSaveConfigHiragana   # fh v3:bsim1.00+call.cs 0x007852b0 cdecl
 0x00785230 function BitTestOfGlobal_00785230     # auto-port shape (bit test of global, cdecl): t0 = u32[&0x0113079c]; return ((t0 >>s 0x4) & 0x1); callers: ; name ours
 0x00785240 function MsGetSaveEventAddress     # returns &g_SaveData (0x0112ca90); +0xc = entrance index (0x0088d670), +0x11/+0x12 = map fade type/frames; was SaveData_Get
@@ -5110,7 +5110,7 @@
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl; ours: (i, k, j, out, flags) -> bit 0 entries left, bit 1 one applied: steals, gauge and Lancet transfers, then the next hit entry of j's records +0x774/+0xa4c (numbers, HP/MP/CTB, statuses, revival, stone, blow, Threaten, Auto-Med, Auto-Potion), the reaction, the death check and the motion (docs/formats/battle.md); ported (battle round 13)
 0x0078f6a0 function MsThreatEndMotion         # ours: called by MsThreatProcess on both sides it releases; MsCheckSetMotion then MsSetMotion(i,0,1,0,1) with +0x41c set
 0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
-0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810
+0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810; ported (battle round 23): (chr, k) name (k 0) or help line (k 1, 2), kana by MsGetSaveConfigHiragana: IDs with bits 12+ MsGetComData record +8+4kana plus its name (0 without); else actor +0xf74/+0xf75 line (not 0xff) in g_BtlFileText (u16 at +4(kana+2line)); else ply_rom record (+4kana, +8+4kana) plus strings, a monster its actor +0x90/+0x190; calls MsGetSaveConfigEnglish and drops it
 0x0078f8f0 function MsGetRomBtlText           # fh v3:bsim1.00+call.cs 0x0078f940 cdecl
 0x0078f930 function MsGetChrStatusBits_0078f930 # (chr) -> actor (chr & 0xff) u16 status bits +0x606 in ax (eax's upper half the actor pointer's); callers TOBtlMakeStatusBuff, TOBtlSetInfoWinParam; own name; ported (battle round 22, ffx_battle::menu)
 0x0078f950 function MsMenuBitStatus           # fh switch:bsim1.00 0x710035e1d0
@@ -5123,8 +5123,8 @@
 0x0078fb00 function MsMenuFreeText            # fh v3:exact 0x0078fb50; ported (battle round 18)
 0x0078fb60 function MsMenuGetBtlEndText       # fh v3:bsim1.00 0x0078fbb0
 0x0078fb80 function MsMenuGetChrSkipCommand   # fh v3:exact 0x0078fbd0
-0x0078fbb0 function MsMenuGetHelp             # fh v3:exact 0x0078fc00
-0x0078fcf0 function MsMenuGetText             # fh v3:exact 0x0078fd40
+0x0078fbb0 function MsMenuGetHelp             # fh v3:exact 0x0078fc00; ported (battle round 23): (i, id, second) as MsMenuGetText but the u16 at +8+4(second&1) (text 0: +0+4(second&1))
+0x0078fcf0 function MsMenuGetText             # fh v3:exact 0x0078fd40; ported (battle round 23): (i, id, second) g_BtlMenuText row i (i unsigned <= 0x10, block +8 not 0, +0 not busy): MsGetExcelData(id & 0xfff, block, &strings) u16 at +4(second&1) plus strings, else 0; rows 3/7/9 (and 0x10/0xe/0xf) switch to the English rows 0x10/0xe/0xf when MsGetSaveConfigEnglish is 1 (never on PC)
 0x0078fe00 function MsMenuGetTextStatus          # layout: alphabetical run between MsMenuGetText and MsMenuHalfElement (1 unnamed in the gap); Switch 0x710035dc80 MsMenuGetTextStatus is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0078fe40 function MsMenuHalfElement         # fh v3:cg2 0x78fe90
 0x0078fe60 function MsMenuInitText            # fh v3:bsim1.00 0x0078feb0

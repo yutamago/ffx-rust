@@ -3733,4 +3733,16 @@ ported! {
     MsWeaponNameNum_Weapon_007a1c00 @ 0x007a_1c00 => extern "C" fn ms_weapon_name_num_weapon(at: u32) -> u32 {
         gear::ms_weapon_name_num_weapon(&mem(), at)
     }
+    /// `MsMenuGetText(i, id, second)`: a menu text's name.
+    MsMenuGetText @ 0x0078_fcf0 => extern "C" fn ms_menu_get_text(i: u32, id: u32, second: u32) -> u32 {
+        menu::ms_menu_get_text(&mem(), i, id, second)
+    }
+    /// `MsMenuGetHelp(i, id, second)`: a menu text's help line.
+    MsMenuGetHelp @ 0x0078_fbb0 => extern "C" fn ms_menu_get_help(i: u32, id: u32, second: u32) -> u32 {
+        menu::ms_menu_get_help(&mem(), i, id, second)
+    }
+    /// `MsGetMenuChrInfo(chr, k)`: a name or help line of an actor or ID.
+    MsGetMenuChrInfo @ 0x0078_f7c0 => extern "C" fn ms_get_menu_chr_info(chr: u32, k: u32) -> u32 {
+        menu::ms_get_menu_chr_info(&mut mem(), chr, k)
+    }
 }

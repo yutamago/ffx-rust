@@ -935,6 +935,32 @@ Neither `chr` nor the slot's character may be fixed (bit 2,
 go to `Ms_Gui_BattleChr2Proc` (`0x007de790`, 5369 bytes, a debug window's
 procedure no code calls): `GUI_STUBS` in the test.
 
+## Round 23
+
+### Menu texts and `MsGetSaveConfigEnglish`
+
+`MsGetSaveConfigEnglish` (`0x007851d0`) is `xor eax, eax; ret`: three
+bytes, too small for a hook's jump. Its callers' ports
+(`ffx_battle::menu`: `MsMenuGetText` `0x0078fcf0`, `MsMenuGetHelp`
+`0x0078fbb0`, `MsGetMenuChrInfo` `0x0078f7c0`) call the Rust constant
+(`ffx_battle::getmem`) directly, and the M2 tooling counts the function
+as ported, not hookable.
+
+- `MsMenuGetText(i, id, second)` reads `g_BtlMenuText` row `i` (12
+  bytes: `+0` busy, `+8` the block's ptr32 handle) before it checks `i`
+  (unsigned, at most 0x10), so rows past the table are read as other
+  globals. With the English config, texts 3, 7 and 9 would move to rows
+  0x10, 0xe and 0xf; on the PC the config is always 0. The record is
+  `MsGetExcelData(id & 0xfff, block)`; the name is its `u16` at
+  `4 * (second & 1)` plus the block's strings. `MsMenuGetHelp` reads
+  `+8` instead, except text 0, which reads its names.
+- `MsGetMenuChrInfo(chr, k)`: IDs with bits above 12 take
+  `MsGetComData`'s record's `u32` at `+8 + 4 * kana` plus the name it
+  stores (0 for the kinds that store none). Otherwise actor `chr`'s
+  `+0xf74` (`k` 1) or `+0xf75` (`k` 2) picks a line in `g_BtlFileText`
+  (`u16` at `4 * (kana + 2 * line)` plus the table); without one, a
+  character reads `ply_rom`, a monster its actor's `+0x90` or `+0x190`.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.
