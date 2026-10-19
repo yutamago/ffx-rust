@@ -9268,6 +9268,245 @@ pub mod bridge {
         call(mem, save_all, &[]);
         1
     }
+
+    /// `Math_AngleStepMode(a, target, step, mode)` (`0x0088b610`, own name;
+    /// caller `0x00869510`): mode 1 [`math_angle_step_to`] with `step`,
+    /// mode 2 the same with `step * -1.0` (a float; a NaN keeps its sign),
+    /// any other [`crate::math::angle_step`]; the result stored as a float
+    /// and returned in `ST0`.
+    #[must_use]
+    pub fn math_angle_step_mode(a: f32, target: f32, step: f32, mode: i32) -> f32 {
+        use ffx_bridge::x87::{load, mul, store};
+        let result = match mode {
+            1 => math_angle_step_to(a, target, step),
+            2 => {
+                let back = f32::from_bits(store(mul(load(step.to_bits()), -1.0)));
+                math_angle_step_to(a, target, back)
+            }
+            _ => crate::math::angle_step(a, target, step),
+        };
+        f32::from_bits(store(load(result.to_bits())))
+    }
+
+    /// `toGetStatusWeaponMesPos()` (`0x008d54a0`, Fahrenheit's name;
+    /// caller `0x008cf990`): where the status screen's weapon/armour
+    /// captions end, `ftol(remapX2(1020) - w)` (at 53 bits, no float store
+    /// between) with `w` the wider of the two captions'
+    /// `ToGetBtlEasyFontWidth(TOMenuGetStatusMes(k), &w, 0, 0.78, 1.0)` for
+    /// `k` 5 and 6 (the second when it is not narrower, or for a NaN).
+    /// `widths` stands for the original's two locals the widths go to.
+    pub fn to_get_status_weapon_mes_pos<M: Mem>(
+        mem: &mut M,
+        widths: [u32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let status_mes = mem.rebase(0x008b_ee70);
+        let font_width = mem.rebase(0x0090_5290);
+        let scale = 0.78f32.to_bits();
+        let one = 1f32.to_bits();
+        for (k, out) in [(5, widths[0]), (6, widths[1])] {
+            let text = call(mem, status_mes, &[k, out, 0, scale, one]);
+            call(mem, font_width, &[text, out, 0, scale, one]);
+        }
+        let first = ffx_bridge::x87::load(mem.read(widths[0]));
+        let second = ffx_bridge::x87::load(mem.read(widths[1]));
+        let wider = if second < first { first } else { second };
+        let right = remap(mem, false, 1020.0);
+        ffx_bridge::x87::ftol(mem, ffx_bridge::x87::sub(right, wider))
+    }
+
+    /// `Pad_ReadCurrDevice(a, b, work, pad)` (`0x008898a0`, own name;
+    /// caller `0x00888f90`, the pad read): the PC input's buttons
+    /// (`inputGetCurrDeviceButtonInfo`, `u16`) with opposite directions
+    /// cancelling (`0xa000` both set drops them to `& 0x5fff`, then `0x5000`
+    /// to `& 0xafff`), by the pad record's mode (byte `+1`, high nibble):
+    /// 6 (analogue) fills `2 * low nibble - 3` bytes from `+3` with `0x80`
+    /// (when more than 3), mode byte `0x42`, `work+0x98` (`u32`) 0; mode 2
+    /// becomes `0x22`; except for mode 6 the buttons go to `work+0x9a` and
+    /// `+0x98` (`u16`). `a` and `b` are unused. Returns `work` (left in
+    /// `eax`).
+    pub fn pad_read_curr_device<M: Mem>(
+        mem: &mut M,
+        work: u32,
+        pad: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let input = mem.rebase(0x0063_0c80);
+        #[allow(clippy::cast_possible_truncation)] // movzx of ax
+        let mut buttons = call(mem, input, &[]) as u16;
+        if buttons & 0xa000 == 0xa000 {
+            buttons &= 0x5fff;
+        }
+        if buttons & 0x5000 == 0x5000 {
+            buttons &= 0xafff;
+        }
+        let mode: u8 = mem.read(pad.wrapping_add(1));
+        let stick_bytes = i32::from(mode & 0xf) * 2;
+        match mode >> 4 {
+            6 => {
+                if stick_bytes > 3 {
+                    for k in 0..(stick_bytes - 3).cast_unsigned() {
+                        mem.write(pad.wrapping_add(3 + k), 0x80u8);
+                    }
+                }
+                mem.write(pad.wrapping_add(1), 0x42u8);
+                mem.write(work.wrapping_add(0x98), 0u32);
+                return work;
+            }
+            2 => mem.write(pad.wrapping_add(1), 0x22u8),
+            _ => {}
+        }
+        mem.write(work.wrapping_add(0x9a), buttons);
+        mem.write(work.wrapping_add(0x98), buttons);
+        work
+    }
+
+    /// `Pad_ResetWork(work)` (`0x00888970`, own name; callers `0x00888910`,
+    /// `0x00889790`): byte `+0` `0xff`, `+4` and `+8` 0, `u16 +0x1c` 0,
+    /// then (a tail call) `Pad_ResetAnalogAt0C(work)`, whose `eax` is
+    /// returned.
+    pub fn pad_reset_work<M: Mem>(
+        mem: &mut M,
+        work: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(work, 0xffu8);
+        mem.write(work.wrapping_add(4), 0u32);
+        mem.write(work.wrapping_add(8), 0u32);
+        mem.write(work.wrapping_add(0x1c), 0u16);
+        let reset = mem.rebase(0x0088_9030);
+        call(mem, reset, &[work])
+    }
+
+    /// `Pad_ClearAnalogWork(a, b)` (`0x008889f0`, own name; caller
+    /// `0x00889360`): in `TkGetControlerWork(a, b)` the eight `u16` at
+    /// `+0xa0` and the eight floats at `+0xb0` become 0 (interleaved).
+    /// Returns the work `+ 0xd0` (the original's `eax` after its loop).
+    pub fn pad_clear_analog_work<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let get = mem.rebase(0x0088_8ec0);
+        let work = call(mem, get, &[a, b]);
+        for k in 0..8u32 {
+            mem.write(work.wrapping_add(0xa0 + 2 * k), 0u16);
+            mem.write(work.wrapping_add(0xb0 + 4 * k), 0u32);
+        }
+        work.wrapping_add(0xd0)
+    }
+
+    /// The menu text wrappers: `(address, text, help)`. Each original is
+    /// `MsMenuGetText(text, id, MsGetSaveConfigHiragana())` (or
+    /// `MsMenuGetHelp` for `help`) of its one argument; see
+    /// [`menu_text_of`]. The `TOMenuGet*`, `TkMenu*` and `TkMn2*` families
+    /// repeat the same texts.
+    pub const MENU_TEXT_WRAPPERS: [(u32, u32, bool); 45] = [
+        (0x0086_0780, 3, false),  // AtelMenuSaveMes_00860780
+        (0x008b_ea50, 5, true),   // TOMenuGetArmsHelp
+        (0x008b_ea70, 5, false),  // TOMenuGetArmsMes
+        (0x008b_ea90, 6, true),   // TOMenuGetBuildHelp
+        (0x008b_eab0, 6, false),  // TOMenuGetBuildMes
+        (0x008b_ead0, 7, true),   // TOMenuGetConfigHelp
+        (0x008b_eaf0, 7, false),  // TOMenuGetConfigMes
+        (0x008b_ec90, 8, true),   // TOMenuGetItemHelp
+        (0x008b_ecb0, 8, false),  // TOMenuGetItemMes
+        (0x008b_ecd0, 9, true),   // TOMenuGetMainHelp
+        (0x008b_ecf0, 9, false),  // TOMenuGetMainMes
+        (0x008b_ed10, 1, true),   // TOMenuGetMenu1Help
+        (0x008b_ed30, 1, false),  // TOMenuGetMenu1Mes
+        (0x008b_ed50, 2, true),   // TOMenuGetMenu2Help
+        (0x008b_ed70, 2, false),  // TOMenuGetMenu2Mes
+        (0x008b_edb0, 10, true),  // TOMenuGetNameHelp
+        (0x008b_edd0, 10, false), // TOMenuGetNameMes
+        (0x008b_ee10, 3, true),   // TOMenuGetSaveHelp
+        (0x008b_ee30, 3, false),  // TOMenuGetSaveMes
+        (0x008b_ee50, 11, true),  // TOMenuGetStatusHelp
+        (0x008b_ee70, 11, false), // TOMenuGetStatusMes
+        (0x008b_ee90, 12, true),  // TOMenuGetSummonHelp
+        (0x008b_eeb0, 12, false), // TOMenuGetSummonMes
+        (0x008b_f150, 5, false),  // TkMn2ArmsMes
+        (0x008d_c8f0, 5, true),   // TkMenuArmsHelp
+        (0x008d_c910, 5, false),  // TkMenuArmsMes
+        (0x008d_c930, 6, true),   // TkMenuBuildHelp
+        (0x008d_c950, 6, false),  // TkMenuBuildMes
+        (0x008d_c9b0, 7, false),  // TkMenuConfigMes
+        (0x008d_df20, 8, true),   // TkMenuItemHelp
+        (0x008d_df40, 8, false),  // TkMenuItemMes
+        (0x008d_df60, 9, true),   // TkMenuMainHelp
+        (0x008d_df80, 9, false),  // TkMenuMainMes
+        (0x008d_dfa0, 1, true),   // TkMenuMenu1Help
+        (0x008d_dfc0, 1, false),  // TkMenuMenu1Mes
+        (0x008d_dfe0, 2, true),   // TkMenuMenu2Help
+        (0x008d_e000, 2, false),  // TkMenuMenu2Mes
+        (0x008d_e020, 10, true),  // TkMenuNameHelp
+        (0x008d_e040, 10, false), // TkMenuNameMes
+        (0x008d_e060, 3, true),   // TkMenuSaveHelp
+        (0x008d_e080, 3, false),  // TkMenuSaveMes
+        (0x008d_e120, 11, true),  // TkMenuStatusHelp
+        (0x008d_e140, 11, false), // TkMenuStatusMes
+        (0x008d_e160, 12, true),  // TkMenuSummonHelp
+        (0x008d_e180, 12, false), // TkMenuSummonMes
+    ];
+
+    /// One of the [`MENU_TEXT_WRAPPERS`]: menu text `text`'s name (or, for
+    /// `help`, help line) of record `id`, in kana when
+    /// `MsGetSaveConfigHiragana()` says so.
+    pub fn menu_text_of(mem: &impl Mem, text: u32, help: bool, id: u32) -> u32 {
+        use ffx_battle::menu::bridge::{ms_menu_get_help, ms_menu_get_text};
+        let kana = save::ms_get_save_config_hiragana(mem);
+        if help {
+            ms_menu_get_help(mem, text, id, kana)
+        } else {
+            ms_menu_get_text(mem, text, id, kana)
+        }
+    }
+
+    /// `TkMenuDraw1612Width(text)` (`0x008dc9e0`, Fahrenheit's name): a
+    /// tail jump to `TOGetTextWidth_008b8040(text)`; its result.
+    pub fn tk_menu_draw1612_width<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let width = mem.rebase(0x008b_8040);
+        call(mem, width, &[text])
+    }
+
+    /// `TkMn2TransCharFace(summon)` (`0x008c2ce0`, Fahrenheit's name): the
+    /// face texture upload, `TOMenuTransFaceSmnTex()` for a nonzero
+    /// `summon`, else `TOMenuTransFacePlyTex()` (tail jumps); its result.
+    pub fn tk_mn2_trans_char_face<M: Mem>(
+        mem: &mut M,
+        summon: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(if summon == 0 {
+            0x0090_1100
+        } else {
+            0x0090_1130
+        });
+        call(mem, f, &[])
+    }
+
+    /// `MenuNameEntry_CommitDefault0b()` (`0x008c5370`, own name; callers
+    /// `0x00787100`, `0x00787470`): the name entry's commit for character
+    /// `0xb` without the menu: `MenuItem_SetTarget(0xb)`,
+    /// `MenuItem_LoadTargetKeys(0xb)`, then (a tail jump)
+    /// `MenuNameEntry_Commit()`, whose result is returned.
+    pub fn menu_name_entry_commit_default0b<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let set_target = mem.rebase(0x008c_5440);
+        call(mem, set_target, &[0xb]);
+        let load_keys = mem.rebase(0x008c_5320);
+        call(mem, load_keys, &[0xb]);
+        let commit = mem.rebase(0x008c_4e60);
+        call(mem, commit, &[])
+    }
 }
 
 #[cfg(test)]

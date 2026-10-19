@@ -210,7 +210,7 @@ impl Twins {
 
 impl Twins {
     /// Like [`Twins::twin`] for an original returning a float in `ST0`:
-    /// the same bits (any NaN for a NaN) and the same memory.
+    /// the same bits (NaNs included) and the same memory.
     fn twin_f(
         &mut self,
         what: &str,
@@ -227,8 +227,9 @@ impl Twins {
             .st0
             .unwrap_or_else(|| panic!("{what} {args:x?}: no float in ST0"));
         let got = f64::from(rust(&mut self.b));
-        assert!(
-            want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
+        assert_eq!(
+            want.to_bits(),
+            got.to_bits(),
             "{what} {args:x?}: {want} vs {got}"
         );
         assert_eq!(
@@ -8700,7 +8701,17 @@ fn menu_round22_buy_sell_windows_match_the_original() {
 /// pointer differs between the original's argument slot and the port's
 /// scratch word).
 fn digit_width(t: &mut Twins) -> u32 {
+    width_out(t, 0x0090_5230).0
+}
+
+/// A stand-in width function `f(text, out, a, scale, b)` at `f`: `*out`
+/// the float bits in the first returned cell, which then grow by the
+/// second cell's word (so successive calls differ); arguments 0, 2 and 3
+/// recorded (the out pointer differs between the original's local and the
+/// port's scratch word).
+fn width_out(t: &mut Twins, f: u32) -> (u32, u32) {
     let cell = t.alloc(&[0; 4]);
+    let step = t.alloc(&[0; 4]);
     let buf = t.alloc(&vec![0; 0x1_0000]);
     let log = t.alloc(&buf.to_le_bytes());
     let l = log.to_le_bytes();
@@ -8713,14 +8724,16 @@ fn digit_width(t: &mut Twins) -> u32 {
         &[0x83, 0x05], &l, &[0x0c],                 // add dword [log], 12
         &[0xa1], &cell.to_le_bytes(),               // mov eax, [cell]
         &[0x8b, 0x54, 0x24, 0x08, 0x89, 0x02],      // *arg 1 = eax
+        &[0x8b, 0x0d], &step.to_le_bytes(),         // mov ecx, [step]
+        &[0x01, 0x0d], &cell.to_le_bytes(),         // add [cell], ecx
         &[0xc3],
     ]
     .concat();
     for o in [&mut t.a, &mut t.b] {
-        let at = o.rebase(0x0090_5230);
+        let at = o.rebase(f);
         o.write(at, &code).unwrap();
     }
-    cell
+    (cell, step)
 }
 
 #[test]
@@ -8830,6 +8843,160 @@ fn menu_round22_legend_choice_and_segment_match_the_original() {
         t.twin_f("Math_SegmentNearestT", 0x0088_a040, &addr, |o| {
             ffx_menu::math::bridge::math_segment_nearest_t(o, addr[0], addr[1], addr[2])
         });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_angles_captions_and_pads_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_b610) else {
+        return;
+    };
+    // Math_AngleStepMode: the three modes over angles near and far
+    let angle = |t: &mut Twins| -> f32 {
+        match t.rng.below(10) {
+            0 => f32::NAN,
+            1 => 0.0,
+            2 => -0.0,
+            3 => std::f32::consts::PI,
+            _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 150.0,
+        }
+    };
+    for _ in 0..600 {
+        let (a, b, step) = (angle(&mut t), angle(&mut t), angle(&mut t));
+        let mode = t.rng.pick_or_any(&[0, 1, 2, 3, 0xffff_ffff]);
+        t.twin_f(
+            "Math_AngleStepMode",
+            0x0088_b610,
+            &[a.to_bits(), b.to_bits(), step.to_bits(), mode],
+            |_| tk::math_angle_step_mode(a, b, step, i(mode)),
+        );
+    }
+    // toGetStatusWeaponMesPos: the two captions' widths from a stand-in
+    let r = t.rng.next();
+    record_n(&mut t, 0x008b_ee70, 1, r);
+    let (cell, step) = width_out(&mut t, 0x0090_5290);
+    let widths = t.b.stack_range().start + 0x100;
+    for round in 0..120u32 {
+        let w = match round % 6 {
+            0 => f32::NAN,
+            1 => 3e9,
+            _ => f32::from(u16::try_from(t.rng.below(400)).unwrap_or(0)) / 3.0,
+        };
+        t.put(cell, w);
+        let grow = t
+            .rng
+            .pick(&[0u32, 1, 0x0010_0000, 0xfff0_0000, 0x0100_0000]);
+        t.put(step, grow);
+        if round % 6 == 5 {
+            // the first width 2.0, the second a NaN (0x40000000 + 0x3f800001)
+            t.put(cell, 0x4000_0000u32);
+            t.put(step, 0x3f80_0001u32);
+        }
+        t.twin("toGetStatusWeaponMesPos", 0x008d_54a0, &[], U32, |o| {
+            w64(tk::to_get_status_weapon_mes_pos(
+                o,
+                [widths, widths + 4],
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    // the pad helpers: the PC buttons, the work resets
+    let buttons = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0xa1][..], &buttons.to_le_bytes(),        // mov eax, [buttons]
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0063_0c80);
+        o.write(at, &code).unwrap();
+    }
+    let r = t.rng.next();
+    record_n(&mut t, 0x0088_9030, 1, r);
+    let work = t.alloc_random(0x100);
+    record_n(&mut t, 0x0088_8ec0, 2, work);
+    for _ in 0..200 {
+        let b = t
+            .rng
+            .pick_or_any(&[0xa000, 0x5000, 0xf000, 0xffff, 0x1_a000, 0x8000]);
+        t.put(buttons, b);
+        let pad = t.alloc_random(0x30);
+        let mode = t
+            .rng
+            .pick(&[0x20u8, 0x22, 0x41, 0x60, 0x61, 0x62, 0x63, 0x6f, 0x73, 0x10]);
+        t.put(pad + 1, mode);
+        let w = t.alloc_random(0x100);
+        let (a, b) = (t.rng.next(), t.rng.next());
+        t.twin(
+            "Pad_ReadCurrDevice",
+            0x0088_98a0,
+            &[a, b, w, pad],
+            U32,
+            |o| w64(tk::pad_read_curr_device(o, w, pad, &mut callback)),
+        );
+        t.twin("Pad_ResetWork", 0x0088_8970, &[w], U32, |o| {
+            w64(tk::pad_reset_work(o, w, &mut callback))
+        });
+        t.twin("Pad_ClearAnalogWork", 0x0088_89f0, &[a, b], U32, |o| {
+            w64(tk::pad_clear_analog_work(o, a, b, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_text_wrappers_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_df80) else {
+        return;
+    };
+    // the 45 menu text wrappers over the game's tables, kana on and off
+    let config = ffx_battle::save::bridge::MENU.sym;
+    for round in 0..40u32 {
+        for (f, text, help) in tk::MENU_TEXT_WRAPPERS {
+            let id = t
+                .rng
+                .pick_or_any(&[0, 1, 2, 0x10, 0x2000_0001, 0xffff_ffff])
+                & 0xffff_1fff;
+            t.twin("menu text wrapper", f, &[id], U32, |o| {
+                w(tk::menu_text_of(o, text, help, id))
+            });
+        }
+        if round % 2 == 0 {
+            t.scramble(config, 4);
+        }
+    }
+    // the tail-jump wrappers, their targets recorded
+    let r = t.rng.next();
+    record_n(&mut t, 0x008b_8040, 1, r);
+    let (smn, ply) = (t.rng.next(), t.rng.next());
+    return_const(&mut t, 0x0090_1130, smn);
+    return_const(&mut t, 0x0090_1100, ply);
+    return_counter(&mut t, 0x008c_5440, 0);
+    let r = t.rng.next();
+    record_n(&mut t, 0x008c_5320, 1, r);
+    let r = t.rng.next();
+    record_n(&mut t, 0x008c_4e60, 0, r);
+    for _ in 0..20 {
+        let text = t.rng.next();
+        t.twin("TkMenuDraw1612Width", 0x008d_c9e0, &[text], U32, |o| {
+            w(tk::tk_menu_draw1612_width(o, text, &mut callback))
+        });
+        let summon = t.rng.pick_or_any(&[0, 1]);
+        t.twin("TkMn2TransCharFace", 0x008c_2ce0, &[summon], U32, |o| {
+            w(tk::tk_mn2_trans_char_face(o, summon, &mut callback))
+        });
+        t.twin(
+            "MenuNameEntry_CommitDefault0b",
+            0x008c_5370,
+            &[],
+            U32,
+            |o| w(tk::menu_name_entry_commit_default0b(o, &mut callback)),
+        );
     }
     eprintln!("{} calls", t.calls);
 }

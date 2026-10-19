@@ -8790,6 +8790,7 @@
 0x00860720 function Native_01d3 # 0x01d3: 1 (mov eax, 1; ret); ported in native_mods (script round 19); name ours
 0x00860730 function Native_01c9              # 0x01c9: (b, a): 0x009084b0(b, a); 1; ported in native_move (script round 11)
 0x00860760 function Native_MsgShowWait_Result    # 0x013b int: tail call to 0x0085a6f0 -> chosen option (-1 none)
+0x00860780 function AtelMenuSaveMes_00860780 # cdecl(id): MsMenuGetText(3, id, MsGetSaveConfigHiragana()), as TkMenuSaveMes; ported in menu round 22 (tk::menu_text_of); name ours
 0x008607a0 function Msg_ShowSetup              # (worker, args, stack, mode): pops (window, message, b, a, x, y, anchor), re-pushes them for Native_MsgSetPos, style 0, text, flags 0, choice bytes +0x1e/+0x1f, MsgOpen with mode|2, then Native_MsgSelect; mode 0 from Native_MsgShowWait, 8 from 0x00855d70; ported in native_msg
 0x00860990 function Msg_ChoicePoll             # (worker, args, handlers): as Native_MsgSelect_Poll, plus status 1: handlers[0x008b8010(window)](choice); ported in native_msg
 0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
@@ -9649,7 +9650,10 @@
 0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790
 0x00888890 function op_counter_add_00888890      # ours: (n) -> n: adds n to the dword at 0x01330278 when n > 0; caller 0x008884a0
 0x008888e0 function op_slot_bytes_reset_008888e0 # ours: (obj) -> obj+0xfe: u16 +0xfe = 0, u16 +0xf6 = 0x808, bytes +0xf0..+0xf5 = 0xff, +0xf8..+0xfd = 0; callers 0x00889050, 0x00889360
+0x00888970 function Pad_ResetWork # cdecl(work): +0 = 0xff, +4/+8 = 0, u16 +0x1c = 0, tail call Pad_ResetAnalogAt0C(work); callers 0x00888910, 0x00889790; ported in menu round 22; name ours
+0x00888990 function Pad_PortClose_00888990 # cdecl(port, slot): port < 0 closes ports 0 and 1 first (then goes on with the negative port), then when bit slot of g_TkControlerWork[port] is set scePadPortClose(port, slot) and clears it; REVIEWED menu r22: dead, its only caller is itself and no pointer to it exists; name ours
 0x008889e0 function Compute_008889e0             # auto-port shape (arithmetic on arguments, cdecl): return (a1 & 0xff); callers: ; name ours
+0x008889f0 function Pad_ClearAnalogWork # cdecl(a, b) -> work+0xd0: TkGetControlerWork(a, b) u16 +0xa0..+0xae and f32 +0xb0..+0xcc zeroed; caller 0x00889360; ported in menu round 22; name ours
 0x00888b60 function TkGetControlerFrame       # (work, i) -> work + ((byte +0x9c + i) & 3) * 0x20: a frame of a pad work's 4-entry input ring
 0x00888b80 function Pad_GetFrame              # (pad, port, i) TkGetControlerFrame(TkGetControlerWork(pad, port), i); own name
 0x00888ba0 function TkGetControlerActuatorMode # (pad, port) TkGetControlerWork +0x9d; Switch name, alphabetical slot before TkGetControlerActuatorNumber (0x00888bc0) and TkGetControlerAnalog; was Pad_GetWorkByte9D
@@ -9682,6 +9686,7 @@
 0x008894d0 function TkSetControlerActuatorMode # fh v3:bsim1.00 0x00889440
 0x008894f0 function TkSetPadButtonMap         # (a, b, i, to): g_PadButtonMap[a + b][i] = to (Pad_MapButtons reads it)
 0x00889510 function Pad_CheckPressMode        # (port, slot, ret, status): scePadInfoPressMode == 1: 7 when status[1] & 0xf != 9 and scePadEnterPressMode != 0, else ret; otherwise TkGetControlerWork(port, slot) +0x82 = 0, ret; caller 0x00889050; name ours
+0x008898a0 function Pad_ReadCurrDevice # cdecl(a, b, work, pad) -> work: inputGetCurrDeviceButtonInfo() with opposite directions cancelled (0xa000 -> & 0x5fff, 0x5000 -> & 0xafff); pad mode byte +1: 6 fills 2*(low nibble)-3 bytes from +3 with 0x80, sets 0x42, work+0x98 = 0; 2 becomes 0x22; else buttons to u16 work+0x9a/+0x98; caller 0x00888f90; ported in menu round 22; name ours
 0x00889a80 function TkUpdateScanControler     # fh v3:exact 0x008899f0
 0x00889aa0 function Pad_StickToByte           # (f32 axis): al = 0x80 - ftol(axis * -127.0) (double 0x00b5dee8), eax's upper 24 bits from the ftol; caller 0x00889570 (stick bytes +0x84..0x87); name ours
 0x00889ac0 function TkFindPadButton           # (a, b, k) -> where in g_PadButtonMap[a + b] the code g_PadButtonCodes[k] is, -1 if nowhere
@@ -9701,6 +9706,7 @@
 0x0088b430 function Math_Atan2XZ                 # (x0, z0, x1, z1) -> angle with axis special cases
 0x0088b4d0 function Math_YawPitchTo              # (*yaw, *pitch, from xyz, to xyz): yaw Math_Atan2XZ on XZ, pitch Math_Atan2XZ(0, fy, sqrt(dx^2+dz^2), ty); eax = yaw
 0x0088b570 function Math_AngleStep            # (cur, target, step) -> ST0: cur turned toward target by at most step the short way (Math_WrapAngle, Math_MinAbs), wrapped; the target itself when closer; name ours
+0x0088b610 function Math_AngleStepMode # cdecl(a, target, step, mode) -> f32 ST0: mode 1 Math_AngleStepTo(a, target, step), 2 with step * -1.0, else Math_AngleStep; caller 0x00869510 (two sites); ported in menu round 22; name ours
 0x0088b6b0 function Math_AngleStepTo          # (a, target, step) a + step unless (a - t)(a + step - t) <= 0, then target; Math_WrapAngle; own name
 0x0088b730 function Math_InRadius                # (r, dx, dy, dz) -> dx^2+dy^2+dz^2 <= r^2
 0x0088b780 function Math_FacingWithin         # (heading, tol, x0, z0, x1, z1) -> eax 1 when Math_MinAbs(Math_WrapAngle(Math_Atan2XZ(x0, z0, x1, z1) - heading), tol) < tol; the talk-angle check (Native_SetTalkAngle, Native_1015); name ours
@@ -10386,36 +10392,36 @@
 0x008be9b0 function SetGlobal_00c5a084 # cdecl(v): *0x00c5a084 = v, returns v; name ours
 0x008bea20 function TOMenuDrawKickTmp         # fh v3:bsim1.00+call.cs 0x008be9f0 cdecl
 0x008bea30 function TOMenuGetAbilitymapWorkAdrs # fh v3:bsim1.00 0x008bea00
-0x008bea50 function TOMenuGetArmsHelp         # (id) -> MsMenuGetHelp(5, id, MsGetSaveConfigHiragana()); first of the TOMenuGet{menu}Help/Mes pairs laid out alphabetically after TOMenuGetAbilitymapWorkAdrs (Arms 5, Build 6, Config 7, GetCommand*, GetImportant*, HelpWork*, Item 8, Main 9, Menu1 1, Menu2 2, Name 10, PacketBuff*, Save 3, Status 11, Summon 12; anchors TOMenuGetNameMes/StatusMes/SummonMes); table 5 is Arms in the TkMenu copy too
-0x008bea70 function TOMenuGetArmsMes          # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()); see TOMenuGetArmsHelp
-0x008bea90 function TOMenuGetBuildHelp        # (id) -> MsMenuGetHelp(6, ...); see TOMenuGetArmsHelp
-0x008beab0 function TOMenuGetBuildMes         # (id) -> MsMenuGetText(6, ...); see TOMenuGetArmsHelp
-0x008bead0 function TOMenuGetConfigHelp       # (id) -> MsMenuGetHelp(7, ...); see TOMenuGetArmsHelp (TkMenuConfigMes is table 7 too)
-0x008beaf0 function TOMenuGetConfigMes        # (id) -> MsMenuGetText(7, ...); see TOMenuGetArmsHelp
+0x008bea50 function TOMenuGetArmsHelp         # (id) -> MsMenuGetHelp(5, id, MsGetSaveConfigHiragana()); first of the TOMenuGet{menu}Help/Mes pairs laid out alphabetically after TOMenuGetAbilitymapWorkAdrs (Arms 5, Build 6, Config 7, GetCommand*, GetImportant*, HelpWork*, Item 8, Main 9, Menu1 1, Menu2 2, Name 10, PacketBuff*, Save 3, Status 11, Summon 12; anchors TOMenuGetNameMes/StatusMes/SummonMes); table 5 is Arms in the TkMenu copy too; cdecl(id): MsMenuGetHelp(5, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bea70 function TOMenuGetArmsMes          # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(5, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bea90 function TOMenuGetBuildHelp        # (id) -> MsMenuGetHelp(6, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetHelp(6, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008beab0 function TOMenuGetBuildMes         # (id) -> MsMenuGetText(6, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(6, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bead0 function TOMenuGetConfigHelp       # (id) -> MsMenuGetHelp(7, ...); see TOMenuGetArmsHelp (TkMenuConfigMes is table 7 too); cdecl(id): MsMenuGetHelp(7, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008beaf0 function TOMenuGetConfigMes        # (id) -> MsMenuGetText(7, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(7, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008beb70 function TOMenuGetGetCommandHelp   # cdecl(id): MsGetRomPlyCommand record u16 +8 (+0xc with hiragana) + strings; Switch TOMenuGetGetCommandHelp (76 bytes) sorts here between TOMenuGetConfigMes and TOMenuGetItemHelp, and TkMenuGetCommandHelp (0x008dde10) is the same body in the TkMenu copy; was TOGetPlyCommandHelp_008beb70
 0x008bebb0 function TOMenuGetGetCommandName   # cdecl(id): MsGetRomPlyCommand record u16 +0 (+4 with hiragana) + strings; Switch name sorting here (see TOMenuGetGetCommandHelp); TkMenuGetCommandName (0x008dde50) is the TkMenu copy; was TOGetPlyCommandName_008bebb0
 0x008bebf0 function TOMenuGetGetImportantHelp # cdecl(id): MsImportantPtr record u16 +8 (+0xc with hiragana) + strings; Switch name sorting here after TOMenuGetGetCommandName (see TOMenuGetGetCommandHelp); was TOGetImportantHelp_008bebf0
 0x008bec30 function TOMenuGetGetImportantName # cdecl(id): MsImportantPtr record u16 +0 (+4 with hiragana) + strings; Switch name sorting here (see TOMenuGetGetCommandHelp); was TOGetImportantName_008bec30
 0x008bec70 function TOMenuGetHelpWorkAdrs     # () -> 0x023cc480: the help work area; Switch TOMenuGetHelpWorkAdrs (12 bytes) and TOMenuGetHelpWorkSize sort between TOMenuGetGetImportantName and TOMenuGetItemHelp, as this pair does, and one function (0x00774c00 here, FUN_710032a6e0 there) calls both; was ReturnAddress_008bec70
 0x008bec80 function TOMenuGetHelpWorkSize     # () -> 0x200000: the help work area's size; see TOMenuGetHelpWorkAdrs; was ReturnConst200000_008bec80
-0x008bec90 function TOMenuGetItemHelp         # (id) -> MsMenuGetHelp(8, ...); see TOMenuGetArmsHelp
-0x008becb0 function TOMenuGetItemMes          # (id) -> MsMenuGetText(8, ...); see TOMenuGetArmsHelp
-0x008becd0 function TOMenuGetMainHelp         # (id) -> MsMenuGetHelp(9, ...); table 9 is TkMenuMainHelp's too; see TOMenuGetArmsHelp
-0x008becf0 function TOMenuGetMainMes          # (id) -> MsMenuGetText(9, ...); see TOMenuGetArmsHelp
-0x008bed10 function TOMenuGetMenu1Help        # (id) -> MsMenuGetHelp(1, ...); table 1 is TkMenuMenu1Help's too; see TOMenuGetArmsHelp
-0x008bed30 function TOMenuGetMenu1Mes         # (id) -> MsMenuGetText(1, ...); see TOMenuGetArmsHelp
-0x008bed50 function TOMenuGetMenu2Help        # (id) -> MsMenuGetHelp(2, ...); see TOMenuGetArmsHelp
-0x008bed70 function TOMenuGetMenu2Mes         # (id) -> MsMenuGetText(2, ...); see TOMenuGetArmsHelp
-0x008bedb0 function TOMenuGetNameHelp         # (id) -> MsMenuGetHelp(10, ...); TOMenuGetNameMes (fh) is table 10; see TOMenuGetArmsHelp
-0x008bedd0 function TOMenuGetNameMes          # fh switch:bsim1.00 0x71004ec370
+0x008bec90 function TOMenuGetItemHelp         # (id) -> MsMenuGetHelp(8, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetHelp(8, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008becb0 function TOMenuGetItemMes          # (id) -> MsMenuGetText(8, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(8, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008becd0 function TOMenuGetMainHelp         # (id) -> MsMenuGetHelp(9, ...); table 9 is TkMenuMainHelp's too; see TOMenuGetArmsHelp; cdecl(id): MsMenuGetHelp(9, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008becf0 function TOMenuGetMainMes          # (id) -> MsMenuGetText(9, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(9, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bed10 function TOMenuGetMenu1Help        # (id) -> MsMenuGetHelp(1, ...); table 1 is TkMenuMenu1Help's too; see TOMenuGetArmsHelp; cdecl(id): MsMenuGetHelp(1, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bed30 function TOMenuGetMenu1Mes         # (id) -> MsMenuGetText(1, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(1, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bed50 function TOMenuGetMenu2Help        # (id) -> MsMenuGetHelp(2, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetHelp(2, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bed70 function TOMenuGetMenu2Mes         # (id) -> MsMenuGetText(2, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(2, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bedb0 function TOMenuGetNameHelp         # (id) -> MsMenuGetHelp(10, ...); TOMenuGetNameMes (fh) is table 10; see TOMenuGetArmsHelp; cdecl(id): MsMenuGetHelp(10, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bedd0 function TOMenuGetNameMes          # fh switch:bsim1.00 0x71004ec370; cdecl(id): MsMenuGetText(10, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008bedf0 function TOMenuGetPacketBuffAdrs      # layout: alphabetical run between TOMenuGetNameMes and TOMenuGetPacketBuffSize (1 unnamed in the gap); Switch 0x71004ec150 TOMenuGetPacketBuffAdrs is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); xor eax,eax; ret: no PS2 packet buffer on PC, TkMn2DrawInitPacket its only caller
 0x008bee00 function TOMenuGetPacketBuffSize   # () -> 0x100000; the Switch's TOMenuGetPacketBuffSize sorts between TOMenuGetNameMes and TOMenuGetSaveHelp, as here, and TkMn2DrawInitPacket (0x008c0be0) calls it with the buffer address to rewind the draw cursor by half of it
-0x008bee10 function TOMenuGetSaveHelp         # (id) -> MsMenuGetHelp(3, ...); TkMenuSaveMes is table 3; see TOMenuGetArmsHelp
-0x008bee30 function TOMenuGetSaveMes          # (id) -> MsMenuGetText(3, ...); see TOMenuGetArmsHelp
-0x008bee50 function TOMenuGetStatusHelp       # (id) -> MsMenuGetHelp(11, ...); TOMenuGetStatusMes (fh) is table 11; see TOMenuGetArmsHelp
-0x008bee70 function TOMenuGetStatusMes        # fh switch:bsim1.00 0x71004ec3a0
-0x008bee90 function TOMenuGetSummonHelp       # (id) -> MsMenuGetHelp(12, ...): the last pair of the TOMenuGet run before TOMenuHelpSetExtMode, with TOMenuGetSummonMes (table 12); see TOMenuGetArmsHelp; was TkMenuItemHelp (fh switch:bsim1.00 0x71004c36e0)
-0x008beeb0 function TOMenuGetSummonMes        # fh switch:bsim1.00 0x71004ec3d0
+0x008bee10 function TOMenuGetSaveHelp         # (id) -> MsMenuGetHelp(3, ...); TkMenuSaveMes is table 3; see TOMenuGetArmsHelp; cdecl(id): MsMenuGetHelp(3, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bee30 function TOMenuGetSaveMes          # (id) -> MsMenuGetText(3, ...); see TOMenuGetArmsHelp; cdecl(id): MsMenuGetText(3, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bee50 function TOMenuGetStatusHelp       # (id) -> MsMenuGetHelp(11, ...); TOMenuGetStatusMes (fh) is table 11; see TOMenuGetArmsHelp; cdecl(id): MsMenuGetHelp(11, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bee70 function TOMenuGetStatusMes        # fh switch:bsim1.00 0x71004ec3a0; cdecl(id): MsMenuGetText(11, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008bee90 function TOMenuGetSummonHelp       # (id) -> MsMenuGetHelp(12, ...): the last pair of the TOMenuGet run before TOMenuHelpSetExtMode, with TOMenuGetSummonMes (table 12); see TOMenuGetArmsHelp; was TkMenuItemHelp (fh switch:bsim1.00 0x71004c36e0); cdecl(id): MsMenuGetHelp(12, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008beeb0 function TOMenuGetSummonMes        # fh switch:bsim1.00 0x71004ec3d0; cdecl(id): MsMenuGetText(12, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008bef10 function TOMenuHelpSetExtMode      # fh v3:bsim1.00 0x008beee0
 0x008bef30 function TOMenuOpenPktBuffTmp      # fh v3:exact+call.cs 0x008bef00 cdecl; TOSetPktBuffAdrs(0x015c0870, 0x80000, 0x75300); jmp TOOpenPktbuff
 0x008bef50 function TkMenuCtrlHelp            # fh v3:exact 0x008bef20
@@ -10424,7 +10430,7 @@
 0x008bf100 function Menu_Scale32              # (a, b): a + a * b / 32 (truncating); name ours
 0x008bf120 function MenuHelp_Ratio            # (a, b) (b+2)*a*2/4 truncating; own name
 0x008bf140 function MenuHelp_Plus40           # (p) p + 0x40; no caller; own name
-0x008bf150 function TkMn2ArmsMes              # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()): table 5 is the Arms menu (TkMenuArmsMes, TOMenuGetArmsMes); the Switch's TkMn2ArmsMes is the 44-byte wrapper of MsGetSaveConfigHiragana + MsMenuGetText; caller TkMenuCtrlEquip; was TkMenuItemMes (fh switch:bsim1.00 0x71004c34c0)
+0x008bf150 function TkMn2ArmsMes              # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()): table 5 is the Arms menu (TkMenuArmsMes, TOMenuGetArmsMes); the Switch's TkMn2ArmsMes is the 44-byte wrapper of MsGetSaveConfigHiragana + MsMenuGetText; caller TkMenuCtrlEquip; was TkMenuItemMes (fh switch:bsim1.00 0x71004c34c0); cdecl(id): MsMenuGetText(5, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008bf170 function TkMn2BuySellWindow           # layout+callees: sorts between TkMn2ArmsMes and TkMn2DrawBrush, and its named callees match the Switch 0x71004c8560 TkMn2BuySellWindow's (similarity 0.70: TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyDigit2); symbols from Fahrenheit's server export; cdecl(x, y, item, price, owned_count, amount, gil): item shop amount window (plates, item name, arrow shapes, price and count digits, cost and gil-left plates); ported in menu round 22
 0x008bf720 function MenuList_IsEmptySlot      # (entry) u16 at +0xc+2*byte(+0xb) is 0 or 0xff; own name
 0x008bf750 function Menu_CursorEase           # (summon, counter, a, b, last): Menu_EaseCounter toward the party (summon 1: summon) cursor position, restarted at its step << 12 when the position leaves *last; name ours
@@ -10514,7 +10520,7 @@
 0x008c2c90 function TkMn2SetOverDriveId       # (chr, v) ply u8 +0x38; Switch name, alphabetical slot TkMn2SetMacroParam..TkMn2TransCharFace
 0x008c2cb0 function TkMn2StringWidth             # layout: alphabetical run between TkMn2SetOverDriveId and TkMn2TransCharFace (2 unnamed in the gap); Switch 0x71004c6480 TkMn2StringWidth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c2cd0 function TkMn2StringWidthHeight       # layout: alphabetical run between TkMn2SetOverDriveId and TkMn2TransCharFace (2 unnamed in the gap); Switch 0x71004c64a0 TkMn2StringWidthHeight is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x008c2ce0 function TkMn2TransCharFace        # fh switch:bsim1.00 0x71004c5b00
+0x008c2ce0 function TkMn2TransCharFace        # fh switch:bsim1.00 0x71004c5b00; cdecl(summon): tail jump to TOMenuTransFaceSmnTex() when summon != 0, else TOMenuTransFacePlyTex(); ported in menu round 22
 0x008c2d00 function TkMn2WeaponBuySellWindow     # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8a60 TkMn2WeaponBuySellWindow's (similarity 0.62: DrawCrossMenuIconWeaponName2, TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export; cdecl(x, y, weapon, amount, owned): weapon shop amount window, |amount| and owned - amount (<= 999999999) gil plates; ported in menu round 22
 0x008c3070 function TkMsSetSaveParam             # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8120 TkMsSetSaveParam's (similarity 1.00: MsSetSaveParam, TkMenuGetHP, TkMenuGetMP, TkMenuGetMaxHP, TkMenuGetMaxMP); symbols from Fahrenheit's server export
 0x008c30d0 function TkMsSetSaveParamAll       # jmp MsSetSaveParamAll (5 bytes); name ours, after TkMsSetSaveParam
@@ -10538,6 +10544,7 @@
 0x008c5260 function MenuItem_SetCell          # (x, y) 0x0186a268 = 15y + x; own name
 0x008c5280 function Menu_ParseItemKeys        # (s): splits a key string into the 32 4-byte entries at 0x0186a280 (g_TkMenuItemKeyUse): kind 4 takes a second byte, values 6..0x2f an argument byte; the rest cleared; name ours
 0x008c5320 function MenuItem_LoadTargetKeys   # (target): target >= 0: Menu_ParseItemKeys(TOMenuGetNameMes(u16 [0x00c5a0d8 + 4*target], or 0x00c5a120 when TOGetFFXLang() != 0)) (tail jump); negative does nothing; callers 0x008c5370, the item menu; name ours
+0x008c5370 function MenuNameEntry_CommitDefault0b # cdecl(): MenuItem_SetTarget(0xb), MenuItem_LoadTargetKeys(0xb), tail jump MenuNameEntry_Commit(); callers 0x00787100, 0x00787470; ported in menu round 22; name ours
 0x008c5390 function MenuItem_KeysMatch        # (t) -> 1 when g_TkMenuItemKeyUse (Menu_ParseItemKeys' entries) spells TOMenuGetNameMes(u16 0x00c5a0d8[4t]) token by token (6..0x2f + arg, 4 + byte (+ byte when <= 0x2f), others alone; each entry then 0) up to the string's end and an entry starting 0; 0 for t < 0 or an empty string; callers pass g_TkMenuItemTarget; name ours
 0x008c5440 function MenuItem_SetTarget        # (chr) 0x0186a258 = chr; own name
 0x008c5450 function TkMenuCtrlItem            # fh v3:exact 0x008c5420
@@ -10691,7 +10698,7 @@
 0x008d4e80 function MenuStatus_GetPos2        # (out, alt) u16 pair 0x0186a918 (alt 0x0186a960) + status origin; own name
 0x008d4ed0 function TkMn2InitStatusBG         # (): both i16 of g_TkMn2StatusBG = 0; Switch symbol name (BSim)
 0x008d5180 function TkMn2MainStatusPlayerStatus  # callees: its named callees match the Switch 0x71004e4bd0 TkMn2MainStatusPlayerStatus's (similarity 0.73: MsGetSavePlayerPtr, TODrawMenuPlateXYWHType, TOMenuGetStatusMes, TOMkpCrossExtMesFontLClut, TOMkpShapeXYWHUV); symbols from Fahrenheit's server export
-0x008d54a0 function toGetStatusWeaponMesPos      # callees: its named callees match the Switch 0x71004e4300 toGetStatusWeaponMesPos's (similarity 1.00: TOMenuGetStatusMes, ToGetBtlEasyFontWidth, graphicUiRemapX2); symbols from Fahrenheit's server export
+0x008d54a0 function toGetStatusWeaponMesPos      # callees: its named callees match the Switch 0x71004e4300 toGetStatusWeaponMesPos's (similarity 1.00: TOMenuGetStatusMes, ToGetBtlEasyFontWidth, graphicUiRemapX2); symbols from Fahrenheit's server export; () -> ftol(remapX2(1020) - max width of status captions 5 and 6 (ToGetBtlEasyFontWidth(TOMenuGetStatusMes(k), &w, 0, 0.78, 1.0))); caller 0x008cf990; ported in menu round 22
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
 0x008d55e0 function MenuKaizou_InitList       # (w) +0x1c = 0; 0x0186aa38 = MsGetSaveWeaponList(-1, -1, 0, &n); 0x0186aa3c = n trimmed to the last entry whose slot byte +2 is set; TkMn2InitStatusBG; own name
 0x008d5680 function MenuKaizou_AddAbility     # (weapon, ability): first u16 slot (+0xe, u8 +0xb of them) that is 0 or 0xff gets ability; tail jump TkMsSetSaveParamAll; caller the customize step 0xd; own name
@@ -10773,13 +10780,13 @@
 0x008dc6b0 function MenuDraw_SpriteV          # (p, x, y, entry) MenuDraw_Sp3UBody; own name
 0x008dc6e0 function MenuDraw_SpriteV8         # (p, x, y, entry) ox = 8; own name
 0x008dc710 function MenuDraw_Sp3UBody         # (p, _, x, y, entry, ox, oy, alpha) the same flipped vertically, u clamped to 0xff0; own name
-0x008dc8f0 function TkMenuArmsHelp            # (id) -> MsMenuGetHelp(5, ...); first of the TkMenu{menu}Help/Mes pairs laid out alphabetically before TkMenuDraw* (Arms 5, Build 6, Config 7) and after TkMenuGetCommand*/GetImportant* (Item 8, Main 9, Menu1 1, Menu2 2, Name 10, Save 3, Status 11, Summon 12); anchors TkMenuConfigMes, TkMenuMainHelp/Mes, TkMenuMenu1Help/Mes, TkMenuStatusMes, TkMenuSaveMes
-0x008dc910 function TkMenuArmsMes             # (id) -> MsMenuGetText(5, ...); see TkMenuArmsHelp
-0x008dc930 function TkMenuBuildHelp           # (id) -> MsMenuGetHelp(6, ...); see TkMenuArmsHelp
-0x008dc950 function TkMenuBuildMes            # (id) -> MsMenuGetText(6, ...); see TkMenuArmsHelp
+0x008dc8f0 function TkMenuArmsHelp            # (id) -> MsMenuGetHelp(5, ...); first of the TkMenu{menu}Help/Mes pairs laid out alphabetically before TkMenuDraw* (Arms 5, Build 6, Config 7) and after TkMenuGetCommand*/GetImportant* (Item 8, Main 9, Menu1 1, Menu2 2, Name 10, Save 3, Status 11, Summon 12); anchors TkMenuConfigMes, TkMenuMainHelp/Mes, TkMenuMenu1Help/Mes, TkMenuStatusMes, TkMenuSaveMes; cdecl(id): MsMenuGetHelp(5, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008dc910 function TkMenuArmsMes             # (id) -> MsMenuGetText(5, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetText(5, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008dc930 function TkMenuBuildHelp           # (id) -> MsMenuGetHelp(6, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetHelp(6, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008dc950 function TkMenuBuildMes            # (id) -> MsMenuGetText(6, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetText(6, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008dc970 function TkMenuConfigHelp          # (id) -> MsMenuGetHelp(7, ...), or table 14 when MsGetSaveConfigEnglish; right before TkMenuConfigMes; see TkMenuArmsHelp
-0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490
-0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl
+0x008dc9b0 function TkMenuConfigMes           # fh switch:bsim1.00 0x71004c3490; cdecl(id): MsMenuGetText(7, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008dc9e0 function TkMenuDraw1612Width       # fh call.cs cdecl; cdecl(text): tail jump to TOGetTextWidth_008b8040(text); ported in menu round 22
 0x008dc9f0 function TkMenuDraw1612WidthHeight # fh switch:bsim1.00 0x71004bfde0
 0x008dca20 function TkMenuDrawSp30            # (x, y) TkMenuDrawSp3(x, y, 0), the 0 written into the caller's argument slot; own name
 0x008dca30 function TkMenuDrawSp3R0           # (x, y) TkMenuDrawSp3R(x, y, 0), the 0 written into the caller's argument slot; own name
@@ -10847,23 +10854,23 @@
 0x008dde50 function TkMenuGetCommandName      # (id) MsGetRomPlyCommand strings + u16 [record + 4*hiragana]; no direct caller; own name
 0x008ddea0 function TkMenuGetImportantHelp    # (id) MsImportantPtr help text; same body as TOMenuGetGetImportantHelp (0x008bebf0) but in the TkMenu run: after TkMenuGetCommandHelp/Name and before TkMenuItemHelp, where the Switch's TkMenuGetImportantHelp sorts; was TOMenuGetGetImportantHelp (fh v3:cg3 0x8dde80)
 0x008ddee0 function TkMenuGetImportantName    # (id) MsImportantPtr name; the TkMenu copy of TOMenuGetGetImportantName (0x008bec30); Switch TkMenuGetImportantName sorts here (see TkMenuGetImportantHelp); was TOMenuGetGetImportantName (fh v3:cg2 0x8ddec0)
-0x008ddf20 function TkMenuItemHelp            # (id) -> MsMenuGetHelp(8, id, MsGetSaveConfigHiragana()): an item help text; caller TkMenuCtrlItem; table 8 pair in the TkMenu run between TkMenuGetImportantName and TkMenuMainHelp (see TkMenuArmsHelp); the TOMenuGet copy is 0x008bec90; was TOMenuGetItemHelp
-0x008ddf40 function TkMenuItemMes             # (id) -> MsMenuGetText(8, ...); see TkMenuItemHelp
-0x008ddf60 function TkMenuMainHelp            # fh switch:bsim1.00 0x71004c35b0
-0x008ddf80 function TkMenuMainMes             # fh switch:bsim1.00 0x71004c33a0
-0x008ddfa0 function TkMenuMenu1Help           # fh switch:bsim1.00 0x71004c35e0
-0x008ddfc0 function TkMenuMenu1Mes            # fh switch:bsim1.00 0x71004c33d0
-0x008ddfe0 function TkMenuMenu2Help           # (id) -> MsMenuGetHelp(2, ...); see TkMenuArmsHelp
-0x008de000 function TkMenuMenu2Mes            # (id) -> MsMenuGetText(2, ...); see TkMenuArmsHelp
-0x008de020 function TkMenuNameHelp            # (id) -> MsMenuGetHelp(10, ...); see TkMenuArmsHelp
-0x008de040 function TkMenuNameMes             # (id) -> MsMenuGetText(10, ...); see TkMenuArmsHelp
-0x008de060 function TkMenuSaveHelp            # (id) -> MsMenuGetHelp(3, ...); before TkMenuSaveMes (table 3); see TkMenuArmsHelp
-0x008de080 function TkMenuSaveMes             # (id) -> MsMenuGetText(3, id, MsGetSaveConfigHiragana()): a save/load menu message; the Switch's TkMenuSaveMes (0x71004c3430, 44 bytes) calls MsGetSaveConfigHiragana and MsMenuGetText and is called by TkMenuJumpToLoadedScene, as here; cg-match lead (3 votes); callers TkMenuCtrlSaveLoad, TkMenuJumpToLoadedScene and the save screens; was TkMenuSaveMesText_008de080
+0x008ddf20 function TkMenuItemHelp            # (id) -> MsMenuGetHelp(8, id, MsGetSaveConfigHiragana()): an item help text; caller TkMenuCtrlItem; table 8 pair in the TkMenu run between TkMenuGetImportantName and TkMenuMainHelp (see TkMenuArmsHelp); the TOMenuGet copy is 0x008bec90; was TOMenuGetItemHelp; cdecl(id): MsMenuGetHelp(8, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008ddf40 function TkMenuItemMes             # (id) -> MsMenuGetText(8, ...); see TkMenuItemHelp; cdecl(id): MsMenuGetText(8, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008ddf60 function TkMenuMainHelp            # fh switch:bsim1.00 0x71004c35b0; cdecl(id): MsMenuGetHelp(9, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008ddf80 function TkMenuMainMes             # fh switch:bsim1.00 0x71004c33a0; cdecl(id): MsMenuGetText(9, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008ddfa0 function TkMenuMenu1Help           # fh switch:bsim1.00 0x71004c35e0; cdecl(id): MsMenuGetHelp(1, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008ddfc0 function TkMenuMenu1Mes            # fh switch:bsim1.00 0x71004c33d0; cdecl(id): MsMenuGetText(1, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008ddfe0 function TkMenuMenu2Help           # (id) -> MsMenuGetHelp(2, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetHelp(2, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008de000 function TkMenuMenu2Mes            # (id) -> MsMenuGetText(2, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetText(2, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008de020 function TkMenuNameHelp            # (id) -> MsMenuGetHelp(10, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetHelp(10, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008de040 function TkMenuNameMes             # (id) -> MsMenuGetText(10, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetText(10, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008de060 function TkMenuSaveHelp            # (id) -> MsMenuGetHelp(3, ...); before TkMenuSaveMes (table 3); see TkMenuArmsHelp; cdecl(id): MsMenuGetHelp(3, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008de080 function TkMenuSaveMes             # (id) -> MsMenuGetText(3, id, MsGetSaveConfigHiragana()): a save/load menu message; the Switch's TkMenuSaveMes (0x71004c3430, 44 bytes) calls MsGetSaveConfigHiragana and MsMenuGetText and is called by TkMenuJumpToLoadedScene, as here; cg-match lead (3 votes); callers TkMenuCtrlSaveLoad, TkMenuJumpToLoadedScene and the save screens; was TkMenuSaveMesText_008de080; cdecl(id): MsMenuGetText(3, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008de0a0 function MenuDraw_GifTag           # (packet, a, b, c) 64-byte GIF header, returns packet + 0x40; own name
-0x008de120 function TkMenuStatusHelp          # (id) -> MsMenuGetHelp(11, ...); before TkMenuStatusMes (table 11); see TkMenuArmsHelp
-0x008de140 function TkMenuStatusMes           # fh switch:bsim1.00 0x71004c3520
-0x008de160 function TkMenuSummonHelp          # (id) -> MsMenuGetHelp(12, ...); see TkMenuArmsHelp
-0x008de180 function TkMenuSummonMes           # (id) -> MsMenuGetText(12, ...); see TkMenuArmsHelp
+0x008de120 function TkMenuStatusHelp          # (id) -> MsMenuGetHelp(11, ...); before TkMenuStatusMes (table 11); see TkMenuArmsHelp; cdecl(id): MsMenuGetHelp(11, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008de140 function TkMenuStatusMes           # fh switch:bsim1.00 0x71004c3520; cdecl(id): MsMenuGetText(11, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008de160 function TkMenuSummonHelp          # (id) -> MsMenuGetHelp(12, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetHelp(12, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
+0x008de180 function TkMenuSummonMes           # (id) -> MsMenuGetText(12, ...); see TkMenuArmsHelp; cdecl(id): MsMenuGetText(12, id, MsGetSaveConfigHiragana()); ported in menu round 22 (tk::menu_text_of)
 0x008de1a0 function MenuStatus_Plus10         # (p) p + 0x10; no caller; own name
 0x008de1b0 function Gs_Pack4                  # (a, b, c, d) u64 a | b<<32 | c<<16 | d<<48; own name
 0x008de1d0 function Gs_Pack5                  # (a, b, c, d, e) Gs_Pack4 with e & 0x0ffffff0 folded in at <<12; own name
