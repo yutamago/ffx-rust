@@ -1641,3 +1641,35 @@ pushed as literals (no relocation entries), not addresses.
   here: party members get the clear sheet and water or the dark sheet,
   then the name row; every other number the dark sheet and the two empty
   labels. It returns the last call's `eax`.
+- `TOMakePktSeqPrimLayout_008fe0b0(prim)` draws a menu-sequence
+  primitive of type 6 (caller `0x00a7bbc0`). The primitive holds four
+  colour bytes at `+4..+7` (and the words `+4`, `+8` as corner colours),
+  the position `i16 +0xc`/`+0xe`, the scale in percent `i16
+  +0x10`/`+0x12` (100 = none) and the shape `u16 +0x14`. Shapes 0x19b,
+  0x19c, 0x19f, 0x1a3 and 0x1fb draw nothing (`eax` the shape). 0x1a1 is
+  the gauge quad `TOMkpShapeXYWHUVC2(-1, x0 - X2(w / 2), Y2(535 - h /
+  2), X2(w), Y2(h), 1759, 1, 1835, 77, +4, +8)` with `w`, `h` = 120 x
+  the scale (the scale stored as `f32` first, the products kept at
+  double precision) and `x0` 160 at `x` 0x74, else 388; it draws nothing
+  below `y` 0x14a (`eax` 0x14a). 0xf0 is shape 200 at `(x - X2(10), y -
+  Y2(185))`, `X2(89)` x `Y2(186)`. Other shapes below 600 draw window
+  layout `shape` (`TOCopyWindowLayout_008fa7d0(shape)` below 200,
+  `(shape - 200)` below 400, sheet 0x3e00; `_008fa450(shape - 400)` on
+  sheet 0x3f00 below 600; `TOGetImageWH` gives the sheet size). Each
+  12-byte part (`u`, `v`, `i8 dx`, `i8 dy`, `u16 w`, `h`, two flip
+  words) becomes a 0x98-byte UI record: corners `ftol(dx / 100 * scale)`
+  and `ftol((w + dx) / 100 * scale)` plus `x` (likewise for y), swapped
+  when the flip word is 1; UVs `u / width`, `(u + w - 1) / width` (the
+  sum stored as `f32` first), `v` likewise; the colour bytes at both
+  corners; `+0x80`, `+0x88`, `+0x90`, `+0x94` zeroed once. 0x19e and
+  0x1fc pass the record through `ShapeDataModify(record, 0x102d /
+  0x1fc)` first; then `graphicDrawUIElement(record, texture, 1, 0, 0)`.
+  0x19d draws only the first part, as the cursor `0x008f59c0(ftol(x *
+  1920 / 512 - 21), ftol(y * 1080 / 416 - 18), 0x14c, 0x20, 0x112, 0x3d,
+  a, a)` and shape 400 beside it (`a` the colour byte `+7`, colour `a <<
+  24 | 0x808080`), unless the corner's `y` is past 300 (`eax` is then the
+  x87 status word of that comparison, 0x3000 plus sticky flags). 0x1f7
+  draws the first part as shape 400 left of and above its corner.
+  `eax`: the layout pointer after the parts, the colour byte `+7` for an
+  empty layout. From 600 up the original reads a stale stack word as the
+  layout; the port draws nothing.

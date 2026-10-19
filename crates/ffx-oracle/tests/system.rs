@@ -13,8 +13,8 @@ use ffx_bridge::{Global, Mem};
 use ffx_oracle::{Conv, Oracle, Pages};
 use ffx_system::{
     accessor, btl, cd, chr_plate, cmdwin, config, container, daps, dtor, files, fixup, instance,
-    intl, math, menu, msg, names, pad, pkt, render, save, scene, sort, stl, stub, sync, tolib, vbf,
-    window,
+    intl, math, menu, msg, names, pad, pkt, render, save, scene, seq_prim, sort, stl, stub, sync,
+    tolib, vbf, window,
 };
 
 /// The game thread's x87 control word.
@@ -21238,4 +21238,207 @@ fn round37_small_plate_matches_the_original_on_the_snapshot() {
         return;
     };
     round37_small_plate(&mut a, &mut b, &mut Xorshift(0x4037_0022));
+}
+
+/// A cdecl stand-in logging a 0x98-byte UI record (argument 0): its two
+/// corners (0x40 bytes), `+0x80`, `+0x88`, `+0x90`, `+0x94`, then
+/// arguments `1..args` and the tag.
+fn ui_record_logger(cursor: u32, tag: u32, args: u8) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp+0xc]; mov edi, [cursor]
+    let mut v = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x3d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    // mov ecx, 0x10; cld; rep movsd
+    v.extend_from_slice(&[0xb9, 0x10, 0, 0, 0, 0xfc, 0xf3, 0xa5]);
+    // mov eax, [esi+off]; stosd (esi is record + 0x40)
+    for off in [0x40u8, 0x48, 0x50, 0x54] {
+        v.extend_from_slice(&[0x8b, 0x46, off, 0xab]);
+    }
+    // mov eax, [esp+0x10 + 4k]; stosd
+    for k in 0..args - 1 {
+        v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x10 + 4 * k, 0xab]);
+    }
+    // mov eax, tag; stosd
+    v.push(0xb8);
+    v.extend_from_slice(&tag.to_le_bytes());
+    v.push(0xab);
+    // mov [cursor], edi; pop edi; pop esi; ret
+    v.extend_from_slice(&[0x89, 0x3d]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    v
+}
+
+/// Round 37 group C: `TOMakePktSeqPrimLayout_008fe0b0` over the original
+/// `graphicUiRemapX2`/`Y2`: the layout copies return a test layout, the
+/// image size comes from test cells, the shapes and the cursor log, the
+/// UI record is logged by `ShapeDataModify` and `graphicDrawUIElement`.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines
+)]
+fn round37_seq_prim_layout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use seq_prim::bridge as t;
+    let log = alloc(a, b, 0x10000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let layout = alloc(a, b, 4 + 0xc * 8);
+    let prim = alloc(a, b, 0x18);
+    let scratch = alloc(a, b, t::SEQ_PRIM_LAYOUT_SCRATCH as usize);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    // TOGetImageWH: width and height from cells + 8 / + 0xc through
+    // arguments 1 and 2
+    let mut wh_tail = Vec::new();
+    for (k, cell) in [(0u8, cells + 8), (1, cells + 0xc)] {
+        // mov edx, [esp+8+4k]; mov eax, [cell]; mov [edx], eax
+        wh_tail.extend_from_slice(&[0x8b, 0x54, 0x24, 8 + 4 * k, 0xa1]);
+        wh_tail.extend_from_slice(&cell.to_le_bytes());
+        wh_tail.extend_from_slice(&[0x89, 0x02]);
+    }
+    let stands: Vec<(u32, Vec<u8>)> = vec![
+        (
+            0x0090_3bb0,
+            pick_logger(cursor, 0x3bb0, &all(9), &[], &ret_cell(cells + 0x10)),
+        ),
+        (
+            0x0090_3ee0,
+            pick_logger(cursor, 0x3ee0, &all(11), &[], &ret_cell(cells + 0x14)),
+        ),
+        (
+            0x008f_a7d0,
+            pick_logger(cursor, 0xa7d0, &all(1), &[], &ret_cell(cells)),
+        ),
+        (
+            0x008f_a450,
+            pick_logger(cursor, 0xa450, &all(1), &[], &ret_cell(cells)),
+        ),
+        (
+            0x008a_c8c0,
+            pick_logger(cursor, 0xc8c0, &all(1), &[], &ret_cell(cells + 4)),
+        ),
+        (
+            0x008a_c400,
+            pick_logger(cursor, 0xc400, &all(1), &[], &wh_tail),
+        ),
+        (
+            0x008f_59c0,
+            pick_logger(cursor, 0x59c0, &all(8), &[], &ret_cell(cells + 0x18)),
+        ),
+        (0x008e_8a10, ui_record_logger(cursor, 0x8a10, 2)),
+        (0x0063_eee0, ui_record_logger(cursor, 0xeee0, 5)),
+    ];
+    for (k, (sym, code)) in (0u32..).zip(&stands) {
+        let stand = stand_in8(a, b, 0x80 * k, code);
+        redirect(a, b, *sym, stand);
+    }
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let kinds = [
+        0x19fu16, 0x1a3, 0x19b, 0x19c, 0x1fb, 0x1a1, 0x1a1, 0xf0, 0x19d, 0x19d, 0x19e, 0x1f7,
+        0x1fc, 0, 199, 200, 399, 400, 599, 0x1a0,
+    ];
+    let sizes = [1.0f32, 256.0, 512.0, 3.0, 1.0e-30, 1024.0, 77.5];
+    for k in 0..1500u32 {
+        put(a, b, cursor, log);
+        put(a, b, cells, layout);
+        for j in 1..0x10 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        for j in 0..2 {
+            let s = if rng.next().is_multiple_of(3) {
+                sizes[(rng.next() % sizes.len() as u32) as usize]
+            } else {
+                (rng.next() % 1024 + 1) as f32
+            };
+            put(a, b, cells + 8 + 4 * j, s);
+        }
+        let count = [0u32, 1, 1, 2, 3, 5, 8][(rng.next() % 7) as usize];
+        put(a, b, layout, count);
+        for j in 0..8 {
+            let e = layout + 4 + 0xc * j;
+            for w in 0..3 {
+                put(a, b, e + 4 * w, rng.next());
+            }
+            put(a, b, e + 4, (rng.next() % 300) as u16);
+            put(a, b, e + 6, (rng.next() % 300) as u16);
+            put(a, b, e + 8, [0u16, 1, 1, 2][(rng.next() % 4) as usize]);
+            put(
+                a,
+                b,
+                e + 0xa,
+                [0u16, 1, 1, 0xffff][(rng.next() % 4) as usize],
+            );
+        }
+        let kind = if rng.next().is_multiple_of(3) {
+            (rng.next() % 600) as u16
+        } else {
+            kinds[(rng.next() % kinds.len() as u32) as usize]
+        };
+        for w in 0..5 {
+            put(a, b, prim + 4 * w, rng.next());
+        }
+        put(a, b, prim + 0x14, kind);
+        let word = |r: &mut Xorshift, near: i16| match r.next() % 4 {
+            0 => r.next() as u16,
+            _ => near
+                .cast_unsigned()
+                .wrapping_add((r.next() % 600) as u16)
+                .wrapping_sub(300),
+        };
+        let x = if rng.next().is_multiple_of(4) {
+            0x74
+        } else {
+            word(rng, 200)
+        };
+        put(a, b, prim + 0xc, x);
+        put(a, b, prim + 0xe, word(rng, 300));
+        for at in [0x10, 0x12] {
+            let s = match rng.next() % 4 {
+                0 | 1 => 100,
+                2 => (rng.next() % 300) as u16,
+                _ => rng.next() as u16,
+            };
+            put(a, b, prim + at, s);
+        }
+        if kind == 0x19d && rng.next().is_multiple_of(3) {
+            // the cursor's corner exactly on its line (y 300)
+            put(a, b, layout + 4 + 3, 0u8);
+            put(a, b, layout + 4 + 0xa, 0u16);
+            put(a, b, prim + 0x12, 100u16);
+            put(a, b, prim + 0xe, 300u16);
+        }
+        for j in 0..(t::SEQ_PRIM_LAYOUT_SCRATCH / 4) {
+            put(a, b, scratch + 4 * j, rng.next());
+        }
+        let want = eax(a, 0x008f_e0b0, &[prim]);
+        let got = t::make_pkt_seq_prim_layout(b, prim, scratch, remap, call);
+        assert_eq!(want, got, "seq prim layout {k} kind {kind:#x}");
+        // the port's record and image size live in `scratch`, the
+        // original's on its stack
+        let kept: [u32; 40] = Mem::read(b, scratch);
+        Mem::write(a, scratch, kept);
+        same_memory(&format!("seq prim layout {k} kind {kind:#x}"), a, b);
+    }
+}
+
+#[test]
+fn round37_seq_prim_layout_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round37_seq_prim_layout(&mut a, &mut b, &mut Xorshift(0x4037_0031));
+}
+
+#[test]
+fn round37_seq_prim_layout_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round37_seq_prim_layout(&mut a, &mut b, &mut Xorshift(0x4037_0032));
 }

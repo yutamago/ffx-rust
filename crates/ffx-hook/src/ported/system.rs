@@ -6,8 +6,8 @@ use ffx_bridge::Mem;
 use ffx_menu::scene::bridge as menu_scene;
 use ffx_system::{
     accessor, btl, cd, chr_plate, cmdwin, config, container, daps, dtor, files, fixup, heap,
-    instance, intl, math, menu, msg, names, pad, pkt, plate, render, save, scene, sort, stl, stub,
-    sync, tolib, vbf, window,
+    instance, intl, math, menu, msg, names, pad, pkt, plate, render, save, scene, seq_prim, sort,
+    stl, stub, sync, tolib, vbf, window,
 };
 
 use super::{call0, mem, ported};
@@ -1196,6 +1196,18 @@ ported! {
             &mut mem(),
             [chr, x, y],
             text,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_ptr,
+        )
+    }
+    /// `TOMakePktSeqPrimLayout_008fe0b0(prim)`.
+    TOMakePktSeqPrimLayout_008fe0b0 @ 0x008f_e0b0 => extern "C" fn to_make_pkt_seq_prim_layout(prim: u32) -> u32 {
+        let mut frame = super::StackFrame::<40>::new();
+        let scratch = frame.at();
+        seq_prim::bridge::make_pkt_seq_prim_layout(
+            &mut mem(),
+            prim,
+            scratch,
             |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
             call_ptr,
         )

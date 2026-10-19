@@ -11118,6 +11118,7 @@
 0x008fdee0 function TOMakePktScissor          # (x0, y0, x1, y1): g_TkMenuScissorOn = 1, XYUV 0, box = the four ints as floats; fh v3:bsim1.00+call.cs 0x008fdee0 cdecl
 0x008fe040 function TOMakePktSeqPrimFunc      # fh v3:exact 0x008fe040
 0x008fe080 function TOMakePktSeqPrimMes       # fh v3:exact 0x008fe080
+0x008fe0b0 function TOMakePktSeqPrimLayout_008fe0b0 # cdecl(prim): menu-sequence primitive type 6 (caller 0x00a7bbc0) as a window-layout shape (u16 +0x14): 0x19b/0x19c/0x19f/0x1a3/0x1fb nothing, 0x1a1 the gauge quad (TOMkpShapeXYWHUVC2 -1, 120 x the i16 percent scales +0x10/+0x12), 0xf0 shape 200, below 600 each part of TOCopyWindowLayout_008fa7d0/_008fa450 as a 0x98-byte record for graphicDrawUIElement (0x19e/0x1fc through ShapeDataModify, 0x19d the cursor 0x008f59c0 + shape 400, 0x1f7 shape 400); 600 up reads a stale stack word as the layout; ported (system round 37); name ours (Switch-style sibling of TOMakePktSeqPrimFunc/Mes)
 0x008feb00 function TOMakePktShapeCursor      # fh v3:exact 0x008feb00
 0x008ff020 function TOXyoffsetPacket_008ff020 # cdecl(x, y) -> x: at *0x018716cc a GIF tag (0x8001, 0x10000000, A+D) and XYOFFSET_1 (x, y | sign of x), the cursor +0x20; caller TODrawMovieMessage; name ours
 0x008ff140 function TOClearEntry_008ff140 # cdecl(i): the 16-byte entry i (< 16, signed) of 0x018762e0 zeroed, returns its address; callers 0x008e3cf0, 0x008e4140; name ours
