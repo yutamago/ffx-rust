@@ -3126,6 +3126,65 @@ pub mod bridge {
         );
     }
 
+    /// `rcbgScaleVector_00928600(out, v, s)` and `rcVu0Add_009285a0(out,
+    /// a, b)`, [`rcfx_particle_calc`]'s vector calls.
+    pub const PARTICLE_CALC_CALLS: [u32; 2] = [0x0092_8600, 0x0092_85a0];
+
+    /// `rcfxParticleCalc(sys)` (`0x00928710`, from `rcfxParticleSetTime`;
+    /// name ours): one step of a particle system. The step `dt` (`+8`,
+    /// `f64`, as `f32`), the mass (`+0x20`), the count (`+0x1c`) and the
+    /// position (`+0x24`), velocity (`+0x2c`) and force (`+0x30`) arrays
+    /// (16 bytes a particle) are taken first. The forces are zeroed, each
+    /// of the `+0x34` force objects (`+0x38` table) with a callback
+    /// (`+0x14`) runs it (`(force, sys)`), then each particle's velocity
+    /// gains `force * (dt / mass)` and its position `velocity * dt`; `+8`
+    /// is `dt` again, now exactly an `f32`. `work` is the original's
+    /// 16-byte vector. Returns the `eax` it ends with (the last add's,
+    /// else the last force object or callback result, else the force
+    /// array).
+    pub fn rcfx_particle_calc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        sys: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use crate::x87;
+        let field = |mem: &M, o: u32| mem.read::<u32>(sys.wrapping_add(o));
+        let mass = x87::copy(field(mem, 0x20));
+        let count = field(mem, 0x1c).cast_signed();
+        let forces = field(mem, 0x30);
+        let pos = field(mem, 0x24);
+        let dt = x87::store(mem.read::<f64>(sys.wrapping_add(8)));
+        let vel = field(mem, 0x2c);
+        // (with particles the last add's `eax` replaces this one)
+        let mut eax = forces;
+        for i in 0..count.max(0).cast_unsigned() {
+            mem.write(forces.wrapping_add(i.wrapping_mul(0x10)), [0u32; 4]);
+        }
+        let mut i = 0;
+        while i < field(mem, 0x34).cast_signed() {
+            let force =
+                mem.read::<u32>(field(mem, 0x38).wrapping_add(i.cast_unsigned().wrapping_mul(4)));
+            eax = force;
+            let callback = mem.read::<u32>(force.wrapping_add(0x14));
+            if callback != 0 {
+                eax = call(mem, callback, &[force, sys]);
+            }
+            i += 1;
+        }
+        let step = x87::store(x87::load(dt) / x87::load(mass));
+        let [scale, add] = PARTICLE_CALC_CALLS.map(|f| mem.rebase(f));
+        for i in 0..count.max(0).cast_unsigned() {
+            let at = |base: u32| base.wrapping_add(i.wrapping_mul(0x10));
+            call(mem, scale, &[work, at(forces), step]);
+            call(mem, add, &[at(vel), at(vel), work]);
+            call(mem, scale, &[work, at(vel), dt]);
+            eax = call(mem, add, &[at(pos), at(pos), work]);
+        }
+        mem.write(sys.wrapping_add(8), x87::load(dt));
+        eax
+    }
+
     /// `rcfxSpringCalc(s, sys)` (`0x00928aa0`, the spring's `+0x14`
     /// callback): for each of the `+0x1c` springs, the pair `(a, b)`
     /// (`+0x20`, two `i32` particle indices) of the particle system's

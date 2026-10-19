@@ -19957,3 +19957,96 @@ fn r13dd_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_9e02);
     r13dd_cases(&mut t, &mut rng, 250);
 }
+
+// ---- field agent r13, group e: a particle system's step ----
+
+/// Group e (r13) on `t`: `rcfxParticleCalc` over up to 9 particles (or
+/// a negative count) and up to 3 force objects, each with no callback, a
+/// logged one, one that sets the forces or one that changes the system's
+/// step, mass and count (which the step must have taken before); the vector calls run as the
+/// original.
+fn r13ee_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model::bridge as mb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(0x400), t.alloc(4));
+    let mut meddle = vec![0x8b, 0x44, 0x24, 0x08];
+    for (o, v) in [(0x20u8, 0x4000_0000u32), (0x1c, 0), (0x08, 0), (0x0c, 0)] {
+        meddle.extend_from_slice(&[0xc7, 0x40, o]);
+        meddle.extend_from_slice(&v.to_le_bytes());
+    }
+    meddle.push(0xc3);
+    // push esi; push edi; mov eax, [esp + 0x10] (sys); mov edi, [eax + 0x30];
+    // mov esi, pushes; mov ecx, 0x40; rep movsd; pop edi; pop esi; ret
+    let pushes = t.alloc(0x100);
+    let mut push = vec![0x56, 0x57, 0x8b, 0x44, 0x24, 0x10, 0x8b, 0x78, 0x30, 0xbe];
+    push.extend_from_slice(&pushes.to_le_bytes());
+    push.extend_from_slice(&[0xb9, 0x40, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc3]);
+    let stubs = t.cave(&[
+        (None, log_stub(log, rv, 1, 2)),
+        (None, meddle),
+        (None, push),
+    ]);
+    let sys = t.alloc(0x40);
+    let (pos, vel, forces) = (t.alloc(0x100), t.alloc(0x100), t.alloc(0x100));
+    let (table, objs) = (t.alloc(0x10), t.alloc(0x60));
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let n = if rng.below(8) == 0 {
+            -1 - rng.below(3).cast_signed()
+        } else {
+            rng.below(10).cast_signed()
+        };
+        t.put(sys + 0x1c, n);
+        t.put(sys + 0x24, pos);
+        t.put(sys + 0x2c, vel);
+        t.put(sys + 0x30, forces);
+        t.put(sys + 0x20, r6b_fine(rng, 0.05, 2.0));
+        t.put(
+            sys + 8,
+            f64::from(f32::from_bits(r6b_fine(rng, 0.001, 0.1))) + 1e-12,
+        );
+        for at in [pos, vel, forces, pushes] {
+            for w in 0..0x40 {
+                t.put(at + 4 * w, r6b_fine(rng, -50.0, 50.0));
+            }
+        }
+        let k = rng.below(4);
+        t.put(sys + 0x34, k);
+        t.put(sys + 0x38, table);
+        for j in 0..k {
+            let o = objs + 0x20 * j;
+            t.put(table + 4 * j, o);
+            t.put(
+                o + 0x14,
+                [0, stubs[0], stubs[1], stubs[2], stubs[2]][rng.below(5) as usize],
+            );
+        }
+        let work = t.stack_scratch(0x100);
+        let vf = t.b.rebase(0x00c8_f974);
+        t.same_but(
+            "rcfxParticleCalc",
+            &[(vf, 12)],
+            |o| o.eax(0x0092_8710, &[sys]),
+            |m| mb::rcfx_particle_calc(m, sys, work, call),
+        );
+    }
+}
+
+/// Group e (r13) on the image.
+#[test]
+fn r13ee_particle_calc_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_9f01);
+    r13ee_cases(&mut t, &mut rng, 400);
+}
+
+/// Group e (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13ee_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_9f02);
+    r13ee_cases(&mut t, &mut rng, 200);
+}

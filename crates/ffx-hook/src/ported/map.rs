@@ -3980,6 +3980,11 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcfxParticleCalc(sys)`: the vector in a frame.
+    rcfxParticleCalc @ 0x0092_8710 => extern "C" fn shim_rcfx_particle_calc(sys: u32) -> u32 {
+        let mut w = super::StackFrame::<4>::new();
+        model::bridge::rcfx_particle_calc(&mut mem(), sys, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `pppPmcomDataQueue_0075ff00(data)`.
     pppPmcomDataQueue_0075ff00 @ 0x0075_ff00 => extern "C" fn shim_ppp_pmcom_data_queue(data: u32) -> u32 {
         ke::bridge::ppp_pmcom_data_queue(&mut mem(), data)

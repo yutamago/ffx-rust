@@ -11931,6 +11931,7 @@
 0x009285a0 function rcVu0Add_009285a0        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller 0x00928710; name ours; ported (field round 45)
 0x00928600 function rcbgScaleVector_00928600  # the same code as rcbgScaleVector 0x009200a0
 0x00928660 function rcfxParticleAddForce      # (ps, force): inserted before the first force of greater priority (+0x18); rcRealloc rcfxParticle.c 0x61/0x6e; rcbgPSimAddDamp/AddWind
+0x00928710 function rcfxParticleCalc          # (sys): one particle step from rcfxParticleSetTime (name ours): dt = f32(+8 f64), mass +0x20, count +0x1c, positions +0x24, velocities +0x2c, forces +0x30 (16 bytes each) taken first; forces zeroed; each of +0x34 force objects (+0x38 table) runs its +0x14 callback (obj, sys) when set; then per particle vel += force * f32(dt / mass), pos += vel * dt (rcbgScaleVector_00928600, rcVu0Add_009285a0 through a stack vector); +8 = dt; ported (field r13, ffx_field::model)
 0x00928800 function rcfxParticleFiniForces    # (ps): each force's delete (+0x4), then the table (+0x38) freed
 0x00928850 function rcfxParticleDelete        # (ps): rcfxParticleFini + rcFree
 0x00928870 function rcfxParticleFini          # (ps): rcFree +0x24..+0x30, rcfxParticleFiniForces
