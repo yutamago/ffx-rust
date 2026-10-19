@@ -17,6 +17,11 @@ pub mod bridge {
         sym.wrapping_sub(IMAGE_BASE).wrapping_add(mem.image_base())
     }
 
+    fn game<M: Mem>(mem: &mut M, call: Call<'_, M>, sym: u32, args: &[u32]) -> u32 {
+        let f = code(mem, sym);
+        call(mem, f, args)
+    }
+
     /// Counts down each frame; the battle waits while it runs.
     pub const PAUSE: Global<u8> = Global::new(0x0112_c9d0);
     /// Set while an actor plays a hit motion (`MsCheckChrHitMotionAll`).
@@ -674,5 +679,306 @@ pub mod bridge {
             mem.write(a.wrapping_add(0x65c), wait.to_le_bytes()[0]);
         }
         -1
+    }
+
+    /// `g_GsDefDrawEnv2` (`i8`, 1 on a PS2-like draw environment): the
+    /// debug camera sleep and the debug pad commands need it.
+    pub const DEF_DRAW_ENV2: Global<i8> = Global::new(0x00b5_ec4f);
+    /// The party's leader has HP (`u32`, 1 while actor 0's `+0x5d0` is above
+    /// 0; 1 outside battle).
+    pub const LEADER_ALIVE: Global<u32> = Global::new(0x00c4_21fc);
+    /// This frame's pad (`u32`, the low half of `TkGetControlerHist(0, 0,
+    /// 0)`) and last frame's.
+    pub const PAD_NOW: Global<u32> = Global::new(0x0112_c904);
+    pub const PAD_LAST: Global<u32> = Global::new(0x0112_c908);
+    /// `MsCheckPlyBtlPosAll`'s last result (`u8`).
+    pub const PLY_POS_OK: Global<u8> = Global::new(0x0112_c9f6);
+    /// Two words cleared each frame (`0x0112c8e0`, `g_BtlLastSe`).
+    pub const FRAME_CLEARED: Global<[u32; 2]> = Global::new(0x0112_c8e0);
+    /// No save written at the battle's end (`u8`).
+    pub const NO_SAVE: Global<u8> = Global::new(0x0112_a91a);
+
+    /// The debug pad combination (L1, R1, L2, R2, X: bits 4, 8, 1, 2, 0x40)
+    /// and its extras: with Triangle (0x20) the battle module restarts;
+    /// Start (0x800) with Square (0x80) ends the battle.
+    pub const DEBUG_COMBO: u32 = 0x4f;
+    pub const DEBUG_RESTART: u32 = 0x20;
+    pub const DEBUG_END: [u32; 2] = [0x800, 0x80];
+    /// `"## BATTLE %x %x\n"`.
+    pub const DEBUG_BATTLE_MESSAGE: u32 = 0x00b5_4b58;
+
+    /// `MsBattleProcess`'s callees, all run through the game (the battle
+    /// ones are hooked ports): `MsBtlReadManage`, `MsDebugCameraSleep`,
+    /// `FFXIsDebug`, `TkGetControlerHist`, `MsDebugGetFieldNum`,
+    /// `dbgPrintf`, `TOAllClearMessageWindow`, `MsBattleLabelExe`,
+    /// `MsBattleExe`, `MsEventEffectProcess`, `TODebugGetPadPrintFlag`,
+    /// `MsBattleProcess_DebugStatus_00792f20`, `MsSEP3Dprocess`,
+    /// `MsMenuCloseTitleWindow`, `MsCheckPlyBtlPosAll`, `MsResetNormalCalc`,
+    /// `MsSEPtransProcess`, the frame's steps ([`FRAME_STEPS`]), the
+    /// soft reset (`TkCheckSoftWareReset`, `MsCheckSoftResetOk`), the
+    /// debug restart (`opd_exit_from_ovl`, `MsNowMusicStop`,
+    /// `MsCameraInit`, [`DEBUG_RESTART_STEPS`]) and the battle's end
+    /// ([`END_STEPS`], `MsSetSaveData`, `MsBattleFree`,
+    /// `AtelBattleEndCallback`).
+    pub const MS_BTL_READ_MANAGE: u32 = 0x0078_3020;
+    pub const MS_DEBUG_CAMERA_SLEEP: u32 = 0x0079_21c0;
+    pub const FFX_IS_DEBUG: u32 = 0x0088_7c50;
+    pub const TK_GET_CONTROLER_HIST: u32 = 0x0088_8d70;
+    pub const MS_DEBUG_GET_FIELD_NUM: u32 = 0x007c_5f50;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const TO_ALL_CLEAR_MESSAGE_WINDOW: u32 = 0x008a_b590;
+    pub const MS_BATTLE_LABEL_EXE: u32 = 0x0078_1c90;
+    pub const MS_BATTLE_EXE: u32 = 0x0078_1020;
+    pub const MS_EVENT_EFFECT_PROCESS: u32 = 0x0078_8c00;
+    pub const TO_DEBUG_GET_PAD_PRINT_FLAG: u32 = 0x008a_bd20;
+    pub const MS_BATTLE_PROCESS_DEBUG_STATUS: u32 = 0x0079_2f20;
+    pub const MS_SEP_3D_PROCESS: u32 = 0x007a_0930;
+    pub const MS_MENU_CLOSE_TITLE_WINDOW: u32 = 0x0078_fa30;
+    pub const MS_CHECK_PLY_BTL_POS_ALL: u32 = 0x0079_2170;
+    pub const MS_RESET_NORMAL_CALC: u32 = 0x0079_5c40;
+    pub const MS_SEP_TRANS_PROCESS: u32 = 0x007a_0540;
+    pub const MS_BATTLE_PROCESS_ORDER: u32 = 0x0079_0fb0;
+    pub const MS_BATTLE_PROCESS_CHR_DAMAGE: u32 = 0x0079_11e0;
+    pub const MS_SET_DEATH_ALL: u32 = 0x0079_1760;
+    pub const MS_STONE_EFFECT_PROCESS: u32 = 0x007a_2690;
+    pub const MS_CHECK_CHR_HIT_MOTION_ALL: u32 = 0x007a_f2b0;
+    pub const MS_BATTLE_PROCESS_STATUS: u32 = 0x0079_17d0;
+    pub const MS_BATTLE_PROCESS_INPUT_CUE: u32 = 0x0079_2a90;
+    pub const TK_CHECK_SOFT_WARE_RESET: u32 = 0x0087_2350;
+    pub const MS_CHECK_SOFT_RESET_OK: u32 = 0x0079_2e80;
+    pub const OPD_EXIT_FROM_OVL: u32 = 0x007f_f8e0;
+    pub const MS_NOW_MUSIC_STOP: u32 = 0x007a_00b0;
+    pub const MS_CAMERA_INIT: u32 = 0x007b_d5d0;
+    pub const MS_SET_SAVE_DATA: u32 = 0x0078_5fc0;
+    pub const MS_BATTLE_FREE: u32 = 0x0078_1590;
+    pub const ATEL_BATTLE_END_CALLBACK: u32 = 0x0086_1160;
+    /// The frame's steps after the input cue's: `TOControlBtlWindow`
+    /// (system), `MsCommandCueProcess`, `MsLimitTypeProcess`,
+    /// `MsMessageCueProcess`, `MsNumberCalcProcess`, `MsMoveChr`,
+    /// `MsMotionPosCheckAll`, `MsEffectStart`.
+    pub const FRAME_STEPS: [u32; 8] = [
+        0x0089_ae20,
+        0x0079_2210,
+        0x007b_1180,
+        0x0079_cdf0,
+        0x0079_f5e0,
+        0x007a_ab80,
+        0x007a_a140,
+        0x0078_8480,
+    ];
+    /// The debug restart's teardown and start: `MsBattleAllFree`,
+    /// `MsEtEffectFree`, `MsBattleMemInit`, `MsEnvInit`, `MsBattleInit`,
+    /// `MsEtEffectRead`.
+    pub const DEBUG_RESTART_STEPS: [u32; 6] = [
+        0x0078_0b40,
+        0x0079_e630,
+        0x0078_1d00,
+        0x0078_2770,
+        0x0078_1700,
+        0x0078_2740,
+    ];
+    /// The battle's end before the save: `MsAtelResetMoveCameraID(2)`,
+    /// the reverb off, `Sg_SetKeepFps(1)`, `TOAllClearMessageWindow`,
+    /// `TkGetNowEventJumpMapNo`, `MsBtlGetTerm`.
+    pub const END_STEPS: [(u32, &[u32]); 6] = [
+        (0x007b_a860, &[2]),
+        (0x0088_7170, &[0]),
+        (0x0082_1ae0, &[1]),
+        (0x008a_b590, &[]),
+        (0x0086_c1f0, &[]),
+        (0x0079_8b70, &[]),
+    ];
+
+    /// The battle's scene for `MsBattleExe`: the field index (`i16`), group
+    /// and slot (`i8`), mode 0.
+    fn battle_exe<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        use crate::init::bridge::{SCENE_FIELD_INDEX, SCENE_GROUP_INDEX, SCENE_SLOT_INDEX};
+        let args = [
+            i32::from(SCENE_FIELD_INDEX.get(mem)),
+            i32::from(SCENE_GROUP_INDEX.get(mem)),
+            i32::from(SCENE_SLOT_INDEX.get(mem)),
+        ]
+        .map(i32::cast_unsigned);
+        game(mem, call, MS_BATTLE_EXE, &[0, args[0], args[1], args[2]]);
+    }
+
+    /// The pad of this frame (`TkGetControlerHist(0, 0, 0)`'s low half).
+    fn pad<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
+        game(mem, call, TK_GET_CONTROLER_HIST, &[0, 0, 0]) & 0xffff
+    }
+
+    /// `MsBattleProcess()` (`0x00790c10`): one frame of the battle module.
+    /// First the read (`MsBtlReadManage`) and, on the PS2-like draw
+    /// environment, the debug camera sleep. Outside a battle (status 0):
+    /// on a debug build the pad combination ([`DEBUG_COMBO`]) starts the
+    /// debug field's battle (`MsBattleLabelExe`), a requested battle
+    /// (`g_BtlExe`) starts (`MsBattleExe`), and the event effect runs.
+    /// In a battle: the debug status print, the leader's HP flag, the pad,
+    /// the 3D sounds and the frame count, the per-frame clears, the
+    /// pause, title window and party position counters, the sound
+    /// transfers; while nothing holds the battle, the order (status 1); the
+    /// damage, deaths, stone and hit motions, the end fades; while
+    /// nothing holds it and no fade runs the status step, and at status 1
+    /// the input cue; then [`FRAME_STEPS`]. A soft reset ends the battle
+    /// (kind 6). On a debug build with the PS2-like environment, Start with
+    /// Square ends it (status 1, `g_BtlEndForced` 5) and at status 1 the
+    /// combination restarts the battle (with Triangle the whole module) and
+    /// returns. Status 0x21 or end kind 5 or 6: the battle's end
+    /// ([`END_STEPS`], the save unless [`NO_SAVE`], `MsBattleFree`,
+    /// `AtelBattleEndCallback(type, scene, music, kind)`, the encounter
+    /// type cleared). Then the pad is kept for the next frame and the event
+    /// effect runs.
+    #[allow(clippy::too_many_lines)]
+    pub fn ms_battle_process<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        use crate::battle_end::bridge::{END_FADE, END_FADE_OUT};
+        use crate::state::bridge::{EXE, SCENE_FIELD, SCENE_GROUP, STATUS};
+        game(mem, &mut *call, MS_BTL_READ_MANAGE, &[]);
+        let ps2 = DEF_DRAW_ENV2.get(mem) == 1;
+        LEADER_ALIVE.set(mem, 1);
+        if ps2 {
+            let v = i32::from(
+                crate::camera::bridge::DEBUG_CAMERA_SLEEP_ON
+                    .get(mem)
+                    .cast_signed(),
+            );
+            game(mem, &mut *call, MS_DEBUG_CAMERA_SLEEP, &[v.cast_unsigned()]);
+        }
+        if crate::state::bridge::ms_battle_get_status(mem) == 0 {
+            if ps2 && game(mem, &mut *call, FFX_IS_DEBUG, &[]) != 0 {
+                let pad = pad(mem, &mut *call);
+                if pad & DEBUG_COMBO == DEBUG_COMBO {
+                    let n = game(mem, &mut *call, MS_DEBUG_GET_FIELD_NUM, &[]);
+                    let fmt = code(mem, DEBUG_BATTLE_MESSAGE);
+                    game(mem, &mut *call, DBG_PRINTF, &[fmt, pad, n]);
+                    game(mem, &mut *call, TO_ALL_CLEAR_MESSAGE_WINDOW, &[]);
+                    let n = game(mem, &mut *call, MS_DEBUG_GET_FIELD_NUM, &[]);
+                    game(mem, &mut *call, MS_BATTLE_LABEL_EXE, &[n, 0, 0]);
+                }
+            }
+            if EXE.get(mem) != 0 {
+                battle_exe(mem, &mut *call);
+            }
+            game(mem, call, MS_EVENT_EFFECT_PROCESS, &[]);
+            return;
+        }
+        if game(mem, &mut *call, TO_DEBUG_GET_PAD_PRINT_FLAG, &[]) != 0 {
+            game(mem, &mut *call, MS_BATTLE_PROCESS_DEBUG_STATUS, &[]);
+        }
+        let leader = ms_get_chr(mem, 0);
+        let hp: i32 = mem.read(leader.wrapping_add(0x5d0));
+        LEADER_ALIVE.set(mem, u32::from(hp > 0));
+        let pad = pad(mem, &mut *call);
+        PAD_NOW.set(mem, pad);
+        let sep = game(mem, &mut *call, MS_SEP_3D_PROCESS, &[]);
+        let frames = crate::damage_end::bridge::COMMAND_FRAMES;
+        frames.set(mem, frames.get(mem).wrapping_add(1));
+        crate::battle_end::bridge::END_HOLD.set(mem, sep.to_le_bytes()[0]);
+        crate::misc::bridge::MENU_COMMAND_SET.set(mem, 0);
+        FRAME_CLEARED.set(mem, [0; 2]);
+        if PAUSE.get(mem) != 0 {
+            PAUSE.set(mem, PAUSE.get(mem) - 1);
+        }
+        let title = crate::state::bridge::TITLE_WINDOW;
+        let [t, rest] = title.get(mem);
+        if t > 0 {
+            title.set(mem, [t - 1, rest]);
+            if t - 1 <= 0 {
+                game(mem, &mut *call, MS_MENU_CLOSE_TITLE_WINDOW, &[0]);
+            }
+        }
+        let leaves = crate::parse::bridge::PARTY_LEAVES;
+        if leaves.get(mem) != 0 {
+            let ok = game(mem, &mut *call, MS_CHECK_PLY_BTL_POS_ALL, &[]).to_le_bytes()[0];
+            PLY_POS_OK.set(mem, ok);
+            if ok == 0 {
+                leaves.set(mem, 0);
+                game(mem, &mut *call, MS_RESET_NORMAL_CALC, &[]);
+            }
+        }
+        game(mem, &mut *call, MS_SEP_TRANS_PROCESS, &[]);
+        if ms_battle_can_progress(mem) != 0 && STATUS.get(mem) == 1 {
+            game(mem, &mut *call, MS_BATTLE_PROCESS_ORDER, &[]);
+        }
+        for f in [
+            MS_BATTLE_PROCESS_CHR_DAMAGE,
+            MS_SET_DEATH_ALL,
+            MS_STONE_EFFECT_PROCESS,
+        ] {
+            game(mem, &mut *call, f, &[]);
+        }
+        let hit = game(mem, &mut *call, MS_CHECK_CHR_HIT_MOTION_ALL, &[]);
+        HIT_MOTION.set(mem, hit.to_le_bytes()[0]);
+        if END_FADE.get(mem) != 0 {
+            END_FADE.set(mem, END_FADE.get(mem) - 1);
+        }
+        if END_FADE_OUT.get(mem) != 0 {
+            END_FADE_OUT.set(mem, END_FADE_OUT.get(mem) - 1);
+        }
+        if ms_battle_can_progress(mem) != 0 {
+            if END_FADE.get(mem) == 0 {
+                game(mem, &mut *call, MS_BATTLE_PROCESS_STATUS, &[]);
+            }
+            if STATUS.get(mem) == 1 {
+                game(mem, &mut *call, MS_BATTLE_PROCESS_INPUT_CUE, &[]);
+            }
+        }
+        for f in FRAME_STEPS {
+            game(mem, &mut *call, f, &[]);
+        }
+        let end_kind = crate::battle_end::bridge::END_KIND;
+        if game(mem, &mut *call, TK_CHECK_SOFT_WARE_RESET, &[]) != 0
+            && game(mem, &mut *call, MS_CHECK_SOFT_RESET_OK, &[]) != 0
+        {
+            end_kind.set(mem, 6);
+        }
+        if game(mem, &mut *call, FFX_IS_DEBUG, &[]) != 0 && ps2 {
+            let [start, square] = DEBUG_END;
+            if pad & start != 0
+                && pad & square != 0
+                && game(mem, &mut *call, MS_CHECK_SOFT_RESET_OK, &[]) != 0
+            {
+                STATUS.set(mem, 1);
+                crate::menu::bridge::END_FORCED.set(mem, 5);
+            }
+            // (the original then skips the status 0x21 test below: it can
+            // only be status 1 there)
+            if STATUS.get(mem) == 1 && pad & DEBUG_COMBO == DEBUG_COMBO {
+                for f in [OPD_EXIT_FROM_OVL, MS_NOW_MUSIC_STOP, MS_CAMERA_INIT] {
+                    game(mem, &mut *call, f, &[]);
+                }
+                if pad & DEBUG_RESTART != 0 {
+                    for f in DEBUG_RESTART_STEPS {
+                        game(mem, &mut *call, f, &[]);
+                    }
+                }
+                battle_exe(mem, call);
+                return;
+            }
+        }
+        let end = STATUS.get(mem) == 0x21 || matches!(end_kind.get(mem), 5 | 6);
+        if end {
+            for (f, args) in END_STEPS {
+                game(mem, &mut *call, f, args);
+            }
+            if NO_SAVE.get(mem) == 0 {
+                game(mem, &mut *call, MS_SET_SAVE_DATA, &[]);
+            }
+            game(mem, &mut *call, MS_BATTLE_FREE, &[]);
+            let field = i32::from(mem.read::<i16>(SCENE_FIELD.get(mem))).cast_unsigned();
+            let group = u32::from(mem.read::<u8>(SCENE_GROUP.get(mem)));
+            let scene = (field << 16).wrapping_add(group);
+            let kind = u32::from(crate::state::bridge::ENCOUNT_TYPE.get(mem));
+            let music = i32::from(crate::exe::bridge::BATTLE_MUSIC.get(mem).cast_signed());
+            let how = i32::from(end_kind.get(mem));
+            game(
+                mem,
+                &mut *call,
+                ATEL_BATTLE_END_CALLBACK,
+                &[kind, scene, music.cast_unsigned(), how.cast_unsigned()],
+            );
+            crate::state::bridge::ENCOUNT_TYPE.set(mem, 0);
+        }
+        PAD_LAST.set(mem, PAD_NOW.get(mem));
+        game(mem, call, MS_EVENT_EFFECT_PROCESS, &[]);
     }
 }

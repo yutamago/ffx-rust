@@ -176,6 +176,46 @@ pub const GRAPHIC_VFX_SET_CLUT_PARAMETERS: u32 = 0x0064_5630;
 /// `calculateVFXSP_ZMat(mode)` (`0x00712d00`).
 pub const CALCULATE_VFX_SP_ZMAT: u32 = 0x0071_2d00;
 
+/// `KeLnsClm_Draw`'s callees and globals.
+pub mod clm {
+    /// `InitVFXRenderDataShapeField(lo, hi, data, count, alpha)`
+    /// (`0x007113d0`).
+    pub const INIT_RENDER_DATA_SHAPE_FIELD: u32 = 0x0071_13d0;
+    /// `updateVFXRenderDataShapeField(lo, hi, record, desc)`
+    /// (`0x0071a4e0`).
+    pub const UPDATE_RENDER_DATA_SHAPE_FIELD: u32 = 0x0071_a4e0;
+    /// `clearVFXRenderDataShp(lo, hi)` (`0x00713290`).
+    pub const CLEAR_RENDER_DATA_SHP: u32 = 0x0071_3290;
+    /// `graphicDynGeoMemManagerLockForRecordNumInKeLns()` (`0x0063ff60`).
+    pub const DYN_GEO_LOCK: u32 = 0x0063_ff60;
+    /// `graphicDynGeoMemManagerUnlockForRecordNumInKeLns()` (`0x00640050`).
+    pub const DYN_GEO_UNLOCK: u32 = 0x0064_0050;
+    /// `graphicDynGeoMemManagerGetBufferForSegment(rd, 0, records, indices)`
+    /// (`0x0063fdb0`).
+    pub const GET_BUFFER_FOR_SEGMENT: u32 = 0x0063_fdb0;
+    /// `graphicLevelGetNameHash()` (`0x00641da0`).
+    pub const LEVEL_NAME_HASH: u32 = 0x0064_1da0;
+    /// `graphicUseOptimizedVFXShaderByVFXInstance(lo, hi)` (`0x00644b10`).
+    pub const USE_OPTIMIZED_SHADER: u32 = 0x0064_4b10;
+    /// The largest record count of any column's render data
+    /// (`0x010d560c`, `u32`): every column's segment is asked for this.
+    pub const MAX_RECORDS: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x010d_560c);
+    /// The largest index count (three a triangle, `0x010d5610`).
+    pub const MAX_INDICES: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x010d_5610);
+    /// 0.75 and 0.25 (`f64`s, `.rdata`): an element's alpha weight
+    /// `0.75 k + 0.25`.
+    pub const ALPHA_SCALE: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b5_1bd0);
+    /// See [`ALPHA_SCALE`].
+    pub const ALPHA_BIAS: ffx_bridge::Global<f64> = ffx_bridge::Global::new(0x00b3_4f90);
+    /// The level whose columns get alpha 6 (`graphicLevelGetNameHash`).
+    pub const DIM_LEVEL_HASH: u32 = 0x482;
+    /// The draw's scratch: the lens work ([`super::bridge::lns_work`],
+    /// 0x88 bytes) and the source matrix after it.
+    pub const WORK: u32 = 0xc8;
+    /// The source matrix in [`WORK`].
+    pub const SOURCE_MATRIX: u32 = 0x88;
+}
+
 /// The `Ke` objects where the game keeps them, through [`ffx_bridge::Mem`].
 pub mod bridge {
     use crate::camera::FArgs;
@@ -1114,6 +1154,205 @@ pub mod bridge {
         let f = mem.rebase(super::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
         let rd = call(mem, f, &[key.0, key.1]);
         lns_submit(mem, key, rd, w, call);
+    }
+
+    /// `KeLnsClm_Draw(e, flags, work)` (`0x007696c0`): a lens "column",
+    /// one render record per element of its shape (the shape's byte `+8`
+    /// of them, 8 bytes each from `+0x10`, a weight `k` at `+4`).
+    ///
+    /// The VFX program is stamped into the shape's `+0xf` (unless an
+    /// ordering-table pass draws) and the instance's render data looked up
+    /// first; nothing more when the shape cannot draw or the source's
+    /// alpha (`s +0x7c`) is 0. The source matrix: `s` itself (`+0x8f`) or
+    /// the unit matrix with z `s +0x88` plus the VFX offset's. A running
+    /// position starts at the VFX offset's x, y (0 for `+0x8f`) moved by
+    /// `(s +0x70, s +0x74)` times the shape's `i16 +0xc`; each element moves
+    /// it by `k` times `(s +0x70, s +0x74)` times `i16 +0xa` and puts it in
+    /// row 3. The fade `f = (s +0xa4 - s +0x8e) / (e +0x14 * s +0x78)`,
+    /// at most 1 (0 unless positive; `1 - f` when the shape's `+0xe`).
+    /// Each element's alpha is `(0.75 k + 0.25)(colour >> 24 * s +0x7c *
+    /// f)` truncated (6 on level 0x482), and with `K = k * e +0x10` rows 0
+    /// and 1 get x / y `K * s[0] * v[0]` and `K * s[5] * v[1]` (`v` the
+    /// scale vector `e +0x18`), copied to the description's matrix.
+    ///
+    /// Without render data (and a live instance) the shape field's is made
+    /// (`InitVFXRenderDataShapeField`, the alpha function 0x80a, 0x84a for
+    /// flag bit 3) and the largest record and index counts kept
+    /// ([`super::clm::MAX_RECORDS`], [`super::clm::MAX_INDICES`]); any
+    /// render data needs its segment buffer, else nothing more. The
+    /// render data is cleared, each element updates it
+    /// (`updateVFXRenderDataShapeField` with the shape frame's record, a
+    /// live instance only) and `graphicVFXUpdate` follows;
+    /// `graphicUseOptimizedVFXShaderByVFXInstance` last.
+    ///
+    /// `w` is [`super::clm::WORK`] bytes of scratch.
+    #[allow(clippy::too_many_lines)] // one pass, as the original
+    pub fn ke_lns_clm_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        flags: u16,
+        w: u32,
+        call: &mut C,
+    ) {
+        use super::clm;
+        let ld = |mem: &M, at: u32| x87::load(mem.read(at));
+        let at = |o: u32| e.wrapping_add(o);
+        let shape_of = |mem: &M| ptr32(mem.read::<u32>(at(4)));
+        if mem.read::<u32>(mem.rebase(super::PPP_OT_DRAWING)) == 0 {
+            let p = mem.read::<u8>(mem.rebase(super::PPP_CURRENT_PROGRAM));
+            mem.write(shape_of(mem).wrapping_add(0xf), p);
+        }
+        let prog = i32::from(mem.read::<i8>(shape_of(mem).wrapping_add(0xf)));
+        let inst = ptr32(mem.read::<u32>(e));
+        let (lo, hi) = (
+            prog.cast_unsigned(),
+            inst.wrapping_add((prog >> 31).cast_unsigned()),
+        );
+        let f = mem.rebase(super::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+        let mut rd = call(mem, f, &[lo, hi]);
+        let shape = shape_of(mem);
+        let sh = |o: u32| shape.wrapping_add(o);
+        if ptr32(mem.read::<u32>(shape)) == mem.rebase(LNS_DEFAULT)
+            || is_ptr32_null(mem.read::<u32>(sh(4))) != 0
+        {
+            return;
+        }
+        let s = ptr32(mem.read::<u32>(shape));
+        let src = |o: u32| s.wrapping_add(o);
+        if ld(mem, src(0x7c)) == 0.0 {
+            return;
+        }
+
+        let m = w.wrapping_add(clm::SOURCE_MATRIX);
+        let at_offset = mem.read::<u8>(src(0x8f)) == 0;
+        let off = mem.rebase(super::VFX_OFFSET);
+        if at_offset {
+            let f = mem.rebase(super::VU0_UNIT_MATRIX);
+            call(mem, f, &[m]);
+            let z = x87::store(ld(mem, src(0x88)) + ld(mem, off.wrapping_add(8)));
+            mem.write(m.wrapping_add(0x38), z);
+        } else {
+            let f = mem.rebase(super::VU0_COPY_MATRIX);
+            call(mem, f, &[m, s]);
+        }
+        // the render description (lns_work)
+        let colour = mem.read::<u32>(at(8));
+        mem.write(w.wrapping_add(0x14), colour);
+        mem.write(w, mem.read::<u32>(sh(4)));
+        mem.write(w.wrapping_add(0x20), w.wrapping_add(lns_work::MATRIX));
+        mem.write(w.wrapping_add(0x12), flags);
+        mem.write(w.wrapping_add(0x2c), 0u32);
+        mem.write(w.wrapping_add(0x18), 0u32);
+        mem.write(w.wrapping_add(0x1c), 0u32);
+
+        // the running position and the per-element steps
+        let (mut x, mut y) = if at_offset {
+            (ld(mem, off), ld(mem, off.wrapping_add(4)))
+        } else {
+            (0.0, 0.0)
+        };
+        let (dx, dy) = (ld(mem, src(0x70)), ld(mem, src(0x74)));
+        let start = f64::from(mem.read::<i16>(sh(0xc)));
+        let step = f64::from(mem.read::<i16>(sh(0xa)));
+        x = x87::load(x87::store(dx * start + x));
+        let step_x = x87::load(x87::store(dx * step));
+        y = x87::load(x87::store(start * dy + y));
+        let step_y = x87::load(x87::store(step * dy));
+        // the fade
+        let d = x87::load(x87::store(
+            ld(mem, src(0xa4)) - f64::from(mem.read::<u8>(src(0x8e))),
+        ));
+        let mut fade = if d > 0.0 || d.is_nan() {
+            let q = x87::load(x87::store(d / (ld(mem, at(0x14)) * ld(mem, src(0x78)))));
+            if q > 1.0 { 1.0 } else { q }
+        } else {
+            0.0
+        };
+        if mem.read::<u8>(sh(0xe)) != 0 {
+            fade = x87::load(x87::store(1.0 - fade));
+        }
+        let strength = x87::load(x87::store(
+            f64::from(colour >> 24) * ld(mem, src(0x7c)) * fade,
+        ));
+
+        if is_ptr32_null(mem.read::<u32>(e)) == 0 && rd == 0 {
+            let alpha = if flags & 8 != 0 { 0x84a } else { 0x80a };
+            let data = ptr32(mem.read::<u32>(w));
+            let n = u32::from(mem.read::<u8>(sh(8)));
+            let f = mem.rebase(clm::INIT_RENDER_DATA_SHAPE_FIELD);
+            call(mem, f, &[lo, hi, data, n, alpha]);
+            let f = mem.rebase(super::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+            rd = call(mem, f, &[lo, hi]);
+            if rd != 0 {
+                let f = mem.rebase(clm::DYN_GEO_LOCK);
+                call(mem, f, &[]);
+                let geo = mem.read::<u32>(rd.wrapping_add(0x94));
+                let records = mem.read::<u32>(geo.wrapping_add(4));
+                if clm::MAX_RECORDS.get(mem) < records {
+                    clm::MAX_RECORDS.set(mem, records);
+                }
+                let indices = mem.read::<u32>(geo.wrapping_add(8)).wrapping_mul(3);
+                if clm::MAX_INDICES.get(mem) < indices {
+                    clm::MAX_INDICES.set(mem, indices);
+                }
+                let f = mem.rebase(clm::DYN_GEO_UNLOCK);
+                call(mem, f, &[]);
+            }
+        }
+        if rd != 0 {
+            let (records, indices) = (clm::MAX_RECORDS.get(mem), clm::MAX_INDICES.get(mem));
+            let f = mem.rebase(clm::GET_BUFFER_FOR_SEGMENT);
+            if call(mem, f, &[rd, 0, records, indices]) == 0 {
+                return;
+            }
+        }
+        let f = mem.rebase(clm::CLEAR_RENDER_DATA_SHP);
+        call(mem, f, &[lo, hi]);
+
+        let (scale, bias) = (clm::ALPHA_SCALE.get(mem), clm::ALPHA_BIAS.get(mem));
+        let n = mem.read::<u8>(sh(8));
+        let mut elem = sh(0x10);
+        for _ in 0..n {
+            let k = ld(mem, elem.wrapping_add(4));
+            mem.write(w.wrapping_add(4), ptr32(elem));
+            ke_lns_shp_update(mem, w);
+            x = x87::load(x87::store(k * step_x + x));
+            mem.write(m.wrapping_add(0x30), x87::store(x));
+            y = x87::load(x87::store(k * step_y + y));
+            mem.write(m.wrapping_add(0x34), x87::store(y));
+            let a = ffx_bridge::x87::cvttsd2si((k * scale + bias) * strength);
+            mem.write(w.wrapping_add(0x17), a.to_le_bytes()[0]);
+            let kk = x87::load(x87::store(k * ld(mem, at(0x10))));
+            let v = ptr32(mem.read::<u32>(at(0x18)));
+            let sx = kk * ld(mem, s) * ld(mem, v);
+            mem.write(m, x87::store(sx));
+            let v = ptr32(mem.read::<u32>(at(0x18)));
+            let sy = ld(mem, v.wrapping_add(4)) * (kk * ld(mem, src(0x14)));
+            mem.write(m.wrapping_add(0x14), x87::store(sy));
+            let f = mem.rebase(super::VU0_COPY_MATRIX);
+            call(mem, f, &[w.wrapping_add(lns_work::MATRIX), m]);
+            let f = mem.rebase(clm::LEVEL_NAME_HASH);
+            if call(mem, f, &[]) == clm::DIM_LEVEL_HASH {
+                mem.write(w.wrapping_add(0x17), 6u8);
+            }
+            if is_ptr32_null(mem.read::<u32>(e)) == 0 && rd != 0 {
+                let data = ptr32(mem.read::<u32>(w));
+                let first = ptr32(mem.read::<u32>(data));
+                let frame = ptr32(mem.read::<u32>(w.wrapping_add(4)));
+                let b2 = u32::from(mem.read::<u8>(frame.wrapping_add(2)));
+                let off = i32::from(mem.read::<i16>(first.wrapping_add(0x10 + 8 * b2)));
+                let record = first.wrapping_add(off.cast_unsigned());
+                let f = mem.rebase(clm::UPDATE_RENDER_DATA_SHAPE_FIELD);
+                call(mem, f, &[lo, hi, record, w.wrapping_add(lns_work::DESC)]);
+            }
+            elem = elem.wrapping_add(8);
+        }
+        if is_ptr32_null(mem.read::<u32>(e)) == 0 && rd != 0 {
+            let f = mem.rebase(super::GRAPHIC_VFX_UPDATE);
+            call(mem, f, &[lo, hi]);
+        }
+        let f = mem.rebase(clm::USE_OPTIMIZED_SHADER);
+        call(mem, f, &[lo, hi]);
     }
 
     /// `KeLnsFls_Draw(e, flags, work)` (`0x0076a1f0`): a lens flash. The

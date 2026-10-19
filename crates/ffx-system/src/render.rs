@@ -206,4 +206,48 @@ pub mod bridge {
             _ => mode,
         }
     }
+
+    /// The Ke thing point tables `updateVFXKeThSetPoint` copies from, one
+    /// 16-byte row per point: (positions, colours) for points 0–5, 6–11
+    /// and 12 on.
+    pub const KETH_POINT_TABLES: [(u32, u32); 3] = [
+        (0x0230_5848, 0x0230_58a8),
+        (0x0230_f908, 0x0230_f968),
+        (0x0230_5908, 0x0230_a908),
+    ];
+
+    /// `updateVFXKeThSetPoint(mesh, i)` (`0x007669c0`): point `i`'s position
+    /// (the row's first three floats, to `[mesh + 0xc] + 12 i`) and colour
+    /// (four floats, to `[mesh + 0x14] + 16 i`), each through the x87 stack
+    /// (a signalling NaN comes out quiet). `i` is signed: below 6 it picks
+    /// row `i` of the first tables, below 12 row `i - 6` of the second,
+    /// else row `i - 12` of the third. `[mesh + 0x14]` is read after the
+    /// position stores; it is also the original's `eax`.
+    pub fn keth_set_point(mem: &mut impl Mem, mesh: u32, i: i32) -> u32 {
+        let (table, row) = if i < 6 {
+            (0, i)
+        } else if i < 12 {
+            (1, i - 6)
+        } else {
+            (2, i - 12)
+        };
+        let (positions, colours) = KETH_POINT_TABLES[table];
+        let row = row.cast_unsigned().wrapping_mul(16);
+        let i = i.cast_unsigned();
+        let pos = mem.rebase(positions).wrapping_add(row);
+        let to: u32 = mem.read(mesh.wrapping_add(0xc));
+        let to = to.wrapping_add(i.wrapping_mul(12));
+        for k in 0..3 {
+            let v: f32 = mem.read(pos.wrapping_add(4 * k));
+            mem.write(to.wrapping_add(4 * k), x87::round_trip(v));
+        }
+        let col = mem.rebase(colours).wrapping_add(row);
+        let base: u32 = mem.read(mesh.wrapping_add(0x14));
+        let to = base.wrapping_add(i.wrapping_mul(16));
+        for k in 0..4 {
+            let v: f32 = mem.read(col.wrapping_add(4 * k));
+            mem.write(to.wrapping_add(4 * k), x87::round_trip(v));
+        }
+        base
+    }
 }

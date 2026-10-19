@@ -335,6 +335,67 @@ pub mod bridge {
         u32::from(ply_byte(mem, chr, 0x2c) & 1)
     }
 
+    /// `MsGetSavePlyFix(chr)` (`0x00785360`): `ply_save` `+0x2c` bit 2 (the
+    /// character may not leave or join the party: `MsExchangeSaveParty`).
+    pub fn ms_get_save_ply_fix(mem: &impl Mem, chr: u32) -> u32 {
+        u32::from((ply_byte(mem, chr, 0x2c) >> 2) & 1)
+    }
+
+    /// The first of the party slots `slots` (from `party`) holding `v`.
+    fn find_slot(mem: &impl Mem, party: u32, slots: std::ops::Range<u32>, v: u32) -> Option<u32> {
+        slots
+            .into_iter()
+            .find(|&k| u32::from(mem.read::<u8>(party.wrapping_add(k))) == v)
+    }
+
+    /// `MsExchangeSaveParty(chr, slot)` (`0x00784d00`): puts `chr` (0xff,
+    /// none, for a negative one) into party slot `slot` (0-2 the front, 3-19
+    /// the reserve) and whoever was there (0xff for an entry above 7) into
+    /// `chr`'s place. The reserve's entries above 7 are cleared to 0xff
+    /// first. `chr`'s place: where it is in the reserve, else in the front;
+    /// for a character in neither that may join (`MsGetSavePlyJoin`) the
+    /// first empty reserve slot, else the first empty front one; with none
+    /// 0. A negative `slot` changes nothing (0); neither may be fixed
+    /// (`MsGetSavePlyFix`: 0 when one is); -1 once swapped.
+    pub fn ms_exchange_save_party(mem: &mut impl Mem, chr: u32, slot: i32) -> u32 {
+        const RESERVE: std::ops::Range<u32> = 3..0x14;
+        const FRONT: std::ops::Range<u32> = 0..3;
+        let party = ms_get_save_in_party(mem, 0);
+        let chr = if chr.cast_signed() < 0 { 0xff } else { chr };
+        for k in RESERVE {
+            let v: u8 = mem.read(party.wrapping_add(k));
+            if v != 0xff && v > 7 {
+                mem.write(party.wrapping_add(k), 0xffu8);
+            }
+        }
+        let mut place =
+            find_slot(mem, party, RESERVE, chr).or_else(|| find_slot(mem, party, FRONT, chr));
+        if place.is_none() && ms_get_save_ply_join(mem, chr) != 0 {
+            place =
+                find_slot(mem, party, RESERVE, 0xff).or_else(|| find_slot(mem, party, FRONT, 0xff));
+        }
+        let Some(place) = place else {
+            return 0;
+        };
+        if slot < 0 {
+            return 0;
+        }
+        let at = party.wrapping_add(slot.cast_unsigned());
+        let mut other: u8 = mem.read(at);
+        if other > 7 {
+            other = 0xff;
+        }
+        if chr != 0xff && ms_get_save_ply_fix(mem, chr) != 0 {
+            return 0;
+        }
+        if other != 0xff && ms_get_save_ply_fix(mem, other.into()) != 0 {
+            return 0;
+        }
+        mem.write(party.wrapping_add(place), other);
+        mem.write(at, chr.to_le_bytes()[0]);
+        u32::MAX
+    }
+
     /// `MsGetSavePlyJoined(chr)` (`0x007853a0`): `ply_save` `+0x2c` bit 4.
     pub fn ms_get_save_ply_joined(mem: &impl Mem, chr: u32) -> u32 {
         u32::from((ply_byte(mem, chr, 0x2c) >> 4) & 1)

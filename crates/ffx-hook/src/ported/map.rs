@@ -2532,6 +2532,10 @@ ported! {
     yiRender_setupparamVU1 @ 0x0090_da90 => extern "C" fn shim_yi_render_setupparam_vu1(r: u32) -> u32 {
         yi::bridge::yi_render_setupparam_vu1(&mut mem(), r)
     }
+    /// `yiRender_create(r, direct, data, refs)`.
+    yiRender_create @ 0x0090_c400 => extern "C" fn shim_yi_render_create(r: u32, direct: u32, data: u32, refs: u32) -> u32 {
+        yi::bridge::yi_render_create(&mut mem(), r, [direct, data, refs], &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `yiRender_term(r)`.
     yiRender_term @ 0x0090_dd00 => extern "C" fn shim_yi_render_term(r: u32) -> u32 {
         yi::bridge::yi_render_term(&mut mem(), r, &mut |_, f, a| call_cdecl(f, a))
@@ -2724,6 +2728,18 @@ ported! {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::GRID_WORK as usize / 4 }>::new();
         ffx_field::abmap_draw::abmap_draw_grid_marks(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapGridMarkUVs()`.
+    AbmapGridMarkUVs @ 0x00a4_ac20 => extern "C" fn shim_abmap_grid_mark_uvs() {
+        ffx_field::abmap_draw::abmap_grid_mark_uvs(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `AbmapProjectGrid()`.
+    AbmapProjectGrid @ 0x00a4_7630 => extern "C" fn shim_abmap_project_grid() {
+        ffx_field::abmap_draw::abmap_project_grid(&mut mem());
+    }
+    /// `AbmapPlyTagRect(tag, out)`.
+    AbmapPlyTagRect @ 0x00a4_82d0 => extern "C" fn shim_abmap_ply_tag_rect(tag: u32, out: u32) {
+        ffx_field::abmap_draw::abmap_ply_tag_rect(&mut mem(), tag, out);
+    }
     /// `AbmapDrawMap()`.
     AbmapDrawMap @ 0x00a4_ce20 => extern "C" fn shim_abmap_draw_map() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::MAP_WORK as usize / 4 }>::new();
@@ -2733,6 +2749,109 @@ ported! {
     KeThBP_Update @ 0x0076_37f0 => extern "C" fn shim_ke_th_bp_update(p: u32) -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::keth::WORK as usize / 4 }>::new();
         ffx_field::keth::ke_th_bp_update(
+            &mut mem(),
+            p,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
+    /// `KeThBP_MkStripEnd_00765a10()`.
+    KeThBP_MkStripEnd_00765a10 @ 0x0076_5a10 => extern "C" fn shim_ke_th_bp_mk_strip_end() -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_END_WORK as usize / 4 }>::new();
+        ffx_field::keth::ke_th_bp_mk_strip_end(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeThBP_MkStrip_00764de0()`.
+    KeThBP_MkStrip_00764de0 @ 0x0076_4de0 => extern "C" fn shim_ke_th_bp_mk_strip() -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_WORK as usize / 4 }>::new();
+        ffx_field::keth::ke_th_bp_mk_strip(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeDttMdl_MkGifPk(p)`.
+    KeDttMdl_MkGifPk @ 0x0072_ded0 => extern "C" fn shim_ke_dtt_mdl_mk_gif_pk(p: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::kedtt::MDL_WORK as usize / 4 }>::new();
+        ffx_field::kedtt::ke_dtt_mdl_mk_gif_pk(
+            &mut mem(),
+            p,
+            w.at(),
+            &mut |_, f, a| call_cdecl(f, a),
+            &mut |_, f, a| call_float(f, a),
+        )
+    }
+    /// `yiPolySplitRectXZ(r, list, inside, outside, cap_in, cap_out, m, a, b, unlimited)`.
+    yiPolySplitRectXZ @ 0x0091_0a90 => extern "C" fn shim_yi_poly_split_rect_xz(_r: u32, list: u32, inside: u32, outside: u32, cap_in: u32, cap_out: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
+        // 16-byte aligned: yiRectTriOverlapXZ hands its vectors to FFXVu0ApplyMatrix
+        #[repr(C, align(16))]
+        struct SplitWork([u8; ffx_field::yipoly::SPLIT_WORK as usize]);
+        let mut work = SplitWork([0; ffx_field::yipoly::SPLIT_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_poly_split_rect_xz(
+            &mut mem(),
+            list,
+            [inside, outside],
+            [cap_in, cap_out],
+            m,
+            [a, b],
+            unlimited,
+            w,
+            &mut |_, f, a| call_cdecl(f, a),
+        )
+    }
+    /// `yiRectToOMDBuild(r, inside, size_in, outside, size_out, m, a, b, unlimited)`.
+    yiRectToOMDBuild @ 0x0091_2270 => extern "C" fn shim_yi_rect_to_omd_build(r: u32, inside: u32, size_in: u32, outside: u32, size_out: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
+        // 16-byte aligned: the corners and the split's work go to FFXVu0 calls
+        #[repr(C, align(16))]
+        struct BuildWork([u8; ffx_field::yipoly::BUILD_WORK as usize]);
+        let mut work = BuildWork([0; ffx_field::yipoly::BUILD_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_rect_to_omd_build(
+            &mut mem(),
+            r,
+            (inside, size_in),
+            (outside, size_out),
+            m,
+            [a, b],
+            unlimited,
+            w,
+            &mut |_, f, a| call_cdecl(f, a),
+        )
+    }
+    /// `yiPolyTexMapXZ(packet, min, max, _, height, tbp, u, v)`.
+    yiPolyTexMapXZ @ 0x0091_2b70 => extern "C" fn shim_yi_poly_tex_map_xz(packet: u32, min: u32, max: u32, _unused: u32, height: u32, tbp: u32, u: u32, v: u32) {
+        let tex = ffx_field::yipoly::TexRegion { height, tbp, u, v };
+        ffx_field::yipoly::yi_poly_tex_map_xz(&mut mem(), packet, min, max, tex);
+    }
+    /// `yiTexTargetClear(frame, u, v, h)`.
+    yiTexTargetClear @ 0x0091_26f0 => extern "C" fn shim_yi_tex_target_clear(frame: u32, u: u32, v: u32, h: u32) -> u32 {
+        // 16-byte aligned: the packet goes to sceDmaSendN
+        #[repr(C, align(16))]
+        struct ClearWork([u8; ffx_field::yipoly::CLEAR_WORK as usize]);
+        let mut work = ClearWork([0; ffx_field::yipoly::CLEAR_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_tex_target_clear(&mut mem(), frame, (u, v), h, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiPolySelectRectXZ(r, list, packet, cap, m, a, b, unlimited)`.
+    yiPolySelectRectXZ @ 0x0091_05b0 => extern "C" fn shim_yi_poly_select_rect_xz(_r: u32, list: u32, packet: u32, cap: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
+        // 16-byte aligned: yiRectTriOverlapXZ hands its vectors to FFXVu0ApplyMatrix
+        #[repr(C, align(16))]
+        struct SplitWork([u8; ffx_field::yipoly::SPLIT_WORK as usize]);
+        let mut work = SplitWork([0; ffx_field::yipoly::SPLIT_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::yipoly::yi_poly_select_rect_xz(
+            &mut mem(),
+            list,
+            packet,
+            cap,
+            m,
+            [a, b],
+            unlimited,
+            w,
+            &mut |_, f, a| call_cdecl(f, a),
+        )
+    }
+    /// `KeDttSpr_MkGifPk(p)`.
+    KeDttSpr_MkGifPk @ 0x0076_7790 => extern "C" fn shim_ke_dtt_spr_mk_gif_pk(p: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::kedtt::WORK as usize / 4 }>::new();
+        ffx_field::kedtt::ke_dtt_spr_mk_gif_pk(
             &mut mem(),
             p,
             w.at(),
@@ -3298,6 +3417,15 @@ ported! {
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         #[allow(clippy::cast_possible_truncation)] // a u16 argument
         ke::bridge::ke_lns_arnd_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `KeLnsClm_Draw(e, flags)`.
+    KeLnsClm_Draw @ 0x0076_96c0 => extern "C" fn shim_ke_lns_clm_draw(e: u32, flags: u32) {
+        #[repr(C, align(16))]
+        struct ClmWork([u8; ke::clm::WORK as usize]);
+        let mut work = ClmWork([0; ke::clm::WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        ke::bridge::ke_lns_clm_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `KeLnsCrn_Draw(e, flags)`.
     KeLnsCrn_Draw @ 0x0076_9d70 => extern "C" fn shim_ke_lns_crn_draw(e: u32, flags: u32) {

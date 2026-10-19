@@ -17,7 +17,10 @@
 //! - [`task`]: the field effects' tasks and objects (`rcef`).
 //! - [`rcui`]: the field UI helpers.
 //! - [`ke`]: `Ke` resource heaps and lens flare objects.
+//! - [`kedtt`]: the Ke distortion sprites (`KeDttSpr`).
 //! - [`yi`]: the field renderer's state and display objects.
+//! - [`yipoly`]: the renderer's load-time packet builders over the poly
+//!   buffer.
 //! - [`vu0`]: the VU0-style vector helpers (`KeVu0*`).
 //! - [`nkz`]: overdrive tables (`Nkz`) and sound status (`Sqs`).
 //! - [`camera`]: the map camera's projection and view matrices.
@@ -33,6 +36,7 @@ pub mod freecam;
 pub mod geom;
 pub mod guide;
 pub mod ke;
+pub mod kedtt;
 pub mod keth;
 pub mod model;
 pub mod nkz;
@@ -45,3 +49,4 @@ pub mod task;
 pub mod vu0;
 pub mod x87;
 pub mod yi;
+pub mod yipoly;

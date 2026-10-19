@@ -640,3 +640,395 @@ where
     mem.write(s.seg + 0x18, nb);
     true
 }
+
+/// The strip [`ke_th_bp_mk_strip`] builds and the state it keeps between
+/// path points (`0x0230f9c8`..).
+pub mod strip {
+    /// The walk: `+4` the next path point (xyzw, `+0x1c` its age), `+0x14`
+    /// the step between points, `+0x1c` the points left.
+    pub const STATE: u32 = 0x0230_f9c8;
+    /// `1 / w` of the next point, and of the last one.
+    pub const INV_W: u32 = 0x0230_f9cc;
+    pub const PREV_INV_W: u32 = 0x0230_f9d0;
+    /// The direction (x, y) to the next point, and the last one.
+    pub const DIR: u32 = 0x0230_f9d8;
+    pub const PREV_DIR: u32 = 0x0230_f9e0;
+    /// The side offset (x, y) at the strip's first end.
+    pub const OFFSET: u32 = 0x0230_f9e8;
+    /// `1 - age * rate`, and the rate.
+    pub const FADE: u32 = 0x0230_f9f0;
+    pub const FADE_RATE: u32 = 0x0230_f9f4;
+    /// The inner edge's share of the width.
+    pub const INNER: u32 = 0x0230_f9f8;
+    /// The half widths (x, y), and their scale.
+    pub const WIDTH: u32 = 0x0230_fa00;
+    pub const WIDTH_SCALE: u32 = 0x0230_fa0c;
+    /// The colour scale, the two colours' steps per point, the colours
+    /// (edge, centre).
+    pub const COLOR_SCALE: u32 = 0x0230_fa10;
+    pub const EDGE_STEP: u32 = 0x0230_fa20;
+    pub const CENTRE_STEP: u32 = 0x0230_fa30;
+    pub const EDGE: u32 = 0x0230_fa40;
+    pub const CENTRE: u32 = 0x0230_fa50;
+    /// The vertex built at the strip's second end, and at its first.
+    pub const SIDE1: u32 = 0x0230_fa60;
+    pub const SIDE0: u32 = 0x0230_fa70;
+    /// The next point (projected, over w), the strip's second end and
+    /// its first.
+    pub const NEXT: u32 = 0x0230_fa80;
+    pub const END1: u32 = 0x0230_fa90;
+    pub const END0: u32 = 0x0230_faa0;
+    /// The projection, and the matrix the vertices go back through.
+    pub const PROJECT: u32 = 0x0230_fac0;
+    pub const UNPROJECT: u32 = 0x0230_fb00;
+    /// Ten vertices (xyzw) a point, and their colours `0x5000` on.
+    pub const VERTS: u32 = 0x0230_5908;
+    pub const COLORS: u32 = VERTS + 0x5000;
+}
+
+/// `FFXVu0MulVector(dst, a, b)`.
+pub const MUL_VECTOR: u32 = 0x006e_d5d0;
+/// `KeAddScaledColor(out, base, step, k)`.
+pub const ADD_SCALED_COLOR: u32 = 0x0076_4c40;
+
+/// The scratch [`ke_th_bp_mk_strip`] needs: four colours and a vertex.
+pub const STRIP_WORK: u32 = 0x50;
+
+/// The four colours of a point's vertices (scaled, over 256 when
+/// stored): the edge colour at the first end and at the second, the
+/// centre colour at both.
+#[derive(Clone, Copy)]
+struct StripColors {
+    edge0: u32,
+    edge1: u32,
+    centre0: u32,
+    centre1: u32,
+}
+
+/// One vertex of the strip: where it is (its end and how far along the
+/// side offset, `None` for the end itself) and its colour (alpha from
+/// the colour or 0).
+struct StripVertex {
+    second_end: bool,
+    side: Option<(f64, bool)>,
+    color: fn(&StripColors) -> u32,
+    alpha: bool,
+}
+
+/// The ten vertices of a point: the outer edge, the inner edge, the
+/// centre, the other inner and outer edge, each at both ends. `side`:
+/// (share of the offset, inner), negative on the far side.
+const STRIP: [StripVertex; 10] = {
+    const fn v(
+        second_end: bool,
+        side: Option<(f64, bool)>,
+        color: fn(&StripColors) -> u32,
+        alpha: bool,
+    ) -> StripVertex {
+        StripVertex {
+            second_end,
+            side,
+            color,
+            alpha,
+        }
+    }
+    [
+        v(false, Some((1.0, false)), |c| c.edge0, false),
+        v(true, Some((1.0, false)), |c| c.edge1, false),
+        v(false, Some((1.0, true)), |c| c.edge0, true),
+        v(true, Some((1.0, true)), |c| c.edge1, true),
+        v(false, None, |c| c.centre0, true),
+        v(true, None, |c| c.centre1, true),
+        v(false, Some((-1.0, true)), |c| c.edge0, true),
+        v(true, Some((-1.0, true)), |c| c.edge1, true),
+        v(false, Some((-1.0, false)), |c| c.edge0, false),
+        v(true, Some((-1.0, false)), |c| c.edge1, false),
+    ]
+};
+
+/// `1 / sqrt(x² + y²)` stored as `f32`, or 0 for a zero length.
+fn inv_len(x: f64, y: f64) -> f64 {
+    let len = ld(st((x * x + y * y).sqrt()));
+    if len == 0.0 { len } else { ld(st(1.0 / len)) }
+}
+
+/// The belt path's strip, point by point (`KeThBP_MkStrip_00764de0()`,
+/// `0x00764de0`, called by `KeThBP_MkGifPk`).
+///
+/// For each point left in the walk ([`strip::STATE`]): the point goes
+/// through the projection and over its w ([`strip::NEXT`]); the edge and
+/// centre colours step on (`KeAddScaledColor`, scaled before and after);
+/// the side offset at the strip's second end is the bisector of the last
+/// and the new direction turned a quarter, times the half widths, the
+/// width scale, the fade (`1 - age * rate`) and the last point's `1 /
+/// w`. Ten vertices go out between the strip's two ends ([`STRIP`]),
+/// each times its w and back through [`strip::UNPROJECT`], with their
+/// colours over 256; then the ends move on. Returns the walk's address
+/// (the original's `eax`).
+#[allow(clippy::too_many_lines)] // one pass, as the original
+pub fn ke_th_bp_mk_strip<M, C>(mem: &mut M, work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    use strip::{COLOR_SCALE, DIR, END0, END1, NEXT, OFFSET, PREV_DIR, PREV_INV_W, SIDE0, SIDE1};
+    let r = |mem: &M, a: u32| mem.rebase(a);
+    let g = |mem: &M, a: u32| ld(mem.read::<u32>(mem.rebase(a)));
+    let put = |mem: &mut M, a: u32, x: f64| {
+        let at = mem.rebase(a);
+        mem.write(at, st(x));
+    };
+    let copy = |mem: &mut M, dst: u32, src: u32| {
+        let v = x87::copy(mem.read::<u32>(mem.rebase(src)));
+        let at = mem.rebase(dst);
+        mem.write(at, v);
+    };
+    let state_at = r(mem, strip::STATE);
+    let mut out = r(mem, strip::VERTS);
+    let colors = [work, work + 0x10, work + 0x20, work + 0x30];
+    let vertex = work + 0x40;
+    loop {
+        let state = mem.read::<u32>(state_at);
+        if mem.read::<i32>(state + 0x1c) <= 0 {
+            return state;
+        }
+        call(mem, r(mem, COPY_VECTOR), &[r(mem, SIDE0), r(mem, END0)]);
+        call(mem, r(mem, COPY_VECTOR), &[r(mem, SIDE1), r(mem, END1)]);
+
+        // the next point, projected
+        let point = mem.read::<u32>(state + 4);
+        let age = ld(mem.read::<u32>(point + 0x1c));
+        put(mem, strip::FADE, 1.0 - age * g(mem, strip::FADE_RATE));
+        call(mem, r(mem, COPY_VECTOR), &[r(mem, NEXT), point]);
+        let (next, project) = (r(mem, NEXT), r(mem, strip::PROJECT));
+        call(mem, r(mem, APPLY_MATRIX), &[next, project, next]);
+        let w = g(mem, NEXT + 0xc);
+        put(mem, strip::INV_W, if w == 0.0 { 0.0 } else { 1.0 / w });
+        let inv_w = g(mem, strip::INV_W);
+        for i in 0..3 {
+            put(mem, NEXT + 4 * i, g(mem, NEXT + 4 * i) * inv_w);
+        }
+
+        // the colours, before and after their steps
+        let scale = r(mem, COLOR_SCALE);
+        for (base, step, before, after) in [
+            (strip::EDGE, strip::EDGE_STEP, colors[0], colors[1]),
+            (strip::CENTRE, strip::CENTRE_STEP, colors[2], colors[3]),
+        ] {
+            let (base, step) = (r(mem, base), r(mem, step));
+            call(mem, r(mem, MUL_VECTOR), &[before, base, scale]);
+            call(
+                mem,
+                r(mem, ADD_SCALED_COLOR),
+                &[base, base, step, 0x3f80_0000],
+            );
+            call(mem, r(mem, MUL_VECTOR), &[after, base, scale]);
+        }
+        let c = StripColors {
+            edge0: colors[0],
+            edge1: colors[1],
+            centre0: colors[2],
+            centre1: colors[3],
+        };
+
+        // the direction, and the side offset along the bisector
+        put(mem, DIR, g(mem, NEXT) - g(mem, END1));
+        put(mem, DIR + 4, g(mem, NEXT + 4) - g(mem, END1 + 4));
+        let k = inv_len(g(mem, DIR), g(mem, DIR + 4));
+        put(mem, DIR, g(mem, DIR) * k);
+        put(mem, DIR + 4, k * g(mem, DIR + 4));
+        let bx = ld(st(g(mem, PREV_DIR) + g(mem, DIR)));
+        let by = ld(st(g(mem, PREV_DIR + 4) + g(mem, DIR + 4)));
+        let k = inv_len(bx, by);
+        let (nx, ny) = (ld(st(bx * k)), ld(st(k * by)));
+        let (width, fade) = (g(mem, strip::WIDTH_SCALE), g(mem, strip::FADE));
+        let prev_inv_w = g(mem, PREV_INV_W);
+        let ox = st(ny * width * fade * prev_inv_w * g(mem, strip::WIDTH));
+        let oy = st(-nx * width * fade * prev_inv_w * g(mem, strip::WIDTH + 4));
+        copy(mem, PREV_DIR, DIR);
+        copy(mem, PREV_DIR + 4, DIR + 4);
+        copy(mem, PREV_INV_W, strip::INV_W);
+
+        // the ten vertices
+        let inner = g(mem, strip::INNER);
+        let offset0 = (g(mem, OFFSET), g(mem, OFFSET + 4));
+        let offset1 = (ld(ox), ld(oy));
+        for (i, v) in (0u32..).zip(&STRIP) {
+            let (end, side, offset) = if v.second_end {
+                (END1, SIDE1, offset1)
+            } else {
+                (END0, SIDE0, offset0)
+            };
+            let src = if let Some((sign, in_edge)) = v.side {
+                for (j, o) in [(0, offset.0), (4, offset.1)] {
+                    let e = g(mem, end + j);
+                    let o = if in_edge { o * inner } else { o };
+                    put(mem, side + j, if sign < 0.0 { e - o } else { e + o });
+                }
+                side
+            } else {
+                end
+            };
+            // times its w, back through the matrix
+            let [x, y, z, w] = mem.read::<[u32; 4]>(r(mem, src)).map(ld);
+            mem.write(vertex, [st(w * x), st(w * y), st(z * w), st(w)]);
+            call(
+                mem,
+                r(mem, APPLY_MATRIX),
+                &[vertex, r(mem, strip::UNPROJECT), vertex],
+            );
+            let at = out + 0x10 * i;
+            let pos = mem.read::<[u32; 4]>(vertex).map(x87::copy);
+            mem.write(at, pos);
+            let rgba = mem.read::<[u32; 4]>((v.color)(&c)).map(ld);
+            let alpha = if v.alpha { st(rgba[3] / 256.0) } else { 0 };
+            let rgb = [rgba[0], rgba[1], rgba[2]].map(|x| st(x / 256.0));
+            mem.write(at + 0x5000, [rgb[0], rgb[1], rgb[2], alpha]);
+        }
+
+        // the ends move on
+        let o = r(mem, OFFSET);
+        mem.write(o, [x87::copy(ox), x87::copy(oy)]);
+        call(mem, r(mem, COPY_VECTOR), &[r(mem, END0), r(mem, END1)]);
+        call(mem, r(mem, COPY_VECTOR), &[r(mem, END1), r(mem, NEXT)]);
+        let state = mem.read::<u32>(state_at);
+        let left = mem.read::<i32>(state + 0x1c).wrapping_sub(1);
+        mem.write(state + 0x1c, left);
+        out += 0xa0;
+        let state = mem.read::<u32>(state_at);
+        let next_point = mem
+            .read::<u32>(state + 4)
+            .wrapping_add(mem.read::<u32>(state + 0x14));
+        mem.write(state + 4, next_point);
+    }
+}
+
+/// The strip's end cap ([`ke_th_bp_mk_strip_end`]).
+pub mod strip_end {
+    /// How much the width scale grows at the cap.
+    pub const WIDTH_STEP: u32 = 0x0230_fa08;
+    /// Six vertices (xyzw), and their colours.
+    pub const VERTS: u32 = 0x0230_f908;
+    pub const COLORS: u32 = 0x0230_f968;
+}
+
+/// The scratch [`ke_th_bp_mk_strip_end`] needs: three colours and a
+/// vertex.
+pub const STRIP_END_WORK: u32 = 0x40;
+
+/// The cap's vertices after the first: the first end plus (share of the
+/// offset, inner) and their colour (the edge colour after its step, or
+/// the centre's) and alpha.
+/// (side: share of the offset and inner, centre colour, alpha).
+type CapVertex = (Option<(f64, bool)>, bool, bool);
+
+const STRIP_END: [CapVertex; 5] = [
+    (Some((1.0, false)), false, false),
+    (Some((1.0, true)), false, true),
+    (None, true, true),
+    (Some((-1.0, true)), false, true),
+    (Some((-1.0, false)), false, false),
+];
+
+/// The belt path strip's end cap (`KeThBP_MkStripEnd_00765a10()`,
+/// `0x00765a10`, called by `KeThBP_MkGifPk` after
+/// [`ke_th_bp_mk_strip`]).
+///
+/// The walk's `+0x20` keeps its `+0` (which then moves on by 0xd0). Six
+/// vertices into [`strip_end::VERTS`]: the strip's second end (the edge
+/// colour scaled, alpha 0), then around its first: plus the offset, plus
+/// the inner offset, itself, minus the inner offset, minus the offset;
+/// each times its w and back through [`strip::UNPROJECT`], colours over
+/// 256 into [`strip_end::COLORS`]. Between them the edge and centre
+/// colours step on, and the width scale grows by
+/// [`strip_end::WIDTH_STEP`] (not below 0). Returns the walk's address
+/// (the original's `eax`).
+pub fn ke_th_bp_mk_strip_end<M, C>(mem: &mut M, work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    use strip::{CENTRE, COLOR_SCALE, EDGE, END0, END1, OFFSET, SIDE1};
+    let r = |mem: &M, a: u32| mem.rebase(a);
+    let g = |mem: &M, a: u32| ld(mem.read::<u32>(mem.rebase(a)));
+    let put = |mem: &mut M, a: u32, x: f64| {
+        let at = mem.rebase(a);
+        mem.write(at, st(x));
+    };
+    let state = mem.read::<u32>(r(mem, strip::STATE));
+    mem.write(state + 0x20, mem.read::<u32>(state));
+    let (edge, centre, vertex) = (work, work + 0x10, work + 0x30);
+    let scale = r(mem, COLOR_SCALE);
+    // a vertex `src` times its w, back through the matrix, with a colour
+    let emit = |mem: &mut M, call: &mut C, i: u32, src: u32, color: u32, alpha: bool| {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let [x, y, z, w] = mem.read::<[u32; 4]>(r(mem, src)).map(ld);
+        mem.write(vertex, [st(w * x), st(w * y), st(z * w), st(w)]);
+        call(
+            mem,
+            r(mem, APPLY_MATRIX),
+            &[vertex, r(mem, strip::UNPROJECT), vertex],
+        );
+        let pos = mem.read::<[u32; 4]>(vertex).map(x87::copy);
+        let at = r(mem, strip_end::VERTS) + 0x10 * i;
+        mem.write(at, pos);
+        let rgba = mem.read::<[u32; 4]>(color).map(ld);
+        let a = if alpha { st(rgba[3] / 256.0) } else { 0 };
+        let rgb = [rgba[0], rgba[1], rgba[2]].map(|c| st(c / 256.0));
+        let at = r(mem, strip_end::COLORS) + 0x10 * i;
+        mem.write(at, [rgb[0], rgb[1], rgb[2], a]);
+    };
+
+    // the second end, in the edge colour before its step
+    call(mem, r(mem, MUL_VECTOR), &[edge, r(mem, EDGE), scale]);
+    emit(mem, call, 0, END1, edge, false);
+    let e = r(mem, EDGE);
+    call(
+        mem,
+        r(mem, ADD_SCALED_COLOR),
+        &[e, e, r(mem, strip::EDGE_STEP), 0x3f80_0000],
+    );
+    call(mem, r(mem, MUL_VECTOR), &[edge, e, scale]);
+    // the width scale grows (not below 0)
+    let width = st(g(mem, strip_end::WIDTH_STEP) + g(mem, strip::WIDTH_SCALE));
+    let width = if ld(width) < 0.0 { 0 } else { width };
+    let at = r(mem, strip::WIDTH_SCALE);
+    mem.write(at, width);
+
+    // around the first end
+    let inner = g(mem, strip::INNER);
+    let offset = (g(mem, OFFSET), g(mem, OFFSET + 4));
+    for (i, &(side, centre_color, alpha)) in (1u32..).zip(&STRIP_END) {
+        let src = if let Some((sign, in_edge)) = side {
+            for (j, o) in [(0, offset.0), (4, offset.1)] {
+                let e = g(mem, END0 + j);
+                let o = if in_edge { o * inner } else { o };
+                put(mem, SIDE1 + j, if sign < 0.0 { e - o } else { e + o });
+            }
+            SIDE1
+        } else {
+            END0
+        };
+        if centre_color {
+            let c = r(mem, CENTRE);
+            call(
+                mem,
+                r(mem, ADD_SCALED_COLOR),
+                &[c, c, r(mem, strip::CENTRE_STEP), 0x3f80_0000],
+            );
+            call(mem, r(mem, MUL_VECTOR), &[centre, c, scale]);
+        }
+        emit(
+            mem,
+            call,
+            i,
+            src,
+            if centre_color { centre } else { edge },
+            alpha,
+        );
+    }
+    let state = mem.read::<u32>(r(mem, strip::STATE));
+    let v = mem.read::<u32>(state).wrapping_add(0xd0);
+    mem.write(state, v);
+    state
+}

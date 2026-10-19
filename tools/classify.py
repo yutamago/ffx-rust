@@ -58,6 +58,8 @@ CATS = ("logic", "glue", "platform", "debug", "dead")
 # verdicts from porters who read the function and found no rule matched it
 # (address: (category, evidence)); applied last, over every rule
 REVIEWED = {
+    0x00784ac0: ("debug", "MsDebugFullMember: only MsBattleInit, under the debug menu's toggle 0x0112a905 (battle round 21)"),
+    0x007848b0: ("logic", "MsDebugFullCommand: the PC booster menu 0x006fc970 (with achievements 0x18, 0x19), 0x006b8ce0 and Native_707d flag 0x15 reach it (battle round 21)"),
     0x007eb760: ("glue", "op_gs1_init: fixed GS register-setup packets (effects round 13)"),
     0x00775330: ("glue", "builds a GS packet (system round 19)"),
     0x0082bb90: ("glue", "builds a GS sprite packet (main round 5)"),
@@ -254,6 +256,18 @@ REVIEWED = {
     0x00401370: ("glue", "STL error_code compare (system round 31)"),
     0x00703910: ("glue", "calls a function pointer by argument count (system round 32)"),
     0x006412b0: ("glue", "forwards to MapPart_LangOverride on [0x00ccc81c] (system round 32)"),
+    0x00784ac0: ("debug", "MsDebugFullMember: only under the debug menu toggle 0x0112a905 (battle round 21)"),
+    0x0069af70: ("glue", "MSVC std::_Tree::erase(first, last) (system round 33)"),
+    0x008e89d0: ("glue", "SetWakkalimitMagicFileTexturesUnloaded: forwards to graphicMenuSetTextureUnloadedInMaterial (system round 33)"),
+    0x0061b3c0: ("platform", "ATL string-resource lookup (LoadResource/LockResource) (system round 33)"),
+    0x0067a9f0: ("platform", "EternalCalm file size via sceOpen, stderr print (system round 33)"),
+    0x008ad840: ("platform", "TOInitEventFontPath: PS3Data path mapping via fiosUnifyFilename (system round 33)"),
+    0x0067a960: ("platform", "iSyncInitialize: operator new of the PC SyncManager (system round 33)"),
+    0x00687070: ("debug", "StackWalker crash-report formatter (system round 33)"),
+    0x006794f0: ("glue", "PhyreFIOS_UnloadMagicfilePrx: PhyreEngine forwarder (system round 34)"),
+    0x004013b0: ("glue", "STL error_category::message (system round 34)"),
+    0x006fb410: ("platform", "SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)"),
+    0x006fb380: ("platform", "SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
