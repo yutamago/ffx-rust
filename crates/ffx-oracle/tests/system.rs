@@ -21520,3 +21520,219 @@ fn round37_fix_mappic_matches_the_original_on_the_snapshot() {
     };
     round37_fix_mappic(&mut a, &mut b, &mut Xorshift(0x4037_0042));
 }
+
+/// Round 37 group E: `TODrawFont3d80String_008ee060` over a cursor-moving
+/// glyph stand-in, the three `TOMenuGet*` text getters over logging
+/// `MsGetSaveConfigHiragana`/`MsMenuGetText`/`MsMenuGetHelp` stand-ins, and
+/// `BtlEnd_InitState_008bdeb0` over logging callees.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round37_tiny(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    // the glyph returns its cursor argument + 0x10 (lea eax, [ecx+0x10]
+    // after mov ecx, [esp+4])
+    let glyph_tail = vec![0x8b, 0x4c, 0x24, 0x04, 0x8d, 0x41, 0x10];
+    let stands: Vec<Stand> = vec![
+        (0x008e_eee0, all(9), vec![1], glyph_tail),
+        (0x008f_2f70, all(1), vec![], ret_cell(cells)),
+        (0x0078_51f0, vec![], vec![], ret_cell(cells + 4)),
+        (0x0078_fcf0, all(3), vec![], ret_cell(cells + 8)),
+        (0x0078_fbb0, all(3), vec![], ret_cell(cells + 0xc)),
+        (0x0086_f3a0, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x008b_de00, vec![], vec![], ret_cell(cells + 0x14)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let text = alloc(a, b, 0x20);
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        for j in 0..8 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        let len = (rng.next() % 12) as usize;
+        for j in 0..0x20u32 {
+            let c = if (j as usize) < len {
+                (rng.next() % 255 + 1) as u8
+            } else {
+                0
+            };
+            put(a, b, text + j, c);
+        }
+        let args = [
+            rng.next(),
+            text,
+            [rng.next(), 0x7fff_fffa, rng.next() % 640][(rng.next() % 3) as usize],
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+        ];
+        let want = eax(a, 0x008e_e060, &args);
+        let got = tolib::bridge::draw_font_3d80_string(b, args, call);
+        assert_eq!(want, got, "string {k}");
+        let id = rng.next();
+        for (f, port) in [
+            (
+                0x008b_ee30u32,
+                menu::bridge::get_save_mes as fn(&mut Oracle, u32, _) -> u32,
+            ),
+            (0x008b_ee50, menu::bridge::get_status_help),
+            (0x008b_ee90, menu::bridge::get_summon_help),
+        ] {
+            let want = eax(a, f, &[id]);
+            assert_eq!(want, port(b, id, call), "menu text {f:#x} {k}");
+        }
+        let kind = [1u32, 2, 0, 3, 0x101, 0x102, rng.next()][(rng.next() % 7) as usize];
+        for at in [0x0186_9f08u32, 0x0186_9f0c, 0x0186_9fbc, 0x00c5_a068] {
+            put(a, b, a.rebase(at), rng.next());
+        }
+        let want = eax(a, 0x008b_deb0, &[kind]);
+        assert_eq!(
+            want,
+            btl::bridge::btl_end_init_state(b, kind, call),
+            "btl end {k}"
+        );
+        same_memory(&format!("round37 small {k}"), a, b);
+    }
+}
+
+#[test]
+fn round37_tiny_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round37_tiny(&mut a, &mut b, &mut Xorshift(0x4037_0051));
+}
+
+#[test]
+fn round37_tiny_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round37_tiny(&mut a, &mut b, &mut Xorshift(0x4037_0052));
+}
+
+/// Round 37 group F: the battle windows' wait and open functions,
+/// `TOFuncPadMessageNormal` and `TOMenuEndScreenX2_008e2790` over logging
+/// stand-ins.
+#[allow(clippy::cast_possible_truncation, clippy::too_many_lines)]
+fn round37_win(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge::{self as t, WaitBtlWin};
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x008a_22f0, all(1), vec![], ret_cell(cells)),
+        (0x008a_2690, all(1), vec![], ret_cell(cells)),
+        (0x0089_cde0, all(1), vec![], ret_cell(cells)),
+        (0x0089_d610, all(1), vec![], ret_cell(cells)),
+        (0x008a_f0d0, all(2), vec![1], ret_cell(cells + 4)),
+        (0x008b_8ca0, all(1), vec![], ret_cell(cells + 8)),
+        (0x0067_ab50, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x008b_9220, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x008a_b020, all(1), vec![], ret_cell(cells + 0x14)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let w = alloc(a, b, 0x100);
+    let opens = [
+        0.0f32,
+        0.3,
+        0.299_999_98,
+        0.300_000_04,
+        0.45,
+        0.449_999_96,
+        0.450_000_02,
+        1.0,
+        -1.0,
+        f32::NAN,
+        f32::INFINITY,
+    ];
+    let trigger = a.rebase(0x025d_09d4);
+    let map = a.rebase(0x0133_0844);
+    let flag = a.rebase(0x0134_0858);
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        for j in 0..8 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            cells + 0xc,
+            [0u32, 0, 1, rng.next()][(rng.next() % 4) as usize],
+        );
+        for j in 0..0x40 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        let open = if rng.next().is_multiple_of(4) {
+            f32::from_bits(rng.next() & 0x7f7f_ffff)
+        } else {
+            opens[(rng.next() % opens.len() as u32) as usize]
+        };
+        put(a, b, w + 0xe0, open);
+        for (f, kind) in [
+            (0x008a_8a40u32, WaitBtlWin::Left),
+            (0x008a_8af0, WaitBtlWin::Right),
+            (0x008a_8b20, WaitBtlWin::Std),
+            (0x008a_8ac0, WaitBtlWin::Prepare),
+        ] {
+            let want = eax(a, f, &[w]);
+            assert_eq!(want, t::wait_btl_win(b, kind, w, call), "{kind:?} {k}");
+        }
+        for (f, right) in [(0x008a_8620u32, false), (0x008a_86d0, true)] {
+            let want = eax(a, f, &[]);
+            assert_eq!(want, t::open_btl_win_side(b, right, call), "open {k}");
+        }
+        put(a, b, trigger, rng.next() as u8);
+        put(a, b, map, rng.next());
+        let want = eax(a, 0x008b_64a0, &[w]);
+        assert_eq!(
+            want,
+            t::func_pad_message_normal(b, w, call),
+            "pad message {k}"
+        );
+        // the flag byte and the three after it
+        put(a, b, flag, rng.next());
+        let want = eax(a, 0x008e_2790, &[w]);
+        assert_eq!(want, t::menu_end_screen_x2(b, w, call), "screen x2 {k}");
+        same_memory(&format!("round37 win {k}"), a, b);
+    }
+}
+
+#[test]
+fn round37_win_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round37_win(&mut a, &mut b, &mut Xorshift(0x4037_0061));
+}
+
+#[test]
+fn round37_win_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round37_win(&mut a, &mut b, &mut Xorshift(0x4037_0062));
+}

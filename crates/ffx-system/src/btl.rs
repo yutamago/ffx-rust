@@ -252,6 +252,33 @@ pub mod bridge {
         total
     }
 
+    /// `BtlEnd_InitState_008bdeb0(kind)` (own name; called by the
+    /// battle-end screen's set-up): by the low byte of `kind`, 1 sets the
+    /// state word `0x01869f08` to 0x1d, 2 to 0, anything else calls
+    /// `AtelSetBattleEndKeepRecoverType(kind)` and sets 1. Then
+    /// `0x01869f0c`, `g_TkBtlEndFlag` and the byte `0x00c5a068` are
+    /// cleared and `BtlEnd_BuildList_008bde00` builds the list (its `eax`
+    /// returned). Callees through `call` (`ffx.sym` addresses).
+    pub fn btl_end_init_state<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let state = match kind & 0xff {
+            1 => 0x1d,
+            2 => 0,
+            _ => {
+                call(mem, 0x0086_f3a0, &[kind]);
+                1
+            }
+        };
+        mem.write(mem.rebase(0x0186_9f08), state);
+        mem.write(mem.rebase(0x0186_9f0c), 0u32);
+        mem.write(mem.rebase(0x0186_9fbc), 0u32);
+        mem.write(mem.rebase(0x00c5_a068), 0u8);
+        call(mem, 0x008b_de00, &[])
+    }
+
     /// `BtlEnd_BuildList_008bde00()` (own name): the battle-end list.
     /// `0x01869f19` is set when any character `g_BtlCountsBattle`
     /// (`0x02310ea0`, bytes) counts has a nonzero `g_TkBtlEndResults`

@@ -1216,6 +1216,58 @@ ported! {
     fix_mappic @ 0x006e_f6f0 => extern "C" fn fix_mappic(map: u32) -> u32 {
         save::bridge::fix_mappic(&mem(), map)
     }
+    /// `TODrawFont3d80String_008ee060(cursor, text, x, y, nibbles, c0, c1, c2, c3)`.
+    TODrawFont3d80String_008ee060 @ 0x008e_e060 => extern "C" fn to_draw_font_3d80_string(cursor: u32, text: u32, x: u32, y: u32, nibbles: u32, c0: u32, c1: u32, c2: u32, c3: u32) -> u32 {
+        tolib::bridge::draw_font_3d80_string(&mut mem(), [cursor, text, x, y, nibbles, c0, c1, c2, c3], call_sym)
+    }
+    /// `TOMenuGetSaveMes(id)`.
+    TOMenuGetSaveMes @ 0x008b_ee30 => extern "C" fn to_menu_get_save_mes(id: u32) -> u32 {
+        menu::bridge::get_save_mes(&mut mem(), id, call_sym)
+    }
+    /// `TOMenuGetStatusHelp(id)`.
+    TOMenuGetStatusHelp @ 0x008b_ee50 => extern "C" fn to_menu_get_status_help(id: u32) -> u32 {
+        menu::bridge::get_status_help(&mut mem(), id, call_sym)
+    }
+    /// `TOMenuGetSummonHelp(id)`.
+    TOMenuGetSummonHelp @ 0x008b_ee90 => extern "C" fn to_menu_get_summon_help(id: u32) -> u32 {
+        menu::bridge::get_summon_help(&mut mem(), id, call_sym)
+    }
+    /// `BtlEnd_InitState_008bdeb0(kind)`.
+    BtlEnd_InitState_008bdeb0 @ 0x008b_deb0 => extern "C" fn btl_end_init_state(kind: u32) -> u32 {
+        btl::bridge::btl_end_init_state(&mut mem(), kind, call_sym)
+    }
+    /// `TOWaitBtlWinLeft(w)`.
+    TOWaitBtlWinLeft @ 0x008a_8a40 => extern "C" fn to_wait_btl_win_left(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Left, w, call_sym)
+    }
+    /// `TOWaitBtlWinRight_008a8af0(w)`.
+    TOWaitBtlWinRight_008a8af0 @ 0x008a_8af0 => extern "C" fn to_wait_btl_win_right(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Right, w, call_sym)
+    }
+    /// `TOWaitBtlWinStd_008a8b20(w)`.
+    TOWaitBtlWinStd_008a8b20 @ 0x008a_8b20 => extern "C" fn to_wait_btl_win_std(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Std, w, call_sym)
+    }
+    /// `TOWaitBtlWinPrepare_008a8ac0(w)`.
+    TOWaitBtlWinPrepare_008a8ac0 @ 0x008a_8ac0 => extern "C" fn to_wait_btl_win_prepare(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Prepare, w, call_sym)
+    }
+    /// `TOOpenBtlWinLeft()`.
+    TOOpenBtlWinLeft @ 0x008a_8620 => extern "C" fn to_open_btl_win_left() -> u32 {
+        tolib::bridge::open_btl_win_side(&mut mem(), false, call_sym)
+    }
+    /// `TOOpenBtlWinRight()`.
+    TOOpenBtlWinRight @ 0x008a_86d0 => extern "C" fn to_open_btl_win_right() -> u32 {
+        tolib::bridge::open_btl_win_side(&mut mem(), true, call_sym)
+    }
+    /// `TOFuncPadMessageNormal(w)`.
+    TOFuncPadMessageNormal @ 0x008b_64a0 => extern "C" fn to_func_pad_message_normal(w: u32) -> u32 {
+        tolib::bridge::func_pad_message_normal(&mut mem(), w, call_sym)
+    }
+    /// `TOMenuEndScreenX2_008e2790(w)`.
+    TOMenuEndScreenX2_008e2790 @ 0x008e_2790 => extern "C" fn to_menu_end_screen_x2(w: u32) -> u32 {
+        tolib::bridge::menu_end_screen_x2(&mut mem(), w, call_sym)
+    }
     /// `sce::Vectormath::Scalar::Aos::inverse(out, m)`.
     sce_Vectormath_Scalar_Aos_inverse @ 0x0057_3d00 => extern "C" fn sce_vectormath_inverse(out: u32, m: u32) -> u32 {
         math::bridge::inverse4(&mut mem(), out, m)

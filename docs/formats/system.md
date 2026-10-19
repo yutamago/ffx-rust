@@ -1685,3 +1685,28 @@ pushed as literals (no relocation entries), not addresses.
   double sums stored as `f32`) pick `map + 1000` when the player is
   nearer the second picture's point, else `map` (ties and NaNs too).
   Any other map is its own picture.
+- Small ones: `TODrawFont3d80String_008ee060(cursor, text, x, y,
+  nibbles, c0..c3)` passes `cursor` through `Identity_008f2f70`, then
+  draws each byte of the NUL-terminated `text` with
+  `TODrawFont3d80Glyph_008eeee0` 10 units apart, feeding each returned
+  cursor to the next, and returns the last. `TOMenuGetSaveMes`,
+  `TOMenuGetStatusHelp` and `TOMenuGetSummonHelp(id)` are
+  `MsMenuGetText(3, ...)` / `MsMenuGetHelp(11 or 12, id,
+  MsGetSaveConfigHiragana())`. `BtlEnd_InitState_008bdeb0(kind)` sets
+  `0x01869f08` by the low byte of `kind` (1: 0x1d, 2: 0, else 1 after
+  `AtelSetBattleEndKeepRecoverType(kind)`), clears `0x01869f0c`,
+  `g_TkBtlEndFlag` and the byte `0x00c5a068`, and tail-calls
+  `BtlEnd_BuildList_008bde00`.
+- The battle windows' table functions without direct callers:
+  `TOWaitBtlWinLeft`/`Right_008a8af0` run `TOBtlGetLeftPad`/`RightPad`
+  unless the window's opening (`f32 +0xe0`) is below 0.45 (stored as a
+  double holding `0.45f32`), returning 0; `TOWaitBtlWinStd_008a8b20` and
+  `TOWaitBtlWinPrepare_008a8ac0` run `TOBtlGetStdPad` /
+  `TOGetPadStatusPrepare` unless it is below `0.3f32`, returning 0 and 1.
+  A NaN opening runs the handler. `TOOpenBtlWinLeft`/`Right` start scene
+  `"bleftwlay"`/`"brightwlay"` in slot 2 and return 1.
+  `TOFuncPadMessageNormal(w)` runs the message window's `+0xf8` function
+  on trigger bit 0x20 and, on an Eternal Calm map, `TOTimedMacroMessage`
+  (tail call, `w` its argument). `TOMenuEndScreenX2_008e2790(w)` clears
+  `w + 0x1c`, turns the X2 screen flag off and sets the byte
+  `0x01340858`.

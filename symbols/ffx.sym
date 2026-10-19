@@ -10020,13 +10020,16 @@
 0x008a84d0 function TOInitBtlWinChange        # fh v3:cg2 0x8a8480 __TOInitBtlWinChange
 0x008a8550 function TOKickOpenLimitBreakSecond   # layout+callees: sorts between TOInitBtlWinChange and TOOpenBtlLimitBreak, and its named callees match the Switch 0x71004ae790 TOKickOpenLimitBreakSecond's (similarity 1.00: MsCheckLeftWindow, TOSeqInitScene, TOSeqStartScene); symbols from Fahrenheit's server export
 0x008a85a0 function TOOpenBtlLimitBreak       # fh v3:cg2 0x8a8550 __TOOpenBtlLimitBreak
-0x008a8620 function TOOpenBtlWinLeft             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'bleftwlay'; Switch 0x71004a8d60 __TOOpenBtlWinLeft (symbols from Fahrenheit's server export)
+0x008a8620 function TOOpenBtlWinLeft             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'bleftwlay'; Switch 0x71004a8d60 __TOOpenBtlWinLeft (symbols from Fahrenheit's server export); ported (system round 37)
 0x008a8640 function TOOpenBtlWinMain          # fh v3:cg2 0x8a85f0 __TOOpenBtlWinMain
-0x008a86d0 function TOOpenBtlWinRight            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'brightwlay'; Switch 0x71004a7f50 __TOOpenBtlWinRight (symbols from Fahrenheit's server export)
+0x008a86d0 function TOOpenBtlWinRight            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'brightwlay'; Switch 0x71004a7f50 __TOOpenBtlWinRight (symbols from Fahrenheit's server export); ported (system round 37)
 0x008a87a0 function TOWaitBtlWinChange           # layout+callees: sorts between TOOpenBtlWinRight and TOWaitBtlWinInputGil, and its named callees match the Switch 0x71004abb20 TOWaitBtlWinChange's (similarity 1.00: TOBtlGetChangePad); symbols from Fahrenheit's server export
 0x008a87d0 function TOWaitBtlWinInputGil      # fh v3:cg3 0x8a8780 __TOWaitBtlWinInputGil
-0x008a8a40 function TOWaitBtlWinLeft             # layout+callees: sorts between TOWaitBtlWinInputGil and TOWaitBtlWinMain, and its named callees match the Switch 0x71004a8d90 TOWaitBtlWinLeft's (similarity 1.00: TOBtlGetLeftPad); symbols from Fahrenheit's server export
+0x008a8a40 function TOWaitBtlWinLeft             # layout+callees: sorts between TOWaitBtlWinInputGil and TOWaitBtlWinMain, and its named callees match the Switch 0x71004a8d90 TOWaitBtlWinLeft's (similarity 1.00: TOBtlGetLeftPad); symbols from Fahrenheit's server export; ported (system round 37)
 0x008a8a70 function TOWaitBtlWinMain          # fh v3:cg2 0x8a8a20 __TOWaitBtlWinMain
+0x008a8ac0 function TOWaitBtlWinPrepare_008a8ac0 # cdecl(w) -> 1: TOGetPadStatusPrepare(w) unless f32 w+0xe0 is below 0.3 (f32); window table entry beside TOWaitBtlWinMain; ported (system round 37); name ours
+0x008a8af0 function TOWaitBtlWinRight_008a8af0 # cdecl(w) -> 0: TOBtlGetRightPad(w) unless f32 w+0xe0 is below 0.45 (a double holding 0.45f32); TOWaitBtlWinLeft's right twin; ported (system round 37); name ours
+0x008a8b20 function TOWaitBtlWinStd_008a8b20 # cdecl(w) -> 0: TOBtlGetStdPad(w) unless f32 w+0xe0 is below 0.3; ported (system round 37); name ours
 0x008a8e10 function IsInTkMenuPause           # fh v3:bsim1.00 0x008a8dc0
 0x008a8e20 function TOGetSaveGilAddress       # () -> MsGetSaveEventAddress() + 0x3d48 (&g_SaveGil); name ours
 0x008a8e30 function TOMenuGetDBuffDC          # fh switch:bsim1.00 0x71004bcd80; Sg_GetDBuffDC(0); non-null out = 0x01841c60
@@ -10269,7 +10272,7 @@
 0x008b6200 function TOFFXToSJIS               # fh v3:exact 0x008b61b0
 0x008b6210 function TOFuncMacroCmdValue          # layout: alphabetical run between TOFFXToSJIS and TOFuncPadMessageNormal (2 unnamed in the gap); Switch 0x71004f24a0 TOFuncMacroCmdValue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(cmd): sprintf('%d', cmd+4) into 0x01869ee4, with digit-group mark 0x46 before each 3 from the right when cmd+1 == 2; returns the buffer
 0x008b62b0 function TOFuncPadMessageInputValue   # layout: alphabetical run between TOFFXToSJIS and TOFuncPadMessageNormal (2 unnamed in the gap); Switch 0x71004f3020 TOFuncPadMessageInputValue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x008b64a0 function TOFuncPadMessageNormal    # fh v3:exact 0x008b6450
+0x008b64a0 function TOFuncPadMessageNormal    # fh v3:exact 0x008b6450; ported (system round 37)
 0x008b64e0 function TOFuncPadMessageSelect       # layout: alphabetical run between TOFuncPadMessageNormal and TOGetChangeMacroAddress (2 unnamed in the gap); Switch 0x71004f2f00 TOFuncPadMessageSelect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008b65e0 function TOGetButtonIconWidth         # layout: alphabetical run between TOFuncPadMessageNormal and TOGetChangeMacroAddress (2 unnamed in the gap); Switch 0x71004f1ae0 TOGetButtonIconWidth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008b6660 function TOGetChangeMacroAddress   # fh v3:exact 0x008b6610
@@ -10359,6 +10362,7 @@
 0x008bdb60 function BtlEnd_SetFlag            # 0x01869fbc = 1; own name
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
 0x008bde00 function BtlEnd_BuildList_008bde00 # (): 0x01869f19 = any counted character (g_BtlCountsBattle) with a nonzero g_TkBtlEndResults; one 14-byte g_TkBtlEndList entry per counted character (+0 BtlEnd_RowX(n, count), +2 6n, +6 chr, +8 TkMenuGetPlayerDamegedColor, +9 BtlEnd_InParty), count to 0x01869f18, then BtlEnd_CompactList (its eax); ported (system round 35); name ours
+0x008bdeb0 function BtlEnd_InitState_008bdeb0 # cdecl(kind): low byte 1 -> 0x01869f08 = 0x1d, 2 -> 0, else AtelSetBattleEndKeepRecoverType(kind) and 1; 0x01869f0c, g_TkBtlEndFlag, byte 0x00c5a068 cleared; tail BtlEnd_BuildList_008bde00; called by the battle-end set-up; ported (system round 37); name ours
 0x008bdf10 function BtlEnd_InitGilStep        # 0x01869f14 = result 19 (the gil won), 0x01869f10 = its step (gil/189 | 1, +2 on a multiple of 5); own name
 0x008bdf60 function TOMenuFieldMusic_008bdf60 # (): after the menu: keep white in/out: nothing; clear 11: cross-fade to AtelGetMusicNumber (0x78), else AtelRegistMusicNumber(-1) and fade out; name ours
 0x008bdfc0 function SetTable_02310f20 # cdecl(i, v) -> i: word i of the table at 0x02310f20 = v; callers 0x008ba4e0, 0x008bb690; name ours
@@ -10408,10 +10412,10 @@
 0x008bedf0 function TOMenuGetPacketBuffAdrs      # layout: alphabetical run between TOMenuGetNameMes and TOMenuGetPacketBuffSize (1 unnamed in the gap); Switch 0x71004ec150 TOMenuGetPacketBuffAdrs is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); xor eax,eax; ret: no PS2 packet buffer on PC, TkMn2DrawInitPacket its only caller
 0x008bee00 function TOMenuGetPacketBuffSize   # () -> 0x100000; the Switch's TOMenuGetPacketBuffSize sorts between TOMenuGetNameMes and TOMenuGetSaveHelp, as here, and TkMn2DrawInitPacket (0x008c0be0) calls it with the buffer address to rewind the draw cursor by half of it
 0x008bee10 function TOMenuGetSaveHelp         # (id) -> MsMenuGetHelp(3, ...); TkMenuSaveMes is table 3; see TOMenuGetArmsHelp
-0x008bee30 function TOMenuGetSaveMes          # (id) -> MsMenuGetText(3, ...); see TOMenuGetArmsHelp
-0x008bee50 function TOMenuGetStatusHelp       # (id) -> MsMenuGetHelp(11, ...); TOMenuGetStatusMes (fh) is table 11; see TOMenuGetArmsHelp
+0x008bee30 function TOMenuGetSaveMes          # (id) -> MsMenuGetText(3, ...); see TOMenuGetArmsHelp; ported (system round 37)
+0x008bee50 function TOMenuGetStatusHelp       # (id) -> MsMenuGetHelp(11, ...); TOMenuGetStatusMes (fh) is table 11; see TOMenuGetArmsHelp; ported (system round 37)
 0x008bee70 function TOMenuGetStatusMes        # fh switch:bsim1.00 0x71004ec3a0
-0x008bee90 function TOMenuGetSummonHelp       # (id) -> MsMenuGetHelp(12, ...): the last pair of the TOMenuGet run before TOMenuHelpSetExtMode, with TOMenuGetSummonMes (table 12); see TOMenuGetArmsHelp; was TkMenuItemHelp (fh switch:bsim1.00 0x71004c36e0)
+0x008bee90 function TOMenuGetSummonHelp       # (id) -> MsMenuGetHelp(12, ...): the last pair of the TOMenuGet run before TOMenuHelpSetExtMode, with TOMenuGetSummonMes (table 12); see TOMenuGetArmsHelp; was TkMenuItemHelp (fh switch:bsim1.00 0x71004c36e0); ported (system round 37)
 0x008beeb0 function TOMenuGetSummonMes        # fh switch:bsim1.00 0x71004ec3d0
 0x008bef10 function TOMenuHelpSetExtMode      # fh v3:bsim1.00 0x008beee0
 0x008bef30 function TOMenuOpenPktBuffTmp      # fh v3:exact+call.cs 0x008bef00 cdecl; TOSetPktBuffAdrs(0x015c0870, 0x80000, 0x75300); jmp TOOpenPktbuff
@@ -10903,6 +10907,7 @@
 0x008e2690 function TkScreenToMenuX           # (x) -> float(x) * 512 / 1920 (a 1920-wide coordinate in the 512-wide menu)
 0x008e26b0 function TkScreenToMenuY           # (y) -> float(y) * 416 / 1080
 0x008e26d0 function TkMenuCtrlAbilityMap2     # fh v3:exact 0x008e26d0
+0x008e2790 function TOMenuEndScreenX2_008e2790 # cdecl(w): w+0x1c = 0, TkMenuSetScreenX2Flag(0) (eax returned), byte 0x01340858 = 1; no direct callers (a window function); ported (system round 37); name ours
 0x008e27e0 function TOMenuTermAbilityMap2     # fh switch:bsim1.00 0x71004b6970; (): TkMenuSetScreenX2Flag(0), SndSepPlaySimple(0x80000001), TkMenuMainSleepMenu(0x13), TkMenuMainActiveMenu(1, 0)
 0x008e2870 function TkMenuCtrlHdd             # fh v3:exact 0x008e2870
 0x008e28e0 function MenuHdd_WindowReset       # (window) +0x1c = 0; own name
@@ -10996,6 +11001,7 @@
 0x008ed160 function TOAddPktBaseMesFontRGBA_008ed160 # cdecl(cursor, text, x, y, colour, r, g, b, a) -> TOAddPktBaseMesFontLClutTypeRGBA(cursor, -1, text, x, y, colour, 0, r, g, b, a); ported (system round 34); name ours
 0x008ed190 function TOAdpEasyMesFontLClutRGBAInterMode # layout+callees: sorts between TOAdpCrossFontS_ASCII and TOAdpEasyShapeXYWHC2, and its named callees match the Switch 0x71005104b0 TOAdpEasyMesFontLClutRGBAInterMode's (similarity 1.00: TOGetFontInfoInterMode, TOMakePktFont1612Font, TOMakePktFont1612Shadow, TOSkipCode); symbols from Fahrenheit's server export
 0x008ed380 function TOAdpEasyShapeXYWHC2      # fh v3:exact 0x008ed380
+0x008ee060 function TODrawFont3d80String_008ee060 # cdecl(cursor, text, x, y, nibbles, c0..c3) -> cursor: Identity_008f2f70(cursor), then TODrawFont3d80Glyph_008eeee0 per character of the NUL-terminated text, x += 10; returns the last cursor; ported (system round 37); name ours
 0x008ee210 function TOAddPktBaseMesFontLClutRGBA_copy_008ee210 # ported (system round 34: kind 0 into 0x008e92a0); the same code as TOAddPktBaseMesFontLClutRGBA (0x008e9270; call targets equal), a copy the compiler kept; own name
 0x008ee240 function TOAdpFontM_ASCII          # fh v3:exact 0x008ee240
 0x008ee600 function TOAdpFontM_ASCII_SaMenu      # layout+callees: sorts between TOAdpFontM_ASCII and TOAdpGsDirectRGBA, and its named callees match the Switch 0x7100514720 TOAdpFontM_ASCII_SaMenu's (similarity 1.00: BeginScissor_XYUV, TOGetImageWH, TOGetTextureName, graphicFontDraw); symbols from Fahrenheit's server export
@@ -16374,6 +16380,7 @@
 0x018676f0 label    g_MsgWindows              # message window pointers: +0 in use (i16), +0x2c state, +0x2e status (TOGetMessageStatus), +0x100 handler per state, +0x114 current handler (TOCloseMessage, TOSetMessageFunc, TOControlMessage)
 0x01869ab0 label    g_MsgVars                    # per window 32 pointers to text variable records {u8 default type, u8 type, i32 value}; text code 0x12
 0x01869eb0 label    g_MacroDic                   # macrodic section pointer table (MacroDic_Load)
+0x01869f08 label    g_BtlEnd_State            # BtlEnd_InitState_008bdeb0: 0x1d, 0 or 1 by the battle-end kind
 0x01869f10 label    g_TkBtlEndGil             # u32 step, u32 gil left to count (BtlEnd_InitGilStep); gil, not AP: BtlEnd_StepGil pays each step with MsPayGIL(-step), the total is result 19 (g_TkBtlEndGilWon), and 0x008bbb10 draws +4 beside MsGetGIL(); was g_TkBtlEndAp
 0x01869f18 label    g_TkBtlEndList            # u8 count, 14-byte entries from +8 (BtlEnd_CompactList)
 0x01869fbc label    g_TkBtlEndFlag            # BtlEnd_SetFlag

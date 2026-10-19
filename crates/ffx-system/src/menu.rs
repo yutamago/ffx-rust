@@ -476,4 +476,45 @@ pub mod bridge {
         mem.write(mem.rebase(0x0193_fd40), 0u32);
         0
     }
+
+    /// A menu text in the save configuration's kana: `get(table, id,
+    /// MsGetSaveConfigHiragana())` with `get` `MsMenuGetText`
+    /// (`0x0078fcf0`) or `MsMenuGetHelp` (`0x0078fbb0`); its `eax`.
+    fn menu_text<M: Mem>(
+        mem: &mut M,
+        get: u32,
+        table: u32,
+        id: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let kana = call(mem, 0x0078_51f0, &[]);
+        call(mem, get, &[table, id, kana])
+    }
+
+    /// `TOMenuGetSaveMes(id)` (`0x008bee30`): text `id` of menu table 3.
+    pub fn get_save_mes<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        menu_text(mem, 0x0078_fcf0, 3, id, call)
+    }
+
+    /// `TOMenuGetStatusHelp(id)` (`0x008bee50`): help `id` of table 11.
+    pub fn get_status_help<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        menu_text(mem, 0x0078_fbb0, 0xb, id, call)
+    }
+
+    /// `TOMenuGetSummonHelp(id)` (`0x008bee90`): help `id` of table 12.
+    pub fn get_summon_help<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        menu_text(mem, 0x0078_fbb0, 0xc, id, call)
+    }
 }
