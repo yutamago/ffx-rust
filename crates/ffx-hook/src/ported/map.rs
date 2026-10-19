@@ -4001,6 +4001,11 @@ ported! {
         let mut w = super::StackFrame::<{ model::bridge::FPM565_FRAME as usize / 4 }>::new();
         model::bridge::rcbg_fpm565_proc001(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcfxWindCalc(wind, sys)`: its two vectors in a frame.
+    rcfxWindCalc @ 0x0092_96d0 => extern "C" fn shim_rcfx_wind_calc(wind: u32, sys: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        model::bridge::rcfx_wind_calc(&mut mem(), wind, sys, w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
     /// `rcfxSpringCalc(s, sys)`.
     rcfxSpringCalc @ 0x0092_8aa0 => extern "C" fn shim_rcfx_spring_calc(s: u32, sys: u32) -> u32 {
         model::bridge::rcfx_spring_calc(&mut mem(), s, sys)

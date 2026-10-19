@@ -11961,6 +11961,7 @@
 0x009295e0 function rcVu0Add_009295e0        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3AddScalars_00735100 on it with c's words, the register to a); caller 0x009296d0; name ours; ported (field round 45)
 0x00929640 function rcbgScaleVector_00929640  # the same code as rcbgScaleVector 0x009200a0
 0x009296a0 function rcCopyQword_009296a0      # (dst, src): as rcCopyQword_0091cb40
+0x009296d0 function rcfxWindCalc              # (wind, sys) -> eax: rcfxWind's +0x14 callback (name ours): time (sys +0 f64) past the next gust +0x50: last +0x48 = next, next += period +0x40, from +0x58 = to +0x5c, to = 1 - 2 rand()/32767; strength from + (to-from) f32(u^2 (3-2u)), u = (time-last)/period; wind = +0x1c + +0x2c * strength; each of sys+0x1c forces (sys+0x30) += wind, or with normals (sys+0x28) normal * dot(wind, normal); ported (field r13, ffx_field::model)
 0x00929850 function rcfxWindInit              # (fx): kind 0x30006 and callbacks 0x00929840/0x009296d0, +0x1c 1.0, +0x34 0.1, +0x40 1.0 f64; 0x009298c0 allocates it (rcfxWind.c)
 0x009298c0 function rcfxWindNew               # (): rcAlloc 0x60 (rcfxWind.c), rcfxWindInit
 0x009298e0 function rcfxWindSet               # (wind, dir, pos, power): two vectors to +0x1c/+0x2c, power as a double at +0x40; rcbgPSimAddWind

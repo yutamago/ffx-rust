@@ -18521,3 +18521,75 @@ fn r13i_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_9002);
     r13i_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r13, group J: the wind force ----
+
+/// Group J (r13) on `t`: `rcfxWindCalc` with the time before, at and
+/// past the next gust (a new random target from a `rand` stand-in), 0..8
+/// particles with or without normals. The vector helpers run as the
+/// originals.
+fn r13j_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model;
+    let fcall = &mut oracle_fcall;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 4), t.alloc(4));
+    let stubs = t.cave(&[(None, log_stub(log, rv, 1, 0))]);
+    t.put(t.b.rebase(model::RAND_IMPORT), stubs[0]);
+    let (wind, sys) = (t.alloc(0x60), t.alloc(0x40));
+    let (normals, forces) = (t.alloc(0x80), t.alloc(0x80));
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.below(0x8000));
+        let period = f64::from(f32::from_bits(r6b_fine(rng, 0.5, 30.0)));
+        let prev = f64::from(rng.below(1000)) / 8.0;
+        let next = prev + period;
+        let time = match rng.below(4) {
+            0 => next,
+            1 => next + f64::from(f32::from_bits(r6b_fine(rng, 0.0, 5.0))),
+            _ => prev + f64::from(f32::from_bits(r6b_fine(rng, 0.0, 1.0))) * period,
+        };
+        t.put(wind + 0x40, period);
+        t.put(wind + 0x48, prev);
+        t.put(wind + 0x50, next);
+        t.put(wind + 0x58, r6b_fine(rng, -1.0, 1.0));
+        t.put(wind + 0x5c, r6b_fine(rng, -1.0, 1.0));
+        for w in 0..4 {
+            t.put(wind + 0x1c + 4 * w, r6b_fine(rng, -3.0, 3.0));
+            t.put(wind + 0x2c + 4 * w, r6b_fine(rng, -3.0, 3.0));
+        }
+        t.put(sys, time);
+        t.put(sys + 0x1c, rng.range(-1, 8));
+        t.put(sys + 0x28, if rng.below(2) == 0 { 0 } else { normals });
+        t.put(sys + 0x30, forces);
+        for w in 0..32 {
+            t.put(normals + 4 * w, r6b_fine(rng, -1.0, 1.0));
+            t.put(forces + 4 * w, r6b_fine(rng, -10.0, 10.0));
+        }
+        let work = t.stack_scratch(0x100);
+        let vf = t.b.rebase(0x00c8_f974);
+        t.same_but(
+            "rcfxWindCalc",
+            &[(vf, 12)],
+            |o| o.eax(0x0092_96d0, &[wind, sys]),
+            |m| model::bridge::rcfx_wind_calc(m, wind, sys, work, call, fcall),
+        );
+    }
+}
+
+/// Group J (r13) on the image.
+#[test]
+fn r13j_wind_calc_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a101);
+    r13j_cases(&mut t, &mut rng, 600);
+}
+
+/// Group J (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13j_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a102);
+    r13j_cases(&mut t, &mut rng, 300);
+}

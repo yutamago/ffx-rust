@@ -3183,6 +3183,85 @@ pub mod bridge {
         );
     }
 
+    /// `rcbgScaleVector_00929640(out, v, s)`, `rcVu0Add_009295e0(out, a,
+    /// b)` and `rcVec3fDot(a, b)` (in `ST0`): [`rcfx_wind_calc`]'s helpers.
+    pub const WIND_HELPERS: [u32; 3] = [0x0092_9640, 0x0092_95e0, 0x0092_1220];
+    /// 32767.0, 2.0 and 3.0 (`f64`s, `.rdata`): the gust's random range
+    /// and the smoothstep's.
+    pub const WIND_CONSTS: [u32; 3] = [0x00b4_1d70, 0x00b9_2270, 0x00b2_c5c8];
+
+    /// `rcfxWindCalc(wind, sys)` (`0x009296d0`, the wind's `+0x14`
+    /// callback; name ours): once the system's time (`sys +0`, an `f64`)
+    /// passes the next gust (`+0x50`), that becomes the last (`+0x48`),
+    /// the next is a period (`+0x40`) on, the target strength (`+0x5c`)
+    /// becomes the start (`+0x58`) and a new one is `1 - 2 rand() /
+    /// 32767` (`f32`). The strength is `from + (to - from) s` with `s` the
+    /// smoothstep `u² (3 - 2u)` of `u = (time - last) / period` (stored as
+    /// `f32`), the wind `+0x1c + +0x2c * strength` (in `work`, 0x20 bytes:
+    /// the scaled vector, then the wind). Each of the `+0x1c` particles'
+    /// forces (`+0x30`) gets the wind, or with normals (`+0x28`) the
+    /// normal times `dot(wind, normal)`. Returns the `eax` it ends with.
+    pub fn rcfx_wind_calc<M, C, F>(
+        mem: &mut M,
+        wind: u32,
+        sys: u32,
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use crate::x87::{copy, load, store};
+        let [scale, add, dot] = WIND_HELPERS.map(|f| mem.rebase(f));
+        let [range, two, three] = WIND_CONSTS.map(|c| mem.read::<f64>(mem.rebase(c)));
+        let time = mem.read::<f64>(sys);
+        let normals = mem.read::<u32>(sys.wrapping_add(0x28));
+        let count = mem.read::<i32>(sys.wrapping_add(0x1c));
+        let mut force = mem.read::<u32>(sys.wrapping_add(0x30));
+        let at = |o: u32| wind.wrapping_add(o);
+        // fcom: only strictly past the next gust (not NaN)
+        if time > mem.read::<f64>(at(0x50)) {
+            let next = mem.read::<f64>(at(0x50));
+            mem.write(at(0x48), next);
+            let to = copy(mem.read::<u32>(at(0x5c)));
+            mem.write(at(0x58), to);
+            mem.write(at(0x50), next + mem.read::<f64>(at(0x40)));
+            let f = mem.read::<u32>(mem.rebase(super::RAND_IMPORT));
+            let r = call(mem, f, &[]).cast_signed();
+            let q = load(store(f64::from(r))) / range * two;
+            mem.write(at(0x5c), store(1.0 - q));
+        }
+        let u = (time - mem.read::<f64>(at(0x48))) / mem.read::<f64>(at(0x40));
+        let s = load(store((three - u * two) * (u * u)));
+        let from = load(mem.read::<u32>(at(0x58)));
+        let k = store(s * (load(mem.read::<u32>(at(0x5c))) - from) + from);
+        let (scaled, gust) = (work, work.wrapping_add(0x10));
+        call(mem, scale, &[scaled, at(0x2c), k]);
+        let mut eax = call(mem, add, &[gust, at(0x1c), scaled]);
+        if normals == 0 {
+            for _ in 0..count.max(0) {
+                eax = call(mem, add, &[force, force, gust]);
+                force = force.wrapping_add(0x10);
+            }
+            return if count > 0 { eax } else { normals };
+        }
+        if count <= 0 {
+            return normals;
+        }
+        let rel = normals.wrapping_sub(force);
+        for _ in 0..count {
+            let n = rel.wrapping_add(force);
+            let d = store(fcall(mem, dot, crate::camera::FArgs::Stack(&[gust, n])));
+            call(mem, scale, &[scaled, n, copy(d)]);
+            call(mem, add, &[force, force, scaled]);
+            force = force.wrapping_add(0x10);
+        }
+        rel
+    }
+
     /// `rcfxWindSet(wind, dir, pos, power)` (`0x009298e0`): the two vectors
     /// (`rcCopyQword`) to `+0x1c`/`+0x2c` and the power as a double at
     /// `+0x40`.
