@@ -1858,4 +1858,294 @@ pub mod bridge {
         }
         number
     }
+
+    /// `0x0119fe90`: the battle's oef2 object, started by
+    /// [`op_et_battle_init`] (`op_is_not_0119fe90` compares with it).
+    pub const BATTLE_OEF2: Global<u32> = Global::new(0x0119_fe90);
+    /// `0x012a40c4`: an opus object that `opu_debug_check` prefers over
+    /// [`OPUS_BATTLE`] and [`opus_end_all_sub`] clears; no writer in the
+    /// dump.
+    pub const OPUS_ALT: Global<u32> = Global::new(0x012a_40c4);
+    /// The debug encounter oef2 object and its part
+    /// ([`op_et_encount_effect_on`] with debug flag 0x20).
+    pub const DEBUG_ENCOUNT: Global<u32> = Global::new(0x0232_15d8);
+    /// The part [`op_et_encount_effect_on`] runs on [`DEBUG_ENCOUNT`].
+    pub const DEBUG_ENCOUNT_PART: Global<u32> = Global::new(0x0232_15fc);
+
+    /// `op_et_ffx_init(oef2)` (`0x007fc620`): `g_OpusEncount` = `oef2`,
+    /// then [`op_et_oef2_start`]; returns `opu_et_unit`'s result.
+    pub fn op_et_ffx_init<M: Mem>(
+        mem: &mut M,
+        oef2: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        ENCOUNT.set(mem, oef2);
+        op_et_oef2_start(mem, oef2, call)
+    }
+
+    /// `op_et_battle_init(oef2)` (`0x007fb250`): the units of the previous
+    /// battle oef2 ([`BATTLE_OEF2`], when set) are freed
+    /// (`opu_unit_free_by_oef2(g_OpusBattle, old)`), `oef2` takes its place
+    /// and is started ([`op_et_oef2_start`]); returns `opu_et_unit`'s
+    /// result. Callees through `call`.
+    pub fn op_et_battle_init<M: Mem>(
+        mem: &mut M,
+        oef2: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let old = BATTLE_OEF2.get(mem);
+        if old != 0 {
+            op_et_oef2_free(mem, old, call);
+        }
+        BATTLE_OEF2.set(mem, oef2);
+        op_et_oef2_start(mem, oef2, call)
+    }
+
+    /// `op_et_encount_effect_on(part, id)` (`0x007fc590`): in debug mode
+    /// with debug flag 0x20, `opu_et_unit(debug oef2, 0, debug part, id)`
+    /// ([`DEBUG_ENCOUNT`], [`DEBUG_ENCOUNT_PART`]); else, with an encounter
+    /// object, `opu_et_unit(g_OpusEncount, 0, part + 8, id)`. Returns that
+    /// call's result, `None` without one (the original leaves `eax` as it
+    /// came). Callees through `call`.
+    pub fn op_et_encount_effect_on<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let unit = OPU_ET_UNIT.ptr(mem).addr;
+        if crate::op::bridge::DEBUG_MODE.get(mem) != 0 && DEBUG_CHR_FLAGS.get(mem) & 0x20 != 0 {
+            let (oef2, debug_part) = (DEBUG_ENCOUNT.get(mem), DEBUG_ENCOUNT_PART.get(mem));
+            return Some(call(mem, unit, &[oef2, 0, debug_part, id]));
+        }
+        let oef2 = ENCOUNT.get(mem);
+        (oef2 != 0).then(|| call(mem, unit, &[oef2, 0, part.wrapping_add(8), id]))
+    }
+
+    /// `op_et_battle_effect_free()` (`0x007fb170`): the weapons freed
+    /// (`op_et_weapon_free_all`), the battle oef2 ([`BATTLE_OEF2`], when
+    /// set) freed and started again, every separation effect freed
+    /// (`op_oef2_sep_free_all(0xffff)`), `op_et_astatus_effect_off_all`,
+    /// `opus_all_clut_dispose`, `opus_change_chrhd_battle_to_ffx`, a debug
+    /// line, and the byte at `0x011a0082` cleared (the one
+    /// [`op_et_battle_effect_init`] sets). Callees through `call`; returns
+    /// the debug print's result (the original's `eax`).
+    pub fn op_et_battle_effect_free<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let weapons_free = at(mem, 0x007f_caf0);
+        call(mem, weapons_free, &[]);
+        let oef2 = BATTLE_OEF2.get(mem);
+        if oef2 != 0 {
+            op_et_oef2_free(mem, oef2, call);
+            BATTLE_OEF2.set(mem, oef2);
+            op_et_oef2_start(mem, oef2, call);
+        }
+        let sep_free = at(mem, 0x007f_ff30);
+        call(mem, sep_free, &[0xffff]);
+        for f in [0x007f_b0a0, 0x0080_8a20, 0x007f_e1a0] {
+            let f = at(mem, f);
+            call(mem, f, &[]);
+        }
+        let (print, msg) = (at(mem, 0x0062_f500), at(mem, 0x00b5_8460));
+        let r = call(mem, print, &[msg]);
+        mem.write(at(mem, 0x011a_0082), 0u8);
+        r
+    }
+
+    /// `op_et_weapon_init(oef2, no)` (`0x007fcb60`): unless `oef2` is one
+    /// of the 4 `g_OpusWeapons` already (returns its slot's address), the
+    /// first free slot takes it with weapon number `no`, its effect count
+    /// and counter cleared, and it is started ([`op_et_oef2_start`];
+    /// returns `opu_et_unit`'s result); 4 when no slot is free. Callees
+    /// through `call`.
+    pub fn op_et_weapon_init<M: Mem>(
+        mem: &mut M,
+        oef2: u32,
+        no: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::opus::bridge::{WEAPON_NOS, WEAPONS};
+        let slot = |mem: &M, i: u32| WEAPONS.ptr(mem).at(i).addr;
+        if let Some(i) = (0..4).find(|&i| mem.read::<u32>(slot(mem, i)) == oef2) {
+            return slot(mem, i);
+        }
+        let Some(i) = (0..4).find(|&i| mem.read::<u32>(slot(mem, i)) == 0) else {
+            return 4;
+        };
+        mem.write(slot(mem, i), oef2);
+        WEAPON_EFF_COUNT.ptr(mem).at(i).set(mem, 0);
+        WEAPON_COUNTER.ptr(mem).at(i).set(mem, 0);
+        #[allow(clippy::cast_possible_truncation)] // the byte the original stores
+        WEAPON_NOS.ptr(mem).at(i).set(mem, no as u8);
+        op_et_oef2_start(mem, oef2, call)
+    }
+
+    /// `op_et_bindeff2(h)` (`0x007fb360`): unless `g_OpEtBindOff` is set
+    /// or there is no encounter object, `g_OpusEncount` takes a slot among
+    /// the 16 oef2 words at `g_OpusBattle + 0x60` (its own, else the first
+    /// free one; nothing more when none is free). A known character `h`
+    /// whose second bind effect (ID `0x50001800 + index`) is not in
+    /// `g_EtEff` past record 0 gets an effect record
+    /// (`opus_get_eff_status_index(id, slot, 1)`); when that is positive,
+    /// `opu_et_unit(g_OpusEncount, 0, 0x18, id)` runs, bind flag 0x10 is
+    /// set and `op_et_bindeff2_walk_on`, `_breath_off`, `_water_off(h)`
+    /// follow. Callees through `call`. Returns the original's `eax` where
+    /// it is defined (`None` with the flag set or no encounter object): 16
+    /// without a free slot, the slot when `h` is skipped, the status index
+    /// when it is not positive, else `_water_off`'s result.
+    pub fn op_et_bindeff2<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let oef2 = ENCOUNT.get(mem);
+        if BIND_OFF.get(mem) != 0 || oef2 == 0 {
+            return None;
+        }
+        let slots = OPUS_BATTLE.get(mem).wrapping_add(0x60);
+        let word = |mem: &M, i: u32| mem.read::<u32>(slots.wrapping_add(4 * i));
+        let slot = if let Some(i) = (0..16).find(|&i| word(mem, i) == oef2) {
+            i
+        } else if let Some(i) = (0..16).find(|&i| word(mem, i) == 0) {
+            mem.write(slots.wrapping_add(4 * i), oef2);
+            i
+        } else {
+            return Some(16);
+        };
+        let Some(index) = find_chr(mem, h) else {
+            return Some(slot);
+        };
+        let id = 0x5000_1800 + index;
+        if find_eff(mem, id).is_some_and(|j| j > 0) {
+            return Some(slot);
+        }
+        let status_index = at(mem, 0x007f_eba0);
+        let record = call(mem, status_index, &[id, slot, 1]);
+        if record.cast_signed() <= 0 {
+            return Some(record);
+        }
+        let unit = OPU_ET_UNIT.ptr(mem).addr;
+        call(mem, unit, &[oef2, 0, 0x18, id]);
+        let flags = Ptr::<u16>::new(chr(mem, index) + 0xc);
+        let v = flags.get(mem) | 0x10;
+        flags.set(mem, v);
+        let mut r = 0;
+        for f in [0x007f_b830, 0x007f_b470, 0x007f_b890] {
+            let f = at(mem, f);
+            r = call(mem, f, &[h]);
+        }
+        Some(r)
+    }
+
+    /// `op_et_monster_init(h, no)` (`0x007fc780`): for a character not in
+    /// `g_EtChr` yet, a record (`opus_get_chr_status_index(h, no, 1)`);
+    /// when one is found and some record has a free draw index (`u16 +0xe`
+    /// 0xffff), `Ch_EffectSetEffectLevel(record +0, 1)`, and the record's
+    /// oef2 (`+8`), when set and not one of the 8 `g_OpusMonsters` yet,
+    /// takes the first free monster slot and is started
+    /// ([`op_et_oef2_start`]). Callees through `call`. Returns the
+    /// original's `eax`: the known record's address, the negative status
+    /// index, 0xf0 without a free draw index, the level call's result
+    /// without an oef2, the monster slot's address when it is there, 8
+    /// when no slot is free, else `opu_et_unit`'s result.
+    pub fn op_et_monster_init<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        no: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::opus::bridge::MONSTERS;
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if let Some(i) = find_chr(mem, h) {
+            return chr(mem, i);
+        }
+        let status = at(mem, 0x007f_e970);
+        let k = call(mem, status, &[h, no, 1]);
+        if k.cast_signed() < 0 {
+            return k;
+        }
+        if !(0..CHRS).any(|i| mem.read::<u16>(chr(mem, i) + 0xe) == 0xffff) {
+            return CHRS;
+        }
+        let rec = CHR.ptr(mem).addr.wrapping_add(k << 5);
+        let level = at(mem, 0x0082_a9d0);
+        let hd: u32 = mem.read(rec);
+        let r = call(mem, level, &[hd, 1]);
+        let oef2: u32 = mem.read(rec.wrapping_add(8));
+        if oef2 == 0 {
+            return r;
+        }
+        let slot = |mem: &M, i: u32| MONSTERS.ptr(mem).at(i).addr;
+        if let Some(i) = (0..8).find(|&i| mem.read::<u32>(slot(mem, i)) == oef2) {
+            return slot(mem, i);
+        }
+        let Some(i) = (0..8).find(|&i| mem.read::<u32>(slot(mem, i)) == 0) else {
+            return 8;
+        };
+        mem.write(slot(mem, i), oef2);
+        op_et_oef2_start(mem, oef2, call)
+    }
+
+    /// `opus_end_all_sub(k)` (`0x007fe6c0`): with an [`OPUS_ALT`] object
+    /// `o`, its four index lists (pointers at `o + 0x10..0x1c`) are filled
+    /// with -1, 16 bytes each per step for `u16 [o + 0x34] >> 3` steps (the
+    /// count and the pointers read again each step), then the pointers are
+    /// put back. Then the effect record `k` (for a negative `k`, the first
+    /// with an ID whose object `+4` is at least `[o + 0x20]`; none: done)
+    /// is ended when its object lies in `[o + 0x20] ..= [o + 0x20] +
+    /// 0x40000000`: `opu_eff_free_by_id(id)` and `MsEffectTerminate(id)`.
+    /// Callees through `call`. A null object faults in the original (it
+    /// reads `[0 + 0x20]`); the port reads address 0x20 then.
+    pub fn opus_end_all_sub<M: Mem>(
+        mem: &mut M,
+        k: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let alt = OPUS_ALT.get(mem);
+        if alt != 0 {
+            let lists = alt.wrapping_add(0x10);
+            let saved: [u32; 4] = mem.read(lists);
+            let count = |mem: &M| u32::from(mem.read::<u16>(alt.wrapping_add(0x34)) >> 3);
+            let mut step = 0;
+            while step < count(mem) {
+                for j in 0..4 {
+                    let list: u32 = mem.read(lists + 4 * j);
+                    mem.write(list, [u32::MAX; 4]);
+                }
+                for j in 0..4 {
+                    let list: u32 = mem.read(lists + 4 * j);
+                    mem.write(lists + 4 * j, list.wrapping_add(0x10));
+                }
+                step += 1;
+            }
+            mem.write(lists, saved);
+        }
+        let alt = OPUS_ALT.get(mem);
+        let low = |mem: &M| mem.read::<u32>(alt.wrapping_add(0x20));
+        let rec = if k.cast_signed() >= 0 {
+            EFF.ptr(mem).addr.wrapping_add(k << 5)
+        } else {
+            let found = (0..EFFS)
+                .map(|i| EFF.ptr(mem).at(i).addr)
+                .find(|&e| mem.read::<u32>(e) != 0 && mem.read::<u32>(e + 4) >= low(mem));
+            let Some(e) = found else {
+                return;
+            };
+            e
+        };
+        let obj: u32 = mem.read(rec.wrapping_add(4));
+        let low = low(mem);
+        if obj >= low && obj <= low.wrapping_add(0x4000_0000) {
+            let id: u32 = mem.read(rec);
+            let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+            let free = at(mem, 0x007f_e920);
+            call(mem, free, &[id]);
+            let terminate = at(mem, 0x0078_8920);
+            call(mem, terminate, &[id]);
+        }
+    }
 }

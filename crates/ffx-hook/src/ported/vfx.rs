@@ -4580,4 +4580,36 @@ ported! {
             &mut |_, seed| crt_srand(seed),
         );
     }
+    /// `op_et_ffx_init(oef2)`.
+    op_et_ffx_init @ 0x007f_c620 => extern "C" fn op_et_ffx_init(oef2: u32) -> u32 {
+        et::bridge::op_et_ffx_init(&mut mem(), oef2, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_battle_init(oef2)`.
+    op_et_battle_init @ 0x007f_b250 => extern "C" fn op_et_battle_init(oef2: u32) -> u32 {
+        et::bridge::op_et_battle_init(&mut mem(), oef2, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_encount_effect_on(part, id)`.
+    op_et_encount_effect_on @ 0x007f_c590 => extern "C" fn op_et_encount_effect_on(part: u32, id: u32) -> u32 {
+        et::bridge::op_et_encount_effect_on(&mut mem(), part, id, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_et_battle_effect_free()`.
+    op_et_battle_effect_free @ 0x007f_b170 => extern "C" fn op_et_battle_effect_free() -> u32 {
+        et::bridge::op_et_battle_effect_free(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_weapon_init(oef2, no)`.
+    op_et_weapon_init @ 0x007f_cb60 => extern "C" fn op_et_weapon_init(oef2: u32, no: u32) -> u32 {
+        et::bridge::op_et_weapon_init(&mut mem(), oef2, no, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_bindeff2(h)`.
+    op_et_bindeff2 @ 0x007f_b360 => extern "C" fn op_et_bindeff2(h: u32) -> u32 {
+        et::bridge::op_et_bindeff2(&mut mem(), h, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_et_monster_init(h, no)`.
+    op_et_monster_init @ 0x007f_c780 => extern "C" fn op_et_monster_init(h: u32, no: u32) -> u32 {
+        et::bridge::op_et_monster_init(&mut mem(), h, no, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_end_all_sub(k)`.
+    opus_end_all_sub @ 0x007f_e6c0 => extern "C" fn opus_end_all_sub(k: u32) {
+        et::bridge::opus_end_all_sub(&mut mem(), k, &mut |_, f, a| call_ptr(f, a));
+    }
 }

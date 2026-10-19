@@ -2661,6 +2661,7 @@
 0x006a1200 function ClassCharacter_clearInstanceList # fh v3:exact 0x006a1340 ClassCharacter::clearInstanceList
 0x006a1590 function ClassCharacterInstance_destroyClothInstances # fh v3:exact 0x006a16d0 ClassCharacterInstance::destroyClothInstances
 0x006a15e0 function ClassCharacterInstance_destroyMeshes # fh v3:exact 0x006a1720 ClassCharacterInstance::destroyMeshes
+0x006a19d0 function std_Tree_erase_range_006a19d0 # ours: thiscall (this, out, first, last) -> out: MSVC _Tree::erase(first, last) (whole tree: 0x006a0fe0 clear; else node by node through 0x006a1a70 with the in-order successor walk, nil byte +0xd); std::map code of ClassVFXRenderDataTable (callers 0x0069e6b0, 0x0069e770, 0x0069e900, 0x0069f110, 0x006a0bd0); REVIEWED platform
 0x006a1e80 function ClassLoadedCharacterTable_existPrototype # fh v3:exact 0x006a1fc0 ClassLoadedCharacterTable::existPrototype
 0x006a1f60 function ClassVFXRenderDataTable_MapFind # thiscall(this, out, &key), ret 8: std::map<u64, geometry>::find over the table's tree (head at this+0; node +0x10 key, +0x18 geometry); *out = node or the head, returns out; called by ClassVFXRenderDataTable_GetDynamicGeometryByInstance; name ours
 0x006a2110 function ClassLoadedCharacterTable_getPrototypeByFilename # fh v3:exact 0x006a2250 ClassLoadedCharacterTable::getPrototypeByFilename
@@ -6611,12 +6612,12 @@
 0x007faed0 function op_et_astatus_effect_change # fh v3:exact 0x007fadf0
 0x007fb000 function op_et_astatus_effect_off  # fh v3:cg5 0x7faf20; (chr): opu_unit_free_by_id(g_OpusBattle, 0x60004000 + i), +0x10/+0x18 = 0x80808080, opus_chara_rgba_set(chr, 0x80808080, w), opus_chara_status_rgb_set(chr, w) with w = MsBattleChrStart() != 0, Ch_ClutDispose when +0x17 bit 0; +0x17 = 0 (et::bridge::op_et_astatus_effect_off)
 0x007fb0a0 function op_et_astatus_effect_off_all # layout: alphabetical run between op_et_astatus_effect_off and op_et_battle_effect_free (1 unnamed in the gap); Switch 0x71003f2130 op_et_astatus_effect_off_all is the only unused name of that source file sorting there (symbols from Fahrenheit's server export) ; (): op_et_astatus_effect_off of every live g_EtChr handle (et::bridge::op_et_astatus_effect_off_all)
-0x007fb170 function op_et_battle_effect_free  # fh v3:exact 0x007fb090
+0x007fb170 function op_et_battle_effect_free  # fh v3:exact 0x007fb090; (): op_et_weapon_free_all, battle oef2 0x0119fe90 freed and restarted, op_oef2_sep_free_all(0xffff), op_et_astatus_effect_off_all, opus_all_clut_dispose, opus_change_chrhd_battle_to_ffx, dbgPrintf, byte 0x011a0082 cleared; eax = dbgPrintf's (et::bridge::op_et_battle_effect_free)
 0x007fb1e0 function op_et_battle_effect_init  # fh v3:exact 0x007fb100 ; (): debug line, byte 0x011a0082 = 1, op_ovl_effect_free, g_OpusBattle +0x3a = 0; returns the list (et::bridge::op_et_battle_effect_init)
 0x007fb240 function op_et_battle_genko_counter_get # fh v3:bsim1.00 0x007fb160
-0x007fb250 function op_et_battle_init         # fh v3:exact 0x007fb170
+0x007fb250 function op_et_battle_init         # fh v3:exact 0x007fb170; (oef2): the old 0x0119fe90 oef2's units freed, oef2 stored there, op_oef2_set2 + opu_et_unit(oef2,0,0,-1); eax = opu_et_unit's (et::bridge::op_et_battle_init)
 0x007fb290 function op_et_bindeff             # fh v3:exact 0x007fb1b0
-0x007fb360 function op_et_bindeff2            # fh v3:exact 0x007fb280
+0x007fb360 function op_et_bindeff2            # fh v3:exact 0x007fb280; (h): g_OpusEncount takes a g_OpusBattle oef2 slot; a known h whose 0x50001800+index effect is not past g_EtEff record 0 gets opus_get_eff_status_index(id, slot, 1) and, when positive, opu_et_unit(enc, 0, 0x18, id), bind flag 0x10, walk_on/breath_off/water_off (et::bridge::op_et_bindeff2)
 0x007fb470 function op_et_bindeff2_breath_off # (h) g_EtChr bind flags |= 0x200; characters 1/0x65 (u16 at h) clear bit 0 of g_EtBreathFlags; between op_et_bindeff2 and op_et_bindeff2_breath_on, the off form of it
 0x007fb4c0 function op_et_bindeff2_breath_on  # fh v3:exact 0x007fb3e0
 0x007fb530 function op_et_bindeff2_draw_off   # (h) -> 8 if newly set: draw flags (g_EtChrDrawFlags2 if nonzero, else g_EtChrDrawFlags) |= 8 when bind flags & 0x10; the set form of op_et_bindeff2_draw_on
@@ -6650,11 +6651,11 @@
 0x007fc4d0 function op_et_eff_flags_and       # (id, mask) the first g_EtEff record with this ID: +0xc &= mask
 0x007fc510 function op_et_eff_flags_or        # (id, bits) the first g_EtEff record with this ID: +0xc |= bits
 0x007fc550 function op_et_eff_signal_or       # (id, u16 bits) the first g_EtEff record with this ID: object +0xb0 |= bits
-0x007fc590 function op_et_encount_effect_on   # fh v3:exact 0x007fc4b0
+0x007fc590 function op_et_encount_effect_on   # fh v3:exact 0x007fc4b0; (part, id): debug mode + 0x02321580 bit 5: opu_et_unit(0x023215d8, 0, [0x023215fc], id), else opu_et_unit(g_OpusEncount, 0, part + 8, id) when set (et::bridge::op_et_encount_effect_on)
 0x007fc5f0 function op_et_encount_effect_free # () g_OpusEncount != 0: opu_unit_free_by_oef2(g_OpusBattle, it), cleared (op_et_encount_effect_on starts its units)
-0x007fc620 function op_et_ffx_init            # fh v3:exact 0x007fc540
+0x007fc620 function op_et_ffx_init            # fh v3:exact 0x007fc540; (oef2): g_OpusEncount = oef2, op_oef2_set2, opu_et_unit(oef2,0,0,-1) (et::bridge::op_et_ffx_init)
 0x007fc650 function op_et_monster_free        # fh v3:exact 0x007fc570 ; (h): bindeff/bindeff2/astatus off on the record handle, op_mdc_mem_transfer_cue_free(h); with at most 2 records of its character number a monster oef2 (+8) gets op_oef2_sep_free_all(0x10000 << slot), opu_unit_free_by_oef2, its g_OpusMonsters slot cleared and opus_mdc_free; then op_et_chr_reset_007feec0 (et::bridge::op_et_monster_free)
-0x007fc780 function op_et_monster_init        # fh v3:exact 0x007fc6a0
+0x007fc780 function op_et_monster_init        # fh v3:exact 0x007fc6a0; (h, no): an unknown h gets opus_get_chr_status_index(h, no, 1); with a free draw index (u16 +0xe 0xffff) somewhere, Ch_EffectSetEffectLevel(+0, 1) and its +8 oef2 into a free g_OpusMonsters slot, started; eax per path (et::bridge::op_et_monster_init)
 0x007fc8a0 function op_et_monster_add         # (oef2) -> -1 null, 0 present or no slot, 1: first free g_OpusMonsters slot, op_oef2_set2 + opu_et_unit(oef2, 0, 0, -1)
 0x007fc900 function op_et_flag2_on            # g_MagicImports slot 575 (6 overlays): byte 0x011a006e |= 2; hidden from the dump
 0x007fc910 function op_et_flag2_off           # g_MagicImports slot 574 (6 overlays): byte 0x011a006e &= 0xfd; hidden from the dump
@@ -6666,7 +6667,7 @@
 0x007fca40 function op_et_weapon_afterimage_fade # fh v3:bsim1.00 0x007fc960
 0x007fca90 function op_et_weapon_free         # fh v3:exact 0x007fc9b0; (obj): for a g_OpusWeapons object: dbgPrintf, opu_unit_free_by_oef2(g_OpusBattle, it), slot cleared (number 0xff) (et::bridge::op_et_weapon_free)
 0x007fcaf0 function op_et_weapon_free_all     # fh v3:exact 0x007fca10; (): op_et_weapon_free for each nonzero g_OpusWeapons slot (et::bridge::op_et_weapon_free_all)
-0x007fcb60 function op_et_weapon_init         # fh v3:exact 0x007fca80
+0x007fcb60 function op_et_weapon_init         # fh v3:exact 0x007fca80; (oef2, no): the first free g_OpusWeapons slot (none if already there) takes oef2, number no, counts cleared, started; eax = slot address / 4 / opu_et_unit's (et::bridge::op_et_weapon_init)
 0x007fcbd0 function magic_nop_007fcbd0        # g_MagicImports slot 224 (1 overlay): a lone ret; hidden from the dump
 0x007fcbf0 function op_event_effect_free      # fh v3:exact 0x007fcb10; (): dbgPrintf, g_EtBindDefault = (& 0xcbff) | 0x800, g_OpEventEffect = 0 (op::bridge::op_event_effect_free)
 0x007fcc20 function op_event_effect_init      # fh v3:exact 0x007fcb40; (): dbgPrintf, g_OpEventEffect (0x011a006b) = 1 (op::bridge::op_event_effect_init)
@@ -6706,7 +6707,7 @@
 0x007fe540 function opus_monster_index        # (obj) -> slot among the 8 g_OpusMonsters (no null check, unlike opus_get_monster_index), else -1
 0x007fe570 function opus_weapon_index         # (obj) -> the opus_get_weapon_index body again
 0x007fe690 function opus_draw_slot_clear      # (obj, v) the 16 words at obj + 0x60 equal to v zeroed
-0x007fe6c0 function opus_end_all_sub          # fh v3:exact 0x007fe5e0
+0x007fe6c0 function opus_end_all_sub          # fh v3:exact 0x007fe5e0; (k): 0x012a40c4's four index lists +0x10..+0x1c filled with -1 for u16 +0x34 >> 3 steps of 16 bytes (pointers restored), then g_EtEff record k (k<0: the first with an ID and +4 >= [o+0x20]) ended by opu_eff_free_by_id + MsEffectTerminate when +4 lies in [o+0x20, +0x40000000] (et::bridge::opus_end_all_sub)
 0x007fe920 function opu_eff_free_by_id        # (id): every g_EtEff record with this ID emptied (id -1, +4 0, +8 0x101, +0xc 0, +0x10/+0x18 0, +0x1c 0xff); nothing for -1 (opu_unit_free_by_id, opu_unit_free_by_oef2, opus_end_all_sub)
 0x007fe970 function opus_get_chr_status_index # fh v3:exact 0x007fe890
 0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
@@ -16092,6 +16093,7 @@
 0x0113fc80 label    g_OpLineCount                # op script reader line counter, +1 per op_line_length_007e2660
 0x0113fcd0 label    g_Op3dListener            # matrix op_3d_vol_pan_get applies (op_apply_m_w1) to a sound position
 0x0119fe10 label    g_OpSprStack                 # op scratch stack, i32 marks: op_spr_alloc(n) pushes top + n (top index g_OpSprTop)
+0x0119fe90 label    g_OpBattleOef2            # the battle's oef2 object: op_et_battle_init frees the old one's units and starts the new one, op_et_battle_effect_free restarts it, op_is_not_0119fe90 compares; name ours
 0x0119fe98 label    g_OpusEncount             # the encounter effect's oef2 object: op_et_encount_effect_on runs opu_et_unit on it, op_et_encount_effect_free frees its units and clears it
 0x0119fe9c label    g_OpusWeaponNos           # 4 bytes: the weapon numbers of g_OpusWeapons (set by op_et_weapon_init, 0xff free; opus_get_weapon_by_no)
 0x0119fea0 label    g_OpusWeapons                # 4 weapon opus objects (opus_get_weapon_index)
@@ -16127,6 +16129,7 @@
 0x012a1370 label    g_OpPads                     # 0x20 per pad: now, last, pressed, auto-repeat, repeat timer (op_pad_set: 12 frames, then every frame)
 0x012a22c0 label    g_EtChr                      # 240 x 0x20 effect character records: +0 handle, +4 chr number, +0xc u16 bind flags, +0xe draw flag index, +0x17 bit 0 stone (op_et_*, op_get_chr*)
 0x012a40c0 label    g_OpusBattle                 # the battle's opus object: +0x1c draw list, +0x20 parts, +0x3a genko counter (opus_get_osu_by_draw default, op_et_battle_genko_counter_get)
+0x012a40c4 label    g_OpusAlt                 # an opus object next to g_OpusBattle that opu_debug_check prefers when set and opus_end_all_sub clears (+0x10..+0x1c lists, +0x20 object base, u16 +0x34 count); no writer in the dump; name ours
 0x012a4100 label    g_EtEff                      # 512 x 0x20 effect records: +0 ID (bind effects 0x40000400/500/600/700 + chr record), +4 object (u16 signals at +0xb0: 0x4000 off, 0x8000 fade)
 0x012a4104 label    g_OpusNoTable                # 32-byte entries, a unit pointer at +4 (this address): opus_no_get / opus_parent_get take the number for 0xfe00..0xfeff from its +0x1a & 0x7ff0, indexed by the unit's u16 +0x14
 0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
@@ -16689,6 +16692,8 @@
 0x02321548 label    g_OpPadInput                 # byte: while 0, op_pad_set takes no buttons
 0x02321580 label    g_OpDebugChrFlags            # byte: bit 1 with g_OpDebugMode makes opus_get_chr_status_index use g_OpDebugChrResident instead of Ch_EffectGetResidentPtr
 0x023215c8 label    g_OpDebugChrResident         # the debug character's resident data pointer (opus_get_chr_status_index)
+0x023215d8 label    g_OpDebugEncountOef2      # the debug encounter oef2 object: op_et_encount_effect_on runs opu_et_unit on it with g_OpDebugMode and 0x02321580 bit 5; opu_debug_reload frees it through op_et_encount_effect_free; name ours
+0x023215fc label    g_OpDebugEncountPart      # the part op_et_encount_effect_on runs on g_OpDebugEncountOef2; name ours
 0x02322790 label    g_OpDebugMode                # byte set by pppInitPartRender: op_pad_set and op_heap_display_set_par do nothing while 0; read by the op debug functions around 0x007e5bd0
 0x02322794 label    g_OpNumShow                  # byte: op_num_xy_set shows its numbers (opd_num_xy_set) when set, again in debug mode
 0x023328d0 label    g_OpLoopCount2            # op_loop_ffx_after increments it each frame; name ours
