@@ -1553,3 +1553,58 @@ pushed as literals (no relocation entries), not addresses.
   signed; a zero maximum faults in the original, the port gives 0) at
   `+0x34`/`+0x38`, `TOBtlMakeStatusBuff(c, row + 0x42)` at `+0x40` and
   0x14 at `+0x3c`. It returns 0x14 when the last slot is filled, else 0xff.
+
+## Round 36
+
+- `updateVFXZBufClearRenderData(lo, hi, z)` turns an effect instance's
+  render data into one full-screen quad at depth `z`: 4 vertices and 6
+  indices in its geometry (`+0x94`), buffer from
+  `graphicDynGeoMemManagerGetBufferForSegment(data, 0, 4, 6)`, indices 0,
+  1, 2, 1, 3, 2, corners (-1, -1), (1, -1), (-1, 1), (1, 1), then
+  `graphicVFXSetVisible(lo, hi, 1)`. Returns 1, or 0 without render data
+  or buffer. Every pointer is read again before each store.
+- `TOAddPktChrNameIcon_008eba80(cursor, chr, x, y, colour)` writes menu
+  icon 0x13 at (`x + 3`, `y + 1`) and the character's name in grey at
+  (`x + 0x16`, `y`), keeping `g_TOPktCursor` up to date after each; it
+  returns the final cursor.
+- `TODrawFont3d80Glyph_008eeee0(cursor, text, x, y, nibbles, c0..c3)`
+  draws one character of the 0x3d80 sheet twice through
+  `graphicFontDraw`: an 0x98-byte sprite record (two corners of x, y, u, v
+  and four words `c0..c3`, `+0x88` 0, `+0x90` the 8-byte size
+  `TOGetTextureName` writes). Character `c = *text - 0x20` (signed) sits
+  in column `(c % 32) / 2` (8 wide) and row `c / 32` (10 high, from 192);
+  odd characters take the second texture of a pair. The first draw
+  (texture `2 * (nibbles >> 4 & 0xf) + odd`, high flag 1) covers
+  (`x + 1`, `y`)..(`x + 11`, `y + 12`), the second (`2 * (nibbles & 0xf)
+  + odd`) (`x`, `y - 1`)..(`x + 10`, `y + 11`); UVs divide the cell (right
+  edge 3.5 in) by the image sizes, the second pair first. The original
+  leaves the record's `+0x40..+0x87` and `+0x8c` uninitialised.
+  It returns `cursor + 0x10`.
+- `TOSetupMessageWindow_008b8de0(w)` runs the window's callback (`+0xf4`)
+  and fits the window to its text (`+0x94`). Without a message (`+8` 0)
+  it sets the word counts, measures the text and centres the rect (y 1 in
+  message-window mode 1), returning `TOWideWindowRect_008b8d10`'s `eax`.
+  With one it counts the choices (`+0x24`, `+0x28` adding the macro text
+  `0x025d09bc`'s), measures the first line (flags `| 3`) and the whole
+  text (`| 1`). Choice style 1 (`+0x22`) adds the macro width to a
+  positive first-line width (kept as `+0x2a`) and widens the window by
+  it. It then sets `+0xa8` to the word count (with the macro text's for
+  style 1), `+2` to 1 when that equals the choices, and returns `+0xa8`.
+  With `+0x1e` 1, `TOLayoutMessageChoices_008b9a60(w, 1)` follows and its
+  `eax` is returned. The x position is stored as `f32` before `ftol`, the
+  y sum is not.
+- `TOBtlDrawCtbWindow(x, y)` draws the battle turn-order (CTB) window
+  unless `0x0133d6e0` is 1. Its frame spans `X2(1637)`, `Y2(194)` to
+  `X2(1765)`, `Y2(482)`: a net window 8 units outside it, scroll arrows
+  0x1b6 (scroll `i8 0x01340446` positive) and 0x1b7 (below 10), the scroll
+  bar and the window scissor. Each of the 32 CTB records at `0x01340478`
+  (`+1` character, `+4` icon, `+0x10`/`+0x12` `i16` offsets, `+0x14` the
+  step callback, `0x008a2b10` while sliding) that is not sliding is drawn
+  by `TODrawBtlCtbParts` at `X2(15) + left + dx` and `Y2(dy / 22 * 48 +
+  row * 48 / 22) + top` (row `i16 0x01340448`); the first one, at row 0,
+  gets the highlight shape 0x1d8. While the command window at
+  `g_BtlActionDepth` is open, it adds a packet scissor and, for each of
+  the first 16 rows whose character bit is set in `0x01340470`, the
+  cursor 0x1d6 at `ftol(x + left + 8)`, `y` and the target frame 0x190
+  (UVs by character below 0x14 or monster). It ends with the full-screen
+  scissor and returns that call's `eax`.

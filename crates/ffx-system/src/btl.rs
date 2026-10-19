@@ -580,4 +580,236 @@ pub mod bridge {
         }
         eax
     }
+
+    /// `TOBtlDrawCtbWindow(x, y)` (`0x008a0590`): the battle turn-order
+    /// (CTB) window, unless `0x0133d6e0` is 1. In screen units remapped by
+    /// `graphicUiRemapX2`/`Y2` (`remap(mem, y_axis, v)`, an `f32`) it spans
+    /// left `X2(1637)`, top `Y2(194)`, right `X2(1765)`, bottom `Y2(482)`:
+    ///
+    /// - the full-screen scissor, the net window around it (8 out, 16
+    ///   wider and taller), the scroll arrows (`DrawCrossCtbIcon` 0x1b6
+    ///   while the scroll `i8 0x01340446` is positive, 0x1b7 while below
+    ///   10), the scroll bar and the window's own scissor;
+    /// - each of the 32 entries at `0x01340478` (record pointers, null for
+    ///   none) not sliding (`+0x14` not `TOBtlCtbSlideStep_008a2b10`):
+    ///   `TODrawBtlCtbParts(i8 +1, +4, x, y)` at `X2(15) + left + i16
+    ///   +0x10` and `Y2(i16 +0x12 / 22 * 48 + scroll row * 48 / 22) + top`
+    ///   (scroll row `i16 0x01340448`), the first, unscrolled one with the
+    ///   highlight shape 0x1d8 first;
+    /// - when the command window at `g_BtlActionDepth` is open (byte
+    ///   `0x0133c952 + 0xf0 * depth` 1): a packet scissor and, for each of
+    ///   the first 16 rows whose entry's character bit (`+1`) is set in
+    ///   `0x01340470`, the cursor shape 0x1d6 at `ftol(x + left + 8)`, `y`
+    ///   and the target frame 0x190.
+    ///
+    /// Ends with the full-screen scissor again and returns its `eax`
+    /// (without drawing, the original leaves `eax` as it was: 0 here).
+    /// Callees through `call` (`ffx.sym` addresses).
+    pub struct CtbWindow<'a, M, R, C> {
+        pub mem: &'a mut M,
+        pub remap: R,
+        pub call: C,
+    }
+
+    /// Shape UVs of the CTB target frame 0x190 (`u0, v0, u1, v1` as `f32`
+    /// bits: 0.5527, 0.5107, 0.6191, 0.5547 and 0.5527, 0.4521, 0.6191,
+    /// 0.4961): rows of characters (below 0x14) and of monsters.
+    const CTB_FRAME_UV_CHARACTER: [u32; 4] = [0x3f0d_8000, 0x3f02_c000, 0x3f1e_8000, 0x3f0e_0000];
+    const CTB_FRAME_UV_MONSTER: [u32; 4] = [0x3f0d_8000, 0x3ee7_8000, 0x3f1e_8000, 0x3efe_0000];
+    /// Shape UVs of the CTB highlight 0x1d8 (`f32` bits: 0.7070, 0.2891,
+    /// 0.7393, 0.3350).
+    const CTB_HIGHLIGHT_UV: [u32; 4] = [0x3f35_0000, 0x3e94_0000, 0x3f3d_4000, 0x3eab_8000];
+    /// The shape colour of the target frame (twice).
+    const CTB_FRAME_COLOUR: u32 = 0x4d80_8080;
+
+    impl<M, R, C> CtbWindow<'_, M, R, C>
+    where
+        M: Mem,
+        R: FnMut(&mut M, bool, f32) -> f32,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        fn x(&mut self, v: f32) -> f64 {
+            f64::from((self.remap)(self.mem, false, v))
+        }
+
+        fn y(&mut self, v: f32) -> f64 {
+            f64::from((self.remap)(self.mem, true, v))
+        }
+
+        fn run(&mut self, sym: u32, args: &[u32]) -> u32 {
+            (self.call)(self.mem, sym, args)
+        }
+
+        fn scroll(&self) -> i8 {
+            self.mem.read(self.mem.rebase(0x0134_0446))
+        }
+
+        fn scroll_row(&self) -> i16 {
+            self.mem.read(self.mem.rebase(0x0134_0448))
+        }
+
+        fn entry(&self, k: u32) -> u32 {
+            self.mem.read(self.mem.rebase(0x0134_0478) + 4 * k)
+        }
+
+        /// The full-screen scissor (`TODrawScissorXYWH(0, 0, 512, 416)`).
+        fn full_scissor(&mut self) -> u32 {
+            self.run(0x008f_9230, &[0, 0, 0x200, 0x1a0])
+        }
+
+        /// The window (see the type).
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::too_many_lines,
+            clippy::many_single_char_names
+        )]
+        pub fn draw(&mut self, x: i32, y: u32) -> u32 {
+            let hidden: u32 = self.mem.read(self.mem.rebase(0x0133_d6e0));
+            if hidden == 1 {
+                return 0;
+            }
+            let left = self.x(1637.0) as f32;
+            let top = self.y(194.0) as f32;
+            let right = self.x(1765.0) as f32;
+            let bottom = self.y(482.0) as f32;
+            let height = (f64::from(bottom) - f64::from(top)) as f32;
+            self.full_scissor();
+
+            // the net window: 8 out, 16 wider and taller
+            let net_h = (self.y(16.0) + f64::from(height)) as f32;
+            let width = (f64::from(right) - f64::from(left)) as f32;
+            let net_w = (self.x(16.0) + f64::from(width)) as f32;
+            let net_y = (f64::from(top) - self.y(8.0)) as f32;
+            let net_x = (f64::from(left) - self.x(8.0)) as f32;
+            let net = [net_x, net_y, net_w, net_h].map(f32::to_bits);
+            self.run(0x008f_41b0, &[net[0], net[1], net[2], net[3], 0]);
+
+            // the scroll arrows
+            let mut scroll = self.scroll();
+            if scroll > 0 {
+                let ay = (f64::from(top) - self.y(10.0)) as f32;
+                let ax = (self.x(44.0) + f64::from(left)) as f32;
+                self.run(0x0089_e660, &[0x1b6, ax.to_bits(), ay.to_bits(), 0, 0]);
+                scroll = self.scroll();
+            }
+            if scroll < 10 {
+                let ay = (self.y(10.0) + f64::from(bottom)) as f32;
+                let ax = (self.x(44.0) + f64::from(left)) as f32;
+                self.run(0x0089_e660, &[0x1b7, ax.to_bits(), ay.to_bits(), 0, 0]);
+                scroll = self.scroll();
+            }
+            let bar = self.x(8.0) as f32;
+            let scroll_args = [
+                left.to_bits(),
+                top.to_bits(),
+                bar.to_bits(),
+                height.to_bits(),
+                i32::from(scroll).cast_unsigned(),
+                6,
+                0x10,
+            ];
+            self.run(0x008e_6cc0, &scroll_args);
+            let window = [left, top, right, bottom].map(f32::to_bits);
+            self.run(0x008e_8980, &window);
+
+            // the entries
+            let sliding = self.mem.rebase(0x008a_2b10);
+            for k in 0..32 {
+                let entry = self.entry(k);
+                if entry == 0 {
+                    continue;
+                }
+                let ex = f64::from(self.mem.read::<i16>(entry + 0x10));
+                let ex = ((ex + f64::from(left)) + self.x(15.0)) as f32;
+                let ey = f64::from(self.mem.read::<i16>(entry + 0x12));
+                let row = f64::from(self.scroll_row());
+                let at = (ey / 22.0 * 48.0 + 48.0 * row / 22.0) as f32;
+                let ey = (self.y(at) + f64::from(top)) as f32;
+                let entry = self.entry(k);
+                if self.mem.read::<u32>(entry + 0x14) == sliding {
+                    continue;
+                }
+                if k == 0 && self.scroll_row() == 0 {
+                    let h = self.y(33.0) as f32;
+                    let w = self.x(23.0) as f32;
+                    let sy = (self.y(7.0) + f64::from(top)) as f32;
+                    let sx = (f64::from(right) - self.x(23.0)) as f32;
+                    let [u0, v0, u1, v1] = CTB_HIGHLIGHT_UV;
+                    let args = [
+                        0x1d8,
+                        sx.to_bits(),
+                        sy.to_bits(),
+                        w.to_bits(),
+                        h.to_bits(),
+                        u0,
+                        v0,
+                        u1,
+                        v1,
+                    ];
+                    self.run(0x0090_3bb0, &args);
+                }
+                let entry = self.entry(k);
+                let chr = i32::from(self.mem.read::<i8>(entry + 1)).cast_unsigned();
+                let icon: u32 = self.mem.read(entry + 4);
+                self.run(0x008a_16d0, &[chr, icon, ex.to_bits(), ey.to_bits()]);
+            }
+
+            // the targets of the open command window
+            let depth = i32::from(self.mem.read::<i8>(self.mem.rebase(0x023c_c092)));
+            let open = self
+                .mem
+                .rebase(0x0133_c952)
+                .wrapping_add((depth * 0xf0).cast_unsigned());
+            if self.mem.read::<u8>(open) == 1 {
+                use ffx_bridge::x87::ftol;
+                let b = ftol(self.mem, f64::from(bottom));
+                let r = ftol(self.mem, f64::from(right));
+                let t = ftol(self.mem, f64::from(top));
+                let l = ftol(self.mem, f64::from(left) - 30.0);
+                self.run(0x008f_dee0, &[l, t, r, b]);
+                #[allow(clippy::cast_precision_loss)] // as the original's fild
+                let fx = x as f32;
+                for k in 0..16u32 {
+                    let row = f64::from(self.scroll_row()) * 48.0 / 22.0;
+                    #[allow(clippy::cast_precision_loss)]
+                    let at = (row + f64::from((0x30 * k) as f32)) as f32;
+                    let ry = (self.y(at) + f64::from(top)) as f32;
+                    let entry = self.entry(k);
+                    let chr: u8 = self.mem.read(entry + 1);
+                    let targets: u32 = self.mem.read(self.mem.rebase(0x0134_0470));
+                    if targets & (1u32 << (chr & 0x1f)) == 0 {
+                        continue;
+                    }
+                    let cx = ftol(self.mem, f64::from(fx) + f64::from(left) + 8.0);
+                    self.run(0x0090_3a10, &[0x1d6, cx, y]);
+                    let entry = self.entry(k);
+                    let uv = if self.mem.read::<i8>(entry + 1) < 0x14 {
+                        CTB_FRAME_UV_CHARACTER
+                    } else {
+                        CTB_FRAME_UV_MONSTER
+                    };
+                    let h = self.y(33.0) as f32;
+                    let w = self.x(54.0) as f32;
+                    let fy = (self.y(6.0) + f64::from(ry)) as f32;
+                    let fx2 = (f64::from(left) - self.x(30.0)) as f32;
+                    let [u0, v0, u1, v1] = uv;
+                    let args = [
+                        0x190,
+                        fx2.to_bits(),
+                        fy.to_bits(),
+                        w.to_bits(),
+                        h.to_bits(),
+                        u0,
+                        v0,
+                        u1,
+                        v1,
+                        CTB_FRAME_COLOUR,
+                        CTB_FRAME_COLOUR,
+                    ];
+                    self.run(0x0090_3ee0, &args);
+                }
+            }
+            self.full_scissor()
+        }
+    }
 }

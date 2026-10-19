@@ -77,6 +77,56 @@ pub mod bridge {
         0
     }
 
+    /// `updateVFXZBufClearRenderData(lo, hi, z)` (`0x0071e330`): the
+    /// effect render data of instance (`lo`, `hi`)
+    /// (`graphicVFXGetRenderDataByInstance`) becomes one full-screen quad
+    /// at depth `z`: its geometry (`+0x94`) gets 4 vertices (`+4`) and 6
+    /// indices (`+8`); when `graphicDynGeoMemManagerGetBufferForSegment
+    /// (data, 0, 4, 6)` gives a buffer, the indices (`+0x1c`, `u16`) are 0,
+    /// 1, 2, 1, 3, 2, the positions (`+0xc`, three `f32` each) (-1, -1),
+    /// (1, -1), (-1, 1), (1, 1) at `z` (copied through x87), and
+    /// `graphicVFXSetVisible(lo, hi, 1)` follows. Every pointer is read
+    /// again before each store, as the original does. Returns 1, or 0
+    /// without render data or buffer. Callees through `call`.
+    pub fn update_vfx_zbuf_clear_render_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        z: f32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let data = call(mem, 0x0064_53d0, &[lo, hi]);
+        if data == 0 {
+            return 0;
+        }
+        let geometry = |m: &M| -> u32 { m.read(data + 0x94) };
+        let g = geometry(mem);
+        mem.write(g + 4, 4u32);
+        let g = geometry(mem);
+        mem.write(g + 8, 6u32);
+        let g = geometry(mem);
+        let vertices: u32 = mem.read(g + 4);
+        let indices: u32 = mem.read(g + 8);
+        if call(mem, 0x0063_fdb0, &[data, 0, vertices, indices]) == 0 {
+            return 0;
+        }
+        for (k, index) in (0u32..).zip([0u16, 1, 2, 1, 3, 2]) {
+            let list: u32 = mem.read(geometry(mem) + 0x1c);
+            mem.write(list + 2 * k, index);
+        }
+        let z = x87::round_trip(z);
+        let g = geometry(mem);
+        let corners = [(-1.0f32, -1.0f32), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)];
+        for (k, (x, y)) in (0u32..).zip(corners) {
+            for (j, v) in (0u32..).zip([x, y, z]) {
+                let positions: u32 = mem.read(g + 0xc);
+                mem.write(positions + 0xc * k + 4 * j, v);
+            }
+        }
+        call(mem, 0x0064_5710, &[lo, hi, 1]);
+        1
+    }
+
     /// `DepthBiasHooks::clearDepthBias()` (`0x006e40b0`): when dirty, every
     /// entry back to (0, 1.0, 0.0) and the count to 0.
     pub fn clear_depth_bias(mem: &mut impl Mem) {
