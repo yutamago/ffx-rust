@@ -19,6 +19,8 @@
 //! - [`ke`]: `Ke` resource heaps and lens flare objects.
 //! - [`kedtt`]: the Ke distortion sprites (`KeDttSpr`).
 //! - [`yi`]: the field renderer's state and display objects.
+//! - [`yipoly`]: the renderer's load-time packet builders over the poly
+//!   buffer.
 //! - [`vu0`]: the VU0-style vector helpers (`KeVu0*`).
 //! - [`nkz`]: overdrive tables (`Nkz`) and sound status (`Sqs`).
 //! - [`camera`]: the map camera's projection and view matrices.
@@ -47,3 +49,4 @@ pub mod task;
 pub mod vu0;
 pub mod x87;
 pub mod yi;
+pub mod yipoly;
