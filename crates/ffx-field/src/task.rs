@@ -1268,6 +1268,45 @@ pub mod bridge {
         eax
     }
 
+    /// `MsEffectReady(e, on)` (`0x00788200`), `MsSetDamage(e, a, b)`
+    /// (`0x0078d980`) and `MsEffectEndMotion(e, kind)` (`0x00787950`).
+    pub const PRAY_CALLS: [u32; 3] = [0x0078_8200, 0x0078_d980, 0x0078_7950];
+
+    /// `rcefEffectReady(on)` (`0x0092dfb0`): `MsEffectReady(the pray
+    /// effect, on != 0)`, whose `eax` it returns.
+    pub fn rcef_effect_ready<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        on: u32,
+        call: &mut C,
+    ) -> u32 {
+        let e = PRAY_EFFECT.get(mem);
+        let f = mem.rebase(PRAY_CALLS[0]);
+        call(mem, f, &[e, u32::from(on != 0)])
+    }
+
+    /// `rcefSetDamage(a, b)` (`0x0092e9a0`): `MsSetDamage(the pray effect,
+    /// a, b)`, whose `eax` it returns.
+    pub fn rcef_set_damage<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let e = PRAY_EFFECT.get(mem);
+        let f = mem.rebase(PRAY_CALLS[1]);
+        call(mem, f, &[e, a, b])
+    }
+
+    /// `rcefResetMotion(e)` (`0x0092e780`): `MsEffectEndMotion(e, 0)`,
+    /// whose `eax` it returns.
+    pub fn rcef_reset_motion<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(PRAY_CALLS[2]);
+        call(mem, f, &[e, 0])
+    }
+
     /// `MsCopyCameraMatrix(out)`, `MsCopyScreenMatrix(out)`,
     /// `FFXVu0CopyMatrix(dst, src)`, `FFXVu0InversMatrix(out, m)`,
     /// `rcefTaskCtrlProc(ctrl)`, `MsEffectTerminate(id)`,

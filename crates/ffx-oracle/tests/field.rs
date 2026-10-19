@@ -20595,3 +20595,89 @@ fn r13mm_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_a702);
     r13mm_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group n: thin wrappers ----
+
+/// Group n (r13) on `t`: `rcefEffectReady`, `rcefSetDamage`,
+/// `rcefResetMotion`, `yiDObjToOMD`, `SqsSePitchDirect`/`Translate` and
+/// `SqsSetPlayPause` with random arguments; their callees (and the CRT's
+/// `__iob_func`/`fprintf`) are logged stand-ins.
+fn r13nn_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::{nkz, task, yi};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, iobv) = (t.alloc(0x100), t.alloc(4), t.alloc(4));
+    let [ready, damage, end_motion] = task::bridge::PRAY_CALLS;
+    let stubs = t.cave(&[
+        (Some(ready), log_stub(log, rv, 1, 2)),
+        (Some(damage), log_stub(log, rv, 2, 3)),
+        (Some(end_motion), log_stub(log, rv, 3, 2)),
+        (Some(yi::bridge::PART_CHAIN_TO_OMD), log_stub(log, rv, 4, 3)),
+        (Some(nkz::bridge::SFX_PAUSE), log_stub(log, rv, 5, 1)),
+        (None, log_stub(log, iobv, 6, 0)),
+        (None, log_stub(log, rv, 7, 3)),
+    ]);
+    t.put(t.b.rebase(yi::CRT_IOB_FUNC), stubs[5]);
+    t.put(t.b.rebase(yi::CRT_FPRINTF), stubs[6]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(iobv, rng.next());
+        task::bridge::PRAY_EFFECT.set(&mut t.a, rng.next());
+        task::bridge::PRAY_EFFECT.set(&mut t.b, task::bridge::PRAY_EFFECT.get(&t.a));
+        let [a, b] = [rng.next(), rng.next()];
+        let on = if rng.below(2) == 0 { 0 } else { a };
+        t.same(
+            "rcefEffectReady",
+            |o| o.eax(0x0092_dfb0, &[on]),
+            |m| task::bridge::rcef_effect_ready(m, on, call),
+        );
+        t.same(
+            "rcefSetDamage",
+            |o| o.eax(0x0092_e9a0, &[a, b]),
+            |m| task::bridge::rcef_set_damage(m, [a, b], call),
+        );
+        t.same(
+            "rcefResetMotion",
+            |o| o.eax(0x0092_e780, &[a]),
+            |m| task::bridge::rcef_reset_motion(m, a, call),
+        );
+        t.same(
+            "yiDObjToOMD",
+            |o| o.eax(0x0090_8420, &[a, b]),
+            |m| yi::bridge::yi_dobj_to_omd(m, [a, b], call),
+        );
+        let translate = rng.below(2) == 0;
+        let f = if translate { 0x0081_e4c0 } else { 0x0081_e4a0 };
+        t.same(
+            "SqsSePitch",
+            |o| o.eax(f, &[a, b]),
+            |m| nkz::bridge::sqs_se_pitch(m, translate, b, call),
+        );
+        t.same(
+            "SqsSetPlayPause",
+            |o| {
+                let e = o.eax(0x0081_ea90, &[a, b]);
+                (a & 2 != 0).then_some(e)
+            },
+            |m| nkz::bridge::sqs_set_play_pause(m, [a, b], call),
+        );
+    }
+}
+
+/// Group n (r13) on the image.
+#[test]
+fn r13nn_wrappers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a801);
+    r13nn_cases(&mut t, &mut rng, 400);
+}
+
+/// Group n (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13nn_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a802);
+    r13nn_cases(&mut t, &mut rng, 200);
+}

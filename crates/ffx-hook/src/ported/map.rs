@@ -4005,6 +4005,34 @@ ported! {
     yiLoadFieldParticle @ 0x0090_9190 => extern "C" fn shim_yi_load_field_particle(textures: u32, effects: u32) -> u32 {
         yi::bridge::yi_load_field_particle(&mut mem(), [textures, effects], &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcefEffectReady(on)`.
+    rcefEffectReady @ 0x0092_dfb0 => extern "C" fn shim_rcef_effect_ready(on: u32) -> u32 {
+        task::bridge::rcef_effect_ready(&mut mem(), on, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `rcefSetDamage(a, b)`.
+    rcefSetDamage @ 0x0092_e9a0 => extern "C" fn shim_rcef_set_damage(a: u32, b: u32) -> u32 {
+        task::bridge::rcef_set_damage(&mut mem(), [a, b], &mut |_, f, args| call_cdecl(f, args))
+    }
+    /// `rcefResetMotion(e)`.
+    rcefResetMotion @ 0x0092_e780 => extern "C" fn shim_rcef_reset_motion(e: u32) -> u32 {
+        task::bridge::rcef_reset_motion(&mut mem(), e, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiDObjToOMD(out, part)`.
+    yiDObjToOMD @ 0x0090_8420 => extern "C" fn shim_yi_dobj_to_omd(out: u32, part: u32) -> u32 {
+        yi::bridge::yi_dobj_to_omd(&mut mem(), [out, part], &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsSePitchDirect(kind, id)`.
+    SqsSePitchDirect @ 0x0081_e4a0 => extern "C" fn shim_sqs_se_pitch_direct(_kind: u32, id: u32) -> u32 {
+        nkz::bridge::sqs_se_pitch(&mut mem(), false, id, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsSePitchTranslate(kind, id)`.
+    SqsSePitchTranslate @ 0x0081_e4c0 => extern "C" fn shim_sqs_se_pitch_translate(_kind: u32, id: u32) -> u32 {
+        nkz::bridge::sqs_se_pitch(&mut mem(), true, id, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsSetPlayPause(flags, id)`.
+    SqsSetPlayPause @ 0x0081_ea90 => extern "C" fn shim_sqs_set_play_pause(flags: u32, id: u32) {
+        nkz::bridge::sqs_set_play_pause(&mut mem(), [flags, id], &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `rcuiRotateX(out, m, angle)`: the rotation in a frame.
     rcuiRotateX @ 0x0093_d5a0 => extern "C" fn shim_rcui_rotate_x(out: u32, m: u32, angle: u32) -> u32 {
         let mut w = super::StackFrame::<16>::new();

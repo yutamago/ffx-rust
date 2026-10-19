@@ -2991,7 +2991,7 @@
 0x006e8770 function TipSystem_PushTip         # fh v3:exact 0x006e88b0 TipSystem::PushTip
 0x006e8810 function TipSystem_PlayTip         # structure: thiscall(tips, id): with an Iggy movie (this[0]) enables the menu and calls its AS3 "OnPlay"(0, id), then replay; returns 1 (0 without a movie); graphicPushTip's callee; name ours
 0x006e8a1f function Catch_All_006e8b5f        # fh v3:cg2 0x6e8b5f Catch_All@006e8b5f
-0x006e9570 function rcbgGuideMapSave          # fh switch:bsim1.00 0x7100562e90
+0x006e9570 function rcbgGuideMapSave          # fh switch:bsim1.00 0x7100562e90; REVIEWED field r13: not the guide map's save (a Switch-signature name): (a, b) jumps to 0x006e9870(a, _ftol2_sse(f64 b+8)), which formats SaveDataGetLoc(slot) and hands it to Iggy (_IggyPlayerCallbackResultPath_4, _IggyValueSetStringUTF8RS_20): an Iggy save-menu callback, UI/system's, not ported
 0x006e96c0 function InitIggyHelper               # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Loc_Texture_Saveload_Attention_Before_Game'; Switch 0x710029c7b0 InitIggyHelper (symbols from Fahrenheit's server export)
 0x006e97b0 function SetIggyPosition720p       # fh switch:bsim1.00 0x710029ca80
 0x006e9920 function std_Tree_lower_bound_string_006e9920 # thiscall(tree, key string) -> node: MSVC std::map<std::string, ...> lower bound: walks from the root (head +4) while the node's isnil byte +0xd is 0, comparing the key with the node's string (+0x10, SSO when capacity +0x24 <= 15) by memcmp of the shorter length then the lengths, left +0 / right +8; std:: copy (the field agent's finding); own name
@@ -6968,8 +6968,8 @@
 0x0081e410 function SqsSeForcePlay            # (kind, id, pan, volume); called by SndForcePlayClick; alphabetical slot; ported (field round 33): iSfxForceStart(id, volume, pan), returns the new SE handle 0x012f4e7c
 0x0081e460 function SqsSePanDirect            # (kind, id, pan) -> iSfxSetPan (cmd 0x3d); called by SndSepPanDirect; alphabetical slot before SqsSePanTranslate; fh: SqsSeVolumeDirect (BSim; that one is 0x0081e820); ported (field round 33)
 0x0081e480 function SqsSePanTranslate         # (kind, id, pan, frames) -> iSfxSetPanTranslate; called by SndSepPanTranslate; ported (field round 33): iSfxSetPanTranslate(id, arg4 & 0x7f, arg3)
-0x0081e4a0 function SqsSePitchDirect          # (kind, id, pitch, x); called by SndSePitchDirect
-0x0081e4c0 function SqsSePitchTranslate       # (kind, id, a, pitch, b); called by SndSePitchTranslate
+0x0081e4a0 function SqsSePitchDirect          # (kind, id, pitch, x); called by SndSePitchDirect; PC: fprintf(__iob_func() + 0x40, "SFX SqsSePitchDirect: ... seq(%d) ... not implemented yet!!!\n" 0x00b58e30, id), its eax; ported (field r13, ffx_field::nkz)
+0x0081e4c0 function SqsSePitchTranslate       # (kind, id, a, pitch, b); called by SndSePitchTranslate; PC: fprintf(stderr, 0x00b58e88 "SFX SqsSePitchTranslate: ...", id), its eax; ported (field r13, ffx_field::nkz)
 0x0081e4e0 function SqsSePlay                 # fh v3:bsim1.00 0x0081e5f0; ported (field round 33): iSfxStart(id, volume, pan), returns the new SE handle 0x012f4e7c
 0x0081e530 function SqsSePlayState            # () -> 0: prints a message (stderr) on PC; SndGetSePlayState jumps here
 0x0081e550 function SqsSePlaySwitch              # layout+callees: sorts between SqsSePlayState and SqsSeSeparateClear, and its named callees match the Switch 0x7100407050 SqsSePlaySwitch's (similarity 1.00: SqsIopCommandSend); symbols from Fahrenheit's server export
@@ -6986,7 +6986,7 @@
 0x0081e900 function SqsSetCycleMode           # fh switch:bsim0.96 0x710040a8e0; ported (field round 39): command (4, a); returns a
 0x0081e980 function SqsSetDigitalRecordingMode   # layout: alphabetical run between SqsSetCycleMode and SqsSetPlayMode (1 unnamed in the gap); Switch 0x7100406ed0 SqsSetDigitalRecordingMode is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081ea00 function SqsSetPlayMode            # fh v3:exact 0x0081eb10; ported (field round 39): mode >= 3 (signed) -> 0, kept in 0x012f4144, command (3, mode)
-0x0081ea90 function SqsSetPlayPause              # layout: alphabetical run between SqsSetPlayMode and SqsSetProjectBase (1 unnamed in the gap); Switch 0x71004071d0 SqsSetPlayPause is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0081ea90 function SqsSetPlayPause              # layout: alphabetical run between SqsSetPlayMode and SqsSetProjectBase (1 unnamed in the gap); Switch 0x71004071d0 SqsSetPlayPause is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (flags, id): iSfxPause(id) when flags & 2 (its eax), else eax left alone; ported (field r13, ffx_field::nkz)
 0x0081eab0 function SqsSetProjectBase         # fh v3:exact 0x0081ebc0; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(2); returns *result, 0 for 0
 0x0081eaf0 function SqsSetReverbAttribute        # layout: alphabetical run between SqsSetProjectBase and SqsSetReverbPlaySwitch (2 unnamed in the gap); Switch 0x71004071e0 SqsSetReverbAttribute is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0081eb90 function SqsSetReverbDepth            # layout: alphabetical run between SqsSetProjectBase and SqsSetReverbPlaySwitch (2 unnamed in the gap); Switch 0x7100407360 SqsSetReverbDepth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -6996,9 +6996,9 @@
 0x0081ee20 function SqsShoutStreamingStart    # (a, b, volume); called by SndStartShoutStream; alphabetical slot after SqsShoutStreamingPlayState; ported (field round 39): command (0x37, a, 0x40, 0x7f), 0x012f4f84 = 1, g_SqsShoutSkipped = 1; returns a
 0x0081eeb0 function SqsSifDmaStart            # fh switch:bsim1.00 0x7100406c30
 0x0081eef0 function SqsSifDmaState               # layout+callees: sorts between SqsSifDmaStart and SqsSortCommonWave, and its named callees match the Switch 0x7100406c80 SqsSifDmaState's (similarity 1.00: FlushCache, sceSifDmaStat); symbols from Fahrenheit's server export; (_, wait): sceSifDmaStat(g_SqsSifDmaId) again while wait and not negative, returns it; ported (field round 33)
-0x0081ef40 function SqsSortCommonWave         # (list): a ret on PC; SndSortCommonWave jumps here
+0x0081ef40 function SqsSortCommonWave         # (list): a ret on PC; SndSortCommonWave jumps here; REVIEWED field r13: xor eax,eax; ret (3 bytes), too small to hook and nothing to port
 0x0081ef50 function SqsSetStraightStreamAreaSize # fh switch:bsim0.93 0x710040a960; ported (field round 39): command (5, a); returns a
-0x0081f210 function SqsStraightStreamingDataSend # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s %d, %4d, %4d : %8.8X\\n'; Switch 0x7100409620 SqsStraightStreamingDataSend (symbols from Fahrenheit's server export)
+0x0081f210 function SqsStraightStreamingDataSend # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s %d, %4d, %4d : %8.8X\\n'; Switch 0x7100409620 SqsStraightStreamingDataSend (symbols from Fahrenheit's server export); REVIEWED field r13: dead on PC: its only caller is the jmp thunk 0x00885ed0, whose only caller SndDataSendStraightStream_sub 0x0077a8e0 is dead (classify credits the thunk to SndClearWave 0x00885ec0 by its code scan); PS2 IOP SIF-DMA streaming, not ported
 0x0081f550 function SqsStraightStreamingDigitalModeSet # (x); called by SndSetStraightStreamingDigitalMode
 0x0081f6c0 function SqsStraightStreamingStart # SndStartStraightStream's slot (0x00887620) jumps here; ported (field round 39): command (0x38, *0x012f4e70), 0x012f4e90 = 0, 0x012f4edc = 1, 0x012f4ef8 = 0
 0x0081f770 function SqsStraightStreamingStop  # SndStopStraightStream's slot (0x00887770) jumps here; ported (field round 39): command (0x33, 0), 0x012f4efc = 3, 0x012f4edc = 0
@@ -11279,7 +11279,7 @@
 0x00908370 function yiBattleMapRead              # layout: alphabetical run between yiAttachChrDObj and yiBattleMapReadNB (1 unnamed in the gap); Switch 0x710052ad50 yiBattleMapRead is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x009083a0 function yiBattleMapReadNB         # fh v3:bsim1.00 0x009083a0
 0x009083e0 function yiCallFieldParticle       # fh v3:exact+call.cs 0x009083e0 cdecl
-0x00908420 function yiDObjToOMD               # fh switch:bsim1.00 0x710052bcf0
+0x00908420 function yiDObjToOMD               # fh switch:bsim1.00 0x710052bcf0; (out, part) -> eax: yiPartChainToOMD(&g_YiRender 0x01876e00, out, part); ported (field r13, ffx_field::yi)
 0x00908450 function yiDisableHamonEff         # fh v3:exact 0x00908450
 0x00908480 function yiDisp                    # fh switch:bsim1.00 0x710052b0b0
 0x009084a0 function yiDisp2                      # layout: alphabetical run between yiDisp and yiDisposeAnimDObj (1 unnamed in the gap); Switch 0x710052b0d0 yiDisp2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -11384,6 +11384,7 @@
 0x0090cd50 function yiRender_resetall         # (r): yiRender_resetobj, +0x9c198/+0xbe0ac/+0xbe0b0 = 0, +0x67f34 = -1; yiInit
 0x0090cd90 function yiRender_resetobj         # fh v3:exact 0x0090cd90
 0x0090cea0 function yiRender_resettex         # fh v3:exact 0x0090cea0
+0x0090cee0 function yiZero_0090cee0           # (): xor eax,eax; ret, from 0x00911fc0 (name ours); REVIEWED field r13: 3 bytes, too small to hook and nothing to port
 0x0090cf00 function yiRender_initpacket       # (r): the fixed GS packet at +0x27624 (32 words); returns 0
 0x0090d1b0 function yiRender_setupFogParam    # (scene): +0x68350 = -255 / (far - near) from +0x681f8 * 1/32 * 32 and +0x68348/+0x6834c; +0x68354 = 255 - +0x68344 (255 with +0x67f08 bit 3); called by yiRender_setupparamVU1
 0x0090d260 function yiRender_setupparamGS     # fh v3:exact 0x0090d260
@@ -11445,6 +11446,7 @@
 0x00915120 function yiKeyFrameWrapAngles      # (v): four floats past pi less (1 - ftol(x / -2pi)) * 2pi, below -pi plus it (doubles 0x00b67118..38); yiKeyFrame_main; name ours
 0x009151c0 function yiRotMatrixSeq            # fh v3:exact 0x009151c0
 0x009152d0 function yiTexSwap_init            # fh v3:exact 0x009152d0
+0x00916130 function yiClutGreen_00916130     # (r) -> 0: from 0x00908400 (name ours): 0x48 CLUTs of 0x100 words from r+0x70 (stride 0x460): each word keeps bytes 0 and 3 and byte 2, byte 1 taken from an uninitialised stack local (a bug for >> 8); REVIEWED field r13: not portable, the green byte is stack junk
 0x009161d0 function yiSplitPath_009161d0     # (path, dir, name, ext) -> eax: from yiMapSetup (name ours): path split at its last '/' (strrchr 0x009497c4), else its first ':' (strchr 0x009498d4), and the last '.' after that; dir gets up to the separator (else empty), name the rest without the extension, ext the extension with its dot (else empty); each target optional; NULs put at the split points while copying, then restored; eax ext without a dot, else the dot's address (low byte 0 after a copy); ported (field r13, ffx_field::yi)
 0x00916290 function Yi_StrLower               # (s) tolower in place; own name
 0x009162c0 function Yi_StrUpper               # (s) toupper in place; own name
@@ -11813,7 +11815,7 @@
 0x00922bb0 function rcbgFPm173New             # (): rcAlloc 0x28 (rcbgFP.c), rcbgFPm173Init
 0x00922be0 function rcbgFPm173Proc000            # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x7100553060 rcbgFPm173Proc000 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00922c50 function rcbgFPm173ProcJect           # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x7100553190 rcbgFPm173ProcJect is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 49): by step +0x1c: 0x25 rcbgFPmRestart(0x53, +0x10, 0x2f); 0x82 pppFpSetStickChr(0x54, +0x10, 2) + Fp_Restart(0x54); 200 Fp_End(0x54) (Ghidra drops the argument); 0x100 rcbgFPmRestart(0x55, +0x10, 0x5d), +0x20 = 0; other steps leave the jump-table index in eax (4 in range, else step - 0x25)
-0x00922dc0 function rcbgFPm173ProcKieru          # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x71005533b0 rcbgFPm173ProcKieru is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00922dc0 function rcbgFPm173ProcKieru          # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x71005533b0 rcbgFPm173ProcKieru is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); REVIEWED field r13: not portable as is: on frames after 0x4b it reads stack locals only written on frame 0x4b (the positions), so the original works on stack junk
 0x00922e60 function rcbgFPm173ProcKonjyo         # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x71005532b0 rcbgFPm173ProcKonjyo is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 49): step +0x1c 0: pppFpSetStickChr(0x58, +0x10, 2), Fp_Restart(0x58) (tail); 0x32: effect 0x59 bone 0x35, +0x20 = 0; returns Fp_Restart's eax, else the step
 0x00922eb0 function rcbgFPm173ProcSphere         # layout: alphabetical run between rcbgFPm173New and rcbgFPm173Start (5 unnamed in the gap); Switch 0x7100553320 rcbgFPm173ProcSphere is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00922ef0 function rcbgFPm173Start           # fh switch:bsim0.96 0x7100553480
@@ -12086,7 +12088,7 @@
 0x0092ded0 function rcefAngleToDir            # (out, a): (-sin a, 0, -cos a, 0)
 0x0092df10 function rcefDisposeChrClut        # (i): Ch_ClutDispose(rcefGetChrHandle(i)), a tail call; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
 0x0092df90 function rcefEffectEndMotion       # g_MagicImports slot 432 (39 overlays), before rcefEffectReady: MsEffectEndMotion(dword 0x025d5bb8, 0); hidden from the dump
-0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0
+0x0092dfb0 function rcefEffectReady           # fh v3:exact 0x0092dfb0; (on) -> eax: MsEffectReady(g_RcefPrayEffect 0x025d5a24, on != 0); ported (field r13, ffx_field::task)
 0x0092dfd0 function rcefGetChrDir             # (chr) -> float: MsGetChrDir into a local, rcefAngleWrap of it (ST0). Switch rcefGetChrDir: the rcef name for a character's direction; caller 0x00924a20
 0x0092e000 function rcefGetChrElemNo          # (i, n) -> Ch_OptposGetElement(handle, n, 0); name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
 0x0092e020 function rcefGetChrElemOff         # (i, e, out): (element e's translation - option 0 element's) x 10.0 (f32 0x00b92318), frame 0x80; name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
@@ -12112,14 +12114,14 @@
 0x0092e730 function rcefResetChrBaseMatrix    # (i): Ch_SetOrgMatrix(handle, NULL); name: Switch rcefUtil name by layout (the PC rcef* run is alphabetical: rcefChgChrClut .. rcefDisposeChrClut, rcefEffectEndMotion, rcefEffectReady, rcefGetChrDir, rcefGetChrElemNo, rcefGetChrElemOff, rcefGetChrElemPos, rcefGetChrEyeHeight, rcefGetChrFrontVec, rcefGetChrHandle, .., rcefGetChrMatrix, rcefGetChrMatrixOpt, rcefGetChrPos, rcefGetChrPosOpt, rcefGetChrPosOptY0, rcefGetChrPosY0, rcefGetChrWidth, .., rcefResetChrBaseMatrix) and role; ported (field r1 B)
 0x0092e750 function rcefSetChrDirTarget       # (chr, a, b): MsSetChrDirTarget(chr, 1, 0, 0, a, b); name ours
 0x0092e770 function rcefWorkCall_00925530     # g_MagicImports slot 472 (9 overlays): 0x00925530(0x025d5a20); hidden from the dump
-0x0092e780 function rcefResetMotion           # fh switch:bsim1.00 0x7100556210
+0x0092e780 function rcefResetMotion           # fh switch:bsim1.00 0x7100556210; (e) -> eax: MsEffectEndMotion(e, 0); ported (field r13, ffx_field::task)
 0x0092e7a0 function rcefReverseList           # g_MagicImports slot 521 (1 overlay): reverses the dwords from 0x025d5bc0 (count at 0x025d5bbc) in place; hidden from the dump
 0x0092e7e0 function rcefSetArmorVisible          # layout+callees: sorts between rcefResetMotion and rcefSetDamage, and its named callees match the Switch 0x7100556f70 rcefSetArmorVisible's (similarity 1.00: Ch_SetHideEffect, MsGetWeaponHandle); symbols from Fahrenheit's server export
 0x0092e830 function rcefSetChrBaseMatrix      # (i, m, out): m into out (or g_RcefChrBaseMatrix 0x0193c090) with rows scaled by Ch_GetScale x Ch_GetDataScale, then Ch_SetOrgMatrix; name: Switch rcefSetChrBaseMatrix by layout (between rcefSetArmorVisible 0x0092e7e0 and rcefSetChrDirTarget2 0x0092e960); ported (field r2 E)
 0x0092e960 function rcefSetChrDirTarget2      # (chr, a, b, c): MsSetChrDirTarget(chr, 2, 0, a, b, c); name ours
 0x0092e980 function MsSetChrPos_thunk         # g_MagicImports slot 506 (1 overlay), after rcefObjClearMode: jmp MsSetChrPos; hidden from the dump
 0x0092e990 function MsSetChrVisible_thunk     # g_MagicImports slot 507 (1 overlay): jmp MsSetChrVisible; hidden from the dump
-0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0
+0x0092e9a0 function rcefSetDamage             # fh v3:exact 0x0092e9a0; (a, b) -> eax: MsSetDamage(g_RcefPrayEffect, a, b); ported (field r13, ffx_field::task)
 0x0092e9c0 function rcefColorSet              # (r, g, b, a, v): the bytes as floats, rcefWorkSetFromVf00(0x025d5a20, colour, v); g_MagicImports (0x00c6544c); name ours
 0x0092ea40 function rcefColorFade             # (r0, g0, b0, a0, r1, g1, b1, a1, v): both colours as floats, rcefWorkSet(0x025d5a20, c0, c1, v); name ours
 0x0092eb10 function MsEffectSetMotion_thunk   # g_MagicImports slot 447 (28 overlays), between rcefSetDamage and rcefStreamCue: jmp MsEffectSetMotion; hidden from the dump

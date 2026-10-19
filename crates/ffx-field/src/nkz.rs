@@ -1515,4 +1515,46 @@ pub mod bridge {
             n = n.wrapping_add(1);
         }
     }
+
+    // ---- field r13, sound command stubs ----
+
+    /// The PC build's "not implemented" messages of `SqsSePitchDirect`
+    /// (`0x00b58e30`) and `SqsSePitchTranslate` (`0x00b58e88`), `%d` the
+    /// sequence id.
+    pub const PITCH_MESSAGES: [u32; 2] = [0x00b5_8e30, 0x00b5_8e88];
+    /// `iSfxPause(id)` (`0x0067a380`).
+    pub const SFX_PAUSE: u32 = 0x0067_a380;
+
+    /// `SqsSePitchDirect(kind, id, ..)` (`0x0081e4a0`) and
+    /// `SqsSePitchTranslate` (`0x0081e4c0`, `translate`): on PC only
+    /// `fprintf(stderr, "SFX SqsSePitch..: try to set pitch for seq(%d),
+    /// function is not implemented yet!!!\n", id)`, whose `eax` it
+    /// returns.
+    pub fn sqs_se_pitch<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        translate: bool,
+        id: u32,
+        call: &mut C,
+    ) -> u32 {
+        let iob = mem.read::<u32>(mem.rebase(crate::yi::CRT_IOB_FUNC));
+        let fprintf = mem.read::<u32>(mem.rebase(crate::yi::CRT_FPRINTF));
+        let message = mem.rebase(PITCH_MESSAGES[usize::from(translate)]);
+        let stderr = call(mem, iob, &[]).wrapping_add(0x40);
+        call(mem, fprintf, &[stderr, message, id])
+    }
+
+    /// `SqsSetPlayPause(flags, id)` (`0x0081ea90`): `iSfxPause(id)` when
+    /// bit 1 of `flags` is set (its `eax`), else nothing (`None`: the
+    /// caller's `eax` stays).
+    pub fn sqs_set_play_pause<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [flags, id]: [u32; 2],
+        call: &mut C,
+    ) -> Option<u32> {
+        if flags & 2 == 0 {
+            return None;
+        }
+        let f = mem.rebase(SFX_PAUSE);
+        Some(call(mem, f, &[id]))
+    }
 }

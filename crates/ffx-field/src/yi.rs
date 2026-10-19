@@ -5785,4 +5785,23 @@ pub mod bridge {
         }
         call(mem, jump, &[event, 0])
     }
+
+    // ---- field r13, yi wrappers ----
+
+    /// `yiPartChainToOMD(r, out, part)` (`0x00911ac0`).
+    pub const PART_CHAIN_TO_OMD: u32 = 0x0091_1ac0;
+    /// The renderer state `g_YiRender` (`0x01876e00`).
+    pub const YI_RENDER: u32 = 0x0187_6e00;
+
+    /// `yiDObjToOMD(out, part)` (`0x00908420`): `yiPartChainToOMD(
+    /// &g_YiRender, out, part)`, whose `eax` it returns.
+    pub fn yi_dobj_to_omd<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [out, part]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(PART_CHAIN_TO_OMD);
+        let r = mem.rebase(YI_RENDER);
+        call(mem, f, &[r, out, part])
+    }
 }
