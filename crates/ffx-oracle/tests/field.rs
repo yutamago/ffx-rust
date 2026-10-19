@@ -18030,3 +18030,104 @@ fn r13d_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_d002);
     r13d_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r13, group E: the anmm ring_buf command ----
+
+/// Group E (r13) on `t`: `SqsCmdAnmm` in every mode (unknown ones too),
+/// rings of 0..20 entries and counts past them, the target from
+/// `opus_no_get` or the record, state 9 or not (`printf`), `+0x212` set
+/// or not, bit 15 (the scaled `+0x90`) on or off and record offsets on
+/// both sides of `ctx +0x320`. The allocator, list and lookup calls and
+/// `printf` are logged stand-ins; `op_xyz_scale` runs as the original.
+fn r13e_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::nkz::bridge as nb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, ring_slot, targetv) = (t.alloc(4 + 0x20 * 8), t.alloc(4), t.alloc(4), t.alloc(4));
+    let stubs = t.cave(&[
+        (Some(nb::OP_MALLOC), log_stub(log, ring_slot, 1, 2)),
+        (Some(nb::OPU_ID_LIST_ADD), log_stub(log, rv, 2, 2)),
+        (Some(nb::OPUS_NO_GET), log_stub(log, targetv, 3, 3)),
+        (None, log_stub(log, rv, 4, 1)),
+    ]);
+    t.put(t.b.rebase(nb::PRINTF_SLOT), stubs[3]);
+    let (ctx, rec, other, cmd) = (t.alloc(0x400), t.alloc(0x100), t.alloc(0x100), t.alloc(8));
+    let ring_buf = t.alloc(0x70 + 0x50 * 21);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(ring_slot, ring_buf);
+        t.fill(ring_buf, 0x70 + 0x50 * 21, rng);
+        t.fill(ctx + 0x200, 0x200, rng);
+        let mode = match rng.below(8) {
+            0 => u16::try_from(rng.below(8)).unwrap() << 12,
+            k => [0u16, 0x1000, 0x2000][usize::try_from(k % 3).unwrap()],
+        };
+        let flags = u16::try_from(rng.next() & 0x8fff).unwrap() | mode;
+        t.put(ctx + 0x21a, flags);
+        t.put(
+            ctx + 0x212,
+            if rng.below(4) == 0 {
+                u16::try_from(rng.below(0xffff)).unwrap() + 1
+            } else {
+                0
+            },
+        );
+        // the emulated zero register as anything (its copy is overwritten
+        // in part)
+        t.fill(t.b.rebase(nb::EE_GPR), 0x10, rng);
+        t.put(ctx + 0x220, rec);
+        t.put(
+            ctx + 0x320,
+            rec.wrapping_add(rng.next() % 0x20_0000)
+                .wrapping_sub(0x10_0000),
+        );
+        t.fill(rec, 0x100, rng);
+        t.fill(other, 0x100, rng);
+        // mode 0x1000 works on the record, 0x2000 on what opus_no_get finds
+        let target = if mode == 0x2000 && rng.below(2) == 0 {
+            other
+        } else {
+            rec
+        };
+        t.put(targetv, target);
+        t.put(target + 0xbb, if rng.below(5) == 0 { 8u8 } else { 9 });
+        t.put(target + 0xa8, ring_buf);
+        let n = u16::try_from(rng.below(21))
+            .unwrap()
+            .max(u16::from(mode != 0));
+        t.put(ring_buf, n);
+        t.put(ring_buf + 2, u16::try_from(rng.below(60)).unwrap());
+        t.fill(cmd, 8, rng);
+        t.put(
+            cmd + 2,
+            if mode == 0 {
+                n
+            } else {
+                u16::try_from(rng.next() & 0xffff).unwrap()
+            },
+        );
+        t.same(
+            "SqsCmdAnmm",
+            |o| o.eax(0x0081_bbc0, &[ctx, cmd]),
+            |m| nb::sqs_cmd_anmm(m, ctx, cmd, call),
+        );
+    }
+}
+
+/// Group E (r13) on the image.
+#[test]
+fn r13e_anmm_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_e001);
+    r13e_cases(&mut t, &mut rng, 800);
+}
+
+/// Group E (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13e_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_e002);
+    r13e_cases(&mut t, &mut rng, 300);
+}

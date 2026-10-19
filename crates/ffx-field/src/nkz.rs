@@ -772,6 +772,154 @@ pub mod bridge {
         cmd.wrapping_add(4)
     }
 
+    /// `op_malloc(heap, n)` (`0x007ff780`).
+    pub const OP_MALLOC: u32 = 0x007f_f780;
+    /// `opu_id_list_add(list, id)` (`0x00800d60`).
+    pub const OPU_ID_LIST_ADD: u32 = 0x0080_0d60;
+    /// `opus_no_get(list, unit, no)` (`0x00801060`).
+    pub const OPUS_NO_GET: u32 = 0x0080_1060;
+    /// `op_xyz_scale(dst, src, s)` (`0x007ea850`).
+    pub const OP_XYZ_SCALE: u32 = 0x007e_a850;
+    /// The CRT's `printf` (import slot `0x00b0c380`).
+    pub const PRINTF_SLOT: u32 = 0x00b0_c380;
+    /// `"anmm should never be NULL in original PS2 version.\n"`.
+    pub const ANMM_NULL_MESSAGE: u32 = 0x00b5_8cf4;
+    /// 16.0 (`f32`, `.rdata`): the `+0x90` vector's scale.
+    pub const ANMM_SCALE: u32 = 0x00b9_231c;
+    /// `g_Ee_Gpr` (`0x00c8f508`): the emulated R5900's zero register
+    /// (16 bytes), then the rest.
+    pub const EE_GPR: u32 = 0x00c8_f508;
+    /// The emulated register the record's vectors are copied through
+    /// (`0x00c8f528`, 16 bytes).
+    pub const EE_COPY_REG: u32 = 0x00c8_f528;
+
+    /// `SqsCmdAnmm(ctx, cmd)` (`0x0081bbc0`, name ours, after its
+    /// message; an IOP command handler like [`sqs_cmd_set_c2`]) on the
+    /// context's record (`+0x220`), by the mode bits `0x7000` of `ctx
+    /// +0x21a`:
+    /// - 0: the record gets a ring of `n` (`cmd +2`) entries of 0x50 bytes
+    ///   (`op_malloc(ctx +0x3a8, 0x50 n + 0x70)`, at its `+0xbc` and
+    ///   `+0xa8`, state `+0xbb` 9): `n`, 0 used, the record's `u16`s
+    ///   `+0xc4`, `+0xc6` and word `+0xc8`, each entry's `+0x20` word 0;
+    ///   the context's id (`+0x214`) joins its list (`opu_id_list_add(ctx
+    ///   +0x300, ..)`). Returns `cmd + 4`.
+    /// - `0x1000` (the record) or `0x2000` (`opus_no_get(ctx +0x300,
+    ///   record, cmd +4)`): unless `ctx +0x212` is set, the target's ring
+    ///   (state 9, else the CRT's `printf` of [`ANMM_NULL_MESSAGE`]) gets
+    ///   its next entry (count `+2` modulo `n`): `+0x20` the command's
+    ///   jump target (`cmd + cmd +2`), `+0x24` 0, `+0x29` 1, `+0x28`/`+0x2c`
+    ///   and `+0x70..+0x78` from [`EE_GPR`], `+0x6c` the record's offset
+    ///   from `ctx +0x320` / 256 (`u16`), `+0x40` and `+0x50` the record's
+    ///   `+0x60` and `+0x80` vectors, `+0x30` its `+0x40` vector (with
+    ///   bit 15 of `+0x21a`: `+0x90` times 16.0, `op_xyz_scale`), `+0x5c`
+    ///   0 (the vectors pass through [`EE_COPY_REG`]). Returns `cmd + 4` or
+    ///   `cmd + 6`.
+    /// - Any other mode: returns `cmd`.
+    pub fn sqs_cmd_anmm<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ctx: u32,
+        cmd: u32,
+        call: &mut C,
+    ) -> u32 {
+        let rec = mem.read::<u32>(ctx.wrapping_add(0x220));
+        let (target, step) = match mem.read::<u16>(ctx.wrapping_add(0x21a)) & 0x7000 {
+            0 => return anmm_create(mem, ctx, cmd, rec, call),
+            0x1000 => (rec, 4),
+            0x2000 => {
+                let f = mem.rebase(OPUS_NO_GET);
+                let no = u32::from(mem.read::<u16>(cmd.wrapping_add(4)));
+                (call(mem, f, &[ctx.wrapping_add(0x300), rec, no]), 6)
+            }
+            _ => return cmd,
+        };
+        let done = cmd.wrapping_add(step);
+        if mem.read::<u16>(ctx.wrapping_add(0x212)) != 0 {
+            return done;
+        }
+        if mem.read::<u8>(target.wrapping_add(0xbb)) != 9 {
+            let f = mem.read::<u32>(mem.rebase(PRINTF_SLOT));
+            let msg = mem.rebase(ANMM_NULL_MESSAGE);
+            call(mem, f, &[msg]);
+            return done;
+        }
+        let ring = mem.read::<u32>(target.wrapping_add(0xa8));
+        let used = mem.read::<u16>(ring.wrapping_add(2));
+        let n = mem.read::<u16>(ring);
+        // idiv: the original faults on an empty ring
+        let slot = if n == 0 { 0 } else { used % n };
+        mem.write(ring.wrapping_add(2), used.wrapping_add(1));
+        let e = ring.wrapping_add(u32::from(slot) * 0x50);
+        let gpr = mem.rebase(EE_GPR);
+        let zero = mem.read::<[u32; 4]>(gpr);
+        mem.write(e.wrapping_add(0x20), zero);
+        let jump = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        mem.write(e.wrapping_add(0x20), jump.wrapping_add(cmd));
+        mem.write(e.wrapping_add(0x24), 0u32);
+        mem.write(e.wrapping_add(0x29), 1u8);
+        let zero = mem.read::<[u32; 4]>(gpr);
+        mem.write(e.wrapping_add(0x6c), zero);
+        let base = i64::from(mem.read::<i32>(ctx.wrapping_add(0x320)));
+        let offset = (i64::from(rec.cast_signed()) - base) / 0x100;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low word
+        mem.write(e.wrapping_add(0x6c), offset as u16);
+        copy_through_reg(mem, rec.wrapping_add(0x60), e.wrapping_add(0x40));
+        copy_through_reg(mem, rec.wrapping_add(0x80), e.wrapping_add(0x50));
+        if mem.read::<u16>(ctx.wrapping_add(0x21a)) & 0x8000 != 0 {
+            let f = mem.rebase(OP_XYZ_SCALE);
+            let s = x87::round_trip(mem.read::<f32>(mem.rebase(ANMM_SCALE))).to_bits();
+            call(mem, f, &[e.wrapping_add(0x30), rec.wrapping_add(0x90), s]);
+        } else {
+            copy_through_reg(mem, rec.wrapping_add(0x40), e.wrapping_add(0x30));
+        }
+        mem.write(e.wrapping_add(0x5c), 0u32);
+        done
+    }
+
+    /// The four words at `src` into [`EE_COPY_REG`], then from it to `dst`
+    /// (the first from the value read, the rest read back).
+    fn copy_through_reg(mem: &mut impl Mem, src: u32, dst: u32) {
+        let reg = mem.rebase(EE_COPY_REG);
+        let v = mem.read::<[u32; 4]>(src);
+        mem.write(reg, v);
+        mem.write(dst, v[0]);
+        for i in 1..4 {
+            let w = mem.read::<u32>(reg + 4 * i);
+            mem.write(dst.wrapping_add(4 * i), w);
+        }
+    }
+
+    /// Mode 0 of [`sqs_cmd_anmm`].
+    fn anmm_create<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ctx: u32,
+        cmd: u32,
+        rec: u32,
+        call: &mut C,
+    ) -> u32 {
+        mem.write(rec.wrapping_add(0xbb), 9u8);
+        let n = mem.read::<u16>(cmd.wrapping_add(2));
+        let f = mem.rebase(OP_MALLOC);
+        let heap = mem.read::<u32>(ctx.wrapping_add(0x3a8));
+        let ring = call(mem, f, &[heap, u32::from(n) * 0x50 + 0x70]);
+        mem.write(rec.wrapping_add(0xbc), ring);
+        mem.write(ring, n);
+        mem.write(ring.wrapping_add(2), 0u16);
+        let a = mem.read::<u16>(rec.wrapping_add(0xc4));
+        mem.write(ring.wrapping_add(4), a);
+        let b = mem.read::<u16>(rec.wrapping_add(0xc6));
+        mem.write(ring.wrapping_add(6), b);
+        let c = mem.read::<u32>(rec.wrapping_add(0xc8));
+        mem.write(ring.wrapping_add(8), c);
+        mem.write(rec.wrapping_add(0xa8), ring);
+        for i in 0..u32::from(n) {
+            mem.write(ring.wrapping_add(0x20 + 0x50 * i), 0u32);
+        }
+        let f = mem.rebase(OPU_ID_LIST_ADD);
+        let id = u32::from(mem.read::<u16>(ctx.wrapping_add(0x214)));
+        call(mem, f, &[ctx.wrapping_add(0x300), id]);
+        cmd.wrapping_add(4)
+    }
+
     /// `Sqs_DecodeAdpcm(src, dst)` (`0x0081cc70`, name ours; from
     /// `SqsStraightStreamingDataSend`): 25 rounds of 256 left samples then
     /// 256 right ones (`i16` into `dst`, 0x6400 bytes), each from 16
