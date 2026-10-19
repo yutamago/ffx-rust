@@ -5744,4 +5744,45 @@ pub mod bridge {
         MAP_NAMES_READY.set(mem, 1);
         Some(eax)
     }
+
+    // ---- field r13, map change ----
+
+    /// MSVCR110's `strstr` import slot (`0x00b0c378`).
+    pub const CRT_STRSTR: u32 = 0x00b0_c378;
+    /// `AtelSetEventJump(event, _)` (`0x0086fec0`).
+    pub const ATEL_SET_EVENT_JUMP: u32 = 0x0086_fec0;
+
+    /// `mapChange(name)` (`0x00908100`): the debug map jump. The last
+    /// entry of [`super::MAP_NAMES`] whose name contains `name` (`strstr`)
+    /// gives the event; when `name` is part of "grid00"
+    /// ([`super::MAP_NAME_NONE`]) the jump goes to event 0 instead
+    /// (`AtelSetEventJump(event, 0)`); without either nothing happens.
+    /// Returns the jump's `eax`, else 0.
+    pub fn map_change<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        name: u32,
+        call: &mut C,
+    ) -> u32 {
+        let strstr = mem.read::<u32>(mem.rebase(CRT_STRSTR));
+        let mut event = u32::MAX;
+        let mut i = 0;
+        while i < super::MAP_NAME_COUNT.get(mem).cast_signed() {
+            let entry = super::MAP_NAMES
+                .get(mem)
+                .wrapping_add(i.cast_unsigned().wrapping_mul(0x10));
+            if call(mem, strstr, &[entry, name]) != 0 {
+                event = mem.read::<u32>(entry.wrapping_add(0xc));
+            }
+            i += 1;
+        }
+        let none = mem.rebase(super::MAP_NAME_NONE);
+        let jump = mem.rebase(ATEL_SET_EVENT_JUMP);
+        if call(mem, strstr, &[none, name]) != 0 {
+            return call(mem, jump, &[0, 0]);
+        }
+        if event == u32::MAX {
+            return 0;
+        }
+        call(mem, jump, &[event, 0])
+    }
 }
