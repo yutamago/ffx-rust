@@ -8793,7 +8793,7 @@
 0x00860780 function AtelMenuSaveMes_00860780 # cdecl(id): MsMenuGetText(3, id, MsGetSaveConfigHiragana()), as TkMenuSaveMes; ported in menu round 22 (tk::menu_text_of); name ours
 0x008607a0 function Msg_ShowSetup              # (worker, args, stack, mode): pops (window, message, b, a, x, y, anchor), re-pushes them for Native_MsgSetPos, style 0, text, flags 0, choice bytes +0x1e/+0x1f, MsgOpen with mode|2, then Native_MsgSelect; mode 0 from Native_MsgShowWait, 8 from 0x00855d70; ported in native_msg
 0x00860990 function Msg_ChoicePoll             # (worker, args, handlers): as Native_MsgSelect_Poll, plus status 1: handlers[0x008b8010(window)](choice); ported in native_msg
-0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8
+0x00860a60 function debugSetRikkuName         # fh switch:cg2 0x71008aefb8; (): strcpy(MsGetSaveChrName(6), MsMenuGetText(3, 0x202c, MsGetSaveConfigHiragana())) (Rikku's default name), eax = name - text; callers 0x00787100, 0x00787470 (not debug-only); ported in menu round 22
 0x00860a90 function getMegasAdding            # fh v3:bsim1.00 0x00860a30
 0x00860aa0 function Msg_PollClose             # (i): 1 when AtelGetMesWinWork(i) +0x14 is 0 or 4; state 2 with TOGetMessageStatus(i) == 3 closes it (Msg_CloseWindow) when AtelGetCurCtrlWork() bit 2 is set (cleared); else 0; callers 0x00860e40, 0x00860f30; name ours
 0x00860b00 function AtelOpenChoiceWindow # cdecl(worker, args, stack, mode) -> Native_MsgSelect's eax: pops x, y, anchor, choice, cancel, cursor, message, window and replays Native_MsgSetPos, the style/message/choice fields of AtelGetMesWinWork(window) (+0x20, +8/+0xc/+0x16, +0x18, +0x22/+0x23/+0x24) through push/pop pairs, Native_MsgOpen(window, mode | 0x42), Native_MsgSelect(window); callers Native_0139 (mode 0), Native_013a (mode 8); ported in menu round 22; name ours
@@ -9640,6 +9640,7 @@
 0x00888430 function TkMcSetExecPort              # layout: alphabetical run between TkMcSetDebugLock and TkMcSetFileInfo (1 unnamed in the gap); Switch 0x710048a530 TkMcSetExecPort is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00888440 function TkMcSetFileInfo           # fh switch:bsim1.00 0x710048a020
 0x00888480 function TkMcSetLoadFilePos        # (slot, pos) 0x0133023c[slot] = pos; Switch name, pairs with TkMcGetLoadFilePos
+0x008884a0 function MenuSave_McSync # cdecl(mode, cmd, result): mode != 0 tail-jumps to the sceMcSync wrapper 0x008884e0(mode, cmd, result); mode 0 polls it with mode 1 until nonzero, op_counter_add_00888890(1000000) after each poll; callers TkMenuCtrlSaveLoad (3 sites); ported in menu round 22; name ours
 0x00888570 function MenuSave_McWrite          # (fd, buf, size): 0 when TkGetTGS(), else jmp sceMcWrite; callers 0x008b15d0 (save menu); name ours
 0x00888620 function TkGetSyncVCallbackHandle  # fh v3:bsim1.00 0x00888590
 0x00888650 function TkGetSyncVCallbackPtr     # (i) -> g_TkSyncVCallbackPtrs[i], i clamped to 0..2 (TkSetSyncVCallbackPtr's getter)
@@ -9648,7 +9649,7 @@
 0x00888740 function TkRegistBGThreadFunc      # fh v3:bsim1.00 0x008886b0
 0x00888790 function TkSetSyncVCallbackPtr     # fh v3:exact 0x00888700
 0x00888820 function TkSignalSemaBGThread      # fh v3:bsim1.00 0x00888790
-0x00888890 function op_counter_add_00888890      # ours: (n) -> n: adds n to the dword at 0x01330278 when n > 0; caller 0x008884a0
+0x00888890 function op_counter_add_00888890      # ours: (n) -> n: adds n to the dword at 0x01330278 when n > 0; caller MenuSave_McSync (1000000 per memory-card poll)
 0x008888e0 function op_slot_bytes_reset_008888e0 # ours: (obj) -> obj+0xfe: u16 +0xfe = 0, u16 +0xf6 = 0x808, bytes +0xf0..+0xf5 = 0xff, +0xf8..+0xfd = 0; callers 0x00889050, 0x00889360
 0x00888970 function Pad_ResetWork # cdecl(work): +0 = 0xff, +4/+8 = 0, u16 +0x1c = 0, tail call Pad_ResetAnalogAt0C(work); callers 0x00888910, 0x00889790; ported in menu round 22; name ours
 0x00888990 function Pad_PortClose_00888990 # cdecl(port, slot): port < 0 closes ports 0 and 1 first (then goes on with the negative port), then when bit slot of g_TkControlerWork[port] is set scePadPortClose(port, slot) and clears it; REVIEWED menu r22: dead, its only caller is itself and no pointer to it exists; name ours
@@ -10461,7 +10462,7 @@
 0x008c0f40 function TkMn2DrawMenuWeapon2      # fh switch:bsim1.00 0x71004c6420
 0x008c0f70 function TkMn2DrawMenuWindowScissor# (y, h, mode, ratio) full-width scissor shrunk (mode 1) or cut (mode 2) by |ratio|*h/4096; Switch name, alphabetical slot TkMn2DrawMenuWeapon2..TkMn2DrawMesExtL
 0x008c1010 function TkMn2DrawMesExtL          # fh switch:bsim1.00 0x71004c5ee0
-0x008c1060 function TkMn2DrawMesL             # fh switch:bsim1.00 0x71004c5e50
+0x008c1060 function TkMn2DrawMesL             # fh switch:bsim1.00 0x71004c5e50; cdecl(x, y, text, colour) -> cursor: g_TkMn2DrawY += 0x10 as the cursor of TOAddPktBaseMesFontRGBA_008ed160(cursor, text, x, y, colour, shade 0x023cc470, 468, 460, 458), result stored back; ported in menu round 22
 0x008c10b0 function TkMn2DrawMesLR               # layout: alphabetical run between TkMn2DrawMesL and TkMn2DrawMesM (1 unnamed in the gap); Switch 0x71004c64b0 TkMn2DrawMesLR is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c1100 function TkMn2DrawMesM             # fh switch:bsim1.00 0x71004c5fb0
 0x008c1150 function TkMn2DrawMesMR            # fh switch:bsim1.00 0x71004c6040
@@ -10568,7 +10569,7 @@
 0x008c6d00 function MenuAbility_ApplyHeal_008c6d00 # (target, ...) Cmd_HealAmount of the command at 0x0186a3a8; for an all-targets command TkMenuAddHPCapped on every aeon / party member the record's +0x22 bits select; caller TkMenuCtrlAbility; own name
 0x008c6dd0 function MenuItem_ListWindowCtrl_008c6dd0 # the item list window's control (+0xc of the window MenuItem_OpenListWindow opens): states at +0x28, pad trigger 0x20 decides through the window's +0x1c check (SndSepPlaySimple 0x80000001 / 0x80000003), 0x40 cancels, up/down/page scroll the cursor +0x48; own name
 0x008c7430 function MenuItem_TargetWindowCtrl_008c7430 # the target (party member or aeon) window's control (+0xc of MenuItem_OpenTargetWindow's window): TkMenuWindowStepFade, states at +0x28, cursor over TkMenuGetPlayerListMax / TkMenuGetSummonListMax; own name
-0x008c7650 function MenuItem_RefreshHelp_008c7650 # the item list window's help line: by window kind (+0x43: 0 item -> TkMenuGetItemHelp, 1 key item -> TkMenuGetImportantHelp, else command -> TkMenuGetCommandHelp) of the entry under the cursor, TkMenuSetHelpMessage; callers TkMenuCtrlAbility and MenuItem_ListWindowCtrl; own name
+0x008c7650 function MenuItem_RefreshHelp_008c7650 # the item list window's help line: by window kind (+0x43: 0 item -> TkMenuGetItemHelp, 1 key item -> TkMenuGetImportantHelp, else command -> TkMenuGetCommandHelp) of the entry under the cursor, TkMenuSetHelpMessage; callers TkMenuCtrlAbility and MenuItem_ListWindowCtrl; own name; ported in menu round 22
 0x008c7750 function MenuItem_ListWindowDraw_008c7750 # the item list window's draw (+0x10 of MenuItem_OpenListWindow's window): scissored menu window, scroll parts (DrawCrossMenuScrollParts), the rows and the cursor (0x008c7af0); own name
 0x008c7af0 function MenuItem_DrawListCursor_008c7af0 # (window, x, y) the list cursor at row +0x48 - top +0x32 (TkMn2DrawCrossCmdCursor), blinking with TkMenuGetTimer in mode 2; caller MenuItem_ListWindowDraw; own name
 0x008c8a00 function MenuItem_GetRows          # 0x0186a38c; own name

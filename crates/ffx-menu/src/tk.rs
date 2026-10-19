@@ -9507,6 +9507,162 @@ pub mod bridge {
         let commit = mem.rebase(0x008c_4e60);
         call(mem, commit, &[])
     }
+
+    /// `TkMn2DrawMesL(x, y, text, colour)` (`0x008c1060`, Fahrenheit's
+    /// name): [`MN2_DRAW_Y`] moves `0x10` on and becomes the cursor of
+    /// `TOAddPktBaseMesFontRGBA_008ed160(cursor, text, x, y, colour,
+    /// shade...)` with the four [`MN2_FONT_SHADE`] words (from `+0x18` down
+    /// to `+0`, 8 bytes apart), whose result is stored back and returned.
+    pub fn tk_mn2_draw_mes_l<M: Mem>(
+        mem: &mut M,
+        [x, y, text, colour]: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let shade = MN2_FONT_SHADE.ptr(mem).addr;
+        let [s0, s1, s2, s3] =
+            [0x18u32, 0x10, 8, 0].map(|o| mem.read::<u32>(shade.wrapping_add(o)));
+        let cursor = MN2_DRAW_Y.get(mem).wrapping_add(0x10);
+        MN2_DRAW_Y.set(mem, cursor);
+        let add = mem.rebase(0x008e_d160);
+        let end = call(mem, add, &[cursor, text, x, y, colour, s0, s1, s2, s3]);
+        MN2_DRAW_Y.set(mem, end);
+        end
+    }
+
+    /// `debugSetRikkuName()` (`0x00860a60`, Fahrenheit's name; callers
+    /// `0x00787100`, `0x00787470`, not debug-only): Rikku's default name,
+    /// `MsMenuGetText(3, 0x202c, MsGetSaveConfigHiragana())`, copied with
+    /// its NUL into `MsGetSaveChrName(6)`. Returns what the original leaves
+    /// in `eax`: the name's address minus the text's.
+    pub fn debug_set_rikku_name<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let text = menu_text_of(mem, 3, false, 0x202c);
+        let chr_name = mem.rebase(0x0078_4fb0);
+        let name = call(mem, chr_name, &[6]);
+        let mut k = 0u32;
+        loop {
+            let c: u8 = mem.read(text.wrapping_add(k));
+            mem.write(name.wrapping_add(k), c);
+            k = k.wrapping_add(1);
+            if c == 0 {
+                break;
+            }
+        }
+        name.wrapping_sub(text)
+    }
+
+    /// `MenuItem_RefreshHelp_008c7650(window)` (`0x008c7650`): the item list
+    /// window's help line. The row is the window's list word at
+    /// `+0x58 + 4 * k` (`k` = byte `+0x45` when not negative, at most
+    /// `+0x42 - 1`) plus twice the `i16` at `+0x48`. With `+0x94` set, by
+    /// kind `+0x43`: 0, an item (entry kind byte of [`MENU_ITEM_LIST`]
+    /// nonzero) `TkMenuGetItemHelp(id)`; 1, a key item below
+    /// `TkMenuImportantListMax()` with a nonzero id that
+    /// `TkMsImportantGet(id)` owns, `TkMenuGetImportantHelp(id)`; 2, below
+    /// `MenuItem_GetRows()`, kind 1 `TkMenuGetCommandHelp(id)`, kind 2
+    /// `MsGetMenuChrInfo(id, 0)`; otherwise 0. When `+0x45` is not negative,
+    /// `TkMenuSetHelpMessage(help)` (a tail jump), whose `eax` is returned;
+    /// otherwise `None` (the original's `eax` is then whatever it last
+    /// held, which no caller reads).
+    pub fn menu_item_refresh_help<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let at = |o: u32| window.wrapping_add(o);
+        let selected = i32::from(mem.read::<i8>(at(0x45)));
+        let lists = i32::from(mem.read::<u8>(at(0x42)));
+        let k = if selected.max(0) >= lists {
+            lists - 1
+        } else {
+            selected.max(0)
+        };
+        let base: u32 = mem.read(at(0x58).wrapping_add(k.cast_unsigned().wrapping_mul(4)));
+        let cursor = i32::from(mem.read::<i16>(at(0x48))).cast_unsigned();
+        let row = base.wrapping_add(cursor.wrapping_mul(2));
+        let items = MENU_ITEM_LIST.ptr(mem).addr;
+        let entry = items.wrapping_add(row.wrapping_mul(4));
+        let id = |mem: &M| u32::from(mem.read::<u16>(entry));
+        let entry_kind = |mem: &M| mem.read::<u8>(entry.wrapping_add(2));
+        let mut help = 0;
+        if mem.read::<u32>(at(0x94)) != 0 {
+            match mem.read::<u8>(at(0x43)) {
+                0 => {
+                    if entry_kind(mem) != 0 {
+                        let f = mem.rebase(0x008a_98f0);
+                        help = call(mem, f, &[id(mem)]);
+                    }
+                }
+                1 => {
+                    let max = mem.rebase(0x008c_8a20);
+                    let max = call(mem, max, &[]);
+                    if row.cast_signed() < max.cast_signed() {
+                        let list = MENU_IMPORTANT_LIST.ptr(mem).addr;
+                        let key =
+                            u32::from(mem.read::<u16>(list.wrapping_add(row.wrapping_mul(2))));
+                        if key != 0 {
+                            let owned = mem.rebase(0x008a_b2c0);
+                            if call(mem, owned, &[key]) != 0 {
+                                let f = mem.rebase(0x008d_dea0);
+                                help = call(mem, f, &[key]);
+                            }
+                        }
+                    }
+                }
+                2 => {
+                    let rows = mem.rebase(0x008c_8a00);
+                    let rows = call(mem, rows, &[]);
+                    if row.cast_signed() < rows.cast_signed() {
+                        match entry_kind(mem) {
+                            1 => {
+                                let f = mem.rebase(0x008d_de10);
+                                help = call(mem, f, &[id(mem)]);
+                            }
+                            2 => {
+                                let f = mem.rebase(0x0078_f7c0);
+                                help = call(mem, f, &[id(mem), 0]);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if selected < 0 {
+            return None;
+        }
+        let set = mem.rebase(0x008a_aeb0);
+        Some(call(mem, set, &[help]))
+    }
+
+    /// `MenuSave_McSync(mode, cmd, result)` (`0x008884a0`, own name; caller
+    /// `TkMenuCtrlSaveLoad`, three sites): a nonzero `mode` is passed on to
+    /// the `sceMcSync` wrapper `0x008884e0(mode, cmd, result)` (a tail
+    /// jump); mode 0 waits, calling it with mode 1 until it returns nonzero
+    /// and adding 1 000 000 to the counter at `0x01330278`
+    /// (`op_counter_add_00888890`) after every poll. Returns the wrapper's
+    /// last result.
+    pub fn menu_save_mc_sync<M: Mem>(
+        mem: &mut M,
+        [mode, cmd, result]: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let sync = mem.rebase(0x0088_84e0);
+        if mode != 0 {
+            return call(mem, sync, &[mode, cmd, result]);
+        }
+        let add = mem.rebase(0x0088_8890);
+        loop {
+            let done = call(mem, sync, &[1, cmd, result]);
+            call(mem, add, &[1_000_000]);
+            if done != 0 {
+                return done;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

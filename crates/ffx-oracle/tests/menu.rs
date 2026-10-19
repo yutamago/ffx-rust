@@ -9000,3 +9000,171 @@ fn menu_round22_text_wrappers_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round22_mes_rikku_and_item_help_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_1060) else {
+        return;
+    };
+    // TkMn2DrawMesL: the font call recorded, the cursor and shades scrambled
+    let r = t.rng.next();
+    record_n(&mut t, 0x008e_d160, 9, r);
+    for _ in 0..20 {
+        t.scramble(tk::MN2_DRAW_Y.sym, 4);
+        t.scramble(tk::MN2_FONT_SHADE.sym, 0x20);
+        let v = [t.rng.next(), t.rng.next(), t.rng.next(), t.rng.next()];
+        t.twin("TkMn2DrawMesL", 0x008c_1060, &v, U32, |o| {
+            w(tk::tk_mn2_draw_mes_l(o, v, &mut callback))
+        });
+    }
+    // debugSetRikkuName: the save name a scratch buffer; the text needs the
+    // game's menu tables (snapshots only: the image has none, text 0)
+    let name = t.alloc_random(0x40);
+    return_const(&mut t, 0x0078_4fb0, name);
+    let rounds = if std::env::var_os("FFX_SNAPSHOT").is_some() {
+        10
+    } else {
+        0
+    };
+    for _ in 0..rounds {
+        t.scramble(ffx_battle::save::bridge::MENU.sym, 4);
+        t.twin("debugSetRikkuName", 0x0086_0a60, &[], U32, |o| {
+            w(tk::debug_set_rikku_name(o, &mut callback))
+        });
+    }
+    // MenuItem_RefreshHelp: every help source recorded with its own result
+    for (f, n) in [
+        (0x008a_98f0u32, 1u8),
+        (0x008d_dea0, 1),
+        (0x008d_de10, 1),
+        (0x0078_f7c0, 2),
+        (0x008a_aeb0, 1),
+    ] {
+        let r = t.rng.next();
+        record_n(&mut t, f, n, r);
+    }
+    let rows = t.alloc(&[0; 4]);
+    let max = t.alloc(&[0; 4]);
+    let owned = t.alloc(&[0; 4]);
+    for (f, cell) in [
+        (0x008c_8a00u32, rows),
+        (0x008c_8a20, max),
+        (0x008a_b2c0, owned),
+    ] {
+        let code = [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat(); // mov eax, [cell]; ret
+        for o in [&mut t.a, &mut t.b] {
+            let at = o.rebase(f);
+            o.write(at, &code).unwrap();
+        }
+    }
+    for round in 0..1200u32 {
+        let window = t.alloc_random(0xa0);
+        let sel = t.rng.pick(&[0u8, 1, 2, 3, 0xff, 0x80]);
+        t.put(window + 0x45, sel);
+        let lists = t.rng.pick(&[0u8, 1, 2, 4]);
+        t.put(window + 0x42, lists);
+        let kind = t.rng.pick(&[0u8, 1, 2, 2, 3]);
+        t.put(window + 0x43, kind);
+        for k in 0..6 {
+            let base = t.rng.below(0x40);
+            t.put(window + 0x54 + 4 * k, base);
+        }
+        // a quarter of the rounds on a negative row
+        let cursor = if round % 4 == 1 {
+            -24
+        } else {
+            i16::try_from(t.rng.below(0x40)).unwrap_or(0) - 8
+        };
+        t.put(window + 0x48, cursor);
+        let on = if round % 8 == 0 {
+            0
+        } else {
+            t.rng.pick(&[1u32, 0x100])
+        };
+        t.put(window + 0x94, on);
+        // the row as the original computes it, the counts around it
+        let k = i32::from(i8::from_le_bytes([sel])).max(0);
+        let k = if k >= i32::from(lists) {
+            i32::from(lists) - 1
+        } else {
+            k
+        };
+        let base: u32 = Mem::read(
+            &t.b,
+            (window + 0x58).wrapping_add(k.cast_unsigned().wrapping_mul(4)),
+        );
+        let row = base.wrapping_add(i32::from(cursor).cast_unsigned().wrapping_mul(2));
+        for cell in [rows, max] {
+            let v = row.wrapping_add(t.rng.pick(&[0xffff_ffffu32, 0, 1, 0x40]));
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[0u32, 1]);
+        t.put(owned, v);
+        let mut list = t.rng.bytes(0x400);
+        for e in list.chunks_mut(4) {
+            e[2] = t.rng.pick(&[0u8, 1, 2, 3]);
+        }
+        // from 16 entries before the list: negative rows read there
+        t.put_bytes(t.sym(tk::MENU_ITEM_LIST.sym) - 0x40, &list);
+        let mut keys = t.rng.bytes(0x200);
+        for e in keys.chunks_mut(2) {
+            if t.rng.below(3) == 0 {
+                e.copy_from_slice(&[0, 0]);
+            }
+        }
+        t.put_bytes(t.sym(tk::MENU_IMPORTANT_LIST.sym) - 0x80, &keys);
+        let mask = if sel >= 0x80 { VOID } else { U32 };
+        t.twin("MenuItem_RefreshHelp", 0x008c_7650, &[window], mask, |o| {
+            w(tk::menu_item_refresh_help(o, window, &mut callback).unwrap_or(0))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_mc_sync_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_84a0) else {
+        return;
+    };
+    // the sync a counter: 0 for the first `left` polls, then its count;
+    // the modes summed
+    let left = t.alloc(&[0; 4]);
+    let log = t.alloc(&[0; 4]);
+    let modes = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04][..],              // mov eax, [esp + 4]
+        &[0x01, 0x05], &modes.to_le_bytes(),        // add [modes], eax
+        &[0xff, 0x05], &log.to_le_bytes(),          // inc dword [log]
+        &[0x31, 0xc0],                              // xor eax, eax
+        &[0x83, 0x2d], &left.to_le_bytes(), &[1],   // sub dword [left], 1
+        &[0x79, 0x05],                              // jns +5
+        &[0xa1], &log.to_le_bytes(),                // mov eax, [log]
+        &[0xc3],                                    // ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0088_84e0);
+        o.write(at, &code).unwrap();
+    }
+    for round in 0..30u32 {
+        t.put(left, round % 5);
+        t.scramble(0x0133_0278, 4);
+        let mode = if round % 3 == 0 {
+            t.rng.pick_or_any(&[1, 2])
+        } else {
+            0
+        };
+        let (cmd, result) = (t.rng.next(), t.rng.next());
+        t.twin(
+            "MenuSave_McSync",
+            0x0088_84a0,
+            &[mode, cmd, result],
+            U32,
+            |o| w(tk::menu_save_mc_sync(o, [mode, cmd, result], &mut callback)),
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}

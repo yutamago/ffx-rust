@@ -238,6 +238,8 @@ REVIEWED = {
     0x0088ccf0: ("glue", "TKMallocAndReadMenuMessage: language path + file read (menu round 21)"),
     0x00888030: ("glue", "path formatting (menu round 21)"),
     0x00888990: ("dead", "Pad_PortClose: only called by itself (its negative-port branch), no pointer to it in the image (menu round 22)"),
+    0x00888830: ("platform", "TkSetVsyncHandler(0): stops the vsync emulation thread (menu round 22)"),
+    0x008886f0: ("platform", "TkInitAllSyncVCallback: resets the vsync emulation callbacks and restarts TkSetVsyncHandler (menu round 22)"),
     0x0090bdb0: ("glue", "sprintf label for a PC renderer object (field round 1)"),
     0x00878420: ("debug", "native 0xc000: TkIsDebug-only / debug loop (script round 21)"),
     0x00878490: ("debug", "native 0xc001: TkIsDebug-only / debug loop (script round 21)"),

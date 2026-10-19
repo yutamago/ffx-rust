@@ -3885,4 +3885,21 @@ ported! {
     MenuNameEntry_CommitDefault0b @ 0x008c_5370 => extern "C" fn menu_name_entry_commit_default0b() -> u32 {
         tk::menu_name_entry_commit_default0b(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2DrawMesL(x, y, text, colour)`: the new cursor.
+    TkMn2DrawMesL @ 0x008c_1060 => extern "C" fn tk_mn2_draw_mes_l(x: u32, y: u32, text: u32, colour: u32) -> u32 {
+        tk::tk_mn2_draw_mes_l(&mut mem(), [x, y, text, colour], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `debugSetRikkuName()`: the name minus the text (the original's eax).
+    debugSetRikkuName @ 0x0086_0a60 => extern "C" fn debug_set_rikku_name() -> u32 {
+        tk::debug_set_rikku_name(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_RefreshHelp_008c7650(window)`: `TkMenuSetHelpMessage`'s eax
+    /// (0 when it is not called; no caller reads it then).
+    MenuItem_RefreshHelp_008c7650 @ 0x008c_7650 => extern "C" fn menu_item_refresh_help(window: u32) -> u32 {
+        tk::menu_item_refresh_help(&mut mem(), window, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `MenuSave_McSync(mode, cmd, result)`: the sync's result.
+    MenuSave_McSync @ 0x0088_84a0 => extern "C" fn menu_save_mc_sync(mode: u32, cmd: u32, result: u32) -> u32 {
+        tk::menu_save_mc_sync(&mut mem(), [mode, cmd, result], &mut |_, f, a| call_ptr(f, a))
+    }
 }
