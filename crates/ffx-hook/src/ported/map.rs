@@ -2783,6 +2783,15 @@ ported! {
         let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_END_WORK as usize / 4 }>::new();
         ffx_field::keth::ke_th_bp_mk_strip_end(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `KeThCp_Update(t)`.
+    KeThCp_Update @ 0x0076_49a0 => extern "C" fn shim_ke_th_cp_update(t: u32) -> u32 {
+        // 16-byte aligned: the unit matrix goes to FFXVu0UnitMatrix
+        #[repr(C, align(16))]
+        struct CpWork([u8; ffx_field::keth::CP_WORK as usize]);
+        let mut work = CpWork([0; ffx_field::keth::CP_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::keth::ke_th_cp_update(&mut mem(), t, w, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `KeThBP_MkStrip_00764de0()`.
     KeThBP_MkStrip_00764de0 @ 0x0076_4de0 => extern "C" fn shim_ke_th_bp_mk_strip() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_WORK as usize / 4 }>::new();

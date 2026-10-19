@@ -1032,3 +1032,100 @@ where
     mem.write(state, v);
     state
 }
+
+/// `KeThBP_Update(p)` (`0x007637f0`), called through the game by
+/// [`ke_th_cp_update`].
+pub const BP_UPDATE: u32 = 0x0076_37f0;
+/// The last updated thread's kind byte and object (`0x02305840`,
+/// `0x02305844`).
+const LAST_KIND: u32 = 0x0230_5840;
+const LAST_OBJECT: u32 = 0x0230_5844;
+/// [`ke_th_cp_update`]'s scratch, `KeThBP_Update`'s argument: a unit
+/// matrix (0x40 bytes, 16-byte aligned), the belt path `+0x40`, then
+/// the thread's `+0x04`, `+0x0c` and `+0x08` words.
+pub const CP_WORK: u32 = 0x50;
+
+/// `KeThCp_Update(t)` (`0x007649a0`): updates every belt path of the
+/// thread `t` (object `t[0]`, its list head at the object's `+0`). The
+/// object's flag bit 1 (`+4`) is taken and cleared: set, belt paths with
+/// `+0x3e` bit 8 also get bit 5 (running). For each belt path `bp` (links
+/// through `get_ptr32_func`): with `+0x3e` bit 9 its head (segment `u16
+/// +0x34`) and the one two on get `t[4]` and `t[5]`
+/// (`KeVu0CopyVecXYZ`); then `KeThBP_Update` runs on `work` (see
+/// [`CP_WORK`]). A belt path with bit 4 (dead) is unlinked (`+0` next,
+/// `+4` previous), quit ([`crate::ke::bridge::ke_th_bp_quit`]) and
+/// pushed on the free list `t[3] + 4`. Then `0x02305840` = the byte at
+/// `t[3]`, `0x02305844` = the object, which is also returned.
+pub fn ke_th_cp_update<M, C>(mem: &mut M, t: u32, work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    use crate::ke::{GET_PTR32_FUNC, IS_PTR32_NULL, SET_PTR32, VU0_UNIT_MATRIX};
+    let r = |mem: &M, a: u32| mem.rebase(a);
+    let object = mem.read::<u32>(t);
+    let flags = mem.read::<u8>(object + 4);
+    let running = if flags & 2 != 0 {
+        mem.write(object + 4, flags & !2);
+        flag::RUNNING
+    } else {
+        0
+    };
+    let f = r(mem, VU0_UNIT_MATRIX);
+    call(mem, f, &[work]);
+    let [a, b, c] = [4, 0xc, 8].map(|o| mem.read::<u32>(t + o));
+    mem.write(work + 0x44, [a, b, c]);
+    let get = |mem: &mut M, call: &mut C, p: u32| {
+        let f = r(mem, GET_PTR32_FUNC);
+        call(mem, f, &[p])
+    };
+    let head = mem.read::<u32>(object);
+    let mut bp = get(mem, call, head);
+    while bp != 0 {
+        if u32::from(mem.read::<u16>(bp + 0x3e)) & 0x200 != 0 {
+            let seg = u32::from(mem.read::<u16>(bp + 0x34));
+            let f = r(mem, COPY_XYZ);
+            let to = mem.read::<u32>(t + 0x10);
+            call(mem, f, &[bp + 0x40 + 0x30 * seg, to]);
+            let seg = u32::from(mem.read::<u16>(bp + 0x34));
+            let to = mem.read::<u32>(t + 0x14);
+            call(mem, f, &[bp + 0x30 * (seg + 2), to]);
+        }
+        let state = u32::from(mem.read::<u16>(bp + 0x3e));
+        if state & flag::START != 0 {
+            #[allow(clippy::cast_possible_truncation)] // the low half
+            mem.write(bp + 0x3e, (state | running) as u16);
+        }
+        mem.write(work + 0x40, bp);
+        let f = r(mem, BP_UPDATE);
+        call(mem, f, &[work]);
+        let next_link = mem.read::<u32>(bp);
+        if u32::from(mem.read::<u8>(bp + 0x3e)) & flag::DEAD == 0 {
+            bp = get(mem, call, next_link);
+            continue;
+        }
+        let next = get(mem, call, next_link);
+        let f = r(mem, IS_PTR32_NULL);
+        if call(mem, f, &[mem.read::<u32>(bp)]) == 0 {
+            let link = mem.read::<u32>(bp);
+            let n = get(mem, call, link);
+            mem.write(n + 4, mem.read::<u32>(bp + 4));
+        }
+        let back = mem.read::<u32>(bp + 4);
+        let p = get(mem, call, back);
+        mem.write(p, mem.read::<u32>(bp));
+        crate::ke::bridge::ke_th_bp_quit(mem, bp);
+        let pool = mem.read::<u32>(t + 0xc);
+        mem.write(bp, mem.read::<u32>(pool + 4));
+        let f = r(mem, SET_PTR32);
+        let link = call(mem, f, &[bp]);
+        let pool = mem.read::<u32>(t + 0xc);
+        mem.write(pool + 4, link);
+        bp = next;
+    }
+    let kind = mem.read::<u32>(t + 0xc);
+    let kind = u32::from(mem.read::<u8>(kind));
+    mem.write(r(mem, LAST_KIND), kind);
+    mem.write(r(mem, LAST_OBJECT), object);
+    object
+}

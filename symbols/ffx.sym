@@ -4179,7 +4179,7 @@
 0x007645e0 function KeThCp_Draw               # fh v3:exact 0x007646d0
 0x00764800 function KeThCp_Init               # fh v3:exact 0x007648f0
 0x00764820 function KeThCp_Reset                 # layout: alphabetical run between KeThCp_Init and KeThCp_Update (1 unnamed in the gap); Switch 0x710030b1f0 KeThCp_Reset is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007649a0 function KeThCp_Update             # fh v3:exact 0x00764a90
+0x007649a0 function KeThCp_Update             # fh v3:exact 0x00764a90; (t) -> t[0]: object t[0] flag bit 1 (+4) taken (running 0x20 for belt paths with +0x3e bit 8); each belt path of the object list (get_ptr32_func): +0x3e bit 9 copies t[4]/t[5] into segments +0x34 and +0x34+2 (KeVu0CopyVecXYZ), KeThBP_Update(unit matrix, bp, t[1], t[3], t[2]); dead (bit 4) ones unlinked (+0 next, +4 back link), KeThBP_Quit, pushed on the free list t[3]+4; 0x02305840 = byte t[3][0], 0x02305844 = object; ported (field r12, ffx_field::keth)
 0x00764b70 function KeThResHd_BPAlloc            # layout+callees: sorts between KeThCp_Update and KeThResHd_Init, and its named callees match the Switch 0x710030aee0 KeThResHd_BPAlloc's (similarity 1.00: is_ptr32_null); symbols from Fahrenheit's server export
 0x00764bb0 function KeThResHd_Init            # fh v3:exact 0x00764ca0
 0x00764c40 function KeAddScaledColor          # (out, base, step, k): out[i] = step[i] * k + base[i] as f32, clamped to 0..=255 (KeThBP_MkGifPk's colours)

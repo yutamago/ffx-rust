@@ -17469,3 +17469,98 @@ fn r12a_on_a_snapshot_matches_the_original() {
     }
     r12a_cases(&mut t, &mut rng, g, 300);
 }
+
+// ---- field agent r12, group B: a Ke thread's belt paths updated ----
+
+/// A stand-in for `KeThBP_Update(p)`: copies the 0x50 bytes at `p` to
+/// `log + 4 + count * 0x50` (`count` at `log`), returns 0.
+fn r12b_update_stub(log: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xa1];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0x6b, 0xf8, 0x50, 0x81, 0xc7]);
+    c.extend_from_slice(&(log + 4).to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, 0x0c, 0xb9, 0x14, 0, 0, 0, 0xf3, 0xa5]);
+    c.extend_from_slice(&[0x31, 0xc0, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group B (r12) on `t`: `KeThCp_Update` over a thread of 0 to 5 belt
+/// paths (copy flags, start/running, dead ones unlinked from anywhere in
+/// the list, owner links or none), the object's flag bit 1 set or not;
+/// `KeThBP_Update` a logging stand-in, `KeThBP_Quit` and the rest the
+/// originals.
+fn r12b_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(4 + 0x50 * 8);
+    t.cave_from(
+        0x500,
+        &[(Some(ffx_field::keth::BP_UPDATE), r12b_update_stub(log))],
+    );
+    let (thread, object, pool) = (t.alloc(0x20), t.alloc(0x10), t.alloc(0x10));
+    let (v4, v5) = (t.alloc(0x10), t.alloc(0x10));
+    let paths = t.alloc(0x400 * 6);
+    let owners = t.alloc(0x10 * 6);
+    let work = t.stack_scratch(0x200);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.fill(object, 0x10, rng);
+        t.fill(pool, 0x10, rng);
+        t.fill(v4, 0x10, rng);
+        t.fill(v5, 0x10, rng);
+        t.fill(owners, 0x60, rng);
+        t.put(thread, [object, rng.next(), rng.next(), pool, v4, v5]);
+        let n = rng.below(6);
+        // object +0 heads the list; each path's +4 points at the link
+        // word that points at it
+        let mut back = object;
+        for k in 0..n {
+            let bp = paths + 0x400 * k;
+            t.fill(bp, 0x400, rng);
+            t.put(back, bp);
+            t.put(bp + 4, back);
+            back = bp;
+            t.put(bp + 0x34, u16::try_from(rng.below(12)).unwrap());
+            t.put(bp + 0x38, 0u16);
+            t.put(bp + 0x3c, 0u16);
+            let flags = (rng.next() & 0x0330) as u16;
+            t.put(bp + 0x3e, flags);
+            if rng.below(2) == 0 {
+                t.put(bp + 0xc, 0u32);
+            } else {
+                // an owner list: previous link word, next 0
+                let o = owners + 0x10 * k;
+                t.put(bp + 8, 0u32);
+                t.put(bp + 0xc, o);
+            }
+        }
+        t.put(back, 0u32);
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x2f00]).unwrap();
+        t.b.write(work, &[0u8; 0x50]).unwrap();
+        t.same(
+            "KeThCp_Update",
+            |o| o.eax(0x0076_49a0, &[thread]),
+            |m| ffx_field::keth::ke_th_cp_update(m, thread, work, call),
+        );
+    }
+}
+
+/// Group B (r12) on the image.
+#[test]
+fn r12b_th_cp_update_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0012_b001);
+    r12b_cases(&mut t, &mut rng, 400);
+}
+
+/// Group B (r12) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r12b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0012_b002);
+    r12b_cases(&mut t, &mut rng, 200);
+}
