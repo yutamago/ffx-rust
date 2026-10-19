@@ -18425,3 +18425,99 @@ fn r13h_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_8002);
     r13h_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group I: map 0x235's FP step ----
+
+/// A stand-in that copies the 16 words its second argument points at to
+/// `dst` and returns 0x55 (`yiSetMatrixDObj`).
+fn r13i_matrix_stub(dst: u32) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp + 0x10]; mov edi, dst; mov ecx, 16;
+    // rep movsd; pop edi; pop esi; mov eax, 0x55; ret
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0xbf];
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&[
+        0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xb8, 0x55, 0, 0, 0, 0xc3,
+    ]);
+    c
+}
+
+/// Group I (r13) on `t`: `rcbgFPm565Proc001` with or without the sea,
+/// FP 0x5a's work and part data, its 3-entry list random (kind 5 or not,
+/// FPs found in a synthetic `g_FpData` or not). The sea, FP work and part
+/// lookups, `pppSetMatrix` and `yiSetMatrixDObj` (its matrix copied out)
+/// are stand-ins; the matrix code and `pppFpGetMngPtr` run as the
+/// originals.
+fn r13i_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model::{self, fpm565 as k};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(4 + 0x20 * 16);
+    let v: Vec<u32> = (0..4).map(|_| t.alloc(4)).collect();
+    let [rv, seav, fpv, partv] = v[..] else {
+        unreachable!()
+    };
+    let (sea, fp, part, out) = (t.alloc(0x40), t.alloc(0x100), t.alloc(0x40), t.alloc(0x40));
+    let fp_data = t.alloc(0x64 + 0x50 * 8);
+    t.cave(&[
+        (Some(k::SEA_GET_MATRIX), log_stub(log, seav, 1, 0)),
+        (Some(k::FP_GET_WORK), log_stub(log, fpv, 2, 3)),
+        (Some(k::GET_PART_DATA), log_stub(log, partv, 3, 4)),
+        (Some(k::PPP_SET_MATRIX), log_stub(log, rv, 4, 1)),
+        (Some(k::SET_MATRIX_DOBJ), r13i_matrix_stub(out)),
+    ]);
+    t.put(t.b.rebase(0x00d2_c258), fp_data); // g_FpData
+    let list = t.b.rebase(model::FPM565_START[0]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(seav, if rng.below(6) == 0 { 0 } else { sea });
+        t.put(fpv, if rng.below(6) == 0 { 0 } else { fp });
+        t.put(partv, if rng.below(6) == 0 { 0 } else { part });
+        for w in 0..16 {
+            t.put(sea + 4 * w, float_in(rng, -50, 50));
+            t.put(
+                t.b.rebase(k::PPP_WORLD_MATRIX) + 4 * w,
+                float_in(rng, -50, 50),
+            );
+        }
+        t.fill(fp, 0x100, rng);
+        t.put(fp + 0xb8, float_in(rng, -40000, 40000));
+        t.put(fp + 0xc4, float_in(rng, -40000, 40000));
+        t.fill(part, 0x40, rng);
+        t.put(fp_data + 4, u16::try_from(rng.below(9)).unwrap());
+        for i in 0..8 {
+            t.put(
+                fp_data + 0x64 + 0x50 * i,
+                u16::try_from(rng.below(12)).unwrap(),
+            );
+        }
+        for i in 0..3 {
+            let e = list + 0x38 * i;
+            t.put(e, u16::try_from(rng.below(12)).unwrap());
+            t.put(e + 6, if rng.below(4) == 0 { 4u8 } else { 5 });
+        }
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "rcbgFPm565Proc001",
+            |o| o.eax(0x0092_2fe0, &[]),
+            |m| model::bridge::rcbg_fpm565_proc001(m, work, call),
+        );
+    }
+}
+
+/// Group I (r13) on the image.
+#[test]
+fn r13i_fpm565_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_9001);
+    r13i_cases(&mut t, &mut rng, 400);
+}
+
+/// Group I (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13i_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_9002);
+    r13i_cases(&mut t, &mut rng, 200);
+}

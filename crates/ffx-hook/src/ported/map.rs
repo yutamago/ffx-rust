@@ -3996,6 +3996,11 @@ ported! {
         let mut w = super::StackFrame::<{ model::bridge::FPM097_FRAME as usize / 4 }>::new();
         model::bridge::rcbg_fpm097_proc001(&mut mem(), part, w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
     }
+    /// `rcbgFPm565Proc001()`: its locals in a frame of the original's size.
+    rcbgFPm565Proc001 @ 0x0092_2fe0 => extern "C" fn shim_rcbg_fpm565_proc001() -> u32 {
+        let mut w = super::StackFrame::<{ model::bridge::FPM565_FRAME as usize / 4 }>::new();
+        model::bridge::rcbg_fpm565_proc001(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcfxSpringCalc(s, sys)`.
     rcfxSpringCalc @ 0x0092_8aa0 => extern "C" fn shim_rcfx_spring_calc(s: u32, sys: u32) -> u32 {
         model::bridge::rcfx_spring_calc(&mut mem(), s, sys)

@@ -320,6 +320,23 @@ pub mod fpm097 {
 /// Map 0x235's FP list (`rcbgFPm565Proc000`: 3 entries at `0x00c5e6b0`)
 /// and its next step (`0x00922fe0`).
 pub const FPM565_START: [u32; 3] = [0x00c5_e6b0, 3, 0x0092_2fe0];
+/// The calls of map 0x235's FP step (`0x00922fe0`).
+pub mod fpm565 {
+    /// `Yn_SeaGetMatrix()`.
+    pub const SEA_GET_MATRIX: u32 = 0x0091_ae00;
+    /// `rcbgFpGetWork(id, part, k)`.
+    pub const FP_GET_WORK: u32 = 0x0092_3100;
+    /// `rcbgFPmGetPartData(id, n, part, k)`.
+    pub const GET_PART_DATA: u32 = 0x0092_3190;
+    /// `pppSetMatrix(run)`.
+    pub const PPP_SET_MATRIX: u32 = 0x0071_7410;
+    /// `g_pppWorldMatrix`.
+    pub const PPP_WORLD_MATRIX: u32 = 0x0230_ffa0;
+    /// `yiSetMatrixDObj(index, m)`.
+    pub const SET_MATRIX_DOBJ: u32 = 0x0090_a520;
+    /// 32768.0 (`f64`, `.rdata`): half a turn, the part's angles from.
+    pub const HALF_TURN: u32 = 0x00b5_1588;
+}
 /// `rcbgFPmRestart(fp, chr, bone)` (`0x00922300`).
 pub const RCBG_FPM_RESTART: u32 = 0x0092_2300;
 /// `Ch_OptposGetElement(chr, n, k)` (`0x00835660`).
@@ -1796,6 +1813,72 @@ pub mod bridge {
         run(mem, k::MUL_MATRIX, &[elem, at(fr::SEA_MATRIX), elem]);
         let m = mem.read::<u32>(at(fr::MNG)).wrapping_add(0xc);
         run(mem, k::COPY_MATRIX, &[m, elem]);
+    }
+
+    /// The bytes of [`rcbg_fpm565_proc001`]'s frame (as `ebp - 0x4c`: the
+    /// FP's run and matrix records, then a matrix).
+    pub const FPM565_FRAME: u32 = 0x48;
+
+    /// `rcbgFPm565Proc001()` (`0x00922fe0`, map 0x235's FP step that
+    /// `rcbgFPm565Proc000` installs; name ours): with the sea's matrix
+    /// (`Yn_SeaGetMatrix`), FP 0x5a's work (`rcbgFpGetWork(0x5a, 6, 2)`)
+    /// and part data (`rcbgFPmGetPartData(0x5a, 1, 6, 2)`): the work gets
+    /// the sea's matrix and `+0xe5` 1, the part data `+4` and `+0x10`
+    /// `32768 - ` the work's `+0xb8` and `+0xc4`; each kind 5 entry of the
+    /// 3-entry list ([`super::FPM565_START`]) with an FP (`pppFpGetMngPtr`)
+    /// gets `pppSetMatrix(run)` and the sea's matrix times
+    /// `g_pppWorldMatrix` in its record's `+0xc`; display object 10 gets
+    /// the sea's matrix without its translation (`yiSetMatrixDObj`).
+    /// `work` is the original's frame ([`FPM565_FRAME`] bytes). Returns the
+    /// `eax` it ends with.
+    pub fn rcbg_fpm565_proc001<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use super::fpm565 as k;
+        use crate::x87::{load, store};
+        let mut run = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = mem.rebase(f);
+            call(mem, f, args)
+        };
+        let (records, matrix) = (work, work.wrapping_add(8));
+        mem.write(records, [0u32; 2]);
+        let sea = run(mem, k::SEA_GET_MATRIX, &[]);
+        if sea == 0 {
+            return 0;
+        }
+        let fp = run(mem, k::FP_GET_WORK, &[0x5a, 6, 2]);
+        let part = run(mem, k::GET_PART_DATA, &[0x5a, 1, 6, 2]);
+        if fp == 0 || part == 0 {
+            return part;
+        }
+        run(mem, super::fpm097::COPY_MATRIX, &[fp, sea]);
+        mem.write(fp.wrapping_add(0xe5), 1u8);
+        run(mem, super::fpm097::COPY_MATRIX, &[matrix, sea]);
+        mem.write(matrix.wrapping_add(0x30), [0u32; 3]);
+        let half = mem.read::<f64>(mem.rebase(k::HALF_TURN));
+        let a = store(half - load(mem.read::<u32>(fp.wrapping_add(0xb8))));
+        mem.write(part.wrapping_add(4), a);
+        let c = store(half - load(mem.read::<u32>(fp.wrapping_add(0xc4))));
+        mem.write(part.wrapping_add(0x10), c);
+        for i in 0..3 {
+            let e = mem.rebase(super::FPM565_START[0]) + i * super::fpm097::ENTRY_SIZE;
+            if mem.read::<u8>(e + 6) != 5 {
+                continue;
+            }
+            let id = i32::from(mem.read::<i16>(e)).cast_unsigned();
+            run(mem, super::PPP_FP_GET_MNG_PTR, &[id, records, records + 4]);
+            let fp_run = mem.read::<u32>(records);
+            if fp_run == 0 {
+                continue;
+            }
+            run(mem, k::PPP_SET_MATRIX, &[fp_run]);
+            let m = mem.read::<u32>(records + 4).wrapping_add(0xc);
+            let world = mem.rebase(k::PPP_WORLD_MATRIX);
+            run(mem, super::fpm097::MUL_MATRIX, &[m, sea, world]);
+        }
+        run(mem, k::SET_MATRIX_DOBJ, &[10, matrix])
     }
 
     /// `rcbgChrFindById(id)` (`0x0092e1e0`): the first character whose

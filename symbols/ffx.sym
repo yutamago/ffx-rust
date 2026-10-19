@@ -11813,6 +11813,7 @@
 0x00922f50 function rcbgFPm565Init               # (part) -> part: type 0x20008, functions 0x00922f30, 0x00922fb0; maps 0x235, 0x236 (0x00921a50)
 0x00922f80 function rcbgFPm565New             # (): rcAlloc 0x10 (rcbgFP.c), rcbgFPm565Init
 0x00922fb0 function rcbgFPm565Proc000         # (obj): rcbgFPmStartList(0x00c5e6b0, 3); started: obj+8 = 0x00922fe0, returns obj (else 0); rcbgFPm565Init installs it; name: Switch rcbgFPm565Proc000; ported (field r2 E)
+0x00922fe0 function rcbgFPm565Proc001         # () -> eax: map 0x235's FP step (rcbgFPm565Proc000 installs it; name ours): with Yn_SeaGetMatrix, rcbgFpGetWork(0x5a, 6, 2) and rcbgFPmGetPartData(0x5a, 1, 6, 2): work = sea matrix, +0xe5 1; part +4/+0x10 = 32768 - work +0xb8/+0xc4; kind-5 entries of 0x00c5e6b0 (3 x 0x38) with an FP: pppSetMatrix(run), mng +0xc = sea * g_pppWorldMatrix; yiSetMatrixDObj(10, sea without translation); ported (field r13, ffx_field::model)
 0x00923100 function rcbgFpGetWork             # fh v3:exact 0x00923100
 0x00923190 function rcbgFPmGetPartData        # (id, n, part, k): pppFpGetMngPtr data, +0x30 chain n times, +8 table, part (0x10 from +0x28), +0xc offsets[k] + 0xa0 + node; 0 when missing
 0x00923240 function rcdtTm2ClutAlphaToPs2        # (clut): 256 RGBA entries, alpha a -> a * 128 / 255, alpha 0 -> entry 0; rcdtTm2 load (0x009232a0) when asked
