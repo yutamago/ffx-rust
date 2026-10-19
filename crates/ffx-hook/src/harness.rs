@@ -29,7 +29,8 @@
 //!   a name of its own per harness port, so harness games run side by side
 //!   (`docs/harness.md`, "Parallel games");
 //! - with `FFX_HARNESS_BACKGROUND=1`, shows the window without activating
-//!   it and makes the keyboard a background device, so the game neither
+//!   it, keeps it at the bottom of the window stack and makes the keyboard
+//!   a background device, so the game neither appears over other windows,
 //!   takes the focus nor stops reading input without it; the real devices
 //!   are then ignored, so typing in other windows does not reach the game.
 //!
@@ -837,11 +838,17 @@ unsafe extern "system" fn message_box_w(
     1 // IDOK
 }
 
-/// Replaces `ShowWindow`: shows without activating in background mode.
+/// Replaces `ShowWindow`: in background mode, shows without activating and
+/// puts the window at the bottom of the window stack, so it neither takes
+/// the focus nor appears over the windows on screen.
 unsafe extern "system" fn show_window(window: *mut c_void, mut cmd: i32) -> i32 {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+    };
     const SW_SHOWNOACTIVATE: i32 = 4;
     const SW_SHOWMINNOACTIVE: i32 = 7;
-    if BACKGROUND.load(Ordering::Relaxed) && cmd != 0 {
+    let background = BACKGROUND.load(Ordering::Relaxed) && cmd != 0;
+    if background {
         cmd = if cmd == 2 || cmd == 6 || cmd == 7 {
             SW_SHOWMINNOACTIVE
         } else {
@@ -852,7 +859,22 @@ unsafe extern "system" fn show_window(window: *mut c_void, mut cmd: i32) -> i32 
         // SAFETY: the address came from the import table.
         unsafe { std::mem::transmute(SHOW_WINDOW.load(Ordering::Acquire)) };
     // SAFETY: same arguments as the game's call.
-    unsafe { original(window, cmd) }
+    let was_visible = unsafe { original(window, cmd) };
+    if background {
+        // SAFETY: the game's own window handle; only the stacking order changes.
+        unsafe {
+            SetWindowPos(
+                window,
+                HWND_BOTTOM,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
+    was_visible
 }
 
 type CreateDeviceAndSwapChainFn = unsafe extern "system" fn(
