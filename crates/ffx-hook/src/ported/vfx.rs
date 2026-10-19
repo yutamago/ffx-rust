@@ -1919,6 +1919,89 @@ ported! {
     op_et_astatus_effect_off @ 0x007f_b000 => extern "C" fn op_et_astatus_effect_off(chr: u32) {
         et::bridge::op_et_astatus_effect_off(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppKeLnsClmUpdate(obj, key, prog)`.
+    pppKeLnsClmUpdate @ 0x0075_a6a0 => extern "C" fn ppp_ke_lns_clm_update(obj: u32, key: u32, prog: u32) {
+        lns::bridge::ppp_ke_lns_clm_update(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_change_chr_status_en()`.
+    opus_change_chr_status_en @ 0x007f_e0f0 => extern "C" fn opus_change_chr_status_en() -> u32 {
+        // the original's locals: the index map and both flag copies
+        let mut frame = super::StackFrame::<0xf0>::new();
+        let at = frame.at();
+        et::bridge::opus_change_chr_status_en(&mut mem(), at)
+    }
+    /// `opus_change_eff_status_en_007fe280()`.
+    opus_change_eff_status_en_007fe280 @ 0x007f_e280 => extern "C" fn opus_change_eff_status_en() -> u32 {
+        // the original's local index map
+        let mut frame = super::StackFrame::<0xf0>::new();
+        let at = frame.at();
+        et::bridge::opus_change_eff_status_en(&mut mem(), at)
+    }
+    /// `opus_change_osu_en_by_chr_status(list)`.
+    opus_change_osu_en_by_chr_status @ 0x007f_e340 => extern "C" fn opus_change_osu_en_by_chr_status(list: u32) -> u32 {
+        // the original's local index map
+        let mut frame = super::StackFrame::<0xf0>::new();
+        let at = frame.at();
+        et::bridge::opus_change_osu_en_by_chr_status(&mut mem(), list, at)
+    }
+    /// `pppCreateFrameBufferData_00715a40(lo, hi)`.
+    pppCreateFrameBufferData_00715a40 @ 0x0071_5a40 => extern "C" fn create_frame_buffer_data(lo: u32, hi: u32) -> u32 {
+        // the original's locals: count, sizes and name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        draw::bridge::create_frame_buffer_data(&mut mem(), lo, hi, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppCreateD3D11FrameBufferData_00716050(lo, hi, n)`.
+    pppCreateD3D11FrameBufferData_00716050 @ 0x0071_6050 => extern "C" fn create_d3d11_frame_buffer_data(lo: u32, hi: u32, n: u32) -> u32 {
+        // the original's locals: count, sizes and name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        draw::bridge::create_d3d11_frame_buffer_data(&mut mem(), lo, hi, n, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_eff_target_center_0081b3e0(eff, out, filter)`.
+    op_et_eff_target_center_0081b3e0 @ 0x0081_b3e0 => extern "C" fn op_et_eff_target_center(eff: u32, out: u32, filter: u32) {
+        et::bridge::op_et_eff_target_center(&mut mem(), eff, out, filter, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_rot_m_y_apply_007e7be0(dst, src, angle)`.
+    op_rot_m_y_apply_007e7be0 @ 0x007e_7be0 => extern "C" fn op_rot_m_y_apply(dst: u32, src: u32, angle: u32) {
+        // the original's local matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        op::bridge::op_rot_m_y_apply(&mut mem(), dst, src, angle, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppFpSetWoodMatrix()`.
+    pppFpSetWoodMatrix @ 0x0072_a690 => extern "C" fn ppp_fp_set_wood_matrix() -> u32 {
+        // the original's three local vectors
+        let mut frame = super::StackFrame::<12>::new();
+        let at = frame.at();
+        fp::bridge::ppp_fp_set_wood_matrix(&mut mem(), at)
+    }
+    /// `pppFpSetRotMatrix(part, mode)`.
+    pppFpSetRotMatrix @ 0x0072_a2e0 => extern "C" fn ppp_fp_set_rot_matrix(part: u32, mode: u32) -> u32 {
+        mat::bridge::ppp_fp_set_rot_matrix(&mut mem(), part, mode)
+    }
+    /// `opus_osu_set_0080b520(set, src, ptr, list, _)`.
+    opus_osu_set_0080b520 @ 0x0080_b520 => extern "C" fn opus_osu_set(set: u32, src: u32, ptr: u32, list: u32, unused: u32) -> u32 {
+        let _ = unused;
+        opus::bridge::opus_osu_set(&mut mem(), set, src, ptr, list, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpPointLightProc()`.
+    pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
+        fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `op_loop_ffx_after()`.
+    op_loop_ffx_after @ 0x007f_f680 => extern "C" fn op_loop_ffx_after() {
+        // the original's locals (the frame number, then the GS environment
+        // at a 16-byte boundary, as its aligned frame has them): with an
+        // unaligned environment the game crashed in the replays
+        #[repr(C, align(16))]
+        struct Locals([u32; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let at = locals.0.as_mut_ptr() as u32 + 0xc;
+        op::bridge::op_loop_ffx_after(&mut mem(), at, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
         opus::bridge::opf_normal(&mut mem(), host, ptr)

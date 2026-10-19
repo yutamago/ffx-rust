@@ -781,4 +781,88 @@ pub mod bridge {
         (s.call)(mem, f, &[id]);
         game(mem, &mut *s.call, SG_EFFECT_ROUTINE_ENABLE, &[1]);
     }
+
+    /// "effect does not ready call", `MsEffectTerminate`'s error.
+    pub const EFFECT_NOT_READY: u32 = 0x00b5_4a00;
+
+    /// `MsEffectTerminate(id)` (`0x00788920`): an effect of actor `id &
+    /// 0xff` (no actor while the actors are not set up) of kind `id >> 8`
+    /// (its byte) ends: 2 the effect state (`+0xdfb`) 5 to 6 (else
+    /// `MsBattleError`); 4 the actor's two effect flags (`+0x3f7`, `+0x436`)
+    /// cleared when both are set; 7 and 8 the counters `+0xe12`, `+0xe13`
+    /// down to 0; 9 `+0xea4` cleared when it is `id`; 10 the reset wait
+    /// cleared; 0xe the command hold down to 0; 0xf as 4 with the stones
+    /// begun down to 0 and `+0xe17` set; 0x80 the event effect's state 6.
+    /// Then the effect camera mode ends when its call is `id`.
+    pub fn ms_effect_terminate<M: Mem>(mem: &mut M, call: Call<'_, M>, id: u32) {
+        let a = if crate::actor::bridge::ms_get_chr_top(mem) == 0 {
+            0
+        } else {
+            ms_get_chr(mem, id & 0xff)
+        };
+        let at = |o: u32| a.wrapping_add(o);
+        let flags_set = |mem: &M| byte(mem, a, 0x3f7) != 0 && byte(mem, a, 0x436) != 0;
+        let count_down = |mem: &mut M, p: u32| {
+            let v: u8 = mem.read(p);
+            if v != 0 {
+                mem.write(p, v - 1);
+            }
+        };
+        match (id >> 8) & 0xff {
+            2 => {
+                if byte(mem, a, 0xdfb) == 5 {
+                    mem.write(at(0xdfb), 6u8);
+                } else {
+                    let msg = code(mem, EFFECT_NOT_READY);
+                    game(mem, call, crate::init::bridge::MS_BATTLE_ERROR, &[msg]);
+                }
+            }
+            4 => {
+                if flags_set(mem) {
+                    mem.write(at(0x436), 0u8);
+                    mem.write(at(0x3f7), 0u8);
+                }
+            }
+            7 => count_down(mem, at(0xe12)),
+            8 => count_down(mem, at(0xe13)),
+            9 => {
+                if word(mem, a, 0xea4) == id {
+                    mem.write(at(0xea4), 0u32);
+                }
+            }
+            10 => {
+                let wait = crate::process::bridge::RESET_WAIT;
+                if wait.get(mem) != 0 {
+                    wait.set(mem, 0);
+                }
+            }
+            0xe => {
+                let hold = crate::chr_damage::bridge::COMMAND_HOLD2;
+                let n = hold.get(mem);
+                if n != 0 {
+                    hold.set(mem, n - 1);
+                }
+            }
+            0xf => {
+                if flags_set(mem) {
+                    let stones = crate::death::bridge::STONE_STARTED.ptr(mem).addr;
+                    count_down(mem, stones);
+                    mem.write(at(0xe17), 1u8);
+                    mem.write(at(0x436), 0u8);
+                    mem.write(at(0x3f7), 0u8);
+                }
+            }
+            0x80 => crate::state::bridge::EVENT_EFFECT_STAT.set(mem, 6),
+            _ => {}
+        }
+        let mode = crate::minor::bridge::EFFECT_CAMERA_MODE;
+        let m = mode.get(mem);
+        if m != 0 {
+            let same = crate::minor::bridge::EFFECT_CAMERA_CALL
+                .get(mem)
+                .cast_unsigned()
+                == id;
+            mode.set(mem, if same { 0 } else { m });
+        }
+    }
 }

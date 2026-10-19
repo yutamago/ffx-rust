@@ -2131,6 +2131,44 @@ pub mod bridge {
         u32::MAX
     }
 
+    /// `opus_osu_set_0080b520(set, src, ptr, list, _)` (`0x0080b520`): a
+    /// free unit of `set` on index list `list` ([`opus_prog_on`]; 0 when
+    /// none) set up from `src` ([`opus_osu_init`], [`opus_osu_copy`]),
+    /// numbered (`+0x1a` = the set's `u16 +2`, which counts on and wraps
+    /// from 0xfff0 to 0x8000) and pointed at `ptr` (`+0` =
+    /// `set_ptr32(ptr)`, through `call`). Returns the unit. With `list` 1
+    /// the original also hands the unit to `yonExtMapRegister`, a bare
+    /// `ret` in this build, with a 0x4c-byte record by value (the fifth
+    /// argument in it); that call is left out.
+    pub fn opus_osu_set<M: Mem>(
+        mem: &mut M,
+        set: u32,
+        src: u32,
+        ptr: u32,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 index in ax
+        let i = (opus_prog_on(mem, set, list) as u16).cast_signed();
+        if i < 0 {
+            return 0;
+        }
+        let units: u32 = mem.read(set.wrapping_add(0x20));
+        let unit = units.wrapping_add(u32::from(i.cast_unsigned()) << 8);
+        opus_osu_init(mem, unit);
+        opus_osu_copy(mem, set, unit, src);
+        let serial: u16 = mem.read(set.wrapping_add(2));
+        mem.write(unit.wrapping_add(0x1a), serial);
+        let next = serial.wrapping_add(1);
+        mem.write(
+            set.wrapping_add(2),
+            if next >= 0xfff0 { 0x8000 } else { next },
+        );
+        let p = call(mem, g(mem, 0x00a4_4700), &[ptr]);
+        mem.write(unit, p);
+        unit
+    }
+
     fn g(mem: &impl Mem, a: u32) -> u32 {
         Global::<u32>::new(a).ptr(mem).addr
     }

@@ -992,6 +992,54 @@ pub mod bridge {
         let k = u32::from(mem.read::<u8>(slot.wrapping_add(4)));
         crate::menu::bridge::ms_weapon_name(mem, w, k, kana, 0)
     }
+
+    /// `SwapSaveGear(first, second)` (`0x007ab9f0`): the two equipment
+    /// slots of these IDs (`MsGetSaveWeapon`) trade their 0x16 bytes; -1
+    /// when either ID is 0xff, else 0. Every character's weapon and armor
+    /// (`ply_save` `+0x2d`, `+0x2e`) on one of them moves to the other,
+    /// and the slot it now wears gets the character as its owner (`+6`);
+    /// with a 0x7000 ID (the spoils' equipment) among the two, the piece
+    /// worn is taken off instead (0xff, and its owner 0xff). IDs compare
+    /// by their 12 bits, a 0x7000 one whole (never a worn piece).
+    pub fn swap_save_gear(mem: &mut impl Mem, first: u32, second: u32) -> i32 {
+        if first == 0xff || second == 0xff {
+            return -1;
+        }
+        let a = ms_get_save_weapon(mem, first, 0);
+        let b = ms_get_save_weapon(mem, second, 0);
+        let pa: [u8; EQUIPMENT_SIZE as usize] = mem.read(a);
+        let pb: [u8; EQUIPMENT_SIZE as usize] = mem.read(b);
+        mem.write(a, pb);
+        mem.write(b, pa);
+        let spoils = |id: u32| id & 0xffff_f000 == 0x7000;
+        let wear = !spoils(first) && !spoils(second);
+        let key = |id: u32| if spoils(id) { id } else { id & 0xfff };
+        let (first, second) = (key(first), key(second));
+        let base = PLY_SAVE.ptr(mem).addr;
+        for chr in 0..PLAYERS {
+            for piece in [0x2d, 0x2e] {
+                let at = base + chr * PLY_SAVE_SIZE + piece;
+                let worn = u32::from(mem.read::<u8>(at));
+                // the slot the piece now lies in, and what it is called
+                let (slot, now) = if worn == first {
+                    (b, second)
+                } else if worn == second {
+                    (a, first)
+                } else {
+                    continue;
+                };
+                #[allow(clippy::cast_possible_truncation)] // the low bytes
+                let (owner, now) = if wear {
+                    (chr as u8, now as u8)
+                } else {
+                    (0xff, 0xff)
+                };
+                mem.write(slot.wrapping_add(6), owner);
+                mem.write(at, now);
+            }
+        }
+        0
+    }
 }
 
 #[cfg(test)]

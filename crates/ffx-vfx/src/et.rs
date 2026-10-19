@@ -337,6 +337,50 @@ pub mod bridge {
         mem.write(rec.wrapping_add(0x17), 0u8);
     }
 
+    /// `op_et_eff_target_center_0081b3e0(eff, out, filter)` (`0x0081b3e0`):
+    /// the mean position of an effect record's targets into `out`: for
+    /// each of its `byte +8` character indices (`+0x10`; the count read
+    /// again each turn), skipped when `filter` and not
+    /// `MsEffectGetTargetFlag(index)`, `out` = the emulated `r0`, then
+    /// `Ch_GetPos(handle, out, out + 4, out + 8)` for a handle in
+    /// `g_EtChrHandles`, summed (`f32`). Then `out` = the sums / their count
+    /// (0 / 0 gives the indefinite NaN). Callees through `call`.
+    pub fn op_et_eff_target_center<M: Mem>(
+        mem: &mut M,
+        eff: u32,
+        out: u32,
+        filter: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::Reg;
+        let addr = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let mut sum = [0f32; 3];
+        let mut found = 0i32;
+        let mut k = 0u32;
+        while k < u32::from(mem.read::<u8>(eff + 8)) {
+            let b = u32::from(mem.read::<u8>(eff + 0x10 + k));
+            k += 1;
+            if filter != 0 && call(mem, addr(mem, 0x0078_7c10), &[b]) == 0 {
+                continue;
+            }
+            let r0: [u32; 4] = mem.read(addr(mem, 0x00c8_f508));
+            mem.write(out, r0);
+            let h = CHR_HANDLES.ptr(mem).at(b).get(mem);
+            if h != 0 {
+                call(mem, addr(mem, 0x0082_ac90), &[h, out, out + 4, out + 8]);
+            }
+            for (i, s) in (0u32..).zip(sum.iter_mut()) {
+                *s = Reg::load(mem.read(out + 4 * i)).add_m32(*s).store();
+            }
+            found += 1;
+        }
+        #[allow(clippy::cast_precision_loss)] // fild: exact below 2^24
+        let count = found as f32;
+        for (i, s) in (0u32..).zip(sum) {
+            mem.write(out + 4 * i, Reg::load(s).div_m32(count).store());
+        }
+    }
+
     /// The draw flag index of character `h`'s record, if it has one.
     fn draw_index(mem: &impl Mem, h: u32) -> Option<u32> {
         let i = find_chr(mem, h)?;
@@ -501,6 +545,111 @@ pub mod bridge {
             mem.write(out.wrapping_add(2 * idx), u as u16);
         }
         moved
+    }
+
+    /// The bytes the three status remaps below keep in their frame: the
+    /// index map (240 `u16`) and, for [`opus_change_chr_status_en`], copies
+    /// of [`DRAW_FLAGS`] and [`DRAW_FLAGS2`].
+    pub const STATUS_FRAME: u32 = 0x3c0;
+
+    /// The new place of draw flag index `k` (`u16`) from the map at
+    /// `frame`. Like the original, an index past the 240 entries reads on
+    /// into the frame.
+    fn remap(mem: &impl Mem, frame: u32, k: u32) -> u16 {
+        mem.read(frame.wrapping_add(2 * k))
+    }
+
+    /// `opus_change_chr_status_en()` (`0x007fe0f0`): after characters
+    /// moved in `g_EtChrHandles` ([`opus_chr_index_map`] into `frame`, its
+    /// [`STATUS_FRAME`] bytes standing for the original's locals), each
+    /// live character record `i` takes its draw flags from its old index
+    /// `k` (`u16 +0xe`, from copies of both flag tables) and `+0xe` = the
+    /// map's `k`. Nothing when none moved. Returns the original's eax: 0
+    /// then, else the end of the record scan (`CHR + 0xe + 240 * 0x20`).
+    pub fn opus_change_chr_status_en(mem: &mut impl Mem, frame: u32) -> u32 {
+        if opus_chr_index_map(mem, frame) == 0 {
+            return 0;
+        }
+        let (flags, flags2) = (frame.wrapping_add(0x1e0), frame.wrapping_add(0x2d0));
+        let old: [u8; 0xf0] = mem.read(DRAW_FLAGS2.ptr(mem).addr);
+        mem.write(flags2, old);
+        let old: [u8; 0xf0] = mem.read(DRAW_FLAGS.ptr(mem).addr);
+        mem.write(flags, old);
+        for i in 0..CHRS {
+            let rec = chr(mem, i);
+            if mem.read::<u32>(rec) == 0 {
+                continue;
+            }
+            let k = u32::from(mem.read::<u16>(rec + 0xe));
+            let f: u8 = mem.read(flags.wrapping_add(k));
+            DRAW_FLAGS.ptr(mem).at(i).set(mem, f);
+            let f: u8 = mem.read(flags2.wrapping_add(k));
+            DRAW_FLAGS2.ptr(mem).at(i).set(mem, f);
+            let to = remap(mem, frame, k);
+            mem.write(rec + 0xe, to);
+        }
+        CHR.ptr(mem).at(CHRS).addr + 0xe
+    }
+
+    /// `opus_change_eff_status_en_007fe280()` (`0x007fe280`): after
+    /// characters moved ([`opus_chr_index_map`] into `frame`), every live
+    /// effect record (`+0` not -1) has its character indices remapped
+    /// (low byte of the map): the `byte +8` bytes at `+0x10` and the `byte
+    /// +9` bytes at `+0x18` (each count read again every turn). Returns
+    /// the original's eax: 0 when none moved, else the end of the record
+    /// scan (`EFF + 8 + 512 * 0x20`).
+    pub fn opus_change_eff_status_en(mem: &mut impl Mem, frame: u32) -> u32 {
+        if opus_chr_index_map(mem, frame) == 0 {
+            return 0;
+        }
+        for j in 0..EFFS {
+            let rec = EFF.ptr(mem).at(j).addr;
+            if mem.read::<u32>(rec) == u32::MAX {
+                continue;
+            }
+            for (count, list) in [(8u32, 0x10u32), (9, 0x18)] {
+                let mut k = 0u32;
+                while k < u32::from(mem.read::<u8>(rec + count)) {
+                    let at = rec + list + k;
+                    let b = u32::from(mem.read::<u8>(at));
+                    mem.write(at, remap(mem, frame, b).to_le_bytes()[0]);
+                    k += 1;
+                }
+            }
+        }
+        EFF.ptr(mem).at(EFFS).addr + 8
+    }
+
+    /// `opus_change_osu_en_by_chr_status(list)` (`0x007fe340`): after
+    /// characters moved ([`opus_chr_index_map`] into `frame`), the
+    /// character index (byte `+0x18`) of every unit in the list's three
+    /// index lists (`+0x10`, `+0x14`, `+0x18`, `u16` until a negative one;
+    /// units 0x100 bytes from `+0x20`) remapped, 0xff for 0xff and above.
+    /// Returns the original's eax (its caller reads it): 0 when none moved,
+    /// else the last list's end mark, zero-extended.
+    pub fn opus_change_osu_en_by_chr_status(mem: &mut impl Mem, list: u32, frame: u32) -> u32 {
+        if opus_chr_index_map(mem, frame) == 0 {
+            return 0;
+        }
+        let mut end = 0u16;
+        for at in [0x10u32, 0x14, 0x18] {
+            let mut idx: u32 = mem.read(list.wrapping_add(at));
+            loop {
+                let n = mem.read::<i16>(idx);
+                if n < 0 {
+                    end = n.cast_unsigned();
+                    break;
+                }
+                let units: u32 = mem.read(list.wrapping_add(0x20));
+                let unit = units.wrapping_add(u32::from(n.cast_unsigned()) << 8);
+                let b = u32::from(mem.read::<u8>(unit.wrapping_add(0x18)));
+                let to = remap(mem, frame, b).min(0xff);
+                #[allow(clippy::cast_possible_truncation)] // at most 0xff
+                mem.write(unit.wrapping_add(0x18), to as u8);
+                idx = idx.wrapping_add(2);
+            }
+        }
+        u32::from(end)
     }
 
     fn or_flags(mem: &mut impl Mem, h: u32, set: u16) -> Option<u32> {

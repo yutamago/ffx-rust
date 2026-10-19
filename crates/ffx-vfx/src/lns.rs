@@ -3,11 +3,13 @@
 
 /// The functions over game memory.
 pub mod bridge {
-    use crate::draw::bridge::g;
+    use crate::draw::bridge::{ENV_SLOT, GET_PTR32, g};
     use ffx_bridge::Mem;
     use ffx_bridge::x87::{add, cvttsd2si, load, store};
 
     const SET_PTR32: u32 = 0x00a4_4700;
+    /// `KeLnsClm_SetShp(area, slot, flag)`.
+    const CLM_SET_SHP: u32 = 0x0076_9cd0;
     const COPY_VECTOR: u32 = 0x006e_d370;
     const APPLY_MATRIX: u32 = 0x006e_d2e0;
     const COPY_VEC_XYZ: u32 = 0x0075_ede0;
@@ -101,6 +103,53 @@ pub mod bridge {
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
         call(mem, g(mem, SET_PTR32), &[v])
+    }
+
+    /// `pppKeLnsClmUpdate(obj, key, prog)` (`0x0075a6a0`): when the key
+    /// is the object's current one (`[key]` = `obj +0xc`), the work area
+    /// `a = obj + 0xa0 + [[prog + 0xc]]` gets `+0` = `set_ptr32` of `obj +
+    /// 0xa0 + [[prog + 0xc] + 4]`; a key shape `+4` of 0xffff clears its
+    /// shape (`+4` = `set_ptr32(0)`), another one not already there
+    /// (`get_ptr32(a + 4)` against the environment's shape table `+0x24`)
+    /// is set with `KeLnsClm_SetShp(a, slot, byte key +0x16)`; then `+0xa`
+    /// = `u16 key +0x12`, `+0xc` = `u16 key +0x10`, `+0xe` = `byte key
+    /// +0x17`. Callees through `call`.
+    pub fn ppp_ke_lns_clm_update<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let offsets: u32 = mem.read(at(prog, 0xc));
+        let base = at(obj, 0xa0);
+        let area = base.wrapping_add(mem.read(offsets));
+        if mem.read::<u32>(key) != mem.read::<u32>(at(obj, 0xc)) {
+            return;
+        }
+        let data = base.wrapping_add(mem.read(at(offsets, 4)));
+        let p = set_ptr32(mem, data, call);
+        mem.write(area, p);
+        let shape: u32 = mem.read(at(key, 4));
+        if shape == 0xffff {
+            let p = set_ptr32(mem, 0, call);
+            mem.write(at(area, 4), p);
+        } else {
+            let env: u32 = mem.read(mem.read::<u32>(g(mem, ENV_SLOT)));
+            let table: u32 = mem.read(at(env, 0x24));
+            let slot = table.wrapping_add(shape.wrapping_mul(4));
+            let cur: u32 = mem.read(at(area, 4));
+            if call(mem, g(mem, GET_PTR32), &[cur]) != slot {
+                let flag = u32::from(mem.read::<u8>(at(key, 0x16)));
+                call(mem, g(mem, CLM_SET_SHP), &[area, slot, flag]);
+            }
+        }
+        let v: u16 = mem.read(at(key, 0x12));
+        mem.write(at(area, 0xa), v);
+        let v: u16 = mem.read(at(key, 0x10));
+        mem.write(at(area, 0xc), v);
+        let v: u8 = mem.read(at(key, 0x17));
+        mem.write(at(area, 0xe), v);
     }
 
     /// `x` (an `f32`) as `fistp` with truncation stores it, the low half

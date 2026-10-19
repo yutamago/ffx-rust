@@ -351,4 +351,120 @@ pub mod bridge {
             f => u32::from(f),
         }
     }
+
+    /// `g_BtlMenuText` (`0x011333f0`): 17 rows of 12 bytes (`+0` busy,
+    /// `+4` size, `+8` the text block's ptr32 handle).
+    pub const MENU_TEXT_ROW: u32 = 12;
+    /// The battle file's text table (`g_BtlFileText`), 0 without one.
+    pub const FILE_TEXT: Global<u32> = Global::new(0x0112_a9b8);
+
+    /// The menu text row `MsMenuGetText` and `MsMenuGetHelp` read for
+    /// text `i` (0..=0x10): rows 3, 7 and 9 (and 0x10, 0xe, 0xf) move to
+    /// their English rows 0x10, 0xe and 0xf when `MsGetSaveConfigEnglish`
+    /// says 1 (never on the PC: `crate::getmem`).
+    fn menu_text_row(i: u32) -> u32 {
+        let english = crate::getmem::bridge::ms_get_save_config_english() == 1;
+        match i {
+            3 | 0x10 if english => 0x10,
+            7 | 0xe if english => 0xe,
+            9 | 0xf if english => 0xf,
+            _ => i,
+        }
+    }
+
+    /// `MsMenuGetText` and `MsMenuGetHelp`: text `i`'s record `id` (12
+    /// bits) in its row's block, the `u16` at `field + 4 * (second & 1)`
+    /// plus the block's strings; 0 while the row (the first one, then the
+    /// English one) is busy or has no block, or past row 0x10 (`i`
+    /// unsigned).
+    fn menu_text(mem: &impl Mem, i: u32, id: u32, second: u32, field: u32) -> u32 {
+        let base = crate::flow::bridge::MENU_TEXT.ptr(mem).addr;
+        let row = |r: u32| base.wrapping_add(r.wrapping_mul(MENU_TEXT_ROW));
+        // the block handle through get_ptr32_func (the pointer itself)
+        let block = |r: u32| mem.read::<u32>(row(r).wrapping_add(8));
+        let usable = |r: u32| block(r) != 0 && mem.read::<u8>(row(r)) == 0;
+        if !usable(i) || i > 0x10 {
+            return 0;
+        }
+        let r = menu_text_row(i);
+        if r != i && !usable(r) {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_wrap)] // 12 bits
+        let (record, strings) = excel_data(mem, (id & 0xfff) as i32, block(r));
+        let o = field + (second & 1) * 4;
+        u32::from(mem.read::<u16>(record.wrapping_add(o))).wrapping_add(strings)
+    }
+
+    /// `MsMenuGetText(i, id, second)` (`0x0078fcf0`): menu text `i`'s name
+    /// of record `id` (its first or, `second & 1`, second name).
+    pub fn ms_menu_get_text(mem: &impl Mem, i: u32, id: u32, second: u32) -> u32 {
+        menu_text(mem, i, id, second, 0)
+    }
+
+    /// `MsMenuGetHelp(i, id, second)` (`0x0078fbb0`): menu text `i`'s help
+    /// of record `id` (the `u16` at `+8`, or `+0xc` for `second & 1`);
+    /// text 0 reads its names (`+0`, `+4`) instead.
+    pub fn ms_menu_get_help(mem: &impl Mem, i: u32, id: u32, second: u32) -> u32 {
+        menu_text(mem, i, id, second, if i == 0 { 0 } else { 8 })
+    }
+
+    /// `MsGetMenuChrInfo(chr, k)` (`0x0078f7c0`): a name (`k` 0), or a
+    /// help line (`k` 1 or 2), in kana when the config says so. IDs with
+    /// high bits (a command, item or ability: `MsGetComData`) give their
+    /// record's `+8 + 4 * kana` offset into the names (0 for kinds without
+    /// names). An actor's `+0xf74` (`k` 1) or `+0xf75` (`k` 2) picks a line
+    /// in the battle file's text table when it is not 0xff; without one,
+    /// a character reads its `ply_rom` record (`+4 * kana`, or `+8 + 4 *
+    /// kana` for `k` 1 and 2), a monster its own `+0x90` (`k` 1) or `+0x190`
+    /// (`k` 2); 0 otherwise.
+    pub fn ms_get_menu_chr_info(mem: &mut impl Mem, chr: u32, k: u32) -> u32 {
+        let kana = crate::save::bridge::ms_get_save_config_hiragana(mem);
+        if chr & 0xffff_f000 != 0 {
+            let (record, name) = crate::stat::bridge::com_data(mem, chr, true);
+            let off: u32 = mem.read(record.wrapping_add(8 + kana * 4));
+            return name.unwrap_or(0).wrapping_add(off);
+        }
+        let mut found = 0u32;
+        let mut actor = 0u32;
+        if crate::actor::bridge::ms_get_chr_top(mem) != 0 {
+            actor = ms_get_chr(mem, chr);
+            let line = match k {
+                1 => Some(mem.read::<u8>(actor.wrapping_add(0xf74))),
+                2 => Some(mem.read::<u8>(actor.wrapping_add(0xf75))),
+                _ => None,
+            };
+            let table = FILE_TEXT.get(mem);
+            if let Some(line) = line
+                && line != 0xff
+                && table != 0
+            {
+                let at = (kana + u32::from(line) * 2) * 4;
+                found = u32::from(mem.read::<u16>(table.wrapping_add(at))).wrapping_add(table);
+            }
+        }
+        if found != 0 {
+            return found;
+        }
+        if crate::actor::bridge::ms_get_ram_chr_monster(chr) == 0 {
+            let t = PLY_ROM.get(mem);
+            let (record, strings) = excel_data(mem, chr.cast_signed(), t);
+            let o = match k {
+                0 => kana * 4,
+                1 | 2 => 8 + kana * 4,
+                _ => return 0,
+            };
+            return u32::from(mem.read::<u16>(record.wrapping_add(o))).wrapping_add(strings);
+        }
+        if actor == 0 {
+            return 0;
+        }
+        // the original asks MsGetSaveConfigEnglish and drops the answer
+        let _ = crate::getmem::bridge::ms_get_save_config_english();
+        match k {
+            1 => actor.wrapping_add(0x90),
+            2 => actor.wrapping_add(0x190),
+            _ => 0,
+        }
+    }
 }
