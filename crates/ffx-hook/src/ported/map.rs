@@ -4238,6 +4238,11 @@ ported! {
         nkz::bridge::sqs_cmd_anmm_mode(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `SqsCmdAnmmOef(ctx, cmd)`.
+    SqsCmdAnmmOef @ 0x0081_b8d0 => extern "C" fn shim_sqs_cmd_anmm_oef(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_anmm_oef(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `Sqs_DecodeAdpcm(src, dst)`.
     Sqs_DecodeAdpcm @ 0x0081_cc70 => extern "C" fn shim_sqs_decode_adpcm(src: u32, dst: u32) -> u32 {
         nkz::bridge::sqs_decode_adpcm(&mut mem(), src, dst)

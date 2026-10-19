@@ -19252,3 +19252,54 @@ fn r13t_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_4102);
     r13t_cases(&mut t, &mut rng, 50);
 }
+
+// ---- field agent r13, group U: the anmm effect command ----
+
+/// Group U (r13) on `t`: `SqsCmdAnmmOef` with random context flags and
+/// effect slots; `op_oef2_a_get` is a logged stand-in returning a buffer
+/// whose table offset (`+0x10`, `i16`) is random (negative too), the list
+/// call a logged stand-in.
+fn r13u_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::nkz::bridge as nb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, datav) = (t.alloc(4 + 0x20 * 4), t.alloc(4), t.alloc(4));
+    t.cave(&[
+        (Some(nb::OP_OEF2_A_GET), log_stub(log, datav, 1, 3)),
+        (Some(nb::OPU_ID_LIST_ADD), log_stub(log, rv, 2, 2)),
+    ]);
+    let (ctx, rec, cmd, data) = (t.alloc(0x400), t.alloc(0x100), t.alloc(8), t.alloc(0x20));
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(datav, data);
+        t.fill(ctx + 0x200, 0x200, rng);
+        t.put(ctx + 0x220, rec);
+        t.fill(rec, 0x100, rng);
+        t.put(rec + 0x1e, u8::try_from(rng.below(8)).unwrap());
+        t.fill(cmd, 8, rng);
+        t.fill(data, 0x20, rng);
+        t.same(
+            "SqsCmdAnmmOef",
+            |o| o.eax(0x0081_b8d0, &[ctx, cmd]),
+            |m| nb::sqs_cmd_anmm_oef(m, ctx, cmd, call),
+        );
+    }
+}
+
+/// Group U (r13) on the image.
+#[test]
+fn r13u_anmm_oef_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_5101);
+    r13u_cases(&mut t, &mut rng, 500);
+}
+
+/// Group U (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13u_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_5102);
+    r13u_cases(&mut t, &mut rng, 250);
+}

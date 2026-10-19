@@ -983,6 +983,54 @@ pub mod bridge {
         }
     }
 
+    /// `SqsCmdAnmmOef(ctx, cmd)` (`0x0081b8d0`, name ours; an IOP command
+    /// like [`sqs_cmd_anmm`]): the record's (`ctx +0x220`) animation from
+    /// its effect data (`op_oef2_a_get(ctx +0x360[record +0x1e], 4, cmd
+    /// +2)`, kept at `+0xe0`, its table `+0x10` at `+0xe4` and that
+    /// table's end at `+0xe8`): mode `+0xbb` 1, `+0xc0` `0x480080`, `+0xc4`
+    /// 0, `+0xf2` 0x100, `+0xf0` 0x200, `+0xec` `0x0200ffff`, and from
+    /// `ctx +0x21a` bits 13..15, 9..11 and the low byte less 0x24 at
+    /// `+0xa8`..`+0xaa`; the context's id joins its list. Returns `cmd +
+    /// 4`.
+    pub fn sqs_cmd_anmm_oef<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ctx: u32,
+        cmd: u32,
+        call: &mut C,
+    ) -> u32 {
+        let rec = mem.read::<u32>(ctx.wrapping_add(0x220));
+        let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x1e)));
+        let src = mem.read::<u32>(ctx.wrapping_add(0x360).wrapping_add(4 * slot));
+        let id = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let f = mem.rebase(OP_OEF2_A_GET);
+        let data = call(mem, f, &[src, 4, id]);
+        mem.write(rec.wrapping_add(0xbb), 1u8);
+        mem.write(rec.wrapping_add(0xe0), data);
+        mem.write(rec.wrapping_add(0xc0), 0x0048_0080u32);
+        mem.write(rec.wrapping_add(0xc4), 0u32);
+        mem.write(rec.wrapping_add(0xf2), 0x100u32);
+        let flags = mem.read::<u16>(ctx.wrapping_add(0x21a));
+        #[allow(clippy::cast_possible_truncation)] // three bits each
+        {
+            mem.write(rec.wrapping_add(0xa8), (flags >> 13 & 7) as u8);
+            mem.write(rec.wrapping_add(0xa9), (flags >> 9 & 7) as u8);
+        }
+        let low = mem.read::<u8>(ctx.wrapping_add(0x21a));
+        mem.write(rec.wrapping_add(0xaa), low.wrapping_sub(0x24));
+        let f = mem.rebase(OPU_ID_LIST_ADD);
+        let id = u32::from(mem.read::<u16>(ctx.wrapping_add(0x214)));
+        call(mem, f, &[ctx.wrapping_add(0x300), id]);
+        let table = data.wrapping_add(0x10);
+        mem.write(rec.wrapping_add(0xe4), table);
+        let end = i32::from(mem.read::<i16>(table))
+            .cast_unsigned()
+            .wrapping_add(data);
+        mem.write(rec.wrapping_add(0xe8), end);
+        mem.write(rec.wrapping_add(0xf0), 0x200u16);
+        mem.write(rec.wrapping_add(0xec), 0x0200_ffffu32);
+        cmd.wrapping_add(4)
+    }
+
     /// `Sqs_DecodeAdpcm(src, dst)` (`0x0081cc70`, name ours; from
     /// `SqsStraightStreamingDataSend`): 25 rounds of 256 left samples then
     /// 256 right ones (`i16` into `dst`, 0x6400 bytes), each from 16
