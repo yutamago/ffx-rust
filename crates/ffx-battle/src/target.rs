@@ -132,6 +132,9 @@ pub mod bridge {
         pub spline: &'h dyn Fn(&mut Dm<'_>, u32, u32, u32, u32),
         /// `TkMtCalcSplineTangent(out, points, n, t)` (menu, `0x0088b3b0`).
         pub spline_tangent: &'h dyn Fn(&mut Dm<'_>, u32, u32, u32, u32),
+        /// `TkMtCalcSpline3(out, points, n, t)` (menu, `0x0088a4d0`; the
+        /// camera passes it `TkMtCalcSpline`'s four words).
+        pub spline3: &'h dyn Fn(&mut Dm<'_>, u32, u32, u32, u32),
         /// `_CIcos` on a double (`MsCameraMoveCalc`).
         pub cos: &'h dyn Fn(f64) -> f64,
         /// `Ch_NeckSetEnable(chr, on)` (chara, `0x00834f60`).

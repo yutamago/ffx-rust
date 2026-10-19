@@ -257,6 +257,9 @@ fn host() -> target::Host<'static> {
     fn tangent(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
         spline_via_stack(m, 0x0088_b3b0, out, points, n, t);
     }
+    fn spline3(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        spline_via_stack(m, 0x0088_a4d0, out, points, n, t);
+    }
     fn neck_enable(m: &mut target::Dm<'_>, chr: u32, on: u32) {
         ffx_chara::chr::bridge::ch_neck_set_enable(
             m,
@@ -291,13 +294,27 @@ fn host() -> target::Host<'static> {
             f(i).to_bits()
         }
     }
-    fn pos(_: &mut target::Dm<'_>, i: u32, x: u32, y: u32, z: u32) {
-        call4(0x0086_b1e0, i, x, y, z);
+    fn pos(m: &mut target::Dm<'_>, actor: u32, x: u32, y: u32, z: u32) {
+        // the outputs may be a frame's locals, at addresses the game never
+        // maps: through this stack, holding their words first (an actor
+        // out of range writes nothing)
+        use ffx_bridge::Mem;
+        let outs = [x, y, z];
+        let mut buf = super::StackFrame::<3>::new();
+        let at = buf.at();
+        let held: [u32; 3] = outs.map(|o| m.read(o));
+        m.write(at, held);
+        call4(0x0086_b1e0, actor, at, at + 4, at + 8);
+        let got: [u32; 3] = m.read(at);
+        for (o, word) in outs.into_iter().zip(got) {
+            m.write(o, word);
+        }
     }
     target::Host {
         trig: &crt_trig,
         spline: &spline,
         spline_tangent: &tangent,
+        spline3: &spline3,
         cos: &crt_cos,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
@@ -2170,12 +2187,98 @@ ported! {
     MsCameraSetStartPos @ 0x007b_ff10 => extern "C" fn ms_camera_set_start_pos(cam: u32, side: u32, mv: u32) -> u32 {
         camera::ms_camera_set_start_pos(&mut mem(), &crt_trig, cam, side, mv)
     }
+    /// `MsCameraSetBtl(id, side, chr, mode, a, b, lift, turn, pitch, scale)`.
+    MsCameraSetBtl @ 0x007c_5c60 => extern "C" fn ms_camera_set_btl(id: u32, side: u32, chr: u32, mode: u32, a: u32, b: u32, lift: u32, turn: u32, pitch: u32, scale: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_camera_set_btl(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side, chr, mode, [a, b], lift, [turn, pitch, scale])
+    }
+    /// `MsCamSetBtl(id, mode, side, ch, other, other_ch)`: the stray
+    /// radius words as VU register 4 holds them (the caller's registers
+    /// are not known here).
+    MsCamSetBtl @ 0x007c_58e0 => extern "C" fn ms_cam_set_btl(id: u32, mode: u32, side: u32, ch: u32, other: u32, other_ch: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_cam_set_btl(&mut target::Dm::new(&mut m), &host(), id, mode, side, ch, other, other_ch, None)
+    }
+    /// `MsCameraAddLineFilter_007bf0b0(id, side, kind, x0, y0, x1, y1, w)`.
+    MsCameraAddLineFilter_007bf0b0 @ 0x007b_f0b0 => extern "C" fn ms_camera_add_line_filter(id: u32, side: u32, kind: u32, x0: u32, y0: u32, x1: u32, y1: u32, w: u32) {
+        camera::ms_camera_add_line_filter(&mut mem(), id, side, kind, [x0, y0], [x1, y1], w);
+    }
+    /// `MsCameraSetDepthMaskMode_007bcf50(id, mode)`.
+    MsCameraSetDepthMaskMode_007bcf50 @ 0x007b_cf50 => extern "C" fn ms_camera_set_depth_mask_mode(id: u32, mode: u32) -> u32 {
+        camera::ms_camera_set_depth_mask_mode(&mut mem(), id, mode)
+    }
+    /// `MsCameraMoveAcc(id, side, mode, accel, hold, decel, curve)`: the
+    /// byte and halfword arguments take their dwords' low parts.
+    MsCameraMoveAcc @ 0x007b_d860 => extern "C" fn ms_camera_move_acc(id: u32, side: u32, mode: u32, accel: u32, hold: u32, decel: u32, curve: u32) -> u32 {
+        let h = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        camera::ms_camera_move_acc(&mut mem(), &crt_trig, id, side, mode.to_le_bytes()[0], [h(accel), h(hold), h(decel)], h(curve))
+    }
+    /// `MsCameraMoveFrame(id, side, mode, frames, kind)`: as
+    /// `MsCameraMoveAcc`.
+    MsCameraMoveFrame @ 0x007b_de50 => extern "C" fn ms_camera_move_frame(id: u32, side: u32, mode: u32, frames: u32, kind: u32) -> u32 {
+        let h = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        camera::ms_camera_move_frame(&mut mem(), &crt_trig, id, side, mode.to_le_bytes()[0], h(frames), h(kind))
+    }
     /// `MsCameraGetYaw()`: the yaw through a word of this stack (the
     /// original's local), the CRT's `_CIatan` through its import slot.
     MsCameraGetYaw @ 0x007b_cf20 => extern "C" fn ms_camera_get_yaw() -> f32 {
         let mut local = super::StackFrame::<1>::new();
         let at = local.at();
         camera::ms_camera_get_yaw(&mut mem(), &crt_trig, at)
+    }
+    /// `MsCameraAimPolar_007c0910(side, mv)`: its two stack words in
+    /// this call's frame.
+    MsCameraAimPolar_007c0910 @ 0x007c_0910 => extern "C" fn ms_camera_aim_polar(side: u32, mv: u32) {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        camera::ms_camera_aim_polar(&mut mem(), &crt_trig, side, mv, at);
+    }
+    /// `MsCameraAimPolar2_007c09b0(side, mv)`.
+    MsCameraAimPolar2_007c09b0 @ 0x007c_09b0 => extern "C" fn ms_camera_aim_polar2(side: u32, mv: u32) {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        camera::ms_camera_aim_polar2(&mut mem(), &crt_trig, side, mv, at);
+    }
+    /// `MsCameraAimPolar3_007c0a30(side, mv)`.
+    MsCameraAimPolar3_007c0a30 @ 0x007c_0a30 => extern "C" fn ms_camera_aim_polar3(side: u32, mv: u32) {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        camera::ms_camera_aim_polar3(&mut mem(), &crt_trig, side, mv, at);
+    }
+    /// `MsCameraAtelYaw_007c0650(side, mv, track)`: the script actors'
+    /// directions through the game.
+    MsCameraAtelYaw_007c0650 @ 0x007c_0650 => extern "C" fn ms_camera_atel_yaw(side: u32, mv: u32, track: u32) {
+        let mut m = mem();
+        camera::ms_camera_atel_yaw(&mut target::Dm::new(&mut m), &host(), side, mv, track);
+    }
+    /// `MsCameraSplinePos_007bcd30(cam, side_no, side, mv, other)`: the
+    /// splines through the game (menu's).
+    MsCameraSplinePos_007bcd30 @ 0x007b_cd30 => extern "C" fn ms_camera_spline_pos(_cam: u32, _side_no: u32, side: u32, mv: u32, other: u32) {
+        let mut m = mem();
+        camera::ms_camera_spline_pos(&mut target::Dm::new(&mut m), &host(), side, mv, other);
+    }
+    /// `MsCameraAtelFocus_007c0560(side, mv)`: the script actors'
+    /// positions through the game.
+    MsCameraAtelFocus_007c0560 @ 0x007c_0560 => extern "C" fn ms_camera_atel_focus(side: u32, mv: u32) {
+        let mut m = mem();
+        camera::ms_camera_atel_focus(&mut target::Dm::new(&mut m), &host(), side, mv);
+    }
+    /// `MsBattleSpecialCameraKind_0079dd70()`.
+    MsBattleSpecialCameraKind_0079dd70 @ 0x0079_dd70 => extern "C" fn ms_battle_special_camera_kind() -> i32 {
+        special::ms_battle_special_camera_kind(&mem())
+    }
+    /// `MsTransSpPos(inverse, v)`: its matrix in this call's frame.
+    MsTransSpPos @ 0x0079_e1b0 => extern "C" fn ms_trans_sp_pos(inverse: u32, v: u32) {
+        let mut local = super::StackFrame::<16>::new();
+        let at = local.at();
+        special::ms_trans_sp_pos(&mut mem(), &crt_trig, inverse, v, at);
+    }
+    /// `MsSpCameraProcess(eye, at, up)`: `MsTransSpPos`'s matrix in this
+    /// call's frame.
+    MsSpCameraProcess @ 0x0079_dfe0 => extern "C" fn ms_sp_camera_process(eye: u32, at: u32, up: u32) {
+        let mut local = super::StackFrame::<16>::new();
+        let m = local.at();
+        special::ms_sp_camera_process(&mut mem(), &crt_trig, [eye, at, up], m);
     }
     /// `MsCameraFocusWeights_007c0ae0(side, mv)`.
     MsCameraFocusWeights_007c0ae0 @ 0x007c_0ae0 => extern "C" fn ms_camera_focus_weights(side: u32, mv: u32) {
@@ -2275,6 +2378,14 @@ ported! {
     /// `MsGetBattleList(kind, &count)`.
     MsGetBattleList @ 0x007b_6c50 => extern "C" fn ms_get_battle_list(kind: i32, count: u32) -> u32 {
         ffx_battle::ability::bridge::ms_get_battle_list(&mut mem(), kind, count)
+    }
+    /// `MsChrDelExtraCommand_007acb40(chr, command, selector)`.
+    MsChrDelExtraCommand_007acb40 @ 0x007a_cb40 => extern "C" fn ms_chr_del_extra_command(chr: u32, command: u32, selector: u32) -> u32 {
+        ffx_battle::ability::bridge::ms_chr_del_extra_command(&mut mem(), chr, command, selector)
+    }
+    /// `MsMonShuffleVariants_007842f0()`.
+    MsMonShuffleVariants_007842f0 @ 0x0078_42f0 => extern "C" fn ms_mon_shuffle_variants() {
+        read::ms_mon_shuffle_variants(&mut mem());
     }
     /// `MsSetRamChrAbility(chr, actor)`.
     MsSetRamChrAbility @ 0x0079_bb50 => extern "C" fn ms_set_ram_chr_ability(chr: u32, actor: u32) {
@@ -2932,6 +3043,11 @@ ported! {
         let s = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
         input::ms_number_put(&mut mem(), b(i), b(k), b(ch), s(x), s(y), b(w), b(h), b(life), b(colour), b(style))
     }
+    /// `MsNumberDrawProcess()`: `TOBtlSetDamageValue` and `_CIsin` through
+    /// the game.
+    MsNumberDrawProcess @ 0x0079_f660 => extern "C" fn ms_number_draw_process() {
+        input::ms_number_draw_process(&mut mem(), &crt_trig, &mut call_ptr);
+    }
     /// `MsNumberRegist(i, kind, value, other, x, flags, style)`.
     MsNumberRegist @ 0x0079_fa00 => extern "C" fn ms_number_regist(i: u32, kind: u32, value: i32, other: i32, x: u32, flags: u32, style: u32) -> i32 {
         input::ms_number_regist(&mut mem(), i, kind, value, other, x, flags, style)
@@ -3157,6 +3273,30 @@ ported! {
     /// `MsRegSEplay2(i, se)`.
     MsRegSEplay2 @ 0x007a_0140 => extern "C" fn ms_reg_se_play2(i: u32, se: u32) -> u32 {
         afterdmg::ms_reg_se_play2(&mut mem(), &crt_trig, &mut call_ptr, i, se)
+    }
+    /// `MsChrSeGet_0079fe80(i, kind)`.
+    MsChrSeGet_0079fe80 @ 0x0079_fe80 => extern "C" fn ms_chr_se_get(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_get(&mut mem(), i, kind)
+    }
+    /// `MsChrSeFade_0079fcf0(i, kind, frames)`.
+    MsChrSeFade_0079fcf0 @ 0x0079_fcf0 => extern "C" fn ms_chr_se_fade(i: u32, kind: u32, frames: u32) -> i32 {
+        afterdmg::ms_chr_se_fade(&mut mem(), i, kind, frames)
+    }
+    /// `MsChrSePlay_0079fd40(i, kind)`.
+    MsChrSePlay_0079fd40 @ 0x0079_fd40 => extern "C" fn ms_chr_se_play(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_play(&mut mem(), &crt_trig, &mut call_ptr, i, kind)
+    }
+    /// `MsChrSePlay2_0079fda0(i, kind)`.
+    MsChrSePlay2_0079fda0 @ 0x0079_fda0 => extern "C" fn ms_chr_se_play2(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_play2(&mut mem(), &crt_trig, &mut call_ptr, i, kind)
+    }
+    /// `MsChrSePlayUnhasted_0079fdf0(i, kind)`.
+    MsChrSePlayUnhasted_0079fdf0 @ 0x0079_fdf0 => extern "C" fn ms_chr_se_play_unhasted(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_play_unhasted(&mut mem(), &crt_trig, &mut call_ptr, i, kind)
+    }
+    /// `MsChrSePlayAlive_0079fe30(i, kind)`.
+    MsChrSePlayAlive_0079fe30 @ 0x0079_fe30 => extern "C" fn ms_chr_se_play_alive(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_play_alive(&mut mem(), &crt_trig, &mut call_ptr, i, kind)
     }
     /// `MsStoneProcess(i, actor)`.
     MsStoneProcess @ 0x0078_e150 => extern "C" fn ms_stone_process(i: u32, actor: u32) -> u32 {
