@@ -1980,6 +1980,11 @@ ported! {
     pppFpSetRotMatrix @ 0x0072_a2e0 => extern "C" fn ppp_fp_set_rot_matrix(part: u32, mode: u32) -> u32 {
         mat::bridge::ppp_fp_set_rot_matrix(&mut mem(), part, mode)
     }
+    /// `opus_osu_set_0080b520(set, src, ptr, list, _)`.
+    opus_osu_set_0080b520 @ 0x0080_b520 => extern "C" fn opus_osu_set(set: u32, src: u32, ptr: u32, list: u32, unused: u32) -> u32 {
+        let _ = unused;
+        opus::bridge::opus_osu_set(&mut mem(), set, src, ptr, list, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

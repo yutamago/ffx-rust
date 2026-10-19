@@ -13347,3 +13347,60 @@ fn ppp_fp_point_light_proc_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn opus_osu_set_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_b520);
+        // set_ptr32 recorded; yonExtMapRegister is a bare `ret`
+        deref_recorder(&mut p, 0x00a4_4700, &[0]);
+        let (set, list, parts, src) = (
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x2200),
+            p.alloc(0x100),
+        );
+        let r0 = p.sym(0x00c8_f508);
+        for round in 0..3000 {
+            p.fill(list, 0x40, &mut rng);
+            for i in 0..0x20u32 {
+                let x: i16 = if rng.chance(8) {
+                    -1
+                } else {
+                    i16::try_from(rng.below(0x100)).unwrap()
+                };
+                p.set(list + 2 * i, x);
+            }
+            p.fill(set, 0x40, &mut rng);
+            let k = rng.below(4);
+            p.set(set + 0x10 + 4 * k, list);
+            p.fill(parts, 0x2200, &mut rng);
+            for i in 0..0x21u32 {
+                let w = if rng.chance(6) { 0 } else { rng.next() | 1 };
+                p.set(parts + 0x100 * i, w);
+            }
+            p.set(set + 0x20, parts);
+            p.set(set + 0x34, rng.pick(&[0u16, 1, 2, 9, 0x20, 0x21]));
+            let serial = rng.pick(&[0u16, 0x7fff, 0xffee, 0xffef, 0xfff0, 0xffff]);
+            p.set(set + 2, serial);
+            p.fill(src, 0x100, &mut rng);
+            p.fill(r0, 16, &mut rng);
+            let (ptr, x) = (rng.next(), rng.next());
+            p.check(
+                &format!("0x0080b520 round {round}"),
+                0x0080_b520,
+                &[set, src, ptr, k, x],
+                |m| {
+                    Some(opus::bridge::opus_osu_set(
+                        m,
+                        set,
+                        src,
+                        ptr,
+                        k,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}

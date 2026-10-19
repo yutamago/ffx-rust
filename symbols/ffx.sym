@@ -6791,6 +6791,7 @@
 0x0080ac00 function opus_map_rgba_free        # fh v3:exact 0x0080ad60
 0x0080af70 function opus_unit_on                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100400760 opus_unit_on, 2 votes, round 1
 0x0080b180 function opu_unit_etc                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'LoadedByOPU_UNIT_ETC'; Switch 0x7100400d30 opu_unit_etc (symbols from Fahrenheit's server export)
+0x0080b520 function opus_osu_set_0080b520     # ours: (set, src, ptr, list, _) -> unit or 0: opus_prog_on(set, list), opus_osu_init + opus_osu_copy(set, unit, src), +0x1a = set u16 +2 (counts on, 0xfff0 wraps to 0x8000), +0 = set_ptr32(ptr); list 1 also calls yonExtMapRegister (bare ret); callers 0x007f0000 battle et code and 0x00a70000 (opus::bridge::opus_osu_set)
 0x0080b650 function op_part_init_check        # fh v3:exact 0x0080b7b0
 0x0080b670 function opu_part_init                # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos FIXME: particle data address in effect overlay was N'; Switch 0x71003e4710 opu_part_init (symbols from Fahrenheit's server export)
 0x0080b7d0 function opu_part_kill             # layout: the only unused Switch name sorting between opu_part_init and opu_part_run (Switch 0x71003e4c00, 48 bytes); (host, cmd) -> cmd + 2 after calling [[host+0x350]+0x54](host+0x220 unit)
