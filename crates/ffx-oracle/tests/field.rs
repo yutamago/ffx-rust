@@ -22403,10 +22403,15 @@ fn r14oo_on_a_snapshot_matches_the_original() {
 /// `seen` (they sit on the caller's stack), the word at `rv` returned.
 fn r14pp_clip_stub(seen: u32, rv: u32) -> Vec<u8> {
     // push esi; push edi; mov esi, [esp + 0x10]; mov edi, seen;
-    // mov ecx, 16; rep movsd; pop edi; pop esi; mov eax, [rv]; ret
+    // mov ecx, 16; rep movsd; (the third argument); pop edi; pop esi;
+    // mov eax, [rv]; ret
     let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0xbf];
     c.extend_from_slice(&seen.to_le_bytes());
-    c.extend_from_slice(&[0xb9, 16, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xa1]);
+    c.extend_from_slice(&[0xb9, 16, 0, 0, 0, 0xf3, 0xa5]);
+    // mov eax, [esp + 0x14]; mov [seen + 0x40], eax: the third argument
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x14, 0xa3]);
+    c.extend_from_slice(&(seen + 0x40).to_le_bytes());
+    c.extend_from_slice(&[0x5f, 0x5e, 0xa1]);
     c.extend_from_slice(&rv.to_le_bytes());
     c.push(0xc3);
     c
@@ -22423,7 +22428,7 @@ fn r14pp_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
         t.alloc(4),
         t.alloc(4),
         t.alloc(4),
-        t.alloc(0x40),
+        t.alloc(0x44),
     );
     let [mul, world, update, _, clip, tex, rd, upd, gm, init, restore] = mb::MODEL_DRAW_CALLS;
     t.cave(&[
@@ -22543,15 +22548,18 @@ fn r14qq_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
         let status = rng.next();
         yi::RENDER_STATUS.set(&mut t.a, status);
         yi::RENDER_STATUS.set(&mut t.b, status);
-        let none = rng.below(4) == 0;
-        let a = if none {
-            [
+        // a stale pending name, which every read clears
+        t.put(t.b.rebase(yi::PENDING_MAP_NAME), 0x41u8);
+        // kind and file -1, or only one of them
+        let a = match rng.below(6) {
+            0 => [
                 u32::MAX,
                 [u32::MAX, 0x7fff_ffff][rng.below(2) as usize],
                 rng.next(),
-            ]
-        } else {
-            [rng.below(0x40), rng.below(0x400), rng.next()]
+            ],
+            1 => [u32::MAX, rng.below(0x400), rng.next()],
+            2 => [rng.below(0x40), u32::MAX, rng.next()],
+            _ => [rng.below(0x40), rng.below(0x400), rng.next()],
         };
         t.same(
             "yiObjReadNB",
