@@ -2574,6 +2574,11 @@ ported! {
     rcefGetChrMatrixOpt @ 0x0092_e270 => extern "C" fn shim_rcef_get_chr_matrix_opt(i: u32, n: u32, out: u32) {
         task::bridge::rcef_get_chr_matrix_opt(&mut mem(), i, n, out, &mut |_, f, a| call_cdecl(f, a));
     }
+    /// `rcefSetTargets(e, opt, te, topt)`: the two positions in a frame.
+    rcefSetTargets @ 0x0092_4a20 => extern "C" fn shim_rcef_set_targets(e: u32, opt: u32, te: u32, topt: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        task::bridge::rcef_set_targets(&mut mem(), [e, opt, te, topt], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
     /// `rcefGetChrPos(i, e, out)`.
     rcefGetChrPos @ 0x0092_e2f0 => extern "C" fn shim_rcef_get_chr_pos(i: u32, e: u32, out: u32) -> u32 {
         let mut w = super::StackFrame::<16>::new();

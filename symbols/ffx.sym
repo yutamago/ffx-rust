@@ -11839,6 +11839,7 @@
 0x009249c0 function rcefTargetGetHeight          # (i) -> float +0x10 of effect target i (0x025d5c60, 0x24 bytes each, filled by 0x00924a20); g_MagicImports
 0x009249e0 function rcefTargetGetAngle           # (i) -> float +0xc, the target's direction; g_MagicImports
 0x00924a00 function rcefTargetGetDist            # (i) -> float +8, horizontal distance (rcVec3fLength before the normalize); g_MagicImports
+0x00924a20 function rcefSetTargets            # (e, opt, te, topt) -> eax of the scale: g_RcefTargets (600 bytes cleared) from the caster 0x025d5bb8 and min(16, i16 0x025d5bbc) listed targets 0x025d5bc0 (count i16 0x025d5ea0): caster angle rcefDirToAngle(rcefGetChrDir) to 0x025d5ea4, positions rcefGetChrPos(Opt with opt/topt) of element e/te, centre 0x025d5ea8 the sum (rcVu0Add) scaled by 1/count; per target +4 chr, +0x14 offset (rcVu0Sub) with +0x10 its y, +0x18/+0x20 0, +8 rcVec3fLength, normalised, +0xc rcefVecToAngle; name ours; ported (field r13, ffx_field::task)
 0x00924ba0 function rcefTargetIsDone             # (i) -> bit 1 of target i's u16 flags
 0x00924bc0 function rcefTargetClear              # (i): its flags = 0
 0x00924be0 function rcefTargetSetDelay           # (u16): 0x025d5ea2, the delay 0x009248c0 gives a reached target

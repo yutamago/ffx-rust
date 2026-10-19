@@ -18255,3 +18255,107 @@ fn r13f_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13f_cases(&mut t, &mut rng, g, 150);
 }
+
+// ---- field agent r13, group G: the effect targets ----
+
+/// A logging stand-in (arguments 1 and 2) that copies 4 words from
+/// `src + 16 (first argument & 15)` to its third (`rcefGetChrPos`).
+fn r13g_pos_stub(log: u32, rv: u32, id: u32, src: u32) -> Vec<u8> {
+    let mut c = log_stub_from(log, rv, id, 0, 2);
+    c.pop(); // ret
+    // push esi; push edi; mov eax, [esp + 0xc]; and eax, 0xf; shl eax, 4;
+    // lea esi, [eax + src]; mov edi, [esp + 0x14]; mov ecx, 4; rep movsd;
+    // pop edi; pop esi; ret
+    c.extend_from_slice(&[
+        0x56, 0x57, 0x8b, 0x44, 0x24, 0x0c, 0x83, 0xe0, 0x0f, 0xc1, 0xe0, 0x04, 0x8d, 0xb0,
+    ]);
+    c.extend_from_slice(&src.to_le_bytes());
+    c.extend_from_slice(&[
+        0x8b, 0x7c, 0x24, 0x14, 0xb9, 0x04, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc3,
+    ]);
+    c
+}
+
+/// A logging stand-in (one argument) returning the `f32` at `at` in `ST0`.
+fn r13g_float_stub(log: u32, rv: u32, id: u32, at: u32) -> Vec<u8> {
+    let mut c = log_stub(log, rv, id, 1);
+    c.truncate(c.len() - 6); // mov eax, [rv]; ret
+    c.extend_from_slice(&[0xd9, 0x05]); // fld dword [at]; ret
+    c.extend_from_slice(&at.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Group G (r13) on `t`: `rcefSetTargets` with -2..20 listed targets
+/// (clamped to 16), each kind of position for the caster and the
+/// targets, targets in the caster's place (zero offsets) or not. The
+/// character direction and positions are stand-ins; the vector code and
+/// the angle helpers run as the originals.
+fn r13g_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::task::{self, target as tg};
+    t.install_trig();
+    let fcall = &mut oracle_fcall;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, dirv, places) = (
+        t.alloc(4 + 0x20 * 48),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(0x100),
+    );
+    t.cave(&[
+        (Some(tg::GET_CHR_DIR), r13g_float_stub(log, rv, 1, dirv)),
+        (Some(tg::GET_CHR_POS), r13g_pos_stub(log, rv, 2, places)),
+        (Some(tg::GET_CHR_POS_OPT), r13g_pos_stub(log, rv, 3, places)),
+    ]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(dirv, float_in(rng, -7, 7));
+        for w in 0..0x40 {
+            t.put(places + 4 * w, float_in(rng, -300, 300));
+        }
+        t.fill(t.b.rebase(0x025d_5c60), 0x260, rng);
+        let n = match rng.below(5) {
+            0 => rng.range(-2, 0),
+            1 => rng.range(16, 20),
+            _ => rng.range(1, 16),
+        };
+        t.set(
+            tg::SOURCE_COUNT,
+            n.cast_unsigned() | (rng.next() & 0xffff_0000),
+        );
+        t.set(tg::CASTER, rng.below(16));
+        for i in 0..16 {
+            t.put(tg::SOURCES.ptr(&t.b).addr + 4 * i, rng.below(16));
+        }
+        let a = [rng.below(30), rng.below(2), rng.below(30), rng.below(2)];
+        let work = t.stack_scratch(0x100);
+        // rcbgScaleVector_009247d0 loads the 16 bytes from its float
+        // argument on into a VU0 register (see group D)
+        let vf = t.b.rebase(0x00c8_f974);
+        t.same_but(
+            "rcefSetTargets",
+            &[(vf, 12)],
+            |o| o.eax(0x0092_4a20, &a),
+            |m| task::bridge::rcef_set_targets(m, a, work, call, fcall),
+        );
+    }
+}
+
+/// Group G (r13) on the image.
+#[test]
+fn r13g_set_targets_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_7001);
+    r13g_cases(&mut t, &mut rng, 400);
+}
+
+/// Group G (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13g_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_7002);
+    r13g_cases(&mut t, &mut rng, 200);
+}
