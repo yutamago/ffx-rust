@@ -173,6 +173,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                     |m| cam::ms_camera_reset(m, id, side),
                 );
             }
+            _ if rng.below(3) == 0 => {
+                for _ in 0..3 {
+                    moves(a, b, rng, slots, c, base);
+                }
+            }
             _ => match rng.below(3) {
                 0 => {
                     // the yaw of the camera in use, through a local
@@ -226,6 +231,72 @@ fn start_pos(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, base:
     let lanes = a.rebase(0x00c8_f814);
     let w = a.read(lanes, 12).unwrap();
     b.write(lanes, &w).unwrap();
+}
+
+/// `MsCameraMoveAcc` and `MsCameraMoveFrame` (round 26) on camera `c`
+/// (at `base`, its slots at `slots`): requests of its slots or made up,
+/// a quiet NaN-free side for `MsCameraSetStartPos`, the channel's lane
+/// flags at random.
+fn moves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32, base: u32) {
+    use battle_common::crt::stand_in;
+    // often the current request (the moves need it)
+    let id = if rng.below(2) == 0 {
+        cam::ms_camera_get_id(b, c)
+    } else {
+        request(a, rng, slots, c)
+    };
+    let side = rng.below(4);
+    // the side's base vectors: none or the other side's position
+    for k in 0..2 {
+        let s = base + 0x30 + k * 0x61c;
+        let v = [0, base + 0x30 + (1 - k) * 0x61c + 0x50][rng.below(2) as usize];
+        poke(a, b, s + 0x8c, &v.to_le_bytes());
+    }
+    let s = base + 0x30 + (side & 1) * 0x61c;
+    let ch = s + 0xc0 + 0x130 * ((id >> 8) & 0xff);
+    if readable(a, ch + 7, 1) {
+        poke(a, b, ch + 7, &[rng.byte() & 0x1f]);
+    }
+    set(a, b, cam::EE_R0, [0; 4]);
+    let mode = rng.byte();
+    let w = |rng: &mut Xorshift| u16::try_from(rng.below(0x10000)).unwrap();
+    if rng.below(2) == 0 {
+        let (f, curve) = ([w(rng), w(rng), w(rng)], w(rng));
+        let args = [
+            id,
+            side,
+            u32::from(mode) | rng.next() << 8,
+            u32::from(f[0]),
+            u32::from(f[1]),
+            u32::from(f[2]),
+            u32::from(curve),
+        ];
+        twin("MsCameraMoveAcc", a, b, 0x007b_d860, &args, u32::MAX, |m| {
+            cam::ms_camera_move_acc(m, &stand_in, id, side, mode, f, curve)
+        });
+    } else {
+        let (frames, kind) = (w(rng), w(rng));
+        let args = [
+            id,
+            side,
+            u32::from(mode),
+            u32::from(frames) | rng.next() << 16,
+            u32::from(kind),
+        ];
+        twin(
+            "MsCameraMoveFrame",
+            a,
+            b,
+            0x007b_de50,
+            &args,
+            u32::MAX,
+            |m| cam::ms_camera_move_frame(m, &stand_in, id, side, mode, frames, kind),
+        );
+    }
+    // VU register 4's yzw: MsCameraSetStartPos' stray words
+    let lanes = a.rebase(0x00c8_f814);
+    let words = a.read(lanes, 12).unwrap();
+    b.write(lanes, &words).unwrap();
 }
 
 /// The three aims of `MsCameraProcess` (round 26) on a made-up side at

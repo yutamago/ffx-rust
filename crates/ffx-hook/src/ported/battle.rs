@@ -2182,6 +2182,18 @@ ported! {
         let mut m = mem();
         camera::ms_cam_set_btl(&mut target::Dm::new(&mut m), &host(), id, mode, side, ch, other, other_ch, None)
     }
+    /// `MsCameraMoveAcc(id, side, mode, accel, hold, decel, curve)`: the
+    /// byte and halfword arguments take their dwords' low parts.
+    MsCameraMoveAcc @ 0x007b_d860 => extern "C" fn ms_camera_move_acc(id: u32, side: u32, mode: u32, accel: u32, hold: u32, decel: u32, curve: u32) -> u32 {
+        let h = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        camera::ms_camera_move_acc(&mut mem(), &crt_trig, id, side, mode.to_le_bytes()[0], [h(accel), h(hold), h(decel)], h(curve))
+    }
+    /// `MsCameraMoveFrame(id, side, mode, frames, kind)`: as
+    /// `MsCameraMoveAcc`.
+    MsCameraMoveFrame @ 0x007b_de50 => extern "C" fn ms_camera_move_frame(id: u32, side: u32, mode: u32, frames: u32, kind: u32) -> u32 {
+        let h = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
+        camera::ms_camera_move_frame(&mut mem(), &crt_trig, id, side, mode.to_le_bytes()[0], h(frames), h(kind))
+    }
     /// `MsCameraGetYaw()`: the yaw through a word of this stack (the
     /// original's local), the CRT's `_CIatan` through its import slot.
     MsCameraGetYaw @ 0x007b_cf20 => extern "C" fn ms_camera_get_yaw() -> f32 {

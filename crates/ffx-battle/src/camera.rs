@@ -1580,6 +1580,90 @@ pub mod bridge {
         Short,
     }
 
+    /// `MsCameraMoveAcc(id, side, mode, accel, hold, decel, curve)`
+    /// (`0x007bd860`): for the camera's current request `id`, side
+    /// `side & 1` starts an accelerated move (mode byte `+1`): each lane
+    /// the channel's (`id >> 8`) flags `+7` leave free gets kind 2, the
+    /// curve, the accelerating, holding and braking frames and their sum
+    /// (16 bits), frame 0 ([`start_lanes`]); then [`ms_camera_set_start_pos`]
+    /// and the flags cleared. Returns that (the camera for side 1, else
+    /// 0), or the current request when it is another.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_move_acc(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        id: u32,
+        side: u32,
+        mode: u8,
+        [accel, hold, decel]: [u16; 3],
+        curve: u16,
+    ) -> u32 {
+        let total = decel.wrapping_add(hold).wrapping_add(accel);
+        start_lanes(mem, trig, id, side, mode, |mem, lane| {
+            mem.write(lane, 2u16);
+            mem.write(lane.wrapping_add(0xc), [total, 0]);
+            mem.write(lane.wrapping_add(4), [curve, accel, hold, decel]);
+        })
+    }
+
+    /// `MsCameraMoveFrame(id, side, mode, frames, kind)` (`0x007bde50`):
+    /// [`ms_camera_move_acc`] for a move of `kind` over `frames` (each free
+    /// lane's `+0`, `+0xc`, frame `+0xe` 0).
+    pub fn ms_camera_move_frame(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        id: u32,
+        side: u32,
+        mode: u8,
+        frames: u16,
+        kind: u16,
+    ) -> u32 {
+        start_lanes(mem, trig, id, side, mode, |mem, lane| {
+            mem.write(lane, kind);
+            mem.write(lane.wrapping_add(0xc), [frames, 0]);
+        })
+    }
+
+    /// The moves' start: the side's lanes (16 bytes each; with side 1 the
+    /// camera's roll `+0xd78` and depth `+0xd88` under flags 8 and 0x10,
+    /// then the side's x, y, z `+0x580`.. under 1, 2, 4) filled by `fill`
+    /// where the channel's flags (read before each, as a lane may hold
+    /// them) leave them free.
+    fn start_lanes<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        id: u32,
+        side: u32,
+        mode: u8,
+        fill: impl Fn(&mut M, u32),
+    ) -> u32 {
+        let current = current_request(mem, id);
+        if current != id {
+            return current;
+        }
+        let cam = camera_base(mem, id);
+        let one = side & 1 != 0;
+        let s = cam.wrapping_add(0x30).wrapping_add(u32::from(one) * 0x61c);
+        let ch = s.wrapping_add(0xc0 + 0x130 * ((id >> 8) & 0xff));
+        mem.write(s.wrapping_add(1), mode);
+        let lanes = [
+            (8u8, cam.wrapping_add(0xd78)),
+            (0x10, cam.wrapping_add(0xd88)),
+            (1, s.wrapping_add(0x580)),
+            (2, s.wrapping_add(0x590)),
+            (4, s.wrapping_add(0x5a0)),
+        ];
+        let first = if one { 0 } else { 2 };
+        for &(flag, lane) in &lanes[first..] {
+            if mem.read::<u8>(ch.wrapping_add(7)) & flag == 0 {
+                fill(mem, lane);
+            }
+        }
+        let r = ms_camera_set_start_pos(mem, trig, if one { cam } else { 0 }, s, ch);
+        mem.write(ch.wrapping_add(7), 0u8);
+        r
+    }
+
     /// `MsCameraAtelFocus_007c0560(side, mv)` (`0x007c0560`, name ours;
     /// `MsCameraProcess`'s): the side's position (`+0x50`) is the move's
     /// offset (`mv + 0x30`) plus the mean position of up to two script
