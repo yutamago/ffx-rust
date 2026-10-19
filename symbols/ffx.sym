@@ -5985,9 +5985,9 @@
 0x007afc90 function MsEffectLimitCheck        # fh v3:exact 0x007afca0
 0x007afd30 function MsEffectLimitStart        # fh v3:exact 0x007afd40
 0x007afde0 function MsEffectLimitSync         # fh v3:exact 0x007afdf0
-0x007afe00 function MsMenuLimitSet            # fh v3:exact 0x007afe10
+0x007afe00 function MsMenuLimitSet            # fh v3:exact 0x007afe10; ported (battle round 24, ffx_battle::limit): (chr, user, count) returns the number of results blocks found (eax; Ghidra void); blocks (actor +0x774/+0xa4c) of this user and command number (cue entry +2): hits left = +1 - +0, bit 2 of +4 the drain block (+1 = 0); kind (command +0x58) 0x25 takes max(count,1) off +0x2b, 0x30/0x52 with count 0 the difference to 0x30ec/0x310d; off every target unless +0x1c bit 0x8000 (then one at a time among those with most left, brnd(0x10)); per target hit command (+0x15 mark 0/1/2) and MsCalcDamage(hits left); +0xdc0 and cue entry (+(n+1)*16) the target bits; drain: MsGetTargetRandomList(chr, &n, 1), g_BtlRandomTargets = n, MsCalcDrainResult with each next result negated
 0x007b03e0 function MsLimitCommandProcess     # fh v3:exact 0x007b03f0
-0x007b0470 function MsMenuLimitSet_007b0470   # fh v3:exact 0x007b0480
+0x007b0470 function MsMenuLimitSet_007b0470   # fh v3:exact 0x007b0480; ported (battle round 24): (chr, count, x, y) with +0xd24 set: +0xd2c = x, +0xd30 = y (floats through fld), +0xd28 = count, +0xd24 = 0, MsMenuLimitSet(chr, actor, count, ftol(x) unused), MsAtelRequestMagicCamera(0, chr, 0, 0x88, 0xffff, 0, 1, 0, 0), 1; else 0
 0x007b0520 function MsSetRikkuLimit           # fh v3:exact 0x007b0530
 0x007b06b0 function MsSummonLimitLoad         # fh v3:exact 0x007b06c0
 0x007b06e0 function MsSummonLimitSave         # fh v3:exact 0x007b06f0

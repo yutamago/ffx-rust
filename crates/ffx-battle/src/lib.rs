@@ -40,6 +40,7 @@ pub mod gear;
 pub mod getmem;
 pub mod init;
 pub mod input;
+pub mod limit;
 pub mod menu;
 pub mod minor;
 pub mod misc;
