@@ -12291,6 +12291,130 @@ pub mod bridge {
         p
     }
 
+    /// Bytes [`draw_font_3d80_glyph`] needs as scratch: the 0x98-byte
+    /// sprite record `graphicFontDraw` reads, then the two image sizes
+    /// (`f32` width and height, twice).
+    pub const GLYPH_3D80_SCRATCH: u32 = 0xa8;
+
+    /// `TODrawFont3d80Glyph_008eeee0(cursor, text, x, y, nibbles, c0, c1,
+    /// c2, c3)` (own name): the character `*text` (signed) from the 0x3d80
+    /// font sheet, drawn twice through `graphicFontDraw(record, texture,
+    /// 0.0, 0.0, 0)`. Character `c - 0x20` sits in cell column
+    /// `(c % 32) / 2` (8 wide) and row `c / 32` (10 high, from 192), odd
+    /// characters on the second texture of a pair. The first draw takes
+    /// `TOGetTextureName(0x3d80, 2 * (nibbles >> 4 & 0xf) + odd, 0, 1,
+    /// &size)` at (`x + 1`, `y`)..(`x + 0xb`, `y + 0xc`); the second
+    /// `TOGetTextureName(0x3d80, 2 * (nibbles & 0xf) + odd, 0, 0, &size)`
+    /// at (`x`, `y - 1`)..(`x + 0xa`, `y + 0xb`). UVs divide the cell
+    /// corners (the right edge 3.5 in, at double precision) by the sizes
+    /// `TOGetImageWH(0x3d80, ..)` gives: the second pair for the first
+    /// draw, the first for the second. Both corners carry the four words
+    /// `c0..c3`, the record's `+0x88` is 0 and `+0x90` holds `size` (8
+    /// bytes, zeroed before each lookup). The original leaves
+    /// `+0x40..+0x88` and `+0x8c` uninitialised; the port leaves `scratch`
+    /// as given there. `scratch` holds [`GLYPH_3D80_SCRATCH`] bytes.
+    /// Returns `cursor + 0x10`. Callees through `call`.
+    pub fn draw_font_3d80_glyph<M: Mem>(
+        mem: &mut M,
+        [cursor, text, x, y, nibbles, c0, c1, c2, c3]: [u32; 9],
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let record = scratch;
+        let size = record + 0x90;
+        let (w1, h1, w2, h2) = (
+            scratch + 0x98,
+            scratch + 0x9c,
+            scratch + 0xa0,
+            scratch + 0xa4,
+        );
+        let c = i32::from(mem.read::<i8>(text)) - 0x20;
+        let column = c % 32 / 2 * 8;
+        let row = c / 32 * 10 + 0xc0;
+        let odd = c.cast_unsigned() & 1;
+        let (x, y) = (x.cast_signed(), y.cast_signed());
+        let sheet_cell = Glyph3d80Cell::new(column, row, [c0, c1, c2, c3]);
+
+        mem.write(size, 0u64);
+        let first = (nibbles >> 4 & 0xf) * 2 + odd;
+        let name = call(mem, 0x008a_cf50, &[0x3d80, first, 0, 1, size]);
+        call(mem, 0x008a_c400, &[0x3d80, w1, h1]);
+        call(mem, 0x008a_c400, &[0x3d80, w2, h2]);
+        let rect = [
+            x.wrapping_add(1),
+            y,
+            x.wrapping_add(0xb),
+            y.wrapping_add(0xc),
+        ];
+        sheet_cell.fill(mem, record, rect, (w2, h2));
+        call(mem, 0x0064_0660, &[record, name, 0, 0, 0]);
+
+        mem.write(size, 0u64);
+        let second = (nibbles & 0xf) * 2 + odd;
+        let name = call(mem, 0x008a_cf50, &[0x3d80, second, 0, 0, size]);
+        let rect = [
+            x,
+            y.wrapping_sub(1),
+            x.wrapping_add(0xa),
+            y.wrapping_add(0xb),
+        ];
+        sheet_cell.fill(mem, record, rect, (w1, h1));
+        call(mem, 0x0064_0660, &[record, name, 0, 0, 0]);
+        cursor.wrapping_add(0x10)
+    }
+
+    /// One 0x3d80 glyph cell of [`draw_font_3d80_glyph`]: its corners on
+    /// the sheet and the record's per-corner words.
+    struct Glyph3d80Cell {
+        left: f32,
+        top: f32,
+        /// `(column + 11) - 3.5`, at double precision.
+        right: f64,
+        bottom: f32,
+        words: [u32; 4],
+    }
+
+    impl Glyph3d80Cell {
+        #[allow(clippy::cast_precision_loss)] // as the original's fild
+        fn new(column: i32, row: i32, words: [u32; 4]) -> Self {
+            Self {
+                left: column as f32,
+                top: row as f32,
+                right: f64::from(column + 0xb) - 3.5,
+                bottom: (row + 0xb) as f32,
+                words,
+            }
+        }
+
+        /// The record's two corners for screen `rect` (left, top, right,
+        /// bottom) over the image size read from `(w, h)`; `+0x88` to 0.
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+        fn fill(&self, mem: &mut impl Mem, record: u32, rect: [i32; 4], (w, h): (u32, u32)) {
+            let w = f64::from(mem.read::<f32>(w));
+            let h = f64::from(mem.read::<f32>(h));
+            mem.write(record + 0x88, 0u32);
+            let corners = [
+                (
+                    rect[0],
+                    rect[1],
+                    f64::from(self.left) / w,
+                    f64::from(self.top) / h,
+                ),
+                (rect[2], rect[3], self.right / w, f64::from(self.bottom) / h),
+            ];
+            for (k, (cx, cy, u, v)) in (0u32..).zip(corners) {
+                let at = record + 0x20 * k;
+                mem.write(at, cx as f32);
+                mem.write(at + 4, cy as f32);
+                mem.write(at + 8, u as f32);
+                mem.write(at + 0xc, v as f32);
+                for (j, word) in (0u32..).zip(self.words) {
+                    mem.write(at + 0x10 + 4 * j, word);
+                }
+            }
+        }
+    }
+
     /// The pen the 16x12 message writers draw with (`0x025d09a0`): the
     /// colour bytes `+0..+3`, x `+4`, y `+8` (f32), `+0xc..+0x18` cleared,
     /// the shadow/edge kind `+0x1a`, the colour nibbles `+0x1b`.

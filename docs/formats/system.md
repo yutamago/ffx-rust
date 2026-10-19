@@ -1567,3 +1567,16 @@ pushed as literals (no relocation entries), not addresses.
   icon 0x13 at (`x + 3`, `y + 1`) and the character's name in grey at
   (`x + 0x16`, `y`), keeping `g_TOPktCursor` up to date after each; it
   returns the final cursor.
+- `TODrawFont3d80Glyph_008eeee0(cursor, text, x, y, nibbles, c0..c3)`
+  draws one character of the 0x3d80 sheet twice through
+  `graphicFontDraw`: an 0x98-byte sprite record (two corners of x, y, u, v
+  and four words `c0..c3`, `+0x88` 0, `+0x90` the 8-byte size
+  `TOGetTextureName` writes). Character `c = *text - 0x20` (signed) sits
+  in column `(c % 32) / 2` (8 wide) and row `c / 32` (10 high, from 192);
+  odd characters take the second texture of a pair. The first draw
+  (texture `2 * (nibbles >> 4 & 0xf) + odd`, high flag 1) covers
+  (`x + 1`, `y`)..(`x + 11`, `y + 12`), the second (`2 * (nibbles & 0xf)
+  + odd`) (`x`, `y - 1`)..(`x + 10`, `y + 11`); UVs divide the cell (right
+  edge 3.5 in) by the image sizes, the second pair first. The original
+  leaves the record's `+0x40..+0x87` and `+0x8c` uninitialised.
+  It returns `cursor + 0x10`.

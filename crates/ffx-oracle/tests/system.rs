@@ -20531,3 +20531,151 @@ fn round36_chr_name_icon_matches_the_original_on_the_snapshot() {
     };
     round36_chr_name_icon(&mut a, &mut b, &mut Xorshift(0x4036_0022));
 }
+
+/// A cdecl `graphicFontDraw` stand-in for round 36: logs the sprite
+/// record's two corners (0x40 bytes), its `+0x88`, `+0x90` and `+0x94`,
+/// then arguments 1..=4.
+fn font_draw_logger(cursor: u32) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp+0xc]; mov edi, [cursor]
+    let mut v = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0x8b, 0x3d];
+    v.extend_from_slice(&cursor.to_le_bytes());
+    // mov ecx, 0x10; cld; rep movsd
+    v.extend_from_slice(&[0xb9, 0x10, 0, 0, 0, 0xfc, 0xf3, 0xa5]);
+    // mov eax, [esi+0x48 / 0x50 / 0x54]; stosd (esi is record + 0x40)
+    for off in [0x48u8, 0x50, 0x54] {
+        v.extend_from_slice(&[0x8b, 0x46, off, 0xab]);
+    }
+    // mov eax, [esp+0x10 + 4k]; stosd
+    for k in 0..4u8 {
+        v.extend_from_slice(&[0x8b, 0x44, 0x24, 0x10 + 4 * k, 0xab]);
+    }
+    // mov [cursor], edi; pop edi; pop esi; ret
+    v.extend_from_slice(&[0x89, 0x3d]);
+    v.extend_from_slice(&cursor.to_le_bytes());
+    v.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    v
+}
+
+/// Round 36 group C: `TODrawFont3d80Glyph_008eeee0`. `TOGetTextureName`
+/// logs and stores a test size pair, `TOGetImageWH` stores the next test
+/// width and height (two pairs, rotated so the two calls differ),
+/// `graphicFontDraw` logs the record.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines
+)]
+fn round36_glyph(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    // the size pair through argument 4, the texture name from cells + 8
+    // (skipped while the word at cells + 0x1c is 0; it flips each call)
+    let mut name_tail = vec![0x83, 0x3d];
+    name_tail.extend_from_slice(&(cells + 0x1c).to_le_bytes());
+    name_tail.extend_from_slice(&[0x00, 0x74, 0x13]);
+    name_tail.extend_from_slice(&[0x8b, 0x54, 0x24, 0x14, 0xa1]);
+    name_tail.extend_from_slice(&cells.to_le_bytes());
+    name_tail.extend_from_slice(&[0x89, 0x02, 0xa1]);
+    name_tail.extend_from_slice(&(cells + 4).to_le_bytes());
+    name_tail.extend_from_slice(&[0x89, 0x42, 0x04]);
+    // xor dword [cells + 0x1c], 1: the next call does the other
+    name_tail.extend_from_slice(&[0x83, 0x35]);
+    name_tail.extend_from_slice(&(cells + 0x1c).to_le_bytes());
+    name_tail.push(1);
+    name_tail.extend_from_slice(&ret_cell(cells + 8));
+    // width/height from cells + 0xc/0x10 through arguments 1/2, then
+    // swapped with cells + 0x14/0x18 for the next call
+    let mut wh_tail = Vec::new();
+    for (k, (now, next)) in [(0xcu32, 0x14u32), (0x10, 0x18)].into_iter().enumerate() {
+        wh_tail.extend_from_slice(&[0x8b, 0x54, 0x24, 8 + 4 * k as u8, 0xa1]);
+        wh_tail.extend_from_slice(&(cells + now).to_le_bytes());
+        wh_tail.extend_from_slice(&[0x89, 0x02, 0x87, 0x05]);
+        wh_tail.extend_from_slice(&(cells + next).to_le_bytes());
+        wh_tail.push(0xa3);
+        wh_tail.extend_from_slice(&(cells + now).to_le_bytes());
+    }
+    let stands: Vec<(u32, Vec<u8>)> = vec![
+        (
+            0x008a_cf50,
+            pick_logger(cursor, 0xcf50, &[0, 1, 2, 3], &[], &name_tail),
+        ),
+        (
+            0x008a_c400,
+            pick_logger(cursor, 0xc400, &[0], &[], &wh_tail),
+        ),
+        (0x0064_0660, font_draw_logger(cursor)),
+    ];
+    for (k, (sym, code)) in (0u32..).zip(&stands) {
+        let stand = stand_in8(a, b, 0x80 * k, code);
+        redirect(a, b, *sym, stand);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let text = alloc(a, b, 4);
+    let scratch = alloc(a, b, tolib::bridge::GLYPH_3D80_SCRATCH as usize);
+    let sizes = [
+        1.0f32,
+        256.0,
+        512.0,
+        3.0,
+        0.0,
+        -0.0,
+        1.0e-30,
+        f32::INFINITY,
+        f32::NAN,
+    ];
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        put(a, b, text, rng.next() as u8);
+        put(a, b, cells, rng.next());
+        put(a, b, cells + 4, rng.next());
+        put(a, b, cells + 8, rng.next());
+        put(a, b, cells + 0x1c, rng.next() % 2);
+        for j in 0..42 {
+            put(a, b, scratch + 4 * j, rng.next());
+        }
+        for j in 0..4 {
+            let s = if rng.next().is_multiple_of(4) {
+                sizes[(rng.next() % 9) as usize]
+            } else {
+                (rng.next() % 1024 + 1) as f32
+            };
+            put(a, b, cells + 0xc + 4 * j, s);
+        }
+        let args = [
+            rng.next(),
+            text,
+            [rng.next(), 0x7fff_fff5, 0x8000_0000, rng.next() % 640][(rng.next() % 4) as usize],
+            [rng.next(), 0x7fff_fff4, 0x8000_0000, rng.next() % 480][(rng.next() % 4) as usize],
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+        ];
+        let want = eax(a, 0x008e_eee0, &args);
+        let got = tolib::bridge::draw_font_3d80_glyph(b, args, scratch, call);
+        assert_eq!(want, got, "glyph {k}");
+        // the port's record and sizes live in `scratch`, the original's on
+        // its stack
+        let kept: [u32; 42] = Mem::read(b, scratch);
+        Mem::write(a, scratch, kept);
+        same_memory(&format!("glyph {k}"), a, b);
+    }
+}
+
+#[test]
+fn round36_glyph_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round36_glyph(&mut a, &mut b, &mut Xorshift(0x4036_0031));
+}
+
+#[test]
+fn round36_glyph_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round36_glyph(&mut a, &mut b, &mut Xorshift(0x4036_0032));
+}

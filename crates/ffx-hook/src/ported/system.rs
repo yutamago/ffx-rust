@@ -1497,6 +1497,12 @@ ported! {
     TOAddPktChrNameIcon_008eba80 @ 0x008e_ba80 => extern "C" fn to_add_pkt_chr_name_icon(cursor: u32, chr: u32, x: u32, y: u32, colour: u32) -> u32 {
         tolib::bridge::add_pkt_chr_name_icon(&mut mem(), [cursor, chr, x, y, colour], call_sym)
     }
+    /// `TODrawFont3d80Glyph_008eeee0(cursor, text, x, y, nibbles, c0, c1, c2, c3)`.
+    TODrawFont3d80Glyph_008eeee0 @ 0x008e_eee0 => extern "C" fn to_draw_font_3d80_glyph(cursor: u32, text: u32, x: u32, y: u32, nibbles: u32, c0: u32, c1: u32, c2: u32, c3: u32) -> u32 {
+        let mut frame = super::StackFrame::<42>::new();
+        let scratch = frame.at();
+        tolib::bridge::draw_font_3d80_glyph(&mut mem(), [cursor, text, x, y, nibbles, c0, c1, c2, c3], scratch, call_sym)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {
