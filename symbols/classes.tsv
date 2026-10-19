@@ -3810,7 +3810,7 @@
 0x006db090	logic	default (no rule: ported to be safe)
 0x006db180	dead	unreachable from the entry point and every pointer table
 0x006db1f0	logic	default (no rule: ported to be safe)
-0x006db2f0	logic	default (no rule: ported to be safe)
+0x006db2f0	platform	reviewed: LocalizationManager_readLocalizationKit: loads the PC localization-kit .BIN via fios/sprintf/new (system round 38)
 0x006db4f0	dead	unreachable from the entry point and every pointer table
 0x006db560	glue	only called from glue code (0x6db670)
 0x006db670	glue	only called from glue code (graphicInitialize)

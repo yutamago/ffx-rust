@@ -302,6 +302,7 @@ REVIEWED = {
     0x0060e8a0: ("platform", "deleting destructor (system round 37)"),
     0x00773c60: ("platform", "HDD-mode struct 0xc41744 (system round 37)"),
     0x0076cf80: ("platform", "HDD-mode struct 0xc41744 (system round 37)"),
+    0x006db2f0: ("platform", "LocalizationManager_readLocalizationKit: loads the PC localization-kit .BIN via fios/sprintf/new (system round 38)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
