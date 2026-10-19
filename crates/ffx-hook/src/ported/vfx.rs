@@ -2262,6 +2262,22 @@ ported! {
     opu_mdc_0x2000_ambient @ 0x0080_41c0 => extern "C" fn opu_mdc_0x2000_ambient(rec: u32) -> u32 {
         opus::bridge::opu_mdc_0x2000_ambient(&mut mem(), rec, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_oef2_tex_cue_007e4f20(rec, mask)`.
+    op_oef2_tex_cue_007e4f20 @ 0x007e_4f20 => extern "C" fn op_oef2_tex_cue(rec: u32, mask: u32) -> u32 {
+        op::bridge::op_oef2_tex_cue(&mut mem(), rec, mask, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_token_line_007e1c30(file, src, out, pos, max, eol, flags)`.
+    op_token_line_007e1c30 @ 0x007e_1c30 => extern "C" fn op_token_line(file: u32, src: u32, out: u32, pos: u32, max: u32, eol: u32, flags: u32) -> u32 {
+        op::bridge::op_token_line(&mut mem(), [file, src, out, pos, max, eol, flags], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_get_eff_status_index(id, kind, create)`.
+    opus_get_eff_status_index @ 0x007f_eba0 => extern "C" fn opus_get_eff_status_index(id: u32, kind: u32, create: u32) -> u32 {
+        // the original's count local
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        #[allow(clippy::cast_possible_truncation)] // a byte argument
+        et::bridge::opus_get_eff_status_index(&mut mem(), id, kind as u8, create, at, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

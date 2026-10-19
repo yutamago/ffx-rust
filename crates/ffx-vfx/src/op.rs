@@ -4385,15 +4385,93 @@ pub mod bridge {
             let r = call(mem, add, &[rec, mask, 1]);
             return if r.cast_signed() < 0 { u32::MAX } else { 0 };
         }
+        cue_push(mem, mask, 0, rec)
+    }
+
+    /// The CLUT cue ring's next slot for [`op_oef2_clut_cue`] and
+    /// [`op_oef2_tex_cue`]: -1 with [`OEF2_CLUT_CUE_COUNT`] at 0x40
+    /// already, else slot `(head + count) & 0x3f` (16-bit sum) takes `mask`
+    /// in [`OEF2_CLUT_CUES`], `tex` at `0x011a01a0` and `clut` at
+    /// `0x011a02a0`, the count one more; 0.
+    fn cue_push(mem: &mut impl Mem, mask: u32, tex: u32, clut: u32) -> u32 {
         let n = OEF2_CLUT_CUE_COUNT.get(mem);
         if n >= 0x40 {
             return u32::MAX;
         }
         let slot = u32::from(OEF2_CLUT_CUE_HEAD.get(mem).wrapping_add(n) & 0x3f);
         OEF2_CLUT_CUES.ptr(mem).at(slot).set(mem, mask);
-        mem.write(g(mem, 0x011a_01a0) + 4 * slot, 0u32);
-        mem.write(g(mem, 0x011a_02a0) + 4 * slot, rec);
+        let tex_at = Global::<u32>::new(0x011a_01a0).ptr(mem).at(slot).addr;
+        mem.write(tex_at, tex);
+        let clut_at = Global::<u32>::new(0x011a_02a0).ptr(mem).at(slot).addr;
+        mem.write(clut_at, clut);
         OEF2_CLUT_CUE_COUNT.set(mem, n + 1);
         0
+    }
+
+    /// `op_oef2_tex_cue_007e4f20(rec, mask)` (`0x007e4f20`): the texture
+    /// twin of [`op_oef2_clut_cue`]: -1 without `rec` or its `+0x14`; ids
+    /// (`+0`, low 14 bits) outside 0x3800..0x3c00 while the byte at
+    /// `0x011a0066` is set go to `op_oef2_tex_clut_ovl_add_007e56d0(rec,
+    /// mask, 0)` (through `call`, -1 when negative, else 0); otherwise the
+    /// cue ring takes `rec` at `0x011a01a0` and 0 at `0x011a02a0`.
+    pub fn op_oef2_tex_cue<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        mask: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if rec == 0 || mem.read::<u32>(rec.wrapping_add(0x14)) == 0 {
+            return u32::MAX;
+        }
+        let id = mem.read::<u32>(rec) & 0x3fff;
+        if !(0x3800..0x3c00).contains(&id) && mem.read::<u8>(g(mem, 0x011a_0066)) != 0 {
+            let add = g(mem, 0x007e_56d0);
+            let r = call(mem, add, &[rec, mask, 0]);
+            return if r.cast_signed() < 0 { u32::MAX } else { 0 };
+        }
+        cue_push(mem, mask, rec, 0)
+    }
+
+    /// `op_token_line_007e1c30(file, src, out, pos, max, eol, flags)`
+    /// (`0x007e1c30`): `op_token_get_007e1d50` (through `call`) into `out`
+    /// with `flags`, then again with `flags | 2` after what it stored (room
+    /// `max` less it) until one stores nothing; trailing bytes of class 1
+    /// ([`CHAR_CLASS`], indexed by the signed byte) are cut off and `out`
+    /// ends there (written even when `out` is 0, as in the original).
+    /// Returns the bytes the calls stored.
+    pub fn op_token_line<M: Mem>(
+        mem: &mut M,
+        args: [u32; 7],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [file, src, out, pos, max, eol, flags] = args;
+        let get = Global::<u32>::new(0x007e_1d50).ptr(mem).addr;
+        let mut total = call(mem, get, &args);
+        loop {
+            let at = out.wrapping_add(total);
+            let room = max.wrapping_sub(total);
+            let n = call(mem, get, &[file, src, at, pos, room, eol, flags | 2]);
+            total = total.wrapping_add(n);
+            if n == 0 {
+                break;
+            }
+        }
+        let mut len = 0u32;
+        if out != 0 {
+            while mem.read::<u8>(out.wrapping_add(len)) != 0 {
+                len = len.wrapping_add(1);
+            }
+        }
+        let table = CHAR_CLASS.ptr(mem).addr;
+        while len.cast_signed() > 0 {
+            let c = mem.read::<u8>(out.wrapping_add(len - 1)).cast_signed();
+            if mem.read::<u8>(table.wrapping_add_signed(i32::from(c))) != 1 {
+                break;
+            }
+            len -= 1;
+        }
+        mem.write(out.wrapping_add(len), 0u8);
+        total
     }
 }

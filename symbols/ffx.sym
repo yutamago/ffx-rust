@@ -6380,6 +6380,7 @@
 0x007e13e0 function op_char_table_set         # (table, chars, v) table[(i8) c] = v for each byte of the string chars
 0x007e1450 function op_error_007e1450          # ours: (code, arg) -> code + 1: op script error report through dbgPrintf (file 0x0113fc58, line 0x0113fc5c when set, then code 1..11's message, e.g. "file not open"), keeps code + 1 in 0x0113e238
 0x007e1b50 function op_str_unquote            # (s) the string's ' and " taken out in place
+0x007e1c30 function op_token_line_007e1c30     # ours: (file, src, out, pos, max, eol, flags) -> bytes stored: op_token_get_007e1d50 then again with flags | 2 after its output until it stores nothing; trailing g_OpCharClass class-1 bytes cut; only caller 0x007e15f0 (op::bridge::op_token_line)
 0x007e1cc0 function op_read_line_007e1cc0        # ours: (src, out, max) -> bytes stored: the op script reader's next line (src: [+0] bytes, +0xc position, +0x10 end) up to 0/0xff/CR/LF, two-byte characters (>= 0x80) kept whole, at most max-1 bytes and a NUL, position stepped back one; callers 0x007e1d50, 0x007e2270
 0x007e1d50 function op_token_get_007e1d50    # ours: (file, src, out, &pos, max, &eol, flags) -> out's length: op_token, joining a trailing \\ onto the next line (op_read_line) unless flags & 4, appending further tokens unless flags & 1 (op::bridge::op_token_get)
 0x007e1f80 function op_token_007e1f80          # ours: (src, out, &pos, max, eol) -> the first byte's class: the op script tokenizer by g_OpCharClass (word runs, two-byte runs, quoted runs, spaces, single characters, ; // /* */ comments with depth 0x0113fc64); callers 0x007e1d50, 0x007e2140, 0x007e2270, 0x007e2a60
@@ -6423,6 +6424,7 @@
 0x007e4c30 function op_oef2_tex_clut_cue_trans # fh v3:exact 0x007e4b40
 0x007e4e40 function op_oef2_tex_clut_ovl_clear # fh v3:exact 0x007e4d50
 0x007e4e80 function op_oef2_tex_clut_ovl_trans # fh v3:exact 0x007e4d90; (mask): while g_OpTexVdispLoad (0x011a0066), each overlay CLUT below g_OpOef2ClutOvlCount in mask reloaded: flag 0 -> op_oef2_texture_load(rec, 1), flagged without a record -> dbgPrintf (op::bridge::op_oef2_tex_clut_ovl_trans)
+0x007e4f20 function op_oef2_tex_cue_007e4f20    # ours: (rec, mask) -> 0/-1: op_oef2_clut_cue for a texture: +0x14 required, id = +0 & 0x3fff, overlay add flag 0, the cue ring takes rec at 0x011a01a0 (op::bridge::op_oef2_tex_cue)
 0x007e4fc0 function op_oef2_tex_pos_replace   # (rec, pos) -> old low 14 bits: table-2 record low 14 bits = pos's, byte +0x1f = 1
 0x007e4ff0 function op_oef2_tex_pos_set       # (rec, pos) -> new low half: table-2 record low 14 bits = (pos & 0x3fff) + (old & 0xfc), byte +0x1f = 1
 0x007e5030 function op_oef2_texture_load      # fh v3:exact 0x007e4f40
@@ -6662,7 +6664,7 @@
 0x007feaa0 function op_et_chr_index_by_no     # (no) -> index of the first of 208 g_EtChr records whose +4 (character number) is no, else -1
 0x007fead0 function op_et_chr_slot_007fead0      # ours: (chr) -> the low byte when any of the top 4 bits is set, else the first g_EtChr record whose u16 +0xe is the low byte, else the first with a handle, else -1; caller 0x007feba0
 0x007feb20 function op_et_chr_count_same_no_007feb20 # ours: (h) -> how many of the 240 g_EtChr records share the character number (+4) of handle h's record (itself included), 0 for a null or unknown handle; caller op_et_monster_free
-0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
+0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0 ; (id, kind, create) -> EFF index: an existing record, else (create) the first free after record 0 gets id/kind and its targets: in battle none (negative id), the op_et_chr_slot record (top nibble) or MsGetTargetRandomList (last magic 0x88..0x8f) / MsGetTargetList into +8 count/+0x10 list with +0x18 = MsGetEff2Chr; out of battle the chr slot inline (et::bridge::opus_get_eff_status_index)
 0x007fed60 function op_et_eff_index           # (id) -> the first g_EtEff record with this ID, or -1
 0x007fedf0 function opus_chr_handles_clear    # () the 240 g_EtChrHandles zeroed
 0x007fee10 function op_et_chr_reset_all_007fee10 # ours: (): every g_EtChr record as op_et_chr_reset_007feec0; returns 0; only caller 0x007ff960 (et::bridge::op_et_chr_reset_all)

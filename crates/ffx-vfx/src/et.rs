@@ -1498,4 +1498,99 @@ pub mod bridge {
         let scale = at(mem, 0x007e_a850);
         Some(call(mem, scale, &[unit.wrapping_add(0x40), speed, k]))
     }
+
+    /// `opus_get_eff_status_index(id, kind, create)` (`0x007feba0`): the
+    /// [`EFF`] record with this id, else -1 unless `create`; id -1 gives 0.
+    /// A new one takes the first free record after the first (`+0` -1;
+    /// none: -1): `+0` = id, byte `+0x1d` 0, byte `+0x1c` = `kind`, `+0xc`
+    /// 0, then its targets (callees through `call`). In battle
+    /// (`MsBattleGetStatus`): a negative id none (`u16 +8` 0x101, bytes
+    /// `+0x10`/`+0x18` 0); one with a top-nibble bit the character slot
+    /// `op_et_chr_slot_007fead0(id)` (its record's byte `+0xe` at both);
+    /// else `MsGetTargetRandomList(id, frame, 0)` for the last magic
+    /// (`MsEffectGetLastMagicNum2(id)`) 0x88..=0x8f, `MsGetTargetList(id,
+    /// frame)` otherwise: the count they leave at `frame` (low byte) into
+    /// byte `+8` and the list at `+0x10`, byte `+0x18` =
+    /// `MsGetEff2Chr(id)`, byte `+9` 1. Out of battle the character slot as
+    /// `op_et_chr_slot` finds it, inline. Returns the record index.
+    pub fn opus_get_eff_status_index<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        kind: u8,
+        create: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let eff = |mem: &M, j: u32| EFF.ptr(mem).at(j).addr;
+        if let Some(j) = (0..EFFS).find(|&j| mem.read::<u32>(eff(mem, j)) == id) {
+            return j;
+        }
+        if create == 0 {
+            return u32::MAX;
+        }
+        if id == u32::MAX {
+            return 0;
+        }
+        let Some(j) = (1..EFFS).find(|&j| mem.read::<u32>(eff(mem, j)) == u32::MAX) else {
+            return u32::MAX;
+        };
+        let rec = eff(mem, j);
+        mem.write(rec, id);
+        mem.write(rec + 0x1d, 0u8);
+        mem.write(rec + 0x1c, kind);
+        mem.write(rec + 0xc, 0u32);
+        let slot_target = |mem: &mut M, slot: u32| {
+            let c = CHR.ptr(mem).addr.wrapping_add(slot << 5);
+            mem.write(rec + 8, 0x101u16);
+            let b: u8 = mem.read(c.wrapping_add(0xe));
+            mem.write(rec + 0x10, b);
+            mem.write(rec + 0x18, b);
+        };
+        let status = at(mem, 0x0078_16f0);
+        if call(mem, status, &[]) == 0 {
+            let slot = if id & 0xf000_0000 != 0 {
+                id & 0xff
+            } else {
+                let b = id & 0xff;
+                let rec_at = |mem: &M, i: u32| CHR.ptr(mem).at(i).addr;
+                (0..CHRS)
+                    .find(|&i| u32::from(mem.read::<u16>(rec_at(mem, i) + 0xe)) == b)
+                    .or_else(|| (0..CHRS).find(|&i| mem.read::<u32>(rec_at(mem, i)) != 0))
+                    .unwrap_or(u32::MAX)
+            };
+            slot_target(mem, slot);
+            return j;
+        }
+        if id.cast_signed() < 0 {
+            mem.write(rec + 8, 0x101u16);
+            mem.write(rec + 0x10, 0u8);
+            mem.write(rec + 0x18, 0u8);
+            return j;
+        }
+        if id & 0xf000_0000 != 0 {
+            let slot = call(mem, at(mem, 0x007f_ead0), &[id]);
+            slot_target(mem, slot);
+            return j;
+        }
+        let magic = call(mem, at(mem, 0x0078_7bf0), &[id]);
+        let list = if magic.wrapping_sub(0x88) <= 7 {
+            call(mem, at(mem, 0x007b_7170), &[id, frame, 0])
+        } else {
+            call(mem, at(mem, 0x007b_7090), &[id, frame])
+        };
+        let n: u8 = mem.read(frame);
+        mem.write(rec + 8, n);
+        let mut k = 0u32;
+        while k < u32::from(mem.read::<u8>(rec + 8)) {
+            let b: u8 = mem.read(list.wrapping_add(k));
+            mem.write(rec + 0x10 + k, b);
+            k += 1;
+        }
+        let chr = call(mem, at(mem, 0x0078_8de0), &[id]);
+        #[allow(clippy::cast_possible_truncation)] // the low byte, as stored
+        mem.write(rec + 0x18, chr as u8);
+        mem.write(rec + 9, 1u8);
+        j
+    }
 }

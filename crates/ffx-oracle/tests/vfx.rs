@@ -14847,3 +14847,233 @@ fn round29k_helpers_match_the_original() {
         }
     }
 }
+
+/// A stand-in that logs its first `args` arguments per call (word `k` of
+/// call `i` at `log + 0x40 * k + 4 * i`, 16 calls) and returns the words of
+/// `seq` in turn (`idx` counts the calls).
+fn seq_stub(p: &mut Pair, sym: u32, args: u8, idx: u32, seq: u32, log: u32) {
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [idx]
+    c.extend(idx.to_le_bytes());
+    for k in 0..args {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        c.extend([0x89, 0x04, 0x8d]); // mov [log + 0x40k + ecx*4], eax
+        c.extend((log + 0x40 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0x8b, 0x04, 0x8d]); // mov eax, [seq + ecx*4]
+    c.extend(seq.to_le_bytes());
+    c.extend([0x41, 0x89, 0x0d]); // inc ecx; mov [idx], ecx
+    c.extend(idx.to_le_bytes());
+    c.push(0xc3);
+    stub_code(p, sym, &c);
+}
+
+/// A target-list stand-in: `*[esp+8]` = the dword at `count`, the first
+/// argument logged at `log`, returns the dword at `list`.
+fn target_list_stub(p: &mut Pair, sym: u32, count: u32, log: u32, list: u32) {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]; // mov eax, [esp+8]; mov ecx, [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x89, 0x08, 0x8b, 0x44, 0x24, 0x04, 0xa3]); // mov [eax], ecx; mov eax, [esp+4]; mov [log], eax
+    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [list]
+    c.extend(list.to_le_bytes());
+    c.push(0xc3);
+    stub_code(p, sym, &c);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round29l_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_eba0);
+        let cells: Vec<u32> = (0..10).map(|_| p.alloc(4)).collect();
+        let (add_ret, status, slot, magic, e2c) =
+            (cells[0], cells[1], cells[2], cells[3], cells[4]);
+        let (count, list_a, list_b, log_a, log_b) =
+            (cells[5], cells[6], cells[7], cells[8], cells[9]);
+        for (sym, words, ret) in [
+            (0x007e_56d0u32, &[0u8, 0, 0][..], Some(add_ret)),
+            (0x0078_16f0, &[], Some(status)),
+            (0x007f_ead0, &[0], Some(slot)),
+            (0x0078_7bf0, &[0], Some(magic)),
+            (0x0078_8de0, &[0], Some(e2c)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        target_list_stub(&mut p, 0x007b_7170, count, log_a, list_a);
+        target_list_stub(&mut p, 0x007b_7090, count, log_b, list_b);
+        let (idx, seq, log) = (p.alloc(4), p.alloc(0x40), p.alloc(0x40 * 7));
+        seq_stub(&mut p, 0x007e_1d50, 7, idx, seq, log);
+        let frame = p.b.stack_range().start + 0x100;
+        let (rec, out, targets) = (p.alloc(0x18), p.alloc(0x100), p.alloc(0x100));
+        // the tokenizer's classes are set up at run time: some of each
+        let class = p.sym(op::bridge::CHAR_CLASS.sym);
+        for c in 0..0x100u32 {
+            let k = rng.pick(&[0u8, 1, 1, 2, 5]);
+            p.set(class + c, k);
+        }
+        p.fill(class - 0x80, 0x80, &mut rng);
+        let (mut ones, mut others) = (Vec::new(), Vec::new());
+        for c in 1..=255u8 {
+            if p.get::<u8>(class + u32::from(c)) == 1 {
+                ones.push(c);
+            } else {
+                others.push(c);
+            }
+        }
+        if ones.is_empty() {
+            ones.push(b' ');
+        }
+        let chr = p.sym(et::bridge::CHR.sym);
+        let eff = p.sym(et::bridge::EFF.sym);
+        for round in 0..600 {
+            // op_oef2_tex_cue
+            p.fill(p.sym(0x011a_01a0), 0x300, &mut rng);
+            p.fill(rec, 0x18, &mut rng);
+            let id = rng.pick(&[
+                0x37ffu32,
+                0x3800,
+                0x3bff,
+                0x3c00,
+                0x1234,
+                0x7bff,
+                0xffff_3800,
+            ]);
+            p.set(rec, id);
+            let tex = rng.pick(&[0u32, 1, 0x1234_5678]);
+            p.set(rec + 0x14, tex);
+            let ovl = rng.pick(&[0u8, 1]);
+            p.set(p.sym(0x011a_0066), ovl);
+            let cues = rng.pick(&[0u16, 5, 0x3f, 0x40, 0x41]);
+            p.put(op::bridge::OEF2_CLUT_CUE_COUNT, cues);
+            let head = rng.pick(&[0u16, 3, 0x3e, 0xffff]);
+            p.put(op::bridge::OEF2_CLUT_CUE_HEAD, head);
+            let added = rng.pick(&[u32::MAX, 0, 5, 0x8000_0000]);
+            p.set(add_ret, added);
+            let target = rng.pick(&[rec, rec, rec, 0]);
+            let mask = rng.next();
+            p.check(
+                &format!("op_oef2_tex_cue round {round}"),
+                0x007e_4f20,
+                &[target, mask],
+                |o| {
+                    Some(op::bridge::op_oef2_tex_cue(
+                        o,
+                        target,
+                        mask,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // op_token_line: one to three stores, then the trim
+            p.set(idx, 0u32);
+            let stores = rng.below(4);
+            for k in 0..4 {
+                let count_k = if k < stores { 1 + rng.below(8) } else { 0 };
+                p.set(seq + 4 * k, count_k);
+            }
+            p.fill(log, 0x40 * 7, &mut rng);
+            let len = rng.below(0x40);
+            for k in 0..len {
+                let tail = k + 4 >= len && rng.chance(70);
+                let c = if tail {
+                    rng.pick(&ones)
+                } else {
+                    rng.pick(&others)
+                };
+                p.set(out + k, c);
+            }
+            p.set(out + len, 0u8);
+            let args = [
+                rng.next(),
+                rng.next(),
+                out,
+                rng.next(),
+                0x80,
+                rng.next(),
+                rng.below(4),
+            ];
+            p.check(
+                &format!("op_token_line round {round}"),
+                0x007e_1c30,
+                &args,
+                |o| Some(op::bridge::op_token_line(o, args, &mut call_original)),
+            );
+            // opus_get_eff_status_index
+            for j in 0..512u32 {
+                let at = eff + 0x20 * j;
+                p.fill(at, 0x20, &mut rng);
+                if rng.chance(40) {
+                    p.set(at, u32::MAX);
+                }
+            }
+            for i in 0..240u32 {
+                let at = chr + 0x20 * i;
+                p.fill(at, 0x20, &mut rng);
+                if rng.chance(50) {
+                    p.set(at, 0u32);
+                }
+                p.set(at + 0xe, u16::try_from(rng.below(0x200)).unwrap());
+            }
+            // now and then no character to fall back on
+            if rng.chance(15) {
+                p.fill(chr - 0x20, 0x20, &mut rng);
+                for i in 0..240u32 {
+                    p.set(chr + 0x20 * i, 0u32);
+                    p.set(chr + 0x20 * i + 0xe, 0x1a0u16 + u16::try_from(i).unwrap());
+                }
+            }
+            let any = rng.next();
+            let id = rng.pick(&[
+                u32::MAX,
+                0x8000_0005,
+                0x1000_0003,
+                0x2000_00f0,
+                0x45,
+                0x1ff,
+                any,
+            ]);
+            if rng.chance(20) {
+                let j = rng.below(512);
+                p.set(eff + 0x20 * j, id);
+            }
+            if rng.chance(5) {
+                for j in 1..512u32 {
+                    let at = eff + 0x20 * j;
+                    if p.get::<u32>(at) == u32::MAX {
+                        p.set(at, 0u32);
+                    }
+                }
+            }
+            let battle = rng.pick(&[0u32, 1]);
+            p.set(status, battle);
+            let chr_slot = rng.pick(&[0u32, 7, 0xef, u32::MAX]);
+            p.set(slot, chr_slot);
+            let last = rng.pick(&[0x87u32, 0x88, 0x8f, 0x90, 3]);
+            p.set(magic, last);
+            let n = rng.pick(&[0u32, 1, 5, 0x1f, 0x102]);
+            p.set(count, n);
+            p.fill(targets, 0x100, &mut rng);
+            p.set(list_a, targets);
+            p.set(list_b, targets + 0x40);
+            p.set(e2c, rng.next());
+            let kind = rng.next();
+            let create = rng.pick(&[0u32, 1, 1]);
+            p.check(
+                &format!("opus_get_eff_status_index round {round}"),
+                0x007f_eba0,
+                &[id, kind, create],
+                |o| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    Some(et::bridge::opus_get_eff_status_index(
+                        o,
+                        id,
+                        kind as u8,
+                        create,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
