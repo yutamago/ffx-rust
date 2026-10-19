@@ -4189,6 +4189,16 @@ ported! {
         rcui::bridge::rc_prim_box(&mut mem(), [x, y, w, h, colour, ui], wk, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcPrimBatu(x, y, size, colour, ui)`: the vertices in a local
+    /// (aligned like the original's).
+    rcPrimBatu @ 0x0092_59c0 => extern "C" fn shim_rc_prim_batu(x: u32, y: u32, size: u32, colour: u32, ui: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Verts([u32; 16]);
+        let mut v = Verts([0; 16]);
+        let wk = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        rcui::bridge::rc_prim_batu(&mut mem(), [x, y, size, colour, ui], wk, &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `rcPrimTri(x, y, r, angle, colour, ui)`: the vertices in a local
     /// buffer, as the original's.
     rcPrimTri @ 0x0092_70c0 => extern "C" fn shim_rc_prim_tri(x: u32, y: u32, r: u32, angle: u32, colour: u32, ui: u32) -> u32 {

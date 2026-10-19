@@ -11875,7 +11875,7 @@
 0x009258e0 function rcFree                    # (p): jmp 0x00687010 (-> user_free); the rcbg*Fini/Delete functions free through it
 0x009258f0 function rcRealloc                 # fh v3:exact 0x009258f0 _rcRealloc
 0x00925950 function rcVec4fToFixed            # (out, v): four floats * 16.0 to 12.4 fixed point (ftol each), returns the last
-0x009259c0 function rcPrimBatu                # fh v3:exact 0x009259c0
+0x009259c0 function rcPrimBatu                # fh v3:exact 0x009259c0; (x, y, size, colour, ui): the cross mark, two quads at depth 256 through rcPrimDraw2D(0x44, verts, 4, colour) between cgraphicSetNowUIType(2 if ui)/(0): h = f32(size*0.5), a = f32(h*0.6666667), heights f32(v*1.1666666*416/448); (x-h,y-q),(x-a,y-p),(x+a,y+p),(x+h,y+q) then (x+a,y-p),(x+h,y-q),(x-h,y+q),(x-a,y+p); eax the setter's; ported (field r13, ffx_field::rcui)
 0x00925b60 function rcPrimBox                 # fh v3:exact 0x00925b60; ported (field round 52): (x, y, w, h, colour, ui): corners (x -+ f32(w * 0.5), y -+ f32(0.5 * h)) at depth 256, rcPrimDraw2D(0x44, verts, 4, colour) between graphicSetNowUIType(2) (when ui) and (0), whose eax it returns
 0x00925c50 function rcPrimBoxLine                # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551660 rcPrimBoxLine is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00925db0 function rcPrimCircle                 # layout: alphabetical run between rcPrimBox and rcPrimCircleLine (2 unnamed in the gap); Switch 0x7100551e10 rcPrimCircle is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)

@@ -17810,3 +17810,97 @@ fn r13b_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_b002);
     r13b_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group C: the cross mark ----
+
+/// An `rcPrimDraw2D(kind, verts, n, colour)` stand-in that appends each
+/// call's `n` vertices, colour and kind at `[cursor]` (moving it on).
+fn r13c_draw_stub(cursor: u32) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp + 0x10]; mov edi, [cursor]
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0x8b, 0x3d];
+    c.extend_from_slice(&cursor.to_le_bytes());
+    // mov ecx, [esp + 0x14]; shl ecx, 2; rep movsd;
+    // mov eax, [esp + 0x18]; stosd; mov eax, [esp + 0xc]; stosd
+    c.extend_from_slice(&[
+        0x8b, 0x4c, 0x24, 0x14, 0xc1, 0xe1, 0x02, 0xf3, 0xa5, 0x8b, 0x44, 0x24, 0x18, 0xab, 0x8b,
+        0x44, 0x24, 0x0c, 0xab, 0x89, 0x3d,
+    ]);
+    c.extend_from_slice(&cursor.to_le_bytes()); // mov [cursor], edi
+    c.extend_from_slice(&[0x5f, 0x5e, 0xb8]); // pop edi; pop esi; mov eax, 0x1234
+    c.extend_from_slice(&0x1234u32.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Group C (r13) on `t`: `rcPrimBatu` at any position and size (specials
+/// too), the UI flag on or off; both quads logged by the draw stand-in,
+/// the UI type calls by another.
+fn r13c_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::rcui;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (cursor, log, log2, rv) = (
+        t.alloc(4),
+        t.alloc(0x100),
+        t.alloc(4 + 0x20 * 4),
+        t.alloc(4),
+    );
+    t.cave(&[
+        (Some(rcui::bridge::RC_PRIM_DRAW_2D), r13c_draw_stub(cursor)),
+        (
+            Some(rcui::bridge::SET_NOW_UI_TYPE),
+            log_stub(log2, rv, 1, 1),
+        ),
+    ]);
+    for _ in 0..cases {
+        let a = [
+            if rng.below(4) == 0 {
+                rng.any_float()
+            } else {
+                float_in(rng, -640, 640)
+            },
+            if rng.below(4) == 0 {
+                rng.any_float()
+            } else {
+                float_in(rng, -480, 480)
+            },
+            if rng.below(4) == 0 {
+                rng.any_float()
+            } else {
+                float_in(rng, 0, 64)
+            },
+            rng.next(),
+            rng.below(2) * rng.next(),
+        ];
+        t.fill(log, 0x100, rng);
+        t.put(cursor, log);
+        t.put(log2, 0u32);
+        t.put(rv, rng.next());
+        // the port's frame starts out as junk: each word it sends is set
+        let work = t.stack_scratch(0x100);
+        let junk: Vec<u8> = (0..0x40).map(|_| rng.next().to_le_bytes()[0]).collect();
+        t.b.write(work, &junk).unwrap();
+        t.same(
+            "rcPrimBatu",
+            |o| o.eax(0x0092_59c0, &a),
+            |m| rcui::bridge::rc_prim_batu(m, a, work, call),
+        );
+    }
+}
+
+/// Group C (r13) on the image.
+#[test]
+fn r13c_prim_batu_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_c001);
+    r13c_cases(&mut t, &mut rng, 600);
+}
+
+/// Group C (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13c_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_c002);
+    r13c_cases(&mut t, &mut rng, 300);
+}
