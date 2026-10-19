@@ -2550,6 +2550,228 @@ pub mod bridge {
     /// `AbmapCalcMoveCosts(node, limit, bit)` (`0x00a474d0`).
     pub const MOVE_COSTS: u32 = 0x00a4_74d0;
 
+    /// The help message hooks' calls: `MsGetExcelData(id, table,
+    /// &strings)` (`0x007ab870`), `MsGetSaveConfigHiragana()`
+    /// (`0x007851f0`) and `AbmapHelpMessageStep_00a59350(message)`.
+    pub const HELP_MESSAGE_CALLS: [u32; 3] = [0x007a_b870, 0x0078_51f0, 0x00a5_9350];
+
+    /// `AbmapSetHelpMessage()` (`0x00a454a0`) and its two copies the
+    /// compiler kept (`0x00a45440`, `0x00a45500`, the same code): the
+    /// help line of the cursor's node (`+0x112fc`): its kind (`u16` at
+    /// node `+6`) looked up in the node excel table
+    /// ([`super::NODE_EXCEL_TABLE`]; the strings base into `work`, the
+    /// original's stack word), the message at the record's `+8` or, with
+    /// the config flag's bit 0 (hiragana), `+0xc` (`u16`, from the strings
+    /// base) handed to the help message step, whose `eax` it returns.
+    pub fn abmap_set_help_message<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [excel, hiragana, step] = HELP_MESSAGE_CALLS.map(|f| mem.rebase(f));
+        let g = ABMAP.get(mem);
+        let node = u32::from(mem.read::<u16>(g.wrapping_add(0x112fc)));
+        let at = g
+            .wrapping_add(layout::NODES + 6)
+            .wrapping_add(node * layout::NODE_SIZE);
+        let kind = u32::from(mem.read::<u16>(at));
+        let table = mem.read::<u32>(mem.rebase(super::NODE_EXCEL_TABLE));
+        let record = call(mem, excel, &[kind, table, work]);
+        let strings = mem.read::<u32>(work);
+        let kana = call(mem, hiragana, &[]) & 1;
+        let message = u32::from(mem.read::<u16>(record.wrapping_add(8 + 4 * kana)));
+        call(mem, step, &[message.wrapping_add(strings)])
+    }
+
+    /// [`abmap_try_use_item`]'s calls: `AbmapItemEffectAtNode(chr, node,
+    /// item)`, `MsSaveItemUse(item, -1)` and `abmap_para_get_special(kind,
+    /// node, chr)`.
+    pub const TRY_USE_ITEM_CALLS: [u32; 3] = [0x00a4_93b0, 0x0079_0550, 0x00a5_cf30];
+
+    /// `AbmapTryUseItem(chr, node, item)` (`0x00a5bca0`): on a reachable
+    /// node (bits 0, 1 of its `+0x22`) where the item has an effect
+    /// (`AbmapItemEffectAtNode`) and is taken from the stock
+    /// (`MsSaveItemUse(item, -1)` 0): the item's ability record
+    /// (`MsGetRomItem(item, work)`, its byte `+0x5d` through the item
+    /// excel table ([`super::ITEM_EXCEL_TABLE`]); 0xff gives no record and
+    /// the original reads address `0xd`) names a special kind (byte `+0xd`):
+    /// with one `abmap_para_get_special(kind, node, chr)`, else the panel
+    /// sound and `0x00a48910(chr, node)`, whose `eax` it returns. `work`
+    /// is the original's argument slot it reuses for the strings out.
+    /// Returns the grid pointer on an unreachable node, else the failed
+    /// check's `eax`.
+    pub fn abmap_try_use_item<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [chr, node, item]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [effect_at, item_use, para_special] = TRY_USE_ITEM_CALLS.map(|f| mem.rebase(f));
+        let g = ABMAP.get(mem);
+        let flags = g
+            .wrapping_add(layout::NODES + 0x22)
+            .wrapping_add(node.wrapping_mul(layout::NODE_SIZE));
+        let reachable = mem.read::<u8>(flags) & 3 != 0;
+        if !reachable {
+            return g;
+        }
+        let r = call(mem, effect_at, &[chr, node, item]);
+        if r == 0 {
+            return r;
+        }
+        let r = call(mem, item_use, &[item, u32::MAX]);
+        if r != 0 {
+            return r;
+        }
+        let f = mem.rebase(super::MS_GET_ROM_ITEM);
+        let rom = call(mem, f, &[item, work]);
+        let ability = mem.read::<u8>(rom.wrapping_add(0x5d));
+        let record = if ability == 0xff {
+            0
+        } else {
+            let table = mem.read::<u32>(mem.rebase(super::ITEM_EXCEL_TABLE));
+            let f = mem.rebase(super::MS_GET_EXCEL_DATA);
+            call(mem, f, &[u32::from(ability), table, work])
+        };
+        let special = mem.read::<u8>(record.wrapping_add(0xd));
+        if special != 0 {
+            return call(mem, para_special, &[u32::from(special), node, chr]);
+        }
+        let [sound, get] = GET_PANEL;
+        let f = mem.rebase(super::SND_SEP_PLAY_SIMPLE);
+        call(mem, f, &[sound]);
+        let f = mem.rebase(get);
+        call(mem, f, &[chr, node])
+    }
+
+    /// `TOAmapGetItemType(i)` (`0x008c6710`).
+    pub const TO_AMAP_GET_ITEM_TYPE: u32 = 0x008c_6710;
+
+    /// `AbmapFillUseItemMenu(pad, kind)` (`0x00a45fd0`): the item list of
+    /// `kind` (`TOAmapMakeItemList`, `TOAmapGetItemListMax`); each item in
+    /// stock (`MsGetSaveItemNum` positive) with an ability (`MsGetRomItem`
+    /// byte `+0x5d` not 0xff; the record into `work`) becomes an entry of
+    /// menu pad `pad` (`addMenuPrim`: 0 and the item type). The original
+    /// builds the second word in a stack slot whose high half it never
+    /// writes (stack junk); the port gives 0 there (the tests zero the
+    /// original's stack). Returns nothing the callers read.
+    pub fn abmap_fill_use_item_menu<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [pad, kind]: [u32; 2],
+        work: u32,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(super::TO_AMAP_MAKE_ITEM_LIST);
+        call(mem, f, &[kind]);
+        let f = mem.rebase(super::TO_AMAP_GET_ITEM_LIST_MAX);
+        let count = call(mem, f, &[]).cast_signed();
+        let mut i = 0i32;
+        while i < count {
+            let f = mem.rebase(TO_AMAP_GET_ITEM_TYPE);
+            let item = call(mem, f, &[i.cast_unsigned()]);
+            let f = mem.rebase(super::MS_GET_SAVE_ITEM_NUM);
+            if call(mem, f, &[item]).cast_signed() > 0 {
+                let f = mem.rebase(super::MS_GET_ROM_ITEM);
+                let rom = call(mem, f, &[item, work]);
+                if mem.read::<u8>(rom.wrapping_add(0x5d)) != 0xff {
+                    let base: u32 = mem.read(mem.rebase(super::ABMAP_PAD));
+                    let p = base.wrapping_add(pad.wrapping_mul(0x340));
+                    add_menu_prim(mem, p, 0, item & 0xffff, call);
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// The panel sound (`SndSepPlaySimple`) and `0x00a48910(a, b)`, the
+    /// panel getter [`abmap_get_panel`] goes on to.
+    pub const GET_PANEL: [u32; 2] = [0x8000_0050, 0x00a4_8910];
+
+    /// `abmap_get_panel(a, b)` (`0x00a458a0`): the panel sound
+    /// (`SndSepPlaySimple(0x80000050)`), then a tail jump to
+    /// `0x00a48910(a, b)`, whose `eax` it returns.
+    pub fn abmap_get_panel<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let [sound, get] = GET_PANEL;
+        let f = mem.rebase(super::SND_SEP_PLAY_SIMPLE);
+        call(mem, f, &[sound]);
+        let f = mem.rebase(get);
+        call(mem, f, &[a, b])
+    }
+
+    /// `abmap_para_get_special`'s calls: the `abmap_cheng_panel` thunk
+    /// (`0x00a45860`), `abmap_snd_chg_panel0`, `abmap_snd_chg_panel1`,
+    /// `abmap_get_panel`, `abmap_set_chr_pos` and `abmap_lost_panel`.
+    pub const PARA_GET_SPECIAL_CALLS: [u32; 6] = [
+        0x00a4_5860,
+        0x00a4_5910,
+        0x00a4_5920,
+        0x00a4_58a0,
+        0x00a4_58f0,
+        0x00a4_58c0,
+    ];
+
+    /// The panel kinds that specials 5 to 7 and 16 to 22 change a node to
+    /// (`abmap_para_get_special`, in special order).
+    pub const SPECIAL_PANELS: [(u32, u32); 10] = [
+        (5, 0x19),
+        (6, 0x23),
+        (7, 0x24),
+        (16, 5),
+        (17, 9),
+        (18, 0xd),
+        (19, 0x11),
+        (20, 0x15),
+        (21, 0x1d),
+        (22, 0x21),
+    ];
+
+    /// `abmap_para_get_special(special, node, chr)` (`0x00a5cf30`): what
+    /// a special panel does once got. 1 to 4 turn `node` into panel 1
+    /// (`abmap_cheng_panel(1, node)`, sound 1); 5 to 7 and 16 to 22 into
+    /// the panel of [`SPECIAL_PANELS`] (sound 0); 8 to 11 and 24 get the
+    /// node's panel for `chr` (`abmap_get_panel(chr, node)`); 12 to 15
+    /// move `chr` there (`abmap_set_chr_pos(chr, node)`); 23 turns it into
+    /// panel 1 and clears its seven lost panels (`abmap_lost_panel(0..7,
+    /// node)`, sound 1). Returns 1, or 0 for a special outside 1 to 24.
+    pub fn abmap_para_get_special<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [special, node, chr]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let [cheng, snd0, snd1, get, set_pos, lost] = PARA_GET_SPECIAL_CALLS;
+        let mut go = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = mem.rebase(f);
+            call(mem, f, args);
+        };
+        match special {
+            1..=4 => {
+                go(mem, cheng, &[1, node]);
+                go(mem, snd1, &[]);
+            }
+            8..=11 | 24 => go(mem, get, &[chr, node]),
+            12..=15 => go(mem, set_pos, &[chr, node]),
+            23 => {
+                go(mem, cheng, &[1, node]);
+                for i in 0..7 {
+                    go(mem, lost, &[i, node]);
+                }
+                go(mem, snd1, &[]);
+            }
+            _ => {
+                let Some(&(_, panel)) = SPECIAL_PANELS.iter().find(|&&(s, _)| s == special) else {
+                    return 0;
+                };
+                go(mem, cheng, &[panel, node]);
+                go(mem, snd0, &[]);
+            }
+        }
+        1
+    }
+
     /// `AbmapPlyTagRect(tag, out)` (`0x00a482d0`) and `AbmapRectsOverlap`
     /// (`0x00a49270`), [`abmap_spread_ply_tags`]'s calls.
     pub const SPREAD_CALLS: [u32; 2] = [0x00a4_82d0, 0x00a4_9270];
@@ -2703,6 +2925,73 @@ pub mod bridge {
         }
         let mut eax = call(mem, show_message, &[kind, node]);
         let [draw, state] = CHENG_PANEL_HOOKS.map(|f| mem.rebase(f));
+        for (saved, slot, hook) in [(0x115b4, 0x115ac, draw), (0x115b0, 0x115a8, state)] {
+            let g = ABMAP.get(mem);
+            if mem.read::<u32>(g.wrapping_add(saved)) == 0 {
+                let v = mem.read::<u32>(g.wrapping_add(slot));
+                mem.write(g.wrapping_add(saved), v);
+                let g = ABMAP.get(mem);
+                mem.write(g.wrapping_add(slot), hook);
+                eax = g;
+            }
+        }
+        eax
+    }
+
+    /// `AbmapStoreSave` (`0x00a5bb70`), `eiAbmParaGet` (`0x00a54860`),
+    /// `AbmapCheckAchievements` (`0x00a47210`) and `0x00a5aa30(chr,
+    /// node)`, [`abmap_get_node_panel`]'s calls after the part.
+    pub const GET_NODE_PANEL_CALLS: [u32; 4] = [0x00a5_bb70, 0x00a5_4860, 0x00a4_7210, 0x00a5_aa30];
+    /// The draw hook (`0x00a51700`) and state (`0x00a48280`) that
+    /// [`abmap_get_node_panel`] saves and sets.
+    pub const GET_NODE_PANEL_HOOKS: [u32; 2] = [0x00a5_1700, 0x00a4_8280];
+
+    /// `AbmapGetNodePanel(chr, node)` (`0x00a48910`, name ours; the tail
+    /// of [`abmap_get_panel`]): character `chr` gets node `node`'s panel.
+    /// The ppp heap is made again and the warp part starts on the node
+    /// (look 4 when the save menu's bits `0xc000` are `0x8000`, else 0;
+    /// scale 0.5); the node's byte `+0x21` gets bit `chr` (none for `chr`
+    /// 8 to 31, as the original's byte shift), `+0x116a8` = `node`, then
+    /// `AbmapStoreSave`, `eiAbmParaGet`, `AbmapCheckAchievements` and
+    /// `0x00a5aa30(chr, node)`; the draw hook and state are saved and set
+    /// as in [`abmap_cheng_panel`]. The node is read through the grid
+    /// pointer taken before the calls. Returns the `eax` it ends with.
+    pub fn abmap_get_node_panel<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [chr, node]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let at = ABMAP
+            .get(mem)
+            .wrapping_add(layout::NODES)
+            .wrapping_add(node.wrapping_mul(layout::NODE_SIZE));
+        let f = mem.rebase(super::MS_GET_SAVE_MENU);
+        let menu = call(mem, f, &[]);
+        let f = mem.rebase(super::PPP_CREATE_HEAP);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let heap = mem.rebase(super::ABMAP_PPP_HEAP);
+        call(mem, f, &[env, heap, 0x7d000]);
+        let h = x87::copy(mem.read::<u32>(mem.rebase(super::WARP_PART_SCALE)));
+        let look = if mem.read::<u32>(menu) & 0xc000 == 0x8000 {
+            4
+        } else {
+            0
+        };
+        let coord = |mem: &M, o: u32| f32::from(mem.read::<i16>(at.wrapping_add(o))).to_bits();
+        let (x, y) = (coord(mem, 0), coord(mem, 2));
+        let part = mem.rebase(super::ABMAP_WARP_PART);
+        let f = mem.rebase(CHENG_PANEL_CALLS[0]);
+        call(mem, f, &[part, look, x, y, 0, 0, 0, 0, h, h, h]);
+        let bit = 1u8.checked_shl(chr & 31).unwrap_or(0);
+        let flags = at.wrapping_add(0x21);
+        mem.write(flags, mem.read::<u8>(flags) | bit);
+        mem.write(ABMAP.get(mem).wrapping_add(0x116a8), node);
+        let [store, abm_para, achievements, after] = GET_NODE_PANEL_CALLS.map(|f| mem.rebase(f));
+        call(mem, store, &[]);
+        call(mem, abm_para, &[]);
+        call(mem, achievements, &[]);
+        let mut eax = call(mem, after, &[chr, node]);
+        let [draw, state] = GET_NODE_PANEL_HOOKS.map(|f| mem.rebase(f));
         for (saved, slot, hook) in [(0x115b4, 0x115ac, draw), (0x115b0, 0x115a8, state)] {
             let g = ABMAP.get(mem);
             if mem.read::<u32>(g.wrapping_add(saved)) == 0 {

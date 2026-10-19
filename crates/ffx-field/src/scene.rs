@@ -702,4 +702,339 @@ pub mod bridge {
             }
         }
     }
+
+    // ---- field r14: a scene's frame ----
+
+    /// The renderer's layer position call `0x00639d60(i, a, b, x, y)`
+    /// (render), which [`rcbg_layer_move_proc`] makes.
+    pub const SET_LAYER_POS: u32 = 0x0063_9d60;
+
+    /// One linear step of a layer's tween: `++counter` of `frames` as
+    /// `t` (both `f32`, the quotient stored as `f32`), then `from + (to -
+    /// from) t` for two pairs, the first rounded once at 53 bits, the
+    /// second's product and sum likewise (`fmulp`/`fadd`), each stored as
+    /// `f32`. Returns the counter.
+    fn tween(mem: &mut impl Mem, l: u32, [frames, counter]: [u32; 2], pairs: [[u32; 3]; 2]) -> i32 {
+        let at = l.wrapping_add(counter);
+        let n = mem.read::<i32>(at).wrapping_add(1);
+        mem.write(at, n);
+        let count = mem.read::<i32>(l.wrapping_add(frames));
+        let nf = x87::load(x87::store(f64::from(n)));
+        let df = x87::load(x87::store(f64::from(count)));
+        let t = x87::load(x87::store(nf / df));
+        for [out, from, to] in pairs {
+            let f = x87::load(mem.read(l.wrapping_add(from)));
+            let g = x87::load(mem.read(l.wrapping_add(to)));
+            mem.write(l.wrapping_add(out), x87::store(f + (g - f) * t));
+        }
+        n
+    }
+
+    /// `rcbgLayerMoveProc_0092ade0(layer, i)` (`0x0092ade0`, from
+    /// `rcbgLayerProc`; name ours): two tweens of a layer
+    /// (`Yn_MapPartSet44_0091abc0` starts the first).
+    /// - With frames left in `+0x74` (counter `+0x78`): `+0x44` and `+0x48`
+    ///   move from `+0x54`/`+0x5c` to `+0x58`/`+0x60`; at the last frame
+    ///   `+0x74` is cleared; the renderer gets the position
+    ///   (`0x00639d60(i, +4, +8, x, y)`).
+    /// - With frames in `+0x7c` (counter `+0x80`): `+0x4c` and `+0x50` from
+    ///   `+0x64`/`+0x6c` to `+0x68`/`+0x70`; `+0x7c` cleared at the end.
+    ///
+    /// Returns the second counter, else the renderer call's `eax`; `None`
+    /// with neither (the caller's `eax` is left).
+    pub fn rcbg_layer_move_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [l, i]: [u32; 2],
+        call: &mut C,
+    ) -> Option<u32> {
+        let mut eax = None;
+        let frames = mem.read::<i32>(l.wrapping_add(0x74));
+        if frames != 0 {
+            let n = tween(
+                mem,
+                l,
+                [0x74, 0x78],
+                [[0x44, 0x54, 0x58], [0x48, 0x5c, 0x60]],
+            );
+            if n >= frames {
+                mem.write(l.wrapping_add(0x74), 0u32);
+            }
+            let [x, y] = [0x44u32, 0x48].map(|o| mem.read::<u32>(l.wrapping_add(o)));
+            let [a, b] = [4u32, 8].map(|o| mem.read::<u32>(l.wrapping_add(o)));
+            let f = mem.rebase(SET_LAYER_POS);
+            eax = Some(call(mem, f, &[i, a, b, x, y]));
+        }
+        let frames = mem.read::<i32>(l.wrapping_add(0x7c));
+        if frames != 0 {
+            let n = tween(
+                mem,
+                l,
+                [0x7c, 0x80],
+                [[0x4c, 0x64, 0x68], [0x50, 0x6c, 0x70]],
+            );
+            if n >= frames {
+                mem.write(l.wrapping_add(0x7c), 0u32);
+            }
+            eax = Some(n.cast_unsigned());
+        }
+        eax
+    }
+
+    /// `rcbgLayerProc(layer, i)`'s calls: `rcbgLayerAnimStep(anim)`,
+    /// `rcbgTrxSetNo(trx, n)`, `rcbgPalSetNo(pal, n)`, `rcbgPalProc(pal)`
+    /// and `rcbgLayerMoveProc_0092ade0(layer, i)`.
+    pub const LAYER_PROC_CALLS: [u32; 5] = [
+        0x0093_0920,
+        0x0092_d670,
+        0x0092_9ab0,
+        0x0092_9b60,
+        0x0092_ade0,
+    ];
+
+    /// `rcbgLayerProc(layer, i)` (`0x0092ad80`): the layer's animation
+    /// steps (`+0x90`); a frame record's first byte, when there is one,
+    /// becomes the texture (`+0xa0`, `rcbgTrxSetNo`) and palette (`+0xb0`,
+    /// `rcbgPalSetNo`) number; the palette runs (`rcbgPalProc`) and the
+    /// layer's tweens ([`rcbg_layer_move_proc`]), whose `eax` it returns.
+    pub fn rcbg_layer_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [l, i]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let [anim_step, trx_set_no, pal_set_no, pal_proc, move_proc] =
+            LAYER_PROC_CALLS.map(|f| mem.rebase(f));
+        let anim = l.wrapping_add(0x90);
+        let frame = call(mem, anim_step, &[anim]);
+        let pal = l.wrapping_add(0xb0);
+        if frame != 0 {
+            let n = u32::from(mem.read::<u8>(frame));
+            let trx = mem.read::<u32>(anim.wrapping_add(0x10));
+            call(mem, trx_set_no, &[trx, n]);
+            let n = u32::from(mem.read::<u8>(frame));
+            call(mem, pal_set_no, &[pal, n]);
+        }
+        call(mem, pal_proc, &[pal]);
+        call(mem, move_proc, &[l, i])
+    }
+
+    /// [`rcbg_scene_proc_layer`]'s calls (render, text and the CRT's
+    /// `strstr` through its import slot): `0x00643a00(i, on)` (a layer's
+    /// texture animation switch), `graphicLevelGetName()`,
+    /// `graphicLevelGetNameHash()`, `TOGetFFXLang()`,
+    /// `graphicTextureAnimationSetFrame(i, frame)`, `graphic2DHideLayer(i)`,
+    /// `graphicTextureAnimationSetMaterialVisiability(i, visible)` and
+    /// `rcbgLayerProc(layer, i)`.
+    pub const PROC_LAYER_CALLS: [u32; 8] = [
+        0x0064_3a00,
+        0x0064_1d90,
+        0x0064_1da0,
+        0x0064_10e0,
+        0x0064_3a20,
+        0x0063_8f30,
+        0x0064_4120,
+        0x0092_ad80,
+    ];
+    /// `"genk12"` and `"genk05"` (`0x00b67790`, `0x00b67798`): the level
+    /// names layers 2 and 3 look for.
+    pub const GENK_NAMES: [u32; 2] = [0x00b6_7790, 0x00b6_7798];
+    /// 128 (`0x00c5e47c`): layer 2's `+0xa4` in a `genk12` level.
+    pub const GENK12_LAYER2: u32 = 0x00c5_e47c;
+    /// The level hash and language (`TOGetFFXLang` 9) in which layer 0xd's
+    /// texture is forced to frame 1.
+    pub const LAYER_D_LEVEL: [u32; 2] = [0xcbc, 9];
+
+    /// `rcbgSceneProcLayer(scene)` (`0x00920b00`): every layer (`+4` of
+    /// them, `0xc0` bytes from `+8`) gets its texture animation switched
+    /// off (`0x00643a00(i, 0)`), then each runs ([`rcbg_layer_proc`]) and
+    /// its texture animation is set to the frame of its texture (`+0xa0`,
+    /// its `+0x3c`: `graphicTextureAnimationSetFrame`), except:
+    /// - layer 2 in a level whose name holds `genk12` gets `+0xa4` = 128;
+    ///   in one holding `genk05` its animation is switched on instead of
+    ///   set;
+    /// - layer 3 in a `genk12` level likewise;
+    /// - layer 0xd in the level of hash 0xcbc with language 9 first gets
+    ///   frame 1.
+    ///
+    /// A layer with bit 0 or 1 of its first byte is hidden
+    /// (`graphic2DHideLayer`, `...SetMaterialVisiability(i, 0)`). Returns
+    /// the last call's `eax`; `None` with no layers.
+    pub fn rcbg_scene_proc_layer<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        call: &mut C,
+    ) -> Option<u32> {
+        let [
+            anim_on,
+            level_name,
+            level_hash,
+            lang,
+            set_frame,
+            hide,
+            visible,
+            layer_proc,
+        ] = PROC_LAYER_CALLS.map(|f| mem.rebase(f));
+        let [genk12, genk05] = GENK_NAMES.map(|f| mem.rebase(f));
+        let count = |mem: &M| mem.read::<i32>(s.wrapping_add(layout::LAYER_COUNT));
+        let mut i = 0i32;
+        while i < count(mem) {
+            call(mem, anim_on, &[i.cast_unsigned(), 0]);
+            i += 1;
+        }
+        let in_level = |mem: &mut M, call: &mut C, name: u32| {
+            let level = call(mem, level_name, &[]);
+            let strstr = mem.read::<u32>(mem.rebase(crate::model::STRSTR_IMPORT));
+            call(mem, strstr, &[level, name]) != 0
+        };
+        let mut layer = mem.read::<u32>(s.wrapping_add(layout::LAYERS));
+        let mut eax = None;
+        let mut i = 0i32;
+        while i < count(mem) {
+            let n = i.cast_unsigned();
+            call(mem, layer_proc, &[layer, n]);
+            let switched_on = match i {
+                2 => {
+                    if in_level(mem, call, genk12) {
+                        let v = mem.read::<u32>(mem.rebase(GENK12_LAYER2));
+                        mem.write(layer.wrapping_add(0xa4), v);
+                    }
+                    in_level(mem, call, genk05)
+                }
+                3 => in_level(mem, call, genk12),
+                0xd => {
+                    let [hash, language] = LAYER_D_LEVEL;
+                    if call(mem, level_hash, &[]) == hash && call(mem, lang, &[]) == language {
+                        let trx = mem.read::<u32>(layer.wrapping_add(0xa0));
+                        mem.write(trx.wrapping_add(0x3c), 1u32);
+                    }
+                    false
+                }
+                _ => false,
+            };
+            eax = Some(if switched_on {
+                call(mem, anim_on, &[n, 1])
+            } else {
+                let trx = mem.read::<u32>(layer.wrapping_add(0xa0));
+                let frame = mem.read::<u32>(trx.wrapping_add(0x3c));
+                call(mem, set_frame, &[n, frame])
+            });
+            if mem.read::<u8>(layer) & 3 != 0 {
+                call(mem, hide, &[n]);
+                eax = Some(call(mem, visible, &[n, 0]));
+            }
+            i += 1;
+            layer = layer.wrapping_add(super::layer::SIZE);
+        }
+        eax
+    }
+
+    /// [`rcbg_scene_proc`]'s calls: `rcbgSceneSetMatrix(scene)`,
+    /// `rcbgSceneWaveC0Update(scene)`, `rcbgSceneWaveDCProc(scene)` and
+    /// `rcbgSceneProcLayer(scene)`.
+    pub const SCENE_PROC_CALLS: [u32; 4] = [0x0092_0c00, 0x0092_10e0, 0x0092_0580, 0x0092_0b00];
+
+    /// `rcbgSceneProc_00920aa0(scene)` (`0x00920aa0`; name ours): each of
+    /// the scene's `+0xc` objects (pointers at `+0x10`) runs its process
+    /// slot (`+8`), when set; with layers (`+4`) the matrix is set
+    /// (`rcbgSceneSetMatrix`); then the two waves (`rcbgSceneWaveC0Update`,
+    /// `rcbgSceneWaveDCProc`) and the layers (`rcbgSceneProcLayer`, whose
+    /// `eax` it returns).
+    pub fn rcbg_scene_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        s: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [set_matrix, wave_c0, wave_dc, proc_layer] = SCENE_PROC_CALLS.map(|f| mem.rebase(f));
+        let mut i = 0u32;
+        while i.cast_signed() < mem.read::<i32>(s.wrapping_add(layout::OBJECT_COUNT)) {
+            let list = mem.read::<u32>(s.wrapping_add(layout::OBJECTS));
+            let obj = mem.read::<u32>(list.wrapping_add(4 * i));
+            let process = mem.read::<u32>(obj.wrapping_add(8));
+            if process != 0 {
+                call(mem, process, &[obj]);
+            }
+            i += 1;
+        }
+        if mem.read::<u32>(s.wrapping_add(layout::LAYER_COUNT)) != 0 {
+            call(mem, set_matrix, &[s]);
+        }
+        call(mem, wave_c0, &[s]);
+        call(mem, wave_dc, &[s]);
+        call(mem, proc_layer, &[s])
+    }
+
+    /// `rcbgSceneProc_00920aa0(scene)` (`0x00920aa0`).
+    pub const SCENE_PROC: u32 = 0x0092_0aa0;
+
+    /// `Yn_SceneProc_009217b0()` (`0x009217b0`; name ours): the Yn scene
+    /// (`g_YnMapSystem`'s map's `+8`, or 0 without a system or map) runs
+    /// (`rcbgSceneProc_00920aa0`), whose `eax` it returns.
+    pub fn yn_scene_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let system = crate::guide::YN_MAP_SYSTEM.get(mem);
+        let map = if system == 0 {
+            0
+        } else {
+            mem.read::<u32>(system)
+        };
+        let scene = if map == 0 {
+            0
+        } else {
+            mem.read::<u32>(map.wrapping_add(8))
+        };
+        let f = mem.rebase(SCENE_PROC);
+        call(mem, f, &[scene])
+    }
+
+    /// [`yn_field_proc`]'s calls: `FFXIsDebug()`, `sceGsSetDefDrawEnv2()`
+    /// (a debug switch), `Yn_BattleCaptureNum()`, `rcbgPreAddFpObjects()`,
+    /// `Yn_SceneProc_009217b0()` and the debug overlay at `0x0092cf10` (code
+    /// Ghidra folded into this function).
+    pub const FIELD_PROC_CALLS: [u32; 6] = [
+        0x0088_7c50,
+        0x0088_7c60,
+        0x0092_1910,
+        0x0092_2010,
+        0x0092_17b0,
+        0x0092_cf10,
+    ];
+
+    /// `Yn_FieldProc_0091a8c0()` (`0x0091a8c0`, from `0x00820ae0`; name
+    /// ours: 14 bytes that jump to `0x00922060`): with a Yn system, in a
+    /// debug build with the debug switch on the battle number is captured
+    /// (`Yn_BattleCaptureNum`); without the system's `+8` the FP objects
+    /// are added (`rcbgPreAddFpObjects`); with a map the scene runs
+    /// (`Yn_SceneProc_009217b0`); in the debug case again the overlay is
+    /// drawn (a tail jump, whose `eax` it returns). Returns 0 otherwise;
+    /// `None` without a system (the caller's `eax` is left).
+    pub fn yn_field_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> Option<u32> {
+        let [is_debug, debug_switch, capture, add_fp, scene_proc, overlay] =
+            FIELD_PROC_CALLS.map(|f| mem.rebase(f));
+        if crate::guide::YN_MAP_SYSTEM.get(mem) == 0 {
+            return None;
+        }
+        let debug = |mem: &mut M, call: &mut C| {
+            call(mem, is_debug, &[]) != 0 && call(mem, debug_switch, &[]) != 0
+        };
+        if debug(mem, call) {
+            call(mem, capture, &[]);
+        }
+        let system = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if mem.read::<u32>(system.wrapping_add(8)) == 0 {
+            call(mem, add_fp, &[]);
+        }
+        let system = crate::guide::YN_MAP_SYSTEM.get(mem);
+        if system != 0 && mem.read::<u32>(system) != 0 {
+            call(mem, scene_proc, &[]);
+        }
+        Some(if debug(mem, call) {
+            call(mem, overlay, &[])
+        } else {
+            0
+        })
+    }
 }

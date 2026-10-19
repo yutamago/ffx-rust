@@ -4823,6 +4823,113 @@ pub mod bridge {
         call(mem, reset_force, &[sys])
     }
 
+    /// [`rcbg_model_draw`]'s calls: `FFXVu0MulMatrix(out, a, b)`,
+    /// `rcbgSetWorldMatrix(m)`, `rcbgUpdateMatrix()`,
+    /// `rcbgModelScaleVector(out, v, s)`, `rcbgClipVertex(m, verts, n)`,
+    /// `rcbgModelSetTexReg(page)`, `graphicVFXGetRenderDataByInstance(lo,
+    /// hi)`, `updateGuildMapRenderData(lo, hi, id, data)`,
+    /// `graphicGuidemapUpdate(lo, hi)`, `InitGuildMapRenderData(lo, hi, id,
+    /// data)` and `rcbgRestoreReg()`.
+    pub const MODEL_DRAW_CALLS: [u32; 11] = [
+        0x006e_d5c0,
+        0x0092_b140,
+        0x0092_b160,
+        0x0092_7b00,
+        0x0092_af60,
+        0x0092_84d0,
+        0x0064_53d0,
+        0x0071_7620,
+        0x0064_14f0,
+        0x0071_0ed0,
+        0x0092_0250,
+    ];
+    /// `g_RcbgClipWorldMatrix` (`0x025d58a0`).
+    pub const CLIP_WORLD_MATRIX: u32 = 0x025d_58a0;
+
+    /// `rcbgModelDraw(model)` (`0x00928020`, the model's draw slot).
+    /// - Unless bit 2 of `+0x10`: the world matrix is the model's `+0x100`
+    ///   times `+0xc0` (into `work`, the original's stack matrix),
+    ///   `rcbgSetWorldMatrix`, `rcbgUpdateMatrix`.
+    /// - With bit 0 (a bounded model): the box corners `+0x90` and `+0xa0`
+    ///   over the scale (`1 / rcbgModelGetScale`, stored as `f32`;
+    ///   `rcbgModelScaleVector`) make four vertices at `work + 0x40` (a, b,
+    ///   (a.x, a.y, b.z), (b.x, b.y, a.z), w 1.0); when `rcbgClipVertex(
+    ///   g_RcbgClipWorldMatrix, vertices, 4)` clips them the model is not
+    ///   drawn and its `eax` returned.
+    /// - The texture register page is 1 with bit 1, else 2
+    ///   (`rcbgModelSetTexReg`); the renderer's guide map data of instance
+    ///   (0, `+0x14`) is updated (`updateGuildMapRenderData`,
+    ///   `graphicGuidemapUpdate`) when it exists, else created
+    ///   (`InitGuildMapRenderData`), both with the model's `+0x20`; then
+    ///   `rcbgRestoreReg`, whose `eax` it returns.
+    pub fn rcbg_model_draw<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        m: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87::{div, load, store};
+        let [
+            mul_matrix,
+            set_world,
+            update_matrix,
+            scale_vector,
+            clip,
+            set_tex_reg,
+            render_data,
+            update_guide,
+            guidemap_update,
+            init_guide,
+            restore_reg,
+        ] = MODEL_DRAW_CALLS.map(|f| mem.rebase(f));
+        let flags = |mem: &M| mem.read::<u8>(m.wrapping_add(0x10));
+        if flags(mem) & 4 == 0 {
+            call(
+                mem,
+                mul_matrix,
+                &[work, m.wrapping_add(0x100), m.wrapping_add(0xc0)],
+            );
+            call(mem, set_world, &[work]);
+            call(mem, update_matrix, &[]);
+        }
+        if flags(mem) & 1 != 0 {
+            let s = load(rcbg_model_get_scale(mem, m).to_bits());
+            let inv = store(div(1.0, s));
+            let [a, b] = [work.wrapping_add(0x40), work.wrapping_add(0x50)];
+            call(mem, scale_vector, &[a, m.wrapping_add(0x90), inv]);
+            call(mem, scale_vector, &[b, m.wrapping_add(0xa0), inv]);
+            let one = 1f32.to_bits();
+            let corner =
+                |mem: &M, v: u32, k: u32| crate::x87::copy(mem.read::<u32>(v.wrapping_add(4 * k)));
+            mem.write(b.wrapping_add(0xc), one);
+            mem.write(a.wrapping_add(0xc), one);
+            let c = [corner(mem, a, 0), corner(mem, a, 1), corner(mem, b, 2), one];
+            mem.write(work.wrapping_add(0x60), c);
+            let d = [corner(mem, b, 0), corner(mem, b, 1), corner(mem, a, 2), one];
+            mem.write(work.wrapping_add(0x70), d);
+            let matrix = mem.rebase(CLIP_WORLD_MATRIX);
+            let r = call(mem, clip, &[matrix, a, 4]);
+            if r != 0 {
+                return r;
+            }
+        }
+        let page = if flags(mem) & 2 == 0 { 2 } else { 1 };
+        call(mem, set_tex_reg, &[page]);
+        let id = |mem: &M| mem.read::<u32>(m.wrapping_add(0x14));
+        let id0 = id(mem);
+        let rd = call(mem, render_data, &[0, id0]);
+        let id1 = id(mem);
+        let data = m.wrapping_add(0x20);
+        if rd == 0 {
+            call(mem, init_guide, &[0, id1, id1, data]);
+        } else {
+            call(mem, update_guide, &[0, id1, id1, data]);
+            let id2 = id(mem);
+            call(mem, guidemap_update, &[0, id2]);
+        }
+        call(mem, restore_reg, &[])
+    }
+
     /// `rcbgModelNew()` (`0x009283b0`), `rcbgModelCreateFromOMD(model, omd)`
     /// (`0x00927d70`), `rcbgModelSetScale(model, s)` (`0x00928540`) and
     /// `rcbgPSimCreate(p, model)` (`0x0091f9d0`):

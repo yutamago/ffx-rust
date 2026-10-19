@@ -1557,4 +1557,89 @@ pub mod bridge {
         let f = mem.rebase(SFX_PAUSE);
         Some(call(mem, f, &[id]))
     }
+
+    // ---- field r14 ----
+
+    /// `FFXSifBindRpc(client, id, mode)` (`0x00a44740`), `FlushCache(0)`
+    /// (`0x0062f4c0`) and `Sqs_CallRpc(cmd)` (`0x0081cbd0`):
+    /// [`sqs_init_iop`]'s calls.
+    pub const INIT_IOP_CALLS: [u32; 3] = [0x00a4_4740, 0x0062_f4c0, 0x0081_cbd0];
+    /// The words [`sqs_init_iop`] clears (`0x012f4f44`, `0x012f4e78`,
+    /// `0x012f4e74`, `0x012f4edc`), the one it sets to 3 (`0x012f4efc`) and
+    /// the IOP buffer words it fills from the reply (`0x012f4f88`,
+    /// `0x012f4f8c`, `0x012f4ec4`, `0x012f4ec0`, `g_SqsShoutBuffer`).
+    pub const INIT_IOP_CLEARED: [u32; 4] = [0x012f_4f44, 0x012f_4e78, 0x012f_4e74, 0x012f_4edc];
+    /// See [`INIT_IOP_CLEARED`].
+    pub const INIT_IOP_THREE: u32 = 0x012f_4efc;
+    /// The reply words' homes: reply words 1, 2, 3, 0 and 4.
+    pub const INIT_IOP_REPLY: [(u32, u32); 5] = [
+        (4, 0x012f_4f88),
+        (8, 0x012f_4f8c),
+        (0xc, 0x012f_4ec4),
+        (0, 0x012f_4ec0),
+        (0x10, 0x012f_4ecc),
+    ];
+    /// The shout buffer's size word (`0x012f4ec8`, 0xc800) and the ready
+    /// flag (`0x012f4148`, 1).
+    pub const INIT_IOP_SIZES: [(u32, u32); 2] = [(0x012f_4ec8, 0xc800), (0x012f_4148, 1)];
+    /// `g_SqsWaveInfoDone` (`0x012f4140`), which gets the mode.
+    pub const WAVE_INFO_DONE: u32 = 0x012f_4140;
+
+    /// `SqsInitIop_0081efd0(mode)` (`0x0081efd0`, from `0x008879d0` with
+    /// the debug byte `0x00b5ec4f`; name ours): the sound driver's two RPC
+    /// clients are bound (`FFXSifBindRpc(0x012f4e20, 0x1000, 0)`, then
+    /// `(0x012f4e48, 0x1001, 0)`, again until both clients' server words
+    /// `+0x24` are set; a negative bind returns 0). Then `FlushCache(0)`,
+    /// the IOP state words cleared ([`INIT_IOP_CLEARED`], 3 at
+    /// [`INIT_IOP_THREE`]), `mode` to `g_SqsWaveInfoDone` and the send
+    /// buffer's first word, the status words' address
+    /// ([`super::SQS_IOP_STATUS`]) to its second, `Sqs_CallRpc(1)`; the
+    /// reply's five words go to [`INIT_IOP_REPLY`], [`INIT_IOP_SIZES`] are
+    /// set and the 16 status words cleared. Returns reply word 0.
+    pub fn sqs_init_iop<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        mode: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [bind, flush, call_rpc] = INIT_IOP_CALLS.map(|f| mem.rebase(f));
+        let [client, client2] =
+            [super::SQS_RPC_CLIENT, super::SQS_RPC_CLIENT2].map(|a| mem.rebase(a));
+        let bound = |mem: &M, c: u32| mem.read::<u32>(c.wrapping_add(0x24)) != 0;
+        let mut r = call(mem, bind, &[client, 0x1000, 0]);
+        loop {
+            if r.cast_signed() < 0 {
+                return 0;
+            }
+            r = call(mem, bind, &[client2, 0x1001, 0]);
+            if r.cast_signed() < 0 {
+                return 0;
+            }
+            if bound(mem, client) && bound(mem, client2) {
+                break;
+            }
+            r = call(mem, bind, &[client, 0x1000, 0]);
+        }
+        call(mem, flush, &[0]);
+        let send = super::SQS_RPC_SEND.get(mem);
+        for a in INIT_IOP_CLEARED {
+            mem.write(mem.rebase(a), 0u32);
+        }
+        mem.write(mem.rebase(INIT_IOP_THREE), 3u32);
+        mem.write(mem.rebase(WAVE_INFO_DONE), mode);
+        mem.write(send, mode);
+        let status = super::SQS_IOP_STATUS.ptr(mem).addr;
+        mem.write(send.wrapping_add(4), status);
+        call(mem, call_rpc, &[1]);
+        let recv = super::SQS_RPC_RECV.get(mem);
+        let reply = mem.read::<[u32; 5]>(recv);
+        for (o, at) in INIT_IOP_REPLY {
+            let w = reply[(o / 4) as usize];
+            mem.write(mem.rebase(at), w);
+        }
+        for (at, v) in INIT_IOP_SIZES {
+            mem.write(mem.rebase(at), v);
+        }
+        mem.write(status, [0u32; 16]);
+        reply[0]
+    }
 }

@@ -21531,3 +21531,1379 @@ fn r14hh_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0014_0802);
     r14hh_cases(&mut t, &mut rng, 250);
 }
+
+// ---- field agent r14, group I: a scene's frame: objects, waves, layers ----
+
+/// A `strstr(hay, needle)` stand-in: the word at `answers` for the
+/// needle `first`, else the word after it.
+fn r14ii_strstr_stub(first: u32, answers: u32) -> Vec<u8> {
+    // mov eax, [esp + 8]; cmp eax, first; jne +6; mov eax, [answers]; ret;
+    // mov eax, [answers + 4]; ret
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x3d];
+    c.extend_from_slice(&first.to_le_bytes());
+    c.extend_from_slice(&[0x75, 0x06, 0xa1]);
+    c.extend_from_slice(&answers.to_le_bytes());
+    c.extend_from_slice(&[0xc3, 0xa1]);
+    c.extend_from_slice(&(answers + 4).to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Group I (r14) on `t`: `rcbgLayerMoveProc_0092ade0` with either tween
+/// running or not, ending or not (the renderer call a logged stand-in);
+/// `rcbgLayerProc` with and without an animation frame (its calls logged
+/// stand-ins, the tweens the original); `rcbgSceneProcLayer` over -1..16
+/// layers, hidden or not, with `strstr` answering each call from a table
+/// and the level hash and language 0xcbc/9 or not (`rcbgLayerProc` the
+/// original); `rcbgSceneProc_00920aa0` with objects with and without a
+/// process slot, with layers or none (its calls logged stand-ins but
+/// `rcbgSceneProcLayer`, the original).
+#[allow(clippy::too_many_lines)]
+fn r14ii_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::{model, scene::bridge as sb};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, framev, hashv, langv) = (
+        t.alloc(0x4000),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+    );
+    let answers = t.alloc(8);
+    let [anim_step, trx_set_no, pal_set_no, pal_proc, _] = sb::LAYER_PROC_CALLS;
+    let [
+        anim_on,
+        level_name,
+        level_hash,
+        lang,
+        set_frame,
+        hide,
+        visible,
+        _,
+    ] = sb::PROC_LAYER_CALLS;
+    let [set_matrix, wave_c0, wave_dc, _] = sb::SCENE_PROC_CALLS;
+    let stubs = t.cave(&[
+        (Some(sb::SET_LAYER_POS), log_stub(log, rv, 1, 5)),
+        (Some(anim_step), log_stub(log, framev, 2, 1)),
+        (Some(trx_set_no), log_stub(log, rv, 3, 2)),
+        (Some(pal_set_no), log_stub(log, rv, 4, 2)),
+        (Some(pal_proc), log_stub(log, rv, 5, 1)),
+        (Some(anim_on), log_stub(log, rv, 6, 2)),
+        (Some(level_name), log_stub(log, rv, 7, 0)),
+        (Some(level_hash), log_stub(log, hashv, 8, 0)),
+        (Some(lang), log_stub(log, langv, 9, 0)),
+        (Some(set_frame), log_stub(log, rv, 10, 2)),
+        (Some(hide), log_stub(log, rv, 11, 1)),
+        (Some(visible), log_stub(log, rv, 12, 2)),
+        (
+            None,
+            r14ii_strstr_stub(t.b.rebase(sb::GENK_NAMES[0]), answers),
+        ),
+        (Some(set_matrix), log_stub(log, rv, 14, 1)),
+        (Some(wave_c0), log_stub(log, rv, 15, 1)),
+        (Some(wave_dc), log_stub(log, rv, 16, 1)),
+        (None, log_stub(log, rv, 17, 1)),
+    ]);
+    t.put(t.b.rebase(model::STRSTR_IMPORT), stubs[12]);
+    let (layers, frame, trx, sc, list, objs) = (
+        t.alloc(0xc00),
+        t.alloc(4),
+        t.alloc(0x40),
+        t.alloc(0x40),
+        t.alloc(0x20),
+        t.alloc(0x100),
+    );
+    let tween_floats = |t: &mut Twin, rng: &mut Xorshift, l: u32| {
+        for w in 0x11..0x1c {
+            t.put(l + 4 * w, r6b_fine(rng, -50.0, 50.0));
+        }
+    };
+    for case in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let l = layers;
+        t.fill(l, 0xc0, rng);
+        tween_floats(t, rng, l);
+        for (frames, counter) in [(0x74, 0x78), (0x7c, 0x80)] {
+            // past 2^24 the counter rounds when stored as an f32
+            let big = if rng.below(4) == 0 { 0x0100_0000 } else { 0 };
+            let n = big + rng.range(-1, 5);
+            t.put(l + frames, if rng.below(3) == 0 { 0 } else { n });
+            t.put(l + counter, big + rng.range(-2, 5));
+        }
+        let a = [l, rng.below(16)];
+        let running = t.b.read::<u32>(l + 0x74) != 0 || t.b.read::<u32>(l + 0x7c) != 0;
+        t.same(
+            "rcbgLayerMoveProc_0092ade0",
+            |o| {
+                let e = o.eax(0x0092_ade0, &a);
+                running.then_some(e)
+            },
+            |m| sb::rcbg_layer_move_proc(m, a, call),
+        );
+        t.put(framev, if rng.below(3) == 0 { 0 } else { frame });
+        t.put(frame, rng.next());
+        t.put(l + 0x74, rng.range(0, 3));
+        t.same(
+            "rcbgLayerProc",
+            |o| o.eax(0x0092_ad80, &a),
+            |m| sb::rcbg_layer_proc(m, a, call),
+        );
+        // the layers of a scene
+        let n = if case % 4 == 0 {
+            rng.range(-1, 2)
+        } else {
+            rng.range(12, 16)
+        };
+        t.fill(sc, 0x40, rng);
+        t.put(sc + 4, n);
+        t.put(sc + 8, layers);
+        for k in 0..16u32 {
+            let at = layers + 0xc0 * k;
+            t.fill(at, 0xc0, rng);
+            tween_floats(t, rng, at);
+            t.put(at, u8::try_from(rng.below(8)).unwrap());
+            t.put(at + 0x74, 0u32);
+            t.put(at + 0x7c, 0u32);
+            t.put(at + 0xa0, trx);
+        }
+        t.fill(trx, 0x40, rng);
+        for k in 0..2 {
+            t.put(answers + 4 * k, rng.below(2));
+        }
+        t.put(hashv, if rng.below(2) == 0 { 0xcbc } else { rng.next() });
+        t.put(langv, if rng.below(2) == 0 { 9 } else { rng.below(12) });
+        t.same(
+            "rcbgSceneProcLayer",
+            |o| {
+                let e = o.eax(0x0092_0b00, &[sc]);
+                (n > 0).then_some(e)
+            },
+            |m| sb::rcbg_scene_proc_layer(m, sc, call),
+        );
+        // the scene's objects
+        let k = rng.below(5);
+        t.put(sc + 0xc, k);
+        t.put(sc + 0x10, list);
+        t.put(sc + 4, n);
+        t.put(sc + 8, layers);
+        for j in 0..5 {
+            let o = objs + 0x20 * j;
+            t.put(list + 4 * j, o);
+            t.put(o + 8, [0, stubs[16]][rng.below(2) as usize]);
+        }
+        t.same(
+            "rcbgSceneProc_00920aa0",
+            |o| {
+                let e = o.eax(0x0092_0aa0, &[sc]);
+                (t_layers_positive(n)).then_some(e)
+            },
+            |m| {
+                let e = sb::rcbg_scene_proc(m, sc, call);
+                (t_layers_positive(n)).then_some(e)
+            },
+        );
+    }
+}
+
+/// Whether a scene of `n` layers ends `rcbgSceneProcLayer` with a call
+/// (else its `eax` is the caller's).
+fn t_layers_positive(n: i32) -> bool {
+    n > 0
+}
+
+/// Group I (r14) on the image.
+#[test]
+fn r14ii_scene_frame_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_0901);
+    r14ii_cases(&mut t, &mut rng, 400);
+}
+
+/// Group I (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14ii_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_0902);
+    r14ii_cases(&mut t, &mut rng, 200);
+}
+
+/// Group I (r14), `Yn_SceneProc_009217b0` with or without a system and
+/// map (`rcbgSceneProc_00920aa0` a logged stand-in).
+#[test]
+fn r14ij_yn_scene_proc_matches_the_original() {
+    use ffx_field::{guide, scene::bridge as sb};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    for snapshot in [false, true] {
+        let t = if snapshot {
+            Twin::snapshot()
+        } else {
+            Twin::image()
+        };
+        let Some(mut t) = t else { continue };
+        let mut rng = Xorshift(0x0014_0903);
+        let (log, rv, ysys, map) = (t.alloc(0x400), t.alloc(4), t.alloc(8), t.alloc(0x10));
+        t.cave(&[(Some(sb::SCENE_PROC), log_stub(log, rv, 1, 1))]);
+        for _ in 0..200 {
+            t.put(log, 0u32);
+            t.put(rv, rng.next());
+            t.set(
+                guide::YN_MAP_SYSTEM,
+                if rng.below(4) == 0 { 0 } else { ysys },
+            );
+            t.put(ysys, if rng.below(4) == 0 { 0 } else { map });
+            t.put(map + 8, rng.next());
+            t.same(
+                "Yn_SceneProc_009217b0",
+                |o| o.eax(0x0092_17b0, &[]),
+                |m| sb::yn_scene_proc(m, call),
+            );
+        }
+    }
+}
+
+// ---- field agent r14, group J: thin yi, guide and grid wrappers ----
+
+/// Group J (r14) on `t`: `yiDisp`, `yiDisp2`, `yiAnimMain`, the three
+/// `yi*ReadNB`, `yiRectToOMD_maketex`, `rcbgGuideUpdate`,
+/// `Yn_GuideMapProcEx` (no system, no guide or one) and `abmap_get_panel`,
+/// every callee a logged stand-in.
+fn r14jj_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::{abmap, guide, yi};
+    use yi::bridge::{self as yb, ReadNb};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(0x400), t.alloc(4));
+    let [lights, draw, key_frame] = yb::DISP_CALLS;
+    let [_, get] = abmap::bridge::GET_PANEL;
+    t.cave(&[
+        (Some(lights), log_stub(log, rv, 1, 0)),
+        (Some(draw), log_stub(log, rv, 2, 2)),
+        (Some(key_frame), log_stub(log, rv, 3, 1)),
+        (Some(yb::OBJ_READ_NB), log_stub(log, rv, 4, 3)),
+        (Some(yb::RECT_TO_OMD_MAKETEX), log_stub(log, rv, 5, 7)),
+        (
+            Some(guide::bridge::GUIDE_UPDATE_EX),
+            log_stub(log, rv, 6, 2),
+        ),
+        (Some(abmap::SND_SEP_PLAY_SIMPLE), log_stub(log, rv, 7, 1)),
+        (Some(get), log_stub(log, rv, 8, 2)),
+    ]);
+    let sys = t.alloc(8);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let status = rng.next();
+        yi::RENDER_STATUS.set(&mut t.a, status);
+        yi::RENDER_STATUS.set(&mut t.b, status);
+        for (f, second) in [(0x0090_8480, false), (0x0090_84a0, true)] {
+            t.same(
+                "yiDisp",
+                |o| o.eax(f, &[]),
+                |m| yb::yi_disp(m, second, call),
+            );
+        }
+        t.same(
+            "yiAnimMain",
+            |o| o.eax(0x0090_8320, &[]),
+            |m| yb::yi_anim_main(m, call),
+        );
+        let ab = [rng.next(), rng.next()];
+        for (f, which) in [
+            (0x0090_83a0, ReadNb::BattleMap),
+            (0x0090_8600, ReadNb::FieldMap),
+            (0x0090_8630, ReadNb::FieldObj),
+        ] {
+            t.same(
+                "yi*ReadNB",
+                |o| o.eax(f, &ab),
+                |m| yb::yi_read_nb(m, which, ab, call),
+            );
+        }
+        let a: [u32; 7] =
+            std::array::from_fn(|i| if i == 3 { rng.any_float() } else { rng.next() });
+        t.same(
+            "yiRectToOMD_maketex",
+            |o| o.eax(0x0090_9d70, &a),
+            |m| yb::yi_rect_to_omd_maketex(m, a, call),
+        );
+        let g = rng.next();
+        t.same(
+            "rcbgGuideUpdate",
+            |o| o.eax(0x0091_da10, &[g]),
+            |m| guide::bridge::rcbg_guide_update(m, g, call),
+        );
+        t.set(
+            guide::YN_MAP_SYSTEM,
+            if rng.below(4) == 0 { 0 } else { sys },
+        );
+        t.put(sys + 4, if rng.below(4) == 0 { 0 } else { rng.next() | 1 });
+        t.same(
+            "Yn_GuideMapProcEx",
+            |o| o.eax(0x0091_9d00, &[g]),
+            |m| guide::bridge::yn_guide_map_proc_ex(m, g, call),
+        );
+        t.same(
+            "abmap_get_panel",
+            |o| o.eax(0x00a4_58a0, &ab),
+            |m| abmap::bridge::abmap_get_panel(m, ab, call),
+        );
+    }
+}
+
+/// Group J (r14) on the image.
+#[test]
+fn r14jj_wrappers_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_0a01);
+    r14jj_cases(&mut t, &mut rng, 300);
+}
+
+/// Group J (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14jj_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_0a02);
+    r14jj_cases(&mut t, &mut rng, 150);
+}
+
+// ---- field agent r14, group K: map part offsets and positions, grid help lines ----
+
+/// Group K (r14) on `t`: `Yn_MapPartSetOffset_0091ab30` (parts around the
+/// count, layer 0x1a on map 0x17e or not, `y` at the nudge's edges) and
+/// `Yn_MapPartSet44_0091abc0` (zero, negative zero, NaN or other floats),
+/// the renderer calls logged stand-ins; the three help message hooks over
+/// a synthetic grid (`MsGetExcelData` a stand-in that stores a strings
+/// base, the config flag and message step logged stand-ins).
+#[allow(clippy::too_many_lines)]
+fn r14kk_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::{abmap, guide, scene};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, recv, strv, flagv) = (
+        t.alloc(0x400),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+    );
+    let excel_stub = |n: u32| {
+        // mov eax, [esp + 0xc]; mov ecx, [strv]; mov [eax], ecx
+        let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d];
+        c.extend_from_slice(&strv.to_le_bytes());
+        c.extend_from_slice(&[0x89, 0x08]);
+        c.extend(log_stub_from(log, recv, n, 0, 2));
+        c
+    };
+    let [excel, hiragana, step] = abmap::bridge::HELP_MESSAGE_CALLS;
+    t.cave(&[
+        (Some(guide::bridge::MOVE_LAYER), log_stub(log, rv, 1, 3)),
+        (
+            Some(ffx_field::scene::bridge::SET_LAYER_POS),
+            log_stub(log, rv, 2, 5),
+        ),
+        (Some(excel), excel_stub(3)),
+        (Some(hiragana), log_stub(log, flagv, 4, 0)),
+        (Some(step), log_stub(log, rv, 5, 1)),
+    ]);
+    let (sys, map, sc, layers, rec) = (
+        t.alloc(8),
+        t.alloc(0x10),
+        t.alloc(0x40),
+        t.alloc(0x1800),
+        t.alloc(0x10),
+    );
+    let g = t.alloc(0x1_4000);
+    t.set(abmap::ABMAP, g);
+    t.set(guide::YN_MAP_SYSTEM, sys);
+    t.put(sys, map);
+    t.put(map + 8, sc);
+    t.put(sc + scene::layout::LAYERS, layers);
+    let work = t.stack_scratch(0x100);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let part = if rng.below(2) == 0 {
+            0x1a
+        } else {
+            rng.range(0, 0x1f).cast_unsigned()
+        };
+        let count = if part == 0x1a && rng.below(4) != 0 {
+            rng.range(0x1b, 0x1e)
+        } else {
+            rng.range(0, 0x1e)
+        };
+        t.put(sc + scene::layout::LAYER_COUNT, count);
+        t.fill(layers, 0x1800, rng);
+        let id = if rng.below(2) == 0 {
+            0x17e
+        } else {
+            rng.below(0x200)
+        };
+        t.put(t.b.rebase(guide::bridge::GRAPHIC_MAP_ID), id);
+        let k = [0, 14, 0, 14, rng.range(-2, 16)][rng.below(5) as usize];
+        let y = (0x54 + 18 * k + rng.range(-1, 18)).cast_unsigned();
+        let a = [part, rng.next(), y];
+        t.same(
+            "Yn_MapPartSetOffset_0091ab30",
+            |o| o.eax(0x0091_ab30, &a),
+            |m| guide::bridge::yn_map_part_set_offset(m, a, call),
+        );
+        let float = |rng: &mut Xorshift| match rng.below(5) {
+            0 => 0,
+            1 => 0x8000_0000,
+            2 => 0x7fc0_0000 | (rng.next() & 0x803f_ffff),
+            _ => r6b_fine(rng, -100.0, 100.0),
+        };
+        let a = [rng.range(-1, 0x1f).cast_unsigned(), float(rng), float(rng)];
+        if a[0].cast_signed() >= 0 {
+            t.same(
+                "Yn_MapPartSet44_0091abc0",
+                |o| o.eax(0x0091_abc0, &a),
+                |m| guide::bridge::yn_map_part_set44(m, a, call),
+            );
+        }
+        let node = rng.below(0x40);
+        t.put(g + 0x112fc, u16::try_from(node).unwrap());
+        t.fill(g + 0x808 + 0x28 * node, 0x28, rng);
+        t.put(t.b.rebase(abmap::NODE_EXCEL_TABLE), rng.next());
+        t.put(recv, rec);
+        t.fill(rec, 0x10, rng);
+        t.put(strv, rng.next());
+        t.put(flagv, rng.next());
+        for f in [0x00a4_54a0, 0x00a4_5500, 0x00a4_5440] {
+            t.same(
+                "AbmapSetHelpMessage",
+                |o| o.eax(f, &[]),
+                |m| abmap::bridge::abmap_set_help_message(m, work, call),
+            );
+        }
+    }
+}
+
+/// Group K (r14) on the image.
+#[test]
+fn r14kk_parts_and_help_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_0b01);
+    r14kk_cases(&mut t, &mut rng, 500);
+}
+
+/// Group K (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14kk_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_0b02);
+    r14kk_cases(&mut t, &mut rng, 250);
+}
+
+// ---- field agent r14, group L: effect characters ----
+
+/// Group L (r14) on `t`: `rcEffectTaskChrWait_00930460` at levels 0..8
+/// with the character flag set or not (`rcefTaskRetSeqCont` the
+/// original); `rcefChrNew` hidden or visible and `rcefChrDraw_00930630`
+/// over any colour bytes, every callee a logged stand-in.
+fn r14ll_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::task::{bridge as tb, header};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, flagv, hv, sizev, blockv, ptrv, listv) = (
+        t.alloc(0x800),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+    );
+    let [
+        get_handle,
+        packet_size,
+        mem_alloc,
+        set_ptr32,
+        clut,
+        image,
+        hidden,
+        visible,
+        root,
+        en,
+    ] = tb::CHR_NEW_CALLS;
+    let [
+        mul_matrix,
+        load_image,
+        load_clut,
+        situation,
+        main_effect,
+        instance,
+        mesh,
+    ] = tb::CHR_DRAW_CALLS;
+    t.cave(&[
+        (Some(tb::MS_CHR_FLAG_415), log_stub(log, flagv, 1, 1)),
+        (Some(get_handle), log_stub(log, hv, 2, 1)),
+        (Some(packet_size), log_stub(log, sizev, 3, 3)),
+        (Some(mem_alloc), log_stub(log, blockv, 4, 3)),
+        (Some(set_ptr32), log_stub(log, ptrv, 5, 1)),
+        (Some(clut), log_stub(log, rv, 6, 3)),
+        (Some(image), log_stub(log, rv, 7, 3)),
+        (Some(hidden), log_stub(log, rv, 8, 4)),
+        (Some(visible), log_stub(log, rv, 9, 4)),
+        (Some(root), log_stub(log, rv, 10, 2)),
+        (Some(en), log_stub(log, rv, 11, 2)),
+        (Some(mul_matrix), log_stub(log, rv, 12, 3)),
+        (Some(load_image), log_stub(log, rv, 13, 2)),
+        (Some(load_clut), log_stub(log, rv, 14, 2)),
+        (Some(situation), log_stub(log, rv, 15, 2)),
+        (Some(main_effect), log_stub(log, rv, 16, 1)),
+        (Some(instance), log_stub(log, listv, 17, 6)),
+        (Some(mesh), log_stub(log, rv, 18, 6)),
+    ]);
+    let (tk, obj, envp, env) = (t.alloc(0xbc), t.alloc(0x100), t.alloc(4), t.alloc(0x20));
+    t.set(tb::PPP_ENV_SLOT, envp);
+    t.put(envp, env);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        for v in [rv, hv, sizev, blockv, ptrv, listv] {
+            t.put(v, rng.next());
+        }
+        t.put(flagv, if rng.below(2) == 0 { 0 } else { rng.next() | 1 });
+        t.fill(tk, 0xbc, rng);
+        t.put(tk + header::LEVEL, rng.range(0, 8));
+        t.same(
+            "rcEffectTaskChrWait_00930460",
+            |o| o.void(0x0093_0460, &[tk]),
+            |m| tb::rc_effect_task_chr_wait(m, tk, call),
+        );
+        t.fill(obj, 0x100, rng);
+        t.put(t.b.rebase(tb::DMA_BUFFER), rng.next());
+        let a = [
+            obj,
+            rng.next(),
+            rng.next(),
+            if rng.below(2) == 0 { 0 } else { rng.next() | 1 },
+        ];
+        t.same(
+            "rcefChrNew",
+            |o| o.eax(0x0093_0550, &a),
+            |m| tb::rcef_chr_new(m, a, call),
+        );
+        t.same(
+            "rcefChrDraw_00930630",
+            |o| o.eax(0x0093_0630, &[obj]),
+            |m| tb::rcef_chr_draw(m, obj, call),
+        );
+    }
+}
+
+/// Group L (r14) on the image.
+#[test]
+fn r14ll_effect_characters_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_0c01);
+    r14ll_cases(&mut t, &mut rng, 500);
+}
+
+/// Group L (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14ll_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_0c02);
+    r14ll_cases(&mut t, &mut rng, 250);
+}
+
+/// Group M (r14): `Yn_FieldProc_0091a8c0` with or without a system, map
+/// and `+8`, a debug build and switch or not (every call a logged
+/// stand-in; the debug answers from a table, call by call).
+#[test]
+fn r14mm_field_proc_matches_the_original() {
+    use ffx_field::{guide, scene::bridge as sb};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    for snapshot in [false, true] {
+        let t = if snapshot {
+            Twin::snapshot()
+        } else {
+            Twin::image()
+        };
+        let Some(mut t) = t else { continue };
+        let mut rng = Xorshift(0x0014_0d01);
+        let (log, rv, count, answers, sys) = (
+            t.alloc(0x400),
+            t.alloc(4),
+            t.alloc(4),
+            t.alloc(0x40),
+            t.alloc(0x10),
+        );
+        let [is_debug, debug_switch, capture, add_fp, scene_proc, overlay] = sb::FIELD_PROC_CALLS;
+        t.cave(&[
+            (Some(is_debug), r13ii_rand_stub(count, answers)),
+            (Some(debug_switch), r13ii_rand_stub(count, answers)),
+            (Some(capture), log_stub(log, rv, 1, 0)),
+            (Some(add_fp), log_stub(log, rv, 2, 0)),
+            (Some(scene_proc), log_stub(log, rv, 3, 0)),
+            (Some(overlay), log_stub(log, rv, 4, 0)),
+        ]);
+        for _ in 0..300 {
+            t.put(log, 0u32);
+            t.put(count, 0u32);
+            t.put(rv, rng.next());
+            for k in 0..8 {
+                t.put(
+                    answers + 4 * k,
+                    if rng.below(2) == 0 { 0 } else { rng.next() | 1 },
+                );
+            }
+            let on = rng.below(5) != 0;
+            t.set(guide::YN_MAP_SYSTEM, if on { sys } else { 0 });
+            t.put(sys, if rng.below(3) == 0 { 0 } else { rng.next() | 1 });
+            t.put(sys + 8, if rng.below(2) == 0 { 0 } else { rng.next() | 1 });
+            t.same(
+                "Yn_FieldProc_0091a8c0",
+                |o| {
+                    let e = o.eax(0x0091_a8c0, &[]);
+                    on.then_some(e)
+                },
+                |m| sb::yn_field_proc(m, call),
+            );
+        }
+    }
+}
+
+// ---- field agent r14, group N: using an item on the sphere grid ----
+
+/// Group N (r14) on `t` over the grid `g`: `AbmapTryUseItem` on reachable
+/// or unreachable nodes, each check passing or not, records with and
+/// without a special kind; `AbmapFillUseItemMenu` over 0..8 items in stock
+/// or not, with or without an ability, into pads near full (the original's
+/// stack zeroed: it never writes the entry word's high half); every callee
+/// a logged stand-in.
+fn r14nn_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::{self, bridge as ab};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, effv, usev, romv, recv, maxv, numv) = (
+        t.alloc(0x800),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+    );
+    let [effect_at, item_use, para_special] = ab::TRY_USE_ITEM_CALLS;
+    let [_, get] = ab::GET_PANEL;
+    t.cave(&[
+        (Some(effect_at), log_stub(log, effv, 1, 3)),
+        (Some(item_use), log_stub(log, usev, 2, 2)),
+        (
+            Some(abmap::MS_GET_ROM_ITEM),
+            log_stub_from(log, romv, 3, 0, 1),
+        ),
+        (
+            Some(abmap::MS_GET_EXCEL_DATA),
+            log_stub_from(log, recv, 4, 0, 2),
+        ),
+        (Some(para_special), log_stub(log, rv, 5, 3)),
+        (Some(abmap::SND_SEP_PLAY_SIMPLE), log_stub(log, rv, 6, 1)),
+        (Some(get), log_stub(log, rv, 7, 2)),
+        (Some(abmap::TO_AMAP_MAKE_ITEM_LIST), log_stub(log, rv, 8, 1)),
+        (
+            Some(abmap::TO_AMAP_GET_ITEM_LIST_MAX),
+            log_stub(log, maxv, 9, 0),
+        ),
+        (Some(ab::TO_AMAP_GET_ITEM_TYPE), log_stub(log, rv, 10, 1)),
+        (
+            Some(abmap::MS_GET_SAVE_ITEM_NUM),
+            log_stub(log, numv, 11, 1),
+        ),
+        (Some(abmap::DBG_PRINTF), log_stub(log, rv, 12, 2)),
+        (Some(abmap::DEBUG_EXIT_TRACE), log_stub(log, rv, 13, 1)),
+    ]);
+    let (rom, rec, pads) = (t.alloc(0x80), t.alloc(0x20), t.alloc(0x2710));
+    t.put(t.b.rebase(abmap::ABMAP_PAD), pads);
+    let work = t.stack_scratch(0x100);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let node = rng.below(0x40);
+        t.fill(g + 0x808 + 0x28 * node, 0x28, rng);
+        t.put(effv, if rng.below(4) == 0 { 0 } else { rng.next() | 1 });
+        t.put(usev, if rng.below(4) == 0 { rng.next() | 1 } else { 0 });
+        t.put(romv, rom);
+        t.fill(rom, 0x80, rng);
+        if rng.below(4) == 0 {
+            t.put(rom + 0x5d, 0xffu8);
+            t.put(recv, 0u32);
+        } else {
+            if rng.below(4) == 0 {
+                t.put(rom + 0x5d, 0xfeu8);
+            }
+            t.put(recv, rec);
+        }
+        t.fill(rec, 0x20, rng);
+        if rng.below(2) == 0 {
+            t.put(rec + 0xd, 0u8);
+        }
+        let rom_ff = t.b.read::<u8>(rom + 0x5d) == 0xff;
+        let a = [rng.next(), node, rng.next()];
+        // a record at 0 reads address 0xd: keep that path where it stops early
+        let reaches = t.b.read::<u8>(g + 0x82a + 0x28 * node) & 3 != 0
+            && t.b.read::<u32>(effv) != 0
+            && t.b.read::<u32>(usev) == 0;
+        if !(rom_ff && reaches) {
+            t.put(t.b.rebase(abmap::ITEM_EXCEL_TABLE), rng.next());
+            t.same(
+                "AbmapTryUseItem",
+                |o| o.eax(0x00a5_bca0, &a),
+                |m| ab::abmap_try_use_item(m, a, work, call),
+            );
+        }
+        t.put(log, 0u32);
+        let pad = rng.below(9);
+        let p = pads + 0x340 * pad;
+        t.fill(p, 0x340, rng);
+        t.put(p + 0x1e, i16::try_from(rng.range(0x38, 0x41)).unwrap());
+        t.put(maxv, rng.range(-1, 8));
+        t.put(numv, rng.range(-1, 3));
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x2f00]).unwrap();
+        let a = [pad, rng.next()];
+        t.same(
+            "AbmapFillUseItemMenu",
+            |o| o.void(0x00a4_5fd0, &a),
+            |m| ab::abmap_fill_use_item_menu(m, a, work, call),
+        );
+    }
+}
+
+/// Group N (r14) on the image.
+#[test]
+fn r14nn_use_item_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_0e01);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r14nn_cases(&mut t, &mut rng, g, 500);
+}
+
+/// Group N (r14) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r14nn_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_0e02);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r14nn_cases(&mut t, &mut rng, g, 250);
+}
+
+// ---- field agent r14, group O: draw objects' rotation and translation ----
+
+/// A `FFXVu0UnitMatrix(m)` stand-in: the 16 words at `table` into `m`.
+fn r14oo_unit_stub(table: u32) -> Vec<u8> {
+    // push esi; push edi; mov edi, [esp + 0xc]; mov esi, table;
+    // mov ecx, 16; rep movsd; pop edi; pop esi; ret
+    let mut c = vec![0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xbe];
+    c.extend_from_slice(&table.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 16, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group O (r14) on `t`: `yiSetRotTransDObj` (objects below or past the
+/// count) and `yiSetRotTransGroup` (0..8 objects, some in the group); the
+/// unit matrix a stand-in that writes a table, the other matrix calls and
+/// the renderer's object calls logged stand-ins (the matrix pointer, a
+/// stack address on the original's side, left out of the logs).
+fn r14oo_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::yi;
+    use yi::bridge as yb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, table) = (t.alloc(0x800), t.alloc(4), t.alloc(0x40));
+    let [unit, rot_seq, translate] = yb::DOBJ_MATRIX_CALLS;
+    let [rx, ry, rz] = yi::VU0_ROT_MATRIX;
+    t.cave(&[
+        (Some(unit), r14oo_unit_stub(table)),
+        (Some(rot_seq), log_stub_from(log, rv, 1, 1, 2)),
+        (Some(translate), log_stub_from(log, rv, 2, 2, 1)),
+        (Some(rx), log_stub_from(log, rv, 3, 2, 1)),
+        (Some(ry), log_stub_from(log, rv, 4, 2, 1)),
+        (Some(rz), log_stub_from(log, rv, 5, 2, 1)),
+        (
+            Some(yi::GRAPHIC_OBJECT_SET_TRANSLATION),
+            log_stub(log, rv, 6, 2),
+        ),
+        (
+            Some(yi::GRAPHIC_OBJECT_SET_ROTATION),
+            log_stub(log, rv, 7, 3),
+        ),
+    ]);
+    let (rot, trans) = (t.alloc(0x10), t.alloc(0x10));
+    let dobjs = yi::DOBJS.ptr(&t.b).addr;
+    let work = t.stack_scratch(0x100);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(table, 0x40, rng);
+        for w in 0..4 {
+            t.put(rot + 4 * w, r6b_fine(rng, -4.0, 4.0));
+        }
+        t.fill(trans, 0x10, rng);
+        let count = rng.below(8);
+        yi::DOBJ_COUNT.set(&mut t.a, count);
+        yi::DOBJ_COUNT.set(&mut t.b, count);
+        let group = rng.below(3);
+        for k in 0..9 {
+            let d = dobjs + 0xb4 * k;
+            t.fill(d, 0xb4, rng);
+            // some groups with a high byte, which the original compares too
+            let high = if rng.below(4) == 0 { 0x100 } else { 0 };
+            t.put(d + 0x74, u16::try_from(rng.below(3) + high).unwrap());
+        }
+        let a = [rng.below(10), rot, trans];
+        t.same(
+            "yiSetRotTransDObj",
+            |o| o.eax(0x0090_a750, &a),
+            |m| yb::yi_set_rot_trans_dobj(m, a, work, call),
+        );
+        let a = [group, rot, trans];
+        t.same(
+            "yiSetRotTransGroup",
+            |o| o.eax(0x0090_a830, &a),
+            |m| yb::yi_set_rot_trans_group(m, a, work, call),
+        );
+    }
+}
+
+/// Group O (r14) on the image.
+#[test]
+fn r14oo_rot_trans_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_0f01);
+    r14oo_cases(&mut t, &mut rng, 400);
+}
+
+/// Group O (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14oo_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_0f02);
+    r14oo_cases(&mut t, &mut rng, 200);
+}
+
+// ---- field agent r14, group P: drawing a background model ----
+
+/// A `rcbgClipVertex(m, verts, n)` stand-in: the 16 vertex words logged at
+/// `seen` (they sit on the caller's stack), the word at `rv` returned.
+fn r14pp_clip_stub(seen: u32, rv: u32) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp + 0x10]; mov edi, seen;
+    // mov ecx, 16; rep movsd; pop edi; pop esi; mov eax, [rv]; ret
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x10, 0xbf];
+    c.extend_from_slice(&seen.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 16, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xa1]);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Group P (r14) on `t`: `rcbgModelDraw` with every combination of flag
+/// bits 0..2, clipped or not, with or without renderer data;
+/// `rcbgModelScaleVector` the original, the other calls logged stand-ins.
+fn r14pp_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model::{self, bridge as mb};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, cv, rdv, seen) = (
+        t.alloc(0x800),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(0x40),
+    );
+    let [mul, world, update, _, clip, tex, rd, upd, gm, init, restore] = mb::MODEL_DRAW_CALLS;
+    t.cave(&[
+        (Some(mul), log_stub_from(log, rv, 1, 1, 2)),
+        (Some(world), log_stub_from(log, rv, 2, 1, 0)),
+        (Some(update), log_stub(log, rv, 3, 0)),
+        (Some(clip), r14pp_clip_stub(seen, cv)),
+        (Some(tex), log_stub(log, rv, 5, 1)),
+        (Some(rd), log_stub(log, rdv, 6, 2)),
+        (Some(upd), log_stub(log, rv, 7, 4)),
+        (Some(gm), log_stub(log, rv, 8, 2)),
+        (Some(init), log_stub(log, rv, 9, 4)),
+        (Some(restore), log_stub(log, rv, 10, 0)),
+    ]);
+    let m = t.alloc(0x140);
+    let work = t.stack_scratch(0x100);
+    let vf = t.b.rebase(0x00c8_f974);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(cv, if rng.below(2) == 0 { 0 } else { rng.next() | 1 });
+        t.put(rdv, if rng.below(2) == 0 { 0 } else { rng.next() | 1 });
+        t.fill(m, 0x140, rng);
+        t.put(m + 0x10, rng.below(8));
+        t.put(m + model::obj::MATRIX, r6b_fine(rng, 0.5, 40.0));
+        for w in 0..8 {
+            t.put(m + 0x90 + 4 * w, r6b_fine(rng, -100.0, 100.0));
+        }
+        t.same_but(
+            "rcbgModelDraw",
+            &[(vf, 12)],
+            |o| o.eax(0x0092_8020, &[m]),
+            |o| mb::rcbg_model_draw(o, m, work, call),
+        );
+    }
+}
+
+/// Group P (r14) on the image.
+#[test]
+fn r14pp_model_draw_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_1001);
+    r14pp_cases(&mut t, &mut rng, 500);
+}
+
+/// Group P (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14pp_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_1002);
+    r14pp_cases(&mut t, &mut rng, 250);
+}
+
+// ---- field agent r14, group Q: reading a map file without blocking ----
+
+/// A CD library read `(file, buf, callback, request)` stand-in: the
+/// request's words `+0xc..+0x1c` (on the caller's stack) logged at `seen`,
+/// then a [`log_stub`] of the first three arguments.
+fn r14qq_read_stub(seen: u32, log: u32, rv: u32) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp + 0x18]; add esi, 0xc; mov edi, seen;
+    // mov ecx, 4; rep movsd; pop edi; pop esi
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x18, 0x83, 0xc6, 0x0c, 0xbf];
+    c.extend_from_slice(&seen.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 4, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e]);
+    c.extend(log_stub(log, rv, 1, 3));
+    c
+}
+
+/// Group Q (r14) on `t`: `yiObjReadNB` with kind and file -1 (the battle
+/// map flag set or not), an empty file or a read; the CD library a table
+/// of logged stand-ins, the resets, the allocator, `GetCDFileName_PC` and
+/// `sprintf` logged stand-ins.
+fn r14qq_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::{model, yi};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, sizev, bufv, cdv, seen) = (
+        t.alloc(0x800),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(0x10),
+    );
+    let resets = yi::bridge::OBJ_READ_RESETS;
+    let stubs = t.cave(&[
+        (None, r14qq_read_stub(seen, log, rv)),
+        (None, log_stub(log, rv, 2, 1)),
+        (None, log_stub(log, sizev, 3, 1)),
+        (Some(yi::GET_CD), log_stub(log, cdv, 4, 0)),
+        (Some(yi::GS_SYNC_PATH), log_stub(log, rv, 5, 2)),
+        (Some(resets[0]), log_stub(log, rv, 6, 0)),
+        (Some(resets[1]), log_stub(log, rv, 7, 0)),
+        (Some(resets[2]), log_stub(log, rv, 8, 0)),
+        (Some(resets[3]), log_stub(log, rv, 9, 0)),
+        (Some(model::SG_MEM_SET_ALIGN), log_stub(log, rv, 10, 1)),
+        (Some(model::USER_MALLOC), log_stub(log, bufv, 11, 1)),
+        (Some(yi::GET_CD_FILE_NAME_PC), log_stub(log, rv, 12, 1)),
+        (None, log_stub(log, rv, 13, 3)),
+    ]);
+    t.put(t.b.rebase(yi::CRT_SPRINTF), stubs[12]);
+    let cd = t.alloc(0x20);
+    t.put(cd, stubs[0]);
+    t.put(cd + 0x10, stubs[1]);
+    t.put(cd + 0x14, stubs[2]);
+    t.put(cdv, cd);
+    let work = t.stack_scratch(0x100);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(seen, [0u32; 4]);
+        t.put(sizev, if rng.below(4) == 0 { 0 } else { rng.next() | 1 });
+        t.put(bufv, rng.next());
+        yi::BTL_MAP_READ.set(&mut t.a, rng.below(2));
+        yi::BTL_MAP_READ.set(&mut t.b, t.a.read::<u32>(yi::BTL_MAP_READ.ptr(&t.a).addr));
+        let status = rng.next();
+        yi::RENDER_STATUS.set(&mut t.a, status);
+        yi::RENDER_STATUS.set(&mut t.b, status);
+        let none = rng.below(4) == 0;
+        let a = if none {
+            [
+                u32::MAX,
+                [u32::MAX, 0x7fff_ffff][rng.below(2) as usize],
+                rng.next(),
+            ]
+        } else {
+            [rng.below(0x40), rng.below(0x400), rng.next()]
+        };
+        t.same(
+            "yiObjReadNB",
+            |o| o.eax(0x0090_9a20, &a),
+            |m| yi::bridge::yi_obj_read_nb(m, a, work, call),
+        );
+    }
+}
+
+/// Group Q (r14) on the image.
+#[test]
+fn r14qq_obj_read_nb_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_1101);
+    r14qq_cases(&mut t, &mut rng, 400);
+}
+
+/// Group Q (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14qq_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_1102);
+    r14qq_cases(&mut t, &mut rng, 200);
+}
+
+// ---- field agent r14, group R: the sound driver's start ----
+
+/// A `FFXSifBindRpc(client, id, mode)` stand-in: the `n`th call (counted
+/// at `count`) returns `values[n]` and sets the client's server word
+/// (`+0x24`) to `servers[n]`.
+fn r14rr_bind_stub(count: u32, values: u32, servers: u32) -> Vec<u8> {
+    // mov ecx, [count]; inc dword [count]; mov eax, [esp + 4];
+    // mov edx, [servers + 4 ecx]; mov [eax + 0x24], edx;
+    // mov eax, [values + 4 ecx]; ret
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x14, 0x8d]);
+    c.extend_from_slice(&servers.to_le_bytes());
+    c.extend_from_slice(&[0x89, 0x50, 0x24, 0x8b, 0x04, 0x8d]);
+    c.extend_from_slice(&values.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Group R (r14) on `t`: `SqsInitIop_0081efd0` with binds failing at any
+/// step or the servers coming up after a few rounds (a table-driven bind
+/// stand-in), `FlushCache` and `Sqs_CallRpc` logged stand-ins.
+fn r14rr_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::nkz::{self, bridge as nb};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, count, values, servers) = (
+        t.alloc(0x400),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(0x100),
+        t.alloc(0x100),
+    );
+    let [bind, flush, call_rpc] = nb::INIT_IOP_CALLS;
+    t.cave(&[
+        (Some(bind), r14rr_bind_stub(count, values, servers)),
+        (Some(flush), log_stub(log, rv, 1, 1)),
+        (Some(call_rpc), log_stub(log, rv, 2, 1)),
+    ]);
+    let (send, recv) = (t.alloc(0x40), t.alloc(0x40));
+    nkz::SQS_RPC_SEND.set(&mut t.a, send);
+    nkz::SQS_RPC_SEND.set(&mut t.b, send);
+    nkz::SQS_RPC_RECV.set(&mut t.a, recv);
+    nkz::SQS_RPC_RECV.set(&mut t.b, recv);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(count, 0u32);
+        // a few rounds of three binds, a failure (negative) now and then,
+        // both servers up by the last
+        let rounds = rng.below(4) * 2 + 3;
+        for k in 0..0x40 {
+            let fail = rng.below(16) == 0;
+            t.put(
+                values + 4 * k,
+                if fail {
+                    rng.next() | 0x8000_0000
+                } else {
+                    rng.below(0x8000_0000)
+                },
+            );
+            let up = k >= rounds || rng.below(3) == 0;
+            t.put(servers + 4 * k, if up { rng.next() | 1 } else { 0 });
+        }
+        t.fill(recv, 0x40, rng);
+        t.fill(t.b.rebase(0x012f_4e00), 0x200, rng);
+        let mode = rng.next();
+        t.same(
+            "SqsInitIop_0081efd0",
+            |o| o.eax(0x0081_efd0, &[mode]),
+            |m| nb::sqs_init_iop(m, mode, call),
+        );
+    }
+}
+
+/// Group R (r14) on the image.
+#[test]
+fn r14rr_sqs_init_iop_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_1201);
+    r14rr_cases(&mut t, &mut rng, 400);
+}
+
+/// Group R (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14rr_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_1202);
+    r14rr_cases(&mut t, &mut rng, 200);
+}
+
+// ---- field agent r14, group S: an effect's main record ----
+
+/// Group S (r14) on `t`: `rcefMainInit` in battle or not (target lists of
+/// -1..8), with -1..5 parts, in a debug build or not; every callee a logged
+/// stand-in (`op_oef2_a_get` handing out prepared parts, the target list
+/// a prepared byte list).
+fn r14ss_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::task::bridge as tb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, blockv, battlev, listv, partv, dbgv) = (
+        t.alloc(0x1000),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+    );
+    let [
+        init_env,
+        alloc,
+        ctrl,
+        battle,
+        eff2,
+        sort,
+        set2,
+        a_get,
+        init_data,
+        dbg,
+        sw,
+        tex,
+        snd,
+    ] = tb::MAIN_INIT_CALLS;
+    let (list, count_set) = (t.alloc(0x10), t.alloc(4));
+    // MsGetTargetSortList(chr, &count, 0): logs chr, writes the count from
+    // `count_set` through the second argument, returns the list
+    let mut sort_stub = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d];
+    sort_stub.extend_from_slice(&count_set.to_le_bytes());
+    sort_stub.extend_from_slice(&[0x89, 0x08]);
+    sort_stub.extend(log_stub_from(log, listv, 6, 0, 1));
+    t.cave(&[
+        (Some(init_env), log_stub(log, rv, 1, 4)),
+        (Some(alloc), log_stub(log, blockv, 2, 3)),
+        (Some(ctrl), log_stub(log, rv, 3, 1)),
+        (Some(battle), log_stub(log, battlev, 4, 0)),
+        (Some(eff2), log_stub(log, rv, 5, 1)),
+        (Some(sort), sort_stub),
+        (Some(set2), log_stub(log, rv, 7, 1)),
+        (Some(a_get), log_stub(log, partv, 8, 3)),
+        (Some(init_data), log_stub(log, rv, 9, 3)),
+        (Some(dbg), log_stub(log, dbgv, 10, 0)),
+        (Some(sw), log_stub(log, dbgv, 11, 0)),
+        (Some(tex), log_stub(log, rv, 12, 4)),
+        (Some(snd), log_stub(log, rv, 13, 4)),
+    ]);
+    let (main, envp, env, block, part, data) = (
+        t.alloc(0x240),
+        t.alloc(4),
+        t.alloc(0x40),
+        t.alloc(0x40),
+        t.alloc(0x40),
+        t.alloc(0x40),
+    );
+    t.set(tb::PPP_ENV_SLOT, envp);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(envp, rng.next());
+        t.put(blockv, block);
+        t.put(battlev, rng.below(2));
+        t.put(listv, list);
+        t.fill(list, 0x10, rng);
+        t.put(count_set, rng.range(-1, 8));
+        t.put(partv, part);
+        t.fill(part, 0x40, rng);
+        t.fill(data, 0x40, rng);
+        t.put(dbgv, rng.below(2));
+        t.fill(main, 0x240, rng);
+        t.fill(env, 0x40, rng);
+        let n = rng.range(-1, 5).cast_unsigned();
+        let a = [
+            main,
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            n,
+            data,
+            env,
+        ];
+        t.same(
+            "rcefMainInit",
+            |o| o.eax(0x0092_5210, &a),
+            |m| tb::rcef_main_init(m, a, call),
+        );
+    }
+}
+
+/// Group S (r14) on the image.
+#[test]
+fn r14ss_main_init_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_1301);
+    r14ss_cases(&mut t, &mut rng, 400);
+}
+
+/// Group S (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14ss_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_1302);
+    r14ss_cases(&mut t, &mut rng, 200);
+}
+
+// ---- field agent r14, group T: special panels ----
+
+/// Group T (r14) on `t`: `abmap_para_get_special` for every special from
+/// 0 to 26 and a few far out of range, every callee a logged stand-in.
+fn r14tt_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::abmap::bridge as ab;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(0x400), t.alloc(4));
+    let [cheng, snd0, snd1, get, set_pos, lost] = ab::PARA_GET_SPECIAL_CALLS;
+    t.cave(&[
+        (Some(cheng), log_stub(log, rv, 1, 2)),
+        (Some(snd0), log_stub(log, rv, 2, 0)),
+        (Some(snd1), log_stub(log, rv, 3, 0)),
+        (Some(get), log_stub(log, rv, 4, 2)),
+        (Some(set_pos), log_stub(log, rv, 5, 2)),
+        (Some(lost), log_stub(log, rv, 6, 2)),
+    ]);
+    for k in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let special = match k % 4 {
+            0 | 1 => k / 4 % 27,
+            2 => rng.next() % 30,
+            _ => rng.next(),
+        };
+        let args = [special, rng.next(), rng.next()];
+        t.same(
+            "abmap_para_get_special",
+            |o| o.eax(0x00a5_cf30, &args),
+            |m| ab::abmap_para_get_special(m, args, call),
+        );
+    }
+}
+
+/// Group T (r14) on the image.
+#[test]
+fn r14tt_special_panels_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_1401);
+    r14tt_cases(&mut t, &mut rng, 400);
+}
+
+/// Group T (r14) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r14tt_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_1402);
+    r14tt_cases(&mut t, &mut rng, 200);
+}
+
+/// Group T (r14) on `t` over the grid `g`: `AbmapGetNodePanel` for random
+/// characters (0 to 9, so some past the flag byte) and nodes, the save
+/// menu's bits `0x8000`/`0xc000` set or not and the draw hook/state saved
+/// or not; every callee a stand-in (the part's arguments copied out).
+fn r14tu_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::{self, bridge as ab};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, menu_rv, part_args) = (t.alloc(0x200), t.alloc(4), t.alloc(4), t.alloc(0x40));
+    let menu = t.alloc(4);
+    t.put(menu_rv, menu);
+    let [store, para, achievements, after] = ab::GET_NODE_PANEL_CALLS;
+    t.cave(&[
+        (Some(abmap::MS_GET_SAVE_MENU), log_stub(log, menu_rv, 1, 0)),
+        (Some(abmap::PPP_CREATE_HEAP), log_stub(log, rv, 2, 3)),
+        (
+            Some(ab::CHENG_PANEL_CALLS[0]),
+            r13aa_args_stub(part_args, 11, rv),
+        ),
+        (Some(store), log_stub(log, rv, 3, 0)),
+        (Some(para), log_stub(log, rv, 4, 0)),
+        (Some(achievements), log_stub(log, rv, 5, 0)),
+        (Some(after), log_stub(log, rv, 6, 2)),
+    ]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(
+            menu,
+            [rng.next() & !0xc000, 0x8000, 0xc000, 0x4000][rng.below(4) as usize],
+        );
+        let (chr, node) = (rng.below(10), rng.below(64));
+        t.fill(g + 0x808 + 0x28 * node, 0x28, rng);
+        t.fill(g + 0x115a0, 0x110, rng);
+        for o in [0x115a8u32, 0x115ac, 0x115b0, 0x115b4] {
+            t.put(g + o, if rng.below(2) == 0 { 0 } else { rng.next() });
+        }
+        t.same(
+            "AbmapGetNodePanel",
+            |o| o.eax(0x00a4_8910, &[chr, node]),
+            |m| ab::abmap_get_node_panel(m, [chr, node], call),
+        );
+    }
+}
+
+/// Group T (r14) `AbmapGetNodePanel` on the image.
+#[test]
+fn r14tu_get_node_panel_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0014_1411);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r14tu_cases(&mut t, &mut rng, g, 300);
+}
+
+/// Group T (r14) `AbmapGetNodePanel` on the snapshot (`FFX_SNAPSHOT`),
+/// over a synthetic grid.
+#[test]
+fn r14tu_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0014_1412);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r14tu_cases(&mut t, &mut rng, g, 150);
+}

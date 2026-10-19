@@ -4800,7 +4800,186 @@ ported! {
         yi::bridge::yi_clut_green_render(&mut mem(), [a, b], &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `rcbgLayerMoveProc_0092ade0(layer, i)`: with no tween running, `eax`
+    /// is junk (0 here).
+    rcbgLayerMoveProc_0092ade0 @ 0x0092_ade0 => extern "C" fn shim_rcbg_layer_move_proc(l: u32, i: u32) -> u32 {
+        scene::bridge::rcbg_layer_move_proc(&mut mem(), [l, i], &mut |_, f, a| call_cdecl(f, a)).unwrap_or(0)
+    }
 
+    /// `rcbgLayerProc(layer, i)`.
+    rcbgLayerProc @ 0x0092_ad80 => extern "C" fn shim_rcbg_layer_proc(l: u32, i: u32) -> u32 {
+        scene::bridge::rcbg_layer_proc(&mut mem(), [l, i], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgSceneProcLayer(scene)`: with no layers, `eax` is junk (0 here).
+    rcbgSceneProcLayer @ 0x0092_0b00 => extern "C" fn shim_rcbg_scene_proc_layer(s: u32) -> u32 {
+        scene::bridge::rcbg_scene_proc_layer(&mut mem(), s, &mut |_, f, a| call_cdecl(f, a)).unwrap_or(0)
+    }
+
+    /// `rcbgSceneProc_00920aa0(scene)`.
+    rcbgSceneProc_00920aa0 @ 0x0092_0aa0 => extern "C" fn shim_rcbg_scene_proc(s: u32) -> u32 {
+        scene::bridge::rcbg_scene_proc(&mut mem(), s, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_SceneProc_009217b0()`.
+    Yn_SceneProc_009217b0 @ 0x0092_17b0 => extern "C" fn shim_yn_scene_proc() -> u32 {
+        scene::bridge::yn_scene_proc(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiDisp()`.
+    yiDisp @ 0x0090_8480 => extern "C" fn shim_yi_disp() -> u32 {
+        yi::bridge::yi_disp(&mut mem(), false, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiDisp2()`.
+    yiDisp2 @ 0x0090_84a0 => extern "C" fn shim_yi_disp2() -> u32 {
+        yi::bridge::yi_disp(&mut mem(), true, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiAnimMain()`.
+    yiAnimMain @ 0x0090_8320 => extern "C" fn shim_yi_anim_main() -> u32 {
+        yi::bridge::yi_anim_main(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiBattleMapReadNB(a, b)`.
+    yiBattleMapReadNB @ 0x0090_83a0 => extern "C" fn shim_yi_battle_map_read_nb(a: u32, b: u32) -> u32 {
+        yi::bridge::yi_read_nb(&mut mem(), yi::bridge::ReadNb::BattleMap, [a, b], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiFieldMapReadNB(a, b)`.
+    yiFieldMapReadNB @ 0x0090_8600 => extern "C" fn shim_yi_field_map_read_nb(a: u32, b: u32) -> u32 {
+        yi::bridge::yi_read_nb(&mut mem(), yi::bridge::ReadNb::FieldMap, [a, b], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiFieldObjReadNB(a, b)`.
+    yiFieldObjReadNB @ 0x0090_8630 => extern "C" fn shim_yi_field_obj_read_nb(a: u32, b: u32) -> u32 {
+        yi::bridge::yi_read_nb(&mut mem(), yi::bridge::ReadNb::FieldObj, [a, b], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiRectToOMD_maketex(a1, ..., a7)`.
+    yiRectToOMD_maketex @ 0x0090_9d70 => extern "C" fn shim_yi_rect_to_omd_maketex(a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32) -> u32 {
+        yi::bridge::yi_rect_to_omd_maketex(&mut mem(), [a1, a2, a3, a4, a5, a6, a7], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgGuideUpdate(guide)`.
+    rcbgGuideUpdate @ 0x0091_da10 => extern "C" fn shim_rcbg_guide_update(g: u32) -> u32 {
+        guide::bridge::rcbg_guide_update(&mut mem(), g, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_GuideMapProcEx(show)`.
+    Yn_GuideMapProcEx @ 0x0091_9d00 => extern "C" fn shim_yn_guide_map_proc_ex(show: u32) -> u32 {
+        guide::bridge::yn_guide_map_proc_ex(&mut mem(), show, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `abmap_get_panel(a, b)`.
+    abmap_get_panel @ 0x00a4_58a0 => extern "C" fn shim_abmap_get_panel(a: u32, b: u32) -> u32 {
+        abmap::bridge::abmap_get_panel(&mut mem(), [a, b], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_MapPartSetOffset_0091ab30(part, x, y)`.
+    Yn_MapPartSetOffset_0091ab30 @ 0x0091_ab30 => extern "C" fn shim_yn_map_part_set_offset(part: u32, x: u32, y: u32) -> u32 {
+        guide::bridge::yn_map_part_set_offset(&mut mem(), [part, x, y], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_MapPartSet44_0091abc0(part, x, y)`.
+    Yn_MapPartSet44_0091abc0 @ 0x0091_abc0 => extern "C" fn shim_yn_map_part_set44(part: u32, x: u32, y: u32) -> u32 {
+        guide::bridge::yn_map_part_set44(&mut mem(), [part, x, y], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapSetHelpMessage()`: the strings base in a frame.
+    AbmapSetHelpMessage @ 0x00a4_54a0 => extern "C" fn shim_abmap_set_help_message() -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        abmap::bridge::abmap_set_help_message(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapSetHelpMessage_copy_00a45500()`: as `AbmapSetHelpMessage`.
+    AbmapSetHelpMessage_copy_00a45500 @ 0x00a4_5500 => extern "C" fn shim_abmap_set_help_message_00a45500() -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        abmap::bridge::abmap_set_help_message(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapSetHelpMessage_copy_00a45440()`: as `AbmapSetHelpMessage`.
+    AbmapSetHelpMessage_copy_00a45440 @ 0x00a4_5440 => extern "C" fn shim_abmap_set_help_message_00a45440() -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        abmap::bridge::abmap_set_help_message(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcEffectTaskChrWait_00930460(task)`.
+    rcEffectTaskChrWait_00930460 @ 0x0093_0460 => extern "C" fn shim_rc_effect_task_chr_wait(t: u32) {
+        task::bridge::rc_effect_task_chr_wait(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcefChrNew(obj, id, mode, visible)`.
+    rcefChrNew @ 0x0093_0550 => extern "C" fn shim_rcef_chr_new(obj: u32, id: u32, mode: u32, visible: u32) -> u32 {
+        task::bridge::rcef_chr_new(&mut mem(), [obj, id, mode, visible], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefChrDraw_00930630(obj)`.
+    rcefChrDraw_00930630 @ 0x0093_0630 => extern "C" fn shim_rcef_chr_draw(obj: u32) -> u32 {
+        task::bridge::rcef_chr_draw(&mut mem(), obj, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_FieldProc_0091a8c0()`: without a Yn system `eax` is the
+    /// caller's (0 here).
+    Yn_FieldProc_0091a8c0 @ 0x0091_a8c0 => extern "C" fn shim_yn_field_proc() -> u32 {
+        scene::bridge::yn_field_proc(&mut mem(), &mut |_, f, a| call_cdecl(f, a)).unwrap_or(0)
+    }
+
+    /// `AbmapTryUseItem(chr, node, item)`: the strings out slot in a frame.
+    AbmapTryUseItem @ 0x00a5_bca0 => extern "C" fn shim_abmap_try_use_item(chr: u32, node: u32, item: u32) -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        abmap::bridge::abmap_try_use_item(&mut mem(), [chr, node, item], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapFillUseItemMenu(pad, kind)`: the record out slot in a frame.
+    AbmapFillUseItemMenu @ 0x00a4_5fd0 => extern "C" fn shim_abmap_fill_use_item_menu(pad: u32, kind: u32) {
+        let mut w = super::StackFrame::<1>::new();
+        abmap::bridge::abmap_fill_use_item_menu(&mut mem(), [pad, kind], w.at(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `yiSetRotTransDObj(i, rot, trans)`: the matrix in a frame.
+    yiSetRotTransDObj @ 0x0090_a750 => extern "C" fn shim_yi_set_rot_trans_dobj(i: u32, rot: u32, trans: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        yi::bridge::yi_set_rot_trans_dobj(&mut mem(), [i, rot, trans], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiSetRotTransGroup(group, rot, trans)`: the matrix in a frame.
+    yiSetRotTransGroup @ 0x0090_a830 => extern "C" fn shim_yi_set_rot_trans_group(group: u32, rot: u32, trans: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        yi::bridge::yi_set_rot_trans_group(&mut mem(), [group, rot, trans], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgModelDraw(model)`: the matrix and vertices in a frame.
+    rcbgModelDraw @ 0x0092_8020 => extern "C" fn shim_rcbg_model_draw(m: u32) -> u32 {
+        let mut w = super::StackFrame::<32>::new();
+        model::bridge::rcbg_model_draw(&mut mem(), m, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiObjReadNB(kind, n, arg)`: the read request in a frame.
+    yiObjReadNB @ 0x0090_9a20 => extern "C" fn shim_yi_obj_read_nb(kind: u32, n: u32, arg: u32) -> u32 {
+        let mut w = super::StackFrame::<7>::new();
+        yi::bridge::yi_obj_read_nb(&mut mem(), [kind, n, arg], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `SqsInitIop_0081efd0(mode)`.
+    SqsInitIop_0081efd0 @ 0x0081_efd0 => extern "C" fn shim_sqs_init_iop(mode: u32) -> u32 {
+        nkz::bridge::sqs_init_iop(&mut mem(), mode, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefMainInit(main, chr, oef, a, b, c, n, data, env)`.
+    rcefMainInit @ 0x0092_5210 => extern "C" fn shim_rcef_main_init(main: u32, chr: u32, oef: u32, a: u32, b: u32, c: u32, n: u32, data: u32, env: u32) -> u32 {
+        task::bridge::rcef_main_init(&mut mem(), [main, chr, oef, a, b, c, n, data, env], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `abmap_para_get_special(special, node, chr)`.
+    abmap_para_get_special @ 0x00a5_cf30 => extern "C" fn shim_abmap_para_get_special(special: u32, node: u32, chr: u32) -> u32 {
+        abmap::bridge::abmap_para_get_special(&mut mem(), [special, node, chr], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `AbmapGetNodePanel(chr, node)`.
+    AbmapGetNodePanel @ 0x00a4_8910 => extern "C" fn shim_abmap_get_node_panel(chr: u32, node: u32) -> u32 {
+        abmap::bridge::abmap_get_node_panel(&mut mem(), [chr, node], &mut |_, f, a| call_cdecl(f, a))
+    }
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet
