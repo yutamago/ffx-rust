@@ -22919,3 +22919,294 @@ fn r14tu_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r14tu_cases(&mut t, &mut rng, g, 150);
 }
+
+// ---- system agent r38: the Ke thread strip's start, a belt path's strip
+// and a thread's draw ----
+
+/// `KeThBP_MkStripStart_00765f80` cases over the strip state
+/// ([`r6b_state`]) and walks ([`r6b_case`]), its callees the originals
+/// (`setKeThPointColor` included).
+fn r38_start_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let work = t.stack_scratch(0x800);
+    let state = t.alloc(0x20);
+    let walk = t.b.rebase(0x0230_f9c8);
+    t.put(walk, state);
+    for k in 0..cases {
+        if !(real && k == 0) {
+            r6b_state(t, rng);
+        }
+        // the width scale's step, sometimes taking it below 0
+        let step = t.b.rebase(0x0230_fa08);
+        t.put(step, sixteenths(rng, -48, 16));
+        t.fill(state, 0x20, rng);
+        r6b_case(t, rng, state);
+        t.same(
+            &format!("KeThBP_MkStripStart_00765f80 {k}"),
+            |o| o.eax(0x0076_5f80, &[]),
+            |m| ffx_field::keth::ke_th_bp_mk_strip_start(m, work, call),
+        );
+    }
+}
+
+#[test]
+fn r38a_strip_start_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0038_a001);
+    r38_start_cases(&mut t, &mut rng, 300, false);
+}
+
+#[test]
+fn r38a_strip_start_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0038_a002);
+    r38_start_cases(&mut t, &mut rng, 150, true);
+}
+
+/// A belt path for `KeThBP_MkGifPk` at `bp` (20 segments): points with
+/// sixteenths (w sometimes 1 or 0), ages, the time, the head and the two
+/// counts (each 0..=6), forwards or backwards.
+fn r38_belt_path(t: &mut Twin, rng: &mut Xorshift, bp: u32) {
+    t.fill(bp, 0x40 + 0x30 * 20, rng);
+    for i in 0..21u32 {
+        let pt = bp + 0x10 + 0x30 * i;
+        for k in 0..3 {
+            t.put(pt + 4 * k, sixteenths(rng, -100 * 16, 100 * 16));
+        }
+        let w = match rng.below(8) {
+            0 => 0,
+            1 => 0x3f80_0000,
+            _ => sixteenths(rng, 4, 64),
+        };
+        t.put(pt + 0xc, w);
+        t.put(pt + 0x1c, sixteenths(rng, 0, 64));
+    }
+    t.put(bp + 0x30, sixteenths(rng, -32, 32));
+    for o in [0x34u32, 0x38, 0x3c] {
+        #[allow(clippy::cast_possible_truncation)]
+        t.put(bp + o, rng.below(7) as u16);
+    }
+    #[allow(clippy::cast_possible_truncation)]
+    let flags = (rng.next() & !0x1000) as u16 | if rng.below(2) == 0 { 0x1000 } else { 0 };
+    t.put(bp + 0x3e, flags);
+}
+
+/// `KeThBP_MkGifPk(d, instance)` cases: the draw `d` (projection, belt
+/// path, tag, template, widths, colour scale), its strip functions the
+/// originals, `debugDrawKeTh`, the render data lookup and
+/// `updateVFXKeThRenderData` logging stand-ins.
+fn r38_gif_pk_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32, real: bool) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(0x20 * 64 + 4);
+    let rv = t.alloc(4);
+    t.stub(Some(0x0063_8e00), 0x200, &log_stub(log, rv, 1, 2));
+    t.stub(Some(0x0064_53d0), 0x280, &log_stub(log, rv, 2, 2));
+    t.stub(Some(0x0076_6770), 0x300, &log_stub(log, rv, 3, 3));
+    let work = t.stack_scratch(0x800);
+    let d = t.alloc(0x30);
+    let projection = t.alloc(0x40);
+    let bp = t.alloc(0x40 + 0x30 * 20);
+    let template = t.alloc(0x40);
+    let widths = t.alloc(8);
+    let scale = t.alloc(0x10);
+    let walk = t.b.rebase(0x0230_f9c8);
+    let program = t.b.rebase(0x0230_fd20);
+    for k in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, if rng.below(4) == 0 { 0 } else { rng.next() });
+        if !(real && k == 0) {
+            r6b_state(t, rng);
+        }
+        let exact = rng.below(3) == 0;
+        r6a_matrix(t, rng, projection, exact);
+        r38_belt_path(t, rng, bp);
+        t.fill(template, 0x40, rng);
+        for (o, lo, hi) in [(0xcu32, 0, 32), (0x1c, -8, 8), (0x30, 0, 16), (0x38, 0, 8)] {
+            t.put(template + o, sixteenths(rng, lo, hi));
+        }
+        for i in 0..2 {
+            t.put(widths + 4 * i, sixteenths(rng, 0, 20 * 16));
+        }
+        for i in 0..4 {
+            t.put(scale + 4 * i, sixteenths(rng, -8, 24));
+        }
+        t.put(d, projection);
+        t.put(d + 4, bp);
+        t.put(d + 8, rng.next());
+        t.put(d + 0xc, template);
+        t.put(d + 0x10, widths);
+        t.put(d + 0x28, scale);
+        t.put(
+            program,
+            rng.next() % 5 + if rng.below(4) == 0 { 0x8000_0000 } else { 0 },
+        );
+        let instance = rng.below(4);
+        // the walk lives in each side's stack frame
+        t.same_but(
+            &format!("KeThBP_MkGifPk {k}"),
+            &[(walk, 4)],
+            |o| o.eax(0x0076_3100, &[d, instance]),
+            |m| ffx_field::keth::ke_th_bp_mk_gif_pk(m, d, instance, work, call),
+        );
+    }
+}
+
+#[test]
+fn r38b_gif_pk_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0038_b001);
+    r38_gif_pk_cases(&mut t, &mut rng, 300, false);
+}
+
+#[test]
+fn r38b_gif_pk_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0038_b002);
+    r38_gif_pk_cases(&mut t, &mut rng, 150, true);
+}
+
+/// A `KeThBP_MkGifPk` stand-in for the draw: logs (to `log`, `[count]`
+/// then 0x80 bytes an entry) the draw's words `+4..+0x10` and
+/// `+0x18..+0x28`, the instance and the 16 words of its matrix, and
+/// returns the word of `rvs` at the count.
+fn r38_gif_pk_stub(log: u32, rvs: u32) -> Vec<u8> {
+    // mov eax, [esp+4]; mov ecx, [log]; shl ecx, 7; lea ecx, [ecx+log+4]
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0xc1, 0xe1, 0x07, 0x8d, 0x89]);
+    c.extend_from_slice(&(log + 4).to_le_bytes());
+    let mut at = 0u8;
+    for src in [4u8, 8, 0xc, 0x10, 0x18, 0x1c, 0x20, 0x24, 0x28] {
+        // mov edx, [eax+src]; mov [ecx+at], edx
+        c.extend_from_slice(&[0x8b, 0x50, src, 0x89, 0x51, at]);
+        at += 4;
+    }
+    // mov edx, [esp+8]; mov [ecx+at], edx
+    c.extend_from_slice(&[0x8b, 0x54, 0x24, 0x08, 0x89, 0x51, at]);
+    at += 4;
+    // mov eax, [eax]: the matrix
+    c.extend_from_slice(&[0x8b, 0x00]);
+    for k in 0..16u8 {
+        c.extend_from_slice(&[0x8b, 0x50, 4 * k, 0x89, 0x51, at]);
+        at += 4;
+    }
+    // mov edx, [log]; mov eax, [rvs + edx*4]; inc dword [log]; ret
+    c.extend_from_slice(&[0x8b, 0x15]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x04, 0x95]);
+    c.extend_from_slice(&rvs.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// `KeThCp_Draw` cases: threads of 0..=4 belt paths, the screen and
+/// camera inverses the originals, `KeThBP_MkGifPk` and the render data
+/// calls logging stand-ins returning test words; skipped frames, with and
+/// without render data, the kept count's object the same or another.
+#[allow(clippy::too_many_lines)] // the set-up, then the cases
+fn r38_cp_draw_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(0x20 * 64 + 4);
+    let gif_log = t.alloc(0x80 * 8 + 4);
+    let rvs = t.alloc(0x40);
+    let gif_rvs = t.alloc(0x20);
+    t.stub(Some(0x0076_3100), 0x800, &r38_gif_pk_stub(gif_log, gif_rvs));
+    let stands: [(u32, u32); 8] = [
+        (0x0064_53d0, 2), // graphicVFXGetRenderDataByInstance
+        (0x0076_5f10, 3), // resetVFXKeThRenderData
+        (0x0064_5710, 3), // graphicVFXSetVisible
+        (0x0064_5600, 2), // graphicVFXPath3Update
+        (0x0071_2c30, 1), // calculateVFXSP_AlphaFunction
+        (0x0076_58b0, 4), // InitVFXKeThRenderData
+        (0x0064_5780, 2), // graphicVFXSetup
+        (0x0064_5280, 2), // graphicVFXDestroy
+    ];
+    for (i, &(f, n)) in (0u32..).zip(&stands) {
+        t.stub(
+            Some(f),
+            0x300 + 0x80 * i,
+            &log_stub(log, rvs + 4 * i, 10 + i, n),
+        );
+    }
+    let work = t.stack_scratch(0x800);
+    let thread = t.alloc(0x10);
+    let object = t.alloc(0x10);
+    let bps = t.alloc(0x40 * 4);
+    let m = t.alloc(0x40);
+    let screen = t.b.rebase(0x0230_fe60);
+    let ms_screen = t.b.rebase(0x0231_1480);
+    let ms_camera = t.b.rebase(0x0231_1440);
+    let skip = t.b.rebase(0x012f_b7d0);
+    let program = t.b.rebase(0x0230_fd20);
+    let (count, last) = (t.b.rebase(0x0230_5840), t.b.rebase(0x0230_5844));
+    for k in 0..cases {
+        t.put(log, 0u32);
+        t.put(gif_log, 0u32);
+        for i in 0..8 {
+            let v = if rng.below(3) == 0 { 0 } else { rng.next() };
+            t.put(rvs + 4 * i, v);
+            t.put(gif_rvs + 4 * i, rng.below(2));
+        }
+        let exact = rng.below(3) == 0;
+        r6a_matrix(t, rng, m, exact);
+        r6a_matrix(t, rng, screen, false);
+        r6a_matrix(t, rng, ms_screen, false);
+        r6a_matrix(t, rng, ms_camera, false);
+        // a list of 0..=4 belt paths
+        let n = rng.below(5);
+        t.put(thread, object);
+        t.put(object, if n == 0 { 0 } else { bps });
+        for i in 0..n {
+            let next = if i + 1 == n { 0 } else { bps + 0x40 * (i + 1) };
+            t.put(bps + 0x40 * i, next);
+        }
+        t.put(skip, u32::from(rng.below(6) == 0));
+        t.put(
+            program,
+            rng.next() % 5 + if rng.below(4) == 0 { 0x8000_0000 } else { 0 },
+        );
+        t.put(count, rng.below(6).wrapping_sub(1));
+        t.put(
+            last,
+            if rng.below(2) == 0 {
+                thread
+            } else {
+                rng.next()
+            },
+        );
+        let mut args = [0u32; 11];
+        for a in &mut args {
+            *a = rng.next();
+        }
+        args[0] = thread;
+        args[1] = m;
+        args[10] = rng.below(4);
+        t.same(
+            &format!("KeThCp_Draw {k}"),
+            |o| o.eax(0x0076_45e0, &args),
+            |mem| ffx_field::keth::ke_th_cp_draw(mem, args, work, call),
+        );
+    }
+}
+
+#[test]
+fn r38c_cp_draw_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0038_c001);
+    r38_cp_draw_cases(&mut t, &mut rng, 300);
+}
+
+#[test]
+fn r38c_cp_draw_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0038_c002);
+    r38_cp_draw_cases(&mut t, &mut rng, 150);
+}

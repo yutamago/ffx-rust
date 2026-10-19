@@ -331,4 +331,158 @@ pub mod bridge {
         }
         base
     }
+
+    /// `FFXVu0ApplyMatrix(dst, m, v)`.
+    pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
+    /// The matrix the Ke thing points go back through to world space
+    /// (`0x0230fb00`, `KeThCp_Draw` builds it).
+    pub const KETH_UNPROJECT: u32 = 0x0230_fb00;
+    /// The scratch [`set_keth_point_color`] needs: one vector.
+    pub const KETH_POINT_WORK: u32 = 0x10;
+    /// The colours' scale, 1/256 (a double constant at `0x00b50198`).
+    const OVER_256: f64 = 0.003_906_25;
+
+    /// `setKeThPointColor(pos, colour, alpha, table, i, row)` (`0x007665c0`):
+    /// the point `pos` times its w (xyz; w copied) goes through
+    /// [`KETH_UNPROJECT`] (`FFXVu0ApplyMatrix`, on the vector at `work`),
+    /// then into a row of the point tables: `table` 0 row `i` of the
+    /// points 0–5, 1 row `i + 10 row` of the points 12 on, 2 row `i` of the
+    /// points 6–11 (see [`KETH_POINT_TABLES`]; any other table stores
+    /// nothing). The colour row is the colour's rgb and `alpha` over 256.
+    /// Returns what the original leaves in `eax`: `colour`, or `table` when
+    /// it stores nothing. Callees (by `ffx.sym` address) through `call`.
+    pub fn set_keth_point_color<M: Mem>(
+        mem: &mut M,
+        [pos, colour, alpha, table, i, row]: [u32; 6],
+        work: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w: u32 = mem.read(pos + 0xc);
+        for k in 0..3 {
+            let v: u32 = mem.read(pos + 4 * k);
+            let w: u32 = mem.read(pos + 0xc);
+            mem.write(
+                work + 4 * k,
+                x87::store(x87::mul(x87::load(v), x87::load(w))),
+            );
+        }
+        mem.write(work + 0xc, x87::store(x87::load(w)));
+        let m = mem.rebase(KETH_UNPROJECT);
+        call(mem, APPLY_MATRIX, &[work, m, work]);
+        let (tables, slot) = match table {
+            0 => (KETH_POINT_TABLES[0], i),
+            1 => (KETH_POINT_TABLES[2], i.wrapping_add(row.wrapping_mul(10))),
+            2 => (KETH_POINT_TABLES[1], i),
+            _ => return table,
+        };
+        let slot = slot.wrapping_mul(16);
+        let positions = mem.rebase(tables.0).wrapping_add(slot);
+        for k in 0..4 {
+            let v: u32 = mem.read(work + 4 * k);
+            mem.write(positions.wrapping_add(4 * k), x87::store(x87::load(v)));
+        }
+        let colours = mem.rebase(tables.1).wrapping_add(slot);
+        for k in 0..3 {
+            let c: u32 = mem.read(colour + 4 * k);
+            let c = x87::store(x87::mul(x87::load(c), OVER_256));
+            mem.write(colours.wrapping_add(4 * k), c);
+        }
+        let a = x87::store(x87::mul(OVER_256, x87::load(alpha)));
+        mem.write(colours.wrapping_add(0xc), a);
+        colour
+    }
+
+    /// The Ke thing effects' texture count, which is also the geometry part
+    /// [`update_vfx_keth_render_data`] fills (`g_KeThTextureCount`).
+    pub const KETH_TEXTURE_COUNT: u32 = 0x0230_5840;
+    /// `graphicVFXGetRenderDataByInstance(lo, hi)`.
+    pub const GET_RENDER_DATA: u32 = 0x0064_53d0;
+    /// `graphicDynGeoMemManagerGetBufferForSegment(data, part, vertices, indices)`.
+    pub const GET_SEGMENT_BUFFER: u32 = 0x0063_fdb0;
+    /// `updateVFXKeThSetPoint(mesh, i)`.
+    pub const KETH_SET_POINT: u32 = 0x0076_69c0;
+
+    /// `updateVFXKeThRenderData(lo, hi, n)` (`0x00766770`): the Ke thing
+    /// strip of `n` points into part `p` (the texture count, read first) of
+    /// instance (`lo`, `hi`)'s render data (`graphicVFXGetRenderDataByInstance`),
+    /// when it has more than `p` parts (`+0x90`, signed). The part (`0x6c`
+    /// bytes each from the geometry `+0x94`) gets `10 n + 12` vertices
+    /// (`+4`) and `24 (n + 1)` indices (`+8`); with a buffer
+    /// (`graphicDynGeoMemManagerGetBufferForSegment(data, p, vertices,
+    /// indices)`) its index list (`+0x1c`, `u16`) becomes two fans of four
+    /// triangles (0, k+1, k+2 and 6, k+7, k+8) and eight triangles a point
+    /// (12 + 10 j + k, +1, +2); then `updateVFXKeThSetPoint` copies the
+    /// points 0–5, 12 on, and 6–11. Every pointer is read again before each
+    /// store, as the original does. Returns 1, or 0 without render data,
+    /// part or buffer.
+    pub fn update_vfx_keth_render_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        n: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let part: i32 = mem.read(mem.rebase(KETH_TEXTURE_COUNT));
+        let data = call(mem, GET_RENDER_DATA, &[lo, hi]);
+        if data == 0 || part >= mem.read::<i32>(data + 0x90) {
+            return 0;
+        }
+        let at = part.cast_unsigned().wrapping_mul(0x6c);
+        let mesh = |m: &M| m.read::<u32>(data + 0x94).wrapping_add(at);
+        let n32 = n.cast_unsigned();
+        mem.write(mesh(mem) + 4, n32.wrapping_mul(10).wrapping_add(12));
+        mem.write(mesh(mem) + 8, n32.wrapping_add(1).wrapping_mul(24));
+        let m = mesh(mem);
+        let (vertices, indices) = (mem.read::<u32>(m + 4), mem.read::<u32>(m + 8));
+        if call(
+            mem,
+            GET_SEGMENT_BUFFER,
+            &[data, part.cast_unsigned(), vertices, indices],
+        ) == 0
+        {
+            return 0;
+        }
+        let mut index = 0u32;
+        let mut put = |mem: &mut M, v: u32| {
+            let list: u32 = mem.read(mesh(mem) + 0x1c);
+            #[allow(clippy::cast_possible_truncation)] // a u16 index
+            mem.write(list.wrapping_add(2 * index), v as u16);
+            index += 1;
+        };
+        // the two end fans
+        for first in [0u32, 6] {
+            for k in 0..4 {
+                put(mem, first);
+                put(mem, first + k + 1);
+                put(mem, first + k + 2);
+            }
+        }
+        // eight triangles a point
+        for j in 0..if n > 0 { n32 } else { 0 } {
+            let base = j.wrapping_mul(10);
+            for k in 0..8 {
+                put(mem, base.wrapping_add(12 + k));
+                put(mem, base.wrapping_add(13 + k));
+                put(mem, base.wrapping_add(14 + k));
+            }
+        }
+        let mut set = |mem: &mut M, i: u32| {
+            let m = mesh(mem);
+            call(mem, KETH_SET_POINT, &[m, i]);
+        };
+        for i in 0..6 {
+            set(mem, i);
+        }
+        if n > 0 {
+            for j in 0..n32 {
+                for k in 0..10 {
+                    set(mem, j.wrapping_mul(10).wrapping_add(12 + k));
+                }
+            }
+        }
+        for i in 6..12 {
+            set(mem, i);
+        }
+        1
+    }
 }

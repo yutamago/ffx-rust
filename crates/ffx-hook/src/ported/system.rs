@@ -1384,6 +1384,14 @@ ported! {
     Vu0ScaleXyz_009dbd90 @ 0x009d_bd90 => extern "C" fn vu0_scale_xyz(out: u32, s: f32, v: u32) -> u32 {
         math::bridge::vu0_scale_xyz(&mut mem(), out, s, v)
     }
+    /// `MagicSqrt_009dbe10(src, dst)`.
+    MagicSqrt_009dbe10 @ 0x009d_be10 => extern "C" fn magic_sqrt(src: u32, dst: u32) -> u32 {
+        math::bridge::magic_sqrt(&mut mem(), src, dst)
+    }
+    /// `Kernel_LoadTables(kind)`.
+    Kernel_LoadTables @ 0x0078_1d40 => extern "C" fn kernel_load_tables(kind: u32) -> u32 {
+        files::bridge::kernel_load_tables(&mut mem(), kind, call_ptr)
+    }
     /// `TOSeqDraw(i, a, b)`.
     TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
         scene::bridge::draw(&mut mem(), i, a, b, call_sym)
@@ -1515,6 +1523,32 @@ ported! {
     /// `updateVFXKeThSetPoint(mesh, i)`.
     updateVFXKeThSetPoint @ 0x0076_69c0 => extern "C" fn update_vfx_keth_set_point(mesh: u32, i: i32) -> u32 {
         render::bridge::keth_set_point(&mut mem(), mesh, i)
+    }
+    /// `setKeThPointColor(pos, colour, alpha, table, i, row)`.
+    setKeThPointColor @ 0x0076_65c0 => extern "C" fn set_keth_point_color(pos: u32, colour: u32, alpha: u32, table: u32, i: u32, row: u32) -> u32 {
+        let mut w = super::StackFrame::<{ render::bridge::KETH_POINT_WORK as usize / 4 }>::new();
+        render::bridge::set_keth_point_color(&mut mem(), [pos, colour, alpha, table, i, row], w.at(), call_sym)
+    }
+    /// `updateVFXKeThRenderData(lo, hi, n)`.
+    updateVFXKeThRenderData @ 0x0076_6770 => extern "C" fn update_vfx_keth_render_data(lo: u32, hi: u32, n: i32) -> u32 {
+        render::bridge::update_vfx_keth_render_data(&mut mem(), lo, hi, n, call_sym)
+    }
+    /// `TOBtlCtrlStatusWin()`.
+    TOBtlCtrlStatusWin @ 0x0089_20d0 => extern "C" fn to_btl_ctrl_status_win() {
+        let mut w = super::StackFrame::<{ btl::bridge::CTRL_STATUS_WORK as usize / 4 }>::new();
+        btl::bridge::ctrl_status_win(&mut mem(), w.at(), call_sym);
+    }
+    /// `TOBtlCtrlAuronLimitWindow()`.
+    TOBtlCtrlAuronLimitWindow @ 0x0089_0f70 => extern "C" fn to_btl_ctrl_auron_limit_window() {
+        btl::bridge::ctrl_auron_limit_window(&mut mem(), call_sym);
+    }
+    /// `TOBtlCtrlTidusLimitWindow()`.
+    TOBtlCtrlTidusLimitWindow @ 0x0089_2320 => extern "C" fn to_btl_ctrl_tidus_limit_window() {
+        btl::bridge::ctrl_tidus_limit_window(&mut mem(), call_sym);
+    }
+    /// `TOBtlCtrlLuluLimitWindow()`.
+    TOBtlCtrlLuluLimitWindow @ 0x0089_1b80 => extern "C" fn to_btl_ctrl_lulu_limit_window() {
+        btl::bridge::ctrl_lulu_limit_window(&mut mem(), call_sym, fcall);
     }
     /// `TOSeqCtrl(i)`.
     TOSeqCtrl @ 0x008a_e0f0 => extern "C" fn to_seq_ctrl(i: i32) {
@@ -1658,6 +1692,26 @@ ported! {
         let mut frame = super::StackFrame::<3>::new();
         let scratch = frame.at();
         tolib::bridge::setup_message_window(&mut mem(), w, scratch, call_ptr, fcall)
+    }
+    /// `TOBtlDrawStatusWin()`.
+    TOBtlDrawStatusWin @ 0x0089_6450 => extern "C" fn to_btl_draw_status_win() {
+        btl::bridge::StatusWindow {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+        }
+        .draw();
+    }
+    /// `TOBtlDrawWeaponAbilityWindow(weapon, x, y)`.
+    TOBtlDrawWeaponAbilityWindow @ 0x008f_34c0 => extern "C" fn to_btl_draw_weapon_ability_window(weapon: u32, x: f32, y: f32) {
+        let mut w = super::StackFrame::<{ btl::bridge::WEAPON_ABILITY_WORK as usize / 4 }>::new();
+        btl::bridge::WeaponAbilityWindow {
+            mem: &mut mem(),
+            remap: |_: &mut _, y_axis: bool, v: f32| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call: call_sym,
+            work: w.at(),
+        }
+        .draw(weapon, x, y);
     }
     /// `TOBtlDrawCtbWindow(x, y)`.
     TOBtlDrawCtbWindow @ 0x008a_0590 => extern "C" fn to_btl_draw_ctb_window(x: i32, y: u32) -> u32 {

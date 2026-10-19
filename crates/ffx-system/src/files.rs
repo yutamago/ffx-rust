@@ -472,4 +472,123 @@ pub mod bridge {
         let read: u32 = mem.read(table);
         call(mem, read, &[name, buf, 0, 0])
     }
+
+    /// Calls the `ffx.sym` function `f` through `call` (absolute addresses).
+    fn rebased<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        f: u32,
+        args: &[u32],
+    ) -> u32 {
+        let f = mem.rebase(f);
+        call(mem, f, args)
+    }
+
+    /// One kernel table [`kernel_load_tables`] loads: its file name
+    /// (`.rdata`), where its pointer is kept, and where its size is kept
+    /// (`u16`; none for the monster magic tables, whose sizes stay whole).
+    pub struct KernelTable {
+        pub name: u32,
+        pub pointer: u32,
+        pub size: Option<u32>,
+    }
+
+    /// The tables by kind: `command`, `ply_rom`, `a_ability`, `item`,
+    /// `monmagic1`, `monmagic2`.
+    pub const KERNEL_TABLES: [KernelTable; 6] = [
+        KernelTable {
+            name: 0x00b5_47a8,
+            pointer: 0x0112_a92c,
+            size: Some(0x0112_a968),
+        },
+        KernelTable {
+            name: 0x00b5_47b0,
+            pointer: 0x0112_a938,
+            size: Some(0x0112_a96a),
+        },
+        KernelTable {
+            name: 0x00b5_47b8,
+            pointer: 0x0112_a944,
+            size: Some(0x0112_a970),
+        },
+        KernelTable {
+            name: 0x00b5_47c4,
+            pointer: 0x0112_a940,
+            size: Some(0x0112_a96e),
+        },
+        KernelTable {
+            name: 0x00b5_47cc,
+            pointer: 0x0112_a930,
+            size: None,
+        },
+        KernelTable {
+            name: 0x00b5_47d8,
+            pointer: 0x0112_a934,
+            size: None,
+        },
+    ];
+    /// The read buffer [`kernel_load_tables`] borrows (`0x25800` bytes).
+    pub const KERNEL_READ_BUFFER: u32 = 0x25800;
+
+    /// `Kernel_LoadTables(kind)` (`0x00781d40`): loads one kernel table
+    /// ([`KERNEL_TABLES`], by `kind` 0..=5; any other returns 0) into a
+    /// `user_malloc(0x25800)` buffer (`getExcelBinSize(name, buf)`, the
+    /// size kept as a `u16` but for the monster magic tables), allocates
+    /// the table once (`Sg_MemSetAlign(0x40)`, `user_malloc(size)`,
+    /// `MsMemCheckRegist(table, size)`), copies the buffer into it and
+    /// frees the buffer; returns -1. `ply_rom` with size 0 is read from the
+    /// CD instead (`GetCD()`'s first function, `(8, table, 0, 0)`). Callees
+    /// through `call`, by absolute address (`ffx.sym` ones rebased here).
+    pub fn kernel_load_tables<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let Some(table) = usize::try_from(kind)
+            .ok()
+            .and_then(|k| KERNEL_TABLES.get(k))
+        else {
+            return 0;
+        };
+        let call = &mut call;
+        let buffer = rebased(mem, call, 0x0068_7020, &[KERNEL_READ_BUFFER]);
+        let name = mem.rebase(table.name);
+        let read = rebased(mem, call, 0x0078_2df0, &[name, buffer]);
+        let pointer = mem.rebase(table.pointer);
+        // the size, as kept (u16) or whole
+        let size = match table.size {
+            Some(at) => {
+                #[allow(clippy::cast_possible_truncation)] // the u16 store
+                mem.write(mem.rebase(at), read as u16);
+                u32::from(mem.read::<u16>(mem.rebase(at)))
+            }
+            None => read,
+        };
+        if mem.read::<u32>(pointer) == 0 {
+            rebased(mem, call, 0x0083_c4a0, &[0x40]);
+            let p = rebased(mem, call, 0x0068_7020, &[size]);
+            mem.write(pointer, p);
+            rebased(mem, call, 0x0079_9f00, &[p, size]);
+        }
+        if kind == 1 && size == 0 {
+            // ply_rom from the CD
+            let cd = rebased(mem, call, 0x0076_d0d0, &[]);
+            let read_cd: u32 = mem.read(cd);
+            let p: u32 = mem.read(pointer);
+            call(mem, read_cd, &[8, p, 0, 0]);
+        } else {
+            let p: u32 = mem.read(pointer);
+            let mut chunk = [0u8; 0x1000];
+            let mut done = 0u32;
+            while done < size {
+                let n = (size - done).min(0x1000);
+                let part = &mut chunk[..n as usize];
+                mem.read_bytes(buffer.wrapping_add(done), part);
+                mem.write_bytes(p.wrapping_add(done), part);
+                done += n;
+            }
+        }
+        rebased(mem, call, 0x0068_7010, &[buffer]);
+        u32::MAX
+    }
 }

@@ -1734,3 +1734,55 @@ pushed as literals (no relocation entries), not addresses.
   `MsGetComData(0x30ff)`'s text for 0x30ff and measures it.
   `TOBtlDrawLibraRight(x)` draws the Libra target's name at `X2(915) +
   x`, `Y2(590)` (`TOMkpCrossExtMesFontLClut`, 0.64, 0.5).
+
+## Round 38
+
+- `setKeThPointColor(pos, colour, alpha, table, i, row)` (`0x007665c0`)
+  takes `pos.xyz * pos.w` (w kept), puts it through
+  `FFXVu0ApplyMatrix(0x0230fb00)` on its own stack and stores it and the
+  colour (`rgb` and `alpha` over 256, a double 2^-8 at `0x00b50198`) in
+  one row of `updateVFXKeThSetPoint`'s tables: table 0 row `i`
+  (`0x02305848`/`0x023058a8`), table 1 row `i + 10 row`
+  (`0x02305908`/`0x0230a908`), table 2 row `i` (`0x0230f908`/`0x0230f968`);
+  other tables store nothing. `eax` is `colour` (`table` for the others);
+  its one caller, `KeThBP_MkStripStart_00765f80`, uses table 0 only.
+- `updateVFXKeThRenderData(lo, hi, n)` (`0x00766770`) fills geometry part
+  `p` (the texture count `0x02305840`, read before the lookup; the part
+  must be below the render data's `+0x90`) for a strip of `n` points:
+  `10 n + 12` vertices, `24 (n + 1)` indices, a segment buffer, then the
+  `u16` index list (two fans `0, k+1, k+2` and `6, k+7, k+8` for k < 4,
+  then `12 + 10 j + k, +1, +2` for eight k per point) and
+  `updateVFXKeThSetPoint` for the points 0–5, 12 on, 6–11. The original
+  counts `n` down in its argument slot.
+- `TOBtlCtrlStatusWin()` (`0x008920d0`) keeps the battle status window's
+  mode (`0x0133d782`: 0 HP, 1 MP, 2 statuses, 3 limit gauges) from the
+  current command's `MsGetComData(..)+0x22` (bit 0 set: bits 1–2, a change
+  re-inits the window; else 3) and re-inits when the party changes. Each
+  row (`0x0133f7d8 + 0x90 k`) steps its shown HP (`+0xc` target, `+0x10`
+  shown, `+0x14` step, `+0x18` frames) and MP (`+0x24`..`+0x30`): a new
+  value sets the step to a tenth of the difference for 10 frames. The HP
+  colour `+0x19` is 2 for `MsCalcWeakLevel` 1 and 2, 0x53 for 3, else 0;
+  the shown limit bar `+0x38` rises by 6 a frame to `gauge * i16
+  0x025d0aa4 / max` (`+0x34`). The count `MsGetSaveWindow` trims is never
+  used.
+- The limit windows run one state a frame (`i16` states `0x0133d6f4`
+  Auron, `0x0133d734` Tidus, `0x0133d708` Lulu): open the scene, wait for
+  its end, start the timer, play, success (`bgood`, click 0x68) or time
+  up, stop the scenes, hand the result to `MsMenuLimitSet_007b0470` (kind
+  2 Auron, 0 Tidus, 5 Lulu with its level). Auron's input must match the
+  combination at `0x0133d704`; Tidus's marker bounces between the bar's
+  ends, a press inside the good part wins; Lulu's directions (stick past
+  0x60/0xa0, or the keyboard's two keys, reset after 0.5001 s idle) count
+  a press for each full circle of five either way, the gauge following
+  `level * width / 16`. Their `eax` is not read (`TOControlBtlWindow`).
+- `TOBtlDrawStatusWin()` (`0x00896450`) draws a row per party member at
+  `X2(1231)`, `Y2(835 + 52 k)` by the mode; `TOBtlDrawWeaponAbilityWindow
+  (weapon, x, y)` (`0x008f34c0`) a weapon's abilities in a net window as
+  wide as `X2(90)` plus the widest name (at least `X2(300)`, 80 on PC).
+- `Kernel_LoadTables(kind)` (`0x00781d40`) loads one of `command`,
+  `ply_rom`, `a_ability`, `item`, `monmagic1`, `monmagic2` through a
+  0x25800-byte buffer (`getExcelBinSize`); the first four keep their size
+  as a `u16`, the table is allocated once, `ply_rom` of size 0 comes from
+  the CD instead. `MagicSqrt_009dbe10(src, dst)` (`0x009dbe10`,
+  `g_MagicImports` slot 300) stores `sqrt(*src)` as `f32` and returns
+  `dst`.

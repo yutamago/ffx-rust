@@ -593,6 +593,18 @@ pub mod bridge {
         mem.write(out, r);
         r[3]
     }
+
+    /// `MagicSqrt_009dbe10(src, dst)` (`0x009dbe10`, `g_MagicImports` slot
+    /// 300): `*dst = sqrt(*src)` through `_CIsqrt`, stored as `f32` (a
+    /// negative source gives the indefinite NaN). Returns `dst` (the
+    /// original's `eax`).
+    pub fn magic_sqrt(mem: &mut impl Mem, src: u32, dst: u32) -> u32 {
+        use ffx_bridge::x87;
+        let v: u32 = mem.read(src);
+        let root = x87::store(x87::sqrt(x87::load(v)));
+        mem.write(dst, x87::store(x87::load(root)));
+        dst
+    }
 }
 
 #[cfg(test)]
