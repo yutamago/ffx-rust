@@ -3980,6 +3980,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapRunPart(part)`.
+    AbmapRunPart @ 0x00a4_5930 => extern "C" fn shim_abmap_run_part(part: u32) -> u32 {
+        abmap::bridge::abmap_run_part(&mut mem(), part, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapShowChangeMessage(kind, node)`: the two string bases in a
     /// frame.
     AbmapShowChangeMessage @ 0x00a5_a640 => extern "C" fn shim_abmap_show_change_message(kind: u32, node: u32) -> u32 {

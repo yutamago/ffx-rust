@@ -19522,3 +19522,73 @@ fn r13x_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13x_cases(&mut t, &mut rng, g, 150);
 }
+
+// ---- field agent r13, group Y: a sphere grid part's run ----
+
+/// Group Y (r13) on `t` over the grid `g`: `AbmapRunPart` for a part
+/// running or not, finishing or not; `pppSetMatrix`, `pppRunPart` and
+/// `pppAllFreePObject` are logged stand-ins, the matrix code runs as the
+/// original.
+fn r13y_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::{self, bridge as ab};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, slot) = (t.alloc(4 + 0x20 * 4), t.alloc(4), t.alloc(4));
+    let [_, set_matrix, _, run, free] = ab::RUN_PART_CALLS;
+    t.cave(&[
+        (Some(set_matrix), log_stub(log, rv, 1, 1)),
+        (Some(run), log_stub(log, rv, 2, 2)),
+        (Some(free), log_stub(log, rv, 3, 1)),
+    ]);
+    t.put(t.b.rebase(abmap::PPP_ENV_SLOT), slot);
+    let part = t.alloc(0x80);
+    let world = t.b.rebase(ab::PPP_MATRICES[3]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.below(2));
+        t.fill(part, 0x80, rng);
+        t.put(slot, rng.next());
+        if rng.below(4) == 0 {
+            t.put(part + 0x1e, 0u16);
+        }
+        for w in 0..32 {
+            t.put(g + 0x113a0 + 4 * w, r6b_fine(rng, -100.0, 100.0));
+        }
+        for w in 0..16 {
+            t.put(world + 4 * w, r6b_fine(rng, -2.0, 2.0));
+        }
+        let running = t.b.read::<u16>(part + 0x1e) != 0;
+        t.same(
+            "AbmapRunPart",
+            |o| {
+                let e = o.eax(0x00a4_5930, &[part]);
+                running.then_some(e)
+            },
+            |m| {
+                let e = ab::abmap_run_part(m, part, call);
+                running.then_some(e)
+            },
+        );
+    }
+}
+
+/// Group Y (r13) on the image.
+#[test]
+fn r13y_run_part_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_9101);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13y_cases(&mut t, &mut rng, g, 300);
+}
+
+/// Group Y (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13y_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_9102);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13y_cases(&mut t, &mut rng, g, 150);
+}

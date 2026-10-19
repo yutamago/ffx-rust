@@ -12844,6 +12844,7 @@
 0x00a458f0 function abmap_set_chr_pos         # fh v3:exact 0x00a458f0
 0x00a45910 function abmap_snd_chg_panel0      # fh v3:cg2 0xa45910
 0x00a45920 function abmap_snd_chg_panel1      # fh v3:cg2 0xa45920
+0x00a45930 function AbmapRunPart              # (part): a sphere grid part's draw hook (name ours): while +0x1e: g_pppScreenMatrix/g_pppCameraMatrix from g_Abmap +0x113a0/+0x11420, screen z (+0x38) += 29184.0, pppSetMatrix(part), view = camera * world (and its copy 0x0230fe20), pppRunPart(part, 0x30) in env 0x01a86034; finished: pppAllFreePObject, +0x1e = 0; eax 0 (the caller's when not running); ported (field r13, ffx_field::abmap)
 0x00a459e0 function AbmapFillCommandMenu      # (pad, kind): each MsMenuStatusNum entry of kind (byte 0) appended to menu pad (inlined addMenuPrim: +0x40 command id +2, +0x48 id - 0x3000, count +0x1e max 0x40, page flag +0x28); eiAbmStart: pads 3/2/4/5, kinds 0x40/0x41/0x45/0x44; name ours
 0x00a45e30 function AbmapDrawBar              # (x0, y0, x1, y1, look) -> eax: from 0x00a46120 (name ours): a UI element on the stack (corners as floats, uvs from .rdata by look, colours 0x80, +0x88/+0x90/+0x94 0, the rest unset), texture sprintf('%s/dat00|dat12/%s/14080_19.dds.phyre', menu/abmap, tex/D3D11) for layer +0x116a4 0/2 (others leave the path buffer unset), fiosUnifyFilename, graphicDrawUIElement(element, path, 1, 0, 0); g_PppPacketPos += 0x60; ported (field r13, ffx_field::abmap_draw)
 0x00a45fd0 function AbmapFillUseItemMenu      # fh v3:exact 0x00a45fd0 +AbmapFillUseItemMenu

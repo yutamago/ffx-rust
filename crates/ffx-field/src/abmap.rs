@@ -2387,6 +2387,69 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// `FFXVu0CopyMatrix`, `pppSetMatrix`, `FFXVu0MulMatrix`, `pppRunPart`
+    /// and `pppAllFreePObject` (`0x006ed360`, `0x00717410`, `0x006ed5c0`,
+    /// `0x00712250`, `0x00711f20`): [`abmap_run_part`]'s calls.
+    pub const RUN_PART_CALLS: [u32; 5] = [
+        0x006e_d360,
+        0x0071_7410,
+        0x006e_d5c0,
+        0x0071_2250,
+        0x0071_1f20,
+    ];
+    /// `g_pppScreenMatrix`, `g_pppCameraMatrix`, `g_pppViewMatrix`,
+    /// `g_pppWorldMatrix` and the view matrix copy (`0x0230fe20`).
+    pub const PPP_MATRICES: [u32; 5] = [
+        0x0230_fe60,
+        0x0230_ff60,
+        0x0230_ff20,
+        0x0230_ffa0,
+        0x0230_fe20,
+    ];
+    /// 29184.0 (`f64`, `.rdata`): added to the screen matrix's z.
+    pub const RUN_PART_DEPTH: u32 = 0x00b7_b6c8;
+
+    /// `AbmapRunPart(part)` (`0x00a45930`, a part's draw hook; name ours):
+    /// a running part (`+0x1e`) under the grid's matrices: the ppp screen
+    /// and camera matrices from `+0x113a0`/`+0x11420`, the screen's z
+    /// translation (`+0x38`) moved by 29184.0, `pppSetMatrix(part)`, the
+    /// view matrix (camera times world) and its copy, then
+    /// `pppRunPart(part, 0x30)` in the grid's ppp environment; a finished
+    /// part's objects are freed (`pppAllFreePObject`) and `+0x1e` cleared.
+    /// Returns 0 (the original leaves its caller's `eax` when the part is
+    /// not running).
+    pub fn abmap_run_part<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        part: u32,
+        call: &mut C,
+    ) -> u32 {
+        if mem.read::<u16>(part.wrapping_add(0x1e)) == 0 {
+            return 0;
+        }
+        let [copy, set_matrix, mul, run, free] = RUN_PART_CALLS.map(|f| mem.rebase(f));
+        let [screen, camera, view, world, view_copy] = PPP_MATRICES.map(|m| mem.rebase(m));
+        let g = ABMAP.get(mem);
+        call(mem, copy, &[screen, g.wrapping_add(0x113a0)]);
+        let g = ABMAP.get(mem);
+        call(mem, copy, &[camera, g.wrapping_add(0x11420)]);
+        let z = screen.wrapping_add(0x38);
+        let depth = mem.read::<f64>(mem.rebase(RUN_PART_DEPTH));
+        mem.write(z, x87::store(x87::load(mem.read::<u32>(z)) + depth));
+        call(mem, set_matrix, &[part]);
+        call(mem, mul, &[view, camera, world]);
+        call(mem, copy, &[view_copy, view]);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let slot = mem.read::<u32>(mem.rebase(super::PPP_ENV_SLOT));
+        mem.write(slot, env);
+        if call(mem, run, &[part, 0x30]) != 0 {
+            let slot = mem.read::<u32>(mem.rebase(super::PPP_ENV_SLOT));
+            mem.write(slot, env);
+            call(mem, free, &[part]);
+            mem.write(part.wrapping_add(0x1e), 0u16);
+        }
+        0
+    }
+
     /// `MsGetSaveConfigHiragana()` (`0x007851f0`) and `MsMenuGetText(group,
     /// id, kana)` (`0x0078fcf0`).
     pub const CHANGE_MESSAGE_CALLS: [u32; 2] = [0x0078_51f0, 0x0078_fcf0];
