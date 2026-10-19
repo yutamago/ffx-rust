@@ -19905,3 +19905,55 @@ fn r13cc_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_9d02);
     r13cc_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r13, group d: pmcom data queued ----
+
+/// Group d (r13) on `t`: `pppPmcomDataQueue_0075ff00` for every kind
+/// 0..14 and random ones, random blocks and queue indices (the ring's
+/// last entries included).
+fn r13dd_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::ke::{self, bridge as kb};
+    let data = t.alloc(0x40);
+    for _ in 0..cases {
+        for (_, slot) in kb::PMCOM_DATA_BLOCKS {
+            t.put(t.b.rebase(slot), rng.next());
+        }
+        t.put(t.b.rebase(kb::PMCOM_DATA_NEXT), rng.next());
+        let i = if rng.below(4) == 0 {
+            0xfe + rng.below(2)
+        } else {
+            rng.below(0x100)
+        };
+        ke::PMCOM_QUEUE_INDEX.set(&mut t.a, i);
+        ke::PMCOM_QUEUE_INDEX.set(&mut t.b, i);
+        let kind = if rng.below(5) == 0 {
+            rng.next()
+        } else {
+            rng.below(15)
+        };
+        t.put(data + 0x28, kind);
+        t.same(
+            "pppPmcomDataQueue_0075ff00",
+            |o| o.eax(0x0075_ff00, &[data]),
+            |m| kb::ppp_pmcom_data_queue(m, data),
+        );
+    }
+}
+
+/// Group d (r13) on the image.
+#[test]
+fn r13dd_pmcom_data_queue_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_9e01);
+    r13dd_cases(&mut t, &mut rng, 500);
+}
+
+/// Group d (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13dd_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_9e02);
+    r13dd_cases(&mut t, &mut rng, 250);
+}

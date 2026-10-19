@@ -3980,6 +3980,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `pppPmcomDataQueue_0075ff00(data)`.
+    pppPmcomDataQueue_0075ff00 @ 0x0075_ff00 => extern "C" fn shim_ppp_pmcom_data_queue(data: u32) -> u32 {
+        ke::bridge::ppp_pmcom_data_queue(&mut mem(), data)
+    }
     /// `yiLoadFieldParticle(textures, effects)`.
     yiLoadFieldParticle @ 0x0090_9190 => extern "C" fn shim_yi_load_field_particle(textures: u32, effects: u32) -> u32 {
         yi::bridge::yi_load_field_particle(&mut mem(), [textures, effects], &mut |_, f, a| call_cdecl(f, a))

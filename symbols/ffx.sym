@@ -4153,6 +4153,7 @@
 0x0075fcd0 function KeVu0SubVecXYZ               # layout: alphabetical run between KeVu0Sqrt and KeVu0VecLen (2 unnamed in the gap); Switch 0x71003074a0 KeVu0SubVecXYZ is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0075fda0 function KeVu0VecLen               # fh v3:exact 0x0075fe90
 0x0075fde0 function KeVu0VecLenXY             # fh v3:exact 0x0075fed0
+0x0075ff00 function pppPmcomDataQueue_0075ff00  # (data) -> eax: pppPmcomDataInit_00760080's pair (the same kinds, name ours): kind +0x28 4/8, 5/9, 6/10, 7, 11/12: KePmcomQueuePush(kind, block 0x00d4b820/b824/ca38/bc28/bc2c, unused 1 or 0), the slot then 0 (11/12: the word at 0x00d4be30); other kinds pushed inline as (kind, set_ptr32(0)); eax the block (11/12 that word); ported (field r13, ffx_field::ke)
 0x00760080 function pppPmcomDataInit_00760080    # (data): prints "pmcom_data_init", pppInitPmcomEnv, KePmcomAlloc blocks, copies the data (lmemcpy), identity/model matrices, pppExSendPacket; "PMCOM_DATA_TEXTURE ReadTextureInfo error" on a bad texture; own name from the message
 0x007605d0 function pppFreeAllEnvObjects      # (): for each of *0x00d4b4cc object blocks (0x80 from 0x00d4e390), *g_pppEnvSlot = the pmcom environment 0x010d4cfc and pppAllFreePObject(block); called by pppDataRcv, pppPartDraw; name ours
 0x00760610 function pppInitPmcomEnv           # (): 0x00d524a0 = 0x00d524a8, g_KePmcomNext = its base 0x00e524f0, pppInitEnv(0x010d4cfc, 0, 0x00fd24f0, 0x100000); name ours
