@@ -5921,7 +5921,7 @@
 0x00760c90	dead	unreachable from the entry point and every pointer table
 0x00760ce0	glue	GS/DMA packet writer (sceDmaSend, sceDmaSync, sceGsSyncPath; writes no game state): replaced by ffx-render
 0x00760e30	dead	unreachable from the entry point and every pointer table
-0x00760f30	logic	default (no rule: ported to be safe)
+0x00760f30	glue	reviewed: pppPacketStart_00760f30: ppp packet reset and the crosshair's GS depth readback through stubbed sceGsExecStoreImage (effects round 30)
 0x007610a0	dead	unreachable from the entry point and every pointer table
 0x007610e0	dead	unreachable from the entry point and every pointer table
 0x00761170	logic	default (no rule: ported to be safe)

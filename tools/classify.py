@@ -282,6 +282,7 @@ REVIEWED = {
     0x007f7360: ("glue", "opus_0706_acc_draw: sizes and mallocs a BrokenScreenEffect buffer (effects round 29)"),
     0x006a1a70: ("platform", "std::map erase (effects round 29)"),
     0x007e2ed0: ("platform", "op_file_read: sceOpen/Lseek/Read file IO (effects round 29)"),
+    0x00760f30: ("glue", "pppPacketStart_00760f30: ppp packet reset and the crosshair's GS depth readback through stubbed sceGsExecStoreImage (effects round 30)"),
     0x006e96c0: ("platform", "InitIggyHelper: Iggy UI (field round 14)"),
     0x006e93f0: ("platform", "IggyPlayerOpen: Iggy UI (field round 14)"),
     0x006e9250: ("platform", "IggyPlayerOpenScaled: Iggy UI (field round 14)"),

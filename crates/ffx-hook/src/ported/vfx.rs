@@ -2361,6 +2361,14 @@ ported! {
     op_mdc_mem_transfer @ 0x0080_3610 => extern "C" fn op_mdc_mem_transfer() {
         op::bridge::op_mdc_mem_transfer(&mut mem(), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `op_oef2_tex_clut_cue_loop()`.
+    op_oef2_tex_clut_cue_loop @ 0x007e_4720 => extern "C" fn op_oef2_tex_clut_cue_loop() {
+        op::bridge::op_oef2_tex_clut_cue_loop(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_oef2_tex_clut_cue_multi(oef, first, last, mask)`.
+    op_oef2_tex_clut_cue_multi @ 0x007e_4830 => extern "C" fn op_oef2_tex_clut_cue_multi(oef: u32, first: u32, last: u32, mask: u32) -> u32 {
+        op::bridge::op_oef2_tex_clut_cue_multi(&mut mem(), oef, first, last, mask, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu_et_unit(oef, group, part, id)`.
     opu_et_unit @ 0x007f_d7f0 => extern "C" fn opu_et_unit(oef: u32, group: u32, part: u32, id: u32) -> u32 {
         et::bridge::opu_et_unit(&mut mem(), oef, group, part, id, &mut |_, f, a| call_ptr(f, a))
