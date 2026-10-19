@@ -19644,3 +19644,86 @@ fn r13z_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_9a02);
     r13z_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group a: the move to another sphere grid node ----
+
+/// A stand-in that copies its `n` stack arguments to `buf` (each call
+/// overwrites the last) and returns the word at `rv`.
+fn r13aa_args_stub(buf: u32, n: u8, rv: u32) -> Vec<u8> {
+    let mut c = Vec::new();
+    for i in 0..n {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, 4 + 4 * i, 0xa3]);
+        c.extend_from_slice(&(buf + 4 * u32::from(i)).to_le_bytes());
+    }
+    c.push(0xa1);
+    c.extend_from_slice(&rv.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// Group a (r13) on `t` over the grid `g`: `abmap_cheng_panel` for random
+/// nodes, new and old kinds and size records, the save menu's bits `0x8000`/`0xc000`
+/// set or not and the draw hook/state saved or not; `MsGetSaveMenu`,
+/// `pppCreateHeap`, `AbmapStartPart` and `AbmapShowChangeMessage` are
+/// stand-ins (the part's arguments copied out).
+#[allow(clippy::cast_possible_truncation)] // random 16-bit words
+fn r13aa_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::{self, bridge as ab};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, menu_rv, part_args) = (t.alloc(0x200), t.alloc(4), t.alloc(4), t.alloc(0x40));
+    let menu = t.alloc(4);
+    t.put(menu_rv, menu);
+    let [start_part, show_message] = ab::CHENG_PANEL_CALLS;
+    t.cave(&[
+        (Some(abmap::MS_GET_SAVE_MENU), log_stub(log, menu_rv, 1, 0)),
+        (Some(abmap::PPP_CREATE_HEAP), log_stub(log, rv, 2, 3)),
+        (Some(start_part), r13aa_args_stub(part_args, 11, rv)),
+        (Some(show_message), log_stub(log, rv, 3, 2)),
+    ]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(
+            menu,
+            [rng.next() & !0xc000, 0x8000, 0xc000, 0x4000][rng.below(4) as usize],
+        );
+        let (kind, node) = (rng.below(350), rng.below(64));
+        let at = g + 0x808 + 0x28 * node;
+        t.fill(at, 0x28, rng);
+        t.put(at + 6, rng.below(350) as u16);
+        for r in 0..350 {
+            t.put(g + 0xf834 + 0x30 * r, rng.next() as u16);
+        }
+        t.fill(g + 0x11620, 0x48, rng);
+        for o in [0x115a8u32, 0x115ac, 0x115b0, 0x115b4] {
+            t.put(g + o, if rng.below(2) == 0 { 0 } else { rng.next() });
+        }
+        t.same(
+            "abmap_cheng_panel",
+            |o| o.eax(0x00a4_8740, &[kind, node]),
+            |m| ab::abmap_cheng_panel(m, [kind, node], call),
+        );
+    }
+}
+
+/// Group a (r13) on the image.
+#[test]
+fn r13aa_cheng_panel_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_9b01);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13aa_cases(&mut t, &mut rng, g, 300);
+}
+
+/// Group a (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13aa_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_9b02);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13aa_cases(&mut t, &mut rng, g, 150);
+}

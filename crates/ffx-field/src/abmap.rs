@@ -2387,6 +2387,91 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// `AbmapStartPart` (`0x00a5bad0`) and `AbmapShowChangeMessage`
+    /// (`0x00a5a640`), [`abmap_cheng_panel`]'s calls.
+    pub const CHENG_PANEL_CALLS: [u32; 2] = [0x00a5_bad0, 0x00a5_a640];
+    /// The node change's draw hook (`0x00a51700`) and state
+    /// (`AbmapState_ChangingNode`, `0x00a47d50`).
+    pub const CHENG_PANEL_HOOKS: [u32; 2] = [0x00a5_1700, 0x00a4_7d50];
+
+    /// `abmap_cheng_panel(kind, node)` (`0x00a48740`, Fahrenheit's name):
+    /// node `node`'s panel starts changing to kind `kind`. The ppp heap
+    /// is made again and the warp part starts on the node (kind 5 when the
+    /// save menu's bits `0xc000` are `0x8000`, else 3; scale 0.5).
+    /// `+0x11628` and `+0x1162c` are the node's current kind's and the new
+    /// kind's radii (half the size word at `+0xf834`, records of `0x30`,
+    /// plus 3.0, [`super::HOMING_MARGIN`]); `+0x11650` 0,
+    /// `+0x1164c`/`+0x1164e` `kind`/`node`, `AbmapShowChangeMessage(kind,
+    /// node)`, then the draw hook and state are saved and set as in
+    /// [`abmap_start_warp`]. The node is read through the grid pointer
+    /// taken before the calls. Returns the `eax` it ends with.
+    pub fn abmap_cheng_panel<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [kind, node]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let at = ABMAP
+            .get(mem)
+            .wrapping_add(layout::NODES)
+            .wrapping_add(node.wrapping_mul(layout::NODE_SIZE));
+        let f = mem.rebase(super::MS_GET_SAVE_MENU);
+        let menu = call(mem, f, &[]);
+        let f = mem.rebase(super::PPP_CREATE_HEAP);
+        let env = mem.rebase(super::ABMAP_PPP_ENV);
+        let heap = mem.rebase(super::ABMAP_PPP_HEAP);
+        call(mem, f, &[env, heap, 0x7d000]);
+        let h = x87::copy(mem.read::<u32>(mem.rebase(super::WARP_PART_SCALE)));
+        let look = if mem.read::<u32>(menu) & 0xc000 == 0x8000 {
+            5
+        } else {
+            3
+        };
+        let coord = |mem: &M, o: u32| f32::from(mem.read::<i16>(at.wrapping_add(o))).to_bits();
+        let (x, y) = (coord(mem, 0), coord(mem, 2));
+        let part = mem.rebase(super::ABMAP_WARP_PART);
+        let [start_part, show_message] = CHENG_PANEL_CALLS.map(|f| mem.rebase(f));
+        call(mem, start_part, &[part, look, x, y, 0, 0, 0, 0, h, h, h]);
+        let margin = super::HOMING_MARGIN.get(mem);
+        let radius = |mem: &M, kind: u32| {
+            let size = ABMAP
+                .get(mem)
+                .wrapping_add(layout::KIND_SIZE)
+                .wrapping_add(kind.wrapping_mul(layout::KIND_STRIDE));
+            x87::store(f64::from(mem.read::<i16>(size) >> 1) + margin)
+        };
+        let g = ABMAP.get(mem);
+        let old = u32::from(
+            mem.read::<u16>(
+                g.wrapping_add(layout::NODES + 6)
+                    .wrapping_add(node.wrapping_mul(layout::NODE_SIZE)),
+            ),
+        );
+        let v = radius(mem, old);
+        mem.write(g.wrapping_add(0x11628), v);
+        let v = radius(mem, kind);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x1162c), v);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11650), 0u8);
+        #[allow(clippy::cast_possible_truncation)] // 16-bit kind and node
+        {
+            mem.write(ABMAP.get(mem).wrapping_add(0x1164c), kind as u16);
+            mem.write(ABMAP.get(mem).wrapping_add(0x1164e), node as u16);
+        }
+        let mut eax = call(mem, show_message, &[kind, node]);
+        let [draw, state] = CHENG_PANEL_HOOKS.map(|f| mem.rebase(f));
+        for (saved, slot, hook) in [(0x115b4, 0x115ac, draw), (0x115b0, 0x115a8, state)] {
+            let g = ABMAP.get(mem);
+            if mem.read::<u32>(g.wrapping_add(saved)) == 0 {
+                let v = mem.read::<u32>(g.wrapping_add(slot));
+                mem.write(g.wrapping_add(saved), v);
+                let g = ABMAP.get(mem);
+                mem.write(g.wrapping_add(slot), hook);
+                eax = g;
+            }
+        }
+        eax
+    }
+
     /// `AbmapRangesOverlap(a, b, c, d)` (`0x00a57000`, floats).
     pub const RANGES_OVERLAP: u32 = 0x00a5_7000;
     /// `1e11` (`0x00b7b710`), `AbmapPlyTagRect`'s mark for a box that is
