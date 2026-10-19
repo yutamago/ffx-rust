@@ -180,6 +180,26 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, out: u32) {
         ALL,
         |m| cue::ms_get_damage_info(m, c, t, outs).cast_unsigned(),
     );
+    // both of the target's buffers for this command at times (round 27:
+    // MsGetDamageInfoNext sums them)
+    if c & 0xff < ACTORS && t & 0xff < ACTORS && rng.below(2) == 0 {
+        let id = b
+            .read(
+                ffx_battle::actor::bridge::ms_get_chr_command(b, c & 0xff) + 2,
+                1,
+            )
+            .unwrap()[0];
+        for o in [0x774, 0xa4c] {
+            let buf = ffx_battle::actor::bridge::ms_get_chr(b, t & 0xff) + o;
+            let head = [
+                u8::try_from(rng.below(4)).unwrap(),
+                u8::try_from(rng.below(6)).unwrap(),
+                u8::try_from(c & 0xff).unwrap(),
+                id,
+            ];
+            poke(a, b, buf, &head);
+        }
+    }
     twin(
         "MsGetDamageInfoNext",
         a,
