@@ -471,9 +471,18 @@ def code_graph(exe, secs, starts, ghidra_calls):
         h, th = holder(src), holder(t)
         if h is not None and th is not None and th != h:
             edges[h].add(t if t in extra or t in known else th)
-    # code Ghidra counted as part of the function before it may fall into it
+    # code Ghidra counted as part of the function before it may fall into
+    # it, unless int3 padding sits right before it: execution cannot run
+    # through an int3, so the code there is entered only by its own
+    # references (the jmp thunk 0x00885ed0 after the 1-byte SndClearWave)
+    def padded(t):
+        for _, va, blob, code in secs:
+            if code and va < t <= va + len(blob):
+                return blob[t - va - 1] == 0xCC
+        return False
+
     for i, t in enumerate(nodes):
-        if t in extra and i:
+        if t in extra and i and not padded(t):
             edges[nodes[i - 1]].add(t)
     direct = {a: set(ts) for a, ts in edges.items()}
     roots, code_edges = scan_pointers(secs, nodes)
