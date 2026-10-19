@@ -2248,6 +2248,38 @@ cleared buffer of its own (16 KB, on the hook's heap) and keeps every
 read and write outside the original's stack, so its output is the
 original's; the triangle paths are ported as written but cannot run.
 
+## Zoom, belt paths, the cross camera and the clip test (field agent r12)
+
+`AbmapCtrlZoom()` (`0x00a490c0`): with the pad's `+0x2700` negative and
+button bit 8 (`g_Abmap +0x1166e`) the zoom level `+0x115cc` steps 0..2
+(wrapping) and a 30-frame change `+0x115d0` starts from `+0x11350` (kept
+at `+0x115dc`) to `AbmapZoomScale()` (`+0x115e0`). Each frame the three
+zoom words `+0x11350..+0x11358` get `from + (to - from) sin[((30 - left)
+<< 14) / 30 >> 4 & 0xfff]`; a zoom at most 0.375 sets `+0x116b0` to -2
+unless negative, at least 0.375 to 2 unless positive (NaN neither, as
+`fcom` reports unordered), `+0x116ac` 0 becomes 1; the last frame sets
+`to` and `+0x115c7`. Returns `g_Abmap`, or the count when idle.
+
+`KeThCp_Update(t)` (`0x007649a0`) runs a thread's belt paths once a
+frame: the object `t[0]`'s flag bit 1 is taken (belt paths with `+0x3e`
+bit 8 also get bit 5); bit 9 copies `t[4]`/`t[5]` into the head segment
+and the one two on; `KeThBP_Update` gets a frame of a unit matrix, the
+path, `t[1]`, `t[3]`, `t[2]`; dead paths (bit 4) are unlinked, quit and
+pushed on `t[3] +4`. `0x02305840`/`0x02305844` keep the kind byte and the
+object, which is returned.
+
+`rcbgSceneSetMatrix_Cross()` (`0x00920e40`) is `rcbgSceneSetMatrix` for
+the map system's own view (`g_YnMapSystem[0] +8`, with its `+4` set)
+without `MsSetCameraMatrix`; it returns 1, or 0 when skipped.
+
+`rcbgClipVertex(m, verts, n)` (`0x0092af60`) puts `m` into the VU0
+registers `0x00c8f7d0..` and each vertex through it as macro code
+(`pppVu0MulX`/`MaddaY`/`MaddaZ` on the accumulator, `MaddW` into
+`0x00c8f820`). The clip code starts at 0x3f and keeps the bits of the
+clip flags `0x00c8facc` per vertex, stopping at 0; the PS2's `vclip` that
+set those flags is not in the PC code, so the flags are left over from
+elsewhere and the transform's result is unused.
+
 ## Floats
 
 The game thread's x87 unit runs at 53-bit precision (`0x027f`). A single

@@ -17590,3 +17590,52 @@ fn r12b_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0012_b002);
     r12b_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r12, group D: the clip test of a vertex list ----
+
+/// Group D (r12) on `t`: `rcbgClipVertex` with random matrices, 1 to 6
+/// vertices (or a count of 0 or less: one still runs) and clip flags
+/// (0, some of the six bits, all), the VU0 helpers the originals.
+fn r12d_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (m, verts) = (t.alloc(0x40), t.alloc(0x60));
+    let flags = t.b.rebase(0x00c8_facc);
+    for _ in 0..cases {
+        for i in 0..16 {
+            t.put(m + 4 * i, float_in(rng, -4, 4));
+        }
+        for i in 0..24 {
+            t.put(verts + 4 * i, float_in(rng, -100, 100));
+        }
+        let f = match rng.below(4) {
+            0 => 0,
+            1 => 0x3f,
+            _ => rng.next(),
+        };
+        t.put(flags, f);
+        let n = rng.range(-1, 7);
+        t.same(
+            "rcbgClipVertex",
+            |o| o.eax(0x0092_af60, &[m, verts, n.cast_unsigned()]),
+            |o| ffx_field::model::bridge::rcbg_clip_vertex(o, m, verts, n, call),
+        );
+    }
+}
+
+/// Group D (r12) on the image.
+#[test]
+fn r12d_clip_vertex_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0012_d001);
+    r12d_cases(&mut t, &mut rng, 400);
+}
+
+/// Group D (r12) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r12d_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0012_d002);
+    r12d_cases(&mut t, &mut rng, 200);
+}

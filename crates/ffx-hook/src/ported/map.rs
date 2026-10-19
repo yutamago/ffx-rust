@@ -1120,6 +1120,10 @@ ported! {
         let h = |v: u32| (v as u16).cast_signed();
         model::bridge::rcbg_trx_set_regs(&mut mem(), t, h(a), h(b), h(c), h(d), h(e), h(f), h(g))
     }
+    /// `rcbgClipVertex(m, verts, n)`.
+    rcbgClipVertex @ 0x0092_af60 => extern "C" fn rcbg_clip_vertex(m: u32, verts: u32, n: i32) -> u32 {
+        model::bridge::rcbg_clip_vertex(&mut mem(), m, verts, n, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcbgClipCodeAnd(out, a, b, c, d)`.
     rcbgClipCodeAnd @ 0x0092_aed0 => extern "C" fn rcbg_clip_code_and(out: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
         model::bridge::rcbg_clip_code_and(&mut mem(), out, a, b, c, d)

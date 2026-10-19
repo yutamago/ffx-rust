@@ -11970,7 +11970,7 @@
 0x0092ad20 function rcbgLayerInit             # fh v3:exact 0x0092ad20
 0x0092ad80 function rcbgLayerProc             # fh switch:bsim1.00 0x7100553930
 0x0092aed0 function rcbgClipCodeAnd              # (out, a, b, c, d) -> out: out = (a & c, b & d); rcbgClipVertex
-0x0092af60 function rcbgClipVertex            # fh v3:cg2 0x92af60
+0x0092af60 function rcbgClipVertex            # fh v3:cg2 0x92af60; (m, verts, n) -> code: m into VU0 0x00c8f7d0.., each vertex (at least one) into 0x00c8f810 through pppVu0MulX/MaddaY/MaddaZ/MaddW (acc 0x00c8f790, out 0x00c8f820); code 0x3f ANDed with the clip flags 0x00c8facc (copied to EE 0x00c8f538; no vclip sets them here) per vertex, 0 stops; ported (field r12, ffx_field::model)
 0x0092b0d0 function rcbgSetClipMatrix         # fh v3:exact 0x0092b0d0
 0x0092b140 function rcbgSetWorldMatrix        # fh v3:bsim1.00 0x0092b140
 0x0092b160 function rcbgUpdateMatrix          # fh v3:exact 0x0092b160
