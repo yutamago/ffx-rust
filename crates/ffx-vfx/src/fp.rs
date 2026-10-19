@@ -683,6 +683,16 @@ pub mod bridge {
         stat(1).set(mem, 0);
     }
 
+    /// `pppFpInitHeapDisplay(heap)` (`0x007299e0`): the heap display
+    /// redone (`op_heap_display_clear(0x601)`,
+    /// `op_heap_display_set_par(heap, 0x8603)`) and [`HEAP_DISPLAY_SET`]
+    /// set.
+    pub fn ppp_fp_init_heap_display(mem: &mut impl Mem, heap: u32) {
+        crate::op::bridge::op_heap_display_clear(mem, 0x601);
+        crate::op::bridge::op_heap_display_set_par(mem, heap, 0x8603);
+        HEAP_DISPLAY_SET.set(mem, 1);
+    }
+
     /// `g_FpPointLightCap` (`0x00cec1f8`): how many point lights
     /// `pppFpPointLightProc` has defined (`Sg_PLightDefine`); `pppFpFree`
     /// disposes of them.
@@ -760,6 +770,27 @@ pub mod bridge {
         id: u16,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
+        free_matching(mem, 0x64, id, call);
+    }
+
+    /// `pppFpGrpForceOff(group)` (`0x00729480`): [`ppp_fp_id_free`] for
+    /// every effect of the group (`u16 +0x66`).
+    pub fn ppp_fp_grp_force_off<M: Mem>(
+        mem: &mut M,
+        group: u16,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        free_matching(mem, 0x66, group, call);
+    }
+
+    /// The effects whose `u16` at `at` (in the entry) is `v`: objects
+    /// freed, counter -0x1000.
+    fn free_matching<M: Mem>(
+        mem: &mut M,
+        at: u32,
+        v: u16,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
         let table = DATA.get(mem);
         if table == 0 {
             return;
@@ -767,7 +798,7 @@ pub mod bridge {
         set_env(mem);
         let n = u32::from(mem.read::<u16>(table.wrapping_add(4)));
         for k in 0..n {
-            if mem.read::<u16>(table.wrapping_add(0x64 + 0x50 * k)) == id {
+            if mem.read::<u16>(table.wrapping_add(at + 0x50 * k)) == v {
                 let run = RUN.ptr(mem).at(k).addr;
                 free_objects(mem, run, call);
                 mem.write(run, NOT_STARTED);

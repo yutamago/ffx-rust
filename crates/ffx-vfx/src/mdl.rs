@@ -1367,4 +1367,27 @@ pub mod bridge {
         ];
         call(mem, g(mem, KE_MDL_DRAW), &args)
     }
+
+    /// `ppp_mdl_rev_random_flags_00740960(rec, out)` (`0x00740960`, from
+    /// `pppDrawMdlRevDraw`): `out[0]` = 1; then for each of the bytes
+    /// `rec +0xd..=+0xf` that is set, `op_random(1.0)` (through `fcall`)
+    /// and `out[1 + j]` = 1 when it came out above 0 (a NaN does not).
+    /// The other flags are left as they were.
+    pub fn ppp_mdl_rev_random_flags<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        out: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        mem.write(out, 1u8);
+        for j in 0..3 {
+            if mem.read::<u8>(rec.wrapping_add(0xd + j)) == 0 {
+                continue;
+            }
+            let r = fcall(mem, g(mem, 0x007e_6700), &[1.0f32.to_bits()]);
+            if r > 0.0 {
+                mem.write(out.wrapping_add(1 + j), 1u8);
+            }
+        }
+    }
 }

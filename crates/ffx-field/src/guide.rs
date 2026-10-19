@@ -488,6 +488,169 @@ pub mod bridge {
         mem.write(at, if on { f | 2 } else { f & !2 });
     }
 
+    /// `rcbgGuideUpdateEx(guide, show)` (`0x0091da80`).
+    pub const GUIDE_UPDATE_EX: u32 = 0x0091_da80;
+
+    /// `rcbgGuideUpdate(guide)` (`0x0091da10`): `rcbgGuideUpdateEx(guide,
+    /// 1)`, whose `eax` it returns.
+    pub fn rcbg_guide_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        guide: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(GUIDE_UPDATE_EX);
+        call(mem, f, &[guide, 1])
+    }
+
+    /// `Yn_GuideMapProcEx(show)` (`0x00919d00`): the Yn guide map
+    /// (`g_YnMapSystem +4`), when there is one, updated
+    /// (`rcbgGuideUpdateEx(guide, show)`, whose `eax` it returns); else 0.
+    pub fn yn_guide_map_proc_ex<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        show: u32,
+        call: &mut C,
+    ) -> u32 {
+        let s = YN_MAP_SYSTEM.get(mem);
+        if s == 0 {
+            return 0;
+        }
+        let guide = mem.read::<u32>(s.wrapping_add(system::GUIDE));
+        if guide == 0 {
+            return 0;
+        }
+        let f = mem.rebase(GUIDE_UPDATE_EX);
+        call(mem, f, &[guide, show])
+    }
+
+    /// The renderer's layer offset call `0x00639d40(i, dx, dy)` (render).
+    pub const MOVE_LAYER: u32 = 0x0063_9d40;
+    /// The map (`g_GraphicMapId` 0x17e) and layer (0x1a) whose y
+    /// [`yn_map_part_set_offset`] nudges.
+    pub const NUDGED_LAYER: [u32; 2] = [0x17e, 0x1a];
+    /// `g_GraphicMapId` (`0x01330844`).
+    pub const GRAPHIC_MAP_ID: u32 = 0x0133_0844;
+
+    /// The layer `part` of the Yn scene: the scene's layer array (`+8`)
+    /// plus `part` layers (the scene 0 without a system or map, as the
+    /// original reads it).
+    fn yn_layer_at(mem: &impl Mem, part: u32) -> u32 {
+        let c = yn_scene_or_zero(mem);
+        let layers = mem.read::<u32>(c.wrapping_add(scene::layout::LAYERS));
+        layers.wrapping_add(part.wrapping_mul(scene::layer::SIZE))
+    }
+
+    /// The Yn scene, or 0 without a system or map (not filtered for a null
+    /// scene, as the originals read it).
+    fn yn_scene_or_zero(mem: &impl Mem) -> u32 {
+        let s = YN_MAP_SYSTEM.get(mem);
+        let m = if s == 0 {
+            0
+        } else {
+            mem.read::<u32>(s + system::MAP)
+        };
+        if m == 0 {
+            0
+        } else {
+            mem.read::<u32>(m + map::SCENE)
+        }
+    }
+
+    /// `Yn_MapPartSetOffset_0091ab30(part, x, y)` (`0x0091ab30`, name ours):
+    /// for a `part` below the count ([`yn_map_part_count`]) the renderer's
+    /// layer moves by the change (`0x00639d40(part, x - +0xc, y - +0x10)`)
+    /// and the layer keeps the new `x`, `y` (`+0xc`, `+0x10`). On map 0x17e
+    /// layer 0x1a's `y` is nudged: one down when `(y - 0x54) / 18` (signed)
+    /// is 0, one up when it is 14. Returns the renderer call's `eax`, else
+    /// the count.
+    pub fn yn_map_part_set_offset<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [part, x, y]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let count = yn_map_part_count(mem);
+        if part.cast_signed() >= count {
+            return count.cast_unsigned();
+        }
+        let layer = yn_layer_at(mem, part);
+        let [map_id, nudged] = NUDGED_LAYER;
+        let mut y = y.cast_signed();
+        if part == nudged && mem.read::<u32>(mem.rebase(GRAPHIC_MAP_ID)) == map_id {
+            match (y.wrapping_sub(0x54)) / 18 {
+                0 => y = y.wrapping_sub(1),
+                14 => y = y.wrapping_add(1),
+                _ => {}
+            }
+        }
+        let y = y.cast_unsigned();
+        let dx = x.wrapping_sub(mem.read::<u32>(layer.wrapping_add(0xc)));
+        let dy = y.wrapping_sub(mem.read::<u32>(layer.wrapping_add(0x10)));
+        let f = mem.rebase(MOVE_LAYER);
+        let eax = call(mem, f, &[part, dx, dy]);
+        mem.write(layer.wrapping_add(0x10), y);
+        mem.write(layer.wrapping_add(0xc), x);
+        eax
+    }
+
+    /// `Yn_MapPartSet44_0091abc0(part, x, y)` (`0x0091abc0`): for a `part`
+    /// below the count, `x` and `y` (`f32`s) go to the layer's `+0x44` and
+    /// `+0x48` unless 0.0 (a NaN is stored), its first tween stops (`+0x78`,
+    /// `+0x74` = 0) and the renderer gets the position (`0x00639d60(part,
+    /// +4, +8, x, y)`, whose `eax` it returns); else the count.
+    pub fn yn_map_part_set44<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [part, x, y]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let count = yn_map_part_count(mem);
+        if part.cast_signed() >= count {
+            return count.cast_unsigned();
+        }
+        let layer = yn_layer_at(mem, part);
+        let (x, y) = (x87::copy(x), x87::copy(y));
+        // `fucom` with 0.0: only an equal compare skips the store
+        let zero = |v: u32| f32::from_bits(v) == 0.0;
+        if !zero(x) {
+            mem.write(layer.wrapping_add(0x44), x);
+        }
+        if !zero(y) {
+            mem.write(layer.wrapping_add(0x48), y);
+        }
+        mem.write(layer.wrapping_add(0x78), 0u32);
+        mem.write(layer.wrapping_add(0x74), 0u32);
+        let [a, b] = [4u32, 8].map(|o| mem.read::<u32>(layer.wrapping_add(o)));
+        let f = mem.rebase(crate::scene::bridge::SET_LAYER_POS);
+        call(mem, f, &[part, a, b, x, y])
+    }
+
+    /// `graphicChangeLayerAlpha(layer, alpha)` (`0x00639d20`, render).
+    pub const GRAPHIC_CHANGE_LAYER_ALPHA: u32 = 0x0063_9d20;
+
+    /// `Yn_MapPartSetAlpha_0091aa90(part, alpha)` (`0x0091aa90`, name
+    /// ours): for a `part` below the count ([`yn_map_part_count`]) the
+    /// layer array is taken (the scene's `+8`), the renderer's layer gets
+    /// the alpha (`graphicChangeLayerAlpha(part, alpha)`) and the layer's
+    /// `+0x43` byte the low byte of `alpha`. Returns the renderer call's
+    /// `eax`, else the count.
+    pub fn yn_map_part_set_alpha<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [part, alpha]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let count = yn_map_part_count(mem);
+        if part.cast_signed() >= count {
+            return count.cast_unsigned();
+        }
+        // a negative part with no scene reads address 8, as the original
+        let c = yn_scene(mem).unwrap_or(0);
+        let layers = mem.read::<u32>(c.wrapping_add(scene::layout::LAYERS));
+        let f = mem.rebase(GRAPHIC_CHANGE_LAYER_ALPHA);
+        let eax = call(mem, f, &[part, alpha]);
+        let at = layers.wrapping_add(part.wrapping_mul(scene::layer::SIZE));
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        mem.write(at.wrapping_add(0x43), alpha as u8);
+        eax
+    }
+
     /// `Yn_MapPartAnimeOn(part)` (`0x00919f90`).
     pub fn yn_map_part_anime_on(mem: &mut impl Mem, part: i32) {
         map_part_anime(mem, part, true);

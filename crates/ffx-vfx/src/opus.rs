@@ -2153,8 +2153,24 @@ pub mod bridge {
         if i < 0 {
             return 0;
         }
+        osu_take(mem, set, i, src, ptr, call)
+    }
+
+    /// Unit `i` of `set` (0x100 bytes from `+0x20`, `i` sign-extended) set
+    /// up from `src` ([`opus_osu_init`], [`opus_osu_copy`]), numbered
+    /// (`+0x1a` = the set's `u16 +2`, which counts on and wraps from 0xfff0
+    /// to 0x8000) and pointed at `ptr` (`+0` = `set_ptr32(ptr)`, through
+    /// `call`); returns the unit.
+    fn osu_take<M: Mem>(
+        mem: &mut M,
+        set: u32,
+        i: i16,
+        src: u32,
+        ptr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
         let units: u32 = mem.read(set.wrapping_add(0x20));
-        let unit = units.wrapping_add(u32::from(i.cast_unsigned()) << 8);
+        let unit = units.wrapping_add((i32::from(i) << 8).cast_unsigned());
         opus_osu_init(mem, unit);
         opus_osu_copy(mem, set, unit, src);
         let serial: u16 = mem.read(set.wrapping_add(2));
@@ -2167,6 +2183,325 @@ pub mod bridge {
         let p = call(mem, g(mem, 0x00a4_4700), &[ptr]);
         mem.write(unit, p);
         unit
+    }
+
+    /// `opu_osu_load_0080ae30(host, cmd)` (`0x0080ae30`): with `u16 host
+    /// +0x212` set, `host +0` = `host` only. Otherwise a unit of the host's
+    /// set (`host + 0x300`) on index list `(i16 host +0x21a >> 12) & 3`
+    /// ([`opus_prog_on`]; its result is used unchecked, so none free gives
+    /// unit -1, 0x100 bytes before the first) is set up from the host's
+    /// unit (`+0x220`) as [`opus_osu_set`] does, pointed at `cmd + i16 cmd
+    /// +2`, and `host +0` = the unit. The original also fills a record
+    /// named `LoadedByOPU_UNIT` for `yonExtMapRegister` (list 1), a bare
+    /// `ret` in this build: left out. Returns `cmd + 4`.
+    pub fn opu_osu_load<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u16>(host.wrapping_add(0x212)) != 0 {
+            mem.write(host, host);
+            return cmd.wrapping_add(4);
+        }
+        let src: u32 = mem.read(host.wrapping_add(0x220));
+        let list = u32::from((mem.read::<i16>(host.wrapping_add(0x21a)) >> 12).cast_unsigned() & 3);
+        let set = host.wrapping_add(0x300);
+        #[allow(clippy::cast_possible_truncation)] // the u16 index in ax
+        let i = (opus_prog_on(mem, set, list) as u16).cast_signed();
+        let off = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let unit = osu_take(mem, set, i, src, cmd.wrapping_add(off), call);
+        mem.write(host, unit);
+        cmd.wrapping_add(4)
+    }
+
+    /// `opus_hd_ptr_get_00803200(base, i)` (`0x00803200`): `get_ptr32` of
+    /// the word at `base + 16 (i + 1)` (through `call`).
+    pub fn opus_hd_ptr_get<M: Mem>(
+        mem: &mut M,
+        base: u32,
+        i: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w: u32 = mem.read(base.wrapping_add(i.wrapping_add(1).wrapping_mul(16)));
+        call(mem, g(mem, 0x00a4_4650), &[w])
+    }
+
+    /// `op_part_init_check(part)` (`0x0080b650`): 1 when `get_ptr32(part
+    /// +0x14)` is at least 0x100000 (a real pointer), else 0.
+    pub fn op_part_init_check<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w: u32 = mem.read(part.wrapping_add(0x14));
+        u32::from(call(mem, g(mem, 0x00a4_4650), &[w]) >= 0x10_0000)
+    }
+
+    /// `g_OpusFfxFocus` (`0x011a0068`) and the focus it replaced
+    /// (`0x011a0069`): `opus_ffxfocus_off` turns `Sg_EnFocus` off and
+    /// keeps the old state once, `opus_ffxfocus_free` puts it back.
+    pub const FFX_FOCUS: Global<[u8; 2]> = Global::new(0x011a_0068);
+
+    /// `opus_ffxfocus_off()` (`0x0080abe0`): `Sg_EnFocus(0)`; the first time
+    /// (no focus kept) its old state is kept. Returns `Sg_EnFocus`'s eax.
+    pub fn opus_ffxfocus_off<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = call(mem, g(mem, 0x0082_cb60), &[0]);
+        if FFX_FOCUS.get(mem)[0] == 0 {
+            FFX_FOCUS.set(mem, [1, r.to_le_bytes()[0]]);
+        }
+        r
+    }
+
+    /// `opus_ffxfocus_free()` (`0x0080abb0`): with a focus kept, it is put
+    /// back (`Sg_EnFocus(old)`) and no longer kept.
+    pub fn opus_ffxfocus_free<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let [kept, old] = FFX_FOCUS.get(mem);
+        if kept != 0 {
+            call(mem, g(mem, 0x0082_cb60), &[u32::from(old)]);
+            FFX_FOCUS.set(mem, [0, old]);
+        }
+    }
+
+    /// `opus_chr_org_set_008053a0(chr, m)` (`0x008053a0`): for a
+    /// character, `Ch_SetOrgMatrix(chr, m)` and `Ch_EnClip(chr, 0)`
+    /// (through `call`).
+    pub fn opus_chr_org_set<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if chr != 0 {
+            call(mem, g(mem, 0x0082_b3e0), &[chr, m]);
+            call(mem, g(mem, 0x0082_aa30), &[chr, 0]);
+        }
+    }
+
+    /// `opus_mdc_rec_init_00813950(rec, n, a, b)` (`0x00813950`): a record
+    /// head: `u16 +0` 0, `+2` `n`, `+4` `a`, `+6` `b`, `+8` 0; `+0x18` =
+    /// `set_ptr32(rec + 0x20)`, `+0x1c` = `set_ptr32(get_ptr32(+0x18) + 32
+    /// n)` (through `call`). Returns the last `set_ptr32`'s eax.
+    pub fn opus_mdc_rec_init<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        n: u32,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the u16 stores
+        let head = [0u16, n as u16, a as u16, b as u16, 0];
+        mem.write(rec, head);
+        let set = g(mem, 0x00a4_4700);
+        let first = call(mem, set, &[rec.wrapping_add(0x20)]);
+        mem.write(rec.wrapping_add(0x18), first);
+        let p = call(mem, g(mem, 0x00a4_4650), &[first]);
+        let end = call(mem, set, &[p.wrapping_add(n << 5)]);
+        mem.write(rec.wrapping_add(0x1c), end);
+        end
+    }
+
+    /// `opu_mdc_0x1000_hide(_)` (`0x00804150`): by the magic file
+    /// (`MagicFile_GetMagicId`, through `call`): 0 for 0x280, 0x1e5, 0x2c6,
+    /// 0x250 and 0x276..=0x27d; 3 for the nine ids listed at `0x00b587e0`
+    /// (`i16`); else 1.
+    pub fn opu_mdc_0x1000_hide<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = call(mem, g(mem, 0x009d_a3b0), &[]);
+        if matches!(id, 0x280 | 0x1e5 | 0x2c6 | 0x250) || id.wrapping_sub(0x276) <= 7 {
+            return 0;
+        }
+        let list: [i16; 9] = mem.read(g(mem, 0x00b5_87e0));
+        if list.iter().any(|&x| i32::from(x).cast_unsigned() == id) {
+            3
+        } else {
+            1
+        }
+    }
+
+    /// `opus_map_rgba_free()` (`0x0080ac00`): the map's look back to
+    /// normal: `yiRenderDisable(4)`, `yiSetColorScale` of (1, 1, 1, 1) (a
+    /// local vector at `frame`, 16 bytes), and with a back colour kept
+    /// (`0x011a006f`) `yiSetBackColor(0x011a0070)` and the flag cleared;
+    /// the colour scale at `0x00c48e64` 1.0 four times. Callees through
+    /// `call`.
+    pub fn opus_map_rgba_free<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let one = 1.0f32.to_bits();
+        mem.write(frame, [one; 4]);
+        call(mem, g(mem, 0x0090_9e10), &[4]);
+        call(mem, g(mem, 0x0090_a270), &[frame]);
+        let kept = g(mem, 0x011a_006f);
+        if mem.read::<u8>(kept) != 0 {
+            call(mem, g(mem, 0x0090_a040), &[g(mem, 0x011a_0070)]);
+            mem.write(kept, 0u8);
+        }
+        mem.write(g(mem, 0x00c4_8e64), [one; 4]);
+    }
+
+    /// `opus_copy_buffer_event_00808a60()` (`0x00808a60`): in the two
+    /// magic files 0x11b and 0x1a6 (`MagicFile_GetMagicId`), a copy-buffer
+    /// event (`graphicVFXAddCopyBufferEventWithClearRGB(0, 1)`), through
+    /// `call`.
+    pub fn opus_copy_buffer_event<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let id = g(mem, 0x009d_a3b0);
+        if call(mem, id, &[]) == 0x11b || call(mem, id, &[]) == 0x1a6 {
+            call(mem, g(mem, 0x0064_4c40), &[0, 1]);
+        }
+    }
+
+    /// `opus_all_clut_dispose()` (`0x00808a20`): `Ch_ClutDispose` of the
+    /// first word of each of the first 0xd0 character records that has one
+    /// (through `call`).
+    pub fn opus_all_clut_dispose<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        for i in 0..0xd0 {
+            let h: u32 = mem.read(crate::et::bridge::CHR.ptr(mem).at(i).addr);
+            if h != 0 {
+                call(mem, g(mem, 0x0083_c810), &[h]);
+            }
+        }
+    }
+
+    /// `opus_clip_on_all_in_battle()` (`0x00800be0`): in battle
+    /// (`MsBattleChrStart()` nonzero) every handle of the first 32 in
+    /// `g_EtChrHandles` gets `Ch_EnClip(h, 1)` (through `call`).
+    pub fn opus_clip_on_all_in_battle<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if call(mem, g(mem, 0x0078_0cb0), &[]) == 0 {
+            return;
+        }
+        for i in 0..0x20 {
+            let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(i).get(mem);
+            if h != 0 {
+                call(mem, g(mem, 0x0082_aa30), &[h, 1]);
+            }
+        }
+    }
+
+    /// `opus_chr_thickness_00800c90(chr, battle)` (`0x00800c90`): in
+    /// battle `MsGetChrWidth(chr)`, else `Ch_GetThickness` of its handle in
+    /// `g_EtChrHandles` (through `fcall`), rounded to `f32`.
+    pub fn opus_chr_thickness<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        battle: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> f32 {
+        let v = if battle == 0 {
+            let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+            fcall(mem, g(mem, 0x0082_ad70), &[h])
+        } else {
+            fcall(mem, g(mem, 0x0079_5a20), &[chr])
+        };
+        f32::from_bits(ffx_bridge::x87::store(v))
+    }
+
+    /// `opus_ffxdeg_to_normaldeg(x)` (`0x0081b170`): an angle in radians
+    /// to the game's 4096-step units, flipped: `n = ftol(x * k1 / k2)`
+    /// (`f64` constants at `0x00b51bc0` and `0x00b582f0`, rounded to `f32`
+    /// first), then `(0x400 - n) & 0xfff` as a float.
+    pub fn opus_ffxdeg_to_normaldeg(mem: &impl Mem, x: f32) -> f32 {
+        use ffx_bridge::x87::{div, load, mul, store};
+        let k1: f64 = mem.read(g(mem, 0x00b5_1bc0));
+        let k2: f64 = mem.read(g(mem, 0x00b5_82f0));
+        let v = store(div(mul(load(x.to_bits()), k1), k2));
+        let n = ffx_bridge::x87::ftol(mem, load(v));
+        #[allow(clippy::cast_precision_loss)] // 0..0x1000: exact
+        let r = (0x400u32.wrapping_sub(n) & 0xfff) as f32;
+        r
+    }
+
+    /// `opus_normaldeg_to_ffxdeg_0081b230(x)` (`0x0081b230`): the way
+    /// back: `(0x400 - ftol(x)) & 0xfff` as a float times the `f64`
+    /// constants at `0x00b582f0` and `0x00b58590`, rounded to `f32`.
+    pub fn opus_normaldeg_to_ffxdeg(mem: &impl Mem, x: f32) -> f32 {
+        use ffx_bridge::x87::{load, mul, store};
+        let k1: f64 = mem.read(g(mem, 0x00b5_82f0));
+        let k2: f64 = mem.read(g(mem, 0x00b5_8590));
+        let n = ffx_bridge::x87::ftol(mem, load(x.to_bits()));
+        #[allow(clippy::cast_precision_loss)] // 0..0x1000: exact
+        let r = f64::from((0x400u32.wrapping_sub(n) & 0xfff) as f32);
+        f32::from_bits(store(mul(mul(r, k1), k2)))
+    }
+
+    /// `opus_set_chr_dirf(chr, dir)` (`0x0081b270`): in battle
+    /// `MsSetChrDirF(chr, dir)`; elsewhere `Ch_SetDirF` on its handle in
+    /// `g_EtChrHandles`, when it has one (0 otherwise). Through `call`;
+    /// returns the callee's eax.
+    pub fn opus_set_chr_dirf<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        dir: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let dir = crate::x87::load(dir);
+        if call(mem, g(mem, 0x0078_0cb0), &[]) != 0 {
+            return call(mem, g(mem, 0x0079_5e20), &[chr, dir]);
+        }
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        if h == 0 {
+            return 0;
+        }
+        call(mem, g(mem, 0x0082_b1b0), &[h, dir])
+    }
+
+    /// `opus_set_chr_pos(chr, pos)` (`0x0081b2b0`): in battle
+    /// `MsSetChrPos(chr, pos)`; elsewhere `Ch_SetPos3(h, x, y, z)` on its
+    /// handle, when it has one. Through `call`; returns the callee's eax
+    /// (the handle, 0, without one).
+    pub fn opus_set_chr_pos<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        pos: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if call(mem, g(mem, 0x0078_0cb0), &[]) != 0 {
+            return call(mem, g(mem, 0x0079_6150), &[chr, pos]);
+        }
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        if h == 0 {
+            return chr;
+        }
+        let xyz: [u32; 3] = mem.read(pos);
+        let [x, y, z] = xyz.map(crate::x87::load);
+        call(mem, g(mem, 0x0082_b480), &[h, x, y, z])
+    }
+
+    /// `opus_encount4_size_get(oef, first, n)` (`0x007f8e30`): the packet
+    /// size of `n` encounter parts: `(7 n + 0x11 + the sum of i16 +0x12 of
+    /// op_oef2_a_get(oef, 4, first + i)) * 16`.
+    pub fn opus_encount4_size_get(mem: &impl Mem, oef: u32, first: u32, n: i32) -> u32 {
+        let mut sum = 0u32;
+        for i in 0..n.max(0).cast_unsigned() {
+            let p = crate::op::bridge::op_oef2_a_get(mem, oef, 4, first.wrapping_add(i));
+            sum =
+                sum.wrapping_add(i32::from(mem.read::<i16>(p.wrapping_add(0x12))).cast_unsigned());
+        }
+        n.cast_unsigned()
+            .wrapping_mul(7)
+            .wrapping_add(sum)
+            .wrapping_add(0x11)
+            << 4
     }
 
     fn g(mem: &impl Mem, a: u32) -> u32 {
@@ -2510,5 +2845,23 @@ pub mod bridge {
         call(mem, free, &[0x400]);
         mem.write(pass, 0u32);
         last
+    }
+
+    /// `opu_mdc_0x2000_ambient(rec)` (`0x008041c0`): for the magic file's
+    /// id (`MagicFile_GetMagicId`, through `call`) among the seven words at
+    /// `0x00c48e44` or in 0x26e..=0x275, the record's ambient (`u16 +0x1d`,
+    /// byte `+0x1c`) all 0x80. Returns 0.
+    pub fn opu_mdc_0x2000_ambient<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = call(mem, g(mem, 0x009d_a3b0), &[]);
+        let ids: [u32; 7] = mem.read(g(mem, 0x00c4_8e44));
+        if ids.contains(&id) || id.wrapping_sub(0x26e) <= 7 {
+            mem.write(rec.wrapping_add(0x1d), 0x8080u16);
+            mem.write(rec.wrapping_add(0x1c), 0x80u8);
+        }
+        0
     }
 }

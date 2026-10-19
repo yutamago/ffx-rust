@@ -275,6 +275,32 @@ REVIEWED = {
     0x00778550: ("platform", "hd_file_read_ex_th_main: PC loader-thread request handshake (system round 35)"),
     0x0076db40: ("dead", "file_offset_get: only caller gated by read-only .rdata byte 0x00b5ec4f == 0 (it is 1); sceCdSearchFile stub always 0 (system round 35)"),
     0x0081f210: ("dead", "SqsStraightStreamingDataSend: only caller is thunk 0x885ed0, whose only caller 0x77a8e0 is never reached (field round 13)"),
+    0x006c06e0: ("glue", "VfxShaderManager lookup (effects round 29)"),
+    0x00715dc0: ("glue", "graphicVFXCreate (effects round 29)"),
+    0x00717620: ("glue", "updateGuildMapRenderData (effects round 29)"),
+    0x00639390: ("glue", "C++ thiscall wrapper (effects round 29)"),
+    0x007f7360: ("glue", "opus_0706_acc_draw: sizes and mallocs a BrokenScreenEffect buffer (effects round 29)"),
+    0x006a1a70: ("platform", "std::map erase (effects round 29)"),
+    0x007e2ed0: ("platform", "op_file_read: sceOpen/Lseek/Read file IO (effects round 29)"),
+    0x006e96c0: ("platform", "InitIggyHelper: Iggy UI (field round 14)"),
+    0x006e93f0: ("platform", "IggyPlayerOpen: Iggy UI (field round 14)"),
+    0x006e9250: ("platform", "IggyPlayerOpenScaled: Iggy UI (field round 14)"),
+    0x006e4100: ("glue", "DepthBiasHooks_onCharacterInstantiated: only the renderer visibility job 0x9f4000 reads g_DepthBias (system round 37)"),
+    0x00a424e0: ("glue", "PhyreEngine class-descriptor entry (system round 37)"),
+    0x00a42740: ("glue", "PhyreEngine class-descriptor entry (system round 37)"),
+    0x00a42760: ("glue", "PhyreEngine class-descriptor entry (system round 37)"),
+    0x00a427e0: ("glue", "PhyreEngine class-descriptor entry (system round 37)"),
+    0x0067a9d0: ("platform", "wrapper of 0x6fb410 (SyncManager) (system round 37)"),
+    0x0061b270: ("platform", "Windows resource string lookup (system round 37)"),
+    0x0067aa70: ("platform", "Eternal Calm file size (system round 37)"),
+    0x0067aae0: ("platform", "Eternal Calm file size (system round 37)"),
+    0x009dacc0: ("platform", "unloads preloaded magic-file modules (system round 37)"),
+    0x006f1980: ("platform", "PC save metadata block (system round 37)"),
+    0x00a42880: ("platform", "CD sector read (system round 37)"),
+    0x0076cf60: ("platform", "CD sector read (system round 37)"),
+    0x0060e8a0: ("platform", "deleting destructor (system round 37)"),
+    0x00773c60: ("platform", "HDD-mode struct 0xc41744 (system round 37)"),
+    0x0076cf80: ("platform", "HDD-mode struct 0xc41744 (system round 37)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
@@ -476,9 +502,18 @@ def code_graph(exe, secs, starts, ghidra_calls):
         h, th = holder(src), holder(t)
         if h is not None and th is not None and th != h:
             edges[h].add(t if t in extra or t in known else th)
-    # code Ghidra counted as part of the function before it may fall into it
+    # code Ghidra counted as part of the function before it may fall into
+    # it, unless int3 padding sits right before it: execution cannot run
+    # through an int3, so the code there is entered only by its own
+    # references (the jmp thunk 0x00885ed0 after the 1-byte SndClearWave)
+    def padded(t):
+        for _, va, blob, code in secs:
+            if code and va < t <= va + len(blob):
+                return blob[t - va - 1] == 0xCC
+        return False
+
     for i, t in enumerate(nodes):
-        if t in extra and i:
+        if t in extra and i and not padded(t):
             edges[nodes[i - 1]].add(t)
     direct = {a: set(ts) for a, ts in edges.items()}
     roots, code_edges = scan_pointers(secs, nodes)
