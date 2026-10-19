@@ -28,6 +28,7 @@ pub mod plate;
 pub mod render;
 pub mod save;
 pub mod scene;
+pub mod seq_prim;
 pub mod sort;
 pub mod stl;
 pub mod stub;

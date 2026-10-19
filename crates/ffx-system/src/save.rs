@@ -301,4 +301,104 @@ pub mod bridge {
         COUNTERS_COPY.set(mem, v);
         n
     }
+
+    /// The player's position `SaveData_Update` copies every frame (`f32`
+    /// x, y, z).
+    pub const PLAYER_POSITION: u32 = 0x00cc_b9a8;
+
+    /// Maps whose save picture is the map's own or its second one (`map +
+    /// 1000`, `m%d_1`) by where the player stands: the second picture's
+    /// point, then the first's (`f32` x, y, z as bits).
+    const TWO_PICTURE_MAPS: [(&[u32], [u32; 3], [u32; 3]); 7] = [
+        (
+            &[0xd8],
+            [0xc3dd_9131, 0x431f_7e1d, 0x4424_8e8f],
+            [0xc129_ea2e, 0x4156_45b2, 0x4371_90bb],
+        ),
+        (
+            &[0x1f],
+            [0x427e_ffa9, 0xc2ea_c923, 0xc302_5d84],
+            [0x3ff7_12dc, 0xc31b_482c, 0xc20b_31e0],
+        ),
+        (
+            &[0x101],
+            [0xc15e_d3a2, 0xbf55_1be7, 0x431c_0db6],
+            [0x415d_b3dd, 0x8000_0000, 0x4484_5d98],
+        ),
+        (
+            &[0x11c],
+            [0xc27d_6a98, 0xc3e5_dcb3, 0x42d3_168c],
+            [0x4319_427c, 0xc297_c6c5, 0xc473_079b],
+        ),
+        (
+            &[0x81, 0x15c],
+            [0xc226_5c67, 0xbf7f_b374, 0xc304_029b],
+            [0x406d_a401, 0xc1a7_11ff, 0xc439_c230],
+        ),
+        (
+            &[0xf4, 0xf5],
+            [0x44a2_a000, 0xc2a9_fff8, 0xc4aa_a000],
+            [0x44ca_8018, 0xc2a9_fff8, 0xc4d5_7000],
+        ),
+        (
+            &[0xf6, 0xf7],
+            [0x4200_32b5, 0x42be_ae53, 0x449c_3539],
+            [0x420a_c972, 0x410d_dcc3, 0x4382_9b98],
+        ),
+    ];
+
+    /// Maps that show the previous map's picture (`map - 1`).
+    const PREVIOUS_PICTURE_MAPS: [u32; 26] = [
+        2, 0x2e, 0x32, 0x39, 0x54, 0x72, 0x97, 0x9b, 0xa1, 0xae, 0xb8, 0xc2, 0xe5, 0xe7, 0xee,
+        0xf0, 0xff, 0x108, 0x110, 0x11a, 0x125, 0x132, 0x134, 0x13b, 0x144, 0x152,
+    ];
+
+    /// The squared distance from `p` to `at` (`f32` bits), at double
+    /// precision and stored as `f32`.
+    #[allow(clippy::cast_possible_truncation)] // fstp dword
+    fn distance2(p: [f32; 3], at: [u32; 3]) -> f32 {
+        let [dx, dy, dz] = [0, 1, 2].map(|k| f64::from(f32::from_bits(at[k])) - f64::from(p[k]));
+        (dx * dx + dy * dy + dz * dz) as f32
+    }
+
+    /// `fix_mappic(map)` (`0x006ef6f0`): the picture a save made on map
+    /// `map` shows in the PC save list (`m%d`, `m%d_1` from 1000 up):
+    /// 0 outside 1..=0x15c, the previous map's for
+    /// [`PREVIOUS_PICTURE_MAPS`], 1, 0x120, 0x11 for maps 3, 7, 0x13, 0
+    /// for 0x59, 0x147..=0x14a, 0x14e, 0x14f, 0xad for 0xaf..=0xb1, 0xe6
+    /// for 0xe8, 0xe9, 0xfe for 0x100; on the [`TWO_PICTURE_MAPS`]
+    /// `map + 1000` when the player ([`PLAYER_POSITION`]) is nearer the
+    /// second picture's point than the first's (squared distances as
+    /// `f32`), else `map` as for any other map.
+    pub fn fix_mappic(mem: &impl Mem, map: u32) -> u32 {
+        if map.wrapping_sub(1) > 0x15b {
+            return 0;
+        }
+        if PREVIOUS_PICTURE_MAPS.contains(&map) {
+            return map - 1;
+        }
+        match map {
+            3 => return 1,
+            7 => return 0x120,
+            0x13 => return 0x11,
+            0x59 | 0x147..=0x14a | 0x14e | 0x14f => return 0,
+            0xaf..=0xb1 => return 0xad,
+            0xe8 | 0xe9 => return 0xe6,
+            0x100 => return 0xfe,
+            _ => {}
+        }
+        let Some(&(_, second, first)) = TWO_PICTURE_MAPS
+            .iter()
+            .find(|(maps, ..)| maps.contains(&map))
+        else {
+            return map;
+        };
+        let at = mem.rebase(PLAYER_POSITION);
+        let p = [0, 4, 8].map(|k| mem.read::<f32>(at + k));
+        if distance2(p, first) > distance2(p, second) {
+            map + 1000
+        } else {
+            map
+        }
+    }
 }

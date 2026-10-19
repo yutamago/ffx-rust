@@ -252,6 +252,360 @@ pub mod bridge {
         total
     }
 
+    /// An integer as `fild` and `fstp dword` leave it.
+    #[allow(clippy::cast_precision_loss)]
+    fn int_f32(n: i32) -> f32 {
+        n as f32
+    }
+
+    /// `TOBtlInitChrNum()` (`0x008979d0`) and `TOBtlCtrlChrNum()`
+    /// (`0x00891140`, the same code): the battle menu's two character
+    /// lists from `MsGetSaveWindow(0, 9 / 0xb, &count)` (`count` in the
+    /// word `count_cell`, zeroed first): trailing 0xff entries dropped,
+    /// the count to `0x0133f0d8` / `0x0133f0ec`, the `u16` entries copied
+    /// to `0x0133f0dc` / `0x0133f0f0` in order. Returns the original's
+    /// `eax`: the second list's pointer with its low half the last entry
+    /// copied, if any. Callees through `call` (`ffx.sym` addresses).
+    pub fn btl_chr_num<M: Mem>(
+        mem: &mut M,
+        count_cell: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut eax = 0;
+        for (window, count_at, entries_at) in [
+            (9u32, 0x0133_f0d8u32, 0x0133_f0dcu32),
+            (0xb, 0x0133_f0ec, 0x0133_f0f0),
+        ] {
+            mem.write(count_cell, 0u32);
+            let list = call(mem, 0x0078_5410, &[0, window, count_cell]);
+            let mut count: i32 = mem.read(count_cell);
+            while count > 0
+                && mem.read::<u16>(list.wrapping_add(2 * (count - 1).cast_unsigned())) == 0xff
+            {
+                count -= 1;
+                mem.write(count_cell, count);
+            }
+            mem.write(mem.rebase(count_at), count);
+            eax = list;
+            let entries = mem.rebase(entries_at);
+            for i in 0..count.max(0).cast_unsigned() {
+                let v: u16 = mem.read(list.wrapping_add(2 * i));
+                mem.write(entries.wrapping_add(2 * i), v);
+                eax = eax & 0xffff_0000 | u32::from(v);
+            }
+        }
+        eax
+    }
+
+    /// `TOBtlMakeStatusBuff(chr, out)` (`0x00898260`): the status
+    /// message ids of `chr` written to `out` (`u16` each): 0x1006 + bit
+    /// for bits 0..=10 of `MsGetChrStatusBits_0078f930(chr)`, 0x1011 when
+    /// `MsGetStatusThreat(chr)` is 1, 0x1012 + i for the 13 nonzero
+    /// counter bytes of `MsMenuCountStatus(chr)`, 0x1020 + bit for bits
+    /// 0..=14 of `MsMenuBitStatus(chr)`. Returns how many.
+    #[allow(clippy::cast_possible_truncation)] // ids and indices fit in u16
+    pub fn btl_make_status_buff<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        out: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut n = 0u32;
+        let mut push = |mem: &mut M, id: u16| {
+            mem.write(out.wrapping_add(2 * n), id);
+            n += 1;
+        };
+        let bits = call(mem, 0x0078_f930, &[chr]) & 0xffff;
+        for i in 0..12u32 {
+            if i == 0xb {
+                if call(mem, 0x0079_afc0, &[chr]) == 1 {
+                    push(mem, 0x1011);
+                }
+            } else if bits >> i & 1 != 0 {
+                push(mem, 0x1006 + i as u16);
+            }
+        }
+        let counts = call(mem, 0x0078_fa80, &[chr]);
+        for i in 0..0xdu32 {
+            if mem.read::<u8>(counts.wrapping_add(i)) != 0 {
+                push(mem, 0x1012 + i as u16);
+            }
+        }
+        let bits = call(mem, 0x0078_f950, &[chr]) & 0xffff;
+        for i in 0..0xfu32 {
+            if bits >> i & 1 != 0 {
+                push(mem, 0x1020 + i as u16);
+            }
+        }
+        n
+    }
+
+    /// `TOBtlSetChangeHelpMes(n)` (`0x008997c0`): for a character or aeon
+    /// (`n` 0..=0x11) or command 0x30ff, the battle help text
+    /// `g_BtlHelpText` (`0x0133f538`, 0x80 bytes) cleared and filled with
+    /// `MsGetMenuChrInfo(n, 0)` or, for 0x30ff, the text at the offset
+    /// `MsGetComData(0x30ff, &base)` gives (`u16 +8`) from `base` (the
+    /// word `out_cell`); copied up to its NUL (unbounded, as the
+    /// original). Then `TOGetMessageWH(0, text, 0x0133f534, 0x0133f530, 0,
+    /// 0)`, whose `eax` it returns. Other numbers do nothing (the
+    /// original's `eax` is then its caller's; the port returns 0).
+    pub fn btl_set_change_help_mes<M: Mem>(
+        mem: &mut M,
+        n: u32,
+        out_cell: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if !(0..=0x11).contains(&n.cast_signed()) && n != 0x30ff {
+            return 0;
+        }
+        let text = mem.rebase(0x0133_f538);
+        mem.write_bytes(text, &[0u8; 0x80]);
+        let mut src = n;
+        if n < 8 {
+            src = call(mem, 0x0078_f7c0, &[n, 0]);
+        }
+        if n.wrapping_sub(8) <= 9 {
+            src = call(mem, 0x0078_f7c0, &[n, 0]);
+        }
+        if n == 0x30ff {
+            mem.write(out_cell, n);
+            let data = call(mem, 0x0079_a4b0, &[0x30ff, out_cell]);
+            let base: u32 = mem.read(out_cell);
+            src = base.wrapping_add(u32::from(mem.read::<u16>(data.wrapping_add(8))));
+        }
+        let mut k = 0u32;
+        loop {
+            let c: u8 = mem.read(src.wrapping_add(k));
+            mem.write(text.wrapping_add(k), c);
+            if c == 0 {
+                break;
+            }
+            k += 1;
+        }
+        let (w, h) = (mem.rebase(0x0133_f534), mem.rebase(0x0133_f530));
+        call(mem, 0x008b_9650, &[0, text, w, h, 0, 0])
+    }
+
+    /// `TOBtlSetInfoWinMes(chr)` (`0x00899f20`): the battle info window's
+    /// first line (`g_BtlInfoWinLines`, `0x0133f618`) after
+    /// `TOBtlInitInfoWinMes`: the text `MsGetMenuChrInfo(chr, 1)` measured
+    /// by `TOGetMessageWH(0, text, &w, &h, 0, 0)` (`f32 w` and the
+    /// height in the words `size`, `size + 4`); its `i16` mode 8 when `w`
+    /// is below the window's `i16 0x0133f61e`, else 2; x and y from the
+    /// `i16`s `0x0133f68c`/`0x0133f690` as `f32`; `ftol(w)` as `u16` at
+    /// `+0x14`; the text at `+0x18`; and the `u16 0x0133f688` 1. Returns
+    /// 1.
+    pub fn btl_set_info_win_mes<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        size: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x0089_7bd0, &[]);
+        let text = call(mem, 0x0078_f7c0, &[chr, 1]);
+        call(mem, 0x008b_9650, &[0, text, size, size + 4, 0, 0]);
+        let w: f32 = mem.read(size);
+        let limit: i16 = mem.read(mem.rebase(0x0133_f61e));
+        let mode: u16 = if f64::from(w) < f64::from(limit) {
+            8
+        } else {
+            2
+        };
+        let line = mem.rebase(0x0133_f618);
+        mem.write(line, mode);
+        for (at, from) in [(0xc, 0x0133_f68c), (0x10, 0x0133_f690)] {
+            let v = i32::from(mem.read::<i16>(mem.rebase(from)));
+            mem.write(line + at, int_f32(v));
+        }
+        let width = ffx_bridge::x87::ftol(mem, f64::from(w));
+        #[allow(clippy::cast_possible_truncation)] // the original stores ax
+        mem.write(line + 0x14, width as u16);
+        mem.write(line + 0x18, text);
+        mem.write(mem.rebase(0x0133_f688), 1u16);
+        1
+    }
+
+    /// `TOBtlDrawLibraRight(x)` (`0x0089c7d0`): the Libra target's
+    /// name (`MsGetMenuChrInfo(i16 0x0133f6aa, 2)`, measured by
+    /// `TOGetMessageWH` into the words `size`, `size + 4` and not used
+    /// further) drawn by `TOMkpCrossExtMesFontLClut(0, text, X2(915) + x,
+    /// Y2(590), 0, 0.64, 0.5)`; returns its `eax`. `remap(mem, y_axis,
+    /// v)` is `graphicUiRemapX2`/`Y2`.
+    pub fn btl_draw_libra_right<M: Mem>(
+        mem: &mut M,
+        x: i32,
+        size: u32,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let chr = i32::from(mem.read::<i16>(mem.rebase(0x0133_f6aa))).cast_unsigned();
+        let text = call(mem, 0x0078_f7c0, &[chr, 2]);
+        call(mem, 0x008b_9650, &[0, text, size, size + 4, 0, 0]);
+        let y = remap(mem, true, 590.0);
+        let dx = remap(mem, false, 915.0);
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let x = (f64::from(dx) + f64::from(int_f32(x))) as f32;
+        let args = [
+            0,
+            text,
+            x.to_bits(),
+            y.to_bits(),
+            0,
+            0.64f32.to_bits(),
+            0.5f32.to_bits(),
+        ];
+        call(mem, 0x0090_16b0, &args)
+    }
+
+    /// The battle info window's status cycle (`0x0133f5c0`, 0x58 bytes):
+    /// `i16 +0` the character, `u16 +2` the frame timer, `+4` the shown
+    /// entry, `+6` the count, `+8` the `u16` message ids.
+    const INFO_STATUS: u32 = 0x0133_f5c0;
+
+    /// `TOBtlSetInfoWinParam(chr)` (`0x00899fd0`): the info window for
+    /// `chr`. The status cycle is cleared and set to `chr`, timer 0x14;
+    /// its HP and maximum (`MsGetRamChrHP`/`HPmax`) go to the `u16`s
+    /// `0x0133f614`/`0x0133f616`; the ids appended as in
+    /// [`btl_make_status_buff`] without the threat entry (bits 0..=11 of
+    /// `MsGetChrStatusBits_0078f930`, the 13 counters, the 15
+    /// `MsMenuBitStatus` bits), the count kept at `+6`. Then the first
+    /// line as [`btl_set_info_win_mes`] with mode 2 and no position
+    /// (`size` the words `TOGetMessageWH` writes). Returns 1.
+    #[allow(clippy::cast_possible_truncation)] // the original stores the low halves
+    pub fn btl_set_info_win_param<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        size: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let cycle = mem.rebase(INFO_STATUS);
+        mem.write_bytes(cycle, &[0u8; 0x58]);
+        mem.write(cycle + 4, 0u32);
+        mem.write(cycle, chr as u16);
+        mem.write(cycle + 2, 0x14u16);
+        let hp = call(mem, 0x0079_add0, &[chr]);
+        mem.write(mem.rebase(0x0133_f614), hp as u16);
+        let max = call(mem, 0x0079_adf0, &[chr]);
+        mem.write(mem.rebase(0x0133_f616), max as u16);
+        let shown = |mem: &M| i32::from(mem.read::<i16>(cycle)).cast_unsigned();
+        let push = |mem: &mut M, id: u16| {
+            let count: i16 = mem.read(cycle + 6);
+            let at = cycle
+                .wrapping_add(8)
+                .wrapping_add((2 * i32::from(count)).cast_unsigned());
+            mem.write(at, id);
+            mem.write(cycle + 6, count.wrapping_add(1));
+        };
+        let chr_word = shown(mem);
+        let bits = call(mem, 0x0078_f930, &[chr_word]) & 0xffff;
+        for i in 0..12u16 {
+            if bits >> i & 1 != 0 {
+                push(mem, 0x1006 + i);
+            }
+        }
+        let chr_word = shown(mem);
+        let counts = call(mem, 0x0078_fa80, &[chr_word]);
+        for i in 0..0xdu16 {
+            if mem.read::<u8>(counts.wrapping_add(u32::from(i))) != 0 {
+                push(mem, 0x1012 + i);
+            }
+        }
+        let chr_word = shown(mem);
+        let bits = call(mem, 0x0078_f950, &[chr_word]) & 0xffff;
+        for i in 0..0xfu16 {
+            if bits >> i & 1 != 0 {
+                push(mem, 0x1020 + i);
+            }
+        }
+        let text = call(mem, 0x0078_f7c0, &[chr, 1]);
+        call(mem, 0x008b_9650, &[0, text, size, size + 4, 0, 0]);
+        let w: f32 = mem.read(size);
+        let line = mem.rebase(0x0133_f618);
+        mem.write(line, 2u16);
+        let width = ffx_bridge::x87::ftol(mem, f64::from(w));
+        mem.write(line + 0x14, width as u16);
+        mem.write(line + 0x18, text);
+        mem.write(mem.rebase(0x0133_f688), 1u16);
+        1
+    }
+
+    /// `TOBtlDrawInfoWinStatus(_, x, y)` (`0x00895240`): one frame of the
+    /// info window's status cycle: the timer (`u16 +2`) counts down and,
+    /// past 0, restarts at 0x14 and moves to the next entry (`+4`, back
+    /// to 0 at the count); that entry's id names `MsMenuGetText(1, id,
+    /// 1)`, centred in `X2(380)` from `x` (`ToGetBtlEasyFontWidth(text,
+    /// &w, 0, 0.78, 1.0)` into the word `width`) and drawn by
+    /// `ToMakeBtlEasyEdgeFont(text, x, y, 0, 0.78, 1.0)`; returns its
+    /// `eax`. `remap(mem, y_axis, v)` is `graphicUiRemapX2`/`Y2`.
+    pub fn btl_draw_info_win_status<M: Mem>(
+        mem: &mut M,
+        [x, y]: [i32; 2],
+        width: u32,
+        mut remap: impl FnMut(&mut M, bool, f32) -> f32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let cycle = mem.rebase(INFO_STATUS);
+        let timer: u16 = mem.read(cycle + 2);
+        mem.write(cycle + 2, timer.wrapping_sub(1));
+        let entry = if timer == 0 {
+            mem.write(cycle + 2, 0x14u16);
+            let mut next = mem.read::<u16>(cycle + 4).wrapping_add(1);
+            mem.write(cycle + 4, next);
+            if next == mem.read::<u16>(cycle + 6) {
+                next = 0;
+                mem.write(cycle + 4, next);
+            }
+            next
+        } else {
+            mem.read(cycle + 4)
+        };
+        let at = cycle
+            .wrapping_add(8)
+            .wrapping_add((2 * i32::from(entry.cast_signed())).cast_unsigned());
+        let id = u32::from(mem.read::<u16>(at));
+        let text = call(mem, 0x0078_fcf0, &[1, id, 1]);
+        let scale = 0.78f32.to_bits();
+        let one = 1f32.to_bits();
+        call(mem, 0x0090_5290, &[text, width, 0, scale, one]);
+        let y = int_f32(y);
+        let span = remap(mem, false, 380.0);
+        let w: f32 = mem.read(width);
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let x = ((f64::from(span) - f64::from(w)) * 0.5 + f64::from(int_f32(x))) as f32;
+        call(
+            mem,
+            0x0090_5930,
+            &[text, x.to_bits(), y.to_bits(), 0, scale, one],
+        )
+    }
+
+    /// `BtlEnd_InitState_008bdeb0(kind)` (own name; called by the
+    /// battle-end screen's set-up): by the low byte of `kind`, 1 sets the
+    /// state word `0x01869f08` to 0x1d, 2 to 0, anything else calls
+    /// `AtelSetBattleEndKeepRecoverType(kind)` and sets 1. Then
+    /// `0x01869f0c`, `g_TkBtlEndFlag` and the byte `0x00c5a068` are
+    /// cleared and `BtlEnd_BuildList_008bde00` builds the list (its `eax`
+    /// returned). Callees through `call` (`ffx.sym` addresses).
+    pub fn btl_end_init_state<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let state = match kind & 0xff {
+            1 => 0x1d,
+            2 => 0,
+            _ => {
+                call(mem, 0x0086_f3a0, &[kind]);
+                1
+            }
+        };
+        mem.write(mem.rebase(0x0186_9f08), state);
+        mem.write(mem.rebase(0x0186_9f0c), 0u32);
+        mem.write(mem.rebase(0x0186_9fbc), 0u32);
+        mem.write(mem.rebase(0x00c5_a068), 0u8);
+        call(mem, 0x008b_de00, &[])
+    }
+
     /// `BtlEnd_BuildList_008bde00()` (own name): the battle-end list.
     /// `0x01869f19` is set when any character `g_BtlCountsBattle`
     /// (`0x02310ea0`, bytes) counts has a nonzero `g_TkBtlEndResults`
