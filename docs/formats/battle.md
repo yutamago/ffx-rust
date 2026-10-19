@@ -1078,6 +1078,97 @@ saved `esi`, `ebp` and return address) reach VU register 4's `yzw`.
 the old `vf02` into `vf00`, and only its subtraction (skipped when the
 origin is the word `r0` holds) restores `vf00`.
 
+## Round 26
+
+### Battle cameras on actors: `MsCameraSetBtl`, `MsCamSetBtl`
+
+`MsCameraSetBtl(id, side, chr, mode, a, b, lift, turn, pitch, scale)`
+(`0x007c5c60`) fills channel `id >> 8` of side `side & 1` (the channel
+records: 0x130 bytes from the side's `+0xc0`): byte 0 polar (modes 3,
+4), kind `+2` (modes 0-4: 0xb, 0xc, 0xd, 0xf, 0x10), the selectors
+`+0x10`/`+0x12` (`u16`), the actor sets `+0x14`/`+0x18` (`id`'s level
+nibble 5: `MsGetChrBit(chr, a | b, 1, 1)`, battle actors; else the
+selectors themselves, script actors), `lift` `+0x5c`, with a mode
+`turn`/`pitch`/`scale` `+0x40`/`+0x44`/`+0x60`, the other side's
+position as `+0x30`, `+6` 1 and `+0x64` 0. While `id` is the current
+request it calls `MsCamSetBtl(id, mode, side, ch, other side, its
+channel)` (`0x007c58e0`) and `MsSetCheckChange(id, side, 0, 0)`.
+
+`MsCamSetBtl` asks `MsGetChrInfo` kinds 9, 10, 7, 11 (camera position,
+camera height, direction, camera width) of each set (0x100 for script
+actors) and averages what answers: the side's position `+0x50` (`y` less
+`lift` times the height), with a mode the yaw (`MsVectorRect2Polar` from
+the first set to the second when both answered with different bits; for
+script actors from the other side's position when they differ in `x` or
+`z` and the side is on; else, for two sets or a kind-0xc other channel
+naming the same actors, the channel's saved yaw `+0x64`, taken the first
+time `+6` is set), the length `scale` times the width (modes 2 and 4:
+`10.0 · scale +` the width) and then either a polar offset added to the
+position (`MsVectorPolar2Rect`, yaw plus `turn`) or the side's polar form
+`+0x60`..`+0x68`. It returns how many sets answered. Its three
+`MsVectorPolar2Rect` calls push five of the eight words: the rest are
+its caller's `edi`, `esi`, `ebx`, which `MsCameraSetBtl` makes the
+channel, the other side and `id`; the port passes them.
+
+### `MsCameraProcess`' leaves
+
+- `MsCameraAimPolar_007c0910`, `...2_007c09b0`, `...3_007c0a30` (names
+  ours): the side's polar form towards the move's point `+0x30` (from the
+  side's base `+0x8c`), pitch and length from the move's `+0x44`/`+0x48`
+  plus the distance over `+0x54`/`+0x58` (a zero divisor adds nothing; a
+  NaN divides), the second keeping the point's own pitch, the third
+  stopping short of the point (length = distance less the rest).
+- `MsCameraAtelFocus_007c0560`, `MsCameraAtelYaw_007c0650`: the mean
+  position or direction of up to two script actors (`+0xc`/`+0xe`,
+  0xffff none) added to the move's offset or yaw.
+- `MsCameraSplinePos_007bcd30`: the side's position and `g_Ee_GprMove`
+  from the move's spline (`+8`; `TkMtCalcSpline3` under flags 3 at
+  `+0x1c`) at the other side's `+0x24`.
+- `MsCameraMoveAcc` (`0x007bd860`), `MsCameraMoveFrame` (`0x007bde50`):
+  the current request's lanes (16 bytes: kind, curve `+4`, accelerating/
+  holding/braking frames `+6`/`+8`/`+0xa`, total `+0xc`, frame `+0xe`):
+  roll `+0xd78` and depth `+0xd88` of the camera for side 1, then the
+  side's x/y/z `+0x580`.. where the channel's flags `+7` (bits 8, 0x10,
+  1, 2, 4; re-read before each lane, as channels from 4 on lie over the
+  lanes) leave them free; then `MsCameraSetStartPos` and the flags 0.
+- `MsCameraAddLineFilter_007bf0b0`: a filter record (up to five, 0x20
+  bytes from the channel's `+0x90`): direction, start, `-x0 dx - y0 dy`,
+  `dx² + dy²`, a weight. `MsCameraSetDepthMaskMode_007bcf50`
+  (`Native_CamSetDepthMaskMode`'s): channel mode `+0xcc8` + 0x30 channel
+  (negative: the old one with bit 1), the camera's `+0xcac` for the
+  current request.
+- The special stage: `MsBattleSpecialCameraKind_0079dd70`,
+  `MsTransSpPos` (`0x0079e1b0`: kind 1 turns points by the tilting
+  stage's angles `+0x800`/`+0x808` after lowering them by `+0x844`, the
+  sea's kinds 2 and 3 by its matrix `+0x7c0` without translation) and
+  `MsSpCameraProcess` (`0x0079dfe0`, eye, look-at and up vector while
+  `0x0112c9fc`).
+
+### Numbers, sounds, commands
+
+- `MsNumberDrawProcess` (`0x0079f660`): the actors' pulsing counters
+  (`+0x5c8` digits; phase `+0xf6c` += `+0x5c9 / (+0x5c8 + 1) / 8`, colour
+  from `sin(phase) + 1`) and the damage number list through
+  `TOBtlSetDamageValue`; frame table `0x00c424b0` (x, y, alpha by age
+  less place); the last 5 frames fade. The original's colour and alpha
+  words carry stack garbage above their low bytes, which
+  `TOBtlSetDamageValue` drops.
+- Actor sounds by kind (`MsChrSeGet_0079fe80`): tables of `u16` per kind
+  (`0x00c42550` party, `0x00c425e0` monsters, `0x00c42598` the rest):
+  base plus a variant (bits 8/9 cycle `+0x410` mod 4/2, bit 10 the
+  underwater flag's bit 0, bit 11 8 under water); the top nibble picks
+  the scene's transferred sounds, the number itself or the model owner's
+  `+0xeac` sounds. The players over it: fade, play (once a frame,
+  `0x0112c8e0`), play once, play unless hasted, play when shown with HP.
+- `MsChrDelExtraCommand_007acb40`: a command out of the picked actors'
+  extra commands (`+0x71a`, count `+0x6cb`) and their second menu list.
+  `MsMonShuffleVariants_007842f0` (`Mon_LoadAll`'s): monsters sharing a
+  model draw distinct `+0x424` variants.
+
+The hook's script position callback (`Host::atel_pos`) now passes the
+game a stack buffer: bridges hand it frame locals at addresses the game
+never maps.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.

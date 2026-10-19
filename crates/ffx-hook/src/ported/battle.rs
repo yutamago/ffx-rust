@@ -294,20 +294,21 @@ fn host() -> target::Host<'static> {
             f(i).to_bits()
         }
     }
-    fn pos(m: &mut target::Dm<'_>, i: u32, x: u32, y: u32, z: u32) {
+    fn pos(m: &mut target::Dm<'_>, actor: u32, x: u32, y: u32, z: u32) {
         // the outputs may be a frame's locals, at addresses the game never
         // maps: through this stack, holding their words first (an actor
         // out of range writes nothing)
         use ffx_bridge::Mem;
-        let mut v = super::StackFrame::<3>::new();
-        let at = v.at();
-        let w: [u32; 3] = [m.read(x), m.read(y), m.read(z)];
-        m.write(at, w);
-        call4(0x0086_b1e0, i, at, at + 4, at + 8);
-        let [wx, wy, wz]: [u32; 3] = m.read(at);
-        m.write(x, wx);
-        m.write(y, wy);
-        m.write(z, wz);
+        let outs = [x, y, z];
+        let mut buf = super::StackFrame::<3>::new();
+        let at = buf.at();
+        let held: [u32; 3] = outs.map(|o| m.read(o));
+        m.write(at, held);
+        call4(0x0086_b1e0, actor, at, at + 4, at + 8);
+        let got: [u32; 3] = m.read(at);
+        for (o, word) in outs.into_iter().zip(got) {
+            m.write(o, word);
+        }
     }
     target::Host {
         trig: &crt_trig,

@@ -1454,10 +1454,10 @@ pub mod bridge {
     /// `MsCamSetBtl`'s stray radius words are this function's `edi`,
     /// `esi`, `ebx` there: the channel, the other side and `id`.
     #[allow(clippy::too_many_arguments)]
-    pub fn ms_camera_set_btl(
-        mem: &mut crate::target::bridge::Dm<'_>,
+    pub fn ms_camera_set_btl<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
         host: &crate::target::bridge::Host<'_>,
-        call: &mut dyn FnMut(&mut crate::target::bridge::Dm<'_>, u32, &[u32]) -> u32,
+        call: &mut dyn FnMut(&mut crate::target::bridge::Dm<'d>, u32, &[u32]) -> u32,
         id: u32,
         side: u32,
         chr: u32,
