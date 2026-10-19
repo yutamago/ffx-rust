@@ -18359,3 +18359,69 @@ fn r13g_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_7002);
     r13g_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r13, group H: the effect's colour fade ----
+
+/// Group H (r13) on `t`: `rcefColorUpdate` at frame 0, the last frame
+/// and between (frame counts 0..60, past them too), running or not, with
+/// colours in 0..255 and alphas whose truncated low byte is 0 or not
+/// (multiples of 256, negatives, huge values). The screen fade call is a
+/// logged stand-in; the vector helpers run as the originals.
+fn r13h_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::task::bridge as tb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 4), t.alloc(4));
+    t.cave(&[(Some(tb::ADD_SCREEN_FADE_TASK), log_stub(log, rv, 1, 5))]);
+    let w = t.alloc(0x200);
+    let alpha = |rng: &mut Xorshift| match rng.below(6) {
+        0 => (256.0 * f32::from(u8::try_from(rng.below(4)).unwrap())).to_bits(),
+        1 => float_in(rng, -300, 0),
+        2 => [3e9f32, -3e9, 2.147_483_6e9, 255.9][usize::try_from(rng.below(4)).unwrap()].to_bits(),
+        _ => float_in(rng, 0, 300),
+    };
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        for c in [0x1c4, 0x1d4] {
+            for i in 0..3 {
+                t.put(w + c + 4 * i, float_in(rng, 0, 255));
+            }
+            t.put(w + c + 12, alpha(rng));
+        }
+        let frames = rng.range(0, 60);
+        t.put(w + 0x1e4, frames);
+        let frame = match rng.below(4) {
+            0 => 0,
+            1 => frames,
+            _ => rng.range(-2, frames + 2),
+        };
+        t.put(w + 0x1e8, frame);
+        t.put(w + 0x1f0, rng.below(2));
+        let work = t.stack_scratch(0x100);
+        let vf = t.b.rebase(0x00c8_f974);
+        t.same_but(
+            "rcefColorUpdate",
+            &[(vf, 12)],
+            |o| o.eax(0x0092_4c70, &[w]),
+            |m| tb::rcef_color_update(m, w, work, call),
+        );
+    }
+}
+
+/// Group H (r13) on the image.
+#[test]
+fn r13h_color_update_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_8001);
+    r13h_cases(&mut t, &mut rng, 600);
+}
+
+/// Group H (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13h_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_8002);
+    r13h_cases(&mut t, &mut rng, 300);
+}

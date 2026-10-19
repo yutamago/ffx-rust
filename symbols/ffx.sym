@@ -11844,6 +11844,7 @@
 0x00924bc0 function rcefTargetClear              # (i): its flags = 0
 0x00924be0 function rcefTargetSetDelay           # (u16): 0x025d5ea2, the delay 0x009248c0 gives a reached target
 0x00924bf0 function rcefBlurUpdate            # (e): while +0x228 with mode +0x218: Sg_Blur(+0x21c, mode 2 faded (frames +0x220 - done +0x224) * v / frames), count +0x224++, after the frames Sg_Blur(0) and +0x228 = 0; from rcefMainProcRunAfter; name ours
+0x00924c70 function rcefColorUpdate           # (w) -> eax: a colour work's per-frame fade (rcefMainProcRunAfter on the effect main object; rcefWorkCall_00924c70 on g_RcefColorWork): colour +0x1c4 at frame 0, +0x1d4 at the last (+0x1e4), else (to - from) f32(frame/frames) + from (rcVu0Sub4, rcbgScaleVector4, rcVu0Add4; frame +0x1e8); graphicAddScreenFadeTask(r/255, g/255, b/255, a/128 or 0.0 when trunc(a)'s low byte is 0, 0); running (+0x1f0) steps the frame, stopping at the last; eax the fade's or the frame count; name ours; ported (field r13, ffx_field::task)
 0x00924df0 function rcefScreenShake           # (e): while +0x214 with mode +0x1f8: sin-table swing of phase +0x210, faded over +0x200 frames from mode 3, times rand() % +0x20c + +0x208 as x (odd) or y; MsScreenOffset(x, y), after the frames (0, 0) and +0x214 = 0; from rcefMainProcRunAfter; name ours
 0x00924f30 function rcbgChrHandleIndex           # (handle) -> battle slot 0..14 or 20..27 whose MsGetChrHandle is handle, else -1; 0x00935340
 0x00924f90 function rcCopyQword_00924f90      # (dst, src): as rcCopyQword_0091cb40

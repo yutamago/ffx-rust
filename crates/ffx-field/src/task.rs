@@ -1186,6 +1186,88 @@ pub mod bridge {
         rcef_work_set(mem, w, work, work.wrapping_add(0x10), args[8]);
     }
 
+    /// `rcCopyQword_009250a0(dst, src)`, `rcVu0Sub4(out, a, b)`,
+    /// `rcbgScaleVector4_00925040(out, v, s)` and `rcVu0Add4(out, a, b)`:
+    /// the vector helpers of [`rcef_color_update`].
+    pub const COLOR_HELPERS: [u32; 4] = [0x0092_50a0, 0x0092_50d0, 0x0092_5040, 0x0092_4fc0];
+    /// `graphicAddScreenFadeTask(r, g, b, a, after)` (`0x00639240`).
+    pub const ADD_SCREEN_FADE_TASK: u32 = 0x0063_9240;
+    /// 1/128 and 255.0 (`f64`s, `.rdata`): the fade's alpha and colour
+    /// scales.
+    pub const COLOR_SCALES: [u32; 2] = [0x00b1_70b8, 0x00b1_70c0];
+
+    /// `fist` under a truncating control word: `x` toward zero, or the
+    /// integer indefinite (`i32::MIN`) when out of range or NaN.
+    fn fist_chop(x: f64) -> i32 {
+        let t = x.trunc();
+        if (-2_147_483_648.0..=2_147_483_647.0).contains(&t) {
+            #[allow(clippy::cast_possible_truncation)] // in range
+            let i = t as i32;
+            i
+        } else {
+            i32::MIN
+        }
+    }
+
+    /// `rcefColorUpdate(w)` (`0x00924c70`, from `rcefMainProcRunAfter`
+    /// on the effect main object and through `rcefWorkCall_00924c70` on
+    /// [`COLOR_WORK`]; name ours): the colour (in `work`, the
+    /// original's 16-byte local) is `+0x1c4` at frame 0, `+0x1d4` at the
+    /// last frame (`+0x1e4`), else `(to - from) * f32(frame / frames) +
+    /// from` through the VU0 helpers ([`COLOR_HELPERS`], frame `+0x1e8`).
+    /// `graphicAddScreenFadeTask(r / 255, g / 255, b / 255, a / 128, 0)`
+    /// gets it, the alpha 0.0 when its truncated value's low byte is 0.
+    /// While running (`+0x1f0`) the frame steps on, stopping at the last.
+    /// Returns the `eax` it ends with: the fade task's, or the frame count
+    /// when running.
+    pub fn rcef_color_update<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        w: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        use crate::x87::{load, store};
+        let [copy, sub, scale, add] = COLOR_HELPERS.map(|f| mem.rebase(f));
+        let (from, to) = (w.wrapping_add(0x1c4), w.wrapping_add(0x1d4));
+        let frame = mem.read::<i32>(w.wrapping_add(0x1e8));
+        let frames = mem.read::<i32>(w.wrapping_add(0x1e4));
+        if frame == 0 {
+            call(mem, copy, &[work, from]);
+        } else if frame == frames {
+            call(mem, copy, &[work, to]);
+        } else {
+            let a = load(store(f64::from(frame)));
+            let b = load(store(f64::from(frames)));
+            let t = store(a / b);
+            call(mem, sub, &[work, to, from]);
+            call(mem, scale, &[work, work, t]);
+            call(mem, add, &[work, work, from]);
+        }
+        let [alpha_scale, colour_scale] = COLOR_SCALES.map(|c| mem.read::<f64>(mem.rebase(c)));
+        let [r, g, b, a] = mem.read::<[u32; 4]>(work).map(load);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low byte
+        let alpha = if fist_chop(a) as u8 == 0 {
+            0
+        } else {
+            store(a * alpha_scale)
+        };
+        let [r, g, b] = [r, g, b].map(|c| store(c / colour_scale));
+        let f = mem.rebase(ADD_SCREEN_FADE_TASK);
+        let mut eax = call(mem, f, &[r, g, b, alpha, 0]);
+        if mem.read::<u32>(w.wrapping_add(0x1f0)) != 0 {
+            let frames = mem.read::<i32>(w.wrapping_add(0x1e4));
+            let at = w.wrapping_add(0x1e8);
+            let next = mem.read::<i32>(at).wrapping_add(1);
+            mem.write(at, next);
+            if next > frames {
+                mem.write(at, frames);
+                mem.write(w.wrapping_add(0x1f0), 0u32);
+            }
+            eax = frames.cast_unsigned();
+        }
+        eax
+    }
+
     // ---- round 26 ----
 
     /// `rcefScreenShake(e)` (`0x00924df0`, from `rcefMainProcRunAfter`;
