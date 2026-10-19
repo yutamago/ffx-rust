@@ -605,6 +605,54 @@ pub mod bridge {
         mem.write(dst, x87::store(x87::load(root)));
         dst
     }
+
+    /// The VU0 emulation's registers `0x009db270` works in: the vector at
+    /// `0x00c8f940`, the matrix (four columns) at `0x00c8f950`, the
+    /// running sums at `0x00c8f790` (`g_Vu0Acc`) and the result at
+    /// `0x00c8f930`; the point's `w` is vf00's (`g_Vu0_Vf00.w`, `0x00c0a010`,
+    /// 1.0).
+    pub const VU0_APPLY_VECTOR: u32 = 0x00c8_f940;
+    pub const VU0_APPLY_MATRIX: u32 = 0x00c8_f950;
+    pub const VU0_APPLY_SUMS: u32 = 0x00c8_f790;
+    pub const VU0_APPLY_RESULT: u32 = 0x00c8_f930;
+    pub const VU0_ONE: u32 = 0x00c0_a010;
+
+    /// `0x009db270(out, m, v)` (`g_MagicImports` slot 297): the point `v`
+    /// moved by the matrix `m` (16 `f32`s, four columns), `w` taken as
+    /// vf00's [`VU0_ONE`] (`v`'s own `w` is copied but not used): `out = m0 x +
+    /// m1 y + m2 z + m3 w`, the PS2's `vmulax/vmadday/vmaddaz/vmaddw`.
+    /// The inputs are copied into the VU0 registers first, each column's
+    /// product added to the running sums ([`VU0_APPLY_SUMS`], `f32` at
+    /// each step), the last into [`VU0_APPLY_RESULT`], then copied to
+    /// `out`. Returns the result's `w` bits (the original's `eax`).
+    pub fn vu0_apply_point(mem: &mut impl Mem, out: u32, m: u32, v: u32) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let vector = mem.rebase(VU0_APPLY_VECTOR);
+        let matrix = mem.rebase(VU0_APPLY_MATRIX);
+        let sums = mem.rebase(VU0_APPLY_SUMS);
+        let result = mem.rebase(VU0_APPLY_RESULT);
+        let input: [u32; 4] = mem.read(v);
+        mem.write(vector, input);
+        let columns: [u32; 16] = mem.read(m);
+        mem.write(matrix, columns);
+        let w: u32 = mem.read(mem.rebase(VU0_ONE));
+        let factors = [input[0], input[1], input[2], w];
+        let mut acc = [0u32; 4];
+        for (k, &f) in factors.iter().enumerate() {
+            let f = load(f);
+            for (i, a) in acc.iter_mut().enumerate() {
+                let product = mul(load(columns[4 * k + i]), f);
+                *a = store(if k == 0 {
+                    product
+                } else {
+                    add(product, load(*a))
+                });
+            }
+            mem.write(if k == 3 { result } else { sums }, acc);
+        }
+        mem.write(out, acc);
+        acc[3]
+    }
 }
 
 #[cfg(test)]
