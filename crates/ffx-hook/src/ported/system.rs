@@ -1503,6 +1503,12 @@ ported! {
         let scratch = frame.at();
         tolib::bridge::draw_font_3d80_glyph(&mut mem(), [cursor, text, x, y, nibbles, c0, c1, c2, c3], scratch, call_sym)
     }
+    /// `TOSetupMessageWindow_008b8de0(w)`.
+    TOSetupMessageWindow_008b8de0 @ 0x008b_8de0 => extern "C" fn to_setup_message_window(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<3>::new();
+        let scratch = frame.at();
+        tolib::bridge::setup_message_window(&mut mem(), w, scratch, call_ptr, fcall)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {

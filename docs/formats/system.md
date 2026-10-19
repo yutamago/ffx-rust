@@ -1580,3 +1580,16 @@ pushed as literals (no relocation entries), not addresses.
   edge 3.5 in) by the image sizes, the second pair first. The original
   leaves the record's `+0x40..+0x87` and `+0x8c` uninitialised.
   It returns `cursor + 0x10`.
+- `TOSetupMessageWindow_008b8de0(w)` runs the window's callback (`+0xf4`)
+  and fits the window to its text (`+0x94`). Without a message (`+8` 0)
+  it sets the word counts, measures the text and centres the rect (y 1 in
+  message-window mode 1), returning `TOWideWindowRect_008b8d10`'s `eax`.
+  With one it counts the choices (`+0x24`, `+0x28` adding the macro text
+  `0x025d09bc`'s), measures the first line (flags `| 3`) and the whole
+  text (`| 1`). Choice style 1 (`+0x22`) adds the macro width to a
+  positive first-line width (kept as `+0x2a`) and widens the window by
+  it. It then sets `+0xa8` to the word count (with the macro text's for
+  style 1), `+2` to 1 when that equals the choices, and returns `+0xa8`.
+  With `+0x1e` 1, `TOLayoutMessageChoices_008b9a60(w, 1)` follows and its
+  `eax` is returned. The x position is stored as `f32` before `ftol`, the
+  y sum is not.
