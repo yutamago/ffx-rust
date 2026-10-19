@@ -9168,3 +9168,62 @@ fn menu_round22_mc_sync_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round22_sell_window_ctrl_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_9e20) else {
+        return;
+    };
+    // the pads from cells, the sound and the sale recorded
+    let (rep, trg) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    for (f, cell) in [(0x008b_e470u32, rep), (0x008b_e4b0, trg)] {
+        let code = [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat(); // mov eax, [cell]; ret
+        for o in [&mut t.a, &mut t.b] {
+            let at = o.rebase(f);
+            o.write(at, &code).unwrap();
+        }
+    }
+    return_counter(&mut t, 0x008b_e410, 0);
+    for (f, n) in [(0x0088_6e80u32, 1u8), (0x0079_0550, 2), (0x0078_59a0, 1)] {
+        let r = t.rng.next();
+        record_n(&mut t, f, n, r);
+    }
+    for round in 0..3000u32 {
+        let window = t.alloc_random(0x80);
+        let state = t.rng.pick_or_any(&[0, 1, 2, 3, 3, 3, 4, 5, 6, 7, 8]);
+        t.put(window + 0x28, state);
+        let n = t
+            .rng
+            .pick(&[0i16, 1, 2, 5, 10, 11, 98, 99, 100, -3, 0x7ffc]);
+        t.put(window + 0x48, n);
+        // half the rounds at or next to the amount
+        let near = i32::from(n)
+            .cast_unsigned()
+            .wrapping_add(t.rng.pick(&[0u32, 1, 9, 10, 11]));
+        let most = if round % 2 == 0 {
+            near
+        } else {
+            t.rng
+                .pick_or_any(&[1, 2, 10, 99, 100, 0x1_0063, 0xffff_ffff])
+        };
+        t.put(window + 0x64, most);
+        let r = t
+            .rng
+            .pick_or_any(&[0, 0x4000, 0x1000, 0x8000, 0x2000, 0x5000, 0xa000]);
+        t.put(rep, r);
+        let g = t.rng.pick_or_any(&[0, 0, 0x20, 0x40, 0x60, 0x2000_0000]);
+        t.put(trg, g);
+        t.twin(
+            "MenuShop_SellWindowCtrl",
+            0x008d_9e20,
+            &[window],
+            VOID,
+            |o| {
+                tk::menu_shop_sell_window_ctrl(o, window, &mut callback);
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}

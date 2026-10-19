@@ -3902,4 +3902,8 @@ ported! {
     MenuSave_McSync @ 0x0088_84a0 => extern "C" fn menu_save_mc_sync(mode: u32, cmd: u32, result: u32) -> u32 {
         tk::menu_save_mc_sync(&mut mem(), [mode, cmd, result], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuShop_SellWindowCtrl(window)`: void (the dispatcher never reads eax).
+    MenuShop_SellWindowCtrl @ 0x008d_9e20 => extern "C" fn menu_shop_sell_window_ctrl(window: u32) {
+        tk::menu_shop_sell_window_ctrl(&mut mem(), window, &mut |_, f, a| call_ptr(f, a));
+    }
 }

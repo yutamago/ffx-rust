@@ -9663,6 +9663,108 @@ pub mod bridge {
             }
         }
     }
+
+    /// `MenuShop_SellWindowCtrl(window)` (`0x008d9e20`, own name; the
+    /// `+0xc` callback `MenuShop_OpenSellWindow` installs): the item shop
+    /// sell window's input. `TOMenuGetControlPad()` (dropped), the repeat
+    /// and trigger pads, then by state `+0x28`: 0 becomes 1; 1 goes on as
+    /// 2, 2 stores 3 and goes on as 3; in 3 a trigger `0x20` sells (state
+    /// 4: `+0x45` 1, sound `0x8000000e`, `MsSaveItemUse(+0x5c, -amount)`,
+    /// `MsPayGIL(-(amount * +0x60))`, state 5), `0x40` cancels (state 6:
+    /// `+0x45` `0xff`, sound `0x80000004`, state 7); otherwise the repeat
+    /// pad moves the amount (`i16 +0x48`, from 1 to the `+0x64` most, sound
+    /// `0x80000001` on a move): `0x4000` −10 (at least 1), `0x1000` +10 (at
+    /// most the most), `0x8000` −1, `0x2000` +1. States 5, 7 and others do
+    /// nothing. The caller never reads `eax`.
+    pub fn menu_shop_sell_window_ctrl<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |o: u32| window.wrapping_add(o);
+        let pad = mem.rebase(0x008b_e410);
+        call(mem, pad, &[]);
+        let rep = mem.rebase(0x008b_e470);
+        let rep = call(mem, rep, &[]) & 0xffff;
+        let trg = mem.rebase(0x008b_e4b0);
+        let trg = call(mem, trg, &[]) & 0xffff;
+        let most = mem.read::<u32>(at(0x64)).cast_signed();
+        let sound = mem.rebase(0x0088_6e80);
+        let amount = |mem: &M| mem.read::<i16>(at(0x48));
+        let mut state = mem.read::<u32>(at(0x28));
+        loop {
+            match state {
+                0 => {
+                    mem.write(at(0x28), 1u32);
+                    return;
+                }
+                1 => state = 2,
+                2 | 3 => {
+                    if state == 2 {
+                        mem.write(at(0x28), 3u32);
+                    }
+                    if trg & 0x20 != 0 {
+                        state = 4;
+                    } else if trg & 0x40 != 0 {
+                        state = 6;
+                    } else {
+                        let n = amount(mem);
+                        if rep & 0x4000 != 0 {
+                            if n > 1 {
+                                call(mem, sound, &[0x8000_0001]);
+                                let n = amount(mem).wrapping_sub(10);
+                                mem.write(at(0x48), if n < 1 { 1 } else { n });
+                            }
+                        } else if rep & 0x1000 != 0 {
+                            if i32::from(n) < most {
+                                call(mem, sound, &[0x8000_0001]);
+                                let n = amount(mem).wrapping_add(10);
+                                #[allow(clippy::cast_possible_truncation)] // the low half
+                                let n = if i32::from(n) > most { most as i16 } else { n };
+                                mem.write(at(0x48), n);
+                            }
+                        } else if rep & 0x8000 != 0 {
+                            if n > 1 {
+                                call(mem, sound, &[0x8000_0001]);
+                                let n = amount(mem).wrapping_sub(1);
+                                mem.write(at(0x48), n);
+                            }
+                        } else if rep & 0x2000 != 0 && i32::from(n) < most {
+                            call(mem, sound, &[0x8000_0001]);
+                            let n = amount(mem).wrapping_add(1);
+                            mem.write(at(0x48), n);
+                        }
+                        return;
+                    }
+                }
+                4 => {
+                    mem.write(at(0x45), 1u8);
+                    call(mem, sound, &[0x8000_000e]);
+                    let item: u32 = mem.read(at(0x5c));
+                    let n = i32::from(amount(mem));
+                    let item_use = mem.rebase(0x0079_0550);
+                    call(mem, item_use, &[item, n.wrapping_neg().cast_unsigned()]);
+                    let n = i32::from(amount(mem));
+                    let price = mem.read::<u32>(at(0x60)).cast_signed();
+                    let pay = mem.rebase(0x0078_59a0);
+                    call(
+                        mem,
+                        pay,
+                        &[n.wrapping_mul(price).wrapping_neg().cast_unsigned()],
+                    );
+                    mem.write(at(0x28), 5u32);
+                    return;
+                }
+                6 => {
+                    mem.write(at(0x45), 0xffu8);
+                    call(mem, sound, &[0x8000_0004]);
+                    mem.write(at(0x28), 7u32);
+                    return;
+                }
+                _ => return,
+            }
+        }
+    }
 }
 
 #[cfg(test)]
