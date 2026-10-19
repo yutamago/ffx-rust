@@ -1872,6 +1872,26 @@ corners, scaled by the corner scales through the emulated VU0 registers
 (`0x00c8f7d0`, scale `0x00c8f7e0`) into the packet buffer (eight
 vectors), then the next 16 floats get `x * 512` and `1 - y * 512`.
 
+`AbmapDrawChrRings()` (`0x00a4c8d0`, from `0x00a54660` and `eiAbmDraw`)
+draws rings through `op1_md_draw_eiabm(model, request, 4, g_Abmap
++0x116a4)`. The request (0x48 bytes) holds kind 4 or 0x24, the target
+0x01740870, 0x48, an RGBA word at `+0x18`, the model matrix pointer
+`+0x20` and a vertex block pointer `+0x44`; bytes `+0x0b` and
+`+0x30..+0x37` are never set. The vertex block is eight vectors of the
+EE zero register (`0x00c8f508`) except vector 3 `(r0.x, r0.y, depth, 1)`
+and a scale matrix in vectors 4..7 (diagonal `s`, the position in row 7
+with z 0 and w 1), times the view `g_Abmap + 0x113e0`
+(`FFXVu0MulMatrix`). First the cursor: model `0x023057fc`, colour by
+the current character from `0x00c86580`, alpha `+0x115c5 / 3`, depth 4,
+`s = (+0x115a4 * 3 + 125) / 1280`, position `+0x11520`. Then each of the
+8 character records (0x50 bytes from `g_Abmap + 0x11088`: position
+`+0x00`, radius `+0x3c`, node `u16 +0x44`) with radius above 0, except
+those on the current character's node that are neither it nor the 8th:
+model `0x023057f8`, colour `0x00c86660[k]`, alpha `16 (1 + sin) + 0x60`
+truncated (sine table index `((k << 13) + (frame +0x11698 << 11)) >> 4`),
+scaled by the fade `+0x115f4` below 1, depth 3 (2 for the 8th), `s =
+radius / 800`.
+
 `AbmapDrawMap()` (`0x00a4ce20`) draws each node (`g_Abmap + 8`, 16 bytes,
 count `i16` at `g_Abmap`; kind template `*(0x01a85f78 + 4 * node[+6])`,
 block at `template + i16 template[+0x10]`): `AbmapMakeNodeMatrix` times the
@@ -2203,6 +2223,22 @@ and `v` are `CLAMP`-style ranges, `u` is also written as `SCISSOR_1`,
 and the offset is `0x800 - (last + 1) / 2` per axis. The `XYOFFSET`
 quadword's y half is always 0, and its caller passes its region width
 where a `v` range is read when `u` is a range; both are kept.
+
+`yiPartChainToOMD(r, out, part)` (`0x00911ac0`, from `yiDObjToOMD`)
+rebuilds map part `part`'s VIF chain (`r +0x68834 + 0xb4 * part`; 0
+without one or past the count `r +0x68788`) as one group-tagged packet
+and returns its size. Node data starts 8 words before its VIF codes
+(4 more than the split's). **Original bug, fixed in the port:** the
+original runs the codes (`yiPolyBufExecVif`) on `&buf`, the address of
+its local that holds the poly buffer, instead of `buf`. Its UNPACKs land
+`16 * TOPS` bytes up its callers' stack and the VIF registers 0x4000 bytes
+up, while the blocks it reads come from the real buffer, which
+`yiPolyBufClear` left zeroed: `TOPS` reads 0 and no block has triangles,
+so the packet is the head, one untextured tag per node (a 0x2000 `u16`),
+an end tag (byte 1 0xff) and no vertices. The port runs the codes on a
+cleared buffer of its own (16 KB, on the hook's heap) and keeps every
+read and write outside the original's stack, so its output is the
+original's; the triangle paths are ported as written but cannot run.
 
 ## Floats
 
