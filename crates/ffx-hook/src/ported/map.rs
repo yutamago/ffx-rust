@@ -2749,6 +2749,15 @@ ported! {
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         ffx_field::abmap_draw::abmap_draw_chr_rings(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
     }
+    /// `AbmapDrawBoard()`.
+    AbmapDrawBoard @ 0x00a4_c700 => extern "C" fn shim_abmap_draw_board() {
+        // 16-byte aligned: the matrices go to FFXVu0UnitMatrix/MulMatrix
+        #[repr(C, align(16))]
+        struct BoardWork([u8; ffx_field::abmap_draw::BOARD_WORK as usize]);
+        let mut work = BoardWork([0; ffx_field::abmap_draw::BOARD_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::abmap_draw::abmap_draw_board(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `AbmapDrawMap()`.
     AbmapDrawMap @ 0x00a4_ce20 => extern "C" fn shim_abmap_draw_map() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::MAP_WORK as usize / 4 }>::new();

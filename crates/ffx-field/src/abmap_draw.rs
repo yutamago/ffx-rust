@@ -907,3 +907,73 @@ where
         draw(mem, call, s, pos, model);
     }
 }
+
+/// `FFXVu0UnitMatrix(m)` (`0x006ed9a0`).
+const UNIT_MATRIX: u32 = 0x006e_d9a0;
+/// The sphere grid's board models (`0x023056ec` for the expert grid,
+/// `0x023056f0` for the standard one).
+const BOARD_MODELS: [u32; 2] = [0x0230_56ec, 0x0230_56f0];
+/// 7.0 (`f32`, `.rdata`): the board's depth.
+const BOARD_DEPTH: u32 = 0x00b5_f2e8;
+/// [`abmap_draw_board`]'s scratch, laid out as the original's frame: the
+/// draw request (0x48 bytes) at 0, the model matrix at `+0x78`, the unit
+/// matrix at `+0xb8`, the vertex block (four vectors) at `+0xf8`.
+pub const BOARD_WORK: u32 = 0x138;
+
+/// `AbmapDrawBoard()` (`0x00a4c700`, name ours; from the ability map's
+/// draw `0x00a54660`): the grid's board model through
+/// `op1_md_draw_eiabm(model, request, 8, g_Abmap[+0x116a4])`: the
+/// expert grid's (`0x023056ec`, request `+0x08` 0x48) when the save menu
+/// word (`MsGetSaveMenu`) has bits 14..15 = 2, else the standard one's
+/// (`0x023056f0`, 0x44). The request is kind 0x34, the target 0x01740870,
+/// colour 0x40404040, the model matrix (`FFXVu0UnitMatrix` times the view
+/// `g_Abmap + 0x113e0`, `FFXVu0MulMatrix`) at `+0x20`, the unit matrix at
+/// `+0x2c`, the vertex block at `+0x44` (the EE zero register three
+/// times, then `(r0.x, r0.y, 7, 1)`); bytes `+0x0b`, `+0x30..+0x37` are
+/// never set. `work` is [`BOARD_WORK`] bytes, 16-byte aligned.
+pub fn abmap_draw_board<M, C>(mem: &mut M, work: u32, call: &mut C)
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let reg = |mem: &M, a: u32| mem.rebase(a);
+    let (request, matrix, unit, verts) = (work, work + 0x78, work + 0xb8, work + 0xf8);
+    let f = reg(mem, crate::abmap::MS_GET_SAVE_MENU);
+    let menu = call(mem, f, &[]);
+    let r0 = read4(mem, reg(mem, EE_R0));
+    let depth = mem.read::<u32>(reg(mem, BOARD_DEPTH));
+    for k in 0..3 {
+        write4(mem, verts + 0x10 * k, r0);
+    }
+    write4(
+        mem,
+        verts + 0x30,
+        [r0[0], r0[1], x87::copy(depth), 0x3f80_0000],
+    );
+    mem.write(request, 0x34u32);
+    mem.write(request + 4, reg(mem, RING_TARGET));
+    mem.write(request + 0xa, 0u8);
+    for o in [0xc, 0x10, 0x14, 0x1c, 0x24, 0x28, 0x38, 0x3c, 0x40] {
+        mem.write(request + o, 0u32);
+    }
+    mem.write(request + 0x18, 0x4040_4040u32);
+    mem.write(request + 0x20, matrix);
+    mem.write(request + 0x2c, unit);
+    mem.write(request + 0x44, verts);
+    let f = reg(mem, UNIT_MATRIX);
+    call(mem, f, &[unit]);
+    let view = ABMAP.get(mem).wrapping_add(0x113e0);
+    let f = reg(mem, MUL_MATRIX);
+    call(mem, f, &[matrix, view, unit]);
+    let expert = mem.read::<u32>(menu) & 0xc000 == 0x8000;
+    let (model, size) = if expert {
+        (BOARD_MODELS[0], 0x48u16)
+    } else {
+        (BOARD_MODELS[1], 0x44)
+    };
+    mem.write(request + 8, size);
+    let layer = mem.read::<u32>(ABMAP.get(mem).wrapping_add(0x116a4));
+    let model = mem.read::<u32>(reg(mem, model));
+    let f = reg(mem, MD_DRAW);
+    call(mem, f, &[model, request, 8, layer]);
+}

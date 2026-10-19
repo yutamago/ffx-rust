@@ -1892,6 +1892,14 @@ truncated (sine table index `((k << 13) + (frame +0x11698 << 11)) >> 4`),
 scaled by the fade `+0x115f4` below 1, depth 3 (2 for the 8th), `s =
 radius / 800`.
 
+`AbmapDrawBoard()` (`0x00a4c700`, from `0x00a54660`) draws the grid's
+board model through the same `op1_md_draw_eiabm` (count 8): the expert
+grid's `0x023056ec` (request `+0x08` 0x48) when `MsGetSaveMenu()`'s word
+has bits 14..15 = 2, else the standard `0x023056f0` (0x44). Request kind
+0x34, colour 0x40404040, the model matrix (unit times the view) at
+`+0x20`, the unit matrix at `+0x2c`, four vectors at `+0x44` (the EE zero
+register three times, then `(r0.x, r0.y, 7, 1)`).
+
 `AbmapDrawMap()` (`0x00a4ce20`) draws each node (`g_Abmap + 8`, 16 bytes,
 count `i16` at `g_Abmap`; kind template `*(0x01a85f78 + 4 * node[+6])`,
 block at `template + i16 template[+0x10]`): `AbmapMakeNodeMatrix` times the
