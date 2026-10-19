@@ -1059,4 +1059,68 @@ pub mod bridge {
         call(mem, draw, &[0x44, work, 4, colour]);
         call(mem, ui_type, &[0])
     }
+
+    // ---- field r13, axis rotations ----
+
+    /// `rcuiMulMatrix(out, a, b)` (`0x0093d1b0`).
+    pub const MUL_MATRIX: u32 = 0x0093_d1b0;
+
+    /// An axis for [`rcui_rotate`]: where `cos`, `-sin`, `sin`, `cos` go
+    /// in the 4x4 matrix (word indices).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Axis {
+        /// `0x0093d5a0`: rows/columns 1 and 2.
+        X,
+        /// `0x0093d620`: rows/columns 0 and 2, `-sin` above the diagonal.
+        Y,
+        /// `0x0093d690`: rows/columns 0 and 1.
+        Z,
+    }
+
+    impl Axis {
+        /// The word indices of `cos`, `-sin`, `sin` and `cos`.
+        const fn slots(self) -> [u32; 4] {
+            match self {
+                Self::X => [5, 6, 9, 10],
+                Self::Y => [0, 2, 8, 10],
+                Self::Z => [0, 1, 4, 5],
+            }
+        }
+    }
+
+    /// `rcuiRotate{X,Y,Z}(out, m, angle)` (`0x0093d5a0`, `0x0093d620`,
+    /// `0x0093d690`, from `0x0093d490` and `0x0093d550`; names ours): the
+    /// rotation by `angle` about `axis` (an identity in `work`, the
+    /// original's stack matrix, with `cos` and `sin` from `_CIcos` and
+    /// `_CIsin`, each stored as an `f32`, and `-sin`) times `m` into `out`
+    /// (`rcuiMulMatrix(out, rotation, m)`), whose `eax` it returns.
+    pub fn rcui_rotate<M: Mem, C, F>(
+        mem: &mut M,
+        axis: Axis,
+        [out, m, angle]: [u32; 3],
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        for i in 0..16u32 {
+            let one = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+            mem.write(work.wrapping_add(4 * i), one);
+        }
+        let a = Reg::load(f32::from_bits(angle)).value();
+        let f = mem.rebase(crate::vu0::CI_COS);
+        let c = Reg::constant(fcall(mem, f, crate::camera::FArgs::St0(a))).store();
+        let f = mem.rebase(crate::vu0::CI_SIN);
+        let s = Reg::constant(fcall(mem, f, crate::camera::FArgs::St0(a))).store();
+        let minus_s = (-Reg::load(s)).store();
+        let [i0, i1, i2, i3] = axis.slots();
+        for (i, v) in [(i0, c), (i1, minus_s), (i2, s), (i3, c)] {
+            mem.write(work.wrapping_add(4 * i), v);
+        }
+        let f = mem.rebase(MUL_MATRIX);
+        call(mem, f, &[out, work, m])
+    }
 }

@@ -4005,6 +4005,21 @@ ported! {
     yiLoadFieldParticle @ 0x0090_9190 => extern "C" fn shim_yi_load_field_particle(textures: u32, effects: u32) -> u32 {
         yi::bridge::yi_load_field_particle(&mut mem(), [textures, effects], &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcuiRotateX(out, m, angle)`: the rotation in a frame.
+    rcuiRotateX @ 0x0093_d5a0 => extern "C" fn shim_rcui_rotate_x(out: u32, m: u32, angle: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        rcui::bridge::rcui_rotate(&mut mem(), rcui::bridge::Axis::X, [out, m, angle], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, x| call_float(f, x))
+    }
+    /// `rcuiRotateY(out, m, angle)`: the rotation in a frame.
+    rcuiRotateY @ 0x0093_d620 => extern "C" fn shim_rcui_rotate_y(out: u32, m: u32, angle: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        rcui::bridge::rcui_rotate(&mut mem(), rcui::bridge::Axis::Y, [out, m, angle], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, x| call_float(f, x))
+    }
+    /// `rcuiRotateZ(out, m, angle)`: the rotation in a frame.
+    rcuiRotateZ @ 0x0093_d690 => extern "C" fn shim_rcui_rotate_z(out: u32, m: u32, angle: u32) -> u32 {
+        let mut w = super::StackFrame::<16>::new();
+        rcui::bridge::rcui_rotate(&mut mem(), rcui::bridge::Axis::Z, [out, m, angle], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, x| call_float(f, x))
+    }
     /// `mapChange(name)`.
     mapChange @ 0x0090_8100 => extern "C" fn shim_map_change(name: u32) -> u32 {
         yi::bridge::map_change(&mut mem(), name, &mut |_, f, a| call_cdecl(f, a))

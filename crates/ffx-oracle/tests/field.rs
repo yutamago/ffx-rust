@@ -20542,3 +20542,56 @@ fn r13ll_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_a602);
     r13ll_cases(&mut t, &mut rng, 250);
 }
+
+// ---- field agent r13, group m: rotations about one axis ----
+
+/// Group m (r13) on `t`: `rcuiRotateX`/`Y`/`Z` for random angles and
+/// matrices, `out` apart from `m` or the same (as `0x0093d490` calls
+/// them); the trigonometry is the CPU's `fcos`/`fsin` on both sides,
+/// `rcuiMulMatrix` runs as the original.
+fn r13mm_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::rcui::bridge::{self as rb, Axis};
+    t.install_trig();
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let fcall = &mut oracle_fcall;
+    let (out, m) = (t.alloc(0x40), t.alloc(0x40));
+    let rotations = [
+        (Axis::X, 0x0093_d5a0),
+        (Axis::Y, 0x0093_d620),
+        (Axis::Z, 0x0093_d690),
+    ];
+    for _ in 0..cases {
+        for w in 0..16 {
+            t.put(m + 4 * w, r6b_fine(rng, -4.0, 4.0));
+        }
+        t.fill(out, 0x40, rng);
+        let (axis, f) = rotations[rng.below(3) as usize];
+        let target = if rng.below(2) == 0 { m } else { out };
+        let angle = r6b_fine(rng, -10.0, 10.0);
+        let a = [target, m, angle];
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "rcuiRotate",
+            |o| o.eax(f, &a),
+            |o| rb::rcui_rotate(o, axis, a, work, call, fcall),
+        );
+    }
+}
+
+/// Group m (r13) on the image.
+#[test]
+fn r13mm_rotate_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a701);
+    r13mm_cases(&mut t, &mut rng, 600);
+}
+
+/// Group m (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13mm_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a702);
+    r13mm_cases(&mut t, &mut rng, 300);
+}

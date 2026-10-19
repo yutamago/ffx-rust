@@ -12298,6 +12298,9 @@
 0x0093d290 function rcuiMulVector                # (out, a, b): four floats, per component
 0x0093d3d0 function rcuiNormalize             # (out, v): v / |v| (xyz)
 0x0093d440 function rcuiCrossProduct          # (out, a, b): a x b, w 0.0
+0x0093d5a0 function rcuiRotateX               # (out, m, angle) -> rcuiMulMatrix's eax: from 0x0093d490/0x0093d550 (name ours): FFXSamp0UnitMatrix into a stack matrix, [5] [10] = f32 _CIcos(angle), [9] = f32 _CIsin(angle), [6] = its negation; rcuiMulMatrix(out, rotation, m); ported (field r13, ffx_field::rcui)
+0x0093d620 function rcuiRotateY               # (out, m, angle): as rcuiRotateX with [0] [10] cos, [8] sin, [2] -sin (name ours); ported (field r13, ffx_field::rcui)
+0x0093d690 function rcuiRotateZ               # (out, m, angle): as rcuiRotateX with [0] [5] cos, [4] sin, [1] -sin (name ours); ported (field r13, ffx_field::rcui)
 0x0093d710 function rcuiProjectToInt          # (out, m, v, raw) -> float 1/w (left in ST0): rcuiApplyMatrix, x y z over w, the four ftol'd (times the double 0x00b313a0 unless raw); name ours
 0x0093d7d0 function rcuiScaleVec4             # (dst, v, s): four floats times s, returns dst; name ours
 0x0093d830 function FFXSamp0TransMatrix       # fh v3:exact 0x0093d830
