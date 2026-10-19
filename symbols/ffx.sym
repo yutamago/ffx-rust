@@ -6457,6 +6457,7 @@
 0x007e6ca0 function op_vec_xz_add             # (dst, v, x, _, z) dst.x = v.x + x, dst.z = v.z + z
 0x007e6cc0 function rcVec4fToFixed_copy_007e6cc0 # the same code as rcVec4fToFixed (0x00925950; call targets equal), a copy the compiler kept; own name
 0x007e6d80 function rcAngle2D                 # (x0, y0, x1, y1) -> ST0: direction of (x1 - x0, y1 - y0) in 0..2pi: quadrant q (NaN negative), atan(b/a) or pi/2 - atan(a/b), + q pi/2; from 0x007e6e50; name ours
+0x007e6e50 function op_circle_cross_007e6e50  # (x0, y0, r, x1, y1, x2, y2, xs, ys) -> 0..2: the line (x1,y1)-(x2,y2) against the circle r about (x0,y0): a = rcAngle2D(line), d = y of the centre offset turned by -a (op_rot_point_007ea9d0); |d| > r: 0; s = sqrt(r^2 - d^2): (x0+s, y0-d) and unless s is 0 (x0-s, y0-d), turned by a about the centre, to xs[i]/ys[i]; from 0x007e8fd0; name ours; ported (field r13, ffx_field::geom)
 0x007e79a0 function op_apply_m_w1             # fh v3:exact 0x007e78b0
 0x007e7be0 function op_rot_m_y_apply_007e7be0 # ours: (dst, src, angle): a unit matrix local (from r0, 1.0 at +g_pppColorConShift, r2 = 1,0), op_rot_m_y(m, m, angle), op_apply_m_w1(dst, m, src) (op::bridge::op_rot_m_y_apply)
 0x007e7ed0 function op_deg_get                # fh v3:exact 0x007e7de0

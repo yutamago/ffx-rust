@@ -3971,6 +3971,12 @@ ported! {
         abmap::bridge::abmap_state_warping(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `op_circle_cross_007e6e50(x0, y0, r, x1, y1, x2, y2, xs, ys)`: the
+    /// turned offset in a frame.
+    op_circle_cross_007e6e50 @ 0x007e_6e50 => extern "C" fn shim_op_circle_cross(x0: u32, y0: u32, r: u32, x1: u32, y1: u32, x2: u32, y2: u32, xs: u32, ys: u32) -> u32 {
+        let mut w = super::StackFrame::<2>::new();
+        geom::bridge::op_circle_cross(&mut mem(), [x0, y0, r, x1, y1, x2, y2, xs, ys], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
     /// `rcAngle2D(x0, y0, x1, y1)` (a float in `ST0`).
     rcAngle2D @ 0x007e_6d80 => extern "C" fn shim_rc_angle_2d(x0: u32, y0: u32, x1: u32, y1: u32) -> f32 {
         geom::bridge::rc_angle_2d(&mut mem(), [x0, y0, x1, y1], |_, f, a| call_float(f, a))

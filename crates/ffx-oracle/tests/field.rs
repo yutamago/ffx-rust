@@ -18593,3 +18593,74 @@ fn r13j_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_a102);
     r13j_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group K: a circle and a line ----
+
+/// Group K (r13) on `t`: `op_circle_cross_007e6e50` for lines missing,
+/// touching (a horizontal line at the radius: one point) and crossing
+/// the circle, NaN radii and zero-length lines. `rcAngle2D` and the
+/// point turn run as the originals.
+fn r13k_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    t.install_trig();
+    let fcall = &mut oracle_fcall;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (xs, ys) = (t.alloc(8), t.alloc(8));
+    for k in 0..cases {
+        t.fill(xs, 8, rng);
+        t.fill(ys, 8, rng);
+        let f = |rng: &mut Xorshift| r6b_fine(rng, -100.0, 100.0);
+        let mut a = [
+            f(rng),
+            f(rng),
+            r6b_fine(rng, 0.0, 80.0),
+            f(rng),
+            f(rng),
+            f(rng),
+            f(rng),
+            xs,
+            ys,
+        ];
+        match k % 6 {
+            0 => {
+                // a horizontal line through the origin touching the circle
+                let r = r6b_fine(rng, 1.0, 50.0);
+                a[2] = r;
+                a[1] = r;
+                a[3] = 0;
+                a[4] = 0;
+                a[5] = 10f32.to_bits();
+                a[6] = 0;
+            }
+            1 => a[2] = 0x7fc0_0000,
+            2 => {
+                a[5] = a[3];
+                a[6] = a[4];
+            }
+            _ => {}
+        }
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "op_circle_cross_007e6e50",
+            |o| o.eax(0x007e_6e50, &a),
+            |m| ffx_field::geom::bridge::op_circle_cross(m, a, work, call, fcall),
+        );
+    }
+}
+
+/// Group K (r13) on the image.
+#[test]
+fn r13k_circle_cross_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_b101);
+    r13k_cases(&mut t, &mut rng, 600);
+}
+
+/// Group K (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13k_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_b102);
+    r13k_cases(&mut t, &mut rng, 300);
+}
