@@ -78,7 +78,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             0x3f1,
             rng.below(0x3f2),
             (-15i32).cast_unsigned(),
-        ][rng.below(7) as usize];
+            // rounds to 0 only as a signed number
+            (-20i32).cast_unsigned(),
+        ][rng.below(8) as usize];
         for o in [&mut *a, &mut *b] {
             for k in 0..u32::try_from(CALLEES.len()).unwrap() {
                 o.write(rec(k), &[0; 4]).unwrap();
