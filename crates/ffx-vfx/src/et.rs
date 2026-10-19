@@ -337,6 +337,60 @@ pub mod bridge {
         mem.write(rec.wrapping_add(0x17), 0u8);
     }
 
+    /// `op_chr_status_reset_exception(h)` (`0x007fae40`): looks the handle
+    /// up among the character records, but goes on to
+    /// [`op_et_astatus_effect_off`]`(h)` whether it is found or not.
+    pub fn op_chr_status_reset_exception<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        op_et_astatus_effect_off(mem, h, call);
+    }
+
+    /// `opus_check_forced_draw()` (`0x007fe4e0`): with any of the 240
+    /// [`DRAW_FLAGS2`] bytes set, a debug line and `debug_exit_trace(1)`
+    /// (through `call`; both bare `ret`s in this build). Returns 0xf0, the
+    /// scan's end left in eax.
+    pub fn opus_check_forced_draw<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let flags: [u8; 0xf0] = mem.read(DRAW_FLAGS2.ptr(mem).addr);
+        if flags.iter().all(|&b| b == 0) {
+            return 0xf0;
+        }
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        call(mem, g(mem, 0x0062_f500), &[g(mem, 0x00b5_8540)]);
+        call(mem, g(mem, 0x0062_f510), &[1]);
+        0xf0
+    }
+
+    /// `opus_change_chrhd_battle_to_ffx()` (`0x007fe1a0`): each of the 32
+    /// battle handles (`g_EtChrHandles`) moves to the first free one of
+    /// the 0xd0 after them (cleared when there is none), then the three
+    /// remaps: [`opus_change_osu_en_by_chr_status`] on the battle's opus
+    /// list, [`opus_change_eff_status_en`], [`opus_change_chr_status_en`]
+    /// (`frame` for their index map, [`STATUS_FRAME`] bytes). Returns the
+    /// last one's eax.
+    pub fn opus_change_chrhd_battle_to_ffx(mem: &mut impl Mem, frame: u32) -> u32 {
+        let handles = CHR_HANDLES.ptr(mem);
+        for i in 0..0x20 {
+            let h = handles.at(i).get(mem);
+            if h == 0 {
+                continue;
+            }
+            handles.at(i).set(mem, 0);
+            if let Some(k) = (0..0xd0).find(|&k| handles.at(0x20 + k).get(mem) == 0) {
+                handles.at(0x20 + k).set(mem, h);
+            }
+        }
+        let list = OPUS_BATTLE.get(mem);
+        opus_change_osu_en_by_chr_status(mem, list, frame);
+        opus_change_eff_status_en(mem, frame);
+        opus_change_chr_status_en(mem, frame)
+    }
+
     /// `op_et_eff_target_center_0081b3e0(eff, out, filter)` (`0x0081b3e0`):
     /// the mean position of an effect record's targets into `out`: for
     /// each of its `byte +8` character indices (`+0x10`; the count read

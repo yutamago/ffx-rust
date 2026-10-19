@@ -6527,6 +6527,8 @@
 0x007ecea0 function op_vec_z_scale            # (dst, v, s) dst.z = v.z * s
 0x007ecec0 function op_vec_w_scale            # (dst, v, s) dst.w = v.w * s
 0x007ecf30 function op_anm_tex0_reset         # fh v3:bsim1.00 0x007ece50; (): only dbgPrintf (op::bridge::op_anm_tex0_reset)
+0x007ecf50 function op_anm_tex0_set_007ecf50 # ours: (_, a, b) -> (b & 0x3fff) << 5: emulated r1 = a & 0x3fff, (b & 0x3fff) << 5; r2 high words 0 and the same; then dbgPrintf; 0x007ecfa0 is the same code (op::bridge::op_anm_tex0_set)
+0x007ecfa0 function op_anm_tex0_set_007ecfa0 # ours: byte-identical to op_anm_tex0_set_007ecf50 (op::bridge::op_anm_tex0_set)
 0x007ed0c0 function op_shape_draw             # fh v3:cg2 0x7ecfe0
 0x007f49e0 function op_shape_draw_eamap          # layout and code: follows op_shape_draw, where the Switch's op_shape file has op_shape_draw_eamap (3904 bytes; ours 4850) next; draws a shape over the area map: graphicAbmapGetVertexInfo (0x00638fd0), graphicFontGetScreenWH; callers the area-map effects 0x00a4fe40, 0x00a51340, 0x00a51560
 0x007f5ed0 function op_spr_cmd_size           # (cmd) -> ((i16) cmd[+2] * (14 if cmd[0] bit 3 else 7) + 7) * 16
@@ -6546,7 +6548,7 @@
 0x007f94e0 function opus_wave_omd_make        # fh switch:cg2 0x71003eaaf0; ours: (obj, wave, uv, omd, view, light) -> end of normals: builds a 17x25 vertex disc OMD (384 quads at +0x30, verts +0x4840, normals +0x62d0): ring heights A sin(ang), normals tilted by the running mean of op_deg_get slopes, lit colours (light +0x24/+0x28/+0x2c, 1.7 +0x4d/128, +0x4c/128) as bytes x128 with ring fade, UVs from op_rtp_w1 extents (wave::bridge::opus_wave_omd_make)
 0x007fa510 function create0706NoiseRenderDataBuffer # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e3a40 create0706NoiseRenderDataBuffer, 4 votes, round 4
 0x007fa5c0 function create0706AccRenderDataBuffer # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e3d80 create0706AccRenderDataBuffer, 4 votes, round 1
-0x007fae40 function op_chr_status_reset_exception # layout+callees: sorts between create0706AccRenderDataBuffer and op_et_astatus_effect_change, and its named callees match the Switch 0x71003ec1e0 op_chr_status_reset_exception's (similarity 1.00: op_et_astatus_effect_off); symbols from Fahrenheit's server export
+0x007fae40 function op_chr_status_reset_exception # layout+callees: sorts between create0706AccRenderDataBuffer and op_et_astatus_effect_change, and its named callees match the Switch 0x71003ec1e0 op_chr_status_reset_exception's (similarity 1.00: op_et_astatus_effect_off); symbols from Fahrenheit's server export; (h): scans g_EtChr for h but jumps to op_et_astatus_effect_off(h) either way (et::bridge::op_chr_status_reset_exception)
 0x007faed0 function op_et_astatus_effect_change # fh v3:exact 0x007fadf0
 0x007fb000 function op_et_astatus_effect_off  # fh v3:cg5 0x7faf20; (chr): opu_unit_free_by_id(g_OpusBattle, 0x60004000 + i), +0x10/+0x18 = 0x80808080, opus_chara_rgba_set(chr, 0x80808080, w), opus_chara_status_rgb_set(chr, w) with w = MsBattleChrStart() != 0, Ch_ClutDispose when +0x17 bit 0; +0x17 = 0 (et::bridge::op_et_astatus_effect_off)
 0x007fb0a0 function op_et_astatus_effect_off_all # layout: alphabetical run between op_et_astatus_effect_off and op_et_battle_effect_free (1 unnamed in the gap); Switch 0x71003f2130 op_et_astatus_effect_off_all is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -6634,14 +6636,14 @@
 0x007fde30 function opu_unit_free_by_id       # fh v3:exact 0x007fdd50; (list, id), eax unread: the first g_EtEff record with id k: opu_eff_free_by_id(id), then every unit of index lists +0x10/+0x14/+0x18 with u16 +0x14 == k through opus_prog_off, opus_draw_off, yonExtMapDeleteId (as opu_unit_free_by_oef2)
 0x007fdf70 function opu_unit_free_by_oef2     # fh v3:exact 0x007fde90
 0x007fe0f0 function opus_change_chr_status_en    # layout: alphabetical run between opu_unit_free_by_oef2 and opus_change_chrhd_battle_to_ffx (1 unnamed in the gap); Switch 0x71003ef890 opus_change_chr_status_en is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (): after opus_chr_index_map, each live g_EtChr record takes its draw flags (both tables) from its old index +0xe and +0xe = the new one (et::bridge::opus_change_chr_status_en)
-0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0
+0x007fe1a0 function opus_change_chrhd_battle_to_ffx # fh v3:exact 0x007fe0c0; (): the 32 battle handles of g_EtChrHandles move to the first free of the next 0xd0, then opus_change_osu_en_by_chr_status(g_OpusBattle), 0x007fe280, opus_change_chr_status_en (et::bridge::opus_change_chrhd_battle_to_ffx)
 0x007fe200 function opus_change_chrhd_ffx_to_battle # fh v3:exact 0x007fe120
 0x007fe280 function opus_change_eff_status_en_007fe280 # ours: (): after opus_chr_index_map, every live g_EtEff record's character indices (byte +8 of them at +0x10, byte +9 at +0x18) remapped to the map's low byte; sits between opus_change_chr_status_en and opus_change_osu_en_by_chr_status (et::bridge::opus_change_eff_status_en)
 0x007fe340 function opus_change_osu_en_by_chr_status # fh v3:exact 0x007fe260; (list): after opus_chr_index_map, the unit character index (+0x18) of every unit in the list's index lists +0x10/+0x14/+0x18 remapped, 0xff and up -> 0xff (et::bridge::opus_change_osu_en_by_chr_status)
 0x007fe430 function op_is_not_0119fe90        # (x) -> -1 unless x is the word at 0x0119fe90, else 0
 0x007fe450 function opus_chr_index_map        # (out) -> moved: out = 240 u16 0xffff, then out[record +0xe] = the record handle's place in g_EtChrHandles; counts the places that differ from +0xe
 0x007fe4c0 function op_is_not_encount         # (x) -> -1 unless x is g_OpusEncount, else 0
-0x007fe4e0 function opus_check_forced_draw       # layout+callees: sorts between opus_change_osu_en_by_chr_status and opus_end_all_sub, and its named callees match the Switch 0x71003ef510 opus_check_forced_draw's (similarity 1.00: debug_exit_trace); symbols from Fahrenheit's server export
+0x007fe4e0 function opus_check_forced_draw       # layout+callees: sorts between opus_change_osu_en_by_chr_status and opus_end_all_sub, and its named callees match the Switch 0x71003ef510 opus_check_forced_draw's (similarity 1.00: debug_exit_trace); symbols from Fahrenheit's server export; (): any of the 240 g_EtDrawFlags2 set -> dbgPrintf, debug_exit_trace(1) (both bare ret); eax 0xf0 (et::bridge::opus_check_forced_draw)
 0x007fe540 function opus_monster_index        # (obj) -> slot among the 8 g_OpusMonsters (no null check, unlike opus_get_monster_index), else -1
 0x007fe570 function opus_weapon_index         # (obj) -> the opus_get_weapon_index body again
 0x007fe690 function opus_draw_slot_clear      # (obj, v) the 16 words at obj + 0x60 equal to v zeroed
@@ -6686,7 +6688,7 @@
 0x00800410 function opus_part_kind            # (p) -> (i16) at *(p + 0xc) + 2
 0x00800440 function op_oef2_sound_init_00800440 # ours: () -> 0: g_OpOef2SoundCueRing/Args, 0x023c36a0..0x023c389f (64 words, g_OpOef2Seps the second half), head/count, both g_OpOef2StreamCues and byte 0x023c3644 cleared; g_OpSoundCurves and 0x023c3660/64 set from image f32 constants (32, 512, 127, 96, 64, 768, 96, 32, 64, -0.0646, 129.07, 1/24); caller 0x007ff960 next to op_oef2_tex_clut_init_007e5680
 0x00800580 function op_effect_init            # fh v3:exact 0x008004a0
-0x00800610 function op_effect_run_before      # fh v3:exact 0x00800530
+0x00800610 function op_effect_run_before      # fh v3:exact 0x00800530; (): g_OpusBattle +0x54 = +0x58 pinned frame or latched 0x02332e8c (limit 0x02332e88 = 0x02332e90 + 0xf0000), opu_main_host(0, 0), latch back when unpinned, limit 0 (op::bridge::op_effect_run_before)
 0x00800670 function op_effect_run_after       # fh v3:exact 0x00800590
 0x00800700 function op_part_fp_init           # fh v3:exact 0x00800620
 0x00800770 function op_part_init              # fh v3:exact 0x00800690
@@ -16540,6 +16542,7 @@
 0x023328d0 label    g_OpLoopCount2            # op_loop_ffx_after increments it each frame; name ours
 0x023328d4 label    g_OpLoopCount             # op_loop_ffx_after increments it each frame; read by 0x007ec500, 0x0080fb30 and debug code (0x00a5f670...); name ours
 0x02332e80 label    g_OpLatch1                # op_loop_ffx_after copies 0x02332e84 here each frame; name ours
+0x02332e88 label    g_OpEffectRunLimit        # op_effect_run_before: 0 for a pinned frame, else 0x02332e90 + 0xf0000 around opu_main_host, cleared after; name ours
 0x02332e8c label    g_OpLatch0                # op_loop_ffx_after copies 0x02332e90 (written by 0x007ec890) here each frame; name ours
 0x02332e98 label    g_OpOtFrameWords          # two words op_ot_draw clears each frame; nothing else in the dump references them; name ours
 0x02332ea0 label    g_OpSprFlag               # byte beside g_OpSprTop, cleared by ops_init_spr (0x007e6c30); use unknown

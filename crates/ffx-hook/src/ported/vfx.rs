@@ -2006,12 +2006,12 @@ ported! {
         op::bridge::op_spline_xyz_table(&mut mem(), x, pts, n);
     }
     /// `op_anm_tex0_reset()`.
-    op_anm_tex0_reset @ 0x007e_cf30 => extern "C" fn op_anm_tex0_reset() -> u32 {
-        op::bridge::op_anm_tex0_reset(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    op_anm_tex0_reset @ 0x007e_cf30 => extern "C" fn op_anm_tex0_reset() {
+        op::bridge::op_anm_tex0_reset(&mut mem(), &mut |_, f, a| call_ptr(f, a));
     }
     /// `op_event_effect_init()`.
-    op_event_effect_init @ 0x007f_cc20 => extern "C" fn op_event_effect_init() -> u32 {
-        op::bridge::op_event_effect_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    op_event_effect_init @ 0x007f_cc20 => extern "C" fn op_event_effect_init() {
+        op::bridge::op_event_effect_init(&mut mem(), &mut |_, f, a| call_ptr(f, a));
     }
     /// `op_event_effect_free()`.
     op_event_effect_free @ 0x007f_cbf0 => extern "C" fn op_event_effect_free() {
@@ -2109,6 +2109,35 @@ ported! {
     /// `Vec4SubScalars_0074be90`.
     Vec4SubScalars_0074bed0 @ 0x0074_bed0 => extern "C" fn vec4_sub_scalars_2(dst: u32, src: u32, x: f32, y: f32, z: f32, w: f32) {
         vec::bridge::vec4_sub_scalars(&mut mem(), dst, src, [x, y, z, w]);
+    }
+    /// `op_chr_status_reset_exception(h)`.
+    op_chr_status_reset_exception @ 0x007f_ae40 => extern "C" fn op_chr_status_reset_exception(h: u32) {
+        et::bridge::op_chr_status_reset_exception(&mut mem(), h, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_check_forced_draw()`.
+    opus_check_forced_draw @ 0x007f_e4e0 => extern "C" fn opus_check_forced_draw() -> u32 {
+        et::bridge::opus_check_forced_draw(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_change_chrhd_battle_to_ffx()`.
+    opus_change_chrhd_battle_to_ffx @ 0x007f_e1a0 => extern "C" fn opus_change_chrhd_battle_to_ffx() -> u32 {
+        // the three remaps' index map and flag copies
+        let mut frame = super::StackFrame::<0xf0>::new();
+        let at = frame.at();
+        et::bridge::opus_change_chrhd_battle_to_ffx(&mut mem(), at)
+    }
+    /// `op_effect_run_before()`.
+    op_effect_run_before @ 0x0080_0610 => extern "C" fn op_effect_run_before() -> u32 {
+        op::bridge::op_effect_run_before(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_anm_tex0_set_007ecf50(_, a, b)`.
+    op_anm_tex0_set_007ecf50 @ 0x007e_cf50 => extern "C" fn op_anm_tex0_set(unused: u32, a: u32, b: u32) -> u32 {
+        let _ = unused;
+        op::bridge::op_anm_tex0_set(&mut mem(), a, b, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_anm_tex0_set_007ecfa0(_, a, b)`: the same code.
+    op_anm_tex0_set_007ecfa0 @ 0x007e_cfa0 => extern "C" fn op_anm_tex0_set_2(unused: u32, a: u32, b: u32) -> u32 {
+        let _ = unused;
+        op::bridge::op_anm_tex0_set(&mut mem(), a, b, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {

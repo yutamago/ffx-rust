@@ -3976,39 +3976,38 @@ pub mod bridge {
         }
     }
 
-    /// `dbgPrintf(msg)` through `call` (a bare `ret` in this build);
-    /// returns its eax.
+    /// `dbgPrintf(msg)` through `call` (a bare `ret` in this build, so
+    /// the callers' eax stays what it was).
     fn debug_print<M: Mem>(
         mem: &mut M,
         msg: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
-    ) -> u32 {
+    ) {
         let f = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
         let m = Global::<u32>::new(msg).ptr(mem).addr;
-        call(mem, f, &[m])
+        call(mem, f, &[m]);
     }
 
     /// `op_anm_tex0_reset()` (`0x007ecf30`): only a debug line
-    /// (`dbgPrintf`, through `call`); returns its eax.
+    /// (`dbgPrintf`, through `call`).
     pub fn op_anm_tex0_reset<M: Mem>(
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
-    ) -> u32 {
-        debug_print(mem, 0x00b5_8308, call)
+    ) {
+        debug_print(mem, 0x00b5_8308, call);
     }
 
     /// `g_OpEventEffect` (`0x011a006b`): set by `op_event_effect_init`.
     pub const EVENT_EFFECT: Global<u8> = Global::new(0x011a_006b);
 
     /// `op_event_effect_init()` (`0x007fcc20`): a debug line, then
-    /// [`EVENT_EFFECT`] set; returns the debug call's eax.
+    /// [`EVENT_EFFECT`] set.
     pub fn op_event_effect_init<M: Mem>(
         mem: &mut M,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
-    ) -> u32 {
-        let r = debug_print(mem, 0x00b5_8500, call);
+    ) {
+        debug_print(mem, 0x00b5_8500, call);
         EVENT_EFFECT.set(mem, 1);
-        r
     }
 
     /// `op_oef2_tex_clut_reset2(oef)` (`0x007e3e70`): a debug line when
@@ -4070,5 +4069,62 @@ pub mod bridge {
         let v: u16 = mem.read(at);
         mem.write(at, (v & 0xcbff) | 0x800);
         EVENT_EFFECT.set(mem, 0);
+    }
+
+    /// `g_OpEffectRunLimit` (`0x02332e88`): set around `op_effect_run_before`'s
+    /// `opu_main_host` run (0 for a pinned frame, else `0x02332e90` +
+    /// 0xf0000), cleared after.
+    pub const EFFECT_RUN_LIMIT: Global<u32> = Global::new(0x0233_2e88);
+
+    /// `op_effect_run_before()` (`0x00800610`): the battle opus object's
+    /// frame `+0x54` = its pinned frame `+0x58` when set ([`EFFECT_RUN_LIMIT`]
+    /// 0), else the latched frame (`0x02332e8c`, limit `0x02332e90` +
+    /// 0xf0000); `opu_main_host(0, 0)` (through `call`); unpinned, the
+    /// frame is latched back; the limit cleared. Returns 0.
+    pub fn op_effect_run_before<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let obj = crate::et::bridge::OPUS_BATTLE.get(mem);
+        let pinned: u32 = mem.read(obj.wrapping_add(0x58));
+        if pinned != 0 {
+            mem.write(obj.wrapping_add(0x54), pinned);
+            EFFECT_RUN_LIMIT.set(mem, 0);
+        } else {
+            let latched: u32 = mem.read(g(mem, 0x0233_2e8c));
+            mem.write(obj.wrapping_add(0x54), latched);
+            let base: u32 = mem.read(g(mem, 0x0233_2e90));
+            EFFECT_RUN_LIMIT.set(mem, base.wrapping_add(0xf_0000));
+        }
+        call(mem, g(mem, 0x0080_cc00), &[0, 0]);
+        if mem.read::<u32>(obj.wrapping_add(0x58)) == 0 {
+            let f: u32 = mem.read(obj.wrapping_add(0x54));
+            mem.write(g(mem, 0x0233_2e8c), f);
+        }
+        EFFECT_RUN_LIMIT.set(mem, 0);
+        0
+    }
+
+    /// `op_anm_tex0_set_007ecf50(_, a, b)` (`0x007ecf50`; `0x007ecfa0` is
+    /// the same code): the emulated `r1` (`0x00c8f528`) = `a & 0x3fff` and
+    /// `(b & 0x3fff) << 5`, `r2`'s high word (`0x00c8f538`, `0x00c8f53c`)
+    /// 0 and `(b & 0x3fff) << 5`, as the PS2 code built a TEX0 word; then
+    /// only a debug line (through `call`). Returns `(b & 0x3fff) << 5` (eax
+    /// across the bare `dbgPrintf`).
+    pub fn op_anm_tex0_set<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        let hi = (b & 0x3fff) << 5;
+        mem.write(g(mem, 0x00c8_f53c), 0u32);
+        mem.write(g(mem, 0x00c8_f538), 0u32);
+        mem.write(g(mem, 0x00c8_f53c), hi);
+        mem.write(g(mem, 0x00c8_f528), [a & 0x3fff, hi]);
+        debug_print(mem, 0x00b5_8308, call);
+        hi
     }
 }
