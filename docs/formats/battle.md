@@ -994,6 +994,25 @@ cuts it at 127 bytes, where the original would run over its stack.
 A file that does not open logs "WJ: there is no DE message.bin" and
 returns 0.
 
+## Round 24
+
+### Overdrive hits: `MsMenuLimitSet`
+
+`MsMenuLimitSet(chr, user, count)` (`0x007afe00`, `ffx_battle::limit`)
+returns the number of results blocks it found in `eax` (Ghidra: void).
+The overdrive kind is the user's command's `+0x58`. A block whose `+4`
+has bit 2 is the user's own (the drain) and gets no hits. For kind 0x25
+the hits taken off are the command's `+0x2b` minus the minigame's count
+(at least 1; none when negative); for 0x30 and 0x52 with count 0 the
+difference between the command's `+0x2b` and that of `0x30ec` or
+`0x310d`, which can be negative and then adds hits to every target.
+Without bit 0x8000 of the command's `+0x1c` every target loses them;
+with it they go one at a time from a random target among those with the
+most left (`brnd(0x10)`, signed remainder). The ports pass the
+original's stack locals (hits and misses, the random list's length, the
+drain vector) in a hook frame. `0x007b0470` passes the truncated `x` as
+a fourth argument that `MsMenuLimitSet` never reads.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.
