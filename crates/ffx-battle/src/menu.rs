@@ -301,6 +301,29 @@ pub mod bridge {
         if lang == 1 { 0 } else { -1 }
     }
 
+    /// `MsSetCountryName(out)` (`0x00782c00`): the language's
+    /// (`TkGetLang`, from the caller) country code into `out` as
+    /// `sprintf` of a constant leaves it (two letters and a NUL; nothing
+    /// for a null `out`): 0 "jp", 1 "us", 2 "fr", 3 "es", 4 "de", 5 "it",
+    /// 0x12 "uk". Returns 1 for the European languages (2-5, 0x12), else
+    /// 0 (other languages write nothing).
+    pub fn ms_set_country_name(mem: &mut impl Mem, lang: i32, out: u32) -> u32 {
+        let (code, europe) = match lang {
+            0 => (b"jp", 0),
+            1 => (b"us", 0),
+            2 => (b"fr", 1),
+            3 => (b"es", 1),
+            4 => (b"de", 1),
+            5 => (b"it", 1),
+            0x12 => (b"uk", 1),
+            _ => return 0,
+        };
+        if out != 0 {
+            mem.write(out, [code[0], code[1], 0u8]);
+        }
+        europe
+    }
+
     /// `MsGetBattleEndStatus()` (`0x007928d0`): 1 when no party member
     /// still fights (`+0xdd2`, `+0xdd3`, HP `+0x5d0` above 0, not out
     /// `+0xdcc`/`+0xdce`), 3 when none of those can act (`+0xdc8`), 4 (2

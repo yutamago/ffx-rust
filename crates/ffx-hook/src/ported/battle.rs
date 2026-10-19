@@ -248,6 +248,47 @@ fn spline_via_stack(m: &mut target::Dm<'_>, f: u32, out: u32, points: u32, n: u3
     m.write(out, w);
 }
 
+/// An original of this build (cdecl, up to four word arguments, already
+/// rebased) that returns an `f32` on the x87 stack: its bits. Missing
+/// arguments are passed as 0, which a cdecl callee never reads (the caller
+/// pops them).
+fn call_f32<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
+    // No panic here: a panic in a function the game calls ends the process.
+    if args.len() > 4 {
+        crate::log::log(&format!(
+            "call_f32: {} arguments, only 4 passed",
+            args.len()
+        ));
+    }
+    let mut words = [0u32; 4];
+    let count = args.len().min(4);
+    words[..count].copy_from_slice(&args[..count]);
+    // SAFETY: `f` is a cdecl function of this build taking at most four
+    // words and returning an f32 in ST0.
+    unsafe {
+        let g: unsafe extern "C" fn(u32, u32, u32, u32) -> f32 = std::mem::transmute(f as usize);
+        g(words[0], words[1], words[2], words[3]).to_bits()
+    }
+}
+
+/// `MsScreenProcess(camera)` (`0x007bc110`) in Rust, for the
+/// `gfx::live` wrapper that the game calls instead (its hook): the
+/// renderer's and other modules' callees, `Cam_Apply` among them, through
+/// the game; the C runtime through its import slots.
+pub(crate) fn ms_screen_process(camera: i32) -> u32 {
+    let mut m = mem();
+    let mut call = call_ptr;
+    let mut fcall = call_f32;
+    let mut env = screen::ScreenEnv {
+        trig: &crt_trig,
+        trig64: &crt_trig_f64,
+        cos: &crt_cos,
+        call: &mut call,
+        fcall: &mut fcall,
+    };
+    screen::ms_screen_process(&mut m, &mut env, camera).cast_unsigned()
+}
+
 /// What `ffx_battle::target` calls in other modules: the CRT through
 /// [`crt_trig`], script's ported functions, the originals of the rest.
 fn host() -> target::Host<'static> {
@@ -1676,6 +1717,12 @@ ported! {
     MsGetCheckEnglish @ 0x0078_4e60 => extern "C" fn ms_get_check_english() -> i32 {
         menu::ms_get_check_english(ffx_menu::tk::bridge::tk_get_lang(&mem()))
     }
+    /// `MsSetCountryName(out)`: the language from `TkGetLang` (menu).
+    MsSetCountryName @ 0x0078_2c00 => extern "C" fn ms_set_country_name(out: u32) -> u32 {
+        let mut m = mem();
+        let lang = ffx_menu::tk::bridge::tk_get_lang(&m);
+        menu::ms_set_country_name(&mut m, lang, out)
+    }
     /// `MsGetBattleEndStatus()`.
     MsGetBattleEndStatus @ 0x0079_28d0 => extern "C" fn ms_get_battle_end_status() -> u32 {
         menu::ms_get_battle_end_status(&mem())
@@ -2291,6 +2338,21 @@ ported! {
         let mut m = mem();
         camera::ms_camera_spline_move(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side_no, side, mv);
     }
+    /// `MsCameraProcess()`: the near-point searches, channel limits and
+    /// `MsSetCheckChange`'s move step through the game; the caller's
+    /// registers and the original's frame address (the by-value vectors'
+    /// spare words) are not known here.
+    MsCameraProcess @ 0x007b_e110 => extern "C" fn ms_camera_process() {
+        let mut m = mem();
+        let mut dm = target::Dm::new(&mut m);
+        let mut env = camera::ProcessEnv {
+            trig64: &crt_trig_f64,
+            call: &mut call_ptr,
+            regs: None,
+            frame: None,
+        };
+        camera::ms_camera_process(&mut dm, &host(), &mut env);
+    }
     /// `MsCameraMoveStep_007bcab0(side, other, chan, step)`: the
     /// near-point search and the channel limits through the game; the
     /// caller's registers (the radius words) are not known here.
@@ -2691,6 +2753,12 @@ ported! {
     MsAttachWeapon @ 0x0079_3330 => extern "C" fn ms_attach_weapon(i: u32, k: u32) -> u32 {
         let mut m = mem();
         status::ms_attach_weapon(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, i, k)
+    }
+    /// `MsDetachWeapon(i, k)`: `Ch_ModelSetHide` (`MsHideArm`) through the
+    /// game.
+    MsDetachWeapon @ 0x0079_3f10 => extern "C" fn ms_detach_weapon(i: u32, k: u32) -> u32 {
+        let mut m = mem();
+        status::ms_detach_weapon(&mut target::Dm::new(&mut m), &mut call_ptr, i, k)
     }
     /// `MsDamageSetMotion(i, kind, flags)`.
     MsDamageSetMotion @ 0x0078_ca20 => extern "C" fn ms_damage_set_motion(i: u32, kind: u32, flags: u32) {

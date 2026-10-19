@@ -178,7 +178,7 @@ pub fn hooks() -> Vec<Hook> {
             // push ebp; mov ebp, esp; sub esp, 0x20
             prologue: &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x20],
             replacement: gfx::live::cam_update as *const () as usize,
-            original: Some(&gfx::live::CAM_UPDATE_ORIGINAL),
+            original: None,
             steal: 0,
         },
         Hook {

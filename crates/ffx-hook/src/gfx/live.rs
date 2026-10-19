@@ -124,11 +124,9 @@ fn game_pause() {
     }
 }
 
-/// The trampoline to the original `MsScreenProcess` (`0x007bc110`).
-pub static CAM_UPDATE_ORIGINAL: AtomicUsize = AtomicUsize::new(0);
-
 /// Wraps `MsScreenProcess` (`0x007bc110`, `cdecl(camera)`, which builds the view
-/// matrix): while the renderer has a free camera, the game's override
+/// matrix; its Rust port, `ffx_battle::screen`, runs in its place): while
+/// the renderer has a free camera, the game's override
 /// camera (`MsEffectCameraSet`) holds it right before, whatever the scene's
 /// camera scripts set since; and after, the view goes to the renderer as
 /// the channel's would (`Cam_Apply`, which the override's branch skips,
@@ -146,12 +144,7 @@ pub unsafe extern "C" fn cam_update(camera: i32) -> u32 {
         // SAFETY: on the game's thread, before its camera update reads them.
         unsafe { put_free_camera(c) };
     }
-    // SAFETY: the trampoline runs the original with the same argument.
-    let out = unsafe {
-        let original: unsafe extern "C" fn(i32) -> u32 =
-            std::mem::transmute(CAM_UPDATE_ORIGINAL.load(Ordering::Acquire));
-        original(camera)
-    };
+    let out = crate::ported::ms_screen_process(camera);
     if let Some(c) = free {
         // SAFETY: the game's functions and its view matrix global, as
         // `Cam_Apply` (0x007bc980) calls them.

@@ -1169,6 +1169,99 @@ The hook's script position callback (`Host::atel_pos`) now passes the
 game a stack buffer: bridges hand it frame locals at addresses the game
 never maps.
 
+## Round 27
+
+### `MsCameraProcess` (`0x007be110`)
+
+Once a frame, for each of the three screens that is on (`+0xc0`), its
+camera (`+0xc1`) runs once (`+0xc89`, set for all three cameras first).
+Each side (`cam + 0x30`, 0x61c bytes) uses the channel of the camera's
+current slot (`MsCameraGetNum`: `off = 0xc0 + 0x130 n`). Three parts:
+
+1. Requests. A channel with a request kind (`+2`) clears the side's
+   `+2`, sets its near flags `+4`/`+5` (kind 7 clears them) and starts
+   the move: 1 the position from the channel's `+0x30`, 2 and 7 the
+   polar form from `+0x40`, 3 `MsCameraAtelFocus`, 4-6 the aims, 8
+   `MsCameraFocusWeights`, 9 the same after the polar form towards the
+   channel's point (its yaw plus `+0x50`), 10 `MsCameraAtelYaw`, 11-13,
+   15, 16 `MsCamSetBtl` modes 0-4, 14 `MsCameraSplineMove_007bcb80`, 17
+   `MsCameraSplinePos_007bcd30`. Then, unless the channel is the camera's
+   last one (`+0xc8c`), `MsCameraNearPoints_007c0d40`, and always
+   `MsCameraMoveStep_007bcab0(side, other, channel, (i8) channel[0])`,
+   whose result is the channel's `+1`.
+2. Positions. With the camera matrices on (`0x023114c4`) the sides take
+   the matrix look-at (side 0) and eye (side 1). Else a side whose
+   channel has a request moves: polar sides (`+1` 1) step yaw, pitch and
+   length (`MsCameraMoveCalc`, near flags `+4`/`+5` for the first two;
+   the polar form from the position first when the channel's `+1` is 0),
+   the others x, y, z; the position from the polar form when the channel
+   is polar (or, if a lane moved, the side). A trailing side (`+3`) keeps
+   within `+8` of its start (`+0x20`): the lag `+0x40` grows by
+   `MsVectorNormal2(position, start, +0xc)`, is clamped to `+8`, and the
+   position is start plus lag. On the camera's last channel the position
+   eases from the start over the channel's `+0x70`..`+0x78` frames
+   (non-zero, NaN too; `+2` set when it moved). The position becomes the
+   start, `g_Ee_GprMove` and the channel's `+0x80`; three shakes
+   (`+0x5b0`, angles `+0xa0` stepped by `+0xb0`) give `+0x90`; `+0x10` is
+   start plus shake, scaled about the camera's `+0x10` by `+0x20` when
+   `+0xc8a` is set.
+3. Roll and depth. With the special stage's camera on,
+   `MsSpCameraProcess(cam + 0x40, cam + 0x65c, cam)` first. The channel's
+   roll and depth targets (`cam + 0xcb8`, `+0xcc0` + 0x30 n) and three
+   words step (`MsCameraMoveCalc`, the roll near). On the last channel
+   the roll eases over side 1's channel `+0x7c` frames the short way
+   round: `d = roll − last`, `m = d − 2π·trunc(d / 2π)` (stored `f32`,
+   the count through `_ftol2_sse`), `+2π` if negative, `last − 2π` as
+   the base when `m ≥ π`. The override's depth or, with the camera
+   matrices on, their roll word replaces the depth; both are kept
+   (`+0xc90`, `+0xc9c`, the channel's `+0xcd4`, `+0xcd8`), the channel
+   becomes the last one and the screen's `+0x1c` takes the depth.
+
+Its by-value vector arguments (`MsVectorPolar2Rect`'s radius,
+`MsVectorNormal2`'s scale, `MsMulVector`) take their spare words from
+its caller's `edi`, `esi`, `ebx`; the move step's radius takes its own
+`esi`, `ebx` (`-off`) and `ebp`, the near points' its `ebx`, `edi`,
+`esi`. The port gets those when known (`ProcessEnv`), else leaves the VU
+words as they were (the hook).
+
+The steps it calls (names ours):
+
+- `MsCameraSplineMove_007bcb80(id, side_no, _, side, mv)`: the move's
+  spline position `mv + 0x68` clamped to 0..1, the spline there and with
+  `mv + 0x1c` bit 2 its tangent added (speed `+0x6c` ≥ 0) or subtracted
+  (`0x0088aba0` is `TkMtCalcSpline3`'s tangent); the roll is the point's
+  w; clamped or at speed 0 `MsCameraSetRect`.
+- `MsCameraMoveStep_007bcab0(side, other, chan, step)`: `MsSetCheckChange`'s
+  move step (`CAMERA_MOVE_STEP`): step 1 rebuilds the position from the
+  polar form; position to `other + 0x30`; a pending near-point search
+  (`+0x1d`) starts (`spline_get_near_point_init`); channel limits
+  (`0x007c0120`, run as the original) can stop the step; a speed at
+  `other + 0x6c` other than 0 goes to the side's y and returns 0.
+- `MsCameraNearPoints_007c0d40(_, side, chan)`: for each filter of kind
+  4 or 5, the near-point search from the side's position and
+  `spline_get_near_point`'s result at `chan + 0x24`; returns their count.
+
+### `MsScreenProcess` (`0x007bc110`)
+
+The screen's frame and the view (see the symbol for the full list).
+Returns 1 for a screen number of 3 or more (signed), -1 for a screen
+off, else 0. Each side's position is the saved one, its centre half the
+size less the display's (`0x00c44240`), links 1-3 (`+0xc2`) as in
+`MsScreenLinkSet`; four lanes move it; two shakes; then everything is
+truncated to whole numbers. The view comes from the override camera, or
+(camera matrices off) the camera: the near plane for magic 0x21c on map
+0xd0, `MsCameraMatrix` of the camera's eye and look-at (three special
+levels check both squared lengths lie in 0.01..1e9), the screen offset
+`((+0x70 + +0x30 − +0x50 + ox) · 2 / 512, (+0x74 − +0x34 − +0x54 + oy) ·
+2 / 416)` and `Cam_Apply`. A camera with focus words other than the
+screen's hands them to the scene graph.
+
+The hook keeps `MsScreenProcess`'s entry in the hook table: the game
+calls `gfx::live::cam_update`, which places the renderer's free camera
+in the override and then runs the Rust port (`ffx_battle::screen`)
+instead of the original; `Cam_Apply` and the renderer's functions run
+through the game.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.

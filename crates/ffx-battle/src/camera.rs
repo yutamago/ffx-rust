@@ -2012,6 +2012,441 @@ pub mod bridge {
         }
     }
 
+    /// What [`ms_camera_process`] needs from outside the module: the
+    /// trigonometry on doubles (`MsCameraShakeProcess`) and the calls the
+    /// move steps make through the game.
+    pub struct ProcessEnv<'e, 'd> {
+        /// `_CIcos`/`_CIsin` on a double, the result as `f32` bits.
+        pub trig64: &'e dyn Fn(crate::pos::bridge::Trig, f64) -> u32,
+        /// An original of this build (cdecl, word arguments) by address.
+        pub call: &'e mut dyn FnMut(&mut crate::target::bridge::Dm<'d>, u32, &[u32]) -> u32,
+        /// `MsCameraProcess`'s caller's `edi`, `esi`, `ebx`: the words its
+        /// by-value vector arguments (`MsVectorPolar2Rect`'s radius,
+        /// `MsVectorNormal2`'s scale, `MsMulVector`'s) take from its
+        /// stack; `None` leaves those VU register words as they were.
+        pub regs: Option<crate::target::bridge::Regs>,
+        /// `MsCameraProcess`'s own `ebp` (its frame's address), which
+        /// [`ms_camera_move_step`]'s radius vector takes; `None` leaves
+        /// that VU register word as it was.
+        pub frame: Option<u32>,
+    }
+
+    /// The caller's three registers, else the `yzw` words of the VU
+    /// register at `vf` (where the by-value vector goes).
+    fn caller_tail(mem: &impl Mem, regs: Option<crate::target::bridge::Regs>, vf: u32) -> [u32; 3] {
+        match regs {
+            Some(r) => [r.edi, r.esi, r.ebx],
+            None => mem.read(vf.wrapping_add(4)),
+        }
+    }
+
+    /// `MsCameraProcess()` (`0x007be110`): every frame, for each of the
+    /// three screens (`SCREENS`, 0x1c0 bytes) that is on (`+0xc0`), its
+    /// camera (`+0xc1`) when not yet moved this frame (`+0xc89`, set for
+    /// all three first): each side's channel of the current request
+    /// starts its move ([`process_requests`]), then each side's position
+    /// steps ([`process_positions`]), then the roll and screen depth
+    /// ([`process_roll`]), whose depth the screen keeps (`+0x1c`).
+    pub fn ms_camera_process<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        env: &mut ProcessEnv<'_, 'd>,
+    ) {
+        let cams = CAMERAS.ptr(mem).addr;
+        for c in 0..3 {
+            mem.write(cams + c * CAMERA_SIZE + 0xc89, 1u8);
+        }
+        let screens = SCREENS.ptr(mem).addr;
+        for k in 0..3 {
+            let screen = screens + k * SCREEN_SIZE;
+            if mem.read::<u8>(screen + 0xc0) == 0 {
+                continue;
+            }
+            let c = u32::from(mem.read::<u8>(screen + 0xc1));
+            let cam = cams.wrapping_add(c.wrapping_mul(CAMERA_SIZE));
+            if mem.read::<u8>(cam + 0xc89) == 0 {
+                continue;
+            }
+            mem.write(cam + 0xc89, 0u8);
+            let n = ms_camera_get_num(mem, c);
+            let off = n.wrapping_mul(0x130).wrapping_add(0xc0);
+            process_requests(mem, host, env, cam, n, off);
+            process_positions(mem, host, env, cam, n, off);
+            if crate::special::bridge::ms_battle_special_camera_kind(mem) != 0 {
+                mem.frame(0x40, |mem, matrix| {
+                    let v = [cam + 0x40, cam + 0x65c, cam];
+                    crate::special::bridge::ms_sp_camera_process(mem, host.trig, v, matrix);
+                });
+            }
+            process_roll(mem, host, cam, n);
+            let depth = x87_copy(mem.read(cam + 0xc9c));
+            mem.write(screen + 0x1c, depth);
+        }
+    }
+
+    /// Whether camera `cam`'s last channel (`+0xc8c`, a signed byte) is
+    /// `n`.
+    fn same_channel(mem: &impl Mem, cam: u32, n: u32) -> bool {
+        i32::from(mem.read::<i8>(cam + 0xc8c)) == n.cast_signed()
+    }
+
+    /// `MsCameraProcess`'s first part: for each side (`cam + 0x30`, 0x61c
+    /// bytes; the other one counting down from `cam + 0x64c`), its channel
+    /// (`+ off`) with a request (`+2`, cleared on the side, which also
+    /// gets `+4`, `+5` set) starts it by kind: 1 the position (`+0x30`,
+    /// through `g_Ee_GprMove`), 2 the polar form (`+0x40`; 7 clears `+4`,
+    /// `+5` first), 3 [`ms_camera_atel_focus`], 4-6 the aims, 8
+    /// [`ms_camera_focus_weights`], 9 the same after the polar form from
+    /// the point (`+0x30`, its yaw plus `+0x50`), 10
+    /// [`ms_camera_atel_yaw`], 11-13, 15, 16 [`ms_cam_set_btl`] modes 0-4,
+    /// 14 [`ms_camera_spline_move`], 17 [`ms_camera_spline_pos`]. Then on
+    /// a channel switch [`ms_camera_near_points`], and always
+    /// [`ms_camera_move_step`] (its result the channel's `+1`).
+    fn process_requests<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        env: &mut ProcessEnv<'_, 'd>,
+        cam: u32,
+        n: u32,
+        off: u32,
+    ) {
+        use crate::vector::bridge::ms_vector_rect2_polar;
+        use ffx_bridge::x87::{add, load, store};
+        let id: u32 = mem.read(cam + 0xc68 + 8 * n);
+        let back = off.wrapping_neg();
+        for k in 0..2u32 {
+            let side = cam + 0x30 + k * 0x61c;
+            let other = cam + 0x64c - k * 0x61c;
+            let ch = side.wrapping_add(off);
+            let other_ch = other.wrapping_add(off);
+            let kind = mem.read::<u8>(ch + 2);
+            if kind != 0 {
+                mem.write(side + 2, 0u8);
+                mem.write(side + 4, [1u8, 1]);
+                let polar = |mem: &mut crate::target::bridge::Dm<'d>| {
+                    mem.write(side + 0x6c, 0.0f32.to_bits());
+                    for o in [0x60, 0x64, 0x68] {
+                        let v = x87_copy(mem.read(ch + o - 0x20));
+                        mem.write(side + o, v);
+                    }
+                };
+                match kind {
+                    1 => {
+                        mem.write(side + 0x6c, 0.0f32.to_bits());
+                        let p: [u32; 4] = mem.read(ch + 0x30);
+                        EE_MOVE.set(mem, p);
+                        mem.write(side + 0x50, p);
+                    }
+                    2 => polar(mem),
+                    7 => {
+                        mem.write(side + 4, 0u16);
+                        polar(mem);
+                    }
+                    3 => ms_camera_atel_focus(mem, host, side, ch),
+                    4..=6 => mem.frame(8, |mem, scratch| match kind {
+                        4 => ms_camera_aim_polar(mem, host.trig, side, ch, scratch),
+                        5 => ms_camera_aim_polar2(mem, host.trig, side, ch, scratch),
+                        _ => ms_camera_aim_polar3(mem, host.trig, side, ch, scratch),
+                    }),
+                    8 => ms_camera_focus_weights(mem, side, ch),
+                    9 => {
+                        let base: u32 = mem.read(side + 0x8c);
+                        ms_vector_rect2_polar(mem, host.trig, ch + 0x30, base, ch + 0x40, 0, 0);
+                        let yaw = store(add(load(mem.read(ch + 0x50)), load(mem.read(ch + 0x40))));
+                        mem.write(ch + 0x40, yaw);
+                        ms_camera_focus_weights(mem, side, ch);
+                    }
+                    10 => ms_camera_atel_yaw(mem, host, side, ch, other_ch),
+                    11..=13 | 15 | 16 => {
+                        let mode = match kind {
+                            11..=13 => u32::from(kind - 11),
+                            15 => 3,
+                            _ => 4,
+                        };
+                        let regs = crate::target::bridge::Regs {
+                            edi: ch,
+                            esi: cam,
+                            ebx: back,
+                        };
+                        ms_cam_set_btl(mem, host, id, mode, side, ch, other, other_ch, Some(regs));
+                    }
+                    14 => ms_camera_spline_move(mem, host, env.call, id, k, side, ch),
+                    17 => ms_camera_spline_pos(mem, host, side, ch, other_ch),
+                    _ => {}
+                }
+            }
+            if !same_channel(mem, cam, n) {
+                ms_camera_near_points(mem, host, env.call, side, ch, Some([back, ch, cam]));
+            }
+            let step = i32::from(mem.read::<i8>(ch)).cast_unsigned();
+            let vf4 = crate::vector::bridge::VF_M.ptr(mem).addr + 0x40;
+            let ebp = env.frame.unwrap_or_else(|| mem.read(vf4 + 0xc));
+            let r = ms_camera_move_step(
+                mem,
+                host.trig,
+                env.call,
+                side,
+                other,
+                ch,
+                step,
+                Some([cam, back, ebp]),
+            );
+            mem.write(ch + 1, r.to_le_bytes()[0]);
+        }
+    }
+
+    /// `MsCameraProcess`'s second part, for each side and its channel
+    /// (`off`): with the camera matrices on (`MATRIX_ON`) the side's
+    /// position, start (`+0x20`), `g_Ee_GprMove` and `+0x10` are the
+    /// look-at (side 0) or eye (side 1); else, with a request (`+2`), the
+    /// side moves: polar sides (`+1` 1) step their yaw, pitch and length
+    /// ([`ms_camera_move_calc`]; the near ones by `+4`, `+5`; from the
+    /// position first when the channel's `+1` is 0), the others their x,
+    /// y, z; the position from the polar form again when the channel (or,
+    /// if anything moved, the side) is polar. A trailing side (`+3`)
+    /// follows its start (`+0x20`) at most `+8` away (its lag `+0x40`
+    /// grows by `MsVectorNormal2` toward the position, scale `+0xc`); on
+    /// the camera's last channel the position eases from the start over
+    /// the channel's `+0x70`..`+0x78` frames (`+2` set when it moved).
+    /// The position becomes the start, `g_Ee_GprMove` and the channel's
+    /// `+0x80`; three shakes (`+0x5b0`, 0x24 bytes, angle `+0xa0` stepped
+    /// by `+0xb0`) give `+0x90`, added to the start into `+0x10`, scaled
+    /// about the camera's `+0x10` by `+0x20` when `+0xc8a` is set.
+    // the moved checks compare exactly, as the original's `fucompp`
+    #[allow(clippy::too_many_lines, clippy::float_cmp)]
+    fn process_positions<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        env: &mut ProcessEnv<'_, 'd>,
+        cam: u32,
+        n: u32,
+        off: u32,
+    ) {
+        use crate::vector::bridge as v;
+        use ffx_bridge::x87::{add, div, load, store, sub};
+        let vf_m = v::VF_M.ptr(mem).addr;
+        let look_at = MATRIX_LOOK_AT.ptr(mem).addr;
+        for k in 0..2u32 {
+            let side = cam + 0x30 + k * 0x61c;
+            let ch = side.wrapping_add(off);
+            let at = |o: u32| side + o;
+            if MATRIX_ON.get(mem) != 0 {
+                let m: [u32; 4] = mem.read(look_at + 0x10 * k);
+                mem.write(at(0x50), m);
+                mem.write(at(0x20), m);
+                EE_MOVE.set(mem, m);
+                mem.write(at(0x10), m);
+                continue;
+            }
+            if mem.read::<u8>(ch + 2) == 0 {
+                continue;
+            }
+            let ch_polar = mem.read::<u8>(ch + 1);
+            let polar_rect = |mem: &mut crate::target::bridge::Dm<'d>| {
+                let base: u32 = mem.read(at(0x8c));
+                let [yaw, pitch, length] = [0x60, 0x64, 0x68].map(|o| x87_copy(mem.read(at(o))));
+                let [y, z, w] = caller_tail(mem, env.regs, vf_m + 0x40);
+                v::ms_vector_polar2_rect(
+                    mem,
+                    host.trig,
+                    at(0x50),
+                    base,
+                    yaw,
+                    pitch,
+                    [length, y, z, w],
+                );
+            };
+            let calc = |mem: &mut crate::target::bridge::Dm<'d>,
+                        near: u32,
+                        value: u32,
+                        target: u32,
+                        lane: u32| {
+                let start = x87_copy(mem.read(at(target)));
+                ms_camera_move_calc(mem, host.cos, near, at(value), start, at(lane))
+            };
+            let moved = if mem.read::<u8>(at(1)) == 1 {
+                if ch_polar == 0 {
+                    let base: u32 = mem.read(at(0x8c));
+                    v::ms_vector_rect2_polar(
+                        mem,
+                        host.trig,
+                        at(0x50),
+                        base,
+                        at(0x60),
+                        at(0x64),
+                        at(0x68),
+                    );
+                }
+                let near = |mem: &crate::target::bridge::Dm<'d>, o: u32| {
+                    i32::from(mem.read::<i8>(at(o))).cast_unsigned()
+                };
+                let yaw = near(mem, 4);
+                let r1 = calc(mem, yaw, 0x60, 0x80, 0x580);
+                let pitch = near(mem, 5);
+                let r2 = calc(mem, pitch, 0x64, 0x84, 0x590);
+                let r3 = calc(mem, 0, 0x68, 0x88, 0x5a0);
+                r1.wrapping_add(r2).wrapping_add(r3)
+            } else {
+                if ch_polar == 1 {
+                    polar_rect(mem);
+                }
+                let r1 = calc(mem, 0, 0x50, 0x70, 0x580);
+                let r2 = calc(mem, 0, 0x54, 0x74, 0x590);
+                let r3 = calc(mem, 0, 0x58, 0x78, 0x5a0);
+                r1.wrapping_add(r2).wrapping_add(r3)
+            };
+            let polar = if moved != 0 {
+                mem.read::<u8>(at(1))
+            } else {
+                ch_polar
+            };
+            if polar == 1 {
+                polar_rect(mem);
+            }
+            if mem.read::<u8>(at(3)) != 0 {
+                mem.frame(0x10, |mem, toward| {
+                    let scale = x87_copy(mem.read(at(0xc)));
+                    let [y, z, w] = caller_tail(mem, env.regs, vf_m + 0x20);
+                    v::ms_vector_normal2(mem, toward, at(0x50), at(0x20), [scale, y, z, w]);
+                    v::ms_add_point(mem, at(0x40), at(0x40), toward);
+                });
+                let len = v::ms_vector_len(mem, at(0x40));
+                let limit = f32::from_bits(mem.read(at(8)));
+                if limit < len {
+                    v::ms_vector_normal(mem, at(0x40), at(0x40));
+                    let limit = x87_copy(mem.read(at(8)));
+                    let [y, z, w] = caller_tail(mem, env.regs, v::VF_B.ptr(mem).addr);
+                    v::ms_mul_vector(mem, at(0x40), [limit, y, z, w]);
+                }
+                v::ms_add_point(mem, at(0x50), at(0x20), at(0x40));
+            }
+            if same_channel(mem, cam, n) {
+                for k in 0..3 {
+                    let frames: u32 = mem.read(ch + 0x70 + 4 * k);
+                    if f32::from_bits(frames) == 0.0 {
+                        continue;
+                    }
+                    let from = x87_copy(mem.read(at(0x20 + 4 * k)));
+                    let to: u32 = mem.read(at(0x50 + 4 * k));
+                    let step = div(sub(load(to), load(from)), load(frames));
+                    let now = store(add(step, load(from)));
+                    mem.write(at(0x50 + 4 * k), now);
+                    if load(now) != load(from) {
+                        mem.write(at(2), 1u8);
+                    }
+                }
+            }
+            let p: [u32; 4] = mem.read(at(0x50));
+            mem.write(at(0x20), p);
+            EE_MOVE.set(mem, p);
+            mem.write(ch + 0x80, p);
+            for k in 0..3 {
+                let rec = at(0x5b0 + 0x24 * k);
+                let angle = at(0xa0 + 4 * k);
+                if mem.read::<u8>(rec) != 0 {
+                    let a = x87_copy(mem.read(angle));
+                    crate::shake::bridge::ms_camera_shake_process(
+                        mem,
+                        env.trig64,
+                        rec,
+                        a,
+                        angle - 0x10,
+                    );
+                    let a = store(add(load(mem.read(angle + 0x10)), load(mem.read(angle))));
+                    mem.write(angle, a);
+                }
+            }
+            v::ms_add_point(mem, at(0x10), at(0x20), at(0x90));
+            if mem.read::<u8>(cam + 0xc8a) != 0 {
+                v::ms_scale_about_point(mem, at(0x10), cam + 0x10, cam + 0x20);
+            }
+        }
+    }
+
+    /// `MsCameraProcess`'s last part: the channel's (`n`, 0x30 bytes)
+    /// roll and depth targets (`+0xcb8`, `+0xcc0`) and three words
+    /// (`+0xcc8`..) become the camera's (`+0xc94`, `+0xca0`, `+0xcac`..),
+    /// the roll (near, `+0xc8b` set) and depth step
+    /// ([`ms_camera_move_calc`], lanes `+0xd78`, `+0xd88`); on the last
+    /// channel the roll eases from the last one (`+0xc90`) over side 1's
+    /// channel's `+0x7c` frames, the way round within pi (side 1's `+2`
+    /// set when it moved). The roll and depth are kept (`+0xc90`,
+    /// `+0xc9c` and the channel's `+0xcd4`, `+0xcd8`; the depth the
+    /// override's or with the camera matrices on their roll word), the
+    /// channel becomes the last one.
+    // the moved check compares exactly, as the original's `fucompp`
+    #[allow(clippy::float_cmp)]
+    fn process_roll(
+        mem: &mut crate::target::bridge::Dm<'_>,
+        host: &crate::target::bridge::Host<'_>,
+        cam: u32,
+        n: u32,
+    ) {
+        use crate::vector::bridge::{PI, TWO_PI};
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store, sub};
+        mem.write(cam + 0xc8b, 1u8);
+        let chan = cam.wrapping_add(n.wrapping_mul(0x30));
+        let roll = cam + 0xc94;
+        let depth = cam + 0xca0;
+        let word = x87_copy(mem.read(chan + 0xcb8));
+        mem.write(roll, word);
+        let word = x87_copy(mem.read(chan + 0xcc0));
+        mem.write(depth, word);
+        let words: [u32; 3] = mem.read(chan + 0xcc8);
+        mem.write(cam + 0xcac, words);
+        let near = i32::from(mem.read::<i8>(cam + 0xc8b)).cast_unsigned();
+        let start = x87_copy(mem.read(cam + 0xc98));
+        ms_camera_move_calc(mem, host.cos, near, roll, start, cam + 0xd78);
+        let start = x87_copy(mem.read(cam + 0xca4));
+        ms_camera_move_calc(mem, host.cos, 0, depth, start, cam + 0xd88);
+        if same_channel(mem, cam, n) {
+            let side1_ch =
+                (cam + 0x30 + 0x61c).wrapping_add(n.wrapping_mul(0x130).wrapping_add(0xc0));
+            let frames: u32 = mem.read(side1_ch + 0x7c);
+            if f32::from_bits(frames) != 0.0 {
+                let two_pi = TWO_PI.get(mem);
+                let last = x87_copy(mem.read(cam + 0xc90));
+                let delta = store(sub(load(mem.read(roll)), load(last)));
+                let turns = ftol(mem, div(load(delta), two_pi));
+                let turns = store(f64::from(turns.cast_signed()));
+                let mut wrapped = store(sub(load(delta), mul(load(turns), two_pi)));
+                if load(wrapped) < 0.0 {
+                    wrapped = store(add(load(wrapped), two_pi));
+                }
+                let base = if PI.get(mem) > load(wrapped) {
+                    load(last)
+                } else {
+                    sub(load(last), two_pi)
+                };
+                let to = store(add(load(wrapped), base));
+                let now = store(add(
+                    div(sub(load(to), load(last)), load(frames)),
+                    load(last),
+                ));
+                mem.write(roll, now);
+                if load(now) != load(last) {
+                    mem.write(cam + 0x30 + 0x61c + 2, 1u8);
+                }
+            }
+        }
+        let kept = x87_copy(mem.read(roll));
+        mem.write(cam + 0xc90, kept);
+        let kept = x87_copy(mem.read(roll));
+        mem.write(chan + 0xcd4, kept);
+        if OVERRIDE_ON.get(mem) != 0 {
+            let word = x87_copy(OVERRIDE_DEPTH.get(mem));
+            mem.write(depth, word);
+        } else if MATRIX_ON.get(mem) != 0 {
+            let word = x87_copy(MATRIX_ROLL.get(mem));
+            mem.write(depth, word);
+        }
+        let kept = x87_copy(mem.read(depth));
+        mem.write(cam + 0xc9c, kept);
+        let kept = x87_copy(mem.read(depth));
+        mem.write(chan + 0xcd8, kept);
+        mem.write(cam + 0xc8c, n.to_le_bytes()[0]);
+    }
+
     /// `MsCameraAtelFocus_007c0560(side, mv)` (`0x007c0560`, name ours;
     /// `MsCameraProcess`'s): the side's position (`+0x50`) is the move's
     /// offset (`mv + 0x30`) plus the mean position of up to two script
