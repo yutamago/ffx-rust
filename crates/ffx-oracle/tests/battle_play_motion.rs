@@ -54,6 +54,17 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let model = scratch(a, b, 0x800);
     let id = scratch(a, b, 4);
     set(a, b, ffx_battle::effect::bridge::MOTION_STOP_CHRS, 0);
+    // the snapshot's motion tables (MsMotBinFrame's blend frames), else none
+    let tables: Vec<u32> = (0..ACTORS)
+        .map(|i| {
+            let t: u32 = ffx_bridge::Mem::read(&*b, w.actor(i) + 0x4f8);
+            if !w.synthetic && readable(a, t, 0x10) {
+                t
+            } else {
+                0
+            }
+        })
+        .collect();
     for _ in 0..4000 {
         let i = match rng.below(6) {
             0 => 0xff,
@@ -84,8 +95,13 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                     [rng.below(5) as usize];
                 poke(a, b, p + o, &v.to_le_bytes());
             }
-            // no motion table (MsMotBinFrame 0)
-            poke(a, b, p + 0x4f8, &[0; 4]);
+            // the actor's motion table or none (MsMotBinFrame 0)
+            let t = if rng.below(4) == 0 {
+                0
+            } else {
+                tables[i as usize]
+            };
+            poke(a, b, p + 0x4f8, &t.to_le_bytes());
         }
         let motion = match rng.below(5) {
             0 => rng.next(),
