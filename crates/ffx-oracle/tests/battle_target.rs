@@ -790,6 +790,36 @@ fn status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
     local_words(a, b);
     same("MsDetachWeapon", a, b);
     poke(a, b, actor, &fake);
+    // and on actors whose weapon has a character (the snapshot's party),
+    // on their real models, ready to let go (+0x4b5)
+    for _ in 0..3 {
+        let j = rng.below(ACTORS);
+        let k = rng.below(2);
+        let wpn = ffx_battle::actor::bridge::ms_get_weapon(b, j, k.cast_signed());
+        if b.read(wpn, 4).unwrap() == [0; 4] {
+            continue;
+        }
+        let pj = w.actor(j);
+        let fake = b.read(pj, 4).unwrap();
+        if let Some(c) = LIVE_CHRS.with(|c| c.borrow().get(j as usize).copied()) {
+            poke(a, b, pj, &c.to_le_bytes());
+        }
+        poke(
+            a,
+            b,
+            pj + 0x4b5,
+            &[1, u8::from(rng.below(2) == 0), u8::from(rng.below(2) == 0)],
+        );
+        if j == 6 && rng.below(2) == 0 {
+            poke(a, b, pj + 4, &7u32.to_le_bytes());
+        }
+        twin("MsDetachWeapon", a, b, 0x0079_3f10, &[j, k], ALL, |m| {
+            dm(m, |m| st::ms_detach_weapon(m, &mut call, j, k))
+        });
+        local_words(a, b);
+        same("MsDetachWeapon", a, b);
+        poke(a, b, pj, &fake);
+    }
     twin("MsResetChrPos", a, b, 0x0078_d680, &[i, actor], ALL, |m| {
         st::ms_reset_chr_pos(m, &stand_in, i, actor)
     });
