@@ -663,7 +663,7 @@ pub mod bridge {
             mem.read_bytes(from, &mut bytes);
             mem.write_bytes(names.wrapping_add(NAME_SIZE * i), &bytes);
             mem.write_bytes(defaults.wrapping_add(NAME_SIZE * i), &bytes);
-            let lang = game(mem, &mut *call, TO_GET_FFX_LANG_FN, &[]);
+            let lang = game(mem, &mut *call, TO_GET_FFX_LANG, &[]);
             let at = names.wrapping_add(NAME_SIZE * i + 0x12);
             mem.write(at, lang.to_le_bytes()[0]);
             mem.write(at.wrapping_add(1), 1u8);
