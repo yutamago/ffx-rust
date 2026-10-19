@@ -2816,6 +2816,21 @@ ported! {
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         ffx_field::keth::ke_th_cp_update(&mut mem(), t, w, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `KeThBP_MkStripStart_00765f80()`.
+    KeThBP_MkStripStart_00765f80 @ 0x0076_5f80 => extern "C" fn shim_ke_th_bp_mk_strip_start() -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_START_WORK as usize / 4 }>::new();
+        ffx_field::keth::ke_th_bp_mk_strip_start(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeThBP_MkGifPk(d, instance)`.
+    KeThBP_MkGifPk @ 0x0076_3100 => extern "C" fn shim_ke_th_bp_mk_gif_pk(d: u32, instance: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::keth::GIF_PK_WORK as usize / 4 }>::new();
+        ffx_field::keth::ke_th_bp_mk_gif_pk(&mut mem(), d, instance, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeThCp_Draw(t, m, widths, template, _, alpha, a6, a7, a8, scale, instance)`.
+    KeThCp_Draw @ 0x0076_45e0 => extern "C" fn shim_ke_th_cp_draw(t: u32, m: u32, widths: u32, template: u32, a4: u32, alpha: u32, a6: u32, a7: u32, a8: u32, scale: u32, instance: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::keth::CP_DRAW_WORK as usize / 4 }>::new();
+        ffx_field::keth::ke_th_cp_draw(&mut mem(), [t, m, widths, template, a4, alpha, a6, a7, a8, scale, instance], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `KeThBP_MkStrip_00764de0()`.
     KeThBP_MkStrip_00764de0 @ 0x0076_4de0 => extern "C" fn shim_ke_th_bp_mk_strip() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_WORK as usize / 4 }>::new();

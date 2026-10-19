@@ -22068,3 +22068,186 @@ fn round37_info_matches_the_original_on_the_snapshot() {
     };
     round37_info(&mut a, &mut b, &mut Xorshift(0x4037_0082));
 }
+
+/// A float for the Ke thing cases: no signalling NaNs (the oracle keeps
+/// them signalling through `fld`).
+fn round38_quiet(rng: &mut Xorshift) -> u32 {
+    loop {
+        let f = rng.float();
+        if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+            return f.to_bits();
+        }
+    }
+}
+
+/// Round 38 group A: `setKeThPointColor` over the original
+/// `FFXVu0ApplyMatrix`, every table (and one it ignores), rows below and
+/// past the tables' first rows.
+fn round38_point_color(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let work = b.stack_range().start + 0x1000;
+    let pos = alloc(a, b, 0x10);
+    let colour = alloc(a, b, 0x10);
+    let unproject = a.rebase(render::bridge::KETH_UNPROJECT);
+    for k in 0..400u32 {
+        if k % 4 == 0 {
+            for j in 0..16 {
+                let v = round38_quiet(rng);
+                put(a, b, unproject + 4 * j, v);
+            }
+        }
+        for j in 0..4 {
+            let v = round38_quiet(rng);
+            put(a, b, pos + 4 * j, v);
+            let v = round38_quiet(rng);
+            put(a, b, colour + 4 * j, v);
+        }
+        let alpha = round38_quiet(rng);
+        let table = match rng.next() % 9 {
+            0 => 3,
+            1 => u32::MAX,
+            n => n % 3,
+        };
+        let i = (rng.next() % 14).wrapping_sub(2);
+        let row = rng.next() % 8;
+        let args = [pos, colour, alpha, table, i, row];
+        assert_eq!(
+            eax(a, 0x0076_65c0, &args),
+            render::bridge::set_keth_point_color(b, args, work, call),
+            "point colour {k}"
+        );
+        same_memory(&format!("point colour {k}"), a, b);
+    }
+}
+
+#[test]
+fn round38_point_color_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round38_point_color(&mut a, &mut b, &mut Xorshift(0x4038_0011));
+}
+
+#[test]
+fn round38_point_color_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round38_point_color(&mut a, &mut b, &mut Xorshift(0x4038_0012));
+}
+
+/// Round 38 group A: `updateVFXKeThRenderData`, its lookup and buffer
+/// calls logging stand-ins returning test words, `updateVFXKeThSetPoint`
+/// the original; the last part's index list sometimes lies in the part
+/// itself (past its pointer).
+#[allow(clippy::cast_possible_wrap)]
+fn round38_keth_render_data(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 8);
+    let stands: Vec<Stand> = vec![
+        (0x0064_53d0, vec![0, 1], vec![], ret_cell(cells)),
+        (0x0063_fdb0, vec![0, 1, 2, 3], vec![], ret_cell(cells + 4)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let stand = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), stand);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let data = alloc(a, b, 0x100);
+    // part -1 (a negative texture count) lies before the first
+    let parts = alloc(a, b, 0x6c * 7 + 0x200) + 0x6c;
+    let lists = alloc(a, b, 0x400);
+    let positions = alloc(a, b, 0x1000);
+    let colours = alloc(a, b, 0x1000);
+    let count = a.rebase(render::bridge::KETH_TEXTURE_COUNT);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        let part = (rng.next() % 6) as i32 - 1;
+        put(a, b, count, part);
+        put(a, b, data + 0x90, rng.next() % 6);
+        put(a, b, data + 0x94, parts);
+        put(
+            a,
+            b,
+            cells,
+            if rng.next().is_multiple_of(6) {
+                0
+            } else {
+                data
+            },
+        );
+        put(
+            a,
+            b,
+            cells + 4,
+            if rng.next().is_multiple_of(6) {
+                0
+            } else {
+                rng.next()
+            },
+        );
+        for j in 0..0x6c * 7 / 4 {
+            put(a, b, parts - 0x6c + 4 * j, rng.next());
+        }
+        for j in 0..0x100 {
+            put(a, b, lists + 4 * j, rng.next());
+        }
+        // every part (the one picked may be any of them) gets lists
+        for p in 0..7 {
+            let mesh = parts + 0x6c * p - 0x6c;
+            let list = match rng.next() % 4 {
+                0 if p == 6 => mesh + 0x20,
+                1 => lists + 2 * (rng.next() % 0x40),
+                _ => lists,
+            };
+            put(a, b, mesh + 0x1c, list);
+            put(a, b, mesh + 0xc, positions);
+            put(a, b, mesh + 0x14, colours);
+        }
+        // the point tables and the lists they are copied to hold test words
+        if k % 8 == 0 {
+            for (pos, col) in render::bridge::KETH_POINT_TABLES {
+                for j in 0..0x60 {
+                    let w = round38_quiet(rng);
+                    put(a, b, a.rebase(pos) + 4 * j, w);
+                    let w = round38_quiet(rng);
+                    put(a, b, a.rebase(col) + 4 * j, w);
+                }
+            }
+        }
+        for j in 0..0x400 {
+            put(a, b, positions + 4 * j, rng.next());
+            put(a, b, colours + 4 * j, rng.next());
+        }
+        let n = (rng.next() % 8) as i32 - 1;
+        let (lo, hi) = (rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x0076_6770, &[lo, hi, n.cast_unsigned()]),
+            render::bridge::update_vfx_keth_render_data(b, lo, hi, n, call),
+            "keth render data {k}"
+        );
+        same_memory(&format!("keth render data {k}"), a, b);
+    }
+}
+
+#[test]
+fn round38_keth_render_data_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round38_keth_render_data(&mut a, &mut b, &mut Xorshift(0x4038_0021));
+}
+
+#[test]
+fn round38_keth_render_data_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round38_keth_render_data(&mut a, &mut b, &mut Xorshift(0x4038_0022));
+}

@@ -1516,6 +1516,15 @@ ported! {
     updateVFXKeThSetPoint @ 0x0076_69c0 => extern "C" fn update_vfx_keth_set_point(mesh: u32, i: i32) -> u32 {
         render::bridge::keth_set_point(&mut mem(), mesh, i)
     }
+    /// `setKeThPointColor(pos, colour, alpha, table, i, row)`.
+    setKeThPointColor @ 0x0076_65c0 => extern "C" fn set_keth_point_color(pos: u32, colour: u32, alpha: u32, table: u32, i: u32, row: u32) -> u32 {
+        let mut w = super::StackFrame::<{ render::bridge::KETH_POINT_WORK as usize / 4 }>::new();
+        render::bridge::set_keth_point_color(&mut mem(), [pos, colour, alpha, table, i, row], w.at(), call_sym)
+    }
+    /// `updateVFXKeThRenderData(lo, hi, n)`.
+    updateVFXKeThRenderData @ 0x0076_6770 => extern "C" fn update_vfx_keth_render_data(lo: u32, hi: u32, n: i32) -> u32 {
+        render::bridge::update_vfx_keth_render_data(&mut mem(), lo, hi, n, call_sym)
+    }
     /// `TOSeqCtrl(i)`.
     TOSeqCtrl @ 0x008a_e0f0 => extern "C" fn to_seq_ctrl(i: i32) {
         scene::bridge::seq_ctrl(&mut mem(), i, call_sym);

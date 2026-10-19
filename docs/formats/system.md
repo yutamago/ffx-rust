@@ -1734,3 +1734,23 @@ pushed as literals (no relocation entries), not addresses.
   `MsGetComData(0x30ff)`'s text for 0x30ff and measures it.
   `TOBtlDrawLibraRight(x)` draws the Libra target's name at `X2(915) +
   x`, `Y2(590)` (`TOMkpCrossExtMesFontLClut`, 0.64, 0.5).
+
+## Round 38
+
+- `setKeThPointColor(pos, colour, alpha, table, i, row)` (`0x007665c0`)
+  takes `pos.xyz * pos.w` (w kept), puts it through
+  `FFXVu0ApplyMatrix(0x0230fb00)` on its own stack and stores it and the
+  colour (`rgb` and `alpha` over 256, a double 2^-8 at `0x00b50198`) in
+  one row of `updateVFXKeThSetPoint`'s tables: table 0 row `i`
+  (`0x02305848`/`0x023058a8`), table 1 row `i + 10 row`
+  (`0x02305908`/`0x0230a908`), table 2 row `i` (`0x0230f908`/`0x0230f968`);
+  other tables store nothing. `eax` is `colour` (`table` for the others);
+  its one caller, `KeThBP_MkStripStart_00765f80`, uses table 0 only.
+- `updateVFXKeThRenderData(lo, hi, n)` (`0x00766770`) fills geometry part
+  `p` (the texture count `0x02305840`, read before the lookup; the part
+  must be below the render data's `+0x90`) for a strip of `n` points:
+  `10 n + 12` vertices, `24 (n + 1)` indices, a segment buffer, then the
+  `u16` index list (two fans `0, k+1, k+2` and `6, k+7, k+8` for k < 4,
+  then `12 + 10 j + k, +1, +2` for eight k per point) and
+  `updateVFXKeThSetPoint` for the points 0–5, 12 on, 6–11. The original
+  counts `n` down in its argument slot.

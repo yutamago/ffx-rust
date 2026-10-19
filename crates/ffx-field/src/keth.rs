@@ -1033,6 +1033,446 @@ where
     state
 }
 
+/// `setKeThPointColor(pos, colour, alpha, table, i, row)` (`0x007665c0`,
+/// `ffx_system::render::bridge::set_keth_point_color`).
+pub const SET_POINT_COLOR: u32 = 0x0076_65c0;
+
+/// The scratch [`ke_th_bp_mk_strip_start`] needs: the edge colour and the
+/// centre colour, scaled.
+pub const STRIP_START_WORK: u32 = 0x20;
+
+/// A projected point over its w: `1 / w` (0 for w 0) into `inv`, then x,
+/// y and z times it.
+fn over_w<M: Mem>(mem: &mut M, v: u32, inv: u32) {
+    let at = |mem: &M, a: u32| mem.rebase(a);
+    let w = ld(mem.read::<u32>(at(mem, v + 0xc)));
+    let k = if w == 0.0 { 0.0 } else { 1.0 / w };
+    mem.write(at(mem, inv), st(k));
+    let k = ld(mem.read::<u32>(at(mem, inv)));
+    for i in 0..3 {
+        let x = ld(mem.read::<u32>(at(mem, v + 4 * i)));
+        mem.write(at(mem, v + 4 * i), st(x * k));
+    }
+}
+
+/// The belt path strip's first end (`KeThBP_MkStripStart_00765f80()`,
+/// `0x00765f80`, called by `KeThBP_MkGifPk` before
+/// [`ke_th_bp_mk_strip`]).
+///
+/// The fade is `1 - age * rate` of the walk's next point. The strip's
+/// first end ([`strip::END0`]) and second ([`strip::END1`]) go through
+/// the projection and over their w (the second's `1 / w` kept); the
+/// first end is point 0 of the first table (`setKeThPointColor`, in the
+/// edge colour scaled, alpha 0). The last direction is the unit vector
+/// between the ends; the edge colour steps on (`KeAddScaledColor`), the
+/// next point (the walk's `+4`) is projected over its w, the direction to
+/// it made unit, and the width scale grows (not below 0). The side offset
+/// along the bisector of the two directions turned a quarter (times the
+/// width scale, the fade, the second end's `1 / w` and the half widths)
+/// gives points 1–5 around the second end: plus the offset (alpha 0),
+/// plus the inner offset, the end itself in the centre colour (stepped
+/// first), minus the inner offset, minus the offset (alpha 0). Then the
+/// offset is kept, the ends move on, and the walk steps to its next point
+/// (`+4` by `+0x14`, `+0x1c` one less). Returns the walk's address (the
+/// original's `eax`).
+#[allow(clippy::too_many_lines)] // one pass, as the original
+pub fn ke_th_bp_mk_strip_start<M, C>(mem: &mut M, work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    use strip::{DIR, END0, END1, INV_W, NEXT, PREV_DIR, PREV_INV_W, PROJECT, SIDE1};
+    let r = |mem: &M, a: u32| mem.rebase(a);
+    let g = |mem: &M, a: u32| ld(mem.read::<u32>(mem.rebase(a)));
+    let put = |mem: &mut M, a: u32, x: f64| {
+        let at = mem.rebase(a);
+        mem.write(at, st(x));
+    };
+    let copy = |mem: &mut M, dst: u32, src: u32| {
+        let v = x87::copy(mem.read::<u32>(mem.rebase(src)));
+        let at = mem.rebase(dst);
+        mem.write(at, v);
+    };
+    let (edge, centre) = (work, work + 0x10);
+    let state = |mem: &M| mem.read::<u32>(mem.rebase(strip::STATE));
+    // `setKeThPointColor(at, colour, alpha, 0, i, 0)` (alpha as bits)
+    let point = |mem: &mut M, call: &mut C, at: u32, colour: u32, alpha: u32, i: u32| {
+        let (f, at) = (r(mem, SET_POINT_COLOR), r(mem, at));
+        call(mem, f, &[at, colour, alpha, 0, i, 0]);
+    };
+    let apply = |mem: &mut M, call: &mut C, dst: u32, v: u32| {
+        let (f, m) = (r(mem, APPLY_MATRIX), r(mem, PROJECT));
+        call(mem, f, &[r(mem, dst), m, v]);
+    };
+    // the fade of the next point
+    let age = ld(mem.read::<u32>(mem.read::<u32>(state(mem) + 4) + 0x1c));
+    put(mem, strip::FADE, 1.0 - age * g(mem, strip::FADE_RATE));
+
+    // the first end: projected, point 0
+    let end0 = r(mem, END0);
+    apply(mem, call, END0, end0);
+    over_w(mem, END0, PREV_INV_W);
+    let scale = r(mem, strip::COLOR_SCALE);
+    call(mem, r(mem, MUL_VECTOR), &[edge, r(mem, strip::EDGE), scale]);
+    point(mem, call, END0, edge, 0, 0);
+
+    // the second end, and the last direction
+    let end1 = r(mem, END1);
+    apply(mem, call, END1, end1);
+    over_w(mem, END1, PREV_INV_W);
+    call(mem, r(mem, COPY_VECTOR), &[r(mem, SIDE1), r(mem, END1)]);
+    put(mem, PREV_DIR, g(mem, END1) - g(mem, END0));
+    put(mem, PREV_DIR + 4, g(mem, END1 + 4) - g(mem, END0 + 4));
+    let k = inv_len(g(mem, PREV_DIR), g(mem, PREV_DIR + 4));
+    put(mem, PREV_DIR, g(mem, PREV_DIR) * k);
+    put(mem, PREV_DIR + 4, k * g(mem, PREV_DIR + 4));
+
+    // the edge colour steps on
+    let e = r(mem, strip::EDGE);
+    call(
+        mem,
+        r(mem, ADD_SCALED_COLOR),
+        &[e, e, r(mem, strip::EDGE_STEP), 0x3f80_0000],
+    );
+    call(mem, r(mem, MUL_VECTOR), &[edge, e, scale]);
+
+    // the next point, projected, and the direction to it
+    let next_point = mem.read::<u32>(state(mem) + 4);
+    apply(mem, call, NEXT, next_point);
+    over_w(mem, NEXT, INV_W);
+    put(mem, DIR, g(mem, NEXT) - g(mem, END1));
+    put(mem, DIR + 4, g(mem, NEXT + 4) - g(mem, END1 + 4));
+    let k = inv_len(g(mem, DIR), g(mem, DIR + 4));
+    put(mem, DIR, g(mem, DIR) * k);
+    put(mem, DIR + 4, k * g(mem, DIR + 4));
+
+    // the width scale grows (not below 0)
+    put(
+        mem,
+        strip::WIDTH_SCALE,
+        g(mem, strip_end::WIDTH_STEP) + g(mem, strip::WIDTH_SCALE),
+    );
+    if g(mem, strip::WIDTH_SCALE) < 0.0 {
+        put(mem, strip::WIDTH_SCALE, 0.0);
+    }
+
+    // the side offset along the bisector, turned a quarter
+    let bx = ld(st(g(mem, DIR) + g(mem, PREV_DIR)));
+    let by = ld(st(g(mem, DIR + 4) + g(mem, PREV_DIR + 4)));
+    let k = inv_len(bx, by);
+    let (nx, ny) = (ld(st(k * bx)), ld(st(k * by)));
+    let neg_nx = ld(st(-nx));
+    let (width, fade) = (g(mem, strip::WIDTH_SCALE), g(mem, strip::FADE));
+    let inv_w = g(mem, PREV_INV_W);
+    let ox = ld(st(width * ny * fade * inv_w * g(mem, strip::WIDTH)));
+    let oy = ld(st(width * neg_nx * fade * inv_w * g(mem, strip::WIDTH + 4)));
+    copy(mem, PREV_DIR, DIR);
+    copy(mem, PREV_DIR + 4, DIR + 4);
+    copy(mem, PREV_INV_W, INV_W);
+
+    // points 1-5 around the second end
+    let inner = g(mem, strip::INNER);
+    let side = |mem: &mut M, x: f64, y: f64| {
+        put(mem, SIDE1, x);
+        put(mem, SIDE1 + 4, y);
+    };
+    let (ex, ey) = (g(mem, END1), g(mem, END1 + 4));
+    side(mem, ex + ox, ey + oy);
+    point(mem, call, SIDE1, edge, 0, 1);
+    let (ex, ey) = (g(mem, END1), g(mem, END1 + 4));
+    side(mem, inner * ox + ex, inner * oy + ey);
+    let a = x87::copy(mem.read::<u32>(edge + 0xc));
+    point(mem, call, SIDE1, edge, a, 2);
+    let c = r(mem, strip::CENTRE);
+    call(
+        mem,
+        r(mem, ADD_SCALED_COLOR),
+        &[c, c, r(mem, strip::CENTRE_STEP), 0x3f80_0000],
+    );
+    call(mem, r(mem, MUL_VECTOR), &[centre, c, scale]);
+    let a = x87::copy(mem.read::<u32>(centre + 0xc));
+    point(mem, call, END1, centre, a, 3);
+    let (ex, ey) = (g(mem, END1), g(mem, END1 + 4));
+    side(mem, ex - inner * ox, ey - inner * oy);
+    let a = x87::copy(mem.read::<u32>(edge + 0xc));
+    point(mem, call, SIDE1, edge, a, 4);
+    let (ex, ey) = (g(mem, END1), g(mem, END1 + 4));
+    side(mem, ex - ox, ey - oy);
+    point(mem, call, SIDE1, edge, 0, 5);
+
+    // the offset kept, the ends move on, the walk steps
+    let o = r(mem, strip::OFFSET);
+    mem.write(o, [st(ox), st(oy)]);
+    call(mem, r(mem, COPY_VECTOR), &[r(mem, END0), r(mem, END1)]);
+    call(mem, r(mem, COPY_VECTOR), &[r(mem, END1), r(mem, NEXT)]);
+    let s = state(mem);
+    let next = mem
+        .read::<u32>(s + 4)
+        .wrapping_add(mem.read::<u32>(s + 0x14));
+    mem.write(s + 4, next);
+    let s = state(mem);
+    let left = mem.read::<i32>(s + 0x1c).wrapping_sub(1);
+    mem.write(s + 0x1c, left);
+    state(mem)
+}
+
+/// `FFXVu0CopyMatrix(dst, src)`.
+pub const COPY_MATRIX: u32 = 0x006e_d360;
+/// `KeThBP_MkStripStart_00765f80()` ([`ke_th_bp_mk_strip_start`]).
+pub const MK_STRIP_START: u32 = 0x0076_5f80;
+/// `KeThBP_MkStrip_00764de0()` ([`ke_th_bp_mk_strip`]).
+pub const MK_STRIP: u32 = 0x0076_4de0;
+/// `KeThBP_MkStripEnd_00765a10()` ([`ke_th_bp_mk_strip_end`]).
+pub const MK_STRIP_END: u32 = 0x0076_5a10;
+/// `debugDrawKeTh(a, n)` (a no-op on PC).
+pub const DEBUG_DRAW: u32 = 0x0063_8e00;
+/// `updateVFXKeThRenderData(lo, hi, n)`
+/// (`ffx_system::render::bridge::update_vfx_keth_render_data`).
+pub const UPDATE_RENDER_DATA: u32 = 0x0076_6770;
+
+/// The walk [`ke_th_bp_mk_gif_pk`] keeps in its scratch (pointed to by
+/// [`strip::STATE`]).
+mod walk {
+    /// The current colour row (`+0`) and its copy at the strip end.
+    pub const ROW: u32 = 0x00;
+    pub const POINT: u32 = 0x04;
+    /// The step between points (`0x30`, negated running backwards).
+    pub const STRIDE: u32 = 0x14;
+    /// The draw's `+8`, handed to `debugDrawKeTh`.
+    pub const TAG: u32 = 0x18;
+    pub const LEFT: u32 = 0x1c;
+    pub const END_ROW: u32 = 0x20;
+    /// The two runs of points: their lengths and first points.
+    pub const FIRST_COUNT: u32 = 0x28;
+    pub const SECOND_COUNT: u32 = 0x2c;
+    pub const FIRST: u32 = 0x30;
+    pub const SECOND: u32 = 0x34;
+}
+
+/// The scratch [`ke_th_bp_mk_gif_pk`] needs: its walk.
+pub const GIF_PK_WORK: u32 = 0x38;
+
+/// A colour scale component stored, then held to 0..=1 (a NaN kept).
+fn clamp_scale<M: Mem>(mem: &mut M, at: u32, from: u32) {
+    let v = x87::copy(mem.read::<u32>(from));
+    mem.write(at, v);
+    let x = ld(v);
+    if x > 1.0 {
+        mem.write(at, 1.0f32.to_bits());
+    } else if x < 0.0 {
+        mem.write(at, 0u32);
+    }
+}
+
+/// One belt path's strip (`KeThBP_MkGifPk(d, instance)`, `0x00763100`,
+/// called by [`ke_th_cp_draw`] with its draw `d`: `+0` the projection,
+/// `+4` the belt path, `+8` a tag, `+0xc` the template, `+0x10` the half
+/// widths, `+0x28` the colour scale).
+///
+/// Nothing for fewer than three segments (`+0x3c` + `+0x38`; returns 0).
+/// Else the walk ([`walk`], at `work`) becomes [`strip::STATE`]; the
+/// projection is copied to [`strip::PROJECT`], the template's widths,
+/// inner share and fade rate, the half widths, the colours (bytes 0–3
+/// centre, 4–7 edge), their steps (signed bytes 0x10–0x17) and the colour
+/// scale (each held to 0..=1) to the strip's state. Running forwards
+/// (`+0x3e` bit 12 clear) the colours and the width scale first step by
+/// the belt path's time `+0x30`, and the points are the `+0x38` from the
+/// head (`+0x34`) on, then the `+0x3c` from the first; backwards the
+/// `+0x3c` from `+0x10` and the `+0x38` behind the head, stepping back.
+/// The first two points are the strip's ends, the third starts it
+/// (`KeThBP_MkStripStart`), each run is drawn (`KeThBP_MkStrip`), then
+/// the end cap (`KeThBP_MkStripEnd`); with render data for instance
+/// (`g_pppCurrentProgram`, its sign plus `instance`), the last run's
+/// length goes to `updateVFXKeThRenderData`. Returns 1.
+#[allow(clippy::too_many_lines)] // one pass, as the original
+pub fn ke_th_bp_mk_gif_pk<M, C>(mem: &mut M, d: u32, instance: u32, work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    use strip::{CENTRE, CENTRE_STEP, COLOR_SCALE, EDGE, EDGE_STEP, END0, END1};
+    let r = |mem: &M, a: u32| mem.rebase(a);
+    let g = |mem: &M, a: u32| ld(mem.read::<u32>(mem.rebase(a)));
+    let put = |mem: &mut M, a: u32, x: f64| {
+        let at = mem.rebase(a);
+        mem.write(at, st(x));
+    };
+    let copy_from = |mem: &mut M, dst: u32, src: u32| {
+        let v = x87::copy(mem.read::<u32>(src));
+        let at = mem.rebase(dst);
+        mem.write(at, v);
+    };
+    let bp = |mem: &M| mem.read::<u32>(d + 4);
+    let o = bp(mem);
+    let segs = u32::from(mem.read::<u16>(o + 0x3c)) + u32::from(mem.read::<u16>(o + 0x38));
+    if segs < 3 {
+        return 0;
+    }
+    let state_at = r(mem, strip::STATE);
+    mem.write(state_at, work);
+    let tag = mem.read::<u32>(d + 8);
+    mem.write(work + walk::TAG, tag);
+    mem.write(work + walk::ROW, tag);
+    mem.write(work + walk::STRIDE, 0x30u32);
+    call(
+        mem,
+        r(mem, COPY_MATRIX),
+        &[r(mem, strip::PROJECT), mem.read::<u32>(d)],
+    );
+
+    // the template's widths, inner share and fade rate, the half widths
+    let t = mem.read::<u32>(d + 0xc);
+    copy_from(mem, strip::WIDTH_SCALE, t + 0xc);
+    copy_from(mem, strip_end::WIDTH_STEP, t + 0x1c);
+    copy_from(mem, strip::INNER, t + 0x30);
+    copy_from(mem, strip::FADE_RATE, t + 0x38);
+    let widths = mem.read::<u32>(d + 0x10);
+    copy_from(mem, strip::WIDTH, widths);
+    let widths = mem.read::<u32>(d + 0x10);
+    copy_from(mem, strip::WIDTH + 4, widths + 4);
+    // the colours, their steps and scale, a channel at a time
+    for i in 0..4 {
+        let byte = |mem: &M, o: u32| u32::from(mem.read::<u8>(mem.read::<u32>(d + 0xc) + o));
+        let signed = |mem: &M, o: u32| i32::from(mem.read::<i8>(mem.read::<u32>(d + 0xc) + o));
+        put(mem, CENTRE + 4 * i, f64::from(byte(mem, i)));
+        put(mem, EDGE + 4 * i, f64::from(byte(mem, 4 + i)));
+        put(mem, CENTRE_STEP + 4 * i, f64::from(signed(mem, 0x10 + i)));
+        put(mem, EDGE_STEP + 4 * i, f64::from(signed(mem, 0x14 + i)));
+        let at = r(mem, COLOR_SCALE + 4 * i);
+        let from = mem.read::<u32>(d + 0x28) + 4 * i;
+        clamp_scale(mem, at, from);
+    }
+
+    let state = |mem: &M| mem.read::<u32>(state_at);
+    let set = |mem: &mut M, o: u32, v: u32| {
+        let s = state(mem);
+        mem.write(s + o, v);
+    };
+    let get = |mem: &M, o: u32| mem.read::<u32>(state(mem) + o);
+    let o = bp(mem);
+    if u32::from(mem.read::<u16>(o + 0x3e)) & 0x1000 == 0 {
+        // forwards: the colours and the width scale step by the time
+        let time = x87::copy(mem.read::<u32>(o + 0x30));
+        let (c, cs) = (r(mem, CENTRE), r(mem, CENTRE_STEP));
+        call(mem, r(mem, ADD_SCALED_COLOR), &[c, c, cs, time]);
+        let time = x87::copy(mem.read::<u32>(bp(mem) + 0x30));
+        let (e, es) = (r(mem, EDGE), r(mem, EDGE_STEP));
+        call(mem, r(mem, ADD_SCALED_COLOR), &[e, e, es, time]);
+        let o = bp(mem);
+        let time = ld(mem.read::<u32>(o + 0x30));
+        put(
+            mem,
+            strip::WIDTH_SCALE,
+            time * g(mem, strip_end::WIDTH_STEP) + g(mem, strip::WIDTH_SCALE),
+        );
+        if g(mem, strip::WIDTH_SCALE) < 0.0 {
+            put(mem, strip::WIDTH_SCALE, 0.0);
+        }
+        set(mem, walk::FIRST_COUNT, u32::from(mem.read::<u16>(o + 0x38)));
+        let o = bp(mem);
+        set(
+            mem,
+            walk::SECOND_COUNT,
+            u32::from(mem.read::<u16>(o + 0x3c)),
+        );
+        let o = bp(mem);
+        let head = u32::from(mem.read::<u16>(o + 0x34));
+        set(mem, walk::FIRST, o + 0x40 + 0x30 * head);
+        let o = bp(mem);
+        set(mem, walk::SECOND, o + 0x40);
+    } else {
+        // backwards
+        set(mem, walk::FIRST_COUNT, u32::from(mem.read::<u16>(o + 0x3c)));
+        let o = bp(mem);
+        set(
+            mem,
+            walk::SECOND_COUNT,
+            u32::from(mem.read::<u16>(o + 0x38)),
+        );
+        let o = bp(mem);
+        let n = u32::from(mem.read::<u16>(o + 0x3c));
+        set(mem, walk::FIRST, o + 0x10 + 0x30 * n);
+        let o = bp(mem);
+        let n = u32::from(mem.read::<u16>(o + 0x34)) + u32::from(mem.read::<u16>(o + 0x38));
+        set(mem, walk::SECOND, (o + 0x10).wrapping_add(0x30 * n));
+        let stride = get(mem, walk::STRIDE).wrapping_neg();
+        set(mem, walk::STRIDE, stride);
+    }
+    set(mem, walk::END_ROW, get(mem, walk::ROW));
+
+    // a point off the walk into `end`, the walk one on
+    let take = |mem: &mut M, call: &mut C, end: u32| {
+        let at = get(mem, walk::POINT);
+        call(mem, r(mem, COPY_VECTOR), &[r(mem, end), at]);
+        let next = get(mem, walk::POINT).wrapping_add(get(mem, walk::STRIDE));
+        set(mem, walk::POINT, next);
+        let left = get(mem, walk::LEFT).wrapping_sub(1);
+        set(mem, walk::LEFT, left);
+    };
+    let second_run = |mem: &mut M| {
+        set(mem, walk::POINT, get(mem, walk::SECOND));
+        set(mem, walk::LEFT, get(mem, walk::SECOND_COUNT));
+    };
+    // the ends and the start, then which runs are left to draw
+    let (first_run, second) = if get(mem, walk::FIRST_COUNT) == 0 {
+        second_run(mem);
+        take(mem, call, END0);
+        take(mem, call, END1);
+        (false, true)
+    } else {
+        set(mem, walk::POINT, get(mem, walk::FIRST));
+        set(mem, walk::LEFT, get(mem, walk::FIRST_COUNT));
+        take(mem, call, END0);
+        if get(mem, walk::LEFT) == 0 {
+            second_run(mem);
+            take(mem, call, END1);
+            (false, true)
+        } else {
+            take(mem, call, END1);
+            if get(mem, walk::LEFT) == 0 {
+                second_run(mem);
+                (false, true)
+            } else {
+                (true, false)
+            }
+        }
+    };
+    call(mem, r(mem, MK_STRIP_START), &[]);
+    let mut drawn = 0; // set by the run drawn last
+    if first_run {
+        let n = get(mem, walk::FIRST_COUNT).wrapping_sub(1);
+        set(mem, walk::FIRST_COUNT, n);
+        drawn = get(mem, walk::LEFT);
+        call(mem, r(mem, MK_STRIP), &[]);
+    }
+    if second || get(mem, walk::SECOND_COUNT) != 0 {
+        if !second {
+            second_run(mem);
+        }
+        drawn = get(mem, walk::LEFT);
+        call(mem, r(mem, MK_STRIP), &[]);
+    }
+    call(mem, r(mem, MK_STRIP_END), &[]);
+    let tag = get(mem, walk::TAG);
+    call(mem, r(mem, DEBUG_DRAW), &[tag, drawn]);
+    let key = |mem: &M| {
+        let lo = mem.read::<u32>(mem.rebase(crate::ke::PPP_CURRENT_PROGRAM));
+        (
+            lo,
+            (lo.cast_signed() >> 31)
+                .cast_unsigned()
+                .wrapping_add(instance),
+        )
+    };
+    let (lo, hi) = key(mem);
+    let f = r(mem, crate::ke::GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+    if call(mem, f, &[lo, hi]) != 0 {
+        let (lo, hi) = key(mem);
+        call(mem, r(mem, UPDATE_RENDER_DATA), &[lo, hi, drawn]);
+    }
+    1
+}
+
 /// `KeThBP_Update(p)` (`0x007637f0`), called through the game by
 /// [`ke_th_cp_update`].
 pub const BP_UPDATE: u32 = 0x0076_37f0;
@@ -1128,4 +1568,163 @@ where
     mem.write(r(mem, LAST_KIND), kind);
     mem.write(r(mem, LAST_OBJECT), object);
     object
+}
+
+/// `KeThBP_MkGifPk(d, instance)` ([`ke_th_bp_mk_gif_pk`]).
+pub const MK_GIF_PK: u32 = 0x0076_3100;
+/// The draws' callees: `FFXVu0MulMatrix(dst, a, b)`,
+/// `sceVu0InversMatrix4x4(dst, m)`, `MsGetScreenMatrix()`,
+/// `MsGetCameraMatrix()`.
+pub const MUL_MATRIX: u32 = 0x006e_d5c0;
+pub const INVERSE_MATRIX: u32 = 0x006e_d460;
+pub const MS_GET_SCREEN_MATRIX: u32 = 0x007b_bd70;
+pub const MS_GET_CAMERA_MATRIX: u32 = 0x007c_04b0;
+/// The render data calls: `resetVFXKeThRenderData(lo, hi, n)`,
+/// `graphicVFXSetVisible(lo, hi, on)`, `graphicVFXPath3Update(lo, hi)`,
+/// `calculateVFXSP_AlphaFunction(a)`, `InitVFXKeThRenderData(lo, hi, alpha,
+/// 0)`, `graphicVFXSetup(lo, hi)`, `graphicVFXDestroy(lo, hi)`.
+pub const RESET_RENDER_DATA: u32 = 0x0076_5f10;
+pub const SET_VISIBLE: u32 = 0x0064_5710;
+pub const PATH3_UPDATE: u32 = 0x0064_5600;
+pub const ALPHA_FUNCTION: u32 = 0x0071_2c30;
+pub const INIT_RENDER_DATA: u32 = 0x0076_58b0;
+pub const SETUP: u32 = 0x0064_5780;
+pub const DESTROY: u32 = 0x0064_5280;
+/// The effects' screen matrix (`g_pppScreenMatrix`), the inverses of the
+/// screen and the camera matrices (`0x0230fb80`, `0x0230fb40`), and
+/// `g_GraphicSkipFrame`.
+pub const PPP_SCREEN_MATRIX: u32 = 0x0230_fe60;
+pub const SCREEN_INVERSE: u32 = 0x0230_fb80;
+pub const CAMERA_INVERSE: u32 = 0x0230_fb40;
+pub const SKIP_FRAME: u32 = 0x012f_b7d0;
+
+/// The scratch [`ke_th_cp_draw`] needs: the draw (`0x2c` bytes) and its
+/// projection matrix at `+0x30`.
+pub const CP_DRAW_WORK: u32 = 0x70;
+
+/// `KeThCp_Draw(t, m, widths, template, _, alpha, a6, a7, a8, scale,
+/// instance)` (`0x007645e0`): draws every belt path of the thread `t`
+/// (object list at `t[0]`, links through `get_ptr32_func`).
+///
+/// The effect instance is (`g_pppCurrentProgram`, its sign plus
+/// `instance`); on a skipped frame (`g_GraphicSkipFrame`) nothing more
+/// (returns 1 without render data, else 0). The draw ([`CP_DRAW_WORK`] at
+/// `work`: `+0` the screen matrix times `m`, `+8` 0x10, `+0xc` the
+/// template, `+0x10` the widths, `+0x18..+0x28` the last five arguments
+/// but the instance) goes to `KeThBP_MkGifPk` for each belt path, after
+/// [`strip::UNPROJECT`] is set to the inverse camera matrix times the
+/// inverse screen matrix; with render data the texture count
+/// (`0x02305840`) is the number drawn so far before each. Then with
+/// render data `resetVFXKeThRenderData(lo, hi, n)` and, when any was
+/// drawn, `graphicVFXSetVisible(lo, hi, 1)` and `graphicVFXPath3Update`;
+/// without, the most drawn for this thread is kept (`0x02305840`,
+/// `0x02305844`) and the render data made (`InitVFXKeThRenderData` with
+/// `calculateVFXSP_AlphaFunction(alpha)`, `graphicVFXSetup`), destroyed
+/// when either fails. Returns what the original leaves in `eax`: the last
+/// callee's result.
+#[allow(clippy::too_many_lines)] // one pass, as the original
+pub fn ke_th_cp_draw<M, C>(mem: &mut M, args: [u32; 11], work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    use crate::ke::{GET_PTR32_FUNC, GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE, PPP_CURRENT_PROGRAM};
+    let [
+        t,
+        m,
+        widths,
+        template,
+        _,
+        alpha,
+        a6,
+        a7,
+        a8,
+        scale,
+        instance,
+    ] = args;
+    let r = |mem: &M, a: u32| mem.rebase(a);
+    let get_ptr = |mem: &mut M, call: &mut C, p: u32| {
+        let f = r(mem, GET_PTR32_FUNC);
+        call(mem, f, &[p])
+    };
+    let first = get_ptr(mem, call, mem.read::<u32>(t));
+    let lo = mem.read::<u32>(r(mem, PPP_CURRENT_PROGRAM));
+    let hi = (lo.cast_signed() >> 31)
+        .cast_unsigned()
+        .wrapping_add(instance);
+    let f = r(mem, GRAPHIC_VFX_GET_RENDER_DATA_BY_INSTANCE);
+    let missing = call(mem, f, &[lo, hi]) == 0;
+    if mem.read::<u32>(r(mem, SKIP_FRAME)) != 0 {
+        return u32::from(missing);
+    }
+
+    // the draw, and the matrix back to world space
+    let (d, matrix) = (work, work + 0x30);
+    mem.write(d + 0xc, template);
+    mem.write(d, matrix);
+    call(
+        mem,
+        r(mem, MUL_MATRIX),
+        &[matrix, r(mem, PPP_SCREEN_MATRIX), m],
+    );
+    mem.write(d + 0x10, widths);
+    mem.write(d + 0x18, [alpha, a6, a7, a8, scale]);
+    mem.write(d + 8, 0x10u32);
+    let screen = call(mem, r(mem, MS_GET_SCREEN_MATRIX), &[]);
+    call(
+        mem,
+        r(mem, INVERSE_MATRIX),
+        &[r(mem, SCREEN_INVERSE), screen],
+    );
+    let camera = call(mem, r(mem, MS_GET_CAMERA_MATRIX), &[]);
+    call(
+        mem,
+        r(mem, INVERSE_MATRIX),
+        &[r(mem, CAMERA_INVERSE), camera],
+    );
+    let (unproject, camera, screen) = (
+        r(mem, strip::UNPROJECT),
+        r(mem, CAMERA_INVERSE),
+        r(mem, SCREEN_INVERSE),
+    );
+    call(mem, r(mem, MUL_MATRIX), &[unproject, camera, screen]);
+
+    // each belt path
+    let mut drawn = 0u32;
+    let mut bp = first;
+    let mut alpha_arg = alpha;
+    while bp != 0 {
+        if !missing {
+            mem.write(r(mem, LAST_KIND), drawn);
+        }
+        mem.write(d + 4, bp);
+        if call(mem, r(mem, MK_GIF_PK), &[d, instance]) != 0 {
+            drawn = drawn.wrapping_add(1);
+        }
+        bp = get_ptr(mem, call, mem.read::<u32>(bp));
+        alpha_arg = mem.read::<u32>(d + 0x18);
+    }
+
+    if !missing {
+        let reset = call(mem, r(mem, RESET_RENDER_DATA), &[lo, hi, drawn]);
+        if drawn == 0 {
+            return reset;
+        }
+        call(mem, r(mem, SET_VISIBLE), &[lo, hi, 1]);
+        return call(mem, r(mem, PATH3_UPDATE), &[lo, hi]);
+    }
+    let alpha = call(mem, r(mem, ALPHA_FUNCTION), &[alpha_arg]);
+    let (count, object) = (r(mem, LAST_KIND), r(mem, LAST_OBJECT));
+    if mem.read::<u32>(object) != t || drawn.cast_signed() > mem.read::<i32>(count) {
+        mem.write(count, drawn);
+        mem.write(object, t);
+    }
+    let ok = call(mem, r(mem, INIT_RENDER_DATA), &[lo, hi, alpha, 0]);
+    if ok != 0 {
+        let ok = call(mem, r(mem, SETUP), &[lo, hi]);
+        if ok != 0 {
+            return ok;
+        }
+    }
+    call(mem, r(mem, DESTROY), &[lo, hi])
 }

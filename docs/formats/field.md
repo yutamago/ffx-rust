@@ -2059,6 +2059,55 @@ are), times w, through `0x0230fb00`. The width scale `0x0230fa0c` grows
 by `0x0230fa08` and is clamped at 0 (-0 kept); the walk's `+0` moves on
 by 0xd0.
 
+### The strip's start, a belt path's strip, a thread's draw (system agent r38)
+
+`KeThBP_MkStripStart_00765f80()` (`0x00765f80`, before the strip; returns
+the walk) builds the first row: the fade from the walk's next point's
+age, both ends (`0x0230faa0`, `0x0230fa90`) through `0x0230fac0` and over
+their w (the second's `1 / w` kept in `0x0230f9d0`); the first end is
+point 0 of `setKeThPointColor`'s first table (edge colour, alpha 0). The
+last direction `0x0230f9e0` is the unit `(end1 - end0).xy`; the edge
+colour steps; the next point is projected into `0x0230fa80` and its
+direction `0x0230f9d8` made unit; the width scale grows by `0x0230fa08`
+(not below 0). The side offset along the two directions' bisector
+(products in the order `scale * n * fade * (1 / w) * width`) gives points
+1–5 around the second end: plus the offset (alpha 0), plus the inner
+offset, the end itself (centre colour, stepped first), minus the inner
+offset, minus the offset (alpha 0). Then the offset goes to `0x0230f9e8`,
+the ends move on and the walk steps.
+
+`KeThBP_MkGifPk(d, instance)` (`0x00763100`) draws one belt path with the
+draw frame `d` (`+0` projection, `+4` belt path, `+8` tag, `+0xc`
+template, `+0x10` half widths, `+0x28` colour scale). Below three
+segments (`+0x3c` + `+0x38`) it returns 0. Its walk is a stack frame
+(`0x0230f9c8` keeps pointing at it afterwards): `+0` and `+0x18` the tag,
+`+0x14` the stride 0x30, `+0x28`/`+0x2c` the two runs' lengths and
+`+0x30`/`+0x34` their first points. The template gives the width scale
+(`+0xc`), its step (`+0x1c`), the inner share (`+0x30`), the fade rate
+(`+0x38`), the colours (bytes 0–3 centre, 4–7 edge) and their steps
+(signed bytes 0x10–0x17); the colour scale is held to 0..=1. Running
+forwards (`+0x3e` bit 12 clear) the colours and the width scale first
+step by the belt path's time `+0x30`; the runs are the `+0x38` points
+from the head `+0x34` and the `+0x3c` from `+0x40`. Backwards they are
+the `+0x3c` from `+0x10` and the `+0x38` behind the head, stride -0x30.
+The first two points are the ends, then the start, one strip per run,
+the end cap, `debugDrawKeTh(tag, n)` and, with render data,
+`updateVFXKeThRenderData(lo, hi, n)` (`n` the last run's points). It
+returns 1.
+
+`KeThCp_Draw(t, m, widths, template, _, alpha, a6, a7, a8, scale,
+instance)` (`0x007645e0`) draws a thread's belt paths: on a skipped frame
+nothing; else the draw frame (screen matrix `0x0230fe60` times `m`),
+`0x0230fb00` = inverse camera times inverse screen matrix, then
+`KeThBP_MkGifPk` per belt path, counting the ones drawn (with render
+data the count so far goes to `0x02305840` before each). With render
+data: `resetVFXKeThRenderData`, and when any was drawn
+`graphicVFXSetVisible` and `graphicVFXPath3Update`; without, the thread
+with the most belt paths is kept in `0x02305840`/`0x02305844` and the
+render data is created (`InitVFXKeThRenderData` with
+`calculateVFXSP_AlphaFunction(alpha)`, then `graphicVFXSetup`), destroyed
+when either fails.
+
 ## The renderer's initial state (field agent r6)
 
 `yiRender_create(r, direct, data, refs)` (`0x0090c400`; `yiInit` calls
