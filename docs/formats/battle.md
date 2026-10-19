@@ -1017,13 +1017,12 @@ a fourth argument that `MsMenuLimitSet` never reads.
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.
 
-**336 functions, 66725 bytes** (190 named). By blockers: 0: 213, 1: 77, 2: 35, 3: 4, 4: 4, 5: 1, 7: 1, 15: 1.
+**334 functions, 65202 bytes** (188 named). By blockers: 0: 212, 1: 76, 2: 35, 3: 4, 4: 4, 5: 1, 7: 1, 15: 1.
 
-The battle loop's top level still open (ported: `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below, with `MsMenuLimitSet`, the biggest function now without blockers but the camera's):
+The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below, with `MsMenuLimitSet`, the biggest function now without blockers but the camera's):
 
 | Function | Address | Bytes | Blockers |
 |---|---|---|---|
-| `MsMenuLimitSet` | `0x007afe00` | 1393 | 0 |
 
 <details><summary>Every remaining function (blockers, then size)</summary>
 
@@ -1240,7 +1239,6 @@ The battle loop's top level still open (ported: `MsMenuGetText`, `MsMenuGetHelp`
 | 0 | 844 | `0x007c3d60` | `MsScreenMatrix` |  |
 | 0 | 891 | `0x007c58e0` | `MsCamSetBtl` |  |
 | 0 | 1385 | `0x007c50f0` | `MsCameraShakeProcess` |  |
-| 0 | 1393 | `0x007afe00` | `MsMenuLimitSet` |  |
 | 0 | 2366 | `0x007c1be0` | `MsCameraMatrix` |  |
 | 1 | 9 | `0x00790290` | `FUN_00790290` | MsEffectSetMotion |
 | 1 | 21 | `0x007962b0` | `MsSetChrShadow` | MsSetChrShadowMode |
@@ -1279,7 +1277,6 @@ The battle loop's top level still open (ported: `MsMenuGetText`, `MsMenuGetHelp`
 | 1 | 123 | `0x007932b0` | `MesSetChrTargetPosToLimitSparePosy` | FUN_00796bb0 |
 | 1 | 127 | `0x007cf8f0` | `ms_free` | FUN_007cf860 |
 | 1 | 128 | `0x007c0650` | `FUN_007c0650` | FUN_0086a6e0 |
-| 1 | 130 | `0x007b0470` | `MsMenuLimitSet_007b0470` | MsMenuLimitSet |
 | 1 | 131 | `0x00784260` | `Mon_GetName` | readBtlMonsterName |
 | 1 | 131 | `0x007abf40` | `FUN_007abf40` | FUN_007abeb0 |
 | 1 | 132 | `0x00783b00` | `Mon_AttachData` | MsRegistSEdata |
