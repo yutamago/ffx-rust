@@ -1268,6 +1268,64 @@ ported! {
     TOMenuEndScreenX2_008e2790 @ 0x008e_2790 => extern "C" fn to_menu_end_screen_x2(w: u32) -> u32 {
         tolib::bridge::menu_end_screen_x2(&mut mem(), w, call_sym)
     }
+    /// `TOBtlInitChrNum()`.
+    TOBtlInitChrNum @ 0x0089_79d0 => extern "C" fn to_btl_init_chr_num() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let count = frame.at();
+        btl::bridge::btl_chr_num(&mut mem(), count, call_sym)
+    }
+    /// `TOBtlCtrlChrNum()`.
+    TOBtlCtrlChrNum @ 0x0089_1140 => extern "C" fn to_btl_ctrl_chr_num() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let count = frame.at();
+        btl::bridge::btl_chr_num(&mut mem(), count, call_sym)
+    }
+    /// `TOBtlMakeStatusBuff(chr, out)`.
+    TOBtlMakeStatusBuff @ 0x0089_8260 => extern "C" fn to_btl_make_status_buff(chr: u32, out: u32) -> u32 {
+        btl::bridge::btl_make_status_buff(&mut mem(), chr, out, call_sym)
+    }
+    /// `TOBtlSetChangeHelpMes(n)`.
+    TOBtlSetChangeHelpMes @ 0x0089_97c0 => extern "C" fn to_btl_set_change_help_mes(n: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let out = frame.at();
+        btl::bridge::btl_set_change_help_mes(&mut mem(), n, out, call_sym)
+    }
+    /// `TOBtlSetInfoWinMes(chr)`.
+    TOBtlSetInfoWinMes @ 0x0089_9f20 => extern "C" fn to_btl_set_info_win_mes(chr: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let size = frame.at();
+        btl::bridge::btl_set_info_win_mes(&mut mem(), chr, size, call_sym)
+    }
+    /// `TOBtlDrawLibraRight(x)`.
+    TOBtlDrawLibraRight @ 0x0089_c7d0 => extern "C" fn to_btl_draw_libra_right(x: i32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let size = frame.at();
+        btl::bridge::btl_draw_libra_right(
+            &mut mem(),
+            x,
+            size,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_sym,
+        )
+    }
+    /// `TOBtlSetInfoWinParam(chr)`.
+    TOBtlSetInfoWinParam @ 0x0089_9fd0 => extern "C" fn to_btl_set_info_win_param(chr: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let size = frame.at();
+        btl::bridge::btl_set_info_win_param(&mut mem(), chr, size, call_sym)
+    }
+    /// `TOBtlDrawInfoWinStatus(_, x, y)`.
+    TOBtlDrawInfoWinStatus @ 0x0089_5240 => extern "C" fn to_btl_draw_info_win_status(_unused: u32, x: i32, y: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        btl::bridge::btl_draw_info_win_status(
+            &mut mem(),
+            [x, y],
+            width,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_sym,
+        )
+    }
     /// `sce::Vectormath::Scalar::Aos::inverse(out, m)`.
     sce_Vectormath_Scalar_Aos_inverse @ 0x0057_3d00 => extern "C" fn sce_vectormath_inverse(out: u32, m: u32) -> u32 {
         math::bridge::inverse4(&mut mem(), out, m)

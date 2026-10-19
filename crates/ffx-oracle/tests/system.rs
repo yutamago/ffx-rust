@@ -21736,3 +21736,335 @@ fn round37_win_matches_the_original_on_the_snapshot() {
     };
     round37_win(&mut a, &mut b, &mut Xorshift(0x4037_0062));
 }
+
+/// Round 37 group G: the battle menu's character lists, status ids, help
+/// text, info window line and Libra name over logging stand-ins (the
+/// window lists, text sources and status data are test memory).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round37_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let lists = alloc(a, b, 0x40);
+    let texts = alloc(a, b, 0x200);
+    let out = texts + 0x180;
+    let scratch = alloc(a, b, 0x10);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    // MsGetSaveWindow(chr, kind, &count): unless cells + 0x30 is 0, count
+    // from cells + 0x20 or + 0x24 by the call; returns the list pointer
+    let mut window_tail = vec![0x83, 0x3d];
+    window_tail.extend_from_slice(&(cells + 0x30).to_le_bytes());
+    window_tail.extend_from_slice(&[0x00, 0x74, 0x0b]);
+    window_tail.extend_from_slice(&[0x8b, 0x54, 0x24, 0x0c, 0xa1]);
+    window_tail.extend_from_slice(&(cells + 0x20).to_le_bytes());
+    window_tail.extend_from_slice(&[0x89, 0x02]);
+    window_tail.extend_from_slice(&[0x87, 0x05]);
+    window_tail.extend_from_slice(&(cells + 0x24).to_le_bytes());
+    window_tail.push(0xa3);
+    window_tail.extend_from_slice(&(cells + 0x20).to_le_bytes());
+    window_tail.extend_from_slice(&ret_cell(cells));
+    // MsGetComData(id, &base): base from cells + 0x2c, returns texts +
+    // 0x1f0 (its u16 +8 the text offset)
+    let mut com_tail = vec![0x8b, 0x54, 0x24, 0x08, 0xa1];
+    com_tail.extend_from_slice(&(cells + 0x2c).to_le_bytes());
+    com_tail.extend_from_slice(&[0x89, 0x02, 0xb8]);
+    com_tail.extend_from_slice(&(texts + 0x1f0).to_le_bytes());
+    // TOGetMessageWH(k, text, &w, &h, ...): w from cells + 0x38
+    let mut wh_tail = vec![0x8b, 0x54, 0x24, 0x0c, 0xa1];
+    wh_tail.extend_from_slice(&(cells + 0x38).to_le_bytes());
+    wh_tail.extend_from_slice(&[0x89, 0x02]);
+    wh_tail.extend_from_slice(&ret_cell(cells + 0x3c));
+    let stands: Vec<Stand> = vec![
+        (0x0078_5410, all(2), vec![], window_tail),
+        (0x0078_f930, all(1), vec![], ret_cell(cells + 4)),
+        (0x0079_afc0, all(1), vec![], ret_cell(cells + 8)),
+        (0x0078_fa80, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x0078_f950, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x0078_f7c0, all(2), vec![], ret_cell(cells + 0x14)),
+        (0x0079_a4b0, all(1), vec![], com_tail),
+        (0x008b_9650, vec![0, 1, 4, 5], vec![1], wh_tail),
+        (0x0089_7bd0, vec![], vec![], ret_cell(cells + 0x18)),
+        (0x0090_16b0, all(7), vec![1], ret_cell(cells + 0x1c)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let g = |o: &Oracle, at: u32| o.rebase(at);
+    let globals = [
+        (g(a, 0x0133_f0d8), 0x40u32),
+        (g(a, 0x0133_f530), 0x100),
+        (g(a, 0x0133_f618), 0x80),
+        (g(a, 0x0133_f688), 0x30),
+    ];
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x10 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        for &(at, len) in &globals {
+            for j in 0..len / 4 {
+                put(a, b, at + 4 * j, rng.next());
+            }
+        }
+        // the two windows' lists: entries with 0xff tails
+        put(a, b, cells, lists);
+        put(a, b, cells + 0x30, rng.next() % 3);
+        for j in 0..0x20u32 {
+            let v = if rng.next().is_multiple_of(3) {
+                0xff
+            } else {
+                rng.next() as u16
+            };
+            put(a, b, lists + 2 * j, v);
+        }
+        put(
+            a,
+            b,
+            cells + 0x20,
+            [0u32, 1, 3, 8, 0xffff_ffff][(rng.next() % 5) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 0x24,
+            [0u32, 2, 5, 8][(rng.next() % 4) as usize],
+        );
+        let want = eax(a, 0x0089_79d0, &[]);
+        assert_eq!(want, t::btl_chr_num(b, scratch, call), "chr num {k}");
+        let s: [u32; 4] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        // the status ids
+        put(a, b, cells + 0xc, texts);
+        for j in 0..0x10u32 {
+            put(a, b, texts + j, [0u8, 0, 1, 7][(rng.next() % 4) as usize]);
+        }
+        put(a, b, cells + 8, [0u32, 1, 2][(rng.next() % 3) as usize]);
+        let chr = rng.next() % 0x20;
+        let want = eax(a, 0x0089_8260, &[chr, out]);
+        assert_eq!(
+            want,
+            t::btl_make_status_buff(b, chr, out, call),
+            "status {k}"
+        );
+        // the help text: a source string of random length
+        let len = rng.next() % 0x60;
+        for j in 0..0x100u32 {
+            let c = if j < len {
+                (rng.next() % 255 + 1) as u8
+            } else {
+                0
+            };
+            put(a, b, texts + 0x80 + j, c);
+        }
+        put(a, b, cells + 0x14, texts + 0x80);
+        put(a, b, cells + 0x2c, texts + 0x80);
+        put(a, b, texts + 0x1f8, (rng.next() % 0x40) as u16);
+        put(
+            a,
+            b,
+            cells + 0x38,
+            [1.0f32, 100.0, 255.5, -3.0, 1.0e9][(rng.next() % 5) as usize],
+        );
+        let n = [0u32, 7, 8, 0x11, 0x12, 0x30ff, u32::MAX, rng.next() % 0x20]
+            [(rng.next() % 8) as usize];
+        let want = eax(a, 0x0089_97c0, &[n]);
+        let got = t::btl_set_change_help_mes(b, n, scratch, call);
+        if (0..=0x11).contains(&n.cast_signed()) || n == 0x30ff {
+            assert_eq!(want, got, "help {k}");
+        }
+        let s: [u32; 4] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        // the info window line (its width sometimes exactly the limit) and
+        // the Libra name
+        if rng.next().is_multiple_of(3) {
+            let limit: i16 = Mem::read(a, a.rebase(0x0133_f61e));
+            put(a, b, cells + 0x38, f32::from(limit));
+        }
+        let want = eax(a, 0x0089_9f20, &[chr]);
+        assert_eq!(
+            want,
+            t::btl_set_info_win_mes(b, chr, scratch, call),
+            "info {k}"
+        );
+        let s: [u32; 4] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        let x = [rng.next(), rng.next() % 1280, 0x8000_0000][(rng.next() % 3) as usize];
+        let want = eax(a, 0x0089_c7d0, &[x]);
+        let got = t::btl_draw_libra_right(b, x.cast_signed(), scratch, remap, call);
+        assert_eq!(want, got, "libra {k}");
+        let s: [u32; 4] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("round37 btl {k}"), a, b);
+    }
+}
+
+#[test]
+fn round37_btl_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round37_btl(&mut a, &mut b, &mut Xorshift(0x4037_0071));
+}
+
+#[test]
+fn round37_btl_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round37_btl(&mut a, &mut b, &mut Xorshift(0x4037_0072));
+}
+
+/// Round 37 group H: the battle info window's status cycle
+/// (`TOBtlSetInfoWinParam`, `TOBtlDrawInfoWinStatus`) over logging
+/// stand-ins and the original remaps.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round37_info(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x40);
+    let counts = alloc(a, b, 0x10);
+    let scratch = alloc(a, b, 0x10);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    // a float from `cell` through argument `k`, then eax from `ret`
+    let store_float = |k: u8, cell: u32, ret: u32| {
+        let mut v = vec![0x8b, 0x54, 0x24, 4 + 4 * k, 0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.extend_from_slice(&[0x89, 0x02]);
+        v.extend_from_slice(&ret_cell(ret));
+        v
+    };
+    let stands: Vec<Stand> = vec![
+        (0x0079_add0, all(1), vec![], ret_cell(cells)),
+        (0x0079_adf0, all(1), vec![], ret_cell(cells + 4)),
+        (0x0078_f930, all(1), vec![], ret_cell(cells + 8)),
+        (0x0078_fa80, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x0078_f950, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x0078_f7c0, all(2), vec![], ret_cell(cells + 0x14)),
+        (
+            0x008b_9650,
+            vec![0, 1, 4, 5],
+            vec![],
+            store_float(2, cells + 0x18, cells + 0x1c),
+        ),
+        (0x0078_fcf0, all(3), vec![], ret_cell(cells + 0x20)),
+        (
+            0x0090_5290,
+            vec![0, 2, 3, 4],
+            vec![],
+            store_float(1, cells + 0x24, cells + 0x28),
+        ),
+        (0x0090_5930, all(6), vec![], ret_cell(cells + 0x2c)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    let window = a.rebase(0x0133_f5c0);
+    let floats = [0.0f32, 1.5, 99.9, 380.0, 1.0e6, -12.25];
+    for k in 0..800u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x10 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        for j in 0..0x40 {
+            put(a, b, window + 4 * j, rng.next());
+        }
+        put(a, b, cells + 0xc, counts);
+        for j in 0..0x10u32 {
+            put(a, b, counts + j, [0u8, 0, 3][(rng.next() % 3) as usize]);
+        }
+        put(a, b, cells + 0x18, floats[(rng.next() % 6) as usize]);
+        put(a, b, cells + 0x24, floats[(rng.next() % 6) as usize]);
+        let chr = [0u32, 5, 0x13, 0x20, rng.next()][(rng.next() % 5) as usize];
+        if rng.next().is_multiple_of(2) {
+            let want = eax(a, 0x0089_9fd0, &[chr]);
+            assert_eq!(
+                want,
+                t::btl_set_info_win_param(b, chr, scratch, call),
+                "param {k}"
+            );
+            let s: [u32; 4] = Mem::read(b, scratch);
+            Mem::write(a, scratch, s);
+        } else {
+            // a cycle mid-way: timer, shown entry and count small
+            put(
+                a,
+                b,
+                window + 2,
+                [0u16, 1, 0x14, 0xffff][(rng.next() % 4) as usize],
+            );
+            let count = (rng.next() % 6) as u16;
+            put(a, b, window + 6, count);
+            put(a, b, window + 4, (rng.next() % 7) as u16);
+        }
+        for _ in 0..3 {
+            let x = [rng.next(), rng.next() % 1280][(rng.next() % 2) as usize];
+            let y = [rng.next(), rng.next() % 720][(rng.next() % 2) as usize];
+            let want = eax(a, 0x0089_5240, &[rng.next(), x, y]);
+            let got = t::btl_draw_info_win_status(
+                b,
+                [x.cast_signed(), y.cast_signed()],
+                scratch,
+                remap,
+                call,
+            );
+            assert_eq!(want, got, "status {k}");
+            let s: [u32; 4] = Mem::read(b, scratch);
+            Mem::write(a, scratch, s);
+        }
+        same_memory(&format!("round37 info {k}"), a, b);
+    }
+}
+
+#[test]
+fn round37_info_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round37_info(&mut a, &mut b, &mut Xorshift(0x4037_0081));
+}
+
+#[test]
+fn round37_info_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round37_info(&mut a, &mut b, &mut Xorshift(0x4037_0082));
+}

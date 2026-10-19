@@ -9843,7 +9843,7 @@
 0x00890f10 function TOBwakkStop               # g_MagicImports slot 649 (10 overlays): TOSeqStopScene(2, "bwakk"), 0x008e89d0(), byte 0x0133c93f = 0; hidden from the dump
 0x00890f30 function TOBtlCtrlActiveChrCursor     # (): advances the battle window's cursor angle 0x0133fa7c by 6 degrees (0.10471976) and wraps it past pi; only caller TOControlBtlWindow; Switch TOBtlCtrlActiveChrCursor (56 bytes, no callees) is the name sorting between TOBtlCloseSimpleHelpMes and TOBtlCtrlAuronLimitWindow here; was QuickConfigMenuCtrl (cg 2 votes; the Switch's is a 1880-byte touch menu); the system porter's TOBtlAdvanceAngle_00890f30
 0x00890f70 function TOBtlCtrlAuronLimitWindow # fh v3:exact 0x00890ee0
-0x00891140 function TOBtlCtrlChrNum           # fh v3:bsim1.00 0x008910b0
+0x00891140 function TOBtlCtrlChrNum           # fh v3:bsim1.00 0x008910b0; same code as TOBtlInitChrNum; ported (system round 37)
 0x00891220 function TOBtlCtrlEnemyLimit       # fh v3:exact 0x00891190
 0x008912e0 function TOBtlCtrlHelpWin          # fh v3:exact+call.cs 0x00891250 cdecl
 0x00891480 function TOBtlCtrlInfoWin          # fh v3:exact 0x008913f0
@@ -9871,7 +9871,7 @@
 0x008947c0 function TOBtlDrawInfoWinBack         # layout: alphabetical run between TOBtlDrawInfoWin and TOBtlDrawInfoWinElementLamp (1 unnamed in the gap); Switch 0x710049f400 TOBtlDrawInfoWinBack is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00894b40 function TOBtlDrawInfoWinElementLamp # fh v3:cg4 0x894ab0
 0x00895140 function TOBtlDrawInfoWinMes       # fh v3:exact 0x008950b0; cdecl(): libra auto off, 0x0133c93d and menu bit 0x400: the four info lines (0x0133f618, 0x1c each) via TOMkpCrossExtMesFontLClut inside OpenFontScissor of the i16 box 0x0133f694; ported (system round 28)
-0x00895240 function TOBtlDrawInfoWinStatus    # fh v3:exact 0x008951b0
+0x00895240 function TOBtlDrawInfoWinStatus    # fh v3:exact 0x008951b0; (_, x, y): status cycle tick (0x14 frames per entry) and the entry text centred in X2(380) (ToMakeBtlEasyEdgeFont 0.78); ported (system round 37)
 0x00895320 function TOBtlDrawLearningMessageWindow # fh v3:exact+call.cs 0x00895290 cdecl
 0x00895390 function TOBtlDrawLibraWindow      # fh v3:exact 0x00895300
 0x00895480 function TOBtlDrawLimitGauge       # fh v3:exact 0x008953f0
@@ -9894,7 +9894,7 @@
 0x008977f0 function TOBtlInit                 # fh v3:exact 0x00897760
 0x00897860 function TOBtlInitActiveChrCursor     # layout+callees: sorts between TOBtlInit and TOBtlInitAuronLimitWindow, and its named callees match the Switch 0x7100493ec0 TOBtlInitActiveChrCursor's (similarity 1.00: TOSeqGetColor); symbols from Fahrenheit's server export; (): 24 floats 0x0133fa08..0x0133fa64 from 0/1 and the image floats 0x00b49998, 0x00b92340, 0x00b5f048, 0x00b10f38, 0x00b5165c, 0x00b5f044, 0x00b43d28; TOSeqGetColor into 0x0133f7d4, 0x0133fa88/8c/90; caller TOInitBtlWindow; name ours
 0x00897970 function TOBtlInitAuronLimitWindow # fh v3:exact 0x008978e0; TOSeqGetNum(2, 0x00b5ecbc, 0x0133f778), TOInitPadData, TOBtlInitLimitTimer, 5 words 0x0133d6f4 = 0, TOSeqGetPoint(2, 0x00b5ecc4, +2, +4), dword +6 = 4
-0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940
+0x008979d0 function TOBtlInitChrNum           # fh v3:bsim1.00 0x00897940; (): the two battle character lists from MsGetSaveWindow(0, 9 / 0xb, &n), 0xff tails dropped, counts 0x0133f0d8/0x0133f0ec, u16 entries 0x0133f0dc/0x0133f0f0; ported (system round 37)
 0x00897af0 function TOBtlInitEnemyLimit          # layout+callees: sorts between TOBtlInitChrNum and TOBtlInitInfoWinMes, and its named callees match the Switch 0x71004942e0 TOBtlInitEnemyLimit's (similarity 1.00: MsGetChrLimitBarFlag, MsGetChrLimitGauge, MsGetChrLimitGaugeMax); symbols from Fahrenheit's server export
 0x00897bd0 function TOBtlInitInfoWinMes       # fh v3:exact 0x00897b40; battle info window 0x0133f5bc..0x0133f6a2 laid out from graphicUiRemapX2/Y2 of x 700, 1400 and y 101, 109, 160
 0x00897dc0 function TOBtlLibraGetRects        # g_MagicImports slot 374 (1 overlay), before TOBtlOpenLibraWindow: TOSeqGetRect(2, "dum28"/"dum29", ...) and TOSeqGetPos-style 0x008ae450 calls into 0x0133f6a4..0x0133f744; hidden from the dump
@@ -9904,7 +9904,7 @@
 0x00898130 function TOBtlInitTargetBit        # fh switch:bsim1.00 0x710049aae0
 0x00898180 function TOBtlInitTidusLimitWindow # fh v3:exact 0x008980f0; same start, 6 words 0x0133d734 = 0, u16 +2/+4/+6 = ftol(graphicUiRemapX2/Y2/X2 of 0x00b5ef70/0x00b5ef98/0x00b5f010), colour +0x14
 0x00898230 function TODum225GetNum            # g_MagicImports slot 655 (10 overlays): TOInitPadData(); TOSeqGetNum(2, "dum225", 0x0133f778); byte 0x0133c93f = 0; hidden from the dump
-0x00898260 function TOBtlMakeStatusBuff       # fh v3:exact 0x008981d0
+0x00898260 function TOBtlMakeStatusBuff       # fh v3:exact 0x008981d0; (chr, out) -> n: u16 message ids 0x1006+bit (bits 0..10), 0x1011 (threat), 0x1012+i (MsMenuCountStatus), 0x1020+bit (MsMenuBitStatus); ported (system round 37)
 0x00898330 function TOBtlMakeTargetChrStatusBit # fh v3:exact 0x008982a0
 0x008983f0 function TOBtlMakeTargetCommandBit    # layout: alphabetical run between TOBtlMakeTargetChrStatusBit and TOBtlMakeTargetGroupBit (1 unnamed in the gap); Switch 0x710049b3c0 TOBtlMakeTargetCommandBit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00898490 function TOBtlMakeTargetGroupBit   # fh v3:exact 0x00898400; (): 28 masks 0x0133d0e4 cleared; mode = (MsGetComData(0x0133d0d2)+0x1a >> 2) & 3 -> 0x0133d0e0: 0 one per union bit (0x0133d0dc), 1 party 0x0133d0d4 / monsters 0x0133d0d8 by MsGetChrGroup (monsters from mask 20), 2 party in mask 0 and monsters in mask 20, 3 the cursor chr 0x0133d0d0 alone
@@ -9920,15 +9920,15 @@
 0x00898df0 function TOBtlPadScrollDown        # fh v3:exact 0x00898d60; 0x0133c938 == 0: 0x0133f7a8 = w+0x3c; w+0x3c += TOGetLineFeedHeight(), w+0x88 = 0x00898e40
 0x00898e20 function TOBtlPadScrollUp          # fh v3:exact 0x00898d90; w+0x3c -= TOGetLineFeedHeight(), w+0x88 = 0x00898e40 (ret)
 0x008990f0 function TOBtlSearchRevNearTarget  # fh v3:exact 0x00899060; (): returns (eax, the decompilation drops it) the other side's list index with the lowest angle-from-axis (deg, _CIacos) x distance / nearest distance (min 1), the axis between the party (0x0133d180) and monster (0x0133d1d4; distance-0 ones if any) mean x/z positions, from the cursor 0x0133d1f4; ties to the first entry's last target; writes nothing; read by TOBtlGetTargetPad 0x0089d4bb
-0x008997c0 function TOBtlSetChangeHelpMes     # fh v3:exact 0x00899730
+0x008997c0 function TOBtlSetChangeHelpMes     # fh v3:exact 0x00899730; (n): chr/aeon 0..0x11 or command 0x30ff: g_BtlHelpText from MsGetMenuChrInfo(n, 0) or MsGetComData text, TOGetMessageWH; ported (system round 37)
 0x00899870 function TOBtlSetCommand           # fh v3:exact 0x008997e0
 0x00899970 function TOBtlSetCommandHelpMes       # layout+callees: sorts between TOBtlSetCommand and TOBtlSetCurPos, and its named callees match the Switch 0x710049e4c0 TOBtlSetCommandHelpMes's (similarity 1.00: MsGetComData, TOGetMessageWH); symbols from Fahrenheit's server export
 0x008999f0 function TOBtlSetCurPos            # fh v3:exact 0x00899960
 0x00899a40 function TOBtlSetDamageValue       # fh v3:exact 0x008999b0; appends a 16-byte record (u16, u16, u32, u32, 4 bytes) at 0x0133f110, count i16 0x0133f108 (max 63, else -1)
 0x00899ac0 function TOBtlSetDefaultCursorPos  # fh v3:exact 0x00899a30; (): window 0x023cc092 restored from chr 0x023cc088's saved cursor (0x0133d788 + (d + 10c)*0x24) when keys (+0x14 vs window +0xa) match: kind 0 looks the saved command up in the window list (+0x1e, count +0x22), sets kind/pos/scroll (read via the found index as a window number)/row scroll clamped by cols +0x36 rows +0x38/mask; kind 1 with a saved mask picks the target entry by saved mode +0x1a (0 equal, 1 sharing a bit, 2 first; +0x18 monsters)
 0x00899ec0 function TOBtlSetDirectHelpMes        # layout: alphabetical run between TOBtlSetDefaultCursorPos and TOBtlSetInfoWinParam (2 unnamed in the gap); Switch 0x710049e450 TOBtlSetDirectHelpMes is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00899f20 function TOBtlSetInfoWinMes           # layout: alphabetical run between TOBtlSetDefaultCursorPos and TOBtlSetInfoWinParam (2 unnamed in the gap); Switch 0x710049f350 TOBtlSetInfoWinMes is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00899fd0 function TOBtlSetInfoWinParam      # fh v3:exact 0x00899f40
+0x00899f20 function TOBtlSetInfoWinMes           # layout: alphabetical run between TOBtlSetDefaultCursorPos and TOBtlSetInfoWinParam (2 unnamed in the gap); Switch 0x710049f350 TOBtlSetInfoWinMes is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (system round 37)
+0x00899fd0 function TOBtlSetInfoWinParam      # fh v3:exact 0x00899f40; (chr): info window status cycle 0x0133f5c0 rebuilt, HP/max to 0x0133f614/6, first line mode 2; ported (system round 37)
 0x0089a160 function TOBtlSetLibraWindowParam  # fh v3:exact 0x0089a0d0
 0x0089a2a0 function TOBtlStartLimitTimer      # cdecl(float t): 0x0133f77c = 1, 0x0133f78c/90/94 = t; no direct callers (overlay import); name ours
 0x0089a2d0 function TOBtlSetLimitTimerPos     # cdecl(x, y): u16 0x0133f780 = x, 0x0133f782 = y (the timer's draw position, 0x008955e0); name ours
@@ -9963,7 +9963,7 @@
 0x0089bc60 function SetByte_00c58ef4 # cdecl(v): byte 0x00c58ef4 = v; name ours
 0x0089bc80 function ToDrawLibraWin            # fh v3:exact 0x0089bbf0
 0x0089bf70 function TOBtlDrawLibraLeft        # fh v3:cg14 0x89bee0 _TOBtlDrawLibraLeft
-0x0089c7d0 function TOBtlDrawLibraRight          # layout+callees: sorts between TOBtlDrawLibraLeft and TOBtlDrawTargetCursor, and its named callees match the Switch 0x71004a0960 TOBtlDrawLibraRight's (similarity 1.00: MsGetMenuChrInfo, TOGetMessageWH, TOMkpCrossExtMesFontLClut, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x0089c7d0 function TOBtlDrawLibraRight          # layout+callees: sorts between TOBtlDrawLibraLeft and TOBtlDrawTargetCursor, and its named callees match the Switch 0x71004a0960 TOBtlDrawLibraRight's (similarity 1.00: MsGetMenuChrInfo, TOGetMessageWH, TOMkpCrossExtMesFontLClut, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export; ported (system round 37)
 0x0089c870 function TOBtlDrawTargetCursor     # fh v3:exact 0x0089c7e0 _TOBtlDrawTargetCursor
 0x0089c900 function TOBtlGetMainPad           # fh v3:exact 0x0089c870 _TOBtlGetMainPad
 0x0089cde0 function TOBtlGetStdPad            # fh v3:bsim0.96 0x0089cd50 _TOBtlGetStdPad; cdecl(w): battle command list window frame: 0x10 skip command (click 1 first, g_BtlHelpWinOpen = 0), 4 next action 0x3002, top level 0x8000 MsCheckLeftWindow > 0 -> next action 0xffff, 0x2000 MsGetSaveWindow(actor, 0xd, &n) with trailing 0xff dropped -> 0xfffe; then d-pad, pick record, libra auto sets 0x0133d6e4 and trigger 0x40, cancel/confirm (refused: 0x0133d6e4 = 1) and scroll; ported (system round 31)
@@ -16308,11 +16308,13 @@
 0x0133d6ec label g_BtlCommandMissed        # u32: set when MsSetTargetsMotion keeps no target, else cleared (MsCommandCueProcess)
 0x0133d6f0 label    g_BtlCurPosCount          # i16: cursor positions TOBtlSetCurPos pushed (at most 4) into g_BtlCurPos
 0x0133d74c label    g_BtlWindowState          # nine words zeroed by TOCloseBtlWindow
+0x0133f0d8 label    g_BtlChrNum               # TOBtlInitChrNum/CtrlChrNum: count of window 9's characters, u16 entries from 0x0133f0dc; window 0xb's at 0x0133f0ec/0x0133f0f0
 0x0133f510 label    g_BtlSimpleHelpMes        # TOBtlCloseSimpleHelpMes clears it
 0x0133f520 label    g_BtlSignWindow           # TOBtlCloseSignWindow clears it
 0x0133f530 label    g_BtlHelpTextH            # i16 height TOGetMessageWH gives g_BtlHelpText (TOBtlSetDirectHelpMes, TOBtlSetCommandHelpMes); name ours
 0x0133f534 label    g_BtlHelpTextW            # f32 width TOGetMessageWH gives g_BtlHelpText; name ours
 0x0133f538 label    g_BtlHelpText             # 0x80-byte battle help text: cleared, then the text copied (unbounded) by TOBtlSetDirectHelpMes/TOBtlSetCommandHelpMes; name ours
+0x0133f5c0 label    g_BtlInfoStatus           # battle info window status cycle (0x58 bytes): i16 chr, u16 timer, shown entry, count, u16 message ids from +8; TOBtlSetInfoWinParam fills, TOBtlDrawInfoWinStatus cycles
 0x0133f618 label    g_BtlInfoWinLines         # 4 records of 0x1c: +0 i16 shown, +0xc/+0x10 f32 x, y, +0x18 text (TOBtlInitInfoWinMes lays them out, TOBtlDrawInfoWinMes draws them); name ours
 0x0133f694 label    g_BtlInfoWinBox           # 4 i16 at 4-byte steps: x0, y0, x1, y1 of the info window font scissor (TOBtlDrawInfoWinMes); name ours
 0x0133f798 label    g_BtlLuluLimitTbl         # 16 bytes: running sums of the ASCII digits TOBtlSetLuluLimitTbl gets

@@ -1710,3 +1710,27 @@ pushed as literals (no relocation entries), not addresses.
   (tail call, `w` its argument). `TOMenuEndScreenX2_008e2790(w)` clears
   `w + 0x1c`, turns the X2 screen flag off and sets the byte
   `0x01340858`.
+- Battle menu lists and the info window. `TOBtlInitChrNum` and
+  `TOBtlCtrlChrNum` (the same code) copy the character lists of
+  `MsGetSaveWindow(0, 9)` and `(0, 0xb)` without their trailing 0xff
+  entries (counts `0x0133f0d8`/`0x0133f0ec`, `u16` entries from
+  `0x0133f0dc`/`0x0133f0f0`); their `eax` is the second list's pointer
+  with the last copied entry in its low half. `TOBtlMakeStatusBuff(chr,
+  out)` writes `chr`'s status message ids (0x1006 + bit for status bits
+  0..10, 0x1011 when `MsGetStatusThreat` is 1, 0x1012 + i for the 13
+  counters, 0x1020 + bit for the 15 `MsMenuBitStatus` bits) and returns
+  their number; `TOBtlSetInfoWinParam(chr)` builds the same list (bit 11
+  as a plain bit, no threat entry) in the info window's status cycle
+  (`0x0133f5c0`: `i16` chr, `u16` timer 0x14, shown entry, count, ids),
+  stores the HP and maximum as `u16`s at `0x0133f614`, and sets the
+  first line (mode 2, `ftol` width, text, `0x0133f688` 1).
+  `TOBtlDrawInfoWinStatus(_, x, y)` steps the cycle every 0x14 frames
+  and draws the shown entry's text (`MsMenuGetText(1, id, 1)`) centred
+  in `X2(380)` from `x` at scale 0.78. `TOBtlSetInfoWinMes(chr)` sets
+  the first line from `MsGetMenuChrInfo(chr, 1)` (mode 8 when its width
+  is below `i16 0x0133f61e`, else 2; position from `0x0133f68c`/`690`).
+  `TOBtlSetChangeHelpMes(n)` fills `g_BtlHelpText` (cleared, then an
+  unbounded copy) from `MsGetMenuChrInfo(n, 0)` for 0..=0x11 or
+  `MsGetComData(0x30ff)`'s text for 0x30ff and measures it.
+  `TOBtlDrawLibraRight(x)` draws the Libra target's name at `X2(915) +
+  x`, `Y2(590)` (`TOMkpCrossExtMesFontLClut`, 0.64, 0.5).
