@@ -2387,6 +2387,60 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// `AbmapGetNodePosRadius(node, out)` (`0x00a5b4c0`, in `ST0`),
+    /// `AbmapCalcLinkPointsStraight` (`0x00a581f0`) and
+    /// `AbmapCalcLinkPointsCurved` (`0x00a57710`).
+    pub const LINK_POINT_CALLS: [u32; 3] = [0x00a5_b4c0, 0x00a5_81f0, 0x00a5_7710];
+
+    /// `AbmapCalcLinkPoints()` (`0x00a5a800`): every link (`+0xa808`, `+4`
+    /// of them) gets the point buffer position `+0x11668` at `+0x10`, then
+    /// its points from its ends' positions and radii
+    /// (`AbmapGetNodePosRadius`, in `work`: 0x30 bytes, the radii stored
+    /// as `f32`): `AbmapCalcLinkPointsStraight(out, a, b, ra, rb, link
+    /// +0xd)` when its centre node (`+4`) is 0xffff, else
+    /// `AbmapCalcLinkPointsCurved(out, a, b, c, ra, rb, link +0xd)`; each
+    /// returns the next position, kept at `+0x11668`. Returns the grid.
+    pub fn abmap_calc_link_points<M, C, F>(
+        mem: &mut M,
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use crate::camera::FArgs;
+        let [pos_radius, straight, curved] = LINK_POINT_CALLS.map(|f| mem.rebase(f));
+        let g = ABMAP.get(mem);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(4)));
+        let mut out = mem.read::<u32>(g.wrapping_add(0x11668));
+        let mut link = g.wrapping_add(0xa808);
+        let (a, b, c) = (work, work.wrapping_add(0x10), work.wrapping_add(0x20));
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            mem.write(link.wrapping_add(0x10), out);
+            let end = |mem: &M, o: u32| u32::from(mem.read::<u16>(link.wrapping_add(o)));
+            let n = end(mem, 0);
+            let ra = x87::store(fcall(mem, pos_radius, FArgs::Stack(&[n, a])));
+            let n = end(mem, 2);
+            let rb = x87::store(fcall(mem, pos_radius, FArgs::Stack(&[n, b])));
+            let centre = end(mem, 4);
+            let kind = link.wrapping_add(0xd);
+            out = if centre == 0xffff {
+                call(mem, straight, &[out, a, b, ra, rb, kind])
+            } else {
+                fcall(mem, pos_radius, FArgs::Stack(&[centre, c]));
+                call(mem, curved, &[out, a, b, c, ra, rb, kind])
+            };
+            link = link.wrapping_add(layout::LINK_SIZE);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11668), out);
+        g
+    }
+
     /// `AbmapItemApplyAt(chr, node, item, mark)` (`0x00a5b400`).
     pub const ITEM_APPLY_AT: u32 = 0x00a5_b400;
     /// `AbmapFindNearestNode(dist, pos, filter)` (`0x00a56a40`).

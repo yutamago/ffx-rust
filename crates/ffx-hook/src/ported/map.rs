@@ -3980,6 +3980,11 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapCalcLinkPoints()`: the three positions in a frame.
+    AbmapCalcLinkPoints @ 0x00a5_a800 => extern "C" fn shim_abmap_calc_link_points() -> u32 {
+        let mut w = super::StackFrame::<12>::new();
+        abmap::bridge::abmap_calc_link_points(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
     /// `AbmapDrawChrFace(x, y)`.
     AbmapDrawChrFace @ 0x00a4_61b0 => extern "C" fn shim_abmap_draw_chr_face(x: u32, y: u32) -> u32 {
         ffx_field::abmap_draw::abmap_draw_chr_face(&mut mem(), x, y, &mut |_, f, a| call_cdecl(f, a))

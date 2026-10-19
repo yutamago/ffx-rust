@@ -19370,3 +19370,83 @@ fn r13v_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_6102);
     r13v_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group W: the links' points ----
+
+/// Group W (r13) on `t` over the grid `g`: `AbmapCalcLinkPoints` over
+/// 0..30 links, straight (centre 0xffff) or curved, between 40 nodes of 8
+/// kinds; every callee runs as the original (the point buffer a scratch
+/// area).
+fn r13w_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::bridge as ab;
+    t.install_trig();
+    let fcall = &mut oracle_fcall;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let points = t.alloc(0x1_0000);
+    for _ in 0..cases {
+        for i in 0..40 {
+            let node = g + 0x808 + 0x28 * i;
+            t.put(
+                node,
+                u16::try_from(rng.range(-0x800, 0x800) & 0xffff).unwrap(),
+            );
+            t.put(
+                node + 2,
+                u16::try_from(rng.range(-0x800, 0x800) & 0xffff).unwrap(),
+            );
+            t.put(node + 6, u16::try_from(rng.below(8)).unwrap());
+        }
+        for k in 0..8 {
+            t.put(
+                g + 0xf834 + 0x30 * k,
+                u16::try_from(rng.range(8, 120)).unwrap(),
+            );
+        }
+        let n = rng.below(31);
+        t.put(g + 4, u16::try_from(n).unwrap());
+        for i in 0..30 {
+            let link = g + 0xa808 + 0x14 * i;
+            t.fill(link, 0x14, rng);
+            let (a, b) = (rng.below(40), rng.below(40));
+            t.put(link, u16::try_from(a).unwrap());
+            t.put(link + 2, u16::try_from(b).unwrap());
+            let centre = if rng.below(2) == 0 {
+                0xffff
+            } else {
+                rng.below(40)
+            };
+            t.put(link + 4, u16::try_from(centre).unwrap());
+        }
+        t.put(g + 0x11668, points);
+        let work = t.stack_scratch(0x100);
+        let vf = t.b.rebase(0x00c8_f974);
+        t.same_but(
+            "AbmapCalcLinkPoints",
+            &[(vf, 12)],
+            |o| o.eax(0x00a5_a800, &[]),
+            |m| ab::abmap_calc_link_points(m, work, call, fcall),
+        );
+    }
+}
+
+/// Group W (r13) on the image.
+#[test]
+fn r13w_calc_link_points_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_7101);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13w_cases(&mut t, &mut rng, g, 150);
+}
+
+/// Group W (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13w_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_7102);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13w_cases(&mut t, &mut rng, g, 80);
+}
