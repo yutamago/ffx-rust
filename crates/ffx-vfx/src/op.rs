@@ -103,6 +103,62 @@ pub mod bridge {
         SPR_TOP.set(mem, top.wrapping_sub(1));
     }
 
+    /// `op_spline_xyz_table(x, pts, n)` (`0x007ea2d0`): spline tables for
+    /// `n` points (16 bytes each, `x, y, z`): `x[0..n]` = the chord-length
+    /// parameters (`x[0]` = 0, each step `sqrt(dx² + dy² + dz²)` added,
+    /// all divided by the total, or set to 0 for a total of 0), then for
+    /// each axis its coordinates copied into a scratch array
+    /// ([`op_spr_alloc`] of `((n + 3) & 0xfc) * 4` bytes, the original's
+    /// mask kept) and [`op_spline_table`]`(x + 4n (8n, 12n), x, scratch,
+    /// n)`. The scratch is released ([`op_spr_free`]).
+    pub fn op_spline_xyz_table<M: Mem>(mem: &mut M, x: u32, pts: u32, n: u32) {
+        use ffx_bridge::x87::{add, load, mul, sqrt, store};
+        let f = |mem: &M, a: u32| load(mem.read(a));
+        let size = (n.wrapping_add(3) & 0xfc) << 2;
+        let tmp = op_spr_alloc(mem, size);
+        mem.write(x, 0u32);
+        let n_i = n.cast_signed();
+        for i in 1..n_i.max(1) {
+            let i = i.cast_unsigned();
+            let (p, q) = (pts.wrapping_add(16 * i), pts.wrapping_add(16 * (i - 1)));
+            let d = |mem: &M, o: u32| {
+                store(ffx_bridge::x87::sub(
+                    f(mem, p.wrapping_add(o)),
+                    f(mem, q.wrapping_add(o)),
+                ))
+            };
+            let (dx, dy, dz) = (d(mem, 0), d(mem, 4), d(mem, 8));
+            let sq = |v: u32| mul(load(v), load(v));
+            let len = store(sqrt(add(add(sq(dx), sq(dy)), sq(dz))));
+            let prev = f(mem, x.wrapping_add(4 * (i - 1)));
+            mem.write(x.wrapping_add(4 * i), store(add(load(len), prev)));
+        }
+        let end = x.wrapping_add(4 * n);
+        let total = f(mem, end.wrapping_sub(4));
+        if n_i > 1 {
+            #[allow(clippy::float_cmp)] // fucompp: exactly zero
+            let zero = total == 0.0;
+            for i in 1..n {
+                let at = x.wrapping_add(4 * i);
+                let v = if zero {
+                    0
+                } else {
+                    store(ffx_bridge::x87::div(f(mem, at), total))
+                };
+                mem.write(at, v);
+            }
+        }
+        for axis in 0..3u32 {
+            for i in 0..n_i.max(0).cast_unsigned() {
+                let v: u32 = mem.read(pts.wrapping_add(16 * i + 4 * axis));
+                mem.write(tmp.wrapping_add(4 * i), crate::x87::load(v));
+            }
+            let out = x.wrapping_add(4 * n * (axis + 1));
+            op_spline_table(mem, out, x, tmp, n);
+        }
+        op_spr_free(mem);
+    }
+
     /// `op_m_copy(dst, src)` (`0x007e8010`): a 4x4 matrix, word by word
     /// upward (`rep movsd`).
     pub fn op_m_copy(mem: &mut impl Mem, dst: u32, src: u32) {
@@ -1283,8 +1339,8 @@ pub mod bridge {
     pub const SOUND_CUE_HEAD: Global<u16> = Global::new(0x023c_3640);
     /// See [`SOUND_CUE_HEAD`].
     pub const SOUND_CUE_COUNT: Global<u16> = Global::new(0x023c_3642);
-    const SOUND_CUES: Global<u32> = Global::new(0x023c_3540);
-    const SOUND_CUE_ARGS: Global<u32> = Global::new(0x023c_35c0);
+    pub const SOUND_CUES: Global<u32> = Global::new(0x023c_3540);
+    pub const SOUND_CUE_ARGS: Global<u32> = Global::new(0x023c_35c0);
     /// The second word of `g_OpOef2StreamCues` (`0x023c364c`).
     pub const STREAM_CUE2: Global<u32> = Global::new(0x023c_364c);
 
@@ -3831,5 +3887,92 @@ pub mod bridge {
         }
         mem.write(out.wrapping_add(n), 0u8);
         kept
+    }
+
+    /// `g_OpOef2SoundCueState` (`0x023c3644`): the sound-cue queue's
+    /// state: 1 starting, 2 a wave being loaded (`SndSyncTrans`), 3 its
+    /// transfer running (`SndSyncWaveTrans`), 0 idle.
+    pub const SOUND_CUE_STATE: Global<u8> = Global::new(0x023c_3644);
+    /// `g_OpOef2StreamPlaying` (`0x023c3520`): the two stream cues last
+    /// started by `op_oef2_sound_cue_loop`.
+    pub const STREAM_PLAYING: Global<u32> = Global::new(0x023c_3520);
+
+    /// `op_oef2_sound_cue_loop()` (`0x00800170`): one step of the sound
+    /// queues. With cues queued ([`SOUND_CUE_COUNT`]): in state 2 once
+    /// `SndSyncTrans(0)` is done, state 3 and `SndStandbySepWave()`; in
+    /// state 3 once `SndSyncWaveTrans(0)` is done, the head moves on and
+    /// the count down, and with cues left the next one starts; state 1
+    /// becomes 2; any other state starts the head cue. Starting cue `head
+    /// % 32`: state 2, and with a cue there `op_oef2_sep_wave_load(cue,
+    /// arg)`, state 3 when it returns 0. With no cues queued, the first
+    /// pending stream cue ([`OEF2_STREAM_CUES`], 0 none, -1 done; the second is [`STREAM_CUE2`]) of kind
+    /// 2 (byte `+0`) is started (`g_OpOef2BattleStreamPlaying` set,
+    /// `SndStandbySepWave`-side `0x00887440` with `get_ptr32(cue +8)` as
+    /// its first or second argument) and kept in [`STREAM_PLAYING`]; the
+    /// cue is marked done. Callees through `call`.
+    pub fn op_oef2_sound_cue_loop<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if SOUND_CUE_COUNT.get(mem) != 0 {
+            let head = match SOUND_CUE_STATE.get(mem) {
+                2 => {
+                    if call(mem, g(mem, 0x0088_7910), &[0]) == 0 {
+                        SOUND_CUE_STATE.set(mem, 3);
+                        call(mem, g(mem, 0x0088_7550), &[]);
+                    }
+                    return;
+                }
+                3 => {
+                    if call(mem, g(mem, 0x0088_7930), &[0]) != 0 {
+                        return;
+                    }
+                    SOUND_CUE_STATE.set(mem, 0);
+                    let head = SOUND_CUE_HEAD.get(mem).wrapping_add(1);
+                    let n = SOUND_CUE_COUNT.get(mem).wrapping_sub(1);
+                    SOUND_CUE_COUNT.set(mem, n);
+                    SOUND_CUE_HEAD.set(mem, head);
+                    if n == 0 { None } else { Some(head) }
+                }
+                1 => {
+                    SOUND_CUE_STATE.set(mem, 2);
+                    return;
+                }
+                _ => Some(SOUND_CUE_HEAD.get(mem)),
+            };
+            if let Some(head) = head {
+                let k = u32::from(head) % 32;
+                SOUND_CUE_STATE.set(mem, 2);
+                let cue = SOUND_CUES.ptr(mem).at(k).get(mem);
+                if cue != 0 {
+                    let arg = SOUND_CUE_ARGS.ptr(mem).at(k).get(mem);
+                    if call(mem, g(mem, 0x007f_ffa0), &[cue, arg]) == 0 {
+                        SOUND_CUE_STATE.set(mem, 3);
+                    }
+                }
+                return;
+            }
+        }
+        for ch in 0..2u32 {
+            let slot = OEF2_STREAM_CUES.ptr(mem).at(ch);
+            let cue = slot.get(mem);
+            if cue == 0 {
+                continue;
+            }
+            if cue == u32::MAX {
+                return;
+            }
+            let at: u32 = mem.read(cue.wrapping_add(8));
+            let p = call(mem, g(mem, 0x00a4_4650), &[at]);
+            if mem.read::<u8>(cue) == 2 {
+                mem.write(g(mem, 0x011a_0083), 1u8);
+                let args = if ch == 0 { [p, 0] } else { [0, p] };
+                call(mem, g(mem, 0x0088_7440), &args);
+                STREAM_PLAYING.ptr(mem).at(ch).set(mem, cue);
+            }
+            slot.set(mem, u32::MAX);
+            return;
+        }
     }
 }

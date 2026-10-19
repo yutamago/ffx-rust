@@ -6447,7 +6447,7 @@
 0x007e6610 function op_pad_set                # fh v3:exact 0x007e6520
 0x007e6700 function op_random                 # fh v3:exact 0x007e6610
 0x007e6780 function op_random_p               # fh v3:exact 0x007e6690
-0x007e67f0 function op_spline_draw_path3         # layout: alphabetical run between op_random_p and op_spr_alloc (1 unnamed in the gap); Switch 0x71003caf40 op_spline_draw_path3 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007e67f0 function op_spline_draw_path3         # layout: alphabetical run between op_random_p and op_spr_alloc (1 unnamed in the gap); Switch 0x71003caf40 op_spline_draw_path3 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); behaviour: (scale, spread) -> (x (1 - spread) -/+ spread) * scale with x = 2*draw - 3 (VU0 R, as op_random) and the sign from r0.x > x, through the emulated VU0 registers; the name is a layout guess (rand::bridge::op_spline_draw_path3)
 0x007e6a00 function op_spr_alloc              # fh v3:bsim1.00 0x007e6910
 0x007e6a30 function op_spr_check                 # layout: alphabetical run between op_spr_alloc and op_spr_free (1 unnamed in the gap); Switch 0x71003cb490 op_spr_check is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007e6a60 function op_spr_free               # fh v3:bsim1.00 0x007e6970
@@ -6482,7 +6482,7 @@
 0x007e9e20 function op_spline                    # structure: (t, values, knots, ., n) -> float: binary search of t in the knot table then the segment's interpolation; only caller op_spline_xyz; Switch op_spline (0x71003dca90, 240 bytes) sorts before op_spline_table, as here
 0x007e9f20 function op_spline_table           # fh v3:cg4 0x7e9e30
 0x007ea120 function op_spline_xyz             # fh v3:exact 0x007ea030
-0x007ea2d0 function op_spline_xyz_table       # fh v3:exact 0x007ea1e0
+0x007ea2d0 function op_spline_xyz_table       # fh v3:exact 0x007ea1e0; (x, pts, n): chord-length knots x[0..n] (normalised, 0 for a zero total), then op_spline_table(x + 4n/8n/12n, x, axis copy, n) per axis in an op_spr_alloc scratch of ((n+3) & 0xfc)*4 bytes (op::bridge::op_spline_xyz_table)
 0x007ea550 function op_trans_m                   # structure: VU0-emulated (dst, src, vec): src with vec added to its translation row; Switch op_trans_m (0x71003da6a0) is the op matrix file's only name between op_spline_xyz_table and op_unit_m
 0x007ea6d0 function op_unit_m                    # structure: (m): memset 0x40 then 1.0 on the diagonal (identity); Switch op_unit_m (40 bytes) sorts before op_unit_m_scale, as here; ported in ffx_vfx::small with oracle parity (same name from the vfx porter)
 0x007ea700 function op_unit_m_scale           # fh v3:exact 0x007ea610
@@ -6678,7 +6678,7 @@
 0x007fffa0 function op_oef2_sep_wave_load        # layout: alphabetical run between op_oef2_sep_number_get and op_oef2_sound_cue_check (2 unnamed in the gap); Switch 0x71003e0d30 op_oef2_sep_wave_load is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00800030 function op_oef2_sep_wave_load_all    # layout: alphabetical run between op_oef2_sep_number_get and op_oef2_sound_cue_check (2 unnamed in the gap); Switch 0x71003e0f30 op_oef2_sep_wave_load_all is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008000f0 function op_oef2_sound_cue_check   # fh v3:exact 0x00800010
-0x00800170 function op_oef2_sound_cue_loop    # fh v3:exact 0x00800090
+0x00800170 function op_oef2_sound_cue_loop    # fh v3:exact 0x00800090; (): the sound-cue queue step (state 0x023c3644: 1 -> 2, 2 waits SndSyncTrans then SndStandbySepWave, 3 waits SndSyncWaveTrans then the next of the 32-entry ring via op_oef2_sep_wave_load); with none queued the first pending stream cue of kind 2 is started (0x00887440, g_OpOef2BattleStreamPlaying) and kept at 0x023c3520/24 (op::bridge::op_oef2_sound_cue_loop)
 0x008002c0 function op_oef2_sound_cue_multi   # fh v3:exact 0x008001e0
 0x00800330 function op_oef2_sound_wait        # g_MagicImports slot 550 (100 overlays), between op_oef2_sound_cue_check and op_oef2_stream_cue: loops op_oef2_sound_cue_loop until 0x023c3648/0x023c364c are clear (SndDataSendSync(0) for -1) and u16 0x023c3642 is 0; hidden from the dump
 0x00800390 function op_oef2_stream_cue        # fh v3:exact 0x008002b0
@@ -16536,10 +16536,12 @@
 0x02332e98 label    g_OpOtFrameWords          # two words op_ot_draw clears each frame; nothing else in the dump references them; name ours
 0x02332ea0 label    g_OpSprFlag               # byte beside g_OpSprTop, cleared by ops_init_spr (0x007e6c30); use unknown
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
+0x023c3520 label    g_OpOef2StreamPlaying     # 2 stream cues op_oef2_sound_cue_loop last started (0x00887440); name ours
 0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)
 0x023c35c0 label    g_OpOef2SoundCueArgs      # the arguments of g_OpOef2SoundCueRing
 0x023c3640 label    g_OpOef2SoundCueHead      # u16 ring head of g_OpOef2SoundCueRing
 0x023c3642 label    g_OpOef2SoundCueCount     # u16 queued cues (<= 32); op_oef2_sound_cue_check returns it, op_oef2_sound_wait waits for 0
+0x023c3644 label    g_OpOef2SoundCueState     # byte: the sound-cue queue's state (1 starting, 2 loading, 3 transferring, 0 idle), op_oef2_sound_cue_loop; name ours
 0x023c3648 label    g_OpOef2StreamCues           # 2 stream cue pointers (op_oef2_stream_cue, op_oef2_sound_cue_*)
 0x023c3668 label    g_OpSoundCurves           # f32 volume max/min (+0/+4), pan max/min (+0x10/+0x14), volume base/slope (+0x18/+0x1c), pan slope (+0x24) for op_3d_vol_pan_get
 0x023c37a0 label    g_OpOef2Seps                 # 32 x (sound sep handle, user mask) slots: op_oef2_sep_free_all clears a mask, stopping (SndSepStop, SndSepClear) a slot left with no user

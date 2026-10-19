@@ -1993,6 +1993,18 @@ ported! {
     opu_osu_load_0080ae30 @ 0x0080_ae30 => extern "C" fn opu_osu_load(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_osu_load(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_oef2_sound_cue_loop()`.
+    op_oef2_sound_cue_loop @ 0x0080_0170 => extern "C" fn op_oef2_sound_cue_loop() {
+        op::bridge::op_oef2_sound_cue_loop(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_spline_draw_path3(scale, spread)`.
+    op_spline_draw_path3 @ 0x007e_67f0 => extern "C" fn op_spline_draw_path3(scale: f32, spread: f32) -> f32 {
+        rand::bridge::op_spline_draw_path3(&mut mem(), scale, spread)
+    }
+    /// `op_spline_xyz_table(x, pts, n)`.
+    op_spline_xyz_table @ 0x007e_a2d0 => extern "C" fn op_spline_xyz_table(x: u32, pts: u32, n: u32) {
+        op::bridge::op_spline_xyz_table(&mut mem(), x, pts, n);
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

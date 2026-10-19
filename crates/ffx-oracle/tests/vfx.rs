@@ -13520,3 +13520,128 @@ fn round29a_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round29b_helpers_match_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_0170);
+        // SndSyncTrans and SndSyncWaveTrans sit 0x20 apart: short stubs
+        // answering from cells; the rest recorded
+        let (sync, wave) = (p.alloc(4), p.alloc(4));
+        for (sym, cell) in [(0x0088_7910u32, sync), (0x0088_7930, wave)] {
+            let mut c = vec![0xa1];
+            c.extend(cell.to_le_bytes());
+            c.push(0xc3);
+            stub_code(&mut p, sym, &c);
+        }
+        let (load, got) = (p.alloc(4), p.alloc(4));
+        deref_recorder(&mut p, 0x0088_7550, &[]);
+        deref_recorder(&mut p, 0x0088_7440, &[0, 0]);
+        deref_recorder_with(&mut p, 0x007f_ffa0, &[0, 0], Some(load));
+        deref_recorder_with(&mut p, 0x00a4_4650, &[0], Some(got));
+        let cues = p.alloc(0x40);
+        let r0 = p.sym(0x00c8_f508);
+        for round in 0..4000 {
+            p.put(o::SOUND_CUE_COUNT, rng.pick(&[0u16, 0, 1, 2, 5]));
+            p.put(o::SOUND_CUE_STATE, rng.pick(&[0u8, 1, 2, 3, 4]));
+            p.put(o::SOUND_CUE_HEAD, rng.pick(&[0u16, 5, 31, 0x7fff, 0xffff]));
+            for k in 0..32u32 {
+                let c = if rng.chance(20) { 0 } else { rng.next() };
+                p.set(p.sym(o::SOUND_CUES.sym) + 4 * k, c);
+                let a = rng.next();
+                p.set(p.sym(o::SOUND_CUE_ARGS.sym) + 4 * k, a);
+            }
+            for cell in [sync, wave, load] {
+                p.set(cell, rng.pick(&[0u32, 1]));
+            }
+            let g = rng.next();
+            p.set(got, g);
+            p.fill(cues, 0x40, &mut rng);
+            for k in 0..2 {
+                let c = cues + 0x20 * k;
+                p.set(c, rng.pick(&[2u8, 1]));
+                let v = rng.pick(&[0u32, u32::MAX, c, c]);
+                p.set(p.sym(o::OEF2_STREAM_CUES.sym) + 4 * k, v);
+            }
+            p.check(
+                &format!("op_oef2_sound_cue_loop round {round}"),
+                0x0080_0170,
+                &[],
+                |m| {
+                    o::op_oef2_sound_cue_loop(m, &mut call_original);
+                    None
+                },
+            );
+            // op_spline_draw_path3
+            if round % 3 == 0 {
+                p.put(ffx_vfx::rand::bridge::R, rng.next());
+                p.put(ffx_vfx::rand::bridge::SEEDED, u32::from(rng.chance(80)));
+            }
+            // unseeded draws give x = -1.0: r0's first word equal to it
+            // now and then
+            let w = if rng.chance(20) {
+                (-1.0f32).to_bits()
+            } else {
+                finite(&mut rng)
+            };
+            p.set(r0, w);
+            p.fill(p.sym(0x00c0_a004), 16, &mut rng);
+            for i in 1..4 {
+                let v = rng.next();
+                p.set(r0 + 4 * i, v);
+            }
+            let (a, b) = (rng.float(), rng.float());
+            check_st0(
+                &mut p,
+                &format!("0x007e67f0 round {round}"),
+                0x007e_67f0,
+                &[a, b],
+                |m| {
+                    f64::from(ffx_vfx::rand::bridge::op_spline_draw_path3(
+                        m,
+                        f32::from_bits(a),
+                        f32::from_bits(b),
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn op_spline_xyz_table_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_a2d0);
+        let (x, pts, scratch) = (p.alloc(0x1100), p.alloc(0x1100), p.alloc(0x8000));
+        for round in 0..2000 {
+            // 0x101: the size mask (& 0xfc) then drops bits
+            let n = rng.pick(&[0u32, 1, 2, 3, 4, 5, 9, 0x10, 0x101]);
+            p.fill(x, 0x1100, &mut rng);
+            for i in 0..0x410u32 {
+                let v = if rng.chance(5) { 0 } else { finite(&mut rng) };
+                p.set(pts + 4 * i, v);
+            }
+            // now and then every point the same: a total length of 0
+            if rng.chance(15) {
+                for i in 1..n {
+                    let a: [u32; 4] = p.get(pts);
+                    p.set(pts + 16 * i, a);
+                }
+            }
+            p.put(op::bridge::SPR_TOP, 0i8);
+            let spr = p.sym(op::bridge::SPR_STACK.sym);
+            p.set(spr, scratch);
+            p.check(
+                &format!("op_spline_xyz_table({n}) round {round}"),
+                0x007e_a2d0,
+                &[x, pts, n],
+                |m| {
+                    op::bridge::op_spline_xyz_table(m, x, pts, n);
+                    None
+                },
+            );
+        }
+    }
+}
