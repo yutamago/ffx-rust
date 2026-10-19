@@ -1262,6 +1262,31 @@ in the override and then runs the Rust port (`ffx_battle::screen`)
 instead of the original; `Cam_Apply` and the renderer's functions run
 through the game.
 
+### Smaller ones
+
+- `MsSetCountryName(out)` (`0x00782c00`): the language's country code
+  (`TkGetLang`: 0 jp, 1 us, 2 fr, 3 es, 4 de, 5 it, 0x12 uk) written as
+  `sprintf` of the constant does (three bytes, none for a null `out`);
+  returns 1 for the European ones. Other languages write nothing, 0.
+- `MsDetachWeapon(i, k)` (`0x00793f10`): returns 1 or 0 (Ghidra shows
+  void). The special weapon takes the actor's `+0x49c`; a weapon with a
+  character while the actor holds weapons (`+0x4b5`) is unbound and left
+  at the hand's optional position (weapon `+0xd`), turned as the actor,
+  `+0x4b6[k]` set for the re-attach `MsAttachWeapon` performs.
+- `MsGetChrMotionInfo_007b2c90(i, k)`: `MsSetChrMotionInfo`'s floats read
+  back (an `f32` in ST0, 9 the width, other kinds 0.0); kinds 0 and 1 are
+  10.0 more while `MsGetDamageResult` for the first of the actor's target
+  bits (`+0xdc0`, selector -16) is 1.
+- `MsChrAddExtraCommand_007ac840(chr, command, selector, slot)`: the
+  counterpart of round 26's delete: up to four extra commands (`+0x71a`,
+  slots `+0x722`, count `+0x6cb`) and the command inserted at the slot
+  (0..7) of the second menu list in `g_BtlItemMem2`.
+- `MsGetDamageInfoNext`: as `MsGetDamageInfo`, only each buffer's next
+  result.
+- `FUN_007b055a` is not a function: `MsSetRikkuLimit` (`0x007b0520`)
+  jumps into it and it runs on that frame; it was ported with
+  `MsSetRikkuLimit` (verdict in `tools/classify.py`).
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.
