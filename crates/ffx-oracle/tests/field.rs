@@ -17904,3 +17904,129 @@ fn r13c_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_c002);
     r13c_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group D: map 0x61's FP step ----
+
+/// A logging stand-in that returns `chr` for an odd first argument, else 0
+/// (`rcbgChrFindById`).
+fn r13d_find_stub(log: u32, rv: u32, id: u32, chr: u32) -> Vec<u8> {
+    let mut c = log_stub(log, rv, id, 1);
+    c.pop(); // ret
+    // mov eax, [esp + 4]; and eax, 1; jz +5; mov eax, chr; ret
+    c.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x01, 0x74, 0x05, 0xb8]);
+    c.extend_from_slice(&chr.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// A logging stand-in (arguments 2 and 3) that copies the 16 words at
+/// `src` to its first argument (`rcbgFPmGetElemMatrix`).
+fn r13d_matrix_stub(log: u32, rv: u32, id: u32, src: u32) -> Vec<u8> {
+    let mut c = log_stub_from(log, rv, id, 1, 2);
+    c.pop(); // ret
+    // push esi; push edi; mov edi, [esp + 0xc]; mov esi, src;
+    // mov ecx, 16; rep movsd; pop edi; pop esi; ret
+    c.extend_from_slice(&[0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xbe]);
+    c.extend_from_slice(&src.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group D (r13) on `t`: `rcbgFPm097Proc001` with its 9-entry list
+/// random (kinds 3, 4 and others; characters found for odd ids; FPs found
+/// in a synthetic `g_FpData` or not), started or not, with and without
+/// the sea. The FP restarts, fades, element matrices and sea pointers are
+/// stand-ins; the matrix code, `pppFpGetMngPtr`, `rcbgFPmGetMatrix` and
+/// `Ch_GetRot` run as the originals.
+fn r13d_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model::{self, fpm097 as k};
+    t.install_trig();
+    let fcall = &mut oracle_fcall;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, angv, posv) = (t.alloc(4 + 0x20 * 64), t.alloc(4), t.alloc(4), t.alloc(4));
+    let (chr, elem, ang, pos) = (t.alloc(0x200), t.alloc(0x40), t.alloc(0x10), t.alloc(0x10));
+    let fp_data = t.alloc(0x64 + 0x50 * 8);
+    t.cave(&[
+        (Some(k::CHR_FIND_BY_ID), r13d_find_stub(log, rv, 1, chr)),
+        (Some(k::GET_ELEM_MATRIX), r13d_matrix_stub(log, rv, 2, elem)),
+        (Some(model::FP_RESTART), log_stub(log, rv, 3, 1)),
+        (Some(k::FADE_INIT), log_stub(log, rv, 4, 4)),
+        (Some(model::YN_SEA_GET_ANG_PTR), log_stub(log, angv, 5, 0)),
+        (Some(k::SEA_GET_POS_PTR), log_stub(log, posv, 6, 0)),
+        (Some(k::SEA_FP_FADE), log_stub(log, rv, 7, 1)),
+    ]);
+    t.put(t.b.rebase(0x00d2_c258), fp_data); // g_FpData
+    let list = t.b.rebase(model::FPM097_START[0]);
+    let part = t.alloc(0x40);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(angv, if rng.below(6) == 0 { 0 } else { ang });
+        t.put(posv, if rng.below(6) == 0 { 0 } else { pos });
+        for v in [ang, pos, elem] {
+            for w in 0..(if v == elem { 16 } else { 4 }) {
+                t.put(v + 4 * w, float_in(rng, -50, 50));
+            }
+        }
+        t.put(chr + 0x158, r6b_fine(rng, -4.0, 4.0));
+        // FPs 0..15: 0..8 of them in g_FpData
+        let n = rng.below(9);
+        t.put(fp_data + 4, u16::try_from(n).unwrap());
+        for i in 0..8 {
+            t.put(
+                fp_data + 0x64 + 0x50 * i,
+                u16::try_from(rng.below(16)).unwrap(),
+            );
+        }
+        for i in 0..9 {
+            let e = list + 0x38 * i;
+            t.put(e, u16::try_from(rng.below(16)).unwrap());
+            t.put(e + 2, u16::try_from(rng.below(8)).unwrap());
+            // elements below 0 too (the original sign-extends them)
+            t.put(e + 4, u16::try_from(rng.range(-3, 30) & 0xffff).unwrap());
+            let kind = [3u8, 4, 4, 3, 0, 5][usize::try_from(rng.below(6)).unwrap()];
+            t.put(e + 6, kind);
+            for w in 0..12 {
+                t.put(e + 8 + 4 * w, r6b_fine(rng, -20.0, 20.0));
+            }
+        }
+        t.put(
+            part + 0x10,
+            if rng.below(2) == 0 { 0 } else { rng.next() | 1 },
+        );
+        t.put(part + 0x14, float_in(rng, -10, 10));
+        t.fill(part + 0x18, 0x28, rng);
+        let work = t.stack_scratch(0x100);
+        t.b.write(work, &[0u8; 0x1a8]).unwrap();
+        // the original reads locals it never sets: its frame starts zeroed
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x3000]).unwrap();
+        // rcbgScaleVector_009224b0 loads the 16 bytes from its float
+        // argument on into a VU0 register: the caller's stack past it
+        let vf = t.b.rebase(0x00c8_f974);
+        t.same_but(
+            "rcbgFPm097Proc001",
+            &[(vf, 12)],
+            |o| o.eax(0x0092_2600, &[part]),
+            |m| model::bridge::rcbg_fpm097_proc001(m, part, work, call, fcall),
+        );
+    }
+}
+
+/// Group D (r13) on the image.
+#[test]
+fn r13d_fpm097_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_d001);
+    r13d_cases(&mut t, &mut rng, 400);
+}
+
+/// Group D (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13d_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_d002);
+    r13d_cases(&mut t, &mut rng, 200);
+}

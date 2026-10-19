@@ -271,6 +271,52 @@ pub const RCBG_FPM_GET_MATRIX: u32 = 0x0092_2290;
 /// Map 0x61's FP list (`rcbgFPm097Proc000`: 9 entries at `0x00c5e4b8`)
 /// and its next step (`0x00922600`).
 pub const FPM097_START: [u32; 3] = [0x00c5_e4b8, 9, 0x0092_2600];
+/// The calls of map 0x61's FP step (`0x00922600`): `rcbgChrFindById`,
+/// `rcbgFPmGetElemMatrix`, `rcbgFpFadeInit`, `Yn_SeaGetPosPtr`,
+/// `rcbgScaleVector_009224b0`, `rcCopyQword_00922510`, `Ch_GetRot` (in
+/// `ST0`), `rcMat4fSetScaleVec3f` and `Yn_SeaFpFade`.
+pub mod fpm097 {
+    /// `rcbgChrFindById(id)`.
+    pub const CHR_FIND_BY_ID: u32 = 0x0092_e1e0;
+    /// `rcbgFPmGetElemMatrix(out, chr, elem)`.
+    pub const GET_ELEM_MATRIX: u32 = 0x0092_2350;
+    /// `rcbgFpFadeInit(fade, id, step, frames)`.
+    pub const FADE_INIT: u32 = 0x0092_2930;
+    /// `Yn_SeaGetPosPtr()`.
+    pub const SEA_GET_POS_PTR: u32 = 0x0091_ae10;
+    /// `rcbgScaleVector_009224b0(out, v, scale)`.
+    pub const SCALE_VECTOR: u32 = 0x0092_24b0;
+    /// `rcCopyQword_00922510(dst, src)`.
+    pub const COPY_QWORD: u32 = 0x0092_2510;
+    /// `Ch_GetRot(chr)`, a float in `ST0`.
+    pub const CH_GET_ROT: u32 = 0x0082_ace0;
+    /// `rcMat4fSetScaleVec3f(out, v)`.
+    pub const SET_SCALE_VEC3F: u32 = 0x0092_5820;
+    /// `Yn_SeaFpFade(fade)`.
+    pub const SEA_FP_FADE: u32 = 0x0092_2970;
+    /// `FFXVu0UnitMatrix(m)`, `FFXVu0MulMatrix(out, a, b)` and
+    /// `FFXVu0CopyMatrix(dst, src)`.
+    pub const UNIT_MATRIX: u32 = 0x006e_d9a0;
+    /// See [`UNIT_MATRIX`].
+    pub const MUL_MATRIX: u32 = 0x006e_d5c0;
+    /// See [`UNIT_MATRIX`].
+    pub const COPY_MATRIX: u32 = 0x006e_d360;
+    /// The two fades' steps, -0.15 and 0.15 (`f32`s, `.rdata`).
+    pub const FADE_STEPS: [u32; 2] = [0x00b6_78f4, 0x00b4_7c60];
+    /// 651.8986 (`f32`, `.rdata`): the sea's angle as a rotation.
+    pub const SEA_ANGLE_SCALE: u32 = 0x00b6_78f0;
+    /// 11.377778 (`f32`, `.rdata`): an FP's rotation scale.
+    pub const FP_ANGLE_SCALE: u32 = 0x00b6_78ec;
+    /// 651.8986 and 1024.0 (`f64`s, `.rdata`): a character's rotation
+    /// (`Ch_GetRot`) to the FP's y rotation, a quarter turn on.
+    pub const ROT_TO_ANGLE: [u32; 2] = [0x00b5_1590, 0x00b5_1ba8];
+    /// Bytes per FP list entry: `+0` the FP id, `+2` the character id,
+    /// `+4` the element (`i16`s), `+6` the kind (3 on the sea, 4 on a
+    /// character), `+8` the offset, `+0x18` the rotation, `+0x28` the
+    /// scale.
+    pub const ENTRY_SIZE: u32 = 0x38;
+}
+
 /// Map 0x235's FP list (`rcbgFPm565Proc000`: 3 entries at `0x00c5e6b0`)
 /// and its next step (`0x00922fe0`).
 pub const FPM565_START: [u32; 3] = [0x00c5_e6b0, 3, 0x0092_2fe0];
@@ -1548,6 +1594,208 @@ pub mod bridge {
         mem.write(fade, 0u32);
         mem.write(fade.wrapping_add(0xc), frames);
         mem.write(fade.wrapping_add(0x10), 0u32);
+    }
+
+    /// The original's frame for [`rcbg_fpm097_proc001`], at `work` (as
+    /// `ebp - 0x1ac`; [`FPM097_FRAME`] bytes).
+    mod frame097 {
+        /// The FP's matrix record (`pppFpGetMngPtr`'s output).
+        pub const MNG: u32 = 0x1ac;
+        /// An FP's own matrix (`rcbgFPmGetMatrix`).
+        pub const FP_MATRIX: u32 = 0x1a4;
+        /// The scale and rotation matrix.
+        pub const SCALE_MATRIX: u32 = 0x164;
+        /// The lift (a unit matrix moved up by the fade, `+0x14`).
+        pub const LIFT_MATRIX: u32 = 0x124;
+        /// The offset (a unit matrix moved by the entry's `+8`).
+        pub const PLACE_MATRIX: u32 = 0xe4;
+        /// The sea's matrix.
+        pub const SEA_MATRIX: u32 = 0xa4;
+        /// The character element's matrix, then the result.
+        pub const ELEM_MATRIX: u32 = 0x64;
+        /// The lift vector (its `y` the fade; the rest never set).
+        pub const LIFT: u32 = 0x34;
+        /// The zero translation (its `w` never set).
+        pub const ZERO: u32 = 0x24;
+        /// The rotation vector.
+        pub const ROTATION: u32 = 0x14;
+    }
+
+    /// The bytes of [`rcbg_fpm097_proc001`]'s frame.
+    pub const FPM097_FRAME: u32 = 0x1a8;
+
+    /// `rcbgFPm097Proc001(part)` (`0x00922600`, map 0x61's FP step that
+    /// `rcbgFPm097Proc000` installs; name ours), over the 9-entry list at
+    /// [`super::FPM097_START`] (layout [`super::fpm097::ENTRY_SIZE`]),
+    /// with its locals in `work` ([`FPM097_FRAME`] bytes, zeroed: the
+    /// original reads some it never sets, see the frame):
+    /// - Until `+0x10` is set: each kind 4 entry whose character is found
+    ///   (`rcbgChrFindById`) is restarted (`Fp_Restart`); the first one
+    ///   gets its element's matrix (unused), `+0x10` 1 and `+0x14` 0.0;
+    ///   if one was, the two fades start (`rcbgFpFadeInit(part +0x18, 1,
+    ///   -0.15, 30)`, `(part +0x2c, 4, 0.15, 30)`).
+    /// - With the sea's angle and position (`Yn_SeaGetAngPtr`,
+    ///   `Yn_SeaGetPosPtr`): the sea's matrix is a unit matrix through
+    ///   `op_rt_m_yxz` with its angle scaled by 651.8986 (x and y 0.0)
+    ///   and its position. Each kind 3 entry with an FP (`pppFpGetMngPtr`)
+    ///   gets its own matrix (`rcbgFPmGetMatrix`) times the sea's into the
+    ///   FP's `+0xc`; each kind 4 entry with an FP and a character gets
+    ///   the element matrix times the entry's scale and y rotation (its
+    ///   `+0x18` scaled by 11.377778, y less `Ch_GetRot * 651.8986 +
+    ///   1024.0`), its offset (`+8`), the lift by `+0x14` and the sea's,
+    ///   copied to the FP's `+0xc`. Then both fades run (`Yn_SeaFpFade`).
+    ///
+    /// Returns the `eax` it ends with: the last fade's, or the sea's
+    /// position when either pointer is null.
+    pub fn rcbg_fpm097_proc001<M, C, F>(
+        mem: &mut M,
+        part: u32,
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use super::fpm097 as k;
+        use frame097 as fr;
+        let at = |local: u32| work.wrapping_add(FPM097_FRAME + 4 - local);
+        let entry = |mem: &M, i: u32| mem.rebase(super::FPM097_START[0]) + i * k::ENTRY_SIZE;
+        let id = |mem: &M, e: u32, o: u32| i32::from(mem.read::<i16>(e + o)).cast_unsigned();
+        let mut run = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = mem.rebase(f);
+            call(mem, f, args)
+        };
+        if mem.read::<u32>(part.wrapping_add(0x10)) == 0 {
+            for i in 0..9 {
+                let e = entry(mem, i);
+                if mem.read::<u8>(e + 6) != 4 {
+                    continue;
+                }
+                let chr = run(mem, k::CHR_FIND_BY_ID, &[id(mem, e, 2)]);
+                if chr == 0 {
+                    continue;
+                }
+                let fp = u32::from(mem.read::<u16>(e));
+                run(mem, super::FP_RESTART, &[fp]);
+                if mem.read::<u32>(part.wrapping_add(0x10)) == 0 {
+                    let elem = id(mem, e, 4);
+                    run(mem, k::GET_ELEM_MATRIX, &[at(fr::LIFT_MATRIX), chr, elem]);
+                    mem.write(part.wrapping_add(0x10), 1u32);
+                    mem.write(part.wrapping_add(0x14), 0u32);
+                }
+            }
+            if mem.read::<u32>(part.wrapping_add(0x10)) != 0 {
+                for (fade, (fp, step)) in
+                    [(0x18, (1, k::FADE_STEPS[0])), (0x2c, (4, k::FADE_STEPS[1]))]
+                {
+                    let step = crate::x87::copy(mem.read::<u32>(mem.rebase(step)));
+                    run(
+                        mem,
+                        k::FADE_INIT,
+                        &[part.wrapping_add(fade), fp, step, 0x1e],
+                    );
+                }
+            }
+        }
+        let angle = run(mem, super::YN_SEA_GET_ANG_PTR, &[]);
+        let pos = run(mem, k::SEA_GET_POS_PTR, &[]);
+        if angle == 0 || pos == 0 {
+            return pos;
+        }
+        let scale = crate::x87::copy(mem.read::<u32>(mem.rebase(k::SEA_ANGLE_SCALE)));
+        run(mem, k::SCALE_VECTOR, &[at(fr::ROTATION), angle, scale]);
+        mem.write(at(fr::ROTATION - 4), 0u32);
+        mem.write(at(fr::ROTATION), 0u32);
+        let sea = at(fr::SEA_MATRIX);
+        run(mem, k::UNIT_MATRIX, &[sea]);
+        run(mem, super::OP_RT_M_YXZ, &[sea, sea, at(fr::ROTATION), pos]);
+        mem.write(at(fr::ZERO), [0u32; 3]);
+        for i in 0..9 {
+            let e = entry(mem, i);
+            let mng = at(fr::MNG);
+            match mem.read::<u8>(e + 6) {
+                3 => {
+                    run(mem, super::PPP_FP_GET_MNG_PTR, &[id(mem, e, 0), 0, mng]);
+                    let m = mem.read::<u32>(mng);
+                    if m != 0 {
+                        run(mem, super::RCBG_FPM_GET_MATRIX, &[e, at(fr::FP_MATRIX)]);
+                        let m = mem.read::<u32>(mng).wrapping_add(0xc);
+                        run(mem, k::MUL_MATRIX, &[m, sea, at(fr::FP_MATRIX)]);
+                    }
+                }
+                4 => {
+                    run(mem, super::PPP_FP_GET_MNG_PTR, &[id(mem, e, 0), 0, mng]);
+                    if mem.read::<u32>(mng) == 0 {
+                        continue;
+                    }
+                    let chr = run(mem, k::CHR_FIND_BY_ID, &[id(mem, e, 2)]);
+                    if chr == 0 {
+                        continue;
+                    }
+                    place_on_chr(mem, part, e, chr, work, &mut run, fcall);
+                }
+                _ => {}
+            }
+        }
+        run(mem, k::SEA_FP_FADE, &[part.wrapping_add(0x18)]);
+        run(mem, k::SEA_FP_FADE, &[part.wrapping_add(0x2c)])
+    }
+
+    /// A kind 4 entry `e` of [`rcbg_fpm097_proc001`] on its character.
+    fn place_on_chr<M, R, F>(
+        mem: &mut M,
+        part: u32,
+        e: u32,
+        chr: u32,
+        work: u32,
+        run: &mut R,
+        fcall: &mut F,
+    ) where
+        M: Mem,
+        R: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        use super::fpm097 as k;
+        use crate::x87;
+        use frame097 as fr;
+        let at = |local: u32| work.wrapping_add(FPM097_FRAME + 4 - local);
+        let place = at(fr::PLACE_MATRIX);
+        run(mem, k::UNIT_MATRIX, &[place]);
+        run(mem, k::COPY_QWORD, &[place + 0x30, e + 8]);
+        mem.write(place + 0x3c, 1.0f32.to_bits());
+        let scale = x87::copy(mem.read::<u32>(mem.rebase(k::FP_ANGLE_SCALE)));
+        let rotation = at(fr::ROTATION);
+        run(mem, k::SCALE_VECTOR, &[rotation, e + 0x18, scale]);
+        let y = x87::load(mem.read::<u32>(rotation + 4));
+        let f = mem.rebase(k::CH_GET_ROT);
+        let rot = fcall(mem, f, crate::camera::FArgs::Stack(&[chr]));
+        let [kr, quarter] = k::ROT_TO_ANGLE.map(|c| mem.read::<f64>(mem.rebase(c)));
+        mem.write(rotation + 4, x87::store(y - (rot * kr + quarter)));
+        mem.write(rotation + 8, 0u32);
+        mem.write(rotation, 0u32);
+        let scaled = at(fr::SCALE_MATRIX);
+        run(mem, k::SET_SCALE_VEC3F, &[scaled, e + 0x28]);
+        run(
+            mem,
+            super::OP_RT_M_YXZ,
+            &[scaled, scaled, rotation, at(fr::ZERO)],
+        );
+        let elem = at(fr::ELEM_MATRIX);
+        let el = i32::from(mem.read::<i16>(e + 4)).cast_unsigned();
+        run(mem, k::GET_ELEM_MATRIX, &[elem, chr, el]);
+        let lift = x87::copy(mem.read::<u32>(part.wrapping_add(0x14)));
+        mem.write(at(fr::LIFT - 4), lift);
+        let lifted = at(fr::LIFT_MATRIX);
+        run(mem, k::UNIT_MATRIX, &[lifted]);
+        run(mem, k::COPY_QWORD, &[lifted + 0x30, at(fr::LIFT)]);
+        run(mem, k::MUL_MATRIX, &[elem, scaled, place]);
+        run(mem, k::MUL_MATRIX, &[elem, lifted, elem]);
+        run(mem, k::MUL_MATRIX, &[elem, at(fr::SEA_MATRIX), elem]);
+        let m = mem.read::<u32>(at(fr::MNG)).wrapping_add(0xc);
+        run(mem, k::COPY_MATRIX, &[m, elem]);
     }
 
     /// `rcbgChrFindById(id)` (`0x0092e1e0`): the first character whose
