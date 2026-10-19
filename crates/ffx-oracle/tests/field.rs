@@ -18968,3 +18968,60 @@ fn r13o_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13o_cases(&mut t, &mut rng, g, 200);
 }
+
+// ---- field agent r13, group P: the character face ----
+
+/// Group P (r13) on `t` over the grid `g`: `AbmapDrawChrFace` with no
+/// slide, a slide in either direction at each frame (its last too) and
+/// other modes; the face packet call is a logged stand-in returning its
+/// packet + 0x30.
+fn r13p_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap_draw as ad;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x30 * 4), t.alloc(4));
+    let mut face = log_stub(log, rv, 1, 9);
+    face.truncate(face.len() - 6); // mov eax, [rv]; ret
+    face.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x83, 0xc0, 0x30, 0xc3]);
+    t.cave(&[(Some(ad::FACE_PACKET), face)]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.fill(g + 0x115b8, 8, rng);
+        t.put(
+            g + 0x115be,
+            [1u8, 2, 0, 3][usize::try_from(rng.below(4)).unwrap()],
+        );
+        t.put(g + 0x115bf, u8::try_from(rng.below(7)).unwrap());
+        if rng.below(10) == 0 {
+            t.put(g + 0x115bf, 0xffu8);
+        }
+        t.set(ffx_field::ke::PACKET_POS, rng.next());
+        let (x, y) = (rng.range(-500, 500).cast_unsigned(), rng.next());
+        t.same(
+            "AbmapDrawChrFace",
+            |o| o.eax(0x00a4_61b0, &[x, y]),
+            |m| ad::abmap_draw_chr_face(m, x, y, call),
+        );
+    }
+}
+
+/// Group P (r13) on the image.
+#[test]
+fn r13p_draw_chr_face_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_0101);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13p_cases(&mut t, &mut rng, g, 500);
+}
+
+/// Group P (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13p_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_0102);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13p_cases(&mut t, &mut rng, g, 250);
+}

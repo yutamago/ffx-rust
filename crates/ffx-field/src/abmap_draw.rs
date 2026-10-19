@@ -1049,3 +1049,52 @@ where
     mem.write(pos, mem.read::<u32>(pos).wrapping_add(0x60));
     eax
 }
+
+/// `0x008efd90(pkt, chr, x, y, r, g, b, alpha, kind)` (the menu code): a
+/// character's face into the packet, returning the packet's end.
+pub const FACE_PACKET: u32 = 0x008e_fd90;
+
+/// `AbmapDrawChrFace(x, y)` (`0x00a461b0`, from `0x00a4fbe0`; name ours):
+/// the current character's (`+0x115bc`) face at `(x, y)`, with the grid's
+/// fade (`+0x115b9`) as alpha, through [`FACE_PACKET`] at
+/// `g_PppPacketPos + 0x10` (the position set to each end). While a change
+/// of character slides (`+0x115be` 1 or 2, frame `+0x115bf` counting up
+/// to 4), the previous character (`+0x115bd`) is drawn first in place and
+/// the current one offset by `(frame * 0x5b) / 4 - 0x50` (direction 1) or
+/// `0x50 -` that (direction 2), the frame from before the step; the fifth
+/// frame ends the slide (`+0x115be` 0). Returns the last packet end.
+pub fn abmap_draw_chr_face<M, C>(mem: &mut M, x: u32, y: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let face = mem.rebase(FACE_PACKET);
+    let byte = |mem: &M, o: u32| u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(o)));
+    let mut draw = |mem: &mut M, chr: u32, x: u32| {
+        let alpha = byte(mem, 0x115b9);
+        let pkt = crate::ke::PACKET_POS.get(mem).wrapping_add(0x10);
+        let end = call(mem, face, &[pkt, chr, x, y, 0x80, 0x80, 0x80, alpha, 6]);
+        crate::ke::PACKET_POS.set(mem, end);
+        end
+    };
+    let slide = |frame: u8| (i32::from(frame) * 0x5b) / 4;
+    let offset = match byte(mem, 0x115be) {
+        1 => Some(slide(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bf))) - 0x50),
+        2 => Some(0x50 - slide(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bf)))),
+        _ => None,
+    };
+    if let Some(offset) = offset {
+        let at = ABMAP.get(mem).wrapping_add(0x115bf);
+        let frame = mem.read::<u8>(at).wrapping_add(1);
+        mem.write(at, frame);
+        if frame <= 4 {
+            let previous = byte(mem, 0x115bd);
+            draw(mem, previous, x);
+            let current = byte(mem, 0x115bc);
+            return draw(mem, current, offset.cast_unsigned().wrapping_add(x));
+        }
+        mem.write(ABMAP.get(mem).wrapping_add(0x115be), 0u8);
+    }
+    let current = byte(mem, 0x115bc);
+    draw(mem, current, x)
+}

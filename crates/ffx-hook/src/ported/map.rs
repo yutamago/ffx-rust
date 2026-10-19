@@ -3966,6 +3966,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapDrawChrFace(x, y)`.
+    AbmapDrawChrFace @ 0x00a4_61b0 => extern "C" fn shim_abmap_draw_chr_face(x: u32, y: u32) -> u32 {
+        ffx_field::abmap_draw::abmap_draw_chr_face(&mut mem(), x, y, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapDrawBar(x0, y0, x1, y1, look)`: the element and paths in a
     /// frame of the original's size.
     AbmapDrawBar @ 0x00a4_5e30 => extern "C" fn shim_abmap_draw_bar(x0: u32, y0: u32, x1: u32, y1: u32, look: u32) -> u32 {
