@@ -48,6 +48,94 @@ pub mod bridge {
     pub const YN_SEA_CREATE: u32 = 0x0091_ade0;
     pub const YI_DISPOSE_ANIM_D_OBJ: u32 = 0x0090_84b0;
 
+    /// `TOGetFFXLang()` itself (system; [`TO_GET_FFX_LANG`] is its jump
+    /// stub), `sceOpen(path, mode)`,
+    /// `sceLseek(fd, offset, whence)`, `sceRead(fd, buf, n)`,
+    /// `sceClose(fd)` (the file layer), `TkMalloc(n)`, `TkFree(p)` (the
+    /// menu's heap).
+    pub const TO_GET_FFX_LANG_FN: u32 = 0x0064_10e0;
+    pub const SCE_OPEN: u32 = 0x0062_fa30;
+    pub const SCE_LSEEK: u32 = 0x0062_f8e0;
+    pub const SCE_READ: u32 = 0x0062_fc00;
+    pub const SCE_CLOSE: u32 = 0x0062_f610;
+    pub const TK_MALLOC: u32 = 0x0088_e650;
+    pub const TK_FREE: u32 = 0x0088_d520;
+    /// "WJ: there is no DE message.bin [%s]\n", `getExcelBinSize`'s
+    /// message for a file that does not open.
+    pub const NO_KERNEL_FILE: u32 = 0x00b4_1e3c;
+    /// `getExcelBinSize`'s path buffer (a stack array in the original).
+    pub const KERNEL_PATH_SIZE: u32 = 0x80;
+
+    /// The language directory `getExcelBinSize` reads the kernel from, by
+    /// `TOGetFFXLang` (unsigned; English for the others).
+    #[must_use]
+    pub fn kernel_lang_dir(lang: u32) -> &'static str {
+        match lang {
+            0 => "jp",
+            2 => "fr",
+            3 => "sp",
+            4 => "de",
+            5 => "it",
+            9 => "kr",
+            10 => "ch",
+            _ => "us",
+        }
+    }
+
+    /// `getExcelBinSize(name, buffer)` (`0x00782df0`): the kernel file
+    /// `host0:/ffx/master/new_<lang>pc/battle/kernel/<name>.bin` (built in
+    /// `path`, [`KERNEL_PATH_SIZE`] bytes; the original's `sprintf` into a
+    /// stack array of that size; a longer path is cut here, where the
+    /// original would overrun its stack) read whole: its size rounded up
+    /// to 16 (`sceLseek` to the end, signed), a `TkMalloc` block of it
+    /// (first word cleared) read and copied into `buffer`, then freed.
+    /// Returns the rounded size; 0 (after `dbgPrintf`) when the file does
+    /// not open. Ghidra calls it void; its callers read the size.
+    pub fn get_excel_bin_size<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        name: u32,
+        buffer: u32,
+        path: u32,
+    ) -> u32 {
+        let lang = game(mem, &mut *call, TO_GET_FFX_LANG_FN, &[]);
+        let mut text = format!(
+            "host0:/ffx/master/new_{}pc/battle/kernel/",
+            kernel_lang_dir(lang)
+        )
+        .into_bytes();
+        let mut at = name;
+        loop {
+            let c: u8 = mem.read(at);
+            if c == 0 || text.len() >= KERNEL_PATH_SIZE as usize {
+                break;
+            }
+            text.push(c);
+            at = at.wrapping_add(1);
+        }
+        text.extend_from_slice(b".bin");
+        text.truncate(KERNEL_PATH_SIZE as usize - 1);
+        text.push(0);
+        mem.write_bytes(path, &text);
+        let fd = game(mem, &mut *call, SCE_OPEN, &[path, 1]);
+        if fd == 0 {
+            let fmt = code(mem, NO_KERNEL_FILE);
+            game(mem, call, DBG_PRINTF, &[fmt, path]);
+            return 0;
+        }
+        let end = game(mem, &mut *call, SCE_LSEEK, &[fd, 0, 2]).cast_signed();
+        let t = end.wrapping_add(0xf);
+        let size = (t.wrapping_add((t >> 31) & 0xf) & !0xf).cast_unsigned();
+        game(mem, &mut *call, SCE_LSEEK, &[fd, 0, 0]);
+        let block = game(mem, &mut *call, TK_MALLOC, &[size]);
+        mem.write(block, 0u32);
+        game(mem, &mut *call, SCE_READ, &[fd, block, size]);
+        game(mem, &mut *call, SCE_CLOSE, &[fd]);
+        copy(mem, buffer, block, size);
+        game(mem, call, TK_FREE, &[block]);
+        size
+    }
+
     /// A kernel file's read buffer (`user_malloc`, freed after the copy).
     pub const READ_BUFFER: u32 = 0x25800;
 
@@ -575,7 +663,7 @@ pub mod bridge {
             mem.read_bytes(from, &mut bytes);
             mem.write_bytes(names.wrapping_add(NAME_SIZE * i), &bytes);
             mem.write_bytes(defaults.wrapping_add(NAME_SIZE * i), &bytes);
-            let lang = game(mem, &mut *call, TO_GET_FFX_LANG, &[]);
+            let lang = game(mem, &mut *call, TO_GET_FFX_LANG_FN, &[]);
             let at = names.wrapping_add(NAME_SIZE * i + 0x12);
             mem.write(at, lang.to_le_bytes()[0]);
             mem.write(at.wrapping_add(1), 1u8);

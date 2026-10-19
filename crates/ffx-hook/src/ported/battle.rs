@@ -3759,4 +3759,11 @@ ported! {
     Battle_ScriptPlayMotion @ 0x007a_8fc0 => extern "C" fn battle_script_play_motion(worker: u32, _args: u32, stack: u32, flag: u32) -> u32 {
         motion::battle_script_play_motion(&mut mem(), &mut call_ptr, worker, stack, flag.to_le_bytes()[0])
     }
+    /// `getExcelBinSize(name, buffer)`: a kernel file read whole (its
+    /// path in a frame of ours; the language and file layer through the
+    /// game).
+    getExcelBinSize @ 0x0078_2df0 => extern "C" fn get_excel_bin_size(name: u32, buffer: u32) -> u32 {
+        let mut path = super::StackFrame::<{ (init::KERNEL_PATH_SIZE / 4) as usize }>::new();
+        init::get_excel_bin_size(&mut mem(), &mut call_ptr, name, buffer, path.at())
+    }
 }

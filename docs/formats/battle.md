@@ -980,6 +980,20 @@ as ported, not hookable.
   1 when the motion does not play or has no frames; `+0x434` stays set
   then. Its script and chara callees go through the game.
 
+### The kernel file reader
+
+`getExcelBinSize(name, buffer)` (`0x00782df0`, `ffx_battle::init`)
+returns the size it read in `eax` although Ghidra calls it void
+(`MsMenuReadText` and the table readers use it): `sceLseek` to the end,
+plus 15, rounded down to 16 as a signed number. The path is
+`host0:/ffx/master/new_<lang>pc/battle/kernel/<name>.bin` with the
+language from `TOGetFFXLang` (0 `jp`, 2 `fr`, 3 `sp`, 4 `de`, 5 `it`,
+9 `kr`, 10 `ch`, anything else `us`), built by `sprintf` into a 128-byte
+stack array; the port builds it in Rust in a frame of the hook's and
+cuts it at 127 bytes, where the original would run over its stack.
+A file that does not open logs "WJ: there is no DE message.bin" and
+returns 0.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here.

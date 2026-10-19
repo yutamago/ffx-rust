@@ -4848,7 +4848,7 @@
 0x00782c00 function MsSetCountryName          # fh v3:exact 0x00782cc0
 0x00782d40 function MsSetDebugMagic              # layout: alphabetical run between MsSetCountryName and getExcelBinSize (2 unnamed in the gap); Switch 0x710033a5f0 MsSetDebugMagic is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00782d60 function MsWalkAbilityProcess         # layout: alphabetical run between MsSetCountryName and getExcelBinSize (2 unnamed in the gap); Switch 0x7100339050 MsWalkAbilityProcess is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00782df0 function getExcelBinSize           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole; was Kernel_LoadFile
+0x00782df0 function getExcelBinSize           # (name, buffer) reads new_<lang>pc/battle/kernel/<name>.bin whole; was Kernel_LoadFile; ported (battle round 23): returns the size (eax; Ghidra void): path host0:/ffx/master/new_<lang>pc/battle/kernel/<name>.bin by TOGetFFXLang 0x006410e0 (0 jp, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch, else us; unsigned), sceOpen(path, 1) 0 -> dbgPrintf(0x00b41e3c, path), 0; size = sceLseek(end) + 15 rounded to 16 (signed), TkMalloc, first word 0, sceRead, sceClose, memcpy into buffer, TkFree
 0x00782f70 function setBattleEnable           # fh v3:cg2 0x783030
 0x00782f80 function AsyncLoadNewCharacter     # fh v3:exact 0x00783040
 0x00782fd0 function FinishReadPhyreBattleMap  # fh v3:bsim1.00 0x00783090
