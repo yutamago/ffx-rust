@@ -102,12 +102,16 @@ fn dress(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, chr: u32
             if mine {
                 mine_left -= 1;
             }
-            let who = if mine {
+            // not the user's: another actor's, or the user's other command
+            let other = !mine && rng.below(3) == 0;
+            let who = if mine || other {
                 chr
             } else {
                 (chr + 1 + rng.below(ACTORS - 1)) % ACTORS
             };
-            let num = if mine || rng.below(2) == 0 {
+            let num = if other {
+                (number + 1 + rng.below(3)) % 4
+            } else if mine || rng.below(2) == 0 {
                 number
             } else {
                 rng.below(4)
