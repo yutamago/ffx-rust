@@ -88,6 +88,95 @@ pub mod bridge {
         run(mem, x, super::positive)
     }
 
+    /// `op_spline_draw_path3(scale, spread)` (`0x007e67f0`; name by
+    /// layout): a random value around a sign, through the emulated VU0
+    /// as the original moves it. With `x = 2 draw - 3` (the `R` draw as
+    /// [`op_random`] takes it; 1.0 while unseeded, `R` then untouched)
+    /// and `y` the emulated `r0`'s first word: `(x (1 - spread) - spread)`
+    /// when `y > x` (`0x00c8b504` = 1), else `(x (1 - spread) + spread)`
+    /// (0), times `scale`, into `0x00c8f72c` and returned. `R` becomes
+    /// `draw - 1.8872414`; seeded after. The VF registers it copies and
+    /// its constants (`0x00c8f528..`, `0x00c8f940..0x00c8f98c`) are
+    /// written as it writes them, then `restoreVf00Register`.
+    pub fn op_spline_draw_path3(mem: &mut impl Mem, scale: f32, spread: f32) -> f32 {
+        use ffx_bridge::x87::Reg;
+        let seeded = SEEDED.get(mem) != 0;
+        let spread = x87::load_f32(spread);
+        vset(mem, 0x00c8_f760, spread.to_bits());
+        vset(mem, 0x00c8_f75c, x87::load_f32(scale).to_bits());
+        let r0 = vget(mem, 0x00c8_f508);
+        vset(mem, 0x00c8_f72c, r0);
+        for (at, v) in [
+            (0x00c8_f528u32, 1.0f32.to_bits()),
+            (0x00c8_f538, 2.0f32.to_bits()),
+            (0x00c8_f548, 3.0f32.to_bits()),
+            (0x00c8_f558, 0x3ff1_9120),
+        ] {
+            vset(mem, at, v);
+        }
+        let one_minus = Reg::load(spread).subr_m32(1.0).store();
+        vset(mem, 0x00c8_f730, one_minus.to_bits());
+        let draw = if seeded {
+            let next = super::step(R.get(mem));
+            R.set(mem, next);
+            f32::from_bits(next)
+        } else {
+            1.0
+        };
+        vmove(mem, 0x00c8_f964, 0x00c8_f53c);
+        for at in [0x00c8_f984u32, 0x00c8_f988] {
+            vset(mem, at, draw.to_bits());
+        }
+        vmove(mem, 0x00c8_f968, 0x00c8_f540);
+        vset(mem, 0x00c8_f98c, draw.to_bits());
+        let two_d = Reg::load(draw).mul_m32(f32::from_bits(vget(mem, 0x00c8_f538)));
+        vmove(mem, 0x00c8_f96c, 0x00c8_f544);
+        vmove(mem, 0x00c8_f954, 0x00c8_f54c);
+        vset(mem, 0x00c8_f980, two_d.store().to_bits());
+        vmove(mem, 0x00c8_f958, 0x00c8_f550);
+        let next = Reg::load(draw).sub_m32(f32::from_bits(vget(mem, 0x00c8_f558)));
+        vmove(mem, 0x00c8_f95c, 0x00c8_f554);
+        vmove(mem, 0x00c8_f944, 0x00c8_f55c);
+        vset(mem, 0x00c8_f92c, next.store().to_bits());
+        vmove(mem, 0x00c8_f948, 0x00c8_f560);
+        let x = Reg::load(f32::from_bits(vget(mem, 0x00c8_f980)))
+            .sub_m32(f32::from_bits(vget(mem, 0x00c8_f548)));
+        vset(mem, 0x00c8_f960, 2.0f32.to_bits());
+        vset(mem, 0x00c8_f950, 3.0f32.to_bits());
+        vset(mem, 0x00c8_f980, x.store().to_bits());
+        vset(mem, 0x00c8_f940, 0x3ff1_9120);
+        vmove(mem, 0x00c8_f94c, 0x00c8_f564);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let xb = vget(mem, 0x00c8_f980);
+        vmove(mem, 0x00c8_f52c, 0x00c8_f984);
+        vset(mem, 0x00c8_f734, xb);
+        let x = f32::from_bits(vget(mem, 0x00c8_f734));
+        let r0x = f32::from_bits(vget(mem, 0x00c8_f72c));
+        vmove(mem, 0x00c8_f530, 0x00c8_f988);
+        vmove(mem, 0x00c8_f534, 0x00c8_f98c);
+        vset(mem, 0x00c8_f528, xb);
+        // fcomp: C0 or C3 (below, equal or unordered) gives 0
+        let above = r0x > x;
+        let scaled = Reg::load(x).mul_m32(f32::from_bits(vget(mem, 0x00c8_f730)));
+        vset(mem, 0x00c8_b504, u32::from(above));
+        vset(mem, 0x00c8_f730, scaled.store().to_bits());
+        let prod = Reg::load(f32::from_bits(vget(mem, 0x00c8_f730)));
+        let off = f32::from_bits(vget(mem, 0x00c8_f760));
+        let val = if above {
+            prod.sub_m32(off)
+        } else {
+            prod.add_m32(off)
+        };
+        vset(mem, 0x00c8_f72c, val.store().to_bits());
+        SEEDED.set(mem, 1);
+        let res = Reg::load(f32::from_bits(vget(mem, 0x00c8_f72c)))
+            .mul_m32(f32::from_bits(vget(mem, 0x00c8_f75c)))
+            .store();
+        vset(mem, 0x00c8_f72c, res.to_bits());
+        R.set(mem, x87::load(vget(mem, 0x00c8_f92c)));
+        x87::load_f32(res)
+    }
+
     /// Copies the emulated VU0 register word `from` to `to` (both
     /// addresses before rebasing).
     fn vmove(mem: &mut impl Mem, to: u32, from: u32) {

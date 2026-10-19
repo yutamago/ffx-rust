@@ -103,6 +103,62 @@ pub mod bridge {
         SPR_TOP.set(mem, top.wrapping_sub(1));
     }
 
+    /// `op_spline_xyz_table(x, pts, n)` (`0x007ea2d0`): spline tables for
+    /// `n` points (16 bytes each, `x, y, z`): `x[0..n]` = the chord-length
+    /// parameters (`x[0]` = 0, each step `sqrt(dx² + dy² + dz²)` added,
+    /// all divided by the total, or set to 0 for a total of 0), then for
+    /// each axis its coordinates copied into a scratch array
+    /// ([`op_spr_alloc`] of `((n + 3) & 0xfc) * 4` bytes, the original's
+    /// mask kept) and [`op_spline_table`]`(x + 4n (8n, 12n), x, scratch,
+    /// n)`. The scratch is released ([`op_spr_free`]).
+    pub fn op_spline_xyz_table<M: Mem>(mem: &mut M, x: u32, pts: u32, n: u32) {
+        use ffx_bridge::x87::{add, load, mul, sqrt, store};
+        let f = |mem: &M, a: u32| load(mem.read(a));
+        let size = (n.wrapping_add(3) & 0xfc) << 2;
+        let tmp = op_spr_alloc(mem, size);
+        mem.write(x, 0u32);
+        let n_i = n.cast_signed();
+        for i in 1..n_i.max(1) {
+            let i = i.cast_unsigned();
+            let (p, q) = (pts.wrapping_add(16 * i), pts.wrapping_add(16 * (i - 1)));
+            let d = |mem: &M, o: u32| {
+                store(ffx_bridge::x87::sub(
+                    f(mem, p.wrapping_add(o)),
+                    f(mem, q.wrapping_add(o)),
+                ))
+            };
+            let (dx, dy, dz) = (d(mem, 0), d(mem, 4), d(mem, 8));
+            let sq = |v: u32| mul(load(v), load(v));
+            let len = store(sqrt(add(add(sq(dx), sq(dy)), sq(dz))));
+            let prev = f(mem, x.wrapping_add(4 * (i - 1)));
+            mem.write(x.wrapping_add(4 * i), store(add(load(len), prev)));
+        }
+        let end = x.wrapping_add(4 * n);
+        let total = f(mem, end.wrapping_sub(4));
+        if n_i > 1 {
+            #[allow(clippy::float_cmp)] // fucompp: exactly zero
+            let zero = total == 0.0;
+            for i in 1..n {
+                let at = x.wrapping_add(4 * i);
+                let v = if zero {
+                    0
+                } else {
+                    store(ffx_bridge::x87::div(f(mem, at), total))
+                };
+                mem.write(at, v);
+            }
+        }
+        for axis in 0..3u32 {
+            for i in 0..n_i.max(0).cast_unsigned() {
+                let v: u32 = mem.read(pts.wrapping_add(16 * i + 4 * axis));
+                mem.write(tmp.wrapping_add(4 * i), crate::x87::load(v));
+            }
+            let out = x.wrapping_add(4 * n * (axis + 1));
+            op_spline_table(mem, out, x, tmp, n);
+        }
+        op_spr_free(mem);
+    }
+
     /// `op_m_copy(dst, src)` (`0x007e8010`): a 4x4 matrix, word by word
     /// upward (`rep movsd`).
     pub fn op_m_copy(mem: &mut impl Mem, dst: u32, src: u32) {
@@ -284,6 +340,79 @@ pub mod bridge {
             mem.write(m.wrapping_add(0x30 + 4 * k), v);
         }
         t
+    }
+
+    /// `op_rt_m_xzy(m, src, angles, t)` (`0x007e99d0`) and
+    /// `op_rt_m_yzx` (`0x007e9a90`): [`op_rt_m_xyz`] with the turns in
+    /// those orders.
+    pub fn op_rt_m_order(
+        mem: &mut impl Mem,
+        m: u32,
+        src: u32,
+        angles: u32,
+        t: u32,
+        order: [crate::mat::Axis; 3],
+    ) -> u32 {
+        use crate::mat::Axis;
+        for (k, axis) in order.into_iter().enumerate() {
+            let at = match axis {
+                Axis::X => 0u32,
+                Axis::Y => 4,
+                Axis::Z => 8,
+            };
+            let a: u32 = mem.read(angles.wrapping_add(at));
+            let from = if k == 0 { src } else { m };
+            op_rt_m(mem, m, from, f32::from_bits(x87::load(a)), axis);
+        }
+        for k in 0..3u32 {
+            let v = x87::add(
+                mem.read(t.wrapping_add(4 * k)),
+                mem.read(m.wrapping_add(0x30 + 4 * k)),
+            );
+            mem.write(m.wrapping_add(0x30 + 4 * k), v);
+        }
+        t
+    }
+
+    /// `op_ivec2_scale_007ecc40(_, v)` (`0x007ecc40`, `k` the `f64` at
+    /// `0x00b50190`) and `0x007ecca0` (`k` at `0x00b921e0`): `v`'s first
+    /// two words, read as `i32` (both before either is written), become
+    /// `f32(x) * k` and `f32(y) * k` (each `i32` rounded to `f32` first).
+    pub fn op_ivec2_scale(mem: &mut impl Mem, v: u32, k_at: u32) {
+        use ffx_bridge::x87::{mul, store};
+        let k: f64 = mem.read(Global::<u32>::new(k_at).ptr(mem).addr);
+        let [x, y]: [i32; 2] = mem.read(v);
+        #[allow(clippy::cast_precision_loss)] // fild, fstp m32
+        let (fx, fy) = (x as f32, y as f32);
+        mem.write(v, store(mul(f64::from(fx), k)));
+        mem.write(v.wrapping_add(4), store(mul(k, f64::from(fy))));
+    }
+
+    /// `op_view_screen_set_007ec990()` (`0x007ec990`): the op layer's view
+    /// screen matrix (`0x0113fd50`) from `FFXSamp0ViewScreenMatrix` with
+    /// the constants at `0x00b41d9c`, `0x00b34254`, `0x00b582fc`,
+    /// `0x00b51a20` (twice), 1.0, `0x00b51a24`, 1.0 and `0x00b43ddc`
+    /// (through `call`).
+    pub fn op_view_screen_set<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let c = |mem: &M, a: u32| x87::load(mem.read(g(mem, a)));
+        let one = 1.0f32.to_bits();
+        let args = [
+            g(mem, 0x0113_fd50),
+            c(mem, 0x00b4_1d9c),
+            c(mem, 0x00b3_4254),
+            c(mem, 0x00b5_82fc),
+            c(mem, 0x00b5_1a20),
+            c(mem, 0x00b5_1a20),
+            one,
+            c(mem, 0x00b5_1a24),
+            one,
+            c(mem, 0x00b4_3ddc),
+        ];
+        call(mem, g(mem, 0x0093_d960), &args);
     }
 
     /// `op_func_before_ot_free(slot)` (`0x007eb350`): list 0.
@@ -1283,8 +1412,8 @@ pub mod bridge {
     pub const SOUND_CUE_HEAD: Global<u16> = Global::new(0x023c_3640);
     /// See [`SOUND_CUE_HEAD`].
     pub const SOUND_CUE_COUNT: Global<u16> = Global::new(0x023c_3642);
-    const SOUND_CUES: Global<u32> = Global::new(0x023c_3540);
-    const SOUND_CUE_ARGS: Global<u32> = Global::new(0x023c_35c0);
+    pub const SOUND_CUES: Global<u32> = Global::new(0x023c_3540);
+    pub const SOUND_CUE_ARGS: Global<u32> = Global::new(0x023c_35c0);
     /// The second word of `g_OpOef2StreamCues` (`0x023c364c`).
     pub const STREAM_CUE2: Global<u32> = Global::new(0x023c_364c);
 
@@ -3747,5 +3876,647 @@ pub mod bridge {
         mem.write(o, 0u8);
         mem.write(pos, i);
         i32::from(ch.cast_signed()).cast_unsigned()
+    }
+
+    /// Whether the C string at `a` equals the one at `b` (`strcmp == 0`).
+    fn c_str_eq(mem: &impl Mem, a: u32, b: u32) -> bool {
+        let mut k = 0u32;
+        loop {
+            let (x, y) = (
+                mem.read::<u8>(a.wrapping_add(k)),
+                mem.read::<u8>(b.wrapping_add(k)),
+            );
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            k += 1;
+        }
+    }
+
+    /// `op_token_expr_007e2140(src, out, pos, max, eol)` (`0x007e2140`):
+    /// tokens ([`op_token`]) appended to `out` while `*pos` is before
+    /// `eol` and the parentheses stay balanced: a class-1 token at the
+    /// start is read over again; class 6 `(` and `)` count the depth up
+    /// and down; class 8 ends it at depth 0 or less; a negative depth ends
+    /// it. The last token read is cut off again (`out` ends where it did
+    /// before that read), then trailing class-1 bytes are trimmed (the
+    /// class read with the byte sign-extended, as the original's `movsx`).
+    /// Returns the length kept before the trim, 0 for unbalanced `)`.
+    pub fn op_token_expr<M: Mem>(
+        mem: &mut M,
+        src: u32,
+        out: u32,
+        pos: u32,
+        max: u32,
+        eol: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (open, close) = (
+            Global::<u32>::new(0x00b5_7fb8).ptr(mem).addr,
+            Global::<u32>::new(0x00b5_7fbc).ptr(mem).addr,
+        );
+        let mut depth = 0i32;
+        let mut len;
+        let mut cur = 0u32;
+        loop {
+            len = cur;
+            let at = out.wrapping_add(len);
+            let mut class = op_token(mem, src, at, pos, max.wrapping_sub(len), eol, call);
+            let mut next = true;
+            if class == 1 && len == 0 {
+                class = op_token(mem, src, out, pos, max, eol, call);
+            }
+            if class == 6 {
+                if at != 0 {
+                    if c_str_eq(mem, at, open) {
+                        depth += 1;
+                    }
+                    if c_str_eq(mem, at, close) {
+                        depth -= 1;
+                    }
+                }
+            } else if class == 8 && depth <= 0 {
+                next = false;
+            }
+            if !next || depth < 0 || mem.read::<i32>(pos) >= eol.cast_signed() {
+                break;
+            }
+            cur = op_strlen(mem, out);
+        }
+        mem.write(out.wrapping_add(len), 0u8);
+        let kept = if depth < 0 { 0 } else { len };
+        let mut n = op_strlen(mem, out);
+        let table = CHAR_CLASS.ptr(mem).addr;
+        while n > 0 {
+            let b = mem.read::<i8>(out.wrapping_add(n - 1));
+            let c: u8 = mem.read(table.wrapping_add(i32::from(b).cast_unsigned()));
+            if c != 1 {
+                break;
+            }
+            n -= 1;
+        }
+        mem.write(out.wrapping_add(n), 0u8);
+        kept
+    }
+
+    /// `g_OpOef2SoundCueState` (`0x023c3644`): the sound-cue queue's
+    /// state: 1 starting, 2 a wave being loaded (`SndSyncTrans`), 3 its
+    /// transfer running (`SndSyncWaveTrans`), 0 idle.
+    pub const SOUND_CUE_STATE: Global<u8> = Global::new(0x023c_3644);
+    /// `g_OpOef2StreamPlaying` (`0x023c3520`): the two stream cues last
+    /// started by `op_oef2_sound_cue_loop`.
+    pub const STREAM_PLAYING: Global<u32> = Global::new(0x023c_3520);
+
+    /// `op_oef2_sound_cue_loop()` (`0x00800170`): one step of the sound
+    /// queues. With cues queued ([`SOUND_CUE_COUNT`]): in state 2 once
+    /// `SndSyncTrans(0)` is done, state 3 and `SndStandbySepWave()`; in
+    /// state 3 once `SndSyncWaveTrans(0)` is done, the head moves on and
+    /// the count down, and with cues left the next one starts; state 1
+    /// becomes 2; any other state starts the head cue. Starting cue `head
+    /// % 32`: state 2, and with a cue there `op_oef2_sep_wave_load(cue,
+    /// arg)`, state 3 when it returns 0. With no cues queued, the first
+    /// pending stream cue ([`OEF2_STREAM_CUES`], 0 none, -1 done; the second is [`STREAM_CUE2`]) of kind
+    /// 2 (byte `+0`) is started (`g_OpOef2BattleStreamPlaying` set,
+    /// `SndStandbySepWave`-side `0x00887440` with `get_ptr32(cue +8)` as
+    /// its first or second argument) and kept in [`STREAM_PLAYING`]; the
+    /// cue is marked done. Callees through `call`.
+    pub fn op_oef2_sound_cue_loop<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if SOUND_CUE_COUNT.get(mem) != 0 {
+            let head = match SOUND_CUE_STATE.get(mem) {
+                2 => {
+                    if call(mem, g(mem, 0x0088_7910), &[0]) == 0 {
+                        SOUND_CUE_STATE.set(mem, 3);
+                        call(mem, g(mem, 0x0088_7550), &[]);
+                    }
+                    return;
+                }
+                3 => {
+                    if call(mem, g(mem, 0x0088_7930), &[0]) != 0 {
+                        return;
+                    }
+                    SOUND_CUE_STATE.set(mem, 0);
+                    let head = SOUND_CUE_HEAD.get(mem).wrapping_add(1);
+                    let n = SOUND_CUE_COUNT.get(mem).wrapping_sub(1);
+                    SOUND_CUE_COUNT.set(mem, n);
+                    SOUND_CUE_HEAD.set(mem, head);
+                    if n == 0 { None } else { Some(head) }
+                }
+                1 => {
+                    SOUND_CUE_STATE.set(mem, 2);
+                    return;
+                }
+                _ => Some(SOUND_CUE_HEAD.get(mem)),
+            };
+            if let Some(head) = head {
+                let k = u32::from(head) % 32;
+                SOUND_CUE_STATE.set(mem, 2);
+                let cue = SOUND_CUES.ptr(mem).at(k).get(mem);
+                if cue != 0 {
+                    let arg = SOUND_CUE_ARGS.ptr(mem).at(k).get(mem);
+                    if call(mem, g(mem, 0x007f_ffa0), &[cue, arg]) == 0 {
+                        SOUND_CUE_STATE.set(mem, 3);
+                    }
+                }
+                return;
+            }
+        }
+        for ch in 0..2u32 {
+            let slot = OEF2_STREAM_CUES.ptr(mem).at(ch);
+            let cue = slot.get(mem);
+            if cue == 0 {
+                continue;
+            }
+            if cue == u32::MAX {
+                return;
+            }
+            let at: u32 = mem.read(cue.wrapping_add(8));
+            let p = call(mem, g(mem, 0x00a4_4650), &[at]);
+            if mem.read::<u8>(cue) == 2 {
+                mem.write(g(mem, 0x011a_0083), 1u8);
+                let args = if ch == 0 { [p, 0] } else { [0, p] };
+                call(mem, g(mem, 0x0088_7440), &args);
+                STREAM_PLAYING.ptr(mem).at(ch).set(mem, cue);
+            }
+            slot.set(mem, u32::MAX);
+            return;
+        }
+    }
+
+    /// `dbgPrintf(msg)` through `call` (a bare `ret` in this build, so
+    /// the callers' eax stays what it was).
+    fn debug_print<M: Mem>(
+        mem: &mut M,
+        msg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = Global::<u32>::new(0x0062_f500).ptr(mem).addr;
+        let m = Global::<u32>::new(msg).ptr(mem).addr;
+        call(mem, f, &[m]);
+    }
+
+    /// `op_anm_tex0_reset()` (`0x007ecf30`): only a debug line
+    /// (`dbgPrintf`, through `call`).
+    pub fn op_anm_tex0_reset<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        debug_print(mem, 0x00b5_8308, call);
+    }
+
+    /// `g_OpEventEffect` (`0x011a006b`): set by `op_event_effect_init`.
+    pub const EVENT_EFFECT: Global<u8> = Global::new(0x011a_006b);
+
+    /// `op_event_effect_init()` (`0x007fcc20`): a debug line, then
+    /// [`EVENT_EFFECT`] set.
+    pub fn op_event_effect_init<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        debug_print(mem, 0x00b5_8500, call);
+        EVENT_EFFECT.set(mem, 1);
+    }
+
+    /// `op_oef2_tex_clut_reset2(oef)` (`0x007e3e70`): a debug line when
+    /// `oef` is nonzero; nothing else.
+    pub fn op_oef2_tex_clut_reset2<M: Mem>(
+        mem: &mut M,
+        oef: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if oef != 0 {
+            debug_print(mem, 0x00b5_8120, call);
+        }
+    }
+
+    /// `op_num_pal_default()` (`0x007e64b0`): `opd_num_pal_default()` when
+    /// numbers are shown (`g_OpNumShow`), and again in debug mode (through
+    /// `call`).
+    pub fn op_num_pal_default<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = Global::<u32>::new(0x00a5_de50).ptr(mem).addr;
+        if mem.read::<u8>(Global::<u32>::new(0x0232_2794).ptr(mem).addr) != 0 {
+            call(mem, f, &[]);
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            call(mem, f, &[]);
+        }
+    }
+
+    /// `op_num_init(x)` (`0x007e6480`) and `op_num_pal_set(x)`
+    /// (`0x007e64d0`): the `opd_` function (`0x00a5dda0`, `0x00a5de60`)
+    /// with `x` when numbers are shown (`g_OpNumShow`), and again in
+    /// debug mode (through `call`).
+    pub fn op_num_forward<M: Mem>(
+        mem: &mut M,
+        opd: u32,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = Global::<u32>::new(opd).ptr(mem).addr;
+        if mem.read::<u8>(Global::<u32>::new(0x0232_2794).ptr(mem).addr) != 0 {
+            call(mem, f, &[x]);
+        }
+        if DEBUG_MODE.get(mem) != 0 {
+            call(mem, f, &[x]);
+        }
+    }
+
+    /// `op_event_effect_free()` (`0x007fcbf0`): a debug line; the bind
+    /// flags (`g_EtBindDefault`) lose 0x3400 and gain 0x800 (the low half
+    /// of the word rewritten); [`EVENT_EFFECT`] cleared.
+    pub fn op_event_effect_free<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        debug_print(mem, 0x00b5_8520, call);
+        let at = Global::<u32>::new(0x011a_0080).ptr(mem).addr;
+        let v: u16 = mem.read(at);
+        mem.write(at, (v & 0xcbff) | 0x800);
+        EVENT_EFFECT.set(mem, 0);
+    }
+
+    /// `g_OpEffectRunLimit` (`0x02332e88`): set around `op_effect_run_before`'s
+    /// `opu_main_host` run (0 for a pinned frame, else `0x02332e90` +
+    /// 0xf0000), cleared after.
+    pub const EFFECT_RUN_LIMIT: Global<u32> = Global::new(0x0233_2e88);
+
+    /// `op_effect_run_before()` (`0x00800610`): the battle opus object's
+    /// frame `+0x54` = its pinned frame `+0x58` when set ([`EFFECT_RUN_LIMIT`]
+    /// 0), else the latched frame (`0x02332e8c`, limit `0x02332e90` +
+    /// 0xf0000); `opu_main_host(0, 0)` (through `call`); unpinned, the
+    /// frame is latched back; the limit cleared. Returns 0.
+    pub fn op_effect_run_before<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let obj = crate::et::bridge::OPUS_BATTLE.get(mem);
+        let pinned: u32 = mem.read(obj.wrapping_add(0x58));
+        if pinned != 0 {
+            mem.write(obj.wrapping_add(0x54), pinned);
+            EFFECT_RUN_LIMIT.set(mem, 0);
+        } else {
+            let latched: u32 = mem.read(g(mem, 0x0233_2e8c));
+            mem.write(obj.wrapping_add(0x54), latched);
+            let base: u32 = mem.read(g(mem, 0x0233_2e90));
+            EFFECT_RUN_LIMIT.set(mem, base.wrapping_add(0xf_0000));
+        }
+        call(mem, g(mem, 0x0080_cc00), &[0, 0]);
+        if mem.read::<u32>(obj.wrapping_add(0x58)) == 0 {
+            let f: u32 = mem.read(obj.wrapping_add(0x54));
+            mem.write(g(mem, 0x0233_2e8c), f);
+        }
+        EFFECT_RUN_LIMIT.set(mem, 0);
+        0
+    }
+
+    /// `op_anm_tex0_set_007ecf50(_, a, b)` (`0x007ecf50`; `0x007ecfa0` is
+    /// the same code): the emulated `r1` (`0x00c8f528`) = `a & 0x3fff` and
+    /// `(b & 0x3fff) << 5`, `r2`'s high word (`0x00c8f538`, `0x00c8f53c`)
+    /// 0 and `(b & 0x3fff) << 5`, as the PS2 code built a TEX0 word; then
+    /// only a debug line (through `call`). Returns `(b & 0x3fff) << 5` (eax
+    /// across the bare `dbgPrintf`).
+    pub fn op_anm_tex0_set<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        let hi = (b & 0x3fff) << 5;
+        mem.write(g(mem, 0x00c8_f53c), 0u32);
+        mem.write(g(mem, 0x00c8_f538), 0u32);
+        mem.write(g(mem, 0x00c8_f53c), hi);
+        mem.write(g(mem, 0x00c8_f528), [a & 0x3fff, hi]);
+        debug_print(mem, 0x00b5_8308, call);
+        hi
+    }
+
+    /// `op_vec3_max_007ecd00(out, v, a)` / `op_vec3_min_007ecdc0(out, v,
+    /// a)` (`0x007ecd00`, `0x007ecdc0`): the three components of the vector
+    /// `a` passed by value (four words from `a`, the fourth unused) against
+    /// `*v`: with `max`, `out[i] = v[i]` where `a[i] < v[i]`; else
+    /// `out[i] = v[i]` where `a[i] > v[i]`; `a[i]` otherwise, so on a tie or
+    /// a NaN (the `fcom` falls through to `a`). `f32` bits copied.
+    pub fn op_vec3_clamp(mem: &mut impl Mem, out: u32, v: u32, a: [u32; 4], max: bool) {
+        for i in 0..3u32 {
+            let vi: u32 = mem.read(v.wrapping_add(4 * i));
+            let ai = a[i as usize];
+            let (x, y) = (f32::from_bits(ai), f32::from_bits(vi));
+            let take_v = if max { x < y } else { x > y };
+            mem.write(out.wrapping_add(4 * i), if take_v { vi } else { ai });
+        }
+    }
+
+    /// `op_file_puts_007e2fb0(file, s)` (`0x007e2fb0`): the C string `s`
+    /// into the op file's write buffer (`+0` the bytes, `+8` the handle,
+    /// `+0xc` the position, `+0x10` the size), each full buffer written
+    /// with `sceWrite(handle, bytes, size)` (through `call`) and the
+    /// position back to 0. Signed arithmetic as the original's, room read
+    /// again each turn. Returns the original's eax: the size, or the last
+    /// write's result when the last turn flushed; `None` for an empty
+    /// string, where it is the caller's.
+    pub fn op_file_puts<M: Mem>(
+        mem: &mut M,
+        file: u32,
+        s: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let mut len = 0u32;
+        while mem.read::<u8>(s.wrapping_add(len)) != 0 {
+            len = len.wrapping_add(1);
+        }
+        let mut left = len.cast_signed();
+        if left <= 0 {
+            return None;
+        }
+        let mut src = s;
+        let mut eax;
+        loop {
+            let pos = mem.read::<u32>(file.wrapping_add(0xc)).cast_signed();
+            let size = mem.read::<u32>(file.wrapping_add(0x10)).cast_signed();
+            let n = left.min(size.wrapping_sub(pos));
+            let data: u32 = mem.read(file);
+            for k in 0..n.max(0).cast_unsigned() {
+                let b: u8 = mem.read(src);
+                let to = data.wrapping_add(pos.cast_unsigned()).wrapping_add(k);
+                mem.write(to, b);
+                src = src.wrapping_add(1);
+            }
+            let pos = pos.wrapping_add(n);
+            mem.write(file.wrapping_add(0xc), pos.cast_unsigned());
+            left = left.wrapping_sub(n);
+            eax = mem.read::<u32>(file.wrapping_add(0x10));
+            if pos >= eax.cast_signed() {
+                let (data, handle): (u32, u32) = (mem.read(file), mem.read(file.wrapping_add(8)));
+                mem.write(file.wrapping_add(0xc), 0u32);
+                let write = crate::draw::bridge::g(mem, 0x0062_fdc0);
+                eax = call(mem, write, &[handle, data, eax]);
+            }
+            if left <= 0 {
+                return Some(eax);
+            }
+        }
+    }
+
+    /// `op_effect_init()` (`0x00800580`): `[[0x00c88a90] + 0x50]` = the
+    /// word at `0x00c48d88`; the 0x400 bytes at `0x012e9c70` cleared; the
+    /// 256 0x80-byte records from `0x012ea070` cleared (the CRT `memset`,
+    /// through `call`) with `u16 +0x1e` = their index; then `pppInitEnv(0x012f2070, 0,
+    /// 0x02343520, 0x80000)` through `call`. Returns 0.
+    pub fn op_effect_init<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::draw::bridge::g;
+        let at: u32 = mem.read(g(mem, 0x00c8_8a90));
+        let v: u32 = mem.read(g(mem, 0x00c4_8d88));
+        mem.write(at.wrapping_add(0x50), v);
+        mem.write(g(mem, 0x012e_9c70), [0u32; 0x100]);
+        let recs = g(mem, 0x012e_a070);
+        let memset = g(mem, 0x0094_964c);
+        for i in 0..0x100u16 {
+            let rec = recs + 0x80 * u32::from(i);
+            call(mem, memset, &[rec, 0, 0x80]);
+            mem.write(rec + 0x1e, i);
+        }
+        let env = g(mem, 0x012f_2070);
+        let heap = g(mem, 0x0234_3520);
+        call(mem, g(mem, 0x0071_69d0), &[env, 0, heap, 0x8_0000]);
+        0
+    }
+
+    /// `op_rt_m_6(m, src, angles, t, order)` (`0x007e98b0`): the rotation
+    /// in one of six turn orders, through `call`: 0 [`op_rt_m`]'s Z, Y, X
+    /// (`0x007e9850`), 1 Z, X, Y (`0x007e9af0`), 2 Y, Z, X (`0x007e9a90`),
+    /// 3 Y, X, Z (`0x007e9a30`), 4 X, Z, Y (`0x007e99d0`), 5 X, Y, Z
+    /// (`0x007e9970`); returns the callee's eax. Any other order does
+    /// nothing and returns it (unsigned compare).
+    pub fn op_rt_m_6<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        order: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const ORDERS: [u32; 6] = [
+            0x007e_9850,
+            0x007e_9af0,
+            0x007e_9a90,
+            0x007e_9a30,
+            0x007e_99d0,
+            0x007e_9970,
+        ];
+        let Some(&f) = usize::try_from(order).ok().and_then(|k| ORDERS.get(k)) else {
+            return order;
+        };
+        let f = Global::<u32>::new(f).ptr(mem).addr;
+        call(mem, f, &args)
+    }
+
+    /// `op_ovl_effect_free()` (`0x007fcd60`): the effect overlay's end, all
+    /// through `call`: a debug line, `op_oef2_tex_clut_ovl_clear(0xffff)`,
+    /// `opus_check_forced_draw`, `opus_ffxfocus_free`, `opus_map_rgba_free`,
+    /// `op_wot_triger(0)`, `op_mdc_mem_transfer_cue_free_all`,
+    /// `opus_clip_on_all_in_battle`, `TkStopVibrate(7)`, and without the
+    /// byte at `0x011a0082` `op_oef2_sep_free_all(0xffff)`; then
+    /// [`g_OpOvlEffectOn`](`0x011a006a`), the camera limit (`u16
+    /// 0x011a006c`) and the bytes at `0x011a006e` and `0x011a0083` cleared.
+    /// Returns 0.
+    pub fn op_ovl_effect_free<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        debug_print(mem, 0x00b5_84ac, call);
+        for (f, args) in [
+            (0x007e_4e40u32, &[0xffffu32][..]),
+            (0x007f_e4e0, &[]),
+            (0x0080_abb0, &[]),
+            (0x0080_ac00, &[]),
+            (0x007e_c7d0, &[0]),
+            (0x0080_3760, &[]),
+            (0x0080_0be0, &[]),
+            (0x0087_6290, &[7]),
+        ] {
+            let f = g(mem, f);
+            call(mem, f, args);
+        }
+        if mem.read::<u8>(g(mem, 0x011a_0082)) == 0 {
+            let f = g(mem, 0x007f_ff30);
+            call(mem, f, &[0xffff]);
+        }
+        mem.write(g(mem, 0x011a_006a), 0u8);
+        mem.write(g(mem, 0x011a_006c), 0u16);
+        mem.write(g(mem, 0x011a_006e), 0u8);
+        mem.write(g(mem, 0x011a_0083), 0u8);
+        0
+    }
+
+    /// `op_oef2_clut_cue(rec, mask)` (`0x007e4610`): -1 without `rec` or
+    /// its `+4`. A record whose `u16` id is outside 0x3800..0x3c00 while
+    /// the byte at `0x011a0066` is set goes to
+    /// `op_oef2_tex_clut_ovl_add_007e56d0(rec, mask, 1)` (through `call`):
+    /// -1 when that is negative, else 0. Otherwise it is queued: -1 with
+    /// [`OEF2_CLUT_CUE_COUNT`] at 0x40 already, else slot `(head + count)
+    /// & 0x3f` (16-bit sum) takes `mask` in [`OEF2_CLUT_CUES`], 0 at
+    /// `0x011a01a0` and `rec` at `0x011a02a0`, the count one more; 0.
+    pub fn op_oef2_clut_cue<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        mask: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if rec == 0 || mem.read::<u32>(rec.wrapping_add(4)) == 0 {
+            return u32::MAX;
+        }
+        let id: u16 = mem.read(rec);
+        if !(0x3800..0x3c00).contains(&id) && mem.read::<u8>(g(mem, 0x011a_0066)) != 0 {
+            let add = g(mem, 0x007e_56d0);
+            let r = call(mem, add, &[rec, mask, 1]);
+            return if r.cast_signed() < 0 { u32::MAX } else { 0 };
+        }
+        cue_push(mem, mask, 0, rec)
+    }
+
+    /// The CLUT cue ring's next slot for [`op_oef2_clut_cue`] and
+    /// [`op_oef2_tex_cue`]: -1 with [`OEF2_CLUT_CUE_COUNT`] at 0x40
+    /// already, else slot `(head + count) & 0x3f` (16-bit sum) takes `mask`
+    /// in [`OEF2_CLUT_CUES`], `tex` at `0x011a01a0` and `clut` at
+    /// `0x011a02a0`, the count one more; 0.
+    fn cue_push(mem: &mut impl Mem, mask: u32, tex: u32, clut: u32) -> u32 {
+        let n = OEF2_CLUT_CUE_COUNT.get(mem);
+        if n >= 0x40 {
+            return u32::MAX;
+        }
+        let slot = u32::from(OEF2_CLUT_CUE_HEAD.get(mem).wrapping_add(n) & 0x3f);
+        OEF2_CLUT_CUES.ptr(mem).at(slot).set(mem, mask);
+        let tex_at = Global::<u32>::new(0x011a_01a0).ptr(mem).at(slot).addr;
+        mem.write(tex_at, tex);
+        let clut_at = Global::<u32>::new(0x011a_02a0).ptr(mem).at(slot).addr;
+        mem.write(clut_at, clut);
+        OEF2_CLUT_CUE_COUNT.set(mem, n + 1);
+        0
+    }
+
+    /// `op_oef2_tex_cue_007e4f20(rec, mask)` (`0x007e4f20`): the texture
+    /// twin of [`op_oef2_clut_cue`]: -1 without `rec` or its `+0x14`; ids
+    /// (`+0`, low 14 bits) outside 0x3800..0x3c00 while the byte at
+    /// `0x011a0066` is set go to `op_oef2_tex_clut_ovl_add_007e56d0(rec,
+    /// mask, 0)` (through `call`, -1 when negative, else 0); otherwise the
+    /// cue ring takes `rec` at `0x011a01a0` and 0 at `0x011a02a0`.
+    pub fn op_oef2_tex_cue<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        mask: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if rec == 0 || mem.read::<u32>(rec.wrapping_add(0x14)) == 0 {
+            return u32::MAX;
+        }
+        let id = mem.read::<u32>(rec) & 0x3fff;
+        if !(0x3800..0x3c00).contains(&id) && mem.read::<u8>(g(mem, 0x011a_0066)) != 0 {
+            let add = g(mem, 0x007e_56d0);
+            let r = call(mem, add, &[rec, mask, 0]);
+            return if r.cast_signed() < 0 { u32::MAX } else { 0 };
+        }
+        cue_push(mem, mask, rec, 0)
+    }
+
+    /// `op_token_line_007e1c30(file, src, out, pos, max, eol, flags)`
+    /// (`0x007e1c30`): `op_token_get_007e1d50` (through `call`) into `out`
+    /// with `flags`, then again with `flags | 2` after what it stored (room
+    /// `max` less it) until one stores nothing; trailing bytes of class 1
+    /// ([`CHAR_CLASS`], indexed by the signed byte) are cut off and `out`
+    /// ends there (written even when `out` is 0, as in the original).
+    /// Returns the bytes the calls stored.
+    pub fn op_token_line<M: Mem>(
+        mem: &mut M,
+        args: [u32; 7],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [file, src, out, pos, max, eol, flags] = args;
+        let get = Global::<u32>::new(0x007e_1d50).ptr(mem).addr;
+        let mut total = call(mem, get, &args);
+        loop {
+            let at = out.wrapping_add(total);
+            let room = max.wrapping_sub(total);
+            let n = call(mem, get, &[file, src, at, pos, room, eol, flags | 2]);
+            total = total.wrapping_add(n);
+            if n == 0 {
+                break;
+            }
+        }
+        let mut len = 0u32;
+        if out != 0 {
+            while mem.read::<u8>(out.wrapping_add(len)) != 0 {
+                len = len.wrapping_add(1);
+            }
+        }
+        let table = CHAR_CLASS.ptr(mem).addr;
+        while len.cast_signed() > 0 {
+            let c = mem.read::<u8>(out.wrapping_add(len - 1)).cast_signed();
+            if mem.read::<u8>(table.wrapping_add_signed(i32::from(c))) != 1 {
+                break;
+            }
+            len -= 1;
+        }
+        mem.write(out.wrapping_add(len), 0u8);
+        total
+    }
+
+    /// `op_mdc_mem_transfer()` (`0x00803610`): with the effect overlay on
+    /// (`0x011a006a`), every [`MDC_TRANSFER_CUES`] entry with a character
+    /// (`+0`) walks its list (`+4`: `u16 +4` items of 16 bytes from `+0x10`,
+    /// the count read again each turn): the target `t` (`ptr32` of the
+    /// item's `+0`) takes `Ch_ModelGetVtexPtr(chr, part) - t` at `+8` and
+    /// `Ch_ModelGetNromPtr(chr, part) - t` at `+0xc` (`part` the item's `u16
+    /// +0xa`), the item `+4` = `Ch_ModelGetBaseMatrix(chr, part, 0)`.
+    /// Callees through `call`.
+    pub fn op_mdc_mem_transfer<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_system::stub::ptr32;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if mem.read::<u8>(g(mem, 0x011a_006a)) == 0 {
+            return;
+        }
+        let (vtex, nrom, base) = (
+            g(mem, 0x0082_ae10),
+            g(mem, 0x0082_adf0),
+            g(mem, 0x0083_0500),
+        );
+        for e in 0..8 {
+            let entry = MDC_TRANSFER_CUES.ptr(mem).at(e).addr;
+            let chr: u32 = mem.read(entry);
+            if chr == 0 {
+                continue;
+            }
+            let list: u32 = mem.read(entry + 4);
+            let mut k = 0u32;
+            while k < u32::from(mem.read::<u16>(list.wrapping_add(4))) {
+                let item = list.wrapping_add(0x10 + 0x10 * k);
+                let t = ptr32(mem.read(item));
+                let part = |mem: &M| u32::from(mem.read::<u16>(item.wrapping_add(0xa)));
+                let n = call(mem, vtex, &[chr, part(mem)]);
+                mem.write(t.wrapping_add(8), n.wrapping_sub(t));
+                let n = call(mem, nrom, &[chr, part(mem)]);
+                mem.write(t.wrapping_add(0xc), n.wrapping_sub(t));
+                let m = call(mem, base, &[chr, part(mem), 0]);
+                mem.write(item.wrapping_add(4), ptr32(m));
+                k += 1;
+            }
+        }
     }
 }

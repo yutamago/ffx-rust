@@ -337,6 +337,110 @@ pub mod bridge {
         mem.write(rec.wrapping_add(0x17), 0u8);
     }
 
+    /// `op_chr_status_reset_exception(h)` (`0x007fae40`): looks the handle
+    /// up among the character records, but goes on to
+    /// [`op_et_astatus_effect_off`]`(h)` whether it is found or not.
+    pub fn op_chr_status_reset_exception<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        op_et_astatus_effect_off(mem, h, call);
+    }
+
+    /// `opus_check_forced_draw()` (`0x007fe4e0`): with any of the 240
+    /// [`DRAW_FLAGS2`] bytes set, a debug line and `debug_exit_trace(1)`
+    /// (through `call`; both bare `ret`s in this build). Returns 0xf0, the
+    /// scan's end left in eax.
+    pub fn opus_check_forced_draw<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let flags: [u8; 0xf0] = mem.read(DRAW_FLAGS2.ptr(mem).addr);
+        if flags.iter().all(|&b| b == 0) {
+            return 0xf0;
+        }
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        call(mem, g(mem, 0x0062_f500), &[g(mem, 0x00b5_8540)]);
+        call(mem, g(mem, 0x0062_f510), &[1]);
+        0xf0
+    }
+
+    /// `opus_change_chrhd_battle_to_ffx()` (`0x007fe1a0`): each of the 32
+    /// battle handles (`g_EtChrHandles`) moves to the first free one of
+    /// the 0xd0 after them (cleared when there is none), then the three
+    /// remaps: [`opus_change_osu_en_by_chr_status`] on the battle's opus
+    /// list, [`opus_change_eff_status_en`], [`opus_change_chr_status_en`]
+    /// (`frame` for their index map, [`STATUS_FRAME`] bytes). Returns the
+    /// last one's eax.
+    pub fn opus_change_chrhd_battle_to_ffx(mem: &mut impl Mem, frame: u32) -> u32 {
+        let handles = CHR_HANDLES.ptr(mem);
+        for i in 0..0x20 {
+            let h = handles.at(i).get(mem);
+            if h == 0 {
+                continue;
+            }
+            handles.at(i).set(mem, 0);
+            if let Some(k) = (0..0xd0).find(|&k| handles.at(0x20 + k).get(mem) == 0) {
+                handles.at(0x20 + k).set(mem, h);
+            }
+        }
+        let list = OPUS_BATTLE.get(mem);
+        opus_change_osu_en_by_chr_status(mem, list, frame);
+        opus_change_eff_status_en(mem, frame);
+        opus_change_chr_status_en(mem, frame)
+    }
+
+    /// `op_chr_status_reset_exception_wrap_007fae90(h)` (`0x007fae90`):
+    /// [`op_chr_status_reset_exception`]`(h)` with `g_OpusBattleList`
+    /// (`0x012a12fc`) cleared for the call when its `u16 +0x300` is 1, and
+    /// put back after.
+    pub fn op_chr_status_reset_exception_wrap<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let slot = Global::<u32>::new(0x012a_12fc).ptr(mem).addr;
+        let list: u32 = mem.read(slot);
+        if list != 0 && mem.read::<u16>(list.wrapping_add(0x300)) == 1 {
+            mem.write(slot, 0u32);
+        }
+        op_chr_status_reset_exception(mem, h, call);
+        mem.write(slot, list);
+    }
+
+    /// `opus_change_chrhd_ffx_to_battle()` (`0x007fe200`): the first 32
+    /// handles of `g_EtChrHandles` become `MsGetChrHandle(i)` (through
+    /// `call`), each nonzero one cleared where it also appears in the 0xd0
+    /// after them (the first match), then the three remaps as
+    /// [`opus_change_chrhd_battle_to_ffx`] does. Returns the last one's
+    /// eax.
+    pub fn opus_change_chrhd_ffx_to_battle<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let handles = CHR_HANDLES.ptr(mem);
+        let get = Global::<u32>::new(0x0079_5080).ptr(mem).addr;
+        for i in 0..0x20 {
+            let h = call(mem, get, &[i]);
+            handles.at(i).set(mem, h);
+        }
+        for i in 0..0x20 {
+            let h = handles.at(i).get(mem);
+            if h == 0 {
+                continue;
+            }
+            if let Some(k) = (0..0xd0).find(|&k| handles.at(0x20 + k).get(mem) == h) {
+                handles.at(0x20 + k).set(mem, 0);
+            }
+        }
+        let list = OPUS_BATTLE.get(mem);
+        opus_change_osu_en_by_chr_status(mem, list, frame);
+        opus_change_eff_status_en(mem, frame);
+        opus_change_chr_status_en(mem, frame)
+    }
+
     /// `op_et_eff_target_center_0081b3e0(eff, out, filter)` (`0x0081b3e0`):
     /// the mean position of an effect record's targets into `out`: for
     /// each of its `byte +8` character indices (`+0x10`; the count read
@@ -1283,5 +1387,344 @@ pub mod bridge {
             }
         }
         u32::MAX
+    }
+
+    /// One character record reset as `0x007fee10` and `0x007feec0` do it:
+    /// `+0..+0x10` from the emulated `r0` (`g_Ee_Gpr`, `0x00c8f508`, its
+    /// fourth word at `+0x1c` too), `u16 +0xe` and `+0x14` 0xffff, `+0x10`
+    /// and `+0x18` 0x80808080; with an old handle at `+0`, every
+    /// `g_EtChrHandles` slot holding it cleared with both draw flags.
+    /// Returns the original's eax: 0xffff without an old handle, else 0xf0.
+    fn chr_reset(mem: &mut impl Mem, i: u32) -> u32 {
+        let r0: [u32; 4] = mem.read(Global::<u32>::new(0x00c8_f508).ptr(mem).addr);
+        let rec = CHR.ptr(mem).at(i).addr;
+        let old: u32 = mem.read(rec);
+        mem.write(rec, r0);
+        mem.write(rec + 0x1c, r0[3]);
+        mem.write(rec + 0xe, 0xffffu16);
+        mem.write(rec + 0x14, 0xffffu32);
+        mem.write(rec + 0x10, 0x8080_8080u32);
+        mem.write(rec + 0x18, 0x8080_8080u32);
+        if old == 0 {
+            return 0xffff;
+        }
+        let handles = CHR_HANDLES.ptr(mem);
+        for k in 0..0xf0 {
+            if handles.at(k).get(mem) == old {
+                handles.at(k).set(mem, 0);
+                DRAW_FLAGS.ptr(mem).at(k).set(mem, 0);
+                DRAW_FLAGS2.ptr(mem).at(k).set(mem, 0);
+            }
+        }
+        0xf0
+    }
+
+    /// `op_et_chr_reset_all_007fee10()` (`0x007fee10`): every one of the
+    /// 240 [`CHR`] records reset (as [`op_et_chr_reset`]). Returns 0.
+    pub fn op_et_chr_reset_all(mem: &mut impl Mem) -> u32 {
+        for i in 0..CHRS {
+            chr_reset(mem, i);
+        }
+        0
+    }
+
+    /// `op_et_chr_reset_007feec0(i)` (`0x007feec0`): record `i` of [`CHR`]
+    /// back to empty: `+0..+0x10` from the emulated `r0` (`+0x1c` its
+    /// fourth word), `u16 +0xe` and `+0x14` 0xffff, `+0x10`/`+0x18`
+    /// 0x80808080, and an old handle dropped from every `g_EtChrHandles`
+    /// slot with both draw flags. Index 0xf0 is let through (signed `> 0xf0`
+    /// test). Returns the original's eax: 0xffff without an old handle,
+    /// else 0xf0; `None` past 0xf0, where it is the caller's.
+    pub fn op_et_chr_reset(mem: &mut impl Mem, i: u32) -> Option<u32> {
+        (i.cast_signed() <= 0xf0).then(|| chr_reset(mem, i))
+    }
+
+    /// `op_et_astatus_effect_off_all()` (`0x007fb0a0`):
+    /// [`op_et_astatus_effect_off`] for the handle of every live [`CHR`]
+    /// record, in order.
+    pub fn op_et_astatus_effect_off_all<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        for k in 0..CHRS {
+            let h: u32 = mem.read(CHR.ptr(mem).at(k).addr);
+            if h != 0 {
+                op_et_astatus_effect_off(mem, h, call);
+            }
+        }
+    }
+
+    /// `op_et_bindeff2_walk(h, speed)` (`0x007fb740`): with event effects on
+    /// (`0x011a006b`) and a handle, the character's bound effect (the
+    /// [`EFF`] record keyed `0x50001800 + i`, `i` its [`CHR`] index; not
+    /// the first record) gets `op_oef2_obj_a_get(g_OpusEncount, 0, 0x20)`
+    /// and `opus_osu_set_0080b520(g_OpusBattle, record +4, that, 1, h)`;
+    /// a unit from it walks: `op_xyz_scale(unit + 0x40, speed, f32 at
+    /// 0x00b9231c)`. Callees through `call`. Returns the original's eax:
+    /// the end of a failed scan, the first record, 0 without a unit, else
+    /// the walk's; `None` without event effects or a handle (the caller's).
+    pub fn op_et_bindeff2_walk<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        speed: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if mem.read::<u8>(at(mem, 0x011a_006b)) == 0 || h == 0 {
+            return None;
+        }
+        let Some(ci) = (0..CHRS).find(|&ci| mem.read::<u32>(CHR.ptr(mem).at(ci).addr) == h) else {
+            return Some(CHR.ptr(mem).at(CHRS).addr);
+        };
+        let key = 0x5000_1800 + ci;
+        let Some(ej) = (0..EFFS).find(|&ej| mem.read::<u32>(EFF.ptr(mem).at(ej).addr) == key)
+        else {
+            return Some(EFF.ptr(mem).at(EFFS).addr);
+        };
+        if ej == 0 {
+            return Some(EFF.ptr(mem).addr);
+        }
+        let encount: u32 = mem.read(at(mem, 0x0119_fe98));
+        let get = at(mem, 0x007e_3b40);
+        let obj = call(mem, get, &[encount, 0, 0x20]);
+        let src: u32 = mem.read(EFF.ptr(mem).at(ej).addr + 4);
+        let list = OPUS_BATTLE.get(mem);
+        let set = at(mem, 0x0080_b520);
+        let unit = call(mem, set, &[list, src, obj, 1, h]);
+        if unit == 0 {
+            return Some(0);
+        }
+        let k: u32 = mem.read(at(mem, 0x00b9_231c));
+        let scale = at(mem, 0x007e_a850);
+        Some(call(mem, scale, &[unit.wrapping_add(0x40), speed, k]))
+    }
+
+    /// `opus_get_eff_status_index(id, kind, create)` (`0x007feba0`): the
+    /// [`EFF`] record with this id, else -1 unless `create`; id -1 gives 0.
+    /// A new one takes the first free record after the first (`+0` -1;
+    /// none: -1): `+0` = id, byte `+0x1d` 0, byte `+0x1c` = `kind`, `+0xc`
+    /// 0, then its targets (callees through `call`). In battle
+    /// (`MsBattleGetStatus`): a negative id none (`u16 +8` 0x101, bytes
+    /// `+0x10`/`+0x18` 0); one with a top-nibble bit the character slot
+    /// `op_et_chr_slot_007fead0(id)` (its record's byte `+0xe` at both);
+    /// else `MsGetTargetRandomList(id, frame, 0)` for the last magic
+    /// (`MsEffectGetLastMagicNum2(id)`) 0x88..=0x8f, `MsGetTargetList(id,
+    /// frame)` otherwise: the count they leave at `frame` (low byte) into
+    /// byte `+8` and the list at `+0x10`, byte `+0x18` =
+    /// `MsGetEff2Chr(id)`, byte `+9` 1. Out of battle the character slot as
+    /// `op_et_chr_slot` finds it, inline. Returns the record index.
+    pub fn opus_get_eff_status_index<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        kind: u8,
+        create: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let eff = |mem: &M, j: u32| EFF.ptr(mem).at(j).addr;
+        if let Some(j) = (0..EFFS).find(|&j| mem.read::<u32>(eff(mem, j)) == id) {
+            return j;
+        }
+        if create == 0 {
+            return u32::MAX;
+        }
+        if id == u32::MAX {
+            return 0;
+        }
+        let Some(j) = (1..EFFS).find(|&j| mem.read::<u32>(eff(mem, j)) == u32::MAX) else {
+            return u32::MAX;
+        };
+        let rec = eff(mem, j);
+        mem.write(rec, id);
+        mem.write(rec + 0x1d, 0u8);
+        mem.write(rec + 0x1c, kind);
+        mem.write(rec + 0xc, 0u32);
+        let slot_target = |mem: &mut M, slot: u32| {
+            let c = CHR.ptr(mem).addr.wrapping_add(slot << 5);
+            mem.write(rec + 8, 0x101u16);
+            let b: u8 = mem.read(c.wrapping_add(0xe));
+            mem.write(rec + 0x10, b);
+            mem.write(rec + 0x18, b);
+        };
+        let status = at(mem, 0x0078_16f0);
+        if call(mem, status, &[]) == 0 {
+            let slot = if id & 0xf000_0000 != 0 {
+                id & 0xff
+            } else {
+                let b = id & 0xff;
+                let rec_at = |mem: &M, i: u32| CHR.ptr(mem).at(i).addr;
+                (0..CHRS)
+                    .find(|&i| u32::from(mem.read::<u16>(rec_at(mem, i) + 0xe)) == b)
+                    .or_else(|| (0..CHRS).find(|&i| mem.read::<u32>(rec_at(mem, i)) != 0))
+                    .unwrap_or(u32::MAX)
+            };
+            slot_target(mem, slot);
+            return j;
+        }
+        if id.cast_signed() < 0 {
+            mem.write(rec + 8, 0x101u16);
+            mem.write(rec + 0x10, 0u8);
+            mem.write(rec + 0x18, 0u8);
+            return j;
+        }
+        if id & 0xf000_0000 != 0 {
+            let slot = call(mem, at(mem, 0x007f_ead0), &[id]);
+            slot_target(mem, slot);
+            return j;
+        }
+        let magic = call(mem, at(mem, 0x0078_7bf0), &[id]);
+        let list = if magic.wrapping_sub(0x88) <= 7 {
+            call(mem, at(mem, 0x007b_7170), &[id, frame, 0])
+        } else {
+            call(mem, at(mem, 0x007b_7090), &[id, frame])
+        };
+        let n: u8 = mem.read(frame);
+        mem.write(rec + 8, n);
+        let mut k = 0u32;
+        while k < u32::from(mem.read::<u8>(rec + 8)) {
+            let b: u8 = mem.read(list.wrapping_add(k));
+            mem.write(rec + 0x10 + k, b);
+            k += 1;
+        }
+        let chr = call(mem, at(mem, 0x0078_8de0), &[id]);
+        #[allow(clippy::cast_possible_truncation)] // the low byte, as stored
+        mem.write(rec + 0x18, chr as u8);
+        mem.write(rec + 9, 1u8);
+        j
+    }
+
+    /// `op_et_battle_target_center_0081b300(out)` (`0x0081b300`): the mean
+    /// position of the battle's targets: `MsGetBattleList(0x10, frame)`
+    /// (through `call`; the count it leaves at `frame`), and per listed
+    /// character (signed byte index into `g_EtChrHandles`) `out` reset from
+    /// the emulated `r0` and, with a handle, `Ch_GetPos(h, out, out + 4,
+    /// out + 8)`; the three sums (`f32`, from 0) over every listed one,
+    /// divided by their number (so a NaN for none). `out.w` is the last
+    /// reset's.
+    pub fn op_et_battle_target_center<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, div, load, store};
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let list = call(mem, at(mem, 0x007b_6c50), &[0x10, frame]);
+        let count = mem.read::<u32>(frame).cast_signed();
+        let zero = 0.0f32.to_bits();
+        let (mut sx, mut sy, mut sz) = (zero, zero, zero);
+        let mut n = 0i32;
+        let get_pos = at(mem, 0x0082_ac90);
+        for k in 0..count.max(0).cast_unsigned() {
+            let c = i32::from(mem.read::<u8>(list.wrapping_add(k)).cast_signed());
+            let r0: [u32; 4] = mem.read(at(mem, 0x00c8_f508));
+            mem.write(out, r0);
+            let slot = CHR_HANDLES.ptr(mem).addr.wrapping_add_signed(4 * c);
+            let h: u32 = mem.read(slot);
+            if h != 0 {
+                call(mem, get_pos, &[h, out, out + 4, out + 8]);
+            }
+            let p: [u32; 3] = mem.read(out);
+            sx = store(add(load(p[0]), load(sx)));
+            n += 1;
+            sy = store(add(load(sy), load(p[1])));
+            sz = store(add(load(p[2]), load(sz)));
+        }
+        #[allow(clippy::cast_precision_loss)] // as fild then fstp: rounded to f32
+        let nf = store(f64::from(n));
+        mem.write(out, store(div(load(sx), load(nf))));
+        mem.write(out + 4, store(div(load(sy), load(nf))));
+        mem.write(out + 8, store(div(load(sz), load(nf))));
+    }
+
+    /// `op_et_battle_effect_init()` (`0x007fb1e0`): a debug line, the byte
+    /// at `0x011a0082` set (so `op_ovl_effect_free` keeps the separation
+    /// effects), `op_ovl_effect_free`, and byte `+0x3a` of the battle's opus
+    /// list cleared when there is one. Callees through `call`. Returns the
+    /// list (the original's eax).
+    pub fn op_et_battle_effect_init<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let (print, msg) = (at(mem, 0x0062_f500), at(mem, 0x00b5_8430));
+        call(mem, print, &[msg]);
+        mem.write(at(mem, 0x011a_0082), 1u8);
+        let free = at(mem, 0x007f_cd60);
+        call(mem, free, &[]);
+        let list = OPUS_BATTLE.get(mem);
+        if list != 0 {
+            mem.write(list + 0x3a, 0u8);
+        }
+        list
+    }
+
+    /// `op_et_monster_free(h)` (`0x007fc650`): the character record of `h`
+    /// (index -1 without one, the record before the table) loses its bound
+    /// effects (`op_et_bindeff_off`, `op_et_bindeff2_off`,
+    /// `op_et_astatus_effect_off`, each on its `+0`) and its mdc transfer
+    /// cue (`op_mdc_mem_transfer_cue_free(h)`). Unless more than two records
+    /// share its character number (`op_et_chr_count_same_no_007feb20`), a
+    /// monster oef2 at `+8` known to `opus_get_monster_index` has its
+    /// separation effects freed (`op_oef2_sep_free_all(0x10000 << k)`, `k`
+    /// its slot among the 16 words at `[0x00c88a90] + 0x60`, 0 without
+    /// one), its units freed (`opu_unit_free_by_oef2(g_OpusBattle,
+    /// g_OpusMonsters[m])`), the monster slot and its flag cleared and
+    /// `opus_mdc_free(oef, h, [p + 0xa8], u16 [p] == 1)`. Then the record is
+    /// reset (`op_et_chr_reset_007feec0(index)`). Callees through `call`.
+    pub fn op_et_monster_free<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let index = if h == 0 {
+            None
+        } else {
+            (0..CHRS).find(|&i| mem.read::<u32>(CHR.ptr(mem).at(i).addr) == h)
+        }
+        .unwrap_or(u32::MAX);
+        let rec = CHR.ptr(mem).at(index).addr;
+        for f in [0x007f_bb90, 0x007f_b6d0, 0x007f_b000] {
+            let (f, word) = (at(mem, f), mem.read::<u32>(rec));
+            call(mem, f, &[word]);
+        }
+        let cue_free = at(mem, 0x0080_3730);
+        call(mem, cue_free, &[h]);
+        let (count, word) = (at(mem, 0x007f_eb20), mem.read::<u32>(rec));
+        let same = call(mem, count, &[word]);
+        let oef: u32 = mem.read(rec.wrapping_add(8));
+        if same.cast_signed() <= 2 && oef != 0 {
+            let index_of = at(mem, 0x0080_0e80);
+            let slot_m = call(mem, index_of, &[oef]);
+            if slot_m.cast_signed() >= 0 {
+                let oef: u32 = mem.read(rec.wrapping_add(8));
+                let pp: u32 = mem.read(at(mem, 0x00c8_8a90));
+                let kk = if oef == 0 {
+                    0xff
+                } else {
+                    (0..16u32)
+                        .find(|&kk| mem.read::<u32>(pp.wrapping_add(0x60 + 4 * kk)) == oef)
+                        .unwrap_or(0xff)
+                };
+                let mask = if kk < 16 { 0x1_0000u32 << kk } else { 0 };
+                let sep_free = at(mem, 0x007f_ff30);
+                call(mem, sep_free, &[mask]);
+                let slot = at(mem, 0x0119_fed0).wrapping_add(4 * slot_m);
+                let (list, unit) = (OPUS_BATTLE.get(mem), mem.read::<u32>(slot));
+                let free = at(mem, 0x007f_df70);
+                call(mem, free, &[list, unit]);
+                mem.write(slot, 0u32);
+                mem.write(at(mem, 0x0119_fef0).wrapping_add(slot_m), 0u8);
+                let second = u32::from(mem.read::<u16>(pp) == 1);
+                let heap: u32 = mem.read(pp.wrapping_add(0xa8));
+                let oef: u32 = mem.read(rec.wrapping_add(8));
+                let mdc_free = at(mem, 0x0080_61a0);
+                call(mem, mdc_free, &[oef, h, heap, second]);
+            }
+        }
+        let reset = at(mem, 0x007f_eec0);
+        call(mem, reset, &[index]);
     }
 }

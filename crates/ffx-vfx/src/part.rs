@@ -195,6 +195,58 @@ pub mod bridge {
         OT_DRAWING.set(mem, 0);
     }
 
+    /// `pppSetPartMatrix(camera, screen)` (`0x00762550`):
+    /// `g_pppCameraMatrix` and `g_pppScreenMatrix` copied from the two
+    /// matrices (`FFXVu0CopyMatrix`); returns the second copy's eax.
+    pub fn ppp_set_part_matrix(mem: &mut impl Mem, camera: u32, screen: u32) -> u32 {
+        use ffx_ps2::vu0::bridge as vu0;
+        let cam = CAMERA_MATRIX.ptr(mem).addr;
+        vu0::matrix_copy(mem, cam, camera);
+        let scr = SCREEN_MATRIX.ptr(mem).addr;
+        vu0::matrix_copy(mem, scr, screen)
+    }
+
+    /// `pppOtFunc_InitEnv(list)` (`0x00716b70`): an empty OT list: both
+    /// links (`+4`, then `+0`) `set_ptr32(list)` (through `call`), the
+    /// count `+0xc` 0. Returns 0.
+    pub fn ppp_ot_func_init_env<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let set = Global::<u32>::new(0x00a4_4700).ptr(mem).addr;
+        let p = call(mem, set, &[list]);
+        mem.write(list.wrapping_add(4), p);
+        let p = call(mem, set, &[list]);
+        mem.write(list, p);
+        mem.write(list.wrapping_add(0xc), 0u32);
+        0
+    }
+
+    /// `pppGetPartMatrix(camera, screen)` (`0x00761c40`): the camera and
+    /// screen matrices into the two buffers: with the word at
+    /// `0x00d4b7f8` = 1 (the battle's) `MsCopyScreenMatrix(screen)` and
+    /// `MsCopyCameraMatrix(camera)` (through `call`), else copies of
+    /// `g_pppCameraMatrix` and `g_pppScreenMatrix` (`FFXVu0CopyMatrix`).
+    /// Returns the last callee's eax.
+    pub fn ppp_get_part_matrix<M: Mem>(
+        mem: &mut M,
+        camera: u32,
+        screen: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_ps2::vu0::bridge as vu0;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if mem.read::<u32>(g(mem, 0x00d4_b7f8)) == 1 {
+            call(mem, g(mem, 0x007b_ba50), &[screen]);
+            return call(mem, g(mem, 0x007c_0070), &[camera]);
+        }
+        let cam = CAMERA_MATRIX.ptr(mem).addr;
+        vu0::matrix_copy(mem, camera, cam);
+        let scr = SCREEN_MATRIX.ptr(mem).addr;
+        vu0::matrix_copy(mem, screen, scr)
+    }
+
     /// `pppOtFunc_Lev(list, node)` (`0x00716ba0`): `node` unlinked (its
     /// neighbours, through `get_ptr32`, linked to each other) and the
     /// list's count (`+0xc`) one less.
@@ -1316,5 +1368,115 @@ pub mod bridge {
         }
         let c = mem.read::<u16>(countdown).wrapping_sub(1);
         mem.write(countdown, c);
+    }
+
+    /// `ppp_screen_to_world_007626d0(out, p)` (`0x007626d0`): the screen
+    /// point `p` back through `g_pppScreenMatrix` (`0x0230fe60`): `s = m[3][2]
+    /// / (p.z - m[2][2])` (rounded to `f32`), view `(p.x / m[0][0] * s,
+    /// p.y / m[1][1] * s, s, 1)` at `frame + 0x40`, `FFXVu0InversMatrix(frame,
+    /// g_pppCameraMatrix)` into the 0x40 bytes at `frame`, then
+    /// `FFXVu0ApplyMatrix(out, frame, frame + 0x40)`; callees through `call`.
+    /// `frame` stands for the original's locals (0x50 bytes).
+    pub fn ppp_screen_to_world<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        p: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{div, load, mul, store, sub};
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let screen = g(mem, 0x0230_fe60);
+        let m = |mem: &M, at: u32| load(mem.read::<u32>(screen + at));
+        let pv: [u32; 3] = mem.read(p);
+        let s = store(div(m(mem, 0x38), sub(load(pv[2]), m(mem, 0x28))));
+        let x = store(mul(div(load(pv[0]), m(mem, 0)), load(s)));
+        let y = store(mul(div(load(pv[1]), m(mem, 0x14)), load(s)));
+        let view = frame.wrapping_add(0x40);
+        mem.write(view, [x, y, s, 1.0f32.to_bits()]);
+        let camera = g(mem, 0x0230_ff60);
+        call(mem, g(mem, 0x006e_d450), &[frame, camera]);
+        call(mem, g(mem, 0x006e_d2e0), &[out, frame, view]);
+    }
+
+    /// `0x0074a760(rot, pos, r)` and its copies `0x0074ad80`, `0x0074b540`:
+    /// `r` = (object index, offset) into [`CURRENT_PART`]'s objects (`+0x3c`,
+    /// 16-byte records, `+4` the data through `get_ptr32_func`); index -1
+    /// gives `rot` (0, 0, _, 1) and `pos` (0, 0, _, _). Else, with `d` the
+    /// data plus the offset, `rot` = the three floats at `ptr32(d + 0xac)`
+    /// and the one at `d + 0xa8`, `pos` = the four `i16` at `ptr32(d +
+    /// 0xb0)` times the `f64` at `0x00b51550` (each rounded to `f32`).
+    /// Returns the original's eax: `pos` for index -1, else the fourth
+    /// `i16` sign-extended.
+    pub fn ppp_obj_rot_pos(mem: &mut impl Mem, rot: u32, pos: u32, r: u32) -> u32 {
+        use ffx_bridge::x87::{load, mul, store};
+        let id: u32 = mem.read(r);
+        if id == u32::MAX {
+            mem.write(rot + 0xc, 1.0f32.to_bits());
+            mem.write(rot, 0u32);
+            mem.write(rot + 4, 0u32);
+            mem.write(pos, 0u32);
+            mem.write(pos + 4, 0u32);
+            return pos;
+        }
+        let part = CURRENT_PART.get(mem);
+        let objs: u32 = mem.read(part.wrapping_add(0x3c));
+        let base = ptr32(mem.read(objs.wrapping_add(id.wrapping_mul(16)).wrapping_add(4)));
+        let off: u32 = mem.read(r + 4);
+        let d = off.wrapping_add(base);
+        let p = ptr32(mem.read(d.wrapping_add(0xac)));
+        let q = ptr32(mem.read(d.wrapping_add(0xb0)));
+        for i in 0..3u32 {
+            let v: u32 = mem.read(p.wrapping_add(4 * i));
+            mem.write(rot + 4 * i, store(load(v)));
+        }
+        let w: u32 = mem.read(d.wrapping_add(0xa8));
+        mem.write(rot + 0xc, store(load(w)));
+        let k: f64 = mem.read(Global::<u32>::new(0x00b5_1550).ptr(mem).addr);
+        let mut last = 0i16;
+        for i in 0..4u32 {
+            last = mem.read(q.wrapping_add(2 * i));
+            #[allow(clippy::cast_precision_loss)] // an i16: exact
+            let f = f32::from(last);
+            mem.write(pos + 4 * i, store(mul(f64::from(f), k)));
+        }
+        i32::from(last).cast_unsigned()
+    }
+
+    /// `hideDisplayOffParticle(part)` (`0x00728e40`): for each of the
+    /// part's objects (`+0x18` of them, signed; `+0x3c` the 16-byte records,
+    /// read again each turn) whose data `+4` is set: `a` = that data, `c` =
+    /// `ptr32(ptr32(a + 8))` (`get_ptr32_func`, the identity on PC), and
+    /// each of `c`'s `i16 +0x26` entries (16 bytes from `+0x28`) holding a
+    /// pointer gets `graphicVFXSetVisible(k, a, 0)` (a 64-bit id `a:k`;
+    /// through `call`).
+    pub fn hide_display_off_particle<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let set_visible = Global::<u32>::new(0x0064_5710).ptr(mem).addr;
+        let mut i = 0u32;
+        while i.cast_signed() < mem.read::<u32>(part.wrapping_add(0x18)).cast_signed() {
+            let objs: u32 = mem.read(part.wrapping_add(0x3c));
+            let rec = objs.wrapping_add(0x10 * i);
+            if objs != 0 && rec != 0 {
+                let data: u32 = mem.read(rec.wrapping_add(4));
+                if is_ptr32_null(data) == 0 {
+                    let a = ptr32(data);
+                    let b = ptr32(mem.read(a.wrapping_add(8)));
+                    let c = ptr32(mem.read(b));
+                    let mut k = 0u32;
+                    while k.cast_signed() < i32::from(mem.read::<i16>(c.wrapping_add(0x26))) {
+                        let e = ptr32(mem.read(c.wrapping_add(0x28 + 0x10 * k)));
+                        if e != 0 {
+                            call(mem, set_visible, &[k, a, 0]);
+                        }
+                        k += 1;
+                    }
+                }
+            }
+            i += 1;
+        }
     }
 }
