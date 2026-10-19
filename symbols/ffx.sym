@@ -10974,6 +10974,7 @@
 0x008eb120 function TOAddPktMenuHelpWindow    # fh switch:cg2 0x71008bc398
 0x008eb240 function TOAddPktMenuIcon          # fh v3:bsim1.00 0x008eb240
 0x008eb270 function TOAddPktMenuIconRGBA      # fh v3:exact 0x008eb270
+0x008eba80 function TOAddPktChrNameIcon_008eba80 # cdecl(cursor, chr, x, y, colour) -> cursor: g_TOPktCursor = cursor, TOAddPktMenuIcon(cursor, x+3, y+1, 0x13), TOAddPktMesFont1612Grey_008ea000(.., TOGetSaveChrName(chr), x+0x16, y, colour), each result back in g_TOPktCursor; callers 0x008c0ec0, 0x008dd190; ported (system round 36); name ours
 0x008ec2f0 function TOAdpCrossEasyStrFontSClutRGBA # fh v3:exact 0x008ec2f0
 0x008ec720 function TOAdpCrossFontM_FFX          # layout+callees: sorts between TOAdpCrossEasyStrFontSClutRGBA and TOAdpCrossFontS_ASCII, and its named callees match the Switch 0x7100513980 TOAdpCrossFontM_FFX's (similarity 1.00: BeginScissor_XYUV, TOGetImageWH, TOGetTextureName, graphicFontDraw); symbols from Fahrenheit's server export
 0x008eca90 function TOAdpCrossFontS_ASCII        # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100515dd0 TOAdpCrossFontS_ASCII, 2 votes, round 1

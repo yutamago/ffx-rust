@@ -12261,6 +12261,36 @@ pub mod bridge {
         }
     }
 
+    /// `TOAddPktChrNameIcon_008eba80(cursor, chr, x, y, colour)` (own
+    /// name): the packet cursor (`g_TOPktCursor`, `0x018716cc`) set to
+    /// `cursor`, then menu icon 0x13 at (`x + 3`, `y + 1`)
+    /// (`TOAddPktMenuIcon`) and the character's name
+    /// (`TOGetSaveChrName(chr)`, read first) in grey at (`x + 0x16`, `y`)
+    /// (`0x008ea000`, colour passed on), each result stored back as the
+    /// cursor. Returns the final cursor. Callees through `call`.
+    pub fn add_pkt_chr_name_icon<M: Mem>(
+        mem: &mut M,
+        [cursor, chr, x, y, colour]: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let pkt_cursor = mem.rebase(0x0187_16cc);
+        let name = call(mem, 0x008a_c850, &[chr]);
+        mem.write(pkt_cursor, cursor);
+        let p = call(
+            mem,
+            0x008e_b240,
+            &[cursor, x.wrapping_add(3), y.wrapping_add(1), 0x13],
+        );
+        mem.write(pkt_cursor, p);
+        let p = call(
+            mem,
+            0x008e_a000,
+            &[p, name, x.wrapping_add(0x16), y, colour],
+        );
+        mem.write(pkt_cursor, p);
+        p
+    }
+
     /// The pen the 16x12 message writers draw with (`0x025d09a0`): the
     /// colour bytes `+0..+3`, x `+4`, y `+8` (f32), `+0xc..+0x18` cleared,
     /// the shadow/edge kind `+0x1a`, the colour nibbles `+0x1b`.

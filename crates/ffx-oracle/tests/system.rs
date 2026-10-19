@@ -20460,3 +20460,74 @@ fn round36_zbuf_clear_matches_the_original_on_the_snapshot() {
     };
     round36_zbuf_clear(&mut a, &mut b, &mut Xorshift(0x4036_0012));
 }
+
+/// Round 36 group B: `TOAddPktChrNameIcon_008eba80`, its name lookup,
+/// icon and grey writer logging stand-ins returning test words.
+fn round36_chr_name_icon(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0xc);
+    let pkt = a.rebase(0x0187_16cc);
+    // the writers also log the packet cursor they find
+    let with_pkt = |ret: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&pkt.to_le_bytes());
+        v.extend_from_slice(&[0x8b, 0x0d]);
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.extend_from_slice(&[0x89, 0x01, 0x83, 0x05]);
+        v.extend_from_slice(&cursor.to_le_bytes());
+        v.push(4);
+        v.extend_from_slice(&ret_cell(ret));
+        v
+    };
+    let stands: Vec<Stand> = vec![
+        (0x008a_c850, vec![0], vec![], ret_cell(cells)),
+        (0x008e_b240, vec![0, 1, 2, 3], vec![], with_pkt(cells + 4)),
+        (
+            0x008e_a000,
+            vec![0, 1, 2, 3, 4],
+            vec![],
+            with_pkt(cells + 8),
+        ),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let stand = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), stand);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..200u32 {
+        put(a, b, cursor, log);
+        for j in 0..3 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        put(a, b, pkt, rng.next());
+        let args = [rng.next(), rng.next(), rng.next(), rng.next(), rng.next()];
+        assert_eq!(
+            eax(a, 0x008e_ba80, &args),
+            tolib::bridge::add_pkt_chr_name_icon(b, args, call),
+            "name icon {k}"
+        );
+        same_memory(&format!("name icon {k}"), a, b);
+    }
+}
+
+#[test]
+fn round36_chr_name_icon_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round36_chr_name_icon(&mut a, &mut b, &mut Xorshift(0x4036_0021));
+}
+
+#[test]
+fn round36_chr_name_icon_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round36_chr_name_icon(&mut a, &mut b, &mut Xorshift(0x4036_0022));
+}

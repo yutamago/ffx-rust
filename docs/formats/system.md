@@ -1563,3 +1563,7 @@ pushed as literals (no relocation entries), not addresses.
   1, 2, 1, 3, 2, corners (-1, -1), (1, -1), (-1, 1), (1, 1), then
   `graphicVFXSetVisible(lo, hi, 1)`. Returns 1, or 0 without render data
   or buffer. Every pointer is read again before each store.
+- `TOAddPktChrNameIcon_008eba80(cursor, chr, x, y, colour)` writes menu
+  icon 0x13 at (`x + 3`, `y + 1`) and the character's name in grey at
+  (`x + 0x16`, `y`), keeping `g_TOPktCursor` up to date after each; it
+  returns the final cursor.

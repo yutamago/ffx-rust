@@ -1493,6 +1493,10 @@ ported! {
     updateVFXZBufClearRenderData @ 0x0071_e330 => extern "C" fn update_vfx_zbuf_clear_render_data(lo: u32, hi: u32, z: f32) -> u32 {
         render::bridge::update_vfx_zbuf_clear_render_data(&mut mem(), lo, hi, z, call_sym)
     }
+    /// `TOAddPktChrNameIcon_008eba80(cursor, chr, x, y, colour)`.
+    TOAddPktChrNameIcon_008eba80 @ 0x008e_ba80 => extern "C" fn to_add_pkt_chr_name_icon(cursor: u32, chr: u32, x: u32, y: u32, colour: u32) -> u32 {
+        tolib::bridge::add_pkt_chr_name_icon(&mut mem(), [cursor, chr, x, y, colour], call_sym)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {
