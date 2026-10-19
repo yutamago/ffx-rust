@@ -1268,6 +1268,81 @@ pub mod bridge {
         eax
     }
 
+    /// `MsCopyCameraMatrix(out)`, `MsCopyScreenMatrix(out)`,
+    /// `FFXVu0CopyMatrix(dst, src)`, `FFXVu0InversMatrix(out, m)`,
+    /// `rcefTaskCtrlProc(ctrl)`, `MsEffectTerminate(id)`,
+    /// `rcefColorUpdate(e)`, `rcefScreenShake(e)` and `rcefBlurUpdate(e)`:
+    /// [`rcef_main_proc_run_after`]'s calls.
+    pub const RUN_AFTER_CALLS: [u32; 9] = [
+        0x007c_0070,
+        0x007b_ba50,
+        0x006e_d360,
+        0x006e_d450,
+        0x0093_0300,
+        0x0078_8920,
+        0x0092_4c70,
+        0x0092_4df0,
+        0x0092_4bf0,
+    ];
+    /// `g_pppScreenMatrix` and `g_PppPacketPos`.
+    pub const PPP_SCREEN_MATRIX: u32 = 0x0230_fe60;
+    /// See [`PPP_SCREEN_MATRIX`].
+    pub const PPP_PACKET_POS: u32 = 0x0230_fd2c;
+
+    /// `rcefMainProcRunAfter(e)` (`0x00925440`, the effect main object's
+    /// per-frame step): the ppp environment slot gets `e +0x10`, the ppp
+    /// camera and screen matrices are copied from the game's
+    /// (`MsCopyCameraMatrix`, `MsCopyScreenMatrix`), the effect base
+    /// matrix ([`super::RCEF_BASE_MATRIX`]) is the inverse of the camera's
+    /// rotation (its translation zeroed first), the packet position
+    /// `g_PppPacketPos` is `e +0xc`; the task controller (`+0x1c`) runs and,
+    /// once it ends, `MsEffectTerminate(e +4)`; then without `+0x1f4` the
+    /// colour fade ([`rcef_color_update`]), the screen shake and the blur,
+    /// and `+0x22c` counts the frame. Returns the blur's `eax`.
+    pub fn rcef_main_proc_run_after<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        e: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [
+            camera_copy,
+            screen_copy,
+            copy,
+            invert,
+            ctrl_proc,
+            terminate,
+            colour,
+            shake,
+            blur,
+        ] = RUN_AFTER_CALLS.map(|f| mem.rebase(f));
+        let slot = super::main::ENV_SLOT.get(mem);
+        let env = mem.read::<u32>(e.wrapping_add(0x10));
+        mem.write(slot, env);
+        let camera = mem.rebase(super::PPP_CAMERA_MATRIX);
+        call(mem, camera_copy, &[camera]);
+        call(mem, screen_copy, &[mem.rebase(PPP_SCREEN_MATRIX)]);
+        let base = mem.rebase(super::RCEF_BASE_MATRIX);
+        call(mem, copy, &[base, camera]);
+        mem.write(base + 0x30, [0u32; 3]);
+        call(mem, invert, &[base, base]);
+        let pos = mem.read::<u32>(e.wrapping_add(0xc));
+        mem.write(mem.rebase(PPP_PACKET_POS), pos);
+        let ctrl = e.wrapping_add(0x1c);
+        call(mem, ctrl_proc, &[ctrl]);
+        if rcef_task_ctrl_is_end(mem, ctrl) {
+            let id = mem.read::<u32>(e.wrapping_add(4));
+            call(mem, terminate, &[id]);
+        }
+        if mem.read::<u32>(e.wrapping_add(0x1f4)) == 0 {
+            call(mem, colour, &[e]);
+        }
+        call(mem, shake, &[e]);
+        let eax = call(mem, blur, &[e]);
+        let frames = e.wrapping_add(0x22c);
+        mem.write(frames, mem.read::<u32>(frames).wrapping_add(1));
+        eax
+    }
+
     // ---- round 26 ----
 
     /// `rcefScreenShake(e)` (`0x00924df0`, from `rcefMainProcRunAfter`;

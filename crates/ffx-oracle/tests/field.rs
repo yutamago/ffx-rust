@@ -18801,3 +18801,87 @@ fn r13m_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_d102);
     r13m_cases(&mut t, &mut rng, 200);
 }
+
+// ---- field agent r13, group N: the effect main object's frame ----
+
+/// Group N (r13) on `t`: `rcefMainProcRunAfter` with the task controller
+/// ending or not, the colour fade on or off; the camera copy fills the
+/// ppp camera matrix from a buffer, the other steps are logged
+/// stand-ins, the matrix copy and inverse run as the originals.
+fn r13n_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::task::{self, bridge as tb};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, cam) = (t.alloc(4 + 0x20 * 16), t.alloc(4), t.alloc(0x40));
+    let [
+        camera_copy,
+        screen_copy,
+        _,
+        _,
+        ctrl_proc,
+        terminate,
+        colour,
+        shake,
+        blur,
+    ] = tb::RUN_AFTER_CALLS;
+    t.cave(&[
+        (Some(camera_copy), r13i_matrix_stub_from(cam)),
+        (Some(screen_copy), log_stub(log, rv, 2, 1)),
+        (Some(ctrl_proc), log_stub(log, rv, 3, 1)),
+        (Some(terminate), log_stub(log, rv, 4, 1)),
+        (Some(colour), log_stub(log, rv, 5, 1)),
+        (Some(shake), log_stub(log, rv, 6, 1)),
+        (Some(blur), log_stub(log, rv, 7, 1)),
+    ]);
+    let (e, slot) = (t.alloc(0x240), t.alloc(4));
+    t.put(t.b.rebase(0x00c3_a4cc), slot);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        for w in 0..16 {
+            t.put(cam + 4 * w, float_in(rng, -50, 50));
+        }
+        t.fill(e, 0x240, rng);
+        let ctrl = e + 0x1c;
+        if rng.below(2) == 0 {
+            // an empty controller: its head's next is its tail
+            let tail = ctrl + task::ctrl::TAIL;
+            t.put(ctrl + task::ctrl::HEAD + task::header::NEXT, tail);
+        }
+        t.put(e + 0x1f4, rng.below(2));
+        t.same(
+            "rcefMainProcRunAfter",
+            |o| o.eax(0x0092_5440, &[e]),
+            |m| tb::rcef_main_proc_run_after(m, e, call),
+        );
+    }
+}
+
+/// A stand-in that copies the 16 words at `src` to its first argument.
+fn r13i_matrix_stub_from(src: u32) -> Vec<u8> {
+    // push esi; push edi; mov edi, [esp + 0xc]; mov esi, src; mov ecx, 16;
+    // rep movsd; pop edi; pop esi; mov eax, 0x66; ret
+    let mut c = vec![0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0xbe];
+    c.extend_from_slice(&src.to_le_bytes());
+    c.extend_from_slice(&[
+        0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xb8, 0x66, 0, 0, 0, 0xc3,
+    ]);
+    c
+}
+
+/// Group N (r13) on the image.
+#[test]
+fn r13n_main_proc_run_after_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_e101);
+    r13n_cases(&mut t, &mut rng, 300);
+}
+
+/// Group N (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13n_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_e102);
+    r13n_cases(&mut t, &mut rng, 150);
+}

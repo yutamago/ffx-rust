@@ -2574,6 +2574,10 @@ ported! {
     rcefGetChrMatrixOpt @ 0x0092_e270 => extern "C" fn shim_rcef_get_chr_matrix_opt(i: u32, n: u32, out: u32) {
         task::bridge::rcef_get_chr_matrix_opt(&mut mem(), i, n, out, &mut |_, f, a| call_cdecl(f, a));
     }
+    /// `rcefMainProcRunAfter(e)`.
+    rcefMainProcRunAfter @ 0x0092_5440 => extern "C" fn shim_rcef_main_proc_run_after(e: u32) -> u32 {
+        task::bridge::rcef_main_proc_run_after(&mut mem(), e, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcefColorUpdate(w)`: the colour in a frame.
     rcefColorUpdate @ 0x0092_4c70 => extern "C" fn shim_rcef_color_update(w: u32) -> u32 {
         let mut f = super::StackFrame::<4>::new();
