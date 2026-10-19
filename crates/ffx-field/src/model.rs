@@ -245,6 +245,9 @@ pub const SPRING_FUNCTIONS: [u32; 3] = [0x0092_8c60, 0x0092_8d70, 0x0092_8aa0];
 pub const SPRING_STIFFNESS: u32 = 0x00b3_4254;
 /// A new spring's damping, 0.4 (`.rdata`, `0x00b10f3c`).
 pub const SPRING_DAMPING: u32 = 0x00b1_0f3c;
+/// 1000.0 (`f64`, `.rdata`): `rcfxSpringCalc` divides the rest length
+/// by it for the shortest length.
+pub const SPRING_REST_SCALE: u32 = 0x00b0_dba0;
 /// The debug gravity's z, -0.1 (`.rdata`, `0x00b59644`).
 pub const GRAVITY_Z: u32 = 0x00b5_9644;
 /// `rcbgSetReg(record)` (`0x00920450`), a `ret` in this build.
@@ -2746,6 +2749,77 @@ pub mod bridge {
             s,
             &[(0x20, n.wrapping_mul(8)), (0x24, n.wrapping_mul(4))],
         );
+    }
+
+    /// `rcfxSpringCalc(s, sys)` (`0x00928aa0`, the spring's `+0x14`
+    /// callback): for each of the `+0x1c` springs, the pair `(a, b)`
+    /// (`+0x20`, two `i32` particle indices) of the particle system's
+    /// positions (`sys +0x24`), velocities (`+0x2c`) and forces (`+0x30`,
+    /// 16 bytes a particle). With `d = pos[b] - pos[a]` (stored as `f32`s)
+    /// and `l` its length, at least the spring's rest length (`+0x24`
+    /// table) / 1000, the force is `d / l * (l - rest) * k` (`+0x28`) plus
+    /// `(vel[b] - vel[a]) * c` (`+0x2c`), added to `a` and taken from `b`.
+    /// The x87 order: `1 / l` and `(l - rest) * k` stored, `d * (1 / l) *
+    /// that` stored, the damped sum stored, each force word read and
+    /// written in turn (`a`'s x, y, z, then `b`'s). Returns the `eax` it
+    /// ends with: the force array, or the rest length table when there
+    /// are no springs.
+    pub fn rcfx_spring_calc(mem: &mut impl Mem, s: u32, sys: u32) -> u32 {
+        use crate::x87;
+        fn ld(mem: &impl Mem, at: u32) -> f64 {
+            x87::load(mem.read::<u32>(at))
+        }
+        let forces = mem.read::<u32>(sys.wrapping_add(0x30));
+        let pos = mem.read::<u32>(sys.wrapping_add(0x24));
+        let vel = mem.read::<u32>(sys.wrapping_add(0x2c));
+        let count = mem.read::<i32>(s.wrapping_add(0x1c));
+        let pairs = ptr32(mem.read::<u32>(s.wrapping_add(0x20)));
+        let rests = ptr32(mem.read::<u32>(s.wrapping_add(0x24)));
+        let k = x87::load(x87::copy(mem.read::<u32>(s.wrapping_add(0x28))));
+        let c = x87::load(x87::copy(mem.read::<u32>(s.wrapping_add(0x2c))));
+        if count <= 0 {
+            return rests;
+        }
+        let mut i = 0u32;
+        while i.cast_signed() < count {
+            let pair = pairs.wrapping_add(i.wrapping_mul(8));
+            let a = mem.read::<u32>(pair).wrapping_mul(0x10);
+            let b = mem.read::<u32>(pair.wrapping_add(4)).wrapping_mul(0x10);
+            let mut d = [0u32; 3];
+            for (j, w) in (0u32..).zip(&mut d) {
+                let at = 4 * j;
+                *w = x87::store(
+                    ld(mem, pos.wrapping_add(b + at)) - ld(mem, pos.wrapping_add(a + at)),
+                );
+            }
+            let len = f32::from_bits(crate::geom::length3(d));
+            let rests = ptr32(mem.read::<u32>(s.wrapping_add(0x24)));
+            let rest = ld(mem, rests.wrapping_add(4 * i));
+            let shortest = f32::from_bits(x87::store(
+                rest / mem.read::<f64>(mem.rebase(super::SPRING_REST_SCALE)),
+            ));
+            // fcom: the shortest only when above the length (not NaN)
+            let l = f64::from(if shortest > len { shortest } else { len });
+            let inv = x87::load(x87::store(1.0 / l));
+            let stretch = x87::load(x87::store((l - rest) * k));
+            let pull = d.map(|w| x87::load(x87::store(x87::load(w) * inv * stretch)));
+            let mut f = [0u32; 3];
+            for ((j, w), pull) in (0u32..).zip(&mut f).zip(pull) {
+                let at = 4 * j;
+                let dv = ld(mem, vel.wrapping_add(b + at)) - ld(mem, vel.wrapping_add(a + at));
+                *w = x87::store(dv * c + pull);
+            }
+            for (j, w) in (0u32..).zip(f) {
+                let at = forces.wrapping_add(a + 4 * j);
+                mem.write(at, x87::store(ld(mem, at) + x87::load(w)));
+            }
+            for (j, w) in (0u32..).zip(f) {
+                let at = forces.wrapping_add(b + 4 * j);
+                mem.write(at, x87::store(ld(mem, at) - x87::load(w)));
+            }
+            i += 1;
+        }
+        forces
     }
 
     /// `rcfxNailFini(nail)` (`0x00929090`): its four buffers

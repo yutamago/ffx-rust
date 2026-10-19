@@ -11929,7 +11929,7 @@
 0x009289b0 function rcfxParticleClearForces      # (p): 16 bytes per particle (+0x2c array, +0x1c count) zeroed; rcfxParticleResetForce
 0x009289f0 function rcfxParticleSetCnt        # fh switch:bsim1.00 0x710054f3f0
 0x00928a60 function rcfxParticleSetTime       # fh switch:bsim1.00 0x710054f8b0
-0x00928aa0 function rcfxSpringCalc               # layout+callees: sorts between rcfxParticleSetTime and rcfxSpringFini, and its named callees match the Switch 0x710054faf0 rcfxSpringCalc's (similarity 1.00: rcVec3fLength); symbols from Fahrenheit's server export
+0x00928aa0 function rcfxSpringCalc               # layout+callees: sorts between rcfxParticleSetTime and rcfxSpringFini, and its named callees match the Switch 0x710054faf0 rcfxSpringCalc's (similarity 1.00: rcVec3fLength); symbols from Fahrenheit's server export; (s, sys): per spring pair (a, b) of +0x20: d = pos[b]-pos[a] (sys+0x24), l = max(|d|, rest/1000) (rest +0x24 table), force d/l (l-rest) k (+0x28) + (vel[b]-vel[a]) c (+0x2c, vel sys+0x2c) added to sys+0x30 [a], taken from [b]; eax the force array (the rest table with no springs); ported (field r13, ffx_field::model)
 0x00928c60 function rcfxSpringDelete          # (spring): rcfxSpringFini, then rcFree; name ours
 0x00928c80 function rcfxSpringFini            # fh switch:bsim0.91 0x710054fa80
 0x00928ce0 function rcfxSpringInit            # (s): kind 0x30005, functions 0x00928c60/0x00928d70/0x00928aa0, 0.8 and 0.4

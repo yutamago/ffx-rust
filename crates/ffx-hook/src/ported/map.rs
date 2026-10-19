@@ -3976,6 +3976,10 @@ ported! {
     rcfxNailUpdate @ 0x0092_9190 => extern "C" fn shim_rcfx_nail_update(fx: u32, ctx: u32) -> u32 {
         model::bridge::rcfx_nail_update(&mut mem(), fx, ctx)
     }
+    /// `rcfxSpringCalc(s, sys)`.
+    rcfxSpringCalc @ 0x0092_8aa0 => extern "C" fn shim_rcfx_spring_calc(s: u32, sys: u32) -> u32 {
+        model::bridge::rcfx_spring_calc(&mut mem(), s, sys)
+    }
 
     /// `AbmapCheckAchievements()`.
     AbmapCheckAchievements @ 0x00a4_7210 => extern "C" fn shim_abmap_check_achievements() {

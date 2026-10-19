@@ -17738,3 +17738,75 @@ fn r13a_on_a_snapshot_matches_the_original() {
     }
     r13a_cases(&mut t, &mut rng, g, 300);
 }
+
+// ---- field agent r13, group B: the spring force ----
+
+/// Group B (r13) on `t`: `rcfxSpringCalc` over 0..12 springs between
+/// eight particles (pairs sharing a particle, a particle with itself, and
+/// zero-length springs), rest lengths around the distances and the
+/// shortest-length clamp (rest / 1000) above, at and below the length.
+fn r13b_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let (s, sys) = (t.alloc(0x30), t.alloc(0x40));
+    let (pairs, rests) = (t.alloc(8 * 12), t.alloc(4 * 12));
+    let arrays: Vec<u32> = (0..3).map(|_| t.alloc(0x10 * 8)).collect();
+    for k in 0..cases {
+        let n = match rng.below(5) {
+            0 => rng.range(-2, 0),
+            _ => rng.range(1, 12),
+        };
+        t.put(s + 0x1c, n);
+        t.put(s + 0x20, pairs);
+        t.put(s + 0x24, rests);
+        t.put(s + 0x28, r6b_fine(rng, -1.0, 2.0));
+        t.put(s + 0x2c, r6b_fine(rng, -1.0, 2.0));
+        t.put(sys + 0x24, arrays[0]);
+        t.put(sys + 0x2c, arrays[1]);
+        t.put(sys + 0x30, arrays[2]);
+        for (j, &a) in arrays.iter().enumerate() {
+            for w in 0..32 {
+                let v = if j == 0 && k % 7 == 0 && w % 4 != 3 {
+                    // all particles in one place: zero-length springs
+                    0x4120_0000
+                } else {
+                    float_in(rng, -100, 100)
+                };
+                t.put(a + 4 * w, v);
+            }
+        }
+        for i in 0..12 {
+            let a = rng.below(8);
+            let b = if rng.below(6) == 0 { a } else { rng.below(8) };
+            t.put(pairs + 8 * i, a);
+            t.put(pairs + 8 * i + 4, b);
+            let rest = match rng.below(5) {
+                0 => r6b_fine(rng, 1e5, 4e5),
+                1 => 0,
+                _ => r6b_fine(rng, 0.0, 300.0),
+            };
+            t.put(rests + 4 * i, rest);
+        }
+        t.same(
+            "rcfxSpringCalc",
+            |o| o.eax(0x0092_8aa0, &[s, sys]),
+            |m| ffx_field::model::bridge::rcfx_spring_calc(m, s, sys),
+        );
+    }
+}
+
+/// Group B (r13) on the image.
+#[test]
+fn r13b_spring_calc_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_b001);
+    r13b_cases(&mut t, &mut rng, 800);
+}
+
+/// Group B (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_b002);
+    r13b_cases(&mut t, &mut rng, 300);
+}
