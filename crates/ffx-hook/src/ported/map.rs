@@ -3966,6 +3966,12 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapDrawBar(x0, y0, x1, y1, look)`: the element and paths in a
+    /// frame of the original's size.
+    AbmapDrawBar @ 0x00a4_5e30 => extern "C" fn shim_abmap_draw_bar(x0: u32, y0: u32, x1: u32, y1: u32, look: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::abmap_draw::BAR_WORK as usize / 4 }>::new();
+        ffx_field::abmap_draw::abmap_draw_bar(&mut mem(), [x0, y0, x1, y1, look], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapShowItemTargets(chr, node, item)`: the nearest node's
     /// distance in a frame.
     AbmapShowItemTargets @ 0x00a5_b980 => extern "C" fn shim_abmap_show_item_targets(chr: u32, node: u32, item: u32) -> u32 {

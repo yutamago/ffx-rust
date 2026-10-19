@@ -18885,3 +18885,86 @@ fn r13n_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_e102);
     r13n_cases(&mut t, &mut rng, 150);
 }
+
+// ---- field agent r13, group O: the sphere grid's bar ----
+
+/// A stand-in that copies `words` words from its first argument to `dst`
+/// and returns 0x77 (`graphicDrawUIElement`).
+fn r13o_copy_stub(dst: u32, words: u8) -> Vec<u8> {
+    // push esi; push edi; mov esi, [esp + 0xc]; mov edi, dst; mov ecx, words;
+    // rep movsd; pop edi; pop esi; mov eax, 0x77; ret
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0xbf];
+    c.extend_from_slice(&dst.to_le_bytes());
+    c.extend_from_slice(&[
+        0xb9, words, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xb8, 0x77, 0, 0, 0, 0xc3,
+    ]);
+    c
+}
+
+/// Group O (r13) on `t` over the grid `g`: `AbmapDrawBar` at any corners
+/// (negative too), both looks, layers 0, 2 and others. `sprintf` and
+/// `fiosUnifyFilename` are logged stand-ins (their stack buffers left
+/// out); `graphicDrawUIElement`'s stand-in copies the whole element out.
+fn r13o_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap_draw as ad;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, element) = (t.alloc(4 + 0x20 * 8), t.alloc(4), t.alloc(0x98));
+    let stubs = t.cave(&[
+        (None, log_stub_from(log, rv, 1, 1, 3)),
+        (
+            Some(ad::FIOS_UNIFY_FILENAME),
+            log_stub_from(log, rv, 2, 2, 1),
+        ),
+        (Some(ad::DRAW_UI_ELEMENT), r13o_copy_stub(element, 0x98 / 4)),
+    ]);
+    t.put(t.b.rebase(ad::SPRINTF_SLOT), stubs[0]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(element, 0x98, rng);
+        t.put(
+            g + 0x116a4,
+            [0u32, 2, 1, 3][usize::try_from(rng.below(4)).unwrap()],
+        );
+        t.put(t.b.rebase(ad::PPP_PACKET_POS), rng.next());
+        let a = [
+            rng.range(-600, 600).cast_unsigned(),
+            rng.range(-400, 400).cast_unsigned(),
+            rng.next(),
+            rng.range(-400, 400).cast_unsigned(),
+            rng.below(2) * rng.next(),
+        ];
+        // the element's words the original never sets: both frames zeroed
+        let work = t.stack_scratch(0x100);
+        t.b.write(work, &[0u8; 0x298]).unwrap();
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x3000]).unwrap();
+        t.same(
+            "AbmapDrawBar",
+            |o| o.eax(0x00a4_5e30, &a),
+            |m| ad::abmap_draw_bar(m, a, work, call),
+        );
+    }
+}
+
+/// Group O (r13) on the image.
+#[test]
+fn r13o_draw_bar_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_f101);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13o_cases(&mut t, &mut rng, g, 400);
+}
+
+/// Group O (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13o_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_f102);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13o_cases(&mut t, &mut rng, g, 200);
+}

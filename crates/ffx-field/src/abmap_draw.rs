@@ -977,3 +977,75 @@ where
     let f = reg(mem, MD_DRAW);
     call(mem, f, &[model, request, 8, layer]);
 }
+
+/// The CRT's `sprintf` (import slot `0x00b0c3dc`).
+pub const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+/// `fiosUnifyFilename(path, out, size)` (`0x00679820`).
+pub const FIOS_UNIFY_FILENAME: u32 = 0x0067_9820;
+/// `graphicDrawUIElement(element, texture, a, b, c)` (`0x0063eee0`).
+pub const DRAW_UI_ELEMENT: u32 = 0x0063_eee0;
+/// `g_PppPacketPos`, moved on by each UI element.
+pub const PPP_PACKET_POS: u32 = 0x0230_fd2c;
+/// `"%s/dat00/%s/14080_19.dds.phyre"` and `"%s/dat12/%s/14080_19.dds.phyre"`
+/// (`.rdata`), by the grid's layer (`g_Abmap +0x116a4`, 0 or 2).
+pub const BAR_TEXTURE_FORMATS: [u32; 2] = [0x00b7_b484, 0x00b7_b4a4];
+/// `"/FFX_Data/GameData/PS3Data/menu/abmap"` and `"tex/D3D11"`.
+pub const BAR_TEXTURE_PARTS: [u32; 2] = [0x00b7_b45c, 0x00b7_b450];
+/// The bar's texture corners (`f32`s, `.rdata`): `u0, v0, u1, v1` for the
+/// two looks (the last argument 0 or not).
+pub const BAR_UVS: [[u32; 4]; 2] = [
+    [0x00b7_b644, 0x00b7_b5dc, 0x00b7_b648, 0x00b6_5620],
+    [0x00b7_b64c, 0x00b7_b5dc, 0x00b7_b650, 0x00b7_b5e8],
+];
+/// The bytes of [`abmap_draw_bar`]'s frame: the element (0x98), the
+/// unified path (0x100), the path (0x100).
+pub const BAR_WORK: u32 = 0x298;
+
+/// `AbmapDrawBar(x0, y0, x1, y1, look)` (`0x00a45e30`, from `0x00a46120`;
+/// name ours): a UI element in `work` (the original's frame, see
+/// [`BAR_WORK`]): corners `(x0, y0)` and `(x1, y1)` as floats (`+0`,
+/// `+0x20`), their texture corners ([`BAR_UVS`], by `look`) at `+8`/`+0x28`,
+/// each corner's four colour words 0x80, `+0x88`, `+0x90`, `+0x94` 0 (the
+/// rest is never set); the texture path from [`BAR_TEXTURE_FORMATS`] for
+/// layer 0 or 2 (another layer leaves the path buffer as it is) through
+/// `fiosUnifyFilename`, then `graphicDrawUIElement(element, path, 1, 0,
+/// 0)`, whose `eax` it returns, and `g_PppPacketPos` moves on 0x60.
+pub fn abmap_draw_bar<M, C>(mem: &mut M, args: [u32; 5], work: u32, call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let [x0, y0, x1, y1, look] = args;
+    let (element, unified, path) = (work, work.wrapping_add(0x98), work.wrapping_add(0x198));
+    let int_float = |v: u32| x87::store(f64::from(v.cast_signed()));
+    let uv = BAR_UVS[usize::from(look != 0)].map(|c| x87::copy(mem.read::<u32>(mem.rebase(c))));
+    for (corner, (x, y), (u, v)) in [
+        (element, (x0, y0), (uv[0], uv[1])),
+        (element.wrapping_add(0x20), (x1, y1), (uv[2], uv[3])),
+    ] {
+        mem.write(corner, [int_float(x), int_float(y), u, v]);
+        mem.write(corner.wrapping_add(0x10), [0x80u32; 4]);
+    }
+    for o in [0x88, 0x90, 0x94] {
+        mem.write(element.wrapping_add(o), 0u32);
+    }
+    let layer = mem.read::<u32>(ABMAP.get(mem).wrapping_add(0x116a4));
+    let format = match layer {
+        0 => Some(BAR_TEXTURE_FORMATS[0]),
+        2 => Some(BAR_TEXTURE_FORMATS[1]),
+        _ => None,
+    };
+    if let Some(format) = format {
+        let f = mem.read::<u32>(mem.rebase(SPRINTF_SLOT));
+        let [dir, kind] = BAR_TEXTURE_PARTS.map(|s| mem.rebase(s));
+        let format = mem.rebase(format);
+        call(mem, f, &[path, format, dir, kind]);
+    }
+    let f = mem.rebase(FIOS_UNIFY_FILENAME);
+    call(mem, f, &[path, unified, 0x100]);
+    let f = mem.rebase(DRAW_UI_ELEMENT);
+    let eax = call(mem, f, &[element, unified, 1, 0, 0]);
+    let pos = mem.rebase(PPP_PACKET_POS);
+    mem.write(pos, mem.read::<u32>(pos).wrapping_add(0x60));
+    eax
+}
