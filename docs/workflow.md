@@ -106,6 +106,25 @@ so module sizes are estimates until most of the code is named. Ownership only
 sees absolute references into `.data`: state reached through pointers is
 invisible to it.
 
+## Duplicate functions
+
+Check `tools/dupes.py` before porting: a copy of a ported function only
+needs a `ported!` line and a test against its own original.
+
+```bash
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD tools/dupes.py --shims ~/ffx-work/speedup/dupes/shims.txt
+tools/dupes.py --family 0x0074bff0   # the families of one address
+```
+
+Families: `exact` (same bytes once calls and jumps out of the function are
+replaced by their resolved target), `masked` (same once the operands
+`.reloc` patches are masked too: other globals) and `near` (>= 95 % of the
+instructions alike with numbers masked and registers renamed: a lead, read
+the difference). `families.tsv` lists every member with module, class and
+port status; `--shims` prints the `ported!` entries for unported logic
+copies of ported functions, copied from the port, and the oracle test to
+extend. About 30 s.
+
 ## Bulk dump
 
 ```bash
