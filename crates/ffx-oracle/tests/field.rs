@@ -17400,3 +17400,72 @@ fn r11c_on_a_snapshot_matches_the_original() {
     }
     r11c_cases(&mut t, &mut rng, ab, 50);
 }
+
+// ---- field agent r12, group A: the sphere grid's zoom control ----
+
+/// Group A (r12) on `t`: `AbmapCtrlZoom` with the button pressed or not,
+/// every zoom level (3 wraps), changes running or not (counts past 30
+/// too), zooms around 0.375 (exactly too), and `+0x116b0`/`+0x116ac`
+/// on each side; `AbmapZoomScale` runs as the original.
+fn r12a_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    let fcall = &mut oracle_fcall;
+    let pad = t.alloc(0x2800);
+    t.set(ffx_field::abmap::TILT_PAD, pad);
+    let zoom = |rng: &mut Xorshift| match rng.below(6) {
+        0 => 0.375f32.to_bits(),
+        1 => [0.125f32, 0.25, 0.5, 1.0][rng.below(4) as usize].to_bits(),
+        _ => r6b_fine(rng, 0.05, 1.2),
+    };
+    for _ in 0..cases {
+        t.put(pad + 0x2700, if rng.below(2) == 0 { 0xffffu16 } else { 1 });
+        t.put(g + 0x1166e, u16::try_from(rng.next() & 0x0303).unwrap());
+        t.put(g + 0x115cc, u8::try_from(rng.below(4)).unwrap());
+        let left = match rng.below(4) {
+            0 => rng.range(-3, 2),
+            1 => rng.range(30, 400),
+            _ => rng.range(1, 31),
+        };
+        t.put(g + 0x115d0, u16::try_from(left & 0xffff).unwrap());
+        for o in [0x11350, 0x115dc, 0x115e0] {
+            t.put(g + o, zoom(rng));
+        }
+        if rng.below(8) == 0 {
+            // inf - inf: a NaN zoom (the "not above 0.375" side)
+            t.put(g + 0x115dc, f32::INFINITY.to_bits());
+            t.put(g + 0x115e0, f32::INFINITY.to_bits());
+        }
+        t.put(g + 0x116b0, rng.range(-3, 4));
+        t.put(g + 0x116ac, rng.below(2));
+        t.same(
+            "AbmapCtrlZoom",
+            |o| o.eax(0x00a4_90c0, &[]),
+            |m| ffx_field::abmap::bridge::abmap_ctrl_zoom(m, fcall),
+        );
+    }
+}
+
+/// Group A (r12) on the image.
+#[test]
+fn r12a_ctrl_zoom_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0012_a001);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r12a_cases(&mut t, &mut rng, g, 600);
+}
+
+/// Group A (r12) on the snapshot (`FFX_SNAPSHOT`), over a synthetic work
+/// area when the snapshot has none.
+#[test]
+fn r12a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0012_a002);
+    let mut g = ffx_field::abmap::ABMAP.get(&t.b);
+    if g == 0 {
+        g = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, g);
+    }
+    r12a_cases(&mut t, &mut rng, g, 300);
+}

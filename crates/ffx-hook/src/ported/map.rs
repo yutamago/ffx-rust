@@ -1341,6 +1341,10 @@ ported! {
     AbmapCtrlTilt @ 0x00a4_8f50 => extern "C" fn abmap_ctrl_tilt() -> u32 {
         abmap::bridge::abmap_ctrl_tilt(&mut mem())
     }
+    /// `AbmapCtrlZoom()`.
+    AbmapCtrlZoom @ 0x00a4_90c0 => extern "C" fn abmap_ctrl_zoom() -> u32 {
+        abmap::bridge::abmap_ctrl_zoom(&mut mem(), &mut |_, f, a| call_float(f, a))
+    }
     /// `AbmapState_HomeOnNode()`.
     AbmapState_HomeOnNode @ 0x00a5_9e80 => extern "C" fn abmap_state_home_on_node() -> u32 {
         abmap::bridge::abmap_state_home_on_node(&mut mem())
