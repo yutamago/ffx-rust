@@ -1522,6 +1522,122 @@ pub mod bridge {
         ms_cam_set_btl(mem, host, id, mode, this, ch, other, other_ch, Some(regs));
         ms_set_check_change(mem, call, id, side, 0, 0)
     }
+
+    /// `MsCameraAimPolar_007c0910(side, mv)` (`0x007c0910`, name ours;
+    /// `MsCameraProcess`'s): the side's polar form towards the move's
+    /// point (`mv + 0x30`, from the side's base `+0x8c`,
+    /// `MsVectorRect2Polar`): its yaw into `+0x60`; the pitch `+0x64` is
+    /// `mv + 0x44` plus the distance over `mv + 0x54` (unless that is 0),
+    /// the length `+0x68` is `mv + 0x48` plus the distance over `mv + 0x58`
+    /// (likewise); `+0x6c` 0. `scratch` stands for the original's two
+    /// stack words (the pitch it drops, the distance).
+    pub fn ms_camera_aim_polar(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        side: u32,
+        mv: u32,
+        scratch: u32,
+    ) {
+        aim(mem, trig, side, mv, scratch, Aim::Fixed);
+    }
+
+    /// `MsCameraAimPolar2_007c09b0(side, mv)` (`0x007c09b0`, name ours):
+    /// [`ms_camera_aim_polar`] keeping the point's own pitch (plus the
+    /// distance over `mv + 0x54`).
+    pub fn ms_camera_aim_polar2(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        side: u32,
+        mv: u32,
+        scratch: u32,
+    ) {
+        aim(mem, trig, side, mv, scratch, Aim::Pitch);
+    }
+
+    /// `MsCameraAimPolar3_007c0a30(side, mv)` (`0x007c0a30`, name ours):
+    /// [`ms_camera_aim_polar2`] with the length the distance less
+    /// (`mv + 0x48` plus the distance over `mv + 0x58`): short of the
+    /// point.
+    pub fn ms_camera_aim_polar3(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        side: u32,
+        mv: u32,
+        scratch: u32,
+    ) {
+        aim(mem, trig, side, mv, scratch, Aim::Short);
+    }
+
+    /// How [`aim`] takes the pitch and the length.
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Aim {
+        /// `mv + 0x44` and `mv + 0x48`, each plus its share of the distance.
+        Fixed,
+        /// The point's pitch, and `mv + 0x48`, each plus its share.
+        Pitch,
+        /// The point's pitch plus its share; the distance less `mv + 0x48`
+        /// and its share.
+        Short,
+    }
+
+    /// The distance `len` over the `f32` at `at`, unless that is 0
+    /// (`fucom`: a NaN divides).
+    fn share(mem: &impl Mem, len: f64, at: u32) -> Option<f64> {
+        let d = ffx_bridge::x87::load(mem.read(at));
+        #[allow(clippy::float_cmp)]
+        let zero = d == 0.0;
+        (!zero).then(|| ffx_bridge::x87::div(len, d))
+    }
+
+    fn aim(
+        mem: &mut impl Mem,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        side: u32,
+        mv: u32,
+        scratch: u32,
+        how: Aim,
+    ) {
+        use ffx_bridge::x87::{add, load, store, sub};
+        let at = |o: u32| side.wrapping_add(o);
+        let (dropped, len_at) = (scratch, scratch.wrapping_add(4));
+        let base: u32 = mem.read(at(0x8c));
+        let pitch_at = if how == Aim::Fixed { dropped } else { at(0x64) };
+        let point = mv.wrapping_add(0x30);
+        crate::vector::bridge::ms_vector_rect2_polar(
+            mem,
+            trig,
+            point,
+            base,
+            at(0x60),
+            pitch_at,
+            len_at,
+        );
+        let len = load(mem.read(len_at));
+        let pitch = if how == Aim::Fixed {
+            let p = x87_copy(mem.read(mv.wrapping_add(0x44)));
+            mem.write(at(0x64), p);
+            p
+        } else {
+            mem.read(at(0x64))
+        };
+        if let Some(s) = share(mem, len, mv.wrapping_add(0x54)) {
+            mem.write(at(0x64), store(add(load(pitch), s)));
+        }
+        let far = x87_copy(mem.read(mv.wrapping_add(0x48)));
+        if how == Aim::Short {
+            let far = match share(mem, len, mv.wrapping_add(0x58)) {
+                Some(s) => store(add(s, load(far))),
+                None => far,
+            };
+            mem.write(at(0x68), store(sub(len, load(far))));
+        } else {
+            mem.write(at(0x68), far);
+            if let Some(s) = share(mem, len, mv.wrapping_add(0x58)) {
+                mem.write(at(0x68), store(add(s, load(far))));
+            }
+        }
+        mem.write(at(0x6c), 0.0f32.to_bits());
+    }
 }
 
 #[cfg(test)]

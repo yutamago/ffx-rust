@@ -10056,6 +10056,9 @@ fn del_extra_command(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &Wor
         let list: Vec<u8> = (0..8).flat_map(|_| pick(rng).to_le_bytes()).collect();
         poke(a, b, items + 0x478 * i + 0x28, &list);
     }
+    // the actor set selector -4 reads (absent ones count with `any`)
+    let picked = rng.next() & 0x7fff_ffff;
+    set(a, b, ffx_battle::actor::bridge::CHR_SET, picked);
     let chr = rng.below(ACTORS);
     let sel = match rng.below(4) {
         0 => 0x1000 + rng.below(0x40),
@@ -10195,7 +10198,7 @@ fn camera_set_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bo
         }
     }
     let id = if rng.below(5) == 0 {
-        rng.next() & 0x05_0502 | if script { 0 } else { 0x5_0000 }
+        rng.next() & 0x05_0f02 | if script { 0 } else { 0x5_0000 }
     } else {
         ids[rng.below(u32::try_from(ids.len()).unwrap()) as usize]
     };

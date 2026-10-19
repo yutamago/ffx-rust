@@ -183,6 +183,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                     poke(a, b, buf, &[0; 4]);
                 }
                 1 => start_pos(a, b, rng, buf, base),
+                2 if rng.below(2) == 0 => {
+                    for _ in 0..4 {
+                        aims(a, b, rng, buf);
+                    }
+                }
                 _ => process_helpers(a, b, rng, buf, list),
             },
         }
@@ -221,6 +226,43 @@ fn start_pos(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, base:
     let lanes = a.rebase(0x00c8_f814);
     let w = a.read(lanes, 12).unwrap();
     b.write(lanes, &w).unwrap();
+}
+
+/// The three aims of `MsCameraProcess` (round 26) on a made-up side at
+/// `buf + 0x10` (its base vector at `buf + 0x100`, or none) and move at
+/// `buf + 0x180`; the port's two scratch words (the original's stack) at
+/// `buf + 0x1f0`, cleared after.
+fn aims(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32) {
+    use battle_common::crt::stand_in;
+    let side = buf + 0x10;
+    poke(a, b, side, &floats(rng, 0x24));
+    poke(a, b, buf + 0x100, &floats(rng, 4));
+    let origin = if rng.below(3) == 0 { 0 } else { buf + 0x100 };
+    poke(a, b, side + 0x8c, &origin.to_le_bytes());
+    let mv = buf + 0x180;
+    poke(a, b, mv, &floats(rng, 0x18));
+    for o in [0x54, 0x58] {
+        if rng.below(3) == 0 {
+            let z = [0u32, 0x8000_0000][rng.below(2) as usize];
+            poke(a, b, mv + o, &z.to_le_bytes());
+        }
+    }
+    let scratch = buf + 0x1f0;
+    let k = rng.below(3);
+    let (name, sym) = [
+        ("MsCameraAimPolar_007c0910", 0x007c_0910),
+        ("MsCameraAimPolar2_007c09b0", 0x007c_09b0),
+        ("MsCameraAimPolar3_007c0a30", 0x007c_0a30),
+    ][k as usize];
+    twin(name, a, b, sym, &[side, mv], 0, |m| {
+        match k {
+            0 => cam::ms_camera_aim_polar(m, &stand_in, side, mv, scratch),
+            1 => cam::ms_camera_aim_polar2(m, &stand_in, side, mv, scratch),
+            _ => cam::ms_camera_aim_polar3(m, &stand_in, side, mv, scratch),
+        }
+        0
+    });
+    poke(a, b, scratch, &[0; 8]);
 }
 
 /// `MsCameraFocusWeights_007c0ae0` on a made-up side (`buf + 0x10`), move

@@ -6299,6 +6299,9 @@
 0x007c0540 function MsScreenInit              # fh v3:bsim1.00 0x007c04c0
 0x007c06d0 function MsSetCameraMatrix         # fh v3:exact 0x007c0650
 0x007c0790 function MsSetCheckChange          # fh v3:exact 0x007c0710
+0x007c0910 function MsCameraAimPolar_007c0910 # ours: (side, mv): MsVectorRect2Polar(mv+0x30, side+0x8c base, side+0x60 yaw, a dropped local, the distance); side+0x64 = mv+0x44 (+ distance / mv+0x54 unless 0; a NaN divides), +0x68 = mv+0x48 (+ distance / mv+0x58 likewise), +0x6c = 0; caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)
+0x007c09b0 function MsCameraAimPolar2_007c09b0 # ours: MsCameraAimPolar_007c0910 with the point's own pitch (Rect2Polar into side+0x64, + distance / mv+0x54); caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)
+0x007c0a30 function MsCameraAimPolar3_007c0a30 # ours: MsCameraAimPolar2_007c09b0 with side+0x68 = distance - (mv+0x48 + distance / mv+0x58): short of the point; caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)
 0x007c0ab0 function MsSetNormalUpVector       # fh v3:exact 0x007c0a30
 0x007c0ae0 function MsCameraFocusWeights_007c0ae0 # ours: (side, mv): records of mv+8 (count, 0x30 each from +0x10): weight = (|side+0x30 - point| (lanes masked by mv[3] bits 1-3, _CIsqrt) + 1, squared with bit 0) / +0xc into +0x1c; side +0x60.. = sum(value * total/weight) / sum(total/weight), x plus mv+0x40; caller MsCameraProcess; ported (ffx_battle::camera, battle round 25)
 0x007c1480 function MsAddPoint                # fh v3:cg21 0x7c1400

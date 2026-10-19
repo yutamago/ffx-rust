@@ -2189,6 +2189,25 @@ ported! {
         let at = local.at();
         camera::ms_camera_get_yaw(&mut mem(), &crt_trig, at)
     }
+    /// `MsCameraAimPolar_007c0910(side, mv)`: its two stack words in
+    /// this call's frame.
+    MsCameraAimPolar_007c0910 @ 0x007c_0910 => extern "C" fn ms_camera_aim_polar(side: u32, mv: u32) {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        camera::ms_camera_aim_polar(&mut mem(), &crt_trig, side, mv, at);
+    }
+    /// `MsCameraAimPolar2_007c09b0(side, mv)`.
+    MsCameraAimPolar2_007c09b0 @ 0x007c_09b0 => extern "C" fn ms_camera_aim_polar2(side: u32, mv: u32) {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        camera::ms_camera_aim_polar2(&mut mem(), &crt_trig, side, mv, at);
+    }
+    /// `MsCameraAimPolar3_007c0a30(side, mv)`.
+    MsCameraAimPolar3_007c0a30 @ 0x007c_0a30 => extern "C" fn ms_camera_aim_polar3(side: u32, mv: u32) {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        camera::ms_camera_aim_polar3(&mut mem(), &crt_trig, side, mv, at);
+    }
     /// `MsCameraFocusWeights_007c0ae0(side, mv)`.
     MsCameraFocusWeights_007c0ae0 @ 0x007c_0ae0 => extern "C" fn ms_camera_focus_weights(side: u32, mv: u32) {
         camera::ms_camera_focus_weights(&mut mem(), side, mv);
