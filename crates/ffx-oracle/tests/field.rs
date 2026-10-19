@@ -19450,3 +19450,75 @@ fn r13w_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13w_cases(&mut t, &mut rng, g, 80);
 }
+
+// ---- field agent r13, group X: the panel-change message ----
+
+/// Group X (r13) on `t` over the grid `g`: `AbmapShowChangeMessage` for
+/// any node and kind with either kana setting; the excel lookup (its base
+/// written out, its row returned), the kana setting and the menu text are
+/// logged stand-ins.
+fn r13x_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::{self, bridge as ab};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(4 + 0x20 * 8);
+    let v: Vec<u32> = (0..4).map(|_| t.alloc(4)).collect();
+    let [rv, rowv, basev, kanav] = v[..] else {
+        unreachable!()
+    };
+    // mov eax, [esp + 0xc]; mov ecx, [basev]; mov [eax], ecx; then the log
+    let mut excel = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d];
+    excel.extend_from_slice(&basev.to_le_bytes());
+    excel.extend_from_slice(&[0x89, 0x08]);
+    excel.extend(log_stub(log, rowv, 1, 2));
+    let [kana, text] = ab::CHANGE_MESSAGE_CALLS;
+    t.cave(&[
+        (Some(abmap::MS_GET_EXCEL_DATA), excel),
+        (Some(kana), log_stub(log, kanav, 2, 0)),
+        (Some(text), log_stub(log, rv, 3, 3)),
+    ]);
+    let row = t.alloc(8);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(rowv, row);
+        t.fill(row, 8, rng);
+        t.put(basev, rng.next());
+        t.put(kanav, rng.next());
+        t.put(t.b.rebase(abmap::NODE_EXCEL_TABLE), rng.next());
+        t.fill(g + 0x11654, 0x14, rng);
+        let node = rng.below(40);
+        t.put(
+            g + 0x80e + 0x28 * node,
+            u16::try_from(rng.below(0x10000)).unwrap(),
+        );
+        let a = [rng.below(0x100), node];
+        let work = t.stack_scratch(0x100);
+        t.same(
+            "AbmapShowChangeMessage",
+            |o| o.eax(0x00a5_a640, &a),
+            |m| ab::abmap_show_change_message(m, a, work, call),
+        );
+    }
+}
+
+/// Group X (r13) on the image.
+#[test]
+fn r13x_show_change_message_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_8101);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13x_cases(&mut t, &mut rng, g, 300);
+}
+
+/// Group X (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13x_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_8102);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13x_cases(&mut t, &mut rng, g, 150);
+}

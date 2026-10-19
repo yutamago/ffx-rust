@@ -3980,6 +3980,12 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapShowChangeMessage(kind, node)`: the two string bases in a
+    /// frame.
+    AbmapShowChangeMessage @ 0x00a5_a640 => extern "C" fn shim_abmap_show_change_message(kind: u32, node: u32) -> u32 {
+        let mut w = super::StackFrame::<2>::new();
+        abmap::bridge::abmap_show_change_message(&mut mem(), [kind, node], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapCalcLinkPoints()`: the three positions in a frame.
     AbmapCalcLinkPoints @ 0x00a5_a800 => extern "C" fn shim_abmap_calc_link_points() -> u32 {
         let mut w = super::StackFrame::<12>::new();

@@ -2387,6 +2387,51 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// `MsGetSaveConfigHiragana()` (`0x007851f0`) and `MsMenuGetText(group,
+    /// id, kana)` (`0x0078fcf0`).
+    pub const CHANGE_MESSAGE_CALLS: [u32; 2] = [0x0078_51f0, 0x0078_fcf0];
+
+    /// `AbmapShowChangeMessage(kind, node)` (`0x00a5a640`, from
+    /// `abmap_cheng_panel`; name ours): the panel-change message: the
+    /// node's (`+0x80e`) and the new kind's node excel rows
+    /// (`MsGetExcelData` from [`super::NODE_EXCEL_TABLE`], their string
+    /// bases in `work`, two words), the timer `+0x11666` 0x78, `+0x11660`
+    /// 0, the text `MsMenuGetText(9, 0x22, kana)` at `+0x11654` and the two
+    /// names (each row's `u16` for the kana setting plus its base) at
+    /// `+0x11658`/`+0x1165c`, `+0x11664` 2. The kana setting is read anew
+    /// (`MsGetSaveConfigHiragana() & 1`) for each. Returns the grid.
+    pub fn abmap_show_change_message<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [kind, node]: [u32; 2],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [kana, text] = CHANGE_MESSAGE_CALLS.map(|f| mem.rebase(f));
+        let excel = mem.rebase(super::MS_GET_EXCEL_DATA);
+        let table = mem.read::<u32>(mem.rebase(super::NODE_EXCEL_TABLE));
+        let g = ABMAP.get(mem);
+        let old =
+            u32::from(mem.read::<u16>(g.wrapping_add(0x80e).wrapping_add(node.wrapping_mul(0x28))));
+        let (old_base, new_base) = (work, work.wrapping_add(4));
+        let old_row = call(mem, excel, &[old, table, old_base]);
+        let table = mem.read::<u32>(mem.rebase(super::NODE_EXCEL_TABLE));
+        let new_row = call(mem, excel, &[kind, table, new_base]);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11666), 0x78u16);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11660), 0u32);
+        let k = call(mem, kana, &[]) & 1;
+        let message = call(mem, text, &[9, 0x22, k]);
+        mem.write(ABMAP.get(mem).wrapping_add(0x11654), message);
+        for (row, base, at) in [(old_row, old_base, 0x11658), (new_row, new_base, 0x1165c)] {
+            let base = mem.read::<u32>(base);
+            let k = call(mem, kana, &[]) & 1;
+            let name = u32::from(mem.read::<u16>(row.wrapping_add(4 * k))).wrapping_add(base);
+            mem.write(ABMAP.get(mem).wrapping_add(at), name);
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x11664), 2u16);
+        g
+    }
+
     /// `AbmapGetNodePosRadius(node, out)` (`0x00a5b4c0`, in `ST0`),
     /// `AbmapCalcLinkPointsStraight` (`0x00a581f0`) and
     /// `AbmapCalcLinkPointsCurved` (`0x00a57710`).
