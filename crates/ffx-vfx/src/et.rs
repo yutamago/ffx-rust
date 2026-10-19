@@ -1727,4 +1727,135 @@ pub mod bridge {
         let reset = at(mem, 0x007f_eec0);
         call(mem, reset, &[index]);
     }
+
+    /// `opu_et_unit(oef, group, part, id)` (`0x007fd7f0`): starts an effect
+    /// unit of the oef2 `oef` in the battle's opus object
+    /// ([`OPUS_BATTLE`] `b`). `oef` takes a slot among the 16 words at `b +
+    /// 0x60` (its own slot when already there, else the first free one; -1
+    /// without one, or for a null `oef`). A unit `n = opus_prog_on(b, 0)`
+    /// (sign-extended `u16`) gives the record `rec = [b + 0x20] + 0x100 *
+    /// n`, filled by `opus_osu_init(rec)` and kept at `0x012a12f8`; `rec +
+    /// 0x1e` = the slot, `rec +0` = `set_ptr32(e + [e + 4 * part] + 4 *
+    /// part)` where `e = op_oef2_a_get(oef, 1, group)`. The effect record
+    /// `k = opus_get_eff_status_index(id, slot, 1)` gets `+4` = `rec` and
+    /// `rec` its index (`u16 +0x14`) and draw layer (`+0x18`: the record's
+    /// byte `+0x10`, or `+0x18` when that is 0xff); `rec +0xb3` = 0x7f
+    /// when `id` has any of bits 28..30 or its byte 1 is 3. The unit's
+    /// number (`u16 +0x1a`): `opus_fullauto_no_get(b)` for a negative `id`,
+    /// else the first `(part << 8) + 0x10 * j` (16 bits, `j >= 1`) that no
+    /// record of the same slot already has among the units the `i16` lists
+    /// at [`OPUS_UNIT_LIST0`] and [`OPUS_UNIT_LIST1`] name (each up to 512
+    /// entries, ended by a negative one). Returns `slot << 16 | number`.
+    ///
+    /// The original also formats `"LoadedByOPU_ET_UNIT"` into a stack record
+    /// for `yonExtMapRegister`, an empty function on PC; neither is kept.
+    /// Callees through `call`.
+    pub fn opu_et_unit<M: Mem>(
+        mem: &mut M,
+        oef: u32,
+        group: u32,
+        part: u32,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let b = OPUS_BATTLE.get(mem);
+        if oef == 0 {
+            return u32::MAX;
+        }
+        let slots = b.wrapping_add(0x60);
+        let word = |mem: &M, i: u32| mem.read::<u32>(slots.wrapping_add(4 * i));
+        let slot = if let Some(i) = (0..16).find(|&i| word(mem, i) == oef) {
+            i
+        } else if let Some(i) = (0..16).find(|&i| word(mem, i) == 0) {
+            mem.write(slots.wrapping_add(4 * i), oef);
+            i
+        } else {
+            return u32::MAX;
+        };
+        // (the original's `slot == 0xff` check after this can't hold)
+        let prog_on = at(mem, 0x0080_1700);
+        #[allow(clippy::cast_possible_truncation)] // the original keeps ax
+        let unit = i32::from((call(mem, prog_on, &[b, 0]) as u16).cast_signed()).cast_unsigned();
+        let rec = unit_record(mem, b, unit);
+        let osu_init = at(mem, 0x0080_1200);
+        call(mem, osu_init, &[rec]);
+        mem.write(at(mem, 0x012a_12f8), rec);
+        #[allow(clippy::cast_possible_truncation)] // below 16
+        mem.write(rec.wrapping_add(0x1e), slot as u8);
+        let a_get = at(mem, 0x007e_3810);
+        let table = call(mem, a_get, &[word(mem, slot), 1, group]);
+        let off = part.wrapping_mul(4);
+        let target = mem
+            .read::<u32>(table.wrapping_add(off))
+            .wrapping_add(off)
+            .wrapping_add(table);
+        let set_ptr32 = at(mem, 0x00a4_4700);
+        let ptr = call(mem, set_ptr32, &[target]);
+        mem.write(rec, ptr);
+        let status = at(mem, 0x007f_eba0);
+        let index = call(mem, status, &[id, slot, 1]);
+        #[allow(clippy::cast_possible_truncation)] // the u16 the original stores
+        mem.write(rec.wrapping_add(0x14), index as u16);
+        let eff = EFF.ptr(mem).addr.wrapping_add(index << 5);
+        mem.write(eff.wrapping_add(4), rec);
+        if id & 0x7000_0000 != 0 || id & 0xff00 == 0x300 {
+            mem.write(rec.wrapping_add(0xb3), 0x7fu8);
+        }
+        let mut layer: u8 = mem.read(eff.wrapping_add(0x10));
+        if layer == 0xff {
+            layer = mem.read(eff.wrapping_add(0x18));
+        }
+        mem.write(rec.wrapping_add(0x18), layer);
+        let number = if id.cast_signed() < 0 {
+            let no_get = at(mem, 0x0080_0df0);
+            #[allow(clippy::cast_possible_truncation)] // ax
+            let n = call(mem, no_get, &[b]) as u16;
+            n
+        } else {
+            free_unit_number(mem, b, slot, part)
+        };
+        mem.write(rec.wrapping_add(0x1a), number);
+        slot << 16 | u32::from(number)
+    }
+
+    /// `i16` part lists of the opus set read by [`opu_et_unit`] (pointers).
+    pub const OPUS_UNIT_LIST0: Global<u32> = Global::new(0x00c8_8a94);
+    /// The second list, searched after [`OPUS_UNIT_LIST0`].
+    pub const OPUS_UNIT_LIST1: Global<u32> = Global::new(0x00c8_8a98);
+
+    /// Unit `n`'s 0x100-byte record in the opus object `b`.
+    fn unit_record(mem: &impl Mem, b: u32, n: u32) -> u32 {
+        (n << 8).wrapping_add(mem.read(b.wrapping_add(0x20)))
+    }
+
+    /// [`opu_et_unit`]'s unit number: from `(part << 8) + 0x10`, 0x10 more
+    /// while a listed unit of `slot` has it. Numbers from 0x8000 never
+    /// match (the original compares the zero-extended record word with the
+    /// sign-extended number).
+    fn free_unit_number(mem: &impl Mem, b: u32, slot: u32, part: u32) -> u16 {
+        #[allow(clippy::cast_possible_truncation)] // the 16 bits the original keeps
+        let mut number = (part << 8).wrapping_add(0x10) as u16;
+        let taken = |list: Global<u32>, number: u16| {
+            let list = list.get(mem);
+            for i in 0..0x200u32 {
+                let n = mem.read::<i16>(list.wrapping_add(2 * i));
+                if n < 0 {
+                    break;
+                }
+                let rec = unit_record(mem, b, i32::from(n).cast_unsigned());
+                if i32::from(mem.read::<u16>(rec.wrapping_add(0x1a)))
+                    == i32::from(number.cast_signed())
+                    && u32::from(mem.read::<u8>(rec.wrapping_add(0x1e))) == slot
+                {
+                    return true;
+                }
+            }
+            false
+        };
+        while taken(OPUS_UNIT_LIST0, number) || taken(OPUS_UNIT_LIST1, number) {
+            number = number.wrapping_add(0x10);
+        }
+        number
+    }
 }

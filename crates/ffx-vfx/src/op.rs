@@ -561,6 +561,161 @@ pub mod bridge {
         }
     }
 
+    /// `op_oef2_tex_clut_cue_loop()` (`0x007e4720`): works off the CLUT
+    /// cue ring from its head, at least one slot: a texture (`0x011a01a0`)
+    /// goes to `op_oef2_texture_load(tex, 1)` (through `call`) and counts
+    /// its `+0x10` bytes, a CLUT (`0x011a02a0`) counts 16 bytes per `u16
+    /// +2` entry; each found one is cleared with its [`OEF2_CLUT_CUES`]
+    /// mask, and the count is read again (the load may queue more). It
+    /// stops once 1 MiB (signed) is counted or the slots run out; the head
+    /// moves past the slots done and the count drops by them (16 bits).
+    pub fn op_oef2_tex_clut_cue_loop<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let mut count = OEF2_CLUT_CUE_COUNT.get(mem);
+        if count == 0 {
+            return;
+        }
+        let head = OEF2_CLUT_CUE_HEAD.get(mem);
+        let texs = Global::<u32>::new(0x011a_01a0).ptr(mem);
+        let cluts = Global::<u32>::new(0x011a_02a0).ptr(mem);
+        let load = Global::<u32>::new(0x007e_5030).ptr(mem).addr;
+        let mut bytes = 0u32;
+        let mut done = 0u16;
+        loop {
+            let slot = u32::from(done.wrapping_add(head)) & 0x3f;
+            let tex = texs.at(slot).get(mem);
+            if tex != 0 {
+                call(mem, load, &[tex, 1]);
+                texs.at(slot).set(mem, 0);
+                OEF2_CLUT_CUES.ptr(mem).at(slot).set(mem, 0);
+                count = OEF2_CLUT_CUE_COUNT.get(mem);
+                bytes = bytes.wrapping_add(mem.read(tex.wrapping_add(0x10)));
+            }
+            let clut = cluts.at(slot).get(mem);
+            if clut != 0 {
+                cluts.at(slot).set(mem, 0);
+                OEF2_CLUT_CUES.ptr(mem).at(slot).set(mem, 0);
+                let entries = u32::from(mem.read::<u16>(clut.wrapping_add(2)));
+                count = OEF2_CLUT_CUE_COUNT.get(mem);
+                bytes = bytes.wrapping_add(entries << 4);
+            }
+            done = done.wrapping_add(1);
+            if bytes.cast_signed() >= 0x10_0000 || done >= count {
+                break;
+            }
+        }
+        OEF2_CLUT_CUE_HEAD.set(mem, done.wrapping_add(head) & 0x3f);
+        OEF2_CLUT_CUE_COUNT.set(mem, count.wrapping_sub(done));
+    }
+
+    /// `g_VfxPhase`: the step a scripted magic has reached, set by
+    /// [`op_oef2_tex_clut_cue_multi`] and read by the renderer.
+    pub const VFX_PHASE: Global<u32> = Global::new(0x00cc_b9d4);
+
+    /// `op_oef2_tex_clut_cue_multi(oef, first, last, mask)` (`0x007e4830`):
+    /// 0 when the oef2 has neither textures (`u16 +0x44`) nor CLUTs (`u16
+    /// +0x46`). Otherwise queues textures `first..=last` (16 bits, clamped
+    /// to the count) with `op_oef2_tex_cue(op_oef2_a_get(oef, 2, i),
+    /// mask)`, then CLUTs alike with `op_oef2_a_get(oef, 3, i)` and
+    /// `op_oef2_clut_cue`. With a magic file open (`MagicFile_GetHandle`
+    /// not -1), some magics mark their steps in [`VFX_PHASE`] by the range
+    /// queued ([`magic_phase`]). Callees through `call`. Returns 0.
+    pub fn op_oef2_tex_clut_cue_multi<M: Mem>(
+        mem: &mut M,
+        oef: u32,
+        first: u32,
+        last: u32,
+        mask: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let texs: u16 = mem.read(oef.wrapping_add(0x44));
+        let cluts: u16 = mem.read(oef.wrapping_add(0x46));
+        if texs == 0 && cluts == 0 {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_truncation)] // the original's 16-bit words
+        let (first, last) = (first as u16, last as u16);
+        let end = last.wrapping_add(1);
+        let a_get = g(mem, 0x007e_3810);
+        for (kind, n, cue) in [(2, texs, 0x007e_4f20), (3, cluts, 0x007e_4610)] {
+            let cue = g(mem, cue);
+            for i in first..end.min(n) {
+                let rec = call(mem, a_get, &[oef, kind, u32::from(i)]);
+                call(mem, cue, &[rec, mask]);
+            }
+        }
+        if call(mem, g(mem, 0x009d_a390), &[]) == u32::MAX {
+            return 0;
+        }
+        let magic = call(mem, g(mem, 0x009d_a3b0), &[]);
+        let phase = VFX_PHASE.get(mem);
+        if let Some(v) = magic_phase(magic, first, last, phase) {
+            VFX_PHASE.set(mem, v);
+        }
+        0
+    }
+
+    /// The new [`VFX_PHASE`] when `magic` marks a step for the range
+    /// `first..=last`: set to a step, or a bit added.
+    fn magic_phase(magic: u32, first: u16, last: u16, phase: u32) -> Option<u32> {
+        let set = |hit: bool, v: u32| hit.then_some(v);
+        match magic {
+            0x2a1 => set(first == 0xf && last == 0xf, 1),
+            0xa8 | 0x24b => match first {
+                0 => set(last == 8, 1),
+                9 => set(last == 10, 2),
+                _ => None,
+            },
+            0xaa => set(first == 0x14 && last == 0x18, 1),
+            0x9a => match first {
+                0 => set(last == 0xf, 0),
+                0x10 => set(last == 0x17, 1),
+                _ => None,
+            },
+            0x130 | 0x238 => match first {
+                0..=2 => set(last == first, u32::from(first) + 1),
+                _ => None,
+            },
+            0x94 | 0x239 | 0xd0 => match first {
+                0x14..=0x17 => Some(phase | 1 << (first - 0x14)),
+                _ => None,
+            },
+            0x1ae | 0x24c => set(first == 0x13 && last == 0x13, 1),
+            0x46 | 0x23a => set(first == 10, 1),
+            0x133 | 0x233 => match first {
+                0 => set(last == 1, 1),
+                2 => set(last == 3, 2),
+                4 => set(last == 4, 3),
+                5 => Some(4),
+                _ => None,
+            },
+            0x1ff | 0x24d => set(first == 0 && last == 3, 1),
+            0x203 | 0x29b => set(first != 0 || last != 10, phase.wrapping_mul(2) | 1),
+            0x263 | 0x29c => match (first, last) {
+                (0, 0x1d) => Some(phase | 1),
+                (0x1e, 0x20) => Some(phase | 2),
+                (0x23, 0x24) => Some(phase | 4),
+                _ => None,
+            },
+            0x207 => match (first, last) {
+                (0, 0x13) => Some(phase | 1),
+                (0x14, 0x27) => Some(phase | 2),
+                (0x28, 0x31) => Some(phase | 4),
+                _ => None,
+            },
+            0x280 => set(first == 0x14 && last == 0x27, 1),
+            0x241 => match (first, last) {
+                (0x15, 0x19) => Some(phase | 1),
+                (0, 1) => Some(phase | 2),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     /// `op_oef2_clut_change(clut, v)` (`0x007e45c0`): sets the CLUT word
     /// (14 bits), marks it changed (`+0xf`) and returns the old word.
     pub fn op_oef2_clut_change(mem: &mut impl Mem, clut: u32, v: u32) -> u32 {

@@ -6437,8 +6437,8 @@
 0x007e4610 function op_oef2_clut_cue             # layout: alphabetical run between op_oef2_clut_change and op_oef2_clut_load (2 unnamed in the gap); Switch 0x71003d91b0 op_oef2_clut_cue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export) ; (rec, mask) -> 0/-1: -1 without rec/+4; ids outside 0x3800..0x3c00 with byte 0x011a0066 go to op_oef2_tex_clut_ovl_add_007e56d0(rec, mask, 1), else queued in the 64-slot g_OpOef2ClutCues ring (0x011a01a0 = 0, 0x011a02a0 = rec) (op::bridge::op_oef2_clut_cue)
 0x007e46b0 function op_oef2_clut_load         # fh v3:exact 0x007e45c0
 0x007e46d0 function op_oef2_tex_clut_cue_check # fh v3:exact 0x007e45e0
-0x007e4720 function op_oef2_tex_clut_cue_loop # fh v3:exact 0x007e4630
-0x007e4830 function op_oef2_tex_clut_cue_multi # fh v3:exact 0x007e4740
+0x007e4720 function op_oef2_tex_clut_cue_loop # fh v3:exact 0x007e4630 ; (): works off the CLUT cue ring from the head (at least one slot): textures through op_oef2_texture_load(tex, 1) count +0x10 bytes, CLUTs 16 * u16 +2; each slot and its mask cleared, the count re-read after each; stops at 1 MiB (signed) or the slots; head += done & 0x3f, count -= done (op::bridge::op_oef2_tex_clut_cue_loop)
+0x007e4830 function op_oef2_tex_clut_cue_multi # fh v3:exact 0x007e4740 ; (oef, first, last, mask) -> 0: textures/CLUTs first..=last (16 bits, clamped to u16 +0x44/+0x46) through op_oef2_a_get(oef, 2/3, i) to op_oef2_tex_cue/op_oef2_clut_cue; then with a magic file open, 25 magic ids mark steps in g_VfxPhase by the range (op::bridge::op_oef2_tex_clut_cue_multi)
 0x007e4c30 function op_oef2_tex_clut_cue_trans # fh v3:exact 0x007e4b40
 0x007e4e40 function op_oef2_tex_clut_ovl_clear # fh v3:exact 0x007e4d50
 0x007e4e80 function op_oef2_tex_clut_ovl_trans # fh v3:exact 0x007e4d90; (mask): while g_OpTexVdispLoad (0x011a0066), each overlay CLUT below g_OpOef2ClutOvlCount in mask reloaded: flag 0 -> op_oef2_texture_load(rec, 1), flagged without a record -> dbgPrintf (op::bridge::op_oef2_tex_clut_ovl_trans)
@@ -6657,7 +6657,7 @@
 0x007fd020 function opu_debug_check              # layout+callees: sorts between opd_camera_change and opu_end_all, and its named callees match the Switch 0x71003f2430 opu_debug_check's (similarity 0.64: Ch_OptposGet, Ch_SetMotionSpeed, MsCameraSetRect, TkSetDebugMenuStatus, op_xyz_scale); symbols from Fahrenheit's server export
 0x007fd720 function opu_end_all               # fh switch:bsim0.91 0x71003f1f50
 0x007fd760 function opu_et_init               # fh v3:exact 0x007fd680
-0x007fd7f0 function opu_et_unit               # fh v3:exact 0x007fd710
+0x007fd7f0 function opu_et_unit               # fh v3:exact 0x007fd710 ; (oef, group, part, id) -> slot << 16 | unit number (eax; -1 without a slot): oef into g_OpusBattle +0x60 slot, opus_prog_on unit record filled, its effect record from opus_get_eff_status_index(id, slot, 1), number from opus_fullauto_no_get (negative id) or the first free (part<<8)+0x10*j in g_OpusUnitList0/1 (et::bridge::opu_et_unit)
 0x007fda30 function opu_et_unit_ofs           # (oef2, a, b, c) arg0 += 0x10, tail jmp opu_et_unit
 0x007fda40 function opu_et_unit_free_by_id    # fh switch:bsim1.00 0x71003ed4a0
 0x007fda60 function opu_et_oef2_free          # (oef2) the op_et_oef2_free body again
@@ -15506,6 +15506,8 @@
 0x00c86b60 label    g_NkzAuronLimitTime          # f32 per level, NkzGetAuronLimitTime (4.0 4.0 4.0 3.0)
 0x00c86b70 label    g_NkzAuronLimitButtons       # 0x20 bytes per sequence, NkzGetAuronLimitButtonData
 0x00c86bf0 label    g_NkzTidusLimitTime          # f32 per level, NkzGetTidusLimitTime (3.0 3.0 3.0 2.0)
+0x00c88a94 label    g_OpusUnitList0           # pointer to i16 unit numbers of the opus set, negative-ended, up to 512; opu_et_unit 0x007fd7f0 checks their records' u16 +0x1a/+0x1e for a free unit number
+0x00c88a98 label    g_OpusUnitList1           # the second such list, searched after g_OpusUnitList0 (opu_et_unit 0x007fd7f0)
 0x00c88aa8 label    g_OpMdTagSizes            # 8 u32: element bytes of the model packet tag types (0x14, 0x1c, 0x20, 0x28, 0x18, 0x20, 0x28, 0x30)
 0x00c8b500 label    g_pppColorConShift           # added once to pppColorCon's work offset, then cleared there; also RW by pppDrawShape0
 0x00c8f508 label g_Ee_Gpr                    # emulated R5900 GPRs, 32 x 16 bytes: r0 (zero) here, t0 at +0x80 (pppRandFloat: t0 = r0 - 1), sp at +0x1d0 (AsmEmuInit stores this address there); argument registers set by AsmEmuSetFuncParam0 and the setters around it

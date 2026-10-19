@@ -15371,3 +15371,311 @@ fn round29n_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round30a_opu_et_unit_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_d7f0);
+        let cells: Vec<u32> = (0..8).map(|_| p.alloc(4)).collect();
+        let (prog_ret, table_ret, ptr_ret, status_ret, no_ret) =
+            (cells[0], cells[1], cells[2], cells[3], cells[4]);
+        for (sym, words, ret) in [
+            (0x0080_1700u32, &[0u8, 0][..], Some(prog_ret)),
+            (0x0080_1200, &[0], None),
+            (0x007e_3810, &[0, 0, 0], Some(table_ret)),
+            (0x00a4_4700, &[0], Some(ptr_ret)),
+            (0x007f_eba0, &[0, 0, 0], Some(status_ret)),
+            (0x0080_0df0, &[0], Some(no_ret)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // the opus object, its unit records (one before for unit -1), the
+        // two unit lists (0x200 entries and a terminator) and the oef2 table
+        let b = p.alloc(0x100);
+        let parts = p.alloc(0x100 * 10) + 0x100;
+        let (list0, list1) = (p.alloc(0x402), p.alloc(0x402));
+        let table = p.alloc(0x100);
+        p.set(table_ret, table);
+        p.put(et::bridge::OPUS_UNIT_LIST0, list0);
+        p.put(et::bridge::OPUS_UNIT_LIST1, list1);
+        let eff = p.sym(et::bridge::EFF.sym);
+        p.put(et::bridge::OPUS_BATTLE, b);
+        for round in 0..1500 {
+            p.fill(b, 0x100, &mut rng);
+            p.set(b + 0x20, parts);
+            let oef = rng.pick(&[0u32, 0x1000, 0x2000, 0x3000]);
+            for i in 0..16 {
+                let w = rng.pick(&[0u32, 0, 0x1000, 0x2000, 0x3000, 0x4000, 0x5000]);
+                p.set(b + 0x60 + 4 * i, w);
+            }
+            if rng.chance(10) {
+                // full, oef not there (or only the last slot free)
+                for i in 0..16 {
+                    p.set(b + 0x60 + 4 * i, 0x4000u32);
+                }
+                if rng.chance(50) {
+                    p.set(b + 0x60 + 4 * 15, 0u32);
+                }
+            }
+            let part = rng.pick(&[0u32, 1, 2, 7, 0x7f, 0x80, 0x1_0005]);
+            let group = rng.next();
+            let slot_guess = rng.below(4);
+            // unit records: some carry the numbers the search walks
+            p.fill(parts - 0x100, 0x100 * 9, &mut rng);
+            for n in 0..8u32 {
+                let rec = parts + 0x100 * n;
+                if rng.chance(60) {
+                    let j = 1 + rng.below(4);
+                    p.set(rec + 0x1a, ((part << 8) + 0x10 * j) as u16);
+                    p.set(rec + 0x1e, slot_guess as u8);
+                }
+            }
+            for list in [list0, list1] {
+                let len = rng.pick(&[0u32, 1, 3, 8, 0x200]);
+                for i in 0..len {
+                    p.set(list + 2 * i, rng.below(8) as u16);
+                }
+                p.set(list + 2 * len, rng.pick(&[0xffffu16, 0x8000]));
+            }
+            if oef != 0 && rng.chance(10) {
+                // slot 0; only the list's 512th entry has the first number
+                p.set(b + 0x60, oef);
+                p.set(parts + 0x1a, ((part << 8) + 0x10) as u16);
+                p.set(parts + 0x1e, 0u8);
+                p.set(parts + 0x800 + 0x1a, 0xffffu16);
+                for i in 0..0x1ff {
+                    p.set(list0 + 2 * i, 8u16);
+                }
+                p.set(list0 + 0x3fe, 0u16);
+                p.set(list1, 0xffffu16);
+            }
+            p.set(prog_ret, rng.pick(&[0u32, 3, 7, 0xffff, 0x1_0002]));
+            p.fill(table, 0x100, &mut rng);
+            for i in 0..8 {
+                p.set(table + 4 * i, rng.below(0x40) * 4);
+            }
+            p.set(ptr_ret, rng.next());
+            p.fill(eff, 0x20 * 8, &mut rng);
+            for i in 0..8 {
+                if rng.chance(30) {
+                    p.set(eff + 0x20 * i + 0x10, 0xffu8);
+                }
+            }
+            p.set(status_ret, rng.pick(&[0u32, 1, 5, 7, u32::MAX]));
+            p.set(no_ret, rng.next());
+            let any = rng.next();
+            let id = rng.pick(&[
+                0u32,
+                0x300,
+                0x1300,
+                0x1000_0000,
+                0x4000_0000,
+                0x8000_0000,
+                0x0000_0400,
+                any,
+            ]);
+            p.check(
+                &format!("opu_et_unit round {round}"),
+                0x007f_d7f0,
+                &[oef, group, part, id],
+                |o| {
+                    Some(et::bridge::opu_et_unit(
+                        o,
+                        oef,
+                        group,
+                        part,
+                        id,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round30a_clut_cues_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_4720);
+        let cells: Vec<u32> = (0..8).map(|_| p.alloc(4)).collect();
+        let (new_count, table_ret, handle_ret, magic_ret) =
+            (cells[0], cells[1], cells[2], cells[3]);
+        // op_oef2_texture_load: the cue count from new_count (a load can
+        // queue more), then the recorder
+        let count = p.sym(op::bridge::OEF2_CLUT_CUE_COUNT.sym);
+        let mut c = vec![0x66, 0xa1]; // mov ax, [new_count]
+        c.extend(new_count.to_le_bytes());
+        c.extend([0x66, 0xa3]); // mov [count], ax
+        c.extend(count.to_le_bytes());
+        stub_code(&mut p, 0x007e_5030, &c);
+        deref_recorder(
+            &mut p,
+            0x007e_5030 + u32::try_from(c.len()).unwrap(),
+            &[0, 0],
+        );
+        for (sym, words, ret) in [
+            (0x007e_3810u32, &[0u8, 0, 0][..], Some(table_ret)),
+            (0x007e_4f20, &[0, 0], None),
+            (0x007e_4610, &[0, 0], None),
+            (0x009d_a390, &[], Some(handle_ret)),
+            (0x009d_a3b0, &[], Some(magic_ret)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let recs = p.alloc(0x40 * 0x20);
+        let oef = p.alloc(0x80);
+        let magics = [
+            0x2a1u32, 0xa8, 0x24b, 0xaa, 0x9a, 0x130, 0x238, 0x94, 0x239, 0xd0, 0x1ae, 0x24c, 0x46,
+            0x23a, 0x133, 0x233, 0x1ff, 0x24d, 0x203, 0x29b, 0x263, 0x29c, 0x207, 0x280, 0x241,
+            0x123,
+        ];
+        let small = [0u32, 1, 2, 3, 4, 5, 8, 9, 10, 0xf, 0x10];
+        let big = [
+            0x13u32, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1d, 0x1e, 0x20, 0x23, 0x24,
+        ];
+        let more = [0x27u32, 0x28, 0x31, 0xffff, 0x1_0003];
+        let steps = [
+            (0xfu32, 0xfu32),
+            (0, 8),
+            (9, 10),
+            (0x14, 0x18),
+            (0, 0xf),
+            (0x10, 0x17),
+            (0, 0),
+            (1, 1),
+            (2, 2),
+            (0x14, 0x14),
+            (0x15, 0),
+            (0x16, 7),
+            (0x17, 0x17),
+            (0x13, 0x13),
+            (10, 2),
+            (0, 1),
+            (2, 3),
+            (4, 4),
+            (5, 0),
+            (0, 3),
+            (0, 10),
+            (0, 0x1d),
+            (0x1e, 0x20),
+            (0x23, 0x24),
+            (0, 0x13),
+            (0x14, 0x27),
+            (0x28, 0x31),
+            (0x15, 0x19),
+        ];
+        // every magic with every step range and a near miss of it, the
+        // phase 0x10 telling set, `|` and the doubling apart
+        p.set(oef + 0x44, 1u16);
+        p.set(oef + 0x46, 0u16);
+        p.set(handle_ret, 0u32);
+        for &magic in &magics {
+            for &(first, end) in &steps {
+                for last in [end, end + 1] {
+                    p.set(magic_ret, magic);
+                    p.put(op::bridge::VFX_PHASE, 0x10);
+                    p.check(
+                        &format!("op_oef2_tex_clut_cue_multi {magic:#x} {first:#x}..={last:#x}"),
+                        0x007e_4830,
+                        &[oef, first, last, 0],
+                        |o| {
+                            Some(op::bridge::op_oef2_tex_clut_cue_multi(
+                                o,
+                                oef,
+                                first,
+                                last,
+                                0,
+                                &mut call_original,
+                            ))
+                        },
+                    );
+                }
+            }
+        }
+        for round in 0..3000 {
+            // op_oef2_tex_clut_cue_loop over a ring of textures and CLUTs
+            // (some rounds textures only or CLUTs only)
+            let kinds = rng.pick(&[0, 0, 0, 1, 2]);
+            p.fill(recs, 0x40 * 0x20, &mut rng);
+            for i in 0..0x40 {
+                let r = recs + 0x20 * i;
+                let size = rng.pick(&[0u32, 0x100, 0x4_0000, 0x10_0000, 0x8000_0000]);
+                p.set(r + 0x10, size);
+                let tex = if rng.chance(50) && kinds != 2 { r } else { 0 };
+                p.set(p.sym(0x011a_01a0) + 4 * i, tex);
+                let clut = if rng.chance(50) && kinds != 1 {
+                    r + 0x14
+                } else {
+                    0
+                };
+                p.set(p.sym(0x011a_02a0) + 4 * i, clut);
+                let n = rng.pick(&[0u16, 1, 0x100, 0x4000, 0xffff]);
+                p.set(r + 0x16, n);
+            }
+            p.fill(p.sym(op::bridge::OEF2_CLUT_CUES.sym), 0x100, &mut rng);
+            let n = rng.pick(&[0u16, 1, 2, 5, 0x40, 0x41, 0x100]);
+            p.put(op::bridge::OEF2_CLUT_CUE_COUNT, n);
+            p.put(
+                op::bridge::OEF2_CLUT_CUE_HEAD,
+                rng.pick(&[0u16, 1, 0x3f, 0x40, 0xfffe]),
+            );
+            let after = if rng.chance(70) {
+                n
+            } else {
+                rng.pick(&[0u16, 1, 3, 0x200])
+            };
+            p.set(new_count, u32::from(after));
+            p.check(
+                &format!("op_oef2_tex_clut_cue_loop round {round}"),
+                0x007e_4720,
+                &[],
+                |o| {
+                    op::bridge::op_oef2_tex_clut_cue_loop(o, &mut call_original);
+                    None
+                },
+            );
+            // op_oef2_tex_clut_cue_multi: the ranges and the magic steps
+            p.set(oef + 0x44, rng.pick(&[0u16, 0, 1, 5, 0x20]));
+            p.set(oef + 0x46, rng.pick(&[0u16, 0, 1, 6, 0x20]));
+            let first = match rng.below(3) {
+                0 => rng.pick(&small),
+                1 => rng.pick(&big),
+                _ => rng.pick(&more),
+            };
+            let last = match rng.below(4) {
+                0 => first,
+                1 => rng.pick(&small),
+                2 => rng.pick(&big),
+                _ => rng.pick(&more),
+            };
+            // half the time a range some magic marks a step for
+            let (first, last) = if rng.chance(50) {
+                rng.pick(&steps)
+            } else {
+                (first, last)
+            };
+            p.set(table_ret, rng.next());
+            p.set(handle_ret, rng.pick(&[u32::MAX, 0, 3]));
+            p.set(magic_ret, rng.pick(&magics));
+            p.put(op::bridge::VFX_PHASE, rng.pick(&[0u32, 1, 6, 0x8000_0001]));
+            let mask = rng.next();
+            p.check(
+                &format!("op_oef2_tex_clut_cue_multi round {round}"),
+                0x007e_4830,
+                &[oef, first, last, mask],
+                |o| {
+                    Some(op::bridge::op_oef2_tex_clut_cue_multi(
+                        o,
+                        oef,
+                        first,
+                        last,
+                        mask,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}

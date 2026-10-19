@@ -2361,6 +2361,10 @@ ported! {
     op_mdc_mem_transfer @ 0x0080_3610 => extern "C" fn op_mdc_mem_transfer() {
         op::bridge::op_mdc_mem_transfer(&mut mem(), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `opu_et_unit(oef, group, part, id)`.
+    opu_et_unit @ 0x007f_d7f0 => extern "C" fn opu_et_unit(oef: u32, group: u32, part: u32, id: u32) -> u32 {
+        et::bridge::opu_et_unit(&mut mem(), oef, group, part, id, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
