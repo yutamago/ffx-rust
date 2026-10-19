@@ -9952,6 +9952,13 @@ fn chr_se(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, buf: u3
     let top = ffx_battle::actor::bridge::CHR_TOP;
     let was = top.get(b);
     let op = rng.below(6);
+    // the fade at times for a spare actor (low byte 0x80 on, which the
+    // players' & 0xff keeps)
+    let i = if op == 1 && rng.below(4) == 0 {
+        (i & !0xff) | 0x80 | rng.below(0x80)
+    } else {
+        i
+    };
     // (only the players that check it first)
     let none = matches!(op, 2 | 3 | 5) && rng.below(8) == 0;
     let probe = buf + 0x80;
@@ -10032,4 +10039,98 @@ fn chr_se_matches_the_original_on_a_snapshot() {
         (150, 8),
         chr_se,
     );
+}
+
+/// `MsChrDelExtraCommand_007acb40` (round 26) on the dressed actors: their
+/// extra commands and second menu lists (`g_BtlItemMem2`, here a block of
+/// 31 lists, `items`) drawn from a few commands, one of them removed.
+fn del_extra_command(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, items: u32) {
+    set(a, b, ffx_battle::misc::bridge::ITEM_MEM2, items);
+    let pool = [0x3001u16, 0x3002, 0x3003, 0xff, 0x2005];
+    let pick = |rng: &mut Xorshift| pool[rng.below(5) as usize];
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        let extra: Vec<u8> = (0..4).flat_map(|_| pick(rng).to_le_bytes()).collect();
+        poke(a, b, p + 0x71a, &extra);
+        poke(a, b, p + 0x6cb, &[u8::try_from(rng.below(5)).unwrap()]);
+        let list: Vec<u8> = (0..8).flat_map(|_| pick(rng).to_le_bytes()).collect();
+        poke(a, b, items + 0x478 * i + 0x28, &list);
+    }
+    let chr = rng.below(ACTORS);
+    let sel = match rng.below(4) {
+        0 => 0x1000 + rng.below(0x40),
+        1 => rng.below(0x40),
+        2 => rng.next() & 0x7fff_ffff,
+        _ => rng.range(-27, 0).cast_unsigned(),
+    };
+    let command =
+        [u32::from(pick(rng)), 0x1_3001, rng.below(0x10000)][rng.below(4).min(2) as usize];
+    twin(
+        "MsChrDelExtraCommand_007acb40",
+        a,
+        b,
+        0x007a_cb40,
+        &[chr, command, sel],
+        ALL,
+        |m| ffx_battle::ability::bridge::ms_chr_del_extra_command(m, chr, command, sel),
+    );
+    same("MsChrDelExtraCommand_007acb40", a, b);
+}
+
+/// `MsMonShuffleVariants_007842f0` (round 26) on the dressed actors: the
+/// monsters shown at random, their model owners mostly among themselves
+/// (an owner's own `+0x14` itself or another).
+fn mon_shuffle(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
+    let owners = [0x14u8, 0x15, 0x14, 0x16, 0x14, 0x15, 0x1a, 0x1b];
+    for k in 0x14..0x1c {
+        let p = w.actor(k);
+        poke(a, b, p + 0x10, &[u8::from(rng.below(6) != 0)]);
+        poke(a, b, p + 0x11, &[u8::from(rng.below(6) != 0)]);
+        let owner = if rng.below(4) == 0 {
+            u8::try_from(rng.below(ACTORS)).unwrap()
+        } else {
+            owners[rng.below(8) as usize]
+        };
+        poke(a, b, p + 0x14, &[owner]);
+    }
+    twin(
+        "MsMonShuffleVariants_007842f0",
+        a,
+        b,
+        0x0078_42f0,
+        &[],
+        0,
+        |m| {
+            ffx_battle::read::bridge::ms_mon_shuffle_variants(m);
+            0
+        },
+    );
+    same("MsMonShuffleVariants_007842f0", a, b);
+}
+
+fn command_and_variants(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    let items = scratch(a, b, 0x8a90);
+    dressed_check(a, b, rng, synthetic, (150, 4), |a, b, rng, w, _| {
+        if rng.below(2) == 0 {
+            del_extra_command(a, b, rng, w, items);
+        } else {
+            mon_shuffle(a, b, rng, w);
+        }
+    });
+}
+
+#[test]
+fn commands_and_variants_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    command_and_variants(&mut a, &mut b, &mut Xorshift(0x26ca_0301), true);
+}
+
+#[test]
+fn commands_and_variants_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    command_and_variants(&mut a, &mut b, &mut Xorshift(0x26ca_0302), false);
 }

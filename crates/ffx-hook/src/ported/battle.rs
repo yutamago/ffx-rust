@@ -2283,6 +2283,14 @@ ported! {
     MsGetBattleList @ 0x007b_6c50 => extern "C" fn ms_get_battle_list(kind: i32, count: u32) -> u32 {
         ffx_battle::ability::bridge::ms_get_battle_list(&mut mem(), kind, count)
     }
+    /// `MsChrDelExtraCommand_007acb40(chr, command, selector)`.
+    MsChrDelExtraCommand_007acb40 @ 0x007a_cb40 => extern "C" fn ms_chr_del_extra_command(chr: u32, command: u32, selector: u32) -> u32 {
+        ffx_battle::ability::bridge::ms_chr_del_extra_command(&mut mem(), chr, command, selector)
+    }
+    /// `MsMonShuffleVariants_007842f0()`.
+    MsMonShuffleVariants_007842f0 @ 0x0078_42f0 => extern "C" fn ms_mon_shuffle_variants() {
+        read::ms_mon_shuffle_variants(&mut mem());
+    }
     /// `MsSetRamChrAbility(chr, actor)`.
     MsSetRamChrAbility @ 0x0079_bb50 => extern "C" fn ms_set_ram_chr_ability(chr: u32, actor: u32) {
         ffx_battle::ability::bridge::ms_set_ram_chr_ability(&mut mem(), chr, actor);
