@@ -391,6 +391,56 @@ pub mod bridge {
         opus_change_chr_status_en(mem, frame)
     }
 
+    /// `op_chr_status_reset_exception_wrap_007fae90(h)` (`0x007fae90`):
+    /// [`op_chr_status_reset_exception`]`(h)` with `g_OpusBattleList`
+    /// (`0x012a12fc`) cleared for the call when its `u16 +0x300` is 1, and
+    /// put back after.
+    pub fn op_chr_status_reset_exception_wrap<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let slot = Global::<u32>::new(0x012a_12fc).ptr(mem).addr;
+        let list: u32 = mem.read(slot);
+        if list != 0 && mem.read::<u16>(list.wrapping_add(0x300)) == 1 {
+            mem.write(slot, 0u32);
+        }
+        op_chr_status_reset_exception(mem, h, call);
+        mem.write(slot, list);
+    }
+
+    /// `opus_change_chrhd_ffx_to_battle()` (`0x007fe200`): the first 32
+    /// handles of `g_EtChrHandles` become `MsGetChrHandle(i)` (through
+    /// `call`), each nonzero one cleared where it also appears in the 0xd0
+    /// after them (the first match), then the three remaps as
+    /// [`opus_change_chrhd_battle_to_ffx`] does. Returns the last one's
+    /// eax.
+    pub fn opus_change_chrhd_ffx_to_battle<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let handles = CHR_HANDLES.ptr(mem);
+        let get = Global::<u32>::new(0x0079_5080).ptr(mem).addr;
+        for i in 0..0x20 {
+            let h = call(mem, get, &[i]);
+            handles.at(i).set(mem, h);
+        }
+        for i in 0..0x20 {
+            let h = handles.at(i).get(mem);
+            if h == 0 {
+                continue;
+            }
+            if let Some(k) = (0..0xd0).find(|&k| handles.at(0x20 + k).get(mem) == h) {
+                handles.at(0x20 + k).set(mem, 0);
+            }
+        }
+        let list = OPUS_BATTLE.get(mem);
+        opus_change_osu_en_by_chr_status(mem, list, frame);
+        opus_change_eff_status_en(mem, frame);
+        opus_change_chr_status_en(mem, frame)
+    }
+
     /// `op_et_eff_target_center_0081b3e0(eff, out, filter)` (`0x0081b3e0`):
     /// the mean position of an effect record's targets into `out`: for
     /// each of its `byte +8` character indices (`+0x10`; the count read

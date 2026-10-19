@@ -770,6 +770,27 @@ pub mod bridge {
         id: u16,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
+        free_matching(mem, 0x64, id, call);
+    }
+
+    /// `pppFpGrpForceOff(group)` (`0x00729480`): [`ppp_fp_id_free`] for
+    /// every effect of the group (`u16 +0x66`).
+    pub fn ppp_fp_grp_force_off<M: Mem>(
+        mem: &mut M,
+        group: u16,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        free_matching(mem, 0x66, group, call);
+    }
+
+    /// The effects whose `u16` at `at` (in the entry) is `v`: objects
+    /// freed, counter -0x1000.
+    fn free_matching<M: Mem>(
+        mem: &mut M,
+        at: u32,
+        v: u16,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
         let table = DATA.get(mem);
         if table == 0 {
             return;
@@ -777,7 +798,7 @@ pub mod bridge {
         set_env(mem);
         let n = u32::from(mem.read::<u16>(table.wrapping_add(4)));
         for k in 0..n {
-            if mem.read::<u16>(table.wrapping_add(0x64 + 0x50 * k)) == id {
+            if mem.read::<u16>(table.wrapping_add(at + 0x50 * k)) == v {
                 let run = RUN.ptr(mem).at(k).addr;
                 free_objects(mem, run, call);
                 mem.write(run, NOT_STARTED);

@@ -2165,6 +2165,41 @@ ported! {
     opus_mdc_rec_init_00813950 @ 0x0081_3950 => extern "C" fn opus_mdc_rec_init(rec: u32, n: u32, a: u32, b: u32) -> u32 {
         opus::bridge::opus_mdc_rec_init(&mut mem(), rec, n, a, b, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_chr_status_reset_exception_wrap_007fae90(h)`.
+    op_chr_status_reset_exception_wrap_007fae90 @ 0x007f_ae90 => extern "C" fn op_chr_status_reset_exception_wrap(h: u32) {
+        et::bridge::op_chr_status_reset_exception_wrap(&mut mem(), h, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppFpGrpForceOff(group)`.
+    pppFpGrpForceOff @ 0x0072_9480 => extern "C" fn ppp_fp_grp_force_off(group: u32) {
+        #[allow(clippy::cast_possible_truncation)] // a u16 argument
+        fp::bridge::ppp_fp_grp_force_off(&mut mem(), group as u16, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opu_mdc_0x1000_hide()`.
+    opu_mdc_0x1000_hide @ 0x0080_4150 => extern "C" fn opu_mdc_0x1000_hide() -> u32 {
+        opus::bridge::opu_mdc_0x1000_hide(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_change_chrhd_ffx_to_battle()`.
+    opus_change_chrhd_ffx_to_battle @ 0x007f_e200 => extern "C" fn opus_change_chrhd_ffx_to_battle() -> u32 {
+        // the three remaps' index map and flag copies
+        let mut frame = super::StackFrame::<0xf0>::new();
+        let at = frame.at();
+        et::bridge::opus_change_chrhd_ffx_to_battle(&mut mem(), at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_rt_m_zxy(m, src, angles, t)`.
+    op_rt_m_zxy @ 0x007e_9af0 => extern "C" fn op_rt_m_zxy(m: u32, src: u32, angles: u32, t: u32) -> u32 {
+        op::bridge::op_rt_m_order(&mut mem(), m, src, angles, t, [mat::Axis::Z, mat::Axis::X, mat::Axis::Y])
+    }
+    /// `opus_map_rgba_free()`.
+    opus_map_rgba_free @ 0x0080_ac00 => extern "C" fn opus_map_rgba_free() {
+        // the original's local vector, 16-byte aligned as in its frame
+        #[repr(C, align(16))]
+        struct Locals([u32; 4]);
+        let mut locals = Locals([0; 4]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let at = locals.0.as_mut_ptr() as u32;
+        opus::bridge::opus_map_rgba_free(&mut mem(), at, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

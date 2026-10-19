@@ -2308,6 +2308,49 @@ pub mod bridge {
         end
     }
 
+    /// `opu_mdc_0x1000_hide(_)` (`0x00804150`): by the magic file
+    /// (`MagicFile_GetMagicId`, through `call`): 0 for 0x280, 0x1e5, 0x2c6,
+    /// 0x250 and 0x276..=0x27d; 3 for the nine ids listed at `0x00b587e0`
+    /// (`i16`); else 1.
+    pub fn opu_mdc_0x1000_hide<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = call(mem, g(mem, 0x009d_a3b0), &[]);
+        if matches!(id, 0x280 | 0x1e5 | 0x2c6 | 0x250) || id.wrapping_sub(0x276) <= 7 {
+            return 0;
+        }
+        let list: [i16; 9] = mem.read(g(mem, 0x00b5_87e0));
+        if list.iter().any(|&x| i32::from(x).cast_unsigned() == id) {
+            3
+        } else {
+            1
+        }
+    }
+
+    /// `opus_map_rgba_free()` (`0x0080ac00`): the map's look back to
+    /// normal: `yiRenderDisable(4)`, `yiSetColorScale` of (1, 1, 1, 1) (a
+    /// local vector at `frame`, 16 bytes), and with a back colour kept
+    /// (`0x011a006f`) `yiSetBackColor(0x011a0070)` and the flag cleared;
+    /// the colour scale at `0x00c48e64` 1.0 four times. Callees through
+    /// `call`.
+    pub fn opus_map_rgba_free<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let one = 1.0f32.to_bits();
+        mem.write(frame, [one; 4]);
+        call(mem, g(mem, 0x0090_9e10), &[4]);
+        call(mem, g(mem, 0x0090_a270), &[frame]);
+        let kept = g(mem, 0x011a_006f);
+        if mem.read::<u8>(kept) != 0 {
+            call(mem, g(mem, 0x0090_a040), &[g(mem, 0x011a_0070)]);
+            mem.write(kept, 0u8);
+        }
+        mem.write(g(mem, 0x00c4_8e64), [one; 4]);
+    }
+
     /// `opus_copy_buffer_event_00808a60()` (`0x00808a60`): in the two
     /// magic files 0x11b and 0x1a6 (`MagicFile_GetMagicId`), a copy-buffer
     /// event (`graphicVFXAddCopyBufferEventWithClearRGB(0, 1)`), through

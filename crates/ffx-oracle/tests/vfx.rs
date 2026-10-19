@@ -14276,3 +14276,207 @@ fn round29h_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round29i_helpers_match_the_original() {
+    use ffx_vfx::mat::Axis;
+    use fp::bridge as f;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_9480);
+        let (start, index, chrh, magic) = (p.alloc(4), p.alloc(4), p.alloc(4), p.alloc(4));
+        for (sym, words, ret) in [
+            (0x0071_1f20u32, &[0u8][..], None),
+            (0x0080_a560, &[0, 0, 0], None),
+            (0x0080_aa00, &[0, 0], None),
+            (0x0083_c810, &[0], None),
+            (0x0090_9e10, &[0], None),
+            (0x0090_a270, &[4], None),
+            (0x0090_a040, &[0], None),
+            (0x0078_0cb0, &[], Some(start)),
+            (0x007f_e970, &[0, 0, 0], Some(index)),
+            (0x0079_5080, &[0], Some(chrh)),
+            (0x009d_a3b0, &[], Some(magic)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // opu_unit_free_by_id: keeps the g_OpusBattleList it sees, the
+        // wrapper's clear visible
+        let seen = p.alloc(4);
+        let mut stub = vec![0xa1];
+        stub.extend(p.sym(0x012a_12fc).to_le_bytes());
+        stub.push(0xa3);
+        stub.extend(seen.to_le_bytes());
+        stub.push(0xc3);
+        stub_code(&mut p, 0x007f_de30, &stub);
+        let env = p.alloc(4);
+        p.set(p.sym(ffx_vfx::draw::bridge::ENV_SLOT), env);
+        let frame = p.b.stack_range().start + 0x100;
+        // opus_map_rgba_free's vector: where the original's aligned frame
+        // puts it (the harness's return address at end - 0x104)
+        let rgba_frame = (p.a.stack_range().end - 0x104 - 4) / 16 * 16 - 0x20;
+        let data = p.alloc(0x20 + 0x50 * 0x30);
+        let run = p.sym(f::RUN.sym);
+        let chr_tab = p.sym(et::bridge::CHR.sym);
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let eff = p.sym(et::bridge::EFF.sym);
+        let (list, units, idx) = (p.alloc(0x40), p.alloc(0x1000), p.alloc(0x60));
+        let (mat_at, src, ang, tr) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let hl = p.alloc(0x400);
+        for round in 0..1500 {
+            // pppFpGrpForceOff
+            p.fill(data, 0x20 + 0x50 * 0x30, &mut rng);
+            p.set(data + 4, rng.pick(&[0u16, 1, 5, 0x30]));
+            for k in 0..0x30u32 {
+                p.set(data + 0x66 + 0x50 * k, rng.pick(&[0u16, 1, 2, 7]));
+            }
+            p.put(f::DATA, if rng.chance(15) { 0 } else { data });
+            p.fill(run, 0x80 * 0x30, &mut rng);
+            p.fill(env, 4, &mut rng);
+            let grp = rng.pick(&[0u32, 1, 2, 7, 0x1_0002]);
+            p.check(
+                &format!("pppFpGrpForceOff round {round}"),
+                0x0072_9480,
+                &[grp],
+                |o| {
+                    #[allow(clippy::cast_possible_truncation)]
+                    f::ppp_fp_grp_force_off(o, grp as u16, &mut call_original);
+                    None
+                },
+            );
+            // the characters
+            p.fill(handles, 0xf0 * 4, &mut rng);
+            for i in 0..240u32 {
+                let r = chr_tab + 0x20 * i;
+                p.fill(r, 0x20, &mut rng);
+                if rng.chance(30) {
+                    let u = rng.below(0xf0);
+                    let hd = 0x1000 + u;
+                    p.set(handles + 4 * u, hd);
+                    p.set(r, hd);
+                    p.set(r + 0xe, u16::try_from(rng.below(0xf0)).unwrap());
+                } else {
+                    p.set(r, 0u32);
+                }
+            }
+            p.set(start, rng.pick(&[0u32, 1]));
+            p.fill(hl, 0x400, &mut rng);
+            p.set(hl + 0x300, rng.pick(&[0u16, 1, 2]));
+            p.set(p.sym(0x012a_12fc), rng.pick(&[0u32, hl]));
+            let hd = rng.pick(&[0u32, 0x1000, 0x1005]);
+            if rng.chance(50) && hd != 0 {
+                let at = chr_tab + 0x20 * rng.below(240);
+                p.set(at, hd);
+                p.set(at + 0xe, u16::try_from(rng.below(0xf0)).unwrap());
+            }
+            p.check(
+                &format!("0x007fae90 round {round}"),
+                0x007f_ae90,
+                &[hd],
+                |o| {
+                    et::bridge::op_chr_status_reset_exception_wrap(o, hd, &mut call_original);
+                    None
+                },
+            );
+            // opus_change_chrhd_ffx_to_battle
+            p.set(p.sym(0x012a_12fc), 0u32);
+            let ch = rng.pick(&[0u32, 0x1003, 0x10ef, 0x9999]);
+            p.set(chrh, ch);
+            for j in 0..512u32 {
+                let r = eff + 0x20 * j;
+                p.set(r, if rng.chance(70) { u32::MAX } else { rng.next() });
+                p.set(r + 8, u8::try_from(rng.below(9)).unwrap());
+                p.set(r + 9, u8::try_from(rng.below(9)).unwrap());
+                for k in 0..16 {
+                    p.set(r + 0x10 + k, u8::try_from(rng.below(0xf0)).unwrap());
+                }
+            }
+            p.fill(units, 0x1000, &mut rng);
+            for i in 0..16u32 {
+                p.set(
+                    units + 0x100 * i + 0x18,
+                    u8::try_from(rng.below(0xf0)).unwrap(),
+                );
+            }
+            p.set(list + 0x20, units);
+            let first = rng.below(16);
+            for (k, at) in [0x10u32, 0x14, 0x18].into_iter().enumerate() {
+                let k = u32::try_from(k).unwrap();
+                let li = idx + 0x20 * k;
+                p.set(list + at, li);
+                let n = rng.below(6);
+                for i in 0..n {
+                    p.set(li + 2 * i, u16::try_from((first + 5 * k + i) % 16).unwrap());
+                }
+                p.set(li + 2 * n, 0xffffu16);
+            }
+            p.put(et::bridge::OPUS_BATTLE, list);
+            p.check(
+                &format!("opus_change_chrhd_ffx_to_battle round {round}"),
+                0x007f_e200,
+                &[],
+                |o| {
+                    Some(et::bridge::opus_change_chrhd_ffx_to_battle(
+                        o,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // op_rt_m_zxy
+            for at in [src, ang, tr] {
+                for i in 0..4 {
+                    let x = finite(&mut rng);
+                    p.set(at + 4 * i, x);
+                }
+            }
+            for i in 4..16 {
+                let x = finite(&mut rng);
+                p.set(src + 4 * i, x);
+            }
+            p.fill(mat_at, 0x40, &mut rng);
+            p.check(
+                &format!("op_rt_m_zxy round {round}"),
+                0x007e_9af0,
+                &[mat_at, src, ang, tr],
+                |o| {
+                    Some(op::bridge::op_rt_m_order(
+                        o,
+                        mat_at,
+                        src,
+                        ang,
+                        tr,
+                        [Axis::Z, Axis::X, Axis::Y],
+                    ))
+                },
+            );
+            // opu_mdc_0x1000_hide: the listed ids, the excluded ones, others
+            let listed = u32::from(p.get::<u16>(p.sym(0x00b5_87e0) + 2 * rng.below(9)));
+            let any = rng.below(0x400);
+            p.set(
+                magic,
+                rng.pick(&[
+                    0x280u32, 0x1e5, 0x2c6, 0x250, 0x276, 0x27d, 0x27e, listed, any,
+                ]),
+            );
+            p.check(
+                &format!("opu_mdc_0x1000_hide round {round}"),
+                0x0080_4150,
+                &[],
+                |o| Some(opus::bridge::opu_mdc_0x1000_hide(o, &mut call_original)),
+            );
+            // opus_map_rgba_free
+            p.set(p.sym(0x011a_006f), u8::from(rng.chance(50)));
+            p.fill(p.sym(0x00c4_8e64), 16, &mut rng);
+            p.check(
+                &format!("opus_map_rgba_free round {round}"),
+                0x0080_ac00,
+                &[],
+                |o| {
+                    opus::bridge::opus_map_rgba_free(o, rgba_frame, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
