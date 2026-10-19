@@ -920,6 +920,69 @@ pub mod bridge {
         cmd.wrapping_add(4)
     }
 
+    /// `opus_draw_off(list, id)` (`0x00800d10`).
+    pub const OPUS_DRAW_OFF: u32 = 0x0080_0d10;
+
+    /// `SqsCmdAnmmMode(ctx, cmd)` (`0x0081ca60`, name ours; the IOP command
+    /// that sets [`sqs_cmd_anmm`]'s mode) on the context's record
+    /// (`+0x220`), by the mode bits `0xf000` of `ctx +0x21a`:
+    /// - 0: the mode byte `+0xbb` from `cmd +2`, two `u16`s (`cmd +4`,
+    ///   `+6`) to `+0xa8`/`+0xaa`, the context's id joins its list
+    ///   (`opu_id_list_add(ctx +0x300, +0x214)`); returns `cmd + 8`.
+    /// - `0x1000`/`0x3000`: the bits `cmd +2` set in / cleared from the
+    ///   record's `+0xc0`; returns `cmd + 4`.
+    /// - `0x2000`: the mode byte, `+0xa8` the inline table at `cmd + 6`, the
+    ///   id joins the list; returns past the table (`cmd + 6 + 2 n`, `n`
+    ///   at `cmd +4`, the doubling in 16 bits).
+    /// - `0x4000`: mode 0 and `opus_draw_off(ctx +0x300, id)`; returns
+    ///   `cmd + 2`.
+    /// - Anything else returns `cmd`.
+    pub fn sqs_cmd_anmm_mode<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        ctx: u32,
+        cmd: u32,
+        call: &mut C,
+    ) -> u32 {
+        let rec = mem.read::<u32>(ctx.wrapping_add(0x220));
+        let list = ctx.wrapping_add(0x300);
+        let id = u32::from(mem.read::<u16>(ctx.wrapping_add(0x214)));
+        let bits = |mem: &M| mem.read::<u16>(cmd.wrapping_add(2));
+        let flags = rec.wrapping_add(0xc0);
+        match mem.read::<u16>(ctx.wrapping_add(0x21a)) & 0xf000 {
+            0 => {
+                mem.write(rec.wrapping_add(0xbb), mem.read::<u8>(cmd.wrapping_add(2)));
+                mem.write(rec.wrapping_add(0xa8), mem.read::<u16>(cmd.wrapping_add(4)));
+                mem.write(rec.wrapping_add(0xaa), mem.read::<u16>(cmd.wrapping_add(6)));
+                let f = mem.rebase(OPU_ID_LIST_ADD);
+                call(mem, f, &[list, id]);
+                cmd.wrapping_add(8)
+            }
+            0x1000 => {
+                mem.write(flags, mem.read::<u16>(flags) | bits(mem));
+                cmd.wrapping_add(4)
+            }
+            0x2000 => {
+                mem.write(rec.wrapping_add(0xbb), mem.read::<u8>(cmd.wrapping_add(2)));
+                mem.write(rec.wrapping_add(0xa8), cmd.wrapping_add(6));
+                let f = mem.rebase(OPU_ID_LIST_ADD);
+                call(mem, f, &[list, id]);
+                let n = mem.read::<u16>(cmd.wrapping_add(4)).wrapping_mul(2);
+                u32::from(n).wrapping_add(6).wrapping_add(cmd)
+            }
+            0x3000 => {
+                mem.write(flags, mem.read::<u16>(flags) & !bits(mem));
+                cmd.wrapping_add(4)
+            }
+            0x4000 => {
+                mem.write(rec.wrapping_add(0xbb), 0u8);
+                let f = mem.rebase(OPUS_DRAW_OFF);
+                call(mem, f, &[list, id]);
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
+
     /// `Sqs_DecodeAdpcm(src, dst)` (`0x0081cc70`, name ours; from
     /// `SqsStraightStreamingDataSend`): 25 rounds of 256 left samples then
     /// 256 right ones (`i16` into `dst`, 0x6400 bytes), each from 16

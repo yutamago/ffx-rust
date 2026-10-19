@@ -19149,3 +19149,59 @@ fn r13r_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_2102);
     r13r_cases(&mut t, &mut rng, 150);
 }
+
+// ---- field agent r13, group S: the anmm mode command ----
+
+/// Group S (r13) on `t`: `SqsCmdAnmmMode` in every mode (0x0000..0xf000),
+/// table lengths with the 16-bit doubling wrap; the list calls are logged
+/// stand-ins.
+fn r13s_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::nkz::bridge as nb;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 4), t.alloc(4));
+    t.cave(&[
+        (Some(nb::OPU_ID_LIST_ADD), log_stub(log, rv, 1, 2)),
+        (Some(nb::OPUS_DRAW_OFF), log_stub(log, rv, 2, 2)),
+    ]);
+    let (ctx, rec, cmd) = (t.alloc(0x400), t.alloc(0x100), t.alloc(0x10));
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(ctx + 0x200, 0x200, rng);
+        let mode = match rng.below(4) {
+            0 => u16::try_from(rng.below(16)).unwrap() << 12,
+            k => [0u16, 0x1000, 0x2000, 0x3000, 0x4000]
+                [usize::try_from(k + rng.below(3) - 1).unwrap()],
+        };
+        t.put(
+            ctx + 0x21a,
+            u16::try_from(rng.next() & 0x0fff).unwrap() | mode,
+        );
+        t.put(ctx + 0x220, rec);
+        t.fill(rec, 0x100, rng);
+        t.fill(cmd, 0x10, rng);
+        t.same(
+            "SqsCmdAnmmMode",
+            |o| o.eax(0x0081_ca60, &[ctx, cmd]),
+            |m| nb::sqs_cmd_anmm_mode(m, ctx, cmd, call),
+        );
+    }
+}
+
+/// Group S (r13) on the image.
+#[test]
+fn r13s_anmm_mode_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_3101);
+    r13s_cases(&mut t, &mut rng, 600);
+}
+
+/// Group S (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13s_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_3102);
+    r13s_cases(&mut t, &mut rng, 300);
+}
