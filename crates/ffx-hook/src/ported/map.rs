@@ -3952,6 +3952,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `LoadAbmap()`.
+    LoadAbmap @ 0x00a4_5570 => extern "C" fn shim_load_abmap() -> u32 {
+        abmap::bridge::load_abmap(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapState_Warping()`.
     AbmapState_Warping @ 0x00a4_7f00 => extern "C" fn shim_abmap_state_warping() -> u32 {
         abmap::bridge::abmap_state_warping(&mut mem(), &mut |_, f, a| call_cdecl(f, a))

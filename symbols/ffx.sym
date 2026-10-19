@@ -12825,7 +12825,7 @@
 0x00a45440 function AbmapSetHelpMessage_copy_00a45440 # the same code as AbmapSetHelpMessage (0x00a454a0; call targets equal), a copy the compiler kept; own name
 0x00a454a0 function AbmapSetHelpMessage       # fh v3:cg2 0xa454a0 +AbmapSetHelpMessage
 0x00a45500 function AbmapSetHelpMessage_copy_00a45500 # the same code as AbmapSetHelpMessage (0x00a454a0; call targets equal), a copy the compiler kept; own name
-0x00a45570 function LoadAbmap                 # fh v3:exact 0x00a45570 +LoadAbmap
+0x00a45570 function LoadAbmap                 # fh v3:exact 0x00a45570 +LoadAbmap; (): file 9/10/11 by MsGetSaveMenu bits 14..15 through GetCD's reader into g_AbmapFile; with '1': counts +2/+4/+6 to g_Abmap +0/+2/+4, kinds (16 B) to +8, nodes (12 B, 0x28 apart) to +0x808 with +0x26 = rev10(nodes left) << 6 and +0xa cell (x+0xa00)/256 + 20 (y+0x920)/256, links (8 B, 0x14 apart) to +0xa808 kept when ends differ and are below the node count (AbmapLinkCells), +4 the kept count; then AbmapCollectNodeLinks, AbmapCalcBounds (its eax); ported (field r13, ffx_field::abmap)
 0x00a457d0 function abmap_test_panel             # (bit, node) -> node panel bits (+0x829) & 1 << bit; 0x00a5d120
 0x00a45800 function abmap_other_has_panel        # (chr, node) -> 1 when another of the first seven characters who has joined (MsGetSavePlyJoined 1) has its panel bit on the node; 0x00a5d120
 0x00a45870 function abmap_chr_node               # (chr) -> the character's node (u16 at g_Abmap +0x110cc + 0x50 chr) once joined, else -1; 0x00a5d120
@@ -16292,6 +16292,7 @@
 0x0159ec70 label    g_TkMenuSaveFiles         # 99 x 0x40-byte save file records (TkMenuGetSaveFileInfo)
 0x01640870 label    g_AbilitymapWork          # the ability map's work area (TOMenuGetAbilitymapWorkAdrs)
 0x01730870 label g_MixTable                # Rikku's mix table (MsGetExcelData layout): record max holds at 2*min what items min and max make (MsSetRikkuLimit)
+0x01740870 label    g_AbmapFile               # the sphere grid file LoadAbmap reads (file 9/10/11 by grid kind): +0 '1' when loaded, +2/+4/+6 kind/node/link counts, records from +0x10; name ours
 0x01840870 label    g_TkMenuMainIgnoreJoinFlag # TkMenuMainSetIgnoreJoinFlag
 0x01840874 label    g_TkMenuMainTask          # MenuMain_GetTask
 0x01840878 label    g_TkMenuHelpRatio2        # TkMenuGetHelpRatio2

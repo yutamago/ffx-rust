@@ -2386,4 +2386,110 @@ pub mod bridge {
         mem.write(g.wrapping_add(0x115c7), 1u8);
         abmap_reset_cursor_camera(mem)
     }
+
+    /// The sphere grid file's buffer (`0x01740870`): `+0` `'1'` when
+    /// loaded, `+2`/`+4`/`+6` the kind, node and link counts (`u16`),
+    /// the records from `+0x10`.
+    pub const ABMAP_FILE: u32 = 0x0174_0870;
+
+    /// `count` bytes from `src` to `dst`, one at a time from the first.
+    fn copy_bytes(mem: &mut impl Mem, dst: u32, src: u32, count: u32) {
+        for i in 0..count {
+            let b = mem.read::<u8>(src.wrapping_add(i));
+            mem.write(dst.wrapping_add(i), b);
+        }
+    }
+
+    /// `LoadAbmap()` (`0x00a45570`): the save's grid kind (`MsGetSaveMenu`
+    /// bits 14..15) picks file 9, 10 or 11, read through `GetCD`'s
+    /// reader (`+0x10(0x25)`, `+0(file, buffer, 0, 0)`, `+8(0)`) into
+    /// [`ABMAP_FILE`]. When it starts with `'1'`, the three counts go to
+    /// the grid's `+0`, `+2`, `+4` and, from `+0x10` of the file in turn:
+    /// the kinds (16 bytes each, to `+8`), the nodes (12 bytes each to
+    /// `+0x808`, 0x28 apart; `+0x26` the low 10 bits of the nodes left
+    /// after it, bit-reversed, shifted up 6, and `+0xa` its cell
+    /// `(x + 0xa00) / 256 + 20 ((y + 0x920) / 256)`), the links (8 bytes
+    /// each to `+0xa808`, 0x14 apart, kept only when its two nodes differ
+    /// and both are below the node count, then [`abmap_link_cells`]; the
+    /// kept count to `+4`). Then [`abmap_collect_node_links`] and
+    /// [`abmap_calc_bounds`], whose result it returns.
+    pub fn load_abmap<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::MS_GET_SAVE_MENU);
+        let menu = call(mem, f, &[]);
+        let file = mem.rebase(ABMAP_FILE);
+        mem.write(file, 0u8);
+        let id = match mem.read::<u32>(menu).cast_signed() >> 14 & 3 {
+            0 => 9,
+            1 => 10,
+            _ => 11,
+        };
+        let f = mem.rebase(super::GET_CD);
+        let cd = call(mem, f, &[]);
+        let f = mem.read::<u32>(cd.wrapping_add(0x10));
+        call(mem, f, &[0x25]);
+        let f = mem.read::<u32>(cd);
+        call(mem, f, &[id, file, 0, 0]);
+        let f = mem.read::<u32>(cd.wrapping_add(8));
+        call(mem, f, &[0]);
+        if mem.read::<u8>(file) == b'1' {
+            load_records(mem, file);
+        }
+        abmap_collect_node_links(mem);
+        abmap_calc_bounds(mem)
+    }
+
+    /// The records of [`load_abmap`]'s file.
+    fn load_records(mem: &mut impl Mem, file: u32) {
+        for o in [0u32, 2, 4] {
+            let n = mem.read::<u16>(file.wrapping_add(2 + o));
+            mem.write(ABMAP.get(mem).wrapping_add(o), n);
+        }
+        let mut src = file.wrapping_add(0x10);
+        let g = ABMAP.get(mem);
+        let mut dst = g.wrapping_add(8);
+        let mut left = i32::from(mem.read::<i16>(g));
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            copy_bytes(mem, dst, src, 0x10);
+            src = src.wrapping_add(0x10);
+            dst = dst.wrapping_add(0x10);
+        }
+        let g = ABMAP.get(mem);
+        let mut node = g.wrapping_add(layout::NODES);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(2)));
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 10 bits
+            let flags = ((left.cast_unsigned() & 0x3ff) as u16).reverse_bits() >> 6;
+            copy_bytes(mem, node, src, 0xc);
+            src = src.wrapping_add(0xc);
+            let y = i32::from(mem.read::<i16>(node.wrapping_add(2)));
+            mem.write(node.wrapping_add(0x26), flags << 6);
+            let x = i32::from(mem.read::<i16>(node));
+            let cell = (x + 0xa00) / 0x100 + (y + 0x920) / 0x100 * 20;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low word
+            mem.write(node.wrapping_add(0xa), cell as u16);
+            node = node.wrapping_add(layout::NODE_SIZE);
+        }
+        let g = ABMAP.get(mem);
+        let mut link = g.wrapping_add(0xa808);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(4)));
+        let mut kept = 0u16;
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            copy_bytes(mem, link, src, 8);
+            src = src.wrapping_add(8);
+            let (a, b) = (mem.read::<u16>(link), mem.read::<u16>(link.wrapping_add(2)));
+            let nodes = i32::from(mem.read::<i16>(ABMAP.get(mem).wrapping_add(2)));
+            if a != b && i32::from(a) < nodes && i32::from(b) < nodes {
+                abmap_link_cells(mem, link);
+                link = link.wrapping_add(layout::LINK_SIZE);
+                kept = kept.wrapping_add(1);
+            }
+        }
+        mem.write(ABMAP.get(mem).wrapping_add(4), kept);
+    }
 }

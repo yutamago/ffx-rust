@@ -18131,3 +18131,127 @@ fn r13e_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_e002);
     r13e_cases(&mut t, &mut rng, 300);
 }
+
+// ---- field agent r13, group F: the sphere grid's load ----
+
+/// [`read_file_stub`] for 0x2000 bytes.
+fn r13f_read_stub(src: u32, idlog: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x44, 0x24, 0x0c, 0xa3];
+    c.extend_from_slice(&idlog.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x7c, 0x24, 0x10, 0xbe]);
+    c.extend_from_slice(&src.to_le_bytes());
+    c.extend_from_slice(&[0xb9, 0x00, 0x20, 0x00, 0x00, 0xf3, 0xa4, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group F (r13) on `t` over the grid `g`: `LoadAbmap` for each grid kind
+/// with files that are loaded (`'1'`) or not, 0..8 kinds, 0..40 nodes
+/// (500..660 now and then)
+/// (positions on both sides of the cell origin) and 0..40 links (same
+/// ends and out-of-range ones dropped). The save menu and the CD reader
+/// are stand-ins; the link, node-link and bounds code runs as the
+/// originals on both sides.
+fn r13f_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap;
+    let (log, rv, menuv, cdptr, idlog) = (
+        t.alloc(4 + 0x20 * 8),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+        t.alloc(4),
+    );
+    let (file, cdtab, menu) = (t.alloc(0x2000), t.alloc(0x20), t.alloc(4));
+    let stubs = t.cave(&[
+        (Some(abmap::MS_GET_SAVE_MENU), log_stub(log, menuv, 1, 0)),
+        (Some(abmap::GET_CD), log_stub(log, cdptr, 2, 0)),
+        (None, log_stub(log, rv, 3, 1)),
+        (None, r13f_read_stub(file, idlog)),
+        (None, log_stub(log, rv, 4, 1)),
+    ]);
+    t.put(cdtab + 0x10, stubs[2]);
+    t.put(cdtab, stubs[3]);
+    t.put(cdtab + 8, stubs[4]);
+    t.put(cdptr, cdtab);
+    t.put(menuv, menu);
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(menu, rng.next());
+        // the grid's own counts (kept when the file is not loaded)
+        for o in [0, 2, 4] {
+            t.put(g + o, u16::try_from(rng.below(41)).unwrap());
+        }
+        t.fill(file, 0x2000, rng);
+        // now and then more than 512 nodes (all ten bits of the count left)
+        let many = if rng.below(12) == 0 {
+            500 + rng.below(160)
+        } else {
+            rng.below(41)
+        };
+        let (kinds, nodes, links) = (rng.below(9), many, rng.below(41));
+        t.put(file, if rng.below(6) == 0 { b'0' } else { b'1' });
+        for (o, n) in [(2, kinds), (4, nodes), (6, links)] {
+            t.put(file + o, u16::try_from(n).unwrap());
+        }
+        let first_node = file + 0x10 + 0x10 * kinds;
+        for i in 0..nodes {
+            let at = first_node + 0xc * i;
+            t.put(
+                at,
+                u16::try_from(rng.range(-0xc00, 0xc00) & 0xffff).unwrap(),
+            );
+            t.put(
+                at + 2,
+                u16::try_from(rng.range(-0xb00, 0xb00) & 0xffff).unwrap(),
+            );
+            // unused nodes (kind 0xffff) too
+            let kind = if rng.below(6) == 0 {
+                0xffff
+            } else {
+                rng.below(8)
+            };
+            t.put(at + 6, u16::try_from(kind).unwrap());
+        }
+        let first_link = first_node + 0xc * nodes;
+        for i in 0..links {
+            let at = first_link + 8 * i;
+            let a = rng.below(nodes + 3);
+            let b = if rng.below(6) == 0 {
+                a
+            } else {
+                rng.below(nodes + 3)
+            };
+            t.put(at, u16::try_from(a).unwrap());
+            t.put(at + 2, u16::try_from(b).unwrap());
+        }
+        t.same(
+            "LoadAbmap",
+            |o| o.eax(0x00a4_5570, &[]),
+            |m| abmap::bridge::load_abmap(m, call),
+        );
+    }
+}
+
+/// Group F (r13) on the image.
+#[test]
+fn r13f_load_abmap_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_f001);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13f_cases(&mut t, &mut rng, g, 300);
+}
+
+/// Group F (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid
+/// (the snapshot's own is left alone).
+#[test]
+fn r13f_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_f002);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13f_cases(&mut t, &mut rng, g, 150);
+}
