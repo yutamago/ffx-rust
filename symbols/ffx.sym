@@ -11046,6 +11046,7 @@
 0x008f4f10 function TODrawCrossMenuIconAbilityName # fh v3:cg3 0x8f4f10
 0x008f5000 function TODrawCrossMenuIconCommandName # fh v3:cg3 0x8f5000
 0x008f50f0 function TODrawCrossMenuIconImportantName # fh v3:cg3 0x8f50f0
+0x008f51e0 function TOMenuDrawChrSmallPlate_008f51e0 # cdecl(chr, x, y) (x/y f32): TOMenuDrawChrStatusPlate_008ff490's top half one ry unit lower: chr < 8 (unsigned) sheet -3 clear + water (bit chr of TOMenuGetYesNoWindow) or dark (V 700), then name, labels 0x21/0x22 and HP/MP (the language gap inside rx); others the dark sheet and the empty labels; caller 0x008c1260; ported (system round 37); name ours
 0x008f5b90 function TODrawIcon                # fh switch:bsim1.00 0x710051ab50
 0x008f5bc0 function TODrawKick                # fh v3:exact 0x008f5bc0
 0x008f5c10 function TODrawMenuBG              # fh switch:bsim1.00+call.cs 0x7100528940 cdecl

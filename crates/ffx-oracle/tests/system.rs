@@ -21124,3 +21124,118 @@ fn round37_layout_plate_matches_the_original_on_the_snapshot() {
     };
     round37_layout_plate(&mut a, &mut b, &mut Xorshift(0x4037_0012));
 }
+
+/// Round 37 group B: `TOMenuDrawChrSmallPlate_008f51e0` over the original
+/// remaps, with logging stand-ins for the shapes, the water, the getters
+/// and the texts (as round 32's status plate).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::too_many_lines,
+    clippy::many_single_char_names
+)]
+fn round37_small_plate(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use chr_plate::bridge as p;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x80);
+    let scratch = alloc(a, b, p::SCRATCH_BYTES as usize);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0090_3bb0, all(9), vec![], ret_cell(cells + 0x40)),
+        (0x008e_7d30, all(12), vec![], ret_cell(cells + 0x44)),
+        (0x008a_9b60, vec![], vec![], ret_cell(cells)),
+        (0x008a_c2f0, vec![], vec![], ret_cell(cells + 4)),
+        (0x008a_98c0, all(1), vec![], ret_cell(cells + 8)),
+        (0x008a_9990, all(1), vec![], ret_cell(cells + 0xc)),
+        (0x008a_9970, all(1), vec![], ret_cell(cells + 0x10)),
+        (0x008a_99b0, all(1), vec![], ret_cell(cells + 0x14)),
+        (0x008a_9a70, all(1), vec![], ret_cell(cells + 0x24)),
+        (0x008a_c850, all(1), vec![], ret_cell(cells + 0x28)),
+        (0x0090_5930, all(6), vec![], ret_cell(cells + 0x2c)),
+        (
+            0x0090_1660,
+            vec![1, 2, 3, 4, 5],
+            vec![0],
+            ret_cell(cells + 0x30),
+        ),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let s = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), s);
+    }
+    let k = stands.len() as u32;
+    let s = stand_in8(
+        a,
+        b,
+        0x80 * k,
+        &pick_logger(
+            cursor,
+            0x5f,
+            &[1, 2, 3],
+            &[],
+            &store_through(0, cells + 0x50),
+        ),
+    );
+    put(a, b, a.rebase(0x00b0_c3dc), s);
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    let remap = |m: &mut Oracle, y: bool, v: f32| {
+        let at = m.rebase(if y { 0x0064_4820 } else { 0x0064_47e0 });
+        m.call(at, Conv::Cdecl, &[v.to_bits()])
+            .unwrap()
+            .st0
+            .unwrap() as f32
+    };
+    for k in 0..600u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x15 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            cells,
+            [0u32, u32::MAX, rng.next()][(rng.next() % 3) as usize],
+        );
+        put(
+            a,
+            b,
+            cells + 4,
+            [0xbu32, 0xb, 0, 1, 2][(rng.next() % 5) as usize],
+        );
+        put(a, b, cells + 0x50, rng.next() & 0x00ff_ffff);
+        let chr = [0u32, 3, 7, 8, 12, 0x20, u32::MAX, rng.next() % 0x14][(rng.next() % 8) as usize];
+        let x = ((rng.next() % 8000) as f32 / 7.0 - 100.0).to_bits();
+        let y = ((rng.next() % 6000) as f32 / 3.0 - 50.0).to_bits();
+        let r = eax(a, 0x008f_51e0, &[chr, x, y]);
+        assert_eq!(
+            r,
+            p::draw_chr_small_plate(b, [chr, x, y], scratch, remap, call),
+            "small plate {k}"
+        );
+        let s: [u32; 9] = Mem::read(b, scratch);
+        Mem::write(a, scratch, s);
+        same_memory(&format!("small plate {k} chr {chr:#x}"), a, b);
+    }
+}
+
+#[test]
+fn round37_small_plate_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round37_small_plate(&mut a, &mut b, &mut Xorshift(0x4037_0021));
+}
+
+#[test]
+fn round37_small_plate_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round37_small_plate(&mut a, &mut b, &mut Xorshift(0x4037_0022));
+}

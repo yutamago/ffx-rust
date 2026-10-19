@@ -122,7 +122,42 @@ pub mod bridge {
         y: f32,
         /// What the original leaves in `eax`: the last call's result.
         eax: u32,
+        /// Where the name row's parts sit.
+        rows: Rows,
     }
+
+    /// The name row's offsets: `ry` of the name, the overdrive label, the
+    /// HP text, the Sphere Level label and the MP text, and whether the
+    /// language gap goes into the numbers' `rx` (else after it).
+    #[derive(Clone, Copy)]
+    struct Rows {
+        name: f32,
+        label: f32,
+        hp: f32,
+        sphere: f32,
+        mp: f32,
+        gap_remapped: bool,
+    }
+
+    /// The status plate's rows.
+    const STATUS_ROWS: Rows = Rows {
+        name: 9.0,
+        label: 7.0,
+        hp: 8.0,
+        sphere: 34.0,
+        mp: 36.0,
+        gap_remapped: false,
+    };
+
+    /// The small plate's rows: one unit lower, the gap remapped.
+    const SMALL_ROWS: Rows = Rows {
+        name: 10.0,
+        label: 8.0,
+        hp: 9.0,
+        sphere: 35.0,
+        mp: 37.0,
+        gap_remapped: true,
+    };
 
     #[allow(clippy::many_single_char_names)]
     impl<M: Mem, R, C> Plate<'_, M, R, C>
@@ -329,7 +364,7 @@ pub mod bridge {
             let uv_h = dword(atlas(41.0 + high));
             let h = dword(high + 23.0);
             let w = dword(wide + 61.5);
-            let y = self.at_y(7.0);
+            let y = self.at_y(self.rows.label);
             let x = self.at_x(490.0);
             self.shape(0x21, x, y, [w, h], [a32(356.0), a32(15.0), uv_w, uv_h]);
             [x, y]
@@ -339,7 +374,7 @@ pub mod bridge {
             let wide = f64::from(label.wide);
             let uv_w = dword(atlas(wide + 570.0));
             let w = dword(wide + 49.0);
-            let y = self.at_y(34.0);
+            let y = self.at_y(self.rows.sphere);
             let x = self.at_x(540.0);
             self.shape(
                 0x22,
@@ -366,7 +401,11 @@ pub mod bridge {
             let format = self.mem.rebase(format);
             self.eax = (self.call)(self.mem, sprintf, &[text, format, value, max]);
             let y = self.at_y(dy);
-            let x = dword(f64::from(self.rx(dx)) + f64::from(self.x) + f64::from(gap));
+            let x = if self.rows.gap_remapped {
+                self.at_x(dword(f64::from(gap) + f64::from(dx)))
+            } else {
+                dword(f64::from(self.rx(dx)) + f64::from(self.x) + f64::from(gap))
+            };
             let args = [
                 text,
                 x.to_bits(),
@@ -383,7 +422,7 @@ pub mod bridge {
         fn name_row(&mut self, scratch: u32) -> Label {
             let chr = self.chr;
             let alpha = self.run(DAMAGE_CLASS, &[chr]);
-            let y = self.at_y(9.0);
+            let y = self.at_y(self.rows.name);
             let x = self.at_x(160.0);
             let name = self.run(CHR_NAME, &[chr]);
             let args = [
@@ -404,11 +443,13 @@ pub mod bridge {
             self.label_shapes(label);
             let max = self.run(MAX_HP, &[chr]);
             let hp = self.run(HP, &[chr]);
-            self.ratio(scratch, HP_FORMAT, [hp, max], [604.0, 8.0], label.gap);
+            let row = [604.0, self.rows.hp];
+            self.ratio(scratch, HP_FORMAT, [hp, max], row, label.gap);
             self.sphere_label(label);
             let max = self.run(MAX_MP, &[chr]);
             let mp = self.run(MP, &[chr]);
-            self.ratio(scratch, MP_FORMAT, [mp, max], [625.0, 36.0], label.gap);
+            let row = [625.0, self.rows.mp];
+            self.ratio(scratch, MP_FORMAT, [mp, max], row, label.gap);
             label
         }
 
@@ -581,6 +622,7 @@ pub mod bridge {
             x: f32::from_bits(x),
             y: f32::from_bits(y),
             eax: 0,
+            rows: STATUS_ROWS,
         };
         p.background();
         if chr > 0x11 {
@@ -606,6 +648,57 @@ pub mod bridge {
         }
         p.eax
     }
+
+    /// `TOMenuDrawChrSmallPlate_008f51e0(chr, x, y)` (`0x008f51e0`, own
+    /// name; caller `0x008c1260`): the status plate's top half, one unit
+    /// lower ([`SMALL_ROWS`]). A party member (`chr` below 8, unsigned)
+    /// on the yes/no window mask gets the clear sheet and the water, one
+    /// not on it the dark sheet; then the name row (the language gap
+    /// inside the numbers' `rx`). Any other number gets the dark sheet and
+    /// the two empty labels. `remap`, `call` and `scratch` (the numbers'
+    /// text) as in [`draw_chr_status_plate`]; returns the last call's
+    /// `eax`.
+    pub fn draw_chr_small_plate<M: Mem>(
+        mem: &mut M,
+        [chr, x, y]: [u32; 3],
+        scratch: u32,
+        remap: impl FnMut(&mut M, bool, f32) -> f32,
+        call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut p = Plate {
+            mem,
+            remap,
+            call,
+            chr,
+            x: f32::from_bits(x),
+            y: f32::from_bits(y),
+            eax: 0,
+            rows: SMALL_ROWS,
+        };
+        let [x, y] = [p.x, p.y];
+        let dark = [0.0, 700.0, 1110.0, 772.0];
+        if chr < 8 {
+            let mask = p.run(YES_NO_WINDOW, &[]);
+            if mask & 1u32.wrapping_shl(chr) != 0 {
+                p.shape(0xffff_fffd, x, y, [1110.0, 72.0], [0.0, 0.0, 1110.0, 72.0]);
+                p.water();
+            } else {
+                p.shape(0xffff_fffd, x, y, [1110.0, 72.0], dark);
+            }
+            p.name_row(scratch);
+        } else {
+            p.shape(0xffff_fffd, x, y, [1110.0, 72.0], dark);
+            let mut label = Label::default();
+            if p.run(LANG, &[]) == 0xb {
+                label.wide = 22.0;
+                label.high = 1.0;
+            }
+            p.label_shapes(label);
+            p.sphere_label(label);
+        }
+        p.eax
+    }
+
     /// `TOBtlDrawCrossLimitGauge(chr, x, y, w, h)`.
     const CROSS_LIMIT_GAUGE: u32 = 0x0089_2910;
     /// `MsGetRamChrHP(chr)`, `MsGetRamChrHPmax`, `MsGetRamChrMP` and
@@ -645,6 +738,7 @@ pub mod bridge {
             x: f32::from_bits(x),
             y: f32::from_bits(y),
             eax: 0,
+            rows: STATUS_ROWS,
         };
         let (px, py) = (f64::from(p.x), f64::from(p.y));
         p.shape(

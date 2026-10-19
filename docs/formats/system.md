@@ -1632,3 +1632,12 @@ pushed as literals (no relocation entries), not addresses.
   0x025d1672, colours)`, labels 0xe9 and 0xea, the bar 0xe7 across the
   screen and label 0x107. It returns `g_TOPktCursor` as the callees left
   it.
+- `TOMenuDrawChrSmallPlate_008f51e0(chr, x, y)` (caller `0x008c1260`,
+  `x`/`y` floats) is the top half of `TOMenuDrawChrStatusPlate_008ff490`
+  without the right panel and gauge row: every part of the name row sits
+  one `ry` unit lower (name 10, overdrive label 8, HP 9, Sphere Level
+  label 35, MP 37), and language 11's gap of 11 goes inside the numbers'
+  remap (`rx(gap + 604)`) instead of after it. `chr` below 8 is unsigned
+  here: party members get the clear sheet and water or the dark sheet,
+  then the name row; every other number the dark sheet and the two empty
+  labels. It returns the last call's `eax`.

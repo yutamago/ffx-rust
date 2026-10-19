@@ -1188,6 +1188,18 @@ ported! {
             call_ptr,
         )
     }
+    /// `TOMenuDrawChrSmallPlate_008f51e0(chr, x, y)`.
+    TOMenuDrawChrSmallPlate_008f51e0 @ 0x008f_51e0 => extern "C" fn to_menu_draw_chr_small_plate(chr: u32, x: u32, y: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let text = frame.at();
+        chr_plate::bridge::draw_chr_small_plate(
+            &mut mem(),
+            [chr, x, y],
+            text,
+            |_, y_axis, v| if y_axis { ffx_graphic::ui::remap_y2(v) } else { ffx_graphic::ui::remap_x2(v) },
+            call_ptr,
+        )
+    }
     /// `sce::Vectormath::Scalar::Aos::inverse(out, m)`.
     sce_Vectormath_Scalar_Aos_inverse @ 0x0057_3d00 => extern "C" fn sce_vectormath_inverse(out: u32, m: u32) -> u32 {
         math::bridge::inverse4(&mut mem(), out, m)
