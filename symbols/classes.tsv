@@ -12697,13 +12697,13 @@
 0x00888620	logic	default (no rule: ported to be safe)
 0x00888650	logic	default (no rule: ported to be safe)
 0x00888680	platform	reviewed: TkSetVsyncHandler: vsync emulation thread (menu round 21)
-0x008886f0	logic	default (no rule: ported to be safe)
+0x008886f0	platform	reviewed: TkInitAllSyncVCallback: resets the vsync emulation callbacks and restarts TkSetVsyncHandler (menu round 22)
 0x00888720	dead	unreachable from the entry point and every pointer table
 0x00888740	logic	default (no rule: ported to be safe)
 0x00888790	logic	default (no rule: ported to be safe)
 0x008887d0	dead	unreachable from the entry point and every pointer table
 0x00888820	platform	thin wrapper: only forwards to platform code (SignalSema)
-0x00888830	logic	default (no rule: ported to be safe)
+0x00888830	platform	reviewed: TkSetVsyncHandler(0): stops the vsync emulation thread (menu round 22)
 0x00888840	dead	unreachable from the entry point and every pointer table
 0x00888880	platform	thin wrapper: only forwards to platform code (WaitSema)
 0x00888890	logic	default (no rule: ported to be safe)
@@ -12712,7 +12712,7 @@
 0x00888910	logic	default (no rule: ported to be safe)
 0x00888940	dead	unreachable from the entry point and every pointer table
 0x00888970	logic	default (no rule: ported to be safe)
-0x00888990	logic	default (no rule: ported to be safe)
+0x00888990	dead	reviewed: Pad_PortClose: only called by itself (its negative-port branch), no pointer to it in the image (menu round 22)
 0x008889e0	logic	default (no rule: ported to be safe)
 0x008889f0	logic	default (no rule: ported to be safe)
 0x00888a40	platform	thin wrapper: only forwards to platform code (scePadInfoAct)
@@ -14591,7 +14591,7 @@
 0x008f9970	dead	unreachable from the entry point and every pointer table
 0x008f9a40	glue	GS/DMA packet writer (TOCtrlPkt, TOMkpShapeXYWHC2; writes no game state): replaced by ffx-render
 0x008f9b60	glue	GS/DMA packet writer (TOCtrlPkt, TOMkpShapeXYWHC2; writes no game state): replaced by ffx-render
-0x008f9c20	glue	GS/DMA packet writer (TOMkpShapeXYWHUV; writes no game state): replaced by ffx-render
+0x008f9c20	glue	GS packet API (TODrawFrameShape_008f9c20): appends to or kicks a packet; replaced by ffx-render
 0x008fa450	logic	default (no rule: ported to be safe)
 0x008fa470	dead	unreachable from the entry point and every pointer table
 0x008fa4f0	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render

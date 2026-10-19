@@ -3643,4 +3643,262 @@ ported! {
     MenuWShop_ClampSubWindow1 @ 0x008d_8450 => extern "C" fn menu_wshop_clamp_sub_window1() {
         tk::menu_wshop_clamp_sub_window1(&mut mem(), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuSave_PackSave(out, save, slot)`: a save file's header and data.
+    MenuSave_PackSave @ 0x008b_3e60 => extern "C" fn menu_save_pack_save(out: u32, save: u32, slot: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the byte argument
+        tk::menu_save_pack_save(&mut mem(), out, save, slot as u8, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2WeaponBuySellWindow(x, y, weapon, amount, owned)`: the last call's eax.
+    TkMn2WeaponBuySellWindow @ 0x008c_2d00 => extern "C" fn tk_mn2_weapon_buy_sell_window(x: u32, y: u32, weapon: u32, amount: i32, owned: i32) -> u32 {
+        tk::tk_mn2_weapon_buy_sell_window(&mut mem(), [f32::from_bits(x), f32::from_bits(y)], weapon, amount, owned, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2BuySellWindow(x, y, item, price, owned_count, amount, gil)`: the last call's eax.
+    TkMn2BuySellWindow @ 0x008b_f170 => extern "C" fn tk_mn2_buy_sell_window(x: u32, y: u32, item: u32, price: u32, owned_count: u32, amount: u32, gil: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::tk_mn2_buy_sell_window(&mut mem(), [f32::from_bits(x), f32::from_bits(y)], [item, price, owned_count, amount, gil], width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSetLegendAbility(chr, level)`: 1 when the abilities were set.
+    TkSetLegendAbility @ 0x008c_3170 => extern "C" fn tk_set_legend_ability(chr: u32, level: u32) -> u32 {
+        tk::tk_set_legend_ability(&mut mem(), chr, level, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `AtelOpenChoiceWindow(worker, args, stack, mode)`: `Native_MsgSelect`'s eax.
+    AtelOpenChoiceWindow @ 0x0086_0b00 => extern "C" fn atel_open_choice_window(worker: u32, args: u32, stack: u32, mode: u32) -> u32 {
+        msg::atel_open_choice_window(&mut mem(), [worker, args, stack], mode, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Math_SegmentNearestT(a, b, c)`: the parameter in `ST0`.
+    Math_SegmentNearestT @ 0x0088_a040 => extern "C" fn math_segment_nearest_t(a: u32, b: u32, c: u32) -> f32 {
+        ffx_menu::math::bridge::math_segment_nearest_t(&mut mem(), a, b, c)
+    }
+    /// `Math_AngleStepMode(a, target, step, mode)`: in `ST0`.
+    Math_AngleStepMode @ 0x0088_b610 => extern "C" fn math_angle_step_mode(a: f32, target: f32, step: f32, mode: i32) -> f32 {
+        tk::math_angle_step_mode(a, target, step, mode)
+    }
+    /// `toGetStatusWeaponMesPos()`: the caption end, an integer.
+    toGetStatusWeaponMesPos @ 0x008d_54a0 => extern "C" fn to_get_status_weapon_mes_pos() -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let base = frame.at();
+        let widths = [base, base.wrapping_add(4)];
+        tk::to_get_status_weapon_mes_pos(&mut mem(), widths, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ReadCurrDevice(a, b, work, pad)`: `work`.
+    Pad_ReadCurrDevice @ 0x0088_98a0 => extern "C" fn pad_read_curr_device(_a: u32, _b: u32, work: u32, pad: u32) -> u32 {
+        tk::pad_read_curr_device(&mut mem(), work, pad, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ResetWork(work)`: `Pad_ResetAnalogAt0C`'s eax.
+    Pad_ResetWork @ 0x0088_8970 => extern "C" fn pad_reset_work(work: u32) -> u32 {
+        tk::pad_reset_work(&mut mem(), work, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ClearAnalogWork(a, b)`: the work + 0xd0.
+    Pad_ClearAnalogWork @ 0x0088_89f0 => extern "C" fn pad_clear_analog_work(a: u32, b: u32) -> u32 {
+        tk::pad_clear_analog_work(&mut mem(), a, b, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `AtelMenuSaveMes_00860780(id)`: menu text 3's name.
+    AtelMenuSaveMes_00860780 @ 0x0086_0780 => extern "C" fn atel_menu_save_mes_00860780(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 3, false, id)
+    }
+    /// `TOMenuGetArmsHelp(id)`: menu text 5's help.
+    TOMenuGetArmsHelp @ 0x008b_ea50 => extern "C" fn to_menu_get_arms_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 5, true, id)
+    }
+    /// `TOMenuGetArmsMes(id)`: menu text 5's name.
+    TOMenuGetArmsMes @ 0x008b_ea70 => extern "C" fn to_menu_get_arms_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 5, false, id)
+    }
+    /// `TOMenuGetBuildHelp(id)`: menu text 6's help.
+    TOMenuGetBuildHelp @ 0x008b_ea90 => extern "C" fn to_menu_get_build_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 6, true, id)
+    }
+    /// `TOMenuGetBuildMes(id)`: menu text 6's name.
+    TOMenuGetBuildMes @ 0x008b_eab0 => extern "C" fn to_menu_get_build_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 6, false, id)
+    }
+    /// `TOMenuGetConfigHelp(id)`: menu text 7's help.
+    TOMenuGetConfigHelp @ 0x008b_ead0 => extern "C" fn to_menu_get_config_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 7, true, id)
+    }
+    /// `TOMenuGetConfigMes(id)`: menu text 7's name.
+    TOMenuGetConfigMes @ 0x008b_eaf0 => extern "C" fn to_menu_get_config_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 7, false, id)
+    }
+    /// `TOMenuGetItemHelp(id)`: menu text 8's help.
+    TOMenuGetItemHelp @ 0x008b_ec90 => extern "C" fn to_menu_get_item_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 8, true, id)
+    }
+    /// `TOMenuGetItemMes(id)`: menu text 8's name.
+    TOMenuGetItemMes @ 0x008b_ecb0 => extern "C" fn to_menu_get_item_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 8, false, id)
+    }
+    /// `TOMenuGetMainHelp(id)`: menu text 9's help.
+    TOMenuGetMainHelp @ 0x008b_ecd0 => extern "C" fn to_menu_get_main_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 9, true, id)
+    }
+    /// `TOMenuGetMainMes(id)`: menu text 9's name.
+    TOMenuGetMainMes @ 0x008b_ecf0 => extern "C" fn to_menu_get_main_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 9, false, id)
+    }
+    /// `TOMenuGetMenu1Help(id)`: menu text 1's help.
+    TOMenuGetMenu1Help @ 0x008b_ed10 => extern "C" fn to_menu_get_menu1_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 1, true, id)
+    }
+    /// `TOMenuGetMenu1Mes(id)`: menu text 1's name.
+    TOMenuGetMenu1Mes @ 0x008b_ed30 => extern "C" fn to_menu_get_menu1_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 1, false, id)
+    }
+    /// `TOMenuGetMenu2Help(id)`: menu text 2's help.
+    TOMenuGetMenu2Help @ 0x008b_ed50 => extern "C" fn to_menu_get_menu2_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 2, true, id)
+    }
+    /// `TOMenuGetMenu2Mes(id)`: menu text 2's name.
+    TOMenuGetMenu2Mes @ 0x008b_ed70 => extern "C" fn to_menu_get_menu2_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 2, false, id)
+    }
+    /// `TOMenuGetNameHelp(id)`: menu text 10's help.
+    TOMenuGetNameHelp @ 0x008b_edb0 => extern "C" fn to_menu_get_name_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 10, true, id)
+    }
+    /// `TOMenuGetNameMes(id)`: menu text 10's name.
+    TOMenuGetNameMes @ 0x008b_edd0 => extern "C" fn to_menu_get_name_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 10, false, id)
+    }
+    /// `TOMenuGetSaveHelp(id)`: menu text 3's help.
+    TOMenuGetSaveHelp @ 0x008b_ee10 => extern "C" fn to_menu_get_save_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 3, true, id)
+    }
+    // TOMenuGetSaveMes: hooked by ported/system.rs (system round 37, the same body).
+    // TOMenuGetStatusHelp: hooked by ported/system.rs (system round 37, the same body).
+    /// `TOMenuGetStatusMes(id)`: menu text 11's name.
+    TOMenuGetStatusMes @ 0x008b_ee70 => extern "C" fn to_menu_get_status_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 11, false, id)
+    }
+    // TOMenuGetSummonHelp: hooked by ported/system.rs (system round 37, the same body).
+    /// `TOMenuGetSummonMes(id)`: menu text 12's name.
+    TOMenuGetSummonMes @ 0x008b_eeb0 => extern "C" fn to_menu_get_summon_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 12, false, id)
+    }
+    /// `TkMn2ArmsMes(id)`: menu text 5's name.
+    TkMn2ArmsMes @ 0x008b_f150 => extern "C" fn tk_mn2_arms_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 5, false, id)
+    }
+    /// `TkMenuArmsHelp(id)`: menu text 5's help.
+    TkMenuArmsHelp @ 0x008d_c8f0 => extern "C" fn tk_menu_arms_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 5, true, id)
+    }
+    /// `TkMenuArmsMes(id)`: menu text 5's name.
+    TkMenuArmsMes @ 0x008d_c910 => extern "C" fn tk_menu_arms_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 5, false, id)
+    }
+    /// `TkMenuBuildHelp(id)`: menu text 6's help.
+    TkMenuBuildHelp @ 0x008d_c930 => extern "C" fn tk_menu_build_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 6, true, id)
+    }
+    /// `TkMenuBuildMes(id)`: menu text 6's name.
+    TkMenuBuildMes @ 0x008d_c950 => extern "C" fn tk_menu_build_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 6, false, id)
+    }
+    /// `TkMenuConfigMes(id)`: menu text 7's name.
+    TkMenuConfigMes @ 0x008d_c9b0 => extern "C" fn tk_menu_config_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 7, false, id)
+    }
+    /// `TkMenuItemHelp(id)`: menu text 8's help.
+    TkMenuItemHelp @ 0x008d_df20 => extern "C" fn tk_menu_item_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 8, true, id)
+    }
+    /// `TkMenuItemMes(id)`: menu text 8's name.
+    TkMenuItemMes @ 0x008d_df40 => extern "C" fn tk_menu_item_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 8, false, id)
+    }
+    /// `TkMenuMainHelp(id)`: menu text 9's help.
+    TkMenuMainHelp @ 0x008d_df60 => extern "C" fn tk_menu_main_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 9, true, id)
+    }
+    /// `TkMenuMainMes(id)`: menu text 9's name.
+    TkMenuMainMes @ 0x008d_df80 => extern "C" fn tk_menu_main_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 9, false, id)
+    }
+    /// `TkMenuMenu1Help(id)`: menu text 1's help.
+    TkMenuMenu1Help @ 0x008d_dfa0 => extern "C" fn tk_menu_menu1_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 1, true, id)
+    }
+    /// `TkMenuMenu1Mes(id)`: menu text 1's name.
+    TkMenuMenu1Mes @ 0x008d_dfc0 => extern "C" fn tk_menu_menu1_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 1, false, id)
+    }
+    /// `TkMenuMenu2Help(id)`: menu text 2's help.
+    TkMenuMenu2Help @ 0x008d_dfe0 => extern "C" fn tk_menu_menu2_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 2, true, id)
+    }
+    /// `TkMenuMenu2Mes(id)`: menu text 2's name.
+    TkMenuMenu2Mes @ 0x008d_e000 => extern "C" fn tk_menu_menu2_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 2, false, id)
+    }
+    /// `TkMenuNameHelp(id)`: menu text 10's help.
+    TkMenuNameHelp @ 0x008d_e020 => extern "C" fn tk_menu_name_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 10, true, id)
+    }
+    /// `TkMenuNameMes(id)`: menu text 10's name.
+    TkMenuNameMes @ 0x008d_e040 => extern "C" fn tk_menu_name_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 10, false, id)
+    }
+    /// `TkMenuSaveHelp(id)`: menu text 3's help.
+    TkMenuSaveHelp @ 0x008d_e060 => extern "C" fn tk_menu_save_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 3, true, id)
+    }
+    /// `TkMenuSaveMes(id)`: menu text 3's name.
+    TkMenuSaveMes @ 0x008d_e080 => extern "C" fn tk_menu_save_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 3, false, id)
+    }
+    /// `TkMenuStatusHelp(id)`: menu text 11's help.
+    TkMenuStatusHelp @ 0x008d_e120 => extern "C" fn tk_menu_status_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 11, true, id)
+    }
+    /// `TkMenuStatusMes(id)`: menu text 11's name.
+    TkMenuStatusMes @ 0x008d_e140 => extern "C" fn tk_menu_status_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 11, false, id)
+    }
+    /// `TkMenuSummonHelp(id)`: menu text 12's help.
+    TkMenuSummonHelp @ 0x008d_e160 => extern "C" fn tk_menu_summon_help(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 12, true, id)
+    }
+    /// `TkMenuSummonMes(id)`: menu text 12's name.
+    TkMenuSummonMes @ 0x008d_e180 => extern "C" fn tk_menu_summon_mes(id: u32) -> u32 {
+        tk::menu_text_of(&mem(), 12, false, id)
+    }
+    /// `TkMenuDraw1612Width(text)`: the text's width.
+    TkMenuDraw1612Width @ 0x008d_c9e0 => extern "C" fn tk_menu_draw1612_width(text: u32) -> u32 {
+        tk::tk_menu_draw1612_width(&mut mem(), text, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2TransCharFace(summon)`: the upload's eax.
+    TkMn2TransCharFace @ 0x008c_2ce0 => extern "C" fn tk_mn2_trans_char_face(summon: u32) -> u32 {
+        tk::tk_mn2_trans_char_face(&mut mem(), summon, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_CommitDefault0b()`: `MenuNameEntry_Commit`'s eax.
+    MenuNameEntry_CommitDefault0b @ 0x008c_5370 => extern "C" fn menu_name_entry_commit_default0b() -> u32 {
+        tk::menu_name_entry_commit_default0b(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawMesL(x, y, text, colour)`: the new cursor.
+    TkMn2DrawMesL @ 0x008c_1060 => extern "C" fn tk_mn2_draw_mes_l(x: u32, y: u32, text: u32, colour: u32) -> u32 {
+        tk::tk_mn2_draw_mes_l(&mut mem(), [x, y, text, colour], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `debugSetRikkuName()`: the name minus the text (the original's eax).
+    debugSetRikkuName @ 0x0086_0a60 => extern "C" fn debug_set_rikku_name() -> u32 {
+        tk::debug_set_rikku_name(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_RefreshHelp_008c7650(window)`: `TkMenuSetHelpMessage`'s eax
+    /// (0 when it is not called; no caller reads it then).
+    MenuItem_RefreshHelp_008c7650 @ 0x008c_7650 => extern "C" fn menu_item_refresh_help(window: u32) -> u32 {
+        tk::menu_item_refresh_help(&mut mem(), window, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `MenuSave_McSync(mode, cmd, result)`: the sync's result.
+    MenuSave_McSync @ 0x0088_84a0 => extern "C" fn menu_save_mc_sync(mode: u32, cmd: u32, result: u32) -> u32 {
+        tk::menu_save_mc_sync(&mut mem(), [mode, cmd, result], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_SellWindowCtrl(window)`: void (the dispatcher never reads eax).
+    MenuShop_SellWindowCtrl @ 0x008d_9e20 => extern "C" fn menu_shop_sell_window_ctrl(window: u32) {
+        tk::menu_shop_sell_window_ctrl(&mut mem(), window, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuShop_BuyWindowCtrl(window)`: void (the dispatcher never reads eax).
+    MenuShop_BuyWindowCtrl @ 0x008d_9bd0 => extern "C" fn menu_shop_buy_window_ctrl(window: u32) {
+        tk::menu_shop_buy_window_ctrl(&mut mem(), window, &mut |_, f, a| call_ptr(f, a));
+    }
 }

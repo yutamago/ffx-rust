@@ -208,6 +208,41 @@ impl Twins {
     }
 }
 
+impl Twins {
+    /// Like [`Twins::twin`] for an original returning a float in `ST0`:
+    /// the same bits (NaNs included) and the same memory.
+    fn twin_f(
+        &mut self,
+        what: &str,
+        sym: u32,
+        args: &[u32],
+        rust: impl FnOnce(&mut Oracle) -> f32,
+    ) {
+        self.drain_x87();
+        let r = self
+            .a
+            .call(self.a.rebase(sym), Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{what} {args:x?}: {e}"));
+        let want = r
+            .st0
+            .unwrap_or_else(|| panic!("{what} {args:x?}: no float in ST0"));
+        let got = f64::from(rust(&mut self.b));
+        assert_eq!(
+            want.to_bits(),
+            got.to_bits(),
+            "{what} {args:x?}: {want} vs {got}"
+        );
+        assert_eq!(
+            self.a.diff(&mut self.b).unwrap(),
+            [],
+            "{what} {args:x?}: memory"
+        );
+        self.a.clear_dirty();
+        self.b.clear_dirty();
+        self.calls += 1;
+    }
+}
+
 const VOID: u64 = 0;
 const U16: u64 = 0xffff;
 const U32: u64 = 0xffff_ffff;
@@ -6586,7 +6621,7 @@ fn menu_out_pointer_callers_match_the_original() {
 
 /// `f` replaced in both oracles by a recorder appending its first `n`
 /// argument words at `*log` (128 KiB of them); returns `ret`. The code
-/// takes `13 + 7n` bytes: `f` must be at least that long.
+/// takes `19 + 7n` bytes: `f` must be at least that long.
 fn record_n(t: &mut Twins, f: u32, n: u8, ret: u32) -> u32 {
     let buf = t.alloc(&vec![0; 0x2_0000]);
     let log = t.alloc(&buf.to_le_bytes());
@@ -8491,6 +8526,722 @@ fn menu_round21_rows_names_and_hides_match_the_original() {
             &[actor, hide],
             U32,
             |o| w(tk::tk_hide_attached_chrs(o, actor, hide, &mut callback)),
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_save_pack_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_3e60) else {
+        return;
+    };
+    for round in 0..150u32 {
+        let mut save = t.rng.bytes(tk::SAVE_DATA_SIZE as usize);
+        let story = t.rng.pick(&[0u16, 15, 16, 299, 300, 0xffff, 0x8000]);
+        let story = if round % 4 == 3 {
+            u16::try_from(t.rng.below(0x1_0000)).unwrap_or(0)
+        } else {
+            story
+        };
+        save[0xbec..0xbee].copy_from_slice(&story.to_le_bytes());
+        for b in &mut save[0x3d58..0x3d5b] {
+            *b = t.rng.pick(&[6u8, 6, 7, 0, 0xff]);
+        }
+        let save = t.alloc(&save);
+        let out = t.alloc_random(0x40 + tk::SAVE_DATA_SIZE as usize);
+        let party = t.rng.pick(&[0xffff_ffffu32, 0, 1, 2, 3, 6, 7, 8, 0x20]);
+        t.put(t.sym(tk::MENU_PLAYER_LIST_MAX2.sym), party);
+        t.scramble(tk::MENU_PLAYERS.sym, 8);
+        let counter = t
+            .rng
+            .pick_or_any(&[0x7fff_ffff, 0x8000_0000, 0xffff_ffff, 0]);
+        t.put(t.sym(tk::MENU_SAVE_COUNTER.sym), counter);
+        // the getters' results, and a name of 0..15 letters
+        for f in [0x0064_10e0, 0x0078_4e80, 0x0086_c410, 0x0086_a7e0] {
+            let v = t.rng.next();
+            return_const(&mut t, f, v);
+        }
+        let mut name = t.rng.bytes(16);
+        for c in &mut name {
+            *c |= 1;
+        }
+        name[t.rng.below(16) as usize] = 0;
+        name.push(0);
+        let name = t.alloc(&name);
+        return_const(&mut t, 0x0078_4fb0, name);
+        let slot = t.rng.next();
+        t.twin(
+            "MenuSave_PackSave",
+            0x008b_3e60,
+            &[out, save, slot],
+            U32,
+            |o| {
+                #[allow(clippy::cast_possible_truncation)]
+                w(tk::menu_save_pack_save(
+                    o,
+                    out,
+                    save,
+                    slot as u8,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_buy_sell_windows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_2d00) else {
+        return;
+    };
+    // floats: a quiet NaN, large, negative, fractions, small values
+    let pick = |t: &mut Twins| -> f32 {
+        match t.rng.below(8) {
+            0 => f32::NAN,
+            1 => f32::from_bits(t.rng.next() & 0x7f7f_ffff),
+            2 => -f32::from_bits(t.rng.next() & 0x4fff_ffff),
+            _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 500) / 4.0,
+        }
+    };
+    let edge = [
+        0u32,
+        1,
+        0xffff_ffff,
+        0x8000_0000,
+        0x7fff_ffff,
+        999_999_999,
+        1_000_000_000,
+    ];
+    // the drawing calls recorded, each with its own result
+    for (f, n) in [
+        (0x008f_5f70u32, 5u8),
+        (0x008f_4b20, 6),
+        (0x008e_6970, 4),
+        (0x008f_9c20, 5),
+        (0x008f_8bb0, 5),
+        (0x008c_0a20, 5),
+        (0x008e_6700, 4),
+        (0x0090_3bb0, 9),
+        (0x0090_5550, 6),
+    ] {
+        let r = t.rng.next();
+        record_n(&mut t, f, n, r);
+    }
+    for _ in 0..60 {
+        let (x, y) = (pick(&mut t), pick(&mut t));
+        let weapon = t.rng.next();
+        let amount = t.rng.pick_or_any(&edge);
+        let owned = if t.rng.below(2) == 0 {
+            amount.wrapping_add(t.rng.pick_or_any(&edge))
+        } else {
+            t.rng.pick_or_any(&edge)
+        };
+        t.twin(
+            "TkMn2WeaponBuySellWindow",
+            0x008c_2d00,
+            &[x.to_bits(), y.to_bits(), weapon, amount, owned],
+            U32,
+            |o| {
+                w(tk::tk_mn2_weapon_buy_sell_window(
+                    o,
+                    [x, y],
+                    weapon,
+                    i(amount),
+                    i(owned),
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    // TkMn2BuySellWindow: the digit widths written through the out word
+    let width = t.b.stack_range().start + 0x100;
+    let cell = digit_width(&mut t);
+    for _ in 0..60 {
+        let digit = if t.rng.below(4) == 0 {
+            f32::NAN
+        } else {
+            f32::from(u8::try_from(t.rng.below(200)).unwrap_or(0)) / 3.0
+        };
+        t.put(cell, digit);
+        let (x, y) = (pick(&mut t), pick(&mut t));
+        let v = [
+            t.rng.next(),
+            t.rng.pick_or_any(&edge),
+            t.rng.pick_or_any(&edge),
+            t.rng.pick_or_any(&[0, 1, 2, 99, 0xffff_ffff, 0x8000]),
+            t.rng.pick_or_any(&edge),
+        ];
+        t.twin(
+            "TkMn2BuySellWindow",
+            0x008b_f170,
+            &[&[x.to_bits(), y.to_bits()], &v[..]].concat(),
+            U32,
+            |o| {
+                w(tk::tk_mn2_buy_sell_window(
+                    o,
+                    [x, y],
+                    v,
+                    width,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// A stand-in `ToGetBtlEasyDigitWidth2(n, out, scale, b)`: `*out` the
+/// float in the returned cell, the other arguments recorded (the out
+/// pointer differs between the original's argument slot and the port's
+/// scratch word).
+fn digit_width(t: &mut Twins) -> u32 {
+    width_out(t, 0x0090_5230).0
+}
+
+/// A stand-in width function `f(text, out, a, scale, b)` at `f`: `*out`
+/// the float bits in the first returned cell, which then grow by the
+/// second cell's word (so successive calls differ); arguments 0, 2 and 3
+/// recorded (the out pointer differs between the original's local and the
+/// port's scratch word).
+fn width_out(t: &mut Twins, f: u32) -> (u32, u32) {
+    let cell = t.alloc(&[0; 4]);
+    let step = t.alloc(&[0; 4]);
+    let buf = t.alloc(&vec![0; 0x1_0000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let l = log.to_le_bytes();
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x0d][..], &l,                      // mov ecx, [log]
+        &[0x8b, 0x44, 0x24, 0x04, 0x89, 0x01],      // [ecx] = arg 0
+        &[0x8b, 0x44, 0x24, 0x0c, 0x89, 0x41, 0x04], // [ecx + 4] = arg 2
+        &[0x8b, 0x44, 0x24, 0x10, 0x89, 0x41, 0x08], // [ecx + 8] = arg 3
+        &[0x83, 0x05], &l, &[0x0c],                 // add dword [log], 12
+        &[0xa1], &cell.to_le_bytes(),               // mov eax, [cell]
+        &[0x8b, 0x54, 0x24, 0x08, 0x89, 0x02],      // *arg 1 = eax
+        &[0x8b, 0x0d], &step.to_le_bytes(),         // mov ecx, [step]
+        &[0x01, 0x0d], &cell.to_le_bytes(),         // add [cell], ecx
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, &code).unwrap();
+    }
+    (cell, step)
+}
+
+#[test]
+fn menu_round22_legend_choice_and_segment_match_the_original() {
+    use ffx_menu::{msg::bridge as msg, tk::bridge as tk};
+    let Some(mut t) = setup_any(0x0022_3170) else {
+        return;
+    };
+    // TkSetLegendAbility: the weapon finder and the save refresh recorded
+    // (no weapon in the last rounds)
+    let weapon = t.alloc_random(0x20);
+    record_n(&mut t, 0x008c_30e0, 1, weapon);
+    // MsSetSaveParamAll is a 5-byte jump before it: a call counter fits
+    return_counter(&mut t, 0x008c_30d0, 0);
+    for round in 0..80u32 {
+        if round == 60 {
+            return_const(&mut t, 0x008c_30e0, 0);
+        }
+        let chr = t
+            .rng
+            .pick_or_any(&[0, 1, 2, 3, 12, 13, 14, 17, 18, 0xffff_ffff]);
+        let level = t.rng.pick(&[0, 1, 2, 3, 7, 0xffff_ffff, 0xffff_fffe]);
+        t.twin("TkSetLegendAbility", 0x008c_3170, &[chr, level], U32, |o| {
+            w(tk::tk_set_legend_ability(o, chr, level, &mut callback))
+        });
+    }
+    // AtelOpenChoiceWindow: the script stack as a counter, the natives and
+    // message lookups recorded
+    let window = t.alloc_random(0x40);
+    let start = t.rng.next();
+    return_counter(&mut t, 0x0086_df00, start);
+    for (f, n) in [
+        (0x0086_e3f0u32, 3u8),
+        (0x0085_80c0, 3),
+        (0x0085_8b50, 3),
+        (0x0085_9710, 3),
+        (0x0086_bf30, 1),
+        (0x0086_bbc0, 0),
+        (0x0086_bf10, 2),
+        (0x0086_be90, 1),
+    ] {
+        let r = if f == 0x0086_be90 {
+            window
+        } else {
+            t.rng.next()
+        };
+        record_n(&mut t, f, n, r);
+    }
+    for round in 0..20u32 {
+        t.scramble(0x0132_5ac0, 4);
+        let (worker, args, stack) = (t.rng.next(), t.rng.next(), t.rng.next());
+        let mode = if round % 2 == 0 {
+            0
+        } else {
+            t.rng.pick_or_any(&[8])
+        };
+        t.twin(
+            "AtelOpenChoiceWindow",
+            0x0086_0b00,
+            &[worker, args, stack, mode],
+            U32,
+            |o| {
+                w(msg::atel_open_choice_window(
+                    o,
+                    [worker, args, stack],
+                    mode,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    // Math_SegmentNearestT: points on and off the segment, degenerate
+    // segments, NaNs and infinities
+    let coord = |t: &mut Twins| -> f32 {
+        match t.rng.below(10) {
+            0 => f32::NAN,
+            1 => f32::INFINITY,
+            2 => 0.0,
+            3 => f32::from_bits(t.rng.next() & 0x7f7f_ffff),
+            _ => f32::from(i16::try_from(t.rng.below(400)).unwrap_or(0) - 200) / 8.0,
+        }
+    };
+    for round in 0..400u32 {
+        let mut pts = [[0f32; 4]; 3];
+        for p in &mut pts {
+            for c in p.iter_mut() {
+                *c = coord(&mut t);
+            }
+        }
+        if round % 4 == 0 {
+            pts[2] = pts[1]; // a zero-length segment
+        }
+        if round % 7 == 0 {
+            pts[0] = pts[1];
+        }
+        let addr: Vec<u32> = pts
+            .iter()
+            .map(|p| {
+                let b: Vec<u8> = p.iter().flat_map(|c| c.to_le_bytes()).collect();
+                t.alloc(&b)
+            })
+            .collect();
+        if round % 9 == 0 {
+            t.scramble(0x00c0_a004, 16);
+        }
+        t.scramble(0x00c8_f788, 4);
+        t.twin_f("Math_SegmentNearestT", 0x0088_a040, &addr, |o| {
+            ffx_menu::math::bridge::math_segment_nearest_t(o, addr[0], addr[1], addr[2])
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_angles_captions_and_pads_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_b610) else {
+        return;
+    };
+    // Math_AngleStepMode: the three modes over angles near and far
+    let angle = |t: &mut Twins| -> f32 {
+        match t.rng.below(10) {
+            0 => f32::NAN,
+            1 => 0.0,
+            2 => -0.0,
+            3 => std::f32::consts::PI,
+            _ => f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 150.0,
+        }
+    };
+    for _ in 0..600 {
+        let (a, b, step) = (angle(&mut t), angle(&mut t), angle(&mut t));
+        let mode = t.rng.pick_or_any(&[0, 1, 2, 3, 0xffff_ffff]);
+        t.twin_f(
+            "Math_AngleStepMode",
+            0x0088_b610,
+            &[a.to_bits(), b.to_bits(), step.to_bits(), mode],
+            |_| tk::math_angle_step_mode(a, b, step, i(mode)),
+        );
+    }
+    // toGetStatusWeaponMesPos: the two captions' widths from a stand-in
+    let r = t.rng.next();
+    record_n(&mut t, 0x008b_ee70, 1, r);
+    let (cell, step) = width_out(&mut t, 0x0090_5290);
+    let widths = t.b.stack_range().start + 0x100;
+    for round in 0..120u32 {
+        let w = match round % 6 {
+            0 => f32::NAN,
+            1 => 3e9,
+            _ => f32::from(u16::try_from(t.rng.below(400)).unwrap_or(0)) / 3.0,
+        };
+        t.put(cell, w);
+        let grow = t
+            .rng
+            .pick(&[0u32, 1, 0x0010_0000, 0xfff0_0000, 0x0100_0000]);
+        t.put(step, grow);
+        if round % 6 == 5 {
+            // the first width 2.0, the second a NaN (0x40000000 + 0x3f800001)
+            t.put(cell, 0x4000_0000u32);
+            t.put(step, 0x3f80_0001u32);
+        }
+        t.twin("toGetStatusWeaponMesPos", 0x008d_54a0, &[], U32, |o| {
+            w64(tk::to_get_status_weapon_mes_pos(
+                o,
+                [widths, widths + 4],
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    // the pad helpers: the PC buttons, the work resets
+    let buttons = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0xa1][..], &buttons.to_le_bytes(),        // mov eax, [buttons]
+        &[0xc3],
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0063_0c80);
+        o.write(at, &code).unwrap();
+    }
+    let r = t.rng.next();
+    record_n(&mut t, 0x0088_9030, 1, r);
+    let work = t.alloc_random(0x100);
+    record_n(&mut t, 0x0088_8ec0, 2, work);
+    for _ in 0..200 {
+        let b = t
+            .rng
+            .pick_or_any(&[0xa000, 0x5000, 0xf000, 0xffff, 0x1_a000, 0x8000]);
+        t.put(buttons, b);
+        let pad = t.alloc_random(0x30);
+        let mode = t
+            .rng
+            .pick(&[0x20u8, 0x22, 0x41, 0x60, 0x61, 0x62, 0x63, 0x6f, 0x73, 0x10]);
+        t.put(pad + 1, mode);
+        let w = t.alloc_random(0x100);
+        let (a, b) = (t.rng.next(), t.rng.next());
+        t.twin(
+            "Pad_ReadCurrDevice",
+            0x0088_98a0,
+            &[a, b, w, pad],
+            U32,
+            |o| w64(tk::pad_read_curr_device(o, w, pad, &mut callback)),
+        );
+        t.twin("Pad_ResetWork", 0x0088_8970, &[w], U32, |o| {
+            w64(tk::pad_reset_work(o, w, &mut callback))
+        });
+        t.twin("Pad_ClearAnalogWork", 0x0088_89f0, &[a, b], U32, |o| {
+            w64(tk::pad_clear_analog_work(o, a, b, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_text_wrappers_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_df80) else {
+        return;
+    };
+    // the 45 menu text wrappers over the game's tables, kana on and off
+    let config = ffx_battle::save::bridge::MENU.sym;
+    for round in 0..40u32 {
+        for (f, text, help) in tk::MENU_TEXT_WRAPPERS {
+            let id = t
+                .rng
+                .pick_or_any(&[0, 1, 2, 0x10, 0x2000_0001, 0xffff_ffff])
+                & 0xffff_1fff;
+            t.twin("menu text wrapper", f, &[id], U32, |o| {
+                w(tk::menu_text_of(o, text, help, id))
+            });
+        }
+        if round % 2 == 0 {
+            t.scramble(config, 4);
+        }
+    }
+    // the tail-jump wrappers, their targets recorded
+    let r = t.rng.next();
+    record_n(&mut t, 0x008b_8040, 1, r);
+    let (smn, ply) = (t.rng.next(), t.rng.next());
+    return_const(&mut t, 0x0090_1130, smn);
+    return_const(&mut t, 0x0090_1100, ply);
+    return_counter(&mut t, 0x008c_5440, 0);
+    let r = t.rng.next();
+    record_n(&mut t, 0x008c_5320, 1, r);
+    let r = t.rng.next();
+    record_n(&mut t, 0x008c_4e60, 0, r);
+    for _ in 0..20 {
+        let text = t.rng.next();
+        t.twin("TkMenuDraw1612Width", 0x008d_c9e0, &[text], U32, |o| {
+            w(tk::tk_menu_draw1612_width(o, text, &mut callback))
+        });
+        let summon = t.rng.pick_or_any(&[0, 1]);
+        t.twin("TkMn2TransCharFace", 0x008c_2ce0, &[summon], U32, |o| {
+            w(tk::tk_mn2_trans_char_face(o, summon, &mut callback))
+        });
+        t.twin(
+            "MenuNameEntry_CommitDefault0b",
+            0x008c_5370,
+            &[],
+            U32,
+            |o| w(tk::menu_name_entry_commit_default0b(o, &mut callback)),
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_mes_rikku_and_item_help_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_1060) else {
+        return;
+    };
+    // TkMn2DrawMesL: the font call recorded, the cursor and shades scrambled
+    let r = t.rng.next();
+    record_n(&mut t, 0x008e_d160, 9, r);
+    for _ in 0..20 {
+        t.scramble(tk::MN2_DRAW_Y.sym, 4);
+        t.scramble(tk::MN2_FONT_SHADE.sym, 0x20);
+        let v = [t.rng.next(), t.rng.next(), t.rng.next(), t.rng.next()];
+        t.twin("TkMn2DrawMesL", 0x008c_1060, &v, U32, |o| {
+            w(tk::tk_mn2_draw_mes_l(o, v, &mut callback))
+        });
+    }
+    // debugSetRikkuName: the save name a scratch buffer; the text needs the
+    // game's menu tables (snapshots only: the image has none, text 0)
+    let name = t.alloc_random(0x40);
+    return_const(&mut t, 0x0078_4fb0, name);
+    let rounds = if std::env::var_os("FFX_SNAPSHOT").is_some() {
+        10
+    } else {
+        0
+    };
+    for _ in 0..rounds {
+        t.scramble(ffx_battle::save::bridge::MENU.sym, 4);
+        t.twin("debugSetRikkuName", 0x0086_0a60, &[], U32, |o| {
+            w(tk::debug_set_rikku_name(o, &mut callback))
+        });
+    }
+    // MenuItem_RefreshHelp: every help source recorded with its own result
+    for (f, n) in [
+        (0x008a_98f0u32, 1u8),
+        (0x008d_dea0, 1),
+        (0x008d_de10, 1),
+        (0x0078_f7c0, 2),
+        (0x008a_aeb0, 1),
+    ] {
+        let r = t.rng.next();
+        record_n(&mut t, f, n, r);
+    }
+    let rows = t.alloc(&[0; 4]);
+    let max = t.alloc(&[0; 4]);
+    let owned = t.alloc(&[0; 4]);
+    for (f, cell) in [
+        (0x008c_8a00u32, rows),
+        (0x008c_8a20, max),
+        (0x008a_b2c0, owned),
+    ] {
+        let code = [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat(); // mov eax, [cell]; ret
+        for o in [&mut t.a, &mut t.b] {
+            let at = o.rebase(f);
+            o.write(at, &code).unwrap();
+        }
+    }
+    for round in 0..1200u32 {
+        let window = t.alloc_random(0xa0);
+        let sel = t.rng.pick(&[0u8, 1, 2, 3, 0xff, 0x80]);
+        t.put(window + 0x45, sel);
+        let lists = t.rng.pick(&[0u8, 1, 2, 4]);
+        t.put(window + 0x42, lists);
+        let kind = t.rng.pick(&[0u8, 1, 2, 2, 3]);
+        t.put(window + 0x43, kind);
+        for k in 0..6 {
+            let base = t.rng.below(0x40);
+            t.put(window + 0x54 + 4 * k, base);
+        }
+        // a quarter of the rounds on a negative row
+        let cursor = if round % 4 == 1 {
+            -24
+        } else {
+            i16::try_from(t.rng.below(0x40)).unwrap_or(0) - 8
+        };
+        t.put(window + 0x48, cursor);
+        let on = if round % 8 == 0 {
+            0
+        } else {
+            t.rng.pick(&[1u32, 0x100])
+        };
+        t.put(window + 0x94, on);
+        // the row as the original computes it, the counts around it
+        let k = i32::from(i8::from_le_bytes([sel])).max(0);
+        let k = if k >= i32::from(lists) {
+            i32::from(lists) - 1
+        } else {
+            k
+        };
+        let base: u32 = Mem::read(
+            &t.b,
+            (window + 0x58).wrapping_add(k.cast_unsigned().wrapping_mul(4)),
+        );
+        let row = base.wrapping_add(i32::from(cursor).cast_unsigned().wrapping_mul(2));
+        for cell in [rows, max] {
+            let v = row.wrapping_add(t.rng.pick(&[0xffff_ffffu32, 0, 1, 0x40]));
+            t.put(cell, v);
+        }
+        let v = t.rng.pick(&[0u32, 1]);
+        t.put(owned, v);
+        let mut list = t.rng.bytes(0x400);
+        for e in list.chunks_mut(4) {
+            e[2] = t.rng.pick(&[0u8, 1, 2, 3]);
+        }
+        // from 16 entries before the list: negative rows read there
+        t.put_bytes(t.sym(tk::MENU_ITEM_LIST.sym) - 0x40, &list);
+        let mut keys = t.rng.bytes(0x200);
+        for e in keys.chunks_mut(2) {
+            if t.rng.below(3) == 0 {
+                e.copy_from_slice(&[0, 0]);
+            }
+        }
+        t.put_bytes(t.sym(tk::MENU_IMPORTANT_LIST.sym) - 0x80, &keys);
+        let mask = if sel >= 0x80 { VOID } else { U32 };
+        t.twin("MenuItem_RefreshHelp", 0x008c_7650, &[window], mask, |o| {
+            w(tk::menu_item_refresh_help(o, window, &mut callback).unwrap_or(0))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_mc_sync_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_84a0) else {
+        return;
+    };
+    // the sync a counter: 0 for the first `left` polls, then its count;
+    // the modes summed
+    let left = t.alloc(&[0; 4]);
+    let log = t.alloc(&[0; 4]);
+    let modes = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04][..],              // mov eax, [esp + 4]
+        &[0x01, 0x05], &modes.to_le_bytes(),        // add [modes], eax
+        &[0xff, 0x05], &log.to_le_bytes(),          // inc dword [log]
+        &[0x31, 0xc0],                              // xor eax, eax
+        &[0x83, 0x2d], &left.to_le_bytes(), &[1],   // sub dword [left], 1
+        &[0x79, 0x05],                              // jns +5
+        &[0xa1], &log.to_le_bytes(),                // mov eax, [log]
+        &[0xc3],                                    // ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x0088_84e0);
+        o.write(at, &code).unwrap();
+    }
+    for round in 0..30u32 {
+        t.put(left, round % 5);
+        t.scramble(0x0133_0278, 4);
+        let mode = if round % 3 == 0 {
+            t.rng.pick_or_any(&[1, 2])
+        } else {
+            0
+        };
+        let (cmd, result) = (t.rng.next(), t.rng.next());
+        t.twin(
+            "MenuSave_McSync",
+            0x0088_84a0,
+            &[mode, cmd, result],
+            U32,
+            |o| w(tk::menu_save_mc_sync(o, [mode, cmd, result], &mut callback)),
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round22_sell_window_ctrl_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0022_9e20) else {
+        return;
+    };
+    // the pads from cells, the sound and the sale recorded
+    let (rep, trg) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    for (f, cell) in [(0x008b_e470u32, rep), (0x008b_e4b0, trg)] {
+        let code = [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat(); // mov eax, [cell]; ret
+        for o in [&mut t.a, &mut t.b] {
+            let at = o.rebase(f);
+            o.write(at, &code).unwrap();
+        }
+    }
+    return_counter(&mut t, 0x008b_e410, 0);
+    for (f, n) in [(0x0088_6e80u32, 1u8), (0x0079_0550, 2), (0x0078_59a0, 1)] {
+        let r = t.rng.next();
+        record_n(&mut t, f, n, r);
+    }
+    // MsGetGIL: 0, 1, 2, ...
+    return_counter(&mut t, 0x0078_4e80, 0);
+    for round in 0..3000u32 {
+        let window = t.alloc_random(0x80);
+        let state = t.rng.pick_or_any(&[0, 1, 2, 3, 3, 3, 4, 5, 6, 7, 8]);
+        t.put(window + 0x28, state);
+        let n = t
+            .rng
+            .pick(&[0i16, 1, 2, 5, 10, 11, 98, 99, 100, -3, 0x7ffc]);
+        t.put(window + 0x48, n);
+        // half the rounds at or next to the amount
+        let near = i32::from(n)
+            .cast_unsigned()
+            .wrapping_add(t.rng.pick(&[0u32, 1, 9, 10, 11]));
+        let most = if round % 2 == 0 {
+            near
+        } else {
+            t.rng
+                .pick_or_any(&[1, 2, 10, 99, 100, 0x1_0063, 0xffff_ffff])
+        };
+        t.put(window + 0x64, most);
+        let r = t
+            .rng
+            .pick_or_any(&[0, 0x4000, 0x1000, 0x8000, 0x2000, 0x5000, 0xa000]);
+        t.put(rep, r);
+        let g = t.rng.pick_or_any(&[0, 0, 0x20, 0x40, 0x60, 0x2000_0000]);
+        t.put(trg, g);
+        t.twin(
+            "MenuShop_SellWindowCtrl",
+            0x008d_9e20,
+            &[window],
+            VOID,
+            |o| {
+                tk::menu_shop_sell_window_ctrl(o, window, &mut callback);
+                0
+            },
+        );
+        // the buy window: the gil a counter, the price never 0
+        let price = t.rng.pick_or_any(&[1, 2, 10, 50, 0x8000_0000]).max(1);
+        t.put(window + 0x60, price);
+        let owned = t.rng.pick_or_any(&[0, 1, 50, 89, 98, 99, 120]);
+        t.put(window + 0x64, owned);
+        t.put(window + 0x28, state);
+        t.put(window + 0x48, n);
+        t.twin(
+            "MenuShop_BuyWindowCtrl",
+            0x008d_9bd0,
+            &[window],
+            VOID,
+            |o| {
+                tk::menu_shop_buy_window_ctrl(o, window, &mut callback);
+                0
+            },
         );
     }
     eprintln!("{} calls", t.calls);

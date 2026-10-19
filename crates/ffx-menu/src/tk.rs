@@ -8929,6 +8929,886 @@ pub mod bridge {
         mem.write(w.wrapping_add(0x45), 0u8);
         Some(w)
     }
+
+    /// The save counter: one more for every save packed (`0x008b3e60`),
+    /// stored in the header capped at `0x80000000`.
+    pub const MENU_SAVE_COUNTER: Global<u32> = Global::new(0x0186_627c);
+
+    /// Bytes of save data behind a packed save's `0x40`-byte header.
+    pub const SAVE_DATA_SIZE: u32 = 0x68c0;
+
+    /// `MenuSave_PackSave(out, save, slot)` (`0x008b3e60`, own name; caller
+    /// `TkMenuCtrlSaveLoad`): a save file at `out`, a `0x40`-byte header
+    /// then [`SAVE_DATA_SIZE`] bytes copied from `save`
+    /// (`TkSetEvSaveStatus` on the copy). The header: `+0` the counter
+    /// ([`MENU_SAVE_COUNTER`] plus one, at most `0x80000000`); `+4` `slot`;
+    /// `+5..+0xc` the party (`TkMenuGetPlayerFromIndex2`, padded with
+    /// `0xff`; just the first character while the story point, `u16` data
+    /// `+0xbec`, is 15 or less), then `+5` the data's byte `+0x3d58`;
+    /// `+0xc` `TOGetFFXLang()`; past story point 15 `+6`/`+7` the bytes
+    /// `+0x3d59`/`+0x3d5a`, and below 300 a 6 in `+5`/`+6` becomes 7;
+    /// `+0x10` data `+0xbc`; `+0x14` `MsGetGIL()`; `+0x18` `AtelGetSaveDic()`;
+    /// `+0x1c` `0x100`; `+0x1e` `AtelGetAlbhedRikku()`; `+0x1f`
+    /// `MsGetSaveConfigEnglish()`; `+0x20` the name `MsGetSaveChrName(0)`;
+    /// `+0x1a` and data `+0x64b4` the `TkCRC` of the data (taken with
+    /// `+0x64b4` 0). Returns the header's `+0x10`.
+    #[allow(clippy::cast_possible_truncation)] // byte and halfword results
+    pub fn menu_save_pack_save<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        save: u32,
+        slot: u8,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let data = out.wrapping_add(0x40);
+        mem.write_bytes(out, &[0; 0x40]);
+        let mut copy = vec![0u8; SAVE_DATA_SIZE as usize];
+        mem.read_bytes(save, &mut copy);
+        mem.write_bytes(data, &copy);
+        tk_set_ev_save_status(mem, data);
+        let counter = MENU_SAVE_COUNTER.get(mem).wrapping_add(1);
+        MENU_SAVE_COUNTER.set(mem, counter);
+        mem.write(out, counter.min(0x8000_0000));
+
+        let story: u16 = mem.read(data.wrapping_add(0xbec));
+        let past_start = story > 15;
+        let early = story < 300;
+        let mut party = MENU_PLAYER_LIST_MAX2.get(mem).cast_signed();
+        if !past_start && party > 1 {
+            party = 1;
+        }
+        let mut i = 0i32;
+        while i < party {
+            let chr = tk_menu_get_player_from_index2(mem, i);
+            mem.write(out.wrapping_add(5).wrapping_add_signed(i), chr);
+            i += 1;
+        }
+        // the rest of the seven party bytes, when fewer were written
+        for k in i.max(0)..7 {
+            mem.write(out.wrapping_add(5).wrapping_add_signed(k), 0xffu8);
+        }
+
+        let lang = call(mem, mem.rebase(0x008a_c2f0), &[]);
+        mem.write(out.wrapping_add(0xc), lang as u8);
+        let first: u8 = mem.read(data.wrapping_add(0x3d58));
+        mem.write(out.wrapping_add(5), first);
+        if past_start {
+            let second: u8 = mem.read(data.wrapping_add(0x3d59));
+            mem.write(out.wrapping_add(6), second);
+            let third: u8 = mem.read(data.wrapping_add(0x3d5a));
+            mem.write(out.wrapping_add(7), third);
+            if early {
+                for o in [5u32, 6] {
+                    if mem.read::<u8>(out.wrapping_add(o)) == 6 {
+                        mem.write(out.wrapping_add(o), 7u8);
+                    }
+                }
+            }
+        }
+        mem.write(out.wrapping_add(4), slot);
+        let v: u32 = mem.read(data.wrapping_add(0xbc));
+        mem.write(out.wrapping_add(0x10), v);
+        let gil = call(mem, mem.rebase(0x008a_98b0), &[]);
+        mem.write(out.wrapping_add(0x14), gil);
+        let dic = call(mem, mem.rebase(0x0086_c410), &[]);
+        mem.write(out.wrapping_add(0x18), dic as u16);
+        mem.write(out.wrapping_add(0x1c), 0x100u16);
+        let rikku = call(mem, mem.rebase(0x0086_a7e0), &[]);
+        mem.write(out.wrapping_add(0x1e), rikku as u8);
+        let english = call(mem, mem.rebase(0x0078_51d0), &[]);
+        mem.write(out.wrapping_add(0x1f), english as u8);
+        let name = call(mem, mem.rebase(0x0078_4fb0), &[0]);
+        let mut k = 0u32;
+        loop {
+            let c: u8 = mem.read(name.wrapping_add(k));
+            mem.write(out.wrapping_add(0x20).wrapping_add(k), c);
+            k = k.wrapping_add(1);
+            if c == 0 {
+                break;
+            }
+        }
+        mem.write(data.wrapping_add(0x64b4), 0u32);
+        #[allow(clippy::cast_possible_wrap)]
+        let crc = tk_crc(mem, SAVE_DATA_SIZE as i32, data);
+        mem.write(out.wrapping_add(0x1a), crc);
+        mem.write(data.wrapping_add(0x64b4), u32::from(crc));
+        mem.read(out.wrapping_add(0x10))
+    }
+
+    /// A rectangle placed at `(x, y)` plus remapped offsets: `[left, top,
+    /// width, height]` as float words, the remaps in the original's order
+    /// (`remapY2(h)`, `remapX2(w)`, `remapY2(dy) + y`, `remapX2(dx) + x`),
+    /// each value rounded to a float where the original stores it.
+    fn remapped_rect<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        [dx, dy, w, h]: [f32; 4],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+    ) -> [u32; 4] {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let round = |v: f64| (v as f32).to_bits();
+        let height = round(remap(mem, true, h));
+        let width = round(remap(mem, false, w));
+        let top = round(remap(mem, true, dy) + f64::from(y));
+        let left = round(remap(mem, false, dx) + f64::from(x));
+        [left, top, width, height]
+    }
+
+    /// `TkMn2WeaponBuySellWindow(x, y, weapon, amount, owned)` (`0x008c2d00`,
+    /// Fahrenheit's name): the weapon shop's amount window at `(x, y)`.
+    /// `TODrawMenuPlateXYWHType(x, y, 560, 240, 10)` (sizes remapped), a
+    /// `TODrawCrossBoxXYWHC2` gradient box (10, 10, 540 x 220, both colours
+    /// `0x40ffffff`), a plate (10, 10, 540 x 60, type 5), the weapon's
+    /// `DrawCrossMenuIconWeaponName2(weapon, x - 85, y + 10, 0)`, the sheet
+    /// `0x008f9c20(10, 70, 540 x 160, 0)`, a plate (13, 73, 534 x 60, type
+    /// 2), sheet cell 20 (`0x008f8bb0`, 65, 85, 430 x 36), and two
+    /// `TkMn2DrawGillPlate`s (24, 137 and 24, 187; 520 x 32): `|amount|`
+    /// and `owned - amount` (at most 999 999 999). Offsets and sizes go
+    /// through the UI remaps as in [`remapped_rect`]. Returns the last
+    /// call's `eax`.
+    pub fn tk_mn2_weapon_buy_sell_window<M: Mem>(
+        mem: &mut M,
+        at: [f32; 2],
+        weapon: u32,
+        amount: i32,
+        owned: i32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let [x, y] = at;
+        let plate = mem.rebase(0x008f_5f70);
+        let height = r(remap(mem, true, 240.0));
+        let width = r(remap(mem, false, 560.0));
+        call(mem, plate, &[x.to_bits(), y.to_bits(), width, height, 10]);
+
+        let [left, top, width, height] = remapped_rect(mem, at, [10.0, 10.0, 540.0, 220.0], remap);
+        let cross_box = mem.rebase(0x008f_4b20);
+        call(
+            mem,
+            cross_box,
+            &[left, top, width, height, 0x40ff_ffff, 0x40ff_ffff],
+        );
+
+        let [left, top, width, height] = remapped_rect(mem, at, [10.0, 10.0, 540.0, 60.0], remap);
+        call(mem, plate, &[left, top, width, height, 5]);
+
+        let top = r(remap(mem, true, 10.0) + f64::from(y));
+        let left = r(f64::from(x) - remap(mem, false, 85.0));
+        let name = mem.rebase(0x008e_6970);
+        call(mem, name, &[weapon, left, top, 0]);
+
+        let [left, top, width, height] = remapped_rect(mem, at, [10.0, 70.0, 540.0, 160.0], remap);
+        let sheet = mem.rebase(0x008f_9c20);
+        call(mem, sheet, &[left, top, width, height, 0]);
+
+        let [left, top, width, height] = remapped_rect(mem, at, [13.0, 73.0, 534.0, 60.0], remap);
+        call(mem, plate, &[left, top, width, height, 2]);
+
+        let [left, top, width, height] = remapped_rect(mem, at, [65.0, 85.0, 430.0, 36.0], remap);
+        let sheet_cell = mem.rebase(0x008f_8bb0);
+        call(mem, sheet_cell, &[20, left, top, width, height]);
+
+        let gil_plate = mem.rebase(0x008c_0a20);
+        let count = amount.wrapping_abs().cast_unsigned();
+        let [left, top, width, height] = remapped_rect(mem, at, [24.0, 137.0, 520.0, 32.0], remap);
+        call(mem, gil_plate, &[left, top, width, height, count]);
+
+        let left_over = owned.wrapping_sub(amount).min(999_999_999).cast_unsigned();
+        let [left, top, width, height] = remapped_rect(mem, at, [24.0, 187.0, 520.0, 32.0], remap);
+        call(mem, gil_plate, &[left, top, width, height, left_over])
+    }
+
+    /// `TkMn2BuySellWindow(x, y, item, price, owned_count, amount, gil)`
+    /// (`0x008bf170`, Fahrenheit's name): the item shop's amount window at
+    /// `(x, y)`. A plate (`TODrawMenuPlateXYWHType`, 560 x 316, type 10),
+    /// a `TODrawCrossBoxXYWHC2` box (10, 10, 540 x 296, colours
+    /// `0x40ffffff`), a plate (10, 10, 540 x 60, type 5), the item's
+    /// `DrawCrossMenuIconItemName(item, x - 85, y + 10, 0)`, three
+    /// `TOMkpShapeXYWHUV` shapes of sheet `0xc8` (112, 76 and 377, 76:
+    /// 72 x 72, UVs 0.484/0.587/0.564/0.667; 244, 90: 73 x 44, UVs
+    /// 0.718/0.0137/0.789/0.0566), `price` and `owned_count` as
+    /// `ToMakeBtlEasyDigit2(n, x', y + 93, 0, 0.68, 0)` centred on 147 and
+    /// 412 (`x'` = remapped `x` minus half of `ToGetBtlEasyDigitWidth2(n,
+    /// &w, 0.68, 0)`'s width; `width` stands for the original's argument
+    /// slot it writes), a plate (12, 148, 534 x 60, type 2), sheet cell 20
+    /// (64, 160, 430 x 36), and two `TkMn2DrawGillPlate`s (22, 212 and 22,
+    /// 263; 522 x 32): `|price * amount|` and `gil - price * amount` (at
+    /// most 999 999 999). Offsets and sizes go through the UI remaps as in
+    /// [`remapped_rect`]. Returns the last call's `eax`.
+    pub fn tk_mn2_buy_sell_window<M: Mem>(
+        mem: &mut M,
+        at: [f32; 2],
+        [item, price, owned_count, amount, gil]: [u32; 5],
+        width: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let [x, y] = at;
+        let total = price.cast_signed().wrapping_mul(amount.cast_signed());
+        let plate = mem.rebase(0x008f_5f70);
+        let height = r(remap(mem, true, 316.0));
+        let w = r(remap(mem, false, 560.0));
+        call(mem, plate, &[x.to_bits(), y.to_bits(), w, height, 10]);
+
+        let [left, top, w, height] = remapped_rect(mem, at, [10.0, 10.0, 540.0, 296.0], remap);
+        let cross_box = mem.rebase(0x008f_4b20);
+        call(
+            mem,
+            cross_box,
+            &[left, top, w, height, 0x40ff_ffff, 0x40ff_ffff],
+        );
+
+        let [left, top, w, height] = remapped_rect(mem, at, [10.0, 10.0, 540.0, 60.0], remap);
+        call(mem, plate, &[left, top, w, height, 5]);
+
+        let top = r(remap(mem, true, 10.0) + f64::from(y));
+        let left = r(f64::from(x) - remap(mem, false, 85.0));
+        let name = mem.rebase(0x008e_6700);
+        call(mem, name, &[item, left, top, 0]);
+
+        let shape = mem.rebase(0x0090_3bb0);
+        let arrow_uv = [0.484_375f32, 0.586_914_06, 0.564_453_1, 0.666_992_2].map(f32::to_bits);
+        for dx in [112.0, 377.0] {
+            let rect = remapped_rect(mem, at, [dx, 76.0, 72.0, 72.0], remap);
+            call(mem, shape, &[&[0xc8], &rect[..], &arrow_uv].concat());
+        }
+        let rect = remapped_rect(mem, at, [244.0, 90.0, 73.0, 44.0], remap);
+        let uv = [0.717_773_44f32, 0.013_671_875, 0.789_062_5, 0.056_640_625].map(f32::to_bits);
+        call(mem, shape, &[&[0xc8], &rect[..], &uv].concat());
+
+        let digit_width = mem.rebase(0x0090_5230);
+        let digits = mem.rebase(0x0090_5550);
+        let scale = 0.68f32.to_bits();
+        for (n, dx) in [(price, 147.0), (owned_count, 412.0)] {
+            call(mem, digit_width, &[n, width, scale, 0]);
+            let top = r(remap(mem, true, 93.0) + f64::from(y));
+            let right = remap(mem, false, dx) + f64::from(x);
+            let half = f64::from(mem.read::<f32>(width)) * 0.5;
+            let left = r(right - half);
+            call(mem, digits, &[n, left, top, 0, scale, 0]);
+        }
+
+        let [left, top, w, height] = remapped_rect(mem, at, [12.0, 148.0, 534.0, 60.0], remap);
+        call(mem, plate, &[left, top, w, height, 2]);
+
+        let [left, top, w, height] = remapped_rect(mem, at, [64.0, 160.0, 430.0, 36.0], remap);
+        let sheet_cell = mem.rebase(0x008f_8bb0);
+        call(mem, sheet_cell, &[20, left, top, w, height]);
+
+        let gil_plate = mem.rebase(0x008c_0a20);
+        let cost = total.wrapping_abs().cast_unsigned();
+        let [left, top, w, height] = remapped_rect(mem, at, [22.0, 212.0, 522.0, 32.0], remap);
+        call(mem, gil_plate, &[left, top, w, height, cost]);
+
+        let left_over = gil
+            .cast_signed()
+            .wrapping_sub(total)
+            .min(999_999_999)
+            .cast_unsigned();
+        let [left, top, w, height] = remapped_rect(mem, at, [22.0, 263.0, 522.0, 32.0], remap);
+        call(mem, gil_plate, &[left, top, w, height, left_over])
+    }
+
+    /// The legend-ability tables of `TkSetLegendAbility`, by character
+    /// (0..=17): four `u16` abilities per level, 8 bytes per level.
+    pub const LEGEND_ABILITY_TABLES: [u32; 18] = [
+        0x00c8_6d00,
+        0x00c8_6d10,
+        0x00c8_6d60,
+        0x00c8_6d20,
+        0x00c8_6d30,
+        0x00c8_6d40,
+        0x00c8_6d50,
+        0x00c8_6d70,
+        0x00c8_6d80,
+        0x00c8_6d90,
+        0x00c8_6da0,
+        0x00c8_6db0,
+        0x00c8_6dc0,
+        0x00c8_6de0,
+        0x00c8_6dd0,
+        0x00c8_6df0,
+        0x00c8_6e00,
+        0x00c8_6e10,
+    ];
+
+    /// `TkSetLegendAbility(chr, level)` (`0x008c3170`, Fahrenheit's name):
+    /// the four abilities of `chr`'s legend weapon (`TkFindLegendWeapon(chr)`,
+    /// called for any `chr`) become those of [`LEGEND_ABILITY_TABLES`]`[chr]`
+    /// at `level` (8 bytes per level, signed), the weapon's `u16` at
+    /// `+0xe..+0x14`; then `MsSetSaveParamAll()` and 1. Returns 0 without a
+    /// weapon or for `chr` above 17.
+    pub fn tk_set_legend_ability<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        level: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = usize::try_from(chr)
+            .ok()
+            .and_then(|i| LEGEND_ABILITY_TABLES.get(i))
+            .map(|&t| mem.rebase(t).wrapping_add(level.wrapping_mul(8)));
+        let find = mem.rebase(0x008c_30e0);
+        let weapon = call(mem, find, &[chr]);
+        let Some(abilities) = table else {
+            return 0;
+        };
+        if weapon == 0 {
+            return 0;
+        }
+        for k in 0..4u32 {
+            let a: u16 = mem.read(abilities.wrapping_add(2 * k));
+            mem.write(weapon.wrapping_add(0xe + 2 * k), a);
+        }
+        let save_all = mem.rebase(0x008c_30d0);
+        call(mem, save_all, &[]);
+        1
+    }
+
+    /// `Math_AngleStepMode(a, target, step, mode)` (`0x0088b610`, own name;
+    /// caller `0x00869510`): mode 1 [`math_angle_step_to`] with `step`,
+    /// mode 2 the same with `step * -1.0` (a float; a NaN keeps its sign),
+    /// any other [`crate::math::angle_step`]; the result stored as a float
+    /// and returned in `ST0`.
+    #[must_use]
+    pub fn math_angle_step_mode(a: f32, target: f32, step: f32, mode: i32) -> f32 {
+        use ffx_bridge::x87::{load, mul, store};
+        let result = match mode {
+            1 => math_angle_step_to(a, target, step),
+            2 => {
+                let back = f32::from_bits(store(mul(load(step.to_bits()), -1.0)));
+                math_angle_step_to(a, target, back)
+            }
+            _ => crate::math::angle_step(a, target, step),
+        };
+        f32::from_bits(store(load(result.to_bits())))
+    }
+
+    /// `toGetStatusWeaponMesPos()` (`0x008d54a0`, Fahrenheit's name;
+    /// caller `0x008cf990`): where the status screen's weapon/armour
+    /// captions end, `ftol(remapX2(1020) - w)` (at 53 bits, no float store
+    /// between) with `w` the wider of the two captions'
+    /// `ToGetBtlEasyFontWidth(TOMenuGetStatusMes(k), &w, 0, 0.78, 1.0)` for
+    /// `k` 5 and 6 (the second when it is not narrower, or for a NaN).
+    /// `widths` stands for the original's two locals the widths go to.
+    pub fn to_get_status_weapon_mes_pos<M: Mem>(
+        mem: &mut M,
+        widths: [u32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let status_mes = mem.rebase(0x008b_ee70);
+        let font_width = mem.rebase(0x0090_5290);
+        let scale = 0.78f32.to_bits();
+        let one = 1f32.to_bits();
+        for (k, out) in [(5, widths[0]), (6, widths[1])] {
+            let text = call(mem, status_mes, &[k, out, 0, scale, one]);
+            call(mem, font_width, &[text, out, 0, scale, one]);
+        }
+        let first = ffx_bridge::x87::load(mem.read(widths[0]));
+        let second = ffx_bridge::x87::load(mem.read(widths[1]));
+        let wider = if second < first { first } else { second };
+        let right = remap(mem, false, 1020.0);
+        ffx_bridge::x87::ftol(mem, ffx_bridge::x87::sub(right, wider))
+    }
+
+    /// `Pad_ReadCurrDevice(a, b, work, pad)` (`0x008898a0`, own name;
+    /// caller `0x00888f90`, the pad read): the PC input's buttons
+    /// (`inputGetCurrDeviceButtonInfo`, `u16`) with opposite directions
+    /// cancelling (`0xa000` both set drops them to `& 0x5fff`, then `0x5000`
+    /// to `& 0xafff`), by the pad record's mode (byte `+1`, high nibble):
+    /// 6 (analogue) fills `2 * low nibble - 3` bytes from `+3` with `0x80`
+    /// (when more than 3), mode byte `0x42`, `work+0x98` (`u32`) 0; mode 2
+    /// becomes `0x22`; except for mode 6 the buttons go to `work+0x9a` and
+    /// `+0x98` (`u16`). `a` and `b` are unused. Returns `work` (left in
+    /// `eax`).
+    pub fn pad_read_curr_device<M: Mem>(
+        mem: &mut M,
+        work: u32,
+        pad: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let input = mem.rebase(0x0063_0c80);
+        #[allow(clippy::cast_possible_truncation)] // movzx of ax
+        let mut buttons = call(mem, input, &[]) as u16;
+        if buttons & 0xa000 == 0xa000 {
+            buttons &= 0x5fff;
+        }
+        if buttons & 0x5000 == 0x5000 {
+            buttons &= 0xafff;
+        }
+        let mode: u8 = mem.read(pad.wrapping_add(1));
+        let stick_bytes = i32::from(mode & 0xf) * 2;
+        match mode >> 4 {
+            6 => {
+                if stick_bytes > 3 {
+                    for k in 0..(stick_bytes - 3).cast_unsigned() {
+                        mem.write(pad.wrapping_add(3 + k), 0x80u8);
+                    }
+                }
+                mem.write(pad.wrapping_add(1), 0x42u8);
+                mem.write(work.wrapping_add(0x98), 0u32);
+                return work;
+            }
+            2 => mem.write(pad.wrapping_add(1), 0x22u8),
+            _ => {}
+        }
+        mem.write(work.wrapping_add(0x9a), buttons);
+        mem.write(work.wrapping_add(0x98), buttons);
+        work
+    }
+
+    /// `Pad_ResetWork(work)` (`0x00888970`, own name; callers `0x00888910`,
+    /// `0x00889790`): byte `+0` `0xff`, `+4` and `+8` 0, `u16 +0x1c` 0,
+    /// then (a tail call) `Pad_ResetAnalogAt0C(work)`, whose `eax` is
+    /// returned.
+    pub fn pad_reset_work<M: Mem>(
+        mem: &mut M,
+        work: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(work, 0xffu8);
+        mem.write(work.wrapping_add(4), 0u32);
+        mem.write(work.wrapping_add(8), 0u32);
+        mem.write(work.wrapping_add(0x1c), 0u16);
+        let reset = mem.rebase(0x0088_9030);
+        call(mem, reset, &[work])
+    }
+
+    /// `Pad_ClearAnalogWork(a, b)` (`0x008889f0`, own name; caller
+    /// `0x00889360`): in `TkGetControlerWork(a, b)` the eight `u16` at
+    /// `+0xa0` and the eight floats at `+0xb0` become 0 (interleaved).
+    /// Returns the work `+ 0xd0` (the original's `eax` after its loop).
+    pub fn pad_clear_analog_work<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let get = mem.rebase(0x0088_8ec0);
+        let work = call(mem, get, &[a, b]);
+        for k in 0..8u32 {
+            mem.write(work.wrapping_add(0xa0 + 2 * k), 0u16);
+            mem.write(work.wrapping_add(0xb0 + 4 * k), 0u32);
+        }
+        work.wrapping_add(0xd0)
+    }
+
+    /// The menu text wrappers: `(address, text, help)`. Each original is
+    /// `MsMenuGetText(text, id, MsGetSaveConfigHiragana())` (or
+    /// `MsMenuGetHelp` for `help`) of its one argument; see
+    /// [`menu_text_of`]. The `TOMenuGet*`, `TkMenu*` and `TkMn2*` families
+    /// repeat the same texts.
+    pub const MENU_TEXT_WRAPPERS: [(u32, u32, bool); 45] = [
+        (0x0086_0780, 3, false),  // AtelMenuSaveMes_00860780
+        (0x008b_ea50, 5, true),   // TOMenuGetArmsHelp
+        (0x008b_ea70, 5, false),  // TOMenuGetArmsMes
+        (0x008b_ea90, 6, true),   // TOMenuGetBuildHelp
+        (0x008b_eab0, 6, false),  // TOMenuGetBuildMes
+        (0x008b_ead0, 7, true),   // TOMenuGetConfigHelp
+        (0x008b_eaf0, 7, false),  // TOMenuGetConfigMes
+        (0x008b_ec90, 8, true),   // TOMenuGetItemHelp
+        (0x008b_ecb0, 8, false),  // TOMenuGetItemMes
+        (0x008b_ecd0, 9, true),   // TOMenuGetMainHelp
+        (0x008b_ecf0, 9, false),  // TOMenuGetMainMes
+        (0x008b_ed10, 1, true),   // TOMenuGetMenu1Help
+        (0x008b_ed30, 1, false),  // TOMenuGetMenu1Mes
+        (0x008b_ed50, 2, true),   // TOMenuGetMenu2Help
+        (0x008b_ed70, 2, false),  // TOMenuGetMenu2Mes
+        (0x008b_edb0, 10, true),  // TOMenuGetNameHelp
+        (0x008b_edd0, 10, false), // TOMenuGetNameMes
+        (0x008b_ee10, 3, true),   // TOMenuGetSaveHelp
+        (0x008b_ee30, 3, false),  // TOMenuGetSaveMes
+        (0x008b_ee50, 11, true),  // TOMenuGetStatusHelp
+        (0x008b_ee70, 11, false), // TOMenuGetStatusMes
+        (0x008b_ee90, 12, true),  // TOMenuGetSummonHelp
+        (0x008b_eeb0, 12, false), // TOMenuGetSummonMes
+        (0x008b_f150, 5, false),  // TkMn2ArmsMes
+        (0x008d_c8f0, 5, true),   // TkMenuArmsHelp
+        (0x008d_c910, 5, false),  // TkMenuArmsMes
+        (0x008d_c930, 6, true),   // TkMenuBuildHelp
+        (0x008d_c950, 6, false),  // TkMenuBuildMes
+        (0x008d_c9b0, 7, false),  // TkMenuConfigMes
+        (0x008d_df20, 8, true),   // TkMenuItemHelp
+        (0x008d_df40, 8, false),  // TkMenuItemMes
+        (0x008d_df60, 9, true),   // TkMenuMainHelp
+        (0x008d_df80, 9, false),  // TkMenuMainMes
+        (0x008d_dfa0, 1, true),   // TkMenuMenu1Help
+        (0x008d_dfc0, 1, false),  // TkMenuMenu1Mes
+        (0x008d_dfe0, 2, true),   // TkMenuMenu2Help
+        (0x008d_e000, 2, false),  // TkMenuMenu2Mes
+        (0x008d_e020, 10, true),  // TkMenuNameHelp
+        (0x008d_e040, 10, false), // TkMenuNameMes
+        (0x008d_e060, 3, true),   // TkMenuSaveHelp
+        (0x008d_e080, 3, false),  // TkMenuSaveMes
+        (0x008d_e120, 11, true),  // TkMenuStatusHelp
+        (0x008d_e140, 11, false), // TkMenuStatusMes
+        (0x008d_e160, 12, true),  // TkMenuSummonHelp
+        (0x008d_e180, 12, false), // TkMenuSummonMes
+    ];
+
+    /// One of the [`MENU_TEXT_WRAPPERS`]: menu text `text`'s name (or, for
+    /// `help`, help line) of record `id`, in kana when
+    /// `MsGetSaveConfigHiragana()` says so.
+    pub fn menu_text_of(mem: &impl Mem, text: u32, help: bool, id: u32) -> u32 {
+        use ffx_battle::menu::bridge::{ms_menu_get_help, ms_menu_get_text};
+        let kana = save::ms_get_save_config_hiragana(mem);
+        if help {
+            ms_menu_get_help(mem, text, id, kana)
+        } else {
+            ms_menu_get_text(mem, text, id, kana)
+        }
+    }
+
+    /// `TkMenuDraw1612Width(text)` (`0x008dc9e0`, Fahrenheit's name): a
+    /// tail jump to `TOGetTextWidth_008b8040(text)`; its result.
+    pub fn tk_menu_draw1612_width<M: Mem>(
+        mem: &mut M,
+        text: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let width = mem.rebase(0x008b_8040);
+        call(mem, width, &[text])
+    }
+
+    /// `TkMn2TransCharFace(summon)` (`0x008c2ce0`, Fahrenheit's name): the
+    /// face texture upload, `TOMenuTransFaceSmnTex()` for a nonzero
+    /// `summon`, else `TOMenuTransFacePlyTex()` (tail jumps); its result.
+    pub fn tk_mn2_trans_char_face<M: Mem>(
+        mem: &mut M,
+        summon: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(if summon == 0 {
+            0x0090_1100
+        } else {
+            0x0090_1130
+        });
+        call(mem, f, &[])
+    }
+
+    /// `MenuNameEntry_CommitDefault0b()` (`0x008c5370`, own name; callers
+    /// `0x00787100`, `0x00787470`): the name entry's commit for character
+    /// `0xb` without the menu: `MenuItem_SetTarget(0xb)`,
+    /// `MenuItem_LoadTargetKeys(0xb)`, then (a tail jump)
+    /// `MenuNameEntry_Commit()`, whose result is returned.
+    pub fn menu_name_entry_commit_default0b<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let set_target = mem.rebase(0x008c_5440);
+        call(mem, set_target, &[0xb]);
+        let load_keys = mem.rebase(0x008c_5320);
+        call(mem, load_keys, &[0xb]);
+        let commit = mem.rebase(0x008c_4e60);
+        call(mem, commit, &[])
+    }
+
+    /// `TkMn2DrawMesL(x, y, text, colour)` (`0x008c1060`, Fahrenheit's
+    /// name): [`MN2_DRAW_Y`] moves `0x10` on and becomes the cursor of
+    /// `TOAddPktBaseMesFontRGBA_008ed160(cursor, text, x, y, colour,
+    /// shade...)` with the four [`MN2_FONT_SHADE`] words (from `+0x18` down
+    /// to `+0`, 8 bytes apart), whose result is stored back and returned.
+    pub fn tk_mn2_draw_mes_l<M: Mem>(
+        mem: &mut M,
+        [x, y, text, colour]: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let shade = MN2_FONT_SHADE.ptr(mem).addr;
+        let [s0, s1, s2, s3] =
+            [0x18u32, 0x10, 8, 0].map(|o| mem.read::<u32>(shade.wrapping_add(o)));
+        let cursor = MN2_DRAW_Y.get(mem).wrapping_add(0x10);
+        MN2_DRAW_Y.set(mem, cursor);
+        let add = mem.rebase(0x008e_d160);
+        let end = call(mem, add, &[cursor, text, x, y, colour, s0, s1, s2, s3]);
+        MN2_DRAW_Y.set(mem, end);
+        end
+    }
+
+    /// `debugSetRikkuName()` (`0x00860a60`, Fahrenheit's name; callers
+    /// `0x00787100`, `0x00787470`, not debug-only): Rikku's default name,
+    /// `MsMenuGetText(3, 0x202c, MsGetSaveConfigHiragana())`, copied with
+    /// its NUL into `MsGetSaveChrName(6)`. Returns what the original leaves
+    /// in `eax`: the name's address minus the text's.
+    pub fn debug_set_rikku_name<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let text = menu_text_of(mem, 3, false, 0x202c);
+        let chr_name = mem.rebase(0x0078_4fb0);
+        let name = call(mem, chr_name, &[6]);
+        let mut k = 0u32;
+        loop {
+            let c: u8 = mem.read(text.wrapping_add(k));
+            mem.write(name.wrapping_add(k), c);
+            k = k.wrapping_add(1);
+            if c == 0 {
+                break;
+            }
+        }
+        name.wrapping_sub(text)
+    }
+
+    /// `MenuItem_RefreshHelp_008c7650(window)` (`0x008c7650`): the item list
+    /// window's help line. The row is the window's list word at
+    /// `+0x58 + 4 * k` (`k` = byte `+0x45` when not negative, at most
+    /// `+0x42 - 1`) plus twice the `i16` at `+0x48`. With `+0x94` set, by
+    /// kind `+0x43`: 0, an item (entry kind byte of [`MENU_ITEM_LIST`]
+    /// nonzero) `TkMenuGetItemHelp(id)`; 1, a key item below
+    /// `TkMenuImportantListMax()` with a nonzero id that
+    /// `TkMsImportantGet(id)` owns, `TkMenuGetImportantHelp(id)`; 2, below
+    /// `MenuItem_GetRows()`, kind 1 `TkMenuGetCommandHelp(id)`, kind 2
+    /// `MsGetMenuChrInfo(id, 0)`; otherwise 0. When `+0x45` is not negative,
+    /// `TkMenuSetHelpMessage(help)` (a tail jump), whose `eax` is returned;
+    /// otherwise `None` (the original's `eax` is then whatever it last
+    /// held, which no caller reads).
+    pub fn menu_item_refresh_help<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let at = |o: u32| window.wrapping_add(o);
+        let selected = i32::from(mem.read::<i8>(at(0x45)));
+        let lists = i32::from(mem.read::<u8>(at(0x42)));
+        let k = if selected.max(0) >= lists {
+            lists - 1
+        } else {
+            selected.max(0)
+        };
+        let base: u32 = mem.read(at(0x58).wrapping_add(k.cast_unsigned().wrapping_mul(4)));
+        let cursor = i32::from(mem.read::<i16>(at(0x48))).cast_unsigned();
+        let row = base.wrapping_add(cursor.wrapping_mul(2));
+        let items = MENU_ITEM_LIST.ptr(mem).addr;
+        let entry = items.wrapping_add(row.wrapping_mul(4));
+        let id = |mem: &M| u32::from(mem.read::<u16>(entry));
+        let entry_kind = |mem: &M| mem.read::<u8>(entry.wrapping_add(2));
+        let mut help = 0;
+        if mem.read::<u32>(at(0x94)) != 0 {
+            match mem.read::<u8>(at(0x43)) {
+                0 => {
+                    if entry_kind(mem) != 0 {
+                        let f = mem.rebase(0x008a_98f0);
+                        help = call(mem, f, &[id(mem)]);
+                    }
+                }
+                1 => {
+                    let max = mem.rebase(0x008c_8a20);
+                    let max = call(mem, max, &[]);
+                    if row.cast_signed() < max.cast_signed() {
+                        let list = MENU_IMPORTANT_LIST.ptr(mem).addr;
+                        let key =
+                            u32::from(mem.read::<u16>(list.wrapping_add(row.wrapping_mul(2))));
+                        if key != 0 {
+                            let owned = mem.rebase(0x008a_b2c0);
+                            if call(mem, owned, &[key]) != 0 {
+                                let f = mem.rebase(0x008d_dea0);
+                                help = call(mem, f, &[key]);
+                            }
+                        }
+                    }
+                }
+                2 => {
+                    let rows = mem.rebase(0x008c_8a00);
+                    let rows = call(mem, rows, &[]);
+                    if row.cast_signed() < rows.cast_signed() {
+                        match entry_kind(mem) {
+                            1 => {
+                                let f = mem.rebase(0x008d_de10);
+                                help = call(mem, f, &[id(mem)]);
+                            }
+                            2 => {
+                                let f = mem.rebase(0x0078_f7c0);
+                                help = call(mem, f, &[id(mem), 0]);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if selected < 0 {
+            return None;
+        }
+        let set = mem.rebase(0x008a_aeb0);
+        Some(call(mem, set, &[help]))
+    }
+
+    /// `MenuSave_McSync(mode, cmd, result)` (`0x008884a0`, own name; caller
+    /// `TkMenuCtrlSaveLoad`, three sites): a nonzero `mode` is passed on to
+    /// the `sceMcSync` wrapper `0x008884e0(mode, cmd, result)` (a tail
+    /// jump); mode 0 waits, calling it with mode 1 until it returns nonzero
+    /// and adding 1 000 000 to the counter at `0x01330278`
+    /// (`op_counter_add_00888890`) after every poll. Returns the wrapper's
+    /// last result.
+    pub fn menu_save_mc_sync<M: Mem>(
+        mem: &mut M,
+        [mode, cmd, result]: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let sync = mem.rebase(0x0088_84e0);
+        if mode != 0 {
+            return call(mem, sync, &[mode, cmd, result]);
+        }
+        let add = mem.rebase(0x0088_8890);
+        loop {
+            let done = call(mem, sync, &[1, cmd, result]);
+            call(mem, add, &[1_000_000]);
+            if done != 0 {
+                return done;
+            }
+        }
+    }
+
+    /// The item shop amount windows' state machine (`MenuShop_BuyWindowCtrl`,
+    /// `MenuShop_SellWindowCtrl`), by state `+0x28`: 0 becomes 1; 1 goes
+    /// on as 2, 2 stores 3 and goes on as 3; in 3 a trigger `0x20` deals
+    /// (state 4: `+0x45` 1, sound `0x8000000e`, `MsSaveItemUse(+0x5c, ±n)`,
+    /// `MsPayGIL(±n * +0x60)`, minus when selling, state 5), `0x40` cancels
+    /// (state 6: `+0x45` `0xff`, sound `0x80000004`, state 7); otherwise
+    /// the repeat pad moves the amount `n` (`i16 +0x48`, from 1 to `most`,
+    /// sound `0x80000001` on a move): `0x4000` −10 (at least 1), `0x1000`
+    /// +10 (at most `most`), `0x8000` −1, `0x2000` +1. States 5, 7 and
+    /// others do nothing.
+    fn shop_amount_ctrl<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [rep, trg]: [u32; 2],
+        most: i32,
+        sell: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |o: u32| window.wrapping_add(o);
+        let sign = |v: i32| if sell { v.wrapping_neg() } else { v };
+        let sound = mem.rebase(0x0088_6e80);
+        let amount = |mem: &M| mem.read::<i16>(at(0x48));
+        let mut state = mem.read::<u32>(at(0x28));
+        loop {
+            match state {
+                0 => {
+                    mem.write(at(0x28), 1u32);
+                    return;
+                }
+                1 => state = 2,
+                2 | 3 => {
+                    if state == 2 {
+                        mem.write(at(0x28), 3u32);
+                    }
+                    if trg & 0x20 != 0 {
+                        state = 4;
+                    } else if trg & 0x40 != 0 {
+                        state = 6;
+                    } else {
+                        let n = amount(mem);
+                        if rep & 0x4000 != 0 {
+                            if n > 1 {
+                                call(mem, sound, &[0x8000_0001]);
+                                let n = amount(mem).wrapping_sub(10);
+                                mem.write(at(0x48), if n < 1 { 1 } else { n });
+                            }
+                        } else if rep & 0x1000 != 0 {
+                            if i32::from(n) < most {
+                                call(mem, sound, &[0x8000_0001]);
+                                let n = amount(mem).wrapping_add(10);
+                                #[allow(clippy::cast_possible_truncation)] // the low half
+                                let n = if i32::from(n) > most { most as i16 } else { n };
+                                mem.write(at(0x48), n);
+                            }
+                        } else if rep & 0x8000 != 0 {
+                            if n > 1 {
+                                call(mem, sound, &[0x8000_0001]);
+                                let n = amount(mem).wrapping_sub(1);
+                                mem.write(at(0x48), n);
+                            }
+                        } else if rep & 0x2000 != 0 && i32::from(n) < most {
+                            call(mem, sound, &[0x8000_0001]);
+                            let n = amount(mem).wrapping_add(1);
+                            mem.write(at(0x48), n);
+                        }
+                        return;
+                    }
+                }
+                4 => {
+                    mem.write(at(0x45), 1u8);
+                    call(mem, sound, &[0x8000_000e]);
+                    let item: u32 = mem.read(at(0x5c));
+                    let n = i32::from(amount(mem));
+                    let item_use = mem.rebase(0x0079_0550);
+                    call(mem, item_use, &[item, sign(n).cast_unsigned()]);
+                    let n = i32::from(amount(mem));
+                    let price = mem.read::<u32>(at(0x60)).cast_signed();
+                    let pay = mem.rebase(0x0078_59a0);
+                    call(mem, pay, &[sign(n.wrapping_mul(price)).cast_unsigned()]);
+                    mem.write(at(0x28), 5u32);
+                    return;
+                }
+                6 => {
+                    mem.write(at(0x45), 0xffu8);
+                    call(mem, sound, &[0x8000_0004]);
+                    mem.write(at(0x28), 7u32);
+                    return;
+                }
+                _ => return,
+            }
+        }
+    }
+
+    /// `TOMenuGetControlPad()` (dropped), then the repeat and trigger
+    /// pads (`u16`).
+    fn shop_pads<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> [u32; 2] {
+        let pad = mem.rebase(0x008b_e410);
+        call(mem, pad, &[]);
+        let rep = mem.rebase(0x008b_e470);
+        let rep = call(mem, rep, &[]) & 0xffff;
+        let trg = mem.rebase(0x008b_e4b0);
+        let trg = call(mem, trg, &[]) & 0xffff;
+        [rep, trg]
+    }
+
+    /// `MenuShop_SellWindowCtrl(window)` (`0x008d9e20`, own name; the
+    /// `+0xc` callback `MenuShop_OpenSellWindow` installs): the item shop
+    /// sell window's input, [`shop_amount_ctrl`] selling, up to `+0x64`
+    /// (the count owned). The caller never reads `eax`.
+    pub fn menu_shop_sell_window_ctrl<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let pads = shop_pads(mem, call);
+        let most = mem.read::<u32>(window.wrapping_add(0x64)).cast_signed();
+        shop_amount_ctrl(mem, window, pads, most, true, call);
+    }
+
+    /// `MenuShop_BuyWindowCtrl(window)` (`0x008d9bd0`, own name; the `+0xc`
+    /// callback `MenuShop_OpenBuyWindow` installs): the item shop buy
+    /// window's input, [`shop_amount_ctrl`] buying, up to what the gil
+    /// pays for, `MsGetGIL() / +0x60` (signed), and at most 99 with the
+    /// count owned (`+0x64`): above that `99 - owned`. A zero price (or
+    /// `i32::MIN / -1`) faults the original; here it allows 0. The caller
+    /// never reads `eax`.
+    pub fn menu_shop_buy_window_ctrl<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let price = mem.read::<u32>(window.wrapping_add(0x60)).cast_signed();
+        let pads = shop_pads(mem, call);
+        let gil = mem.rebase(0x0078_4e80);
+        let gil = call(mem, gil, &[]).cast_signed();
+        let mut most = gil.checked_div(price).unwrap_or(0);
+        let owned = mem.read::<u32>(window.wrapping_add(0x64)).cast_signed();
+        if owned.wrapping_add(most) > 99 {
+            most = 99i32.wrapping_sub(owned);
+        }
+        shop_amount_ctrl(mem, window, pads, most, false, call);
+    }
 }
 
 #[cfg(test)]
