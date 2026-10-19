@@ -36,6 +36,8 @@ mod text;
 mod vfx;
 mod vfx_hi;
 
+pub(crate) use battle::ms_screen_process;
+
 /// Every replacement, for the hook table.
 #[must_use]
 pub fn hooks() -> Vec<Hook> {

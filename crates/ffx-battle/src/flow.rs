@@ -342,6 +342,44 @@ pub mod bridge {
         crate::state::bridge::ms_atel_request_init(mem);
     }
 
+    /// 10.0 (`0x00b922b0`).
+    pub const TEN: Global<f64> = Global::new(0x00b9_22b0);
+
+    /// `MsGetChrMotionInfo_007b2c90(i, k)` (`0x007b2c90`, name ours; the
+    /// natives 0x70a7 and 0x70ac): [`ms_set_chr_motion_info`]'s float `k`
+    /// as an `f32` on the x87 stack (k 9 the width, others 0.0); k 0 and 1
+    /// are 10.0 more while the result for the first actor of selector -16
+    /// (`Battle_FirstSelectedActor(i, -16, 0, 1)`, `MsGetDamageResult(i,
+    /// it)`) is 1.
+    pub fn ms_get_chr_motion_info(mem: &mut impl Mem, i: u32, k: u32) -> f32 {
+        use ffx_bridge::x87::{add, load, store};
+        let a = ms_get_chr(mem, i);
+        let o = match k {
+            0 => 0x4bc,
+            1 => 0x4c0,
+            2 => 0x4c8,
+            3 => 0x4d4,
+            4 => 0x4d8,
+            5 => 0x4cc,
+            6 => 0x4d0,
+            7 => 0x4dc,
+            8 => 0x4c4,
+            9 => 0x4e4,
+            _ => return 0.0,
+        };
+        let v = store(load(mem.read(a.wrapping_add(o))));
+        if k > 1 {
+            return f32::from_bits(v);
+        }
+        let target = crate::body::bridge::battle_first_selected_actor(mem, i, 0xffff_fff0, 0, 1);
+        let hit = crate::cue::bridge::ms_get_damage_result(mem, i, target.cast_unsigned(), 0, 0, 0);
+        if hit == 1 {
+            f32::from_bits(store(add(load(v), TEN.get(mem))))
+        } else {
+            f32::from_bits(v)
+        }
+    }
+
     /// `MsSetChrMotionInfo(i, k, value)` (`0x007b4a90`): one of the actor's
     /// motion floats (k 0-8: `+0x4bc`, `+0x4c0`, `+0x4c8`, `+0x4d4`,
     /// `+0x4d8`, `+0x4cc`, `+0x4d0`, `+0x4dc`, `+0x4c4`); 9 is its width

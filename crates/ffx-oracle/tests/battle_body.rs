@@ -274,6 +274,14 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, out: u32) {
         ALL,
         |m| menu::ms_menu_get_chr_skip_command(m, k),
     );
+    // the language: each country, and ones without (round 27)
+    let lang = [0i8, 1, 2, 3, 4, 5, 0x12, 6, 0x11, 0x13, -1][rng.below(11) as usize];
+    set(a, b, ffx_menu::tk::bridge::LANG, lang);
+    let name = [0, out + 0x100][rng.below(4).min(1) as usize];
+    twin("MsSetCountryName", a, b, 0x0078_2c00, &[name], ALL, |m| {
+        let lang = ffx_menu::tk::bridge::tk_get_lang(m);
+        menu::ms_set_country_name(m, lang, name)
+    });
     twin("MsGetCheckEnglish", a, b, 0x0078_4e60, &[], ALL, |m| {
         menu::ms_get_check_english(ffx_menu::tk::bridge::tk_get_lang(m)).cast_unsigned()
     });

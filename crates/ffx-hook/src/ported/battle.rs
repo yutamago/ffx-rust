@@ -248,6 +248,47 @@ fn spline_via_stack(m: &mut target::Dm<'_>, f: u32, out: u32, points: u32, n: u3
     m.write(out, w);
 }
 
+/// An original of this build (cdecl, up to four word arguments, already
+/// rebased) that returns an `f32` on the x87 stack: its bits. Missing
+/// arguments are passed as 0, which a cdecl callee never reads (the caller
+/// pops them).
+fn call_f32<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
+    // No panic here: a panic in a function the game calls ends the process.
+    if args.len() > 4 {
+        crate::log::log(&format!(
+            "call_f32: {} arguments, only 4 passed",
+            args.len()
+        ));
+    }
+    let mut words = [0u32; 4];
+    let count = args.len().min(4);
+    words[..count].copy_from_slice(&args[..count]);
+    // SAFETY: `f` is a cdecl function of this build taking at most four
+    // words and returning an f32 in ST0.
+    unsafe {
+        let g: unsafe extern "C" fn(u32, u32, u32, u32) -> f32 = std::mem::transmute(f as usize);
+        g(words[0], words[1], words[2], words[3]).to_bits()
+    }
+}
+
+/// `MsScreenProcess(camera)` (`0x007bc110`) in Rust, for the
+/// `gfx::live` wrapper that the game calls instead (its hook): the
+/// renderer's and other modules' callees, `Cam_Apply` among them, through
+/// the game; the C runtime through its import slots.
+pub(crate) fn ms_screen_process(camera: i32) -> u32 {
+    let mut m = mem();
+    let mut call = call_ptr;
+    let mut fcall = call_f32;
+    let mut env = screen::ScreenEnv {
+        trig: &crt_trig,
+        trig64: &crt_trig_f64,
+        cos: &crt_cos,
+        call: &mut call,
+        fcall: &mut fcall,
+    };
+    screen::ms_screen_process(&mut m, &mut env, camera).cast_unsigned()
+}
+
 /// What `ffx_battle::target` calls in other modules: the CRT through
 /// [`crt_trig`], script's ported functions, the originals of the rest.
 fn host() -> target::Host<'static> {
@@ -259,6 +300,31 @@ fn host() -> target::Host<'static> {
     }
     fn spline3(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
         spline_via_stack(m, 0x0088_a4d0, out, points, n, t);
+    }
+    fn spline3_tangent(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        spline_via_stack(m, 0x0088_aba0, out, points, n, t);
+    }
+    fn near_point(m: &mut target::Dm<'_>, a: [u32; 8]) -> u32 {
+        // the three outputs may be a frame's locals, at addresses the game
+        // never maps: through this stack, holding their words first
+        use ffx_bridge::Mem;
+        let outs = [a[4], a[5], a[6]];
+        let mut buf = super::StackFrame::<3>::new();
+        let at = buf.at();
+        let held: [u32; 3] = outs.map(|o| m.read(o));
+        m.write(at, held);
+        // SAFETY: a cdecl function of this build taking eight words and
+        // returning an f32 in ST0.
+        let d = unsafe {
+            let f: unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> f32 =
+                std::mem::transmute(crate::rebase(0x00a4_4120));
+            f(a[0], a[1], a[2], a[3], at, at + 4, at + 8, a[7])
+        };
+        let got: [u32; 3] = m.read(at);
+        for (o, word) in outs.into_iter().zip(got) {
+            m.write(o, word);
+        }
+        d.to_bits()
     }
     fn neck_enable(m: &mut target::Dm<'_>, chr: u32, on: u32) {
         ffx_chara::chr::bridge::ch_neck_set_enable(
@@ -315,6 +381,8 @@ fn host() -> target::Host<'static> {
         spline: &spline,
         spline_tangent: &tangent,
         spline3: &spline3,
+        spline3_tangent: &spline3_tangent,
+        near_point: &near_point,
         cos: &crt_cos,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
@@ -1649,6 +1717,12 @@ ported! {
     MsGetCheckEnglish @ 0x0078_4e60 => extern "C" fn ms_get_check_english() -> i32 {
         menu::ms_get_check_english(ffx_menu::tk::bridge::tk_get_lang(&mem()))
     }
+    /// `MsSetCountryName(out)`: the language from `TkGetLang` (menu).
+    MsSetCountryName @ 0x0078_2c00 => extern "C" fn ms_set_country_name(out: u32) -> u32 {
+        let mut m = mem();
+        let lang = ffx_menu::tk::bridge::tk_get_lang(&m);
+        menu::ms_set_country_name(&mut m, lang, out)
+    }
     /// `MsGetBattleEndStatus()`.
     MsGetBattleEndStatus @ 0x0079_28d0 => extern "C" fn ms_get_battle_end_status() -> u32 {
         menu::ms_get_battle_end_status(&mem())
@@ -1863,6 +1937,10 @@ ported! {
     MsGetDamageInfo @ 0x0079_a680 => extern "C" fn ms_get_damage_info(chr: u32, target: u32, a: u32, b: u32, c: u32) -> i32 {
         cue::ms_get_damage_info(&mut mem(), chr, target, [a, b, c])
     }
+    /// `MsGetDamageInfoNext(chr, target, &a, &b, &c)`.
+    MsGetDamageInfoNext @ 0x0079_a760 => extern "C" fn ms_get_damage_info_next(chr: u32, target: u32, a: u32, b: u32, c: u32) -> i32 {
+        cue::ms_get_damage_info_next(&mut mem(), chr, target, [a, b, c])
+    }
     /// `MsGetTargetList(chr, &n)`.
     MsGetTargetList @ 0x007b_7090 => extern "C" fn ms_get_target_list(chr: u32, n: u32) -> u32 {
         cue::ms_get_target_list(&mut mem(), chr, n)
@@ -1958,6 +2036,10 @@ ported! {
     /// `MsAtelRegistInit`.
     MsAtelRegistInit @ 0x0079_7ae0 => extern "C" fn ms_atel_regist_init() {
         flow::ms_atel_regist_init(&mut mem());
+    }
+    /// `MsGetChrMotionInfo_007b2c90(i, k)`: an `f32` in ST0.
+    MsGetChrMotionInfo_007b2c90 @ 0x007b_2c90 => extern "C" fn ms_get_chr_motion_info(i: u32, k: u32) -> f32 {
+        flow::ms_get_chr_motion_info(&mut mem(), i, k)
     }
     /// `MsSetChrMotionInfo`.
     MsSetChrMotionInfo @ 0x007b_4a90 => extern "C" fn ms_set_chr_motion_info(i: u32, k: u32, value: u32) {
@@ -2257,6 +2339,40 @@ ported! {
         let mut m = mem();
         camera::ms_camera_spline_pos(&mut target::Dm::new(&mut m), &host(), side, mv, other);
     }
+    /// `MsCameraSplineMove_007bcb80(id, side_no, _, side, mv)`: the splines
+    /// and tangents through the game (menu's), the move step through the
+    /// game.
+    MsCameraSplineMove_007bcb80 @ 0x007b_cb80 => extern "C" fn ms_camera_spline_move(id: u32, side_no: u32, _unused: u32, side: u32, mv: u32) {
+        let mut m = mem();
+        camera::ms_camera_spline_move(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side_no, side, mv);
+    }
+    /// `MsCameraProcess()`: the near-point searches, channel limits and
+    /// `MsSetCheckChange`'s move step through the game; the caller's
+    /// registers and the original's frame address (the by-value vectors'
+    /// spare words) are not known here.
+    MsCameraProcess @ 0x007b_e110 => extern "C" fn ms_camera_process() {
+        let mut m = mem();
+        let mut dm = target::Dm::new(&mut m);
+        let mut env = camera::ProcessEnv {
+            trig64: &crt_trig_f64,
+            call: &mut call_ptr,
+            regs: None,
+            frame: None,
+        };
+        camera::ms_camera_process(&mut dm, &host(), &mut env);
+    }
+    /// `MsCameraMoveStep_007bcab0(side, other, chan, step)`: the
+    /// near-point search and the channel limits through the game; the
+    /// caller's registers (the radius words) are not known here.
+    MsCameraMoveStep_007bcab0 @ 0x007b_cab0 => extern "C" fn ms_camera_move_step(side: u32, other: u32, chan: u32, step: u32) -> u32 {
+        camera::ms_camera_move_step(&mut mem(), &crt_trig, &mut call_ptr, side, other, chan, step, None)
+    }
+    /// `MsCameraNearPoints_007c0d40(_, side, chan)`: the near-point search
+    /// through the game; the caller's registers are not known here.
+    MsCameraNearPoints_007c0d40 @ 0x007c_0d40 => extern "C" fn ms_camera_near_points(_unused: u32, side: u32, chan: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_camera_near_points(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, side, chan, None)
+    }
     /// `MsCameraAtelFocus_007c0560(side, mv)`: the script actors'
     /// positions through the game.
     MsCameraAtelFocus_007c0560 @ 0x007c_0560 => extern "C" fn ms_camera_atel_focus(side: u32, mv: u32) {
@@ -2378,6 +2494,10 @@ ported! {
     /// `MsGetBattleList(kind, &count)`.
     MsGetBattleList @ 0x007b_6c50 => extern "C" fn ms_get_battle_list(kind: i32, count: u32) -> u32 {
         ffx_battle::ability::bridge::ms_get_battle_list(&mut mem(), kind, count)
+    }
+    /// `MsChrAddExtraCommand_007ac840(chr, command, selector, slot)`.
+    MsChrAddExtraCommand_007ac840 @ 0x007a_c840 => extern "C" fn ms_chr_add_extra_command(chr: u32, command: u32, selector: u32, slot: i32) -> u32 {
+        ffx_battle::ability::bridge::ms_chr_add_extra_command(&mut mem(), chr, command, selector, slot)
     }
     /// `MsChrDelExtraCommand_007acb40(chr, command, selector)`.
     MsChrDelExtraCommand_007acb40 @ 0x007a_cb40 => extern "C" fn ms_chr_del_extra_command(chr: u32, command: u32, selector: u32) -> u32 {
@@ -2645,6 +2765,12 @@ ported! {
     MsAttachWeapon @ 0x0079_3330 => extern "C" fn ms_attach_weapon(i: u32, k: u32) -> u32 {
         let mut m = mem();
         status::ms_attach_weapon(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, i, k)
+    }
+    /// `MsDetachWeapon(i, k)`: `Ch_ModelSetHide` (`MsHideArm`) through the
+    /// game.
+    MsDetachWeapon @ 0x0079_3f10 => extern "C" fn ms_detach_weapon(i: u32, k: u32) -> u32 {
+        let mut m = mem();
+        status::ms_detach_weapon(&mut target::Dm::new(&mut m), &mut call_ptr, i, k)
     }
     /// `MsDamageSetMotion(i, kind, flags)`.
     MsDamageSetMotion @ 0x0078_ca20 => extern "C" fn ms_damage_set_motion(i: u32, kind: u32, flags: u32) {

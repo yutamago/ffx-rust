@@ -1169,18 +1169,133 @@ The hook's script position callback (`Host::atel_pos`) now passes the
 game a stack buffer: bridges hand it frame locals at addresses the game
 never maps.
 
+## Round 27
+
+### `MsCameraProcess` (`0x007be110`)
+
+Once a frame, for each of the three screens that is on (`+0xc0`), its
+camera (`+0xc1`) runs once (`+0xc89`, set for all three cameras first).
+Each side (`cam + 0x30`, 0x61c bytes) uses the channel of the camera's
+current slot (`MsCameraGetNum`: `off = 0xc0 + 0x130 n`). Three parts:
+
+1. Requests. A channel with a request kind (`+2`) clears the side's
+   `+2`, sets its near flags `+4`/`+5` (kind 7 clears them) and starts
+   the move: 1 the position from the channel's `+0x30`, 2 and 7 the
+   polar form from `+0x40`, 3 `MsCameraAtelFocus`, 4-6 the aims, 8
+   `MsCameraFocusWeights`, 9 the same after the polar form towards the
+   channel's point (its yaw plus `+0x50`), 10 `MsCameraAtelYaw`, 11-13,
+   15, 16 `MsCamSetBtl` modes 0-4, 14 `MsCameraSplineMove_007bcb80`, 17
+   `MsCameraSplinePos_007bcd30`. Then, unless the channel is the camera's
+   last one (`+0xc8c`), `MsCameraNearPoints_007c0d40`, and always
+   `MsCameraMoveStep_007bcab0(side, other, channel, (i8) channel[0])`,
+   whose result is the channel's `+1`.
+2. Positions. With the camera matrices on (`0x023114c4`) the sides take
+   the matrix look-at (side 0) and eye (side 1). Else a side whose
+   channel has a request moves: polar sides (`+1` 1) step yaw, pitch and
+   length (`MsCameraMoveCalc`, near flags `+4`/`+5` for the first two;
+   the polar form from the position first when the channel's `+1` is 0),
+   the others x, y, z; the position from the polar form when the channel
+   is polar (or, if a lane moved, the side). A trailing side (`+3`) keeps
+   within `+8` of its start (`+0x20`): the lag `+0x40` grows by
+   `MsVectorNormal2(position, start, +0xc)`, is clamped to `+8`, and the
+   position is start plus lag. On the camera's last channel the position
+   eases from the start over the channel's `+0x70`..`+0x78` frames
+   (non-zero, NaN too; `+2` set when it moved). The position becomes the
+   start, `g_Ee_GprMove` and the channel's `+0x80`; three shakes
+   (`+0x5b0`, angles `+0xa0` stepped by `+0xb0`) give `+0x90`; `+0x10` is
+   start plus shake, scaled about the camera's `+0x10` by `+0x20` when
+   `+0xc8a` is set.
+3. Roll and depth. With the special stage's camera on,
+   `MsSpCameraProcess(cam + 0x40, cam + 0x65c, cam)` first. The channel's
+   roll and depth targets (`cam + 0xcb8`, `+0xcc0` + 0x30 n) and three
+   words step (`MsCameraMoveCalc`, the roll near). On the last channel
+   the roll eases over side 1's channel `+0x7c` frames the short way
+   round: `d = roll − last`, `m = d − 2π·trunc(d / 2π)` (stored `f32`,
+   the count through `_ftol2_sse`), `+2π` if negative, `last − 2π` as
+   the base when `m ≥ π`. The override's depth or, with the camera
+   matrices on, their roll word replaces the depth; both are kept
+   (`+0xc90`, `+0xc9c`, the channel's `+0xcd4`, `+0xcd8`), the channel
+   becomes the last one and the screen's `+0x1c` takes the depth.
+
+Its by-value vector arguments (`MsVectorPolar2Rect`'s radius,
+`MsVectorNormal2`'s scale, `MsMulVector`) take their spare words from
+its caller's `edi`, `esi`, `ebx`; the move step's radius takes its own
+`esi`, `ebx` (`-off`) and `ebp`, the near points' its `ebx`, `edi`,
+`esi`. The port gets those when known (`ProcessEnv`), else leaves the VU
+words as they were (the hook).
+
+The steps it calls (names ours):
+
+- `MsCameraSplineMove_007bcb80(id, side_no, _, side, mv)`: the move's
+  spline position `mv + 0x68` clamped to 0..1, the spline there and with
+  `mv + 0x1c` bit 2 its tangent added (speed `+0x6c` ≥ 0) or subtracted
+  (`0x0088aba0` is `TkMtCalcSpline3`'s tangent); the roll is the point's
+  w; clamped or at speed 0 `MsCameraSetRect`.
+- `MsCameraMoveStep_007bcab0(side, other, chan, step)`: `MsSetCheckChange`'s
+  move step (`CAMERA_MOVE_STEP`): step 1 rebuilds the position from the
+  polar form; position to `other + 0x30`; a pending near-point search
+  (`+0x1d`) starts (`spline_get_near_point_init`); channel limits
+  (`0x007c0120`, run as the original) can stop the step; a speed at
+  `other + 0x6c` other than 0 goes to the side's y and returns 0.
+- `MsCameraNearPoints_007c0d40(_, side, chan)`: for each filter of kind
+  4 or 5, the near-point search from the side's position and
+  `spline_get_near_point`'s result at `chan + 0x24`; returns their count.
+
+### `MsScreenProcess` (`0x007bc110`)
+
+The screen's frame and the view (see the symbol for the full list).
+Returns 1 for a screen number of 3 or more (signed), -1 for a screen
+off, else 0. Each side's position is the saved one, its centre half the
+size less the display's (`0x00c44240`), links 1-3 (`+0xc2`) as in
+`MsScreenLinkSet`; four lanes move it; two shakes; then everything is
+truncated to whole numbers. The view comes from the override camera, or
+(camera matrices off) the camera: the near plane for magic 0x21c on map
+0xd0, `MsCameraMatrix` of the camera's eye and look-at (three special
+levels check both squared lengths lie in 0.01..1e9), the screen offset
+`((+0x70 + +0x30 − +0x50 + ox) · 2 / 512, (+0x74 − +0x34 − +0x54 + oy) ·
+2 / 416)` and `Cam_Apply`. A camera with focus words other than the
+screen's hands them to the scene graph.
+
+The hook keeps `MsScreenProcess`'s entry in the hook table: the game
+calls `gfx::live::cam_update`, which places the renderer's free camera
+in the override and then runs the Rust port (`ffx_battle::screen`)
+instead of the original; `Cam_Apply` and the renderer's functions run
+through the game.
+
+### Smaller ones
+
+- `MsSetCountryName(out)` (`0x00782c00`): the language's country code
+  (`TkGetLang`: 0 jp, 1 us, 2 fr, 3 es, 4 de, 5 it, 0x12 uk) written as
+  `sprintf` of the constant does (three bytes, none for a null `out`);
+  returns 1 for the European ones. Other languages write nothing, 0.
+- `MsDetachWeapon(i, k)` (`0x00793f10`): returns 1 or 0 (Ghidra shows
+  void). The special weapon takes the actor's `+0x49c`; a weapon with a
+  character while the actor holds weapons (`+0x4b5`) is unbound and left
+  at the hand's optional position (weapon `+0xd`), turned as the actor,
+  `+0x4b6[k]` set for the re-attach `MsAttachWeapon` performs.
+- `MsGetChrMotionInfo_007b2c90(i, k)`: `MsSetChrMotionInfo`'s floats read
+  back (an `f32` in ST0, 9 the width, other kinds 0.0); kinds 0 and 1 are
+  10.0 more while `MsGetDamageResult` for the first of the actor's target
+  bits (`+0xdc0`, selector -16) is 1.
+- `MsChrAddExtraCommand_007ac840(chr, command, selector, slot)`: the
+  counterpart of round 26's delete: up to four extra commands (`+0x71a`,
+  slots `+0x722`, count `+0x6cb`) and the command inserted at the slot
+  (0..7) of the second menu list in `g_BtlItemMem2`.
+- `MsGetDamageInfoNext`: as `MsGetDamageInfo`, only each buffer's next
+  result.
+- `FUN_007b055a` is not a function: `MsSetRikkuLimit` (`0x007b0520`)
+  jumps into it and it runs on that frame; it was ported with
+  `MsSetRikkuLimit` (verdict in `tools/classify.py`).
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.
 
-**285 functions, 51056 bytes** (157 named). By blockers: 0: 179, 1: 71, 2: 25, 3: 4, 4: 4, 5: 1, 7: 1.
+**276 functions, 45107 bytes** (153 named). By blockers: 0: 175, 1: 69, 2: 24, 3: 3, 4: 3, 5: 1, 7: 1.
 
-The battle loop's top level still open (ported: `MsCamSetBtl`, `MsCameraSetBtl`, `MsCameraMoveAcc`, `MsCameraMoveFrame`, `MsTransSpPos`, `MsSpCameraProcess`, `MsNumberDrawProcess` and `MsCameraProcess` leaves in round 26, the camera's `MsCameraMatrix`, `MsScreenMatrix`, shakes, screen moves and setters in round 25, `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below):
+The battle loop's top level still open (ported: `MsCameraProcess`, `MsScreenProcess` (run by the `gfx::live` wrapper) and `MsCameraProcess`' last steps in round 27, `MsCamSetBtl`, `MsCameraSetBtl`, `MsCameraMoveAcc`, `MsCameraMoveFrame`, `MsTransSpPos`, `MsSpCameraProcess`, `MsNumberDrawProcess` and `MsCameraProcess` leaves in round 26, the camera's `MsCameraMatrix`, `MsScreenMatrix`, shakes, screen moves and setters in round 25, `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below):
 
-| Function | Address | Bytes | Blockers |
-|---|---|---|---|
-| `MsCameraProcess` | `0x007be110` | 2436 | 3 |
-| `MsScreenProcess` | `0x007bc110` | 1539 | 1 |
+None: the battle loop's top level is ported.
 
 <details><summary>Every remaining function (blockers, then size)</summary>
 
@@ -1354,17 +1469,13 @@ The battle loop's top level still open (ported: `MsCamSetBtl`, `MsCameraSetBtl`,
 | 0 | 225 | `0x007bf330` | `FUN_007bf330` |  |
 | 0 | 226 | `0x007befc0` | `FUN_007befc0` |  |
 | 0 | 233 | `0x007a87f0` | `MsGetDirDivide` |  |
+| 0 | 234 | `0x007bfca0` | `MsCameraSetSpline` |  |
 | 0 | 240 | `0x0078cd30` | `MsGetComInfo` |  |
-| 0 | 249 | `0x0079a760` | `MsGetDamageInfoNext` |  |
 | 0 | 249 | `0x007bf420` | `FUN_007bf420` |  |
 | 0 | 249 | `0x008be0d0` | `FUN_008be0d0` |  |
-| 0 | 250 | `0x007ac840` | `FUN_007ac840` |  |
-| 0 | 254 | `0x007b2c90` | `FUN_007b2c90` |  |
-| 0 | 262 | `0x00793f10` | `MsDetachWeapon` |  |
-| 0 | 264 | `0x00782c00` | `MsSetCountryName` |  |
 | 0 | 267 | `0x007beeb0` | `FUN_007beeb0` |  |
 | 0 | 268 | `0x007848b0` | `MsDebugFullCommand` |  |
-| 0 | 332 | `0x007b055a` | `FUN_007b055a` |  |
+| 0 | 332 | `0x007b055a` | `MsSetRikkuLimitTail_007b055a` |  |
 | 1 | 9 | `0x00790290` | `FUN_00790290` | MsEffectSetMotion |
 | 1 | 20 | `0x00780cc0` | `MsBattleCursorCalc` | MsCalcCursorPos |
 | 1 | 21 | `0x007962b0` | `MsSetChrShadow` | MsSetChrShadowMode |
@@ -1422,7 +1533,6 @@ The battle loop's top level still open (ported: `MsCamSetBtl`, `MsCameraSetBtl`,
 | 1 | 222 | `0x00790340` | `PasswordTextRead` | FUN_00790430 |
 | 1 | 222 | `0x007b77c0` | `FUN_007b77c0` | MsSetDamageMotion |
 | 1 | 231 | `0x007869b0` | `MsSetSavePlyJoin` | MsChangeWeaponInvisible |
-| 1 | 234 | `0x007bfca0` | `MsCameraSetSpline` | FUN_007bcb80 |
 | 1 | 241 | `0x00784120` | `MsCDreadWeapon` | FUN_00784000 |
 | 1 | 269 | `0x00796550` | `MsSetChrTransparentVisible` | MsSetChrTransparentVisible |
 | 1 | 299 | `0x007882c0` | `MsEffectSetMotion` | MsEffectSetSpeed |
@@ -1435,7 +1545,6 @@ The battle loop's top level still open (ported: `MsCamSetBtl`, `MsCameraSetBtl`,
 | 1 | 599 | `0x0079f380` | `MsCalcCursorPos` | graphicProject3DPointOntoScreenConsider2DScene |
 | 1 | 880 | `0x007c0120` | `FUN_007c0120` | spline_get_near_point |
 | 1 | 1109 | `0x007badb0` | `FUN_007badb0` | MsAtelGetCameraID |
-| 1 | 1539 | `0x007bc110` | `MsScreenProcess` | Cam_Apply |
 | 2 | 30 | `0x00796680` | `FUN_00796680` | FUN_00796880, FUN_007968b0 |
 | 2 | 49 | `0x00783fc0` | `FUN_00783fc0` | MsBtlReadWeapon, FUN_00784000 |
 | 2 | 83 | `0x007a8f60` | `FUN_007a8f60` | MsGetSameTarget, FUN_00796430 |
@@ -1449,7 +1558,6 @@ The battle loop's top level still open (ported: `MsCamSetBtl`, `MsCameraSetBtl`,
 | 2 | 211 | `0x00796c30` | `getSparedLmtPos` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796bb0 |
 | 2 | 215 | `0x007bb970` | `FUN_007bb970` | MsAtelGetCameraID, MsCameraSetSpline |
 | 2 | 270 | `0x007a89c0` | `MsSetChrVisibleBtl2Event` | FUN_007fae90, MsSetRamChr |
-| 2 | 275 | `0x007c0d40` | `FUN_007c0d40` | spline_get_near_point, spline_get_near_point_init |
 | 2 | 280 | `0x007b7680` | `FUN_007b7680` | FUN_0079eba0, MsEtCriticalEffect |
 | 2 | 285 | `0x00787e00` | `MsEffectProcess` | op_effect_run_after, op_effect_run_before |
 | 2 | 302 | `0x00782090` | `MsBattleReadDataNB` | Kernel_LoadTables, eiAbmSetLang |
@@ -1463,11 +1571,9 @@ The battle loop's top level still open (ported: `MsCamSetBtl`, `MsCameraSetBtl`,
 | 2 | 1624 | `0x0079b4f0` | `MsSetRamChr` | FUN_0079ca80, MsSetCommandUse |
 | 3 | 206 | `0x007bb5d0` | `FUN_007bb5d0` | Cam_SetPolar, MsAtelGetCameraID, Cam_AddPolar |
 | 3 | 271 | `0x007bb410` | `MsAtelCameraEyeAddArea_007bb410` | MsAtelGetCameraID, FUN_007bf420, FUN_007bf330 |
-| 3 | 2436 | `0x007be110` | `MsCameraProcess` | FUN_007bcb80, FUN_007bcab0, FUN_007c0d40 |
 | 3 | 7007 | `0x007b4b70` | `MsSetChrStatInfo` | MsSetSavePlyJoin, MsSetChrShadowMode, MsSetChrVisibleMain |
 | 4 | 167 | `0x007b74d0` | `FUN_007b74d0` | FUN_007b77c0, FUN_007b75c0, FUN_007b7680, FUN_007b7650 |
 | 4 | 406 | `0x00787470` | `setDefaultPlayerName` | FUN_00875220, debugSetRikkuName, FUN_008c5370, FUN_00875370 |
-| 4 | 420 | `0x007bcb80` | `FUN_007bcb80` | FUN_0088aba0, TkMtCalcSpline, TkMtCalcSplineTangent, TkMtCalcSpline3 |
 | 4 | 766 | `0x00795250` | `MsGetChrLimitBarFlag` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796d10, MesSetChrTargetPosToLimitSparePosy, getSparedLmtPos |
 | 5 | 702 | `0x007938e0` | `MsBtlWeaponRegist` | ChN_DataDispose, Ch_Allocate, MsSetWeaponEffectAttribute, Ch_Dispose, FUN_00796f70 |
 | 7 | 347 | `0x007824e0` | `MsBtlBridgeEvent2Btl` | AtelGetEventElemCharIDFromID, AtelSetEventActorLinkWork, AtelGetEventElemHandleFromID, FUN_0086b440, AtelGetEventBindIdFromID, AtelGetEventActorLinkWork, AtelGetEventCharIDFromID |

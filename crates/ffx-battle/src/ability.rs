@@ -414,6 +414,52 @@ pub mod bridge {
         1
     }
 
+    /// `MsChrAddExtraCommand_007ac840(chr, command, selector, slot)`
+    /// (`0x007ac840`, name ours; native 0x7037): each actor `selector`
+    /// picks (`MsGetChrBit(chr, selector, 0, 1)`) with fewer than four
+    /// extra commands (`+0x6cb`) gets `command` (`u16`) as its next
+    /// (`+0x71a`), with its `slot` (clamped to 0..7, `+0x722`), and in its
+    /// second menu list (`g_BtlItemMem2` `+0x28` + 0x478 per actor, eight
+    /// `u16`) at that slot, the later ones moved down one (the last
+    /// dropped). Returns how many actors got it.
+    pub fn ms_chr_add_extra_command(
+        mem: &mut impl Mem,
+        chr: u32,
+        command: u32,
+        selector: u32,
+        slot: i32,
+    ) -> u32 {
+        let picked = crate::actor::bridge::ms_get_chr_bit(mem, chr, selector, 0, 1);
+        let slot = slot.clamp(0, 7).cast_unsigned();
+        let command = command.to_le_bytes();
+        let command = u16::from_le_bytes([command[0], command[1]]);
+        let mut count = 0;
+        for i in 0..31 {
+            if picked.cast_signed() >> i & 1 == 0 {
+                continue;
+            }
+            let a = ms_get_chr(mem, i);
+            let extra: u8 = mem.read(a.wrapping_add(0x6cb));
+            if extra >= 4 {
+                continue;
+            }
+            let n = u32::from(extra);
+            mem.write(a.wrapping_add(0x71a + 2 * n), command);
+            mem.write(a.wrapping_add(0x722 + n), slot.to_le_bytes()[0]);
+            mem.write(a.wrapping_add(0x6cb), extra + 1);
+            let list = 0x28 + 0x478 * i;
+            for t in (slot..7).rev() {
+                let base = ITEM_MEM2.get(mem);
+                let v: u16 = mem.read(base.wrapping_add(list + 2 * t));
+                mem.write(base.wrapping_add(list + 2 * t + 2), v);
+            }
+            let base = ITEM_MEM2.get(mem);
+            mem.write(base.wrapping_add(list + 2 * slot), command);
+            count += 1;
+        }
+        count
+    }
+
     /// `MsChrDelExtraCommand_007acb40(chr, command, selector)`
     /// (`0x007acb40`, name ours): `command` (a `u16`; a larger value
     /// matches nothing) leaves the extra commands of each actor `selector`

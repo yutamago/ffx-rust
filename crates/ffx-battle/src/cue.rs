@@ -307,6 +307,44 @@ pub mod bridge {
         r
     }
 
+    /// `MsGetDamageInfoNext(chr, target, &a, &b, &c)` (`0x0079a760`): as
+    /// [`ms_get_damage_info`] but only the next result of each buffer
+    /// (words `+0x38`, `+0x3c`, `+0x40` of result `+0` of the buffer)
+    /// summed into the three outputs (null ones skipped), and how many are
+    /// left (returned; `count - next` of each, negative when past).
+    pub fn ms_get_damage_info_next(
+        mem: &mut impl Mem,
+        chr: u32,
+        target: u32,
+        out: [u32; 3],
+    ) -> i32 {
+        let c = chr & 0xff;
+        let mut sums = [0i32; 3];
+        let mut left = 0i32;
+        if ms_btl_chr_num_check(c) != 0 {
+            let id = byte(mem, crate::actor::bridge::ms_get_chr_command(mem, c), 2);
+            let t = ms_get_chr(mem, target);
+            for o in BUFFERS {
+                let b = t.wrapping_add(o);
+                if u32::from(byte(mem, b, 2)) != c || byte(mem, b, 3) != id {
+                    continue;
+                }
+                let next = byte(mem, b, 0);
+                left = left.wrapping_add(i32::from(byte(mem, b, 1)) - i32::from(next));
+                let e = b.wrapping_add(u32::from(next) * 0x2c);
+                for (s, f) in sums.iter_mut().zip([0x38u32, 0x3c, 0x40]) {
+                    *s = s.wrapping_add(mem.read::<i32>(e.wrapping_add(f)));
+                }
+            }
+        }
+        for (p, v) in out.into_iter().zip(sums) {
+            if p != 0 {
+                mem.write(p, v);
+            }
+        }
+        left
+    }
+
     /// `MsGetDamageInfo(chr, target, &a, &b, &c)` (`0x0079a680`): over
     /// `target`'s buffers for `chr`'s running command, the sums of the
     /// results left (words `+0x20`, `+0x24`, `+0x28`), and how many are left

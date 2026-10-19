@@ -315,6 +315,44 @@ pub mod bridge {
         1
     }
 
+    /// `MsDetachWeapon(i, k)` (`0x00793f10`): actor `i & 0xff`'s special
+    /// weapon `k` (`MsGetWeaponSpecial`) takes the actor's `+0x49c`; its
+    /// weapon `k` (`MsGetWeapon`), when it has a character and the actor
+    /// `+0x4b5`, is let go where it is: re-attach pending (`+0x4b6[k]`),
+    /// the arm shown (`MsHideArm(i, 0)`), unbound (`Ch_BindToElem(w, 0,
+    /// 0)`) and placed at the hand's optional position (`Ch_OptposGet` of
+    /// the actor's character, weapon `+0xd`) turned as the actor
+    /// (`Ch_GetRot`, `Ch_SetDirF`). 1, else 0.
+    pub fn ms_detach_weapon<'d>(mem: &mut Dm<'d>, call: Call<'_, Dm<'d>>, i: u32, k: u32) -> u32 {
+        use ffx_chara::chr::bridge as ch;
+        let i = i & 0xff;
+        let a = ms_get_chr(mem, i);
+        let special = crate::actor::bridge::ms_get_weapon_special(mem, i, k);
+        if special != 0 {
+            let v = crate::camera::x87_copy(mem.read(a.wrapping_add(0x49c)));
+            mem.write(special.wrapping_add(0x49c), v);
+        }
+        let w = crate::actor::bridge::ms_get_weapon(mem, i, k.cast_signed());
+        let wchr: u32 = mem.read(w);
+        let h = crate::actor::bridge::ms_get_chr_handle(mem, i);
+        if wchr == 0 || byte(mem, a, 0x4b5) == 0 {
+            return 0;
+        }
+        mem.write(a.wrapping_add(0x4b6).wrapping_add(k), 1u8);
+        ms_hide_arm(mem, call, i, 0);
+        let elem = u32::from(byte(mem, w, 0xd));
+        mem.frame(0x10, |mem, hand| {
+            ffx_chara::attach::bridge::ch_optpos_get(mem, h, elem, hand);
+            let rot = ch::ch_get_rot(mem, h);
+            ffx_chara::attach::bridge::ch_bind_to_elem(mem, wchr, 0, 0);
+            let [x, y, z]: [u32; 3] = mem.read(hand);
+            let f = |v: u32| f32::from_bits(crate::camera::x87_copy(v));
+            ch::ch_set_pos3(mem, wchr, f(x), f(y), f(z));
+            ch::ch_set_dir_f(mem, wchr, f(rot.to_bits()));
+        });
+        1
+    }
+
     /// `MsDamageSetMotion(i, kind, flags)` (`0x0078ca20`): the motion actor
     /// `i`'s mover (`+0x422`) plays after a hit of `kind`, its effects'
     /// motion lock and head target reset and `+0x50e` from `+0x50f`
