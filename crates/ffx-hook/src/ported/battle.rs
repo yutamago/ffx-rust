@@ -25,6 +25,7 @@ use ffx_battle::process::bridge as process;
 use ffx_battle::read::bridge as read;
 use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
+use ffx_battle::shake::bridge as shake;
 use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
 use ffx_battle::view::bridge as view;
@@ -159,6 +160,42 @@ fn crt_trig(t: pos::Trig, x: u32) -> u32 {
     {
         let _ = (slot, x);
         unreachable!("the CRT's trigonometry runs in the 32-bit game")
+    }
+}
+
+/// MSVCR110's `_CIcos` or `_CIsin` through the game's import slot on a
+/// double (an angle the caller summed at 53 bits): loaded with `fld qword`,
+/// the result stored with `fstp dword`, as `MsCameraShakeProcess` does.
+fn crt_trig_f64(t: pos::Trig, x: f64) -> u32 {
+    let slot = match t {
+        pos::Trig::Cos => 0x00b0_c3b4,
+        pos::Trig::Sin => 0x00b0_c3b8,
+        pos::Trig::Atan => 0x00b0_c450,
+    };
+    // SAFETY: the slot holds the address of the CRT's intrinsic, which
+    // takes its argument in ST0 and returns in ST0 (eax, ecx, edx, the x87
+    // and SSE registers clobbered).
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        let f = (crate::rebase(slot) as *const usize).read();
+        let bits: u32;
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "sub esp, 4",
+            "fstp dword ptr [esp]",
+            "pop eax",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            lateout("eax") bits,
+            clobber_abi("C"),
+        );
+        bits
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let _ = (slot, x);
+        0
     }
 }
 
@@ -2042,6 +2079,38 @@ ported! {
     /// `MsScreenMatrix(out, screen)`.
     MsScreenMatrix @ 0x007c_3d60 => extern "C" fn ms_screen_matrix(out: u32, screen: u32) -> u32 {
         view::ms_screen_matrix(&mut mem(), out, screen)
+    }
+    /// `MsCameraCheckShake(cam, side)`.
+    MsCameraCheckShake @ 0x007c_4f10 => extern "C" fn ms_camera_check_shake(cam: u32, side: u32) -> i32 {
+        shake::ms_camera_check_shake(&mem(), cam, side)
+    }
+    /// `MsScreenCheckShake(i)`.
+    MsScreenCheckShake @ 0x007c_5680 => extern "C" fn ms_screen_check_shake(i: u32) -> i32 {
+        shake::ms_screen_check_shake(&mem(), i)
+    }
+    /// `MsCameraResetShake(id, side)`; `eax` as the original leaves it.
+    MsCameraResetShake @ 0x007c_4f50 => extern "C" fn ms_camera_reset_shake(id: u32, side: u32) -> u32 {
+        shake::ms_camera_reset_shake(&mut mem(), id, side)
+    }
+    /// `MsCameraShake(id, side, which, kind, value, length, amplitude, range)`;
+    /// `eax` as the original leaves it.
+    MsCameraShake @ 0x007c_4fc0 => extern "C" fn ms_camera_shake(id: u32, side: u32, which: u32, kind: u32, value: u32, length: u32, amplitude: u32, range: u32) -> u32 {
+        let start = shake::Start { kind: kind.to_le_bytes()[0], value, length: u16::from_le_bytes([length.to_le_bytes()[0], length.to_le_bytes()[1]]), amplitude: u16::from_le_bytes([amplitude.to_le_bytes()[0], amplitude.to_le_bytes()[1]]), range: range.to_le_bytes()[0] };
+        shake::ms_camera_shake(&mut mem(), id, side, which, start)
+    }
+    /// `MsScreenShake(i, which, kind, value, length, amplitude, range)`.
+    MsScreenShake @ 0x007c_56f0 => extern "C" fn ms_screen_shake(i: u32, which: u32, kind: u32, value: u32, length: u32, amplitude: u32, range: u32) {
+        let start = shake::Start { kind: kind.to_le_bytes()[0], value, length: u16::from_le_bytes([length.to_le_bytes()[0], length.to_le_bytes()[1]]), amplitude: u16::from_le_bytes([amplitude.to_le_bytes()[0], amplitude.to_le_bytes()[1]]), range: range.to_le_bytes()[0] };
+        shake::ms_screen_shake(&mut mem(), i, which, start);
+    }
+    /// `MsScreenShake2(i, which, kind, steps, length, speed, range, pull, fade)`.
+    MsScreenShake2 @ 0x007c_57b0 => extern "C" fn ms_screen_shake2(i: u32, which: u32, kind: u32, steps: u32, length: u32, speed: u32, range: i32, pull: u32, fade: u32) {
+        shake::ms_screen_shake2(&mut mem(), i, which, kind.to_le_bytes()[0], steps.to_le_bytes()[0], length, speed, range, pull, fade.to_le_bytes()[0]);
+    }
+    /// `MsCameraShakeProcess(shake, angle, out)`: `_CIcos`/`_CIsin` through
+    /// their import slots on a double.
+    MsCameraShakeProcess @ 0x007c_50f0 => extern "C" fn ms_camera_shake_process(rec: u32, angle: u32, out: u32) {
+        shake::ms_camera_shake_process(&mut mem(), &crt_trig_f64, rec, angle, out);
     }
     /// `MsVectorNormal2(out, a, b, s)`.
     MsVectorNormal2 @ 0x007c_45e0 => extern "C" fn ms_vector_normal2(out: u32, a: u32, b: u32, s0: u32, s1: u32, s2: u32, s3: u32) {
