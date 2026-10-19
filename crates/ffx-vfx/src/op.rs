@@ -4841,4 +4841,181 @@ pub mod bridge {
             }
         }
     }
+
+    /// A point of [`op_segment_circle_cross`]: its `x`, `y` (quieted
+    /// copies), distance to `p1` and direction from it (`op_deg_get`).
+    #[derive(Clone, Copy)]
+    struct Hit {
+        x: f32,
+        y: f32,
+        len: f32,
+        deg: f32,
+    }
+
+    /// `op_segment_circle_cross_007e8fd0(x0, y0, r, x1, y1, x2, y2, out,
+    /// out2)` (`0x007e8fd0`): the crossings of the line `p1 = (x1, y1)` to
+    /// `p2 = (x2, y2)` with the circle `r` about `(x0, y0)`
+    /// (`op_circle_cross`, into the scratch at `frame`: two `x` at `+0`,
+    /// two `y` at `+8`, the three lengths at `+0x10`) that lie on the
+    /// segment. With one crossing it is the answer: `out` and
+    /// `0x00c8f528` get `(x, [0x00c8f50c], y, [0x00c8f514])`, 1. With two,
+    /// each gets its distance and direction from `p1` (`op_deg_get`, as
+    /// for `p2` itself: `deg`, `len`); the nearer one first (a swap only
+    /// when the second's length is less). None when `len` is less than
+    /// the nearer's; otherwise a crossing counts when its direction lies
+    /// within `deg - 128 ..= deg + 128` (`op_deg_in_check`), the farther
+    /// one only unless its length exceeds `len`. The counted ones go to
+    /// `out` and `out2` (`x` at `+0`, `y` at `+8`); returns how many.
+    /// Lengths compare as the x87 does (a NaN is never less or greater).
+    /// Callees through `call` (`fcall` for `op_deg_get`'s `ST0`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn op_segment_circle_cross<M: Mem>(
+        mem: &mut M,
+        p: [f32; 7],
+        out: u32,
+        out2: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let q = |x: f32| crate::x87::load_f32(x).to_bits();
+        let (xs, ys) = (frame, frame + 8);
+        let mut args: Vec<u32> = p.iter().map(|&x| q(x)).collect();
+        args.extend([xs, ys]);
+        let cross = at(mem, 0x007e_6e50);
+        let n = call(mem, cross, &args);
+        let xy: [f32; 4] = mem.read(frame);
+        let (w1, w3): (u32, u32) = (
+            mem.read(at(mem, 0x00c8_f50c)),
+            mem.read(at(mem, 0x00c8_f514)),
+        );
+        let (ax, ay) = (crate::x87::load_f32(xy[0]), crate::x87::load_f32(xy[2]));
+        let (bx, by) = (crate::x87::load_f32(xy[1]), crate::x87::load_f32(xy[3]));
+        if n == 0 {
+            return 0;
+        }
+        if n == 1 {
+            let v = [ax.to_bits(), w1, ay.to_bits(), w3];
+            mem.write(at(mem, 0x00c8_f528), v);
+            mem.write(out, v);
+            return 1;
+        }
+        let deg_get = at(mem, 0x007e_7ed0);
+        let mut deg = |mem: &mut M, x: u32, y: u32, len: u32| {
+            #[allow(clippy::cast_possible_truncation)] // fstp m32
+            let d = fcall(mem, deg_get, &[q(p[3]), q(p[4]), x, y, len]) as f32;
+            (d, mem.read::<f32>(len))
+        };
+        let (deg1, len1) = deg(mem, q(p[5]), q(p[6]), frame + 0x10);
+        let (deg_a, len_a) = deg(mem, ax.to_bits(), ay.to_bits(), frame + 0x14);
+        let (deg_b, len_b) = deg(mem, bx.to_bits(), by.to_bits(), frame + 0x18);
+        let mut near = Hit {
+            x: ax,
+            y: ay,
+            len: len_a,
+            deg: deg_a,
+        };
+        let mut far = Hit {
+            x: bx,
+            y: by,
+            len: len_b,
+            deg: deg_b,
+        };
+        if far.len < near.len {
+            std::mem::swap(&mut near, &mut far);
+        }
+        if len1 < near.len {
+            return 0;
+        }
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let (lo, hi) = (
+            (f64::from(deg1) - 128.0) as f32,
+            (f64::from(deg1) + 128.0) as f32,
+        );
+        let in_check = at(mem, 0x007e_7f60);
+        let mut inside = |mem: &mut M, h: Hit| call(mem, in_check, &[q(h.deg), q(lo), q(hi)]) != 0;
+        let put = |mem: &mut M, to: u32, h: Hit| {
+            mem.write(to, h.x);
+            mem.write(to + 8, h.y);
+        };
+        if far.len > len1 {
+            if !inside(mem, near) {
+                return 0;
+            }
+            put(mem, out, near);
+            return 1;
+        }
+        if inside(mem, near) {
+            let both = inside(mem, far);
+            put(mem, out, near);
+            if !both {
+                return 1;
+            }
+            put(mem, out2, far);
+            return 2;
+        }
+        if !inside(mem, far) {
+            return 0;
+        }
+        put(mem, out, far);
+        1
+    }
+
+    /// `ops_init_draw_work()` (`0x007ec890`): once (the byte at
+    /// `0x011a0700`): the op draw pointers (`0x02332e90` = the work at
+    /// `0x011a1260`, `0x02332e84` = the absolute `0x01d00000`, which has no
+    /// relocation), four unit matrices at `0x011a00a0` + 0x40 k
+    /// (`FFXVu0UnitMatrix`), the counters at `0x02332870` and `0x02332878`
+    /// cleared (a dword at `+2`, then the word), the DMA channels 0, 1, 2,
+    /// 8 and 9 (`sceDmaGetChan`) into `0x023328e8` down to `0x023328d8`,
+    /// four 1.0 at `0x011a0878`, `0x80808080` at `0x011a0870`,
+    /// `g_OpFuncOtOrder` filled with -1 (`memset`) and the first words of
+    /// the 8 `g_OpFuncOt` slots cleared. Callees through `call`. Returns
+    /// the original's `eax`: 0x80, `None` when it ran before.
+    pub fn ops_init_draw_work<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let done = g(mem, 0x011a_0700);
+        if mem.read::<u8>(done) != 0 {
+            return None;
+        }
+        mem.write(done, 1u8);
+        let work = g(mem, 0x011a_1260);
+        mem.write(g(mem, 0x0233_2e90), work);
+        mem.write(g(mem, 0x0233_2e84), 0x01d0_0000u32);
+        let unit = g(mem, 0x006e_d9a0);
+        for k in 0..4 {
+            let m = g(mem, 0x011a_00a0) + 0x40 * k;
+            call(mem, unit, &[m]);
+        }
+        for at in [0x0233_2870, 0x0233_2878] {
+            mem.write(g(mem, at + 2), 0u32);
+            mem.write(g(mem, at), 0u16);
+        }
+        let chan = g(mem, 0x0062_f6e0);
+        for (k, at) in [
+            (0, 0x0233_28e8),
+            (1, 0x0233_28e4),
+            (2, 0x0233_28e0),
+            (8, 0x0233_28dc),
+            (9, 0x0233_28d8),
+        ] {
+            let c = call(mem, chan, &[k]);
+            mem.write(g(mem, at), c);
+        }
+        for at in [0x011a_0884, 0x011a_0880, 0x011a_087c, 0x011a_0878] {
+            mem.write(g(mem, at), 1.0f32);
+        }
+        mem.write(g(mem, 0x011a_0870), 0x8080_8080u32);
+        let (memset, order) = (g(mem, 0x0094_964c), g(mem, 0x011a_0960));
+        call(mem, memset, &[order, 0xff, 0x80]);
+        for k in 0..8 {
+            let slot = g(mem, 0x011a_09e0) + 0x10 * k;
+            mem.write(slot, 0u32);
+        }
+        Some(0x80)
+    }
 }
