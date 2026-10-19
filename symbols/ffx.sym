@@ -6254,6 +6254,7 @@
 0x007bc930 function Cam_SetScreenCameraOn     # (screen, on): byte +0xc0 of g_Screens[screen] for screens 0..2 (MsScreen's per-frame code takes g_Camera from the screen's camera +0xc1 when it is set); caller Native_604e; name ours; ported (ffx_sg::camera)
 0x007bc950 function Cam_SetScreenCamera       # (screen, on, camera): bytes +0xc0 and +0xc1 (the camera, g_DebugCamera for screen 0) of g_Screens[screen] for screens 0..2; caller Native_604f; name ours; ported (ffx_sg::camera)
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
+0x007bcd30 function MsCameraSplinePos_007bcd30 # ours: (cam, side_no, side, mv, other): side +0x50..+0x5c and g_Ee_GprMove = the move's spline (mv+8: count, points +0x10) at other+0x24 (TkMtCalcSpline3 when mv+0x1c & 3 == 3, else TkMtCalcSpline, both given count and t), side+0x6c = 0; the first two arguments unread; caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)
 0x007bcf20 function MsCameraGetYaw            # () -> ST0: the yaw of the active camera (g_Camera): MsVectorRect2Polar(cam+0x50 look-at, cam+0x66c eye, &yaw, 0, 0); 3 callers; name ours; ported (ffx_battle::camera, battle round 25; the yaw through a StackFrame word)
 0x007bcf50 function MsCameraSetDepthMaskMode_007bcf50 # ours: (id, mode) -> eax: for request id (MsCameraIDcheck), camera +0xca8 = 1, channel mode +0xcc8 + 0x30 ch = mode (negative: the old one | 2), and while id is current camera +0xcac = it (eax the camera; else the current request; 0 without id); caller Native_CamSetDepthMaskMode; ported (ffx_battle::camera, battle round 26)
 0x007bd000 function MsCameraFree              # fh v3:cg3 0x7bcf80
@@ -6302,6 +6303,7 @@
 0x007c04c0 function MsNearRag                 # fh v3:exact 0x007c0440
 0x007c0540 function MsScreenInit              # fh v3:bsim1.00 0x007c04c0
 0x007c0560 function MsCameraAtelFocus_007c0560 # ours: (side, mv): side+0x50 = mv+0x30 + the mean of up to two script actors' positions (mv+0xc/+0xe u16, 0xffff none; 0x0086b1e0, sums stored as f32, divided only for two), side+0x6c = 0; caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)
+0x007c0650 function MsCameraAtelYaw_007c0650 # ours: (side, mv, track): side +0x60 = mv+0x40 + the mean direction of up to two script actors (track+0xc/+0xe u16, 0xffff none; 0x0086a6e0), +0x64/+0x68 = mv+0x44/+0x48, +0x6c = 0; caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)
 0x007c06d0 function MsSetCameraMatrix         # fh v3:exact 0x007c0650
 0x007c0790 function MsSetCheckChange          # fh v3:exact 0x007c0710
 0x007c0910 function MsCameraAimPolar_007c0910 # ours: (side, mv): MsVectorRect2Polar(mv+0x30, side+0x8c base, side+0x60 yaw, a dropped local, the distance); side+0x64 = mv+0x44 (+ distance / mv+0x54 unless 0; a NaN divides), +0x68 = mv+0x48 (+ distance / mv+0x58 likewise), +0x6c = 0; caller MsCameraProcess; ported (ffx_battle::camera, battle round 26)

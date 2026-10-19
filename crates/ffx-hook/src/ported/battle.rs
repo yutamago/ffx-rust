@@ -257,6 +257,9 @@ fn host() -> target::Host<'static> {
     fn tangent(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
         spline_via_stack(m, 0x0088_b3b0, out, points, n, t);
     }
+    fn spline3(m: &mut target::Dm<'_>, out: u32, points: u32, n: u32, t: u32) {
+        spline_via_stack(m, 0x0088_a4d0, out, points, n, t);
+    }
     fn neck_enable(m: &mut target::Dm<'_>, chr: u32, on: u32) {
         ffx_chara::chr::bridge::ch_neck_set_enable(
             m,
@@ -291,13 +294,26 @@ fn host() -> target::Host<'static> {
             f(i).to_bits()
         }
     }
-    fn pos(_: &mut target::Dm<'_>, i: u32, x: u32, y: u32, z: u32) {
-        call4(0x0086_b1e0, i, x, y, z);
+    fn pos(m: &mut target::Dm<'_>, i: u32, x: u32, y: u32, z: u32) {
+        // the outputs may be a frame's locals, at addresses the game never
+        // maps: through this stack, holding their words first (an actor
+        // out of range writes nothing)
+        use ffx_bridge::Mem;
+        let mut v = super::StackFrame::<3>::new();
+        let at = v.at();
+        let w: [u32; 3] = [m.read(x), m.read(y), m.read(z)];
+        m.write(at, w);
+        call4(0x0086_b1e0, i, at, at + 4, at + 8);
+        let [wx, wy, wz]: [u32; 3] = m.read(at);
+        m.write(x, wx);
+        m.write(y, wy);
+        m.write(z, wz);
     }
     target::Host {
         trig: &crt_trig,
         spline: &spline,
         spline_tangent: &tangent,
+        spline3: &spline3,
         cos: &crt_cos,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
@@ -2227,6 +2243,18 @@ ported! {
         let mut local = super::StackFrame::<2>::new();
         let at = local.at();
         camera::ms_camera_aim_polar3(&mut mem(), &crt_trig, side, mv, at);
+    }
+    /// `MsCameraAtelYaw_007c0650(side, mv, track)`: the script actors'
+    /// directions through the game.
+    MsCameraAtelYaw_007c0650 @ 0x007c_0650 => extern "C" fn ms_camera_atel_yaw(side: u32, mv: u32, track: u32) {
+        let mut m = mem();
+        camera::ms_camera_atel_yaw(&mut target::Dm::new(&mut m), &host(), side, mv, track);
+    }
+    /// `MsCameraSplinePos_007bcd30(cam, side_no, side, mv, other)`: the
+    /// splines through the game (menu's).
+    MsCameraSplinePos_007bcd30 @ 0x007b_cd30 => extern "C" fn ms_camera_spline_pos(_cam: u32, _side_no: u32, side: u32, mv: u32, other: u32) {
+        let mut m = mem();
+        camera::ms_camera_spline_pos(&mut target::Dm::new(&mut m), &host(), side, mv, other);
     }
     /// `MsCameraAtelFocus_007c0560(side, mv)`: the script actors'
     /// positions through the game.

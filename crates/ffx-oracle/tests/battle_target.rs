@@ -34,6 +34,9 @@ fn host() -> t::Host<'static> {
     fn tangent(m: &mut t::Dm<'_>, out: u32, points: u32, n: u32, x: u32) {
         spline_via(m, 0x0088_b3b0, out, points, n, x);
     }
+    fn spline3(m: &mut t::Dm<'_>, out: u32, points: u32, n: u32, x: u32) {
+        spline_via(m, 0x0088_a4d0, out, points, n, x);
+    }
     fn neck_enable(m: &mut t::Dm<'_>, chr: u32, on: u32) {
         call(oracle(m), 0x0083_4f60, &[chr, on]);
     }
@@ -86,6 +89,7 @@ fn host() -> t::Host<'static> {
         trig: &stand_in,
         spline: &spline,
         spline_tangent: &tangent,
+        spline3: &spline3,
         cos: &cos_stand_in,
         neck_enable: &neck_enable,
         neck_target: &neck_target,
@@ -10383,15 +10387,84 @@ fn sp_camera(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, work:
     same("the special camera", a, b);
 }
 
+/// `MsCameraAtelYaw_007c0650` and `MsCameraSplinePos_007bcd30` (round 26)
+/// on a made-up side, move and other side at `buf`: script actors only on
+/// a snapshot; the spline one of the dressed move splines (`MOVE_SPLINES`,
+/// at times of two points or fewer, where the original's local keeps its
+/// stack: zeroed).
+fn camera_tracks(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, script: bool) {
+    let h = host();
+    let (side, mv, other) = (buf, buf + 0x100, buf + 0x200);
+    poke(a, b, side, &floats(rng, 0x20));
+    poke(a, b, mv, &floats(rng, 0x18));
+    poke(a, b, other, &floats(rng, 0x10));
+    zero_stack(a);
+    if rng.below(2) == 0 {
+        let track = buf + 0x300;
+        for k in 0..2 {
+            let actor: u16 = if script && rng.below(4) != 0 {
+                u16::try_from(rng.below(4)).unwrap()
+            } else {
+                0xffff
+            };
+            poke(a, b, track + 0xc + 2 * k, &actor.to_le_bytes());
+        }
+        twin(
+            "MsCameraAtelYaw_007c0650",
+            a,
+            b,
+            0x007c_0650,
+            &[side, mv, track],
+            0,
+            |m| {
+                dm(m, |m| {
+                    ffx_battle::camera::bridge::ms_camera_atel_yaw(m, &h, side, mv, track);
+                });
+                0
+            },
+        );
+    } else {
+        let sp = t::MOVE_SPLINES.ptr(b).addr + 0x210 * rng.below(4);
+        if rng.below(3) == 0 {
+            poke(a, b, sp, &rng.below(3).to_le_bytes());
+        }
+        poke(a, b, mv + 8, &sp.to_le_bytes());
+        poke(a, b, mv + 0x1c, &[rng.byte()]);
+        twin(
+            "MsCameraSplinePos_007bcd30",
+            a,
+            b,
+            0x007b_cd30,
+            &[rng.next(), rng.next(), side, mv, other],
+            0,
+            |m| {
+                dm(m, |m| {
+                    ffx_battle::camera::bridge::ms_camera_spline_pos(m, &h, side, mv, other);
+                });
+                0
+            },
+        );
+    }
+    // the spline's VU words holding its output's address (a local)
+    local_words(a, b);
+    same("the camera tracks", a, b);
+}
+
 fn camera_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let work = scratch(a, b, 0x870);
-    dressed_check(a, b, rng, synthetic, (150, 4), |a, b, rng, _, buf| {
-        if rng.below(2) == 0 {
-            atel_focus(a, b, rng, buf, !synthetic);
-        } else {
-            sp_camera(a, b, rng, buf, work);
-        }
-    });
+    let buf2 = scratch(a, b, 0x400);
+    dressed_check(
+        a,
+        b,
+        rng,
+        synthetic,
+        (150, 4),
+        |a, b, rng, _, buf| match rng.below(3) {
+            0 => atel_focus(a, b, rng, buf, !synthetic),
+            1 => sp_camera(a, b, rng, buf, work),
+            _ => camera_tracks(a, b, rng, buf2, !synthetic),
+        },
+    );
 }
 
 #[test]

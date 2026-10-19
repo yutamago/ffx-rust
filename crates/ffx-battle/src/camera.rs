@@ -1732,6 +1732,71 @@ pub mod bridge {
         r
     }
 
+    /// `MsCameraAtelYaw_007c0650(side, mv, track)` (`0x007c0650`, name
+    /// ours; `MsCameraProcess`'s): the side's polar form (`+0x60`..`+0x68`)
+    /// from the move's (`mv + 0x40`..`+0x48`), the yaw plus the mean
+    /// direction of up to two script actors (`track + 0xc`, `+0xe`; 0xffff
+    /// none; `AtelGetActorDir`, summed as `f32`); `+0x6c` 0.
+    pub fn ms_camera_atel_yaw(
+        mem: &mut crate::target::bridge::Dm<'_>,
+        host: &crate::target::bridge::Host<'_>,
+        side: u32,
+        mv: u32,
+        track: u32,
+    ) {
+        use ffx_bridge::x87::{add, div, load, store};
+        let mut sum = 0.0f32.to_bits();
+        let mut n = 0i32;
+        for k in 0..2 {
+            let actor: u16 = mem.read(track.wrapping_add(0xc + 2 * k));
+            if actor == 0xffff {
+                continue;
+            }
+            let dir = (host.atel_dir)(mem, u32::from(actor));
+            sum = store(add(load(dir), load(sum)));
+            n += 1;
+        }
+        if n > 0 {
+            sum = store(div(load(sum), load(store(f64::from(n)))));
+        }
+        mem.write(side.wrapping_add(0x6c), 0.0f32.to_bits());
+        let polar: [u32; 3] = mem.read(mv.wrapping_add(0x40));
+        let yaw = store(add(load(polar[0]), load(sum)));
+        mem.write(
+            side.wrapping_add(0x60),
+            [yaw, x87_copy(polar[1]), x87_copy(polar[2])],
+        );
+    }
+
+    /// `MsCameraSplinePos_007bcd30(cam, side_no, side, mv, other)`
+    /// (`0x007bcd30`, name ours; `MsCameraProcess`'s): the side's position
+    /// (`+0x50`..`+0x5c`, copied words) and `g_Ee_GprMove` from the move's
+    /// spline (`mv + 8`: a count, points from `+0x10`) at `other + 0x24`:
+    /// `TkMtCalcSpline3` when `mv + 0x1c` has bits 0 and 1, else
+    /// `TkMtCalcSpline` (both with the count and position); `+0x6c` 0. The
+    /// first two arguments are not read.
+    pub fn ms_camera_spline_pos(
+        mem: &mut crate::target::bridge::Dm<'_>,
+        host: &crate::target::bridge::Host<'_>,
+        side: u32,
+        mv: u32,
+        other: u32,
+    ) {
+        let spline: u32 = mem.read(mv.wrapping_add(8));
+        let three = mem.read::<u8>(mv.wrapping_add(0x1c)) & 3 == 3;
+        let t = x87_copy(mem.read(other.wrapping_add(0x24)));
+        let n: u32 = mem.read(spline);
+        let points = spline.wrapping_add(0x10);
+        let p: [u32; 4] = mem.frame(0x10, |mem, out| {
+            let f = if three { host.spline3 } else { host.spline };
+            f(mem, out, points, n, t);
+            mem.read(out)
+        });
+        EE_MOVE.set(mem, p);
+        mem.write(side.wrapping_add(0x6c), 0.0f32.to_bits());
+        mem.write(side.wrapping_add(0x50), p);
+    }
+
     /// `MsCameraAtelFocus_007c0560(side, mv)` (`0x007c0560`, name ours;
     /// `MsCameraProcess`'s): the side's position (`+0x50`) is the move's
     /// offset (`mv + 0x30`) plus the mean position of up to two script

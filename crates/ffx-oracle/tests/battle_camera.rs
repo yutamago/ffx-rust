@@ -316,6 +316,14 @@ fn moves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32,
 /// (round 26) on camera `c` (its slots at `slots`): requests of its
 /// slots or made up, the channels' filter counts small.
 fn filters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32) {
+    // the current request at times on channel 4 or 5
+    if rng.below(3) == 0 {
+        let n = cam::ms_camera_get_num(b, c);
+        let at = slots + 8 * n;
+        let w = u32::from_le_bytes(a.read(at, 4).unwrap().try_into().unwrap());
+        let w = (w & !0xff00) | (4 + rng.below(2)) << 8;
+        poke(a, b, at, &w.to_le_bytes());
+    }
     let id = if rng.below(2) == 0 {
         cam::ms_camera_get_id(b, c)
     } else {
