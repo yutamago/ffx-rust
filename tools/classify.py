@@ -285,6 +285,22 @@ REVIEWED = {
     0x006e96c0: ("platform", "InitIggyHelper: Iggy UI (field round 14)"),
     0x006e93f0: ("platform", "IggyPlayerOpen: Iggy UI (field round 14)"),
     0x006e9250: ("platform", "IggyPlayerOpenScaled: Iggy UI (field round 14)"),
+    0x006e4100: ("glue", "DepthBiasHooks_onCharacterInstantiated: only the renderer visibility job 0x9f4000 reads g_DepthBias (system round 37)"),
+    0x00a424e0: ("glue", "PhyreEngine class-descriptor entry (system round 37)"),
+    0x00a42740: ("glue", "PhyreEngine class-descriptor entry (system round 37)"),
+    0x00a42760: ("glue", "PhyreEngine class-descriptor entry (system round 37)"),
+    0x00a427e0: ("glue", "PhyreEngine class-descriptor entry (system round 37)"),
+    0x0067a9d0: ("platform", "wrapper of 0x6fb410 (SyncManager) (system round 37)"),
+    0x0061b270: ("platform", "Windows resource string lookup (system round 37)"),
+    0x0067aa70: ("platform", "Eternal Calm file size (system round 37)"),
+    0x0067aae0: ("platform", "Eternal Calm file size (system round 37)"),
+    0x009dacc0: ("platform", "unloads preloaded magic-file modules (system round 37)"),
+    0x006f1980: ("platform", "PC save metadata block (system round 37)"),
+    0x00a42880: ("platform", "CD sector read (system round 37)"),
+    0x0076cf60: ("platform", "CD sector read (system round 37)"),
+    0x0060e8a0: ("platform", "deleting destructor (system round 37)"),
+    0x00773c60: ("platform", "HDD-mode struct 0xc41744 (system round 37)"),
+    0x0076cf80: ("platform", "HDD-mode struct 0xc41744 (system round 37)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

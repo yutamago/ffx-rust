@@ -292,7 +292,7 @@
 0x0060e7b0	dead	unreachable from the entry point and every pointer table
 0x0060e7d0	dead	unreachable from the entry point and every pointer table
 0x0060e860	dead	unreachable from the entry point and every pointer table
-0x0060e8a0	logic	default (no rule: ported to be safe)
+0x0060e8a0	platform	reviewed: deleting destructor (system round 37)
 0x0060e8e0	dead	unreachable from the entry point and every pointer table
 0x0060e910	dead	unreachable from the entry point and every pointer table
 0x0060e930	dead	unreachable from the entry point and every pointer table
@@ -333,7 +333,7 @@
 0x0061b160	dead	unreachable from the entry point and every pointer table
 0x0061b1a0	dead	unreachable from the entry point and every pointer table
 0x0061b1d0	dead	unreachable from the entry point and every pointer table
-0x0061b270	logic	default (no rule: ported to be safe)
+0x0061b270	platform	reviewed: Windows resource string lookup (system round 37)
 0x0061b2e0	dead	unreachable from the entry point and every pointer table
 0x0061b310	dead	unreachable from the entry point and every pointer table
 0x0061b330	platform	only called from platform code (0x625130)
@@ -2157,12 +2157,12 @@
 0x0067a960	platform	reviewed: iSyncInitialize: operator new of the PC SyncManager (system round 33)
 0x0067a990	dead	unreachable from the entry point and every pointer table
 0x0067a9b0	debug	reviewed: the REQ debug hook: forwards to the script debugger object at *0x00ce9014 (script round 17)
-0x0067a9d0	logic	default (no rule: ported to be safe)
+0x0067a9d0	platform	reviewed: wrapper of 0x6fb410 (SyncManager) (system round 37)
 0x0067a9f0	platform	reviewed: EternalCalm file size via sceOpen, stderr print (system round 33)
 0x0067aa50	logic	default (no rule: ported to be safe)
-0x0067aa70	logic	default (no rule: ported to be safe)
+0x0067aa70	platform	reviewed: Eternal Calm file size (system round 37)
 0x0067aac0	logic	default (no rule: ported to be safe)
-0x0067aae0	logic	default (no rule: ported to be safe)
+0x0067aae0	platform	reviewed: Eternal Calm file size (system round 37)
 0x0067ab30	logic	default (no rule: ported to be safe)
 0x0067ab50	logic	default (no rule: ported to be safe)
 0x0067ab90	dead	unreachable from the entry point and every pointer table
@@ -3907,7 +3907,7 @@
 0x006e3f40	glue	calls PhyreEngine Phyre_FogEffectManager_setChrFogEffect
 0x006e4020	logic	default (no rule: ported to be safe)
 0x006e40b0	logic	default (no rule: ported to be safe)
-0x006e4100	logic	default (no rule: ported to be safe)
+0x006e4100	glue	reviewed: DepthBiasHooks_onCharacterInstantiated: only the renderer visibility job 0x9f4000 reads g_DepthBias (system round 37)
 0x006e4470	logic	default (no rule: ported to be safe)
 0x006e45c0	dead	unreachable from the entry point and every pointer table
 0x006e45d0	dead	unreachable from the entry point and every pointer table
@@ -4130,7 +4130,7 @@
 0x006f1890	glue	reviewed: call-through-pointer thunk (system round 31)
 0x006f18b0	dead	unreachable from the entry point and every pointer table
 0x006f1900	platform	imports SteamUserStats
-0x006f1980	logic	default (no rule: ported to be safe)
+0x006f1980	platform	reviewed: PC save metadata block (system round 37)
 0x006f1a80	dead	unreachable from the entry point and every pointer table
 0x006f1aa0	platform	only called from platform code (SaveDataSaveLoadSucceed)
 0x006f1b00	dead	unreachable from the entry point and every pointer table
@@ -6056,8 +6056,8 @@
 0x0076ccb0	platform	only called from platform code (Sa_CdRead_task)
 0x0076ce20	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdQueueSector_0076ce20
 0x0076ce40	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdQueueSectorRead_0076ce40
-0x0076cf60	logic	default (no rule: ported to be safe)
-0x0076cf80	logic	default (no rule: ported to be safe)
+0x0076cf60	platform	reviewed: CD sector read (system round 37)
+0x0076cf80	platform	reviewed: HDD-mode struct 0xc41744 (system round 37)
 0x0076cfa0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CdSetC40e19_0076cfa0
 0x0076cfc0	logic	default (no rule: ported to be safe)
 0x0076cfd0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): FileReadMain
@@ -6491,7 +6491,7 @@
 0x00773c00	logic	default (no rule: ported to be safe)
 0x00773c20	logic	default (no rule: ported to be safe)
 0x00773c40	logic	default (no rule: ported to be safe)
-0x00773c60	logic	default (no rule: ported to be safe)
+0x00773c60	platform	reviewed: HDD-mode struct 0xc41744 (system round 37)
 0x00773c90	logic	default (no rule: ported to be safe)
 0x00773cb0	logic	default (no rule: ported to be safe)
 0x00773cd0	logic	default (no rule: ported to be safe)
@@ -14454,7 +14454,7 @@
 0x008ed380	glue	GS packet API (TOAdpEasyShapeXYWHC2): appends to or kicks a packet; replaced by ffx-render
 0x008edfc0	glue	GS/DMA packet writer (TOAdpFontM_ASCII; writes no game state): replaced by ffx-render
 0x008ee010	dead	unreachable from the entry point and every pointer table
-0x008ee060	glue	GS/DMA packet writer (TODrawFont3d80Glyph_008eeee0; writes no game state): replaced by ffx-render
+0x008ee060	glue	GS packet API (TODrawFont3d80String_008ee060): appends to or kicks a packet; replaced by ffx-render
 0x008ee0b0	dead	unreachable from the entry point and every pointer table
 0x008ee100	dead	unreachable from the entry point and every pointer table
 0x008ee150	dead	unreachable from the entry point and every pointer table
@@ -14535,7 +14535,7 @@
 0x008f3220	dead	unreachable from the entry point and every pointer table
 0x008f3280	glue	GS/DMA packet writer (calls the packet writers 0x8edfc0; writes no game state): replaced by ffx-render
 0x008f3300	glue	GS packet API (TOMkpBtlDigitRight_008f3300): appends to or kicks a packet; replaced by ffx-render
-0x008f3390	glue	GS/DMA packet writer (calls the packet writers 0x8ee060; writes no game state): replaced by ffx-render
+0x008f3390	glue	GS/DMA packet writer (TODrawFont3d80String_008ee060; writes no game state): replaced by ffx-render
 0x008f3420	glue	GS packet API (TOMkpBtlDigitRight_008f3420): appends to or kicks a packet; replaced by ffx-render
 0x008f34c0	logic	default (no rule: ported to be safe)
 0x008f3820	logic	default (no rule: ported to be safe)
@@ -14677,9 +14677,9 @@
 0x008fdee0	glue	GS packet API (TOMakePktScissor): appends to or kicks a packet; replaced by ffx-render
 0x008fdf20	glue	GS/DMA packet writer (graphicDrawUIElement; writes no game state): replaced by ffx-render
 0x008fe040	glue	GS packet API (TOMakePktSeqPrimFunc): appends to or kicks a packet; replaced by ffx-render
-0x008fe070	logic	default (no rule: ported to be safe)
+0x008fe070	glue	GS/DMA packet writer (only packet writers call it; writes no game state): replaced by ffx-render
 0x008fe080	glue	GS packet API (TOMakePktSeqPrimMes): appends to or kicks a packet; replaced by ffx-render
-0x008fe0b0	logic	default (no rule: ported to be safe)
+0x008fe0b0	glue	GS packet API (TOMakePktSeqPrimLayout_008fe0b0): appends to or kicks a packet; replaced by ffx-render
 0x008feb00	glue	GS packet API (TOMakePktShapeCursor): appends to or kicks a packet; replaced by ffx-render
 0x008fefb0	dead	unreachable from the entry point and every pointer table
 0x008feff0	dead	unreachable from the entry point and every pointer table
@@ -16419,7 +16419,7 @@
 0x009da960	logic	default (no rule: ported to be safe)
 0x009dac60	logic	default (no rule: ported to be safe)
 0x009daca0	logic	default (no rule: ported to be safe)
-0x009dacc0	logic	default (no rule: ported to be safe)
+0x009dacc0	platform	reviewed: unloads preloaded magic-file modules (system round 37)
 0x009dad70	logic	default (no rule: ported to be safe)
 0x009dadc0	logic	default (no rule: ported to be safe)
 0x009dae60	logic	default (no rule: ported to be safe)
@@ -16893,22 +16893,22 @@
 0x00a423c0	dead	unreachable from the entry point and every pointer table
 0x00a42490	logic	default (no rule: ported to be safe)
 0x00a424b0	glue	calls PhyreEngine Phyre_PScripting_PScriptAccessors_PObjectAccessor_Phyre_POccluderGeometry_POccluderGeometryObject__Get
-0x00a424e0	logic	default (no rule: ported to be safe)
+0x00a424e0	glue	reviewed: PhyreEngine class-descriptor entry (system round 37)
 0x00a42500	logic	default (no rule: ported to be safe)
 0x00a42520	dead	unreachable from the entry point and every pointer table
 0x00a425a0	dead	unreachable from the entry point and every pointer table
 0x00a425e0	dead	unreachable from the entry point and every pointer table
 0x00a42690	dead	unreachable from the entry point and every pointer table
 0x00a42700	logic	default (no rule: ported to be safe)
-0x00a42740	logic	default (no rule: ported to be safe)
-0x00a42760	logic	default (no rule: ported to be safe)
+0x00a42740	glue	reviewed: PhyreEngine class-descriptor entry (system round 37)
+0x00a42760	glue	reviewed: PhyreEngine class-descriptor entry (system round 37)
 0x00a42780	dead	unreachable from the entry point and every pointer table
-0x00a427e0	logic	default (no rule: ported to be safe)
+0x00a427e0	glue	reviewed: PhyreEngine class-descriptor entry (system round 37)
 0x00a42810	glue	reviewed: call-through-pointer thunk (system round 31)
 0x00a42830	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileName_PC
 0x00a42850	dead	unreachable from the entry point and every pointer table
 0x00a42870	platform	thin wrapper: only forwards to platform code (CDfileReadSector_CD)
-0x00a42880	logic	default (no rule: ported to be safe)
+0x00a42880	platform	reviewed: CD sector read (system round 37)
 0x00a428a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileSize_PC
 0x00a429d0	logic	default (no rule: ported to be safe)
 0x00a42a00	platform	reviewed: pc_ReadWholeFile: sceOpen/sceRead into user_malloc (system round 30)
@@ -17630,7 +17630,7 @@
 0x00a7bb00	logic	default (no rule: ported to be safe)
 0x00a7bb60	dead	unreachable from the entry point and every pointer table
 0x00a7bb90	logic	default (no rule: ported to be safe)
-0x00a7bbc0	logic	default (no rule: ported to be safe)
+0x00a7bbc0	glue	GS/DMA packet writer (TOMakePktSeqPrimFunc, TOMakePktSeqPrimLayout_008fe0b0, TOMakePktSeqPrimMes; writes no game state): replaced by ffx-render
 0x00a7c6f0	logic	default (no rule: ported to be safe)
 0x00a7c7f0	logic	default (no rule: ported to be safe)
 0x00a7c810	logic	default (no rule: ported to be safe)
