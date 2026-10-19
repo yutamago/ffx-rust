@@ -20160,3 +20160,77 @@ fn r13gg_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_a102);
     r13gg_cases(&mut t, &mut rng, 250);
 }
+
+// ---- field agent r13, group h: a node picked on the sphere grid ----
+
+/// Group h (r13) on `t` over the grid `g`: `AbmapSelectNode_00a48e40` on
+/// the cursor's node (the command menu, its empty entries marked through
+/// logged `MsGetSaveSP`/`TOAmapMakeItemList`/`TOAmapGetItemListMax`
+/// stand-ins) or another (homing, a state saved or not).
+fn r13hh_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap::{self, bridge as ab};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, spv, maxv) = (t.alloc(0x400), t.alloc(4), t.alloc(4), t.alloc(4));
+    t.cave(&[
+        (Some(abmap::MS_GET_SAVE_SP), log_stub(log, spv, 1, 1)),
+        (Some(abmap::TO_AMAP_MAKE_ITEM_LIST), log_stub(log, rv, 2, 1)),
+        (
+            Some(abmap::TO_AMAP_GET_ITEM_LIST_MAX),
+            log_stub(log, maxv, 3, 0),
+        ),
+    ]);
+    let pads = t.alloc(0x2710);
+    t.put(t.b.rebase(abmap::ABMAP_PAD), pads);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(pads, 0x2710, rng);
+        t.put(pads + 0x16de, i16::try_from(rng.range(-2, 6)).unwrap());
+        t.put(g + abmap::CURRENT_CHR, u8::try_from(rng.below(7)).unwrap());
+        t.put(spv, if rng.below(2) == 0 { 0 } else { rng.next() });
+        t.put(maxv, if rng.below(2) == 0 { 0 } else { rng.next() });
+        t.fill(g + 0x112b8, 0x50, rng);
+        t.fill(g + 0x115a8, 0x10, rng);
+        if rng.below(2) == 0 {
+            t.put(g + 0x115b0, 0u32);
+        }
+        let current = rng.below(0x40);
+        t.put(g + 0x112fc, u16::try_from(current).unwrap());
+        let node = if rng.below(3) == 0 {
+            current
+        } else {
+            rng.below(0x40)
+        };
+        let at = g + 0x808 + 0x28 * node;
+        t.fill(at, 0x28, rng);
+        t.put(at + 6, u16::try_from(rng.below(0x100)).unwrap());
+        let a = [node, r6b_fine(rng, 0.1, 1.0)];
+        t.same(
+            "AbmapSelectNode_00a48e40",
+            |o| o.eax(0x00a4_8e40, &a),
+            |m| ab::abmap_select_node(m, a, call),
+        );
+    }
+}
+
+/// Group h (r13) on the image.
+#[test]
+fn r13hh_select_node_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a201);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13hh_cases(&mut t, &mut rng, g, 400);
+}
+
+/// Group h (r13) on the snapshot (`FFX_SNAPSHOT`), over a synthetic grid.
+#[test]
+fn r13hh_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a202);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r13hh_cases(&mut t, &mut rng, g, 200);
+}

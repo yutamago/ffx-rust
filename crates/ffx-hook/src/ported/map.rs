@@ -4001,6 +4001,10 @@ ported! {
     yiLoadFieldParticle @ 0x0090_9190 => extern "C" fn shim_yi_load_field_particle(textures: u32, effects: u32) -> u32 {
         yi::bridge::yi_load_field_particle(&mut mem(), [textures, effects], &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapSelectNode_00a48e40(node, t)`.
+    AbmapSelectNode_00a48e40 @ 0x00a4_8e40 => extern "C" fn shim_abmap_select_node(node: u32, t: u32) -> u32 {
+        abmap::bridge::abmap_select_node(&mut mem(), [node, t], &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapSpreadPlyTags()`: the seven boxes in a frame.
     AbmapSpreadPlyTags @ 0x00a5_a4b0 => extern "C" fn shim_abmap_spread_ply_tags() -> u32 {
         let mut w = super::StackFrame::<28>::new();

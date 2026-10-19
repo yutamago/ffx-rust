@@ -12869,6 +12869,7 @@
 0x00a48c80 function AbmapInitMovingToTarget   # fh v3:exact 0x00a48c80 +AbmapInitMovingToTarget
 0x00a48d20 function AbmapTransitionToHoming   # fh v3:exact 0x00a48d20 +AbmapTransitionToHoming
 0x00a48d70 function AbmapInitHoming           # fh v3:exact 0x00a48d70 +AbmapInitHoming
+0x00a48e40 function AbmapSelectNode_00a48e40  # (node, t) -> eax: no direct callers (name ours): node == +0x112fc: AbmapMarkEmptyMenus, pad 7 shown and current with the handler 0x00a56330, bit 3 of +0x16e4 (AbmapEnterCommandMenu's code), eax the pads; else AbmapInitHoming(node, t) and, with +0x115b0 empty, the state saved there and set to 0x00a5a020; eax g_Abmap; ported (field r13, ffx_field::abmap)
 0x00a48f20 function AbmapPadStartSlideIn      # (pad): unless shown (+0x23 set) and idle, counter +0x29 = 0, step +0x34 = AbmapPadSlideInStep; name ours
 0x00a48f50 function AbmapCtrlTilt             # fh v3:cg2 0xa48f50 +AbmapCtrlTilt
 0x00a490c0 function AbmapCtrlZoom             # fh v3:exact 0x00a490c0 +AbmapCtrlZoom; (): pad +0x2700 < 0 and button bit 8 (+0x1166e): zoom level +0x115cc steps 0..2 (wrapping), 30-frame change +0x115d0 from +0x11350 (kept +0x115dc) to AbmapZoomScale() (+0x115e0); each frame +0x11350/54/58 = from + (to - from) sin[((30-left)<<14)/30>>4 & 0xfff], <= 0.375 sets +0x116b0 -2 (NaN neither) unless negative, >= 0.375 sets 2 unless positive, +0x116ac 0 -> 1; last frame: to, +0x115c7 = 1; eax g_Abmap or the count; ported (field r12, ffx_field::abmap)

@@ -2387,6 +2387,36 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// The state [`abmap_select_node`] sets while homing (`0x00a5a020`).
+    pub const STATE_SELECT_HOMING: u32 = 0x00a5_a020;
+
+    /// `AbmapSelectNode_00a48e40(node, t)` (`0x00a48e40`; name ours): on
+    /// the cursor's node (`+0x112fc`) the command menu opens
+    /// ([`abmap_enter_command_menu`]); elsewhere the cursor homes on
+    /// `node` ([`abmap_init_homing`], `t`) and, with no state saved
+    /// (`+0x115b0`), the state goes to [`STATE_SELECT_HOMING`], the old one
+    /// saved. Returns the pad array or the grid (left in `eax`).
+    pub fn abmap_select_node<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [node, t]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        if node == u32::from(mem.read::<u16>(g.wrapping_add(0x112fc))) {
+            return abmap_enter_command_menu(mem, call);
+        }
+        abmap_init_homing(mem, node, t);
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+            let state = mem.read::<u32>(g.wrapping_add(0x115a8));
+            mem.write(g.wrapping_add(0x115b0), state);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x115a8), mem.rebase(STATE_SELECT_HOMING));
+            return g;
+        }
+        g
+    }
+
     /// `AbmapPlyTagRect(tag, out)` (`0x00a482d0`) and `AbmapRectsOverlap`
     /// (`0x00a49270`), [`abmap_spread_ply_tags`]'s calls.
     pub const SPREAD_CALLS: [u32; 2] = [0x00a4_82d0, 0x00a4_9270];
