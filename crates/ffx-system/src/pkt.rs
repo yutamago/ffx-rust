@@ -431,4 +431,34 @@ pub mod bridge {
             ],
         )
     }
+
+    /// `prcPacketDataClose(self)` (`0x00766b90`, `pppYanagi.c`): ends the
+    /// packet at the cursor `self+4` with the 16-byte tag `0x8000`,
+    /// `0x1000_0000`, 0, 0, moves the cursor past it, and asserts
+    /// `size <= self->m_size` (signed: cursor minus start `self+0` against
+    /// `self+8`) through `dbgPrintf` (`0x0062f500`, passed in). Returns the
+    /// size, or `dbgPrintf`'s `eax` when the assertion fires.
+    pub fn prc_packet_data_close<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let tag: u32 = mem.read(this + 4);
+        mem.write(tag, 0x8000u32);
+        mem.write(tag + 4, 0x1000_0000u32);
+        let tag: u32 = mem.read(this + 4);
+        mem.write(tag + 8, 0u32);
+        mem.write(tag + 0xc, 0u32);
+        let cursor = mem.read::<u32>(this + 4).wrapping_add(0x10);
+        mem.write(this + 4, cursor);
+        let size = mem.read::<u32>(this + 4).wrapping_sub(mem.read(this));
+        let limit: u32 = mem.read(this + 8);
+        if size.cast_signed() <= limit.cast_signed() {
+            return size;
+        }
+        let fmt = mem.rebase(0x00b5_1a6c);
+        let cond = mem.rebase(0x00b5_1a54);
+        let file = mem.rebase(0x00b5_1a38);
+        call(mem, 0x0062_f500, &[fmt, cond, file, 0x39])
+    }
 }

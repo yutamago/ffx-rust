@@ -892,3 +892,166 @@ pub fn yi_tex_target_clear<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
     let f = mem.rebase(SEND_GS_PACKET);
     call(mem, f, &[work, qwc])
 }
+
+/// [`yi_part_chain_to_omd`]'s scratch: the poly buffer its VIF codes run
+/// on (0x4088 bytes, VU memory and the VIF registers).
+pub const CHAIN_VIF_WORK: u32 = 0x4088;
+
+/// `yiPartChainToOMD` (`0x00911ac0`, name ours; from `yiDObjToOMD`
+/// `0x00908420`): map part `part`'s VIF chain (`r +0x68834 + 0xb4 *
+/// part`; 0 without one or for `part` at or past the count `r +0x68788`)
+/// rebuilt as one group-tagged packet at `out`, like
+/// [`yi_poly_select_rect_xz`] without the rectangle. Returns the packet's
+/// size in bytes.
+///
+/// **A deliberate fix of an original bug.** The original runs each node's
+/// VIF codes (`yiPolyBufExecVif`) on `&buf` - the address of its local
+/// holding the poly buffer - instead of on `buf`, so the VIF writes
+/// (UNPACKs `16 * TOPS` up, the registers 0x4000 bytes up) land in its
+/// callers' stack frames, while the blocks it reads come from the real
+/// buffer, which `yiPolyBufClear` left zeroed (`TOPS` 0, no triangles).
+/// Here the codes run on `vif` ([`CHAIN_VIF_WORK`] bytes, cleared first)
+/// and everything read and written outside the original's stack stays as
+/// it was: every node gets an untextured tag, the packet an end tag
+/// (byte 1 0xff), and nothing else. The triangle paths below follow the
+/// original but cannot run (the block read is always the cleared one).
+#[allow(clippy::too_many_lines)] // the original's one pass, its dead triangle paths kept
+pub fn yi_part_chain_to_omd<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+    mem: &mut M,
+    r: u32,
+    out: u32,
+    part: u32,
+    vif: u32,
+    call: &mut C,
+) -> u32 {
+    if part >= mem.read::<u32>(r.wrapping_add(PART_COUNT)) {
+        return 0;
+    }
+    let head = r.wrapping_add(0x6_8834 + 0xb4 * part);
+    if mem.read::<u32>(head) == 0 {
+        return 0;
+    }
+    let poly = yi_malloc_plain(mem, 0x4088, call);
+    yi_poly_buf_clear(mem, poly);
+    yi_poly_buf_clear(mem, vif);
+    let first = mem.read::<u32>(head);
+    let mut quads = 0u32;
+    let mut node = first;
+    while node != 0 {
+        quads = quads.wrapping_add(mem.read::<u32>(node + 0x48));
+        node = mem.read::<u32>(node + 0x4c);
+    }
+    mem.write(out + 0x12, 0u32);
+    mem.write(out + 0x10, 0u16);
+    mem.write(out + 0x1c, 0u32);
+    // the vertices are gathered past the records' worst case, then moved
+    let staged = out.wrapping_add(quads << 4);
+    mem.write(out, 0x400u32);
+    mem.write(out + 0xc, 0u32);
+    mem.write(out + 8, 0u32);
+    mem.write(out + 4, 0x20u32);
+    let mut cur = out + 0x20;
+    let mut vert = staged;
+    let mut node = first;
+    while node != 0 {
+        let data = mem.read::<u32>(node + 0x44);
+        let mut words = mem.read::<u32>(node + 0x48) << 2;
+        let setup = mem.rebase(SETUP_CODES);
+        let used = yi_poly_buf_exec_vif(mem, vif, setup, 4);
+        bump_u16(mem, out + 0x10);
+        words = words.wrapping_sub(used);
+        let mut src = data.wrapping_add(0x10 + 4 * used);
+        // the node's tag; the triangles count into the last tag opened
+        let mut count_at = cur + 2;
+        mem.write(cur + 2, 0u16);
+        mem.write(cur + 8, [0u32; 4]);
+        mem.write(cur, 0x2000u16);
+        cur = cur.wrapping_add(0x20);
+        let mut textured = false;
+        while words != 0 {
+            let used = yi_poly_buf_exec_vif(mem, vif, src, words);
+            words = words.wrapping_sub(used);
+            src = src.wrapping_add(4 * used);
+            let block = poly.wrapping_add(mem.read::<u32>(poly + LAST_TOPS) << 4);
+            let w = |mem: &M, i: u32| mem.read::<u32>(block.wrapping_add(4 * i));
+            if w(mem, 8) != 0 {
+                bump_u16(mem, out + 0x10);
+                count_at = cur + 2;
+                mem.write(cur, 0x2200u16);
+                mem.write(cur + 2, 0u16);
+                mem.write(cur + 8, [w(mem, 0xc), w(mem, 0xd)]);
+                let second = if w(mem, 0x12) == 0 {
+                    [0xc, 0xd]
+                } else {
+                    [0x10, 0x11]
+                };
+                mem.write(cur + 0x10, second.map(|i| w(mem, i)));
+                mem.write(cur + 0x1c, 0u32);
+                mem.write(cur + 0x18, w(mem, 0x14));
+                textured = true;
+                cur = cur.wrapping_add(0x20);
+            }
+            let n = w(mem, 0);
+            let colors = block.wrapping_add(0xa0);
+            let uvs = block.wrapping_add((n.wrapping_mul(3) + 10) << 4);
+            let positions = block.wrapping_add((n.wrapping_mul(6) + 10) << 4);
+            for t in 0..n {
+                let tri = cur;
+                cur = cur.wrapping_add(if textured { 0x20 } else { 0x14 });
+                bump_u16(mem, out + 0x10);
+                bump_u16(mem, count_at);
+                mem.write(tri + 0x12, 0u16);
+                let c = colors.wrapping_add(0x30 * t);
+                for i in 0..12 {
+                    let byte = mem.read::<u8>(c.wrapping_add(4 * i));
+                    mem.write(tri + i, byte);
+                }
+                if textured {
+                    let uv = uvs.wrapping_add(0x30 * t);
+                    for (k, i) in (0u32..).zip([0, 1, 4, 5, 8, 9]) {
+                        let v = mem.read::<u16>(uv.wrapping_add(4 * i));
+                        mem.write(tri + 0x14 + 2 * k, v);
+                    }
+                }
+                for k in 0..3 {
+                    let index = mem.read::<u16>(out + 0x12);
+                    mem.write(tri + 0xc + 2 * k, index);
+                    bump_u16(mem, out + 0x12);
+                }
+                let p = positions.wrapping_add(0x30 * t);
+                for k in 0..3 {
+                    let xyz = mem.read::<[u32; 3]>(p.wrapping_add(0x10 * k));
+                    mem.write(vert.wrapping_add(0x10 * k), xyz);
+                }
+                vert = vert.wrapping_add(0x30);
+            }
+        }
+        node = mem.read::<u32>(node + 0x4c);
+    }
+    // the end tag, then the vertices moved behind it with w 1.0
+    mem.write(cur + 1, 0xffu8);
+    mem.write(cur + 2, 0u16);
+    mem.write(cur + 8, [0u32; 4]);
+    bump_u16(mem, out + 0x10);
+    let mut dst = cur.wrapping_add(0x20);
+    mem.write(out + 8, dst.wrapping_sub(out) & !3);
+    let mut i = 0;
+    while i < i32::from(mem.read::<i16>(out + 0x12)) {
+        let xyz = mem.read::<[u32; 3]>(staged.wrapping_add(0x10 * i.cast_unsigned()));
+        mem.write(dst, xyz);
+        mem.write(dst + 0xc, 1f32);
+        dst = dst.wrapping_add(0x10);
+        i += 1;
+    }
+    yi_free(mem, poly, call);
+    dst.wrapping_sub(out)
+}
+
+/// `yiMalloc(size)` (`0x0090bbd0`): a jump to `user_malloc`.
+fn yi_malloc_plain<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+    mem: &mut M,
+    size: u32,
+    call: &mut C,
+) -> u32 {
+    crate::model::bridge::rc_alloc(mem, call, size)
+}

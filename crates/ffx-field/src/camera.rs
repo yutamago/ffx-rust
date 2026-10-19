@@ -259,9 +259,49 @@ pub mod bridge {
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
         fcall: &mut impl FnMut(&mut M, u32, FArgs<'_>) -> f64,
     ) {
+        scene_set_matrix(mem, v, work, true, call, fcall);
+    }
+
+    /// `rcbgSceneSetMatrix_Cross()` (`0x00920e40`): [`rcbg_scene_set_matrix`]
+    /// for the view of the map system's scene (`g_YnMapSystem[0] +8`, with
+    /// its `+4` set), without `MsSetCameraMatrix`. Returns 1, or 0 when
+    /// there is no such view or its field of view is 0.
+    pub fn rcbg_scene_set_matrix_cross<M: Mem>(
+        mem: &mut M,
+        work: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, FArgs<'_>) -> f64,
+    ) -> u32 {
+        let system = crate::guide::YN_MAP_SYSTEM.get(mem);
+        let map = if system == 0 {
+            0
+        } else {
+            mem.read::<u32>(system)
+        };
+        let v = if map == 0 {
+            0
+        } else {
+            mem.read::<u32>(map + 8)
+        };
+        if v == 0 || mem.read::<u32>(v + 4) == 0 {
+            return 0;
+        }
+        u32::from(scene_set_matrix(mem, v, work, false, call, fcall))
+    }
+
+    /// The two scene matrix set-ups' body; `ms_set` passes the matrices
+    /// on to `MsSetCameraMatrix`. False when the field of view is 0.
+    fn scene_set_matrix<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        work: u32,
+        ms_set: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, FArgs<'_>) -> f64,
+    ) -> bool {
         let fov = mem.read::<u32>(v + view::FOV);
         if f32::from_bits(fov) == 0.0 {
-            return;
+            return false;
         }
         let get = mem.rebase(SG_GET_PLAYER);
         let player = call(mem, get, &[]);
@@ -315,19 +355,21 @@ pub mod bridge {
         let d: f32 = mem.read(distance);
         let d = (Reg::load(d) + Reg::constant(rdata::HALF_WIDTH.get(mem))).store();
         mem.write(distance, d);
-        let set = mem.rebase(crate::guide::MS_SET_CAMERA_MATRIX);
-        call(
-            mem,
-            set,
-            &[
-                1,
-                projection,
-                view_m,
-                v + view::AT,
-                v + view::EYE,
-                d.to_bits(),
-            ],
-        );
+        if ms_set {
+            let set = mem.rebase(crate::guide::MS_SET_CAMERA_MATRIX);
+            call(
+                mem,
+                set,
+                &[
+                    1,
+                    projection,
+                    view_m,
+                    v + view::AT,
+                    v + view::EYE,
+                    d.to_bits(),
+                ],
+            );
+        }
         let sy: f32 = mem.read(v + view::SCALE_Y);
         let two = Reg::constant(rdata::TWO.get(mem));
         let q = (Reg::constant(rdata::HEIGHT.get(mem)) / (Reg::load(sy) * two)).store();
@@ -347,5 +389,6 @@ pub mod bridge {
         let f = mem.rebase(CAMERA_SET_WORLD);
         let m = mem.rebase(CAMERA_MATRIX);
         call(mem, f, &[m]);
+        true
     }
 }

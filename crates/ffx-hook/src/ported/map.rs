@@ -1120,6 +1120,10 @@ ported! {
         let h = |v: u32| (v as u16).cast_signed();
         model::bridge::rcbg_trx_set_regs(&mut mem(), t, h(a), h(b), h(c), h(d), h(e), h(f), h(g))
     }
+    /// `rcbgClipVertex(m, verts, n)`.
+    rcbgClipVertex @ 0x0092_af60 => extern "C" fn rcbg_clip_vertex(m: u32, verts: u32, n: i32) -> u32 {
+        model::bridge::rcbg_clip_vertex(&mut mem(), m, verts, n, &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcbgClipCodeAnd(out, a, b, c, d)`.
     rcbgClipCodeAnd @ 0x0092_aed0 => extern "C" fn rcbg_clip_code_and(out: u32, a: u32, b: u32, c: u32, d: u32) -> u32 {
         model::bridge::rcbg_clip_code_and(&mut mem(), out, a, b, c, d)
@@ -1340,6 +1344,10 @@ ported! {
     /// `AbmapCtrlTilt()`.
     AbmapCtrlTilt @ 0x00a4_8f50 => extern "C" fn abmap_ctrl_tilt() -> u32 {
         abmap::bridge::abmap_ctrl_tilt(&mut mem())
+    }
+    /// `AbmapCtrlZoom()`.
+    AbmapCtrlZoom @ 0x00a4_90c0 => extern "C" fn abmap_ctrl_zoom() -> u32 {
+        abmap::bridge::abmap_ctrl_zoom(&mut mem(), &mut |_, f, a| call_float(f, a))
     }
     /// `AbmapState_HomeOnNode()`.
     AbmapState_HomeOnNode @ 0x00a5_9e80 => extern "C" fn abmap_state_home_on_node() -> u32 {
@@ -2452,6 +2460,12 @@ ported! {
             &mut |_, f, a| call_float(f, a),
         );
     }
+    /// `rcbgSceneSetMatrix_Cross()`.
+    rcbgSceneSetMatrix_Cross @ 0x0092_0e40 => extern "C" fn shim_rcbg_scene_set_matrix_cross() -> u32 {
+        let mut work = CameraWork([0; camera::WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        camera::bridge::rcbg_scene_set_matrix_cross(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
     /// `rcbgModelCreate(model, desc)`.
     rcbgModelCreate @ 0x0092_7be0 => extern "C" fn shim_rcbg_model_create(m: u32, desc: u32) -> u32 {
         model::bridge::rcbg_model_create(&mut mem(), m, desc, &mut |_, f, a| call_cdecl(f, a))
@@ -2740,6 +2754,24 @@ ported! {
     AbmapPlyTagRect @ 0x00a4_82d0 => extern "C" fn shim_abmap_ply_tag_rect(tag: u32, out: u32) {
         ffx_field::abmap_draw::abmap_ply_tag_rect(&mut mem(), tag, out);
     }
+    /// `AbmapDrawChrRings()`.
+    AbmapDrawChrRings @ 0x00a4_c8d0 => extern "C" fn shim_abmap_draw_chr_rings() {
+        // 16-byte aligned: the matrix and vectors go to FFXVu0MulMatrix
+        #[repr(C, align(16))]
+        struct RingsWork([u8; ffx_field::abmap_draw::RINGS_WORK as usize]);
+        let mut work = RingsWork([0; ffx_field::abmap_draw::RINGS_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::abmap_draw::abmap_draw_chr_rings(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `AbmapDrawBoard()`.
+    AbmapDrawBoard @ 0x00a4_c700 => extern "C" fn shim_abmap_draw_board() {
+        // 16-byte aligned: the matrices go to FFXVu0UnitMatrix/MulMatrix
+        #[repr(C, align(16))]
+        struct BoardWork([u8; ffx_field::abmap_draw::BOARD_WORK as usize]);
+        let mut work = BoardWork([0; ffx_field::abmap_draw::BOARD_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::abmap_draw::abmap_draw_board(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `AbmapDrawMap()`.
     AbmapDrawMap @ 0x00a4_ce20 => extern "C" fn shim_abmap_draw_map() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::MAP_WORK as usize / 4 }>::new();
@@ -2760,6 +2792,15 @@ ported! {
     KeThBP_MkStripEnd_00765a10 @ 0x0076_5a10 => extern "C" fn shim_ke_th_bp_mk_strip_end() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::keth::STRIP_END_WORK as usize / 4 }>::new();
         ffx_field::keth::ke_th_bp_mk_strip_end(&mut mem(), w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `KeThCp_Update(t)`.
+    KeThCp_Update @ 0x0076_49a0 => extern "C" fn shim_ke_th_cp_update(t: u32) -> u32 {
+        // 16-byte aligned: the unit matrix goes to FFXVu0UnitMatrix
+        #[repr(C, align(16))]
+        struct CpWork([u8; ffx_field::keth::CP_WORK as usize]);
+        let mut work = CpWork([0; ffx_field::keth::CP_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::keth::ke_th_cp_update(&mut mem(), t, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `KeThBP_MkStrip_00764de0()`.
     KeThBP_MkStrip_00764de0 @ 0x0076_4de0 => extern "C" fn shim_ke_th_bp_mk_strip() -> u32 {
@@ -2828,6 +2869,15 @@ ported! {
         let mut work = ClearWork([0; ffx_field::yipoly::CLEAR_WORK as usize]);
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         ffx_field::yipoly::yi_tex_target_clear(&mut mem(), frame, (u, v), h, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiPartChainToOMD(r, out, part)`, fixed: the VIF codes run on their own buffer.
+    yiPartChainToOMD @ 0x0091_1ac0 => extern "C" fn shim_yi_part_chain_to_omd(r: u32, out: u32, part: u32) -> u32 {
+        // on the heap: 16 KB is too big for some threads' stacks
+        let mut vif = vec![0u32; ffx_field::yipoly::CHAIN_VIF_WORK as usize / 4];
+        let w = u32::try_from(vif.as_mut_ptr().expose_provenance()).unwrap_or(0);
+        let size = ffx_field::yipoly::yi_part_chain_to_omd(&mut mem(), r, out, part, w, &mut |_, f, a| call_cdecl(f, a));
+        std::hint::black_box(&mut vif);
+        size
     }
     /// `yiPolySelectRectXZ(r, list, packet, cap, m, a, b, unlimited)`.
     yiPolySelectRectXZ @ 0x0091_05b0 => extern "C" fn shim_yi_poly_select_rect_xz(_r: u32, list: u32, packet: u32, cap: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
