@@ -17,6 +17,7 @@ use ffx_battle::gear::bridge as gear;
 use ffx_battle::getmem::bridge as getmem;
 use ffx_battle::init::bridge as init;
 use ffx_battle::input::bridge as input;
+use ffx_battle::limit::bridge as limit;
 use ffx_battle::motion::bridge as motion;
 use ffx_battle::parse::bridge as parse;
 use ffx_battle::predict::bridge as predict;
@@ -3765,5 +3766,17 @@ ported! {
     getExcelBinSize @ 0x0078_2df0 => extern "C" fn get_excel_bin_size(name: u32, buffer: u32) -> u32 {
         let mut path = super::StackFrame::<{ (init::KERNEL_PATH_SIZE / 4) as usize }>::new();
         init::get_excel_bin_size(&mut mem(), &mut call_ptr, name, buffer, path.at())
+    }
+    /// `MsMenuLimitSet(chr, user, count)`: an overdrive's hits handed
+    /// out (its callees' out values in a frame of ours).
+    MsMenuLimitSet @ 0x007a_fe00 => extern "C" fn ms_menu_limit_set(chr: u32, user: u32, count: i32) -> u32 {
+        let mut frame = super::StackFrame::<{ limit::LIMIT_SCRATCH_WORDS as usize }>::new();
+        limit::ms_menu_limit_set(&mut mem(), &mut call_ptr, chr, user, count, frame.at())
+    }
+    /// `MsMenuLimitSet_007b0470(chr, count, x, y)`: a minigame's result
+    /// taken (the magic camera through the game).
+    MsMenuLimitSet_007b0470 @ 0x007b_0470 => extern "C" fn ms_menu_limit_start(chr: u32, count: u32, x: u32, y: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ limit::LIMIT_SCRATCH_WORDS as usize }>::new();
+        limit::ms_menu_limit_start(&mut mem(), &mut call_ptr, chr, count, x, y, frame.at())
     }
 }

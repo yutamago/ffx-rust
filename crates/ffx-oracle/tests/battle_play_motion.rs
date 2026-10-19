@@ -54,6 +54,27 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let model = scratch(a, b, 0x800);
     let id = scratch(a, b, 4);
     set(a, b, ffx_battle::effect::bridge::MOTION_STOP_CHRS, 0);
+    // a motion table of our own: motions 0x10-0x18, each with one record
+    // (a nonzero result, two "on" frames among 0x10-0x18, no "off" ones)
+    let fake = scratch(a, b, 0x100);
+    let mut t = vec![0u8; 40 + 9 * 12];
+    t[..2].copy_from_slice(&9u16.to_le_bytes());
+    for k in 0..9u16 {
+        let list = 40 + 12 * k;
+        let e = 2 + 4 * usize::from(k);
+        t[e..e + 2].copy_from_slice(&(0x10 + k).to_le_bytes());
+        t[e + 2..e + 4].copy_from_slice(&list.to_le_bytes());
+        let l = usize::from(list);
+        t[l..l + 2].copy_from_slice(&1u16.to_le_bytes());
+        t[l + 2..l + 4].copy_from_slice(&4u16.to_le_bytes());
+        t[l + 4] = rng.byte() | 1;
+        t[l + 5] = 2;
+        for f in 0..2 {
+            let v = u16::try_from(0x10 + rng.below(9)).unwrap();
+            t[l + 8 + 2 * f..l + 10 + 2 * f].copy_from_slice(&v.to_le_bytes());
+        }
+    }
+    poke(a, b, fake, &t);
     // the snapshot's motion tables (MsMotBinFrame's blend frames), else none
     let tables: Vec<u32> = (0..ACTORS)
         .map(|i| {
@@ -90,16 +111,25 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             for o in [0x20, 0x3f0, 0x3f1, 0x406, 0x408, 0x409, 0x434] {
                 poke(a, b, p + o, &[rng.byte()]);
             }
+            // the old motion often one the fake table lists
+            if rng.below(2) == 0 {
+                poke(
+                    a,
+                    b,
+                    p + 0x3f0,
+                    &[u8::try_from(0x10 + rng.below(9)).unwrap()],
+                );
+            }
             for o in [0x3fc, 0x400, 0x402] {
                 let v = [0u16, 0x100, 0x80, 1, rng.word().to_le_bytes()[0].into()]
                     [rng.below(5) as usize];
                 poke(a, b, p + o, &v.to_le_bytes());
             }
             // the actor's motion table or none (MsMotBinFrame 0)
-            let t = if rng.below(4) == 0 {
-                0
-            } else {
-                tables[i as usize]
+            let t = match rng.below(4) {
+                0 => 0,
+                1 => tables[i as usize],
+                _ => fake,
             };
             poke(a, b, p + 0x4f8, &t.to_le_bytes());
         }
@@ -107,6 +137,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             0 => rng.next(),
             1 => 0x8000 | rng.below(0x100),
             2 => [1, 2, 3, 4, 5, 6, 0xc, 0xd, 0x82][rng.below(9) as usize],
+            3 => 0x10 + rng.below(9),
             _ => rng.below(0x100),
         };
         let frames = [0, 1, -1, 30, rng.next().cast_signed()][rng.below(5) as usize];

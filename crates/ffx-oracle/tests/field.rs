@@ -6738,11 +6738,23 @@ fn float_in(rng: &mut Xorshift, lo: i32, hi: i32) -> u32 {
 /// battle camera matrices and `FFXSamp0ViewScreenMatrix` run as the
 /// original, `Ch_SetClipZ` and the renderer's camera setters logged).
 #[test]
-#[allow(clippy::too_many_lines)] // one function after another
 fn round9_camera_matches_the_original() {
     let Some(mut t) = Twin::image() else { return };
+    round9_camera_cases(&mut t, Xorshift(0x0009_0001));
+}
+
+/// The camera group on the snapshot (`FFX_SNAPSHOT`; field agent r12).
+#[test]
+fn round9_camera_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    round9_camera_cases(&mut t, Xorshift(0x0009_0002));
+}
+
+#[allow(clippy::too_many_lines)] // one function after another
+fn round9_camera_cases(t: &mut Twin, mut rng: Xorshift) {
     t.install_trig();
-    let mut rng = Xorshift(0x0009_0001);
     let (log, rv) = (t.alloc(4 + 0x20 * 256), t.alloc(4));
     // Ch_SetClipZ(chr, z): [chr + 0x174] = z, 1.0 in ST0
     let clip = vec![
@@ -6775,10 +6787,11 @@ fn round9_camera_matches_the_original() {
     let chr = t.alloc(0x200);
     let (v, out, dst) = (t.alloc(0xc0), t.alloc(0x40), t.alloc(0x40));
     let (eye, at, up, distance) = (t.alloc(0x10), t.alloc(0x10), t.alloc(0x10), t.alloc(4));
+    let cross = [t.alloc(8), t.alloc(0x10)];
     for k in 0..40u32 {
         t.put(log, 0u32);
         // the vector helpers
-        finite_floats(&mut t, v, 4, &mut rng);
+        finite_floats(t, v, 4, &mut rng);
         let s = rng.float();
         let (x, y, z) = (rng.next(), rng.next(), rng.next());
         for (f, name) in [
@@ -6903,6 +6916,19 @@ fn round9_camera_matches_the_original() {
             |o| o.void(0x0092_0c00, &[v]),
             |m| camera::bridge::rcbg_scene_set_matrix(m, v, work, call, fcall),
         );
+        // field agent r12 C: the same for the map system's own view
+        let (sys2, map2) = (cross[0], cross[1]);
+        t.set(guide::YN_MAP_SYSTEM, if k % 9 == 4 { 0 } else { sys2 });
+        t.put(sys2, if k % 9 == 5 { 0 } else { map2 });
+        t.put(map2 + 8, if k % 9 == 6 { 0 } else { v });
+        t.put(v + 4, if k % 9 == 7 { 0 } else { rng.next() | 1 });
+        t.same_but(
+            "rcbgSceneSetMatrix_Cross",
+            &view_skip,
+            |o| o.eax(0x0092_0e40, &[]),
+            |m| camera::bridge::rcbg_scene_set_matrix_cross(m, work, call, fcall),
+        );
+        t.set(guide::YN_MAP_SYSTEM, sys);
     }
 }
 
@@ -17399,4 +17425,217 @@ fn r11c_on_a_snapshot_matches_the_original() {
         t.set(ffx_field::abmap::ABMAP, ab);
     }
     r11c_cases(&mut t, &mut rng, ab, 50);
+}
+
+// ---- field agent r12, group A: the sphere grid's zoom control ----
+
+/// Group A (r12) on `t`: `AbmapCtrlZoom` with the button pressed or not,
+/// every zoom level (3 wraps), changes running or not (counts past 30
+/// too), zooms around 0.375 (exactly too), and `+0x116b0`/`+0x116ac`
+/// on each side; `AbmapZoomScale` runs as the original.
+fn r12a_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    let fcall = &mut oracle_fcall;
+    let pad = t.alloc(0x2800);
+    t.set(ffx_field::abmap::TILT_PAD, pad);
+    let zoom = |rng: &mut Xorshift| match rng.below(6) {
+        0 => 0.375f32.to_bits(),
+        1 => [0.125f32, 0.25, 0.5, 1.0][rng.below(4) as usize].to_bits(),
+        _ => r6b_fine(rng, 0.05, 1.2),
+    };
+    for _ in 0..cases {
+        t.put(pad + 0x2700, if rng.below(2) == 0 { 0xffffu16 } else { 1 });
+        t.put(g + 0x1166e, u16::try_from(rng.next() & 0x0303).unwrap());
+        t.put(g + 0x115cc, u8::try_from(rng.below(4)).unwrap());
+        let left = match rng.below(4) {
+            0 => rng.range(-3, 2),
+            1 => rng.range(30, 400),
+            _ => rng.range(1, 31),
+        };
+        t.put(g + 0x115d0, u16::try_from(left & 0xffff).unwrap());
+        for o in [0x11350, 0x115dc, 0x115e0] {
+            t.put(g + o, zoom(rng));
+        }
+        if rng.below(8) == 0 {
+            // inf - inf: a NaN zoom (the "not above 0.375" side)
+            t.put(g + 0x115dc, f32::INFINITY.to_bits());
+            t.put(g + 0x115e0, f32::INFINITY.to_bits());
+        }
+        t.put(g + 0x116b0, rng.range(-3, 4));
+        t.put(g + 0x116ac, rng.below(2));
+        t.same(
+            "AbmapCtrlZoom",
+            |o| o.eax(0x00a4_90c0, &[]),
+            |m| ffx_field::abmap::bridge::abmap_ctrl_zoom(m, fcall),
+        );
+    }
+}
+
+/// Group A (r12) on the image.
+#[test]
+fn r12a_ctrl_zoom_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0012_a001);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    r12a_cases(&mut t, &mut rng, g, 600);
+}
+
+/// Group A (r12) on the snapshot (`FFX_SNAPSHOT`), over a synthetic work
+/// area when the snapshot has none.
+#[test]
+fn r12a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0012_a002);
+    let mut g = ffx_field::abmap::ABMAP.get(&t.b);
+    if g == 0 {
+        g = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, g);
+    }
+    r12a_cases(&mut t, &mut rng, g, 300);
+}
+
+// ---- field agent r12, group B: a Ke thread's belt paths updated ----
+
+/// A stand-in for `KeThBP_Update(p)`: copies the 0x50 bytes at `p` to
+/// `log + 4 + count * 0x50` (`count` at `log`), returns 0.
+fn r12b_update_stub(log: u32) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xa1];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0x6b, 0xf8, 0x50, 0x81, 0xc7]);
+    c.extend_from_slice(&(log + 4).to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, 0x0c, 0xb9, 0x14, 0, 0, 0, 0xf3, 0xa5]);
+    c.extend_from_slice(&[0x31, 0xc0, 0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group B (r12) on `t`: `KeThCp_Update` over a thread of 0 to 5 belt
+/// paths (copy flags, start/running, dead ones unlinked from anywhere in
+/// the list, owner links or none), the object's flag bit 1 set or not;
+/// `KeThBP_Update` a logging stand-in, `KeThBP_Quit` and the rest the
+/// originals.
+fn r12b_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(4 + 0x50 * 8);
+    t.cave_from(
+        0x500,
+        &[(Some(ffx_field::keth::BP_UPDATE), r12b_update_stub(log))],
+    );
+    let (thread, object, pool) = (t.alloc(0x20), t.alloc(0x10), t.alloc(0x10));
+    let (v4, v5) = (t.alloc(0x10), t.alloc(0x10));
+    let paths = t.alloc(0x400 * 6);
+    let owners = t.alloc(0x10 * 6);
+    let work = t.stack_scratch(0x200);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.fill(object, 0x10, rng);
+        t.fill(pool, 0x10, rng);
+        t.fill(v4, 0x10, rng);
+        t.fill(v5, 0x10, rng);
+        t.fill(owners, 0x60, rng);
+        t.put(thread, [object, rng.next(), rng.next(), pool, v4, v5]);
+        let n = rng.below(6);
+        // object +0 heads the list; each path's +4 points at the link
+        // word that points at it
+        let mut back = object;
+        for k in 0..n {
+            let bp = paths + 0x400 * k;
+            t.fill(bp, 0x400, rng);
+            t.put(back, bp);
+            t.put(bp + 4, back);
+            back = bp;
+            t.put(bp + 0x34, u16::try_from(rng.below(12)).unwrap());
+            t.put(bp + 0x38, 0u16);
+            t.put(bp + 0x3c, 0u16);
+            let flags = (rng.next() & 0x0330) as u16;
+            t.put(bp + 0x3e, flags);
+            if rng.below(2) == 0 {
+                t.put(bp + 0xc, 0u32);
+            } else {
+                // an owner list: previous link word, next 0
+                let o = owners + 0x10 * k;
+                t.put(bp + 8, 0u32);
+                t.put(bp + 0xc, o);
+            }
+        }
+        t.put(back, 0u32);
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x2f00]).unwrap();
+        t.b.write(work, &[0u8; 0x50]).unwrap();
+        t.same(
+            "KeThCp_Update",
+            |o| o.eax(0x0076_49a0, &[thread]),
+            |m| ffx_field::keth::ke_th_cp_update(m, thread, work, call),
+        );
+    }
+}
+
+/// Group B (r12) on the image.
+#[test]
+fn r12b_th_cp_update_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0012_b001);
+    r12b_cases(&mut t, &mut rng, 400);
+}
+
+/// Group B (r12) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r12b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0012_b002);
+    r12b_cases(&mut t, &mut rng, 200);
+}
+
+// ---- field agent r12, group D: the clip test of a vertex list ----
+
+/// Group D (r12) on `t`: `rcbgClipVertex` with random matrices, 1 to 6
+/// vertices (or a count of 0 or less: one still runs) and clip flags
+/// (0, some of the six bits, all), the VU0 helpers the originals.
+fn r12d_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (m, verts) = (t.alloc(0x40), t.alloc(0x60));
+    let flags = t.b.rebase(0x00c8_facc);
+    for _ in 0..cases {
+        for i in 0..16 {
+            t.put(m + 4 * i, float_in(rng, -4, 4));
+        }
+        for i in 0..24 {
+            t.put(verts + 4 * i, float_in(rng, -100, 100));
+        }
+        let f = match rng.below(4) {
+            0 => 0,
+            1 => 0x3f,
+            _ => rng.next(),
+        };
+        t.put(flags, f);
+        let n = rng.range(-1, 7);
+        t.same(
+            "rcbgClipVertex",
+            |o| o.eax(0x0092_af60, &[m, verts, n.cast_unsigned()]),
+            |o| ffx_field::model::bridge::rcbg_clip_vertex(o, m, verts, n, call),
+        );
+    }
+}
+
+/// Group D (r12) on the image.
+#[test]
+fn r12d_clip_vertex_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0012_d001);
+    r12d_cases(&mut t, &mut rng, 400);
+}
+
+/// Group D (r12) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r12d_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0012_d002);
+    r12d_cases(&mut t, &mut rng, 200);
 }
