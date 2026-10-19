@@ -1489,6 +1489,10 @@ ported! {
         let count = frame.at();
         btl::bridge::init_status_win(&mut mem(), count, call_sym)
     }
+    /// `updateVFXZBufClearRenderData(lo, hi, z)`.
+    updateVFXZBufClearRenderData @ 0x0071_e330 => extern "C" fn update_vfx_zbuf_clear_render_data(lo: u32, hi: u32, z: f32) -> u32 {
+        render::bridge::update_vfx_zbuf_clear_render_data(&mut mem(), lo, hi, z, call_sym)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {

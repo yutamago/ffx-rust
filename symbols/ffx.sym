@@ -3561,7 +3561,7 @@
 0x0071cf90 function updateVFXRenderData_FakeEnvModel # layout+callees: sorts between updateVFXRenderDataShp_OShapeVu1 and updateVFXRenderData_KaGra001, and its named callees match the Switch 0x71002e4cf0 updateVFXRenderData_FakeEnvModel's (similarity 0.71: FFXVu0ApplyMatrix, graphicDynGeoMemManagerGetBufferForSegment, graphicGetScreenRatio, graphicVFXGetRenderDataByInstance, graphicVFXSetVisible); symbols from Fahrenheit's server export
 0x0071d520 function updateVFXRenderData_KaGra001 # fh switch:cg2 0x71002e31c0
 0x0071dbd0 function updateVFXRenderData_NoiseBlur # fh switch:cg4 0x71002e3aa0
-0x0071e330 function updateVFXZBufClearRenderData # fh v3:exact 0x0071e410
+0x0071e330 function updateVFXZBufClearRenderData # fh v3:exact 0x0071e410; cdecl(lo, hi, z) -> 1/0: render data geometry (+0x94) 4 vertices/6 indices, GetBufferForSegment(data, 0, 4, 6), indices 0,1,2,1,3,2 (u16 at +0x1c), corners (+-1, +-1, z) at +0xc, graphicVFXSetVisible(lo, hi, 1); ported (system round 36)
 0x0071e460 function useExtendedAlpha          # fh v3:exact 0x0071e540
 0x0071e610 function useMultipleInstances_model   # layout+callees: sorts between useExtendedAlpha and useShaderPointLight, and its named callees match the Switch 0x71002d8de0 useMultipleInstances_model's (similarity 1.00: MagicFile_GetMagicId); symbols from Fahrenheit's server export; cdecl(model, instance) -> 1 when model byte bit 7 set, bit 2 clear, magic in {0x133,0x25d,0x6a,0x119,0x233,0x264,0x20a,0x1bd,0xa2,0x24a,0xe} and g_VfxPass; else 2 on maps 0x183/0x184/0x186 when instance i16 +0x10 >= 0x834; else 0; ported (system round 35)
 0x0071e6f0 function useShaderPointLight       # fh switch:bsim1.00 0x71002d8da0

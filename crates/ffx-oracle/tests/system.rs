@@ -20360,3 +20360,103 @@ fn round35_status_win_matches_the_original_on_the_snapshot() {
     };
     round35_status_win(&mut a, &mut b, &mut Xorshift(0x4035_0042));
 }
+
+/// Round 36 group A: `updateVFXZBufClearRenderData`, its lookup, buffer
+/// and visibility calls logging stand-ins (the lookup and the buffer
+/// returning test words); the geometry's index and position lists may
+/// alias the geometry itself.
+fn round36_zbuf_clear(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 8);
+    let stands: Vec<Stand> = vec![
+        (0x0064_53d0, vec![0, 1], vec![], ret_cell(cells)),
+        (0x0063_fdb0, vec![0, 1, 2, 3], vec![], ret_cell(cells + 4)),
+        (0x0064_5710, vec![0, 1, 2], vec![], vec![]),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let stand = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), stand);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let data = alloc(a, b, 0x100);
+    let geometry = alloc(a, b, 0x40);
+    let lists = alloc(a, b, 0x100);
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x40 {
+            put(a, b, lists + 4 * j, rng.next());
+        }
+        for j in 0..0x10 {
+            put(a, b, geometry + 4 * j, rng.next());
+        }
+        put(a, b, data + 0x94, geometry);
+        put(
+            a,
+            b,
+            cells,
+            if rng.next().is_multiple_of(5) {
+                0
+            } else {
+                data
+            },
+        );
+        put(
+            a,
+            b,
+            cells + 4,
+            if rng.next().is_multiple_of(5) {
+                0
+            } else {
+                rng.next()
+            },
+        );
+        // the index list sometimes overlaps the positions or the geometry
+        let index_list = match rng.next() % 4 {
+            0 => geometry + 0x10,
+            1 => lists + 0x20,
+            _ => lists + 0x80,
+        };
+        // (positions over the geometry stop short of its own pointer +0xc)
+        let position_list = match rng.next() % 4 {
+            0 => geometry + 0x10,
+            1 => index_list,
+            _ => lists,
+        };
+        put(a, b, geometry + 0x1c, index_list);
+        put(a, b, geometry + 0xc, position_list);
+        let z = match rng.next() % 3 {
+            0 => f32::from_bits(rng.next()),
+            _ => rng.float(),
+        };
+        let z = if z.is_nan() { f32::NAN } else { z };
+        let (lo, hi) = (rng.next(), rng.next());
+        assert_eq!(
+            eax(a, 0x0071_e330, &[lo, hi, z.to_bits()]),
+            render::bridge::update_vfx_zbuf_clear_render_data(b, lo, hi, z, call),
+            "zbuf clear {k}"
+        );
+        same_memory(&format!("zbuf clear {k}"), a, b);
+    }
+}
+
+#[test]
+fn round36_zbuf_clear_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round36_zbuf_clear(&mut a, &mut b, &mut Xorshift(0x4036_0011));
+}
+
+#[test]
+fn round36_zbuf_clear_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round36_zbuf_clear(&mut a, &mut b, &mut Xorshift(0x4036_0012));
+}

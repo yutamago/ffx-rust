@@ -1553,3 +1553,13 @@ pushed as literals (no relocation entries), not addresses.
   signed; a zero maximum faults in the original, the port gives 0) at
   `+0x34`/`+0x38`, `TOBtlMakeStatusBuff(c, row + 0x42)` at `+0x40` and
   0x14 at `+0x3c`. It returns 0x14 when the last slot is filled, else 0xff.
+
+## Round 36
+
+- `updateVFXZBufClearRenderData(lo, hi, z)` turns an effect instance's
+  render data into one full-screen quad at depth `z`: 4 vertices and 6
+  indices in its geometry (`+0x94`), buffer from
+  `graphicDynGeoMemManagerGetBufferForSegment(data, 0, 4, 6)`, indices 0,
+  1, 2, 1, 3, 2, corners (-1, -1), (1, -1), (-1, 1), (1, 1), then
+  `graphicVFXSetVisible(lo, hi, 1)`. Returns 1, or 0 without render data
+  or buffer. Every pointer is read again before each store.
