@@ -1483,6 +1483,12 @@ ported! {
         }
         .change(chr, x, y)
     }
+    /// `TOBtlInitStatusWin()`.
+    TOBtlInitStatusWin @ 0x0089_8010 => extern "C" fn to_btl_init_status_win() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let count = frame.at();
+        btl::bridge::init_status_win(&mut mem(), count, call_sym)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {

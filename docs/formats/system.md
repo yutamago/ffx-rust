@@ -1544,3 +1544,12 @@ pushed as literals (no relocation entries), not addresses.
   `Y2(16)`), and `TOBtlDrawCrossParamPlate` at `(X2(15), Y2(61))` or
   `(X2(12), Y2(62))`; they return the plate's `eax`. Each sum is
   computed at double precision and stored as `f32`.
+- `TOBtlInitStatusWin()` sets up the battle status window: three 0x90-byte
+  rows at `0x0133f7d8` (cleared), the party's three `u16` characters from
+  `MsGetSaveWindow(0, 0x12, &n)` at `0x0133f7ac` (0xff for none; `n` is
+  trimmed past trailing 0xff entries but not used further). Each row
+  holds HP at `+0xc`/`+0x10`, MP at `+0x24`/`+0x28`, the limit gauge
+  scaled to the `i16` bar width at `0x025d0aa4` (`gauge * width / max`,
+  signed; a zero maximum faults in the original, the port gives 0) at
+  `+0x34`/`+0x38`, `TOBtlMakeStatusBuff(c, row + 0x42)` at `+0x40` and
+  0x14 at `+0x3c`. It returns 0x14 when the last slot is filled, else 0xff.

@@ -501,4 +501,83 @@ pub mod bridge {
             self.plate(chr, plate_x, plate_y)
         }
     }
+
+    /// The battle status window's party (`0x0133f7ac`, three `u16`
+    /// characters, 0xff for none).
+    pub const STATUS_PARTY: u32 = 0x0133_f7ac;
+    /// The battle status window's rows (`0x0133f7d8`, three of 0x90 bytes).
+    pub const STATUS_ROWS: u32 = 0x0133_f7d8;
+
+    /// `TOBtlInitStatusWin()` (`0x00898010`): clears the three status rows,
+    /// takes the party from `MsGetSaveWindow(0, 0x12, &n)` (its first three
+    /// `u16`s; `n`, in `count`, is trimmed past trailing 0xff entries), and
+    /// for each character `c` there (re-read before each call) fills its
+    /// row: HP (`MsGetRamChrHP`) at `+0xc` and `+0x10`, MP
+    /// (`MsGetRamChrMP`) at `+0x24` and `+0x28`, the limit gauge scaled to
+    /// the `i16` width at `0x025d0aa4` (`gauge * width / max`, signed) at
+    /// `+0x34` and `+0x38`, `TOBtlMakeStatusBuff(c, row + 0x42)` at `+0x40`
+    /// (`u16`) and 0x14 at `+0x3c` (`u16`); `+0x14`, `+0x2c` (words) and
+    /// `+0x18`, `+0x30` (bytes) cleared. A zero maximum (or `i32::MIN /
+    /// -1`) faults in the original; here it gives 0. Callees through
+    /// `call`. Returns what the original leaves in `eax`: 0x14 when the
+    /// last slot holds a character, else 0xff.
+    pub fn init_status_win<M: Mem>(
+        mem: &mut M,
+        count: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rows = mem.rebase(STATUS_ROWS);
+        for k in (0..0x1b0).step_by(4) {
+            mem.write(rows + k, 0u32);
+        }
+        mem.write(count, 0u32);
+        let window = call(mem, 0x0078_5410, &[0, 0x12, count]);
+        let mut n: i32 = mem.read(count);
+        while n > 0 && mem.read::<u16>(window.wrapping_add((2 * n - 2).cast_unsigned())) == 0xff {
+            n -= 1;
+            mem.write(count, n);
+        }
+        let party = mem.rebase(STATUS_PARTY);
+        for k in 0..3 {
+            let c: u16 = mem.read(window.wrapping_add(2 * k));
+            mem.write(party + 2 * k, c);
+        }
+        let width = mem.rebase(0x025d_0aa4);
+        let mut eax = 0;
+        for k in 0..3 {
+            let slot = party + 2 * k;
+            let row = rows + 0x90 * k;
+            let c = u32::from(mem.read::<u16>(slot));
+            if c == 0xff {
+                eax = 0xff;
+                continue;
+            }
+            let hp = call(mem, 0x0079_add0, &[c]);
+            mem.write(row + 0xc, hp);
+            mem.write(row + 0x10, hp);
+            let c = u32::from(mem.read::<u16>(slot));
+            mem.write(row + 0x14, 0u32);
+            mem.write(row + 0x18, 0u8);
+            let mp = call(mem, 0x0079_ae50, &[c]);
+            mem.write(row + 0x24, mp);
+            mem.write(row + 0x28, mp);
+            let c = u32::from(mem.read::<u16>(slot));
+            mem.write(row + 0x2c, 0u32);
+            mem.write(row + 0x30, 0u8);
+            let gauge = call(mem, 0x0079_5550, &[c]).cast_signed();
+            let scale = i32::from(mem.read::<i16>(width));
+            let c = u32::from(mem.read::<u16>(slot));
+            let max = call(mem, 0x0079_5590, &[c]).cast_signed();
+            let bar = gauge.wrapping_mul(scale).checked_div(max).unwrap_or(0);
+            mem.write(row + 0x34, bar);
+            mem.write(row + 0x38, bar);
+            let c = u32::from(mem.read::<u16>(slot));
+            let buff = call(mem, 0x0089_8260, &[c, row + 0x42]);
+            #[allow(clippy::cast_possible_truncation)] // the u16 store
+            mem.write(row + 0x40, buff as u16);
+            mem.write(row + 0x3c, 0x14u16);
+            eax = 0x14;
+        }
+        eax
+    }
 }

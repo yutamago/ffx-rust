@@ -20267,3 +20267,96 @@ fn round35_prims_match_the_original_on_the_snapshot() {
     };
     round35_prims(&mut a, &mut b, &mut Xorshift(0x4035_0032));
 }
+
+/// Round 35 group D: `TOBtlInitStatusWin`, its getters logging stand-ins
+/// returning test words (`MsGetSaveWindow` a test party list, its count
+/// stored through the pointer).
+#[allow(clippy::cast_possible_truncation)]
+fn round35_status_win(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let cells = alloc(a, b, 0x20);
+    let mut window_tail = store_through(2, cells + 0x18);
+    window_tail.extend_from_slice(&ret_cell(cells));
+    let stands: Vec<Stand> = vec![
+        (0x0078_5410, vec![0, 1], vec![], window_tail),
+        (0x0079_add0, vec![0], vec![], ret_cell(cells + 4)),
+        (0x0079_ae50, vec![0], vec![], ret_cell(cells + 8)),
+        (0x0079_5550, vec![0], vec![], ret_cell(cells + 0xc)),
+        (0x0079_5590, vec![0], vec![], ret_cell(cells + 0x10)),
+        (0x0089_8260, vec![0, 1], vec![], ret_cell(cells + 0x14)),
+    ];
+    for (k, (sym, args, texts, tail)) in (0u32..).zip(&stands) {
+        let stand = stand_in8(
+            a,
+            b,
+            0x80 * k,
+            &pick_logger(cursor, *sym, args, texts, tail),
+        );
+        redirect(a, b, sym.to_owned(), stand);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let list = alloc(a, b, 0x40);
+    let count = alloc(a, b, 4);
+    let width = a.rebase(0x025d_0aa4);
+    for k in 0..400u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x10 {
+            let chr = [0u16, 1, 6, 7, 0xff, 0xff, 0x12, 0xffff][(rng.next() % 8) as usize];
+            put(a, b, list + 2 * j, chr);
+        }
+        put(a, b, cells, list);
+        // stale rows: every byte the rows get must be written
+        let rows = a.rebase(0x0133_f7d0);
+        for j in 0..0x70 {
+            put(a, b, rows + 4 * j, rng.next());
+        }
+        for j in 1..6 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        // a nonzero maximum, never i32::MIN / -1 (both fault)
+        let max = [1u32, 3, 0x3e8, 0xff, 2][(rng.next() % 5) as usize];
+        put(
+            a,
+            b,
+            cells + 0x10,
+            if rng.next().is_multiple_of(2) {
+                max
+            } else {
+                max.wrapping_neg() | 1
+            },
+        );
+        put(a, b, cells + 0xc, rng.next() % 0x10000);
+        put(
+            a,
+            b,
+            cells + 0x18,
+            [0u32, 1, 2, 3, 8, 0x10, u32::MAX][(rng.next() % 7) as usize],
+        );
+        put(a, b, width, rng.next() as u16);
+        put(a, b, count, rng.next());
+        let want = eax(a, 0x0089_8010, &[]);
+        let got = btl::bridge::init_status_win(b, count, call);
+        assert_eq!(want, got, "status win {k}");
+        // the port's count lives in `count`, the original's on its stack
+        let trimmed: u32 = Mem::read(b, count);
+        Mem::write(a, count, trimmed);
+        same_memory(&format!("status win {k}"), a, b);
+    }
+}
+
+#[test]
+fn round35_status_win_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round35_status_win(&mut a, &mut b, &mut Xorshift(0x4035_0041));
+}
+
+#[test]
+fn round35_status_win_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round35_status_win(&mut a, &mut b, &mut Xorshift(0x4035_0042));
+}
