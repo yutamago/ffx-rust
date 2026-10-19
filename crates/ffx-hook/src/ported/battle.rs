@@ -25,6 +25,7 @@ use ffx_battle::process::bridge as process;
 use ffx_battle::read::bridge as read;
 use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
+use ffx_battle::screen::bridge as screen;
 use ffx_battle::shake::bridge as shake;
 use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
@@ -2111,6 +2112,78 @@ ported! {
     /// their import slots on a double.
     MsCameraShakeProcess @ 0x007c_50f0 => extern "C" fn ms_camera_shake_process(rec: u32, angle: u32, out: u32) {
         shake::ms_camera_shake_process(&mut mem(), &crt_trig_f64, rec, angle, out);
+    }
+    /// `MsScreenLinkSet(i, k, v)`.
+    MsScreenLinkSet @ 0x007b_bdd0 => extern "C" fn ms_screen_link_set(i: u32, k: u32, v: u32) {
+        screen::ms_screen_link_set(&mut mem(), i, k, v.to_le_bytes()[0]);
+    }
+    /// `MsScreenOffsetID(id, x, y)`; `eax` as the original leaves it.
+    MsScreenOffsetID @ 0x007b_c0e0 => extern "C" fn ms_screen_offset_id(id: u32, x: u32, y: u32) -> u32 {
+        screen::ms_screen_offset_id(&mut mem(), id, x, y)
+    }
+    /// `MsScreenMoveCheck(i, side)`.
+    MsScreenMoveCheck @ 0x007b_bfc0 => extern "C" fn ms_screen_move_check(i: u32, side: u32) -> u32 {
+        screen::ms_screen_move_check(&mem(), i, side)
+    }
+    /// `MsScreenMoveReset(i, side)`.
+    MsScreenMoveReset @ 0x007b_c010 => extern "C" fn ms_screen_move_reset(i: u32, side: u32) {
+        screen::ms_screen_move_reset(&mut mem(), i, side);
+    }
+    /// `MsScreenMove(i, side, total, kind)`.
+    MsScreenMove @ 0x007b_bdf0 => extern "C" fn ms_screen_move(i: u32, side: u32, total: u32, kind: u32) {
+        screen::ms_screen_move(&mut mem(), i, side, u16::from_le_bytes([total.to_le_bytes()[0], total.to_le_bytes()[1]]), u16::from_le_bytes([kind.to_le_bytes()[0], kind.to_le_bytes()[1]]));
+    }
+    /// `MsScreenMoveAcc(i, side, accel, cruise, brake)`.
+    MsScreenMoveAcc @ 0x007b_beb0 => extern "C" fn ms_screen_move_acc(i: u32, side: u32, accel: u32, cruise: u32, brake: u32) {
+        screen::ms_screen_move_acc(&mut mem(), i, side, u16::from_le_bytes([accel.to_le_bytes()[0], accel.to_le_bytes()[1]]), u16::from_le_bytes([cruise.to_le_bytes()[0], cruise.to_le_bytes()[1]]), u16::from_le_bytes([brake.to_le_bytes()[0], brake.to_le_bytes()[1]]));
+    }
+    /// `MsCameraResetFilter(id, side)`.
+    MsCameraResetFilter @ 0x007b_ed10 => extern "C" fn ms_camera_reset_filter(id: u32, side: u32) {
+        camera::ms_camera_reset_filter(&mut mem(), id, side);
+    }
+    /// `MsCameraMoveStat(id, side, v)`.
+    MsCameraMoveStat @ 0x007b_df90 => extern "C" fn ms_camera_move_stat(id: u32, side: u32, v: u32) {
+        camera::ms_camera_move_stat(&mut mem(), id, side, v.to_le_bytes()[0]);
+    }
+    /// `MsCameraMoveDivide(id, side, v0, v1, v2, v3)`.
+    MsCameraMoveDivide @ 0x007b_dde0 => extern "C" fn ms_camera_move_divide(id: u32, side: u32, v0: u32, v1: u32, v2: u32, v3: u32) {
+        camera::ms_camera_move_divide(&mut mem(), id, side, [v0, v1, v2, v3]);
+    }
+    /// `MsCameraSetSplineFilter(id, side, value, scale, kind)`.
+    MsCameraSetSplineFilter @ 0x007b_fe70 => extern "C" fn ms_camera_set_spline_filter(id: u32, side: u32, value: u32, scale: u32, kind: u32) {
+        camera::ms_camera_set_spline_filter(&mut mem(), id, side, value, scale, kind);
+    }
+    /// `MsCameraResetDirVector(id, side)`.
+    MsCameraResetDirVector @ 0x007b_ec90 => extern "C" fn ms_camera_reset_dir_vector(id: u32, side: u32) {
+        camera::ms_camera_reset_dir_vector(&mut mem(), id, side);
+    }
+    /// `MsCameraSetFocus(id, side, v)`.
+    MsCameraSetFocus @ 0x007b_f280 => extern "C" fn ms_camera_set_focus(id: u32, side: u32, v: u32) {
+        camera::ms_camera_set_focus(&mut mem(), id, side, v);
+    }
+    /// `MsCameraReset(id, side)`.
+    MsCameraReset @ 0x007b_eae0 => extern "C" fn ms_camera_reset(id: u32, side: u32) -> u32 {
+        camera::ms_camera_reset(&mut mem(), id, side)
+    }
+    /// `MsCameraSetStartPos(cam, side, mv)`: the CRT's trigonometry
+    /// through its import slots.
+    MsCameraSetStartPos @ 0x007b_ff10 => extern "C" fn ms_camera_set_start_pos(cam: u32, side: u32, mv: u32) -> u32 {
+        camera::ms_camera_set_start_pos(&mut mem(), &crt_trig, cam, side, mv)
+    }
+    /// `MsCameraGetYaw()`: the yaw through a word of this stack (the
+    /// original's local), the CRT's `_CIatan` through its import slot.
+    MsCameraGetYaw @ 0x007b_cf20 => extern "C" fn ms_camera_get_yaw() -> f32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        camera::ms_camera_get_yaw(&mut mem(), &crt_trig, at)
+    }
+    /// `MsCameraFocusWeights_007c0ae0(side, mv)`.
+    MsCameraFocusWeights_007c0ae0 @ 0x007c_0ae0 => extern "C" fn ms_camera_focus_weights(side: u32, mv: u32) {
+        camera::ms_camera_focus_weights(&mut mem(), side, mv);
+    }
+    /// `MsScaleAboutPoint_007c4d40(v, origin, scale)`.
+    MsScaleAboutPoint_007c4d40 @ 0x007c_4d40 => extern "C" fn ms_scale_about_point(v: u32, origin: u32, scale: u32) -> u32 {
+        vector::ms_scale_about_point(&mut mem(), v, origin, scale)
     }
     /// `MsVectorNormal2(out, a, b, s)`.
     MsVectorNormal2 @ 0x007c_45e0 => extern "C" fn ms_vector_normal2(out: u32, a: u32, b: u32, s0: u32, s1: u32, s2: u32, s3: u32) {

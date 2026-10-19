@@ -1013,6 +1013,71 @@ original's stack locals (hits and misses, the random list's length, the
 drain vector) in a hook frame. `0x007b0470` passes the truncated `x` as
 a fourth argument that `MsMenuLimitSet` never reads.
 
+## Round 25
+
+### The view matrices: `MsCameraMatrix`, `MsScreenMatrix`
+
+Both are PS2 VU0 macro code the PC port runs on the x87 through the
+emulated registers (`ffx_battle::view`); every register they leave is
+part of their result. `MsCameraMatrix(out, eye, target, up, roll)`
+(`0x007c1be0`) returns `out[15]` in `eax` (1.0; `eye.w` when `eye` and
+`target` hold the same 16 bytes, which gives a zero matrix with
+`out[15]` = 1 and touches no register). Otherwise: `d` = `target - eye`
+normalised (Q = `vf00.w / sqrt(|d|²)`, 0 for a zero sum; `_CIsqrt`'s root
+stored as `f32`), `c` = `d × up` and `e` = `d × c`, each normalised the
+same way (the outer product as `vopmula`/`vopmsub`: the accumulator
+`a.yzx·b.zxy` stored first); each row's `w` becomes `w - w` (an old
+infinity or NaN in `0x00c8f7fc`/`0x00c8f83c` survives as NaN); the three
+are transposed by adding a `vf00` lane to every off-diagonal element
+(so -0 turns +0); `r` = `eye.x·col0 + eye.y·col1 + eye.z·col2` and the
+translation `vf00 - r`, `w` 1; then every row is turned by the roll in
+its `xy` plane (`_CIcos`, `_CIsin`). The roll rows `vf04`/`vf05` take
+their `zw` from four stack words the function never writes.
+
+`MsScreenMatrix(out, screen)` (`0x007c3d60`) returns 0: the diagonal
+`((+0x1c · +0x10) · +0x48) / +0x58 + vf00.x` and
+`((+0x14 · +0x1c) · +0x4c) / +0x5c` (that quotient is Q) `+ vf00.y`, the
+centre `(+0x30 + +0x20) + +0x70 - +0x50` (`xy`, through
+`Vec2SubScalarsFlags_0075e870`, which raises VU0's zero and sign flags on
+it), rows `(sx,0,0,0)`, `(0,sy,0,0)`, `(cx,cy,+0x28,1)`, `(0,0,+0x18,0)`;
+the zero and sign flags also for `sy`.
+
+### Shakes (`ffx_battle::shake`)
+
+A shake record is 0x24 bytes: kind, jitter range, amplitude (`u16`),
+frames left and length (`i16`), the last value (`+8`) and the spring
+(`+0xc` start, `+0x10` position, `+0x14` speed, `+0x18` pull, `+0x1c`
+start pull, `+0x20` steps, `+0x21` fade, `+0x22` random range). Each
+camera side has three at `+0x5e0` (one per axis: `MsCameraShake`'s
+`which` bits 0-2, not eye and look-at), each screen two at `+0x16c`.
+`MsCameraShakeProcess(rec, angle, out)` (`0x007c50f0`): kinds 1, 2, 7
+`sin(angle)`, 3, 4 `(sin(angle) + cos(angle + 0.3)) / 2`, 5, 6, 8 the
+same with 0.1 (the sum at 53 bits, passed to `_CIcos` as a double), times
+the amplitude, `(32 + jitter)` and 1/32, the jitter `range/2 -
+brnd(9) % range`; odd kinds 1-5 fade by frames left / length, even ones
+by (length - frames left) / length; 5 and 6 hold half the last value on
+odd frames or when another `brnd(9)` has a zero low nibble; kind 9 steps
+the spring `+0x20` times (`pos += speed`, `speed ± pull`, against the
+position's sign). Below 0 frames left the shake stops and writes 0;
+kinds 7-9 only with a positive length.
+
+### Screen moves and the camera's setters
+
+Each screen side has four lane records of 0x10 bytes at `+0xdc` + 0x40
+side (`+0` kind, 2 accelerated, `+4` frame, `+6`/`+8`/`+0xa` the
+accelerating, cruising and braking frames, `+0xc` the total), a position
+`+0x40`, a saved one `+0x80` and the move's start `+0xa0` (16 bytes per
+side). The camera's request functions find channel `id >> 8` of camera
+`id & 0xff`: 0x130 bytes from `+0xf0` of the side; its `+4` is the
+filter count (up to five, each 0x20 bytes from `+0x90`), `+7` the move
+state, `+0x70` the divide values, `+0x170` the start position
+(`MsCameraReset`). `MsCameraSetStartPos` (`0x007bff10`) pushes only five
+of `MsVectorPolar2Rect`'s eight argument words; the other three (its own
+saved `esi`, `ebp` and return address) reach VU register 4's `yzw`.
+`MsScaleAboutPoint_007c4d40` (name ours, `MsCameraProcess`) first copies
+the old `vf02` into `vf00`, and only its subtraction (skipped when the
+origin is the word `r0` holds) restores `vf00`.
+
 ## M2 remaining
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.

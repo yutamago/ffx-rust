@@ -87,6 +87,8 @@ pub mod bridge {
     /// operands.
     pub const VF_A: Global<Vec4> = Global::new(0x00c8_f7a0);
     pub const VF_B: Global<Vec4> = Global::new(0x00c8_f7b0);
+    /// `0x00c8f7c0`: `MsScaleAboutPoint_007c4d40`'s scale.
+    pub const VF_C: Global<Vec4> = Global::new(0x00c8_f7c0);
     /// `0x00c8f7d0`-`0x00c8f80c`: a matrix (or `MsAddPoint`'s operands and
     /// result from `0x00c8f7d0`, `0x00c8f7e0`, `0x00c8f7f0`).
     pub const VF_M: Global<Mat4> = Global::new(0x00c8_f7d0);
@@ -671,5 +673,36 @@ pub mod bridge {
     /// `MsPointLen2D(a, b)` (`0x007c3030`): see [`point_len`].
     pub fn ms_point_len_2d(mem: &mut impl Mem, a: u32, b: u32) -> f32 {
         point_len(mem, a, b, false)
+    }
+
+    /// `MsScaleAboutPoint_007c4d40(v, origin, scale)` (`0x007c4d40`, name
+    /// ours): `v = (v - origin) · scale + origin` lane by lane through the
+    /// VU registers (`v` in `0x00c8f7a0`, `origin` `0x00c8f7b0`, `scale`
+    /// `0x00c8f7c0`). The PS2 code's move from `vf02` into `vf00` comes
+    /// first: `vf00` takes `vf02`'s old value, and only the subtraction
+    /// (skipped when `origin` is the word `r0` holds) restores it.
+    /// Returns `v.w`'s bits (`eax`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_scale_about_point(mem: &mut impl Mem, v: u32, origin: u32, scale: u32) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let old: Vec4 = VF_B.get(mem);
+        VF00.set(mem, old.map(crate::camera::x87_copy));
+        let mut a: Vec4 = mem.read(v);
+        let o: Vec4 = mem.read(origin);
+        let s: Vec4 = mem.read(scale);
+        VF_A.set(mem, a);
+        VF_C.set(mem, s);
+        VF_B.set(mem, o);
+        if origin != crate::camera::bridge::EE_R0.get(mem)[0] {
+            a = std::array::from_fn(|k| store(sub(load(a[k]), load(o[k]))));
+            ffx_ps2::ee::bridge::restore_vf00(mem);
+        }
+        let r: Vec4 = std::array::from_fn(|k| {
+            let scaled = store(mul(load(s[k]), load(a[k])));
+            store(add(load(scaled), load(o[k])))
+        });
+        VF_A.set(mem, r);
+        mem.write(v, r);
+        r[3]
     }
 }

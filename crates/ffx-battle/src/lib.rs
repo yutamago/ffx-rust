@@ -54,6 +54,7 @@ pub mod reward;
 pub mod rng;
 pub mod save;
 pub mod save_param;
+pub mod screen;
 pub mod shake;
 pub mod special;
 pub mod stat;
