@@ -20234,3 +20234,109 @@ fn r13hh_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13hh_cases(&mut t, &mut rng, g, 200);
 }
+
+// ---- field agent r13, group i: a random direction in the XZ plane ----
+
+/// A `rand()` stand-in: the `n`th call (counted at `count`) returns
+/// `values[n]`.
+fn r13ii_rand_stub(count: u32, values: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0x8b, 0x04, 0x8d]);
+    c.extend_from_slice(&values.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// A one-argument `f(v)` stand-in: the `n`th call (counted at `count`,
+/// modulo 64) logs `v`'s 16 bytes at `seen + 16 n`, then copies vector
+/// `n` of `table` (16 bytes each) over it.
+fn r13ii_vec_stub(count: u32, table: u32, seen: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&count.to_le_bytes());
+    c.extend_from_slice(&[0x83, 0xe1, 0x3f, 0xc1, 0xe1, 0x04, 0x8b, 0x54, 0x24, 0x04]);
+    for w in 0..4u8 {
+        // mov eax, [edx + 4w]; mov [ecx + seen + 4w], eax
+        c.extend_from_slice(&[0x8b, 0x42, 4 * w, 0x89, 0x81]);
+        c.extend_from_slice(&(seen + 4 * u32::from(w)).to_le_bytes());
+    }
+    for w in 0..4u8 {
+        c.extend_from_slice(&[0x8b, 0x81]);
+        c.extend_from_slice(&(table + 4 * u32::from(w)).to_le_bytes());
+        c.extend_from_slice(&[0x89, 0x42, 4 * w]);
+    }
+    c.extend_from_slice(&[0x31, 0xc0, 0xc3]);
+    c
+}
+
+/// Group i (r13) on `t`: `rcRandomDirXZ_0092e4f0` with `rand()` a
+/// sequence of random results (mostly in `0..=32767`) and
+/// `rcVec3fNormalize` a stand-in that logs the vector and overwrites it
+/// with the next of a table of results (zeros, signed zeros and a quiet NaN among
+/// them), so that the draw repeats.
+fn r13ii_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model::{self, bridge as mb};
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (count, values) = (t.alloc(4), t.alloc(0x200));
+    let (ncount, results, seen) = (t.alloc(4), t.alloc(0x400), t.alloc(0x400));
+    let stubs = t.cave(&[
+        (None, r13ii_rand_stub(count, values)),
+        (
+            Some(mb::VEC3F_NORMALIZE),
+            r13ii_vec_stub(ncount, results, seen),
+        ),
+    ]);
+    t.put(t.b.rebase(model::RAND_IMPORT), stubs[0]);
+    let v = t.alloc(0x10);
+    for _ in 0..cases {
+        t.put(count, 0u32);
+        t.put(ncount, 0u32);
+        for i in 0..0x40 {
+            let r = if rng.below(8) == 0 {
+                rng.next()
+            } else {
+                rng.below(0x8000)
+            };
+            t.put(values + 4 * i, r);
+        }
+        for i in 0..0x100 {
+            let w = match rng.below(6) {
+                0 | 1 => 0,
+                2 => 0x8000_0000,
+                3 if rng.below(4) == 0 => 0x7fc0_0000,
+                _ => r6b_fine(rng, -1.0, 1.0),
+            };
+            t.put(results + 4 * i, w);
+        }
+        t.fill(v, 0x10, rng);
+        t.same(
+            "rcRandomDirXZ_0092e4f0",
+            |o| {
+                o.eax(0x0092_e4f0, &[v]);
+            },
+            |m| mb::rc_random_dir_xz(m, v, call),
+        );
+    }
+}
+
+/// Group i (r13) on the image.
+#[test]
+fn r13ii_random_dir_xz_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a301);
+    r13ii_cases(&mut t, &mut rng, 500);
+}
+
+/// Group i (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13ii_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a302);
+    r13ii_cases(&mut t, &mut rng, 250);
+}

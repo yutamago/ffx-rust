@@ -3126,6 +3126,49 @@ pub mod bridge {
         );
     }
 
+    /// 32767.0 and 2.0 (`f64`, `.rdata` `0x00b41d70`, `0x00b92270`):
+    /// [`rc_random_dir_xz`]'s scale.
+    pub const RANDOM_DIR_CONSTS: [u32; 2] = [0x00b4_1d70, 0x00b9_2270];
+    /// `rcVec3fNormalize(v)` (`0x00921360`).
+    pub const VEC3F_NORMALIZE: u32 = 0x0092_1360;
+
+    /// `rcRandomDirXZ_0092e4f0(v)` (`0x0092e4f0`; name ours): a random
+    /// direction in the XZ plane: x and z from `rand() / 32767.0 * 2.0 -
+    /// 1.0` (each `rand()` stored as an `f32` first), y and w 0.0, then
+    /// `rcVec3fNormalize(v)`; drawn again while x and z both end exactly
+    /// 0.0 (a NaN ends it). The `eax` it leaves is the FPU status word in
+    /// the normaliser's; callers drop it.
+    pub fn rc_random_dir_xz<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        v: u32,
+        call: &mut C,
+    ) {
+        use crate::x87::{load, store};
+        let rand = mem.read::<u32>(mem.rebase(super::RAND_IMPORT));
+        let [range, two] = RANDOM_DIR_CONSTS.map(|c| mem.read::<f64>(mem.rebase(c)));
+        let normalize = mem.rebase(VEC3F_NORMALIZE);
+        loop {
+            let mut unit = |mem: &mut M| {
+                let r = call(mem, rand, &[]).cast_signed();
+                // `fild`, then `fstp m32`
+                let r = store(f64::from(r));
+                store(load(r) / range * two - 1.0)
+            };
+            let x = unit(mem);
+            mem.write(v, x);
+            let z = unit(mem);
+            mem.write(v.wrapping_add(8), z);
+            mem.write(v.wrapping_add(0xc), 0u32);
+            mem.write(v.wrapping_add(4), 0u32);
+            call(mem, normalize, &[v]);
+            // `fucom` with 0.0: equal (not unordered) draws again
+            let zero = |mem: &M, o: u32| f32::from_bits(mem.read::<u32>(v.wrapping_add(o))) == 0.0;
+            if !zero(mem, 0) || !zero(mem, 8) {
+                return;
+            }
+        }
+    }
+
     /// `rcbgScaleVector_00928600(out, v, s)` and `rcVu0Add_009285a0(out,
     /// a, b)`, [`rcfx_particle_calc`]'s vector calls.
     pub const PARTICLE_CALC_CALLS: [u32; 2] = [0x0092_8600, 0x0092_85a0];

@@ -3980,6 +3980,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcRandomDirXZ_0092e4f0(v)`.
+    rcRandomDirXZ_0092e4f0 @ 0x0092_e4f0 => extern "C" fn shim_rc_random_dir_xz(v: u32) {
+        model::bridge::rc_random_dir_xz(&mut mem(), v, &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `initEventList()`.
     initEventList @ 0x0090_7f50 => extern "C" fn shim_init_event_list() {
         yi::bridge::init_event_list(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
