@@ -3,7 +3,7 @@
 
 use ffx_bridge::{Global, Mem};
 
-use crate::abmap::ABMAP;
+use crate::abmap::{ABMAP, SIN_TABLE};
 use crate::x87;
 
 /// The GS packet buffer both draws fill (`0x01a860ec`, a pointer).
@@ -748,3 +748,232 @@ pub fn abmap_ply_tag_rect<M: Mem>(mem: &mut M, tag: u32, out: u32) {
 const FAR_AWAY: u32 = 0x00b7_b710;
 /// 10.0 (`f64`, `.rdata`).
 const TEN_F64: u32 = 0x00b9_22b0;
+
+/// `FFXVu0MulMatrix(out, a, b)` (`0x006ed5c0`).
+const MUL_MATRIX: u32 = 0x006e_d5c0;
+/// `op1_md_draw_eiabm(model, request, 4, layer)` (`0x00a657c0`).
+const MD_DRAW: u32 = 0x00a6_57c0;
+/// The ring models [`abmap_draw_chr_rings`] draws: the cursor's
+/// (`0x023057fc`) and the characters' (`0x023057f8`).
+const CURSOR_RING: u32 = 0x0230_57fc;
+const CHR_RING: u32 = 0x0230_57f8;
+/// The cursor ring's colours by character (`0x00c86580`) and each
+/// character's ring colour (`0x00c86660`), RGBA words.
+const CURSOR_COLORS: u32 = 0x00c8_6580;
+const RING_COLORS: u32 = 0x00c8_6660;
+/// The rings' render target (`0x01740870`).
+const RING_TARGET: u32 = 0x0174_0870;
+/// The emulated EE zero register (`0x00c8f508`, four words).
+const EE_R0: u32 = 0x00c8_f508;
+/// `.rdata` constants: the rings' depth (4, 3, 2: `f32`), the cursor's
+/// scale (3, 125, 1/1280: `f64`) and the characters' (1/800: `f64`).
+const RING_DEPTHS: [u32; 3] = [0x00b9_22f8, 0x00b3_eb94, 0x00b9_2268];
+const CURSOR_SCALE: [u32; 3] = [0x00b2_c5c8, 0x00b7_b6b8, 0x00b7_b628];
+const RING_SCALE: u32 = 0x00b7_b638;
+
+/// [`abmap_draw_chr_rings`]' scratch, laid out as the original's frame:
+/// the draw request (0x48 bytes) at 0, the model matrix at `+0x78`, the
+/// vertex block (eight vectors) at `+0xb8`.
+pub const RINGS_WORK: u32 = 0x138;
+const RINGS_MATRIX: u32 = 0x78;
+const RINGS_VERTS: u32 = 0xb8;
+
+/// `AbmapDrawChrRings()` (`0x00a4c8d0`, name ours; from the ability map's
+/// draws `0x00a54660` and `eiAbmDraw`): the rings under the cursor and the
+/// characters, each through `op1_md_draw_eiabm(model, request, 4, g_Abmap
+/// [+0x116a4])`. The request (`work`, see [`RINGS_WORK`]) holds kind
+/// (4, then 0x24), the target 0x01740870, 0x48, a colour word at `+0x18`
+/// (alpha byte `+0x1b`), the model matrix pointer `+0x20` and the vertex
+/// block's `+0x44`; its bytes `+0x0b` and `+0x30..+0x37` are left as they
+/// are (the original never sets them). The vertex block is the EE zero
+/// register (`0x00c8f508`) four times over, but vector 3 `(r0.x, r0.y,
+/// depth, 1)` and a scale matrix in vectors 4..7 (`s` on the diagonal, the
+/// zero register elsewhere, the position in row 7 with z 0, w 1), which
+/// `FFXVu0MulMatrix` takes times the view `g_Abmap + 0x113e0`.
+/// - The cursor: colour by the current character (`+0x115bc`) from
+///   `0x00c86580`, alpha `+0x115c5 / 3`, depth 4, `s = (pulse +0x115a4 * 3 +
+///   125) / 1280`, position `+0x11520`, model `0x023057fc`.
+/// - Each character `k` of 8 (records 0x50 bytes from `g_Abmap + 0x11088`:
+///   radius `+0x3c`, position `+0x00`, node `u16 +0x44`) with a radius
+///   above 0, unless it shares the current character's node and is neither
+///   it nor `k` 7: colour `0x00c86660[k]`, alpha `16 (1 + sin) + 0x60`
+///   (truncated; the sine at `(k << 13) + (frame +0x11698 << 11)` 16ths
+///   of the table), times the fade `+0x115f4` when it is below 1, depth 3
+///   (2 from `k` 7 on), `s = radius / 800`, model `0x023057f8`.
+pub fn abmap_draw_chr_rings<M, C>(mem: &mut M, work: u32, call: &mut C)
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let (ld, st) = (x87::load, x87::store);
+    let reg = |mem: &M, a: u32| mem.rebase(a);
+    let (request, matrix, verts) = (work, work + RINGS_MATRIX, work + RINGS_VERTS);
+    let g = ABMAP.get(mem);
+    let one = 0x3f80_0000u32;
+
+    // the request's fixed fields, written again before the characters
+    let fill_request = |mem: &mut M, kind: u32| {
+        mem.write(request, kind);
+        mem.write(request + 4, reg(mem, RING_TARGET));
+        mem.write(request + 8, 0x48u16);
+        mem.write(request + 0xa, 0u8);
+        for o in [0xc, 0x10, 0x14, 0x1c, 0x24, 0x28, 0x2c, 0x38, 0x3c, 0x40] {
+            mem.write(request + o, 0u32);
+        }
+        mem.write(request + 0x20, matrix);
+        mem.write(request + 0x44, verts);
+    };
+    // the vertex block: the zero register, but vector 3 and row 7
+    let fill_verts = |mem: &mut M, depth: u32| {
+        let r0 = read4(mem, reg(mem, EE_R0));
+        for k in 0..8 {
+            write4(mem, verts + 0x10 * k, r0);
+        }
+        mem.write(verts + 0x38, x87::copy(depth));
+        mem.write(verts + 0x3c, one);
+        mem.write(verts + 0x78, 0u32);
+        mem.write(verts + 0x7c, one);
+    };
+    // the scale matrix's diagonal and position, then the model matrix
+    let draw = |mem: &mut M, call: &mut C, s: u32, pos: [u32; 2], model: u32| {
+        mem.write(verts + 0x40, s);
+        mem.write(verts + 0x54, s);
+        mem.write(verts + 0x68, s);
+        mem.write(verts + 0x70, pos[0]);
+        mem.write(verts + 0x74, pos[1]);
+        let g = ABMAP.get(mem);
+        let f = reg(mem, MUL_MATRIX);
+        call(mem, f, &[matrix, g.wrapping_add(0x113e0), verts + 0x40]);
+        let layer = mem.read::<u32>(ABMAP.get(mem).wrapping_add(0x116a4));
+        let f = reg(mem, MD_DRAW);
+        call(mem, f, &[model, request, 4, layer]);
+    };
+
+    // the cursor
+    let depth = mem.read::<u32>(reg(mem, RING_DEPTHS[0]));
+    fill_request(mem, 4);
+    let chr = u32::from(mem.read::<u8>(g.wrapping_add(0x115bc)));
+    let color = mem.read::<u32>(reg(mem, CURSOR_COLORS) + 4 * chr);
+    mem.write(request + 0x18, color);
+    mem.write(request + 0x1b, mem.read::<u8>(g.wrapping_add(0x115c5)) / 3);
+    fill_verts(mem, depth);
+    let model = mem.read::<u32>(reg(mem, CURSOR_RING));
+    let [k3, k125, k1280] = CURSOR_SCALE.map(|a| mem.read::<f64>(reg(mem, a)));
+    let pulse = ld(mem.read::<u32>(g.wrapping_add(0x115a4)));
+    let s = st((pulse * k3 + k125) * k1280);
+    let pos = [0x11520, 0x11524].map(|o| mem.read::<u32>(g.wrapping_add(o)));
+    draw(mem, call, s, pos, model);
+
+    // the characters
+    let mut depth = mem.read::<u32>(reg(mem, RING_DEPTHS[1]));
+    let g2 = ABMAP.get(mem);
+    let frame = mem.read::<u16>(g2.wrapping_add(0x11698)).wrapping_shl(11);
+    let chr = u32::from(mem.read::<u8>(g2.wrapping_add(0x115bc)));
+    let chr_node = mem.read::<u16>(g2.wrapping_add(0x110cc + 0x50 * chr));
+    fill_request(mem, 0x24);
+    fill_verts(mem, depth);
+    let scale = mem.read::<f64>(reg(mem, RING_SCALE));
+    for k in 0..8u32 {
+        if k == 7 {
+            depth = mem.read::<u32>(reg(mem, RING_DEPTHS[2]));
+            mem.write(verts + 0x38, depth);
+        }
+        let rec = g.wrapping_add(0x110c4 + 0x50 * k);
+        let radius = ld(mem.read::<u32>(rec));
+        if radius.is_nan() || radius <= 0.0 {
+            continue;
+        }
+        let g = ABMAP.get(mem);
+        let current = u32::from(mem.read::<u8>(g.wrapping_add(0x115bc)));
+        if chr_node == mem.read::<u16>(rec + 8) && k != current && k != 7 {
+            continue;
+        }
+        let color = mem.read::<u32>(reg(mem, RING_COLORS) + 4 * k);
+        mem.write(request + 0x18, color);
+        let at = ((k << 13).wrapping_add(u32::from(frame)) >> 4) & 0xfff;
+        let sin = ld(mem.read::<u32>(reg(mem, SIN_TABLE) + 4 * at));
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        let alpha = (ffx_bridge::x87::cvttsd2si((1.0 + sin) * 16.0) as u8).wrapping_add(0x60);
+        mem.write(request + 0x1b, alpha);
+        let fade = ld(mem.read::<u32>(g.wrapping_add(0x115f4)));
+        if fade < 1.0 {
+            #[allow(clippy::cast_possible_truncation)] // the low byte
+            let a = ffx_bridge::x87::ftol(mem, fade * f64::from(alpha)) as u8;
+            mem.write(request + 0x1b, a);
+        }
+        let s = st(scale * radius);
+        let pos = [rec - 0x3c, rec - 0x38].map(|a| mem.read::<u32>(a));
+        let model = mem.read::<u32>(reg(mem, CHR_RING));
+        draw(mem, call, s, pos, model);
+    }
+}
+
+/// `FFXVu0UnitMatrix(m)` (`0x006ed9a0`).
+const UNIT_MATRIX: u32 = 0x006e_d9a0;
+/// The sphere grid's board models (`0x023056ec` for the expert grid,
+/// `0x023056f0` for the standard one).
+const BOARD_MODELS: [u32; 2] = [0x0230_56ec, 0x0230_56f0];
+/// 7.0 (`f32`, `.rdata`): the board's depth.
+const BOARD_DEPTH: u32 = 0x00b5_f2e8;
+/// [`abmap_draw_board`]'s scratch, laid out as the original's frame: the
+/// draw request (0x48 bytes) at 0, the model matrix at `+0x78`, the unit
+/// matrix at `+0xb8`, the vertex block (four vectors) at `+0xf8`.
+pub const BOARD_WORK: u32 = 0x138;
+
+/// `AbmapDrawBoard()` (`0x00a4c700`, name ours; from the ability map's
+/// draw `0x00a54660`): the grid's board model through
+/// `op1_md_draw_eiabm(model, request, 8, g_Abmap[+0x116a4])`: the
+/// expert grid's (`0x023056ec`, request `+0x08` 0x48) when the save menu
+/// word (`MsGetSaveMenu`) has bits 14..15 = 2, else the standard one's
+/// (`0x023056f0`, 0x44). The request is kind 0x34, the target 0x01740870,
+/// colour 0x40404040, the model matrix (`FFXVu0UnitMatrix` times the view
+/// `g_Abmap + 0x113e0`, `FFXVu0MulMatrix`) at `+0x20`, the unit matrix at
+/// `+0x2c`, the vertex block at `+0x44` (the EE zero register three
+/// times, then `(r0.x, r0.y, 7, 1)`); bytes `+0x0b`, `+0x30..+0x37` are
+/// never set. `work` is [`BOARD_WORK`] bytes, 16-byte aligned.
+pub fn abmap_draw_board<M, C>(mem: &mut M, work: u32, call: &mut C)
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let reg = |mem: &M, a: u32| mem.rebase(a);
+    let (request, matrix, unit, verts) = (work, work + 0x78, work + 0xb8, work + 0xf8);
+    let f = reg(mem, crate::abmap::MS_GET_SAVE_MENU);
+    let menu = call(mem, f, &[]);
+    let r0 = read4(mem, reg(mem, EE_R0));
+    let depth = mem.read::<u32>(reg(mem, BOARD_DEPTH));
+    for k in 0..3 {
+        write4(mem, verts + 0x10 * k, r0);
+    }
+    write4(
+        mem,
+        verts + 0x30,
+        [r0[0], r0[1], x87::copy(depth), 0x3f80_0000],
+    );
+    mem.write(request, 0x34u32);
+    mem.write(request + 4, reg(mem, RING_TARGET));
+    mem.write(request + 0xa, 0u8);
+    for o in [0xc, 0x10, 0x14, 0x1c, 0x24, 0x28, 0x38, 0x3c, 0x40] {
+        mem.write(request + o, 0u32);
+    }
+    mem.write(request + 0x18, 0x4040_4040u32);
+    mem.write(request + 0x20, matrix);
+    mem.write(request + 0x2c, unit);
+    mem.write(request + 0x44, verts);
+    let f = reg(mem, UNIT_MATRIX);
+    call(mem, f, &[unit]);
+    let view = ABMAP.get(mem).wrapping_add(0x113e0);
+    let f = reg(mem, MUL_MATRIX);
+    call(mem, f, &[matrix, view, unit]);
+    let expert = mem.read::<u32>(menu) & 0xc000 == 0x8000;
+    let (model, size) = if expert {
+        (BOARD_MODELS[0], 0x48u16)
+    } else {
+        (BOARD_MODELS[1], 0x44)
+    };
+    mem.write(request + 8, size);
+    let layer = mem.read::<u32>(ABMAP.get(mem).wrapping_add(0x116a4));
+    let model = mem.read::<u32>(reg(mem, model));
+    let f = reg(mem, MD_DRAW);
+    call(mem, f, &[model, request, 8, layer]);
+}

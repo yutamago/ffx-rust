@@ -37,6 +37,78 @@ pub mod bridge {
         u32::from(!SHAPE_FIELD_PLAIN_LEVELS.contains(&h))
     }
 
+    /// The locals `pppCreateFrameBufferData_00715a40` and
+    /// `pppCreateD3D11FrameBufferData_00716050` hand to
+    /// `graphicVFXCreateDataBuffer`: `+0` the buffer count (1), `+4` and
+    /// `+8` the two sizes, `+0xc` the name (up to 0x100 bytes).
+    pub const FRAME_BUFFER_FRAME: u32 = 0x10c;
+
+    /// `graphicVFXCreate(lo, hi, flags)`, then one data buffer
+    /// (`graphicVFXCreateDataBuffer(lo, hi, 1, &a, &b, name, &count)` with
+    /// the frame filled as [`FRAME_BUFFER_FRAME`] says); whether the
+    /// instance now has render data (`graphicVFXGetRenderDataByInstance`).
+    fn create_frame_buffer<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        flags: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, g(mem, 0x0064_4de0), &[lo, hi, flags]);
+        let args = [lo, hi, 1, frame + 4, frame + 8, frame + 0xc, frame];
+        call(mem, g(mem, 0x0064_5040), &args);
+        u32::from(call(mem, g(mem, GET_RENDER_DATA), &[lo, hi]) != 0)
+    }
+
+    /// `pppCreateFrameBufferData_00715a40(lo, hi)` (`0x00715a40`): a VFX
+    /// instance (flags 0x10000) with one 0x441 x 0x1800 data buffer named
+    /// `FrameBuffer` (12 bytes from `0x00b45b3c`), `frame` standing for
+    /// the original's locals ([`FRAME_BUFFER_FRAME`]). Returns whether it
+    /// has render data. Callees through `call`.
+    pub fn create_frame_buffer_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let name: [u32; 3] = mem.read(g(mem, 0x00b4_5b3c));
+        mem.write(frame, [1u32, 0x441, 0x1800]);
+        mem.write(frame + 0xc, name);
+        create_frame_buffer(mem, lo, hi, 0x1_0000, frame, call)
+    }
+
+    /// `pppCreateD3D11FrameBufferData_00716050(lo, hi, n)` (`0x00716050`):
+    /// a VFX instance (flags 0x20000000) with one data buffer of `8 n + 4`
+    /// by `12 n + 6` named `D3D11FrameBuffer` (copied from `0x00b47f18` to
+    /// its NUL, as the original's `strcpy`), `frame` standing for its
+    /// locals. Returns whether it has render data. Callees through `call`.
+    pub fn create_d3d11_frame_buffer_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        n: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(frame, [1u32, 0, 0]);
+        let src = g(mem, 0x00b4_7f18);
+        for i in 0..0x100 {
+            let c: u8 = mem.read(src + i);
+            mem.write(frame + 0xc + i, c);
+            if c == 0 {
+                break;
+            }
+        }
+        let sizes = [
+            n.wrapping_mul(8).wrapping_add(4),
+            n.wrapping_mul(12).wrapping_add(6),
+        ];
+        mem.write(frame + 4, sizes);
+        create_frame_buffer(mem, lo, hi, 0x2000_0000, frame, call)
+    }
+
     /// `graphicVFXGetRenderDataByInstance(lo, hi)`, called through `call`.
     const GET_RENDER_DATA: u32 = 0x0064_53d0;
     /// `graphicDynGeoMemManagerGetCurrentBufferId()`, called through `call`.

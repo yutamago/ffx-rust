@@ -268,6 +268,8 @@ REVIEWED = {
     0x004013b0: ("glue", "STL error_category::message (system round 34)"),
     0x006fb410: ("platform", "SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)"),
     0x006fb380: ("platform", "SyncManager lookup waiting on its load flag (SleepThreadInMillisecond) (system round 34)"),
+    0x00715a40: ("glue", "PC renderer frame-buffer data creator (graphicVFXCreate) (effects round 28)"),
+    0x00716050: ("glue", "PC renderer frame-buffer data creator (graphicVFXCreate) (effects round 28)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

@@ -546,10 +546,33 @@ pub mod bridge {
     /// `XYZ` rotation of the part's angles (`+0x50`), rows scaled by its
     /// scale (`+0x60`, as `pppKeMatPht` scales), its position (`+0x40`).
     pub fn ppp_set_matrix(mem: &mut impl Mem, part: u32) {
+        set_world(mem, part, super::order::XYZ);
+    }
+
+    /// [`ppp_set_matrix`] with the rotation order `order`.
+    fn set_world(mem: &mut impl Mem, part: u32, order: [super::Axis; 3]) {
         let m = WORLD.ptr(mem).addr;
-        ppp_get_rot_matrix(mem, m, part.wrapping_add(0x50), super::order::XYZ);
+        ppp_get_rot_matrix(mem, m, part.wrapping_add(0x50), order);
         scale_rows(mem, m, part.wrapping_add(0x60));
         copy_xyz(mem, m.wrapping_add(0x30), part.wrapping_add(0x40));
+    }
+
+    /// `pppFpSetRotMatrix(part, mode)` (`0x0072a2e0`): [`ppp_set_matrix`]
+    /// with the rotation order the mode's low byte picks (1 `XZY`, 2
+    /// `YXZ`, 3 `YZX`, 4 `ZXY`, 5 `ZYX`, else `XYZ`). Returns the
+    /// original's eax: the scaled row 2's `z`.
+    pub fn ppp_fp_set_rot_matrix(mem: &mut impl Mem, part: u32, mode: u32) -> u32 {
+        use super::order;
+        let o = match mode & 0xff {
+            1 => order::XZY,
+            2 => order::YXZ,
+            3 => order::YZX,
+            4 => order::ZXY,
+            5 => order::ZYX,
+            _ => order::XYZ,
+        };
+        set_world(mem, part, o);
+        mem.read(WORLD.ptr(mem).addr + 0x28)
     }
 
     /// `pppVertexAttend(obj, key, ctrl)` (`0x0075d340`): unless the key's

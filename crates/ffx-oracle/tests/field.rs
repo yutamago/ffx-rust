@@ -17099,3 +17099,304 @@ fn r10f_on_a_snapshot_matches_the_original() {
     }
     r10f_cases(&mut t, &mut rng, ab, 200);
 }
+
+// ---- field agent r11, group A: the sphere grid's cursor and character rings ----
+
+/// A stand-in for `op1_md_draw_eiabm(model, request, n, layer)`: appends
+/// `model`, `n`, `layer`, a pad word, the request's 0x48 bytes, the 0x40
+/// bytes at its matrix pointer `+0x20` and `vert_words` words at its
+/// vertex pointer `+0x44` to `log + 4 + count * 0x120` (`count` at
+/// `log`), the pointers `+0x20`, `+0x2c`, `+0x44` made relative to the
+/// request (the frames differ, the layout must not). Saves `esi`/`edi`.
+fn r11a_draw_stub(log: u32, vert_words: u8) -> Vec<u8> {
+    let mut c = vec![0x56, 0x57, 0xa1];
+    c.extend_from_slice(&log.to_le_bytes());
+    c.extend_from_slice(&[0x69, 0xf8, 0x20, 0x01, 0, 0, 0x81, 0xc7]);
+    c.extend_from_slice(&(log + 4).to_le_bytes());
+    c.extend_from_slice(&[0xff, 0x05]);
+    c.extend_from_slice(&log.to_le_bytes());
+    for off in [0x0c, 0x14, 0x18] {
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, off, 0xab]);
+    }
+    c.extend_from_slice(&[0x83, 0xc7, 0x04]);
+    c.extend_from_slice(&[0x8b, 0x74, 0x24, 0x10, 0xb9, 0x12, 0, 0, 0, 0xf3, 0xa5]);
+    for (field, words) in [(0x20u8, 0x10u8), (0x44, vert_words)] {
+        c.extend_from_slice(&[0x8b, 0x74, 0x24, 0x10, 0x8b, 0x76, field]);
+        c.extend_from_slice(&[0xb9, words, 0, 0, 0, 0xf3, 0xa5]);
+    }
+    let back = 0x48 + 0x40 + 4 * u32::from(vert_words);
+    c.extend_from_slice(&[0x81, 0xef]);
+    c.extend_from_slice(&back.to_le_bytes());
+    for field in [0x20u8, 0x2c, 0x44] {
+        // the pointer relative to the request (0 stays 0)
+        c.extend_from_slice(&[0x8b, 0x47, field, 0x85, 0xc0, 0x74, 0x04]);
+        c.extend_from_slice(&[0x2b, 0x44, 0x24, 0x10, 0x89, 0x47, field]);
+    }
+    c.extend_from_slice(&[0x5f, 0x5e, 0xc3]);
+    c
+}
+
+/// Group A (r11) on `t`: `AbmapDrawChrRings` over a work area at `ab`
+/// (character records with radii, nodes shared with the current one,
+/// positions; the pulse, frame, fade, colours, view matrix), the EE zero
+/// register and the ring models random, the draws logged.
+fn r11a_cases(t: &mut Twin, rng: &mut Xorshift, ab: u32, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let log = t.alloc(4 + 0x120 * 10);
+    t.cave_from(0x500, &[(Some(0x00a6_57c0), r11a_draw_stub(log, 0x20))]);
+    let work = t.stack_scratch(0x400);
+    let mut draws = 0;
+    for k in 0..cases {
+        t.put(log, 0u32);
+        for i in 0..16 {
+            t.put(ab + 0x113e0 + 4 * i, r6b_fine(rng, -2.0, 2.0));
+        }
+        let chr = rng.below(8);
+        t.put(ab + 0x115bc, u8::try_from(chr).unwrap());
+        t.put(ab + 0x115c5, u8::try_from(rng.below(256)).unwrap());
+        t.put(ab + 0x115a4, r6b_fine(rng, -1.0, 1.0));
+        t.put(ab + 0x11520, float_in(rng, -2000, 2000));
+        t.put(ab + 0x11524, float_in(rng, -2000, 2000));
+        t.put(ab + 0x11698, u16::try_from(rng.below(0x1_0000)).unwrap());
+        let fade = match rng.below(3) {
+            0 => 1f32.to_bits(),
+            1 => float_in(rng, 2, 3),
+            _ => r6b_fine(rng, 0.0, 1.0),
+        };
+        t.put(ab + 0x115f4, fade);
+        t.put(ab + 0x116a4, rng.next());
+        let node = u16::try_from(rng.below(4)).unwrap();
+        for c in 0..8 {
+            let rec = ab + 0x11088 + 0x50 * c;
+            t.fill(rec, 0x50, rng);
+            let radius = match rng.below(5) {
+                0 => 0,
+                1 => (-1f32).to_bits(),
+                _ => float_in(rng, 1, 400),
+            };
+            t.put(rec + 0x3c, radius);
+            let n = if rng.below(2) == 0 {
+                node
+            } else {
+                u16::try_from(rng.below(4)).unwrap()
+            };
+            t.put(rec + 0x44, n);
+        }
+        let r0 = if k % 3 == 0 {
+            [0u32; 4]
+        } else {
+            [rng.next(), 0, rng.next(), 0]
+        };
+        t.put(t.b.rebase(0x00c8_f508), r0);
+        t.put(t.b.rebase(0x0230_57f8), rng.next());
+        t.put(t.b.rebase(0x0230_57fc), rng.next());
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x2f00]).unwrap();
+        t.b.write(work, &[0u8; 0x138]).unwrap();
+        t.same(
+            "AbmapDrawChrRings",
+            |o| o.void(0x00a4_c8d0, &[]),
+            |m| ffx_field::abmap_draw::abmap_draw_chr_rings(m, work, call),
+        );
+        draws += Mem::read::<u32>(&t.a, log);
+    }
+    // the cursor every time, and characters on most calls
+    assert!(draws > 3 * cases, "{draws} draws");
+}
+
+/// Group A (r11) on the image.
+#[test]
+fn r11a_chr_rings_match_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0011_a001);
+    let ab = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, ab);
+    r11a_cases(&mut t, &mut rng, ab, 200);
+}
+
+/// Group A (r11) on the snapshot (`FFX_SNAPSHOT`), over a synthetic work
+/// area when the snapshot has none.
+#[test]
+fn r11a_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0011_a002);
+    let mut ab = ffx_field::abmap::ABMAP.get(&t.b);
+    if ab == 0 {
+        ab = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, ab);
+    }
+    r11a_cases(&mut t, &mut rng, ab, 100);
+}
+
+// ---- field agent r11, group B: a map part's chain to one packet (fixed) ----
+
+/// Calls `f(a, b, c)` with the stack 0x8000 bytes lower, so the original
+/// `yiPartChainToOMD`'s VIF writes (from its own frame up to 0x4088
+/// bytes, its bug) stay inside the oracle's stack.
+fn r11b_deep_call(f: u32) -> Vec<u8> {
+    let mut c = vec![0x81, 0xec, 0x00, 0x80, 0x00, 0x00];
+    for _ in 0..3 {
+        c.extend_from_slice(&[0xff, 0xb4, 0x24, 0x0c, 0x80, 0x00, 0x00]);
+    }
+    c.push(0xb8);
+    c.extend_from_slice(&f.to_le_bytes());
+    c.extend_from_slice(&[0xff, 0xd0, 0x81, 0xc4, 0x0c, 0x80, 0x00, 0x00, 0xc3]);
+    c
+}
+
+/// Group B (r11) on `t`: `yiPartChainToOMD` over a renderer of 0 to 4
+/// parts with chains of 0 to 4 nodes (their VIF blocks as group A of r8
+/// builds them), parts past the count, the poly buffer a stand-in's. The
+/// original's frame and what it scribbles above it are on its stack,
+/// which the comparison leaves out; the port's VIF scratch is on the
+/// bridge's.
+fn r11b_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv, poly) = (t.alloc(4 + 0x20 * 8), t.alloc(4), t.alloc(0x4100));
+    t.cave_from(
+        0,
+        &[
+            (Some(model::USER_MALLOC), ret_stub(poly)),
+            (Some(model::USER_FREE), log_stub(log, rv, 1, 1)),
+        ],
+    );
+    let deep = t.b.rebase(0x0091_1ac0);
+    t.stub(None, 0x900, &r11b_deep_call(deep));
+    // by its image address: the original's side rebases what it calls
+    let trampoline = CODE_AREA + 0x900;
+    let r = t.alloc(0x6_8840 + 0xb4 * 6);
+    let out = t.alloc(0x8000);
+    let nodes = t.alloc(0x60 * 20);
+    let data = t.alloc(0x10000);
+    let vif = t.stack_scratch(0x1000);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.fill(poly, 0x4100, rng);
+        t.fill(out, 0x8000, rng);
+        let ints = rng.below(3) == 0;
+        let parts = rng.below(5);
+        t.put(r + 0x6_8788, parts);
+        let (mut at, mut used) = (data, 0u32);
+        for p in 0..parts {
+            let mut link = 0u32;
+            for _ in 0..rng.below(5) {
+                let node = nodes + 0x60 * used;
+                used += 1;
+                t.fill(node, 0x60, rng);
+                // the node's DMA tag and setup words: the original skips 8
+                let mut w: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+                let (n, textured) = (rng.below(5), rng.below(3) == 0);
+                w.extend(r8a_block(rng, n, textured, ints));
+                if rng.below(3) == 0 {
+                    let n2 = rng.below(3);
+                    w.extend(r8a_block(rng, n2, !textured, ints));
+                }
+                let quads = u32::try_from(w.len()).unwrap().div_ceil(4);
+                w.resize(4 * quads as usize + 16, 0);
+                let bytes: Vec<u8> = w.iter().flat_map(|x| x.to_le_bytes()).collect();
+                t.write(at, &bytes);
+                t.put(node + 0x44, at);
+                t.put(node + 0x48, quads);
+                t.put(node + 0x4c, link);
+                link = node;
+                at += u32::try_from(bytes.len()).unwrap().next_multiple_of(0x10);
+            }
+            t.put(r + 0x6_8834 + 0xb4 * p, link);
+        }
+        let part = rng.below(parts + 2);
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x1_0000, &vec![0u8; 0xff00]).unwrap();
+        t.same(
+            "yiPartChainToOMD",
+            |o| o.eax(trampoline, &[r, out, part]),
+            |o| ffx_field::yipoly::yi_part_chain_to_omd(o, r, out, part, vif, call),
+        );
+    }
+}
+
+/// Group B (r11) on the image.
+#[test]
+fn r11b_part_chain_to_omd_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0011_b001);
+    r11b_cases(&mut t, &mut rng, 300);
+}
+
+/// Group B (r11) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r11b_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0011_b002);
+    r11b_cases(&mut t, &mut rng, 150);
+}
+
+// ---- field agent r11, group C: the sphere grid's board ----
+
+/// Group C (r11) on `t`: `AbmapDrawBoard` with the save menu word
+/// (a stand-in's) picking either board, the view, EE zero register,
+/// models and layer random, the draw logged.
+fn r11c_cases(t: &mut Twin, rng: &mut Xorshift, ab: u32, cases: u32) {
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, menu) = (t.alloc(4 + 0x120 * 2), t.alloc(4));
+    t.cave_from(
+        0x500,
+        &[
+            (Some(0x00a6_57c0), r11a_draw_stub(log, 0x10)),
+            (Some(ffx_field::abmap::MS_GET_SAVE_MENU), ret_stub(menu)),
+        ],
+    );
+    let work = t.stack_scratch(0x400);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(menu, rng.next());
+        for i in 0..16 {
+            t.put(ab + 0x113e0 + 4 * i, r6b_fine(rng, -2.0, 2.0));
+        }
+        t.put(ab + 0x116a4, rng.next());
+        t.put(
+            t.b.rebase(0x00c8_f508),
+            [rng.next(), rng.next(), rng.next(), rng.next()],
+        );
+        t.put(t.b.rebase(0x0230_56ec), rng.next());
+        t.put(t.b.rebase(0x0230_56f0), rng.next());
+        let top = t.a.stack_range().end;
+        t.a.write(top - 0x3000, &[0u8; 0x2f00]).unwrap();
+        t.b.write(work, &[0u8; 0x138]).unwrap();
+        t.same(
+            "AbmapDrawBoard",
+            |o| o.void(0x00a4_c700, &[]),
+            |m| ffx_field::abmap_draw::abmap_draw_board(m, work, call),
+        );
+        assert_eq!(Mem::read::<u32>(&t.a, log), 1);
+    }
+}
+
+/// Group C (r11) on the image.
+#[test]
+fn r11c_board_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0011_c001);
+    let ab = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, ab);
+    r11c_cases(&mut t, &mut rng, ab, 100);
+}
+
+/// Group C (r11) on the snapshot (`FFX_SNAPSHOT`), over a synthetic work
+/// area when the snapshot has none.
+#[test]
+fn r11c_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0011_c002);
+    let mut ab = ffx_field::abmap::ABMAP.get(&t.b);
+    if ab == 0 {
+        ab = t.alloc(0x1_4000);
+        t.set(ffx_field::abmap::ABMAP, ab);
+    }
+    r11c_cases(&mut t, &mut rng, ab, 50);
+}

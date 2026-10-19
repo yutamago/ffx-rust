@@ -961,38 +961,44 @@ pub mod bridge {
     /// string table), else [`NO_COMMAND`] with `name` the actor's (0), the
     /// equipment's (5, 7, 0xb) or the key item's (0xa) name.
     pub fn ms_get_com_data(mem: &mut impl Mem, id: u32, name: u32) -> u32 {
-        use ffx_kernel::bridge::{self as k, rom};
+        let (record, s) = com_data(mem, id, name != 0);
+        if let Some(s) = s {
+            mem.write(name, s);
+        }
+        record
+    }
+
+    /// [`ms_get_com_data`] for Rust callers: the record and, when `name`
+    /// is asked for, the name it would store (`None` for the kinds that
+    /// leave it alone).
+    pub fn com_data<M: Mem>(mem: &mut M, id: u32, name: bool) -> (u32, Option<u32>) {
+        use ffx_kernel::bridge::{self as k, rom, rom_strings};
         let i = id & 0xfff;
         let none = NO_COMMAND.ptr(mem).addr;
-        match id.cast_signed() >> 12 {
-            0 => {
-                if name != 0 {
-                    let s = crate::actor::bridge::ms_get_ram_chr_name(mem, i);
-                    mem.write(name, s);
-                }
-                none
-            }
-            2 => rom(mem, k::ITEM, i, name),
-            3 => rom(mem, k::COMMAND, i, name),
-            4 => rom(mem, k::MON_MAGIC1, i, name),
-            6 => rom(mem, k::MON_MAGIC2, i, name),
-            8 => rom(mem, k::A_ABILITY, i, name),
-            5 | 7 | 0xb => {
-                if name != 0 {
-                    let s = crate::save::bridge::ms_get_save_weapon_name(mem, id);
-                    mem.write(name, s);
-                }
-                none
-            }
-            0xa => {
-                if name != 0 {
-                    let s = crate::minor::bridge::ms_important_name(mem, i);
-                    mem.write(name, s);
-                }
-                none
-            }
+        let kind = id.cast_signed() >> 12;
+        let record = |mem: &mut M| match kind {
+            2 => rom(mem, k::ITEM, i, 0),
+            3 => rom(mem, k::COMMAND, i, 0),
+            4 => rom(mem, k::MON_MAGIC1, i, 0),
+            6 => rom(mem, k::MON_MAGIC2, i, 0),
+            8 => rom(mem, k::A_ABILITY, i, 0),
             _ => none,
+        };
+        if !name {
+            return (record(mem), None);
         }
+        let (record, s) = match kind {
+            0 => (none, crate::actor::bridge::ms_get_ram_chr_name(mem, i)),
+            2 => rom_strings(mem, k::ITEM, i),
+            3 => rom_strings(mem, k::COMMAND, i),
+            4 => rom_strings(mem, k::MON_MAGIC1, i),
+            6 => rom_strings(mem, k::MON_MAGIC2, i),
+            8 => rom_strings(mem, k::A_ABILITY, i),
+            5 | 7 | 0xb => (none, crate::save::bridge::ms_get_save_weapon_name(mem, id)),
+            0xa => (none, crate::minor::bridge::ms_important_name(mem, i)),
+            _ => return (none, None),
+        };
+        (record, Some(s))
     }
 
     /// `MsGetRandomGroupTarget(bits)` (`0x00799910`): the actors of `bits`
