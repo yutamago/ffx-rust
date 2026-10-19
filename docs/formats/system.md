@@ -1520,3 +1520,18 @@ pushed as literals (no relocation entries), not addresses.
   whether it is in the party; `0x01869f19` is set when any counted
   character has a nonzero `g_TkBtlEndResults` word. It ends in
   `BtlEnd_CompactList` and returns its `eax`.
+- `useMultipleInstances_model(model, instance)` returns 1 for a model with
+  flag bit 7 set and bit 2 clear while one of eleven spells (0x133, 0x25d,
+  0x6a, 0x119, 0x233, 0x264, 0x20a, 0x1bd, 0xa2, 0x24a, 0xe) runs in an
+  effect pass (`g_VfxPass`); otherwise 2 on maps 0x183, 0x184 and 0x186
+  when the instance's `i16` at `+0x10` is at least 0x834; else 0.
+- `MacroDic_Load()` reads `"macrodic"` and turns its 16 section offsets
+  into pointers (0 for offsets below 1) in `g_MacroDic`; with the language
+  swap flag set it does the same for `TODVDFileLoad(4, 4)` into
+  `0x01869eb4`. It returns the swap flag, or that second dictionary's last
+  `get_ptr32_func` (Ghidra shows void).
+- `TOBtlDrawDamageValue2()` draws the queued damage numbers (16-byte
+  entries from `0x0133f110`, `i16` count at `0x0133f108`, cleared after):
+  values 0..=9 as digits in the entry's colour, 0x3d/0x3c/0x3b/0x3a as
+  battle icons 0..=3; in spell 0x11b kind-3 entries are skipped. Pending
+  9999/99999-damage flags unlock achievements 0x12 and 0x15 first.

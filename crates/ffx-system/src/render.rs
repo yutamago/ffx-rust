@@ -46,6 +46,37 @@ pub mod bridge {
         u32::from(crate::instance::bridge::magic_id(mem) == super::POINT_LIGHT_MAGIC)
     }
 
+    /// The magic IDs whose effects draw a model several times
+    /// (`useMultipleInstances_model`, in the original's order).
+    pub const MULTI_INSTANCE_MAGIC: [u32; 11] = [
+        0x133, 0x25d, 0x6a, 0x119, 0x233, 0x264, 0x20a, 0x1bd, 0xa2, 0x24a, 0xe,
+    ];
+    /// The effect pass (`g_VfxPass`).
+    pub const VFX_PASS: Global<u32> = Global::new(0x0113_335c);
+    /// The field map number (`g_CurrentMapNo`).
+    pub const CURRENT_MAP_NO: Global<u32> = Global::new(0x012f_bc40);
+
+    /// `useMultipleInstances_model(model, instance)` (`0x0071e610`): 1 for
+    /// a model whose flag byte (`model+0`) has bit 7 set and bit 2 clear,
+    /// in one of [`MULTI_INSTANCE_MAGIC`]'s effects, during an effect pass
+    /// ([`VFX_PASS`]); else 2 on maps 0x183, 0x184 and 0x186 when the
+    /// instance's `i16` at `+0x10` is at least 0x834; else 0.
+    pub fn use_multiple_instances_model(mem: &impl Mem, model: u32, instance: u32) -> u32 {
+        let flags: u8 = mem.read(model);
+        if flags & 0x80 != 0
+            && flags & 4 == 0
+            && MULTI_INSTANCE_MAGIC.contains(&crate::instance::bridge::magic_id(mem))
+            && VFX_PASS.get(mem) != 0
+        {
+            return 1;
+        }
+        let map = CURRENT_MAP_NO.get(mem);
+        if matches!(map, 0x183 | 0x184 | 0x186) && mem.read::<i16>(instance + 0x10) >= 0x834 {
+            return 2;
+        }
+        0
+    }
+
     /// `DepthBiasHooks::clearDepthBias()` (`0x006e40b0`): when dirty, every
     /// entry back to (0, 1.0, 0.0) and the count to 0.
     pub fn clear_depth_bias(mem: &mut impl Mem) {

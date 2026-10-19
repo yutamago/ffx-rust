@@ -1447,6 +1447,18 @@ ported! {
     BtlEnd_BuildList_008bde00 @ 0x008b_de00 => extern "C" fn btl_end_build_list() -> u32 {
         btl::bridge::btl_end_build_list(&mut mem(), call_sym)
     }
+    /// `useMultipleInstances_model(model, instance)`.
+    useMultipleInstances_model @ 0x0071_e610 => extern "C" fn use_multiple_instances_model(model: u32, instance: u32) -> u32 {
+        render::bridge::use_multiple_instances_model(&mem(), model, instance)
+    }
+    /// `MacroDic_Load()`.
+    MacroDic_Load @ 0x008b_85c0 => extern "C" fn macro_dic_load() -> u32 {
+        window::bridge::macro_dic_load(&mut mem(), call_sym)
+    }
+    /// `TOBtlDrawDamageValue2()`.
+    TOBtlDrawDamageValue2 @ 0x0089_3290 => extern "C" fn to_btl_draw_damage_value2() -> u32 {
+        btl::bridge::draw_damage_value2(&mut mem(), call_sym)
+    }
     /// `MagicFile_Init()`.
     MagicFile_Init @ 0x009d_a3e0 => extern "C" fn magic_file_init() -> u32 {
         menu::bridge::magic_file_init(&mut mem(), |m, fmt| {

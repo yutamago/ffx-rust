@@ -304,4 +304,78 @@ pub mod bridge {
         mem.write(mem.rebase(0x0186_9f18), count as u8);
         call(mem, 0x008b_a400, &[])
     }
+
+    /// `TOBtlDrawDamageValue2()` (`0x00893290`): after
+    /// `TOMkpSetEnvSubFont`, draws each of the `i16` count at `0x0133f108`
+    /// (read again after each) 16-byte entries from `0x0133f110` (`i16` x
+    /// `+0`, y `+2`, kind `+4`, value `+8`, colour bytes `+0xc..+0xf`), then
+    /// clears the count. Before each, a pending 9999 (`0x01133390`) or 99999
+    /// (`0x01133394`) damage unlocks achievement 0x12 or 0x15 and is
+    /// cleared. In magic 0x11b, kind 3 entries are skipped. Values 0..=9
+    /// are digits (`TOMakePktBtlDamageNumRGBA(value, x, y, r, g, b, a)`),
+    /// 0x3d, 0x3c, 0x3b and 0x3a icons 0..=3 (`TOMakePktBtlIconA(icon, x,
+    /// y, a)`); other values draw nothing. Callees through `call`; returns
+    /// 0.
+    pub fn draw_damage_value2<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let count = mem.rebase(0x0133_f108);
+        let damage_9999 = mem.rebase(0x0113_3390);
+        let damage_99999 = mem.rebase(0x0113_3394);
+        call(mem, 0x0090_3300, &[]);
+        let mut entry = mem.rebase(0x0133_f110);
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<i16>(count)) {
+            if mem.read::<u32>(damage_9999) != 0 {
+                call(mem, 0x0082_2380, &[0x12]);
+                mem.write(damage_9999, 0u32);
+            }
+            if mem.read::<u32>(damage_99999) != 0 {
+                call(mem, 0x0082_2380, &[0x15]);
+                mem.write(damage_99999, 0u32);
+            }
+            let magic = call(mem, 0x009d_a3b0, &[]);
+            if magic != 0x11b || mem.read::<u32>(entry + 4) != 3 {
+                let value: i32 = mem.read(entry + 8);
+                let x = i32::from(mem.read::<i16>(entry)).cast_unsigned();
+                let y = i32::from(mem.read::<i16>(entry + 2)).cast_unsigned();
+                let colour = |m: &M, k: u32| u32::from(m.read::<u8>(entry + 0xc + k));
+                if (0..=9).contains(&value) {
+                    let rgba = [
+                        colour(mem, 0),
+                        colour(mem, 1),
+                        colour(mem, 2),
+                        colour(mem, 3),
+                    ];
+                    let args = [
+                        value.cast_unsigned(),
+                        x,
+                        y,
+                        rgba[0],
+                        rgba[1],
+                        rgba[2],
+                        rgba[3],
+                    ];
+                    call(mem, 0x008f_b840, &args);
+                } else {
+                    let icon = match value {
+                        0x3d => Some(0),
+                        0x3c => Some(1),
+                        0x3b => Some(2),
+                        0x3a => Some(3),
+                        _ => None,
+                    };
+                    if let Some(icon) = icon {
+                        let alpha = colour(mem, 3);
+                        call(mem, 0x008f_bcc0, &[icon, x, y, alpha]);
+                    }
+                }
+            }
+            i += 1;
+            entry += 0x10;
+        }
+        mem.write(count, 0u16);
+        0
+    }
 }

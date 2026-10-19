@@ -3561,7 +3561,7 @@
 0x0071dbd0 function updateVFXRenderData_NoiseBlur # fh switch:cg4 0x71002e3aa0
 0x0071e330 function updateVFXZBufClearRenderData # fh v3:exact 0x0071e410
 0x0071e460 function useExtendedAlpha          # fh v3:exact 0x0071e540
-0x0071e610 function useMultipleInstances_model   # layout+callees: sorts between useExtendedAlpha and useShaderPointLight, and its named callees match the Switch 0x71002d8de0 useMultipleInstances_model's (similarity 1.00: MagicFile_GetMagicId); symbols from Fahrenheit's server export
+0x0071e610 function useMultipleInstances_model   # layout+callees: sorts between useExtendedAlpha and useShaderPointLight, and its named callees match the Switch 0x71002d8de0 useMultipleInstances_model's (similarity 1.00: MagicFile_GetMagicId); symbols from Fahrenheit's server export; cdecl(model, instance) -> 1 when model byte bit 7 set, bit 2 clear, magic in {0x133,0x25d,0x6a,0x119,0x233,0x264,0x20a,0x1bd,0xa2,0x24a,0xe} and g_VfxPass; else 2 on maps 0x183/0x184/0x186 when instance i16 +0x10 >= 0x834; else 0; ported (system round 35)
 0x0071e6f0 function useShaderPointLight       # fh switch:bsim1.00 0x71002d8da0
 0x0071e810 function JobScheduleWait_pppPart_fillBuffer # fh v3:bsim1.00 0x0071e8f0
 0x0071ecd0 function JobSchedule_pppPart_clearFillBufferRequest # fh v3:exact+call.cs 0x0071edb0 cdecl
@@ -9845,7 +9845,7 @@
 0x008928b0 function TOBtlDrawChangeSeqAnm0    # fh v3:exact 0x00892820
 0x00892910 function TOBtlDrawCrossLimitGauge  # fh v3:exact 0x00892880
 0x00892cb0 function TOBtlDrawCrossParamPlate  # fh v3:cg13 0x892c20; (chr, x, y): battle HP/MP plate: frame, TOBtlDrawCrossLimitGauge(chr, x, y, w, h) (five words; Ghidra shows two), HP/MP labels 0xe9/0xea, ToMakeBtlEasyEdgeDigitRight (six words) with the HP colour from MsCalcWeakLevel; ported (system round 33, chr_plate.rs)
-0x00893290 function TOBtlDrawDamageValue2     # fh v3:exact 0x00893200
+0x00893290 function TOBtlDrawDamageValue2     # fh v3:exact 0x00893200; (): i16 count 0x0133f108 of 16-byte entries at 0x0133f110 (i16 x, y, kind, value, rgba); digits 0..9 TOMakePktBtlDamageNumRGBA, 0x3d..0x3a icons 0..3 TOMakePktBtlIconA; magic 0x11b skips kind 3; 9999/99999 flags 0x01133390/94 unlock achievements 0x12/0x15; returns 0; ported (system round 35)
 0x008933c0 function TOBtlDrawEnemyLimit       # fh v3:exact 0x00893330
 0x008934d0 function TOBtlDrawFirstStrikeEnemyMessageWindow # fh call.cs cdecl
 0x008934f0 function TOBtlDrawFirstStrikePlayerMessageWindow # fh call.cs cdecl
@@ -10298,7 +10298,7 @@
 0x008b8510 function TOMacroSetValue_008b8510 # the same code as TOMacroSetValue 0x008b8980; callers 0x008c2c60, 0x00a59350; name ours
 0x008b8530 function TOIsMessageStatus3Pressed # (i) -> 1 when TOGetMessageStatus(i) == 3 and bit 0x20 of the pad byte 0x025d09d4; name ours
 0x008b8560 function TOOpenMessage_008b8560 # cdecl(i): message window i: +0 = 1, +0x2c = 0, its +0x100(window), +0x114 = +0x104, then a tail call of +0xf8(window); caller 0x008ade10; name ours
-0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic
+0x008b85c0 function MacroDic_Load                # Msg_LoadFile("macrodic"): 16 section offsets -> pointers in g_MacroDic; (): returns the swap flag, or the swapped dictionary's last get_ptr32_func (Ghidra void); 0x01869ec0 the file read last, 0x01869eb4 the TODVDFileLoad(4, 4) dictionary when TOGetFFXLangSwapFlag() == 1; ported (system round 35)
 0x008b8680 function TOResetMessageVars_008b8680 # cdecl(i): g_MsgVars[i*32..]: type byte copied to +1, then type 0xff; name ours
 0x008b86e0 function TOSetExeMessageArea       # fh v3:exact 0x008b8690; cdecl(bank): 0x018676f0[8] = 0x018663f0/0x01866d70 + 0x130k, 0x01868a90[8] = 0x01867710/0x018680d0 + 0x138k, 0x01869ab0[256] = 0x01868ab0/0x018692b0 + 8k
 0x008b8880 function TOSetMessageChoice        # cdecl(i, n, x, y, total): msg +0x1c = 2; line rec (0x01868a90[i]) +1/+4 = 0, +5 = n, +2/+3 clamped 0..n-1, per item cell at +0x38+8k: 1, total/n, x + k*(total/n), y; name ours
