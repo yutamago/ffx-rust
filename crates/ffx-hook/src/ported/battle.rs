@@ -27,6 +27,7 @@ use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
+use ffx_battle::view::bridge as view;
 use ffx_battle::visible::bridge as visible;
 use ffx_battle::{actor::bridge as actor, camera::bridge as camera, command::bridge as cmd};
 use ffx_battle::{
@@ -2032,6 +2033,15 @@ ported! {
     /// `MsVectorPolar2Rect(out, base, yaw, pitch, r)`.
     MsVectorPolar2Rect @ 0x007c_47c0 => extern "C" fn ms_vector_polar2_rect(out: u32, base: u32, yaw: u32, pitch: u32, r0: u32, r1: u32, r2: u32, r3: u32) {
         vector::ms_vector_polar2_rect(&mut mem(), &crt_trig, out, base, yaw, pitch, [r0, r1, r2, r3]);
+    }
+    /// `MsCameraMatrix(out, eye, target, up, roll)`: `_CIcos` and `_CIsin`
+    /// through their import slots; `eax` as the original leaves it.
+    MsCameraMatrix @ 0x007c_1be0 => extern "C" fn ms_camera_matrix(out: u32, eye: u32, target: u32, up: u32, roll: u32) -> u32 {
+        view::ms_camera_matrix(&mut mem(), &crt_trig, out, eye, target, up, roll)
+    }
+    /// `MsScreenMatrix(out, screen)`.
+    MsScreenMatrix @ 0x007c_3d60 => extern "C" fn ms_screen_matrix(out: u32, screen: u32) -> u32 {
+        view::ms_screen_matrix(&mut mem(), out, screen)
     }
     /// `MsVectorNormal2(out, a, b, s)`.
     MsVectorNormal2 @ 0x007c_45e0 => extern "C" fn ms_vector_normal2(out: u32, a: u32, b: u32, s0: u32, s1: u32, s2: u32, s3: u32) {

@@ -6295,7 +6295,7 @@
 0x007c1480 function MsAddPoint                # fh v3:cg21 0x7c1400
 0x007c1550 function MsApplyMatrix             # fh v3:cg6 0x7c14d0
 0x007c1790 function MsBillBoardMatrix            # layout+callees: sorts between MsApplyMatrix and MsCameraMatrix, and its named callees match the Switch 0x710039ed40 MsBillBoardMatrix's (similarity 1.00: restoreVf00Register); symbols from Fahrenheit's server export
-0x007c1be0 function MsCameraMatrix            # fh v3:exact 0x007c1b70
+0x007c1be0 function MsCameraMatrix            # fh v3:exact 0x007c1b70; cdecl(out, eye, target, up, roll) -> eax out[15] (eye.w for equal points): look-at matrix through emulated VU0 (d = |target-eye|, c = |d x up|, e = |d x c|, transposed by vf00-lane adds, translation vf00 - eye.R), rolled by _CIcos/_CIsin; equal 16-byte points give zeros with out[15] = 1; copies four never-written stack words into 0x00c8f7d8/dc/e8/ec; ported (ffx_battle::view, battle round 25)
 0x007c2520 function MsDivVector               # fh v3:exact 0x007c24b0
 0x007c25e0 function MsMiddlePoint             # fh v3:exact 0x007c2570
 0x007c2770 function MsMulMatrix               # fh v3:exact 0x007c2700
@@ -6306,7 +6306,7 @@
 0x007c3480 function MsRotMatrixY              # fh v3:bsim1.00 0x007c3420; ported (battle round 18)
 0x007c3790 function MsRotMatrixZ              # fh v3:bsim1.00 0x007c3730; ported (battle round 18)
 0x007c3aa0 function MsRotTransPers               # layout: alphabetical run between MsRotMatrixZ and MsScreenMatrix (1 unnamed in the gap); Switch 0x710039efc0 MsRotTransPers is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007c3d60 function MsScreenMatrix            # fh v3:exact 0x007c3d00
+0x007c3d60 function MsScreenMatrix            # fh v3:exact 0x007c3d00; cdecl(out, screen) -> 0: projection from the screen record (+0x10 scale, +0x20/+0x30/+0x70 summed into the centre less +0x50 via Vec2SubScalarsFlags_0075e870, scales divided by +0x58/+0x5c), VU0 regs 0x00c8f7a0..0x00c8f82f, Q, ZS/SS flags; ported (ffx_battle::view, battle round 25)
 0x007c40b0 function MsSubPoint                # fh v3:cg6 0x7c4050
 0x007c4180 function MsVectorGetSide           # fh v3:exact 0x007c4120
 0x007c4280 function MsVectorLen               # fh v3:exact 0x007c4220

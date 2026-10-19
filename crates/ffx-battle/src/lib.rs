@@ -62,6 +62,7 @@ pub mod target;
 pub mod turn;
 pub mod util;
 pub mod vector;
+pub mod view;
 pub mod visible;
 
 pub use encounters::{EncounterTable, Field, Formation, Group};
