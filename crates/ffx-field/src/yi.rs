@@ -5571,6 +5571,39 @@ pub mod bridge {
         0
     }
 
+    /// The `host0:/ffx/proj/map/f_particle/` paths' formats: field maps'
+    /// `m%03d.bin` and `m%03d.pdt` (`0x00b66f24`, `0x00b66f50`), battle
+    /// maps' `b%03d.bin` and `b%03d.pdt` (`0x00b66f7c`, `0x00b66fa8`).
+    pub const PARTICLE_FORMATS: [[u32; 2]; 2] =
+        [[0x00b6_6f24, 0x00b6_6f50], [0x00b6_6f7c, 0x00b6_6fa8]];
+    /// `yiLoadFieldParticle(textures, effects)` (`0x00909190`).
+    pub const LOAD_FIELD_PARTICLE: u32 = 0x0090_9190;
+
+    /// `yiLoadFieldParticleNo(n)` (`0x009092e0`) and, with `battle`,
+    /// `yiLoadBattleFieldParticleNo(n)` (`0x00909120`): the paths of map
+    /// `n`'s particle textures and effects (`sprintf` with
+    /// [`PARTICLE_FORMATS`] into `work`, the original's two 256-byte
+    /// strings: the `.bin` first, the `.pdt` at `+0x100`) handed to
+    /// `yiLoadFieldParticle`, whose `eax` it returns (the stack cookie
+    /// check leaves it).
+    pub fn yi_load_field_particle_no<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        battle: bool,
+        n: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let (textures, effects) = (work, work.wrapping_add(0x100));
+        let formats = PARTICLE_FORMATS[usize::from(battle)];
+        for (buf, format) in [(textures, formats[0]), (effects, formats[1])] {
+            let sprintf = mem.read::<u32>(mem.rebase(super::CRT_SPRINTF));
+            let format = mem.rebase(format);
+            call(mem, sprintf, &[buf, format, n]);
+        }
+        let f = mem.rebase(LOAD_FIELD_PARTICLE);
+        call(mem, f, &[textures, effects])
+    }
+
     /// The file `path` read whole into a `yiMalloc` buffer (`sceOpen`
     /// mode 1, its size from `sceLseek` to the end, back to the start,
     /// `sceRead`, `sceClose`); 0 when it does not open.
@@ -5803,5 +5836,396 @@ pub mod bridge {
         let f = mem.rebase(PART_CHAIN_TO_OMD);
         let r = mem.rebase(YI_RENDER);
         call(mem, f, &[r, out, part])
+    }
+
+    // ---- field r14 ----
+
+    /// `yiRender_create(r, a, b, c)` (`0x0090c400`), `yiRender_resetall(r)`
+    /// (`0x0090cd50`) and `rcbgInit()` (`0x00919a70`): [`yi_init`]'s calls.
+    pub const INIT_CALLS: [u32; 3] = [0x0090_c400, 0x0090_cd50, 0x0091_9a70];
+    /// 32.0 (`f32`, `.rdata` `0x00b41d84`): the scale factor [`yi_init`]
+    /// sets.
+    pub const DEFAULT_SCALE: u32 = 0x00b4_1d84;
+
+    /// `yiInit()` (`0x00909030`): the renderer state created
+    /// (`yiRender_create(&g_YiRender, 0, 0x3000, 0x2400)`), the scale
+    /// factor's three words 32.0, the state reset (`yiRender_resetall`),
+    /// then `rcbgInit()`, whose `eax` it returns (a tail jump).
+    pub fn yi_init<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(mem: &mut M, call: &mut C) -> u32 {
+        let [create, reset, rcbg_init] = INIT_CALLS.map(|f| mem.rebase(f));
+        let r = mem.rebase(YI_RENDER);
+        call(mem, create, &[r, 0, 0x3000, 0x2400]);
+        let scale = crate::x87::copy(mem.read::<u32>(mem.rebase(DEFAULT_SCALE)));
+        SCALE_FACTOR.set(mem, [scale; 3]);
+        call(mem, reset, &[r]);
+        call(mem, rcbg_init, &[])
+    }
+
+    /// `FFXIsDebug()` (`0x00887c50`) and `yiRectToOMDBuild(r, ...)`
+    /// (`0x00912270`): [`yi_rect_to_omd`]'s calls.
+    pub const RECT_TO_OMD_CALLS: [u32; 2] = [0x0088_7c50, 0x0091_2270];
+
+    /// `yiRectToOMD(a1, ..., a8)` (`0x00909d30`): `yiRectToOMDBuild(
+    /// &g_YiRender, a1, ..., a7, a8)` with `a8` (the unlimited flag) kept
+    /// only in a debug build (`FFXIsDebug()` non-zero), else 0. Returns its
+    /// `eax`.
+    pub fn yi_rect_to_omd<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: [u32; 8],
+        call: &mut C,
+    ) -> u32 {
+        let [is_debug, build] = RECT_TO_OMD_CALLS.map(|f| mem.rebase(f));
+        let unlimited = if call(mem, is_debug, &[]) == 0 {
+            0
+        } else {
+            a[7]
+        };
+        let r = mem.rebase(YI_RENDER);
+        let mut args = [0u32; 9];
+        args[0] = r;
+        args[1..8].copy_from_slice(&a[..7]);
+        args[8] = unlimited;
+        call(mem, build, &args)
+    }
+
+    /// `Sg_GetDispMode()` (`0x00820550`) and `yiScreff_draw(scene)`
+    /// (`0x00913200`): [`yi_screff_entry`]'s calls.
+    pub const SCREFF_ENTRY_CALLS: [u32; 2] = [0x0082_0550, 0x0091_3200];
+
+    /// `yiScreff_entry(scene)` (`0x009131d0`): in a display mode other
+    /// than 0 (`Sg_GetDispMode`) the screen effect's `+0xbe0a8` is cleared
+    /// and `scene` returned; else `yiScreff_draw(scene)`, whose `eax` it
+    /// returns.
+    pub fn yi_screff_entry<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [disp_mode, draw] = SCREFF_ENTRY_CALLS.map(|f| mem.rebase(f));
+        if call(mem, disp_mode, &[]) != 0 {
+            mem.write(scene.wrapping_add(0xbe0a8), 0u32);
+            return scene;
+        }
+        call(mem, draw, &[scene])
+    }
+
+    /// `yiSetLightMatrices()` (`0x00908d00`), `yiRender_draw(r, second)`
+    /// (`0x0090bf10`) and `yiKeyFrame_main(r)` (`0x00914a10`): the draw and
+    /// animation wrappers' calls.
+    pub const DISP_CALLS: [u32; 3] = [0x0090_8d00, 0x0090_bf10, 0x0091_4a10];
+
+    /// `yiDisp()` (`0x00908480`) and, with `second`, `yiDisp2()`
+    /// (`0x009084a0`): the field drawn (`yiRender_draw(&g_YiRender,
+    /// second)`, whose `eax` it returns), the first after the light
+    /// matrices are set (`yiSetLightMatrices`).
+    pub fn yi_disp<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        second: bool,
+        call: &mut C,
+    ) -> u32 {
+        let [lights, draw, _] = DISP_CALLS.map(|f| mem.rebase(f));
+        if !second {
+            call(mem, lights, &[]);
+        }
+        let r = mem.rebase(YI_RENDER);
+        call(mem, draw, &[r, u32::from(second)])
+    }
+
+    /// `yiAnimMain()` (`0x00908320`): `yiKeyFrame_main(&g_YiRender)`, whose
+    /// `eax` it returns.
+    pub fn yi_anim_main<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let [_, _, key_frame] = DISP_CALLS.map(|f| mem.rebase(f));
+        let r = mem.rebase(YI_RENDER);
+        call(mem, key_frame, &[r])
+    }
+
+    /// `yiObjReadNB(kind, a, b)` (`0x00909a20`).
+    pub const OBJ_READ_NB: u32 = 0x0090_9a20;
+
+    /// What a `yi*ReadNB` wrapper reads: the kind `yiObjReadNB` gets, the
+    /// [`RENDER_STATUS`] bit it sets after, and whether it returns 0 (else
+    /// `yiObjReadNB`'s `eax`).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ReadNb {
+        /// `yiBattleMapReadNB(a, b)` (`0x009083a0`): kind 0x1a, bit 12, 0.
+        BattleMap,
+        /// `yiFieldMapReadNB(a, b)` (`0x00908600`): kind 0x13, bit 13, 0.
+        FieldMap,
+        /// `yiFieldObjReadNB(a, b)` (`0x00908630`): kind 0x13, bit 13, the
+        /// read's `eax`.
+        FieldObj,
+    }
+
+    /// The `yi*ReadNB(a, b)` wrappers ([`ReadNb`]): `yiObjReadNB(kind, a,
+    /// b)`, then the status bit.
+    pub fn yi_read_nb<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        which: ReadNb,
+        [a, b]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let (kind, bit) = match which {
+            ReadNb::BattleMap => (0x1a, 0x1000),
+            ReadNb::FieldMap | ReadNb::FieldObj => (0x13, 0x2000),
+        };
+        let f = mem.rebase(OBJ_READ_NB);
+        let eax = call(mem, f, &[kind, a, b]);
+        RENDER_STATUS.set(mem, RENDER_STATUS.get(mem) | bit);
+        if which == ReadNb::FieldObj { eax } else { 0 }
+    }
+
+    /// `0x00911fc0(r, a1, ..., a7)`, the texture maker of
+    /// [`yi_rect_to_omd_maketex`].
+    pub const RECT_TO_OMD_MAKETEX: u32 = 0x0091_1fc0;
+
+    /// `yiRectToOMD_maketex(a1, ..., a7)` (`0x00909d70`): `0x00911fc0(
+    /// &g_YiRender, a1, ..., a7)`, the fourth word (an `f32`) copied through
+    /// the x87; returns its `eax`.
+    pub fn yi_rect_to_omd_maketex<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: [u32; 7],
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(RECT_TO_OMD_MAKETEX);
+        let r = mem.rebase(YI_RENDER);
+        let args = [
+            r,
+            a[0],
+            a[1],
+            a[2],
+            crate::x87::copy(a[3]),
+            a[4],
+            a[5],
+            a[6],
+        ];
+        call(mem, f, &args)
+    }
+
+    /// `FFXVu0UnitMatrix(m)` (`0x006ed9a0`), `yiRotMatrixSeq(m, angles,
+    /// order)` (`0x009151c0`) and `FFXSamp0TransMatrix(out, m, v)`
+    /// (`0x0093d830`): the draw objects' matrix calls.
+    pub const DOBJ_MATRIX_CALLS: [u32; 3] = [0x006e_d9a0, 0x0091_51c0, 0x0093_d830];
+
+    /// A draw object's rotation (`+0x40`) and translation (`+0x50`) from
+    /// `rot` and `trans` (four words each, read and written word by word).
+    fn set_dobj_rot_trans(mem: &mut impl Mem, d: u32, rot: u32, trans: u32) {
+        for (to, from) in [(dobj::ROTATION, rot), (dobj::TRANSLATION, trans)] {
+            for k in 0..4u32 {
+                let w = mem.read::<u32>(from.wrapping_add(4 * k));
+                mem.write(d.wrapping_add(to + 4 * k), w);
+            }
+        }
+    }
+
+    /// The renderer's object `i` gets draw object `d`'s translation and
+    /// rotation (`graphicObjectSetTranslation`, `graphicObjectSetRotation`
+    /// with the order `+0x76`), whose `eax` it returns.
+    fn send_dobj_transform<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        i: u32,
+        d: u32,
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(super::GRAPHIC_OBJECT_SET_TRANSLATION);
+        call(mem, f, &[i, d.wrapping_add(dobj::TRANSLATION)]);
+        let order = u32::from(mem.read::<u16>(d.wrapping_add(dobj::ROT_ORDER)));
+        let f = mem.rebase(super::GRAPHIC_OBJECT_SET_ROTATION);
+        call(mem, f, &[i, d.wrapping_add(dobj::ROTATION), order])
+    }
+
+    /// `yiSetRotTransDObj(i, rot, trans)` (`0x0090a750`): for a draw object
+    /// below the count ([`DOBJ_COUNT`], unsigned) its rotation and
+    /// translation are set, its matrix rebuilt in `work` (the original's
+    /// stack matrix: `FFXVu0UnitMatrix`, `yiRotMatrixSeq(work, rotation,
+    /// order)`, `FFXSamp0TransMatrix(work, work, translation)`) and the
+    /// renderer's object told; then the matrix is copied to the object's
+    /// `+0`. Returns the rotation call's `eax`, else `i`.
+    pub fn yi_set_rot_trans_dobj<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [i, rot, trans]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        if i >= DOBJ_COUNT.get(mem) {
+            return i;
+        }
+        let [unit, rot_seq, translate] = DOBJ_MATRIX_CALLS.map(|f| mem.rebase(f));
+        let d = DOBJS.ptr(mem).addr.wrapping_add(i.wrapping_mul(dobj::SIZE));
+        set_dobj_rot_trans(mem, d, rot, trans);
+        call(mem, unit, &[work]);
+        let order = u32::from(mem.read::<u16>(d.wrapping_add(dobj::ROT_ORDER)));
+        call(mem, rot_seq, &[work, d.wrapping_add(dobj::ROTATION), order]);
+        call(
+            mem,
+            translate,
+            &[work, work, d.wrapping_add(dobj::TRANSLATION)],
+        );
+        let eax = send_dobj_transform(mem, i, d, call);
+        let m = mem.read::<[u32; 16]>(work);
+        mem.write(d.wrapping_add(dobj::MATRIX), m);
+        eax
+    }
+
+    /// `yiSetRotTransGroup(group, rot, trans)` (`0x0090a830`): one matrix in
+    /// `work` (the original's stack matrix: `FFXVu0UnitMatrix`, rotations
+    /// about x, y and z by `rot[0..3]` (`f32`s copied through the x87),
+    /// `FFXSamp0TransMatrix(work, work, trans)`) for every draw object of
+    /// `group` (`u16` at `+0x74`): each gets the rotation, translation and
+    /// matrix and the renderer's object is told. The count is read before
+    /// the loop and again after each match. Returns the last object's
+    /// rotation call `eax` when it matched, else its group; with no
+    /// objects the translation call's `eax`.
+    pub fn yi_set_rot_trans_group<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [group, rot, trans]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [unit, _, translate] = DOBJ_MATRIX_CALLS.map(|f| mem.rebase(f));
+        call(mem, unit, &[work]);
+        for (k, &f) in (0u32..).zip(super::VU0_ROT_MATRIX.iter()) {
+            let angle = crate::x87::copy(mem.read::<u32>(rot.wrapping_add(4 * k)));
+            let f = mem.rebase(f);
+            call(mem, f, &[work, work, angle]);
+        }
+        let mut eax = call(mem, translate, &[work, work, trans]);
+        let mut count = DOBJ_COUNT.get(mem);
+        let mut i = 0u32;
+        while i < count {
+            let d = DOBJS.ptr(mem).addr.wrapping_add(i.wrapping_mul(dobj::SIZE));
+            let g = u32::from(mem.read::<u16>(d.wrapping_add(dobj::GROUP)));
+            eax = g;
+            if g == group {
+                set_dobj_rot_trans(mem, d, rot, trans);
+                let m = mem.read::<[u32; 16]>(work);
+                mem.write(d.wrapping_add(dobj::MATRIX), m);
+                eax = send_dobj_transform(mem, i, d, call);
+                count = DOBJ_COUNT.get(mem);
+            }
+            i += 1;
+        }
+        eax
+    }
+
+    /// [`yi_obj_read_nb`]'s resets: `yiResetObj()` (`0x00909ea0`),
+    /// `graphicVFXDestroyAll()` (`0x00645310`), `destroyMoviePicture()`
+    /// (`0x0076ece0`) and `fiosDeleteCompletedOps()` (`0x00679560`).
+    pub const OBJ_READ_RESETS: [u32; 4] = [0x0090_9ea0, 0x0064_5310, 0x0076_ece0, 0x0067_9560];
+    /// `yiObjReadCallback(request)` (`0x009097c0`).
+    pub const OBJ_READ_CALLBACK: u32 = 0x0090_97c0;
+
+    /// `yiObjReadNB(kind, n, arg)` (`0x00909a20`): a map or object file
+    /// read without blocking. The pending map ([`super::PENDING_MAP`]) and
+    /// its name are cleared, the GS path synced (`sceGsSyncPath(0, 0)`),
+    /// the objects, effects, movie picture and finished file operations
+    /// reset, the camera and map ids -1. Kind and file -1 (file `2n + 1`)
+    /// only clear [`super::BTL_MAP_READ`]. Else the CD library
+    /// (`GetCD()`) opens `kind` (`+0x10`) and sizes file `2n + 1` (`+0x14`;
+    /// 0 clears [`super::BTL_MAP_READ`] and returns -1); a `yiMalloc64`
+    /// buffer of that size gets the file through the library's read
+    /// (`+0`, `(file, buffer, yiObjReadCallback, request)`), the request
+    /// being `work` (the original's stack record: `+0xc` 1, `+0x10` the
+    /// buffer, `+0x14` `arg`, `+0x18` `n`; its first three words, never
+    /// written by the original, are 0 here); the status gains `0xa0`, the
+    /// buffer becomes the pending map, the library opens `kind` again and
+    /// the pending name is the file's (`sprintf("%s",
+    /// GetCDFileName_PC(file))`). Returns 0.
+    pub fn yi_obj_read_nb<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [kind, n, arg]: [u32; 3],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let c = |mem: &M, f: u32| mem.rebase(f);
+        super::PENDING_MAP.set(mem, 0);
+        let name = c(mem, super::PENDING_MAP_NAME);
+        mem.write(name, 0u8);
+        let file = n.wrapping_mul(2).wrapping_add(1);
+        let get_cd = c(mem, super::GET_CD);
+        let cd = call(mem, get_cd, &[]);
+        let f = c(mem, super::GS_SYNC_PATH);
+        call(mem, f, &[0, 0]);
+        for f in OBJ_READ_RESETS {
+            let f = c(mem, f);
+            call(mem, f, &[]);
+        }
+        super::CAMERA_IDS.set(mem, [u32::MAX; 2]);
+        super::MAP_IDS.set(mem, [u32::MAX; 2]);
+        if kind == u32::MAX && file == u32::MAX {
+            if super::BTL_MAP_READ.get(mem) != 0 {
+                super::BTL_MAP_READ.set(mem, 0);
+            }
+            return 0;
+        }
+        let open = mem.read::<u32>(cd.wrapping_add(0x10));
+        call(mem, open, &[kind]);
+        let f = mem.read::<u32>(cd.wrapping_add(0x14));
+        let size = call(mem, f, &[file]);
+        if size == 0 {
+            super::BTL_MAP_READ.set(mem, 0);
+            return u32::MAX;
+        }
+        let buf = crate::model::bridge::yi_malloc64(mem, call, size);
+        RENDER_STATUS.set(mem, RENDER_STATUS.get(mem) | 0xa0);
+        mem.write(work, [0u32, 0, 0, 1, buf, arg, n]);
+        let open = mem.read::<u32>(cd.wrapping_add(0x10));
+        call(mem, open, &[kind]);
+        let read = mem.read::<u32>(cd);
+        let callback = c(mem, OBJ_READ_CALLBACK);
+        call(mem, read, &[file, buf, callback, work]);
+        super::PENDING_MAP.set(mem, buf);
+        let cd = call(mem, get_cd, &[]);
+        let open = mem.read::<u32>(cd.wrapping_add(0x10));
+        call(mem, open, &[kind]);
+        let f = c(mem, super::GET_CD_FILE_NAME_PC);
+        let file_name = call(mem, f, &[file]);
+        let sprintf = mem.read::<u32>(c(mem, super::CRT_SPRINTF));
+        let format = c(mem, super::FORMAT_S);
+        call(mem, sprintf, &[name, format, file_name]);
+        0
+    }
+
+    /// `yiClutGreen_00916130(r, a, b)` (`0x00916130`).
+    pub const CLUT_GREEN: u32 = 0x0091_6130;
+
+    /// `yiClutGreenRender_00908400(a, b)` (`0x00908400`; name ours):
+    /// `yiClutGreen_00916130(&g_YiRender, a, b)` (left to the original: it
+    /// reads stack junk), whose `eax` it returns.
+    pub fn yi_clut_green_render<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(CLUT_GREEN);
+        let r = mem.rebase(YI_RENDER);
+        call(mem, f, &[r, a, b])
+    }
+
+    /// `yiScreff_entry(r)` (`0x009131d0`) and
+    /// `graphicSetDistortionSkipped(skipped)` (`0x00642f80`, render):
+    /// [`yi_draw_scr_effect`]'s calls.
+    pub const DRAW_SCR_EFFECT_CALLS: [u32; 2] = [0x0091_31d0, 0x0064_2f80];
+
+    /// `yiDrawScrEffect()` (`0x00908550`): with the screen effect on (bit
+    /// 24 of [`RENDER_STATUS`]) `yiScreff_entry(&g_YiRender)` (the original
+    /// also pushes the distortion word [`super::fog::HAMON`], which it
+    /// does not read), else the renderer is told the distortion is skipped
+    /// (`graphicSetDistortionSkipped(1)`). Returns 0.
+    pub fn yi_draw_scr_effect<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let [entry, skipped] = DRAW_SCR_EFFECT_CALLS.map(|f| mem.rebase(f));
+        if RENDER_STATUS.get(mem) & 0x0100_0000 != 0 {
+            let hamon = mem.read::<u32>(mem.rebase(super::fog::HAMON));
+            let r = mem.rebase(YI_RENDER);
+            call(mem, entry, &[r, hamon]);
+        } else {
+            call(mem, skipped, &[1]);
+        }
+        0
     }
 }

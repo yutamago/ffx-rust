@@ -2204,6 +2204,40 @@ pub mod bridge {
         call(mem, buffer, &[a, b, n, w, h, names, flags]);
         u32::from(call(mem, render, &[a, b]) != 0)
     }
+
+    /// `graphicDynGeoMemManagerGetBufferForSegment(rd, segment, a, b)`
+    /// (`0x0063fdb0`, glue).
+    pub const GET_BUFFER_FOR_SEGMENT: u32 = 0x0063_fdb0;
+
+    /// `resetVFXKeThRenderData(a, b, first)` (`0x00765f10`): the Ke thing
+    /// effects' render data (`graphicVFXGetRenderDataByInstance(a, b)`):
+    /// from segment `first` up to its count (`+0x90`, signed, re-read each
+    /// time) each segment record (`0x6c` bytes in the `+0x94` array,
+    /// re-read for each store) gets `+4` and `+8` zeroed and its buffer
+    /// reset (`graphicDynGeoMemManagerGetBufferForSegment(rd, i, 0, 0)`).
+    /// Returns the last reset's `eax`, or the render data with none.
+    pub fn reset_vfx_ke_th_render_data<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b, first]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let [_, _, render] = GRAPHIC_VFX_CREATE.map(|f| mem.rebase(f));
+        let rd = call(mem, render, &[a, b]);
+        let reset = mem.rebase(GET_BUFFER_FOR_SEGMENT);
+        let count = |mem: &M| mem.read::<i32>(rd.wrapping_add(0x90));
+        let mut eax = rd;
+        let mut i = first.cast_signed();
+        while i < count(mem) {
+            let record = i.cast_unsigned().wrapping_mul(0x6c);
+            for o in [4u32, 8] {
+                let segments = mem.read::<u32>(rd.wrapping_add(0x94));
+                mem.write(segments.wrapping_add(record).wrapping_add(o), 0u32);
+            }
+            eax = call(mem, reset, &[rd, i.cast_unsigned(), 0, 0]);
+            i = i.wrapping_add(1);
+        }
+        eax
+    }
 }
 
 #[cfg(test)]
