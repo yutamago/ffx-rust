@@ -1031,6 +1031,69 @@ pub mod bridge {
         cmd.wrapping_add(4)
     }
 
+    /// `opus_chr_width_00800cd0(chr, battle)` (`0x00800cd0`, in `ST0`).
+    pub const OPUS_CHR_WIDTH: u32 = 0x0080_0cd0;
+
+    /// `SqsCmdAnmmParam(ctx, cmd)` (`0x0081c160`, name ours; an IOP
+    /// command like [`sqs_cmd_anmm`]) on the context's record (`+0x220`),
+    /// by the mode bits `0xf000` of `ctx +0x21a`:
+    /// - 0: bit 15 of the record's `+0xc0` set; returns `cmd + 2`.
+    /// - `0x1000`: for the byte offsets `cmd +2` and `+3` (0 skips one),
+    ///   the record's `f32` there truncated (`_ftol2`) to `+0xf2` and
+    ///   `+0xf4`; returns `cmd + 6`.
+    /// - `0x2000`: `+0xc6` the `u16` at `cmd +2`, with bit 9 of `+0x21a`
+    ///   times the character's width (`opus_chr_width_00800cd0(record
+    ///   +0x18, ctx +0x21e)`, the value as an `i16`, truncated); returns
+    ///   `cmd + 4`.
+    /// - `0x3000`: `+0xc4` the `u16` at `cmd +2`; returns `cmd + 4`.
+    /// - Anything else returns `cmd`.
+    pub fn sqs_cmd_anmm_param<M, F>(mem: &mut M, ctx: u32, cmd: u32, fcall: &mut F) -> u32
+    where
+        M: Mem,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        let rec = mem.read::<u32>(ctx.wrapping_add(0x220));
+        let flags = mem.read::<u16>(ctx.wrapping_add(0x21a));
+        #[allow(clippy::cast_possible_truncation)] // the low word is stored
+        let low = |v: u32| v as u16;
+        match flags & 0xf000 {
+            0 => {
+                let at = rec.wrapping_add(0xc0);
+                mem.write(at, mem.read::<u16>(at) | 0x8000);
+                cmd.wrapping_add(2)
+            }
+            0x1000 => {
+                for (k, to) in [(2u32, 0xf2u32), (3, 0xf4)] {
+                    let off = u32::from(mem.read::<u8>(cmd.wrapping_add(k)));
+                    if off != 0 {
+                        let v = x87::load(mem.read::<u32>(rec.wrapping_add(off)));
+                        let i = x87::ftol(mem, v);
+                        mem.write(rec.wrapping_add(to), low(i));
+                    }
+                }
+                cmd.wrapping_add(6)
+            }
+            0x2000 => {
+                let mut v = mem.read::<u16>(cmd.wrapping_add(2));
+                if flags & 0x200 != 0 {
+                    let chr = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+                    let battle = i32::from(mem.read::<i8>(ctx.wrapping_add(0x21e))).cast_unsigned();
+                    let f = mem.rebase(OPUS_CHR_WIDTH);
+                    let width = fcall(mem, f, crate::camera::FArgs::Stack(&[chr, battle]));
+                    let scale = x87::load(x87::store(f64::from(v.cast_signed())));
+                    v = low(x87::ftol(mem, width * scale));
+                }
+                mem.write(rec.wrapping_add(0xc6), v);
+                cmd.wrapping_add(4)
+            }
+            0x3000 => {
+                mem.write(rec.wrapping_add(0xc4), mem.read::<u16>(cmd.wrapping_add(2)));
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        }
+    }
+
     /// `Sqs_DecodeAdpcm(src, dst)` (`0x0081cc70`, name ours; from
     /// `SqsStraightStreamingDataSend`): 25 rounds of 256 left samples then
     /// 256 right ones (`i16` into `dst`, 0x6400 bytes), each from 16

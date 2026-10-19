@@ -19303,3 +19303,70 @@ fn r13u_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0013_5102);
     r13u_cases(&mut t, &mut rng, 250);
 }
+
+// ---- field agent r13, group V: the anmm parameter command ----
+
+/// Group V (r13) on `t`: `SqsCmdAnmmParam` in every mode, the record's
+/// floats at any byte offset (huge values too: the integer indefinite),
+/// the width scaling on or off; the width is a logged stand-in in `ST0`.
+fn r13v_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::nkz::bridge as nb;
+    let fcall = &mut oracle_fcall;
+    let (log, rv, widthv) = (t.alloc(4 + 0x20 * 4), t.alloc(4), t.alloc(4));
+    let mut width = log_stub(log, rv, 1, 2);
+    width.truncate(width.len() - 6); // mov eax, [rv]; ret
+    width.extend_from_slice(&[0xd9, 0x05]); // fld dword [widthv]; ret
+    width.extend_from_slice(&widthv.to_le_bytes());
+    width.push(0xc3);
+    t.cave(&[(Some(nb::OPUS_CHR_WIDTH), width)]);
+    let (ctx, rec, cmd) = (t.alloc(0x400), t.alloc(0x104), t.alloc(8));
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(widthv, r6b_fine(rng, 0.0, 20.0));
+        t.fill(ctx + 0x200, 0x200, rng);
+        let mode = match rng.below(4) {
+            0 => u16::try_from(rng.below(16)).unwrap() << 12,
+            k => [0u16, 0x1000, 0x2000, 0x3000][usize::try_from(k).unwrap()],
+        };
+        t.put(
+            ctx + 0x21a,
+            u16::try_from(rng.next() & 0x0fff).unwrap() | mode,
+        );
+        t.put(ctx + 0x220, rec);
+        for w in 0..0x41 {
+            let v = if rng.below(10) == 0 {
+                3e9f32.to_bits()
+            } else {
+                r6b_fine(rng, -3000.0, 3000.0)
+            };
+            t.put(rec + 4 * w, v);
+        }
+        t.fill(cmd, 8, rng);
+        if rng.below(4) == 0 {
+            t.put(cmd + 2, 0u8);
+        }
+        t.same(
+            "SqsCmdAnmmParam",
+            |o| o.eax(0x0081_c160, &[ctx, cmd]),
+            |m| nb::sqs_cmd_anmm_param(m, ctx, cmd, fcall),
+        );
+    }
+}
+
+/// Group V (r13) on the image.
+#[test]
+fn r13v_anmm_param_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_6101);
+    r13v_cases(&mut t, &mut rng, 600);
+}
+
+/// Group V (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13v_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_6102);
+    r13v_cases(&mut t, &mut rng, 300);
+}
