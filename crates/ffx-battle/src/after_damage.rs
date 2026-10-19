@@ -325,6 +325,185 @@ pub mod bridge {
         se | 0x8000_0000
     }
 
+    /// The actors' sound tables (`u16` per sound kind, 0x21 kinds): party
+    /// members (below 8), monsters (0x14-0x1b), the others.
+    pub const SE_TABLES: [ffx_bridge::Global<[u16; 0x21]>; 3] = [
+        ffx_bridge::Global::new(0x00c4_2550),
+        ffx_bridge::Global::new(0x00c4_25e0),
+        ffx_bridge::Global::new(0x00c4_2598),
+    ];
+    /// The last sound `MsChrSePlay_0079fd40` started (cleared each battle
+    /// frame, `process::FRAME_CLEARED`'s first word).
+    pub const LAST_CHR_SE: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0112_c8e0);
+
+    /// `MsChrSeGet_0079fe80(i, kind)` (`0x0079fe80`, name ours): actor
+    /// `i`'s sound for `kind` (0 to 0x20), 0 for none. Kind 6 only while
+    /// `+0x40f` is set and `+0xdcc` is not.
+    ///
+    /// The kind's entry in the actor's table ([`SE_TABLES`]) is a base
+    /// (low byte) plus a variant: bit 8 cycles `+0x410` through 0-3 (the
+    /// count's C remainder, the next count one more), bit 9 through 0-1,
+    /// bit 10 the underwater flag's bit 0, bit 11 8 when underwater. Its
+    /// top nibble picks the source: 1 the scene's transferred sounds
+    /// (`SEP_TRANS_TABLE`, ten per actor, while `SEP_TRANS_FLAG`), 2 the
+    /// number itself with bit 31, any other the sounds of the actor's
+    /// model owner (`+0x14`: `+0xeac`, 0x20 of them, while its `+0xf2c`).
+    pub fn ms_chr_se_get(mem: &mut impl Mem, i: u32, kind: u32) -> u32 {
+        let class = match i.cast_signed() {
+            ..8 => 0,
+            0x14..0x1c => 1,
+            _ => 2,
+        };
+        let a = ms_get_chr(mem, i);
+        if kind == 6 {
+            if byte(mem, a, 0x40f) == 0 || byte(mem, a, 0xdcc) != 0 {
+                return 0;
+            }
+        } else if kind.cast_signed() < 0 || kind.cast_signed() >= 0x21 {
+            return 0;
+        }
+        let entry: u16 = mem.read(SE_TABLES[class].ptr(mem).addr + 2 * kind);
+        let mut variant = 0i32;
+        for (bit, n) in [(0x100, 4), (0x200, 2)] {
+            if entry & bit != 0 {
+                let count = byte(mem, a, 0x410).cast_signed();
+                let r = count % n;
+                variant = i32::from(r);
+                mem.write(a.wrapping_add(0x410), r.wrapping_add(1));
+            }
+        }
+        let water = crate::state::bridge::UNDERWATER.get(mem);
+        if entry & 0x400 != 0 {
+            variant = i32::from(water) & 1;
+        }
+        if entry & 0x800 != 0 && water != 0 {
+            variant = 8;
+        }
+        let [v0, v1, ..] = variant.to_le_bytes();
+        let sound =
+            u32::from(u16::from(entry.to_le_bytes()[0]).wrapping_add(u16::from_le_bytes([v0, v1])));
+        match entry & 0xf000 {
+            0x1000 => {
+                let on = mem.read::<u8>(crate::minor::bridge::SEP_TRANS_FLAG.ptr(mem).addr) != 0;
+                if on && sound < 10 {
+                    let table = crate::minor::bridge::SEP_TRANS_TABLE.ptr(mem).addr;
+                    mem.read(table.wrapping_add(4 * sound.wrapping_add(i.wrapping_mul(10))))
+                } else {
+                    0
+                }
+            }
+            0x2000 => sound | 0x8000_0000,
+            _ => {
+                let owner = ms_get_chr(mem, u32::from(byte(mem, a, 0x14)));
+                if byte(mem, owner, 0xf2c) != 0 && sound < 0x20 {
+                    mem.read(owner.wrapping_add(0xeac + 4 * sound))
+                } else {
+                    0
+                }
+            }
+        }
+    }
+
+    /// `MsChrSeFade_0079fcf0(i, kind, frames)` (`0x0079fcf0`, name ours):
+    /// actor `i & 0xff`'s sound for `kind` ([`ms_chr_se_get`]) fades out
+    /// over `frames` (`MsSEP3DfadeOut`): -1, 0 without one.
+    pub fn ms_chr_se_fade(mem: &mut impl Mem, i: u32, kind: u32, frames: u32) -> i32 {
+        let se = ms_chr_se_get(mem, i & 0xff, kind);
+        if se == 0 {
+            return 0;
+        }
+        crate::damage_end::bridge::ms_sep_3d_fade_out(mem, se, frames);
+        -1
+    }
+
+    /// `MsChrSePlay_0079fd40(i, kind)` (`0x0079fd40`, name ours): actor
+    /// `i & 0xff`'s sound for `kind` starts where it stands
+    /// (`MsSEP3Dregist` kind 3) unless it is the one this frame already
+    /// started ([`LAST_CHR_SE`]); the sound, else 0 (also without actors).
+    pub fn ms_chr_se_play<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: Call<'_, M>,
+        i: u32,
+        kind: u32,
+    ) -> u32 {
+        if crate::actor::bridge::ms_get_chr_top(mem) == 0 {
+            return 0;
+        }
+        let i = i & 0xff;
+        let se = ms_chr_se_get(mem, i, kind);
+        if se == 0 || LAST_CHR_SE.get(mem) == se {
+            return 0;
+        }
+        ms_sep_3d_regist(mem, trig, call, 3, i, se, 0, 0);
+        LAST_CHR_SE.set(mem, se);
+        se
+    }
+
+    /// `MsChrSePlay2_0079fda0(i, kind)` (`0x0079fda0`, name ours):
+    /// [`ms_chr_se_play`] once (not again while it plays) and without the
+    /// frame's check.
+    pub fn ms_chr_se_play2<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: Call<'_, M>,
+        i: u32,
+        kind: u32,
+    ) -> u32 {
+        if crate::actor::bridge::ms_get_chr_top(mem) == 0 {
+            return 0;
+        }
+        let i = i & 0xff;
+        let se = ms_chr_se_get(mem, i, kind);
+        if se == 0 {
+            return 0;
+        }
+        ms_sep_3d_regist(mem, trig, call, 3, i, se, 1, 0);
+        se
+    }
+
+    /// `MsChrSePlayUnhasted_0079fdf0(i, kind)` (`0x0079fdf0`, name
+    /// ours): [`ms_chr_se_play`] unless the actor is hasted (`+0x613`).
+    pub fn ms_chr_se_play_unhasted<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: Call<'_, M>,
+        i: u32,
+        kind: u32,
+    ) -> u32 {
+        let i = i & 0xff;
+        let a = ms_get_chr(mem, i);
+        if byte(mem, a, 0x613) != 0 {
+            return 0;
+        }
+        ms_chr_se_play(mem, trig, call, i, kind)
+    }
+
+    /// `MsChrSePlayAlive_0079fe30(i, kind)` (`0x0079fe30`, name ours):
+    /// [`ms_chr_se_play`] for a shown actor (`+0x15`) with HP (`+0x40`
+    /// not 0.0; a NaN counts).
+    pub fn ms_chr_se_play_alive<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: Call<'_, M>,
+        i: u32,
+        kind: u32,
+    ) -> u32 {
+        if crate::actor::bridge::ms_get_chr_top(mem) == 0 {
+            return 0;
+        }
+        let i = i & 0xff;
+        let a = ms_get_chr(mem, i);
+        let hp: u32 = mem.read(a.wrapping_add(0x40));
+        // fucompp: a NaN is not 0
+        #[allow(clippy::float_cmp)]
+        let dead = ffx_bridge::x87::load(hp) == 0.0;
+        if byte(mem, a, 0x15) == 0 || dead {
+            return 0;
+        }
+        ms_chr_se_play(mem, trig, call, i, kind)
+    }
+
     /// `MsStoneProcess(i, actor)` (`0x0078e150`): for an actor with a
     /// character: petrified (`+0x606` bit 2) it gets sound 0x59, weight -1,
     /// Provoke off and, without stone HP (`+0x5d0` below 1), `+0x616` bit

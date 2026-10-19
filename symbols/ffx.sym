@@ -5507,7 +5507,13 @@
 0x0079fa00 function MsNumberRegist            # fh v3:exact+call.cs 0x0079fa20 cdecl; ours: (i, kind, value, other, x, flags, style): a damage number's digits and word (kind 1 MP, 3/4/5 words at 0x00c424a0..ac) via MsNumberPut; ported (battle round 12)
 0x0079fc00 function MsNumberDigits            # ours: (n, &digits) -> count: n's decimal digits (lowest first, up to 9) into 0x011360ac, its address to digits; 0 for n < 0; MsNumberRegist's only callee of it; ported (battle round 12)
 0x0079fc60 function MsNumberPut               # ours: (i, k, ch, x, y, w, h, life, colour, style) -> 1: a damage number character into the first free of g_BtlNumbers' 0x80 records of 0x14 (+0 style), linked at g_BtlNumberTail; 0 when full; ported (battle round 12)
+0x0079fcf0 function MsChrSeFade_0079fcf0      # ours: (i, kind, frames) -> -1 after MsSEP3DfadeOut(MsChrSeGet_0079fe80(i & 0xff, kind), frames), 0 without a sound; caller Native_7087; ported (ffx_battle::after_damage, battle round 26)
 0x0079fd20 function MsChrSEfoot               # fh v3:cg3 0x79fd40
+0x0079fd40 function MsChrSePlay_0079fd40      # ours: (i, kind) -> the sound MsChrSeGet_0079fe80(i & 0xff, kind) started with MsSEP3Dregist(3, i, se, 0, 0) unless it is 0x0112c8e0 (this frame's last, then set); 0 without actors (MsGetChrTop); callers Native_707b, MsChrSePlayUnhasted/Alive; ported (ffx_battle::after_damage, battle round 26)
+0x0079fda0 function MsChrSePlay2_0079fda0     # ours: MsChrSePlay_0079fd40 once (MsSEP3Dregist's once 1) and without the frame's check; caller Native_70c8; ported (ffx_battle::after_damage, battle round 26)
+0x0079fdf0 function MsChrSePlayUnhasted_0079fdf0 # ours: (i, kind): MsChrSePlay_0079fd40 unless actor i & 0xff has Haste (+0x613); caller Native_70c9; ported (ffx_battle::after_damage, battle round 26)
+0x0079fe30 function MsChrSePlayAlive_0079fe30 # ours: (i, kind): MsChrSePlay_0079fd40 for a shown actor (+0x15) whose HP (+0x40 f32) is not 0.0 (a NaN counts); 0 without actors; ported (ffx_battle::after_damage, battle round 26)
+0x0079fe80 function MsChrSeGet_0079fe80       # ours: (i, kind 0-0x20; 6 only while +0x40f and not +0xdcc) -> actor i's sound: u16 entry of 0x00c42550 (i < 8), 0x00c425e0 (0x14-0x1b), else 0x00c42598; low byte + variant (bit 8: +0x410 mod 4, bit 9: mod 2, +0x410 counts on; bit 10: g_BtlUnderwater & 1; bit 11: 8 underwater); top nibble 1: g_SepTransTable[sound + 10 i] while g_SepTransFlag, 2: sound | bit 31, else the model owner's (+0x14) +0xeac sound while its +0xf2c; 0 for none; ported (ffx_battle::after_damage, battle round 26)
 0x0079fff0 function MsMusicReadStart          # fh v3:cg6 0x7a0010; ours: MsSEPbattleClear, MsEffectSepClearAll, the playing music stopped and cleared, SndMusicRead (tail call, its eax); ported (battle round 14)
 0x007a0020 function MsMusicStop                  # layout: alphabetical run between MsMusicReadStart and MsMusicSync (1 unnamed in the gap); Switch 0x7100377f30 MsMusicStop is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a0040 function MsMusicSync               # fh v3:exact 0x007a0060; ours: (music) SndSyncMusicStandby(0) 0: playing music stopped/cleared, SndMusicReplayPointClear and SndMusicStart(music), -1; else 0; ported (battle round 14)
@@ -15360,6 +15366,9 @@
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
 0x00c424b0 label g_BtlNumberFrames          # MsNumberDrawProcess: 3-byte rows (x offset i8, y offset i8, alpha) by a number character's age less its place; name ours
+0x00c42550 label g_BtlChrSeTable           # u16[0x21] party members' sounds by kind (MsChrSeGet_0079fe80; bits 8-11 variants, top nibble the source); name ours
+0x00c42598 label g_BtlChrSeTableOther      # u16[0x21] sounds by kind of actors 8-0x13 and 0x1c on (MsChrSeGet_0079fe80); name ours
+0x00c425e0 label g_BtlChrSeTableMonster    # u16[0x21] monsters' (0x14-0x1b) sounds by kind (MsChrSeGet_0079fe80); name ours
 0x00c438a8 label g_AeonCommands            # 16 bytes per aeon (actor 8 on): u16 command / u8 value pairs at +0, +4, +8, +0xc (MsGetAeonCommand)
 0x00c43948 label g_TidusLimits             # 4 x u16 overdrive command IDs Tidus learns (MsLimitTidusLearn)
 0x00c43950 label g_TidusLimitNeeds         # 4 x i32 uses each of g_TidusLimits needs

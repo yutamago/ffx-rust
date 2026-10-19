@@ -9712,8 +9712,12 @@ fn dressed_check(
     let s = scratch(a, b, 0x10);
     SCRATCH.with(|c| c.set(s));
     let rec = scratch(a, b, 0x80);
+    // SndSepPlay (sound) a logging stub, as in [`process_stubs`]
+    let srec = scratch(a, b, EXCHANGE_REC as usize);
     for o in [&mut *a, &mut *b] {
         script_stubs(o, rec);
+        let play = ffx_battle::after_damage::bridge::SND_SEP_PLAY;
+        logging_stub(o, play, PROCESS_STUBS + 0x40 * 5, srec, 3, 0);
     }
     let buf = scratch(a, b, 0x400);
     for _ in 0..rounds {
@@ -9766,7 +9770,14 @@ fn number_draw(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, bu
     use ffx_battle::input::bridge as ip;
     let status = [0x1fi8, 0x20, 0x21, 0, 5, 0x22][rng.below(6) as usize];
     set(a, b, ffx_battle::state::bridge::STATUS, status);
-    let near = |rng: &mut Xorshift| rng.range(-0x30, 0x240);
+    // near the screen, at times on its edges
+    let near = |rng: &mut Xorshift| {
+        if rng.below(6) == 0 {
+            [0x200, 0x201, 0x1a0, 0x1a1, 0, -1][rng.below(6) as usize]
+        } else {
+            rng.range(-0x30, 0x240)
+        }
+    };
     for i in 0..ACTORS {
         let p = w.actor(i);
         let on = |rng: &mut Xorshift| u8::from(rng.below(6) != 0);
@@ -9793,10 +9804,20 @@ fn number_draw(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, bu
         e[0] = rng.byte();
         e[1] = [0u8, 1, 2, 3, rng.byte()][rng.below(5) as usize];
         e[2] = u8::try_from(actor).unwrap();
-        e[3] = u8::try_from(rng.below(8)).unwrap();
+        // the frame rows mostly in the table, at times anywhere near it
+        let wide = rng.below(4) == 0;
+        e[3] = if wide {
+            rng.byte()
+        } else {
+            u8::try_from(rng.below(8)).unwrap()
+        };
         e[4] = rng.byte();
         e[5] = u8::from(rng.below(4) == 0);
-        e[6] = u8::try_from(rng.below(20)).unwrap();
+        e[6] = if wide {
+            rng.byte()
+        } else {
+            u8::try_from(rng.below(20)).unwrap()
+        };
         e[7] = [u8::try_from(rng.below(20)).unwrap(), rng.byte()][rng.below(4).min(1) as usize];
         e[8..10].copy_from_slice(&i16::try_from(rng.range(-40, 40)).unwrap().to_le_bytes());
         e[10..12].copy_from_slice(&i16::try_from(rng.range(-40, 40)).unwrap().to_le_bytes());
@@ -9850,5 +9871,165 @@ fn number_draw_matches_the_original_on_a_snapshot() {
         false,
         (300, 2),
         number_draw,
+    );
+}
+
+/// The actors' sounds by kind (round 26): `MsChrSeGet_0079fe80` and the
+/// players over it on the dressed actors, their sound fields, a table
+/// entry and the scene's transferred sounds made up; the players (through
+/// the ported `MsSEP3Dregist`) only for actors with a position.
+fn chr_se(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, buf: u32) {
+    use ffx_battle::after_damage::bridge as ad;
+    // an actor, at times in a word with high bits (the players mask them)
+    let i = rng.below(ACTORS)
+        | if rng.below(3) == 0 {
+            rng.next() & !0xff
+        } else {
+            0
+        };
+    let p = w.actor(i & 0xff);
+    let flag = |rng: &mut Xorshift, n: u32| u8::from(rng.below(n) == 0);
+    poke(a, b, p + 0x40f, &[flag(rng, 4) ^ 1]);
+    poke(a, b, p + 0xdcc, &[flag(rng, 3)]);
+    poke(a, b, p + 0x410, &[rng.byte()]);
+    poke(a, b, p + 0x613, &[flag(rng, 3)]);
+    poke(a, b, p + 0x15, &[flag(rng, 5) ^ 1]);
+    let hp = [0, 0x8000_0000, 0x7fc0_0000, float(rng), float(rng)][rng.below(5) as usize];
+    poke(a, b, p + 0x40, &hp.to_le_bytes());
+    let owner = u8::try_from(rng.below(ACTORS)).unwrap();
+    poke(a, b, p + 0x14, &[owner]);
+    let o = w.actor(u32::from(owner));
+    poke(a, b, o + 0xf2c, &[flag(rng, 4) ^ 1]);
+    let sounds: Vec<u8> = (0..0x20)
+        .flat_map(|_| {
+            [0, 0x8000_0001 | rng.below(4), rng.next()][rng.below(3) as usize].to_le_bytes()
+        })
+        .collect();
+    poke(a, b, o + 0xeac, &sounds);
+    // a table entry: variant bits and sources at random
+    let kind = [
+        rng.below(0x21),
+        6,
+        rng.range(-2, 0x23).cast_unsigned(),
+        rng.next(),
+    ][rng.below(4) as usize];
+    if rng.below(2) == 0 && kind < 0x21 {
+        let class = rng.below(3);
+        let table = ad::SE_TABLES[class as usize].ptr(b).addr;
+        let entry = (rng.below(16) << 8) | (rng.below(4) << 12) | rng.below(0x24);
+        poke(
+            a,
+            b,
+            table + 2 * kind,
+            &u16::try_from(entry).unwrap().to_le_bytes(),
+        );
+    }
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::UNDERWATER,
+        [0i8, 1, 2, -1][rng.below(4) as usize],
+    );
+    let trans = ffx_battle::minor::bridge::SEP_TRANS_FLAG.ptr(b).addr;
+    poke(a, b, trans, &[flag(rng, 2)]);
+    let table: Vec<u8> = (0..0x80)
+        .flat_map(|_| [0, 0x4000_0000 | rng.below(8)][rng.below(2) as usize].to_le_bytes())
+        .collect();
+    poke(
+        a,
+        b,
+        ffx_battle::minor::bridge::SEP_TRANS_TABLE.ptr(b).addr,
+        &table,
+    );
+    set(
+        a,
+        b,
+        ad::LAST_CHR_SE,
+        [0, 0x8000_0001, 0x8000_0002][rng.below(3) as usize],
+    );
+    sep_3d_list(a, b, rng);
+    // no actors at times (the players' first check)
+    let top = ffx_battle::actor::bridge::CHR_TOP;
+    let was = top.get(b);
+    let op = rng.below(6);
+    // (only the players that check it first)
+    let none = matches!(op, 2 | 3 | 5) && rng.below(8) == 0;
+    let probe = buf + 0x80;
+    let placed = op < 2
+        || none
+        || i & 0xff == 0xff
+        || writes(a, b, 0x0079_56e0, i & 0xff, probe) && writes(a, b, 0x0079_48e0, i & 0xff, probe);
+    let op = if placed { op } else { op % 2 };
+    if none {
+        set(a, b, top, 0);
+    }
+    let frames = rng.next();
+    let what = [
+        "MsChrSeGet_0079fe80",
+        "MsChrSeFade_0079fcf0",
+        "MsChrSePlay_0079fd40",
+        "MsChrSePlay2_0079fda0",
+        "MsChrSePlayUnhasted_0079fdf0",
+        "MsChrSePlayAlive_0079fe30",
+    ][op as usize];
+    let sym = [
+        0x0079_fe80,
+        0x0079_fcf0,
+        0x0079_fd40,
+        0x0079_fda0,
+        0x0079_fdf0,
+        0x0079_fe30,
+    ][op as usize];
+    let args: Vec<u32> = if op == 0 {
+        vec![i & 0xff, kind]
+    } else if op == 1 {
+        vec![i, kind, frames]
+    } else {
+        vec![i, kind]
+    };
+    twin(what, a, b, sym, &args, ALL, |m| {
+        let mut c = game_call_o;
+        match op {
+            0 => ad::ms_chr_se_get(m, i & 0xff, kind),
+            1 => ad::ms_chr_se_fade(m, i, kind, frames).cast_unsigned(),
+            2 => ad::ms_chr_se_play(m, &stand_in, &mut c, i, kind),
+            3 => ad::ms_chr_se_play2(m, &stand_in, &mut c, i, kind),
+            4 => ad::ms_chr_se_play_unhasted(m, &stand_in, &mut c, i, kind),
+            _ => ad::ms_chr_se_play_alive(m, &stand_in, &mut c, i, kind),
+        }
+    });
+    if none {
+        set(a, b, top, was);
+    }
+    same(what, a, b);
+}
+
+#[test]
+fn chr_se_matches_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    dressed_check(
+        &mut a,
+        &mut b,
+        &mut Xorshift(0x26ca_0201),
+        true,
+        (150, 8),
+        chr_se,
+    );
+}
+
+#[test]
+fn chr_se_matches_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    dressed_check(
+        &mut a,
+        &mut b,
+        &mut Xorshift(0x26ca_0202),
+        false,
+        (150, 8),
+        chr_se,
     );
 }

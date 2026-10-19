@@ -3170,6 +3170,30 @@ ported! {
     MsRegSEplay2 @ 0x007a_0140 => extern "C" fn ms_reg_se_play2(i: u32, se: u32) -> u32 {
         afterdmg::ms_reg_se_play2(&mut mem(), &crt_trig, &mut call_ptr, i, se)
     }
+    /// `MsChrSeGet_0079fe80(i, kind)`.
+    MsChrSeGet_0079fe80 @ 0x0079_fe80 => extern "C" fn ms_chr_se_get(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_get(&mut mem(), i, kind)
+    }
+    /// `MsChrSeFade_0079fcf0(i, kind, frames)`.
+    MsChrSeFade_0079fcf0 @ 0x0079_fcf0 => extern "C" fn ms_chr_se_fade(i: u32, kind: u32, frames: u32) -> i32 {
+        afterdmg::ms_chr_se_fade(&mut mem(), i, kind, frames)
+    }
+    /// `MsChrSePlay_0079fd40(i, kind)`.
+    MsChrSePlay_0079fd40 @ 0x0079_fd40 => extern "C" fn ms_chr_se_play(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_play(&mut mem(), &crt_trig, &mut call_ptr, i, kind)
+    }
+    /// `MsChrSePlay2_0079fda0(i, kind)`.
+    MsChrSePlay2_0079fda0 @ 0x0079_fda0 => extern "C" fn ms_chr_se_play2(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_play2(&mut mem(), &crt_trig, &mut call_ptr, i, kind)
+    }
+    /// `MsChrSePlayUnhasted_0079fdf0(i, kind)`.
+    MsChrSePlayUnhasted_0079fdf0 @ 0x0079_fdf0 => extern "C" fn ms_chr_se_play_unhasted(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_play_unhasted(&mut mem(), &crt_trig, &mut call_ptr, i, kind)
+    }
+    /// `MsChrSePlayAlive_0079fe30(i, kind)`.
+    MsChrSePlayAlive_0079fe30 @ 0x0079_fe30 => extern "C" fn ms_chr_se_play_alive(i: u32, kind: u32) -> u32 {
+        afterdmg::ms_chr_se_play_alive(&mut mem(), &crt_trig, &mut call_ptr, i, kind)
+    }
     /// `MsStoneProcess(i, actor)`.
     MsStoneProcess @ 0x0078_e150 => extern "C" fn ms_stone_process(i: u32, actor: u32) -> u32 {
         afterdmg::ms_stone_process(&mut mem(), &crt_trig, &mut call_ptr, i, actor)
