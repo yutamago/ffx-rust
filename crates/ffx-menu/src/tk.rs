@@ -8929,6 +8929,289 @@ pub mod bridge {
         mem.write(w.wrapping_add(0x45), 0u8);
         Some(w)
     }
+
+    /// The save counter: one more for every save packed (`0x008b3e60`),
+    /// stored in the header capped at `0x80000000`.
+    pub const MENU_SAVE_COUNTER: Global<u32> = Global::new(0x0186_627c);
+
+    /// Bytes of save data behind a packed save's `0x40`-byte header.
+    pub const SAVE_DATA_SIZE: u32 = 0x68c0;
+
+    /// `MenuSave_PackSave(out, save, slot)` (`0x008b3e60`, own name; caller
+    /// `TkMenuCtrlSaveLoad`): a save file at `out`, a `0x40`-byte header
+    /// then [`SAVE_DATA_SIZE`] bytes copied from `save`
+    /// (`TkSetEvSaveStatus` on the copy). The header: `+0` the counter
+    /// ([`MENU_SAVE_COUNTER`] plus one, at most `0x80000000`); `+4` `slot`;
+    /// `+5..+0xc` the party (`TkMenuGetPlayerFromIndex2`, padded with
+    /// `0xff`; just the first character while the story point, `u16` data
+    /// `+0xbec`, is 15 or less), then `+5` the data's byte `+0x3d58`;
+    /// `+0xc` `TOGetFFXLang()`; past story point 15 `+6`/`+7` the bytes
+    /// `+0x3d59`/`+0x3d5a`, and below 300 a 6 in `+5`/`+6` becomes 7;
+    /// `+0x10` data `+0xbc`; `+0x14` `MsGetGIL()`; `+0x18` `AtelGetSaveDic()`;
+    /// `+0x1c` `0x100`; `+0x1e` `AtelGetAlbhedRikku()`; `+0x1f`
+    /// `MsGetSaveConfigEnglish()`; `+0x20` the name `MsGetSaveChrName(0)`;
+    /// `+0x1a` and data `+0x64b4` the `TkCRC` of the data (taken with
+    /// `+0x64b4` 0). Returns the header's `+0x10`.
+    #[allow(clippy::cast_possible_truncation)] // byte and halfword results
+    pub fn menu_save_pack_save<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        save: u32,
+        slot: u8,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let data = out.wrapping_add(0x40);
+        mem.write_bytes(out, &[0; 0x40]);
+        let mut copy = vec![0u8; SAVE_DATA_SIZE as usize];
+        mem.read_bytes(save, &mut copy);
+        mem.write_bytes(data, &copy);
+        tk_set_ev_save_status(mem, data);
+        let counter = MENU_SAVE_COUNTER.get(mem).wrapping_add(1);
+        MENU_SAVE_COUNTER.set(mem, counter);
+        mem.write(out, counter.min(0x8000_0000));
+
+        let story: u16 = mem.read(data.wrapping_add(0xbec));
+        let past_start = story > 15;
+        let early = story < 300;
+        let mut party = MENU_PLAYER_LIST_MAX2.get(mem).cast_signed();
+        if !past_start && party > 1 {
+            party = 1;
+        }
+        let mut i = 0i32;
+        while i < party {
+            let chr = tk_menu_get_player_from_index2(mem, i);
+            mem.write(out.wrapping_add(5).wrapping_add_signed(i), chr);
+            i += 1;
+        }
+        // the rest of the seven party bytes, when fewer were written
+        for k in i.max(0)..7 {
+            mem.write(out.wrapping_add(5).wrapping_add_signed(k), 0xffu8);
+        }
+
+        let lang = call(mem, mem.rebase(0x008a_c2f0), &[]);
+        mem.write(out.wrapping_add(0xc), lang as u8);
+        let first: u8 = mem.read(data.wrapping_add(0x3d58));
+        mem.write(out.wrapping_add(5), first);
+        if past_start {
+            let second: u8 = mem.read(data.wrapping_add(0x3d59));
+            mem.write(out.wrapping_add(6), second);
+            let third: u8 = mem.read(data.wrapping_add(0x3d5a));
+            mem.write(out.wrapping_add(7), third);
+            if early {
+                for o in [5u32, 6] {
+                    if mem.read::<u8>(out.wrapping_add(o)) == 6 {
+                        mem.write(out.wrapping_add(o), 7u8);
+                    }
+                }
+            }
+        }
+        mem.write(out.wrapping_add(4), slot);
+        let v: u32 = mem.read(data.wrapping_add(0xbc));
+        mem.write(out.wrapping_add(0x10), v);
+        let gil = call(mem, mem.rebase(0x008a_98b0), &[]);
+        mem.write(out.wrapping_add(0x14), gil);
+        let dic = call(mem, mem.rebase(0x0086_c410), &[]);
+        mem.write(out.wrapping_add(0x18), dic as u16);
+        mem.write(out.wrapping_add(0x1c), 0x100u16);
+        let rikku = call(mem, mem.rebase(0x0086_a7e0), &[]);
+        mem.write(out.wrapping_add(0x1e), rikku as u8);
+        let english = call(mem, mem.rebase(0x0078_51d0), &[]);
+        mem.write(out.wrapping_add(0x1f), english as u8);
+        let name = call(mem, mem.rebase(0x0078_4fb0), &[0]);
+        let mut k = 0u32;
+        loop {
+            let c: u8 = mem.read(name.wrapping_add(k));
+            mem.write(out.wrapping_add(0x20).wrapping_add(k), c);
+            k = k.wrapping_add(1);
+            if c == 0 {
+                break;
+            }
+        }
+        mem.write(data.wrapping_add(0x64b4), 0u32);
+        #[allow(clippy::cast_possible_wrap)]
+        let crc = tk_crc(mem, SAVE_DATA_SIZE as i32, data);
+        mem.write(out.wrapping_add(0x1a), crc);
+        mem.write(data.wrapping_add(0x64b4), u32::from(crc));
+        mem.read(out.wrapping_add(0x10))
+    }
+
+    /// A rectangle placed at `(x, y)` plus remapped offsets: `[left, top,
+    /// width, height]` as float words, the remaps in the original's order
+    /// (`remapY2(h)`, `remapX2(w)`, `remapY2(dy) + y`, `remapX2(dx) + x`),
+    /// each value rounded to a float where the original stores it.
+    fn remapped_rect<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        [dx, dy, w, h]: [f32; 4],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+    ) -> [u32; 4] {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let round = |v: f64| (v as f32).to_bits();
+        let height = round(remap(mem, true, h));
+        let width = round(remap(mem, false, w));
+        let top = round(remap(mem, true, dy) + f64::from(y));
+        let left = round(remap(mem, false, dx) + f64::from(x));
+        [left, top, width, height]
+    }
+
+    /// `TkMn2WeaponBuySellWindow(x, y, weapon, amount, owned)` (`0x008c2d00`,
+    /// Fahrenheit's name): the weapon shop's amount window at `(x, y)`.
+    /// `TODrawMenuPlateXYWHType(x, y, 560, 240, 10)` (sizes remapped), a
+    /// `TODrawCrossBoxXYWHC2` gradient box (10, 10, 540 x 220, both colours
+    /// `0x40ffffff`), a plate (10, 10, 540 x 60, type 5), the weapon's
+    /// `DrawCrossMenuIconWeaponName2(weapon, x - 85, y + 10, 0)`, the sheet
+    /// `0x008f9c20(10, 70, 540 x 160, 0)`, a plate (13, 73, 534 x 60, type
+    /// 2), sheet cell 20 (`0x008f8bb0`, 65, 85, 430 x 36), and two
+    /// `TkMn2DrawGillPlate`s (24, 137 and 24, 187; 520 x 32): `|amount|`
+    /// and `owned - amount` (at most 999 999 999). Offsets and sizes go
+    /// through the UI remaps as in [`remapped_rect`]. Returns the last
+    /// call's `eax`.
+    pub fn tk_mn2_weapon_buy_sell_window<M: Mem>(
+        mem: &mut M,
+        at: [f32; 2],
+        weapon: u32,
+        amount: i32,
+        owned: i32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let [x, y] = at;
+        let plate = mem.rebase(0x008f_5f70);
+        let height = r(remap(mem, true, 240.0));
+        let width = r(remap(mem, false, 560.0));
+        call(mem, plate, &[x.to_bits(), y.to_bits(), width, height, 10]);
+
+        let [left, top, width, height] = remapped_rect(mem, at, [10.0, 10.0, 540.0, 220.0], remap);
+        let cross_box = mem.rebase(0x008f_4b20);
+        call(
+            mem,
+            cross_box,
+            &[left, top, width, height, 0x40ff_ffff, 0x40ff_ffff],
+        );
+
+        let [left, top, width, height] = remapped_rect(mem, at, [10.0, 10.0, 540.0, 60.0], remap);
+        call(mem, plate, &[left, top, width, height, 5]);
+
+        let top = r(remap(mem, true, 10.0) + f64::from(y));
+        let left = r(f64::from(x) - remap(mem, false, 85.0));
+        let name = mem.rebase(0x008e_6970);
+        call(mem, name, &[weapon, left, top, 0]);
+
+        let [left, top, width, height] = remapped_rect(mem, at, [10.0, 70.0, 540.0, 160.0], remap);
+        let sheet = mem.rebase(0x008f_9c20);
+        call(mem, sheet, &[left, top, width, height, 0]);
+
+        let [left, top, width, height] = remapped_rect(mem, at, [13.0, 73.0, 534.0, 60.0], remap);
+        call(mem, plate, &[left, top, width, height, 2]);
+
+        let [left, top, width, height] = remapped_rect(mem, at, [65.0, 85.0, 430.0, 36.0], remap);
+        let sheet_cell = mem.rebase(0x008f_8bb0);
+        call(mem, sheet_cell, &[20, left, top, width, height]);
+
+        let gil_plate = mem.rebase(0x008c_0a20);
+        let count = amount.wrapping_abs().cast_unsigned();
+        let [left, top, width, height] = remapped_rect(mem, at, [24.0, 137.0, 520.0, 32.0], remap);
+        call(mem, gil_plate, &[left, top, width, height, count]);
+
+        let left_over = owned.wrapping_sub(amount).min(999_999_999).cast_unsigned();
+        let [left, top, width, height] = remapped_rect(mem, at, [24.0, 187.0, 520.0, 32.0], remap);
+        call(mem, gil_plate, &[left, top, width, height, left_over])
+    }
+
+    /// `TkMn2BuySellWindow(x, y, item, price, owned_count, amount, gil)`
+    /// (`0x008bf170`, Fahrenheit's name): the item shop's amount window at
+    /// `(x, y)`. A plate (`TODrawMenuPlateXYWHType`, 560 x 316, type 10),
+    /// a `TODrawCrossBoxXYWHC2` box (10, 10, 540 x 296, colours
+    /// `0x40ffffff`), a plate (10, 10, 540 x 60, type 5), the item's
+    /// `DrawCrossMenuIconItemName(item, x - 85, y + 10, 0)`, three
+    /// `TOMkpShapeXYWHUV` shapes of sheet `0xc8` (112, 76 and 377, 76:
+    /// 72 x 72, UVs 0.484/0.587/0.564/0.667; 244, 90: 73 x 44, UVs
+    /// 0.718/0.0137/0.789/0.0566), `price` and `owned_count` as
+    /// `ToMakeBtlEasyDigit2(n, x', y + 93, 0, 0.68, 0)` centred on 147 and
+    /// 412 (`x'` = remapped `x` minus half of `ToGetBtlEasyDigitWidth2(n,
+    /// &w, 0.68, 0)`'s width; `width` stands for the original's argument
+    /// slot it writes), a plate (12, 148, 534 x 60, type 2), sheet cell 20
+    /// (64, 160, 430 x 36), and two `TkMn2DrawGillPlate`s (22, 212 and 22,
+    /// 263; 522 x 32): `|price * amount|` and `gil - price * amount` (at
+    /// most 999 999 999). Offsets and sizes go through the UI remaps as in
+    /// [`remapped_rect`]. Returns the last call's `eax`.
+    pub fn tk_mn2_buy_sell_window<M: Mem>(
+        mem: &mut M,
+        at: [f32; 2],
+        [item, price, owned_count, amount, gil]: [u32; 5],
+        width: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let r = |v: f64| (v as f32).to_bits();
+        let [x, y] = at;
+        let total = price.cast_signed().wrapping_mul(amount.cast_signed());
+        let plate = mem.rebase(0x008f_5f70);
+        let height = r(remap(mem, true, 316.0));
+        let w = r(remap(mem, false, 560.0));
+        call(mem, plate, &[x.to_bits(), y.to_bits(), w, height, 10]);
+
+        let [left, top, w, height] = remapped_rect(mem, at, [10.0, 10.0, 540.0, 296.0], remap);
+        let cross_box = mem.rebase(0x008f_4b20);
+        call(
+            mem,
+            cross_box,
+            &[left, top, w, height, 0x40ff_ffff, 0x40ff_ffff],
+        );
+
+        let [left, top, w, height] = remapped_rect(mem, at, [10.0, 10.0, 540.0, 60.0], remap);
+        call(mem, plate, &[left, top, w, height, 5]);
+
+        let top = r(remap(mem, true, 10.0) + f64::from(y));
+        let left = r(f64::from(x) - remap(mem, false, 85.0));
+        let name = mem.rebase(0x008e_6700);
+        call(mem, name, &[item, left, top, 0]);
+
+        let shape = mem.rebase(0x0090_3bb0);
+        let arrow_uv = [0.484_375f32, 0.586_914_06, 0.564_453_1, 0.666_992_2].map(f32::to_bits);
+        for dx in [112.0, 377.0] {
+            let rect = remapped_rect(mem, at, [dx, 76.0, 72.0, 72.0], remap);
+            call(mem, shape, &[&[0xc8], &rect[..], &arrow_uv].concat());
+        }
+        let rect = remapped_rect(mem, at, [244.0, 90.0, 73.0, 44.0], remap);
+        let uv = [0.717_773_44f32, 0.013_671_875, 0.789_062_5, 0.056_640_625].map(f32::to_bits);
+        call(mem, shape, &[&[0xc8], &rect[..], &uv].concat());
+
+        let digit_width = mem.rebase(0x0090_5230);
+        let digits = mem.rebase(0x0090_5550);
+        let scale = 0.68f32.to_bits();
+        for (n, dx) in [(price, 147.0), (owned_count, 412.0)] {
+            call(mem, digit_width, &[n, width, scale, 0]);
+            let top = r(remap(mem, true, 93.0) + f64::from(y));
+            let right = remap(mem, false, dx) + f64::from(x);
+            let half = f64::from(mem.read::<f32>(width)) * 0.5;
+            let left = r(right - half);
+            call(mem, digits, &[n, left, top, 0, scale, 0]);
+        }
+
+        let [left, top, w, height] = remapped_rect(mem, at, [12.0, 148.0, 534.0, 60.0], remap);
+        call(mem, plate, &[left, top, w, height, 2]);
+
+        let [left, top, w, height] = remapped_rect(mem, at, [64.0, 160.0, 430.0, 36.0], remap);
+        let sheet_cell = mem.rebase(0x008f_8bb0);
+        call(mem, sheet_cell, &[20, left, top, w, height]);
+
+        let gil_plate = mem.rebase(0x008c_0a20);
+        let cost = total.wrapping_abs().cast_unsigned();
+        let [left, top, w, height] = remapped_rect(mem, at, [22.0, 212.0, 522.0, 32.0], remap);
+        call(mem, gil_plate, &[left, top, w, height, cost]);
+
+        let left_over = gil
+            .cast_signed()
+            .wrapping_sub(total)
+            .min(999_999_999)
+            .cast_unsigned();
+        let [left, top, w, height] = remapped_rect(mem, at, [22.0, 263.0, 522.0, 32.0], remap);
+        call(mem, gil_plate, &[left, top, w, height, left_over])
+    }
 }
 
 #[cfg(test)]

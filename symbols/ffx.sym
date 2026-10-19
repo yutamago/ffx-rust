@@ -10235,6 +10235,7 @@
 0x008b3d90 function TkMenuSaveLoadCloseWindow2 # (): close request (+0x41 = 1) for 0x01866258 and forget it; save/load menu (TkMenuCtrlSaveLoad area)
 0x008b3db0 function TkMenuCloseSaveLoadScreen # fh v3:exact 0x008b3d60
 0x008b3e40 function TkMenuSaveLoadCloseWindow # (): close request for g_TkMenuSaveLoadWindow (TkMenuCtrlSaveLoad reads it) and forget it
+0x008b3e60 function MenuSave_PackSave # cdecl(out, save, slot) -> header+0x10: memset(out, 0, 0x40), the 0x68c0 save bytes to out+0x40 (TkSetEvSaveStatus), header counter/slot/party/lang/gil/dic/name, TkCRC of the data at +0x1a and data+0x64b4; caller TkMenuCtrlSaveLoad (two sites); ported in menu round 22; name ours
 0x008b3ff0 function MenuSave_PathDir          # (out, n) "/" + sprintf(0x023cc0a0 = product code + "FF0906%02d", n); own name
 0x008b4060 function MenuSave_PathData         # (out, n) "/S/S" with S the save name of slot n; own name
 0x008b4110 function MenuSave_PathIcon         # (out, n) "/S/" + "010906%02d.ico"; own name
@@ -10422,7 +10423,7 @@
 0x008bf120 function MenuHelp_Ratio            # (a, b) (b+2)*a*2/4 truncating; own name
 0x008bf140 function MenuHelp_Plus40           # (p) p + 0x40; no caller; own name
 0x008bf150 function TkMn2ArmsMes              # (id) -> MsMenuGetText(5, id, MsGetSaveConfigHiragana()): table 5 is the Arms menu (TkMenuArmsMes, TOMenuGetArmsMes); the Switch's TkMn2ArmsMes is the 44-byte wrapper of MsGetSaveConfigHiragana + MsMenuGetText; caller TkMenuCtrlEquip; was TkMenuItemMes (fh switch:bsim1.00 0x71004c34c0)
-0x008bf170 function TkMn2BuySellWindow           # layout+callees: sorts between TkMn2ArmsMes and TkMn2DrawBrush, and its named callees match the Switch 0x71004c8560 TkMn2BuySellWindow's (similarity 0.70: TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyDigit2); symbols from Fahrenheit's server export
+0x008bf170 function TkMn2BuySellWindow           # layout+callees: sorts between TkMn2ArmsMes and TkMn2DrawBrush, and its named callees match the Switch 0x71004c8560 TkMn2BuySellWindow's (similarity 0.70: TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2, ToMakeBtlEasyDigit2); symbols from Fahrenheit's server export; cdecl(x, y, item, price, owned_count, amount, gil): item shop amount window (plates, item name, arrow shapes, price and count digits, cost and gil-left plates); ported in menu round 22
 0x008bf720 function MenuList_IsEmptySlot      # (entry) u16 at +0xc+2*byte(+0xb) is 0 or 0xff; own name
 0x008bf750 function Menu_CursorEase           # (summon, counter, a, b, last): Menu_EaseCounter toward the party (summon 1: summon) cursor position, restarted at its step << 12 when the position leaves *last; name ours
 0x008bf7e0 function Menu_EaseCounter          # (-, counter, a, b): a non-zero *counter moves 0x199 toward 0; reaching 0 it becomes 0 and *a = *b (read first); name ours
@@ -10512,7 +10513,7 @@
 0x008c2cb0 function TkMn2StringWidth             # layout: alphabetical run between TkMn2SetOverDriveId and TkMn2TransCharFace (2 unnamed in the gap); Switch 0x71004c6480 TkMn2StringWidth is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c2cd0 function TkMn2StringWidthHeight       # layout: alphabetical run between TkMn2SetOverDriveId and TkMn2TransCharFace (2 unnamed in the gap); Switch 0x71004c64a0 TkMn2StringWidthHeight is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c2ce0 function TkMn2TransCharFace        # fh switch:bsim1.00 0x71004c5b00
-0x008c2d00 function TkMn2WeaponBuySellWindow     # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8a60 TkMn2WeaponBuySellWindow's (similarity 0.62: DrawCrossMenuIconWeaponName2, TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x008c2d00 function TkMn2WeaponBuySellWindow     # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8a60 TkMn2WeaponBuySellWindow's (similarity 0.62: DrawCrossMenuIconWeaponName2, TODrawCrossBoxXYWHC2, TODrawMenuPlateXYWHType, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export; cdecl(x, y, weapon, amount, owned): weapon shop amount window, |amount| and owned - amount (<= 999999999) gil plates; ported in menu round 22
 0x008c3070 function TkMsSetSaveParam             # layout+callees: sorts between TkMn2TransCharFace and TkSetLegendAbility, and its named callees match the Switch 0x71004c8120 TkMsSetSaveParam's (similarity 1.00: MsSetSaveParam, TkMenuGetHP, TkMenuGetMP, TkMenuGetMaxHP, TkMenuGetMaxMP); symbols from Fahrenheit's server export
 0x008c30d0 function TkMsSetSaveParamAll       # jmp MsSetSaveParamAll (5 bytes); name ours, after TkMsSetSaveParam
 0x008c30e0 function TkFindLegendWeapon_008c30e0  # (kind) -> the saved weapon whose flags +3 bit 2 (legend) are set and +4 == kind, from MsGetSaveWeaponList; dbgPrintf "TK:Found Legend weapon(%d)" / "not found"; only caller TkSetLegendAbility (the Switch inlines it there, hence the string match); own name
@@ -11068,6 +11069,7 @@
 0x008f8ee0 function TODrawScaleButtonIconRGBA # fh v3:exact 0x008f8ee0
 0x008f91f0 function TODrawScissor             # (x0, y0, x1, y1): the same bytes as TOMakePktScissor; name ours (before TODrawScissorXYWH in the file's alphabetical order)
 0x008f9230 function TODrawScissorXYWH         # (x, y, w, h): g_TkMenuScissorOn = 1, XYUV mode 0, box (x, y, x+w, y+h) as floats; leaves y+h in eax; fh v3:exact+call.cs 0x008f9230 cdecl
+0x008f9c20 function TODrawFrameShape_008f9c20 # cdecl(x, y, w, h, kind): TOMkpShapeXYWHUV(200, ...) frame pieces by kind (0..5, kinds 0/4/5 without the bottom strip); TkMn2WeaponBuySellWindow draws (10, 70, 540 x 160, 0) under the weapon name; name ours
 0x008fa450 function TOCopyWindowLayout_008fa450 # cdecl(i): TOCopyWindowLayout(0x00c5c2c8, i); name ours
 0x008fa4f0 function TOGetWindowLayout          # cdecl(id): 0..c6 and c8..18e TOCopyWindowLayout_008fa7d0, 190..256 _008fa450, 258..289 tail _008fa790 (id less the range base), else id; name ours
 0x008fa570 function TOGetFontSpaceInPiexl     # fh v3:exact 0x008fa570; spaces 0x018716b4/b8 computed once: langs 1..8 both trunc(ws*0.7+0.5)/ws, else trunc(ws*0.5+0.5)/ws and the 0.7 one; kind 1/3 the second
@@ -16365,6 +16367,7 @@
 0x01866254 label    g_TkMenuSaveLoadWindow    # the save/load menu's window (TkMenuCtrlSaveLoad, TkMenuSaveLoadCloseWindow)
 0x0186626a label    g_TkMenuSaveLoadToggles   # 2 x u8 (MenuSaveLoad_ResetToggles)
 0x01866278 label    g_TkSaveSlotsUsed         # MenuSaveLoad_MarkSlots
+0x0186627c label g_MenuSaveCounter # u32: MenuSave_PackSave adds 1 per save and stores it capped at 0x80000000 in the header's +0; name ours
 0x01866290 label    g_TkSaveSlots             # 99 x u8 slot states (0 free, 1 used, 3 marked)
 0x018663c4 label    g_TkMenuSaveLoadActive    # cleared by TkMenuSaveLoadActive
 0x018676f0 label    g_MsgWindows              # message window pointers: +0 in use (i16), +0x2c state, +0x2e status (TOGetMessageStatus), +0x100 handler per state, +0x114 current handler (TOCloseMessage, TOSetMessageFunc, TOControlMessage)

@@ -3643,4 +3643,19 @@ ported! {
     MenuWShop_ClampSubWindow1 @ 0x008d_8450 => extern "C" fn menu_wshop_clamp_sub_window1() {
         tk::menu_wshop_clamp_sub_window1(&mut mem(), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuSave_PackSave(out, save, slot)`: a save file's header and data.
+    MenuSave_PackSave @ 0x008b_3e60 => extern "C" fn menu_save_pack_save(out: u32, save: u32, slot: u32) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the byte argument
+        tk::menu_save_pack_save(&mut mem(), out, save, slot as u8, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2WeaponBuySellWindow(x, y, weapon, amount, owned)`: the last call's eax.
+    TkMn2WeaponBuySellWindow @ 0x008c_2d00 => extern "C" fn tk_mn2_weapon_buy_sell_window(x: u32, y: u32, weapon: u32, amount: i32, owned: i32) -> u32 {
+        tk::tk_mn2_weapon_buy_sell_window(&mut mem(), [f32::from_bits(x), f32::from_bits(y)], weapon, amount, owned, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2BuySellWindow(x, y, item, price, owned_count, amount, gil)`: the last call's eax.
+    TkMn2BuySellWindow @ 0x008b_f170 => extern "C" fn tk_mn2_buy_sell_window(x: u32, y: u32, item: u32, price: u32, owned_count: u32, amount: u32, gil: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::tk_mn2_buy_sell_window(&mut mem(), [f32::from_bits(x), f32::from_bits(y)], [item, price, owned_count, amount, gil], width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
 }
