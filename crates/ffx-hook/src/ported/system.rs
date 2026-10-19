@@ -1384,6 +1384,14 @@ ported! {
     Vu0ScaleXyz_009dbd90 @ 0x009d_bd90 => extern "C" fn vu0_scale_xyz(out: u32, s: f32, v: u32) -> u32 {
         math::bridge::vu0_scale_xyz(&mut mem(), out, s, v)
     }
+    /// `MagicSqrt_009dbe10(src, dst)`.
+    MagicSqrt_009dbe10 @ 0x009d_be10 => extern "C" fn magic_sqrt(src: u32, dst: u32) -> u32 {
+        math::bridge::magic_sqrt(&mut mem(), src, dst)
+    }
+    /// `Kernel_LoadTables(kind)`.
+    Kernel_LoadTables @ 0x0078_1d40 => extern "C" fn kernel_load_tables(kind: u32) -> u32 {
+        files::bridge::kernel_load_tables(&mut mem(), kind, call_ptr)
+    }
     /// `TOSeqDraw(i, a, b)`.
     TOSeqDraw @ 0x008a_e2f0 => extern "C" fn to_seq_draw(i: i32, a: u32, b: u32) -> u32 {
         scene::bridge::draw(&mut mem(), i, a, b, call_sym)

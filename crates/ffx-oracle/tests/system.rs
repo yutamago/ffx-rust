@@ -22932,3 +22932,109 @@ fn round38_weapon_abilities_match_the_original_on_the_snapshot() {
     round38_weapon_abilities(&mut a, &mut b, &mut Xorshift(0x4038_0062));
 }
 
+/// Round 38 group F: `Kernel_LoadTables` over logging stand-ins (the two
+/// allocations from a table of addresses, the read size from a cell, the
+/// CD read behind `GetCD`), every kind and two it ignores, tables present
+/// or not; and `MagicSqrt_009dbe10`.
+#[allow(clippy::too_many_lines)]
+fn round38_kernel_tables(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let blocks = alloc(a, b, 0x10);
+    let cells = alloc(a, b, 0x10);
+    let buffer = alloc(a, b, 0x26000);
+    let table = alloc(a, b, 0x26000);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0068_7020, all(1), vec![], round38_seq(counter, blocks)),
+        (0x0068_7010, all(1), vec![], vec![]),
+        (0x0083_c4a0, all(1), vec![], vec![]),
+        (0x0079_9f00, all(2), vec![], vec![]),
+        (0x0078_2df0, all(2), vec![], ret_cell(cells)),
+        (0x0076_d0d0, vec![], vec![], ret_cell(cells + 4)),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    // the CD read: a logging stand-in behind a pointer
+    let read = stand_in8(
+        a,
+        b,
+        0x80 * 6,
+        &pick_logger(cursor, 0xcd, &all(4), &[], &[]),
+    );
+    put(a, b, cells + 8, read);
+    let call = |m: &mut Oracle, f: u32, args: &[u32]| m.call(f, Conv::Cdecl, args).unwrap().eax;
+    for k in 0..300u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        put(a, b, blocks, buffer);
+        put(a, b, blocks + 4, table);
+        let size = [0u32, 1, 0x100, 0x2_5800, 0x1_0010, 0x7ff, 0x3][(rng.next() % 7) as usize];
+        put(a, b, cells, size);
+        put(a, b, cells + 4, cells + 8);
+        for j in 0..0x40 {
+            put(a, b, buffer + 4 * j, rng.next());
+            put(a, b, table + 4 * j, rng.next());
+        }
+        for j in (0x7f0..0x810)
+            .chain(0x1_0000..0x1_0020)
+            .chain(0x2_57f0..0x2_5800)
+        {
+            put(a, b, buffer + j, (rng.next() & 0xff) as u8);
+        }
+        for t in &files::bridge::KERNEL_TABLES {
+            put(
+                a,
+                b,
+                a.rebase(t.pointer),
+                if rng.next().is_multiple_of(2) {
+                    0
+                } else {
+                    table
+                },
+            );
+        }
+        let kind = [0u32, 1, 2, 3, 4, 5, 6, u32::MAX][(rng.next() % 8) as usize];
+        assert_eq!(
+            eax(a, 0x0078_1d40, &[kind]),
+            files::bridge::kernel_load_tables(b, kind, call),
+            "kernel tables {k}"
+        );
+        same_memory(&format!("kernel tables {k}"), a, b);
+    }
+    // the square root
+    let src = alloc(a, b, 4);
+    let dst = alloc(a, b, 4);
+    for k in 0..300u32 {
+        let v = loop {
+            let f = rng.float();
+            if !(f.is_nan() && f.to_bits() & 0x0040_0000 == 0) {
+                break f.to_bits();
+            }
+        };
+        put(a, b, src, v);
+        put(a, b, dst, rng.next());
+        assert_eq!(
+            eax(a, 0x009d_be10, &[src, dst]),
+            math::bridge::magic_sqrt(b, src, dst),
+            "sqrt {k}"
+        );
+        same_memory(&format!("sqrt {k}"), a, b);
+    }
+}
+
+#[test]
+fn round38_kernel_tables_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round38_kernel_tables(&mut a, &mut b, &mut Xorshift(0x4038_0071));
+}
+
+#[test]
+fn round38_kernel_tables_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round38_kernel_tables(&mut a, &mut b, &mut Xorshift(0x4038_0072));
+}

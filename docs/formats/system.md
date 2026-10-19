@@ -1754,3 +1754,35 @@ pushed as literals (no relocation entries), not addresses.
   then `12 + 10 j + k, +1, +2` for eight k per point) and
   `updateVFXKeThSetPoint` for the points 0–5, 12 on, 6–11. The original
   counts `n` down in its argument slot.
+- `TOBtlCtrlStatusWin()` (`0x008920d0`) keeps the battle status window's
+  mode (`0x0133d782`: 0 HP, 1 MP, 2 statuses, 3 limit gauges) from the
+  current command's `MsGetComData(..)+0x22` (bit 0 set: bits 1–2, a change
+  re-inits the window; else 3) and re-inits when the party changes. Each
+  row (`0x0133f7d8 + 0x90 k`) steps its shown HP (`+0xc` target, `+0x10`
+  shown, `+0x14` step, `+0x18` frames) and MP (`+0x24`..`+0x30`): a new
+  value sets the step to a tenth of the difference for 10 frames. The HP
+  colour `+0x19` is 2 for `MsCalcWeakLevel` 1 and 2, 0x53 for 3, else 0;
+  the shown limit bar `+0x38` rises by 6 a frame to `gauge * i16
+  0x025d0aa4 / max` (`+0x34`). The count `MsGetSaveWindow` trims is never
+  used.
+- The limit windows run one state a frame (`i16` states `0x0133d6f4`
+  Auron, `0x0133d734` Tidus, `0x0133d708` Lulu): open the scene, wait for
+  its end, start the timer, play, success (`bgood`, click 0x68) or time
+  up, stop the scenes, hand the result to `MsMenuLimitSet_007b0470` (kind
+  2 Auron, 0 Tidus, 5 Lulu with its level). Auron's input must match the
+  combination at `0x0133d704`; Tidus's marker bounces between the bar's
+  ends, a press inside the good part wins; Lulu's directions (stick past
+  0x60/0xa0, or the keyboard's two keys, reset after 0.5001 s idle) count
+  a press for each full circle of five either way, the gauge following
+  `level * width / 16`. Their `eax` is not read (`TOControlBtlWindow`).
+- `TOBtlDrawStatusWin()` (`0x00896450`) draws a row per party member at
+  `X2(1231)`, `Y2(835 + 52 k)` by the mode; `TOBtlDrawWeaponAbilityWindow
+  (weapon, x, y)` (`0x008f34c0`) a weapon's abilities in a net window as
+  wide as `X2(90)` plus the widest name (at least `X2(300)`, 80 on PC).
+- `Kernel_LoadTables(kind)` (`0x00781d40`) loads one of `command`,
+  `ply_rom`, `a_ability`, `item`, `monmagic1`, `monmagic2` through a
+  0x25800-byte buffer (`getExcelBinSize`); the first four keep their size
+  as a `u16`, the table is allocated once, `ply_rom` of size 0 comes from
+  the CD instead. `MagicSqrt_009dbe10(src, dst)` (`0x009dbe10`,
+  `g_MagicImports` slot 300) stores `sqrt(*src)` as `f32` and returns
+  `dst`.

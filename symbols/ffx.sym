@@ -4828,7 +4828,7 @@
 0x00781c50 function MsBattleInitAtEvent       # fh v3:exact 0x00781d20
 0x00781c90 function MsBattleLabelExe          # fh v3:exact+call.cs 0x00781d60 cdecl
 0x00781d00 function MsBattleMemInit           # fh v3:exact 0x00781dd0
-0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals
+0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals; cdecl(kind) -> -1 (0 for kind > 5): user_malloc(0x25800) buffer, getExcelBinSize(name, buf) (size kept as u16 at 0x0112a968/96a/970/96e for command/ply_rom/a_ability/item, whole for monmagic1/2), table allocated once (Sg_MemSetAlign(0x40), user_malloc, MsMemCheckRegist), memcpy, user_free_thunk; ply_rom of size 0 read from the CD ((*GetCD())(8, table, 0, 0)); ported (system r38, files::bridge::kernel_load_tables)
 0x00782050 function MsBattleReadData          # fh v3:exact 0x00782110
 0x00782090 function MsBattleReadDataNB        # fh v3:exact 0x00782150
 0x007821e0 function MsBattleWater             # returns 0x0112c9ce, formation byte 3 (set only in underwater fields: cdsp00, bjyt02, genk09, bsil03, mtgz07, stbv00 ...); was Battle_IsUnderwater
@@ -12515,6 +12515,7 @@
 0x009db490 function CopyFields_009db490          # auto-port shape (several stores: copy into field, cdecl): t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; t4 = u32[&0x00c8f508]; u32[(a0 + 0x10)] = t4; t5 = u32[&0x00c8f50c]; u32[(a0 + 0x14)] = t5; t6 = u32[&0x00c8f510]; u32[(a0 + 0x18)] = t6; t7 = u32[&0x00c8f514]; u32[(a0 + 0x1c)] = t7; t8 = u32[&0x00c8f508]; u32[(a0 + 0x20)] = t8; t9 = u32[&0x00c8f50c]; u32[(a0 + 0x24)] = t9; t10 = u32[&0x00c8f510]; u32[(a0 + 0x28)] = t10; t11 = u32[&0x00c8f514]; u32[(a0 + 0x2c)] = t11; t12 = u32[&0x00c8f508]; u32[(a0 + 0x30)] = t12; t13 = u32[&0x00c8f50c]; u32[(a0 + 0x34)] = t13; t14 = u32[&0x00c8f510]; u32[(a0 + 0x38)] = t14; t15 = u32[&0x00c8f514]; u32[(a0 + 0x3c)] = t15; return t15; callers: no direct caller; name ours
 0x009dba10 function FFXVu0MulMatrix_thunk     # g_MagicImports slot 299 (5 overlays): jmp FFXVu0MulMatrix (0x006ed5c0); hidden from the dump
 0x009dbd90 function Vu0ScaleXyz_009dbd90 # cdecl(out, s, v) -> w bits: VU0 regs 0x00c8f820 = s, 0x00c8f830 = v with xyz *= s (f32), copied to out; no direct caller; name ours; ported (system round 32)
+0x009dbe10 function MagicSqrt_009dbe10        # g_MagicImports slot 300 (after FFXVu0MulMatrix_thunk): cdecl(src, dst) -> dst: *dst = (f32) _CIsqrt(*src); hidden from the dump; name ours; ported (system r38, math::bridge::magic_sqrt)
 0x009dbea0 function magic_nop_009dbea0        # g_MagicImports slot 720 (354 overlays): a lone ret; hidden from the dump
 0x009ddb30 function Difference_009ddb30 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
 0x009ddb40 function Difference_009ddb40 # cdecl(a, b) -> b - a (frame-pointer build, no direct callers); name ours
