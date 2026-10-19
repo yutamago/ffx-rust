@@ -2387,6 +2387,54 @@ pub mod bridge {
         abmap_reset_cursor_camera(mem)
     }
 
+    /// `AbmapRangesOverlap(a, b, c, d)` (`0x00a57000`, floats).
+    pub const RANGES_OVERLAP: u32 = 0x00a5_7000;
+    /// `1e11` (`0x00b7b710`), `AbmapPlyTagRect`'s mark for a box that is
+    /// not on screen.
+    pub const OFF_SCREEN: u32 = 0x00b7_b710;
+
+    /// `AbmapRectsOverlap(a, b)` (`0x00a49270`, from `0x00a5a4b0`; name
+    /// ours): whether two `(x0, y0, x1, y1)` boxes from `AbmapPlyTagRect`
+    /// overlap. A box whose `x0` is [`OFF_SCREEN`] never does. The box
+    /// further left must reach the other's `x0` (`x1 >= x0`; equal or
+    /// unordered `x0`s pass), then the y ranges go to
+    /// `AbmapRangesOverlap(a.y0, a.y1, b.y0, b.y1)`. Returns 0 or 1.
+    pub fn abmap_rects_overlap<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let word = |mem: &M, at: u32, i: u32| mem.read::<u32>(at.wrapping_add(4 * i));
+        let float = |mem: &M, at: u32, i: u32| f32::from_bits(word(mem, at, i));
+        let off = f32::from_bits(mem.read::<u32>(mem.rebase(OFF_SCREEN)));
+        #[allow(clippy::float_cmp)] // `fucom`'s exact match
+        let off_screen = float(mem, a, 0) == off || float(mem, b, 0) == off;
+        if off_screen {
+            return 0;
+        }
+        let (ax, bx) = (float(mem, a, 0), float(mem, b, 0));
+        let reaches = if bx > ax {
+            float(mem, a, 2) >= bx
+        } else if bx < ax {
+            float(mem, b, 2) >= ax
+        } else {
+            true
+        };
+        if !reaches {
+            return 0;
+        }
+        // Passed through `fld`/`fstp`, which quiets a signalling NaN.
+        let args = [
+            word(mem, a, 1),
+            word(mem, a, 3),
+            word(mem, b, 1),
+            word(mem, b, 3),
+        ]
+        .map(x87::copy);
+        let f = mem.rebase(RANGES_OVERLAP);
+        u32::from(call(mem, f, &args) != 0)
+    }
+
     /// `FFXVu0CopyMatrix`, `pppSetMatrix`, `FFXVu0MulMatrix`, `pppRunPart`
     /// and `pppAllFreePObject` (`0x006ed360`, `0x00717410`, `0x006ed5c0`,
     /// `0x00712250`, `0x00711f20`): [`abmap_run_part`]'s calls.

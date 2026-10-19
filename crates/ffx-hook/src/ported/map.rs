@@ -3980,6 +3980,10 @@ ported! {
     AbmapStartWarp @ 0x00a4_8a80 => extern "C" fn shim_abmap_start_warp(chr: u32, target: u32) -> u32 {
         abmap::bridge::abmap_start_warp(&mut mem(), chr, target, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapRectsOverlap(a, b)`.
+    AbmapRectsOverlap @ 0x00a4_9270 => extern "C" fn shim_abmap_rects_overlap(a: u32, b: u32) -> u32 {
+        abmap::bridge::abmap_rects_overlap(&mut mem(), [a, b], &mut |_, f, args| call_cdecl(f, args))
+    }
     /// `AbmapRunPart(part)`.
     AbmapRunPart @ 0x00a4_5930 => extern "C" fn shim_abmap_run_part(part: u32) -> u32 {
         abmap::bridge::abmap_run_part(&mut mem(), part, &mut |_, f, a| call_cdecl(f, a))

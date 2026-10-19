@@ -19592,3 +19592,55 @@ fn r13y_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13y_cases(&mut t, &mut rng, g, 150);
 }
+
+// ---- field agent r13, group Z: two sphere grid boxes' overlap ----
+
+/// Group Z (r13) on `t`: `AbmapRectsOverlap` over boxes drawn from a few
+/// values (so `x0`s tie and boxes touch), off-screen marks and quiet
+/// NaNs; `AbmapRangesOverlap` is a logged stand-in returning 0, 1 or 7.
+fn r13z_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::abmap::bridge as ab;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(4 + 0x20 * 4), t.alloc(4));
+    t.cave(&[(Some(ab::RANGES_OVERLAP), log_stub(log, rv, 1, 4))]);
+    let off = t.b.read::<u32>(t.b.rebase(ab::OFF_SCREEN));
+    let (a, b) = (t.alloc(0x10), t.alloc(0x10));
+    let values = [0.0f32, 1.0, 2.0, 3.0, -1.0];
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, [0u32, 1, 7][rng.below(3) as usize]);
+        for at in [a, b] {
+            for w in 0..4 {
+                let v = match rng.below(12) {
+                    0 => 0x7fc0_0000,
+                    1 if w == 0 => off,
+                    _ => values[rng.below(5) as usize].to_bits(),
+                };
+                t.put(at + 4 * w, v);
+            }
+        }
+        t.same(
+            "AbmapRectsOverlap",
+            |o| o.eax(0x00a4_9270, &[a, b]),
+            |m| ab::abmap_rects_overlap(m, [a, b], call),
+        );
+    }
+}
+
+/// Group Z (r13) on the image.
+#[test]
+fn r13z_rects_overlap_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_9a01);
+    r13z_cases(&mut t, &mut rng, 600);
+}
+
+/// Group Z (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13z_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_9a02);
+    r13z_cases(&mut t, &mut rng, 300);
+}
