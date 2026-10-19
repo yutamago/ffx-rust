@@ -2525,6 +2525,15 @@ ported! {
     pppDrawMdlCameraLoopInit_007400f0 @ 0x0074_00f0 => extern "C" fn ppp_draw_mdl_camera_loop_init(rec: u32, area: u32) {
         mdl::bridge::ppp_draw_mdl_camera_loop_init(&mut mem(), rec, area, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `opus_mdc_break_make_VitaSafe(mdc, out, params, view)`.
+    opus_mdc_break_make_VitaSafe @ 0x0080_59c0 => extern "C" fn opus_mdc_break_make(mdc: u32, out: u32, params: u32, view: u32) {
+        // the original's matrices and image-size locals (0x180 bytes)
+        let mut frame = super::StackFrame::<0x60>::new();
+        let at = frame.at();
+        // the caller's saved edi and esi only reach op_irandom_p's VU0
+        // scratch (as anmm's junk words)
+        opus::bridge::opus_mdc_break_make(&mut mem(), [mdc, out, params, view], at, [0; 2], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
     /// `pppDrawRainDes(obj, prog)`.
     pppDrawRainDes @ 0x0075_6270 => extern "C" fn ppp_draw_rain_des(obj: u32, prog: u32) -> u32 {
         draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::RAIN_DES, &mut |_, f, a| call_ptr(f, a))

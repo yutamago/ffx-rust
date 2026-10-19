@@ -460,6 +460,53 @@ record index (`u16 +0x14` of the 0x100-byte unit) is that record's.
 `opu_unit_free_by_oef2(list, oef)` (`0x007fdf70`) works by oef2 slot
 group instead (`u8 +0x1e`). Both are in `et.rs`.
 
+## Effect units (`opu_et_unit`)
+
+`opu_et_unit(oef, group, part, id)` (`0x007fd7f0`, 15 callers) starts a
+unit of an oef2 in `g_OpusBattle`: the oef2 takes one of the 16 slots at
+`+0x60` (its own or the first free; -1 without one), `opus_prog_on(b, 0)`
+gives the 0x100-byte unit record, which gets the slot (`+0x1e`), its data
+(`+0` = `set_ptr32` of entry `part` of `op_oef2_a_get(oef, 1, group)`), its
+`g_EtEff` record (`opus_get_eff_status_index(id, slot, 1)`, index at `u16
++0x14`, layer at `+0x18`) and a unit number (`u16 +0x1a`): for a negative
+`id` `opus_fullauto_no_get`, else the first `(part << 8) + 0x10 j` that no
+unit of the same slot in the `i16` lists at `[0x00c88a94]` and
+`[0x00c88a98]` already has. The result, in `eax` although Ghidra shows
+`void`, is `slot << 16 | number`. The original also formats
+"LoadedByOPU_ET_UNIT" into a 0x4c-byte stack record for `yonExtMapRegister`,
+which is an empty function on PC (`et.rs`).
+
+## CLUT cue ring (`op_oef2_tex_clut_cue_loop`, `_multi`)
+
+Textures and CLUTs queued by `op_oef2_tex_cue` / `op_oef2_clut_cue` wait in
+a 64-slot ring (masks at `0x011a03a0`, textures at `0x011a01a0`, CLUTs at
+`0x011a02a0`, `u16` head and count at `0x011a04a0`/`a2`).
+`op_oef2_tex_clut_cue_loop` (`0x007e4720`) loads them from the head,
+counting texture bytes (`+0x10`) and 16 per CLUT entry, until 1 MiB or the
+count runs out; the count is read again after every load.
+`op_oef2_tex_clut_cue_multi(oef, first, last, mask)` (`0x007e4830`) queues a
+range of an oef2's textures and CLUTs and then, for 25 scripted magics
+(`MagicFile_GetMagicId`), records the step the range stands for in
+`g_VfxPhase` (`0x00ccb9d4`), which the renderer reads (`op.rs`).
+
+## Breaking models (`opus_mdc_break_make_VitaSafe`)
+
+`opus_mdc_break_make_VitaSafe(mdc, out, params, view)` (`0x008059c0`) turns
+a model into flying triangles: `out +4` counts them (at most 4095 per
+model), and each is 0xc0 bytes from `out + 0x30`: the three corners less the
+centre at `+0`, `+0x10`, `+0x20` (`w` 1, turned by the entry matrix without
+translation), texture coordinates (`u16 / 4096`) at `+0x30`, `+0x34`,
+`+0x40`, `+0x44`, `+0x50`, `+0x54`, the part's words at `+0x38`/`+0x3c` and
+bytes at `+0x58..+0x5b`, a life `u16 +0x48` = `op_irandom_p(params +0x1e) +
+0x10 + params +0x1c`, the centre at `+0x60` (through the camera times the
+entry matrix, whose translation is scaled by 1000), the unit direction from
+`[view +4]` at `+0x70` and its length at `+0x7c`, speeds `(a +
+op_random(b)) / 256` at `+0x80`, `+0x84`, `+0xb8`, `+0xbc` and spins
+`op_random` at `+0xa0..+0xa8` from `params`' `i16` pairs, and `g_Ee_Gpr`'s
+r0 at `+0x90` and `+0xb4` (its `+0xb8`/`+0xbc` then taken by the speeds). `op_irandom_p` reads four arguments where one is
+pushed, so three of the caller's stack words reach its VU0 scratch
+registers only (`opus.rs`).
+
 ## Model-draw packets (`0x0080e160`, `0x0080e230`, `0x0080e900`)
 
 Before `op1_mdc_draw`, the opus model units (`0x0080df10`, `0x0080e030`)

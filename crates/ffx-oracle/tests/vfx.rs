@@ -15934,3 +15934,157 @@ fn round30b_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round30c_mdc_break_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_59c0);
+        // Ch_GetBigImageSize: the image id (the rest point at the locals)
+        deref_recorder(&mut p, 0x0083_3e60, &[0]);
+        // get_ptr32_func: logged, the word itself
+        let (mut c, _) = deref_recorder_code(&mut p, &[0], None);
+        c.truncate(c.len() - 6);
+        c.extend([0x8b, 0x44, 0x24, 0x04, 0xc3]); // mov eax, [esp + 4]; ret
+        assert!(c.len() <= 0x50);
+        stub_code(&mut p, 0x00a4_4650, &c);
+        // dbgPrintf and debug_exit_trace are 16 bytes apart
+        far_recorder(&mut p, 0x0062_f500, &[0], None);
+        far_recorder(&mut p, 0x0062_f510, &[0], None);
+        // the matrix functions take the original's locals, so they must
+        // not log or keep those addresses (the real ones keep them in the
+        // emulated EE registers). FFXVu0CopyMatrix(dst, src): a copy
+        // (push esi; push edi; mov edi, [esp+0xc]; mov esi, [esp+0x10];
+        // mov ecx, 16; rep movsd; pop edi; pop esi; ret)
+        let copy16 = [
+            0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x74, 0x24, 0x10, 0xb9, 0x10, 0, 0, 0, 0xf3,
+            0xa5, 0x5f, 0x5e, 0xc3,
+        ];
+        stub_code(&mut p, 0x006e_d360, &copy16);
+        // op_mul_m(dst, a, b): b copied, then dst[0] = a[0]
+        // (... mov esi, [esp+0x14] ...; mov eax, [esp+8]; mov eax, [eax];
+        // mov edx, [esp+4]; mov [edx], eax; ret)
+        let mut c = copy16[..19].to_vec();
+        c[9] = 0x14;
+        c.extend([
+            0x8b, 0x44, 0x24, 0x08, 0x8b, 0x00, 0x8b, 0x54, 0x24, 0x04, 0x89, 0x02, 0xc3,
+        ]);
+        stub_code(&mut p, 0x007e_83b0, &c);
+        // FFXVu0ApplyMatrix(out, m, v): logs out, m's first row and v,
+        // then out = m's translation row
+        let (mut c, _) = deref_recorder_code(&mut p, &[0, 4, 4], None);
+        c.pop();
+        c.extend([
+            0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x74, 0x24, 0x10, 0x83, 0xc6, 0x30, 0xb9, 4,
+            0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e, 0xc3,
+        ]);
+        let to = p.a.alloc_code(&c).unwrap();
+        assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+        let at = p.sym(0x006e_d2e0);
+        let mut j = vec![0xe9]; // jmp to
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        p.a.write(at, &j).unwrap();
+        p.b.write(at, &j).unwrap();
+        let frame = p.b.stack_range().start + 0x100;
+        let (mdc, out, params, view) = (
+            p.alloc(0x100),
+            p.alloc(0x30 + 0xc0 * 40),
+            p.alloc(0x20),
+            p.alloc(0x10),
+        );
+        let (camera, pos) = (p.alloc(0x40), p.alloc(0x10));
+        let models: Vec<u32> = (0..3).map(|_| p.alloc(0x1_d000)).collect();
+        let mats: Vec<u32> = (0..3).map(|_| p.alloc(0x40)).collect();
+        p.set(view, camera);
+        p.set(view + 4, pos);
+        for round in 0..300 {
+            p.fill(out, 0x30 + 0xc0 * 40, &mut rng);
+            p.fill(mdc, 0x100, &mut rng);
+            for at in [camera, pos].into_iter().chain(mats.iter().copied()) {
+                for i in (0..0x40).step_by(4) {
+                    let f = if rng.chance(90) {
+                        (f32::from_bits(rng.next() & 0x3fff_ffff) % 64.0 - 32.0).to_bits()
+                    } else {
+                        rng.float()
+                    };
+                    p.set(at + i, f);
+                }
+            }
+            let scale = rng.float();
+            p.set(view + 8, scale);
+            for i in (0..0x20).step_by(2) {
+                p.set(params + i, (rng.below(0x200) as u16).wrapping_sub(0x100));
+            }
+            let entries = rng.pick(&[0u16, 1, 2, 3]);
+            p.set(mdc + 4, entries);
+            for (e, (&model, &mat)) in models.iter().zip(&mats).enumerate() {
+                let at = mdc + 0x10 + 0x10 * e as u32;
+                p.set(at, model);
+                p.set(at + 4, mat);
+                p.fill(model, 0x400, &mut rng);
+                // vertices from +0x300, parts from +0x20
+                p.set(model + 8, 0x300u32);
+                for i in (0..0x80).step_by(4) {
+                    let f = if rng.chance(95) {
+                        (f32::from_bits(rng.next() & 0x3fff_ffff) % 16.0 - 8.0).to_bits()
+                    } else {
+                        rng.float()
+                    };
+                    p.set(model + 0x300 + i, f);
+                }
+                let mut part = model + 0x20;
+                for _ in 0..rng.below(3) {
+                    let n = rng.pick(&[0u16, 1, 2, 3]);
+                    let kind = if rng.chance(95) {
+                        0x10u8
+                    } else {
+                        rng.pick(&[0x11, 0, 0x0f, 0x7f])
+                    };
+                    p.set(part + 1, kind);
+                    p.set(part + 2, n);
+                    for k in 0..u32::from(n) {
+                        let tri = part + 0x20 + 0x1c * k;
+                        for j in 0..3 {
+                            p.set(tri + 2 * j, rng.below(8) as u16);
+                        }
+                    }
+                    part += 0x20 + 0x1c * u32::from(n);
+                }
+                match rng.below(10) {
+                    // a part too large to make: skipped to the far end
+                    0 => {
+                        p.set(part + 1, 0x10u8);
+                        p.set(part + 2, 0x1000u16);
+                        p.set(part + 0x20 + 0x1c * 0x1000 + 1, 0xffu8);
+                    }
+                    // a negative count: the next part starts at its triangles
+                    1 => {
+                        p.set(part + 1, 0x10u8);
+                        p.set(part + 2, 0xffffu16);
+                        p.set(part + 0x21, 0xffu8);
+                    }
+                    _ => p.set(part + 1, 0xffu8),
+                }
+            }
+            let args = [mdc, out, params, view];
+            p.check(
+                &format!("opus_mdc_break_make round {round}"),
+                0x0080_59c0,
+                &args,
+                |o| {
+                    // the oracle starts the original with edi 0x33333333
+                    // and esi 0x22222222
+                    opus::bridge::opus_mdc_break_make(
+                        o,
+                        args,
+                        frame,
+                        [0x3333_3333, 0x2222_2222],
+                        &mut call_original,
+                        &mut call_original_f,
+                    );
+                    None
+                },
+            );
+        }
+    }
+}

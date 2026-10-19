@@ -2284,6 +2284,254 @@ pub mod bridge {
         }
     }
 
+    /// Where [`opus_mdc_break_make`]'s callees see its locals, as offsets in
+    /// its `frame` (0x180 bytes, the original's `ebp - 0x184` up): the
+    /// image size words, `Ch_GetBigImageSize`'s buffer, the piece matrix,
+    /// the entry's scaled matrix and the piece matrix without translation.
+    const BREAK_SIZE: u32 = 0;
+    const BREAK_BUFFER: u32 = 0x70;
+    const BREAK_PIECE_M: u32 = 0xc0;
+    const BREAK_ENTRY_M: u32 = 0x100;
+    const BREAK_TURN_M: u32 = 0x140;
+
+    /// `opus_mdc_break_make_VitaSafe(mdc, out, params, view)`
+    /// (`0x008059c0`): breaks a model into flying triangles. `out` gets
+    /// `+0xc` = `params`, `+4` = 0 (the piece count), `+0x20` = the float
+    /// `view +8`, `+8` = `mdc`, `+0x10..+0x1f` the four words at `[view
+    /// +4]`, after `Ch_GetBigImageSize([mdc], ...)` into the frame. Each of
+    /// the `u16 mdc +4` entries of 16 bytes from `mdc + 0x10` ([`break_entry`])
+    /// adds its pieces, 0xc0 bytes each from `out + 0x30`. Callees through
+    /// `call` (`op_random` through `fcall`); `frame` stands for the
+    /// original's locals (0x180 bytes). `op_irandom_p` reads four
+    /// arguments where one is pushed: the other three are `op_random`'s
+    /// last result (left in its argument slot) and the caller's `edi` and
+    /// `esi` as the original saved them (`saved`); they only reach the
+    /// emulated VU0 registers.
+    pub fn opus_mdc_break_make<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        frame: u32,
+        saved: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let [mdc, out, params, view] = args;
+        let camera: u32 = mem.read(view);
+        mem.write(out.wrapping_add(0xc), params);
+        mem.write(out.wrapping_add(4), 0u32);
+        let scale = crate::x87::load(mem.read(view.wrapping_add(8)));
+        mem.write(out.wrapping_add(0x20), scale);
+        mem.write(out.wrapping_add(8), mdc);
+        let id: u32 = mem.read(mdc);
+        let size = frame + BREAK_SIZE;
+        call(
+            mem,
+            g(mem, 0x0083_3e60),
+            &[id, size + 4, size, frame + BREAK_BUFFER],
+        );
+        let pos: u32 = mem.read(view.wrapping_add(4));
+        let p: [u32; 4] = mem.read(pos);
+        mem.write(out.wrapping_add(0x10), p);
+        let mut piece = out.wrapping_add(0x30);
+        let ctx = Break {
+            out,
+            params,
+            view,
+            camera,
+            frame,
+            saved,
+        };
+        let mut i = 0u32;
+        while i < u32::from(mem.read::<u16>(mdc.wrapping_add(4))) {
+            let entry = mdc.wrapping_add(0x10 + 0x10 * i);
+            piece = break_entry(mem, &ctx, entry, piece, call, fcall);
+            i += 1;
+        }
+    }
+
+    /// What [`break_entry`] and [`break_piece`] share.
+    struct Break {
+        out: u32,
+        params: u32,
+        view: u32,
+        camera: u32,
+        frame: u32,
+        saved: [u32; 2],
+    }
+
+    /// One entry of [`opus_mdc_break_make`]: its matrix (`get_ptr32_func`
+    /// of `+4`, copied, the translation times 1000) after the camera
+    /// (`op_mul_m(piece_m, camera, entry_m)`), then the parts of its model
+    /// (`get_ptr32_func` of `+0`, vertices of 16 bytes at `[+8]` past it,
+    /// parts from `+0x20` until a kind (`+1`) of 0xff; kinds other than
+    /// 0x10 are reported and `debug_exit_trace(1)` called). A part of `i16
+    /// +2` triangles of 0x1c bytes from `+0x20` makes its pieces while the
+    /// total stays below 4096, else is skipped. Returns the next piece.
+    fn break_entry<M: Mem>(
+        mem: &mut M,
+        ctx: &Break,
+        entry: u32,
+        mut piece: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let get = g(mem, 0x00a4_4650);
+        let (entry_m, piece_m) = (ctx.frame + BREAK_ENTRY_M, ctx.frame + BREAK_PIECE_M);
+        let w: u32 = mem.read(entry.wrapping_add(4));
+        let m = call(mem, get, &[w]);
+        call(mem, g(mem, 0x006e_d360), &[entry_m, m]);
+        for k in 0..3 {
+            let at = entry_m + 0x30 + 4 * k;
+            let v = ffx_bridge::x87::load(mem.read(at));
+            mem.write(at, ffx_bridge::x87::store(ffx_bridge::x87::mul(v, 1000.0)));
+        }
+        call(mem, g(mem, 0x007e_83b0), &[piece_m, ctx.camera, entry_m]);
+        let w: u32 = mem.read(entry);
+        let model = call(mem, get, &[w]);
+        let verts = mem.read::<u32>(model.wrapping_add(8)).wrapping_add(model);
+        let mut part = model.wrapping_add(0x20);
+        let total_at = ctx.out.wrapping_add(4);
+        while mem.read::<u8>(part.wrapping_add(1)) != 0xff {
+            if mem.read::<u8>(part.wrapping_add(1)) != 0x10 {
+                let msg = g(mem, 0x00b5_87f8);
+                call(mem, g(mem, 0x0062_f500), &[msg]);
+                call(mem, g(mem, 0x0062_f510), &[1]);
+            }
+            let count = |mem: &M| i32::from(mem.read::<i16>(part.wrapping_add(2)));
+            let n = count(mem);
+            let total = mem.read::<u32>(total_at).cast_signed().wrapping_add(n);
+            let mut tri = part.wrapping_add(0x20);
+            if total < 0x1000 {
+                mem.write(total_at, total);
+                let mut k = 0;
+                while k < count(mem) {
+                    break_piece(mem, ctx, piece, tri, part, verts, call, fcall);
+                    piece = piece.wrapping_add(0xc0);
+                    tri = tri.wrapping_add(0x1c);
+                    k += 1;
+                }
+            } else {
+                tri = tri.wrapping_add(n.wrapping_mul(0x1c).cast_unsigned());
+            }
+            part = tri;
+        }
+        // the original fetches the model twice more and drops it
+        let w: u32 = mem.read(entry);
+        call(mem, get, &[w]);
+        let w: u32 = mem.read(entry);
+        call(mem, get, &[w]);
+        piece
+    }
+
+    /// One piece of [`break_entry`] from the triangle `tri` (`i16`
+    /// vertex indices at `+0`, `+2`, `+4`; six `u16` texture coordinates
+    /// from `+8`, over 4096 into `+0x30`, `+0x34`, `+0x40`, `+0x44`,
+    /// `+0x50`, `+0x54`). Its centre `c` (the three vertices' mean, at
+    /// x87 precision) goes to `+0x60` (`w` 1 at `+0x6c`), the vertices less
+    /// `c` to `+0`, `+0x10`, `+0x20` (`w` 1); the centre through the piece
+    /// matrix and the vertices through it without translation
+    /// (`FFXVu0ApplyMatrix`). Then `+0xb0` = the centre's `y`, the unit
+    /// direction from `[view +4]` to the centre at `+0x70` and its length
+    /// at `+0x7c`, `g_Ee_Gpr`'s r0 into `+0x90` and `+0xb4`; `params`
+    /// (`i16` pairs) give `+0x80`, `+0x84`, `+0xb8`, `+0xbc` = `(a +
+    /// op_random(b)) / 256`, `+0xa0..+0xa8` = `op_random(+0x16..+0x1a)`,
+    /// `u16 +0x48` = `op_irandom_p(+0x1e) + 0x10 + +0x1c`, `+0x4a` 0; the
+    /// part gives `+0x38`, `+0x3c` (its words `+8`, `+0xc`) and the bytes
+    /// `+0x58..+0x5b` (its `+4..+7`).
+    #[allow(clippy::too_many_arguments)]
+    fn break_piece<M: Mem>(
+        mem: &mut M,
+        ctx: &Break,
+        piece: u32,
+        tri: u32,
+        part: u32,
+        verts: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, div, load, mul, sqrt, store, sub};
+        let at = |off: u32| piece.wrapping_add(off);
+        for (k, off) in (0u32..).zip([0x30, 0x34, 0x40, 0x44, 0x50, 0x54]) {
+            let v = mem.read::<u16>(tri.wrapping_add(8 + 2 * k));
+            mem.write(at(off), f32::from(v) / 4096.0);
+        }
+        // the three vertices as the original copies them (fld/fstp)
+        let vertex = |mem: &M, k: u32| -> [f64; 3] {
+            let i = i32::from(mem.read::<i16>(tri.wrapping_add(2 * k)));
+            let v = verts.wrapping_add(i.wrapping_mul(16).cast_unsigned());
+            [0, 4, 8].map(|o| load(mem.read(v.wrapping_add(o))))
+        };
+        let (v0, v1, v2) = (vertex(mem, 0), vertex(mem, 1), vertex(mem, 2));
+        let mut centre = [0f64; 3];
+        for j in 0..3 {
+            let sum = add(add(v1[j], v0[j]), v2[j]);
+            centre[j] = load(store(div(sum, 3.0)));
+        }
+        let one = 1.0f32.to_bits();
+        for (j, &c) in (0u32..).zip(&centre) {
+            mem.write(at(0x60 + 4 * j), store(c));
+            mem.write(at(4 * j), store(sub(v0[j as usize], c)));
+            mem.write(at(0x10 + 4 * j), store(sub(v1[j as usize], c)));
+            mem.write(at(0x20 + 4 * j), store(sub(v2[j as usize], c)));
+        }
+        for off in [0xc, 0x1c, 0x2c, 0x6c] {
+            mem.write(at(off), one);
+        }
+        let (piece_m, turn_m) = (ctx.frame + BREAK_PIECE_M, ctx.frame + BREAK_TURN_M);
+        call(mem, g(mem, 0x006e_d360), &[turn_m, piece_m]);
+        mem.write(turn_m + 0x30, [0u32, 0, 0, one]);
+        let apply = g(mem, 0x006e_d2e0);
+        call(mem, apply, &[at(0x60), piece_m, at(0x60)]);
+        for off in [0, 0x10, 0x20] {
+            call(mem, apply, &[at(off), turn_m, at(off)]);
+        }
+        let centre_y: u32 = mem.read(at(0x64));
+        mem.write(at(0xb0), crate::x87::load(centre_y));
+        // (the original clears +0xb4..+0xbc here; all three are written below)
+        let pos: u32 = mem.read(ctx.view.wrapping_add(4));
+        let dir: [f64; 3] = [0, 4, 8].map(|o| {
+            let c = load(mem.read(at(0x60 + o)));
+            load(store(sub(c, load(mem.read(pos.wrapping_add(o))))))
+        });
+        let squares = add(
+            add(mul(dir[1], dir[1]), mul(dir[0], dir[0])),
+            mul(dir[2], dir[2]),
+        );
+        let len = load(store(sqrt(squares)));
+        for (j, &dj) in (0u32..).zip(&dir) {
+            mem.write(at(0x70 + 4 * j), store(div(dj, len)));
+        }
+        mem.write(at(0x7c), store(len));
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        mem.write(at(0xb4), r0);
+        mem.write(at(0x90), r0);
+        let int = |mem: &M, off: u32| f32::from(mem.read::<i16>(ctx.params.wrapping_add(off)));
+        let random = g(mem, 0x007e_6700);
+        for (lo, off) in [(4, 0x80), (8, 0x84), (0xc, 0xb8), (0x10, 0xbc)] {
+            let base = f64::from(int(mem, lo));
+            let spread = int(mem, lo + 2);
+            let r = fcall(mem, random, &[spread.to_bits()]);
+            mem.write(at(off), store(mul(add(r, base), 1.0 / 256.0)));
+        }
+        let mut last = 0;
+        for (k, off) in [(0x16, 0xa0), (0x18, 0xa4), (0x1a, 0xa8)] {
+            let spread = int(mem, k);
+            let r = fcall(mem, random, &[spread.to_bits()]);
+            last = store(r);
+            mem.write(at(off), last);
+        }
+        let spread = i32::from(mem.read::<i16>(ctx.params.wrapping_add(0x1e))).cast_unsigned();
+        let [edi, esi] = ctx.saved;
+        #[allow(clippy::cast_possible_truncation)] // the 16-bit sum
+        let n = call(mem, g(mem, 0x007e_5d50), &[spread, last, edi, esi]) as u16;
+        let base: u16 = mem.read(ctx.params.wrapping_add(0x1c));
+        mem.write(at(0x48), [n.wrapping_add(0x10).wrapping_add(base), 0]);
+        let words: [u32; 2] = mem.read(part.wrapping_add(8));
+        mem.write(at(0x38), words);
+        let bytes: [u8; 4] = mem.read(part.wrapping_add(4));
+        mem.write(at(0x58), bytes);
+    }
+
     /// `opus_mdc_rec_init_00813950(rec, n, a, b)` (`0x00813950`): a record
     /// head: `u16 +0` 0, `+2` `n`, `+4` `a`, `+6` `b`, `+8` 0; `+0x18` =
     /// `set_ptr32(rec + 0x20)`, `+0x1c` = `set_ptr32(get_ptr32(+0x18) + 32
