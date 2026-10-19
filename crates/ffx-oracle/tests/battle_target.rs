@@ -9694,7 +9694,17 @@ fn cam_set_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32, scr
     call(a, b, rng.below(6));
 }
 
-fn cam_set_btl_check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+/// Round 26's small checks: the dressed actors (as [`check`] dresses
+/// them) for `rounds` rounds, `body` called `per` times on each with a
+/// scratch block of 0x400 bytes.
+fn dressed_check(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    synthetic: bool,
+    (rounds, per): (u32, u32),
+    mut body: impl FnMut(&mut Oracle, &mut Oracle, &mut Xorshift, &World, u32),
+) {
     patch(a);
     patch(b);
     let w = world(a, b, rng, synthetic);
@@ -9706,11 +9716,11 @@ fn cam_set_btl_check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthet
         script_stubs(o, rec);
     }
     let buf = scratch(a, b, 0x400);
-    for _ in 0..150 {
+    for _ in 0..rounds {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
-        for _ in 0..8 {
-            cam_set_btl(a, b, rng, buf, !synthetic);
+        for _ in 0..per {
+            body(a, b, rng, &w, buf);
         }
     }
 }
@@ -9720,7 +9730,16 @@ fn cam_set_btl_matches_the_original() {
     let Some((mut a, mut b)) = synthetic() else {
         return;
     };
-    cam_set_btl_check(&mut a, &mut b, &mut Xorshift(0x26ca_0001), true);
+    dressed_check(
+        &mut a,
+        &mut b,
+        &mut Xorshift(0x26ca_0001),
+        true,
+        (150, 8),
+        |a, b, rng, _, buf| {
+            cam_set_btl(a, b, rng, buf, false);
+        },
+    );
 }
 
 #[test]
@@ -9728,5 +9747,108 @@ fn cam_set_btl_matches_the_original_on_a_snapshot() {
     let Some((mut a, mut b)) = snapshot() else {
         return;
     };
-    cam_set_btl_check(&mut a, &mut b, &mut Xorshift(0x26ca_0002), false);
+    dressed_check(
+        &mut a,
+        &mut b,
+        &mut Xorshift(0x26ca_0002),
+        false,
+        (150, 8),
+        |a, b, rng, _, buf| {
+            cam_set_btl(a, b, rng, buf, true);
+        },
+    );
+}
+
+/// `MsNumberDrawProcess` (round 26) on the dressed actors with screen
+/// points near the screen and a made-up list of number characters at
+/// `buf`; `TOBtlSetDamageValue` runs as the original in both.
+fn number_draw(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, buf: u32) {
+    use ffx_battle::input::bridge as ip;
+    let status = [0x1fi8, 0x20, 0x21, 0, 5, 0x22][rng.below(6) as usize];
+    set(a, b, ffx_battle::state::bridge::STATUS, status);
+    let near = |rng: &mut Xorshift| rng.range(-0x30, 0x240);
+    for i in 0..ACTORS {
+        let p = w.actor(i);
+        let on = |rng: &mut Xorshift| u8::from(rng.below(6) != 0);
+        poke(a, b, p + 0x10, &[on(rng)]);
+        poke(a, b, p + 0xdc8, &[on(rng)]);
+        poke(a, b, p + 0x15, &[on(rng)]);
+        let bits = if rng.below(6) == 0 { 0 } else { 0x4000 } | rng.below(0x4000);
+        poke(a, b, p + 0x616, &u16::try_from(bits).unwrap().to_le_bytes());
+        let hp = [0, 0x8000_0000, 0x7fc0_0000, float(rng), float(rng)][rng.below(5) as usize];
+        poke(a, b, p + 0x40, &hp.to_le_bytes());
+        let count = [rng.byte(), rng.byte() % 10, 0][rng.below(3) as usize];
+        poke(a, b, p + 0x5c8, &[count, rng.byte()]);
+        poke(a, b, p + 0xf6c, &float(rng).to_le_bytes());
+        for o in [0xf3c, 0xf40, 0xf44, 0xf48, 0xf4c, 0xf50] {
+            poke(a, b, p + o, &near(rng).to_le_bytes());
+        }
+    }
+    // up to 12 characters, linked in order
+    let n = rng.below(13);
+    let mut list = vec![0u8; 0x14 * 12];
+    for k in 0..n as usize {
+        let e = &mut list[0x14 * k..0x14 * (k + 1)];
+        let actor = [rng.below(ACTORS), rng.next() & 0xff][rng.below(4).min(1) as usize];
+        e[0] = rng.byte();
+        e[1] = [0u8, 1, 2, 3, rng.byte()][rng.below(5) as usize];
+        e[2] = u8::try_from(actor).unwrap();
+        e[3] = u8::try_from(rng.below(8)).unwrap();
+        e[4] = rng.byte();
+        e[5] = u8::from(rng.below(4) == 0);
+        e[6] = u8::try_from(rng.below(20)).unwrap();
+        e[7] = [u8::try_from(rng.below(20)).unwrap(), rng.byte()][rng.below(4).min(1) as usize];
+        e[8..10].copy_from_slice(&i16::try_from(rng.range(-40, 40)).unwrap().to_le_bytes());
+        e[10..12].copy_from_slice(&i16::try_from(rng.range(-40, 40)).unwrap().to_le_bytes());
+        e[12] = rng.byte();
+        e[13] = rng.byte();
+        let next = if k + 1 < n as usize {
+            buf + 0x14 * (u32::try_from(k).unwrap() + 1)
+        } else {
+            0
+        };
+        e[0x10..0x14].copy_from_slice(&next.to_le_bytes());
+    }
+    poke(a, b, buf, &list);
+    let head = if n == 0 { 0 } else { buf };
+    set(a, b, ffx_battle::minor::bridge::NUMBER_LIST, head);
+    // the damage values' count: room, nearly full, full
+    let count = [0i16, 0x3c, 0x3f][rng.below(3) as usize];
+    set(a, b, ffx_bridge::Global::<i16>::new(0x0133_f108), count);
+    twin("MsNumberDrawProcess", a, b, 0x0079_f660, &[], 0, |m| {
+        let mut c = game_call_o;
+        ip::ms_number_draw_process(m, &stand_in, &mut c);
+        0
+    });
+    same("MsNumberDrawProcess", a, b);
+}
+
+#[test]
+fn number_draw_matches_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    dressed_check(
+        &mut a,
+        &mut b,
+        &mut Xorshift(0x26ca_0101),
+        true,
+        (300, 2),
+        number_draw,
+    );
+}
+
+#[test]
+fn number_draw_matches_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    dressed_check(
+        &mut a,
+        &mut b,
+        &mut Xorshift(0x26ca_0102),
+        false,
+        (300, 2),
+        number_draw,
+    );
 }

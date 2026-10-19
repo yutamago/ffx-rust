@@ -49,6 +49,12 @@ pub mod bridge {
     /// The digits of the last number `MsNumberRegist` split (lowest first,
     /// up to 9).
     pub const NUMBER_DIGITS: Global<[u8; 9]> = Global::new(0x0113_60ac);
+    /// `TOBtlSetDamageValue(x, y, kind, ch, r, g, b, alpha)` (system): a
+    /// damage number character drawn.
+    pub const TO_BTL_SET_DAMAGE_VALUE: u32 = 0x0089_9a40;
+    /// `MsNumberDrawProcess`' table of number frames (3 bytes each: x and
+    /// y offsets (`i8`), alpha), by a character's age less its place.
+    pub const NUMBER_TABLE: Global<u8> = Global::new(0x00c4_24b0);
     /// Set: every HP loss takes 99999 more (a debug switch; actors with
     /// `+4` 1-7 are spared).
     pub const DEBUG_KILL: Global<u32> = Global::new(0x0113_338c);
@@ -286,6 +292,176 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `MsNumberDrawProcess()` (`0x0079f660`): the damage numbers drawn
+    /// (`TOBtlSetDamageValue`, system's, through `call`).
+    ///
+    /// Outside the battle's end states (`g_BtlStatus` 0x1f-0x21), each
+    /// actor with a model, on screen (`+0xdc8`), flag 0x4000 of `+0x616`,
+    /// shown (`+0x15`) and with HP (`+0x40` not 0.0; a NaN counts) first
+    /// shows its counter `+0x5c8` in pulsing digits: its phase `+0xf6c`
+    /// grows by `+0x5c9 / (+0x5c8 + 1) * 0.125`, and from
+    /// `t = sin(phase) + 1` (both stored as `f32`) the colour is
+    /// `t * 12 + 140`, `t * 12 + 50`, `t * 6 + 60` (truncated, low bytes).
+    /// The digits (lowest first) go right to left 9 apart, centred on
+    /// `+0xf3c`, at `+0xf40` less 0x13, in kind 3 and alpha 0x80; only
+    /// those inside the screen.
+    ///
+    /// Then every number character of the list (`minor::NUMBER_LIST`) whose
+    /// delay (`+5`) has run out: its age (`+6` less 1) less its place
+    /// (`+3`) picks a row of the table at `0x00c424b0` (x and y offsets,
+    /// alpha); the last 5 frames of its life (`+7`) fade (alpha `(life -
+    /// age) << 5`). It sits at the actor's (`+2`) number point (`+0xf4c`/
+    /// `+0xf50` with style bit 7, else `+0xf44`/`+0xf48`) plus its offset
+    /// (`+8`, `+0xa`): colour 0 bounces by the table's offsets, 1 rises by
+    /// half its age, 2 by its age, any other stays put. Colour 0 and 2 are
+    /// grey (0x80), 1 green (0x4a, 0xa0, 0x58), any other keeps the last
+    /// one's (none yet: black). Drawn when its box (`+0xc` wide, `+0xd`
+    /// high) reaches the screen (x at most 0x200, y at most 0x1a0).
+    ///
+    /// The original passes the colour bytes and the alpha in words whose
+    /// upper bytes are stack garbage; `TOBtlSetDamageValue` keeps only
+    /// their low bytes, so these pass 0 there.
+    pub fn ms_number_draw_process<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: Call<'_, M>,
+    ) {
+        let mut put = |mem: &mut M, args: [u32; 8]| {
+            let f = code(mem, TO_BTL_SET_DAMAGE_VALUE);
+            call(mem, f, &args);
+        };
+        let status = crate::state::bridge::STATUS.get(mem);
+        if !matches!(status, 0x1f..=0x21) {
+            draw_counters(mem, trig, &mut put);
+        }
+        let table = NUMBER_TABLE.ptr(mem).addr;
+        let mut colour = [0u32; 3];
+        let mut node = crate::minor::bridge::NUMBER_LIST.get(mem);
+        while node != 0 {
+            if byte(mem, node, 5) == 0 {
+                let signed = |o: u32| i32::from(byte(mem, node, o).cast_signed());
+                let a = ms_get_chr(mem, signed(2).cast_unsigned());
+                let kind = signed(1);
+                let age = signed(6) - 1;
+                match kind {
+                    0 | 2 => colour = [0x80; 3],
+                    1 => colour = [0x4a, 0xa0, 0x58],
+                    _ => {}
+                }
+                let row = table.wrapping_add((age - signed(3)).wrapping_mul(3).cast_unsigned());
+                let life = byte(mem, node, 7);
+                let mut alpha = byte(mem, row, 2);
+                if age > i32::from(life.cast_signed()) - 5 {
+                    alpha = life.wrapping_sub(age.to_le_bytes()[0]) << 5;
+                }
+                let at = if byte(mem, node, 0) & 0x80 == 0 {
+                    0xf44
+                } else {
+                    0xf4c
+                };
+                let mut x: i32 = mem.read(a.wrapping_add(at));
+                let mut y: i32 = mem.read(a.wrapping_add(at + 4));
+                let ox = i32::from(half(mem, node, 8).cast_signed());
+                let oy = i32::from(half(mem, node, 0xa).cast_signed());
+                let rise = match kind {
+                    0 => {
+                        x = x.wrapping_add(i32::from(byte(mem, row, 0).cast_signed()));
+                        Some(i32::from(byte(mem, row, 1).cast_signed()))
+                    }
+                    1 => Some(age / 2),
+                    2 => Some(age),
+                    _ => None,
+                };
+                if let Some(rise) = rise {
+                    x = x.wrapping_add(ox);
+                    y = y.wrapping_add(oy.wrapping_sub(rise));
+                }
+                let w = i32::from(byte(mem, node, 0xc));
+                let h = i32::from(byte(mem, node, 0xd));
+                if w.wrapping_add(x) >= 0 && x <= 0x200 && h.wrapping_add(y) >= 0 && y <= 0x1a0 {
+                    let ch = signed(4).cast_unsigned();
+                    let [r, g, b] = colour;
+                    let args = [x, y, kind].map(i32::cast_unsigned);
+                    put(
+                        mem,
+                        [args[0], args[1], args[2], ch, r, g, b, u32::from(alpha)],
+                    );
+                }
+            }
+            node = mem.read(node.wrapping_add(0x10));
+        }
+    }
+
+    /// [`ms_number_draw_process`]' first part: the actors' pulsing
+    /// counters.
+    fn draw_counters<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        put: &mut dyn FnMut(&mut M, [u32; 8]),
+    ) {
+        use crate::pos::bridge::Trig;
+        use ffx_bridge::x87::{add, cvttsd2si, div, load, mul, store};
+        // fistp under truncation: the low byte of the integer
+        let low = |x: f64| u32::from(cvttsd2si(x).to_le_bytes()[0]);
+        for i in 0..0x1f {
+            let a = ms_get_chr(mem, i);
+            if byte(mem, a, 0x10) == 0
+                || byte(mem, a, 0xdc8) == 0
+                || half(mem, a, 0x616) & 0x4000 == 0
+                || byte(mem, a, 0x15) == 0
+            {
+                continue;
+            }
+            let hp: u32 = mem.read(a.wrapping_add(0x40));
+            // fucompp: a NaN is not 0
+            #[allow(clippy::float_cmp)]
+            if load(hp) == 0.0 {
+                continue;
+            }
+            let count = byte(mem, a, 0x5c8);
+            let speed = byte(mem, a, 0x5c9);
+            let steps = load(store(f64::from(count) + 1.0));
+            let phase: u32 = mem.read(a.wrapping_add(0xf6c));
+            let phase = store(add(mul(div(f64::from(speed), steps), 0.125), load(phase)));
+            mem.write(a.wrapping_add(0xf6c), phase);
+            let t = load(store(add(load(trig(Trig::Sin, phase)), 1.0)));
+            let twelve = mul(t, 12.0);
+            let colour = [
+                low(add(twelve, 140.0)),
+                low(add(twelve, 50.0)),
+                low(add(mul(t, 6.0), 60.0)),
+            ];
+            let n = ms_number_digits(mem, i32::from(count), 0);
+            let digits = NUMBER_DIGITS.ptr(mem).addr;
+            let mut x = n * 9 / 2;
+            for k in 0..n.cast_unsigned() {
+                x -= 9;
+                let left: i32 = mem.read(a.wrapping_add(0xf3c));
+                let top: i32 = mem.read(a.wrapping_add(0xf40));
+                let (dx, dy) = (left.wrapping_add(x), top.wrapping_sub(0x13));
+                if dx.wrapping_add(9).cast_unsigned() <= 0x209
+                    && dy.wrapping_add(0x11).cast_unsigned() <= 0x1b1
+                {
+                    let digit = u32::from(mem.read::<u8>(digits.wrapping_add(k)));
+                    let [r, g, b] = colour;
+                    put(
+                        mem,
+                        [
+                            dx.cast_unsigned(),
+                            dy.cast_unsigned(),
+                            3,
+                            digit,
+                            r,
+                            g,
+                            b,
+                            0x80,
+                        ],
+                    );
+                }
+            }
+        }
     }
 
     /// `MsSubHP(i, actor, n, other, x, flags, style)` (`0x0078e230`):

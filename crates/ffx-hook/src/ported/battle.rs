@@ -2939,6 +2939,11 @@ ported! {
         let s = |v: u32| u16::from_le_bytes([v.to_le_bytes()[0], v.to_le_bytes()[1]]);
         input::ms_number_put(&mut mem(), b(i), b(k), b(ch), s(x), s(y), b(w), b(h), b(life), b(colour), b(style))
     }
+    /// `MsNumberDrawProcess()`: `TOBtlSetDamageValue` and `_CIsin` through
+    /// the game.
+    MsNumberDrawProcess @ 0x0079_f660 => extern "C" fn ms_number_draw_process() {
+        input::ms_number_draw_process(&mut mem(), &crt_trig, &mut call_ptr);
+    }
     /// `MsNumberRegist(i, kind, value, other, x, flags, style)`.
     MsNumberRegist @ 0x0079_fa00 => extern "C" fn ms_number_regist(i: u32, kind: u32, value: i32, other: i32, x: u32, flags: u32, style: u32) -> i32 {
         input::ms_number_regist(&mut mem(), i, kind, value, other, x, flags, style)

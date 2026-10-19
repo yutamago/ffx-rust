@@ -5500,7 +5500,7 @@
 0x0079f290 function MsCalAndGetChrTargetPos      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100361ad0 MsCalAndGetChrTargetPos, 4 votes, round 1
 0x0079f380 function MsCalcCursorPos           # fh v3:exact 0x0079f3a0
 0x0079f5e0 function MsNumberCalcProcess       # fh v3:exact 0x0079f600
-0x0079f660 function MsNumberDrawProcess       # fh v3:exact 0x0079f680
+0x0079f660 function MsNumberDrawProcess       # fh v3:exact 0x0079f680; ours: (): outside g_BtlStatus 0x1f-0x21 each shown actor with flag 0x4000 at +0x616 and HP draws its counter +0x5c8 in digits pulsing with sin(+0xf6c += +0x5c9/(+0x5c8+1)/8) (colour t*12+140, t*12+50, t*6+60, t = sin+1), then each number character of g_BtlNumberList past its delay: table 0x00c424b0 by age - place (x, y, alpha; fading its last 5 frames), colour 0 bounces, 1 (green) rises by age/2, 2 by age; all through TOBtlSetDamageValue (the original's colour/alpha words carry stack garbage above their low bytes, which it drops); ported (ffx_battle::input, battle round 26)
 0x0079f990 function MsNumberFreeMem              # layout: alphabetical run between MsNumberDrawProcess and MsNumberGetMem (1 unnamed in the gap); Switch 0x7100361a60 MsNumberFreeMem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (battle round 18)
 0x0079f9b0 function MsNumberGetMem            # fh v3:exact 0x0079f9d0; ported (battle round 19)
 0x0079f9f0 function MsNumberInit              # fh v3:cg2 0x79fa10
@@ -15359,6 +15359,7 @@
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
+0x00c424b0 label g_BtlNumberFrames          # MsNumberDrawProcess: 3-byte rows (x offset i8, y offset i8, alpha) by a number character's age less its place; name ours
 0x00c438a8 label g_AeonCommands            # 16 bytes per aeon (actor 8 on): u16 command / u8 value pairs at +0, +4, +8, +0xc (MsGetAeonCommand)
 0x00c43948 label g_TidusLimits             # 4 x u16 overdrive command IDs Tidus learns (MsLimitTidusLearn)
 0x00c43950 label g_TidusLimitNeeds         # 4 x i32 uses each of g_TidusLimits needs
