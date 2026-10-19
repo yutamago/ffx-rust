@@ -2991,7 +2991,7 @@
 0x006e8770 function TipSystem_PushTip         # fh v3:exact 0x006e88b0 TipSystem::PushTip
 0x006e8810 function TipSystem_PlayTip         # structure: thiscall(tips, id): with an Iggy movie (this[0]) enables the menu and calls its AS3 "OnPlay"(0, id), then replay; returns 1 (0 without a movie); graphicPushTip's callee; name ours
 0x006e8a1f function Catch_All_006e8b5f        # fh v3:cg2 0x6e8b5f Catch_All@006e8b5f
-0x006e9570 function rcbgGuideMapSave          # fh switch:bsim1.00 0x7100562e90; REVIEWED field r13: not the guide map's save (a Switch-signature name): (a, b) jumps to 0x006e9870(a, _ftol2_sse(f64 b+8)), which formats SaveDataGetLoc(slot) and hands it to Iggy (_IggyPlayerCallbackResultPath_4, _IggyValueSetStringUTF8RS_20): an Iggy save-menu callback, UI/system's, not ported
+0x006e9570 function rcbgGuideMapSave          # Fahrenheit's name (switch:bsim1.00 0x7100562e90, kept as ours for the verdict); REVIEWED field r13: not the guide map's save (a Switch-signature name): (a, b) jumps to 0x006e9870(a, _ftol2_sse(f64 b+8)), which formats SaveDataGetLoc(slot) and hands it to Iggy (_IggyPlayerCallbackResultPath_4, _IggyValueSetStringUTF8RS_20): an Iggy save-menu callback, UI/system's, not ported
 0x006e96c0 function InitIggyHelper               # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Loc_Texture_Saveload_Attention_Before_Game'; Switch 0x710029c7b0 InitIggyHelper (symbols from Fahrenheit's server export)
 0x006e97b0 function SetIggyPosition720p       # fh switch:bsim1.00 0x710029ca80
 0x006e9920 function std_Tree_lower_bound_string_006e9920 # thiscall(tree, key string) -> node: MSVC std::map<std::string, ...> lower bound: walks from the root (head +4) while the node's isnil byte +0xd is 0, comparing the key with the node's string (+0x10, SSO when capacity +0x24 <= 15) by memcmp of the shorter length then the lengths, left +0 / right +8; std:: copy (the field agent's finding); own name
@@ -6965,6 +6965,7 @@
 0x0081e2d0 function SqsReportStandbyStatus    # (x); called by SndReportStandbyStatusDirect; alphabetical slot; ported (field round 36): (flush) -> 0x012f414c - g_SqsIopResult, the queue flushed first when flush and requests are unanswered
 0x0081e3b0 function SndStandbyShoutStream     # fh switch:cg2 0x71008ba6a8; ported (field round 44): (data): length +0xc in 1..=0x10000 (signed) -> iSfxLoadData(i16 +8, 0), returns its eax; else returns the length
 0x0081e3e0 function SqsSeBlockPlaying         # (id); SndIsSepPlay for block SEs (bit 31 set); alphabetical slot before SqsSeForcePlay; ported (field round 33)
+0x0081e400 function EmptyStub_0081e400        # (): an empty function, from 0x0088d710 (name ours); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x0081e410 function SqsSeForcePlay            # (kind, id, pan, volume); called by SndForcePlayClick; alphabetical slot; ported (field round 33): iSfxForceStart(id, volume, pan), returns the new SE handle 0x012f4e7c
 0x0081e460 function SqsSePanDirect            # (kind, id, pan) -> iSfxSetPan (cmd 0x3d); called by SndSepPanDirect; alphabetical slot before SqsSePanTranslate; fh: SqsSeVolumeDirect (BSim; that one is 0x0081e820); ported (field round 33)
 0x0081e480 function SqsSePanTranslate         # (kind, id, pan, frames) -> iSfxSetPanTranslate; called by SndSepPanTranslate; ported (field round 33): iSfxSetPanTranslate(id, arg4 & 0x7f, arg3)
@@ -9215,6 +9216,7 @@
 0x00874c50 function getEventLocTexListPath    # fh v3:exact 0x00874be0
 0x00874fb0 function Atel_ClearRecords1327f50   # (): 32 records at 0x01327f50 (16 bytes): +0, +4, byte +8 cleared; name ours; ported in helpers (script round 14)
 0x00875000 function AtelCheckCallbackQue      # fh v3:cg2 0x874f80
+0x008750a0 function EmptyStub_008750a0        # (): an empty function, from 0x00861160 (name ours); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x008750b0 function AtelExecCallbackQue       # fh v3:exact 0x00875030; ported in helpers (script round 16)
 0x00875180 function AtelIsCallbackQue         # fh v3:bsim1.00 0x00875100
 0x00875190 function AtelRegistCallbackQue     # fh switch:bsim1.00 0x710044e160
@@ -11386,6 +11388,7 @@
 0x0090cea0 function yiRender_resettex         # fh v3:exact 0x0090cea0
 0x0090cee0 function yiZero_0090cee0           # (): xor eax,eax; ret, from 0x00911fc0 (name ours); REVIEWED field r13: 3 bytes, too small to hook and nothing to port
 0x0090cf00 function yiRender_initpacket       # (r): the fixed GS packet at +0x27624 (32 words); returns 0
+0x0090cff0 function yiZero_0090cff0           # () -> 0: from 0x00911fc0 (name ours); REVIEWED field r14: xor eax,eax; ret (3 bytes), too small to hook and nothing to port; callers' ports skip the call
 0x0090d1b0 function yiRender_setupFogParam    # (scene): +0x68350 = -255 / (far - near) from +0x681f8 * 1/32 * 32 and +0x68348/+0x6834c; +0x68354 = 255 - +0x68344 (255 with +0x67f08 bit 3); called by yiRender_setupparamVU1
 0x0090d260 function yiRender_setupparamGS     # fh v3:exact 0x0090d260
 0x0090da90 function yiRender_setupparamVU1    # fh v3:exact 0x0090da90; ported (field r1 A): fog param, VU1 block +0x676a8 (clip window from +0x68368/+0x6836c less 2048 via _ftol2_sse, +0x68370 max |a|,|b|, +0x676d4 max of +0x67f38/+0x67f4c, fog/matrix copies); returns the word at +0x68228
@@ -11489,10 +11492,10 @@
 0x00919be0 function Yn_FpTrxTexSetAddr        # (tex, image, clut): rcbgTrxTexSetAddr; pppDrawMdl* callers
 0x00919c00 function Yn_GuideMapClearFlags        # (bits): rcbgGuideClearFlags on g_YnMapSystem's guide, if any
 0x00919c30 function Yn_GuideMapSetFlags          # (bits): rcbgGuideSetFlags on g_YnMapSystem's guide, if any
-0x00919c60 function Yn_GuideMapEnd            # fh v3:bsim1.00 0x00919c60
+0x00919c60 function Yn_GuideMapEnd            # Fahrenheit's name (v3:bsim1.00 0x00919c60, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x00919c70 function Yn_GuideMapGetMapNo       # fh v3:exact 0x00919c70
 0x00919ca0 function Yn_GuideMapGetLimit          # () -> float: rcbgGuideGetLimit of the guide, 0.0 without one
-0x00919cd0 function Yn_GuideMapInit           # fh v3:bsim1.00 0x00919cd0
+0x00919cd0 function Yn_GuideMapInit           # Fahrenheit's name (v3:bsim1.00 0x00919cd0, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x00919d00 function Yn_GuideMapProcEx         # per field frame: Guide_Update(*(0x0193bf80 + 4), show), the guide object of the minimap (Native_MinimapSetCorner); was Guide_Frame
 0x00919d40 function Yn_GuideMapSetFlag3          # (on): rcbgGuideSetFlag3 on the guide, if any
 0x00919d70 function Yn_GuideMapSetDispProg    # fh v3:bsim1.00 0x00919d70
@@ -11504,6 +11507,7 @@
 0x00919ef0 function Yn_PSimGetCnt             # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x00919f00 function Yn_PSimGetHandle_00919f00 # fh switch:cg3 0x71008af228
 0x00919f10 function Yn_PSimSetPos             # fh v3:exact 0x00919f10
+0x00919f30 function EmptyStub_00919f30        # (): an empty function, from 0x0079de60 and 0x00935710 (name ours); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x00919f40 function Yn_MapPartAnimeOff           # (part): clears bit 1 of map part (scene layer, 0xc0 bytes) part's animation word (+0x90) when part < Yn_MapPartCount; script native 0x0091b490
 0x00919f90 function Yn_MapPartAnimeOn            # (part): sets that bit; script native 0x0091b470
 0x00919fe0 function Yn_MapPartAnimeSetMode       # (part, bits): map part animation word (+0x90) & ~0xf00 | bits, part below Yn_MapPartCount; script native 0x8022 (0x0091b4b0)
@@ -11548,6 +11552,7 @@
 0x0091ad10 function Yn_PreBgSetScrBank        # fh switch:bsim1.00 0x7100548410
 0x0091ad40 function Yn_PreBgSetScrOffset      # (x, y): the current scene's +0xb8/+0xbc, rcbgSceneSetMatrix
 0x0091ad80 function Yn_SceneSetC0                # (a, float b, c, d, e): scene +0xc0..+0xd0, +0xd4 = 0.0, +0xd8 = 0; script native 0x0091b550
+0x0091ade0 function EmptyStub_0091ade0        # (): an empty function, from 0x0079de60 (name ours); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x0091adf0 function Yn_SeaGetAngPtr           # () -> the sea's angle vector, 0 without a sea
 0x0091ae00 function Yn_SeaGetMatrix           # the Switch BSim name (fh-import drops BSim names on functions of 16 bytes or less), kept: the ffx-field port shows the behaviour it names (crates/ffx-hook/src/ported/map.rs)
 0x0091ae10 function Yn_SeaGetPosPtr           # () -> the sea's position vector, 0 without a sea
@@ -11900,7 +11905,7 @@
 0x00927230 function rcPrimTriLine                # layout+callees: sorts between rcPrimTri and rcPrint, and its named callees match the Switch 0x7100551970 rcPrimTriLine's (similarity 0.67: cgraphicSetNowUIType, rcPrimDraw2D); symbols from Fahrenheit's server export
 0x009273b0 function rcCopyQword_009273b0      # (dst, src): as rcCopyQword_0091cb40
 0x009273e0 function rcVectorToFixed_009273e0  # (dst, v): v through vf31 as 12.4 fixed point (rcVec4fToFixed); rcPrimDraw2D
-0x00927550 function rcPrint                   # fh v3:bsim1.00+call.cs 0x00927550
+0x00927550 function rcPrint                   # Fahrenheit's name (v3:bsim1.00+call.cs 0x00927550, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x00927570 function rcPacketDataAlloc         # fh switch:bsim1.00 0x71005506b0
 0x009275b0 function rcPacketDataCloseAdr      # fh v3:exact 0x009275b0
 0x00927600 function rcPacketDataDraw          # fh v3:exact 0x00927600
@@ -12025,7 +12030,7 @@
 0x0092b990 function rcdtParseSeekChar         # (parse, c): cursor = rcdtParseFindChar(parse, c)
 0x0092b9b0 function rcdtParseAdvanceLine         # structure: (parse): skip to past the next '\n' (0x0092b970) then rcdtParseSkipSeparators; callers include rcuiGetStageName2 and rcuiGuideProcConvertAll, as the Switch's rcdtParseAdvanceLine (0x71005498d0, called by rcuiGetStageName2, rcuiGuideProcConvertAll, rcuiGetMapNo, rcdtRsd2Load)
 0x0092ba30 function rcdtParseNextToken        # (parse): cursor past the token (rcdtParseSkipToken) and the separators (rcdtParseSkipSeparators)
-0x0092ba60 function rcdtParseFini             # fh v3:bsim1.00 0x0092ba60
+0x0092ba60 function rcdtParseFini             # Fahrenheit's name (v3:bsim1.00 0x0092ba60, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x0092ba70 function rcdtParseGetBegin         # fh switch:bsim1.00 0x71005495d0
 0x0092ba90 function rcdtParseGetBin           # fh v3:exact 0x0092ba90
 0x0092bae0 function rcdtParseFindChar         # (parse, c): the cursor advanced to c or the chunk end (rcdtChunkHandleGetEnd)
@@ -12067,7 +12072,7 @@
 0x0092d580 function rcbgTrxNew                # fh v3:bsim1.00 0x0092d580
 0x0092d5a0 function rcbgTrxPacketMake            # layout: alphabetical run between rcbgTrxNew and rcbgTrxSetNo (1 unnamed in the gap); Switch 0x7100555a60 rcbgTrxPacketMake is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0092d670 function rcbgTrxSetNo              # fh v3:bsim1.00 0x0092d670
-0x0092d680 function rcbgTrxSetTag             # fh v3:bsim1.00 0x0092d680
+0x0092d680 function rcbgTrxSetTag             # Fahrenheit's name (v3:bsim1.00 0x0092d680, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x0092d690 function rcbgScaleVector_0092d690  # the same code as rcbgScaleVector 0x009200a0
 0x0092d6f0 function rcCopyQword_0092d6f0      # (dst, src): as rcCopyQword_0091cb40 (6 callers)
 0x0092d720 function rcVu0Sub_0092d720        # the same code as rcVu0Sub; callers 0x0092dad0, 0x0092e020; name ours; ported (field round 38)
@@ -12132,6 +12137,7 @@
 0x0092ec60 function rcefSetVibrate            # (id, arg): TkSetVibrateStream(7, arg, op_oef2_a_get(g_RcefOef2, 5, id)); replaces Fahrenheit's Switch BSim guess rcefStreamCue (bsim1.00 0x71005582b0); name ours
 0x0092ec90 function rcefTaskDestruct            # (task): calls task +0xb4 if set (rcefTaskKill)
 0x0092ecb0 function rcefTaskCallSeq           # fh v3:exact 0x0092ecb0
+0x0092ed00 function EmptyStub_0092ed00        # (): an empty function, from 0x0092fee0 (name ours); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x0092ed10 function rcefTaskInit              # fh v3:exact 0x0092ed10
 0x0092ed50 function rcefTaskKill              # fh v3:exact 0x0092ed50
 0x0092ed90 function rcefTaskProc              # fh v3:exact 0x0092ed90
@@ -12143,6 +12149,7 @@
 0x0092ee90 function rcefTaskWaitSeq           # fh v3:exact 0x0092ee90
 0x0092eec0 function rcefRunPart               # (env, part, arg): *g_pppEnvSlot = env, pppRunPart(part, arg); rcefParProc
 0x0092eee0 function rcefParCreate             # fh v3:exact 0x0092eee0
+0x0092efc0 function EmptyStub_0092efc0        # (): an empty function, from 0x0092fee0 (name ours); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x0092efd0 function rcefParInit               # fh v3:exact 0x0092efd0
 0x0092f010 function rcefParProc               # fh v3:exact 0x0092f010; ported (field r2 D): live part: env +0x20..+0x28 from data +0x14..+0x1c, pppStartPart once (bit 1), pppSetMatrix, world matrix from +0x90, scale +0x94 x +0x9c into 0x0230fd50, colour words +0x98 x 4096 at +0x80, row lengths +0x70, view matrices, rcefRunPart(env, part, 0x30); finished or kept past its life (g_RcefParKept limits) -> pppAllFreePObject, flags 0
 0x0092f290 function rcefAnimeDraw             # (anim): shape matrix +0x50 = camera x +0x48, colour bytes +0x14 (x128, clamp), +0x24 packet pos, render data of instance (0, anim) updated (updateVFXRenderDataShp, graphicVFXUpdate) or created (InitVFXRenderDataShp with the shape's alpha function, enlarge factor 8); name ours (the drawing half of rcefAnimeProc, which calls it before rcefAnimeStep); ported (field r2 D)
@@ -12958,7 +12965,7 @@
 0x00a5bad0 function AbmapStartPart            # (part, n, x, y, z, a, b, c, d, e, f) -> trunc c: env 0x01a86034, pppStartPart(part, 0x1000, get_ptr32_func(*0x02305800 +0x10)[n], 1, 0), +0x1e 1, +0x40 x y z 1.0, +0x50 trunc a b c, +0x5c 1, +0x60 d e f, +0x6c 1.0; name ours
 0x00a5bb70 function AbmapStoreSave            # (): node byte pairs (+0x80e/+0x829), link flags (+0xa814) from +0xa00, seven characters' u16s (+0x110cc) at +0xf00, +0x115cb/cc at +0xf18 into MsGetSaveAbilityMap's block; name ours
 0x00a5bca0 function AbmapTryUseItem           # fh v3:exact 0x00a5bca0 +AbmapTryUseItem
-0x00a5bd80 function KaGDebFirstCall           # fh v3:bsim1.00 0x00a5bd80
+0x00a5bd80 function KaGDebFirstCall           # Fahrenheit's name (v3:bsim1.00 0x00a5bd80, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x00a5be30 function AbmapVu0LoadMatrix1       # (m): 64 bytes into the emulated vf01..vf04 (0x00c8f7a0)
 0x00a5bec0 function AbmapVu0LoadMatrix2       # (m): 64 bytes into the emulated vf05..vf08 (0x00c8f7e0)
 0x00a5c130 function createVFXRenderDataBuffer_DrawScrollModel # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'diffuse'; Switch 0x7100863940 createVFXRenderDataBuffer_DrawScrollModel (symbols from Fahrenheit's server export)
