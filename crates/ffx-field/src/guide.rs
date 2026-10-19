@@ -488,6 +488,35 @@ pub mod bridge {
         mem.write(at, if on { f | 2 } else { f & !2 });
     }
 
+    /// `graphicChangeLayerAlpha(layer, alpha)` (`0x00639d20`, render).
+    pub const GRAPHIC_CHANGE_LAYER_ALPHA: u32 = 0x0063_9d20;
+
+    /// `Yn_MapPartSetAlpha_0091aa90(part, alpha)` (`0x0091aa90`, name
+    /// ours): for a `part` below the count ([`yn_map_part_count`]) the
+    /// layer array is taken (the scene's `+8`), the renderer's layer gets
+    /// the alpha (`graphicChangeLayerAlpha(part, alpha)`) and the layer's
+    /// `+0x43` byte the low byte of `alpha`. Returns the renderer call's
+    /// `eax`, else the count.
+    pub fn yn_map_part_set_alpha<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [part, alpha]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let count = yn_map_part_count(mem);
+        if part.cast_signed() >= count {
+            return count.cast_unsigned();
+        }
+        // a negative part with no scene reads address 8, as the original
+        let c = yn_scene(mem).unwrap_or(0);
+        let layers = mem.read::<u32>(c.wrapping_add(scene::layout::LAYERS));
+        let f = mem.rebase(GRAPHIC_CHANGE_LAYER_ALPHA);
+        let eax = call(mem, f, &[part, alpha]);
+        let at = layers.wrapping_add(part.wrapping_mul(scene::layer::SIZE));
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        mem.write(at.wrapping_add(0x43), alpha as u8);
+        eax
+    }
+
     /// `Yn_MapPartAnimeOn(part)` (`0x00919f90`).
     pub fn yn_map_part_anime_on(mem: &mut impl Mem, part: i32) {
         map_part_anime(mem, part, true);

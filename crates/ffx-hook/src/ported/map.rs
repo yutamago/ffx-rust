@@ -4671,6 +4671,136 @@ ported! {
     Sg_MemSetFree @ 0x0083_bdb0 => extern "C" fn shim_sg_mem_set_free(block: u32) -> u32 {
         yi::bridge::sg_mem_set_free(&mut mem(), block)
     }
+
+    /// `AbmapInitChoosingMoveTarget()`.
+    AbmapInitChoosingMoveTarget @ 0x00a5_b7b0 => extern "C" fn shim_abmap_init_choosing_move_target() -> u32 {
+        abmap::bridge::abmap_init_choosing_move_target(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgModelShortsToVectors_009283f0(out, src, n, s)`: the two
+    /// vectors in a frame.
+    rcbgModelShortsToVectors_009283f0 @ 0x0092_83f0 => extern "C" fn shim_rcbg_model_shorts_to_vectors(out: u32, src: u32, n: u32, s: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        model::bridge::rcbg_model_shorts_to_vectors(&mut mem(), [out, src, n, s], w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxGravityCalc(gravity, sys)`: its vector in a frame.
+    rcfxGravityCalc @ 0x0092_9500 => extern "C" fn shim_rcfx_gravity_calc(gravity: u32, sys: u32) -> u32 {
+        let mut w = super::StackFrame::<4>::new();
+        model::bridge::rcfx_gravity_calc(&mut mem(), gravity, sys, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxDampCalc(damp, sys)`: its vector in a frame.
+    rcfxDampCalc @ 0x0092_9360 => extern "C" fn shim_rcfx_damp_calc(damp: u32, sys: u32) -> u32 {
+        let mut w = super::StackFrame::<4>::new();
+        model::bridge::rcfx_damp_calc(&mut mem(), damp, sys, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcfxParticleSetTime(sys, t)`: `t` an `f64`, taken as its two words.
+    rcfxParticleSetTime @ 0x0092_8a60 => extern "C" fn shim_rcfx_particle_set_time(sys: u32, lo: u32, hi: u32) {
+        let t = f64::from_bits(u64::from(hi) << 32 | u64::from(lo));
+        model::bridge::rcfx_particle_set_time(&mut mem(), sys, t, &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `rcuiRotateZYX_0093d550(out, m, angles)`.
+    rcuiRotateZYX_0093d550 @ 0x0093_d550 => extern "C" fn shim_rcui_rotate_zyx(out: u32, m: u32, angles: u32) -> u32 {
+        rcui::bridge::rcui_rotate_zyx(&mut mem(), [out, m, angles], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `resetVFXKeThRenderData(a, b, first)`.
+    resetVFXKeThRenderData @ 0x0076_5f10 => extern "C" fn shim_reset_vfx_ke_th_render_data(a: u32, b: u32, first: u32) -> u32 {
+        ke::bridge::reset_vfx_ke_th_render_data(&mut mem(), [a, b, first], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiLoadFieldParticleNo(n)`: the two paths in a frame.
+    yiLoadFieldParticleNo @ 0x0090_92e0 => extern "C" fn shim_yi_load_field_particle_no(n: u32) -> u32 {
+        let mut w = super::StackFrame::<128>::new();
+        yi::bridge::yi_load_field_particle_no(&mut mem(), false, n, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiLoadBattleFieldParticleNo(n)`: the two paths in a frame.
+    yiLoadBattleFieldParticleNo @ 0x0090_9120 => extern "C" fn shim_yi_load_battle_field_particle_no(n: u32) -> u32 {
+        let mut w = super::StackFrame::<128>::new();
+        yi::bridge::yi_load_field_particle_no(&mut mem(), true, n, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcefMemDebugInit(heap, heap_size, packets, packet_size)`.
+    rcefMemDebugInit @ 0x0093_74f0 => extern "C" fn shim_rcef_mem_debug_init(a: u32, b: u32, c: u32, d: u32) -> u32 {
+        task::bridge::rcef_mem_debug_init(&mut mem(), [a, b, c, d])
+    }
+
+    /// `rcefMemDebugDisp(heap_used, packets_used)`.
+    rcefMemDebugDisp @ 0x0093_7440 => extern "C" fn shim_rcef_mem_debug_disp(heap: u32, packets: u32) {
+        task::bridge::rcef_mem_debug_disp(&mut mem(), heap, packets);
+    }
+
+    /// `rcefMsGetMoveTargetDist_0092eb20(a1, ..., a11)`.
+    rcefMsGetMoveTargetDist_0092eb20 @ 0x0092_eb20 => extern "C" fn shim_rcef_ms_get_move_target_dist(a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32, a9: u32, a10: u32, a11: u32) -> u32 {
+        task::bridge::rcef_ms_get_move_target_dist(&mut mem(), [a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_MapPartSetAlpha_0091aa90(part, alpha)`.
+    Yn_MapPartSetAlpha_0091aa90 @ 0x0091_aa90 => extern "C" fn shim_yn_map_part_set_alpha(part: u32, alpha: u32) -> u32 {
+        guide::bridge::yn_map_part_set_alpha(&mut mem(), [part, alpha], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgFPm173Start(part, a, b, c)`.
+    rcbgFPm173Start @ 0x0092_2ef0 => extern "C" fn shim_rcbg_fpm173_start(p: u32, a: u32, b: u32, c: u32) -> u32 {
+        model::bridge::rcbg_fpm173_start(&mut mem(), [p, a, b, c], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiInit()`.
+    yiInit @ 0x0090_9030 => extern "C" fn shim_yi_init() -> u32 {
+        yi::bridge::yi_init(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiRectToOMD(a1, ..., a8)`.
+    yiRectToOMD @ 0x0090_9d30 => extern "C" fn shim_yi_rect_to_omd(a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
+        yi::bridge::yi_rect_to_omd(&mut mem(), [a1, a2, a3, a4, a5, a6, a7, a8], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiScreff_entry(scene)`.
+    yiScreff_entry @ 0x0091_31d0 => extern "C" fn shim_yi_screff_entry(scene: u32) -> u32 {
+        yi::bridge::yi_screff_entry(&mut mem(), scene, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgPSimProc(p)`: the model's update slot a call, not a tail jump.
+    rcbgPSimProc @ 0x0091_fe70 => extern "C" fn shim_rcbg_psim_proc(p: u32) -> u32 {
+        model::bridge::rcbg_psim_proc(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `Yn_FPm173Start_00919a80(a, b, c)`.
+    Yn_FPm173Start_00919a80 @ 0x0091_9a80 => extern "C" fn shim_yn_fpm173_start(a: u32, b: u32, c: u32) -> u32 {
+        model::bridge::yn_fpm173_start(&mut mem(), [a, b, c], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `yiDrawScrEffect()`.
+    yiDrawScrEffect @ 0x0090_8550 => extern "C" fn shim_yi_draw_scr_effect() -> u32 {
+        yi::bridge::yi_draw_scr_effect(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgPSimCreate(p, model)`: the edge vector in a frame.
+    rcbgPSimCreate @ 0x0091_f9d0 => extern "C" fn shim_rcbg_psim_create(p: u32, model: u32) -> u32 {
+        let mut w = super::StackFrame::<4>::new();
+        model::bridge::rcbg_psim_create(&mut mem(), [p, model], w.at(), &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
+    }
+
+    /// `rcbgPSimCreateFromOMD(p, omd, scale)`.
+    rcbgPSimCreateFromOMD @ 0x0091_fd00 => extern "C" fn shim_rcbg_psim_create_from_omd(p: u32, omd: u32, scale: u32) -> u32 {
+        model::bridge::rcbg_psim_create_from_omd(&mut mem(), [p, omd, scale], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+    /// `rcbgFPm173Proc000(part)`: not started, `eax` is junk (0 here).
+    rcbgFPm173Proc000 @ 0x0092_2be0 => extern "C" fn shim_rcbg_fpm173_proc000(p: u32) -> u32 {
+        model::bridge::rcbg_fpm173_proc000(&mut mem(), p, &mut |_, f, a| call_cdecl(f, a)).unwrap_or(0)
+    }
+
+    /// `yiClutGreenRender_00908400(a, b)`.
+    yiClutGreenRender_00908400 @ 0x0090_8400 => extern "C" fn shim_yi_clut_green_render(a: u32, b: u32) -> u32 {
+        yi::bridge::yi_clut_green_render(&mut mem(), [a, b], &mut |_, f, a| call_cdecl(f, a))
+    }
+
+
 }
 
 /// The original's 16-byte aligned stack buffer for a load-image packet

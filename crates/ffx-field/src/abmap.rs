@@ -2459,6 +2459,97 @@ pub mod bridge {
         g
     }
 
+    /// The choosing-a-move-target state (`0x00a44ef0`, code Ghidra left
+    /// as a label) and its help message hook
+    /// (`AbmapSetHelpMessage_copy_00a45440`), which
+    /// [`abmap_init_choosing_move_target`] sets.
+    pub const CHOOSING_MOVE_TARGET: [u32; 2] = [0x00a4_4ef0, 0x00a4_5440];
+    /// 0.25 (`f32`, `.rdata` `0x00b92180`): the homing time
+    /// [`abmap_init_choosing_move_target`] hands `AbmapInitHoming`.
+    pub const CHOOSING_HOMING_T: u32 = 0x00b9_2180;
+
+    /// `AbmapInitChoosingMoveTarget()` (`0x00a5b7b0`, from `0x00a56330`):
+    /// the current character's (`+0x115bc`) node (`u16` at `+0x110cc +
+    /// 0x50 * chr`) is kept; the state (`+0x115a8`) and message hook
+    /// (`+0x115ac`) become [`CHOOSING_MOVE_TARGET`]'s; the move costs are
+    /// worked out from that node (`AbmapCalcMoveCosts(node, sp, chr)`,
+    /// `sp` the character's sphere points from `MsGetSaveSP(chr)`: the
+    /// original leaves `chr` pushed under its arguments, so the walk's
+    /// mask bit is the character); every node with a kind (`+6` not
+    /// `0xffff`) loses its reach bits (bits 0, 1 of `+0x22`), then gets
+    /// them back when its cost (`+0x24`) is at most `sp * 4` (a fresh
+    /// `MsGetSaveSP`, both 16-bit). `+0x116a0`, `+0x1169c` and `+0x1161c`
+    /// are zeroed, the cursor homes on the node ([`abmap_init_homing`],
+    /// [`CHOOSING_HOMING_T`]) and, with no state saved (`+0x115b0`), the
+    /// state is saved and replaced by `AbmapState_HomeOnNode`; `+0x115c3`
+    /// = 1. Returns the data pointer (left in `eax` either way).
+    pub fn abmap_init_choosing_move_target<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let g = ABMAP.get(mem);
+        let chr = u32::from(mem.read::<u8>(g.wrapping_add(super::CURRENT_CHR)));
+        let node = mem.read::<u16>(g.wrapping_add(0x110cc).wrapping_add(chr * 0x50));
+        let [state, message] = CHOOSING_MOVE_TARGET.map(|f| mem.rebase(f));
+        mem.write(g.wrapping_add(0x115a8), state);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115ac), message);
+        let sp_of = |mem: &mut M, call: &mut C| {
+            let g = ABMAP.get(mem);
+            let chr = u32::from(mem.read::<u8>(g.wrapping_add(super::CURRENT_CHR)));
+            let f = mem.rebase(super::MS_GET_SAVE_SP);
+            (chr, call(mem, f, &[chr]))
+        };
+        let (chr, sp) = sp_of(mem, call);
+        let costs = mem.rebase(MOVE_COSTS);
+        call(mem, costs, &[u32::from(node), sp, chr]);
+        let for_nodes = |mem: &mut M, f: &dyn Fn(&M, u32) -> Option<u8>| {
+            let g = ABMAP.get(mem);
+            let count = i32::from(mem.read::<i16>(g.wrapping_add(2))).cast_unsigned();
+            let mut at = g.wrapping_add(layout::NODES);
+            for _ in 0..count {
+                if mem.read::<u16>(at.wrapping_add(6)) != 0xffff
+                    && let Some(flags) = f(mem, at)
+                {
+                    mem.write(at.wrapping_add(0x22), flags);
+                }
+                at = at.wrapping_add(layout::NODE_SIZE);
+            }
+        };
+        for_nodes(mem, &|mem, at| {
+            Some(mem.read::<u8>(at.wrapping_add(0x22)) & 0xfc)
+        });
+        let (_, sp) = sp_of(mem, call);
+        #[allow(clippy::cast_possible_truncation)] // a 16-bit compare
+        let reach = (sp << 2) as u16;
+        for_nodes(mem, &|mem, at| {
+            (mem.read::<u16>(at.wrapping_add(0x24)) <= reach)
+                .then(|| mem.read::<u8>(at.wrapping_add(0x22)) | 3)
+        });
+        let t = x87::copy(mem.read::<u32>(mem.rebase(CHOOSING_HOMING_T)));
+        for o in [0x116a0u32, 0x1169c, 0x1161c] {
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(o), 0u32);
+        }
+        abmap_init_homing(mem, u32::from(node), t);
+        let g = ABMAP.get(mem);
+        if mem.read::<u32>(g.wrapping_add(0x115b0)) == 0 {
+            let saved = mem.read::<u32>(g.wrapping_add(0x115a8));
+            mem.write(g.wrapping_add(0x115b0), saved);
+            let g = ABMAP.get(mem);
+            mem.write(
+                g.wrapping_add(0x115a8),
+                mem.rebase(super::STATE_HOME_ON_NODE),
+            );
+        }
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115c3), 1u8);
+        g
+    }
+
+    /// `AbmapCalcMoveCosts(node, limit, bit)` (`0x00a474d0`).
+    pub const MOVE_COSTS: u32 = 0x00a4_74d0;
+
     /// `AbmapPlyTagRect(tag, out)` (`0x00a482d0`) and `AbmapRectsOverlap`
     /// (`0x00a49270`), [`abmap_spread_ply_tags`]'s calls.
     pub const SPREAD_CALLS: [u32; 2] = [0x00a4_82d0, 0x00a4_9270];

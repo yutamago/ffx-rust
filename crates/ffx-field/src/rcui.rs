@@ -1123,4 +1123,28 @@ pub mod bridge {
         let f = mem.rebase(MUL_MATRIX);
         call(mem, f, &[out, work, m])
     }
+
+    /// `rcuiRotateX`, `rcuiRotateY` and `rcuiRotateZ` (`0x0093d5a0`,
+    /// `0x0093d620`, `0x0093d690`): [`rcui_rotate_zyx`]'s steps.
+    pub const ROTATE_XYZ: [u32; 3] = [0x0093_d5a0, 0x0093_d620, 0x0093_d690];
+
+    /// `rcuiRotateZYX_0093d550(out, m, angles)` (`0x0093d550`; name ours):
+    /// `m` rotated about z by `angles[2]` into `out`, then `out` about y by
+    /// `angles[1]` and about x by `angles[0]` (three `f32`s, each copied
+    /// through the x87 and read just before its step, after the step
+    /// before has written `out`). Returns `rcuiRotateX`'s `eax`.
+    pub fn rcui_rotate_zyx<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [out, m, angles]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let [x, y, z] = ROTATE_XYZ.map(|f| mem.rebase(f));
+        let angle = |mem: &M, i: u32| crate::x87::copy(mem.read::<u32>(angles.wrapping_add(4 * i)));
+        let a = angle(mem, 2);
+        call(mem, z, &[out, m, a]);
+        let a = angle(mem, 1);
+        call(mem, y, &[out, out, a]);
+        let a = angle(mem, 0);
+        call(mem, x, &[out, out, a])
+    }
 }

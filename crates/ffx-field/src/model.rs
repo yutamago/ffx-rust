@@ -730,7 +730,82 @@ pub mod bridge {
         p
     }
 
-    /// `rcbgFPm565Init(part)` (`0x00922f50`, maps 0x235 and 0x236's part):
+    /// `AtelGetEventCharHandleFromID(id)` (`0x0086b3a0`, script).
+    pub const ATEL_GET_EVENT_CHAR_HANDLE: u32 = 0x0086_b3a0;
+
+    /// `rcbgFPm173Start(part, a, b, c)` (`0x00922ef0`): the characters of
+    /// event ids `a` and `b` (`AtelGetEventCharHandleFromID`) at `+0x10`
+    /// and `+0x14`, `c` at `+0x18`, then `+0x1c` 0, `+0x20` 1, `+0x24` 0.
+    /// Returns `c` (left in `eax`).
+    pub fn rcbg_fpm173_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [p, a, b, c]: [u32; 4],
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(ATEL_GET_EVENT_CHAR_HANDLE);
+        let h = call(mem, f, &[a]);
+        mem.write(p.wrapping_add(0x10), h);
+        let h = call(mem, f, &[b]);
+        mem.write(p.wrapping_add(0x14), h);
+        mem.write(p.wrapping_add(0x18), [c, 0, 1, 0]);
+        c
+    }
+
+    /// The scene object kind of map 0xad's part (`Yn_SceneGetObject`).
+    pub const FPM173_KIND: u32 = 0x0002_0008;
+
+    /// `Yn_FPm173Start_00919a80(a, b, c)` (`0x00919a80`; name ours): the
+    /// scene's first [`FPM173_KIND`] object (`Yn_SceneGetObject`), when
+    /// there is one, started (`rcbgFPm173Start(part, a, b, c)`, whose `eax`
+    /// it returns); else 0.
+    pub fn yn_fpm173_start<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b, c]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let part = yn_scene_get_object(mem, FPM173_KIND, 0);
+        if part == 0 {
+            return 0;
+        }
+        let f = mem.rebase(FPM173_START);
+        call(mem, f, &[part, a, b, c])
+    }
+
+    /// `rcbgFPm173Start(part, a, b, c)` (`0x00922ef0`).
+    pub const FPM173_START: u32 = 0x0092_2ef0;
+
+    /// Map 0xad's part's four phases (`+0x18`): `rcbgFPm173ProcJect`,
+    /// `rcbgFPm173ProcKonjyo`, `rcbgFPm173ProcSphere` and
+    /// `rcbgFPm173ProcKieru` (`0x00922c50`, `0x00922e60`, `0x00922eb0`,
+    /// `0x00922dc0`).
+    pub const FPM173_PHASES: [u32; 4] = [0x0092_2c50, 0x0092_2e60, 0x0092_2eb0, 0x0092_2dc0];
+
+    /// `rcbgFPm173Proc000(part)` (`0x00922be0`): while started (`+0x20`
+    /// non-zero) the phase `+0x18` (0..=3, [`FPM173_PHASES`]) runs on the
+    /// part, then the frame count `+0x1c` goes up (also for any other
+    /// phase). Returns the phase's `eax`, the phase number for another;
+    /// `None` when not started (the caller's `eax` is left).
+    pub fn rcbg_fpm173_proc000<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) -> Option<u32> {
+        if mem.read::<u32>(p.wrapping_add(0x20)) == 0 {
+            return None;
+        }
+        let phase = mem.read::<u32>(p.wrapping_add(0x18));
+        let eax = match FPM173_PHASES.get(phase as usize) {
+            Some(&f) => {
+                let f = mem.rebase(f);
+                call(mem, f, &[p])
+            }
+            None => phase,
+        };
+        let frames = p.wrapping_add(0x1c);
+        mem.write(frames, mem.read::<u32>(frames).wrapping_add(1));
+        Some(eax)
+    }
+
     /// the header; returns the part.
     pub fn rcbg_fpm565_init(mem: &mut impl Mem, p: u32) -> u32 {
         fp_header(mem, p, super::fp::M565);
@@ -4324,6 +4399,451 @@ pub mod bridge {
         let next = mem.rebase(next);
         mem.write(obj.wrapping_add(8), next);
         obj
+    }
+
+    // ---- field r14 ----
+
+    /// `rcVu0IntToFloat(out, v)` (`0x00927ba0`) and
+    /// `rcbgModelScaleVector(out, v, s)` (`0x00927b00`):
+    /// [`rcbg_model_shorts_to_vectors`]'s helpers.
+    pub const SHORTS_TO_VECTORS_CALLS: [u32; 2] = [0x0092_7ba0, 0x0092_7b00];
+
+    /// `rcbgModelShortsToVectors_009283f0(out, src, n, s)` (`0x009283f0`,
+    /// from `rcbgPSimCreate`; name ours): `n` (signed) points of three
+    /// `i16`s at `src` become vectors at `out` (16 bytes each): each point
+    /// sign-extended to three words, converted to floats
+    /// (`rcVu0IntToFloat`) and scaled by `s` (`rcbgModelScaleVector`,
+    /// whose `eax`, the w word, it returns). `work` is the original's two
+    /// stack vectors (0x20 bytes: the floats, then the integers). The
+    /// original never writes the integers' w word, so the vectors' w is
+    /// whatever the stack held; the port writes 0 there (the tests zero
+    /// the original's stack). With no points `eax` is the caller's.
+    pub fn rcbg_model_shorts_to_vectors<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [out, src, n, s]: [u32; 4],
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [to_float, scale] = SHORTS_TO_VECTORS_CALLS.map(|f| mem.rebase(f));
+        let (floats, ints) = (work, work.wrapping_add(0x10));
+        let mut eax = 0;
+        for i in 0..n.cast_signed().max(0).cast_unsigned() {
+            let point = src.wrapping_add(6 * i);
+            for k in 0..3u32 {
+                let v = i32::from(mem.read::<i16>(point.wrapping_add(2 * k)));
+                mem.write(ints.wrapping_add(4 * k), v);
+            }
+            mem.write(ints.wrapping_add(0xc), 0u32);
+            call(mem, to_float, &[floats, ints]);
+            let s = crate::x87::copy(s);
+            eax = call(mem, scale, &[out.wrapping_add(16 * i), floats, s]);
+        }
+        eax
+    }
+
+    /// `rcbgScaleVector_009294a0(out, v, s)` and `rcVu0Add_00929440(out,
+    /// a, b)`: [`rcfx_gravity_calc`]'s helpers.
+    pub const GRAVITY_CALLS: [u32; 2] = [0x0092_94a0, 0x0092_9440];
+
+    /// `rcfxGravityCalc(gravity, sys)` (`0x00929500`, the gravity's `+0x14`
+    /// callback, set by `rcfxGravityInit`; name ours): each of the system's
+    /// `+0x1c` particles' forces (`+0x30`, 16 bytes each) gains the
+    /// gravity vector (`+0x1c`) times the mass (`sys +0x20`, copied
+    /// through the x87 once). `work` is the original's stack vector.
+    /// Returns the last add's `eax`, or `sys` with no particles.
+    pub fn rcfx_gravity_calc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        gravity: u32,
+        sys: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [scale, add] = GRAVITY_CALLS.map(|f| mem.rebase(f));
+        let mass = crate::x87::copy(mem.read::<u32>(sys.wrapping_add(0x20)));
+        let forces = mem.read::<u32>(sys.wrapping_add(0x30));
+        let count = mem.read::<i32>(sys.wrapping_add(0x1c));
+        let mut eax = sys;
+        for i in 0..count.max(0).cast_unsigned() {
+            let force = forces.wrapping_add(16 * i);
+            call(mem, scale, &[work, gravity.wrapping_add(0x1c), mass]);
+            eax = call(mem, add, &[force, force, work]);
+        }
+        eax
+    }
+
+    /// `rcbgScaleVector_009292a0(out, v, s)` and `rcVu0Sub_00929300(out,
+    /// a, b)`: [`rcfx_damp_calc`]'s helpers.
+    pub const DAMP_CALLS: [u32; 2] = [0x0092_92a0, 0x0092_9300];
+
+    /// `rcfxDampCalc(damp, sys)` (`0x00929360`, the damping's `+0x14`
+    /// callback, set by `rcfxDampInit`; name ours): each of the system's
+    /// `+0x1c` particles' forces (`+0x30`) loses its velocity (`+0x2c`)
+    /// times the damping (`+0x1c`, read for each particle). `work` is the
+    /// original's stack vector. Returns the last subtraction's `eax`, or
+    /// `sys` with no particles.
+    pub fn rcfx_damp_calc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        damp: u32,
+        sys: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [scale, sub] = DAMP_CALLS.map(|f| mem.rebase(f));
+        let velocities = mem.read::<u32>(sys.wrapping_add(0x2c));
+        let forces = mem.read::<u32>(sys.wrapping_add(0x30));
+        let count = mem.read::<i32>(sys.wrapping_add(0x1c));
+        let mut eax = sys;
+        for i in 0..count.max(0).cast_unsigned() {
+            let k = crate::x87::copy(mem.read::<u32>(damp.wrapping_add(0x1c)));
+            let force = forces.wrapping_add(16 * i);
+            call(mem, scale, &[work, velocities.wrapping_add(16 * i), k]);
+            eax = call(mem, sub, &[force, force, work]);
+        }
+        eax
+    }
+
+    /// An `f64` through `fld m64` / `fstp m64`: a signalling NaN comes out
+    /// quiet.
+    fn copy_f64(x: f64) -> f64 {
+        if x.is_nan() {
+            f64::from_bits(x.to_bits() | 0x0008_0000_0000_0000)
+        } else {
+            x
+        }
+    }
+
+    /// `rcfxParticleCalc(sys)` (`0x00928710`), [`rcfx_particle_set_time`]'s
+    /// step.
+    pub const PARTICLE_CALC: u32 = 0x0092_8710;
+
+    /// `rcfxParticleSetTime(sys, t)` (`0x00928a60`): the target time `t`
+    /// (`f64`) goes to `+0x10`; while the system's time (`+0`) is before
+    /// it, the system steps (`rcfxParticleCalc`) and its time advances by
+    /// the step (`+8`, re-read after each step: the step stores it as an
+    /// `f32`). The original's `eax` is the last `fnstsw`'s status word
+    /// over a caller's high half, which no caller reads.
+    pub fn rcfx_particle_set_time<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        sys: u32,
+        t: f64,
+        call: &mut C,
+    ) {
+        use ffx_bridge::x87;
+        let t = copy_f64(t);
+        mem.write(sys.wrapping_add(0x10), t);
+        let particle_calc = mem.rebase(PARTICLE_CALC);
+        while mem.read::<f64>(sys) < t {
+            call(mem, particle_calc, &[sys]);
+            let step = mem.read::<f64>(sys.wrapping_add(8));
+            let time = x87::add(step, mem.read::<f64>(sys));
+            mem.write(sys, time);
+        }
+    }
+
+    /// `rcfxParticleSetTime(sys, t)` (`0x00928a60`) and `rcbgModelFToS0(
+    /// out, points, n, scale)` (`0x009281d0`): [`rcbg_psim_proc`]'s calls.
+    pub const PSIM_PROC_CALLS: [u32; 2] = [0x0092_8a60, 0x0092_81d0];
+    /// 0.5 (`f64`, `.rdata` `0x00b92220`): the time a running simulation
+    /// advances each frame.
+    pub const PSIM_TIME_STEP: u32 = 0x00b9_2220;
+
+    /// `rcbgPSimProc(p)` (`0x0091fe70`, the particle simulation's process
+    /// slot): while running (bit 0 of `+0x10`) its particle system
+    /// (`+0x18`) is stepped to the time `+0xa8` (`f64`,
+    /// `rcfxParticleSetTime`), which then advances by 0.5; the particles'
+    /// positions (the system's `+0x24`) go back into its model's (`+0x14`)
+    /// points as `i16` triples (`rcbgModelFToS0(blob + blob[+8], positions,
+    /// count, scale)`, the model's blob `+0x14`, its count the `i16` at
+    /// `+0x12`, the scale `rcbgModelGetScale(model)` stored as an `f32`).
+    /// Then the model's update slot (`+8`), when set, runs on it (a tail
+    /// jump), whose `eax` it returns; else the model.
+    pub fn rcbg_psim_proc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        p: u32,
+        call: &mut C,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let [set_time, f_to_s0] = PSIM_PROC_CALLS.map(|f| mem.rebase(f));
+        if mem.read::<u8>(p.wrapping_add(0x10)) & 1 != 0 {
+            let t = copy_f64(mem.read::<f64>(p.wrapping_add(0xa8))).to_bits();
+            let sys = mem.read::<u32>(p.wrapping_add(0x18));
+            #[allow(clippy::cast_possible_truncation)] // the two halves
+            call(mem, set_time, &[sys, t as u32, (t >> 32) as u32]);
+            let step = mem.read::<f64>(mem.rebase(PSIM_TIME_STEP));
+            let t = x87::add(mem.read::<f64>(p.wrapping_add(0xa8)), step);
+            mem.write(p.wrapping_add(0xa8), t);
+        }
+        let model = mem.read::<u32>(p.wrapping_add(0x14));
+        let scale = rcbg_model_get_scale(mem, model).to_bits();
+        let blob = mem.read::<u32>(model.wrapping_add(0x14));
+        let n = i32::from(mem.read::<i16>(blob.wrapping_add(0x12))).cast_unsigned();
+        let sys = mem.read::<u32>(p.wrapping_add(0x18));
+        let positions = mem.read::<u32>(sys.wrapping_add(0x24));
+        let out = blob.wrapping_add(mem.read::<u32>(blob.wrapping_add(8)));
+        call(mem, f_to_s0, &[out, positions, n, scale]);
+        let model = mem.read::<u32>(p.wrapping_add(0x14));
+        let update = mem.read::<u32>(model.wrapping_add(8));
+        if update == 0 {
+            return model;
+        }
+        call(mem, update, &[model])
+    }
+
+    /// [`rcbg_psim_create`]'s calls: `rcfxParticleNew()`,
+    /// `rcfxParticleSetCnt(sys, n)`, `rcbgModelShortsToVectors_009283f0(out,
+    /// src, n, s)`, `rcfxSpringNew()`, `rcbgModelGetPrimHeader(model, i)`,
+    /// `rcAlloc(size, file, line)`, `rcfxSpringSetCnt(spring, n)`,
+    /// `rcVu0Sub(out, a, b)`, `rcFree(p)`,
+    /// `rcfxParticleAddForce(sys, force)` and `rcfxParticleResetForce(sys)`.
+    pub const PSIM_CREATE_CALLS: [u32; 11] = [
+        0x0092_8950,
+        0x0092_89f0,
+        0x0092_83f0,
+        0x0092_8d50,
+        0x0092_82c0,
+        0x0092_58a0,
+        0x0092_8d80,
+        0x0091_f740,
+        0x0092_58e0,
+        0x0092_8660,
+        0x0092_8970,
+    ];
+    /// `rcVec3fLength(v)` (`0x00921250`, in `ST0`).
+    pub const VEC3F_LENGTH: u32 = 0x0092_1250;
+    /// `"..\\program\\src\\rcBg\\rcbgPSim.c"` (`0x00b676f0`), the
+    /// allocations' file.
+    pub const PSIM_FILE: u32 = 0x00b6_76f0;
+    /// The bytes per element of each primitive type 0..=7 (the original's
+    /// eight stack bytes `0x28201c14`, `0x30282018`): types below 4 are
+    /// triangles, the others quads.
+    pub const PRIM_STRIDES: [u8; 8] = [0x14, 0x1c, 0x20, 0x28, 0x18, 0x20, 0x28, 0x30];
+
+    /// A primitive type's element size: [`PRIM_STRIDES`]; a type outside
+    /// 0..=7 reads the original's other stack bytes, here 0.
+    fn prim_stride(kind: i8) -> u32 {
+        usize::try_from(kind)
+            .ok()
+            .and_then(|k| PRIM_STRIDES.get(k))
+            .map_or(0, |&b| u32::from(b))
+    }
+
+    /// [`rcbg_psim_create`]'s edge list: a first pass over the model's
+    /// primitives counts the edges (3 per triangle, 4 per quad), a second
+    /// writes them (two words each) into an `rcAlloc`ed list (rcbgPSim.c
+    /// line 0x97). Returns the list and the count.
+    fn psim_edges<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        model: u32,
+        [prim_header, alloc]: [u32; 2],
+        call: &mut C,
+    ) -> (u32, i32) {
+        let file = mem.rebase(PSIM_FILE);
+        // first pass: the number of edges
+        let kind_at = |mem: &M, h: u32| mem.read::<i8>(h.wrapping_add(1));
+        let count_at = |mem: &M, h: u32| i32::from(mem.read::<i16>(h.wrapping_add(2)));
+        let mut edges = 0i32;
+        let mut h = call(mem, prim_header, &[model, 0]);
+        while kind_at(mem, h) != -1 {
+            let kind = kind_at(mem, h);
+            let n = count_at(mem, h);
+            edges = edges.wrapping_add(n.wrapping_mul(if kind < 4 { 3 } else { 4 }));
+            h = h
+                .wrapping_add(0x10)
+                .wrapping_add(prim_stride(kind).wrapping_mul(n.cast_unsigned()));
+        }
+        let edge_count = edges.cast_unsigned();
+
+        // second pass: the edges, two words each
+        let list = call(mem, alloc, &[edge_count.wrapping_mul(8), file, 0x97]);
+        let mut out = list;
+        let mut h = call(mem, prim_header, &[model, 0]);
+        while kind_at(mem, h) != -1 {
+            let kind = kind_at(mem, h);
+            let mut e = h.wrapping_add(0x10);
+            let mut i = 0i32;
+            while i < count_at(mem, h) {
+                let index = |mem: &M, o: u32| u32::from(mem.read::<u16>(e.wrapping_add(o)));
+                let ends: &[u32] = if kind < 4 {
+                    &[0xc, 0xe, 0xe, 0x10, 0x10, 0xc]
+                } else {
+                    &[0x10, 0x12, 0x12, 0x16, 0x16, 0x14, 0x14, 0x10]
+                };
+                for &o in ends {
+                    mem.write(out, index(mem, o));
+                    out = out.wrapping_add(4);
+                }
+                i += 1;
+                e = e.wrapping_add(prim_stride(kind_at(mem, h)));
+            }
+            h = e;
+        }
+
+        (list, edges)
+    }
+
+    /// [`rcbg_psim_create`]'s marks: a zeroed `rcAlloc`ed word per edge
+    /// (line 0xc6), 1 for an edge equal to an earlier one either way round.
+    fn psim_mark_repeats<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        list: u32,
+        edges: i32,
+        alloc: u32,
+        call: &mut C,
+    ) -> u32 {
+        let file = mem.rebase(PSIM_FILE);
+        let edge_count = edges.cast_unsigned();
+        let read = |mem: &M, at: u32| mem.read::<u32>(at);
+        // an edge equal to an earlier one, either way round, is marked
+        let marks = call(mem, alloc, &[edge_count.wrapping_mul(4), file, 0xc6]);
+        for k in 0..edge_count.cast_signed().max(0).cast_unsigned() {
+            mem.write(marks.wrapping_add(4 * k), 0u32);
+        }
+        let end = |mem: &M, k: u32, which: u32| read(mem, list.wrapping_add(8 * k + 4 * which));
+        for i in 0..(edges - 1).max(0).cast_unsigned() {
+            let (a, b) = (end(mem, i, 0), end(mem, i, 1));
+            for j in i + 1..edges.cast_unsigned() {
+                let (c, d) = (end(mem, j, 0), end(mem, j, 1));
+                if (c == a || c == b) && (d == a || d == b) {
+                    mem.write(marks.wrapping_add(4 * j), 1u32);
+                    break;
+                }
+            }
+        }
+        marks
+    }
+
+    /// `rcbgPSimCreate(p, model)` (`0x0091f9d0`): the particle simulation of
+    /// a cloth-like model.
+    /// - `model` goes to `+0x14`; a new particle system
+    ///   (`rcfxParticleNew`) to `+0x18`, with as many particles as the
+    ///   model's points (the `i16` at blob `+0x12`, the blob the model's
+    ///   `+0x14`), placed at the points (`rcbgModelShortsToVectors_009283f0`
+    ///   into the system's positions `+0x24`, scaled by
+    ///   `rcbgModelGetScale(model)` stored as an `f32`).
+    /// - A spring force (`rcfxSpringNew`) gets one spring per distinct
+    ///   edge of the model's primitives (`rcbgModelGetPrimHeader(model, 0)`:
+    ///   headers of 0x10 bytes, type `+1` (-1 ends), count `+2` (`i16`),
+    ///   then the elements, [`PRIM_STRIDES`] bytes each). Triangles (types
+    ///   below 4) give the edges (a, b), (b, c), (c, a) of their `u16`
+    ///   indices at `+0xc`, `+0xe`, `+0x10`; quads (a, b), (b, d), (d, c),
+    ///   (c, a) of `+0x10`, `+0x12`, `+0x14`, `+0x16`. The edges go to an
+    ///   `rcAlloc`ed list (rcbgPSim.c line 0x97; the count from a first
+    ///   pass: 3 or 4 per element), an edge equal to an earlier one either
+    ///   way round is marked (a zeroed `rcAlloc`ed word each, line 0xc6),
+    ///   and each unmarked edge becomes a spring (`rcfxSpringSetCnt`, the
+    ///   pairs at `get_ptr32_func(+0x20)` (the identity), the rest lengths at
+    ///   `get_ptr32_func(+0x24)`: `rcVec3fLength` of position a minus
+    ///   position b (`rcVu0Sub` into `work`, 16 bytes), stored as `f32`).
+    /// - Both lists are freed (`rcFree`, when allocated), the spring added
+    ///   to the system (`rcfxParticleAddForce`) and the forces reset
+    ///   (`rcfxParticleResetForce`), whose `eax` it returns.
+    pub fn rcbg_psim_create<M, C, F>(
+        mem: &mut M,
+        [p, model]: [u32; 2],
+        work: u32,
+        call: &mut C,
+        fcall: &mut F,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+        F: FnMut(&mut M, u32, crate::camera::FArgs<'_>) -> f64,
+    {
+        let [
+            particle_new,
+            particle_set_cnt,
+            shorts_to_vectors,
+            spring_new,
+            prim_header,
+            alloc,
+            spring_set_cnt,
+            vu0_sub,
+            free,
+            add_force,
+            reset_force,
+        ] = PSIM_CREATE_CALLS.map(|f| mem.rebase(f));
+        let read = |mem: &M, at: u32| mem.read::<u32>(at);
+
+        mem.write(p.wrapping_add(0x14), model);
+        let sys = call(mem, particle_new, &[]);
+        mem.write(p.wrapping_add(0x18), sys);
+        let blob = read(mem, model.wrapping_add(0x14));
+        let points = i32::from(mem.read::<i16>(blob.wrapping_add(0x12))).cast_unsigned();
+        call(mem, particle_set_cnt, &[sys, points]);
+        let positions = read(mem, read(mem, p.wrapping_add(0x18)).wrapping_add(0x24));
+        let scale = rcbg_model_get_scale(mem, model).to_bits();
+        // the count read again from the same blob, the source from the
+        // model's blob as it is now
+        let points = i32::from(mem.read::<i16>(blob.wrapping_add(0x12))).cast_unsigned();
+        let blob = read(mem, model.wrapping_add(0x14));
+        let src = blob.wrapping_add(read(mem, blob.wrapping_add(8)));
+        call(mem, shorts_to_vectors, &[positions, src, points, scale]);
+        let spring = call(mem, spring_new, &[]);
+
+        let (list, edges) = psim_edges(mem, model, [prim_header, alloc], call);
+        let marks = psim_mark_repeats(mem, list, edges, alloc, call);
+        let end = |mem: &M, k: u32, which: u32| read(mem, list.wrapping_add(8 * k + 4 * which));
+        let unmarked = |mem: &M, k: u32| read(mem, marks.wrapping_add(4 * k)) == 0;
+        let all = 0..edges.max(0).cast_unsigned();
+        let springs = all.clone().filter(|&k| unmarked(mem, k)).count();
+        call(
+            mem,
+            spring_set_cnt,
+            &[spring, u32::try_from(springs).unwrap_or(0)],
+        );
+
+        // one spring per unmarked edge, its rest length the current one
+        let mut pairs = ptr32(read(mem, spring.wrapping_add(0x20)));
+        let mut lengths = ptr32(read(mem, spring.wrapping_add(0x24)));
+        let positions = read(mem, read(mem, p.wrapping_add(0x18)).wrapping_add(0x24));
+        let length = mem.rebase(VEC3F_LENGTH);
+        for k in all {
+            if !unmarked(mem, k) {
+                continue;
+            }
+            let (a, b) = (end(mem, k, 0), end(mem, k, 1));
+            mem.write(pairs.wrapping_add(4), b);
+            mem.write(pairs, a);
+            let at = |i: u32| positions.wrapping_add(i << 4);
+            call(mem, vu0_sub, &[work, at(a), at(b)]);
+            let len = fcall(mem, length, crate::camera::FArgs::Stack(&[work]));
+            pairs = pairs.wrapping_add(8);
+            mem.write(lengths, ffx_bridge::x87::store(len));
+            lengths = lengths.wrapping_add(4);
+        }
+        if marks != 0 {
+            call(mem, free, &[marks]);
+        }
+        if list != 0 {
+            call(mem, free, &[list]);
+        }
+        let sys = read(mem, p.wrapping_add(0x18));
+        call(mem, add_force, &[sys, spring]);
+        let sys = read(mem, p.wrapping_add(0x18));
+        call(mem, reset_force, &[sys])
+    }
+
+    /// `rcbgModelNew()` (`0x009283b0`), `rcbgModelCreateFromOMD(model, omd)`
+    /// (`0x00927d70`), `rcbgModelSetScale(model, s)` (`0x00928540`) and
+    /// `rcbgPSimCreate(p, model)` (`0x0091f9d0`):
+    /// [`rcbg_psim_create_from_omd`]'s calls.
+    pub const PSIM_FROM_OMD_CALLS: [u32; 4] = [0x0092_83b0, 0x0092_7d70, 0x0092_8540, 0x0091_f9d0];
+
+    /// `rcbgPSimCreateFromOMD(p, omd, scale)` (`0x0091fd00`): a new model
+    /// (`rcbgModelNew`) made from `omd` (`rcbgModelCreateFromOMD`), scaled
+    /// by `scale` (an `f32`, copied through the x87; `rcbgModelSetScale`),
+    /// becomes `p`'s simulation (`rcbgPSimCreate(p, model)`), whose `eax`
+    /// it returns.
+    pub fn rcbg_psim_create_from_omd<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [p, omd, scale]: [u32; 3],
+        call: &mut C,
+    ) -> u32 {
+        let [new, from_omd, set_scale, create] = PSIM_FROM_OMD_CALLS.map(|f| mem.rebase(f));
+        let model = call(mem, new, &[]);
+        call(mem, from_omd, &[model, omd]);
+        call(mem, set_scale, &[model, crate::x87::copy(scale)]);
+        call(mem, create, &[p, model])
     }
 }
 

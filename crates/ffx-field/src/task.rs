@@ -2940,6 +2940,80 @@ pub mod bridge {
         let f = mem.rebase(super::CH_SET_ORG_MATRIX);
         call(mem, f, &[h, dst]);
     }
+
+    // ---- field r14 ----
+
+    /// The effect heap's debug record (`rcefMemDebugInit`): the heap's
+    /// base and size, its highest use in percent (`f32`), the packet
+    /// buffer's base and size, its highest use (`0x0193c12c..0x0193c140`).
+    pub const MEM_DEBUG: u32 = 0x0193_c12c;
+    /// 100.0 (`f64`, `.rdata`): [`rcef_mem_debug_disp`]'s percent scale.
+    pub const PERCENT: u32 = 0x00b9_22e0;
+
+    /// `rcefMemDebugInit(heap, heap_size, packets, packet_size)`
+    /// (`0x009374f0`): the four into [`MEM_DEBUG`] (`+0`, `+4`, `+0xc`,
+    /// `+0x10`), both highest uses (`+8`, `+0x14`) 0.0. The original then
+    /// prints them with `rcPrint`, a `ret` on PC (not called here). Returns
+    /// `packet_size` (left in `eax`).
+    pub fn rcef_mem_debug_init(
+        mem: &mut impl Mem,
+        [heap, heap_size, packets, packet_size]: [u32; 4],
+    ) -> u32 {
+        let d = mem.rebase(MEM_DEBUG);
+        mem.write(d.wrapping_add(0x14), 0f32);
+        mem.write(d.wrapping_add(8), 0f32);
+        for (o, v) in [
+            (0u32, heap),
+            (4, heap_size),
+            (0xc, packets),
+            (0x10, packet_size),
+        ] {
+            mem.write(d.wrapping_add(o), v);
+        }
+        packet_size
+    }
+
+    /// `rcefMemDebugDisp(heap_used, packets_used)` (`0x00937440`): each use
+    /// as a percentage of its size (both integers stored as `f32`, divided,
+    /// times 100.0 at 53 bits, stored as `f32`); a percentage above the
+    /// highest so far (`+8`, `+0x14` of [`MEM_DEBUG`]; not when either is
+    /// NaN) becomes the highest. The original then prints them with
+    /// `rcPrint`, a `ret` on PC (not called here); its `eax` is a status
+    /// word over junk, which no caller reads.
+    pub fn rcef_mem_debug_disp(mem: &mut impl Mem, heap_used: u32, packets_used: u32) {
+        use ffx_bridge::x87::{div, load, mul, store};
+        let d = mem.rebase(MEM_DEBUG);
+        let scale = mem.read::<f64>(mem.rebase(PERCENT));
+        let as_f32 = |v: u32| load(store(f64::from(v.cast_signed())));
+        for (used, size_at, max_at) in [(heap_used, 4u32, 8u32), (packets_used, 0x10, 0x14)] {
+            let size = as_f32(mem.read::<u32>(d.wrapping_add(size_at)));
+            let p = store(mul(div(as_f32(used), size), scale));
+            let max = d.wrapping_add(max_at);
+            if load(mem.read::<u32>(max)) < load(p) {
+                mem.write(max, p);
+            }
+        }
+    }
+
+    /// `MsGetMoveTargetDist` (`0x007ab540`, battle's), which
+    /// [`rcef_ms_get_move_target_dist`] calls.
+    pub const MS_GET_MOVE_TARGET_DIST: u32 = 0x007a_b540;
+
+    /// `rcefMsGetMoveTargetDist_0092eb20(a1, ..., a11)` (`0x0092eb20`, in the
+    /// rcef function table, slot `0x00c65480`; name ours): `MsGetMoveTargetDist` with the
+    /// same eleven words, the fourth and the last four (`f32`s) copied
+    /// through the x87. Returns its `eax`.
+    pub fn rcef_ms_get_move_target_dist<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        mut args: [u32; 11],
+        call: &mut C,
+    ) -> u32 {
+        for i in [3usize, 7, 8, 9, 10] {
+            args[i] = crate::x87::copy(args[i]);
+        }
+        let f = mem.rebase(MS_GET_MOVE_TARGET_DIST);
+        call(mem, f, &args)
+    }
 }
 
 #[cfg(test)]

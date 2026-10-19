@@ -5571,6 +5571,39 @@ pub mod bridge {
         0
     }
 
+    /// The `host0:/ffx/proj/map/f_particle/` paths' formats: field maps'
+    /// `m%03d.bin` and `m%03d.pdt` (`0x00b66f24`, `0x00b66f50`), battle
+    /// maps' `b%03d.bin` and `b%03d.pdt` (`0x00b66f7c`, `0x00b66fa8`).
+    pub const PARTICLE_FORMATS: [[u32; 2]; 2] =
+        [[0x00b6_6f24, 0x00b6_6f50], [0x00b6_6f7c, 0x00b6_6fa8]];
+    /// `yiLoadFieldParticle(textures, effects)` (`0x00909190`).
+    pub const LOAD_FIELD_PARTICLE: u32 = 0x0090_9190;
+
+    /// `yiLoadFieldParticleNo(n)` (`0x009092e0`) and, with `battle`,
+    /// `yiLoadBattleFieldParticleNo(n)` (`0x00909120`): the paths of map
+    /// `n`'s particle textures and effects (`sprintf` with
+    /// [`PARTICLE_FORMATS`] into `work`, the original's two 256-byte
+    /// strings: the `.bin` first, the `.pdt` at `+0x100`) handed to
+    /// `yiLoadFieldParticle`, whose `eax` it returns (the stack cookie
+    /// check leaves it).
+    pub fn yi_load_field_particle_no<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        battle: bool,
+        n: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let (textures, effects) = (work, work.wrapping_add(0x100));
+        let formats = PARTICLE_FORMATS[usize::from(battle)];
+        for (buf, format) in [(textures, formats[0]), (effects, formats[1])] {
+            let sprintf = mem.read::<u32>(mem.rebase(super::CRT_SPRINTF));
+            let format = mem.rebase(format);
+            call(mem, sprintf, &[buf, format, n]);
+        }
+        let f = mem.rebase(LOAD_FIELD_PARTICLE);
+        call(mem, f, &[textures, effects])
+    }
+
     /// The file `path` read whole into a `yiMalloc` buffer (`sceOpen`
     /// mode 1, its size from `sceLseek` to the end, back to the start,
     /// `sceRead`, `sceClose`); 0 when it does not open.
@@ -5803,5 +5836,117 @@ pub mod bridge {
         let f = mem.rebase(PART_CHAIN_TO_OMD);
         let r = mem.rebase(YI_RENDER);
         call(mem, f, &[r, out, part])
+    }
+
+    // ---- field r14 ----
+
+    /// `yiRender_create(r, a, b, c)` (`0x0090c400`), `yiRender_resetall(r)`
+    /// (`0x0090cd50`) and `rcbgInit()` (`0x00919a70`): [`yi_init`]'s calls.
+    pub const INIT_CALLS: [u32; 3] = [0x0090_c400, 0x0090_cd50, 0x0091_9a70];
+    /// 32.0 (`f32`, `.rdata` `0x00b41d84`): the scale factor [`yi_init`]
+    /// sets.
+    pub const DEFAULT_SCALE: u32 = 0x00b4_1d84;
+
+    /// `yiInit()` (`0x00909030`): the renderer state created
+    /// (`yiRender_create(&g_YiRender, 0, 0x3000, 0x2400)`), the scale
+    /// factor's three words 32.0, the state reset (`yiRender_resetall`),
+    /// then `rcbgInit()`, whose `eax` it returns (a tail jump).
+    pub fn yi_init<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(mem: &mut M, call: &mut C) -> u32 {
+        let [create, reset, rcbg_init] = INIT_CALLS.map(|f| mem.rebase(f));
+        let r = mem.rebase(YI_RENDER);
+        call(mem, create, &[r, 0, 0x3000, 0x2400]);
+        let scale = crate::x87::copy(mem.read::<u32>(mem.rebase(DEFAULT_SCALE)));
+        SCALE_FACTOR.set(mem, [scale; 3]);
+        call(mem, reset, &[r]);
+        call(mem, rcbg_init, &[])
+    }
+
+    /// `FFXIsDebug()` (`0x00887c50`) and `yiRectToOMDBuild(r, ...)`
+    /// (`0x00912270`): [`yi_rect_to_omd`]'s calls.
+    pub const RECT_TO_OMD_CALLS: [u32; 2] = [0x0088_7c50, 0x0091_2270];
+
+    /// `yiRectToOMD(a1, ..., a8)` (`0x00909d30`): `yiRectToOMDBuild(
+    /// &g_YiRender, a1, ..., a7, a8)` with `a8` (the unlimited flag) kept
+    /// only in a debug build (`FFXIsDebug()` non-zero), else 0. Returns its
+    /// `eax`.
+    pub fn yi_rect_to_omd<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        a: [u32; 8],
+        call: &mut C,
+    ) -> u32 {
+        let [is_debug, build] = RECT_TO_OMD_CALLS.map(|f| mem.rebase(f));
+        let unlimited = if call(mem, is_debug, &[]) == 0 {
+            0
+        } else {
+            a[7]
+        };
+        let r = mem.rebase(YI_RENDER);
+        let mut args = [0u32; 9];
+        args[0] = r;
+        args[1..8].copy_from_slice(&a[..7]);
+        args[8] = unlimited;
+        call(mem, build, &args)
+    }
+
+    /// `Sg_GetDispMode()` (`0x00820550`) and `yiScreff_draw(scene)`
+    /// (`0x00913200`): [`yi_screff_entry`]'s calls.
+    pub const SCREFF_ENTRY_CALLS: [u32; 2] = [0x0082_0550, 0x0091_3200];
+
+    /// `yiScreff_entry(scene)` (`0x009131d0`): in a display mode other
+    /// than 0 (`Sg_GetDispMode`) the screen effect's `+0xbe0a8` is cleared
+    /// and `scene` returned; else `yiScreff_draw(scene)`, whose `eax` it
+    /// returns.
+    pub fn yi_screff_entry<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        scene: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [disp_mode, draw] = SCREFF_ENTRY_CALLS.map(|f| mem.rebase(f));
+        if call(mem, disp_mode, &[]) != 0 {
+            mem.write(scene.wrapping_add(0xbe0a8), 0u32);
+            return scene;
+        }
+        call(mem, draw, &[scene])
+    }
+
+    /// `yiClutGreen_00916130(r, a, b)` (`0x00916130`).
+    pub const CLUT_GREEN: u32 = 0x0091_6130;
+
+    /// `yiClutGreenRender_00908400(a, b)` (`0x00908400`; name ours):
+    /// `yiClutGreen_00916130(&g_YiRender, a, b)` (left to the original: it
+    /// reads stack junk), whose `eax` it returns.
+    pub fn yi_clut_green_render<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        [a, b]: [u32; 2],
+        call: &mut C,
+    ) -> u32 {
+        let f = mem.rebase(CLUT_GREEN);
+        let r = mem.rebase(YI_RENDER);
+        call(mem, f, &[r, a, b])
+    }
+
+    /// `yiScreff_entry(r)` (`0x009131d0`) and
+    /// `graphicSetDistortionSkipped(skipped)` (`0x00642f80`, render):
+    /// [`yi_draw_scr_effect`]'s calls.
+    pub const DRAW_SCR_EFFECT_CALLS: [u32; 2] = [0x0091_31d0, 0x0064_2f80];
+
+    /// `yiDrawScrEffect()` (`0x00908550`): with the screen effect on (bit
+    /// 24 of [`RENDER_STATUS`]) `yiScreff_entry(&g_YiRender)` (the original
+    /// also pushes the distortion word [`super::fog::HAMON`], which it
+    /// does not read), else the renderer is told the distortion is skipped
+    /// (`graphicSetDistortionSkipped(1)`). Returns 0.
+    pub fn yi_draw_scr_effect<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let [entry, skipped] = DRAW_SCR_EFFECT_CALLS.map(|f| mem.rebase(f));
+        if RENDER_STATUS.get(mem) & 0x0100_0000 != 0 {
+            let hamon = mem.read::<u32>(mem.rebase(super::fog::HAMON));
+            let r = mem.rebase(YI_RENDER);
+            call(mem, entry, &[r, hamon]);
+        } else {
+            call(mem, skipped, &[1]);
+        }
+        0
     }
 }
