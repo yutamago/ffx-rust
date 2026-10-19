@@ -14480,3 +14480,166 @@ fn round29i_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round29j_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_cd00);
+        // op_random: keeps its argument, returns the f32 at rnd
+        // (mov eax, [esp+4]; mov [arg], eax; fld dword [rnd]; ret)
+        let (rnd, rnd_arg) = (p.alloc(4), p.alloc(4));
+        let mut stub = vec![0x8b, 0x44, 0x24, 0x04, 0xa3];
+        stub.extend(rnd_arg.to_le_bytes());
+        stub.extend([0xd9, 0x05]);
+        stub.extend(rnd.to_le_bytes());
+        stub.push(0xc3);
+        stub_code(&mut p, 0x007e_6700, &stub);
+        let wrote = p.alloc(4);
+        for (sym, words, ret) in [
+            (0x0062_fdc0u32, &[0u8, 0, 0][..], Some(wrote)),
+            (0x0071_69d0, &[0, 0, 0, 0], None),
+            (0x0094_964c, &[0, 0, 0], None),
+            (0x006e_d2e0, &[0, 4, 4], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // FFXVu0InversMatrix: the camera matrix copied into its first
+        // argument (push esi; push edi; mov edi, [esp+0xc];
+        // mov esi, [esp+0x10]; mov ecx, 16; rep movsd; pop edi; pop esi)
+        stub_code(
+            &mut p,
+            0x006e_d450,
+            &[
+                0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x74, 0x24, 0x10, 0xb9, 0x10, 0, 0, 0,
+                0xf3, 0xa5, 0x5f, 0x5e, 0xc3,
+            ],
+        );
+        let frame = p.b.stack_range().start + 0x100;
+        let (out, vec, file, data) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x14), p.alloc(0x40));
+        let (text, rec, point, holder) =
+            (p.alloc(0x80), p.alloc(0x10), p.alloc(0x10), p.alloc(0x60));
+        let special = [0u32, 0x8000_0000, 0x7fc0_0000, 0xffc0_0000, 0x3f80_0000];
+        for round in 0..2000 {
+            // op_vec3_max / op_vec3_min: ties, signed zeros and NaNs
+            let mut by_value = [0u32; 4];
+            for (i, slot) in (0u32..).zip(by_value.iter_mut()) {
+                let xv = if rng.chance(25) {
+                    rng.pick(&special)
+                } else {
+                    finite(&mut rng)
+                };
+                *slot = xv;
+                let yv = match rng.below(4) {
+                    0 => xv,
+                    1 => rng.pick(&special),
+                    _ => finite(&mut rng),
+                };
+                p.set(vec + 4 * i, yv);
+            }
+            for max in [true, false] {
+                p.fill(out, 0x10, &mut rng);
+                let sym = if max { 0x007e_cd00 } else { 0x007e_cdc0 };
+                p.check(
+                    &format!("{sym:#x} round {round}"),
+                    sym,
+                    &[out, vec, by_value[0], by_value[1], by_value[2], by_value[3]],
+                    |o| {
+                        op::bridge::op_vec3_clamp(o, out, vec, by_value, max);
+                        None
+                    },
+                );
+            }
+            // op_file_puts: the buffer full, partly full, over-full
+            let size = rng.pick(&[1u32, 3, 8, 0x40]);
+            let over = rng.pick(&[0u32, 0, 0, 1, 2]);
+            let pos = rng.below(size + 1) + over;
+            p.fill(data, 0x40, &mut rng);
+            let handle = rng.next();
+            p.set(file, data);
+            p.set(file + 8, handle);
+            p.set(file + 0xc, pos);
+            p.set(file + 0x10, size);
+            let len = rng.pick(&[0u32, 1, 2, 7, 0x20, 0x3f]);
+            for k in 0..len {
+                p.set(text + k, u8::try_from(1 + rng.below(255)).unwrap());
+            }
+            p.set(text + len, 0u8);
+            let result = rng.next();
+            p.set(wrote, result);
+            p.check(
+                &format!("op_file_puts round {round}"),
+                0x007e_2fb0,
+                &[file, text],
+                |o| op::bridge::op_file_puts(o, file, text, &mut call_original),
+            );
+            // ppp_mdl_rev_random_flags
+            p.fill(rec, 0x10, &mut rng);
+            for j in 0..3 {
+                let on = rng.pick(&[0u8, 0, 1, 0x80]);
+                p.set(rec + 0xd + j, on);
+            }
+            let rv = rng.pick(&[
+                0x3f00_0000u32,
+                0,
+                0x8000_0000,
+                0xbf00_0000,
+                0x7fc0_0000,
+                0x0000_0001,
+            ]);
+            p.set(rnd, rv);
+            p.fill(out, 4, &mut rng);
+            p.check(
+                &format!("0x00740960 round {round}"),
+                0x0074_0960,
+                &[rec, out],
+                |o| {
+                    mdl::bridge::ppp_mdl_rev_random_flags(o, rec, out, &mut call_original_f);
+                    None
+                },
+            );
+            // ppp_screen_to_world
+            let screen = p.sym(0x0230_fe60);
+            let camera = p.sym(0x0230_ff60);
+            for i in 0..16 {
+                let xv = finite(&mut rng);
+                p.set(screen + 4 * i, xv);
+                let yv = finite(&mut rng);
+                p.set(camera + 4 * i, yv);
+            }
+            if rng.chance(10) {
+                let zv: u32 = p.get(screen + 0x28);
+                p.set(point + 8, zv);
+            }
+            for i in 0..3 {
+                if i < 2 || !rng.chance(10) {
+                    let xv = finite(&mut rng);
+                    p.set(point + 4 * i, xv);
+                }
+            }
+            p.fill(out, 0x10, &mut rng);
+            p.check(
+                &format!("0x007626d0 round {round}"),
+                0x0076_26d0,
+                &[out, point],
+                |o| {
+                    part::bridge::ppp_screen_to_world(o, out, point, frame, &mut call_original);
+                    None
+                },
+            );
+            // op_effect_init, now and then (256 memsets)
+            if round % 50 == 0 {
+                p.fill(holder, 0x60, &mut rng);
+                p.set(p.sym(0x00c8_8a90), holder);
+                p.fill(p.sym(0x00c4_8d88), 4, &mut rng);
+                p.fill(p.sym(0x012e_9c70), 0x8400, &mut rng);
+                p.check(
+                    &format!("op_effect_init round {round}"),
+                    0x0080_0580,
+                    &[],
+                    |o| Some(op::bridge::op_effect_init(o, &mut call_original)),
+                );
+            }
+        }
+    }
+}

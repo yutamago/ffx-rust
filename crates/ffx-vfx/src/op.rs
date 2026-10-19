@@ -4200,4 +4200,98 @@ pub mod bridge {
         debug_print(mem, 0x00b5_8308, call);
         hi
     }
+
+    /// `op_vec3_max_007ecd00(out, v, a)` / `op_vec3_min_007ecdc0(out, v,
+    /// a)` (`0x007ecd00`, `0x007ecdc0`): the three components of the vector
+    /// `a` passed by value (four words from `a`, the fourth unused) against
+    /// `*v`: with `max`, `out[i] = v[i]` where `a[i] < v[i]`; else
+    /// `out[i] = v[i]` where `a[i] > v[i]`; `a[i]` otherwise, so on a tie or
+    /// a NaN (the `fcom` falls through to `a`). `f32` bits copied.
+    pub fn op_vec3_clamp(mem: &mut impl Mem, out: u32, v: u32, a: [u32; 4], max: bool) {
+        for i in 0..3u32 {
+            let vi: u32 = mem.read(v.wrapping_add(4 * i));
+            let ai = a[i as usize];
+            let (x, y) = (f32::from_bits(ai), f32::from_bits(vi));
+            let take_v = if max { x < y } else { x > y };
+            mem.write(out.wrapping_add(4 * i), if take_v { vi } else { ai });
+        }
+    }
+
+    /// `op_file_puts_007e2fb0(file, s)` (`0x007e2fb0`): the C string `s`
+    /// into the op file's write buffer (`+0` the bytes, `+8` the handle,
+    /// `+0xc` the position, `+0x10` the size), each full buffer written
+    /// with `sceWrite(handle, bytes, size)` (through `call`) and the
+    /// position back to 0. Signed arithmetic as the original's, room read
+    /// again each turn. Returns the original's eax: the size, or the last
+    /// write's result when the last turn flushed; `None` for an empty
+    /// string, where it is the caller's.
+    pub fn op_file_puts<M: Mem>(
+        mem: &mut M,
+        file: u32,
+        s: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let mut len = 0u32;
+        while mem.read::<u8>(s.wrapping_add(len)) != 0 {
+            len = len.wrapping_add(1);
+        }
+        let mut left = len.cast_signed();
+        if left <= 0 {
+            return None;
+        }
+        let mut src = s;
+        let mut eax;
+        loop {
+            let pos = mem.read::<u32>(file.wrapping_add(0xc)).cast_signed();
+            let size = mem.read::<u32>(file.wrapping_add(0x10)).cast_signed();
+            let n = left.min(size.wrapping_sub(pos));
+            let data: u32 = mem.read(file);
+            for k in 0..n.max(0).cast_unsigned() {
+                let b: u8 = mem.read(src);
+                let to = data.wrapping_add(pos.cast_unsigned()).wrapping_add(k);
+                mem.write(to, b);
+                src = src.wrapping_add(1);
+            }
+            let pos = pos.wrapping_add(n);
+            mem.write(file.wrapping_add(0xc), pos.cast_unsigned());
+            left = left.wrapping_sub(n);
+            eax = mem.read::<u32>(file.wrapping_add(0x10));
+            if pos >= eax.cast_signed() {
+                let (data, handle): (u32, u32) = (mem.read(file), mem.read(file.wrapping_add(8)));
+                mem.write(file.wrapping_add(0xc), 0u32);
+                let write = crate::draw::bridge::g(mem, 0x0062_fdc0);
+                eax = call(mem, write, &[handle, data, eax]);
+            }
+            if left <= 0 {
+                return Some(eax);
+            }
+        }
+    }
+
+    /// `op_effect_init()` (`0x00800580`): `[[0x00c88a90] + 0x50]` = the
+    /// word at `0x00c48d88`; the 0x400 bytes at `0x012e9c70` cleared; the
+    /// 256 0x80-byte records from `0x012ea070` cleared (the CRT `memset`,
+    /// through `call`) with `u16 +0x1e` = their index; then `pppInitEnv(0x012f2070, 0,
+    /// 0x02343520, 0x80000)` through `call`. Returns 0.
+    pub fn op_effect_init<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::draw::bridge::g;
+        let at: u32 = mem.read(g(mem, 0x00c8_8a90));
+        let v: u32 = mem.read(g(mem, 0x00c4_8d88));
+        mem.write(at.wrapping_add(0x50), v);
+        mem.write(g(mem, 0x012e_9c70), [0u32; 0x100]);
+        let recs = g(mem, 0x012e_a070);
+        let memset = g(mem, 0x0094_964c);
+        for i in 0..0x100u16 {
+            let rec = recs + 0x80 * u32::from(i);
+            call(mem, memset, &[rec, 0, 0x80]);
+            mem.write(rec + 0x1e, i);
+        }
+        let env = g(mem, 0x012f_2070);
+        let heap = g(mem, 0x0234_3520);
+        call(mem, g(mem, 0x0071_69d0), &[env, 0, heap, 0x8_0000]);
+        0
+    }
 }

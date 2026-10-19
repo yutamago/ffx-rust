@@ -1369,4 +1369,33 @@ pub mod bridge {
         let c = mem.read::<u16>(countdown).wrapping_sub(1);
         mem.write(countdown, c);
     }
+
+    /// `ppp_screen_to_world_007626d0(out, p)` (`0x007626d0`): the screen
+    /// point `p` back through `g_pppScreenMatrix` (`0x0230fe60`): `s = m[3][2]
+    /// / (p.z - m[2][2])` (rounded to `f32`), view `(p.x / m[0][0] * s,
+    /// p.y / m[1][1] * s, s, 1)` at `frame + 0x40`, `FFXVu0InversMatrix(frame,
+    /// g_pppCameraMatrix)` into the 0x40 bytes at `frame`, then
+    /// `FFXVu0ApplyMatrix(out, frame, frame + 0x40)`; callees through `call`.
+    /// `frame` stands for the original's locals (0x50 bytes).
+    pub fn ppp_screen_to_world<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        p: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{div, load, mul, store, sub};
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let screen = g(mem, 0x0230_fe60);
+        let m = |mem: &M, at: u32| load(mem.read::<u32>(screen + at));
+        let pv: [u32; 3] = mem.read(p);
+        let s = store(div(m(mem, 0x38), sub(load(pv[2]), m(mem, 0x28))));
+        let x = store(mul(div(load(pv[0]), m(mem, 0)), load(s)));
+        let y = store(mul(div(load(pv[1]), m(mem, 0x14)), load(s)));
+        let view = frame.wrapping_add(0x40);
+        mem.write(view, [x, y, s, 1.0f32.to_bits()]);
+        let camera = g(mem, 0x0230_ff60);
+        call(mem, g(mem, 0x006e_d450), &[frame, camera]);
+        call(mem, g(mem, 0x006e_d2e0), &[out, frame, view]);
+    }
 }

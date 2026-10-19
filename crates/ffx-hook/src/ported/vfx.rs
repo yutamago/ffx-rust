@@ -2200,6 +2200,34 @@ ported! {
         opus::bridge::opus_map_rgba_free(&mut mem(), at, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
+    /// `op_vec3_max_007ecd00(out, v, a)`, `a` by value.
+    op_vec3_max_007ecd00 @ 0x007e_cd00 => extern "C" fn op_vec3_max(out: u32, v: u32, a0: u32, a1: u32, a2: u32, a3: u32) {
+        op::bridge::op_vec3_clamp(&mut mem(), out, v, [a0, a1, a2, a3], true);
+    }
+    /// `op_vec3_min_007ecdc0(out, v, a)`, `a` by value.
+    op_vec3_min_007ecdc0 @ 0x007e_cdc0 => extern "C" fn op_vec3_min(out: u32, v: u32, a0: u32, a1: u32, a2: u32, a3: u32) {
+        op::bridge::op_vec3_clamp(&mut mem(), out, v, [a0, a1, a2, a3], false);
+    }
+    /// `op_file_puts_007e2fb0(file, s)`: the caller's eax for an empty
+    /// string is not kept (0); nothing reads it there.
+    op_file_puts_007e2fb0 @ 0x007e_2fb0 => extern "C" fn op_file_puts(file: u32, s: u32) -> u32 {
+        op::bridge::op_file_puts(&mut mem(), file, s, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `op_effect_init()`.
+    op_effect_init @ 0x0080_0580 => extern "C" fn op_effect_init() -> u32 {
+        op::bridge::op_effect_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `ppp_mdl_rev_random_flags_00740960(rec, out)`.
+    ppp_mdl_rev_random_flags_00740960 @ 0x0074_0960 => extern "C" fn ppp_mdl_rev_random_flags(rec: u32, out: u32) {
+        mdl::bridge::ppp_mdl_rev_random_flags(&mut mem(), rec, out, &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `ppp_screen_to_world_007626d0(out, p)`.
+    ppp_screen_to_world_007626d0 @ 0x0076_26d0 => extern "C" fn ppp_screen_to_world(out: u32, p: u32) {
+        // the original's inverse camera matrix and view point
+        let mut frame = super::StackFrame::<0x14>::new();
+        let at = frame.at();
+        part::bridge::ppp_screen_to_world(&mut mem(), out, p, at, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

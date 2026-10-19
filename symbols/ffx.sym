@@ -3846,6 +3846,7 @@
 0x0073fa50 function pppDrawMdlCameraLoopDraw  # ppp program table record "pppDrawMdlCameraLoop" draw; not a function start in the Ghidra dump
 0x007403f0 function pppDrawMdlRevCon          # ppp program table record "pppDrawMdlRev" (0x00c3dcf8) +0x1c set-up
 0x00740410 function pppDrawMdlRevDraw         # ppp program table record "pppDrawMdlRev" draw; not a function start in the Ghidra dump
+0x00740960 function ppp_mdl_rev_random_flags_00740960 # ours: (rec, out): out[0] = 1; for each set byte rec +0xd..+0xf, out[1+j] = 1 when op_random(1.0) > 0; only caller pppDrawMdlRevDraw (mdl::bridge::ppp_mdl_rev_random_flags)
 0x007409e0 function pppDrawShape              # fh v3:bsim1.00 0x00740aa0
 0x00740a70 function pppDrawShape0             # fh v3:exact 0x00740b30
 0x00740eb0 function pppDrawShapeCon           # ppp program table record "pppDrawShape" (0x00c3a8c8) +0x1c set-up; "pppDrawShape" (0x00c3a8c8) +0x20 second set-up; "pppDrawShape" (0x00c3bf70) +0x1c set-up and 1 more
@@ -4170,6 +4171,7 @@
 0x00761e20 function pppPartDraw               # fh switch:cg4 0x71002d37e0
 0x00762240 function pppPartLoop               # fh v3:exact+call.cs 0x00762330 cdecl
 0x00762550 function pppSetPartMatrix          # fh switch:cg2 0x71008b5328; (camera, screen): FFXVu0CopyMatrix into g_pppCameraMatrix and g_pppScreenMatrix (part::bridge::ppp_set_part_matrix)
+0x007626d0 function ppp_screen_to_world_007626d0 # ours: (out, p): s = scr[3][2] / (p.z - scr[2][2]) with g_pppScreenMatrix, view (p.x/scr[0][0]*s, p.y/scr[1][1]*s, s, 1), FFXVu0InversMatrix of g_pppCameraMatrix, FFXVu0ApplyMatrix into out; only caller 0x00760f30 (part::bridge::ppp_screen_to_world)
 0x007628c0 function pppDataSetTex_007628c0    # ours: (data, base, a, b) -> b: the records as pppDataLastPair_00761250 walks them; kinds 2, 3, 6, 7 get words 0 and 1 of 12-byte record u8 +4 + base of 0x00d4be38 at +8/+0xc, the last pair into a and b; caller pppDataRcv
 0x007629e0 function pppSetPmcom2Texture_007629e0 # (prog): uploads the pmcom texture with sceGsSetDefLoadImage / sceGsExecLoadImage after FlushCache; its own messages say "setPmcom2Texture depth error!!!" (and "... 2 !!!"); caller pppDataRcv; own name from the message
 0x00762f50 function KePmcomAlloc                 # (bytes) -> block: bytes + 15 rounded down to 8 from the pmcom arena 0x00e524f0..0x00f524f0 (next 0x00d524a4); past the end restarts at the base (spins forever when it still does not fit); 0x00760080 ("pmcom_data_init")
@@ -6386,6 +6388,7 @@
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
 0x007e2660 function op_line_length_007e2660      # ours: (src, lines) -> length of the op script reader's next line (bytes before LF, >= 0x80 with the next) or -1 at 0/0xff/the end (position back one); *lines (if any) and g_OpLineCount += 1; callers 0x007e1d50, 0x007e2270
 0x007e2ed0 function op_file_read                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003cb510 op_file_read, 2 votes, round 1
+0x007e2fb0 function op_file_puts_007e2fb0       # ours: (file, s): the C string into the op file write buffer (+0 bytes, +8 handle, +0xc position, +0x10 size), sceWrite of each full buffer; only caller 0x007e2270 (op::bridge::op_file_puts)
 0x007e3040 function op_and64                  # (dst, a, b) 64-bit dst = *a & *b
 0x007e3060 function op_word_copy3             # the op_word_copy body again
 0x007e3070 function op_float_scale            # (dst, v, s) *dst = *v * s (f32)
@@ -6526,6 +6529,8 @@
 0x007ecc00 function op_vec_w_add2             # (dst, v, _, _, _, s) dst.w = v.w + s (s the sixth argument)
 0x007ecc40 function op_ivec2_scale_007ecc40  # ours: (_, v): v[0], v[1] as i32 -> f32 * the f64 at 0x00b50190 (callers pass 0x00c8f7a0 twice) (op::bridge::op_ivec2_scale)
 0x007ecca0 function op_ivec2_scale_007ecca0  # ours: as 0x007ecc40 with the f64 at 0x00b921e0 (callers on 0x00c8f900/0x00c8f940) (op::bridge::op_ivec2_scale)
+0x007ecd00 function op_vec3_max_007ecd00        # ours: (out, v, a by value): out[i] = v[i] where a[i] < v[i], else a[i] (three components; ties and NaNs keep a); only caller op_shape_draw (op::bridge::op_vec3_clamp)
+0x007ecdc0 function op_vec3_min_007ecdc0        # ours: (out, v, a by value): out[i] = v[i] where a[i] > v[i], else a[i]; only caller op_shape_draw (op::bridge::op_vec3_clamp)
 0x007ece80 function op_word_copy_z            # (dst, src) the word at +8
 0x007ecea0 function op_vec_z_scale            # (dst, v, s) dst.z = v.z * s
 0x007ecec0 function op_vec_w_scale            # (dst, v, s) dst.w = v.w * s
@@ -6691,7 +6696,7 @@
 0x00800390 function op_oef2_stream_cue        # fh v3:exact 0x008002b0
 0x00800410 function opus_part_kind            # (p) -> (i16) at *(p + 0xc) + 2
 0x00800440 function op_oef2_sound_init_00800440 # ours: () -> 0: g_OpOef2SoundCueRing/Args, 0x023c36a0..0x023c389f (64 words, g_OpOef2Seps the second half), head/count, both g_OpOef2StreamCues and byte 0x023c3644 cleared; g_OpSoundCurves and 0x023c3660/64 set from image f32 constants (32, 512, 127, 96, 64, 768, 96, 32, 64, -0.0646, 129.07, 1/24); caller 0x007ff960 next to op_oef2_tex_clut_init_007e5680
-0x00800580 function op_effect_init            # fh v3:exact 0x008004a0
+0x00800580 function op_effect_init            # fh v3:exact 0x008004a0 ; (): [[0x00c88a90]+0x50] = [0x00c48d88], 0x012e9c70 0x400 bytes cleared, the 256 0x80-byte records at 0x012ea070 memset with u16 +0x1e = index, pppInitEnv(0x012f2070, 0, 0x02343520, 0x80000); returns 0 (op::bridge::op_effect_init)
 0x00800610 function op_effect_run_before      # fh v3:exact 0x00800530; (): g_OpusBattle +0x54 = +0x58 pinned frame or latched 0x02332e8c (limit 0x02332e88 = 0x02332e90 + 0xf0000), opu_main_host(0, 0), latch back when unpinned, limit 0 (op::bridge::op_effect_run_before)
 0x00800670 function op_effect_run_after       # fh v3:exact 0x00800590
 0x00800700 function op_part_fp_init           # fh v3:exact 0x00800620
