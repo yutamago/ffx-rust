@@ -1082,9 +1082,9 @@ origin is the word `r0` holds) restores `vf00`.
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.
 
-**334 functions, 65202 bytes** (188 named). By blockers: 0: 212, 1: 76, 2: 35, 3: 4, 4: 4, 5: 1, 7: 1, 15: 1.
+**308 functions, 56463 bytes** (164 named). By blockers: 0: 189, 1: 76, 2: 33, 3: 4, 4: 3, 5: 1, 7: 1, 12: 1.
 
-The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below, with `MsMenuLimitSet`, the biggest function now without blockers but the camera's):
+The battle loop's top level still open (ported: the camera's `MsCameraMatrix`, `MsScreenMatrix`, shakes, screen moves and setters in round 25, `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below):
 
 | Function | Address | Bytes | Blockers |
 |---|---|---|---|
@@ -1135,7 +1135,6 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 29 | `0x0079e4f0` | `MsEffectSendSignal` |  |
 | 0 | 29 | `0x007aaac0` | `FUN_007aaac0` |  |
 | 0 | 30 | `0x007902d0` | `PasswordGetTotalIndex` |  |
-| 0 | 32 | `0x007bbdd0` | `MsScreenLinkSet` |  |
 | 0 | 33 | `0x007c1110` | `FUN_007c1110` |  |
 | 0 | 34 | `0x007b7ef0` | `FUN_007b7ef0` |  |
 | 0 | 35 | `0x007af2f0` | `MsCheckDefenseMotion` |  |
@@ -1155,10 +1154,8 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 42 | `0x007a8c50` | `FUN_007a8c50` |  |
 | 0 | 42 | `0x007ad6e0` | `FUN_007ad6e0` |  |
 | 0 | 43 | `0x007ad5b0` | `FUN_007ad5b0` |  |
-| 0 | 43 | `0x007bc0e0` | `MsScreenOffsetID` |  |
 | 0 | 44 | `0x007abb70` | `MsGetSaveChrArmorModel` |  |
 | 0 | 44 | `0x007abba0` | `MsGetSaveChrWeaponModel` |  |
-| 0 | 44 | `0x007bcf20` | `MsCameraGetYaw` |  |
 | 0 | 45 | `0x007c11c0` | `FUN_007c11c0` |  |
 | 0 | 45 | `0x008be0a0` | `MsExchangeSaveWeapon` |  |
 | 0 | 46 | `0x00781650` | `FUN_00781650` |  |
@@ -1178,11 +1175,9 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 54 | `0x00795e70` | `MsSetChrDirLeave` |  |
 | 0 | 55 | `0x007907a0` | `FUN_007907a0` |  |
 | 0 | 55 | `0x0079ea90` | `MsResetWeaponEffectAttribute` |  |
-| 0 | 55 | `0x007c5680` | `MsScreenCheckShake` |  |
 | 0 | 56 | `0x007a88e0` | `FUN_007a88e0` |  |
 | 0 | 58 | `0x007844c0` | `readBtlMonsterName` |  |
 | 0 | 58 | `0x00793dc0` | `FUN_00793dc0` |  |
-| 0 | 58 | `0x007c4f10` | `MsCameraCheckShake` |  |
 | 0 | 59 | `0x007881c0` | `MsEffectReadStatInit` |  |
 | 0 | 59 | `0x007ad710` | `FUN_007ad710` |  |
 | 0 | 61 | `0x00795d40` | `FUN_00795d40` |  |
@@ -1200,11 +1195,9 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 69 | `0x00798950` | `Rng_ClockSeed` |  |
 | 0 | 69 | `0x0079d2a0` | `FUN_0079d2a0` |  |
 | 0 | 70 | `0x007c13c0` | `FUN_007c13c0` |  |
-| 0 | 71 | `0x007bed10` | `MsCameraResetFilter` |  |
 | 0 | 72 | `0x00788d10` | `MsEventEffectReadComplete` |  |
 | 0 | 72 | `0x007c1000` | `FUN_007c1000` |  |
 | 0 | 73 | `0x00796430` | `FUN_00796430` |  |
-| 0 | 73 | `0x007bdf90` | `MsCameraMoveStat` |  |
 | 0 | 75 | `0x007bd4b0` | `FUN_007bd4b0` |  |
 | 0 | 76 | `0x00798840` | `FUN_00798840` |  |
 | 0 | 76 | `0x007bf1a0` | `FUN_007bf1a0` |  |
@@ -1213,13 +1206,11 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 78 | `0x007bcdd0` | `FUN_007bcdd0` |  |
 | 0 | 79 | `0x007961d0` | `MsSetChrPos2D` |  |
 | 0 | 79 | `0x00796d10` | `FUN_00796d10` |  |
-| 0 | 80 | `0x007bbfc0` | `MsScreenMoveCheck` |  |
 | 0 | 86 | `0x0079a020` | `FUN_0079a020` |  |
 | 0 | 87 | `0x007ab2a0` | `MsSetBtlPosReset` |  |
 | 0 | 88 | `0x0078d620` | `MsResetAvoidFlag` |  |
 | 0 | 91 | `0x00782ae0` | `MsGetMapCenter` |  |
 | 0 | 91 | `0x007ab910` | `FUN_007ab910` |  |
-| 0 | 91 | `0x007c4f50` | `MsCameraResetShake` |  |
 | 0 | 93 | `0x007878a0` | `MsEffectCheckMotion2` |  |
 | 0 | 93 | `0x007ad5e0` | `MsChangeWeaponInvisible` |  |
 | 0 | 94 | `0x00794990` | `FUN_00794990` |  |
@@ -1229,18 +1220,17 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 97 | `0x007a8ad0` | `FUN_007a8ad0` |  |
 | 0 | 98 | `0x00790430` | `FUN_00790430` |  |
 | 0 | 98 | `0x007b19f0` | `FUN_007b19f0` |  |
-| 0 | 103 | `0x007bdde0` | `MsCameraMoveDivide` |  |
 | 0 | 105 | `0x0079a440` | `MsGetChrID` |  |
 | 0 | 105 | `0x007b7c80` | `MsSetBallSplineInit` |  |
 | 0 | 109 | `0x007abca0` | `Equip_RebuildWearers` |  |
 | 0 | 111 | `0x007a06b0` | `MsSEPtransRegist` |  |
 | 0 | 112 | `0x00787c30` | `MsEffectMagicMotion` |  |
 | 0 | 113 | `0x007c0a30` | `FUN_007c0a30` |  |
+| 0 | 114 | `0x007bb840` | `MsAtelScreenShake` |  |
 | 0 | 116 | `0x007a0820` | `MsSoundStreamPlay` |  |
 | 0 | 117 | `0x0079b470` | `MsSetCommandUse` |  |
 | 0 | 118 | `0x007ac940` | `FUN_007ac940` |  |
 | 0 | 119 | `0x007a9a40` | `MsGetTargetDist` |  |
-| 0 | 120 | `0x007bec90` | `MsCameraResetDirVector` |  |
 | 0 | 124 | `0x0079ca80` | `FUN_0079ca80` |  |
 | 0 | 124 | `0x007c09b0` | `FUN_007c09b0` |  |
 | 0 | 126 | `0x00796bb0` | `FUN_00796bb0` |  |
@@ -1254,7 +1244,6 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 140 | `0x007a0720` | `MsSetVoice` |  |
 | 0 | 140 | `0x007bf1f0` | `FUN_007bf1f0` |  |
 | 0 | 145 | `0x007bc750` | `FUN_007bc750` |  |
-| 0 | 146 | `0x007bfe70` | `MsCameraSetSplineFilter` |  |
 | 0 | 147 | `0x007ab010` | `MsMoveSpline` |  |
 | 0 | 147 | `0x007baac0` | `MsSplineRegist` |  |
 | 0 | 149 | `0x007c0910` | `FUN_007c0910` |  |
@@ -1263,13 +1252,9 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 157 | `0x007bce80` | `FUN_007bce80` |  |
 | 0 | 159 | `0x007b6f10` | `FUN_007b6f10` |  |
 | 0 | 160 | `0x007bc890` | `FUN_007bc890` |  |
-| 0 | 163 | `0x007bf280` | `MsCameraSetFocus` |  |
 | 0 | 165 | `0x00795c90` | `FUN_00795c90` |  |
-| 0 | 166 | `0x007bc010` | `MsScreenMoveReset` |  |
 | 0 | 169 | `0x007bcf50` | `FUN_007bcf50` |  |
 | 0 | 175 | `0x00784610` | `FUN_00784610` |  |
-| 0 | 180 | `0x007bbdf0` | `MsScreenMove` |  |
-| 0 | 182 | `0x007c56f0` | `MsScreenShake` |  |
 | 0 | 189 | `0x0078db70` | `MsSetDamageMotion` |  |
 | 0 | 190 | `0x00785d40` | `MsSetSaveCommandMenuPanel` |  |
 | 0 | 190 | `0x007981e0` | `MsAtelRequestSystem` |  |
@@ -1282,7 +1267,6 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 233 | `0x007a87f0` | `MsGetDirDivide` |  |
 | 0 | 240 | `0x0078cd30` | `MsGetComInfo` |  |
 | 0 | 240 | `0x0079e1b0` | `MsTransSpPos` |  |
-| 0 | 245 | `0x007bff10` | `MsCameraSetStartPos` |  |
 | 0 | 249 | `0x0079a760` | `MsGetDamageInfoNext` |  |
 | 0 | 249 | `0x008be0d0` | `FUN_008be0d0` |  |
 | 0 | 250 | `0x007ac840` | `FUN_007ac840` |  |
@@ -1290,21 +1274,14 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 0 | 262 | `0x00793f10` | `MsDetachWeapon` |  |
 | 0 | 264 | `0x00782c00` | `MsSetCountryName` |  |
 | 0 | 268 | `0x007848b0` | `MsDebugFullCommand` |  |
-| 0 | 271 | `0x007bbeb0` | `MsScreenMoveAcc` |  |
-| 0 | 294 | `0x007c57b0` | `MsScreenShake2` |  |
-| 0 | 296 | `0x007c4fc0` | `MsCameraShake` |  |
 | 0 | 297 | `0x007842f0` | `FUN_007842f0` |  |
+| 0 | 314 | `0x007bde50` | `MsCameraMoveFrame` |  |
 | 0 | 325 | `0x007acb40` | `FUN_007acb40` |  |
 | 0 | 332 | `0x007b055a` | `FUN_007b055a` |  |
 | 0 | 364 | `0x0079fe80` | `FUN_0079fe80` |  |
-| 0 | 429 | `0x007beae0` | `MsCameraReset` |  |
-| 0 | 453 | `0x007c4d40` | `FUN_007c4d40` |  |
-| 0 | 549 | `0x007c0ae0` | `FUN_007c0ae0` |  |
+| 0 | 542 | `0x007bd860` | `MsCameraMoveAcc` |  |
 | 0 | 806 | `0x0079f660` | `MsNumberDrawProcess` |  |
-| 0 | 844 | `0x007c3d60` | `MsScreenMatrix` |  |
 | 0 | 891 | `0x007c58e0` | `MsCamSetBtl` |  |
-| 0 | 1385 | `0x007c50f0` | `MsCameraShakeProcess` |  |
-| 0 | 2366 | `0x007c1be0` | `MsCameraMatrix` |  |
 | 1 | 9 | `0x00790290` | `FUN_00790290` | MsEffectSetMotion |
 | 1 | 21 | `0x007962b0` | `MsSetChrShadow` | MsSetChrShadowMode |
 | 1 | 23 | `0x00783990` | `MsBtlReadMonsterDone_00783990` | Mon_AttachData |
@@ -1338,7 +1315,6 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 1 | 98 | `0x0079e2a0` | `FUN_0079e2a0` | yiSetRotTransDObj |
 | 1 | 108 | `0x007b7d00` | `MsEffectChrGetLoveLoveMax` | MsGetRamChrFemale |
 | 1 | 114 | `0x0079e510` | `MsEffectSetGuard` | FUN_0079ec40 |
-| 1 | 114 | `0x007bb840` | `MsAtelScreenShake` | MsScreenShake |
 | 1 | 123 | `0x007932b0` | `MesSetChrTargetPosToLimitSparePosy` | FUN_00796bb0 |
 | 1 | 127 | `0x007cf8f0` | `ms_free` | FUN_007cf860 |
 | 1 | 128 | `0x007c0650` | `FUN_007c0650` | FUN_0086a6e0 |
@@ -1354,7 +1330,9 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 1 | 158 | `0x007acc90` | `MsActReCommand` | FUN_007b19d0 |
 | 1 | 165 | `0x007b7d70` | `MsEffectChrMotionIn` | MsSetWeaponEffectAttribute |
 | 1 | 168 | `0x00796f70` | `FUN_00796f70` | Ch_EngineSetFast |
+| 1 | 169 | `0x007bb520` | `FUN_007bb520` | MsAtelGetCameraID |
 | 1 | 173 | `0x0078f700` | `MsCheckLeftWindow` | MsGetCommandUse |
+| 1 | 175 | `0x007bb8c0` | `MsAtelCameraShake` | MsAtelGetCameraID |
 | 1 | 189 | `0x007b1910` | `FUN_007b1910` | FUN_007b19d0 |
 | 1 | 198 | `0x0079ed40` | `MsSetWeaponEffectAttribute` | op_et_eff |
 | 1 | 207 | `0x0079a5b0` | `MsGetCommandUse` | FUN_0079a080 |
@@ -1371,16 +1349,15 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 1 | 269 | `0x00796550` | `MsSetChrTransparentVisible` | MsSetChrTransparentVisible |
 | 1 | 299 | `0x007882c0` | `MsEffectSetMotion` | MsEffectSetSpeed |
 | 1 | 314 | `0x007ac9c0` | `Battle_QueueCommand` | FUN_00796430 |
-| 1 | 314 | `0x007bde50` | `MsCameraMoveFrame` | MsCameraSetStartPos |
 | 1 | 337 | `0x0079e8c0` | `MsMagicEffectStart` | op_et_eff |
 | 1 | 343 | `0x007c5c60` | `MsCameraSetBtl` | MsCamSetBtl |
 | 1 | 374 | `0x007b72c0` | `MsGetTargetSortList` | FUN_007b6f10 |
 | 1 | 439 | `0x007a01b0` | `MsRegistSEdata` | MsSEPtransRegist |
 | 1 | 504 | `0x007b1710` | `FUN_007b1710` | FUN_007b1e40 |
-| 1 | 542 | `0x007bd860` | `MsCameraMoveAcc` | MsCameraSetStartPos |
 | 1 | 566 | `0x0079a200` | `MsGetCTBlist` | FUN_0079a020 |
 | 1 | 599 | `0x0079f380` | `MsCalcCursorPos` | graphicProject3DPointOntoScreenConsider2DScene |
 | 1 | 880 | `0x007c0120` | `FUN_007c0120` | spline_get_near_point |
+| 1 | 1539 | `0x007bc110` | `MsScreenProcess` | Cam_Apply |
 | 2 | 20 | `0x00780cc0` | `MsBattleCursorCalc` | MsNumberDrawProcess, MsCalcCursorPos |
 | 2 | 30 | `0x00796680` | `FUN_00796680` | FUN_00796880, FUN_007968b0 |
 | 2 | 49 | `0x00783fc0` | `FUN_00783fc0` | MsBtlReadWeapon, FUN_00784000 |
@@ -1396,8 +1373,6 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 2 | 155 | `0x007bb370` | `MsAtelCameraRefAddCircleArea_007bb370` | MsAtelGetCameraID, FUN_007bf1f0 |
 | 2 | 166 | `0x00784070` | `Mon_LoadAll` | FUN_007842f0, MsSetRamMonData |
 | 2 | 169 | `0x007bab90` | `FUN_007bab90` | MsAtelGetCameraID, FUN_007beeb0 |
-| 2 | 169 | `0x007bb520` | `FUN_007bb520` | MsAtelGetCameraID, MsCameraMoveDivide |
-| 2 | 175 | `0x007bb8c0` | `MsAtelCameraShake` | MsAtelGetCameraID, MsCameraShake |
 | 2 | 189 | `0x007bb2b0` | `FUN_007bb2b0` | MsAtelGetCameraID, FUN_007bf0b0 |
 | 2 | 193 | `0x007bac40` | `FUN_007bac40` | FUN_007befc0, MsAtelGetCameraID |
 | 2 | 211 | `0x00796c30` | `getSparedLmtPos` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796bb0 |
@@ -1423,9 +1398,8 @@ The battle loop's top level still open (ported: `MsMenuLimitSet`, `MsMenuLimitSe
 | 4 | 167 | `0x007b74d0` | `FUN_007b74d0` | FUN_007b77c0, FUN_007b75c0, FUN_007b7680, FUN_007b7650 |
 | 4 | 406 | `0x00787470` | `setDefaultPlayerName` | FUN_00875220, debugSetRikkuName, FUN_008c5370, FUN_00875370 |
 | 4 | 766 | `0x00795250` | `MsGetChrLimitBarFlag` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796d10, MesSetChrTargetPosToLimitSparePosy, getSparedLmtPos |
-| 4 | 1539 | `0x007bc110` | `MsScreenProcess` | Cam_Apply, MsScreenMatrix, MsCameraMatrix, MsCameraShakeProcess |
 | 5 | 702 | `0x007938e0` | `MsBtlWeaponRegist` | ChN_DataDispose, Ch_Allocate, MsSetWeaponEffectAttribute, Ch_Dispose, FUN_00796f70 |
 | 7 | 347 | `0x007824e0` | `MsBtlBridgeEvent2Btl` | AtelGetEventElemCharIDFromID, AtelSetEventActorLinkWork, AtelGetEventElemHandleFromID, FUN_0086b440, AtelGetEventBindIdFromID, AtelGetEventActorLinkWork, AtelGetEventCharIDFromID |
-| 15 | 2436 | `0x007be110` | `MsCameraProcess` | FUN_007bcb80, FUN_007c0910, FUN_007c0a30, FUN_007bcd30, FUN_007c09b0, FUN_007bcab0, FUN_007c0d40, FUN_007c4d40, FUN_007c0650, MsSpCameraProcess, FUN_007c0ae0, FUN_007c0560, MsCamSetBtl, FUN_0079dd70, MsCameraShakeProcess |
+| 12 | 2436 | `0x007be110` | `MsCameraProcess` | FUN_007bcb80, FUN_007c0910, FUN_007c0a30, FUN_007bcd30, FUN_007c09b0, FUN_007bcab0, FUN_007c0d40, FUN_007c0650, MsSpCameraProcess, FUN_007c0560, MsCamSetBtl, FUN_0079dd70 |
 
 </details>
