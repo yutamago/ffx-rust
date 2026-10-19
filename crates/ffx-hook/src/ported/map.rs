@@ -4005,6 +4005,10 @@ ported! {
     yiLoadFieldParticle @ 0x0090_9190 => extern "C" fn shim_yi_load_field_particle(textures: u32, effects: u32) -> u32 {
         yi::bridge::yi_load_field_particle(&mut mem(), [textures, effects], &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `AbmapDrawScrollBar(x, y, height, first, total, shown)`.
+    AbmapDrawScrollBar @ 0x00a4_6120 => extern "C" fn shim_abmap_draw_scroll_bar(x: u32, y: u32, height: u32, first: u32, total: u32, shown: u32) -> u32 {
+        abmap_draw::abmap_draw_scroll_bar(&mut mem(), [x, y, height, first, total, shown], &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `AbmapCalcMoveCosts(node, limit, bit)`.
     AbmapCalcMoveCosts @ 0x00a4_74d0 => extern "C" fn shim_abmap_calc_move_costs(node: u32, limit: u32, bit: u32) -> u32 {
         abmap::bridge::abmap_calc_move_costs(&mut mem(), [node, limit, bit], &mut |_, f, a| call_cdecl(f, a))

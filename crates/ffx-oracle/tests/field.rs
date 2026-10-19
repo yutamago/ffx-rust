@@ -20406,3 +20406,73 @@ fn r13jj_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13jj_cases(&mut t, &mut rng, g, 150);
 }
+
+// ---- field agent r13, group k: a list's scroll bar ----
+
+/// Group k (r13) on `t`: `AbmapDrawScrollBar` for random positions
+/// (16-bit wrap included), heights, list positions and counts (a nonzero
+/// total); `AbmapDrawBar` is a logged stand-in.
+fn r13kk_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::abmap_draw as ad;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (log, rv) = (t.alloc(0x100), t.alloc(4));
+    t.cave(&[(Some(ad::DRAW_BAR), log_stub(log, rv, 1, 5))]);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        let small = |rng: &mut Xorshift| {
+            if rng.below(6) == 0 {
+                rng.next()
+            } else {
+                rng.below(400).wrapping_sub(50)
+            }
+        };
+        let total = loop {
+            let v = if rng.below(3) == 0 {
+                rng.below(40)
+            } else {
+                small(rng)
+            };
+            if v != 0 && v != u32::MAX {
+                break v;
+            }
+        };
+        let mut a = [
+            small(rng),
+            small(rng),
+            small(rng),
+            rng.below(60),
+            total,
+            rng.below(20),
+        ];
+        if rng.below(16) == 0 {
+            // the thumb's top at i16::MAX: one more wraps
+            a[1] = 0x7ffe;
+            a[3] = 0;
+            a[5] = 0;
+        }
+        t.same(
+            "AbmapDrawScrollBar",
+            |o| o.eax(0x00a4_6120, &a),
+            |m| ad::abmap_draw_scroll_bar(m, a, call),
+        );
+    }
+}
+
+/// Group k (r13) on the image.
+#[test]
+fn r13kk_draw_scroll_bar_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_a501);
+    r13kk_cases(&mut t, &mut rng, 1000);
+}
+
+/// Group k (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13kk_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_a502);
+    r13kk_cases(&mut t, &mut rng, 500);
+}

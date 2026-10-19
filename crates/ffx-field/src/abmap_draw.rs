@@ -1098,3 +1098,58 @@ where
     let current = byte(mem, 0x115bc);
     draw(mem, current, x)
 }
+
+// ---- field r13, the scroll bar ----
+
+/// `AbmapDrawBar` (`0x00a45e30`), [`abmap_draw_scroll_bar`]'s call.
+pub const DRAW_BAR: u32 = 0x00a4_5e30;
+
+/// `AbmapDrawScrollBar(x, y, height, first, total, shown)` (`0x00a46120`,
+/// from `0x00a58900`; name ours): a list's scroll bar. With `h` the
+/// height less 4 (as an `i16`) and `top = y + 1`, the track is
+/// [`abmap_draw_bar`] look 0 from `(x + 1, top)` to `(x + 3, top + h)`,
+/// the thumb look 1 from `top + h * first / total` to `top + h * (first +
+/// shown) / total` (truncating divisions, the ends as `i16`), at least
+/// one high. Returns the second bar's `eax`. A zero `total` faults in the
+/// original; here the divisions give 0.
+pub fn abmap_draw_scroll_bar<M, C>(mem: &mut M, args: [u32; 6], call: &mut C) -> u32
+where
+    M: Mem,
+    C: FnMut(&mut M, u32, &[u32]) -> u32,
+{
+    let [x, y, height, first, total, shown] = args;
+    #[allow(clippy::cast_possible_truncation)] // the original's 16-bit values
+    let short = |v: u32| i32::from((v as u16).cast_signed());
+    let h = short(height.wrapping_sub(4));
+    let top = y.wrapping_add(1);
+    let (x0, x1) = (short(x).wrapping_add(1), short(x).wrapping_add(3));
+    let f = mem.rebase(DRAW_BAR);
+    let track = [
+        x0.cast_unsigned(),
+        short(top).cast_unsigned(),
+        x1.cast_unsigned(),
+        h.wrapping_add(short(top)).cast_unsigned(),
+        0,
+    ];
+    call(mem, f, &track);
+    let at = |n: i32| {
+        let q = h
+            .wrapping_mul(n)
+            .checked_div(total.cast_signed())
+            .unwrap_or(0);
+        short(q.cast_unsigned().wrapping_add(top))
+    };
+    let start = at(first.cast_signed());
+    let mut end = at(shown.wrapping_add(first).cast_signed());
+    if end <= start {
+        end = short(start.cast_unsigned().wrapping_add(1));
+    }
+    let thumb = [
+        x0.cast_unsigned(),
+        start.cast_unsigned(),
+        x1.cast_unsigned(),
+        end.cast_unsigned(),
+        1,
+    ];
+    call(mem, f, &thumb)
+}
