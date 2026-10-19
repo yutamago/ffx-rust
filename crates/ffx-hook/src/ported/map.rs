@@ -2740,6 +2740,24 @@ ported! {
     AbmapPlyTagRect @ 0x00a4_82d0 => extern "C" fn shim_abmap_ply_tag_rect(tag: u32, out: u32) {
         ffx_field::abmap_draw::abmap_ply_tag_rect(&mut mem(), tag, out);
     }
+    /// `AbmapDrawChrRings()`.
+    AbmapDrawChrRings @ 0x00a4_c8d0 => extern "C" fn shim_abmap_draw_chr_rings() {
+        // 16-byte aligned: the matrix and vectors go to FFXVu0MulMatrix
+        #[repr(C, align(16))]
+        struct RingsWork([u8; ffx_field::abmap_draw::RINGS_WORK as usize]);
+        let mut work = RingsWork([0; ffx_field::abmap_draw::RINGS_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::abmap_draw::abmap_draw_chr_rings(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
+    }
+    /// `AbmapDrawBoard()`.
+    AbmapDrawBoard @ 0x00a4_c700 => extern "C" fn shim_abmap_draw_board() {
+        // 16-byte aligned: the matrices go to FFXVu0UnitMatrix/MulMatrix
+        #[repr(C, align(16))]
+        struct BoardWork([u8; ffx_field::abmap_draw::BOARD_WORK as usize]);
+        let mut work = BoardWork([0; ffx_field::abmap_draw::BOARD_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        ffx_field::abmap_draw::abmap_draw_board(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
+    }
     /// `AbmapDrawMap()`.
     AbmapDrawMap @ 0x00a4_ce20 => extern "C" fn shim_abmap_draw_map() -> u32 {
         let mut w = super::StackFrame::<{ ffx_field::abmap_draw::MAP_WORK as usize / 4 }>::new();
@@ -2828,6 +2846,15 @@ ported! {
         let mut work = ClearWork([0; ffx_field::yipoly::CLEAR_WORK as usize]);
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         ffx_field::yipoly::yi_tex_target_clear(&mut mem(), frame, (u, v), h, w, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `yiPartChainToOMD(r, out, part)`, fixed: the VIF codes run on their own buffer.
+    yiPartChainToOMD @ 0x0091_1ac0 => extern "C" fn shim_yi_part_chain_to_omd(r: u32, out: u32, part: u32) -> u32 {
+        // on the heap: 16 KB is too big for some threads' stacks
+        let mut vif = vec![0u32; ffx_field::yipoly::CHAIN_VIF_WORK as usize / 4];
+        let w = u32::try_from(vif.as_mut_ptr().expose_provenance()).unwrap_or(0);
+        let size = ffx_field::yipoly::yi_part_chain_to_omd(&mut mem(), r, out, part, w, &mut |_, f, a| call_cdecl(f, a));
+        std::hint::black_box(&mut vif);
+        size
     }
     /// `yiPolySelectRectXZ(r, list, packet, cap, m, a, b, unlimited)`.
     yiPolySelectRectXZ @ 0x0091_05b0 => extern "C" fn shim_yi_poly_select_rect_xz(_r: u32, list: u32, packet: u32, cap: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
