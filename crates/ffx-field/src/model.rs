@@ -3197,6 +3197,74 @@ pub mod bridge {
         forces
     }
 
+    /// `rcVec3fApplyMatrix(out, v, m)`, `rcCopyQword_00928eb0(dst, src)`,
+    /// `rcVu0Sub_00928ee0(out, a, b)`, `rcbgScaleVector_00928e50(out, v,
+    /// s)` and `rcVu0Add_00928df0(out, a, b)`: [`rcfx_nail_calc`]'s
+    /// helpers.
+    pub const NAIL_HELPERS: [u32; 5] = [
+        0x0092_1300,
+        0x0092_8eb0,
+        0x0092_8ee0,
+        0x0092_8e50,
+        0x0092_8df0,
+    ];
+
+    /// `rcfxNailCalc(nail, sys)` (`0x00928f40`, the nail's `+0x14`
+    /// callback; name ours): each of the `+0x1c` points' targets (`+0x28`)
+    /// is its base (`+0x24`) through the matrix `+0x38` (`rcVec3fApplyMatrix`)
+    /// or copied; with `t = (time - last) / (end - last)` (the system's
+    /// `+0`, `+0x10` and the nail's `+0x30`, `f64`s; stored as `f32`) and
+    /// `last` set to the time, each point (`+0x2c`) moves `t` of the way to
+    /// its target (in `work`, 0x20 bytes) and is copied to the system's
+    /// position (`sys +0x24`) of its particle (`+0x20` index), whose force
+    /// (`sys +0x30`) is zeroed. Returns the `eax` it ends with: the force
+    /// array, or the count with no points.
+    pub fn rcfx_nail_calc<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        nail: u32,
+        sys: u32,
+        work: u32,
+        call: &mut C,
+    ) -> u32 {
+        let [apply, copy, sub, scale, add] = NAIL_HELPERS.map(|f| mem.rebase(f));
+        let rd = |mem: &M, o: u32| mem.read::<u32>(nail.wrapping_add(o));
+        let forces = mem.read::<u32>(sys.wrapping_add(0x30));
+        let positions = mem.read::<u32>(sys.wrapping_add(0x24));
+        let (base, target, point) = (rd(mem, 0x24), rd(mem, 0x28), rd(mem, 0x2c));
+        let count = mem.read::<i32>(nail.wrapping_add(0x1c));
+        let n = count.max(0).cast_unsigned();
+        let matrix = rd(mem, 0x38);
+        for i in 0..n {
+            let (b, a) = (target.wrapping_add(16 * i), base.wrapping_add(16 * i));
+            if matrix == 0 {
+                call(mem, copy, &[b, a]);
+            } else {
+                let m = rd(mem, 0x38);
+                call(mem, apply, &[b, a, m]);
+            }
+        }
+        let time = mem.read::<f64>(sys);
+        let last = mem.read::<f64>(nail.wrapping_add(0x30));
+        let end = mem.read::<f64>(sys.wrapping_add(0x10));
+        let t = crate::x87::store((time - last) / (end - last));
+        mem.write(nail.wrapping_add(0x30), time);
+        if count <= 0 {
+            return count.cast_unsigned();
+        }
+        let (step, moved) = (work, work.wrapping_add(0x10));
+        for i in 0..n {
+            let k = mem.read::<u32>(rd(mem, 0x20).wrapping_add(4 * i));
+            let p = point.wrapping_add(16 * i);
+            call(mem, sub, &[step, target.wrapping_add(16 * i), p]);
+            call(mem, scale, &[moved, step, t]);
+            call(mem, add, &[p, p, moved]);
+            let at = k.wrapping_shl(4);
+            call(mem, copy, &[positions.wrapping_add(at), p]);
+            mem.write(forces.wrapping_add(at), [0u32; 4]);
+        }
+        forces
+    }
+
     /// `rcfxNailFini(nail)` (`0x00929090`): its four buffers
     /// (`+0x20..+0x2c`) freed and cleared.
     pub fn rcfx_nail_fini<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(

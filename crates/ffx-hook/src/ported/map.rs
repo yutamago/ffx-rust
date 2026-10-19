@@ -4036,6 +4036,11 @@ ported! {
     rcbgTrxDraw @ 0x0092_d230 => extern "C" fn shim_rcbg_trx_draw(t: u32) -> u32 {
         model::bridge::rcbg_trx_draw(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a))
     }
+    /// `rcfxNailCalc(nail, sys)`: its two vectors in a frame.
+    rcfxNailCalc @ 0x0092_8f40 => extern "C" fn shim_rcfx_nail_calc(nail: u32, sys: u32) -> u32 {
+        let mut w = super::StackFrame::<8>::new();
+        model::bridge::rcfx_nail_calc(&mut mem(), nail, sys, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
     /// `rcfxSpringCalc(s, sys)`.
     rcfxSpringCalc @ 0x0092_8aa0 => extern "C" fn shim_rcfx_spring_calc(s: u32, sys: u32) -> u32 {
         model::bridge::rcfx_spring_calc(&mut mem(), s, sys)

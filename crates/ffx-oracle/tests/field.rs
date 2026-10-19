@@ -19025,3 +19025,72 @@ fn r13p_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     r13p_cases(&mut t, &mut rng, g, 250);
 }
+
+// ---- field agent r13, group Q: the nail's pull ----
+
+/// Group Q (r13) on `t`: `rcfxNailCalc` with -1..8 points, with and
+/// without a matrix, any time step (past the end too); every helper runs
+/// as the original.
+fn r13q_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::model;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (nail, sys, idx, matrix) = (t.alloc(0x40), t.alloc(0x40), t.alloc(0x20), t.alloc(0x40));
+    let arrays: Vec<u32> = (0..5).map(|_| t.alloc(0x80)).collect();
+    for _ in 0..cases {
+        t.put(nail + 0x1c, rng.range(-1, 8));
+        t.put(nail + 0x20, idx);
+        t.put(nail + 0x24, arrays[0]);
+        t.put(nail + 0x28, arrays[1]);
+        t.put(nail + 0x2c, arrays[2]);
+        t.put(nail + 0x38, if rng.below(2) == 0 { 0 } else { matrix });
+        t.put(sys + 0x24, arrays[3]);
+        t.put(sys + 0x30, arrays[4]);
+        for i in 0..8 {
+            t.put(idx + 4 * i, rng.below(8));
+        }
+        for &a in &arrays {
+            for w in 0..32 {
+                t.put(a + 4 * w, r6b_fine(rng, -50.0, 50.0));
+            }
+        }
+        for w in 0..16 {
+            t.put(matrix + 4 * w, r6b_fine(rng, -2.0, 2.0));
+        }
+        let last = f64::from(rng.below(100));
+        t.put(nail + 0x30, last);
+        t.put(
+            sys,
+            last + f64::from(f32::from_bits(r6b_fine(rng, 0.0, 3.0))),
+        );
+        t.put(
+            sys + 0x10,
+            last + f64::from(f32::from_bits(r6b_fine(rng, 0.5, 2.0))),
+        );
+        let work = t.stack_scratch(0x100);
+        let vf = t.b.rebase(0x00c8_f974);
+        t.same_but(
+            "rcfxNailCalc",
+            &[(vf, 12)],
+            |o| o.eax(0x0092_8f40, &[nail, sys]),
+            |m| model::bridge::rcfx_nail_calc(m, nail, sys, work, call),
+        );
+    }
+}
+
+/// Group Q (r13) on the image.
+#[test]
+fn r13q_nail_calc_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x0013_1101);
+    r13q_cases(&mut t, &mut rng, 500);
+}
+
+/// Group Q (r13) on the snapshot (`FFX_SNAPSHOT`).
+#[test]
+fn r13q_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x0013_1102);
+    r13q_cases(&mut t, &mut rng, 250);
+}

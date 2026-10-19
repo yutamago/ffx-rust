@@ -11945,6 +11945,7 @@
 0x00928e50 function rcbgScaleVector_00928e50  # the same code as rcbgScaleVector 0x009200a0
 0x00928eb0 function rcCopyQword_00928eb0      # (dst, src): as rcCopyQword_0091cb40
 0x00928ee0 function rcVu0Sub_00928ee0        # (a, b, c) -> a.w: the rcVu0Sub template (b to the VU0 register 0x00c8f980, c to 0x00c8f970, Vec3SubScalars_0074b670 (restores vf00) on it with c's words, the register to a); caller 0x00928f40; name ours; ported (field round 45)
+0x00928f40 function rcfxNailCalc              # (nail, sys) -> eax: rcfxNail's +0x14 callback (name ours): each of +0x1c targets +0x28 = base +0x24 through matrix +0x38 (rcVec3fApplyMatrix) or copied; t = f32((time - last)/(end - last)) (sys +0/+0x10, nail +0x30 f64; last = time); each point +0x2c += (target - point) t (rcVu0Sub/Scale/Add), copied to sys+0x24 [index +0x20], force sys+0x30 zeroed; eax the forces (the count with none); ported (field r13, ffx_field::model)
 0x00929070 function rcfxNailDelete            # (nail): rcfxNailFini, then rcFree; name ours
 0x00929090 function rcfxNailFini              # (nail): rcFree +0x20..+0x2c
 0x00929100 function rcfxNailInit              # (fx): kind 0x30004 and callbacks 0x00929070/0x00929190/0x00928f40; 0x00929170 allocates it (rcfxNail.c)
