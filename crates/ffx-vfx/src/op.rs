@@ -4294,4 +4294,106 @@ pub mod bridge {
         call(mem, g(mem, 0x0071_69d0), &[env, 0, heap, 0x8_0000]);
         0
     }
+
+    /// `op_rt_m_6(m, src, angles, t, order)` (`0x007e98b0`): the rotation
+    /// in one of six turn orders, through `call`: 0 [`op_rt_m`]'s Z, Y, X
+    /// (`0x007e9850`), 1 Z, X, Y (`0x007e9af0`), 2 Y, Z, X (`0x007e9a90`),
+    /// 3 Y, X, Z (`0x007e9a30`), 4 X, Z, Y (`0x007e99d0`), 5 X, Y, Z
+    /// (`0x007e9970`); returns the callee's eax. Any other order does
+    /// nothing and returns it (unsigned compare).
+    pub fn op_rt_m_6<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        order: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const ORDERS: [u32; 6] = [
+            0x007e_9850,
+            0x007e_9af0,
+            0x007e_9a90,
+            0x007e_9a30,
+            0x007e_99d0,
+            0x007e_9970,
+        ];
+        let Some(&f) = usize::try_from(order).ok().and_then(|k| ORDERS.get(k)) else {
+            return order;
+        };
+        let f = Global::<u32>::new(f).ptr(mem).addr;
+        call(mem, f, &args)
+    }
+
+    /// `op_ovl_effect_free()` (`0x007fcd60`): the effect overlay's end, all
+    /// through `call`: a debug line, `op_oef2_tex_clut_ovl_clear(0xffff)`,
+    /// `opus_check_forced_draw`, `opus_ffxfocus_free`, `opus_map_rgba_free`,
+    /// `op_wot_triger(0)`, `op_mdc_mem_transfer_cue_free_all`,
+    /// `opus_clip_on_all_in_battle`, `TkStopVibrate(7)`, and without the
+    /// byte at `0x011a0082` `op_oef2_sep_free_all(0xffff)`; then
+    /// [`g_OpOvlEffectOn`](`0x011a006a`), the camera limit (`u16
+    /// 0x011a006c`) and the bytes at `0x011a006e` and `0x011a0083` cleared.
+    /// Returns 0.
+    pub fn op_ovl_effect_free<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        debug_print(mem, 0x00b5_84ac, call);
+        for (f, args) in [
+            (0x007e_4e40u32, &[0xffffu32][..]),
+            (0x007f_e4e0, &[]),
+            (0x0080_abb0, &[]),
+            (0x0080_ac00, &[]),
+            (0x007e_c7d0, &[0]),
+            (0x0080_3760, &[]),
+            (0x0080_0be0, &[]),
+            (0x0087_6290, &[7]),
+        ] {
+            let f = g(mem, f);
+            call(mem, f, args);
+        }
+        if mem.read::<u8>(g(mem, 0x011a_0082)) == 0 {
+            let f = g(mem, 0x007f_ff30);
+            call(mem, f, &[0xffff]);
+        }
+        mem.write(g(mem, 0x011a_006a), 0u8);
+        mem.write(g(mem, 0x011a_006c), 0u16);
+        mem.write(g(mem, 0x011a_006e), 0u8);
+        mem.write(g(mem, 0x011a_0083), 0u8);
+        0
+    }
+
+    /// `op_oef2_clut_cue(rec, mask)` (`0x007e4610`): -1 without `rec` or
+    /// its `+4`. A record whose `u16` id is outside 0x3800..0x3c00 while
+    /// the byte at `0x011a0066` is set goes to
+    /// `op_oef2_tex_clut_ovl_add_007e56d0(rec, mask, 1)` (through `call`):
+    /// -1 when that is negative, else 0. Otherwise it is queued: -1 with
+    /// [`OEF2_CLUT_CUE_COUNT`] at 0x40 already, else slot `(head + count)
+    /// & 0x3f` (16-bit sum) takes `mask` in [`OEF2_CLUT_CUES`], 0 at
+    /// `0x011a01a0` and `rec` at `0x011a02a0`, the count one more; 0.
+    pub fn op_oef2_clut_cue<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        mask: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if rec == 0 || mem.read::<u32>(rec.wrapping_add(4)) == 0 {
+            return u32::MAX;
+        }
+        let id: u16 = mem.read(rec);
+        if !(0x3800..0x3c00).contains(&id) && mem.read::<u8>(g(mem, 0x011a_0066)) != 0 {
+            let add = g(mem, 0x007e_56d0);
+            let r = call(mem, add, &[rec, mask, 1]);
+            return if r.cast_signed() < 0 { u32::MAX } else { 0 };
+        }
+        let n = OEF2_CLUT_CUE_COUNT.get(mem);
+        if n >= 0x40 {
+            return u32::MAX;
+        }
+        let slot = u32::from(OEF2_CLUT_CUE_HEAD.get(mem).wrapping_add(n) & 0x3f);
+        OEF2_CLUT_CUES.ptr(mem).at(slot).set(mem, mask);
+        mem.write(g(mem, 0x011a_01a0) + 4 * slot, 0u32);
+        mem.write(g(mem, 0x011a_02a0) + 4 * slot, rec);
+        OEF2_CLUT_CUE_COUNT.set(mem, n + 1);
+        0
+    }
 }

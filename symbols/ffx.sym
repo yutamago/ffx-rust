@@ -6415,7 +6415,7 @@
 0x007e4540 function op_gs_store               # fh switch:bsim1.00 0x71003d8890
 0x007e45c0 function op_oef2_clut_change       # fh switch:bsim1.00 0x71003d8c20
 0x007e45e0 function op_oef2_clut_change_monster  # (rec, pos): u16 +0 = (pos & 0x3fff) + (old & 0x3c), byte +0xf = 1 (reload); only caller opu_tc_load as on the Switch (op_oef2_clut_change_monster 0x71003d8c40, 36 bytes, called by opu_tc_load); sorts after op_oef2_clut_change; the vfx porter's op_oef2_clut_pos_set
-0x007e4610 function op_oef2_clut_cue             # layout: alphabetical run between op_oef2_clut_change and op_oef2_clut_load (2 unnamed in the gap); Switch 0x71003d91b0 op_oef2_clut_cue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007e4610 function op_oef2_clut_cue             # layout: alphabetical run between op_oef2_clut_change and op_oef2_clut_load (2 unnamed in the gap); Switch 0x71003d91b0 op_oef2_clut_cue is the only unused name of that source file sorting there (symbols from Fahrenheit's server export) ; (rec, mask) -> 0/-1: -1 without rec/+4; ids outside 0x3800..0x3c00 with byte 0x011a0066 go to op_oef2_tex_clut_ovl_add_007e56d0(rec, mask, 1), else queued in the 64-slot g_OpOef2ClutCues ring (0x011a01a0 = 0, 0x011a02a0 = rec) (op::bridge::op_oef2_clut_cue)
 0x007e46b0 function op_oef2_clut_load         # fh v3:exact 0x007e45c0
 0x007e46d0 function op_oef2_tex_clut_cue_check # fh v3:exact 0x007e45e0
 0x007e4720 function op_oef2_tex_clut_cue_loop # fh v3:exact 0x007e4630
@@ -6476,7 +6476,7 @@
 0x007e9670 function op_rot_m_y                 # (dst, src, float angle): as op_rot_m_x about Y; Switch op_rot_m_y (op matrix file, 0x71003da1f0..): op_rot_m, op_rot_m_x/y/z sort before op_rt_m and the five ordered op_rt_m_* that call them; was op_rt_m_y
 0x007e9760 function op_rot_m_z                 # (dst, src, float angle): as op_rot_m_x about Z; Switch op_rot_m_z (op matrix file, 0x71003da1f0..): op_rot_m, op_rot_m_x/y/z sort before op_rt_m and the five ordered op_rt_m_* that call them; was op_rt_m_z
 0x007e9850 function op_rt_m                      # structure: (dst, src, angles): op_rot_m_z, op_rot_m_y, op_rot_m_x in that order (the default order); first of the op matrix file's rt_m group, sorted after op_rot_m_z; Switch op_rt_m (0x71003da7d0) precedes the five orders and op_rt_m_6
-0x007e98b0 function op_rt_m_6                    # structure: dispatches on an order index to op_rt_m and the five ordered variants (0x007e9970.. 0x007e9af0); Switch op_rt_m_6 (60 bytes); sorts after op_rt_m and before op_rt_m_xyz
+0x007e98b0 function op_rt_m_6                    # structure: dispatches on an order index to op_rt_m and the five ordered variants (0x007e9970.. 0x007e9af0); Switch op_rt_m_6 (60 bytes); sorts after op_rt_m and before op_rt_m_xyz ; ported: order 0..5 -> op_rt_m, zxy, yzx, yxz, xzy, xyz, else returns the order (op::bridge::op_rt_m_6)
 0x007e9970 function op_rt_m_xyz                  # structure: op_rot_m_x, op_rot_m_y, op_rot_m_z in that order; Switch op_rt_m_xyz; sorted run op_rt_m_xyz, xzy, yxz (named, v3 bsim), yzx, zxy
 0x007e99d0 function op_rt_m_xzy                  # structure: op_rot_m_x, op_rot_m_z, op_rot_m_y in that order; Switch op_rt_m_xzy; (m, src, angles, t) -> t: as op_rt_m_xyz with the turns X, Z, Y (op::bridge::op_rt_m_order)
 0x007e9a30 function op_rt_m_yxz               # fh v3:bsim1.00 0x007e9940
@@ -6560,7 +6560,7 @@
 0x007fae90 function op_chr_status_reset_exception_wrap_007fae90 # disasm: clears g_OpusBattleList while its u16 +0x300 is 1 around op_chr_status_reset_exception 0x007fae40, then restores it
 0x007faed0 function op_et_astatus_effect_change # fh v3:exact 0x007fadf0
 0x007fb000 function op_et_astatus_effect_off  # fh v3:cg5 0x7faf20; (chr): opu_unit_free_by_id(g_OpusBattle, 0x60004000 + i), +0x10/+0x18 = 0x80808080, opus_chara_rgba_set(chr, 0x80808080, w), opus_chara_status_rgb_set(chr, w) with w = MsBattleChrStart() != 0, Ch_ClutDispose when +0x17 bit 0; +0x17 = 0 (et::bridge::op_et_astatus_effect_off)
-0x007fb0a0 function op_et_astatus_effect_off_all # layout: alphabetical run between op_et_astatus_effect_off and op_et_battle_effect_free (1 unnamed in the gap); Switch 0x71003f2130 op_et_astatus_effect_off_all is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007fb0a0 function op_et_astatus_effect_off_all # layout: alphabetical run between op_et_astatus_effect_off and op_et_battle_effect_free (1 unnamed in the gap); Switch 0x71003f2130 op_et_astatus_effect_off_all is the only unused name of that source file sorting there (symbols from Fahrenheit's server export) ; (): op_et_astatus_effect_off of every live g_EtChr handle (et::bridge::op_et_astatus_effect_off_all)
 0x007fb170 function op_et_battle_effect_free  # fh v3:exact 0x007fb090
 0x007fb1e0 function op_et_battle_effect_init  # fh v3:exact 0x007fb100
 0x007fb240 function op_et_battle_genko_counter_get # fh v3:bsim1.00 0x007fb160
@@ -6573,7 +6573,7 @@
 0x007fb5a0 function op_et_bindeff2_draw_on    # fh v3:bsim1.00 0x007fb4c0
 0x007fb610 function op_et_bindeff2_draw_set   # (h, hide) op_et_bindeff2_draw_off (hide) or _draw_on, one body; returns ~old & 8
 0x007fb6d0 function op_et_bindeff2_off        # (h) bind flags &= 0xf8cf, then opu_unit_free_by_id(g_OpusBattle, 0x50001800 + record index): the unit op_et_bindeff2 starts with opu_et_unit(oef2, 0, 0x18, 0x50001800 + i)
-0x007fb740 function op_et_bindeff2_walk          # layout+callees: sorts between op_et_bindeff2_off and op_et_bindeff2_walk_off, and its named callees match the Switch 0x71003f1530 op_et_bindeff2_walk's (similarity 0.67: op_oef2_obj_a_get, op_xyz_scale); symbols from Fahrenheit's server export
+0x007fb740 function op_et_bindeff2_walk          # layout+callees: sorts between op_et_bindeff2_off and op_et_bindeff2_walk_off, and its named callees match the Switch 0x71003f1530 op_et_bindeff2_walk's (similarity 0.67: op_oef2_obj_a_get, op_xyz_scale); symbols from Fahrenheit's server export ; (h, speed): with g_EventEffect, the EFF record keyed 0x50001800 + chr index (not record 0) gets op_oef2_obj_a_get(g_OpusEncount, 0, 0x20) and opus_osu_set_0080b520(g_OpusBattle, +4, obj, 1, h); op_xyz_scale(unit + 0x40, speed, [0x00b9231c]) (et::bridge::op_et_bindeff2_walk)
 0x007fb7f0 function op_et_bindeff2_walk_off   # (h) bind flags |= 0x100 (op_et_bindeff2_walk_on clears it)
 0x007fb830 function op_et_bindeff2_walk_on    # fh v3:bsim1.00 0x007fb750
 0x007fb870 function op_et_bind_default_water  # () u16 g_EtBindDefault = (g_EtBindDefault & 0xcbff) | 0x800, the word left in eax
@@ -6626,7 +6626,7 @@
 0x007fccc0 function op_get_chrhd_all_list     # fh v3:exact 0x007fcbe0
 0x007fcd10 function op_get_chrhd_by_chrno     # fh v3:exact 0x007fcc30
 0x007fcd50 function op_ovl_effect_forced_free # fh v3:bsim1.00 0x007fcc70
-0x007fcd60 function op_ovl_effect_free        # fh v3:exact 0x007fcc80
+0x007fcd60 function op_ovl_effect_free        # fh v3:exact 0x007fcc80 ; (): debug line, op_oef2_tex_clut_ovl_clear(0xffff), opus_check_forced_draw, opus_ffxfocus_free, opus_map_rgba_free, op_wot_triger(0), op_mdc_mem_transfer_cue_free_all, opus_clip_on_all_in_battle, TkStopVibrate(7), op_oef2_sep_free_all(0xffff) unless 0x011a0082; clears 0x011a006a/6c/6e/83 (op::bridge::op_ovl_effect_free)
 0x007fcdd0 function op_ovl_effect_init        # fh v3:exact 0x007fccf0
 0x007fce10 function op_pray_effect_check      # fh v3:exact 0x007fcd30
 0x007fce30 function opd_camera_change            # layout+callees: sorts between op_pray_effect_check and opu_end_all, and its named callees match the Switch 0x71003f2d80 opd_camera_change's (similarity 0.88: MsBattleSpecialCameraPause, MsCameraFree, MsCameraGet, MsCameraSetRoll, MsCameraSetScrDpt); symbols from Fahrenheit's server export
@@ -6665,6 +6665,8 @@
 0x007feba0 function opus_get_eff_status_index # fh v3:exact 0x007feac0
 0x007fed60 function op_et_eff_index           # (id) -> the first g_EtEff record with this ID, or -1
 0x007fedf0 function opus_chr_handles_clear    # () the 240 g_EtChrHandles zeroed
+0x007fee10 function op_et_chr_reset_all_007fee10 # ours: (): every g_EtChr record as op_et_chr_reset_007feec0; returns 0; only caller 0x007ff960 (et::bridge::op_et_chr_reset_all)
+0x007feec0 function op_et_chr_reset_007feec0  # ours: (i): g_EtChr record i: +0..+0xf from g_Ee_Gpr r0 (+0x1c its 4th word), u16 +0xe/+0x14 0xffff, +0x10/+0x18 0x80808080; the old handle cleared from every g_EtChrHandles slot with both draw flags; only caller op_et_monster_free (et::bridge::op_et_chr_reset)
 0x007fef70 function op_et_eff_init_all        # () every g_EtEff record: +0 -1, +8 0x101, +0xc 0, +0x10 0, +0x18 0, +0x1c 0xff (+4 kept); callers opu_et_init, 0x007ff960
 0x007ff090 function op_et_chr_show            # (on): g_OpEtChrShow = on, g_EtChrHidden = !on; bit 1 of the draw flags of the first 208 g_EtChr records with a handle set (on = 0) or cleared; g_MagicImports slot 568
 0x007ff100 function op_fog_param_set          # fh v3:exact 0x007ff020
@@ -6751,7 +6753,7 @@
 0x00803940 function opu_matrix_bone              # layout+callees: sorts between op_mdc_mem_transfer_cue_free_all and opu_mdc, and its named callees match the Switch 0x71003e6a90 opu_matrix_bone's (similarity 1.00: Ch_ElemGetBaseMatrix, Ch_GetOrgMatrix, Ch_GetRootGlobalMatrix, Ch_OptposGetElement, op_apply_m_w1); symbols from Fahrenheit's server export
 0x00803c00 function opu_mdc                      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003e6190 opu_mdc, 2 votes, round 2
 0x00804150 function opu_mdc_0x1000_hide          # layout: alphabetical run between opu_mdc and opu_motion (3 unnamed in the gap); Switch 0x71003e5f40 opu_mdc_0x1000_hide is the only unused name of that source file sorting there (symbols from Fahrenheit's server export) ; ported: 0 for magic 0x280/0x1e5/0x2c6/0x250/0x276..0x27d, 3 for the i16 list at 0x00b587e0, else 1
-0x008041c0 function opu_mdc_0x2000_ambient       # layout: alphabetical run between opu_mdc and opu_motion (3 unnamed in the gap); Switch 0x71003e6020 opu_mdc_0x2000_ambient is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x008041c0 function opu_mdc_0x2000_ambient       # layout: alphabetical run between opu_mdc and opu_motion (3 unnamed in the gap); Switch 0x71003e6020 opu_mdc_0x2000_ambient is the only unused name of that source file sorting there (symbols from Fahrenheit's server export) ; (rec): magic ids in the 7 words at 0x00c48e44 or 0x26e..0x275 set the ambient u16 +0x1d/byte +0x1c to 0x80 (opus::bridge::opu_mdc_0x2000_ambient)
 0x00804270 function opu_mdc_break                # layout: alphabetical run between opu_mdc and opu_motion (3 unnamed in the gap); Switch 0x71003e6d20 opu_mdc_break is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008044e0 function opu_motion                # fh switch:cg2 0x71003e4c60
 0x008047b0 function opu_motion_etc               # layout+callees: sorts between opu_motion and opu_v_en_bone, and its named callees match the Switch 0x71003e4f70 opu_motion_etc's (similarity 1.00: Ch_SetMotionSpeed, MsEffectEndMotion); symbols from Fahrenheit's server export
@@ -15385,6 +15387,7 @@
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c48bf0 label    g_OpUpVector                 # f32 x4: the up vector op_vector_m crosses the view direction with
 0x00c48c00 label    g_OpUpVectorAlt              # f32 x4: op_vector_m's up vector when the direction's x and z bits (and the emulated a0/a1 high words) are all zero
+0x00c48e44 label    g_OpuMdc2000AmbientIds        # opu_mdc_0x2000_ambient 0x008041c0: 7 magic ids whose ambient becomes 0x80
 0x00c49458 label    g_SqsRpcSend                 # pointer to the sound RPC send buffer (0x40 bytes; Sqs_CallRpc, SqsSeSeparateMaskClear writes the SE mask there)
 0x00c4945c label    g_SqsRpcSend2                # pointer to the second RPC client's send buffer (Sqs_CallRpc2)
 0x00c49460 label    g_SqsRpcRecv                 # pointer to the sound RPC receive buffer (0x400 bytes; Sqs_CallRpc)

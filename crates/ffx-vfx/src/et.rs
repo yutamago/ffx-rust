@@ -1388,4 +1388,114 @@ pub mod bridge {
         }
         u32::MAX
     }
+
+    /// One character record reset as `0x007fee10` and `0x007feec0` do it:
+    /// `+0..+0x10` from the emulated `r0` (`g_Ee_Gpr`, `0x00c8f508`, its
+    /// fourth word at `+0x1c` too), `u16 +0xe` and `+0x14` 0xffff, `+0x10`
+    /// and `+0x18` 0x80808080; with an old handle at `+0`, every
+    /// `g_EtChrHandles` slot holding it cleared with both draw flags.
+    /// Returns the original's eax: 0xffff without an old handle, else 0xf0.
+    fn chr_reset(mem: &mut impl Mem, i: u32) -> u32 {
+        let r0: [u32; 4] = mem.read(Global::<u32>::new(0x00c8_f508).ptr(mem).addr);
+        let rec = CHR.ptr(mem).at(i).addr;
+        let old: u32 = mem.read(rec);
+        mem.write(rec, r0);
+        mem.write(rec + 0x1c, r0[3]);
+        mem.write(rec + 0xe, 0xffffu16);
+        mem.write(rec + 0x14, 0xffffu32);
+        mem.write(rec + 0x10, 0x8080_8080u32);
+        mem.write(rec + 0x18, 0x8080_8080u32);
+        if old == 0 {
+            return 0xffff;
+        }
+        let handles = CHR_HANDLES.ptr(mem);
+        for k in 0..0xf0 {
+            if handles.at(k).get(mem) == old {
+                handles.at(k).set(mem, 0);
+                DRAW_FLAGS.ptr(mem).at(k).set(mem, 0);
+                DRAW_FLAGS2.ptr(mem).at(k).set(mem, 0);
+            }
+        }
+        0xf0
+    }
+
+    /// `op_et_chr_reset_all_007fee10()` (`0x007fee10`): every one of the
+    /// 240 [`CHR`] records reset (as [`op_et_chr_reset`]). Returns 0.
+    pub fn op_et_chr_reset_all(mem: &mut impl Mem) -> u32 {
+        for i in 0..CHRS {
+            chr_reset(mem, i);
+        }
+        0
+    }
+
+    /// `op_et_chr_reset_007feec0(i)` (`0x007feec0`): record `i` of [`CHR`]
+    /// back to empty: `+0..+0x10` from the emulated `r0` (`+0x1c` its
+    /// fourth word), `u16 +0xe` and `+0x14` 0xffff, `+0x10`/`+0x18`
+    /// 0x80808080, and an old handle dropped from every `g_EtChrHandles`
+    /// slot with both draw flags. Index 0xf0 is let through (signed `> 0xf0`
+    /// test). Returns the original's eax: 0xffff without an old handle,
+    /// else 0xf0; `None` past 0xf0, where it is the caller's.
+    pub fn op_et_chr_reset(mem: &mut impl Mem, i: u32) -> Option<u32> {
+        (i.cast_signed() <= 0xf0).then(|| chr_reset(mem, i))
+    }
+
+    /// `op_et_astatus_effect_off_all()` (`0x007fb0a0`):
+    /// [`op_et_astatus_effect_off`] for the handle of every live [`CHR`]
+    /// record, in order.
+    pub fn op_et_astatus_effect_off_all<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        for k in 0..CHRS {
+            let h: u32 = mem.read(CHR.ptr(mem).at(k).addr);
+            if h != 0 {
+                op_et_astatus_effect_off(mem, h, call);
+            }
+        }
+    }
+
+    /// `op_et_bindeff2_walk(h, speed)` (`0x007fb740`): with event effects on
+    /// (`0x011a006b`) and a handle, the character's bound effect (the
+    /// [`EFF`] record keyed `0x50001800 + i`, `i` its [`CHR`] index; not
+    /// the first record) gets `op_oef2_obj_a_get(g_OpusEncount, 0, 0x20)`
+    /// and `opus_osu_set_0080b520(g_OpusBattle, record +4, that, 1, h)`;
+    /// a unit from it walks: `op_xyz_scale(unit + 0x40, speed, f32 at
+    /// 0x00b9231c)`. Callees through `call`. Returns the original's eax:
+    /// the end of a failed scan, the first record, 0 without a unit, else
+    /// the walk's; `None` without event effects or a handle (the caller's).
+    pub fn op_et_bindeff2_walk<M: Mem>(
+        mem: &mut M,
+        h: u32,
+        speed: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let at = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        if mem.read::<u8>(at(mem, 0x011a_006b)) == 0 || h == 0 {
+            return None;
+        }
+        let Some(ci) = (0..CHRS).find(|&ci| mem.read::<u32>(CHR.ptr(mem).at(ci).addr) == h) else {
+            return Some(CHR.ptr(mem).at(CHRS).addr);
+        };
+        let key = 0x5000_1800 + ci;
+        let Some(ej) = (0..EFFS).find(|&ej| mem.read::<u32>(EFF.ptr(mem).at(ej).addr) == key)
+        else {
+            return Some(EFF.ptr(mem).at(EFFS).addr);
+        };
+        if ej == 0 {
+            return Some(EFF.ptr(mem).addr);
+        }
+        let encount: u32 = mem.read(at(mem, 0x0119_fe98));
+        let get = at(mem, 0x007e_3b40);
+        let obj = call(mem, get, &[encount, 0, 0x20]);
+        let src: u32 = mem.read(EFF.ptr(mem).at(ej).addr + 4);
+        let list = OPUS_BATTLE.get(mem);
+        let set = at(mem, 0x0080_b520);
+        let unit = call(mem, set, &[list, src, obj, 1, h]);
+        if unit == 0 {
+            return Some(0);
+        }
+        let k: u32 = mem.read(at(mem, 0x00b9_231c));
+        let scale = at(mem, 0x007e_a850);
+        Some(call(mem, scale, &[unit.wrapping_add(0x40), speed, k]))
+    }
 }

@@ -2846,4 +2846,22 @@ pub mod bridge {
         mem.write(pass, 0u32);
         last
     }
+
+    /// `opu_mdc_0x2000_ambient(rec)` (`0x008041c0`): for the magic file's
+    /// id (`MagicFile_GetMagicId`, through `call`) among the seven words at
+    /// `0x00c48e44` or in 0x26e..=0x275, the record's ambient (`u16 +0x1d`,
+    /// byte `+0x1c`) all 0x80. Returns 0.
+    pub fn opu_mdc_0x2000_ambient<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = call(mem, g(mem, 0x009d_a3b0), &[]);
+        let ids: [u32; 7] = mem.read(g(mem, 0x00c4_8e44));
+        if ids.contains(&id) || id.wrapping_sub(0x26e) <= 7 {
+            mem.write(rec.wrapping_add(0x1d), 0x8080u16);
+            mem.write(rec.wrapping_add(0x1c), 0x80u8);
+        }
+        0
+    }
 }

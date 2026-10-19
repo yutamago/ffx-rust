@@ -2228,6 +2228,40 @@ ported! {
         let at = frame.at();
         part::bridge::ppp_screen_to_world(&mut mem(), out, p, at, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `op_rt_m_6(m, src, angles, t, order)`.
+    op_rt_m_6 @ 0x007e_98b0 => extern "C" fn op_rt_m_6(m: u32, src: u32, angles: u32, t: u32, order: u32) -> u32 {
+        op::bridge::op_rt_m_6(&mut mem(), [m, src, angles, t], order, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_ovl_effect_free()`.
+    op_ovl_effect_free @ 0x007f_cd60 => extern "C" fn op_ovl_effect_free() -> u32 {
+        op::bridge::op_ovl_effect_free(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_oef2_clut_cue(rec, mask)`.
+    op_oef2_clut_cue @ 0x007e_4610 => extern "C" fn op_oef2_clut_cue(rec: u32, mask: u32) -> u32 {
+        op::bridge::op_oef2_clut_cue(&mut mem(), rec, mask, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_chr_reset_all_007fee10()`.
+    op_et_chr_reset_all_007fee10 @ 0x007f_ee10 => extern "C" fn op_et_chr_reset_all() -> u32 {
+        et::bridge::op_et_chr_reset_all(&mut mem())
+    }
+    /// `op_et_chr_reset_007feec0(i)`: past 0xf0 the caller's eax is not
+    /// kept (0); its only caller returns right after with it unused.
+    op_et_chr_reset_007feec0 @ 0x007f_eec0 => extern "C" fn op_et_chr_reset(i: u32) -> u32 {
+        et::bridge::op_et_chr_reset(&mut mem(), i).unwrap_or(0)
+    }
+    /// `op_et_astatus_effect_off_all()`.
+    op_et_astatus_effect_off_all @ 0x007f_b0a0 => extern "C" fn op_et_astatus_effect_off_all() {
+        et::bridge::op_et_astatus_effect_off_all(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_et_bindeff2_walk(h, speed)`: without event effects or a handle
+    /// the caller's eax is not kept (0).
+    op_et_bindeff2_walk @ 0x007f_b740 => extern "C" fn op_et_bindeff2_walk(h: u32, speed: u32) -> u32 {
+        et::bridge::op_et_bindeff2_walk(&mut mem(), h, speed, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
+    }
+    /// `opu_mdc_0x2000_ambient(rec)`.
+    opu_mdc_0x2000_ambient @ 0x0080_41c0 => extern "C" fn opu_mdc_0x2000_ambient(rec: u32) -> u32 {
+        opus::bridge::opu_mdc_0x2000_ambient(&mut mem(), rec, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppFpPointLightProc()`.
     pppFpPointLightProc @ 0x0072_9f90 => extern "C" fn ppp_fp_point_light_proc() -> u32 {
         fp::bridge::ppp_fp_point_light_proc(&mut mem(), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))

@@ -14643,3 +14643,207 @@ fn round29j_helpers_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round29k_helpers_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_cd60);
+        let cells: Vec<u32> = (0..8).map(|_| p.alloc(4)).collect();
+        let (add_ret, start_ret, obj_ret, set_ret, magic_ret) =
+            (cells[0], cells[1], cells[2], cells[3], cells[4]);
+        for (sym, words, ret) in [
+            (0x007e_9850u32, &[0u8, 0, 0, 0][..], None),
+            (0x007e_9af0, &[0, 0, 0, 0], None),
+            (0x007e_9a90, &[0, 0, 0, 0], None),
+            (0x007e_9a30, &[0, 0, 0, 0], None),
+            (0x007e_99d0, &[0, 0, 0, 0], None),
+            (0x007e_9970, &[0, 0, 0, 0], None),
+            (0x007e_4e40, &[0], None),
+            (0x007f_e4e0, &[], None),
+            (0x0080_abb0, &[], None),
+            (0x0080_ac00, &[], None),
+            (0x007e_c7d0, &[0], None),
+            (0x0080_3760, &[], None),
+            (0x0080_0be0, &[], None),
+            (0x0087_6290, &[0], None),
+            (0x007f_ff30, &[0], None),
+            (0x007e_56d0, &[0, 0, 0], Some(add_ret)),
+            (0x007f_de30, &[0, 0], None),
+            (0x0078_0cb0, &[], Some(start_ret)),
+            (0x0080_a560, &[0, 0, 0], None),
+            (0x0080_aa00, &[0, 0], None),
+            (0x0083_c810, &[0], None),
+            (0x007e_3b40, &[0, 0, 0], Some(obj_ret)),
+            (0x0080_b520, &[0, 0, 0, 0, 0], Some(set_ret)),
+            (0x007e_a850, &[0, 0, 0], None),
+            (0x009d_a3b0, &[], Some(magic_ret)),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        let chr = p.sym(et::bridge::CHR.sym);
+        let eff = p.sym(et::bridge::EFF.sym);
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let (rec, amb) = (p.alloc(8), p.alloc(0x20));
+        for round in 0..400 {
+            // op_rt_m_6: each order and two outside the table
+            let args = [rng.next(), rng.next(), rng.next(), rng.next()];
+            let order = rng.pick(&[0u32, 1, 2, 3, 4, 5, 6, u32::MAX]);
+            let all = [args[0], args[1], args[2], args[3], order];
+            p.check(
+                &format!("op_rt_m_6 round {round}"),
+                0x007e_98b0,
+                &all,
+                |o| Some(op::bridge::op_rt_m_6(o, args, order, &mut call_original)),
+            );
+            // op_ovl_effect_free
+            p.fill(p.sym(0x011a_0068), 0x20, &mut rng);
+            let sep = rng.pick(&[0u8, 0, 1]);
+            p.set(p.sym(0x011a_0082), sep);
+            p.check(
+                &format!("op_ovl_effect_free round {round}"),
+                0x007f_cd60,
+                &[],
+                |o| Some(op::bridge::op_ovl_effect_free(o, &mut call_original)),
+            );
+            // op_oef2_clut_cue: the id range, the overlay path, a full ring
+            p.fill(p.sym(0x011a_01a0), 0x300, &mut rng);
+            let id = rng.pick(&[0x37ffu16, 0x3800, 0x3bff, 0x3c00, 0x1234, 0xffff]);
+            p.set(rec, id);
+            let second = rng.pick(&[0u32, 1, 0x1234_5678]);
+            p.set(rec + 4, second);
+            let ovl = rng.pick(&[0u8, 1]);
+            p.set(p.sym(0x011a_0066), ovl);
+            let count = rng.pick(&[0u16, 5, 0x3f, 0x40, 0x41]);
+            p.put(op::bridge::OEF2_CLUT_CUE_COUNT, count);
+            let head = rng.pick(&[0u16, 3, 0x3e, 0xffff]);
+            p.put(op::bridge::OEF2_CLUT_CUE_HEAD, head);
+            let added = rng.pick(&[u32::MAX, 0, 5, 0x8000_0000, 0x7fff_ffff]);
+            p.set(add_ret, added);
+            let target = rng.pick(&[rec, rec, rec, 0]);
+            let mask = rng.next();
+            p.check(
+                &format!("op_oef2_clut_cue round {round}"),
+                0x007e_4610,
+                &[target, mask],
+                |o| {
+                    Some(op::bridge::op_oef2_clut_cue(
+                        o,
+                        target,
+                        mask,
+                        &mut call_original,
+                    ))
+                },
+            );
+            // the character records: handles, some in several slots
+            p.fill(p.sym(0x00c8_f508), 16, &mut rng);
+            p.fill(handles, 0xf0 * 4, &mut rng);
+            p.fill(p.sym(et::bridge::DRAW_FLAGS.sym), 0xf0, &mut rng);
+            p.fill(p.sym(et::bridge::DRAW_FLAGS2.sym), 0xf0, &mut rng);
+            for idx in 0..241u32 {
+                let at = chr + 0x20 * idx;
+                p.fill(at, 0x20, &mut rng);
+                if rng.chance(40) {
+                    let hd = 0x1000 + rng.below(16);
+                    p.set(at, hd);
+                    for _ in 0..rng.below(3) {
+                        let kk = rng.below(0xf0);
+                        p.set(handles + 4 * kk, hd);
+                    }
+                } else if idx < 240 {
+                    p.set(at, 0u32);
+                }
+            }
+            let idx = rng.pick(&[0u32, 7, 0xef, 0xf0, 0xf1, 0x100]);
+            p.check(
+                &format!("op_et_chr_reset round {round}"),
+                0x007f_eec0,
+                &[idx],
+                |o| et::bridge::op_et_chr_reset(o, idx),
+            );
+            if round % 8 == 0 {
+                p.check(
+                    &format!("op_et_chr_reset_all round {round}"),
+                    0x007f_ee10,
+                    &[],
+                    |o| Some(et::bridge::op_et_chr_reset_all(o)),
+                );
+            }
+            // op_et_astatus_effect_off_all on the records as they are
+            for idx in 0..240u32 {
+                let at = chr + 0x20 * idx;
+                if rng.chance(30) {
+                    p.set(at, 0x1000 + rng.below(16));
+                }
+            }
+            let started = rng.pick(&[0u32, 1, 7]);
+            p.set(start_ret, started);
+            p.set(p.sym(et::bridge::OPUS_BATTLE.sym), rng.next());
+            if round % 4 == 0 {
+                p.check(
+                    &format!("op_et_astatus_effect_off_all round {round}"),
+                    0x007f_b0a0,
+                    &[],
+                    |o| {
+                        et::bridge::op_et_astatus_effect_off_all(o, &mut call_original);
+                        None
+                    },
+                );
+            }
+            // op_et_bindeff2_walk: the handle found or not, the bound effect
+            // record found, first, or missing
+            for slot in 0..512u32 {
+                p.set(eff + 0x20 * slot, rng.next());
+                p.set(eff + 0x20 * slot + 4, rng.next());
+            }
+            let ci = rng.below(240);
+            let hd = 0x2000 + rng.below(4);
+            p.set(chr + 0x20 * ci, hd);
+            match rng.below(4) {
+                0 => {}
+                1 => p.set(eff, 0x5000_1800 + ci),
+                _ => {
+                    let slot = 1 + rng.below(511);
+                    p.set(eff + 0x20 * slot, 0x5000_1800 + ci);
+                }
+            }
+            let on = rng.pick(&[0u8, 1, 1, 1]);
+            p.put(op::bridge::EVENT_EFFECT, on);
+            p.set(p.sym(0x0119_fe98), rng.next());
+            let obj = rng.next();
+            p.set(obj_ret, obj);
+            let unit = rng.pick(&[0u32, 0x1234_5600]);
+            p.set(set_ret, unit);
+            let who = match rng.below(5) {
+                0 => 0,
+                1 => 0x2010,
+                _ => hd,
+            };
+            let speed = finite(&mut rng);
+            p.check(
+                &format!("op_et_bindeff2_walk round {round}"),
+                0x007f_b740,
+                &[who, speed],
+                |o| et::bridge::op_et_bindeff2_walk(o, who, speed, &mut call_original),
+            );
+            // opu_mdc_0x2000_ambient
+            let listed: u32 = p.get(p.sym(0x00c4_8e44) + 4 * rng.below(7));
+            let any = rng.below(0x400);
+            let magic = rng.pick(&[listed, 0x26d, 0x26e, 0x275, 0x276, any]);
+            p.set(magic_ret, magic);
+            p.fill(amb, 0x20, &mut rng);
+            p.check(
+                &format!("opu_mdc_0x2000_ambient round {round}"),
+                0x0080_41c0,
+                &[amb],
+                |o| {
+                    Some(opus::bridge::opu_mdc_0x2000_ambient(
+                        o,
+                        amb,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
