@@ -183,7 +183,144 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         );
         same("vectors", a, b);
         polar(a, b, rng, buf);
+        camera_matrix(a, b, rng, buf);
+        screen_matrix(a, b, rng, buf);
     }
+}
+
+/// `MsScreenMatrix` on a random screen (`0x80` bytes from `buf`): half the
+/// time ordinary numbers only; sometimes a zero centre coordinate (both
+/// signs), a zero `y` scale, zero divisors; the VU flags cleared first.
+fn screen_matrix(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32) {
+    use ffx_battle::view::bridge as view;
+    let plain = rng.below(2) == 0;
+    let vals: Vec<u8> = (0..0x20)
+        .flat_map(|_| {
+            let v = if plain {
+                (f32::from(i16::try_from(rng.range(-30000, 30000)).unwrap()) / 97.0).to_bits()
+            } else {
+                float(rng)
+            };
+            v.to_le_bytes()
+        })
+        .collect();
+    poke(a, b, buf, &vals);
+    for (off, chance) in [
+        (0x20u32, 4),
+        (0x30, 4),
+        (0x70, 4),
+        (0x50, 4),
+        (0x14, 6),
+        (0x58, 8),
+        (0x5c, 8),
+    ] {
+        if rng.below(chance) == 0 {
+            poke(a, b, buf + off, &[0; 4]);
+        }
+    }
+    if rng.below(6) == 0 {
+        // a centre x of -0 or +0 from equal terms
+        poke(a, b, buf + 0x20, &[0; 4]);
+        poke(a, b, buf + 0x30, &[0; 4]);
+        let x = a.read(buf + 0x70, 4).unwrap();
+        poke(a, b, buf + 0x50, &x);
+    }
+    if rng.below(2) == 0 {
+        set(a, b, ffx_ps2::ee::bridge::STATUS, 0);
+    }
+    if rng.below(4) == 0 {
+        let at = a.rebase(0x00c0_a004);
+        poke(a, b, at, &float(rng).to_le_bytes());
+    }
+    let out = buf + 0x80;
+    twin("MsScreenMatrix", a, b, 0x007c_3d60, &[out, buf], ALL, |m| {
+        view::ms_screen_matrix(m, out, buf)
+    });
+    same("MsScreenMatrix", a, b);
+}
+
+/// Zeroes the top of `o`'s stack, where the next original's locals go
+/// (`MsCameraMatrix` copies four words it never wrote; the port writes 0).
+fn zero_stack(o: &mut Oracle) {
+    let r = o.stack_range();
+    o.write(r.start, &vec![0; (r.end - r.start) as usize])
+        .unwrap();
+}
+
+/// `MsCameraMatrix`: random points and up vectors, sometimes equal points
+/// (the identity-like early return, or equal but for `w`), a zero
+/// direction, an up vector along it, and stale register `w`s (infinite,
+/// NaN) it reads; the CRT stand-ins for the roll's cosine and sine.
+fn camera_matrix(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, buf: u32) {
+    use battle_common::crt::stand_in;
+    use ffx_battle::view::bridge as view;
+    let (eye, target, up, out) = (buf, buf + 0x10, buf + 0x20, buf + 0x30);
+    // half the time only ordinary numbers (no NaN spreading through)
+    let plain = rng.below(2) == 0;
+    let vals: Vec<u8> = (0..12)
+        .flat_map(|_| {
+            let v = if plain {
+                (f32::from(i16::try_from(rng.range(-30000, 30000)).unwrap()) / 97.0).to_bits()
+            } else {
+                float(rng)
+            };
+            v.to_le_bytes()
+        })
+        .collect();
+    poke(a, b, buf, &vals);
+    match rng.below(8) {
+        // a direction whose squares underflow to 0
+        3 => {
+            poke(a, b, eye, &[0; 12]);
+            let d: Vec<u8> = (0..3)
+                .flat_map(|_| rng.below(0x100).to_le_bytes())
+                .collect();
+            poke(a, b, target, &d);
+        }
+        // the same 16 bytes: no matrix
+        0 => {
+            let p = a.read(eye, 16).unwrap();
+            poke(a, b, target, &p);
+        }
+        // the same point, another w
+        1 => {
+            let p = a.read(eye, 12).unwrap();
+            poke(a, b, target, &p);
+        }
+        // up along the direction (or zero)
+        2 => {
+            let p = a.read(target, 12).unwrap();
+            poke(a, b, up, &p);
+            let e = a.read(eye, 12).unwrap();
+            let d: Vec<u8> = (0..3)
+                .flat_map(|k| {
+                    let w = |v: &[u8]| f32::from_le_bytes(v[4 * k..4 * k + 4].try_into().unwrap());
+                    (w(&p) - w(&e)).to_le_bytes()
+                })
+                .collect();
+            let d = if rng.below(2) == 0 { d } else { vec![0; 12] };
+            poke(a, b, up, &d);
+        }
+        _ => {}
+    }
+    // the registers whose old w it reads
+    for o in [0x00c8_f7fcu32, 0x00c8_f83c] {
+        let v = float(rng);
+        let at = a.rebase(o);
+        poke(a, b, at, &v.to_le_bytes());
+    }
+    // vf00 as something else left it (the function restores it first)
+    if rng.below(4) == 0 {
+        let at = a.rebase(0x00c0_a004);
+        poke(a, b, at, &float(rng).to_le_bytes());
+    }
+    let roll = float(rng);
+    zero_stack(a);
+    let args = [out, eye, target, up, roll];
+    twin("MsCameraMatrix", a, b, 0x007c_1be0, &args, ALL, |m| {
+        view::ms_camera_matrix(m, &stand_in, out, eye, target, up, roll)
+    });
+    same("MsCameraMatrix", a, b);
 }
 
 /// The polar conversions and `MsVectorNormal2`, with the CRT's trigonometry

@@ -42,6 +42,7 @@ fn game_call(m: &mut Oracle, f: u32, args: &[u32]) -> u32 {
         .eax
 }
 
+#[allow(clippy::too_many_lines)]
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
     let recs = scratch(a, b, 0x100 * CALLEES.len());
