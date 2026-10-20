@@ -296,14 +296,10 @@ fn rotations_and_lengths_match_the_original_bit_for_bit() {
             .st0
             .expect("a float result");
         let r = math::bridge::length_squared(&b, block);
-        // ST0 comes back as an f64 (exact for an f32), NaN payloads lost
-        if r.is_nan() {
-            assert!(st0.is_nan(), "length² case {n}: {v:?}");
-        } else {
-            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
-            let st0 = st0 as f32;
-            assert_eq!(st0.to_bits(), r.to_bits(), "length² case {n}: {v:?}");
-        }
+        // ST0 comes back as an f64 (exact for an f32, NaN payloads kept)
+        #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+        let st0 = st0 as f32;
+        assert_eq!(st0.to_bits(), r.to_bits(), "length² case {n}: {v:?}");
     }
 }
 
@@ -6103,14 +6099,10 @@ fn round8_windows_and_menus(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) 
         .st0
         .expect("a float result");
         let r = math::bridge::ratio_squared(x, y);
-        // ST0 comes back as an f64 (exact for an f32), NaN payloads lost
-        if r.is_nan() {
-            assert!(st0.is_nan(), "{x} / {y}");
-        } else {
-            #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
-            let st0 = st0 as f32;
-            assert_eq!(st0.to_bits(), r.to_bits(), "{x} / {y}");
-        }
+        // ST0 comes back as an f64 (exact for an f32, NaN payloads kept)
+        #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
+        let st0 = st0 as f32;
+        assert_eq!(st0.to_bits(), r.to_bits(), "{x} / {y}");
     }
 }
 
@@ -7008,11 +7000,7 @@ fn round10(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let v: [u32; 2] = Mem::read(b, wh);
         Mem::write(a, wh, v);
     };
-    let st0_f32 = |r: ffx_oracle::Ret| {
-        #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
-        let v = r.st0.expect("a float result") as f32;
-        v
-    };
+    let st0_f32 = |r: ffx_oracle::Ret| r.st0_f32().expect("a float result");
     // wide-screen x positions
     let wtab = t::WINDOWS.ptr(b).addr;
     for i in 0..4u32 {
@@ -7051,10 +7039,7 @@ fn round10(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let got = t::font_space_in_pixel(b, kind, |m| orig(m, 0x0064_10e0, &[]), screen);
         sync_wh(a, b);
         let v = st0_f32(r);
-        assert!(
-            v.to_bits() == got.to_bits() || (v.is_nan() && got.is_nan()),
-            "{lang} {kind} {ws}"
-        );
+        assert!(v.to_bits() == got.to_bits(), "{lang} {kind} {ws}");
         same_memory("font spaces", a, b);
     }
     // scenes initialised: running slots stopped unless kept
@@ -7330,10 +7315,7 @@ fn round11(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             let r = t::font_advance(b, kind, font, size, width, space);
             #[allow(clippy::cast_possible_truncation)] // exact: an f32 value
             let st0 = st0 as f32;
-            assert!(
-                st0.to_bits() == r.to_bits() || (st0.is_nan() && r.is_nan()),
-                "advance {n}"
-            );
+            assert!(st0.to_bits() == r.to_bits(), "advance {n}");
         } else {
             call(a, 0x008e_8ed0, Conv::Cdecl, &[glyph, font, size.to_bits()]);
             t::add_font_width_space(b, glyph, font, size, screen, width, space);
@@ -23109,7 +23091,7 @@ fn round39_info_win(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             };
             put(a, b, table + 4 * j, v);
         }
-        // a time (never a NaN: the oracle's st0 drops NaN payloads)
+        // a time (never a NaN)
         put(a, b, cells, ((rng.next() % 100_000) as f32 / 7.0).to_bits());
         put(a, b, target, chr(rng));
         for at in [t::INFO_PARAM_CHR, t::INFO_MES_CHR] {

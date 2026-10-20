@@ -340,9 +340,8 @@ harvest_test!(
     |m: &mut Oracle, s| {
         let point = m.stack_range().start + 0x1000;
         let fcall = &mut |h: &mut OracleHost<'_>, f: u32, a: &[u32]| {
-            let r = h.0.call(f, Conv::Cdecl, a).unwrap();
             // the next call starts with an empty x87 stack (`Oracle::call`)
-            r.st0_f64().unwrap()
+            h.0.call_f64(f, a).unwrap()
         };
         ffx_sg::state::bridge::id_chr_move(&mut OracleHost(m), s.arg(0), point, fcall);
     }

@@ -38,15 +38,7 @@ fn oracles() -> Vec<(&'static str, Oracle)> {
 /// What `fstp qword` stores for an x87 register: the f64 bits, NaN
 /// payloads kept.
 fn st0_bits(raw: [u8; 10]) -> u64 {
-    let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-    let se = u16::from_le_bytes([raw[8], raw[9]]);
-    let sign = u64::from(se >> 15) << 63;
-    if se & 0x7fff == 0x7fff {
-        // infinities and NaNs: the top 52 fraction bits
-        return sign | (0x7ff << 52) | ((mant << 1) >> 12);
-    }
-    let r = ffx_oracle::f80_to_f64(&raw);
-    r.to_bits()
+    ffx_oracle::f80_to_f64(&raw).to_bits()
 }
 
 fn words(x: f64) -> [u32; 2] {
