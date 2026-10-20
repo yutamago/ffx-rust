@@ -1179,7 +1179,7 @@
 0x00643bc0	dead	unreachable from the entry point and every pointer table
 0x00643cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSgSetSpecular
 0x00643db0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicShaderGetVertexInfo
-0x00643dc0	logic	default (no rule: ported to be safe)
+0x00643dc0	glue	thin wrapper: only forwards to glue code (DynGeo_ResetCurrentBuffer_0069fcb0)
 0x00643dd0	glue	reviewed: forwarder to PhyreEngine/managers (PC2 render/pc-ui round 1)
 0x00643de0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicShowAutoSavePrompt
 0x00643df0	glue	thin wrapper: only forwards to glue code (PhyreScene_SetMeshesVisible)
@@ -1270,9 +1270,9 @@
 0x00646910	logic	default (no rule: ported to be safe)
 0x00646920	platform	platform name (PC port: input, saves, loaders, app lifecycle): MallocAndReadGamecode
 0x00646b10	dead	unreachable from the entry point and every pointer table
-0x00646b30	logic	default (no rule: ported to be safe)
-0x00646ca0	debug	only called from debug code (debugSavedataLoadAll)
-0x00646df0	logic	debug-sounding name, but used by logic: 0x6492e0
+0x00646b30	debug	reviewed: opens a raw save from /FFX_Data/GameData/PS3Data/saves/%02d with fopen, SKS_DEBUG messages; only via 0x6492b0 (menu round 25)
+0x00646ca0	debug	reviewed: %d copy of 0x646b30; only caller debugSavedataLoadAll (fh Switch name) (menu round 25)
+0x00646df0	debug	reviewed: debugSave (fh Switch name): SKS_DEBUG messages on the dev-only save path (menu round 25)
 0x00646fd0	dead	unreachable from the entry point and every pointer table
 0x00646ff0	dead	unreachable from the entry point and every pointer table
 0x00647220	dead	unreachable from the entry point and every pointer table
@@ -2919,7 +2919,7 @@
 0x0069fbc0	dead	unreachable from the entry point and every pointer table
 0x0069fc10	glue	only called from glue code (graphicVFXDestroy)
 0x0069fc70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_RemoveDeletedPoolMeshInstances
-0x0069fcb0	logic	default (no rule: ported to be safe)
+0x0069fcb0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): DynGeo_ResetCurrentBuffer_0069fcb0
 0x0069fd70	dead	unreachable from the entry point and every pointer table
 0x0069fdc0	platform	only called from platform code (0x69fe40)
 0x0069fe50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassVFXRenderDataTable_UpdateDeletePool
@@ -2971,7 +2971,7 @@
 0x006a3a00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VFXDynamicGeometry_setUVOffset
 0x006a3a20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VFXDynamicGeometry_setYIQEnable
 0x006a3b20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): VFXDynamicGeometry_setZCorrectionValue
-0x006a3b30	logic	default (no rule: ported to be safe)
+0x006a3b30	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_setupDynMesh
 0x006a3b40	logic	default (no rule: ported to be safe)
 0x006a3b50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_setupMaterial
 0x006a4240	logic	default (no rule: ported to be safe)
