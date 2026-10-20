@@ -23828,3 +23828,155 @@ fn round40_pad_message_matches_the_original_on_the_snapshot() {
     };
     round40_pad_message(&mut a, &mut b, &mut Xorshift(0x4040_0012));
 }
+
+/// Round 40 group B: `TOBtlGetChangePad` and the battle windows' wait
+/// functions `TOWaitBtlWinChange`, `TOWaitBtlWinStdMode2_008a8b50` and
+/// `TOWaitBtlWinStdMode3_008a8b90` over logging stand-ins (their returns
+/// from a table of a few values; the `TOBtlGetStdPad` stand-in copies the
+/// list mode `0x0133d6e8` it sees into a cell).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::too_many_lines
+)]
+fn round40_change_pad(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge::{self as t, WaitBtlWin};
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let seen = alloc(a, b, 4);
+    let seq = round38_seq(counter, table);
+    let mode = a.rebase(0x0133_d6e8);
+    // mov eax, [mode]; mov [seen], eax
+    let mut std_pad = vec![0xa1];
+    std_pad.extend_from_slice(&mode.to_le_bytes());
+    std_pad.push(0xa3);
+    std_pad.extend_from_slice(&seen.to_le_bytes());
+    // inputIsRepButton also flips held 0x1000 (xor word [held], 0x1000),
+    // so the held word read again after it counts
+    let mut rep_button = seq.clone();
+    rep_button.extend_from_slice(&[0x66, 0x81, 0x35]);
+    rep_button.extend_from_slice(&a.rebase(0x025d_09d2).to_le_bytes());
+    rep_button.extend_from_slice(&[0x00, 0x10]);
+    let stands: Vec<Stand> = vec![
+        (0x0063_0d30, vec![0], vec![], rep_button),
+        (0x0089_97c0, vec![0], vec![], vec![]),
+        (0x0089_a630, vec![], vec![], vec![]),
+        (0x0089_aca0, vec![0, 1], vec![], seq.clone()),
+        (0x0089_a330, vec![0, 1], vec![], vec![]),
+        (0x0088_6ba0, vec![0], vec![], seq),
+        (0x0089_cde0, vec![0], vec![], std_pad),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let w = alloc(a, b, 0x100);
+    let list = alloc(a, b, 0x40);
+    let (held, trigger, repeat) = (
+        a.rebase(0x025d_09d2),
+        a.rebase(0x025d_09d4),
+        a.rebase(0x025d_09d6),
+    );
+    let count = a.rebase(0x0134_080c);
+    let opens = [
+        0.3f32,
+        0.299_999_98,
+        0.45,
+        0.449_999_96,
+        0.450_000_02,
+        1.0,
+        -1.0,
+        f32::NAN,
+        0.0,
+    ];
+    for k in 0..6000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        put(a, b, seen, rng.next());
+        put(a, b, mode, rng.next());
+        for j in 0..0x100 {
+            let v = if rng.next().is_multiple_of(3) {
+                rng.next()
+            } else {
+                rng.next() % 3
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        for j in 0..0x38 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        for j in 0..0x10 {
+            put(a, b, list + 4 * j, rng.next());
+        }
+        let n = [0i32, 1, 2, 3, 5, 8][(rng.next() % 6) as usize];
+        put(a, b, count, n);
+        put(a, b, w + 0x20, list);
+        put(a, b, w + 0x42, (rng.next() % 12) as i16 - 2);
+        put(a, b, w + 0xb, (rng.next() % 6) as i8 - 2);
+        let held_bits = [
+            0u16, 0x4000, 4, 0x4004, 0x1000, 1, 0x1001, 0x5005, 0x4001, 0x1004,
+        ][(rng.next() % 10) as usize];
+        put(a, b, held, held_bits | (rng.next() as u16 & 0x0aaa));
+        put(
+            a,
+            b,
+            repeat,
+            [0u16, 0x4000, 0x1000, 0x5000][(rng.next() % 4) as usize]
+                | (rng.next() as u16 & 0x2fff),
+        );
+        put(
+            a,
+            b,
+            trigger,
+            [0u16, 0x20, 0x40, 0x60][(rng.next() % 4) as usize] | (rng.next() as u16 & 0xff9f),
+        );
+        put(
+            a,
+            b,
+            a.rebase(0x0133_d6e0),
+            [0u32, 1, 2][(rng.next() % 3) as usize],
+        );
+        put(a, b, a.rebase(0x023c_c092), (rng.next() % 4) as i8 - 1);
+        if k % 3 == 0 {
+            let open = opens[(rng.next() % opens.len() as u32) as usize];
+            put(a, b, w + 0xe0, open);
+            for (f, kind) in [
+                (0x008a_87a0u32, WaitBtlWin::Change),
+                (0x008a_8b50, WaitBtlWin::StdMode2),
+                (0x008a_8b90, WaitBtlWin::StdMode3),
+            ] {
+                let want = eax(a, f, &[w]);
+                assert_eq!(want, t::wait_btl_win(b, kind, w, call), "{kind:?} {k}");
+                same_memory(&format!("{kind:?} {k}"), a, b);
+            }
+        } else {
+            let want = eax(a, 0x008a_2160, &[w]);
+            let got = t::btl_get_change_pad(b, w, call);
+            // a click is logged with SndPlayClick's address as its tag
+            let end = Mem::read::<u32>(a, cursor);
+            let clicked = (log..end)
+                .step_by(4)
+                .any(|at| Mem::read::<u32>(a, at) == 0x0088_6ba0);
+            if clicked {
+                assert_eq!(got, want, "change pad {k}");
+            }
+        }
+        same_memory(&format!("change pad {k}"), a, b);
+    }
+}
+
+#[test]
+fn round40_change_pad_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round40_change_pad(&mut a, &mut b, &mut Xorshift(0x4040_0021));
+}
+
+#[test]
+fn round40_change_pad_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round40_change_pad(&mut a, &mut b, &mut Xorshift(0x4040_0022));
+}

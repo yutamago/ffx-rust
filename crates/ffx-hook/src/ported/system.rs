@@ -1252,6 +1252,22 @@ ported! {
     TOWaitBtlWinPrepare_008a8ac0 @ 0x008a_8ac0 => extern "C" fn to_wait_btl_win_prepare(w: u32) -> u32 {
         tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Prepare, w, call_sym)
     }
+    /// `TOWaitBtlWinChange(w)`.
+    TOWaitBtlWinChange @ 0x008a_87a0 => extern "C" fn to_wait_btl_win_change(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Change, w, call_sym)
+    }
+    /// `TOWaitBtlWinStdMode2_008a8b50(w)`.
+    TOWaitBtlWinStdMode2_008a8b50 @ 0x008a_8b50 => extern "C" fn to_wait_btl_win_std_mode2(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::StdMode2, w, call_sym)
+    }
+    /// `TOWaitBtlWinStdMode3_008a8b90(w)`.
+    TOWaitBtlWinStdMode3_008a8b90 @ 0x008a_8b90 => extern "C" fn to_wait_btl_win_std_mode3(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::StdMode3, w, call_sym)
+    }
+    /// `TOBtlGetChangePad(w)`.
+    TOBtlGetChangePad @ 0x008a_2160 => extern "C" fn to_btl_get_change_pad(w: u32) -> u32 {
+        tolib::bridge::btl_get_change_pad(&mut mem(), w, call_sym)
+    }
     /// `TOOpenBtlWinLeft()`.
     TOOpenBtlWinLeft @ 0x008a_8620 => extern "C" fn to_open_btl_win_left() -> u32 {
         tolib::bridge::open_btl_win_side(&mut mem(), false, call_sym)

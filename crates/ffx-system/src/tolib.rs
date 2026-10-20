@@ -11279,6 +11279,17 @@ pub mod bridge {
         /// `TOWaitBtlWinPrepare_008a8ac0(w)`: `TOGetPadStatusPrepare` from
         /// 0.3; returns 1.
         Prepare,
+        /// `TOWaitBtlWinChange(w)` (`0x008a87a0`): `TOBtlGetChangePad`
+        /// from 0.3 (`f32`); returns 1.
+        Change,
+        /// `TOWaitBtlWinStdMode2_008a8b50(w)` (the summon list's): the
+        /// battle list mode (`0x0133d6e8`) 2 around `TOBtlGetStdPad`, from
+        /// 0.45 (the double holds 0.45f32); returns 1.
+        StdMode2,
+        /// `TOWaitBtlWinStdMode3_008a8b90(w)` (the weapon and kinds 7/0xf
+        /// lists'): as [`WaitBtlWin::StdMode2`] with mode 3; returns 0
+        /// when below the threshold, else 1.
+        StdMode3,
     }
 
     /// One [`WaitBtlWin`] frame of window `w`: the handler runs unless the
@@ -11290,15 +11301,35 @@ pub mod bridge {
         w: u32,
         mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
+        const STD_PAD: u32 = 0x0089_cde0;
         let open: f32 = mem.read(w.wrapping_add(0xe0));
         let (below, handler, result) = match kind {
             WaitBtlWin::Left => (open < 0.45f32, 0x008a_22f0, 0),
             WaitBtlWin::Right => (open < 0.45f32, 0x008a_2690, 0),
-            WaitBtlWin::Std => (0.3f32 > open, 0x0089_cde0, 0),
+            WaitBtlWin::Std => (0.3f32 > open, STD_PAD, 0),
             WaitBtlWin::Prepare => (0.3f32 > open, 0x0089_d610, 1),
+            WaitBtlWin::Change => (0.3f32 > open, 0x008a_2160, 1),
+            WaitBtlWin::StdMode2 | WaitBtlWin::StdMode3 => (open < 0.45f32, STD_PAD, 1),
         };
-        if !below {
-            call(mem, handler, &[w]);
+        let mode = match kind {
+            WaitBtlWin::StdMode2 => Some(2u32),
+            WaitBtlWin::StdMode3 => Some(3),
+            _ => None,
+        };
+        if below {
+            return if matches!(kind, WaitBtlWin::StdMode3) {
+                0
+            } else {
+                result
+            };
+        }
+        let list_mode = mem.rebase(0x0133_d6e8);
+        if let Some(m) = mode {
+            mem.write(list_mode, m);
+        }
+        call(mem, handler, &[w]);
+        if mode.is_some() {
+            mem.write(list_mode, 0u32);
         }
         result
     }
@@ -11698,6 +11729,129 @@ pub mod bridge {
             mem.write(pad_record(mem, w).wrapping_add(1), 2u8);
             call(mem, CLICK, &[1]);
         }
+    }
+
+    /// `TOBtlGetChangePad(w)` (`0x008a2160`): one frame of the battle
+    /// change window `w` (the party list `+0x20` of `i16` ids, its length
+    /// `i32 0x0134080c`, the row `i16 +0x42`). Unless both a down
+    /// (0x4000/4) and an up (0x1000/1) button are held (`0x025d09d2`), the
+    /// row moves down on repeat 0x4000 (`0x025d09d6`) or
+    /// `inputIsRepButton(0x08000000)`, unless 0x4000 and 4 are both held,
+    /// and up likewise (0x1000, `0x10000000`, held 0x1000 and 1); it wraps
+    /// in the list. The row's id goes to `u16 +0x16 + 2 side` and the row to
+    /// `+0xe + 2 side` (`side` = `i8 +0xb`), the help text follows
+    /// (`TOBtlSetChangeHelpMes(id)`). A moved row clicks 1; else with
+    /// Libra's auto mode (`0x0133d6e0` 1) the trigger word (`0x025d09d4`)
+    /// is forced to 0x40, and then:
+    /// - 0x40 at a deeper window level (`i8 0x023cc092` above 0):
+    ///   `TOBtlSetPrevAction()`, `+1` stepped, click 4;
+    /// - 0x20: `TOCheckBtlCommandUse(i16 +8, u16 +0x16)` negative clicks 3,
+    ///   else `+1` stepped, `TOBtlSetNextAction(i16 +8, u16 +0x16)`,
+    ///   click 1.
+    ///
+    /// Returns `SndPlayClick`'s `eax` (tail jumps); without a click the
+    /// original's `eax` is left over, and its only caller,
+    /// `TOWaitBtlWinChange`, drops it: 0 here.
+    pub fn btl_get_change_pad<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const REP_BUTTON: u32 = 0x0063_0d30;
+        const CHANGE_HELP: u32 = 0x0089_97c0;
+        const PREV_ACTION: u32 = 0x0089_a630;
+        const CHECK_USE: u32 = 0x0089_aca0;
+        const NEXT_ACTION: u32 = 0x0089_a330;
+        const CLICK: u32 = 0x0088_6ba0;
+        let held_at = mem.rebase(0x025d_09d2);
+        let repeat_at = mem.rebase(PAD_REPEAT);
+        let count_at = mem.rebase(0x0134_080c);
+        let row_at = w.wrapping_add(0x42);
+        let step = |mem: &mut M, by: i16| {
+            mem.write(row_at, mem.read::<i16>(row_at).wrapping_add(by));
+        };
+        let was = mem.read::<i16>(row_at);
+        let mut held: u16 = mem.read(held_at);
+        if held & 0x4004 == 0 || held & 0x1001 == 0 {
+            if !(held & 0x4000 != 0 && mem.read::<u8>(held_at) & 4 != 0) {
+                if mem.read::<u16>(repeat_at) & 0x4000 != 0
+                    || call(mem, REP_BUTTON, &[0x0800_0000]) != 0
+                {
+                    step(mem, 1);
+                }
+                held = mem.read(held_at);
+            }
+            if !(held & 0x1000 != 0 && mem.read::<u8>(held_at) & 1 != 0)
+                && (mem.read::<u16>(repeat_at) & 0x1000 != 0
+                    || call(mem, REP_BUTTON, &[0x1000_0000]) != 0)
+            {
+                step(mem, -1);
+            }
+        }
+        let mut count: i32 = mem.read(count_at);
+        if i32::from(mem.read::<i16>(row_at)) >= count {
+            mem.write(row_at, 0u16);
+            count = mem.read(count_at);
+        }
+        if mem.read::<i16>(row_at) < 0 {
+            // lea eax, [ecx - 1]; mov [w + 0x42], ax
+            let last = count.wrapping_sub(1).to_le_bytes();
+            mem.write(row_at, u16::from_le_bytes([last[0], last[1]]));
+        }
+        // the row's entry of the party list
+        let entry = |mem: &M| {
+            let row = i32::from(mem.read::<i16>(row_at));
+            let list: u32 = mem.read(w.wrapping_add(0x20));
+            list.wrapping_add(row.wrapping_mul(2).cast_unsigned())
+        };
+        let side = |mem: &M| {
+            i32::from(mem.read::<i8>(w.wrapping_add(0xb)))
+                .wrapping_mul(2)
+                .cast_unsigned()
+        };
+        let id: u16 = mem.read(entry(mem));
+        mem.write(w.wrapping_add(0x16).wrapping_add(side(mem)), id);
+        let row: u16 = mem.read(row_at);
+        mem.write(w.wrapping_add(0xe).wrapping_add(side(mem)), row);
+        let id = i32::from(mem.read::<i16>(entry(mem))).cast_unsigned();
+        call(mem, CHANGE_HELP, &[id]);
+        if mem.read::<i16>(row_at) != was {
+            return call(mem, CLICK, &[1]);
+        }
+        let trigger_at = mem.rebase(PAD_TRIGGER);
+        if mem.read::<u32>(mem.rebase(0x0133_d6e0)) == 1 {
+            mem.write(trigger_at, 0x40u16);
+        }
+        let trigger: u8 = mem.read(trigger_at);
+        let step_level = |mem: &mut M| {
+            let at = w.wrapping_add(1);
+            mem.write(at, mem.read::<u8>(at).wrapping_add(1));
+        };
+        if trigger & 0x40 != 0 {
+            if mem.read::<i8>(mem.rebase(0x023c_c092)) <= 0 {
+                return 0;
+            }
+            call(mem, PREV_ACTION, &[]);
+            step_level(mem);
+            return call(mem, CLICK, &[4]);
+        }
+        if trigger & 0x20 == 0 {
+            return 0;
+        }
+        let args = |mem: &M| {
+            [
+                i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned(),
+                u32::from(mem.read::<u16>(w.wrapping_add(0x16))),
+            ]
+        };
+        let a = args(mem);
+        if call(mem, CHECK_USE, &a).cast_signed() < 0 {
+            return call(mem, CLICK, &[3]);
+        }
+        step_level(mem);
+        let a = args(mem);
+        call(mem, NEXT_ACTION, &a);
+        call(mem, CLICK, &[1])
     }
 
     /// `TOBtlGetLeftPad(w)` (`0x008a22f0`, `cancel` 0x2000) and
