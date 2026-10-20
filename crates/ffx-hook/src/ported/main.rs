@@ -2197,6 +2197,13 @@ ported! {
     eiAbmSetLang @ 0x00a5_4ab0 => extern "C" fn ei_abm_set_lang() -> u32 {
         abmap::bridge::ei_abm_set_lang(&mut mem())
     }
+    /// `Sg_FrameSync(dt)` (`0x00821e80`): the clock through
+    /// `graphicGetTimeInMicroseconds`' `edx:eax`.
+    Sg_FrameSync @ 0x0082_1e80 => extern "C" fn sg_frame_sync(dt: u32) -> u32 {
+        let mut m = mem();
+        let at = ffx_bridge::Mem::rebase(&m, state::bridge::TIME_US);
+        state::bridge::frame_sync(&mut m, dt, &mut |_| super::call_cdecl_u64(at, &[]))
+    }
     /// `eiAbmLoad()`.
     eiAbmLoad @ 0x00a5_4810 => extern "C" fn ei_abm_load() -> u32 {
         abmap::bridge::ei_abm_load(&mut mem())

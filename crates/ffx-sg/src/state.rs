@@ -3192,4 +3192,223 @@ pub mod bridge {
         }
         n
     }
+
+    /// `0x00821e80`'s state (`Sg_FrameSync`, name ours): the frame
+    /// remainder and the voice frame remainder (`f32`), the voice hold
+    /// count, the sync frame index, the sync clock's start, accumulated
+    /// pause and its pending add (64-bit microseconds), the sync on flag,
+    /// its last, now, step time and rate (`f32`), the camera restart
+    /// flag, the v-blank counters, the pause and fade words, the debug
+    /// byte.
+    pub const FS_REMAINDER: Global<u32> = Global::new(0x012f_b7f8);
+    pub const FS_VOICE_REMAINDER: Global<u32> = Global::new(0x012f_b7fc);
+    pub const FS_VOICE_HOLD: Global<u32> = Global::new(0x012f_b808);
+    pub const FS_SYNC_INDEX: Global<u32> = Global::new(0x012f_b814);
+    pub const FS_START: Global<u64> = Global::new(0x012f_b818);
+    pub const FS_PAUSED: Global<u64> = Global::new(0x012f_b7e8);
+    pub const FS_PAUSE_ADD: Global<u64> = Global::new(0x00cc_c868);
+    pub const FS_SYNC_ON: Global<u32> = Global::new(0x012f_b8a0);
+    pub const FS_SYNC_LAST: Global<u32> = Global::new(0x012f_b8a4);
+    pub const FS_SYNC_NOW: Global<u32> = Global::new(0x012f_b8a8);
+    pub const FS_SYNC_STEP: Global<u32> = Global::new(0x012f_b8ac);
+    pub const FS_SYNC_RATE: Global<u32> = Global::new(0x012f_b8b0);
+    pub const FS_RESTART: Global<u32> = Global::new(0x00c4_94d4);
+    pub const FS_VCOUNT: Global<u32> = Global::new(0x012f_b7f0);
+    pub const FS_VCOUNT2: Global<u32> = Global::new(0x012f_b7f4);
+    pub const FS_MOVIE_FADING: Global<u32> = Global::new(0x0134_0824);
+    pub const FS_PAUSE_ON: Global<u32> = Global::new(0x0134_0828);
+    pub const FS_PAUSE_2: Global<u32> = Global::new(0x0134_082c);
+    pub const FS_IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
+    /// `setFramSync()`, `Sg_SyncCutScene()`,
+    /// `graphicGetTimeInMicroseconds()` (64-bit), `Sg_CanSpeedUp()`,
+    /// `SaveDataIsScreenClosed()`, `TkScanControler()`, `Gu_VSyncMain()`
+    /// (debug), `Sg_EffectReadPoll(dt)`.
+    pub const SET_FRAM_SYNC: u32 = 0x0082_2720;
+    pub const SYNC_CUT_SCENE: u32 = 0x0082_1d60;
+    pub const TIME_US: u32 = 0x0064_1420;
+    pub const CAN_SPEED_UP: u32 = 0x0081_fd30;
+    pub const SCREEN_CLOSED: u32 = 0x0064_8100;
+    pub const SCAN_CONTROLER: u32 = 0x0088_93e0;
+    pub const VSYNC_MAIN: u32 = 0x0084_a460;
+    pub const EFFECT_READ_POLL: u32 = 0x0082_2250;
+    /// `.rdata`: 0.3 (`f32`, and as `f64`), 60, 1000, 0.1, 30 (`f64`), 2
+    /// (`f32`).
+    const FS_K03_F32: u32 = 0x00b3_eb44;
+    const FS_K03: u32 = 0x00b4_8308;
+    const FS_K60: u32 = 0x00b4_a180;
+    const FS_K1000: u32 = 0x00b0_dba0;
+    const FS_K01: u32 = 0x00b9_21f0;
+    const FS_K30: u32 = 0x00b9_22c8;
+    const FS_K2_F32: u32 = 0x00b9_2268;
+
+    /// The sync clock in seconds (`f32`): microseconds since the start
+    /// less the paused time, `u64` to float (one rounding), to `f32`,
+    /// over 1000, to `f32`.
+    fn fs_seconds(h: &impl Mem, now: u64) -> u32 {
+        let d = now
+            .wrapping_sub(FS_PAUSED.get(h))
+            .wrapping_sub(FS_START.get(h));
+        #[allow(clippy::cast_precision_loss)] // the original's u64 to float
+        let us = ffx_bridge::x87::load(ffx_bridge::x87::store(d as f64));
+        ffx_bridge::x87::store(ffx_bridge::x87::div(us, h.read::<f64>(h.rebase(FS_K1000))))
+    }
+
+    /// `0x00821e80(dt)` (`Sg_FrameSync`, name ours; from `Sg_MainLoop`
+    /// each frame, `dt` the frame's seconds as `f32`). `dt` is capped at
+    /// 0.3; the frames due are (remainder + `dt`) x 60. Unless the voice
+    /// hold runs (`0x012fb808`): the cut-scene sync (`Sg_SyncCutScene`,
+    /// index 0); while it is on, the sync clock (`time` gives
+    /// `graphicGetTimeInMicroseconds`) either restarts (`0x00c494d4`) or
+    /// takes the pending pause and is read: behind the step time it
+    /// steps (hold and index up, the sync again) while the rate is below
+    /// how far it is ahead and the sync stays on; ahead by 0.1 s or more
+    /// it spins until the clock catches up. Off, fewer than 2 frames due
+    /// or no speed-up (`Sg_CanSpeedUp`) holds 1 with both remainders 0;
+    /// else the whole frames go to the hold (`ftol` of the voice frames
+    /// x 30) and the fractions stay. Then the v-blank counters (+2 when
+    /// no movie fade, no pause and the save screen is closed), the pad
+    /// scan, `Gu_VSyncMain` in debug builds, and `Sg_EffectReadPoll(dt)`,
+    /// whose `eax` it returns.
+    #[allow(clippy::too_many_lines)] // one frame, in the original's order
+    pub fn frame_sync<H: ffx_bridge::Host>(
+        h: &mut H,
+        dt: u32,
+        time: &mut impl FnMut(&mut H) -> u64,
+    ) -> u32 {
+        let call = |h: &mut H, f: u32, args: &[u32]| {
+            let f = h.rebase(f);
+            h.call(f, args)
+        };
+        let k = |h: &H, at: u32| h.read::<f64>(h.rebase(at));
+        let remainder = ffx_bridge::x87::load(FS_REMAINDER.get(h));
+        let mut due = ffx_bridge::x87::store(ffx_bridge::x87::mul(
+            ffx_bridge::x87::add(remainder, ffx_bridge::x87::load(dt)),
+            k(h, FS_K60),
+        ));
+        call(h, SET_FRAM_SYNC, &[]);
+        let cap = ffx_bridge::x87::load(h.read(h.rebase(FS_K03_F32)));
+        let mut dt = dt;
+        if ffx_bridge::x87::load(dt) > cap {
+            dt = ffx_bridge::x87::store(cap);
+            let remainder = ffx_bridge::x87::load(FS_REMAINDER.get(h));
+            due = ffx_bridge::x87::store(ffx_bridge::x87::mul(
+                ffx_bridge::x87::add(remainder, k(h, FS_K03)),
+                k(h, FS_K60),
+            ));
+        }
+        if FS_VOICE_HOLD.get(h) == 0 {
+            FS_SYNC_INDEX.set(h, 0);
+            call(h, SYNC_CUT_SCENE, &[]);
+            let through =
+                |h: &H, g: Global<u32>| ffx_bridge::x87::store(ffx_bridge::x87::load(g.get(h)));
+            if FS_SYNC_ON.get(h) == 1 {
+                let restart = FS_RESTART.get(h) == 1;
+                FS_VOICE_HOLD.set(h, 1);
+                if restart {
+                    let now = time(h);
+                    let step = through(h, FS_SYNC_STEP);
+                    FS_SYNC_LAST.set(h, step);
+                    FS_START.set(h, now);
+                    FS_RESTART.set(h, 0);
+                    FS_PAUSE_ADD.set(h, 0);
+                    FS_PAUSED.set(h, 0);
+                } else {
+                    let now = time(h);
+                    let paused = FS_PAUSED.get(h).wrapping_add(FS_PAUSE_ADD.get(h));
+                    FS_PAUSED.set(h, paused);
+                    FS_PAUSE_ADD.set(h, 0);
+                    FS_SYNC_NOW.set(h, fs_seconds(h, now));
+                    let f = |h: &H, g: Global<u32>| ffx_bridge::x87::load(g.get(h));
+                    let (now, last) = (f(h, FS_SYNC_NOW), f(h, FS_SYNC_LAST));
+                    if last > now {
+                        // ahead: spin while 0.1 s or more ahead
+                        let t = time(h);
+                        FS_SYNC_NOW.set(h, fs_seconds(h, t));
+                        let ahead = |h: &H| {
+                            // not below 0.1, or unordered
+                            ffx_bridge::x87::sub(f(h, FS_SYNC_LAST), f(h, FS_SYNC_NOW))
+                                .partial_cmp(&k(h, FS_K01))
+                                != Some(std::cmp::Ordering::Less)
+                        };
+                        if ahead(h) {
+                            loop {
+                                let t = time(h);
+                                FS_SYNC_NOW.set(h, fs_seconds(h, t));
+                                if !ahead(h) {
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        // behind: step while the rate is below the lag
+                        let behind = |h: &H| {
+                            f(h, FS_SYNC_RATE)
+                                < ffx_bridge::x87::sub(f(h, FS_SYNC_NOW), f(h, FS_SYNC_LAST))
+                        };
+                        if behind(h) {
+                            while FS_SYNC_ON.get(h) == 1 {
+                                let step = through(h, FS_SYNC_STEP);
+                                FS_VOICE_HOLD.set(h, FS_VOICE_HOLD.get(h).wrapping_add(1));
+                                FS_SYNC_INDEX.set(h, FS_SYNC_INDEX.get(h).wrapping_add(1));
+                                FS_SYNC_LAST.set(h, step);
+                                call(h, SYNC_CUT_SCENE, &[]);
+                                if !behind(h) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    let step = through(h, FS_SYNC_STEP);
+                    FS_SYNC_LAST.set(h, step);
+                }
+            } else {
+                let two = ffx_bridge::x87::load(h.read(h.rebase(FS_K2_F32)));
+                let due_f = ffx_bridge::x87::load(due);
+                // 2 frames or more due, or unordered
+                let speed = due_f.partial_cmp(&two) != Some(std::cmp::Ordering::Less)
+                    && call(h, CAN_SPEED_UP, &[]) != 0;
+                if speed {
+                    let whole = ffx_bridge::x87::ftol(h, due_f);
+                    let whole_f = ffx_bridge::x87::load(ffx_bridge::x87::store(f64::from(
+                        whole.cast_signed(),
+                    )));
+                    let frac =
+                        ffx_bridge::x87::div(ffx_bridge::x87::sub(due_f, whole_f), k(h, FS_K60));
+                    FS_REMAINDER.set(h, ffx_bridge::x87::store(frac));
+                    let voice = ffx_bridge::x87::load(FS_VOICE_REMAINDER.get(h));
+                    let thirty = k(h, FS_K30);
+                    let frames =
+                        ffx_bridge::x87::load(ffx_bridge::x87::store(ffx_bridge::x87::mul(
+                            ffx_bridge::x87::add(voice, ffx_bridge::x87::load(dt)),
+                            thirty,
+                        )));
+                    let hold = ffx_bridge::x87::ftol(h, frames);
+                    FS_VOICE_HOLD.set(h, hold);
+                    let hold_f = ffx_bridge::x87::load(ffx_bridge::x87::store(f64::from(
+                        hold.cast_signed(),
+                    )));
+                    let frac = ffx_bridge::x87::div(ffx_bridge::x87::sub(frames, hold_f), thirty);
+                    FS_VOICE_REMAINDER.set(h, ffx_bridge::x87::store(frac));
+                } else {
+                    FS_VOICE_HOLD.set(h, 1);
+                    FS_REMAINDER.set(h, 0);
+                    FS_VOICE_REMAINDER.set(h, 0);
+                }
+            }
+        }
+        if FS_MOVIE_FADING.get(h) == 0
+            && FS_PAUSE_ON.get(h) == 0
+            && FS_PAUSE_2.get(h) == 0
+            && call(h, SCREEN_CLOSED, &[]) != 0
+        {
+            FS_VCOUNT.set(h, FS_VCOUNT.get(h).wrapping_add(2));
+            FS_VCOUNT2.set(h, FS_VCOUNT2.get(h).wrapping_add(2));
+        }
+        call(h, SCAN_CONTROLER, &[]);
+        if FS_IS_DEBUG.get(h) != 0 {
+            call(h, VSYNC_MAIN, &[]);
+        }
+        let dt = ffx_bridge::x87::store(ffx_bridge::x87::load(dt));
+        call(h, EFFECT_READ_POLL, &[dt])
+    }
 }

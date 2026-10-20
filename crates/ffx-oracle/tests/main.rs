@@ -8982,3 +8982,155 @@ fn abm_load_snapshot() {
     let mut rng = Xorshift(0x5eed_1112);
     abm_load_cases(&mut a, &mut b, &mut rng, 50);
 }
+
+/// `Sg_FrameSync` over stand-ins: the microsecond clock answers a list
+/// (around the sync's last time, then later), the cut-scene sync turns the
+/// sync off after a count; every branch of the frame and voice hold.
+#[allow(clippy::too_many_lines)] // the stand-ins, then the state
+fn frame_sync_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let stands = [
+        (st::SET_FRAM_SYNC, 0),
+        (st::CAN_SPEED_UP, 0),
+        (st::SCREEN_CLOSED, 0),
+        (st::SCAN_CONTROLER, 0),
+        (st::VSYNC_MAIN, 0),
+        (st::EFFECT_READ_POLL, 1),
+    ];
+    for (k, &(sym, n)) in (1u32..).zip(&stands) {
+        recorder(a, b, k, sym, n, 0);
+    }
+    // the sync: logged; after `[count]` calls it stores `[off]` in the
+    // on flag
+    let (count, off) = (alloc(a, b, 4), alloc(a, b, 4));
+    let on = a.rebase(st::FS_SYNC_ON.sym);
+    let mut c = vec![0xa1];
+    c.extend(count.to_le_bytes()); // mov eax, [count]
+    c.extend([0x85, 0xc0, 0x75, 0x0d, 0x8b, 0x0d]); // test eax, eax; jnz more; mov ecx, [off]
+    c.extend(off.to_le_bytes());
+    c.extend([0x89, 0x0d]);
+    c.extend(on.to_le_bytes()); // mov [on], ecx
+    c.extend([0xc3, 0xff, 0x0d]); // ret; more: dec dword [count]
+    c.extend(count.to_le_bytes());
+    c.push(0xc3);
+    logged(a, b, 7, st::SYNC_CUT_SCENE, 0, &c);
+    // the clock: the next of a list of 64-bit times
+    let (cursor, times) = (alloc(a, b, 4), alloc(a, b, 8 * 40));
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(cursor.to_le_bytes()); // mov ecx, [cursor]
+    c.extend([0x8b, 0x01, 0x8b, 0x51, 0x04, 0x83, 0x05]); // mov eax, [ecx]; mov edx, [ecx+4]; add dword [cursor], 8
+    c.extend(cursor.to_le_bytes());
+    c.extend([8, 0xc3]);
+    logged(a, b, 8, st::TIME_US, 0, &c);
+    let time_us = a.rebase(st::TIME_US);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..9 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        let at = ret(a, 2);
+        put(a, b, at, rng.below(2));
+        let frac = |rng: &mut Xorshift| float_within(rng, 1.0) & 0x7fff_ffff;
+        let rem = if rng.below(4) == 0 { 0 } else { frac(rng) };
+        set(a, b, st::FS_REMAINDER, rem);
+        set(a, b, st::FS_VOICE_REMAINDER, frac(rng));
+        set(
+            a,
+            b,
+            st::FS_VOICE_HOLD,
+            [0, 0, 0, 1, 2][rng.below(5) as usize],
+        );
+        set(a, b, st::FS_SYNC_ON, [1, 1, 0, 2][rng.below(4) as usize]);
+        set(a, b, st::FS_RESTART, [0, 0, 1, 2][rng.below(4) as usize]);
+        put(a, b, count, rng.below(4));
+        put(a, b, off, [0u32, 2][rng.below(2) as usize]);
+        let start = u64::from(rng.next());
+        let paused = u64::from(rng.below(1_000_000));
+        let add = u64::from(rng.below(1000));
+        set(a, b, st::FS_START, start);
+        set(a, b, st::FS_PAUSED, paused);
+        set(a, b, st::FS_PAUSE_ADD, add);
+        #[allow(clippy::cast_precision_loss)] // test values
+        let last = (rng.below(1_000_000) as f32) / 10.0;
+        set(a, b, st::FS_SYNC_LAST, last.to_bits());
+        set(
+            a,
+            b,
+            st::FS_SYNC_STEP,
+            (last + [0.0f32, 16.6, 33.3][rng.below(3) as usize]).to_bits(),
+        );
+        set(
+            a,
+            b,
+            st::FS_SYNC_RATE,
+            [16.6f32, 0.0, 100.0][rng.below(3) as usize].to_bits(),
+        );
+        set(a, b, st::FS_SYNC_NOW, rng.float());
+        // the clock: about the last time, then 30 ms steps, then far on
+        let step = [30.0f64, 0.04, 0.0][rng.below(3) as usize];
+        let delta = [
+            -200.0f64, -50.0, -0.2, -0.15, -0.1, -0.05, 0.0, 0.05, 50.0, 200.0,
+        ][rng.below(10) as usize];
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // test values
+        let at_ms = |ms: f64| start + paused + add + (ms * 1000.0).max(0.0) as u64;
+        for k in 0..40u32 {
+            let t = if k < 36 {
+                at_ms(f64::from(last) + delta + step * f64::from(k))
+            } else {
+                u64::MAX / 2
+            };
+            put(a, b, times + 8 * k, t);
+        }
+        if rng.below(10) == 0 {
+            put(a, b, times, start.wrapping_sub(1));
+        }
+        // exactly 0.1 ms ahead: the last time f32 0.1, the clock at 0
+        if rng.below(10) == 0 {
+            set(a, b, st::FS_SYNC_LAST, 0.1f32.to_bits());
+            put(a, b, times, start + paused + add);
+            put(a, b, times + 8, start + paused + add);
+        }
+        put(a, b, cursor, times);
+        for g in [st::FS_MOVIE_FADING, st::FS_PAUSE_ON, st::FS_PAUSE_2] {
+            set(a, b, g, u32::from(rng.below(4) == 0));
+        }
+        set(a, b, st::FS_IS_DEBUG, [0u8, 1, 0x80][rng.below(3) as usize]);
+        set(a, b, st::FS_VCOUNT, rng.next());
+        set(a, b, st::FS_VCOUNT2, rng.next());
+        let dt = match rng.below(6) {
+            0 => 0x3e99_999a, // 0.3
+            1 => 0x3c88_8889, // 1/60
+            2 => 0x3d08_8889, // 1/30
+            3 => 0x3f00_0000,
+            4 => rng.float(),
+            _ => float_within(rng, 0.4),
+        };
+        twin("Sg_FrameSync", a, b, 0x0082_1e80, &[dt], |m| {
+            st::frame_sync(&mut H(m), dt, &mut |h| {
+                let r = h.0.call(time_us, Conv::Cdecl, &[]).unwrap();
+                u64::from(r.edx) << 32 | u64::from(r.eax)
+            })
+        });
+    }
+}
+
+#[test]
+fn frame_sync_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1113);
+    frame_sync_cases(&mut a, &mut b, &mut rng, 3000);
+}
+
+#[test]
+fn frame_sync_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1114);
+    frame_sync_cases(&mut a, &mut b, &mut rng, 1000);
+}
