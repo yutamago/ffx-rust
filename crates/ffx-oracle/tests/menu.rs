@@ -11067,3 +11067,644 @@ fn menu_round24_item_rows_and_name_entry_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Code that appends `id` and its `n` word arguments to the shared log
+/// at `[log]`, then `extra` (which may read the arguments), then
+/// `mov eax, [cell]; ret`.
+fn seq_code(log: u32, id: u32, n: u8, cell: u32, extra: &[u8]) -> Vec<u8> {
+    let args: Vec<u8> = (0..n).collect();
+    seq_code_of(log, id, &args, cell, extra)
+}
+
+/// [`seq_code`] logging only the arguments `args` (indices).
+fn seq_code_of(log: u32, id: u32, args: &[u8], cell: u32, extra: &[u8]) -> Vec<u8> {
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+    code.extend([&[0xc7, 0x01][..], &id.to_le_bytes()].concat()); // mov dword [ecx], id
+    let mut at = 4u8;
+    for &k in args {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, at]);
+        at += 4;
+    }
+    code.extend([&[0x83, 0x05][..], &l, &[at]].concat()); // add dword [log], 4 + 4n
+    code.extend(extra);
+    code.extend([&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()); // mov eax, [cell]; ret
+    code
+}
+
+/// A shared call log: the cell holding the write pointer.
+fn seq_log(t: &mut Twins) -> u32 {
+    let buf = t.alloc(&vec![0; 0x4_0000]);
+    t.alloc(&buf.to_le_bytes())
+}
+
+/// `f` replaced (behind a jump) by [`seq_code`]; returns the result cell.
+fn seq_stub(t: &mut Twins, f: u32, log: u32, n: u8, extra: &[u8]) -> u32 {
+    let cell = t.alloc(&[0; 4]);
+    let code = seq_code(log, f, n, cell, extra);
+    jump_stub(t, f, &code);
+    cell
+}
+
+/// Fresh random results in `cells`.
+fn reroll(t: &mut Twins, cells: &[u32]) {
+    for &c in cells {
+        let v = t.rng.next();
+        t.put(c, v);
+    }
+}
+
+#[test]
+fn menu_round25_rows_pads_draw_cursor_and_count_plate_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0025_aea0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    // every call logs from the start (each call's log is compared on its own)
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // MenuItem_DrawRowPairs: the rows logged
+    seq_stub(&mut t, 0x008d_af50, log, 4, &[]);
+    for _ in 0..300 {
+        t.put(log, start);
+        let window = t.rng.next();
+        let pair = t
+            .rng
+            .pick_or_any(&[0, 1, 0x7fff_ffff, 0x8000_0000, 0xffff_ffff]);
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let args = [window, t.rng.next(), pair, x, y];
+        t.twin("MenuItem_DrawRowPairs", 0x008d_aea0, &args, VOID, |o| {
+            tk::menu_item_draw_row_pairs(
+                o,
+                window,
+                pair,
+                [f32::from_bits(x), f32::from_bits(y)],
+                &mut ui_remap,
+                &mut callback,
+            );
+            0
+        });
+    }
+
+    // Pad_UpdateFrame: the work from a cell, TkGetControlerFrame the
+    // original, the repeats from their arguments, the reset logged
+    let work_cell = seq_stub(&mut t, 0x0088_8ec0, log, 2, &[]);
+    #[rustfmt::skip]
+    let mix = [
+        0x8b, 0x44, 0x24, 0x0c, 0x33, 0x44, 0x24, 0x10, // mov eax, [esp + 12]; xor eax, [esp + 16]
+        0x03, 0x44, 0x24, 0x14, 0xc1, 0xc0, 0x05,       // add eax, [esp + 20]; rol eax, 5
+        0x50, 0x58,                                     // push eax; pop eax
+    ];
+    let repeat_cell = t.alloc(&[0; 4]);
+    let mut code = seq_code(log, 0x0088_9940, 5, repeat_cell, &mix);
+    // the mix is the result: drop the cell load
+    code.truncate(code.len() - 6);
+    code.push(0xc3);
+    jump_stub(&mut t, 0x0088_9940, &code);
+    let reset_cell = seq_stub(&mut t, 0x0088_8970, log, 1, &[]);
+    for _ in 0..1000 {
+        t.put(log, start);
+        let work = t.alloc_random(0x100);
+        t.put(work_cell, work);
+        let mode = t.rng.pick(&[0u8, 1, 1, 2, 2, 3, 0xff]);
+        t.put(work + 0x81, mode);
+        let keep = t.rng.pick(&[0u8, 0, 1, 0x80]);
+        t.put(work + 0x9e, keep);
+        reroll(&mut t, &[reset_cell]);
+        let (a, b) = (t.rng.next(), t.rng.next());
+        t.twin("Pad_UpdateFrame", 0x0088_9790, &[a, b], U32, |o| {
+            w(tk::pad_update_frame(o, a, b, &mut callback))
+        });
+    }
+
+    // TkMenuDrawAll: every callee, the slots' callbacks and the task logged
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008d_ce30u32, 0u8),
+        (0x008d_d440, 0),
+        (0x008f_5c60, 2),
+        (0x008d_ce50, 0),
+        (0x0088_ec60, 0),
+        (0x008a_9690, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let abmap = seq_stub(&mut t, 0x0064_1060, log, 0, &[]);
+    let mut callbacks = Vec::new();
+    for k in 0..4u32 {
+        let cell = t.alloc(&[0; 4]);
+        // the task (3) takes no argument
+        let code = seq_code(log, 0x100 + k, u8::from(k < 3), cell, &[]);
+        callbacks.push(test_code(&mut t, &code));
+    }
+    let task_fn = callbacks[3];
+    let task = t.alloc(&task_fn.to_le_bytes());
+    let slots = t.sym(tk::MENU_SLOTS.sym);
+    for round in 0..600u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let ab = t.rng.pick(&[0u32, 1, 1, 2, 0xffff_ffff]);
+        t.put(abmap, ab);
+        let first = t.rng.pick(&[0u8, 0, 1, 0xff]);
+        t.put(t.sym(0x0134_0859), first);
+        let pkt = t.rng.pick_or_any(&[0, 0, 1]);
+        t.put(t.sym(0x0187_1538), pkt);
+        let map = t.rng.pick(&[0x17eu32, 0x17e, 0x17f, 0, 0x1_017e]);
+        t.put(t.sym(0x0133_0844), map);
+        t.scramble(0x025d_1678, 8);
+        let mode = t.rng.pick(&[
+            0x0040_0000u32,
+            0x0040_ffff,
+            0x0041_0000,
+            0x00c0_0000,
+            0x0140_0000,
+            0,
+        ]);
+        let mode = mode ^ (t.rng.next() & 0xffff);
+        t.put(t.sym(tk::MN2_MENU_MODE.sym), mode);
+        let mask = t.rng.pick_or_any(&[0, 0xffff_ffff, 0x0100_0001]);
+        t.put(t.sym(0x0184_08f0), mask);
+        for k in 0..25u32 {
+            let menu = if t.rng.below(4) == 0 {
+                0
+            } else {
+                let m = t.alloc_random(0x20);
+                let cb = t.rng.pick(&[0, callbacks[0], callbacks[1], callbacks[2]]);
+                t.put(m + 4, cb);
+                for o in [0x19u32, 0x1b] {
+                    let on = t.rng.pick(&[0u8, 0, 1, 0x80]);
+                    t.put(m + o, on);
+                }
+                m
+            };
+            t.put(slots + 4 * k, menu);
+        }
+        let main = if round % 3 == 0 { 0 } else { task };
+        t.put(t.sym(tk::MENU_MAIN_TASK.sym), main);
+        let early = first == 0 && pkt != 0 && map != 0x17e;
+        let mask = if early { VOID } else { U32 };
+        t.twin("TkMenuDrawAll", 0x008a_a290, &[], mask, |o| {
+            w(tk::tk_menu_draw_all(o, &mut callback))
+        });
+    }
+
+    // MenuSelList_CursorX: names logged, the widths from a table in turn
+    let summon = seq_stub(&mut t, 0x0087_3b50, log, 1, &[]);
+    let mes = seq_stub(&mut t, 0x008d_dfc0, log, 1, &[]);
+    let widths = t.alloc(&[0; 0x100]);
+    let wptr = t.alloc(&widths.to_le_bytes());
+    let p = wptr.to_le_bytes();
+    #[rustfmt::skip]
+    let next_width: Vec<u8> = [
+        &[0x8b, 0x0d][..], &p,                      // mov ecx, [wptr]
+        &[0x8b, 0x01],                              // mov eax, [ecx]
+        &[0x83, 0x05], &p, &[0x04],                 // add dword [wptr], 4
+        &[0x8b, 0x54, 0x24, 0x08, 0x89, 0x02],      // mov edx, [esp + 8]; mov [edx], eax
+    ]
+    .concat();
+    // the out pointer (argument 1) is the original's argument slot: not logged
+    let width_cell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0090_5290, &[0, 2, 3, 4], width_cell, &next_width);
+    jump_stub(&mut t, 0x0090_5290, &code);
+    let list = t.sym(tk::MENU_ITEM_LIST.sym);
+    for _ in 0..1000 {
+        t.put(log, start);
+        reroll(&mut t, &[summon, mes, width_cell]);
+        for k in 0..64u32 {
+            let v = match t.rng.below(6) {
+                0 => quiet_float(&mut t),
+                1 => f32::NAN.to_bits(),
+                _ => t.rng.float(-50.0, 900.0).to_bits(),
+            };
+            t.put(widths + 4 * k, v);
+        }
+        t.put(wptr, widths);
+        let window = t.alloc_random(0x50);
+        let n = t.rng.pick(&[0u16, 1, 2, 5, 20, 40, 0x101]);
+        t.put(window + 0x30, n);
+        for k in 0..u32::from(n) {
+            let id = u16::try_from(t.rng.next() & 0xffff).unwrap_or(0);
+            let kind = t.rng.pick(&[0u8, 1, 2, 2, 3, 3, 3, 4, 0xff]);
+            let kind = if kind == 1 && t.rng.below(3) != 0 {
+                2
+            } else {
+                kind
+            };
+            let on = t.rng.pick(&[0u8, 1, 1, 0x80]);
+            t.put(list + 4 * k, id);
+            t.put(list + 4 * k + 2, kind);
+            t.put(list + 4 * k + 3, on);
+        }
+        t.twin_f("MenuSelList_CursorX", 0x008d_1bc0, &[window], |o| {
+            tk::menu_sel_list_cursor_x(o, window, local, &mut ui_remap, &mut callback)
+        });
+    }
+
+    // TkMn2DrawCrossSummonBattleCountPlate: every callee logged
+    let player = seq_stub(&mut t, 0x0078_5330, log, 1, &[]);
+    let mut cells = vec![player];
+    for (f, n) in [
+        (0x0090_3ee0u32, 11u8),
+        (0x008d_e140, 1),
+        (0x0090_16b0, 7),
+        (0x008c_2c60, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let p = t.alloc_random(0x40);
+        t.put(player, p);
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let chr = t.rng.next();
+        t.twin(
+            "TkMn2DrawCrossSummonBattleCountPlate",
+            0x008c_d720,
+            &[x, y, chr],
+            U32,
+            |o| {
+                w(tk::tk_mn2_draw_cross_summon_battle_count_plate(
+                    o,
+                    [f32::from_bits(x), f32::from_bits(y)],
+                    chr,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round25_gear_sort_shop_rows_and_grow_rows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0025_9fb0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let list = t.sym(tk::MENU_ITEM_LIST.sym);
+
+    // MsGetSaveWeapon(id, &out): the id logged (not the out pointer, a
+    // frame word), the record at table + (id & 0xff) * 8, owner byte +4
+    let table = t.alloc_random(0x800);
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = Vec::new();
+    #[rustfmt::skip]
+    code.extend([
+        &[0x8b, 0x0d][..], &l,                          // mov ecx, [log]
+        &[0xc7, 0x01], &0x007a_bbd0u32.to_le_bytes(),   // mov dword [ecx], id
+        &[0x8b, 0x44, 0x24, 0x04, 0x89, 0x41, 0x04],    // [ecx + 4] = arg 0
+        &[0x83, 0x05], &l, &[0x08],                     // add dword [log], 8
+        &[0x8b, 0x54, 0x24, 0x08],                      // mov edx, [esp + 8]
+        &[0xc7, 0x02, 0x0b, 0x0b, 0x0b, 0x0b],          // mov dword [edx], 0x0b0b0b0b (the out word)
+        &[0x8b, 0x44, 0x24, 0x04, 0x25, 0xff, 0, 0, 0], // mov eax, [esp + 4]; and eax, 0xff
+        &[0x8d, 0x04, 0xc5], &table.to_le_bytes(),      // lea eax, [table + eax * 8]
+        &[0xc3],
+    ]
+    .concat());
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+
+    // MenuItem_SortGearByOwner: groups that fit the list, owners that are
+    // found or not, Menu_FindByte the original, the swaps logged
+    let n_cell = seq_stub(&mut t, 0x008c_1bc0, log, 0, &[]);
+    seq_stub(&mut t, 0x007a_b9f0, log, 2, &[]);
+    let counts = t.sym(0x0186_a3e4);
+    for round in 0..1500u32 {
+        t.put(log, start);
+        let n = t.rng.pick(&[0u32, 1, 3, 8, 20, 40, 64]);
+        let n = if round % 50 == 0 { 0xffff_ffff } else { n };
+        t.put(n_cell, n);
+        let mut left = if n > 0x100 { 0 } else { n };
+        let mut sizes = [0u32; 7];
+        for k in 0..14u32 {
+            let c = if left == 0 {
+                0
+            } else {
+                t.rng.below(left.min(9) + 1)
+            };
+            left -= c;
+            sizes[(k / 2) as usize] += c;
+            t.put(counts + 2 * k, u16::try_from(c).unwrap_or(0));
+        }
+        if round % 2 == 0 {
+            // ids 0.. with owners that fill the groups, shuffled: the sort
+            // finds every one it needs
+            let mut owners: Vec<u8> = (0..7u8)
+                .flat_map(|o| std::iter::repeat_n(o, sizes[o as usize] as usize))
+                .collect();
+            while owners.len() < n.min(0x100) as usize {
+                owners.push(t.rng.pick(&[0u8, 3, 6, 7]));
+            }
+            for k in (1..owners.len()).rev() {
+                let j = t.rng.below(u32::try_from(k).unwrap_or(0) + 1) as usize;
+                owners.swap(k, j);
+            }
+            for (k, &o) in (0u32..).zip(&owners) {
+                t.put(table + 8 * k + 4, o);
+                t.put(list + 4 * k, u16::try_from(k).unwrap_or(0));
+            }
+        } else {
+            for k in 0..0x100u32 {
+                let o = match t.rng.below(10) {
+                    0 => t.rng.pick(&[7u8, 0xff, 0x80]),
+                    _ => u8::try_from(t.rng.below(7)).unwrap_or(0),
+                };
+                t.put(table + 8 * k + 4, o);
+            }
+            let ids = t.rng.bytes(4 * 64);
+            t.put_bytes(list, &ids);
+        }
+        t.twin("MenuItem_SortGearByOwner", 0x008c_9fb0, &[], U32, |o| {
+            w(tk::menu_item_sort_gear_by_owner(
+                o,
+                local,
+                local + 0x400,
+                &mut callback,
+            ))
+        });
+    }
+
+    // the shop rows: every callee logged
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008d_b3b0u32, 1u8),
+        (0x008f_5f70, 5),
+        (0x0090_3ee0, 11),
+        (0x0090_55c0, 6),
+        (0x008e_6700, 4),
+        (0x008d_9170, 1),
+        (0x008d_9370, 1),
+        (0x008e_6970, 4),
+        (0x008d_9410, 1),
+        (0x008b_eeb0, 1),
+        (0x0090_5ab0, 6),
+        (0x008a_9880, 0),
+        (0x0078_5330, 1),
+        (0x008c_eca0, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let can = [
+        seq_stub(&mut t, 0x008d_ab30, log, 1, &[]),
+        seq_stub(&mut t, 0x008d_85d0, log, 1, &[]),
+    ];
+    t.scramble(0x00c5_a608, 0x1c * 40);
+    for round in 0..3000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        for c in can {
+            let v = t.rng.pick_or_any(&[0, 0, 1]);
+            t.put(c, v);
+        }
+        let window = t.alloc_random(0x50);
+        let count = t.rng.pick(&[0u16, 1, 5, 12, 0x100, 0xffff]);
+        t.put(window + 0x30, count);
+        let row = t
+            .rng
+            .pick_or_any(&[0, 1, 4, 5, 11, 12, 31, 32, 0xff, 0xffff_ffff, 0x8000_0000]);
+        let row = if row > 0x1000 && row < 0x8000_0000 {
+            row & 0x3f
+        } else {
+            row
+        };
+        let ids = t.alloc_random(0x200);
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let mask = if i(row) < 0 { VOID } else { U32 };
+        let (fx, fy) = (f32::from_bits(x), f32::from_bits(y));
+        match round % 4 {
+            0 => t.twin(
+                "MenuShop_DrawRow",
+                0x008d_ac70,
+                &[window, x, y, row, ids],
+                mask,
+                |o| {
+                    w(tk::menu_shop_draw_row(
+                        o,
+                        window,
+                        [fx, fy],
+                        i(row),
+                        ids,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                },
+            ),
+            1 => t.twin(
+                "MenuWShop_DrawBuyRow",
+                0x008d_8cb0,
+                &[window, x, y, row, ids],
+                mask,
+                |o| {
+                    w(tk::menu_wshop_draw_buy_row(
+                        o,
+                        window,
+                        [fx, fy],
+                        i(row),
+                        ids,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                },
+            ),
+            2 => {
+                if row < 0x200 {
+                    let e = t.rng.bytes(4);
+                    t.put_bytes(list + 4 * row, &e);
+                    let id = t.rng.pick(&[0u16, 0, 1, 0x1234]);
+                    if id != 0x1234 {
+                        t.put(list + 4 * row, id);
+                    }
+                    let on = t.rng.pick(&[0u8, 1, 0x80]);
+                    t.put(list + 4 * row + 3, on);
+                }
+                t.twin(
+                    "MenuWShop_DrawSellRow",
+                    0x008d_8f60,
+                    &[window, x, y, row],
+                    mask,
+                    |o| {
+                        w(tk::menu_wshop_draw_sell_row(
+                            o,
+                            window,
+                            [fx, fy],
+                            i(row),
+                            local,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+            _ => {
+                t.scramble(0x0186_a600, 4);
+                let fixed = t.rng.pick_or_any(&[0, 0, 1]);
+                let mask = if i(row) < 0 || i(row) >= i32::from(count) {
+                    VOID
+                } else {
+                    mask
+                };
+                t.twin(
+                    "MenuSummon_DrawGrowRow",
+                    0x008c_e5c0,
+                    &[window, x, y, row, fixed],
+                    mask,
+                    |o| {
+                        w(tk::menu_summon_draw_grow_row(
+                            o,
+                            window,
+                            [fx, fy],
+                            i(row),
+                            fixed,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// A row loop's port, for the table of three copies.
+type Rows = fn(
+    &mut Oracle,
+    u32,
+    u32,
+    [f32; 2],
+    u32,
+    &mut fn(&mut Oracle, bool, f32) -> f64,
+    &mut fn(&mut Oracle, u32, &[u32]) -> u32,
+);
+
+#[test]
+fn menu_round25_scan_row_loops_and_cursor_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0025_93e0) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // TkScanControler: the busy thunk, the works and the updates logged
+    let mut cells = vec![
+        seq_stub(&mut t, 0x0082_2560, log, 0, &[]),
+        seq_stub(&mut t, 0x0088_8e10, log, 2, &[]),
+    ];
+    let update = seq_stub(&mut t, 0x0088_9790, log, 3, &[]);
+    cells.push(update);
+    for _ in 0..200 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.twin("TkScanControler", 0x0088_93e0, &[], U32, |o| {
+            w(tk::tk_scan_controler(o, &mut callback))
+        });
+    }
+
+    // the row loops: each row logged
+    for f in [0x008d_8cb0u32, 0x008d_8f60, 0x008d_ac70, 0x008c_e5c0] {
+        seq_stub(&mut t, f, log, 5, &[]);
+    }
+    let loops: [(&str, u32, Rows); 3] = [
+        (
+            "MenuWShop_DrawBuyRows",
+            0x008d_8c30,
+            |o, w, f, xy, ids, r, c| {
+                tk::menu_wshop_draw_buy_rows(o, w, f, xy, ids, r, c);
+            },
+        ),
+        (
+            "MenuWShop_DrawSellRows",
+            0x008d_8ee0,
+            |o, w, f, xy, ids, r, c| {
+                tk::menu_wshop_draw_sell_rows(o, w, f, xy, ids, r, c);
+            },
+        ),
+        (
+            "MenuShop_DrawRows",
+            0x008d_abf0,
+            |o, w, f, xy, ids, r, c| {
+                tk::menu_shop_draw_rows(o, w, f, xy, ids, r, c);
+            },
+        ),
+    ];
+    for round in 0..600u32 {
+        t.put(log, start);
+        let (what, f, port) = loops[(round % 3) as usize];
+        let (window, ids) = (t.rng.next(), t.rng.next());
+        let first = t.rng.pick_or_any(&[0, 1, 0x7fff_fffc, 0xffff_fffe]);
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let args = [window, t.rng.next(), first, x, y, ids];
+        let xy = [f32::from_bits(x), f32::from_bits(y)];
+        t.twin(what, f, &args, VOID, |o| {
+            let mut r: fn(&mut Oracle, bool, f32) -> f64 = ui_remap;
+            let mut c: fn(&mut Oracle, u32, &[u32]) -> u32 = callback;
+            port(o, window, first, xy, ids, &mut r, &mut c);
+            0
+        });
+    }
+
+    // MenuSummon_DrawGrowRows: integer x, y
+    for _ in 0..300 {
+        t.put(log, start);
+        let (window, fixed) = (t.rng.next(), t.rng.pick_or_any(&[0, 1]));
+        let first = t.rng.pick_or_any(&[0, 1, 0x8000_0000]);
+        let (x, y) = (t.rng.int(), t.rng.int());
+        t.twin(
+            "MenuSummon_DrawGrowRows",
+            0x008c_e520,
+            &[window, fixed, first, x, y],
+            VOID,
+            |o| {
+                tk::menu_summon_draw_grow_rows(
+                    o,
+                    window,
+                    fixed,
+                    first,
+                    [i(x), i(y)],
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+
+    // MenuSelList_DrawCursor: CursorX logged and leaving a float in ST0
+    let xcell = t.alloc(&[0; 4]);
+    let fld = [&[0xd9, 0x05][..], &xcell.to_le_bytes()].concat(); // fld dword [xcell]
+    let xret = seq_stub(&mut t, 0x008d_1bc0, log, 1, &fld);
+    let cursor = seq_stub(&mut t, 0x008c_0670, log, 3, &[]);
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &[xret, cursor]);
+        let v = quiet_float(&mut t);
+        t.put(xcell, v);
+        let window = t.alloc_random(0x50);
+        for o in [0x48u32, 0x32] {
+            let v = t
+                .rng
+                .pick_or_any(&[0, 1, 2, 3, 0x7fff, 0x8000, 0xffff, 0xfffe]);
+            t.put(window + o, u16::try_from(v & 0xffff).unwrap_or(0));
+        }
+        t.twin("MenuSelList_DrawCursor", 0x008d_15a0, &[window], U32, |o| {
+            w(tk::menu_sel_list_draw_cursor(
+                o,
+                window,
+                &mut ui_remap,
+                &mut |o, w| {
+                    let at = o.rebase(0x008d_1bc0);
+                    o.call(at, Conv::Cdecl, &[w]).unwrap().st0.unwrap()
+                },
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
