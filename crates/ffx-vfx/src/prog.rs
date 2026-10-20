@@ -1545,4 +1545,368 @@ pub mod bridge {
             call(mem, f, &[0, 1]);
         }
     }
+
+    /// `pppKeBornPtCmpl(pc, pd, prog)` (`0x007595e0`): unless
+    /// `g_pppStopStatus` is set or `pd +8` or `pd +0x10` is -1,
+    /// `KeBornPtCmlp(pc, pd, prog, out)` (through `call`; `out` the
+    /// original's one-word local).
+    pub fn ppp_ke_born_pt_cmpl<M: Mem>(
+        mem: &mut M,
+        pc: u32,
+        pd: u32,
+        prog: u32,
+        out: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if STOP.get(mem) != 0
+            || mem.read::<u32>(pd.wrapping_add(8)) == u32::MAX
+            || mem.read::<u32>(pd.wrapping_add(0x10)) == u32::MAX
+        {
+            return;
+        }
+        let f = Global::<u32>::new(0x0075_9400).ptr(mem).addr;
+        call(mem, f, &[pc, pd, prog, out]);
+    }
+
+    /// `pppKeBornRnd3_Born(obj, def, shape, out)` (`0x007589f0`):
+    /// [`ppp_ke_born_rnd2_born`] without the magic-file check or the
+    /// speed: the record is `def +0xc`, the child's `+4` = `obj` even for a
+    /// null record (the original writes `[4]` then), the position goes to
+    /// area `def +0x10` and the normalised direction from `obj +0x40` to
+    /// area `def +0x18`.
+    pub fn ppp_ke_born_rnd3_born<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        shape: u32,
+        out: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz;
+        use ffx_ps2::vu0::bridge as vu0;
+        let part = CURRENT_PART.get(mem);
+        let records: u32 = mem.read(part.wrapping_add(0x3c));
+        let rec = mem
+            .read::<u32>(def.wrapping_add(0xc))
+            .wrapping_shl(4)
+            .wrapping_add(records);
+        if rec == 0 {
+            mem.write(out, 0u32);
+        } else {
+            let create = Global::<u32>::new(0x0071_6770).ptr(mem).addr;
+            let child = call(mem, create, &[part, rec]);
+            mem.write(out, child);
+            if child == 0 {
+                return;
+            }
+        }
+        let child: u32 = mem.read(out);
+        mem.write(child.wrapping_add(4), stub::ptr32(obj));
+        let child: u32 = mem.read(out);
+        let at = |k: u32| -> u32 {
+            let area: u32 = mem.read(def.wrapping_add(k));
+            area.wrapping_add(0xa0).wrapping_add(child)
+        };
+        let (pos, dir) = (at(0x10), at(0x18));
+        let p: [i16; 3] = mem.read(shape);
+        let v = p.map(f32::from);
+        mem.write(frame, [v[0], v[1], v[2], 1.0]);
+        vu0::apply_matrix(mem, frame, obj.wrapping_add(0x10), frame);
+        ke_vu0_copy_vec_xyz(mem, pos, frame);
+        vu0::sub_vector(mem, frame, frame, obj.wrapping_add(0x40));
+        vu0::normalize(mem, frame, frame);
+        ke_vu0_copy_vec_xyz(mem, dir, frame);
+    }
+
+    /// `pppKeHitBorn(obj, key, prog)` (`0x00759890`): work area bytes
+    /// `obj + 0xa0 + [[prog +0xc] +8]` (`f`): nothing once bit 1 is set. On
+    /// the key's frame bit 0 = whether key byte `+0xc` is set. Unless
+    /// `g_pppStopStatus`, with bit 0 of area `+4`'s byte `+0x10` and a key
+    /// record `+4` not -1: a child (`pppCreatePObject` through `call`; a
+    /// null record gives child 0) with `+4` = `obj`, whose area at key `+8`
+    /// gets (`KeVu0CopyVecXYZ`) area `+4`'s start the first time (bit 0
+    /// clear: bit 1 set then) or area `+0`'s.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ke_hit_born_step<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz;
+        let offs = |mem: &M, i: u32| -> u32 {
+            let t: u32 = mem.read(prog.wrapping_add(0xc));
+            mem.read(t.wrapping_add(4 * i))
+        };
+        let f = obj.wrapping_add(offs(mem, 2)).wrapping_add(0xa0);
+        let b: u8 = mem.read(f);
+        if b & 2 != 0 {
+            return;
+        }
+        if mem.read::<u32>(obj.wrapping_add(0xc)) == mem.read::<u32>(key) {
+            let on = mem.read::<u8>(key.wrapping_add(0xc)) != 0;
+            mem.write(f, if on { b | 1 } else { b & 0xfe });
+        }
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let area = obj.wrapping_add(0xa0).wrapping_add(offs(mem, 1));
+        if mem.read::<u8>(area.wrapping_add(0x10)) & 1 == 0 {
+            return;
+        }
+        let n: u32 = mem.read(key.wrapping_add(4));
+        if n == u32::MAX {
+            return;
+        }
+        let part = CURRENT_PART.get(mem);
+        let rec = n
+            .wrapping_shl(4)
+            .wrapping_add(mem.read(part.wrapping_add(0x3c)));
+        let child = if rec == 0 {
+            0
+        } else {
+            let create = Global::<u32>::new(0x0071_6770).ptr(mem).addr;
+            let child = call(mem, create, &[part, rec]);
+            if child == 0 {
+                return;
+            }
+            mem.write(child.wrapping_add(4), stub::ptr32(obj));
+            child
+        };
+        let src = obj.wrapping_add(0xa0).wrapping_add(offs(mem, 0));
+        let dst = child
+            .wrapping_add(0xa0)
+            .wrapping_add(mem.read(key.wrapping_add(8)));
+        let b: u8 = mem.read(f);
+        if b & 1 == 0 {
+            mem.write(f, b | 2);
+            ke_vu0_copy_vec_xyz(mem, dst, area);
+        } else {
+            ke_vu0_copy_vec_xyz(mem, dst, src);
+        }
+    }
+
+    // ---- round 34 b ----
+
+    fn sym(mem: &impl Mem, a: u32) -> u32 {
+        Global::<u32>::new(a).ptr(mem).addr
+    }
+
+    /// `pppKeThDraw(obj, key, prog)` (`0x00736580`): `KeThCp_Draw(area,
+    /// g_pppViewMatrixCopy, &scale, area + 0x10, 0, a, b, c, 0, &colour,
+    /// obj)` for the work area `obj + 0xa0 + [[prog + 0xc]]`, its eax
+    /// returned. The original's locals at `frame` (its `ebp`): `scale` at
+    /// `-0x28` is the current part's `+0x60` and `+0x64 x [0x00b51540]`;
+    /// `colour` at `-0x14` the part's four `u16 +0x70` halves times
+    /// `[0x00b50190]` (`f32` each). The key's byte `+0x58` picks `(a, b,
+    /// c)`: 0 `(0x48, 0, 0x51801)`, 1 `(0x42, 0, 0x51801)`, else `(0xa8,
+    /// 0x80, 0x70000)`. `KeThCp_Draw` through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ke_th_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use x87::{MUL, Reg};
+        let w = area(mem, obj, prog, 0).wrapping_add(0xa0);
+        let part = CURRENT_PART.get(mem);
+        let (scale, colour) = (frame.wrapping_sub(0x28), frame.wrapping_sub(0x14));
+        mem.write(scale, x87::load(mem.read(part.wrapping_add(0x60))));
+        let k: f64 = mem.read(sym(mem, 0x00b5_1540));
+        let y = Reg::load(mem.read(part.wrapping_add(0x64))).constant(MUL, k);
+        mem.write(scale.wrapping_add(4), y.store());
+        let (a, b, c) = match mem.read::<u8>(key.wrapping_add(0x58)) {
+            0 => (0x48, 0, 0x5_1801),
+            1 => (0x42, 0, 0x5_1801),
+            _ => (0xa8, 0x80, 0x7_0000),
+        };
+        let k: f64 = mem.read(sym(mem, 0x00b5_0190));
+        for i in 0..4 {
+            let part = CURRENT_PART.get(mem);
+            let h = f64::from(mem.read::<u16>(part.wrapping_add(0x70 + 2 * i)));
+            #[allow(clippy::cast_possible_truncation)] // fstp m32
+            mem.write(colour.wrapping_add(4 * i), (h * k) as f32);
+        }
+        let view = sym(mem, 0x0230_fe20);
+        let args = [
+            w,
+            view,
+            scale,
+            w.wrapping_add(0x10),
+            0,
+            a,
+            b,
+            c,
+            0,
+            colour,
+            obj,
+        ];
+        call(mem, sym(mem, 0x0076_45e0), &args)
+    }
+
+    /// `pppKeMvYpEff(obj, key, prog)` (`0x0075e310`): unless `g_pppStop`,
+    /// turns work area 0 (`a0 = obj + 0xa0 + [[prog + 0xc]]`) toward the
+    /// direction `(x, y, z)` in work area 1 (unless all three are 0, as
+    /// `fucom` sees them): the yaw `pppKeAngleXY(-y, x)` and the pitch
+    /// `pppKeAngleXY(KeVu0Sqrt(y y + x x), -z)` (the sum rounded to `f32`),
+    /// each when it gives one, as `ftol(a x [0x00b51588] / [0x00b51548])`
+    /// into `a0 +8` and `a0 +0`. Two vectors and the angle in the original's
+    /// locals at `frame` (its `ebp`, from `-0x14`). Callees through `call`
+    /// and `fcall` (`KeVu0Sqrt`'s `ST0`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ke_mv_yp_eff<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store};
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let dir = area(mem, obj, prog, 1).wrapping_add(0xa0);
+        let a0 = area(mem, obj, prog, 0).wrapping_add(0xa0);
+        let f = |mem: &M, at: u32| load(mem.read(at));
+        let (x, y) = (f(mem, dir), f(mem, dir.wrapping_add(4)));
+        let zero = |v: f64| v == 0.0;
+        if zero(y) && zero(x) && zero(f(mem, dir.wrapping_add(8))) {
+            return;
+        }
+        let (v, out) = (frame.wrapping_sub(0x14), frame.wrapping_sub(4));
+        let (k1, k2): (f64, f64) = (
+            mem.read(sym(mem, 0x00b5_1588)),
+            mem.read(sym(mem, 0x00b5_1548)),
+        );
+        let angle_xy = sym(mem, 0x0075_e1f0);
+        mem.write(v, store(-y));
+        mem.write(v.wrapping_add(4), store(x));
+        if call(mem, angle_xy, &[v, out]) != 0 {
+            let a = f(mem, out);
+            let n = ftol(mem, div(mul(k1, a), k2));
+            mem.write(a0.wrapping_add(8), n);
+        }
+        let sum = store(add(mul(y, y), mul(x, x)));
+        let r = fcall(mem, sym(mem, 0x0075_fbf0), &[store(load(sum))]);
+        mem.write(v, store(r));
+        let z = f(mem, dir.wrapping_add(8));
+        mem.write(v.wrapping_add(4), store(-z));
+        if call(mem, angle_xy, &[v, out]) != 0 {
+            let a = f(mem, out);
+            let n = ftol(mem, div(mul(a, k1), k2));
+            mem.write(a0, n);
+        }
+    }
+
+    /// `pppKeBornRnd4(obj, def, shape, out)` (`0x00758df0`):
+    /// [`ppp_ke_born_rnd3_born`] with the record `def +0x10` (a null one
+    /// leaves the child null and its `+4` unwritten), the position into
+    /// area `def +0x14`, the normalised direction from `obj +0x40` into
+    /// area `def +0x24`, and that direction times `f32 def +8` into area
+    /// `def +0x1c`. The vector in the original's locals at `frame`.
+    pub fn ppp_ke_born_rnd4<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        shape: u32,
+        out: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz;
+        use ffx_ps2::vu0::bridge as vu0;
+        let part = CURRENT_PART.get(mem);
+        let records: u32 = mem.read(part.wrapping_add(0x3c));
+        let rec = mem
+            .read::<u32>(def.wrapping_add(0x10))
+            .wrapping_shl(4)
+            .wrapping_add(records);
+        if rec == 0 {
+            mem.write(out, 0u32);
+        } else {
+            let create = Global::<u32>::new(0x0071_6770).ptr(mem).addr;
+            let child = call(mem, create, &[part, rec]);
+            mem.write(out, child);
+            if child == 0 {
+                return;
+            }
+            mem.write(child.wrapping_add(4), stub::ptr32(obj));
+        }
+        let child: u32 = mem.read(out);
+        let at = |k: u32| -> u32 {
+            let area: u32 = mem.read(def.wrapping_add(k));
+            area.wrapping_add(0xa0).wrapping_add(child)
+        };
+        let (pos, scaled, dir) = (at(0x14), at(0x1c), at(0x24));
+        let p: [i16; 3] = mem.read(shape);
+        let v = p.map(f32::from);
+        mem.write(frame, [v[0], v[1], v[2], 1.0]);
+        vu0::apply_matrix(mem, frame, obj.wrapping_add(0x10), frame);
+        ke_vu0_copy_vec_xyz(mem, pos, frame);
+        vu0::sub_vector(mem, frame, frame, obj.wrapping_add(0x40));
+        vu0::normalize(mem, frame, frame);
+        ke_vu0_copy_vec_xyz(mem, dir, frame);
+        let s = f32::from_bits(x87::load(mem.read(def.wrapping_add(8))));
+        vu0::scale_vector(mem, frame, frame, s);
+        ke_vu0_copy_vec_xyz(mem, scaled, frame);
+    }
+
+    // ---- round 34 c ----
+
+    /// `pppEiWindFun(obj, key, prog)` (`0x0075d450`): work area `a = obj +
+    /// 0xa0 + [[prog + 0xc]]`. Unless `g_pppStop`, `+0x20 += +0x24` and
+    /// `+0x1c += +0x20` (the new value). On the key's frame: `+0..+0xc` =
+    /// the key's `+0x10..+0x1c`, `+0x10` = `f32 key +0x20`, `+0x14` = `s =
+    /// key +0x24`; the emulated VU0 accumulator `0x00c8f7b0` = `x x + s s`
+    /// (`x` = `+0x10`), `Q` (`0x00c8f788`) = `sqrt(|acc|)`, the accumulator
+    /// = `vf00.x + Q` and `+0x18` = `x / acc` (each `f32`); then unless
+    /// `g_pppStop` the key's `+0x28..+0x30` are added to `+0x1c..+0x24`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ei_wind_fun(mem: &mut impl Mem, obj: u32, key: u32, prog: u32) {
+        use ffx_bridge::x87::{add, div, load, mul, sqrt, store};
+        let a = area(mem, obj, prog, 0).wrapping_add(0xa0);
+        let at = |o: u32| a.wrapping_add(o);
+        if STOP.get(mem) == 0 {
+            let t = store(add(load(mem.read(at(0x24))), load(mem.read(at(0x20)))));
+            mem.write(at(0x20), t);
+            let v = store(add(load(t), load(mem.read(at(0x1c)))));
+            mem.write(at(0x1c), v);
+        }
+        if !applies(mem, obj, key) {
+            return;
+        }
+        let words: [u32; 4] = mem.read(key.wrapping_add(0x10));
+        mem.write(a, words);
+        mem.write(at(0x10), store(load(mem.read(key.wrapping_add(0x20)))));
+        let s = load(mem.read(key.wrapping_add(0x24)));
+        mem.write(at(0x14), store(s));
+        let s = load(store(s));
+        let x = load(mem.read(at(0x10)));
+        let acc = Global::<u32>::new(0x00c8_f7b0).ptr(mem).addr;
+        let q = Global::<u32>::new(0x00c8_f788).ptr(mem).addr;
+        let sum = store(add(mul(x, x), mul(s, s)));
+        mem.write(acc, sum);
+        let r = store(sqrt(load(store(load(sum).abs()))));
+        mem.write(q, r);
+        let vf00_x: u32 = mem.read(VF00.ptr(mem).addr);
+        let d = store(add(load(vf00_x), load(r)));
+        mem.write(acc, d);
+        let y = store(div(load(mem.read(at(0x10))), load(d)));
+        mem.write(at(0x18), y);
+        if STOP.get(mem) == 0 {
+            for k in 0..3 {
+                let v = store(add(
+                    load(mem.read(key.wrapping_add(0x28 + 4 * k))),
+                    load(mem.read(at(0x1c + 4 * k))),
+                ));
+                mem.write(at(0x1c + 4 * k), v);
+            }
+        }
+    }
 }

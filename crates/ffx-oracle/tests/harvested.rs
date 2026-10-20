@@ -77,6 +77,67 @@ harvest_test!(
     }
 );
 
+// battle round 29: small leaves the drivers reach
+harvest_test!(
+    ms_battle_draw,
+    0x0078_0d00,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_battle::minor::bridge::ms_battle_draw(m, &mut |m, f, a| {
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);
+harvest_test!(
+    ms_battle_encount_flag,
+    0x0078_0fe0,
+    args = 1,
+    |m: &mut Oracle, s| {
+        ffx_battle::misc::bridge::ms_battle_encount_flag(m, s.arg(0));
+    }
+);
+harvest_test!(
+    ms_get_chr_head_pos,
+    0x0079_50b0,
+    args = 2,
+    |m: &mut Oracle, s| {
+        ffx_battle::minor::bridge::ms_get_chr_head_pos(m, s.arg(0), s.arg(1));
+    }
+);
+harvest_test!(
+    ms_add_next_ctb,
+    0x0079_a020,
+    args = 5,
+    |m: &mut Oracle, s| {
+        ffx_battle::minor::bridge::ms_add_next_ctb(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            s.arg(3),
+            s.arg(4),
+        );
+    }
+);
+harvest_test!(
+    ms_get_ctb_list,
+    0x0079_a200,
+    args = 1,
+    |m: &mut Oracle, s| {
+        // the CTBs and counters in stack scratch
+        let frame = m.stack_range().start + 0x100;
+        ffx_battle::turn::bridge::ms_get_ctb_list(m, s.arg(0), frame)
+    }
+);
+harvest_test!(
+    ms_wait_motion_pick,
+    0x007a_8c50,
+    args = 3,
+    |m: &mut Oracle, s| {
+        ffx_battle::minor::bridge::ms_wait_motion_pick(m, s.arg(0), s.arg(1), s.arg(2))
+    }
+);
+
 // map (ffx-field)
 harvest_test!(
     yi_render_setup_fog_param,
@@ -174,6 +235,52 @@ harvest_test!(
         })
     }
 );
+
+// effects (round 33): the thiscall callees run as the originals
+fn this_call(m: &mut Oracle, f: u32, this: u32, a: &[u32]) -> u32 {
+    m.call(f, ffx_oracle::Conv::Thiscall(this), a).unwrap().eax
+}
+
+harvest_test!(
+    class_dynamic_geometry_setup_dyn_mesh,
+    0x006a_3b30,
+    args = 0,
+    |m: &mut Oracle, s| { ffx_vfx::small::bridge::setup_dyn_mesh(m, s.ecx(), &mut this_call) }
+);
+harvest_test!(
+    vfx_geometry_register,
+    0x006a_52f0,
+    args = 1,
+    |m: &mut Oracle, s| {
+        ffx_vfx::small::bridge::vfx_geometry_register(m, s.ecx(), s.arg(0), &mut this_call)
+    }
+);
+harvest_test!(
+    dyn_geo_reset_current_buffer,
+    0x0069_fcb0,
+    args = 0,
+    |m: &mut Oracle, s| {
+        ffx_vfx::small::bridge::dyn_geo_reset_current_buffer(m, s.ecx(), &mut |m, f, a| {
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);
+// the random draw's three extra words are the caller's edi, esi, ebx
+harvest_test!(
+    opp_anmm_frame_random,
+    0x0081_0dd0,
+    args = 4,
+    |m: &mut Oracle, s| {
+        let junk = [s.regs.edi, s.regs.esi, s.regs.ebx];
+        ffx_vfx::anmm::bridge::frame_random(m, s.arg(2), s.arg(3), junk)
+    }
+);
+// effects (round 34): op_irandom_p's three extra words are the caller's
+// edi, esi and ebp
+harvest_test!(opu_wait_cond, 0x0080_c520, args = 2, |m: &mut Oracle, s| {
+    let junk = [s.regs.edi, s.regs.esi, s.regs.ebp];
+    ffx_vfx::opus::bridge::opu_wait_cond(m, s.arg(0), s.arg(1), junk)
+});
 
 /// The store's format round-trips, and a state of the first target applies
 /// to a fresh oracle (layout check).

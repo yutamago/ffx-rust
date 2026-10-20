@@ -327,6 +327,14 @@ REVIEWED = {
     0x006884e0: ("debug", "StackWalker module-load logger (system round 41)"),
     0x006885f0: ("debug", "StackWalker symbol-init logger (system round 41)"),
     0x006f1c40: ("debug", "only calls SaveDataManager_debugSave_Internal (system round 41)"),
+    0x00646b30: ("debug", "opens a raw save from /FFX_Data/GameData/PS3Data/saves/%02d with fopen, SKS_DEBUG messages; only via 0x6492b0 (menu round 25)"),
+    0x00646ca0: ("debug", "%d copy of 0x646b30; only caller debugSavedataLoadAll (fh Switch name) (menu round 25)"),
+    0x00646df0: ("debug", "debugSave (fh Switch name): SKS_DEBUG messages on the dev-only save path (menu round 25)"),
+    0x00780cf0: ("debug", "MsBattleDisposeAtEvent: a single ret (no-op stub) (battle round 29)"),
+    0x007846e0: ("debug", "MsCheatPlayerPowerfulOff: a single ret (no-op stub) (battle round 29)"),
+    0x00792e70: ("debug", "MsSetMouseCamera: a single ret (no-op stub) (battle round 29)"),
+    0x0092cf00: ("debug", "MsDebugDrawBoard: a single ret (no-op stub) (battle round 29)"),
+    0x007c8ae0: ("debug", "bare ret: MsBattleDraw's jump target when FFXIsDebug is set (battle round 29)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

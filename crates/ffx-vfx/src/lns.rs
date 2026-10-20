@@ -337,4 +337,131 @@ pub mod bridge {
         mem.write(d, v);
         call(mem, g(mem, LP_UPDATE), &[d])
     }
+
+    /// `pppKeLnsClmTOtDraw(area)` (`0x0075a610`): the `g_pppOtList` draw
+    /// `pppKeLnsClmTCon` registers: a descriptor at `frame - 0x30`
+    /// (`set_ptr32` of the area, of the area again at `+4`, the colour word
+    /// `+0x58` at `+8`, `g_pppScreenMatrix` at `+0xc`, the floats `+0x54`
+    /// and `+0x50` at `+0x10`, `+0x14`, the position `area +0x30` at
+    /// `+0x18`) to `KeLnsClm_Draw(desc, 4)`. Returns its eax.
+    pub fn ppp_ke_lns_clm_t_ot_draw<M: Mem>(
+        mem: &mut M,
+        area: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let d = frame.wrapping_sub(0x30);
+        let v = set_ptr32(mem, area, call);
+        mem.write(at(d, 0x14), copy(mem, at(area, 0x50)));
+        mem.write(d, v);
+        mem.write(at(d, 8), mem.read::<u32>(at(area, 0x58)));
+        mem.write(at(d, 0x10), copy(mem, at(area, 0x54)));
+        let v = set_ptr32(mem, g(mem, SCREEN_MATRIX), call);
+        mem.write(at(d, 0xc), v);
+        let v = set_ptr32(mem, area, call);
+        mem.write(at(d, 4), v);
+        let v = set_ptr32(mem, at(area, 0x30), call);
+        mem.write(at(d, 0x18), v);
+        call(mem, g(mem, 0x0076_96c0), &[d, 4])
+    }
+
+    /// `pppKeLnsClmDraw(obj, key, prog)` (`0x0075a3a0`): `pppKeLnsClmUpdate`,
+    /// then a descriptor at `frame - 0x30` for `KeLnsClm_Draw(desc, 0)`:
+    /// `set_ptr32` of the object, of its work area (`+4`) and of the part's
+    /// position (`+0x60` of the part current before the update, `+0x18`);
+    /// the key's colour scaled by the part ([`colour`], `+8`),
+    /// `g_pppScreenMatrix` (`+0xc`), the key's size `+0xc` (`+0x10`) and
+    /// its `u16 +0x14` as a float (`+0x14`). Returns the drawer's eax.
+    pub fn ppp_ke_lns_clm_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let part: u32 = mem.read(g(mem, CURRENT_PART));
+        call(mem, g(mem, 0x0075_a6a0), &[obj, key, prog]);
+        let d = frame.wrapping_sub(0x30);
+        let v = set_ptr32(mem, obj, call);
+        mem.write(d, v);
+        let n = f64::from(mem.read::<u16>(at(key, 0x14)));
+        mem.write(at(d, 0x14), store(n));
+        colour(mem, key, at(d, 8));
+        mem.write(at(d, 0x10), copy(mem, at(key, 0xc)));
+        let v = set_ptr32(mem, g(mem, SCREEN_MATRIX), call);
+        mem.write(at(d, 0xc), v);
+        let area = at(obj, 0xa0).wrapping_add(mem.read(mem.read::<u32>(at(prog, 0xc))));
+        let v = set_ptr32(mem, area, call);
+        mem.write(at(d, 4), v);
+        let v = set_ptr32(mem, at(part, 0x60), call);
+        mem.write(at(d, 0x18), v);
+        call(mem, g(mem, 0x0076_96c0), &[d, 0])
+    }
+
+    /// `pppKeLnsClmTDraw(obj, key, prog)` (`0x0075a540`): `pppKeLnsClmUpdate`;
+    /// on the key's frame its size `+0xc` into the work area's `+0x54` and
+    /// its `u16 +0x14` as a float into `+0x50`; then the scaled colour
+    /// ([`colour`]) into `+0x58` and the part's position (read before the
+    /// update) into `+0x30` (`FFXVu0CopyVector`, whose eax it returns).
+    pub fn ppp_ke_lns_clm_t_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let off: u32 = mem.read(mem.read::<u32>(at(prog, 0xc)));
+        let part: u32 = mem.read(g(mem, CURRENT_PART));
+        call(mem, g(mem, 0x0075_a6a0), &[obj, key, prog]);
+        let a = at(obj, off).wrapping_add(0xa0);
+        if mem.read::<u32>(key) == mem.read::<u32>(at(obj, 0xc)) {
+            mem.write(at(a, 0x54), copy(mem, at(key, 0xc)));
+            let n = f64::from(mem.read::<u16>(at(key, 0x14)));
+            mem.write(at(a, 0x50), store(n));
+        }
+        colour(mem, key, at(a, 0x58));
+        call(mem, g(mem, COPY_VECTOR), &[at(a, 0x30), at(part, 0x60)])
+    }
+
+    /// `pppKeLnsLpTDraw(obj, key, prog)` (`0x0075b160`):
+    /// [`ppp_ke_lns_lp_draw`] (its frame where the original's call puts it:
+    /// `(frame - 0x40) & !0xf`, `frame` this one's `ebp`); on the key's frame
+    /// the work area's bytes `+0xd0` = `key +0xe << 3`, `+0xd1` = `key +0xf
+    /// << 2`, `+0x8d` = `key +0x10`; then `(0, 0, 0, 1)` through the
+    /// object's matrix `+0x50` (`FFXVu0ApplyMatrix`, at `frame - 0x14`)
+    /// scaled by `1 / w` into `+0xc0` (`FFXVu0ScaleVector`), and `u16
+    /// +0xcc` = `g_pppLensView`. Returns the scale's eax with the view in
+    /// its low half (`mov ax`).
+    pub fn ppp_ke_lns_lp_t_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::Reg;
+        use ffx_ps2::vu0::bridge as vu0;
+        ppp_ke_lns_lp_draw(mem, obj, key, prog, frame.wrapping_sub(0x40) & !0xf, call);
+        let off: u32 = mem.read(mem.read::<u32>(at(prog, 0xc)));
+        let w = at(obj, off).wrapping_add(0xa0);
+        if mem.read::<u32>(key) == mem.read::<u32>(at(obj, 0xc)) {
+            mem.write(at(w, 0xd0), mem.read::<u8>(at(key, 0xe)) << 3);
+            mem.write(at(w, 0xd1), mem.read::<u8>(at(key, 0xf)) << 2);
+            mem.write(at(w, 0x8d), mem.read::<u8>(at(key, 0x10)));
+        }
+        let v = frame.wrapping_sub(0x14);
+        mem.write(v, [0f32, 0.0, 0.0, 1.0]);
+        vu0::apply_matrix(mem, v, at(obj, 0x50), v);
+        let div: crate::x87::Op = |a, b| a / b;
+        let s = Reg::Num(1.0)
+            .reg(div, Reg::load_f32(mem.read(at(v, 0xc))))
+            .store();
+        let r = vu0::scale_vector(mem, at(w, 0xc0), v, s);
+        // g_pppLensView
+        let view: u16 = mem.read(g(mem, 0x0230_fffe));
+        mem.write(at(w, 0xcc), view);
+        r & 0xffff_0000 | u32::from(view)
+    }
 }

@@ -1444,6 +1444,481 @@ ported! {
     op_irandom_p @ 0x007e_5d50 => extern "C" fn op_irandom_p(n: u32, b: u32, c: u32, d: u32) -> u32 {
         rand::bridge::op_irandom_core(&mut mem(), [n, b, c, d])
     }
+    // ---- round 34 a ----
+    /// `op_init_draw()`.
+    op_init_draw @ 0x007e_c410 => extern "C" fn op_init_draw() -> u32 {
+        small::bridge::op_init_draw(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_ovl_effect_forced_free()`.
+    op_ovl_effect_forced_free @ 0x007f_cd50 => extern "C" fn op_ovl_effect_forced_free() -> u32 {
+        small::bridge::op_ovl_effect_forced_free(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ResetSlots_00888910(works)`.
+    Pad_ResetSlots_00888910 @ 0x0088_8910 => extern "C" fn pad_reset_slots(works: u32) -> u32 {
+        small::bridge::pad_reset_slots(&mut mem(), works, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `InitVFXZBufClearRenderData(lo, hi)`.
+    InitVFXZBufClearRenderData @ 0x0071_1680 => extern "C" fn init_vfx_zbuf_clear_render_data(lo: u32, hi: u32) -> u32 {
+        small::bridge::init_vfx_zbuf_clear_render_data(&mut mem(), lo, hi, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `create0706AccRenderDataBuffer(lo, hi, tex_lo, tex_hi)`.
+    create0706AccRenderDataBuffer @ 0x007f_a5c0 => extern "C" fn create_0706_acc_render_data_buffer(lo: u32, hi: u32, tex_lo: u32, tex_hi: u32) -> u32 {
+        // the original's locals: three words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        small::bridge::create_0706_acc_render_data_buffer(&mut mem(), [lo, hi, tex_lo, tex_hi], at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `ShadowEntries_Init_006d54c0(this, n, buf)`.
+    ShadowEntries_Init_006d54c0 @ 0x006d_54c0 => extern "thiscall" fn shadow_entries_init(this: u32, n: u32, buf: u32) -> u32 {
+        small::bridge::shadow_entries_init(&mut mem(), this, n, buf, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: ShadowEntry_Init, thiscall of one stack word (`ret 4`).
+            unsafe {
+                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                g(this, a.first().copied().unwrap_or(0))
+            }
+        })
+    }
+    /// `pppInitProtocolDriver(d, a, b, c, e)`.
+    pppInitProtocolDriver @ 0x0076_b2d0 => extern "C" fn ppp_init_protocol_driver(d: u32, a: u32, b: u32, c: u32, e: u32) -> u32 {
+        small::bridge::ppp_init_protocol_driver(&mut mem(), [d, a, b, c, e], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppShapeRevMatrix_00741470(obj, _, prog)`.
+    pppShapeRevMatrix_00741470 @ 0x0074_1470 => extern "C" fn ppp_shape_rev_matrix(obj: u32, _unused: u32, prog: u32) -> u32 {
+        mat::bridge::ppp_shape_rev_matrix(&mut mem(), obj, prog)
+    }
+    /// `pppKeLnsClmDraw(obj, key, prog)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppKeLnsClmDraw @ 0x0075_a3a0 => extern "C" fn ppp_ke_lns_clm_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_clm_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_end_all(host)`.
+    opu_end_all @ 0x007f_d720 => extern "C" fn opu_end_all(host: u32) -> u32 {
+        opus::bridge::opu_end_all(&mut mem(), host, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_ffx(host, cmd)`.
+    opu_ffx @ 0x0081_6680 => extern "C" fn opu_ffx(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_ffx(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_2d(host, cmd)`.
+    opu_v_2d @ 0x0081_8dc0 => extern "C" fn opu_v_2d(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_2d(&mut mem(), host, cmd)
+    }
+    // ---- round 34 b ----
+    /// `pppKeThDraw(obj, key, prog)`.
+    pppKeThDraw @ 0x0073_6580 => extern "C" fn ppp_ke_th_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        // the original's locals: the scale pair and the colour, below its ebp
+        let mut frame = super::StackFrame::<10>::new();
+        let ebp = frame.at() + 0x28;
+        prog::bridge::ppp_ke_th_draw(&mut mem(), obj, key, prog, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMvYpEff(obj, key, prog)`.
+    pppKeMvYpEff @ 0x0075_e310 => extern "C" fn ppp_ke_mv_yp_eff(obj: u32, key: u32, prog: u32) {
+        let _ = key;
+        // the original's locals: the vector and the angle, below its ebp
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 0x14;
+        prog::bridge::ppp_ke_mv_yp_eff(&mut mem(), obj, prog, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opu_float_calc_0080c6a0(host, cmd)`.
+    opu_float_calc_0080c6a0 @ 0x0080_c6a0 => extern "C" fn opu_float_calc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_float_calc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_wait_cond_0080c520(host, cmd)`: `op_irandom_p`'s three extra
+    /// words (the caller's saved registers) go in as 0, as the shim of
+    /// `opp_anmm_frame_random` does.
+    opu_wait_cond_0080c520 @ 0x0080_c520 => extern "C" fn opu_wait_cond(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_wait_cond(&mut mem(), host, cmd, [0; 3])
+    }
+    /// `opu_float_move_0080c940(host, cmd)`.
+    opu_float_move_0080c940 @ 0x0080_c940 => extern "C" fn opu_float_move(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_float_move(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpPointLight(obj, key, prog)`.
+    pppFpPointLight @ 0x0075_d7f0 => extern "C" fn ppp_fp_point_light(obj: u32, key: u32, prog: u32) -> u32 {
+        fp::bridge::ppp_fp_point_light(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeBornRnd4(obj, def, shape, out)`.
+    pppKeBornRnd4 @ 0x0075_8df0 => extern "C" fn ppp_ke_born_rnd4(obj: u32, def: u32, shape: u32, out: u32) {
+        // the original's local vector
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_rnd4(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawMdlCameraTex_0073dfe0(rec, m)`.
+    pppDrawMdlCameraTex_0073dfe0 @ 0x0073_dfe0 => extern "C" fn ppp_draw_mdl_camera_tex(rec: u32, m: u32) {
+        mdl::bridge::ppp_draw_mdl_camera_tex(&mut mem(), rec, m, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldSpdInit_00745610(p, src)`.
+    pppDrawShapeFieldSpdInit_00745610 @ 0x0074_5610 => extern "C" fn ppp_shape_field_spd_init(p: u32, src: u32) {
+        draw::bridge::ppp_shape_field_spd_init(&mut mem(), p, src, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_vector_m_to_007e7330(dst, a, b)`.
+    op_vector_m_to_007e7330 @ 0x007e_7330 => extern "C" fn op_vector_m_to(dst: u32, a: u32, b: u32) -> u32 {
+        // the original's local vector, with room above it for the colour
+        // shift's `w`
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        op::bridge::op_vector_m_to(&mut mem(), dst, a, b, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 34 c ----
+    /// `op_part_init(unit)`.
+    op_part_init @ 0x0080_0770 => extern "C" fn op_part_init(unit: u32) -> u32 {
+        opus::bridge::op_part_init(&mut mem(), unit, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `checkPolyImg0434(lo, n, make)`.
+    checkPolyImg0434 @ 0x0071_3160 => extern "C" fn check_poly_img_0434(lo: u32, n: u32, make: u32) -> u32 {
+        // the original's locals: three words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        small::bridge::check_poly_img_0434(&mut mem(), [lo, n, make], at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppLinePoints_00761350(m, a, b, p4, p5)`.
+    pppLinePoints_00761350 @ 0x0076_1350 => extern "C" fn ppp_line_points(m: u32, a: u32, b: u32, p4: u32, p5: u32) {
+        // the original's locals: 0x78 bytes below its ebp
+        let mut frame = super::StackFrame::<0x1e>::new();
+        let ebp = frame.at() + 0x78;
+        part::bridge::ppp_line_points(&mut mem(), [m, a, b, p4, p5], ebp, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppEiWindFun(obj, key, prog)`.
+    pppEiWindFun @ 0x0075_d450 => extern "C" fn ppp_ei_wind_fun(obj: u32, key: u32, prog: u32) {
+        prog::bridge::ppp_ei_wind_fun(&mut mem(), obj, key, prog);
+    }
+    // ---- round 33 a ----
+    /// `ClassDynamicGeometry_setupDynMesh(this)`.
+    ClassDynamicGeometry_setupDynMesh @ 0x006a_3b30 => extern "thiscall" fn class_dynamic_geometry_setup_dyn_mesh(this: u32) -> u32 {
+        small::bridge::setup_dyn_mesh(&mut mem(), this, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
+            unsafe {
+                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                g(this, a.first().copied().unwrap_or(0))
+            }
+        })
+    }
+    /// `vfxIntTree_InsertFinalize_0070fd70(this, node)`.
+    vfxIntTree_InsertFinalize_0070fd70 @ 0x0070_fd70 => extern "thiscall" fn vfx_int_tree_insert_finalize(this: u32, node: u32) -> u32 {
+        tree::bridge::vfx_int_tree_insert_finalize(&mut mem(), this, node, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
+            unsafe {
+                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                g(this, a.first().copied().unwrap_or(0))
+            }
+        })
+    }
+    /// `pppKeBornPtCmpl(pc, pd, prog)`.
+    pppKeBornPtCmpl @ 0x0075_95e0 => extern "C" fn ppp_ke_born_pt_cmpl(pc: u32, pd: u32, prog: u32) {
+        // the original's one-word local
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_pt_cmpl(&mut mem(), pc, pd, prog, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_view_screen_matrix_00801ea0(m)`.
+    opus_view_screen_matrix_00801ea0 @ 0x0080_1ea0 => extern "C" fn opus_view_screen_matrix(m: u32) -> u32 {
+        small::bridge::opus_view_screen_matrix(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_colour_scale2_0080a470(r, g, b, a)`.
+    opus_colour_scale2_0080a470 @ 0x0080_a470 => extern "C" fn opus_colour_scale2(r: u32, g: u32, b: u32, a: u32) -> u32 {
+        small::bridge::opus_colour_scale2(&mut mem(), [r, g, b, a], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_prog_clear_0080adc0(host, cmd)`.
+    opu_prog_clear_0080adc0 @ 0x0080_adc0 => extern "C" fn opu_prog_clear(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_prog_clear(&mut mem(), host, cmd)
+    }
+    /// `opu_end_no_0080c650(host, cmd)`.
+    opu_end_no_0080c650 @ 0x0080_c650 => extern "C" fn opu_end_no(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_end_no(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anmm_frame_random_00810dd0(host, set, cmd, work)`.
+    opp_anmm_frame_random_00810dd0 @ 0x0081_0dd0 => extern "C" fn opp_anmm_frame_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = (host, set);
+        anmm::bridge::frame_random(&mut mem(), cmd, work, [0; 3])
+    }
+    /// `opp_anmm_scale_y_00810ff0(host, set, cmd, work)`.
+    opp_anmm_scale_y_00810ff0 @ 0x0081_0ff0 => extern "C" fn opp_anmm_scale_y(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::scale_y(&mut mem(), host, cmd, work, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anmm_width_scale_008110d0(host, set, cmd, work)`.
+    opp_anmm_width_scale_008110d0 @ 0x0081_10d0 => extern "C" fn opp_anmm_width_scale(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        anmm::bridge::width_scale(&mut mem(), host, set, cmd, work, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opp_et_ovl(host)`.
+    opp_et_ovl @ 0x0081_3460 => extern "C" fn opp_et_ovl(host: u32) -> u32 {
+        opus::bridge::opp_et_ovl(&mem(), host)
+    }
+    /// `opu_vibration(host, cmd)`.
+    opu_vibration @ 0x0081_43e0 => extern "C" fn opu_vibration(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_vibration(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_stone_00814440(host, cmd)`.
+    opu_stone_00814440 @ 0x0081_4440 => extern "C" fn opu_stone(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_stone(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_chr_switch_008144b0(host, cmd)`.
+    opu_chr_switch_008144b0 @ 0x0081_44b0 => extern "C" fn opu_chr_switch(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_chr_switch(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_kind8_00815710(host, cmd)`.
+    opu_kind8_00815710 @ 0x0081_5710 => extern "C" fn opu_kind8(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_kind8(&mut mem(), host, cmd)
+    }
+    /// `opu_call_00815760(host, cmd)`.
+    opu_call_00815760 @ 0x0081_5760 => extern "C" fn opu_call(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_call(&mut mem(), host, cmd)
+    }
+    /// `opu_return_00817280(host)`.
+    opu_return_00817280 @ 0x0081_7280 => extern "C" fn opu_return(host: u32) -> u32 {
+        opus::bridge::opu_return(&mem(), host)
+    }
+    /// `opu_signal(host, cmd)`.
+    opu_signal @ 0x0081_72b0 => extern "C" fn opu_signal(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_signal(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 33 b ----
+    /// `graphicVFXAddScreenFadeEvent(r, g, b, a, alpha)`.
+    graphicVFXAddScreenFadeEvent @ 0x0064_4d40 => extern "C" fn graphic_vfx_add_screen_fade_event(r: u32, g: u32, b: u32, a: u32, alpha: u32) -> u32 {
+        // the original's event local
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        small::bridge::graphic_vfx_add_screen_fade_event(&mut mem(), [r, g, b, a], alpha, at, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
+            unsafe {
+                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                g(this, a.first().copied().unwrap_or(0))
+            }
+        })
+    }
+    /// `pppNoiseBlurDraw_007116d0(a0..a6)`.
+    pppNoiseBlurDraw_007116d0 @ 0x0071_16d0 => extern "C" fn ppp_noise_blur_draw(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) {
+        small::bridge::ppp_noise_blur_draw(&mut mem(), [a0, a1, a2, a3, a4, a5, a6], &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppAkazaScrFltDraw_00711750(lo, hi, a, b)`.
+    pppAkazaScrFltDraw_00711750 @ 0x0071_1750 => extern "C" fn ppp_akaza_scr_flt_draw(lo: u32, hi: u32, a: u32, b: u32) {
+        small::bridge::ppp_akaza_scr_flt_draw(&mut mem(), lo, hi, a, b, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeParMatR(obj)`.
+    pppKeParMatR @ 0x0073_4880 => extern "C" fn ppp_ke_par_mat_r(obj: u32) {
+        // the original's local matrix and vector
+        let mut frame = super::StackFrame::<20>::new();
+        let at = frame.at();
+        mat::bridge::ppp_ke_par_mat_r(&mut mem(), obj, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeLnsClmTOtDraw(area)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsClmTOtDraw @ 0x0075_a610 => extern "C" fn ppp_ke_lns_clm_t_ot_draw(area: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_clm_t_ot_draw(&mut mem(), area, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_part_fp_init(part)`.
+    op_part_fp_init @ 0x0080_0700 => extern "C" fn op_part_fp_init(part: u32) -> u32 {
+        opus::bridge::op_part_fp_init(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_part_free(part)`.
+    op_part_free @ 0x0080_09c0 => extern "C" fn op_part_free(part: u32) -> u32 {
+        opus::bridge::op_part_free(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_motion_etc(host, cmd)`.
+    opu_motion_etc @ 0x0080_47b0 => extern "C" fn opu_motion_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_motion_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_blur_00807f90(host, cmd)`.
+    opu_blur_00807f90 @ 0x0080_7f90 => extern "C" fn opu_blur(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_blur(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_battle_0080aca0(host, cmd)`.
+    opu_et_battle_0080aca0 @ 0x0080_aca0 => extern "C" fn opu_et_battle(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_et_battle(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_eff_end_0080c490(host, cmd)`.
+    opu_eff_end_0080c490 @ 0x0080_c490 => extern "C" fn opu_eff_end(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_eff_end(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anmm_weapon_count_00811050(host, set, cmd, work)`.
+    opp_anmm_weapon_count_00811050 @ 0x0081_1050 => extern "C" fn opp_anmm_weapon_count(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        anmm::bridge::weapon_count(&mut mem(), host, set, cmd, work)
+    }
+    /// `opp_flash(host)`.
+    opp_flash @ 0x0081_2fa0 => extern "C" fn opp_flash(host: u32) -> u32 {
+        opus::bridge::opp_flash(&mut mem(), host, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_ovl(host, cmd)`.
+    opu_et_ovl @ 0x0081_4790 => extern "C" fn opu_et_ovl(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_et_ovl(&mut mem(), host, cmd)
+    }
+    /// `opu_damage(host, cmd)`.
+    opu_damage @ 0x0081_5d90 => extern "C" fn opu_damage(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_damage(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_damage_motion(host, cmd)`.
+    opu_damage_motion @ 0x0081_5e10 => extern "C" fn opu_damage_motion(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_damage_motion(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_ground_branch_00817e60(host, cmd)`.
+    opu_ground_branch_00817e60 @ 0x0081_7e60 => extern "C" fn opu_ground_branch(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_ground_branch(&mut mem(), host, cmd, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_length_00817ee0(host, cmd)`.
+    opu_length_00817ee0 @ 0x0081_7ee0 => extern "C" fn opu_length(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_length(&mut mem(), host, cmd)
+    }
+    /// `opu_kind2_0081c460(host, cmd)`.
+    opu_kind2_0081c460 @ 0x0081_c460 => extern "C" fn opu_kind2(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_kind2(&mut mem(), host, cmd)
+    }
+    // ---- round 33 c ----
+    /// `pppExSendPacket(rpc, tag, data, n)`.
+    pppExSendPacket @ 0x0076_b210 => extern "C" fn ppp_ex_send_packet(rpc: u32, tag: u32, data: u32, n: u32) -> u32 {
+        ppp::bridge::ppp_ex_send_packet(&mut mem(), rpc, tag, data, n, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_part_run(part)`.
+    op_part_run @ 0x0080_08b0 => extern "C" fn op_part_run(part: u32) -> u32 {
+        opus::bridge::op_part_run(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_prog_set_0080ad20(host, cmd)`.
+    opu_prog_set_0080ad20 @ 0x0080_ad20 => extern "C" fn opu_prog_set(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_prog_set(&mut mem(), host, cmd)
+    }
+    /// `opu_osu_load_pos_0080b460(host, cmd)`.
+    opu_osu_load_pos_0080b460 @ 0x0080_b460 => extern "C" fn opu_osu_load_pos(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_osu_load_pos(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anmm_fin_en_bone5(host, set, cmd, work)`.
+    opp_anmm_fin_en_bone5 @ 0x0081_0e20 => extern "C" fn opp_anmm_fin_en_bone5(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = host;
+        anmm::bridge::fin_en_bone5(&mut mem(), set, cmd, work, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_| crt_rand())
+    }
+    /// `DynGeo_ResetCurrentBuffer_0069fcb0(this)`.
+    DynGeo_ResetCurrentBuffer_0069fcb0 @ 0x0069_fcb0 => extern "thiscall" fn dyn_geo_reset_current_buffer(this: u32) -> u32 {
+        small::bridge::dyn_geo_reset_current_buffer(&mut mem(), this, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsClmTDraw(obj, key, prog)`.
+    pppKeLnsClmTDraw @ 0x0075_a540 => extern "C" fn ppp_ke_lns_clm_t_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        lns::bridge::ppp_ke_lns_clm_t_draw(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsLpTDraw(obj, key, prog)`: its stack locals (and
+    /// pppKeLnsLpDraw's) in a buffer on this shim's stack (the frame
+    /// pointer at its end).
+    pppKeLnsLpTDraw @ 0x0075_b160 => extern "C" fn ppp_ke_lns_lp_t_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        // its vector at frame - 0x14, pppKeLnsLpDraw's 0x30 bytes below
+        // (frame - 0x40) & !0xf
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        lns::bridge::ppp_ke_lns_lp_t_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `create0706NoiseRenderDataBuffer(lo, hi)`.
+    create0706NoiseRenderDataBuffer @ 0x007f_a510 => extern "C" fn create_0706_noise_render_data_buffer(lo: u32, hi: u32) -> u32 {
+        // the original's locals: three words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        small::bridge::create_0706_noise_render_data_buffer(&mut mem(), lo, hi, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_en_etc(host, cmd)`.
+    opu_en_etc @ 0x0081_5f60 => extern "C" fn opu_en_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_en_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_fin_type(host, cmd)`.
+    opu_fin_type @ 0x0081_67b0 => extern "C" fn opu_fin_type(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_fin_type(&mut mem(), host, cmd, &mut |_, y, x| crt_atan2(y, x))
+    }
+    // ---- round 33 d ----
+    /// `VfxGeometry_Register_006a52f0(this, kind)`.
+    VfxGeometry_Register_006a52f0 @ 0x006a_52f0 => extern "thiscall" fn vfx_geometry_register(this: u32, kind: u32) -> u32 {
+        small::bridge::vfx_geometry_register(&mut mem(), this, kind, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: the engine's thiscall functions of one or two stack
+            // words (the bridge asks for no other count).
+            unsafe {
+                match *a {
+                    [x] => {
+                        let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                        g(this, x)
+                    }
+                    [x, y] => {
+                        let g: unsafe extern "thiscall" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
+                        g(this, x, y)
+                    }
+                    _ => 0,
+                }
+            }
+        })
+    }
+    /// `pppKaGra001Draw_00711830(hi, a, rec)`.
+    pppKaGra001Draw_00711830 @ 0x0071_1830 => extern "C" fn ppp_ka_gra001_draw(hi: u32, a: u32, rec: u32) {
+        small::bridge::ppp_ka_gra001_draw(&mut mem(), hi, a, rec, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `weaponShadowDrawInit(lo, hi, _, mode)`.
+    weaponShadowDrawInit @ 0x0081_4070 => extern "C" fn weapon_shadow_draw_init(lo: u32, hi: u32, unused: u32, mode: u32) -> u32 {
+        let _ = unused;
+        // the original's locals: three words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        small::bridge::weapon_shadow_draw_init(&mut mem(), lo, hi, mode, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_flag_etc_008176f0(host, cmd)`.
+    opu_flag_etc_008176f0 @ 0x0081_76f0 => extern "C" fn opu_flag_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_flag_etc(&mut mem(), opus::bridge::FlagWord::Host, host, cmd)
+    }
+    /// `opu_v_get(host, cmd)`.
+    opu_v_get @ 0x0081_9940 => extern "C" fn opu_v_get(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_get(&mut mem(), host, cmd)
+    }
+    /// `createZBufClearRenderData_00716110(lo, hi)`.
+    createZBufClearRenderData_00716110 @ 0x0071_6110 => extern "C" fn create_zbuf_clear_render_data(lo: u32, hi: u32) -> u32 {
+        // the original's locals: ten words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x4a>::new();
+        let at = frame.at();
+        small::bridge::create_zbuf_clear_render_data(&mut mem(), lo, hi, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_mem(host, cmd)`.
+    opu_mem @ 0x0081_70c0 => extern "C" fn opu_mem(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_mem(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_signal_etc_008177f0(host, cmd)`.
+    opu_signal_etc_008177f0 @ 0x0081_77f0 => extern "C" fn opu_signal_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_flag_etc(&mut mem(), opus::bridge::FlagWord::Unit, host, cmd)
+    }
+    /// `opu_r_etc(host, cmd)`.
+    opu_r_etc @ 0x0081_8110 => extern "C" fn opu_r_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_r_etc(&mut mem(), host, cmd)
+    }
+    /// `opu_r_u(host, cmd)`.
+    opu_r_u @ 0x0081_8200 => extern "C" fn opu_r_u(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_r_u(&mut mem(), host, cmd, &mut |_, y, x| crt_atan2(y, x))
+    }
+    // ---- round 33 e ----
+    /// `pppKeBornRnd3_Born(obj, def, shape, out)`.
+    pppKeBornRnd3_Born @ 0x0075_89f0 => extern "C" fn ppp_ke_born_rnd3_born(obj: u32, def: u32, shape: u32, out: u32) {
+        // the original's local vector
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_rnd3_born(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeHitBorn(obj, key, prog)`.
+    pppKeHitBorn_00759890 @ 0x0075_9890 => extern "C" fn ppp_ke_hit_born_step(obj: u32, key: u32, prog: u32) {
+        prog::bridge::ppp_ke_hit_born_step(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opu_mdc_matrix_set_00802350(host, set)`.
+    opu_mdc_matrix_set_00802350 @ 0x0080_2350 => extern "C" fn opu_mdc_matrix_set(host: u32, set: u32) {
+        opus::bridge::opu_mdc_matrix_set(&mut mem(), host, set);
+    }
+    /// `opp_anmm_short_scale_00810ef0(host, set, cmd, work)`.
+    opp_anmm_short_scale_00810ef0 @ 0x0081_0ef0 => extern "C" fn opp_anmm_short_scale(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        anmm::bridge::short_scale(&mut mem(), host, set, cmd, work, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_signal_other_008179b0(host, cmd)`.
+    opu_signal_other_008179b0 @ 0x0081_79b0 => extern "C" fn opu_signal_other(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_flag_etc(&mut mem(), opus::bridge::FlagWord::Other, host, cmd)
+    }
     /// `opu_end(obj, cmd)`.
     opu_end @ 0x0080_c3f0 => extern "C" fn opu_end(obj: u32, cmd: u32) -> u32 {
         opus::bridge::opu_end(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

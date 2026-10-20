@@ -5160,4 +5160,48 @@ pub mod bridge {
         }
         Some(0x80)
     }
+
+    /// `0x007e7330(dst, a, b)` (`op_vector_m_to`, ours; for `opu_spl`): the
+    /// frame [`op_vector_m`] builds at `a` looking along `b - a`: the
+    /// emulated `r2` (`0x00c8f528`) = 1.0, `a` and `b` through the VU0
+    /// registers `0x00c8f980` and `0x00c8f970` (left holding `b - a` and
+    /// `b`), `restoreVf00Register`, the difference with `w` = `r2` at
+    /// `+g_pppColorConShift` into the original's locals `v` (`ebp - 0x14`;
+    /// the shift then cleared), and `op_vector_m(dst, a, v)` through `call`
+    /// (its eax returned).
+    pub fn op_vector_m_to<M: Mem>(
+        mem: &mut M,
+        dst: u32,
+        a: u32,
+        b: u32,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        let (r2, mv, t) = (
+            g(mem, 0x00c8_f528),
+            g(mem, 0x00c8_f980),
+            g(mem, 0x00c8_f970),
+        );
+        mem.write(r2, 0x3f80_0000u32);
+        let av: [u32; 4] = mem.read(a);
+        mem.write(mv, av);
+        let bv: [u32; 4] = mem.read(b);
+        mem.write(t, bv);
+        for k in 0..4 {
+            let d = x87::sub(
+                f32::from_bits(bv[k as usize]),
+                f32::from_bits(av[k as usize]),
+            );
+            mem.write(mv.wrapping_add(4 * k), d);
+        }
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let d: [u32; 4] = mem.read(mv);
+        mem.write(v, d);
+        let shift = crate::rand::bridge::COLOR_CON_SHIFT.get(mem);
+        let w: u32 = mem.read(r2);
+        mem.write(v.wrapping_add(0xc).wrapping_add(shift), w);
+        crate::rand::bridge::COLOR_CON_SHIFT.set(mem, 0);
+        call(mem, g(mem, 0x007e_a760), &[dst, a, v])
+    }
 }

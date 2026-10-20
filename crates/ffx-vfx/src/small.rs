@@ -985,4 +985,653 @@ pub mod bridge {
         }
         sum.cast_unsigned()
     }
+
+    fn sym(mem: &impl Mem, at: u32) -> u32 {
+        Global::<u32>::new(at).ptr(mem).addr
+    }
+
+    /// `ClassDynamicGeometry_setupDynMesh(this)` (`0x006a3b30`, thiscall):
+    /// `FUN_00673030` (thiscall on `[this +8]`, the engine's) of `[this
+    /// +0x24]`, through `this_call(f, this, args)`. Returns 0.
+    pub fn setup_dyn_mesh<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mesh: u32 = mem.read(this.wrapping_add(0x24));
+        let obj: u32 = mem.read(this.wrapping_add(8));
+        this_call(mem, sym(mem, 0x0067_3030), obj, &[mesh]);
+        0
+    }
+
+    /// `0x0080a470` (`opus_colour_scale2`, ours): the four `f32` arguments
+    /// through the FPU (`fld`/`fstp`: a signalling NaN comes back quiet)
+    /// to `graphicSetMaterialColourScale2` (through `call`); returns its
+    /// `eax`.
+    pub fn opus_colour_scale2<M: Mem>(
+        mem: &mut M,
+        rgba: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let a = rgba.map(x87::load);
+        call(mem, sym(mem, 0x0064_3670), &a)
+    }
+
+    /// `0x00801ea0` (`opus_view_screen_matrix`, ours):
+    /// `FFXSamp0ViewScreenMatrix(m, 512, 0.8, 0.87285, 2048, 2048, 1,
+    /// 16777215, 1, 65536)` (the `.rdata` constants `0x00b41d9c`,
+    /// `0x00b34254`, `0x00b582fc`, `0x00b51a20` twice, `fld1`,
+    /// `0x00b51a24`, `fld1`, `0x00b43ddc`), through `call`; returns its
+    /// `eax`.
+    pub fn opus_view_screen_matrix<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let c = |mem: &M, at: u32| x87::load(mem.read(sym(mem, at)));
+        let one = 1.0f32.to_bits();
+        let args = [
+            m,
+            c(mem, 0x00b4_1d9c),
+            c(mem, 0x00b3_4254),
+            c(mem, 0x00b5_82fc),
+            c(mem, 0x00b5_1a20),
+            c(mem, 0x00b5_1a20),
+            one,
+            c(mem, 0x00b5_1a24),
+            one,
+            c(mem, 0x00b4_3ddc),
+        ];
+        call(mem, sym(mem, 0x0093_d960), &args)
+    }
+
+    /// `graphicVFXAddScreenFadeEvent(r, g, b, a, alpha)` (`0x00644d40`): a
+    /// screen fade draw event in `event` (the original's local: `+0` = 2,
+    /// `+4` left as it is, `+8` the four colour bytes, `+0xc`
+    /// `calculateVFXSP_AlphaFunction(alpha)`) handed to
+    /// `PhyreScene_addVFXDrawEvent` (thiscall on `g_PhyreScene`, through
+    /// `this_call`) unless `g_GraphicSkipFrame` is set. Returns that call's
+    /// `eax`, or on a skipped frame the alpha function.
+    pub fn graphic_vfx_add_screen_fade_event<M: Mem>(
+        mem: &mut M,
+        rgba: [u32; 4],
+        alpha: u32,
+        event: u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the argument bytes
+        let bytes = rgba.map(|c| c as u8);
+        mem.write(event.wrapping_add(8), bytes);
+        mem.write(event, 2u32);
+        let f = crate::op::bridge::calculate_vfx_sp_alpha_function(alpha & 0xff);
+        mem.write(event.wrapping_add(0xc), f);
+        if mem.read::<u32>(sym(mem, 0x012f_b7d0)) != 0 {
+            return f;
+        }
+        let scene: u32 = mem.read(sym(mem, 0x00cc_b9d8));
+        this_call(mem, sym(mem, 0x0065_6940), scene, &[event])
+    }
+
+    /// `0x00711750` (`pppAkazaScrFltDraw`, ours): `graphicVFXAddCopyBufferEvent(0,
+    /// 1)`; the instance `(lo, hi)` gets its render data when it has none
+    /// (`pppCreateFrameBufferData_00715a40`, then `graphicVFXSetup`; either
+    /// failing ends in `graphicVFXDestroy(lo, hi)`), then
+    /// `updateVFXRenderData_AkazaScrFlt(lo, hi, a, b)` and
+    /// `graphicVFXUpdateType4(lo, hi)`. All through `call`.
+    pub fn ppp_akaza_scr_flt_draw<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, sym(mem, 0x0064_4be0), &[0, 1]);
+        if call(mem, sym(mem, 0x0064_53d0), &[lo, hi]) == 0
+            && (call(mem, sym(mem, 0x0071_5a40), &[lo, hi]) == 0
+                || call(mem, sym(mem, 0x0064_5780), &[lo, hi]) == 0)
+        {
+            call(mem, sym(mem, 0x0064_5280), &[lo, hi]);
+            return;
+        }
+        call(mem, sym(mem, 0x0071_ce20), &[lo, hi, a, b]);
+        call(mem, sym(mem, 0x0064_4db0), &[lo, hi]);
+    }
+
+    /// `0x007116d0` (`pppNoiseBlurDraw`, ours; `(a0..a6)`): `0x00cec19c` =
+    /// 0; renderer instance `(6, 0)` gets its render data when it has none
+    /// (`pppCreateD3D11FrameBufferData_00716050(6, 0, a2)`, then
+    /// `graphicVFXSetup(6, 0)`; either failing ends in
+    /// `graphicVFXDestroy(6, 0)`), then `updateVFXRenderData_NoiseBlur(6,
+    /// 0, a0..a6)` and `graphicVFXUpdate(6, 0)`. All through `call`.
+    pub fn ppp_noise_blur_draw<M: Mem>(
+        mem: &mut M,
+        a: [u32; 7],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        mem.write(sym(mem, 0x00ce_c19c), 0u32);
+        if call(mem, sym(mem, 0x0064_53d0), &[6, 0]) == 0
+            && (call(mem, sym(mem, 0x0071_6050), &[6, 0, a[2]]) == 0
+                || call(mem, sym(mem, 0x0064_5780), &[6, 0]) == 0)
+        {
+            call(mem, sym(mem, 0x0064_5280), &[6, 0]);
+            return;
+        }
+        let args = [6, 0, a[0], a[1], a[2], a[3], a[4], a[5], a[6]];
+        call(mem, sym(mem, 0x0071_dbd0), &args);
+        call(mem, sym(mem, 0x0064_58a0), &[6, 0]);
+    }
+
+    /// `create0706NoiseRenderDataBuffer(lo, hi)` (`0x007fa510`): the
+    /// original's locals at `frame` (`+0` format 1, `+4` height, `+8`
+    /// width, `+0xc` the name, `sprintf` of the format string at
+    /// `0x00b45b3c` through the import slot `0x00b0c3dc`);
+    /// `graphicVFXCreate(lo, hi, 0x20000000)`, then
+    /// `graphicVFXCreateDataBuffer(lo, hi, 1, &width 0x700, &height 0xa80,
+    /// name, &format)` (all through `call`); `0x012e9644` = 1. Returns 1.
+    pub fn create_0706_noise_render_data_buffer<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (format, height, width, name) = (frame, frame + 4, frame + 8, frame + 0xc);
+        mem.write(width, 0u32);
+        mem.write(height, 0u32);
+        mem.write(format, 1u32);
+        let sprintf: u32 = mem.read(sym(mem, 0x00b0_c3dc));
+        call(mem, sprintf, &[name, sym(mem, 0x00b4_5b3c)]);
+        mem.write(width, 0x700u32);
+        mem.write(height, 0xa80u32);
+        call(mem, sym(mem, 0x0064_4de0), &[lo, hi, 0x2000_0000]);
+        call(
+            mem,
+            sym(mem, 0x0064_5040),
+            &[lo, hi, 1, width, height, name, format],
+        );
+        mem.write(sym(mem, 0x012e_9644), 1u32);
+        1
+    }
+
+    /// `0x0069fcb0` (`DynGeo_ResetCurrentBuffer`, ours; thiscall `(this)`):
+    /// `this +0x10` = `graphicDynGeoMemManagerGetCurrentBufferId()` (through
+    /// `call`); that buffer's record (`[[this + 4 id] +0x94]`, read again
+    /// for each step) gets `+4`, `+8` = 0 and its arrays zeroed (`memset`):
+    /// `[+0x14]` 0x1f40 bytes, `[+0x1c]` 0xbb8, `[+0x10]` 0x1770, `[+0x18]`
+    /// 0xfa0, `[+0xc]` 0x1770. Returns the last array (`memset`'s eax).
+    pub fn dyn_geo_reset_current_buffer<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = call(mem, sym(mem, 0x0063_ff50), &[]);
+        mem.write(this.wrapping_add(0x10), id);
+        let rec = |mem: &M| {
+            let id: u32 = mem.read(this.wrapping_add(0x10));
+            let b: u32 = mem.read(this.wrapping_add(id.wrapping_mul(4)));
+            mem.read::<u32>(b.wrapping_add(0x94))
+        };
+        let r = rec(mem);
+        mem.write(r.wrapping_add(4), 0u32);
+        let r = rec(mem);
+        mem.write(r.wrapping_add(8), 0u32);
+        let mut last = 0;
+        for (off, n) in [
+            (0x14, 0x1f40),
+            (0x1c, 0xbb8),
+            (0x10, 0x1770),
+            (0x18, 0xfa0),
+            (0xc, 0x1770),
+        ] {
+            let dst: u32 = mem.read(rec(mem).wrapping_add(off));
+            for i in (0..n).step_by(4) {
+                mem.write(dst.wrapping_add(i), 0u32);
+            }
+            last = dst;
+        }
+        last
+    }
+
+    /// The renderer instance `(g_pppCurrentProgram, hi)` (the program
+    /// sign-extended to 64 bits plus `hi` in the high word), read again
+    /// each time.
+    fn program_instance(mem: &impl Mem, hi: u32) -> [u32; 2] {
+        let lo: u32 = mem.read(sym(mem, 0x0230_fd20));
+        [
+            lo,
+            (lo.cast_signed() >> 31).cast_unsigned().wrapping_add(hi),
+        ]
+    }
+
+    /// `0x00711830` (`pppKaGra001Draw`, ours; `(hi, a, rec)`): for the
+    /// current program's renderer instance ([`program_instance`]) with
+    /// render data `updateVFXRenderData_KaGra001(inst, a, rec)` and
+    /// `graphicVFXUpdate(inst)`; without, it is made first
+    /// (`FUN_00715dc0(inst, a, rec, f)`, `f` =
+    /// `calculateVFXSP_AlphaFunction(byte rec +8)` | 1 when `rec +0x44` is
+    /// set | 0x40 with bit 3 of byte `rec +0`, then `graphicVFXSetup`;
+    /// either failing ends in `graphicVFXDestroy`). All through `call`.
+    pub fn ppp_ka_gra001_draw<M: Mem>(
+        mem: &mut M,
+        hi: u32,
+        a: u32,
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let i = program_instance(mem, hi);
+        if call(mem, sym(mem, 0x0064_53d0), &i) != 0 {
+            let i = program_instance(mem, hi);
+            call(mem, sym(mem, 0x0071_d520), &[i[0], i[1], a, rec]);
+            let i = program_instance(mem, hi);
+            call(mem, sym(mem, 0x0064_58a0), &i);
+            return;
+        }
+        let mut f = crate::op::bridge::calculate_vfx_sp_alpha_function(u32::from(
+            mem.read::<u8>(rec.wrapping_add(8)),
+        ));
+        f |= u32::from(mem.read::<u32>(rec.wrapping_add(0x44)) != 0);
+        if mem.read::<u8>(rec) & 8 != 0 {
+            f |= 0x40;
+        }
+        let i = program_instance(mem, hi);
+        if call(mem, sym(mem, 0x0071_5dc0), &[i[0], i[1], a, rec, f]) == 0
+            || call(mem, sym(mem, 0x0064_5780), &i) == 0
+        {
+            call(mem, sym(mem, 0x0064_5280), &i);
+            return;
+        }
+        call(mem, sym(mem, 0x0071_d520), &[i[0], i[1], a, rec]);
+        call(mem, sym(mem, 0x0064_58a0), &i);
+    }
+
+    /// `weaponShadowDrawInit(lo, hi, _, mode)` (`0x00814070`): the
+    /// original's locals at `frame` as in
+    /// [`create_0706_noise_render_data_buffer`] (format 0, height 0x300,
+    /// width 0x102, the name `g_StrNoTexture`'s ten bytes);
+    /// `graphicVFXCreate(lo, hi, f)` (`f` 0x10 for mode byte 0x42, 2 for
+    /// 0x48, else 0), `graphicVFXCreateDataBuffer(lo, hi, 1, &width,
+    /// &height, name, &format)`, `graphicVFXSetup`, `graphicVFXSetVisible(lo,
+    /// hi, 1)`, whose eax it returns (all through `call`).
+    pub fn weapon_shadow_draw_init<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        mode: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (format, height, width, name) = (frame, frame + 4, frame + 8, frame + 0xc);
+        mem.write(width, 0u32);
+        mem.write(height, 0u32);
+        mem.write(format, 0u32);
+        let f = match mode & 0xff {
+            0x42 => 0x10,
+            0x48 => 2,
+            _ => 0,
+        };
+        call(mem, sym(mem, 0x0064_4de0), &[lo, hi, f]);
+        let text: [u8; 10] = mem.read(sym(mem, 0x00b4_1b50));
+        mem.write(name, text);
+        mem.write(width, 0x102u32);
+        mem.write(height, 0x300u32);
+        call(
+            mem,
+            sym(mem, 0x0064_5040),
+            &[lo, hi, 1, width, height, name, format],
+        );
+        call(mem, sym(mem, 0x0064_5780), &[lo, hi]);
+        call(mem, sym(mem, 0x0064_5710), &[lo, hi, 1])
+    }
+
+    /// `0x006a52f0` (`VfxGeometry_Register`, ours; thiscall `(this, kind)`,
+    /// `ret 4`): `r` = 0 for a `kind` with bit 30 (cleared), else the
+    /// object's virtual `+0x28(kind)` (`v_call(f, this, args)`); bit 31
+    /// becomes the draw entry's flag (the low byte of the original argument
+    /// word), then cleared. With `[0x00ccca58]` = 1 any kind but 2 is 4, as
+    /// is any with bit 8 of `this +0x3c`. With `this +0x24` set and `r` 0,
+    /// the scene (`g_PhyreScene`) gets by kind: 0 `FUN_006565e0([this
+    /// +0xc])` when byte `this +0x50` is set, else
+    /// `PhyreScene_AddDrawEntry(this, flag)`; 1 `FUN_006a0d40`, 2
+    /// `FUN_00656990`, 4 `FUN_006567e0` of `[this +0xc]` (thiscalls through
+    /// `this_call`). Returns `r`.
+    pub fn vfx_geometry_register<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        kind: u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut k = kind;
+        let mut r = 0;
+        if k & 0x4000_0000 != 0 {
+            k &= !0x4000_0000;
+        } else {
+            let vt: u32 = mem.read(this);
+            let f: u32 = mem.read(vt.wrapping_add(0x28));
+            r = this_call(mem, f, this, &[k]);
+        }
+        let flag = kind & 0xffff_ff00 | u32::from(k & 0x8000_0000 != 0);
+        k &= 0x7fff_ffff;
+        let one = mem.read::<u32>(sym(mem, 0x00cc_ca58)) == 1;
+        if (one && k != 2) || mem.read::<u32>(this.wrapping_add(0x3c)) & 0x100 != 0 {
+            k = 4;
+        }
+        if mem.read::<u32>(this.wrapping_add(0x24)) == 0 || r != 0 || k > 4 {
+            return r;
+        }
+        let scene: u32 = mem.read(sym(mem, 0x00cc_b9d8));
+        let item: u32 = mem.read(this.wrapping_add(0xc));
+        match k {
+            0 if mem.read::<u8>(this.wrapping_add(0x50)) != 0 => {
+                this_call(mem, sym(mem, 0x0065_65e0), scene, &[item]);
+            }
+            0 => {
+                this_call(mem, sym(mem, 0x0065_6c10), scene, &[this, flag]);
+            }
+            1 => {
+                this_call(mem, sym(mem, 0x006a_0d40), scene, &[item]);
+            }
+            2 => {
+                this_call(mem, sym(mem, 0x0065_6990), scene, &[item]);
+            }
+            4 => {
+                this_call(mem, sym(mem, 0x0065_67e0), scene, &[item]);
+            }
+            _ => {}
+        }
+        r
+    }
+
+    /// `0x00716110` (`createZBufClearRenderData`, ours; `(lo, hi)`): the
+    /// original's locals at `frame` (`+0` height 6, `+4` width 4, `+8`
+    /// format 0, seven zero words from `+0xc`, the name at `+0x28`:
+    /// `sprintf(name, g_StrNoTexture)` through the import slot
+    /// `0x00b0c3dc`); `graphicVFXCreate(lo, hi, 0x40000000)`,
+    /// `graphicVFXCreateDataBuffer(lo, hi, 1, &width, &height, name,
+    /// &format)` (through `call`). Returns 1 when the instance has render
+    /// data then (`graphicVFXGetRenderDataByInstance`), else 0.
+    pub fn create_zbuf_clear_render_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (height, width, format, name) = (frame, frame + 4, frame + 8, frame + 0x28);
+        mem.write(frame + 0xc, [0u32; 7]);
+        mem.write(width, 0u32);
+        mem.write(height, 0u32);
+        mem.write(format, 0u32);
+        let sprintf: u32 = mem.read(sym(mem, 0x00b0_c3dc));
+        call(mem, sprintf, &[name, sym(mem, 0x00b4_1b50)]);
+        mem.write(width, 4u32);
+        mem.write(height, 6u32);
+        call(mem, sym(mem, 0x0064_4de0), &[lo, hi, 0x4000_0000]);
+        call(
+            mem,
+            sym(mem, 0x0064_5040),
+            &[lo, hi, 1, width, height, name, format],
+        );
+        u32::from(call(mem, sym(mem, 0x0064_53d0), &[lo, hi]) != 0)
+    }
+
+    // ---- round 34 a ----
+
+    /// `op_init_draw()` (`0x007ec410`): `ops_init_draw_work()`, then (a
+    /// tail jump) `ops_init_spr()`, whose eax it returns. Both through
+    /// `call`.
+    pub fn op_init_draw<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, sym(mem, 0x007e_c890), &[]);
+        call(mem, sym(mem, 0x007e_6c30), &[])
+    }
+
+    /// `op_ovl_effect_forced_free()` (`0x007fcd50`): `opus_end_all_sub(-1)`,
+    /// then (a tail jump) `op_ovl_effect_free()`, whose eax it returns. Both
+    /// through `call`.
+    pub fn op_ovl_effect_forced_free<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, sym(mem, 0x007f_e6c0), &[u32::MAX]);
+        call(mem, sym(mem, 0x007f_cd60), &[])
+    }
+
+    /// `0x00888910(works)` (`Pad_ResetSlots`, ours): the four 0x20-byte
+    /// slot works from `works` each get `Pad_ResetWork(work)` (through
+    /// `call`), then `u16 +2` and `u16 +0x1e` = 0. Returns 0 (the
+    /// original's `eax`).
+    pub fn pad_reset_slots<M: Mem>(
+        mem: &mut M,
+        works: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for k in 0..4u32 {
+            let work = works.wrapping_add(0x20 * k);
+            call(mem, sym(mem, 0x0088_8970), &[work]);
+            mem.write(work.wrapping_add(2), 0u16);
+            mem.write(work.wrapping_add(0x1e), 0u16);
+        }
+        0
+    }
+
+    /// `InitVFXZBufClearRenderData(lo, hi)` (`0x00711680`):
+    /// `createZBufClearRenderData(lo, hi)`; when that gives nonzero,
+    /// `graphicVFXSetup(lo, hi)`, whose nonzero eax is returned. Otherwise
+    /// `graphicVFXDestroy(lo, hi)` and its eax. All through `call`.
+    pub fn init_vfx_zbuf_clear_render_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if call(mem, sym(mem, 0x0071_6110), &[lo, hi]) != 0 {
+            let r = call(mem, sym(mem, 0x0064_5780), &[lo, hi]);
+            if r != 0 {
+                return r;
+            }
+        }
+        call(mem, sym(mem, 0x0064_5280), &[lo, hi])
+    }
+
+    /// `create0706AccRenderDataBuffer(lo, hi, tex_lo, tex_hi)`
+    /// (`0x007fa5c0`): the texture word `t = tex_hi:tex_lo` (a GS `TEX0`)
+    /// names the texture: `graphicVFXIsTextureWithBpLoaded(t & 0x3fff, t >>
+    /// 20 & 0x3f, 0, 0, 1 << (t >> 26 & 0xf), 1 << (t >> 30 & 0xf), name)`
+    /// (16-bit shifts). Unless that is loaded (nonzero) it returns 0.
+    /// Otherwise `graphicVFXCreate(lo, hi, 0x08000000)` and
+    /// `graphicVFXCreateDataBuffer(lo, hi, 1, &0xe00, &0x1500, name,
+    /// &format 1)`, and 1. The original's locals at `frame` (`+0` the
+    /// format, `+4`, `+8` the two sizes, `+0xc` the 0x100-byte name);
+    /// callees through `call`.
+    pub fn create_0706_acc_render_data_buffer<M: Mem>(
+        mem: &mut M,
+        [lo, hi, tex_lo, tex_hi]: [u32; 4],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (format, first, second, name) = (frame, frame + 4, frame + 8, frame + 0xc);
+        let t = u64::from(tex_hi) << 32 | u64::from(tex_lo);
+        #[allow(clippy::cast_possible_truncation)] // the 4-bit fields
+        let size = |shift: u32| u32::from(1u16 << ((t >> shift) as u32 & 0xf));
+        mem.write(second, 0u32);
+        mem.write(first, 0u32);
+        mem.write(format, 1u32);
+        #[allow(clippy::cast_possible_truncation)] // the 6-bit field
+        let psm = (t >> 20) as u32 & 0x3f;
+        let args = [tex_lo & 0x3fff, psm, 0, 0, size(26), size(30), name];
+        if call(mem, sym(mem, 0x0064_5450), &args) == 0 {
+            return 0;
+        }
+        mem.write(second, 0xe00u32);
+        mem.write(first, 0x1500u32);
+        call(mem, sym(mem, 0x0064_4de0), &[lo, hi, 0x0800_0000]);
+        call(
+            mem,
+            sym(mem, 0x0064_5040),
+            &[lo, hi, 1, second, first, name, format],
+        );
+        1
+    }
+
+    /// `0x006d54c0` (`ShadowEntries_Init`, ours; thiscall `(this, n,
+    /// buf)`, `ret 8`): `this +0x34` = `n`, `+0x38` = `buf`, a table of `n`
+    /// pointers; the records follow it from `buf` + the table's size
+    /// rounded up to 16 (`(4n - 1 & !0xf) + 0x10`). Each record is a
+    /// 16-byte head (zeroed, its address into the table) and two 0xb0-byte
+    /// entries `ShadowEntry_Init(entry, 1)` and `(entry, 2)` (thiscall,
+    /// through `this_call`) whose results go to the head's `+0` and `+4`.
+    /// A record address of 0 (wrapping) gets null instead, as the
+    /// original's `new` checks. Returns the address after the last record.
+    pub fn shadow_entries_init<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        n: u32,
+        buf: u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let init = sym(mem, 0x006d_3560);
+        let mut at = (n.wrapping_mul(4).wrapping_sub(1) & !0xf)
+            .wrapping_add(0x10)
+            .wrapping_add(buf);
+        mem.write(this.wrapping_add(0x34), n);
+        mem.write(this.wrapping_add(0x38), buf);
+        let slot = |mem: &M, i: u32| {
+            let table: u32 = mem.read(this.wrapping_add(0x38));
+            let head: u32 = mem.read(table.wrapping_add(4 * i));
+            head
+        };
+        for i in 0..n.cast_signed().max(0).cast_unsigned() {
+            let head = if at == 0 {
+                0
+            } else {
+                mem.write(at, [0u32; 4]);
+                at
+            };
+            let table: u32 = mem.read(this.wrapping_add(0x38));
+            mem.write(table.wrapping_add(4 * i), head);
+            at = at.wrapping_add(0x10);
+            let e = if at == 0 {
+                0
+            } else {
+                this_call(mem, init, at, &[1])
+            };
+            let h = slot(mem, i);
+            mem.write(h, e);
+            at = at.wrapping_add(0xb0);
+            let e = if at == 0 {
+                0
+            } else {
+                this_call(mem, init, at, &[2])
+            };
+            let h = slot(mem, i);
+            mem.write(h.wrapping_add(4), e);
+            at = at.wrapping_add(0xb0);
+        }
+        at
+    }
+
+    /// `pppInitProtocolDriver(drv, a, b, c, e)` (`0x0076b2d0`; the
+    /// arguments' names are guesses): the driver record `drv` gets `+4` =
+    /// `a`, `+0x3c` = `b`, `+0x40` = `c`, `+0x44` = `e`, `+0x10` = `0x010d5640`, `+0x14` = `0x010d7640` (its two
+    /// buffers), and `+8`, `+0xc`, `+0x24` = 0; `g_pppWaitDone` = 1; the
+    /// twelve PS2 debug handlers (`SetDebugHandler`, a stub on PC) for
+    /// causes 1..7 and 9..13; `0x010e7874` = `GetCurrentThreadId()` (the
+    /// import thunk `0x006f2ec0`). Callees through `call`. Returns 1.
+    pub fn ppp_init_protocol_driver<M: Mem>(
+        mem: &mut M,
+        [drv, mode, send, recv, user]: [u32; 5],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const HANDLERS: [(u32, u32); 12] = [
+            (1, 0x0076_ac90),
+            (2, 0x0076_ad30),
+            (3, 0x0076_ad50),
+            (4, 0x0076_ad70),
+            (5, 0x0076_ad90),
+            (6, 0x0076_adb0),
+            (7, 0x0076_add0),
+            (9, 0x0076_adf0),
+            (10, 0x0076_acb0),
+            (11, 0x0076_acd0),
+            (12, 0x0076_acf0),
+            (13, 0x0076_ad10),
+        ];
+        let at = |o: u32| drv.wrapping_add(o);
+        mem.write(at(4), mode);
+        mem.write(at(0x3c), send);
+        mem.write(at(0x10), sym(mem, 0x010d_5640));
+        mem.write(at(0x14), sym(mem, 0x010d_7640));
+        mem.write(at(8), 0u32);
+        mem.write(at(0x40), recv);
+        mem.write(at(0xc), 0u32);
+        mem.write(at(0x24), 0u32);
+        mem.write(at(0x44), user);
+        mem.write(sym(mem, 0x010e_7640), 1u32);
+        for (cause, handler) in HANDLERS {
+            let handler = sym(mem, handler);
+            call(mem, sym(mem, 0x0062_f4d0), &[cause, handler]);
+        }
+        let id = call(mem, sym(mem, 0x006f_2ec0), &[]);
+        mem.write(sym(mem, 0x010e_7874), id);
+        1
+    }
+
+    // ---- round 34 c ----
+
+    /// `checkPolyImg0434(lo, n, make)` (`0x00713160`): render data for
+    /// `n` polygons of instance `(0, lo)`: none (`graphicVFXDestroy`, 0)
+    /// for `n` = 0; with `make`, `graphicVFXCreate(0, lo, 2)` and
+    /// `graphicVFXCreateDataBuffer(0, lo, 1, &6n, &6n, "NoTexture",
+    /// &1)` (the original's locals at `frame`: `+0` the format, `+4`,
+    /// `+8` the counts, `+0xc` the name copied from `g_StrNoTexture`). Then
+    /// the instance's render data `r`
+    /// (`graphicVFXGetRenderDataByInstance`, 0 when none): its `[+0x94]`
+    /// gets `+4`, `+8` = `6n`, and
+    /// `graphicDynGeoMemManagerGetBufferForSegment(r, 0, +4, +8)` must give
+    /// a buffer (else 0); `0x00cec194` = 0 and 1. Callees through `call`.
+    pub fn check_poly_img_0434<M: Mem>(
+        mem: &mut M,
+        [lo, n, make]: [u32; 3],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if n == 0 {
+            call(mem, sym(mem, 0x0064_5280), &[0, lo]);
+            return 0;
+        }
+        let count = n.wrapping_mul(6);
+        if make != 0 {
+            let (format, first, second, name) = (frame, frame + 4, frame + 8, frame + 0xc);
+            mem.write(first, count);
+            mem.write(second, count);
+            let text: [u8; 10] = mem.read(sym(mem, 0x00b4_1b50));
+            mem.write(name, text);
+            mem.write(format, 1u32);
+            call(mem, sym(mem, 0x0064_4de0), &[0, lo, 2]);
+            call(
+                mem,
+                sym(mem, 0x0064_5040),
+                &[0, lo, 1, first, second, name, format],
+            );
+        }
+        let data = call(mem, sym(mem, 0x0064_53d0), &[0, lo]);
+        if data == 0 {
+            return 0;
+        }
+        let rec = |mem: &M| mem.read::<u32>(data.wrapping_add(0x94));
+        let r = rec(mem);
+        mem.write(r.wrapping_add(4), count);
+        let r = rec(mem);
+        mem.write(r.wrapping_add(8), count);
+        let r = rec(mem);
+        let (v, i) = (mem.read(r.wrapping_add(4)), mem.read(r.wrapping_add(8)));
+        if call(mem, sym(mem, 0x0063_fdb0), &[data, 0, v, i]) == 0 {
+            return 0;
+        }
+        mem.write(sym(mem, 0x00ce_c194), 0u32);
+        1
+    }
 }

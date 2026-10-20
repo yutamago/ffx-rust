@@ -310,6 +310,31 @@ pub mod bridge {
             std::hint::spin_loop();
             std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
         }
+        send_packet(mem, [rpc, tag, data, n], true, call)
+    }
+
+    /// `pppExSendPacket(rpc, tag, data, n)` (`0x0076b210`): [`ppp_send_packet`]
+    /// without the waits: [`WAIT_DONE`] is only set (1) after the call.
+    /// Returns 0.
+    pub fn ppp_ex_send_packet<M: Mem>(
+        mem: &mut M,
+        rpc: u32,
+        tag: u32,
+        data: u32,
+        n: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        send_packet(mem, [rpc, tag, data, n], false, call)
+    }
+
+    /// The packet of [`ppp_send_packet`] and [`ppp_ex_send_packet`]; `wait`
+    /// clears [`WAIT_DONE`] before the flush.
+    fn send_packet<M: Mem>(
+        mem: &mut M,
+        [rpc, tag, data, n]: [u32; 4],
+        wait: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
         let pk = SEND_PACKET.ptr(mem).addr;
         mem.write(rpc.wrapping_add(0x10), pk);
         mem.write(rpc.wrapping_add(8), n.wrapping_add(0x14));
@@ -324,7 +349,9 @@ pub mod bridge {
             let b: u8 = mem.read(data.wrapping_add(i));
             mem.write(pk.wrapping_add(0x14 + i), b);
         }
-        WAIT_DONE.set(mem, 0);
+        if wait {
+            WAIT_DONE.set(mem, 0);
+        }
         let flush = Global::<u32>::new(0x0062_f4c0).ptr(mem).addr;
         call(mem, flush, &[0]);
         let size: u32 = mem.read(rpc.wrapping_add(8));

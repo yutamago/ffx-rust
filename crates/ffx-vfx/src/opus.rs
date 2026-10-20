@@ -3112,4 +3112,1475 @@ pub mod bridge {
         }
         0
     }
+
+    /// The unit `host +0x220`.
+    fn unit(mem: &impl Mem, host: u32) -> u32 {
+        mem.read(host.wrapping_add(0x220))
+    }
+
+    /// The flag nibble's bits (`u16 host +0x21a & 0xf000`).
+    fn nibble(mem: &impl Mem, host: u32) -> u16 {
+        mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000
+    }
+
+    /// `opp_et_ovl(host)` (`0x00813460`): the unit's word `+0xac`
+    /// (`get_ptr32_func`, the identity here).
+    pub fn opp_et_ovl(mem: &impl Mem, host: u32) -> u32 {
+        ffx_system::stub::ptr32(mem.read(unit(mem, host).wrapping_add(0xac)))
+    }
+
+    /// `0x00817280` (`opu_return`, ours): the address [`opu_call`] saved
+    /// in the unit's slot `i16 host +0x216` (`+0x20 + 4 i`), through
+    /// `get_ptr32_func`.
+    pub fn opu_return(mem: &impl Mem, host: u32) -> u32 {
+        let i = i32::from(mem.read::<i16>(host.wrapping_add(0x216))).cast_unsigned();
+        let slot = unit(mem, host)
+            .wrapping_add(0x20)
+            .wrapping_add(i.wrapping_mul(4));
+        ffx_system::stub::ptr32(mem.read(slot))
+    }
+
+    /// `0x00815760` (`opu_call`, ours): `cmd + 4` (`set_ptr32`) into the
+    /// unit's slot `i16 host +0x216`, then a jump by the command's `i16 +2`
+    /// (from `cmd`, read after the store).
+    pub fn opu_call(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let u = unit(mem, host);
+        let back = ffx_system::stub::ptr32(cmd.wrapping_add(4));
+        let i = i32::from(mem.read::<i16>(host.wrapping_add(0x216))).cast_unsigned();
+        mem.write(u.wrapping_add(0x20).wrapping_add(i.wrapping_mul(4)), back);
+        let d = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        d.wrapping_add(cmd)
+    }
+
+    /// `0x0080c650` (`opu_end_no`, ours): when unit `u16 cmd +2` of the
+    /// list `host +0x300` ([`opus_no_get`]) is the list's base `[host
+    /// +0x320]` (none found), [`opu_end`]; else the host waits (`+0x210` =
+    /// 1) and `cmd` comes back.
+    pub fn opu_end_no<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let list = host.wrapping_add(0x300);
+        let u = opus_no_get(mem, list, unit(mem, host), no);
+        if u == mem.read::<u32>(list.wrapping_add(0x20)) {
+            return opu_end(mem, host, cmd, call);
+        }
+        mem.write(host.wrapping_add(0x210), 1u8);
+        cmd
+    }
+
+    /// `0x00815710` (`opu_kind8`, ours): the unit's `+0xa8` = `cmd + 4`,
+    /// its draw kind `+0xbb` = 8, the host's unit number `u16 +0x214`
+    /// added to the list `host +0x300` (`opu_id_list_add`). Returns `cmd +
+    /// 6 + 2 n` for the command's `u16 +2` as an `i16` (read first).
+    pub fn opu_kind8(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let u = unit(mem, host);
+        let n = mem.read::<i16>(cmd.wrapping_add(2));
+        mem.write(u.wrapping_add(0xa8), cmd.wrapping_add(4));
+        mem.write(u.wrapping_add(0xbb), 8u8);
+        let id: u16 = mem.read(host.wrapping_add(0x214));
+        crate::op::bridge::opu_id_list_add(mem, host.wrapping_add(0x300), id);
+        let skip = i32::from(n).cast_unsigned().wrapping_mul(2);
+        cmd.wrapping_add(6).wrapping_add(skip)
+    }
+
+    /// `opu_signal(host, cmd)` (`0x008172b0`): with no flag bits
+    /// `AtelSetEffectFlag(u16 cmd +2)` and `cmd + 4`; with nibble 1 `cmd +
+    /// 4` once `AtelGetEffectFlag` of it is set, else the host waits
+    /// (`+0x210` = 1) on `cmd`; other nibbles return `cmd` (both through
+    /// `call`).
+    pub fn opu_signal<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let bit = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        match nibble(mem, host) {
+            0 => {
+                call(mem, g(mem, 0x0086_fa40), &[bit]);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                if call(mem, g(mem, 0x0086_b030), &[bit]) != 0 {
+                    return cmd.wrapping_add(4);
+                }
+                mem.write(host.wrapping_add(0x210), 1u8);
+                cmd
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opu_vibration(host, cmd)` (`0x008143e0`): with no flag bits, the
+    /// pad's vibration stream: table `i16 cmd +2` of kind 5 of the unit's
+    /// oef (`[host +0x360 + 4 * byte unit +0x1e]`, `op_oef2_a_get`), then
+    /// `TkStopVibrate(7)` and `TkSetVibrateStream(7, i16 cmd +4, table)`
+    /// (through `call`); returns `cmd + 6`. Otherwise `cmd`.
+    pub fn opu_vibration<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if nibble(mem, host) != 0 {
+            return cmd;
+        }
+        let k = u32::from(mem.read::<u8>(unit(mem, host).wrapping_add(0x1e)));
+        let oef: u32 = mem.read(host.wrapping_add(0x360).wrapping_add(4 * k));
+        let n = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let table = crate::op::bridge::op_oef2_a_get(mem, oef, 5, n);
+        call(mem, g(mem, 0x0087_6290), &[7]);
+        let curve = i32::from(mem.read::<i16>(cmd.wrapping_add(4))).cast_unsigned();
+        call(mem, g(mem, 0x0087_5fb0), &[7, curve, table]);
+        cmd.wrapping_add(6)
+    }
+
+    /// `0x00814440` (`opu_stone`, ours): the unit's character (`byte +0x18`
+    /// of `g_EtChrHandles`) found in `g_EtChr` (`opus_get_chr_status_index(h,
+    /// 0, 0)`, -1 for none takes the record before) gets its stone bit
+    /// (`+0x17` bit 0) set with no flag bits or cleared with nibble 1 (both
+    /// `cmd + 4`); other nibbles return `cmd`.
+    pub fn opu_stone<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let chr = u32::from(mem.read::<u8>(unit(mem, host).wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        let i = crate::et::bridge::opus_get_chr_status_index(mem, h, 0, 0, call);
+        let base = crate::et::bridge::CHR.ptr(mem).addr;
+        let at = (i.cast_unsigned() << 5)
+            .wrapping_add(base)
+            .wrapping_add(0x17);
+        match nibble(mem, host) {
+            0 => mem.write(at, mem.read::<u8>(at) | 1),
+            0x1000 => mem.write(at, mem.read::<u8>(at) & 0xfe),
+            _ => return cmd,
+        }
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x0080adc0` (`opu_prog_clear`, ours): for flag nibble `k` not 0 the
+    /// unit's program pointer `+4 k` = 0 (`set_ptr32(0)`) and its byte
+    /// `+0x1f` loses bit `k` (`!(1 << k)` in a byte, 0 from bit 8 up, kept
+    /// to the low four bits); for 0 the pointers `+4`, `+8`, `+0xc` = 0 and
+    /// `+0x1f` keeps bit 0. Returns `cmd + 2`.
+    pub fn opu_prog_clear(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let u = unit(mem, host);
+        let k = u32::from(mem.read::<u16>(host.wrapping_add(0x21a)) >> 12);
+        let zero = ffx_system::stub::ptr32(0);
+        let flags = u.wrapping_add(0x1f);
+        if k == 0 {
+            mem.write(flags, mem.read::<u8>(flags) & 1);
+            for off in [0xc, 8, 4] {
+                mem.write(u.wrapping_add(off), zero);
+            }
+        } else {
+            mem.write(u.wrapping_add(4 * k), zero);
+            // read after the store: slot 7 holds the flags byte
+            let bit = 1u8.checked_shl(k).unwrap_or(0);
+            mem.write(flags, mem.read::<u8>(flags) & !bit & 0xf);
+        }
+        cmd.wrapping_add(2)
+    }
+
+    /// `0x008144b0` (`opu_chr_switch`, ours): with no flag bits, a jump
+    /// through the command's table (`cmd + i16 cmd +2`) by the unit's
+    /// character's effect table number (`Ch_IdGetEffectTable` of its
+    /// `g_EtChrHandles` entry, `byte unit +0x18`, through `call`; from 10
+    /// up the original prints and calls `debug_exit_trace(1)` first): `t +
+    /// 2 i + i16 [t + 2 i]`. Otherwise `cmd`.
+    pub fn opu_chr_switch<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let chr = u32::from(mem.read::<u8>(unit(mem, host).wrapping_add(0x18)));
+        if nibble(mem, host) != 0 {
+            return cmd;
+        }
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        let i = call(mem, g(mem, 0x0083_d7e0), &[h]);
+        if i.cast_signed() >= 10 {
+            let fmt = g(mem, 0x00b5_8b2c);
+            call(mem, g(mem, 0x0062_f500), &[fmt, i]);
+            call(mem, g(mem, 0x0062_f510), &[1]);
+        }
+        let t = i32::from(mem.read::<i16>(cmd.wrapping_add(2)))
+            .cast_unsigned()
+            .wrapping_add(cmd);
+        let e = t.wrapping_add(i.wrapping_mul(2));
+        i32::from(mem.read::<i16>(e))
+            .cast_unsigned()
+            .wrapping_add(e)
+    }
+
+    /// Points `g_pppEnvSlot`'s target at the op layer's environment
+    /// (`0x012f2070`).
+    fn op_env(mem: &mut impl Mem) {
+        let slot = crate::heap::bridge::ENV_SLOT.get(mem);
+        mem.write(slot, g(mem, 0x012f_2070));
+    }
+
+    /// `op_part_free(part)` (`0x008009c0`): a particle part (draw kind
+    /// `+0xbb` 3) with a ppp part at `+0xbc` frees its objects
+    /// (`pppAllFreePObject`, under the op environment), clears its entry in
+    /// `0x012e9c70` (by the ppp part's `u16 +0x1e`) and is reset (`+0xbb`,
+    /// `+0xbc` = 0). Returns 0.
+    pub fn op_part_free<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u8>(part.wrapping_add(0xbb)) != 3
+            || mem.read::<u32>(part.wrapping_add(0xbc)) == 0
+        {
+            return 0;
+        }
+        op_env(mem);
+        let ppp: u32 = mem.read(part.wrapping_add(0xbc));
+        op_env(mem);
+        crate::part::bridge::ppp_all_free_pobject(mem, ppp, call);
+        let i = u32::from(mem.read::<u16>(ppp.wrapping_add(0x1e)));
+        mem.write(g(mem, 0x012e_9c70).wrapping_add(4 * i), 0u32);
+        mem.write(part.wrapping_add(0xbb), 0u8);
+        mem.write(part.wrapping_add(0xbc), 0u32);
+        0
+    }
+
+    /// `op_part_fp_init(part)` (`0x00800700`): for a loaded ppp part
+    /// (`[part +0xd0]`, first byte not 0) the op environment's three tables
+    /// (`0x012f2090`..`98`) = its words `+0x14`, `+0x18`, `+0x1c`
+    /// (`get_ptr32_func`); unless [`op_part_init_check`] says it is set up,
+    /// `pppInitData(ppp, g_pppProgramTable)`. Returns 0.
+    pub fn op_part_fp_init<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let ppp: u32 = mem.read(part.wrapping_add(0xd0));
+        if mem.read::<u8>(ppp) == 0 {
+            return 0;
+        }
+        for k in 0..3 {
+            let v = ffx_system::stub::ptr32(mem.read(ppp.wrapping_add(0x14 + 4 * k)));
+            mem.write(g(mem, 0x012f_2090).wrapping_add(4 * k), v);
+        }
+        op_env(mem);
+        if op_part_init_check(mem, ppp, call) == 0 {
+            let table = g(mem, 0x00c3_a508);
+            crate::part::bridge::ppp_init_data(mem, ppp, table);
+        }
+        0
+    }
+
+    /// `0x00807f90` (`opu_blur`, ours): with no flag bits the unit's draw
+    /// kind `+0xbb` = 7, `u16 +0xa8` = 0 and the host's unit number added
+    /// to the list `host +0x300` (`opu_id_list_add`); with nibble 1
+    /// `opus_blur_path3(unit)` (through `call`); both `cmd + 2`. Other
+    /// nibbles return `cmd`.
+    pub fn opu_blur<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = unit(mem, host);
+        match nibble(mem, host) {
+            0 => {
+                mem.write(u.wrapping_add(0xbb), 7u8);
+                mem.write(u.wrapping_add(0xa8), 0u16);
+                let id: u16 = mem.read(host.wrapping_add(0x214));
+                crate::op::bridge::opu_id_list_add(mem, host.wrapping_add(0x300), id);
+            }
+            0x1000 => {
+                call(mem, g(mem, 0x0080_f7e0), &[u]);
+            }
+            _ => return cmd,
+        }
+        cmd.wrapping_add(2)
+    }
+
+    /// `0x0080c490` (`opu_eff_end`, ours): the unit's `g_EtEff` record (`u16
+    /// unit +0x14`) with a battle effect id (`+0` with the top four bits
+    /// clear) not yet ended (byte `+0x1d`) is marked (`+0x1d` = 1) and
+    /// `MsEffectTerminate(id)` called (through `call`). Then with flag bits
+    /// `cmd + 4`; without, `opu_eff_free_by_id(id)` and [`opu_end`].
+    pub fn opu_eff_end<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let i = u32::from(mem.read::<u16>(unit(mem, host).wrapping_add(0x14)));
+        let e = EFF.ptr(mem).at(i).addr;
+        let id: u32 = mem.read(e);
+        if id & 0xf000_0000 == 0 && mem.read::<u8>(e + 0x1d) == 0 {
+            mem.write(e + 0x1d, 1u8);
+            call(mem, g(mem, 0x0078_8920), &[id]);
+        }
+        if nibble(mem, host) != 0 {
+            return cmd.wrapping_add(4);
+        }
+        crate::et::bridge::opu_eff_free_by_id(mem, id);
+        opu_end(mem, host, cmd, call)
+    }
+
+    /// `opu_damage_motion(host, cmd)` (`0x00815e10`):
+    /// `MsDamageSetMotion(chr, kind, 1)` (through `call`): `kind` 5 with
+    /// no flag bits, 6 with nibble 1, else the host's address (as the
+    /// original leaves it); `chr` the unit's byte `+0x18` with flag bit
+    /// 0x800, else byte `+0x10` of its `g_EtEff` record. Returns `cmd + 2`.
+    pub fn opu_damage_motion<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = unit(mem, host);
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let i = u32::from(mem.read::<u16>(u.wrapping_add(0x14)));
+        let e = EFF.ptr(mem).at(i).addr;
+        let kind = match flags & 0xf000 {
+            0 => 5,
+            0x1000 => 6,
+            _ => host,
+        };
+        let chr = if flags & 0x800 == 0 {
+            mem.read::<u8>(e + 0x10)
+        } else {
+            mem.read::<u8>(u.wrapping_add(0x18))
+        };
+        call(mem, g(mem, 0x0078_ca20), &[u32::from(chr), kind, 1]);
+        cmd.wrapping_add(2)
+    }
+
+    /// `0x00817ee0` (`opu_length`, ours): with no flag bits, the unit's
+    /// float at byte offset `u16 cmd +4` = the distance from its `+0x90` to
+    /// unit `u16 cmd +2`'s (`opus_no_get`, `op_length_get`) times
+    /// `g_Vu0FixedScale` (16), rounded to `f32`; `cmd + 6`. Otherwise
+    /// `cmd`.
+    pub fn opu_length(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let u = unit(mem, host);
+        if nibble(mem, host) != 0 {
+            return cmd;
+        }
+        let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let off = u32::from(mem.read::<u16>(cmd.wrapping_add(4)));
+        let other = opus_no_get(mem, host.wrapping_add(0x300), u, no);
+        let d =
+            crate::op::bridge::op_length_get(mem, u.wrapping_add(0x90), other.wrapping_add(0x90));
+        let scale: f64 = mem.read(g(mem, 0x00b3_13a0));
+        let v = crate::x87::Reg::load_f32(d)
+            .constant(crate::x87::MUL, scale)
+            .store();
+        mem.write(off.wrapping_add(u), v);
+        cmd.wrapping_add(6)
+    }
+
+    /// `opu_et_ovl(host, cmd)` (`0x00814790`): with nibble 1 the unit's
+    /// `u16 +0xa8` = the command's `u16 +2`, `+0xac` = `cmd + i16 cmd +4`
+    /// (`set_ptr32`), draw kind `+0xbb` = 0xb and the host's unit number
+    /// added to the list `host +0x300`. Returns `cmd + 6`.
+    pub fn opu_et_ovl(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let to = i32::from(mem.read::<i16>(cmd.wrapping_add(4)))
+            .cast_unsigned()
+            .wrapping_add(cmd);
+        let u = unit(mem, host);
+        if nibble(mem, host) == 0x1000 {
+            let v: u16 = mem.read(cmd.wrapping_add(2));
+            mem.write(u.wrapping_add(0xa8), v);
+            mem.write(u.wrapping_add(0xac), ffx_system::stub::ptr32(to));
+            mem.write(u.wrapping_add(0xbb), 0xbu8);
+            let id: u16 = mem.read(host.wrapping_add(0x214));
+            crate::op::bridge::opu_id_list_add(mem, host.wrapping_add(0x300), id);
+        }
+        cmd.wrapping_add(6)
+    }
+
+    /// `0x0080aca0` (`opu_et_battle`, ours): units of the battle's oef2
+    /// (`g_OpBattleOef2`) under id -2: no flag bits `opu_et_unit(oef, i16
+    /// cmd +2, i16 cmd +4, -2)` (`cmd + 6`); nibble 1
+    /// `op_et_eff_signal_or(-2, 0)` (`cmd + 4`); nibble 2
+    /// `op_et_eff_off_signal(-2)` (`cmd + 2`); else `cmd`.
+    pub fn opu_et_battle<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = (-2i32).cast_unsigned();
+        match nibble(mem, host) {
+            0 => {
+                let part = i32::from(mem.read::<i16>(cmd.wrapping_add(4))).cast_unsigned();
+                let group = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+                let oef = crate::et::bridge::BATTLE_OEF2.get(mem);
+                call(mem, g(mem, 0x007f_d7f0), &[oef, group, part, id]);
+                cmd.wrapping_add(6)
+            }
+            0x1000 => {
+                crate::et::bridge::op_et_eff_signal_or(mem, id, 0);
+                cmd.wrapping_add(4)
+            }
+            0x2000 => {
+                crate::et::bridge::op_et_eff_off_signal(mem, id);
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `0x00817e60` (`opu_ground_branch`, ours): the unit's character's
+    /// ground height (`MsGetChrGround(byte unit +0x18)`, an `f32` through
+    /// `fcall`) against its `f32 +0x94` (x87 compares, NaN unordered):
+    /// with no flag bits a jump by the command's `i16 +2` unless the
+    /// ground is below (or NaN), with nibble 1 unless it is above (or
+    /// NaN), else `cmd + 4`. Other nibbles return `cmd`.
+    pub fn opu_ground_branch<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let u = unit(mem, host);
+        let chr = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        #[allow(clippy::cast_possible_truncation)] // fstp m32
+        let ground = fcall(mem, g(mem, 0x0079_4fb0), &[chr]) as f32;
+        let y: f32 = mem.read(u.wrapping_add(0x94));
+        let jump = match nibble(mem, host) {
+            0 => ground >= y,
+            0x1000 => ground <= y,
+            _ => return cmd,
+        };
+        if jump {
+            let d = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+            cmd.wrapping_add(d)
+        } else {
+            cmd.wrapping_add(4)
+        }
+    }
+
+    /// `opp_flash(host)` (`0x00812fa0`): `graphicAddScreenFadeTask(r, g,
+    /// b, a, f)` from the unit's floats: `r g b` = `+0x40`, `+0x44`,
+    /// `+0x48` times 1/128 and `a` = `+0x4c` / 255 (`f32` each), `f` =
+    /// `calculateVFXSP_AlphaFunction(i8 +0xa8)`; then
+    /// `graphicsRegisterResetScreenFadeDelegation(0x801)` (both through
+    /// `call`), whose eax it returns.
+    #[allow(clippy::many_single_char_names)] // the colour channels
+    pub fn opp_flash<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{MUL, Reg};
+        let u = unit(mem, host);
+        let mode = i32::from(mem.read::<i8>(u.wrapping_add(0xa8))).cast_unsigned();
+        let f = crate::op::bridge::calculate_vfx_sp_alpha_function(mode);
+        let rd = |mem: &M, off: u32| mem.read::<f32>(u.wrapping_add(off));
+        let div: crate::x87::Op = |a, b| a / b;
+        let max: f64 = mem.read(g(mem, 0x00b1_70c0));
+        let k: f64 = mem.read(g(mem, 0x00b1_70b8));
+        let a = Reg::load_f32(rd(mem, 0x4c)).constant(div, max).store();
+        let b = Reg::load_f32(rd(mem, 0x48)).constant(MUL, k).store();
+        let gr = Reg::load_f32(rd(mem, 0x44)).constant(MUL, k).store();
+        let r = Reg::Num(k).mem(MUL, rd(mem, 0x40)).store();
+        let args = [r, gr, b, a].map(f32::to_bits);
+        call(
+            mem,
+            g(mem, 0x0063_9240),
+            &[args[0], args[1], args[2], args[3], f],
+        );
+        call(mem, g(mem, 0x0064_5e60), &[0x801])
+    }
+
+    /// `opu_damage(host, cmd)` (`0x00815d90`): for the unit's `g_EtEff`
+    /// record `e` (`u16 unit +0x14`): no flag bits `MsSetDamage([e], byte
+    /// e +0x10, b)`, nibble 1 `MsSetDamage([e], byte unit +0x18, b)` (`b` =
+    /// 2 with flag bit 0x800, else 0), nibble 2 `MsMergeDamage([e], byte
+    /// unit +0x18)` (through `call`), each `cmd + 2`; other nibbles `cmd`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_damage<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = unit(mem, host);
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let i = u32::from(mem.read::<u16>(u.wrapping_add(0x14)));
+        let e = EFF.ptr(mem).at(i).addr;
+        let b = u32::from(flags & 0x800) >> 10;
+        let chr = |mem: &M| u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        match flags & 0xf000 {
+            0 => {
+                let c = u32::from(mem.read::<u8>(e + 0x10));
+                let id: u32 = mem.read(e);
+                call(mem, g(mem, 0x0078_d980), &[id, c, b]);
+            }
+            0x1000 => {
+                let c = chr(mem);
+                let id: u32 = mem.read(e);
+                call(mem, g(mem, 0x0078_d980), &[id, c, b]);
+            }
+            0x2000 => {
+                let c = chr(mem);
+                let id: u32 = mem.read(e);
+                call(mem, g(mem, 0x0079_aff0), &[id, c]);
+            }
+            _ => return cmd,
+        }
+        cmd.wrapping_add(2)
+    }
+
+    /// `opu_motion_etc(host, cmd)` (`0x008047b0`): for the unit's character
+    /// (`byte +0x18`): no flag bits `Ch_SetMotionSpeed(g_EtChrHandles[c],
+    /// u16 cmd +2)` (`cmd + 4`); nibble 1 `MsEffectEndMotion(c, 0)` (`cmd +
+    /// 2`); nibble 2 `MsEffectEndMotion(c, [0x00c48e28 + 4 u16 cmd +2])`
+    /// (`cmd + 4`); all through `call`. Other nibbles `cmd`.
+    pub fn opu_motion_etc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let c = u32::from(mem.read::<u8>(unit(mem, host).wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(c).get(mem);
+        let n = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        match nibble(mem, host) {
+            0 => {
+                call(mem, g(mem, 0x0082_b380), &[h, n]);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                call(mem, g(mem, 0x0078_7950), &[c, 0]);
+                cmd.wrapping_add(2)
+            }
+            0x2000 => {
+                let kind: u32 = mem.read(g(mem, 0x00c4_8e28).wrapping_add(4 * n));
+                call(mem, g(mem, 0x0078_7950), &[c, kind]);
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `0x0081c460` (`opu_kind2`, ours): the unit's draw kind `+0xbb` = 2,
+    /// `+0xe0` = table `u16 cmd +2` of kind 4 of its oef (`op_oef2_a_get`,
+    /// `set_ptr32`), `+0xc0` = 0x00480080 (two halves, 0x80 and 0x48: not relocated), byte `+0xa8`
+    /// = flag bits 13..15, `+0xa9` = bits 9..11, and the host's unit number
+    /// added to the list `host +0x300`. Returns `cmd + 4`.
+    pub fn opu_kind2(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let n = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let u = unit(mem, host);
+        let k = u32::from(mem.read::<u8>(u.wrapping_add(0x1e)));
+        let oef: u32 = mem.read(host.wrapping_add(0x360).wrapping_add(4 * k));
+        let t = crate::op::bridge::op_oef2_a_get(mem, oef, 4, n);
+        mem.write(u.wrapping_add(0xbb), 2u8);
+        mem.write(u.wrapping_add(0xe0), ffx_system::stub::ptr32(t));
+        // a constant, not an address: no relocation
+        mem.write(u.wrapping_add(0xc0), 0x0048_0080u32);
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        #[allow(clippy::cast_possible_truncation)] // three bits
+        mem.write(u.wrapping_add(0xa8), (flags >> 13 & 7) as u8);
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        #[allow(clippy::cast_possible_truncation)] // three bits
+        mem.write(u.wrapping_add(0xa9), (flags >> 9 & 7) as u8);
+        let id: u16 = mem.read(host.wrapping_add(0x214));
+        crate::op::bridge::opu_id_list_add(mem, host.wrapping_add(0x300), id);
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x0080ad20` (`opu_prog_set`, ours): program slot `k` = flag bits
+    /// 12..13 of the unit (`[unit +4 k]`); slot 0 takes the first null one
+    /// of 1..3 (`is_ptr32_null`), none returning `cmd + 4` at once. The slot
+    /// = `cmd + i16 cmd +2` (`set_ptr32`), the unit's byte `+0x1f` gets bit
+    /// `k` with flag bit 15, its byte `+0x10 + k` = 0. Returns `cmd + 4`.
+    pub fn opu_prog_set(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let u = unit(mem, host);
+        let mut k = u32::from(flags >> 12 & 3);
+        if k == 0 {
+            match (1..4)
+                .find(|&i| ffx_system::stub::is_ptr32_null(mem.read(u.wrapping_add(4 * i))) != 0)
+            {
+                Some(i) => k = i,
+                None => return cmd.wrapping_add(4),
+            }
+        }
+        let to = i32::from(mem.read::<i16>(cmd.wrapping_add(2)))
+            .cast_unsigned()
+            .wrapping_add(cmd);
+        mem.write(u.wrapping_add(4 * k), ffx_system::stub::ptr32(to));
+        let bit = u8::from(flags & 0x8000 != 0) << k & 0xf;
+        let at = u.wrapping_add(0x1f);
+        mem.write(at, mem.read::<u8>(at) | bit);
+        mem.write(u.wrapping_add(0x10 + k), 0u8);
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x0080b460` (`opu_osu_load_pos`, ours): without flag bits 8..11
+    /// [`opu_osu_load`], then the eight `i16` at `d = cmd + i16 cmd +4` as
+    /// floats into the host's object (`[host]`) `+0x30..+0x4c` (the load
+    /// through `call`). Returns
+    /// `cmd + 6`; with the bits `cmd`.
+    pub fn opu_osu_load_pos<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf00 != 0 {
+            return cmd;
+        }
+        call(mem, g(mem, 0x0080_ae30), &[host, cmd]);
+        let d = i32::from(mem.read::<i16>(cmd.wrapping_add(4)))
+            .cast_unsigned()
+            .wrapping_add(cmd);
+        let obj: u32 = mem.read(host);
+        for k in 0..8 {
+            let v = f32::from(mem.read::<i16>(d.wrapping_add(2 * k)));
+            mem.write(obj.wrapping_add(0x30 + 4 * k), v);
+        }
+        cmd.wrapping_add(6)
+    }
+
+    /// `op_part_run(part)` (`0x008008b0`): the op environment's tables from
+    /// the ppp part data (`[part +0xd0]`, as [`op_part_fp_init`]); for a
+    /// loaded one `pppRunPart([part +0xbc], 0x30)` (through `call`): when
+    /// that is done (not 0), its entry in `0x012e9c70` cleared and
+    /// `pppAllFreePObject`. Returns `pppRunPart`'s result, or 0 (an unloaded
+    /// one prints a message, `dbgPrintf`).
+    pub fn op_part_run<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let data: u32 = mem.read(part.wrapping_add(0xd0));
+        let ppp: u32 = mem.read(part.wrapping_add(0xbc));
+        for k in 0..3 {
+            let v = ffx_system::stub::ptr32(mem.read(data.wrapping_add(0x14 + 4 * k)));
+            mem.write(g(mem, 0x012f_2090).wrapping_add(4 * k), v);
+        }
+        op_env(mem);
+        if mem.read::<u8>(data) == 0 {
+            call(mem, g(mem, 0x0062_f500), &[g(mem, 0x00b5_8778)]);
+            return 0;
+        }
+        op_env(mem);
+        let done = call(mem, g(mem, 0x0071_2250), &[ppp, 0x30]);
+        if done != 0 {
+            let i = u32::from(mem.read::<u16>(ppp.wrapping_add(0x1e)));
+            mem.write(g(mem, 0x012e_9c70).wrapping_add(4 * i), 0u32);
+            op_env(mem);
+            crate::part::bridge::ppp_all_free_pobject(mem, ppp, call);
+        }
+        done
+    }
+
+    /// `opu_fin_type(host, cmd)` (`0x008167b0`): no flag bits: the unit's
+    /// `+0x48` = the direction (`op_deg_get(x, z, other x, other z, unit
+    /// +0x40)`, which also stores the distance at `+0x40`) to unit `u16 cmd
+    /// +2` ([`opus_no_get`]), `cmd + 4`; nibble 1: byte `+0xba` = 0 and
+    /// `+0x40 = op_xyz_scale(+0x90, 16)`, `cmd + 4`; else `cmd`. The unit's
+    /// byte `+0xb2` loses bit 2 in every case.
+    pub fn opu_fin_type<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        use crate::x87::load_f32;
+        let u = unit(mem, host);
+        let next = match nibble(mem, host) {
+            0 => {
+                let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+                let other = opus_no_get(mem, host.wrapping_add(0x300), u, no);
+                let rd = |mem: &M, at: u32| load_f32(mem.read(at));
+                let at = u.wrapping_add(0x40);
+                let p = [
+                    rd(mem, at),
+                    rd(mem, u.wrapping_add(0x48)),
+                    rd(mem, other.wrapping_add(0x40)),
+                    rd(mem, other.wrapping_add(0x48)),
+                ];
+                let d = crate::op::bridge::op_deg_get(mem, p, at, atan2);
+                mem.write(u.wrapping_add(0x48), d);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                let s: f32 = mem.read(g(mem, 0x00b9_231c));
+                mem.write(u.wrapping_add(0xba), 0u8);
+                crate::op::bridge::op_xyz_scale(
+                    mem,
+                    u.wrapping_add(0x40),
+                    u.wrapping_add(0x90),
+                    s.to_bits(),
+                );
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        };
+        let b = u.wrapping_add(0xb2);
+        mem.write(b, mem.read::<u8>(b) & 0xfb);
+        next
+    }
+
+    /// `opu_en_etc(host, cmd)` (`0x00815f60`): by the command's `i16 +2`:
+    /// 0 sets the wind of the unit's character (`g_EtChrHandles[byte unit
+    /// +0x18]`): `Ch_WindSet(h, +0x30 / 256, angle, +0x38 +
+    /// op_random(10))` with `angle` = `((ftol(+0x34) + 0x400) & 0xfff) /
+    /// 4096 * 360 - 90` (`f32` each); 1 `Ch_WindSetEnable(h, 0)`; both
+    /// `cmd + 4` (callees through `call`). Other values return `cmd`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_en_etc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{MUL, Reg, SUB};
+        let u = unit(mem, host);
+        let chr = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        match mem.read::<i16>(cmd.wrapping_add(2)) {
+            0 => {
+                let rd = |mem: &M, at: u32| mem.read::<f32>(u.wrapping_add(at));
+                let k = |mem: &M, at: u32| mem.read::<f64>(g(mem, at));
+                let turn = ffx_bridge::x87::ftol(mem, Reg::load_f32(rd(mem, 0x34)).value());
+                #[allow(clippy::cast_precision_loss)] // below 4096: fild is exact
+                let t = (turn.wrapping_add(0x400) & 0xfff) as f32;
+                let angle = Reg::load_f32(t)
+                    .constant(MUL, k(mem, 0x00b5_0190))
+                    .constant(MUL, k(mem, 0x00b4_8380))
+                    .constant(SUB, k(mem, 0x00b5_8cd0))
+                    .store();
+                let w = crate::x87::load_f32(rd(mem, 0x38));
+                let ten: f32 = mem.read(g(mem, 0x00b9_2318));
+                let r = crate::rand::bridge::op_random(mem, ten);
+                let b = Reg::load_f32(r).mem(crate::x87::ADD, w).store();
+                let s = Reg::load_f32(rd(mem, 0x30))
+                    .constant(MUL, k(mem, 0x00b5_0198))
+                    .store();
+                call(
+                    mem,
+                    g(mem, 0x0082_4c90),
+                    &[h, s.to_bits(), angle.to_bits(), b.to_bits()],
+                );
+                cmd.wrapping_add(4)
+            }
+            1 => {
+                call(mem, g(mem, 0x0082_4cc0), &[h, 0]);
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// The flag word an [`opu_flag_etc`] command works on.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum FlagWord {
+        /// `0x008176f0`: the host's word `+0x304`, the command's bits
+        /// shifted up 16 with flag bit 15.
+        Host,
+        /// `0x008177f0`: the unit's `u16 +0xb0` (the signals).
+        Unit,
+        /// `0x008179b0`: the signals of unit `u16 cmd +2` ([`opus_no_get`]);
+        /// the bits at `cmd +4`, the jump at `+6`, everything 2 bytes on.
+        Other,
+    }
+
+    /// `0x008176f0`, `0x008177f0` and `0x008179b0` (`opu_flag_etc`,
+    /// `opu_signal_etc`, `opu_signal_other`, ours): the flag word
+    /// ([`FlagWord`]) and the command's `u16 +2` bits, by flag bits 12..14:
+    /// 0 sets them, 1 clears them (`cmd + 4`); 2 jumps by `i16 cmd +4`
+    /// (from the command) when any is set (else `cmd + 6`), 3 when none is;
+    /// 4 waits (`+0x210` = 1, `cmd`) while any is set, 5 while none is (else
+    /// `cmd + 4`); 6 sets them when the unit's effect part index
+    /// (`opu_eff_part_index`) plus one is its `g_EtEff` record's byte `+8`
+    /// (`cmd + 4`); 7 returns `cmd`. `Other` reads all of these 2 bytes on.
+    pub fn opu_flag_etc(mem: &mut impl Mem, which: FlagWord, host: u32, cmd: u32) -> u32 {
+        let (u, cmd2) = if which == FlagWord::Other {
+            let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+            let me = unit(mem, host);
+            (
+                opus_no_get(mem, host.wrapping_add(0x300), me, no),
+                cmd.wrapping_add(2),
+            )
+        } else {
+            (unit(mem, host), cmd)
+        };
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let mut bits = u32::from(mem.read::<u16>(cmd2.wrapping_add(2)));
+        let (word, wide) = match which {
+            FlagWord::Host => {
+                if flags & 0x8000 != 0 {
+                    bits <<= 16;
+                }
+                (host.wrapping_add(0x304), true)
+            }
+            FlagWord::Unit | FlagWord::Other => (u.wrapping_add(0xb0), false),
+        };
+        // the command's length: `Other` has the unit number in front
+        let start = cmd;
+        let cmd = cmd2;
+        match flags >> 12 & 7 {
+            0 => {
+                let v = load_word(mem, word, wide);
+                store_word(mem, word, wide, v | bits);
+                cmd.wrapping_add(4)
+            }
+            1 => {
+                let v = load_word(mem, word, wide);
+                store_word(mem, word, wide, v & !bits);
+                cmd.wrapping_add(4)
+            }
+            k @ (2 | 3) => {
+                let set = load_word(mem, word, wide) & bits != 0;
+                if set == (k == 2) {
+                    i32::from(mem.read::<i16>(cmd.wrapping_add(4)))
+                        .cast_unsigned()
+                        .wrapping_add(start)
+                } else {
+                    cmd.wrapping_add(6)
+                }
+            }
+            k @ (4 | 5) => {
+                let set = load_word(mem, word, wide) & bits != 0;
+                if set == (k == 4) {
+                    mem.write(host.wrapping_add(0x210), 1u8);
+                    // the command itself again
+                    start
+                } else {
+                    cmd.wrapping_add(4)
+                }
+            }
+            6 => {
+                let idx = crate::et::bridge::opu_eff_part_index(mem, u) & 0xff;
+                let i = u32::from(mem.read::<u16>(u.wrapping_add(0x14)));
+                let e = EFF.ptr(mem).at(i).addr;
+                if u32::from(mem.read::<u8>(e + 8)) == idx + 1 {
+                    let v = load_word(mem, word, wide);
+                    store_word(mem, word, wide, v | bits);
+                }
+                cmd.wrapping_add(4)
+            }
+            _ => start,
+        }
+    }
+
+    fn load_word(mem: &impl Mem, at: u32, wide: bool) -> u32 {
+        if wide {
+            mem.read(at)
+        } else {
+            u32::from(mem.read::<u16>(at))
+        }
+    }
+
+    fn store_word(mem: &mut impl Mem, at: u32, wide: bool, v: u32) {
+        if wide {
+            mem.write(at, v);
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // the u16 word
+            mem.write(at, v as u16);
+        }
+    }
+
+    /// `opu_v_get(host, cmd)` (`0x00819940`): from unit `u16 cmd +4`
+    /// ([`opus_no_get`]) into the host's unit: vector `(u16 cmd +2 & 7)`
+    /// (16 bytes at `+0x30` up) word by word for its flag bits 12..15 (x, y,
+    /// z, w); with bit 4 also the floats `+0x90`, `+0x94`, `+0x98` for bits
+    /// 12..14 (through the FPU). Returns `cmd + 6`.
+    pub fn opu_v_get(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let u = unit(mem, host);
+        let no = u32::from(mem.read::<u16>(cmd.wrapping_add(4)));
+        let other = opus_no_get(mem, host.wrapping_add(0x300), u, no);
+        let bits: u16 = mem.read(cmd.wrapping_add(2));
+        let v = u32::from(bits & 7) << 4;
+        for k in 0..4 {
+            if bits & (0x1000 << k) != 0 {
+                let w: u32 = mem.read(other.wrapping_add(v + 0x30 + 4 * k));
+                mem.write(u.wrapping_add(v + 0x30 + 4 * k), w);
+            }
+        }
+        if bits & 0x10 != 0 {
+            for k in 0..3 {
+                if bits & (0x1000 << k) != 0 {
+                    let f = crate::x87::load(mem.read(other.wrapping_add(0x90 + 4 * k)));
+                    mem.write(u.wrapping_add(0x90 + 4 * k), f);
+                }
+            }
+        }
+        cmd.wrapping_add(6)
+    }
+
+    /// `opu_mem(host, cmd)` (`0x008170c0`): with no flag bits the unit's
+    /// buffer `+0xbc` is freed (`op_free([host +0x3a8], p)`) and cleared
+    /// (`cmd + 2`). With nibble 1 the host's set `s = host + 0x300` gets a
+    /// heap: sizes `a`, `b`, `c` = the command's `i16 +2`, `+4`, `+6` times
+    /// 0x100; `s +0xa8` = `op_heap_init([s +0xc], a)`, `+0xa0` = `[s +0xc] +
+    /// a`, `+0xac` = `a`, `+0xa4` = `b`, `+0x54`, `+0x58` = `+0xa0` + `b`,
+    /// `+0xb0` = `c`, `+0x28`, `+0x2c` = `[0x00c498dc]`, then its driver's
+    /// `[[s +0x50] +0x60](s, heap, a)` (through `call`); `cmd + 8`. Other
+    /// nibbles return `cmd`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_mem<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = unit(mem, host);
+        let s = host.wrapping_add(0x300);
+        match nibble(mem, host) {
+            0 => {
+                let p: u32 = mem.read(u.wrapping_add(0xbc));
+                if p != 0 {
+                    let heap: u32 = mem.read(host.wrapping_add(0x3a8));
+                    crate::op::bridge::op_free(mem, heap, p, call);
+                    mem.write(u.wrapping_add(0xbc), 0u32);
+                }
+                cmd.wrapping_add(2)
+            }
+            0x1000 => {
+                let size = |mem: &M, at: u32| {
+                    (i32::from(mem.read::<i16>(cmd.wrapping_add(at))) << 8).cast_unsigned()
+                };
+                let (a, b, c) = (size(mem, 2), size(mem, 4), size(mem, 6));
+                let heap: u32 = mem.read(s.wrapping_add(0xc));
+                let r = crate::op::bridge::op_heap_init(mem, heap, a);
+                mem.write(s.wrapping_add(0xa8), r);
+                let base = mem.read::<u32>(s.wrapping_add(0xc)).wrapping_add(a);
+                mem.write(s.wrapping_add(0xa0), base);
+                mem.write(s.wrapping_add(0xac), a);
+                mem.write(s.wrapping_add(0xa4), b);
+                let end = base.wrapping_add(b);
+                mem.write(s.wrapping_add(0x54), end);
+                mem.write(s.wrapping_add(0x58), end);
+                mem.write(s.wrapping_add(0xb0), c);
+                for at in [0x28, 0x2c] {
+                    let v: u32 = mem.read(g(mem, 0x00c4_98dc));
+                    mem.write(s.wrapping_add(at), v);
+                }
+                let driver: u32 = mem.read(s.wrapping_add(0x50));
+                let f: u32 = mem.read(driver.wrapping_add(0x60));
+                call(mem, f, &[s, heap, a]);
+                cmd.wrapping_add(8)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opu_r_u(host, cmd)` (`0x00818200`): the direction from the host's
+    /// unit to unit `u16 cmd +2` ([`opus_no_get`]) in x/z (`op_deg_get(x,
+    /// z, other x, other z, host)`, which stores the distance at `[host]`),
+    /// plus `[0x00b51bc0]` with flag bit 0x800 (`f32`), into the unit's
+    /// float at byte `cmd +4`; with nibble 1 also the distance times
+    /// `g_Vu0FixedScale` at byte `cmd +5`. Returns `cmd + 6` (other
+    /// nibbles: `cmd`, after the call).
+    pub fn opu_r_u<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        use crate::x87::{ADD, MUL, Reg, load_f32};
+        let u = unit(mem, host);
+        let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let other = opus_no_get(mem, host.wrapping_add(0x300), u, no);
+        let rd = |mem: &M, at: u32| load_f32(mem.read(at));
+        let p = [
+            rd(mem, u.wrapping_add(0x90)),
+            rd(mem, u.wrapping_add(0x98)),
+            rd(mem, other.wrapping_add(0x90)),
+            rd(mem, other.wrapping_add(0x98)),
+        ];
+        let mut d = crate::op::bridge::op_deg_get(mem, p, host, atan2);
+        let (at4, at5) = (
+            mem.read::<u8>(cmd.wrapping_add(4)),
+            mem.read::<u8>(cmd.wrapping_add(5)),
+        );
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let nib = flags & 0xf000;
+        if nib > 0x1000 {
+            return cmd;
+        }
+        if flags & 0x800 != 0 {
+            let k: f64 = mem.read(g(mem, 0x00b5_1bc0));
+            d = Reg::load_f32(d).constant(ADD, k).store();
+        }
+        mem.write(u.wrapping_add(u32::from(at4)), d);
+        if nib == 0x1000 {
+            let scale: f64 = mem.read(g(mem, 0x00b3_13a0));
+            let len = Reg::load_f32(mem.read(host)).constant(MUL, scale).store();
+            mem.write(u.wrapping_add(u32::from(at5)), len);
+        }
+        cmd.wrapping_add(6)
+    }
+
+    /// `opu_r_etc(host, cmd)` (`0x00818110`): with nibble 0 or 1 (the same
+    /// code), whether the unit's angle at byte `cmd +2` is within `w` of
+    /// its angle at byte `cmd +3` (`op_deg_in_check(a, b - w, b + w)`, `w`
+    /// the command's `i16 +4`, `f32` each): a jump by `i16 cmd +6` when it
+    /// is, else `cmd + 8`. Other nibbles return `cmd`.
+    pub fn opu_r_etc(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        use crate::x87::{ADD, Reg, SUB, load_f32};
+        let u = unit(mem, host);
+        if nibble(mem, host) > 0x1000 {
+            return cmd;
+        }
+        let a = load_f32(mem.read(u.wrapping_add(u32::from(mem.read::<u8>(cmd.wrapping_add(2))))));
+        let b = load_f32(mem.read(u.wrapping_add(u32::from(mem.read::<u8>(cmd.wrapping_add(3))))));
+        let w = f32::from(mem.read::<i16>(cmd.wrapping_add(4)));
+        let (wr, br) = (Reg::load_f32(w), Reg::load_f32(b));
+        let hi = wr.reg(ADD, br).store();
+        let lo = br.reg(SUB, wr).store();
+        if crate::op::bridge::op_deg_in_check(mem, a, lo, hi) != 0 {
+            i32::from(mem.read::<i16>(cmd.wrapping_add(6)))
+                .cast_unsigned()
+                .wrapping_add(cmd)
+        } else {
+            cmd.wrapping_add(8)
+        }
+    }
+
+    /// `0x00802350` (`opu_mdc_matrix_set`, ours; `(host, set)`): the host's
+    /// draw head for its unit `u`: the unit's `+0x30..+0x3c` through the
+    /// emulated `r` registers (`0x00c8f528`..`534`) into the host's first
+    /// 16 bytes, `+0` then 0.0; `host +0x80` = the unit's scale `f32 +0x3c`
+    /// times `[0x00b58398]` (`op_unit_m_scale`) rotated and moved by the
+    /// unit (`op_rt_m(+0x80, +0x80, u +0x30, u +0x90)`); `host +0xc0` = its
+    /// parent's matrix (`opus_parent_get`) times that, then `host +0x2c0`
+    /// times it (`op_mul_m`); the head `host +0x100` from
+    /// `opus_mdc_head_set(head, host, set, u, i16 [[u +0xa8] + 2])` with
+    /// bit 6 of its first word set, and its lights
+    /// (`opus_mdc_lights_get(head, set, u, [u +0xa8] + 2)`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_mdc_matrix_set(mem: &mut impl Mem, host: u32, set: u32) {
+        use crate::op::bridge as op;
+        use crate::x87::{MUL, Reg};
+        let u = unit(mem, host);
+        let nos = mem.read::<u32>(u.wrapping_add(0xa8)).wrapping_add(2);
+        let scale = crate::x87::load(mem.read(u.wrapping_add(0x3c)));
+        let v: [u32; 4] = mem.read(u.wrapping_add(0x30));
+        let gpr = g(mem, 0x00c8_f528);
+        mem.write(gpr, v);
+        mem.write(host, v[0]);
+        for k in 1..4 {
+            let w: u32 = mem.read(gpr.wrapping_add(4 * k));
+            mem.write(host.wrapping_add(4 * k), w);
+        }
+        mem.write(host, 0f32);
+        let k: f64 = mem.read(g(mem, 0x00b5_8398));
+        let s = Reg::load(scale).constant(MUL, k).store();
+        let m = host.wrapping_add(0x80);
+        let out = host.wrapping_add(0xc0);
+        op::op_unit_m_scale(mem, m, s);
+        op::op_rt_m_zyx(mem, m, m, u.wrapping_add(0x30), u.wrapping_add(0x90));
+        let parent = opus_parent_get(mem, host, u);
+        op::op_mul_m(mem, out, parent, m);
+        op::op_mul_m(mem, out, host.wrapping_add(0x2c0), out);
+        let head = host.wrapping_add(0x100);
+        let tex = i32::from(mem.read::<i16>(nos)).cast_unsigned();
+        opus_mdc_head_set(mem, head, host, set, u, tex);
+        let w: u32 = mem.read(head);
+        mem.write(head, w | 0x40);
+        opus_mdc_lights_get(mem, head, set, u, nos);
+    }
+
+    // ---- round 34 a ----
+
+    /// `opu_end_all(host)` (`0x007fd720`): the host's unit gets its first
+    /// 16 bytes cleared, the host halts (`byte +0x210` = 1) with `u16
+    /// +0x214` and `+0x218` = 0, then `opus_end_all_sub(u16 unit +0x14)`
+    /// (through `call`). Returns 0.
+    pub fn opu_end_all<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = unit(mem, host);
+        mem.write(u, [0u32; 4]);
+        mem.write(host.wrapping_add(0x210), 1u8);
+        mem.write(host.wrapping_add(0x214), 0u16);
+        mem.write(host.wrapping_add(0x218), 0u16);
+        let k = u32::from(mem.read::<u16>(u.wrapping_add(0x14)));
+        call(mem, g(mem, 0x007f_e6c0), &[k]);
+        0
+    }
+
+    /// `opu_ffx(host, cmd)` (`0x00816680`): sub-command `k = i16 cmd +2`
+    /// on the effect record of the host's unit (`g_EtEff[u16 unit +0x14]`,
+    /// its ID `+0`). 1, 2: `g_OpPrayEffect` = 1, 0. 3: while
+    /// `g_OpPrayEffect` is set the host halts (`byte +0x210` = 1, `cmd`
+    /// again). 4, 6: `MsEffectReady(id, 1)`, `(id, 0)`. 5: halts while
+    /// `MsEffectMotionLevel(id)` is below 1. 7, 8: `Sg_EnableCalcMap`,
+    /// `Sg_EnableDrawMap`, `Sg_EnableDrawMenu` and `Sg_EnableDrawGui` with
+    /// 1, 0. Callees through `call`. Returns `cmd + 4`, `cmd` when it halts
+    /// or for any other `k`.
+    pub fn opu_ffx<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = unit(mem, host);
+        let rec = EFF
+            .ptr(mem)
+            .addr
+            .wrapping_add(u32::from(mem.read::<u16>(u.wrapping_add(0x14))) << 5);
+        let pray = g(mem, crate::op::bridge::PRAY_EFFECT.sym);
+        let next = cmd.wrapping_add(4);
+        let halt = |mem: &mut M| {
+            mem.write(host.wrapping_add(0x210), 1u8);
+            cmd
+        };
+        let id = |mem: &M| mem.read::<u32>(rec);
+        let enable = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, on: u32| {
+            for f in [0x0082_0440, 0x0082_0400, 0x0082_0460, 0x0082_0420] {
+                call(mem, g(mem, f), &[on]);
+            }
+        };
+        match mem.read::<i16>(cmd.wrapping_add(2)) {
+            1 => mem.write(pray, 1u8),
+            2 => mem.write(pray, 0u8),
+            3 => {
+                if mem.read::<u8>(pray) != 0 {
+                    return halt(mem);
+                }
+            }
+            4 => {
+                let id = id(mem);
+                call(mem, g(mem, 0x0078_8200), &[id, 1]);
+            }
+            5 => {
+                let id = id(mem);
+                if call(mem, g(mem, 0x0078_7ca0), &[id]).cast_signed() < 1 {
+                    return halt(mem);
+                }
+            }
+            6 => {
+                let id = id(mem);
+                call(mem, g(mem, 0x0078_8200), &[id, 0]);
+            }
+            7 => enable(mem, call, 1),
+            8 => enable(mem, call, 0),
+            _ => return cmd,
+        }
+        next
+    }
+
+    /// `opu_v_2d(host, cmd)` (`0x00818dc0`): unless the host's flag nibble
+    /// is set (then `cmd`), places the host's unit on the screen at another
+    /// unit `o` (`u16 cmd +2`, [`opus_no_get`]): the host's matrix `+0x80`
+    /// = the parent's matrix (`opus_parent_get(host, o)`) times a move by
+    /// `o +0x90`; `host +0xc0` = `host +0x2c0` times that; `host +0..+0x10`
+    /// = the emulated `r0` (`0x00c8f508`), then `op_rtp_w1(host, host
+    /// +0xc0, host)`. Its screen x, y (`(i32 +0 - 0x8000) >> 4`, `+4`)
+    /// rounded to `f32`, times the unit's scale `+0x40` and `[0x00b50198]`
+    /// (1/256), go to the unit's `+0x90`, `+0x94`. Returns `cmd + 4`.
+    pub fn opu_v_2d<M: Mem>(mem: &mut M, host: u32, cmd: u32) -> u32 {
+        use crate::op::bridge as op;
+        let me = unit(mem, host);
+        if nibble(mem, host) != 0 {
+            return cmd;
+        }
+        let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let other = opus_no_get(mem, host.wrapping_add(0x300), me, no);
+        let mat = host.wrapping_add(0x80);
+        crate::small::bridge::op_unit_m(mem, mat);
+        op::op_trans_m(mem, mat, mat, other.wrapping_add(0x90));
+        let parent = opus_parent_get(mem, host, other);
+        op::op_mul_m(mem, mat, parent, mat);
+        let out = host.wrapping_add(0xc0);
+        op::op_mul_m(mem, out, host.wrapping_add(0x2c0), mat);
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        mem.write(host, r0);
+        op::op_rtp_w1(mem, host, out, host);
+        let screen = |mem: &M, k: u32| {
+            let v = mem
+                .read::<i32>(host.wrapping_add(4 * k))
+                .wrapping_sub(0x8000)
+                >> 4;
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+            let v = v as f32;
+            v
+        };
+        let (x, y) = (screen(mem, 0), screen(mem, 1));
+        let k: f64 = mem.read(g(mem, 0x00b5_0198));
+        let scale: f32 = mem.read(me.wrapping_add(0x40));
+        let x = Reg::load_f32(x).mem(MUL, scale).constant(MUL, k).store();
+        mem.write(me.wrapping_add(0x90), x);
+        let y = Reg::load_f32(y).mem(MUL, scale).constant(MUL, k).store();
+        mem.write(me.wrapping_add(0x94), y);
+        cmd.wrapping_add(4)
+    }
+
+    // ---- round 34 b ----
+
+    /// The unit-type hook a float command ends with: when the host's flag
+    /// bit 9 is set, `[0x00c492c8 + 4 byte unit +0xba](host, next)`
+    /// (through `call`).
+    fn unit_type_hook<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        unit: u32,
+        next: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if mem.read::<u16>(host.wrapping_add(0x21a)) & 0x200 != 0 {
+            let i = u32::from(mem.read::<u8>(unit.wrapping_add(0xba)));
+            let f: u32 = mem.read(g(mem, 0x00c4_92c8).wrapping_add(4 * i));
+            call(mem, f, &[host, next]);
+        }
+    }
+
+    /// `0x0080c6a0(host, cmd)` (`opu_float_calc`, ours): with flag bit 10
+    /// the command names another unit `o` (`u16 cmd +2`, [`opus_no_get`];
+    /// the rest of the command follows two bytes later), else `o` is the
+    /// host's unit `u`. The target base `t` is `u`, or `o` when the flags'
+    /// low byte is 0xa9. With flag bit 11 `a = f32 t[c +3]`, `b = f32 o[c
+    /// +4]` into `t[c +2]` (byte offsets), else `b = i16 c +2` as a float,
+    /// `a = o[c +5]` into `o[c +4]`. The nibble picks `b + a` (0), `a - b`
+    /// (1), `b * a` (2) or `a / b` (3, 0 for a `b` of 0), stored as `f32`;
+    /// others store nothing. Then [`unit_type_hook`] on `t`. Returns the
+    /// command's end (`+6`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_float_calc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{ADD, SUB};
+        let flags = |mem: &M| u32::from(mem.read::<u16>(host.wrapping_add(0x21a)));
+        let u = unit(mem, host);
+        let mut c = cmd;
+        let (src, base) = if flags(mem) & 0x400 != 0 {
+            let no = u32::from(mem.read::<u16>(c.wrapping_add(2)));
+            c = c.wrapping_add(2);
+            let o = opus_no_get(mem, host.wrapping_add(0x300), u, no);
+            let u = unit(mem, host);
+            (o, if flags(mem) & 0xff == 0xa9 { o } else { u })
+        } else {
+            (u, u)
+        };
+        let f = flags(mem);
+        let byte = |mem: &M, k: u32| u32::from(mem.read::<u8>(c.wrapping_add(k)));
+        let (a, b, dst) = if f & 0x800 != 0 {
+            let a = crate::x87::load(mem.read(base.wrapping_add(byte(mem, 3))));
+            let b = crate::x87::load(mem.read(src.wrapping_add(byte(mem, 4))));
+            (a, b, base.wrapping_add(byte(mem, 2)))
+        } else {
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+            let b = (f32::from(mem.read::<i16>(c.wrapping_add(2)))).to_bits();
+            let a = crate::x87::load(mem.read(src.wrapping_add(byte(mem, 5))));
+            (a, b, base.wrapping_add(byte(mem, 4)))
+        };
+        let r = match f & 0xf000 {
+            0 => Some(Reg::load(b).mem(ADD, f32::from_bits(a))),
+            0x1000 => Some(Reg::load(a).mem(SUB, f32::from_bits(b))),
+            0x2000 => Some(Reg::load(b).mem(MUL, f32::from_bits(a))),
+            // fldz; fucom: a `b` of 0 (either sign) gives 0, a NaN goes on
+            // to `fdivr` (st = m32 / st)
+            0x3000 => Some(if Reg::load(b).value() == 0.0 {
+                Reg::Num(0.0)
+            } else {
+                Reg::load(b).mem(|st, m| m / st, f32::from_bits(a))
+            }),
+            _ => None,
+        };
+        if let Some(r) = r {
+            mem.write(dst, r.store());
+        }
+        let next = c.wrapping_add(6);
+        unit_type_hook(mem, host, base, next, call);
+        next
+    }
+
+    /// `0x0080c520(host, cmd)` (`opu_wait_cond`, ours): the flag nibble
+    /// picks what goes into the host's halt byte `+0x210` (`cmd + 4`
+    /// unless said otherwise): 0 `op_irandom_p(i16 cmd +2)` (its low byte;
+    /// `junk` are the three stack words it reads past its argument, the
+    /// caller's `edi`, `esi` and `ebp`), 1 `u8 cmd +2 x
+    /// opu_eff_part_index(u)` (8-bit), 2 `ftol(f32 u[i16 cmd +2])`; 3 halts
+    /// (`1`, `cmd`) unless `op_et_chr_index_by_no(i16 cmd +2)` finds the
+    /// character; 8 halts unless unit `u16 cmd +2` ([`opus_no_get`]) is
+    /// the host's first part (`host +0x320`); 9 halts unless
+    /// `g_OpEventEffect` (then `cmd + 2`). Others return `cmd`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_wait_cond(mem: &mut impl Mem, host: u32, cmd: u32, junk: [u32; 3]) -> u32 {
+        let halt = host.wrapping_add(0x210);
+        let wide = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let u = unit(mem, host);
+        #[allow(clippy::cast_possible_truncation)] // the low byte
+        let v = match nibble(mem, host) {
+            0 => crate::rand::bridge::op_irandom_core(mem, [wide, junk[0], junk[1], junk[2]]) as u8,
+            0x1000 => {
+                let n = crate::et::bridge::opu_eff_part_index(mem, u) as u8;
+                mem.read::<u8>(cmd.wrapping_add(2)).wrapping_mul(n)
+            }
+            0x2000 => {
+                let x = ffx_bridge::x87::load(mem.read(u.wrapping_add(wide)));
+                ffx_bridge::x87::ftol(mem, x) as u8
+            }
+            0x3000 => {
+                if crate::et::bridge::op_et_chr_index_by_no(mem, wide) < 0 {
+                    mem.write(halt, 1u8);
+                    return cmd;
+                }
+                return cmd.wrapping_add(4);
+            }
+            0x8000 => {
+                let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+                let o = opus_no_get(mem, host.wrapping_add(0x300), u, no);
+                if o == mem.read::<u32>(host.wrapping_add(0x320)) {
+                    return cmd.wrapping_add(4);
+                }
+                mem.write(halt, 1u8);
+                return cmd;
+            }
+            0x9000 => {
+                if crate::op::bridge::EVENT_EFFECT.get(mem) != 0 {
+                    return cmd.wrapping_add(2);
+                }
+                mem.write(halt, 1u8);
+                return cmd;
+            }
+            _ => return cmd,
+        };
+        mem.write(halt, v);
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x0080c940(host, cmd)` (`opu_float_move`, ours): with flag bit 10
+    /// the command names another unit `o` (`u16 cmd +2`, [`opus_no_get`];
+    /// the rest follows two bytes later as `c`), else `o` is the host's
+    /// unit `u`. The bytes `lo`, `hi` of `u16 c +2` are float offsets; the
+    /// nibble: 0 `o[i16 c +2] = i16 c +4` (`c + 6`), 1 `o[lo] = o[hi]`, 2
+    /// swaps them, 3 `u[lo] = o[hi]`, 4 `o[hi] = u[lo]`, 5 `o[lo] =
+    /// -u[lo]` (`c + 4`); others move nothing (`c`). Floats through the
+    /// FPU. Then [`unit_type_hook`] on `o`. Returns the end.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_float_move<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store};
+        let u = unit(mem, host);
+        let mut c = cmd;
+        let o = if mem.read::<u16>(host.wrapping_add(0x21a)) & 0x400 != 0 {
+            let no = u32::from(mem.read::<u16>(c.wrapping_add(2)));
+            c = c.wrapping_add(2);
+            opus_no_get(mem, host.wrapping_add(0x300), u, no)
+        } else {
+            u
+        };
+        let pair: u16 = mem.read(c.wrapping_add(2));
+        let (lo, hi) = (u32::from(pair & 0xff), u32::from(pair >> 8));
+        let f = |mem: &M, a: u32| load(mem.read(a));
+        let next = match nibble(mem, host) {
+            0 => {
+                let v = f32::from(mem.read::<i16>(c.wrapping_add(4)));
+                let at = i32::from(pair.cast_signed()).cast_unsigned();
+                mem.write(o.wrapping_add(at), v);
+                c.wrapping_add(6)
+            }
+            0x1000 => {
+                let v = f(mem, o.wrapping_add(hi));
+                mem.write(o.wrapping_add(lo), store(v));
+                c.wrapping_add(4)
+            }
+            0x2000 => {
+                let t = store(f(mem, o.wrapping_add(lo)));
+                let v = f(mem, o.wrapping_add(hi));
+                mem.write(o.wrapping_add(lo), store(v));
+                mem.write(o.wrapping_add(hi), store(load(t)));
+                c.wrapping_add(4)
+            }
+            0x3000 => {
+                let v = f(mem, o.wrapping_add(hi));
+                mem.write(u.wrapping_add(lo), store(v));
+                c.wrapping_add(4)
+            }
+            0x4000 => {
+                let v = f(mem, u.wrapping_add(lo));
+                mem.write(o.wrapping_add(hi), store(v));
+                c.wrapping_add(4)
+            }
+            0x5000 => {
+                let v = f(mem, u.wrapping_add(lo));
+                mem.write(o.wrapping_add(lo), store(-v));
+                c.wrapping_add(4)
+            }
+            _ => c,
+        };
+        unit_type_hook(mem, host, o, next, call);
+        next
+    }
+
+    // ---- round 34 c ----
+
+    /// `op_part_init(unit)` (`0x00800770`): the op environment's three
+    /// tables (`0x012f2090`..`98`) from the unit's ppp part `d = [unit
+    /// +0xd0]` (`get_ptr32` of `+0x14`, `+0x18`, `+0x1c`), the environment
+    /// made current; the unit's key `byte +0x1e << 16 + u16 +0x1a` gets a
+    /// slot of the 256 at `0x012e9c70`: its own (freed first:
+    /// `pppAllFreePObject` of slot `i`'s part `0x012ea070 + 0x80 i`), else
+    /// the first empty one, else slot 0x100 (freed, as the original's
+    /// loops fall through). The slot keeps the key and `unit +0xbc` = its
+    /// part. For a loaded `d` (first byte not 0) the part starts
+    /// (`pppStartPartFromYonish(part, 0x1000, [get_ptr32(d +0x10) + 4 byte
+    /// unit +0xd4], 1)`, and a fifth word, `byte d +3 == 1`, that the
+    /// callee does not read), else `dbgPrintf(0x00b58718)`. Callees
+    /// through `call`. Returns 0.
+    pub fn op_part_init<M: Mem>(
+        mem: &mut M,
+        unit: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_system::stub::ptr32;
+        let d: u32 = mem.read(unit.wrapping_add(0xd0));
+        for k in 0..3 {
+            let v = ptr32(mem.read(d.wrapping_add(0x14 + 4 * k)));
+            mem.write(g(mem, 0x012f_2090).wrapping_add(4 * k), v);
+        }
+        op_env(mem);
+        let key = (u32::from(mem.read::<u8>(unit.wrapping_add(0x1e))) << 16)
+            .wrapping_add(u32::from(mem.read::<u16>(unit.wrapping_add(0x1a))));
+        let slots = g(mem, 0x012e_9c70);
+        let parts = g(mem, 0x012e_a070);
+        let find =
+            |mem: &M, want: u32| (0..0x100u32).find(|&i| mem.read::<u32>(slots + 4 * i) == want);
+        let (i, free) = match find(mem, key) {
+            Some(i) => (i, true),
+            None => find(mem, 0).map_or((0x100, true), |i| (i, false)),
+        };
+        if free {
+            op_env(mem);
+            call(mem, g(mem, 0x0071_1f20), &[parts.wrapping_add(i << 7)]);
+        }
+        mem.write(slots.wrapping_add(4 * i), key);
+        let part = parts.wrapping_add(i << 7);
+        mem.write(unit.wrapping_add(0xbc), part);
+        if mem.read::<u8>(d) == 0 {
+            call(mem, g(mem, 0x0062_f500), &[g(mem, 0x00b5_8718)]);
+            return 0;
+        }
+        op_env(mem);
+        let d: u32 = mem.read(unit.wrapping_add(0xd0));
+        let once = u32::from(mem.read::<u8>(d.wrapping_add(3)) == 1);
+        let data = ptr32(mem.read(d.wrapping_add(0x10)));
+        let k = u32::from(mem.read::<u8>(unit.wrapping_add(0xd4)));
+        let set: u32 = mem.read(data.wrapping_add(4 * k));
+        call(mem, g(mem, 0x0071_2560), &[part, 0x1000, set, 1, once]);
+        0
+    }
 }
