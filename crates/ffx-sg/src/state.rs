@@ -2833,4 +2833,270 @@ pub mod bridge {
     pub const fn not_implemented() -> u32 {
         0
     }
+
+    /// The menu list state of `0x0076f470` (`g_MenuList*`, names ours):
+    /// the open hook (a pointer to a function pointer), the lists (a
+    /// record pointer and an `i16` count each, 8 bytes), the record
+    /// base, the busy byte, the value slots, the text table and its base,
+    /// the text out buffer, the preset pairs, the list count, the target
+    /// record, the current list, the last record, a mirror word, the
+    /// current-record flag and the three pad words (`u16`).
+    pub const ML_HOOK: Global<u32> = Global::new(0x0112_a014);
+    pub const ML_LISTS: Global<u32> = Global::new(0x0112_a01c);
+    pub const ML_TEXTS: Global<u32> = Global::new(0x0112_a024);
+    pub const ML_PAIRS: Global<u32> = Global::new(0x0112_a028);
+    pub const ML_OUT: Global<u32> = Global::new(0x0112_a02c);
+    pub const ML_BUSY: Global<u8> = Global::new(0x0112_a038);
+    pub const ML_BASE: Global<u32> = Global::new(0x0112_a03c);
+    pub const ML_TEXT_BASE: Global<u32> = Global::new(0x0112_a040);
+    pub const ML_IS_TARGET: Global<u32> = Global::new(0x0112_a078);
+    pub const ML_COUNT: Global<i32> = Global::new(0x0112_a080);
+    pub const ML_TARGET: Global<u32> = Global::new(0x0112_a084);
+    pub const ML_CURRENT: Global<u32> = Global::new(0x0112_a088);
+    pub const ML_TRG: Global<u16> = Global::new(0x0112_a08c);
+    pub const ML_PAD: Global<u16> = Global::new(0x0112_a090);
+    pub const ML_REP: Global<u16> = Global::new(0x0112_a094);
+    pub const ML_LAST: Global<u32> = Global::new(0x0112_a098);
+    pub const ML_MIRROR: Global<u32> = Global::new(0x0112_a0a0);
+    pub const ML_SLOTS: Global<u32> = Global::new(0x0112_a0a4);
+    /// `TODebugGetPadPrintFlag()`, `TOMenuGetControlPad()`, `...Trg()`,
+    /// `...Rep()`, `MenuCursorBlocked()`, `MsgExpandCodes(out, text, arg,
+    /// &jump, 0)`, `MenuCursorStep(&again)`, `ResetRecords()`.
+    pub const PAD_PRINT_FLAG: u32 = 0x008a_bd20;
+    pub const CONTROL_PAD: u32 = 0x008b_e410;
+    pub const CONTROL_PAD_TRG: u32 = 0x008b_e4b0;
+    pub const CONTROL_PAD_REP: u32 = 0x008b_e470;
+    pub const CURSOR_BLOCKED: u32 = 0x0077_5530;
+    pub const EXPAND_CODES: u32 = 0x0077_6940;
+    pub const CURSOR_STEP: u32 = 0x0077_6110;
+    pub const RESET_RECORDS: u32 = 0x0077_4740;
+    /// [`menu_list_step`]'s work: `MsgExpandCodes`' jump word, then
+    /// `MenuCursorStep`'s answer.
+    pub const MENU_STEP_WORK: u32 = 8;
+
+    /// A list's first record and its count.
+    fn ml_list(h: &impl Mem, lists: u32, i: u32) -> (u32, i32) {
+        let at = lists.wrapping_add(i.wrapping_mul(8));
+        let first = h.read::<u32>(at).wrapping_add(ML_BASE.get(h));
+        (first, i32::from(h.read::<i16>(at.wrapping_add(4))))
+    }
+
+    /// A value slot by an `i16` index.
+    fn ml_slot(h: &impl Mem, index: i16) -> u32 {
+        let k = i32::from(index).cast_unsigned();
+        ML_SLOTS.get(h).wrapping_add(k.wrapping_mul(4))
+    }
+
+    /// The pad words cleared.
+    fn ml_clear_pad(h: &mut impl Mem) {
+        ML_PAD.set(h, 0);
+        ML_TRG.set(h, 0);
+        ML_REP.set(h, 0);
+    }
+
+    /// One value record's pad step (record `+0x104..`): flags (bit 0 on,
+    /// bit 1 wraps, bit 2 counts up), the axis `+0x105`, the pad word
+    /// `+0x106` (0, 2 held, 1 triggered), the bounds `u16 +0x108/+0x10a`,
+    /// the slot `i16 +0x10c`.
+    fn ml_value_step(h: &mut impl Mem, rec: u32) {
+        let at = |o: u32| rec.wrapping_add(o);
+        let flags: u8 = h.read(at(0x104));
+        if flags & 1 == 0 {
+            return;
+        }
+        let pad = match h.read::<i8>(at(0x106)) {
+            0 | 2 => ML_PAD.get(h),
+            1 => ML_TRG.get(h),
+            _ => return,
+        };
+        if pad == 0 {
+            return;
+        }
+        let slot = ml_slot(h, h.read(at(0x10c)));
+        let mut value: i32 = h.read(slot);
+        let step = if flags & 4 != 0 { 1 } else { -1 };
+        let (up, down) = match h.read::<i8>(at(0x105)) {
+            0 => (0x1000, 0x4000),
+            1 => (0x8000, 0x2000),
+            2 => (4, 8),
+            3 => (1, 8),
+            _ => (0, 0),
+        };
+        if pad & up != 0 {
+            value = value.wrapping_add(step);
+        }
+        if pad & down != 0 {
+            value = value.wrapping_sub(step);
+        }
+        let lo = i32::from(h.read::<u16>(at(0x108)));
+        let hi = i32::from(h.read::<u16>(at(0x10a)));
+        let value = if flags & 2 == 0 {
+            value.max(lo).min(hi)
+        } else if value < lo {
+            hi
+        } else if value > hi {
+            lo
+        } else {
+            value
+        };
+        h.write(slot, value);
+    }
+
+    /// `0x0076f470()` (`menu_list_step`, name ours; no direct caller):
+    /// one step of a menu's lists. The open hook (`*[0x0112a014]`) runs,
+    /// the pad words are read (`Rep` keeps its bits 4..7 from `Trg`);
+    /// then, while `MenuCursorStep` answers 1: a record of the current
+    /// list with byte `+0x110` 2 and `u16 +0x116` set clears the pad
+    /// words; `MenuCursorBlocked`; unless busy, each record of the
+    /// current list (0x138 bytes from its pointer + base) notes whether
+    /// it is the target, a text record (kind 0) expands its text
+    /// (`MsgExpandCodes` with the slot values of `+0x18`/`+0x24`, -1 for
+    /// none) and on a jump moves the current list to the one holding the
+    /// target (its presets `+0x1c`/`+0x1e` into the slots,
+    /// `ResetRecords` when the list changed, the pad words cleared) and
+    /// starts over; a kind-6 record of a newly shown list resets
+    /// `+0x2a`/`+0x1a`. Then every record's value steps with the pad.
+    /// Returns `MenuCursorStep`'s `eax`.
+    #[allow(clippy::too_many_lines)] // one loop with a restart
+    pub fn menu_list_step(h: &mut impl ffx_bridge::Host, work: u32) -> u32 {
+        let hook = ML_HOOK.get(h);
+        if hook != 0 {
+            let f: u32 = h.read(hook);
+            h.call(f, &[]);
+        }
+        let call = |h: &mut _, f: u32| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, &[])
+        };
+        call(h, PAD_PRINT_FLAG);
+        let pad = call(h, CONTROL_PAD);
+        ML_PAD.set(h, crate::lo16(pad));
+        let trg = call(h, CONTROL_PAD_TRG);
+        ML_TRG.set(h, crate::lo16(trg));
+        let rep = crate::lo16(call(h, CONTROL_PAD_REP)) & 0xff0f;
+        let held = crate::lo16(h.read::<u32>(h.rebase(ML_TRG.sym)) & 0xf0);
+        ML_REP.set(h, rep | held);
+        let (jump, again) = (work, work.wrapping_add(4));
+        'restart: loop {
+            ML_IS_TARGET.set(h, 0);
+            let lists = ML_LISTS.get(h);
+            if lists != 0 {
+                let (mut rec, n) = ml_list(h, lists, ML_CURRENT.get(h));
+                for _ in 0..n.max(0) {
+                    let kind: i8 = h.read(rec.wrapping_add(0x110));
+                    if kind == 2 && h.read::<u16>(rec.wrapping_add(0x116)) != 0 {
+                        ml_clear_pad(h);
+                    }
+                    rec = rec.wrapping_add(0x138);
+                }
+            }
+            call(h, CURSOR_BLOCKED);
+            let lists = ML_LISTS.get(h);
+            if ML_BUSY.get(h) == 0 && lists != 0 {
+                let current = ML_CURRENT.get(h);
+                let (first, n) = ml_list(h, lists, current);
+                let shown = first != ML_LAST.get(h);
+                let mut target = ML_TARGET.get(h);
+                let mirror = if target == 0 {
+                    first
+                } else {
+                    current.wrapping_sub(ML_BASE.get(h))
+                };
+                ML_MIRROR.set(h, mirror);
+                ML_LAST.set(h, first);
+                if n > 0 {
+                    let mut rec = first;
+                    for _ in 0..n {
+                        let value = |h: &mut _, o: u32| -> u32 {
+                            let index: i16 = Mem::read(h, rec.wrapping_add(o));
+                            if index < 0 {
+                                0
+                            } else {
+                                Mem::read(h, ml_slot(h, index))
+                            }
+                        };
+                        let (text, arg) = (value(h, 0x18), value(h, 0x24));
+                        ML_IS_TARGET.set(h, u32::from(rec == target));
+                        match h.read::<u8>(rec) {
+                            0 => {
+                                let k = i32::from(h.read::<i16>(rec.wrapping_add(0x16)));
+                                let k = k.cast_unsigned().wrapping_add(text);
+                                let texts = ML_TEXTS.get(h).wrapping_add(k.wrapping_mul(4));
+                                let text: u32 = h.read(texts);
+                                let text = text.wrapping_add(ML_TEXT_BASE.get(h));
+                                let (f, out) = (h.rebase(EXPAND_CODES), ML_OUT.get(h));
+                                h.call(f, &[out, text, arg, jump, 0]);
+                                if h.read::<u32>(jump) != 0 {
+                                    ml_jump(h, current);
+                                    continue 'restart;
+                                }
+                                target = ML_TARGET.get(h);
+                            }
+                            6 if shown => {
+                                h.write(rec.wrapping_add(0x2a), 0u8);
+                                h.write(rec.wrapping_add(0x1a), u16::MAX);
+                            }
+                            _ => {}
+                        }
+                        rec = rec.wrapping_add(0x138);
+                    }
+                    let mut rec = ML_LAST.get(h);
+                    for _ in 0..n {
+                        ml_value_step(h, rec);
+                        rec = rec.wrapping_add(0x138);
+                    }
+                }
+            }
+            let f = h.rebase(CURSOR_STEP);
+            let eax = h.call(f, &[again]);
+            if h.read::<u32>(again) != 1 {
+                return eax;
+            }
+        }
+    }
+
+    /// The jump of [`menu_list_step`]: the first list (of the
+    /// `0x0112a080`) holding the target record becomes current (mirror
+    /// `i - base`), its presets (`u16 +0x1c` pairs of slot index and
+    /// value from `pairs + 8 * i16 +0x1e`) go into the slots,
+    /// `ResetRecords` runs when it is not `was`, and the pad words clear.
+    /// Without one nothing changes.
+    fn ml_jump(h: &mut impl ffx_bridge::Host, was: u32) {
+        let (target, lists) = (ML_TARGET.get(h), ML_LISTS.get(h));
+        let mut i = 0u32;
+        while i.cast_signed() < ML_COUNT.get(h) {
+            let (mut rec, n) = ml_list(h, lists, i);
+            for _ in 0..n.max(0) {
+                if rec == target {
+                    ML_CURRENT.set(h, i);
+                    let base = ML_BASE.get(h);
+                    ML_MIRROR.set(h, i.wrapping_sub(base));
+                    let presets = rec.wrapping_add(0x1c);
+                    if h.read::<u16>(presets) != 0 {
+                        let k = i32::from(h.read::<i16>(rec.wrapping_add(0x1e)));
+                        let mut pair = ML_PAIRS
+                            .get(h)
+                            .wrapping_add(k.cast_unsigned().wrapping_mul(8));
+                        let slots = ML_SLOTS.get(h);
+                        let mut done = 0u32;
+                        while done < u32::from(h.read::<u16>(presets)) {
+                            let (slot, value): (u32, u32) =
+                                (h.read(pair), h.read(pair.wrapping_add(4)));
+                            h.write(slots.wrapping_add(slot.wrapping_mul(4)), value);
+                            done += 1;
+                            pair = pair.wrapping_add(8);
+                        }
+                    }
+                    if was != i {
+                        let f = h.rebase(RESET_RECORDS);
+                        h.call(f, &[]);
+                    }
+                    ml_clear_pad(h);
+                    return;
+                }
+                rec = rec.wrapping_add(0x138);
+            }
+            i += 1;
+        }
+    }
 }

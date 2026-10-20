@@ -33,6 +33,12 @@ ported! {
     cd_read_q_clear @ 0x0076_e130 => extern "C" fn cd_read_q_clear(id: i32) {
         cdread::bridge::cd_read_q_clear(&mut mem(), id);
     }
+    /// `menu_list_step()` (`0x0076f470`): the jump word and the step's
+    /// answer in this frame.
+    menu_list_step @ 0x0076_f470 => extern "C" fn menu_list_step() -> u32 {
+        let mut w = super::StackFrame::<{ state::bridge::MENU_STEP_WORK as usize / 4 }>::new();
+        state::bridge::menu_list_step(&mut mem(), w.at())
+    }
     /// `cd_read_thread_sector(cd, request, n)` (`0x0076e4b0`).
     cd_read_thread_sector @ 0x0076_e4b0 => extern "C" fn cd_read_thread_sector(cd: u32, request: u32, n: u32) {
         cdread::bridge::cd_read_thread_sector(&mut mem(), cd, request, n);

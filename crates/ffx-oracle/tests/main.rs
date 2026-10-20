@@ -8473,3 +8473,226 @@ fn abm_draw_item_snapshot() {
     let mut rng = Xorshift(0x5eed_110a);
     abm_draw_item_cases(&mut a, &mut b, &mut rng, 1000);
 }
+
+/// A stand-in tail that stores 1 through argument `arg`'s pointer while
+/// `[count]` is not 0 (counting it down), then `[last]`, and answers
+/// `[ret]`.
+fn store_countdown(arg: u8, count: u32, last: u32, ret: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 4 + 4 * arg, 0x8b, 0x0d]; // mov eax, [esp+..]; mov ecx, [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x85, 0xc9, 0x74, 0x0d, 0xff, 0x0d]); // test ecx, ecx; jz last; dec dword [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0xc7, 0x00, 1, 0, 0, 0]); // mov dword [eax], 1
+    c.push(0xa1);
+    c.extend(ret.to_le_bytes()); // mov eax, [ret]
+    c.push(0xc3);
+    // jz lands here: 6 + 6 + 5 + 1 = 18 bytes on
+    let at = c.len() - 18;
+    c[at - 1] = 18;
+    c.extend([0x8b, 0x0d]);
+    c.extend(last.to_le_bytes()); // mov ecx, [last]
+    c.extend([0x89, 0x08]); // mov [eax], ecx
+    c.push(0xa1);
+    c.extend(ret.to_le_bytes()); // mov eax, [ret]
+    c.push(0xc3);
+    c
+}
+
+/// `menu_list_step` over stand-ins: up to three lists of up to four
+/// records (text, kind 6, value records), the text expansion jumping a
+/// counted number of times, the cursor step repeating a counted number.
+#[allow(clippy::too_many_lines)] // the stand-ins, then the lists
+fn menu_list_step_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 1, st::PAD_PRINT_FLAG, 0, 0);
+    recorder(a, b, 2, st::CONTROL_PAD, 0, 0);
+    recorder(a, b, 3, st::CONTROL_PAD_TRG, 0, 0);
+    recorder(a, b, 4, st::CONTROL_PAD_REP, 0, 0);
+    // the cursor check notes the mirror word as it sees it
+    let mirrors = alloc(a, b, 4 + 64 * 4);
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(mirrors.to_le_bytes()); // mov ecx, [mirrors]
+    c.push(0xa1);
+    c.extend(a.rebase(st::ML_MIRROR.sym).to_le_bytes()); // mov eax, [mirror]
+    c.extend([0x89, 0x04, 0x8d]);
+    c.extend((mirrors + 4).to_le_bytes()); // mov [mirrors + 4 + 4 ecx], eax
+    c.extend([0xff, 0x05]);
+    c.extend(mirrors.to_le_bytes()); // inc dword [mirrors]
+    c.push(0xc3);
+    logged(a, b, 5, st::CURSOR_BLOCKED, 0, &c);
+    recorder(a, b, 6, st::RESET_RECORDS, 0, 0);
+    // the open hook's function: a recorder in a dead function's place
+    recorder(a, b, 7, 0x0077_a3f0, 0, 0);
+    let counts = alloc(a, b, 16);
+    // the expansion may move the target (from a slot)
+    let moved = alloc(a, b, 4);
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(moved.to_le_bytes()); // mov ecx, [moved]
+    c.extend([0x89, 0x0d]);
+    c.extend(a.rebase(st::ML_TARGET.sym).to_le_bytes()); // mov [target], ecx
+    c.extend(store_countdown(3, counts, counts + 4, ret(a, 8)));
+    logged(a, b, 8, st::EXPAND_CODES, 3, &c);
+    let c = store_countdown(0, counts + 8, counts + 12, ret(a, 9));
+    logged(a, b, 9, st::CURSOR_STEP, 0, &c);
+    let hook = alloc(a, b, 4);
+    put(a, b, hook, a.rebase(0x0077_a3f0));
+    let lists = alloc(a, b, 3 * 8);
+    let recs = [
+        alloc(a, b, 4 * 0x138),
+        alloc(a, b, 4 * 0x138),
+        alloc(a, b, 4 * 0x138),
+    ];
+    let slots = alloc(a, b, 8 * 4);
+    let texts = alloc(a, b, 64 * 4);
+    // one pair before the table for index -1
+    let pairs = alloc(a, b, 9 * 8) + 8;
+    let work = b.stack_range().start + 0x1000;
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..10 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        put(a, b, counts, [0, 0, 1, 2][rng.below(4) as usize]);
+        put(a, b, counts + 4, 0u32);
+        put(a, b, counts + 8, rng.below(3));
+        put(a, b, counts + 12, [0, 2, rng.next()][rng.below(3) as usize]);
+        set(a, b, st::ML_HOOK, if rng.below(2) == 0 { 0 } else { hook });
+        let base = [0, 0x40, rng.below(0x100)][rng.below(3) as usize];
+        set(a, b, st::ML_BASE, base);
+        for (k, &r) in (0u32..).zip(&recs) {
+            put(a, b, lists + 8 * k, r.wrapping_sub(base));
+            let n = [0u16, 1, 2, 3, 4, 0xffff][rng.below(6) as usize];
+            put(a, b, lists + 8 * k + 4, n);
+            for i in 0..4 * 0x138 / 4 {
+                put(a, b, r + 4 * i, rng.next());
+            }
+            for i in 0..4 {
+                let rec = r + 0x138 * i;
+                let small = |rng: &mut Xorshift, m: u32| u16::try_from(rng.below(m)).unwrap();
+                put(
+                    a,
+                    b,
+                    rec,
+                    [0u8, 0, 6, 6, rng.next().to_le_bytes()[0]][rng.below(5) as usize],
+                );
+                put(a, b, rec + 0x16, small(rng, 9));
+                for o in [0x18, 0x24] {
+                    let v = if rng.below(3) == 0 {
+                        0xffff
+                    } else {
+                        small(rng, 8)
+                    };
+                    put(a, b, rec + o, v);
+                }
+                put(a, b, rec + 0x1c, [0u16, 0, 1, 3][rng.below(4) as usize]);
+                let pair = if rng.below(6) == 0 {
+                    0xffff
+                } else {
+                    small(rng, 5)
+                };
+                put(a, b, rec + 0x1e, pair);
+                put(
+                    a,
+                    b,
+                    rec + 0x105,
+                    [0u8, 1, 2, 3, 4, 0xff][rng.below(6) as usize],
+                );
+                put(a, b, rec + 0x106, [0u8, 1, 2, 3][rng.below(4) as usize]);
+                for o in [0x108, 0x10a] {
+                    let high = if rng.below(8) == 0 { 0x8000 } else { 0 };
+                    put(a, b, rec + o, small(rng, 11) | high);
+                }
+                put(a, b, rec + 0x10c, small(rng, 8));
+                put(
+                    a,
+                    b,
+                    rec + 0x110,
+                    [2u8, 2, 0, rng.next().to_le_bytes()[0]][rng.below(4) as usize],
+                );
+                put(
+                    a,
+                    b,
+                    rec + 0x116,
+                    [0u16, 0, 1, 0x8000][rng.below(4) as usize],
+                );
+            }
+        }
+        set(
+            a,
+            b,
+            st::ML_LISTS,
+            if rng.below(8) == 0 { 0 } else { lists },
+        );
+        set(a, b, st::ML_COUNT, [0, 1, 2, 3, -1][rng.below(5) as usize]);
+        let current = rng.below(3);
+        set(a, b, st::ML_CURRENT, current);
+        let first = recs[current as usize];
+        set(
+            a,
+            b,
+            st::ML_LAST,
+            if rng.below(2) == 0 { first } else { rng.next() },
+        );
+        let target = match rng.below(4) {
+            0 => 0,
+            1 => rng.next(),
+            _ => recs[rng.below(3) as usize] + 0x138 * rng.below(4),
+        };
+        set(a, b, st::ML_TARGET, target);
+        let next = recs[rng.below(3) as usize] + 0x138 * rng.below(4);
+        put(a, b, moved, if rng.below(2) == 0 { target } else { next });
+        put(a, b, mirrors, 0u32);
+        set(a, b, st::ML_BUSY, u8::from(rng.below(6) == 0));
+        set(a, b, st::ML_SLOTS, slots);
+        set(a, b, st::ML_TEXTS, texts);
+        set(a, b, st::ML_PAIRS, pairs);
+        set(a, b, st::ML_OUT, rng.next());
+        set(a, b, st::ML_TEXT_BASE, rng.next());
+        set(a, b, st::ML_TRG, rng.next().to_le_bytes()[0].into());
+        for k in 0..9 {
+            put(a, b, pairs - 8 + 8 * k, rng.below(8));
+            put(a, b, pairs - 4 + 8 * k, rng.below(11));
+        }
+        for k in 0..8 {
+            put(a, b, slots + 4 * k, rng.below(11));
+        }
+        for k in 0..64 {
+            put(a, b, texts + 4 * k, rng.next());
+        }
+        // pad words with the bits the value records test
+        for k in 2..5 {
+            let at = ret(a, k);
+            let bits = [0, 0x1000, 0x4000, 0x8000, 0x2000, 1, 4, 8, rng.next()];
+            put(
+                a,
+                b,
+                at,
+                bits[rng.below(9) as usize] | bits[rng.below(9) as usize],
+            );
+        }
+        twin("menu_list_step", a, b, 0x0076_f470, &[], |m| {
+            st::menu_list_step(&mut H(m), work)
+        });
+    }
+}
+
+#[test]
+fn menu_list_step_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_110b);
+    menu_list_step_cases(&mut a, &mut b, &mut rng, 3000);
+}
+
+#[test]
+fn menu_list_step_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_110c);
+    menu_list_step_cases(&mut a, &mut b, &mut rng, 1000);
+}
