@@ -386,4 +386,80 @@ pub mod bridge {
         let f = h.rebase(SET_LIGHT_COLOUR);
         h.call(f, &[kind, rgb[2], rgb[1], rgb[0]])
     }
+
+    /// `Sg_LightSetColorRGB(kind, r, g, b)` (`0x00836400`, name ours, after
+    /// `Sg_LightSetDirXYZ`; `Native_4012`'s): [`sg_light_set_color`] with
+    /// `(r, g, b, 0)` from the stack (each through `fld`/`fstp`); its `eax`.
+    pub fn sg_light_set_color_rgb(
+        h: &mut impl ffx_bridge::Host,
+        kind: u32,
+        r: f32,
+        g: f32,
+        b: f32,
+    ) -> u32 {
+        use crate::scratch::{SCRATCH, Scratch};
+        let mut s = Scratch::new(h);
+        let v = [r, g, b].map(x87::round_trip);
+        s.write(SCRATCH, [v[0], v[1], v[2], 0.0]);
+        sg_light_set_color(&mut s, kind, SCRATCH)
+    }
+
+    /// `0x0084eb10(light, r, g, b, pitch, yaw)`: the debug log of
+    /// `Light_Set`'s arguments.
+    pub const LIGHT_SET_LOG: u32 = 0x0084_eb10;
+
+    /// `Light_Set(light, r, g, b, pitch, yaw)` (`0x00836520`): the colour
+    /// `(r, g, b) / 255` ([`sg_light_set_color`]) and the direction from
+    /// the two angles in degrees ([`crate::control::bridge::light_set_dir`]):
+    /// `(sin p cos y, sin y, cos p cos y)`, each angle `f32(deg * pi /
+    /// 180)` through `Angle_Wrap`, `sin` and `cos` the CRT's (`trig`,
+    /// `f32` bits in and out). Every integer goes through `f32` first
+    /// (`fild`, `fstp dword`). Both vectors live in one stack local whose
+    /// fourth word the original never writes (0 here). With
+    /// `g_FFXIsDebug` set, [`LIGHT_SET_LOG`] gets the arguments; `eax` is the
+    /// last call's.
+    #[allow(clippy::similar_names)] // the two angles' sines and cosines
+    pub fn light_set(
+        h: &mut impl ffx_bridge::Host,
+        trig: &dyn Fn(ffx_battle::pos::bridge::Trig, u32) -> u32,
+        light: u32,
+        rgb: [i32; 3],
+        pitch: i32,
+        yaw: i32,
+    ) -> u32 {
+        use crate::player::bridge::{DEG_180, DEG_PI};
+        use crate::scratch::{SCRATCH, Scratch};
+        use ffx_battle::pos::bridge::Trig;
+        let int = |v: i32| f32::from_bits(x87::store(f64::from(v)));
+        let scale = Reg::constant(COLOR_SCALE.get(h));
+        let pi = Reg::constant(DEG_PI.get(h));
+        let half_turn = Reg::constant(DEG_180.get(h));
+        let radians = |deg: i32| (Reg::load(int(deg)) * pi / half_turn).store();
+        let ret = {
+            let mut s = Scratch::new(h);
+            let color = rgb.map(|c| (Reg::load(int(c)) / scale).store());
+            s.write(SCRATCH, [color[0], color[1], color[2]]);
+            sg_light_set_color(&mut s, light, SCRATCH);
+            let w_yaw = crate::vec::bridge::angle_wrap(radians(yaw));
+            let sin_yaw = trig(Trig::Sin, w_yaw.to_bits());
+            let cos_yaw = f32::from_bits(trig(Trig::Cos, w_yaw.to_bits()));
+            let w_pitch = crate::vec::bridge::angle_wrap(radians(pitch));
+            let sin_pitch = f32::from_bits(trig(Trig::Sin, w_pitch.to_bits()));
+            let x = Reg::load(sin_pitch).mul_m32(cos_yaw).store();
+            let cos_pitch = f32::from_bits(trig(Trig::Cos, w_pitch.to_bits()));
+            let z = Reg::load(cos_pitch).mul_m32(cos_yaw).store();
+            let y = x87::round_trip(f32::from_bits(sin_yaw));
+            s.write(SCRATCH, [x, y, z]);
+            crate::control::bridge::light_set_dir(&mut s, light, SCRATCH)
+        };
+        if crate::control::bridge::IS_DEBUG.get(h) == 0 {
+            return ret;
+        }
+        let f = h.rebase(LIGHT_SET_LOG);
+        let [r, g, b] = rgb.map(i32::cast_unsigned);
+        h.call(
+            f,
+            &[light, r, g, b, pitch.cast_unsigned(), yaw.cast_unsigned()],
+        )
+    }
 }

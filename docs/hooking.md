@@ -210,7 +210,8 @@ For each stored state it builds two oracles on the snapshot, applies the
 state to both (`Oracle::apply_state`), runs the original from the saved
 registers in one (`Oracle::run_state`, returning to the oracle) and the
 closure in the other, then compares the result (`u32`, `i32`, `bool`,
-`u64` as `EDX:EAX`, `f32`/`f64` in `ST0`, `Masked`, `()`), every byte written
+`u64` as `EDX:EAX`, `f32`/`f64` in `ST0` bit for bit with NaN payloads,
+`Masked`, `()`), every byte written
 outside the stacks, and the caller's stack above the `args` words. A float
 the original leaves in `ST0` fails a non-float port. `s.arg(i)`, `s.ecx()`,
 `s.edx()` read the call's arguments; `OracleHost` is the `ffx_bridge::Host`

@@ -111,7 +111,7 @@
 0x0042f8e0	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_initScene
 0x0042f8f0	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_prePhyreInit
 0x0042f930	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_render
-0x0042f9a0	logic	default (no rule: ported to be safe)
+0x0042f9a0	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_resize
 0x0042f9b0	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x0042fa00	platform	only called from platform code (FFXApplication_animate)
 0x00430c50	dead	unreachable from the entry point and every pointer table
@@ -990,7 +990,7 @@
 0x00640e70	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (mspace_free, user_free_thunk)
 0x00641060	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetAbmap
 0x00641080	glue	thin wrapper: only forwards to glue code (PhyreScene_getChaPos)
-0x006410a0	logic	default (no rule: ported to be safe)
+0x006410a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetAbmapUV_006410a0
 0x006410d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetCurrentFrame
 0x006410e0	logic	default (no rule: ported to be safe)
 0x00641100	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
@@ -1101,7 +1101,7 @@
 0x00642c70	glue	thin wrapper: only forwards to glue code (PostProcessManager_GetInstance)
 0x00642c80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicResetLoadingScreen
 0x00642cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicResetYIQ
-0x00642cd0	glue	thin wrapper: only forwards to glue code (PhyreScene_resize)
+0x00642cd0	platform	only called from platform code (FFXApplication_resize)
 0x00642ce0	platform	only called from platform code (FFXApplication_animate)
 0x00642cf0	logic	scene state the renderer needs (original look first): graphicScreenGetDttOffset
 0x00642d10	logic	scene state the renderer needs (original look first): graphicScreenGetOffset
@@ -1175,7 +1175,7 @@
 0x00643af0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetUiDrawType
 0x00643b10	logic	default (no rule: ported to be safe)
 0x00643b30	glue	reviewed: forwarder to PhyreEngine/managers (PC2 render/pc-ui round 1)
-0x00643b80	logic	default (no rule: ported to be safe)
+0x00643b80	dead	reviewed: no callers; inverts the camera matrix and calls 0x4f93f0 on an unread result (PC2 render round 22)
 0x00643bc0	dead	unreachable from the entry point and every pointer table
 0x00643cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSgSetSpecular
 0x00643db0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicShaderGetVertexInfo
@@ -1473,7 +1473,7 @@
 0x0064f7f0	glue	calls PhyreEngine Phyre_PhyreMalloc_0042fb80
 0x0064f860	glue	calls PhyreEngine Phyre_PhyreMalloc_0042fb80
 0x0064f8d0	platform	thin wrapper: only forwards to platform code (ThrowStdException_0064fa50)
-0x0064f970	logic	default (no rule: ported to be safe)
+0x0064f970	platform	reviewed: ATL resource lookup (FindResourceExW over CAtlBaseModule) (PC2 render round 22)
 0x0064f9e0	dead	unreachable from the entry point and every pointer table
 0x0064fa20	dead	unreachable from the entry point and every pointer table
 0x0064fa50	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): ThrowStdException_0064fa50
@@ -1517,7 +1517,7 @@
 0x00652410	dead	unreachable from the entry point and every pointer table
 0x00652470	logic	default (no rule: ported to be safe)
 0x006525e0	dead	unreachable from the entry point and every pointer table
-0x00652600	logic	default (no rule: ported to be safe)
+0x00652600	platform	reviewed: ATL CSimpleStringT<wchar_t> preallocate/reallocate (PC2 render round 22)
 0x00652660	dead	unreachable from the entry point and every pointer table
 0x006526a0	logic	scene state the renderer needs (original look first): PhyreScene_Project3DPointOntoScreen
 0x006528d0	platform	thin wrapper: only forwards to platform code (0x654950)
@@ -4315,7 +4315,7 @@
 0x006f78d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_hideAllIcons
 0x006f7900	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_hideIcon
 0x006f7940	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_setVisible
-0x006f7970	logic	default (no rule: ported to be safe)
+0x006f7970	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_showIcon
 0x006f79d0	glue	only called from glue code (PhyreScene_animate)
 0x006f79e0	dead	unreachable from the entry point and every pointer table
 0x006f79f0	dead	unreachable from the entry point and every pointer table
@@ -5657,7 +5657,7 @@
 0x00756320	logic	default (no rule: ported to be safe)
 0x007564d0	dead	unreachable from the entry point and every pointer table
 0x007565b0	dead	unreachable from the entry point and every pointer table
-0x00756600	logic	debug-sounding name, but used by logic: 0x755a00, 0x756320
+0x00756600	logic	debug-sounding name, but used by logic: 0x755a00, pppDrawRainAlloc_00756320
 0x007566a0	logic	default (no rule: ported to be safe)
 0x007566d0	logic	default (no rule: ported to be safe)
 0x007566e0	logic	default (no rule: ported to be safe)
@@ -10767,7 +10767,7 @@
 0x0084eb10	logic	default (no rule: ported to be safe)
 0x0084eb60	debug	only called from debug code (0x84dac0 and 2 more)
 0x0084ebd0	debug	only called from debug code (0x84dac0 and 2 more)
-0x0084ed10	logic	default (no rule: ported to be safe)
+0x0084ed10	debug	reviewed: DECI2 protocol handler: 0x84eee0 passes it only to sceDeci2Open 0x62f680 (xor eax,eax; ret), so it never runs (main round 16)
 0x0084ede0	debug	only called from debug code (0x84f080 and 9 more)
 0x0084ef10	debug	only called from debug code (Gu_VSyncMain)
 0x0084efd0	debug	only called from debug code (WMainProc)

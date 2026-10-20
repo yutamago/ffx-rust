@@ -1709,4 +1709,51 @@ pub mod bridge {
             mem.write(rot.wrapping_add(4 * i), store(mul(a, k)));
         }
     }
+
+    /// `pppNeiChrPointLightDraw(obj, key, ctrl)` (`0x007371c0`): for a
+    /// target (`key +0x28` = `n`, not -1) and an area `a = obj +0xa0 +
+    /// *ctrl[+0xc]` whose word `+0x80` is set: `t = part object n + key
+    /// +0x2c`; bytes `a +0x88`, `+0x89` = `t +0xa8`, `t +0xb4` x 128 as
+    /// `fistp` truncates them (the low byte; NaN and out of range give 0),
+    /// then `pppPObjPosRot(a + 0x40 + 0x10 k, a + 0x10 k, key + 8 + 8 k)`
+    /// for `k` 0..4 (through `call`).
+    pub fn ppp_nei_chr_point_light_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{cvttsd2si, load, mul};
+        let n: u32 = rd(mem, key.wrapping_add(0x28));
+        if n == u32::MAX {
+            return;
+        }
+        let off = rd(mem, rd(mem, ctrl.wrapping_add(0xc)));
+        let a = obj.wrapping_add(0xa0).wrapping_add(off);
+        if rd(mem, a.wrapping_add(0x80)) == 0 {
+            return;
+        }
+        let part = rd(mem, CURRENT_PART.ptr(mem).addr);
+        let records = rd(mem, part.wrapping_add(0x3c));
+        let o = ptr32(rd(
+            mem,
+            records.wrapping_add(4).wrapping_add(n.wrapping_mul(16)),
+        ));
+        let t = rd(mem, key.wrapping_add(0x2c)).wrapping_add(o);
+        let k: f64 = mem.read(Global::<u32>::new(0x00b4_c170).ptr(mem).addr);
+        for (src, dst) in [(0xa8u32, 0x88u32), (0xb4, 0x89)] {
+            let v = mul(load(rd(mem, t.wrapping_add(src))), k);
+            mem.write(a.wrapping_add(dst), cvttsd2si(v).to_le_bytes()[0]);
+        }
+        let f = Global::<u32>::new(0x0073_72d0).ptr(mem).addr;
+        for i in 0..4u32 {
+            let args = [
+                a.wrapping_add(0x40 + 0x10 * i),
+                a.wrapping_add(0x10 * i),
+                key.wrapping_add(8 + 8 * i),
+            ];
+            call(mem, f, &args);
+        }
+    }
 }

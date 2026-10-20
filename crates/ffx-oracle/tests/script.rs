@@ -149,24 +149,9 @@ impl run::NativeHost for Run<'_> {
     }
 }
 
-/// An 80-bit x87 value as `fstp m64` stores it, NaN payloads kept (the
-/// values natives leave are already rounded to 53 bits).
+/// An 80-bit x87 value as `fstp m64` stores it, NaN payloads kept.
 fn f80_to_f64(raw: [u8; 10]) -> f64 {
-    let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-    let se = u16::from_le_bytes([raw[8], raw[9]]);
-    let sign = u64::from(se >> 15) << 63;
-    if se & 0x7fff == 0x7fff && mant << 1 != 0 {
-        // NaN: quiet, the top 52 fraction bits kept
-        return f64::from_bits(sign | 0x7ff8_0000_0000_0000 | (mant << 1) >> 12);
-    }
-    let x = if se.trailing_zeros() >= 15 && mant == 0 {
-        0.0
-    } else {
-        #[allow(clippy::cast_precision_loss)] // exact for 53-bit values
-        let m = mant as f64;
-        m * 2f64.powi(i32::from(se & 0x7fff) - 16383 - 63)
-    };
-    f64::from_bits(sign | x.to_bits())
+    ffx_oracle::f80_to_f64(&raw)
 }
 
 struct Xorshift(u32);
@@ -2684,10 +2669,7 @@ fn native_case(a: &mut Oracle, b: &mut Oracle, w: u32, sym: u32, push: &[(u8, u3
             orig(a, FTOL2, &[]);
             let rb = f(&mut Run(b), w, args, s);
             let x = f80_to_f64(raw);
-            assert!(
-                x.to_bits() == rb.to_bits() || (x.is_nan() && rb.is_nan()),
-                "{what}: ST0 {x} vs {rb}"
-            );
+            assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
         }
         None => panic!("{what}: not in find"),
     }
@@ -3173,10 +3155,7 @@ fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32) {
                         orig(a, FTOL2, &[]);
                         let rb = f(&mut Run(b), w, args, s);
                         let x = f80_to_f64(raw);
-                        assert!(
-                            x.to_bits() == rb.to_bits() || (x.is_nan() && rb.is_nan()),
-                            "{what}: ST0 {x} vs {rb}"
-                        );
+                        assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
                     }
                     None => panic!("{what}: not in find"),
                 }
@@ -4948,10 +4927,7 @@ fn round19_natives_match_the_original() {
                             orig(a, FTOL2, &[]);
                             let rb = f(&mut Run(b), w, args, s);
                             let x = f80_to_f64(raw);
-                            assert!(
-                                x.to_bits() == rb.to_bits() || (x.is_nan() && rb.is_nan()),
-                                "{what}: ST0 {x} vs {rb}"
-                            );
+                            assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
                         }
                         None => panic!("{what}: not in find"),
                     }

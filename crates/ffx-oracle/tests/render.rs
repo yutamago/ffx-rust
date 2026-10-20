@@ -388,7 +388,7 @@ impl Twins {
                 let st0 = ra.st0.expect("a float in ST0");
                 let ours = f64::from(v);
                 assert!(
-                    st0.to_bits() == ours.to_bits() || (st0.is_nan() && ours.is_nan()),
+                    ffx_oracle::same_float(st0, ours),
                     "{what}: st0 {st0} vs {ours}"
                 );
             }
@@ -6737,5 +6737,362 @@ fn snapshot_round21_matches_the_original() {
         t.reset();
         let what = format!("snapshot round {round}");
         round21_case(&mut t, &mut rng, round % 3, &what);
+    }
+}
+
+// ---- round 22 ----
+
+/// Writes a stub over `graphicFontGetScreenWH(w*, h*)` that stores `w`
+/// and `h`.
+fn stub_screen_wh(t: &mut Twins, width: u32, height: u32) {
+    let at = t.rebase(0x0064_0db0);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov [eax], w
+    c.extend(width.to_le_bytes());
+    c.extend([0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]); // mov eax, [esp+8]; mov [eax], h
+    c.extend(height.to_le_bytes());
+    c.push(0xc3);
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+/// One round-22 case on `scene` (a fresh one when 0); the matrix
+/// helpers, `PMatrix4_RowTimes` and the screen-adjusted view run
+/// original on both sides.
+fn round22_case(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) {
+    use ffx_bridge::x87::SSE2_AVAILABLE;
+    use ffx_graphic::util::bridge as ut;
+    let float = |rng: &mut Rng| -> f32 {
+        match rng.below(12) {
+            0 => rng.float(),
+            1 => 0.0,
+            2 => -0.0,
+            3 => 1.0,
+            _ => (rng.below(81) as f32 - 40.0) / 8.0,
+        }
+    };
+    let floats = |t: &mut Twins, rng: &mut Rng, n: usize| -> u32 {
+        let v: Vec<u8> = (0..n).flat_map(|_| float(rng).to_le_bytes()).collect();
+        t.alloc(&v)
+    };
+    let scene = if scene == 0 {
+        let scene = t.alloc(&rng.bytes(0xfa00));
+        for off in (0xc50..0xc90).step_by(4).chain([0xf9bc, 0xf9c0]) {
+            let v = float(rng);
+            t.write(scene + off, &v.to_le_bytes());
+        }
+        let cam = floats(t, rng, 0x30);
+        let xf = if rng.chance(3) { 0 } else { floats(t, rng, 12) };
+        t.w32(cam + 0xb4, xf);
+        t.w32(scene + 0xdc, cam);
+        scene
+    } else {
+        scene
+    };
+    let at = t.rebase(scene::bridge::IS_3D.sym);
+    t.w8(at, u8::from(rng.chance(2)));
+    t.global(SSE2_AVAILABLE.sym, u32::from(rng.chance(2)));
+    let (width, height) = match rng.below(4) {
+        0 => (1920, 1080),
+        1 => (rng.next(), rng.next()),
+        _ => (rng.below(4000), rng.below(3000)),
+    };
+    stub_screen_wh(t, width, height);
+    let p = floats(t, rng, 3);
+    let out = t.alloc(&rng.bytes(8));
+    let mode = [0, 1, 2, 2, 3, rng.next()][rng.below(6) as usize];
+    t.check(
+        what,
+        0x0065_26a0,
+        Conv::Thiscall(scene),
+        &[out, p, mode],
+        |g| Out::F32(ut::scene_project_point(g, scene, out, p, mode)),
+    );
+}
+
+#[test]
+fn round22_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2222_0022);
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round22_case(&mut t, &mut rng, 0, &what);
+    }
+}
+
+#[test]
+fn snapshot_round22_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let real = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    let real = if real != 0 && t.r32(real + 0xdc) != 0 {
+        real
+    } else {
+        0
+    };
+    let mut rng = Rng(0x5222_0022);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        // the game's own scene and camera every other round
+        let scene = if round % 2 == 0 { real } else { 0 };
+        round22_case(&mut t, &mut rng, scene, &what);
+    }
+}
+
+// ---- round 22, group 2 ----
+
+/// `graphicGetAbmapUV_006410a0`: `SheetCellUV` runs original on both
+/// sides.
+fn round22b_abmap(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    if rng.chance(2) {
+        t.global(ui::bridge::ABMAP.sym, rng.next());
+    }
+    let kinds = [
+        0x3700,
+        0x3720,
+        0x3740,
+        0x3760,
+        0x37a0,
+        0x3780,
+        0,
+        rng.next(),
+    ];
+    let kind = kinds[rng.below(8) as usize];
+    let out = t.alloc(&rng.bytes(8));
+    let p = [
+        kind,
+        rng.float().to_bits(),
+        rng.float().to_bits(),
+        out,
+        out + 4,
+    ];
+    t.check(what, 0x0064_10a0, Conv::Cdecl, &p, |g| {
+        Out::U32(ut::abmap_sheet_cell_uv(g, p))
+    });
+}
+
+/// `IconPanel_showIcon` on `panel` (a fresh one when 0).
+fn round22b_icon(t: &mut Twins, rng: &mut Rng, panel: u32, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    let panel = if panel == 0 {
+        // padding before it for the negative indices
+        let mut p = rng.bytes(0x60);
+        for i in 0..7 {
+            if rng.chance(2) {
+                p[0x20 + 4 * i..0x24 + 4 * i].fill(0);
+            }
+        }
+        t.alloc(&p) + 0x20
+    } else {
+        panel
+    };
+    t.stub_sym(ut::IGGY_PLAYER_OPEN_SCALED, Conv::Cdecl, 5, rng.next());
+    t.stub_sym(ut::IGGY_MENU_SET_ENABLE, Conv::Thiscall(0), 1, rng.next());
+    let i = [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        6,
+        7,
+        8,
+        u32::MAX,
+        u32::MAX - 1,
+        u32::MAX - 2,
+    ][rng.below(13) as usize];
+    t.check(what, 0x006f_7970, Conv::Thiscall(panel), &[i], |g| {
+        Out::U32(ut::icon_panel_show_icon(g, panel, i))
+    });
+}
+
+/// `SpdCtrl_ScaleElapsedTime`: the predicates stubbed (or, with `real`,
+/// left original on the snapshot's state), each blocking condition rare.
+fn round22b_speed(t: &mut Twins, rng: &mut Rng, real: bool, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    let al = |rng: &mut Rng, p: u32| (rng.next() & !0xff) | u32::from(rng.chance(p));
+    if !real {
+        let status = [1, 1, 0, 2, rng.next()][rng.below(5) as usize];
+        t.stub_sym(ut::MS_BATTLE_GET_STATUS, Conv::Cdecl, 0, status);
+        let uc = if rng.chance(3) { 0 } else { rng.next() | 1 };
+        t.stub_sym(ut::GET_UC_STATUS, Conv::Cdecl, 0, uc);
+        let map = al(rng, 6);
+        t.stub_sym(ut::SPD_CTRL_IS_MAP_EXCLUDED, Conv::Cdecl, 1, map);
+        let magic = al(rng, 6);
+        t.stub_sym(ut::SPD_CTRL_IS_MAGIC_EXCLUDED, Conv::Cdecl, 0, magic);
+        let abmap = if rng.chance(6) { rng.next() | 1 } else { 0 };
+        t.stub_sym(ut::GRAPHIC_GET_ABMAP, Conv::Cdecl, 0, abmap);
+        let rare = |rng: &mut Rng| if rng.chance(8) { rng.next() | 1 } else { 0 };
+        let v = rare(rng);
+        t.global(ut::WAIT_FRAMES_BY_TIME.sym, v);
+        let v = rng.next();
+        t.global(ut::CURRENT_MAP_NO.sym, v);
+        let v = rare(rng);
+        t.global(ut::SAVE_MACHINE_BUSY.sym, v);
+        let v = rare(rng);
+        t.global(ut::MOVIE_FADING.sym, v);
+        let at = t.rebase(ut::BTL_END_CTRL_DONE.sym);
+        t.w8(at, [1, 1, 1, 0, 0xff][rng.below(5) as usize]);
+    }
+    t.stub_sym(ut::IGGY_CALL_AS3_EXTERNAL, Conv::Thiscall(0), 5, rng.next());
+    t.stub_sym(ut::SG_SET_MUTE_SOUND, Conv::Cdecl, 1, rng.next());
+    let at = t.rebase(ut::SPD_CTRL_ENABLED.sym);
+    t.w8(at, [1, 1, 1, 1, 0, 2][rng.below(6) as usize]);
+    let level = [0, 1, 1, 2, 2, 3][rng.below(6) as usize];
+    t.global(ut::SPD_CTRL_B4.sym, level);
+    let was = [0, 1, rng.next()][rng.below(3) as usize];
+    t.global(ut::SPD_CTRL_B8.sym, was);
+    let menu = if rng.chance(3) { 0 } else { rng.next() | 1 };
+    t.global(ut::SPD_CTRL_C0.sym, menu);
+    let dt = match rng.below(4) {
+        0 => rng.float(),
+        1 => 1.0 / 60.0,
+        _ => rng.below(1000) as f32 / 997.0,
+    }
+    .to_bits();
+    t.check(what, 0x006f_7340, Conv::Cdecl, &[dt], |g| {
+        Out::F32(ut::spd_ctrl_scale_elapsed_time(g, dt))
+    });
+}
+
+/// A stub over `dbgPrintf` for `Cache_OverFlow`: logs the format, and the
+/// two arguments after it only for the one format that has them (the
+/// other calls leave the caller's stack there).
+fn stub_overflow_printf(t: &mut Twins, ret: u32) {
+    use cache::bridge as cb;
+    let one = t.stub(None, cb::DBG_PRINTF, false, 1, 0, ret);
+    let three = t.stub(None, cb::DBG_PRINTF, false, 3, 0, ret);
+    let fmt = t.rebase(cb::OVERFLOW_DISPOSED);
+    let at = t.cave_next;
+    let mut c = vec![0x81, 0x7c, 0x24, 0x04]; // cmp dword [esp+4], fmt
+    c.extend(fmt.to_le_bytes());
+    c.extend([0x0f, 0x84]); // je three
+    c.extend(three.wrapping_sub(at + 14).to_le_bytes());
+    c.push(0xe9); // jmp one
+    c.extend(one.wrapping_sub(at + 19).to_le_bytes());
+    assert!(at + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(at, &c);
+    t.cave_next = at + c.len() as u32;
+    let f = t.rebase(cb::DBG_PRINTF);
+    let mut j = vec![0xe9];
+    j.extend(at.wrapping_sub(f + 5).to_le_bytes());
+    t.write(f, &j);
+}
+
+/// `Cache_OverFlow` on the cache as it is (`fresh`: a random one, with
+/// small data words and ages, sometimes nothing to free).
+fn round22b_overflow(t: &mut Twins, rng: &mut Rng, fresh: bool, what: &str) -> u32 {
+    use cache::bridge as cb;
+    if fresh {
+        build_cache(t, rng);
+        let table = t.rebase(cb::TABLE.sym);
+        let none = rng.chance(6);
+        for i in 0..cache::SLOTS {
+            let e = t.r32(table + 4 * i);
+            if none {
+                // unread, in use, pinned or free: nothing to free
+                match rng.below(4) {
+                    0 => t.w8(e + 6, 1),
+                    1 => t.w8(e + 5, 1),
+                    2 => t.w8(e + 8, 7 | (rng.next() as u8 & 0xf8)),
+                    _ => t.w32(e + 0xc, 0),
+                }
+                continue;
+            }
+            if rng.chance(2) {
+                t.w8(e + 5, 0);
+                t.w8(e + 6, 0);
+            }
+            if rng.chance(3) {
+                // ids with the top bit: the logged high half is signed
+                t.w32(e, rng.next());
+            }
+            if rng.chance(2) {
+                let data = [
+                    rng.below(0x2000_0000),
+                    rng.below(64),
+                    0x0fff_ffff,
+                    0x0fff_fffe,
+                ][rng.below(4) as usize];
+                t.w32(e + 0xc, data);
+            }
+        }
+    }
+    stub_overflow_printf(t, rng.next());
+    t.stub_sym(cb::CH_CREATE_NAME, Conv::Cdecl, 1, rng.next());
+    t.stub_sym(cb::FREE_ENTRY, Conv::Cdecl, 1, rng.next());
+    let mut r = 0;
+    t.check(what, 0x0084_09a0, Conv::Cdecl, &[], |g| {
+        r = cb::overflow(g);
+        Out::U32(r)
+    });
+    r
+}
+
+#[test]
+fn round22b_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2222_b022);
+    let mut freed = [0u32; 2];
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        match round % 4 {
+            0 => round22b_abmap(&mut t, &mut rng, &what),
+            1 => round22b_icon(&mut t, &mut rng, 0, &what),
+            2 => round22b_speed(&mut t, &mut rng, false, &what),
+            _ => freed[round22b_overflow(&mut t, &mut rng, true, &what) as usize] += 1,
+        }
+    }
+    assert!(freed.iter().all(|&n| n > 50), "overflow answers {freed:?}");
+}
+
+#[test]
+fn snapshot_round22b_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5222_b022);
+    // first on the game's own state, before any stub or random cache
+    // replaces it: the real cache, the real speed-up predicates
+    let freed = round22b_overflow(&mut t, &mut rng, false, "snapshot cache");
+    eprintln!("the snapshot's cache: Cache_OverFlow returns {freed}");
+    for round in 0..40 {
+        t.reset();
+        let what = format!("snapshot real speed {round}");
+        round22b_speed(&mut t, &mut rng, true, &what);
+    }
+    let panel = t.r32(t.rebase(0x00ce_82e4));
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        match round % 4 {
+            0 => round22b_abmap(&mut t, &mut rng, &what),
+            // the game's own icon panel, when there is one
+            1 => {
+                let p = if round % 8 == 1 { panel } else { 0 };
+                round22b_icon(&mut t, &mut rng, p, &what);
+            }
+            2 => round22b_speed(&mut t, &mut rng, false, &what),
+            _ => {
+                round22b_overflow(&mut t, &mut rng, true, &what);
+            }
+        }
     }
 }

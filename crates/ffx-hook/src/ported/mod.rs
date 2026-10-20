@@ -177,27 +177,93 @@ pub(crate) const fn callee_pops(abi: &str) -> bool {
 /// arguments, returning `eax`. cdecl leaves the stack to the caller, so
 /// the call is the same for any count; more than 8 is a bug in the bridge
 /// that asked.
-#[allow(clippy::many_single_char_names)] // the arguments, in order
 pub(crate) fn call_cdecl(f: u32, a: &[u32]) -> u32 {
-    type F12 =
-        unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> u32;
+    cdecl12("call_cdecl", f, a)
+}
+
+/// [`call_cdecl`] for an original that returns its result in `ST0`
+/// (`float` or `double` in C, often `void` in Ghidra: look for
+/// `(float10)Name(` at the callers): the value at the x87's precision
+/// (53 bits under the game's control word), which the declared `f64`
+/// return pops off the x87 stack. Only for a callee that always leaves
+/// `ST0` set: popping an empty x87 stack gives a NaN and unbalances it.
+pub(crate) fn call_cdecl_f64(f: u32, a: &[u32]) -> f64 {
+    cdecl12("call_cdecl_f64", f, a)
+}
+
+/// [`call_cdecl_f64`] rounded to `f32` (`fstp dword`), for an original
+/// whose callers store its `ST0` as a `float` (`MsCameraGetYaw`,
+/// `AtelPopStackFloat`).
+pub(crate) fn call_cdecl_f32(f: u32, a: &[u32]) -> f32 {
+    cdecl12("call_cdecl_f32", f, a)
+}
+
+/// The call behind [`call_cdecl`] and its float forms: 12 words, the
+/// missing ones zero, `R` from `eax` (`u32`) or `ST0` (`f32`, `f64`).
+#[allow(clippy::many_single_char_names)] // the arguments, in order
+fn cdecl12<R>(helper: &str, f: u32, a: &[u32]) -> R {
+    type F12<R> =
+        unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) -> R;
     // No panic here: a panic in a function the game calls ends the process.
     if a.len() > 12 {
         crate::log::log(&format!(
-            "call_cdecl: {} arguments, only 12 passed",
+            "{helper}: {} arguments for {f:#010x}, only 12 passed",
             a.len()
         ));
     }
     let mut w = [0u32; 12];
     let n = a.len().min(12);
     w[..n].copy_from_slice(&a[..n]);
-    // SAFETY: a cdecl function of at most 12 word arguments; the extra
-    // zero words it doesn't read sit on the caller's side of the stack.
+    // SAFETY: a cdecl function of at most 12 word arguments returning `R`
+    // where the ABI puts it (`eax`, or `ST0` for a float); the extra zero
+    // words it doesn't read sit on the caller's side of the stack.
     unsafe {
-        let g: F12 = std::mem::transmute::<usize, F12>(f as usize);
+        let g: F12<R> = std::mem::transmute::<usize, F12<R>>(f as usize);
         g(
             w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11],
         )
+    }
+}
+
+/// Calls an original thiscall (or fastcall taking only `ecx`) function by
+/// absolute address: `this` in `ecx`, 0 to 8 word arguments on the
+/// stack, returning `eax`. The callee pops its stack arguments, so `a`
+/// must hold exactly as many words as it takes; more than 8 is a bridge
+/// bug, logged, and the original is not called (0).
+pub(crate) fn call_thiscall(f: u32, this: u32, a: &[u32]) -> u32 {
+    macro_rules! call {
+        ($($w:ident),*) => {{
+            // SAFETY: a thiscall function of this build that takes these
+            // stack words (the bridge's count) and pops them itself.
+            unsafe {
+                let g = std::mem::transmute::<
+                    usize,
+                    unsafe extern "thiscall" fn(u32 $(, call!(@word $w))*) -> u32,
+                >(f as usize);
+                g(this $(, $w)*)
+            }
+        }};
+        (@word $w:ident) => { u32 };
+    }
+    match *a {
+        [] => call!(),
+        [a0] => call!(a0),
+        [a0, a1] => call!(a0, a1),
+        [a0, a1, a2] => call!(a0, a1, a2),
+        [a0, a1, a2, a3] => call!(a0, a1, a2, a3),
+        [a0, a1, a2, a3, a4] => call!(a0, a1, a2, a3, a4),
+        [a0, a1, a2, a3, a4, a5] => call!(a0, a1, a2, a3, a4, a5),
+        [a0, a1, a2, a3, a4, a5, a6] => call!(a0, a1, a2, a3, a4, a5, a6),
+        [a0, a1, a2, a3, a4, a5, a6, a7] => call!(a0, a1, a2, a3, a4, a5, a6, a7),
+        _ => {
+            // No panic here: a panic in a function the game calls ends the
+            // process. A wrong count would unbalance the stack: don't call.
+            crate::log::log(&format!(
+                "call_thiscall: {} arguments for {f:#010x}, at most 8; not called",
+                a.len()
+            ));
+            0
+        }
     }
 }
 
