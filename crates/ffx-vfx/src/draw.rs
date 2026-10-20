@@ -1221,4 +1221,122 @@ pub mod bridge {
         }
         call(mem, g(mem, 0x006e_d360), &[area, m]);
     }
+
+    /// `0x00745f70` (`pppDrawShapeFieldGlobalEmit`, ours; `(obj, def, ctrl)`,
+    /// called by `pppDrawShapeFieldGlobalDraw`): in work area 0 `w = obj +
+    /// 0xa0 + [[ctrl +0xc]]` the countdown `+0x44` steps down; at 0 it
+    /// emits `u8 def +0xc0` particles (the count read again each time) and
+    /// restarts at `u8 def +0xc1 - 1`. A particle is the 0xb0-byte record
+    /// `+0x48` (a ring of `def +8`) of the array `get_ptr32_func(w +0x40)`:
+    /// `pppDrawShapeFieldSpdInit(rec, def, w)`, the emulated `VfMove`
+    /// register and `rec +0x10` take `g_pppWorldMatrix +0x30` (four words),
+    /// `KeVecAddRandom(rec +0x10, def +0x10, u8 def +0x20)`, and `rec
+    /// +0x20` and `+0x30` go through a copy of `g_pppWorldMatrix` without
+    /// its translation (`FFXVu0ApplyMatrix`; the copy in the original's
+    /// locals at `frame - 0x44`, `frame` its `ebp`, its `x, y, z`
+    /// translation zeroed). Returns the new countdown (left in eax).
+    /// Callees through `call`.
+    pub fn ppp_draw_shape_field_global_emit<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let offsets: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let w = obj
+            .wrapping_add(0xa0)
+            .wrapping_add(mem.read::<u32>(offsets));
+        let left: u32 = mem.read(w + 0x44);
+        if left != 0 {
+            let n = left.wrapping_sub(1);
+            mem.write(w + 0x44, n);
+            return n;
+        }
+        let m = frame.wrapping_sub(0x44);
+        let world = g(mem, 0x0230_ffa0);
+        call(mem, g(mem, 0x006e_d360), &[m, world]);
+        // the original's zeroed locals at ebp -0x14..-0xc are the copy's
+        // translation
+        for at in [0x38, 0x34, 0x30] {
+            mem.write(m + at, 0f32);
+        }
+        let mut i = 0u32;
+        while i < u32::from(mem.read::<u8>(def.wrapping_add(0xc0))) {
+            let base = ffx_system::stub::ptr32(mem.read(w + 0x40));
+            let rec = mem
+                .read::<u32>(w + 0x48)
+                .wrapping_mul(0xb0)
+                .wrapping_add(base);
+            call(mem, g(mem, 0x0074_5610), &[rec, def, w]);
+            let at: [u32; 4] = mem.read(world + 0x30);
+            mem.write(g(mem, 0x00c8_f980), at);
+            mem.write(rec.wrapping_add(0x10), at);
+            let spread = u32::from(mem.read::<u8>(def.wrapping_add(0x20)));
+            let args = [rec.wrapping_add(0x10), def.wrapping_add(0x10), spread];
+            call(mem, g(mem, 0x0076_6f10), &args);
+            for off in [0x20, 0x30] {
+                let v = rec.wrapping_add(off);
+                call(mem, g(mem, 0x006e_d2e0), &[v, m, v]);
+            }
+            let next = mem.read::<u32>(w + 0x48).wrapping_add(1);
+            mem.write(w + 0x48, next);
+            if next >= mem.read::<u32>(def.wrapping_add(8)) {
+                mem.write(w + 0x48, 0u32);
+            }
+            i += 1;
+        }
+        let n = u32::from(mem.read::<u8>(def.wrapping_add(0xc1))).wrapping_sub(1);
+        mem.write(w + 0x44, n);
+        n
+    }
+
+    /// `0x007454a0` (`pppDrawShapeFieldSpdAlloc`, ours; `(obj, def, ctrl)`,
+    /// called by `pppDrawShapeFieldSpdDraw`): in work area 0 `w = obj +
+    /// 0xa0 + [[ctrl +0xc]]`, four buffers from the current environment's
+    /// heap (`pppMemAlloc(env, env + 0x10, size)`, `env = [[0x00c3a4cc]]`),
+    /// each kept as `set_ptr32`: `+0x40` the particles (`def +8 x 0xa0`
+    /// bytes, zeroed), `+0x44` 0xc bytes, `+0x50` (`w +0x58 x 8`, zeroed)
+    /// and `+0x54` (`w +0x58 x 16`, zeroed); the first null one returns 0,
+    /// else 1. Callees through `call` (`memset` through its thunk
+    /// `0x0094964c`).
+    pub fn ppp_draw_shape_field_spd_alloc<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let offsets: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let w = obj
+            .wrapping_add(0xa0)
+            .wrapping_add(mem.read::<u32>(offsets));
+        let count: u32 = mem.read(def.wrapping_add(8));
+        // (field, size, zeroed); the sizes read when they come up
+        for (at, zeroed) in [(0x40, true), (0x44, false), (0x50, true), (0x54, true)] {
+            let size = match at {
+                0x40 => count.wrapping_mul(0xa0),
+                0x44 => 0xc,
+                0x50 => mem.read::<u32>(w + 0x58) << 3,
+                _ => mem.read::<u32>(w + 0x58) << 4,
+            };
+            let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+            let block = call(
+                mem,
+                g(mem, 0x0071_6a30),
+                &[env, env.wrapping_add(0x10), size],
+            );
+            let kept = ffx_system::stub::ptr32(block);
+            mem.write(w + at, kept);
+            if ffx_system::stub::is_ptr32_null(kept) != 0 {
+                return 0;
+            }
+            if zeroed {
+                let to = ffx_system::stub::ptr32(mem.read(w + at));
+                call(mem, g(mem, 0x0094_964c), &[to, 0, size]);
+            }
+        }
+        1
+    }
 }

@@ -20318,3 +20318,253 @@ fn round35b_born_homing_and_unit_floats_match_the_original() {
         }
     }
 }
+
+/// A stand-in at `sym` (through a jump) that returns the words of `table`
+/// in turn (`count` the call number, kept at `table + 0x20`) and logs its
+/// three argument words for call `k` at `table + 0x30 + 4k`, `+ 0x40 +
+/// 4k` and `+ 0x50 + 4k` (`table` 0x60 bytes).
+fn seq_stand_in(p: &mut Pair, sym: u32, table: u32) {
+    let count = table + 0x20;
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x83, 0xe1, 0x03]); // and ecx, 3
+    for k in 0..3u8 {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        c.extend([0x89, 0x04, 0x8d]); // mov [log + ecx * 4], eax
+        c.extend((table + 0x30 + 0x10 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0x8b, 0x04, 0x8d]); // mov eax, [table + ecx * 4]
+    c.extend(table.to_le_bytes());
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(count.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round35c_zbuf_init_axes_and_shape_fields_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_c7e0);
+        let cells = p.alloc(0x40);
+        let (magic, render, driver, ot) = (cells, cells + 4, cells + 8, cells + 0xc);
+        far_recorder(&mut p, 0x009d_a3b0, &[], Some(magic));
+        far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(render));
+        far_recorder(&mut p, 0x0076_b2d0, &[0; 5], Some(driver));
+        far_recorder(&mut p, 0x0071_6b70, &[0], Some(ot));
+        for (f, n) in [
+            (0x0064_5840, 0),
+            (0x0071_e330, 3),
+            (0x0064_5600, 2),
+            (0x0071_1680, 2),
+            (0x0062_fbf0, 1),
+            (0x0062_f500, 2),
+            (0x007e_c410, 0),
+            (0x0071_69d0, 4),
+            (0x0074_5610, 3),
+            (0x0094_964c, 3),
+        ] {
+            far_recorder(&mut p, f, &vec![0; n], None);
+        }
+        far_recorder(&mut p, 0x0076_1350, &[4, 3, 3, 0, 0], None);
+        far_recorder(&mut p, 0x0076_6f10, &[4, 0, 0], None);
+        let allocs = p.alloc(0x60);
+        seq_stand_in(&mut p, 0x0071_6a30, allocs);
+        let instance = p.sym(small::bridge::ZBUF_CLEAR_INSTANCE.sym);
+        let (centre, world) = (p.sym(0x00d4_b4d8), p.sym(0x0230_ffa0));
+        let cpart = p.sym(0x0230_ffe4);
+        let slot = p.sym(heap::bridge::ENV_SLOT.sym);
+        let (obj, def, prog, offs, recs, scratch, env) = (
+            p.alloc(0x200),
+            p.alloc(0x100),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0xb0 * 8),
+            p.alloc(0xc0),
+            p.alloc(4),
+        );
+        let (pos, rot, target, part, records, others, data) = (
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(8),
+            p.alloc(0x80),
+            p.alloc(0x40),
+            p.alloc(0x400),
+            p.alloc(0x40),
+        );
+        p.set(slot, env);
+        for round in 0..2000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            let keep = |m: &mut Oracle| m.read(scratch, 0xc0).unwrap();
+
+            // op_zbuf_clear: the instance about to wrap now and then
+            let r = rng.next();
+            let id = rng.pick(&[0u64, 4, 5, 0xffff_ffff, 1 << 32, u64::from(r)]);
+            p.set(instance, id);
+            p.set(magic, rng.pick(&[0x9au32, 0x9b, 0]));
+            p.set(render, rng.pick(&[0u32, 1]));
+            let r = rng.next();
+            let z = rng.pick(&[0u32, 1, 0x00ff_ffff, 0x0100_0000, u32::MAX, r]);
+            p.check(&what("zbuf_clear"), 0x007e_c7e0, &[z], |m| {
+                Some(small::bridge::op_zbuf_clear(m, z, &mut call_original))
+            });
+
+            // pppInitPartRender: what it clears set first
+            for at in [
+                0x00d4_e370u32,
+                0x010d_4cf8,
+                0x00d5_249c,
+                0x0230_fd34,
+                0x0230_fd38,
+            ] {
+                let a = p.sym(at);
+                let v = rng.next() | 0x0101_0101;
+                p.set(a, v);
+            }
+            p.set(driver, rng.pick(&[0u32, 1, u32::MAX, 0x8000_0000]));
+            p.set(ot, rng.next());
+            p.check(&what("init_part_render"), 0x0076_1d60, &[], |m| {
+                Some(small::bridge::ppp_init_part_render(m, &mut call_original))
+            });
+
+            // pppDrawDebugAxes
+            for k in 0..3 {
+                let v = rng.float();
+                p.set(centre + 4 * k, v);
+            }
+            for at in [0x0230_fe60u32, 0x0230_ff60] {
+                let m = p.sym(at);
+                for k in 0..16 {
+                    let v = ranged(&mut rng, -4.0, 4.0);
+                    p.set(m + 4 * k, v);
+                }
+            }
+            p.check(&what("debug_axes"), 0x0076_25a0, &[], |m| {
+                let k = keep(m);
+                part::bridge::ppp_draw_debug_axes(m, scratch + 0xb0, &mut call_original);
+                m.write(scratch, &k).unwrap();
+                None
+            });
+
+            // pppDrawShapeFieldEmit: a countdown, or a burst over the ring
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(def, 0x100, &mut rng);
+            p.fill(recs, 0xb0 * 8, &mut rng);
+            p.set(prog + 0xc, offs);
+            p.set(offs, 0x10 * rng.below(4));
+            let w = obj + 0xa0 + p.get::<u32>(offs);
+            p.set(w + 0x40, recs);
+            let slots = rng.below(8) + 1;
+            p.set(def + 8, slots);
+            p.set(w + 0x48, rng.below(slots));
+            p.set(def + 0xc0, rng.below(6) as u8);
+            p.set(w + 0x44, rng.pick(&[0u32, 0, 1, 7]));
+            for k in 0..16 {
+                let v = ranged(&mut rng, -4.0, 4.0);
+                p.set(world + 4 * k, v);
+            }
+            p.check(
+                &what("shape_field_emit"),
+                0x0074_5f70,
+                &[obj, def, prog],
+                |m| {
+                    let k = keep(m);
+                    let r = draw::bridge::ppp_draw_shape_field_global_emit(
+                        m,
+                        obj,
+                        def,
+                        prog,
+                        scratch + 0x48,
+                        &mut call_original,
+                    );
+                    m.write(scratch, &k).unwrap();
+                    Some(r)
+                },
+            );
+
+            // pppDrawShapeFieldAlloc: the first failing block in turn
+            p.set(env, rng.next());
+            let fail = rng.below(5);
+            for k in 0..4 {
+                let v = if k == fail { 0 } else { rng.next() | 1 };
+                p.set(allocs + 4 * k, v);
+            }
+            p.set(allocs + 0x20, 0u32);
+            p.set(w + 0x58, rng.below(0x40));
+            p.check(
+                &what("shape_field_alloc"),
+                0x0074_54a0,
+                &[obj, def, prog],
+                |m| {
+                    Some(draw::bridge::ppp_draw_shape_field_spd_alloc(
+                        m,
+                        obj,
+                        def,
+                        prog,
+                        &mut call_original,
+                    ))
+                },
+            );
+
+            // pppPObjPosRot
+            p.fill(others, 0x400, &mut rng);
+            p.fill(pos, 0x10, &mut rng);
+            p.fill(rot, 0x10, &mut rng);
+            p.fill(data, 0x40, &mut rng);
+            p.set(cpart, part);
+            p.set(part + 0x3c, records);
+            for k in 0..4 {
+                p.set(records + 0x10 * k + 4, others + 0x100 * k);
+            }
+            let n = if rng.chance(15) {
+                u32::MAX
+            } else {
+                rng.below(4)
+            };
+            let field = 4 * rng.below(8);
+            p.set(target, n);
+            p.set(target + 4, field);
+            if n != u32::MAX {
+                let t = others + 0x100 * n + field;
+                p.set(t + 0xac, data);
+                p.set(t + 0xb0, data + 0x20);
+                let v = rng.float();
+                p.set(t + 0xa8, v);
+            }
+            for k in 0..3 {
+                let v = rng.float();
+                p.set(data + 4 * k, v);
+            }
+            let s = rng.float();
+            p.set(part + 0x60, s);
+            p.check(
+                &what("pobj_pos_rot"),
+                0x0073_72d0,
+                &[pos, rot, target],
+                |m| {
+                    let k = keep(m);
+                    part::bridge::ppp_pobj_pos_rot(
+                        m,
+                        pos,
+                        rot,
+                        target,
+                        scratch + 0x20,
+                        &mut call_original,
+                    );
+                    m.write(scratch, &k).unwrap();
+                    None
+                },
+            );
+        }
+    }
+}

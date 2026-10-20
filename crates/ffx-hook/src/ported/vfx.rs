@@ -5356,4 +5356,38 @@ ported! {
     opu_gw_etc @ 0x0080_ca80 => extern "C" fn opu_gw_etc(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_gw_etc(&mut mem(), host, cmd, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
+    // ---- round 35 c ----
+    /// `op_zbuf_clear(z)`.
+    op_zbuf_clear @ 0x007e_c7e0 => extern "C" fn op_zbuf_clear(z: u32) -> u32 {
+        small::bridge::op_zbuf_clear(&mut mem(), z, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppInitPartRender()`.
+    pppInitPartRender @ 0x0076_1d60 => extern "C" fn ppp_init_part_render() -> u32 {
+        small::bridge::ppp_init_part_render(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawDebugAxes_007625a0()`.
+    pppDrawDebugAxes_007625a0 @ 0x0076_25a0 => extern "C" fn ppp_draw_debug_axes() {
+        // the original's locals: the matrix and the six ends, below its ebp
+        let mut frame = super::StackFrame::<41>::new();
+        let ebp = frame.at() + 0xa4;
+        part::bridge::ppp_draw_debug_axes(&mut mem(), ebp, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldGlobalEmit_00745f70(obj, def, ctrl)`.
+    pppDrawShapeFieldGlobalEmit_00745f70 @ 0x0074_5f70 => extern "C" fn ppp_draw_shape_field_global_emit(obj: u32, def: u32, ctrl: u32) -> u32 {
+        // the original's locals: the matrix copy, below its ebp
+        let mut frame = super::StackFrame::<17>::new();
+        let ebp = frame.at() + 0x44;
+        draw::bridge::ppp_draw_shape_field_global_emit(&mut mem(), obj, def, ctrl, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldSpdAlloc_007454a0(obj, def, ctrl)`.
+    pppDrawShapeFieldSpdAlloc_007454a0 @ 0x0074_54a0 => extern "C" fn ppp_draw_shape_field_spd_alloc(obj: u32, def: u32, ctrl: u32) -> u32 {
+        draw::bridge::ppp_draw_shape_field_spd_alloc(&mut mem(), obj, def, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppPObjPosRot_007372d0(pos, rot, target)`.
+    pppPObjPosRot_007372d0 @ 0x0073_72d0 => extern "C" fn ppp_pobj_pos_rot(pos: u32, rot: u32, target: u32) {
+        // the original's locals: the vector, below its ebp
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 0x14;
+        part::bridge::ppp_pobj_pos_rot(&mut mem(), pos, rot, target, ebp, &mut |_, f, a| call_ptr(f, a));
+    }
 }
