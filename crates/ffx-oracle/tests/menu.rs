@@ -13821,3 +13821,91 @@ fn menu_round28_list_row_and_gear_info_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round28_spline_segments_match_the_original() {
+    let Some(mut t) = setup_any(0x0028_a500) else {
+        return;
+    };
+    let stack = t.b.stack_range().start;
+    let local = stack + 0x200;
+    let top = t.a.stack_range().end;
+    let points = t.alloc(&[0; 0x400]);
+    let out = t.alloc(&[0; 0x10]);
+    // the VU0 helpers run as the originals on both sides: the result and
+    // every VU0 register they leave are compared
+    for round in 0..1200u32 {
+        for k in 0..0x100u32 {
+            let v = match t.rng.below(16) {
+                0 => 0.0f32,
+                1 => f32::from_bits(t.rng.next() & 0xbfff_ffff),
+                _ => t.rng.float(-500.0, 500.0),
+            };
+            t.put(points + 4 * k, v.to_bits());
+        }
+        let vregs = t.sym(0x00c8_f788);
+        t.scramble_at(vregs, 0x90);
+        let vf00 = t.sym(0x00c0_a004);
+        let wv = t.rng.pick(&[1.0f32, 1.0, 2.0, 0.5, -1.0, 0.0]);
+        t.put(vf00 + 0xc, wv.to_bits());
+        let tv = match t.rng.below(11) {
+            // denormals: t / 2 rounds when stored
+            10 => f32::from_bits(t.rng.below(0x0080_0000) | (t.rng.next() & 0x8000_0000)),
+            0 => t.rng.pick(&[
+                0.0f32,
+                1.0,
+                -0.0,
+                0.5,
+                f32::from_bits(0x7fc0_0000),
+                f32::INFINITY,
+            ]),
+            1 => t.rng.float(-3.0, 3.0),
+            _ => t.rng.float(0.0, 1.0),
+        };
+        let index = t.rng.below(0x3c);
+        let position = t.rng.pick(&[0u32, 1, 0x8000_0000]);
+        // the quadratic copies a never-written frame word: zero it on both
+        let zero = vec![0u8; 0x4000];
+        t.a.write_bytes(top - 0x4000, &zero);
+        t.put(local + 12, 0u32);
+        let quadratic = round % 2 == 0;
+        let (name, f) = if quadratic {
+            ("TkMtCalcSplineSegment_0088abd0", 0x0088_abd0)
+        } else {
+            ("TkMtCalcSpline3Segment_0088a500", 0x0088_a500)
+        };
+        t.twin(
+            name,
+            f,
+            &[out, index, tv.to_bits(), points, position],
+            VOID,
+            |o| {
+                if quadratic {
+                    tk::tk_mt_calc_spline_segment(
+                        o,
+                        out,
+                        index,
+                        tv,
+                        points,
+                        position,
+                        local,
+                        &mut callback,
+                    );
+                } else {
+                    tk::tk_mt_calc_spline3_segment(
+                        o,
+                        out,
+                        index,
+                        tv,
+                        points,
+                        position,
+                        local,
+                        &mut callback,
+                    );
+                }
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}

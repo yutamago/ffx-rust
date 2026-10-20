@@ -10136,7 +10136,9 @@
 0x0088a3a0 function Math_PolarToVector       # (out, r, yaw, pitch): pitch Math_WrapAngle'd, beyond +-pi/2 turned back (pi - p or p + pi) with yaw + pi; yaw wrapped; out = (cos(yaw) h, sin(p) r, sin(yaw) h, 1) with h = cos(p) r (CIsin/CIcos, each a float); name ours
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
+0x0088a500 function TkMtCalcSpline3Segment_0088a500 # (out, index, t, points, position): uniform cubic B-spline segment of the 4 points at points + 16*index through the emulated VU0 (coefficients 0x00c8f7e0, MulX/MaddaY/MaddaZ/MaddW into 0x00c8f7f0); position != 0 the point, 0 the normalised derivative (Vec4Scale4, AddY/Z, MsDivSqrt, vec3_scale into 0x00c8f800); caller 0x0088aa40 (TkMtCalcSpline3 core, n > 3); ported in menu round 28; name ours
 0x0088aba0 function TkMtCalcSpline3Tangent_0088aba0 # ours: (out, points, n, t): FUN_0088aa40(out, points, n, t, 0), TkMtCalcSpline3's tangent as MsCameraSplineMove_007bcb80 pairs it with TkMtCalcSpline3 (as TkMtCalcSplineTangent with TkMtCalcSpline); menu module
+0x0088abd0 function TkMtCalcSplineSegment_0088abd0 # (out, index, t, points, position): uniform quadratic B-spline segment of 3 points (weights (1-t)^2/2, t(1-t)+1/2, t^2/2; tangent t-1, 1-2t, t, normalised) through the VU0 (coefficients 0x00c8f7d0, MulX/MaddaY/Vu0MaddaScalar4 into 0x00c8f7e0, unit 0x00c8f7f0); its 16-byte coefficient copy carries a never-written frame word; caller 0x0088afd0; ported in menu round 28; name ours
 0x0088b3b0 function TkMtCalcSplineTangent     # fh v3:bsim1.00 0x0088b320
 0x0088b3e0 function CIcos                     # fh v3:bsim1.00 0x0088b350 +_CIcos
 0x0088b400 function Math_MinAbs               # (a, b) -> float: |a| when b is greater, else b

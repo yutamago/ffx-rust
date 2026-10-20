@@ -287,3 +287,27 @@ AdjustButtonIconY` in Japanese and at `y + 5.0` otherwise, 2.5 higher for
 the icons `0x20..0x22`, `0x34..0x37`, `0x42`, and `0x30`/`0x48` while
 y is below 350. At y `0x163` both lift glyphs while drawing them (1 in Japanese,
 else 2 or 3).
+
+## Splines (`TkMtCalcSpline*`)
+
+`0x0088aa40` (the body of `TkMtCalcSpline3` and its tangent
+`0x0088aba0`) clamps `t` to 0..1 and, for more than 3 points, picks the
+segment index with an `ftol` (per Ghidra; not ported yet), moves it until
+the local `t = (t - index / (n - 3)) * (n - 3)` is in 0..1, keeps it in
+`0..n - 4` and calls `TkMtCalcSpline3Segment_0088a500(out, index,
+t, points, position)`; up to 3 points go to `0x0088afd0`, which uses
+`TkMtCalcSplineSegment_0088abd0`. Points are 16 bytes. Both are uniform
+B-splines evaluated on the emulated VU0 (`g_Vu0Acc` `0x00c8f790` and the
+registers after it):
+
+| segment | position weights | tangent weights |
+|---|---|---|
+| cubic (`0x0088a500`) | `(1-t)^3/6`, `t^3/2 - t^2 + 2/3`, `-t^3/2 + t^2/2 + t/2 + 1/6`, `t^3/6` | `-(1-t)^2/2`, `1.5t^2 - 2t`, `-1.5t^2 + t + 1/2`, `t^2/2` |
+| quadratic (`0x0088abd0`) | `(1-t)^2/2`, `t(1-t) + 1/2`, `t^2/2` | `t - 1`, `1 - 2t`, `t` |
+
+Each weight is stored as `f32` (the cubic also stores `1 - t`, `t^2`,
+`t/2` and `t^2 * t/2`). A nonzero `position` writes the point; 0 writes
+the tangent normalised (`x^2 + y^2 + z^2`, `MsDivSqrt` into `g_Vu0_Q`,
+`w` from `vf00.w`). The quadratic writes three weights into a 16-byte
+frame buffer and copies all 16 bytes, so `0x00c8f7dc` gets a frame word
+nobody wrote (no helper reads it).

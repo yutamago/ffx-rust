@@ -4194,6 +4194,20 @@ ported! {
         let table = frame.at();
         tk::menu_item_sort_gear(&mut mem(), list, start, n, table, table.wrapping_add(0x1900), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `TkMtCalcSpline3Segment_0088a500(out, index, t, points, position)`.
+    TkMtCalcSpline3Segment_0088a500 @ 0x0088_a500 => extern "C" fn tk_mt_calc_spline3_segment(out: u32, index: u32, t: f32, points: u32, position: u32) {
+        // the coefficients' frame copy
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline3_segment(&mut mem(), out, index, t, points, position, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSplineSegment_0088abd0(out, index, t, points, position)`.
+    TkMtCalcSplineSegment_0088abd0 @ 0x0088_abd0 => extern "C" fn tk_mt_calc_spline_segment(out: u32, index: u32, t: f32, points: u32, position: u32) {
+        // the coefficients' frame copy (its fourth word is never written)
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline_segment(&mut mem(), out, index, t, points, position, local, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `MenuItem_DrawListRow(window, x, y, row, mode)`.
     MenuItem_DrawListRow @ 0x008c_7c30 => extern "C" fn menu_item_draw_list_row(window: u32, x: f32, y: f32, row: u32, mode: u32) {
         // the digit width (the original's argument slot) and the command out word

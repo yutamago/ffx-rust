@@ -12586,6 +12586,201 @@ pub mod bridge {
         call(mem, kick, &[])
     }
 
+    /// Calls the VU0 helper `f` with the two pointers `args` and the four
+    /// words at `vec` behind them (what the spline segments push; each
+    /// helper reads the component it scales by).
+    fn vu0_call<M: Mem>(
+        mem: &mut M,
+        f: u32,
+        [a, b]: [u32; 2],
+        vec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(f);
+        let w: [u32; 4] = [0u32, 4, 8, 12].map(|o| mem.read(vec.wrapping_add(o)));
+        call(mem, f, &[a, b, w[0], w[1], w[2], w[3]]);
+    }
+
+    /// The tangent tail of the spline segments: `dst = src * src`
+    /// (`Vec4Scale4`), `dst.x += y`, `+= z` (`pppVu0AddY`/`AddZ`),
+    /// `Q = vf00.w / sqrt(dst.x)` (`MsDivSqrt_007c13c0`), `0x00728ab0()`,
+    /// `dst = src * Q` (`vfx_vec3_scale`), `dst.w = vf00.w`
+    /// (`vfx_vec_w_add`), copied to `out`: `src` normalised.
+    fn spline_unit<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        [dst, src]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::round_trip;
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let (dst, src) = (fun(mem, dst), fun(mem, src));
+        let copy = |mem: &M, a: u32| round_trip(f32::from_bits(mem.read(a))).to_bits();
+        vu0_call(mem, 0x007c_11c0, [dst, src], src, call);
+        vu0_call(mem, 0x0074_b630, [dst, dst], dst, call);
+        vu0_call(mem, 0x0074_b650, [dst, dst], dst, call);
+        let (q_reg, vf00) = (fun(mem, 0x00c8_f788), fun(mem, 0x00c0_a004));
+        let (vf00_w, dst_x) = (copy(mem, vf00.wrapping_add(0xc)), copy(mem, dst));
+        let f = fun(mem, 0x007c_13c0);
+        call(mem, f, &[q_reg, vf00_w, dst_x]);
+        let f = fun(mem, 0x0072_8ab0);
+        call(mem, f, &[]);
+        let scale = copy(mem, q_reg);
+        let f = fun(mem, 0x0075_bb00);
+        call(mem, f, &[dst, src, scale]);
+        vu0_call(mem, 0x0081_7cc0, [dst, vf00], vf00, call);
+        let f = fun(mem, 0x0071_0e70);
+        call(mem, f, &[dst, out]);
+    }
+
+    /// `TkMtCalcSpline3Segment_0088a500(out, index, t, points, position)`
+    /// (`0x0088a500`, own name; caller `0x0088aa40`, `TkMtCalcSpline3`'s
+    /// body for more than 3 points): the uniform cubic B-spline segment of
+    /// the four 16-byte points from `points + 16 * index`. A nonzero
+    /// `position` gives the point, weights `((1-t)^3/6, t^3/2 - t^2 + 2/3,
+    /// -t^3/2 + t^2/2 + t/2 + 1/6, t^3/6)` (each an `f32`, `t/2` and `t^2`
+    /// too), as `vf0x7f0` of `MulX`/`MaddaY`/`MaddaZ`/`MaddW`; 0 the
+    /// derivative `(-t^2/2 + t - 1/2, 1.5t^2 - 2t, -1.5t^2 + t + 1/2,
+    /// t^2/2)`, normalised. Through the VU0 registers at `0x00c8f790`..
+    /// (coefficients `0x00c8f7e0`, points `0x00c8f7a0`.., result
+    /// `0x00c8f7f0`, unit `0x00c8f800`). `local` is the coefficients'
+    /// 16-byte frame copy.
+    #[allow(clippy::too_many_arguments)]
+    pub fn tk_mt_calc_spline3_segment<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        index: u32,
+        t: f32,
+        points: u32,
+        position: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let tl = load(t.to_bits());
+        let weights = if position == 0 {
+            [
+                store(sub(add(mul(mul(tl, -0.5), tl), tl), 0.5)),
+                store(sub(mul(mul(tl, 1.5), tl), mul(tl, 2.0))),
+                store(add(add(mul(mul(tl, -1.5), tl), tl), 0.5)),
+                store(mul(mul(tl, 0.5), tl)),
+            ]
+        } else {
+            let a = load(store(sub(1.0, tl)));
+            let w0 = store(div(mul(mul(a, a), a), 6.0));
+            let tt = load(store(mul(tl, tl)));
+            let half = load(store(div(tl, 2.0)));
+            let cube = load(store(mul(tt, half)));
+            let w1 = store(add(sub(cube, tt), f64::from(2.0f32 / 3.0)));
+            let w2 = store(add(
+                add(add(mul(cube, -1.0), div(tt, 2.0)), half),
+                f64::from(1.0f32 / 6.0),
+            ));
+            [w0, w1, w2, store(div(cube, 3.0))]
+        };
+        for (k, w) in (0u32..).zip(weights) {
+            mem.write(local.wrapping_add(4 * k), w);
+        }
+        let points = points.wrapping_add(index.wrapping_mul(16));
+        let copy = fun(mem, 0x0071_0e30);
+        let coef = fun(mem, 0x00c8_f7e0);
+        call(mem, copy, &[coef, local]);
+        let vf = fun(mem, 0x00c8_f7a0);
+        for k in 0..4u32 {
+            call(
+                mem,
+                copy,
+                &[vf.wrapping_add(16 * k), points.wrapping_add(16 * k)],
+            );
+        }
+        let (acc, result) = (fun(mem, 0x00c8_f790), fun(mem, 0x00c8_f7f0));
+        vu0_call(mem, 0x0072_c6a0, [acc, vf], coef, call);
+        vu0_call(mem, 0x0072_c590, [acc, vf.wrapping_add(0x10)], coef, call);
+        vu0_call(mem, 0x0072_c5f0, [acc, vf.wrapping_add(0x20)], coef, call);
+        vu0_call(
+            mem,
+            0x0072_c650,
+            [result, vf.wrapping_add(0x30)],
+            coef,
+            call,
+        );
+        if position != 0 {
+            let to = fun(mem, 0x0071_0e70);
+            call(mem, to, &[result, out]);
+            return;
+        }
+        spline_unit(mem, out, [0x00c8_f800, 0x00c8_f7f0], call);
+    }
+
+    /// `TkMtCalcSplineSegment_0088abd0(out, index, t, points, position)`
+    /// (`0x0088abd0`, own name; caller `0x0088afd0`): the uniform quadratic
+    /// B-spline segment of the three points from `points + 16 * index`,
+    /// like [`tk_mt_calc_spline3_segment`]: weights `((1-t)^2/2, t(1-t) +
+    /// 1/2, t^2/2)` for the point, `(t - 1, 1 - 2t, t)` for the tangent
+    /// (normalised), into `0x00c8f7d0` (`MulX`, `MaddaY`,
+    /// `Vu0MaddaScalar4` to `0x00c8f7e0`; unit `0x00c8f7f0`). Only three
+    /// words of `local` are written: the fourth is copied as it stands
+    /// (the original's never-written frame word).
+    #[allow(clippy::too_many_arguments)]
+    pub fn tk_mt_calc_spline_segment<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        index: u32,
+        t: f32,
+        points: u32,
+        position: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, round_trip, store, sub};
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let tl = load(t.to_bits());
+        let weights = if position == 0 {
+            [
+                store(sub(tl, 1.0)),
+                store(sub(1.0, mul(tl, 2.0))),
+                round_trip(t).to_bits(),
+            ]
+        } else {
+            let a = load(store(sub(1.0, tl)));
+            let w0 = store(mul(mul(a, a), 0.5));
+            let w2 = store(mul(mul(tl, tl), 0.5));
+            [w0, store(add(mul(tl, a), 0.5)), w2]
+        };
+        for (k, w) in (0u32..).zip(weights) {
+            mem.write(local.wrapping_add(4 * k), w);
+        }
+        let points = points.wrapping_add(index.wrapping_mul(16));
+        let copy = fun(mem, 0x0071_0e30);
+        let coef = fun(mem, 0x00c8_f7d0);
+        call(mem, copy, &[coef, local]);
+        let vf = fun(mem, 0x00c8_f7a0);
+        for k in 0..3u32 {
+            call(
+                mem,
+                copy,
+                &[vf.wrapping_add(16 * k), points.wrapping_add(16 * k)],
+            );
+        }
+        let (acc, result) = (fun(mem, 0x00c8_f790), fun(mem, 0x00c8_f7e0));
+        vu0_call(mem, 0x0072_c6a0, [acc, vf], coef, call);
+        vu0_call(mem, 0x0072_c590, [acc, vf.wrapping_add(0x10)], coef, call);
+        vu0_call(
+            mem,
+            0x007c_1000,
+            [result, vf.wrapping_add(0x20)],
+            coef,
+            call,
+        );
+        if position != 0 {
+            let to = fun(mem, 0x0071_0e70);
+            call(mem, to, &[result, out]);
+            return;
+        }
+        spline_unit(mem, out, [0x00c8_f7f0, 0x00c8_f7e0], call);
+    }
+
     /// The main command window (`TkMenuAppearMainCmdWindow`'s window).
     pub const MENU_MAIN_CMD_WINDOW: Global<u32> = Global::new(0x0187_1540);
     /// The widest option text of the main command window.
