@@ -793,3 +793,26 @@ request whose busy byte is clear: busy set, buffer, file number and
 With all 64 busy the assertion `q_cnt != READ_Q_CNT` (`libmscd.c`,
 line 0x6a7) goes to `movie_err` and request 64 is written anyway, its
 size landing on `g_CdReadId` after the id was taken.
+
+## Round 15: the CD data decoders (`crates/ffx-sg/src/decode.rs`)
+
+`sa_decode(dst, src)` (`0x00a43de0`) calls entry `src[0]` of the table at
+`0x00c85ea4` as `f(src, dst, &size)` and returns the size: 0 copies,
+1 is `sa_meth01dec` (`0x00a43bc0`), 2 `sa_meth02dec` (`0x00a43cc0`); names
+from Fahrenheit's Switch build. After the method byte comes the decoded size
+(unaligned `u32`), then codes from `+5`:
+
+| code `c` | meaning |
+|---|---|
+| `0` | end: `*size = out - dst`, also returned in `eax` |
+| `1..=0x7d` | `c` literal bytes |
+| `0x7e n b` | `n + 4` bytes `b` |
+| `0x7f n:u16 b` | `n` bytes `b` (0 runs 2^32 times) |
+| `0x80.. x` | back reference: method 1 length `(c >> 3 & 0xf) + 3`, distance `((c & 7) << 8 \| x) + 1`; method 2 length `(c >> 4 & 7) + 3`, distance `((c & 0xf) << 8 \| x) + 1` |
+
+A reference starting at `out < dst + 0x7ff` (method 1) or
+`out <= dst + 0xfff` (method 2) writes zeros while `out < dst + distance`
+(a signed compare), standing for bytes before the output. Past that it
+copies unchecked: method 1 at `dst + 0x7ff` with distance 0x800 reads
+`dst[-1]`. Method 2's bound can change nothing (its distance is at most
+0x1000).

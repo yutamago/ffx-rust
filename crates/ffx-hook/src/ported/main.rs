@@ -4,7 +4,8 @@
 
 use ffx_sg::quat::Crt;
 use ffx_sg::{
-    camera, cdread, chpacket, cloth, control, envelope, gs, light, player, quat, seq, state, vec,
+    camera, cdread, chpacket, cloth, control, decode, envelope, gs, light, player, quat, seq,
+    state, vec,
 };
 
 use super::{mem, ported};
@@ -1087,6 +1088,14 @@ ported! {
     /// `Sg_MouseButtonMain()`.
     Sg_MouseButtonMain @ 0x0085_17c0 => extern "C" fn sg_mouse_button_main() -> u32 {
         state::bridge::mouse_button_main(&mut mem())
+    }
+    /// `sa_meth01dec(src, dst, size)`.
+    sa_meth01dec @ 0x00a4_3bc0 => extern "C" fn sa_meth01dec(src: u32, dst: u32, size: u32) -> u32 {
+        decode::bridge::sa_meth01dec(&mut mem(), src, dst, size)
+    }
+    /// `sa_meth02dec(src, dst, size)`.
+    sa_meth02dec @ 0x00a4_3cc0 => extern "C" fn sa_meth02dec(src: u32, dst: u32, size: u32) -> u32 {
+        decode::bridge::sa_meth02dec(&mut mem(), src, dst, size)
     }
     /// `sa_meth01dec2_ex()`: never implemented on PC; 0.
     sa_meth01dec2_ex @ 0x00a4_3ca0 => extern "C" fn sa_meth01dec2_ex() -> u32 {

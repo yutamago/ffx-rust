@@ -10,6 +10,7 @@ pub mod cdread;
 pub mod chpacket;
 pub mod cloth;
 pub mod control;
+pub mod decode;
 pub mod envelope;
 pub mod gs;
 pub mod light;

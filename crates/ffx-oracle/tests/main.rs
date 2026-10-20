@@ -5465,3 +5465,103 @@ fn read_sector_snapshot() {
     let mut rng = Xorshift(0x5eed_0e74);
     read_sector_cases(&mut a, &mut b, &mut rng, 100, true);
 }
+
+// Main round 15: the `sa_decode` LZ decoders (`sa_meth01dec`,
+// `sa_meth02dec`).
+
+/// A random code stream of 1..=`codes` codes and the end code; no `0x7f`
+/// run of 0 (2^32 bytes). References are mostly long ones early on, so
+/// they reach before the output.
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn lz_stream(rng: &mut Xorshift, codes: u32) -> Vec<u8> {
+    let mut s = vec![rng.below(3) as u8, 0, 0, 0, 0];
+    for _ in 0..=rng.below(codes) {
+        match rng.below(10) {
+            0..=2 => {
+                let n = rng.below(0x7d) + 1;
+                s.push(n as u8);
+                s.extend((0..n).map(|_| rng.next() as u8));
+            }
+            3 => s.extend([0x7e, rng.next() as u8, rng.next() as u8]),
+            4 => {
+                let [lo, hi] = (rng.below(0x300) as u16 + 1).to_le_bytes();
+                s.extend([0x7f, lo, hi, rng.next() as u8]);
+            }
+            _ => s.extend([(rng.next() | 0x80) as u8, rng.next() as u8]),
+        }
+    }
+    s.push(0);
+    s
+}
+
+/// Method 1's edge: a reference of the longest distance right at
+/// `dst + 0x7fe` (still near) and `dst + 0x7ff` (far: reads `dst - 1`);
+/// method 2's at `dst + 0xfff` (near) and `dst + 0x1000`.
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn lz_edge(method: u8, at: u32) -> Vec<u8> {
+    let mut s = vec![method, 0, 0, 0, 0];
+    let mut left = at;
+    while left > 0 {
+        let n = left.min(0xffff);
+        let [lo, hi] = (n as u16).to_le_bytes();
+        s.extend([0x7f, lo, hi, 0x5a]);
+        left -= n;
+    }
+    // 0xff 0xff: the longest distance (and length) of either method
+    s.extend([0xff, 0xff, 0x03, 1, 2, 3, 0]);
+    s
+}
+
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn decode_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::decode::bridge as d;
+    let src = alloc(a, b, 0x20000);
+    let out = alloc(a, b, 0x80000);
+    let size = alloc(a, b, 4);
+    let run = |a: &mut Oracle, b: &mut Oracle, s: &[u8], two: bool, junk: &[u8]| {
+        a.write(src, s).unwrap();
+        b.write(src, s).unwrap();
+        // what the game leaves before and in the output
+        a.write(out, junk).unwrap();
+        b.write(out, junk).unwrap();
+        let dst = out + 8;
+        let args = [src, dst, size];
+        if two {
+            twin("sa_meth02dec", a, b, 0x00a4_3cc0, &args, |m| {
+                d::sa_meth02dec(m, src, dst, size)
+            });
+        } else {
+            twin("sa_meth01dec", a, b, 0x00a4_3bc0, &args, |m| {
+                d::sa_meth01dec(m, src, dst, size)
+            });
+        }
+    };
+    for (method, at) in [(1, 0x7fe), (1, 0x7ff), (2, 0xfff), (2, 0x1000)] {
+        let junk: Vec<u8> = (0..0x10).map(|_| rng.next() as u8 | 1).collect();
+        run(a, b, &lz_edge(method, at), method == 2, &junk);
+    }
+    for n in 0..rounds {
+        let codes = if n % 4 == 0 { 400 } else { 40 };
+        let s = lz_stream(rng, codes);
+        let junk: Vec<u8> = (0..0x10).map(|_| rng.next() as u8).collect();
+        run(a, b, &s, rng.below(2) == 0, &junk);
+    }
+}
+
+#[test]
+fn decode_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f01);
+    decode_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn decode_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f02);
+    decode_cases(&mut a, &mut b, &mut rng, 60);
+}
