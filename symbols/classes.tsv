@@ -13519,7 +13519,7 @@
 0x008b9f30	logic	default (no rule: ported to be safe)
 0x008ba2a0	dead	unreachable from the entry point and every pointer table
 0x008ba370	logic	default (no rule: ported to be safe)
-0x008ba390	logic	default (no rule: ported to be safe)
+0x008ba390	glue	reviewed: 9-byte frame then jmp MsSaveAddAP_00784610 (menu round 27)
 0x008ba3a0	logic	default (no rule: ported to be safe)
 0x008ba3c0	logic	default (no rule: ported to be safe)
 0x008ba400	logic	default (no rule: ported to be safe)

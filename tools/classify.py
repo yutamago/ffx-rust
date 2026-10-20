@@ -341,6 +341,7 @@ REVIEWED = {
     0x00a54720: ("dead", "eiAbmExit: no call or absolute reference in the image (main round 15)"),
     0x00a50ed0: ("dead", "no call or absolute reference in the image (main round 15)"),
     0x00729850: ("debug", "pppFpInfPrint: CAM:/PLY:/DIS: text via sprintf drawn with op_num (effects round 35)"),
+    0x008ba390: ("glue", "9-byte frame then jmp MsSaveAddAP_00784610 (menu round 27)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
