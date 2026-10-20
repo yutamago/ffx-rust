@@ -3411,4 +3411,291 @@ pub mod bridge {
         let dt = ffx_bridge::x87::store(ffx_bridge::x87::load(dt));
         call(h, EFFECT_READ_POLL, &[dt])
     }
+
+    /// The help menu's three file numbers (`0x00c416bc`: the menu SPS2,
+    /// `0x00c416c0`: the sbin, `0x00c416d8`), its module number
+    /// (`0x00c416c4`), the sbin's parse (`0x00c416cc`) and three table
+    /// pointers (`0x00c416d0`, `0x00c416d4`, `0x00c416dc`).
+    pub const SA_MENU_SPS2: Global<u32> = Global::new(0x00c4_16bc);
+    pub const SA_MENU_SBIN: Global<u32> = Global::new(0x00c4_16c0);
+    pub const SA_MENU_MODULE: Global<u32> = Global::new(0x00c4_16c4);
+    pub const SA_MENU_PARSED: Global<u32> = Global::new(0x00c4_16cc);
+    pub const SA_MENU_TABLES: [(u32, u32); 3] = [
+        (0x00c4_16d0, 0x00c4_0f30),
+        (0x00c4_16d4, 0x00c4_16e0),
+        (0x00c4_16dc, 0x00c4_1720),
+    ];
+    pub const SA_MENU_THIRD: Global<u32> = Global::new(0x00c4_16d8);
+    /// The file numbers by menu kind 1..=4, else.
+    pub const SA_MENU_FILES: [[u32; 3]; 5] =
+        [[4, 5, 6], [7, 8, 9], [10, 11, 12], [13, 14, 0], [1, 2, 3]];
+    /// `g_CdLib + 0x14` (a table's size), `+ 0`, `+ 8`, `+ 0x10`.
+    pub const CDLIB_SIZE: Global<u32> = Global::new(0x0231_0c54);
+    pub const CDLIB_READ: Global<u32> = Global::new(0x0231_0c40);
+    pub const CDLIB_SYNC: Global<u32> = Global::new(0x0231_0c48);
+    pub const CDLIB_TABLE: Global<u32> = Global::new(0x0231_0c50);
+    /// `g_CdChannelKeepNames` (`cd_read.m_mode`), `g_FFXHddMode`.
+    pub const CD_READ_MODE: Global<u32> = Global::new(0x0231_0c58);
+    pub const FFX_HDD_MODE: Global<i8> = Global::new(0x0133_c913);
+    /// The sbin while it is parsed, the parse (again), the event FTC.
+    pub const SA_MENU_SBIN_BUF: Global<u32> = Global::new(0x0112_a044);
+    pub const SA_MENU_PARSED_2: Global<u32> = Global::new(0x0112_a4a8);
+    pub const SA_MENU_FTC: Global<u32> = Global::new(0x0112_a010);
+    /// Zeroed at the start: `0x0112a07c` (`g_EmptyName`), `0x0112a018`,
+    /// `0x0112a054` words, and after the task: the SPS2 block `0x0112a034`,
+    /// the three HDD-copy tables `0x0112a048`, `0x0112a04c`, `0x0112a050`,
+    /// `0x02310c20` (the first one's size) and the `system.cnf` copy
+    /// `0x0112a064` and its size `0x0112a068`.
+    pub const SA_MENU_CLEARED: [u32; 3] = [0x0112_a07c, 0x0112_a018, 0x0112_a054];
+    pub const SA_MENU_FLAG_39: Global<u8> = Global::new(0x0112_a039);
+    pub const SA_MENU_SPS2_BLOCK: Global<u32> = Global::new(0x0112_a034);
+    pub const SA_MENU_HDD_TABLES: [Global<u32>; 3] = [
+        Global::new(0x0112_a050),
+        Global::new(0x0112_a048),
+        Global::new(0x0112_a04c),
+    ];
+    pub const SA_MENU_HDD_SIZE: Global<u32> = Global::new(0x0231_0c20);
+    pub const SA_MENU_CNF: Global<u32> = Global::new(0x0112_a064);
+    pub const SA_MENU_CNF_SIZE: Global<u32> = Global::new(0x0112_a068);
+    /// The HDD copy's state words set in kind 4: `0x02310c1c` -1,
+    /// `0x02310c18` and `0x02310c14` 0.
+    pub const SA_MENU_HDD_STATE: [(u32, u32); 3] =
+        [(0x0231_0c1c, u32::MAX), (0x0231_0c18, 0), (0x0231_0c14, 0)];
+    /// The 0x42000-byte work block.
+    pub const SA_MENU_WORK: Global<u32> = Global::new(0x0112_a030);
+    /// `"cd_read.m_mode=%d\n"`, `"ffx_hddmode=%d\n"`, `"sa_menu_start\n"`,
+    /// `"sa_menu.file_module_no=%d\n"`, `"sbin size=%d\n"`,
+    /// `"sps2 size=%d\n"`, the dashes, `"dvd_hdd_copy_system_cnf_buff=\n"`,
+    /// `"%s"`; the event FTC's name.
+    pub const STR_CD_READ_MODE: u32 = 0x00b5_340c;
+    pub const STR_HDD_MODE: u32 = 0x00b5_2164;
+    pub const STR_MENU_START: u32 = 0x00b5_3420;
+    pub const STR_MODULE_NO: u32 = 0x00b5_3430;
+    pub const STR_SBIN_SIZE: u32 = 0x00b5_344c;
+    pub const STR_SPS2_SIZE: u32 = 0x00b5_349c;
+    pub const STR_DASHES: u32 = 0x00b5_345c;
+    pub const STR_CNF: u32 = 0x00b5_347c;
+    pub const STR_S: u32 = 0x00b0_e160;
+    pub const STR_EVENT_FTC: u32 = 0x00b4_04a0;
+    /// `TOMenuClearControlPadBuff()`, `dbgPrintf`,
+    /// `MsGetSaveConfigEnglish()`, `HelpMem_Get(reset, size)`,
+    /// `0x00775ed0(sbin)` (its parse), `HelpMem_Free(size)`,
+    /// `user_free_thunk(p)`, `TKMallocAndReadEventFTC(name)`,
+    /// `TOFTCTransfer(ftc)`, `sa_task_buff_size_get(n)`,
+    /// `sa_task_init2(n, buffer, 0)`, the C runtime's `memset` (here
+    /// through `Mem`), `TKMallocAndReadSPS2(kind, page)`,
+    /// `SetFileTables()`, `disk_open_check_set(flag)`,
+    /// `hdd_OpenFfxPartition()`, `PatchMenuRecords()`, the two tails
+    /// `FindRecordAt()` and `FindRecordFlagged()`; the task's handler.
+    pub const CLEAR_PAD_BUFF: u32 = 0x008b_e3d0;
+    pub const SA_DBG_PRINTF: u32 = 0x0062_f500;
+    pub const GET_SAVE_CONFIG_ENGLISH: u32 = 0x0078_51d0;
+    pub const HELP_MEM_GET: u32 = 0x0077_4c00;
+    pub const SBIN_PARSE: u32 = 0x0077_5ed0;
+    pub const HELP_MEM_FREE: u32 = 0x0077_4aa0;
+    pub const USER_FREE_THUNK: u32 = 0x0068_7010;
+    pub const READ_EVENT_FTC: u32 = 0x0088_c860;
+    pub const FTC_TRANSFER: u32 = 0x008a_c130;
+    pub const SA_TASK_BUFF_SIZE_GET: u32 = 0x0077_a180;
+    pub const SA_TASK_INIT2: u32 = 0x0077_a1d0;
+    pub const READ_SPS2: u32 = 0x0088_ce80;
+    pub const SET_FILE_TABLES: u32 = 0x0077_6f00;
+    pub const DISK_OPEN_CHECK_SET: u32 = 0x0076_d6b0;
+    pub const HDD_OPEN_PARTITION: u32 = 0x0077_9000;
+    pub const PATCH_MENU_RECORDS: u32 = 0x0077_67d0;
+    pub const FIND_RECORD_AT: u32 = 0x0077_5ce0;
+    pub const FIND_RECORD_FLAGGED: u32 = 0x0077_5de0;
+    pub const SA_MENU_HANDLER: u32 = 0x0077_4c80;
+
+    /// `0x00770430(kind)` (`sa_menu_start`, name ours from its
+    /// `dbgPrintf`; from `TkMenuCtrlHelp`): starts the help menu of kind
+    /// `kind & 0xff` (1..=4, others as 0).
+    ///
+    /// The pad buffer cleared, the pad words ([`ML_TRG`], [`ML_PAD`],
+    /// [`ML_REP`]) 0, three reports; the file numbers by kind
+    /// ([`SA_MENU_FILES`], jump table `0x00770910`) and the three table
+    /// pointers; [`SA_MENU_CLEARED`], [`ML_BUSY`] and `0x0112a039` 0. The
+    /// module 3 with the English save setting, else 0x30 (reported, made
+    /// the CD library's table). The sbin read whole into help memory
+    /// (`HelpMem_Get(0, size)`), parsed by `0x00775ed0` (both parse words)
+    /// and freed. The event FTC: with none loaded `user_free_thunk(0)`
+    /// first; read and, when there is one, transferred. A task
+    /// (`sa_task_init2(1, HelpMem_Get(1, sa_task_buff_size_get(1)), 0)`,
+    /// [`ML_HOOK`]) gets the handler `0x00774c80` through its `+8` with
+    /// `(handler, 1, 0)`. [`ML_SLOTS`] (0x400 bytes) and [`ML_OUT`]
+    /// (0x4000) from help memory, zeroed. Kind 4 (the HDD copy) reads
+    /// tables 0xf, 0x10, 0x11 and, under table 1, `system.cnf` (table 0xd,
+    /// with a 0 after it) and reports it; the others read table 0 (the
+    /// SPS2) to [`SA_MENU_SPS2_BLOCK`]. Then a block for the menu SPS2's
+    /// size (stored in [`ML_BASE`], then overwritten: help memory taken
+    /// for nothing), `TKMallocAndReadSPS2(kind, 1)` and `(kind, 0)` to
+    /// [`ML_BASE`] and [`ML_TEXT_BASE`], 0x42000 bytes of work,
+    /// `SetFileTables`, for kind 4 the partition opened, `PatchMenuRecords`
+    /// and the tail: `FindRecordAt` when `kind & 0x8000`, else
+    /// `FindRecordFlagged`, whose `eax` it returns.
+    #[allow(clippy::too_many_lines)] // one straight sequence of loads
+    pub fn sa_menu_start(h: &mut impl ffx_bridge::Host, kind: u32) -> u32 {
+        let call = |h: &mut _, sym: u32, args: &[u32]| -> u32 {
+            let f = ffx_bridge::Mem::rebase(h, sym);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        let ptr = |h: &mut _, g: Global<u32>, args: &[u32]| -> u32 {
+            let f = g.get(h);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        call(h, CLEAR_PAD_BUFF, &[]);
+        let menu = kind & 0xff;
+        ML_TRG.set(h, 0);
+        ML_PAD.set(h, 0);
+        ML_REP.set(h, 0);
+        let (fmt, mode) = (h.rebase(STR_CD_READ_MODE), CD_READ_MODE.get(h));
+        call(h, SA_DBG_PRINTF, &[fmt, mode]);
+        let (fmt, hdd) = (h.rebase(STR_HDD_MODE), FFX_HDD_MODE.get(h));
+        call(h, SA_DBG_PRINTF, &[fmt, i32::from(hdd).cast_unsigned()]);
+        let fmt = h.rebase(STR_MENU_START);
+        call(h, SA_DBG_PRINTF, &[fmt]);
+        let files = match menu {
+            1..=4 => SA_MENU_FILES[menu as usize - 1],
+            _ => SA_MENU_FILES[4],
+        };
+        SA_MENU_SPS2.set(h, files[0]);
+        SA_MENU_SBIN.set(h, files[1]);
+        SA_MENU_THIRD.set(h, files[2]);
+        for (at, table) in SA_MENU_TABLES {
+            let table = h.rebase(table);
+            Global::<u32>::new(at).set(h, table);
+        }
+        for at in SA_MENU_CLEARED[..2].iter().copied() {
+            Global::<u32>::new(at).set(h, 0);
+        }
+        SA_MENU_FLAG_39.set(h, 0);
+        ML_BUSY.set(h, 0);
+        Global::<u32>::new(SA_MENU_CLEARED[2]).set(h, 0);
+        let module = if call(h, GET_SAVE_CONFIG_ENGLISH, &[]) == 0 {
+            0x30
+        } else {
+            3
+        };
+        SA_MENU_MODULE.set(h, module);
+        let fmt = h.rebase(STR_MODULE_NO);
+        call(h, SA_DBG_PRINTF, &[fmt, module]);
+        let module = SA_MENU_MODULE.get(h);
+        ptr(h, CDLIB_TABLE, &[module]);
+        // the sbin
+        let sbin = SA_MENU_SBIN.get(h);
+        let size = ptr(h, CDLIB_SIZE, &[sbin]);
+        let fmt = h.rebase(STR_SBIN_SIZE);
+        call(h, SA_DBG_PRINTF, &[fmt, size]);
+        let buf = call(h, HELP_MEM_GET, &[0, size]);
+        SA_MENU_SBIN_BUF.set(h, buf);
+        let sbin = SA_MENU_SBIN.get(h);
+        ptr(h, CDLIB_READ, &[sbin, buf, 0, 0]);
+        ptr(h, CDLIB_SYNC, &[0]);
+        let buf = SA_MENU_SBIN_BUF.get(h);
+        let parsed = call(h, SBIN_PARSE, &[buf]);
+        SA_MENU_PARSED_2.set(h, parsed);
+        SA_MENU_PARSED.set(h, parsed);
+        call(h, HELP_MEM_FREE, &[size]);
+        let none = SA_MENU_FTC.get(h) == 0;
+        SA_MENU_SBIN_BUF.set(h, 0);
+        if none {
+            call(h, USER_FREE_THUNK, &[0]);
+            SA_MENU_FTC.set(h, 0);
+        }
+        let name = h.rebase(STR_EVENT_FTC);
+        let ftc = call(h, READ_EVENT_FTC, &[name]);
+        SA_MENU_FTC.set(h, ftc);
+        if ftc != 0 {
+            call(h, FTC_TRANSFER, &[ftc]);
+        }
+        // the task and its handler
+        let n = call(h, SA_TASK_BUFF_SIZE_GET, &[1]);
+        let buf = call(h, HELP_MEM_GET, &[1, n]);
+        let task = call(h, SA_TASK_INIT2, &[1, buf, 0]);
+        ML_HOOK.set(h, task);
+        let (f, handler) = (
+            h.read::<u32>(task.wrapping_add(8)),
+            h.rebase(SA_MENU_HANDLER),
+        );
+        h.call(f, &[handler, 1, 0]);
+        for (g, len) in [(ML_SLOTS, 0x400u32), (ML_OUT, 0x4000)] {
+            let block = call(h, HELP_MEM_GET, &[1, len]);
+            g.set(h, block);
+            h.write_bytes(block, &vec![0u8; len as usize]);
+        }
+        SA_MENU_SPS2_BLOCK.set(h, 0);
+        for g in SA_MENU_HDD_TABLES {
+            g.set(h, 0);
+        }
+        SA_MENU_HDD_SIZE.set(h, 0);
+        SA_MENU_CNF.set(h, 0);
+        SA_MENU_CNF_SIZE.set(h, 0);
+        if menu == 4 {
+            for (at, v) in SA_MENU_HDD_STATE {
+                Global::<u32>::new(at).set(h, v);
+            }
+            for (table, g) in (0xf..).zip(SA_MENU_HDD_TABLES) {
+                let size = ptr(h, CDLIB_SIZE, &[table]);
+                if table == 0xf {
+                    SA_MENU_HDD_SIZE.set(h, size);
+                }
+                let block = call(h, HELP_MEM_GET, &[1, size]);
+                g.set(h, block);
+                ptr(h, CDLIB_READ, &[table, block, 0, 0]);
+                ptr(h, CDLIB_SYNC, &[0]);
+            }
+            ptr(h, CDLIB_TABLE, &[1]);
+            let size = ptr(h, CDLIB_SIZE, &[0xd]);
+            let cnf = call(h, HELP_MEM_GET, &[1, size.wrapping_add(4)]);
+            SA_MENU_CNF.set(h, cnf);
+            SA_MENU_CNF_SIZE.set(h, size);
+            h.write(cnf, 0u8);
+            let cnf = SA_MENU_CNF.get(h);
+            ptr(h, CDLIB_READ, &[0xd, cnf, 0, 0]);
+            ptr(h, CDLIB_SYNC, &[0]);
+            let (cnf, size) = (SA_MENU_CNF.get(h), SA_MENU_CNF_SIZE.get(h));
+            h.write(size.wrapping_add(cnf), 0u8);
+            let dashes = h.rebase(STR_DASHES);
+            call(h, SA_DBG_PRINTF, &[dashes]);
+            let fmt = h.rebase(STR_CNF);
+            call(h, SA_DBG_PRINTF, &[fmt]);
+            let (fmt, cnf) = (h.rebase(STR_S), SA_MENU_CNF.get(h));
+            call(h, SA_DBG_PRINTF, &[fmt, cnf]);
+            call(h, SA_DBG_PRINTF, &[dashes]);
+            let module = SA_MENU_MODULE.get(h);
+            ptr(h, CDLIB_TABLE, &[module]);
+        } else {
+            let size = ptr(h, CDLIB_SIZE, &[0]);
+            let fmt = h.rebase(STR_SPS2_SIZE);
+            call(h, SA_DBG_PRINTF, &[fmt, size]);
+            let block = call(h, HELP_MEM_GET, &[1, size]);
+            SA_MENU_SPS2_BLOCK.set(h, block);
+            ptr(h, CDLIB_READ, &[0, block, 0, 0]);
+            ptr(h, CDLIB_SYNC, &[0]);
+        }
+        let sps2 = SA_MENU_SPS2.get(h);
+        let size = ptr(h, CDLIB_SIZE, &[sps2]);
+        let fmt = h.rebase(STR_SPS2_SIZE);
+        call(h, SA_DBG_PRINTF, &[fmt, size]);
+        let block = call(h, HELP_MEM_GET, &[1, size]);
+        ML_BASE.set(h, block);
+        let base = call(h, READ_SPS2, &[menu, 1]);
+        ML_BASE.set(h, base);
+        let texts = call(h, READ_SPS2, &[menu, 0]);
+        ML_TEXT_BASE.set(h, texts);
+        let work = call(h, HELP_MEM_GET, &[1, 0x42000]);
+        SA_MENU_WORK.set(h, work);
+        call(h, SET_FILE_TABLES, &[]);
+        if menu == 4 {
+            call(h, DISK_OPEN_CHECK_SET, &[1]);
+            call(h, HDD_OPEN_PARTITION, &[]);
+        }
+        call(h, PATCH_MENU_RECORDS, &[]);
+        let tail = if kind & 0x8000 != 0 {
+            FIND_RECORD_AT
+        } else {
+            FIND_RECORD_FLAGGED
+        };
+        call(h, tail, &[])
+    }
 }

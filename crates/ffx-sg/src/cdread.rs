@@ -484,4 +484,79 @@ pub mod bridge {
         h.write(request.wrapping_add(0x31), 0u8);
         h.write(request.wrapping_add(0x24), 0u32);
     }
+
+    /// The thread's own calls: `sceCdRead()` (`xor eax, eax; ret` on PC)
+    /// and `task_wait(n)` are [`CD_READ`] and [`TASK_WAIT`]; the two
+    /// request handlers go through the game ([`CD_READ_THREAD_SECTOR`],
+    /// [`CD_READ_THREAD_FILE`]) like every other call here.
+    pub const CD_READ_THREAD_SECTOR: u32 = 0x0076_e4b0;
+    pub const CD_READ_THREAD_FILE: u32 = 0x0076_e1c0;
+    /// The outer `task_wait(1)` call's return address in the original
+    /// thread (`0x0076e881 call`, back at `0x0076e886`): the oracle test's
+    /// stand-in stops the endless loop there.
+    pub const CD_READ_THREAD_WAIT_RET: u32 = 0x0076_e886;
+
+    /// One pass of the CD-mode read thread (`0x0076e780`, the loop body
+    /// before its `task_wait(1)`), over the 64 requests in order. A busy
+    /// request (`+0x31`) of kind (`+0x30`, signed byte) 1 goes to
+    /// `cd_read_thread_sector(cd, request, i)`; of kind 0, unless
+    /// cancelled (`+0x33`), to `cd_read_thread_file(cd, request, i)`.
+    /// A cancelled kind-0 request waits for `sceCdRead()` to answer
+    /// non-zero (`task_wait(1)` between: on PC it answers 0, so a cancel
+    /// in CD mode spins here for good, as in the original), clears its
+    /// cancel byte, clears channel `cd + 0x74` (`cd_channel_clear`), and
+    /// when no request is busy any more sets `cd + 0x70` 0, `+0x5c` -1
+    /// and runs `hdd_state_clear`; `cd + 0x74` becomes -1. Other kinds
+    /// are skipped.
+    pub fn cd_read_thread_pass(h: &mut impl Host, cd: u32) {
+        use ffx_system::cd::bridge::{cd_channel_clear, hdd_state_clear};
+        for i in 0..READ_Q_CNT {
+            let r = record(h, i);
+            if h.read::<u8>(r + 0x31) == 0 {
+                continue;
+            }
+            match h.read::<i8>(r + 0x30) {
+                1 => {
+                    let f = h.rebase(CD_READ_THREAD_SECTOR);
+                    h.call(f, &[cd, r, i]);
+                }
+                0 if h.read::<u8>(r + 0x33) == 0 => {
+                    let f = h.rebase(CD_READ_THREAD_FILE);
+                    h.call(f, &[cd, r, i]);
+                }
+                0 => {
+                    let f = h.rebase(CD_READ);
+                    while h.call(f, &[]) == 0 {
+                        let w = h.rebase(TASK_WAIT);
+                        h.call(w, &[1]);
+                    }
+                    h.write(r + 0x33, 0u8);
+                    let n: u32 = h.read(cd.wrapping_add(0x74));
+                    cd_channel_clear(h, n);
+                    if busy_count(h) == 0 {
+                        h.write(cd.wrapping_add(0x70), 0u32);
+                        h.write(cd.wrapping_add(0x5c), u32::MAX);
+                        hdd_state_clear(h);
+                    }
+                    h.write(cd.wrapping_add(0x74), u32::MAX);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The CD-mode read thread (`0x0076e780`, name ours; installed in
+    /// `g_CdLib + 0x68` by `CdEnvInit`'s `0x0076cff0` when given 1, the PC
+    /// table holds `0x00a432a0` there instead): `GetCD()` once, then
+    /// [`cd_read_thread_pass`] and `task_wait(1)` for ever. It never
+    /// returns; the test runs the pass and the wait N times and stops the
+    /// original at its `task_wait` (see [`CD_READ_THREAD_WAIT_RET`]).
+    pub fn cd_read_thread(h: &mut impl Host) -> ! {
+        let cd = ffx_system::cd::bridge::get_cd(h);
+        loop {
+            cd_read_thread_pass(h, cd);
+            let f = h.rebase(TASK_WAIT);
+            h.call(f, &[1]);
+        }
+    }
 }

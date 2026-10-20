@@ -1497,4 +1497,184 @@ pub mod bridge {
         }
         ei_abm_set_lang(h)
     }
+
+    /// `MsGetSaveMenu()` (the menu settings word's address; bits 14-15
+    /// pick the grid: 0 standard, 1 expert, else the third).
+    pub const GET_SAVE_MENU: u32 = 0x0078_5290;
+    /// Set once the 70 grid data files are loaded (`eiAbmDataInit`).
+    pub const DATA_LOADED: Global<u32> = Global::new(0x01a8_5f60);
+    /// Zeroed by every `eiAbmDataInit`.
+    pub const DATA_INIT_CLEAR: Global<u32> = Global::new(0x01a8_5f70);
+    /// The C runtime's `sprintf` and `sprintf_s` (import slots).
+    pub const SPRINTF_SLOT: Global<u32> = Global::new(0x00b0_c3dc);
+    pub const SPRINTF_S_SLOT: Global<u32> = Global::new(0x00b0_c394);
+    /// `"%s/%s"`, `"/ffx_ps2/ffx/eiichi_abmap_data"`, `"%s"`, the
+    /// not-found and the loaded `dbgPrintf` formats.
+    pub const FMT_PATH: u32 = 0x00b5_85c8;
+    pub const DATA_DIR: u32 = 0x00b7_b5a4;
+    pub const FMT_S: u32 = 0x00b0_e160;
+    pub const FMT_NOT_FOUND: u32 = 0x00b5_85ec;
+    pub const FMT_LOADED: u32 = 0x00b5_862c;
+    /// The data files' names (`"par_dna.pdt"`, ...): [`DATA_FILES`]
+    /// pointers.
+    pub const DATA_NAMES: u32 = 0x00c8_5ef0;
+    pub const DATA_FILES: u32 = 70;
+    /// `fiosUnifyFilename(src, out, size)`, `fiosOpen(path, mode)`,
+    /// `fiosLseek(file, offset, whence)`, `user_aligned_malloc(size,
+    /// align)`, `fiosRead(file, buffer, size)`, `fiosClose(file)`; the
+    /// reports go to `dbgPrintf` ([`DBG_PRINTF`]).
+    pub const FIOS_UNIFY: u32 = 0x0067_9820;
+    pub const FIOS_OPEN: u32 = 0x0067_9730;
+    pub const FIOS_LSEEK: u32 = 0x0067_9710;
+    pub const ALIGNED_MALLOC: u32 = 0x0068_6ff0;
+    pub const FIOS_READ: u32 = 0x0067_9800;
+    pub const FIOS_CLOSE: u32 = 0x0067_9510;
+    /// `g_CdLib + 0`: the CD library's read (`(table, buffer, 0, 0)`).
+    pub const CDLIB_READ: Global<u32> = Global::new(0x0231_0c40);
+    /// The grid's activation lists by grid (bits 14-15 of the menu word,
+    /// 0, 1, else): seven pointers each, one per character, to `u16` node
+    /// numbers ending in 0xffff.
+    pub const ACTIVE_LISTS: [u32; 3] = [0x00c8_6c5c, 0x00c8_6ca4, 0x00c8_6cec];
+    /// The characters' start nodes by grid: seven `u16` each.
+    pub const START_NODES: [u32; 3] = [0x00c8_6c00, 0x00c8_6c10, 0x00c8_6c20];
+    /// `eiAbmParaGet()`.
+    pub const EI_ABM_PARA_GET: u32 = 0x00a5_4860;
+    /// Where the loaded data blocks go: block `i` (but 16) to
+    /// `0x02305800 - 4i`; blocks 6..=13 also to `0x01a85f78 + 4(i - 6)`,
+    /// 0x1e..=0x30 to `0x01a85f98 + 4(i - 0x1e)`, 0x31..=0x43 to
+    /// `0x01a85fe8 + 4(i - 0x31)`, block 14 to `0x01a85fe4`.
+    pub const DATA_BLOCKS: u32 = 0x0230_5800;
+    pub const DATA_COPIES: [(u32, std::ops::RangeInclusive<u32>); 4] = [
+        (0x01a8_5f78, 6..=13),
+        (0x01a8_5f98, 0x1e..=0x30),
+        (0x01a8_5fe4, 14..=14),
+        (0x01a8_5fe8, 0x31..=0x43),
+    ];
+    /// The block [`ei_abm_data_init`] works in, laid out as the original's
+    /// frame from `ebp - 0x684`: the table read's buffer
+    /// ([`DATA_INIT_HEADER`] bytes, 4 spare), the unified path and the
+    /// path (0x100 bytes each).
+    pub const DATA_INIT_WORK: u32 = 0x680;
+    pub const DATA_INIT_HEADER: u32 = 0x47c;
+    pub const DATA_INIT_UNIFIED: u32 = 0x480;
+    pub const DATA_INIT_PATH: u32 = 0x580;
+
+    /// `eiAbmDataInit(save)` (`0x00a53de0`, Fahrenheit's name; from
+    /// `MsSetSaveStartGame` and `Native_0254`): the save's sphere grid
+    /// reset for the grid the menu word picks (bits 14-15).
+    ///
+    /// Once ([`DATA_LOADED`]): each of the 70 grid data files
+    /// `"/ffx_ps2/ffx/eiichi_abmap_data/<name>"` (`sprintf`,
+    /// `fiosUnifyFilename`, `sprintf_s "%s"`) opened, its size taken
+    /// (`fiosLseek` to the end and back), read into a new 16-aligned block
+    /// and closed, with a `dbgPrintf` either way; the blocks stored as
+    /// [`DATA_BLOCKS`] says. A file that does not open leaves its block
+    /// word as the frame held it (garbage in the original): 0 here.
+    ///
+    /// Then [`DATA_INIT_CLEAR`] 0, the CD library's table (`g_CdLib +
+    /// 0x10`) 0x25, read of table 0x11, 0x12 or 0x13 by grid into the
+    /// work block's buffer, the read wait (`g_CdLib + 8`), `save`'s 0x1320
+    /// bytes zeroed. A buffer whose `u16 +0` is 0x31 gives the nodes'
+    /// kinds: `u16 +2` bytes from `+8` to the even bytes of `save`
+    /// (beyond 0x678 the original reads past its frame; the data's count
+    /// is far below). Each character `k` (0..7) sets bit `k` of the odd
+    /// byte of each node of its activation list ([`ACTIVE_LISTS`]), and
+    /// the seven start nodes ([`START_NODES`]) go to `save + 0xf00`. The
+    /// grid is re-read from the menu word at each step. Ends with
+    /// `eiAbmParaGet()`, whose `eax` it returns.
+    pub fn ei_abm_data_init<H: ffx_bridge::Host>(h: &mut H, save: u32, work: u32) -> u32 {
+        let f = h.rebase(GET_SAVE_MENU);
+        let menu = h.call(f, &[]);
+        // 0, 1, or 2 for the rest
+        let grid = |h: &H| -> usize { (h.read::<u32>(menu) >> 14 & 3).min(2) as usize };
+        if DATA_LOADED.get(h) == 0 {
+            load_data(h, work);
+        }
+        let g = grid(h);
+        DATA_INIT_CLEAR.set(h, 0);
+        let f = CDLIB_READ_TABLE.get(h);
+        h.call(f, &[0x25]);
+        let table = [0x11, 0x12, 0x13][g];
+        let header = work;
+        let f = CDLIB_READ.get(h);
+        h.call(f, &[table, header, 0, 0]);
+        let f = CDLIB_READ_SYNC.get(h);
+        h.call(f, &[0]);
+        h.write_bytes(save, &[0u8; 0x1320]);
+        if h.read::<u16>(header) == 0x31 {
+            let count = u32::from(h.read::<u16>(header + 2));
+            for i in 0..count {
+                let kind = h.read::<u8>(header + 8 + i);
+                h.write(save.wrapping_add(2 * i), kind);
+            }
+        }
+        for k in 0..7u32 {
+            let g = grid(h);
+            let lists = h.rebase(ACTIVE_LISTS[g]);
+            let mut at: u32 = h.read(lists + 4 * k);
+            loop {
+                let node: u16 = h.read(at);
+                if node == 0xffff {
+                    break;
+                }
+                let byte = save.wrapping_add(2 * u32::from(node) + 1);
+                let v = h.read::<u8>(byte) | 1 << k;
+                h.write(byte, v);
+                at = at.wrapping_add(2);
+            }
+        }
+        for k in 0..7u32 {
+            let g = grid(h);
+            let starts = h.rebase(START_NODES[g]);
+            let node: u16 = h.read(starts + 2 * k);
+            h.write(save.wrapping_add(0xf00 + 2 * k), node);
+        }
+        let f = h.rebase(EI_ABM_PARA_GET);
+        h.call(f, &[])
+    }
+
+    /// [`ei_abm_data_init`]'s one-time load of the grid data files.
+    fn load_data(h: &mut impl ffx_bridge::Host, work: u32) {
+        let (path, unified) = (work + DATA_INIT_PATH, work + DATA_INIT_UNIFIED);
+        let mut blocks = [0u32; DATA_FILES as usize];
+        for (i, block) in (0u32..).zip(blocks.iter_mut()) {
+            let name: u32 = h.read(h.rebase(DATA_NAMES) + 4 * i);
+            let (fmt, dir) = (h.rebase(FMT_PATH), h.rebase(DATA_DIR));
+            let f = SPRINTF_SLOT.get(h);
+            h.call(f, &[path, fmt, dir, name]);
+            let f = h.rebase(FIOS_UNIFY);
+            h.call(f, &[path, unified, 0x100]);
+            let (f, fmt) = (SPRINTF_S_SLOT.get(h), h.rebase(FMT_S));
+            h.call(f, &[path, 0xfe, fmt, unified]);
+            let f = h.rebase(FIOS_OPEN);
+            let file = h.call(f, &[path, 1]);
+            if file == 0 {
+                let (f, fmt) = (h.rebase(DBG_PRINTF), h.rebase(FMT_NOT_FOUND));
+                h.call(f, &[fmt, path]);
+                continue;
+            }
+            let f = h.rebase(FIOS_LSEEK);
+            let size = h.call(f, &[file, 0, 2]);
+            h.call(f, &[file, 0, 0]);
+            let f = h.rebase(ALIGNED_MALLOC);
+            *block = h.call(f, &[size, 0x10]);
+            let f = h.rebase(FIOS_READ);
+            h.call(f, &[file, *block, size]);
+            let f = h.rebase(FIOS_CLOSE);
+            h.call(f, &[file]);
+            let (f, fmt) = (h.rebase(DBG_PRINTF), h.rebase(FMT_LOADED));
+            h.call(f, &[fmt, path, size]);
+        }
+        for (i, &block) in (0u32..).zip(&blocks) {
+            if i != 16 {
+                Global::<u32>::new(DATA_BLOCKS - 4 * i).set(h, block);
+            }
+        }
+        for (at, range) in DATA_COPIES {
+            for (k, i) in (0u32..).zip(range) {
+                Global::<u32>::new(at + 4 * k).set(h, blocks[i as usize]);
+            }
+        }
+        DATA_LOADED.set(h, 1);
+    }
 }
