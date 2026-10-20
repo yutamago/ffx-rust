@@ -10,7 +10,7 @@
 pub mod bridge {
     use ffx_battle::pos::bridge::Trig;
     use ffx_bridge::x87::{self, Reg};
-    use ffx_bridge::{Global, Host};
+    use ffx_bridge::{Global, Host, Mem};
     use ffx_chara::chr::bridge as chr;
     use ffx_chara::layout as l;
 
@@ -80,6 +80,35 @@ pub mod bridge {
     pub const GRAPHIC_LEVEL_GET_NAME_HASH: u32 = 0x0064_1da0;
     /// The two levels whose camera yaw is taken every frame.
     pub const FOLLOW_LEVELS: [u32; 2] = [0x19c, 0x220];
+
+    /// `Sg_CameraGetYaw()` (a `jmp` to `MsCameraGetYaw`): the yaw in `ST0`.
+    pub const SG_CAMERA_GET_YAW: u32 = 0x0083_f2d0;
+    /// pi as the original rounds it (3.141592, `f64`) and 180 (`f64`): degrees
+    /// to radians.
+    pub const DEG_PI: Global<f64> = Global::new(0x00b5_82f0);
+    pub const DEG_180: Global<f64> = Global::new(0x00b4_8378);
+
+    /// `Sg_PlayerSetControlAngle(deg)` (`0x0082d950`, name ours;
+    /// `Native_SetControlAngle`'s): takes the camera's yaw now
+    /// (`Sg_CameraGetYaw`'s `ST0` through `fcall`, stored as `f32`) into
+    /// [`CAMERA_YAW`], and sets [`DIR_OFFSET`] to `Angle_Wrap(f32(deg *
+    /// pi / 180))` plus the stick's angle. Like `Angle_Wrap`, it never
+    /// ends for an infinite `deg`.
+    pub fn set_control_angle<M: Mem>(
+        mem: &mut M,
+        deg: f32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        let f = mem.rebase(SG_CAMERA_GET_YAW);
+        let yaw = fcall(mem, f, &[]);
+        CAMERA_YAW.set(mem, f32::from_bits(x87::store(yaw)));
+        let pi = Reg::constant(DEG_PI.get(mem));
+        let half_turn = Reg::constant(DEG_180.get(mem));
+        let rad = (Reg::load(deg) * pi / half_turn).store();
+        let wrapped = crate::vec::bridge::angle_wrap(rad);
+        let offset = Reg::load(wrapped).add_m32(STICK_DIR.get(mem)).store();
+        DIR_OFFSET.set(mem, offset);
+    }
 
     fn call_sym(h: &mut impl Host, sym: u32, args: &[u32]) -> u32 {
         let at = h.rebase(sym);

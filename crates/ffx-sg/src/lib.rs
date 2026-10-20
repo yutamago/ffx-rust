@@ -5,6 +5,7 @@
 //! over game memory (`docs/porting.md`), one module per area.
 
 pub mod abmap;
+pub mod app;
 pub mod assert;
 pub mod cache;
 pub mod camera;
