@@ -342,6 +342,8 @@ REVIEWED = {
     0x00a50ed0: ("dead", "no call or absolute reference in the image (main round 15)"),
     0x00729850: ("debug", "pppFpInfPrint: CAM:/PLY:/DIS: text via sprintf drawn with op_num (effects round 35)"),
     0x008ba390: ("glue", "9-byte frame then jmp MsSaveAddAP_00784610 (menu round 27)"),
+    0x00798950: ("platform", "Rng_ClockSeed: XORs the system time bytes; the harness hooks this address for its seed (battle round 30)"),
+    0x00790430: ("platform", "PasswordTextRead's file loader: fiosOpen/sceLseek/sceRead/sceClose, TkMalloc/TkFree, memcpy only (battle round 30)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

@@ -7192,7 +7192,7 @@
 0x007902f0	logic	default (no rule: ported to be safe)
 0x00790340	logic	default (no rule: ported to be safe)
 0x00790420	dead	unreachable from the entry point and every pointer table
-0x00790430	logic	default (no rule: ported to be safe)
+0x00790430	platform	reviewed: PasswordTextRead's file loader: fiosOpen/sceLseek/sceRead/sceClose, TkMalloc/TkFree, memcpy only (battle round 30)
 0x007904a0	logic	default (no rule: ported to be safe)
 0x007904b0	logic	default (no rule: ported to be safe)
 0x00790500	logic	default (no rule: ported to be safe)
@@ -7428,7 +7428,7 @@
 0x00798890	logic	default (no rule: ported to be safe)
 0x007988f0	logic	default (no rule: ported to be safe)
 0x00798930	logic	default (no rule: ported to be safe)
-0x00798950	logic	default (no rule: ported to be safe)
+0x00798950	platform	reviewed: Rng_ClockSeed: XORs the system time bytes; the harness hooks this address for its seed (battle round 30)
 0x007989a0	logic	default (no rule: ported to be safe)
 0x00798a00	logic	default (no rule: ported to be safe)
 0x00798a90	logic	default (no rule: ported to be safe)
