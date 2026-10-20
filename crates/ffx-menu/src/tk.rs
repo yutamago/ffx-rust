@@ -6725,10 +6725,39 @@ pub mod bridge {
         [cur, next]: [u32; 2],
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
-        use ffx_bridge::x87;
         let summon = mem.rebase(0x008a_9bc0);
         let cur = call(mem, summon, &[cur]);
         let next = call(mem, summon, &[next]);
+        draw_face_slide(mem, [x, y, w, h], t, [cur, next], call)
+    }
+
+    /// `MenuNameEntry_DrawCharFaceSlide(x, y, w, h, t, cur, next)`
+    /// (`0x008d33b0`, own name; caller `0x008c3ec0` for a character
+    /// target) and its byte-for-byte copy `MenuNameEntry_DrawSummonFaceSlide`
+    /// (`0x008d35a0`, an aeon target): [`menu_summon_draw_face_slide`]
+    /// with `cur` and `next` already faces (no `TkMenuGetSummonFromIndex`).
+    #[allow(clippy::many_single_char_names)] // the rectangle and the slide
+    pub fn menu_name_entry_draw_face_slide<M: Mem>(
+        mem: &mut M,
+        xywh: [u32; 4],
+        t: i32,
+        faces: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        draw_face_slide(mem, xywh, t, faces, call)
+    }
+
+    /// The face slide of [`menu_summon_draw_face_slide`] and
+    /// [`menu_name_entry_draw_face_slide`], from the two faces on.
+    #[allow(clippy::many_single_char_names)] // the rectangle and the slide
+    fn draw_face_slide<M: Mem>(
+        mem: &mut M,
+        [x, y, w, h]: [u32; 4],
+        t: i32,
+        [cur, next]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
         let read_end = mem.rebase(0x008a_8e50);
         let face = mem.rebase(0x008c_0250);
         let mut drawn = call(mem, read_end, &[]);
@@ -11046,6 +11075,170 @@ pub mod bridge {
             }
         }
         (large << 8) | small
+    }
+    /// `MenuItem_DrawChrSmallPlate(x, y, chr)` (`0x008c1260`, own name;
+    /// caller `0x008c9570`): `TOMenuDrawChrSmallPlate_008f51e0(chr, x, y)`,
+    /// the floats copied through `fld`/`fstp`; its result.
+    pub fn menu_item_draw_chr_small_plate<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::round_trip;
+        let f = mem.rebase(0x008f_51e0);
+        call(
+            mem,
+            f,
+            &[chr, round_trip(x).to_bits(), round_trip(y).to_bits()],
+        )
+    }
+
+    /// `TkMenuConfigHelp(id)` (`0x008dc970`, Fahrenheit's name): menu text
+    /// 7's help line of `id` (14's when `MsGetSaveConfigEnglish()`, which
+    /// is 0 in this build), in kana when `MsGetSaveConfigHiragana()` says
+    /// so; the help line.
+    pub fn tk_menu_config_help<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let kana = save::ms_get_save_config_hiragana(mem);
+        let english = mem.rebase(0x0078_51d0);
+        let text = if call(mem, english, &[]) == 0 { 7 } else { 14 };
+        ffx_battle::menu::bridge::ms_menu_get_help(mem, text, id, kana)
+    }
+
+    /// `MenuWeapon_DrawRows(window, fixed, first, _, y)` (`0x008d0250`,
+    /// own name; caller `0x008cf9f0`): five [`menu_weapon_draw_row`]s,
+    /// rows `first..first + 5` at `x = f32(remapX2(210))`, the first at
+    /// `y = f32(remapY2(599) + f32(y))`, each next one
+    /// `f32(remapY2(79) + y)` lower. No caller reads `eax`.
+    pub fn menu_weapon_draw_rows<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [fixed, first, y]: [i32; 3],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87;
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let y = y as f32;
+        let x = x87::store(remap(mem, false, 210.0));
+        let mut y = x87::store(remap(mem, true, 599.0) + f64::from(y));
+        let row = mem.rebase(0x008d_0170);
+        for i in 0..5 {
+            let args = [
+                window,
+                x,
+                y,
+                first.wrapping_add(i).cast_unsigned(),
+                fixed.cast_unsigned(),
+            ];
+            call(mem, row, &args);
+            y = x87::store(remap(mem, true, 79.0) + x87::load(y));
+        }
+    }
+
+    /// `MenuSave_BuildIconSys(n, b, index)` (`0x008b42e0`, own name;
+    /// callers `TkMenuCtrlSaveLoad`, `TkMenuPreSave`): the PS2 `icon.sys`
+    /// at `0x0159e870` (0x3c4 bytes) cleared, magic `PS2D` at `+0`, `u16`
+    /// 0x20 at `+6` and 0x60 at `+0xc`; the title
+    /// [`menu_save_dic_text`]`(local, n, b, index)` at `+0xc0`, then
+    /// `MenuSave_IconName(local, n)` at `+0x104`, `+0x144` and `+0x184`
+    /// (each copied up to its NUL, `local` 0x100 bytes in the original).
+    /// No caller reads `eax`.
+    pub fn menu_save_build_icon_sys<M: Mem>(
+        mem: &mut M,
+        [icon, second, index]: [u32; 3],
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let sys = mem.rebase(0x0159_e870);
+        mem.write_bytes(sys, &[0; 0x3c4]);
+        mem.write(sys.wrapping_add(6), 0x20u16);
+        mem.write(sys, 0x4432_5350u32);
+        mem.write(sys.wrapping_add(0xc), 0x60u32);
+        let dic = mem.rebase(0x008b_43e0);
+        call(mem, dic, &[local, icon, second, index]);
+        let copy = |mem: &mut M, to: u32| {
+            let mut i = 0u32;
+            loop {
+                let c = mem.read::<u8>(local.wrapping_add(i));
+                mem.write(to.wrapping_add(i), c);
+                if c == 0 {
+                    break;
+                }
+                i = i.wrapping_add(1);
+            }
+        };
+        copy(mem, sys.wrapping_add(0xc0));
+        menu_save_icon_name(mem, local, icon);
+        for at in [0x104, 0x144, 0x184] {
+            copy(mem, sys.wrapping_add(at));
+        }
+    }
+
+    /// `BtlEnd_StepEntry(i)` (`0x008bb690`, own name; caller
+    /// `TkBtlEndCtrl`): one step of after-battle entry `i` (14 bytes from
+    /// `0x01869f20`: `i16 +2` a timer, `i16 +4` the state, `i16 +6` the
+    /// character). State 0 and 3 count the timer down, and below 0 go on
+    /// to 1 (timer 0; state 0 then returns 0 at once) or 4; 1 and 4 count
+    /// it up by 0xe3 and from 0x1000 go on to 2 or 5 (timer 0x1000); 2
+    /// sets its timer to 0x1000 again. Then, with `BtlEnd_GetSP(chr)` at least 99,
+    /// `SetTable_02310f20(chr, 0)`. Returns 1 in state 2 or 5, else 0.
+    pub fn btl_end_step_entry<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let e = mem.rebase(0x0186_9f22).wrapping_add(i.wrapping_mul(14));
+        let mut done = 0;
+        // the timer and the state as one dword
+        let go = |mem: &mut M, state: u32, timer: u32| mem.write(e, (state << 16) | timer);
+        let step = |mem: &mut M, by: i16| {
+            let t = mem.read::<i16>(e).wrapping_add(by);
+            mem.write(e, t);
+            t
+        };
+        match mem.read::<i16>(e.wrapping_add(2)) {
+            0 => {
+                if step(mem, -1) < 0 {
+                    go(mem, 1, 0);
+                }
+                return 0;
+            }
+            1 => {
+                if step(mem, 0xe3) >= 0x1000 {
+                    go(mem, 2, 0x1000);
+                }
+            }
+            2 => {
+                go(mem, 2, 0x1000);
+                done = 1;
+            }
+            3 => {
+                if step(mem, -1) < 0 {
+                    go(mem, 4, 0);
+                }
+            }
+            4 => {
+                if step(mem, 0xe3) >= 0x1000 {
+                    go(mem, 5, 0x1000);
+                }
+            }
+            5 => done = 1,
+            _ => {}
+        }
+        let chr = |mem: &M| i32::from(mem.read::<i16>(e.wrapping_add(4))).cast_unsigned();
+        let sp = mem.rebase(0x008b_da50);
+        let c = chr(mem);
+        if call(mem, sp, &[c]).cast_signed() >= 0x63 {
+            let set = mem.rebase(0x008b_dfc0);
+            let c = chr(mem);
+            call(mem, set, &[c, 0]);
+        }
+        done
     }
 }
 

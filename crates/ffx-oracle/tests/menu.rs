@@ -10299,3 +10299,191 @@ fn menu_round23_reads_cursors_and_pads_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// A float's bits: NaN, any non-signalling pattern, or a small value.
+fn quiet_float(t: &mut Twins) -> u32 {
+    match t.rng.below(8) {
+        0 => f32::NAN.to_bits(),
+        1 => t.rng.next() & 0xffbf_ffff | 0x0040_0000, // no signalling NaNs
+        _ => (f32::from(i16::try_from(t.rng.below(2000)).unwrap_or(0) - 1000) / 4.0).to_bits(),
+    }
+}
+
+#[test]
+fn menu_round24_plates_rows_and_slides_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0024_1260) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let r = t.rng.next();
+
+    // MenuItem_DrawChrSmallPlate
+    record_far(&mut t, 0x008f_51e0, 3, r);
+    for _ in 0..200 {
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let chr = t.rng.int();
+        t.twin(
+            "MenuItem_DrawChrSmallPlate",
+            0x008c_1260,
+            &[x, y, chr],
+            U32,
+            |o| {
+                w(tk::menu_item_draw_chr_small_plate(
+                    o,
+                    [f32::from_bits(x), f32::from_bits(y)],
+                    chr,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+
+    // TkMenuConfigHelp: MsGetSaveConfigEnglish from a cell
+    let english = return_cell(&mut t, 0x0078_51d0);
+    let config = ffx_battle::save::bridge::MENU.sym;
+    for round in 0..200u32 {
+        let e = t.rng.pick(&[0u32, 0, 1, 0x100]);
+        t.put(english, e);
+        let id = t
+            .rng
+            .pick_or_any(&[0, 1, 2, 0x10, 0x2000_0001, 0xffff_ffff])
+            & 0xffff_1fff;
+        t.twin("TkMenuConfigHelp", 0x008d_c970, &[id], U32, |o| {
+            w(tk::tk_menu_config_help(o, id, &mut callback))
+        });
+        if round % 2 == 0 {
+            t.scramble(config, 4);
+        }
+    }
+
+    // MenuWeapon_DrawRows: the rows recorded
+    record_far(&mut t, 0x008d_0170, 5, r);
+    for _ in 0..200 {
+        let window = t.rng.next();
+        let fixed = t.rng.int();
+        let first = t.rng.int();
+        let d = t.rng.next();
+        let y = t.rng.int();
+        t.twin(
+            "MenuWeapon_DrawRows",
+            0x008d_0250,
+            &[window, fixed, first, d, y],
+            VOID,
+            |o| {
+                tk::menu_weapon_draw_rows(
+                    o,
+                    window,
+                    [i(fixed), i(first), i(y)],
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+
+    // MenuSave_BuildIconSys: MenuSave_DicText copies a text of its own
+    let text = t.alloc(&[0; 0x100]);
+    // the three words after `out` (a stack address) logged
+    let buf = t.alloc(&[0; 0x4000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &log.to_le_bytes()].concat(); // mov ecx, [log]
+    for k in 0..3u8 {
+        code.extend([0x8b, 0x44, 0x24, 8 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    code.extend([&[0x83, 0x05][..], &log.to_le_bytes(), &[12]].concat());
+    #[rustfmt::skip]
+    code.extend([
+        &[0x8b, 0x54, 0x24, 0x04][..],              // mov edx, [esp + 4] (out)
+        &[0xb9], &text.to_le_bytes(),               // mov ecx, text
+        &[0x8a, 0x01, 0x88, 0x02, 0x41, 0x42],      // mov al, [ecx]; mov [edx], al; inc ecx; inc edx
+        &[0x84, 0xc0, 0x75, 0xf6, 0xc3],            // test al, al; jne; ret
+    ]
+    .concat());
+    jump_stub(&mut t, 0x008b_43e0, &code);
+    for _ in 0..200 {
+        let len = t.rng.pick(&[0usize, 1, 5, 0x40, 0xff]);
+        let mut s: Vec<u8> = (0..len)
+            .map(|_| 1 + u8::try_from(t.rng.below(0xff)).unwrap())
+            .collect();
+        s.push(0);
+        t.put_bytes(text, &s);
+        t.scramble(0x0159_e870, 0x3c4);
+        let n = t.rng.pick_or_any(&[0, 1, 9, 10, 99, 100]);
+        let (b, index) = (t.rng.next(), t.rng.int());
+        t.twin(
+            "MenuSave_BuildIconSys",
+            0x008b_42e0,
+            &[n, b, index],
+            VOID,
+            |o| {
+                tk::menu_save_build_icon_sys(o, [n, b, index], local, &mut callback);
+                0
+            },
+        );
+    }
+
+    // BtlEnd_StepEntry: BtlEnd_GetSP from a cell, both logged
+    let sp = t.alloc(&[0; 4]);
+    let (_, mut code) = log_args(&mut t, 1);
+    code.extend([&[0xa1][..], &sp.to_le_bytes(), &[0xc3]].concat());
+    jump_stub(&mut t, 0x008b_da50, &code);
+    record_far(&mut t, 0x008b_dfc0, 2, r);
+    for _ in 0..1000 {
+        let k = t.rng.pick(&[0u32, 1, 2, 3, 5, 0xffff_ffff]);
+        let e = t.sym(0x0186_9f22).wrapping_add(k.wrapping_mul(14));
+        let state = t.rng.pick(&[0i16, 1, 2, 3, 4, 5, 6, -1, 0x7fff, 0x100]);
+        let timer = t.rng.pick(&[
+            0i16, 1, -1, 2, 0xf1c, 0xf1d, 0xfff, 0x1000, 0x7fff, -0x8000, 0x7f20,
+        ]);
+        t.put(e, timer);
+        t.put(e + 2, state);
+        let chr = t.rng.pick(&[0i16, 1, 7, -1, 0x7fff]);
+        t.put(e + 4, chr);
+        let s = t
+            .rng
+            .pick(&[0u32, 0x62, 0x63, 0x64, 0xffff_ffff, 0x8000_0000]);
+        t.put(sp, s);
+        t.twin("BtlEnd_StepEntry", 0x008b_b690, &[k], U32, |o| {
+            w(tk::btl_end_step_entry(o, k, &mut callback))
+        });
+    }
+
+    // the name entry's face slides
+    record_n(&mut t, 0x008c_0250, 5, 0x66);
+    record_n(&mut t, 0x008c_2c30, 4, 0x77);
+    for round in 0..400u32 {
+        let flag = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x008a_8e50, flag);
+        let step = match t.rng.below(3) {
+            0 => t.rng.next(),
+            _ => t.rng.below(0x200),
+        };
+        t.put(t.sym(0x0186_a9ec), step);
+        t.scramble(0x023c_c458, 0x24);
+        let xywh: [u32; 4] = std::array::from_fn(|_| quiet_float(&mut t));
+        let slide = match round % 4 {
+            0 => 0,
+            1 => t.rng.next(),
+            _ => t.rng.below(0x2000).wrapping_sub(0x1000),
+        };
+        let (cur, next) = (t.rng.next(), t.rng.next());
+        let args = [xywh[0], xywh[1], xywh[2], xywh[3], slide, cur, next];
+        let (what, f) = if round % 2 == 0 {
+            ("MenuNameEntry_DrawCharFaceSlide", 0x008d_33b0)
+        } else {
+            ("MenuNameEntry_DrawSummonFaceSlide", 0x008d_35a0)
+        };
+        t.twin(what, f, &args, U32, |o| {
+            w(tk::menu_name_entry_draw_face_slide(
+                o,
+                xywh,
+                slide.cast_signed(),
+                [cur, next],
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

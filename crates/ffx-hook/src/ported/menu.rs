@@ -4049,4 +4049,36 @@ ported! {
     Pad_ActuatorIds @ 0x0088_8a70 => extern "C" fn pad_actuator_ids(port: u32, slot: u32) -> u32 {
         tk::pad_actuator_ids(&mut mem(), port, slot, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_DrawChrSmallPlate(x, y, chr)`: the plate's result.
+    MenuItem_DrawChrSmallPlate @ 0x008c_1260 => extern "C" fn menu_item_draw_chr_small_plate(x: u32, y: u32, chr: u32) -> u32 {
+        tk::menu_item_draw_chr_small_plate(&mut mem(), [f32::from_bits(x), f32::from_bits(y)], chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuConfigHelp(id)`: the help line.
+    TkMenuConfigHelp @ 0x008d_c970 => extern "C" fn tk_menu_config_help(id: u32) -> u32 {
+        tk::tk_menu_config_help(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWeapon_DrawRows(window, fixed, first, _, y)`: void.
+    MenuWeapon_DrawRows @ 0x008d_0250 => extern "C" fn menu_weapon_draw_rows(window: u32, fixed: i32, first: i32, _d: u32, y: i32) {
+        tk::menu_weapon_draw_rows(&mut mem(), window, [fixed, first, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSave_BuildIconSys(n, b, index)`: void.
+    MenuSave_BuildIconSys @ 0x008b_42e0 => extern "C" fn menu_save_build_icon_sys(n: u32, b: u32, index: u32) {
+        let mut frame = super::StackFrame::<0x40>::new();
+        let local = frame.at();
+        tk::menu_save_build_icon_sys(&mut mem(), [n, b, index], local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `BtlEnd_StepEntry(i)`: 1 in state 2 or 5.
+    BtlEnd_StepEntry @ 0x008b_b690 => extern "C" fn btl_end_step_entry(i: u32) -> u32 {
+        tk::btl_end_step_entry(&mut mem(), i, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_DrawCharFaceSlide(x, y, w, h, t, cur, next)`: the
+    /// last call's result.
+    MenuNameEntry_DrawCharFaceSlide @ 0x008d_33b0 => extern "C" fn menu_name_entry_draw_char_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
+        tk::menu_name_entry_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_DrawSummonFaceSlide(x, y, w, h, t, cur, next)`: the
+    /// same body.
+    MenuNameEntry_DrawSummonFaceSlide @ 0x008d_35a0 => extern "C" fn menu_name_entry_draw_summon_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
+        tk::menu_name_entry_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
 }
