@@ -121,6 +121,24 @@ as the fade goes 0..0x1000, with alpha `fade / 32`; a disabled option's
 name is drawn dimmed. The highlighted option (`0x01871548`) gets the cross
 cursor once fully shown.
 
+`TkMenuAppearMainCmdWindow` (`0x008e1c60`, `(slide, mode)`) fills that
+table. Modes `0xc`-`0x10` and `0x18` open a single option (menus `0xd`,
+`0xc`, `0xe`, `0xa`, `0xb`, `0x37`) and clear `0x01871554` (the main
+menu control waits for it to come back before freeing its window
+groups). Any other mode builds an option bit mask from the scenario flag
+(`AtelGetScenarioFlag`; 0 counts as "after everything"): bits 0, 1, 4,
+8, 9 and 15 always, 2 from flag `0xd2`, 3 from `0x43`, 7
+from `0x448`, 6 from `0xd9` when the menu mask lacks bit `0x40` and the
+party has more than one member, 5 from `0xd0` when an aeon is enabled.
+Option bit `i` goes to slot `u8 0x00c5b2d4[i]` (01 02 04 00 05 06 07 08
+09 0a ..., so the slots are below 32) with menu `i`, enabled 1 and a
+`u16` kind at `+6` (1 for menu 1, 2 for menus 2-4 and 15, else 0); the
+filled slots in slot order become the options. The window
+(`0x01871540`: callbacks `0x008e2040`/`0x008e20f0`, kind 2, layer 7)
+records the widest option text in `0x01871550`; `0x01871558` is its
+slide (`0x3000` when `slide` is set), and the u16 rows at `0x01871668`
+(delay `4 * row`) and `0x01871678` (slide, 0) time the rows.
+
 ## Item, shop and aeon lists
 
 The menu list at `0x01597770` has `0x200` 4-byte entries, count in
@@ -166,6 +184,18 @@ weapon's and armour's abilities for kind 0.
 `MenuSelList_DrawRows` (`0x008d1620`) draws a two-column selection list:
 nine row pairs from row `first * 2 - 2`, left column at `remapX2(210)`,
 right at `remapX2(970)`, from `y + remapY2(403)` down by `remapY2(77)`.
+
+Gear sorting: `0x008c9bf0` calls `MenuItem_SortGear_008c9c40(list,
+start, n)` for each owner's weapons, then armour
+(`g_TkMenuItemGearCounts`, the runs follow each other in the list). Each
+entry gets a 32-byte ability bit set (abilities `u16` at `+0xe` of its
+`MsGetSaveWeapon` record, count byte `+0xb`, `0xff` skipped: bit
+`31 - (a & 31)` of word `(a & 0xff) >> 5`), then a selection sort puts
+the largest set first (`MenuItem_CompareEntries`, word by word,
+unsigned). Equal sets go to the record with more abilities, then to the
+first larger `u16` ability (so `0x105` ranks above `0x05`, same bit);
+each move swaps the save data too (`SwapSaveGear`). The bit table is
+`0x1900` bytes of the frame: 200 entries.
 
 ## Characters and aeons
 

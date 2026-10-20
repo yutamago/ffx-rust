@@ -11062,7 +11062,7 @@
 0x008c9b60 function MenuItem_GetLinePos       # (): TkMn2SeqGetPos("p_linmline", 0x0186a400), ("p_rinmline", 0x0186a404); no direct callers; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b90 function Menu_FindFlagged          # (entries, from, to): first index in from..to whose 4-byte entry has byte +2 set, else -1; name ours
 0x008c9bc0 function Menu_FindByte             # (bytes, v, from, to): first index in from..to whose byte is v, else -1; name ours
-0x008c9c40 function MenuItem_SortGear_008c9c40   # (list, n, mode): sorts the equipment list (MsGetSaveWeapon, MenuItem_CompareEntries, MenuItem_SwapEntries, SwapSaveGear), debug prints "TK:ID:0x%x/POS:%d", "TK:ABL ID:0x%x"; own name
+0x008c9c40 function MenuItem_SortGear_008c9c40 # (list, start, n): per entry a 32-byte ability bit set (MsGetSaveWeapon abilities +0xe, count +0xb, 0xff skipped; bit 31-(a&31) of word (a&0xff)>>5), then a selection sort: MenuItem_CompareEntries, ties to more abilities then the first larger u16 ability; swaps SwapSaveGear + MenuItem_SwapEntries; dbgPrintf "TK:ID:0x%x/POS:%d", "TK:ABL ID:0x%x", "TK:SRC = %d / DST = %d", "TK:EXCHANGE:%d <> %d"; caller 0x008c9bf0 (per owner, weapons then armour from g_TkMenuItemGearCounts); ported in menu round 28; own name
 0x008c9fb0 function MenuItem_SortGearByOwner # (): n = TkMn2GetNameModeMax(); owners[i] = byte +4 of MsGetSaveWeapon(id_i, &out) for the first n g_TkMenuItemList entries (0x400-byte frame buffer); per owner 0..7 the group of u16 weapon+armour counts at 0x0186a3e4 (after the previous groups): a foreign entry swaps (SwapSaveGear(id_k, id_j), owner bytes) with j = Menu_FindByte(owners, owner, from, n), from = the group end, then j + 1; returns 1, or 0 when a search fails (TkMenuCtrlItem reads it); caller TkMenuCtrlItem; ported in menu round 25; name ours
 0x008ca320 function TOMenuGetDummyAnalogControler # fh v3:exact 0x008ca2f0
 0x008ca370 function SetByte_0186a429_008ca370 # cdecl(i, v): byte 0x0186a42d, 0x0186a42f, 0x0186a429 or 0x0186a42b (i = 0..3, a jump table) = v; caller 0x0085f2e0; name ours
@@ -11409,7 +11409,7 @@
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl
 0x008e19f0 function TOMenuDrawTimer              # callees: its named callees match the Switch 0x71004d6a90 TOMenuDrawTimer's (similarity 1.00: TOGetFFXLang, TOGetFontSpaceInPiexl, ToGetBtlEasyDigitWidth2, ToGetBtlEasyFontWidth, ToMakeBtlEasyEdgeDigit2); symbols from Fahrenheit's server export; cdecl(frames, x, y, alpha, kind): play time hours J minutes right-aligned at x in the battle edge font (scale 0.63/1.5), J only for kind 0x25; ported (system round 28)
 0x008e1c50 function graphicGetCurrentFrame_008e1c50 # duplicate Switch name (0x006410d0 has it); fh switch:bsim1.00 0x71001d9db0: TkMenuGetPlayerFromIndex2_008a9b00(TkMenuGetCurrentPlayerPos())
-0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl
+0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl; (slide, mode): modes 0xc-0x10/0x18 one option, else the option mask from AtelGetScenarioFlag (0 = after everything) placed by g_TkMenuMainOptionOrder; window 0x008e2040/0x008e20f0, layer 7; returns TkMenuMainRegistWindow eax; ported in menu round 28
 0x008e2250 function GetGlobal01871558_008e2250   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01871558]; return t0; callers: no direct caller; name ours
 0x008e2260 function MenuMain_OptionY          # (i) i16 0x0187156e + 8i; own name
 0x008e2270 function TkMenuMainGetOptionMenu   # fh v3:bsim1.00 0x008e2270 +TkMenuMainGetOptionMenu
@@ -16028,6 +16028,7 @@
 0x00c5a088 label    g_MenuHelpExtArg          # second argument of TOMenuHelpSetExtMode
 0x00c5a604 label    g_NkzAeonStats               # 0x1c bytes a stat (row 0 none, then HP, MP, str, def, mag, mdef, agi, luck, eva, acc): +0 gain function, +0x18 maximum (99999, 9999, 255); TkMenuCtrlSummon
 0x00c5a790 label g_TkMenuStatusStats      # (i32 mes, u32 field) pairs: the status page stats 7..14 at save offsets 47..54, ended by mes -1 (TkMn2MainStatusPlayerStatus)
+0x00c5b2d4 label g_TkMenuMainOptionOrder  # u8[32]: the slot of main-menu option bit i (TkMenuAppearMainCmdWindow); 01 02 04 00 05 06 07 08 09 0a ...; name ours
 0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
 0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height
 0x00c5d780 label    g_TOAddPkt                # TOInitAddPkt sets 1, TOSetAddPkt 0
@@ -17071,9 +17072,15 @@
 0x01871524 label    g_TkMenuTutoSaveCopy      # pointer to the tutorial's g_SaveData copy (0x0186ac60, TkMenuCtrlTuto); MenuTuto_RestoreNames
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
+0x01871540 label g_TkMenuMainCmdWindow    # the main command window (TkMenuAppearMainCmdWindow); name ours
 0x01871548 label g_TkMenuMainOptionCursor # the main menu's highlighted option: MenuMain_DrawOptionRow draws the cross cursor on that row once its fade is 0x1000; name ours
 0x0187154c label    g_TkMenuMainChoice        # reset to -1 by TkMenuMainOpenOption
+0x01871550 label g_TkMenuMainCmdWidth     # i32 widest option text, TkMenuDraw1612Width(TkMenuMainMes(menu)) (TkMenuAppearMainCmdWindow); name ours
+0x01871554 label g_TkMenuMainCmdDone      # cleared by the single-option openings of TkMenuAppearMainCmdWindow; the main menu control (states 0x1a, 0x1d, 0x21) waits for it before TkMenuMainFreeWindowGroup; name ours
+0x01871558 label g_TkMenuMainCmdSlide     # 0x3000 when TkMenuAppearMainCmdWindow(slide != 0), else 0; 0x008e20f0 draws the backing at slide*805/4096; read by 0x008e2250; name ours
 0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
+0x01871668 label g_TkMenuMainRowDelay     # u16[8] = 4*row (TkMenuAppearMainCmdWindow), counted down by 0x008e2040; name ours
+0x01871678 label g_TkMenuMainRowSlide     # u16[8] cleared by TkMenuAppearMainCmdWindow; 0x008e22a0 reads it as the row offset; name ours
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
 0x01871698 label    g_TkMenuWorldMapWindow    # MenuWorldMap_CloseWindow
 0x018716a8 label    g_TkMenuScissorScales     # 2 x f32 a, b: in XYUV mode BeginScissor_XYUV scales x1 from x0 by b / a, clips, scales back by a / b

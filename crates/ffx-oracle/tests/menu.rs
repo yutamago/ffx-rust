@@ -13386,3 +13386,201 @@ impl Twins {
         self.put_bytes(at, &v);
     }
 }
+
+/// `dbgPrintf` (`0x0062f500`) replaced by a logger: the format and the
+/// first value, and the second value for the formats in `three`.
+fn printf_log(t: &mut Twins, log: u32, three: &[u32; 3]) {
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = Vec::new();
+    #[rustfmt::skip]
+    code.extend([
+        &[0x8b, 0x0d][..], &l,                  // mov ecx, [log]
+        &[0x8b, 0x44, 0x24, 0x04, 0x89, 0x01],  // [ecx] = format
+        &[0x8b, 0x44, 0x24, 0x08, 0x89, 0x41, 0x04], // [ecx + 4] = value
+        &[0x83, 0x05], &l, &[0x08],             // add dword [log], 8
+        &[0x8b, 0x44, 0x24, 0x04],              // mov eax, format
+        &[0x3d], &three[0].to_le_bytes(), &[0x74, 14],
+        &[0x3d], &three[1].to_le_bytes(), &[0x74, 7],
+        &[0x3d], &three[2].to_le_bytes(), &[0x75, 19],
+        &[0x8b, 0x0d], &l,                      // mov ecx, [log]
+        &[0x8b, 0x44, 0x24, 0x0c, 0x89, 0x01],  // [ecx] = second value
+        &[0x83, 0x05], &l, &[0x04],             // add dword [log], 4
+        &[0xc3],
+    ]
+    .concat());
+    jump_stub(t, 0x0062_f500, &code);
+}
+
+#[test]
+fn menu_round28_sort_gear_and_main_cmd_window_match_the_original() {
+    let Some(mut t) = setup_any(0x0028_9c40) else {
+        return;
+    };
+    let stack = t.b.stack_range().start;
+    let (table, local) = (stack + 0x200, stack + 0x200 + 0x1900);
+    // a 2 MB log: 200 entries sort with up to 20000 logged comparisons
+    let buf = t.alloc(&vec![0; 0x20_0000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let start = Mem::read::<u32>(&t.a, log);
+    let three = [0x00b6_5a10, 0x00b6_5a4c, 0x00b6_5a64].map(|a| t.sym(a));
+    printf_log(&mut t, log, &three);
+
+    // MenuItem_SortGear: MsGetSaveWeapon(id, &out) logs the id and gives
+    // the 0x20-byte record of the id's low byte; abilities from a small set
+    // (0xff skipped, high bytes that set the same bits) so that entries tie
+    let records = t.alloc(&vec![0; 0x2000]);
+    let mut code: Vec<u8> = seq_code_of(log, 0x007a_bbd0, &[0], 0, &[]);
+    code.truncate(code.len() - 6);
+    #[rustfmt::skip]
+    code.extend([
+        &[0x0f, 0xb6, 0x44, 0x24, 0x04][..],    // movzx eax, byte [esp + 4]
+        &[0xc1, 0xe0, 0x05],                    // shl eax, 5
+        &[0x05], &records.to_le_bytes(),        // add eax, records
+        &[0xc3],
+    ]
+    .concat());
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+    seq_stub(&mut t, 0x007a_b9f0, log, 2, &[]);
+    let list = t.alloc(&[0; 4 * 0x120]);
+    let abilities = [0u16, 5, 0x21, 0x105, 0xff, 0x1ff, 0x80, 0x9f, 0x3e, 0x1f];
+    for round in 0..400u32 {
+        t.put(log, start);
+        for id in 0..0x100u32 {
+            let rec = records + id * 0x20;
+            let count = match t.rng.below(8) {
+                0 => 0,
+                7 => 8,
+                k => u8::try_from(k.min(4)).unwrap_or(0),
+            };
+            t.put(rec + 0xb, count);
+            for k in 0..8 {
+                let a = t.rng.pick(&abilities);
+                t.put(rec + 0xe + 2 * k, a);
+            }
+        }
+        let pool: Vec<u16> = (0..=t.rng.below(12))
+            .map(|_| u16::try_from(t.rng.next() & 0x1ff).unwrap_or(0))
+            .collect();
+        for k in 0..0x120 {
+            let id = t.rng.pick(&pool);
+            t.put(list + 4 * k, id);
+        }
+        let n = t.rng.pick(&[0i32, 1, 2, 3, 4, 6, 10, 25, 60, 200, -1, -7]);
+        let n = if round == 7 { 200 } else { n };
+        let first = t.rng.below(0x18);
+        t.twin(
+            "MenuItem_SortGear_008c9c40",
+            0x008c_9c40,
+            &[list, first, n.cast_unsigned()],
+            VOID,
+            |o| {
+                tk::menu_item_sort_gear(o, list, first, n, table, local, &mut callback);
+                0
+            },
+        );
+    }
+
+    // TkMenuAppearMainCmdWindow: the gates and every callee logged,
+    // TkMenuMainGetOptionMenu/GetMaxOptions the originals
+    let flag = seq_stub(&mut t, 0x0086_c470, log, 0, &[]);
+    let menu_mask = seq_stub(&mut t, 0x0086_be50, log, 0, &[]);
+    let players = seq_stub(&mut t, 0x008a_9b50, log, 0, &[]);
+    let summons = seq_stub(&mut t, 0x008a_b1e0, log, 0, &[]);
+    seq_stub(&mut t, 0x008a_aeb0, log, 1, &[]);
+    let help = seq_stub(&mut t, 0x008d_df60, log, 1, &[]);
+    let window = seq_stub(&mut t, 0x008a_a1a0, log, 0, &[]);
+    let regist = seq_stub(&mut t, 0x008a_ab00, log, 1, &[]);
+    let texts = t.alloc_random(0x400);
+    record_stub(&mut t, 0x008d_df80, log, &[0], texts, 4, None);
+    let mut code: Vec<u8> = seq_code_of(log, 0x008d_c9e0, &[0], 0, &[]);
+    code.truncate(code.len() - 6);
+    code.extend([0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00, 0xc3]); // mov eax, [[esp + 4]]
+    jump_stub(&mut t, 0x008d_c9e0, &code);
+    let order = t.sym(0x00c5_b2d4);
+    let game_order: Vec<u8> = (0..32).map(|k| Mem::read::<u8>(&t.a, order + k)).collect();
+    let flags = [
+        0u32,
+        1,
+        0x42,
+        0x43,
+        0xcf,
+        0xd0,
+        0xd1,
+        0xd2,
+        0xd8,
+        0xd9,
+        0x447,
+        0x448,
+        0x7fff_ffff,
+        0xffff_ffff,
+        0x8000_0000,
+    ];
+    for round in 0..600u32 {
+        t.put(log, start);
+        let f = if round < 60 {
+            flags[(round % 15) as usize]
+        } else {
+            t.rng.pick(&flags)
+        };
+        t.put(flag, f);
+        let m = t.rng.next();
+        t.put(menu_mask, m);
+        let p = t.rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff, 0x8000_0000]);
+        t.put(players, p);
+        let s = t.rng.pick(&[0u32, 1, 0x8000_0000, 0x100]);
+        t.put(summons, s);
+        reroll(&mut t, &[help, regist]);
+        let win = t.alloc_random(0x100);
+        t.put(window, win);
+        t.scramble_at(texts, 0x400);
+        for at in [0x0187_1540u32, 0x0187_1568, 0x0187_1668] {
+            let at = t.sym(at);
+            t.scramble_at(at, 0x40);
+        }
+        for at in [
+            0x0187_1548u32,
+            0x0187_154c,
+            0x0187_1550,
+            0x0187_1554,
+            0x0187_1558,
+            0x0187_1688,
+        ] {
+            let v = t.rng.next();
+            let at = t.sym(at);
+            t.put(at, v);
+        }
+        if round % 3 == 0 {
+            let v: Vec<u8> = (0..32)
+                .map(|_| u8::try_from(t.rng.below(32)).unwrap_or(0))
+                .collect();
+            t.put_bytes(order, &v);
+        } else {
+            t.put_bytes(order, &game_order);
+        }
+        let mode = match round % 4 {
+            0 => t.rng.below(0x20),
+            1 => t.rng.pick(&[0xc, 0xd, 0xe, 0xf, 0x10, 0x18]),
+            2 => t
+                .rng
+                .pick(&[0xb, 0x11, 0x17, 0x19, 0xffff_ffff, 0x8000_000c]),
+            _ => t.rng.next(),
+        };
+        let slide = t.rng.pick(&[0u32, 1, 0x8000_0000, 0x3000]);
+        t.twin(
+            "TkMenuAppearMainCmdWindow",
+            0x008e_1c60,
+            &[slide, mode],
+            U32,
+            |o| {
+                w(tk::tk_menu_appear_main_cmd_window(
+                    o,
+                    slide,
+                    mode,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    t.put_bytes(order, &game_order);
+    eprintln!("{} calls", t.calls);
+}

@@ -12167,6 +12167,305 @@ pub mod bridge {
         }
         eax
     }
+    /// `MenuItem_SortGear_008c9c40(list, start, n)` (`0x008c9c40`, own
+    /// name; caller `0x008c9bf0`, once per owner and gear kind): sorts the
+    /// `n` entries of `list` from `start` (4-byte entries, `u16` id) by
+    /// their abilities. Each entry gets a 32-byte bit set in `table`
+    /// (`MsGetSaveWeapon(id, local)`, ability count `+0xb`, `u16`
+    /// abilities from `+0xe`, `0xff` skipped: bit `31 - (a & 31)` of word
+    /// `(a & 0xff) >> 5`). Then a selection sort: for each `i < n - 1` the
+    /// best of `i..n` is the first one `MenuItem_CompareEntries` ranks
+    /// above, ties going to more abilities, then to the first larger
+    /// ability id; a new best is swapped in (`SwapSaveGear(id_i,
+    /// id_best)`, `MenuItem_SwapEntries`). Every step is reported through
+    /// `dbgPrintf` (a `ret` on PC). `table` is the original's 0x1900-byte
+    /// frame buffer (200 entries; more overrun it in the original too),
+    /// `local` the out word.
+    #[allow(clippy::too_many_arguments)]
+    pub fn menu_item_sort_gear<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        start: u32,
+        n: i32,
+        table: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let print = mem.rebase(0x0062_f500);
+        let text = |mem: &M, id_a: u32| mem.rebase(id_a);
+        let weapon = mem.rebase(0x007a_bbd0);
+        let entry =
+            |i: i32| list.wrapping_add(start.wrapping_add(i.cast_unsigned()).wrapping_mul(4));
+        let mut i = 0i32;
+        while i < n {
+            let bits = table.wrapping_add(i.cast_unsigned().wrapping_mul(0x20));
+            for k in 0..8 {
+                mem.write(bits.wrapping_add(4 * k), 0u32);
+            }
+            let id = u32::from(mem.read::<u16>(entry(i)));
+            let rec = call(mem, weapon, &[id, local]);
+            let pos = start.wrapping_add(i.cast_unsigned());
+            let fmt = text(mem, 0x00b6_5a10);
+            call(mem, print, &[fmt, id, pos]);
+            let mut k = 0u32;
+            while k < u32::from(mem.read::<u8>(rec.wrapping_add(0xb))) {
+                let ability = mem.read::<u16>(rec.wrapping_add(0xe + 2 * k));
+                if ability != 0xff {
+                    let fmt = text(mem, 0x00b6_5a24);
+                    call(mem, print, &[fmt, u32::from(ability)]);
+                    let low = u32::from(ability & 0xff);
+                    let (word, bit) = (low >> 5, 0x1f - (low & 0x1f));
+                    let at = bits.wrapping_add(4 * word);
+                    let v = mem.read::<u32>(at) | 1 << bit;
+                    mem.write(at, v);
+                    let fmt = text(mem, 0x00b6_5a34);
+                    call(mem, print, &[fmt, word]);
+                    let fmt = text(mem, 0x00b6_5a40);
+                    call(mem, print, &[fmt, bit]);
+                }
+                k += 1;
+            }
+            i += 1;
+        }
+        let end = n.wrapping_sub(1);
+        if end <= 0 {
+            return;
+        }
+        let mut i = 0i32;
+        loop {
+            let mut best = i;
+            let mut other = i.wrapping_add(1);
+            while other < n {
+                let rank = menu_item_compare_entries(
+                    mem,
+                    table,
+                    best.cast_unsigned(),
+                    other.cast_unsigned(),
+                );
+                if rank < 0 {
+                    let fmt = text(mem, 0x00b6_5a4c);
+                    call(mem, print, &[fmt, best.cast_unsigned(), i.cast_unsigned()]);
+                    best = other;
+                } else if rank == 0 {
+                    let id_a = u32::from(mem.read::<u16>(entry(best)));
+                    let ra = call(mem, weapon, &[id_a, local]);
+                    let id_b = u32::from(mem.read::<u16>(entry(other)));
+                    let rb = call(mem, weapon, &[id_b, local]);
+                    let ca = mem.read::<u8>(ra.wrapping_add(0xb));
+                    let cb = mem.read::<u8>(rb.wrapping_add(0xb));
+                    if ca < cb {
+                        best = other;
+                    } else if ca == cb {
+                        for k in 0..u32::from(ca) {
+                            let ab_a = mem.read::<u16>(ra.wrapping_add(0xe + 2 * k));
+                            let ab_b = mem.read::<u16>(rb.wrapping_add(0xe + 2 * k));
+                            if ab_a < ab_b {
+                                best = other;
+                                break;
+                            }
+                            if ab_a > ab_b {
+                                break;
+                            }
+                        }
+                    }
+                }
+                other = other.wrapping_add(1);
+            }
+            if best != i {
+                let id_a = u32::from(mem.read::<u16>(entry(i)));
+                let id_b = u32::from(mem.read::<u16>(entry(best)));
+                let fmt = text(mem, 0x00b6_5a64);
+                let (from, to) = (
+                    start.wrapping_add(i.cast_unsigned()),
+                    start.wrapping_add(best.cast_unsigned()),
+                );
+                call(mem, print, &[fmt, from, to]);
+                let swap = mem.rebase(0x007a_b9f0);
+                call(mem, swap, &[id_a, id_b]);
+                menu_item_swap_entries(mem, table, i.cast_unsigned(), best.cast_unsigned());
+            }
+            i = i.wrapping_add(1);
+            if i >= end {
+                return;
+            }
+        }
+    }
+
+    /// The main command window (`TkMenuAppearMainCmdWindow`'s window).
+    pub const MENU_MAIN_CMD_WINDOW: Global<u32> = Global::new(0x0187_1540);
+    /// The widest option text of the main command window.
+    pub const MENU_MAIN_CMD_WIDTH: Global<i32> = Global::new(0x0187_1550);
+    /// Cleared by the single-option openings; the menu control waits for
+    /// it before freeing the window groups.
+    pub const MENU_MAIN_CMD_DONE: Global<u32> = Global::new(0x0187_1554);
+    /// The main command window's slide (`0x3000` when opened sliding).
+    pub const MENU_MAIN_CMD_SLIDE: Global<u32> = Global::new(0x0187_1558);
+    /// Per row: a `u16` delay (`4 * row`) and a `u16` slide.
+    pub const MENU_MAIN_ROW_DELAY: Global<[u16; 8]> = Global::new(0x0187_1668);
+    /// See [`MENU_MAIN_ROW_DELAY`].
+    pub const MENU_MAIN_ROW_SLIDE: Global<[u16; 8]> = Global::new(0x0187_1678);
+
+    /// [`tk_menu_appear_main_cmd_window`]'s options for the other modes:
+    /// the scenario mask, slots by `g_TkMenuMainOptionOrder`, compacted.
+    fn main_cmd_options<M: Mem>(
+        mem: &mut M,
+        options: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let f = fun(mem, 0x0086_c470);
+        let flag = call(mem, f, &[]).cast_signed();
+        let from = |limit: i32| flag == 0 || flag >= limit;
+        let mut mask = if from(0xd2) { 0x15 } else { 0x11 };
+        mask |= 0x8000;
+        if from(0x43) {
+            mask |= 8;
+        }
+        if from(0x448) {
+            mask |= 0x80;
+        }
+        mask |= 0x302;
+        if from(0xd9) {
+            let f = fun(mem, 0x0086_be50);
+            if call(mem, f, &[]) & 0x40 == 0 {
+                let f = fun(mem, 0x008a_9b50);
+                if call(mem, f, &[]).cast_signed() > 1 {
+                    mask |= 0x40;
+                }
+            }
+        }
+        let f = fun(mem, 0x008a_b1e0);
+        if call(mem, f, &[]) != 0 && from(0xd0) {
+            mask |= 0x20;
+        }
+        // the original's 0x100-byte frame buffer; the slots the game's
+        // order table names are all below 32 (larger ones would land
+        // on its saved registers)
+        let mut slots = [[0u32; 2]; 32];
+        let order = fun(mem, 0x00c5_b2d4);
+        for i in 0..32u32 {
+            if mask & 1 << i == 0 {
+                continue;
+            }
+            let slot = usize::from(mem.read::<u8>(order.wrapping_add(i)));
+            let kind = match i {
+                1 => 1,
+                2..=4 | 15 => 2,
+                _ => 0,
+            };
+            if let Some(s) = slots.get_mut(slot) {
+                *s = [i, 1 | kind << 16];
+            }
+        }
+        let mut count = 0u32;
+        for [menu, enabled] in slots {
+            if enabled & 0xffff == 1 {
+                let at = options.wrapping_add(8 * count);
+                mem.write(at, menu);
+                mem.write(at.wrapping_add(4), enabled);
+                count += 1;
+            }
+        }
+        MENU_MAIN_MAX_OPTIONS.set(mem, count);
+    }
+
+    /// `TkMenuAppearMainCmdWindow(slide, mode)` (`0x008e1c60`; Fahrenheit's
+    /// name): the main menu's options and their window. Modes `0xc`-`0x10`
+    /// and `0x18` give one option (menus `0xd`, `0xc`, `0xe`, `0xa`, `0xb`,
+    /// `0x37`) and clear [`MENU_MAIN_CMD_DONE`]. Any other mode builds the
+    /// option mask from `AtelGetScenarioFlag()` (0 counts as "after
+    /// everything"): `0x302 | 0x8000` always, `0x11` before flag `0xd2`
+    /// else `0x15`, `8` from `0x43`, `0x80` from `0x448`, `0x40` from
+    /// `0xd9` when `AtelGetMenuMask()` lacks bit `0x40` and
+    /// `TkMenuGetPlayerListMax2() > 1`, `0x20` from `0xd0` when
+    /// `TkMenuSummonEnableMask()`; option bit `i` goes to slot
+    /// `byte 0x00c5b2d4[i]` (menu `i`, enabled 1, kind 1 for menu 1, 2
+    /// for 2-4 and 15, else 0), and the filled slots in order become
+    /// [`MENU_MAIN_OPTIONS`]. Then the help message (`TkMenuSetHelpMessage(0)`
+    /// and that of the cursor's option), the slide, the row timers, a
+    /// window from `TkMenuMainAllocWindow()` (callbacks `+0xc`
+    /// `0x008e2040`, `+0x10` `0x008e20f0`, kind `+0x36` 2, layer `+0x3e`
+    /// 7) kept in [`MENU_MAIN_CMD_WINDOW`], the widest option text
+    /// (`TkMenuDraw1612Width(TkMenuMainMes(menu))`), and the registration;
+    /// returns `TkMenuMainRegistWindow`'s `eax`.
+    pub fn tk_menu_appear_main_cmd_window<M: Mem>(
+        mem: &mut M,
+        slide: u32,
+        mode: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let cursor = fun(mem, 0x0187_1548);
+        mem.write(cursor, 0u32);
+        MENU_MAIN_CMD_WIDTH.set(mem, 0);
+        MENU_MAIN_CHOICE.set(mem, -1);
+        let options = MENU_MAIN_OPTIONS.ptr(mem).addr;
+        let single = match mode {
+            0xc => Some(0xd),
+            0xd => Some(0xc),
+            0xe => Some(0xe),
+            0xf => Some(0xa),
+            0x10 => Some(0xb),
+            0x18 => Some(0x37),
+            _ => None,
+        };
+        if let Some(menu) = single {
+            mem.write(options, menu);
+            mem.write(options.wrapping_add(4), 1u32);
+            MENU_MAIN_MAX_OPTIONS.set(mem, 1);
+            MENU_MAIN_CMD_DONE.set(mem, 0);
+        } else {
+            main_cmd_options(mem, options, call);
+        }
+        let set_help = fun(mem, 0x008a_aeb0);
+        call(mem, set_help, &[0]);
+        let get_menu = fun(mem, 0x008e_2270);
+        let c: u32 = mem.read(cursor);
+        let menu = call(mem, get_menu, &[c]);
+        let f = fun(mem, 0x008d_df60);
+        let help = call(mem, f, &[menu]);
+        call(mem, set_help, &[help]);
+        MENU_MAIN_CMD_SLIDE.set(mem, if slide == 0 { 0 } else { 0x3000 });
+        let (delay, row_slide) = (
+            MENU_MAIN_ROW_DELAY.ptr(mem).addr,
+            MENU_MAIN_ROW_SLIDE.ptr(mem).addr,
+        );
+        for c in 0..8u16 {
+            mem.write(delay.wrapping_add(2 * u32::from(c)), c * 4);
+            mem.write(row_slide.wrapping_add(2 * u32::from(c)), 0u16);
+        }
+        let f = fun(mem, 0x008a_a1a0);
+        let w = call(mem, f, &[]);
+        MENU_MAIN_CMD_WINDOW.set(mem, w);
+        let (ctrl, draw) = (fun(mem, 0x008e_2040), fun(mem, 0x008e_20f0));
+        for (o, v) in [
+            (8u32, 0),
+            (0xc, ctrl),
+            (0x10, draw),
+            (0x14, 0),
+            (0x18, 0),
+            (0x1c, 0),
+        ] {
+            mem.write(w.wrapping_add(o), v);
+        }
+        mem.write(w.wrapping_add(0x36), 2u8);
+        mem.write(w.wrapping_add(0x3e), 7u8);
+        let max = fun(mem, 0x008e_2280);
+        let (mes, width) = (fun(mem, 0x008d_df80), fun(mem, 0x008d_c9e0));
+        let mut i = 0u32;
+        while i.cast_signed() < call(mem, max, &[]).cast_signed() {
+            let menu = call(mem, get_menu, &[i]);
+            let text = call(mem, mes, &[menu]);
+            let wd = call(mem, width, &[text]).cast_signed();
+            if wd > MENU_MAIN_CMD_WIDTH.get(mem) {
+                MENU_MAIN_CMD_WIDTH.set(mem, wd);
+            }
+            i += 1;
+        }
+        let f = fun(mem, 0x008a_ab00);
+        call(mem, f, &[w])
+    }
+
     /// `MenuItem_SortGearByOwner()` (`0x008c9fb0`, own name; caller
     /// `TkMenuCtrlItem`, which reads the result): orders the gear list by
     /// owner. With `n = TkMn2GetNameModeMax()`, `owners[i]` is the byte
