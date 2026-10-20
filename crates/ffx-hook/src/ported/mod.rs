@@ -198,6 +198,12 @@ pub(crate) fn call_cdecl_f32(f: u32, a: &[u32]) -> f32 {
     cdecl12("call_cdecl_f32", f, a)
 }
 
+/// [`call_cdecl`] for an original that returns 64 bits in `edx:eax`
+/// (`graphicGetTimeInMicroseconds`).
+pub(crate) fn call_cdecl_u64(f: u32, a: &[u32]) -> u64 {
+    cdecl12("call_cdecl_u64", f, a)
+}
+
 /// The call behind [`call_cdecl`] and its float forms: 12 words, the
 /// missing ones zero, `R` from `eax` (`u32`) or `ST0` (`f32`, `f64`).
 #[allow(clippy::many_single_char_names)] // the arguments, in order

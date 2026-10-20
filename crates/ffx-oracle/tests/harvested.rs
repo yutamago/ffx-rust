@@ -360,3 +360,12 @@ harvest_test!(opu_bind_etc, 0x0081_4520, args = 2, |m: &mut Oracle, s| {
         m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
     })
 });
+// main round 17: the main loop's frame sync
+harvest_test!(sg_frame_sync, 0x0082_1e80, args = 1, |m: &mut Oracle, s| {
+    let at = m.rebase(ffx_sg::state::bridge::TIME_US);
+    let time = &mut |h: &mut OracleHost<'_>| {
+        let r = h.0.call(at, Conv::Cdecl, &[]).unwrap();
+        u64::from(r.edx) << 32 | u64::from(r.eax)
+    };
+    ffx_sg::state::bridge::frame_sync(&mut OracleHost(m), s.arg(0), time)
+});

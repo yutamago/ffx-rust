@@ -2833,4 +2833,582 @@ pub mod bridge {
     pub const fn not_implemented() -> u32 {
         0
     }
+
+    /// The menu list state of `0x0076f470` (`g_MenuList*`, names ours):
+    /// the open hook (a pointer to a function pointer), the lists (a
+    /// record pointer and an `i16` count each, 8 bytes), the record
+    /// base, the busy byte, the value slots, the text table and its base,
+    /// the text out buffer, the preset pairs, the list count, the target
+    /// record, the current list, the last record, a mirror word, the
+    /// current-record flag and the three pad words (`u16`).
+    pub const ML_HOOK: Global<u32> = Global::new(0x0112_a014);
+    pub const ML_LISTS: Global<u32> = Global::new(0x0112_a01c);
+    pub const ML_TEXTS: Global<u32> = Global::new(0x0112_a024);
+    pub const ML_PAIRS: Global<u32> = Global::new(0x0112_a028);
+    pub const ML_OUT: Global<u32> = Global::new(0x0112_a02c);
+    pub const ML_BUSY: Global<u8> = Global::new(0x0112_a038);
+    pub const ML_BASE: Global<u32> = Global::new(0x0112_a03c);
+    pub const ML_TEXT_BASE: Global<u32> = Global::new(0x0112_a040);
+    pub const ML_IS_TARGET: Global<u32> = Global::new(0x0112_a078);
+    pub const ML_COUNT: Global<i32> = Global::new(0x0112_a080);
+    pub const ML_TARGET: Global<u32> = Global::new(0x0112_a084);
+    pub const ML_CURRENT: Global<u32> = Global::new(0x0112_a088);
+    pub const ML_TRG: Global<u16> = Global::new(0x0112_a08c);
+    pub const ML_PAD: Global<u16> = Global::new(0x0112_a090);
+    pub const ML_REP: Global<u16> = Global::new(0x0112_a094);
+    pub const ML_LAST: Global<u32> = Global::new(0x0112_a098);
+    pub const ML_MIRROR: Global<u32> = Global::new(0x0112_a0a0);
+    pub const ML_SLOTS: Global<u32> = Global::new(0x0112_a0a4);
+    /// `TODebugGetPadPrintFlag()`, `TOMenuGetControlPad()`, `...Trg()`,
+    /// `...Rep()`, `MenuCursorBlocked()`, `MsgExpandCodes(out, text, arg,
+    /// &jump, 0)`, `MenuCursorStep(&again)`, `ResetRecords()`.
+    pub const PAD_PRINT_FLAG: u32 = 0x008a_bd20;
+    pub const CONTROL_PAD: u32 = 0x008b_e410;
+    pub const CONTROL_PAD_TRG: u32 = 0x008b_e4b0;
+    pub const CONTROL_PAD_REP: u32 = 0x008b_e470;
+    pub const CURSOR_BLOCKED: u32 = 0x0077_5530;
+    pub const EXPAND_CODES: u32 = 0x0077_6940;
+    pub const CURSOR_STEP: u32 = 0x0077_6110;
+    pub const RESET_RECORDS: u32 = 0x0077_4740;
+    /// [`menu_list_step`]'s work: `MsgExpandCodes`' jump word, then
+    /// `MenuCursorStep`'s answer.
+    pub const MENU_STEP_WORK: u32 = 8;
+
+    /// A list's first record and its count.
+    fn ml_list(h: &impl Mem, lists: u32, i: u32) -> (u32, i32) {
+        let at = lists.wrapping_add(i.wrapping_mul(8));
+        let first = h.read::<u32>(at).wrapping_add(ML_BASE.get(h));
+        (first, i32::from(h.read::<i16>(at.wrapping_add(4))))
+    }
+
+    /// A value slot by an `i16` index.
+    fn ml_slot(h: &impl Mem, index: i16) -> u32 {
+        let k = i32::from(index).cast_unsigned();
+        ML_SLOTS.get(h).wrapping_add(k.wrapping_mul(4))
+    }
+
+    /// The pad words cleared.
+    fn ml_clear_pad(h: &mut impl Mem) {
+        ML_PAD.set(h, 0);
+        ML_TRG.set(h, 0);
+        ML_REP.set(h, 0);
+    }
+
+    /// One value record's pad step (record `+0x104..`): flags (bit 0 on,
+    /// bit 1 wraps, bit 2 counts up), the axis `+0x105`, the pad word
+    /// `+0x106` (0, 2 held, 1 triggered), the bounds `u16 +0x108/+0x10a`,
+    /// the slot `i16 +0x10c`.
+    fn ml_value_step(h: &mut impl Mem, rec: u32) {
+        let at = |o: u32| rec.wrapping_add(o);
+        let flags: u8 = h.read(at(0x104));
+        if flags & 1 == 0 {
+            return;
+        }
+        let pad = match h.read::<i8>(at(0x106)) {
+            0 | 2 => ML_PAD.get(h),
+            1 => ML_TRG.get(h),
+            _ => return,
+        };
+        if pad == 0 {
+            return;
+        }
+        let slot = ml_slot(h, h.read(at(0x10c)));
+        let mut value: i32 = h.read(slot);
+        let step = if flags & 4 != 0 { 1 } else { -1 };
+        let (up, down) = match h.read::<i8>(at(0x105)) {
+            0 => (0x1000, 0x4000),
+            1 => (0x8000, 0x2000),
+            2 => (4, 8),
+            3 => (1, 8),
+            _ => (0, 0),
+        };
+        if pad & up != 0 {
+            value = value.wrapping_add(step);
+        }
+        if pad & down != 0 {
+            value = value.wrapping_sub(step);
+        }
+        let lo = i32::from(h.read::<u16>(at(0x108)));
+        let hi = i32::from(h.read::<u16>(at(0x10a)));
+        let value = if flags & 2 == 0 {
+            value.max(lo).min(hi)
+        } else if value < lo {
+            hi
+        } else if value > hi {
+            lo
+        } else {
+            value
+        };
+        h.write(slot, value);
+    }
+
+    /// `0x0076f470()` (`menu_list_step`, name ours; no direct caller):
+    /// one step of a menu's lists. The open hook (`*[0x0112a014]`) runs,
+    /// the pad words are read (`Rep` keeps its bits 4..7 from `Trg`);
+    /// then, while `MenuCursorStep` answers 1: a record of the current
+    /// list with byte `+0x110` 2 and `u16 +0x116` set clears the pad
+    /// words; `MenuCursorBlocked`; unless busy, each record of the
+    /// current list (0x138 bytes from its pointer + base) notes whether
+    /// it is the target, a text record (kind 0) expands its text
+    /// (`MsgExpandCodes` with the slot values of `+0x18`/`+0x24`, -1 for
+    /// none) and on a jump moves the current list to the one holding the
+    /// target (its presets `+0x1c`/`+0x1e` into the slots,
+    /// `ResetRecords` when the list changed, the pad words cleared) and
+    /// starts over; a kind-6 record of a newly shown list resets
+    /// `+0x2a`/`+0x1a`. Then every record's value steps with the pad.
+    /// Returns `MenuCursorStep`'s `eax`.
+    #[allow(clippy::too_many_lines)] // one loop with a restart
+    pub fn menu_list_step(h: &mut impl ffx_bridge::Host, work: u32) -> u32 {
+        let hook = ML_HOOK.get(h);
+        if hook != 0 {
+            let f: u32 = h.read(hook);
+            h.call(f, &[]);
+        }
+        let call = |h: &mut _, f: u32| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, &[])
+        };
+        call(h, PAD_PRINT_FLAG);
+        let pad = call(h, CONTROL_PAD);
+        ML_PAD.set(h, crate::lo16(pad));
+        let trg = call(h, CONTROL_PAD_TRG);
+        ML_TRG.set(h, crate::lo16(trg));
+        let rep = crate::lo16(call(h, CONTROL_PAD_REP)) & 0xff0f;
+        let held = crate::lo16(h.read::<u32>(h.rebase(ML_TRG.sym)) & 0xf0);
+        ML_REP.set(h, rep | held);
+        let (jump, again) = (work, work.wrapping_add(4));
+        'restart: loop {
+            ML_IS_TARGET.set(h, 0);
+            let lists = ML_LISTS.get(h);
+            if lists != 0 {
+                let (mut rec, n) = ml_list(h, lists, ML_CURRENT.get(h));
+                for _ in 0..n.max(0) {
+                    let kind: i8 = h.read(rec.wrapping_add(0x110));
+                    if kind == 2 && h.read::<u16>(rec.wrapping_add(0x116)) != 0 {
+                        ml_clear_pad(h);
+                    }
+                    rec = rec.wrapping_add(0x138);
+                }
+            }
+            call(h, CURSOR_BLOCKED);
+            let lists = ML_LISTS.get(h);
+            if ML_BUSY.get(h) == 0 && lists != 0 {
+                let current = ML_CURRENT.get(h);
+                let (first, n) = ml_list(h, lists, current);
+                let shown = first != ML_LAST.get(h);
+                let mut target = ML_TARGET.get(h);
+                let mirror = if target == 0 {
+                    first
+                } else {
+                    current.wrapping_sub(ML_BASE.get(h))
+                };
+                ML_MIRROR.set(h, mirror);
+                ML_LAST.set(h, first);
+                if n > 0 {
+                    let mut rec = first;
+                    for _ in 0..n {
+                        let value = |h: &mut _, o: u32| -> u32 {
+                            let index: i16 = Mem::read(h, rec.wrapping_add(o));
+                            if index < 0 {
+                                0
+                            } else {
+                                Mem::read(h, ml_slot(h, index))
+                            }
+                        };
+                        let (text, arg) = (value(h, 0x18), value(h, 0x24));
+                        ML_IS_TARGET.set(h, u32::from(rec == target));
+                        match h.read::<u8>(rec) {
+                            0 => {
+                                let k = i32::from(h.read::<i16>(rec.wrapping_add(0x16)));
+                                let k = k.cast_unsigned().wrapping_add(text);
+                                let texts = ML_TEXTS.get(h).wrapping_add(k.wrapping_mul(4));
+                                let text: u32 = h.read(texts);
+                                let text = text.wrapping_add(ML_TEXT_BASE.get(h));
+                                let (f, out) = (h.rebase(EXPAND_CODES), ML_OUT.get(h));
+                                h.call(f, &[out, text, arg, jump, 0]);
+                                if h.read::<u32>(jump) != 0 {
+                                    ml_jump(h, current);
+                                    continue 'restart;
+                                }
+                                target = ML_TARGET.get(h);
+                            }
+                            6 if shown => {
+                                h.write(rec.wrapping_add(0x2a), 0u8);
+                                h.write(rec.wrapping_add(0x1a), u16::MAX);
+                            }
+                            _ => {}
+                        }
+                        rec = rec.wrapping_add(0x138);
+                    }
+                    let mut rec = ML_LAST.get(h);
+                    for _ in 0..n {
+                        ml_value_step(h, rec);
+                        rec = rec.wrapping_add(0x138);
+                    }
+                }
+            }
+            let f = h.rebase(CURSOR_STEP);
+            let eax = h.call(f, &[again]);
+            if h.read::<u32>(again) != 1 {
+                return eax;
+            }
+        }
+    }
+
+    /// The jump of [`menu_list_step`]: the first list (of the
+    /// `0x0112a080`) holding the target record becomes current (mirror
+    /// `i - base`), its presets (`u16 +0x1c` pairs of slot index and
+    /// value from `pairs + 8 * i16 +0x1e`) go into the slots,
+    /// `ResetRecords` runs when it is not `was`, and the pad words clear.
+    /// Without one nothing changes.
+    fn ml_jump(h: &mut impl ffx_bridge::Host, was: u32) {
+        let (target, lists) = (ML_TARGET.get(h), ML_LISTS.get(h));
+        let mut i = 0u32;
+        while i.cast_signed() < ML_COUNT.get(h) {
+            let (mut rec, n) = ml_list(h, lists, i);
+            for _ in 0..n.max(0) {
+                if rec == target {
+                    ML_CURRENT.set(h, i);
+                    let base = ML_BASE.get(h);
+                    ML_MIRROR.set(h, i.wrapping_sub(base));
+                    let presets = rec.wrapping_add(0x1c);
+                    if h.read::<u16>(presets) != 0 {
+                        let k = i32::from(h.read::<i16>(rec.wrapping_add(0x1e)));
+                        let mut pair = ML_PAIRS
+                            .get(h)
+                            .wrapping_add(k.cast_unsigned().wrapping_mul(8));
+                        let slots = ML_SLOTS.get(h);
+                        let mut done = 0u32;
+                        while done < u32::from(h.read::<u16>(presets)) {
+                            let (slot, value): (u32, u32) =
+                                (h.read(pair), h.read(pair.wrapping_add(4)));
+                            h.write(slots.wrapping_add(slot.wrapping_mul(4)), value);
+                            done += 1;
+                            pair = pair.wrapping_add(8);
+                        }
+                    }
+                    if was != i {
+                        let f = h.rebase(RESET_RECORDS);
+                        h.call(f, &[]);
+                    }
+                    ml_clear_pad(h);
+                    return;
+                }
+                rec = rec.wrapping_add(0x138);
+            }
+            i += 1;
+        }
+    }
+
+    /// `Sg_LoadVramResource()`, `user_malloc(size)`, `user_free(p)`,
+    /// `Sg_InitFilter()`, `Sg_DbInitAll()` (debug), `Sg_Dmy()`,
+    /// `0x00839ca0(1)`, `Ch_FunctionHistoryInit()`,
+    /// `Ch_TextureSpecInitAll()`, `Ch_DrawSetShadowMode(mode)`,
+    /// `Ch_MemMoveSetTrigger()`, `dbgPrintf(format, ..)`,
+    /// `Sg_MapSetName(name, which)`, `Sg_MapInit()`.
+    pub const LOAD_VRAM_RESOURCE: u32 = 0x0083_fc50;
+    pub const SG_USER_MALLOC: u32 = 0x0068_7020;
+    pub const SG_USER_FREE: u32 = 0x0068_7010;
+    pub const INIT_FILTER: u32 = 0x0082_cd50;
+    pub const DB_INIT_ALL: u32 = 0x0084_1440;
+    pub const SG_DMY: u32 = 0x0084_67a0;
+    pub const INIT_0083_9CA0: u32 = 0x0083_9ca0;
+    pub const FUNCTION_HISTORY_INIT: u32 = 0x0082_6a40;
+    pub const TEXTURE_SPEC_INIT_ALL: u32 = 0x0083_d140;
+    pub const DRAW_SET_SHADOW_MODE: u32 = 0x0083_0140;
+    pub const MEM_MOVE_SET_TRIGGER: u32 = 0x0082_7250;
+    pub const SG_DBG_PRINTF: u32 = 0x0062_f500;
+    pub const MAP_SET_NAME: u32 = 0x0084_4fb0;
+    pub const SG_MAP_INIT: u32 = 0x0084_4d10;
+    /// The emulated GS register sink (`g_GsRegisterSink`).
+    pub const GS_REGISTER_SINK: Global<u32> = Global::new(0x0230_56e8);
+    /// The 1 MB block `Sg_InitAll` allocates (`0x00c498dc`).
+    pub const INIT_BLOCK: Global<u32> = Global::new(0x00c4_98dc);
+    /// `Sg_Test`'s 64 KB block (`0x013036b8`) and the frame counter it
+    /// prints (`g_SgFrame`).
+    pub const TEST_BLOCK: Global<u32> = Global::new(0x0130_36b8);
+    pub const SG_FRAME: Global<u32> = Global::new(0x023c_bbf0);
+    /// `Sg_Test`'s `"%d:SG:sync end\n"` and its two map names
+    /// (`"sugimoto"`, `"kaisou"`).
+    pub const FMT_TEST_FRAME: u32 = 0x00b5_aac4;
+    pub const TEST_MAP_NAMES: [u32; 2] = [0x00b5_9078, 0x00b5_aad4];
+
+    /// `Sg_InitAll()` (`0x0083b5f0`): `Sg_LoadVramResource`, the GS sink
+    /// written 0x83 twice, a 1 MB block into `0x00c498dc`,
+    /// `Sg_InitFilter`, `Sg_DbInitAll`, `Sg_Dmy`, `0x00839ca0(1)`, the
+    /// character function history and texture specs, shadow mode 0.
+    /// Returns the last call's `eax`.
+    pub fn init_all(h: &mut impl ffx_bridge::Host) -> u32 {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        call(h, LOAD_VRAM_RESOURCE, &[]);
+        GS_REGISTER_SINK.set(h, 0x83);
+        GS_REGISTER_SINK.set(h, 0x83);
+        let block = call(h, SG_USER_MALLOC, &[0x10_0000]);
+        INIT_BLOCK.set(h, block);
+        for f in [INIT_FILTER, DB_INIT_ALL, SG_DMY] {
+            call(h, f, &[]);
+        }
+        call(h, INIT_0083_9CA0, &[1]);
+        call(h, FUNCTION_HISTORY_INIT, &[]);
+        call(h, TEXTURE_SPEC_INIT_ALL, &[]);
+        call(h, DRAW_SET_SHADOW_MODE, &[0])
+    }
+
+    /// `Sg_Test(n)` (`0x008467b0`, the script native 0x401e; jump table
+    /// `0x00846830`): 0 names the two test maps (`Sg_MapSetName`) and
+    /// runs `Sg_MapInit`, 1 prints the frame (`dbgPrintf`), 2 allocates a
+    /// 64 KB block into `0x013036b8`, 3 frees it and sets the character
+    /// memory-move trigger; anything else nothing. Returns `n`.
+    pub fn sg_test(h: &mut impl ffx_bridge::Host, n: u32) -> u32 {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        match n {
+            0 => {
+                for (which, name) in (0u32..).zip(TEST_MAP_NAMES) {
+                    let name = h.rebase(name);
+                    call(h, MAP_SET_NAME, &[name, which]);
+                }
+                call(h, SG_MAP_INIT, &[]);
+            }
+            1 => {
+                let (fmt, frame) = (h.rebase(FMT_TEST_FRAME), SG_FRAME.get(h));
+                call(h, SG_DBG_PRINTF, &[fmt, frame]);
+            }
+            2 => {
+                let block = call(h, SG_USER_MALLOC, &[0x1_0000]);
+                TEST_BLOCK.set(h, block);
+            }
+            3 => {
+                let block = TEST_BLOCK.get(h);
+                call(h, SG_USER_FREE, &[block]);
+                call(h, MEM_MOVE_SET_TRIGGER, &[]);
+            }
+            _ => {}
+        }
+        n
+    }
+
+    /// `0x00821e80`'s state (`Sg_FrameSync`, name ours): the frame
+    /// remainder and the voice frame remainder (`f32`), the voice hold
+    /// count, the sync frame index, the sync clock's start, accumulated
+    /// pause and its pending add (64-bit microseconds), the sync on flag,
+    /// its last, now, step time and rate (`f32`), the camera restart
+    /// flag, the v-blank counters, the pause and fade words, the debug
+    /// byte.
+    pub const FS_REMAINDER: Global<u32> = Global::new(0x012f_b7f8);
+    pub const FS_VOICE_REMAINDER: Global<u32> = Global::new(0x012f_b7fc);
+    pub const FS_VOICE_HOLD: Global<u32> = Global::new(0x012f_b808);
+    pub const FS_SYNC_INDEX: Global<u32> = Global::new(0x012f_b814);
+    pub const FS_START: Global<u64> = Global::new(0x012f_b818);
+    pub const FS_PAUSED: Global<u64> = Global::new(0x012f_b7e8);
+    pub const FS_PAUSE_ADD: Global<u64> = Global::new(0x00cc_c868);
+    pub const FS_SYNC_ON: Global<u32> = Global::new(0x012f_b8a0);
+    pub const FS_SYNC_LAST: Global<u32> = Global::new(0x012f_b8a4);
+    pub const FS_SYNC_NOW: Global<u32> = Global::new(0x012f_b8a8);
+    pub const FS_SYNC_STEP: Global<u32> = Global::new(0x012f_b8ac);
+    pub const FS_SYNC_RATE: Global<u32> = Global::new(0x012f_b8b0);
+    pub const FS_RESTART: Global<u32> = Global::new(0x00c4_94d4);
+    pub const FS_VCOUNT: Global<u32> = Global::new(0x012f_b7f0);
+    pub const FS_VCOUNT2: Global<u32> = Global::new(0x012f_b7f4);
+    pub const FS_MOVIE_FADING: Global<u32> = Global::new(0x0134_0824);
+    pub const FS_PAUSE_ON: Global<u32> = Global::new(0x0134_0828);
+    pub const FS_PAUSE_2: Global<u32> = Global::new(0x0134_082c);
+    pub const FS_IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
+    /// `setFramSync()`, `Sg_SyncCutScene()`,
+    /// `graphicGetTimeInMicroseconds()` (64-bit), `Sg_CanSpeedUp()`,
+    /// `SaveDataIsScreenClosed()`, `TkScanControler()`, `Gu_VSyncMain()`
+    /// (debug), `Sg_EffectReadPoll(dt)`.
+    pub const SET_FRAM_SYNC: u32 = 0x0082_2720;
+    pub const SYNC_CUT_SCENE: u32 = 0x0082_1d60;
+    pub const TIME_US: u32 = 0x0064_1420;
+    pub const CAN_SPEED_UP: u32 = 0x0081_fd30;
+    pub const SCREEN_CLOSED: u32 = 0x0064_8100;
+    pub const SCAN_CONTROLER: u32 = 0x0088_93e0;
+    pub const VSYNC_MAIN: u32 = 0x0084_a460;
+    pub const EFFECT_READ_POLL: u32 = 0x0082_2250;
+    /// `.rdata`: 0.3 (`f32`, and as `f64`), 60, 1000, 0.1, 30 (`f64`), 2
+    /// (`f32`).
+    const FS_K03_F32: u32 = 0x00b3_eb44;
+    const FS_K03: u32 = 0x00b4_8308;
+    const FS_K60: u32 = 0x00b4_a180;
+    const FS_K1000: u32 = 0x00b0_dba0;
+    const FS_K01: u32 = 0x00b9_21f0;
+    const FS_K30: u32 = 0x00b9_22c8;
+    const FS_K2_F32: u32 = 0x00b9_2268;
+
+    /// The sync clock in seconds (`f32`): microseconds since the start
+    /// less the paused time, `u64` to float (one rounding), to `f32`,
+    /// over 1000, to `f32`.
+    fn fs_seconds(h: &impl Mem, now: u64) -> u32 {
+        let d = now
+            .wrapping_sub(FS_PAUSED.get(h))
+            .wrapping_sub(FS_START.get(h));
+        #[allow(clippy::cast_precision_loss)] // the original's u64 to float
+        let us = ffx_bridge::x87::load(ffx_bridge::x87::store(d as f64));
+        ffx_bridge::x87::store(ffx_bridge::x87::div(us, h.read::<f64>(h.rebase(FS_K1000))))
+    }
+
+    /// `0x00821e80(dt)` (`Sg_FrameSync`, name ours; from `Sg_MainLoop`
+    /// each frame, `dt` the frame's seconds as `f32`). `dt` is capped at
+    /// 0.3; the frames due are (remainder + `dt`) x 60. Unless the voice
+    /// hold runs (`0x012fb808`): the cut-scene sync (`Sg_SyncCutScene`,
+    /// index 0); while it is on, the sync clock (`time` gives
+    /// `graphicGetTimeInMicroseconds`) either restarts (`0x00c494d4`) or
+    /// takes the pending pause and is read: behind the step time it
+    /// steps (hold and index up, the sync again) while the rate is below
+    /// how far it is ahead and the sync stays on; ahead by 0.1 s or more
+    /// it spins until the clock catches up. Off, fewer than 2 frames due
+    /// or no speed-up (`Sg_CanSpeedUp`) holds 1 with both remainders 0;
+    /// else the whole frames go to the hold (`ftol` of the voice frames
+    /// x 30) and the fractions stay. Then the v-blank counters (+2 when
+    /// no movie fade, no pause and the save screen is closed), the pad
+    /// scan, `Gu_VSyncMain` in debug builds, and `Sg_EffectReadPoll(dt)`,
+    /// whose `eax` it returns.
+    #[allow(clippy::too_many_lines)] // one frame, in the original's order
+    pub fn frame_sync<H: ffx_bridge::Host>(
+        h: &mut H,
+        dt: u32,
+        time: &mut impl FnMut(&mut H) -> u64,
+    ) -> u32 {
+        let call = |h: &mut H, f: u32, args: &[u32]| {
+            let f = h.rebase(f);
+            h.call(f, args)
+        };
+        let k = |h: &H, at: u32| h.read::<f64>(h.rebase(at));
+        let remainder = ffx_bridge::x87::load(FS_REMAINDER.get(h));
+        let mut due = ffx_bridge::x87::store(ffx_bridge::x87::mul(
+            ffx_bridge::x87::add(remainder, ffx_bridge::x87::load(dt)),
+            k(h, FS_K60),
+        ));
+        call(h, SET_FRAM_SYNC, &[]);
+        let cap = ffx_bridge::x87::load(h.read(h.rebase(FS_K03_F32)));
+        let mut dt = dt;
+        if ffx_bridge::x87::load(dt) > cap {
+            dt = ffx_bridge::x87::store(cap);
+            let remainder = ffx_bridge::x87::load(FS_REMAINDER.get(h));
+            due = ffx_bridge::x87::store(ffx_bridge::x87::mul(
+                ffx_bridge::x87::add(remainder, k(h, FS_K03)),
+                k(h, FS_K60),
+            ));
+        }
+        if FS_VOICE_HOLD.get(h) == 0 {
+            FS_SYNC_INDEX.set(h, 0);
+            call(h, SYNC_CUT_SCENE, &[]);
+            let through =
+                |h: &H, g: Global<u32>| ffx_bridge::x87::store(ffx_bridge::x87::load(g.get(h)));
+            if FS_SYNC_ON.get(h) == 1 {
+                let restart = FS_RESTART.get(h) == 1;
+                FS_VOICE_HOLD.set(h, 1);
+                if restart {
+                    let now = time(h);
+                    let step = through(h, FS_SYNC_STEP);
+                    FS_SYNC_LAST.set(h, step);
+                    FS_START.set(h, now);
+                    FS_RESTART.set(h, 0);
+                    FS_PAUSE_ADD.set(h, 0);
+                    FS_PAUSED.set(h, 0);
+                } else {
+                    let now = time(h);
+                    let paused = FS_PAUSED.get(h).wrapping_add(FS_PAUSE_ADD.get(h));
+                    FS_PAUSED.set(h, paused);
+                    FS_PAUSE_ADD.set(h, 0);
+                    FS_SYNC_NOW.set(h, fs_seconds(h, now));
+                    let f = |h: &H, g: Global<u32>| ffx_bridge::x87::load(g.get(h));
+                    let (now, last) = (f(h, FS_SYNC_NOW), f(h, FS_SYNC_LAST));
+                    if last > now {
+                        // ahead: spin while 0.1 s or more ahead
+                        let t = time(h);
+                        FS_SYNC_NOW.set(h, fs_seconds(h, t));
+                        let ahead = |h: &H| {
+                            // not below 0.1, or unordered
+                            ffx_bridge::x87::sub(f(h, FS_SYNC_LAST), f(h, FS_SYNC_NOW))
+                                .partial_cmp(&k(h, FS_K01))
+                                != Some(std::cmp::Ordering::Less)
+                        };
+                        if ahead(h) {
+                            loop {
+                                let t = time(h);
+                                FS_SYNC_NOW.set(h, fs_seconds(h, t));
+                                if !ahead(h) {
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        // behind: step while the rate is below the lag
+                        let behind = |h: &H| {
+                            f(h, FS_SYNC_RATE)
+                                < ffx_bridge::x87::sub(f(h, FS_SYNC_NOW), f(h, FS_SYNC_LAST))
+                        };
+                        if behind(h) {
+                            while FS_SYNC_ON.get(h) == 1 {
+                                let step = through(h, FS_SYNC_STEP);
+                                FS_VOICE_HOLD.set(h, FS_VOICE_HOLD.get(h).wrapping_add(1));
+                                FS_SYNC_INDEX.set(h, FS_SYNC_INDEX.get(h).wrapping_add(1));
+                                FS_SYNC_LAST.set(h, step);
+                                call(h, SYNC_CUT_SCENE, &[]);
+                                if !behind(h) {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    let step = through(h, FS_SYNC_STEP);
+                    FS_SYNC_LAST.set(h, step);
+                }
+            } else {
+                let two = ffx_bridge::x87::load(h.read(h.rebase(FS_K2_F32)));
+                let due_f = ffx_bridge::x87::load(due);
+                // 2 frames or more due, or unordered
+                let speed = due_f.partial_cmp(&two) != Some(std::cmp::Ordering::Less)
+                    && call(h, CAN_SPEED_UP, &[]) != 0;
+                if speed {
+                    let whole = ffx_bridge::x87::ftol(h, due_f);
+                    let whole_f = ffx_bridge::x87::load(ffx_bridge::x87::store(f64::from(
+                        whole.cast_signed(),
+                    )));
+                    let frac =
+                        ffx_bridge::x87::div(ffx_bridge::x87::sub(due_f, whole_f), k(h, FS_K60));
+                    FS_REMAINDER.set(h, ffx_bridge::x87::store(frac));
+                    let voice = ffx_bridge::x87::load(FS_VOICE_REMAINDER.get(h));
+                    let thirty = k(h, FS_K30);
+                    let frames =
+                        ffx_bridge::x87::load(ffx_bridge::x87::store(ffx_bridge::x87::mul(
+                            ffx_bridge::x87::add(voice, ffx_bridge::x87::load(dt)),
+                            thirty,
+                        )));
+                    let hold = ffx_bridge::x87::ftol(h, frames);
+                    FS_VOICE_HOLD.set(h, hold);
+                    let hold_f = ffx_bridge::x87::load(ffx_bridge::x87::store(f64::from(
+                        hold.cast_signed(),
+                    )));
+                    let frac = ffx_bridge::x87::div(ffx_bridge::x87::sub(frames, hold_f), thirty);
+                    FS_VOICE_REMAINDER.set(h, ffx_bridge::x87::store(frac));
+                } else {
+                    FS_VOICE_HOLD.set(h, 1);
+                    FS_REMAINDER.set(h, 0);
+                    FS_VOICE_REMAINDER.set(h, 0);
+                }
+            }
+        }
+        if FS_MOVIE_FADING.get(h) == 0
+            && FS_PAUSE_ON.get(h) == 0
+            && FS_PAUSE_2.get(h) == 0
+            && call(h, SCREEN_CLOSED, &[]) != 0
+        {
+            FS_VCOUNT.set(h, FS_VCOUNT.get(h).wrapping_add(2));
+            FS_VCOUNT2.set(h, FS_VCOUNT2.get(h).wrapping_add(2));
+        }
+        call(h, SCAN_CONTROLER, &[]);
+        if FS_IS_DEBUG.get(h) != 0 {
+            call(h, VSYNC_MAIN, &[]);
+        }
+        let dt = ffx_bridge::x87::store(ffx_bridge::x87::load(dt));
+        call(h, EFFECT_READ_POLL, &[dt])
+    }
 }

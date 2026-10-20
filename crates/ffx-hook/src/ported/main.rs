@@ -33,6 +33,20 @@ ported! {
     cd_read_q_clear @ 0x0076_e130 => extern "C" fn cd_read_q_clear(id: i32) {
         cdread::bridge::cd_read_q_clear(&mut mem(), id);
     }
+    /// `menu_list_step()` (`0x0076f470`): the jump word and the step's
+    /// answer in this frame.
+    menu_list_step @ 0x0076_f470 => extern "C" fn menu_list_step() -> u32 {
+        let mut w = super::StackFrame::<{ state::bridge::MENU_STEP_WORK as usize / 4 }>::new();
+        state::bridge::menu_list_step(&mut mem(), w.at())
+    }
+    /// `cd_read_thread_sector(cd, request, n)` (`0x0076e4b0`).
+    cd_read_thread_sector @ 0x0076_e4b0 => extern "C" fn cd_read_thread_sector(cd: u32, request: u32, n: u32) {
+        cdread::bridge::cd_read_thread_sector(&mut mem(), cd, request, n);
+    }
+    /// `cd_read_thread_file(cd, request, n)` (`0x0076e1c0`).
+    cd_read_thread_file @ 0x0076_e1c0 => extern "C" fn cd_read_thread_file(cd: u32, request: u32, n: u32) {
+        cdread::bridge::cd_read_thread_file(&mut mem(), cd, request, n);
+    }
     /// `read_err_disp_set(v)` (a byte).
     read_err_disp_set @ 0x0076_e5e0 => extern "C" fn read_err_disp_set(v: u32) {
         state::bridge::read_err_disp_set(&mut mem(), v);
@@ -1743,6 +1757,12 @@ ported! {
     AbmapPadEntryDrawStat @ 0x00a4_fa30 => extern "C" fn abmap_pad_entry_draw_stat(_p: u32, entry: u32, _i: u32, x: u32, y: u32) -> u32 {
         abmap::bridge::abmap_pad_entry_draw_stat(&mut mem(), entry, x, y, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `AbmapPadEntryDrawItem(panel, entry, index, x, y)` (`0x00a4f630`):
+    /// the quad and its name buffer in this frame.
+    AbmapPadEntryDrawItem @ 0x00a4_f630 => extern "C" fn abmap_pad_entry_draw_item(panel: u32, entry: u32, index: u32, x: u32, y: u32) -> u32 {
+        let mut w = super::StackFrame::<{ abmap::bridge::ITEM_WORK as usize / 4 }>::new();
+        abmap::bridge::abmap_pad_entry_draw_item(&mut mem(), w.at(), [panel, entry, index, x, y])
+    }
     /// `Cam_Apply(camera)`.
     Cam_Apply @ 0x007b_c980 => extern "C" fn cam_apply(cam: u32) {
         let mut w = super::StackFrame::<{ camera::bridge::APPLY_WORK as usize / 4 }>::new();
@@ -2176,6 +2196,41 @@ ported! {
     /// `eiAbmSetLang()`.
     eiAbmSetLang @ 0x00a5_4ab0 => extern "C" fn ei_abm_set_lang() -> u32 {
         abmap::bridge::ei_abm_set_lang(&mut mem())
+    }
+    /// `Sg_FrameSync(dt)` (`0x00821e80`): the clock through
+    /// `graphicGetTimeInMicroseconds`' `edx:eax`.
+    Sg_FrameSync @ 0x0082_1e80 => extern "C" fn sg_frame_sync(dt: u32) -> u32 {
+        let mut m = mem();
+        let at = ffx_bridge::Mem::rebase(&m, state::bridge::TIME_US);
+        state::bridge::frame_sync(&mut m, dt, &mut |_| super::call_cdecl_u64(at, &[]))
+    }
+    /// `eiAbmLoad()`.
+    eiAbmLoad @ 0x00a5_4810 => extern "C" fn ei_abm_load() -> u32 {
+        abmap::bridge::ei_abm_load(&mut mem())
+    }
+    /// `Sg_InitAll()`.
+    Sg_InitAll @ 0x0083_b5f0 => extern "C" fn sg_init_all() -> u32 {
+        state::bridge::init_all(&mut mem())
+    }
+    /// `Sg_Test(n)`.
+    Sg_Test @ 0x0084_67b0 => extern "C" fn sg_test(n: u32) -> u32 {
+        state::bridge::sg_test(&mut mem(), n)
+    }
+    /// `eiAbmCalc()`: the screen vector in this frame.
+    eiAbmCalc @ 0x00a5_3570 => extern "C" fn ei_abm_calc() -> u32 {
+        let mut w = super::StackFrame::<{ abmap::bridge::CALC_WORK as usize / 4 }>::new();
+        abmap::bridge::ei_abm_calc(&mut mem(), w.at())
+    }
+    /// `eiAbmParaGet()`: `MsGetExcelData`'s strings word in this frame.
+    eiAbmParaGet @ 0x00a5_4860 => extern "C" fn ei_abm_para_get() -> u32 {
+        let mut w = super::StackFrame::<1>::new();
+        abmap::bridge::ei_abm_para_get(&mut mem(), w.at())
+    }
+    /// `AbmapDrawChrPanel()` (`0x00a4fbe0`): the message size in this
+    /// frame.
+    AbmapDrawChrPanel @ 0x00a4_fbe0 => extern "C" fn abmap_draw_chr_panel() -> u32 {
+        let mut w = super::StackFrame::<{ abmap::bridge::CHR_PANEL_WORK as usize / 4 }>::new();
+        abmap::bridge::abmap_draw_chr_panel(&mut mem(), w.at())
     }
     /// `pc_fat_index_filename_set()`: the country name in this frame.
     pc_fat_index_filename_set @ 0x00a4_2fc0 => extern "C" fn pc_fat_index_filename_set() -> u32 {
