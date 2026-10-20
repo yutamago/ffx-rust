@@ -4131,6 +4131,22 @@ ported! {
         let local = frame.at();
         tk::menu_item_sort_inventory(&mut mem(), local, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuItem_ItemTargetMask(item)`: 1 with aeons only, else 0.
+    MenuItem_ItemTargetMask_008c8a30 @ 0x008c_8a30 => extern "C" fn menu_item_item_target_mask(item: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_item_target_mask(&mut mem(), item, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawRow(window, x, y, row)`: void.
+    MenuItem_DrawRow @ 0x008d_af50 => extern "C" fn menu_item_draw_row(window: u32, x: u32, y: u32, row: i32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_draw_row(&mut mem(), window, [f32::from_bits(x), f32::from_bits(y)], row, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `NameInputChrChange(chr)`: `Menu_ParseItemKeys`'s result.
+    NameInputChrChange @ 0x008c_33f0 => extern "C" fn name_input_chr_change(chr: u32) -> u32 {
+        tk::name_input_chr_change(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `inputGetCurTime()` (`0x00630c60`) through the game's entry: the result

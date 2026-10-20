@@ -10654,7 +10654,7 @@
 0x008c32e0 function Gs_Pack4b                 # copy of Gs_Pack4; own name
 0x008c3300 function Gs_Pack5b                 # copy of Gs_Pack5; own name
 0x008c3330 function MenuItem_Second           # (a, b) b; no caller; own name
-0x008c33f0 function NameInputChrChange           # callees: its named callees match the Switch 0x71004da190 NameInputChrChange's (similarity 0.75: MsGetSaveConfigEnglish, TOGetFFXLang, TOGetSaveChrName, TOMenuGetNameMes, TkMn2GetMenuMode); symbols from Fahrenheit's server export
+0x008c33f0 function NameInputChrChange       # callees: its named callees match the Switch 0x71004da190 NameInputChrChange's (similarity 0.75: MsGetSaveConfigEnglish, TOGetFFXLang, TOGetSaveChrName, TOMenuGetNameMes, TkMn2GetMenuMode); symbols from Fahrenheit's server export; ported in menu round 24: chr <= 0x11 (unsigned) and not g_TkMenuItemTarget; title 0x0186a274 = TOMenuGetNameMes(menu mode bit 19 and chr >= 8 ? 0x204e : 0x200b); window [0x0186a278] +0x5c = chr; without +0x58 OpenCharWindow (+0x60), 0x0186a270 1, 0x0186a26c lang ? 1 : 3, face slide 0x023cc3c4 = old target, 0x023cc3c8 = old >= chr ? 0x1000 : -0x1000; else +0x60/0x0186a270/0x0186a26c 0; LoadLayout, GetStatusPos, +0x64 = RegistWindow; tail Menu_ParseItemKeys(TOGetSaveChrName(chr))
 0x008c3550 function MenuItem_IsUsable2        # (window, list) lists 4 and 3-with-target use the key-item flag 0x0186a280; own name
 0x008c4250 function TkMenuOpenNameEntryWindow    # callees: its named callees match the Switch 0x71004d8350 TkMenuOpenNameEntryWindow's (similarity 0.73: MsGetSaveConfigEnglish, PasswordTextRead, TMn2SetStatusBGDiff, TOGetFFXLang, TOGetSaveChrName); symbols from Fahrenheit's server export
 0x008c43f0 function MenuNameEntry_OpenCharWindow # (chr): TkMenuMainAllocWindow with +8 0x008c3530, +0xc 0x008c3ce0, +0x10 0x008c3ec0, +0x14 0x008c44b0, +0x3e = 3, +0x58 chr; TkMenuMainRegistWindow; then 0x023cc3c4/c0/bc = chr, 0x023cc3c8 = 0; returns it; callers NameInputChrChange, TkMenuOpenNameEntryWindow; name ours
@@ -10700,7 +10700,7 @@
 0x008c8a00 function MenuItem_GetRows          # 0x0186a38c; own name
 0x008c8a10 function TkMenuGetImportantCounter # fh v3:bsim1.00 0x008c89e0
 0x008c8a20 function TkMenuImportantListMax    # fh v3:bsim1.00 0x008c89f0
-0x008c8a30 function MenuItem_ItemTargetMask_008c8a30 # (item) the item version of MenuAbility_CommandTargetMask: TkMsGetRomItem record, then each aeon / party member MenuItem_TargetNeedsRecovery accepts; caller TkMenuCtrlItem; own name
+0x008c8a30 function MenuItem_ItemTargetMask_008c8a30 # (item) the item version of MenuAbility_CommandTargetMask: TkMsGetRomItem record, then each aeon / party member MenuItem_TargetNeedsRecovery accepts; caller TkMenuCtrlItem; own name; ported in menu round 24 (shares the body with 0x008c6bc0: TkMsGetRomItem, kind 3 when TOGetFFXLangJmp() != 11 and +0x22 bit 4; jump table 0x008c8b88 the same; shl ax, cl = the rotated bit in 16 bits)
 0x008c8ba0 function TkMenuItemImportantRefresh # fh v3:exact 0x008c8b70
 0x008c8c30 function TOAmapGetItemListMax      # fh v3:bsim1.00 0x008c8c00
 0x008c8c40 function MenuItem_ApplyHeal_008c8c40 # cdecl(target) -> eax of the last call: item 0x0186a3a8 heals target (0x0186a391 == 1) or every aeon/party member its TkMsGetRomItem record +0x22 bits 0x80/0x40 pick, TkMenuItemHealAmount_008c69a0 + TkMenuAddHPCapped each; caller TkMenuCtrlItem; the item twin of MenuAbility_ApplyHeal_008c6d00; ported (system round 28); name ours
@@ -10893,6 +10893,7 @@
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
 0x008daac0 function MenuTuto_RestartWindow2   # TkMenuRestartWindow(0x0186ac38); own name
 0x008dab30 function MenuShop_CanBuy          # (id): MsGetSaveItemNum(id) < 99 and MenuShop_Price(id) <= MsGetGIL() (signed); name ours
+0x008daf50 function MenuItem_DrawRow         # (window, x, y, row): row in 0..u16 +0x30: TODrawMenuPlateXYWHType(x, y, remapX2(740), remapY2(60), 4); menu list entry (0x01597770 + 4 row) with byte +3: n = MsGetSaveItemNum(id), ToGetBtlEasyDigitWidth2(n, &w, 0.68, 0), ToMakeBtlEasyDigit2(n, f32(remapX2(636) + x - w/2), f32(remapY2(14) + y), 0, 0.68, 0), DrawCrossMenuIconItemName(id, x, y, 0); caller 0x008daea0; ported in menu round 24; name ours
 0x008db080 function TkMn2GetIShopPos             # str-match switch: only user of 38 string(s) held once by both builds, e.g. 'r_ashmojiplt1'; Switch 0x71004c90d0 TkMn2GetIShopPos (symbols from Fahrenheit's server export)
 0x008db3b0 function MenuShop_Price            # (id): TkMn2GetExcelData(id & 0xfff, [0x0186ac28]) first word * shop ratio (0x01326b6c) / 100, at least 1; name ours
 0x008db400 function MenuShop_SellPrice        # (id): AbmapQuarterOrOne(g_TkMenuWShopList, first word of TkMn2GetExcelData(id & 0xfff, [0x0186ac28])); name ours

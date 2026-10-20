@@ -10892,3 +10892,178 @@ fn menu_round24_tables_masks_and_rows_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` replaced by `inc dword [cell]; mov eax, ret; ret` (behind a jump);
+/// returns the cell (the call count).
+fn counter_stub(t: &mut Twins, f: u32, ret: u32) -> u32 {
+    let cell = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0xff, 0x05][..], &cell.to_le_bytes(),     // inc dword [cell]
+        &[0xb8], &ret.to_le_bytes(), &[0xc3],       // mov eax, ret; ret
+    ]
+    .concat();
+    jump_stub(t, f, &code);
+    cell
+}
+
+#[test]
+fn menu_round24_item_rows_and_name_entry_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0024_33f0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let r = t.rng.next();
+
+    // MenuItem_ItemTargetMask: the item record, the lists and
+    // MenuItem_TargetNeedsRecovery stand-ins logged
+    let rec = t.alloc(&[0; 0x40]);
+    let (_, mut code) = log_args(&mut t, 1);
+    code.extend([&[0xb8][..], &rec.to_le_bytes(), &[0xc3]].concat());
+    jump_stub(&mut t, 0x008a_b280, &code);
+    let lang = return_cell(&mut t, 0x008a_c2f0);
+    let aeons = return_cell(&mut t, 0x008a_9bf0);
+    let party = return_cell(&mut t, 0x008a_9b30);
+    for (f, k) in [(0x008a_9bc0u32, 0x20u8), (0x008a_9ad0, 0x10)] {
+        stub(
+            &mut t,
+            f,
+            &[
+                0x8b, 0x44, 0x24, 0x04, 0x8d, 0x04, 0x40, 0x83, 0xc0, k, 0xc3,
+            ],
+        );
+    }
+    let (_, mut code) = log_args(&mut t, 3);
+    #[rustfmt::skip]
+    code.extend([
+        0x8b, 0x44, 0x24, 0x0c, 0xc1, 0xe8, 0x05,       // mov eax, [esp + 12]; shr eax, 5
+        0x03, 0x44, 0x24, 0x0c, 0x03, 0x44, 0x24, 0x04, // add eax, [esp + 12]; add eax, [esp + 4]
+        0x33, 0x44, 0x24, 0x08, 0xc1, 0xe8, 0x01,       // xor eax, [esp + 8]; shr eax, 1
+        0x83, 0xe0, 0x01, 0xc3,                         // and eax, 1; ret
+    ]);
+    jump_stub(&mut t, 0x008c_6a70, &code);
+    for _ in 0..1000 {
+        let kind = t.rng.pick(&[0u8, 1, 2, 3, 4, 0xff]);
+        t.put(rec + 0x23, kind);
+        let targets = t.rng.bytes(2);
+        t.put_bytes(rec + 0x1a, &targets);
+        let flags = t
+            .rng
+            .pick(&[0u8, 0x40, 0x80, 0xc0, 0x10, 0x50, 0x90, 0xd0, 0x2f]);
+        t.put(rec + 0x22, flags);
+        let l = t.rng.pick(&[0u32, 1, 10, 11, 12]);
+        t.put(lang, l);
+        for cell in [aeons, party] {
+            let n = t.rng.pick(&[0u32, 1, 3, 8, 17, 33, 0xffff_ffff]);
+            t.put(cell, n);
+        }
+        let item = t.rng.next();
+        t.twin("MenuItem_ItemTargetMask", 0x008c_8a30, &[item], U32, |o| {
+            w(tk::menu_item_item_target_mask(
+                o,
+                item,
+                local,
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuItem_DrawRow: the count from id * 3, the width from a cell
+    for (f, n) in [(0x008f_5f70u32, 5u8), (0x0090_5550, 6), (0x008e_6700, 4)] {
+        record_far(&mut t, f, n, r);
+    }
+    let (_, mut code) = log_args(&mut t, 1);
+    code.extend([0x8b, 0x44, 0x24, 0x04, 0x8d, 0x04, 0x40, 0xc3]); // mov eax, [esp + 4]; lea eax, [eax + eax * 2]; ret
+    jump_stub(&mut t, 0x0079_04b0, &code);
+    let width = t.alloc(&[0; 4]);
+    let buf = t.alloc(&[0; 0x4000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &log.to_le_bytes()].concat();
+    for k in [0u8, 2, 3] {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    #[rustfmt::skip]
+    code.extend([
+        &[0x83, 0x05][..], &log.to_le_bytes(), &[16],  // add dword [log], 16
+        &[0x8b, 0x44, 0x24, 0x08],                     // mov eax, [esp + 8]
+        &[0x8b, 0x0d], &width.to_le_bytes(),           // mov ecx, [width]
+        &[0x89, 0x08, 0xc3],                           // mov [eax], ecx; ret
+    ]
+    .concat());
+    jump_stub(&mut t, 0x0090_5230, &code);
+    let list = t.sym(0x0159_7770);
+    for _ in 0..1000 {
+        let window = t.alloc_random(0x40);
+        let rows = t.rng.pick(&[0u16, 1, 5, 0x100]);
+        t.put(window + 0x30, rows);
+        let row = t.rng.pick(&[0u32, 1, 4, 5, 0xff, 0xffff_ffff]);
+        if row < 0x100 {
+            let e = t.rng.bytes(4);
+            t.put_bytes(list + 4 * row, &e);
+            let on = t.rng.pick(&[0u8, 1, 0x80]);
+            t.put(list + 4 * row + 3, on);
+        }
+        let wd = quiet_float(&mut t);
+        t.put(width, wd);
+        let (x, y) = (quiet_float(&mut t), t.rng.float(-100.0, 600.0).to_bits());
+        t.twin(
+            "MenuItem_DrawRow",
+            0x008d_af50,
+            &[window, x, y, row],
+            VOID,
+            |o| {
+                tk::menu_item_draw_row(
+                    o,
+                    window,
+                    [f32::from_bits(x), f32::from_bits(y)],
+                    i(row),
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+
+    // NameInputChrChange: every callee a stand-in
+    let mode = return_cell(&mut t, 0x008a_b240);
+    let r2 = t.rng.next();
+    for (f, n, ret) in [
+        (0x008b_edd0u32, 1u8, r),
+        (0x008c_43f0, 1, r2),
+        (0x008a_c850, 1, r ^ 0x55),
+        (0x008c_5280, 1, r2 ^ 0x77),
+    ] {
+        record_far(&mut t, f, n, ret);
+    }
+    let english = counter_stub(&mut t, 0x0078_51d0, 0);
+    let counts = [
+        counter_stub(&mut t, 0x008c_5050, 0),
+        counter_stub(&mut t, 0x008d_4920, 0),
+        counter_stub(&mut t, 0x008c_4450, r ^ 0x99),
+    ];
+    let _ = (english, counts);
+    let window = t.alloc_random(0x80);
+    t.put(t.sym(0x0186_a278), window);
+    for _ in 0..1000 {
+        let m = t.rng.pick(&[0u32, 0x8_0000, 0xfff7_ffff, 0xffff_ffff]);
+        t.put(mode, m);
+        let l = t.rng.pick(&[0u32, 0, 1, 11]);
+        t.put(lang, l);
+        let open = t.rng.pick(&[0u32, 0, 1, 0x1234_5678]);
+        t.put(window + 0x58, open);
+        let cur = t.rng.pick(&[0u32, 1, 7, 8, 9, 0x11, 0x12, 0xffff_ffff]);
+        t.put(t.sym(0x0186_a258), cur);
+        t.scramble(0x0186_a25c, 0x20);
+        t.put(t.sym(0x0186_a278), window);
+        t.scramble(0x023c_c3c4, 8);
+        let chr = t.rng.pick(&[0u32, 1, 7, 8, 9, 0x11, 0x12, 0xffff_ffff]);
+        let mask = if chr > 0x11 || chr == cur { VOID } else { U32 };
+        t.twin("NameInputChrChange", 0x008c_33f0, &[chr], mask, |o| {
+            w(tk::name_input_chr_change(o, chr, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

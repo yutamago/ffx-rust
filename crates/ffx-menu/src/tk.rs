@@ -11593,10 +11593,37 @@ pub mod bridge {
         local: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
+        target_mask(mem, cmd, local, false, call)
+    }
+
+    /// `MenuItem_ItemTargetMask(item)` (`0x008c8a30`, own name; caller
+    /// `TkMenuCtrlItem`): [`menu_ability_command_target_mask`] for an item
+    /// (`TkMsGetRomItem(item, local)`), whose recovery kind becomes 3 when
+    /// `TOGetFFXLangJmp()` (always asked) is not 11 and `+0x22` has bit
+    /// 4. Its `shl ax, cl` bit equals the ability version's rotated one in
+    /// the low 16 bits.
+    pub fn menu_item_item_target_mask<M: Mem>(
+        mem: &mut M,
+        item: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        target_mask(mem, item, local, true, call)
+    }
+
+    /// The body of [`menu_ability_command_target_mask`] and
+    /// [`menu_item_item_target_mask`].
+    fn target_mask<M: Mem>(
+        mem: &mut M,
+        cmd: u32,
+        local: u32,
+        item: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
         let r = |mem: &M, a: u32| mem.rebase(a);
         #[allow(clippy::cast_possible_truncation)] // mov word
         mem.write(r(mem, 0x0186_a3a8), cmd as u16);
-        let rom = r(mem, 0x0079_0a90);
+        let rom = r(mem, if item { 0x008a_b280 } else { 0x0079_0a90 });
         let rec = call(mem, rom, &[cmd, local]);
         let kind = match mem.read::<u8>(rec.wrapping_add(0x23)) {
             2 => 1u8,
@@ -11604,6 +11631,12 @@ pub mod bridge {
             _ => 0,
         };
         mem.write(r(mem, 0x0186_a392), kind);
+        if item {
+            let lang = r(mem, 0x008a_c2f0);
+            if call(mem, lang, &[]) != 11 && mem.read::<u8>(rec.wrapping_add(0x22)) & 0x10 != 0 {
+                mem.write(r(mem, 0x0186_a392), 3u8);
+            }
+        }
         let targets = (mem.read::<u16>(rec.wrapping_add(0x1a)) >> 2) & 3;
         mem.write(r(mem, 0x0186_a391), u8::from(!matches!(targets, 1 | 2)));
         let mut mask = 0u32;
@@ -11693,6 +11726,145 @@ pub mod bridge {
         }
         let f = r(mem, 0x008c_8e60);
         call(mem, f, &[4]);
+    }
+    /// `MenuItem_DrawRow(window, x, y, row)` (`0x008daf50`, own name;
+    /// caller `0x008daea0`): for `row` within the `u16` count at `window +
+    /// 0x30`, the plate `TODrawMenuPlateXYWHType(x, y, f32(remapX2(740)),
+    /// f32(remapY2(60)), 4)`; for a menu list entry (4 bytes at
+    /// `0x01597770`) whose byte `+3` is set, its count `MsGetSaveItemNum(id)`
+    /// right-aligned at `x + remapX2(636)` (`ToGetBtlEasyDigitWidth2(n,
+    /// &width, 0.68, 0)`, then `ToMakeBtlEasyDigit2(n, f32(remapX2(636) +
+    /// x - width / 2), f32(remapY2(14) + y), 0, 0.68, 0)`) and the name
+    /// `DrawCrossMenuIconItemName(id, x, y, 0)`. `local` holds the width.
+    /// No caller reads `eax`.
+    pub fn menu_item_draw_row<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [x, y]: [f32; 2],
+        row: i32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, round_trip, store, sub};
+        let rows = i32::from(mem.read::<u16>(window.wrapping_add(0x30)));
+        if row < 0 || row >= rows {
+            return;
+        }
+        let (xb, yb) = (round_trip(x).to_bits(), round_trip(y).to_bits());
+        let height = store(remap(mem, true, 60.0));
+        let width = store(remap(mem, false, 740.0));
+        let plate = mem.rebase(0x008f_5f70);
+        call(mem, plate, &[xb, yb, width, height, 4]);
+        let entry = mem
+            .rebase(0x0159_7770)
+            .wrapping_add(row.cast_unsigned() * 4);
+        if mem.read::<u8>(entry.wrapping_add(3)) == 0 {
+            return;
+        }
+        let id = |mem: &M| u32::from(mem.read::<u16>(entry));
+        let scale = 0.68f32.to_bits();
+        let num = mem.rebase(0x0079_04b0);
+        let i = id(mem);
+        let n = call(mem, num, &[i]);
+        let measure = mem.rebase(0x0090_5230);
+        call(mem, measure, &[n, local, scale, 0]);
+        let ty = store(add(remap(mem, true, 14.0), f64::from(y)));
+        let left = add(remap(mem, false, 636.0), f64::from(x));
+        let half = mul(load(mem.read(local)), 0.5);
+        let tx = store(sub(left, half));
+        let i = id(mem);
+        let n = call(mem, num, &[i]);
+        let digits = mem.rebase(0x0090_5550);
+        call(mem, digits, &[n, tx, ty, 0, scale, 0]);
+        let i = id(mem);
+        let name = mem.rebase(0x008e_6700);
+        call(mem, name, &[i, xb, yb, 0]);
+    }
+
+    /// `NameInputChrChange(chr)` (`0x008c33f0`, Fahrenheit's name): the
+    /// name entry switches to character `chr` (at most 0x11, not the
+    /// current `0x0186a258`; else nothing). With `w` the window at
+    /// `[0x0186a278]`: `0x0186a274` the title `TOMenuGetNameMes(0x204e)`
+    /// for an aeon (`chr` 8 up) in menu mode bit 19, else `0x200b`; `w +
+    /// 0x5c` and `0x0186a258` = `chr`; `MsGetSaveConfigEnglish()` asked in
+    /// Japanese; `0x0186a25c`, `0x0186a268`, `0x0186a260` cleared. Without
+    /// a `w + 0x58` the character window opens (`w + 0x60` =
+    /// `MenuNameEntry_OpenCharWindow(chr)`, `0x0186a270` 1, `0x0186a26c` 1
+    /// in Japanese else 3, the face slide `0x023cc3c4` = the old character
+    /// and `0x023cc3c8` 0x1000 when it is not below `chr`, else -0x1000);
+    /// with one `w + 0x60`, `0x0186a270` and `0x0186a26c` are 0.
+    /// `MenuNameEntry_LoadLayout()`, `TkMn2GetStatusPos()`, `w + 0x64` =
+    /// `MenuNameEntry_RegistWindow()`, and the tail call
+    /// `Menu_ParseItemKeys(TOGetSaveChrName(chr))`, whose result is
+    /// returned (0 when nothing happens; the original leaves `eax`
+    /// alone, and its caller does not read it).
+    pub fn name_input_chr_change<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let w: u32 = mem.read(r(mem, 0x0186_a278));
+        let target = r(mem, 0x0186_a258);
+        if chr > 0x11 || chr == mem.read::<u32>(target) {
+            return 0;
+        }
+        let open = mem.read::<u32>(w.wrapping_add(0x58));
+        let title = r(mem, 0x0186_a274);
+        mem.write(title, 0u32);
+        let f = r(mem, 0x008a_b240);
+        let mode = call(mem, f, &[]);
+        let id = if mode & 0x8_0000 != 0 && chr >= 8 {
+            0x204e
+        } else {
+            0x200b
+        };
+        let f = r(mem, 0x008b_edd0);
+        let text = call(mem, f, &[id]);
+        mem.write(title, text);
+        let old = mem.read::<u32>(target);
+        mem.write(w.wrapping_add(0x5c), chr);
+        mem.write(target, chr);
+        let lang = r(mem, 0x008a_c2f0);
+        if call(mem, lang, &[]) == 0 {
+            let f = r(mem, 0x0078_51d0);
+            call(mem, f, &[]);
+        }
+        for a in [0x0186_a25c, 0x0186_a268, 0x0186_a260] {
+            mem.write(r(mem, a), 0u32);
+        }
+        let (on, layout) = (r(mem, 0x0186_a270), r(mem, 0x0186_a26c));
+        if open == 0 {
+            let f = r(mem, 0x008c_43f0);
+            let window = call(mem, f, &[chr]);
+            mem.write(w.wrapping_add(0x60), window);
+            mem.write(on, 1u32);
+            let japanese = call(mem, lang, &[]) == 0;
+            mem.write(layout, if japanese { 3u32 } else { 1 });
+            mem.write(r(mem, 0x023c_c3c4), old);
+            let slide: i32 = if old.cast_signed() >= chr.cast_signed() {
+                0x1000
+            } else {
+                -0x1000
+            };
+            mem.write(r(mem, 0x023c_c3c8), slide);
+        } else {
+            mem.write(w.wrapping_add(0x60), 0u32);
+            mem.write(on, 0u32);
+            mem.write(layout, 0u32);
+        }
+        for a in [0x008c_5050, 0x008d_4920] {
+            let f = r(mem, a);
+            call(mem, f, &[]);
+        }
+        let f = r(mem, 0x008c_4450);
+        let regist = call(mem, f, &[]);
+        mem.write(w.wrapping_add(0x64), regist);
+        let f = r(mem, 0x008a_c850);
+        let name = call(mem, f, &[chr]);
+        let f = r(mem, 0x008c_5280);
+        call(mem, f, &[name])
     }
 }
 
