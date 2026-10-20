@@ -12,14 +12,22 @@ count, and not their neighbours within RADIUS pixels either (an animated
 pixel can match twice by chance). Exits 1 when a screenshot has such
 pixels.
 
-Screenshots whose name starts with a `--coarse` prefix are compared by the
-mean brightness of BLOCK x BLOCK blocks instead: where the whole picture
-moves between runs of the original (the field's camera sways with a timer
-that the replay does not pin down), a block may differ by COARSE levels, or
-twice what the two original runs differ by, whichever is more, leaving out
-the top SKY rows (the field's searchlight beams sweep on the wall clock;
-one run measured 38 there). A missing character model changes its blocks
-by about 50.
+Screenshots whose name starts with a `--coarse` prefix (the field) are
+compared by BLOCK x BLOCK block means instead (`compare_coarse`): the deck sways
+and its light changes between runs, original or not, because the asset
+loader's timing moves the map's animation phase. The scene below the SKY
+rows is aligned to the original first (one shift for the whole picture,
+up to SWAY_X, SWAY_Y pixels: runs measured 0 across and -9 to +6 down),
+each block may then match within LOCAL_X, LOCAL_Y pixels of that (the
+railing and the near deck move more than the far deck), and each colour
+channel is compared after removing its median difference (the light
+step). A block's limit grows with the edges in it, BLOCK_LIMIT + EDGE x
+its mean gradient: edges are what a leftover sub-pixel or parallax shift
+turns into a difference, while a missing model on the flat deck shows
+against a low limit; the limit is also at least twice the difference
+between the two original runs. The UI (the minimap, which does not sway)
+is compared unshifted against UI_LIMIT: a picture shifted as a whole
+moves it.
 """
 import pathlib
 import struct
@@ -47,24 +55,124 @@ MASKS = {
     "menu-browse-3.bmp": [(140, 575, 190, 605)],
     "menu-browse-4.bmp": [(140, 575, 190, 605)],
     "menu-browse-5.bmp": [(140, 575, 190, 605)],
-    # a searchlight beam's lower end (blocks at y 240, x 1000-1120; up to 41 seen)
-    # and the save sphere's pulsing glow (field-walk-1 only; 21.5 seen)
-    "field-walk-1.bmp": [(1000, 240, 1120, 280), (480, 300, 580, 420)],
-    "field-walk-2.bmp": [(1000, 240, 1120, 280)],
+    # the searchlight beams below the SKY rows, where they cross the sky
+    # behind the crane (x 880-1280, y 240-400 in field-walk-1, up to 31
+    # seen; x 600-700, y 240-320 in field-walk-2, 12 seen), the beam's
+    # lower end (blocks at y 240, x 1000-1120; up to 41 seen) and the save
+    # sphere's pulsing glow (field-walk-1 only; 21.5 seen)
+    "field-walk-1.bmp": [(880, 240, 1280, 400), (480, 300, 580, 420)],
+    "field-walk-2.bmp": [(1000, 240, 1120, 280), (600, 240, 700, 320)],
 }
 BLOCK = 20
-COARSE = 25
 SKY = 240  # coarse shots: rows above this are left out (the beams reach the y 160 blocks; characters stand lower)
+# coarse shots (`compare_coarse`), measured on 95 field-walk runs (2026-10-17 to
+# 2026-10-20) against synthetic breakage made from them
+SWAY_X, SWAY_Y = 4, 16  # the whole-scene shift searched; at its edge the camera is wrong
+LOCAL_X, LOCAL_Y = 3, 6  # per block, around that shift
+# the scene's left and right halves are lined up on their own (QUAD pixels
+# around the whole-scene shift); the deck's sway turns them by at most 3
+# pixels against each other (roll: right half down minus left half down)
+# and spreads them by at most 2.5 (zoom: right half across minus left);
+# a camera rotated by 1 degree gives 7 to 14, zoomed by 2 % 7 to 12
+QUAD = 8
+CAMERA_LIMIT = 4.5
+BLOCK_LIMIT, EDGE = 13.0, 1.4  # a block's limit: 13 + 1.4 x its mean gradient (levels per pixel)
+UI = {  # (x0, y0, x1, y1) compared unshifted: the minimap
+    "field-walk-1.bmp": [(100, 60, 320, 220)],
+    "field-walk-2.bmp": [(100, 60, 320, 220)],
+}
+UI_LIMIT = 6.0  # runs: up to 5.4; the picture shifted by 2 pixels: 6.9, by 4: 14
 
 
-def block_means(w, h, px):
-    """Mean brightness (R+G+B)/3 per BLOCK x BLOCK block, rows of blocks."""
-    out = {}
-    for i in range(0, w * h * 4, 4):
-        x, y = (i // 4) % w, h - 1 - (i // 4) // w
-        k = (x // BLOCK, y // BLOCK)
-        out[k] = out.get(k, 0) + (px[i] + px[i + 1] + px[i + 2]) / 3
-    return {k: v / (BLOCK * BLOCK) for k, v in out.items()}
+def compare_coarse(name, w, h, a, b, r):
+    """Field shots: returns (failures, report lines) for the Rust run r
+    against the original a, with the second original run b for the noise
+    (module docstring)."""
+    import numpy as np
+
+    def img(px):  # rows top-down, channels as stored (B, G, R)
+        return np.frombuffer(px, np.uint8).reshape(h, w, 4)[::-1, :, :3].astype(np.float64)
+
+    def grad(lum):
+        g = np.zeros_like(lum)
+        g[:, 1:] += np.abs(np.diff(lum, axis=1))
+        g[1:] += np.abs(np.diff(lum, axis=0))
+        return g
+
+    def blocks(x):  # BLOCK x BLOCK means of an (h, w, ...) array
+        return x[:h // BLOCK * BLOCK, :w // BLOCK * BLOCK].reshape(
+            h // BLOCK, BLOCK, w // BLOCK, BLOCK, *x.shape[2:]).mean((1, 3))
+
+    def box_means(x):  # mean of x[y:y + BLOCK, x:x + BLOCK] at every (y, x)
+        c = np.zeros((h + 1, w + 1, 3))
+        c[1:, 1:] = x.cumsum(0).cumsum(1)
+        return (c[BLOCK:, BLOCK:] - c[:-BLOCK, BLOCK:] - c[BLOCK:, :-BLOCK] + c[:-BLOCK, :-BLOCK]) / BLOCK ** 2
+
+    hb, wb = h // BLOCK, w // BLOCK
+    keep = np.zeros((hb, wb), bool)
+    keep[SKY // BLOCK:, :] = True
+    for x0, y0, x1, y1 in MASKS.get(name, ()):
+        keep[y0 // BLOCK:-(-y1 // BLOCK), x0 // BLOCK:-(-x1 // BLOCK)] = False
+
+    def best_shift(go, gq, rows, cols, us, vs):
+        """(u, v) with gq[y + v, x + u] closest to go[y, x] over rows x cols."""
+        return min((np.abs(go[rows, cols] - gq[rows.start + v:rows.stop + v, cols.start + u:cols.stop + u]).mean(), u, v)
+                   for v in vs for u in us)[1:]
+
+    def scene(o, q):
+        """Per-block difference of q from o after the alignment, and the shift."""
+        go, gq = grad(o.mean(2)), grad(q.mean(2))
+        rows, cols = slice(SKY + SWAY_Y, h - SWAY_Y), slice(SWAY_X, w - SWAY_X)
+        dx, dy = best_shift(go, gq, rows, cols, range(-SWAY_X, SWAY_X + 1), range(-SWAY_Y, SWAY_Y + 1))
+        mo, mq = blocks(o), box_means(q)
+        by, bx = np.mgrid[0:hb, 0:wb]
+        cand = np.stack([mq[np.clip(by * BLOCK + dy + v, 0, h - BLOCK), np.clip(bx * BLOCK + dx + u, 0, w - BLOCK)]
+                         for v in range(-LOCAL_Y, LOCAL_Y + 1) for u in range(-LOCAL_X, LOCAL_X + 1)])
+        k = keep.copy()
+        k[hb - (abs(dy) + LOCAL_Y) // BLOCK - 1:, :] = False  # rows the shift pushes off the picture
+        shift = np.median((mo - cand[len(cand) // 2])[k], 0)
+        d = np.abs(mo[None] - cand - shift).max(-1).min(0)
+        d[~k] = 0
+        return d, dx, dy
+
+    def camera(o, q, dx, dy):
+        """Roll and zoom of q against o (QUAD): the shifts of the scene's
+        upper and lower, left and right quarters."""
+        go, gq = grad(o.mean(2)), grad(q.mean(2))
+        m = SWAY_Y + QUAD
+        mid_y, mid_x = (SKY + h) // 2, w // 2
+        quarter = {}
+        for ys in (slice(SKY + m, mid_y), slice(mid_y, h - m)):
+            for side, xs in (("left", slice(m, mid_x)), ("right", slice(mid_x, w - m))):
+                quarter.setdefault(side, []).append(best_shift(
+                    go, gq, ys, xs, range(dx - QUAD, dx + QUAD + 1), range(dy - QUAD, dy + QUAD + 1)))
+        mean = {side: np.mean(v, 0) for side, v in quarter.items()}
+        return mean["right"][1] - mean["left"][1], mean["right"][0] - mean["left"][0]
+
+    a, b, r = img(a), img(b), img(r)
+    d, dx, dy = scene(a, r)
+    roll, zoom = camera(a, r, dx, dy)
+    noise, _, _ = scene(a, b)
+    limit = np.maximum(BLOCK_LIMIT + EDGE * blocks(grad(a.mean(2))), 2 * noise)
+    by, bx = np.unravel_index((d / limit).argmax(), d.shape)
+    bad = 0
+    lines = [f"{name}: largest block difference {d[by, bx]:.1f} at x {bx * BLOCK}, y {by * BLOCK} "
+             f"(limit {limit[by, bx]:.1f}; scene shifted by {dx}, {dy})"]
+    if d[by, bx] > limit[by, bx]:
+        bad += 1
+    if abs(dx) == SWAY_X or abs(dy) == SWAY_Y:
+        lines.append(f"  the scene is shifted by {dx}, {dy}, beyond the deck's sway: wrong camera?")
+        bad += 1
+    lines.append(f"  camera: roll {roll:.1f}, zoom {zoom:.1f} (limit {CAMERA_LIMIT:.1f})")
+    if max(abs(roll), abs(zoom)) > CAMERA_LIMIT:
+        bad += 1
+    for x0, y0, x1, y1 in UI.get(name, ()):
+        ma = a[y0:y1, x0:x1].reshape((y1 - y0) // BLOCK, BLOCK, (x1 - x0) // BLOCK, BLOCK, 3).mean((1, 3))
+        mr = r[y0:y1, x0:x1].reshape((y1 - y0) // BLOCK, BLOCK, (x1 - x0) // BLOCK, BLOCK, 3).mean((1, 3))
+        ui = np.abs(ma - mr).max()
+        lines.append(f"  UI x {x0}..{x1}, y {y0}..{y1}: largest block difference {ui:.1f} (limit {UI_LIMIT:.1f})")
+        bad += ui > UI_LIMIT
+    return bad, lines
 
 
 def pixels(path):
@@ -82,23 +190,9 @@ for a_path in sorted(a_dir.glob("*.bmp")):
     _, _, b = pixels(b_dir / a_path.name)
     _, _, r = pixels(r_dir / a_path.name)
     if coarse and a_path.name.startswith(coarse):
-        ma, mb, mr = block_means(w, h, a), block_means(w, h, b), block_means(w, h, r)
-        # the top band: the deck's searchlight beams sweep on the wall clock
-        for m in (ma, mb, mr):
-            for k in [k for k in m if k[1] * BLOCK < SKY or any(
-                    x0 <= k[0] * BLOCK < x1 and y0 <= k[1] * BLOCK < y1
-                    for x0, y0, x1, y1 in MASKS.get(a_path.name, ()))]:
-                del m[k]
-        # the deck's light level steps with the wall clock (whole picture,
-        # 7.8 to 29.1 seen on one floor block): compare after removing the
-        # median shift, so only local differences (a missing model) count
-        shift = sorted(ma[k] - mr[k] for k in ma)[len(ma) // 2]
-        shift_b = sorted(ma[k] - mb[k] for k in ma)[len(ma) // 2]
-        limit = max(COARSE, 2 * max(abs(ma[k] - mb[k] - shift_b) for k in ma))
-        worst = max(ma, key=lambda k: abs(ma[k] - mr[k] - shift))
-        d = abs(ma[worst] - mr[worst] - shift)
-        print(f"{a_path.name}: largest block difference {d:.1f} at x {worst[0] * BLOCK}, y {worst[1] * BLOCK} (limit {limit:.1f})")
-        bad += d > limit
+        n, lines = compare_coarse(a_path.name, w, h, a, b, r)
+        print("\n".join(lines))
+        bad += n
         continue
     noise = bytearray(w * h)
     noisy = 0
