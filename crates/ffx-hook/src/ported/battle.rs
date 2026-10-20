@@ -2314,6 +2314,11 @@ ported! {
         native!(c);
         camnat::ms_bind_camera(&mut mem(), &mut c, w, kind, cam)
     }
+    /// `MsSetChrStatInfo(chr, kind, selector, v)`: the battle's other
+    /// functions the properties call through the game.
+    MsSetChrStatInfo @ 0x007b_4b70 => extern "C" fn ms_set_chr_stat_info(chr: u32, kind: u32, selector: u32, v: u32) -> u32 {
+        ffx_battle::stat_set::bridge::ms_set_chr_stat_info(&mut mem(), &mut call_ptr, chr, kind, selector, v)
+    }
     /// `MsMenuHalfElement(i)`.
     MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
         minor::ms_menu_half_element(&mem(), i)

@@ -59,6 +59,7 @@ pub mod screen;
 pub mod shake;
 pub mod special;
 pub mod stat;
+pub mod stat_set;
 pub mod state;
 pub mod status;
 pub mod target;

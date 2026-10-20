@@ -6165,7 +6165,7 @@
 0x007b2dc0 function MsGetChrStatInfo          # switch over ~340 actor properties; was Battle_GetActorProperty
 0x007b4a70 function Battle_ChrMoveFlags       # (actor) -> u32 actor +0x4ac (bits 0-1: a move under way), | 8 while +0x3fb; used by MsGetChrStatInfo and 0x007a4f80
 0x007b4a90 function MsSetChrMotionInfo        # (actor, property 0-9, float): writes actor dwords 0x12f-0x139; was Battle_SetActorFloatProperty
-0x007b4b70 function MsSetChrStatInfo          # switch over ~320 actor properties; was Battle_SetActorProperty
+0x007b4b70 function MsSetChrStatInfo          # switch over ~320 actor properties; was Battle_SetActorProperty; ported (ffx_battle::stat_set, battle round 29): (chr, kind, selector, v) -> how many actors MsGetChrBit(chr, selector, 0, 1) picked (kind 0x88 on battle 0x60ee in "sins07_07": -5); per actor property kind (jump table 0x007b66dc, 0x15a entries) stored: bytes of v or v & 1, MsCheckRange(v, 1/0, 0xff / 1, 100) bytes, u16/u32 fields, bits, the info record +0xf88's fields, f32 v/100.0 (+0x4e8, +0x4ec; Ch_SetThicknessBtlCam/CamHeight/FixHeight over +0x3a8/+0x3a4); MsStatusEffectCheck after 4-7 and 0x29-0x39, MsSetChrWeak/MsCheckAutoStatus after 0, 4, 0xf2 (+MsDamageCheckDeath), MsResetAutoStatus/MsSetRamChrParam/MsSetAutoStatus after 0x12e-0x135; "znkd09_00": 0x57 = 4 on monster 0x14 sets 0x01136ac0, then its property 0 is 100; property 0x14c turns v & 1 on for the actors after an alive one
 0x007b6c50 function MsGetBattleList           # fh v3:exact 0x007b6bd0
 0x007b6fb0 function MsGetTargetLinkList       # fh v3:exact 0x007b6f30
 0x007b7090 function MsGetTargetList           # fh v3:exact 0x007b7010
@@ -16230,6 +16230,7 @@
 0x01136a6c label g_BtlActionRequest        # u32, cleared by MsActionRequestSet with 0x01136a70 and the 0x48-byte block 0x01136a78
 0x01136a7b label g_BtlActionRequestEntries # u8, the action request block's (0x01136a78) +3: entries a script left; MsActionRequest makes them a cue entry
 0x01136a7c label g_BtlActionRequestTurn    # u8, the block's +4; MsActionRequest copies the out cue's into it
+0x01136ac0 label g_BtlZnkdHp # u32: MsSetChrStatInfo's "znkd09_00" mark (property 0x57 = 4 on monster 0x14), after which that monster's HP set becomes 100
 0x01136ac4 label g_BtlBallOffset           # [f32; 4] MsGetChrInfo kind 0xd of the thrower's targets (MsSetBallSplineInit 0x007b7c80), added to the ball's end (MsSetBallSpline, battle round 17); name ours
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
 0x01136b18 label g_BtlEffectCameraWords # [u32; 16] after g_BtlEffectCameraFloats (MsEffectGetCameraBuf_007b7ed0 / MsEffectSetCameraBuf_007b7f30)
