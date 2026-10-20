@@ -1,0 +1,19 @@
+[package]
+name = "mutants-rs"
+description = "Finds where tools/mutants.py can wrap a mutation site into a schema"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Not a member of the repo's workspace: a tool built once into its own target dir.
+[workspace]
+
+[dependencies]
+proc-macro2 = { version = "1.0.80", features = ["span-locations"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+syn = { version = "2", features = ["full", "visit", "parsing"] }
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
