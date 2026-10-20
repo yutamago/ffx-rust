@@ -22226,3 +22226,250 @@ fn round37c_local_frames_and_lerps_match_the_original() {
         }
     }
 }
+
+// ---- round 38 ---------------------------------------------------------
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round38a_vertex_morph_and_point_light_match_the_original() {
+    use heap::bridge as h;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_eb20);
+        x87_crt_stand_ins(&mut p);
+        let env_slot = p.alloc(4);
+        let env = p.alloc(0x40);
+        let arena = p.alloc(0x2000);
+        // entries 0..4 and 0xffff (a key whose first model is 0xffff)
+        let models = p.alloc(0x20_0020);
+        let verts = p.alloc(0x800);
+        let (obj, key, ctrl, offsets) =
+            (p.alloc(0x400), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let spare = p.alloc(0x200);
+        p.set(ctrl + 0xc, offsets);
+        p.put(h::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        let stop = p.sym(ppp::bridge::STOP.sym);
+        let sse2 = p.sym(ffx_bridge::x87::SSE2_AVAILABLE.sym);
+        // pppNeiPointLightAdd's part, objects and lights
+        let (part, objs, data, lights) =
+            (p.alloc(0x40), p.alloc(0x100), p.alloc(0x400), p.alloc(0x40));
+        p.put(prog::bridge::CURRENT_PART, part);
+        p.set(part + 0x3c, objs);
+        let (r, acc) = (p.alloc(8), p.alloc(0x10));
+        let vf00 = p.sym(ffx_ps2::ee::bridge::VF00.sym);
+        // the original's uninitialised local: [ebp - 0x20] below the
+        // oracle's call frame (three arguments)
+        let stale_at = p.a.stack_range().end - 0x100 - 0x10 - 4 - 0x20;
+        for round in 0..3000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            if round % 64 == 0 {
+                p.check("pppCreateHeap", 0x0072_c480, &[env, arena, 0x300], |m| {
+                    h::ppp_create_heap(m, env, arena, 0x300);
+                    None
+                });
+                p.check(
+                    "pppCreateHeap",
+                    0x0072_c480,
+                    &[env + 0x10, arena + 0x1000, 0x300],
+                    |m| {
+                        h::ppp_create_heap(m, env + 0x10, arena + 0x1000, 0x300);
+                        None
+                    },
+                );
+            }
+            // pppVtMime: four models of up to 40 vertices
+            p.set(env + 0x20, models);
+            p.fill(verts, 0x800, &mut rng);
+            for m in 0..4u32 {
+                let n = if rng.chance(10) { 0 } else { rng.below(40) };
+                p.set(models + 32 * m, n);
+                p.set(
+                    models + 32 * m + 0x14,
+                    verts + 0x100 * (m * 2 + rng.below(2)),
+                );
+            }
+            p.fill(key, 0x40, &mut rng);
+            p.fill(obj, 0x400, &mut rng);
+            p.set(offsets, 4 * rng.below(0x40));
+            let w = obj + p.get::<u32>(offsets);
+            for at in [0xa0u32, 0xa4, 0xa8] {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -2.0, 2.0)
+                } else {
+                    rng.float()
+                };
+                p.set(w + at, v);
+            }
+            for at in [0xcu32, 0x10, 0x14] {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -1.0, 1.0)
+                } else {
+                    rng.float()
+                };
+                p.set(key + at, v);
+            }
+            if rng.chance(50) {
+                let f: u32 = p.get(obj + 0xc);
+                p.set(key, f);
+            }
+            let (m1, m2) = match rng.below(6) {
+                0 => (0xffff, 0xffff),
+                1 => (0xffff, rng.below(4)),
+                2 => (rng.below(4), 0xffff),
+                _ => (rng.below(4), rng.below(4)),
+            };
+            if m1 == 0xffff && m2 != 0xffff {
+                // model 0xffff: entry 0xffff of the table, a count of 0 there
+                p.set(models + (0xffff << 5), 0u32);
+            }
+            p.set(models + (0xffff << 5) + 0x14, verts + 0x700);
+            p.set(key + 4, m1);
+            p.set(key + 8, m2);
+            let buf = if rng.chance(40) { 0 } else { spare };
+            p.set(w + 0xac, buf);
+            p.set(stop, u32::from(rng.chance(15)));
+            p.set(sse2, u32::from(rng.chance(50)));
+            p.check(&what("pppVtMime"), 0x0072_eb20, &[obj, key, ctrl], |m| {
+                ppp::bridge::ppp_vt_mime(m, obj, key, ctrl);
+                None
+            });
+
+            // pppNeiPointLightAdd
+            p.fill(data, 0x400, &mut rng);
+            p.fill(lights, 0x40, &mut rng);
+            let id = if rng.chance(10) {
+                u32::MAX
+            } else {
+                rng.below(4)
+            };
+            let off = 4 * rng.below(0x40);
+            p.set(r, id);
+            p.set(r + 4, off);
+            for i in 0..4u32 {
+                p.set(objs + 16 * i + 4, data + 4 * rng.below(0x10));
+            }
+            let base: u32 = if id == u32::MAX {
+                data
+            } else {
+                p.get(objs + 16 * id + 4)
+            };
+            let d = base + off + 0xa0;
+            if id != u32::MAX && d + 0x14 <= data + 0x400 {
+                p.set(d + 0xc, lights);
+                p.set(d + 0x10, lights + 0x20);
+                let radius = if rng.chance(90) {
+                    ranged(&mut rng, 0.0, 300.0)
+                } else {
+                    rng.float()
+                };
+                p.set(d + 8, radius);
+            } else if id != u32::MAX {
+                continue;
+            }
+            for i in 0..3u32 {
+                let v = if rng.chance(95) {
+                    ranged(&mut rng, -200.0, 200.0)
+                } else {
+                    rng.float()
+                };
+                p.set(lights + 4 * i, v);
+                let v = if rng.chance(95) {
+                    ranged(&mut rng, -200.0, 200.0)
+                } else {
+                    rng.float()
+                };
+                p.set(obj + 0x40 + 4 * i, v);
+            }
+            for i in 0..4u32 {
+                let v = if rng.chance(95) {
+                    ranged(&mut rng, 0.0, 2.0)
+                } else {
+                    rng.float()
+                };
+                p.set(acc + 4 * i, v);
+            }
+            for i in 0..5u32 {
+                p.set(vf00 + 4 * i, rng.next());
+            }
+            let stale = rng.next();
+            Mem::write(&mut p.a, stale_at, stale);
+            p.check(
+                &what("pppNeiPointLightAdd"),
+                0x0074_b9c0,
+                &[obj, r, acc],
+                |m| {
+                    part::bridge::ppp_nei_point_light_add(m, obj, r, acc, stale);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round38a_encounter_ring_and_noise_update_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_9280);
+        let cells = p.alloc(0x20);
+        let (blur, rd, made, setup, destroy, upd, dtt) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+            cells + 0x18,
+        );
+        far_recorder(&mut p, 0x0063_9140, &[], Some(blur));
+        far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd));
+        far_recorder(&mut p, 0x007f_a510, &[0, 0], Some(made));
+        far_recorder(&mut p, 0x0064_5780, &[0, 0], Some(setup));
+        far_recorder(&mut p, 0x0064_5280, &[0, 0], Some(destroy));
+        far_recorder(&mut p, 0x007f_a890, &[0, 0, 0], Some(upd));
+        far_recorder(&mut p, 0x0064_5330, &[0, 0], Some(dtt));
+        let set = p.alloc(0x20 + 0x741 * 0x60);
+        let (pos, eff) = (p.alloc(8), p.alloc(0x60));
+        for round in 0..400u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            for c in 0..7 {
+                let v = if rng.chance(30) { 0 } else { rng.next() };
+                p.set(cells + 4 * c, v);
+            }
+            let v = if rng.chance(85) {
+                ranged(&mut rng, -1.0e4, 1.0e4)
+            } else {
+                rng.float()
+            };
+            p.set(eff + 0x40, v);
+            p.check(&what("opus_0706_noise_update"), 0x007f_a750, &[eff], |m| {
+                Some(small::bridge::opus_0706_noise_update(
+                    m,
+                    eff,
+                    &mut call_original,
+                ))
+            });
+            if round % 20 == 0 {
+                p.fill(set, 0x20 + 0x741 * 0x60, &mut rng);
+                for i in 0..2u32 {
+                    let v = if round % 60 == 20 {
+                        rng.float()
+                    } else {
+                        ranged(&mut rng, -3000.0, 3000.0)
+                    };
+                    p.set(pos + 4 * i, v);
+                }
+                p.put(rand::bridge::R, rng.next());
+                p.put(rand::bridge::SEEDED, u32::from(rng.chance(80)));
+                p.check(&what("opus_encount5_make"), 0x007f_9280, &[set, pos], |m| {
+                    Some(opus::bridge::opus_encount5_make(
+                        m,
+                        set,
+                        pos,
+                        &mut call_original,
+                    ))
+                });
+            }
+        }
+    }
+}

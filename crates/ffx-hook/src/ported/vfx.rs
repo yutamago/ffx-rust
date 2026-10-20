@@ -5552,4 +5552,22 @@ ported! {
     opu_v_lerp @ 0x0081_87b0 => extern "C" fn opu_v_lerp(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_v_lerp(&mut mem(), host, cmd)
     }
+    // ---- round 38 a ----
+    /// `pppVtMime(obj, key, ctrl)` (`0x0072eb20`).
+    pppVtMime @ 0x0072_eb20 => extern "C" fn ppp_vt_mime(obj: u32, key: u32, ctrl: u32) {
+        ppp::bridge::ppp_vt_mime(&mut mem(), obj, key, ctrl);
+    }
+    /// `opus_0706_noise_update(eff)` (`0x007fa750`).
+    opus_0706_noise_update @ 0x007f_a750 => extern "C" fn opus_0706_noise_update(eff: u32) -> u32 {
+        small::bridge::opus_0706_noise_update(&mut mem(), eff, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_encount5_make(set, pos)` (`0x007f9280`).
+    opus_encount5_make @ 0x007f_9280 => extern "C" fn opus_encount5_make(set: u32, pos: u32) -> u32 {
+        opus::bridge::opus_encount5_make(&mut mem(), set, pos, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppNeiPointLightAdd(obj, r, acc)` (`0x0074b9c0`): the original's
+    /// uninitialised local (copied to `0x00c8f82c`) is 0 here.
+    pppNeiPointLightAdd @ 0x0074_b9c0 => extern "C" fn ppp_nei_point_light_add(obj: u32, r: u32, acc: u32) {
+        part::bridge::ppp_nei_point_light_add(&mut mem(), obj, r, acc, 0);
+    }
 }

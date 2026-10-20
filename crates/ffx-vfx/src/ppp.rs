@@ -161,6 +161,83 @@ pub mod bridge {
         zero(mem, obj, ctrl, &[0xa8, 0xac, 0xa4, 0xa0]);
     }
 
+    /// `g_pppVtMimeT`: the last blend factor [`ppp_vt_mime`] used.
+    pub const VT_MIME_T: Global<u32> = Global::new(0x00c8_f7f0);
+
+    /// `pppVtMime(obj, key, ctrl)` (`0x0072eb20`): the vertex morph
+    /// between two models. Work area 0 holds the blend factor `t` (`+0xa0`),
+    /// its rate (`+0xa4`), the rate's step (`+0xa8`) and the morphed
+    /// vertices (`+0xac`). Unless stopped: rate += step, then `t` += rate
+    /// (each rounded to `f32`); a key that applies adds its three floats
+    /// at `+0xc` to `t`, rate and step. Then, unless the key's models
+    /// (`+4`, `+8`, entries of the environment's 32-byte model table at
+    /// `env +0x20`) are both 0xffff: with `n` the first model's vertex
+    /// count (`+0`) and both models' `i16` vertices at `ptr32(+0x14)`
+    /// (6 bytes each), the buffer (allocated on first use,
+    /// `pppMemAlloc(env, env + 0x10, 8 n)`; none returns at once) gets
+    /// each coordinate as `ftol(f32(to - from) * t + from)`, [`VT_MIME_T`]
+    /// = `t`, and `obj +0x90` = the buffer.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_vt_mime<M: Mem>(mem: &mut M, obj: u32, key: u32, ctrl: u32) {
+        use ffx_bridge::x87::{Reg, ftol};
+        use ffx_system::stub::ptr32;
+        let w = obj.wrapping_add(offset(mem, ctrl, 0));
+        let f = |mem: &M, at: u32| f32::from_bits(mem.read(w.wrapping_add(at)));
+        if STOP.get(mem) == 0 {
+            let rate = Reg::load(f(mem, 0xa8)).add_m32(f(mem, 0xa4)).store();
+            mem.write(w + 0xa4, rate);
+            let t = (Reg::load(f(mem, 0xa0)) + Reg::load(rate)).store();
+            mem.write(w + 0xa0, t);
+            if applies(mem, obj, key) {
+                let k = |mem: &M, at: u32| f32::from_bits(mem.read(key.wrapping_add(at)));
+                let t = Reg::load(t).add_m32(k(mem, 0xc)).store();
+                mem.write(w + 0xa0, t);
+                let rate = Reg::load(rate).add_m32(k(mem, 0x10)).store();
+                mem.write(w + 0xa4, rate);
+                let step = Reg::load(k(mem, 0x14)).add_m32(f(mem, 0xa8)).store();
+                mem.write(w + 0xa8, step);
+            }
+        }
+        let (m1, m2): (u32, u32) = (mem.read(key + 4), mem.read(key + 8));
+        if m1 == 0xffff && m2 == 0xffff {
+            return;
+        }
+        let env = |mem: &M| mem.read::<u32>(crate::heap::bridge::ENV_SLOT.get(mem));
+        let model = |mem: &M, m: u32| {
+            let table: u32 = mem.read(env(mem).wrapping_add(0x20));
+            table.wrapping_add(m << 5)
+        };
+        let from = ptr32(mem.read(model(mem, m1).wrapping_add(0x14)));
+        let to = ptr32(mem.read(model(mem, m2).wrapping_add(0x14)));
+        let t = Reg::load(f(mem, 0xa0)).store();
+        let e = env(mem);
+        let n: u32 = mem.read(model(mem, m1));
+        let buf = Ptr::<u32>::new(w + 0xac);
+        if buf.get(mem) == 0 {
+            let p = crate::heap::bridge::ppp_mem_alloc(mem, e, e.wrapping_add(0x10), n << 3);
+            buf.set(mem, p);
+            if p == 0 {
+                return;
+            }
+        }
+        VT_MIME_T.set(mem, t.to_bits());
+        let out = buf.get(mem);
+        for i in 0..n {
+            for c in 0..3 {
+                let at = 6 * i + 2 * c;
+                let a = i32::from(mem.read::<i16>(from.wrapping_add(at)));
+                let b = i32::from(mem.read::<i16>(to.wrapping_add(at)));
+                // fild, then fstp m32 (exact for these)
+                let d = Reg::constant(f64::from(b - a)).store();
+                let v = Reg::load(d).mul_m32(f(mem, 0xa0)) + Reg::constant(f64::from(a));
+                #[allow(clippy::cast_possible_truncation)] // the low word in ax
+                mem.write(out.wrapping_add(at), ftol(mem, v.value()) as u16);
+            }
+        }
+        let p = buf.get(mem);
+        mem.write(obj.wrapping_add(0x90), p);
+    }
+
     /// `pppNeiLightEikyoCon(obj, ctrl)` (`0x0075d6c0`).
     pub fn ppp_nei_light_eikyo_con(mem: &mut impl Mem, obj: u32, ctrl: u32) {
         zero(mem, obj, ctrl, &[0xa8, 0xa4, 0xa0, 0xb4, 0xb0, 0xac]);

@@ -2735,6 +2735,90 @@ pub mod bridge {
         call(mem, g(mem, 0x0082_b480), &[h, x, y, z])
     }
 
+    /// `opus_encount5_make(set, pos)` (`0x007f9280`): the encounter
+    /// swirl's 0x740 particles, a ring of 96-byte records from `set +0x20`
+    /// round a 512 x 416 rectangle centred on `A = f32(pos.x + 2048)`, `B =
+    /// f32(pos.y + 2048)`. `g_BtlReadHold` = 0x5a, `set +0` = 0. With `k` =
+    /// 1/512, `x0 = A - 256`, `y0 = B - 208` (unrounded): the bottom edge
+    /// (512, `i` up) at `+0x10` (`f32(i + x0)`, `f32(y0)`, 0) and texture
+    /// `+0x38` (`i k`, 0); the right edge (416) (`f32(A + 256)`, `f32(i +
+    /// y0)`, 0) and (1, `i k`); the top (512, `i` down) (`f32(i + x0)`,
+    /// `f32(B + 208)`, 0) and (`i k`, 0.8125); the left (416, `i` down)
+    /// (`f32(x0)`, `f32(i + y0)`, 0) with its texture pair (0, `i k`) one
+    /// record on, so the left edge's first record keeps its old `+0x38` and
+    /// the record after the last gets one. Then every record: `+0` (`A`,
+    /// `B`, 0), colours `+0x20`/`+0x24` 0x80808080, `+0x30` (`f32((A -
+    /// 1792) k)`, `f32(k (B - 1840))`), `+0x40..+0x50` 0 and `+0x54` =
+    /// `f32(op_random_p(0.001) + 0.002)`. Returns
+    /// `graphicActivateRadialBlur()` through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opus_encount5_make<M: Mem>(
+        mem: &mut M,
+        set: u32,
+        pos: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        const K: f64 = 0.001_953_125;
+        const N: [u32; 4] = [0x200, 0x1a0, 0x200, 0x1a0];
+        Global::<u32>::new(0x0112_ca64).set(mem, 0x5a);
+        mem.write(set, 0u32);
+        let a = store(add(load(mem.read(pos)), 2048.0));
+        let b = store(add(2048.0, load(mem.read(pos.wrapping_add(4)))));
+        let x0 = sub(load(a), 256.0);
+        let y0 = sub(load(b), 208.0);
+        let rec = |j: u32| set.wrapping_add(0x20).wrapping_add(0x60 * j);
+        let put = |mem: &mut M, j: u32, at: u32, v: u32| mem.write(rec(j).wrapping_add(at), v);
+        #[allow(clippy::cast_precision_loss)] // below 0x200: exact
+        let fi = |i: u32| f64::from(i as f32);
+        let (zero, one) = (0u32, 1.0f32.to_bits());
+        let mut j = 0;
+        // bottom, right, top, left
+        for (edge, n) in (0..).zip(N) {
+            let (right, top) = (store(add(load(a), 256.0)), store(add(load(b), 208.0)));
+            for step in 0..n {
+                let i = if edge < 2 { step } else { n - 1 - step };
+                let (x, y, u, v) = match edge {
+                    0 => (store(add(fi(i), x0)), store(y0), store(mul(fi(i), K)), zero),
+                    1 => (right, store(add(fi(i), y0)), one, store(mul(fi(i), K))),
+                    2 => (
+                        store(add(fi(i), x0)),
+                        top,
+                        store(mul(fi(i), K)),
+                        0x3f50_0000,
+                    ),
+                    _ => (store(x0), store(add(fi(i), y0)), zero, store(mul(fi(i), K))),
+                };
+                put(mem, j, 0x10, x);
+                put(mem, j, 0x14, y);
+                put(mem, j, 0x18, zero);
+                let t = if edge == 3 { j + 1 } else { j };
+                put(mem, t, 0x38, u);
+                put(mem, t, 0x3c, v);
+                j += 1;
+            }
+        }
+        let u = store(mul(sub(load(a), 1792.0), K));
+        let v = store(mul(K, sub(load(b), 1840.0)));
+        // the f64 0x00b4c168 is the f32 0.002 widened
+        let speed = f64::from(0.002f32);
+        for k in 0..j {
+            put(mem, k, 0, a);
+            put(mem, k, 0x20, 0x8080_8080);
+            put(mem, k, 0x24, 0x8080_8080);
+            put(mem, k, 4, b);
+            put(mem, k, 8, zero);
+            put(mem, k, 0x30, u);
+            put(mem, k, 0x34, v);
+            for at in (0x40..=0x50).step_by(4) {
+                put(mem, k, at, zero);
+            }
+            let r = crate::rand::bridge::op_random_p(mem, f32::from_bits(0x3a83_126f));
+            put(mem, k, 0x54, store(add(load(r.to_bits()), speed)));
+        }
+        call(mem, g(mem, 0x0063_9140), &[])
+    }
+
     /// `opus_encount4_size_get(oef, first, n)` (`0x007f8e30`): the packet
     /// size of `n` encounter parts: `(7 n + 0x11 + the sum of i16 +0x12 of
     /// op_oef2_a_get(oef, 4, first + i)) * 16`.
