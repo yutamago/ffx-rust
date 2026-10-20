@@ -1549,12 +1549,12 @@ ported! {
     pppFpPointLight @ 0x0075_d7f0 => extern "C" fn ppp_fp_point_light(obj: u32, key: u32, prog: u32) -> u32 {
         fp::bridge::ppp_fp_point_light(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a))
     }
-    /// `pppKeBornRnd4(obj, def, shape, out)`.
-    pppKeBornRnd4 @ 0x0075_8df0 => extern "C" fn ppp_ke_born_rnd4(obj: u32, def: u32, shape: u32, out: u32) {
+    /// `pppKeBornRnd4_Born(obj, def, shape, out)`.
+    pppKeBornRnd4_Born @ 0x0075_8df0 => extern "C" fn ppp_ke_born_rnd4_born(obj: u32, def: u32, shape: u32, out: u32) {
         // the original's local vector
         let mut frame = super::StackFrame::<4>::new();
         let at = frame.at();
-        prog::bridge::ppp_ke_born_rnd4(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
+        prog::bridge::ppp_ke_born_rnd4_born(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
     }
     /// `pppDrawMdlCameraTex_0073dfe0(rec, m)`.
     pppDrawMdlCameraTex_0073dfe0 @ 0x0073_dfe0 => extern "C" fn ppp_draw_mdl_camera_tex(rec: u32, m: u32) {
@@ -5645,6 +5645,22 @@ ported! {
         let mut frame = super::StackFrame::<8>::new();
         let local = frame.at();
         prog::bridge::ppp_draw_mdl_psim_init(&mut mem(), obj, def, sim, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `QuickRecoverMenuReserve(rgba, flags, alpha)` (`0x007eadb0`): the
+    /// three words it passes on to `op_flash_path3`.
+    QuickRecoverMenuReserve @ 0x007e_adb0 => extern "C" fn quick_recover_menu_reserve(rgba: u32, flags: u32, alpha: u32) {
+        op::bridge::quick_recover_menu_reserve(&mut mem(), rgba, flags, alpha, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opp_mdc(host, set)` (`0x0080e030`).
+    opp_mdc @ 0x0080_e030 => extern "C" fn opp_mdc(host: u32, set: u32) -> u32 {
+        opus::bridge::opp_mdc(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeBornRnd4(obj, key, ctrl)` (`0x00758ae0`): the local vector in
+    /// this shim's frame.
+    pppKeBornRnd4 @ 0x0075_8ae0 => extern "C" fn ppp_ke_born_rnd4(obj: u32, key: u32, ctrl: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let v = frame.at();
+        prog::bridge::ppp_ke_born_rnd4(&mut mem(), obj, key, ctrl, v, &mut |_, f, a| call_ptr(f, a));
     }
     // ---- round 38 c ----
     /// `setPolyQuad0434(id, quad, setup)` (`0x007128d0`).

@@ -1799,6 +1799,151 @@ pub mod bridge {
         mem.write(index_at, index as u16);
     }
 
+    /// `pppKeBornRnd4(obj, key, ctrl)` (`0x00758ae0`, the program table's
+    /// `pppKeBornRnd4` step; Fahrenheit has it as `pppKeBornRnd4_Born`).
+    /// Unless stopped: when the mask `key +0xd` is not 0xff, a
+    /// `KeVu0RndI()` sharing no bit (from bit 8) with it makes children
+    /// through `KeBornRnd2(obj, key, pppKeBornRnd4_Born, area 0 + 0xa0,
+    /// u16 key +4, u8 key +0xe, u8 key +0xc)` (records `+0x10`, areas
+    /// `+0x18`/`+0x20` not -1, else done), and none made ends it; a stop
+    /// set meanwhile ends it too. Then (also straight away for mask 0xff)
+    /// a second `KeVu0RndI()` and the same mask and -1 tests pick up to `u8
+    /// key +0xc` vertices of shape `i16 key +4` (`env +0x28`; the vertices
+    /// `obj +0x90`, else its model's `+0x14`) from area 0's `u16 +0xa0`
+    /// index, or that random value modulo the count for `key +0xe`; each
+    /// a new object of record `key +0x10` (`pppCreatePObject`; none: stop
+    /// without storing the index; record address 0: child 0) with `+4` =
+    /// `obj`: the vertex (`w` 1.0) times `obj`'s matrix to its area `key
+    /// +0x14`, minus `obj +0x40` normalised to `+0x24`, times `f32 key +8`
+    /// to `+0x1c`. The index steps (wrapping at the count) or is drawn
+    /// again. `KeVu0RndI`, `KeBornRnd2` and `pppCreatePObject` go through
+    /// `call`; `v` is the original's local vector.
+    #[allow(clippy::many_single_char_names)]
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_ke_born_rnd4<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz;
+        use ffx_ps2::vu0::bridge as vu0;
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let rnd = Global::<u32>::new(KE_VU0_RND_I).ptr(mem).addr;
+        let mask = |mem: &M| mem.read::<u8>(key.wrapping_add(0xd));
+        let shares = |m: u8, r: u32| m & (r.cast_signed() >> 8).to_le_bytes()[0] != 0;
+        let unset = |mem: &M| {
+            [0x10, 0x18, 0x20]
+                .iter()
+                .any(|&k| mem.read::<u32>(key.wrapping_add(k)) == u32::MAX)
+        };
+        let area0: u32 = mem.read(mem.read::<u32>(ctrl.wrapping_add(0xc)));
+        let index_at = area0.wrapping_add(0xa0).wrapping_add(obj);
+        if mask(mem) != 0xff {
+            let r = call(mem, rnd, &[]);
+            if !shares(mask(mem), r) {
+                if unset(mem) {
+                    return;
+                }
+                let args = [
+                    obj,
+                    key,
+                    Global::<u32>::new(0x0075_8df0).ptr(mem).addr,
+                    index_at,
+                    u32::from(mem.read::<u16>(key.wrapping_add(4))),
+                    u32::from(mem.read::<u8>(key.wrapping_add(0xe))),
+                    u32::from(mem.read::<u8>(key.wrapping_add(0xc))),
+                ];
+                let f = Global::<u32>::new(KE_BORN_RND2).ptr(mem).addr;
+                if call(mem, f, &args) == 0 {
+                    return;
+                }
+            }
+            if STOP.get(mem) != 0 {
+                return;
+            }
+        }
+        let r = call(mem, rnd, &[]);
+        let m = mask(mem);
+        if m == 0xff || shares(m, r) || unset(mem) {
+            return;
+        }
+        let a = i32::from(mem.read::<i16>(key.wrapping_add(4))).cast_unsigned();
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let table: u32 = mem.read(env.wrapping_add(0x28));
+        let shape = a.wrapping_mul(8).wrapping_add(table);
+        let mut verts = stub::ptr32(mem.read(obj.wrapping_add(0x90)));
+        if verts == 0 {
+            let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+            let models: u32 = mem.read(env.wrapping_add(0x20));
+            let model = i32::from(mem.read::<i16>(shape)).cast_unsigned();
+            let at = model
+                .wrapping_shl(5)
+                .wrapping_add(0x14)
+                .wrapping_add(models);
+            verts = stub::ptr32(mem.read(at));
+        }
+        let count = |mem: &M| i32::from(mem.read::<i16>(shape.wrapping_add(2)));
+        // idiv: a count of 0 faults in the original (never in the data)
+        let modulo = |x: i32, n: i32| x.checked_rem(n).unwrap_or(0);
+        let random = mem.read::<u8>(key.wrapping_add(0xe)) != 0;
+        let mut index: i32 = if random {
+            modulo(r.cast_signed(), count(mem))
+        } else {
+            i32::from(mem.read::<u16>(index_at))
+        };
+        for _ in 0..mem.read::<u8>(key.wrapping_add(0xc)) {
+            let part = CURRENT_PART.get(mem);
+            let rec = mem
+                .read::<u32>(key.wrapping_add(0x10))
+                .wrapping_shl(4)
+                .wrapping_add(mem.read(part.wrapping_add(0x3c)));
+            let child = if rec == 0 {
+                0
+            } else {
+                let create = Global::<u32>::new(0x0071_6770).ptr(mem).addr;
+                let child = call(mem, create, &[part, rec]);
+                if child == 0 {
+                    return;
+                }
+                mem.write(child.wrapping_add(4), stub::ptr32(obj));
+                child
+            };
+            let area = |mem: &M, k: u32| {
+                let off: u32 = mem.read(key.wrapping_add(k));
+                child.wrapping_add(0xa0).wrapping_add(off)
+            };
+            let pos = area(mem, 0x14);
+            let list = stub::ptr32(mem.read(shape.wrapping_add(4)));
+            let at = index.cast_unsigned().wrapping_mul(2).wrapping_add(list);
+            let vi = u32::from(mem.read::<u16>(at));
+            let p: [i16; 3] = mem.read(vi.wrapping_mul(6).wrapping_add(verts));
+            let (vel, dir) = (area(mem, 0x1c), area(mem, 0x24));
+            let [x, y, z] = p.map(f32::from);
+            mem.write(v, [x, y, z, 1.0]);
+            vu0::apply_matrix(mem, v, obj.wrapping_add(0x10), v);
+            ke_vu0_copy_vec_xyz(mem, pos, v);
+            vu0::sub_vector(mem, v, v, obj.wrapping_add(0x40));
+            vu0::normalize(mem, v, v);
+            ke_vu0_copy_vec_xyz(mem, dir, v);
+            let speed = x87::load_f32(mem.read(key.wrapping_add(8)));
+            vu0::scale_vector(mem, v, v, speed);
+            ke_vu0_copy_vec_xyz(mem, vel, v);
+            index = if random {
+                modulo(call(mem, rnd, &[]).cast_signed(), count(mem))
+            } else {
+                let next = index.wrapping_add(1);
+                if next >= count(mem) { 0 } else { next }
+            };
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low half it keeps
+        mem.write(index_at, index as u16);
+    }
+
     /// `g_pppChrScale` (`0x0230fd50`): the character's scale (`x`, `y`,
     /// `z`) the `pppChr*Scl*Matrix` steps scale by.
     pub const CHR_SCALE: Global<[f32; 3]> = Global::new(0x0230_fd50);
@@ -2193,13 +2338,14 @@ pub mod bridge {
         }
     }
 
-    /// `pppKeBornRnd4(obj, def, shape, out)` (`0x00758df0`):
-    /// [`ppp_ke_born_rnd3_born`] with the record `def +0x10` (a null one
+    /// `pppKeBornRnd4_Born(obj, def, shape, out)` (`0x00758df0`, the born
+    /// function `pppKeBornRnd4` passes `KeBornRnd2`; Fahrenheit has it as
+    /// `pppKeBornRnd4`): [`ppp_ke_born_rnd3_born`] with the record `def +0x10` (a null one
     /// leaves the child null and its `+4` unwritten), the position into
     /// area `def +0x14`, the normalised direction from `obj +0x40` into
     /// area `def +0x24`, and that direction times `f32 def +8` into area
     /// `def +0x1c`. The vector in the original's locals at `frame`.
-    pub fn ppp_ke_born_rnd4<M: Mem>(
+    pub fn ppp_ke_born_rnd4_born<M: Mem>(
         mem: &mut M,
         obj: u32,
         def: u32,
@@ -2302,7 +2448,7 @@ pub mod bridge {
     // ---- round 35 b ----
 
     /// `pppKeBornRnd6_Born(obj, def, shape, out)` (`0x007592a0`): the
-    /// child as in [`ppp_ke_born_rnd4`] from the record `def +0xc` (a null
+    /// child as in [`ppp_ke_born_rnd4_born`] from the record `def +0xc` (a null
     /// record leaves `*out` null and goes on with it); the shape's three
     /// `i16` (as `f32`, and 1.0) copied into the child's area `def +0x10`;
     /// then into the `i32` area `a = child + 0xa0 + def +0x18`: the yaw

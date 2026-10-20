@@ -178,6 +178,21 @@ pub mod bridge {
         op_spr_free(mem);
     }
 
+    /// `QuickRecoverMenuReserve(rgba, flags, alpha)` (`0x007eadb0`,
+    /// Fahrenheit's name): `op_gs1_transfer()` (through `call`), then a
+    /// tail jump to `op_flash_path3` with its caller's three words.
+    pub fn quick_recover_menu_reserve<M: Mem>(
+        mem: &mut M,
+        rgba: u32,
+        flags: u32,
+        alpha: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = Global::<u32>::new(0x007e_b580).ptr(mem).addr;
+        call(mem, f, &[]);
+        op_flash_path3(mem, rgba, flags, alpha, call);
+    }
+
     /// `op_spline_xyz_table(x, pts, n)` (`0x007ea2d0`): spline tables for
     /// `n` points (16 bytes each, `x, y, z`): `x[0..n]` = the chord-length
     /// parameters (`x[0]` = 0, each step `sqrt(dx² + dy² + dz²)` added,

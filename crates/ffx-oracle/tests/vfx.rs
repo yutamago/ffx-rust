@@ -19361,7 +19361,7 @@ fn round34b2_born_and_set_ups_match_the_original() {
                 &[obj, def, shape, out],
                 |m| {
                     let keep = m.read(frame, 0x10).unwrap();
-                    pb::ppp_ke_born_rnd4(m, obj, def, shape, out, frame, &mut call_original);
+                    pb::ppp_ke_born_rnd4_born(m, obj, def, shape, out, frame, &mut call_original);
                     m.write(frame, &keep).unwrap();
                     None
                 },
@@ -23486,6 +23486,7 @@ fn round39b_flash_path3_matches_the_original() {
             far_recorder(&mut p, 0x0064_4d40, &[0; 5], None),
             far_recorder(&mut p, 0x0062_f880, &[0, 0], None),
             far_recorder(&mut p, 0x0062_f710, &[0, 0], None),
+            far_recorder(&mut p, 0x007e_b580, &[], None), // op_gs1_transfer
         ];
         let spr = p.alloc(0x200);
         let (magic, r0, tail, chan) = (
@@ -23515,6 +23516,17 @@ fn round39b_flash_path3_matches_the_original() {
                 &[rgba, flags, alpha],
                 |m| {
                     o::op_flash_path3(m, rgba, flags, alpha, &mut call_original);
+                    None
+                },
+            );
+            // round 39 c: QuickRecoverMenuReserve, op_gs1_transfer first
+            p.put(o::SPR_TOP, 0i8);
+            p.check(
+                &format!("QuickRecoverMenuReserve round {round}"),
+                0x007e_adb0,
+                &[rgba, flags, alpha],
+                |m| {
+                    o::quick_recover_menu_reserve(m, rgba, flags, alpha, &mut call_original);
                     None
                 },
             );
@@ -23613,6 +23625,185 @@ fn round39b_psim_init_matches_the_original() {
                     let r = pb::ppp_draw_mdl_psim_init(m, obj, def, sim, local, &mut call_original);
                     m.write(local, &keep).unwrap();
                     Some(r)
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn round39c_opp_mdc_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_e030);
+        let rets = p.alloc(0x10);
+        // the matrix, packet, light and draw callees: recorded
+        let logs = [
+            far_recorder(&mut p, 0x0080_62c0, &[0; 6], None), // opus_rt_m_chara
+            far_recorder(&mut p, 0x0080_1f00, &[0, 0], Some(rets)), // opus_parent_get
+            far_recorder(&mut p, 0x007e_83b0, &[0, 0, 0], None), // op_mul_m
+            far_recorder(&mut p, 0x0080_e160, &[0; 5], Some(rets + 4)), // packet_set
+            far_recorder(&mut p, 0x0080_e900, &[0; 5], None), // light_set
+            far_recorder(&mut p, 0x00a6_8c90, &[0; 5], Some(rets + 8)), // op1_mdc_draw
+        ];
+        let (host, unit, set, shape) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x60), p.alloc(4));
+        let vu = p.sym(0x00c8_f528);
+        for round in 0..2000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(rets, 0x10, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(set, 0x60, &mut rng);
+            p.fill(shape, 4, &mut rng);
+            p.fill(vu, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            p.set(unit + 0xa8, shape);
+            let k = if rng.chance(10) {
+                0x7fc0_0001
+            } else {
+                finite(&mut rng)
+            };
+            p.set(unit + 0x3c, k);
+            p.check(
+                &format!("opp_mdc round {round}"),
+                0x0080_e030,
+                &[host, set],
+                |m| Some(o::opp_mdc(m, host, set, &mut call_original)),
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round39c_ke_born_rnd4_matches_the_original() {
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_8ae0);
+        let seeds = record_srand(&mut p);
+        let rets = p.alloc(8);
+        let born = far_recorder(&mut p, 0x0076_9230, &[0; 7], Some(rets)); // KeBornRnd2
+        let stop = p.sym(ppp::bridge::STOP.sym);
+        // KeBornRnd2 may set the stop flag (from the cell `halt`): a stub
+        // in front of its recorder
+        let halt = p.alloc(4);
+        let at = p.sym(0x0076_9230);
+        let to = at + 5 + p.get::<u32>(at + 1);
+        let mut c = vec![0xa1]; // mov eax, [halt]
+        c.extend(halt.to_le_bytes());
+        c.push(0xa3); // mov [stop], eax
+        c.extend(stop.to_le_bytes());
+        let stub = p.a.alloc_code(&[0; 16]).unwrap();
+        assert_eq!(p.b.alloc_code(&[0; 16]).unwrap(), stub);
+        c.push(0xe9); // jmp to
+        c.extend(to.wrapping_sub(stub + 15).to_le_bytes());
+        p.a.write(stub, &c).unwrap();
+        p.b.write(stub, &c).unwrap();
+        let mut j = vec![0xe9];
+        j.extend(stub.wrapping_sub(at + 5).to_le_bytes());
+        p.a.write(at, &j).unwrap();
+        p.b.write(at, &j).unwrap();
+        let made = far_recorder(&mut p, 0x0071_6770, &[0, 0], Some(rets + 4)); // pppCreatePObject
+        let (obj, key, ctrl, offsets) = (p.alloc(0x400), p.alloc(0x40), p.alloc(0x10), p.alloc(4));
+        let (part, records, child, spare) =
+            (p.alloc(0x40), p.alloc(0x100), p.alloc(0x400), p.alloc(0x40));
+        let (env_slot, env, shapes, models) =
+            (p.alloc(4), p.alloc(0x40), p.alloc(0x80), p.alloc(0x100));
+        let (lists, verts, v) = (p.alloc(0x400), p.alloc(0x200), p.alloc(0x10));
+        p.set(ctrl + 0xc, offsets);
+        p.put(heap::bridge::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        // signed shape and model indices: tables with room below 0
+        p.set(env + 0x20, models + 0x40);
+        p.set(env + 0x28, shapes + 0x40);
+        for round in 0..3000 {
+            for log in [seeds, born, made] {
+                p.set(log, 0u32);
+            }
+            p.set(stop, u32::from(rng.chance(5)));
+            p.set(halt, u32::from(rng.chance(10)));
+            p.set(p.sym(0x00c8_f728), u32::from(rng.chance(90)));
+            p.set(p.sym(0x00c0_a000), rng.next());
+            p.set(p.sym(0x00c8_f508), rng.next());
+            p.put(pb::CURRENT_PART, part);
+            p.fill(child, 0x400, &mut rng);
+            p.fill(spare, 0x40, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(v, 0x10, &mut rng);
+            p.set(key + 0xd, rng.pick(&[0u8, 0, 0xff, 1, 0x80, 0x0f, 0x55]));
+            p.set(key + 0xe, u8::from(rng.chance(50)));
+            p.set(key + 0xc, rng.pick(&[0u8, 1, 2, 3, 5, 9]));
+            p.set(key + 4, rng.below(16) as i16 - 8);
+            p.set(rets, rng.pick(&[0u32, 1, 3]));
+            p.set(rets + 4, if rng.chance(8) { 0 } else { child });
+            let speed = if rng.chance(10) {
+                0x7fc0_0001
+            } else {
+                ranged(&mut rng, -4.0, 4.0)
+            };
+            p.set(key + 8, speed);
+            // no record (address 0): the child is at 0, its areas absolute
+            let none = rng.chance(10);
+            p.set(part + 0x3c, if none { 0 } else { records });
+            p.set(key + 0x10, if none { 0 } else { rng.below(16) });
+            for k in [0x14u32, 0x1c, 0x24] {
+                let area = if none {
+                    spare + 0x10 * rng.below(3) - 0xa0
+                } else {
+                    0x10 * rng.below(0x30)
+                };
+                p.set(key + k, area);
+            }
+            for k in [0x10u32, 0x18, 0x20] {
+                if rng.chance(8) {
+                    p.set(key + k, u32::MAX);
+                }
+            }
+            let count = 1 + rng.below(12) as i16;
+            for s in 0..16u32 {
+                p.set(shapes + 8 * s, rng.below(4) as i16 - 2);
+                p.set(shapes + 8 * s + 2, count);
+                p.set(shapes + 8 * s + 4, lists + 0x40 * s + 0x20);
+            }
+            for i in 0..0x200u32 {
+                p.set(lists + 2 * i, rng.below(16) as u16);
+            }
+            for m in 0..8u32 {
+                p.set(models + 0x20 * m + 0x14, verts + 0x40 * (m % 4));
+            }
+            for i in 0..0x100u32 {
+                p.set(verts + 2 * i, (rng.below(0x2000) as i16) - 0x1000);
+            }
+            p.set(obj + 0x90, if rng.chance(30) { verts + 0x60 } else { 0 });
+            let off = 4 * rng.below(0x40);
+            p.set(offsets, off);
+            let start = if rng.chance(10) {
+                rng.below(0x10)
+            } else {
+                rng.below(u32::from(count.cast_unsigned()))
+            };
+            p.set(obj + off + 0xa0, start as u16);
+            for i in 0..16u32 {
+                let d = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+                p.set(
+                    obj + 0x10 + 4 * i,
+                    d + f32::from_bits(ranged(&mut rng, -0.5, 0.5)),
+                );
+            }
+            for i in 0..4u32 {
+                p.set(obj + 0x40 + 4 * i, ranged(&mut rng, -100.0, 100.0));
+            }
+            p.check(
+                &format!("pppKeBornRnd4 round {round}"),
+                0x0075_8ae0,
+                &[obj, key, ctrl],
+                |m| {
+                    let keep = m.read(v, 0x10).unwrap();
+                    pb::ppp_ke_born_rnd4(m, obj, key, ctrl, v, &mut call_original);
+                    m.write(v, &keep).unwrap();
+                    None
                 },
             );
         }

@@ -4281,6 +4281,63 @@ pub mod bridge {
         }
     }
 
+    /// `0x0080e030` (`opp_mdc`, ours; opp table entry 13, `0x00c48eb4`),
+    /// `(host, set)` -> the draw's result, also at `set +0x54`: the unit's
+    /// (`host +0x220`) `+0x30..+0x40` to the emulated EE register at
+    /// `0x00c8f528` (`g_Ee_Gpr +0x20`) and host `+0..+0x10`, host `+0` then
+    /// 0.0; `opus_rt_m_chara(host +0x80,
+    /// byte unit +0x18, f32 unit +0x3c, host, unit +0x90, i8 host +0x21e)`,
+    /// host `+0xc0` = `opus_parent_get(host, unit)` x `host +0x80`, then
+    /// `host +0x2c0` x it (`op_mul_m`); the mdc packet
+    /// (`opus_mdc_packet_set(host +0x100, host, set, unit, i16 *[unit
+    /// +0xa8])`), host `+0x100` |= 0x40, its lights
+    /// (`opus_mdc_light_set(.., [unit +0xa8])`) and `op1_mdc_draw(packet,
+    /// host +0x100, host +0x80, host +0x280, host +0x2c0)`. Callees through
+    /// `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opp_mdc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        set: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let u = unit(mem, host);
+        let h = |k: u32| host.wrapping_add(k);
+        let shape: u32 = mem.read(u.wrapping_add(0xa8));
+        let v: [u32; 4] = mem.read(u.wrapping_add(0x30));
+        mem.write(g(mem, 0x00c8_f528), v);
+        mem.write(host, v);
+        mem.write(host, 0u32);
+        let chr = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let k = store(load(mem.read(u.wrapping_add(0x3c))));
+        let battle = i32::from(mem.read::<i8>(h(0x21e))).cast_unsigned();
+        go(
+            mem,
+            0x0080_62c0,
+            &[h(0x80), chr, k, host, u.wrapping_add(0x90), battle],
+        );
+        let parent = go(mem, 0x0080_1f00, &[host, u]);
+        go(mem, 0x007e_83b0, &[h(0xc0), parent, h(0x80)]);
+        go(mem, 0x007e_83b0, &[h(0xc0), h(0x2c0), h(0xc0)]);
+        let first = i32::from(mem.read::<i16>(shape)).cast_unsigned();
+        let packet = go(mem, 0x0080_e160, &[h(0x100), host, set, u, first]);
+        let w: u32 = mem.read(h(0x100));
+        mem.write(h(0x100), w | 0x40);
+        go(mem, 0x0080_e900, &[h(0x100), host, set, u, shape]);
+        let r = go(
+            mem,
+            0x00a6_8c90,
+            &[packet, h(0x100), h(0x80), h(0x280), h(0x2c0)],
+        );
+        mem.write(set.wrapping_add(0x54), r);
+        r
+    }
+
     /// `opu_motion`'s motion change: `MsEffectSetMotion(c, m)` for `c` <
     /// 0x20, else with a handle `Ch_ResetMotion(h)`, `Ch_SetSysMotion(h, 1,
     /// m)` and `Ch_GetSeqFrame(h)`; the frame count either returns (None:
