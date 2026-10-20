@@ -2925,4 +2925,225 @@ pub mod bridge {
         let w = (calls.call)(mem, f, &[k]);
         crate::camera_native::bridge::ms_bind_camera(mem, calls, w, 2, 0)
     }
+
+    /// The damage motions of the effect signals 3-8 (`0x007b77c0`'s jump
+    /// table at `0x007b78a0`).
+    pub static SIGNAL_MOTIONS: [u32; 6] = [5, 6, 0xd, 0xe, 0xf, 0x10];
+
+    /// `MsEffectSignalHit_007b75c0(i, actor)` (`0x007b75c0`, name ours;
+    /// the effect signal 1 of `0x007b74d0`): for an actor whose `+0x446`
+    /// is 1 or 4, its first target (`Battle_FirstSelectedActor(i, -16, 0,
+    /// 1)`) and that one's damage result (`MsGetDamageResult(i, target, 0,
+    /// &local, &more)`; `more` is the original's own argument slot, which
+    /// it always writes): with `more` set and result 1 or 0x11, the
+    /// hit sound (`MsChrSePlay_0079fd40(i, 0x1f with +0x44a, else 3)`,
+    /// `se`) and `MsSetDamage(i, -5, -3)` (`damage`); otherwise the body
+    /// hit bits of `+0xdc0` cleared (`MsClearBodyHitBits_00793dc0`).
+    /// `local` holds the two words (the original's frame word and slot).
+    pub fn ms_effect_signal_hit<M: Mem>(
+        mem: &mut M,
+        se: &mut dyn FnMut(&mut M, u32, u32),
+        damage: &mut dyn FnMut(&mut M, [u32; 3]),
+        i: u32,
+        actor: u32,
+        local: u32,
+    ) {
+        let k = byte(mem, actor, 0x446);
+        if k != 1 && k != 4 {
+            return;
+        }
+        let more = local.wrapping_add(4);
+        let first = crate::body::bridge::battle_first_selected_actor(mem, i, 0xffff_fff0, 0, 1);
+        let r =
+            crate::cue::bridge::ms_get_damage_result(mem, i, first.cast_unsigned(), 0, local, more);
+        if mem.read::<u32>(more) != 0 && (r == 1 || r == 0x11) {
+            let kind = if byte(mem, actor, 0x44a) == 0 {
+                3
+            } else {
+                0x1f
+            };
+            se(mem, i, kind);
+            damage(mem, [i, (-5i32).cast_unsigned(), (-3i32).cast_unsigned()]);
+            return;
+        }
+        let bits: u32 = mem.read(actor.wrapping_add(0xdc0));
+        ms_clear_body_hit_bits(mem, bits);
+    }
+
+    /// `MsEffectSignalMotion_007b77c0(i, actor, signal)` (`0x007b77c0`,
+    /// name ours; the effect signals 3-8 of `0x007b74d0`): for an actor
+    /// whose `+0x446` is 1 or 4 whose first target's damage result
+    /// (`MsGetDamageResult(i, target, 0, 0, &more)`, as
+    /// [`ms_effect_signal_hit`]) is negative, or above 1 and not 0x11, the
+    /// signal's damage motion ([`SIGNAL_MOTIONS`]) for its targets
+    /// (`MsSetDamageMotion(i, -5, motion)`).
+    pub fn ms_effect_signal_motion<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+        actor: u32,
+        signal: u32,
+        local: u32,
+    ) {
+        let k = byte(mem, actor, 0x446);
+        if k != 1 && k != 4 {
+            return;
+        }
+        let first = crate::body::bridge::battle_first_selected_actor(mem, i, 0xffff_fff0, 0, 1);
+        let r =
+            crate::cue::bridge::ms_get_damage_result(mem, i, first.cast_unsigned(), 0, 0, local);
+        if (0..=1).contains(&r) || r == 0x11 {
+            return;
+        }
+        let Some(&motion) = SIGNAL_MOTIONS.get(signal.wrapping_sub(3) as usize) else {
+            return;
+        };
+        ms_set_damage_motion(mem, call, i, (-5i32).cast_unsigned(), motion);
+    }
+
+    /// `MsSetBallSplineInit(i)` (`0x007b7c80`): the ball's start, actor
+    /// `i`'s position (`MsGetChrPos` into `local`, the original's frame
+    /// vector, which it may leave unwritten), into `+0x390..` (through
+    /// `fld`/`fstp`); then its targets' (`+0xdc0`) offset
+    /// `MsGetChrInfo(0xd, targets, 0x10, g_BtlBallOffset)` (`info`), whose
+    /// `eax` it returns.
+    pub fn ms_set_ball_spline_init<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        info: &mut dyn FnMut(&mut M, [u32; 4]) -> u32,
+        i: u32,
+        local: u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store};
+        let a = crate::actor::bridge::ms_get_chr(mem, i);
+        crate::pos::bridge::ms_get_chr_pos(mem, trig, i, local);
+        for k in 0..3 {
+            let v = store(load(mem.read(local.wrapping_add(4 * k))));
+            mem.write(a.wrapping_add(0x390 + 4 * k), v);
+        }
+        let targets: u32 = mem.read(a.wrapping_add(0xdc0));
+        let out = crate::predict::bridge::BALL_OFFSET.ptr(mem).addr;
+        info(mem, [0xd, targets, 0x10, out])
+    }
+
+    /// `MsEffectChrGetLoveLoveMax()` (`0x007b7d00`): of the party's women
+    /// 0-6 (`MsGetRamChrFemale`) who joined, are not dead or stone, and
+    /// (under water, [`UNDERWATER`]) only 6, the one with the most
+    /// affection ([`LOVE`], signed; the first on a tie, and above -1); -1
+    /// for none.
+    ///
+    /// [`UNDERWATER`]: crate::state::bridge::UNDERWATER
+    /// [`LOVE`]: crate::save::bridge::LOVE
+    pub fn ms_effect_chr_get_love_love_max(mem: &impl Mem) -> u32 {
+        use crate::actor::bridge::{ms_get_chr_stat_death, ms_get_chr_stat_stone};
+        let love = crate::save::bridge::LOVE.ptr(mem).addr;
+        let water = crate::state::bridge::UNDERWATER.get(mem) != 0;
+        let (mut best, mut who) = (-1i32, u32::MAX);
+        for i in 0..7 {
+            if ms_get_ram_chr_female(mem, i) == 0
+                || crate::save::bridge::ms_get_save_ply_join(mem, i) == 0
+                || ms_get_chr_stat_death(mem, i) != 0
+                || ms_get_chr_stat_stone(mem, i) != 0
+                || (water && i != 6)
+            {
+                continue;
+            }
+            let v: i32 = mem.read(love.wrapping_add(4 * i));
+            if v > best {
+                best = v;
+                who = i;
+            }
+        }
+        who
+    }
+
+    /// `MsSetChrExtraSlot_00796bb0(i)` (`0x00796bb0`, name ours): actor
+    /// (u8)`i`'s character's slot in [`CHR_EXTRA`] (3 entries of 0xc
+    /// bytes: in use, character): the one holding it, else the first free
+    /// one taken for it, else slot 0 taken over.
+    pub fn ms_set_chr_extra_slot(mem: &mut impl Mem, i: u32) -> u32 {
+        let chr: u32 = mem.read(crate::actor::bridge::ms_get_chr(mem, i & 0xff));
+        let extra = CHR_EXTRA.get(mem);
+        for k in 0..3 {
+            let e = extra.wrapping_add(0xc * k);
+            if byte(mem, e, 0) != 0 && mem.read::<u32>(e.wrapping_add(4)) == chr {
+                return k;
+            }
+        }
+        for k in 0..3 {
+            let e = extra.wrapping_add(0xc * k);
+            if byte(mem, e, 0) == 0 {
+                mem.write(e.wrapping_add(4), chr);
+                mem.write(CHR_EXTRA.get(mem).wrapping_add(0xc * k), 1u8);
+                return k;
+            }
+        }
+        mem.write(extra.wrapping_add(4), chr);
+        mem.write(CHR_EXTRA.get(mem), 1u8);
+        0
+    }
+
+    /// `Enc_SetGroupWeight_00782ba0(scene, w)` (`0x00782ba0`, name ours;
+    /// native 0x708c): the formation `MsFldGetScene(scene, 0, 0, 0)`
+    /// finds gets weight `w` (0-15) in its byte's high nibble, its map's
+    /// weights recounted (`Enc_ResetWeights(scene >> 16, 1)`); the old
+    /// weight; 0 for none.
+    pub fn enc_set_group_weight(mem: &mut impl Mem, scene: u32, w: u32) -> u32 {
+        let at = crate::process::bridge::ms_fld_get_scene(mem, scene, 0, 0, 0);
+        if at == 0 {
+            return 0;
+        }
+        let old = byte(mem, at, 1);
+        let w = w.cast_signed().clamp(0, 0xf).cast_unsigned().to_le_bytes()[0];
+        mem.write(at.wrapping_add(1), (old & 0xf).wrapping_add(w << 4));
+        enc_reset_weights(mem, (scene.cast_signed() >> 16).cast_unsigned(), 1);
+        u32::from(old >> 4)
+    }
+
+    /// `yiSetRotTransDObj` (field, `0x0090a750`).
+    pub const YI_SET_ROT_TRANS_DOBJ: u32 = 0x0090_a750;
+
+    /// `MsResetSceneObjects_0079e2a0()` (`0x0079e2a0`, name ours): scene
+    /// objects 0x1c-0x1e put back (`yiSetRotTransDObj(k, rot, trans)`
+    /// through `call`, both (0, 0, 0, 1.0) in `local`, the original's two
+    /// frame vectors).
+    pub fn ms_reset_scene_objects<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        local: u32,
+    ) {
+        let f = mem.rebase(YI_SET_ROT_TRANS_DOBJ);
+        let v = [0, 0, 0, 1.0f32.to_bits()];
+        for k in 0..3 {
+            mem.write(local, v);
+            mem.write(local.wrapping_add(0x10), v);
+            call(mem, f, &[k + 0x1c, local, local.wrapping_add(0x10)]);
+        }
+    }
+
+    /// `MsLineSideDist_007b6f10(flip, a, b, c)` (`0x007b6f10`, name ours;
+    /// `MsGetTargetSortList`'s): the signed distance (`f32`, in `ST0`) of
+    /// point `c` from the line through `a` and `b` on the ground (x, z):
+    /// the direction (u, v) = (a.x - b.x, a.z - b.z), or with `flip`
+    /// (a.z - b.z, b.x - a.x), each stored `f32`; its length `d`
+    /// (`_CIsqrt`, `f32`); 0.0 when it is 0, else ((u a.z - v a.x as
+    /// `f32`) + (v c.x - u c.z)) / d. As bits.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_line_side_dist(mem: &impl Mem, flip: u32, a: u32, b: u32, c: u32) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, sqrt, store, sub};
+        let f = |p: u32, k: u32| load(mem.read(p.wrapping_add(4 * k)));
+        let (u, v) = if flip != 0 {
+            (store(sub(f(a, 2), f(b, 2))), store(sub(f(b, 0), f(a, 0))))
+        } else {
+            (store(sub(f(a, 0), f(b, 0))), store(sub(f(a, 2), f(b, 2))))
+        };
+        let (u, v) = (load(u), load(v));
+        let d = load(store(sqrt(add(mul(u, u), mul(v, v)))));
+        if d == 0.0 {
+            return 0;
+        }
+        let t = store(sub(mul(f(a, 2), u), mul(f(a, 0), v)));
+        let w = sub(mul(v, f(c, 0)), mul(u, f(c, 2)));
+        store(div(add(load(t), w), d))
+    }
 }

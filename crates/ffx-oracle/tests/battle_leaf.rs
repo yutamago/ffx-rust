@@ -1880,9 +1880,20 @@ fn leaf_turns_match_the_original_on_a_snapshot() {
 /// camera.
 fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
-    let rec = scratch(a, b, 0x40);
+    let rec = scratch(a, b, 0x60);
+    let extra = scratch(a, b, 0x24);
+    let objs = scratch(a, b, 0x20);
     for o in [&mut *a, &mut *b] {
         recording_stub(o, g::MS_GET_SAVE_PLY_LEFT, STUBS_D, rec, 1, 0);
+        // yiSetRotTransDObj (field)
+        recording_stub(
+            o,
+            g::YI_SET_ROT_TRANS_DOBJ,
+            STUBS_D + 0xc0,
+            rec + 0x30,
+            3,
+            0,
+        );
         // the worker's actor and the event map's camera
         recording_stub(
             o,
@@ -2108,6 +2119,105 @@ fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             }
         }
         same("encounter wrappers", a, b);
+        let f = if table[2] > 0 && rng.below(4) != 0 {
+            u32::from(table[7])
+        } else {
+            rng.below(0x40)
+        };
+        let scene = [map << 16 | f, rng.next()][rng.below(6).min(1) as usize];
+        let weight = rng.range(-3, 20).cast_unsigned();
+        twin(
+            "Enc_SetGroupWeight",
+            a,
+            b,
+            0x0078_2ba0,
+            &[scene, weight],
+            ALL,
+            |m| g::enc_set_group_weight(m, scene, weight),
+        );
+        same("Enc_SetGroupWeight", a, b);
+        // affection, the water, the women
+        let love: Vec<u8> = (0..7)
+            .flat_map(|_| {
+                [rng.range(-1, 3), rng.next().cast_signed()][rng.below(6).min(1) as usize]
+                    .to_le_bytes()
+            })
+            .collect();
+        poke(a, b, ffx_battle::save::bridge::LOVE.ptr(b).addr, &love);
+        for k in 0..7 {
+            let p = w.actor(k);
+            poke(a, b, p + 0xdcc, &[u8::from(rng.below(5) == 0)]);
+            poke(
+                a,
+                b,
+                p + 0xdce,
+                &[[0, 0, 0, 1, 0xff][rng.below(5) as usize]],
+            );
+        }
+        set(
+            a,
+            b,
+            ffx_battle::state::bridge::UNDERWATER,
+            [0, 0, 1][rng.below(3) as usize],
+        );
+        twin(
+            "MsEffectChrGetLoveLoveMax",
+            a,
+            b,
+            0x007b_7d00,
+            &[],
+            ALL,
+            |m| g::ms_effect_chr_get_love_love_max(m),
+        );
+        // the three extra slots: some in use, some for actors' characters
+        if !readable(a, g::CHR_EXTRA.get(b), 0x24) {
+            set(a, b, g::CHR_EXTRA, extra);
+        }
+        let e = g::CHR_EXTRA.get(b);
+        for k in 0..3 {
+            let chr = ffx_battle::actor::bridge::ms_get_chr(b, rng.below(ACTORS));
+            let c: u32 = ffx_bridge::Mem::read(b, chr);
+            poke(
+                a,
+                b,
+                e + 0xc * k,
+                &[[0, 1, 1, rng.byte()][rng.below(4) as usize]],
+            );
+            poke(
+                a,
+                b,
+                e + 0xc * k + 4,
+                &[c, rng.next()][rng.below(3).min(1) as usize].to_le_bytes(),
+            );
+        }
+        let j = [rng.below(ACTORS), rng.next()][rng.below(5).min(1) as usize];
+        twin("MsSetChrExtraSlot", a, b, 0x0079_6bb0, &[j], ALL, |m| {
+            g::ms_set_chr_extra_slot(m, j)
+        });
+        same("extra slots", a, b);
+        // the scene objects (yiSetRotTransDObj a recording stub: its
+        // vectors are frame ones, compared by what they hold)
+        twin("MsResetSceneObjects", a, b, 0x0079_e2a0, &[], 0, |m| {
+            g::ms_reset_scene_objects(m, &mut c, objs);
+            0
+        });
+        let ra = a.read(rec + 0x30, 0x10).unwrap();
+        let rb = b.read(rec + 0x30, 0x10).unwrap();
+        assert_eq!(ra[..8], rb[..8], "MsResetSceneObjects: count, object");
+        for k in 0..2 {
+            let pa = u32::from_le_bytes(ra[8 + 4 * k..12 + 4 * k].try_into().unwrap());
+            let pb = u32::from_le_bytes(rb[8 + 4 * k..12 + 4 * k].try_into().unwrap());
+            assert_eq!(
+                a.read(pa, 0x10).unwrap(),
+                b.read(pb, 0x10).unwrap(),
+                "MsResetSceneObjects vector {k}"
+            );
+        }
+        let v = b.read(rec + 0x30, 0x10).unwrap();
+        a.write(rec + 0x30, &v).unwrap();
+        let v = b.read(objs, 0x20).unwrap();
+        a.write(objs, &v).unwrap();
+        same("MsResetSceneObjects", a, b);
         fill(a, b, rng, g::MENU_PANEL.ptr(b).addr, 0x20);
         let id = [
             0x3000 | rng.below(0x60),
@@ -2326,6 +2436,8 @@ fn motions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
     use ffx_battle::motion::bridge as mo;
     let w = world(a, b, rng, synthetic);
     let rec = scratch(a, b, 0x110 * 10);
+    let sig = scratch(a, b, 0x40);
+    let sig_local = scratch(a, b, 8);
     let callees: [(u32, u8); 10] = [
         (g::MS_DAMAGE_SET_MOTION, 3),
         (g::MS_ATEL_REQUEST_EXE, 6),
@@ -2365,6 +2477,9 @@ fn motions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
             (&[0xc3], None),
         ]);
         hook_to(o, g::MS_GET_MOVE_TARGET_POS, STUBS_E, &code);
+        // MsChrSePlay_0079fd40 and MsSetDamage for the effect signals
+        recording_stub(o, 0x0079_fd40, STUBS_E + 0x100, sig, 2, 0);
+        recording_stub(o, 0x0078_d980, STUBS_E + 0x140, sig + 0x20, 3, 0);
     }
     let local = scratch(a, b, 0x20);
     // characters to point at (the character functions are stubs; the
@@ -2469,6 +2584,84 @@ fn motions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
             },
         );
         same("MsSetDamageMotion", a, b);
+        // the effect signals 1 and 3-8 on the same records
+        let actor = w.actor(rng.below(ACTORS));
+        poke(
+            a,
+            b,
+            actor + 0x446,
+            &[[1, 4, rng.byte()][rng.below(3) as usize]],
+        );
+        poke(a, b, actor + 0x44a, &[u8::from(rng.below(2) == 0)]);
+        poke(a, b, actor + 0xdc0, &rng.next().to_le_bytes());
+        poke(a, b, sig_local, &rng.next().to_le_bytes());
+        // the first target's damage buffer for i's command, its result one
+        // of those the signals test
+        let i8 = i & 0xff;
+        let first = ffx_battle::body::bridge::battle_first_selected_actor(b, i8, 0xffff_fff0, 0, 1);
+        if ffx_battle::actor::bridge::ms_btl_chr_num_check(i8) != 0
+            && first >= 0
+            && rng.below(4) != 0
+        {
+            let cmd = ffx_battle::actor::bridge::ms_get_chr_command(b, i8);
+            let id = b.read(cmd + 2, 1).unwrap()[0];
+            let t = ffx_battle::actor::bridge::ms_get_chr(b, first.cast_unsigned());
+            let (next, count) = (
+                [0u8, 0, 1][rng.below(3) as usize],
+                [1u8, 2][rng.below(2) as usize],
+            );
+            let r = [1u8, 0x11, 2, 0xff, 0][rng.below(5) as usize];
+            for o in [0x774u32, 0xa4c] {
+                poke(a, b, t + o, &[next, count, u8::try_from(i8).unwrap(), id]);
+                for k in 0..2 {
+                    poke(a, b, t + o + 0x18 + 0x2c * k, &[r]);
+                }
+            }
+        }
+        if rng.below(2) == 0 {
+            twin(
+                "MsEffectSignalHit",
+                a,
+                b,
+                0x007b_75c0,
+                &[i, actor],
+                0,
+                |m| {
+                    let (fs, fd) = (m.rebase(0x0079_fd40), m.rebase(0x0078_d980));
+                    g::ms_effect_signal_hit(
+                        m,
+                        &mut |m, i, k| {
+                            call_original(m, fs, &[i, k]);
+                        },
+                        &mut |m, args| {
+                            call_original(m, fd, &args);
+                        },
+                        i,
+                        actor,
+                        sig_local,
+                    );
+                    0
+                },
+            );
+        } else {
+            let signal = rng.below(11);
+            twin(
+                "MsEffectSignalMotion",
+                a,
+                b,
+                0x007b_77c0,
+                &[i, actor, signal],
+                0,
+                |m| {
+                    g::ms_effect_signal_motion(m, &mut c, i, actor, signal, sig_local);
+                    0
+                },
+            );
+        }
+        // (the damage result's words are the original's frame and slot)
+        let v = b.read(sig_local, 8).unwrap();
+        a.write(sig_local, &v).unwrap();
+        same("effect signals", a, b);
         let chr = rng.below(0x12);
         let p = ply + chr * 0x94;
         poke(
@@ -2620,6 +2813,8 @@ fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         for (k, (f, n)) in (0u32..).zip(stubbed) {
             recording_stub(o, f, STUBS_D + 0x80 * k, rec + 0x80 * k, n, 0);
         }
+        // MsGetChrInfo for the ball's offset
+        recording_stub(o, 0x0079_5170, STUBS_D + 0x200, rec + 0x1c0, 4, 0);
     }
     let pos = scratch(a, b, 0x10);
     if w.synthetic {
@@ -2807,6 +3002,50 @@ fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             }),
         }
         same("battle targets", a, b);
+        // the ball's start: its position through the same frame
+        let seed: Vec<u8> = (0..4).flat_map(|_| float(rng).to_le_bytes()).collect();
+        a.write(frame, &seed).unwrap();
+        poke(a, b, local, &seed);
+        poke(a, b, rec + 0x1c0 + 0x14, &rng.next().to_le_bytes());
+        twin("MsSetBallSplineInit", a, b, 0x007b_7c80, &[i], ALL, |m| {
+            let f = m.rebase(0x0079_5170);
+            ffx_battle::minor::bridge::ms_set_ball_spline_init(
+                m,
+                &stand_in,
+                &mut |m, args| call_original(m, f, &args),
+                i,
+                local,
+            )
+        });
+        let v = a.read(frame, 0x10).unwrap();
+        a.write(local, &v).unwrap();
+        same("MsSetBallSplineInit", a, b);
+        // a point's side of a line on the ground
+        let pts: Vec<u8> = (0..12).flat_map(|_| float(rng).to_le_bytes()).collect();
+        poke(a, b, w.out, &pts);
+        if rng.below(6) == 0 {
+            // a line of no length
+            let p = b.read(w.out, 12).unwrap();
+            poke(a, b, w.out + 0x10, &p);
+        }
+        let flip = rng.below(2) * rng.next();
+        ftwin(
+            "MsLineSideDist",
+            a,
+            b,
+            0x007b_6f10,
+            &[flip, w.out, w.out + 0x10, w.out + 0x20],
+            |m| {
+                ffx_battle::minor::bridge::ms_line_side_dist(
+                    m,
+                    flip,
+                    w.out,
+                    w.out + 0x10,
+                    w.out + 0x20,
+                )
+            },
+        );
+        same("MsLineSideDist", a, b);
     }
 }
 

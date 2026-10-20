@@ -4019,6 +4019,58 @@ ported! {
         native!(c);
         minor::ms_atel_bind_camera(&mut mem(), &mut c, kind, i, n, at)
     }
+    /// `MsEffectSignalHit_007b75c0(i, actor)`: the damage result's two
+    /// words in this call's frame.
+    MsEffectSignalHit_007b75c0 @ 0x007b_75c0 => extern "C" fn ms_effect_signal_hit(i: u32, actor: u32) {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        let mut se = |m: &mut _, i: u32, kind: u32| {
+            afterdmg::ms_chr_se_play(m, &crt_trig, &mut call_ptr, i, kind);
+        };
+        let mut damage = |m: &mut _, a: [u32; 3]| {
+            script!(s);
+            afterdmg::ms_set_damage(&mut target::Dm::new(m), &host(), &mut s, a[0], a[1], a[2]);
+        };
+        minor::ms_effect_signal_hit(&mut mem(), &mut se, &mut damage, i, actor, at);
+    }
+    /// `MsEffectSignalMotion_007b77c0(i, actor, signal)`.
+    MsEffectSignalMotion_007b77c0 @ 0x007b_77c0 => extern "C" fn ms_effect_signal_motion(i: u32, actor: u32, signal: u32) {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        minor::ms_effect_signal_motion(&mut mem(), &mut call_ptr, i, actor, signal, at);
+    }
+    /// `MsSetBallSplineInit(i)`: the position in this call's frame.
+    MsSetBallSplineInit @ 0x007b_7c80 => extern "C" fn ms_set_ball_spline_init(i: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        let mut info = |m: &mut _, a: [u32; 4]| {
+            target::ms_get_chr_info(&mut target::Dm::new(m), &host(), a[0], a[1], a[2], a[3], None)
+        };
+        minor::ms_set_ball_spline_init(&mut mem(), &crt_trig, &mut info, i, at)
+    }
+    /// `MsEffectChrGetLoveLoveMax()`.
+    MsEffectChrGetLoveLoveMax @ 0x007b_7d00 => extern "C" fn ms_effect_chr_get_love_love_max() -> u32 {
+        minor::ms_effect_chr_get_love_love_max(&mem())
+    }
+    /// `MsSetChrExtraSlot_00796bb0(i)`.
+    MsSetChrExtraSlot_00796bb0 @ 0x0079_6bb0 => extern "C" fn ms_set_chr_extra_slot(i: u32) -> u32 {
+        minor::ms_set_chr_extra_slot(&mut mem(), i)
+    }
+    /// `Enc_SetGroupWeight_00782ba0(scene, w)`.
+    Enc_SetGroupWeight_00782ba0 @ 0x0078_2ba0 => extern "C" fn enc_set_group_weight(scene: u32, w: u32) -> u32 {
+        minor::enc_set_group_weight(&mut mem(), scene, w)
+    }
+    /// `MsResetSceneObjects_0079e2a0()`: the two vectors in this call's
+    /// frame, `yiSetRotTransDObj` through the game.
+    MsResetSceneObjects_0079e2a0 @ 0x0079_e2a0 => extern "C" fn ms_reset_scene_objects() {
+        let mut local = super::StackFrame::<8>::new();
+        let at = local.at();
+        minor::ms_reset_scene_objects(&mut mem(), &mut call_ptr, at);
+    }
+    /// `MsLineSideDist_007b6f10(flip, a, b, c)` (an `f32` in ST0).
+    MsLineSideDist_007b6f10 @ 0x007b_6f10 => extern "C" fn ms_line_side_dist(flip: u32, a: u32, b: u32, c: u32) -> f32 {
+        f32::from_bits(minor::ms_line_side_dist(&mem(), flip, a, b, c))
+    }
     /// `MsRegSEplay3(i, se)`.
     MsRegSEplay3 @ 0x007a_0170 => extern "C" fn ms_reg_se_play3(i: u32, se: u32) -> u32 {
         afterdmg::ms_reg_se_play3(&mut mem(), &crt_trig, &mut call_ptr, i, se)
