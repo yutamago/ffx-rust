@@ -1518,6 +1518,403 @@ pub mod bridge {
         MENU_ITEM_LIST_COUNT.set(mem, entry.wrapping_sub(list) >> 2);
     }
 
+    /// The overdrive modes in list order (`TkMn2BuildItemList_008c2390`
+    /// kind 1): 20 bit numbers of `TkMn2GetOverDriveType`'s mask.
+    pub const MN2_OVERDRIVE_ORDER: Global<[u8; 20]> = Global::new(0x00c8_765c);
+
+    /// `TkMn2BuildItemList_008c2390(kind, arg)` (`0x008c2390`): fills
+    /// [`MENU_ITEM_LIST`] (cleared with [`MENU_ITEM_COUNTS`]) by `kind`,
+    /// then [`MN2_LIST_MAX`] = entries written and [`MN2_NAME_MODE_MAX`] =
+    /// entries shown (at least 1). Entries are `{u16 id, u8 kind, u8
+    /// value}`:
+    /// - 0 the current character's commands (`TkMenuGetCommandMax/Offset
+    ///   (MsMenuStatusNum(0), 5, chr, 0)`, owned ones `0x101`; a missing one
+    ///   with a menu panel leaves a gap unless `chr` is 0, 2 or 4), or for
+    ///   `chr` 1 the aeons of `TkMenuSummonEnableMask` (8..15, `0x102`);
+    ///   2 the same for the current aeon (never a gap);
+    /// - 1 the overdrive modes of [`MN2_OVERDRIVE_ORDER`] in
+    ///   `TkMn2GetOverDriveType(chr)` (`0x103`);
+    /// - 3 the aeon grow list (`TkMn2GetSummonGrow`, 8-byte records: mask
+    ///   byte, `u16` command, `u16` item, needed count): learnt 5, too few
+    ///   items 7, allowed for the aeon (mask bit `aeon - 8`) or with key
+    ///   item `0xa022` 4, else 6; value = record index; no items, no entry
+    ///   (its `+3` keeps the `0xff` written first);
+    /// - 5 the weapon customisations (`TkMn2GetKaizou`, same record shape,
+    ///   mask 2 for armour `arg + 5`, else 1) against `arg`'s abilities
+    ///   (`u16` at `+0xe`, `MsGetRomAbility` group `+0x69`, level `+0x6a`,
+    ///   kind `+0x6b`): 0xb, 0xe too few items, 0xc same, 0xf higher or
+    ///   blocked, 0x10 no empty slot (`MenuList_IsEmptySlot(arg)`); the
+    ///   ones without items follow as `0xff11_0000` (listed, not shown);
+    /// - 6/7 the inventory (`MsSaveItemTypeBuffer/NumBuffer`), each slot
+    ///   in place, usable ones (always for 7) kind `0x12`, value 1;
+    /// - `0x13`/`0x15` every weapon (`MsGetSaveWeaponList(-1, -1, 0)`):
+    ///   kind 1, value 1 when flags `+3 & 0xd` are 0 and `+6` is `0xff`;
+    ///   unowned or flag 2 zero (`0x13`) or the id with 0 (`0x15`); shown up
+    ///   to the last owned one;
+    /// - `0x14` the current character's weapons of kind `arg`, `0x101`, and
+    ///   for `arg` 1 an empty `0x0100_0000` entry.
+    ///
+    /// `local` is 12 bytes of out slots (a count, then a discarded word).
+    pub fn tk_mn2_build_item_list<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        arg: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let out = local.wrapping_add(8);
+        let f = fun(mem, 0x0079_0200);
+        let commands = call(mem, f, &[0, out]);
+        let f = fun(mem, 0x008a_9860);
+        let player = call(mem, f, &[]);
+        let list = MENU_ITEM_LIST.ptr(mem).addr;
+        let counts = MENU_ITEM_COUNTS.ptr(mem).addr;
+        mem.write(list, [0u32; 0x200]);
+        mem.write(counts, [0u16; 0x200]);
+        MN2_LIST_MAX.set(mem, 0);
+        let mut e = list;
+        let shown = match kind {
+            0 | 2 => {
+                let (who, mut whole) = if kind == 2 {
+                    let f = fun(mem, 0x008a_9880);
+                    (call(mem, f, &[]), true)
+                } else {
+                    (player, false)
+                };
+                if who == 1 {
+                    let f = fun(mem, 0x008a_b1e0);
+                    let mask = call(mem, f, &[]);
+                    for c in 8..16 {
+                        if mask & (1 << c) != 0 {
+                            put(mem, &mut e, c, 2, 1);
+                        }
+                    }
+                } else {
+                    whole |= matches!(who, 0 | 2 | 4);
+                    let f = fun(mem, 0x008a_8e20);
+                    call(mem, f, &[]);
+                    let f = fun(mem, 0x008d_2d80);
+                    let max = call(mem, f, &[commands, 5, who, 0]).cast_signed();
+                    let f = fun(mem, 0x008d_2dc0);
+                    let off = call(mem, f, &[commands, 5, who, 0]);
+                    let mut at = commands.wrapping_add(off.wrapping_mul(4)).wrapping_add(2);
+                    for _ in 0..max.max(0) {
+                        let id = u32::from(mem.read::<u16>(at));
+                        let f = fun(mem, 0x0078_5020);
+                        if call(mem, f, &[who, id]) != 0 {
+                            put(mem, &mut e, id, 1, 1);
+                        } else if !whole {
+                            let f = fun(mem, 0x0078_50b0);
+                            if call(mem, f, &[id]) != 0 {
+                                e = e.wrapping_add(4);
+                            }
+                        }
+                        at = at.wrapping_add(4);
+                    }
+                }
+                e
+            }
+            1 => {
+                let f = fun(mem, 0x008c_1bf0);
+                let mask = call(mem, f, &[player]);
+                let order = MN2_OVERDRIVE_ORDER.get(mem);
+                for b in order {
+                    if mask & (1 << (b & 0x1f)) != 0 {
+                        put(mem, &mut e, u32::from(b), 3, 1);
+                    }
+                }
+                e
+            }
+            3 => {
+                build_grow_rows(mem, &mut e, call);
+                e
+            }
+            5 => build_kaizou_rows(mem, arg, out, &mut e, call),
+            6 | 7 => build_inventory_rows(mem, kind == 7, local, &mut e, call),
+            0x13 | 0x15 => build_weapon_rows(mem, kind == 0x13, local, &mut e, call),
+            0x14 => {
+                let f = fun(mem, 0x008a_9860);
+                let chr = call(mem, f, &[]);
+                let f = fun(mem, 0x007a_bd10);
+                let ids = call(mem, f, &[chr, arg, 0, local]);
+                let get = fun(mem, 0x007a_bbd0);
+                let mut k = 0u32;
+                while k.cast_signed() < mem.read::<i32>(local) {
+                    let id = u32::from(mem.read::<u16>(ids.wrapping_add(2 * k)));
+                    let rec = call(mem, get, &[id, out]);
+                    if mem.read::<u8>(rec.wrapping_add(2)) != 0 {
+                        put(mem, &mut e, id, 1, 1);
+                    }
+                    k += 1;
+                }
+                if arg == 1 {
+                    mem.write(e, 0x0100_0000u32);
+                    e = e.wrapping_add(4);
+                }
+                e
+            }
+            _ => list,
+        };
+        MN2_LIST_MAX.set(mem, e.wrapping_sub(list) >> 2);
+        let shown = shown.wrapping_sub(list) >> 2;
+        MN2_NAME_MODE_MAX.set(mem, if shown == 0 { 1 } else { shown });
+    }
+
+    /// `TkMn2BuildItemList_008c2390` kinds 6 and 7: the inventory, each
+    /// slot in place (`all`: kind 7, every item usable).
+    fn build_inventory_rows<M: Mem>(
+        mem: &mut M,
+        all: bool,
+        local: u32,
+        e: &mut u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let out = local.wrapping_add(8);
+        let f = fun(mem, 0x0079_0530);
+        let ids = call(mem, f, &[local]);
+        let f = fun(mem, 0x0079_0510);
+        let nums = call(mem, f, &[local]);
+        let mut k = 0u32;
+        while k.cast_signed() < mem.read::<i32>(local) {
+            let id = u32::from(mem.read::<u16>(ids.wrapping_add(2 * k)));
+            let n: u8 = mem.read(nums.wrapping_add(k));
+            let f = fun(mem, 0x008a_b280);
+            let rec = call(mem, f, &[id, out]);
+            if n != 0 {
+                let usable = item_usable_by_call(mem, rec, call) || all;
+                if usable {
+                    mem.write(e.wrapping_add(2), 0x12u8);
+                }
+                #[allow(clippy::cast_possible_truncation)] // a u16 id
+                mem.write(*e, id as u16);
+                mem.write(e.wrapping_add(3), u8::from(usable));
+            }
+            *e = e.wrapping_add(4);
+            k += 1;
+        }
+        *e
+    }
+
+    /// `TkMn2BuildItemList_008c2390` kinds `0x13` and `0x15`: every weapon
+    /// (`zero`: kind `0x13`, unowned ones cleared); returns the end of the
+    /// rows shown.
+    fn build_weapon_rows<M: Mem>(
+        mem: &mut M,
+        zero: bool,
+        local: u32,
+        e: &mut u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let out = local.wrapping_add(8);
+        let list = MENU_ITEM_LIST.ptr(mem).addr;
+        let f = fun(mem, 0x007a_bd10);
+        let ids = call(mem, f, &[u32::MAX, u32::MAX, 0, local]);
+        let get = fun(mem, 0x007a_bbd0);
+        let mut k = 0u32;
+        while k.cast_signed() < mem.read::<i32>(local) {
+            let id = u32::from(mem.read::<u16>(ids.wrapping_add(2 * k)));
+            let rec = call(mem, get, &[id, out]);
+            if id != 0 {
+                let flags: u8 = mem.read(rec.wrapping_add(3));
+                if mem.read::<u8>(rec.wrapping_add(2)) == 0 || flags & 2 != 0 {
+                    if zero {
+                        mem.write(*e, 0u32);
+                    } else {
+                        #[allow(clippy::cast_possible_truncation)] // a u16 id
+                        mem.write(*e, id as u16);
+                        mem.write(e.wrapping_add(2), 0u16);
+                    }
+                } else {
+                    let plain = flags & 0xd == 0 && mem.read::<u8>(rec.wrapping_add(6)) == 0xff;
+                    #[allow(clippy::cast_possible_truncation)] // a u16 id
+                    mem.write(*e, id as u16);
+                    mem.write(e.wrapping_add(3), u8::from(plain));
+                    mem.write(e.wrapping_add(2), 1u8);
+                }
+            }
+            *e = e.wrapping_add(4);
+            k += 1;
+        }
+        // shown up to the last owned weapon (at least one row)
+        let mut end_row = mem.read::<i32>(local).wrapping_sub(1);
+        while end_row >= 0 {
+            let at = ids.wrapping_add(2 * end_row.cast_unsigned());
+            let id = u32::from(mem.read::<u16>(at));
+            let rec = call(mem, get, &[id, out]);
+            if mem.read::<u8>(rec.wrapping_add(2)) != 0 {
+                end_row += 1;
+                break;
+            }
+            end_row -= 1;
+        }
+        if end_row <= 0 {
+            mem.write(list, 0u32);
+            end_row = 1;
+        }
+        list.wrapping_add(end_row.cast_unsigned().wrapping_mul(4))
+    }
+
+    /// One `{u16 id, u8 kind, u8 value}` list entry at `*e`, then the next.
+    fn put(mem: &mut impl Mem, e: &mut u32, id: u32, kind: u8, value: u8) {
+        #[allow(clippy::cast_possible_truncation)] // a u16 id
+        mem.write(*e, id as u16);
+        mem.write(e.wrapping_add(2), kind);
+        mem.write(e.wrapping_add(3), value);
+        *e = e.wrapping_add(4);
+    }
+
+    /// [`item_usable`] with `TkMenuSummonEnableMask` called (only when
+    /// `+0x22` has bit 7 without bit 6).
+    fn item_usable_by_call<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> bool {
+        if mem.read::<u8>(rec.wrapping_add(0x1c)) & 1 == 0 {
+            return false;
+        }
+        let f = mem.read::<u8>(rec.wrapping_add(0x22));
+        if f & 0x80 == 0 || f & 0x40 != 0 {
+            return true;
+        }
+        let mask = mem.rebase(0x008a_b1e0);
+        call(mem, mask, &[]) != 0
+    }
+
+    /// `TkMn2BuildItemList_008c2390` kind 3: the current aeon's grow list.
+    fn build_grow_rows<M: Mem>(
+        mem: &mut M,
+        e: &mut u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let f = fun(mem, 0x0079_0800);
+        let important = call(mem, f, &[0xa022]);
+        let f = fun(mem, 0x008a_9880);
+        let summon = call(mem, f, &[]);
+        let f = fun(mem, 0x008c_1c40);
+        let max = call(mem, f, &[]).cast_signed();
+        let f = fun(mem, 0x008c_1c20);
+        let table = call(mem, f, &[]);
+        #[allow(clippy::cast_possible_truncation)] // the byte test of `1 << n`
+        let bit = (1u32 << (summon.wrapping_sub(8) & 0x1f)) as u8;
+        for k in 0..max.max(0).cast_unsigned() {
+            let rec = table.wrapping_add(8 * k);
+            let id = u32::from(mem.read::<u16>(rec.wrapping_add(2)));
+            mem.write(e.wrapping_add(3), 0xffu8);
+            let f = fun(mem, 0x0078_5020);
+            let row = if call(mem, f, &[summon, id]) == 0 {
+                let item = u32::from(mem.read::<u16>(rec.wrapping_add(4)));
+                let f = fun(mem, 0x0079_04b0);
+                let n = call(mem, f, &[item]).cast_signed();
+                if n == 0 {
+                    None
+                } else if n < i32::from(mem.read::<u8>(rec.wrapping_add(6))) {
+                    Some(7)
+                } else if mem.read::<u8>(rec) & bit != 0 || important != 0 {
+                    Some(4)
+                } else {
+                    Some(6)
+                }
+            } else {
+                Some(5)
+            };
+            if let Some(kind) = row {
+                #[allow(clippy::cast_possible_truncation)] // the index byte
+                put(mem, e, id, kind, k as u8);
+            }
+        }
+    }
+
+    /// `TkMn2BuildItemList_008c2390` kind 5: the customisations for the
+    /// piece at `gear`; returns the end of the rows shown.
+    fn build_kaizou_rows<M: Mem>(
+        mem: &mut M,
+        gear: u32,
+        out: u32,
+        e: &mut u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let f = fun(mem, 0x008c_1b70);
+        let table = call(mem, f, &[]);
+        let f = fun(mem, 0x008c_1b90);
+        let max = call(mem, f, &[]).cast_signed();
+        let mask: u8 = if mem.read::<u8>(gear.wrapping_add(5)) != 0 {
+            2
+        } else {
+            1
+        };
+        // the piece's abilities: group, level, kind (0xff: any customisation
+        // of kind 0xfe is blocked)
+        let mut have = [[0u8; 3]; 4];
+        let mut n_have = 0;
+        let mut wild = false;
+        for s in 0..4 {
+            let a = u32::from(mem.read::<u16>(gear.wrapping_add(0xe + 2 * s)));
+            if a == 0 || a == 0xff {
+                continue;
+            }
+            let f = fun(mem, 0x0079_0970);
+            let rec = call(mem, f, &[a, out]);
+            let g: [u8; 3] = mem.read(rec.wrapping_add(0x69));
+            wild |= g[2] == 0xff;
+            have[n_have] = g;
+            n_have += 1;
+        }
+        let mut missing = 0u32;
+        for k in 0..max.max(0).cast_unsigned() {
+            let row = table.wrapping_add(8 * k);
+            if mem.read::<u8>(row) & mask == 0 {
+                continue;
+            }
+            let ability = u32::from(mem.read::<u16>(row.wrapping_add(2)));
+            let f = fun(mem, 0x0079_0970);
+            let rec = call(mem, f, &[ability, out]);
+            let item = u32::from(mem.read::<u16>(row.wrapping_add(4)));
+            let f = fun(mem, 0x0079_04b0);
+            let n = call(mem, f, &[item]).cast_signed();
+            if n == 0 {
+                missing += 1;
+                continue;
+            }
+            let [group, level, kind]: [u8; 3] = mem.read(rec.wrapping_add(0x69));
+            let mut row_kind = 0xbu8;
+            for g in &have[..n_have] {
+                if g[0] == group {
+                    if g[1] > level {
+                        row_kind = 0xf;
+                    }
+                    if g[1] == level {
+                        row_kind = if g[2] == kind { 0xc } else { 0xf };
+                    }
+                }
+                if wild && kind == 0xfe {
+                    row_kind = 0xf;
+                }
+            }
+            if row_kind == 0xb && i32::from(mem.read::<u8>(row.wrapping_add(6))) > n {
+                row_kind = 0xe;
+            }
+            let f = fun(mem, 0x008b_f720);
+            if call(mem, f, &[gear]) == 0 {
+                row_kind = 0x10;
+            }
+            #[allow(clippy::cast_possible_truncation)] // the index byte
+            put(mem, e, ability, row_kind, k as u8);
+        }
+        // the rows without items are listed, not shown
+        let shown = *e;
+        for _ in 0..missing {
+            mem.write(*e, 0xff11_0000u32);
+            *e = e.wrapping_add(4);
+        }
+        shown
+    }
+
     /// An item's menu use: kernel flag `+0x1c` bit 0; with `+0x22` bit 7
     /// also bit 6 or an aeon (`TkMenuSummonEnableMask`).
     fn item_usable(mem: &impl Mem, rec: u32) -> bool {

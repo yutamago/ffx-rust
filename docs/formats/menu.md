@@ -210,6 +210,27 @@ not the row. In gear mode (`0x0186a393`) `MenuItem_DrawGearInfo`
 and the piece it wears of the selected row's kind (byte `+5`: armour,
 else weapon) above the selected piece.
 
+`TkMn2BuildItemList_008c2390(kind, arg)` (`0x008c2390`, callers
+`TkMn2RefreshList` and two menu screens) clears the item list and its
+counts and fills `{u16 id, u8 kind, u8 value}` entries by `kind` (byte
+table `0x008c2aa4` into the jump table `0x008c2a7c`; 4, 8..0x12 and
+anything above `0x15` list nothing):
+
+| kind | entries |
+|---|---|
+| 0 | the current character's commands: `TkMenuGetCommandMax/Offset(MsMenuStatusNum(0), 5, chr, 0)`, owned ones (`MsGetSaveCommand`) `0x101`; a missing one with a menu panel (`MsGetSaveCommandMenuPanel`) leaves an empty entry, except for characters 0, 2 and 4. Character 1 instead lists the aeons of `TkMenuSummonEnableMask` (ids 8..15, `0x102`); jump table `0x008c2abc` on the character |
+| 1 | the overdrive modes: each byte of `g_TkMn2OverDriveOrder` (`0x00c8765c`, 20) whose bit is set in `TkMn2GetOverDriveType(chr)`, `0x103` |
+| 2 | kind 0 for the current aeon (`TkMenuGetCurrentSummon`), never with gaps |
+| 3 | the aeon's grow list (`TkMn2GetSummonGrow`, `TkMn2GetSummonGrowMax` 8-byte records: mask byte, `u16` command, `u16` item, needed count byte): kind 5 learnt, 7 fewer items than needed, 4 when the mask has bit `aeon - 8` or key item `0xa022` is owned, else 6; value = record index. No items, no entry, but its `+3` keeps the `0xff` written before the test |
+| 5 | weapon customisations (`TkMn2GetKaizou`/`Max`, same record shape; mask bit 2 when `arg + 5` is set, else 1) against the piece at `arg`: its four `u16` abilities at `+0xe` (0 and `0xff` skipped) give `MsGetRomAbility` bytes `+0x69` group, `+0x6a` level, `+0x6b` kind. A row starts at `0xb`; a same-group ability with a higher level makes `0xf`, the same level `0xc` (same kind) or `0xf`; with an ability of kind `0xff` every row of kind `0xfe` is `0xf`; `0xb` with fewer items than needed is `0xe`; no empty slot (`MenuList_IsEmptySlot(arg)`) makes `0x10`. Rows without items follow as `0xff11_0000`, counted in the list but not shown |
+| 6, 7 | the inventory (`MsSaveItemTypeBuffer`/`NumBuffer`), slot by slot (empty slots stay zero): usable items (as in `TkMenuItemRefresh`; all for 7) get kind `0x12`, value 1 |
+| `0x13`, `0x15` | every weapon (`MsGetSaveWeaponList(-1, -1, 0)`): owned ones without flag 2 kind 1, value 1 when flags `+3 & 0xd` are 0 and `+6` is `0xff`; the others zero (`0x13`) or id and 0 (`0x15`) |
+| `0x14` | the current character's weapons of kind `arg` that are owned, `0x101`; for `arg` 1 then an empty `0x0100_0000` entry |
+
+`g_TkMn2ListMax` gets the entries written and `g_TkMn2NameModeMax` the
+entries shown, at least 1: for `0x13`/`0x15` up to the last owned
+weapon (MsGetSaveWeapon `+2`), for 5 without the missing rows.
+
 ## Config menu
 
 `MenuConfig_DrawOptionRow` (`0x008cbae0`) draws row `row` of the config

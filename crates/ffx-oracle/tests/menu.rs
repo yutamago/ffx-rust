@@ -14145,3 +14145,212 @@ fn menu_round28_sel_items_window_ctrl_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` logging the arguments `args`, storing the word in the second
+/// returned cell through argument `out` and returning the first's.
+fn ret_out_stub(t: &mut Twins, f: u32, log: u32, args: &[u8], out: u8) -> (u32, u32) {
+    let (cell, value) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x8b, 0x54, 0x24, 4 + 4 * out, 0xa1]; // mov edx, [esp + 4 + 4 out]; mov eax, [value]
+    extra.extend(value.to_le_bytes());
+    extra.extend([0x89, 0x02]); // mov [edx], eax
+    let code = seq_code_of(log, f, args, cell, &extra);
+    jump_stub(t, f, &code);
+    (cell, value)
+}
+
+/// `f` logging the arguments `args` and returning the word of `base`
+/// selected by the low byte of argument `k`.
+fn word_table_stub(t: &mut Twins, f: u32, log: u32, args: &[u8], k: u8, base: u32) {
+    let unused = t.alloc(&[0; 4]);
+    let mut code = seq_code_of(log, f, args, unused, &[]);
+    code.truncate(code.len() - 6);
+    #[rustfmt::skip]
+    code.extend([
+        &[0x0f, 0xb6, 0x44, 0x24, 4 + 4 * k][..], // movzx eax, byte [esp + 4 + 4k]
+        &[0x8b, 0x04, 0x85], &base.to_le_bytes(), // mov eax, [eax * 4 + base]
+        &[0xc3],
+    ].concat());
+    jump_stub(t, f, &code);
+}
+
+/// `n` bytes from `set`.
+fn bytes_of(t: &mut Twins, n: usize, set: &[u8]) -> Vec<u8> {
+    (0..n).map(|_| t.rng.pick(set)).collect()
+}
+
+#[test]
+fn menu_round29_build_item_list_matches_the_original() {
+    let Some(mut t) = setup_any(0x0029_2390) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x200;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    // every callee logged; results from cells or from tables by an id's
+    // low byte; the record getters write their out word (a stack address)
+    let (commands, _) = ret_out_stub(&mut t, 0x0079_0200, log, &[0], 1);
+    let player = seq_stub(&mut t, 0x008a_9860, log, 0, &[]);
+    let summon = seq_stub(&mut t, 0x008a_9880, log, 0, &[]);
+    seq_stub(&mut t, 0x008a_8e20, log, 0, &[]);
+    let max = seq_stub(&mut t, 0x008d_2d80, log, 4, &[]);
+    let off = seq_stub(&mut t, 0x008d_2dc0, log, 4, &[]);
+    let (has_cmd, panel) = (t.alloc(&[0; 0x100]), t.alloc(&[0; 0x100]));
+    byte_table_stub(&mut t, 0x0078_5020, log, &[0, 1], 1, has_cmd);
+    byte_table_stub(&mut t, 0x0078_50b0, log, &[0], 0, panel);
+    let important = seq_stub(&mut t, 0x0079_0800, log, 1, &[]);
+    let grow_max = seq_stub(&mut t, 0x008c_1c40, log, 0, &[]);
+    let grow = seq_stub(&mut t, 0x008c_1c20, log, 0, &[]);
+    let nums = t.alloc(&[0; 0x400]);
+    word_table_stub(&mut t, 0x0079_04b0, log, &[0], 0, nums);
+    let od = seq_stub(&mut t, 0x008c_1bf0, log, 1, &[]);
+    let kaizou = seq_stub(&mut t, 0x008c_1b70, log, 0, &[]);
+    let kaizou_max = seq_stub(&mut t, 0x008c_1b90, log, 0, &[]);
+    let (abilities, weapons, items) = (
+        t.alloc(&[0; 0x900]),
+        t.alloc(&[0; 0x900]),
+        t.alloc(&[0; 0x900]),
+    );
+    record_stub(&mut t, 0x0079_0970, log, &[0], abilities, 8, Some(1));
+    let empty = seq_stub(&mut t, 0x008b_f720, log, 1, &[]);
+    let (weapon_list, weapon_n) = ret_out_stub(&mut t, 0x007a_bd10, log, &[0, 1, 2], 3);
+    record_stub(&mut t, 0x007a_bbd0, log, &[0], weapons, 8, Some(1));
+    let (item_ids, item_n1) = ret_out_stub(&mut t, 0x0079_0530, log, &[], 0);
+    let (item_nums, item_n2) = ret_out_stub(&mut t, 0x0079_0510, log, &[], 0);
+    record_stub(&mut t, 0x008a_b280, log, &[0], items, 8, Some(1));
+    let mask = seq_stub(&mut t, 0x008a_b1e0, log, 0, &[]);
+
+    let list = t.sym(tk::MENU_ITEM_LIST.sym);
+    let counts = t.sym(tk::MENU_ITEM_COUNTS.sym);
+    let order = t.sym(tk::MN2_OVERDRIVE_ORDER.sym);
+    let game_order: Vec<u8> = (0..20).map(|k| Mem::read::<u8>(&t.a, order + k)).collect();
+    let (cmd_list, table, gear, ids) = (
+        t.alloc(&[0; 0x400]),
+        t.alloc(&[0; 0x200]),
+        t.alloc(&[0; 0x20]),
+        t.alloc(&[0; 0x400]),
+    );
+    let item_bytes = t.alloc(&[0; 0x200]);
+    let who = [0u32, 1, 2, 3, 4, 5, 7, 8, 9, 0xc, 0xf, 0x10, 0xffff_ffff];
+    for round in 0..1500u32 {
+        t.put(log, start);
+        t.scramble_at(list, 0x880);
+        t.scramble_at(counts, 0x400);
+        for g in [tk::MN2_LIST_MAX.sym, tk::MN2_NAME_MODE_MAX.sym] {
+            let v = t.rng.next();
+            let at = t.sym(g);
+            t.put(at, v);
+        }
+        if round % 4 == 3 {
+            let v: Vec<u8> = (0..20)
+                .map(|_| t.rng.pick(&[0u8, 1, 5, 0x1f, 0x20, 0x3f, 0xff]))
+                .collect();
+            t.put_bytes(order, &v);
+        } else {
+            t.put_bytes(order, &game_order);
+        }
+        // commands
+        t.put(commands, cmd_list);
+        t.scramble_at(cmd_list, 0x400);
+        let v = small_bytes(&mut t, 0x100);
+        t.put_bytes(has_cmd, &v);
+        let v = small_bytes(&mut t, 0x100);
+        t.put_bytes(panel, &v);
+        let p = t.rng.pick(&who);
+        t.put(player, p);
+        let s = t.rng.pick(&who);
+        t.put(summon, s);
+        let n = t.rng.pick(&[-3i32, 0, 1, 2, 5, 20, 60, 0x7fff_ffff]);
+        t.put(max, n.min(60));
+        let o = t.rng.below(0x40);
+        t.put(off, o);
+        // grow and kaizou tables (8-byte records), counts and abilities
+        t.scramble_at(table, 0x200);
+        let v = bytes_of(&mut t, 0x200, &[0, 1, 2, 3, 4, 5, 0xfe, 0xff, 0x41]);
+        if round % 2 == 0 {
+            t.put_bytes(table, &v);
+        }
+        for k in 0..0x100u32 {
+            let n = t
+                .rng
+                .pick(&[0u32, 0, 1, 2, 3, 5, 99, 0xffff_ffff, 0x8000_0000, 0x100]);
+            t.put(nums + 4 * k, n);
+        }
+        t.put(grow, table);
+        t.put(kaizou, table);
+        let n = t.rng.pick(&[-1i32, 0, 1, 2, 5, 12, 30, 63]);
+        t.put(grow_max, n);
+        let n = t.rng.pick(&[-1i32, 0, 1, 2, 5, 12, 30, 63]);
+        t.put(kaizou_max, n);
+        let imp = t.rng.pick(&[0u32, 0, 1, 0x8000_0000]);
+        t.put(important, imp);
+        let v = bytes_of(&mut t, 0x900, &[0, 1, 2, 3, 0xfe, 0xff]);
+        t.put_bytes(abilities, &v);
+        let v = small_bytes(&mut t, 0x20);
+        t.put_bytes(gear, &v);
+        for k in 0..4 {
+            let a = t
+                .rng
+                .pick(&[0u16, 0xff, 1, 7, 0x20, 0x81, 0x1ff, 0x100, 0xffff]);
+            t.put(gear + 0xe + 2 * k, a);
+        }
+        let e = t.rng.pick(&[0u32, 1, 2, 0x100]);
+        t.put(empty, e);
+        let m = t
+            .rng
+            .pick(&[0u32, 0xffff_ffff, 0x100, 0xff00, 0x8a00, 0x1_0000])
+            ^ t.rng.next() & 0xff00;
+        t.put(mask, m);
+        let m = t.rng.next();
+        t.put(od, m);
+        // weapons and items
+        t.put(weapon_list, ids);
+        t.put(item_ids, ids);
+        t.put(item_nums, item_bytes);
+        let v: Vec<u8> = (0..0x400)
+            .map(|k| {
+                if k % 2 == 1 {
+                    t.rng.pick(&[0u8, 0, 1, 2])
+                } else {
+                    u8::try_from(t.rng.next() & 0xff).unwrap_or(0)
+                }
+            })
+            .collect();
+        t.put_bytes(ids, &v);
+        let v = bytes_of(&mut t, 0x200, &[0, 0, 1, 2, 0xff]);
+        t.put_bytes(item_bytes, &v);
+        let v = bytes_of(&mut t, 0x900, &[0, 1, 2, 3, 4, 8, 0xd, 0xff]);
+        t.put_bytes(weapons, &v);
+        let v = bytes_of(&mut t, 0x900, &[0, 1, 0x80, 0xc0, 0x81, 0x41, 0xc1, 0xff]);
+        t.put_bytes(items, &v);
+        let n = t.rng.pick(&[-2i32, 0, 1, 2, 3, 10, 60, 200]);
+        t.put(weapon_n, n);
+        let n = t.rng.pick(&[-2i32, 0, 1, 3, 10, 0x60, 0x1ff]);
+        t.put(item_n1, n);
+        let n = t.rng.pick(&[-2i32, 0, 1, 3, 10, 0x60, 0x1ff]);
+        t.put(item_n2, n);
+        let kind = match round % 3 {
+            0 => round / 3 % 0x16,
+            1 => t.rng.pick(&[0u32, 1, 2, 3, 5, 6, 7, 0x13, 0x14, 0x15]),
+            _ => t
+                .rng
+                .pick(&[4u32, 8, 0x12, 0x16, 0x20, 0xffff_ffff, 0x8000_0000, 0x15]),
+        };
+        let arg = match kind {
+            5 => gear,
+            0x14 => t.rng.pick(&[0u32, 1, 2, 5, 0xffff_ffff]),
+            _ => t.rng.next(),
+        };
+        t.twin(
+            "TkMn2BuildItemList_008c2390",
+            0x008c_2390,
+            &[kind, arg],
+            VOID,
+            |o| {
+                tk::tk_mn2_build_item_list(o, kind, arg, local, &mut callback);
+                0
+            },
+        );
+    }
+    t.put_bytes(order, &game_order);
+    eprintln!("{} calls", t.calls);
+}
