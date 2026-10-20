@@ -7783,7 +7783,7 @@
 0x008361c0 function Sg_LightGetDir            # fh v3:exact 0x00836240
 0x00836240 function Sg_LightGetNormalMatrixPtr # () -> 0x01300978, the matrix Sg_LightSetDir fills; Switch name
 0x00836250 function Sg_LightSetChr            # (chr): light matrices from the character's own directions/colours (+0x384.., +0x3c4.., chosen by the i8 at +0x188) or the global ones; Switch name
-0x00836310 function Sg_LightSetColor          # fh v3:exact 0x00836390
+0x00836310 function Sg_LightSetColor          # fh v3:exact 0x00836390; cdecl(kind, rgba) -> eax: kind 0..3 (unsigned): 4 words of rgba into light colour kind (0x00c49744 + 16 kind); FFXVu0LightColorMatrix(0x023c4400, the four colours); graphicCharacterLightingSetLightColor(kind, r, g, b) returned; ported in ffx_sg::light (main round 15)
 0x00836430 function Sg_LightSetDir            # fh v3:exact 0x008364b0
 0x008364f0 function Sg_LightSetDirXYZ         # (i, x, y, z): Sg_LightSetDir(i, &(x, y, z, 0)); script native at 0x00a77f70; between Sg_LightSetDir and Light_Set; name ours; ported (ffx_sg::control)
 0x00836520 function Light_Set                    # (light 0-3, r, g, b, pitch deg, yaw deg): color /255 (0x00836310) and direction from the two angles (0x00836430)

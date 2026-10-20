@@ -1714,6 +1714,10 @@ ported! {
     MsCameraSetTargetPolar_007bf600 @ 0x007b_f600 => extern "C" fn cam_set_target_polar(id: u32, side: u32, flags: u32, target: u32, d: u32, a: u32, b: u32) -> u32 {
         camera::bridge::cam_set_target_polar(&mut mem(), id, side, flags, target, [d, a, b])
     }
+    /// `Sg_LightSetColor(kind, rgba)`.
+    Sg_LightSetColor @ 0x0083_6310 => extern "C" fn sg_light_set_color(kind: u32, rgba: u32) -> u32 {
+        light::bridge::sg_light_set_color(&mut mem(), kind, rgba)
+    }
     /// `sa_meth01dec(src, dst, size)`.
     sa_meth01dec @ 0x00a4_3bc0 => extern "C" fn sa_meth01dec(src: u32, dst: u32, size: u32) -> u32 {
         decode::bridge::sa_meth01dec(&mut mem(), src, dst, size)

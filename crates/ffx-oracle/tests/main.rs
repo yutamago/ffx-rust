@@ -6363,3 +6363,46 @@ fn cam_polar_snapshot() {
     let mut rng = Xorshift(0x5eed_0f13);
     cam_polar_cases(&mut a, &mut b, &mut rng, 100);
 }
+
+fn light_color_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::light::bridge as l;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 115, l::LIGHT_COLOR_MATRIX, 5, 0);
+    recorder(a, b, 116, l::SET_LIGHT_COLOUR, 4, 0);
+    let rets = [a.rebase(REC_RETS) + 4 * 115, a.rebase(REC_RETS) + 4 * 116];
+    let rgba = alloc(a, b, 0x10);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for r in rets {
+            put(a, b, r, rng.next());
+        }
+        for i in 0..4 {
+            put(a, b, rgba + 4 * i, rng.float());
+        }
+        let kind = match rng.below(4) {
+            0 => rng.next(),
+            _ => rng.below(6),
+        };
+        twin("Sg_LightSetColor", a, b, 0x0083_6310, &[kind, rgba], |m| {
+            l::sg_light_set_color(&mut H(m), kind, rgba)
+        });
+    }
+}
+
+#[test]
+fn light_color_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f14);
+    light_color_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn light_color_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f15);
+    light_color_cases(&mut a, &mut b, &mut rng, 60);
+}
