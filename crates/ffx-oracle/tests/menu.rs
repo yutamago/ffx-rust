@@ -10716,3 +10716,179 @@ fn menu_round24_eases_pads_and_kaizou_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round24_tables_masks_and_rows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0024_ac70) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let r = t.rng.next();
+
+    // Pad_RepeatButtons: Pad_RepeatButton logged, its eax from a cell
+    let eax = t.alloc(&[0; 4]);
+    let (_, mut code) = log_args(&mut t, 6);
+    code.extend(
+        [
+            &[0xa1][..],
+            &eax.to_le_bytes(),
+            &[0x03, 0x44, 0x24, 0x0c, 0xc3],
+        ]
+        .concat(),
+    ); // mov eax, [eax]; add eax, [esp + 12]; ret
+    jump_stub(&mut t, 0x0088_9980, &code);
+    for _ in 0..300 {
+        let e = t.rng.next();
+        t.put(eax, e);
+        let args: [u32; 5] = std::array::from_fn(|_| t.rng.next());
+        t.twin("Pad_RepeatButtons", 0x0088_9940, &args, U32, |o| {
+            w(tk::pad_repeat_buttons(
+                o,
+                args[0],
+                [args[1], args[2], args[3], args[4]],
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuKaizou_DrawRows: the rows recorded
+    record_far(&mut t, 0x008d_6760, 5, r);
+    for _ in 0..200 {
+        let window = t.rng.next();
+        let (fixed, first, d, y) = (t.rng.int(), t.rng.int(), t.rng.next(), t.rng.int());
+        t.twin(
+            "MenuKaizou_DrawRows",
+            0x008d_6560,
+            &[window, fixed, first, d, y],
+            VOID,
+            |o| {
+                tk::menu_kaizou_draw_rows(
+                    o,
+                    window,
+                    [i(fixed), i(first), i(y)],
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+
+    // Math_SemicircleTable: _CIsin's stand-in, and _CIacos as
+    // atan2(sqrt(1 - x²), x)
+    install_x87(&mut t);
+    #[rustfmt::skip]
+    let acos = test_code(&mut t, &[
+        0xd9, 0xc0, 0xd8, 0xc8,  // fld st0; fmul st0, st0
+        0xd9, 0xe8, 0xde, 0xe1,  // fld1; fsubrp st1 (1 - x²)
+        0xd9, 0xfa, 0xd9, 0xc9,  // fsqrt; fxch st1
+        0xd9, 0xf3, 0xc3,        // fpatan; ret
+    ]);
+    t.put(t.sym(0x00b0_c3c4), acos);
+    let out = t.alloc(&[0; 0x400]);
+    for _ in 0..300 {
+        let n = t.rng.pick(&[0u32, 1, 2, 3, 5, 16, 100, 0x1ff, 0xffff_ffff]);
+        let amp = t
+            .rng
+            .pick_or_any(&[0, 1, 10, 0x7fff, 0xffff_fff0, 0x10_0000]);
+        let fill = t.rng.bytes(0x400);
+        t.put_bytes(out, &fill);
+        t.twin(
+            "Math_SemicircleTable",
+            0x008c_ac70,
+            &[out + 2, n, amp],
+            U32,
+            |o| {
+                w(tk::math_semicircle_table(
+                    o,
+                    out + 2,
+                    [i(n), i(amp)],
+                    &mut |o, sin, v| {
+                        x87_call(o, if sin { 0x00b0_c3b8 } else { 0x00b0_c3c4 }, v, None)
+                    },
+                ))
+            },
+        );
+    }
+
+    // MenuAbility_CommandTargetMask: the command record, the lists and
+    // MenuItem_TargetNeedsRecovery stand-ins logged
+    let rec = t.alloc(&[0; 0x40]);
+    let (_, mut code) = log_args(&mut t, 1);
+    code.extend([&[0xb8][..], &rec.to_le_bytes(), &[0xc3]].concat());
+    jump_stub(&mut t, 0x0079_0a90, &code);
+    let aeons = return_cell(&mut t, 0x008a_9bf0);
+    let party = return_cell(&mut t, 0x008a_9b30);
+    for (f, k) in [(0x008a_9bc0u32, 0x20u8), (0x008a_9ad0, 0x10)] {
+        // i * 3 + k
+        stub(
+            &mut t,
+            f,
+            &[
+                0x8b, 0x44, 0x24, 0x04, 0x8d, 0x04, 0x40, 0x83, 0xc0, k, 0xc3,
+            ],
+        );
+    }
+    let (_, mut code) = log_args(&mut t, 3);
+    #[rustfmt::skip]
+    code.extend([
+        0x8b, 0x44, 0x24, 0x0c, 0xc1, 0xe8, 0x05,       // mov eax, [esp + 12]; shr eax, 5
+        0x03, 0x44, 0x24, 0x0c, 0x03, 0x44, 0x24, 0x04, // add eax, [esp + 12]; add eax, [esp + 4]
+        0x33, 0x44, 0x24, 0x08, 0xc1, 0xe8, 0x01,       // xor eax, [esp + 8]; shr eax, 1
+        0x83, 0xe0, 0x01, 0xc3,                         // and eax, 1; ret
+    ]);
+    jump_stub(&mut t, 0x008c_6a70, &code);
+    for _ in 0..1000 {
+        let kind = t.rng.pick(&[0u8, 1, 2, 3, 4, 0xff]);
+        t.put(rec + 0x23, kind);
+        let targets = u16::from_le_bytes([t.rng.bytes(1)[0], t.rng.bytes(1)[0]]);
+        t.put(rec + 0x1a, targets);
+        let flags = t.rng.pick(&[0u8, 0x40, 0x80, 0xc0, 0x3f]);
+        t.put(rec + 0x22, flags);
+        for cell in [aeons, party] {
+            let n = t.rng.pick(&[0u32, 1, 3, 8, 33, 0xffff_ffff]);
+            t.put(cell, n);
+        }
+        let cmd = t.rng.next();
+        t.twin(
+            "MenuAbility_CommandTargetMask",
+            0x008c_6bc0,
+            &[cmd],
+            U32,
+            |o| {
+                w(tk::menu_ability_command_target_mask(
+                    o,
+                    cmd,
+                    local,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+
+    // MenuItem_SortInventory: the menu list scrambled
+    let count = return_cell(&mut t, 0x008c_8c30);
+    record_far(&mut t, 0x008c_8e60, 1, r);
+    let list = t.sym(0x0159_7770);
+    for _ in 0..200 {
+        let n = t.rng.pick(&[0u32, 1, 5, 0x70, 0x100, 0xffff_ffff]);
+        t.put(count, n);
+        for k in 0..0x100 {
+            let id = t
+                .rng
+                .pick(&[
+                    0x2000u16, 0x2001, 0x2010, 0x206f, 0x2070, 0x20ff, 0x2100, 0x0005, 0xffff,
+                ])
+                .wrapping_add(u16::try_from(t.rng.below(4)).unwrap());
+            t.put(list + 4 * k, id);
+            let c = t.rng.pick(&[0u8, 1, 99, 0xff]);
+            t.put(list + 4 * k + 2, c);
+        }
+        t.twin("MenuItem_SortInventory", 0x008c_8fe0, &[], VOID, |o| {
+            tk::menu_item_sort_inventory(o, local, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

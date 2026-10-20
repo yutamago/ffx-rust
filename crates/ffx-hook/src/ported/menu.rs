@@ -4106,6 +4106,31 @@ ported! {
     Pad_RepeatButton @ 0x0088_9980 => extern "C" fn pad_repeat_button(work: u32, _b: u32, i: u32, now: u32, prev: u32, slot: u32) -> u32 {
         tk::pad_repeat_button(&mut mem(), work, [i, now, prev, slot], &mut |_| input_get_cur_time())
     }
+    /// `Pad_RepeatButtons(work, b, now, prev, slot)`: the bits in `ax`.
+    Pad_RepeatButtons @ 0x0088_9940 => extern "C" fn pad_repeat_buttons(work: u32, b: u32, now: u32, prev: u32, slot: u32) -> u32 {
+        tk::pad_repeat_buttons(&mut mem(), work, [b, now, prev, slot], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_DrawRows(window, fixed, first, _, y)`: void.
+    MenuKaizou_DrawRows @ 0x008d_6560 => extern "C" fn menu_kaizou_draw_rows(window: u32, fixed: i32, first: i32, _d: u32, y: i32) {
+        tk::menu_kaizou_draw_rows(&mut mem(), window, [fixed, first, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Math_SemicircleTable(out, n, r)`: `out`.
+    Math_SemicircleTable @ 0x008c_ac70 => extern "C" fn math_semicircle_table(out: u32, n: i32, r: i32) -> u32 {
+        // _CIsin and _CIacos through the C runtime's import slots
+        tk::math_semicircle_table(&mut mem(), out, [n, r], &mut |_, sin, v| crt_x87(if sin { 0x00b0_c3b8 } else { 0x00b0_c3c4 }, v, None))
+    }
+    /// `MenuAbility_CommandTargetMask(cmd)`: 1 with aeons only, else 0.
+    MenuAbility_CommandTargetMask_008c6bc0 @ 0x008c_6bc0 => extern "C" fn menu_ability_command_target_mask(cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_ability_command_target_mask(&mut mem(), cmd, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_SortInventory()`: void.
+    MenuItem_SortInventory @ 0x008c_8fe0 => extern "C" fn menu_item_sort_inventory() {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_sort_inventory(&mut mem(), local, &mut |_, f, a| call_ptr(f, a));
+    }
 }
 
 /// `inputGetCurTime()` (`0x00630c60`) through the game's entry: the result

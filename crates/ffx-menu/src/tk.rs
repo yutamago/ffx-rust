@@ -11138,13 +11138,69 @@ pub mod bridge {
         remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
+        let rows = Rows {
+            row: 0x008d_0170,
+            x: 210.0,
+            top: 599.0,
+            step: 79.0,
+            from: 0,
+            to: 5,
+        };
+        draw_rows(mem, &rows, window, [fixed, first, y], remap, call);
+    }
+
+    /// `MenuKaizou_DrawRows(window, fixed, first, _, y)` (`0x008d6560`,
+    /// own name; caller `0x008d5d50`): [`menu_weapon_draw_rows`] for the
+    /// customise menu, eleven [`menu_kaizou_draw_row`]s, rows
+    /// `first - 1..first + 10`, at `remapX2(209)`, from `remapY2(244) +
+    /// y`, `remapY2(75)` apart. No caller reads `eax`.
+    pub fn menu_kaizou_draw_rows<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [fixed, first, y]: [i32; 3],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let rows = Rows {
+            row: 0x008d_6760,
+            x: 209.0,
+            top: 244.0,
+            step: 75.0,
+            from: -1,
+            to: 10,
+        };
+        draw_rows(mem, &rows, window, [fixed, first, y], remap, call);
+    }
+
+    /// A row list's layout: the row function, the remapped `x`, first
+    /// `y` and step, and the row offsets `from..to` added to `first`.
+    struct Rows {
+        row: u32,
+        x: f32,
+        top: f32,
+        step: f32,
+        from: i32,
+        to: i32,
+    }
+
+    /// The row loop of [`menu_weapon_draw_rows`] and
+    /// [`menu_kaizou_draw_rows`]: `row(window, x, y, first + i, fixed)`,
+    /// `y` stepped (as a float) after each row, the last included.
+    fn draw_rows<M: Mem>(
+        mem: &mut M,
+        rows: &Rows,
+        window: u32,
+        [fixed, first, y]: [i32; 3],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
         use ffx_bridge::x87;
         #[allow(clippy::cast_precision_loss)] // fild, fstp dword
         let y = y as f32;
-        let x = x87::store(remap(mem, false, 210.0));
-        let mut y = x87::store(remap(mem, true, 599.0) + f64::from(y));
-        let row = mem.rebase(0x008d_0170);
-        for i in 0..5 {
+        let x = x87::store(remap(mem, false, rows.x));
+        let mut y = x87::store(remap(mem, true, rows.top) + f64::from(y));
+        let row = mem.rebase(rows.row);
+        for i in rows.from..rows.to {
             let args = [
                 window,
                 x,
@@ -11153,7 +11209,7 @@ pub mod bridge {
                 fixed.cast_unsigned(),
             ];
             call(mem, row, &args);
-            y = x87::store(remap(mem, true, 79.0) + x87::load(y));
+            y = x87::store(remap(mem, true, rows.step) + x87::load(y));
         }
     }
 
@@ -11462,6 +11518,181 @@ pub mod bridge {
         mem.write(timer, left);
         mem.write(last, t);
         (slot & 0xffff_0000) | u32::from(out)
+    }
+    /// `Pad_RepeatButtons(work, b, now, prev, slot)` (`0x00889940`, own
+    /// name): [`pad_repeat_button`] for buttons 0-3, their bits or'd in
+    /// `ax` (the rest of `eax` the last call's).
+    pub fn pad_repeat_buttons<M: Mem>(
+        mem: &mut M,
+        work: u32,
+        [b, now, prev, slot]: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0088_9980);
+        let mut bits = 0;
+        let mut eax = 0;
+        for i in 0..4 {
+            eax = call(mem, f, &[work, b, i, now, prev, slot]);
+            bits |= eax & 0xffff;
+        }
+        (eax & 0xffff_0000) | bits
+    }
+
+    /// `Math_SemicircleTable(out, n, r)` (`0x008cac70`, own name; caller
+    /// `TkBtlEndInit`): `n` `u16`s at `out`, entry `i` =
+    /// `ftol(f32(f32(sin(f32(acos(x)))) * f32(r) * 16))` with `x =
+    /// f32((2 f32(i) - d) / d)`, `d = f32(n) - 1`, clamped to `[-1, 1]`
+    /// (NaN kept); then the first and the `n`-th entry are 0 (also for `n`
+    /// below 1: `out[n - 1]`). `trig(sin, v)` is the C runtime's `_CIsin`
+    /// or `_CIacos`. Returns `out`.
+    #[allow(clippy::many_single_char_names)] // the formula's names
+    pub fn math_semicircle_table<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        [count, radius]: [i32; 2],
+        trig: &mut impl FnMut(&mut M, bool, f64) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{div, load, mul, store, sub};
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let int = |v: i32| f64::from(v as f32);
+        let round = |v: f64| load(store(v));
+        if count > 0 {
+            let d = sub(int(count), 1.0);
+            let radius = int(radius);
+            for i in 0..count {
+                let q = round(div(sub(mul(2.0, int(i)), d), d));
+                // (a NaN stays a NaN)
+                let x = q.clamp(-1.0, 1.0);
+                let a = round(trig(mem, false, x));
+                let s = round(trig(mem, true, a));
+                let v = round(mul(mul(s, radius), 16.0));
+                let v = ffx_bridge::x87::ftol(mem, v);
+                #[allow(clippy::cast_possible_truncation)] // mov word
+                mem.write(out.wrapping_add(i.cast_unsigned() * 2), v as u16);
+            }
+        }
+        mem.write(out, 0u16);
+        let last = count.wrapping_sub(1).cast_unsigned().wrapping_mul(2);
+        mem.write(out.wrapping_add(last), 0u16);
+        out
+    }
+
+    /// `MenuAbility_CommandTargetMask(cmd)` (`0x008c6bc0`, own name;
+    /// caller `TkMenuCtrlAbility`): command `cmd` (kept at `0x0186a3a8`)
+    /// from `MsGetRomPlyCommand(cmd, local)`: the recovery kind byte
+    /// `0x0186a392` from `+0x23` (2 gives 1, 3 gives 2, else 0), the
+    /// all-targets byte `0x0186a391` 0 when `+0x1a >> 2 & 3` is 1 or 2,
+    /// else 1; then bit `i` of the `u16` at `0x0186a3a4` for each aeon
+    /// (`+0x22` bit 7, `TkMenuGetSummonFromIndex`) and then, from bit 0
+    /// again, each party member (bit 6, `TkMenuGetPlayerFromIndex2`) that
+    /// `MenuItem_TargetNeedsRecovery(kind, all, chr)` accepts. Returns 0
+    /// with party members, else 1 with aeons, else 0.
+    pub fn menu_ability_command_target_mask<M: Mem>(
+        mem: &mut M,
+        cmd: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        #[allow(clippy::cast_possible_truncation)] // mov word
+        mem.write(r(mem, 0x0186_a3a8), cmd as u16);
+        let rom = r(mem, 0x0079_0a90);
+        let rec = call(mem, rom, &[cmd, local]);
+        let kind = match mem.read::<u8>(rec.wrapping_add(0x23)) {
+            2 => 1u8,
+            3 => 2,
+            _ => 0,
+        };
+        mem.write(r(mem, 0x0186_a392), kind);
+        let targets = (mem.read::<u16>(rec.wrapping_add(0x1a)) >> 2) & 3;
+        mem.write(r(mem, 0x0186_a391), u8::from(!matches!(targets, 1 | 2)));
+        let mut mask = 0u32;
+        let mut ret = 0;
+        let groups = [
+            (0x80u8, 0x008a_9bf0u32, 0x008a_9bc0u32),
+            (0x40, 0x008a_9b30, 0x008a_9ad0),
+        ];
+        for (bit, max, get) in groups {
+            if mem.read::<u8>(rec.wrapping_add(0x22)) & bit == 0 {
+                continue;
+            }
+            let f = r(mem, max);
+            let n = call(mem, f, &[]).cast_signed();
+            let mut one = 1u32;
+            for i in 0..n {
+                let f = r(mem, get);
+                let chr = call(mem, f, &[i.cast_unsigned()]);
+                let kind = u32::from(mem.read::<u8>(r(mem, 0x0186_a392)));
+                let all = u32::from(mem.read::<u8>(r(mem, 0x0186_a391)));
+                let f = r(mem, 0x008c_6a70);
+                if call(mem, f, &[kind, all, chr]) != 0 {
+                    mask |= one;
+                }
+                one = one.rotate_left(1);
+            }
+            ret = u32::from(bit == 0x80);
+        }
+        #[allow(clippy::cast_possible_truncation)] // mov word
+        mem.write(r(mem, 0x0186_a3a4), mask as u16);
+        ret
+    }
+
+    /// `MenuItem_SortInventory()` (`0x008c8fe0`, own name; caller
+    /// `TkMenuCtrlItem`): rebuilds the save's item list in the game's
+    /// item order. All 256 entries of `MsSaveItemTypeBuffer(local)` become
+    /// 0xff and of `MsSaveItemNumBuffer(local)` 0 (past their 0x70 slots,
+    /// as in the original); the counts of the menu list
+    /// (`TOAmapGetItemListMax()` entries of 4 bytes at `0x01597770`: `u16`
+    /// id, count byte `+2`) indexed by `id & 0xfff` (ids above 0xff and
+    /// zero counts skipped); then for each id of the order table at
+    /// `0x00c87578` (`u16`s up to 0xffff) with a count, the id and the
+    /// count's low byte appended. `TkMenuItemRefresh(4)`. The order table
+    /// (0x2000-0x206f, never written) indexes only the 256 counts; an
+    /// index past them (stack in the original) counts as 0 here. No caller
+    /// reads `eax`.
+    pub fn menu_item_sort_inventory<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let f = r(mem, 0x0079_0530);
+        let mut types = call(mem, f, &[local]);
+        let f = r(mem, 0x0079_0510);
+        let mut nums = call(mem, f, &[local]);
+        for i in 0..0x100u32 {
+            mem.write(types.wrapping_add(i * 2), 0xffu16);
+            mem.write(nums.wrapping_add(i), 0u8);
+        }
+        let mut counts = [0u16; 0x100];
+        let f = r(mem, 0x008c_8c30);
+        let n = call(mem, f, &[]).cast_signed();
+        let mut at = r(mem, 0x0159_7770);
+        for _ in 0..n {
+            let id = usize::from(mem.read::<u16>(at) & 0xfff);
+            let count = mem.read::<u8>(at.wrapping_add(2));
+            if count != 0 && id <= 0xff {
+                counts[id] = u16::from(count);
+            }
+            at = at.wrapping_add(4);
+        }
+        let mut order = r(mem, 0x00c8_7578);
+        loop {
+            let id = mem.read::<u16>(order);
+            if id == 0xffff {
+                break;
+            }
+            let count = counts.get(usize::from(id & 0xfff)).copied().unwrap_or(0);
+            if count != 0 {
+                mem.write(types, id);
+                types = types.wrapping_add(2);
+                mem.write(nums, count.to_le_bytes()[0]);
+                nums = nums.wrapping_add(1);
+            }
+            order = order.wrapping_add(2);
+        }
+        let f = r(mem, 0x008c_8e60);
+        call(mem, f, &[4]);
     }
 }
 
