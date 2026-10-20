@@ -38,6 +38,8 @@ use ffx_bridge::snapshot::{BLOCK, Snapshot};
 use goblin::pe::PE;
 use unicorn_engine::{Arch, HookType, MemType, Mode, Prot, RegisterX86, Unicorn};
 
+pub mod harvest;
+pub use harvest::{CallState, Case, Driver, OracleHost, Store, harvested};
 mod win32;
 mod x87;
 
@@ -91,6 +93,8 @@ pub enum Error {
         file: String,
         line: u32,
     },
+    #[error("a harvested state does not fit this oracle's memory layout: {0}")]
+    LayoutMismatch(String),
     #[error("the C runtime gave up: it called {0} (an invalid parameter, abort() or an exception)")]
     RuntimeAbort(&'static str),
 }
@@ -246,6 +250,13 @@ struct State {
     code_next: u64,
     /// Strings handed out once (command line, environment).
     constants: HashMap<&'static str, u32>,
+    /// The targets and states of a running [`Oracle::harvest`].
+    harvest: Option<harvest::Run>,
+    /// Where [`Oracle::call`] puts its arguments, when not at the top of
+    /// the stack (below a harvested call's frame, [`Oracle::apply_state`]).
+    call_top: Option<u64>,
+    /// Blocks run in the `FFX_ORACLE_COVER` ranges (`ffx.sym` addresses).
+    cover: BTreeSet<u32>,
 }
 
 /// An emulated `FFX.exe` process.
@@ -547,6 +558,19 @@ impl Oracle {
                         uc.get_data_mut().fault = Some(e);
                         let _ = uc.emu_stop();
                     }
+                })?;
+            }
+        }
+        if let Some(ranges) = cover_ranges() {
+            for (lo, len) in ranges {
+                let at = u64::from(lo.wrapping_sub(0x0040_0000).wrapping_add(base));
+                uc.add_block_hook(at, at + u64::from(len.max(1)) - 1, move |uc, addr, _| {
+                    let s = uc.get_data_mut();
+                    let sym = u32::try_from(addr)
+                        .unwrap_or(0)
+                        .wrapping_sub(s.image_base)
+                        .wrapping_add(0x0040_0000);
+                    s.cover.insert(sym);
                 })?;
             }
         }
@@ -875,9 +899,12 @@ impl Oracle {
             (RegisterX86::EDI, "EDI", 0x3333_3333),
             (RegisterX86::EBP, "EBP", 0x4444_4444),
         ];
-        let (stack_base, sentinel) = {
+        let (top, sentinel) = {
             let s = self.uc.get_data();
-            (s.stack_base, s.sentinel)
+            (
+                s.call_top.unwrap_or(s.stack_base + STACK_SIZE - 0x100),
+                s.sentinel,
+            )
         };
         let stack_args: &[u32] = match conv {
             Conv::Fastcall => {
@@ -897,7 +924,7 @@ impl Oracle {
             }
             Conv::Cdecl | Conv::Stdcall => args,
         };
-        let mut sp = stack_base + STACK_SIZE - 0x100;
+        let mut sp = top;
         for &arg in stack_args.iter().rev() {
             sp -= 4;
             self.uc.mem_write(sp, &arg.to_le_bytes())?;
@@ -961,6 +988,51 @@ impl Oracle {
         let mut out = [0u8; 10];
         out.copy_from_slice(&raw[..10]);
         Ok(Some(out))
+    }
+}
+
+/// `FFX_ORACLE_COVER`: comma-separated `addr+len` ranges (`ffx.sym`
+/// addresses, hexadecimal) whose run blocks every oracle appends to the
+/// file `FFX_ORACLE_COVER_OUT` when dropped, one address per line: rough
+/// branch reach of a test (docs/hooking.md).
+fn cover_ranges() -> Option<Vec<(u32, u32)>> {
+    let spec = std::env::var("FFX_ORACLE_COVER").ok()?;
+    let num = |t: &str| {
+        let t = t.trim().replace('_', "");
+        let t = t.strip_prefix("0x").unwrap_or(&t);
+        u32::from_str_radix(t, 16).ok()
+    };
+    Some(
+        spec.split(',')
+            .filter_map(|r| {
+                let (a, n) = r.split_once('+')?;
+                Some((num(a)?, num(n)?))
+            })
+            .collect(),
+    )
+}
+
+impl Drop for Oracle {
+    fn drop(&mut self) {
+        let cover = &self.uc.get_data().cover;
+        if cover.is_empty() {
+            return;
+        }
+        if let Some(out) = std::env::var_os("FFX_ORACLE_COVER_OUT") {
+            use std::io::Write;
+            let text = cover.iter().fold(String::new(), |mut t, a| {
+                use std::fmt::Write as _;
+                let _ = writeln!(t, "{a:#010x}");
+                t
+            });
+            if let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(out)
+            {
+                let _ = f.write_all(text.as_bytes());
+            }
+        }
     }
 }
 

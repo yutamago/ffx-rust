@@ -172,6 +172,59 @@ The smoke test maps `FFX.exe` with `DONT_RESOLVE_DLL_REFERENCES` (no game
 code runs), installs the hooks, and calls the original addresses, which now
 run Rust.
 
+### Harvested call states
+
+Parity tests can run on real calls instead of hand-built inputs
+(`crates/ffx-oracle/src/harvest.rs`). `Oracle::harvest` runs a driver (an
+original top-level routine) for some frames on a snapshot; a block hook at
+each target's entry saves the call as the original made it: registers, x87
+and SSE state, 64 KiB of stack above `ESP`, and every page written so far
+that differs from the snapshot. The game's clock reads a system DLL, so the
+harvest patches `Phyre_PTimerWin32_GetTime` to a fake clock
+(`Oracle::fake_clock`); the patch travels with each state. States are
+deduplicated by a hash of `EAX`/`ECX`/`EDX`, the first eight stack words and
+64 bytes behind each, and capped per target.
+
+```bash
+tools/harvest.sh                        # fills ~/ffx-work/harvest from field.snap and battle.snap
+cargo run --release -p ffx-oracle --example harvest -- --snapshot <snap> \
+    --driver 0x00820ae0 --frames 60 --max 8 [--targets ported|<file>|<addr,...>]
+```
+
+The store is `~/ffx-work/harvest/<snapshot>/<addr>/<n>.state` (`FFX_HARVEST`
+moves it): an 8-byte magic, the dedupe key, an LZ4 block. Drivers in
+`tools/harvest.sh`: `Sg_MainLoop` (`0x00820ae0`, the game's frame: about 600
+ported targets on each snapshot), `Yn_FieldProc` (`0x0091a8c0`) and
+`MsBattleProcess` (`0x00790c10`). The store stays outside git; rerun the
+script after a new snapshot or a new hook.
+
+A test is one line (`crates/ffx-oracle/tests/harvested.rs`):
+
+```rust
+harvest_test!(sg_seq_step, 0x0083_7900, args = 1, |m: &mut Oracle, s| {
+    ffx_sg::seq::bridge::seq_step(&mut OracleHost(m), s.arg(0))
+});
+```
+
+For each stored state it builds two oracles on the snapshot, applies the
+state to both (`Oracle::apply_state`), runs the original from the saved
+registers in one (`Oracle::run_state`, returning to the oracle) and the
+closure in the other, then compares the result (`u32`, `i32`, `bool`,
+`u64` as `EDX:EAX`, `f32`/`f64` in `ST0`, `Masked`, `()`), every byte written
+outside the stacks, and the caller's stack above the `args` words. A float
+the original leaves in `ST0` fails a non-float port. `s.arg(i)`, `s.ecx()`,
+`s.edx()` read the call's arguments; `OracleHost` is the `ffx_bridge::Host`
+for bridges that call originals (their frames go below the saved stack).
+Tests skip without `FFX_GAME_DIR` or states; `FFX_HARVEST_REQUIRE=1` makes a
+missing store a failure, `FFX_HARVEST_LIMIT=n` caps states per snapshot.
+`ffx_oracle::harvested(addr)` gives the cases for custom checks
+(`Case::compare` returns the difference instead of panicking, for mutation
+runners).
+
+Rough branch reach: `FFX_ORACLE_COVER=0x<addr>+<len hex>,...` with
+`FFX_ORACLE_COVER_OUT=<file>` makes every oracle append the blocks it ran in
+those ranges (`ffx.sym` addresses) to the file when dropped.
+
 ## In the game
 
 The game runs on Windows straight from its folder on the WSL filesystem,
