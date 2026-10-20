@@ -4892,7 +4892,7 @@
 0x00782750 function MsEffectBufferFree_00782750 # (): user_free(g_BtlEffectBuffer), cleared; MsBattleFree's only call between Sg_IdSetEffectTableIndex and MsNumberFreeMem, inlined as a user_free in Switch's MsBattleFree (fh cg_switch calls); name ours; ported (battle round 18)
 0x00782770 function MsEnvInit                 # fh v3:exact 0x00782830
 0x007827f0 function MsFldGetScene             # (field map<<16 | formation id) -> its 2-byte entry in the encounter groups; outputs field, group, position; was Enc_FindFormation
-0x007828a0 function Enc_ResetWeights           # (map, keep): entry byte 1 = default weight (low nibble) copied to the current weight (high nibble) unless keep; group +4 = sum of current weights
+0x007828a0 function Enc_ResetWeights           # (map, keep): entry byte 1 = default weight (low nibble) copied to the current weight (high nibble) unless keep; group +4 = sum of current weights; (map, keep): each group of MsBtlListFieldNum(map)'s encounters: +4 = sum of the formations' weights (high nibble of each pair's second byte, reset to the low nibble unless keep); ported (ffx_battle::minor, battle round 29)
 0x00782940 function MsFldGetSceneHigh_00782940 # ours: (scene) -> f = MsFldGetScene(scene, 0, 0, 0); f ? byte f+1 >> 4 : 0; caller Native_708b; ported (ffx_battle::minor, battle round 29)
 0x00782970 function MsGetBattleScene          # *0x0112a9f0 << 16 | *0x0112a9fc while in battle (0x0112a8e0), else 0; ?field index << 16 | formation (battle scripts compare it to e.g. 0x2050000); was Battle_GetBattleId
 0x007829b0 function MsBtlEncountEffect_007829b0 # (kind, &out) -> -1/0 for kind -1, 1/0x65 (3/0x3f under water: AtelGetWaterBattleEffect) for kinds 1-3, else 0/0x31 (2/0x31); out unless null; MsBattleExe's callee; name ours; ported (battle round 19)
@@ -4953,7 +4953,7 @@
 0x00784fe0 function MsGetSaveChrNameSize         # layout: alphabetical run between MsGetSaveChrName and MsGetSaveChrSummon (1 unnamed in the gap); Switch 0x71003737b0 MsGetSaveChrNameSize is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00784ff0 function MsGetSaveChrSummon        # fh v3:cg4 0x7850b0
 0x00785020 function MsGetSaveCommand          # fh v3:exact+call.cs 0x007850e0 cdecl
-0x007850b0 function MsGetSaveCommandMenuPanel    # layout: alphabetical run between MsGetSaveCommand and MsGetSaveCommandUse (1 unnamed in the gap); Switch 0x7100375dd0 MsGetSaveCommandMenuPanel is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007850b0 function MsGetSaveCommandMenuPanel    # layout: alphabetical run between MsGetSaveCommand and MsGetSaveCommandUse (1 unnamed in the gap); Switch 0x7100375dd0 MsGetSaveCommandMenuPanel is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (id) -> 0x3xxx: bit of MsGetSaveMenuPanel (0x011307b8): below 0x3060 at +0, else (id - 0x60) at +0xc (10 words); else 0; ported (ffx_battle::minor, battle round 29)
 0x00785140 function MsGetSaveCommandUse       # fh v3:exact 0x00785200
 0x007851b0 function BitTestOfGlobal_007851b0     # auto-port shape (bit test of global, cdecl): t0 = u32[&0x0113079c]; return ((t0 >>s 0x5) & 0x1); callers: ; name ours
 0x007851c0 function MsGetSaveConfigCursorSave # fh v3:exact 0x00785280
@@ -5004,7 +5004,7 @@
 0x00786930 function MsSetSaveParty            # fh v3:exact 0x007869f0
 0x00786950 function MsSetSavePartyMember      # name from Fahrenheit (fh v3:exact+call.cs 0x00786a10 cdecl); (a, b, c) -> MsExchangeSaveParty(a, 0), (b, 1), (c, 2), the last's result; ported (ffx_battle::minor, battle round 29)
 0x00786980 function MsSetSavePlyFix              # layout: alphabetical run between MsSetSavePartyMember and MsSetSavePlyJoin (1 unnamed in the gap); Switch 0x7100373eb0 MsSetSavePlyFix is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007869b0 function MsSetSavePlyJoin          # (chr, on): on=1 sets bits 0/4 of 0x01132088[chr*0x94] and adds chr to the party list 0x00785270(0) (20 slots); on=0 removes it; was Party_SetMember
+0x007869b0 function MsSetSavePlyJoin          # (chr, on): on=1 sets bits 0/4 of 0x01132088[chr*0x94] and adds chr to the party list 0x00785270(0) (20 slots); on=0 removes it; was Party_SetMember; ported (ffx_battle::minor, battle round 29): on: MsChangeWeaponInvisible(chr, 0), flags bits 0/4 = on & 1, chr < 8 not in the party takes MsGetSaveOutParty(&n)'s first 0xff slot (n in its argument slot); off unless MsGetSavePlyLeft: bit 0 cleared, party slot 0xff; then jumps to MsSaveEncountCheck
 0x00786aa0 function MsSetSavePlyBit4_00786aa0 # ours: (chr, on): bit 4 of ply_save[(u8)chr] +0x2c (0x01132088, MsSetSavePlyJoin's flags) = bit 0 of on; caller Native_01f9; ported (ffx_battle::minor, battle round 29)
 0x00786b00 function MsSetSaveStartGame        # new game: clears g_SaveData, reads menu, party, weapon (wep_data -> inventory 0x01130f2c, 200 x 22 bytes) and ply_save; was SaveData_Clear; ported (battle round 21): g_SaveData cleared; directory 0xd file 3 (7 words to g_SaveMenu), 4 party_data (0x21 to g_SaveGil), 5 wep_data (until the first record repeats, at most 0x23 unless 0x0112a920; owners below 7 MsWeaponNameNum, MsWeaponName), ply_save (18 x 0x94, names twice with bytes 18, 19 the language and 1), 0x1f menu_panel (8 to 0x011307b8); MsRandMize(frames + 0x011307dc); starting items 0x0113081c/0x0113082c; MsSetSaveConfigEnglish(0), equip flags, TkInitSaveWork, eiAbmDataInit; debug: scenario 5
 0x00786ef0 function spendSlv                  # fh v3:exact 0x00786fb0 +spendSlv
@@ -5174,7 +5174,7 @@
 0x0078f040 function MsSetChrMovePos           # (i, actor): +0x425 = 1, tail jump MsGetChrPos(i, actor +0x3c0); MsDamageSetMotion kind 1; name ours
 0x0078f060 function AfterDamageProcess        # fh call.cs cdecl; ours: (i, k, j, out, flags) -> bit 0 entries left, bit 1 one applied: steals, gauge and Lancet transfers, then the next hit entry of j's records +0x774/+0xa4c (numbers, HP/MP/CTB, statuses, revival, stone, blow, Threaten, Auto-Med, Auto-Potion), the reaction, the death check and the motion (docs/formats/battle.md); ported (battle round 13)
 0x0078f6a0 function MsThreatEndMotion         # ours: called by MsThreatProcess on both sides it releases; MsCheckSetMotion then MsSetMotion(i,0,1,0,1) with +0x41c set
-0x0078f700 function MsCheckLeftWindow         # fh v3:exact 0x0078f750
+0x0078f700 function MsCheckLeftWindow         # name from Fahrenheit (fh v3:exact 0x0078f750); (i) -> bits: of actor i's 8 menu commands (g_BtlItemMem2 +0x28 + 0x478 i, u16, 0xff none) usable (MsGetCommandUse 0): 1 one without a cost (MsGetComData +0x26 0), 2 one the actor can pay (+0x5bc >= +0x5bd or g_BtlDebugNoCost); [0x011333e8]: +0x5bc = +0x5bd first; ported (ffx_battle::minor, battle round 29)
 0x0078f7c0 function MsGetMenuChrInfo          # fh v3:exact 0x0078f810; ported (battle round 23): (chr, k) name (k 0) or help line (k 1, 2), kana by MsGetSaveConfigHiragana: IDs with bits 12+ MsGetComData record +8+4kana plus its name (0 without); else actor +0xf74/+0xf75 line (not 0xff) in g_BtlFileText (u16 at +4(kana+2line)); else ply_rom record (+4kana, +8+4kana) plus strings, a monster its actor +0x90/+0x190; calls MsGetSaveConfigEnglish and drops it
 0x0078f8f0 function MsGetRomBtlText           # name from Fahrenheit (fh v3:bsim1.00+call.cs 0x0078f940 cdecl); (id, second) -> MsMenuGetText(0, id, second); ported (ffx_battle::minor, battle round 29)
 0x0078f910 function MsMenuAbsElement_0078f910 # ours: (i) -> AL = MsGetChr((u8)i) + 0x5da (absorbed elements; MsMenuInvElement +0x5db, MsMenuHalfElement +0x5dc next to it) over the actor's address; callers TOBtlDrawInfoWin, FUN_00897650; ported (ffx_battle::minor, battle round 29)
@@ -5367,12 +5367,12 @@
 0x00796150 function MsSetChrPos               # fh v3:exact 0x00796160
 0x007961d0 function MsSetChrPos2D                # layout: alphabetical run between MsSetChrPos and MsSetChrPosReset (1 unnamed in the gap); Switch 0x7100349c10 MsSetChrPos2D is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00796220 function MsSetChrPosReset          # fh v3:exact 0x00796230; ours: (i, pos): Ch_SetPos3 (Ch_SetPos with +0x34) and Ch_ClothReset, -1; 0 without a character; ported (battle round 12)
-0x007962b0 function MsSetChrShadow            # fh v3:bsim1.00 0x007962c0
-0x007962d0 function MsSetChrShadowMode        # fh v3:exact 0x007962e0
+0x007962b0 function MsSetChrShadow            # name from Fahrenheit (fh v3:bsim1.00 0x007962c0); (i, v) -> MsSetChrShadowMode(i, 2, v); ported (ffx_battle::minor, battle round 29)
+0x007962d0 function MsSetChrShadowMode        # name from Fahrenheit (fh v3:exact 0x007962e0); (i, k, v) -> 0: msSetChrShadowReq(actor, k, v) for (u8)i, its weapons and its followers (+0x440: actors with +0x43f == i, recursively); ported (ffx_battle::minor, battle round 29)
 0x00796360 function MsSetChrSpecular          # fh v3:exact 0x00796370
 0x00796430 function MsSetChrScriptTargets_00796430 # ours: (i, bits) -> MsBtlChrNumCheck ? (actor +0xdc0 = bits, popcount of bits 0..30) : 0; callers Native_BtlSelectTarget, Native_7025, FUN_007a8f60, Battle_QueueCommand; ported (ffx_battle::minor, battle round 29)
 0x00796480 function MsSetChrTransparent       # fh switch:cg2 0x71003489a0
-0x00796550 function MsSetChrTransparentVisible # fh v3:exact 0x00796560
+0x00796550 function MsSetChrTransparentVisible # name from Fahrenheit (fh v3:exact 0x00796560); (i, from, to, frames, flags) -> 1 with a character and flags & 1: +0x40 = to, +0x423 = 0, MsSetChrVisibleAppear(i, 1), Ch_SetTransparent(chr, from, 0) then (chr, to, frames), weapons alike, followers recursively; else 0; ported (ffx_battle::minor, battle round 29)
 0x00796660 function MsSetChrVisible           # fh v3:bsim1.00 0x00796670; ours: msSetChrVisibleReq(i, 2, v); ported (battle round 12)
 0x00796680 function MsSetAllVisible_00796680 # ours: (v) -> MsSetPlayersVisible_007968b0(v) + MsSetMonsVisible_00796880(v) = 0x1a; caller opu_en_on; ported (ffx_battle::minor, battle round 29)
 0x007966a0 function MsSetChrVisibleAppear     # fh v3:bsim1.00 0x007966b0; ours: msSetChrVisibleReq(i, 1, v); ported (battle round 12)
@@ -5519,6 +5519,7 @@
 0x0079c0c0 function MsSetRamChrCommandUse        # layout: alphabetical run between MsSetRamChrAbility and MsSetRamChrData (2 unnamed in the gap); Switch 0x7100369540 MsSetRamChrCommandUse is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0079c110 function MsSetRamChrData           # monster slot i (actor via 0x00795aa0) gets id = formation +0x0c + 2i (0xffff: empty); was Battle_SetUpActors
 0x0079c5f0 function MsSetRamChrParam          # party actor from ply_save and equipment: weapon formula/power -> +0x5c1/+0x5c7, crit -> +0x5d8, a_ability records applied; was Battle_InitPartyActor; eax at return: the clamped MP (MsCheckRange's last); ported (battle round 22, ffx_battle::save_param)
+0x0079ca80 function MsBuildGearList_0079ca80 # ours: (i): g_BtlItemMem2 +0x158 / +0x2e8 + 0x478 i: u16 0x5000 + slot for each g_Equipment slot in use, of kind (+5) 0 then 1, owner (+4) i, without flag 2 (+3); caller MsSetRamChr; ported (ffx_battle::minor, battle round 29)
 0x0079cb10 function MsSetRamMonData           # fh v3:exact 0x0079cb30
 0x0079cb40 function MsMotBinFrame             # fh v3:exact 0x0079cb60
 0x0079ccd0 function MsRegMotionInit           # fh v3:bsim1.00 0x0079ccf0
@@ -6016,11 +6017,12 @@
 0x007abba0 function MsGetSaveChrWeaponModel   # name from Fahrenheit (fh v3:cg2 0x7abbc0); (chr) -> u16 +0xc of MsGetSaveWeapon(ply_save[chr] +0x2d, 0), 0 without; ported (ffx_battle::minor, battle round 29)
 0x007abbd0 function MsGetSaveWeapon           # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c; was Equip_Get
 0x007abc60 function MsGetSaveWeaponAmount     # counts in-use slots without flag 0x02; out: free slots; was Equip_CountOwned
-0x007abca0 function Equip_RebuildWearers       # equipment +6 = wearer, from ply_save +0x2d/+0x2e
+0x007abca0 function Equip_RebuildWearers       # equipment +6 = wearer, from ply_save +0x2d/+0x2e; (id) -> 0xff or not in use: -1; else slot +2 = 0 and (not 0x7000) every ply_save +0x2d/+0x2e equal to id & 0xfff = 0xff; 0; ported (ffx_battle::minor, battle round 29)
 0x007abd10 function MsGetSaveWeaponList       # fh v3:exact 0x007abd30
 0x007abdc0 function MsGetSaveWeaponModel      # fh v3:exact 0x007abde0
 0x007abdf0 function MsGetSaveWeaponName       # fh v3:exact+call.cs 0x007abe10 cdecl
 0x007abe30 function MsInitSaveWeaponEquipFlag # fh v3:exact 0x007abe50
+0x007abeb0 function MsCopyPointsOffset_007abeb0 # ours: (base, other, k): record k (32 bytes from base, k < (i8) base +1): for each of other's (i8) +1 records (0x60 bytes from +4): min((i8) rec +4, (i8) e +0) points from base + rec +0x10 into other + e +0xc, each + the vector at e +0x2c (f32 adds, 16 bytes apart); caller FUN_007abf40; ported (ffx_battle::minor, battle round 29)
 0x007abfe0 function MsBtlGetPos               # fh call.cs cdecl
 0x007ac2b0 function MsGetSummonerPos          # fh v3:exact 0x007ac2d0
 0x007ac600 function MsPopBtlPos               # fh v3:bsim1.00+call.cs 0x007ac620 cdecl
@@ -6028,6 +6030,7 @@
 0x007ac680 function MsPushBtlPosAll           # fh v3:bsim1.00 0x007ac6a0
 0x007ac6a0 function MsSetChrPosAfterSummon    # fh v3:exact 0x007ac6c0; ours: (i) the party back at their battle positions, the aeon i placed (body part 3 off, +0x4fd 0xd, sound +0xf76 faded) and its entrance or stand; ported (battle round 13)
 0x007ac840 function MsChrAddExtraCommand_007ac840 # ours: (chr, command, selector, slot) -> eax how many actors got it: each actor MsGetChrBit(chr, selector, 0, 1) picks with +0x6cb < 4 gets command (u16) at +0x71a + 2n, slot (clamped 0..7) at +0x722 + n, +0x6cb + 1, and in g_BtlItemMem2 +0x28 + 0x478 i (eight u16) at slot, later ones moved down (the last dropped); MsChrDelExtraCommand_007acb40's counterpart; caller Native_7037; ported (ffx_battle::ability, battle round 27)
+0x007ac940 function MsCueAddCommand_007ac940 # ours: (i, id, word) -> 0: with an action (0x01136a68 != -1) and the linked actor b = MsGetChr((i8) MsGetChr(i) + 0xded) not in state 3 (+0xdf0): cue = MsGetChrCommand2(b +0xc): u16 +8 + 16 n = id, +0xa + 16 n = 0xff, +16 (n + 1) = word (n = cue +2); ported (ffx_battle::minor, battle round 29)
 0x007ac9c0 function Battle_QueueCommand          # (actor, command, target mask, ...): adds a command to the 4-entry queue at 0x01136a80 for the current actor; "TARGET ERROR CHR" when no target is valid; reads 5 words: its script callers (0x700b, 0x705a, 0x7117) push 3 and leave MsGetChrBit's last two arguments as the 4th and 5th (0, -1; 1, -1; 1, 0x40); a non-negative 5th goes to 0x01136a70, so the bridges pass them
 0x007acb00 function MsActionRequestSet        # (kind): if g_BtlAction != -1: 0x48-byte block 0x01136a78 cleared, its byte 0 = kind, 0x01136a6c/0x01136a70 = 0, returns 0; else -1; MsActionRequest; name ours
 0x007acb40 function MsChrDelExtraCommand_007acb40 # ours: (chr, command, selector) -> eax how many actors MsGetChrBit(chr, selector, 0, 1) picks: each loses command (u16) from its four extra commands +0x71a (moved up, 0xff last, +0x6cb one less) and then from its g_BtlItemMem2 second list (+0x28 + 0x478 i, 8 slots); caller Native_7038; ported (ffx_battle::ability, battle round 26)
@@ -6329,7 +6332,7 @@
 0x007ba780 function MsAtelGetCameraID         # (type 5, which 0-3, camera < 3): cached camera channel handle (owner<<24 | type<<16 | slot<<8 | camera), allocates via 0x007bd110; was Cam_GetHandle; (owner, kind 0-3, cam 0-2) -> the g_AtelCamera ID of group 1/0/2/3, MsCameraGet(owner, cam, 3/1/5/7) the first time; ported (ffx_battle::camera, battle round 28)
 0x007ba860 function MsAtelResetMoveCameraID   # fh v3:exact 0x007ba7e0
 0x007ba950 function MsBattleCameraFree        # fh v3:exact 0x007ba8d0
-0x007ba9a0 function MsBindCamera              # fh v3:exact 0x007ba920
+0x007ba9a0 function MsBindCamera              # name from Fahrenheit (fh v3:exact 0x007ba920); (worker, kind, cam) -> kind <= 3: jumps to MsAtelGetCamera_007baa50(worker, kind, cam); else 0; ported (ffx_battle::camera_native, battle round 29)
 0x007ba9c0 function MsBindOffCamera           # fh v3:exact 0x007ba940
 0x007baa50 function MsAtelGetCamera_007baa50 # ours: (worker, kind, cam) -> the worker's camera word (AtelGetCameraWorkAdrs) kept, or MsAtelGetCameraID(5, kind, cam) stored there (kind 0 -> 1 when AtelGetActorId(worker) == AtelGetEventMapCameraId()); caller MsBindCamera; ported (ffx_battle::camera_native, battle round 29)
 0x007baaa0 function MsSplineInit              # fh v3:bsim1.00 0x007baa20
@@ -16132,7 +16135,7 @@
 0x0112ff9c label g_SaveWalkMap               # save +0x350c: minimap fog of war (MsGetSaveWalkMap 0x00785400; Guide_RevealFog)
 0x0113079c label g_SaveMenu                  # save +0x3d0c: menu settings word; bit 1 cursor memory (MsGetSaveConfigCursorSave), bit 3 hiragana (MsGetSaveConfigHiragana); MsGetSaveMenu returns it
 0x011307a4 label g_SaveBattleCount           # save +0x3d14: u32 battles fought (MsGetSaveBattleCount 0x00784f50)
-0x011307b8 label g_SaveMenuPanel           # 8 words: menu_panel's first record (MsSetSaveStartGame)
+0x011307b8 label g_SaveMenuPanel           # 8 words: menu_panel's first record (MsSetSaveStartGame); the commands' 0x3000-0x305f bits from +0, shared ones from +0xc (MsGetSaveMenuPanel, MsGetSaveCommandMenuPanel)
 0x011307d8 label g_SaveGil                   # save +0x3d48: u32 gil (MsGetGIL 0x00784e80); MsDebugAddGill caps it at 999999899, MsDebugFullGill sets 999999999
 0x011307dc label g_SaveSeed                # u32 in g_SaveGil's record (+4): MsSetSaveStartGame seeds MsRandMize with the frame counter plus it
 0x011307e8 label g_SaveInParty               # save +0x3d58: 3 x u8 ply_save indices of the battle party (MsGetSaveInParty 0x00785270, count 3; MsGetSavePartyMember)
@@ -16172,6 +16175,7 @@
 0x01133398 label g_BtlMotionStopChrs       # i32 count, then models from 0x0113339c: ms_motion_trans returns 0 (and sets +0x3f3) for an actor whose model is listed while MagicFile_GetMagicId is 0x1b2 or 0x262
 0x011333c0 label g_BtlOrderCount             # i32 queued action orders (MsOrderInit 0x0078d4b0, MsOrderRegist)
 0x011333c4 label g_BtlOrders                 # 31 x u8 actor indices (MsOrderRegist 0x0078d4c0)
+0x011333e8 label g_BtlLeftWindowReset # u32: MsCheckLeftWindow restores +0x5bc from +0x5bd while set
 0x011333f0 label g_BtlMenuText             # 17 x 12 bytes cleared by MsMenuInitText
 0x011333f4 label g_BtlMenuTextSize         # u32 in g_BtlMenuText's 12-byte rows (+4 size, +8 the block's ptr32 handle), MsMenuReadText
 0x011334bc label g_KernelImportantSize     # u32 the key item table's size (MsImportantRead)

@@ -1792,3 +1792,387 @@ fn leaf_turns_match_the_original_on_a_snapshot() {
     };
     turns(&mut a, &mut b, &mut Xorshift(0x2929_1002), false);
 }
+
+/// Group G: the command window, the party, encounter weights, shadows,
+/// transparency, equipment lists, points moved by offsets, the bound
+/// camera.
+fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x40);
+    for o in [&mut *a, &mut *b] {
+        recording_stub(o, g::MS_GET_SAVE_PLY_LEFT, STUBS_D, rec, 1, 0);
+        // the worker's actor and the event map's camera
+        recording_stub(
+            o,
+            ffx_battle::atel::bridge::ATEL_GET_ACTOR_ID,
+            STUBS_D + 0x40,
+            rec + 0x10,
+            1,
+            0,
+        );
+        recording_stub(
+            o,
+            ffx_battle::camera_native::bridge::ATEL_GET_EVENT_MAP_CAMERA_ID,
+            STUBS_D + 0x80,
+            rec + 0x20,
+            0,
+            0,
+        );
+    }
+    // the command tables (0x40 records), the second menu lists
+    if w.synthetic {
+        let t = fake_records(a, b, rng, 0x140, 0x60);
+        set(a, b, ffx_kernel::bridge::COMMAND, t);
+        if !readable(a, ffx_battle::actor::bridge::MON_TOP.get(b), 0x10) {
+            set(a, b, ffx_battle::actor::bridge::MON_TOP, w.actor(0x14));
+        }
+    }
+    let mem2 = scratch(a, b, 0x5400);
+    set(a, b, ffx_battle::misc::bridge::ITEM_MEM2, mem2);
+    let local = scratch(a, b, 4);
+    // an encounter table of our own (as in leaf_accessors)
+    let fields = scratch(a, b, 14);
+    poke(a, b, fields, &7u16.to_le_bytes());
+    set(a, b, ffx_battle::state::bridge::FIELD_RECORDS, fields);
+    set(a, b, ffx_battle::minor::bridge::FIELD_COUNT, 1);
+    let encounters = scratch(a, b, 0x80);
+    set(a, b, ffx_battle::misc::bridge::FIELD_TABLE2, encounters);
+    let base = scratch(a, b, 0x400);
+    let other = scratch(a, b, 0x800);
+    let worker = scratch(a, b, 0x100);
+    let ply = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr;
+    let equipment = g::EQUIPMENT.ptr(b).addr;
+    for round in 0..300 {
+        if w.synthetic || round % 2 == 0 {
+            dress(a, b, rng, w.actors);
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                for (at, len) in [
+                    (0x40, 4),
+                    (0x423, 1),
+                    (0x5bc, 2),
+                    (0xc, 1),
+                    (0xde5, 1),
+                    (0xded, 1),
+                    (0xdf0, 1),
+                ] {
+                    fill(a, b, rng, p + at, len);
+                }
+                poke(a, b, p + 0xded, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
+            }
+        }
+        if w.synthetic {
+            // no characters; followers of earlier actors only
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                poke(a, b, p, &[0; 4]);
+                poke(a, b, p + 0x13, &[0xff]);
+                let owner = if k == 0 || rng.below(3) != 0 {
+                    0xff
+                } else {
+                    rng.below(k)
+                };
+                poke(
+                    a,
+                    b,
+                    p + 0x43f,
+                    &[u8::try_from(owner).unwrap(), u8::from(rng.below(4) == 0)],
+                );
+            }
+        }
+        let i = rng.below(0x12);
+        // the menu commands: none, items, commands
+        for k in 0..8u32 {
+            let id =
+                [0xff, 0x3000 | rng.below(0x40), 0x2000 | rng.below(0x40)][rng.below(3) as usize];
+            poke(
+                a,
+                b,
+                mem2 + i * 0x478 + 0x28 + 2 * k,
+                &u16::try_from(id).unwrap().to_le_bytes(),
+            );
+        }
+        set(
+            a,
+            b,
+            g::LEFT_WINDOW_RESET,
+            [0, 1, 2, 0x100][rng.below(4) as usize],
+        );
+        // the spare actor (MsGetChr(0xff), what command 0xff would ask)
+        // able to act
+        let spare = ffx_battle::actor::bridge::CHR_SPARE.ptr(b).addr;
+        poke(a, b, spare + 0x5d0, &100u32.to_le_bytes());
+        poke(a, b, spare + 0xdd4, &[1]);
+        poke(a, b, spare + 0xdcd, &[0]);
+        poke(a, b, spare + 0x6d8, &[0]);
+        set(
+            a,
+            b,
+            ffx_battle::damage::bridge::DEBUG_NO_COST,
+            u8::from(rng.below(4) == 0),
+        );
+        twin("MsCheckLeftWindow", a, b, 0x0078_f700, &[i], ALL, |m| {
+            g::ms_check_left_window(m, i)
+        });
+        same("MsCheckLeftWindow", a, b);
+        // the party: in it, out of it, full
+        let party = ffx_battle::save::bridge::ms_get_save_in_party(b, 0);
+        let party_bytes: Vec<u8> = (0..0x14)
+            .map(|_| [0xffu8, u8::try_from(rng.below(0x12)).unwrap()][rng.below(2) as usize])
+            .collect();
+        poke(a, b, party, &party_bytes);
+        let (chr, on) = (
+            [rng.below(0x12), rng.next()][rng.below(5).min(1) as usize],
+            [0, 1, rng.next()][rng.below(3) as usize],
+        );
+        poke(a, b, rec + 8, &rng.below(2).to_le_bytes());
+        let mut c = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+        twin(
+            "MsSetSavePlyJoin",
+            a,
+            b,
+            0x0078_69b0,
+            &[chr, on],
+            ALL,
+            |m| g::ms_set_save_ply_join(m, &mut c, chr, on, local),
+        );
+
+        let n = b.read(local, 4).unwrap();
+        a.write(local, &n).unwrap();
+        same("MsSetSavePlyJoin", a, b);
+        // encounter groups: two of up to five formations
+        let groups = 1 + rng.below(2);
+        let mut table = vec![0u8, u8::try_from(groups).unwrap()];
+        for _ in 0..groups {
+            let n = rng.below(6);
+            table.extend([u8::try_from(n).unwrap(), 0, 0, 0, 0]);
+            table.extend((0..2 * n).map(|_| rng.byte()));
+        }
+        poke(a, b, encounters, &table);
+        let (map, keep) = (
+            [7, 0, rng.below(0x400)][rng.below(3) as usize],
+            rng.below(2),
+        );
+        twin(
+            "Enc_ResetWeights",
+            a,
+            b,
+            0x0078_28a0,
+            &[map, keep],
+            0,
+            |m| {
+                g::enc_reset_weights(m, map, keep);
+                0
+            },
+        );
+        same("Enc_ResetWeights", a, b);
+        fill(a, b, rng, g::MENU_PANEL.ptr(b).addr, 0x20);
+        let id = [
+            0x3000 | rng.below(0x60),
+            0x3060 + rng.below(0xc0),
+            0x3000 | rng.below(0x1000),
+            rng.next(),
+            0x2000 | rng.below(0x100),
+        ][rng.below(5) as usize];
+        twin(
+            "MsGetSaveCommandMenuPanel",
+            a,
+            b,
+            0x0078_50b0,
+            &[id],
+            ALL,
+            |m| g::ms_get_save_command_menu_panel(m, id),
+        );
+        same("MsGetSaveCommandMenuPanel", a, b);
+        let (k, v) = (rng.below(4), rng.next());
+        twin(
+            "MsSetChrShadowMode",
+            a,
+            b,
+            0x0079_62d0,
+            &[i, k, v],
+            ALL,
+            |m| g::ms_set_chr_shadow_mode(m, i, k, v),
+        );
+        same("MsSetChrShadowMode", a, b);
+        twin("MsSetChrShadow", a, b, 0x0079_62b0, &[i, v], ALL, |m| {
+            g::ms_set_chr_shadow(m, i, v)
+        });
+        same("MsSetChrShadow", a, b);
+        if round % 3 == 0 {
+            let (from, to, frames, flags) = (float(rng), float(rng), rng.below(30), rng.next());
+            let j = rng.below(ACTORS);
+            twin(
+                "MsSetChrTransparentVisible",
+                a,
+                b,
+                0x0079_6550,
+                &[j, from, to, frames, flags],
+                ALL,
+                |m| g::ms_set_chr_transparent_visible(m, &mut c, j, from, to, frames, flags),
+            );
+            same("MsSetChrTransparentVisible", a, b);
+        }
+        // equipment: in use or not, worn by some
+        for k in 0..200u32 {
+            let at = equipment + 22 * k;
+            poke(
+                a,
+                b,
+                at + 2,
+                &[
+                    u8::from(rng.below(3) != 0),
+                    [0u8, 2, 8, 0xa][rng.below(4) as usize],
+                    u8::try_from(rng.below(0x14)).unwrap(),
+                    u8::try_from(rng.below(3)).unwrap(),
+                ],
+            );
+        }
+        for c2 in 0..18 {
+            poke(
+                a,
+                b,
+                ply + c2 * 0x94 + 0x2d,
+                &[
+                    u8::try_from(rng.below(200)).unwrap(),
+                    [
+                        0xffu8,
+                        u8::try_from(rng.below(200)).unwrap(),
+                        u8::try_from(rng.below(8)).unwrap(),
+                    ][rng.below(3) as usize],
+                ],
+            );
+        }
+        // the 0x7000 slots too
+        let eq7000 = ffx_battle::save::bridge::EQUIPMENT_7000.ptr(b).addr;
+        for k in 0..8u32 {
+            poke(a, b, eq7000 + 22 * k + 2, &[u8::from(rng.below(3) != 0)]);
+        }
+        let eid = [
+            rng.below(200),
+            0x7000 | rng.below(8),
+            0xff,
+            0x1000 | rng.below(200),
+        ][rng.below(4) as usize];
+        twin(
+            "Equip_RebuildWearers",
+            a,
+            b,
+            0x007a_bca0,
+            &[eid],
+            ALL,
+            |m| g::equip_rebuild_wearers(m, eid),
+        );
+        same("Equip_RebuildWearers", a, b);
+        twin("MsBuildGearList", a, b, 0x0079_ca80, &[i], 0, |m| {
+            g::ms_build_gear_list(m, i);
+            0
+        });
+        same("MsBuildGearList", a, b);
+        set(
+            a,
+            b,
+            ffx_battle::misc::bridge::ACTION,
+            [-1, 0, 3, -2][rng.below(4) as usize],
+        );
+        let (cid, word) = (rng.next(), rng.next());
+        let j = rng.below(ACTORS);
+        twin(
+            "MsCueAddCommand",
+            a,
+            b,
+            0x007a_c940,
+            &[j, cid, word],
+            ALL,
+            |m| g::ms_cue_add_command(m, j, cid, word),
+        );
+        same("MsCueAddCommand", a, b);
+        // points: records with offsets inside the two areas
+        fill(a, b, rng, base, 0x400);
+        fill(a, b, rng, other, 0x800);
+        let nrec = rng.below(4);
+        poke(a, b, base + 1, &[u8::try_from(nrec).unwrap()]);
+        for k in 0..4u32 {
+            let r = base + 32 * k;
+            poke(a, b, r + 4, &[[0u8, 1, 3, 5, 0xff][rng.below(5) as usize]]);
+            poke(a, b, r + 0x10, &(0x100 + 0x40 * k).to_le_bytes());
+        }
+        for k in 0..0x30u32 {
+            poke(a, b, base + 0x100 + 4 * k, &float(rng).to_le_bytes());
+        }
+        let n2 = rng.below(4);
+        poke(a, b, other + 1, &[u8::try_from(n2).unwrap()]);
+        for j in 0..3u32 {
+            let e = other + 4 + 0x60 * j;
+            poke(a, b, e, &[[0u8, 2, 4, 0x80][rng.below(4) as usize]]);
+            poke(a, b, e + 0xc, &(0x400 + 0x100 * j).to_le_bytes());
+            for c3 in 0..3 {
+                poke(a, b, e + 0x2c + 4 * c3, &float(rng).to_le_bytes());
+            }
+        }
+        let k = [rng.below(4), rng.next()][rng.below(5).min(1) as usize];
+        twin(
+            "MsCopyPointsOffset",
+            a,
+            b,
+            0x007a_beb0,
+            &[base, other, k],
+            0,
+            |m| {
+                g::ms_copy_points_offset(m, base, other, k);
+                0
+            },
+        );
+        same("MsCopyPointsOffset", a, b);
+        // the bound camera
+        poke(
+            a,
+            b,
+            worker + 0x3c,
+            &[0, rng.next()][rng.below(2) as usize].to_le_bytes(),
+        );
+        let (kind, cm) = (rng.below(6), rng.below(4));
+        let actor = rng.below(3);
+        poke(a, b, rec + 0x18, &actor.to_le_bytes());
+        poke(
+            a,
+            b,
+            rec + 0x24,
+            &[actor, rng.below(3)][rng.below(2) as usize].to_le_bytes(),
+        );
+        let mut fc = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+        twin(
+            "MsBindCamera",
+            a,
+            b,
+            0x007b_a9a0,
+            &[worker, kind, cm],
+            ALL,
+            |m| {
+                let mut cc = ffx_battle::camera_native::bridge::Calls {
+                    call: &mut c,
+                    fcall: &mut fc,
+                };
+                ffx_battle::camera_native::bridge::ms_bind_camera(m, &mut cc, worker, kind, cm)
+            },
+        );
+        same("MsBindCamera", a, b);
+        same(&format!("lists {round}"), a, b);
+    }
+}
+
+#[test]
+fn leaf_lists_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    lists(&mut a, &mut b, &mut Xorshift(0x2929_1101), true);
+}
+
+#[test]
+fn leaf_lists_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    lists(&mut a, &mut b, &mut Xorshift(0x2929_1102), false);
+}

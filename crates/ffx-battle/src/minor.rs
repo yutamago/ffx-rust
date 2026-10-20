@@ -2066,4 +2066,361 @@ pub mod bridge {
         mem.write(slot + 6, 0xffu8);
         0x5000 + k
     }
+
+    // Round 29 G: the command window, the party, encounters, shadows,
+    // transparency, equipment lists.
+
+    /// Set: `MsCheckLeftWindow` gives the actor its full `+0x5bc` back
+    /// (from `+0x5bd`) first.
+    pub const LEFT_WINDOW_RESET: Global<u32> = Global::new(0x0113_33e8);
+    /// `MsGetSaveMenuPanel()`'s panel: the commands' 0x3000-0x305f bits,
+    /// then the shared ones' from `+0xc`.
+    pub const MENU_PANEL: Global<u16> = Global::new(0x0113_07b8);
+    /// `MsGetSavePlyLeft(chr)` (an auto-port), called through the game.
+    pub const MS_GET_SAVE_PLY_LEFT: u32 = 0x0078_53c0;
+
+    /// `MsCheckLeftWindow(i)` (`0x0078f700`): what actor `i`'s eight menu
+    /// commands (`g_BtlItemMem2` `+0x28` + 0x478 `i`, `u16`s, 0xff none)
+    /// allow when usable (`MsGetCommandUse` 0): bit 0 for one without a
+    /// cost (`MsGetComData` `+0x26` 0), bit 1 for one whose cost the actor
+    /// can pay (`+0x5bc` at least `+0x5bd`, or `g_BtlDebugNoCost`). With
+    /// [`LEFT_WINDOW_RESET`] `+0x5bc` is `+0x5bd` first.
+    pub fn ms_check_left_window(mem: &mut impl Mem, i: u32) -> u32 {
+        let a = actor_of(mem, i);
+        if LEFT_WINDOW_RESET.get(mem) != 0 {
+            let v = byte(mem, a, 0x5bd);
+            mem.write(a.wrapping_add(0x5bc), v);
+        }
+        let mut bits = 0;
+        for k in 0..8 {
+            let list = crate::misc::bridge::ITEM_MEM2.get(mem);
+            let at = list
+                .wrapping_add(i.wrapping_mul(0x478))
+                .wrapping_add(0x28 + 2 * k);
+            let id = u32::from(mem.read::<u16>(at));
+            if id == 0xff {
+                continue;
+            }
+            let rec = crate::stat::bridge::ms_get_com_data(mem, id, 0);
+            if crate::turn::bridge::ms_get_command_use(mem, i, id) != 0 {
+                continue;
+            }
+            if byte(mem, rec, 0x26) == 0 {
+                bits |= 1;
+            } else if byte(mem, a, 0x5bc) >= byte(mem, a, 0x5bd)
+                || crate::damage::bridge::DEBUG_NO_COST.get(mem) != 0
+            {
+                bits |= 2;
+            }
+        }
+        bits
+    }
+
+    /// `MsSetSavePlyJoin(chr, on)` (`0x007869b0`): character `chr & 0xff`
+    /// joins (`on`: weapon shown, `MsChangeWeaponInvisible(chr, 0)`; its
+    /// flags' bits 0 and 4 = bit 0 of `on`; one of the first 8 not in the
+    /// party (20 slots) takes the first free one of the others,
+    /// `MsGetSaveOutParty(&n)` with `n` in `local`, the original's
+    /// argument slot) or leaves (unless `MsGetSavePlyLeft`, through `call`:
+    /// bit 0 cleared, its party slot 0xff). Then `MsSaveEncountCheck`,
+    /// whose result it returns.
+    pub fn ms_set_save_ply_join<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        chr: u32,
+        on: u32,
+        local: u32,
+    ) -> u32 {
+        use crate::save::bridge::{PLY_SAVE, ms_get_save_in_party, ms_get_save_out_party};
+        let chr = chr & 0xff;
+        let flags = PLY_SAVE.ptr(mem).addr + chr * 0x94 + 0x2c;
+        if on != 0 {
+            ms_change_weapon_invisible(mem, chr, 0);
+            let bit = on.to_le_bytes()[0] & 1;
+            let f = (byte(mem, flags, 0) & 0xfe | bit) & 0xef | bit << 4;
+            mem.write(flags, f);
+            if chr < 8 {
+                let party = ms_get_save_in_party(mem, 0);
+                if !(0..0x14).any(|k| u32::from(byte(mem, party, k)) == chr) {
+                    let out = ms_get_save_out_party(mem, local);
+                    let n: i32 = mem.read(local);
+                    if let Some(k) =
+                        (0..n.max(0).cast_unsigned()).find(|&k| byte(mem, out, k) == 0xff)
+                    {
+                        mem.write(out + k, chr.to_le_bytes()[0]);
+                    }
+                }
+            }
+        } else if game(mem, call, MS_GET_SAVE_PLY_LEFT, &[chr]) == 0 {
+            let f = byte(mem, flags, 0) & 0xfe;
+            mem.write(flags, f);
+            let party = ms_get_save_in_party(mem, 0);
+            if let Some(k) = (0..0x14).find(|&k| u32::from(byte(mem, party, k)) == chr) {
+                mem.write(party + k, 0xffu8);
+            }
+        }
+        ms_save_encount_check(mem)
+    }
+
+    /// `Enc_ResetWeights(map, keep)` (`0x007828a0`): each encounter group of
+    /// map `map`'s field (`MsBtlListFieldNum`) gets its weight total (`+4`)
+    /// from its formations' weights (the high nibble of their second byte,
+    /// which, unless `keep`, is first reset to the low one).
+    pub fn enc_reset_weights(mem: &mut impl Mem, map: u32, keep: u32) {
+        let f = ms_btl_list_field_num(mem, map.cast_signed());
+        if f < 0 {
+            return;
+        }
+        let list = ms_btl_list_encount(mem, f);
+        let mut g = 0;
+        while g < u32::from(byte(mem, list, 1)) {
+            let grp = crate::flow::bridge::ms_btl_list_group(mem, f, g.cast_signed());
+            let mut sum = 0u8;
+            let mut k = 0;
+            while k < u32::from(byte(mem, grp, 0)) {
+                let at = grp + 6 + 2 * k;
+                if keep == 0 {
+                    let low = byte(mem, at, 0) & 0xf;
+                    mem.write(at, low << 4 | low);
+                }
+                sum = sum.wrapping_add(byte(mem, at, 0) >> 4);
+                k += 1;
+            }
+            mem.write(grp + 4, sum);
+            g += 1;
+        }
+    }
+
+    /// `MsGetSaveCommandMenuPanel(id)` (`0x007850b0`): whether command `id`
+    /// (0x3xxx) is on the menu panel ([`MENU_PANEL`]): below 0x3060 its bit
+    /// from `+0`, else (`id - 0x60`) from `+0xc`, 0 past ten words.
+    pub fn ms_get_save_command_menu_panel(mem: &impl Mem, id: u32) -> u32 {
+        if id & 0xffff_f000 != 0x3000 {
+            return 0;
+        }
+        let panel = MENU_PANEL.ptr(mem).addr;
+        let (at, k) = if id.cast_signed() < 0x3060 {
+            let k = id & 0xfff;
+            (panel + 2 * (k >> 4), k)
+        } else {
+            let k = id.wrapping_sub(0x60) & 0xfff;
+            if k >> 4 >= 10 {
+                return 0;
+            }
+            (panel + 0xc + 2 * (k >> 4), k)
+        };
+        u32::from(mem.read::<u16>(at) & 1 << (k & 0xf) != 0)
+    }
+
+    /// `MsSetChrShadowMode(i, k, v)` (`0x007962d0`): shadow request `k`
+    /// (`msSetChrShadowReq`) of actor `i & 0xff`, its two weapons, and its
+    /// followers (`+0x440`: the actors whose `+0x43f` is `i`, recursively).
+    /// 0.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_set_chr_shadow_mode(mem: &mut impl Mem, i: u32, k: u32, v: u32) -> u32 {
+        use crate::visible::bridge::ms_set_chr_shadow_req;
+        let i = i & 0xff;
+        let a = actor_of(mem, i);
+        let v8 = v.to_le_bytes()[0];
+        ms_set_chr_shadow_req(mem, a, k.cast_signed(), v8);
+        for n in 0..2 {
+            let w = crate::actor::bridge::ms_get_weapon(mem, i, n);
+            if w != 0 {
+                ms_set_chr_shadow_req(mem, w, k.cast_signed(), v8);
+            }
+        }
+        if byte(mem, a, 0x440) != 0 {
+            for j in 0..0x1f {
+                if u32::from(byte(mem, actor_of(mem, j), 0x43f)) == i {
+                    ms_set_chr_shadow_mode(mem, j, k, v);
+                }
+            }
+        }
+        0
+    }
+
+    /// `MsSetChrShadow(i, v)` (`0x007962b0`): shadow request 2
+    /// ([`ms_set_chr_shadow_mode`]).
+    pub fn ms_set_chr_shadow(mem: &mut impl Mem, i: u32, v: u32) -> u32 {
+        ms_set_chr_shadow_mode(mem, i, 2, v)
+    }
+
+    /// `MsSetChrTransparentVisible(i, from, to, frames, flags)`
+    /// (`0x00796550`): with a character and flag bit 0, actor `i & 0xff`
+    /// fades from `from` to `to` over `frames` (`Ch_SetTransparent` twice,
+    /// the first at once; `to` its `f32` `+0x40`, `+0x423` 0, then
+    /// `MsSetChrVisibleAppear(i, 1)`), its weapons alike, and its followers
+    /// (recursively); 1, or 0 without.
+    pub fn ms_set_chr_transparent_visible<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+        from: u32,
+        to: u32,
+        frames: u32,
+        flags: u32,
+    ) -> u32 {
+        use ffx_chara::{chr::bridge::ch_set_fade, layout::FADE_ALPHA};
+        let i = i & 0xff;
+        let a = actor_of(mem, i);
+        let chr = read_u32(mem, a);
+        if chr == 0 || flags & 1 == 0 {
+            return 0;
+        }
+        let (f0, f1) = (
+            f32::from_bits(crate::camera::x87_copy(from)),
+            f32::from_bits(crate::camera::x87_copy(to)),
+        );
+        let frames = frames.cast_signed();
+        mem.write(a.wrapping_add(0x40), crate::camera::x87_copy(to));
+        mem.write(a.wrapping_add(0x423), 0u8);
+        crate::visible::bridge::ms_set_chr_visible_appear(mem, call, i, 1);
+        ch_set_fade(mem, chr, FADE_ALPHA, f0, 0);
+        ch_set_fade(mem, chr, FADE_ALPHA, f1, frames);
+        for n in 0..2 {
+            let w = crate::actor::bridge::ms_get_weapon(mem, i, n);
+            if w == 0 {
+                continue;
+            }
+            let wc = read_u32(mem, w);
+            mem.write(w.wrapping_add(0x40), crate::camera::x87_copy(to));
+            if wc != 0 {
+                ch_set_fade(mem, wc, FADE_ALPHA, f0, 0);
+                ch_set_fade(mem, wc, FADE_ALPHA, f1, frames);
+            }
+        }
+        if byte(mem, a, 0x440) != 0 {
+            for j in 0..0x1f {
+                if u32::from(byte(mem, actor_of(mem, j), 0x43f)) == i {
+                    ms_set_chr_transparent_visible(
+                        mem,
+                        call,
+                        j,
+                        from,
+                        to,
+                        frames.cast_unsigned(),
+                        flags,
+                    );
+                }
+            }
+        }
+        1
+    }
+
+    /// `Equip_RebuildWearers(id)` (`0x007abca0`): equipment `id` in use
+    /// (`MsGetSaveWeapon` `+2`) no longer is, and no character wears it
+    /// any more (their weapon and armor slots `+0x2d`/`+0x2e` with it become
+    /// 0xff; not for the 0x7000 IDs); 0, -1 for 0xff or one not in use.
+    pub fn equip_rebuild_wearers(mem: &mut impl Mem, id: u32) -> u32 {
+        if id == 0xff {
+            return u32::MAX;
+        }
+        let slot = crate::save::bridge::ms_get_save_weapon(mem, id, 0);
+        if byte(mem, slot, 2) == 0 {
+            return u32::MAX;
+        }
+        mem.write(slot.wrapping_add(2), 0u8);
+        if id & 0xffff_f000 != 0x7000 {
+            let k = id & 0xfff;
+            let ply = crate::save::bridge::PLY_SAVE.ptr(mem).addr;
+            for c in 0..18 {
+                for o in [0x2d, 0x2e] {
+                    let at = ply + c * 0x94 + o;
+                    if u32::from(byte(mem, at, 0)) == k {
+                        mem.write(at, 0xffu8);
+                    }
+                }
+            }
+        }
+        0
+    }
+
+    /// `MsCueAddCommand_007ac940(i, id, word)` (`0x007ac940`): while an
+    /// action runs (`crate::misc::bridge::ACTION` not -1), and unless the
+    /// actor's linked actor (`+0xded`) is in state 3 (`+0xdf0`), the
+    /// command `id` (with 0xff as its second) and `word` added to the
+    /// linked actor's cue (`MsGetChrCommand2` of its `+0xc`; its count
+    /// `+2`). 0.
+    pub fn ms_cue_add_command(mem: &mut impl Mem, i: u32, id: u32, word: u32) -> u32 {
+        if crate::misc::bridge::ACTION.get(mem) == -1 {
+            return 0;
+        }
+        let link = sbyte(mem, actor_of(mem, i), 0xded);
+        let b = actor_of(mem, link);
+        if byte(mem, b, 0xdf0) == 3 {
+            return 0;
+        }
+        let cue = crate::actor::bridge::ms_get_chr_command2(mem, u32::from(byte(mem, b, 0xc)));
+        if cue == 0 {
+            return 0;
+        }
+        let n = u32::from(byte(mem, cue, 2));
+        #[allow(clippy::cast_possible_truncation)] // the original's `mov word`
+        mem.write(cue + 8 + 16 * n, id as u16);
+        mem.write(cue + 0xa + 16 * n, 0xffu16);
+        let n = u32::from(byte(mem, cue, 2));
+        mem.write(cue + 16 * (n + 1), word);
+        0
+    }
+
+    /// `MsCopyPointsOffset_007abeb0(base, other, k)` (`0x007abeb0`): record
+    /// `k` (32 bytes from `base`; `k` within its signed count `+1`) has
+    /// points (`+0x10` an offset from `base`, count `+4`); each of `other`'s
+    /// records (signed count `+1`, 0x60 bytes from `+4`: count `+0`, the
+    /// points' offset from `other` at `+0xc`, an offset vector at `+0x2c`)
+    /// gets as many of them as both have, each moved by its vector (`f32`
+    /// adds, 16 bytes apart).
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_copy_points_offset(mem: &mut impl Mem, base: u32, other: u32, k: u32) {
+        use ffx_bridge::x87::{add, load, store};
+        let k = k.cast_signed();
+        if k < 0 || k >= sbyte(mem, base, 1).cast_signed() {
+            return;
+        }
+        let rec = base + 32 * k.cast_unsigned();
+        let n = sbyte(mem, other, 1).cast_signed();
+        for j in 0..n.max(0).cast_unsigned() {
+            let e = other + 4 + 0x60 * j;
+            let mut src = base.wrapping_add(read_u32(mem, rec + 0x10));
+            let mut dst = other.wrapping_add(read_u32(mem, e + 0xc));
+            let count = sbyte(mem, rec, 4)
+                .cast_signed()
+                .min(sbyte(mem, e, 0).cast_signed());
+            for _ in 0..count.max(0) {
+                for c in 0..3 {
+                    let o: u32 = mem.read(e + 0x2c + 4 * c);
+                    let p: u32 = mem.read(src + 4 * c);
+                    mem.write(dst + 4 * c, store(add(load(o), load(p))));
+                }
+                src += 0x10;
+                dst += 0x10;
+            }
+        }
+    }
+
+    /// `MsBuildGearList_0079ca80(i)` (`0x0079ca80`): character `i`'s
+    /// weapons, then its armors (`g_BtlItemMem2` `+0x158` and `+0x2e8` +
+    /// 0x478 `i`): 0x5000 + slot for each equipment slot in use (`+2`) of
+    /// that kind (`+5`) owned by `i` (`+4`) without flag 2 (`+3`).
+    pub fn ms_build_gear_list(mem: &mut impl Mem, i: u32) {
+        let eq = EQUIPMENT.ptr(mem).addr;
+        for kind in 0..2u32 {
+            let list = crate::misc::bridge::ITEM_MEM2.get(mem);
+            let mut out = list
+                .wrapping_add(if kind == 0 { 0x158 } else { 0x2e8 })
+                .wrapping_add(i.wrapping_mul(0x478));
+            for k in 0..200 {
+                let s = eq + 22 * k;
+                if byte(mem, s, 2) != 0
+                    && u32::from(byte(mem, s, 5)) == kind
+                    && u32::from(byte(mem, s, 4)) == i
+                    && byte(mem, s, 3) & 2 == 0
+                {
+                    #[allow(clippy::cast_possible_truncation)] // below 0x50c8
+                    mem.write(out, (0x5000 + k) as u16);
+                    out = out.wrapping_add(2);
+                }
+            }
+        }
+    }
 }

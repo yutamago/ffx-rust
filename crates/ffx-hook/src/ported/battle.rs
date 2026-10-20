@@ -2262,6 +2262,58 @@ ported! {
         let at = frame.at();
         turn::ms_get_ctb_list(&mut mem(), out, at)
     }
+    /// `MsCheckLeftWindow(i)`.
+    MsCheckLeftWindow @ 0x0078_f700 => extern "C" fn ms_check_left_window(i: u32) -> u32 {
+        minor::ms_check_left_window(&mut mem(), i)
+    }
+    /// `MsSetSavePlyJoin(chr, on)`: the count `MsGetSaveOutParty` gives in
+    /// this call's frame, `MsGetSavePlyLeft` through the game.
+    MsSetSavePlyJoin @ 0x0078_69b0 => extern "C" fn ms_set_save_ply_join(chr: u32, on: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        minor::ms_set_save_ply_join(&mut mem(), &mut call_ptr, chr, on, at)
+    }
+    /// `Enc_ResetWeights(map, keep)`.
+    Enc_ResetWeights @ 0x0078_28a0 => extern "C" fn enc_reset_weights(map: u32, keep: u32) {
+        minor::enc_reset_weights(&mut mem(), map, keep);
+    }
+    /// `MsGetSaveCommandMenuPanel(id)`.
+    MsGetSaveCommandMenuPanel @ 0x0078_50b0 => extern "C" fn ms_get_save_command_menu_panel(id: u32) -> u32 {
+        minor::ms_get_save_command_menu_panel(&mem(), id)
+    }
+    /// `MsSetChrShadowMode(i, k, v)`.
+    MsSetChrShadowMode @ 0x0079_62d0 => extern "C" fn ms_set_chr_shadow_mode(i: u32, k: u32, v: u32) -> u32 {
+        minor::ms_set_chr_shadow_mode(&mut mem(), i, k, v)
+    }
+    /// `MsSetChrShadow(i, v)`.
+    MsSetChrShadow @ 0x0079_62b0 => extern "C" fn ms_set_chr_shadow(i: u32, v: u32) -> u32 {
+        minor::ms_set_chr_shadow(&mut mem(), i, v)
+    }
+    /// `MsSetChrTransparentVisible(i, from, to, frames, flags)`.
+    MsSetChrTransparentVisible @ 0x0079_6550 => extern "C" fn ms_set_chr_transparent_visible(i: u32, from: u32, to: u32, frames: u32, flags: u32) -> u32 {
+        minor::ms_set_chr_transparent_visible(&mut mem(), &mut call_ptr, i, from, to, frames, flags)
+    }
+    /// `Equip_RebuildWearers(id)`.
+    Equip_RebuildWearers @ 0x007a_bca0 => extern "C" fn equip_rebuild_wearers(id: u32) -> u32 {
+        minor::equip_rebuild_wearers(&mut mem(), id)
+    }
+    /// `MsCueAddCommand_007ac940(i, id, word)`.
+    MsCueAddCommand_007ac940 @ 0x007a_c940 => extern "C" fn ms_cue_add_command(i: u32, id: u32, word: u32) -> u32 {
+        minor::ms_cue_add_command(&mut mem(), i, id, word)
+    }
+    /// `MsCopyPointsOffset_007abeb0(base, other, k)`.
+    MsCopyPointsOffset_007abeb0 @ 0x007a_beb0 => extern "C" fn ms_copy_points_offset(base: u32, other: u32, k: u32) {
+        minor::ms_copy_points_offset(&mut mem(), base, other, k);
+    }
+    /// `MsBuildGearList_0079ca80(i)`.
+    MsBuildGearList_0079ca80 @ 0x0079_ca80 => extern "C" fn ms_build_gear_list(i: u32) {
+        minor::ms_build_gear_list(&mut mem(), i);
+    }
+    /// `MsBindCamera(worker, kind, cam)`.
+    MsBindCamera @ 0x007b_a9a0 => extern "C" fn ms_bind_camera(w: u32, kind: u32, cam: u32) -> u32 {
+        native!(c);
+        camnat::ms_bind_camera(&mut mem(), &mut c, w, kind, cam)
+    }
     /// `MsMenuHalfElement(i)`.
     MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
         minor::ms_menu_half_element(&mem(), i)

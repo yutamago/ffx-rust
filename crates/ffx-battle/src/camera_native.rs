@@ -388,4 +388,19 @@ pub mod bridge {
             &[cam, side, kind, x, b, a],
         )
     }
+
+    /// `MsBindCamera(worker, kind, cam)` (`0x007ba9a0`): for kinds 0-3,
+    /// [`ms_atel_get_camera`] (the original jumps to it); 0 for the others.
+    pub fn ms_bind_camera<M: Mem>(
+        mem: &mut M,
+        c: &mut Calls<'_, M>,
+        w: u32,
+        kind: u32,
+        cam: u32,
+    ) -> u32 {
+        if kind > 3 {
+            return 0;
+        }
+        ms_atel_get_camera(mem, c, w, kind, cam)
+    }
 }
