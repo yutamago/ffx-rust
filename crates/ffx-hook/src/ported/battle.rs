@@ -5203,4 +5203,24 @@ ported! {
     MsSetCommandScriptTarget_007a8b40 @ 0x007a_8b40 => extern "C" fn ms_set_command_script_target(i: u32, id: u32, flags: u32) -> u32 {
         minor::ms_set_command_script_target(&mut mem(), i, id, flags)
     }
+    /// `MsGetTargetSortList(i, &n, flip)`: the count and vectors in this
+    /// call's frame.
+    MsGetTargetSortList @ 0x007b_72c0 => extern "C" fn ms_get_target_sort_list(i: u32, out: u32, flip: u32) -> u32 {
+        let mut local = super::StackFrame::<{ (minor::SORT_FRAME / 4) as usize }>::new();
+        let at = local.at();
+        let mut info = |m: &mut _, a: [u32; 4]| {
+            target::ms_get_chr_info(&mut target::Dm::new(m), &host(), a[0], a[1], a[2], a[3], None)
+        };
+        minor::ms_get_target_sort_list(&mut mem(), &crt_trig, &mut info, [i, out, flip], at)
+    }
+    /// `MsGetChrLinkSet_007b7440(i, set)`.
+    MsGetChrLinkSet_007b7440 @ 0x007b_7440 => extern "C" fn ms_get_chr_link_set(i: u32, set: u32) -> u32 {
+        minor::ms_get_chr_link_set(&mem(), i, set)
+    }
+    /// `MsGetTargetLinkList(i, &n)`: the count in this call's frame.
+    MsGetTargetLinkList @ 0x007b_6fb0 => extern "C" fn ms_get_target_link_list(i: u32, out: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        minor::ms_get_target_link_list(&mut mem(), i, out, at)
+    }
 }

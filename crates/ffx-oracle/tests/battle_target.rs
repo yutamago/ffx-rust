@@ -131,6 +131,9 @@ thread_local! {
     static DIVIDE_RNG: std::cell::Cell<u32> = const { std::cell::Cell::new(0x28d1_0001) };
     /// 0x20 bytes in both oracles for a script signal block (cleared after).
     static BLOCK: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// 0x80 bytes in both oracles for the target lists' frame words and
+    /// count (round 32).
+    static LISTS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// The battle snapshot's character pointers, before the actors are
     /// randomized (`MsAttachWeapon` binds to their real models).
     static LIVE_CHRS: std::cell::RefCell<Vec<u32>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -6516,6 +6519,8 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
     SCRATCH.with(|c| c.set(s));
     let block = scratch(a, b, 0x20);
     BLOCK.with(|c| c.set(block));
+    let lists = scratch(a, b, 0x80);
+    LISTS.with(|c| c.set(lists));
     let rec = scratch(a, b, 0x80);
     for o in [&mut *a, &mut *b] {
         script_stubs(o, rec);
@@ -7514,6 +7519,116 @@ fn target_dist(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, f:
     });
     local_words(a, b);
     same(&format!("MsSetMove {args:x?}"), a, b);
+    target_lists(a, b, rng, w, i);
+}
+
+/// The target lists (round 32): who stands on whom (`+0x43f`, mostly
+/// nobody; `+0x440` carries some) for `MsGetChrLinkSet_007b7440` and
+/// `MsGetTargetLinkList`, then `MsGetTargetSortList` (its `MsGetChrInfo`
+/// the Rust with the original's `edi` and `ebx`); the links put back
+/// after. The ports' frame words (`local`) start as the original's stack
+/// (zeroed) and are dropped after.
+fn target_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, i: u32) {
+    use ffx_battle::minor::bridge as mi;
+    let h = host();
+    let kept: Vec<Vec<u8>> = (0..ACTORS)
+        .map(|k| a.read(w.actor(k) + 0x43f, 2).unwrap())
+        .collect();
+    for k in 0..ACTORS {
+        // (now and then a record index past the actors, for the links'
+        // whole-byte compare)
+        let under = match rng.below(6) {
+            0 | 1 => u8::try_from(rng.below(ACTORS + 2)).unwrap(),
+            2 => u8::try_from(0x20 + rng.below(0x20)).unwrap(),
+            _ => 0xff,
+        };
+        poke(
+            a,
+            b,
+            w.actor(k) + 0x43f,
+            &[under, u8::from(rng.below(2) == 0)],
+        );
+    }
+    // actor i's targets (`+0xdc0`, the list without a running command)
+    let bits = rng.next() & ((1u32 << ACTORS) - 1);
+    poke(a, b, w.actor(i % ACTORS) + 0xdc0, &bits.to_le_bytes());
+    if rng.below(4) != 0 {
+        // (no running command: its cue entry's targets would win)
+        poke(a, b, w.actor(i % ACTORS) + 0xde5, &[0xff]);
+    }
+    let local = LISTS.with(std::cell::Cell::get);
+    let out = local + 0x40;
+    let pick = [0, out][rng.below(4).min(1) as usize];
+    let set = [0, rng.next(), 1 << rng.below(32)][rng.below(3) as usize];
+    let j = [i, rng.below(ACTORS), 0x20 + rng.below(0x20)][rng.below(3) as usize];
+    // a record past the actors carries some (put back after)
+    let carry = ffx_battle::actor::bridge::ms_get_chr(b, j) + 0x440;
+    let carried = a.read(carry, 1).unwrap();
+    if j >= ACTORS {
+        poke(a, b, carry, &[1]);
+    }
+    twin(
+        "MsGetChrLinkSet_007b7440",
+        a,
+        b,
+        0x007b_7440,
+        &[j, set],
+        ALL,
+        |m| mi::ms_get_chr_link_set(m, j, set),
+    );
+    poke(a, b, carry, &carried);
+    poke(a, b, local, &[0; 0x34]);
+    zero_stack(a);
+    twin(
+        "MsGetTargetLinkList",
+        a,
+        b,
+        0x007b_6fb0,
+        &[i, pick],
+        ALL,
+        |m| mi::ms_get_target_link_list(m, i, pick, local),
+    );
+    let v = a.read(local, 0x34).unwrap();
+    b.write(local, &v).unwrap();
+    same(&format!("MsGetTargetLinkList {i:#x}"), a, b);
+    let flip = [0, 1, rng.next()][rng.below(3) as usize];
+    let args = [i, pick, flip];
+    // now and then an actor's model at x NaN (one payload: the NaNs that
+    // meet are the same), for the sort's unordered compares
+    let nan_at = {
+        // (one of i's targets, else any actor)
+        let k = (0..ACTORS)
+            .cycle()
+            .skip(rng.below(ACTORS) as usize)
+            .take(ACTORS as usize)
+            .find(|&k| bits >> k & 1 != 0)
+            .unwrap_or(0);
+        let chr = u32::from_le_bytes(a.read(w.actor(k), 4).unwrap().try_into().unwrap());
+        let at = chr.wrapping_add(ffx_chara::layout::POS);
+        (rng.below(3) == 0 && readable(a, at, 4)).then(|| (at, a.read(at, 4).unwrap()))
+    };
+    if let Some((at, _)) = &nan_at {
+        poke(a, b, *at, &0x7fc0_0000u32.to_le_bytes());
+    }
+    zero_stack(a);
+    twin("MsGetTargetSortList", a, b, 0x007b_72c0, &args, ALL, |m| {
+        dm(m, |m| {
+            let mut info = |m: &mut t::Dm<'_>, x: [u32; 4]| {
+                t::ms_get_chr_info(m, &h, x[0], x[1], x[2], x[3], Some([i & 0xff, HARNESS.ebx]))
+            };
+            mi::ms_get_target_sort_list(m, &stand_in, &mut info, args, local)
+        })
+    });
+    let v = a.read(local, 0x34).unwrap();
+    b.write(local, &v).unwrap();
+    local_words(a, b);
+    same(&format!("MsGetTargetSortList {args:x?}"), a, b);
+    if let Some((at, v)) = nan_at {
+        poke(a, b, at, &v);
+    }
+    for (k, v) in (0..ACTORS).zip(&kept) {
+        poke(a, b, w.actor(k) + 0x43f, v);
+    }
 }
 
 /// The `op_et_eff` wrappers (round 31, `ffx_battle::et_effect`) on the
