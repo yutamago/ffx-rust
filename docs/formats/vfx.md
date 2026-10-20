@@ -530,7 +530,8 @@ matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
 
 ## High range (`0x00a30000..0x00a80000`)
 
-Ported in `crates/ffx-vfx/src/hi_md.rs` and `hi_opus.rs`; the shims are
+Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs`, `hi_draw.rs` and
+`hi_opus.rs`; the shims are
 `crates/ffx-hook/src/ported/vfx_hi.rs`, the oracle tests
 `crates/ffx-oracle/tests/vfx_hi.rs`.
 
@@ -587,6 +588,44 @@ A packet's tags start at `+0x20`: type byte `+1`, `i16` count `+2`.
   multiplied by 1000 for the product and divided by 1000 after, as `f32`
   both times, so it keeps both roundings.
 
+### Vertex lights
+
+Three set-ups before a model draw, from `0x00a6d380` on. The fog
+vectors `g_OpFog + 0x10` and `+0x40` (`0x011a0020`, `0x011a0050`) go
+through the EE's `v0` (`0x00c8f528`; the first leaves its `x` alone) into
+`work +0x280` and `+0x290`. Each "light" matrix is a copy of `[model
++0x2c]` with `x` and `y` of rows 0..2 negated (`fchs`).
+
+- `op_vertex_normal_point44_ffx(obj, model, work, chr)` (`0x00a6d380`;
+  16-aligned frame): the model matrix `[model +0x28]` becomes light x
+  inverse(`[model +0x2c]`) x it (`sceVu0InversMatrix4x4`, two
+  `FFXVu0MulMatrix`); `op_ffxlight_to_omdlight(w + 0x80, w + 0xc0, w +
+  0x100)` and `op_matrix_light4_vector(w + 0xc0, w + 0xc0, light)` with `w
+  = [work +0x390]`; the fog vectors. With a character: `Ch_DrawCalcShade`,
+  the colour scale `work +0x370..+0x37c` x 1/128 (`f32` each) and
+  `graphicPS2LightingSetupEffect(instance, name[0] == 'w', matrix, [model
+  +0x24], f32 byte +0x4d, w + 0xc0, w + 0x80, f32 byte +0x4c, shade,
+  scale, 0)`, whose `eax` (0) it returns; 0 without one.
+- `op_vertex_normal_point44_ffx_2` (`0x00a6d670`, same arguments): only
+  with a character; the lights are locals
+  (`op_ffxlight_to_omdlight_0279`), no fog vectors, the scale is (1, 1,
+  0.5, `w`) for magic 0x245 (`MagicFile_GetMagicId`), and the last
+  argument 1.
+- `op_0437_vertex_normal_point44_ffx(packet, model, work, base, mul1,
+  mul0, slot)` (`0x00a6d890`): the vertex colours into
+  `g_MagicBuffersA[slot]` (`0x022fb3e0`; made on first use,
+  `user_aligned_malloc(i16 packet +0x14 x 16, 16)`). Lights as locals
+  (`op_ffxlight_to_omdlight`, `op_matrix_light4_vector` with `[model
+  +0x2c]`), the fog vectors; then the `i16` stream at `packet + [packet
+  +0x1c] + 0x10`, `i16 packet +0x12` groups of a count and that many
+  vertex numbers `v`, `i = (v << 2) as i16`: the normal `-[model
+  +0x3c][i..i+3]` (w 1) through the directions (`FFXVu0ApplyMatrix`),
+  negatives to +0, w 1, through the colours; per channel negatives to +0,
+  `c = f32(c x f32(byte +0x4c / 128))`, `buffer[i + k] = f32((c x
+  mul0[k] x mul1[k] + base[k]) / 255)` (`f64` 255 at `0x00b170c0`).
+  Returns `packet` without groups, else the count. It also normalises
+  rows 0..2 of `[model +0x2c]` (`_CIsqrt`) into a local nothing reads.
+
 ### oef2 entry links
 
 `op_oef2_entry_link_00a6a320(e, i)` (`0x00a6a320`, from `opu_part_init`
@@ -609,6 +648,66 @@ in `colours` row 3 instead of `r0`. `op_ffxambient_to_omdambient()`
 (`0x00a68ff0`) turns the ambient colour into RGBA bytes (`x 256` as
 `f32`, above 255 is 255, below 0 is 0, else truncated) and leaves them in
 `eax`; its callers drop them.
+
+### Refraction coordinates
+
+`op_refrection_st_float(obj, model, _, out, scale, du, dv)` (`0x00a6cfb0`;
+from `op_md_ref_nolight`, `opus_0279_draw`, `0x00a705f0`): `u` is the
+unit matrix with rows 0..2 `FFXVu0Normalize`d from `[model +0x2c]`, `s`
+= `op_unit_m_scale(f32(f32(scale) / 4096))` x `u` (`op_mul_m(s, u, s)`).
+With `ku = 0x1000 / du` and `kv = 0x1000 / dv` (`idiv`: 0 faults, and so
+does `ftol`'s `0x80000000 % -1`), for each of the `i16 obj +0x12` groups:
+`p = s x [model +0x38][i]`, `fu = f32((ftol(p.x) % du) x ku) / 4096`, `fv`
+the same from `p.y` and `dv`. Its vertices are `i` itself when `[obj
++0x1c]` is 0, else the next count and vertex numbers of the `i16` stream
+at `obj + 0x10 + [obj +0x1c]`. Each vertex `v`: `t = u x ([model
++0x3c][v], w 1)` (`FFXVu0ApplyMatrix`), `out[v].x = f32(f32((t.x + 3) x
+0.5) + fu)` and `.y` the same (16 bytes a vertex). `eax` is the group
+count reread at the end (`obj` or 0 with none); no caller reads it.
+
+### Model draw set-ups
+
+`op1_md_draw` (`0x00a65750`) picks a path by the packet's flags
+(`0x2000`: `0x00a6bae0`; 4: `0x00a6bfe0` with any of `0x300`, else
+`0x00a6b710`; then `op_md_one8`/`_fog`, `0x00a6c3d0`, `0x00a6acb0`). Each
+path takes `0x1800` bytes of the op scratch stack (`w` = the old top's
+mark; the index is the sign-extended `g_OpSprTop` + 1, unwrapped) and pops
+them at the end; the 0x50-byte init block goes to `w +0x300` 16 bytes at
+a time through the EE's `v0` (`0x00c8f528`, all four words), and `w
++0x338`/`+0x33c` default to `obj + [obj +8]`/`obj + [obj +0xc]` when 0.
+Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
+`g_GsRegisterSink` (`0x023056e8`) has bit 8 set and return `[w +0x334]`.
+
+- `op_md_chara_path3(obj, init, chr)` (`0x00a6a3a0`; from `opu_mdc`,
+  `op1_mdc_draw`, `0x00a693b0`): with `a` the RGBA bytes of
+  `op_ffxambient_to_omdambient()` and `t = f32(byte w +0x34c / 128)`, the
+  colour `w +0x370 + 4k` = `byte w +0x31c + k x (1 - t) + a[k] x t`
+  (exact). `w +0x390` = `(i16 obj +0x12 << 5) + [w +0x304]`, `+0x394` =
+  `[w +0x304]`; init flag `0x40`: `op_vertex_normal_point44_ffx(obj, w +
+  0x300, w, chr)`, else with `i16 obj +0x14` and no flag `0x20`
+  `op_normal_light44_ffx(obj, w + 0x300, w)`. Returns 0.
+- `op_md_x64_00a6b710(obj, init)` (`0x00a6b710`): `p =
+  op_md_spr_init_x64(obj, init, w)`; the colour from the signed bytes `p
+  +0x1c..`; `w +0x390` = `(i16 obj +0x12 << 4) + [p +4]`. Lights: no flag
+  `0x40` and `i16 obj +0x14` nonzero: `op_matrix_light4_vector` into a
+  local nothing reads, or with flag `0x20` `op_md_white_vectors`; flag
+  `0x40`: `opc` (a bare `ret`) when neither `[obj]` nor `[p]` has `0x400`,
+  else `0x00a6cd40` (a bare `ret`) unless `[obj]` has 8. Tags (byte table
+  `0x00a6ba98`, jumps `0x00a6ba7c`): types 0..7 set `w +0x1f0` 0x8001 and
+  `w +0x1f8` (0/1 `0x414141`, 4/5 `0x41414141`, 2/3 and 6/7 `0x12412412`
+  with `w +0x120` = `u16 p +0xc + [tag +8]`, `w +0x124` = `(u16 p +0xe << 5)
+  + [tag +0xc]`) and step 0x10; 0x20 and 0x22 step 0x20 and act only when
+  `i16 tag +2` is nonzero (0x22 also `w +0x100` 0x70000006, `+0x110`
+  0x8001, `+0x150` `[tag +0x18]`, `+0x160` `[tag +0x10]` or `w +0x120`,
+  `+0x168` 6, then `opc2()`, a bare `ret`); other types end.
+- `op_md_x64_fog_00a6bfe0(obj, init)` (`0x00a6bfe0`): the colour from the
+  signed bytes `w +0x31c..`; `w +0x394` = `[w +0x304]`, `+0x39c` = `(i16
+  obj +0x12 << 4) + [w +0x304]`; the GS words as `op_md_spr_init_x64`
+  writes them except `+0x118` (0xeeee here) and `+0x150` (only 0 for
+  `[obj]` flag 4, else 5); the 16 bytes at `+0x140` from
+  `g_OpMdGsWordsB_011a07f0` with init flag 8, else
+  `g_OpMdGsWordsA_011a0740`. Tags (jumps `0x00a6c3b0`): 0, 2, 4, 6 as
+  above, step 0x10; 1, 3, 5 and anything else end.
 
 ### `opus_0437` dots
 
@@ -638,6 +737,16 @@ The dot buffer `b`: `b[0]` the entry count, `b[1]` the next entry
   request (`JobSchedule_pppPart_getFillBufferRequest(b[0])`) gets kind 4,
   the three segments, `b + 0x10` and `b[0]`.
 
+### `opus_0437` polygons
+
+`opus_0437_poly_init_00a6e1b0(b, list, m, k)` (`0x00a6e1b0`,
+`opp_0437_cmd_a6dbe0` kind 0x4000) lays out the buffer
+`opus_0437_poly_check` (`0x00a6ed40`) reads: `u16 +0` `k`, `u16 +2` 0,
+`u16 +4` `op_md_list_count10(list)`; `k` 0x60-byte entries from `+0x30`
+(`u16 +0xc` 0xffff each), `ptr32 +0xc` their end, from which
+`op_md_list_count10(list)` `u16`s are 0xffff; the box
+`op_md_list_bounds(list, m, b + 0x10, b + 0x20)` (its `eax` returned).
+
 ### `opus_0582` dots
 
 `opus_0582_dot_set_00a73740(b, rec)` (`0x00a73740`,
@@ -647,3 +756,23 @@ of the dot buffer `opus_0582_dot_draw` reads, from the part `rec`: radii
 `ftol(+0x30)`, step `ftol(ftol(+0x34) / 256)` (the integer back through
 an `f32`), spread `ftol(+0x38)` (0 when negative), life `ftol(+0x4c) +
 16`, colour `+0xc8`, fade-in 8. It returns the colour.
+
+### Map draw
+
+`opp_map_draw_init_00a753f0(b, pos)` (`0x00a753f0`, kind 0 of
+`opp_map_draw_a74c60`, which allocates `0x27e20` bytes): `[b]` = 0 and
+0x740 0x58-byte entries from `b + 0x20`. With `X = f32(pos.x + 2048)`, `Y
+= f32(pos.y + 2048)`, `x0 = X - 256`, `y0 = Y - 208` (unrounded until
+each store) and `k` = 1/512, the entries go round the rectangle (`+0x10`
+x, `+0x14` y, `+0x18` 0, `+0x38`/`+0x3c` uv): 0x200 along the bottom (`x0
++ i`, `y0`, uv `(i k, 0)`), 0x1a0 up the right (`X + 256`, `y0 + i`, uv
+`(1, i k)`), 0x200 back along the top (`i` from 0x1ff down: `x0 + i`, `Y +
+208`, uv `(i k, 0.8125)`) and 0x1a0 down the left (`i` from 0x19f: `x0`,
+`y0 + i`), whose uv goes to the next entry's `+0x38`/`+0x3c` (the left
+side's first entry keeps whatever its uv held, and the last pair lands 8
+bytes past the buffer). Then each entry gets `+0` `X`, `+4` `Y`, `+8` 0,
+`+0x20`/`+0x24` 0x80808080, `+0x30` `f32((X - 1792) k)`, `+0x34` `f32(k (Y
+- 1840))`, `+0x40..+0x48` 0, an `op_random_p(0.001)` whose value is
+dropped (it only advances the generator), `+0x4c` 0.01, `+0x50`/`+0x54`
+0. The `eax` the last `op_random_p` left is its result; no caller reads
+it.

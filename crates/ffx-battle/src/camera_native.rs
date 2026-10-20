@@ -295,6 +295,34 @@ pub mod bridge {
         c.game(mem, MS_CAMERA_SET_ATEL_YAW, &[cam, side, d, x, b, a])
     }
 
+    /// `MsAtelCameraDirVector_007bb210(worker, _, stack, side)`
+    /// (`0x007bb210`, name ours; natives 0x6036 and 0x6018): three floats
+    /// popped (`a`, `b`, `c`) into
+    /// `MsCameraSetDirVector_007bce80(camera, side, c, b, a)`.
+    ///
+    /// The callee's scale words past the first are this function's `esi`
+    /// (`stack`), its `ebp` (`frame`: the original's frame pointer) and
+    /// the return address into it (see
+    /// `ffx_battle::camera::bridge::ms_camera_set_dir_vector`).
+    pub fn ms_atel_camera_dir_vector<M: Mem>(
+        mem: &mut M,
+        c: &mut Calls<'_, M>,
+        w: u32,
+        s: u32,
+        side: u32,
+        frame: u32,
+    ) {
+        let cam = camera(mem, c, w);
+        let [a, b, x] = c.floats::<3>(mem, w, s);
+        let ret = mem.rebase(DIR_VECTOR_RETURN);
+        crate::camera::bridge::ms_camera_set_dir_vector(mem, cam, side, x, b, a, [s, frame, ret]);
+    }
+
+    /// Where `MsCameraSetDirVector_007bce80` returns to in
+    /// [`ms_atel_camera_dir_vector`]'s original (`0x007bb29e`): a word of
+    /// the scale vector it leaves in VU register 2.
+    pub const DIR_VECTOR_RETURN: u32 = 0x007b_b29e;
+
     /// `MsAtelCameraSpline_007bb970(worker, _, stack, side)` (`0x007bb970`):
     /// an integer `flags`, floats `speed` and `t`, then the spline popped:
     /// 0 and 1 the built-in ones ([`SPLINE_RECORDS`], their count copied to
@@ -364,6 +392,202 @@ pub mod bridge {
             mem,
             MS_CAMERA_SET_BTL,
             &[cam, side, chr, 0, a, b, lift, 0, 0, 0],
+        );
+        cam
+    }
+
+    /// `MsGetBattleScene` (battle), `MagicFile_GetMagicId` and
+    /// `MagicFile_GetHandle` (system), `graphicLevelGetNameHash`
+    /// (render), `Ch_GetId` and `Ch_SetHideBattle` (chara): the callees
+    /// of [`ms_atel_camera_set_btl_pc`] it reaches through the game.
+    pub const MS_GET_BATTLE_SCENE: u32 = 0x0078_2970;
+    pub const MAGIC_FILE_GET_MAGIC_ID: u32 = 0x009d_a3b0;
+    pub const MAGIC_FILE_GET_HANDLE: u32 = 0x009d_a390;
+    pub const GRAPHIC_LEVEL_GET_NAME_HASH: u32 = 0x0064_1da0;
+    pub const CH_GET_ID: u32 = 0x0082_6b80;
+    pub const CH_SET_HIDE_BATTLE: u32 = 0x0082_b260;
+
+    /// [`ms_atel_camera_set_btl_pc`]'s constants (`f64`s in the image but
+    /// for the last two, `f32`s): the products it compares with, its
+    /// steps, and the 0x92 fix's camera.
+    const C_MINUS_150: u32 = 0x00b5_5150;
+    const C_89: u32 = 0x00b5_5128;
+    const C_229: u32 = 0x00b5_5130;
+    const C_0_9: u32 = 0x00b4_9958;
+    const C_4: u32 = 0x00b5_5108;
+    const C_1_5_F32: u32 = 0x00b3_eb58;
+    const C_3: u32 = 0x00b2_c5c8;
+    const C_HALF: u32 = 0x00b9_2220;
+    const C_30_49: u32 = 0x00b5_5120;
+    const C_TINY: u32 = 0x00b3_eb50;
+    const C_29_49: u32 = 0x00b5_5118;
+    const C_3_5: u32 = 0x00b5_5100;
+    const C_10_09: u32 = 0x00b5_5110;
+    const C_0_1: u32 = 0x00b9_21f0;
+    const C_0X92_X_F32: u32 = 0x00b5_50fc;
+    const C_0X92_DIST_F32: u32 = 0x00b5_5140;
+
+    /// `MsAtelCameraSetBtlPc_007badb0(worker, _, stack, side, mode)`
+    /// (`0x007badb0`, name ours; natives 0x6040, 0x604c, 0x604d): as
+    /// [`ms_atel_camera_set_btl`] with six values popped: `dist` (over
+    /// 100.0), yaw and pitch (degrees to radians), `x` (over 100.0) and
+    /// integers `b`, `a`, into `MsCameraSetBtl(camera, side, actor, mode,
+    /// a, b, x, pitch, yaw, dist)`, after the PC build's fixes for single
+    /// battles (scene `MsGetBattleScene`, magic `MagicFile_GetMagicId`):
+    ///
+    /// - scene 0xd40000, level hash 0x200f, magic 0xfb: with `100 dist`
+    ///   -150.0 and `100 x` 88.99999237, the hidden characters
+    ///   ([`HIDE_QUEUE`] from its last down to 1) shown
+    ///   (`Ch_SetHideBattle(chr, 1)`) and [`HIDE_MASK`] 0;
+    /// - scene 0x1a30004, magic 0x58: `100 dist` 228.99996948, `dist` less
+    ///   0.9;
+    /// - scene 0x1f60004, magic 0xc9: `100 x` 3.99999905, `x` plus 0.9;
+    /// - scene 0x25c0013, side 1, mode 2, magic 0x4c or 0x137, the command
+    ///   actor's character `Ch_GetId` 0x10c1: `dist` 1.5 tripled;
+    /// - magic 0xa3, scene 0x1590000, side 1, mode 2: `100 dist + 0.5`
+    ///   truncated 520, `dist` less 0.5;
+    /// - magic 0x2c1 with a magic file (`MagicFile_GetHandle` not -1):
+    ///   `|trunc(dist - 30.49)|` or else `|trunc(dist - 29.49)|` (as
+    ///   `f32`s) below 1e-4, `dist` less 3.5;
+    /// - magic 0x2c0 with a magic file: `|trunc(dist - 10.09)|` below
+    ///   1e-4, `x` plus 0.1;
+    /// - magic 0x92 with a magic file in scene 0x1ae000a: `100 x` and
+    ///   `100 dist` truncated 0x12 and 1000, `x` 0.2221 and `dist` 9.0.
+    ///
+    /// The products are the x87's at the game's 53-bit precision, where
+    /// no `f32` times 100 makes 88.99999237, 228.99996948 or 3.99999905
+    /// (they are `f32` products, single precision's): those three fixes
+    /// never apply. The camera. (The equalities are the x87's `fucom`
+    /// tests: exact on purpose.)
+    #[allow(clippy::too_many_lines, clippy::float_cmp)]
+    pub fn ms_atel_camera_set_btl_pc<M: Mem>(
+        mem: &mut M,
+        c: &mut Calls<'_, M>,
+        w: u32,
+        s: u32,
+        side: u32,
+        mode: u32,
+    ) -> u32 {
+        use crate::visible::bridge::{HIDE_MASK, HIDE_QUEUE, HIDE_QUEUE_LAST};
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store, sub};
+        let scene = c.game(mem, MS_GET_BATTLE_SCENE, &[]);
+        let magic = c.game(mem, MAGIC_FILE_GET_MAGIC_ID, &[]);
+        let actor = c.game(mem, crate::motion::bridge::ATEL_GET_BATTLE_ID_ADRS2, &[w]);
+        let work = c.game(mem, ATEL_GET_CAMERA_WORK_ADRS, &[w]);
+        let mut cam: u32 = mem.read(work);
+        if cam == 0 {
+            cam = crate::camera::bridge::ms_atel_get_camera_id(mem, 5, 2, 0);
+            mem.write(work, cam);
+        }
+        let hundred = f64_at(mem, HUNDRED);
+        let d = c.float(mem, w, s);
+        let mut dist = store(div(load(d), hundred));
+        let yaw = c.float(mem, w, s);
+        let pitch = c.float(mem, w, s);
+        let x = c.float(mem, w, s);
+        let mut x = store(div(load(x), hundred));
+        let b = c.int(mem, w, s);
+        let a = c.int(mem, w, s);
+        let yaw = radians(mem, yaw);
+        let pitch = radians(mem, pitch);
+        let k = |mem: &M, sym: u32| f64_at(mem, sym);
+        let hundredth = |v: u32| mul(load(v), hundred);
+        match scene {
+            0x00d4_0000 => {
+                if c.game(mem, GRAPHIC_LEVEL_GET_NAME_HASH, &[]) == 0x200f
+                    && magic == 0xfb
+                    && hundredth(dist) == k(mem, C_MINUS_150)
+                    && hundredth(x) == k(mem, C_89)
+                {
+                    let mut last = HIDE_QUEUE_LAST.get(mem);
+                    while last != 0 {
+                        let at = HIDE_QUEUE
+                            .ptr(mem)
+                            .addr
+                            .wrapping_add(last.cast_unsigned().wrapping_mul(4));
+                        let chr: u32 = mem.read(at);
+                        c.game(mem, CH_SET_HIDE_BATTLE, &[chr, 1]);
+                        last = HIDE_QUEUE_LAST.get(mem).wrapping_sub(1);
+                        HIDE_QUEUE_LAST.set(mem, last);
+                    }
+                    HIDE_MASK.set(mem, 0);
+                }
+            }
+            0x01a3_0004 => {
+                if c.game(mem, MAGIC_FILE_GET_MAGIC_ID, &[]) == 0x58
+                    && hundredth(dist) == k(mem, C_229)
+                {
+                    dist = store(sub(load(dist), k(mem, C_0_9)));
+                }
+            }
+            0x01f6_0004 => {
+                if c.game(mem, MAGIC_FILE_GET_MAGIC_ID, &[]) == 0xc9 && hundredth(x) == k(mem, C_4)
+                {
+                    x = store(add(load(x), k(mem, C_0_9)));
+                }
+            }
+            0x025c_0013 if side == 1 && mode == 2 && (magic == 0x4c || magic == 0x137) => {
+                let who = crate::actor::bridge::COMMAND_ACTOR.get(mem);
+                if who != 0xff {
+                    let chr: u32 = mem.read(crate::actor::bridge::ms_get_chr(mem, u32::from(who)));
+                    if chr != u32::MAX
+                        && c.game(mem, CH_GET_ID, &[chr]) == 0x10c1
+                        && load(mem.read(mem.rebase(C_1_5_F32))) == load(dist)
+                    {
+                        dist = store(mul(load(dist), k(mem, C_3)));
+                    }
+                }
+            }
+            _ => {}
+        }
+        // |trunc(dist - by)| as an f32
+        let off = |mem: &M, dist: u32, by: u32| {
+            let t = ftol(mem, sub(load(dist), k(mem, by)))
+                .cast_signed()
+                .wrapping_abs();
+            store(f64::from(t))
+        };
+        match magic {
+            0xa3 => {
+                if scene == 0x0159_0000
+                    && side == 1
+                    && mode == 2
+                    && ftol(mem, add(hundredth(dist), k(mem, C_HALF))) == 0x208
+                {
+                    dist = store(sub(load(dist), k(mem, C_HALF)));
+                }
+            }
+            0x2c1 => {
+                if c.game(mem, MAGIC_FILE_GET_HANDLE, &[]) != u32::MAX {
+                    let tiny = k(mem, C_TINY);
+                    if tiny > load(off(mem, dist, C_30_49)) || load(off(mem, dist, C_29_49)) < tiny
+                    {
+                        dist = store(sub(load(dist), k(mem, C_3_5)));
+                    }
+                }
+            }
+            0x2c0 => {
+                if c.game(mem, MAGIC_FILE_GET_HANDLE, &[]) != u32::MAX
+                    && load(off(mem, dist, C_10_09)) < k(mem, C_TINY)
+                {
+                    x = store(add(load(x), k(mem, C_0_1)));
+                }
+            }
+            0x92 if c.game(mem, MAGIC_FILE_GET_HANDLE, &[]) != u32::MAX
+                && scene == 0x01ae_000a
+                && ftol(mem, hundredth(x)) == 0x12
+                && ftol(mem, hundredth(dist)) == 1000 =>
+            {
+                x = mem.read(mem.rebase(C_0X92_X_F32));
+                dist = mem.read(mem.rebase(C_0X92_DIST_F32));
+            }
+            _ => {}
+        }
+        let chr = u32::from(mem.read::<u8>(actor));
+        c.game(
+            mem,
+            MS_CAMERA_SET_BTL,
+            &[cam, side, chr, mode, a, b, x, pitch, yaw, dist],
         );
         cam
     }

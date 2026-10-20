@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{hi_md, hi_opus, x87};
+use ffx_vfx::{hi_draw, hi_light, hi_md, hi_opus, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -906,6 +906,716 @@ fn opus_0437_dot_draw_matches_the_original() {
         }
         for log in logs {
             assert!(p.get::<u32>(log) > 0, "{}: a stand-in never ran", p.name);
+        }
+    }
+}
+
+// ---- round 4: opus_0437 polygons, vertex lights ---------------------------
+
+/// A stand-in at `sym` like [`deref_recorder_with`], with 0x200 bytes a
+/// call (up to 127 logged words), returning the dword at `ret`.
+fn wide_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: u32) -> u32 {
+    let log = p.alloc(4 + 0x100 * 0x200);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x09]); // shl ecx, 9
+    let mut pos = 0u32;
+    for (k, &n) in (0u8..).zip(words) {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        if n == 0 {
+            c.extend([0x89, 0x81]); // mov [ecx + slot], eax
+            c.extend((log + 4 + 4 * pos).to_le_bytes());
+            pos += 1;
+        } else {
+            for j in 0..n {
+                c.extend([0x8b, 0x50, 4 * j]); // mov edx, [eax + 4j]
+                c.extend([0x89, 0x91]); // mov [ecx + slot], edx
+                c.extend((log + 4 + 4 * pos).to_le_bytes());
+                pos += 1;
+            }
+        }
+    }
+    assert!(pos <= 127);
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0xa1); // mov eax, [ret]
+    c.extend(ret.to_le_bytes());
+    c.push(0xc3);
+    jump_to(p, sym, &c);
+    log
+}
+
+/// A stand-in at `sym` returning the dword at `cell`.
+fn returns_cell(p: &mut Pair, sym: u32, cell: u32) {
+    let mut c = vec![0xa1]; // mov eax, [cell]
+    c.extend(cell.to_le_bytes());
+    c.push(0xc3);
+    jump_to(p, sym, &c);
+}
+
+/// 16 floats at `at`: finite, now and then any (no signalling NaNs).
+fn matrix(p: &mut Pair, rng: &mut Xorshift, at: u32) {
+    for i in 0..16 {
+        let x = if rng.chance(5) {
+            rng.float()
+        } else {
+            finite(rng)
+        };
+        p.set(at + 4 * i, x);
+    }
+}
+
+#[test]
+fn opus_0437_poly_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_e1b0);
+        let (list, packets, mats) = (p.alloc(0x100), p.alloc(0x400 * 4), p.alloc(0x40 * 4));
+        let (b, m) = (p.alloc(0x800), p.alloc(0x40));
+        for round in 0..1500 {
+            p.fill(list, 0x100, &mut rng);
+            p.fill(packets, 0x400 * 4, &mut rng);
+            let n = rng.below(5);
+            p.set(list + 4, u16::try_from(n).unwrap());
+            for k in 0..n {
+                let (pk, mk) = (packets + 0x400 * k, mats + 0x40 * k);
+                p.set(list + 0x10 + 0x10 * k, pk);
+                p.set(list + 0x14 + 0x10 * k, mk);
+                let mut t = pk + 0x20;
+                for _ in 0..rng.below(4) {
+                    let c = rng.pick(&[-1i16, 0, 1, 2, 3, 3]);
+                    p.set(t + 1, 0x10u8);
+                    p.set(t + 2, c);
+                    t = t.wrapping_add_signed(0x20 + 0x1c * i32::from(c));
+                }
+                p.set(t + 1, rng.pick(&[0x11u8, 0xff, 0x00]));
+                p.set(pk + 8, 0x300u32);
+                p.set(pk + 0x12, i16::try_from(rng.below(4)).unwrap());
+                for i in 0..12 {
+                    let x = finite(&mut rng);
+                    p.set(pk + 0x300 + 4 * i, x);
+                }
+                for i in 0..16 {
+                    let x = finite(&mut rng);
+                    p.set(mk + 4 * i, x);
+                }
+            }
+            for i in 0..16 {
+                let x = finite(&mut rng);
+                p.set(m + 4 * i, x);
+            }
+            p.fill(b, 0x800, &mut rng);
+            let k = match round % 6 {
+                0 => rng.pick(&[0u32, 0xffff_fffe, 0x8000_0000]),
+                _ => rng.below(5),
+            };
+            // op_md_list_bounds leaves stack addresses in the EE registers
+            // (0x00c8f548): run it at the depth the original calls it, its
+            // frame 36 bytes below this one's
+            let bounds = p.sym(0x00a6_a0c0);
+            check_deep_n(
+                &mut p,
+                "opus_0437_poly_init",
+                0x00a6_e1b0,
+                &[b, list, m, k],
+                |o, frame| {
+                    let mut call = |o: &mut Oracle, f: u32, a: &[u32]| {
+                        if f == bounds {
+                            hi_md::bridge::op_md_list_bounds(
+                                o,
+                                a[0],
+                                a[1],
+                                a[2],
+                                a[3],
+                                frame - 36,
+                                &mut call_original,
+                            )
+                        } else {
+                            call_original(o, f, a)
+                        }
+                    };
+                    Some(hi_opus::bridge::opus_0437_poly_init(
+                        o, b, list, m, k, &mut call,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+/// The set-up shared by the two `op_vertex_normal_point44_ffx` tests:
+/// `(model, work, chr cells)`, the scene lights and a character `chr`
+/// (`ffx_chara` layout: name `+4`, render instance `+0x830`).
+struct LightScene {
+    model: u32,
+    work: u32,
+    area: u32,
+    mats: [u32; 2],
+    chr: u32,
+    name: u32,
+    ret: u32,
+    log: u32,
+}
+
+impl LightScene {
+    fn new(p: &mut Pair) -> Self {
+        let ret = p.alloc(0x10);
+        // graphicPS2LightingSetupEffect(instance, is_w, mat 16, tex, f, dirs
+        // 16, colours 16, f, shade 3, scale 4, last)
+        let log = wide_recorder(p, 0x0064_2750, &[0, 0, 16, 0, 0, 16, 16, 0, 3, 4, 0], ret);
+        LightScene {
+            model: p.alloc(0x60),
+            work: p.alloc(0x400),
+            area: p.alloc(0x200),
+            mats: [p.alloc(0x40), p.alloc(0x40)],
+            chr: p.alloc(0x900),
+            name: p.alloc(0x10),
+            ret,
+            log,
+        }
+    }
+
+    /// A fresh scene; returns the `chr` argument (0 a tenth of the time).
+    fn fill(&self, p: &mut Pair, rng: &mut Xorshift) -> u32 {
+        scene_lights(p, rng);
+        p.fill(self.model, 0x60, rng);
+        p.fill(self.work, 0x400, rng);
+        p.fill(self.area, 0x200, rng);
+        for at in [0x370u32, 0x374, 0x378, 0x37c] {
+            let x = rng.float();
+            p.set(self.work + at, x);
+        }
+        p.set(self.work + 0x390, self.area);
+        for (k, at) in [0x28u32, 0x2c].into_iter().enumerate() {
+            matrix(p, rng, self.mats[k]);
+            p.set(self.model + at, self.mats[k]);
+        }
+        p.fill(self.chr, 0x900, rng);
+        p.fill(self.name, 0x10, rng);
+        p.set(self.name, rng.pick(&[b'w', b'W', b'v', 0]));
+        p.set(self.chr + 4, self.name);
+        // Ch_DrawCalcShade's own floats: any but signalling NaNs
+        for i in 0..0x30 {
+            let x = rng.float();
+            p.set(self.chr + 0x330 + 4 * i, x);
+        }
+        let by_light = rng.pick(&[0u8, 1]);
+        p.set(p.sym(0x00c4_96ea), by_light);
+        p.fill(self.ret, 4, rng);
+        if rng.chance(10) { 0 } else { self.chr }
+    }
+
+    fn check_log(&self, p: &Pair) {
+        assert!(p.get::<u32>(self.log) > 0, "{}: no draw call", p.name);
+    }
+}
+
+#[test]
+fn vertex_normal_point44_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_d380);
+        let s = LightScene::new(&mut p);
+        let obj = p.alloc(0x10);
+        for _ in 0..1000 {
+            let chr = s.fill(&mut p, &mut rng);
+            let (model, work) = (s.model, s.work);
+            check_deep_n(
+                &mut p,
+                "op_vertex_normal_point44_ffx",
+                0x00a6_d380,
+                &[obj, model, work, chr],
+                |o, frame| {
+                    let aligned = (frame - 8) & !0xf;
+                    Some(hi_light::bridge::op_vertex_normal_point44_ffx(
+                        o,
+                        model,
+                        work,
+                        chr,
+                        aligned,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        s.check_log(&p);
+    }
+}
+
+#[test]
+fn vertex_normal_point44_2_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_d670);
+        let s = LightScene::new(&mut p);
+        let (obj, magic) = (p.alloc(0x10), p.alloc(0x10));
+        returns_cell(&mut p, 0x009d_a3b0, magic);
+        let mut special = 0;
+        for _ in 0..1000 {
+            let chr = s.fill(&mut p, &mut rng);
+            let id = if rng.chance(30) {
+                0x245
+            } else {
+                rng.pick(&[0x244u32, 0x246, 0x1b5, 0x10245])
+            };
+            special += u32::from(id == 0x245 && chr != 0);
+            p.set(magic, id);
+            let (model, work) = (s.model, s.work);
+            check_deep_n(
+                &mut p,
+                "op_vertex_normal_point44_ffx_2",
+                0x00a6_d670,
+                &[obj, model, work, chr],
+                |o, frame| {
+                    let aligned = (frame - 8) & !0xf;
+                    Some(hi_light::bridge::op_vertex_normal_point44_ffx_2(
+                        o,
+                        model,
+                        work,
+                        chr,
+                        aligned,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(special > 0, "{}: no magic 0x245", p.name);
+        s.check_log(&p);
+    }
+}
+
+#[test]
+fn vertex_normal_point44_0437_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_d890);
+        let (packet, model, work) = (p.alloc(0x200), p.alloc(0x60), p.alloc(0x400));
+        let (light, normals, bufs) = (p.alloc(0x40), p.alloc(0x400), p.alloc(0x400));
+        let (vecs, ret) = (p.alloc(0x30), p.alloc(0x10));
+        let malloc = deref_recorder_with(&mut p, 0x0068_6ff0, &[0, 0], Some(ret));
+        let cells = p.sym(0x022f_b3e0);
+        for round in 0..1500 {
+            scene_lights(&mut p, &mut rng);
+            p.fill(packet, 0x200, &mut rng);
+            p.fill(model, 0x60, &mut rng);
+            p.fill(work, 0x400, &mut rng);
+            p.fill(bufs, 0x400, &mut rng);
+            matrix(&mut p, &mut rng, light);
+            p.set(model + 0x2c, light);
+            p.set(model + 0x3c, normals + 0x200);
+            for i in 0..0x100 {
+                let x = if rng.chance(5) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(normals + 4 * i, x);
+            }
+            for i in 0..12 {
+                let x = if rng.chance(5) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(vecs + 4 * i, x);
+            }
+            if round % 4 == 1 {
+                // zeros of either sign and a few round values (zero light
+                // rows, exact sums); no colour comes out -0 even so: both
+                // matrices' row 3 is +0, a +0 term in every sum
+                let some = [0u32, 0x8000_0000, 0x8000_0000, 0x3f80_0000, 0xbf00_0000];
+                for i in 0..0x100 {
+                    let x = rng.pick(&some);
+                    p.set(normals + 4 * i, x);
+                }
+                for i in 0..12 {
+                    let x = rng.pick(&some);
+                    p.set(vecs + 4 * i, x);
+                }
+                let lights = p.sym(0x00c4_9724);
+                for i in 0..0x1c {
+                    let x = rng.pick(&some);
+                    p.set(lights + 4 * i, x);
+                }
+                for i in 0..16 {
+                    let x = rng.pick(&some);
+                    p.set(light + 4 * i, x);
+                }
+            }
+            // the stream: groups of a count and that many vertex numbers
+            let groups = match round % 8 {
+                0 => rng.pick(&[0i16, -1, -0x7fff]),
+                _ => i16::try_from(rng.below(4)).unwrap() + 1,
+            };
+            p.set(packet + 0x12, groups);
+            p.set(packet + 0x1c, 0x20u32);
+            let mut s = packet + 0x30;
+            for _ in 0..groups.max(0) {
+                let n = rng.pick(&[0i16, -2, 1, 2, 3]);
+                p.set(s, n);
+                s += 2;
+                for _ in 0..n.max(0) {
+                    let v: u16 = match rng.below(4) {
+                        0 => 0x3ff0 + u16::try_from(rng.below(0x20)).unwrap(),
+                        1 => 0xfff0 + u16::try_from(rng.below(0x10)).unwrap(),
+                        _ => u16::try_from(rng.below(0x10)).unwrap(),
+                    };
+                    p.set(s, v);
+                    s += 2;
+                }
+            }
+            let slot = rng.below(5);
+            let cell = if rng.chance(20) { 0 } else { bufs + 0x200 };
+            p.set(cells + 4 * slot, cell);
+            p.set(ret, bufs + 0x200);
+            let (base, mul1, mul0) = (vecs, vecs + 0x10, vecs + 0x20);
+            check_deep_n(
+                &mut p,
+                "op_0437_vertex_normal_point44_ffx",
+                0x00a6_d890,
+                &[packet, model, work, base, mul1, mul0, slot],
+                |o, frame| {
+                    Some(hi_light::bridge::op_0437_vertex_normal_point44_ffx(
+                        o,
+                        packet,
+                        model,
+                        work,
+                        [base, mul1, mul0],
+                        slot,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(p.get::<u32>(malloc) > 0, "{}: no allocation", p.name);
+    }
+}
+
+// ---- round 5: model draw set-ups ------------------------------------------
+
+/// The op scratch stack with its top at a random index and that mark at
+/// `area`; returns the top index.
+fn spr_top(p: &mut Pair, rng: &mut Xorshift, area: u32) -> i8 {
+    let top = i8::try_from(rng.below(6)).unwrap();
+    p.set(p.sym(0x0233_2ea1), top);
+    let mark = p.sym(0x0119_fe10) + 4 * u32::try_from(top).unwrap();
+    p.set(mark, area);
+    let next = rng.next();
+    p.set(mark + 4, next);
+    // the GS is never busy here (the original would spin for ever)
+    let sink = rng.next() & !0x100;
+    p.set(p.sym(0x0230_56e8), sink);
+    top
+}
+
+#[test]
+fn md_chara_path3_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_a3a0);
+        let s = LightScene::new(&mut p);
+        let (obj, spr) = (p.alloc(0x40), p.alloc(0x1a00));
+        let mut paths = [0u32; 3];
+        for round in 0..1500 {
+            let chr = s.fill(&mut p, &mut rng);
+            let ambient = p.sym(0x00c4_9774);
+            for k in 0..4 {
+                let x = f32::from(u16::try_from(rng.below(300)).unwrap()) / 256.0 - 0.1;
+                p.set(ambient + 4 * k, x.to_bits());
+            }
+            p.fill(obj, 0x40, &mut rng);
+            p.fill(spr, 0x400, &mut rng);
+            spr_top(&mut p, &mut rng, spr);
+            let init = s.model;
+            let flags = rng.next() & !0x60 | rng.pick(&[0u32, 0x20, 0x40, 0x60]);
+            p.set(init, flags);
+            p.set(init + 4, s.area);
+            p.set(obj + 0x12, i16::try_from(rng.below(3)).unwrap());
+            p.set(obj + 0x14, rng.pick(&[0i16, 1, -1, 0x100]));
+            for at in [0x38u32, 0x3c] {
+                if rng.chance(50) {
+                    p.set(init + at, 0u32);
+                }
+            }
+            if round % 5 == 0 {
+                p.set(init + 0x4c, rng.pick(&[0u8, 0x80, 0xff, 1]));
+            }
+            let path = if flags & 0x40 != 0 {
+                0
+            } else if p.get::<i16>(obj + 0x14) != 0 && flags & 0x20 == 0 {
+                1
+            } else {
+                2
+            };
+            paths[path] += 1;
+            check_deep_n(
+                &mut p,
+                "op_md_chara_path3",
+                0x00a6_a3a0,
+                &[obj, init, chr],
+                |o, _| {
+                    Some(hi_draw::bridge::op_md_chara_path3(
+                        o,
+                        obj,
+                        init,
+                        chr,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(paths.iter().all(|&n| n > 0), "{}: paths {paths:?}", p.name);
+    }
+}
+
+/// A tag chain from `at`: `n` tags of the types in `types` (each 0x10 or,
+/// for 0x20 and up, 0x20 bytes, random fields, `i16 +2` 0 now and then),
+/// then a tag of type `end`.
+fn md_tags(p: &mut Pair, rng: &mut Xorshift, at: u32, types: &[i8], n: u32, end: i8) {
+    let mut t = at;
+    for _ in 0..n {
+        let ty = rng.pick(types);
+        p.set(t + 1, ty);
+        if rng.chance(25) {
+            p.set(t + 2, 0i16);
+        }
+        if rng.chance(25) {
+            p.set(t + 0x10, 0u32);
+        }
+        t += if ty >= 0x20 { 0x20 } else { 0x10 };
+    }
+    p.set(t + 1, end);
+}
+
+#[test]
+fn md_x64_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_b710);
+        let (obj, init, spr, area) = (
+            p.alloc(0x400),
+            p.alloc(0x60),
+            p.alloc(0x1a00),
+            p.alloc(0x400),
+        );
+        let mats = [p.alloc(0x40), p.alloc(0x40)];
+        let opc2 = deref_recorder(&mut p, 0x007e_6b20, &[]);
+        // opc and 0x00a6cd40 are bare `ret`s: recorders tell them apart
+        let opc = deref_recorder(&mut p, 0x00a6_d370, &[0, 0, 0]);
+        let cd40 = deref_recorder(&mut p, 0x00a6_cd40, &[0, 0, 0]);
+        let ends = [8i8, 0x1f, 0x21, 0x23, -1, -0x80, 0x7f];
+        for round in 0..2000 {
+            scene_lights(&mut p, &mut rng);
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(init, 0x60, &mut rng);
+            p.fill(spr, 0x400, &mut rng);
+            spr_top(&mut p, &mut rng, spr);
+            for (k, at) in [0x28u32, 0x2c].into_iter().enumerate() {
+                matrix(&mut p, &mut rng, mats[k]);
+                p.set(init + at, mats[k]);
+            }
+            p.set(init + 4, area + 0x100);
+            let flags = rng.next() & !0x460 | rng.pick(&[0u32, 0x20, 0x40, 0x60, 0x400, 0x440]);
+            p.set(init, flags);
+            let own = rng.next() & !0x40c | rng.pick(&[0u32, 4, 8, 0x400, 0x408, 0x10]);
+            p.set(obj, own);
+            p.set(obj + 4, 0x40u32);
+            p.set(obj + 0x12, i16::try_from(rng.below(6)).unwrap() - 2);
+            p.set(obj + 0x14, rng.pick(&[0i16, 1, 3, -1]));
+            for at in [0x38u32, 0x3c] {
+                if rng.chance(50) {
+                    p.set(init + at, 0u32);
+                }
+            }
+            let types = [0i8, 1, 2, 3, 4, 5, 6, 7, 0x20, 0x22];
+            let (n, end) = (rng.below(10), rng.pick(&ends));
+            md_tags(&mut p, &mut rng, obj + 0x40, &types, n, end);
+            if round % 7 == 0 {
+                p.set(obj + 0x41, rng.pick(&ends));
+            }
+            check_deep_n(
+                &mut p,
+                "op_md_x64_00a6b710",
+                0x00a6_b710,
+                &[obj, init],
+                |o, frame| {
+                    Some(hi_draw::bridge::op_md_x64(
+                        o,
+                        obj,
+                        init,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        for (log, what) in [(opc2, "opc2"), (opc, "opc"), (cd40, "0x00a6cd40")] {
+            assert!(p.get::<u32>(log) > 0, "{}: {what} never ran", p.name);
+        }
+    }
+}
+
+#[test]
+fn md_x64_fog_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_bfe0);
+        let (obj, init, spr) = (p.alloc(0x400), p.alloc(0x60), p.alloc(0x1a00));
+        let ends = [1i8, 3, 5, 7, 0x20, -1, -0x80];
+        for round in 0..2000 {
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(init, 0x60, &mut rng);
+            p.fill(spr, 0x400, &mut rng);
+            for sym in [0x011a_0740u32, 0x011a_07f0] {
+                let at = p.sym(sym);
+                p.fill(at, 0x10, &mut rng);
+            }
+            spr_top(&mut p, &mut rng, spr);
+            p.set(obj + 4, 0x40u32);
+            for at in [0x38u32, 0x3c] {
+                if rng.chance(50) {
+                    p.set(init + at, 0u32);
+                }
+            }
+            if rng.chance(40) {
+                p.set(init + 8, 0u16);
+            } else if rng.chance(20) {
+                p.set(init + 8, 0x100u16);
+            }
+            let (n, end) = (rng.below(8), rng.pick(&ends));
+            md_tags(&mut p, &mut rng, obj + 0x40, &[0, 2, 4, 6], n, end);
+            if round % 7 == 0 {
+                p.set(obj + 0x41, rng.pick(&ends));
+            }
+            p.check("op_md_x64_fog_00a6bfe0", 0x00a6_bfe0, &[obj, init], |o| {
+                Some(hi_draw::bridge::op_md_x64_fog(o, obj, init))
+            });
+        }
+    }
+}
+
+#[test]
+fn refrection_st_float_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_cfb0);
+        let (obj, model, light) = (p.alloc(0x400), p.alloc(0x40), p.alloc(0x40));
+        let (pos, normals, out) = (p.alloc(0x200), p.alloc(0x1000), p.alloc(0x1000));
+        let mut kinds = [0u32; 2];
+        for round in 0..1500 {
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(out, 0x1000, &mut rng);
+            matrix(&mut p, &mut rng, light);
+            for i in 0..0x80 {
+                let x = if rng.chance(3) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(pos + 4 * i, x);
+            }
+            for i in 0..0x400 {
+                let x = if rng.chance(3) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(normals + 4 * i, x);
+            }
+            if round % 4 == 1 {
+                // small positions: the wrap's remainders of either sign
+                for i in 0..0x80 {
+                    let x = (f32::from(i16::try_from(rng.below(4000)).unwrap()) - 2000.0) / 3.0;
+                    p.set(pos + 4 * i, x.to_bits());
+                }
+            }
+            p.set(model + 0x2c, light);
+            p.set(model + 0x38, pos);
+            p.set(model + 0x3c, normals + 0x800);
+            let groups = match round % 8 {
+                0 => rng.pick(&[0i16, -1, -0x7fff]),
+                _ => i16::try_from(rng.below(6)).unwrap() + 1,
+            };
+            p.set(obj + 0x12, groups);
+            let stream = rng.chance(50);
+            kinds[usize::from(stream)] += 1;
+            p.set(obj + 0x1c, if stream { 0x20u32 } else { 0 });
+            let mut s = obj + 0x30;
+            for _ in 0..groups.max(0) {
+                let n = rng.pick(&[0i16, -2, 1, 2, 3]);
+                p.set(s, n);
+                s += 2;
+                for _ in 0..n.max(0) {
+                    let v = i16::try_from(rng.below(0x50)).unwrap() - 0x28;
+                    p.set(s, v);
+                    s += 2;
+                }
+            }
+            let scale = match rng.below(3) {
+                0 => rng.next(),
+                1 => rng.below(0x2000),
+                _ => rng.pick(&[0u32, 1, 0x1000, 0xffff_f000, 0x8000_0000, 0x7fff_ffff]),
+            };
+            // never 0 or -1: the original faults (0x1000 / 0, and
+            // ftol's 0x80000000 % -1 out of range)
+            let d = |rng: &mut Xorshift| match rng.below(3) {
+                0 => rng.below(64) + 1,
+                1 => rng.pick(&[1u32, 0xffff_fffe, 0x1000, 0x1001, 0xffff_fff0, 7]),
+                _ => (rng.next() | 1).min(0xffff_fffd),
+            };
+            let (du, dv) = (d(&mut rng), d(&mut rng));
+            let junk = rng.next();
+            check_deep_n(
+                &mut p,
+                "op_refrection_st_float",
+                0x00a6_cfb0,
+                &[obj, model, junk, out + 0x800, scale, du, dv],
+                |o, frame| {
+                    Some(hi_light::bridge::op_refrection_st_float(
+                        o,
+                        obj,
+                        model,
+                        out + 0x800,
+                        scale,
+                        du,
+                        dv,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(kinds.iter().all(|&n| n > 0), "{}: {kinds:?}", p.name);
+    }
+}
+
+#[test]
+fn opp_map_draw_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_53f0);
+        // the buffer (0x27e20 bytes) and the 8 bytes the original writes
+        // past it
+        let (b, pos) = (p.alloc(0x27e20 + 0x40), p.alloc(0x10));
+        for round in 0..200 {
+            if round % 10 == 0 {
+                p.fill(b, 0x27e60, &mut rng);
+            }
+            for k in 0..2 {
+                let x = match round % 4 {
+                    0 => rng.float(),
+                    1 => (f32::from(u16::try_from(rng.below(8000)).unwrap()) - 4000.0).to_bits(),
+                    // 2^31..2^39: X - 256 and Y - 208 are no f32 there
+                    2 => {
+                        (rng.next() & 0x8000_0000)
+                            | ((158 + rng.below(8)) << 23)
+                            | (rng.next() & 0x007f_ffff)
+                    }
+                    _ => finite(&mut rng),
+                };
+                p.set(pos + 4 * k, x);
+            }
+            p.check("opp_map_draw_init_00a753f0", 0x00a7_53f0, &[b, pos], |o| {
+                Some(hi_opus::bridge::opp_map_draw_init(
+                    o,
+                    b,
+                    pos,
+                    &mut call_original,
+                ))
+            });
         }
     }
 }

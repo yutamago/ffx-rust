@@ -33,21 +33,5 @@ pub fn stand_in(t: Trig, x: u32) -> u32 {
 
 /// An `f32` in an 80-bit x87 register (as `fld m32` left it), as bits.
 pub fn f80_to_f32(r: [u8; 10]) -> u32 {
-    let mant = u64::from_le_bytes(r[..8].try_into().unwrap());
-    let se = u16::from_le_bytes([r[8], r[9]]);
-    let sign = u32::from(se >> 15) << 31;
-    let exp = i32::from(se & 0x7fff);
-    if exp == 0x7fff {
-        let frac = u32::try_from((mant >> 40) & 0x7f_ffff).unwrap();
-        return sign | 0x7f80_0000 | frac;
-    }
-    if mant == 0 {
-        return sign;
-    }
-    // exact: it came from an f32 (24 significant bits)
-    #[allow(clippy::cast_precision_loss)]
-    let x = (mant as f64) * 2f64.powi(exp - 16383 - 63);
-    #[allow(clippy::cast_possible_truncation)]
-    let f = x as f32;
-    sign | f.to_bits()
+    ffx_oracle::f80_to_f32(r).to_bits()
 }
