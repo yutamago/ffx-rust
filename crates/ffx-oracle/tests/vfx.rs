@@ -18588,3 +18588,222 @@ fn round33d2_commands_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn round33e_born_hit_and_commands_match_the_original() {
+    use opus::bridge as o;
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_89f0);
+        let cells = p.alloc(0x20);
+        let child_ret = p.alloc(4);
+        far_recorder(&mut p, 0x0071_6770, &[0, 0], Some(child_ret)); // pppCreatePObject
+        far_recorder(&mut p, 0x0079_5720, &[0, 0], None); // MsGetChrScale
+        for (k, sym) in [0x0082_aba0u32, 0x0082_ad70, 0x0079_50f0, 0x0079_5a20]
+            .into_iter()
+            .enumerate()
+        {
+            float_stub(&mut p, sym, cells + 4 * k as u32);
+        }
+        let eff = p.sym(et::bridge::EFF.sym);
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let (part, records, child, def) =
+            (p.alloc(0x80), p.alloc(0x100), p.alloc(0x400), p.alloc(0x40));
+        let (obj, shape, out, frame) = (p.alloc(0x200), p.alloc(8), p.alloc(4), p.alloc(0x10));
+        let (key, prog, table) = (p.alloc(0x20), p.alloc(0x10), p.alloc(0x10));
+        let (host, unit, cmd, parts, set, work) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x1000),
+            p.alloc(0x40),
+            p.alloc(0x100),
+        );
+        let f = |rng: &mut Xorshift, lo: f32, hi: f32| {
+            lo + (hi - lo) * (rng.below(0x1_0000) as f32 / 65536.0)
+        };
+        for round in 0..2000 {
+            let what = |s: &str| format!("{s} round {round}");
+            // pppKeBornRnd3_Born (records always there: a null one writes [4])
+            p.put(pb::CURRENT_PART, part);
+            p.fill(part, 0x80, &mut rng);
+            p.fill(child, 0x400, &mut rng);
+            p.fill(def, 0x40, &mut rng);
+            p.set(part + 0x3c, records);
+            p.set(def + 0xc, rng.below(16));
+            p.set(child_ret, if rng.chance(10) { 0 } else { child });
+            for k in [0x10u32, 0x18] {
+                p.set(def + k, 0x10 * rng.below(0x30));
+            }
+            for i in 0..16u32 {
+                let d = if i % 5 == 0 { 1.0 } else { 0.0 };
+                p.set(obj + 0x10 + 4 * i, d + f(&mut rng, -0.5, 0.5));
+            }
+            for i in 0..4u32 {
+                p.set(obj + 0x40 + 4 * i, f(&mut rng, -100.0, 100.0));
+            }
+            let s: [i16; 4] = std::array::from_fn(|_| rng.next() as i16);
+            p.set(shape, s);
+            p.set(out, rng.next());
+            p.check(
+                &what("born_rnd3"),
+                0x0075_89f0,
+                &[obj, def, shape, out],
+                |m| {
+                    let keep = m.read(frame, 0x10).unwrap();
+                    pb::ppp_ke_born_rnd3_born(m, obj, def, shape, out, frame, &mut call_original);
+                    m.write(frame, &keep).unwrap();
+                    None
+                },
+            );
+
+            // pppKeHitBorn
+            p.fill(key, 0x20, &mut rng);
+            p.set(prog + 0xc, table);
+            for k in 0..3 {
+                p.set(table + 4 * k, 0x10 * rng.below(8));
+            }
+            for k in (0xa0..0x200).step_by(4) {
+                p.set(obj + k, rng.next() & 0x0303_0303);
+            }
+            if rng.chance(50) {
+                let fr = p.get::<u32>(obj + 0xc);
+                p.set(key, fr);
+            }
+            p.set(
+                key + 4,
+                if rng.chance(10) {
+                    u32::MAX
+                } else {
+                    rng.below(16)
+                },
+            );
+            p.set(key + 8, 0x10 * rng.below(0x30));
+            p.put(ppp::bridge::STOP, u32::from(rng.chance(10)));
+            p.set(child_ret, if rng.chance(10) { 0 } else { child });
+            p.check(&what("hit_born"), 0x0075_9890, &[obj, key, prog], |m| {
+                pb::ppp_ke_hit_born_step(m, obj, key, prog, &mut call_original);
+                None
+            });
+
+            // the other unit's signals
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x40, &mut rng);
+            p.set(host + 0x220, unit);
+            let flags = (rng.below(8) << 12 | rng.below(0x1000)) as u16;
+            p.set(host + 0x21a, flags);
+            p.set(cmd + 2, rng.pick(&[0xff00u16, 0xffff]));
+            p.set(host + 0x320, parts);
+            p.set(unit + 0x1c, u16::try_from(rng.below(16)).unwrap());
+            let up = parts + 0x100 * u32::from(p.get::<u16>(unit + 0x1c));
+            p.set(up, 1u32);
+            p.set(up + 0xb0, rng.next() as u16);
+            p.set(cmd + 4, rng.pick(&[0u16, 1, 0x8001, 0x30, 0xffff]));
+            p.set(cmd + 6, rng.pick(&[6i16, -4, 0x10]));
+            let i = rng.below(512);
+            p.set(up + 0x14, u16::try_from(i).unwrap());
+            p.set(eff + 0x20 * i + 8, u8::try_from(rng.below(4)).unwrap());
+            p.check(&what("signal_other"), 0x0081_79b0, &[host, cmd], |m| {
+                Some(o::opu_flag_etc(m, o::FlagWord::Other, host, cmd))
+            });
+
+            // opp_anmm_short_scale
+            for k in 0..4 {
+                let x = finite(&mut rng);
+                p.set(cells + 4 * k, x);
+            }
+            p.set(set + 0x20, parts);
+            p.set(work + 0x4c, u16::try_from(rng.below(16)).unwrap());
+            let no = u32::from(p.get::<u16>(work + 0x4c));
+            let chr = rng.below(0xf0);
+            p.set(parts + 0x100 * no + 0x18, chr as u8);
+            p.set(handles + 4 * chr, rng.next());
+            p.set(
+                host + 0x21a,
+                (rng.below(8) << 12 | rng.below(8) << 9) as u16,
+            );
+            p.set(host + 0x21e, rng.pick(&[0u8, 1, 0xff]));
+            p.fill(work, 0x4c, &mut rng);
+            p.set(host + 0xc4, f(&mut rng, -3.0, 3.0));
+            p.set(cmd + 2, rng.pick(&[0i16, -100, 5]));
+            p.set(cmd + 4, rng.pick(&[1000i16, 50, -1]));
+            p.check(
+                &what("short_scale"),
+                0x0081_0ef0,
+                &[host, set, cmd, work],
+                |m| {
+                    Some(anmm::bridge::short_scale(
+                        m,
+                        host,
+                        set,
+                        cmd,
+                        work,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn round33e2_mdc_matrix_set_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_2350);
+        let (host, unit, set, oef, nos) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x100),
+            p.alloc(0x200),
+            p.alloc(0x10),
+        );
+        for round in 0..1500 {
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(set, 0x100, &mut rng);
+            p.fill(oef, 0x200, &mut rng);
+            p.set(host + 0x220, unit);
+            p.set(host + 0x320, unit);
+            for k in (0x30..0x100).step_by(4) {
+                let v = ranged(&mut rng, -3.0, 3.0);
+                p.set(unit + k, v);
+            }
+            for k in (0x280..0x300).step_by(4) {
+                let v = ranged(&mut rng, -3.0, 3.0);
+                p.set(host + k, v);
+            }
+            p.set(unit + 0xb8, rng.pick(&[0u16, 0xff00]));
+            p.set(unit + 0xa8, nos - 2);
+            p.set(unit + 0x1e, u8::try_from(rng.below(8)).unwrap());
+            p.set(unit + 0x1a, 5u16);
+            p.set(unit + 0xc8, rng.next());
+            let g = u32::from(p.get::<u8>(unit + 0x1e));
+            p.set(set + 0x60 + 4 * g, oef);
+            p.set(oef + 0x10, 0x20u32);
+            p.set(nos, rng.pick(&[-1i16, 0, 3]));
+            // lights from the unit or its parent (one step up the set's list)
+            p.set(set + 0x20, unit);
+            p.set(unit + 0x1c, 0u16);
+            for k in 1..5 {
+                p.set(nos + 2 * k, rng.pick(&[0u16, 0xff00, 0xffff]));
+            }
+            p.check(
+                &format!("mdc_matrix_set round {round}"),
+                0x0080_2350,
+                &[host, set],
+                |m| {
+                    o::opu_mdc_matrix_set(m, host, set);
+                    None
+                },
+            );
+        }
+    }
+}

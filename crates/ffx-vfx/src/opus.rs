@@ -3890,20 +3890,33 @@ pub mod bridge {
         Host,
         /// `0x008177f0`: the unit's `u16 +0xb0` (the signals).
         Unit,
+        /// `0x008179b0`: the signals of unit `u16 cmd +2` ([`opus_no_get`]);
+        /// the bits at `cmd +4`, the jump at `+6`, everything 2 bytes on.
+        Other,
     }
 
-    /// `0x008176f0` and `0x008177f0` (`opu_flag_etc`, `opu_signal_etc`,
-    /// ours): the flag word ([`FlagWord`]) and the command's `u16 +2` bits,
-    /// by flag bits 12..14: 0 sets them, 1 clears them (`cmd + 4`); 2
-    /// jumps by `i16 cmd +4` when any is set (else `cmd + 6`), 3 when none
-    /// is; 4 waits (`+0x210` = 1, `cmd`) while any is set, 5 while none is
-    /// (else `cmd + 4`); 6 sets them when the unit's effect part index
+    /// `0x008176f0`, `0x008177f0` and `0x008179b0` (`opu_flag_etc`,
+    /// `opu_signal_etc`, `opu_signal_other`, ours): the flag word
+    /// ([`FlagWord`]) and the command's `u16 +2` bits, by flag bits 12..14:
+    /// 0 sets them, 1 clears them (`cmd + 4`); 2 jumps by `i16 cmd +4`
+    /// (from the command) when any is set (else `cmd + 6`), 3 when none is;
+    /// 4 waits (`+0x210` = 1, `cmd`) while any is set, 5 while none is (else
+    /// `cmd + 4`); 6 sets them when the unit's effect part index
     /// (`opu_eff_part_index`) plus one is its `g_EtEff` record's byte `+8`
-    /// (`cmd + 4`); 7 returns `cmd`.
+    /// (`cmd + 4`); 7 returns `cmd`. `Other` reads all of these 2 bytes on.
     pub fn opu_flag_etc(mem: &mut impl Mem, which: FlagWord, host: u32, cmd: u32) -> u32 {
+        let (u, cmd2) = if which == FlagWord::Other {
+            let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+            let me = unit(mem, host);
+            (
+                opus_no_get(mem, host.wrapping_add(0x300), me, no),
+                cmd.wrapping_add(2),
+            )
+        } else {
+            (unit(mem, host), cmd)
+        };
         let flags: u16 = mem.read(host.wrapping_add(0x21a));
-        let mut bits = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
-        let u = unit(mem, host);
+        let mut bits = u32::from(mem.read::<u16>(cmd2.wrapping_add(2)));
         let (word, wide) = match which {
             FlagWord::Host => {
                 if flags & 0x8000 != 0 {
@@ -3911,8 +3924,11 @@ pub mod bridge {
                 }
                 (host.wrapping_add(0x304), true)
             }
-            FlagWord::Unit => (u.wrapping_add(0xb0), false),
+            FlagWord::Unit | FlagWord::Other => (u.wrapping_add(0xb0), false),
         };
+        // the command's length: `Other` has the unit number in front
+        let start = cmd;
+        let cmd = cmd2;
         match flags >> 12 & 7 {
             0 => {
                 let v = load_word(mem, word, wide);
@@ -3929,7 +3945,7 @@ pub mod bridge {
                 if set == (k == 2) {
                     i32::from(mem.read::<i16>(cmd.wrapping_add(4)))
                         .cast_unsigned()
-                        .wrapping_add(cmd)
+                        .wrapping_add(start)
                 } else {
                     cmd.wrapping_add(6)
                 }
@@ -3938,7 +3954,8 @@ pub mod bridge {
                 let set = load_word(mem, word, wide) & bits != 0;
                 if set == (k == 4) {
                     mem.write(host.wrapping_add(0x210), 1u8);
-                    cmd
+                    // the command itself again
+                    start
                 } else {
                     cmd.wrapping_add(4)
                 }
@@ -3953,7 +3970,7 @@ pub mod bridge {
                 }
                 cmd.wrapping_add(4)
             }
-            _ => cmd,
+            _ => start,
         }
     }
 
@@ -4130,5 +4147,49 @@ pub mod bridge {
         } else {
             cmd.wrapping_add(8)
         }
+    }
+
+    /// `0x00802350` (`opu_mdc_matrix_set`, ours; `(host, set)`): the host's
+    /// draw head for its unit `u`: the unit's `+0x30..+0x3c` through the
+    /// emulated `r` registers (`0x00c8f528`..`534`) into the host's first
+    /// 16 bytes, `+0` then 0.0; `host +0x80` = the unit's scale `f32 +0x3c`
+    /// times `[0x00b58398]` (`op_unit_m_scale`) rotated and moved by the
+    /// unit (`op_rt_m(+0x80, +0x80, u +0x30, u +0x90)`); `host +0xc0` = its
+    /// parent's matrix (`opus_parent_get`) times that, then `host +0x2c0`
+    /// times it (`op_mul_m`); the head `host +0x100` from
+    /// `opus_mdc_head_set(head, host, set, u, i16 [[u +0xa8] + 2])` with
+    /// bit 6 of its first word set, and its lights
+    /// (`opus_mdc_lights_get(head, set, u, [u +0xa8] + 2)`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_mdc_matrix_set(mem: &mut impl Mem, host: u32, set: u32) {
+        use crate::op::bridge as op;
+        use crate::x87::{MUL, Reg};
+        let u = unit(mem, host);
+        let nos = mem.read::<u32>(u.wrapping_add(0xa8)).wrapping_add(2);
+        let scale = crate::x87::load(mem.read(u.wrapping_add(0x3c)));
+        let v: [u32; 4] = mem.read(u.wrapping_add(0x30));
+        let gpr = g(mem, 0x00c8_f528);
+        mem.write(gpr, v);
+        mem.write(host, v[0]);
+        for k in 1..4 {
+            let w: u32 = mem.read(gpr.wrapping_add(4 * k));
+            mem.write(host.wrapping_add(4 * k), w);
+        }
+        mem.write(host, 0f32);
+        let k: f64 = mem.read(g(mem, 0x00b5_8398));
+        let s = Reg::load(scale).constant(MUL, k).store();
+        let m = host.wrapping_add(0x80);
+        let out = host.wrapping_add(0xc0);
+        op::op_unit_m_scale(mem, m, s);
+        op::op_rt_m_zyx(mem, m, m, u.wrapping_add(0x30), u.wrapping_add(0x90));
+        let parent = opus_parent_get(mem, host, u);
+        op::op_mul_m(mem, out, parent, m);
+        op::op_mul_m(mem, out, host.wrapping_add(0x2c0), out);
+        let head = host.wrapping_add(0x100);
+        let tex = i32::from(mem.read::<i16>(nos)).cast_unsigned();
+        opus_mdc_head_set(mem, head, host, set, u, tex);
+        let w: u32 = mem.read(head);
+        mem.write(head, w | 0x40);
+        opus_mdc_lights_get(mem, head, set, u, nos);
     }
 }

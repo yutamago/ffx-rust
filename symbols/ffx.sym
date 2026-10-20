@@ -4033,7 +4033,7 @@
 0x00758840 function pppKeBornRnd2_Born        # fh v3:cg5 0x758930; cdecl(obj, def, shape, out): unless magic id 0x2a9, pppCreatePObject(part, records + 16 def[+0x10]) into *out (+4 = obj), i16 shape * obj matrix -> child area def[+0x14] pos, (that - obj+0x40) normalised * f32 def[+8] -> area def[+0x1c] (prog::bridge::ppp_ke_born_rnd2_born)
 0x00758960 function pppKeBornRnd3             # fh v3:cg2 0x758a50
 0x007589d0 function pppKeBornRnd3Con          # ppp program table record "pppKeBornRnd3" (0x00c3aeb8) +0x1c set-up; "pppKeBornRnd3" (0x00c3c560) +0x1c set-up
-0x007589f0 function pppKeBornRnd3_Born        # fh v3:exact 0x00758ae0
+0x007589f0 function pppKeBornRnd3_Born        # fh v3:exact 0x00758ae0; ported (round 33): (obj, def, shape, out): pppKeBornRnd2_Born without the magic check or speed: record def+0xc, child+4 = obj even for a null record, position to area def+0x10, normalised direction from obj+0x40 to area def+0x18 (prog::bridge::ppp_ke_born_rnd3_born)
 0x00758ae0 function pppKeBornRnd4_Born        # fh switch:cg2 0x710030e010
 0x00758dd0 function pppKeBornRnd4Con          # ppp program table record "pppKeBornRnd4" (0x00c3e1a8) +0x1c set-up
 0x00758df0 function pppKeBornRnd4             # fh switch:cg2 0x710030e150
@@ -4053,7 +4053,7 @@
 0x00759800 function pppKeGrvTgtCon            # ppp program table record "pppKeGrvTgt" (0x00c3b368) +0x1c set-up; "pppKeGrvTgt" (0x00c3ca10) +0x1c set-up
 0x00759830 function pppKeHitBall              # ppp program table record "pppKeHitBall" (0x00c3ad50) +0x8 step; "pppKeHitBall" (0x00c3c3f8) +0x8 step
 0x00759880 function pppKeHitBallCon           # ppp program table record "pppKeHitBall" +0x1c set-up; not a function start in the Ghidra dump
-0x00759890 function pppKeHitBorn_00759890     # ppp program table record "pppKeHitBorn" step
+0x00759890 function pppKeHitBorn_00759890     # ppp program table record "pppKeHitBorn" step; ported (round 33): (obj, key, prog): flags at area [[prog+0xc]+8] (bit 1 done); key frame: bit 0 = key byte +0xc; unless stopped, area +4 bit 0 and key+4 != -1: child (pppCreatePObject) +4 = obj; its area key+8 = area +4 (first time, bit 1 set) or area +0 (KeVu0CopyVecXYZ) (prog::bridge::ppp_ke_hit_born_step)
 0x00759990 function pppKeHitBornCon           # ppp program table record "pppKeHitBorn" (0x00c3e1f8) +0x1c set-up
 0x007599b0 function pppKeHitChkPxB            # ppp program table record "pppKeHitChkPxB" step; not a function start in the Ghidra dump
 0x00759bc0 function pppKeHitChkPxBCon         # ppp program table record "pppKeHitChkPxB" (0x00c3ad78) +0x1c set-up; "pppKeHitChkPxB" (0x00c3c420) +0x1c set-up
@@ -6825,6 +6825,7 @@
 0x00801f00 function opus_parent_get              # structure: (oef2, unit) -> the unit numbered by unit +0xb8 among the oef2's units (index lists +0x314/+0x310, 0x100-byte units at +0x320), or the oef2's root at +0x280 when the number is 0; 32 callers in the opus code (opu_mdc, opu_part_run, opp_md); name ours
 0x00802080 function op_float_scale2           # the op_float_scale body again
 0x008020a0 function opp_md                       # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f9be0 opp_md, 4 votes, round 1
+0x00802350 function opu_mdc_matrix_set_00802350 # (host, set): unit +0x30..+0x3c through r regs 0x00c8f528 into host+0..+0xc (host+0 = 0.0); host+0x80 = op_unit_m_scale(f32 +0x3c * [0x00b58398]) op_rt_m by the unit; host+0xc0 = host+0x2c0 x parent x it; opus_mdc_head_set(host+0x100, host, set, unit, i16 [[u+0xa8]+2]) | 0x40, opus_mdc_lights_get; name ours; ported (round 33, opus::bridge::opu_mdc_matrix_set)
 0x00802450 function opus_mdc_head_set_00802450 # ours: (head, mats, set, part, tex) -> op_oef2_a_get(set +0x60 [part +0x1e], 4, tex) or 0: an mdc draw head like opus_mdc_packet_set's, colour word from part +0xc8 (opus::bridge::opus_mdc_head_set)
 0x00802bd0 function opus_mdc_lights_get_00802bd0 # ours: (head, _, list, unit, nos): the 4 light colours [head +0x24] and positions [head +0x28] reset to r0, then for each nonzero u16 at nos +2k the opus_no_get unit's +0x90 position (w = +0x4c / 16) and +0xc8 colour bytes / 128; head bytes +0x4c/+0x4d = ftol(unit +0x30/+0x4c) / 2 clamped 0..0x80 (opus::bridge::opus_mdc_lights_get)
 0x00802fb0 function createU16MeshBreakRenderDataBuffer # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/chr'; Switch 0x71003e7650 createU16MeshBreakRenderDataBuffer (symbols from Fahrenheit's server export)
@@ -6966,6 +6967,7 @@
 0x00810dd0 function opp_anmm_frame_random_00810dd0 # (host, set, cmd, work) -> cmd+6: work byte +0xb = u16 cmd+2 + op_irandom_core(u16 cmd+4, 0xffff = frame count u16 [work+4]+4 minus the first), +0xa = 1; name ours; ported (round 33, anmm::bridge::frame_random)
 0x00810e20 function opp_anmm_fin_en_bone5        # callees: its named callees match the Switch 0x71003f7a90 opp_anmm_fin_en_bone5's (similarity 0.75: Ch_ElemGetParent, op_irandom_p, op_random_p); symbols from Fahrenheit's server export; ported (round 33): (host, set, cmd, work) -> cmd+4: random bone of the i16 list at cmd + i16 cmd+2 (op_irandom_p, capped n-1): +0x40 bone, +0x44 Ch_ElemGetParent (negative 0), rand(), +0x48 op_random_p(1), +0x4e = 4 (anmm::bridge::fin_en_bone5)
 0x00810ed0 function opp_anmm_fin_en_bone3x    # fh switch:bsim1.00 0x71003f7b60
+0x00810ef0 function opp_anmm_short_scale_00810ef0 # (host, set, cmd, work) -> cmd+6: the sprite i16 at the short target (0x00c4930c, flag bits 12..14) as a float times opus_cscale_get / opus_chr_width / |MsGetChrScale y| (flag bits 9..11: 0 / 0x400 / 0x800, others 1), ftol, clamped to i16 cmd+2..cmd+4; name ours; ported (round 33, anmm::bridge::short_scale)
 0x00810ff0 function opp_anmm_scale_y_00810ff0 # (host, set, cmd, work) -> cmd+4: work float at byte cmd+2 *= |f32 host+0xc4| after MsGetChrScale(byte unit+0x18, host+0xc0); name ours; ported (round 33, anmm::bridge::scale_y)
 0x00811050 function opp_anmm_weapon_count_00811050 # (host, set, cmd, work) -> cmd+2: g_OpusWeaponCounter[opus_get_weapon_index_by_no(byte part+0x18)] up to 0x7f, or with flag 0x1000 down to 0; name ours; ported (round 33, anmm::bridge::weapon_count)
 0x008110d0 function opp_anmm_width_scale_008110d0 # (host, set, cmd, work) -> cmd+4: work float at byte cmd+2 *= opus_chr_width(byte part+0x18, i8 host+0x21e); name ours; ported (round 33, anmm::bridge::width_scale)
@@ -7025,6 +7027,7 @@
 0x008176f0 function opu_flag_etc_008176f0     # (host, cmd): host word +0x304 vs u16 cmd+2 (<< 16 with flag bit 15) by flag bits 12..14: set, clear, jump if any/none (i16 cmd+4), wait while any/none, set when opu_eff_part_index + 1 == eff byte +8; name ours; ported (round 33, opus::bridge::opu_flag_etc)
 0x008177f0 function opu_signal_etc_008177f0   # (host, cmd): opu_flag_etc_008176f0 on the unit's u16 signals +0xb0 (no shift); name ours; ported (round 33, opus::bridge::opu_flag_etc)
 0x008178f0 function opu_eff_flag_008178f0     # (host, cmd): g_EtEff[unit u16 +0x14] +0xc flags vs (i16 +4 << 16 | i16 +2): nibble&7 0 set, 1 clear, 2/3 jump i16 +6 on any/none, 4/5 wait on any/none; name ours
+0x008179b0 function opu_signal_other_008179b0 # (host, cmd): opu_flag_etc on the u16 signals +0xb0 of unit u16 cmd+2 (opus_no_get), bits at cmd+4, jump at cmd+6, lengths 2 more; name ours; ported (round 33, opus::bridge::opu_flag_etc)
 0x00817ad0 function opu_level                    # callees: its named callees match the Switch 0x71003fd8e0 opu_level's (similarity 1.00: Ch_EffectGetEffectLevel, Ch_EffectSetEffectLevel, MsGetChrMotionSignal); symbols from Fahrenheit's server export
 0x00817c30 function op_add64                  # (dst, src, n) 64-bit dst = src + (i32) n
 0x00817cc0 function vfx_vec_w_add             # (dst, v, s) dst.w = v.w + s; callers 0x0088a500, 0x0088abd0

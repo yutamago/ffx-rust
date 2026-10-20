@@ -1567,4 +1567,124 @@ pub mod bridge {
         let f = Global::<u32>::new(0x0075_9400).ptr(mem).addr;
         call(mem, f, &[pc, pd, prog, out]);
     }
+
+    /// `pppKeBornRnd3_Born(obj, def, shape, out)` (`0x007589f0`):
+    /// [`ppp_ke_born_rnd2_born`] without the magic-file check or the
+    /// speed: the record is `def +0xc`, the child's `+4` = `obj` even for a
+    /// null record (the original writes `[4]` then), the position goes to
+    /// area `def +0x10` and the normalised direction from `obj +0x40` to
+    /// area `def +0x18`.
+    pub fn ppp_ke_born_rnd3_born<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        shape: u32,
+        out: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz;
+        use ffx_ps2::vu0::bridge as vu0;
+        let part = CURRENT_PART.get(mem);
+        let records: u32 = mem.read(part.wrapping_add(0x3c));
+        let rec = mem
+            .read::<u32>(def.wrapping_add(0xc))
+            .wrapping_shl(4)
+            .wrapping_add(records);
+        if rec == 0 {
+            mem.write(out, 0u32);
+        } else {
+            let create = Global::<u32>::new(0x0071_6770).ptr(mem).addr;
+            let child = call(mem, create, &[part, rec]);
+            mem.write(out, child);
+            if child == 0 {
+                return;
+            }
+        }
+        let child: u32 = mem.read(out);
+        mem.write(child.wrapping_add(4), stub::ptr32(obj));
+        let child: u32 = mem.read(out);
+        let at = |k: u32| -> u32 {
+            let area: u32 = mem.read(def.wrapping_add(k));
+            area.wrapping_add(0xa0).wrapping_add(child)
+        };
+        let (pos, dir) = (at(0x10), at(0x18));
+        let p: [i16; 3] = mem.read(shape);
+        let v = p.map(f32::from);
+        mem.write(frame, [v[0], v[1], v[2], 1.0]);
+        vu0::apply_matrix(mem, frame, obj.wrapping_add(0x10), frame);
+        ke_vu0_copy_vec_xyz(mem, pos, frame);
+        vu0::sub_vector(mem, frame, frame, obj.wrapping_add(0x40));
+        vu0::normalize(mem, frame, frame);
+        ke_vu0_copy_vec_xyz(mem, dir, frame);
+    }
+
+    /// `pppKeHitBorn(obj, key, prog)` (`0x00759890`): work area bytes
+    /// `obj + 0xa0 + [[prog +0xc] +8]` (`f`): nothing once bit 1 is set. On
+    /// the key's frame bit 0 = whether key byte `+0xc` is set. Unless
+    /// `g_pppStopStatus`, with bit 0 of area `+4`'s byte `+0x10` and a key
+    /// record `+4` not -1: a child (`pppCreatePObject` through `call`; a
+    /// null record gives child 0) with `+4` = `obj`, whose area at key `+8`
+    /// gets (`KeVu0CopyVecXYZ`) area `+4`'s start the first time (bit 0
+    /// clear: bit 1 set then) or area `+0`'s.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ke_hit_born_step<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz;
+        let offs = |mem: &M, i: u32| -> u32 {
+            let t: u32 = mem.read(prog.wrapping_add(0xc));
+            mem.read(t.wrapping_add(4 * i))
+        };
+        let f = obj.wrapping_add(offs(mem, 2)).wrapping_add(0xa0);
+        let b: u8 = mem.read(f);
+        if b & 2 != 0 {
+            return;
+        }
+        if mem.read::<u32>(obj.wrapping_add(0xc)) == mem.read::<u32>(key) {
+            let on = mem.read::<u8>(key.wrapping_add(0xc)) != 0;
+            mem.write(f, if on { b | 1 } else { b & 0xfe });
+        }
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let area = obj.wrapping_add(0xa0).wrapping_add(offs(mem, 1));
+        if mem.read::<u8>(area.wrapping_add(0x10)) & 1 == 0 {
+            return;
+        }
+        let n: u32 = mem.read(key.wrapping_add(4));
+        if n == u32::MAX {
+            return;
+        }
+        let part = CURRENT_PART.get(mem);
+        let rec = n
+            .wrapping_shl(4)
+            .wrapping_add(mem.read(part.wrapping_add(0x3c)));
+        let child = if rec == 0 {
+            0
+        } else {
+            let create = Global::<u32>::new(0x0071_6770).ptr(mem).addr;
+            let child = call(mem, create, &[part, rec]);
+            if child == 0 {
+                return;
+            }
+            mem.write(child.wrapping_add(4), stub::ptr32(obj));
+            child
+        };
+        let src = obj.wrapping_add(0xa0).wrapping_add(offs(mem, 0));
+        let dst = child
+            .wrapping_add(0xa0)
+            .wrapping_add(mem.read(key.wrapping_add(8)));
+        let b: u8 = mem.read(f);
+        if b & 1 == 0 {
+            mem.write(f, b | 2);
+            ke_vu0_copy_vec_xyz(mem, dst, area);
+        } else {
+            ke_vu0_copy_vec_xyz(mem, dst, src);
+        }
+    }
 }

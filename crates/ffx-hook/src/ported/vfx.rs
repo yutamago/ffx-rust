@@ -1751,6 +1751,30 @@ ported! {
     opu_r_u @ 0x0081_8200 => extern "C" fn opu_r_u(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_r_u(&mut mem(), host, cmd, &mut |_, y, x| crt_atan2(y, x))
     }
+    // ---- round 33 e ----
+    /// `pppKeBornRnd3_Born(obj, def, shape, out)`.
+    pppKeBornRnd3_Born @ 0x0075_89f0 => extern "C" fn ppp_ke_born_rnd3_born(obj: u32, def: u32, shape: u32, out: u32) {
+        // the original's local vector
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_rnd3_born(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeHitBorn(obj, key, prog)`.
+    pppKeHitBorn_00759890 @ 0x0075_9890 => extern "C" fn ppp_ke_hit_born_step(obj: u32, key: u32, prog: u32) {
+        prog::bridge::ppp_ke_hit_born_step(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opu_mdc_matrix_set_00802350(host, set)`.
+    opu_mdc_matrix_set_00802350 @ 0x0080_2350 => extern "C" fn opu_mdc_matrix_set(host: u32, set: u32) {
+        opus::bridge::opu_mdc_matrix_set(&mut mem(), host, set);
+    }
+    /// `opp_anmm_short_scale_00810ef0(host, set, cmd, work)`.
+    opp_anmm_short_scale_00810ef0 @ 0x0081_0ef0 => extern "C" fn opp_anmm_short_scale(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        anmm::bridge::short_scale(&mut mem(), host, set, cmd, work, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_signal_other_008179b0(host, cmd)`.
+    opu_signal_other_008179b0 @ 0x0081_79b0 => extern "C" fn opu_signal_other(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_flag_etc(&mut mem(), opus::bridge::FlagWord::Other, host, cmd)
+    }
     /// `opu_end(obj, cmd)`.
     opu_end @ 0x0080_c3f0 => extern "C" fn opu_end(obj: u32, cmd: u32) -> u32 {
         opus::bridge::opu_end(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

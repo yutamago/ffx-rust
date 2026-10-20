@@ -821,4 +821,68 @@ pub mod bridge {
         mem.write(work.wrapping_add(0x4e), 4u8);
         cmd.wrapping_add(4)
     }
+
+    /// `0x00810ef0` (`opp_anmm_short_scale`, ours): the sprite's `i16` at
+    /// the short target of flag bits 12..14 (`0x00c4930c`) as a float,
+    /// scaled by flag bits 9..11: 0 the character scale
+    /// (`opus_cscale_get(byte part +0x18, i8 host +0x21e)`), 0x400 its width
+    /// (`opus_chr_width`), 0x800 the y of `MsGetChrScale(chr, host +0xc0)`
+    /// (`f32 host +0xc4`, the product negated below 0), others not at all
+    /// (`f32` each); then truncated (`ftol`) and kept between the
+    /// command's `i16 +2` and `+4`. Returns `cmd + 6`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn short_scale<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        set: u32,
+        cmd: u32,
+        work: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use crate::x87::{MUL, Reg};
+        let no = u32::from(mem.read::<u16>(work.wrapping_add(0x4c)));
+        let part = (no << 8).wrapping_add(mem.read(set.wrapping_add(0x20)));
+        let f = mem.read::<u16>(host.wrapping_add(0x21a));
+        let i = u32::from(f >> 12 & 7);
+        let off: i16 = mem.read(word(mem, SHORTS) + 2 * i);
+        let at = work.wrapping_add(i32::from(off).cast_unsigned());
+        let mut x = f32::from(mem.read::<i16>(at));
+        let chr = |mem: &M| u32::from(mem.read::<u8>(part.wrapping_add(0x18)));
+        let battle = |mem: &M| i32::from(mem.read::<i8>(host.wrapping_add(0x21e))).cast_unsigned();
+        match f & 0xe00 {
+            0 => {
+                let (c, b) = (chr(mem), battle(mem));
+                let s = crate::opus::bridge::opus_cscale_get(mem, c, b, fcall);
+                x = Reg::load_f32(s).mem(MUL, x).store();
+            }
+            0x400 => {
+                let (c, b) = (chr(mem), battle(mem));
+                let s = crate::opus::bridge::opus_chr_width(mem, c, b, fcall);
+                x = Reg::load_f32(s).mem(MUL, x).store();
+            }
+            0x800 => {
+                let c = chr(mem);
+                call(mem, word(mem, 0x0079_5720), &[c, host.wrapping_add(0xc0)]);
+                let y: f32 = mem.read(host.wrapping_add(0xc4));
+                x = Reg::load_f32(y).mem(MUL, x).store();
+                if x < 0.0 {
+                    x = -x;
+                }
+            }
+            _ => {}
+        }
+        #[allow(clippy::cast_possible_truncation)] // movzx eax, ax
+        let mut r = ffx_bridge::x87::ftol(mem, Reg::load_f32(x).value()) as u16;
+        let lo: u16 = mem.read(cmd.wrapping_add(2));
+        let hi: u16 = mem.read(cmd.wrapping_add(4));
+        if r.cast_signed() < lo.cast_signed() {
+            r = lo;
+        }
+        if r.cast_signed() > hi.cast_signed() {
+            r = hi;
+        }
+        mem.write(at, r);
+        cmd.wrapping_add(6)
+    }
 }
