@@ -1923,3 +1923,292 @@ pub fn atel_add_sep_load(m: &mut impl Mem, id: u32, flags: u32) -> u32 {
     m.write(count, n + 1);
     0
 }
+
+/// The worker's position block: `+0x284` for types 5 and 6, `+0x558`
+/// otherwise (`AtelGetPosWorkAdrs`), and 0 for type 4.
+fn pos_block(m: &impl Mem, w: u32) -> u32 {
+    match kind(m, w) {
+        4 => 0,
+        5 | 6 => w.wrapping_add(0x284),
+        _ => w.wrapping_add(0x558),
+    }
+}
+
+const YI_SET_ROT_TRANS_GROUP: u32 = 0x0090_a830;
+const YI_SET_ROT_TRANS_DOBJ: u32 = 0x0090_a750;
+
+/// `AtelSetBindObject(worker)` (`0x0086f4c0`): the map object the worker
+/// is bound to (`+0xa8`, `u16`; `+0xaa` 4 a group, 5 one object) gets the
+/// position block's rotation (`+0x30`..`+0x38`, w 0) and translation
+/// (`+0`..`+8`, w 1) through `yiSetRotTransGroup`/`yiSetRotTransDObj`,
+/// built in `frame` (32 bytes: the original's locals). Returns that
+/// call's `EAX`, else the block pointer with `+0xaa` in its low byte.
+/// Type 4 workers have no block (the original reads through 0).
+pub fn atel_set_bind_object(h: &mut impl ffx_bridge::Host, w: u32, frame: u32) -> u32 {
+    let p = pos_block(h, w);
+    let (rot, trans) = (frame, frame + 0x10);
+    for k in 0..3 {
+        copy_f32(h, p.wrapping_add(0x30 + 4 * k), rot + 4 * k);
+    }
+    h.write(rot + 0xc, 0_u32);
+    for k in 0..3 {
+        copy_f32(h, p.wrapping_add(4 * k), trans + 4 * k);
+    }
+    h.write(trans + 0xc, x87::store(1.0));
+    let bind = h.read::<u8>(w + 0xaa);
+    let f = match bind {
+        4 => YI_SET_ROT_TRANS_GROUP,
+        5 => YI_SET_ROT_TRANS_DOBJ,
+        _ => return p & !0xff | u32::from(bind),
+    };
+    let id = u32::from(h.read::<u16>(w + 0xa8));
+    host_call(h, f, &[id, rot, trans])
+}
+
+const MS_CAMERA_SET_RECT: u32 = 0x007b_f940;
+const CH_SET_POS3: u32 = 0x0082_b480;
+const CH_CLOTH_RESET: u32 = 0x0082_4650;
+const CH_ID_GET_ENCOUNT: u32 = 0x0083_d820;
+const CH_ID_GET_DICTIONARY: u32 = 0x0083_d7a0;
+const TK_GET_SAVE_EVENT_ADDRESS: u32 = 0x0088_c830;
+
+/// `AtelSetPos3d(worker, x, y, z, snap)` (`0x00870b20`): the position
+/// block's `+0`..`+8` = (x, y, z) (`f32`), then by `+0xaa`: 1 the
+/// character (`+0x9c`, when set) `Ch_SetPos3` and `Ch_ClothReset`, 2 the
+/// camera `MsCameraSetRect(+0x3c, 1, &(x, y, z, 1))` (in `frame`, 16
+/// bytes). For the player worker (`+0x2e` = the ctrl work's `+0xa`) the
+/// ctrl work's position (`+0x218`, w `+0x224`) moves to the previous one
+/// (`+0x228`) and becomes the block's, w 1; without `+0x34` bit 4, or with
+/// `snap`, the previous one too; the save event's encounter byte (`+0x10`)
+/// and dictionary index come from the character (0 without one). Without
+/// bit 4, or with `snap`, the block's `+0x10`..`+0x18` = the position too.
+/// The ctrl work's `+2` bit 4 is set. Returns `snap` (the header's
+/// pointer with its type in the low byte for type 4, which is left alone).
+pub fn atel_set_pos_3d(
+    h: &mut impl ffx_bridge::Host,
+    w: u32,
+    pos: [u32; 3],
+    snap: u32,
+    frame: u32,
+) -> u32 {
+    let hdr = h.read::<u32>(w);
+    let t = h.read::<u8>(hdr);
+    if t == 4 {
+        return hdr & !0xff | u32::from(t);
+    }
+    let p = pos_block(h, w);
+    if p == 0 {
+        return hdr & !0xff | u32::from(t.wrapping_sub(5));
+    }
+    let [x, y, z] = pos.map(|v| x87::store(x87::load(v)));
+    h.write(p, x);
+    h.write(p + 4, y);
+    h.write(p + 8, z);
+    let one = x87::store(1.0);
+    match h.read::<u8>(w + 0xaa) {
+        1 => {
+            let c = h.read::<u32>(w + 0x9c);
+            if c != 0 {
+                host_call(h, CH_SET_POS3, &[c, x, y, z]);
+                let c = h.read::<u32>(w + 0x9c);
+                host_call(h, CH_CLOTH_RESET, &[c]);
+            }
+        }
+        2 => {
+            h.write(frame, [x, y, z, one]);
+            let cam = h.read::<u32>(w + 0x3c);
+            host_call(h, MS_CAMERA_SET_RECT, &[cam, 1, frame]);
+        }
+        _ => {}
+    }
+    // the original tests +0x34 twice, around the save-event calls
+    let keep = |h: &mut _| ffx_bridge::Mem::read::<u8>(h, w + 0x34) & 0x10 != 0 && snap == 0;
+    let mut ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u16>(w + 0x2e) == h.read::<u16>(ctx + 0xa) {
+        for k in 0..4 {
+            copy_f32(h, ctx + 0x218 + 4 * k, ctx + 0x228 + 4 * k);
+        }
+        for k in 0..3 {
+            copy_f32(h, p + 4 * k, ctx + 0x218 + 4 * k);
+        }
+        h.write(ctx + 0x224, one);
+        if !keep(h) {
+            for k in 0..3 {
+                copy_f32(h, ctx + 0x218 + 4 * k, ctx + 0x228 + 4 * k);
+            }
+            h.write(ctx + 0x234, one);
+        }
+        let c = h.read::<u32>(w + 0x9c);
+        let dic = if c == 0 {
+            let e = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            h.write(e + 0x10, 0_u8);
+            0
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // the original stores BL
+            let enc = host_call(h, CH_ID_GET_ENCOUNT, &[c]) as u8;
+            let e = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            h.write(e + 0x10, enc);
+            let c = h.read::<u32>(w + 0x9c);
+            host_call(h, CH_ID_GET_DICTIONARY, &[c])
+        };
+        atel_set_save_dic_index(h, dic);
+        ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    }
+    if !keep(h) {
+        for k in 0..3 {
+            copy_f32(h, p + 4 * k, p + 0x10 + 4 * k);
+        }
+    }
+    let f = h.read::<u8>(ctx + 2);
+    h.write(ctx + 2, f | 0x10);
+    snap
+}
+
+/// Whether the player may be given control back: the ctrl work's `+1`
+/// bit 2 and `+3` bits `0x84` clear (read after `AtelUcOff`), and it had
+/// control before (`+0` bits `0x22`).
+fn uc_may_resume(h: &impl Mem, had: bool) -> bool {
+    let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    h.read::<u8>(c + 1) & 4 == 0 && h.read::<u8>(c + 3) & 0x84 == 0 && had
+}
+
+/// `Atel_UcResume()` (`0x0086a130`): `AtelUcOff`, then `AtelUcOn` when
+/// the player had control (ctrl work `+0` bits `0x22`) and the ctrl work's
+/// `+1` bit 2 and `+3` bits `0x84` are clear. (`EAX` is a leftover; no
+/// caller reads it.)
+pub fn atel_uc_resume(h: &mut impl ffx_bridge::Host) {
+    let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let had = h.read::<u8>(c) & 0x22 != 0;
+    atel_uc_off(h);
+    if uc_may_resume(h, had) {
+        atel_uc_on(h);
+    }
+}
+
+/// `Atel_UcRestore()` (`0x0086a0e0`): [`atel_uc_resume`], then the ctrl
+/// work's `+0` bit 1 is what it was before. (`EAX` is a leftover; no
+/// caller reads it.)
+pub fn atel_uc_restore(h: &mut impl ffx_bridge::Host) {
+    let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let flags = h.read::<u8>(c);
+    atel_uc_off(h);
+    if uc_may_resume(h, flags & 0x22 != 0) {
+        atel_uc_on(h);
+    }
+    let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let now = h.read::<u8>(c);
+    h.write(c, now & !2 | flags & 2);
+}
+
+/// `Atel_GetWorkerRotY(i)` (`0x0086a6e0`): `ST0` = the position block's
+/// `+0x34` (`f32`) of worker `i` (`AtelGetBasicWork`). Type 4 workers have
+/// no block (the original reads through 0).
+pub fn atel_get_worker_rot_y(m: &mut impl Mem, i: u32) -> f32 {
+    let w = super::super::bridge::atel_get_basic_work(m, i.cast_signed());
+    f32::from_bits(m.read(pos_block(m, w).wrapping_add(0x34)))
+}
+
+/// `Atel_SyncChrDir(worker)` (`0x00869df0`): a worker bound to its
+/// character (`+0xaa` 1, `+0x9c` set) takes the character's direction
+/// (`Ch_GetDir`, `dir`) into its position block's `+0x20` (`fstp m32`).
+pub fn atel_sync_chr_dir<M: Mem>(m: &mut M, w: u32, dir: impl FnOnce(&mut M, u32) -> f64) {
+    let p = pos_block(m, w);
+    let c = m.read::<u32>(w + 0x9c);
+    if m.read::<u8>(w + 0xaa) == 1 && c != 0 {
+        let d = x87::store(dir(m, c));
+        m.write(p.wrapping_add(0x20), d);
+    }
+}
+
+const OP_ET_BINDEFF2: u32 = 0x007f_b360;
+const OP_ET_BINDEFF2_DRAW_ON: u32 = 0x007f_b5a0;
+const OP_ET_BINDEFF2_WALK_ON: u32 = 0x007f_b830;
+const OP_ET_BINDEFF2_BREATH_ON: u32 = 0x007f_b4c0;
+const OP_ET_BINDEFF2_WATER_ON: u32 = 0x007f_b8e0;
+
+/// `AtelBindEff2On(worker, kind)` (`0x00862700`): the character's
+/// (`+0x9c`) bind effect 2 (`op_et_bindeff2`, then `_draw_on`), and for
+/// kind 0 `_walk_on` (`+0x38` bit 5), 1 `_breath_on` (bit 6), 2
+/// `_water_on` (bit 7). `EAX` the last call's, 0x80 for kind 2, else
+/// `kind - 2`.
+pub fn atel_bind_eff2_on(h: &mut impl ffx_bridge::Host, w: u32, kind: u32) -> u32 {
+    for f in [OP_ET_BINDEFF2, OP_ET_BINDEFF2_DRAW_ON] {
+        let c = h.read::<u32>(w + 0x9c);
+        host_call(h, f, &[c]);
+    }
+    let (f, bit) = match kind {
+        0 => (OP_ET_BINDEFF2_WALK_ON, 0x20),
+        1 => (OP_ET_BINDEFF2_BREATH_ON, 0x40),
+        2 => (OP_ET_BINDEFF2_WATER_ON, 0x80),
+        _ => return kind.wrapping_sub(2),
+    };
+    let c = h.read::<u32>(w + 0x9c);
+    let eax = host_call(h, f, &[c]);
+    let v = h.read::<u16>(w + 0x38);
+    h.write(w + 0x38, v | bit);
+    if kind == 2 { bit.into() } else { eax }
+}
+
+/// `g_AtelSepQueueCount` (`0x0132707c`), then the queue from 1:
+/// `g_AtelSepQueueIds` (`0x01327080`) and `g_AtelSepQueueFades`
+/// (`0x013270a0`), 8 each.
+const SEP_QUEUE_COUNT: u32 = 0x0132_707c;
+const SEP_QUEUE_FADES: u32 = 0x0132_709c;
+
+/// The event header's sound-separate table (`+0x2c`, then its `+0xc`:
+/// `n`, then `n` `(id, flags)` pairs; offsets from the header), or 0.
+fn sep_table(m: &impl Mem, b: u32) -> u32 {
+    let t = m.read::<u32>(b + 0x2c);
+    if t == 0 || b.wrapping_add(t) == 0 {
+        return 0;
+    }
+    let u = m.read::<u32>(b.wrapping_add(t) + 0xc);
+    if u == 0 { 0 } else { b.wrapping_add(u) }
+}
+
+/// `Atel_QueueSepLoads(header)` (`0x008638c0`): the queue is emptied, then
+/// every pending entry of `g_AtelSepLoadList` (flags bit `0x8000`) whose id
+/// is not in the event header's separates table is queued with a fade of
+/// 0xf0 frames (0x78 with flag `0x2000`, 0x168 with `0x4000`) and loses
+/// the pending bit. Returns the table's count (0 without one).
+pub fn atel_queue_sep_loads(m: &mut impl Mem, b: u32) -> u32 {
+    let table = sep_table(m, b);
+    let n = if table == 0 { 0 } else { m.read::<i32>(table) };
+    let count = m.rebase(SEP_QUEUE_COUNT);
+    let fades = m.rebase(SEP_QUEUE_FADES);
+    let list = m.rebase(SEP_LOAD_LIST);
+    let loads = m.rebase(SEP_LOAD_COUNT);
+    m.write(count, 0_u32);
+    let mut i = 0_u32;
+    while i.cast_signed() < m.read::<i32>(loads) {
+        let entry = list + i * 8;
+        let flags = m.read::<u32>(entry + 4);
+        let id = m.read::<u32>(entry);
+        let listed = flags & 0x8000 == 0
+            || (0..n).any(|j| {
+                let t = sep_table(m, b);
+                let tid = if t == 0 {
+                    0
+                } else {
+                    m.read::<u32>(t.wrapping_add(j.cast_unsigned() * 8 + 4))
+                };
+                tid == m.read::<u32>(entry)
+            });
+        if !listed {
+            let fade = if flags & 0x4000 != 0 {
+                0x168_u32
+            } else if flags & 0x2000 != 0 {
+                0x78
+            } else {
+                0xf0
+            };
+            let k = m.read::<u32>(count).wrapping_add(1);
+            m.write(count.wrapping_add(k * 4), id);
+            m.write(fades.wrapping_add(k * 4), fade);
+            m.write(count, k);
+            m.write(entry + 4, flags & !0x8000);
+        }
+        i += 1;
+    }
+    n.cast_unsigned()
+}

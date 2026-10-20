@@ -882,14 +882,16 @@ pub fn native_01a3<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// (`0x008712a0`), `0x0086a0e0()`; 1.
 pub fn native_0031<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0087_12a0, &[w, 1]);
-    void(h, 0x0086_a0e0, 1)
+    super::helpers::atel_uc_restore(h);
+    1
 }
 
 /// `0x0032` (`0x00856da0`): `Atel_SetWorkerFlag200(worker, 0)`,
 /// `0x0086a0e0()`; 0.
 pub fn native_0032<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0087_12a0, &[w, 0]);
-    void(h, 0x0086_a0e0, 0)
+    super::helpers::atel_uc_restore(h);
+    0
 }
 
 /// `0x00f0` (`0x008576a0`): `(&v)`: `Atel_SetLineTable(worker, variable
@@ -2112,7 +2114,8 @@ pub fn native_0183<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     call(h, 0x0087_03b0, &[w, 0]);
     let t = h.read::<u8>(w + 0xaa);
     if t != 1 && t.wrapping_sub(4) <= 1 {
-        call(h, 0x0086_f4c0, &[w]);
+        let f = h.scratch();
+        super::helpers::atel_set_bind_object(h, w, f);
     }
     x87::load(r)
 }
@@ -2172,7 +2175,8 @@ fn pos_from<H: NativeHost>(h: &mut H, w: u32, s: u32, f: u32) -> u32 {
     let out = h.scratch();
     call(h, f, &[out, pv, nf]);
     let [x, y, z] = [0, 4, 8].map(|k| h.read::<u32>(out + k));
-    call(h, 0x0087_0b20, &[w, x, y, z, 0]);
+    let f = h.scratch();
+    super::helpers::atel_set_pos_3d(h, w, [x, y, z], 0, f);
     1
 }
 

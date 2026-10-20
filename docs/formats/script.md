@@ -2534,6 +2534,46 @@ queues the pending ones with a fade of 0xf0 frames (0x78 with flag
 checks them on synthetic workers of every type and on the snapshots' real
 workers (those whose level blocks point at their own blocks).
 
+`AtelSetBindObject` (`0x0086f4c0`) moves the map object a worker is bound
+to (`+0xaa` 4: the group `+0xa8`, `yiSetRotTransGroup`; 5: the object
+`+0xa8`, `yiSetRotTransDObj`) to its position block (`+0x284` for types 5
+and 6, `+0x558` otherwise): rotation `+0x30`..`+0x38` with w 0, translation
+`+0`..`+8` with w 1, both built in the original's frame. Its `EAX` is that
+call's (a pointer into `yiSetRotTransGroup`'s own frame), else the block
+pointer with `+0xaa` in the low byte; type 4 workers have no block and the
+original reads through 0. `AtelSetPos3d` (`0x00870b20`, `(worker, x, y, z,
+snap)`, returns `snap`) writes the block's position, then by `+0xaa`: 1 the
+character (`+0x9c`) `Ch_SetPos3` and `Ch_ClothReset`, 2 the camera
+`MsCameraSetRect(+0x3c, 1, &(x, y, z, 1))`. For the player worker (`+0x2e`
+= the ctrl work's `+0xa`) the ctrl work's position `+0x218` (w `+0x224`)
+moves to `+0x228` and becomes the block's (w 1), and the save event's
+encounter byte (`+0x10`) and `AtelSetSaveDicIndex` take the character's
+PID fields (`Ch_IdGetEncount`, `Ch_IdGetDictionary`; 0 without one).
+Without the worker's `+0x34` bit 4, or with `snap`, the previous position
+(`+0x228`, w 1) and the block's `+0x10`..`+0x18` follow the new one. The
+ctrl work's `+2` bit 4 is set. The natives that called both through the
+original call the Rust ones, with the native scratch as the frame.
+`round23b_helpers_match_the_original` covers them (character, map-group
+and camera bindings come from the snapshots).
+
+The rest of round 23: `Atel_UcResume` (`0x0086a130`) runs `AtelUcOff`,
+then `AtelUcOn` when the ctrl work had given the player control (`+0`
+bits `0x22`, read first) and its `+1` bit 2 and `+3` bits `0x84` are clear;
+`Atel_UcRestore` (`0x0086a0e0`) does the same and then puts `+0` bit 1
+back as it was. `Atel_GetWorkerRotY` (`0x0086a6e0`) returns the position
+block's `+0x34` of a worker index in `ST0`; `Atel_SyncChrDir`
+(`0x00869df0`) stores `Ch_GetDir` of the worker's character into the
+block's `+0x20` when bound to it (`+0xaa` 1). `AtelBindEff2On`
+(`0x00862700`) switches the character's bind effect 2 on (`op_et_bindeff2`,
+`_draw_on`) and one of its parts (kind 0 walk, 1 breath, 2 water), marking
+it in the worker's `+0x38` (bits 5, 6, 7). `Atel_QueueSepLoads`
+(`0x008638c0`) turns the pending entries of `g_AtelSepLoadList` that the
+event header's table does not list into the separates queue
+(`g_AtelSepQueueCount`, `0x0132707c`, entries from 1: ids at
+`0x01327080`, fades at `0x013270a0`). `round23c_helpers_match_the_original`
+covers them; `op_et_bindeff2_draw_on` finds no bind-effect slot on either
+snapshot's characters, so its call is not observed there.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

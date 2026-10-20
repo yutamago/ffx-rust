@@ -6648,4 +6648,42 @@ ported! {
     Atel_ShareTurnBlock @ 0x0087_1090 => extern "C" fn h_871090(w: u32, level: u32, mask: u32, mode: u32) -> u32 {
         hp::atel_share_turn_block(&mut mem(), w, level, mask, mode)
     }
+    /// `AtelSetBindObject(worker)`: the rotation and translation are the
+    /// original's locals.
+    AtelSetBindObject @ 0x0086_f4c0 => extern "C" fn h_86f4c0(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_set_bind_object(&mut mem(), w, frame.at())
+    }
+    /// `AtelSetPos3d(worker, x, y, z, snap)`: the camera rectangle is the
+    /// original's local.
+    AtelSetPos3d @ 0x0087_0b20 => extern "C" fn h_870b20(w: u32, x: u32, y: u32, z: u32, snap: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_set_pos_3d(&mut mem(), w, [x, y, z], snap, frame.at())
+    }
+    /// `Atel_UcRestore()`.
+    Atel_UcRestore @ 0x0086_a0e0 => extern "C" fn h_86a0e0() {
+        hp::atel_uc_restore(&mut mem());
+    }
+    /// `Atel_UcResume()`.
+    Atel_UcResume @ 0x0086_a130 => extern "C" fn h_86a130() {
+        hp::atel_uc_resume(&mut mem());
+    }
+    /// `Atel_GetWorkerRotY(i)`: `ST0`.
+    Atel_GetWorkerRotY @ 0x0086_a6e0 => extern "C" fn h_86a6e0(i: u32) -> f32 {
+        hp::atel_get_worker_rot_y(&mut mem(), i)
+    }
+    /// `Atel_SyncChrDir(worker)`: `Ch_GetDir` through the game.
+    Atel_SyncChrDir @ 0x0086_9df0 => extern "C" fn h_869df0(w: u32) {
+        hp::atel_sync_chr_dir(&mut mem(), w, |m, c| {
+            super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, 0x0082_ab80), &[c])
+        });
+    }
+    /// `AtelBindEff2On(worker, kind)`.
+    AtelBindEff2On @ 0x0086_2700 => extern "C" fn h_862700(w: u32, kind: u32) -> u32 {
+        hp::atel_bind_eff2_on(&mut mem(), w, kind)
+    }
+    /// `Atel_QueueSepLoads(header)`.
+    Atel_QueueSepLoads @ 0x0086_38c0 => extern "C" fn h_8638c0(b: u32) -> u32 {
+        hp::atel_queue_sep_loads(&mut mem(), b)
+    }
 }

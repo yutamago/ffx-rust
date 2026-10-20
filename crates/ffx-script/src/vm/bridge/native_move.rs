@@ -255,7 +255,8 @@ pub fn native_set_yaw<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 
             call(h, 0x0082_b520, &[c, r]);
         }
     } else if k.wrapping_sub(4) <= 1 {
-        call(h, 0x0086_f4c0, &[w]);
+        let f = h.scratch();
+        super::helpers::atel_set_bind_object(h, w, f);
     }
     x87::load(y)
 }
@@ -401,7 +402,7 @@ pub fn native_bit_flag_set<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -
 pub fn native_0060<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     let r = call(h, 0x0087_12a0, &[w, v]);
-    call(h, 0x0086_a0e0, &[]);
+    super::helpers::atel_uc_restore(h);
     r
 }
 
@@ -620,7 +621,8 @@ pub fn native_set_model<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32
     let pos: Vec<u32> = (0..3)
         .map(|i| x87::store(x87::load(h.read(p + i * 4))))
         .collect();
-    call(h, 0x0087_0b20, &[w, pos[0], pos[1], pos[2], 0]);
+    let f = h.scratch();
+    super::helpers::atel_set_pos_3d(h, w, [pos[0], pos[1], pos[2]], 0, f);
     if h.read::<u16>(c + 0x1a) == 0 {
         if h.read::<u8>(w + 0xaa) == 1 {
             let ch = h.read::<u32>(w + worker::CHAR_HANDLE);
@@ -635,7 +637,7 @@ pub fn native_set_model<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32
     }
     for (bit, k) in [(0x20u8, 0u32), (0x40, 1), (0x80, 2)] {
         if h.read::<u8>(w + 0x38) & bit != 0 {
-            call(h, 0x0086_2700, &[w, k]);
+            super::helpers::atel_bind_eff2_on(h, w, k);
         }
     }
     0
@@ -1099,7 +1101,8 @@ pub fn native_set_pos_0126<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) ->
             MUSIC_IS_25.set(h, 1);
         }
     }
-    call(h, 0x0087_0b20, &[w, cp(x), cp(y), cp(z), 1]);
+    let f = h.scratch();
+    super::helpers::atel_set_pos_3d(h, w, [cp(x), cp(y), cp(z)], 1, f);
     0
 }
 
@@ -1183,7 +1186,7 @@ pub fn native_set_party_index<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32)
         call(h, 0x0087_2160, &[w]);
     }
     call(h, 0x0087_12a0, &[w, u32::from(v == 0)]);
-    call(h, 0x0086_a0e0, &[]);
+    super::helpers::atel_uc_restore(h);
     let slot = if v < 8 { v } else { 0xf };
     party_slot(h, w, c, slot);
     v
@@ -1304,7 +1307,8 @@ pub fn worker_detach<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     match h.read::<u8>(w + 0xaa) {
         4 | 5 => {
-            call(h, 0x0086_f4c0, &[w]);
+            let f = h.scratch();
+            super::helpers::atel_set_bind_object(h, w, f);
         }
         1 => {
             if h.read::<u32>(w + 0x9c) != 0 {
@@ -1375,7 +1379,8 @@ pub fn native_set_pitch<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f6
     h.write(p + 0x24, y);
     h.write(p + 0x30, y);
     if h.read::<u8>(w + 0xaa).wrapping_sub(4) <= 1 {
-        call(h, 0x0086_f4c0, &[w]);
+        let f = h.scratch();
+        super::helpers::atel_set_bind_object(h, w, f);
     }
     x87::load(y)
 }
@@ -1413,7 +1418,7 @@ pub fn native_015b_result<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -
     let c = super::atel_get_cur_ctrl_work(h);
     let b = h.read::<u8>(c + 3);
     h.write(c + 3, b & 0xfb);
-    call(h, 0x0086_a130, &[]);
+    super::helpers::atel_uc_resume(h);
     1
 }
 
@@ -2263,7 +2268,7 @@ pub fn native_021a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// `0x00862700(worker, 1)`; 1.
 pub fn native_0207<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(w + 0xaa) == 1 && h.read::<u32>(w + 0x9c) != 0 {
-        call(h, 0x0086_2700, &[w, 1]);
+        super::helpers::atel_bind_eff2_on(h, w, 1);
     }
     1
 }
@@ -2984,7 +2989,7 @@ pub fn native_024d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// `0x00862700(worker, 2)`; 1.
 pub fn native_0209<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     if h.read::<u8>(w + 0xaa) == 1 && h.read::<u32>(w + 0x9c) != 0 {
-        call(h, 0x0086_2700, &[w, 2]);
+        super::helpers::atel_bind_eff2_on(h, w, 2);
     }
     1
 }
@@ -3126,7 +3131,7 @@ pub fn native_0216_result<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) ->
     let c = super::atel_get_cur_ctrl_work(h);
     let b = h.read::<u8>(c + 3);
     h.write(c + 3, b & 0xfb);
-    call(h, 0x0086_a130, &[]);
+    super::helpers::atel_uc_resume(h);
     call(h, 0x0087_4200, &[x, y, 1])
 }
 
@@ -3624,7 +3629,10 @@ fn chr_call<H: NativeHost>(h: &mut H, w: u32, f: u32, k: u32) -> u32 {
 
 /// `Native_0205` (`0x0085ec00`, `0x0205`): `0x00862700(worker, 0)`.
 pub fn native_0205<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
-    chr_call(h, w, 0x0086_2700, 0)
+    if h.read::<u8>(w + 0xaa) == 1 && h.read::<u32>(w + 0x9c) != 0 {
+        super::helpers::atel_bind_eff2_on(h, w, 0);
+    }
+    1
 }
 
 /// `Native_0206` (`0x0085ee10`, `0x0206`): `0x00862680(worker, 0)`.
@@ -4973,7 +4981,7 @@ pub fn native_015b<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     if new == 0 {
         call(h, 0x0079_8b60, &[]);
     }
-    call(h, 0x0086_a130, &[]);
+    super::helpers::atel_uc_resume(h);
     let m = super::atel_get_mes_win_work(h, win.cast_signed());
     let f = h.read::<u8>(m + 0x1d);
     h.write(m + 0x1d, f | 0x10);
@@ -5014,7 +5022,7 @@ pub fn native_0216<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     h.write(a, win);
     h.write(a + 4, 1_u32);
     h.write(a + 0xe, 0_u16);
-    call(h, 0x0086_a130, &[]);
+    super::helpers::atel_uc_resume(h);
     let m = super::atel_get_mes_win_work(h, win.cast_signed());
     let f = h.read::<u8>(m + 0x1d);
     h.write(m + 0x1d, f | 0x10);
