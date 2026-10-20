@@ -1818,6 +1818,148 @@ pub mod bridge {
         if t == 0 { 0 } else { t + 0x20 }
     }
 
+    /// `g_ChrHsvPending` (`0x012f4110`): a weapon's colour change waits.
+    pub const CHR_HSV_PENDING: Global<u32> = Global::new(0x012f_4110);
+    /// `g_ChrHsvInstance` (`0x012f4114`): the renderer instance of the
+    /// character whose weapon [`op_chara_hsv`] recoloured.
+    pub const CHR_HSV_INSTANCE: Global<u32> = Global::new(0x012f_4114);
+
+    /// The character's effect record kind (`g_EtChr[i] + 0xe`, `u16`) at
+    /// `opus_get_chr_status_index(chr, 0, 0)`, and its stone state
+    /// (`op_get_chr_status_stone`), both through `call`.
+    fn hsv_kind<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> (u32, u32) {
+        let i = ch(mem, 0x007f_e970, &[chr, 0, 0], call);
+        let rec = Global::<u32>::new(0x012a_22c0).ptr(mem).addr;
+        let kind = u32::from(mem.read::<u16>(rec.wrapping_add(i << 5).wrapping_add(0xe)));
+        (kind, ch(mem, 0x007f_cc80, &[chr], call))
+    }
+
+    /// `graphicSetHSVParam(Ch_GetChrRenderInstance(chr), hsv...)` through
+    /// `call`; its result.
+    fn set_hsv<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        hsv: [f32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let inst = ch(mem, 0x0082_6b70, &[chr], call);
+        let [a, b, c, d] = hsv.map(f32::to_bits);
+        ch(mem, 0x0064_3340, &[inst, a, b, c, d], call)
+    }
+
+    /// `op_chara_hsv_make(chr, buf)` (`0x008079f0`): unless the character
+    /// is stone, its CLUTs' colours as HSV: `u16 buf[0]` = the CLUT count
+    /// (`Ch_ClutGetNb`), `u16 buf[1 + i]` = CLUT `i`'s size
+    /// (`Ch_ClutGetSize`), and from `buf + 0x20` on each non-empty CLUT
+    /// (`Ch_ClutGetOrgPtr`) converted by `op_rgb_to_hsv`, which returns the
+    /// next free place. Then the renderer instance gets HSV on
+    /// (`graphicEnableHSV(inst, 1)`) at (0, 0, 0, -1.0)
+    /// (`graphicSetHSVParam`); for kind 6 with a weapon
+    /// (`MsGetWeaponHandle(kind, 0)`) the weapon's likewise, and
+    /// `g_ChrHsvPending` = 1. All callees through `call`. Returns the
+    /// original's `eax`: the stone state, the weapon handle, or the last
+    /// `graphicSetHSVParam`'s result.
+    pub fn op_chara_hsv_make<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        buf: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (kind, stone) = hsv_kind(mem, chr, call);
+        if stone != 0 {
+            return stone;
+        }
+        let n = ch(mem, 0x0083_c9a0, &[chr], call);
+        #[allow(clippy::cast_possible_truncation)] // the original's u16 stores
+        mem.write(buf, n as u16);
+        let mut out = buf.wrapping_add(0x20);
+        let mut i = 0u32;
+        while i.cast_signed() < n.cast_signed() {
+            let size = ch(mem, 0x0083_c9f0, &[chr, i], call);
+            #[allow(clippy::cast_possible_truncation)]
+            mem.write(buf.wrapping_add(2 + 2 * i), size as u16);
+            if size != 0 {
+                let src = ch(mem, 0x0083_c9b0, &[chr, i], call);
+                out = ch(mem, 0x0080_7e90, &[out, src, size], call);
+            }
+            i += 1;
+        }
+        // g_ChrClothFlip (0x00b92340), the constant -1.0
+        let hsv = [0.0, 0.0, 0.0, -1.0];
+        let inst = ch(mem, 0x0082_6b70, &[chr], call);
+        ch(mem, 0x0064_0100, &[inst, 1], call);
+        set_hsv(mem, chr, hsv, call);
+        let weapon = ch(mem, 0x0079_5b40, &[kind, 0], call);
+        if weapon == 0 || kind != 6 {
+            return weapon;
+        }
+        let inst = ch(mem, 0x0082_6b70, &[weapon], call);
+        ch(mem, 0x0064_0100, &[inst, 1], call);
+        let r = set_hsv(mem, weapon, hsv, call);
+        CHR_HSV_PENDING.set(mem, 1);
+        r
+    }
+
+    /// `op_chara_hsv(chr, buf, hue, sat, val, mix)` (`0x00807870`): unless
+    /// the character is stone, its CLUTs (`Ch_ClutGetPtr`) rewritten from
+    /// the HSV copy [`op_chara_hsv_make`] left in `buf` (`opus_hsv_rgba`
+    /// per non-empty CLUT, which returns the next source place), and the
+    /// renderer's HSV parameters set to `(hue, sat, val, mix)` as floats.
+    /// When `sat + val` is 0 the shade first becomes
+    /// `val / 128 + *Ch_GetLightValue(chr)` (`Ch_CalcLight(chr, &shade)`;
+    /// `frame` is the word for `shade`, as the original's local). For kind
+    /// 6 with a weapon (`MsGetWeaponHandle(kind, 0)`) `g_ChrHsvInstance` =
+    /// the character's instance and the weapon gets the same parameters.
+    /// All callees through `call`. Returns the original's `eax`: the stone
+    /// state, the weapon handle, or the last `graphicSetHSVParam`'s result.
+    #[allow(clippy::too_many_arguments)]
+    pub fn op_chara_hsv<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        buf: u32,
+        hsv: [i32; 4],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (kind, stone) = hsv_kind(mem, chr, call);
+        if stone != 0 {
+            return stone;
+        }
+        let n = u32::from(mem.read::<u16>(buf));
+        let mut src = buf.wrapping_add(0x20);
+        let light = ch(mem, 0x0083_cb90, &[chr], call);
+        #[allow(clippy::cast_precision_loss)] // fild, fstp m32
+        let f = hsv.map(|v| v as f32);
+        let shade = x87::Reg::load_f32(f[2])
+            .constant(x87::MUL, 0.007_812_5)
+            .mem(x87::ADD, mem.read(light))
+            .store();
+        mem.write(frame, shade);
+        if hsv[1].wrapping_add(hsv[2]) == 0 {
+            ch(mem, 0x0083_c6f0, &[chr, frame], call);
+        }
+        let [h, s, v, m] = hsv.map(i32::cast_unsigned);
+        for i in 0..n {
+            let size = u32::from(mem.read::<u16>(buf.wrapping_add(2 + 2 * i)));
+            if size != 0 {
+                let clut = ch(mem, 0x0083_c9d0, &[chr, i], call);
+                src = ch(mem, 0x0080_7b70, &[clut, src, size, h, s, v, m], call);
+            }
+        }
+        set_hsv(mem, chr, f, call);
+        let weapon = ch(mem, 0x0079_5b40, &[kind, 0], call);
+        if weapon == 0 || kind != 6 {
+            return weapon;
+        }
+        let inst = ch(mem, 0x0082_6b70, &[chr], call);
+        CHR_HSV_INSTANCE.set(mem, inst);
+        set_hsv(mem, weapon, f, call)
+    }
+
     /// `op_chara_packet_size_get(chr, mode, visible)` (`0x008037c0`): for
     /// a mimic (`opus_mimic_check`) what `0x0080f580(mode, visible)`
     /// gives; else per model (`Ch_GetNbModel`; with `visible`, hidden

@@ -1349,6 +1349,152 @@ pub mod bridge {
         }
     }
 
+    /// `pppKeBornRnd2_Born(obj, def, shape, out)` (`0x00758840`, and its
+    /// copy `pppKeBornRnd5_Born`, `0x00758fc0`): the child `KeBornRnd2`
+    /// makes, unless the magic file is 0x2a9 (`MagicFile_GetMagicId`): the
+    /// current part's object record `def +0x10` (16 bytes each, from part
+    /// `+0x3c`) gets a new object (`pppCreatePObject` through `call`; none:
+    /// `*out` = 0 and done) into `*out`, its `+4` = `obj`. Then the `i16`
+    /// point `shape[0..3]` (as floats, `w` 1.0) times `obj`'s matrix
+    /// (`+0x10`) is the child's area `def +0x14` position (`+0xa0`, `xyz`),
+    /// and that minus `obj +0x40`, normalised and scaled by `f32 def +8`,
+    /// its area `def +0x1c` velocity. A record address of 0 skips the
+    /// object but not the rest (on the child at 0, as the original does).
+    /// `frame` is the original's 16-byte local vector.
+    pub fn ppp_ke_born_rnd2_born<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        shape: u32,
+        out: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_field::vu0::bridge::ke_vu0_copy_vec_xyz;
+        use ffx_ps2::vu0::bridge as vu0;
+        if ffx_system::instance::bridge::magic_id(mem) == 0x2a9 {
+            return;
+        }
+        let part = CURRENT_PART.get(mem);
+        let records: u32 = mem.read(part.wrapping_add(0x3c));
+        let rec = mem
+            .read::<u32>(def.wrapping_add(0x10))
+            .wrapping_shl(4)
+            .wrapping_add(records);
+        if rec == 0 {
+            mem.write(out, 0u32);
+        } else {
+            let create = Global::<u32>::new(0x0071_6770).ptr(mem).addr;
+            let child = call(mem, create, &[part, rec]);
+            mem.write(out, child);
+            if child == 0 {
+                return;
+            }
+            mem.write(child.wrapping_add(4), stub::ptr32(obj));
+        }
+        let child: u32 = mem.read(out);
+        let at = |k: u32| -> u32 {
+            let area: u32 = mem.read(def.wrapping_add(k));
+            area.wrapping_add(0xa0).wrapping_add(child)
+        };
+        let (pos, vel) = (at(0x14), at(0x1c));
+        let p: [i16; 3] = mem.read(shape);
+        let v = p.map(f32::from);
+        mem.write(frame, [v[0], v[1], v[2], 1.0]);
+        vu0::apply_matrix(mem, frame, obj.wrapping_add(0x10), frame);
+        ke_vu0_copy_vec_xyz(mem, pos, frame);
+        vu0::sub_vector(mem, frame, frame, obj.wrapping_add(0x40));
+        vu0::normalize(mem, frame, frame);
+        let speed = x87::load_f32(mem.read(def.wrapping_add(8)));
+        vu0::scale_vector(mem, frame, frame, speed);
+        ke_vu0_copy_vec_xyz(mem, vel, frame);
+    }
+
+    /// `g_pppChrScale` (`0x0230fd50`): the character's scale (`x`, `y`,
+    /// `z`) the `pppChr*Scl*Matrix` steps scale by.
+    pub const CHR_SCALE: Global<[f32; 3]> = Global::new(0x0230_fd50);
+
+    /// The `pppChr*Scl*Matrix` steps (`0x00734910`..`0x00734af0`).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ChrScl {
+        /// `pppChrSclXYZMatrix` (`0x00734910`): x scale on x and z, y on y.
+        Xyz,
+        /// `pppChrSclXZMatrix` (`0x007349b0`): x scale on x and z.
+        Xz,
+        /// `pppChrSclYMatrix` (`0x00734a30`): y scale on y.
+        Y,
+        /// `pppChrYSclXYZMatrix` (`0x00734aa0`): reads its own unit
+        /// matrix's z (1.0) for all three, so it multiplies by the unit
+        /// matrix.
+        YXyz,
+        /// `pppChrXSclXYZMatrix` (`0x00734af0`): x scale on all three.
+        XXyz,
+    }
+
+    /// The `pppChr*Scl*Matrix(obj, key)` steps: `obj +0x10` =
+    /// `FFXVu0MulMatrix(scale, obj +0x10)` (through `call`; `frame`, 16
+    /// words, is the original's local) with a diagonal scale (see
+    /// [`ChrScl`]) of `g_pppChrScale` component `c` grown by `key +4`:
+    /// `f32(c + c * k)` (`Xyz`, the product with `k` as memory operand) or
+    /// `f32(k * c + c)` (the others), capped at `key +8` when that is
+    /// below it. (`YXyz` reads no key: `key` is unused there.)
+    pub fn ppp_chr_scl_matrix<M: Mem>(
+        mem: &mut M,
+        kind: ChrScl,
+        obj: u32,
+        key: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use x87::{ADD, MUL, Reg};
+        ffx_ps2::vu0::bridge::matrix_identity(mem, frame);
+        let scale = |mem: &M, axis: u32| -> f32 {
+            let c = mem.read::<f32>(CHR_SCALE.ptr(mem).addr.wrapping_add(4 * axis));
+            let grow: f32 = mem.read(key.wrapping_add(4));
+            let gc = Reg::load_f32(c);
+            let v = if kind == ChrScl::Xyz {
+                gc.reg(ADD, gc.mem(MUL, grow))
+            } else {
+                Reg::load_f32(grow).reg(MUL, gc).reg(ADD, gc)
+            }
+            .store();
+            let cap: f32 = mem.read(key.wrapping_add(8));
+            if f64::from(cap) < f64::from(v) {
+                x87::load_f32(cap)
+            } else {
+                v
+            }
+        };
+        let diag = |i: u32| frame.wrapping_add(0x14 * i);
+        match kind {
+            ChrScl::Xyz => {
+                let (x, y) = (scale(mem, 0), scale(mem, 1));
+                mem.write(diag(0), x);
+                mem.write(diag(2), x);
+                mem.write(diag(1), y);
+            }
+            ChrScl::Xz => {
+                let x = scale(mem, 0);
+                mem.write(diag(0), x);
+                mem.write(diag(2), x);
+            }
+            ChrScl::Y => {
+                let y = scale(mem, 1);
+                mem.write(diag(1), y);
+            }
+            ChrScl::YXyz => {}
+            ChrScl::XXyz => {
+                let x = scale(mem, 0);
+                for i in 0..3 {
+                    mem.write(diag(i), x);
+                }
+            }
+        }
+        let m = obj.wrapping_add(0x10);
+        let mul = Global::<u32>::new(0x006e_d5c0).ptr(mem).addr;
+        call(mem, mul, &[m, frame, m]);
+    }
+
     /// `pppKeOfsPt(obj, key, ctrl)` (`0x0075cd30`): unless stopped, on the
     /// key's frame: at frame 0, with a shape (key `+0x2c`, not 0xffff; the
     /// environment's shape blocks) `0x0075c660(area 0 + 0xb0, shape)`

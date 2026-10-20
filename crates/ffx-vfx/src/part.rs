@@ -831,9 +831,8 @@ pub mod bridge {
                 return false;
             }
         }
-        if is_ptr32_null(rd(mem, chain)) == 0 {
-            mem.write(w(0xb), 0u32);
-        }
+        // (the original first clears w(0xb) when the chain's first link is
+        // set: a dead store, overwritten below before any read)
         mem.write(w(2), 0u32);
         mem.write(part.wrapping_add(0x1d), 0u8);
         let nb = rd(mem, w(6));

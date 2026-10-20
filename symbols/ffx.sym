@@ -3586,7 +3586,7 @@
 0x00728a60 function vfx_vec3_scale3           # (dst, v, sx, sy, sz) dst.xyz = v.xyz * (sx, sy, sz)
 0x00728dd0 function pppViewOutCode           # ours: (x f32, y f32) -> outcode: 1 x < -8/9, 2 x >= 8/9 (the f32 8/9 as a double, 0x00b514e0/e8), 4 y < -0.5, 8 y >= 0.5; NaN none; pppCheckViewCylinder calls it for four corners
 0x00728e40 function hideDisplayOffParticle    # fh v3:exact+call.cs 0x00728f30 cdecl ; (part): per object with data (+0x3c records, +4), each entry of ptr32(ptr32(data+8))+0x28 (i16 count +0x26) that is set gets graphicVFXSetVisible(k, data, 0) (part::bridge::hide_display_off_particle)
-0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000
+0x00728f10 function pppCheckViewCylinder      # fh v3:cg4 0x729000; cdecl(m, v, far, radius, height) -> u32: 0 if far < 0, 0xf if v*m beyond far or z+radius <= 0, else the AND of pppViewOutCode at x,y +- radius,height over z+radius (small::check_view_cylinder)
 0x00729050 function pppFpSetDisp              # (on): g_pppFpDisp = on (eax = on)
 0x00729060 function pppFpDispDebug               # str-match switch: only user of 6 string(s) held once by both builds, e.g. '---- FP Disp Status Start\\n\\n'; Switch 0x71002d72b0 pppFpDispDebug (symbols from Fahrenheit's server export)
 0x007291c0 function pppFpFree                 # fh v3:exact 0x007292b0; (): op_fp_effect_free, every effect's objects freed and g_FpData cleared, the heap2 block and packet buffer freed, point lights disposed of (fp::bridge::ppp_fp_free)
@@ -3707,10 +3707,15 @@
 0x00732dd0 function pppSRandCV                # ppp program table record "pppSRandCV" step: four draws whenever the key applies (flag +0xc), i8 factors at +8, byte targets += ftol(w k - k)
 0x00732f30 function pppSRandCV_Draw           # pppSRandCV's draw; ours: = rand::bridge::ppp_srand_draw(Spread::Plain), the byte argument picking the two-draw form, result in ST0 (oracle parity)
 0x007330e0 function pppSRandUpCV              # ppp program table record "pppSRandUpCV" step: as pppSRandCV, ftol(k w)
+0x00733230 function pppSRandUpCV_Draw         # pppSRandUpCV's draw (its step 0x007330e0 calls it); ours: byte-identical to pppSRandUpFV_Draw 0x00732970 but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x007333e0 function pppSRandDownCV            # ppp program table record "pppSRandDownCV" step
+0x00733530 function pppSRandDownCV_Draw       # pppSRandDownCV's draw (its step 0x007333e0 calls it); ours: byte-identical to pppSRandDownFV_Draw 0x00732c00 but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x007336e0 function pppSRandHCV               # fh v3:exact 0x007337b0
+0x00733820 function pppSRandHCV_Draw          # pppSRandHCV's draw (its step 0x007336e0 calls it); ours: byte-identical to pppSRandFV_Draw 0x007326e0 (and pppSRandCV_Draw) but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x00733a00 function pppSRandUpHCV             # ppp program table record "pppSRandUpHCV" step: as pppSRandHCV, cbw(ftol(k w))
+0x00733b30 function pppSRandUpHCV_Draw        # pppSRandUpHCV's draw (its step 0x00733a00 calls it); ours: byte-identical to pppSRandUpFV_Draw 0x00732970 but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x00733d10 function pppSRandDownHCV           # ppp program table record "pppSRandDownHCV" step
+0x00733e40 function pppSRandDownHCV_Draw      # pppSRandDownHCV's draw (its step 0x00733d10 calls it); ours: byte-identical to pppSRandDownFV_Draw 0x00732c00 but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x00734020 function pppKeMatSN                # ppp program table record "pppKeMatSN" step (aligned-stack prologue): area 0 +0x80 takes area 1's three angles; pppGetRotMatrixXYZ(area0 + 0x40, old - new as i32); +0x70/+0x74 from 0x00c3e6e0
 0x007340f0 function pppKeMatSNCon             # fh v3:exact 0x007341c0
 0x00734130 function pppMatrixLoc              # fh v3:exact 0x00734200
@@ -3719,11 +3724,11 @@
 0x00734400 function pppKeOfsMatXYZ            # ppp program table record "pppKeOfsMatXYZ" step: obj+0x10 = XYZ rotation of area 1 scaled by area 2 about the pivot p = area0[+0x10] + area0[+0x20]: position = area0 + p - M p
 0x00734640 function pppParMatrix              # fh v3:exact 0x00734710
 0x00734880 function pppKeParMatR              # fh v3:exact 0x00734950
-0x00734910 function pppChrSclXYZMatrix        # ppp program table record "pppChrSclXYZMatrix" step
-0x007349b0 function pppChrSclXZMatrix         # ppp program table record "pppChrSclXZMatrix" step
-0x00734a30 function pppChrSclYMatrix          # ppp program table record "pppChrSclYMatrix" step
-0x00734aa0 function pppChrYSclXYZMatrix       # ppp program table record "pppChrYSclXYZMatrix" step
-0x00734af0 function pppChrXSclXYZMatrix       # ppp program table record "pppChrXSclXYZMatrix" step
+0x00734910 function pppChrSclXYZMatrix        # ppp program table record "pppChrSclXYZMatrix" step; ours: cdecl(obj, key): obj+0x10 = FFXVu0MulMatrix(diag(sx, sy, sx), obj+0x10), s = f32(c + c*key[+4]) of g_pppChrScale, capped at key[+8] (prog::bridge::ppp_chr_scl_matrix)
+0x007349b0 function pppChrSclXZMatrix         # ppp program table record "pppChrSclXZMatrix" step; ours: as pppChrSclXYZMatrix with diag(sx, 1, sx), s = f32(key[+4]*c + c) (prog::bridge::ppp_chr_scl_matrix)
+0x00734a30 function pppChrSclYMatrix          # ppp program table record "pppChrSclYMatrix" step; ours: as pppChrSclXYZMatrix with diag(1, sy, 1), s = f32(key[+4]*c + c) (prog::bridge::ppp_chr_scl_matrix)
+0x00734aa0 function pppChrYSclXYZMatrix       # ppp program table record "pppChrYSclXYZMatrix" step; ours: cdecl(obj): reads its own unit matrix's m22 (1.0) for all three, so obj+0x10 = MulMatrix(unit, obj+0x10) (prog::bridge::ppp_chr_scl_matrix)
+0x00734af0 function pppChrXSclXYZMatrix       # ppp program table record "pppChrXSclXYZMatrix" step; ours: as pppChrSclXYZMatrix with diag(sx, sx, sx), s = f32(key[+4]*c + c) (prog::bridge::ppp_chr_scl_matrix)
 0x00734b70 function pppDrawMatrix             # ppp program table record "pppDrawMatrix" draw: obj+0x9c = 0, then tail-jumps to FFXVu0MulMatrix(obj+0x50, g_pppViewMatrixCopy, obj+0x10)
 0x00734ba0 function pppDrawMatrixLoop         # ppp program table record "pppDrawMatrixLoop" draw: the same code as pppDrawMatrix
 0x00734bd0 function pppDrawMatrixFront        # fh v3:exact 0x00734ca0
@@ -3866,6 +3871,7 @@
 0x00742cc0 function pppDrawShapeFieldDraw     # ppp program table record "pppDrawShapeField" draw
 0x00742f20 function pppDrawShapeFieldAlloc_00742f20 # ours: (obj, key, prog) -> 1/0: pppDrawShapeFieldDraw's (0x00742cc0) buffers: work +0x40 = pppMemAlloc([key+8] * 0xa0) cleared, +0x44 = 12 bytes, +0x50 = [work+0x54] * 8 cleared; 0 when is_ptr32_null; byte-identical to 0x00744260 (draw::bridge::shape_alloc FIELD_ALLOC)
 0x00743030 function pppShapeFieldRenderOn_00743030 # ours: () -> 0 when graphicLevelGetNameHash() is one of 0x76f, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139, else 1; 0x00741b90 and pppDrawShapeFieldDraw skip their shape-field render data on 0 (draw::bridge::shape_field_render_on)
+0x00743da0 function pppShapeFieldRevStep_00743da0 # ours: cdecl(obj, key), called by pppDrawShapeFieldRevDraw 0x00744040: obj+8 0xa0-byte particles at ptr32(key+0x40): age/lifetime, velocity and spin steps, frame clock over the shape ptr32(env+0x24[obj+4]) entries; as 0x007472b0 with key+0x54, obj+0x60, obj+0xa0 (draw::bridge::ppp_shape_step)
 0x00743f00 function pppDrawShapeFieldRevCon   # ppp program table record "pppDrawShapeFieldRev" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_REV_CON)
 0x00743f80 function pppDrawShapeFieldRevDes   # ppp program table record "pppDrawShapeFieldRev" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_REV_DES)
 0x00744040 function pppDrawShapeFieldRevDraw  # ppp program table record "pppDrawShapeFieldRev" draw
@@ -3877,10 +3883,14 @@
 0x00746280 function pppDrawShapeFieldGlobalDes # ppp program table record "pppDrawShapeFieldGlobal" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_GLOBAL_DES)
 0x00746320 function pppDrawShapeFieldGlobalDraw # ppp program table record "pppDrawShapeFieldGlobal" draw
 0x00746540 function pppDrawShapeFieldGlobalAlloc_00746540 # ours: (obj, key, prog) -> 1/0: pppDrawShapeFieldGlobalDraw's buffers: work +0x40 = [key+8] * 0xb0 cleared, +0x4c = [work+0x50] * 8 cleared (draw::bridge::shape_alloc FIELD_GLOBAL_ALLOC)
+0x00747090 function pppShapeCameraEmit_00747090 # ours: cdecl(obj, key, ctrl), called by pppDrawShapeCameraDraw 0x00747540: area 0 countdown +0xe4; at 0 u8 key+0xb0 particles from the camera position (row 3 of FFXVu0InversMatrix(g_pppCameraMatrix), copied through g_Vu0_VfMove), random velocity/spin (KeVecAddRandom/ScaleRandom), unit matrix turned by spin.z*4096/360 (op_rot_m_z) (draw::bridge::ppp_shape_camera_emit)
+0x007472b0 function pppShapeCameraStep_007472b0 # ours: cdecl(obj, key), called by pppDrawShapeCameraDraw 0x00747540: obj+8 0xa0-byte particles at ptr32(key+0x40): age/lifetime, velocity and spin steps, frame clock over the shape ptr32(env+0x24[obj+4]) entries; lifetime key+0x50, velocity step obj+0x50, spin step obj+0x90 (draw::bridge::ppp_shape_step)
 0x00747410 function pppDrawShapeCameraCon     # ppp program table record "pppDrawShapeCamera" +0x1c set-up; ours: (draw::bridge::shape_con CAMERA_CON)
 0x00747490 function pppDrawShapeCameraDes     # ppp program table record "pppDrawShapeCamera" +0x24 destructor; ours: destroys the instance before and after the frees (draw::bridge::ppp_des CAMERA_DES)
 0x00747540 function pppDrawShapeCameraDraw    # ppp program table record "pppDrawShapeCamera" draw
 0x00747760 function pppDrawShapeCameraAlloc_00747760 # ours: pppDrawShapeCameraDraw's buffers: pppDrawShapeFieldGlobalAlloc_00746540 with 0xa0-byte records; byte-identical to 0x007489b0 (draw::bridge::shape_alloc CAMERA_ALLOC)
+0x007482e0 function pppShapeCameraDisPosEmit_007482e0 # ours: cdecl(obj, key, ctrl), called by pppDrawShapeCameraDisPosDraw 0x00748790: area 0 countdown +0xe4; at 0 u8 key+0xb0 particles from the camera position (row 3 of FFXVu0InversMatrix(g_pppCameraMatrix), copied through g_Vu0_VfMove), random velocity/spin (KeVecAddRandom/ScaleRandom), unit matrix turned by spin.z*4096/360 (op_rot_m_z); byte-identical to 0x00747090 but for relative branches (draw::bridge::ppp_shape_camera_emit)
+0x00748500 function pppShapeCameraDisPosStep_00748500 # ours: cdecl(obj, key), called by pppDrawShapeCameraDisPosDraw 0x00748790: obj+8 0xa0-byte particles at ptr32(key+0x40): age/lifetime, velocity and spin steps, frame clock over the shape ptr32(env+0x24[obj+4]) entries; byte-identical to 0x007472b0 but for relative branches (draw::bridge::ppp_shape_step)
 0x00748660 function pppDrawShapeCameraDisPosCon # ppp program table record "pppDrawShapeCameraDisPos" +0x1c set-up; ours: (draw::bridge::shape_con CAMERA_CON)
 0x007486e0 function pppDrawShapeCameraDisPosDes # ppp program table record "pppDrawShapeCameraDisPos" +0x24 destructor; ours: (draw::bridge::ppp_des CAMERA_DES)
 0x00748790 function pppDrawShapeCameraDisPosDraw # ppp program table record "pppDrawShapeCameraDisPos" draw
@@ -4012,7 +4022,7 @@
 0x00758790 function pppKeBornRndCon           # ppp program table record "pppKeBornRnd" (0x00c3aff8) +0x1c set-up; "pppKeBornRnd" (0x00c3c6a0) +0x1c set-up
 0x007587b0 function pppKeBornRnd2             # fh v3:cg2 0x7588a0
 0x00758820 function pppKeBornRnd2Con          # ppp program table record "pppKeBornRnd2" (0x00c3aee0) +0x1c set-up; "pppKeBornRnd2" (0x00c3c588) +0x1c set-up
-0x00758840 function pppKeBornRnd2_Born        # fh v3:cg5 0x758930
+0x00758840 function pppKeBornRnd2_Born        # fh v3:cg5 0x758930; cdecl(obj, def, shape, out): unless magic id 0x2a9, pppCreatePObject(part, records + 16 def[+0x10]) into *out (+4 = obj), i16 shape * obj matrix -> child area def[+0x14] pos, (that - obj+0x40) normalised * f32 def[+8] -> area def[+0x1c] (prog::bridge::ppp_ke_born_rnd2_born)
 0x00758960 function pppKeBornRnd3             # fh v3:cg2 0x758a50
 0x007589d0 function pppKeBornRnd3Con          # ppp program table record "pppKeBornRnd3" (0x00c3aeb8) +0x1c set-up; "pppKeBornRnd3" (0x00c3c560) +0x1c set-up
 0x007589f0 function pppKeBornRnd3_Born        # fh v3:exact 0x00758ae0
@@ -4021,7 +4031,8 @@
 0x00758df0 function pppKeBornRnd4             # fh switch:cg2 0x710030e150
 0x00758f20 function pppKeBornRnd5             # ppp program table record "pppKeBornRnd5" step
 0x00758f90 function pppKeBornRnd5Con          # ppp program table record "pppKeBornRnd5" (0x00c3a9e0) +0x1c set-up; "pppKeBornRnd5" (0x00c3c088) +0x1c set-up
-0x00758fc0 function pppKeBornRnd5_Born        # fh v3:cg8 0x7590b0
+0x00758fc0 function pppKeBornRnd5_Born        # fh v3:cg8 0x7590b0; byte-identical copy of pppKeBornRnd2_Born 0x00758840 but for relative branches (prog::bridge::ppp_ke_born_rnd2_born)
+0x007590e0 function pppKeAngleXY_007590e0      # ours: cdecl(v, out) -> 1/0: the angle of (v.x, v.y) in -pi..pi via _CIatan on the unrounded quotient, +-f32(pi) / f32(pi/2) offsets from the doubles 3.141592654/1.570796327; (0, 0) returns 0 untouched; pppKeBornRnd6_Born calls it (small::angle_xy)
 0x00759200 function pppKeBornRnd6             # ppp program table record "pppKeBornRnd6" step
 0x00759270 function pppKeBornRnd6Con          # ppp program table record "pppKeBornRnd6" (0x00c3af80) +0x1c set-up; "pppKeBornRnd6" (0x00c3c628) +0x1c set-up
 0x007592a0 function pppKeBornRnd6_Born        # fh v3:exact 0x00759390
@@ -4160,6 +4171,7 @@
 0x0075df90 function pppFpPointLightVsfScl     # ppp program table record "pppFpPointLightVsfScl" step
 0x0075e1d0 function pppFpPointLightVsfSclCon  # ppp program table record "pppFpPointLightVsfScl" +0x1c set-up; not a function start in the Ghidra dump
 0x0075e1e0 function pppFpPointLightVsfSclCon2 # ppp program table record "pppFpPointLightVsfScl" +0x20 set-up; not a function start in the Ghidra dump
+0x0075e1f0 function pppKeAngleXY_0075e1f0      # ours: cdecl(v, out) -> 1/0: the angle of (v.x, v.y) in -pi..pi via _CIatan on the unrounded quotient, +-f32(pi) / f32(pi/2) offsets from the doubles 3.141592654/1.570796327; (0, 0) returns 0 untouched; the same code as 0x007590e0 (tools/dupes.py; 0x0075e990 is a dead third copy) (small::angle_xy)
 0x0075e310 function pppKeMvYpEff              # fh v3:exact 0x0075e400
 0x0075e430 function pppKeDrct                 # fh v3:exact 0x0075e520
 0x0075e470 function pppKeDrctCon              # fh v3:exact 0x0075e560
@@ -6872,8 +6884,8 @@
 0x00806f10 function std_Tree_Rrotate_copy_00806f10 # the same code as std_Tree_Rrotate_00a41b40 (0x00a41b40; call targets equal), a copy the compiler kept; own name
 0x00807830 function yonExtMapDeleteId         # fh v3:bsim1.00 0x00807750
 0x00807860 function yonExtMapRegister         # fh v3:bsim1.00 0x00807780
-0x00807870 function op_chara_hsv              # fh v3:cg4 0x807790
-0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0
+0x00807870 function op_chara_hsv              # fh v3:cg4 0x807790; cdecl(chr, buf, hue, sat, val, mix): CLUTs from op_chara_hsv_make's HSV copy (opus_hsv_rgba), graphicSetHSVParam(hue, sat, val, mix as f32); sat+val == 0: Ch_CalcLight(val/128 + light); kind 6 weapon too, g_ChrHsvInstance (op::bridge::op_chara_hsv)
+0x008079f0 function op_chara_hsv_make         # fh v3:cg4 0x807ae0; cdecl(chr, buf): u16 count, u16 sizes, HSV CLUTs at buf+0x20 (op_rgb_to_hsv); graphicEnableHSV(inst, 1) (the leftover pushed 1), graphicSetHSVParam(0, 0, 0, -1.0); kind 6 weapon too, g_ChrHsvPending = 1 (op::bridge::op_chara_hsv_make)
 0x00807b20 function op_chara_hsv_size_get     # fh v3:exact 0x00807c90
 0x00807b70 function opus_hsv_rgba_00807b70 # ours: (out, src, n, time, sat, val, mix) -> src + 8n: n 8-byte HSV entries (i16 hue/sat/val, alpha byte +6) shifted toward the hue ftol(time / 5.33) % 0x300 by mix/256, sat/val offsets, into RGBA words; zero entries give 0 (opus::bridge::opus_hsv_rgba)
 0x00807de0 function op_ota_encount1_draw         # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e92c0 op_ota_encount1_draw, 4 votes, round 1
@@ -16193,7 +16205,7 @@
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
 0x012a85b0 label    g_EtChrDrawFlags2            # used instead of g_EtChrDrawFlags where nonzero
 0x012a89a8 label    g_OpWotNodes              # 0x1023 16-byte nodes op_ot_draw relinks while g_OpWotTrigger is set (+4 next node, +8 itself); name ours
-0x012f4110 label    g_ChrHsvPending           # u32: a colour change (op_chara_hsv 0x00807870) waits on g_ChrHsvInstance's clut; Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
+0x012f4110 label    g_ChrHsvPending           # u32: a weapon colour change waits on g_ChrHsvInstance's clut (op_chara_hsv_make 0x008079f0 sets it for kind 6); Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
 0x012f4114 label    g_ChrHsvInstance          # renderer instance of the pending colour change (op_chara_hsv sets it)
 0x012f4140 label    g_SqsWaveInfoDone            # non-zero: SqsInitWaveInfo does nothing
 0x012f4144 label    g_SqsPlayMode                # SqsSetPlayMode's mode (0..2)
@@ -16721,6 +16733,7 @@
 0x0230fd30 label    g_pppUserFuncs            # user function table pppCallUsrFunc / 0x00757370 index by the part's byte +0xe; pppAllFreePObject clears it
 0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
 0x0230fd3c label    g_pppMemAllocFailed       # pppMemAlloc: 1 when neither heap had room
+0x0230fd50 label    g_pppChrScale             # f32 x, y, z: the character scale the pppChr*Scl*Matrix steps (0x00734910..0x00734af0) read; rcefParProc 0x0092f010 sets x, y from the model size, opu_part_run 0x0080b800 all three to +0x3c / 256, pppDataRcv 0x007614a0 copies x
 0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
 0x0230fe60 label    g_pppScreenMatrix         # MsCopyScreenMatrix(0x0230fe60) in pppOtFunc_Control (0x00716ac0) before the g_pppOtList draws
