@@ -121,4 +121,23 @@ pub mod bridge {
         }
         node
     }
+
+    /// `0x0070fd70` (`vfxIntTree_InsertFinalize`, ours; thiscall `(this,
+    /// node)`, `ret 4`): [`vfx_int_tree_insert`]; when that finds the key
+    /// taken, 0x12; else the engine's
+    /// `Phyre_PRedBlackTree_postInsertFinalize(node)` on `this` (through
+    /// `this_call(f, this, args)`) and 0.
+    pub fn vfx_int_tree_insert_finalize<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        node: u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if vfx_int_tree_insert(mem, this, node) != 0 {
+            return 0x12;
+        }
+        let f = ffx_bridge::Global::<u32>::new(0x0057_4980).ptr(mem).addr;
+        this_call(mem, f, this, &[node]);
+        0
+    }
 }

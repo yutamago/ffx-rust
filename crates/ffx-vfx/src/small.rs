@@ -985,4 +985,63 @@ pub mod bridge {
         }
         sum.cast_unsigned()
     }
+
+    fn sym(mem: &impl Mem, at: u32) -> u32 {
+        Global::<u32>::new(at).ptr(mem).addr
+    }
+
+    /// `ClassDynamicGeometry_setupDynMesh(this)` (`0x006a3b30`, thiscall):
+    /// `FUN_00673030` (thiscall on `[this +8]`, the engine's) of `[this
+    /// +0x24]`, through `this_call(f, this, args)`. Returns 0.
+    pub fn setup_dyn_mesh<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mesh: u32 = mem.read(this.wrapping_add(0x24));
+        let obj: u32 = mem.read(this.wrapping_add(8));
+        this_call(mem, sym(mem, 0x0067_3030), obj, &[mesh]);
+        0
+    }
+
+    /// `0x0080a470` (`opus_colour_scale2`, ours): the four `f32` arguments
+    /// through the FPU (`fld`/`fstp`: a signalling NaN comes back quiet)
+    /// to `graphicSetMaterialColourScale2` (through `call`); returns its
+    /// `eax`.
+    pub fn opus_colour_scale2<M: Mem>(
+        mem: &mut M,
+        rgba: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let a = rgba.map(x87::load);
+        call(mem, sym(mem, 0x0064_3670), &a)
+    }
+
+    /// `0x00801ea0` (`opus_view_screen_matrix`, ours):
+    /// `FFXSamp0ViewScreenMatrix(m, 512, 0.8, 0.87285, 2048, 2048, 1,
+    /// 16777215, 1, 65536)` (the `.rdata` constants `0x00b41d9c`,
+    /// `0x00b34254`, `0x00b582fc`, `0x00b51a20` twice, `fld1`,
+    /// `0x00b51a24`, `fld1`, `0x00b43ddc`), through `call`; returns its
+    /// `eax`.
+    pub fn opus_view_screen_matrix<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let c = |mem: &M, at: u32| x87::load(mem.read(sym(mem, at)));
+        let one = 1.0f32.to_bits();
+        let args = [
+            m,
+            c(mem, 0x00b4_1d9c),
+            c(mem, 0x00b3_4254),
+            c(mem, 0x00b5_82fc),
+            c(mem, 0x00b5_1a20),
+            c(mem, 0x00b5_1a20),
+            one,
+            c(mem, 0x00b5_1a24),
+            one,
+            c(mem, 0x00b4_3ddc),
+        ];
+        call(mem, sym(mem, 0x0093_d960), &args)
+    }
 }

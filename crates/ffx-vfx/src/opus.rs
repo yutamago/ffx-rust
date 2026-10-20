@@ -3112,4 +3112,212 @@ pub mod bridge {
         }
         0
     }
+
+    /// The unit `host +0x220`.
+    fn unit(mem: &impl Mem, host: u32) -> u32 {
+        mem.read(host.wrapping_add(0x220))
+    }
+
+    /// The flag nibble's bits (`u16 host +0x21a & 0xf000`).
+    fn nibble(mem: &impl Mem, host: u32) -> u16 {
+        mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000
+    }
+
+    /// `opp_et_ovl(host)` (`0x00813460`): the unit's word `+0xac`
+    /// (`get_ptr32_func`, the identity here).
+    pub fn opp_et_ovl(mem: &impl Mem, host: u32) -> u32 {
+        ffx_system::stub::ptr32(mem.read(unit(mem, host).wrapping_add(0xac)))
+    }
+
+    /// `0x00817280` (`opu_return`, ours): the address [`opu_call`] saved
+    /// in the unit's slot `i16 host +0x216` (`+0x20 + 4 i`), through
+    /// `get_ptr32_func`.
+    pub fn opu_return(mem: &impl Mem, host: u32) -> u32 {
+        let i = i32::from(mem.read::<i16>(host.wrapping_add(0x216))).cast_unsigned();
+        let slot = unit(mem, host)
+            .wrapping_add(0x20)
+            .wrapping_add(i.wrapping_mul(4));
+        ffx_system::stub::ptr32(mem.read(slot))
+    }
+
+    /// `0x00815760` (`opu_call`, ours): `cmd + 4` (`set_ptr32`) into the
+    /// unit's slot `i16 host +0x216`, then a jump by the command's `i16 +2`
+    /// (from `cmd`, read after the store).
+    pub fn opu_call(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let u = unit(mem, host);
+        let back = ffx_system::stub::ptr32(cmd.wrapping_add(4));
+        let i = i32::from(mem.read::<i16>(host.wrapping_add(0x216))).cast_unsigned();
+        mem.write(u.wrapping_add(0x20).wrapping_add(i.wrapping_mul(4)), back);
+        let d = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        d.wrapping_add(cmd)
+    }
+
+    /// `0x0080c650` (`opu_end_no`, ours): when unit `u16 cmd +2` of the
+    /// list `host +0x300` ([`opus_no_get`]) is the list's base `[host
+    /// +0x320]` (none found), [`opu_end`]; else the host waits (`+0x210` =
+    /// 1) and `cmd` comes back.
+    pub fn opu_end_no<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let list = host.wrapping_add(0x300);
+        let u = opus_no_get(mem, list, unit(mem, host), no);
+        if u == mem.read::<u32>(list.wrapping_add(0x20)) {
+            return opu_end(mem, host, cmd, call);
+        }
+        mem.write(host.wrapping_add(0x210), 1u8);
+        cmd
+    }
+
+    /// `0x00815710` (`opu_kind8`, ours): the unit's `+0xa8` = `cmd + 4`,
+    /// its draw kind `+0xbb` = 8, the host's unit number `u16 +0x214`
+    /// added to the list `host +0x300` (`opu_id_list_add`). Returns `cmd +
+    /// 6 + 2 n` for the command's `u16 +2` as an `i16` (read first).
+    pub fn opu_kind8(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let u = unit(mem, host);
+        let n = mem.read::<i16>(cmd.wrapping_add(2));
+        mem.write(u.wrapping_add(0xa8), cmd.wrapping_add(4));
+        mem.write(u.wrapping_add(0xbb), 8u8);
+        let id: u16 = mem.read(host.wrapping_add(0x214));
+        crate::op::bridge::opu_id_list_add(mem, host.wrapping_add(0x300), id);
+        let skip = i32::from(n).cast_unsigned().wrapping_mul(2);
+        cmd.wrapping_add(6).wrapping_add(skip)
+    }
+
+    /// `opu_signal(host, cmd)` (`0x008172b0`): with no flag bits
+    /// `AtelSetEffectFlag(u16 cmd +2)` and `cmd + 4`; with nibble 1 `cmd +
+    /// 4` once `AtelGetEffectFlag` of it is set, else the host waits
+    /// (`+0x210` = 1) on `cmd`; other nibbles return `cmd` (both through
+    /// `call`).
+    pub fn opu_signal<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let bit = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        match nibble(mem, host) {
+            0 => {
+                call(mem, g(mem, 0x0086_fa40), &[bit]);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                if call(mem, g(mem, 0x0086_b030), &[bit]) != 0 {
+                    return cmd.wrapping_add(4);
+                }
+                mem.write(host.wrapping_add(0x210), 1u8);
+                cmd
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opu_vibration(host, cmd)` (`0x008143e0`): with no flag bits, the
+    /// pad's vibration stream: table `i16 cmd +2` of kind 5 of the unit's
+    /// oef (`[host +0x360 + 4 * byte unit +0x1e]`, `op_oef2_a_get`), then
+    /// `TkStopVibrate(7)` and `TkSetVibrateStream(7, i16 cmd +4, table)`
+    /// (through `call`); returns `cmd + 6`. Otherwise `cmd`.
+    pub fn opu_vibration<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if nibble(mem, host) != 0 {
+            return cmd;
+        }
+        let k = u32::from(mem.read::<u8>(unit(mem, host).wrapping_add(0x1e)));
+        let oef: u32 = mem.read(host.wrapping_add(0x360).wrapping_add(4 * k));
+        let n = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let table = crate::op::bridge::op_oef2_a_get(mem, oef, 5, n);
+        call(mem, g(mem, 0x0087_6290), &[7]);
+        let curve = i32::from(mem.read::<i16>(cmd.wrapping_add(4))).cast_unsigned();
+        call(mem, g(mem, 0x0087_5fb0), &[7, curve, table]);
+        cmd.wrapping_add(6)
+    }
+
+    /// `0x00814440` (`opu_stone`, ours): the unit's character (`byte +0x18`
+    /// of `g_EtChrHandles`) found in `g_EtChr` (`opus_get_chr_status_index(h,
+    /// 0, 0)`, -1 for none takes the record before) gets its stone bit
+    /// (`+0x17` bit 0) set with no flag bits or cleared with nibble 1 (both
+    /// `cmd + 4`); other nibbles return `cmd`.
+    pub fn opu_stone<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let chr = u32::from(mem.read::<u8>(unit(mem, host).wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        let i = crate::et::bridge::opus_get_chr_status_index(mem, h, 0, 0, call);
+        let base = crate::et::bridge::CHR.ptr(mem).addr;
+        let at = (i.cast_unsigned() << 5)
+            .wrapping_add(base)
+            .wrapping_add(0x17);
+        match nibble(mem, host) {
+            0 => mem.write(at, mem.read::<u8>(at) | 1),
+            0x1000 => mem.write(at, mem.read::<u8>(at) & 0xfe),
+            _ => return cmd,
+        }
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x0080adc0` (`opu_prog_clear`, ours): for flag nibble `k` not 0 the
+    /// unit's program pointer `+4 k` = 0 (`set_ptr32(0)`) and its byte
+    /// `+0x1f` loses bit `k` (`!(1 << k)` in a byte, 0 from bit 8 up, kept
+    /// to the low four bits); for 0 the pointers `+4`, `+8`, `+0xc` = 0 and
+    /// `+0x1f` keeps bit 0. Returns `cmd + 2`.
+    pub fn opu_prog_clear(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let u = unit(mem, host);
+        let k = u32::from(mem.read::<u16>(host.wrapping_add(0x21a)) >> 12);
+        let zero = ffx_system::stub::ptr32(0);
+        let flags = u.wrapping_add(0x1f);
+        if k == 0 {
+            mem.write(flags, mem.read::<u8>(flags) & 1);
+            for off in [0xc, 8, 4] {
+                mem.write(u.wrapping_add(off), zero);
+            }
+        } else {
+            mem.write(u.wrapping_add(4 * k), zero);
+            // read after the store: slot 7 holds the flags byte
+            let bit = 1u8.checked_shl(k).unwrap_or(0);
+            mem.write(flags, mem.read::<u8>(flags) & !bit & 0xf);
+        }
+        cmd.wrapping_add(2)
+    }
+
+    /// `0x008144b0` (`opu_chr_switch`, ours): with no flag bits, a jump
+    /// through the command's table (`cmd + i16 cmd +2`) by the unit's
+    /// character's effect table number (`Ch_IdGetEffectTable` of its
+    /// `g_EtChrHandles` entry, `byte unit +0x18`, through `call`; from 10
+    /// up the original prints and calls `debug_exit_trace(1)` first): `t +
+    /// 2 i + i16 [t + 2 i]`. Otherwise `cmd`.
+    pub fn opu_chr_switch<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let chr = u32::from(mem.read::<u8>(unit(mem, host).wrapping_add(0x18)));
+        if nibble(mem, host) != 0 {
+            return cmd;
+        }
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        let i = call(mem, g(mem, 0x0083_d7e0), &[h]);
+        if i.cast_signed() >= 10 {
+            let fmt = g(mem, 0x00b5_8b2c);
+            call(mem, g(mem, 0x0062_f500), &[fmt, i]);
+            call(mem, g(mem, 0x0062_f510), &[1]);
+        }
+        let t = i32::from(mem.read::<i16>(cmd.wrapping_add(2)))
+            .cast_unsigned()
+            .wrapping_add(cmd);
+        let e = t.wrapping_add(i.wrapping_mul(2));
+        i32::from(mem.read::<i16>(e))
+            .cast_unsigned()
+            .wrapping_add(e)
+    }
 }

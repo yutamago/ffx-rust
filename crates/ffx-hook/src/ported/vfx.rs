@@ -1444,6 +1444,96 @@ ported! {
     op_irandom_p @ 0x007e_5d50 => extern "C" fn op_irandom_p(n: u32, b: u32, c: u32, d: u32) -> u32 {
         rand::bridge::op_irandom_core(&mut mem(), [n, b, c, d])
     }
+    // ---- round 33 a ----
+    /// `ClassDynamicGeometry_setupDynMesh(this)`.
+    ClassDynamicGeometry_setupDynMesh @ 0x006a_3b30 => extern "thiscall" fn class_dynamic_geometry_setup_dyn_mesh(this: u32) -> u32 {
+        small::bridge::setup_dyn_mesh(&mut mem(), this, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
+            unsafe {
+                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                g(this, a.first().copied().unwrap_or(0))
+            }
+        })
+    }
+    /// `vfxIntTree_InsertFinalize_0070fd70(this, node)`.
+    vfxIntTree_InsertFinalize_0070fd70 @ 0x0070_fd70 => extern "thiscall" fn vfx_int_tree_insert_finalize(this: u32, node: u32) -> u32 {
+        tree::bridge::vfx_int_tree_insert_finalize(&mut mem(), this, node, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
+            unsafe {
+                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                g(this, a.first().copied().unwrap_or(0))
+            }
+        })
+    }
+    /// `pppKeBornPtCmpl(pc, pd, prog)`.
+    pppKeBornPtCmpl @ 0x0075_95e0 => extern "C" fn ppp_ke_born_pt_cmpl(pc: u32, pd: u32, prog: u32) {
+        // the original's one-word local
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_pt_cmpl(&mut mem(), pc, pd, prog, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_view_screen_matrix_00801ea0(m)`.
+    opus_view_screen_matrix_00801ea0 @ 0x0080_1ea0 => extern "C" fn opus_view_screen_matrix(m: u32) -> u32 {
+        small::bridge::opus_view_screen_matrix(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_colour_scale2_0080a470(r, g, b, a)`.
+    opus_colour_scale2_0080a470 @ 0x0080_a470 => extern "C" fn opus_colour_scale2(r: u32, g: u32, b: u32, a: u32) -> u32 {
+        small::bridge::opus_colour_scale2(&mut mem(), [r, g, b, a], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_prog_clear_0080adc0(host, cmd)`.
+    opu_prog_clear_0080adc0 @ 0x0080_adc0 => extern "C" fn opu_prog_clear(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_prog_clear(&mut mem(), host, cmd)
+    }
+    /// `opu_end_no_0080c650(host, cmd)`.
+    opu_end_no_0080c650 @ 0x0080_c650 => extern "C" fn opu_end_no(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_end_no(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anmm_frame_random_00810dd0(host, set, cmd, work)`.
+    opp_anmm_frame_random_00810dd0 @ 0x0081_0dd0 => extern "C" fn opp_anmm_frame_random(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = (host, set);
+        anmm::bridge::frame_random(&mut mem(), cmd, work, [0; 3])
+    }
+    /// `opp_anmm_scale_y_00810ff0(host, set, cmd, work)`.
+    opp_anmm_scale_y_00810ff0 @ 0x0081_0ff0 => extern "C" fn opp_anmm_scale_y(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = set;
+        anmm::bridge::scale_y(&mut mem(), host, cmd, work, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anmm_width_scale_008110d0(host, set, cmd, work)`.
+    opp_anmm_width_scale_008110d0 @ 0x0081_10d0 => extern "C" fn opp_anmm_width_scale(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        anmm::bridge::width_scale(&mut mem(), host, set, cmd, work, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opp_et_ovl(host)`.
+    opp_et_ovl @ 0x0081_3460 => extern "C" fn opp_et_ovl(host: u32) -> u32 {
+        opus::bridge::opp_et_ovl(&mem(), host)
+    }
+    /// `opu_vibration(host, cmd)`.
+    opu_vibration @ 0x0081_43e0 => extern "C" fn opu_vibration(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_vibration(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_stone_00814440(host, cmd)`.
+    opu_stone_00814440 @ 0x0081_4440 => extern "C" fn opu_stone(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_stone(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_chr_switch_008144b0(host, cmd)`.
+    opu_chr_switch_008144b0 @ 0x0081_44b0 => extern "C" fn opu_chr_switch(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_chr_switch(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_kind8_00815710(host, cmd)`.
+    opu_kind8_00815710 @ 0x0081_5710 => extern "C" fn opu_kind8(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_kind8(&mut mem(), host, cmd)
+    }
+    /// `opu_call_00815760(host, cmd)`.
+    opu_call_00815760 @ 0x0081_5760 => extern "C" fn opu_call(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_call(&mut mem(), host, cmd)
+    }
+    /// `opu_return_00817280(host)`.
+    opu_return_00817280 @ 0x0081_7280 => extern "C" fn opu_return(host: u32) -> u32 {
+        opus::bridge::opu_return(&mem(), host)
+    }
+    /// `opu_signal(host, cmd)`.
+    opu_signal @ 0x0081_72b0 => extern "C" fn opu_signal(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_signal(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu_end(obj, cmd)`.
     opu_end @ 0x0080_c3f0 => extern "C" fn opu_end(obj: u32, cmd: u32) -> u32 {
         opus::bridge::opu_end(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

@@ -2680,6 +2680,7 @@
 0x006a3a00 function VFXDynamicGeometry_setUVOffset # fh v3:exact 0x006a3b40 VFXDynamicGeometry::setUVOffset
 0x006a3a20 function VFXDynamicGeometry_setYIQEnable # fh v3:exact 0x006a3b60 VFXDynamicGeometry::setYIQEnable
 0x006a3b20 function VFXDynamicGeometry_setZCorrectionValue # fh v3:bsim1.00 0x006a3c60 VFXDynamicGeometry::setZCorrectionValue
+0x006a3b30 function ClassDynamicGeometry_setupDynMesh # fh switch:bsim1.00 0x71001e1220 ClassDynamicGeometry::setupDynMesh; thiscall(this) -> 0: FUN_00673030 (thiscall on [this+8]) of [this+0x24]; ported (round 33, small::bridge::setup_dyn_mesh)
 0x006a3b40 function SetDeref_006a3b40            # auto-port shape (store argument to deref, thiscall): t0 = u32[(a0 + 0x10)]; u32[(t0 + 0xc)] = a0; return 0x0; callers: no direct caller; name ours
 0x006a3b50 function ClassDynamicGeometry_setupMaterial # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'CCTexture'; Switch 0x71001e02c0 ClassDynamicGeometry::setupMaterial (symbols from Fahrenheit's server export)
 0x006a49e0 function ClassDynamicGeometry_show # fh v3:bsim1.00 0x006a4b30 ClassDynamicGeometry::show
@@ -3481,6 +3482,7 @@
 0x0070f490 function SfxEvent_stop             # thiscall(event; immediate), ret 4: Switch SfxEvent::stop by the order; called by FmodSfx::stop
 0x0070f930 function SfxBank_dtor_SfxBank         # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'this=0x%p, Unload Fmod Project\\n'; Switch 0x71002a8060 SfxBank::~SfxBank (symbols from Fahrenheit's server export)
 0x0070fd20 function vfxIntTree_Find           # thiscall (this, key) -> the node whose i32 at +0xc is *key, else 0: from the root this+0xc, child [0] when the node's key is greater, [1] when less, the header (this) ends; callers 0x00710270/0x00710290
+0x0070fd70 function vfxIntTree_InsertFinalize_0070fd70 # thiscall(this, node), ret 4: vfxIntTree_Insert, 0x12 when the key is taken, else Phyre_PRedBlackTree_postInsertFinalize(node) on this and 0; name ours; ported (round 33, tree::bridge::vfx_int_tree_insert_finalize)
 0x0070fda0 function vfxIntTree_Insert         # thiscall (this, node) -> 0, or the node already holding the key: node+8 (parent link, bit 0 colour) gets bit 0, children = this, linked under the search's last node ((node+8 & 1) + parent), as vfxIntTree_Find walks
 0x00710e30 function VFX_Copy16From            # (dst, src): four words copied, the last left in eax (callers: sg_calcenvelope_normW)
 0x00710e70 function VFX_Copy16To              # (src, dst): four words copied, the last left in eax
@@ -4037,7 +4039,7 @@
 0x00759270 function pppKeBornRnd6Con          # ppp program table record "pppKeBornRnd6" (0x00c3af80) +0x1c set-up; "pppKeBornRnd6" (0x00c3c628) +0x1c set-up
 0x007592a0 function pppKeBornRnd6_Born        # fh v3:exact 0x00759390
 0x00759400 function KeBornPtCmlp                 # callees: its named callees match the Switch 0x710030d580 KeBornPtCmlp's (similarity 1.00: FFXVu0CopyVector, FFXVu0ScaleVector, FFXVu0SubVector, KeVu0AddVecXYZ, KeVu0CopyVecXYZ); symbols from Fahrenheit's server export; ported (round 31): (pc, pd, prog, out): spawns pd[4] particle objects (pppCreatePObject) filling the gap from the previous point (prog[0xc][0]) to this one (prog[0xc][1]) at prev + d * f * step, step +0xa8 = 1 / (pd[4] + 1) when there is no previous point
-0x007595e0 function pppKeBornPtCmpl           # ppp program table record "pppKeBornPtCmpl" step
+0x007595e0 function pppKeBornPtCmpl           # ppp program table record "pppKeBornPtCmpl" step; ported (round 33): (pc, pd, prog): KeBornPtCmlp(pc, pd, prog, &local) unless g_pppStopStatus or pd+8/pd+0x10 is -1 (prog::bridge::ppp_ke_born_pt_cmpl)
 0x00759620 function pppKeBornPtCmplCon        # ppp program table record "pppKeBornPtCmpl" (0x00c3e1d0) +0x1c set-up
 0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
 0x007597a0 function pppKeGrvEffCon            # ppp program table record "pppKeGrvEff" +0x1c set-up; not a function start in the Ghidra dump
@@ -6813,6 +6815,7 @@
 0x00801a50 function opu_local_link            # layout: the only unused Switch name sorting between opu_local_etc and opu_matrix_etc (Switch 0x71003e4030, 72 bytes); flag nibble 0/1: unit u16 +0xb8 = cmd+2, unit byte +0x19 bit 7 cleared/set; -> cmd + 4
 0x00801ab0 function opu_matrix_etc               # layout+callees: sorts between opu_local_etc and opu_world, and its named callees match the Switch 0x71003e4390 opu_matrix_etc's (similarity 0.62: op_apply_m_w1, op_mul_m, op_rot_m, op_trans_m, op_unit_m); symbols from Fahrenheit's server export
 0x00801d00 function opu_world                    # callees: its named callees match the Switch 0x71003e4080 opu_world's (similarity 0.75: op_apply_m_w1, op_m_copy, op_mul_m33, op_rt_m_6, op_unit_m_scale); symbols from Fahrenheit's server export
+0x00801ea0 function opus_view_screen_matrix_00801ea0 # (m) -> eax of FFXSamp0ViewScreenMatrix(m, 512, 0.8, 0.87285, 2048, 2048, 1, 16777215, 1, 65536) (.rdata constants); name ours; ported (round 33, small::bridge::opus_view_screen_matrix)
 0x00801f00 function opus_parent_get              # structure: (oef2, unit) -> the unit numbered by unit +0xb8 among the oef2's units (index lists +0x314/+0x310, 0x100-byte units at +0x320), or the oef2's root at +0x280 when the number is 0; 32 callers in the opus code (opu_mdc, opu_part_run, opp_md); name ours
 0x00802080 function op_float_scale2           # the op_float_scale body again
 0x008020a0 function opp_md                       # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f9be0 opp_md, 4 votes, round 1
@@ -6900,11 +6903,13 @@
 0x00808cb0 function opus_vec3_scale           # (dst, v, _, _, _, s) dst.xyz = v.xyz * s, s the sixth argument
 0x00808cf0 function opu_ffxlight                 # callees: its named callees match the Switch 0x7100403180 opu_ffxlight's (similarity 1.00: FFXVu0AddVector, FFXVu0CopyVector, FFXVu0Normalize, FFXVu0ScaleVector, FFXVu0SubVector); symbols from Fahrenheit's server export
 0x00809620 function opu_rgba_en                  # callees: its named callees match the Switch 0x7100402640 opu_rgba_en's (similarity 0.75: Ch_DrawCalcShade, Ch_DrawGetModelAlpha, Ch_ModelSetAlpha, MagicFile_GetMagicId, op_xyz_scale); symbols from Fahrenheit's server export
+0x0080a470 function opus_colour_scale2_0080a470 # (r, g, b, a) f32 through fld/fstp to graphicSetMaterialColourScale2, its eax; name ours; ported (round 33, small::bridge::opus_colour_scale2)
 0x0080a560 function opus_chara_rgba_set       # fh v3:exact 0x0080a6c0
 0x0080aa00 function opus_chara_status_rgb_set # fh v3:exact 0x0080ab60
 0x0080abb0 function opus_ffxfocus_free        # fh v3:exact 0x0080ad10; (): with a kept state Sg_EnFocus(old) and no longer kept (opus::bridge::opus_ffxfocus_free)
 0x0080abe0 function opus_ffxfocus_off            # layout: alphabetical run between opus_ffxfocus_free and opus_map_rgba_free (1 unnamed in the gap); Switch 0x7100403650 opus_ffxfocus_off is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (): Sg_EnFocus(0), its old state kept once at 0x011a0068/69 (opus::bridge::opus_ffxfocus_off)
 0x0080ac00 function opus_map_rgba_free        # fh v3:exact 0x0080ad60 ; ported: yiRenderDisable(4), colour scale 1.0, saved back colour restored (0x011a006f/0x011a0070), 0x00c48e64 = 1.0 x4
+0x0080adc0 function opu_prog_clear_0080adc0   # (host, cmd) -> cmd+2: flag nibble k: unit program pointer +4k = 0 and byte +0x1f &= ~(1<<k) (8-bit shift) & 0xf; k 0: +4/+8/+0xc = 0, +0x1f &= 1; name ours; ported (round 33, opus::bridge::opu_prog_clear)
 0x0080ae30 function opu_osu_load_0080ae30    # ours: (host, cmd) -> cmd+4: with u16 host+0x212 host+0 = host; else a unit of host+0x300 on list (i16 host+0x21a >> 12) & 3 (opus_prog_on, unchecked), set up from host+0x220 (opus_osu_init/copy, serial at +0x302), +0 = set_ptr32(cmd + i16 cmd+2), host+0 = it; name record "LoadedByOPU_UNIT" for yonExtMapRegister (bare ret) (opus::bridge::opu_osu_load)
 0x0080af70 function opus_unit_on                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100400760 opus_unit_on, 2 votes, round 1
 0x0080b180 function opu_unit_etc                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'LoadedByOPU_UNIT_ETC'; Switch 0x7100400d30 opu_unit_etc (symbols from Fahrenheit's server export)
@@ -6916,6 +6921,7 @@
 0x0080bd50 function opp_main                  # fh v3:exact 0x0080bea0
 0x0080c3f0 function opu_end                      # layout+callees: sorts between opp_main and opu_wait, and its named callees match the Switch 0x71003f3230 opu_end's (similarity 1.00: opus_draw_off, opus_prog_off, yonExtMapDeleteId); symbols from Fahrenheit's server export
 0x0080c500 function opu_wait                  # fh switch:bsim1.00 0x71003f32f0
+0x0080c650 function opu_end_no_0080c650       # (host, cmd): opus_no_get(host+0x300, unit, u16 cmd+2) == [host+0x320] -> opu_end(host, cmd), else host+0x210 = 1 and cmd; name ours; ported (round 33, opus::bridge::opu_end_no)
 0x0080ca80 function opu_gw_etc                   # callees: its named callees match the Switch 0x71003f38e0 opu_gw_etc's (similarity 1.00: MsGetDamageInfo, op_irandom_p, op_random); symbols from Fahrenheit's server export
 0x0080cc00 function opu_main_host             # fh v3:exact 0x0080cd60; ours: (battle, list) -> last word copied: the opus unit interpreter: host record from op_spr_alloc(0x400) (g_OpusBattleList), battle bytes 0..0x100 at +0x300 via the emulated EE v0..a1, order [+0x310 + 4 list] walked twice (second pass +0x21d = 0xff for marked slots), each unit (0x100 bytes from +0x320) runs 4 program slots through the 0x00c48ec8 handlers (0x100: the overlay table [[battle+0x50]+0x7c]) and the motion step in VU regs 0x00c8f8d0.. with callback 0x00c492c8[+0xba] (opus::bridge::opu_main_host)
 0x0080e160 function opus_mdc_packet_set_0080e160 # ours: (pk, mats, obj, unit, tex) -> op_oef2_a_get(obj +0x60 [unit +0x1e], 4, tex) or 0 for tex -1: the 0x50-byte op1_mdc_draw packet header (unit +0xc0/+0xc2/+0xc4/+0xc8/+0xcb, obj +0x28/+0x54, the four matrices of mats); called by 0x0080df10/0x0080e030 before op1_mdc_draw
@@ -6946,20 +6952,25 @@
 0x00810d10 function opp_anmm_branch_random    # opp_anmm command slot 16: op_random_per(0x100) < i16 cmd+2: cmd + u16 cmd+4, else cmd + 6; name ours
 0x00810d50 function opp_anmm_fade             # opp_anmm command slot 17: at work + i16 cmd+2: step byte +0x2c = cmd+5, host +0x210 = |cmd+4 - byte +0x1c| / |step| (1 for 0); -> cmd + 6; name ours
 0x00810da0 function opp_anmm_part_float       # opp_anmm command slot 18: work + byte cmd+2 = the part's float at byte cmd+3 (part u16 work +0x4c); -> cmd + 4; name ours
+0x00810dd0 function opp_anmm_frame_random_00810dd0 # (host, set, cmd, work) -> cmd+6: work byte +0xb = u16 cmd+2 + op_irandom_core(u16 cmd+4, 0xffff = frame count u16 [work+4]+4 minus the first), +0xa = 1; name ours; ported (round 33, anmm::bridge::frame_random)
 0x00810e20 function opp_anmm_fin_en_bone5        # callees: its named callees match the Switch 0x71003f7a90 opp_anmm_fin_en_bone5's (similarity 0.75: Ch_ElemGetParent, op_irandom_p, op_random_p); symbols from Fahrenheit's server export
 0x00810ed0 function opp_anmm_fin_en_bone3x    # fh switch:bsim1.00 0x71003f7b60
+0x00810ff0 function opp_anmm_scale_y_00810ff0 # (host, set, cmd, work) -> cmd+4: work float at byte cmd+2 *= |f32 host+0xc4| after MsGetChrScale(byte unit+0x18, host+0xc0); name ours; ported (round 33, anmm::bridge::scale_y)
+0x008110d0 function opp_anmm_width_scale_008110d0 # (host, set, cmd, work) -> cmd+4: work float at byte cmd+2 *= opus_chr_width(byte part+0x18, i8 host+0x21e); name ours; ported (round 33, anmm::bridge::width_scale)
 0x00811120 function opp_anm                      # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f7dc0 opp_anm, 3 votes, round 2
 0x00811530 function opp_anm_sippo                # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f8110 opp_anm_sippo, 3 votes, round 2
 0x00811bc0 function opp_anm_yodare               # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f86e0 opp_anm_yodare, 4 votes, round 1
 0x008124b0 function opp_anmm                     # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003f91d0 opp_anmm, 4 votes, round 1; ported (effects round 26, anmm::bridge::opp_anmm): (host, set) steps the unit's sprites (head [unit+0xa8]): commands 0x00c49318, motion, mode 0..5 position, scale/turn matrix host+0x80, texture animation and VFX render data
 0x00812b50 function opp_dtt                      # layout+callees: sorts between opp_anmm and opp_et_ovl, and its named callees match the Switch 0x71003f8ed0 opp_dtt's (similarity 0.67: KeDttSpr_MkGifPk, KeDttSpr_MkGifPk_Pre, op_apply_m_w1, op_rot_m, op_unit_m); symbols from Fahrenheit's server export
 0x00812fa0 function opp_flash                    # callees: its named callees match the Switch 0x71003f8e60 opp_flash's (similarity 1.00: calculateVFXSP_AlphaFunction, graphicAddScreenFadeTask, graphicsRegisterResetScreenFadeDelegation); symbols from Fahrenheit's server export
-0x00813460 function opp_et_ovl                # fh switch:bsim1.00 0x71003fb640
+0x00813460 function opp_et_ovl                # fh switch:bsim1.00 0x71003fb640; ported (round 33): (host) -> [unit +0xac] (opus::bridge::opp_et_ovl)
 0x00813480 function op_2point_shadow             # callees: its named callees match the Switch 0x7100405270 op_2point_shadow's (similarity 1.00: op_spline_xyz, op_spline_xyz_table, op_spr_alloc, op_spr_free); symbols from Fahrenheit's server export
 0x00813950 function opus_mdc_rec_init_00813950 # ours: (rec, n, a, b): u16 +0 0, +2 n, +4 a, +6 b, +8 0; +0x18 = set_ptr32(rec + 0x20), +0x1c = set_ptr32(get_ptr32(+0x18) + 32n) (opus::bridge::opus_mdc_rec_init)
 0x00813c20 function updateWeaponShadowDrawData   # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71004057a0 updateWeaponShadowDrawData, 3 votes, round 2
 0x00814070 function weaponShadowDrawInit         # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x7100405700 weaponShadowDrawInit, 4 votes, round 4
-0x008143e0 function opu_vibration                # callees: its named callees match the Switch 0x71004062a0 opu_vibration's (similarity 1.00: TkSetVibrateStream, TkStopVibrate, op_oef2_a_get); symbols from Fahrenheit's server export
+0x008143e0 function opu_vibration                # callees: its named callees match the Switch 0x71004062a0 opu_vibration's (similarity 1.00: TkSetVibrateStream, TkStopVibrate, op_oef2_a_get); symbols from Fahrenheit's server export; ported (round 33): (host, cmd): no flags: TkStopVibrate(7), TkSetVibrateStream(7, i16 cmd+4, op_oef2_a_get(oef, 5, i16 cmd+2)) -> cmd+6, else cmd (opus::bridge::opu_vibration)
+0x00814440 function opu_stone_00814440        # (host, cmd): g_EtChr record of the unit's character (opus_get_chr_status_index(h, 0, 0)) stone bit +0x17: nibble 0 set, 1 clear (cmd+4), else cmd; name ours; ported (round 33, opus::bridge::opu_stone)
+0x008144b0 function opu_chr_switch_008144b0   # (host, cmd): no flags: jump table at cmd + i16 cmd+2 by Ch_IdGetEffectTable(handle) (>= 10 dbgPrintf + debug_exit_trace(1)); name ours; ported (round 33, opus::bridge::opu_chr_switch)
 0x00814790 function opu_et_ovl                # fh switch:bsim1.00 0x7100406310
 0x008148c0 function opu_dvd                      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004067d0 opu_dvd, 3 votes, round 3
 0x00814a00 function opu_file                     # str-match switch: only user of 8 string(s) held once by both builds, e.g. '(op)\\t\\t\\ttexture count change (%d) !!!\\n'; Switch 0x7100406900 opu_file (symbols from Fahrenheit's server export)
@@ -6973,6 +6984,8 @@
 0x00815350 function opf_rel2                  # layout: the 0x00c492c8 motion callbacks 0x00814c90..0x00815670 are the Switch's opf_* names in sort order (cir, cir2, cir_gw, cir_y, cirz_gw, normal, rel, rel2, sph, spl_gw); slot 11: opf_rel from the host's +0 (= unit +0xa4, +0x44, +0x48) toward opus_no_get(+0xa0)
 0x008155b0 function opf_sph                      # callees: its named callees match the Switch 0x71003f6180 opf_sph's (similarity 1.00: op_apply_m_w1, op_rt_m, op_unit_m, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
 0x00815670 function opf_spl_gw                   # callees: its named callees match the Switch 0x71003f6540 opf_spl_gw's (similarity 1.00: op_spline_xyz, op_xyz_scale, opus_no_get); symbols from Fahrenheit's server export
+0x00815710 function opu_kind8_00815710        # (host, cmd) -> cmd+6+2*i16 cmd+2: unit +0xa8 = cmd+4, +0xbb = 8, opu_id_list_add(host+0x300, u16 host+0x214); name ours; ported (round 33, opus::bridge::opu_kind8)
+0x00815760 function opu_call_00815760         # (host, cmd): unit slot +0x20+4*i16 host+0x216 = cmd+4, returns cmd + i16 cmd+2 (a call; opu_return_00817280 comes back); name ours; ported (round 33, opus::bridge::opu_call)
 0x008157a0 function opu_camera                   # callees: its named callees match the Switch 0x71003fc5b0 opu_camera's (similarity 0.94: MagicFile_GetMagicId, MsBattleGetStatus, MsBattleSpecialCameraPause, MsCameraGetPosNow, MsCameraResetMove); symbols from Fahrenheit's server export
 0x00815d90 function opu_damage                   # layout+callees: sorts between opu_camera and opu_damage_motion, and its named callees match the Switch 0x71003fcec0 opu_damage's (similarity 1.00: MsMergeDamage, MsSetDamage); symbols from Fahrenheit's server export
 0x00815e10 function opu_damage_motion         # fh v3:exact 0x00815f60
@@ -6991,7 +7004,8 @@
 0x008170c0 function opu_mem                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fcd10 opu_mem's (similarity 1.00: op_free, op_heap_init); symbols from Fahrenheit's server export
 0x00817250 function StoreCopyToDeref_00817250    # auto-port shape (store copy to deref, cdecl): t0 = u32[(a0 + 0x220)]; t1 = u16[(a1 + 0x2)]; u16[(t0 + 0x1a)] = t1; return (a1 + 0x4); callers: no direct caller; name ours
 0x00817270 function FieldAddr2_00817270          # auto-port shape (return argument + offset, cdecl): return (a1 + 0x2); callers: no direct caller; name ours
-0x008172b0 function opu_signal                   # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd360 opu_signal's (similarity 1.00: AtelGetEffectFlag, AtelSetEffectFlag); symbols from Fahrenheit's server export
+0x00817280 function opu_return_00817280       # (host) -> unit slot +0x20+4*i16 host+0x216 (get_ptr32_func), the address opu_call_00815760 saved; name ours; ported (round 33, opus::bridge::opu_return)
+0x008172b0 function opu_signal                   # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd360 opu_signal's (similarity 1.00: AtelGetEffectFlag, AtelSetEffectFlag); symbols from Fahrenheit's server export; ported (round 33): (host, cmd): nibble 0 AtelSetEffectFlag(u16 cmd+2) -> cmd+4; 1: AtelGetEffectFlag set -> cmd+4, else host+0x210 = 1, cmd; else cmd (opus::bridge::opu_signal)
 0x00817300 function opu_sloop                    # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fbde0 opu_sloop's (similarity 0.67: MsGetDamageInfo, op_irandom_p); symbols from Fahrenheit's server export
 0x00817470 function opu_sys                      # layout+callees: sorts between opu_et_no and opus_camera_limit, and its named callees match the Switch 0x71003fd1a0 opu_sys's (similarity 1.00: MsEffectWaitFlag); symbols from Fahrenheit's server export
 0x00817530 function opu_unit_max              # behaviour (Switch opu_unit_max, 68 bytes; ours 88): host u16 +0x334 = cmd+2, clearing the 4 program pointers of each unit from the old count up; -> cmd + 4

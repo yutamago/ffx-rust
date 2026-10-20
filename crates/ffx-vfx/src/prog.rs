@@ -1545,4 +1545,26 @@ pub mod bridge {
             call(mem, f, &[0, 1]);
         }
     }
+
+    /// `pppKeBornPtCmpl(pc, pd, prog)` (`0x007595e0`): unless
+    /// `g_pppStopStatus` is set or `pd +8` or `pd +0x10` is -1,
+    /// `KeBornPtCmlp(pc, pd, prog, out)` (through `call`; `out` the
+    /// original's one-word local).
+    pub fn ppp_ke_born_pt_cmpl<M: Mem>(
+        mem: &mut M,
+        pc: u32,
+        pd: u32,
+        prog: u32,
+        out: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if STOP.get(mem) != 0
+            || mem.read::<u32>(pd.wrapping_add(8)) == u32::MAX
+            || mem.read::<u32>(pd.wrapping_add(0x10)) == u32::MAX
+        {
+            return;
+        }
+        let f = Global::<u32>::new(0x0075_9400).ptr(mem).addr;
+        call(mem, f, &[pc, pd, prog, out]);
+    }
 }

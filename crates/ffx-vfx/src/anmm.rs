@@ -678,4 +678,78 @@ pub mod bridge {
         mem.write(set.wrapping_add(0x54), saved);
         saved
     }
+
+    /// `0x00810dd0` (`opp_anmm_frame_random`, ours): the sprite's frame
+    /// byte `+0xb` = the command's `u16 +2` plus a random number below its
+    /// `u16 +4` (0xffff: up to the frame count, `u16 [work +4] +4`, minus
+    /// the first; 0 takes no draw), the sum kept in a byte; `+0xa` = 1.
+    /// The random number is `op_irandom_core`'s low 16 bits; `junk` as for
+    /// [`wait_random`]. Returns `cmd + 6`.
+    pub fn frame_random(mem: &mut impl Mem, cmd: u32, work: u32, junk: [u32; 3]) -> u32 {
+        let first: u16 = mem.read(cmd.wrapping_add(2));
+        let mut n: u16 = mem.read(cmd.wrapping_add(4));
+        if n == 0xffff {
+            let frames: u32 = mem.read(work.wrapping_add(4));
+            n = mem.read::<u16>(frames.wrapping_add(4)).wrapping_sub(first);
+        }
+        if n != 0 {
+            let arg = i32::from(n.cast_signed()).cast_unsigned();
+            #[allow(clippy::cast_possible_truncation)] // movzx eax, ax
+            let r = rand::op_irandom_core(mem, [arg, junk[0], junk[1], junk[2]]) as u16;
+            n = r;
+        }
+        #[allow(clippy::cast_possible_truncation)] // add al, bl
+        let b = (n as u8).wrapping_add(first as u8);
+        mem.write(work.wrapping_add(0xb), b);
+        mem.write(work.wrapping_add(0xa), 1u8);
+        cmd.wrapping_add(6)
+    }
+
+    /// `0x008110d0` (`opp_anmm_width_scale`, ours): the sprite's float at
+    /// byte offset `cmd +2` times the width of its part's character
+    /// (`opus_chr_width(byte part +0x18, i8 host +0x21e)`, part `u16 work
+    /// +0x4c` of `[set +0x20]`), rounded to `f32`. Returns `cmd + 4`.
+    pub fn width_scale<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        set: u32,
+        cmd: u32,
+        work: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let off = u32::from(mem.read::<u8>(cmd.wrapping_add(2)));
+        let no = u32::from(mem.read::<u16>(work.wrapping_add(0x4c)));
+        let part = (no << 8).wrapping_add(mem.read(set.wrapping_add(0x20)));
+        let battle = i32::from(mem.read::<i8>(host.wrapping_add(0x21e))).cast_unsigned();
+        let chr = u32::from(mem.read::<u8>(part.wrapping_add(0x18)));
+        let w = crate::opus::bridge::opus_chr_width(mem, chr, battle, fcall);
+        let at = off.wrapping_add(work);
+        let v = crate::x87::mul(mem.read(at), w);
+        mem.write(at, v);
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x00810ff0` (`opp_anmm_scale_y`, ours): the sprite's float at byte
+    /// offset `cmd +2` times the y of its character's scale
+    /// (`MsGetChrScale(byte unit +0x18, host +0xc0)` through `call`, then
+    /// `f32 host +0xc4`, negated when below 0: an x87 compare, so 0 and
+    /// NaN stay), rounded to `f32`. Returns `cmd + 4`.
+    pub fn scale_y<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        work: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let off = u32::from(mem.read::<u8>(cmd.wrapping_add(2)));
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let chr = u32::from(mem.read::<u8>(unit.wrapping_add(0x18)));
+        call(mem, word(mem, 0x0079_5720), &[chr, host.wrapping_add(0xc0)]);
+        let y: f32 = mem.read(host.wrapping_add(0xc4));
+        let y = if y < 0.0 { -y } else { y };
+        let at = off.wrapping_add(work);
+        let v = crate::x87::mul(y, mem.read(at));
+        mem.write(at, v);
+        cmd.wrapping_add(4)
+    }
 }
