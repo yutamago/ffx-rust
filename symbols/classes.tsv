@@ -7994,7 +7994,7 @@
 0x007abdf0	logic	default (no rule: ported to be safe)
 0x007abe30	logic	default (no rule: ported to be safe)
 0x007abeb0	logic	default (no rule: ported to be safe)
-0x007abf40	logic	default (no rule: ported to be safe)
+0x007abf40	dead	reviewed: only caller is code at 0x7abe90 that no call or pointer in FFX.exe reaches (battle round 32)
 0x007abfe0	logic	default (no rule: ported to be safe)
 0x007ac2b0	logic	default (no rule: ported to be safe)
 0x007ac600	logic	default (no rule: ported to be safe)
