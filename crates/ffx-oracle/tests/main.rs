@@ -1632,6 +1632,7 @@ fn stand_in(c: ffx_sg::quat::Crt, x: f64) -> f32 {
         ffx_sg::quat::Crt::Cos => (x * x).store(),
         ffx_sg::quat::Crt::Sin => (x + x).store(),
         ffx_sg::quat::Crt::Acos => (x + Reg::ONE).store(),
+        ffx_sg::quat::Crt::Atan => (-x).store(),
     }
 }
 
@@ -5464,4 +5465,1149 @@ fn read_sector_snapshot() {
     };
     let mut rng = Xorshift(0x5eed_0e74);
     read_sector_cases(&mut a, &mut b, &mut rng, 100, true);
+}
+
+// Main round 15: the `sa_decode` LZ decoders (`sa_meth01dec`,
+// `sa_meth02dec`).
+
+/// A random code stream of 1..=`codes` codes and the end code; no `0x7f`
+/// run of 0 (2^32 bytes). References are mostly long ones early on, so
+/// they reach before the output.
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn lz_stream(rng: &mut Xorshift, codes: u32) -> Vec<u8> {
+    let mut s = vec![rng.below(3) as u8, 0, 0, 0, 0];
+    for _ in 0..=rng.below(codes) {
+        match rng.below(10) {
+            0..=2 => {
+                let n = rng.below(0x7d) + 1;
+                s.push(n as u8);
+                s.extend((0..n).map(|_| rng.next() as u8));
+            }
+            3 => s.extend([0x7e, rng.next() as u8, rng.next() as u8]),
+            4 => {
+                let [lo, hi] = (rng.below(0x300) as u16 + 1).to_le_bytes();
+                s.extend([0x7f, lo, hi, rng.next() as u8]);
+            }
+            _ => s.extend([(rng.next() | 0x80) as u8, rng.next() as u8]),
+        }
+    }
+    s.push(0);
+    s
+}
+
+/// Method 1's edge: a reference of the longest distance right at
+/// `dst + 0x7fe` (still near) and `dst + 0x7ff` (far: reads `dst - 1`);
+/// method 2's at `dst + 0xfff` (near) and `dst + 0x1000`.
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn lz_edge(method: u8, at: u32) -> Vec<u8> {
+    let mut s = vec![method, 0, 0, 0, 0];
+    let mut left = at;
+    while left > 0 {
+        let n = left.min(0xffff);
+        let [lo, hi] = (n as u16).to_le_bytes();
+        s.extend([0x7f, lo, hi, 0x5a]);
+        left -= n;
+    }
+    // 0xff 0xff: the longest distance (and length) of either method
+    s.extend([0xff, 0xff, 0x03, 1, 2, 3, 0]);
+    s
+}
+
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn decode_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::decode::bridge as d;
+    let src = alloc(a, b, 0x20000);
+    let out = alloc(a, b, 0x80000);
+    let size = alloc(a, b, 4);
+    let run = |a: &mut Oracle, b: &mut Oracle, s: &[u8], two: bool, junk: &[u8]| {
+        a.write(src, s).unwrap();
+        b.write(src, s).unwrap();
+        // what the game leaves before and in the output
+        a.write(out, junk).unwrap();
+        b.write(out, junk).unwrap();
+        let dst = out + 8;
+        let args = [src, dst, size];
+        if two {
+            twin("sa_meth02dec", a, b, 0x00a4_3cc0, &args, |m| {
+                d::sa_meth02dec(m, src, dst, size)
+            });
+        } else {
+            twin("sa_meth01dec", a, b, 0x00a4_3bc0, &args, |m| {
+                d::sa_meth01dec(m, src, dst, size)
+            });
+        }
+    };
+    for (method, at) in [(1, 0x7fe), (1, 0x7ff), (2, 0xfff), (2, 0x1000)] {
+        let junk: Vec<u8> = (0..0x10).map(|_| rng.next() as u8 | 1).collect();
+        run(a, b, &lz_edge(method, at), method == 2, &junk);
+    }
+    for n in 0..rounds {
+        let codes = if n % 4 == 0 { 400 } else { 40 };
+        let s = lz_stream(rng, codes);
+        let junk: Vec<u8> = (0..0x10).map(|_| rng.next() as u8).collect();
+        run(a, b, &s, rng.below(2) == 0, &junk);
+    }
+}
+
+#[test]
+fn decode_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f01);
+    decode_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn decode_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f02);
+    decode_cases(&mut a, &mut b, &mut rng, 60);
+}
+
+// Main round 15: the `MsGetSaveCommand(chr, cmd)` accessors of the
+// function table at `0x00c410c8`.
+
+const MS_GET_SAVE_COMMAND: u32 = 0x0078_5020;
+
+/// Each accessor against its bridge; `stub` puts a recorder over
+/// `MsGetSaveCommand` (it logs both arguments and returns a random word),
+/// else both run the original.
+fn save_command_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32, stub: bool) {
+    let log = a.rebase(REC_LOG);
+    let ret = a.rebase(REC_RETS) + 4 * 97;
+    if stub {
+        recorder(a, b, 97, MS_GET_SAVE_COMMAND, 2, 0);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{sym:#x}: {e}"))
+            .eax
+    };
+    for _ in 0..rounds {
+        for &(at, _) in &ffx_sg::savecmd::bridge::SAVE_COMMANDS {
+            if stub {
+                put(a, b, log, 0u32);
+                put(a, b, ret, rng.next());
+            }
+            // the original indexes the save data by chr: any word only
+            // under the recorder
+            let chr = if stub && rng.below(4) == 0 {
+                rng.next()
+            } else {
+                rng.below(20)
+            };
+            twin("KernelSaveCommand", a, b, at, &[chr], |m| {
+                ffx_sg::savecmd::bridge::kernel_save_command(m, at, chr, call)
+            });
+        }
+    }
+}
+
+#[test]
+fn save_command_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f03);
+    save_command_cases(&mut a, &mut b, &mut rng, 4, true);
+}
+
+#[test]
+fn save_command_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f04);
+    save_command_cases(&mut a, &mut b, &mut rng, 2, true);
+}
+
+#[test]
+fn save_command_original_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f05);
+    save_command_cases(&mut a, &mut b, &mut rng, 2, false);
+}
+
+// Main round 15: the sphere grid draws (`ffx_sg::abmap`).
+
+/// A cdecl logging stand-in: appends the words of the arguments `args`,
+/// `len` bytes at argument `ptr` and 0x40 bytes behind each of its pointer
+/// fields `fields` to `log + 4 + count * entry` (`count` at `log`); the
+/// logged pointer fields are made relative to the struct (frames differ,
+/// the layout must not). Returns 0; keeps `esi`/`edi`.
+fn deref_logger(log: u32, args: &[u8], ptr: u8, len: u32, fields: &[u8]) -> (Vec<u8>, u32) {
+    let fields_len = 0x40 * u32::try_from(fields.len()).unwrap();
+    let args_len = 4 * u32::try_from(args.len()).unwrap();
+    let entry = args_len + len + fields_len;
+    let arg_at = |i: u8| 0x0c + 4 * i; // after the two pushes and the return
+    let mut c = vec![0x56, 0x57, 0xa1]; // push esi; push edi; mov eax, [log]
+    c.extend(log.to_le_bytes());
+    c.extend([0x69, 0xf8]); // imul edi, eax, entry
+    c.extend(entry.to_le_bytes());
+    c.extend([0x81, 0xc7]); // add edi, log + 4
+    c.extend((log + 4).to_le_bytes());
+    c.extend([0xff, 0x05]); // inc dword [log]
+    c.extend(log.to_le_bytes());
+    for &i in args {
+        c.extend([0x8b, 0x44, 0x24, arg_at(i), 0xab]); // mov eax, [esp+..]; stosd
+    }
+    c.extend([0x8b, 0x74, 0x24, arg_at(ptr), 0xb9]); // mov esi, [esp+..]; mov ecx, len/4
+    c.extend((len / 4).to_le_bytes());
+    c.extend([0xf3, 0xa5]); // rep movsd
+    for &f in fields {
+        c.extend([0x8b, 0x74, 0x24, arg_at(ptr), 0x8b, 0x76, f]); // mov esi, [[esp+..]+f]
+        c.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]);
+    }
+    c.extend([0x81, 0xef]); // sub edi, len + fields: back to the struct's copy
+    c.extend((len + fields_len).to_le_bytes());
+    for &f in fields {
+        // mov eax, [edi+f]; test eax, eax; jz +4; sub eax, [esp+ptr]; mov [edi+f], eax
+        c.extend([
+            0x8b,
+            0x47,
+            f,
+            0x85,
+            0xc0,
+            0x74,
+            0x04,
+            0x2b,
+            0x44,
+            0x24,
+            arg_at(ptr),
+        ]);
+        c.extend([0x89, 0x47, f]);
+    }
+    c.extend([0x31, 0xc0, 0x5f, 0x5e, 0xc3]); // xor eax, eax; pop edi; pop esi; ret
+    (c, entry)
+}
+
+/// Puts `code` in both and jumps `sym` there.
+fn redirect_to(a: &mut Oracle, b: &mut Oracle, sym: u32, code: &[u8]) {
+    let at = a.alloc_code(code).unwrap();
+    assert_eq!(b.alloc_code(code).unwrap(), at);
+    for o in [a, b] {
+        let from = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(at.wrapping_sub(from + 5).to_le_bytes());
+        o.write(from, &j).unwrap();
+    }
+}
+
+/// Random float bits in `[-m, m)`.
+fn float_within(rng: &mut Xorshift, m: f32) -> u32 {
+    #[allow(clippy::cast_precision_loss)] // a fraction
+    let t = rng.below(1 << 20) as f32 / (1 << 20) as f32;
+    (m * (2.0 * t - 1.0)).to_bits()
+}
+
+/// A sphere grid in `ab`: `nodes` nodes (x, y `i16`, kind `u16 +6`, some
+/// 0xffff), 16 kinds with sizes, the cursor near the nodes, its range, a
+/// view matrix; the EE zero register and models random.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss
+)] // bytes and halves of random words, small floats
+fn abmap_grid(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, ab: u32, nodes: u32) {
+    put(a, b, ab + 2, nodes as u16);
+    let span = [64, 256, 1024][rng.below(3) as usize];
+    for k in 0..nodes {
+        let n = ab + 0x808 + 0x28 * k;
+        let bytes: Vec<u8> = (0..0x28).map(|_| rng.next() as u8).collect();
+        a.write(n, &bytes).unwrap();
+        b.write(n, &bytes).unwrap();
+        put(a, b, n, (rng.below(2 * span) as i32 - span as i32) as i16);
+        put(
+            a,
+            b,
+            n + 2,
+            (rng.below(2 * span) as i32 - span as i32) as i16,
+        );
+        let z = if rng.below(4) == 0 {
+            rng.next() as i16 / 64
+        } else {
+            0
+        };
+        put(a, b, n + 4, z);
+        let kind = if rng.below(6) == 0 {
+            0xffff
+        } else {
+            rng.below(16) as u16
+        };
+        put(a, b, n + 6, kind);
+    }
+    for k in 0..16 {
+        let size = match rng.below(32) {
+            0 => 0x7fc0_0000,
+            1 => 0,
+            _ => float_within(rng, 2.0),
+        };
+        put(a, b, ab + 0xf838 + 0x30 * k, size);
+        put(a, b, ab + 0xf83c + 0x30 * k, rng.next() as u16);
+    }
+    for i in 0..3 {
+        let m = if i == 2 {
+            span as f32 / 8.0
+        } else {
+            span as f32
+        };
+        put(a, b, ab + 0x11520 + 4 * i, float_within(rng, m));
+    }
+    let range = match rng.below(8) {
+        0 => 0,
+        1 => 0x7fc0_0000,
+        _ => (rng.below(span * 2) as f32 + 1.0).to_bits(),
+    };
+    put(a, b, ab + 0x115a0, range);
+    for i in 0..16 {
+        put(a, b, ab + 0x113e0 + 4 * i, float_within(rng, 2.0));
+    }
+    put(a, b, ab + 0x116a4, rng.next());
+    let r0 = a.rebase(0x00c8_f508);
+    for i in 0..4 {
+        put(
+            a,
+            b,
+            r0 + 4 * i,
+            if rng.below(2) == 0 { 0 } else { rng.next() },
+        );
+    }
+    for m in [0x0230_57ec, 0x0230_57f4] {
+        let at = a.rebase(m);
+        put(a, b, at, rng.next());
+    }
+}
+
+/// Fills the frames in both with the same 16-byte pattern, so the
+/// requests' unset fields read alike (both frames are 16-byte aligned).
+fn fill_frames(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, work: u32, len: usize) {
+    let unit: Vec<u8> = (0..16).map(|_| rng.next().to_le_bytes()[0]).collect();
+    let top = a.stack_range().end;
+    let pattern: Vec<u8> = unit.iter().copied().cycle().take(0x2f00).collect();
+    a.write(top - 0x3000, &pattern).unwrap();
+    b.write(work, &pattern[..len]).unwrap();
+}
+
+/// One node at the origin (kind 0, size 1) and the cursor at `(x, y, 0)`
+/// with range `r`: the halo's rounding and boundary cases.
+fn halo_edge(a: &mut Oracle, b: &mut Oracle, ab: u32, r: f32, x: f32, y: f32) {
+    put(a, b, ab + 2, 1u16);
+    for o in [0u32, 2, 4] {
+        put(a, b, ab + 0x808 + o, 0u16);
+    }
+    put(a, b, ab + 0x808 + 6, 0u16);
+    put(a, b, ab + 0xf838, 1f32.to_bits());
+    put(a, b, ab + 0x115a0, r.to_bits());
+    put(a, b, ab + 0x11520, x.to_bits());
+    put(a, b, ab + 0x11524, y.to_bits());
+    put(a, b, ab + 0x11528, 0u32);
+}
+
+fn node_halo_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as g;
+    let log = alloc(a, b, 4 + 0x170 * 30);
+    let (stub, _) = deref_logger(log, &[0, 2, 3], 1, 0x50, &[0x20, 0x2c, 0x44]);
+    redirect_to(a, b, g::MD_DRAW, &stub);
+    let ab = alloc(a, b, 0x1_4000);
+    set(a, b, g::ABMAP, ab);
+    let work = b.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let mut draws = 0;
+    // f32 roundings and bounds: d2, v, dist and 65536 / r rounded; v at
+    // 0x1000 exactly; d2 at r * r / 2 exactly
+    let edges: [(f32, f32, f32); 6] = [
+        (256.0, 59.458_03, 23.68),
+        (29.0, 7.25, 0.0),
+        (7.0, 1.749_999_9, 0.0),
+        (256.0, 16.0, 0.0),
+        (16.0, 8.0, 8.0),
+        (256.0, 64.0, 0.0),
+    ];
+    for n in 0..rounds + 6 {
+        if let Some(&(r, x, y)) = edges.get(n as usize) {
+            abmap_grid(a, b, rng, ab, 1);
+            halo_edge(a, b, ab, r, x, y);
+        } else {
+            let nodes = if n % 8 == 0 { 60 } else { rng.below(20) };
+            abmap_grid(a, b, rng, ab, nodes);
+        }
+        put(a, b, log, 0u32);
+        fill_frames(a, b, rng, work, g::NODE_WORK as usize);
+        twin("AbmapDrawNodeHalos", a, b, 0x00a5_0290, &[], |m| {
+            g::abmap_draw_node_halos(m, work, call);
+        });
+        draws += Mem::read::<u32>(a, log);
+    }
+    assert!(draws > rounds, "{draws} draws");
+}
+
+#[test]
+fn node_halos_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f06);
+    node_halo_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn node_halos_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f07);
+    node_halo_cases(&mut a, &mut b, &mut rng, 100);
+}
+
+#[allow(clippy::cast_possible_truncation)] // bytes and halves of random words
+fn node_sphere_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as g;
+    let log = alloc(a, b, 4 + 0x170 * 7 * 64);
+    let (stub, _) = deref_logger(log, &[0, 2, 3], 1, 0x50, &[0x20, 0x2c, 0x44]);
+    redirect_to(a, b, g::MD_DRAW_SPHE, &stub);
+    let ab = alloc(a, b, 0x1_4000);
+    set(a, b, g::ABMAP, ab);
+    let work = b.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let sin1 = a.rebase(0x00c4_4bf4);
+    for n in 0..rounds {
+        let nodes = if n % 8 == 0 { 60 } else { rng.below(12) };
+        abmap_grid(a, b, rng, ab, nodes);
+        // part offsets: 0x1000 for some kinds, else small
+        for k in 0..16 {
+            let rec = ab + 0xf83c + 0x30 * k;
+            put(a, b, rec, if rng.below(4) == 0 { 0x1000u16 } else { 0 });
+            for i in 0..14 {
+                put(a, b, rec + 2 * i, (rng.below(0x200) as i16) - 0x100);
+            }
+            if rng.below(4) == 0 {
+                put(a, b, rec, 0x1000u16);
+            }
+        }
+        put(a, b, ab + 0x115c9, rng.next() as u8);
+        put(a, b, ab + 0x11698, rng.next());
+        if n == 0 {
+            // a sine where 0.15 as f32 and as f64 truncate apart (-3, -2):
+            // entry 1 for node 0, every node lit
+            put(a, b, sin1, 0x3e55_5555u32);
+            put(a, b, ab + 0x11698, 0u32);
+            put(a, b, ab + 0x115c9, 0xffu8);
+            for k in 0..nodes {
+                let node = ab + 0x808 + 0x28 * k;
+                put(a, b, node + 0x26, 0x10u16);
+                put(a, b, node + 0x21, 0xffu8);
+                put(a, b, node + 6, 1u16);
+            }
+            put(a, b, ab + 0xf83c + 0x30, 0u16);
+        }
+        put(a, b, log, 0u32);
+        fill_frames(a, b, rng, work, g::NODE_WORK as usize);
+        twin("AbmapDrawNodeSpheres", a, b, 0x00a5_05e0, &[], |m| {
+            g::abmap_draw_node_spheres(m, work, call);
+        });
+    }
+}
+
+#[test]
+fn node_spheres_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f08);
+    node_sphere_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn node_spheres_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f09);
+    node_sphere_cases(&mut a, &mut b, &mut rng, 60);
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)] // bytes of random words, small floats
+fn link_strip_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as g;
+    let log = alloc(a, b, 4 + 0x88 * 64);
+    let (stub, _) = deref_logger(log, &[1, 2], 0, 0x80, &[]);
+    redirect_to(a, b, g::DRAW_UI_ELEMENT, &stub);
+    let ab = alloc(a, b, 0x1_4000);
+    set(a, b, g::ABMAP, ab);
+    let packet = alloc(a, b, 0x160);
+    put(a, b, a.rebase(g::STRIP_PACKET), packet);
+    let p = alloc(a, b, 0x200);
+    let points = alloc(a, b, 0x18 * 10);
+    let work = b.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let mut draws = 0;
+    for n in 0..rounds {
+        let bytes: Vec<u8> = (0..0x200).map(|_| rng.next() as u8).collect();
+        a.write(p, &bytes).unwrap();
+        b.write(p, &bytes).unwrap();
+        if rng.below(2) == 0 {
+            // packet byte +0x13: the top byte of p + 0x140
+            put(a, b, p + 0x143, 1u8);
+        }
+        for i in 0..16 {
+            put(a, b, ab + 0x113e0 + 4 * i, float_within(rng, 2.0));
+            put(a, b, ab + 0x114e0 + 4 * i, float_within(rng, 2.0));
+        }
+        put(a, b, ab + 0x113e0 + 0xc, float_within(rng, 0.01));
+        put(a, b, ab + 0x113e0 + 0x1c, float_within(rng, 0.01));
+        put(
+            a,
+            b,
+            ab + 0x113e0 + 0x3c,
+            (4.0 + rng.below(4) as f32).to_bits(),
+        );
+        put(a, b, ab + 0x11350, float_within(rng, 4.0));
+        put(a, b, ab + 0x11620, float_within(rng, 2.0));
+        put(a, b, a.rebase(g::GS_SINK), rng.next() & !0x100);
+        for i in 0..60 {
+            put(a, b, points + 4 * i, float_within(rng, 100.0));
+        }
+        let mut count = 2 + rng.below(5);
+        match n % 8 {
+            // the first w at or below 0: 0, -1, NaN
+            1 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0u32);
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                let w = [0u32, (-1f32).to_bits(), 0x7fc0_0000][(n / 8 % 3) as usize];
+                put(a, b, ab + 0x113e0 + 0x3c, w);
+            }
+            // a tiny w: offsets past 2^24 (the f32 roundings of the
+            // integers) and a divisor where 0.1 as f32 and f64 round apart
+            4 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0u32);
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                put(a, b, ab + 0x113e0 + 0x3c, 1e-3f32.to_bits());
+                put(a, b, ab + 0x11350, 0x3204_e52du32);
+            }
+            // a corner of 2^24 + 1: 2^24 from b (x 524288 through a unit
+            // rotation, doubled, at W 1) plus the centre's 1 (x 1/16)
+            6 => {
+                for i in 0..16 {
+                    put(a, b, ab + 0x113e0 + 4 * i, 0u32);
+                    put(a, b, ab + 0x114e0 + 4 * i, 0u32);
+                }
+                put(a, b, ab + 0x113e0 + 0x30, 0.0625f32.to_bits());
+                put(a, b, ab + 0x113e0 + 0x3c, 1f32.to_bits());
+                put(a, b, ab + 0x114e0, 1f32.to_bits());
+                put(a, b, ab + 0x114e0 + 0x14, 1f32.to_bits());
+                put(a, b, ab + 0x11350, 1.5f32.to_bits());
+                for t in 0..10 {
+                    put(a, b, points + 0x18 * t + 8, 524_288f32.to_bits());
+                }
+                count = 2;
+            }
+            5 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0u32);
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                put(a, b, ab + 0x113e0 + 0x3c, 1e-4f32.to_bits());
+                put(a, b, ab + 0x11350, (1.0 + rng.below(4) as f32).to_bits());
+            }
+            // a later one: x of triple 3 far out along a steep w
+            2 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0.1f32.to_bits());
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                put(a, b, ab + 0x113e0 + 0x3c, 1f32.to_bits());
+                for t in 0..10 {
+                    put(a, b, points + 0x18 * t, (rng.below(5) as f32).to_bits());
+                }
+                put(a, b, points + 0x18 * 3, (-20f32).to_bits());
+                count = 6;
+            }
+            // n = 1 runs on until a w fails (triple 2 here)
+            3 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0.1f32.to_bits());
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                put(a, b, ab + 0x113e0 + 0x3c, 1f32.to_bits());
+                for t in 0..10 {
+                    put(a, b, points + 0x18 * t, (rng.below(5) as f32).to_bits());
+                }
+                put(a, b, points + 0x18 * 2, (-20f32).to_bits());
+                count = 1;
+            }
+            _ => {}
+        }
+        put(a, b, log, 0u32);
+        fill_frames(a, b, rng, work, g::STRIP_WORK as usize);
+        twin(
+            "AbmapDrawLinkStrip",
+            a,
+            b,
+            0x00a5_21a0,
+            &[p, points, count],
+            |m| {
+                g::abmap_draw_link_strip(m, p, points, count, work, call);
+            },
+        );
+        draws += Mem::read::<u32>(a, log);
+    }
+    assert!(draws > rounds, "{draws} draws");
+}
+
+#[test]
+fn link_strip_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0a);
+    link_strip_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn link_strip_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0b);
+    link_strip_cases(&mut a, &mut b, &mut rng, 60);
+}
+
+/// The slot name accessors over recorders for both name functions (each
+/// logs its id and returns a random word) and a random record table.
+fn slot_name_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::savecmd::bridge as s;
+    let log = a.rebase(REC_LOG);
+    let rets = [a.rebase(REC_RETS) + 4 * 98, a.rebase(REC_RETS) + 4 * 99];
+    recorder(a, b, 98, s::ABILITY_NAME, 1, 0);
+    recorder(a, b, 99, s::ITEM_NAME, 1, 0);
+    let table = alloc(a, b, 0x1d8 * 8);
+    set(a, b, Global::<u32>::new(0x0112_a034), table);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{sym:#x}: {e}"))
+            .eax
+    };
+    for _ in 0..rounds {
+        let bytes: Vec<u8> = (0..0x1d8 * 8)
+            .map(|_| rng.next().to_le_bytes()[0])
+            .collect();
+        a.write(table, &bytes).unwrap();
+        b.write(table, &bytes).unwrap();
+        for &(at, _, _) in &s::SLOT_NAMES {
+            put(a, b, log, 0u32);
+            for r in rets {
+                put(a, b, r, rng.next());
+            }
+            let i = rng.below(8);
+            twin("KernelSlotName", a, b, at, &[i], |m| {
+                s::kernel_slot_name(m, at, i, call)
+            });
+        }
+    }
+}
+
+#[test]
+fn save_command_slot_names_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0c);
+    slot_name_cases(&mut a, &mut b, &mut rng, 4);
+}
+
+#[test]
+fn save_command_slot_names_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0d);
+    slot_name_cases(&mut a, &mut b, &mut rng, 2);
+}
+
+// Main round 15: small glue (stored streams, size tables, camera rects,
+// cache entries, a task helper).
+
+fn stored_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::decode::bridge as d;
+    let buf = alloc(a, b, 0x8000);
+    let out = alloc(a, b, 0x4000);
+    let size = alloc(a, b, 4);
+    for n in 0..rounds {
+        let fill: Vec<u8> = (0..0x8000).map(|_| rng.next().to_le_bytes()[0]).collect();
+        a.write(buf, &fill).unwrap();
+        b.write(buf, &fill).unwrap();
+        let len = match n % 4 {
+            0 => rng.below(0x3000),
+            1 => 0,
+            _ => rng.below(0x200),
+        };
+        // apart, or overlapping either way inside one block
+        let (src, dst) = match n % 3 {
+            0 => (buf, out),
+            1 => (buf + 0x10, buf + 0x10 + 5 + rng.below(0x40)),
+            _ => (buf + 0x1000, buf + 0x1000 + 5 - rng.below(0x40)),
+        };
+        let at = src + 1;
+        put(a, b, at, len.to_le_bytes()[0]);
+        for (i, byte) in (0u32..).zip(len.to_le_bytes()) {
+            put(a, b, at + i, byte);
+        }
+        twin("sa_meth00dec", a, b, 0x00a4_3da0, &[src, dst, size], |m| {
+            d::sa_meth00dec(m, src, dst, size)
+        });
+    }
+}
+
+#[test]
+fn glue15_stored_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0e);
+    stored_cases(&mut a, &mut b, &mut rng, 60);
+}
+
+#[test]
+fn glue15_stored_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0f);
+    stored_cases(&mut a, &mut b, &mut rng, 30);
+}
+
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn glue15_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::{cache::bridge as c, camera::bridge as cam, cdread::bridge as cd};
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 100, cd::READ_WHOLE_FILE, 2, 0);
+    recorder(a, b, 101, cam::MS_CAMERA_GET, 3, 0);
+    recorder(a, b, 102, cam::MS_CAMERA_SET_RECT, 3, 0);
+    recorder(a, b, 103, c::SG_FREE_A, 2, 0);
+    recorder(a, b, 104, c::USER_FREE, 1, 0);
+    recorder(a, b, 105, c::TASK_CREATE_IN_GROUP, 4, 0);
+    let work = b.stack_range().start + 0x1000;
+    let entry = alloc(a, b, 0x20);
+    let count = ffx_system::cd::bridge::EX_SIZE_COUNT;
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 100..106 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        set(a, b, count, rng.next().cast_signed() >> (rng.below(32)));
+        twin("pc_sizetbl_set_Ex", a, b, 0x00a4_3100, &[], |m| {
+            cd::pc_sizetbl_set_ex(&mut H(m))
+        });
+        for (sym, path) in [
+            (0x00a4_3080, cd::MODULE_SIZE_PATH),
+            (0x00a4_30c0, cd::SIZETBL_PATH),
+        ] {
+            twin("pc_sizetbl_set", a, b, sym, &[], |m| {
+                cd::pc_sizetbl_set(&mut H(m), path, work)
+            });
+        }
+        twin("Sg_CameraPutRects", a, b, 0x0083_f130, &[], |m| {
+            cam::sg_camera_put_rects(&mut H(m))
+        });
+        let bytes: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+        a.write(entry, &bytes).unwrap();
+        b.write(entry, &bytes).unwrap();
+        if n % 2 == 0 {
+            put(a, b, entry, c::SG_BLOCK);
+        }
+        let block: u32 = Mem::read(a, entry + 0xc);
+        set(
+            a,
+            b,
+            c::CHR_TIDUS,
+            if n % 3 == 0 { block } else { rng.next() },
+        );
+        twin("Cache_FreeEntry", a, b, 0x0084_0ec0, &[entry], |m| {
+            c::cache_free_entry(&mut H(m), entry)
+        });
+        let args = [rng.next(), rng.next(), rng.next()];
+        twin("task_create_group7", a, b, 0x0077_a060, &args, |m| {
+            c::task_create_group7(&mut H(m), args[0], args[1], args[2])
+        });
+        assert_eq!(Mem::read::<u32>(a, log), 8, "calls logged");
+    }
+}
+
+#[test]
+fn glue15_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f10);
+    glue15_cases(&mut a, &mut b, &mut rng, 40);
+}
+
+#[test]
+fn glue15_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f11);
+    glue15_cases(&mut a, &mut b, &mut rng, 20);
+}
+
+/// The polar camera requests over recorders for the battle camera
+/// callees (random answers; the slot table set so the request runs on
+/// some calls).
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn cam_polar_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 110, c::ID_CHECK, 1, 0);
+    recorder(a, b, 111, c::GET_NUM, 1, 0);
+    recorder(a, b, 112, c::SET_CHECK_CHANGE, 4, 0);
+    recorder(a, b, 113, c::RECT_TO_POLAR, 5, 0);
+    recorder(a, b, 114, c::FOCUS_WEIGHTS, 2, 0);
+    let target = block(a, b, rng, 0x10);
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        // camera and request bytes past 0x7f now and then (the masks)
+        let (cam, sub) = if n % 16 == 15 {
+            (0x80 + rng.below(0x80), 0x80 + rng.below(0x80))
+        } else {
+            (rng.below(4), rng.below(5))
+        };
+        let id = cam
+            | sub << 8
+            | if rng.below(4) == 0 {
+                rng.next() & !0xffff
+            } else {
+                0
+            };
+        let side = rng.next() % 4;
+        put(
+            a,
+            b,
+            ret(a, 110),
+            if n % 5 == 0 { 0 } else { 1 + rng.below(3) },
+        );
+        let num = rng.below(4);
+        put(a, b, ret(a, 111), num);
+        for k in [112, 113, 114] {
+            put(a, b, ret(a, k), rng.next());
+        }
+        // the running slot: this id (mostly), another, or flagged off/done
+        let slot = a.rebase(c::CAMERA_SLOTS) + 8 * (cam * 0x1b4 + num);
+        let running = if rng.below(3) == 0 { rng.next() } else { id };
+        put(a, b, slot, running);
+        put(a, b, slot + 4, u8::from(rng.below(4) == 0));
+        put(a, b, slot + 5, u8::from(rng.below(4) == 0));
+        // the request's set byte for Cam_AddPolar
+        let rec =
+            a.rebase(c::CAMERA_SIDES) + (side & 1) * 0x61c + cam * 0xda0 + (id >> 8 & 0xff) * 0x130;
+        put(a, b, rec + 0xc0, (rng.below(2) as u8) * 3);
+        put(a, b, rec + 0xc7, rng.next() as u8 | 1);
+        let polar = [rng.float(), rng.float(), rng.float()];
+        match n % 3 {
+            0 => twin(
+                "Cam_SetPolar",
+                a,
+                b,
+                0x007b_f700,
+                &[id, side, polar[0], polar[1], polar[2]],
+                |m| c::cam_set_polar(&mut H(m), id, side, polar),
+            ),
+            1 => twin(
+                "Cam_AddPolar",
+                a,
+                b,
+                0x007b_f7f0,
+                &[id, side, polar[0], polar[1], polar[2]],
+                |m| c::cam_add_polar(&mut H(m), id, side, polar),
+            ),
+            _ => {
+                let flags = rng.next();
+                let args = [id, side, flags, target, polar[0], polar[1], polar[2]];
+                twin("MsCameraSetTargetPolar", a, b, 0x007b_f600, &args, |m| {
+                    c::cam_set_target_polar(&mut H(m), id, side, flags, target, polar)
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn cam_polar_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f12);
+    cam_polar_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn cam_polar_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f13);
+    cam_polar_cases(&mut a, &mut b, &mut rng, 100);
+}
+
+fn light_color_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::light::bridge as l;
+    let log = a.rebase(REC_LOG);
+    recorder(a, b, 115, l::LIGHT_COLOR_MATRIX, 5, 0);
+    recorder(a, b, 116, l::SET_LIGHT_COLOUR, 4, 0);
+    let rets = [a.rebase(REC_RETS) + 4 * 115, a.rebase(REC_RETS) + 4 * 116];
+    let rgba = alloc(a, b, 0x10);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for r in rets {
+            put(a, b, r, rng.next());
+        }
+        for i in 0..4 {
+            put(a, b, rgba + 4 * i, rng.float());
+        }
+        let kind = match rng.below(4) {
+            0 => rng.next(),
+            _ => rng.below(6),
+        };
+        twin("Sg_LightSetColor", a, b, 0x0083_6310, &[kind, rgba], |m| {
+            l::sg_light_set_color(&mut H(m), kind, rgba)
+        });
+    }
+}
+
+#[test]
+fn light_color_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f14);
+    light_color_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn light_color_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f15);
+    light_color_cases(&mut a, &mut b, &mut rng, 60);
+}
+
+/// The pad entry draw callbacks over recorders (the 12-word font call
+/// through a logging stand-in), the entry's locked byte and kind random.
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn pad_entry_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as g;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 117, g::ADD_COMMAND_ICON_NAME, 5, 0);
+    recorder(a, b, 118, g::HELP_LINE_DRAW, 3, 0);
+    recorder(a, b, 119, g::SAVE_PLAYER_PTR, 1, 0);
+    recorder(a, b, 120, g::DIGIT_RIGHT, 6, 0);
+    let font_log = alloc(a, b, 4 + 0x30 * 8);
+    let (stub, _) = deref_logger(font_log, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 0, 0, &[]);
+    redirect_to(a, b, g::ADD_MES_FONT, &stub);
+    let ab = alloc(a, b, 0x1_2000);
+    set(a, b, g::ABMAP, ab);
+    let player = block(a, b, rng, 0x40);
+    let entry = alloc(a, b, 0x10);
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, font_log, 0u32);
+        for k in [117, 118, 120] {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        let at = ret(a, 119);
+        put(a, b, at, player);
+        put(a, b, ab + 0x115b9, rng.next() as u8);
+        put(a, b, ab + 0x115bc, rng.next() as u8);
+        set(a, b, g::PACKET_POS, rng.next());
+        set(a, b, g::STAT_LAYOUT, rng.below(2) * rng.next());
+        put(a, b, entry, rng.next());
+        put(
+            a,
+            b,
+            entry + 4,
+            if rng.below(2) == 0 {
+                0u8
+            } else {
+                rng.next() as u8 | 1
+            },
+        );
+        put(
+            a,
+            b,
+            entry + 8,
+            if rng.below(4) == 0 {
+                rng.next()
+            } else {
+                rng.below(11)
+            },
+        );
+        let (x, y) = (rng.below(0x400), rng.below(0x400));
+        let args = [rng.next(), entry, rng.next(), x, y];
+        let locked = Mem::read::<u8>(a, entry + 4) != 0;
+        match n % 6 {
+            0 | 1 => {
+                let sym = if n % 6 == 0 { 0x00a4_f250 } else { 0x00a4_f9a0 };
+                if locked {
+                    // the caller's eax stays: nothing to compare
+                    twin("AbmapPadEntryDrawIcon", a, b, sym, &args, |m| {
+                        assert!(g::abmap_pad_entry_draw_icon(m, entry, x, y, call).is_none());
+                    });
+                } else {
+                    twin("AbmapPadEntryDrawIcon", a, b, sym, &args, |m| {
+                        g::abmap_pad_entry_draw_icon(m, entry, x, y, call).unwrap()
+                    });
+                }
+            }
+            2 => twin("AbmapPadEntryDrawText", a, b, 0x00a4_f9e0, &args, |m| {
+                g::abmap_pad_entry_draw_text(m, entry, x, y, call)
+            }),
+            3 => twin("AbmapPadEntryDrawHelp_e", a, b, 0x00a4_f930, &args, |m| {
+                g::abmap_pad_entry_draw_help(m, entry, x, y, 0xe, call)
+            }),
+            4 => twin("AbmapPadEntryDrawHelp_5", a, b, 0x00a4_fb70, &args, |m| {
+                g::abmap_pad_entry_draw_help(m, entry, x, y, 5, call)
+            }),
+            _ => twin("AbmapPadEntryDrawStat", a, b, 0x00a4_fa30, &args, |m| {
+                g::abmap_pad_entry_draw_stat(m, entry, x, y, call)
+            }),
+        }
+    }
+}
+
+#[test]
+fn pad_entry_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f16);
+    pad_entry_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn pad_entry_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f17);
+    pad_entry_cases(&mut a, &mut b, &mut rng, 120);
+}
+
+/// `Cam_Apply` over recorders (the two pointer callees through a logging
+/// stand-in that keeps the value) and `_CIatan` as `-x`.
+fn cam_apply_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    patch_atan(a);
+    patch_atan(b);
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let ptr_log = alloc(a, b, 4 + 8 * 4);
+    for (sym, k) in [(c::SET_FOVY, 0u32), (c::SET_ASPECT, 1)] {
+        // each its own log: count, then the value
+        let (stub, _) = deref_logger(ptr_log + 0x10 * k, &[], 0, 4, &[]);
+        redirect_to(a, b, sym, &stub);
+    }
+    recorder(a, b, 121, c::MAGIC_ID, 0, 0);
+    recorder(a, b, 122, c::SET_WORLD_SUB, 2, 0);
+    recorder(a, b, 123, c::SPLIT_START, 1, 0);
+    recorder(a, b, 124, c::SPLIT_SET_CAMERA, 1, 0);
+    recorder(a, b, 125, c::SPLIT_END, 0, 0);
+    recorder(a, b, 126, c::SET_WORLD, 1, 0);
+    let work = b.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let atan = |_: &mut Oracle, x: f64| ffx_bridge::x87::store(-x);
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, ptr_log, 0u32);
+        put(a, b, ptr_log + 0x10, 0u32);
+        let cam = match rng.below(8) {
+            0 => 0,
+            1 => 2,
+            2 => 3,
+            _ => 1,
+        };
+        let screen = a.rebase(c::APPLY_SCREENS) + cam * 0x1c0;
+        for o in [0u32, 4, 0xc] {
+            let v = if rng.below(6) == 0 {
+                rng.float()
+            } else {
+                float_within(rng, 400.0)
+            };
+            put(a, b, screen + o, v);
+        }
+        let split = if rng.below(2) == 0 {
+            256f32.to_bits()
+        } else {
+            rng.float()
+        };
+        put(a, b, screen + 0x78, split);
+        set(
+            a,
+            b,
+            c::APPLY_NARROW,
+            if rng.below(2) == 0 { 2 } else { rng.below(4) },
+        );
+        set(
+            a,
+            b,
+            c::APPLY_SUB,
+            if rng.below(2) == 0 {
+                1
+            } else {
+                rng.next().to_le_bytes()[0]
+            },
+        );
+        let magic = [0x98, 0x259, rng.below(0x300)][rng.below(3) as usize];
+        let at = ret(a, 121);
+        put(a, b, at, magic);
+        let _ = n;
+        twin("Cam_Apply", a, b, 0x007b_c980, &[cam], |m| {
+            c::cam_apply(m, cam, work, call, atan);
+        });
+    }
+}
+
+#[test]
+fn cam_apply_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f18);
+    cam_apply_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn cam_apply_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f19);
+    cam_apply_cases(&mut a, &mut b, &mut rng, 100);
 }

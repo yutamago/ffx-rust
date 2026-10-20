@@ -110,4 +110,44 @@ pub mod bridge {
         h.write(r + 0x34, 0u16);
         id
     }
+
+    /// `pc_ReadWholeFile(path, &size)` (`0x00a42a00`, platform: the file
+    /// read whole into a new block).
+    pub const READ_WHOLE_FILE: u32 = 0x00a4_2a00;
+    /// `MsSetCountryName(out)` (`0x00782c00`).
+    pub const SET_COUNTRY_NAME: u32 = 0x0078_2c00;
+    /// The paths: `".../sizetbl.vita.bin"`, `".../modulesize.bin"`,
+    /// `".../sizetbl.bin"` (under `host0:/ffx/proj/prog/cdidx/jp/`).
+    pub const SIZETBL_EX_PATH: u32 = 0x00c8_5e74;
+    pub const MODULE_SIZE_PATH: u32 = 0x00c8_5e44;
+    pub const SIZETBL_PATH: u32 = 0x00c8_5e18;
+    /// The 0x10-byte buffer [`pc_sizetbl_set`] hands `MsSetCountryName`.
+    pub const COUNTRY_WORK: u32 = 0x10;
+
+    /// `pc_sizetbl_set_Ex()` (`0x00a43100`, from `CdEnvInit`): reads
+    /// `sizetbl.vita.bin` with its byte size into `g_Cd_ExSizeCount`, then
+    /// makes that a count of words (`/ 4`, toward zero); returns the block.
+    pub fn pc_sizetbl_set_ex(h: &mut impl Host) -> u32 {
+        let count = ffx_system::cd::bridge::EX_SIZE_COUNT;
+        let (f, path, at) = (
+            h.rebase(READ_WHOLE_FILE),
+            h.rebase(SIZETBL_EX_PATH),
+            h.rebase(0x0112_8a94),
+        );
+        let data = h.call(f, &[path, at]);
+        let bytes = count.get(h);
+        count.set(h, bytes / 4);
+        data
+    }
+
+    /// `pc_sizetbl_set()` (`0x00a430c0`) and `pc_module_sizetbl_set()`
+    /// (`0x00a43080`), from `CdEnvInit`, the same code but the path:
+    /// `MsSetCountryName` into a buffer (`work`, [`COUNTRY_WORK`] bytes,
+    /// not used after), then `pc_ReadWholeFile(path, 0)` returned.
+    pub fn pc_sizetbl_set(h: &mut impl Host, path: u32, work: u32) -> u32 {
+        let f = h.rebase(SET_COUNTRY_NAME);
+        h.call(f, &[work]);
+        let (f, path) = (h.rebase(READ_WHOLE_FILE), h.rebase(path));
+        h.call(f, &[path, 0])
+    }
 }

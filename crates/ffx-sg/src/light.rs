@@ -356,4 +356,34 @@ pub mod bridge {
         set_attenuation(mem, i, a);
         set_enable(mem, i, 1);
     }
+
+    /// `FFXVu0LightColorMatrix(dst, c0, c1, c2, ambient)`.
+    pub const LIGHT_COLOR_MATRIX: u32 = 0x006e_d4f0;
+    /// `graphicCharacterLightingSetLightColor(kind, r, g, b)`.
+    pub const SET_LIGHT_COLOUR: u32 = 0x0063_cb00;
+
+    /// `Sg_LightSetColor(kind, rgba)` (`0x00836310`; from `Light_Set`,
+    /// `opu_ffxlight` and others): for `kind` 0..=3 (unsigned) the four
+    /// words at `rgba` into colour `kind` of [`LIGHT_COLORS`]; then the
+    /// colour matrix ([`COLOR_MATRIX`]) from the four slots
+    /// (`FFXVu0LightColorMatrix`) and `graphicCharacterLightingSetLightColor
+    /// (kind, r, g, b)` with `rgba`'s first three floats (through x87),
+    /// whose `eax` is returned.
+    pub fn sg_light_set_color(h: &mut impl ffx_bridge::Host, kind: u32, rgba: u32) -> u32 {
+        let slots = color(h, 0);
+        if kind <= 3 {
+            for i in 0..4 {
+                let w: u32 = h.read(rgba.wrapping_add(4 * i));
+                h.write(slots + 0x10 * kind + 4 * i, w);
+            }
+        }
+        let (f, matrix) = (h.rebase(LIGHT_COLOR_MATRIX), h.rebase(0x023c_4400));
+        h.call(
+            f,
+            &[matrix, slots, slots + 0x10, slots + 0x20, slots + 0x30],
+        );
+        let rgb = [8u32, 4, 0].map(|o| x87::store(x87::load(h.read(rgba.wrapping_add(o)))));
+        let f = h.rebase(SET_LIGHT_COLOUR);
+        h.call(f, &[kind, rgb[2], rgb[1], rgb[0]])
+    }
 }

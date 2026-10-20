@@ -793,3 +793,70 @@ request whose busy byte is clear: busy set, buffer, file number and
 With all 64 busy the assertion `q_cnt != READ_Q_CNT` (`libmscd.c`,
 line 0x6a7) goes to `movie_err` and request 64 is written anyway, its
 size landing on `g_CdReadId` after the id was taken.
+
+## Round 15: the CD data decoders (`crates/ffx-sg/src/decode.rs`)
+
+`sa_decode(dst, src)` (`0x00a43de0`) calls entry `src[0]` of the table at
+`0x00c85ea4` as `f(src, dst, &size)` and returns the size: 0 copies,
+1 is `sa_meth01dec` (`0x00a43bc0`), 2 `sa_meth02dec` (`0x00a43cc0`); names
+from Fahrenheit's Switch build. After the method byte comes the decoded size
+(unaligned `u32`), then codes from `+5`:
+
+| code `c` | meaning |
+|---|---|
+| `0` | end: `*size = out - dst`, also returned in `eax` |
+| `1..=0x7d` | `c` literal bytes |
+| `0x7e n b` | `n + 4` bytes `b` |
+| `0x7f n:u16 b` | `n` bytes `b` (0 runs 2^32 times) |
+| `0x80.. x` | back reference: method 1 length `(c >> 3 & 0xf) + 3`, distance `((c & 7) << 8 \| x) + 1`; method 2 length `(c >> 4 & 7) + 3`, distance `((c & 0xf) << 8 \| x) + 1` |
+
+A reference starting at `out < dst + 0x7ff` (method 1) or
+`out <= dst + 0xfff` (method 2) writes zeros while `out < dst + distance`
+(a signed compare), standing for bytes before the output. Past that it
+copies unchecked: method 1 at `dst + 0x7ff` with distance 0x800 reads
+`dst[-1]`. Method 2's bound can change nothing (its distance is at most
+0x1000).
+
+## Round 15: sphere grid halos and node spheres (`crates/ffx-sg/src/abmap.rs`)
+
+`AbmapDrawNodeHalos` (`0x00a50290`) and `AbmapDrawNodeSpheres`
+(`0x00a505e0`), both from the grid's draw pass `0x00a54660`, build an effect
+draw request in their frame (from `ebp - 0x140`, `ebp` 16-byte aligned):
+
+| offset | field |
+|---|---|
+| `+0x00` | kind: 0x44 halo; 0x2c lit part, 0x24 dark part (spheres: left as it was for empty nodes) |
+| `+0x04` | `g_AbmapFile` (`0x01740870`) |
+| `+0x08` | `u16`: 0x48 halo, 0x8064 sphere |
+| `+0x18` | RGBA tint (halo 0x808080, alpha `a >> 3`) |
+| `+0x20` | view (`g_Abmap + 0x113e0`) times the node matrix, at `+0x78` of the request |
+| `+0x24`, `+0x28` | `g_Abmap + 0x11560`, `g_Abmap + 0x11520` |
+| `+0x2c` | the node (or part) matrix, at `+0xb8` |
+| `+0x44` | four vectors at `+0xf8`: the EE zero register (`0x00c8f508`), the last `(r0.x, r0.y, depth, 1)` |
+| `+0x4c`, `+0x4d` | halo bytes 0 and `2a` |
+
+`+0x0b`, `+0x30`, `+0x34` and `+0x48` are never set. Halos go through
+`op1_md_draw_eiabm(model, request, 4, g_Abmap[+0x116a4])` on nodes in
+`(r / 16, r / sqrt 2)` of the cursor (`v = ftol(dist * 65536 / r)`), 25 at
+most. Spheres draw seven parts per node through
+`op1_md_draw_eiabm_sphe(model, request, node, part)`; part offsets are `i16`
+pairs from `+0xf83c` of the kind's record (0x1000 first: no offsets), colours
+from `0x00c8659c` (panel bit set, scaled by `(0x6c - ftol(-14.4 sin)) / 128`)
+or `0x00c86644`.
+
+## Round 15: the sphere grid link strip (`AbmapDrawLinkStrip`, `0x00a521a0`)
+
+`AbmapDrawLinkStrip(p, points, n)` draws a link as textured quads from `n`
+triples of 2D points (0x18 bytes: centre, two offsets). Its record `p`
+(at least 0x1ec bytes): `+0x00/+0x10/+0x20` the three points as `(x, y, 0,
+1)`, `+0x30/+0x40/+0x50` them projected (`FFXVu0ApplyMatrix` through
+`g_Abmap + 0x113e0` for the centre, `+0x114e0` for the offsets, each divided
+by the centre's w with `FFXVu0DivVectorXYZ`), `+0x60..+0xcc` the previous
+triple's 1/16 fixed-point screen points, `+0xd0..+0x13c` the current one's
+(centre, then each offset at 1x, 2x / W, 4x / W, W = `f32(g_Abmap[+0x11350]
+* 0.6 + 0.1)`), `+0x140..+0x158` and `+0x1e0..+0x1e8` the GS packet's header
+fields. A centre w of 0 or below ends the strip; a NaN w does not (`fcomp`
+sets C0 for both "below" and unordered, and the code tests C0 for 0 < w).
+The packet is `[0x01a860f0]`; each segment is two `graphicDrawUIAbmapElement`
+quads (kinds 9 and 12) whose texture tile is the packet's bytes `+0x11`,
+`+0x10`.

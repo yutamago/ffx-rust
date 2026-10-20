@@ -8,7 +8,7 @@
 pub mod bridge {
     use ffx_battle::camera::bridge as battle;
     use ffx_bridge::x87::{self, Reg};
-    use ffx_bridge::{Global, Mem};
+    use ffx_bridge::{Global, Host, Mem};
 
     /// The screen centre, x and y (`f32`, `Sg_SetScreenCenter`).
     pub const SCREEN_CENTER: Global<[f32; 2]> = Global::new(0x0130_1bbc);
@@ -258,5 +258,316 @@ pub mod bridge {
             r |= 4;
         }
         r
+    }
+
+    /// `MsCameraGet(owner, camera, type)`.
+    pub const MS_CAMERA_GET: u32 = 0x007b_d110;
+    /// `MsCameraSetRect(handle, side, &xyz)`.
+    pub const MS_CAMERA_SET_RECT: u32 = 0x007b_f940;
+
+    /// `Sg_CameraPutRects()` (`0x0083f130`, name ours; from `Sg_MainLoop`
+    /// and `Sg_CameraSetPlayer`): the battle camera `MsCameraGet(6, 0, 0)`
+    /// gets side 0 from [`CAMERA_REF`] and side 1 from [`CAMERA_POS`]
+    /// (`MsCameraSetRect`); returns the last call's `eax`.
+    pub fn sg_camera_put_rects(h: &mut impl Host) -> u32 {
+        let f = h.rebase(MS_CAMERA_GET);
+        let cam = h.call(f, &[6, 0, 0]);
+        let f = h.rebase(MS_CAMERA_SET_RECT);
+        let at = h.rebase(0x00c4_ded0);
+        h.call(f, &[cam, 0, at]);
+        let at = h.rebase(0x00c4_dec0);
+        h.call(f, &[cam, 1, at])
+    }
+
+    /// `MsCameraIDcheck(id)`.
+    pub const ID_CHECK: u32 = 0x007b_d560;
+    /// `MsCameraGetNum(cam)`.
+    pub const GET_NUM: u32 = 0x007b_d340;
+    /// `MsSetCheckChange(id, side, step, mode)`.
+    pub const SET_CHECK_CHANGE: u32 = 0x007c_0790;
+    /// `MsVectorRect2Polar(v, centre, yaw, pitch, len)`.
+    pub const RECT_TO_POLAR: u32 = 0x007c_4990;
+    /// `MsCameraFocusWeights_007c0ae0(side, request)`.
+    pub const FOCUS_WEIGHTS: u32 = 0x007c_0ae0;
+    /// The cameras' sides (`g_Cameras + 0x30`): 0xda0 bytes a camera,
+    /// 0x61c a side; requests of 0x130 bytes from `+0xc0` of a side.
+    pub const CAMERA_SIDES: u32 = 0x0113_7570;
+    /// `g_CameraSlots`: 8-byte request slots, 0x1b4 a camera.
+    pub const CAMERA_SLOTS: u32 = 0x0113_81a8;
+
+    /// A request id's camera (`id & 0xff`), its side record and the
+    /// request's 0x130-byte block (`(id >> 8) & 0xff` from the side).
+    fn request(h: &impl Host, id: u32, side: u32) -> (u32, u32, u32) {
+        let cam = id & 0xff;
+        let base = h
+            .rebase(CAMERA_SIDES)
+            .wrapping_add(side.wrapping_mul(0x61c))
+            .wrapping_add(cam.wrapping_mul(0xda0));
+        let rec = base.wrapping_add(((id >> 8) & 0xff).wrapping_mul(0x130));
+        (cam, base, rec)
+    }
+
+    /// The camera's running request: the id in its slot `MsCameraGetNum`
+    /// unless the slot's off or done byte (`+4`, `+5`) is set; else 0.
+    fn running(h: &mut impl Host, cam: u32) -> u32 {
+        let f = h.rebase(GET_NUM);
+        let n = h.call(f, &[cam]);
+        let slot = h
+            .rebase(CAMERA_SLOTS)
+            .wrapping_add(cam.wrapping_mul(0x1b4).wrapping_add(n).wrapping_mul(8));
+        if h.read::<u8>(slot.wrapping_add(4)) == 0 && h.read::<u8>(slot.wrapping_add(5)) == 0 {
+            h.read(slot)
+        } else {
+            0
+        }
+    }
+
+    /// `fld m32`, `fstp m32`.
+    fn copy(v: u32) -> u32 {
+        x87::store(x87::load(v))
+    }
+
+    /// Applies polar `(a, b, c)` to the side now (`+0x60..+0x6c`, the
+    /// last 0) and `MsSetCheckChange(id, side, 1, 0)`.
+    fn apply_polar(h: &mut impl Host, id: u32, side: u32, base: u32, [a, b, c]: [u32; 3]) -> u32 {
+        h.write(base.wrapping_add(0x6c), 0u32);
+        h.write(base.wrapping_add(0x60), copy(a));
+        h.write(base.wrapping_add(0x64), copy(b));
+        h.write(base.wrapping_add(0x68), copy(c));
+        let f = h.rebase(SET_CHECK_CHANGE);
+        h.call(f, &[id, side, 1, 0])
+    }
+
+    /// `Cam_SetPolar(id, side, theta, phi, len)` (`0x007bf700`): request
+    /// `id` of camera side `side & 1` becomes mode 2 (`+0xc0` 1, `+0xc2`
+    /// 2, `+0xc7` 0) with the polar position at `+0x100..+0x108`; when it
+    /// is the camera's running request, also the side's now and
+    /// `MsSetCheckChange`'s `eax` returned, else the running id. 0 for an
+    /// id `MsCameraIDcheck` rejects.
+    pub fn cam_set_polar(h: &mut impl Host, id: u32, side: u32, polar: [u32; 3]) -> u32 {
+        let f = h.rebase(ID_CHECK);
+        if h.call(f, &[id]) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let (cam, base, rec) = request(h, id, side);
+        h.write(rec.wrapping_add(0xc7), 0u8);
+        h.write(rec.wrapping_add(0xc0), 1u8);
+        h.write(rec.wrapping_add(0x100), copy(polar[0]));
+        h.write(rec.wrapping_add(0xc2), 2u8);
+        h.write(rec.wrapping_add(0x104), copy(polar[1]));
+        h.write(rec.wrapping_add(0x108), copy(polar[2]));
+        let now = running(h, cam);
+        if now != id {
+            return now;
+        }
+        apply_polar(h, id, side, base, polar)
+    }
+
+    /// `Cam_AddPolar(id, side, dtheta, dphi, dlen)` (`0x007bf7f0`): as
+    /// [`cam_set_polar`] in mode 7 with the polar position moved by the
+    /// deltas; a request not yet set (`+0xc0` 0) starts from the side's
+    /// position (`+0x50`) about its centre (`[+0x8c]`) through
+    /// `MsVectorRect2Polar`. Returns the id itself when it is not the
+    /// running request.
+    pub fn cam_add_polar(h: &mut impl Host, id: u32, side: u32, delta: [u32; 3]) -> u32 {
+        let f = h.rebase(ID_CHECK);
+        if h.call(f, &[id]) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let (cam, base, rec) = request(h, id, side);
+        let set = h.read::<u8>(rec.wrapping_add(0xc0));
+        h.write(rec.wrapping_add(0xc7), 0u8);
+        let polar = [0x100u32, 0x104, 0x108].map(|o| rec.wrapping_add(o));
+        if set == 0 {
+            let f = h.rebase(RECT_TO_POLAR);
+            let centre: u32 = h.read(base.wrapping_add(0x8c));
+            h.call(
+                f,
+                &[
+                    base.wrapping_add(0x50),
+                    centre,
+                    polar[0],
+                    polar[1],
+                    polar[2],
+                ],
+            );
+        }
+        for (at, d) in polar.into_iter().zip(delta) {
+            let v = x87::add(x87::load(d), x87::load(h.read(at)));
+            h.write(at, x87::store(v));
+            if at == polar[0] {
+                h.write(rec.wrapping_add(0xc0), 1u8);
+                h.write(rec.wrapping_add(0xc2), 7u8);
+            }
+        }
+        let now = running(h, cam);
+        if now != id {
+            return id;
+        }
+        let now = polar.map(|at| h.read(at));
+        apply_polar(h, id, side, base, now)
+    }
+
+    /// `MsCameraSetTargetPolar_007bf600(id, side, flags, target, d, a,
+    /// b)` (name ours; from `Native_Cam_601d`/`601f`): request `id`
+    /// becomes mode 9 (`+0xc0` 1, `+0xc2` 9, `+0xc7` 0) following `target`
+    /// (`+0xc8`, its byte `+4` OR the low byte of `flags` at `+0xc3`), `a`,
+    /// `b` at `+0xf0`, `+0xf8` and `d` at `+0x110`. When it is the running
+    /// request: `MsVectorRect2Polar(+0xf0, [side +0x8c], +0x100, 0, 0)`,
+    /// `+0x100 += d`, `MsCameraFocusWeights(side, request +0xc0)` and
+    /// `MsSetCheckChange(id, side, 1, 0)`'s `eax`; else the running id; 0
+    /// for an id `MsCameraIDcheck` rejects.
+    #[allow(clippy::many_single_char_names)] // h, d, a, b, f: as documented
+    pub fn cam_set_target_polar(
+        h: &mut impl Host,
+        id: u32,
+        side: u32,
+        flags: u32,
+        target: u32,
+        [d, a, b]: [u32; 3],
+    ) -> u32 {
+        let f = h.rebase(ID_CHECK);
+        if h.call(f, &[id]) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let (cam, base, rec) = request(h, id, side);
+        let rec = rec.wrapping_add(0xc0);
+        h.write(rec.wrapping_add(7), 0u8);
+        h.write(rec, 1u8);
+        h.write(rec.wrapping_add(2), 9u8);
+        let mode = h.read::<u8>(target.wrapping_add(4)) | crate::lo8(flags);
+        h.write(rec.wrapping_add(8), target);
+        h.write(rec.wrapping_add(3), mode);
+        h.write(rec.wrapping_add(0x30), copy(a));
+        h.write(rec.wrapping_add(0x38), copy(b));
+        h.write(rec.wrapping_add(0x50), copy(d));
+        let now = running(h, cam);
+        if now != id {
+            return now;
+        }
+        let f = h.rebase(RECT_TO_POLAR);
+        let centre: u32 = h.read(base.wrapping_add(0x8c));
+        h.call(
+            f,
+            &[rec.wrapping_add(0x30), centre, rec.wrapping_add(0x40), 0, 0],
+        );
+        let yaw = rec.wrapping_add(0x40);
+        let v = x87::add(
+            x87::load(h.read(rec.wrapping_add(0x50))),
+            x87::load(h.read(yaw)),
+        );
+        h.write(yaw, x87::store(v));
+        let f = h.rebase(FOCUS_WEIGHTS);
+        h.call(f, &[base, rec]);
+        let f = h.rebase(SET_CHECK_CHANGE);
+        h.call(f, &[id, side, 1, 0])
+    }
+
+    /// The screens (`0x01137010`, 0x1c0 bytes each): `+0` and `+4` the
+    /// depths `Cam_Apply` turns into the field of view, `+0xc` its
+    /// divisor, `+0x78` 256 for a split screen.
+    pub const APPLY_SCREENS: u32 = 0x0113_7010;
+    /// 2 when the field of view uses 3/4 of the angle (`0x01136fc0`).
+    pub const APPLY_NARROW: Global<u32> = Global::new(0x0113_6fc0);
+    /// 1 when camera 1 draws through the sub matrix (`0x01137280`).
+    pub const APPLY_SUB: Global<u8> = Global::new(0x0113_7280);
+    /// `g_CameraMatrix` (`0x02311440`).
+    pub const CAMERA_MATRIX: u32 = 0x0231_1440;
+    /// The callees: `graphicCameraSetFOVy(&f)`, `graphicCameraSetAspectRatio
+    /// (&f)`, `MagicFile_GetMagicId()`, `graphicCameraSetWorldMatrixSub(m,
+    /// cam)`, `SplitScreenStart(0)`, `SplitScreenSetCamera(m)`,
+    /// `0x00638d20()`, `graphicCameraSetWorldMatrix(m)`.
+    pub const SET_FOVY: u32 = 0x0063_95e0;
+    pub const SET_ASPECT: u32 = 0x0063_95c0;
+    pub const MAGIC_ID: u32 = 0x009d_a3b0;
+    pub const SET_WORLD_SUB: u32 = 0x0063_9b30;
+    pub const SPLIT_START: u32 = 0x0063_8d40;
+    pub const SPLIT_SET_CAMERA: u32 = 0x0063_8aa0;
+    pub const SPLIT_END: u32 = 0x0063_8d20;
+    pub const SET_WORLD: u32 = 0x0063_9860;
+    /// [`cam_apply`]'s work: the field of view and the aspect ratio
+    /// (`f32` each) the renderer reads through pointers.
+    pub const APPLY_WORK: u32 = 8;
+    /// `.rdata` `f64`: 2, 512, 448, 0.75, 256.
+    const K2: u32 = 0x00b9_2270;
+    const K512: u32 = 0x00b4_1d38;
+    const K448: u32 = 0x00b5_0210;
+    const K075: u32 = 0x00b5_1bd0;
+    const K256: u32 = 0x00b9_22f0;
+
+    /// `Cam_Apply(camera)` (`0x007bc980`; from `MsScreenProcess` and
+    /// `0x0076edc0`): the renderer's camera from screen `camera`
+    /// ([`APPLY_SCREENS`]): with `h = f32(512 / (2 a))` and `w = f32(448 /
+    /// (2 b))` (`a`, `b` its `+0`, `+4`), the field of view `f32(2 f32(atan(w
+    /// / c)))` (`c` its `+0xc`; `atan(0.75 w / c)` when [`APPLY_NARROW`] is
+    /// 2) and the aspect ratio `f32(h / w)` go to `graphicCameraSetFOVy`
+    /// and `graphicCameraSetAspectRatio` through `work` ([`APPLY_WORK`]).
+    /// Then the view `g_CameraMatrix`: for magic 0x98 or 0x259 on camera 1
+    /// with [`APPLY_SUB`] set through `graphicCameraSetWorldMatrixSub(m,
+    /// 1)`; else on a split screen (`+0x78` exactly 256) `SplitScreenStart
+    /// (0)` and, for camera 1, `SplitScreenSetCamera(m)`; else (and for the
+    /// other split cameras) `graphicCameraSetWorldMatrix(m)`, after
+    /// `0x00638d20()` when not split. `atan` stands for `_CIatan` (its
+    /// result stored as `f32` bits).
+    pub fn cam_apply<M, C>(
+        mem: &mut M,
+        cam: u32,
+        work: u32,
+        call: &mut C,
+        mut atan: impl FnMut(&mut M, f64) -> u32,
+    ) where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let k = |mem: &M, a: u32| mem.read::<f64>(mem.rebase(a));
+        let screen = mem
+            .rebase(APPLY_SCREENS)
+            .wrapping_add(cam.wrapping_mul(0x1c0));
+        let field = |mem: &M, o: u32| x87::load(mem.read(screen.wrapping_add(o)));
+        let two = k(mem, K2);
+        let height = x87::store(x87::div(k(mem, K512), x87::mul(field(mem, 0), two)));
+        let width = x87::store(x87::div(k(mem, K448), x87::mul(two, field(mem, 4))));
+        let depth = x87::load(x87::store(field(mem, 0xc)));
+        let q = x87::div(x87::load(width), depth);
+        let mut fov = x87::store(x87::mul(x87::load(atan(mem, q)), two));
+        if APPLY_NARROW.get(mem) == 2 {
+            let narrow = atan(mem, x87::mul(q, k(mem, K075)));
+            fov = x87::store(x87::mul(x87::load(narrow), two));
+        }
+        let aspect = x87::store(x87::div(x87::load(height), x87::load(width)));
+        mem.write(work, fov);
+        mem.write(work + 4, aspect);
+        let f = mem.rebase(SET_FOVY);
+        call(mem, f, &[work]);
+        let f = mem.rebase(SET_ASPECT);
+        call(mem, f, &[work + 4]);
+        let f = mem.rebase(MAGIC_ID);
+        let special = call(mem, f, &[]) == 0x98 || call(mem, f, &[]) == 0x259;
+        let m = mem.rebase(CAMERA_MATRIX);
+        if special && cam == 1 && APPLY_SUB.get(mem) == 1 {
+            let f = mem.rebase(SET_WORLD_SUB);
+            call(mem, f, &[m, cam]);
+            return;
+        }
+        // fucompp: equal and ordered
+        #[allow(clippy::float_cmp)] // the exact compare the original makes
+        let split = field(mem, 0x78) == k(mem, K256);
+        if split {
+            let f = mem.rebase(SPLIT_START);
+            call(mem, f, &[0]);
+            if cam == 1 {
+                let f = mem.rebase(SPLIT_SET_CAMERA);
+                call(mem, f, &[m]);
+                return;
+            }
+        } else {
+            let f = mem.rebase(SPLIT_END);
+            call(mem, f, &[]);
+        }
+        let f = mem.rebase(SET_WORLD);
+        call(mem, f, &[m]);
     }
 }

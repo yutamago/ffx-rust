@@ -6,12 +6,19 @@
 #![allow(clippy::cast_possible_wrap)] // stack words to the ports' i32 arguments
 
 use ffx_oracle::harvest_test;
-use ffx_oracle::{CallState, Oracle, OracleHost};
+use ffx_oracle::{CallState, Conv, Oracle, OracleHost};
 
 use ffx_ps2::vu0::bridge as vu0;
 
 fn int(s: &CallState, i: u32) -> i32 {
     s.arg(i).cast_signed()
+}
+
+/// `_CIatan` for the port's side: the host's `atan` stored as `f32` (the
+/// original runs the CRT on the oracle's emulated x87; the `f32`s agree on
+/// the harvested states).
+fn crt_atan(_: &mut Oracle, x: f64) -> u32 {
+    ffx_bridge::x87::store(x.atan())
 }
 
 // ps2_emu: VU0 helpers (float math on vectors and matrices)
@@ -40,6 +47,17 @@ harvest_test!(
         ffx_sg::state::bridge::chr_sort_by_z(m, int(s, 0));
     }
 );
+harvest_test!(
+    sg_camera_put_rects,
+    0x0083_f130,
+    args = 0,
+    |m: &mut Oracle, _s| { ffx_sg::camera::bridge::sg_camera_put_rects(&mut OracleHost(m)) }
+);
+harvest_test!(cam_apply, 0x007b_c980, args = 1, |m: &mut Oracle, s| {
+    let work = m.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    ffx_sg::camera::bridge::cam_apply(m, s.arg(0), work, call, crt_atan);
+});
 
 // chara
 harvest_test!(

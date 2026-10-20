@@ -4,17 +4,21 @@
 //! becomes a core (portable, on its own types) and a `bridge` function
 //! over game memory (`docs/porting.md`), one module per area.
 
+pub mod abmap;
 pub mod assert;
+pub mod cache;
 pub mod camera;
 pub mod cdread;
 pub mod chpacket;
 pub mod cloth;
 pub mod control;
+pub mod decode;
 pub mod envelope;
 pub mod gs;
 pub mod light;
 pub mod player;
 pub mod quat;
+pub mod savecmd;
 pub mod scratch;
 pub mod seq;
 pub mod state;
