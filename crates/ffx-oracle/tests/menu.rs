@@ -11571,3 +11571,140 @@ fn menu_round25_gear_sort_shop_rows_and_grow_rows_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// A row loop's port, for the table of three copies.
+type Rows = fn(
+    &mut Oracle,
+    u32,
+    u32,
+    [f32; 2],
+    u32,
+    &mut fn(&mut Oracle, bool, f32) -> f64,
+    &mut fn(&mut Oracle, u32, &[u32]) -> u32,
+);
+
+#[test]
+fn menu_round25_scan_row_loops_and_cursor_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0025_93e0) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // TkScanControler: the busy thunk, the works and the updates logged
+    let mut cells = vec![
+        seq_stub(&mut t, 0x0082_2560, log, 0, &[]),
+        seq_stub(&mut t, 0x0088_8e10, log, 2, &[]),
+    ];
+    let update = seq_stub(&mut t, 0x0088_9790, log, 3, &[]);
+    cells.push(update);
+    for _ in 0..200 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.twin("TkScanControler", 0x0088_93e0, &[], U32, |o| {
+            w(tk::tk_scan_controler(o, &mut callback))
+        });
+    }
+
+    // the row loops: each row logged
+    for f in [0x008d_8cb0u32, 0x008d_8f60, 0x008d_ac70, 0x008c_e5c0] {
+        seq_stub(&mut t, f, log, 5, &[]);
+    }
+    let loops: [(&str, u32, Rows); 3] = [
+        (
+            "MenuWShop_DrawBuyRows",
+            0x008d_8c30,
+            |o, w, f, xy, ids, r, c| {
+                tk::menu_wshop_draw_buy_rows(o, w, f, xy, ids, r, c);
+            },
+        ),
+        (
+            "MenuWShop_DrawSellRows",
+            0x008d_8ee0,
+            |o, w, f, xy, ids, r, c| {
+                tk::menu_wshop_draw_sell_rows(o, w, f, xy, ids, r, c);
+            },
+        ),
+        (
+            "MenuShop_DrawRows",
+            0x008d_abf0,
+            |o, w, f, xy, ids, r, c| {
+                tk::menu_shop_draw_rows(o, w, f, xy, ids, r, c);
+            },
+        ),
+    ];
+    for round in 0..600u32 {
+        t.put(log, start);
+        let (what, f, port) = loops[(round % 3) as usize];
+        let (window, ids) = (t.rng.next(), t.rng.next());
+        let first = t.rng.pick_or_any(&[0, 1, 0x7fff_fffc, 0xffff_fffe]);
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let args = [window, t.rng.next(), first, x, y, ids];
+        let xy = [f32::from_bits(x), f32::from_bits(y)];
+        t.twin(what, f, &args, VOID, |o| {
+            let mut r: fn(&mut Oracle, bool, f32) -> f64 = ui_remap;
+            let mut c: fn(&mut Oracle, u32, &[u32]) -> u32 = callback;
+            port(o, window, first, xy, ids, &mut r, &mut c);
+            0
+        });
+    }
+
+    // MenuSummon_DrawGrowRows: integer x, y
+    for _ in 0..300 {
+        t.put(log, start);
+        let (window, fixed) = (t.rng.next(), t.rng.pick_or_any(&[0, 1]));
+        let first = t.rng.pick_or_any(&[0, 1, 0x8000_0000]);
+        let (x, y) = (t.rng.int(), t.rng.int());
+        t.twin(
+            "MenuSummon_DrawGrowRows",
+            0x008c_e520,
+            &[window, fixed, first, x, y],
+            VOID,
+            |o| {
+                tk::menu_summon_draw_grow_rows(
+                    o,
+                    window,
+                    fixed,
+                    first,
+                    [i(x), i(y)],
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+
+    // MenuSelList_DrawCursor: CursorX logged and leaving a float in ST0
+    let xcell = t.alloc(&[0; 4]);
+    let fld = [&[0xd9, 0x05][..], &xcell.to_le_bytes()].concat(); // fld dword [xcell]
+    let xret = seq_stub(&mut t, 0x008d_1bc0, log, 1, &fld);
+    let cursor = seq_stub(&mut t, 0x008c_0670, log, 3, &[]);
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &[xret, cursor]);
+        let v = quiet_float(&mut t);
+        t.put(xcell, v);
+        let window = t.alloc_random(0x50);
+        for o in [0x48u32, 0x32] {
+            let v = t
+                .rng
+                .pick_or_any(&[0, 1, 2, 3, 0x7fff, 0x8000, 0xffff, 0xfffe]);
+            t.put(window + o, u16::try_from(v & 0xffff).unwrap_or(0));
+        }
+        t.twin("MenuSelList_DrawCursor", 0x008d_15a0, &[window], U32, |o| {
+            w(tk::menu_sel_list_draw_cursor(
+                o,
+                window,
+                &mut ui_remap,
+                &mut |o, w| {
+                    let at = o.rebase(0x008d_1bc0);
+                    o.call(at, Conv::Cdecl, &[w]).unwrap().st0.unwrap()
+                },
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

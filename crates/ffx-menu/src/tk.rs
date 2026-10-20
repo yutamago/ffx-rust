@@ -12481,6 +12481,150 @@ pub mod bridge {
         let digits = mem.rebase(0x0090_55c0);
         call(mem, digits, &[value, tx, ty, grey, 0.68f32.to_bits(), 0])
     }
+    /// `TkScanControler()` (`0x008893e0`, Fahrenheit's name; callers
+    /// `Sg_MainLoop`, `0x00821e80`, `TOControlBtlWindow`): `SaveDataIsBusy()`
+    /// through its thunk `0x00822560` (result unused), then for pads 0
+    /// and 1 `Pad_UpdateFrame(pad, 0, TkGetControlerWork2(pad, 0))` (the
+    /// third word is unused by the callee). Returns the last
+    /// `Pad_UpdateFrame`'s `eax`.
+    pub fn tk_scan_controler<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let busy = mem.rebase(0x0082_2560);
+        call(mem, busy, &[]);
+        let (work2, update) = (mem.rebase(0x0088_8e10), mem.rebase(0x0088_9790));
+        let mut eax = 0;
+        for pad in 0..2 {
+            let w = call(mem, work2, &[pad, 0]);
+            eax = call(mem, update, &[pad, 0, w]);
+        }
+        eax
+    }
+
+    /// Shop rows (`0x008d8c30`, `0x008d8ee0`: 9, `0x008dabf0`: 10; three
+    /// copies that differ in `row` and the count): `x' =
+    /// f32(graphicUiRemapX2(210) + x)` once, `y'` from `y` and after each
+    /// row `f32(graphicUiRemapY2(77) + y')`, `row(window, x', y', first +
+    /// i, ids)` for `i` in `0..rows`.
+    #[allow(clippy::too_many_arguments)]
+    fn shop_draw_rows<M: Mem>(
+        mem: &mut M,
+        [row, rows]: [u32; 2],
+        window: u32,
+        first: u32,
+        [x, y]: [f32; 2],
+        ids: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, round_trip, store};
+        let row = mem.rebase(row);
+        let left = store(add(remap(mem, false, 210.0), load(x.to_bits())));
+        let mut top = round_trip(y).to_bits();
+        for i in 0..rows {
+            call(mem, row, &[window, left, top, first.wrapping_add(i), ids]);
+            top = store(add(remap(mem, true, 77.0), load(top)));
+        }
+    }
+
+    /// `MenuWShop_DrawBuyRows(window, _, first, x, y, ids)` (`0x008d8c30`,
+    /// own name; `x`, `y` `f32`): [`shop_draw_rows`] of
+    /// `MenuWShop_DrawBuyRow`. No caller reads `eax`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn menu_wshop_draw_buy_rows<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        first: u32,
+        xy: [f32; 2],
+        ids: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        shop_draw_rows(mem, [0x008d_8cb0, 9], window, first, xy, ids, remap, call);
+    }
+
+    /// `MenuWShop_DrawSellRows(window, _, first, x, y, ids)` (`0x008d8ee0`,
+    /// own name): [`shop_draw_rows`] of `MenuWShop_DrawSellRow` (which
+    /// ignores `ids`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn menu_wshop_draw_sell_rows<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        first: u32,
+        xy: [f32; 2],
+        ids: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        shop_draw_rows(mem, [0x008d_8f60, 9], window, first, xy, ids, remap, call);
+    }
+
+    /// `MenuShop_DrawRows(window, _, first, x, y, ids)` (`0x008dabf0`, own
+    /// name): [`shop_draw_rows`] of `MenuShop_DrawRow`, ten of them.
+    #[allow(clippy::too_many_arguments)]
+    pub fn menu_shop_draw_rows<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        first: u32,
+        xy: [f32; 2],
+        ids: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        shop_draw_rows(mem, [0x008d_ac70, 10], window, first, xy, ids, remap, call);
+    }
+
+    /// `MenuSummon_DrawGrowRows(window, fixed, first, x, y)` (`0x008ce520`,
+    /// own name; caller `0x008ce750`; `x`, `y` integers): eleven
+    /// `MenuSummon_DrawGrowRow(window, x', y', first + i, fixed)` for `i`
+    /// in `-1..10`, `x' = f32(remapX2(210) + f32(x))`, `y'` from
+    /// `f32(remapY2(300) + f32(y))` and after each row `f32(remapY2(70) +
+    /// y')`. No caller reads `eax`.
+    pub fn menu_summon_draw_grow_rows<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        fixed: u32,
+        first: u32,
+        [x, y]: [i32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, store};
+        let int = |v: i32| load(store(f64::from(v)));
+        let left = store(add(remap(mem, false, 210.0), int(x)));
+        let mut top = store(add(remap(mem, true, 300.0), int(y)));
+        let row = mem.rebase(0x008c_e5c0);
+        for i in -1..10i32 {
+            let r = first.wrapping_add(i.cast_unsigned());
+            call(mem, row, &[window, left, top, r, fixed]);
+            top = store(add(remap(mem, true, 70.0), load(top)));
+        }
+    }
+
+    /// `MenuSelList_DrawCursor(window)` (`0x008d15a0`, own name; caller
+    /// `0x008d1400`): `TkMn2DrawCrossCursor(x, y, 0)` with `x =
+    /// MenuSelList_CursorX(window)` (asked last, through `cursor_x`) and
+    /// `y = f32(remapY2(493) + remapY2(77) * f32(v))`, with
+    /// `v = (i16 +0x48 >> 1) - i16 +0x32` (the cursor's row on screen).
+    /// Returns the cursor call's `eax`.
+    pub fn menu_sel_list_draw_cursor<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        cursor_x: &mut impl FnMut(&mut M, u32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let half = i32::from(mem.read::<i16>(window.wrapping_add(0x48))) >> 1;
+        let step = remap(mem, true, 77.0);
+        let v = half.wrapping_sub(i32::from(mem.read::<i16>(window.wrapping_add(0x32))));
+        let offset = mul(step, load(store(f64::from(v))));
+        let y = store(add(remap(mem, true, 493.0), offset));
+        let x = store(cursor_x(mem, window));
+        let f = mem.rebase(0x008c_0670);
+        call(mem, f, &[x, y, 0])
+    }
 }
 
 #[cfg(test)]

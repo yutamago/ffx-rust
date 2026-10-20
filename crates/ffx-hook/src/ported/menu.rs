@@ -4190,10 +4190,42 @@ ported! {
     MenuSummon_DrawGrowRow @ 0x008c_e5c0 => extern "C" fn menu_summon_draw_grow_row(window: u32, x: f32, y: f32, row: i32, fixed: u32) -> u32 {
         tk::menu_summon_draw_grow_row(&mut mem(), window, [x, y], row, fixed, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkScanControler()`: the last `Pad_UpdateFrame`'s `eax`.
+    TkScanControler @ 0x0088_93e0 => extern "C" fn tk_scan_controler() -> u32 {
+        tk::tk_scan_controler(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawBuyRows(window, _, first, x, y, ids)`: nine rows.
+    MenuWShop_DrawBuyRows @ 0x008d_8c30 => extern "C" fn menu_wshop_draw_buy_rows(window: u32, _unused: u32, first: u32, x: f32, y: f32, ids: u32) {
+        tk::menu_wshop_draw_buy_rows(&mut mem(), window, first, [x, y], ids, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuWShop_DrawSellRows(window, _, first, x, y, ids)`: nine rows.
+    MenuWShop_DrawSellRows @ 0x008d_8ee0 => extern "C" fn menu_wshop_draw_sell_rows(window: u32, _unused: u32, first: u32, x: f32, y: f32, ids: u32) {
+        tk::menu_wshop_draw_sell_rows(&mut mem(), window, first, [x, y], ids, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuShop_DrawRows(window, _, first, x, y, ids)`: ten rows.
+    MenuShop_DrawRows @ 0x008d_abf0 => extern "C" fn menu_shop_draw_rows(window: u32, _unused: u32, first: u32, x: f32, y: f32, ids: u32) {
+        tk::menu_shop_draw_rows(&mut mem(), window, first, [x, y], ids, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSummon_DrawGrowRows(window, fixed, first, x, y)`: eleven rows.
+    MenuSummon_DrawGrowRows @ 0x008c_e520 => extern "C" fn menu_summon_draw_grow_rows(window: u32, fixed: u32, first: u32, x: i32, y: i32) {
+        tk::menu_summon_draw_grow_rows(&mut mem(), window, fixed, first, [x, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSelList_DrawCursor(window)`: `TkMn2DrawCrossCursor`'s `eax`.
+    MenuSelList_DrawCursor @ 0x008d_15a0 => extern "C" fn menu_sel_list_draw_cursor(window: u32) -> u32 {
+        tk::menu_sel_list_draw_cursor(&mut mem(), window, &mut |_, y, v| ui_remap(y, v), &mut |_, w| sel_list_cursor_x(w), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMn2DrawCrossSummonBattleCountPlate(x, y, chr)`: the last font call's `eax`.
     TkMn2DrawCrossSummonBattleCountPlate @ 0x008c_d720 => extern "C" fn tk_mn2_draw_cross_summon_battle_count_plate(x: f32, y: f32, chr: u32) -> u32 {
         tk::tk_mn2_draw_cross_summon_battle_count_plate(&mut mem(), [x, y], chr, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+}
+
+/// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry
+/// (the hook when it is on): the result in `ST0`, read back as a double.
+fn sel_list_cursor_x(window: u32) -> f64 {
+    let f = crate::rebase(0x008d_1bc0);
+    // SAFETY: a cdecl function of one word returning in ST0.
+    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn(u32) -> f64>(f)(window) }
 }
 
 /// `inputGetCurTime()` (`0x00630c60`) through the game's entry: the result
