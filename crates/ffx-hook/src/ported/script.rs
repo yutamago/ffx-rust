@@ -6628,4 +6628,24 @@ ported! {
     Atel_SetLineTable @ 0x0086_d190 => extern "C" fn h_86d190(w: u32, t: u32) -> u32 {
         hp::atel_set_line_table(&mut mem(), w, t)
     }
+    /// `Atel_AddSepLoad(id, flags)`.
+    Atel_AddSepLoad @ 0x0086_e250 => extern "C" fn h_86e250(id: u32, flags: u32) -> u32 {
+        hp::atel_add_sep_load(&mut mem(), id, flags)
+    }
+    /// `Atel_StartMoveBlock(worker, mask, mode, param)`.
+    Atel_StartMoveBlock @ 0x0087_03e0 => extern "C" fn h_8703e0(w: u32, mask: u32, mode: u32, param: u32) -> u32 {
+        hp::atel_start_move_block(&mut mem(), w, mask, mode, param)
+    }
+    /// `Atel_ShareMoveBlock(worker, level, mask, mode)`.
+    Atel_ShareMoveBlock @ 0x0087_0440 => extern "C" fn h_870440(w: u32, level: u32, mask: u32, mode: u32) -> u32 {
+        hp::atel_share_move_block(&mut mem(), w, level, mask, mode)
+    }
+    /// `Atel_StartTurnBlock(worker, mask, mode, param)`.
+    Atel_StartTurnBlock @ 0x0087_1030 => extern "C" fn h_871030(w: u32, mask: u32, mode: u32, param: u32) -> u32 {
+        hp::atel_start_turn_block(&mut mem(), w, mask, mode, param)
+    }
+    /// `Atel_ShareTurnBlock(worker, level, mask, mode)`.
+    Atel_ShareTurnBlock @ 0x0087_1090 => extern "C" fn h_871090(w: u32, level: u32, mask: u32, mode: u32) -> u32 {
+        hp::atel_share_turn_block(&mut mem(), w, level, mask, mode)
+    }
 }

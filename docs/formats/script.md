@@ -2507,6 +2507,33 @@ original's, so a sixth uninitialised-stack stub zeroes its frame
 actors through that record's garbage, where the original stops; the test
 leaves them out there.
 
+### Helpers (script round 23)
+
+The move and turn blocks: each level block (`+0x12c + level*0x4c`) points
+at a move block (`+0x44`) and a turn block (`+0x48`); a level's own blocks
+are `+0x5b8 + level*0x4c` and `+0x864 + level*0x44`, and levels sharing one
+move or turn together. `Atel_StartMoveBlock` (`0x008703e0`) and
+`Atel_StartTurnBlock` (`0x00871030`), the tails of `Native_MoveStart` and
+`Native_TurnStart`, write the current level's own block `+0` = param, `+2`
+= mode, `+6` = 0 (16 bits each) and hand it to `Atel_ShareMoveBlock`
+(`0x00870440`) or `Atel_ShareTurnBlock` (`0x00871090`): the level's own
+block (the level unclamped) becomes the clamped level's block (0-1 for
+types 5 and 6, 0-8 otherwise), and so for every level `i` from 0 to the
+level (to 7 with mode bit `0x20`) whose bit is in `mask | 1 << level`;
+with mode bit `0x100` only for levels whose current block is idle (`+2 &
+0xff80` for moves, `& 0xffe0` for turns). All four return the `EAX` the
+loop leaves. `Atel_AddSepLoad` (`0x0086e250`) appends `(id, flags |
+0x8000)` to the sound-separate load list (`g_AtelSepLoadList`,
+`0x01327030`, 8 entries, count `0x01325b78`) when the flags' group bits
+(`0x7e0000`, none = group 0 at bit 16) meet `(g_AtelSepGroupMask |
+1) << 16` (`0x01326bdc`): 0 added, -1 already listed, 1 full or not
+selected. `0x00866520` fills it from the event header's separates table
+(`+0x2c`, then `+0xc`: a count and `(id, flags)` pairs), and `0x008638c0`
+queues the pending ones with a fade of 0xf0 frames (0x78 with flag
+`0x2000`, 0x168 with `0x4000`). `round23_helpers_match_the_original`
+checks them on synthetic workers of every type and on the snapshots' real
+workers (those whose level blocks point at their own blocks).
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

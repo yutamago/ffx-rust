@@ -118,7 +118,7 @@ pub fn native_move_start<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u
     if x87::load(h.read(m + 0x38)) == 0.0 {
         mode |= 0x800;
     }
-    call(h, 0x0087_03e0, &[w, b, mode, a]);
+    super::helpers::atel_start_move_block(h, w, b, mode, a);
     0
 }
 
@@ -169,7 +169,7 @@ pub fn native_turn_start<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u
             h.write(t + 0xc, x87::store(x87::div(1.0, c)));
         }
     }
-    call(h, 0x0087_1030, &[w, b, mode, a]);
+    super::helpers::atel_start_turn_block(h, w, b, mode, a);
     0
 }
 
