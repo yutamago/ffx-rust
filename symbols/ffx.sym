@@ -11037,6 +11037,7 @@
 0x008c7650 function MenuItem_RefreshHelp_008c7650 # the item list window's help line: by window kind (+0x43: 0 item -> TkMenuGetItemHelp, 1 key item -> TkMenuGetImportantHelp, else command -> TkMenuGetCommandHelp) of the entry under the cursor, TkMenuSetHelpMessage; callers TkMenuCtrlAbility and MenuItem_ListWindowCtrl; own name; ported in menu round 22
 0x008c7750 function MenuItem_ListWindowDraw_008c7750 # the item list window's draw (+0x10 of MenuItem_OpenListWindow's window): scissored menu window, scroll parts (DrawCrossMenuScrollParts), the rows and the cursor (0x008c7af0); own name
 0x008c7af0 function MenuItem_DrawListCursor_008c7af0 # (window, x, y) the list cursor at row +0x48 - top +0x32 (TkMn2DrawCrossCmdCursor), blinking with TkMenuGetTimer in mode 2; caller MenuItem_ListWindowDraw; own name
+0x008c7c30 function MenuItem_DrawListRow     # (window, x, y, row, mode): one item list row by list kind +0x43 (0 items: kind-4 plate, count, DrawCrossMenuIconItemName; 1 key items from g_TkMenuImportantList when TkMsImportantGet; 2 commands: text kind 1 plate 0xe, icon shape 200, name, MP cost byte +0x25 of MsGetRomPlyCommand; text kind 2 MenuMn2_EmitPacket(ftol x, ftol y, 2)); modes 0/2 add 2*i16 +0x32, mode 1 2*i16 +0x34; then TkMn2DrawStatiCursor when +0x42 == 2, i8 +0x45 > 0, +0x58 + 2*i16 +0x2c == row (the key id for kind 1) and bit 1 of TkMenuGetTimer; caller MenuItem_ListWindowDraw_008c7750; ported in menu round 28; name ours
 0x008c8a00 function MenuItem_GetRows          # 0x0186a38c; own name
 0x008c8a10 function TkMenuGetImportantCounter # fh v3:bsim1.00 0x008c89e0
 0x008c8a20 function TkMenuImportantListMax    # fh v3:bsim1.00 0x008c89f0
@@ -11057,6 +11058,7 @@
 0x008c9410 function MenuItem_CompareEntries   # (list, a, b) 32-byte entries as 8 unsigned words: 1/-1/0; own name
 0x008c9460 function MenuItem_SwapEntries      # (list, a, b) swap 32-byte entries; own name
 0x008c94e0 function MenuItem_CountGearByOwner # (): u16 counts [7][2] at 0x0186a3e4 cleared; per i < TkMn2GetNameModeMax() (signed) MsGetSaveWeapon(u16 g_TkMenuItemList[i], &local): owner byte +4 < 7 -> counts[owner*2 + (byte +5 != 0)]++; eax: count, the last index or slot; caller 0x008c5480 (case 0x8c57bb); own name
+0x008c9570 function MenuItem_DrawGearInfo    # (window): the item menu gear pane: MenuItem_DrawChrSmallPlate(X210, Y231, owner or -1); in gear mode (g_TkMenuItemGearMode) the owner's worn piece (TkMenuGetArmor/TkMenuGetWeapon by record byte +5) with 0x008d8aa0 stats or status text 0x17, then the selected one; ends with TkMn2DrawKickSyncPacket2 (its eax); caller 0x008c87e0; ported in menu round 28; name ours
 0x008c99f0 function MenuItem_DrawRows         # (window, _, first, f32 x, f32 y): x' = f32(graphicUiRemapX2(210) + x); nine MenuItem_DrawRow(window, x', y', first + i), y' += graphicUiRemapY2(77) (f32); caller the item list draw; own name
 0x008c9a70 function MenuItem_DrawRow          # (window, x, y, index): index in 0..u16 window+0x30: TODrawMenuPlateXYWHType(x, y, rx2(740), ry2(60), 5); window+0x45 > 0 and index == i16 +0x2c: TkMn2DrawCrossCmdCursor(x + rx2(160), y + ry2(4), 1); g_TkMenuItemList[index] byte +2 set: DrawCrossMenuIconWeaponName2(MsGetSaveWeapon(id, &local), x, y, 0); caller 0x008c99f0; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b60 function MenuItem_GetLinePos       # (): TkMn2SeqGetPos("p_linmline", 0x0186a400), ("p_rinmline", 0x0186a404); no direct callers; name ours; ported in ffx-pcui item (pc-ui round 6)
@@ -17041,6 +17043,7 @@
 0x0186a388 label    g_TkMenuImportantListMax  # TkMenuImportantListMax
 0x0186a38c label    g_TkMenuItemRows          # MenuItem_GetRows
 0x0186a391 label    g_TkMenuAbilitySingle     # u8 1 when the ability menu's command has one target (+0x1a bits 2-3 neither 1 nor 2; set by 0x008c6bc0); MenuAbility_ApplyHeal
+0x0186a393 label g_TkMenuItemGearMode     # u8 1 while the item menu lists gear (set by TkMenuCtrlItem after the gear sort 0x008c9bf0, cleared by the other lists); MenuItem_DrawGearInfo; name ours
 0x0186a394 label    g_TkMenuItemWindow        # the item menu's window (TkMenuCtrlItem, TkMenuItemCloseWindow, TkMenuItemClearWindow)
 0x0186a3a8 label    g_TkMenuAbilityCommand    # u16 the ability menu's command id (set by 0x008c6bc0; Cmd_HealAmount, MsGetRomPlyCommand in MenuAbility_ApplyHeal)
 0x0186a3b0 label    g_TkMenuItemFirstUsable   # i16 inventory slot of the first usable item, -1 for none (TkMenuItemRefresh)

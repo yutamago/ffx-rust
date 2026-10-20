@@ -197,6 +197,19 @@ first larger `u16` ability (so `0x105` ranks above `0x05`, same bit);
 each move swaps the save data too (`SwapSaveGear`). The bit table is
 `0x1900` bytes of the frame: 200 entries.
 
+The item list window draws a row with `MenuItem_DrawListRow`
+(`0x008c7c30`) by the window's list kind (`+0x43`): 0 items (count right
+aligned on `remapX2(636)` at scale 0.68, dimmed when the usable byte is
+0), 1 key items (`g_TkMenuImportantList` ids, shown when
+`TkMsImportantGet`), 2 commands (byte `+2` is 1 for a command with its
+icon and MP cost `+0x25`, 2 for a packet at the integer position). The
+cursor blinks with bit 1 of `TkMenuGetTimer()` on the row
+`+0x58 + 2 * i16 +0x2c`; for key items it is compared with the key id,
+not the row. In gear mode (`0x0186a393`) `MenuItem_DrawGearInfo`
+(`0x008c9570`) draws the owner (record byte `+4` when byte `+2` is set)
+and the piece it wears of the selected row's kind (byte `+5`: armour,
+else weapon) above the selected piece.
+
 ## Characters and aeons
 
 `g_TkMenuPlayers` (`0x01841c14`) and `g_TkMenuSummons` (`0x01841c38`) are

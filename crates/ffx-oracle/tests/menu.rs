@@ -13584,3 +13584,240 @@ fn menu_round28_sort_gear_and_main_cmd_window_match_the_original() {
     t.put_bytes(order, &game_order);
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` logging the arguments `args` and storing the word in the returned
+/// cell (a float width) through argument `out`, which it also returns.
+fn out_float_stub(t: &mut Twins, f: u32, log: u32, args: &[u8], out: u8) -> u32 {
+    let cell = t.alloc(&[0; 4]);
+    let mut extra = vec![0x8b, 0x54, 0x24, 4 + 4 * out, 0xa1]; // mov edx, [esp + 4 + 4 out]; mov eax, [cell]
+    extra.extend(cell.to_le_bytes());
+    extra.extend([0x89, 0x02]); // mov [edx], eax
+    let code = seq_code_of(log, f, args, cell, &extra);
+    jump_stub(t, f, &code);
+    cell
+}
+
+/// A float for the row tests: mostly on screen, sometimes odd.
+fn row_float(t: &mut Twins) -> f32 {
+    match t.rng.below(12) {
+        0 => t.rng.pick(&[
+            0.0f32,
+            -0.0,
+            1e30,
+            -1e30,
+            f32::INFINITY,
+            f32::from_bits(0x7fc0_0000),
+        ]),
+        1 => f32::from_bits(t.rng.next() & 0xbfff_ffff),
+        _ => t.rng.float(-200.0, 1500.0),
+    }
+}
+
+/// `n` bytes, mostly 0 or 1.
+fn small_bytes(t: &mut Twins, n: usize) -> Vec<u8> {
+    (0..n)
+        .map(|_| match t.rng.below(4) {
+            0 => 0,
+            1 => 1,
+            2 => u8::try_from(t.rng.below(4)).unwrap_or(0),
+            _ => u8::try_from(t.rng.next() & 0xff).unwrap_or(0),
+        })
+        .collect()
+}
+
+#[test]
+fn menu_round28_list_row_and_gear_info_match_the_original() {
+    let Some(mut t) = setup_any(0x0028_7c30) else {
+        return;
+    };
+    let stack = t.b.stack_range().start;
+    let (width, local) = (stack + 0x200, stack + 0x204);
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let list = t.sym(tk::MENU_ITEM_LIST.sym);
+    let keys = t.sym(tk::MENU_IMPORTANT_LIST.sym);
+
+    // every callee logged
+    let plate = seq_stub(&mut t, 0x008f_5f70, log, 5, &[]);
+    let sheet = seq_stub(&mut t, 0x008f_8bb0, log, 5, &[]);
+    let digit_w = out_float_stub(&mut t, 0x0090_5230, log, &[0, 2, 3], 1);
+    let digits = seq_stub(&mut t, 0x0090_5820, log, 6, &[]);
+    let item_name = seq_stub(&mut t, 0x008e_6700, log, 4, &[]);
+    let key_get = seq_stub(&mut t, 0x008a_b2c0, log, 1, &[]);
+    let key_name = seq_stub(&mut t, 0x008f_50f0, log, 4, &[]);
+    let roms = t.alloc(&[0; 0x900]);
+    record_stub(&mut t, 0x0079_0a90, log, &[0], roms, 8, None);
+    let shape = seq_stub(&mut t, 0x0090_3bb0, log, 9, &[]);
+    let cmd_name = seq_stub(&mut t, 0x008f_5000, log, 4, &[]);
+    let emit = seq_stub(&mut t, 0x008c_11b0, log, 3, &[]);
+    let timer = seq_stub(&mut t, 0x008a_9c60, log, 0, &[]);
+    let cursor = seq_stub(&mut t, 0x008c_13d0, log, 3, &[]);
+    let maxes = [
+        seq_stub(&mut t, 0x008c_8c30, log, 0, &[]),
+        seq_stub(&mut t, 0x008c_8a20, log, 0, &[]),
+        seq_stub(&mut t, 0x008c_8a00, log, 0, &[]),
+    ];
+    let small_plate = seq_stub(&mut t, 0x008c_1260, log, 3, &[]);
+    let gear = t.alloc(&[0; 0x900]);
+    record_stub(&mut t, 0x007a_bbd0, log, &[0], gear, 8, None);
+    let worn = [
+        seq_stub(&mut t, 0x008a_9820, log, 1, &[]),
+        seq_stub(&mut t, 0x008a_9c70, log, 1, &[]),
+    ];
+    let stats = seq_stub(&mut t, 0x008d_8aa0, log, 3, &[]);
+    let name2 = seq_stub(&mut t, 0x008e_6970, log, 4, &[]);
+    let status_mes = seq_stub(&mut t, 0x008b_ee70, log, 1, &[]);
+    let text_w = out_float_stub(&mut t, 0x0090_5290, log, &[0, 2, 3, 4], 1);
+    let font = seq_stub(&mut t, 0x0090_5ab0, log, 6, &[]);
+    let kick = seq_stub(&mut t, 0x008c_0cd0, log, 0, &[]);
+    let cells = [
+        plate,
+        sheet,
+        digits,
+        item_name,
+        key_get,
+        key_name,
+        shape,
+        cmd_name,
+        emit,
+        timer,
+        cursor,
+        small_plate,
+        stats,
+        name2,
+        status_mes,
+        font,
+        kick,
+    ];
+
+    // MenuItem_DrawListRow: every list kind, rows in and out of range,
+    // the cursor row hit or not
+    for round in 0..1500u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        for c in [digit_w, text_w] {
+            let v = row_float(&mut t).to_bits();
+            t.put(c, v);
+        }
+        let b = small_bytes(&mut t, 0x900);
+        t.put_bytes(roms, &b);
+        let b = small_bytes(&mut t, 0x800);
+        t.put_bytes(list, &b);
+        let k: Vec<u8> = (0..0x400)
+            .map(|_| {
+                if t.rng.below(4) == 0 {
+                    0
+                } else {
+                    u8::try_from(t.rng.next() & 0xff).unwrap_or(0)
+                }
+            })
+            .collect();
+        t.put_bytes(keys, &k);
+        let window = t.alloc_random(0x100);
+        let kind = t.rng.pick(&[0u8, 1, 2, 2, 3]);
+        t.put(window + 0x43, kind);
+        let (s32, s34) = (
+            i16::try_from(t.rng.below(8)).unwrap_or(0) - 1,
+            i16::try_from(t.rng.below(8)).unwrap_or(0) - 1,
+        );
+        t.put(window + 0x32, s32);
+        t.put(window + 0x34, s34);
+        let mode = t.rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff]);
+        let row = t
+            .rng
+            .pick(&[0u32, 1, 2, 5, 9, 30, 0xffff_ffff, 0xffff_fff0, 0x8000_0000]);
+        let shift = match mode {
+            0 | 2 => i32::from(s32) * 2,
+            1 => i32::from(s34) * 2,
+            _ => 0,
+        };
+        let real = row.wrapping_add(shift.cast_unsigned());
+        for (k, &c) in maxes.iter().enumerate() {
+            let m = match t.rng.below(4) {
+                0 => real,
+                1 => real.wrapping_add(1),
+                2 => t.rng.below(0x40),
+                _ => t.rng.next(),
+            };
+            let m = if k == 0 && round % 7 == 0 { 0x200 } else { m };
+            t.put(c, m);
+        }
+        let active = t.rng.pick(&[2u8, 2, 1, 0]);
+        t.put(window + 0x42, active);
+        let shown = t.rng.pick(&[1i8, 3, 0, -1]);
+        t.put(window + 0x45, shown);
+        let c2c = i16::try_from(t.rng.below(6)).unwrap_or(0) - 2;
+        t.put(window + 0x2c, c2c);
+        let target = match t.rng.below(3) {
+            0 => real,
+            1 => u32::from(Mem::read::<u16>(&t.a, keys + real.wrapping_mul(2))),
+            _ => t.rng.next(),
+        };
+        t.put(
+            window + 0x58,
+            target.wrapping_sub((i32::from(c2c) * 2).cast_unsigned()),
+        );
+        let (x, y) = (row_float(&mut t), row_float(&mut t));
+        t.twin(
+            "MenuItem_DrawListRow",
+            0x008c_7c30,
+            &[window, x.to_bits(), y.to_bits(), row, mode],
+            VOID,
+            |o| {
+                tk::menu_item_draw_list_row(
+                    o,
+                    window,
+                    [x, y],
+                    row,
+                    mode,
+                    [width, local],
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+
+    // MenuItem_DrawGearInfo: gear mode or not, listed rows or not, worn
+    // pieces or none
+    let mode = t.sym(tk::MENU_ITEM_GEAR_MODE.sym);
+    for _ in 0..800u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let v = row_float(&mut t).to_bits();
+        t.put(text_w, v);
+        let b = small_bytes(&mut t, 0x900);
+        t.put_bytes(gear, &b);
+        let b = small_bytes(&mut t, 0x800);
+        t.put_bytes(list, &b);
+        for c in worn {
+            let v = t.rng.pick(&[0xffu32, 0, 3, 0x1ff, 0x1_00ff]);
+            let v = if t.rng.below(3) == 0 { t.rng.next() } else { v };
+            t.put(c, v);
+        }
+        let on = t.rng.pick(&[1u8, 1, 1, 0, 0x80]);
+        t.put(mode, on);
+        let window = t.alloc_random(0x100);
+        let row = t.rng.pick(&[0i16, 1, 7, 0x1ff, -1]);
+        let row = if t.rng.below(2) == 0 {
+            i16::try_from(t.rng.below(0x200)).unwrap_or(0)
+        } else {
+            row
+        };
+        t.put(window + 0x48, row);
+        // row -1 reads the entry before the list
+        let before = [t.rng.pick(&[0u8, 3]), 1, t.rng.pick(&[0u8, 1]), 0];
+        t.put_bytes(list - 4, &before);
+        t.twin("MenuItem_DrawGearInfo", 0x008c_9570, &[window], U32, |o| {
+            w(tk::menu_item_draw_gear_info(
+                o,
+                window,
+                [local, width],
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

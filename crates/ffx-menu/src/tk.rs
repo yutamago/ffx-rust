@@ -12291,6 +12291,301 @@ pub mod bridge {
         }
     }
 
+    /// A list row's backing: `TODrawMenuPlateXYWHType(x, y, X(740),
+    /// Y(60), kind)` (`y` remapped first).
+    fn list_row_plate<M: Mem>(
+        mem: &mut M,
+        [x, y]: [u32; 2],
+        kind: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::store;
+        let h = store(remap(mem, true, 60.0));
+        let w = store(remap(mem, false, 740.0));
+        let plate = mem.rebase(0x008f_5f70);
+        call(mem, plate, &[x, y, w, h, kind]);
+    }
+
+    /// A list row's count: `ToGetBtlEasyDigitWidth2(v, width, 0.68, 0)`,
+    /// then `ToMakeBtlEasyEdgeDigit2(v, f32(X(636) + x - w * 0.5),
+    /// f32(Y(14) + y), dim, 0.68, 0)`, `v` the byte at `value` (read for
+    /// each call).
+    fn list_row_count<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        value: u32,
+        dim: u32,
+        width: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let scale = 0.68f32.to_bits();
+        let v = u32::from(mem.read::<u8>(value));
+        let measure = mem.rebase(0x0090_5230);
+        call(mem, measure, &[v, width, scale, 0]);
+        let ty = store(add(remap(mem, true, 14.0), load(y.to_bits())));
+        let right = add(remap(mem, false, 636.0), load(x.to_bits()));
+        let tx = store(sub(right, mul(load(mem.read(width)), 0.5)));
+        let v = u32::from(mem.read::<u8>(value));
+        let digits = mem.rebase(0x0090_5820);
+        call(mem, digits, &[v, tx, ty, dim, scale, 0]);
+    }
+
+    /// `MenuItem_DrawListRow(window, x, y, row, mode)` (`0x008c7c30`, own
+    /// name; caller `MenuItem_ListWindowDraw_008c7750`): one row of the
+    /// item list window. Modes 0 and 2 add `2 * i16 +0x32` (the scroll) to
+    /// `row`, mode 1 `2 * i16 +0x34`. By the window's list kind (`+0x43`):
+    /// 0 items (`row` below `TOAmapGetItemListMax()`: a kind-4 plate, then
+    /// for a count the count and `DrawCrossMenuIconItemName`, dimmed when
+    /// the usable byte is 0), 1 key items (`row` below
+    /// `TkMenuImportantListMax()`: the id from [`MENU_IMPORTANT_LIST`],
+    /// which replaces `row` for the cursor test; when
+    /// `TkMsImportantGet(id)`, a kind-7 plate and its name), 2 commands
+    /// (`row` below `MenuItem_GetRows()`: text kind 1 is a kind-`0xe`
+    /// plate, the command icon shape, its name and its MP cost byte `+0x25`
+    /// of `MsGetRomPlyCommand(id, local)`; kind 2 is
+    /// `MenuMn2_EmitPacket(ftol(x), ftol(y), 2)`). A negative or too large
+    /// `row` returns at once. Then the blinking cursor
+    /// `TkMn2DrawStatiCursor(X(170) + x, Y(5) + y, 0)` when the window is
+    /// active (`+0x42` 2, `i8 +0x45` positive), its cursor row
+    /// `+0x58 + 2 * i16 +0x2c` is `row` and bit 1 of `TkMenuGetTimer()` is
+    /// set. `width` stands for the original's argument slot the digit
+    /// width goes to, `local` for its command out word.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn menu_item_draw_list_row<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [x, y]: [f32; 2],
+        row: u32,
+        mode: u32,
+        [width, local]: [u32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, ftol, load, round_trip, store, sub};
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let at = |o: u32| window.wrapping_add(o);
+        let xy = [round_trip(x).to_bits(), round_trip(y).to_bits()];
+        let (xl, yl) = (load(x.to_bits()), load(y.to_bits()));
+        let scroll = match mode {
+            0 | 2 => Some(0x32),
+            1 => Some(0x34),
+            _ => None,
+        };
+        let mut row = row;
+        if let Some(o) = scroll {
+            let s = i32::from(mem.read::<i16>(at(o))).cast_unsigned();
+            row = row.wrapping_add(s.wrapping_mul(2));
+        }
+        let entry = MENU_ITEM_LIST
+            .ptr(mem)
+            .addr
+            .wrapping_add(row.wrapping_mul(4));
+        let in_range = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, f: u32| {
+            let f = mem.rebase(f);
+            row.cast_signed() >= 0 && row.cast_signed() < call(mem, f, &[]).cast_signed()
+        };
+        match mem.read::<u8>(at(0x43)) {
+            0 => {
+                if !in_range(mem, call, 0x008c_8c30) {
+                    return;
+                }
+                let dim = u32::from(mem.read::<u8>(entry.wrapping_add(3)) == 0);
+                list_row_plate(mem, xy, 4, remap, call);
+                if mem.read::<u8>(entry.wrapping_add(2)) != 0 {
+                    list_row_count(mem, [x, y], entry.wrapping_add(2), dim, width, remap, call);
+                    let id = u32::from(mem.read::<u16>(entry));
+                    let name = fun(mem, 0x008e_6700);
+                    call(mem, name, &[id, xy[0], xy[1], dim]);
+                }
+            }
+            1 => {
+                if !in_range(mem, call, 0x008c_8a20) {
+                    return;
+                }
+                let keys = MENU_IMPORTANT_LIST.ptr(mem).addr;
+                row = u32::from(mem.read::<u16>(keys.wrapping_add(row.wrapping_mul(2))));
+                let get = fun(mem, 0x008a_b2c0);
+                if row != 0 && call(mem, get, &[row]) != 0 {
+                    list_row_plate(mem, xy, 7, remap, call);
+                    let name = fun(mem, 0x008f_50f0);
+                    call(mem, name, &[row, xy[0], xy[1], 0]);
+                }
+            }
+            2 => {
+                if !in_range(mem, call, 0x008c_8a00) {
+                    return;
+                }
+                let dim = u32::from(mem.read::<u8>(entry.wrapping_add(3)) == 0);
+                match mem.read::<u8>(entry.wrapping_add(2)) {
+                    1 => {
+                        let id = u32::from(mem.read::<u16>(entry));
+                        let rom = fun(mem, 0x0079_0a90);
+                        let rec = call(mem, rom, &[id, local]);
+                        list_row_plate(mem, xy, 0xe, remap, call);
+                        let h = store(remap(mem, true, 68.0));
+                        let w = store(remap(mem, false, 68.0));
+                        let sy = store(sub(yl, remap(mem, true, 2.0)));
+                        let sx = store(add(remap(mem, false, 602.0), xl));
+                        // u0, v0, u1, v1: 0.486, 0.589, 0.560, 0.662
+                        let uv = [0x3ef9_0000u32, 0x3f16_c000, 0x3f0f_4000, 0x3f29_8000];
+                        let shape = fun(mem, 0x0090_3bb0);
+                        call(mem, shape, &[200, sx, sy, w, h, uv[0], uv[1], uv[2], uv[3]]);
+                        let id = u32::from(mem.read::<u16>(entry));
+                        let name = fun(mem, 0x008f_5000);
+                        call(mem, name, &[id, xy[0], xy[1], dim]);
+                        let cost = rec.wrapping_add(0x25);
+                        if mem.read::<u8>(cost) != 0 {
+                            list_row_count(mem, [x, y], cost, dim, width, remap, call);
+                        }
+                    }
+                    2 => {
+                        let ty = ftol(mem, yl);
+                        let tx = ftol(mem, xl);
+                        let emit = fun(mem, 0x008c_11b0);
+                        call(mem, emit, &[tx, ty, 2]);
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        if mem.read::<u8>(at(0x42)) != 2 || mem.read::<i8>(at(0x45)) < 1 {
+            return;
+        }
+        let cursor = mem.read::<u32>(at(0x58)).wrapping_add(
+            i32::from(mem.read::<i16>(at(0x2c)))
+                .cast_unsigned()
+                .wrapping_mul(2),
+        );
+        if cursor != row {
+            return;
+        }
+        let timer = fun(mem, 0x008a_9c60);
+        if (call(mem, timer, &[]).cast_signed() / 2) & 1 == 0 {
+            return;
+        }
+        let cy = store(add(remap(mem, true, 5.0), yl));
+        let cx = store(add(remap(mem, false, 170.0), xl));
+        let draw = fun(mem, 0x008c_13d0);
+        call(mem, draw, &[cx, cy, 0]);
+    }
+
+    /// Set while the item menu lists gear (`TkMenuCtrlItem` after the gear
+    /// sort), cleared by the other item lists.
+    pub const MENU_ITEM_GEAR_MODE: Global<u8> = Global::new(0x0186_a393);
+
+    /// `MenuItem_DrawGearInfo(window)` (`0x008c9570`, own name; caller
+    /// `0x008c87e0`, the item menu's draw): outside gear mode
+    /// ([`MENU_ITEM_GEAR_MODE`] 0) only `MenuItem_DrawChrSmallPlate(X(210),
+    /// Y(231), -1)`. In gear mode, for the window's row `i16 +0x48` of
+    /// [`MENU_ITEM_LIST`] (id `+0`, count byte `+2`): with an id and a
+    /// count the record `r = MsGetSaveWeapon(id, local)` and its owner
+    /// (byte `+4` when byte `+2` is set, else -1) get the small plate;
+    /// then the owner's equipped piece (`TkMenuGetArmor`/`TkMenuGetWeapon`
+    /// by byte `+5`, `0xff` none) in a plate (`X(1144), Y(295), X(740),
+    /// Y(60)`, kind 2) with sheet cell `0x12` and either its stats
+    /// (`0x008d8aa0`), a plate and its name, or status text `0x17` centred
+    /// on `X(1514)` (scale 0.78); then the selected one: plate at
+    /// `X(970), Y(659)`, cell `0x13` and `0x008d8aa0(X(970), Y(727), r)`.
+    /// Every `X`/`Y` is `graphicUiRemapX2`/`Y2`, each y before its x, the
+    /// last argument first. Ends with `TkMn2DrawKickSyncPacket2()`, whose
+    /// `eax` it returns. `local` is the out word, `width` the text width's.
+    pub fn menu_item_draw_gear_info<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [local, width]: [u32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let (small_plate, kick) = (fun(mem, 0x008c_1260), fun(mem, 0x008c_0cd0));
+        let (plate, sheet, stats) = (
+            fun(mem, 0x008f_5f70),
+            fun(mem, 0x008f_8bb0),
+            fun(mem, 0x008d_8aa0),
+        );
+        let weapon = fun(mem, 0x007a_bbd0);
+        let mut owner = u32::MAX;
+        if MENU_ITEM_GEAR_MODE.get(mem) == 0 {
+            let y = store(remap(mem, true, 231.0));
+            let x = store(remap(mem, false, 210.0));
+            call(mem, small_plate, &[x, y, owner]);
+            return call(mem, kick, &[]);
+        }
+        let row = i32::from(mem.read::<i16>(window.wrapping_add(0x48))).cast_unsigned();
+        let entry = MENU_ITEM_LIST
+            .ptr(mem)
+            .addr
+            .wrapping_add(row.wrapping_mul(4));
+        let listed =
+            |mem: &M| mem.read::<u16>(entry) != 0 && mem.read::<u8>(entry.wrapping_add(2)) != 0;
+        let mut rec = 0;
+        if listed(mem) {
+            let id = u32::from(mem.read::<u16>(entry));
+            rec = call(mem, weapon, &[id, local]);
+            if mem.read::<u8>(rec.wrapping_add(2)) != 0 {
+                owner = u32::from(mem.read::<u8>(rec.wrapping_add(4)));
+            }
+        }
+        let y = store(remap(mem, true, 231.0));
+        let x = store(remap(mem, false, 210.0));
+        call(mem, small_plate, &[x, y, owner]);
+        if !listed(mem) {
+            return call(mem, kick, &[]);
+        }
+        let get = if mem.read::<u8>(rec.wrapping_add(5)) == 0 {
+            fun(mem, 0x008a_9c70)
+        } else {
+            fun(mem, 0x008a_9820)
+        };
+        let equipped = call(mem, get, &[owner]);
+        let worn = if equipped == 0xff {
+            0
+        } else {
+            call(mem, weapon, &[equipped, local])
+        };
+        let [x, y, w, h] = status_rect(mem, remap, [1144.0, 295.0, 740.0, 60.0], None);
+        call(mem, plate, &[x, y, w, h, 2]);
+        let [x, y, w, h] = status_rect(mem, remap, [1299.0, 307.0, 430.0, 36.0], None);
+        call(mem, sheet, &[0x12, x, y, w, h]);
+        let scale = 0.78f32.to_bits();
+        let one = 1f32.to_bits();
+        if worn == 0 {
+            let mes = fun(mem, 0x008b_ee70);
+            let text = call(mem, mes, &[0x17, width, 0, scale, one]);
+            let measure = fun(mem, 0x0090_5290);
+            call(mem, measure, &[text, width, 0, scale, one]);
+            let y = store(remap(mem, true, 243.0));
+            let right = remap(mem, false, 1514.0);
+            let x = store(sub(right, mul(load(mem.read(width)), 0.5)));
+            let text = call(mem, mes, &[0x17, x, y, 0, scale, one]);
+            let font = fun(mem, 0x0090_5ab0);
+            call(mem, font, &[text, x, y, 0, scale, one]);
+        } else {
+            let y = store(remap(mem, true, 363.0));
+            let x = store(remap(mem, false, 1144.0));
+            call(mem, stats, &[x, y, worn]);
+            let [x, y, w, h] = status_rect(mem, remap, [1164.0, 231.0, 700.0, 64.0], None);
+            call(mem, plate, &[x, y, w, h, 9]);
+            let y = store(remap(mem, true, 234.0));
+            let x = store(remap(mem, false, 1164.0));
+            let name = fun(mem, 0x008e_6970);
+            call(mem, name, &[worn, x, y, 0]);
+        }
+        let [x, y, w, h] = status_rect(mem, remap, [970.0, 659.0, 740.0, 60.0], None);
+        call(mem, plate, &[x, y, w, h, 2]);
+        let [x, y, w, h] = status_rect(mem, remap, [1125.0, 671.0, 430.0, 36.0], None);
+        call(mem, sheet, &[0x13, x, y, w, h]);
+        let y = store(remap(mem, true, 727.0));
+        let x = store(remap(mem, false, 970.0));
+        call(mem, stats, &[x, y, rec]);
+        call(mem, kick, &[])
+    }
+
     /// The main command window (`TkMenuAppearMainCmdWindow`'s window).
     pub const MENU_MAIN_CMD_WINDOW: Global<u32> = Global::new(0x0187_1540);
     /// The widest option text of the main command window.

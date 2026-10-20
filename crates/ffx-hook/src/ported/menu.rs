@@ -4194,6 +4194,20 @@ ported! {
         let table = frame.at();
         tk::menu_item_sort_gear(&mut mem(), list, start, n, table, table.wrapping_add(0x1900), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuItem_DrawListRow(window, x, y, row, mode)`.
+    MenuItem_DrawListRow @ 0x008c_7c30 => extern "C" fn menu_item_draw_list_row(window: u32, x: f32, y: f32, row: u32, mode: u32) {
+        // the digit width (the original's argument slot) and the command out word
+        let mut frame = super::StackFrame::<2>::new();
+        let width = frame.at();
+        tk::menu_item_draw_list_row(&mut mem(), window, [x, y], row, mode, [width, width.wrapping_add(4)], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuItem_DrawGearInfo(window)`: `TkMn2DrawKickSyncPacket2`'s `eax`.
+    MenuItem_DrawGearInfo @ 0x008c_9570 => extern "C" fn menu_item_draw_gear_info(window: u32) -> u32 {
+        // MsGetSaveWeapon's out word and the text width
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_item_draw_gear_info(&mut mem(), window, [local, local.wrapping_add(4)], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuAppearMainCmdWindow(slide, mode)`: `TkMenuMainRegistWindow`'s `eax`.
     TkMenuAppearMainCmdWindow @ 0x008e_1c60 => extern "C" fn tk_menu_appear_main_cmd_window(slide: u32, mode: u32) -> u32 {
         tk::tk_menu_appear_main_cmd_window(&mut mem(), slide, mode, &mut |_, f, a| call_ptr(f, a))
