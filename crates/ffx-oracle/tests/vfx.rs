@@ -21467,7 +21467,7 @@ fn round37a_unit_on_vectors_trails_and_hit_checks_match_the_original() {
                     host,
                     cmd,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 ))
             });
 
