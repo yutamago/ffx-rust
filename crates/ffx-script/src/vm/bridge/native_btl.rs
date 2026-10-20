@@ -271,17 +271,67 @@ pub fn native_70ac<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
     callf(h, 0x007b_2c90, &[id, v])
 }
 
-/// `Native_700c` (`0x007a4310`, `0x700c`): `0x007a9150(worker, args,
-/// stack, 0.0)`; 0.
+/// `MsGetMoveTargetDist(actor, kind, with, speed, n, accel, brake, a, b,
+/// c, gravity)` (`0x007ab540`): a battle move's set-up.
+const MS_GET_MOVE_TARGET_DIST: u32 = 0x007a_b540;
+
+/// `Atel_BtlMoveTargetDist(worker, args, stack, gravity)` (`0x007a9150`),
+/// the move set-up behind `0x700c`, `0x7085` and `0x7053`: pops `c`, `b`,
+/// `a` (floats), `brake`, `accel`, `n`, `speed` (float) and `kind` (pushed
+/// in the reverse order); when the worker has a battle actor and `n` > 0,
+/// `MsGetMoveTargetDist(actor, kind, actor's +0x416, speed, n, accel,
+/// brake, a, b, c, gravity)` and returns the actor record; else 0. Every
+/// float passes through `fstp m32` (or `fld`/`fstp`, for `gravity`).
+pub fn atel_btl_move_target_dist<H: NativeHost>(
+    h: &mut H,
+    w: u32,
+    _a: u32,
+    s: u32,
+    gravity: u32,
+) -> u32 {
+    let fstp = |v: u32| x87::store(x87::load(v));
+    let c = fstp(popf(h, s));
+    let b = fstp(popf(h, s));
+    let a = fstp(popf(h, s));
+    let brake = pop(h, s);
+    let accel = pop(h, s);
+    let n = pop(h, s);
+    let speed = fstp(popf(h, s));
+    let kind = pop(h, s);
+    let id = actor(h, w);
+    if id == 0xff || n.cast_signed() <= 0 {
+        return 0;
+    }
+    let r = chr(h, id);
+    let with = u32::from(h.read::<u8>(r + 0x416));
+    let args = [
+        id,
+        kind,
+        with,
+        speed,
+        n,
+        accel,
+        brake,
+        a,
+        b,
+        c,
+        fstp(gravity),
+    ];
+    call(h, MS_GET_MOVE_TARGET_DIST, &args);
+    r
+}
+
+/// `Native_700c` (`0x007a4310`, `0x700c`): [`atel_btl_move_target_dist`]
+/// with gravity 0.0; 0.
 pub fn native_700c<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
-    call(h, 0x007a_9150, &[w, a, s, x87::store(0.0)]);
+    atel_btl_move_target_dist(h, w, a, s, x87::store(0.0));
     0
 }
 
 /// `Native_7085` (`0x007a43a0`, `0x7085`): as `0x700c`, the returned
 /// record's `+0x418` = 1; 0.
 pub fn native_7085<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
-    let r = call(h, 0x007a_9150, &[w, a, s, x87::store(0.0)]);
+    let r = atel_btl_move_target_dist(h, w, a, s, x87::store(0.0));
     if r != 0 {
         h.write(r + 0x418, 1_u8);
     }
@@ -2017,11 +2067,11 @@ pub fn native_7025<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     h.read(o)
 }
 
-/// `Native_7053` (`0x007a4470`, `0x7053`): `(f)`: `0x007a9150(worker,
-/// args, stack, f)`; 0.
+/// `Native_7053` (`0x007a4470`, `0x7053`): `(f)`:
+/// [`atel_btl_move_target_dist`] with gravity f; 0.
 pub fn native_7053<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     let f = x87::store(x87::load(popf(h, s)));
-    call(h, 0x007a_9150, &[w, a, s, f]);
+    atel_btl_move_target_dist(h, w, a, s, f);
     0
 }
 

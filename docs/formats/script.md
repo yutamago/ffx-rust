@@ -388,6 +388,11 @@ Opcode `79` (`0x00870d30`) writes the worker's vibration curve, eight
 `u16` in a variable (`+0x44` points at it, filled from
 `TkGetVibrateDefaultCurve` the first time); `7a` (`0x0086fab0`) sets a
 `(key, value)` slot in the table at `+0x2e4` of types 5 and 6.
+That table is a script variable's storage, installed by `Native_00f0`
+through `Atel_SetLineTable` (`0x0086d190`): eight 8-byte `(key u32, value
+u8)` slots, reset to `(0xffff, 3)` (`Atel_ResetLineTable`, `0x0086d110`),
+then 16 signal nodes from `+0x40` that `Atel_FreeLineSignals`
+(`0x0086d1c0`) pushes onto the worker's free list (`+0x88`).
 
 ### Natives in Rust
 
@@ -2473,6 +2478,34 @@ marked "not ported" runs in the original, and so does the handler of
 | `0xc05c` | `Native_c05c` | v int | debug (mod-tool candidate): AtelPs2DebugString2(sprintf("DEBUG:%d/0x%x", worker id, v)); v | - | int `0x008783c0` (not ported) |
 | `0xc05d` | `Native_c05d` | v int | int: v; 0x00887ca0(v) | - | int `0x00878470` (native_sys) |
 | `0xd000` | `Native_d000` | v | int: popped for an "abiritymap_debug(%d)" line through the empty dbgPrintf; 0 | - | int `0x00a445f0` (native_mods) |
+
+### Helpers (script round 22)
+
+`ffx_script::vm::bridge::helpers` has, besides the setup functions of
+earlier rounds: `Atel_ClearBindMask` (`0x00863650`, the counterpart of
+`Atel_SetBindMask`), the event sprites' alpha and colour setters
+(`0x00874ad0`, `0x008749f0`: the slot clamped to 0-127, the values to
+0-255; `EAX` is slot * 7), `Atel_GetVoiceStreamParams` (`0x00885ba0`:
+digits 4-5 of `(id >> 12)` in decimal below 21 give `(0x19, 1)`, else
+`(0x1b, 0)`), the character-name converters `setDefaultPlayerName` uses for
+language 1 (`0x00875220`) and languages 9 and 10 (`0x00875370`, the
+inverse), and the line table above. `native_btl::atel_btl_move_target_dist`
+is `0x007a9150`, the battle move set-up behind `0x700c`, `0x7085` and
+`0x7053`: it pops `c`, `b`, `a`, brake, accel, `n`, speed and kind (floats
+through `fstp m32`) and, when the worker has a battle actor and `n` > 0,
+calls `MsGetMoveTargetDist` (`0x007ab540`) with the actor's `+0x416` and
+returns the actor record (0 otherwise). `0x00a7ae20` is a copy of
+`Angle_Wrap` (`ST0` result) and is hooked with `ffx_chara`'s port. The
+natives that called these through the original now call the Rust ones.
+`round22_helpers_match_the_original` checks them on the image and on each
+snapshot. On the snapshots' `0xcd`-filled event workers (battle id from
+`0x5d` up, `MsGetChr`'s spare record) `MsGetMoveTargetDist` copies a
+position `MsGetChrPos` never writes (`[ebp-0x14]`) into the record's
+`+0x390`; with the pops in Rust, the leftovers there differ from the
+original's, so a sixth uninitialised-stack stub zeroes its frame
+(`0x007ab546`, as `MsGetTargetDist`'s). Move kinds 2 and 10 read other
+actors through that record's garbage, where the original stops; the test
+leaves them out there.
 
 ### Verification
 

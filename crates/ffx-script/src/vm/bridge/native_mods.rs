@@ -799,7 +799,7 @@ pub fn native_01d6<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let id = pop(h, s);
     let buf = h.scratch();
     let (pa, pb) = (buf + 4, buf);
-    call(h, 0x0088_5ba0, &[id, pa, pb]);
+    super::helpers::atel_get_voice_stream_params(h, id, pa, pb);
     let pos = call(h, 0x0088_7790, &[id]);
     if pos == u32::MAX {
         return 0;
@@ -892,12 +892,12 @@ pub fn native_0032<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     void(h, 0x0086_a0e0, 0)
 }
 
-/// `0x00f0` (`0x008576a0`): `(&v)`: `0x0086d190(worker, variable
-/// address)`; 1.
+/// `0x00f0` (`0x008576a0`): `(&v)`: `Atel_SetLineTable(worker, variable
+/// address)` (`0x0086d190`); 1.
 pub fn native_00f0<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     let p = atel_get_real_var_adrs(h, w, v);
-    call(h, 0x0086_d190, &[w, p]);
+    super::helpers::atel_set_line_table(h, w, p);
     1
 }
 
@@ -1578,10 +1578,11 @@ pub fn native_0211<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     i
 }
 
-/// `0x011e` (`0x0085caf0`): `(b, a)`: `0x00874ad0(b, a)`; `b`.
+/// `0x011e` (`0x0085caf0`): `(b, a)`: `Atel_SetSpriteAlpha(b, a)`
+/// (`0x00874ad0`); `b`.
 pub fn native_011e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let [a, b] = pops::<2>(h, s);
-    call(h, 0x0087_4ad0, &[b, a]);
+    super::helpers::atel_set_sprite_alpha(h, b, a);
     b
 }
 

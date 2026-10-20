@@ -746,13 +746,14 @@ pub fn native_sprite_hide<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) ->
 }
 
 /// `Native_SpriteSetColor` (`0x0085c760`, `0x0129`): `(sprite, a, b, c)`
-/// -> `0x008749f0(sprite, a, c, b)`; returns `sprite`.
+/// -> `Atel_SetSpriteColor(sprite, a, c, b)` (`0x008749f0`); returns
+/// `sprite`.
 pub fn native_sprite_set_color<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let p1 = pop(h, s);
     let p2 = pop(h, s);
     let p3 = pop(h, s);
     let sprite = pop(h, s);
-    call(h, 0x0087_49f0, &[sprite, p3, p1, p2]);
+    super::helpers::atel_set_sprite_color(h, sprite, p3, p1, p2);
     sprite
 }
 
