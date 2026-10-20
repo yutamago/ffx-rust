@@ -277,3 +277,293 @@ fn misc_matches_the_original_on_a_snapshot() {
     };
     check(&mut a, &mut b, &mut Xorshift(0x5647_3829));
 }
+
+/// A float for the leaves' x87 copies: specials (no signalling NaNs: the
+/// emulator keeps them), quiet randoms, plain values.
+fn leaf_float(rng: &mut Xorshift) -> u32 {
+    match rng.below(6) {
+        0 => [
+            0,
+            0x8000_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x7fc0_0000,
+            1,
+            0x7fc1_2345,
+        ][rng.below(7) as usize],
+        1 => quiet(rng.next()),
+        _ => (f32::from(i16::try_from(rng.range(-30000, 30000)).unwrap()) / 37.0).to_bits(),
+    }
+}
+
+/// Round 29's leaves (`ffx_battle::misc`, `ffx_battle::camera`) and the
+/// two copies of vfx ports, on random globals and arguments.
+fn leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_battle::camera::bridge as cam;
+    use ffx_oracle::Conv;
+    let area = scratch(a, b, 0x400);
+    let rec = scratch(a, b, 0x40);
+    // TOGetFFXLang's thunk and sceWrite as recording stubs: the language
+    // and the write's result are the test's
+    for o in [&mut *a, &mut *b] {
+        recording_stub(o, 0x008a_c2f0, STUBS + 0x100, rec, 0, 0);
+        recording_stub(o, 0x0062_fdc0, STUBS + 0x140, rec + 0x10, 3, 0);
+    }
+    let menu_text = ffx_battle::flow::bridge::MENU_TEXT.ptr(b).addr;
+    let ply = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr;
+    let cameras = cam::CAMERAS.ptr(b).addr;
+    for round in 0..400 {
+        for (gl, len) in [
+            (g::GLOBAL_00C44248.ptr(b).addr, 4),
+            (g::SCREEN_ASPECT_Z.ptr(b).addr, 4),
+            (g::REEL_ENTRIES.ptr(b).addr, 16),
+            (g::EFFECT_CAMERA_WORDS.ptr(b).addr, 0x48),
+            (ffx_battle::action::bridge::SET_COMMAND_FLAG.ptr(b).addr, 1),
+            (ffx_battle::process::bridge::ENCOUNT_FADE.ptr(b).addr, 1),
+            (ffx_battle::process::bridge::RESET_WAIT2.ptr(b).addr, 1),
+            (menu_text, 12 * 18),
+            (ply, 0x94 * 19),
+            (cam::SCREENS.ptr(b).addr, cam::SCREEN_SIZE * 3 + 4),
+        ] {
+            fill(a, b, rng, gl, len);
+        }
+        for k in 0..16 {
+            let f = leaf_float(rng);
+            poke(
+                a,
+                b,
+                g::EFFECT_CAMERA_FLOATS.ptr(b).addr + 4 * k,
+                &f.to_le_bytes(),
+            );
+        }
+        fill(a, b, rng, area, 0x400);
+        let w = rng.word();
+        twin("GetGlobal00c44248", a, b, 0x007c_6db0, &[], ALL, |m| {
+            g::get_global_00c44248(m)
+        });
+        twin("MsMenuSetWindowSystem", a, b, 0x0079_01f0, &[w], 0, |m| {
+            g::ms_menu_set_window_system(m, w);
+            0
+        });
+        let w = rng.word();
+        twin("MsBattleEncountFlag", a, b, 0x0078_0fe0, &[w], 0, |m| {
+            g::ms_battle_encount_flag(m, w);
+            0
+        });
+        let w = rng.next();
+        twin("MsEffectWaitFlag", a, b, 0x0078_8b20, &[w], 0, |m| {
+            g::ms_effect_wait_flag(m, w);
+            0
+        });
+        let f = leaf_float(rng);
+        twin("setScreenDataAspectZ", a, b, 0x007c_0e60, &[f], 0, |m| {
+            g::set_screen_data_aspect_z(m, f);
+            0
+        });
+        // the camera in use: one of the three, its roll a test float
+        let n = rng.below(3);
+        let camera = cameras + n * cam::CAMERA_SIZE;
+        set(a, b, cam::CAMERA, camera);
+        poke(a, b, camera + 0xc90, &leaf_float(rng).to_le_bytes());
+        ftwin("MsCameraGetRollNow", a, b, 0x007b_d500, &[], |m| {
+            g::ms_camera_get_roll_now(m)
+        });
+        let n = [rng.range(-3, 10).cast_unsigned(), rng.word()][rng.below(2) as usize];
+        twin("Clamp0To6", a, b, 0x007a_86e0, &[n], ALL, |_| {
+            g::clamp0_to6(n)
+        });
+        if round % 8 == 0 {
+            twin("MsDebugSetAllSP", a, b, 0x0078_4ae0, &[], ALL, |m| {
+                g::ms_debug_set_all_sp(m)
+            });
+        }
+        let i = [rng.range(-2, 6).cast_unsigned(), rng.word()][rng.below(2) as usize];
+        twin("MsGetReelEntry", a, b, 0x007b_19d0, &[i], ALL, |m| {
+            g::ms_get_reel_entry(m, i)
+        });
+        // the vectors: in the area, the output sometimes the input
+        for k in 0..8 {
+            poke(a, b, area + 4 * k, &leaf_float(rng).to_le_bytes());
+            poke(
+                a,
+                b,
+                ffx_battle::vector::bridge::VF_ACC.ptr(b).addr + 4 * (k & 3),
+                &leaf_float(rng).to_le_bytes(),
+            );
+        }
+        let (v, out) = (area, [area + 0x20, area][rng.below(2) as usize]);
+        let s: [u32; 4] = std::array::from_fn(|_| leaf_float(rng));
+        twin(
+            "Vec4Scale4",
+            a,
+            b,
+            0x007c_11c0,
+            &[out, v, s[0], s[1], s[2], s[3]],
+            ALL,
+            |m| g::vec4_scale4(m, out, v, s),
+        );
+        let (u1, u2) = (rng.next(), rng.next());
+        twin(
+            "Vu0MaddaScalar4",
+            a,
+            b,
+            0x007c_1000,
+            &[out, v, u1, u2, s[0]],
+            ALL,
+            |m| g::vu0_madda_scalar4(m, out, v, s[0]),
+        );
+        let i = [rng.range(-2, 18).cast_unsigned(), rng.word()][rng.below(2) as usize];
+        twin("MsEffectGetCameraBuf", a, b, 0x007b_7ed0, &[i], ALL, |m| {
+            g::ms_effect_get_camera_buf(m, i)
+        });
+        ftwin("MsEffectGetCameraBufFloat", a, b, 0x007b_7ef0, &[i], |m| {
+            g::ms_effect_get_camera_buf_float(m, i)
+        });
+        let v = rng.next();
+        twin("MsEffectSetCameraBuf", a, b, 0x007b_7f30, &[i, v], 0, |m| {
+            g::ms_effect_set_camera_buf(m, i, v);
+            0
+        });
+        let k = [rng.range(-1, 0x13).cast_unsigned(), rng.word()][rng.below(2) as usize];
+        poke(a, b, area + 0x100 + 0xc, &k.to_le_bytes());
+        twin(
+            "MsMenuReadTextDone",
+            a,
+            b,
+            0x0078_fed0,
+            &[area + 0x100],
+            0,
+            |m| {
+                g::ms_menu_read_text_done(m, area + 0x100);
+                0
+            },
+        );
+        // the language: Japanese (0) often, English, any
+        let lang = [0, 1, rng.below(12), rng.word()][rng.below(4) as usize];
+        poke(a, b, rec + 4, &lang.to_le_bytes());
+        let get_lang = |m: &mut Oracle| {
+            let f = m.rebase(0x008a_c2f0);
+            m.call(f, Conv::Cdecl, &[]).unwrap().eax
+        };
+        twin("isNeedShowJapanLogo", a, b, 0x0078_7390, &[], ALL, |m| {
+            g::is_need_show_japan_logo(get_lang(m))
+        });
+        let was = [lang, lang ^ 0x100, lang & 0xff | 0x80, rng.next()][rng.below(4) as usize];
+        twin("isNeedRenamePlayer", a, b, 0x0078_7370, &[was], ALL, |m| {
+            let lang = get_lang(m);
+            g::is_need_rename_player(was, lang)
+        });
+        // a name: letters of both cases, high bytes, empty
+        let len = rng.below(24);
+        let name: Vec<u8> = (0..len)
+            .map(|_| match rng.below(4) {
+                0 => b'A' + u8::try_from(rng.below(26)).unwrap(),
+                1 => 0x40 + u8::try_from(rng.below(0x40)).unwrap(),
+                _ => u8::try_from(1 + rng.below(255)).unwrap(),
+            })
+            .chain([0])
+            .collect();
+        poke(a, b, area + 0x200, &name);
+        twin("NameHash", a, b, 0x007c_f000, &[area + 0x200], ALL, |m| {
+            g::name_hash(m, area + 0x200)
+        });
+        let (screen, c) = (
+            [rng.range(-1, 4).cast_unsigned(), rng.word()][rng.below(2) as usize],
+            rng.next(),
+        );
+        twin(
+            "Cam_SetScreenCameraNo",
+            a,
+            b,
+            0x007b_c870,
+            &[screen, c],
+            0,
+            |m| {
+                cam::cam_set_screen_camera_no(m, screen, c);
+                0
+            },
+        );
+        // a camera side's point: one of the three cameras, the outputs
+        // in the area or null
+        let (n, side) = (rng.below(3), rng.next());
+        let pos = cameras + n * cam::CAMERA_SIZE + (side & 1) * 0x61c + 0x40;
+        for k in 0..3 {
+            poke(a, b, pos + 4 * k, &leaf_float(rng).to_le_bytes());
+        }
+        let outs = [0x300u32, 0x304, 0x308].map(|o| if rng.below(4) == 0 { 0 } else { area + o });
+        let cam_arg = n | rng.next() << 8;
+        twin(
+            "Cam_GetRefPos",
+            a,
+            b,
+            0x007b_d4b0,
+            &[cam_arg, side, outs[0], outs[1], outs[2]],
+            ALL,
+            |m| cam::cam_get_ref_pos(m, cam_arg, side, outs),
+        );
+        // the vfx copies, each against its own original
+        let (dst, src) = (area + 0x340, [area, area + 0x340][rng.below(2) as usize]);
+        // (no signalling NaNs in the source: the emulator keeps them)
+        for k in 0..4 {
+            poke(a, b, dst + 4 * k, &leaf_float(rng).to_le_bytes());
+        }
+        twin(
+            "pppVec4Copy_007c1110",
+            a,
+            b,
+            0x007c_1110,
+            &[dst, src],
+            0,
+            |m| {
+                ffx_vfx::op::bridge::ppp_vec4_copy(m, dst, src);
+                0
+            },
+        );
+        // op_file_puts: the buffer full, partly full, over-full
+        let (file, data, text) = (area + 0x380, area + 0x240, area + 0x3a0);
+        let cap = [1u32, 3, 8, 0x40][rng.below(4) as usize];
+        let pos = rng.below(cap + 1) + [0, 0, 1][rng.below(3) as usize];
+        for (o, v) in [(0, data), (8, rng.next()), (0xc, pos), (0x10, cap)] {
+            poke(a, b, file + o, &u32::to_le_bytes(v));
+        }
+        let len = [0u32, 1, 2, 7, 0x1f][rng.below(5) as usize];
+        let s: Vec<u8> = (0..len)
+            .map(|_| u8::try_from(1 + rng.below(255)).unwrap())
+            .chain([0])
+            .collect();
+        poke(a, b, text, &s);
+        poke(a, b, rec + 0x20, &rng.next().to_le_bytes());
+        let mask = if len == 0 { 0 } else { ALL };
+        twin(
+            "op_file_puts_007cf860",
+            a,
+            b,
+            0x007c_f860,
+            &[file, text],
+            mask,
+            |m| {
+                ffx_vfx::op::bridge::op_file_puts(m, file, text, &mut |m, f, args| {
+                    m.call(f, Conv::Cdecl, args).unwrap().eax
+                })
+                .unwrap_or(0)
+            },
+        );
+        same("leaves", a, b);
+    }
+}
+
+#[test]
+fn leaves_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    leaves(&mut a, &mut b, &mut Xorshift(0x2929_0001));
+}
+
+#[test]
+fn leaves_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    leaves(&mut a, &mut b, &mut Xorshift(0x2929_0002));
+}

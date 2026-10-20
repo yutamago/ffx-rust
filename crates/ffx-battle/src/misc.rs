@@ -363,4 +363,200 @@ pub mod bridge {
             mem.write(at, x87_copy(f));
         }
     }
+
+    /// The word `GetGlobal00c44248_007c6db0` returns (read by the map name
+    /// banner, `MapNameText_Show_006bb480`); what it holds is open.
+    pub const GLOBAL_00C44248: Global<u32> = Global::new(0x00c4_4248);
+    /// The screen data's aspect `setScreenDataAspectZ` stores (an `f32`).
+    pub const SCREEN_ASPECT_Z: Global<u32> = Global::new(0x0113_701c);
+    /// Four 4-byte reel entries (`MsGetReelEntry_007b19d0`): `+0` and `+1`
+    /// bytes that `MsSetReelResult`'s helpers read.
+    pub const REEL_ENTRIES: Global<[u32; 4]> = Global::new(0x0112_be80);
+    /// 16 words after [`EFFECT_CAMERA_FLOATS`] (`MsEffectSetCameraBuf_007b7f30`).
+    pub const EFFECT_CAMERA_WORDS: Global<[u32; 16]> = Global::new(0x0113_6b18);
+
+    /// `GetGlobal00c44248_007c6db0()` (`0x007c6db0`).
+    pub fn get_global_00c44248(mem: &impl Mem) -> u32 {
+        GLOBAL_00C44248.get(mem)
+    }
+
+    /// `MsMenuSetWindowSystem(v)` (`0x007901f0`): the command flag byte
+    /// (`MsSetBtlCommand` clears it) to the low byte of `v`.
+    pub fn ms_menu_set_window_system(mem: &mut impl Mem, v: u32) {
+        crate::action::bridge::SET_COMMAND_FLAG.set(mem, v.to_le_bytes()[0]);
+    }
+
+    /// `MsBattleEncountFlag(v)` (`0x00780fe0`): the encounter fade flag
+    /// to bit 0 of `v`.
+    pub fn ms_battle_encount_flag(mem: &mut impl Mem, v: u32) {
+        crate::process::bridge::ENCOUNT_FADE.set(mem, v.to_le_bytes()[0] & 1);
+    }
+
+    /// `MsEffectWaitFlag(v)` (`0x00788b20`): the soft reset's wait flag to
+    /// bit 0 of `v`.
+    pub fn ms_effect_wait_flag(mem: &mut impl Mem, v: u32) {
+        crate::process::bridge::RESET_WAIT2.set(mem, v.to_le_bytes()[0] & 1);
+    }
+
+    /// `setScreenDataAspectZ(f)` (`0x007c0e60`): [`SCREEN_ASPECT_Z`] = `f`
+    /// (through `fld`/`fstp`).
+    pub fn set_screen_data_aspect_z(mem: &mut impl Mem, f: u32) {
+        SCREEN_ASPECT_Z.set(mem, x87_copy(f));
+    }
+
+    /// `MsCameraGetRollNow_007bd500()` (`0x007bd500`): the current camera's
+    /// roll now (`[g_Camera] + 0xc90`), the `f32` left in ST0, as bits.
+    pub fn ms_camera_get_roll_now(mem: &impl Mem) -> u32 {
+        let camera = crate::camera::bridge::CAMERA.get(mem);
+        x87_copy(mem.read(camera.wrapping_add(0xc90)))
+    }
+
+    /// `Clamp0To6_007a86e0(n)` (`0x007a86e0`): `n` (signed) within 0..=6.
+    #[must_use]
+    pub fn clamp0_to6(n: u32) -> u32 {
+        n.cast_signed().clamp(0, 6).cast_unsigned()
+    }
+
+    /// `MsDebugSetAllSP_00784ae0()` (`0x00784ae0`): every one of the 18
+    /// `ply_save` records' SP byte (`+0x3b`) to 0x62 (98). `EAX` ends one
+    /// record past the last.
+    pub fn ms_debug_set_all_sp(mem: &mut impl Mem) -> u32 {
+        let mut at = crate::save::bridge::PLY_SAVE.ptr(mem).addr + 0x3b;
+        for _ in 0..18 {
+            mem.write(at, 0x62u8);
+            at += 0x94;
+        }
+        at
+    }
+
+    /// `MsGetReelEntry_007b19d0(i)` (`0x007b19d0`): reel entry `i` (below
+    /// 4, unsigned) of [`REEL_ENTRIES`], 0 for the others.
+    pub fn ms_get_reel_entry(mem: &impl Mem, i: u32) -> u32 {
+        if i < 4 {
+            REEL_ENTRIES.ptr(mem).addr + 4 * i
+        } else {
+            0
+        }
+    }
+
+    /// `Vec4Scale4_007c11c0(out, v, sx, sy, sz, sw)` (`0x007c11c0`): each
+    /// of `v`'s four floats times its own scale (`f32` arguments as bits),
+    /// stored as `f32` in `out`. Returns `out` (the original's `EAX`).
+    pub fn vec4_scale4(mem: &mut impl Mem, out: u32, v: u32, s: [u32; 4]) -> u32 {
+        use ffx_bridge::x87::{load, mul, store};
+        for (k, s) in (0..4).zip(s) {
+            let x: u32 = mem.read(v + 4 * k);
+            mem.write(out + 4 * k, store(mul(load(x), load(s))));
+        }
+        out
+    }
+
+    /// `Vu0MaddaScalar4_007c1000(out, v, _, _, s)` (`0x007c1000`): VU0
+    /// `vmadda`-style, `out = v * s + ACC` per float (ACC the emulated
+    /// accumulator `0x00c8f790`), each rounded to `f32` at its store; the
+    /// third and fourth arguments are unused. Returns `out`.
+    pub fn vu0_madda_scalar4(mem: &mut impl Mem, out: u32, v: u32, s: u32) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let acc = crate::vector::bridge::VF_ACC.ptr(mem).addr;
+        for k in 0..4 {
+            let x: u32 = mem.read(v + 4 * k);
+            let a: u32 = mem.read(acc + 4 * k);
+            mem.write(out + 4 * k, store(add(mul(load(x), load(s)), load(a))));
+        }
+        out
+    }
+
+    /// `MsEffectGetCameraBuf_007b7ed0(i)` (`0x007b7ed0`): word `i` (0-15)
+    /// of [`EFFECT_CAMERA_WORDS`], 0 for the others.
+    pub fn ms_effect_get_camera_buf(mem: &impl Mem, i: u32) -> u32 {
+        if i <= 15 {
+            mem.read(EFFECT_CAMERA_WORDS.ptr(mem).addr + 4 * i)
+        } else {
+            0
+        }
+    }
+
+    /// `MsEffectSetCameraBuf_007b7f30(i, v)` (`0x007b7f30`): word `i`
+    /// (0-15) of [`EFFECT_CAMERA_WORDS`] = `v`; the others ignored.
+    pub fn ms_effect_set_camera_buf(mem: &mut impl Mem, i: u32, v: u32) {
+        if i <= 15 {
+            let at = EFFECT_CAMERA_WORDS.ptr(mem).addr + 4 * i;
+            mem.write(at, v);
+        }
+    }
+
+    /// `MsEffectGetCameraBufFloat_007b7ef0(i)` (`0x007b7ef0`): float `i`
+    /// (0-15) of [`EFFECT_CAMERA_FLOATS`] (`fld`/`fstp` through a local),
+    /// 0.0 for the others; the `f32` the original leaves in ST0, as bits.
+    pub fn ms_effect_get_camera_buf_float(mem: &impl Mem, i: u32) -> u32 {
+        if i <= 15 {
+            x87_copy(mem.read(EFFECT_CAMERA_FLOATS.ptr(mem).addr + 4 * i))
+        } else {
+            0
+        }
+    }
+
+    /// `MsMenuReadTextDone_0078fed0(request)` (`0x0078fed0`): the menu text
+    /// `request + 0xc` (at most 0x10, unsigned) no longer busy: its first
+    /// byte in `g_BtlMenuText` cleared.
+    pub fn ms_menu_read_text_done(mem: &mut impl Mem, request: u32) {
+        let i: u32 = mem.read(request.wrapping_add(0xc));
+        if i <= 0x10 {
+            let at = crate::flow::bridge::MENU_TEXT.ptr(mem).addr + 12 * i;
+            mem.write(at, 0u8);
+        }
+    }
+
+    /// `isNeedShowJapanLogo()` (`0x00787390`): 1 when the language
+    /// (`TOGetFFXLang`) is 0 (Japanese), else 0.
+    #[must_use]
+    pub fn is_need_show_japan_logo(lang: u32) -> u32 {
+        u32::from(lang == 0)
+    }
+
+    /// `isNeedRenamePlayer(lang_was)` (`0x00787370`): 1 when the signed
+    /// low byte of `lang_was` is not the language (`TOGetFFXLang`), else 0.
+    #[must_use]
+    pub fn is_need_rename_player(lang_was: u32, lang: u32) -> u32 {
+        let was = i32::from(lang_was.to_le_bytes()[0].cast_signed());
+        u32::from(was != lang.cast_signed())
+    }
+
+    /// `NameHash_007cf000(s)` (`0x007cf000`): a case-blind hash of the C
+    /// string `s`: each byte (`A`-`Z` lowered), sign-extended and `XOR`ed with
+    /// 0x6f times its index, summed (wrapping).
+    pub fn name_hash(mem: &impl Mem, s: u32) -> u32 {
+        let mut sum = 0u32;
+        let mut salt = 0u32;
+        let mut p = s;
+        loop {
+            let mut c: u8 = mem.read(p);
+            if c == 0 {
+                return sum;
+            }
+            if c.wrapping_sub(b'A') <= 25 {
+                c = c.wrapping_add(0x20);
+            }
+            sum = sum.wrapping_add(i32::from(c.cast_signed()).cast_unsigned() ^ salt);
+            salt = salt.wrapping_add(0x6f);
+            p = p.wrapping_add(1);
+        }
+    }
+
+    /// `MsDivSqrt_007c13c0(out, a, b)` (`0x007c13c0`): `out` = `a` over the
+    /// square root of `|b|` (`f32`s; `_CIsqrt`, rounded to `f32`, the
+    /// division in `f64` of `a`), or 0.0 when `|b|` is 0.0.
+    pub fn ms_div_sqrt(mem: &mut impl Mem, out: u32, a: u32, b: u32) {
+        use ffx_bridge::x87::{div, load, sqrt, store};
+        let t = store(load(b).abs());
+        // `fucom` with 0.0: a NaN takes the root
+        #[allow(clippy::float_cmp)]
+        let v = if load(t) == 0.0 {
+            0
+        } else {
+            let root = store(sqrt(load(t)));
+            store(div(load(a), load(root)))
+        };
+        mem.write(out, v);
+    }
 }
