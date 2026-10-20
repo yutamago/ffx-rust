@@ -157,6 +157,46 @@ harvest_test!(
     }
 );
 
+// effects (round 33): the thiscall callees run as the originals
+fn this_call(m: &mut Oracle, f: u32, this: u32, a: &[u32]) -> u32 {
+    m.call(f, ffx_oracle::Conv::Thiscall(this), a).unwrap().eax
+}
+
+harvest_test!(
+    class_dynamic_geometry_setup_dyn_mesh,
+    0x006a_3b30,
+    args = 0,
+    |m: &mut Oracle, s| { ffx_vfx::small::bridge::setup_dyn_mesh(m, s.ecx(), &mut this_call) }
+);
+harvest_test!(
+    vfx_geometry_register,
+    0x006a_52f0,
+    args = 1,
+    |m: &mut Oracle, s| {
+        ffx_vfx::small::bridge::vfx_geometry_register(m, s.ecx(), s.arg(0), &mut this_call)
+    }
+);
+harvest_test!(
+    dyn_geo_reset_current_buffer,
+    0x0069_fcb0,
+    args = 0,
+    |m: &mut Oracle, s| {
+        ffx_vfx::small::bridge::dyn_geo_reset_current_buffer(m, s.ecx(), &mut |m, f, a| {
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);
+// the random draw's three extra words are the caller's edi, esi, ebx
+harvest_test!(
+    opp_anmm_frame_random,
+    0x0081_0dd0,
+    args = 4,
+    |m: &mut Oracle, s| {
+        let junk = [s.regs.edi, s.regs.esi, s.regs.ebx];
+        ffx_vfx::anmm::bridge::frame_random(m, s.arg(2), s.arg(3), junk)
+    }
+);
+
 /// The store's format round-trips, and a state of the first target applies
 /// to a fresh oracle (layout check).
 #[test]
