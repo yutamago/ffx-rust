@@ -20646,3 +20646,216 @@ fn round35d_shape_field_steps_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round36a_trails_point_lights_and_commands_match_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_9af0);
+        let cells = p.alloc(0x20);
+        let (fly, water, alive, cscale, width) =
+            (cells, cells + 4, cells + 8, cells + 0xc, cells + 0x10);
+        far_recorder(&mut p, 0x0079_4f70, &[0], Some(fly));
+        far_recorder(&mut p, 0x0078_21e0, &[], Some(water));
+        far_recorder(&mut p, 0x0079_5a60, &[0], Some(alive));
+        far_recorder(&mut p, 0x0078_8b20, &[0], None);
+        far_recorder(&mut p, 0x0079_5720, &[0, 0], None);
+        far_recorder(&mut p, 0x0073_72d0, &[0, 0, 0], None);
+        float_recorder(&mut p, 0x0080_0c10, 2, cscale);
+        float_recorder(&mut p, 0x0080_0cd0, 2, width);
+        let cpart = p.sym(0x0230_ffe4);
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x10));
+        let (obj, key, ctrl, part, records, others) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x400),
+        );
+        // a trail of up to 0x1010 points (slots past 0x1000 wrap in 16 bits)
+        let (trail, point) = (p.alloc(0x10 + 0x1010 * 16), p.alloc(0x10));
+        for round in 0..1500u32 {
+            let what = |s: &str| format!("{s} round {round}");
+
+            // opus_chara_center_check
+            let r = rng.next();
+            p.set(fly, rng.pick(&[0, 1, r]));
+            let r = rng.next();
+            p.set(water, rng.pick(&[0, 1, r]));
+            let (chr, on) = (rng.next(), rng.pick(&[0, 1, r]));
+            p.check(&what("chara_center_check"), 0x0080_0b40, &[chr, on], |m| {
+                Some(o::opus_chara_center_check(m, chr, on, &mut call_original))
+            });
+
+            // opu_death, opu_sys, opu_v_scale: every nibble
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            let nib = rng.below(16) << 12;
+            p.set(host + 0x21a, (nib | rng.below(0x1000)) as u16);
+            p.set(host + 0x210, 0u8);
+            let r = rng.next();
+            p.set(alive, rng.pick(&[0, 1, r]));
+            p.check(&what("death"), 0x0081_5f10, &[host, cmd], |m| {
+                Some(o::opu_death(m, host, cmd, &mut call_original))
+            });
+            let nib = rng.below(8) << 12;
+            p.set(host + 0x21a, (nib | rng.below(0x1000)) as u16);
+            p.check(&what("sys"), 0x0081_7470, &[host, cmd], |m| {
+                Some(o::opu_sys(m, host, cmd, &mut call_original))
+            });
+            p.set(host + 0x21a, rng.next() as u16);
+            if rng.chance(30) {
+                p.set(host + 0x21e, 0u8);
+            }
+            for c in [cscale, width] {
+                let v = if rng.chance(5) {
+                    0x7f7f_ffff // overflows when scaled by 16
+                } else if rng.chance(80) {
+                    ranged(&mut rng, -4.0, 4.0)
+                } else {
+                    rng.float()
+                };
+                p.set(c, v);
+            }
+            let v = if rng.chance(70) {
+                ranged(&mut rng, -4.0, 4.0)
+            } else {
+                rng.float()
+            };
+            let v = if rng.chance(10) {
+                rng.pick(&[0, 0x8000_0000])
+            } else {
+                v
+            };
+            p.set(host + 4, v);
+            for k in 0..8 {
+                let v = if rng.chance(80) {
+                    ranged(&mut rng, -100.0, 100.0)
+                } else {
+                    rng.float()
+                };
+                let v = if rng.chance(10) { 0 } else { v };
+                p.set(unit + 0x30 + 4 * k, v);
+            }
+            p.check(&what("v_scale"), 0x0081_9af0, &[host, cmd], |m| {
+                Some(o::opu_v_scale(
+                    m,
+                    host,
+                    cmd,
+                    &mut call_original,
+                    &mut call_original_f_nan,
+                ))
+            });
+
+            // pppNeiChrPointLightDraw
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(others, 0x400, &mut rng);
+            p.set(cpart, part);
+            p.set(part + 0x3c, records);
+            for k in 0..4 {
+                p.set(records + 0x10 * k + 4, others + 0x100 * k);
+            }
+            let r = rng.next();
+            p.set(key + 0x28, rng.pick(&[u32::MAX, 0, 1, 2, 3]));
+            p.set(key + 0x2c, 4 * rng.below(0x10));
+            let off = 0x10 * rng.below(3);
+            p.set(ctrl + 0xc, ctrl);
+            p.set(ctrl, off);
+            p.set(obj + 0xa0 + off + 0x80, rng.pick(&[0, 1, r]));
+            for k in 0..0x40 {
+                let v = if rng.chance(70) {
+                    ranged(&mut rng, -3.0, 3.0)
+                } else {
+                    rng.float()
+                };
+                p.set(others + 0xa0 + 4 * k, v);
+            }
+            p.check(
+                &what("nei_chr_point_light"),
+                0x0073_71c0,
+                &[obj, key, ctrl],
+                |m| {
+                    part::bridge::ppp_nei_chr_point_light_draw(
+                        m,
+                        obj,
+                        key,
+                        ctrl,
+                        &mut call_original,
+                    );
+                    None
+                },
+            );
+
+            // op_trail_push / op_trail_add: small trails with lengths, and
+            // large ones (slots cut to 16 bits) without
+            let big = rng.chance(4);
+            let n = if big {
+                0x1000 + rng.below(0x10)
+            } else {
+                rng.pick(&[0, 1, 2, 3, 5, 7, 8, 9])
+            };
+            let held = if rng.chance(70) {
+                rng.below(n + 1)
+            } else {
+                rng.below(n + 3)
+            };
+            let r = rng.next() & 0xffff;
+            let start = rng.pick(&[0, 0xffff, 1, r, r]);
+            let mut flags = rng.next() & 0xffff;
+            if big || (n == 0 && held > 1) || held > n.max(1) + 1 {
+                flags &= 0x7fff;
+            }
+            if rng.chance(50) && !big && !(n == 0 && held > 1) {
+                flags |= 0x8000;
+            }
+            p.set(trail + 2, flags as u16);
+            p.set(trail + 4, n as u16);
+            p.set(trail + 6, start as u16);
+            p.set(trail + 8, held as u16);
+            for k in 0..n.min(16) * 4 {
+                let v = if rng.chance(85) {
+                    small_int(&mut rng)
+                } else {
+                    rng.float()
+                };
+                p.set(trail + 0x10 + 4 * k, v);
+            }
+            for k in 0..4 {
+                let v = if rng.chance(85) {
+                    small_int(&mut rng)
+                } else {
+                    rng.float()
+                };
+                p.set(point + 4 * k, v);
+            }
+            let r = rng.next();
+            let life = rng.pick(&[0, 7, 0x1_0000, r]);
+            if rng.chance(50) {
+                p.check(
+                    &what("trail_push"),
+                    0x007e_5f80,
+                    &[trail, point, life],
+                    |m| Some(small::bridge::op_trail_push(m, trail, point, life)),
+                );
+            } else {
+                let r = rng.next();
+                let fill = rng.pick(&[0, 1, r]);
+                p.check(
+                    &what("trail_add"),
+                    0x007e_6110,
+                    &[trail, point, fill, life],
+                    |m| Some(small::bridge::op_trail_add(m, trail, point, fill, life)),
+                );
+            }
+        }
+    }
+}

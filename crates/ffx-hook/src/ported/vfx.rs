@@ -5399,4 +5399,33 @@ ported! {
     pppDrawShapeFieldGlobalStep_007460b0 @ 0x0074_60b0 => extern "C" fn ppp_draw_shape_field_global_step(def: u32, w: u32) {
         draw::bridge::ppp_draw_shape_field_global_step(&mut mem(), def, w, &mut |_, f, a| call_ptr(f, a));
     }
+    // ---- round 36 a ----
+    /// `opus_chara_center_check(chr, on)`.
+    opus_chara_center_check @ 0x0080_0b40 => extern "C" fn opus_chara_center_check(chr: u32, on: u32) -> u32 {
+        opus::bridge::opus_chara_center_check(&mut mem(), chr, on, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_death(host, cmd)`.
+    opu_death @ 0x0081_5f10 => extern "C" fn opu_death(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_death(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_sys(host, cmd)`.
+    opu_sys @ 0x0081_7470 => extern "C" fn opu_sys(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_sys(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_scale(host, cmd)`.
+    opu_v_scale @ 0x0081_9af0 => extern "C" fn opu_v_scale(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_scale(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `pppNeiChrPointLightDraw(obj, key, ctrl)`.
+    pppNeiChrPointLightDraw @ 0x0073_71c0 => extern "C" fn ppp_nei_chr_point_light_draw(obj: u32, key: u32, ctrl: u32) {
+        part::bridge::ppp_nei_chr_point_light_draw(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_trail_push_007e5f80(ring, point, life)`.
+    op_trail_push_007e5f80 @ 0x007e_5f80 => extern "C" fn op_trail_push(ring: u32, point: u32, life: u32) -> u32 {
+        small::bridge::op_trail_push(&mut mem(), ring, point, life)
+    }
+    /// `op_trail_add_007e6110(ring, point, fill, life)`.
+    op_trail_add_007e6110 @ 0x007e_6110 => extern "C" fn op_trail_add(ring: u32, point: u32, fill: u32, life: u32) -> u32 {
+        small::bridge::op_trail_add(&mut mem(), ring, point, fill, life)
+    }
 }
