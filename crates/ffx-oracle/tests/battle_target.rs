@@ -7308,8 +7308,13 @@ fn ball_splines(
         local_words(a, b);
         same(&format!("MsMoveSplineRegist {args:x?}"), a, b);
         // MsMoveSpline (round 32) on the same spline and actor: speeds now
-        // and then held (+0x41b)
+        // and then held (+0x41b); the actor's move (`+0x400..+0x4a0`) and
+        // the spline's first word put back after (a spline move, kind 7,
+        // with any frame count is no state the later steps take)
         let p = w.actor(i);
+        let moved = a.read(p + 0x400, 0xa0).unwrap();
+        let data = ffx_battle::target::bridge::MOVE_SPLINES.ptr(b).addr + 0x210 * k;
+        let first = a.read(data, 4).unwrap();
         poke(a, b, p + 0x41b, &[u8::from(rng.below(3) == 0)]);
         let args = [k, i, rng.next(), float(rng), rng.next()];
         twin("MsMoveSpline", a, b, 0x007a_b010, &args, 0, |m| {
@@ -7317,6 +7322,8 @@ fn ball_splines(
             0
         });
         same(&format!("MsMoveSpline {args:x?}"), a, b);
+        poke(a, b, p + 0x400, &moved);
+        poke(a, b, data, &first);
     }
     // MsSetBallSpline: thrower i, catcher +0x14, the ball state +0x420
     let i = rng.below(ACTORS);
@@ -7872,37 +7879,43 @@ fn effect_signals(
     let p = ac::ms_get_chr(b, i8);
     let result = pick(rng, &[1, 0x4000_0123, 0, 0x8000_0000, u32::MAX]);
     poke(a, b, rec + 0x34, &result.to_le_bytes());
-    let state = u8::try_from({
-        let r = rng.below(0x100);
-        pick(rng, &[1, 1, 4, 4, 0, 2, r])
-    })
-    .unwrap();
-    poke(a, b, p + 0x446, &[state]);
-    // a part (+0x12) points at its owner (+0x14)
-    let part = u8::from(rng.below(5) == 0);
-    poke(a, b, p + 0x12, &[part]);
-    poke(a, b, p + 0x14, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
-    for o in [0x39c, 0xe1e, 0xe22] {
-        poke(a, b, p + o, &rng.next().to_le_bytes());
+    // an actor's fields (not the records past them, whose offsets these
+    // reach: the weapons' models); its part and owner bytes put back after
+    let inside = i8 < ACTORS;
+    let part_bytes = a.read(p + 0x12, 3).unwrap();
+    if inside {
+        let state = u8::try_from({
+            let r = rng.below(0x100);
+            pick(rng, &[1, 1, 4, 4, 0, 2, r])
+        })
+        .unwrap();
+        poke(a, b, p + 0x446, &[state]);
+        // a part (+0x12) points at its owner (+0x14)
+        let part = u8::from(rng.below(5) == 0);
+        poke(a, b, p + 0x12, &[part]);
+        poke(a, b, p + 0x14, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
+        for o in [0x39c, 0xe1e, 0xe22] {
+            poke(a, b, p + o, &rng.next().to_le_bytes());
+        }
+        for o in [0x429, 0x4c] {
+            poke(a, b, p + o, &[u8::try_from(rng.below(0x100)).unwrap()]);
+        }
+        for (o, n) in [(0xe19, 3), (0xe16, 3)] {
+            poke(a, b, p + o, &[u8::from(rng.below(n) != 0)]);
+        }
+        let own = u16::try_from({
+            let r = rng.below(0x40);
+            pick(rng, &[0xffff, 0x8000, 0, 2, 0xff, 0x7fff, r])
+        })
+        .unwrap();
+        poke(a, b, p + 0xe1a, &own.to_le_bytes());
+        let effect = u8::try_from({
+            let r = rng.below(0x100);
+            pick(rng, &[0, 0x1e, 0x36, r])
+        })
+        .unwrap();
+        poke(a, b, p + 0xe0e, &[effect]);
     }
-    for o in [0x429, 0x4c] {
-        poke(a, b, p + o, &[u8::try_from(rng.below(0x100)).unwrap()]);
-    }
-    for (o, n) in [(0xe19, 3), (0xe16, 3)] {
-        poke(a, b, p + o, &[u8::from(rng.below(n) != 0)]);
-    }
-    let own = u16::try_from({
-        let r = rng.below(0x40);
-        pick(rng, &[0xffff, 0x8000, 0, 2, 0xff, 0x7fff, r])
-    })
-    .unwrap();
-    poke(a, b, p + 0xe1a, &own.to_le_bytes());
-    let effect = u8::try_from({
-        let r = rng.below(0x100);
-        pick(rng, &[0, 0x1e, 0x36, r])
-    })
-    .unwrap();
-    poke(a, b, p + 0xe0e, &[effect]);
     // the first target's damage buffers for i's command, now and then
     let first = ffx_battle::body::bridge::battle_first_selected_actor(b, i, 0xffff_fff0, 0, 1);
     if ac::ms_btl_chr_num_check(i8) != 0 && first >= 0 && rng.below(4) != 0 {
@@ -7990,6 +8003,7 @@ fn effect_signals(
     let v = a.read(local, 0x10).unwrap();
     b.write(local, &v).unwrap();
     same(&format!("effect signal {i:#x}"), a, b);
+    poke(a, b, p + 0x12, &part_bytes);
 }
 
 /// `MsEtEffectRead` and `MsRegMotionRead` (round 32,
