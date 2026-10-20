@@ -1414,6 +1414,103 @@ ported! {
     Cache_OverFlow @ 0x0084_09a0 => extern "C" fn cache_overflow() -> u32 {
         cache::bridge::overflow(&mut mem())
     }
+
+    // ---- round 23 ----
+    /// `Cache_Clear()`.
+    Cache_Clear @ 0x0084_0030 => extern "C" fn cache_clear() {
+        cache::bridge::clear(&mut mem(), false);
+    }
+    /// `Cache_ClearFast()`.
+    Cache_ClearFast @ 0x0084_0150 => extern "C" fn cache_clear_fast() {
+        cache::bridge::clear(&mut mem(), true);
+    }
+    /// `Cache_DisposeCheck()`.
+    Cache_DisposeCheck @ 0x0084_0440 => extern "C" fn cache_dispose_check() {
+        cache::bridge::dispose_check(&mut mem());
+    }
+    /// `Cache_Dispose(kind, id, check)`.
+    Cache_Dispose @ 0x0084_0250 => extern "C" fn cache_dispose(kind: i32, id: u32, check: u32) -> u32 {
+        cache::bridge::dispose(&mut mem(), kind, id, check)
+    }
+    /// `graphicProject3DPointOntoScreenConsider2DScene(out, p)`: `1 / w`
+    /// in `ST0`.
+    graphicProject3DPointOntoScreenConsider2DScene @ 0x0064_28f0 => extern "C" fn project_point_2d(out: u32, p: u32) -> f32 {
+        ut::project_point(&mut mem(), out, p, 1)
+    }
+    /// `graphicProject3DPointOntoScreenAbmap(out, p)`: `1 / w` in `ST0`.
+    graphicProject3DPointOntoScreenAbmap @ 0x0064_28d0 => extern "C" fn project_point_abmap(out: u32, p: u32) -> f32 {
+        ut::project_point(&mut mem(), out, p, 2)
+    }
+    /// `PhyreScene_change2DSceneNum(this, n)`.
+    PhyreScene_change2DSceneNum @ 0x0065_87d0 => extern "thiscall" fn scene_change_2d_scene_num(this: u32, n: u32) {
+        ut::change_2d_scene_num(&mut mem(), this, n);
+    }
+    /// `PhyreScene_changeLayerOffset_00658350(this, layer, x, y)`.
+    PhyreScene_changeLayerOffset_00658350 @ 0x0065_8350 => extern "thiscall" fn scene_change_layer_offset(this: u32, layer: u32, x: u32, y: u32) {
+        ut::change_layer_offset(&mut mem(), this, layer, x, y);
+    }
+    /// `PhyreScene_changeLayerScale_00658570(this, layer, x, y, sx, sy)`.
+    PhyreScene_changeLayerScale_00658570 @ 0x0065_8570 => extern "thiscall" fn scene_change_layer_scale(this: u32, layer: u32, x: u32, y: u32, sx: u32, sy: u32) {
+        ut::change_layer_scale(&mut mem(), this, layer, x, y, f32::from_bits(sx), f32::from_bits(sy));
+    }
+    /// `graphicChangeLayerOffset_00639d40(layer, x, y)`.
+    graphicChangeLayerOffset_00639d40 @ 0x0063_9d40 => extern "C" fn graphic_change_layer_offset(layer: u32, x: u32, y: u32) {
+        ut::graphic_change_layer_offset(&mut mem(), layer, x, y);
+    }
+    /// `graphicChangeLayerScale_00639d60(layer, x, y, sx, sy)`.
+    graphicChangeLayerScale_00639d60 @ 0x0063_9d60 => extern "C" fn graphic_change_layer_scale(layer: u32, x: u32, y: u32, sx: u32, sy: u32) {
+        ut::graphic_change_layer_scale(&mut mem(), layer, x, y, f32::from_bits(sx), f32::from_bits(sy));
+    }
+    /// `graphicChangeSceneNum_00639d90(n)`.
+    graphicChangeSceneNum_00639d90 @ 0x0063_9d90 => extern "C" fn graphic_change_scene_num(n: u32) {
+        ut::graphic_change_scene_num(&mut mem(), n);
+    }
+    /// `TextureAnimationManager_updateSamplers_006b44a0(this)`.
+    TextureAnimationManager_updateSamplers_006b44a0 @ 0x006b_44a0 => extern "fastcall" fn tex_anim_update_samplers(this: u32) {
+        mg::update_samplers(&mut mem(), this);
+    }
+
+    // ---- round 24 ----
+    /// `PhyreScene_getViewProjectionMatrix(this, out)`.
+    PhyreScene_getViewProjectionMatrix @ 0x0065_e660 => extern "thiscall" fn scene_view_projection(this: u32, out: u32) -> u32 {
+        ffx_graphic::util::bridge24::scene_view_projection(&mut mem(), this, out)
+    }
+    /// `SpdCtrl_Tick()`.
+    SpdCtrl_Tick @ 0x006f_7470 => extern "C" fn spd_ctrl_tick() {
+        ffx_graphic::util::bridge24::spd_ctrl_tick(&mut mem());
+    }
+    /// `ShadowDynamicMesh_updateBuffers_006789f0(_, src, streams, indices)` (vtable slot 5, `ecx` unread).
+    ShadowDynamicMesh_updateBuffers_006789f0 @ 0x0067_89f0 => extern "stdcall" fn shadow_dynamic_mesh_update_buffers(_unused: u32, src: u32, streams: u32, indices: u32) -> u32 {
+        ffx_graphic::util::bridge24::shadow_dynamic_mesh_update_buffers(&mut mem(), src, streams, indices)
+    }
+    /// `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0(a, b, c, x, y, w, h, sw, sh, d, e)`: its 0x300-byte frame here.
+    graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0 @ 0x0064_3eb0 => extern "C" fn graphic_tex_anim_set_animated_materials_char(a: u32, b: u32, c: u32, x: u32, y: u32, w: u32, h: u32, sw: u32, sh: u32, d: u32, e: u32) -> u32 {
+        let mut frame = super::StackFrame::<0xc0>::new();
+        let at = frame.at();
+        ffx_graphic::util::bridge24::graphic_tex_anim_set_animated_materials_char(&mut mem(), at, [a, b, c, x, y, w, h, sw, sh, d, e])
+    }
+    /// `graphicTextureAnimationSetMaterialUV_00644150(a, b, u, v, key)`: its 0x300-byte frame here.
+    graphicTextureAnimationSetMaterialUV_00644150 @ 0x0064_4150 => extern "C" fn graphic_tex_anim_set_material_uv(a: u32, b: u32, u: u32, v: u32, key: u32) {
+        let mut frame = super::StackFrame::<0xc0>::new();
+        let at = frame.at();
+        ffx_graphic::util::bridge24::graphic_tex_anim_set_material_uv(&mut mem(), at, [a, b, u, v, key]);
+    }
+    /// `TextureAnimationManager_setMaterialUV_006b33c0(this, s1, s2, u, v, key)` (the names unread).
+    TextureAnimationManager_setMaterialUV_006b33c0 @ 0x006b_33c0 => extern "thiscall" fn tex_anim_set_material_uv(this: u32, _s1: u32, _s2: u32, u: u32, v: u32, key: u32) {
+        ffx_graphic::util::bridge24::tex_anim_set_material_uv(&mut mem(), this, u, v, key);
+    }
+    /// `graphicCameraGetViewProjectionMatrix(out)`: its 16-word local here.
+    graphicCameraGetViewProjectionMatrix @ 0x0063_9590 => extern "C" fn graphic_camera_view_projection(out: u32) {
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        ffx_graphic::util::bridge24::graphic_camera_view_projection(&mut mem(), at, out);
+    }
+    /// `TexAnim_SetMaterialsChar_0077fbf0(a, b, c, x, y, w, h, sw, sh, d, e)`: the callee's 0x300-byte frame here.
+    TexAnim_SetMaterialsChar_0077fbf0 @ 0x0077_fbf0 => extern "C" fn tex_anim_set_materials_char(a: u32, b: u32, c: u32, x: u32, y: u32, w: u32, h: u32, sw: u32, sh: u32, d: u32, e: u32) -> u32 {
+        let mut frame = super::StackFrame::<0xc0>::new();
+        let at = frame.at();
+        ffx_graphic::util::bridge24::tex_anim_set_materials_char(&mut mem(), at, [a, b, c, x, y, w, h, sw, sh, d, e])
+    }
 }
 
 /// A singleton's pointer.

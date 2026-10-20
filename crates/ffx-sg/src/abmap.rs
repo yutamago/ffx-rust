@@ -864,4 +864,817 @@ pub mod bridge {
         let f = h.rebase(FLUSH_CACHE);
         h.call(f, &[0])
     }
+
+    /// `MsInitChrAbilityMap()`, `MsGetAbilityMap(chr)`,
+    /// `MsGetSaveAbilityMap()`, `MsGetExcelData(id, table, &strings)`,
+    /// `MsAbilityMapSetCommand(chr, command)`, `MsSetSaveParamAll()`.
+    pub const INIT_CHR_ABILITY_MAP: u32 = 0x0079_8820;
+    pub const GET_ABILITY_MAP: u32 = 0x0079_87f0;
+    pub const GET_SAVE_ABILITY_MAP: u32 = 0x0078_4f40;
+    pub const GET_EXCEL_DATA: u32 = 0x007a_b870;
+    pub const ABILITY_MAP_SET_COMMAND: u32 = 0x0079_8840;
+    pub const SET_SAVE_PARAM_ALL: u32 = 0x0078_6900;
+    /// `g_AbmapNodeKinds`: the node kinds' excel table.
+    pub const NODE_KINDS: Global<u32> = Global::new(0x01a8_60e0);
+    /// The save grid's node count (two bytes each: kind, a bit per
+    /// character that activated it).
+    pub const SAVE_NODES: u32 = 0x400;
+
+    /// `eiAbmParaGet()` (`0x00a54860`, from the menus' load paths,
+    /// `AbmapState_ChangingNode`, `AbmapGetNodePanel`, `eiAbmDataInit`):
+    /// after `MsInitChrAbilityMap`, for each of the seven characters the
+    /// stat bonuses of the grid nodes it activated. Each activated node's
+    /// kind record (`MsGetExcelData`) adds its byte `+0x14` to the stats
+    /// its `u16 +0x10` bits name and hands its command (`u16 +0x12`) to
+    /// `MsAbilityMapSetCommand`. Into the character's ability map record:
+    /// bit 0x100 (u32 `+0`) and 0x200 (u32 `+4`) unclamped, bits 0..7 as
+    /// bytes `+8..+0xf` clamped at 0xff (`+8..+0xb` from bits 1, 2, 4, 8
+    /// and so on). Then `MsSetSaveParamAll`, whose `eax` it returns
+    /// (`eiAbmDataInit` passes it on). `MsGetExcelData`'s third argument
+    /// is a frame word it never reads: `strings` here (one word).
+    pub fn ei_abm_para_get(h: &mut impl ffx_bridge::Host, strings: u32) -> u32 {
+        let f = h.rebase(INIT_CHR_ABILITY_MAP);
+        h.call(f, &[]);
+        for chr in 0..7u32 {
+            // bits 0..7, then 0x100 and 0x200
+            let mut sums = [0u32; 10];
+            let f = h.rebase(GET_ABILITY_MAP);
+            let out = h.call(f, &[chr]);
+            let f = h.rebase(GET_SAVE_ABILITY_MAP);
+            let save = h.call(f, &[]);
+            let bit = 1u8 << chr;
+            for node in 0..SAVE_NODES {
+                let at = save.wrapping_add(2 * node);
+                if h.read::<u8>(at.wrapping_add(1)) & bit == 0 {
+                    continue;
+                }
+                let kind = u32::from(h.read::<u8>(at));
+                let (f, table) = (h.rebase(GET_EXCEL_DATA), NODE_KINDS.get(h));
+                let record = h.call(f, &[kind, table, strings]);
+                let stats: u16 = h.read(record.wrapping_add(0x10));
+                let amount = u32::from(h.read::<u8>(record.wrapping_add(0x14)));
+                for (k, sum) in sums.iter_mut().enumerate() {
+                    if stats & (1 << k) != 0 {
+                        *sum = sum.wrapping_add(amount);
+                    }
+                }
+                let command = u32::from(h.read::<u16>(record.wrapping_add(0x12)));
+                let f = h.rebase(ABILITY_MAP_SET_COMMAND);
+                h.call(f, &[chr, command]);
+            }
+            h.write(out, sums[8]);
+            h.write(out.wrapping_add(4), sums[9]);
+            for (k, sum) in (0u32..).zip(&sums[..8]) {
+                // the sums stay below 0x400 * 0xff: the signed clamp
+                // reads as an unsigned one
+                let byte = u8::try_from(*sum).unwrap_or(0xff);
+                h.write(out.wrapping_add(8 + k), byte);
+            }
+        }
+        let f = h.rebase(SET_SAVE_PARAM_ALL);
+        h.call(f, &[])
+    }
+
+    /// `0x00a45ab0(side, x, y)` (the panel frame, `f32` x and y),
+    /// `AbmapDrawChrFace(x, y)`, `TOGetSaveChrName(chr)`,
+    /// `TOGetMessageSize(text, &w, &h)`, `AbmapHelpLineDraw(text, x, y)`,
+    /// `MsGetSaveSP(chr)`.
+    pub const PANEL_FRAME: u32 = 0x00a4_5ab0;
+    pub const DRAW_CHR_FACE: u32 = 0x00a4_61b0;
+    pub const SAVE_CHR_NAME: u32 = 0x008a_c850;
+    pub const MESSAGE_SIZE: u32 = 0x008b_7130;
+    pub const GET_SAVE_SP: u32 = 0x0078_53e0;
+    /// `.rdata`: 4 and 172 (`f32`).
+    const KFOUR: u32 = 0x00b9_22f8;
+    const K172: u32 = 0x00b7_b6d8;
+    /// The work block of [`abmap_draw_chr_panel`]: the message size's
+    /// width and height words.
+    pub const CHR_PANEL_WORK: u32 = 8;
+
+    /// `0x00a4fbe0()` (`AbmapDrawChrPanel`, name ours; from `eiAbmDraw`
+    /// and the grid draw pass `0x00a54660`): the current character's
+    /// panel (`g_Abmap + 0x115bc`), left (`x` 0xa0) or, with `+0x115c0`,
+    /// right (`x` 0). While `+0x115c2` slides it, frame `+0x115c1` (or 3
+    /// minus it, to the right) puts `x` at `frame * 160 / 4 + 0x20` and
+    /// steps (a fourth step ends the slide), both panels drawn where they
+    /// show (the left one for `x > 0`, the right one for `x < 0xa0`). A
+    /// panel: its frame (`0x00a45ab0(side, x - 0x70 or x + 0x17c, 4 or
+    /// 0)`), the face, the name centred (`TOGetMessageSize` into `work`),
+    /// the SP left (`MsGetSaveSP` - `+0x1161c`) as digits at 172.
+    /// Returns the last digits call's `eax`.
+    pub fn abmap_draw_chr_panel(h: &mut impl ffx_bridge::Host, work: u32) -> u32 {
+        /// `(side, frame x, frame y, face x, name x, digits x)` offsets.
+        fn panel(h: &mut impl ffx_bridge::Host, work: u32, x: i32, right: bool) -> u32 {
+            let f32_of = |v: i32| x87::store(f64::from(v));
+            let (side, frame_x, frame_y, face, name_x, digits) = if right {
+                (1, x + 0x17c, 0, x + 0x18d, x + 0x169 + 0x3d, x + 0x1bd)
+            } else {
+                (
+                    0,
+                    x - 0x70,
+                    rdata_f32(h, KFOUR),
+                    x - 0x5f,
+                    x - 2 - 0x44,
+                    x - 0x2f,
+                )
+            };
+            let f = h.rebase(PANEL_FRAME);
+            h.call(f, &[side, f32_of(frame_x), frame_y]);
+            let f = h.rebase(DRAW_CHR_FACE);
+            h.call(f, &[face.cast_unsigned(), 0x50]);
+            let chr = u32::from(h.read::<u8>(ABMAP.get(h).wrapping_add(0x115bc)));
+            let f = h.rebase(SAVE_CHR_NAME);
+            let name = h.call(f, &[chr]);
+            let f = h.rebase(MESSAGE_SIZE);
+            h.call(f, &[name, work, work + 4]);
+            let width: i32 = h.read(work);
+            let at = name_x.wrapping_sub(width / 2);
+            let f = h.rebase(HELP_LINE_DRAW);
+            h.call(f, &[name, at.cast_unsigned(), 0x9e]);
+            let chr = u32::from(h.read::<u8>(ABMAP.get(h).wrapping_add(0x115bc)));
+            let f = h.rebase(GET_SAVE_SP);
+            let sp = h.call(f, &[chr]);
+            let used: u32 = h.read(ABMAP.get(h).wrapping_add(0x1161c));
+            let (k172, [sx, sy]) = (rdata_f32(h, K172), DIGIT_SCALE.map(|a| rdata_f32(h, a)));
+            let f = h.rebase(DIGIT_RIGHT);
+            h.call(f, &[sp.wrapping_sub(used), f32_of(digits), k172, 0, sx, sy])
+        }
+        let g = ABMAP.get(h);
+        let sliding = h.read::<u8>(g.wrapping_add(0x115c2)) != 0;
+        let to_right = h.read::<u8>(g.wrapping_add(0x115c0)) != 0;
+        let mut eax = 0;
+        let x = if sliding {
+            let frame: u8 = h.read(g.wrapping_add(0x115c1));
+            let step = if to_right {
+                3 - i32::from(frame)
+            } else {
+                i32::from(frame)
+            };
+            let x = step.wrapping_mul(160) / 4 + 0x20;
+            let next = frame.wrapping_add(1);
+            h.write(g.wrapping_add(0x115c1), next);
+            if next >= 4 {
+                let g = ABMAP.get(h);
+                h.write(g.wrapping_add(0x115c2), 0u8);
+                let g = ABMAP.get(h);
+                h.write(g.wrapping_add(0x115c1), 0u8);
+            }
+            if x > 0 {
+                eax = panel(h, work, x, false);
+            }
+            x
+        } else if to_right {
+            0
+        } else {
+            return panel(h, work, 0xa0, false);
+        };
+        if x < 0xa0 {
+            eax = panel(h, work, x, true);
+        }
+        eax
+    }
+
+    /// `MsGetSaveItemNum(item)`, `TOAdpMenuIconItemAbmap(pkt, item, x, y,
+    /// dim)`, `AbmapDigitRight(n, x, y, dim)`.
+    pub const SAVE_ITEM_NUM: u32 = 0x0079_04b0;
+    pub const ICON_ITEM: u32 = 0x008f_0700;
+    pub const ABMAP_DIGIT_RIGHT: u32 = 0x00a5_9630;
+    /// The row's texture coordinates (`.rdata` `f32`): u left and right,
+    /// v top for even and odd rows, v bottom for even and odd rows.
+    const ITEM_U: [u32; 2] = [0x00b7_b5f0, 0x00b7_b614];
+    const ITEM_V_TOP: [u32; 2] = [0x00b7_b5dc, 0x00b6_5610];
+    const ITEM_V_BOTTOM: [u32; 2] = [0x00b7_b5e0, 0x00b7_b5f8];
+    /// The work of [`abmap_pad_entry_draw_item`]: the four vertices
+    /// (`x, y, u, v` and four colour words each) and, from `+0x80`, the
+    /// 256-byte name buffer `graphicDrawUIAbmapElement` gets.
+    pub const ITEM_WORK: u32 = 0x180;
+
+    /// `0x00a4f630(panel, entry, index, x, y)` (`AbmapPadEntryDrawItem`,
+    /// name ours; a pad entry draw callback stored at panel `+0x38` by
+    /// `0x00a55036`): the item row of `entry` (item `u16 +8`, dimmed by
+    /// byte `+4`). Rows `y - 2 .. y + 0x12` inside the panel's clip
+    /// (`i16 +0xa` - 1 .. `+0xa` + `+0xe` - 3; a row above the top is cut
+    /// at the top only) get a background quad from `x - +0x20` to `x +
+    /// +0xc - +0x20` (texture rows alternating with `index`'s parity, a
+    /// signed remainder) through `graphicDrawUIAbmapElement(quad, name,
+    /// 6)`, the item icon at `(x, y - 1)` (`TOAdpMenuIconItemAbmap` from
+    /// `g_PppPacketPos + 0x10`, the new position stored) and the count
+    /// (`MsGetSaveItemNum`, read first) right-aligned at `x + +0xc -
+    /// 0x24`. Returns the original's `eax`: the count's draw, else the
+    /// row bottom or the clip bottom it failed on. The original's name
+    /// buffer is uninitialised stack; `work`'s is the caller's.
+    pub fn abmap_pad_entry_draw_item(
+        h: &mut impl ffx_bridge::Host,
+        work: u32,
+        [panel, entry, index, x, y]: [u32; 5],
+    ) -> u32 {
+        let item = u32::from(h.read::<u16>(entry.wrapping_add(8)));
+        let f = h.rebase(SAVE_ITEM_NUM);
+        let count = h.call(f, &[item]);
+        let half = |h: &mut _, o: u32| i32::from(Mem::read::<i16>(h, panel.wrapping_add(o)));
+        let (x, y) = (x.cast_signed(), y.cast_signed());
+        let origin = half(h, 0x20);
+        let left = x87::store(f64::from(x.wrapping_sub(origin)));
+        let right = half(h, 0xc).wrapping_sub(origin).wrapping_add(x);
+        let right = x87::store(f64::from(right));
+        let (mut top, mut bottom) = (y.wrapping_sub(2), y.wrapping_add(0x12));
+        let clip_top = half(h, 0xa).wrapping_sub(1);
+        if bottom <= clip_top {
+            return bottom.cast_unsigned();
+        }
+        let clip_bottom = half(h, 0xa).wrapping_sub(3).wrapping_add(half(h, 0xe));
+        if top >= clip_bottom {
+            return clip_bottom.cast_unsigned();
+        }
+        if top < clip_top {
+            top = clip_top;
+        } else if bottom > clip_bottom {
+            bottom = clip_bottom;
+        }
+        let (top, bottom) = (x87::store(f64::from(top)), x87::store(f64::from(bottom)));
+        let odd = usize::from(index.cast_signed() % 2 != 0);
+        let [u0, u1] = ITEM_U.map(|a| rdata_f32(h, a));
+        let (v0, v1) = (
+            rdata_f32(h, ITEM_V_TOP[odd]),
+            rdata_f32(h, ITEM_V_BOTTOM[odd]),
+        );
+        for (k, vertex) in (0u32..).zip([
+            [left, top, u0, v0],
+            [left, bottom, u0, v1],
+            [right, top, u1, v0],
+            [right, bottom, u1, v1],
+        ]) {
+            let at = work.wrapping_add(0x20 * k);
+            for (o, word) in (0u32..).zip(vertex) {
+                h.write(at.wrapping_add(4 * o), word);
+            }
+            for o in 4..8 {
+                h.write(at.wrapping_add(4 * o), 0x80u32);
+            }
+        }
+        let f = h.rebase(DRAW_UI_ELEMENT);
+        h.call(f, &[work, work.wrapping_add(0x80), 6]);
+        let y = y.wrapping_sub(1).cast_unsigned();
+        let dim = u32::from(h.read::<u8>(entry.wrapping_add(4)) != 0);
+        let pkt = PACKET_POS.get(h).wrapping_add(0x10);
+        let f = h.rebase(ICON_ITEM);
+        let end = h.call(f, &[pkt, item, x.cast_unsigned(), y, dim]);
+        PACKET_POS.set(h, end);
+        let at = half(h, 0xc).wrapping_sub(0x24).wrapping_add(x);
+        let f = h.rebase(ABMAP_DIGIT_RIGHT);
+        h.call(f, &[count, at.cast_unsigned(), y, dim])
+    }
+
+    /// `g_AbmapPad`: the pad state (`i16 +0x2700` the pressed command,
+    /// negative while a state runs; twelve slots of 0x340 bytes with a
+    /// callback at `+0x34`).
+    pub const ABMAP_PAD: Global<u32> = Global::new(0x01a8_6108);
+    /// A word `eiAbmCalc` sets to 1 (`0x01a85f70`).
+    pub const CALC_RAN: Global<u32> = Global::new(0x01a8_5f70);
+    /// The matrix scale scratch (`0x00c8f820`, 16 words: the scales, then
+    /// the rotation's three rows).
+    pub const SCALE_ROWS: u32 = 0x00c8_f820;
+    /// `AbmapReadPad(no_stick, pad)`, `dbgPrintf(text)`,
+    /// `AbmapCtrlZoom()`, `AbmapCtrlTilt()`, `AbmapTryChangePlayer()`,
+    /// `AbmapState_HomeOnNode` (a state), `AbmapPadCtrl()`,
+    /// `AbmapPulseCursor()`, `FFXVu0CopyVector(dst, src)`,
+    /// `FFXVu0ScaleVector(dst, v, s)`, `FFXSamp0UnitMatrix(m)`,
+    /// `pppGetRotMatrixXYZ(out, angles)`, `FFXVu0CopyMatrix(dst, src)`,
+    /// `graphicSetAbmap(sin, cos, x, y, scale)`, `AbmapSpreadPlyTags()`.
+    pub const READ_PAD: u32 = 0x00a5_7520;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const CTRL_ZOOM: u32 = 0x00a4_90c0;
+    pub const CTRL_TILT: u32 = 0x00a4_8f50;
+    pub const TRY_CHANGE_PLAYER: u32 = 0x00a5_8ec0;
+    pub const STATE_HOME_ON_NODE: u32 = 0x00a5_9e80;
+    pub const PAD_CTRL: u32 = 0x00a5_83e0;
+    pub const PULSE_CURSOR: u32 = 0x00a4_7440;
+    pub const COPY_VECTOR: u32 = 0x006e_d370;
+    pub const SCALE_VECTOR: u32 = 0x006e_d8f0;
+    pub const UNIT_MATRIX: u32 = 0x0093_d900;
+    pub const ROT_MATRIX_XYZ: u32 = 0x0072_c800;
+    pub const COPY_MATRIX: u32 = 0x006e_d360;
+    pub const SET_ABMAP: u32 = 0x0064_2da0;
+    pub const SPREAD_PLY_TAGS: u32 = 0x00a5_a4b0;
+    /// `"Got ABMAP pad input!!!\n"`.
+    const STR_PAD_INPUT: u32 = 0x00b7_b58c;
+    /// `.rdata`: 15, 10, 512 (`f64`); 341, 208, 96 (`f32`); 128 is
+    /// [`K128`].
+    const K15: u32 = 0x00b9_22c0;
+    const K10: u32 = 0x00b9_22b0;
+    const K512: u32 = 0x00b4_1d38;
+    const K341: u32 = 0x00b7_b6e8;
+    const K208_F32: u32 = 0x00b6_56d8;
+    const K96: u32 = 0x00b4_3db8;
+    /// The work of [`ei_abm_calc`]: the screen vector it scales (16
+    /// bytes).
+    pub const CALC_WORK: u32 = 0x10;
+
+    /// `eiAbmCalc()` (`0x00a53570`, from `TkMenuCtrlAbilityMap2`): one
+    /// frame of the sphere grid. For its first 21 frames (`g_Abmap +
+    /// 0x115b8`, counting) the fade-in: `+0x115e8`, `+0x115ec`, `+0x115f0`
+    /// the frame over 15 (0 and 1 at the ends), `+0x115f4` the frame past
+    /// 10 over 10 and `+0x115b9` that times 128 (`ftol`; 0 and 0x80 at the
+    /// ends); the first frame also sets `g_AbmapPad + 0x13a3`. After that
+    /// the pad: `AbmapReadPad(0, +0x1166c)` (a `dbgPrintf` on input),
+    /// zoom and tilt while a state runs or their counters (`i16 +0x115d0`,
+    /// `+0x115ce`) are positive, then the state (`+0x115a8`) while one
+    /// runs, else `AbmapTryChangePlayer` for command 7 (the state then
+    /// only if it is `AbmapState_HomeOnNode`) or `AbmapPadCtrl`, and the
+    /// twelve pad slots' callbacks. Then the cursor pulse, the three frame
+    /// counters (the last capped at 100), the camera target (`+0x11318`
+    /// from `+0x11308`) checked against the edges (`+0x115fc..+0x11608`)
+    /// with the screen (341, 208) over the scale (`+0x11350`): leaving
+    /// the left 128 flips the panel side `+0x115c0` (a slide `+0x115c2`
+    /// unless `+0x115ba`), and the target clamped inside the edges less
+    /// (341, 208) - 96 scaled (0 where they cross). Then the matrices:
+    /// unit `+0x11360`, the rotation `+0x11420` of the angles `+0x11340`
+    /// scaled by rows (through `0x00c8f820`), the products `+0x114e0` and
+    /// `+0x113e0`, the camera `+0x11390` and target `+0x11450` points
+    /// (x, y negated, z from 512), and `graphicSetAbmap` with the angle's
+    /// sine and cosine. The name tags spread when `+0x115c7` asks.
+    /// Returns `g_Abmap` (the original's `eax`).
+    #[allow(clippy::too_many_lines)] // one frame, in the original's order
+    pub fn ei_abm_calc(h: &mut impl ffx_bridge::Host, work: u32) -> u32 {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        let f32_at = |h: &mut _, o: u32| -> f64 {
+            let at = ABMAP.get(h).wrapping_add(o);
+            x87::load(Mem::read(h, at))
+        };
+        let set_f32 = |h: &mut _, o: u32, v: f64| {
+            let at = ABMAP.get(h).wrapping_add(o);
+            Mem::write(h, at, x87::store(v));
+        };
+        CALC_RAN.set(h, 1);
+        let mut first = ABMAP.get(h);
+        if h.read::<u8>(first.wrapping_add(0x115b8)) == 0 {
+            let pad = ABMAP_PAD.get(h);
+            h.write(pad.wrapping_add(0x13a3), 1u8);
+            first = ABMAP.get(h);
+        }
+        let frame: u8 = h.read(first.wrapping_add(0x115b8));
+        if frame <= 0x14 {
+            let fade = match frame {
+                0 => 0.0,
+                1..=14 => {
+                    let t = x87::load(x87::store(f64::from(frame)));
+                    x87::load(x87::store(x87::div(t, rdata_f64(h, K15))))
+                }
+                _ => 1.0,
+            };
+            h.write(first.wrapping_add(0x115e8), x87::store(fade));
+            let fade = x87::load(h.read(first.wrapping_add(0x115e8)));
+            let fade = x87::load(x87::store(fade));
+            set_f32(h, 0x115f0, fade);
+            set_f32(h, 0x115ec, fade);
+            let late = i32::from(h.read::<u8>(first.wrapping_add(0x115b8))) - 10;
+            let (shade, alpha) = if late <= 0 {
+                (0.0, 0u8)
+            } else if late < 10 {
+                let t = x87::load(x87::store(f64::from(late)));
+                let shade = x87::load(x87::store(x87::div(t, rdata_f64(h, K10))));
+                let k128 = rdata_f64(h, K128);
+                (shade, crate::lo8(x87::ftol(h, x87::mul(shade, k128))))
+            } else {
+                (1.0, 0x80)
+            };
+            set_f32(h, 0x115f4, shade);
+            let at = ABMAP.get(h).wrapping_add(0x115b9);
+            h.write(at, alpha);
+            let at = ABMAP.get(h).wrapping_add(0x115b8);
+            let n: u8 = h.read(at);
+            h.write(at, n.wrapping_add(1));
+        } else {
+            call(h, READ_PAD, &[0, first.wrapping_add(0x1166c)]);
+            if h.read::<u16>(ABMAP.get(h).wrapping_add(0x1166e)) != 0 {
+                let text = h.rebase(STR_PAD_INPUT);
+                call(h, DBG_PRINTF, &[text]);
+            }
+            let pad = ABMAP_PAD.get(h);
+            let command = |h: &mut _| Mem::read::<i16>(h, pad.wrapping_add(0x2700));
+            if command(h) < 0 || h.read::<i16>(ABMAP.get(h).wrapping_add(0x115d0)) > 0 {
+                call(h, CTRL_ZOOM, &[]);
+            }
+            if command(h) < 0 || h.read::<i16>(ABMAP.get(h).wrapping_add(0x115ce)) > 0 {
+                call(h, CTRL_TILT, &[]);
+            }
+            let command = command(h);
+            let state = |h: &mut _| -> u32 { Mem::read(h, ABMAP.get(h).wrapping_add(0x115a8)) };
+            if command < 0 {
+                let f = state(h);
+                if f != 0 {
+                    h.call(f, &[]);
+                }
+            } else if command == 7 && {
+                call(h, TRY_CHANGE_PLAYER, &[]);
+                state(h) == h.rebase(STATE_HOME_ON_NODE)
+            } {
+                let f = state(h);
+                h.call(f, &[]);
+            } else {
+                call(h, PAD_CTRL, &[]);
+            }
+            let mut slot = ABMAP_PAD.get(h);
+            for _ in 0..12 {
+                let f: u32 = h.read(slot.wrapping_add(0x34));
+                if f != 0 {
+                    h.call(f, &[slot]);
+                }
+                slot = slot.wrapping_add(0x340);
+            }
+        }
+        call(h, PULSE_CURSOR, &[]);
+        for o in [0x11698, 0x1169c, 0x116a0] {
+            let at = ABMAP.get(h).wrapping_add(o);
+            let n: u32 = h.read(at);
+            h.write(at, n.wrapping_add(1));
+        }
+        let at = ABMAP.get(h).wrapping_add(0x116a0);
+        if h.read::<i32>(at) > 100 {
+            h.write(at, 100u32);
+        }
+        let at = ABMAP.get(h);
+        call(
+            h,
+            COPY_VECTOR,
+            &[at.wrapping_add(0x11318), at.wrapping_add(0x11308)],
+        );
+        let screen = |h: &mut _, z: u32| {
+            let words = [
+                rdata_f32(h, K341),
+                rdata_f32(h, K208_F32),
+                z,
+                x87::store(1.0),
+            ];
+            for (k, w) in (0u32..).zip(words) {
+                Mem::write(h, work.wrapping_add(4 * k), w);
+            }
+            let s = x87::store(x87::div(1.0, f32_at(h, 0x11350)));
+            call(h, SCALE_VECTOR, &[work, work, s]);
+        };
+        // the panel side from the target against the left and right edges
+        screen(h, 0);
+        let x = f32_at(h, 0x11318);
+        let half = x87::load(h.read(work));
+        let left = x87::add(x87::add(f32_at(h, 0x115fc), rdata_f64(h, K128)), half);
+        let side = ABMAP.get(h).wrapping_add(0x115c0);
+        let flip = if x < left {
+            (h.read::<u8>(side) != 1).then_some(1u8)
+        } else {
+            let right = x87::sub(x87::sub(f32_at(h, 0x11604), rdata_f64(h, K128)), half);
+            (f32_at(h, 0x11318) > right && h.read::<u8>(side) != 0).then_some(0)
+        };
+        if let Some(to) = flip {
+            h.write(side, to);
+            let g0 = ABMAP.get(h);
+            if h.read::<u8>(g0.wrapping_add(0x115ba)) == 0 {
+                h.write(g0.wrapping_add(0x115c2), 1u8);
+            }
+        }
+        // the target kept inside the edges less the scaled screen
+        screen(h, rdata_f32(h, K96));
+        let z = x87::load(h.read(work.wrapping_add(8)));
+        let wx = x87::load(x87::store(x87::sub(x87::load(h.read(work)), z)));
+        let wy = x87::load(x87::store(x87::sub(
+            x87::load(h.read(work.wrapping_add(4))),
+            z,
+        )));
+        h.write(work, x87::store(wx));
+        h.write(work.wrapping_add(4), x87::store(wy));
+        for (o, w, lo, hi) in [
+            (0x11318, wx, 0x115fc, 0x11604),
+            (0x1131c, wy, 0x11600, 0x11608),
+        ] {
+            let lo = x87::add(f32_at(h, lo), w);
+            let hi = x87::sub(f32_at(h, hi), w);
+            if hi < lo {
+                set_f32(h, o, 0.0);
+            } else if f32_at(h, o) < lo {
+                set_f32(h, o, lo);
+            } else if f32_at(h, o) > hi {
+                set_f32(h, o, hi);
+            }
+        }
+        // the matrices
+        let at = ABMAP.get(h);
+        call(h, UNIT_MATRIX, &[at.wrapping_add(0x11360)]);
+        let at = ABMAP.get(h);
+        call(
+            h,
+            ROT_MATRIX_XYZ,
+            &[at.wrapping_add(0x11420), at.wrapping_add(0x11340)],
+        );
+        let at = ABMAP.get(h);
+        call(
+            h,
+            COPY_MATRIX,
+            &[at.wrapping_add(0x11460), at.wrapping_add(0x11360)],
+        );
+        let at = ABMAP.get(h);
+        call(
+            h,
+            MUL_MATRIX,
+            &[
+                at.wrapping_add(0x114e0),
+                at.wrapping_add(0x114a0),
+                at.wrapping_add(0x11460),
+            ],
+        );
+        let at = ABMAP.get(h);
+        let rows = h.rebase(SCALE_ROWS);
+        for k in 0..16u32 {
+            let from = if k < 4 {
+                0x11350 + 4 * k
+            } else {
+                0x11420 + 4 * (k - 4)
+            };
+            let w: u32 = h.read(at.wrapping_add(from));
+            h.write(rows.wrapping_add(4 * k), w);
+        }
+        for row in 0..3u32 {
+            let scale = x87::load(h.read(rows.wrapping_add(4 * row)));
+            for col in 0..3u32 {
+                let at = rows.wrapping_add(0x10 + 0x10 * row + 4 * col);
+                let v = x87::mul(scale, x87::load(h.read(at)));
+                h.write(at, x87::store(v));
+            }
+        }
+        for k in 0..12u32 {
+            let w: u32 = h.read(rows.wrapping_add(0x10 + 4 * k));
+            // `g_Abmap` read again before the second and third rows
+            let at = if k % 4 == 0 { ABMAP.get(h) } else { at };
+            h.write(at.wrapping_add(0x11420 + 4 * k), w);
+        }
+        set_f32(h, 0x11324, 1.0);
+        let at = ABMAP.get(h);
+        call(
+            h,
+            APPLY_MATRIX,
+            &[
+                at.wrapping_add(0x11390),
+                at.wrapping_add(0x11360),
+                at.wrapping_add(0x11328),
+            ],
+        );
+        let at = ABMAP.get(h);
+        call(
+            h,
+            APPLY_MATRIX,
+            &[
+                at.wrapping_add(0x11450),
+                at.wrapping_add(0x11420),
+                at.wrapping_add(0x11318),
+            ],
+        );
+        let k512 = rdata_f64(h, K512);
+        for point in [0x11390, 0x11450] {
+            let x = f32_at(h, point);
+            set_f32(h, point, -x);
+            let y = f32_at(h, point + 4);
+            set_f32(h, point + 4, -y);
+            let z = f32_at(h, point + 8);
+            set_f32(h, point + 8, x87::sub(k512, z));
+        }
+        let at = ABMAP.get(h);
+        call(
+            h,
+            MUL_MATRIX,
+            &[
+                at.wrapping_add(0x113e0),
+                at.wrapping_add(0x113a0),
+                at.wrapping_add(0x11360),
+            ],
+        );
+        let at = ABMAP.get(h);
+        let angle: i32 = h.read(at.wrapping_add(0x11340));
+        let table = |h: &mut _, a: i32| {
+            let k = (a >> 4).cast_unsigned() & 0xfff;
+            let at = Mem::rebase(h, SIN_TABLE).wrapping_add(4 * k);
+            x87::store(x87::load(Mem::read(h, at)))
+        };
+        let through = |h: &mut _, o: u32| x87::store(x87::load(Mem::read(h, at.wrapping_add(o))));
+        let args = [
+            table(h, angle),
+            table(h, angle.wrapping_add(0x4000)),
+            through(h, 0x11318),
+            through(h, 0x1131c),
+            through(h, 0x11350),
+        ];
+        call(h, SET_ABMAP, &args);
+        let mut at = ABMAP.get(h);
+        if h.read::<u8>(at.wrapping_add(0x115c7)) != 0 {
+            call(h, SPREAD_PLY_TAGS, &[]);
+            let g1 = ABMAP.get(h);
+            h.write(g1.wrapping_add(0x115c7), 0u8);
+            at = ABMAP.get(h);
+        }
+        h.write(at.wrapping_add(0x115ba), 0u8);
+        at
+    }
+
+    /// `eiAbmLoad()` (`0x00a54810`, from `MsBattleReadDataNB`'s menu
+    /// side): the sizes of `sphere.bin` and `panel.bin` (`getExcelBinSize`
+    /// into a [`LANG_BUFFER`] block, freed after), a block of each size
+    /// into `g_AbmapNodeKinds + 4` and `g_AbmapNodeKinds`, then (a tail
+    /// jump) [`ei_abm_set_lang`], whose `eax` it returns.
+    pub fn ei_abm_load(h: &mut impl ffx_bridge::Host) -> u32 {
+        let f = h.rebase(USER_MALLOC);
+        let buf = h.call(f, &[LANG_BUFFER]);
+        let mut sizes = [0; 2];
+        for (size, (name, _)) in sizes.iter_mut().zip(LANG_FILES) {
+            let (f, name) = (h.rebase(GET_EXCEL_BIN_SIZE), h.rebase(name));
+            *size = h.call(f, &[name, buf]);
+        }
+        let f = h.rebase(USER_FREE);
+        h.call(f, &[buf]);
+        for (size, (_, at)) in sizes.into_iter().zip(LANG_FILES) {
+            let f = h.rebase(USER_MALLOC);
+            let block = h.call(f, &[size]);
+            Global::<u32>::new(at).set(h, block);
+        }
+        ei_abm_set_lang(h)
+    }
+
+    /// `MsGetSaveMenu()` (the menu settings word's address; bits 14-15
+    /// pick the grid: 0 standard, 1 expert, else the third).
+    pub const GET_SAVE_MENU: u32 = 0x0078_5290;
+    /// Set once the 70 grid data files are loaded (`eiAbmDataInit`).
+    pub const DATA_LOADED: Global<u32> = Global::new(0x01a8_5f60);
+    /// Zeroed by every `eiAbmDataInit`.
+    pub const DATA_INIT_CLEAR: Global<u32> = Global::new(0x01a8_5f70);
+    /// The C runtime's `sprintf` and `sprintf_s` (import slots).
+    pub const SPRINTF_SLOT: Global<u32> = Global::new(0x00b0_c3dc);
+    pub const SPRINTF_S_SLOT: Global<u32> = Global::new(0x00b0_c394);
+    /// `"%s/%s"`, `"/ffx_ps2/ffx/eiichi_abmap_data"`, `"%s"`, the
+    /// not-found and the loaded `dbgPrintf` formats.
+    pub const FMT_PATH: u32 = 0x00b5_85c8;
+    pub const DATA_DIR: u32 = 0x00b7_b5a4;
+    pub const FMT_S: u32 = 0x00b0_e160;
+    pub const FMT_NOT_FOUND: u32 = 0x00b5_85ec;
+    pub const FMT_LOADED: u32 = 0x00b5_862c;
+    /// The data files' names (`"par_dna.pdt"`, ...): [`DATA_FILES`]
+    /// pointers.
+    pub const DATA_NAMES: u32 = 0x00c8_5ef0;
+    pub const DATA_FILES: u32 = 70;
+    /// `fiosUnifyFilename(src, out, size)`, `fiosOpen(path, mode)`,
+    /// `fiosLseek(file, offset, whence)`, `user_aligned_malloc(size,
+    /// align)`, `fiosRead(file, buffer, size)`, `fiosClose(file)`; the
+    /// reports go to `dbgPrintf` ([`DBG_PRINTF`]).
+    pub const FIOS_UNIFY: u32 = 0x0067_9820;
+    pub const FIOS_OPEN: u32 = 0x0067_9730;
+    pub const FIOS_LSEEK: u32 = 0x0067_9710;
+    pub const ALIGNED_MALLOC: u32 = 0x0068_6ff0;
+    pub const FIOS_READ: u32 = 0x0067_9800;
+    pub const FIOS_CLOSE: u32 = 0x0067_9510;
+    /// `g_CdLib + 0`: the CD library's read (`(table, buffer, 0, 0)`).
+    pub const CDLIB_READ: Global<u32> = Global::new(0x0231_0c40);
+    /// The grid's activation lists by grid (bits 14-15 of the menu word,
+    /// 0, 1, else): seven pointers each, one per character, to `u16` node
+    /// numbers ending in 0xffff.
+    pub const ACTIVE_LISTS: [u32; 3] = [0x00c8_6c5c, 0x00c8_6ca4, 0x00c8_6cec];
+    /// The characters' start nodes by grid: seven `u16` each.
+    pub const START_NODES: [u32; 3] = [0x00c8_6c00, 0x00c8_6c10, 0x00c8_6c20];
+    /// `eiAbmParaGet()`.
+    pub const EI_ABM_PARA_GET: u32 = 0x00a5_4860;
+    /// Where the loaded data blocks go: block `i` (but 16) to
+    /// `0x02305800 - 4i`; blocks 6..=13 also to `0x01a85f78 + 4(i - 6)`,
+    /// 0x1e..=0x30 to `0x01a85f98 + 4(i - 0x1e)`, 0x31..=0x43 to
+    /// `0x01a85fe8 + 4(i - 0x31)`, block 14 to `0x01a85fe4`.
+    pub const DATA_BLOCKS: u32 = 0x0230_5800;
+    pub const DATA_COPIES: [(u32, std::ops::RangeInclusive<u32>); 4] = [
+        (0x01a8_5f78, 6..=13),
+        (0x01a8_5f98, 0x1e..=0x30),
+        (0x01a8_5fe4, 14..=14),
+        (0x01a8_5fe8, 0x31..=0x43),
+    ];
+    /// The block [`ei_abm_data_init`] works in, laid out as the original's
+    /// frame from `ebp - 0x684`: the table read's buffer
+    /// ([`DATA_INIT_HEADER`] bytes, 4 spare), the unified path and the
+    /// path (0x100 bytes each).
+    pub const DATA_INIT_WORK: u32 = 0x680;
+    pub const DATA_INIT_HEADER: u32 = 0x47c;
+    pub const DATA_INIT_UNIFIED: u32 = 0x480;
+    pub const DATA_INIT_PATH: u32 = 0x580;
+
+    /// `eiAbmDataInit(save)` (`0x00a53de0`, Fahrenheit's name; from
+    /// `MsSetSaveStartGame` and `Native_0254`): the save's sphere grid
+    /// reset for the grid the menu word picks (bits 14-15).
+    ///
+    /// Once ([`DATA_LOADED`]): each of the 70 grid data files
+    /// `"/ffx_ps2/ffx/eiichi_abmap_data/<name>"` (`sprintf`,
+    /// `fiosUnifyFilename`, `sprintf_s "%s"`) opened, its size taken
+    /// (`fiosLseek` to the end and back), read into a new 16-aligned block
+    /// and closed, with a `dbgPrintf` either way; the blocks stored as
+    /// [`DATA_BLOCKS`] says. A file that does not open leaves its block
+    /// word as the frame held it (garbage in the original): 0 here.
+    ///
+    /// Then [`DATA_INIT_CLEAR`] 0, the CD library's table (`g_CdLib +
+    /// 0x10`) 0x25, read of table 0x11, 0x12 or 0x13 by grid into the
+    /// work block's buffer, the read wait (`g_CdLib + 8`), `save`'s 0x1320
+    /// bytes zeroed. A buffer whose `u16 +0` is 0x31 gives the nodes'
+    /// kinds: `u16 +2` bytes from `+8` to the even bytes of `save`
+    /// (beyond 0x678 the original reads past its frame; the data's count
+    /// is far below). Each character `k` (0..7) sets bit `k` of the odd
+    /// byte of each node of its activation list ([`ACTIVE_LISTS`]), and
+    /// the seven start nodes ([`START_NODES`]) go to `save + 0xf00`. The
+    /// grid is re-read from the menu word at each step. Ends with
+    /// `eiAbmParaGet()`, whose `eax` it returns.
+    pub fn ei_abm_data_init<H: ffx_bridge::Host>(h: &mut H, save: u32, work: u32) -> u32 {
+        let f = h.rebase(GET_SAVE_MENU);
+        let menu = h.call(f, &[]);
+        // 0, 1, or 2 for the rest
+        let grid = |h: &H| -> usize { (h.read::<u32>(menu) >> 14 & 3).min(2) as usize };
+        if DATA_LOADED.get(h) == 0 {
+            load_data(h, work);
+        }
+        let g = grid(h);
+        DATA_INIT_CLEAR.set(h, 0);
+        let f = CDLIB_READ_TABLE.get(h);
+        h.call(f, &[0x25]);
+        let table = [0x11, 0x12, 0x13][g];
+        let header = work;
+        let f = CDLIB_READ.get(h);
+        h.call(f, &[table, header, 0, 0]);
+        let f = CDLIB_READ_SYNC.get(h);
+        h.call(f, &[0]);
+        h.write_bytes(save, &[0u8; 0x1320]);
+        if h.read::<u16>(header) == 0x31 {
+            let count = u32::from(h.read::<u16>(header + 2));
+            for i in 0..count {
+                let kind = h.read::<u8>(header + 8 + i);
+                h.write(save.wrapping_add(2 * i), kind);
+            }
+        }
+        for k in 0..7u32 {
+            let g = grid(h);
+            let lists = h.rebase(ACTIVE_LISTS[g]);
+            let mut at: u32 = h.read(lists + 4 * k);
+            loop {
+                let node: u16 = h.read(at);
+                if node == 0xffff {
+                    break;
+                }
+                let byte = save.wrapping_add(2 * u32::from(node) + 1);
+                let v = h.read::<u8>(byte) | 1 << k;
+                h.write(byte, v);
+                at = at.wrapping_add(2);
+            }
+        }
+        for k in 0..7u32 {
+            let g = grid(h);
+            let starts = h.rebase(START_NODES[g]);
+            let node: u16 = h.read(starts + 2 * k);
+            h.write(save.wrapping_add(0xf00 + 2 * k), node);
+        }
+        let f = h.rebase(EI_ABM_PARA_GET);
+        h.call(f, &[])
+    }
+
+    /// [`ei_abm_data_init`]'s one-time load of the grid data files.
+    fn load_data(h: &mut impl ffx_bridge::Host, work: u32) {
+        let (path, unified) = (work + DATA_INIT_PATH, work + DATA_INIT_UNIFIED);
+        let mut blocks = [0u32; DATA_FILES as usize];
+        for (i, block) in (0u32..).zip(blocks.iter_mut()) {
+            let name: u32 = h.read(h.rebase(DATA_NAMES) + 4 * i);
+            let (fmt, dir) = (h.rebase(FMT_PATH), h.rebase(DATA_DIR));
+            let f = SPRINTF_SLOT.get(h);
+            h.call(f, &[path, fmt, dir, name]);
+            let f = h.rebase(FIOS_UNIFY);
+            h.call(f, &[path, unified, 0x100]);
+            let (f, fmt) = (SPRINTF_S_SLOT.get(h), h.rebase(FMT_S));
+            h.call(f, &[path, 0xfe, fmt, unified]);
+            let f = h.rebase(FIOS_OPEN);
+            let file = h.call(f, &[path, 1]);
+            if file == 0 {
+                let (f, fmt) = (h.rebase(DBG_PRINTF), h.rebase(FMT_NOT_FOUND));
+                h.call(f, &[fmt, path]);
+                continue;
+            }
+            let f = h.rebase(FIOS_LSEEK);
+            let size = h.call(f, &[file, 0, 2]);
+            h.call(f, &[file, 0, 0]);
+            let f = h.rebase(ALIGNED_MALLOC);
+            *block = h.call(f, &[size, 0x10]);
+            let f = h.rebase(FIOS_READ);
+            h.call(f, &[file, *block, size]);
+            let f = h.rebase(FIOS_CLOSE);
+            h.call(f, &[file]);
+            let (f, fmt) = (h.rebase(DBG_PRINTF), h.rebase(FMT_LOADED));
+            h.call(f, &[fmt, path, size]);
+        }
+        for (i, &block) in (0u32..).zip(&blocks) {
+            if i != 16 {
+                Global::<u32>::new(DATA_BLOCKS - 4 * i).set(h, block);
+            }
+        }
+        for (at, range) in DATA_COPIES {
+            for (k, i) in (0u32..).zip(range) {
+                Global::<u32>::new(at + 4 * k).set(h, blocks[i as usize]);
+            }
+        }
+        DATA_LOADED.set(h, 1);
+    }
 }

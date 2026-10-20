@@ -388,6 +388,11 @@ Opcode `79` (`0x00870d30`) writes the worker's vibration curve, eight
 `u16` in a variable (`+0x44` points at it, filled from
 `TkGetVibrateDefaultCurve` the first time); `7a` (`0x0086fab0`) sets a
 `(key, value)` slot in the table at `+0x2e4` of types 5 and 6.
+That table is a script variable's storage, installed by `Native_00f0`
+through `Atel_SetLineTable` (`0x0086d190`): eight 8-byte `(key u32, value
+u8)` slots, reset to `(0xffff, 3)` (`Atel_ResetLineTable`, `0x0086d110`),
+then 16 signal nodes from `+0x40` that `Atel_FreeLineSignals`
+(`0x0086d1c0`) pushes onto the worker's free list (`+0x88`).
 
 ### Natives in Rust
 
@@ -2473,6 +2478,61 @@ marked "not ported" runs in the original, and so does the handler of
 | `0xc05c` | `Native_c05c` | v int | debug (mod-tool candidate): AtelPs2DebugString2(sprintf("DEBUG:%d/0x%x", worker id, v)); v | - | int `0x008783c0` (not ported) |
 | `0xc05d` | `Native_c05d` | v int | int: v; 0x00887ca0(v) | - | int `0x00878470` (native_sys) |
 | `0xd000` | `Native_d000` | v | int: popped for an "abiritymap_debug(%d)" line through the empty dbgPrintf; 0 | - | int `0x00a445f0` (native_mods) |
+
+### Helpers (script round 22)
+
+`ffx_script::vm::bridge::helpers` has, besides the setup functions of
+earlier rounds: `Atel_ClearBindMask` (`0x00863650`, the counterpart of
+`Atel_SetBindMask`), the event sprites' alpha and colour setters
+(`0x00874ad0`, `0x008749f0`: the slot clamped to 0-127, the values to
+0-255; `EAX` is slot * 7), `Atel_GetVoiceStreamParams` (`0x00885ba0`:
+digits 4-5 of `(id >> 12)` in decimal below 21 give `(0x19, 1)`, else
+`(0x1b, 0)`), the character-name converters `setDefaultPlayerName` uses for
+language 1 (`0x00875220`) and languages 9 and 10 (`0x00875370`, the
+inverse), and the line table above. `native_btl::atel_btl_move_target_dist`
+is `0x007a9150`, the battle move set-up behind `0x700c`, `0x7085` and
+`0x7053`: it pops `c`, `b`, `a`, brake, accel, `n`, speed and kind (floats
+through `fstp m32`) and, when the worker has a battle actor and `n` > 0,
+calls `MsGetMoveTargetDist` (`0x007ab540`) with the actor's `+0x416` and
+returns the actor record (0 otherwise). `0x00a7ae20` is a copy of
+`Angle_Wrap` (`ST0` result) and is hooked with `ffx_chara`'s port. The
+natives that called these through the original now call the Rust ones.
+`round22_helpers_match_the_original` checks them on the image and on each
+snapshot. On the snapshots' `0xcd`-filled event workers (battle id from
+`0x5d` up, `MsGetChr`'s spare record) `MsGetMoveTargetDist` copies a
+position `MsGetChrPos` never writes (`[ebp-0x14]`) into the record's
+`+0x390`; with the pops in Rust, the leftovers there differ from the
+original's, so a sixth uninitialised-stack stub zeroes its frame
+(`0x007ab546`, as `MsGetTargetDist`'s). Move kinds 2 and 10 read other
+actors through that record's garbage, where the original stops; the test
+leaves them out there.
+
+### Helpers (script round 23)
+
+The move and turn blocks: each level block (`+0x12c + level*0x4c`) points
+at a move block (`+0x44`) and a turn block (`+0x48`); a level's own blocks
+are `+0x5b8 + level*0x4c` and `+0x864 + level*0x44`, and levels sharing one
+move or turn together. `Atel_StartMoveBlock` (`0x008703e0`) and
+`Atel_StartTurnBlock` (`0x00871030`), the tails of `Native_MoveStart` and
+`Native_TurnStart`, write the current level's own block `+0` = param, `+2`
+= mode, `+6` = 0 (16 bits each) and hand it to `Atel_ShareMoveBlock`
+(`0x00870440`) or `Atel_ShareTurnBlock` (`0x00871090`): the level's own
+block (the level unclamped) becomes the clamped level's block (0-1 for
+types 5 and 6, 0-8 otherwise), and so for every level `i` from 0 to the
+level (to 7 with mode bit `0x20`) whose bit is in `mask | 1 << level`;
+with mode bit `0x100` only for levels whose current block is idle (`+2 &
+0xff80` for moves, `& 0xffe0` for turns). All four return the `EAX` the
+loop leaves. `Atel_AddSepLoad` (`0x0086e250`) appends `(id, flags |
+0x8000)` to the sound-separate load list (`g_AtelSepLoadList`,
+`0x01327030`, 8 entries, count `0x01325b78`) when the flags' group bits
+(`0x7e0000`, none = group 0 at bit 16) meet `(g_AtelSepGroupMask |
+1) << 16` (`0x01326bdc`): 0 added, -1 already listed, 1 full or not
+selected. `0x00866520` fills it from the event header's separates table
+(`+0x2c`, then `+0xc`: a count and `(id, flags)` pairs), and `0x008638c0`
+queues the pending ones with a fade of 0xf0 frames (0x78 with flag
+`0x2000`, 0x168 with `0x4000`). `round23_helpers_match_the_original`
+checks them on synthetic workers of every type and on the snapshots' real
+workers (those whose level blocks point at their own blocks).
 
 ### Verification
 

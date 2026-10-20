@@ -18,7 +18,8 @@
 //! - [`opus`]: opus effect objects and their script commands;
 //! - [`anmm`]: `opp_anmm`'s sprite-animation commands;
 //! - [`opd`]: the debug display;
-//! - [`hi_md`], [`hi_opus`]: the high range's model helpers and opus
+//! - [`hi_md`], [`hi_light`], [`hi_draw`], [`hi_opus`], [`hi_0283`]: the
+//!   high range's model helpers, vertex lights, model draw set-ups and opus
 //!   effects.
 //!
 //! [`x87`] reproduces the game thread's float arithmetic bit for bit.
@@ -28,6 +29,9 @@ pub mod draw;
 pub mod et;
 pub mod fp;
 pub mod heap;
+pub mod hi_0283;
+pub mod hi_draw;
+pub mod hi_light;
 pub mod hi_md;
 pub mod hi_opus;
 pub mod lns;

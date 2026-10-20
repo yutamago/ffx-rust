@@ -6584,4 +6584,68 @@ ported! {
     Native_d000 @ 0x00a4_45f0 => extern "C" fn n_a445f0(w: u32, a: u32, s: u32) -> u32 {
         native_mods::native_d000(&mut mem(), w, a, s)
     }
+    /// `Atel_BtlMoveTargetDist(worker, args, stack, gravity)`.
+    Atel_BtlMoveTargetDist @ 0x007a_9150 => extern "C" fn h_7a9150(w: u32, a: u32, s: u32, g: u32) -> u32 {
+        native_btl::atel_btl_move_target_dist(&mut mem(), w, a, s, g)
+    }
+    /// `Angle_Wrap_00a7ae20(x)`: a copy of `Angle_Wrap`.
+    Angle_Wrap_00a7ae20 @ 0x00a7_ae20 => extern "C" fn h_a7ae20(x: f32) -> f32 {
+        ffx_chara::chr::wrap_angle(x)
+    }
+    /// `Atel_GetVoiceStreamParams(id, &a, &b)`.
+    Atel_GetVoiceStreamParams @ 0x0088_5ba0 => extern "C" fn h_885ba0(id: u32, a: u32, b: u32) -> u32 {
+        hp::atel_get_voice_stream_params(&mut mem(), id, a, b)
+    }
+    /// `Atel_SetSpriteAlpha(i, alpha)`.
+    Atel_SetSpriteAlpha @ 0x0087_4ad0 => extern "C" fn h_874ad0(i: u32, alpha: u32) -> u32 {
+        hp::atel_set_sprite_alpha(&mut mem(), i, alpha)
+    }
+    /// `Atel_SetSpriteColor(i, r, g, b)`.
+    Atel_SetSpriteColor @ 0x0087_49f0 => extern "C" fn h_8749f0(i: u32, r: u32, g: u32, b: u32) -> u32 {
+        hp::atel_set_sprite_color(&mut mem(), i, r, g, b)
+    }
+    /// `Atel_ClearBindMask(n)`.
+    Atel_ClearBindMask @ 0x0086_3650 => extern "C" fn h_863650(n: u32) -> u32 {
+        hp::atel_clear_bind_mask(&mut mem(), n)
+    }
+    /// `Atel_NameToLang1(src, dst)`.
+    Atel_NameToLang1 @ 0x0087_5220 => extern "C" fn h_875220(src: u32, dst: u32) -> u32 {
+        hp::atel_name_to_lang1(&mut mem(), src, dst)
+    }
+    /// `Atel_NameFromLang1(src, dst)`.
+    Atel_NameFromLang1 @ 0x0087_5370 => extern "C" fn h_875370(src: u32, dst: u32) -> u32 {
+        hp::atel_name_from_lang1(&mut mem(), src, dst)
+    }
+    /// `Atel_ResetLineTable(worker)`.
+    Atel_ResetLineTable @ 0x0086_d110 => extern "C" fn h_86d110(w: u32) -> u32 {
+        hp::atel_reset_line_table(&mut mem(), w)
+    }
+    /// `Atel_FreeLineSignals(worker)`.
+    Atel_FreeLineSignals @ 0x0086_d1c0 => extern "C" fn h_86d1c0(w: u32) -> u32 {
+        hp::atel_free_line_signals(&mut mem(), w)
+    }
+    /// `Atel_SetLineTable(worker, table)`.
+    Atel_SetLineTable @ 0x0086_d190 => extern "C" fn h_86d190(w: u32, t: u32) -> u32 {
+        hp::atel_set_line_table(&mut mem(), w, t)
+    }
+    /// `Atel_AddSepLoad(id, flags)`.
+    Atel_AddSepLoad @ 0x0086_e250 => extern "C" fn h_86e250(id: u32, flags: u32) -> u32 {
+        hp::atel_add_sep_load(&mut mem(), id, flags)
+    }
+    /// `Atel_StartMoveBlock(worker, mask, mode, param)`.
+    Atel_StartMoveBlock @ 0x0087_03e0 => extern "C" fn h_8703e0(w: u32, mask: u32, mode: u32, param: u32) -> u32 {
+        hp::atel_start_move_block(&mut mem(), w, mask, mode, param)
+    }
+    /// `Atel_ShareMoveBlock(worker, level, mask, mode)`.
+    Atel_ShareMoveBlock @ 0x0087_0440 => extern "C" fn h_870440(w: u32, level: u32, mask: u32, mode: u32) -> u32 {
+        hp::atel_share_move_block(&mut mem(), w, level, mask, mode)
+    }
+    /// `Atel_StartTurnBlock(worker, mask, mode, param)`.
+    Atel_StartTurnBlock @ 0x0087_1030 => extern "C" fn h_871030(w: u32, mask: u32, mode: u32, param: u32) -> u32 {
+        hp::atel_start_turn_block(&mut mem(), w, mask, mode, param)
+    }
+    /// `Atel_ShareTurnBlock(worker, level, mask, mode)`.
+    Atel_ShareTurnBlock @ 0x0087_1090 => extern "C" fn h_871090(w: u32, level: u32, mask: u32, mode: u32) -> u32 {
+        hp::atel_share_turn_block(&mut mem(), w, level, mask, mode)
+    }
 }

@@ -6,9 +6,9 @@
 //! ship's event running). Needs `FFX_GAME_DIR` and `FFX_SNAPSHOT`; skipped
 //! otherwise.
 //!
-//! Float results come back in `ST0`, which the oracle reads as an `f64`:
-//! they compare exactly, NaNs only as NaNs (their bits are checked where
-//! the code stores them). `_ftol2_sse` pops each one.
+//! Float results come back in `ST0`, which the oracle reads as an `f64`
+//! (`fst qword`, NaN payloads kept): they compare bit for bit, NaNs
+//! included. `_ftol2_sse` pops each one.
 
 // a and b are the two oracles (original, bridge) throughout; w, l, s a worker,
 // its level and its stack
@@ -120,7 +120,7 @@ impl run::NativeHost for Run<'_> {
         // pop it, as the original's fstp does
         let ftol = self.0.rebase(FTOL2);
         self.0.call(ftol, Conv::Cdecl, &[]).unwrap();
-        f80_to_f64(raw)
+        ffx_oracle::f80_to_f64(&raw)
     }
     fn call_intrinsic2(&mut self, addr: u32, a: f64, b: f64) -> f64 {
         let at = self.0.rebase(TRAMPOLINE);
@@ -130,7 +130,7 @@ impl run::NativeHost for Run<'_> {
         let r = self.0.call(at, Conv::Cdecl, &args).unwrap();
         let raw = r.st0_raw.expect("the intrinsic leaves ST0");
         self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
-        f80_to_f64(raw)
+        ffx_oracle::f80_to_f64(&raw)
     }
     fn call_intrinsic1(&mut self, addr: u32, a: f64) -> f64 {
         let at = self.0.rebase(TRAMPOLINE);
@@ -140,18 +140,13 @@ impl run::NativeHost for Run<'_> {
         let r = self.0.call(at + 19, Conv::Cdecl, &args).unwrap();
         let raw = r.st0_raw.expect("the intrinsic leaves ST0");
         self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
-        f80_to_f64(raw)
+        ffx_oracle::f80_to_f64(&raw)
     }
     fn scratch(&mut self) -> u32 {
         // the bottom of the emulated stack: no call reaches that deep, and
         // the comparisons leave the stack out, as the originals' locals are
         self.0.stack_range().start + 0x100
     }
-}
-
-/// An 80-bit x87 value as `fstp m64` stores it, NaN payloads kept.
-fn f80_to_f64(raw: [u8; 10]) -> f64 {
-    ffx_oracle::f80_to_f64(&raw)
 }
 
 struct Xorshift(u32);
@@ -194,14 +189,10 @@ fn orig_float(a: &mut Oracle, f: u32, args: &[u32]) -> f64 {
     x
 }
 
-/// Whether an `ST0` result is the bridge's `f32` bits.
+/// Whether an `ST0` result is the bridge's `f32` bits, bit for bit (NaN
+/// payloads and signs included, as `fld dword` widens them).
 fn same_float(st0: f64, bits: u32) -> bool {
-    let f = f32::from_bits(bits);
-    if f.is_nan() {
-        st0.is_nan()
-    } else {
-        st0.to_bits() == f64::from(f).to_bits()
-    }
+    ffx_oracle::same_float(st0, f64::from(f32::from_bits(bits)))
 }
 
 /// Every byte written must agree, except inside words that hold an address
@@ -1551,7 +1542,7 @@ const ZEROED: [(u32, &[u8]); 3] = [
     (0x0086_ea8a, &[0x31, 0xf6, 0x90]),
 ];
 
-const UNINIT: [Uninit; 8] = [
+const UNINIT: [Uninit; 9] = [
     // 0x007bb6a0 (Native_CamSetPos and its "ref" twin) hands Cam_SetPos a
     // vector of three popped floats whose w ([ebp-8]) it never writes;
     // Cam_SetPos copies it into the camera and the VU0 registers. Site: the
@@ -1582,6 +1573,20 @@ const UNINIT: [Uninit; 8] = [
     // mov ecx, 9; rep stosd; pop ecx; pop edi; mov eax, [cookie]; ret
     Uninit {
         site: 0x007a_9a46,
+        site_len: 5,
+        stub: &[
+            0x57, 0x8d, 0x7d, 0xd8, 0x31, 0xc0, 0x51, 0xb9, 0x09, 0, 0, 0, 0xf3, 0xab, 0x59, 0x5f,
+            0xa1, 0, 0, 0, 0, 0xc3,
+        ],
+        fixup: Some((17, 0x00c6_13d8)),
+    },
+    // MsGetMoveTargetDist (0x007ab540, behind Atel_BtlMoveTargetDist and
+    // so 0x700c/0x7085/0x7053) copies the position MsGetChrPos leaves at
+    // [ebp-0x14] into the actor's +0x390; for MsGetChr's spare record (the
+    // 0xcd-filled event workers' ids) nothing writes it. Same site and
+    // stub as MsGetTargetDist's: [ebp-0x28..-0x8], nine words.
+    Uninit {
+        site: 0x007a_b546,
         site_len: 5,
         stub: &[
             0x57, 0x8d, 0x7d, 0xd8, 0x31, 0xc0, 0x51, 0xb9, 0x09, 0, 0, 0, 0xf3, 0xab, 0x59, 0x5f,
@@ -2654,7 +2659,7 @@ fn native_case(a: &mut Oracle, b: &mut Oracle, w: u32, sym: u32, push: &[(u8, u3
             let raw = ra.st0_raw.expect("ST0");
             orig(a, FTOL2, &[]);
             let rb = f(&mut Run(b), w, args, s);
-            let x = f80_to_f64(raw);
+            let x = ffx_oracle::f80_to_f64(&raw);
             assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
         }
         None => panic!("{what}: not in find"),
@@ -3140,7 +3145,7 @@ fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32) {
                         let raw = ra.st0_raw.expect("ST0");
                         orig(a, FTOL2, &[]);
                         let rb = f(&mut Run(b), w, args, s);
-                        let x = f80_to_f64(raw);
+                        let x = ffx_oracle::f80_to_f64(&raw);
                         assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
                     }
                     None => panic!("{what}: not in find"),
@@ -4912,7 +4917,7 @@ fn round19_natives_match_the_original() {
                             let raw = ra.st0_raw.expect("ST0");
                             orig(a, FTOL2, &[]);
                             let rb = f(&mut Run(b), w, args, s);
-                            let x = f80_to_f64(raw);
+                            let x = ffx_oracle::f80_to_f64(&raw);
                             assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
                         }
                         None => panic!("{what}: not in find"),
@@ -4925,4 +4930,649 @@ fn round19_natives_match_the_original() {
     }
     eprintln!("{compared} round-19 native calls compared ({stops} stopped in the original)");
     assert!(compared > 0, "nothing ran");
+}
+
+// ---- script round 22: the VM's helpers ----
+
+/// `len` bytes allocated at the same address in both oracles.
+fn alloc_both(a: &mut Oracle, b: &mut Oracle, len: usize) -> u32 {
+    let at = a.alloc(len).unwrap();
+    assert_eq!(b.alloc(len).unwrap(), at);
+    at
+}
+
+/// `len` random bytes at `at` in both oracles.
+fn fill_both(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, at: u32, len: u32) {
+    for k in 0..len {
+        #[allow(clippy::cast_possible_truncation)] // a random byte
+        poke(a, b, at + k, rng.next() as u8);
+    }
+}
+
+/// The original at `sym` against the bridge `f`: `EAX` (when `eax`) and
+/// every byte written.
+fn r22_case(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    sym: u32,
+    args: &[u32],
+    eax: bool,
+    what: &str,
+    f: impl FnOnce(&mut Run) -> u32,
+) {
+    clear_stacks(a, b);
+    let ra = orig(a, sym, args);
+    let rb = f(&mut Run(b));
+    if eax {
+        assert_eq!(ra, rb, "{what}: EAX");
+    }
+    native_no_diff(a, b, what);
+}
+
+/// A worker of type `kind` (header, a `0x400`-byte work area, an empty
+/// stack, no battle actor) allocated in both oracles.
+fn r22_worker(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, kind: u8) -> u32 {
+    let hdr = alloc_both(a, b, 0x40);
+    poke(a, b, hdr, kind);
+    let w = alloc_both(a, b, 0x400);
+    // random bytes from +0x80 (the free lists, the line table), the rest
+    // zero: an empty stack's pop reports the level's PC through the
+    // levels and the block (`+4`)
+    fill_both(a, b, rng, w + 0x80, 0x40);
+    poke(a, b, w, hdr);
+    let block = alloc_both(a, b, 0x40);
+    poke(a, b, w + 4, block);
+    poke(a, b, w + worker::LEVEL, 0u8);
+    poke(a, b, w + worker::STACK, 0i32);
+    poke(a, b, w + worker::BATTLE_ID, 0xffu8);
+    w
+}
+
+/// The bind masks, sprites, voice ids, name converters, line tables and
+/// the angle wrap copy on one pair of oracles (image or snapshot).
+#[allow(clippy::too_many_lines)] // one block per helper
+fn r22_helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    use ffx_script::vm::bridge::helpers as hp;
+    let mut n = 0;
+    // Atel_ClearBindMask: random masks, bits inside, past the end, negative
+    let masks = a.rebase(0x0132_6b90);
+    for round in 0..48_u32 {
+        // random masks have every bit somewhere: mostly a few bits only, so
+        // the union shows each word
+        if round % 4 == 0 {
+            fill_both(a, b, rng, masks, 0x50);
+        } else {
+            for k in 0..0x14 {
+                poke(a, b, masks + 4 * k, 0u32);
+            }
+            for _ in 0..rng.below(4) {
+                let at = masks + 4 * rng.below(0x14);
+                let v = Mem::read::<u32>(b, at) | 1 << rng.below(32);
+                poke(a, b, at, v);
+            }
+        }
+        let k = match round {
+            0 => 0,
+            1 => 1,
+            2 => 31,
+            3 => 32,
+            4 => 0x1ff,
+            5 => 0x200,
+            6 => 0x7fff_ffff,
+            7 => u32::MAX,
+            8 => (-31_i32).cast_unsigned(),
+            9 => (-33_i32).cast_unsigned(),
+            10 => (-64_i32).cast_unsigned(),
+            _ => rng.below(0x240),
+        };
+        r22_case(
+            a,
+            b,
+            0x0086_3650,
+            &[k],
+            k.cast_signed() < 0x200,
+            &format!("Atel_ClearBindMask({k:#x})"),
+            |r| hp::atel_clear_bind_mask(r, k),
+        );
+        n += 1;
+    }
+    // the sprite setters, slots and values in and out of range
+    let slots = [0, 3, 0x7f, 0x80, 1000, u32::MAX, (-5_i32).cast_unsigned()];
+    let vals = [0, 1, 0x80, 0xff, 0x100, u32::MAX, 0x8000_0000, 0x7fff_ffff];
+    for round in 0..40_u32 {
+        let pick = |rng: &mut Xorshift, t: &[u32]| {
+            if rng.below(4) == 0 {
+                rng.next()
+            } else {
+                t[rng.below(u32::try_from(t.len()).unwrap()) as usize]
+            }
+        };
+        let i = if round < 7 {
+            slots[round as usize]
+        } else {
+            pick(rng, &slots)
+        };
+        let v: [u32; 3] = std::array::from_fn(|_| pick(rng, &vals));
+        r22_case(
+            a,
+            b,
+            0x0087_4ad0,
+            &[i, v[0]],
+            true,
+            &format!("Atel_SetSpriteAlpha({i:#x}, {:#x})", v[0]),
+            |r| hp::atel_set_sprite_alpha(r, i, v[0]),
+        );
+        r22_case(
+            a,
+            b,
+            0x0087_49f0,
+            &[i, v[0], v[1], v[2]],
+            true,
+            &format!("Atel_SetSpriteColor({i:#x}, {v:x?})"),
+            |r| hp::atel_set_sprite_color(r, i, v[0], v[1], v[2]),
+        );
+        n += 2;
+    }
+    // Atel_GetVoiceStreamParams around the 21 threshold and at random
+    let out = alloc_both(a, b, 8);
+    for round in 0..40_u32 {
+        let id = match round {
+            0..=5 => {
+                let q = [0, 20, 21, 99, 100, 104][round as usize] * 10000 + rng.below(10000);
+                q << 12 | rng.below(0x1000)
+            }
+            _ => rng.next(),
+        };
+        let (pa, pb) = if round % 2 == 0 {
+            (out, out + 4)
+        } else {
+            (out + 4, out)
+        };
+        fill_both(a, b, rng, out, 8);
+        r22_case(
+            a,
+            b,
+            0x0088_5ba0,
+            &[id, pa, pb],
+            true,
+            &format!("Atel_GetVoiceStreamParams({id:#x})"),
+            |r| hp::atel_get_voice_stream_params(r, id, pa, pb),
+        );
+        n += 1;
+    }
+    // the name converters: every byte once, random names, in place and
+    // one byte down
+    let buf = alloc_both(a, b, 0x220);
+    for round in 0..24_u32 {
+        let len = if round < 2 { 0xff } else { rng.below(24) };
+        for k in 0..len {
+            #[allow(clippy::cast_possible_truncation)] // bytes 1..=255
+            let c = if round < 2 { k + 1 } else { rng.below(255) + 1 } as u8;
+            poke(a, b, buf + 0x10 + k, c);
+        }
+        poke(a, b, buf + 0x10 + len, 0u8);
+        let src = buf + 0x10;
+        let dst = match round % 3 {
+            0 => buf + 0x110,
+            1 => src,
+            _ => src - 1,
+        };
+        for (sym, name) in [
+            (0x0087_5220, "Atel_NameToLang1"),
+            (0x0087_5370, "Atel_NameFromLang1"),
+        ] {
+            r22_case(
+                a,
+                b,
+                sym,
+                &[src, dst],
+                true,
+                &format!("{name} round {round}"),
+                |r| {
+                    if sym == 0x0087_5220 {
+                        hp::atel_name_to_lang1(r, src, dst)
+                    } else {
+                        hp::atel_name_from_lang1(r, src, dst)
+                    }
+                },
+            );
+            n += 1;
+        }
+    }
+    // the line tables on synthetic workers of every type: no table, a
+    // table of its own, and two tables laid over the worker (node 0 on the
+    // free list's head, slot 1's key on it), where the order of the writes
+    // shows; the free list empty or not
+    let names = [
+        "Atel_ResetLineTable",
+        "Atel_FreeLineSignals",
+        "Atel_SetLineTable",
+    ];
+    for (f, name) in names.into_iter().enumerate() {
+        for kind in [0u8, 4, 5, 6, 7] {
+            for layout in 0..4 {
+                for listed in [false, true] {
+                    let w = r22_worker(a, b, rng, kind);
+                    let table = alloc_both(a, b, 0x1e0);
+                    fill_both(a, b, rng, table, 0x1e0);
+                    let t = [0, table, w + 0x48, w + 0x80][layout];
+                    // Atel_SetLineTable with a table of its own installs it
+                    let (pre, arg) = if f == 2 && layout == 1 {
+                        (0, t)
+                    } else {
+                        (t, t)
+                    };
+                    poke(a, b, w + 0x2e4, pre);
+                    let node = alloc_both(a, b, 0x18);
+                    fill_both(a, b, rng, node, 0x18);
+                    poke(a, b, w + 0x88, if listed { node } else { 0 });
+                    let what = format!("{name} type {kind} layout {layout} listed {listed}");
+                    let sym = [0x0086_d110, 0x0086_d1c0, 0x0086_d190][f];
+                    let args = [w, arg];
+                    let args = if f == 2 { &args[..] } else { &args[..1] };
+                    r22_case(a, b, sym, args, true, &what, |r| match f {
+                        0 => hp::atel_reset_line_table(r, w),
+                        1 => hp::atel_free_line_signals(r, w),
+                        _ => hp::atel_set_line_table(r, w, arg),
+                    });
+                    n += 1;
+                }
+            }
+        }
+    }
+    // Angle_Wrap_00a7ae20 against Angle_Wrap's port
+    // the original's 3.141592 (0x00b582f0, as f32)
+    let pi = f32::from_bits(0x4049_0fd8);
+    let mut xs = vec![
+        0.0,
+        -0.0,
+        pi,
+        -pi,
+        f32::from_bits(pi.to_bits() + 1),
+        f32::from_bits((-pi).to_bits() + 1),
+        core::f32::consts::PI,
+        -core::f32::consts::PI,
+        6.283_184,
+        -6.283_184,
+        1000.0,
+        -9999.5,
+        f32::NAN,
+        -f32::NAN,
+    ];
+    for _ in 0..40 {
+        #[allow(clippy::cast_precision_loss)] // a random angle
+        xs.push((rng.next() as f32 / u32::MAX as f32 - 0.5) * 80.0);
+    }
+    for x in xs {
+        clear_stacks(a, b);
+        let st0 = orig_float(a, 0x00a7_ae20, &[x.to_bits()]);
+        let r = ffx_chara::chr::wrap_angle(x);
+        assert!(
+            same_float(st0, r.to_bits()),
+            "Angle_Wrap_00a7ae20({x}): {st0} vs {r}"
+        );
+        no_diff(a, b, "Angle_Wrap_00a7ae20");
+        n += 1;
+    }
+    n
+}
+
+/// `Atel_BtlMoveTargetDist` on worker `w` with `push` on its stack.
+fn r22_move(a: &mut Oracle, b: &mut Oracle, w: u32, push: &[(u8, u32)], g: u32, what: &str) {
+    let s = w + worker::STACK;
+    let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+    let args = v::script_worker_level(b, w, lvl) + 0x2c;
+    poke(a, b, s, 0i32);
+    for &(k, x) in push {
+        push_both(a, b, s, k, x);
+    }
+    r22_case(a, b, 0x007a_9150, &[w, args, s, g], true, what, |r| {
+        ffx_script::vm::bridge::native_btl::atel_btl_move_target_dist(r, w, args, s, g)
+    });
+}
+
+/// `MsGetMoveTargetPos` kinds (`ffx_battle::target`) the move tests use.
+/// Kinds 2 and 10 (the last two) read other actors through the actor's
+/// target fields, garbage in `MsGetChr`'s spare record (ids from 0x5d up,
+/// the snapshots' 0xcd-filled event workers), where the original stops.
+const KINDS: [u32; 9] = [0, 1, 3, 6, 13, 14, 0x46, 2, 10];
+
+/// Eight move arguments as pushed (kind, speed, n, accel, brake, a, b, c),
+/// `n` as given; a float slot sometimes holds an integer and the other way
+/// round (the pops convert).
+fn r22_move_args(rng: &mut Xorshift, n: u32, spare: bool) -> Vec<(u8, u32)> {
+    #[allow(clippy::cast_precision_loss)] // a random value
+    let f = |rng: &mut Xorshift, k: f32| (rng.next() as f32 / u32::MAX as f32 - 0.3) * k;
+    let mut v = vec![
+        // move kinds on the actor's own positions (1 battle position, 3
+        // escape, 6 its position, 13/14 on the ground; 0x40 the speed from
+        // +0x460); 2 and 10 read its targets and actor +0x416
+        (
+            stack::INT,
+            KINDS[rng.below(if spare { 7 } else { 9 }) as usize],
+        ),
+        (stack::FLOAT, f(rng, 8.0).to_bits()),
+        (stack::INT, n),
+        (stack::INT, rng.below(0x90)),
+        (stack::INT, rng.below(0x90)),
+        (stack::FLOAT, f(rng, 10.0).to_bits()),
+        (stack::FLOAT, f(rng, 10.0).to_bits()),
+        (stack::FLOAT, f(rng, 10.0).to_bits()),
+    ];
+    if rng.below(4) == 0 {
+        let i = rng.below(8) as usize;
+        v[i].0 = if v[i].0 == stack::INT {
+            stack::FLOAT
+        } else {
+            stack::INT
+        };
+        if v[i].0 == stack::INT {
+            v[i].1 = rng.below(40);
+        }
+    }
+    v
+}
+
+/// Round 22's helpers against the original: the image alone, then the
+/// snapshot's state (`FFX_SNAPSHOT`), where `Atel_BtlMoveTargetDist` also
+/// runs on every actor of every ctrl work in use (battle actors in the
+/// battle snapshot).
+#[test]
+fn round22_helpers_match_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0022);
+    let mut compared = 0;
+    // the image: the helpers, and the move set-up without a battle actor
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        compared += r22_helpers(&mut a, &mut b, &mut rng);
+        for round in 0..12_u32 {
+            let w = r22_worker(&mut a, &mut b, &mut rng, 0);
+            let n = if round % 2 == 0 { 3 } else { 0 };
+            let push = r22_move_args(&mut rng, n, false);
+            let take = if round % 4 == 3 { 5 } else { 8 };
+            let what = format!("Atel_BtlMoveTargetDist image round {round}");
+            r22_move(&mut a, &mut b, w, &push[..take], 0, &what);
+            compared += 1;
+        }
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        assert!(compared > 0);
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    {
+        let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+        let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+        compared += r22_helpers(&mut a, &mut b, &mut rng);
+    }
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let mut battle = 0;
+    for c in ctrls {
+        let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        let ws = actors(&mut a, &mut b);
+        for (i, &w) in ws.iter().enumerate().take(16) {
+            let id = Mem::read::<u8>(&b, w + worker::BATTLE_ID);
+            for round in 0..4_u32 {
+                let n = [1, 12, 0, (-3_i32).cast_unsigned()][round as usize];
+                let push = r22_move_args(&mut rng, n, id != 0xff && id >= 0x5d);
+                let g = [0.0f32, -0.5, 1.25, 0.0][round as usize].to_bits();
+                let what = format!(
+                    "Atel_BtlMoveTargetDist ctrl {c:#x} worker {i} (actor {id:#x}) round {round}"
+                );
+                r22_move(&mut a, &mut b, w, &push, g, &what);
+                compared += 1;
+                if id != 0xff && n.cast_signed() > 0 {
+                    battle += 1;
+                }
+            }
+            // the line tables on the real worker
+            let what = format!("ctrl {c:#x} worker {i}");
+            r22_case(&mut a, &mut b, 0x0086_d1c0, &[w], true, &what, |r| {
+                hp::atel_free_line_signals(r, w)
+            });
+            r22_case(&mut a, &mut b, 0x0086_d110, &[w], true, &what, |r| {
+                hp::atel_reset_line_table(r, w)
+            });
+            compared += 2;
+        }
+    }
+    eprintln!("{compared} round-22 cases compared ({battle} moves on a battle actor)");
+}
+
+/// A worker of type `kind` with room for every move and turn block
+/// (`0x1000` bytes): each level block's move (`+0x44`) and turn (`+0x48`)
+/// pointer is one of the worker's own blocks, every block's mode (`+2`)
+/// random, idle or busy.
+fn r23_worker(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, kind: u8) -> u32 {
+    let hdr = alloc_both(a, b, 0x40);
+    poke(a, b, hdr, kind);
+    let w = alloc_both(a, b, 0x1000);
+    poke(a, b, w, hdr);
+    poke(a, b, w + worker::LEVEL, u8::try_from(rng.below(9)).unwrap());
+    for i in 0..13 {
+        let modes = [0, 0x7f, 0x80, 0x1f, 0x20, 0x4000, rng.next() & 0xffff];
+        let m = modes[rng.below(7) as usize];
+        poke(a, b, w + 0x5ba + i * 0x4c, u16::try_from(m).unwrap());
+        let m = modes[rng.below(7) as usize];
+        poke(a, b, w + 0x866 + i * 0x44, u16::try_from(m).unwrap());
+    }
+    for l in 0..9 {
+        let blk = w + 0x12c + l * 0x4c;
+        poke(a, b, blk + 0x44, w + 0x5b8 + rng.below(13) * 0x4c);
+        poke(a, b, blk + 0x48, w + 0x864 + rng.below(13) * 0x44);
+    }
+    w
+}
+
+/// A mask and mode for the block helpers: the shared and `0x20`/`0x100`
+/// bits in every combination, random bits besides.
+fn r23_mask_mode(rng: &mut Xorshift, round: u32) -> (u32, u32) {
+    let mask = match round % 5 {
+        0 => 0,
+        1 => u32::MAX,
+        2 => 1 << rng.below(32),
+        _ => rng.next(),
+    };
+    let flags = [0, 0x20, 0x100, 0x120][(round % 4) as usize];
+    let mode = rng.next()
+        & !0x120
+        & if round.is_multiple_of(3) {
+            0xffff
+        } else {
+            u32::MAX
+        }
+        | flags;
+    (mask, mode)
+}
+
+/// The four block helpers on worker `w`: share at `level`, start at the
+/// worker's own level.
+fn r23_blocks(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: u32,
+    level: u32,
+    round: u32,
+    what: &str,
+) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let (mask, mode) = r23_mask_mode(rng, round);
+    let param = rng.next();
+    let what = format!("{what} level {level:#x} mask {mask:#x} mode {mode:#x}");
+    r22_case(
+        a,
+        b,
+        0x0087_0440,
+        &[w, level, mask, mode],
+        true,
+        &format!("Atel_ShareMoveBlock {what}"),
+        |r| hp::atel_share_move_block(r, w, level, mask, mode),
+    );
+    r22_case(
+        a,
+        b,
+        0x0087_1090,
+        &[w, level, mask, mode],
+        true,
+        &format!("Atel_ShareTurnBlock {what}"),
+        |r| hp::atel_share_turn_block(r, w, level, mask, mode),
+    );
+    r22_case(
+        a,
+        b,
+        0x0087_03e0,
+        &[w, mask, mode, param],
+        true,
+        &format!("Atel_StartMoveBlock {what}"),
+        |r| hp::atel_start_move_block(r, w, mask, mode, param),
+    );
+    r22_case(
+        a,
+        b,
+        0x0087_1030,
+        &[w, mask, mode, param],
+        true,
+        &format!("Atel_StartTurnBlock {what}"),
+        |r| hp::atel_start_turn_block(r, w, mask, mode, param),
+    );
+}
+
+/// `Atel_AddSepLoad` on random lists: counts from -1 to 9, ids already
+/// listed or not, every group bit against random selected groups.
+fn r23_sep_loads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) -> u32 {
+    use ffx_script::vm::bridge::helpers as hp;
+    let count = a.rebase(0x0132_5b78);
+    let list = a.rebase(0x0132_7030);
+    let groups = a.rebase(0x0132_6bdc);
+    for round in 0..rounds {
+        let n = [0, 1, 7, 8, 9, -1, 3][(round % 7) as usize];
+        if round % 3 != 2 {
+            poke(a, b, count, n);
+        }
+        for i in 0..8 {
+            poke(a, b, list + i * 8, rng.below(6));
+            poke(a, b, list + i * 8 + 4, rng.next());
+        }
+        poke(a, b, groups, u8::try_from(rng.below(256)).unwrap());
+        let id = if round % 2 == 0 {
+            rng.below(8)
+        } else {
+            rng.next()
+        };
+        let group = match round % 4 {
+            0 => 0,
+            1 => 1 << (16 + rng.below(7)),
+            2 => rng.next() & 0x7f_0000,
+            _ => rng.next(),
+        };
+        let flags = group | rng.next() & 0xffff;
+        r22_case(
+            a,
+            b,
+            0x0086_e250,
+            &[id, flags],
+            true,
+            &format!("Atel_AddSepLoad({id:#x}, {flags:#x}) round {round}"),
+            |r| hp::atel_add_sep_load(r, id, flags),
+        );
+    }
+    rounds
+}
+
+/// Round 23's helpers against the original: the move/turn block setters
+/// on synthetic workers of every type and level (image), then on every
+/// actor of every ctrl work in use (`FFX_SNAPSHOT`); `Atel_AddSepLoad` on
+/// both.
+#[test]
+fn round23_helpers_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0023);
+    let mut compared = 0;
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        compared += r23_sep_loads(&mut a, &mut b, &mut rng, 200);
+        for round in 0..240_u32 {
+            let kind = [0, 1, 4, 5, 6, 7][(round % 6) as usize];
+            let w = r23_worker(&mut a, &mut b, &mut rng, kind);
+            let level = match round % 8 {
+                0 => u32::MAX,
+                1 => 12,
+                2 => 9,
+                _ => rng.below(9),
+            };
+            r23_blocks(
+                &mut a,
+                &mut b,
+                &mut rng,
+                w,
+                level,
+                round,
+                &format!("image type {kind} round {round}"),
+            );
+            compared += 4;
+        }
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    {
+        let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+        let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+        compared += r23_sep_loads(&mut a, &mut b, &mut rng, 60);
+    }
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let mut real = 0;
+    for c in ctrls {
+        let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        let ws = actors(&mut a, &mut b);
+        for (i, &w) in ws.iter().enumerate().take(24) {
+            // only workers with move and turn blocks: every level's
+            // pointers into its own blocks (the 0x100 mode reads them)
+            let own = (0..9).all(|l| {
+                let at = w + 0x12c + l * 0x4c;
+                let mv = Mem::read::<u32>(&b, at + 0x44).wrapping_sub(w + 0x5b8);
+                let tn = Mem::read::<u32>(&b, at + 0x48).wrapping_sub(w + 0x864);
+                mv < 9 * 0x4c && tn < 9 * 0x44
+            });
+            if !own {
+                continue;
+            }
+            real += 1;
+            for round in 0..6_u32 {
+                let level = if round == 0 {
+                    u32::from(Mem::read::<u8>(&b, w + worker::LEVEL))
+                } else {
+                    rng.below(9)
+                };
+                r23_blocks(
+                    &mut a,
+                    &mut b,
+                    &mut rng,
+                    w,
+                    level,
+                    round,
+                    &format!("ctrl {c:#x} worker {i} round {round}"),
+                );
+                compared += 4;
+            }
+        }
+    }
+    eprintln!("{compared} round-23 cases compared ({real} real workers)");
+    assert!(real > 0, "no worker with move blocks");
 }

@@ -85,6 +85,11 @@ def main():
         COUNT.write_text(str(n))
     tests = sorted({t for c in (affected if wide else touched) for t in ORACLE.get(c, [])})
     tests += [pathlib.Path(f).stem for f in changed if f.startswith("crates/ffx-oracle/tests/")]
+    # the harvested_<module> files and tests/common/ (their shared helpers) run as one family
+    harvest = [f for f in changed if f.startswith("crates/ffx-oracle/tests/")
+               and (pathlib.Path(f).stem.startswith("harvested") or "/common/" in f)]
+    if harvest:
+        tests.append("harvested")
     files = sorted(p.stem for p in (REPO / "crates/ffx-oracle/tests").glob("*.rs"))
     if every:
         oracle = files
