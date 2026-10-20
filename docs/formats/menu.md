@@ -85,6 +85,15 @@ jump table at `0x008d5134`:
 
 The page slides in by `MenuMn2_Ease(t, 1) * 0x155 / 4096` pixels.
 
+`TkMn2MainStatusPlayerStatus` (`0x008d5180`) draws the stats of the
+character page from the table at `0x00c5a790`: `(i32 mes, u32 field)`
+pairs (messages 7..14 over save-record offsets 47..54), ended by a
+negative `mes`. Four go in a column from `remapX2(210)`, the rest from
+`remapX2(970)`, `remapY2(81)` apart from `remapY2(552)`; each row slides
+in by `MenuHelp_Ratio(ease * 0xd0 / 4096, row % 4)`. For ids outside
+14..17 a plate at `remapY2(925)` against the right edge (`remapX2(1806)`)
+holds shape `0xf3` and `TOMenuGetStatusMes(0x1a)`.
+
 Status rectangles are 24 bytes (i16 x, y, then sizes);
 `MenuStatus_OffsetRect` (`0x008d3220`) copies one, moves it and can take
 the size `g_TkMenuStatusRectSize` (`0x0186a8a4`, the w, h of the
@@ -121,12 +130,42 @@ The menu list at `0x01597770` has `0x200` 4-byte entries, count in
 row (`MenuSelList_DrawRow` `0x008d1820`) draws by that kind: 1 a command
 icon and name, 2 an aeon name, 3 `TkMenuMenu1Mes(id + 0x1033)`; the
 window's i16 `+0x46` scrolls it by `+0x46 * 32 / 4096` pixels.
+`MenuItem_DrawKeyUseCells` (`0x008c4770`) draws the key-use row of the
+item menu: `MenuItem_CellTable()`'s u16 `+2` cells (at most 8 fit), each
+a 4-byte text at `0x0186a280` (an empty one ends the names), centred by
+`(8 - n) * i32 0x0186a31c / 2`. The frame of the cell to fill next (the
+first empty one, or the last when all are filled) blinks: drawn
+`0x80e1f8ff` while the fraction of `graphicGetTime()` is above 0.5, the
+others `0x8000c6ff`.
 `TkMn2DrawStatusPlate` (`0x008c1490`) draws one stat: a caption and the
 byte at an offset into the character's save record
 (`MsGetSavePlayerPtr`). The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten
 rows; `MenuWShop_DrawBuyRows` `0x008d8c30` and `MenuWShop_DrawSellRows`
 `0x008d8ee0`, nine) and `MenuSummon_DrawGrowRows` (`0x008ce520`, eleven)
-draw a fixed number of rows from a first index.
+draw a fixed number of rows from a first index. `MenuWShop_InitList` (`0x008d94a0`) fills the
+weapon shop's stock from `TkMn2GetExcelData(0x0186ab1c, 0x0186aba8)`: up
+to 16 u16 ids from `+2`, each record (`MenuWShop_GetRecord`) getting byte
+`+6` = `0xff` and its name; the count goes to `0x0186ab10`, and
+`0x0186ab14` says whether an owned weapon has byte `+2` zero.
+
+`MenuItem_KeyRowCount` (`0x008c5180`) counts the key layout's rows of
+three: u16 lists ended by 0 (`0x00c5a2f0[i32 0x0186a25c]` for Japanese,
+`0x00c5a2c8` English, `0x00c5a260` for languages 9, 10, 11, `0x00c5a288`
+otherwise); 9, 10 and 11 without an item target count
+`PasswordGetTotalIndex()` instead. `MenuItem_TypeKey` (`0x008c4c90`) copies the character
+under the key cursor (`i32 0x0186a268`, five per row) into the first empty
+key-use cell: one byte, two for codes `0x06..0x2f`, three for `04` with a
+byte below `0x30`, then a zero and an empty next cell.
+
+`TkMenuGetDispCommand` (`0x008d2e10`) lists a menu's commands into a word
+array: the entries of `MsMenuStatusNum(0, ..)` from
+`TkMenuGetCommandOffset` (4 bytes each, u16 id at `+2`), filtered by
+`MsGetSaveCommand` (packed; for party members a missing command with a
+menu panel leaves a gap), by membership in place for sub-menu 1, or the
+weapon's and armour's abilities for kind 0.
+`MenuSelList_DrawRows` (`0x008d1620`) draws a two-column selection list:
+nine row pairs from row `first * 2 - 2`, left column at `remapX2(210)`,
+right at `remapX2(970)`, from `y + remapY2(403)` down by `remapY2(77)`.
 
 ## Characters and aeons
 
@@ -138,7 +177,12 @@ the u8 ids the menu cycles through, indexed by `g_TkMenuCurrentPlayerPos`
 aeons (`TkMn2DrawOverDrive` draws the Overdrive mode only below 8).
 `DrawCrossMenuSummonPlateClut` (`0x008e6e10`) draws a name with HP and MP
 as `"%5d/%5d"` and `"%4d/%4d"` (current/max); language 11 widens the
-labels.
+labels. `TkMn2DrawSummonPlateCheckHP` (`0x008ceb00`) picks it while HP is
+above 0, else the plate without HP/MP plus the battle count plate. Its
+colour is `MenuPlayer_DamageClass`, or 1 for ids above 13 whose row in
+the open sub-command window (`0x023cc128`, row `i16 +0x48`) is marked 1
+in the bytes at `0x0186a5b0`; a dead character without that mark gets
+`0x53`.
 
 ## Save/load slots
 
@@ -161,3 +205,42 @@ centred) from `inputGetCurrDeviceStickInfo`'s floats 2, 3, 0, 1,
 `+0x90`/`+0x91` the d-pad pressure bytes, and direction bits of u16
 `+0x9a` from bytes `+0x86` (`0x8000`/`0x2000`) and `+0x87`
 (`0x4000`/`0x1000`) past `0x10`/`0xf0`.
+`Pad_ReadAndUpdate` (`0x00888f90`) is one pad's frame: `Pad_ReadCurrDevice`,
+`Pad_UpdateAnalog` with the buttons at u16 `+0x98`, and, when byte
+`+0x9d` is set, `inputSetVibration(port, +0xff, +0xfe)` (bytes). `Pad_InitWork` (`0x00889360`)
+resets a record: u16 `+0x9d` = `0x100`, byte `+0x9f` = 1, `+0x94` =
+`0x5000c`, bytes `+0x9c`/`+0x83` = 0, and the identity button map.
+
+## Help files
+
+`TKMallocAndReadSPS2(index, page)` (`0x0088ce80`) loads a help `.sps2`
+whole into a `user_malloc` buffer (64-byte alignment, size rounded up to
+0x800, first word cleared) or returns 0 when the file is missing. The
+path is `/ffx_ps2/ffx/master/new_XXpc` for the language (jump table
+`0x0088d0f0` on `TOGetFFXLang()`: 0 jp, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10
+ch, anything else us) plus entry `index` of `0x00c58e44` (page 0:
+`/help/<name>/<name>.sps2` for test_proj, now_help, mon_boku, s_monitor,
+dvdcopy) or `0x00c58e58` (the `_page.sps2` files).
+
+`DrawMesFontLClutTypeRGBA_ForHelp(key, text, x, y, flags, r, g, b, a)`
+(`0x008e75c0`) draws help text through the pen at `0x025d09a0` (bytes
+r, g, b, a; f32 x `+4`, y `+8`; flags byte `+0x1b`). Codes by
+`TOGetGroup` (jump table `0x008e788c`): group 1 is a line break (x back,
+y + 16), group 2 a control code (`07 e1..ef` moves x by `p - 0xe0`, `0a
+p` sets the flag nibbles to `(p & 0xf) - 1` and `(p & 0xf0) - 0x40`, `0b
+p` draws button icon `p` at 0.65, 1 lower for icons `0x34..0x37`), group
+3 a macro (`TOAddPktChangeMacro_help`, unless `key` is -1), group 4 a
+glyph (shadow then face, 0.78).
+
+Two 16x12 siblings write into a packet (`g_TOPktCursor` `0x018716cc`,
+returned) through the same pen, with byte `+0x1a` choosing an edge font
+(1) over shadow and face: `MenuMes_AddPktFont1612` (`0x008e4af0`) and
+`MenuMes_AddPktFont1612Icons` (`0x008e4e60`). Both draw `0b` icons at
+0.73 and advance by the icon width plus 1. The first has English quirks
+(at y `0x163` a leading `48 73 78 82 7f` is skipped; at `(0xd6, 0xbb)` a
+text starting with `h` starts at x 200) and places icons at `y + 4.5 +
+AdjustButtonIconY`; the second places them at `y + 4.0 +
+AdjustButtonIconY` in Japanese and at `y + 5.0` otherwise, 2.5 higher for
+the icons `0x20..0x22`, `0x34..0x37`, `0x42`, and `0x30`/`0x48` while
+y is below 350. At y `0x163` both lift glyphs while drawing them (1 in Japanese,
+else 2 or 3).
