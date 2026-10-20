@@ -60,6 +60,63 @@ pub mod bridge {
         cd(mem, call, 0, &[file, p, done, 0])
     }
 
+    /// `Sg_FreeA(p, pool)` and `ply_data`'s block name.
+    pub const SG_FREE_A: u32 = 0x0083_f090;
+    pub const PLY_DATA_NAME: u32 = 0x00b5_49ec;
+
+    /// `MsDebugFullCommand()` (`0x007848b0`, the PC booster's "all
+    /// abilities"): `ply_data` (file 1 of directory 0xd, CD methods `+0x10`,
+    /// `+0x14`) read into a new block (`Sg_MallocA(n, 0x10, 5, name, -1)`,
+    /// method `+0` with no callback, waited on by method `+8`); each of the
+    /// 18 characters but 7 (Seymour) ORs record 0x12 (0x13 from character
+    /// 8 on) of it, its six command flag words `+0x3e`..`+0x48`, into its
+    /// save's (`ply_save + 0x94 i + 0x3e`); the block is freed; the shared
+    /// commands' first 0x83 flags (`g_SaveSharedCommands`) are set; in a
+    /// battle (actors and `MsBattleCheck`) every actor's menus are rebuilt
+    /// ([`crate::ability::bridge::ms_set_ram_chr_ability`]).
+    pub fn ms_debug_full_command<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        let cd = |mem: &mut M, call: Call<'_, M>, slot: u32, args: &[u32]| {
+            let obj = game(mem, &mut *call, crate::getmem::bridge::GET_CD, &[]);
+            let f: u32 = mem.read(obj.wrapping_add(slot));
+            call(mem, f, args)
+        };
+        cd(mem, &mut *call, 0x10, &[0xd]);
+        let n = cd(mem, &mut *call, 0x14, &[1]);
+        let name = code(mem, PLY_DATA_NAME);
+        let p = game(mem, &mut *call, SG_MALLOC_A, &[n, 0x10, 5, name, u32::MAX]);
+        cd(mem, &mut *call, 0, &[1, p, 0, 0]);
+        cd(mem, &mut *call, 8, &[0]);
+        let saves = crate::save::bridge::PLY_SAVE.ptr(mem).addr;
+        for i in 0..18 {
+            if i == 7 {
+                continue;
+            }
+            let id = 0x12 + i32::from(i >= 8);
+            let rec = ffx_kernel::bridge::ms_get_excel_data(mem, id, p, 0);
+            let save = saves.wrapping_add(0x94 * i + 0x3e);
+            for k in 0..6 {
+                let v = mem.read::<u16>(rec.wrapping_add(0x3e + 2 * k));
+                let w = mem.read::<u16>(save + 2 * k);
+                mem.write(save + 2 * k, w | v);
+            }
+        }
+        game(mem, &mut *call, SG_FREE_A, &[p, 5]);
+        let shared = crate::save::bridge::SHARED_COMMANDS.ptr(mem).addr;
+        for k in 0..0x83u32 {
+            let at = shared + 2 * (k >> 4);
+            let w = mem.read::<u16>(at);
+            mem.write(at, w | 1 << (k & 15));
+        }
+        for i in 0..0x1f {
+            if crate::actor::bridge::ms_get_chr_top(mem) != 0
+                && crate::state::bridge::ms_battle_check(mem) != 0
+            {
+                let actor = ms_get_chr(mem, i);
+                crate::ability::bridge::ms_set_ram_chr_ability(mem, i, actor);
+            }
+        }
+    }
+
     /// The motion `MsGetRamChrCTBbasic` waits on.
     pub const CTB_WAIT_MOTION: u8 = 0xd0;
 

@@ -2519,6 +2519,37 @@ ported! {
     MsGetComData @ 0x0079_a4b0 => extern "C" fn ms_get_com_data(id: u32, name: u32) -> u32 {
         ffx_battle::stat::bridge::ms_get_com_data(&mut mem(), id, name)
     }
+    /// `MsGetBasicDivide(i, n, mode)`: the facing's local in this call's
+    /// frame.
+    MsGetBasicDivide @ 0x007a_8720 => extern "C" fn ms_get_basic_divide(i: u32, n: u32, mode: u32) -> u32 {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        ffx_battle::body::bridge::ms_get_basic_divide(&mut mem(), i, n, mode, at)
+    }
+    /// `MsGetDirDivide(from, to, i, n, mode)`: the facing's and yaw's
+    /// locals in this call's frame.
+    MsGetDirDivide @ 0x007a_87f0 => extern "C" fn ms_get_dir_divide(from: u32, to: u32, i: u32, n: u32, mode: u32) -> u32 {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        ffx_battle::body::bridge::ms_get_dir_divide(&mut mem(), &crt_trig, from, to, i, n, mode, at)
+    }
+    /// `BtlEnd_DrawWeaponPlate_008be0d0(n, x, y, fixed)`: the remaps as
+    /// the render crate's ports, the plate and name draws through the
+    /// game, the weapon name's local in this call's frame.
+    BtlEnd_DrawWeaponPlate_008be0d0 @ 0x008b_e0d0 => extern "C" fn btl_end_draw_weapon_plate(n: u32, x: u32, y: u32, fixed: u32) {
+        use ffx_battle::battle_end::bridge::Remap;
+        let remap = |r: Remap, v: f32| match r {
+            Remap::X2 => ffx_graphic::ui::remap_x2(v),
+            Remap::Y2 => ffx_graphic::ui::remap_y2(v),
+        };
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        ffx_battle::battle_end::bridge::btl_end_draw_weapon_plate(&mut mem(), &remap, &mut call_ptr, n, x, y, fixed, at);
+    }
+    /// `MsGetComInfo(i, id, what)`.
+    MsGetComInfo @ 0x0078_cd30 => extern "C" fn ms_get_com_info(i: u32, id: u32, what: u32) -> u32 {
+        ffx_battle::stat::bridge::ms_get_com_info(&mut mem(), i, id, what)
+    }
     /// `MsGetRandomGroupTarget(bits)`.
     MsGetRandomGroupTarget @ 0x0079_9910 => extern "C" fn ms_get_random_group_target(bits: u32) -> u32 {
         ffx_battle::stat::bridge::ms_get_random_group_target(&mut mem(), bits)
@@ -3734,6 +3765,45 @@ ported! {
     MsCameraSetRect @ 0x007b_f940 => extern "C" fn ms_camera_set_rect(id: u32, side: u32, p: u32) -> u32 {
         camera::ms_camera_set_rect(&mut mem(), &mut call_ptr, id, side, p)
     }
+    /// `MsCameraSetAtelFocus_007beeb0(id, side, a, b, p)`.
+    MsCameraSetAtelFocus_007beeb0 @ 0x007b_eeb0 => extern "C" fn ms_camera_set_atel_focus(id: u32, side: u32, a: u32, b: u32, p: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_camera_set_atel_focus(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side, a, b, p)
+    }
+    /// `MsCameraSetAtelYaw_007befc0(id, side, yaw, pitch, length)`.
+    MsCameraSetAtelYaw_007befc0 @ 0x007b_efc0 => extern "C" fn ms_camera_set_atel_yaw(id: u32, side: u32, yaw: u32, pitch: u32, length: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_camera_set_atel_yaw(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side, yaw, pitch, length)
+    }
+    /// `MsAtelGetCameraID(owner, kind, cam)`.
+    MsAtelGetCameraID @ 0x007b_a780 => extern "C" fn ms_atel_get_camera_id(owner: u32, kind: u32, cam: u32) -> u32 {
+        camera::ms_atel_get_camera_id(&mut mem(), owner, kind, cam)
+    }
+    /// `MsCameraSetSpline(id, side, spline, t, speed, flags)`: the spline
+    /// move's callees through the game.
+    MsCameraSetSpline @ 0x007b_fca0 => extern "C" fn ms_camera_set_spline(id: u32, side: u32, spline: u32, t: u32, speed: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_camera_set_spline(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side, spline, t, speed, flags)
+    }
+    /// `MsCameraSetSpline2(id, side, spline, flags)`.
+    MsCameraSetSpline2 @ 0x007b_fd90 => extern "C" fn ms_camera_set_spline2(id: u32, side: u32, spline: u32, flags: u32) -> u32 {
+        let mut m = mem();
+        camera::ms_camera_set_spline2(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side, spline, flags)
+    }
+    /// `MsCameraSetAimPolar_007bf330(id, side, x, z, pitch, d1, length,
+    /// d2)`: the aim's local in this call's frame.
+    MsCameraSetAimPolar_007bf330 @ 0x007b_f330 => extern "C" fn ms_camera_set_aim_polar(id: u32, side: u32, x: u32, z: u32, pitch: u32, d1: u32, length: u32, d2: u32) -> u32 {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        camera::ms_camera_set_aim_polar(&mut mem(), &crt_trig, &mut call_ptr, id, side, [x, z, pitch, d1, length, d2], at)
+    }
+    /// `MsCameraSetAimPolar2_007bf420(id, side, short, x, y, z, d1, length,
+    /// d2)`: the aim's local in this call's frame.
+    MsCameraSetAimPolar2_007bf420 @ 0x007b_f420 => extern "C" fn ms_camera_set_aim_polar2(id: u32, side: u32, short: u32, x: u32, y: u32, z: u32, d1: u32, length: u32, d2: u32) -> u32 {
+        let mut local = super::StackFrame::<2>::new();
+        let at = local.at();
+        camera::ms_camera_set_aim_polar2(&mut mem(), &crt_trig, &mut call_ptr, id, side, short, [x, y, z, d1, length, d2], at)
+    }
     /// `MsCameraResetMove(id, flags)`.
     MsCameraResetMove @ 0x007b_ed60 => extern "C" fn ms_camera_reset_move(id: u32, flags: u32) -> u32 {
         camera::ms_camera_reset_move(&mut mem(), &mut call_ptr, id, flags)
@@ -3978,6 +4048,11 @@ ported! {
     /// game.
     MsBtlReadScene @ 0x0078_3d80 => extern "C" fn ms_btl_read_scene(file: u32) -> u32 {
         read::ms_btl_read_scene(&mut mem(), &mut call_ptr, file)
+    }
+    /// `MsDebugFullCommand()`: the CD object, `Sg_MallocA`, `Sg_FreeA`
+    /// through the game.
+    MsDebugFullCommand @ 0x0078_48b0 => extern "C" fn ms_debug_full_command() {
+        read::ms_debug_full_command(&mut mem(), &mut call_ptr);
     }
     /// `MsBtlReadManage()`: the map's, graphics', sound's, script's and
     /// chara's callees, the CD object and `MsBtlReadSetScene`,

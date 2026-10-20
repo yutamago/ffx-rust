@@ -149,6 +149,45 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, cue: u32
         s::ms_get_com_data(m, data, name)
     });
     same("MsGetComData", a, b);
+    // a field of the record (round 28): every selector and beyond, an
+    // actor whose +0x5c1/+0x5d9 the 0x40000 commands read
+    let i = rng.below(0x1f);
+    let what = [rng.below(11), rng.below(11), 11, rng.next()][rng.below(4) as usize];
+    twin(
+        "MsGetComInfo",
+        a,
+        b,
+        0x0078_cd30,
+        &[i, data, what],
+        ALL,
+        |m| s::ms_get_com_info(m, i, data, what),
+    );
+    same("MsGetComInfo", a, b);
+    // a record at address 0 (an item table whose data offset wraps the
+    // record round to 0): no record
+    if rng.below(4) == 0 {
+        let table = out + 0xc0;
+        let mut t = [0u8; 0x14];
+        t[..2].copy_from_slice(&1u16.to_le_bytes());
+        t[0xa..0xc].copy_from_slice(&0xfffu16.to_le_bytes());
+        t[0x10..].copy_from_slice(&table.wrapping_neg().to_le_bytes());
+        poke(a, b, table, &t);
+        let items = ffx_kernel::bridge::ITEM;
+        let kept = items.get(b);
+        set(a, b, items, table);
+        let id = 0x2000 | rng.below(0x1000);
+        twin(
+            "MsGetComInfo",
+            a,
+            b,
+            0x0078_cd30,
+            &[i, id, what],
+            ALL,
+            |m| s::ms_get_com_info(m, i, id, what),
+        );
+        set(a, b, items, kept);
+        same("MsGetComInfo", a, b);
+    }
     twin(
         "MsGetSaveWeapon",
         a,

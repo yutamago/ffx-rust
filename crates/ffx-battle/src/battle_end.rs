@@ -1062,4 +1062,72 @@ pub mod bridge {
         }
         STATUS.set(mem, 0x21);
     }
+
+    /// The results screen's weapon spoils: how many (`i32`), the list's
+    /// height in 1/4096 rows (`i32`, scaled by the remapped 66.0 for a
+    /// row) and the weapon IDs (`u16`, a pointer).
+    pub const SPOIL_WEAPON_COUNT: Global<i32> = Global::new(0x0186_a188);
+    pub const SPOIL_WEAPON_ROWS: Global<i32> = Global::new(0x0186_a18c);
+    pub const SPOIL_WEAPONS: Global<u32> = Global::new(0x025c_c580);
+    /// `TODrawMenuPlateXYWHType(x, y, w, h, kind)` and
+    /// `DrawCrossMenuIconWeaponName(id, x, y, equippable)`.
+    pub const TO_DRAW_MENU_PLATE_XYWH_TYPE: u32 = 0x008f_5f70;
+    pub const DRAW_CROSS_MENU_ICON_WEAPON_NAME: u32 = 0x008e_67f0;
+
+    /// Which `graphicUiRemap*2` a call means: x (`0x006447e0`) or y
+    /// (`0x00644820`).
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Remap {
+        X2,
+        Y2,
+    }
+
+    /// `BtlEnd_DrawWeaponPlate_008be0d0(n, x, y, fixed)` (`0x008be0d0`,
+    /// name ours): weapon spoil `n` (of [`SPOIL_WEAPON_COUNT`]) drawn at
+    /// `x`, `y` (`y` without `fixed` moved down by the list's rows: the
+    /// remapped 66.0 times [`SPOIL_WEAPON_ROWS`] (an `f32`) / 4096 plus
+    /// `y`, truncated) when its weapon (`MsGetSaveWeapon`, the name into
+    /// `local`, the original's stack) is held (`+2`): a plate of the
+    /// remapped width 740.0 and height 60.0, kind 5, and its icon and
+    /// name, equippable when `+6` is not 0xff.
+    #[allow(clippy::too_many_arguments)]
+    pub fn btl_end_draw_weapon_plate<M: Mem>(
+        mem: &mut M,
+        remap: &dyn Fn(Remap, f32) -> f32,
+        call: Call<'_, M>,
+        n: u32,
+        x: u32,
+        y: u32,
+        fixed: u32,
+        local: u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let n = n.cast_signed();
+        if n >= SPOIL_WEAPON_COUNT.get(mem) || n < 0 {
+            return;
+        }
+        let list = SPOIL_WEAPONS.get(mem);
+        let id = u32::from(mem.read::<u16>(list.wrapping_add(n.cast_unsigned().wrapping_mul(2))));
+        let int = |v: u32| load(store(f64::from(v.cast_signed())));
+        let y = if fixed == 0 {
+            let row = f64::from(remap(Remap::Y2, 66.0));
+            let rows = int(SPOIL_WEAPON_ROWS.get(mem).cast_unsigned());
+            let v = add(mul(mul(row, rows), 1.0 / 4096.0), int(y));
+            ffx_bridge::x87::ftol(mem, v)
+        } else {
+            y
+        };
+        let weapon = crate::save::bridge::ms_get_save_weapon(mem, id, local);
+        if mem.read::<u8>(weapon.wrapping_add(2)) == 0 {
+            return;
+        }
+        let (xf, yf) = (store(int(x)), store(int(y)));
+        let height = remap(Remap::Y2, 60.0).to_bits();
+        let width = remap(Remap::X2, 740.0).to_bits();
+        let plate = code(mem, TO_DRAW_MENU_PLATE_XYWH_TYPE);
+        call(mem, plate, &[xf, yf, width, height, 5]);
+        let equippable = u32::from(mem.read::<u8>(weapon.wrapping_add(6)) != 0xff);
+        let name = code(mem, DRAW_CROSS_MENU_ICON_WEAPON_NAME);
+        call(mem, name, &[id, xf, yf, equippable]);
+    }
 }
