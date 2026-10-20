@@ -924,3 +924,38 @@ Round 22:
   (`f64`s at `0x00b41d38`, `0x00b41d30`) for `mode` 2, else
   `graphicFontGetScreenWH`'s ints, each rounded to a float first; `0.5` is
   the `f64` at `0x00b92220`.
+- `graphicGetAbmapUV_006410a0(kind, u, v, &u_out, &v_out)` (`0x006410a0`,
+  cdecl): `SheetCellUV_00684b00` with `ecx` = `g_GraphicAbmap` (the callee
+  never reads it) and the two floats through the x87; returns its `eax`.
+- `IconPanel_showIcon(panel, i)` (`0x006f7970`, `thiscall`, `ret 4`): the
+  panel's seven icon words lie at `+0`, their paths at `+0x1c`, their
+  slots (bytes) at `+0x38`, its visibility (byte) at `+0x3f`. For `i < 7`
+  (signed; else 0), an absent icon is opened by
+  `IggyPlayerOpenScaled_006e9250(path, 10 + 0x35 * slot, 10, 0x2b, 0x2b)`
+  and `IggyMenu_setEnable(icon, visible)`; returns the icon word.
+- `SpdCtrl_ScaleElapsedTime(dt)` (`0x006f7340`, cdecl, result in `ST0`):
+  with `g_SpdCtrl_Ready` set, `dt * g_SpdCtrlScales[level]` (`0x00c38e1c`,
+  floats 1, 2, 4; `level` = `g_SpdCtrl_b4`, 0 = off; the product stored as
+  a float) when all hold: in battle (`MsBattleGetStatus() == 1`) or
+  `getUCStatus()`; `g_WaitFramesByTime` clear; `SpdCtrl_IsMapExcluded(
+  g_CurrentMapNo)` clear (`al`; called only when the two before hold); not
+  (in battle and `SpdCtrl_IsMagicExcluded()`); `g_BtlEndCtrlDone`
+  (`0x00c5a068`, a byte) set; `g_SaveMachineBusy`, `graphicGetAbmap()` and
+  `g_MovieFading` clear; `level` != 0. Else `dt`. `g_SpdCtrl_b8` keeps
+  whether it scaled: on a change, `IggyMenu_callIggyAS3External(menu, 0,
+  "OnEnable" or "OnDisable", 0, 0, 1)` when `g_SpdCtrl_c0` holds a menu,
+  then `Sg_SetMuteSound(1 or 0)`. Before the ready check nothing is
+  called.
+- `Cache_OverFlow()` (`0x008409a0`): returns 1 when no entry is live
+  (`+0xc` != 0), read (`+6` clear), unused (`+5` clear) and unpinned (age
+  != 7); else frees one and returns 0. The scan keeps an age (from 100)
+  and a data word (from `0x0fffffff`, compared signed): an entry of lower
+  age takes the place and the age, then one whose age equals the kept one
+  takes the place and the data word when its own is lower. The data word
+  is not reset when the age drops, so the victim is not always the lowest
+  data among its age, and data words at `0x10000000` and above win only
+  by age. The victim is logged with `dbgPrintf` (`"Memory overflow!! "`,
+  then `"[CHR"`/`"[MOT"`/`"[MAP"`/`"[BGM"` for kinds 1-4, then
+  `":%s:%d] disposed from Cache."` with `ch_create_name(id)` and `id >>
+  16` arithmetic), then `Cache_FreeEntry(victim)`; last comes a call of
+  the empty `Cache_Empty_00840ab0`.

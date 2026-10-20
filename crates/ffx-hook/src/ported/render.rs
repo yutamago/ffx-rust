@@ -1398,6 +1398,22 @@ ported! {
     PhyreScene_Project3DPointOntoScreen @ 0x0065_26a0 => extern "thiscall" fn scene_project_point(this: u32, out: u32, p: u32, mode: u32) -> f32 {
         ut::scene_project_point(&mut mem(), this, out, p, mode)
     }
+    /// `graphicGetAbmapUV_006410a0(kind, u, v, u_out, v_out)`.
+    graphicGetAbmapUV_006410a0 @ 0x0064_10a0 => extern "C" fn abmap_sheet_cell_uv(kind: u32, u: u32, v: u32, u_out: u32, v_out: u32) -> u32 {
+        ut::abmap_sheet_cell_uv(&mut mem(), [kind, u, v, u_out, v_out])
+    }
+    /// `IconPanel_showIcon(this, i)`.
+    IconPanel_showIcon @ 0x006f_7970 => extern "thiscall" fn icon_panel_show_icon(this: u32, i: u32) -> u32 {
+        ut::icon_panel_show_icon(&mut mem(), this, i)
+    }
+    /// `SpdCtrl_ScaleElapsedTime(dt)`: in `ST0`.
+    SpdCtrl_ScaleElapsedTime @ 0x006f_7340 => extern "C" fn spd_ctrl_scale_elapsed_time(dt: u32) -> f32 {
+        ut::spd_ctrl_scale_elapsed_time(&mut mem(), dt)
+    }
+    /// `Cache_OverFlow()`.
+    Cache_OverFlow @ 0x0084_09a0 => extern "C" fn cache_overflow() -> u32 {
+        cache::bridge::overflow(&mut mem())
+    }
 }
 
 /// A singleton's pointer.

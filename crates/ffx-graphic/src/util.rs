@@ -2081,4 +2081,142 @@ pub mod bridge {
         h.write(out + 4, x87::ftol(h, y));
         f32::from_bits(x87::store(x87::div(1.0, w)))
     }
+
+    // ---- round 22, group 2 ----
+
+    /// `SheetCellUV_00684b00(kind, u, v, &u_out, &v_out)` (`ret 0x14`; it
+    /// ignores the `ecx` its caller sets).
+    pub const SHEET_CELL_UV: u32 = 0x0068_4b00;
+
+    /// `graphicGetAbmapUV_006410a0(kind, u, v, &u_out, &v_out)`
+    /// (`0x006410a0`, cdecl): `SheetCellUV_00684b00` with `ecx` =
+    /// `g_GraphicAbmap` and the two floats moved through the x87. Returns
+    /// its `eax`.
+    pub fn abmap_sheet_cell_uv(h: &mut impl Host, p: [u32; 5]) -> u32 {
+        let [kind, u, v, u_out, v_out] = p;
+        let abmap = crate::ui::bridge::ABMAP.get(h);
+        h.call_sym(
+            SHEET_CELL_UV,
+            Conv::Thiscall(abmap),
+            &[kind, rt(u), rt(v), u_out, v_out],
+        )
+    }
+
+    /// `IggyPlayerOpenScaled_006e9250(path, x, y, w, h)` (cdecl) and
+    /// `IggyMenu_setEnable(menu, on)` (`thiscall`, `ret 4`).
+    pub const IGGY_PLAYER_OPEN_SCALED: u32 = 0x006e_9250;
+    pub const IGGY_MENU_SET_ENABLE: u32 = 0x00a2_8ef0;
+
+    /// `IconPanel_showIcon(panel, i)` (`0x006f7970`, `thiscall`, `ret 4`):
+    /// icon `i` (signed, 0-6; 0 above) of the panel, opened first when its
+    /// word (`+4 i`) is 0 by `IggyPlayerOpenScaled(path, 10 + 0x35 * slot,
+    /// 10, 0x2b, 0x2b)` (the path at `+0x1c + 4 i`, the slot the byte at
+    /// `+0x38 + i`), then enabled as the panel is
+    /// (`IggyMenu_setEnable(icon, +0x3f)`).
+    pub fn icon_panel_show_icon(h: &mut impl Host, panel: u32, i: u32) -> u32 {
+        #[allow(clippy::cast_possible_wrap)] // jl
+        if i as i32 >= 7 {
+            return 0;
+        }
+        let at = panel.wrapping_add(i.wrapping_mul(4));
+        if h.read::<u32>(at) == 0 {
+            let path: u32 = h.read(at.wrapping_add(0x1c));
+            let slot = u32::from(h.read::<u8>(panel.wrapping_add(i).wrapping_add(0x38)));
+            let x = slot * 0x35 + 10;
+            let icon = h.call_sym(
+                IGGY_PLAYER_OPEN_SCALED,
+                Conv::Cdecl,
+                &[path, x, 10, 0x2b, 0x2b],
+            );
+            h.write(at, icon);
+            let on = u32::from(h.read::<u8>(panel.wrapping_add(0x3f)));
+            h.call_sym(IGGY_MENU_SET_ENABLE, Conv::Thiscall(icon), &[on]);
+        }
+        h.read(at)
+    }
+
+    /// The callees of `SpdCtrl_ScaleElapsedTime`: `MsBattleGetStatus`,
+    /// `getUCStatus`, `SpdCtrl_IsMapExcluded(map)`, `SpdCtrl_IsMagicExcluded`
+    /// (both `al`), `graphicGetAbmap`, and
+    /// `IggyMenu_callIggyAS3External(menu, 0, name, 0, 0, 1)` (`thiscall`).
+    pub const MS_BATTLE_GET_STATUS: u32 = 0x0078_16f0;
+    pub const GET_UC_STATUS: u32 = 0x0082_2460;
+    pub const SPD_CTRL_IS_MAP_EXCLUDED: u32 = 0x006f_6fa0;
+    pub const SPD_CTRL_IS_MAGIC_EXCLUDED: u32 = 0x006f_6ff0;
+    pub const GRAPHIC_GET_ABMAP: u32 = 0x0064_1060;
+    pub const IGGY_CALL_AS3_EXTERNAL: u32 = 0x00a2_8ba0;
+    /// `"OnEnable"` and `"OnDisable"`.
+    pub const SPD_CTRL_ON_ENABLE: u32 = 0x00b4_bf80;
+    pub const SPD_CTRL_ON_DISABLE: u32 = 0x00b4_bf8c;
+    /// `g_SpdCtrlScales`: the time scale of each speed level (1, 2, 4 in
+    /// the image, indexed by `SPD_CTRL_B4`).
+    pub const SPD_CTRL_SCALES: u32 = 0x00c3_8e1c;
+    /// The globals that hold the speed-up off: `g_WaitFramesByTime`,
+    /// `g_CurrentMapNo`, `g_BtlEndCtrlDone` (a byte: speed-up only while
+    /// set), `g_SaveMachineBusy`, `g_MovieFading`.
+    pub const WAIT_FRAMES_BY_TIME: Global<u32> = Global::new(0x0112_a008);
+    pub const CURRENT_MAP_NO: Global<u32> = Global::new(0x012f_bc40);
+    pub const BTL_END_CTRL_DONE: Global<u8> = Global::new(0x00c5_a068);
+    pub const SAVE_MACHINE_BUSY: Global<u32> = Global::new(0x00ce_7310);
+    pub const MOVIE_FADING: Global<u32> = Global::new(0x0134_0824);
+
+    /// `SpdCtrl_ScaleElapsedTime(dt)` (`0x006f7340`, cdecl): `dt` times
+    /// the level's scale (`g_SpdCtrlScales[SPD_CTRL_B4]`, stored as a
+    /// float) while the speed control is enabled and may speed up, else
+    /// `dt`; returns it in `ST0`.
+    ///
+    /// It may when the level is not 0 and: in battle
+    /// (`MsBattleGetStatus() == 1`) or with `getUCStatus()`, no
+    /// `g_WaitFramesByTime`, the map not excluded, not in battle with an
+    /// excluded magic on show, `g_BtlEndCtrlDone` set, no save loading, no
+    /// sphere grid (`graphicGetAbmap`), no movie fade. `SPD_CTRL_B8` holds
+    /// whether it did last time: the first scaled call tells the HUD
+    /// (`"OnEnable"`, when `SPD_CTRL_C0` holds a menu) and mutes the
+    /// sound, the first unscaled one after `"OnDisable"` and unmutes.
+    pub fn spd_ctrl_scale_elapsed_time(h: &mut impl Host, dt: u32) -> f32 {
+        if SPD_CTRL_ENABLED.get(h) == 0 {
+            return f32::from_bits(rt(dt));
+        }
+        let al = |r: u32| r.to_le_bytes()[0] != 0;
+        let in_battle = h.call_sym(MS_BATTLE_GET_STATUS, Conv::Cdecl, &[]) == 1;
+        let uc = h.call_sym(GET_UC_STATUS, Conv::Cdecl, &[]);
+        let allowed = (uc != 0 || in_battle) && WAIT_FRAMES_BY_TIME.get(h) == 0 && {
+            let map = CURRENT_MAP_NO.get(h);
+            !al(h.call_sym(SPD_CTRL_IS_MAP_EXCLUDED, Conv::Cdecl, &[map]))
+        };
+        let magic_excluded =
+            in_battle && al(h.call_sym(SPD_CTRL_IS_MAGIC_EXCLUDED, Conv::Cdecl, &[]));
+        let abmap = h.call_sym(GRAPHIC_GET_ABMAP, Conv::Cdecl, &[]) != 0;
+        let level = SPD_CTRL_B4.get(h);
+        let speed_up = !magic_excluded
+            && allowed
+            && BTL_END_CTRL_DONE.get(h) != 0
+            && SAVE_MACHINE_BUSY.get(h) == 0
+            && !abmap
+            && MOVIE_FADING.get(h) == 0
+            && level != 0;
+        let was = SPD_CTRL_B8.get(h) != 0;
+        let (scaled, name) = if speed_up {
+            let table = h.rebase(SPD_CTRL_SCALES);
+            let scale = x87::load(h.read(table.wrapping_add(level.wrapping_mul(4))));
+            let scaled = x87::store(x87::mul(scale, x87::load(dt)));
+            (scaled, SPD_CTRL_ON_ENABLE)
+        } else {
+            (rt(dt), SPD_CTRL_ON_DISABLE)
+        };
+        if was != speed_up {
+            let menu = SPD_CTRL_C0.get(h);
+            if menu != 0 {
+                let name = h.rebase(name);
+                h.call_sym(
+                    IGGY_CALL_AS3_EXTERNAL,
+                    Conv::Thiscall(menu),
+                    &[0, name, 0, 0, 1],
+                );
+            }
+            h.call_sym(SG_SET_MUTE_SOUND, Conv::Cdecl, &[u32::from(speed_up)]);
+        }
+        SPD_CTRL_B8.set(h, u32::from(speed_up));
+        f32::from_bits(scaled)
+    }
 }
