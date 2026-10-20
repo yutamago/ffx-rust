@@ -107,6 +107,28 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, block: u
         |m| at::ms_atel_get_handler(m, kind, i, n.cast_signed(), out),
     );
     same("MsAtelGetHandler", a, b);
+    // its worker bound as camera 2 (0x00798720)
+    let local = out + 0x10;
+    twin(
+        "MsAtelBindCamera_00798720",
+        a,
+        b,
+        0x0079_8720,
+        &[rng.next(), kind, i, n],
+        ALL,
+        |m| {
+            let mut call = script_call;
+            let mut fcall = script_call;
+            let mut c = ffx_battle::camera_native::bridge::Calls {
+                call: &mut call,
+                fcall: &mut fcall,
+            };
+            ffx_battle::minor::bridge::ms_atel_bind_camera(m, &mut c, kind, i, n, local)
+        },
+    );
+    let v = b.read(local, 4).unwrap();
+    a.write(local, &v).unwrap();
+    same("MsAtelBindCamera_00798720", a, b);
     // the work of script controls 3 and 4 only as the game set it: no
     // faked actor or camera handlers past the lookup
     if !w.synthetic && matches!(kind, 3 | 4) {

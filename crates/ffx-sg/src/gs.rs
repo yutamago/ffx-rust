@@ -630,4 +630,66 @@ pub mod bridge {
             _ => {}
         }
     }
+
+    /// The VRAM resource table (20 entries of 4 bytes: `i8 +1` a count,
+    /// `u16 +2` the running start [`load_vram_resource`] sets, from 2).
+    pub const VRAM_RESOURCES: u32 = 0x00c4_df00;
+    /// The VRAM read-back buffer, and its first two bytes when the
+    /// resources are in place (0x29, 0xff).
+    pub const VRAM_READ_BACK: u32 = 0x0130_1bf0;
+    /// `sceGsSetDefStoreImage`, `sceGsExecStoreImage`, `sceGsSyncPath`,
+    /// `FlushCache`, `Sg_SaveVramResource`, `dbgPrintf`.
+    pub const SET_DEF_STORE_IMAGE: u32 = 0x0062_f830;
+    pub const EXEC_STORE_IMAGE: u32 = 0x0062_f7b0;
+    pub const SYNC_PATH: u32 = 0x0062_f880;
+    pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    pub const SAVE_VRAM_RESOURCE: u32 = 0x0083_fd60;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    /// `"SG:res_ok\n"` and `"SG:res_dame\n"`.
+    pub const RES_OK: u32 = 0x00b5_a4d0;
+    pub const RES_DAME: u32 = 0x00b5_a4c0;
+    /// The store-image request in `Sg_LoadVramResource`'s frame (bytes).
+    pub const STORE_IMAGE_WORK: u32 = 0x70;
+
+    /// `Sg_LoadVramResource()` (`0x0083fc50`, from `Sg_InitAll`): the
+    /// resource table's starts (each the sum of the counts before it, from
+    /// 2), then a 16x16 store of VRAM block 0x2efc into [`VRAM_READ_BACK`]
+    /// (request in `work`, [`STORE_IMAGE_WORK`] bytes; `FlushCache(0)`
+    /// before and after) and, unless it starts 0x29 0xff,
+    /// `Sg_SaveVramResource()`; `dbgPrintf` of the verdict, whose `eax` it
+    /// returns. `call` runs a cdecl original (up to
+    /// eight words).
+    pub fn load_vram_resource<M: Mem>(
+        h: &mut M,
+        work: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let table = h.rebase(VRAM_RESOURCES);
+        let mut start = 2i32;
+        for k in 0..20 {
+            let count: i8 = h.read(table + 4 * k + 1);
+            let [lo, hi, _, _] = start.to_le_bytes(); // `mov word, dx`
+            h.write(table + 4 * k + 2, u16::from_le_bytes([lo, hi]));
+            start = start.wrapping_add(i32::from(count));
+        }
+        let f = h.rebase(SET_DEF_STORE_IMAGE);
+        call(h, f, &[work, 0x2efc, 1, 0, 0, 0, 0x10, 0x10]);
+        let flush = h.rebase(FLUSH_CACHE);
+        call(h, flush, &[0]);
+        let (f, back) = (h.rebase(EXEC_STORE_IMAGE), h.rebase(VRAM_READ_BACK));
+        call(h, f, &[work, back]);
+        let f = h.rebase(SYNC_PATH);
+        call(h, f, &[0, 0]);
+        call(h, flush, &[0]);
+        let ok = h.read::<[u8; 2]>(back) == [0x29, 0xff];
+        let message = if ok {
+            RES_OK
+        } else {
+            let f = h.rebase(SAVE_VRAM_RESOURCE);
+            call(h, f, &[]);
+            RES_DAME
+        };
+        let (f, message) = (h.rebase(DBG_PRINTF), h.rebase(message));
+        call(h, f, &[message])
+    }
 }

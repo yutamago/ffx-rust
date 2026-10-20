@@ -479,6 +479,24 @@ pub mod bridge {
         ms_chr_se_play(mem, trig, call, i, kind)
     }
 
+    /// `MsRegSEplay3(i, se)` (`0x007a0170`): [`ms_reg_se_play`] unless
+    /// the actor is hasted (`+0x613`): 0 then. (As
+    /// [`ms_chr_se_play_unhasted`] with `MsRegSEplay`.)
+    pub fn ms_reg_se_play3<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: Call<'_, M>,
+        i: u32,
+        se: u32,
+    ) -> u32 {
+        let i = i & 0xff;
+        let a = ms_get_chr(mem, i);
+        if byte(mem, a, 0x613) != 0 {
+            return 0;
+        }
+        ms_reg_se_play(mem, trig, call, i, se)
+    }
+
     /// `MsChrSePlayAlive_0079fe30(i, kind)` (`0x0079fe30`, name ours):
     /// [`ms_chr_se_play`] for a shown actor (`+0x15`) with HP (`+0x40`
     /// not 0.0; a NaN counts).

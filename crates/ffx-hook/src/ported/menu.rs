@@ -106,6 +106,21 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
 
+/// Calls a game function returning its result in `ST0` (cdecl, 0 to 8
+/// word arguments), read back as a double.
+#[allow(clippy::many_single_char_names)] // the arguments, in order
+fn fcall_ptr(f: u32, a: &[u32]) -> f64 {
+    type F8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> f64;
+    let mut w = [0u32; 8];
+    let n = a.len().min(8);
+    w[..n].copy_from_slice(&a[..n]);
+    // SAFETY: a cdecl function of at most 8 word arguments returning in
+    // ST0; the extra zero words it doesn't read sit on the caller's side.
+    unsafe {
+        std::mem::transmute::<usize, F8>(f as usize)(w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7])
+    }
+}
+
 /// `graphicUiRemapX2`/`graphicUiRemapY2(v)` (`0x006447e0`/`0x00644820`)
 /// through the game's entries: the result in `ST0`, read back as a double.
 fn ui_remap(y: bool, v: f32) -> f64 {
@@ -4284,6 +4299,88 @@ ported! {
         let mut frame = super::StackFrame::<8>::new();
         let text = frame.at();
         tk::draw_cross_menu_summon_plate_clut(&mut mem(), chr, [x, y], alpha, text, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawSummonPlateCheckHP(x, y, chr)`: the last call's `eax`.
+    TkMn2DrawSummonPlateCheckHP @ 0x008c_eb00 => extern "C" fn tk_mn2_draw_summon_plate_check_hp(x: i32, y: i32, chr: i32) -> u32 {
+        tk::tk_mn2_draw_summon_plate_check_hp(&mut mem(), [x, y], chr, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ReadAndUpdate(port, slot, pad)`: its only caller ignores `eax`.
+    Pad_ReadAndUpdate @ 0x0088_8f90 => extern "C" fn pad_read_and_update(port: u32, slot: u32, pad: u32) {
+        tk::pad_read_and_update(&mut mem(), port, slot, pad, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSelList_DrawRows(window, fixed, first, _, y)`: its only caller ignores `eax`.
+    MenuSelList_DrawRows @ 0x008d_1620 => extern "C" fn menu_sel_list_draw_rows(window: u32, fixed: u32, first: i32, _a: u32, y: i32) {
+        tk::menu_sel_list_draw_rows(&mut mem(), window, fixed, first, y, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkBtlEndGetText(id)`: the text pointer.
+    TkBtlEndGetText @ 0x008b_da60 => extern "C" fn tk_btl_end_get_text(id: u32) -> u32 {
+        tk::tk_btl_end_get_text(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TKMallocAndReadSPS2(index, page)`: the buffer, or 0.
+    TKMallocAndReadSPS2 @ 0x0088_ce80 => extern "C" fn tk_malloc_and_read_sps2(index: u32, page: u32) -> u32 {
+        // the original's two 256-byte path buffers
+        let mut frame = super::StackFrame::<128>::new();
+        let path = frame.at();
+        tk::tk_malloc_and_read_sps2(&mut mem(), index, page, [path, path + 0x100], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawMesFontLClutTypeRGBA_ForHelp(key, text, x, y, flags, r, g, b, a)`: its only caller ignores `eax`.
+    DrawMesFontLClutTypeRGBA_ForHelp @ 0x008e_75c0 => extern "C" fn draw_mes_font_lclut_type_rgba_for_help(key: u32, text: u32, x: i32, y: i32, flags: u32, r: u32, g: u32, b: u32, a: u32) {
+        // graphicFontGetScreenWH's two unread outputs
+        let mut frame = super::StackFrame::<2>::new();
+        let screen = frame.at();
+        tk::draw_mes_font_lclut_type_rgba_for_help(&mut mem(), key, text, [x, y], flags, [r, g, b, a], screen, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a));
+    }
+    /// `MenuItem_DrawKeyUseCells()`: its only caller ignores `eax`.
+    MenuItem_DrawKeyUseCells @ 0x008c_4770 => extern "C" fn menu_item_draw_key_use_cells() {
+        // the original's frame word for the text width
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::menu_item_draw_key_use_cells(&mut mem(), width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a));
+    }
+    /// `TkMn2MainStatusPlayerStatus(_, y, chr, t)`: the kick's `eax`.
+    TkMn2MainStatusPlayerStatus @ 0x008d_5180 => extern "C" fn tk_mn2_main_status_player_status(_a: u32, y: i32, chr: i32, t: u32) -> u32 {
+        // the original's frame word for the text width
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::tk_mn2_main_status_player_status(&mut mem(), y, chr, t, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_InitWork(port, slot)`: its only caller ignores `eax`.
+    Pad_InitWork @ 0x0088_9360 => extern "C" fn pad_init_work(port: u32, slot: u32) {
+        tk::pad_init_work(&mut mem(), port, slot, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `AtelEvent_FreeMovie()`: the `eax` the original leaves.
+    AtelEvent_FreeMovie @ 0x0087_4130 => extern "C" fn atel_event_free_movie() -> u32 {
+        tk::atel_event_free_movie(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_InitList()`: the `eax` the original leaves.
+    MenuWShop_InitList @ 0x008d_94a0 => extern "C" fn menu_wshop_init_list() -> u32 {
+        // the original's count and name frame words
+        let mut frame = super::StackFrame::<2>::new();
+        let count = frame.at();
+        tk::menu_wshop_init_list(&mut mem(), [count, count + 4], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_KeyRowCount()`: rows of three.
+    MenuItem_KeyRowCount @ 0x008c_5180 => extern "C" fn menu_item_key_row_count() -> i32 {
+        tk::menu_item_key_row_count(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_TypeKey()`: its only caller ignores `eax`.
+    MenuItem_TypeKey @ 0x008c_4c90 => extern "C" fn menu_item_type_key() {
+        tk::menu_item_type_key(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuGetDispCommand(kind, sub, a, chr, out)`: the count.
+    TkMenuGetDispCommand @ 0x008d_2e10 => extern "C" fn tk_menu_get_disp_command(kind: u32, sub: u32, a: u32, chr: i32, out: u32) -> i32 {
+        // the original's two frame words (MsMenuStatusNum's and MsGetSaveWeapon's outs)
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        tk::tk_menu_get_disp_command(&mut mem(), kind, sub, a, chr, out, [scratch, scratch + 4], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMes_AddPktFont1612(cursor, key, text, x, y, flags, edge, r, g, b, a)`: the packet cursor.
+    MenuMes_AddPktFont1612 @ 0x008e_4af0 => extern "C" fn menu_mes_add_pkt_font1612(cursor: u32, key: u32, text: u32, x: i32, y: i32, flags: u32, edge: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tk::menu_mes_add_pkt_font1612(&mut mem(), cursor, key, text, [x, y], [flags, edge], [r, g, b, a], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
+    /// `MenuMes_AddPktFont1612Icons(cursor, key, text, x, y, flags, edge, r, g, b, a)`: the packet cursor.
+    MenuMes_AddPktFont1612Icons @ 0x008e_4e60 => extern "C" fn menu_mes_add_pkt_font1612_icons(cursor: u32, key: u32, text: u32, x: i32, y: i32, flags: u32, edge: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tk::menu_mes_add_pkt_font1612_icons(&mut mem(), cursor, key, text, [x, y], [flags, edge], [r, g, b, a], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
     }
 }
 

@@ -111,7 +111,7 @@
 0x0042f8e0	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_initScene
 0x0042f8f0	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_prePhyreInit
 0x0042f930	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_render
-0x0042f9a0	logic	default (no rule: ported to be safe)
+0x0042f9a0	platform	platform name (PC port: input, saves, loaders, app lifecycle): FFXApplication_resize
 0x0042f9b0	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
 0x0042fa00	platform	only called from platform code (FFXApplication_animate)
 0x00430c50	dead	unreachable from the entry point and every pointer table
@@ -1101,7 +1101,7 @@
 0x00642c70	glue	thin wrapper: only forwards to glue code (PostProcessManager_GetInstance)
 0x00642c80	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicResetLoadingScreen
 0x00642cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicResetYIQ
-0x00642cd0	glue	thin wrapper: only forwards to glue code (PhyreScene_resize)
+0x00642cd0	platform	only called from platform code (FFXApplication_resize)
 0x00642ce0	platform	only called from platform code (FFXApplication_animate)
 0x00642cf0	logic	scene state the renderer needs (original look first): graphicScreenGetDttOffset
 0x00642d10	logic	scene state the renderer needs (original look first): graphicScreenGetOffset
@@ -7192,7 +7192,7 @@
 0x007902f0	logic	default (no rule: ported to be safe)
 0x00790340	logic	default (no rule: ported to be safe)
 0x00790420	dead	unreachable from the entry point and every pointer table
-0x00790430	logic	default (no rule: ported to be safe)
+0x00790430	platform	reviewed: PasswordTextRead's file loader: fiosOpen/sceLseek/sceRead/sceClose, TkMalloc/TkFree, memcpy only (battle round 30)
 0x007904a0	logic	default (no rule: ported to be safe)
 0x007904b0	logic	default (no rule: ported to be safe)
 0x00790500	logic	default (no rule: ported to be safe)
@@ -7428,7 +7428,7 @@
 0x00798890	logic	default (no rule: ported to be safe)
 0x007988f0	logic	default (no rule: ported to be safe)
 0x00798930	logic	default (no rule: ported to be safe)
-0x00798950	logic	default (no rule: ported to be safe)
+0x00798950	platform	reviewed: Rng_ClockSeed: XORs the system time bytes; the harness hooks this address for its seed (battle round 30)
 0x007989a0	logic	default (no rule: ported to be safe)
 0x00798a00	logic	default (no rule: ported to be safe)
 0x00798a90	logic	default (no rule: ported to be safe)
@@ -10767,7 +10767,7 @@
 0x0084eb10	logic	default (no rule: ported to be safe)
 0x0084eb60	debug	only called from debug code (0x84dac0 and 2 more)
 0x0084ebd0	debug	only called from debug code (0x84dac0 and 2 more)
-0x0084ed10	logic	default (no rule: ported to be safe)
+0x0084ed10	debug	reviewed: DECI2 protocol handler: 0x84eee0 passes it only to sceDeci2Open 0x62f680 (xor eax,eax; ret), so it never runs (main round 16)
 0x0084ede0	debug	only called from debug code (0x84f080 and 9 more)
 0x0084ef10	debug	only called from debug code (Gu_VSyncMain)
 0x0084efd0	debug	only called from debug code (WMainProc)
@@ -13519,7 +13519,7 @@
 0x008b9f30	logic	default (no rule: ported to be safe)
 0x008ba2a0	dead	unreachable from the entry point and every pointer table
 0x008ba370	logic	default (no rule: ported to be safe)
-0x008ba390	logic	default (no rule: ported to be safe)
+0x008ba390	glue	reviewed: 9-byte frame then jmp MsSaveAddAP_00784610 (menu round 27)
 0x008ba3a0	logic	default (no rule: ported to be safe)
 0x008ba3c0	logic	default (no rule: ported to be safe)
 0x008ba400	logic	default (no rule: ported to be safe)
