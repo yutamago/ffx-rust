@@ -6739,3 +6739,112 @@ fn snapshot_round21_matches_the_original() {
         round21_case(&mut t, &mut rng, round % 3, &what);
     }
 }
+
+// ---- round 22 ----
+
+/// Writes a stub over `graphicFontGetScreenWH(w*, h*)` that stores `w`
+/// and `h`.
+fn stub_screen_wh(t: &mut Twins, width: u32, height: u32) {
+    let at = t.rebase(0x0064_0db0);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x00]; // mov eax, [esp+4]; mov [eax], w
+    c.extend(width.to_le_bytes());
+    c.extend([0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00]); // mov eax, [esp+8]; mov [eax], h
+    c.extend(height.to_le_bytes());
+    c.push(0xc3);
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+/// One round-22 case on `scene` (a fresh one when 0); the matrix
+/// helpers, `PMatrix4_RowTimes` and the screen-adjusted view run
+/// original on both sides.
+fn round22_case(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) {
+    use ffx_bridge::x87::SSE2_AVAILABLE;
+    use ffx_graphic::util::bridge as ut;
+    let float = |rng: &mut Rng| -> f32 {
+        match rng.below(12) {
+            0 => rng.float(),
+            1 => 0.0,
+            2 => -0.0,
+            3 => 1.0,
+            _ => (rng.below(81) as f32 - 40.0) / 8.0,
+        }
+    };
+    let floats = |t: &mut Twins, rng: &mut Rng, n: usize| -> u32 {
+        let v: Vec<u8> = (0..n).flat_map(|_| float(rng).to_le_bytes()).collect();
+        t.alloc(&v)
+    };
+    let scene = if scene == 0 {
+        let scene = t.alloc(&rng.bytes(0xfa00));
+        for off in (0xc50..0xc90).step_by(4).chain([0xf9bc, 0xf9c0]) {
+            let v = float(rng);
+            t.write(scene + off, &v.to_le_bytes());
+        }
+        let cam = floats(t, rng, 0x30);
+        let xf = if rng.chance(3) { 0 } else { floats(t, rng, 12) };
+        t.w32(cam + 0xb4, xf);
+        t.w32(scene + 0xdc, cam);
+        scene
+    } else {
+        scene
+    };
+    let at = t.rebase(scene::bridge::IS_3D.sym);
+    t.w8(at, u8::from(rng.chance(2)));
+    t.global(SSE2_AVAILABLE.sym, u32::from(rng.chance(2)));
+    let (width, height) = match rng.below(4) {
+        0 => (1920, 1080),
+        1 => (rng.next(), rng.next()),
+        _ => (rng.below(4000), rng.below(3000)),
+    };
+    stub_screen_wh(t, width, height);
+    let p = floats(t, rng, 3);
+    let out = t.alloc(&rng.bytes(8));
+    let mode = [0, 1, 2, 2, 3, rng.next()][rng.below(6) as usize];
+    t.check(
+        what,
+        0x0065_26a0,
+        Conv::Thiscall(scene),
+        &[out, p, mode],
+        |g| Out::F32(ut::scene_project_point(g, scene, out, p, mode)),
+    );
+}
+
+#[test]
+fn round22_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2222_0022);
+    for round in 0..4000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round22_case(&mut t, &mut rng, 0, &what);
+    }
+}
+
+#[test]
+fn snapshot_round22_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let real = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    let real = if real != 0 && t.r32(real + 0xdc) != 0 {
+        real
+    } else {
+        0
+    };
+    let mut rng = Rng(0x5222_0022);
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        // the game's own scene and camera every other round
+        let scene = if round % 2 == 0 { real } else { 0 };
+        round22_case(&mut t, &mut rng, scene, &what);
+    }
+}

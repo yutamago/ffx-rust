@@ -1391,6 +1391,13 @@ ported! {
     BoundingBox_IsInsideTransformed_006d2a70 @ 0x006d_2a70 => extern "thiscall" fn box_inside_transformed(this: u32, m: u32) -> u32 {
         ut::box_inside_transformed(&mut mem(), this, m)
     }
+
+    // ---- round 22 ----
+    /// `PhyreScene_Project3DPointOntoScreen(this, out, p, mode)`: `1 / w`
+    /// in `ST0`.
+    PhyreScene_Project3DPointOntoScreen @ 0x0065_26a0 => extern "thiscall" fn scene_project_point(this: u32, out: u32, p: u32, mode: u32) -> f32 {
+        ut::scene_project_point(&mut mem(), this, out, p, mode)
+    }
 }
 
 /// A singleton's pointer.

@@ -1961,4 +1961,124 @@ pub mod bridge {
         };
         box_clip_test(h, this, mat, BoxTest::Inside)
     }
+
+    // ---- round 22 ----
+
+    /// `PMatrix4_Identity_00451bb0(out)` (cdecl), `PMatrix4_Inverse_004cc0c0(out,
+    /// m)` (cdecl, returns `out`), and the two 4x4 copies
+    /// `PMatrix4_Copy_004c9430(out, m)` and `PMatrix4_Copy_00453340(out, m)`
+    /// (`thiscall`, `ret 4`).
+    pub const MATRIX4_IDENTITY: u32 = 0x0045_1bb0;
+    pub const MATRIX4_INVERSE: u32 = 0x004c_c0c0;
+    pub const MATRIX4_COPY_4C9430: u32 = 0x004c_9430;
+    pub const MATRIX4_COPY_453340: u32 = 0x0045_3340;
+    /// `graphicFontGetScreenWH(w*, h*)` (cdecl).
+    pub const FONT_GET_SCREEN_WH: u32 = 0x0064_0db0;
+    /// The `f64`s of the projection: `3.75` and `2.8125` (the PS2 point
+    /// scaled to 1920 x 1170), `512` and `416` (the PS2 screen), `0.5`.
+    pub const PROJECT_SCALE_X: u32 = 0x00b4_1d18;
+    pub const PROJECT_SCALE_Y: u32 = 0x00b4_3d78;
+    pub const PROJECT_PS2_W: u32 = 0x00b4_1d38;
+    pub const PROJECT_PS2_H: u32 = 0x00b4_1d30;
+    pub const PROJECT_HALF: u32 = 0x00b9_2220;
+
+    /// `PhyreScene_Project3DPointOntoScreen(scene, out, p, mode)`
+    /// (`0x006526a0`, `thiscall`, `ret 0xc`): the point `p` on the screen.
+    ///
+    /// The matrix: for `mode` 2 the scene's own at `+0xc50` (and `p.x`,
+    /// `p.y` first scaled in place by 3.75 and 2.8125); with a 2D scene
+    /// (`g_PhyreScene3D` clear) and a `mode` other than 0, the screen-
+    /// adjusted view (`PhyreScene_GetScreenAdjustedView_00651650`) times
+    /// the inverse of the camera's world transform (its 3x4 at
+    /// `*(scene +0xdc) +0xb4` made a 4x4, or the identity without one);
+    /// else the camera's at `*(scene +0xdc) +0x74`. Copied into a local by
+    /// `PMatrix4_Copy_00453340`, it takes the row vector `(-p.x, -p.y,
+    /// p.z, 1)` (`PMatrix4_RowTimes`) to `(x, y, z, w)`; `x / w` and `y /
+    /// w` (floats, negated for `w < 0`), times 512 x -416 for `mode` 2 or
+    /// the screen's width x -height (`graphicFontGetScreenWH`, as floats)
+    /// else, times 0.5 and truncated (`ftol2_sse`), go to `out[0]`,
+    /// `out[1]`. Returns `1 / w` (as a float, in `ST0`).
+    ///
+    /// The original's locals live in [`Host::scratch`] from `+0x40` (the
+    /// screen-adjusted view keeps its temporary below), reused once dead.
+    pub fn scene_project_point(h: &mut impl Host, scene: u32, out: u32, p: u32, mode: u32) -> f32 {
+        let constant = |h: &mut _, sym: u32| -> f64 {
+            let at = Mem::rebase(h, sym);
+            f64::from_bits(Mem::read(h, at))
+        };
+        let copy16 = |h: &mut _, to: u32, from: u32| {
+            for i in 0..16 {
+                let v: u32 = Mem::read(h, from + 4 * i);
+                Mem::write(h, to + 4 * i, v);
+            }
+        };
+        let s = h.scratch();
+        // the 4x4 locals (`product` reuses the identity's)
+        let identity = s + 0x40;
+        let world = s + 0x80;
+        let world_copy = s + 0xc0;
+        let inverse_out = s + 0x100;
+        let inverse = s + 0x140;
+        let view = s + 0x180;
+        let matrix = if mode == 2 {
+            let kx = constant(h, PROJECT_SCALE_X);
+            let x = x87::store(x87::mul(x87::load(h.read(p)), kx));
+            h.write(p, x);
+            let ky = constant(h, PROJECT_SCALE_Y);
+            let y = x87::store(x87::mul(x87::load(h.read(p + 4)), ky));
+            h.write(p + 4, y);
+            scene + 0xc50
+        } else if crate::scene::bridge::IS_3D.get(h) == 0 && mode != 0 {
+            h.call_sym(MATRIX4_IDENTITY, Conv::Cdecl, &[identity]);
+            let camera: u32 = h.read(scene + 0xdc);
+            let transform: u32 = h.read(camera.wrapping_add(0xb4));
+            if transform == 0 {
+                copy16(h, world, identity);
+            } else {
+                h.call_sym(MATRIX4_FROM_3X4, Conv::Thiscall(world), &[transform]);
+            }
+            copy16(h, world_copy, world);
+            let inv = h.call_sym(MATRIX4_INVERSE, Conv::Cdecl, &[inverse_out, world_copy]);
+            h.call_sym(MATRIX4_COPY_4C9430, Conv::Thiscall(inverse), &[inv]);
+            let adjusted = scene_screen_adjusted_view(h, scene, view);
+            let product = identity;
+            h.call_sym(MATRIX4_MULTIPLY, Conv::Cdecl, &[product, adjusted, inverse])
+        } else {
+            h.read::<u32>(scene + 0xdc).wrapping_add(0x74)
+        };
+        // the frame's last locals: the matrix copy, the vector and its image
+        let (m, v, r) = (world, world_copy, world_copy + 0x10);
+        h.call_sym(MATRIX4_COPY_453340, Conv::Thiscall(m), &[matrix]);
+        let neg = |bits: u32| x87::store(-x87::load(bits));
+        let vx = neg(h.read(p));
+        let vy = neg(h.read(p + 4));
+        let vz = rt(h.read(p + 8));
+        for (k, word) in (0u32..).zip([vx, vy, vz, 1f32.to_bits()]) {
+            h.write(v + 4 * k, word);
+        }
+        h.call_sym(ROW_TIMES, Conv::Thiscall(m), &[r, v]);
+        let w = x87::load(h.read(r + 0xc));
+        let mut sx = x87::store(x87::div(x87::load(h.read(r)), w));
+        let mut sy = x87::store(x87::div(x87::load(h.read(r + 4)), w));
+        if 0.0 > w {
+            sx ^= 0x8000_0000;
+            sy ^= 0x8000_0000;
+        }
+        let half = constant(h, PROJECT_HALF);
+        let (width, height) = if mode == 2 {
+            (constant(h, PROJECT_PS2_W), constant(h, PROJECT_PS2_H))
+        } else {
+            let (wp, hp) = (s + 0xe0, s + 0xe4);
+            h.call_sym(FONT_GET_SCREEN_WH, Conv::Cdecl, &[wp, hp]);
+            // `fild`, then stored as a float
+            #[allow(clippy::cast_possible_wrap)]
+            let fild = |n: u32| x87::load(x87::store(f64::from(n as i32)));
+            (fild(h.read(wp)), fild(h.read(hp)))
+        };
+        let x = x87::mul(x87::mul(x87::load(sx), width), half);
+        h.write(out, x87::ftol(h, x));
+        let y = x87::mul(x87::mul(-x87::load(sy), height), half);
+        h.write(out + 4, x87::ftol(h, y));
+        f32::from_bits(x87::store(x87::div(1.0, w)))
+    }
 }

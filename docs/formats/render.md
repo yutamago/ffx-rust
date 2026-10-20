@@ -899,3 +899,28 @@ Round 21:
   its 4x4 (`PMatrix4_FromMatrix3x4_00451080` into a local, then
   `PMatrix4_Multiply_004ca360(out, m, local)`, whose returned `out` is
   passed), without one on a local copy of `m`. Its answer is returned.
+
+Round 22:
+
+- `PhyreScene_Project3DPointOntoScreen(scene, out, p, mode)` (`0x006526a0`,
+  `thiscall`, `ret 0xc`; Fahrenheit's name): the screen position of the
+  point `p` (3 floats) into `out` (2 ints); returns `1 / w` as a float in
+  `ST0`. The matrix:
+  - `mode` 2: the scene's own 4x4 at `+0xc50`, with `p.x` and `p.y` first
+    scaled in place by 3.75 and 2.8125 (`f64`s at `0x00b41d18`,
+    `0x00b43d78`; stored back as floats into the caller's point);
+  - a 2D scene (`g_PhyreScene3D`, `0x00ccb9c0`, clear) and `mode` != 0:
+    `PMatrix4_Multiply_004ca360(view, inverse)`, `view` the screen-adjusted
+    view (`0x00651650`), `inverse` = `PMatrix4_Inverse_004cc0c0` of the
+    camera's world transform (the 3x4 at `*(scene +0xdc) +0xb4` made a 4x4
+    by `PMatrix4_FromMatrix3x4_00451080`, or the identity
+    `PMatrix4_Identity_00451bb0` when the pointer is 0);
+  - else the camera's 4x4 at `*(scene +0xdc) +0x74`.
+
+  The row vector `(-p.x, -p.y, p.z, 1)` times it (`PMatrix4_RowTimes_004c9c20`)
+  gives `(x, y, z, w)`; `x / w` and `y / w` are stored as floats and negated
+  when `w < 0` (a NaN `w` leaves them). `out[0]` = `ftol2_sse(x/w * W *
+  0.5)`, `out[1]` = `ftol2_sse(-(y/w) * H * 0.5)`, with `W x H` = 512 x 416
+  (`f64`s at `0x00b41d38`, `0x00b41d30`) for `mode` 2, else
+  `graphicFontGetScreenWH`'s ints, each rounded to a float first; `0.5` is
+  the `f64` at `0x00b92220`.
