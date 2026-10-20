@@ -6640,7 +6640,7 @@ fn control_angle_cases(
         let r = m
             .call(f, Conv::Cdecl, args)
             .unwrap_or_else(|e| panic!("{f:#x}: {e}"));
-        let st0 = r.st0_f64().unwrap_or_else(|| panic!("{f:#x}: no ST0"));
+        let st0 = r.st0.unwrap_or_else(|| panic!("{f:#x}: no ST0"));
         let pop = m.rebase(POP_STUB);
         m.call(pop, Conv::Cdecl, &[]).unwrap();
         st0
@@ -7609,7 +7609,7 @@ fn id_chr_move_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds:
         let r =
             m.0.call(f, Conv::Cdecl, args)
                 .unwrap_or_else(|e| panic!("{f:#x}: {e}"));
-        let st0 = r.st0_f64().unwrap_or_else(|| panic!("{f:#x}: no ST0"));
+        let st0 = r.st0.unwrap_or_else(|| panic!("{f:#x}: no ST0"));
         let pop = m.0.rebase(POP_STUB);
         m.0.call(pop, Conv::Cdecl, &[]).unwrap();
         st0

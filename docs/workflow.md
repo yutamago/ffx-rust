@@ -84,7 +84,8 @@ every crate depending on them; the `ffx-oracle` tests of the changed crates,
 of the changed test files and of the modules whose hook shims changed, on the
 image alone and on both snapshots side by side (all of them when
 `ffx-oracle/src` or `ffx-bridge` changed); the port checks, the hook build
-and the replays. Every fourth run, or with `--full`, the oracle tests of every
+and the replays (check-clobber takes about 6 s with its disassembly cache,
+30 s when FFX.exe or objdump changed). Every fourth run, or with `--full`, the oracle tests of every
 dependent crate run too. The game-data tests that read the whole archive run
 separately, now and then.
 

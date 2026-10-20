@@ -56,11 +56,18 @@ written) must agree.
 - `Oracle::stub_return(addr, value)` fixes a callee (a clock) for the test.
 - Floats: the game thread runs x87 at 53-bit precision (`0x027f`); the
   snapshot oracle sets that control word. Results compare exactly unless
-  a tolerance is stated and justified. `Ret::st0_raw` has `ST0`'s 80 bits
-  (`Ret::st0` makes every NaN the same). The emulator differs from the
-  hardware on one point: a signalling NaN loaded with `flds` stays
-  signalling there, while the CPU quiets it; replacements follow the
-  hardware, and their tests leave signalling NaNs out.
+  a tolerance is stated and justified. `Ret::st0` is `ST0` as `fst qword`
+  stores it (`ffx_oracle::f80_to_f64`): a NaN keeps its sign and top 52
+  fraction bits, so compare bit for bit (`ffx_oracle::same_float`,
+  `Ret::st0_is(port)`), NaNs included. `Ret::st0_f32()` is `ST0` as
+  `fst dword` stores it (`ffx_oracle::f80_to_f32`, one rounding from the
+  80 bits), `Ret::st0_raw` the 80 bits themselves. For a port that calls
+  an original float function, hand it `|o, f, args|
+  o.call_f64(f, args).unwrap()` (`Oracle::call_f64`): payloads reach the
+  port as they do in the game, no per-test NaN helpers. The emulator
+  differs from the hardware on one point: a signalling NaN loaded with
+  `flds` stays signalling there, while the CPU quiets it; replacements
+  follow the hardware, and their tests leave signalling NaNs out.
 
 ## 4. Install it
 
@@ -85,7 +92,10 @@ the result (`eax`, and `edx` for 64 bits). FFX.exe was built with
 whole-program optimisation: a caller may keep a scratch register live
 across a call to a function the compiler knew leaves it alone
 (`op_spline_xyz_table` returns the `eax` it had before calling
-`op_spr_free`). `tools/check-clobber.py` lists those call sites; with the
+`op_spr_free`). `tools/check-clobber.py` lists those call sites (it
+caches the disassembly per FFX.exe hash in `~/ffx-work/cache` and
+disassembles what is missing in parallel, `--jobs N`; `--no-cache` skips
+the cache; same output either way); with the
 thunk they need nothing more, but a shim returning `u8`, `u16` or `bool`
 must still match what the original leaves in the rest of `eax` when a
 caller reads all of it.
