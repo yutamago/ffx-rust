@@ -968,6 +968,37 @@ pub mod bridge {
         record
     }
 
+    /// `MsGetComInfo(i, id, what)` (`0x0078cd30`): a field of command `id`'s
+    /// record ([`ms_get_com_data`]; 0 without one): 0 its byte `+0x28`
+    /// (with `+0x1c` bit 0x40000 actor `i`'s `+0x5c1` instead), 1 `+0x20`
+    /// & 3, 2-4 `+0x23` bits 1, 2, 4, 5-9 bits 4 down to 0 of `+0x2d`
+    /// (under that bit with the actor's `+0x5d9` bits as well), 10 `+0x1a`
+    /// >> 2 & 3; others 0.
+    pub fn ms_get_com_info(mem: &mut impl Mem, i: u32, id: u32, what: u32) -> u32 {
+        let rec = ms_get_com_data(mem, id, 0);
+        if rec == 0 {
+            return 0;
+        }
+        let actor = crate::actor::bridge::ms_get_chr(mem, i);
+        let (first, flags) = if mem.read::<u32>(rec + 0x1c) & 0x4_0000 == 0 {
+            (mem.read::<u8>(rec + 0x28), mem.read::<u8>(rec + 0x2d))
+        } else {
+            (
+                mem.read::<u8>(actor.wrapping_add(0x5c1)),
+                mem.read::<u8>(actor.wrapping_add(0x5d9)) | mem.read::<u8>(rec + 0x2d),
+            )
+        };
+        let flags = u32::from(flags);
+        match what {
+            0 => u32::from(first),
+            1 => u32::from(mem.read::<u16>(rec + 0x20)) & 3,
+            2..=4 => u32::from(mem.read::<u8>(rec + 0x23)) & (1 << (what - 2)),
+            5..=9 => flags >> (9 - what) & 1,
+            10 => u32::from(mem.read::<u16>(rec + 0x1a)) >> 2 & 3,
+            _ => 0,
+        }
+    }
+
     /// [`ms_get_com_data`] for Rust callers: the record and, when `name`
     /// is asked for, the name it would store (`None` for the kinds that
     /// leave it alone).

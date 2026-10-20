@@ -722,6 +722,235 @@ pub mod bridge {
         ms_set_check_change(mem, call, id, side, 0, 0)
     }
 
+    /// The request setters' common part: channel `id >> 8 & 0xff` of side
+    /// `side & 1` of camera `id & 0xff` (`+0xf0` + 0x130 channel) gets
+    /// `+7` cleared, `+0` = `polar` and the kind (`+2`), then `fill`; when
+    /// `id` is the camera's current request, `start(side base, channel)`
+    /// runs and [`ms_set_check_change`] with `step`, mode 0. EAX as the
+    /// original leaves it (0, the current request, or the check's).
+    #[allow(clippy::too_many_arguments)]
+    fn set_request<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+        side: u32,
+        polar: u8,
+        kind: u8,
+        step: u32,
+        fill: impl FnOnce(&mut M, u32),
+        start: impl FnOnce(&mut M, &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, u32, u32),
+    ) -> u32 {
+        if ms_camera_id_check(mem, id) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let s = camera_base(mem, id) + side * 0x61c + 0x30;
+        let ch = channel(mem, id, side);
+        mem.write(ch + 7, 0u8);
+        mem.write(ch, polar);
+        mem.write(ch + 2, kind);
+        fill(mem, ch);
+        let cur = current_request(mem, id);
+        if cur != id {
+            return cur;
+        }
+        start(mem, &mut *call, s, ch);
+        ms_set_check_change(mem, call, id, side, step, 0)
+    }
+
+    /// `MsCameraSetAtelFocus_007beeb0(id, side, a, b, p)` (`0x007beeb0`,
+    /// name ours): a request of kind 3 (plain): the script actors `a`, `b`
+    /// (`u16`, `+0xc`, `+0xe`) and the offset `p` (four words, through
+    /// `g_Ee_GprMove`, `+0x30`) to focus on; on the current request
+    /// [`ms_camera_atel_focus`] and [`ms_set_check_change`] step 0.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_set_atel_focus<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        call: &mut dyn FnMut(&mut crate::target::bridge::Dm<'d>, u32, &[u32]) -> u32,
+        id: u32,
+        side: u32,
+        a: u32,
+        b: u32,
+        p: u32,
+    ) -> u32 {
+        let fill = |mem: &mut crate::target::bridge::Dm<'d>, ch: u32| {
+            for (o, w) in [(0xc, a), (0xe, b)] {
+                let [lo, hi, _, _] = w.to_le_bytes();
+                mem.write(ch + o, [lo, hi]);
+            }
+            let v: [u32; 4] = mem.read(p);
+            EE_MOVE.set(mem, v);
+            mem.write(ch + 0x30, v);
+        };
+        let start = |mem: &mut crate::target::bridge::Dm<'d>, _: Call<'_, 'd>, s: u32, ch: u32| {
+            ms_camera_atel_focus(mem, host, s, ch);
+        };
+        set_request(mem, call, id, side, 0, 3, 0, fill, start)
+    }
+
+    /// `MsCameraSetAtelYaw_007befc0(id, side, yaw, pitch, length)`
+    /// (`0x007befc0`, name ours): a request of kind 10 (polar): `+0x40`,
+    /// `+0x44`, `+0x48`; on the current request [`ms_camera_atel_yaw`]
+    /// (tracking the other side's channel) and [`ms_set_check_change`]
+    /// step 1.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_set_atel_yaw<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        call: &mut dyn FnMut(&mut crate::target::bridge::Dm<'d>, u32, &[u32]) -> u32,
+        id: u32,
+        side: u32,
+        yaw: u32,
+        pitch: u32,
+        length: u32,
+    ) -> u32 {
+        let fill = |mem: &mut crate::target::bridge::Dm<'d>, ch: u32| {
+            for (o, v) in [(0x40, yaw), (0x44, pitch), (0x48, length)] {
+                mem.write(ch + o, x87_copy(v));
+            }
+        };
+        let start = |mem: &mut crate::target::bridge::Dm<'d>, _: Call<'_, 'd>, s: u32, ch: u32| {
+            // the other side's same channel
+            let track = if s.wrapping_sub(camera_base(mem, id)) == 0x30 {
+                ch + 0x61c
+            } else {
+                ch - 0x61c
+            };
+            ms_camera_atel_yaw(mem, host, s, ch, track);
+        };
+        set_request(mem, call, id, side, 1, 10, 1, fill, start)
+    }
+
+    /// `MsCameraSetAimPolar_007bf330(id, side, x, z, pitch, d1, length,
+    /// d2)` (`0x007bf330`, name ours): a request of kind 4 (polar): the
+    /// point's x, z (`+0x30`, `+0x38`), the pitch and length (`+0x44`,
+    /// `+0x48`) and their divisors (`+0x54`, `+0x58`); on the current
+    /// request [`ms_camera_aim_polar`] (its local at `scratch`) and
+    /// [`ms_set_check_change`] step 1.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_set_aim_polar<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+        side: u32,
+        v: [u32; 6],
+        scratch: u32,
+    ) -> u32 {
+        let fill = |mem: &mut M, ch: u32| {
+            for (o, w) in [0x30, 0x38, 0x44, 0x54, 0x48, 0x58].into_iter().zip(v) {
+                mem.write(ch + o, x87_copy(w));
+            }
+        };
+        let start =
+            |mem: &mut M, _: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, s: u32, ch: u32| {
+                ms_camera_aim_polar(mem, trig, s, ch, scratch);
+            };
+        set_request(mem, call, id, side, 1, 4, 1, fill, start)
+    }
+
+    /// `MsCameraSetAimPolar2_007bf420(id, side, short, x, y, z, d1, length,
+    /// d2)` (`0x007bf420`, name ours): a request of kind 5 (6 when
+    /// `short`, polar): the point (`+0x30`..`+0x38`), the length (`+0x48`)
+    /// and the divisors (`+0x54`, `+0x58`); on the current request
+    /// [`ms_camera_aim_polar2`] (or [`ms_camera_aim_polar3`] when
+    /// `short`; their local at `scratch`) and [`ms_set_check_change`]
+    /// step 1.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_set_aim_polar2<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+        side: u32,
+        short: u32,
+        v: [u32; 6],
+        scratch: u32,
+    ) -> u32 {
+        let fill = |mem: &mut M, ch: u32| {
+            for (o, w) in [0x30, 0x34, 0x38, 0x54, 0x48, 0x58].into_iter().zip(v) {
+                mem.write(ch + o, x87_copy(w));
+            }
+        };
+        let start =
+            |mem: &mut M, _: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, s: u32, ch: u32| {
+                if short == 0 {
+                    ms_camera_aim_polar2(mem, trig, s, ch, scratch);
+                } else {
+                    ms_camera_aim_polar3(mem, trig, s, ch, scratch);
+                }
+            };
+        let kind = 5 + u8::from(short != 0);
+        set_request(mem, call, id, side, 1, kind, 1, fill, start)
+    }
+
+    /// [`set_request`]'s caller-side call helper on the battle's memory.
+    type Call<'c, 'd> = &'c mut dyn FnMut(&mut crate::target::bridge::Dm<'d>, u32, &[u32]) -> u32;
+
+    /// `MsCameraSetSpline(id, side, spline, t, speed, flags)`
+    /// (`0x007bfca0`): with a spline, a request of kind 14 (plain): the
+    /// spline (`+8`), its place and speed (`+0x68`, `+0x6c`), the flags
+    /// (`+0x1c`); on the current request [`ms_camera_spline_move`] and
+    /// [`ms_set_check_change`] step 0. EAX as the original leaves it
+    /// (no spline: `MsCameraIDcheck`'s).
+    #[allow(clippy::too_many_arguments)]
+    pub fn ms_camera_set_spline<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        call: Call<'_, 'd>,
+        id: u32,
+        side: u32,
+        spline: u32,
+        t: u32,
+        speed: u32,
+        flags: u32,
+    ) -> u32 {
+        let ok = ms_camera_id_check(mem, id);
+        if ok == 0 || spline == 0 {
+            return ok.cast_unsigned();
+        }
+        let fill = |mem: &mut crate::target::bridge::Dm<'d>, ch: u32| {
+            mem.write(ch + 0x68, x87_copy(t));
+            mem.write(ch + 0x6c, x87_copy(speed));
+            mem.write(ch + 0x1c, flags.to_le_bytes()[0]);
+            mem.write(ch + 8, spline);
+        };
+        let start =
+            |mem: &mut crate::target::bridge::Dm<'d>, call: Call<'_, 'd>, s: u32, ch: u32| {
+                ms_camera_spline_move(mem, host, call, id, side & 1, s, ch);
+            };
+        set_request(mem, call, id, side, 0, 14, 0, fill, start)
+    }
+
+    /// `MsCameraSetSpline2(id, side, spline, flags)` (`0x007bfd90`): with
+    /// a spline, a request of kind 17 (plain): the spline (`+8`) and flags
+    /// (`+0x1c`); on the current request [`ms_camera_spline_pos`] (the
+    /// channel its own other one) and [`ms_set_check_change`] step 0. EAX
+    /// as [`ms_camera_set_spline`].
+    pub fn ms_camera_set_spline2<'d>(
+        mem: &mut crate::target::bridge::Dm<'d>,
+        host: &crate::target::bridge::Host<'_>,
+        call: Call<'_, 'd>,
+        id: u32,
+        side: u32,
+        spline: u32,
+        flags: u32,
+    ) -> u32 {
+        let ok = ms_camera_id_check(mem, id);
+        if ok == 0 || spline == 0 {
+            return ok.cast_unsigned();
+        }
+        let fill = |mem: &mut crate::target::bridge::Dm<'d>, ch: u32| {
+            mem.write(ch + 0x1c, flags.to_le_bytes()[0]);
+            mem.write(ch + 8, spline);
+        };
+        let start = |mem: &mut crate::target::bridge::Dm<'d>, _: Call<'_, 'd>, s: u32, ch: u32| {
+            ms_camera_spline_pos(mem, host, s, ch, ch);
+        };
+        set_request(mem, call, id, side, 0, 17, 0, fill, start)
+    }
+
     /// `MsCameraResetMove(id, flags)` (`0x007bed60`): for the camera's
     /// current request `id`, side `flags & 1` stops moving (its three
     /// axis moves `+0x5bc`-`+0x5dc`; side 1 also the roll and depth moves
@@ -757,6 +986,30 @@ pub mod bridge {
             }
         }
         0
+    }
+
+    /// `MsAtelGetCameraID(owner, kind, cam)` (`0x007ba780`): the script's
+    /// request ID of `kind` (0-3, [`crate::minor::bridge::ATEL_CAMERA`]
+    /// groups 1, 0, 2, 3) for camera `cam` (0-2), got the first time
+    /// ([`ms_camera_get`] with request kind 3, 1, 5, 7) and kept; 0 for
+    /// other kinds or cameras.
+    pub fn ms_atel_get_camera_id(mem: &mut impl Mem, owner: u32, kind: u32, cam: u32) -> u32 {
+        let (group, request) = match kind {
+            0 => (1, 3),
+            1 => (0, 1),
+            2 => (2, 5),
+            3 => (3, 7),
+            _ => return 0,
+        };
+        if cam > 2 {
+            return 0;
+        }
+        let at = crate::minor::bridge::ATEL_CAMERA.ptr(mem).addr + 12 * group + 4 * cam;
+        if mem.read::<u32>(at) == 0 {
+            let id = ms_camera_get(mem, owner, cam, request);
+            mem.write(at, id);
+        }
+        mem.read(at)
     }
 
     /// `MsAtelResetMoveCameraID(kind)` (`0x007ba860`): the three script
