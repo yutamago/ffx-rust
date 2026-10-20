@@ -5600,4 +5600,28 @@ ported! {
             &mut |_, f, this, a| super::call_thiscall(f, this, a),
         )
     }
+    // ---- round 38 c ----
+    /// `setPolyQuad0434(id, quad, setup)` (`0x007128d0`).
+    setPolyQuad0434 @ 0x0071_28d0 => extern "C" fn set_poly_quad_0434(id: u32, quad: u32, setup: u32) -> u32 {
+        small::bridge::set_poly_quad_0434(&mut mem(), id, quad, setup, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppEiWfacc(obj, key, ctrl)`: the original's uninitialised local
+    /// (copied to `0x00c8f83c`) is 0 here.
+    pppEiWfacc @ 0x0075_bb30 => extern "C" fn ppp_ei_wfacc(obj: u32, key: u32, ctrl: u32) {
+        ppp::bridge::ppp_ei_wfacc(&mut mem(), obj, key, ctrl, 0);
+    }
+    /// `pppFpLoopMatrix(part, set, def)` (`0x00728ac0`): the local matrix
+    /// in this shim's frame.
+    pppFpLoopMatrix @ 0x0072_8ac0 => extern "C" fn ppp_fp_loop_matrix(part: u32, set: u32, def: u32) -> u32 {
+        let mut frame = super::StackFrame::<16>::new();
+        let local = frame.at();
+        fp::bridge::ppp_fp_loop_matrix(&mut mem(), part, set, def, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_matrix_bone(host, cmd)` (`0x00803940`): the option position
+    /// vector in this shim's frame.
+    opu_matrix_bone @ 0x0080_3940 => extern "C" fn opu_matrix_bone(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        let vec = frame.at();
+        opus::bridge::opu_matrix_bone(&mut mem(), host, cmd, vec, &mut |_, f, a| call_ptr(f, a))
+    }
 }

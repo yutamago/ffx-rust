@@ -2735,6 +2735,124 @@ pub mod bridge {
         call(mem, g(mem, 0x0082_b480), &[h, x, y, z])
     }
 
+    /// `opu_matrix_bone(host, cmd)` (`0x00803940`): the unit's matrix
+    /// from its character's bone. `h` = `g_EtChrHandles[unit +0x18]`;
+    /// the element `e` is `i16 cmd +2` for nibble 0, `ftol(f32 unit + u8
+    /// cmd +2)` for 1; other nibbles return cmd at once. `host +0` =
+    /// `Ch_GetOrgMatrix(h)` (`op_m_copy`) or `Ch_GetRootGlobalMatrix(h,
+    /// host)`; `host +0x40` = `Ch_ElemGetBaseMatrix(h, e', host +0x40)`
+    /// with `e'` = `Ch_OptposGetElement(h, e & 0xff, vec)` and its row 3 =
+    /// `op_apply_m_w1(host +0x70, host +0x40, vec)` for bit 0x8000, else
+    /// `e` and `host +0x80` = the emulated `r0`; `host` = `host x
+    /// host+0x40`; `host +0x80` = scale 999.99994 rotated (`op_rt_m`) by
+    /// unit `+0x30` at `host +0xc0` = unit `+0x90` scaled (`op_xyz_scale`);
+    /// `host` x= it. Then the emulated VU0 normalises `host`'s three rows
+    /// (`0x00c8f528` the row, `0x00c8f538` the count, the move register
+    /// `0x00c8f980`, squares and sums `0x00c8f970..`, `Q`, results
+    /// `0x00c8f960..`, whose `w` `0x00c8f96c` each row takes), and unit
+    /// `+0xc0` = `host +0x280 x host`. Returns cmd+4. Callees through
+    /// `call`; `vec` is the original's 4-word local.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_matrix_bone<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        vec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{Reg, ftol, load};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let chr = u32::from(mem.read::<u8>(unit.wrapping_add(0x18)));
+        let h: u32 = mem.read(g(mem, 0x012a_8100).wrapping_add(4 * chr));
+        let e = match mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf000 {
+            0 => i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned(),
+            0x1000 => {
+                let at = u32::from(mem.read::<u8>(cmd.wrapping_add(2)));
+                ftol(mem, load(mem.read(at.wrapping_add(unit))))
+            }
+            _ => return cmd,
+        };
+        let org = go(mem, 0x0082_ac60, &[h]);
+        if org == 0 {
+            go(mem, 0x0083_3f80, &[h, host]);
+        } else {
+            go(mem, 0x007e_8010, &[host, org]);
+        }
+        let base = host.wrapping_add(0x40);
+        if e & 0x8000 == 0 {
+            go(mem, 0x0083_3b80, &[h, e, base]);
+            let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+            mem.write(host.wrapping_add(0x80), r0);
+        } else {
+            let el = go(mem, 0x0083_5660, &[h, e & 0xff, vec]);
+            go(mem, 0x0083_3b80, &[h, el, base]);
+            go(mem, 0x007e_79a0, &[host.wrapping_add(0x70), base, vec]);
+        }
+        go(mem, 0x007e_83b0, &[host, host, base]);
+        let s = mem.read::<u32>(g(mem, 0x00b5_88f8));
+        let s = ffx_bridge::x87::round_trip(f32::from_bits(s)).to_bits();
+        let (m80, mc0) = (host.wrapping_add(0x80), host.wrapping_add(0xc0));
+        go(mem, 0x007e_a700, &[m80, s]);
+        go(mem, 0x007e_a850, &[mc0, unit.wrapping_add(0x90), s]);
+        go(mem, 0x007e_9850, &[m80, m80, unit.wrapping_add(0x30), mc0]);
+        go(mem, 0x007e_83b0, &[host, host, m80]);
+        // the emulated VU0's normalisation of the three rows
+        let reg = |mem: &M, a: u32| g(mem, a);
+        let (row_at, count) = (reg(mem, 0x00c8_f528), reg(mem, 0x00c8_f538));
+        let (mv, sq, out) = (
+            reg(mem, 0x00c8_f980),
+            reg(mem, 0x00c8_f970),
+            reg(mem, 0x00c8_f960),
+        );
+        let vf00: [f32; 4] = mem.read(reg(mem, 0x00c0_a004));
+        mem.write(row_at, host);
+        mem.write(count, 3u32);
+        loop {
+            let row: u32 = mem.read(row_at);
+            let v: [f32; 4] = mem.read(row);
+            mem.write(mv, v);
+            let sx = Reg::load(v[0]).mul_m32(v[0]).store();
+            let sy = Reg::load(v[1]).mul_m32(v[1]).store();
+            let sz = Reg::load(v[2]).mul_m32(v[2]).store();
+            let s1 = Reg::load(sy).add_m32(sx).store();
+            let s2 = Reg::load(sz).add_m32(s1).store();
+            let root = Reg::load(f32::from_bits(s2.to_bits() & 0x7fff_ffff))
+                .sqrt()
+                .store();
+            let len = Reg::load(root).add_m32(vf00[0]).store();
+            mem.write(sq, [len, sy, sz]);
+            let q = Reg::load(vf00[3]).div_m32(len).store();
+            mem.write(reg(mem, 0x00c8_f788), q);
+            let qr = Reg::load(q);
+            let n = [
+                (Reg::load(v[0]) * qr).store(),
+                (Reg::load(v[1]) * qr).store(),
+                qr.mul_m32(v[2]).store(),
+            ];
+            mem.write(out, n);
+            let w: u32 = mem.read(out.wrapping_add(0xc));
+            mem.write(row, n);
+            mem.write(row.wrapping_add(0xc), w);
+            let left = mem.read::<u32>(count).wrapping_sub(1);
+            let next = mem.read::<u32>(row_at).wrapping_add(0x10);
+            mem.write(count, left);
+            mem.write(row_at, next);
+            if left == 0 {
+                break;
+            }
+        }
+        go(
+            mem,
+            0x007e_83b0,
+            &[unit.wrapping_add(0xc0), host.wrapping_add(0x280), host],
+        );
+        cmd.wrapping_add(4)
+    }
+
     /// `opu_se_00814150(host, cmd)` (ours; opus table `0x00c48f74`): the
     /// sound commands, by the nibble `host u16 +0x21a >> 12`. With `unit`
     /// = `host +0x220`, `oef` = `host +0x360 + 4 unit +0x1e` and `ch` = 8

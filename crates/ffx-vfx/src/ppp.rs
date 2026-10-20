@@ -238,6 +238,102 @@ pub mod bridge {
         mem.write(obj.wrapping_add(0x90), p);
     }
 
+    /// `pppEiWfacc(obj, key, ctrl)` (`0x0075bb30`): a pull toward a
+    /// target. With `A` and `B` the data the key's references (`+4`/`+8`
+    /// and `+0xc`/`+0x10`: object index into `g_pppCurrentPart`'s objects
+    /// and offset, plus 0xa0; index -1 the rand target `0x00d52398`) and
+    /// `d` = work area 0 `+0xa0..+0xa8` minus `B`'s three floats, through
+    /// the emulated VU0: `0x00c8f830` = (`d`, `stale`: the original's
+    /// uninitialised local, at `+0xc`), `0x00c8f810` = `d + vf00`, the
+    /// squares and their running sum (`0x00c8f830..`, `0x00c8f824`,
+    /// `0x00c8f828`), `0x00c8f830` = `len` = `sqrt(|sum|) + vf00.x`, `Q` =
+    /// `vf00.w / len`, `0x00c8f820` = `n` = `Q (d + vf00)`. When `len` is
+    /// below `A`'s radius `r` (`+0x10`) and `i` = `f32(A . n)`
+    /// (`FFXVu0InnerProduct`) above its cosine `c` (`+0x18`), work area 1
+    /// `+0xa0..+0xa8` += `n k` with `k` = `f32(f32(f32((i - c) / (1 - c) x
+    /// A +0x1c) x (r - len) / r) / key +0x14)`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ei_wfacc<M: Mem>(mem: &mut M, obj: u32, key: u32, ctrl: u32, stale: u32) {
+        use ffx_bridge::x87::{Reg, round_trip};
+        use ffx_system::stub::ptr32;
+        let f = |mem: &M, at: u32| f32::from_bits(mem.read(at));
+        let w0 = obj.wrapping_add(offset(mem, ctrl, 0));
+        let target = |mem: &M, at: u32| {
+            let id: u32 = mem.read(key.wrapping_add(at));
+            if id == u32::MAX {
+                return crate::rand::bridge::TARGET.ptr(mem).addr;
+            }
+            let part = crate::prog::bridge::CURRENT_PART.get(mem);
+            let objs: u32 = mem.read(part.wrapping_add(0x3c));
+            let base = ptr32(mem.read(objs.wrapping_add(id.wrapping_mul(16)).wrapping_add(4)));
+            let off: u32 = mem.read(key.wrapping_add(at + 4));
+            off.wrapping_add(0xa0).wrapping_add(base)
+        };
+        let (a, b) = (target(mem, 4), target(mem, 0xc));
+        let d: [f32; 3] = std::array::from_fn(|i| {
+            let i = 4 * u32::try_from(i).unwrap_or(0);
+            Reg::load(f(mem, w0.wrapping_add(0xa0 + i)))
+                .sub_m32(f(mem, b.wrapping_add(i)))
+                .store()
+        });
+        let vf = |mem: &M, at: u32| ffx_bridge::Global::<u32>::new(at).ptr(mem).addr;
+        let (r20, r30) = (vf(mem, 0x00c8_f820), vf(mem, 0x00c8_f830));
+        let r10 = vf(mem, 0x00c8_f810);
+        mem.write(r30, d);
+        mem.write(r30 + 0xc, stale);
+        let vf00: [f32; 4] = mem.read(vf(mem, 0x00c0_a004));
+        let e: [f32; 3] = std::array::from_fn(|i| Reg::load(d[i]).add_m32(vf00[i]).store());
+        mem.write(r10, e);
+        let xx = (Reg::load(d[0]) * Reg::load(d[0])).store();
+        let yy = Reg::load(d[1]).mul_m32(d[1]).store();
+        let zz = Reg::load(d[2]).mul_m32(d[2]).store();
+        let s1 = Reg::load(yy).add_m32(xx).store();
+        let s2 = Reg::load(zz).add_m32(s1).store();
+        mem.write(r30 + 4, yy);
+        mem.write(r30 + 8, zz);
+        mem.write(r20 + 4, s1);
+        mem.write(r20 + 8, s2);
+        let q = Reg::load(round_trip(f32::from_bits(s2.to_bits() & 0x7fff_ffff)))
+            .sqrt()
+            .store();
+        let len = Reg::load(q).add_m32(vf00[0]).store();
+        mem.write(r30, len);
+        let big_q = Reg::load(vf00[3]).div_m32(len).store();
+        mem.write(vf(mem, 0x00c8_f788), big_q);
+        let qr = Reg::load(big_q);
+        let n = [
+            (Reg::load(e[0]) * qr).store(),
+            (Reg::load(e[1]) * qr).store(),
+            qr.mul_m32(e[2]).store(),
+        ];
+        mem.write(r20, n);
+        let radius = f(mem, a.wrapping_add(0x10));
+        if len.partial_cmp(&radius) != Some(std::cmp::Ordering::Less) {
+            return;
+        }
+        let av: [f32; 3] = mem.read(a);
+        let i = round_trip(ffx_ps2::vu0::inner(av, n));
+        let c = f(mem, a.wrapping_add(0x18));
+        if c.partial_cmp(&i) != Some(std::cmp::Ordering::Less) {
+            return;
+        }
+        let k1 = (Reg::load(i).sub_m32(c) / (Reg::ONE - Reg::load(c)))
+            .mul_m32(f(mem, a.wrapping_add(0x1c)))
+            .store();
+        let k2 = (Reg::load(k1) * (Reg::load(radius).sub_m32(len).div_m32(radius))).store();
+        let k3 = Reg::load(k2)
+            .div_m32(f(mem, key.wrapping_add(0x14)))
+            .store();
+        let k = Reg::load(k3);
+        let w1 = obj.wrapping_add(offset(mem, ctrl, 1));
+        let x = (Reg::load(n[0]) * k + Reg::load(f(mem, w1 + 0xa0))).store();
+        mem.write(w1 + 0xa0, x);
+        let y = (Reg::load(n[1]) * k).add_m32(f(mem, w1 + 0xa4)).store();
+        mem.write(w1 + 0xa4, y);
+        let z = k.mul_m32(n[2]).add_m32(f(mem, w1 + 0xa8)).store();
+        mem.write(w1 + 0xa8, z);
+    }
+
     /// `pppNeiLightEikyoCon(obj, ctrl)` (`0x0075d6c0`).
     pub fn ppp_nei_light_eikyo_con(mem: &mut impl Mem, obj: u32, ctrl: u32) {
         zero(mem, obj, ctrl, &[0xa8, 0xa4, 0xa0, 0xb4, 0xb0, 0xac]);

@@ -2043,6 +2043,61 @@ pub mod bridge {
         1
     }
 
+    /// `0x007128d0` (`setPolyQuad0434`, ours; after `setPolyTris0434` in
+    /// the table at `0x00c659dc`) `(id, quad, setup)`: the render data of
+    /// instance `(0, id)` only (0 when missing). With `quad`, two
+    /// triangles more in slot `n` = `0x00cec194` (then counted up): the
+    /// six vertices `6n..6n+5` (`[+0x94] +0xc`, 12 bytes each) take the
+    /// three words at `quad +0x30`, `+0x70`, `+0x50`, `+0x70`, `+0x90`,
+    /// `+0x50`, their colours (`+0x14`, 16 bytes) the four at `+0x20`,
+    /// `+0x60`, `+0x40`, `+0x60`, `+0x80`, `+0x40`, and the `u16` indices
+    /// (`+0x1c`) are `6n..6n+5`. Without, the unit matrix
+    /// (`FFXVu0UnitMatrix`), visible, then set up (`graphicVFXSetup`) with
+    /// `setup`, else updated. Returns 1. Callees through `call`.
+    pub fn set_poly_quad_0434<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        quad: u32,
+        setup: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const POS: [u32; 6] = [0x30, 0x70, 0x50, 0x70, 0x90, 0x50];
+        const COL: [u32; 6] = [0x20, 0x60, 0x40, 0x60, 0x80, 0x40];
+        let get = sym(mem, 0x0064_53d0);
+        let d = call(mem, get, &[0, id]);
+        if d == 0 {
+            return 0;
+        }
+        if quad == 0 {
+            let unit = sym(mem, 0x006e_d9a0);
+            call(mem, unit, &[d]);
+            let visible = sym(mem, 0x0064_5710);
+            call(mem, visible, &[0, id, 1]);
+            let f = sym(mem, if setup != 0 { 0x0064_5780 } else { 0x0064_58a0 });
+            call(mem, f, &[0, id]);
+            return 1;
+        }
+        let bufs: u32 = mem.read(d.wrapping_add(0x94));
+        let buf = |mem: &M, at: u32| mem.read::<u32>(bufs.wrapping_add(at));
+        let count = sym(mem, 0x00ce_c194);
+        let n: u32 = mem.read(count);
+        for (k, (p, c)) in (0u32..).zip(POS.into_iter().zip(COL)) {
+            let v = n.wrapping_mul(6).wrapping_add(k);
+            let pos: [u32; 3] = mem.read(quad.wrapping_add(p));
+            mem.write(buf(mem, 0xc).wrapping_add(v.wrapping_mul(12)), pos);
+            let col: [u32; 4] = mem.read(quad.wrapping_add(c));
+            mem.write(buf(mem, 0x14).wrapping_add(v.wrapping_mul(16)), col);
+        }
+        for k in 0..6u32 {
+            let v = n.wrapping_mul(6).wrapping_add(k);
+            #[allow(clippy::cast_possible_truncation)] // the u16 index
+            mem.write(buf(mem, 0x1c).wrapping_add(v.wrapping_mul(2)), v as u16);
+        }
+        let n: u32 = mem.read(count);
+        mem.write(count, n.wrapping_add(1));
+        1
+    }
+
     /// `0x007fa890` (`update0706NoiseRenderData`, ours; from `0x007fa750`)
     /// `(lo, hi, x)`: with the instance's render data `d` and its segment-0
     /// buffer (`graphicDynGeoMemManagerGetBufferForSegment(d, 0, [d +0x94]

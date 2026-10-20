@@ -737,6 +737,102 @@ pub mod bridge {
     /// `g_pppViewMatrixCopy`.
     const VIEW_MATRIX_COPY: u32 = 0x0230_fe20;
 
+    /// `0x00728ac0` (`pppFpLoopMatrix`, ours; from `pppFpLoop`) `(part,
+    /// set, def)`: `g_pppWorldMatrix` for a looped field effect. First
+    /// `pppFpSetRotMatrix(part, def +0x4b)`. With none of `set`'s flag bits
+    /// 0..3: bit 0x100 copies `set +0xc` into it, else
+    /// `pppFpSetRotMatrix` again. Else its translation is cleared and the
+    /// local matrix `local` (the original's, 16 words) starts as the unit
+    /// matrix; with a parent `set +4`, bit 0 takes `Ch_ElemGetMatrix(chr,
+    /// set +8, local)` and scales its three rows' `xyz` by 1000 (through
+    /// the emulated registers: `0x00c8f830` ends with row 2 scaled,
+    /// `+0xc` its `w`, `0x00c8f820` = 1000.0), else bit 1
+    /// `yiGetMatrixGroup` and bit 3 `yiGetMatrixDObj`. Bit 0x20 normalises
+    /// the three rows. Bit 0x40: world = `set +0xc` x `local`
+    /// (`FFXVu0CopyMatrix`, `FFXVu0MulMatrix`) and `part +0x60..+0x68` its
+    /// row lengths (`pppVu0Length`); else world = `set +0xc` x world, then
+    /// `local` x it. Then `pppFpSetDrawMatrix(def +0x4a)`. Callees
+    /// through `call` (`fcall` for the lengths).
+    #[allow(clippy::many_single_char_names, clippy::verbose_bit_mask)] // test al, 0xf
+    pub fn ppp_fp_loop_matrix<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        set: u32,
+        def: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let rot = u32::from(mem.read::<u8>(def.wrapping_add(0x4b)));
+        go(mem, 0x0072_a2e0, &[part, rot]);
+        let world = g(mem, 0x0230_ffa0);
+        let flags = |mem: &M| mem.read::<u32>(set);
+        let m = set.wrapping_add(0xc);
+        if flags(mem) & 0xf == 0 {
+            if flags(mem) & 0x100 != 0 {
+                go(mem, 0x006e_d360, &[world, m]);
+            } else {
+                let rot = u32::from(mem.read::<u8>(def.wrapping_add(0x4b)));
+                go(mem, 0x0072_a2e0, &[part, rot]);
+            }
+        } else {
+            for k in [0x38, 0x34, 0x30] {
+                mem.write(world.wrapping_add(k), 0u32);
+            }
+            go(mem, 0x006e_d9a0, &[local]);
+            let parent: u32 = mem.read(set.wrapping_add(4));
+            if parent != 0 {
+                let fl = flags(mem);
+                if fl & 1 != 0 {
+                    let e: u32 = mem.read(set.wrapping_add(8));
+                    go(mem, 0x0083_3c30, &[parent, e, local]);
+                    let k = Reg::constant(1000.0);
+                    let regs = g(mem, 0x00c8_f830);
+                    for row in 0..3u32 {
+                        let at = local.wrapping_add(0x10 * row);
+                        let v: [f32; 3] = mem.read(at);
+                        let s = v.map(|x| (Reg::load(x) * k).store());
+                        mem.write(regs, s);
+                        mem.write(at, s);
+                    }
+                    let w: u32 = mem.read(local.wrapping_add(0x2c));
+                    mem.write(regs.wrapping_add(0xc), w);
+                    mem.write(g(mem, 0x00c8_f820), 1000.0f32.to_bits());
+                } else if fl & 2 != 0 {
+                    go(mem, 0x0090_8e30, &[parent, local]);
+                } else if fl & 8 != 0 {
+                    go(mem, 0x0090_8df0, &[parent, local]);
+                }
+            }
+            if mem.read::<u8>(set) & 0x20 != 0 {
+                for row in 0..3u32 {
+                    let r = local.wrapping_add(0x10 * row);
+                    go(mem, 0x006e_d6f0, &[r, r]);
+                }
+            }
+            if mem.read::<u8>(set) & 0x40 != 0 {
+                go(mem, 0x006e_d360, &[world, m]);
+                go(mem, 0x006e_d5c0, &[world, local, world]);
+                let len = g(mem, 0x0072_ab20);
+                for row in 0..3u32 {
+                    let v = fcall(mem, len, &[world.wrapping_add(0x10 * row)]);
+                    mem.write(part.wrapping_add(0x60 + 4 * row), ffx_bridge::x87::store(v));
+                }
+            } else {
+                go(mem, 0x006e_d5c0, &[world, m, world]);
+                go(mem, 0x006e_d5c0, &[world, local, world]);
+            }
+        }
+        let draw = u32::from(mem.read::<u8>(def.wrapping_add(0x4a)));
+        go(mem, 0x0072_a260, &[draw])
+    }
+
     /// `pppFpSetDrawMatrix(mode)` (`0x0072a260`): `g_pppViewMatrix` for a
     /// field effect's draws (the mode's low byte): 1 keeps
     /// `g_pppWorldMatrix`'s rotation with its position moved by
