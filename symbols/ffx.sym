@@ -9434,6 +9434,7 @@
 0x00873e80 function AtelSetMenuOtakaraFlag    # fh v3:bsim1.00 0x00873e20
 0x00873e90 function AtelSetOnMemoryMovie      # fh v3:bsim1.00 0x00873e30
 0x00873f70 function AtelSetOnMemoryMovieFileWait # fh switch:bsim1.00 0x710044eb50
+0x00874130 function AtelEvent_FreeMovie      # (): event save (TkGetSaveEventAddress) +0xe0 via jump table 0x008741b8: 1, 2, 3, 5 nothing; 4 movie_stop_prog; else movie_stop_prog, TkFree the buffers 0x01327118/0x01327114/0x01327110 (then 0), +0xe0 = 0; caller AtelEventRemove; ported in menu round 27; name ours
 0x008741d0 function TkCdSizeKBCached_008741d0 # ours: () -> 0x00c52760 while not negative; else it becomes (TkCdSize(0x2a, 0) + 0x3ff) / 1024 (signed) + 0x20; ported (ffx_battle::minor, battle round 29)
 0x00874200 function MsSetSaveCommandWithPrefix # name from Fahrenheit (fh v3:exact+call.cs 0x00874190 cdecl); (chr, id, on) -> MsSetSaveCommand(chr, 0x3000 | id & 0xfff, on) (a jump); ported (ffx_battle::minor, battle round 29)
 0x008742b0 function AtelClearShape            # fh v3:exact 0x00874240
@@ -9911,6 +9912,7 @@
 0x00888f90 function Pad_ReadAndUpdate        # (port, slot, pad): work = TkGetControlerWork(port, slot); scePadRead_ps2 (PC stub returning 0), Pad_ReadCurrDevice(port, slot, work, pad), Pad_UpdateAnalog(work, pad, u16 work +0x98), inputSetVibration(port, byte +0xff, byte +0xfe) when byte +0x9d is set; caller 0x00889050 ignores eax; ported in menu round 27; name ours
 0x00889000 function Pad_ResetAnalog           # (work) +0x84/+0x90 = 0x80808080, +0x88/+0x8c = 0; own name
 0x00889030 function Pad_ResetAnalogAt0C       # (work) +0xc/+0x18 = 0x80808080, +0x10/+0x14 = 0; own name
+0x00889360 function Pad_InitWork             # (port, slot): work = TkGetControlerWork(port, slot): u16 +0x9d = 0x100, byte +0x9f = 1, +0x94 = 0x5000c; Pad_ResetMode, op_slot_bytes_reset_008888e0, Pad_ResetSlots_00888910 (work), Pad_ClearAnalogWork(port, slot); bytes +0x9c, +0x83 = 0; TkSetPadButtonMap(port, slot, i, i) for i in 0..16; caller 0x00889340 (ports 0, 1); ported in menu round 27; name ours
 0x008893e0 function TkScanControler          # fh v3:exact 0x00889350; (): SaveDataIsBusy (thunk 0x00822560, result unused), then Pad_UpdateFrame(pad, 0, TkGetControlerWork2(pad, 0)) for pads 0, 1 (eax: the last); callers Sg_MainLoop, 0x00821e80, TOControlBtlWindow; ported in menu round 25
 0x00889410 function TkUpdateControlerActuator # (work): with the actuator mode (+0x9d, TkSetControlerActuatorMode) on, motor bytes +0xf8/+0xf9 = +0xfe/+0xff >> +0xf6/+0xf7; off, both 0
 0x00889460 function Pad_SetActuatorPair       # (work, a, b) bytes +0xf0, +0xf1, u16 +0xf8 = 0; own name
@@ -10805,6 +10807,7 @@
 0x008c4ff0 function MenuItem_CursorTable      # (): 0x00c5a19c/0x00c5a1cc (Japanese, with/without a target 0x0186a258 >= 0), else 0x00c5a188/0x00c5a1e4; name ours
 0x008c5030 function MenuItem_CursorCount      # (): entries (4 bytes) of MenuItem_CursorTable() before the first u16 0; name ours
 0x008c5050 function MenuNameEntry_LoadLayout  # (): the name entry's layout: TkMn2GetCommonPlate into 0x0186a334 (rect_fchplt, 0xda/0xdb), 0x0186a34c (rect_nmfwnd), 0x0186a364 (rect_nmnplt); TkMn2SeqGetNum num_fchplt/num_name1/num_name2 into 0x0186a304/31c/320, col_nmline into 0x0186a314; TkMn2SeqGetPos pos_nface .. pos_ace; TkMn2SeqGetRect rect_nmline into 0x0186a308; name ours
+0x008c5180 function MenuItem_KeyRowCount     # () -> rows of three: u16 list (to a 0) by language: jp without English 0x00c5a2f0[i32 0x0186a25c], 10/9/11 0x00c5a260 (no item target: PasswordGetTotalIndex() / 3 rounded up), English 0x00c5a2c8, else 0x00c5a288; ported in menu round 27; name ours
 0x008c5260 function MenuItem_SetCell          # (x, y) 0x0186a268 = 15y + x; own name
 0x008c5280 function Menu_ParseItemKeys        # (s): splits a key string into the 32 4-byte entries at 0x0186a280 (g_TkMenuItemKeyUse): kind 4 takes a second byte, values 6..0x2f an argument byte; the rest cleared; name ours
 0x008c5320 function MenuItem_LoadTargetKeys   # (target): target >= 0: Menu_ParseItemKeys(TOMenuGetNameMes(u16 [0x00c5a0d8 + 4*target], or 0x00c5a120 when TOGetFFXLang() != 0)) (tail jump); negative does nothing; callers 0x008c5370, the item menu; name ours
@@ -11028,6 +11031,7 @@
 0x008d9190 function TkMn2GetWShopPos             # str-match switch: only user of 23 string(s) held once by both builds, e.g. 'rect_wshscrol'; Switch 0x71004e91d0 TkMn2GetWShopPos (symbols from Fahrenheit's server export)
 0x008d9370 function MenuShop_WeaponPrice      # (entry): AbmapScaledLevelValue(sum of the abilities' TkMn2GetExcelData(id, [0x0186aba4]) first words, slots, empty slots) * shop ratio (0x01326b6c) / 100, at least 1; name ours
 0x008d9410 function MenuShop_WeaponSellPrice  # (entry): AbmapQuarterOrOne([0x0186ab1c], the MenuShop_WeaponPrice base value); 0 with flags +3 & 0xd; name ours
+0x008d94a0 function MenuWShop_InitList       # (): 0x0186ab14 = 1 when an owned weapon (MsGetSaveWeaponList(-1, -1, 0, &n)) has byte +2 zero (MsGetSaveWeapon); then for the u16 ids from +2 of TkMn2GetExcelData(0x0186ab1c, 0x0186aba8) up to 0 or 16: MenuWShop_GetRecord(id) byte +6 = 0xff, MsSetWeaponName; count -> 0x0186ab10; caller 0x008d6e40; ported in menu round 27; name ours
 0x008d9580 function MenuWShop_InitCursor      # (window) cursor +0x48 on the first usable item, scroll +0x32/+0x34 centred and clamped; own name
 0x008d9600 function TkMenuCtrlWShop           # fh v3:exact 0x008d95d0
 0x008d9ad0 function Set_g_TkMenuWShopList_008d9ad0 # auto-port shape (store argument to global, cdecl): u32[&0x0186ac20] = a1; return a1; callers: no direct caller; name ours
@@ -16583,6 +16587,7 @@
 0x013270e0 label    g_AtelBasicWorkCacheIndex    # u16: index of the worker AtelGetBasicWork cached
 0x013270e4 label    g_AtelBasicWorkCache         # worker AtelGetBasicWork returned last; 0 = none (AtelRemoveCtrlWork and AtelInitTotal clear it; AtelRequireCtrlWork counts a loop down to 0 in it)
 0x013270f0 label    g_AtelMenuOtakaraFlag        # i8 read by AtelCheckMenuOtakaraFlag (0x00872b50)
+0x01327110 label g_AtelMovieBuffers       # three buffer pointers (0x01327110, 0x01327114, 0x01327118) AtelEvent_FreeMovie frees (TkFree) and clears
 0x0132711c label    g_AtelMapIdPage              # bytes: +0 state (AtelSetMapIdPage 2, AtelClearPreBgPage 0), +1 (0xff when cleared), +2 page, +3 event mode (AtelGetEventMode; 0xff reads as 1)
 0x01327120 label    g_AtelExpandFTCAdrs          # read by AtelGetExpandFTCAdrs (0x00873ac0)
 0x01327124 label    g_AtelHalfTurnAngle       # f32 degrees: AtelSetHalfTurnAngle; Native_GetTurnKind's threshold
@@ -16828,6 +16833,8 @@
 0x0186a9fc label    g_TkMn2StatusBG           # i16 step, i16 value 0..0x1000 (TkMn2InitStatusBG, TMn2SetStatusBGDiff, TkMn2StepStatusBG, TkMn2GetStatusBG)
 0x0186aa04 label g_TkMenuSummonCommands   # u16[] aeon command ids (MenuSummon_BuildCommandList); counts u16 0x0186aa24 and 0x0186aa28; MenuSummon_DrawCommandRow; name ours
 0x0186aaf0 label    g_TkMenuWShopSubWindows   # 5 more weapon shop windows (MenuWShop_CloseSubWindow0..4)
+0x0186ab10 label g_TkMenuWShopCount       # u32: MenuWShop_InitList's stock count (up to 16)
+0x0186ab14 label g_TkMenuWShopUnnamed     # u32: 1 when an owned weapon has byte +2 zero (MenuWShop_InitList)
 0x0186abac label    g_TkMenuWShopTable        # MenuWShop_GetRecord
 0x0186ac20 label    g_TkMenuWShopList         # u32 id, slot count (+4), ?, table (+0xc) (MenuWShop_CountSlots)
 0x0186ac34 label    g_TkMenuTutoWindows       # 2 tutorial windows (MenuTuto_RestartWindow/2)

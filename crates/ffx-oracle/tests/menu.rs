@@ -12894,3 +12894,167 @@ fn menu_round27_key_use_cells_and_status_stats_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` replaced by a stub logging `args` and returning `base + (low byte
+/// of argument 0) * stride` (a record per id).
+fn record_stub(
+    t: &mut Twins,
+    f: u32,
+    log: u32,
+    args: &[u8],
+    base: u32,
+    stride: u8,
+    out: Option<u8>,
+) {
+    let unused = t.alloc(&[0; 4]);
+    // an out word: [argument out] = esp
+    let extra: Vec<u8> = out.map_or(Vec::new(), |k| {
+        vec![0x8b, 0x54, 0x24, 4 + 4 * k, 0x89, 0x22] // mov edx, [esp + 4 + 4k]; mov [edx], esp
+    });
+    let mut code = seq_code_of(log, f, args, unused, &extra);
+    code.truncate(code.len() - 6);
+    let scale = match stride {
+        2 => 0x45,
+        4 => 0x85,
+        _ => 0xc5,
+    };
+    #[rustfmt::skip]
+    code.extend([
+        &[0x8b, 0x44, 0x24, 0x04][..], // mov eax, [esp + 4]
+        &[0x0f, 0xb6, 0xc0],           // movzx eax, al
+        &[0x8d, 0x04, scale], &base.to_le_bytes(), // lea eax, [eax * stride + base]
+        &[0xc3],
+    ].concat());
+    jump_stub(t, f, &code);
+}
+
+#[test]
+fn menu_round27_pad_init_event_movie_wshop_list_and_key_rows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_9360) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // Pad_InitWork and AtelEvent_FreeMovie
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x0088_8ee0u32, 1u8),
+        (0x0088_88e0, 1),
+        (0x0088_8910, 1),
+        (0x0088_89f0, 2),
+        (0x0088_94f0, 4),
+        (0x0076_f090, 0),
+        (0x0088_d520, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let event = seq_stub(&mut t, 0x0088_c830, log, 0, &[]);
+    let save = t.alloc(&[0; 0x100]);
+    let buffers = t.sym(0x0132_7110);
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let (port, slot) = (t.rng.below(4), t.rng.below(4));
+        let work = tk::tk_get_controler_work(&t.b, i(port), i(slot));
+        t.scramble(work + 0x80, 0x24);
+        t.twin("Pad_InitWork", 0x0088_9360, &[port, slot], VOID, |o| {
+            tk::pad_init_work(o, port, slot, &mut callback);
+            0
+        });
+
+        t.put(event, save);
+        let kind = t.rng.pick_or_any(&[0, 1, 2, 3, 4, 5, 6, 0xffff_ffff]);
+        t.put(save + 0xe0, kind);
+        for k in 0..3 {
+            let p = if t.rng.below(2) == 0 { 0 } else { t.rng.next() };
+            t.put(buffers + 4 * k, p);
+        }
+        t.twin("AtelEvent_FreeMovie", 0x0087_4130, &[], U32, |o| {
+            w(tk::atel_event_free_movie(o, &mut callback))
+        });
+    }
+
+    // MenuWShop_InitList
+    let excel = seq_stub(&mut t, 0x008c_1af0, log, 2, &[]);
+    let list = t.alloc(&[0; 0x40]);
+    let owned_cell = t.alloc(&[0; 4]);
+    let count = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let extra: Vec<u8> = [
+        &[0x8b, 0x54, 0x24, 0x10][..], // mov edx, [esp + 16]
+        &[0xa1], &count.to_le_bytes(), // mov eax, [count]
+        &[0x89, 0x02],                 // mov [edx], eax
+    ].concat();
+    let code = seq_code_of(log, 0x007a_bd10, &[0, 1, 2], owned_cell, &extra);
+    jump_stub(&mut t, 0x007a_bd10, &code);
+    let owned = t.alloc(&[0; 0x40]);
+    let weapons = t.alloc(&[0; 0x400]);
+    record_stub(&mut t, 0x007a_bbd0, log, &[0], weapons, 4, Some(1));
+    let records = t.alloc(&[0; 0x800]);
+    record_stub(&mut t, 0x008d_9170, log, &[0], records, 8, None);
+    let named = seq_stub(&mut t, 0x0079_93b0, log, 1, &[]);
+    for _ in 0..600 {
+        t.put(log, start);
+        let v = t.rng.next();
+        t.put(named, v);
+        t.put(excel, list);
+        t.put(owned_cell, owned);
+        let n = t.rng.pick_or_any(&[0, 1, 5, 16, 0xffff_ffff]) & 0x8000_001f;
+        t.put(count, n);
+        for k in 0..20 {
+            let id = if t.rng.below(8) == 0 {
+                0
+            } else {
+                t.rng.below(0x100)
+            };
+            t.put(list + 2 * k, u16::try_from(id).unwrap_or(0));
+            let id = t.rng.below(0x100);
+            t.put(owned + 2 * k, u16::try_from(id).unwrap_or(0));
+        }
+        for k in 0..0x100 {
+            let b = u8::from(t.rng.below(16) != 0);
+            t.put(weapons + 4 * k + 2, b);
+        }
+        t.scramble(0x0186_ab10, 8);
+        t.scramble(0x0186_ab1c, 4);
+        t.scramble(0x0186_aba8, 4);
+        t.twin("MenuWShop_InitList", 0x008d_94a0, &[], U32, |o| {
+            w(tk::menu_wshop_init_list(
+                o,
+                [local, local + 4],
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuItem_KeyRowCount: PasswordGetTotalIndex counts up per call
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let english = seq_stub(&mut t, 0x0078_51d0, log, 0, &[]);
+    let total = t.alloc(&[0; 4]);
+    let mut code = seq_code_of(log, 0x0079_02d0, &[], total, &[]);
+    code.pop();
+    code.extend([&[0xff, 0x05][..], &total.to_le_bytes(), &[0xc3]].concat()); // inc dword [total]; ret
+    jump_stub(&mut t, 0x0079_02d0, &code);
+    for _ in 0..600 {
+        t.put(log, start);
+        let l = t.rng.pick_or_any(&[0, 0, 1, 2, 9, 10, 11, 12]);
+        t.put(lang, l);
+        let e = t.rng.pick_or_any(&[0, 1]);
+        t.put(english, e);
+        let v = t
+            .rng
+            .pick_or_any(&[0, 1, 2, 3, 0xffff_fffe, 0x7fff_ffff, 0x8000_0000]);
+        t.put(total, v);
+        let mode = t.rng.below(3);
+        t.put(t.sym(0x0186_a25c), mode);
+        let target = t.rng.pick_or_any(&[0, 1, 0xffff_ffff, 0x8000_0000]);
+        t.put(t.sym(0x0186_a258), target);
+        t.twin("MenuItem_KeyRowCount", 0x008c_5180, &[], U32, |o| {
+            s(tk::menu_item_key_row_count(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

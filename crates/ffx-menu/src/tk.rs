@@ -14108,6 +14108,165 @@ pub mod bridge {
         }
         call(mem, at(mem, 0x008c_0cc0), &[])
     }
+
+    /// `Pad_InitWork(port, slot)` (`0x00889360`, name ours): resets one
+    /// pad's work record (`TkGetControlerWork(port, slot)`): u16 `+0x9d` =
+    /// `0x100`, byte `+0x9f` = 1, `+0x94` = `0x5000c`, then
+    /// `Pad_ResetMode(work)`, `op_slot_bytes_reset_008888e0(work)`,
+    /// `Pad_ResetSlots_00888910(work)`, `Pad_ClearAnalogWork(port, slot)`,
+    /// bytes `+0x9c` and `+0x83` = 0, and the identity button map
+    /// (`TkSetPadButtonMap(port, slot, i, i)` for `i` in 0..16). Its only
+    /// caller (`0x00889340`, ports 0 and 1) ignores `eax`.
+    pub fn pad_init_work<M: Mem>(
+        mem: &mut M,
+        port: u32,
+        slot: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let work = tk_get_controler_work(mem, port.cast_signed(), slot.cast_signed());
+        mem.write(work.wrapping_add(0x9d), 0x100u16);
+        mem.write(work.wrapping_add(0x9f), 1u8);
+        mem.write(work.wrapping_add(0x94), 0x0005_000cu32);
+        for f in [0x0088_8ee0, 0x0088_88e0, 0x0088_8910] {
+            let f = mem.rebase(f);
+            call(mem, f, &[work]);
+        }
+        let clear = mem.rebase(0x0088_89f0);
+        call(mem, clear, &[port, slot]);
+        mem.write(work.wrapping_add(0x9c), 0u8);
+        mem.write(work.wrapping_add(0x83), 0u8);
+        let map = mem.rebase(0x0088_94f0);
+        for button in 0..16 {
+            call(mem, map, &[port, slot, button, button]);
+        }
+    }
+
+    /// `AtelEvent_FreeMovie()` (`0x00874130`, name ours): by the event
+    /// save's `+0xe0` (`TkGetSaveEventAddress`, jump table `0x008741b8` on
+    /// 1..=5): 1, 2, 3 and 5 keep everything; 4 only stops the movie
+    /// (`movie_stop_prog`); anything else stops it, frees the buffers at
+    /// `0x01327118`, `0x01327114` and `0x01327110` (`TkFree`, then 0) and
+    /// clears `+0xe0`. Returns the `eax` the original leaves (`kind - 1`,
+    /// the movie stop's, or the event save's address).
+    pub fn atel_event_free_movie<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let event = mem.rebase(0x0088_c830);
+        let save = call(mem, event, &[]);
+        let kind = mem.read::<u32>(save.wrapping_add(0xe0));
+        let stop = mem.rebase(0x0076_f090);
+        match kind {
+            1 | 2 | 3 | 5 => return kind - 1,
+            4 => return call(mem, stop, &[]),
+            _ => {}
+        }
+        call(mem, stop, &[]);
+        for buffer in [0x0132_7118, 0x0132_7114, 0x0132_7110] {
+            let at = mem.rebase(buffer);
+            let p = mem.read::<u32>(at);
+            if p != 0 {
+                let free = mem.rebase(0x0088_d520);
+                call(mem, free, &[p]);
+                mem.write(at, 0u32);
+            }
+        }
+        let save = call(mem, event, &[]);
+        mem.write(save.wrapping_add(0xe0), 0u32);
+        save
+    }
+
+    /// `MenuWShop_InitList()` (`0x008d94a0`, name ours): the weapon shop's
+    /// stock. `0x0186ab14` = 1 when one of the owned weapons
+    /// (`MsGetSaveWeaponList(-1, -1, 0, &count)`) has a zero byte `+2`
+    /// (`MsGetSaveWeapon(id, &name)`), else 0. Then for the u16 ids from
+    /// `+2` of `TkMn2GetExcelData(0x0186ab1c, 0x0186aba8)`, up to a zero or
+    /// 16 of them: the record `MenuWShop_GetRecord(id)` gets byte `+6` =
+    /// `0xff` and `MsSetWeaponName`; the count goes to `0x0186ab10`.
+    /// `count` and `name` are the original's frame words. Returns the
+    /// `eax` the original leaves.
+    pub fn menu_wshop_init_list<M: Mem>(
+        mem: &mut M,
+        [count, name]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let excel = [0x0186_ab1c, 0x0186_aba8].map(|g| mem.read::<u32>(at(mem, g)));
+        let list = call(mem, at(mem, 0x008c_1af0), &excel);
+        let max = u32::MAX;
+        let owned = call(mem, at(mem, 0x007a_bd10), &[max, max, 0, count]);
+        let unnamed = at(mem, 0x0186_ab14);
+        mem.write(unnamed, 0u32);
+        let mut i = 0;
+        while i < mem.read::<i32>(count) {
+            let id = u32::from(mem.read::<u16>(owned.wrapping_add(2 * i.cast_unsigned())));
+            let weapon = call(mem, at(mem, 0x007a_bbd0), &[id, name]);
+            if mem.read::<u8>(weapon.wrapping_add(2)) == 0 {
+                mem.write(unnamed, 1u32);
+                break;
+            }
+            i += 1;
+        }
+        let mut n = 0u32;
+        let mut eax = 0;
+        while n < 16 {
+            let id = u32::from(mem.read::<u16>(list.wrapping_add(2 + 2 * n)));
+            if id == 0 {
+                eax = 0;
+                break;
+            }
+            let record = call(mem, at(mem, 0x008d_9170), &[id]);
+            mem.write(record.wrapping_add(6), 0xffu8);
+            eax = call(mem, at(mem, 0x0079_93b0), &[record]);
+            n += 1;
+        }
+        mem.write(at(mem, 0x0186_ab10), n);
+        eax
+    }
+
+    /// `MenuItem_KeyRowCount()` (`0x008c5180`, name ours): rows of three in
+    /// the current key layout. Japanese without the English setting: the
+    /// u16 list `0x00c5a2f0[i32 0x0186a25c]`; languages 10, 9 and 11: with
+    /// no item target (`0x0186a258` < 0) `PasswordGetTotalIndex()` rounded
+    /// up, else the list `0x00c5a260`; English (1, or 0 with the English
+    /// setting) `0x00c5a2c8`; others `0x00c5a288`. A list counts its
+    /// entries up to a zero; the result is that `/ 3`. The language is
+    /// asked again before each test (`TOGetFFXLangJmp`).
+    pub fn menu_item_key_row_count<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let lang = at(mem, 0x008a_c2f0);
+        let list = if call(mem, lang, &[]) == 0 {
+            if call(mem, at(mem, 0x0078_51d0), &[]) == 0 {
+                let mode = mem.read::<u32>(at(mem, 0x0186_a25c));
+                mem.read::<u32>(at(mem, 0x00c5_a2f0).wrapping_add(mode.wrapping_mul(4)))
+            } else {
+                at(mem, 0x00c5_a2c8)
+            }
+        } else if call(mem, lang, &[]) == 10
+            || call(mem, lang, &[]) == 9
+            || call(mem, lang, &[]) == 11
+        {
+            if mem.read::<i32>(at(mem, 0x0186_a258)) < 0 {
+                let total = at(mem, 0x0079_02d0);
+                let up = call(mem, total, &[]).cast_signed() % 3 != 0;
+                let rows = call(mem, total, &[]).cast_signed() / 3;
+                return if up { rows + 1 } else { rows };
+            }
+            at(mem, 0x00c5_a260)
+        } else if call(mem, lang, &[]) == 1 {
+            at(mem, 0x00c5_a2c8)
+        } else {
+            at(mem, 0x00c5_a288)
+        };
+        let mut n = 0i32;
+        while mem.read::<u16>(list.wrapping_add(2 * n.cast_unsigned())) != 0 {
+            n += 1;
+        }
+        n / 3
+    }
 }
 
 #[cfg(test)]

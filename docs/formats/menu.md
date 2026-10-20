@@ -142,7 +142,17 @@ byte at an offset into the character's save record
 (`MsGetSavePlayerPtr`). The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten
 rows; `MenuWShop_DrawBuyRows` `0x008d8c30` and `MenuWShop_DrawSellRows`
 `0x008d8ee0`, nine) and `MenuSummon_DrawGrowRows` (`0x008ce520`, eleven)
-draw a fixed number of rows from a first index.
+draw a fixed number of rows from a first index. `MenuWShop_InitList` (`0x008d94a0`) fills the
+weapon shop's stock from `TkMn2GetExcelData(0x0186ab1c, 0x0186aba8)`: up
+to 16 u16 ids from `+2`, each record (`MenuWShop_GetRecord`) getting byte
+`+6` = `0xff` and its name; the count goes to `0x0186ab10`, and
+`0x0186ab14` says whether an owned weapon has byte `+2` zero.
+
+`MenuItem_KeyRowCount` (`0x008c5180`) counts the key layout's rows of
+three: u16 lists ended by 0 (`0x00c5a2f0[i32 0x0186a25c]` for Japanese,
+`0x00c5a2c8` English, `0x00c5a260` for languages 9, 10, 11, `0x00c5a288`
+otherwise); 9, 10 and 11 without an item target count
+`PasswordGetTotalIndex()` instead.
 `MenuSelList_DrawRows` (`0x008d1620`) draws a two-column selection list:
 nine row pairs from row `first * 2 - 2`, left column at `remapX2(210)`,
 right at `remapX2(970)`, from `y + remapY2(403)` down by `remapY2(77)`.
@@ -187,7 +197,9 @@ centred) from `inputGetCurrDeviceStickInfo`'s floats 2, 3, 0, 1,
 (`0x4000`/`0x1000`) past `0x10`/`0xf0`.
 `Pad_ReadAndUpdate` (`0x00888f90`) is one pad's frame: `Pad_ReadCurrDevice`,
 `Pad_UpdateAnalog` with the buttons at u16 `+0x98`, and, when byte
-`+0x9d` is set, `inputSetVibration(port, +0xff, +0xfe)` (bytes).
+`+0x9d` is set, `inputSetVibration(port, +0xff, +0xfe)` (bytes). `Pad_InitWork` (`0x00889360`)
+resets a record: u16 `+0x9d` = `0x100`, byte `+0x9f` = 1, `+0x94` =
+`0x5000c`, bytes `+0x9c`/`+0x83` = 0, and the identity button map.
 
 ## Help files
 

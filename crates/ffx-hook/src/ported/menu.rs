@@ -4344,6 +4344,25 @@ ported! {
         let width = frame.at();
         tk::tk_mn2_main_status_player_status(&mut mem(), y, chr, t, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `Pad_InitWork(port, slot)`: its only caller ignores `eax`.
+    Pad_InitWork @ 0x0088_9360 => extern "C" fn pad_init_work(port: u32, slot: u32) {
+        tk::pad_init_work(&mut mem(), port, slot, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `AtelEvent_FreeMovie()`: the `eax` the original leaves.
+    AtelEvent_FreeMovie @ 0x0087_4130 => extern "C" fn atel_event_free_movie() -> u32 {
+        tk::atel_event_free_movie(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_InitList()`: the `eax` the original leaves.
+    MenuWShop_InitList @ 0x008d_94a0 => extern "C" fn menu_wshop_init_list() -> u32 {
+        // the original's count and name frame words
+        let mut frame = super::StackFrame::<2>::new();
+        let count = frame.at();
+        tk::menu_wshop_init_list(&mut mem(), [count, count + 4], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_KeyRowCount()`: rows of three.
+    MenuItem_KeyRowCount @ 0x008c_5180 => extern "C" fn menu_item_key_row_count() -> i32 {
+        tk::menu_item_key_row_count(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry
