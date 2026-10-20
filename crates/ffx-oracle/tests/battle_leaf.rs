@@ -767,6 +767,15 @@ fn leaf_helpers_match_the_original_on_a_snapshot() {
     helpers(&mut a, &mut b, &mut Xorshift(0x2929_0c02), false);
 }
 
+/// Points the function at `f` (ffx.sym address) at the code at `at`
+/// (ffx.sym address) with a `jmp`.
+fn redirect(o: &mut Oracle, f: u32, at: u32) {
+    let entry = o.rebase(f);
+    let rel = o.rebase(at).wrapping_sub(entry + 5);
+    o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+        .unwrap();
+}
+
 /// `MsBtlPosPrintBin` (`0x007c9f10`, 0x57f bytes, unreachable): room for
 /// group D's recording stubs.
 const STUBS_D: u32 = 0x007c_9f10;
@@ -3139,6 +3148,38 @@ fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         // MsGetChrInfo for the ball's offset
         recording_stub(o, 0x0079_5170, STUBS_D + 0x200, rec + 0x1c0, 4, 0);
     }
+    // op_et_eff (vfx) for the weapon effect of MsEffectChrMotionIn (round
+    // 32): a recording stub, its result at `et_rec + 0x14`
+    let et_rec = scratch(a, b, 0x40);
+    // MsSetMotion for MsEffectMagicMotion (round 32): keeps its 7
+    // arguments at `motion_rec + 8` and the byte `MsGetChr(i) + 0x41b` at
+    // `motion_rec`, and returns the word after that (`mov eax,[esp+4k];
+    // mov [rec+8+4k],eax` for each, then `push [esp+4]; call MsGetChr;
+    // add esp,4; mov al,[eax+0x41b]; mov [rec],al; mov eax,[rec+4]; ret`)
+    let motion_rec = scratch(a, b, 0x24);
+    for o in [&mut *a, &mut *b] {
+        recording_stub(o, 0x007f_c2e0, STUBS_D + 0x280, et_rec, 4, 0);
+        let at = o.rebase(STUBS_D + 0x300);
+        let mut args = Vec::new();
+        for k in 0..7u8 {
+            args.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0xa3]);
+            args.extend((motion_rec + 8 + 4 * u32::from(k)).to_le_bytes());
+        }
+        let n = u32::try_from(args.len()).unwrap();
+        let get_chr = o.rebase(0x0079_4020).wrapping_sub(at + n + 9);
+        let code = [
+            &args[..],
+            &[0xff, 0x74, 0x24, 0x04, 0xe8][..],
+            &get_chr.to_le_bytes(),
+            &[0x83, 0xc4, 0x04, 0x8a, 0x80, 0x1b, 0x04, 0x00, 0x00, 0xa2],
+            &motion_rec.to_le_bytes(),
+            &[0xa1],
+            &(motion_rec + 4).to_le_bytes(),
+            &[0xc3],
+        ]
+        .concat();
+        o.write(at, &code).unwrap();
+    }
     let pos = scratch(a, b, 0x10);
     if w.synthetic {
         // a position file (as battle_pos.rs's): floats, small counts and
@@ -3259,6 +3300,66 @@ fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         });
         same("MsEffectChrMotionOut", a, b);
         poke(a, b, p + 0x4fd, &kind);
+        // MsEffectChrMotionIn (round 32): the same actor coming back in,
+        // its escape position in the frame local (as MsSetBtlPosReset's)
+        poke(a, b, p + 0x4fd, &[rng.byte()]);
+        poke(a, b, p + 0xdff, &[u8::from(rng.below(3) != 0)]);
+        for o in [0x50a, 0x3f0, 0x41c, 0x412, 0x5d9] {
+            poke(a, b, p + o, &[rng.byte()]);
+        }
+        poke(a, b, p + 0xdcd, &[u8::from(rng.below(3) == 0)]);
+        poke(
+            a,
+            b,
+            et_rec + 0x14,
+            &[1u32, 0, 0x8000_0000][rng.below(3) as usize].to_le_bytes(),
+        );
+        let seed: Vec<u8> = (0..4).flat_map(|_| float(rng).to_le_bytes()).collect();
+        a.write(frame, &seed).unwrap();
+        poke(a, b, local, &seed);
+        twin("MsEffectChrMotionIn", a, b, 0x007b_7d70, &[i], ALL, |m| {
+            ffx_battle::effect_signal::bridge::ms_effect_chr_motion_in(
+                m,
+                &mut |m: &mut Oracle, f, args: &[u32]| call_original(m, f, args),
+                i,
+                local,
+            )
+        });
+        let v = a.read(frame, 0x10).unwrap();
+        a.write(local, &v).unwrap();
+        let at = ffx_battle::vector::bridge::VF_B.ptr(a).addr + 4;
+        let r = a.read(at, 12).unwrap();
+        b.write(at, &r).unwrap();
+        same(&format!("MsEffectChrMotionIn {i:#x}"), a, b);
+        poke(a, b, p + 0x4fd, &kind);
+        // MsEffectMagicMotion (round 32): kind 2 most of the time
+        let motion = [0xff, 0x32, rng.byte()][rng.below(3) as usize];
+        poke(a, b, p + 0xe01, &[motion]);
+        for o in [0x405, 0x41b, 0x3f2, 0x3f3, 0xf5e, 0xdf2] {
+            poke(a, b, p + o, &[rng.byte()]);
+        }
+        poke(a, b, p + 0x3f3, &[u8::from(rng.below(2) == 0)]);
+        let kind8 = [2, 2, 2, 0, 1, 3, rng.below(0x100)][rng.below(7) as usize];
+        let w8 = (i & 0xff) | kind8 << 8 | rng.next() & 0xffff_0000;
+        // MsSetMotion keeps its actor's +0x41b at the call (what the
+        // original sets for it) and returns a word of `motion_rec`
+        poke(a, b, motion_rec, &[0; 4]);
+        poke(a, b, motion_rec + 4, &rng.next().to_le_bytes());
+        poke(a, b, motion_rec + 8, &[0; 0x1c]);
+        for o in [&mut *a, &mut *b] {
+            redirect(o, 0x007a_b360, STUBS_D + 0x300);
+        }
+        twin("MsEffectMagicMotion", a, b, 0x0078_7c30, &[w8], ALL, |m| {
+            ffx_battle::effect_signal::bridge::ms_effect_magic_motion(
+                m,
+                &mut |m: &mut Oracle, f, args: &[u32]| call_original(m, f, args),
+                w8,
+            )
+        });
+        for o in [&mut *a, &mut *b] {
+            redirect(o, 0x007a_b360, STUBS_D);
+        }
+        same(&format!("MsEffectMagicMotion {w8:#x}"), a, b);
         // a command cue running (or not), the turn word, the head
         set(
             a,

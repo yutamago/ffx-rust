@@ -30,6 +30,7 @@ pub mod damage;
 pub mod damage_end;
 pub mod death;
 pub mod effect;
+pub mod effect_signal;
 mod encounters;
 pub mod et_effect;
 pub mod exchange;

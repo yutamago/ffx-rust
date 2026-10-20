@@ -10,6 +10,7 @@ use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
 use ffx_battle::effect::bridge as effect;
+use ffx_battle::effect_signal::bridge as esig;
 use ffx_battle::et_effect::bridge as eteff;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exe::bridge as exe;
@@ -5144,5 +5145,26 @@ ported! {
     MsMenuLimitSet_007b0470 @ 0x007b_0470 => extern "C" fn ms_menu_limit_start(chr: u32, count: u32, x: u32, y: u32) -> u32 {
         let mut frame = super::StackFrame::<{ limit::LIMIT_SCRATCH_WORDS as usize }>::new();
         limit::ms_menu_limit_start(&mut mem(), &mut call_ptr, chr, count, x, y, frame.at())
+    }
+    /// `MsEffectSignal_007b74d0(i, signal, _)`.
+    MsEffectSignal_007b74d0 @ 0x007b_74d0 => extern "C" fn ms_effect_signal(i: u32, signal: u32) -> u32 {
+        esig::ms_effect_signal(&mut mem(), &mut call_ptr, i, signal)
+    }
+    /// `MsEffectSignalDamage_007b7680(i, actor, signal)`: the damage
+    /// result's three words in this call's frame.
+    MsEffectSignalDamage_007b7680 @ 0x007b_7680 => extern "C" fn ms_effect_signal_damage(i: u32, actor: u32, signal: u32) {
+        let mut local = super::StackFrame::<3>::new();
+        let at = local.at();
+        esig::ms_effect_signal_damage(&mut mem(), &mut call_ptr, i, actor, signal, at);
+    }
+    /// `MsEffectChrMotionIn(i)`: the escape position in this call's frame.
+    MsEffectChrMotionIn @ 0x007b_7d70 => extern "C" fn ms_effect_chr_motion_in(i: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        esig::ms_effect_chr_motion_in(&mut mem(), &mut call_ptr, i, at)
+    }
+    /// `MsEffectMagicMotion(w)`.
+    MsEffectMagicMotion @ 0x0078_7c30 => extern "C" fn ms_effect_magic_motion(w: u32) -> u32 {
+        esig::ms_effect_magic_motion(&mut mem(), &mut call_ptr, w)
     }
 }

@@ -6477,6 +6477,7 @@ part!(part_read_set_scene, "read_set_scene", 40);
 part!(part_read_monster, "read_monster", 40);
 part!(part_target_dist, "target_dist", 150);
 part!(part_et_effects, "et_effects", 200);
+part!(part_effect_signals, "effect_signals", 200);
 part!(part_teardown, "teardown", 100);
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, sel: &Sel) {
@@ -6711,6 +6712,10 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
     let mut r31 = Xorshift(0x31e5_0001 ^ u32::from(synthetic));
     // the op_et_eff wrappers (round 31)
     let mut et_rng = Xorshift(0x31e5_0101 ^ u32::from(synthetic));
+    // the effect signals and motions (round 32): their frame words
+    let mut sig_rng = Xorshift(0x32e5_0001 ^ u32::from(synthetic));
+    let sig_local = scratch(a, b, 0x10);
+    let sig_rec = scratch(a, b, 0x100);
     for o in [&mut *a, &mut *b] {
         logging_stub(
             o,
@@ -6878,6 +6883,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
         if sel.on("et_effects") {
             for _ in 0..4 {
                 et_effects(a, b, &mut et_rng, rec);
+            }
+        }
+        if sel.on("effect_signals") {
+            for _ in 0..4 {
+                effect_signals(a, b, &mut sig_rng, rec, [sig_local, sig_rec]);
             }
         }
     }
@@ -7689,6 +7699,198 @@ fn et_effects(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32) {
         }
     }
     same(&format!("et effect {i:#x}"), a, b);
+}
+
+/// The effect signals (round 32, `ffx_battle::effect_signal`; the effect
+/// motions are in `battle_leaf`'s resets) on the dressed actors: the callees the
+/// ports run through the game run as the originals, `op_et_eff` is the
+/// recording stub (its result at `rec + 0x34`). The damage buffers of the
+/// first target hold records of actor `i`'s command now and then, with
+/// the results and flags the signals test. `local` stands for the
+/// original's frame words: zeroed in both before a call (the original's
+/// stack too), and the Rust's copy dropped after it. The callees the
+/// ports call through the game are recording stubs during the calls
+/// ([`with_stubs`]): the dispatcher's four steps, and the sound and
+/// `MsSetDamage` of the damage step (whose originals want a real battle).
+fn effect_signals(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rec: u32,
+    [local, stub_rec]: [u32; 2],
+) {
+    use ffx_battle::actor::bridge as ac;
+    use ffx_battle::effect_signal::bridge as es;
+    let pick =
+        |rng: &mut Xorshift, v: &[u32]| v[rng.below(u32::try_from(v.len()).unwrap()) as usize];
+    // indices MsBtlChrNumCheck refuses now and then (as `et_effects`)
+    let i = if rng.below(6) == 0 {
+        [
+            0xff,
+            0x1ff,
+            ACTORS + rng.below(0x3e),
+            0x100 + rng.below(ACTORS),
+        ][rng.below(4) as usize]
+    } else {
+        rng.below(ACTORS)
+    };
+    let i8 = i & 0xff;
+    let p = ac::ms_get_chr(b, i8);
+    let result = pick(rng, &[1, 0x4000_0123, 0, 0x8000_0000, u32::MAX]);
+    poke(a, b, rec + 0x34, &result.to_le_bytes());
+    let state = u8::try_from({
+        let r = rng.below(0x100);
+        pick(rng, &[1, 1, 4, 4, 0, 2, r])
+    })
+    .unwrap();
+    poke(a, b, p + 0x446, &[state]);
+    // a part (+0x12) points at its owner (+0x14)
+    let part = u8::from(rng.below(5) == 0);
+    poke(a, b, p + 0x12, &[part]);
+    poke(a, b, p + 0x14, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
+    for o in [0x39c, 0xe1e, 0xe22] {
+        poke(a, b, p + o, &rng.next().to_le_bytes());
+    }
+    for o in [0x429, 0x4c] {
+        poke(a, b, p + o, &[u8::try_from(rng.below(0x100)).unwrap()]);
+    }
+    for (o, n) in [(0xe19, 3), (0xe16, 3)] {
+        poke(a, b, p + o, &[u8::from(rng.below(n) != 0)]);
+    }
+    let own = u16::try_from({
+        let r = rng.below(0x40);
+        pick(rng, &[0xffff, 0x8000, 0, 2, 0xff, 0x7fff, r])
+    })
+    .unwrap();
+    poke(a, b, p + 0xe1a, &own.to_le_bytes());
+    let effect = u8::try_from({
+        let r = rng.below(0x100);
+        pick(rng, &[0, 0x1e, 0x36, r])
+    })
+    .unwrap();
+    poke(a, b, p + 0xe0e, &[effect]);
+    // the first target's damage buffers for i's command, now and then
+    let first = ffx_battle::body::bridge::battle_first_selected_actor(b, i, 0xffff_fff0, 0, 1);
+    if ac::ms_btl_chr_num_check(i8) != 0 && first >= 0 && rng.below(4) != 0 {
+        let cmd = ac::ms_get_chr_command(b, i8);
+        let id = b.read(cmd + 2, 1).unwrap()[0];
+        let t = ac::ms_get_chr(b, first.cast_unsigned());
+        let next = u8::try_from(pick(rng, &[0, 0, 1])).unwrap();
+        let count = u8::try_from(pick(rng, &[1, 2])).unwrap();
+        for o in [0x774u32, 0xa4c] {
+            poke(a, b, t + o, &[next, count, u8::try_from(i8).unwrap(), id]);
+            for k in 0..2 {
+                let e = t + o + 0x2c * k;
+                let r = u8::try_from(pick(
+                    rng,
+                    &[0, 1, 0x11, 4, 6, 2, 3, 5, 0x10, 0x12, 0xff, 0x80],
+                ))
+                .unwrap();
+                poke(a, b, e + 0x18, &[r]);
+                let flags = u16::try_from({
+                    let r = rng.below(0x1_0000);
+                    pick(rng, &[0, 1, 4, 8, 0x100, 0x101, 0x107, 0x108, r])
+                })
+                .unwrap();
+                poke(a, b, e + 0x32, &flags.to_le_bytes());
+                poke(a, b, e + 0x1a, &[rng.byte()]);
+            }
+        }
+    }
+    poke(a, b, local, &[0; 0x10]);
+    zero_stack(a);
+    let signal = if rng.below(8) == 0 {
+        pick(rng, &[10, 31, 32, 33, u32::MAX, 0x8000_0001])
+    } else {
+        rng.below(10)
+    };
+    let args = [i, signal, rng.next()];
+    let steps = [
+        (es::MS_EFFECT_SIGNAL_HIT, 2),
+        (es::MS_EFFECT_SIGNAL_AVOID, 2),
+        (es::MS_EFFECT_SIGNAL_DAMAGE, 3),
+        (es::MS_EFFECT_SIGNAL_MOTION, 3),
+    ];
+    // the actors not set up, now and then (put back after)
+    let top = ffx_battle::actor::bridge::CHR_TOP;
+    let kept = top.get(b);
+    if rng.below(10) == 0 {
+        set(a, b, top, 0);
+    }
+    with_stubs(a, b, &steps, stub_rec, |a, b| {
+        twin(
+            "MsEffectSignal_007b74d0",
+            a,
+            b,
+            0x007b_74d0,
+            &args,
+            ALL,
+            |m| dm(m, |m| es::ms_effect_signal(m, &mut game_call, i, signal)),
+        );
+    });
+    same(&format!("MsEffectSignal {args:x?}"), a, b);
+    set(a, b, top, kept);
+    // and the damage step alone, on an actor in range
+    let signal = pick(rng, &[0, 0, 9, 9, 1, 5]);
+    let args = [i, p, signal];
+    poke(a, b, local, &[0; 0x10]);
+    zero_stack(a);
+    let callees = [(es::MS_CHR_SE_PLAY, 2), (es::MS_SET_DAMAGE, 3)];
+    with_stubs(a, b, &callees, stub_rec, |a, b| {
+        twin(
+            "MsEffectSignalDamage_007b7680",
+            a,
+            b,
+            0x007b_7680,
+            &args,
+            0,
+            |m| {
+                dm(m, |m| {
+                    es::ms_effect_signal_damage(m, &mut game_call, i, p, signal, local);
+                });
+                0
+            },
+        );
+    });
+    // (the frame words: the original's stack, the Rust's `local`)
+    let v = a.read(local, 0x10).unwrap();
+    b.write(local, &v).unwrap();
+    same(&format!("effect signal {i:#x}"), a, b);
+}
+
+/// `FUN_007ca580` (dead, 0x10a9 bytes): room for [`with_stubs`]' code.
+const SIGNAL_STUBS: u32 = 0x007c_a580;
+
+/// Runs `f` with the functions `stubs` (ffx.sym address, argument count)
+/// replaced by [`recording_stub`]s in both oracles (code at
+/// [`SIGNAL_STUBS`], records at `rec`, 0x20 bytes each, results 0), and
+/// puts their first bytes back after.
+fn with_stubs(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    stubs: &[(u32, u8)],
+    rec: u32,
+    f: impl FnOnce(&mut Oracle, &mut Oracle),
+) {
+    let saved: Vec<Vec<u8>> = stubs
+        .iter()
+        .map(|&(s, _)| {
+            let at = a.rebase(s);
+            a.read(at, 5).unwrap()
+        })
+        .collect();
+    for o in [&mut *a, &mut *b] {
+        for (k, &(s, n)) in (0u32..).zip(stubs) {
+            recording_stub(o, s, SIGNAL_STUBS + 0x40 * k, rec + 0x20 * k, n, 0);
+        }
+    }
+    f(a, b);
+    for o in [&mut *a, &mut *b] {
+        for (&(s, _), v) in stubs.iter().zip(&saved) {
+            let at = o.rebase(s);
+            o.write(at, v).unwrap();
+        }
+    }
 }
 
 #[test]
