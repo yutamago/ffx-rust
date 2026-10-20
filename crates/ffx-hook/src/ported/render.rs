@@ -1469,6 +1469,16 @@ ported! {
     TextureAnimationManager_updateSamplers_006b44a0 @ 0x006b_44a0 => extern "fastcall" fn tex_anim_update_samplers(this: u32) {
         mg::update_samplers(&mut mem(), this);
     }
+
+    // ---- round 24 ----
+    /// `PhyreScene_getViewProjectionMatrix(this, out)`.
+    PhyreScene_getViewProjectionMatrix @ 0x0065_e660 => extern "thiscall" fn scene_view_projection(this: u32, out: u32) -> u32 {
+        ffx_graphic::util::bridge24::scene_view_projection(&mut mem(), this, out)
+    }
+    /// `SpdCtrl_Tick()`.
+    SpdCtrl_Tick @ 0x006f_7470 => extern "C" fn spd_ctrl_tick() {
+        ffx_graphic::util::bridge24::spd_ctrl_tick(&mut mem());
+    }
 }
 
 /// A singleton's pointer.

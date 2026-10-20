@@ -2203,7 +2203,7 @@
 0x0065e630 function PhyreScene_GetField0ddc # thiscall(this): u32 at +0xddc (beside getVideoTexture +0xde0); name ours
 0x0065e640 function PhyreScene_getVideoTexture # thiscall(this): u32 +0xde0; name Fahrenheit's (Switch BSim)
 0x0065e650 function PhyreScene_GetField0dd8 # thiscall(this): u32 at +0xdd8; name ours
-0x0065e660 function PhyreScene_getViewProjectionMatrix # fh v3:exact 0x0065e7e0 PhyreScene::getViewProjectionMatrix
+0x0065e660 function PhyreScene_getViewProjectionMatrix # fh v3:exact 0x0065e7e0 PhyreScene::getViewProjectionMatrix; free camera made on first use (operator_new 0x340 + FreeCamera_FreeCamera); while it is off (+0x338, +0x33c, +0 clear) camera(+0xdc)+0xb4 = scene+0xfa04 and Phyre_PCamera_updateViewMatrices(camera+4); out = camera +0x74 times translate(+0xfa34, +0xfa38), then unless +0xf9c7 or g_PhyreScene3D times the 4/3 adjustment of PhyreScene_GetScreenAdjustedView_00651650 (PMatrix4_RowTimes per row); returns out; ported (render round 24)
 0x0065e9e0 function PhyreScene_getYIQParam    # fh v3:exact 0x0065eb60 PhyreScene::getYIQParam
 0x0065eaf0 function PhyreSceneCursor_Seek1    # structure: fastcall(cursor): unless PhyreCursor_IsValid (0x00660240), steps +0x18 to *node (0 at the end node +0x14) until valid; then PhyreSceneCursor_SetNode, or the first five words cleared; name ours
 0x0065ebd0 function PhyreSceneCursor_Seek2    # structure: as PhyreSceneCursor_Seek1 with the check 0x006602a0; name ours
@@ -3153,10 +3153,11 @@
 0x006f6f80 function UnloadCameraData          # fh v3:bsim1.00 0x006f70c0
 0x006f6fa0 function SpdCtrl_IsMapExcluded     # cdecl(map) -> 0/1: map in the 3 words at 0x00b4bf74 (0x3e, 0x163, 0x181), or map 0x118 outside battle (MsBattleGetStatus != 1) with getScenerioFlag 0x71c..0x721; SpdCtrl_ScaleElapsedTime keeps the speed-up booster off on it (g_CurrentMapNo); name ours
 0x006f6ff0 function SpdCtrl_IsMagicExcluded   # cdecl() -> al: the shown magic (MagicFile_GetHandle != -1, MagicFile_GetMagicId in 0x15b, 0x186-0x18d, 0x19b-0x19e, 0x1a9, 0x1b7-0x1bd, 0x1bf-0x1c2, 0x1eb-0x1ef, 0x1f4, 0x2b9, 0x2ba: two jump tables) unless g_BtlWindowOpen and TOGetBtlWindowControlEnable() == 1; SpdCtrl_ScaleElapsedTime keeps the booster off in battle then; name ours
+0x006f7230 function SpdCtrl_UpdateSubtitleMute_006f7230 # name ours; no Ghidra function, reached only by SpdCtrl_Tick's tail jmp at 0x006f756c: MsMuteBattleSubTitle(1) once while MsBattleCheck() and g_SpdCtrl_b4 != 0, MsMuteBattleSubTitle(0) once otherwise, g_SpdCtrl_SubtitleMuted holding the state
 0x006f72f0 function SpdCtrl_Init              # fh v3:exact 0x006f73e0
 0x006f7330 function SpdCtrl_IsSpeedingUp      # fh v3:bsim1.00 0x006f7420
 0x006f7340 function SpdCtrl_ScaleElapsedTime  # fh v3:cg5 0x6f7430; cdecl(dt) -> ST0: dt * g_SpdCtrlScales[g_SpdCtrl_b4] while enabled and allowed (battle or getUCStatus, no wait/excluded map/excluded magic/save load/sphere grid/movie fade, g_BtlEndCtrlDone set), else dt; g_SpdCtrl_b8 = whether, its changes call IggyMenu_callIggyAS3External "OnEnable"/"OnDisable" on g_SpdCtrl_c0 and Sg_SetMuteSound
-0x006f7470 function SpdCtrl_Tick              # fh v3:exact 0x006f7550
+0x006f7470 function SpdCtrl_Tick              # fh v3:exact 0x006f7550; speed-up button (inputIsPressButton 0x10000) with g_IggyMenuManager, TipSystem_Get and IconPanel_get steps g_SpdCtrl_b4 (signed % 3), hides both icons, shows the level's (menu into g_SpdCtrl_c0), pushes tip 0x2fd/0x2fe/0x2ff, OnDisable when not speeding; then tail-jumps to SpdCtrl_UpdateSubtitleMute_006f7230; ported (render round 24)
 0x006f7580 function CheckAutobtlKey           # fh v3:cg3 0x6f7660
 0x006f75c0 function CheckEncounterKey         # fh v3:cg3 0x6f76a0
 0x006f76c0 function CheckInvincibleKey        # fh v3:cg3 0x6f77a0
@@ -16138,6 +16139,7 @@
 0x00ce82b4 label    g_SpdCtrl_b4              # cleared by SpdCtrl_Init; the speed level, SpdCtrl_ScaleElapsedTime's index into g_SpdCtrlScales (0: off); name ours
 0x00ce82b8 label    g_SpdCtrl_b8              # cleared by SpdCtrl_Init; whether SpdCtrl_ScaleElapsedTime scaled last time; name ours
 0x00ce82bc label    g_SpdCtrl_Ready           # u8: SpdCtrl_Init sets it 1 after Sg_SetMuteSound(0); name ours
+0x00ce82bd label    g_SpdCtrl_SubtitleMuted # u8: SpdCtrl_UpdateSubtitleMute_006f7230 sets it 1 before MsMuteBattleSubTitle(1), 0 before MsMuteBattleSubTitle(0); name ours
 0x00ce82c0 label    g_SpdCtrl_c0              # cleared by SpdCtrl_Init, before and after Sg_SetMuteSound(0); name ours
 0x00ce82c8 label    g_AutobtlKey              # CheckAutobtlKey: 1 while button 0x20000 is pressed (inputIsPressButton), else 0
 0x00ce82cc label    g_InvincibleKey           # CheckInvincibleKey: 1 while button 0x200000 is pressed (inputIsPressButton), else 0
@@ -17146,6 +17148,7 @@
 0x01940abc label g_BtlEffectSpecialScene   # u32: effect 0x84 by model 0x108f in scene 0x1e70000 (MsEffectRead)
 0x01942998 label    g_DepthBias_Count         # entries in use; DepthBiasHooks_clearDepthBias zeroes it
 0x0194299c label    g_DepthBias               # 256 entries of 12 bytes (u32, f32 scale, f32): DepthBiasHooks_clearDepthBias resets them to (0, 1.0, 0.0)
+0x01984c6c label    g_IggyMenuManager # IggyMenuManager_createInstance (0x00a26240) stores the new 0x34-byte manager here, 0x00a26270 deletes it and clears it; SpdCtrl_Tick needs it set; name ours
 0x01a85ba4 label    g_Use200ThunderFile          # SetGlobal_01a85ba4 (BasicDebugTweakUtil_handleInput) sets it; PcFileName_00a42c00 then puts 200thunder_ before kami0400.ebp; name ours
 0x01a85ba8 label    g_FullArenaLocalization   # toggled (non-zero -> 0, 0 -> 1) by setFullArenaLocalizationEnable; read by 0x00a42c00, 0x00a42fa0
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both

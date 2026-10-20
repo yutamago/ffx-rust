@@ -2489,3 +2489,217 @@ pub mod bridge {
         change_2d_scene_num(h, scene, n);
     }
 }
+
+/// Round 24: the view-projection matrix and the speed control's tick.
+#[allow(clippy::many_single_char_names)] // matrix rows
+pub mod bridge24 {
+    use super::bridge::{
+        IGGY_CALL_AS3_EXTERNAL, INPUT_IS_PRESS_BUTTON, MATRIX4_COPY_453340, ROW_TIMES,
+        SCREEN_ADJUST_ASPECT, SCREEN_ADJUST_THIRD, SPD_CTRL_B4, SPD_CTRL_B8, SPD_CTRL_C0,
+        SPD_CTRL_ENABLED, SPD_CTRL_ON_DISABLE,
+    };
+    use crate::host::{Conv, Host};
+    use crate::state::bridge::CAMERA_UPDATE_VIEW as CAMERA_UPDATE_VIEW_MATRICES;
+    use ffx_bridge::{Global, x87};
+
+    /// A float as `fld`/`fstp` moves it.
+    fn rt(bits: u32) -> u32 {
+        x87::round_trip(f32::from_bits(bits)).to_bits()
+    }
+
+    /// `g_FreeCamera` (`0x00ccc830`), `operator_new` and
+    /// `FreeCamera_FreeCamera(this)` (`thiscall`, returns `this`).
+    pub const FREE_CAMERA: Global<u32> = Global::new(0x00cc_c830);
+    pub const OPERATOR_NEW: u32 = 0x0063_0310;
+    pub const FREE_CAMERA_CTOR: u32 = 0x0067_fe70;
+    /// The size `getViewProjectionMatrix` allocates for the free camera.
+    pub const FREE_CAMERA_SIZE: u32 = 0x340;
+
+    /// `out` = `out` times `m`, row by row as the original does it: each
+    /// row of `out` (bottom first) through `PMatrix4_RowTimes(m, tmp, row)`
+    /// into its own temporary, then the four results copied over `out`
+    /// (`fld`/`fstp`).
+    fn rows_times(h: &mut impl Host, out: u32, m: u32, tmp: u32) {
+        for r in (0..4u32).rev() {
+            h.call_sym(
+                ROW_TIMES,
+                Conv::Thiscall(m),
+                &[tmp + 0x10 * r, out + 0x10 * r],
+            );
+        }
+        for i in 0..16 {
+            let v = rt(h.read(tmp + 4 * i));
+            h.write(m + 4 * i, v);
+        }
+    }
+
+    /// Writes `[1 0 0 0; 0 k 0 0; 0 0 1 0; x y 0 1]` at `m`.
+    fn affine(h: &mut impl Host, m: u32, k: u32, x: u32, y: u32) {
+        let one = 1f32.to_bits();
+        let p = [one, 0, 0, 0, 0, k, 0, 0, 0, 0, one, 0, x, y, 0, one];
+        for (i, v) in (0u32..).zip(p) {
+            h.write(m + 4 * i, v);
+        }
+    }
+
+    /// `PhyreScene_getViewProjectionMatrix(scene, out)` (`0x0065e660`,
+    /// `thiscall`, `ret 4`): the camera's view-projection matrix, moved by
+    /// the scene's screen offset and, in a 2D scene, adjusted to the
+    /// screen. Returns `out`.
+    ///
+    /// The free camera is made on first use (`operator_new(0x340)`,
+    /// `FreeCamera_FreeCamera`; 0 when the allocation fails). When it is
+    /// off (bytes `+0x338` and `+0x33c` and word `+0` clear) the scene's
+    /// camera (`*(scene +0xdc)`) takes `scene +0xfa04` as its transform
+    /// (`+0xb4`) and updates its view matrices (`Phyre_PCamera_updateViewMatrices`
+    /// on camera `+4`). `out` = the camera's 4x4 at `+0x74`
+    /// (`PMatrix4_Copy_00453340`) times the translation by
+    /// `(scene +0xfa34, scene +0xfa38)` (`[1 0 0 0; 0 1 0 0; 0 0 1 0; x y
+    /// 0 1]`). Unless the scene draws as 3D (byte `+0xf9c7`, or
+    /// `g_PhyreScene3D`), it then takes the screen adjustment of
+    /// `PhyreScene_GetScreenAdjustedView_00651650` (`[1 0 0 0; 0 4/3 0 0;
+    /// 0 0 1 0; 0 d 0 1]`, `d = 0.33333337 - 2 * (scene +0xf9c0 + scene
+    /// +0xf9bc)` stored as a float), the result copied into `out` by
+    /// `PMatrix4_Copy_00453340`. The products go row by row through
+    /// `PMatrix4_RowTimes` ([`rows_times`]); the matrix and temporaries
+    /// are the original's locals ([`Host::scratch`]).
+    pub fn scene_view_projection(h: &mut impl Host, scene: u32, out: u32) -> u32 {
+        let mut cam = FREE_CAMERA.get(h);
+        if cam == 0 {
+            let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[FREE_CAMERA_SIZE]);
+            cam = if p == 0 {
+                0
+            } else {
+                h.call_sym(FREE_CAMERA_CTOR, Conv::Thiscall(p), &[])
+            };
+            FREE_CAMERA.set(h, cam);
+        }
+        if h.read::<u8>(cam.wrapping_add(0x338)) == 0
+            && h.read::<u8>(cam.wrapping_add(0x33c)) == 0
+            && h.read::<u32>(cam) == 0
+        {
+            let camera: u32 = h.read(scene + 0xdc);
+            h.write(camera.wrapping_add(0xb4), scene + 0xfa04);
+            let camera: u32 = h.read(scene + 0xdc);
+            h.call_sym(
+                CAMERA_UPDATE_VIEW_MATRICES,
+                Conv::Thiscall(camera.wrapping_add(4)),
+                &[],
+            );
+        }
+        let camera: u32 = h.read(scene + 0xdc);
+        h.call_sym(
+            MATRIX4_COPY_453340,
+            Conv::Thiscall(out),
+            &[camera.wrapping_add(0x74)],
+        );
+        let m = h.scratch();
+        let tmp = m + 0x40;
+        let x = rt(h.read(scene + 0xfa34));
+        let y = rt(h.read(scene + 0xfa38));
+        affine(h, m, 1f32.to_bits(), x, y);
+        rows_times(h, out, m, tmp);
+        for i in 0..16 {
+            let v = rt(h.read(m + 4 * i));
+            h.write(out + 4 * i, v);
+        }
+        if h.read::<u8>(scene + 0xf9c7) != 0 || crate::scene::bridge::IS_3D.get(h) != 0 {
+            return out;
+        }
+        let k = rt(h.read(h.rebase(SCREEN_ADJUST_ASPECT)));
+        let third = f64::from_bits(h.read(h.rebase(SCREEN_ADJUST_THIRD)));
+        let a = x87::load(h.read(scene + 0xf9c0));
+        let s = x87::add(a, x87::load(h.read(scene + 0xf9bc)));
+        let d = x87::store(x87::sub(third, x87::add(s, s)));
+        affine(h, m, k, 0, d);
+        rows_times(h, out, m, tmp);
+        h.call_sym(MATRIX4_COPY_453340, Conv::Thiscall(out), &[m]);
+        out
+    }
+
+    /// `g_IggyMenuManager` (`0x01984c6c`, `IggyMenuManager_createInstance`).
+    pub const IGGY_MENU_MANAGER: Global<u32> = Global::new(0x0198_4c6c);
+    /// Whether the battle subtitles are muted for the speed-up (a byte
+    /// beside `SPD_CTRL_ENABLED`).
+    pub const SPD_CTRL_SUBTITLE_MUTED: Global<u8> = Global::new(0x00ce_82bd);
+    /// The speed-up button `SpdCtrl_Tick` checks.
+    pub const SPD_CTRL_BUTTON: u32 = 0x1_0000;
+    /// `TipSystem_Get()`, `TipSystem_PushTip(tips, id)` (`thiscall`).
+    pub const TIP_SYSTEM_GET: u32 = 0x006e_8750;
+    pub const TIP_SYSTEM_PUSH_TIP: u32 = 0x006e_8770;
+    /// `IconPanel_get()`, `IconPanel_hideIcon(panel, i)` and
+    /// `IconPanel_showIcon(panel, i)` (`thiscall`, `ret 4`).
+    pub const ICON_PANEL_GET: u32 = 0x006f_78b0;
+    pub const ICON_PANEL_HIDE_ICON: u32 = 0x006f_7900;
+    pub const ICON_PANEL_SHOW_ICON: u32 = 0x006f_7970;
+    /// `MsBattleCheck()` and `MsMuteBattleSubTitle(on)`.
+    pub const MS_BATTLE_CHECK: u32 = 0x0078_0c90;
+    pub const MS_MUTE_BATTLE_SUBTITLE: u32 = 0x0078_5990;
+    /// The tips shown for speed levels 1, 2 and 0.
+    pub const SPD_CTRL_TIPS: [u32; 3] = [0x2ff, 0x2fd, 0x2fe];
+
+    /// `SpdCtrl_Tick()` (`0x006f7470`): once the speed control is ready,
+    /// the speed-up button (`inputIsPressButton(0x10000)`) with the Iggy
+    /// menus, the tips and the icon panel up steps the level (`SPD_CTRL_B4`,
+    /// 0, 1, 2 round, a signed `% 3`): both icons hidden, the level's icon
+    /// shown (its menu into `SPD_CTRL_C0`, else 0) and its tip pushed
+    /// (`0x2fd`, `0x2fe`, or `0x2ff` for off); a shown icon while the
+    /// speed-up is not running (`SPD_CTRL_B8`) gets `"OnDisable"`. Then
+    /// (also without the button) [`spd_ctrl_update_subtitle_mute`].
+    pub fn spd_ctrl_tick(h: &mut impl Host) {
+        if SPD_CTRL_ENABLED.get(h) == 0 {
+            return;
+        }
+        if h.call_sym(INPUT_IS_PRESS_BUTTON, Conv::Cdecl, &[SPD_CTRL_BUTTON]) != 0 {
+            if IGGY_MENU_MANAGER.get(h) == 0
+                || h.call_sym(TIP_SYSTEM_GET, Conv::Cdecl, &[]) == 0
+                || h.call_sym(ICON_PANEL_GET, Conv::Cdecl, &[]) == 0
+            {
+                return;
+            }
+            #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)] // idiv
+            let level = (SPD_CTRL_B4.get(h).wrapping_add(1) as i32 % 3) as u32;
+            SPD_CTRL_B4.set(h, level);
+            for i in 0..2 {
+                let panel = h.call_sym(ICON_PANEL_GET, Conv::Cdecl, &[]);
+                h.call_sym(ICON_PANEL_HIDE_ICON, Conv::Thiscall(panel), &[i]);
+            }
+            let level = SPD_CTRL_B4.get(h);
+            SPD_CTRL_C0.set(h, 0);
+            let tip = if level == 1 || level == 2 {
+                let panel = h.call_sym(ICON_PANEL_GET, Conv::Cdecl, &[]);
+                let menu = h.call_sym(ICON_PANEL_SHOW_ICON, Conv::Thiscall(panel), &[level - 1]);
+                SPD_CTRL_C0.set(h, menu);
+                SPD_CTRL_TIPS[level as usize]
+            } else {
+                SPD_CTRL_TIPS[0]
+            };
+            let tips = h.call_sym(TIP_SYSTEM_GET, Conv::Cdecl, &[]);
+            h.call_sym(TIP_SYSTEM_PUSH_TIP, Conv::Thiscall(tips), &[tip]);
+            let menu = SPD_CTRL_C0.get(h);
+            if SPD_CTRL_B8.get(h) == 0 && menu != 0 {
+                let name = h.rebase(SPD_CTRL_ON_DISABLE);
+                h.call_sym(
+                    IGGY_CALL_AS3_EXTERNAL,
+                    Conv::Thiscall(menu),
+                    &[0, name, 0, 0, 1],
+                );
+            }
+        }
+        spd_ctrl_update_subtitle_mute(h);
+    }
+
+    /// `SpdCtrl_UpdateSubtitleMute_006f7230()` (name ours; Ghidra has no
+    /// function there, only `SpdCtrl_Tick`'s tail jump reaches it): the
+    /// battle subtitles muted (`MsMuteBattleSubTitle(1)`) while in battle
+    /// (`MsBattleCheck`) at a speed level other than 0, unmuted otherwise;
+    /// [`SPD_CTRL_SUBTITLE_MUTED`] keeps the state, set before each call,
+    /// and only a change calls.
+    pub fn spd_ctrl_update_subtitle_mute(h: &mut impl Host) {
+        let mute = h.call_sym(MS_BATTLE_CHECK, Conv::Cdecl, &[]) != 0 && SPD_CTRL_B4.get(h) != 0;
+        if (SPD_CTRL_SUBTITLE_MUTED.get(h) != 0) != mute {
+            SPD_CTRL_SUBTITLE_MUTED.set(h, u8::from(mute));
+            h.call_sym(MS_MUTE_BATTLE_SUBTITLE, Conv::Cdecl, &[u32::from(mute)]);
+        }
+    }
+}

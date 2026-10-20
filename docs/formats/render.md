@@ -1048,3 +1048,37 @@ Round 23, texture-animation samplers:
   `+0xa`, offset + size within the buffer's first word) holds a value
   (`+8`) whose byte `+2` is 2, else `this + 0x14`. (The frame's -1 test is
   redundant: -1 is never below the 31-bit count.)
+
+Round 24, the view-projection matrix and the speed control's tick
+(`ffx_graphic::util::bridge24`):
+
+- `PhyreScene_getViewProjectionMatrix(scene, out)` (`0x0065e660`,
+  thiscall, `ret 4`, returns `out`): the free camera (`g_FreeCamera`,
+  `0x00ccc830`) is made on first use (`operator_new(0x340)`,
+  `FreeCamera_FreeCamera`, 0 when the allocation fails). While it is off
+  (bytes `+0x338`, `+0x33c` and word `+0` clear), the scene's camera
+  (`*(scene +0xdc)`) takes `scene +0xfa04` as its transform (`+0xb4`) and
+  `Phyre_PCamera_updateViewMatrices` runs on camera `+4`. `out` = the
+  camera's 4x4 at `+0x74` (`PMatrix4_Copy_00453340`) times the
+  translation `[1 0 0 0; 0 1 0 0; 0 0 1 0; x y 0 1]`, `x`, `y` the floats
+  at `scene +0xfa34`, `+0xfa38`. Unless byte `+0xf9c7` or
+  `g_PhyreScene3D` is set, `out` then takes the screen adjustment of
+  `PhyreScene_GetScreenAdjustedView_00651650` (`[1 0 0 0; 0 4/3 0 0; 0 0
+  1 0; 0 d 0 1]`, `d = 0.33333337 - 2 (+0xf9c0 + +0xf9bc)` as a float),
+  copied in by `PMatrix4_Copy_00453340`. Each product goes row by row
+  (bottom first) through `PMatrix4_RowTimes_004c9c20` into locals, then
+  back. Both snapshots have the free camera made and a 3D scene.
+- `SpdCtrl_Tick()` (`0x006f7470`): once `g_SpdCtrl_Ready`, the speed-up
+  button (`inputIsPressButton(0x10000)`) steps the level (`g_SpdCtrl_b4`,
+  signed `(level + 1) % 3`) when `g_IggyMenuManager` (`0x01984c6c`),
+  `TipSystem_Get()` and `IconPanel_get()` are all there: both icons hidden
+  (`IconPanel_hideIcon` 0 and 1), `g_SpdCtrl_c0` cleared, then for level 1
+  or 2 icon `level - 1` shown (`IconPanel_showIcon`, its menu into
+  `g_SpdCtrl_c0`) and tip `0x2fd` / `0x2fe` pushed, else tip `0x2ff`. A
+  shown icon while the speed-up is not running (`g_SpdCtrl_b8` clear)
+  gets `"OnDisable"` (`IggyMenu_callIggyAS3External`). It then
+  tail-jumps to `SpdCtrl_UpdateSubtitleMute_006f7230` (no function in
+  Ghidra): in battle (`MsBattleCheck`) at a level other than 0 the battle
+  subtitles are muted (`MsMuteBattleSubTitle(1)`), else unmuted, each
+  only on a change of `g_SpdCtrl_SubtitleMuted` (`0x00ce82bd`, set before
+  the call).

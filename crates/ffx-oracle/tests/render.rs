@@ -7660,3 +7660,203 @@ fn snapshot_round23c_matches_the_original() {
         round23c_case(&mut t, &mut rng, &what);
     }
 }
+
+// ---- round 24 ----
+
+/// `PhyreScene_getViewProjectionMatrix` on `scene` (a fresh one when 0):
+/// `PMatrix4_RowTimes` and `PMatrix4_Copy_00453340` run original on both
+/// sides; the free camera's construction and the camera update are
+/// recording stubs. Returns which way it went (bit 0: the camera update,
+/// bit 1: the screen adjustment, bit 2: a new free camera).
+fn round24_view_projection(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) -> u32 {
+    use ffx_graphic::util::bridge24 as b;
+    let fl = |rng: &mut Rng| -> f32 {
+        if rng.chance(3) {
+            rng.float()
+        } else {
+            (rng.below(41) as f32 - 20.0) / 16.0
+        }
+    };
+    let floats = |rng: &mut Rng, n: usize| -> Vec<u8> {
+        (0..n).flat_map(|_| fl(rng).to_le_bytes()).collect()
+    };
+    let scene = if scene == 0 {
+        let s = t.alloc(&rng.bytes(0xfa40));
+        for off in [0xf9bc, 0xf9c0, 0xfa34, 0xfa38] {
+            let v = fl(rng);
+            t.write(s + off, &v.to_le_bytes());
+        }
+        t.w8(s + 0xf9c7, u8::from(rng.chance(3)));
+        let cam = t.alloc(&floats(rng, 0x40));
+        t.w32(s + 0xdc, cam);
+        t.w8(t.rebase(scene::bridge::IS_3D.sym), u8::from(rng.chance(3)));
+        s
+    } else {
+        scene
+    };
+    // a free camera, on or off (as the stubbed constructor leaves it too)
+    let free_camera = |t: &mut Twins, rng: &mut Rng| {
+        let fc = t.zeros(0x340);
+        if rng.chance(3) {
+            t.w8(fc + 0x338, rng.next() as u8 | 1);
+        }
+        if rng.chance(3) {
+            t.w8(fc + 0x33c, rng.next() as u8 | 1);
+        }
+        if rng.chance(3) {
+            t.w32(fc, rng.next() | 1);
+        }
+        fc
+    };
+    let fresh = free_camera(t, rng);
+    let mut flags = 0;
+    if rng.chance(4) {
+        t.global(b::FREE_CAMERA.sym, 0);
+        flags |= 4;
+    } else {
+        let fc = free_camera(t, rng);
+        t.global(b::FREE_CAMERA.sym, fc);
+    }
+    t.stub_sym(b::OPERATOR_NEW, Conv::Cdecl, 1, fresh);
+    t.stub_sym(b::FREE_CAMERA_CTOR, Conv::Thiscall(0), 0, fresh);
+    t.stub_sym(
+        ffx_graphic::state::bridge::CAMERA_UPDATE_VIEW,
+        Conv::Thiscall(0),
+        0,
+        rng.next(),
+    );
+    let fc = t.r32(t.rebase(b::FREE_CAMERA.sym));
+    let fc = if fc == 0 { fresh } else { fc };
+    if t.r8(fc + 0x338) == 0 && t.r8(fc + 0x33c) == 0 && t.r32(fc) == 0 {
+        flags |= 1;
+    }
+    if t.r8(scene + 0xf9c7) == 0 && t.r8(t.rebase(scene::bridge::IS_3D.sym)) == 0 {
+        flags |= 2;
+    }
+    let out = t.alloc(&floats(rng, 16));
+    t.check(what, 0x0065_e660, Conv::Thiscall(scene), &[out], |g| {
+        Out::U32(b::scene_view_projection(g, scene, out))
+    });
+    flags
+}
+
+/// `SpdCtrl_Tick` with its callees as recording stubs. Returns which way
+/// it went (bit 0: the level stepped, bit 1: `"OnDisable"`, bit 2: a
+/// subtitle mute call).
+fn round24_spd_ctrl_tick(t: &mut Twins, rng: &mut Rng, keep: bool, what: &str) -> u32 {
+    use ffx_graphic::util::bridge as ut;
+    use ffx_graphic::util::bridge24 as b;
+    if !keep {
+        t.w8(t.rebase(ut::SPD_CTRL_ENABLED.sym), u8::from(!rng.chance(6)));
+        let mgr = if rng.chance(6) { 0 } else { rng.next() | 1 };
+        t.global(b::IGGY_MENU_MANAGER.sym, mgr);
+        let level = [0, 1, 2, 3, u32::MAX, 0x7fff_ffff, rng.next()][rng.below(7) as usize];
+        t.global(ut::SPD_CTRL_B4.sym, level);
+        t.global(
+            ut::SPD_CTRL_B8.sym,
+            [0, 1, rng.next()][rng.below(3) as usize],
+        );
+        t.global(ut::SPD_CTRL_C0.sym, [0, rng.next()][rng.below(2) as usize]);
+        t.w8(
+            t.rebase(b::SPD_CTRL_SUBTITLE_MUTED.sym),
+            [0, 1, 0x80][rng.below(3) as usize],
+        );
+    }
+    let pick = |rng: &mut Rng, n: u32| if rng.chance(n) { 0 } else { rng.next() | 1 };
+    let pressed = u32::from(rng.chance(2));
+    t.stub_sym(ut::INPUT_IS_PRESS_BUTTON, Conv::Cdecl, 1, pressed);
+    let tips = pick(rng, 6);
+    t.stub_sym(b::TIP_SYSTEM_GET, Conv::Cdecl, 0, tips);
+    let panel = pick(rng, 6);
+    t.stub_sym(b::ICON_PANEL_GET, Conv::Cdecl, 0, panel);
+    t.stub_sym(b::ICON_PANEL_HIDE_ICON, Conv::Thiscall(0), 1, rng.next());
+    let menu = pick(rng, 3);
+    t.stub_sym(b::ICON_PANEL_SHOW_ICON, Conv::Thiscall(0), 1, menu);
+    t.stub_sym(b::TIP_SYSTEM_PUSH_TIP, Conv::Thiscall(0), 1, rng.next());
+    t.stub_sym(ut::IGGY_CALL_AS3_EXTERNAL, Conv::Thiscall(0), 5, rng.next());
+    t.stub_sym(
+        b::MS_BATTLE_CHECK,
+        Conv::Cdecl,
+        0,
+        [0, 1, rng.next()][rng.below(3) as usize],
+    );
+    t.stub_sym(b::MS_MUTE_BATTLE_SUBTITLE, Conv::Cdecl, 1, rng.next());
+    t.check(what, 0x006f_7470, Conv::Cdecl, &[], |g| {
+        b::spd_ctrl_tick(g);
+        Out::None
+    });
+    // what the log shows
+    let n = t.r32(t.log);
+    let mut seen = 0;
+    for k in 0..n {
+        match t.r32(t.log + 4 + 0x20 * k) {
+            x if x == b::ICON_PANEL_HIDE_ICON => seen |= 1,
+            x if x == ut::IGGY_CALL_AS3_EXTERNAL => seen |= 2,
+            x if x == b::MS_MUTE_BATTLE_SUBTITLE => seen |= 4,
+            _ => {}
+        }
+    }
+    seen
+}
+
+#[test]
+fn round24_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2424_0024);
+    let mut vp = [0u32; 8];
+    let mut tick = [0u32; 8];
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        vp[round24_view_projection(&mut t, &mut rng, 0, &what) as usize] += 1;
+        t.reset();
+        t.log = t.zeros(0x8000);
+        tick[round24_spd_ctrl_tick(&mut t, &mut rng, false, &what) as usize] += 1;
+    }
+    eprintln!("view projection {vp:?}, tick {tick:?}");
+    for (k, n) in vp.iter().enumerate() {
+        assert!(*n > 30, "view projection way {k}: {n}");
+    }
+    // "OnDisable" only follows a step
+    for k in [0, 1, 3, 4, 5, 7] {
+        assert!(tick[k] > 20, "tick way {k}: {}", tick[k]);
+    }
+}
+
+#[test]
+fn snapshot_round24_matches_the_original() {
+    use ffx_graphic::util::bridge24 as b;
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    // the game's own scene, camera and free camera, all original
+    let scene = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    if scene != 0 && t.r32(scene + 0xdc) != 0 {
+        let out = t.zeros(0x40);
+        eprintln!(
+            "free camera {:#x}, 3D {}",
+            t.r32(t.rebase(b::FREE_CAMERA.sym)),
+            t.r8(t.rebase(scene::bridge::IS_3D.sym))
+        );
+        t.check(
+            "snapshot scene",
+            0x0065_e660,
+            Conv::Thiscall(scene),
+            &[out],
+            |g| Out::U32(b::scene_view_projection(g, scene, out)),
+        );
+    }
+    let mut rng = Rng(0x5424_0024);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        let real = if round % 2 == 0 { scene } else { 0 };
+        round24_view_projection(&mut t, &mut rng, real, &what);
+        t.reset();
+        // the game's own speed control state first
+        round24_spd_ctrl_tick(&mut t, &mut rng, round == 0, &what);
+    }
+}
