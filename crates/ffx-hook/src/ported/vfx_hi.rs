@@ -4,7 +4,7 @@
 //! original leaves a result in `eax` return the full `u32`.
 
 use super::{mem, ported};
-use ffx_vfx::{hi_draw, hi_light, hi_md, hi_opus};
+use ffx_vfx::{hi_0283, hi_draw, hi_light, hi_md, hi_opus};
 
 /// An original cdecl function through its address (rebased by the bridge).
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
@@ -131,6 +131,14 @@ ported! {
     op_md_x64_fog_00a6bfe0 @ 0x00a6_bfe0 => extern "C" fn op_md_x64_fog(obj: u32, init: u32) -> u32 {
         hi_draw::bridge::op_md_x64_fog(&mut mem(), obj, init)
     }
+    /// `op_md_persp_00a6bae0(obj, init)`.
+    op_md_persp_00a6bae0 @ 0x00a6_bae0 => extern "C" fn op_md_persp(obj: u32, init: u32) -> u32 {
+        hi_draw::bridge::op_md_persp(&mut mem(), obj, init, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_flag80_fog_00a6c3d0(obj, init)`.
+    op_md_flag80_fog_00a6c3d0 @ 0x00a6_c3d0 => extern "C" fn op_md_flag80_fog(obj: u32, init: u32) -> u32 {
+        hi_draw::bridge::op_md_flag80_fog(&mut mem(), obj, init, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_refrection_st_float(obj, model, _, out, scale, du, dv)`: its
     /// locals in a buffer on this shim's stack.
     op_refrection_st_float @ 0x00a6_cfb0 => extern "C" fn op_refrection_st_float(obj: u32, model: u32, _unused: u32, out: u32, scale: u32, du: u32, dv: u32) -> u32 {
@@ -144,5 +152,15 @@ ported! {
     /// `opp_map_draw_init_00a753f0(b, pos)`.
     opp_map_draw_init_00a753f0 @ 0x00a7_53f0 => extern "C" fn opp_map_draw_init(b: u32, pos: u32) -> u32 {
         hi_opus::bridge::opp_map_draw_init(&mut mem(), b, pos, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_0283_draw(obj, rec)`: its two render-data part locals in a
+    /// buffer on this shim's stack.
+    opus_0283_draw @ 0x00a7_6770 => extern "C" fn opus_0283_draw(obj: u32, rec: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        hi_0283::bridge::opus_0283_draw(&mut mem(), obj, rec, frame, &mut |_, f, a| call_ptr(f, a));
     }
 }

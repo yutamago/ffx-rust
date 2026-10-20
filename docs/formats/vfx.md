@@ -530,8 +530,8 @@ matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
 
 ## High range (`0x00a30000..0x00a80000`)
 
-Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs`, `hi_draw.rs` and
-`hi_opus.rs`; the shims are
+Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs`, `hi_draw.rs`,
+`hi_opus.rs` and `hi_0283.rs`; the shims are
 `crates/ffx-hook/src/ported/vfx_hi.rs`, the oracle tests
 `crates/ffx-oracle/tests/vfx_hi.rs`.
 
@@ -708,6 +708,57 @@ Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
   `g_OpMdGsWordsB_011a07f0` with init flag 8, else
   `g_OpMdGsWordsA_011a0740`. Tags (jumps `0x00a6c3b0`): 0, 2, 4, 6 as
   above, step 0x10; 1, 3, 5 and anything else end.
+- `op_md_persp_00a6bae0(obj, init)` (`0x00a6bae0`, flag `0x2000`):
+  as `0x00a6bfe0` (the same GS words) plus a projection at `w +0x200`:
+  `op_unit_m`, then `[2][2]` = 1.00003052 and `[3][2]` = -2.00003052
+  (`f32` at `0x00b7c424`), `[2][3]` 1 and `[3][3]` 0, times `[w +0x330]`
+  (`op_mul_m(m, m, [w +0x330])`); the 64 bytes at `[w +0x320]` go to `w
+  +0x240`; `w +0x390` = `[w +0x304]`, `+0x394`/`+0x398` = `(i16 obj
+  +0x12 << 4 / 5) + [w +0x304]`. Tags (jumps `0x00a6bfb0`): 0, 1, 4, 5
+  set `w +0x1f0`/`+0x280` 0x8000 and `+0x1f8`/`+0x288` 0x41; 2, 3, 6, 7
+  the same with 0x412 and the texture words; type 8 and up (or negative)
+  ends.
+- `op_md_flag80_fog_00a6c3d0(obj, init)` (`0x00a6c3d0`, flag `0x80` with
+  any of `0x300`): returns `[init +0x34]` at once when
+  `op_md_packet_size_check(obj, [init +0x34], 1)` (`0x00a698b0`, `xor
+  eax, eax; ret`) is nonzero, which it never is. Pushes `0x2800` bytes,
+  rounds `w +0x334` up to 64 (`& 0x0fffffc0`), the colour and `w
+  +0x394`/`+0x39c` as `0x00a6bfe0`; GS words `+0x110` 0x8001, `+0x118`
+  0xeeeee, `+0x128` 6, `+0x130`/`+0x134` as above, `+0x138` 0x42,
+  `+0x140` 16 bytes from `g_OpMdGsWordsC_011a0820`, `+0x150` 16 from
+  `g_OpMdGsWordsA_011a0740`, `+0x160` 0/5 by `[obj]` flag 4, `+0x168` 8,
+  `+0x180` the address `0x012a8da8`. Tags (jumps `0x00a6c88c`): 0 and 4
+  set `w +0x100` 0x20000009/0x2000000b and `+0x1f8` 0x414141ee; 2 and 6
+  0x2000000d/0x20000010, 0x12412eee and the texture words; each sets `w
+  +0x1f0` 0x8001 and spins on the GS; 1, 3, 5 and anything else end.
+  Returns `[w +0x334] + 0x40`.
+
+### `opus_0283` draw
+
+`opus_0283_draw(obj, rec)` (`0x00a76770`, kind 0x1000 of
+`opp_part_a76720`) does nothing while `g_GraphicSkipFrame` is set. It
+builds a packet at `b = [obj +0x328]`: header `+0` 0, `+4` 0x20, `+8`
+0x5040, `+0x10` 0x08000200, `+0x14` 0x880000, `u16 +0x20` 0x600, `u16
++0x22` the low half of `+0x10`, `+0x28` 0x1a00; 16 x 32 quads of 0x28
+bytes from `+0x30` (colours 0x80808080 x 4, vertex numbers `33 row +
+col`, `+1`, `+33`, `+34`, texture `u16` pairs `(0x80 col, 0xd0 row)` to
+`(+0x80, +0xd0)`), the end tag's type byte 0xff after them. The vertex
+table at `+0x5040`, 17 rows of 33 `i16` triples: with `r = rec +0x30`,
+`k = f32(rec +0x34 / 256)`, `x = 8 j - 128`, `y = 13 i - 104`, `d =
+f32(y^2 + x^2 + r^2)`, `s = f32(sqrt d)`, `q = f32(f32(s - f32(f32(s -
+r) k)) / s)`: `ftol(q x 128 x 1.333)`, `ftol(q y 128 x 1.333)`, `ftol(-128
+q r)` (1.333 is `f64` `0x00b7c570`; low halves stored). The request at
+`obj +0x100` (`+0` 0x90, `+4` `b + 0xd040`, `u16 +8` `rec +0xc2`, `+0x18`
+`rec +0xc8`, `+0x20` `obj + 0xc0`, `+0x34` `[obj +0x354]`, `+0x38` `b +
+[b +8]`, `+0x40` `rec +0xc4`, the rest 0), the matrix `obj +0x80`
+(`op_unit_m_scale(f32(rec +0x3c x 2^-21))`, `op_trans_m(rec + 0x90)`, the
+parent's matrix (`opus_parent_get`) times it, copied to `obj +0xc0`).
+Then `updateVFXRenderData(0, id, part, obj + 0x100)` and
+`graphicVFXUpdate(0, id)` when `(0, id)` has render data, else
+`InitVFXRenderData(0, id, part, obj + 0x100, 8)`, `id` =
+`MagicFile_GetMagicId()`; `part` is a stack local with only `+0x1c` (=
+`b`) set, the only word the renderer reads. Ported in
+`crates/ffx-vfx/src/hi_0283.rs`.
 
 ### `opus_0437` dots
 
