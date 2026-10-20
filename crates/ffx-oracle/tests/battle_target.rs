@@ -369,6 +369,19 @@ fn local_words(a: &mut Oracle, b: &mut Oracle) {
     }
 }
 
+/// The sector checks' facing local without a model: 5.0 (beyond pi,
+/// so `MsNearRag` turns it) in the original's whole stack and the Rust's
+/// two words at `local`.
+fn facing_stack(a: &mut Oracle, b: &mut Oracle, local: u32) {
+    let r = a.stack_range();
+    let five: Vec<u8> = (r.start..r.end)
+        .step_by(4)
+        .flat_map(|_| 5.0f32.to_le_bytes())
+        .collect();
+    a.write(r.start, &five).unwrap();
+    b.write(local, &five[..8]).unwrap();
+}
+
 fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, script: bool) {
     let h = host();
     let i = rng.below(ACTORS);
@@ -394,16 +407,26 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         |m| t::ms_get_chr_camera_pos(m, &stand_in, i, out + 0x10).cast_unsigned(),
     );
     same("positions", a, b);
-    // the turn's sectors (round 28): the facing's local zeroed in both
-    // (an actor without a model leaves it as it was), sector counts of
-    // either sign (never 0: the original's divide faults), points apart
-    // or not, a battle direction of the slots around +0x514
+    // the turn's sectors (round 28): the facing's local 5.0 in both
+    // ([`facing_stack`]: an actor without a model leaves it as it was),
+    // sector counts of either sign (never 0: the original's divide
+    // faults), points apart, together or a hair apart, a battle direction
+    // of the slots around +0x514
     let mut dr = Xorshift(DIVIDE_RNG.with(std::cell::Cell::get));
     let slot = a.read(actor + 0x511, 1).unwrap();
-    zero_stack(a);
     let local = a.stack_range().end - 0x200;
-    poke(a, b, local, &[0; 8]);
-    let n = [1, 2, 4, 8, 0x10, 1 + dr.below(100), (-3i32).cast_unsigned()][dr.below(7) as usize];
+    facing_stack(a, b, local);
+    // (and one an f32 cannot hold)
+    let n = [
+        1,
+        2,
+        4,
+        8,
+        0x10,
+        1 + dr.below(100),
+        (-3i32).cast_unsigned(),
+        0x0100_0003,
+    ][dr.below(8) as usize];
     let mode = [0, 1, dr.next()][dr.below(3) as usize];
     poke(
         a,
@@ -422,12 +445,21 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
     );
     same("MsGetBasicDivide", a, b);
     let (from, to) = (out + 0x20, out + 0x30);
-    if dr.below(4) == 0 {
-        let p = a.read(from, 16).unwrap();
-        poke(a, b, to, &p);
+    match dr.below(6) {
+        0 => {
+            let p = a.read(from, 16).unwrap();
+            poke(a, b, to, &p);
+        }
+        // a tiny but nonzero distance
+        1 => {
+            let mut p = a.read(from, 16).unwrap();
+            let x = f32::from_le_bytes(p[..4].try_into().unwrap());
+            p[..4].copy_from_slice(&(x + 1e-4 * x.abs().max(1.0)).to_le_bytes());
+            poke(a, b, to, &p);
+        }
+        _ => {}
     }
-    zero_stack(a);
-    poke(a, b, local, &[0; 8]);
+    facing_stack(a, b, local);
     twin(
         "MsGetDirDivide",
         a,
@@ -8516,7 +8548,10 @@ fn weapon_plate(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, bl
     poke(a, b, block, &ids);
     set(a, b, be::SPOIL_WEAPONS, block);
     set(a, b, be::SPOIL_WEAPON_COUNT, count.cast_signed());
-    set(a, b, be::SPOIL_WEAPON_ROWS, rng.range(-0x3000, 0x8000));
+    // (at times more rows than an f32 holds exactly: 0x100001f rounds up
+    // to 0x1000020, which moves the plate a pixel)
+    let rows = [rng.range(-0x3000, 0x8000), 0x0100_001f][rng.below(2) as usize];
+    set(a, b, be::SPOIL_WEAPON_ROWS, rows);
     for k in 0..8 {
         let slot = ffx_battle::save::bridge::SPOILS_EQUIPMENT.ptr(b).addr + 0x16 * k;
         poke(a, b, slot + 2, &[u8::from(rng.below(4) != 0)]);
