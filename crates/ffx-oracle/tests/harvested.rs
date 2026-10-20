@@ -40,6 +40,12 @@ harvest_test!(
         ffx_sg::state::bridge::chr_sort_by_z(m, int(s, 0));
     }
 );
+harvest_test!(
+    sg_camera_put_rects,
+    0x0083_f130,
+    args = 0,
+    |m: &mut Oracle, _s| { ffx_sg::camera::bridge::sg_camera_put_rects(&mut OracleHost(m)) }
+);
 
 // chara
 harvest_test!(

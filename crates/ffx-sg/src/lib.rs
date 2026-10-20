@@ -6,6 +6,7 @@
 
 pub mod abmap;
 pub mod assert;
+pub mod cache;
 pub mod camera;
 pub mod cdread;
 pub mod chpacket;

@@ -1,7 +1,8 @@
 //! The two LZ decoders behind `sa_decode` (`0x00a43de0`, `decode.c`).
 //!
 //! `sa_decode(dst, src)` calls entry `src[0]` of the table at
-//! `0x00c85ea4` as `f(src, dst, &size)`: 0 is a plain copy, 1
+//! `0x00c85ea4` as `f(src, dst, &size)`: 0 is a plain copy
+//! ([`bridge::sa_meth00dec`]), 1
 //! [`bridge::sa_meth01dec`], 2 [`bridge::sa_meth02dec`] (Fahrenheit's
 //! Switch names; that build has them at the same table slots).
 //!
@@ -144,5 +145,34 @@ pub mod bridge {
     /// [`sa_meth01dec`] for a method-2 stream.
     pub fn sa_meth02dec(mem: &mut impl Mem, src: u32, dst: u32, size: u32) -> u32 {
         decode(mem, Method::Two, src, dst, size)
+    }
+
+    /// `memmove`: `len` bytes from `src` to `dst`, overlapping or not, in
+    /// 4 KB pieces (backwards when `dst` lies inside the source).
+    fn move_bytes(mem: &mut impl Mem, dst: u32, src: u32, len: u32) {
+        const PIECE: u32 = 0x1000;
+        let mut buf = [0u8; PIECE as usize];
+        let backwards = dst.wrapping_sub(src) < len && dst != src;
+        let mut done = 0;
+        while done < len {
+            let n = (len - done).min(PIECE);
+            let at = if backwards { len - done - n } else { done };
+            let piece = &mut buf[..n as usize];
+            mem.read_bytes(src.wrapping_add(at), piece);
+            mem.write_bytes(dst.wrapping_add(at), piece);
+            done += n;
+        }
+    }
+
+    /// `sa_meth00dec(src, dst, size)` (`0x00a43da0`, entry 0 of the table;
+    /// name ours after the other two): a stored stream: the length (the
+    /// `u32` at `src + 1`, read a byte at a time) bytes from `src + 5` to
+    /// `dst` through the CRT's `memcpy` (which moves overlapping blocks as
+    /// `memmove` does); stores the length at `size` and returns it.
+    pub fn sa_meth00dec(mem: &mut impl Mem, src: u32, dst: u32, size: u32) -> u32 {
+        let len = u32::from_le_bytes([1, 2, 3, 4].map(|i| mem.read::<u8>(src.wrapping_add(i))));
+        move_bytes(mem, dst, src.wrapping_add(5), len);
+        mem.write(size, len);
+        len
     }
 }

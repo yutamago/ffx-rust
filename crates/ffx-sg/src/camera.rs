@@ -8,7 +8,7 @@
 pub mod bridge {
     use ffx_battle::camera::bridge as battle;
     use ffx_bridge::x87::{self, Reg};
-    use ffx_bridge::{Global, Mem};
+    use ffx_bridge::{Global, Host, Mem};
 
     /// The screen centre, x and y (`f32`, `Sg_SetScreenCenter`).
     pub const SCREEN_CENTER: Global<[f32; 2]> = Global::new(0x0130_1bbc);
@@ -258,5 +258,24 @@ pub mod bridge {
             r |= 4;
         }
         r
+    }
+
+    /// `MsCameraGet(owner, camera, type)`.
+    pub const MS_CAMERA_GET: u32 = 0x007b_d110;
+    /// `MsCameraSetRect(handle, side, &xyz)`.
+    pub const MS_CAMERA_SET_RECT: u32 = 0x007b_f940;
+
+    /// `Sg_CameraPutRects()` (`0x0083f130`, name ours; from `Sg_MainLoop`
+    /// and `Sg_CameraSetPlayer`): the battle camera `MsCameraGet(6, 0, 0)`
+    /// gets side 0 from [`CAMERA_REF`] and side 1 from [`CAMERA_POS`]
+    /// (`MsCameraSetRect`); returns the last call's `eax`.
+    pub fn sg_camera_put_rects(h: &mut impl Host) -> u32 {
+        let f = h.rebase(MS_CAMERA_GET);
+        let cam = h.call(f, &[6, 0, 0]);
+        let f = h.rebase(MS_CAMERA_SET_RECT);
+        let at = h.rebase(0x00c4_ded0);
+        h.call(f, &[cam, 0, at]);
+        let at = h.rebase(0x00c4_dec0);
+        h.call(f, &[cam, 1, at])
     }
 }

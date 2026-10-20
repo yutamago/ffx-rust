@@ -6082,3 +6082,185 @@ fn link_strip_snapshot() {
     let mut rng = Xorshift(0x5eed_0f0b);
     link_strip_cases(&mut a, &mut b, &mut rng, 60);
 }
+
+/// The slot name accessors over recorders for both name functions (each
+/// logs its id and returns a random word) and a random record table.
+fn slot_name_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::savecmd::bridge as s;
+    let log = a.rebase(REC_LOG);
+    let rets = [a.rebase(REC_RETS) + 4 * 98, a.rebase(REC_RETS) + 4 * 99];
+    recorder(a, b, 98, s::ABILITY_NAME, 1, 0);
+    recorder(a, b, 99, s::ITEM_NAME, 1, 0);
+    let table = alloc(a, b, 0x1d8 * 8);
+    set(a, b, Global::<u32>::new(0x0112_a034), table);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{sym:#x}: {e}"))
+            .eax
+    };
+    for _ in 0..rounds {
+        let bytes: Vec<u8> = (0..0x1d8 * 8)
+            .map(|_| rng.next().to_le_bytes()[0])
+            .collect();
+        a.write(table, &bytes).unwrap();
+        b.write(table, &bytes).unwrap();
+        for &(at, _, _) in &s::SLOT_NAMES {
+            put(a, b, log, 0u32);
+            for r in rets {
+                put(a, b, r, rng.next());
+            }
+            let i = rng.below(8);
+            twin("KernelSlotName", a, b, at, &[i], |m| {
+                s::kernel_slot_name(m, at, i, call)
+            });
+        }
+    }
+}
+
+#[test]
+fn save_command_slot_names_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0c);
+    slot_name_cases(&mut a, &mut b, &mut rng, 4);
+}
+
+#[test]
+fn save_command_slot_names_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0d);
+    slot_name_cases(&mut a, &mut b, &mut rng, 2);
+}
+
+// Main round 15: small glue (stored streams, size tables, camera rects,
+// cache entries, a task helper).
+
+fn stored_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::decode::bridge as d;
+    let buf = alloc(a, b, 0x8000);
+    let out = alloc(a, b, 0x4000);
+    let size = alloc(a, b, 4);
+    for n in 0..rounds {
+        let fill: Vec<u8> = (0..0x8000).map(|_| rng.next().to_le_bytes()[0]).collect();
+        a.write(buf, &fill).unwrap();
+        b.write(buf, &fill).unwrap();
+        let len = match n % 4 {
+            0 => rng.below(0x3000),
+            1 => 0,
+            _ => rng.below(0x200),
+        };
+        // apart, or overlapping either way inside one block
+        let (src, dst) = match n % 3 {
+            0 => (buf, out),
+            1 => (buf + 0x10, buf + 0x10 + 5 + rng.below(0x40)),
+            _ => (buf + 0x1000, buf + 0x1000 + 5 - rng.below(0x40)),
+        };
+        let at = src + 1;
+        put(a, b, at, len.to_le_bytes()[0]);
+        for (i, byte) in (0u32..).zip(len.to_le_bytes()) {
+            put(a, b, at + i, byte);
+        }
+        twin("sa_meth00dec", a, b, 0x00a4_3da0, &[src, dst, size], |m| {
+            d::sa_meth00dec(m, src, dst, size)
+        });
+    }
+}
+
+#[test]
+fn glue15_stored_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0e);
+    stored_cases(&mut a, &mut b, &mut rng, 60);
+}
+
+#[test]
+fn glue15_stored_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0f);
+    stored_cases(&mut a, &mut b, &mut rng, 30);
+}
+
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn glue15_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::{cache::bridge as c, camera::bridge as cam, cdread::bridge as cd};
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 100, cd::READ_WHOLE_FILE, 2, 0);
+    recorder(a, b, 101, cam::MS_CAMERA_GET, 3, 0);
+    recorder(a, b, 102, cam::MS_CAMERA_SET_RECT, 3, 0);
+    recorder(a, b, 103, c::SG_FREE_A, 2, 0);
+    recorder(a, b, 104, c::USER_FREE, 1, 0);
+    recorder(a, b, 105, c::TASK_CREATE_IN_GROUP, 4, 0);
+    let work = b.stack_range().start + 0x1000;
+    let entry = alloc(a, b, 0x20);
+    let count = ffx_system::cd::bridge::EX_SIZE_COUNT;
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 100..106 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        set(a, b, count, rng.next().cast_signed() >> (rng.below(32)));
+        twin("pc_sizetbl_set_Ex", a, b, 0x00a4_3100, &[], |m| {
+            cd::pc_sizetbl_set_ex(&mut H(m))
+        });
+        for (sym, path) in [
+            (0x00a4_3080, cd::MODULE_SIZE_PATH),
+            (0x00a4_30c0, cd::SIZETBL_PATH),
+        ] {
+            twin("pc_sizetbl_set", a, b, sym, &[], |m| {
+                cd::pc_sizetbl_set(&mut H(m), path, work)
+            });
+        }
+        twin("Sg_CameraPutRects", a, b, 0x0083_f130, &[], |m| {
+            cam::sg_camera_put_rects(&mut H(m))
+        });
+        let bytes: Vec<u8> = (0..0x20).map(|_| rng.next() as u8).collect();
+        a.write(entry, &bytes).unwrap();
+        b.write(entry, &bytes).unwrap();
+        if n % 2 == 0 {
+            put(a, b, entry, c::SG_BLOCK);
+        }
+        let block: u32 = Mem::read(a, entry + 0xc);
+        set(
+            a,
+            b,
+            c::CHR_TIDUS,
+            if n % 3 == 0 { block } else { rng.next() },
+        );
+        twin("Cache_FreeEntry", a, b, 0x0084_0ec0, &[entry], |m| {
+            c::cache_free_entry(&mut H(m), entry)
+        });
+        let args = [rng.next(), rng.next(), rng.next()];
+        twin("task_create_group7", a, b, 0x0077_a060, &args, |m| {
+            c::task_create_group7(&mut H(m), args[0], args[1], args[2])
+        });
+        assert_eq!(Mem::read::<u32>(a, log), 8, "calls logged");
+    }
+}
+
+#[test]
+fn glue15_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f10);
+    glue15_cases(&mut a, &mut b, &mut rng, 40);
+}
+
+#[test]
+fn glue15_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f11);
+    glue15_cases(&mut a, &mut b, &mut rng, 20);
+}
