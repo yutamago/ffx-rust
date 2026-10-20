@@ -11994,3 +11994,179 @@ fn menu_round26_status_pages_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` logged with the argument indices `args`, writing the word in the
+/// returned cell to `[esp + 4 + 4 * out]` (a frame address, not logged).
+fn out_stub(t: &mut Twins, log: u32, f: u32, args: &[u8], out: u8) -> u32 {
+    let value = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let extra: Vec<u8> = [
+        &[0x8b, 0x54, 0x24, 4 + 4 * out][..],       // mov edx, [esp + 4 + 4 out]
+        &[0xa1], &value.to_le_bytes(),              // mov eax, [value]
+        &[0x89, 0x02],                              // mov [edx], eax
+    ]
+    .concat();
+    let cell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, f, args, cell, &extra);
+    jump_stub(t, f, &code);
+    value
+}
+
+#[test]
+fn menu_round26_list_rows_status_plate_and_option_rows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0026_1820) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008f_5f70u32, 5u8),
+        (0x008f_5000, 4),
+        (0x0087_3b50, 1),
+        (0x008d_dfc0, 1),
+        (0x0090_5ab0, 6),
+        (0x0090_3bb0, 9),
+        (0x008b_ee70, 1),
+        (0x0090_5820, 6),
+        (0x0090_3ee0, 11),
+        (0x008e_2270, 1),
+        (0x008d_df80, 1),
+        (0x0090_5970, 7),
+        (0x008c_0670, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let player = seq_stub(&mut t, 0x0078_5330, log, 1, &[]);
+    let enabled = seq_stub(&mut t, 0x008e_2290, log, 1, &[]);
+    let width = out_stub(&mut t, log, 0x0090_5290, &[0, 2, 3, 4], 1);
+    let digit_width = out_stub(&mut t, log, 0x0090_5230, &[0, 2, 3], 1);
+    let list = t.sym(tk::MENU_ITEM_LIST.sym);
+
+    // MenuSelList_DrawRow: rows in and out of range, every kind
+    for _ in 0..1000 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let wv = quiet_float(&mut t);
+        t.put(width, wv);
+        let window = t.alloc_random(0x50);
+        let rows = t.rng.pick(&[0u16, 1, 4, 9, 0x8000, 0xffff]);
+        t.put(window + 0x30, rows);
+        let scroll = t
+            .rng
+            .pick(&[0u16, 0x7f, 0x80, 0x1000, 0x7fff, 0x8000, 0xff81, 0xffff])
+            ^ u16::try_from(t.rng.next() & t.rng.next() & 0xffff).unwrap_or(0);
+        t.put(window + 0x46, scroll);
+        let row = t
+            .rng
+            .pick(&[0u32, 1, 3, 8, 9, 10, 0x7fff, 0xffff_ffff, 0x8000_0000])
+            .cast_signed();
+        if (0..0x200).contains(&row) {
+            let at = list + 4 * row.cast_unsigned();
+            let id = u16::try_from(t.rng.next() & 0xffff).unwrap_or(0);
+            let kind = t.rng.pick(&[0u8, 1, 2, 3, 3, 2, 1, 4, 0xff]);
+            let on = t.rng.pick(&[0u8, 1, 1, 1, 0x80]);
+            t.put(at, id);
+            t.put(at + 2, kind);
+            t.put(at + 3, on);
+        }
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let fixed = t.rng.pick(&[0u32, 0, 1, 0x100]);
+        let args = [window, x, y, row.cast_unsigned(), fixed];
+        t.twin("MenuSelList_DrawRow", 0x008d_1820, &args, VOID, |o| {
+            #[rustfmt::skip]
+            tk::menu_sel_list_draw_row(o, window, [f32::from_bits(x), f32::from_bits(y)], row, fixed != 0, local, &mut ui_remap, &mut callback);
+            0
+        });
+    }
+
+    // TkMn2DrawStatusPlate: the stat byte from the player record
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let (wv, dv) = (quiet_float(&mut t), quiet_float(&mut t));
+        t.put(width, wv);
+        t.put(digit_width, dv);
+        let p = t.alloc_random(0x100);
+        t.put(player, p);
+        let (x, y) = (status_int(&mut t), status_int(&mut t));
+        let (chr, mes) = (t.rng.next(), t.rng.next());
+        let field = t.rng.below(0x100);
+        #[rustfmt::skip]
+        let args = [x.cast_unsigned(), y.cast_unsigned(), t.rng.next(), t.rng.next(), chr, mes, field];
+        t.twin("TkMn2DrawStatusPlate", 0x008c_1490, &args, U32, |o| {
+            w(tk::tk_mn2_draw_status_plate(
+                o,
+                [x, y],
+                chr,
+                mes,
+                field,
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuMain_DrawOptionRow: the fade, the chosen option's cursor
+    for _ in 0..1000 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let wv = quiet_float(&mut t);
+        t.put(width, wv);
+        let e = t.rng.pick(&[0u32, 0, 1, 2, 0xffff_ffff]);
+        t.put(enabled, e);
+        let index = t
+            .rng
+            .pick(&[
+                0u32,
+                1,
+                2,
+                5,
+                7,
+                0xffff_ffff,
+                0x8000_0000,
+                0x7fff_ffff,
+                0x0100_0001,
+            ])
+            .cast_signed();
+        let chosen = if t.rng.below(2) == 0 {
+            index.cast_unsigned()
+        } else {
+            t.rng.next()
+        };
+        t.put(t.sym(0x0187_1548), chosen);
+        let fade = t
+            .rng
+            .pick(&[
+                0x1000u32,
+                0x1000,
+                0,
+                0x800,
+                0xfff,
+                0x1001,
+                0xffff_ffe1,
+                0x8000_0000,
+                0x7fff_ffff,
+                0x0100_0001,
+            ])
+            .cast_signed();
+        let x = quiet_float(&mut t);
+        #[rustfmt::skip]
+        let args = [index.cast_unsigned(), x, t.rng.next(), t.rng.next(), fade.cast_unsigned()];
+        t.twin("MenuMain_DrawOptionRow", 0x008e_22a0, &args, U32, |o| {
+            w(tk::menu_main_draw_option_row(
+                o,
+                index,
+                f32::from_bits(x),
+                fade,
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

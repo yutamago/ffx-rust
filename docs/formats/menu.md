@@ -105,12 +105,29 @@ and u16 `0x0186aa28` (group 2); `MenuSummon_DrawCommandRow`
 the second `(0x16)`. `g_TkMn2StatusBG` (`0x0186a9fc`) holds the status
 background's step and value (`TkMn2StepStatusBG` `0x008d3280`).
 
+## Main menu options
+
+`g_TkMenuMainOptions` (`0x01871568`) holds 8-byte entries (`+0` menu,
+`+4` i16 enabled; `TkMenuMainGetOptionMenu` `0x008e2270`,
+`TkMenuMainGetOptionEnabled` `0x008e2290`). `MenuMain_DrawOptionRow`
+(`0x008e22a0`) draws option `i` as a bar from the texture rows
+`74.7 i .. 74.7 i + 67`, sliding from `y = 3` (PS2 pixels) to its place as the
+fade goes 0..0x1000 and with alpha `fade / 32`; a disabled option's name
+is drawn dimmed. The highlighted option (`0x01871548`) gets the cross
+cursor once fully shown.
+
 ## Item, shop and aeon lists
 
 The menu list at `0x01597770` has `0x200` 4-byte entries, count in
 `0x0186a384`: u16 id, then a byte that is the count in the item list
 (`TkMenuItemRefresh`) and the text kind in a selection list
-(`MenuSelList_CursorX`), then a usable/enabled byte. `MenuItem_SortGearByOwner` (`0x008c9fb0`) groups
+(`MenuSelList_CursorX`), then a usable/enabled byte. A selection list
+row (`MenuSelList_DrawRow` `0x008d1820`) draws by that kind: 1 a command
+icon and name, 2 an aeon name, 3 `TkMenuMenu1Mes(id + 0x1033)`; the
+window's i16 `+0x46` scrolls it by `+0x46 * 32 / 4096` pixels.
+`TkMn2DrawStatusPlate` (`0x008c1490`) draws one stat: a caption and the
+byte at an offset into the character's save record
+(`MsGetSavePlayerPtr`). `MenuItem_SortGearByOwner` (`0x008c9fb0`) groups
 gear by owner using the u16 [weapon, armour] counts per owner at
 `0x0186a3e4`. The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten
 rows; `MenuWShop_DrawBuyRows` `0x008d8c30` and `MenuWShop_DrawSellRows`

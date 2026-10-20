@@ -10638,7 +10638,7 @@
 0x008c1390 function TkMn2DrawScissorRect      # 5-byte jmp TODrawScissorXYWH thunk (not a function in the dump, left original); Switch name, after TkMn2DrawScissorClear
 0x008c13a0 function TkMn2DrawShape               # layout: alphabetical run between TkMn2DrawScissorClear and TkMn2DrawStatiCursor (1 unnamed in the gap); Switch 0x71004c66a0 TkMn2DrawShape is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c13d0 function TkMn2DrawStatiCursor         # layout+callees: sorts between TkMn2DrawScissorClear and TkMn2DrawSubTitlePlate, and its named callees match the Switch 0x71004c7180 TkMn2DrawStatiCursor's (similarity 1.00: TOMkpShapeXYWHUV, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
-0x008c1490 function TkMn2DrawStatusPlate         # layout+callees: sorts between TkMn2DrawScissorClear and TkMn2DrawSubTitlePlate, and its named callees match the Switch 0x71004c7230 TkMn2DrawStatusPlate's (similarity 1.00: MsGetSavePlayerPtr, TODrawMenuPlateXYWHType, TOMenuGetStatusMes, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2); symbols from Fahrenheit's server export
+0x008c1490 function TkMn2DrawStatusPlate     # layout+callees: sorts between TkMn2DrawScissorClear and TkMn2DrawSubTitlePlate, and its named callees match the Switch 0x71004c7230 TkMn2DrawStatusPlate's (similarity 1.00: MsGetSavePlayerPtr, TODrawMenuPlateXYWHType, TOMenuGetStatusMes, TOMkpShapeXYWHUV, ToGetBtlEasyDigitWidth2); symbols from Fahrenheit's server export; (x, y, _, _, chr, mes, field): type-0xe plate, shape 200, TOMenuGetStatusMes(mes) centred, MsGetSavePlayerPtr(chr)[field] through ToMakeBtlEasyEdgeDigit2 (0.68, -0.0); ported in menu round 26
 0x008c16b0 function TkMn2DrawSubTitlePlate    # fh switch:bsim1.00 0x71004c5d70
 0x008c16e0 function TkMn2DrawSubTitlePlate2      # layout: alphabetical run between TkMn2DrawSubTitlePlate and TkMn2DrawSummonPlate (1 unnamed in the gap); Switch 0x71004c5dc0 TkMn2DrawSubTitlePlate2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008c1730 function TkMn2DrawSummonPlate      # fh switch:bsim1.00 0x71004c5cd0
@@ -10847,6 +10847,7 @@
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
 0x008d0eb0 function TkMn2CtrlSelItemsWindow      # layout+callees: sorts between TkMn2ArmsRefreshArms and TkMn2DrawSelItemsHelp, and its named callees match the Switch 0x71004d3a50 TkMn2CtrlSelItemsWindow's (similarity 0.71: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg, TkMn2DrawSelItemsHelp); symbols from Fahrenheit's server export
 0x008d15a0 function MenuSelList_DrawCursor   # (window): TkMn2DrawCrossCursor(f32(MenuSelList_CursorX(window)), f32(remapY2(493) + remapY2(77) * f32((i16 +0x48 >> 1) - i16 +0x32)), 0) (eax); caller 0x008d1400; ported in menu round 25; name ours
+0x008d1820 function MenuSelList_DrawRow      # (window, x, y, row, fixed): y -= i16 +0x46 * 32 / 4096 unless fixed; for row in 0..u16 +0x30 a type-0xe plate, then by the list entry's kind (byte +2, when byte +3 is set): 1 TODrawCrossMenuIconCommandName, 2 AtelGetSummonNameforFinalBattleSelector, 3 TkMenuMenu1Mes(id + 0x1033), centred over remapX2(740); caller 0x008d1620; ported in menu round 26; name ours
 0x008d1a20 function TkMn2DrawSelItemsHelp        # callees: its named callees match the Switch 0x71004d3930 TkMn2DrawSelItemsHelp's (similarity 1.00: MsGetMenuChrInfo, TkMenuMenu1Help, TkMenuSetHelpMessage, TkMn2GetAbilityHelp, TkMn2GetCommandHelp); symbols from Fahrenheit's server export; cdecl(window): help of g_TkMenuItemList row i16 +0x48 (< u16 +0x30) by entry kind u8 +2: 1,4-7 TkMn2GetCommandHelp(id), 2 MsGetMenuChrInfo(id, 0) (id 15: TkMn2GetCommandHelp(0x30ff)), 3 TkMenuMenu1Help(id + 0x1033), 11-16 TkMn2GetAbilityHelp, 18 TkMn2GetItemHelp (id 0: 0), else 0; tail jump TkMenuSetHelpMessage(help); ported in menu round 23
 0x008d1b50 function TkMenuLimitClearWindow    # (): 0x0186a714 +0x28 = 0, +0x45 = 0
 0x008d1b70 function TkMenuLimitClearWindow2   # (): 0x0186a718 +0x28 = 0, +0x45 = 0
@@ -11115,6 +11116,7 @@
 0x008e2270 function TkMenuMainGetOptionMenu   # fh v3:bsim1.00 0x008e2270 +TkMenuMainGetOptionMenu
 0x008e2280 function TkMenuMainGetMaxOptions   # fh v3:bsim1.00 0x008e2280 +TkMenuMainGetMaxOptions
 0x008e2290 function TkMenuMainGetOptionEnabled # fh v3:bsim1.00 0x008e2290 +TkMenuMainGetOptionEnabled
+0x008e22a0 function MenuMain_DrawOptionRow   # (i, x, _, _, fade): main-menu option bar (shape -3, texels 1118, 74.7i, 1599, 67 + 74.7i, alpha fade/32), name TkMenuMainMes(TkMenuMainGetOptionMenu(i)) dimmed when TkMenuMainGetOptionEnabled(i) is 0, TkMn2DrawCrossCursor for i == 0x01871548 at fade 0x1000; caller 0x008e20f0; ported in menu round 26; name ours
 0x008e24c0 function TkMenuMainOpenOption      # (i) option i (TkMenuMainGetOptionMenu): its menu slot activated, main menu (1) slept; 0x0187154c = -1; own name
 0x008e2630 function TkMn2GetMainPos           # fh switch:bsim1.00 0x71004d55d0
 0x008e2690 function TkScreenToMenuX           # (x) -> float(x) * 512 / 1920 (a 1920-wide coordinate in the 512-wide menu)
@@ -16711,6 +16713,7 @@
 0x01871524 label    g_TkMenuTutoSaveCopy      # pointer to the tutorial's g_SaveData copy (0x0186ac60, TkMenuCtrlTuto); MenuTuto_RestoreNames
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
+0x01871548 label g_TkMenuMainOptionCursor # the main menu's highlighted option: MenuMain_DrawOptionRow draws the cross cursor on that row once its fade is 0x1000; name ours
 0x0187154c label    g_TkMenuMainChoice        # reset to -1 by TkMenuMainOpenOption
 0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
