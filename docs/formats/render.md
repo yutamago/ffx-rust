@@ -1029,3 +1029,22 @@ Round 23, the 2D scene's layers:
   `graphicChangeLayerScale_00639d60(layer, x, y, sx, sy)` and
   `graphicChangeSceneNum_00639d90(n)` (cdecl; names ours, sorting after
   `graphicChangeLayerAlpha`): the three on `g_PhyreScene`.
+
+Round 23, texture-animation samplers:
+
+- `TextureAnimationManager_updateSamplers_006b44a0(this)` (`0x006b44a0`,
+  fastcall; name ours): nothing unless `+4` is set. For each animated
+  material `i` (`+0x78`, `+0x74` of them with a flag bit, the count read
+  again each pass; a material has its shader at `+0`, its parameter
+  buffer at `+4`, its animation's name, a `PString`, at `+0x10`):
+  `TextureAnimation_FindByName` gives the animation; its frame (`+0x18`,
+  -1 none, below `+8` with a flag bit) picks a slot in `+0xc` (-1 none),
+  plus `+0x10` when `i >= +0xc`; the slot, below `+0x5c` (flag bit),
+  picks the texture in `+0x60`. With a texture and a `"TextureSampler"`
+  (`0x00b3017c`) parameter (`ShaderParams_FindByName` on the shader),
+  `Render_SurfaceFormat_0066e4f0(buffer, param, &record)` gets the record
+  `(0xff, 0, sampler, texture)`: `sampler` is `this + 0x38` when the
+  parameter's slot (offset `+8` at least 4, size the low 13 bits of
+  `+0xa`, offset + size within the buffer's first word) holds a value
+  (`+8`) whose byte `+2` is 2, else `this + 0x14`. (The frame's -1 test is
+  redundant: -1 is never below the 31-bit count.)

@@ -583,4 +583,93 @@ pub mod bridge {
         m.write(at + 4, v);
         0
     }
+
+    /// `ShaderParams_FindByName(shader, name)` (`thiscall`, library).
+    pub const SHADER_PARAMS_FIND: u32 = 0x0056_cbf0;
+    /// `Render_SurfaceFormat_0066e4f0(buffer, param, &value)` (`thiscall`,
+    /// `ret 8`): sets the parameter's value from a four-word record.
+    pub const SET_PARAM_VALUE: u32 = 0x0066_e4f0;
+    /// `"TextureSampler"`.
+    pub const NAME_TEXTURE_SAMPLER: u32 = 0x00b3_017c;
+
+    /// The texture of animation `anim`'s current frame (`+0x18`, -1 for
+    /// none): its slot (`+0xc`, `+8` count with a flag bit; -1 for none),
+    /// past `+0x10` for the materials from `+0xc` on, in the `+0x60`
+    /// textures (`+0x5c` count with a flag bit); 0 when anything is
+    /// missing.
+    fn frame_texture(m: &impl Mem, this: u32, i: u32, anim: u32) -> u32 {
+        if anim == 0 {
+            return 0;
+        }
+        let frame: u32 = m.read(anim + 0x18);
+        if frame == u32::MAX || frame >= m.read::<u32>(anim + 8) & 0x7fff_ffff {
+            return 0;
+        }
+        let slots: u32 = m.read(anim + 0xc);
+        let mut slot: u32 = m.read(slots.wrapping_add(4 * frame));
+        if slot == u32::MAX {
+            return 0;
+        }
+        if i >= m.read::<u32>(this + 0xc) {
+            slot = slot.wrapping_add(m.read(this + 0x10));
+        }
+        if slot >= m.read::<u32>(this + 0x5c) & 0x7fff_ffff {
+            return 0;
+        }
+        let textures: u32 = m.read(this + 0x60);
+        m.read(textures.wrapping_add(4 * slot))
+    }
+
+    /// `TextureAnimationManager_updateSamplers_006b44a0(this)` (fastcall;
+    /// name ours): with `+4` set, each animated material (`+0x78`, `+0x74`
+    /// of them with a flag bit, read again each pass; `+0` its shader, `+4`
+    /// its parameter buffer, `+0x10` the animation's name, a `PString`)
+    /// whose animation ([`find_by_name`]) has a texture for its frame
+    /// ([`frame_texture`]) gets it as its `"TextureSampler"`: the record
+    /// `(0xff, 0, sampler, texture)` handed to [`SET_PARAM_VALUE`]. The
+    /// sampler is `+0x38` when the buffer's slot of the parameter (offset
+    /// `+8`, at least 4, size `+0xa` low 13 bits, within the buffer's
+    /// first word) holds a value whose `+2` byte is 2, else `+0x14`.
+    pub fn update_samplers(h: &mut impl Host, this: u32) {
+        if h.read::<u32>(this + 4) == 0 {
+            return;
+        }
+        let mut i = 0;
+        while i < h.read::<u32>(this + 0x74) & 0x7fff_ffff {
+            let materials: u32 = h.read(this + 0x78);
+            let mat: u32 = h.read(materials.wrapping_add(4 * i));
+            i += 1;
+            if mat == 0 {
+                continue;
+            }
+            let anim = find_by_name(h, this, pstring(h, mat + 0x10));
+            let texture = frame_texture(h, this, i - 1, anim);
+            if texture == 0 {
+                continue;
+            }
+            let shader: u32 = h.read(mat);
+            let name = h.rebase(NAME_TEXTURE_SAMPLER);
+            let param = h.call_sym(SHADER_PARAMS_FIND, Conv::Thiscall(shader), &[name]);
+            if param == 0 {
+                continue;
+            }
+            let buf: u32 = h.read(mat + 4);
+            let offset = u32::from(h.read::<u16>(param + 8));
+            let size = u32::from(h.read::<u16>(param + 0xa) & 0x1fff);
+            let at = buf.wrapping_add(offset);
+            let typed = size.wrapping_add(offset) <= h.read::<u32>(buf)
+                && offset >= 4
+                && at != 0
+                && match h.read::<u32>(at + 8) {
+                    0 => false,
+                    value => h.read::<u8>(value + 2) == 2,
+                };
+            let sampler = this + if typed { 0x38 } else { 0x14 };
+            let record = h.scratch();
+            for (k, v) in (0u32..).zip([0xff, 0, sampler, texture]) {
+                h.write(record + 4 * k, v);
+            }
+            h.call_sym(SET_PARAM_VALUE, Conv::Thiscall(buf), &[param, record]);
+        }
+    }
 }

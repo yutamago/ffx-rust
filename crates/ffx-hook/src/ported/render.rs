@@ -1465,6 +1465,10 @@ ported! {
     graphicChangeSceneNum_00639d90 @ 0x0063_9d90 => extern "C" fn graphic_change_scene_num(n: u32) {
         ut::graphic_change_scene_num(&mut mem(), n);
     }
+    /// `TextureAnimationManager_updateSamplers_006b44a0(this)`.
+    TextureAnimationManager_updateSamplers_006b44a0 @ 0x006b_44a0 => extern "fastcall" fn tex_anim_update_samplers(this: u32) {
+        mg::update_samplers(&mut mem(), this);
+    }
 }
 
 /// A singleton's pointer.

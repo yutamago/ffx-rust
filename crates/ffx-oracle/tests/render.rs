@@ -7511,3 +7511,166 @@ fn snapshot_round23b_matches_the_original() {
         round23b_case(&mut t, &mut rng, scene, &what);
     }
 }
+
+// ---- round 23, group 3 ----
+
+/// A recording stub for `thiscall (a, record*)`, `ret 8`: logs the tag,
+/// `ecx`, `a` and the record's four words (its address differs: the
+/// original's stack, the bridge's scratch).
+fn stub_record4(t: &mut Twins, sym: u32, ret: u32) {
+    let at = t.rebase(sym);
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // [eax+8] = a
+    c.extend([0x56, 0x8b, 0x74, 0x24, 0x0c]); // push esi; mov esi, [esp+0xc]
+    for k in 0..4u8 {
+        c.extend([0x8b, 0x56, 4 * k, 0x89, 0x50, 0xc + 4 * k]); // [eax+0xc+4k] = record[k]
+    }
+    c.push(0x5e); // pop esi
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.extend([0xc2, 0x08, 0x00]); // ret 8
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+/// `TextureAnimationManager_updateSamplers_006b44a0` on a random manager:
+/// animations named from a few names, frames in and out of range, slots
+/// of -1, textures past the count, parameter slots typed 2 or not.
+/// Returns how many records were set.
+fn round23c_case(t: &mut Twins, rng: &mut Rng, what: &str) -> u32 {
+    use managers::bridge as mb;
+    let names: Vec<u32> = ["texA", "texB", "anim1", "anim10"]
+        .iter()
+        .map(|s| cstr(t, s))
+        .collect();
+    let this = t.alloc(&rng.bytes(0x90));
+    t.w32(this + 4, u32::from(!rng.chance(10)));
+    // the textures
+    let ntex = rng.below(6);
+    let textures: Vec<u8> = (0..ntex + 2)
+        .flat_map(|_| if rng.chance(4) { 0 } else { rng.next() | 1 }.to_le_bytes())
+        .collect();
+    let tex = t.alloc(&textures);
+    t.w32(
+        this + 0x5c,
+        ntex | if rng.chance(2) { 0x8000_0000 } else { 0 },
+    );
+    t.w32(this + 0x60, tex);
+    t.w32(this + 0xc, rng.below(5));
+    t.w32(this + 0x10, rng.below(4));
+    // the animations
+    let nanim = rng.below(4);
+    let anims = t.alloc(&rng.bytes(0x20 * nanim as usize + 4));
+    for k in 0..nanim {
+        let a = anims + 0x20 * k;
+        let name = names[rng.below(4) as usize];
+        t.w32(a + 4, name | u32::from(rng.chance(3)));
+        let nslots = rng.below(4);
+        let slots: Vec<u8> = (0..=nslots)
+            .flat_map(|_| {
+                let v = if rng.chance(4) {
+                    u32::MAX
+                } else {
+                    rng.below(ntex + 3)
+                };
+                v.to_le_bytes()
+            })
+            .collect();
+        let s = t.alloc(&slots);
+        t.w32(a + 8, nslots | if rng.chance(3) { 0x8000_0000 } else { 0 });
+        t.w32(a + 0xc, s);
+        let frame = [u32::MAX, 0, 1, rng.below(nslots + 2)][rng.below(4) as usize];
+        t.w32(a + 0x18, frame);
+    }
+    t.w32(this + 0x7c, nanim);
+    t.w32(this + 0x80, anims);
+    let offset = [0u32, 2, 4, 8, 0x10][rng.below(5) as usize];
+    // the sampler parameter, its offset and size
+    let param = if rng.chance(6) {
+        0
+    } else {
+        let p = t.alloc(&rng.bytes(0x10));
+        let size = [4u16, 8, 0x10, 0x30, 0xe010][rng.below(5) as usize];
+        t.write(p + 8, &(offset as u16).to_le_bytes());
+        t.write(p + 0xa, &size.to_le_bytes());
+        p
+    };
+    // the materials
+    let nmat = rng.below(6);
+    let mut mats = Vec::new();
+    for _ in 0..nmat {
+        if rng.chance(6) {
+            mats.extend(0u32.to_le_bytes());
+            continue;
+        }
+        let mat = t.alloc(&rng.bytes(0x20));
+        t.w32(mat, rng.next());
+        let buf = t.alloc(&rng.bytes(0x40));
+        let value = t.alloc(&rng.bytes(8));
+        t.w8(value + 2, [2, 2, 1, 3][rng.below(4) as usize]);
+        t.w32(buf + offset + 8, if rng.chance(5) { 0 } else { value });
+        t.w32(buf, [0x10, 0x20, 0x40, rng.next()][rng.below(4) as usize]);
+        t.w32(mat + 4, buf);
+        let name = names[rng.below(4) as usize];
+        t.w32(mat + 0x10, name | u32::from(rng.chance(3)));
+        mats.extend(mat.to_le_bytes());
+    }
+    let list = t.alloc(&mats);
+    t.w32(
+        this + 0x74,
+        nmat | if rng.chance(3) { 0x8000_0000 } else { 0 },
+    );
+    t.w32(this + 0x78, list);
+    t.stub_sym(mb::SHADER_PARAMS_FIND, Conv::Thiscall(0), 1, param);
+    stub_record4(t, mb::SET_PARAM_VALUE, rng.next());
+    t.check(what, 0x006b_44a0, Conv::Fastcall, &[this], |g| {
+        mb::update_samplers(g, this);
+        Out::None
+    });
+    t.r32(t.log)
+}
+
+#[test]
+fn round23c_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2323_c023);
+    let mut set = 0;
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        set += round23c_case(&mut t, &mut rng, &what);
+    }
+    eprintln!("stub calls: {set}");
+    assert!(set > 150, "stub calls: {set}");
+}
+
+#[test]
+fn snapshot_round23c_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5323_c023);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round23c_case(&mut t, &mut rng, &what);
+    }
+}
