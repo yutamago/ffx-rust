@@ -5285,4 +5285,118 @@ ported! {
     pppStartPartFromYonish @ 0x0071_2560 => extern "C" fn ppp_start_part_from_yonish(p: u32, rate: u32, data: u32, set_ups: u32) {
         part::bridge::ppp_start_part_from_yonish(&mut mem(), p, rate, data, set_ups, &mut |_, f, a| call_ptr(f, a));
     }
+    // ---- round 35 a ----
+    /// `pppKeGrvEff(obj, key, prog)`.
+    pppKeGrvEff @ 0x0075_9650 => extern "C" fn ppp_ke_grv_eff(obj: u32, key: u32, prog: u32) {
+        // the original's locals: the vector, below its ebp
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 0x14;
+        prog::bridge::ppp_ke_grv_eff(&mut mem(), obj, key, prog, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opus_mdc_break_matrix_00802e20(out, src)`.
+    opus_mdc_break_matrix_00802e20 @ 0x0080_2e20 => extern "C" fn opus_mdc_break_matrix(out: u32, src: u32) -> u32 {
+        opus::bridge::opus_mdc_break_matrix(&mut mem(), out, src)
+    }
+    /// `opus_mimic_screen_set_0080f680(host)`.
+    opus_mimic_screen_set_0080f680 @ 0x0080_f680 => extern "C" fn opus_mimic_screen_set(host: u32) -> u32 {
+        opus::bridge::opus_mimic_screen_set(&mut mem(), host, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_tex_ctrl_008088c0(host, cmd)`.
+    opu_tex_ctrl_008088c0 @ 0x0080_88c0 => extern "C" fn opu_tex_ctrl(host: u32, cmd: u32) -> u32 {
+        // the original's locals: the image's width and height, below its ebp
+        let mut frame = super::StackFrame::<2>::new();
+        let ebp = frame.at() + 8;
+        opus::bridge::opu_tex_ctrl(&mut mem(), host, cmd, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_level(host, cmd)`.
+    opu_level @ 0x0081_7ad0 => extern "C" fn opu_level(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_level(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_eff(oef, group, part, id)`.
+    op_et_eff @ 0x007f_c2e0 => extern "C" fn op_et_eff(oef: u32, group: u32, part: u32, id: u32) -> u32 {
+        et::bridge::op_et_eff(&mut mem(), oef, group, part, id, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 35 b ----
+    /// `pppKeBornRnd6_Born(obj, def, shape, out)`.
+    pppKeBornRnd6_Born @ 0x0075_92a0 => extern "C" fn ppp_ke_born_rnd6_born(obj: u32, def: u32, shape: u32, out: u32) {
+        // the original's locals: the angle and the vector, below its ebp
+        let mut frame = super::StackFrame::<8>::new();
+        let ebp = frame.at() + 0x20;
+        prog::bridge::ppp_ke_born_rnd6_born(&mut mem(), obj, def, shape, out, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opu_part_init(host, cmd)`.
+    opu_part_init @ 0x0080_b670 => extern "C" fn opu_part_init(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_part_init(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_sloop(host, cmd)`: `op_irandom_p`'s three extra words (the
+    /// caller's saved registers) go in as 0, as for `opu_wait_cond`.
+    opu_sloop @ 0x0081_7300 => extern "C" fn opu_sloop(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_sloop(&mut mem(), host, cmd, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `pppEiZCrctDisPosDraw(obj, key, ctrl)`.
+    pppEiZCrctDisPosDraw @ 0x0073_5ee0 => extern "C" fn ppp_ei_z_crct_dis_pos_draw(obj: u32, key: u32, ctrl: u32) {
+        // the original's locals: the matrix, below its ebp
+        let mut frame = super::StackFrame::<17>::new();
+        let ebp = frame.at() + 0x44;
+        draw::bridge::ppp_ei_z_crct_dis_pos_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opu_float_cmp_0080c7c0(host, cmd)`.
+    opu_float_cmp_0080c7c0 @ 0x0080_c7c0 => extern "C" fn opu_float_cmp(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_float_cmp(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeHmgEff(obj, key, ctrl)`.
+    pppKeHmgEff @ 0x0075_9bf0 => extern "C" fn ppp_ke_hmg_eff(obj: u32, key: u32, ctrl: u32) {
+        // the original's locals: the three vectors (and the length), below its ebp
+        let mut frame = super::StackFrame::<14>::new();
+        let ebp = frame.at() + 0x38;
+        prog::bridge::ppp_ke_hmg_eff(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opu_gw_etc(host, cmd)`: `op_irandom_p`'s three extra words go in as
+    /// 0, as for `opu_sloop`.
+    opu_gw_etc @ 0x0080_ca80 => extern "C" fn opu_gw_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_gw_etc(&mut mem(), host, cmd, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    // ---- round 35 c ----
+    /// `op_zbuf_clear(z)`.
+    op_zbuf_clear @ 0x007e_c7e0 => extern "C" fn op_zbuf_clear(z: u32) -> u32 {
+        small::bridge::op_zbuf_clear(&mut mem(), z, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppInitPartRender()`.
+    pppInitPartRender @ 0x0076_1d60 => extern "C" fn ppp_init_part_render() -> u32 {
+        small::bridge::ppp_init_part_render(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawDebugAxes_007625a0()`.
+    pppDrawDebugAxes_007625a0 @ 0x0076_25a0 => extern "C" fn ppp_draw_debug_axes() {
+        // the original's locals: the matrix and the six ends, below its ebp
+        let mut frame = super::StackFrame::<41>::new();
+        let ebp = frame.at() + 0xa4;
+        part::bridge::ppp_draw_debug_axes(&mut mem(), ebp, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldGlobalEmit_00745f70(obj, def, ctrl)`.
+    pppDrawShapeFieldGlobalEmit_00745f70 @ 0x0074_5f70 => extern "C" fn ppp_draw_shape_field_global_emit(obj: u32, def: u32, ctrl: u32) -> u32 {
+        // the original's locals: the matrix copy, below its ebp
+        let mut frame = super::StackFrame::<17>::new();
+        let ebp = frame.at() + 0x44;
+        draw::bridge::ppp_draw_shape_field_global_emit(&mut mem(), obj, def, ctrl, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldSpdAlloc_007454a0(obj, def, ctrl)`.
+    pppDrawShapeFieldSpdAlloc_007454a0 @ 0x0074_54a0 => extern "C" fn ppp_draw_shape_field_spd_alloc(obj: u32, def: u32, ctrl: u32) -> u32 {
+        draw::bridge::ppp_draw_shape_field_spd_alloc(&mut mem(), obj, def, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppPObjPosRot_007372d0(pos, rot, target)`.
+    pppPObjPosRot_007372d0 @ 0x0073_72d0 => extern "C" fn ppp_pobj_pos_rot(pos: u32, rot: u32, target: u32) {
+        // the original's locals: the vector, below its ebp
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 0x14;
+        part::bridge::ppp_pobj_pos_rot(&mut mem(), pos, rot, target, ebp, &mut |_, f, a| call_ptr(f, a));
+    }
+    // ---- round 35 d ----
+    /// `pppDrawShapeFieldSpdStep_00744f60(def, w)`.
+    pppDrawShapeFieldSpdStep_00744f60 @ 0x0074_4f60 => extern "C" fn ppp_draw_shape_field_spd_step(def: u32, w: u32) {
+        draw::bridge::ppp_draw_shape_field_spd_step(&mut mem(), def, w, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldGlobalStep_007460b0(def, w)`.
+    pppDrawShapeFieldGlobalStep_007460b0 @ 0x0074_60b0 => extern "C" fn ppp_draw_shape_field_global_step(def: u32, w: u32) {
+        draw::bridge::ppp_draw_shape_field_global_step(&mut mem(), def, w, &mut |_, f, a| call_ptr(f, a));
+    }
 }

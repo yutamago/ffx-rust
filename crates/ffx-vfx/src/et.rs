@@ -2228,4 +2228,134 @@ pub mod bridge {
         mem.write(unit.wrapping_add(0xb0), flags);
         Some(r)
     }
+
+    // ---- round 35 a ----
+
+    /// `0x00c48d78`: the last id [`op_et_eff`] started a unit with.
+    pub const ET_EFF_ID: Global<u32> = Global::new(0x00c4_8d78);
+
+    /// `op_et_eff(oef, group, part, id)` (`0x007fc2e0`):
+    /// `opu_et_unit(oef, group, part, id)` and [`ET_EFF_ID`] = `id` (after
+    /// the call), returning 1, unless debug mode is on. In debug mode the
+    /// flags byte `0x02321580` may swap in a debug object (each with an
+    /// optional part that replaces `part` when not 0), setting
+    /// [`ET_EFF_ID`] before the call; a missing debug object returns -1:
+    /// - the battle oef2 ([`BATTLE_OEF2`]'s word), bit 0: `0x023215c0`
+    ///   (part `0x023215f0`);
+    /// - neither a monster nor a weapon (`opus_monster_index`,
+    ///   `opus_weapon_index`): bit 0 as for the battle oef2, else bit 1 as
+    ///   for a monster, else bit 2 `0x023215d0` (part `0x023215f8`), else
+    ///   -1;
+    /// - a weapon, bit 2: as above;
+    /// - null or a monster, bit 1: the debug character
+    ///   ([`DEBUG_CHR_RESIDENT`], its part `0x023215f4` used only when
+    ///   `part` is outside 4..=7), set up first with `op_et_monster_init(c,
+    ///   -1)` when `opus_get_monster_index` has none; without bit 1 a null
+    ///   `oef` returns -1.
+    ///
+    /// Otherwise the unit starts as asked, [`ET_EFF_ID`] untouched.
+    /// Callees through `call`.
+    pub fn op_et_eff<M: Mem>(
+        mem: &mut M,
+        oef: u32,
+        group: u32,
+        part: u32,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        enum Route {
+            /// The unit as asked.
+            Direct,
+            /// A debug object and its part's word.
+            Swap(u32, u32),
+            /// The debug character.
+            Chr,
+            Fail,
+        }
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let word = |mem: &M, a: u32| Global::<u32>::new(a).get(mem);
+        let unit = g(mem, 0x007f_d7f0);
+        if crate::op::bridge::DEBUG_MODE.get(mem) == 0 {
+            call(mem, unit, &[oef, group, part, id]);
+            ET_EFF_ID.set(mem, id);
+            return 1;
+        }
+        let flags = |mem: &M| DEBUG_CHR_FLAGS.get(mem);
+        let (battle, other) = (
+            Route::Swap(0x0232_15c0, 0x0232_15f0),
+            Route::Swap(0x0232_15d0, 0x0232_15f8),
+        );
+        let monster = |mem: &M| {
+            if flags(mem) & 2 != 0 {
+                Route::Chr
+            } else if oef == 0 {
+                Route::Fail
+            } else {
+                Route::Direct
+            }
+        };
+        let route = if oef == 0 {
+            monster(mem)
+        } else if oef == BATTLE_OEF2.get(mem) {
+            if flags(mem) & 1 != 0 {
+                battle
+            } else {
+                Route::Direct
+            }
+        } else if call(mem, g(mem, 0x007f_e540), &[oef]).cast_signed() >= 0 {
+            monster(mem)
+        } else {
+            let weapon = call(mem, g(mem, 0x007f_e570), &[oef]).cast_signed() >= 0;
+            let f = flags(mem);
+            if weapon {
+                if f & 4 != 0 { other } else { Route::Direct }
+            } else if f & 1 != 0 {
+                battle
+            } else if f & 2 != 0 {
+                Route::Chr
+            } else if f & 4 != 0 {
+                other
+            } else {
+                Route::Fail
+            }
+        };
+        match route {
+            Route::Direct => {
+                call(mem, unit, &[oef, group, part, id]);
+                1
+            }
+            Route::Fail => u32::MAX,
+            Route::Swap(obj, alt) => {
+                let o = word(mem, obj);
+                if o == 0 {
+                    return u32::MAX;
+                }
+                let p = match word(mem, alt) {
+                    0 => part,
+                    p => p,
+                };
+                ET_EFF_ID.set(mem, id);
+                call(mem, unit, &[o, group, p, id]);
+                1
+            }
+            Route::Chr => {
+                let chr = DEBUG_CHR_RESIDENT.get(mem);
+                if chr == 0 {
+                    return u32::MAX;
+                }
+                ET_EFF_ID.set(mem, id);
+                let alt = word(mem, 0x0232_15f4);
+                let p = if (4..=7).contains(&part.cast_signed()) || alt == 0 {
+                    part
+                } else {
+                    alt
+                };
+                if call(mem, g(mem, 0x0080_0e80), &[chr]).cast_signed() < 0 {
+                    call(mem, g(mem, 0x007f_c780), &[chr, u32::MAX]);
+                }
+                call(mem, unit, &[chr, group, p, id]);
+                1
+            }
+        }
+    }
 }
