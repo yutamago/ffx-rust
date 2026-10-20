@@ -8848,3 +8848,137 @@ fn abm_calc_snapshot() {
     let mut rng = Xorshift(0x5eed_110e);
     abm_calc_cases(&mut a, &mut b, &mut rng, 500);
 }
+
+/// `Sg_InitAll` and `Sg_Test` over recorders (`user_malloc` answering
+/// from a slot); every `Sg_Test` case and some outside the table.
+fn init_all_test_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let stands = [
+        (st::LOAD_VRAM_RESOURCE, 0),
+        (st::SG_USER_MALLOC, 1),
+        (st::SG_USER_FREE, 1),
+        (st::INIT_FILTER, 0),
+        (st::DB_INIT_ALL, 0),
+        (st::SG_DMY, 0),
+        (st::INIT_0083_9CA0, 1),
+        (st::FUNCTION_HISTORY_INIT, 0),
+        (st::TEXTURE_SPEC_INIT_ALL, 0),
+        (st::DRAW_SET_SHADOW_MODE, 1),
+        (st::MEM_MOVE_SET_TRIGGER, 0),
+        (st::SG_DBG_PRINTF, 2),
+        (st::MAP_SET_NAME, 2),
+        (st::SG_MAP_INIT, 0),
+    ];
+    for (k, &(sym, n)) in (1u32..).zip(&stands) {
+        recorder(a, b, k, sym, n, 0);
+    }
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..15 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        set(a, b, st::TEST_BLOCK, rng.next());
+        set(a, b, st::SG_FRAME, rng.next());
+        set(a, b, st::GS_REGISTER_SINK, rng.next());
+        twin("Sg_InitAll", a, b, 0x0083_b5f0, &[], |m| {
+            st::init_all(&mut H(m))
+        });
+        put(a, b, log, 0u32);
+        let n = [0, 1, 2, 3, 4, u32::MAX, rng.next()][rng.below(7) as usize];
+        twin("Sg_Test", a, b, 0x0084_67b0, &[n], |m| {
+            st::sg_test(&mut H(m), n)
+        });
+    }
+}
+
+#[test]
+fn init_all_test_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_110f);
+    init_all_test_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn init_all_test_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1110);
+    init_all_test_cases(&mut a, &mut b, &mut rng, 100);
+}
+
+/// `eiAbmLoad` over `eiAbmSetLang`'s stand-ins: `user_malloc` hands out
+/// a list of blocks, `getExcelBinSize` answers a list of sizes.
+fn abm_load_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as ab;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 1, ab::GET_SAVE_CONFIG_ENGLISH, 0, 0);
+    // a list stand-in: logs its first argument, answers the next word
+    let list = |a: &mut Oracle, b: &mut Oracle, sym: u32, n: u8| -> u32 {
+        let cursor = alloc(a, b, 4);
+        let mut c = vec![0xa1]; // mov eax, [cursor]
+        c.extend(cursor.to_le_bytes());
+        c.extend([0x8b, 0x00, 0x83, 0x05]); // mov eax, [eax]; add dword [cursor], 4
+        c.extend(cursor.to_le_bytes());
+        c.extend([4, 0xc3]);
+        let k = if n == 1 { 2 } else { 3 };
+        logged(a, b, k, sym, n, &c);
+        cursor
+    };
+    let mallocs = list(a, b, ab::USER_MALLOC, 1);
+    let sizes = list(a, b, ab::GET_EXCEL_BIN_SIZE, 2);
+    recorder(a, b, 4, ab::USER_FREE, 1, 0);
+    recorder(a, b, 5, ab::FLUSH_CACHE, 1, 0);
+    recorder(a, b, 6, 0x0077_a3f0, 1, 0);
+    recorder(a, b, 7, 0x0077_a420, 1, 0);
+    let code = |a: &Oracle, k: u32| a.rebase(REC_CODE) + 0x60 * k;
+    let (read_table, read_sync) = (code(a, 6), code(a, 7));
+    set(a, b, ab::CDLIB_READ_TABLE, read_table);
+    set(a, b, ab::CDLIB_READ_SYNC, read_sync);
+    // the load's buffer and two blocks, then a buffer per file
+    let blocks = [0; 5].map(|_| alloc(a, b, 0x200));
+    let (block_list, size_list) = (alloc(a, b, 20), alloc(a, b, 20));
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..8 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        put(a, b, mallocs, block_list);
+        put(a, b, sizes, size_list);
+        for (k, &blk) in (0u32..).zip(&blocks) {
+            put(a, b, block_list + 4 * k, blk);
+            put(a, b, size_list + 4 * k, rng.below(0x201));
+            for i in 0..0x80 {
+                put(a, b, blk + 4 * i, rng.next());
+            }
+        }
+        twin("eiAbmLoad", a, b, 0x00a5_4810, &[], |m| {
+            ab::ei_abm_load(&mut H(m))
+        });
+    }
+}
+
+#[test]
+fn abm_load_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1111);
+    abm_load_cases(&mut a, &mut b, &mut rng, 100);
+}
+
+#[test]
+fn abm_load_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1112);
+    abm_load_cases(&mut a, &mut b, &mut rng, 50);
+}

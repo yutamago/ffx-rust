@@ -1474,4 +1474,27 @@ pub mod bridge {
         h.write(at.wrapping_add(0x115ba), 0u8);
         at
     }
+
+    /// `eiAbmLoad()` (`0x00a54810`, from `MsBattleReadDataNB`'s menu
+    /// side): the sizes of `sphere.bin` and `panel.bin` (`getExcelBinSize`
+    /// into a [`LANG_BUFFER`] block, freed after), a block of each size
+    /// into `g_AbmapNodeKinds + 4` and `g_AbmapNodeKinds`, then (a tail
+    /// jump) [`ei_abm_set_lang`], whose `eax` it returns.
+    pub fn ei_abm_load(h: &mut impl ffx_bridge::Host) -> u32 {
+        let f = h.rebase(USER_MALLOC);
+        let buf = h.call(f, &[LANG_BUFFER]);
+        let mut sizes = [0; 2];
+        for (size, (name, _)) in sizes.iter_mut().zip(LANG_FILES) {
+            let (f, name) = (h.rebase(GET_EXCEL_BIN_SIZE), h.rebase(name));
+            *size = h.call(f, &[name, buf]);
+        }
+        let f = h.rebase(USER_FREE);
+        h.call(f, &[buf]);
+        for (size, (_, at)) in sizes.into_iter().zip(LANG_FILES) {
+            let f = h.rebase(USER_MALLOC);
+            let block = h.call(f, &[size]);
+            Global::<u32>::new(at).set(h, block);
+        }
+        ei_abm_set_lang(h)
+    }
 }

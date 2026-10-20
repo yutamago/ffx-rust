@@ -8069,7 +8069,7 @@
 0x0083b1d0 function Sg_PcRead_0083b1d0        # fh v3:exact 0x0083b250 _Sg_PcRead
 0x0083b420 function Sg_EventjumpDispose       # fh v3:exact 0x0083b4a0
 0x0083b460 function Sg_EventjumpInit          # fh v3:exact 0x0083b4e0
-0x0083b5f0 function Sg_InitAll                # fh v3:exact 0x0083b670
+0x0083b5f0 function Sg_InitAll                # fh v3:exact 0x0083b670; (): Sg_LoadVramResource, g_GsRegisterSink 0x83 twice, user_malloc(1 MB) into 0x00c498dc, Sg_InitFilter, Sg_DbInitAll, Sg_Dmy, 0x00839ca0(1), Ch_FunctionHistoryInit, Ch_TextureSpecInitAll, Ch_DrawSetShadowMode(0) (its eax); ported (ffx_sg::state, main round 17)
 0x0083b650 function Sg_PacketGetPtr           # fh v3:bsim1.00 0x0083b6d0
 0x0083b700 function Sg_MemCache               # fh switch:bsim1.00 0x7100431260
 0x0083b770 function Sg_MemCache_SerchFree     # (p) -> data of the first free block before p's that is bigger, 0 else; Switch name
@@ -8350,7 +8350,7 @@
 0x00845ec0 function sg_calcenvelope_normW     # fh v3:exact 0x00845ec0
 0x00846710 function sg_normalize              # fh v3:exact 0x00846710
 0x008467a0 function Sg_Dmy                    # fh v3:bsim1.00 0x008467a0
-0x008467b0 function Sg_Test                      # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%d:SG:sync end\\n'; Switch 0x7100433f50 Sg_Test (symbols from Fahrenheit's server export)
+0x008467b0 function Sg_Test                      # str-match switch: only user of 2 string(s) held once by both builds, e.g. '%d:SG:sync end\\n'; Switch 0x7100433f50 Sg_Test (symbols from Fahrenheit's server export); jump table 0x00846830: 0 Sg_MapSetName("sugimoto", 0), ("kaisou", 1), Sg_MapInit; 1 dbgPrintf("%d:SG:sync end\n", g_SgFrame); 2 user_malloc(64 KB) into 0x013036b8; 3 user_free it, Ch_MemMoveSetTrigger; returns n; ported (ffx_sg::state, main round 17)
 0x008479d0 function Gu_DrawEnd                # fh v3:exact 0x008479d0
 0x00847a40 function Gu_DrawMouseCursor        # fh v3:exact 0x00847a40
 0x00847b00 function Gu_DrawStart              # (buffer): GIF tag (one A+D) at buffer+0x10, g_GuPacket = g_GuPacketData = buffer, count 2, then Gu_SetTest(1, 1, 0, 0, 0, 0, 1, 2); fh v3:exact 0x00847b00
@@ -13443,7 +13443,7 @@
 0x00a54720 function eiAbmExit                 # fh v3:exact 0x00a54720
 0x00a54750 function ReturnConst2_00a54750        # auto-port shape (return constant, cdecl): return 0x2; callers: ; name ours
 0x00a547e0 function GetGlobal01a85f70_00a547e0   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01a85f70]; return t0; callers: ; name ours
-0x00a54810 function eiAbmLoad                 # fh v3:exact 0x00a54810
+0x00a54810 function eiAbmLoad                 # fh v3:exact 0x00a54810; (): sphere/panel .bin sizes by getExcelBinSize into a 0x25800 user_malloc block (freed), blocks of those sizes into 0x01a860e4 / g_AbmapNodeKinds, then tail-jumps to eiAbmSetLang; ported (ffx_sg::abmap, main round 17)
 0x00a54860 function eiAbmParaGet              # fh v3:exact+call.cs 0x00a54860 cdecl; () -> MsSetSaveParamAll's eax (eiAbmDataInit passes it on): MsInitChrAbilityMap, then per character 0..6 the save grid's (MsGetSaveAbilityMap, 0x400 x (kind, char bits)) activated nodes' kind records (MsGetExcelData(kind, g_AbmapNodeKinds)): byte +0x14 summed per bit of u16 +0x10 into MsGetAbilityMap(chr): bits 0x100/0x200 u32 +0/+4, bits 0..7 bytes +8..+0xf clamped at 0xff; MsAbilityMapSetCommand(chr, u16 +0x12) per node; ported (ffx_sg::abmap, main round 17)
 0x00a54ab0 function eiAbmSetLang              # fh v3:exact 0x00a54ab0; (): CD library table read (g_CdLib+0x10) 7 if MsGetSaveConfigEnglish else 0xd, then sphere/panel .bin through getExcelBinSize into a user_malloc block, memcpy over *0x01a860e4 / *0x01a860e0, freed; read wait (g_CdLib+8), FlushCache(0) (eax); ported (ffx_sg::abmap, main round 16)
 0x00a54b40 function eiAbmStart                # fh v3:exact 0x00a54b40

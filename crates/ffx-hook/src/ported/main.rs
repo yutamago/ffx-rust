@@ -2197,6 +2197,18 @@ ported! {
     eiAbmSetLang @ 0x00a5_4ab0 => extern "C" fn ei_abm_set_lang() -> u32 {
         abmap::bridge::ei_abm_set_lang(&mut mem())
     }
+    /// `eiAbmLoad()`.
+    eiAbmLoad @ 0x00a5_4810 => extern "C" fn ei_abm_load() -> u32 {
+        abmap::bridge::ei_abm_load(&mut mem())
+    }
+    /// `Sg_InitAll()`.
+    Sg_InitAll @ 0x0083_b5f0 => extern "C" fn sg_init_all() -> u32 {
+        state::bridge::init_all(&mut mem())
+    }
+    /// `Sg_Test(n)`.
+    Sg_Test @ 0x0084_67b0 => extern "C" fn sg_test(n: u32) -> u32 {
+        state::bridge::sg_test(&mut mem(), n)
+    }
     /// `eiAbmCalc()`: the screen vector in this frame.
     eiAbmCalc @ 0x00a5_3570 => extern "C" fn ei_abm_calc() -> u32 {
         let mut w = super::StackFrame::<{ abmap::bridge::CALC_WORK as usize / 4 }>::new();

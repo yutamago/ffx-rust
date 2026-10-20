@@ -3099,4 +3099,97 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    /// `Sg_LoadVramResource()`, `user_malloc(size)`, `user_free(p)`,
+    /// `Sg_InitFilter()`, `Sg_DbInitAll()` (debug), `Sg_Dmy()`,
+    /// `0x00839ca0(1)`, `Ch_FunctionHistoryInit()`,
+    /// `Ch_TextureSpecInitAll()`, `Ch_DrawSetShadowMode(mode)`,
+    /// `Ch_MemMoveSetTrigger()`, `dbgPrintf(format, ..)`,
+    /// `Sg_MapSetName(name, which)`, `Sg_MapInit()`.
+    pub const LOAD_VRAM_RESOURCE: u32 = 0x0083_fc50;
+    pub const SG_USER_MALLOC: u32 = 0x0068_7020;
+    pub const SG_USER_FREE: u32 = 0x0068_7010;
+    pub const INIT_FILTER: u32 = 0x0082_cd50;
+    pub const DB_INIT_ALL: u32 = 0x0084_1440;
+    pub const SG_DMY: u32 = 0x0084_67a0;
+    pub const INIT_0083_9CA0: u32 = 0x0083_9ca0;
+    pub const FUNCTION_HISTORY_INIT: u32 = 0x0082_6a40;
+    pub const TEXTURE_SPEC_INIT_ALL: u32 = 0x0083_d140;
+    pub const DRAW_SET_SHADOW_MODE: u32 = 0x0083_0140;
+    pub const MEM_MOVE_SET_TRIGGER: u32 = 0x0082_7250;
+    pub const SG_DBG_PRINTF: u32 = 0x0062_f500;
+    pub const MAP_SET_NAME: u32 = 0x0084_4fb0;
+    pub const SG_MAP_INIT: u32 = 0x0084_4d10;
+    /// The emulated GS register sink (`g_GsRegisterSink`).
+    pub const GS_REGISTER_SINK: Global<u32> = Global::new(0x0230_56e8);
+    /// The 1 MB block `Sg_InitAll` allocates (`0x00c498dc`).
+    pub const INIT_BLOCK: Global<u32> = Global::new(0x00c4_98dc);
+    /// `Sg_Test`'s 64 KB block (`0x013036b8`) and the frame counter it
+    /// prints (`g_SgFrame`).
+    pub const TEST_BLOCK: Global<u32> = Global::new(0x0130_36b8);
+    pub const SG_FRAME: Global<u32> = Global::new(0x023c_bbf0);
+    /// `Sg_Test`'s `"%d:SG:sync end\n"` and its two map names
+    /// (`"sugimoto"`, `"kaisou"`).
+    pub const FMT_TEST_FRAME: u32 = 0x00b5_aac4;
+    pub const TEST_MAP_NAMES: [u32; 2] = [0x00b5_9078, 0x00b5_aad4];
+
+    /// `Sg_InitAll()` (`0x0083b5f0`): `Sg_LoadVramResource`, the GS sink
+    /// written 0x83 twice, a 1 MB block into `0x00c498dc`,
+    /// `Sg_InitFilter`, `Sg_DbInitAll`, `Sg_Dmy`, `0x00839ca0(1)`, the
+    /// character function history and texture specs, shadow mode 0.
+    /// Returns the last call's `eax`.
+    pub fn init_all(h: &mut impl ffx_bridge::Host) -> u32 {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        call(h, LOAD_VRAM_RESOURCE, &[]);
+        GS_REGISTER_SINK.set(h, 0x83);
+        GS_REGISTER_SINK.set(h, 0x83);
+        let block = call(h, SG_USER_MALLOC, &[0x10_0000]);
+        INIT_BLOCK.set(h, block);
+        for f in [INIT_FILTER, DB_INIT_ALL, SG_DMY] {
+            call(h, f, &[]);
+        }
+        call(h, INIT_0083_9CA0, &[1]);
+        call(h, FUNCTION_HISTORY_INIT, &[]);
+        call(h, TEXTURE_SPEC_INIT_ALL, &[]);
+        call(h, DRAW_SET_SHADOW_MODE, &[0])
+    }
+
+    /// `Sg_Test(n)` (`0x008467b0`, the script native 0x401e; jump table
+    /// `0x00846830`): 0 names the two test maps (`Sg_MapSetName`) and
+    /// runs `Sg_MapInit`, 1 prints the frame (`dbgPrintf`), 2 allocates a
+    /// 64 KB block into `0x013036b8`, 3 frees it and sets the character
+    /// memory-move trigger; anything else nothing. Returns `n`.
+    pub fn sg_test(h: &mut impl ffx_bridge::Host, n: u32) -> u32 {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        match n {
+            0 => {
+                for (which, name) in (0u32..).zip(TEST_MAP_NAMES) {
+                    let name = h.rebase(name);
+                    call(h, MAP_SET_NAME, &[name, which]);
+                }
+                call(h, SG_MAP_INIT, &[]);
+            }
+            1 => {
+                let (fmt, frame) = (h.rebase(FMT_TEST_FRAME), SG_FRAME.get(h));
+                call(h, SG_DBG_PRINTF, &[fmt, frame]);
+            }
+            2 => {
+                let block = call(h, SG_USER_MALLOC, &[0x1_0000]);
+                TEST_BLOCK.set(h, block);
+            }
+            3 => {
+                let block = TEST_BLOCK.get(h);
+                call(h, SG_USER_FREE, &[block]);
+                call(h, MEM_MOVE_SET_TRIGGER, &[]);
+            }
+            _ => {}
+        }
+        n
+    }
 }
