@@ -21265,3 +21265,57 @@ fn round36c_vertex_point_lights_and_shape_field_emits_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn round36d_opu_init_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_da80);
+        let index = p.alloc(4);
+        far_recorder(&mut p, 0x007f_eba0, &[0, 0, 0], Some(index));
+        let obj = p.alloc(0x1800);
+        for round in 0..1000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            p.fill(obj, 0x1800, &mut rng);
+            let n = rng.pick(&[0u32, 1, 7, 8, 9, 16, 20, 0x1_0010]);
+            let no = rng.pick(&[0u32, 1, 2, 3, 0x1_0001]);
+            let r = rng.next();
+            let show = rng.pick(&[u32::MAX, 0, 5, 0x200, r]);
+            let r = rng.next();
+            let owner = rng.pick(&[0, 1, r]);
+            // the owner's slot: taken by it, free or none free
+            for k in 0..16 {
+                let v = rng.pick(&[0u32, 2, 3, r]);
+                p.set(obj + 0x60 + 4 * k, if rng.chance(70) { v | 4 } else { v });
+            }
+            if rng.chance(30) {
+                p.set(obj + 0x60 + 4 * rng.below(16), owner);
+            }
+            let idx = rng.below(512);
+            p.set(index, idx);
+            let rec = p.sym(et::bridge::EFF.sym) + 32 * idx;
+            p.set(rec + 0x10, rng.pick(&[0xffu8, 0xfe, 3]));
+            p.set(rec + 0x18, rng.next() as u8);
+            let r0 = p.sym(ppp::bridge::R0.sym);
+            for k in 0..4 {
+                let v = rng.next();
+                p.set(r0 + 4 * k, v);
+            }
+            let data = rng.next();
+            let args = [no, data, owner, obj, n, rng.next(), show];
+            p.check(&what("opu_init"), 0x007f_da80, &args, |m| {
+                Some(o::opu_init(
+                    m,
+                    no,
+                    data,
+                    owner,
+                    obj,
+                    n,
+                    show,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}

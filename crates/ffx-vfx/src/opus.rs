@@ -5357,4 +5357,103 @@ pub mod bridge {
             _ => cmd,
         }
     }
+
+    /// `opu_init(no, data, owner, obj, n, _, show)` (`0x007fda80`, called by
+    /// `opu_et_init`): sets up opus object `obj` as number `no`
+    /// (`g_OpusBattle[u16 no]`; a non-negative `show` to `0x023227b4`, and
+    /// `show` to `0x011a0084` for number 1): `obj`'s first 0x100 bytes
+    /// cleared (`memset`), four `u16 n`-entry `i16` arrays after them
+    /// (`+0x10`, `+0x14`, `+0x18`, `+0x1c`; their first `n & !7` entries
+    /// -1), the unit at `+0x20` behind them, `+0x24` = `obj`, `u16 +0` =
+    /// `no`, `+2` = 0x8000, `+8` = `data`, `u16 +0x34` = `n`, `+0x36` =
+    /// 0x10001; `owner` gets a slot among the 16 words at `+0x60` (its own,
+    /// else the first free one; 0xff when none or `owner` is 0; the clear
+    /// has just emptied them, so a set `owner` always gets slot 0); then
+    /// `opus_osu_init_group(no, n)` (after the first array's first entry is
+    /// 0), `opus_osu_init(unit)` (`g_OpusLastUnit` = it), the unit's `+0` =
+    /// `data`, `u16 +0x1a` = 0, byte `+0x1e` = the slot, `u16 +0x14` =
+    /// `opus_get_eff_status_index(show, slot, 1)` = `i`, `g_EtEff[i] +4` =
+    /// the unit and its byte `+0x18` = record byte `+0x10` (`+0x18` when
+    /// that is 0xff). Callees through `call`. Returns `obj`.
+    #[allow(clippy::too_many_arguments, clippy::cast_possible_truncation)]
+    pub fn opu_init<M: Mem>(
+        mem: &mut M,
+        no: u32,
+        data: u32,
+        owner: u32,
+        obj: u32,
+        n: u32,
+        show: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let no16 = no & 0xffff;
+        mem.write(OPUS_BATTLE.ptr(mem).addr.wrapping_add(no16 << 2), obj);
+        if show.cast_signed() >= 0 {
+            mem.write(g(mem, 0x0232_27b4), show);
+        }
+        if no16 == 1 {
+            mem.write(g(mem, 0x011a_0084), show);
+        }
+        call(mem, g(mem, 0x0094_964c), &[obj, 0, 0x100]);
+        let len = (n & 0xffff) * 2;
+        let arrays = [0u32, 1, 2, 3].map(|k| obj.wrapping_add(0x100 + k * len));
+        let unit = obj.wrapping_add(0x100 + 4 * len);
+        for (k, a) in (0u32..).zip(arrays) {
+            mem.write(obj.wrapping_add(0x10 + 4 * k), a);
+        }
+        mem.write(obj.wrapping_add(0x20), unit);
+        for _ in 0..len / 16 {
+            for k in 0..4 {
+                let at = obj.wrapping_add(0x10 + 4 * k);
+                let a: u32 = mem.read(at);
+                mem.write(a, [u32::MAX; 4]);
+            }
+            for k in 0..4 {
+                let at = obj.wrapping_add(0x10 + 4 * k);
+                let a: u32 = mem.read(at);
+                mem.write(at, a.wrapping_add(0x10));
+            }
+        }
+        mem.write(obj.wrapping_add(0x18), arrays[2]);
+        mem.write(obj.wrapping_add(0x1c), arrays[3]);
+        mem.write(obj.wrapping_add(2), 0x8000u16);
+        mem.write(obj.wrapping_add(0x14), arrays[1]);
+        mem.write(obj.wrapping_add(0x34), n as u16);
+        mem.write(obj.wrapping_add(0x10), arrays[0]);
+        mem.write(obj.wrapping_add(0x24), obj);
+        mem.write(obj, no as u16);
+        mem.write(obj.wrapping_add(0x36), 0x0001_0001u32);
+        mem.write(obj.wrapping_add(8), data);
+        let slots = obj.wrapping_add(0x60);
+        let slot = if owner == 0 {
+            0xff
+        } else if let Some(k) = (0..16u32).find(|&k| mem.read::<u32>(slots + 4 * k) == owner) {
+            k
+        } else if let Some(k) = (0..16u32).find(|&k| mem.read::<u32>(slots + 4 * k) == 0) {
+            mem.write(slots + 4 * k, owner);
+            k
+        } else {
+            0xff
+        };
+        let first: u32 = mem.read(obj.wrapping_add(0x10));
+        mem.write(first, 0u16);
+        call(mem, g(mem, 0x0080_1480), &[no, n]);
+        let unit: u32 = mem.read(obj.wrapping_add(0x20));
+        call(mem, g(mem, 0x0080_1200), &[unit]);
+        mem.write(g(mem, 0x012a_12f8), unit);
+        let d: u32 = mem.read(obj.wrapping_add(8));
+        mem.write(unit, ffx_system::stub::ptr32(d));
+        mem.write(unit.wrapping_add(0x1a), 0u16);
+        mem.write(unit.wrapping_add(0x1e), slot as u8);
+        let i = call(mem, g(mem, 0x007f_eba0), &[show, slot, 1]);
+        mem.write(unit.wrapping_add(0x14), i as u16);
+        let rec = EFF.ptr(mem).addr.wrapping_add(i << 5);
+        mem.write(rec.wrapping_add(4), unit);
+        let mut c: u8 = mem.read(rec.wrapping_add(0x10));
+        if c == 0xff {
+            c = mem.read(rec.wrapping_add(0x18));
+        }
+        mem.write(unit.wrapping_add(0x18), c);
+        obj
+    }
 }
