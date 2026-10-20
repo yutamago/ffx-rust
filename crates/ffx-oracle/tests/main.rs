@@ -7830,3 +7830,646 @@ fn update_motion_snapshot() {
     let mut rng = Xorshift(0x5eed_101a);
     update_motion_cases(&mut a, &mut b, &mut rng, 400);
 }
+
+// Main round 17: the sphere grid's stat bonuses.
+
+/// `eiAbmParaGet` over stand-ins: the init, save map, command and
+/// save-param calls recorded; `MsGetAbilityMap(chr)` the 16-byte record
+/// `outs + 16 * chr`; `MsGetExcelData(id, table, _)` the 32-byte record
+/// `recs + 32 * id`, the table it was handed into `seen`. A save map of
+/// 0x401 entries with a few activated nodes (the log holds 95 calls), the
+/// one past the end activated for everyone.
+fn abm_para_get_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as ab;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 1, ab::INIT_CHR_ABILITY_MAP, 0, 0);
+    recorder(a, b, 2, ab::GET_SAVE_ABILITY_MAP, 0, 0);
+    recorder(a, b, 3, ab::ABILITY_MAP_SET_COMMAND, 2, 0);
+    recorder(a, b, 4, ab::SET_SAVE_PARAM_ALL, 0, 0);
+    let outs = alloc(a, b, 16 * 8);
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x04, 0x05]; // mov eax, [esp+4]; shl eax, 4; add eax, outs
+    c.extend(outs.to_le_bytes());
+    c.push(0xc3);
+    redirect_to(a, b, ab::GET_ABILITY_MAP, &c);
+    let recs = alloc(a, b, 32 * 256);
+    let seen = alloc(a, b, 4);
+    let mut c = vec![0x8b, 0x4c, 0x24, 0x08, 0x89, 0x0d]; // mov ecx, [esp+8]; mov [seen], ecx
+    c.extend(seen.to_le_bytes());
+    c.extend([0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe0, 0x05, 0x05]); // mov eax, [esp+4]; shl eax, 5; add eax, recs
+    c.extend(recs.to_le_bytes());
+    c.push(0xc3);
+    redirect_to(a, b, ab::GET_EXCEL_DATA, &c);
+    let save = alloc(a, b, 2 * 0x401);
+    let strings = b.stack_range().start + 0x1000;
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..5 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        let at = ret(a, 2);
+        put(a, b, at, save);
+        put(a, b, seen, 0u32);
+        set(a, b, ab::NODE_KINDS, rng.next());
+        for k in 0..32 * 2 {
+            put(a, b, outs + 4 * k, rng.next());
+        }
+        let amount = [0x55u8, 0x80, 0x33, 1, 0xff, 0][rng.below(8) as usize % 6];
+        let fixed = rng.below(2) == 0;
+        for k in 0..32 * 256 / 4 {
+            put(a, b, recs + 4 * k, rng.next());
+        }
+        for id in 0..256 {
+            let r = recs + 32 * id;
+            if fixed {
+                put(a, b, r + 0x14, amount);
+            }
+            if rng.below(3) == 0 {
+                put(a, b, r + 0x10, 0xffffu16);
+            }
+        }
+        for k in 0..0x401 {
+            let kind = rng.next().to_le_bytes()[0];
+            put(a, b, save + 2 * k, [kind, 0]);
+        }
+        put(a, b, save + 2 * 0x400 + 1, 0xffu8);
+        for _ in 0..rng.below(11) {
+            let node = match rng.below(4) {
+                0 => 0,
+                1 => 0x3ff,
+                _ => rng.below(0x400),
+            };
+            let bits = match rng.below(3) {
+                0 => 0xff,
+                1 => 1 << rng.below(8),
+                _ => rng.next().to_le_bytes()[0],
+            };
+            put(a, b, save + 2 * node + 1, bits);
+        }
+        twin("eiAbmParaGet", a, b, 0x00a5_4860, &[], |m| {
+            ab::ei_abm_para_get(&mut H(m), strings)
+        });
+    }
+}
+
+#[test]
+fn abm_para_get_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1101);
+    abm_para_get_cases(&mut a, &mut b, &mut rng, 150);
+}
+
+#[test]
+fn abm_para_get_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1102);
+    abm_para_get_cases(&mut a, &mut b, &mut rng, 60);
+}
+
+/// `eiAbmParaGet` with the game's own callees on the snapshot's save data
+/// (every character's real grid).
+#[test]
+fn abm_para_get_snapshot_real() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let strings = b.stack_range().start + 0x1000;
+    twin("eiAbmParaGet", &mut a, &mut b, 0x00a5_4860, &[], |m| {
+        ffx_sg::abmap::bridge::ei_abm_para_get(&mut H(m), strings)
+    });
+}
+
+/// A stand-in that logs through recorder `k` (its `n` arguments passed
+/// on), then runs `tail` (which must return).
+fn logged(a: &mut Oracle, b: &mut Oracle, k: u32, sym: u32, n: u8, tail: &[u8]) {
+    recorder(a, b, k, sym, n.into(), 0);
+    let rec = a.rebase(REC_CODE) + 0x60 * k;
+    let mut c = vec![];
+    for _ in 0..n {
+        c.extend([0xff, 0x74, 0x24, 4 * n]); // push dword [esp + 4n]
+    }
+    c.push(0xb8);
+    c.extend(rec.to_le_bytes()); // mov eax, rec
+    c.extend([0xff, 0xd0, 0x83, 0xc4, 4 * n]); // call eax; add esp, 4n
+    c.extend(tail);
+    redirect_to(a, b, sym, &c);
+}
+
+/// [`logged`] answering `[fail]` while `[count]` is not 0 (counting it
+/// down) and `[ok]` after; each `poke` first stores the byte at `.0`
+/// into `.1`.
+fn countdown(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    k: u32,
+    sym: u32,
+    n: u8,
+    [count, fail, ok]: [u32; 3],
+    poke: &[(u32, u32)],
+) {
+    let mut c = vec![];
+    for &(from, to) in poke {
+        c.push(0xa0);
+        c.extend(from.to_le_bytes()); // mov al, [from]
+        c.push(0xa2);
+        c.extend(to.to_le_bytes()); // mov [to], al
+    }
+    c.push(0xa1);
+    c.extend(count.to_le_bytes()); // mov eax, [count]
+    c.extend([0x85, 0xc0, 0x74, 0x0c, 0xff, 0x0d]); // test eax, eax; jz ok; dec dword [count]
+    c.extend(count.to_le_bytes());
+    c.extend(answer(fail));
+    c.extend(answer(ok));
+    logged(a, b, k, sym, n, &c);
+}
+
+/// `cd_read_thread_sector` over stand-ins: seek, HDD step and read count
+/// down to their answer; the step pokes request 63's busy byte from a
+/// slot; zero, one or more busy requests.
+fn cd_read_thread_sector_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::cdread::bridge as cd;
+    let log = a.rebase(REC_LOG);
+    let slots = alloc(a, b, 4 * 12);
+    let chans = cd::CHANNELS.ptr(a).addr;
+    let last = chans + 63 * 0x38 + 0x31;
+    let ctl = alloc(a, b, 0x80);
+    // the step also notes the first byte of `cd + 0x74`
+    countdown(a, b, 1, cd::CD_SEEK, 1, [slots, slots + 4, slots + 8], &[]);
+    countdown(
+        a,
+        b,
+        2,
+        cd::HDD_READ_STEP,
+        0,
+        [slots + 12, slots + 16, slots + 20],
+        &[(slots + 36, last), (ctl + 0x74, slots + 40)],
+    );
+    countdown(
+        a,
+        b,
+        3,
+        cd::CD_READ,
+        0,
+        [slots + 24, slots + 28, slots + 32],
+        &[],
+    );
+    recorder(a, b, 4, cd::TASK_WAIT, 1, 0);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, slots, rng.below(19));
+        put(a, b, slots + 4, [0, 2, rng.next()][rng.below(3) as usize]);
+        put(a, b, slots + 8, 1u32);
+        put(a, b, slots + 12, rng.below(6));
+        put(
+            a,
+            b,
+            slots + 16,
+            [1, u32::MAX, rng.next() | 1][rng.below(3) as usize],
+        );
+        put(a, b, slots + 20, 0u32);
+        put(a, b, slots + 24, rng.below(6));
+        put(a, b, slots + 28, 0u32);
+        put(a, b, slots + 32, [1, rng.next() | 1][rng.below(2) as usize]);
+        put(
+            a,
+            b,
+            slots + 36,
+            [0u8, 1, 0, rng.next().to_le_bytes()[0]][rng.below(4) as usize],
+        );
+        for k in 0..0x20 {
+            put(a, b, ctl + 4 * k, rng.next());
+        }
+        let n = rng.below(64);
+        let req = chans + 0x38 * n;
+        for k in 0..64 * 0x38 / 4 {
+            put(a, b, chans + 4 * k, rng.next());
+        }
+        let busy = rng.below(5);
+        for k in 0..64 {
+            let on = match busy {
+                0 => 0,
+                1 | 2 => u8::from(k == n),
+                3 => u8::from(k == (n + 1) % 64),
+                _ => u8::from(rng.below(16) == 0),
+            };
+            put(
+                a,
+                b,
+                chans + 0x38 * k + 0x31,
+                on * (1 + rng.next().to_le_bytes()[0] % 255),
+            );
+        }
+        set(
+            a,
+            b,
+            cd::HDD_MODE,
+            [0, 0, 0, 1, rng.next().to_le_bytes()[0]][rng.below(5) as usize],
+        );
+        twin(
+            "cd_read_thread_sector",
+            a,
+            b,
+            0x0076_e4b0,
+            &[ctl, req, n],
+            |m| {
+                cd::cd_read_thread_sector(&mut H(m), ctl, req, n);
+            },
+        );
+    }
+}
+
+#[test]
+fn cd_read_thread_sector_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1103);
+    cd_read_thread_sector_cases(&mut a, &mut b, &mut rng, 800);
+}
+
+#[test]
+fn cd_read_thread_sector_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1104);
+    cd_read_thread_sector_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+/// `cd_read_thread_file` over stand-ins: `sprintf` doing `%s`, the C
+/// runtime's `memcpy`, the rest logged; the flush ticks the clock;
+/// `task_wait` clears the background busy byte after a count. Sizes
+/// around sector multiples, packed or not, stored (first byte 0) or not,
+/// an HDD copy or not, either decoder.
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn cd_read_thread_file_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::cdread::bridge as cd;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let clock = alloc(a, b, 0x20);
+    let tick = clock + 0x1c;
+    // the find notes `cd + 0x5c`, `+0x70`, `+0x74` as it sees them
+    let ctl = alloc(a, b, 0x80);
+    let seen = alloc(a, b, 12);
+    let mut c = vec![];
+    for (k, off) in (0u32..).zip([0x5c, 0x70, 0x74]) {
+        c.push(0xa1);
+        c.extend((ctl + off).to_le_bytes()); // mov eax, [ctl + off]
+        c.push(0xa3);
+        c.extend((seen + 4 * k).to_le_bytes()); // mov [seen + 4k], eax
+    }
+    c.extend(answer(ret(a, 1)));
+    logged(a, b, 1, cd::HDD_INSTALL_FIND, 2, &c);
+    recorder(a, b, 2, cd::HD_FILE_READ, 4, 0);
+    recorder(a, b, 3, cd::GET_HDD_ERR, 0, 0);
+    recorder(a, b, 4, cd::TK_REFRESH_HDD_MODE, 0, 0);
+    recorder(a, b, 5, cd::SA_CD_READ_TASK, 5, 0);
+    // the flush ticks the clock and moves the request's archive, sector
+    // and buffer (read again after each call)
+    let req_at = alloc(a, b, 4);
+    let mut c = vec![0xff, 0x05]; // inc dword [tick]
+    c.extend(tick.to_le_bytes());
+    c.push(0xa1);
+    c.extend(req_at.to_le_bytes()); // mov eax, [req_at]
+    // inc dword [eax+0x28]; inc dword [eax+0x1c]; add dword [eax+4], 4
+    c.extend([
+        0xff, 0x40, 0x28, 0xff, 0x40, 0x1c, 0x83, 0x40, 0x04, 0x04, 0xc3,
+    ]);
+    logged(a, b, 6, cd::FLUSH_CACHE, 1, &c);
+    recorder(a, b, 7, cd::TK_CONFIG, 0, 0);
+    recorder(a, b, 8, cd::TK_SIGNAL_BG, 0, 0);
+    recorder(a, b, 9, cd::DECODE_DATA, 1, 0);
+    recorder(a, b, 10, cd::READ_CALLBACK, 1, 0);
+    let waits = alloc(a, b, 4);
+    let busy = a.rebase(cd::BG_BUSY.sym);
+    let mut c = vec![0xa1];
+    c.extend(waits.to_le_bytes()); // mov eax, [waits]
+    c.extend([0x85, 0xc0, 0x75, 0x08, 0xc6, 0x05]); // test eax, eax; jnz more; mov byte [busy], 0
+    c.extend(busy.to_le_bytes());
+    c.extend([0, 0xc3, 0xff, 0x0d]); // ret; more: dec dword [waits]
+    c.extend(waits.to_le_bytes());
+    c.push(0xc3);
+    logged(a, b, 11, cd::TASK_WAIT, 1, &c);
+    let sprintf = a.alloc_code(&SPRINTF_S).unwrap();
+    assert_eq!(b.alloc_code(&SPRINTF_S).unwrap(), sprintf);
+    set(a, b, cd::SPRINTF_SLOT, sprintf);
+    set(a, b, cd::CLOCK, clock);
+    let entry = alloc(a, b, 0x40);
+    let config = alloc(a, b, 0x20);
+    let sector_buf = alloc(a, b, 0x800);
+    let buffer = alloc(a, b, 0x5000);
+    let chans = cd::CHANNELS.ptr(a).addr;
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..12 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        let at = ret(a, 1);
+        put(a, b, at, if rng.below(3) == 0 { entry } else { 0 });
+        let at = ret(a, 3);
+        put(a, b, at, [0, 0, 1, rng.next()][rng.below(4) as usize]);
+        let at = ret(a, 7);
+        put(a, b, at, config);
+        put(a, b, config + 0x10, u8::from(rng.below(2) == 0));
+        for k in 0..0x10 {
+            put(a, b, entry + 4 * k, rng.next());
+        }
+        let name: Vec<u8> = (0..rng.below(12))
+            .map(|_| b'a' + rng.below(26).to_le_bytes()[0])
+            .chain([0])
+            .collect();
+        a.write(entry + 0x24, &name).unwrap();
+        b.write(entry + 0x24, &name).unwrap();
+        for k in 0..0x200 {
+            put(a, b, sector_buf + 4 * k, rng.next());
+        }
+        for k in 0..0x1400 {
+            put(a, b, buffer + 4 * k, rng.next());
+        }
+        // the first byte read: stored (0) or packed
+        let first =
+            |rng: &mut Xorshift| [0, 0, 1, rng.next().to_le_bytes()[0]][rng.below(4) as usize];
+        put(a, b, sector_buf, first(rng));
+        // the flush moves the buffer on by 4 each time
+        let byte = first(rng);
+        for k in 0..4 {
+            put(a, b, buffer + 4 * k, byte);
+        }
+        set(a, b, cd::READ_LAST_SRC, rng.next());
+        set(a, b, cd::READ_BUFFER, sector_buf);
+        for k in 0..0x20 {
+            put(a, b, ctl + 4 * k, rng.next());
+        }
+        put(
+            a,
+            b,
+            ctl + 0x70,
+            [0, 0, 0, 1, rng.next()][rng.below(5) as usize],
+        );
+        put(a, b, tick, rng.next());
+        put(a, b, waits, rng.below(4));
+        set(
+            a,
+            b,
+            cd::BG_BUSY,
+            [0, 1, rng.next().to_le_bytes()[0]][rng.below(3) as usize],
+        );
+        set(a, b, cd::HDD_MODE, rng.next().to_le_bytes()[0]);
+        let n = rng.below(64);
+        let req = chans + 0x38 * n;
+        for k in 0..0x38 / 4 {
+            put(a, b, req + 4 * k, rng.next());
+        }
+        let size = match rng.below(5) {
+            0 => rng.below(0x800),
+            1 => 0x800 * rng.below(5),
+            2 => 0x800 * rng.below(5) + [1, 0x7fb, 0x7ff][rng.below(3) as usize],
+            _ => rng.below(0x4000),
+        };
+        let mut stored = match rng.below(5) {
+            0 => size,
+            1 => size.wrapping_sub(1),
+            2 => [
+                0x800 * rng.below(5) + rng.below(3),
+                0x800 * (rng.below(4) + 1) - 6 - rng.below(3),
+                0x800 * rng.below(5) + 0x3fb,
+            ][rng.below(3) as usize],
+            _ => rng.below(size.max(1)),
+        };
+        // a stored file ending within 5 bytes past a sector copies a
+        // negative length: the original faults (the data never does it)
+        if stored + 5 >= 0x800 && (stored + 5) & 0x7ff < 5 {
+            stored -= 5;
+        }
+        // a packed size past `i32::MAX`: one sector read (its first byte
+        // not 0, else the copy runs away)
+        let wide = rng.below(16) == 0;
+        let size = if wide {
+            stored = 0x7fff_fffb;
+            put(a, b, sector_buf, 1u8);
+            u32::MAX - rng.below(4)
+        } else {
+            size
+        };
+        put(a, b, req, stored);
+        put(a, b, req + 4, buffer);
+        put(a, b, req + 0x2c, size);
+        put(a, b, req + 0x1c, rng.below(0x10_0000));
+        put(
+            a,
+            b,
+            req + 0x20,
+            if rng.below(2) == 0 { 0 } else { rng.next() },
+        );
+        put(
+            a,
+            b,
+            req + 0x34,
+            [0u8, 1, rng.next().to_le_bytes()[0]][rng.below(3) as usize],
+        );
+        if wide {
+            put(a, b, req + 0x34, 1u8);
+        }
+        put(a, b, req_at, req);
+        twin(
+            "cd_read_thread_file",
+            a,
+            b,
+            0x0076_e1c0,
+            &[ctl, req, n],
+            |m| {
+                cd::cd_read_thread_file(&mut H(m), ctl, req, n);
+            },
+        );
+    }
+}
+
+#[test]
+fn cd_read_thread_file_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1105);
+    cd_read_thread_file_cases(&mut a, &mut b, &mut rng, 800);
+}
+
+#[test]
+fn cd_read_thread_file_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1106);
+    cd_read_thread_file_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+/// `AbmapDrawChrPanel` over stand-ins: the message size writes its
+/// width and height from slots (only the text is logged: the two
+/// pointers are frame addresses); every slide frame, both directions.
+fn abm_chr_panel_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as ab;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 1, ab::PANEL_FRAME, 3, 0);
+    recorder(a, b, 2, ab::DRAW_CHR_FACE, 2, 0);
+    recorder(a, b, 3, ab::SAVE_CHR_NAME, 1, 0);
+    let size = alloc(a, b, 8);
+    let mut c = vec![];
+    for (arg, from) in [(8u8, size), (12, size + 4)] {
+        c.extend([0x8b, 0x44, 0x24, arg, 0x8b, 0x0d]); // mov eax, [esp+arg]; mov ecx, [from]
+        c.extend(from.to_le_bytes());
+        c.extend([0x89, 0x08]); // mov [eax], ecx
+    }
+    c.push(0xc3);
+    logged(a, b, 4, ab::MESSAGE_SIZE, 1, &c);
+    recorder(a, b, 5, ab::HELP_LINE_DRAW, 3, 0);
+    recorder(a, b, 6, ab::GET_SAVE_SP, 1, 0);
+    recorder(a, b, 7, ab::DIGIT_RIGHT, 6, 0);
+    let g = alloc(a, b, 0x1_1700);
+    set(a, b, ab::ABMAP, g);
+    let work = b.stack_range().start + 0x1000;
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..8 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        let w = [0, 1, 0x7f, rng.below(0x200), rng.next()][rng.below(5) as usize];
+        put(a, b, size, w);
+        put(a, b, size + 4, rng.next());
+        put(a, b, g + 0x115bc, rng.next().to_le_bytes()[0]);
+        put(
+            a,
+            b,
+            g + 0x115c0,
+            [0u8, 0, 1, rng.next().to_le_bytes()[0]][rng.below(4) as usize],
+        );
+        let frame = [0u8, 1, 2, 3, 4, 0xff, rng.next().to_le_bytes()[0]][rng.below(7) as usize];
+        put(a, b, g + 0x115c1, frame);
+        put(
+            a,
+            b,
+            g + 0x115c2,
+            [0u8, 1, rng.next().to_le_bytes()[0]][rng.below(3) as usize],
+        );
+        put(a, b, g + 0x1161c, rng.next());
+        twin("AbmapDrawChrPanel", a, b, 0x00a4_fbe0, &[], |m| {
+            ab::abmap_draw_chr_panel(&mut H(m), work)
+        });
+    }
+}
+
+#[test]
+fn abm_chr_panel_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1107);
+    abm_chr_panel_cases(&mut a, &mut b, &mut rng, 1500);
+}
+
+#[test]
+fn abm_chr_panel_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1108);
+    abm_chr_panel_cases(&mut a, &mut b, &mut rng, 500);
+}
+
+/// `AbmapPadEntryDrawItem` over stand-ins: the element draw logs its
+/// quad (0x80 bytes) and kind; rows around the clip's edges, both
+/// parities (negative indices too), dimmed or not.
+fn abm_draw_item_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as ab;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 1, ab::SAVE_ITEM_NUM, 1, 0);
+    recorder(a, b, 2, ab::ICON_ITEM, 5, 0);
+    recorder(a, b, 3, ab::ABMAP_DIGIT_RIGHT, 4, 0);
+    let quads = alloc(a, b, 4 + 0x84 * 2);
+    let mut c = arg_logger(quads, &[(0, 0x80), (2, 0)], &[]);
+    c.extend(answer(ret(a, 4)));
+    redirect_to(a, b, ab::DRAW_UI_ELEMENT, &c);
+    let panel = alloc(a, b, 0x40);
+    let entry = alloc(a, b, 0x10);
+    let work = b.stack_range().start + 0x1000;
+    let pos = a.rebase(ab::PACKET_POS.sym);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, quads, 0u32);
+        for k in 1..5 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        for k in 0..0x10 {
+            put(a, b, panel + 4 * k, rng.next());
+        }
+        for k in 0..4 {
+            put(a, b, entry + 4 * k, rng.next());
+        }
+        put(
+            a,
+            b,
+            entry + 4,
+            [0u8, 1, rng.next().to_le_bytes()[0]][rng.below(3) as usize],
+        );
+        put(a, b, pos, rng.next());
+        let small = |rng: &mut Xorshift, m: u32| (rng.below(2 * m)).wrapping_sub(m);
+        let top = small(rng, 0x100);
+        let height = rng.below(0x100);
+        put(a, b, panel + 0xa, u16::try_from(top & 0xffff).unwrap());
+        put(a, b, panel + 0xe, u16::try_from(height).unwrap());
+        put(
+            a,
+            b,
+            panel + 0xc,
+            u16::try_from(small(rng, 0x200) & 0xffff).unwrap(),
+        );
+        put(
+            a,
+            b,
+            panel + 0x20,
+            u16::try_from(small(rng, 0x200) & 0xffff).unwrap(),
+        );
+        // rows at the clip's edges and anywhere
+        let y = match rng.below(4) {
+            0 => top.wrapping_sub(0x13).wrapping_add(rng.below(4)),
+            1 => top
+                .wrapping_add(height)
+                .wrapping_sub(2)
+                .wrapping_add(rng.below(5))
+                .wrapping_sub(2),
+            _ => top.wrapping_add(small(rng, 0x80)),
+        };
+        let x = small(rng, 0x400);
+        let index = [0, 1, 2, u32::MAX, 0xffff_fffe, rng.next()][rng.below(6) as usize];
+        let args = [panel, entry, index, x, y];
+        twin("AbmapPadEntryDrawItem", a, b, 0x00a4_f630, &args, |m| {
+            ab::abmap_pad_entry_draw_item(&mut H(m), work, args)
+        });
+    }
+}
+
+#[test]
+fn abm_draw_item_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1109);
+    abm_draw_item_cases(&mut a, &mut b, &mut rng, 3000);
+}
+
+#[test]
+fn abm_draw_item_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_110a);
+    abm_draw_item_cases(&mut a, &mut b, &mut rng, 1000);
+}

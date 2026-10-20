@@ -864,4 +864,264 @@ pub mod bridge {
         let f = h.rebase(FLUSH_CACHE);
         h.call(f, &[0])
     }
+
+    /// `MsInitChrAbilityMap()`, `MsGetAbilityMap(chr)`,
+    /// `MsGetSaveAbilityMap()`, `MsGetExcelData(id, table, &strings)`,
+    /// `MsAbilityMapSetCommand(chr, command)`, `MsSetSaveParamAll()`.
+    pub const INIT_CHR_ABILITY_MAP: u32 = 0x0079_8820;
+    pub const GET_ABILITY_MAP: u32 = 0x0079_87f0;
+    pub const GET_SAVE_ABILITY_MAP: u32 = 0x0078_4f40;
+    pub const GET_EXCEL_DATA: u32 = 0x007a_b870;
+    pub const ABILITY_MAP_SET_COMMAND: u32 = 0x0079_8840;
+    pub const SET_SAVE_PARAM_ALL: u32 = 0x0078_6900;
+    /// `g_AbmapNodeKinds`: the node kinds' excel table.
+    pub const NODE_KINDS: Global<u32> = Global::new(0x01a8_60e0);
+    /// The save grid's node count (two bytes each: kind, a bit per
+    /// character that activated it).
+    pub const SAVE_NODES: u32 = 0x400;
+
+    /// `eiAbmParaGet()` (`0x00a54860`, from the menus' load paths,
+    /// `AbmapState_ChangingNode`, `AbmapGetNodePanel`, `eiAbmDataInit`):
+    /// after `MsInitChrAbilityMap`, for each of the seven characters the
+    /// stat bonuses of the grid nodes it activated. Each activated node's
+    /// kind record (`MsGetExcelData`) adds its byte `+0x14` to the stats
+    /// its `u16 +0x10` bits name and hands its command (`u16 +0x12`) to
+    /// `MsAbilityMapSetCommand`. Into the character's ability map record:
+    /// bit 0x100 (u32 `+0`) and 0x200 (u32 `+4`) unclamped, bits 0..7 as
+    /// bytes `+8..+0xf` clamped at 0xff (`+8..+0xb` from bits 1, 2, 4, 8
+    /// and so on). Then `MsSetSaveParamAll`, whose `eax` it returns
+    /// (`eiAbmDataInit` passes it on). `MsGetExcelData`'s third argument
+    /// is a frame word it never reads: `strings` here (one word).
+    pub fn ei_abm_para_get(h: &mut impl ffx_bridge::Host, strings: u32) -> u32 {
+        let f = h.rebase(INIT_CHR_ABILITY_MAP);
+        h.call(f, &[]);
+        for chr in 0..7u32 {
+            // bits 0..7, then 0x100 and 0x200
+            let mut sums = [0u32; 10];
+            let f = h.rebase(GET_ABILITY_MAP);
+            let out = h.call(f, &[chr]);
+            let f = h.rebase(GET_SAVE_ABILITY_MAP);
+            let save = h.call(f, &[]);
+            let bit = 1u8 << chr;
+            for node in 0..SAVE_NODES {
+                let at = save.wrapping_add(2 * node);
+                if h.read::<u8>(at.wrapping_add(1)) & bit == 0 {
+                    continue;
+                }
+                let kind = u32::from(h.read::<u8>(at));
+                let (f, table) = (h.rebase(GET_EXCEL_DATA), NODE_KINDS.get(h));
+                let record = h.call(f, &[kind, table, strings]);
+                let stats: u16 = h.read(record.wrapping_add(0x10));
+                let amount = u32::from(h.read::<u8>(record.wrapping_add(0x14)));
+                for (k, sum) in sums.iter_mut().enumerate() {
+                    if stats & (1 << k) != 0 {
+                        *sum = sum.wrapping_add(amount);
+                    }
+                }
+                let command = u32::from(h.read::<u16>(record.wrapping_add(0x12)));
+                let f = h.rebase(ABILITY_MAP_SET_COMMAND);
+                h.call(f, &[chr, command]);
+            }
+            h.write(out, sums[8]);
+            h.write(out.wrapping_add(4), sums[9]);
+            for (k, sum) in (0u32..).zip(&sums[..8]) {
+                // the sums stay below 0x400 * 0xff: the signed clamp
+                // reads as an unsigned one
+                let byte = u8::try_from(*sum).unwrap_or(0xff);
+                h.write(out.wrapping_add(8 + k), byte);
+            }
+        }
+        let f = h.rebase(SET_SAVE_PARAM_ALL);
+        h.call(f, &[])
+    }
+
+    /// `0x00a45ab0(side, x, y)` (the panel frame, `f32` x and y),
+    /// `AbmapDrawChrFace(x, y)`, `TOGetSaveChrName(chr)`,
+    /// `TOGetMessageSize(text, &w, &h)`, `AbmapHelpLineDraw(text, x, y)`,
+    /// `MsGetSaveSP(chr)`.
+    pub const PANEL_FRAME: u32 = 0x00a4_5ab0;
+    pub const DRAW_CHR_FACE: u32 = 0x00a4_61b0;
+    pub const SAVE_CHR_NAME: u32 = 0x008a_c850;
+    pub const MESSAGE_SIZE: u32 = 0x008b_7130;
+    pub const GET_SAVE_SP: u32 = 0x0078_53e0;
+    /// `.rdata`: 4 and 172 (`f32`).
+    const KFOUR: u32 = 0x00b9_22f8;
+    const K172: u32 = 0x00b7_b6d8;
+    /// The work block of [`abmap_draw_chr_panel`]: the message size's
+    /// width and height words.
+    pub const CHR_PANEL_WORK: u32 = 8;
+
+    /// `0x00a4fbe0()` (`AbmapDrawChrPanel`, name ours; from `eiAbmDraw`
+    /// and the grid draw pass `0x00a54660`): the current character's
+    /// panel (`g_Abmap + 0x115bc`), left (`x` 0xa0) or, with `+0x115c0`,
+    /// right (`x` 0). While `+0x115c2` slides it, frame `+0x115c1` (or 3
+    /// minus it, to the right) puts `x` at `frame * 160 / 4 + 0x20` and
+    /// steps (a fourth step ends the slide), both panels drawn where they
+    /// show (the left one for `x > 0`, the right one for `x < 0xa0`). A
+    /// panel: its frame (`0x00a45ab0(side, x - 0x70 or x + 0x17c, 4 or
+    /// 0)`), the face, the name centred (`TOGetMessageSize` into `work`),
+    /// the SP left (`MsGetSaveSP` - `+0x1161c`) as digits at 172.
+    /// Returns the last digits call's `eax`.
+    pub fn abmap_draw_chr_panel(h: &mut impl ffx_bridge::Host, work: u32) -> u32 {
+        /// `(side, frame x, frame y, face x, name x, digits x)` offsets.
+        fn panel(h: &mut impl ffx_bridge::Host, work: u32, x: i32, right: bool) -> u32 {
+            let f32_of = |v: i32| x87::store(f64::from(v));
+            let (side, frame_x, frame_y, face, name_x, digits) = if right {
+                (1, x + 0x17c, 0, x + 0x18d, x + 0x169 + 0x3d, x + 0x1bd)
+            } else {
+                (
+                    0,
+                    x - 0x70,
+                    rdata_f32(h, KFOUR),
+                    x - 0x5f,
+                    x - 2 - 0x44,
+                    x - 0x2f,
+                )
+            };
+            let f = h.rebase(PANEL_FRAME);
+            h.call(f, &[side, f32_of(frame_x), frame_y]);
+            let f = h.rebase(DRAW_CHR_FACE);
+            h.call(f, &[face.cast_unsigned(), 0x50]);
+            let chr = u32::from(h.read::<u8>(ABMAP.get(h).wrapping_add(0x115bc)));
+            let f = h.rebase(SAVE_CHR_NAME);
+            let name = h.call(f, &[chr]);
+            let f = h.rebase(MESSAGE_SIZE);
+            h.call(f, &[name, work, work + 4]);
+            let width: i32 = h.read(work);
+            let at = name_x.wrapping_sub(width / 2);
+            let f = h.rebase(HELP_LINE_DRAW);
+            h.call(f, &[name, at.cast_unsigned(), 0x9e]);
+            let chr = u32::from(h.read::<u8>(ABMAP.get(h).wrapping_add(0x115bc)));
+            let f = h.rebase(GET_SAVE_SP);
+            let sp = h.call(f, &[chr]);
+            let used: u32 = h.read(ABMAP.get(h).wrapping_add(0x1161c));
+            let (k172, [sx, sy]) = (rdata_f32(h, K172), DIGIT_SCALE.map(|a| rdata_f32(h, a)));
+            let f = h.rebase(DIGIT_RIGHT);
+            h.call(f, &[sp.wrapping_sub(used), f32_of(digits), k172, 0, sx, sy])
+        }
+        let g = ABMAP.get(h);
+        let sliding = h.read::<u8>(g.wrapping_add(0x115c2)) != 0;
+        let to_right = h.read::<u8>(g.wrapping_add(0x115c0)) != 0;
+        let mut eax = 0;
+        let x = if sliding {
+            let frame: u8 = h.read(g.wrapping_add(0x115c1));
+            let step = if to_right {
+                3 - i32::from(frame)
+            } else {
+                i32::from(frame)
+            };
+            let x = step.wrapping_mul(160) / 4 + 0x20;
+            let next = frame.wrapping_add(1);
+            h.write(g.wrapping_add(0x115c1), next);
+            if next >= 4 {
+                let g = ABMAP.get(h);
+                h.write(g.wrapping_add(0x115c2), 0u8);
+                let g = ABMAP.get(h);
+                h.write(g.wrapping_add(0x115c1), 0u8);
+            }
+            if x > 0 {
+                eax = panel(h, work, x, false);
+            }
+            x
+        } else if to_right {
+            0
+        } else {
+            return panel(h, work, 0xa0, false);
+        };
+        if x < 0xa0 {
+            eax = panel(h, work, x, true);
+        }
+        eax
+    }
+
+    /// `MsGetSaveItemNum(item)`, `TOAdpMenuIconItemAbmap(pkt, item, x, y,
+    /// dim)`, `AbmapDigitRight(n, x, y, dim)`.
+    pub const SAVE_ITEM_NUM: u32 = 0x0079_04b0;
+    pub const ICON_ITEM: u32 = 0x008f_0700;
+    pub const ABMAP_DIGIT_RIGHT: u32 = 0x00a5_9630;
+    /// The row's texture coordinates (`.rdata` `f32`): u left and right,
+    /// v top for even and odd rows, v bottom for even and odd rows.
+    const ITEM_U: [u32; 2] = [0x00b7_b5f0, 0x00b7_b614];
+    const ITEM_V_TOP: [u32; 2] = [0x00b7_b5dc, 0x00b6_5610];
+    const ITEM_V_BOTTOM: [u32; 2] = [0x00b7_b5e0, 0x00b7_b5f8];
+    /// The work of [`abmap_pad_entry_draw_item`]: the four vertices
+    /// (`x, y, u, v` and four colour words each) and, from `+0x80`, the
+    /// 256-byte name buffer `graphicDrawUIAbmapElement` gets.
+    pub const ITEM_WORK: u32 = 0x180;
+
+    /// `0x00a4f630(panel, entry, index, x, y)` (`AbmapPadEntryDrawItem`,
+    /// name ours; a pad entry draw callback stored at panel `+0x38` by
+    /// `0x00a55036`): the item row of `entry` (item `u16 +8`, dimmed by
+    /// byte `+4`). Rows `y - 2 .. y + 0x12` inside the panel's clip
+    /// (`i16 +0xa` - 1 .. `+0xa` + `+0xe` - 3; a row above the top is cut
+    /// at the top only) get a background quad from `x - +0x20` to `x +
+    /// +0xc - +0x20` (texture rows alternating with `index`'s parity, a
+    /// signed remainder) through `graphicDrawUIAbmapElement(quad, name,
+    /// 6)`, the item icon at `(x, y - 1)` (`TOAdpMenuIconItemAbmap` from
+    /// `g_PppPacketPos + 0x10`, the new position stored) and the count
+    /// (`MsGetSaveItemNum`, read first) right-aligned at `x + +0xc -
+    /// 0x24`. Returns the original's `eax`: the count's draw, else the
+    /// row bottom or the clip bottom it failed on. The original's name
+    /// buffer is uninitialised stack; `work`'s is the caller's.
+    pub fn abmap_pad_entry_draw_item(
+        h: &mut impl ffx_bridge::Host,
+        work: u32,
+        [panel, entry, index, x, y]: [u32; 5],
+    ) -> u32 {
+        let item = u32::from(h.read::<u16>(entry.wrapping_add(8)));
+        let f = h.rebase(SAVE_ITEM_NUM);
+        let count = h.call(f, &[item]);
+        let half = |h: &mut _, o: u32| i32::from(Mem::read::<i16>(h, panel.wrapping_add(o)));
+        let (x, y) = (x.cast_signed(), y.cast_signed());
+        let origin = half(h, 0x20);
+        let left = x87::store(f64::from(x.wrapping_sub(origin)));
+        let right = half(h, 0xc).wrapping_sub(origin).wrapping_add(x);
+        let right = x87::store(f64::from(right));
+        let (mut top, mut bottom) = (y.wrapping_sub(2), y.wrapping_add(0x12));
+        let clip_top = half(h, 0xa).wrapping_sub(1);
+        if bottom <= clip_top {
+            return bottom.cast_unsigned();
+        }
+        let clip_bottom = half(h, 0xa).wrapping_sub(3).wrapping_add(half(h, 0xe));
+        if top >= clip_bottom {
+            return clip_bottom.cast_unsigned();
+        }
+        if top < clip_top {
+            top = clip_top;
+        } else if bottom > clip_bottom {
+            bottom = clip_bottom;
+        }
+        let (top, bottom) = (x87::store(f64::from(top)), x87::store(f64::from(bottom)));
+        let odd = usize::from(index.cast_signed() % 2 != 0);
+        let [u0, u1] = ITEM_U.map(|a| rdata_f32(h, a));
+        let (v0, v1) = (
+            rdata_f32(h, ITEM_V_TOP[odd]),
+            rdata_f32(h, ITEM_V_BOTTOM[odd]),
+        );
+        for (k, vertex) in (0u32..).zip([
+            [left, top, u0, v0],
+            [left, bottom, u0, v1],
+            [right, top, u1, v0],
+            [right, bottom, u1, v1],
+        ]) {
+            let at = work.wrapping_add(0x20 * k);
+            for (o, word) in (0u32..).zip(vertex) {
+                h.write(at.wrapping_add(4 * o), word);
+            }
+            for o in 4..8 {
+                h.write(at.wrapping_add(4 * o), 0x80u32);
+            }
+        }
+        let f = h.rebase(DRAW_UI_ELEMENT);
+        h.call(f, &[work, work.wrapping_add(0x80), 6]);
+        let y = y.wrapping_sub(1).cast_unsigned();
+        let dim = u32::from(h.read::<u8>(entry.wrapping_add(4)) != 0);
+        let pkt = PACKET_POS.get(h).wrapping_add(0x10);
+        let f = h.rebase(ICON_ITEM);
+        let end = h.call(f, &[pkt, item, x.cast_unsigned(), y, dim]);
+        PACKET_POS.set(h, end);
+        let at = half(h, 0xc).wrapping_sub(0x24).wrapping_add(x);
+        let f = h.rebase(ABMAP_DIGIT_RIGHT);
+        h.call(f, &[count, at.cast_unsigned(), y, dim])
+    }
 }
