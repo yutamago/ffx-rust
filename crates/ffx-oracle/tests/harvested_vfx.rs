@@ -99,3 +99,22 @@ harvest_test!(opu_bind_etc, 0x0081_4520, args = 2, |m: &mut Oracle, s| {
         m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
     })
 });
+// effects (round 38)
+harvest_test!(
+    ppp_fp_loop_matrix,
+    0x0072_8ac0,
+    args = 3,
+    |m: &mut Oracle, s| {
+        // the local matrix in stack scratch
+        let local = m.stack_range().start + 0x100;
+        ffx_vfx::fp::bridge::ppp_fp_loop_matrix(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            local,
+            &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+            &mut |m, f, a| m.call_f64(f, a).unwrap(),
+        )
+    }
+);

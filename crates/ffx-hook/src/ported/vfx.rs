@@ -5552,4 +5552,81 @@ ported! {
     opu_v_lerp @ 0x0081_87b0 => extern "C" fn opu_v_lerp(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_v_lerp(&mut mem(), host, cmd)
     }
+    // ---- round 38 a ----
+    /// `pppVtMime(obj, key, ctrl)` (`0x0072eb20`).
+    pppVtMime @ 0x0072_eb20 => extern "C" fn ppp_vt_mime(obj: u32, key: u32, ctrl: u32) {
+        ppp::bridge::ppp_vt_mime(&mut mem(), obj, key, ctrl);
+    }
+    /// `opus_0706_noise_update(eff)` (`0x007fa750`).
+    opus_0706_noise_update @ 0x007f_a750 => extern "C" fn opus_0706_noise_update(eff: u32) -> u32 {
+        small::bridge::opus_0706_noise_update(&mut mem(), eff, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_encount5_make(set, pos)` (`0x007f9280`).
+    opus_encount5_make @ 0x007f_9280 => extern "C" fn opus_encount5_make(set: u32, pos: u32) -> u32 {
+        opus::bridge::opus_encount5_make(&mut mem(), set, pos, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppNeiPointLightAdd(obj, r, acc)` (`0x0074b9c0`): the original's
+    /// uninitialised local (copied to `0x00c8f82c`) is 0 here.
+    pppNeiPointLightAdd @ 0x0074_b9c0 => extern "C" fn ppp_nei_point_light_add(obj: u32, r: u32, acc: u32) {
+        part::bridge::ppp_nei_point_light_add(&mut mem(), obj, r, acc, 0);
+    }
+    // ---- round 38 b ----
+    /// `opp_md(host, set)` (`0x008020a0`): the part record (the original's
+    /// local) in this shim's frame.
+    opp_md @ 0x0080_20a0 => extern "C" fn opp_md(host: u32, set: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let part = frame.at();
+        opus::bridge::opp_md(&mut mem(), host, set, part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_se_00814150(host, cmd)`.
+    opu_se_00814150 @ 0x0081_4150 => extern "C" fn opu_se(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_se(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `checkEnvMdl0434(id, n, make, rd0, rd1)`: the names and counts
+    /// below this shim's frame pointer.
+    checkEnvMdl0434 @ 0x0071_2ec0 => extern "C" fn check_env_mdl_0434(id: u32, n: u32, make: u32, rd0: u32, rd1: u32) -> u32 {
+        let mut frame = super::StackFrame::<0x88>::new();
+        let ebp = frame.at() + 0x220;
+        small::bridge::check_env_mdl_0434(&mut mem(), id, n, make, rd0, rd1, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opusTree_Erase(this, out, at)` (`0x008075b0`, `ret 8`).
+    opusTree_Erase @ 0x0080_75b0 => extern "thiscall" fn opus_tree_erase(this: u32, out: u32, at: u32) -> u32 {
+        tree::bridge::opus_tree_erase(
+            &mut mem(),
+            this,
+            out,
+            at,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, this, a| super::call_thiscall(f, this, a),
+        )
+    }
+    // ---- round 38 c ----
+    /// `setPolyQuad0434(id, quad, setup)` (`0x007128d0`).
+    setPolyQuad0434 @ 0x0071_28d0 => extern "C" fn set_poly_quad_0434(id: u32, quad: u32, setup: u32) -> u32 {
+        small::bridge::set_poly_quad_0434(&mut mem(), id, quad, setup, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppEiWfacc(obj, key, ctrl)`: the original's uninitialised local
+    /// (copied to `0x00c8f83c`) is 0 here.
+    pppEiWfacc @ 0x0075_bb30 => extern "C" fn ppp_ei_wfacc(obj: u32, key: u32, ctrl: u32) {
+        ppp::bridge::ppp_ei_wfacc(&mut mem(), obj, key, ctrl, 0);
+    }
+    /// `pppFpLoopMatrix(part, set, def)` (`0x00728ac0`): the local matrix
+    /// in this shim's frame.
+    pppFpLoopMatrix @ 0x0072_8ac0 => extern "C" fn ppp_fp_loop_matrix(part: u32, set: u32, def: u32) -> u32 {
+        let mut frame = super::StackFrame::<16>::new();
+        let local = frame.at();
+        fp::bridge::ppp_fp_loop_matrix(&mut mem(), part, set, def, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_matrix_bone(host, cmd)` (`0x00803940`): the option position
+    /// vector in this shim's frame.
+    opu_matrix_bone @ 0x0080_3940 => extern "C" fn opu_matrix_bone(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        let vec = frame.at();
+        opus::bridge::opu_matrix_bone(&mut mem(), host, cmd, vec, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 38 d ----
+    /// `opus_encount0_draw(host, unit, grid)` (`0x007f81e0`).
+    opus_encount0_draw @ 0x007f_81e0 => extern "C" fn opus_encount0_draw(host: u32, unit: u32, grid: u32) -> u32 {
+        opus::bridge::opus_encount0_draw(&mut mem(), host, unit, grid, &mut |_, f, a| call_ptr(f, a))
+    }
 }

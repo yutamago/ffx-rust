@@ -1497,6 +1497,82 @@ pub mod bridge {
         i32::from(last).cast_unsigned()
     }
 
+    /// `0x0074b9c0` (`pppNeiPointLightAdd`, ours) `(obj, r, acc)`: one
+    /// point light of `pppNeiDrawShapePointLightDraw` added to the colour
+    /// `acc` (4 `f32`). `r` = (object index, offset) as in
+    /// [`ppp_obj_rot_pos`]; index -1 adds nothing. With `d` the data plus
+    /// the offset plus 0xa0: the light at `ptr32(d +0xc)` (3 `f32`), its
+    /// colour the 4 `i16` at `ptr32(d +0x10)`, its radius `f32 d +8`.
+    /// Through the emulated VU0: `0x00c8f820` = (the light, `stale`: the
+    /// original's uninitialised local), `0x00c8f830` = `obj +0x40..+0x48`
+    /// minus the light (`obj +0x4c` kept), `restoreVf00Register`, then the
+    /// squares in `0x00c8f830`, their running sum in its x, `Q` = the
+    /// square root of its absolute value and `x` = `vf00.x + Q`, the
+    /// distance `s`. Each colour word / 64 is added when the radius is not
+    /// below `s` (or either is a NaN), else times `f32(radius / s / 64)`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_nei_point_light_add<M: Mem>(mem: &mut M, obj: u32, r: u32, acc: u32, stale: u32) {
+        use ffx_bridge::x87::{Reg, round_trip};
+        let id: u32 = mem.read(r);
+        if id == u32::MAX {
+            return;
+        }
+        let part = CURRENT_PART.get(mem);
+        let objs: u32 = mem.read(part.wrapping_add(0x3c));
+        let base = ptr32(mem.read(objs.wrapping_add(id.wrapping_mul(16)).wrapping_add(4)));
+        let off: u32 = mem.read(r + 4);
+        let d = off.wrapping_add(0xa0).wrapping_add(base);
+        let light = ptr32(mem.read(d.wrapping_add(0xc)));
+        let col = ptr32(mem.read(d.wrapping_add(0x10)));
+        let f = |mem: &M, at: u32| f32::from_bits(mem.read(at));
+        let l = [0, 4, 8].map(|i| round_trip(f(mem, light.wrapping_add(i))));
+        let vf = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        let (acc_v, len_v) = (vf(mem, 0x00c8_f820), vf(mem, 0x00c8_f830));
+        mem.write(acc_v, l);
+        mem.write(acc_v + 0xc, stale);
+        let mut v = [0f32; 3];
+        for (i, x) in (0u32..).zip(v.iter_mut()) {
+            *x = Reg::load(f(mem, obj.wrapping_add(0x40 + 4 * i)))
+                .sub_m32(l[i as usize])
+                .store();
+        }
+        let w: u32 = mem.read(obj.wrapping_add(0x4c));
+        mem.write(len_v, v);
+        mem.write(len_v + 0xc, w);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let xx = (Reg::load(v[0]) * Reg::load(v[0])).store();
+        let yy = Reg::load(v[1]).mul_m32(v[1]).store();
+        let zz = Reg::load(v[2]).mul_m32(v[2]).store();
+        let s1 = Reg::load(yy).add_m32(xx).store();
+        let s2 = Reg::load(zz).add_m32(s1).store();
+        mem.write(len_v + 4, yy);
+        mem.write(len_v + 8, zz);
+        let q = Reg::load(f32::from_bits(s2.to_bits() & 0x7fff_ffff))
+            .sqrt()
+            .store();
+        mem.write(vf(mem, 0x00c8_f788), q);
+        let vf00x = f32::from_bits(crate::prog::bridge::VF00.get(mem)[0]);
+        let dist = Reg::load(vf00x).add_m32(q).store();
+        mem.write(len_v, dist);
+        let radius = f(mem, d.wrapping_add(8));
+        let c = |mem: &M, i: u32| Reg::load(f32::from(mem.read::<i16>(col.wrapping_add(2 * i))));
+        let a = |mem: &M, i: u32| f(mem, acc.wrapping_add(4 * i));
+        let k = if radius < dist {
+            Reg::load((Reg::load(dist).divr_m32(radius) * Reg::constant(0.015_625)).store())
+        } else {
+            Reg::constant(0.015_625)
+        };
+        // each sum stored before the next word is read
+        let x = (c(mem, 0) * k + Reg::load(a(mem, 0))).store();
+        mem.write(acc, x);
+        for i in 1..3 {
+            let x = (c(mem, i) * k).add_m32(a(mem, i)).store();
+            mem.write(acc.wrapping_add(4 * i), x);
+        }
+        let x = k.mul_m32(c(mem, 3).store()).add_m32(a(mem, 3)).store();
+        mem.write(acc.wrapping_add(0xc), x);
+    }
+
     /// `hideDisplayOffParticle(part)` (`0x00728e40`): for each of the
     /// part's objects (`+0x18` of them, signed; `+0x3c` the 16-byte records,
     /// read again each turn) whose data `+4` is set: `a` = that data, `c` =
