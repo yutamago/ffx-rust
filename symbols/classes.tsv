@@ -5167,7 +5167,7 @@
 0x00729700	logic	default (no rule: ported to be safe)
 0x007297a0	dead	unreachable from the entry point and every pointer table
 0x00729810	logic	default (no rule: ported to be safe)
-0x00729850	logic	default (no rule: ported to be safe)
+0x00729850	debug	reviewed: pppFpInfPrint: CAM:/PLY:/DIS: text via sprintf drawn with op_num (effects round 35)
 0x007299e0	logic	default (no rule: ported to be safe)
 0x00729a10	logic	default (no rule: ported to be safe)
 0x00729ab0	logic	default (no rule: ported to be safe)
@@ -5914,9 +5914,9 @@
 0x00760f30	glue	reviewed: pppPacketStart_00760f30: ppp packet reset and the crosshair's GS depth readback through stubbed sceGsExecStoreImage (effects round 30)
 0x007610a0	dead	unreachable from the entry point and every pointer table
 0x007610e0	dead	unreachable from the entry point and every pointer table
-0x00761170	logic	default (no rule: ported to be safe)
+0x00761170	debug	only called from debug code (pppLinePoints_00761350)
 0x00761250	logic	default (no rule: ported to be safe)
-0x00761350	logic	default (no rule: ported to be safe)
+0x00761350	debug	only called from debug code (pppDrawDebugAxes_007625a0)
 0x00761480	dead	unreachable from the entry point and every pointer table
 0x007614a0	logic	default (no rule: ported to be safe)
 0x00761c00	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -5928,7 +5928,7 @@
 0x00762460	dead	unreachable from the entry point and every pointer table
 0x00762530	dead	unreachable from the entry point and every pointer table
 0x00762550	logic	default (no rule: ported to be safe)
-0x007625a0	logic	default (no rule: ported to be safe)
+0x007625a0	debug	debug name: pppDrawDebugAxes_007625a0
 0x007626b0	dead	unreachable from the entry point and every pointer table
 0x007626d0	logic	default (no rule: ported to be safe)
 0x00762760	dead	unreachable from the entry point and every pointer table
