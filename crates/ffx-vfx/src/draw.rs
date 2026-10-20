@@ -886,4 +886,200 @@ pub mod bridge {
         mem.write(at(0x7c), store(mul(load(vis), f(mem, at(0x7c)))));
         mem.write(at(0xac), vis);
     }
+
+    /// Where a shape particle step finds its key's fields: the lifetime
+    /// (`u32`), the velocity step and the spin step (three `f32` each).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ShapeStep {
+        /// `0x007472b0` (`pppDrawShapeCameraDraw`) and `0x00748500`
+        /// (`pppDrawShapeCameraDisPosDraw`): `+0x50`, `+0x50`, `+0x90`.
+        Camera,
+        /// `0x00743da0` (`pppDrawShapeFieldRevDraw`): `+0x54`, `+0x60`,
+        /// `+0xa0`.
+        FieldRev,
+    }
+
+    /// The shape draws' particle step (`0x007472b0`, `0x00748500`,
+    /// `0x00743da0`; [`ShapeStep`] picks the key layout) over `obj +8`
+    /// (`i32`) 0xa0-byte particles at `ptr32(key +0x40)`, with the shape
+    /// `ptr32(env +0x24 [obj +4])`. Each live one (bit 0 of `+0`): its age
+    /// `+8` counts up (at the key's lifetime or past, unsigned, bit 0
+    /// clears); its velocity `+0x20..+0x28` gets the key's velocity step
+    /// (`obj` value first) and moves the position `+0x10`
+    /// (`FFXVu0AddVector`, four lanes); its spin speed `+0x40..+0x48` gets
+    /// the spin step and turns `+0x30..+0x38`. The frame clock `u16 +4`
+    /// adds `u16 obj +0xc`; at the frame's length (`i16 shape +0x12 + 8 f`
+    /// for frame `f = u16 +6`, compared as `i32` from a `u16` clock) it
+    /// drops by it and the frame steps on; past the last (`i16 shape +6`)
+    /// a looping frame (bit 7 of `shape +0x14 + 8 f`) clears clock and
+    /// frame (one dword), else the clock clears and the frame stays.
+    pub fn ppp_shape_step<M: Mem>(mem: &mut M, kind: ShapeStep, obj: u32, key: u32) {
+        use crate::x87::add;
+        use ffx_system::stub::ptr32;
+        let (life, vel, spin) = match kind {
+            ShapeStep::Camera => (0x50, 0x50, 0x90),
+            ShapeStep::FieldRev => (0x54, 0x60, 0xa0),
+        };
+        let count: i32 = mem.read(obj.wrapping_add(8));
+        let parts = ptr32(mem.read(key.wrapping_add(0x40)));
+        let env: u32 = mem.read(mem.read::<u32>(g(mem, ENV_SLOT)));
+        let shapes: u32 = mem.read(env.wrapping_add(0x24));
+        let no: u32 = mem.read(obj.wrapping_add(4));
+        let shape = ptr32(mem.read(shapes.wrapping_add(no.wrapping_mul(4))));
+        let f = |mem: &M, a: u32| mem.read::<f32>(a);
+        let mut r = parts;
+        for _ in 0..count.max(0) {
+            let flags: u32 = mem.read(r);
+            if flags & 1 != 0 {
+                let frame = u32::from(mem.read::<u16>(r.wrapping_add(6)));
+                let age = mem.read::<u32>(r.wrapping_add(8)).wrapping_add(1);
+                mem.write(r.wrapping_add(8), age);
+                if age >= mem.read::<u32>(key.wrapping_add(life)) {
+                    mem.write(r, flags & !1);
+                }
+                for (o, at) in [(vel, 0x20), (spin, 0x40)] {
+                    for i in 0..3 {
+                        let (src, dst) = (obj.wrapping_add(o + 4 * i), r.wrapping_add(at + 4 * i));
+                        let v = add(f(mem, src), f(mem, dst));
+                        mem.write(dst, v);
+                    }
+                    if at == 0x20 {
+                        let pos = r.wrapping_add(0x10);
+                        ffx_ps2::vu0::bridge::add_vector(mem, pos, pos, r.wrapping_add(0x20));
+                    }
+                }
+                for i in 0..3 {
+                    let (src, dst) = (r.wrapping_add(0x40 + 4 * i), r.wrapping_add(0x30 + 4 * i));
+                    let v = add(f(mem, src), f(mem, dst));
+                    mem.write(dst, v);
+                }
+                let step: u16 = mem.read(obj.wrapping_add(0xc));
+                let clock = step.wrapping_add(mem.read(r.wrapping_add(4)));
+                mem.write(r.wrapping_add(4), clock);
+                let entry = shape.wrapping_add(8 * frame);
+                let len: u16 = mem.read(entry.wrapping_add(0x12));
+                if i32::from(clock) >= i32::from(len.cast_signed()) {
+                    mem.write(r.wrapping_add(4), clock.wrapping_sub(len));
+                    let next = mem.read::<u16>(r.wrapping_add(6)).wrapping_add(1);
+                    mem.write(r.wrapping_add(6), next);
+                    let last = i32::from(mem.read::<i16>(shape.wrapping_add(6)));
+                    if i32::from(next) >= last {
+                        if mem.read::<u8>(entry.wrapping_add(0x14)) & 0x80 != 0 {
+                            mem.write(r.wrapping_add(4), 0u32);
+                        } else {
+                            mem.write(r.wrapping_add(4), 0u16);
+                            mem.write(r.wrapping_add(6), next.wrapping_sub(1));
+                        }
+                    }
+                }
+            }
+            r = r.wrapping_add(0xa0);
+        }
+    }
+
+    /// `g_Vu0_Vf00` (`0x00c0a004`): the emulated VU0 `vf00`.
+    const VF00: u32 = 0x00c0_a004;
+    /// `g_Vu0_VfMove` (`0x00c8f980`): the emulated VU0 register copies
+    /// go through.
+    const VF_MOVE: u32 = 0x00c8_f980;
+    /// `g_pppCameraMatrix` (`0x0230ff60`).
+    const CAMERA_MATRIX: u32 = 0x0230_ff60;
+
+    /// The camera shape draws' emitter (`0x00747090`, and the copy
+    /// `0x007482e0`; `pppDrawShapeCameraDraw`/`DisPosDraw`), on area 0
+    /// `w` of `obj`: while the countdown `w +0xe4` runs it only counts
+    /// down; at 0 it births `u8 key +0xb0` particles and reloads it with
+    /// `u8 key +0xb1` - 1. Each particle (0xa0 bytes, number `w +0xe8` in
+    /// `ptr32(w +0xe0)`, which then steps on and wraps at `key +8`): bit 0
+    /// set, clock, frame and age 0; velocity `+0x20` = key `+0x30` plus a
+    /// random `key +0x40` (`KeVecAddRandom`), spin speed `+0x30` = key
+    /// `+0x60` scaled at random by `key +0x70` (`KeVecScaleRandom`), `+0x40`
+    /// = key `+0x80` (`w` 0 for all three), spin `+0x50` = `vf00` plus a
+    /// random `key +0xa0`, a unit matrix `+0x60` turned about z by
+    /// `f32(spin.z * 4096 / 360)` (`op_rot_m_z`), and the position `+0x10`
+    /// = the camera's (row 3 of `FFXVu0InversMatrix(g_pppCameraMatrix)`,
+    /// computed once into `frame`, 16 words, and copied through
+    /// `g_Vu0_VfMove`) plus a random `key +0x10` scaled by `u8 key
+    /// +0x20`. Callees through `call`.
+    pub fn ppp_shape_camera_emit<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use crate::x87::load;
+        let offsets: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let w = obj.wrapping_add(mem.read(offsets));
+        let countdown: u32 = mem.read(w.wrapping_add(0xe4));
+        if countdown != 0 {
+            mem.write(w.wrapping_add(0xe4), countdown.wrapping_sub(1));
+            return;
+        }
+        let camera = g(mem, CAMERA_MATRIX);
+        call(mem, g(mem, 0x006e_d450), &[frame, camera]);
+        let (add_random, scale_random) = (g(mem, 0x0076_6f10), g(mem, 0x0076_6f70));
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<u8>(key.wrapping_add(0xb0))) {
+            let parts = ffx_system::stub::ptr32(mem.read(w.wrapping_add(0xe0)));
+            let no: u32 = mem.read(w.wrapping_add(0xe8));
+            let p = parts.wrapping_add(no.wrapping_mul(0xa0));
+            let at = |o: u32| p.wrapping_add(o);
+            let flags: u32 = mem.read(p);
+            mem.write(p, flags | 1);
+            mem.write(at(4), 0u32);
+            mem.write(at(8), 0u32);
+            // (the original first copies vf00 to +0x10 too: a dead store,
+            // the position below overwrites it before any read)
+            // fld / fstp copies of the key's vectors, w 0
+            for (dst, src) in [(0x20, 0x30), (0x30, 0x60), (0x40, 0x80)] {
+                for k in 0..3 {
+                    let v: u32 = mem.read(key.wrapping_add(src + 4 * k));
+                    mem.write(at(dst + 4 * k), load(v));
+                }
+                mem.write(at(dst + 0xc), 0.0f32);
+                match dst {
+                    0x20 => {
+                        call(mem, add_random, &[at(0x20), key.wrapping_add(0x40), 0]);
+                    }
+                    0x30 => {
+                        call(mem, scale_random, &[at(0x30), key.wrapping_add(0x70), 0]);
+                    }
+                    _ => {}
+                }
+            }
+            let vf00: [u32; 4] = mem.read(g(mem, VF00));
+            mem.write(at(0x50), vf00);
+            call(mem, add_random, &[at(0x50), key.wrapping_add(0xa0), 0]);
+            call(mem, g(mem, 0x006e_d9a0), &[at(0x60)]);
+            let spin = crate::x87::Reg::load_f32(mem.read(at(0x58)))
+                .constant(crate::x87::MUL, 4096.0)
+                .constant(|a, b| a / b, 360.0)
+                .store();
+            // (fld / fstp of a stored value: already quiet)
+            call(
+                mem,
+                g(mem, 0x007e_9760),
+                &[at(0x60), at(0x60), spin.to_bits()],
+            );
+            let mv = g(mem, VF_MOVE);
+            let row3: [u32; 4] = mem.read(frame.wrapping_add(0x30));
+            for k in [1u32, 2, 3, 0] {
+                mem.write(mv.wrapping_add(4 * k), row3[k as usize]);
+            }
+            let pos: [u32; 4] = mem.read(mv);
+            mem.write(at(0x10), pos);
+            let scale = u32::from(mem.read::<u8>(key.wrapping_add(0x20)));
+            call(mem, add_random, &[at(0x10), key.wrapping_add(0x10), scale]);
+            let next = mem.read::<u32>(w.wrapping_add(0xe8)).wrapping_add(1);
+            mem.write(w.wrapping_add(0xe8), next);
+            if next >= mem.read::<u32>(key.wrapping_add(8)) {
+                mem.write(w.wrapping_add(0xe8), 0u32);
+            }
+            i += 1;
+        }
+        let reload = u32::from(mem.read::<u8>(key.wrapping_add(0xb1)));
+        mem.write(w.wrapping_add(0xe4), reload.wrapping_sub(1));
+    }
 }

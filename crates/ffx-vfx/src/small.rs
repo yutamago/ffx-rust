@@ -42,6 +42,102 @@ pub fn ppp_view_out_code(x: f32, y: f32) -> u32 {
     code
 }
 
+/// The core of `pppCheckViewCylinder` (`0x00728f10`) on `point`
+/// already in view space (`x`, `y`, `z`): 0 when `far` is below 0 (the
+/// view test is off), 0xf when the point lies beyond `far` or the
+/// cylinder's near side (`z + radius`) is not in front of the eye; else
+/// the [`ppp_view_out_code`]s of the four corners of the cylinder's
+/// box projected at `z + radius` (`x ± radius`, `y ± height`, over that
+/// depth) combined with `&`: nonzero when the whole box is off one side. Each value
+/// is rounded to `f32` where the original stores it; a NaN passes every
+/// test that would end early (unordered compares fall through).
+#[must_use]
+pub fn check_view_cylinder(point: [f32; 3], far: f32, radius: f32, height: f32) -> u32 {
+    use crate::x87::{ADD, MUL, Reg, SUB};
+    const DIV: crate::x87::Op = |a, b| a / b;
+    let [x, y, z] = point;
+    if f64::from(far) < 0.0 {
+        return 0;
+    }
+    if f64::from(far) < f64::from(z) {
+        return 0xf;
+    }
+    let rad = Reg::load_f32(radius);
+    let near = Reg::load_f32(z).reg(ADD, rad).store();
+    if f64::from(near) <= 0.0 {
+        return 0xf;
+    }
+    let inv = Reg::Num(1.0).reg(DIV, Reg::load_f32(near)).store();
+    let inv_r = Reg::load_f32(inv);
+    let sx = Reg::load_f32(x).reg(MUL, inv_r).store();
+    let sy = Reg::load_f32(y).reg(MUL, inv_r).store();
+    let sr = rad.reg(MUL, inv_r).store();
+    let sh = inv_r.mem(MUL, height).store();
+    let (sx, sy, sr, sh) = (
+        Reg::load_f32(sx),
+        Reg::load_f32(sy),
+        Reg::load_f32(sr),
+        Reg::load_f32(sh),
+    );
+    let (y0, x0) = (sy.reg(SUB, sh).store(), sx.reg(SUB, sr).store());
+    let (x1, y1) = (sx.reg(ADD, sr).store(), sy.reg(ADD, sh).store());
+    ppp_view_out_code(x1, y1)
+        & ppp_view_out_code(x0, y1)
+        & ppp_view_out_code(x1, y0)
+        & ppp_view_out_code(x0, y0)
+}
+
+/// The core of the effect programs' 2D angle (`0x007590e0`, `0x0075e1f0`):
+/// the angle of `(x, y)` in -pi..pi, `None` for (0, 0). With `x * y`
+/// (as `f32`) above 0 it is `atan(y / x)` (the quotient unrounded, the
+/// angle stored as `f32`) plus 0 (`x > 0`) or `f32(-pi)`; below 0,
+/// `f32(+-pi / 2)` (the sign of `y`) minus `atan(x / y)`; else, with
+/// `x` not 0 (or a NaN), 0 or `pi` by the sign of `x`, and with `x` 0,
+/// `+-pi / 2` by the sign of `y`. The constants are the original's
+/// doubles (3.141592654, 1.570796327); NaNs take the "not above 0"
+/// side of each test. `atan` is the C runtime's `_CIatan` on the x87
+/// value.
+pub fn angle_xy(x: f32, y: f32, atan: &mut impl FnMut(f64) -> f64) -> Option<f32> {
+    use crate::x87::{MUL, Reg};
+    // the original's doubles (0x00b51548, 0x00b51670), not the exact ones
+    #[allow(clippy::approx_constant)]
+    const PI: f64 = 3.141_592_654;
+    #[allow(clippy::approx_constant)]
+    const HALF_PI: f64 = 1.570_796_327;
+    const DIV: crate::x87::Op = |a, b| a / b;
+    // the register as the f64 the shim loads (a NaN keeps its payload)
+    let reg = |r: Reg| match r {
+        Reg::Num(v) => v,
+        Reg::Nan(b) => f64::from(f32::from_bits(b)),
+    };
+    #[allow(clippy::cast_possible_truncation)] // fstp m32
+    let to_f32 = |v: f64| v as f32;
+    let prod = f64::from(Reg::load_f32(x).mem(MUL, y).store());
+    let (fx, fy) = (f64::from(x), f64::from(y));
+    if prod > 0.0 {
+        let off = to_f32(if 0.0 < fx { 0.0 } else { -PI });
+        let r = to_f32(atan(reg(Reg::load_f32(y).mem(DIV, x))));
+        return Some(Reg::load_f32(r).mem(crate::x87::ADD, off).store());
+    }
+    if prod < 0.0 {
+        let off = to_f32(if 0.0 < fy { HALF_PI } else { -HALF_PI });
+        let r = to_f32(atan(reg(Reg::load_f32(x).mem(DIV, y))));
+        let d = Reg::Num(off.into()).reg(crate::x87::SUB, Reg::load_f32(r));
+        return Some(d.store());
+    }
+    // (a NaN is not 0 either)
+    let angle = if fx != 0.0 {
+        if 0.0 < fx { 0.0 } else { PI }
+    } else if fy == 0.0 {
+        return None;
+    } else if 0.0 < fy {
+        HALF_PI
+    } else {
+        -HALF_PI
+    };
+    Some(to_f32(angle))
+}
+
 /// The four-texel average of [`bridge::op_texels_box`] (`row_a[2i]`,
 /// `row_b[2i]`, `row_a[2i + 1]`, `row_b[2i + 1]`): per byte of the RGBA
 /// words, `(a + b + c + d + 2) >> 2`, carried in two halves (bytes 0
@@ -73,6 +169,48 @@ pub mod bridge {
 
     fn rf(mem: &impl Mem, at: u32) -> f32 {
         mem.read(at)
+    }
+
+    /// `pppCheckViewCylinder(m, v, far, radius, height)` (`0x00728f10`):
+    /// [`super::check_view_cylinder`] on `v` (a vector) times the matrix
+    /// `m` (`FFXVu0ApplyMatrix`, computed in place: the original's copy
+    /// lands in its own frame), when `far` is not below 0.
+    pub fn ppp_check_view_cylinder(
+        mem: &impl Mem,
+        m: u32,
+        v: u32,
+        far: f32,
+        radius: f32,
+        height: f32,
+    ) -> u32 {
+        if f64::from(far) < 0.0 {
+            return 0;
+        }
+        let x: [f32; 4] = mem.read(v);
+        let p: [f32; 3] = std::array::from_fn(|i| {
+            #[allow(clippy::cast_possible_truncation)] // 0..3
+            let i = i as u32;
+            let col = [0, 4, 8, 12].map(|row| rf(mem, m.wrapping_add(4 * (row + i))));
+            ffx_system::math::mul4x4_component(i, x, col)
+        });
+        super::check_view_cylinder(p, far, radius, height)
+    }
+
+    /// The effect programs' 2D angle (`0x007590e0`, and the copy
+    /// `0x0075e1f0`) of the vector at `v` (`x`, `y`) into `*out`:
+    /// [`super::angle_xy`]; returns 1, or 0 (nothing written) for (0, 0).
+    pub fn ppp_angle_xy<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        out: u32,
+        atan: &mut impl FnMut(&mut M, f64) -> f64,
+    ) -> u32 {
+        let (x, y) = (rf(mem, v), rf(mem, v.wrapping_add(4)));
+        let Some(a) = super::angle_xy(x, y, &mut |t| atan(mem, t)) else {
+            return 0;
+        };
+        mem.write(out, a);
+        1
     }
 
     /// `hashU(s)` (`0x00716570`): [`super::hash_u`] of the NUL-terminated

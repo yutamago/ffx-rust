@@ -9110,6 +9110,12 @@ fn srand_draws_match_the_original() {
                 (0x0073_2f30, Spread::Plain),
                 (0x0073_2970, Spread::Up),
                 (0x0073_2c00, Spread::Down),
+                // the copies (tools/dupes.py)
+                (0x0073_3820, Spread::Plain),
+                (0x0073_3230, Spread::Up),
+                (0x0073_3b30, Spread::Up),
+                (0x0073_3530, Spread::Down),
+                (0x0073_3e40, Spread::Down),
             ] {
                 check_st0(
                     &mut p,
@@ -16498,6 +16504,7 @@ fn round31c_start_part_and_draw_work_match_the_original() {
         let (data, part, recs) = (p.alloc(0x200), p.alloc(0x80), p.alloc(0x100));
         let (env, heap_mem) = (p.alloc(0x20), p.alloc(0x2000));
         let env_cell = p.alloc(4);
+        let (patch_b, patch_c) = (p.alloc(0x80), p.alloc(0x20));
         let slot = p.sym(0x00c3_a4cc); // g_pppEnvSlot
         for round in 0..600 {
             // the environment's two heaps, sometimes too small
@@ -16508,6 +16515,7 @@ fn round31c_start_part_and_draw_work_match_the_original() {
                 (1, rng.pick(&[0x30u32, 0x1000])),
             ] {
                 let (heap, memory) = (env + 0x10 * k, heap_mem + 0x1000 * k);
+                p.fill(memory, 0x1000, &mut rng);
                 let last = memory + size - 0x10;
                 p.set(heap, [0u32, memory, last, 0]);
                 p.set(memory, [last, 0u32, 0, 0]);
@@ -16536,9 +16544,35 @@ fn round31c_start_part_and_draw_work_match_the_original() {
                 let node = data + 0x10 + 0x20 * k;
                 p.set(node, if k + 1 == chain { 0 } else { node + 0x20 });
             }
+            // the localisation patch's chain (pppStartPart, births = 0x33)
+            // (the word 0x38 past the births' first definition, births + 4)
+            p.set(data + 0x140 + 4 + 0x38, patch_b);
+            p.set(patch_b + 0x70, patch_c);
             p.fill(part, 0x80, &mut rng);
             let rate = rng.next();
             let set_ups = rng.pick(&[0u32, 1, 0x100]);
+            if round % 3 == 0 {
+                let nb = rng.pick(&[0x33u32, 2]);
+                p.set(data + 0x140, nb);
+                let lang = p.sym(0x0064_10e0); // TOGetFFXLang
+                let l = rng.pick(&[1u32, 0xb]);
+                p.a.stub_return(lang, l).unwrap();
+                p.b.stub_return(lang, l).unwrap();
+                let magic = p.sym(0x00c6_4ca0); // MagicFile_GetId's id
+                p.set(magic, rng.pick(&[0x296u32, 0x295]));
+                p.fill(patch_c, 0x20, &mut rng);
+                p.check(
+                    &format!("pppStartPart round {round}"),
+                    0x0071_23c0,
+                    &[part, rate, data, set_ups],
+                    |m| {
+                        pt::ppp_start_part(m, part, rate, data, set_ups, &mut call_original);
+                        None
+                    },
+                );
+                p.fill(part, 0x80, &mut rng);
+                p.set(data + 0x140, 1 + rng.below(4));
+            }
             p.check(
                 &format!("pppStartPartFromYonish round {round}"),
                 0x0071_2560,
@@ -16556,7 +16590,12 @@ fn round31c_start_part_and_draw_work_match_the_original() {
                 },
             );
             // ops_init_draw_work, once or again
-            p.set(p.sym(0x011a_0700), u8::from(rng.chance(30)));
+            let again = if rng.chance(30) {
+                rng.pick(&[1u8, 2, 0x80, 0xff])
+            } else {
+                0
+            };
+            p.set(p.sym(0x011a_0700), again);
             p.set(chan_ret, rng.next());
             for (at, len) in [
                 (0x0233_2870u32, 0x10u32),
@@ -16574,6 +16613,654 @@ fn round31c_start_part_and_draw_work_match_the_original() {
                 &[],
                 |m| op::bridge::ops_init_draw_work(m, &mut call_original),
             );
+        }
+    }
+}
+
+/// Jumps `sym` to `code` (put in both oracles' code space).
+fn jump_to_code(p: &mut Pair, sym: u32, code: &[u8]) {
+    let to = p.a.alloc_code(code).unwrap();
+    assert_eq!(p.b.alloc_code(code).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
+
+/// Code returning `table[arg1 & 7]` (a cdecl callee's second argument).
+fn table_by_arg1(table: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x83, 0xe0, 0x07, 0x8b, 0x04, 0x85]; // mov eax, [esp+8]; and eax, 7; mov eax, [table + eax*4]
+    c.extend(table.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round32d_chara_hsv_matches_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_79f0);
+        let cells: Vec<u32> = (0..8).map(|_| p.alloc(4)).collect();
+        let [
+            idx_ret,
+            stone_ret,
+            nb_ret,
+            weapon_ret,
+            light_ret,
+            set_ret,
+            enable_ret,
+            _,
+        ] = cells[..]
+        else {
+            unreachable!()
+        };
+        let mut logs = Vec::new();
+        for (sym, words, ret) in [
+            (0x007f_e970u32, &[0u8, 0, 0][..], Some(idx_ret)), // opus_get_chr_status_index
+            (0x007f_cc80, &[0], Some(stone_ret)),              // op_get_chr_status_stone
+            (0x0083_c9a0, &[0], Some(nb_ret)),                 // Ch_ClutGetNb
+            (0x0079_5b40, &[0, 0], Some(weapon_ret)),          // MsGetWeaponHandle
+            (0x0064_0100, &[0, 0], Some(enable_ret)),          // graphicEnableHSV
+            (0x0064_3340, &[0, 0, 0, 0, 0], Some(set_ret)),    // graphicSetHSVParam
+            (0x0083_cb90, &[0], Some(light_ret)),              // Ch_GetLightValue
+            (0x0083_c6f0, &[0, 1], None),                      // Ch_CalcLight(chr, &shade)
+        ] {
+            logs.push(far_recorder(&mut p, sym, words, ret));
+        }
+        // Ch_ClutGetSize, Ch_ClutGetOrgPtr and Ch_ClutGetPtr: per CLUT
+        let (sizes, orgs, cluts) = (p.alloc(0x20), p.alloc(0x20), p.alloc(0x20));
+        for (sym, table) in [
+            (0x0083_c9f0u32, sizes),
+            (0x0083_c9b0, orgs),
+            (0x0083_c9d0, cluts),
+        ] {
+            jump_to_code(&mut p, sym, &table_by_arg1(table));
+        }
+        // Ch_GetChrRenderInstance(chr) = chr ^ 0x5a5a0000
+        jump_to_code(
+            &mut p,
+            0x0082_6b70,
+            &[0x8b, 0x44, 0x24, 0x04, 0x35, 0, 0, 0x5a, 0x5a, 0xc3],
+        );
+        let org_mem = p.alloc(8 * 0x80);
+        let clut_mem = p.alloc(8 * 0x80);
+        for i in 0..8 {
+            p.set(orgs + 4 * i, org_mem + 0x80 * i);
+            p.set(cluts + 4 * i, clut_mem + 0x80 * i);
+        }
+        let (buf, light, frame) = (p.alloc(0x20 + 8 * 0x20 * 8), p.alloc(4), p.alloc(4));
+        p.set(light_ret, light);
+        let rec = p.sym(0x012a_22c0); // g_EtChr
+        for round in 0..1500 {
+            for &l in &logs {
+                p.set(l, 0u32);
+            }
+            let idx = rng.below(240);
+            p.set(idx_ret, idx);
+            p.set(rec + 0x20 * idx + 0xe, rng.pick(&[6u16, 6, 0, 7, 0x0106]));
+            p.set(
+                stone_ret,
+                if rng.chance(15) {
+                    rng.pick(&[1u32, 0x80])
+                } else {
+                    0
+                },
+            );
+            p.set(nb_ret, rng.pick(&[0u32, 1, 2, 5, 8, 0xffff_ffff]));
+            p.set(weapon_ret, if rng.chance(30) { 0 } else { rng.next() | 1 });
+            p.set(set_ret, rng.next());
+            p.set(enable_ret, rng.next());
+            for i in 0..8 {
+                p.set(sizes + 4 * i, rng.pick(&[0u32, 1, 3, 0x10]));
+            }
+            p.fill(org_mem, 8 * 0x80, &mut rng);
+            p.fill(clut_mem, 8 * 0x80, &mut rng);
+            p.fill(buf, 0x20 + 8 * 0x20 * 8, &mut rng);
+            p.set(p.sym(0x012f_4110), rng.next());
+            let chr = rng.next();
+            p.check(
+                &format!("op_chara_hsv_make round {round}"),
+                0x0080_79f0,
+                &[chr, buf],
+                |m| Some(o::op_chara_hsv_make(m, chr, buf, &mut call_original)),
+            );
+            // op_chara_hsv on that buffer (a stone character left it
+            // random: its count is then kept small)
+            if p.get::<u16>(buf) > 8 {
+                p.set(buf, rng.below(9) as u16);
+            }
+            for i in 0..8 {
+                if p.get::<u16>(buf + 2 + 2 * i) > 0x10 {
+                    p.set(buf + 2 + 2 * i, rng.pick(&[0u16, 2, 0x10]));
+                }
+            }
+            // (hues outside 0..0x300 reach opus_hsv_rgba's uninitialised
+            // local: entries make did not write stay random)
+            for k in 0..0x100 {
+                let at = buf + 0x20 + 8 * k;
+                if !(0..0x300).contains(&p.get::<i16>(at)) {
+                    p.set(at, rng.below(0x300) as u16);
+                }
+            }
+            p.set(stone_ret, u32::from(rng.chance(10)));
+            p.set(
+                light,
+                if rng.chance(5) {
+                    0x7fc0_1234
+                } else {
+                    finite(&mut rng)
+                },
+            );
+            let mut hsv = [0i32; 4];
+            for v in &mut hsv {
+                let (wide, small) = (
+                    rng.below(0x600).cast_signed() - 0x300,
+                    rng.below(0x200).cast_signed(),
+                );
+                *v = rng.pick(&[0, wide, small, 0x0100_0001, -0x0123_4567]);
+            }
+            // the hue stays non-negative (a negative reference hue leaves
+            // opus_hsv_rgba's sectors, the uninitialised local again)
+            hsv[0] = hsv[0].max(0);
+            if rng.chance(30) {
+                hsv[2] = hsv[1].wrapping_neg();
+            }
+            if round % 50 == 7 {
+                // a count past 0xff (0x101): CLUT 1 alone, its entries 0
+                p.set(buf, 0x101u16);
+                for k in 0..0x108 {
+                    p.set(buf + 2 * k + 2, 0u16);
+                }
+                p.set(buf + 4, 2u16);
+            }
+            p.set(p.sym(0x012f_4114), rng.next());
+            let mut args = vec![chr, buf];
+            args.extend(hsv.map(i32::cast_unsigned));
+            p.check(
+                &format!("op_chara_hsv round {round} {hsv:?}"),
+                0x0080_7870,
+                &args,
+                |m| {
+                    let keep = m.read(frame, 4).unwrap();
+                    let r = o::op_chara_hsv(m, chr, buf, hsv, frame, &mut call_original);
+                    m.write(frame, &keep).unwrap();
+                    Some(r)
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss, clippy::many_single_char_names)]
+fn round32d_check_view_cylinder_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_8f10);
+        let (m, v) = (p.alloc(0x40), p.alloc(0x10));
+        let f = |rng: &mut Xorshift, lo: f32, hi: f32| {
+            lo + (hi - lo) * (rng.below(0x1_0000) as f32 / 65536.0)
+        };
+        for round in 0..4000 {
+            // near the identity (exactly it every 8th round), or anything
+            let (garbage, exact) = (rng.chance(10), round % 8 == 0);
+            for i in 0..16u32 {
+                let d = if i % 5 == 0 { 1.0 } else { 0.0 };
+                let x = if exact {
+                    d
+                } else if garbage && rng.chance(30) {
+                    f32::from_bits(finite(&mut rng))
+                } else {
+                    d + f(&mut rng, -0.3, 0.3)
+                };
+                p.set(m + 4 * i, x);
+            }
+            let w = if exact || rng.chance(50) {
+                1.0
+            } else {
+                f(&mut rng, -2.0, 2.0)
+            };
+            let mut pt = [
+                f(&mut rng, -4.0, 4.0),
+                f(&mut rng, -3.0, 3.0),
+                f(&mut rng, -2.0, 8.0),
+                w,
+            ];
+            let pick = |rng: &mut Xorshift, lo: f32, hi: f32| {
+                if rng.chance(5) {
+                    rng.pick(&[0.0f32, -0.0, f32::INFINITY, f32::from_bits(0x7fc0_0001)])
+                } else {
+                    f(rng, lo, hi)
+                }
+            };
+            let mut far = pick(&mut rng, -1.0, 10.0);
+            let mut radius = pick(&mut rng, -1.0, 3.0);
+            let mut height = pick(&mut rng, -1.0, 3.0);
+            if exact {
+                // the edges: far on z, the near side on the eye, a corner
+                // within an ulp of the top edge (y / 7 with 1 / 7 as f32)
+                match rng.below(4) {
+                    0 => far = pt[2],
+                    1 => radius = -pt[2],
+                    2 => {
+                        pt = [0.0, f32::from_bits(0x405f_ffff), 6.0, 1.0];
+                        (far, radius, height) = (10.0, 1.0, 0.0);
+                    }
+                    _ => {}
+                }
+            }
+            p.set(v, pt);
+            p.check(
+                &format!("pppCheckViewCylinder round {round}"),
+                0x0072_8f10,
+                &[m, v, far.to_bits(), radius.to_bits(), height.to_bits()],
+                |o| {
+                    Some(small::bridge::ppp_check_view_cylinder(
+                        o, m, v, far, radius, height,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_precision_loss)]
+fn round32e_ke_born_rnd_born_matches_the_original() {
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_8840);
+        let child_ret = p.alloc(4);
+        let log = far_recorder(&mut p, 0x0071_6770, &[0, 0], Some(child_ret)); // pppCreatePObject
+        let (part, records, child, def) =
+            (p.alloc(0x80), p.alloc(0x100), p.alloc(0x400), p.alloc(0x40));
+        let (obj, shape, out, frame, spare) = (
+            p.alloc(0x80),
+            p.alloc(8),
+            p.alloc(4),
+            p.alloc(0x10),
+            p.alloc(0x40),
+        );
+        let f = |rng: &mut Xorshift, lo: f32, hi: f32| {
+            lo + (hi - lo) * (rng.below(0x1_0000) as f32 / 65536.0)
+        };
+        for round in 0..3000 {
+            p.set(log, 0u32);
+            p.put(pb::CURRENT_PART, part);
+            p.fill(part, 0x80, &mut rng);
+            p.fill(child, 0x400, &mut rng);
+            p.fill(spare, 0x40, &mut rng);
+            p.fill(def, 0x40, &mut rng);
+            p.set(
+                p.sym(0x00c6_4ca0),
+                if rng.chance(10) { 0x2a9u32 } else { 0x100 },
+            );
+            // no record (address 0): the child is at 0, its areas absolute
+            let none = rng.chance(10);
+            p.set(part + 0x3c, if none { 0 } else { records });
+            p.set(def + 0x10, if none { 0 } else { rng.below(16) });
+            p.set(child_ret, if rng.chance(10) { 0 } else { child });
+            for k in [0x14u32, 0x1c] {
+                let area = if none {
+                    spare + 0x10 * rng.below(3) - 0xa0
+                } else {
+                    0x10 * rng.below(0x30)
+                };
+                p.set(def + k, area);
+            }
+            p.set(
+                def + 8,
+                if rng.chance(5) {
+                    0.0
+                } else {
+                    f(&mut rng, -4.0, 4.0)
+                },
+            );
+            for i in 0..16u32 {
+                let d = if i % 5 == 0 { 1.0 } else { 0.0 };
+                p.set(obj + 0x10 + 4 * i, d + f(&mut rng, -0.5, 0.5));
+            }
+            for i in 0..4u32 {
+                p.set(obj + 0x40 + 4 * i, f(&mut rng, -100.0, 100.0));
+            }
+            let s: [i16; 4] = std::array::from_fn(|_| {
+                let b = rng.next().to_le_bytes();
+                i16::from_le_bytes([b[0], b[1]])
+            });
+            p.set(shape, s);
+            if rng.chance(10) {
+                // the point on obj +0x40: a zero vector to normalise
+                p.set(shape, [0i16; 4]);
+                for i in 0..16u32 {
+                    p.set(obj + 0x10 + 4 * i, if i % 5 == 0 { 1.0f32 } else { 0.0 });
+                }
+                p.set(obj + 0x40, [0.0f32, 0.0, 0.0, 1.0]);
+            }
+            p.set(out, rng.next());
+            for at in [0x0075_8840u32, 0x0075_8fc0] {
+                p.check(
+                    &format!("pppKeBornRnd_Born {at:#x} round {round}"),
+                    at,
+                    &[obj, def, shape, out],
+                    |m| {
+                        let keep = m.read(frame, 0x10).unwrap();
+                        pb::ppp_ke_born_rnd2_born(
+                            m,
+                            obj,
+                            def,
+                            shape,
+                            out,
+                            frame,
+                            &mut call_original,
+                        );
+                        m.write(frame, &keep).unwrap();
+                        None
+                    },
+                );
+            }
+        }
+    }
+}
+
+/// MSVCR110's `_CIatan` (the oracle has no stubs): a stand-in (`fld1;
+/// fpatan`, which the CRT's x87 path computes the same way) behind the
+/// import slot `0x00b0c450` in both oracles, and a thunk running it on the
+/// `f64` at `x` into `out`, for the bridges' callback. Returns (thunk, x,
+/// out).
+fn x87_atan_stand_in(p: &mut Pair) -> (u32, u32, u32) {
+    let code = [0xd9u8, 0xe8, 0xd9, 0xf3, 0xc3];
+    let f = p.a.alloc_code(&code).unwrap();
+    assert_eq!(p.b.alloc_code(&code).unwrap(), f);
+    let slot = p.sym(0x00b0_c450);
+    p.set(slot, f);
+    let data = p.alloc(0x10);
+    let (x, out) = (data, data + 8);
+    let mut c = vec![0xdd, 0x05]; // fld qword [x]
+    c.extend(x.to_le_bytes());
+    c.extend([0xff, 0x15]); // call [slot]
+    c.extend(slot.to_le_bytes());
+    c.extend([0xdd, 0x1d]); // fstp qword [out]
+    c.extend(out.to_le_bytes());
+    c.push(0xc3);
+    let thunk = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), thunk);
+    (thunk, x, out)
+}
+
+/// The bridges' `atan` callback in the second oracle: the stand-in.
+fn oracle_atan(io: (u32, u32, u32)) -> impl FnMut(&mut Oracle, f64) -> f64 {
+    move |m, x| {
+        Mem::write(m, io.1, x);
+        m.call(io.0, Conv::Cdecl, &[]).unwrap();
+        let r = Mem::read(m, io.2);
+        // the scratch back to zero, as in the first oracle
+        Mem::write(m, io.1, [0u32; 4]);
+        r
+    }
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn round32e_angle_xy_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_90e0);
+        let io = x87_atan_stand_in(&mut p);
+        let (v, out) = (p.alloc(8), p.alloc(4));
+        for round in 0..6000 {
+            let mut c = || {
+                let wide = (rng.below(0x2_0000) as f32 - 65536.0) / 1024.0;
+                let any = f32::from_bits(finite(&mut rng));
+                rng.pick(&[
+                    wide,
+                    wide,
+                    wide,
+                    0.0,
+                    -0.0,
+                    1e-30,
+                    -1e-30,
+                    f32::INFINITY,
+                    f32::NEG_INFINITY,
+                    f32::from_bits(0x7fc0_0123),
+                    f32::from_bits(0xffc1_0000),
+                    any,
+                ])
+            };
+            let (x, y) = (c(), c());
+            p.set(v, [x, y]);
+            p.set(out, rng.next());
+            for at in [0x0075_90e0u32, 0x0075_e1f0] {
+                p.check(
+                    &format!("pppKeAngleXY {at:#x} round {round} ({x}, {y})"),
+                    at,
+                    &[v, out],
+                    |m| Some(small::bridge::ppp_angle_xy(m, v, out, &mut oracle_atan(io))),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn round32e_shape_step_matches_the_original() {
+    use draw::bridge::{self as d, ShapeStep};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_72b0);
+        let (env_cell, env, shapes) = (p.alloc(4), p.alloc(0x40), p.alloc(0x10));
+        let shape_mem = p.alloc(4 * 0x100);
+        // shape 3's frames reach 0x8000 (entries 0x40000 bytes on)
+        let big = p.alloc(0x4_0100);
+        let (obj, key, parts) = (p.alloc(0xc0), p.alloc(0x60), p.alloc(0xa0 * 6));
+        p.set(p.sym(d::ENV_SLOT), env_cell);
+        p.set(env_cell, env);
+        p.set(env + 0x24, shapes);
+        for k in 0..3 {
+            p.set(shapes + 4 * k, shape_mem + 0x100 * k);
+        }
+        p.set(shapes + 12, big);
+        for round in 0..3000 {
+            p.fill(shape_mem, 4 * 0x100, &mut rng);
+            let mut frames = [0i16; 4];
+            for (k, n) in (0u32..).zip(&mut frames) {
+                let s = if k == 3 { big } else { shape_mem + 0x100 * k };
+                *n = rng.pick(&[1i16, 2, 5, 16, -1]);
+                p.set(s + 6, *n);
+                for f in (0..20).chain(0x7ffe..0x8001) {
+                    let len = rng.pick(&[0u16, 1, 5, 0x100, 0xfffd, 0x7fff, 0x8000]);
+                    if k == 3 || f < 20 {
+                        p.set(s + 0x12 + 8 * f, len);
+                    }
+                }
+            }
+            p.fill(obj, 0xc0, &mut rng);
+            let no = rng.below(4);
+            p.set(obj + 4, no);
+            p.set(obj + 8, rng.pick(&[0i32, 1, 3, 6, -1]));
+            p.set(obj + 0xc, rng.pick(&[0u16, 1, 3, 0x8000, 0xffff]));
+            for i in 0..0x30u32 {
+                p.set(obj + 0x50 + 4 * i, f32::from_bits(finite(&mut rng)) / 1e30);
+            }
+            for i in [
+                0x50u32, 0x54, 0x58, 0x60, 0x64, 0x68, 0x90, 0x94, 0x98, 0xa0, 0xa4, 0xa8,
+            ] {
+                if rng.chance(70) {
+                    p.set(obj + i, (rng.below(2000) as f32 - 1000.0) / 64.0);
+                }
+            }
+            p.fill(key, 0x60, &mut rng);
+            p.set(key + 0x40, parts);
+            p.fill(parts, 0xa0 * 6, &mut rng);
+            let ages = rng.pick(&[0u32, 5, 0xffff_fffe, 0xffff_ffff]);
+            for k in 0..6 {
+                let r = parts + 0xa0 * k;
+                for i in 0..0x10u32 {
+                    let x = if rng.chance(80) {
+                        (rng.below(2000) as f32 - 1000.0) / 32.0
+                    } else if rng.chance(20) {
+                        f32::from_bits(rng.pick(&[0x7fc0_0001u32, 0xffc0_0001, 0x7fd0_0000]))
+                    } else {
+                        f32::from_bits(finite(&mut rng))
+                    };
+                    p.set(r + 0x10 + 4 * i, x);
+                }
+                let n = u32::from(frames[no as usize].max(16).cast_unsigned());
+                let frame = if no == 3 && rng.chance(30) {
+                    0x7fff
+                } else {
+                    rng.below(n + 2)
+                };
+                p.set(r + 6, frame as u16);
+                p.set(r + 8, ages.wrapping_add(rng.below(3)));
+            }
+            for at in [0x50u32, 0x54] {
+                p.set(key + at, ages.wrapping_add(rng.below(4)));
+            }
+            for (at, kind) in [
+                (0x0074_72b0u32, ShapeStep::Camera),
+                (0x0074_8500, ShapeStep::Camera),
+                (0x0074_3da0, ShapeStep::FieldRev),
+            ] {
+                p.check(
+                    &format!("shape step {at:#x} round {round}"),
+                    at,
+                    &[obj, key],
+                    |m| {
+                        d::ppp_shape_step(m, kind, obj, key);
+                        None
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn round32f_shape_camera_emit_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_7090);
+        // FFXVu0InversMatrix: the camera matrix copied into its first
+        // argument (as in the op_vec3 test)
+        stub_code(
+            &mut p,
+            0x006e_d450,
+            &[
+                0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x74, 0x24, 0x10, 0xb9, 0x10, 0, 0, 0,
+                0xf3, 0xa5, 0x5f, 0x5e, 0xc3,
+            ],
+        );
+        let (obj, ctrl, offsets) = (p.alloc(0x200), p.alloc(0x10), p.alloc(0x10));
+        // (two calls of up to 5 births from number 7: 17 particles)
+        let (key, parts, frame) = (p.alloc(0xc0), p.alloc(0xa0 * 24), p.alloc(0x40));
+        p.set(ctrl + 0xc, offsets);
+        let camera = p.sym(0x0230_ff60);
+        let small = |rng: &mut Xorshift| (rng.below(2000) as f32 - 1000.0) / 64.0;
+        for round in 0..2000 {
+            let off = rng.pick(&[0u32, 0x10, 0x40]);
+            p.set(offsets, off);
+            let w = obj + off;
+            p.fill(obj, 0x200, &mut rng);
+            p.set(w + 0xe4, rng.pick(&[0u32, 0, 0, 1, 5]));
+            p.set(w + 0xe0, parts);
+            p.set(w + 0xe8, rng.below(8));
+            p.fill(parts, 0xa0 * 24, &mut rng);
+            for i in 0..0x30u32 {
+                let x = if rng.chance(90) {
+                    small(&mut rng)
+                } else {
+                    f32::from_bits(rng.pick(&[0x7fc0_0001u32, 0, 0x8000_0000]))
+                };
+                p.set(key + 4 * i, x);
+            }
+            p.set(key + 8, rng.pick(&[1u32, 3, 8, 0x100, 0xffff_fff0]));
+            // a wide spin range: angles past 2^23, where every bit counts
+            if rng.chance(20) {
+                p.set(key + 0xa8, 3.0e7f32);
+            }
+            p.set(key + 0x20, rng.pick(&[0u8, 1, 0x80, 0xff]));
+            p.set(key + 0xb0, rng.pick(&[0u8, 1, 3, 5]));
+            p.set(key + 0xb1, rng.pick(&[0u8, 1, 4]));
+            for i in 0..16u32 {
+                p.set(camera + 4 * i, small(&mut rng));
+            }
+            for at in [0x0074_7090u32, 0x0074_82e0] {
+                p.check(
+                    &format!("shape camera emit {at:#x} round {round}"),
+                    at,
+                    &[obj, key, ctrl],
+                    |m| {
+                        let keep = m.read(frame, 0x40).unwrap();
+                        d::ppp_shape_camera_emit(m, obj, key, ctrl, frame, &mut call_original);
+                        m.write(frame, &keep).unwrap();
+                        None
+                    },
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn round32g_chr_scl_matrix_matches_the_original() {
+    use prog::bridge::{self as pb, ChrScl};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_4910);
+        let (obj, key, frame) = (p.alloc(0x60), p.alloc(0x10), p.alloc(0x40));
+        let scale = p.sym(pb::CHR_SCALE.sym);
+        let num = |rng: &mut Xorshift| {
+            if rng.chance(5) {
+                f32::from_bits(rng.pick(&[0x7fc0_0001u32, 0xffd0_0000, 0, 0x8000_0000]))
+            } else {
+                (rng.below(4000) as f32 - 2000.0) / 256.0
+            }
+        };
+        for round in 0..3000 {
+            for (at, kind, args) in [
+                (0x0073_4910u32, ChrScl::Xyz, 2),
+                (0x0073_49b0, ChrScl::Xz, 2),
+                (0x0073_4a30, ChrScl::Y, 2),
+                (0x0073_4aa0, ChrScl::YXyz, 1),
+                (0x0073_4af0, ChrScl::XXyz, 2),
+            ] {
+                for i in 0..0x18u32 {
+                    p.set(obj + 4 * i, num(&mut rng));
+                }
+                for i in 0..3 {
+                    p.set(scale + 4 * i, num(&mut rng));
+                }
+                p.set(key, rng.next());
+                p.set(key + 4, num(&mut rng));
+                // the cap: often near the scale, sometimes above or equal
+                let cap = if rng.chance(30) {
+                    p.get::<f32>(scale) * 1.5
+                } else {
+                    num(&mut rng)
+                };
+                p.set(key + 8, cap);
+                let a = [obj, key];
+                p.check(
+                    &format!("{kind:?} {at:#x} round {round}"),
+                    at,
+                    &a[..args],
+                    |m| {
+                        let keep = m.read(frame, 0x40).unwrap();
+                        pb::ppp_chr_scl_matrix(m, kind, obj, key, frame, &mut call_original);
+                        m.write(frame, &keep).unwrap();
+                        None
+                    },
+                );
+            }
         }
     }
 }
