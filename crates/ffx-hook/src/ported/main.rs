@@ -2200,6 +2200,16 @@ ported! {
         let mut w = super::StackFrame::<{ state::bridge::MAP_INIT_WORK as usize / 4 }>::new();
         state::bridge::map_init(&mut mem(), w.at());
     }
+    /// `Sg_CanSpeedUp()`.
+    Sg_CanSpeedUp @ 0x0081_fd30 => extern "C" fn sg_can_speed_up() -> u32 {
+        state::bridge::can_speed_up(&mut mem())
+    }
+    /// `Sg_IdChrMove(chr)`: the point in this frame, `Sg_IdGetHeight`'s `ST0`
+    /// through the game.
+    Sg_IdChrMove @ 0x0083_e5f0 => extern "C" fn sg_id_chr_move(chr: u32) {
+        let mut w = super::StackFrame::<4>::new();
+        state::bridge::id_chr_move(&mut mem(), chr, w.at(), &mut |_, f, a| super::call_cdecl_f64(f, a));
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

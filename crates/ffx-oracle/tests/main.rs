@@ -7366,7 +7366,9 @@ fn map_init_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u3
     let work = b.stack_range().start + 0x1000;
     let name = |rng: &mut Xorshift| -> Vec<u8> {
         let n = rng.below(9) as usize;
-        let mut v: Vec<u8> = (0..n).map(|_| b'a' + rng.below(26).to_le_bytes()[0]).collect();
+        let mut v: Vec<u8> = (0..n)
+            .map(|_| b'a' + rng.below(26).to_le_bytes()[0])
+            .collect();
         v.resize(0x40, 0);
         v
     };
@@ -7420,4 +7422,290 @@ fn map_init_snapshot() {
     };
     let mut rng = Xorshift(0x5eed_1014);
     map_init_cases(&mut a, &mut b, &mut rng, 100);
+}
+
+/// `Sg_CanSpeedUp` over recorders answering values from its lists (magic
+/// ids, level hashes, flags, maps), so every test is reached.
+fn can_speed_up_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let callees = [
+        st::MAGIC_ID,
+        st::LEVEL_NAME_HASH,
+        st::GET_SCENERIO_FLAG,
+        st::BATTLE_CHECK,
+        st::VIDEO_PLAYING,
+        st::MOVIE_HAVE_CAMERA,
+        st::GET_UC_STATUS,
+        st::GET_INTER_VALEFOR,
+        st::WINDOWS_BUSY,
+        st::IS_SPEEDING_UP,
+    ];
+    for (k, sym) in (1..).zip(callees) {
+        recorder(a, b, k, sym, 0, 0);
+    }
+    let pick = |rng: &mut Xorshift, list: &[u32]| {
+        if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            list[rng.below(u32::try_from(list.len()).unwrap()) as usize]
+        }
+    };
+    let rare =
+        |rng: &mut Xorshift| u32::from(rng.below(6) == 0) * [1, rng.next()][rng.below(2) as usize];
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        let magic = pick(
+            rng,
+            &[
+                0x14a,
+                0x14c,
+                0x17d,
+                0x132,
+                0xa9,
+                0x1b5,
+                0x1b6,
+                0xcd,
+                u32::MAX,
+                0,
+                0x14b,
+            ],
+        );
+        let hash = pick(
+            rng,
+            &[
+                0x1cd6, 0x56d, 0x24f9, 0x1b4f, 0x7b4, 0x1c99, 0x1ca, 0x6e1, 0x1b84, 0x1f7, 0x1899,
+                0x1d21, 0xc04, 0x1e48, 0xbae, 0x1c45, 0,
+            ],
+        );
+        let flag = pick(rng, &[0x5be, 0x2de, 0x309, 0xc3f, 0xb68, 0x1_05be, 0]);
+        let battle = [0, 1, rng.next()][rng.below(3) as usize];
+        let valefor = [0, 4, 0x84, 0x80, rng.next()][rng.below(5) as usize];
+        let busy = [2, 0, rng.next()][rng.below(3) as usize];
+        let answers = [
+            magic,
+            hash,
+            flag,
+            battle,
+            rare(rng),
+            rare(rng),
+            u32::from(rng.below(2) == 0),
+            valefor,
+            busy,
+            u32::from(rng.below(8) == 0),
+        ];
+        for (k, v) in (1..).zip(answers) {
+            let at = ret(a, k);
+            put(a, b, at, v);
+        }
+        set(a, b, st::WAIT_BY_TIME, rare(rng));
+        set(
+            a,
+            b,
+            st::CURRENT_MAP,
+            pick(rng, &[0xd0, 0xa4, 0x5f, 0x78, 0x7f, 0x3b, 0]),
+        );
+        set(a, b, st::MOVIE_FADING, rare(rng));
+        for g in st::SPEED_UP_BLOCKS {
+            put(a, b, a.rebase(g), u32::from(rng.below(10) == 0));
+        }
+        twin("Sg_CanSpeedUp", a, b, 0x0081_fd30, &[], |m| {
+            st::can_speed_up(&mut H(m))
+        });
+    }
+}
+
+#[test]
+fn can_speed_up_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1015);
+    can_speed_up_cases(&mut a, &mut b, &mut rng, 20000);
+}
+
+#[test]
+fn can_speed_up_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1016);
+    can_speed_up_cases(&mut a, &mut b, &mut rng, 5000);
+}
+
+/// A cdecl stand-in that appends its arguments to `log + 4 + count *
+/// entry` (`count` at `log`): for each `(i, len)` argument `i` itself
+/// (`len` 0) or `len` bytes behind it; then runs `tail` (which sees the
+/// arguments at `[esp + 4 + 4 i]` and must return).
+fn arg_logger(log: u32, args: &[(u8, u32)], tail: &[u8]) -> Vec<u8> {
+    let entry: u32 = args
+        .iter()
+        .map(|&(_, len)| if len == 0 { 4 } else { len })
+        .sum();
+    let mut c = vec![0x56, 0x57, 0xa1]; // push esi; push edi; mov eax, [log]
+    c.extend(log.to_le_bytes());
+    c.extend([0x69, 0xf8]); // imul edi, eax, entry
+    c.extend(entry.to_le_bytes());
+    c.extend([0x81, 0xc7]); // add edi, log + 4
+    c.extend((log + 4).to_le_bytes());
+    c.extend([0xff, 0x05]); // inc dword [log]
+    c.extend(log.to_le_bytes());
+    for &(i, len) in args {
+        if len == 0 {
+            c.extend([0x8b, 0x44, 0x24, 0x0c + 4 * i, 0xab]); // mov eax, [esp+..]; stosd
+        } else {
+            c.extend([0x8b, 0x74, 0x24, 0x0c + 4 * i, 0xb9]); // mov esi, [esp+..]; mov ecx, len/4
+            c.extend((len / 4).to_le_bytes());
+            c.extend([0xf3, 0xa5]); // rep movsd
+        }
+    }
+    c.extend([0x5f, 0x5e]); // pop edi; pop esi
+    c.extend(tail);
+    c
+}
+
+/// `mov eax, [slot]; ret`.
+fn answer(slot: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(slot.to_le_bytes());
+    c.push(0xc3);
+    c
+}
+
+/// `Sg_IdChrMove` over logging stand-ins: the walk flips a bit of the
+/// point's x and sets the triangle from a slot, the slide flips one of
+/// its z, the height comes from a slot through `ST0`.
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn id_chr_move_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 1, st::GET_IGNORE_ID, 0, 0);
+    recorder(a, b, 2, st::ID_GET_NORMAL, 2, 0);
+    let logs: Vec<u32> = (0..4).map(|_| alloc(a, b, 4 + 0x20 * 8)).collect();
+    let (find, walk, walk_tri, height) = (ret(a, 3), ret(a, 4), ret(a, 5), ret(a, 6));
+    let c = arg_logger(logs[0], &[(0, 12)], &answer(find));
+    redirect_to(a, b, st::ID_FIND_TRIANGLE, &c);
+    let mut tail = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    tail.extend([0x81, 0x30, 0, 0, 0x40, 0]); // xor dword [eax], 0x400000
+    tail.extend([0x8b, 0x4c, 0x24, 0x04, 0x66, 0x8b, 0x15]); // mov ecx, [esp+4]; mov dx, [walk_tri]
+    tail.extend(walk_tri.to_le_bytes());
+    tail.extend([0x66, 0x89, 0x91, 0x24, 0x08, 0, 0]); // mov [ecx+0x824], dx
+    tail.extend(answer(walk));
+    let c = arg_logger(logs[1], &[(0, 0), (1, 12), (2, 0)], &tail);
+    redirect_to(a, b, st::ID_WALK, &c);
+    let mut tail = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp+8]
+    tail.extend([0x81, 0x70, 0x08, 0, 0, 0x40, 0]); // xor dword [eax+8], 0x400000
+    tail.extend([0x31, 0xc0, 0xc3]); // xor eax, eax; ret
+    let c = arg_logger(logs[2], &[(0, 0), (1, 12)], &tail);
+    redirect_to(a, b, st::ID_SLIDE_EDGE, &c);
+    let mut tail = vec![0xd9, 0x05]; // fld dword [height]
+    tail.extend(height.to_le_bytes());
+    tail.push(0xc3);
+    let c = arg_logger(logs[3], &[(0, 12), (1, 0)], &tail);
+    redirect_to(a, b, st::ID_GET_HEIGHT, &c);
+    let fcall = &mut |m: &mut H, f: u32, args: &[u32]| {
+        let r =
+            m.0.call(f, Conv::Cdecl, args)
+                .unwrap_or_else(|e| panic!("{f:#x}: {e}"));
+        let st0 = r.st0_f64().unwrap_or_else(|| panic!("{f:#x}: no ST0"));
+        let pop = m.0.rebase(POP_STUB);
+        m.0.call(pop, Conv::Cdecl, &[]).unwrap();
+        st0
+    };
+    let chr = alloc(a, b, 0x900);
+    let table = alloc(a, b, 0x10 * 0x20);
+    let point = b.stack_range().start + 0x1000;
+    let f = |rng: &mut Xorshift| {
+        if rng.below(6) == 0 {
+            rng.float()
+        } else {
+            float_within(rng, 300.0)
+        }
+    };
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for l in &logs {
+            put(a, b, *l, 0u32);
+        }
+        zero_stacks(a, b);
+        b.write(point, &[0u8; 16]).unwrap();
+        for k in 1..7 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        let tri = |rng: &mut Xorshift| {
+            [0xffff, rng.below(0x20), rng.next() & 0xffff][rng.below(3) as usize]
+        };
+        put(a, b, ret(a, 1), u32::from(rng.below(3) == 0));
+        put(a, b, find, tri(rng));
+        put(a, b, walk, [0, 1, rng.next()][rng.below(3) as usize]);
+        put(a, b, walk_tri, tri(rng));
+        put(a, b, height, f(rng));
+        for o in [0xc, 0x10, 0x14, 0x4c, 0x54] {
+            let v = f(rng);
+            put(a, b, chr + o, v);
+        }
+        put(
+            a,
+            b,
+            chr,
+            [1u16, 0, 0x101, rng.next().to_le_bytes()[0].into()][rng.below(4) as usize],
+        );
+        set(a, b, st::ID_WALK_STEP, rng.next());
+        put(
+            a,
+            b,
+            chr + 0x194,
+            if rng.below(2) == 0 {
+                0x200
+            } else {
+                rng.next() & !0x200
+            },
+        );
+        put(a, b, chr + st::CHR_TRIANGLE, tri(rng));
+        for k in 0..0x80 {
+            put(a, b, table + 4 * k, rng.next());
+        }
+        set(
+            a,
+            b,
+            st::ID_TABLE,
+            if rng.below(6) == 0 { 0 } else { table },
+        );
+        set(a, b, st::ID_ZOOM, f32::from_bits(f(rng)));
+        set(a, b, st::ID_REACH, f32::from_bits(f(rng)));
+        set(
+            a,
+            b,
+            st::GRAPHIC_MAP_ID,
+            if rng.below(2) == 0 {
+                0x12a
+            } else {
+                rng.below(0x200)
+            },
+        );
+        twin("Sg_IdChrMove", a, b, 0x0083_e5f0, &[chr], |m| {
+            st::id_chr_move(&mut H(m), chr, point, fcall);
+        });
+    }
+}
+
+#[test]
+fn id_chr_move_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1017);
+    id_chr_move_cases(&mut a, &mut b, &mut rng, 2000);
+}
+
+#[test]
+fn id_chr_move_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1018);
+    id_chr_move_cases(&mut a, &mut b, &mut rng, 500);
 }

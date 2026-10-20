@@ -1681,6 +1681,290 @@ pub mod bridge {
         0x00b4_1d80,
     ];
 
+    /// `Sg_IdChrMove`'s callees: `Sg_GetIgnoreID`, `Sg_IdFindTriangle(p)`,
+    /// `Sg_IdWalk(chr, p, i)`, `Sg_IdSlideEdge(from, to)`,
+    /// `Sg_IdGetNormal(out, i)`, `Sg_IdGetHeight(p, i)` (`ST0`).
+    pub const GET_IGNORE_ID: u32 = 0x0082_d830;
+    pub const ID_FIND_TRIANGLE: u32 = 0x0083_de10;
+    pub const ID_WALK: u32 = 0x0083_d960;
+    pub const ID_SLIDE_EDGE: u32 = 0x0083_e180;
+    pub const ID_GET_NORMAL: u32 = 0x0083_e130;
+    pub const ID_GET_HEIGHT: u32 = 0x0083_e040;
+    /// Its data: a step's word `Sg_IdWalk` reads (cleared before each
+    /// walk), the scaled value of `0x00c4deb0` it keeps, the map whose
+    /// player stands 1 lower (`g_GraphicMapId`), and its constants (10 and
+    /// 1 as `f64`, -1 as `f32`).
+    pub const ID_WALK_STEP: Global<u32> = Global::new(0x0130_1ae8);
+    pub const ID_REACH: Global<f32> = Global::new(0x00c4_deb0);
+    pub const ID_REACH_SCALED: Global<f32> = Global::new(0x0130_1af4);
+    pub const GRAPHIC_MAP_ID: Global<u32> = Global::new(0x0133_0844);
+    pub const ID_TEN: Global<f64> = Global::new(0x00b9_22b0);
+    pub const ID_ONE: Global<f64> = Global::new(0x00b9_2248);
+    pub const ID_MINUS_ONE: Global<f32> = Global::new(0x00b9_2340);
+    /// The character's fields it uses: position (`+0xc`, `+0x10`,
+    /// `+0x14`), the id-space position (`+0x3c`), the move (`+0x4c`,
+    /// `+0x54`), the ground normal (`+0x7c`), the height (`+0x16c`), the
+    /// flags (`+0x194`, 0x200: the id map ignores it), the triangle
+    /// (`i16 +0x824`) and its word (`+0x828`, `0xfffe0000` for none).
+    pub const CHR_TRIANGLE: u32 = 0x824;
+    pub const CHR_TRIANGLE_WORD: u32 = 0x828;
+
+    /// `Sg_IdChrMove(chr)` (`0x0083e5f0`, name ours; the push-apart pass
+    /// `0x0083d3b0` calls it per character): the character's move over the
+    /// id (collision) map. Without one, the move is added to x and z and
+    /// the ground reset (normal (0, -1, 0), height 0). Otherwise in the
+    /// map's scale ([`ID_ZOOM`]): the triangle found when unknown (or none
+    /// when the map ignores the character), the target point `p` (the
+    /// position plus the move, y 0); on no triangle the move is added (times 10 unless
+    /// ignored); else up to four `Sg_IdWalk` steps (sliding along crossed
+    /// edges), then the triangle's word, normal and height (1 lower for
+    /// the player on map 0x12a) and the position `p` back out of the
+    /// map's scale. `p` is the frame's point (16 bytes the callees reach;
+    /// the walk changes it); `fcall` runs `Sg_IdGetHeight` (its `ST0`).
+    #[allow(clippy::too_many_lines)] // one walk, as the original's
+    pub fn id_chr_move<H: ffx_bridge::Host>(
+        h: &mut H,
+        chr: u32,
+        p: u32,
+        fcall: &mut impl FnMut(&mut H, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{self, Reg};
+        let f32_at = |h: &H, o: u32| h.read::<f32>(chr.wrapping_add(o));
+        let set = |h: &mut H, o: u32, v: f32| h.write(chr.wrapping_add(o), v);
+        let triangle = |h: &H| h.read::<u16>(chr.wrapping_add(CHR_TRIANGLE));
+        if ID_TABLE.get(h) == 0 {
+            set_word(h, chr, 0xfffe_0000);
+            let x = Reg::load(f32_at(h, 0x4c)).add_m32(f32_at(h, 0xc)).store();
+            set(h, 0xc, x);
+            let z = Reg::load(f32_at(h, 0x54)).add_m32(f32_at(h, 0x14)).store();
+            set(h, 0x14, z);
+            set(h, 0x16c, 0.0);
+            set(h, 0x7c, 0.0);
+            let down = x87::round_trip(ID_MINUS_ONE.get(h));
+            set(h, 0x80, down);
+            set(h, 0x84, 0.0);
+            return;
+        }
+        let scale = ID_ZOOM.get(h);
+        let reach = Reg::load(ID_REACH.get(h)).mul_m32(scale).store();
+        ID_REACH_SCALED.set(h, reach);
+        // x and y as `fmul st, st(n)`, z as `fmulp st(3), st` (scale * z)
+        let scaled = [
+            Reg::load(f32_at(h, 0xc)).mul_m32(scale).store(),
+            Reg::load(f32_at(h, 0x10)).mul_m32(scale).store(),
+            Reg::load(scale).mul_m32(f32_at(h, 0x14)).store(),
+        ];
+        for (k, v) in (0u32..).zip(scaled) {
+            set(h, 0x3c + 4 * k, v);
+        }
+        h.write(p, scaled);
+        h.write(p + 0xc, 0u32);
+        let call = |h: &mut H, f: u32, args: &[u32]| {
+            let f = h.rebase(f);
+            h.call(f, args)
+        };
+        let flags = |h: &H| h.read::<u32>(chr.wrapping_add(0x194));
+        let mut ignored = false;
+        if call(h, GET_IGNORE_ID, &[]) != 0 && flags(h) & 0x200 != 0 {
+            ignored = true;
+            h.write(chr.wrapping_add(CHR_TRIANGLE), u16::MAX);
+        }
+        if triangle(h) == u16::MAX {
+            let [lo, hi, _, _] = call(h, ID_FIND_TRIANGLE, &[p]).to_le_bytes();
+            h.write(chr.wrapping_add(CHR_TRIANGLE), u16::from_le_bytes([lo, hi]));
+        }
+        let id = triangle(h);
+        let s = Reg::load(scale);
+        let px = (Reg::load(f32_at(h, 0x4c)) * s).add_m32(h.read(p)).store();
+        h.write(p, px);
+        let pz = (s.mul_m32(f32_at(h, 0x54))).add_m32(h.read(p + 8)).store();
+        h.write(p + 8, pz);
+        h.write(p + 4, 0.0f32);
+        if id == u16::MAX {
+            let mx = Reg::load(f32_at(h, 0x4c));
+            if ignored {
+                let x = mx.add_m32(f32_at(h, 0xc)).store();
+                set(h, 0xc, x);
+                let z = Reg::load(f32_at(h, 0x54)).add_m32(f32_at(h, 0x14)).store();
+                set(h, 0x14, z);
+            } else {
+                let ten = Reg::constant(ID_TEN.get(h));
+                let x = (mx * ten).add_m32(f32_at(h, 0xc)).store();
+                set(h, 0xc, x);
+                let z = ten
+                    .mul_m32(f32_at(h, 0x54))
+                    .add_m32(f32_at(h, 0x14))
+                    .store();
+                set(h, 0x14, z);
+            }
+            return;
+        }
+        if !ignored {
+            let start = id;
+            let mut walked = false;
+            for _ in 0..4 {
+                let i = i32::from(triangle(h).cast_signed()).cast_unsigned();
+                ID_WALK_STEP.set(h, 0);
+                if call(h, ID_WALK, &[chr, p, i]) == 0 {
+                    walked = true;
+                    break;
+                }
+                if call(h, GET_IGNORE_ID, &[]) != 0 && flags(h) & 0x200 != 0 {
+                    walked = true;
+                    break;
+                }
+                if triangle(h) != u16::MAX {
+                    call(h, ID_SLIDE_EDGE, &[chr.wrapping_add(0x3c), p]);
+                }
+                h.write(chr.wrapping_add(CHR_TRIANGLE), start);
+            }
+            if !walked {
+                return;
+            }
+        }
+        let c = triangle(h);
+        let table = ID_TABLE.get(h);
+        let i = i32::from(c.cast_signed()).cast_unsigned();
+        if c != u16::MAX && table != 0 {
+            let w = h.read::<u32>(table.wrapping_add(i.wrapping_mul(16)).wrapping_add(0xc));
+            set_word(h, chr, w);
+        } else {
+            set_word(h, chr, 0xfffe_0000);
+        }
+        call(h, ID_GET_NORMAL, &[chr.wrapping_add(0x7c), i]);
+        let i = i32::from(triangle(h).cast_signed()).cast_unsigned();
+        let f = h.rebase(ID_GET_HEIGHT);
+        let height = Reg::constant(fcall(h, f, &[p, i]));
+        let height = (height / s).store();
+        set(h, 0x16c, height);
+        if GRAPHIC_MAP_ID.get(h) == 0x12a && h.read::<u16>(chr) == 1 {
+            let lower = (Reg::load(height) - Reg::constant(ID_ONE.get(h))).store();
+            set(h, 0x16c, lower);
+        }
+        let x = (Reg::load(h.read(p)) / s).store();
+        set(h, 0xc, x);
+        let z = s.divr_m32(h.read(p + 8)).store();
+        set(h, 0x14, z);
+    }
+
+    fn set_word(h: &mut impl Mem, chr: u32, w: u32) {
+        h.write(chr.wrapping_add(CHR_TRIANGLE_WORD), w);
+    }
+
+    /// `Sg_CanSpeedUp`'s callees: `MagicFile_GetMagicId`,
+    /// `graphicLevelGetNameHash`, `getScenerioFlag` (`u16`), `MsBattleCheck`,
+    /// `graphicIsVideoPlaying`, `movie_have_camera`, `getUCStatus`,
+    /// `getInterValefor` (`u8`), `Atel_WindowsBusy`, `SpdCtrl_IsSpeedingUp`.
+    pub const MAGIC_ID: u32 = 0x009d_a3b0;
+    pub const LEVEL_NAME_HASH: u32 = 0x0064_1da0;
+    pub const GET_SCENERIO_FLAG: u32 = 0x0078_7360;
+    pub const BATTLE_CHECK: u32 = 0x0078_0c90;
+    pub const VIDEO_PLAYING: u32 = 0x0064_1cf0;
+    pub const MOVIE_HAVE_CAMERA: u32 = 0x0076_efc0;
+    pub const GET_UC_STATUS: u32 = 0x0082_2460;
+    pub const GET_INTER_VALEFOR: u32 = 0x0078_7340;
+    pub const WINDOWS_BUSY: u32 = 0x0086_c8b0;
+    pub const IS_SPEEDING_UP: u32 = 0x006f_7330;
+    /// Its globals: the frame wait by time (`g_WaitFramesByTime + 4`), the
+    /// map number, the movie fade, three words that each block it.
+    pub const WAIT_BY_TIME: Global<u32> = Global::new(0x0112_a00c);
+    pub const CURRENT_MAP: Global<u32> = Global::new(0x012f_bc40);
+    pub const MOVIE_FADING: Global<u32> = Global::new(0x0134_0824);
+    pub const SPEED_UP_BLOCKS: [u32; 3] = [0x012f_20a4, 0x012f_20a8, 0x012f_20ac];
+
+    /// `Sg_CanSpeedUp()` (`0x0081fd30`, name ours; the world update
+    /// `0x00821e80` asks it before its time-rate step): 1 while
+    /// `SpdCtrl_IsSpeedingUp`; else 0 while a video plays without the
+    /// movie's camera (nor a timed frame wait), in some magic effects
+    /// (`0x14a`, `0x14c`, `0x17d` on map 0xd0; `0x132`, `0xa9`, `0x1b5`,
+    /// `0x1b6`, `0xcd`), at listed story points of some maps and levels
+    /// (scenario flag, battle, level name hash, the script's windows,
+    /// Valefor's flags), while the movie fades, in eight levels during
+    /// `getUCStatus`, or while one of [`SPEED_UP_BLOCKS`] is set; 1
+    /// otherwise. Every callee runs first, in the original's order.
+    #[allow(clippy::too_many_lines)] // one decision, as the original's
+    pub fn can_speed_up(h: &mut impl ffx_bridge::Host) -> u32 {
+        fn call(h: &mut impl ffx_bridge::Host, f: u32) -> u32 {
+            let f = h.rebase(f);
+            h.call(f, &[])
+        }
+        let magic = call(h, MAGIC_ID);
+        let hash = call(h, LEVEL_NAME_HASH);
+        let [lo, hi, _, _] = call(h, GET_SCENERIO_FLAG).to_le_bytes();
+        let flag = u16::from_le_bytes([lo, hi]);
+        let battle = call(h, BATTLE_CHECK);
+        let video = call(h, VIDEO_PLAYING);
+        let movie_camera = call(h, MOVIE_HAVE_CAMERA) != 0 || WAIT_BY_TIME.get(h) != 0;
+        let uc = call(h, GET_UC_STATUS);
+        call(h, GET_INTER_VALEFOR);
+        let busy = call(h, WINDOWS_BUSY);
+        if call(h, IS_SPEEDING_UP) != 0 {
+            return 1;
+        }
+        if video != 0 && !movie_camera {
+            return 0;
+        }
+        let map = CURRENT_MAP.get(h);
+        if matches!(magic, 0x14a | 0x14c | 0x17d) && map == 0xd0 {
+            return 0;
+        }
+        if matches!(magic, 0x132 | 0xa9 | 0x1b5 | 0x1b6 | 0xcd) {
+            return 0;
+        }
+        if map == 0xa4 {
+            if hash == 0x1cd6 && flag == 0x5be {
+                return 0;
+            }
+        } else {
+            if matches!(map, 0x5f | 0x78 | 0x7f) && battle == 0 && flag == 0x2de {
+                return 0;
+            }
+            if map == 0x3b && hash == 0x56d && battle == 0 && flag == 0x309 {
+                return 0;
+            }
+        }
+        if MOVIE_FADING.get(h) != 0 {
+            return 0;
+        }
+        // `None`: on to the level checks; `Some(blocked)`: decided here
+        let story = match hash {
+            0x24f9 => {
+                let valefor = call(h, GET_INTER_VALEFOR);
+                if valefor & 4 != 0 && call(h, GET_INTER_VALEFOR) & 0x80 == 0 {
+                    return 0;
+                }
+                None
+            }
+            0x1b4f if busy == 2 => Some(battle == 0),
+            0x7b4 if flag == 0xc3f => Some(battle == 0),
+            _ => None,
+        };
+        let blocked = match story {
+            Some(blocked) => blocked,
+            None if battle == 0 && hash == 0x1c99 => true,
+            None if hash == 0x1ca => flag == 0xb68,
+            None => hash == 0x6e1 && battle != 0 && magic == u32::MAX,
+        };
+        if blocked {
+            return 0;
+        }
+        if uc != 0
+            && matches!(
+                hash,
+                0x1b84 | 0x1f7 | 0x1899 | 0x1d21 | 0xc04 | 0x1e48 | 0xbae | 0x1c45
+            )
+        {
+            return 0;
+        }
+        if SPEED_UP_BLOCKS
+            .iter()
+            .any(|&g| Global::<u32>::new(g).get(h) != 0)
+        {
+            return 0;
+        }
+        1
+    }
+
     /// `Sg_MapInit`'s callees and data: `yiReset`, `yiMapSetup(objects,
     /// textures)`, `Sg_PcRead(path)`, `Sg_IdFixupAndSet(id)`, `dbgPrintf`,
     /// the C runtime's `sprintf` (through its import slot); the debug line
