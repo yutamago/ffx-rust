@@ -1416,6 +1416,14 @@ ported! {
     TOTextScrollTick_008df570 @ 0x008d_f570 => extern "C" fn to_text_scroll_tick(w: u32) -> u32 {
         tolib::bridge::text_scroll_tick(&mut mem(), w, call_sym, fcall)
     }
+    /// `TOTextScrollInit_008ded00(w)`.
+    TOTextScrollInit_008ded00 @ 0x008d_ed00 => extern "C" fn to_text_scroll_init(w: u32) -> u32 {
+        tolib::bridge::text_scroll_init(&mut mem(), w, call_sym)
+    }
+    /// `TOTextScrollStep_008ded60(w)`.
+    TOTextScrollStep_008ded60 @ 0x008d_ed60 => extern "C" fn to_text_scroll_step(w: u32) -> u32 {
+        tolib::bridge::text_scroll_step(&mut mem(), w, call_sym)
+    }
     /// `TOMenuTransFaceSmnTex()`.
     TOMenuTransFaceSmnTex @ 0x0090_1130 => extern "C" fn to_menu_trans_face_smn_tex() -> u32 {
         intl::bridge::trans_face_smn_tex(&mut mem(), call_ptr)

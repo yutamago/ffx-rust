@@ -24199,3 +24199,92 @@ fn round40_ability_window_matches_the_original_on_the_snapshot() {
     };
     round40_ability_window(&mut a, &mut b, &mut Xorshift(0x4040_0042));
 }
+
+/// Round 41 group A: the scrolling text window's clock reset and step,
+/// `TOTextScrollInit_008ded00` and `TOTextScrollStep_008ded60`; the
+/// scroll tick is a logging stand-in that stores the next table word as
+/// the new line count, so the second clamp sees every range.
+fn round41_text_scroll(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let next_line = alloc(a, b, 4);
+    // mov edx, [esp+4]; mov eax, [next_line]; mov [edx+0xa0], eax
+    let mut tick = vec![0x8b, 0x54, 0x24, 0x04, 0xa1];
+    tick.extend_from_slice(&next_line.to_le_bytes());
+    tick.extend_from_slice(&[0x89, 0x82, 0xa0, 0, 0, 0]);
+    round38_stands(a, b, cursor, 0, &[(0x008d_f570, vec![0], vec![], tick)]);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let w = alloc(a, b, 0x140);
+    let text = alloc(a, b, 4);
+    let mode = a.rebase(0x0186_5f00);
+    let near = |rng: &mut Xorshift| -> i32 {
+        [
+            0i32,
+            1,
+            -1,
+            2,
+            5,
+            9,
+            10,
+            11,
+            i32::MIN,
+            i32::MAX,
+            rng.next().cast_signed(),
+        ][(rng.next() % 11) as usize]
+    };
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x50 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            mode,
+            [0u32, 1, 2, 0x8000_0000][(rng.next() % 4) as usize],
+        );
+        let first = [0u32, 1, 0x80][(rng.next() % 3) as usize];
+        put(a, b, text, first | (rng.next() & 0xffff_ff00));
+        put(a, b, w + 0x98, text);
+        put(a, b, w + 0xa0, near(rng));
+        let last = if rng.next().is_multiple_of(4) {
+            near(rng)
+        } else {
+            10
+        };
+        put(a, b, w + 0xa8, last);
+        put(a, b, next_line, near(rng));
+        put(
+            a,
+            b,
+            w + 0xb4,
+            [0u32, 0, 1, 0x100, u32::MAX][(rng.next() % 5) as usize],
+        );
+        if k % 2 == 0 {
+            let want = eax(a, 0x008d_ed00, &[w]);
+            assert_eq!(want, t::text_scroll_init(b, w, call), "scroll init {k}");
+            same_memory(&format!("scroll init {k}"), a, b);
+        } else {
+            let want = eax(a, 0x008d_ed60, &[w]);
+            assert_eq!(want, t::text_scroll_step(b, w, call), "scroll step {k}");
+            same_memory(&format!("scroll step {k}"), a, b);
+        }
+    }
+}
+
+#[test]
+fn round41_text_scroll_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round41_text_scroll(&mut a, &mut b, &mut Xorshift(0x4041_0011));
+}
+
+#[test]
+fn round41_text_scroll_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round41_text_scroll(&mut a, &mut b, &mut Xorshift(0x4041_0012));
+}
