@@ -1416,6 +1416,14 @@ ported! {
     TOTextScrollTick_008df570 @ 0x008d_f570 => extern "C" fn to_text_scroll_tick(w: u32) -> u32 {
         tolib::bridge::text_scroll_tick(&mut mem(), w, call_sym, fcall)
     }
+    /// `TOTextScrollInit_008ded00(w)`.
+    TOTextScrollInit_008ded00 @ 0x008d_ed00 => extern "C" fn to_text_scroll_init(w: u32) -> u32 {
+        tolib::bridge::text_scroll_init(&mut mem(), w, call_sym)
+    }
+    /// `TOTextScrollStep_008ded60(w)`.
+    TOTextScrollStep_008ded60 @ 0x008d_ed60 => extern "C" fn to_text_scroll_step(w: u32) -> u32 {
+        tolib::bridge::text_scroll_step(&mut mem(), w, call_sym)
+    }
     /// `TOMenuTransFaceSmnTex()`.
     TOMenuTransFaceSmnTex @ 0x0090_1130 => extern "C" fn to_menu_trans_face_smn_tex() -> u32 {
         intl::bridge::trans_face_smn_tex(&mut mem(), call_ptr)
@@ -2295,6 +2303,18 @@ ported! {
     /// `LocalizationManager_GetInstance()`.
     LocalizationManager_GetInstance @ 0x006d_b070 => extern "C" fn localization_manager_get_instance() -> u32 {
         instance::bridge::localization_manager(&mem(), &mut phyre_printf)
+    }
+    /// `LocalizationManager_getText(this, index, out, _)` (`ret 0xc`).
+    LocalizationManager_getText @ 0x006d_b1f0 => extern "thiscall" fn localization_get_text(this: u32, index: u32, out: u32, _unused: u32) -> u32 {
+        instance::bridge::localization_get_text(&mut mem(), this, index, out, |_, this| {
+            // SAFETY: LocalizationManager_readLocalizationKit (thiscall,
+            // no stack arguments), the platform's file read, not ported.
+            unsafe {
+                let f: unsafe extern "thiscall" fn(u32) -> u32 =
+                    std::mem::transmute(crate::rebase(0x006d_b2f0));
+                f(this);
+            }
+        })
     }
     /// `TOGetFFXLang()`.
     TOGetFFXLang @ 0x0064_10e0 => extern "C" fn to_get_ffx_lang() -> u32 {
@@ -6415,6 +6435,16 @@ ported! {
         menu::bridge::magic_file_stop(&mut mem(), call_sym, |m, fmt, arg| {
             menu::bridge::MagicFileCalls::printf(&mut GameMenu, m, fmt, arg);
         })
+    }
+    /// `MagicFile_Unload()`.
+    MagicFile_Unload @ 0x009d_a960 => extern "C" fn magic_file_unload() -> u32 {
+        menu::bridge::magic_file_unload(&mut mem(), call_sym, |m, fmt, arg| {
+            menu::bridge::MagicFileCalls::printf(&mut GameMenu, m, fmt, arg);
+        })
+    }
+    /// `MagicFile_Update()`.
+    MagicFile_Update @ 0x009d_ac60 => extern "C" fn magic_file_update() -> u32 {
+        menu::bridge::magic_file_update(&mut mem(), call_sym)
     }
     /// `MagicFile_SetAsyncLoad()`.
     MagicFile_SetAsyncLoad @ 0x009d_afe0 => extern "C" fn magic_file_set_async_load() -> u32 {

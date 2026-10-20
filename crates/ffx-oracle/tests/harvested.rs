@@ -144,6 +144,19 @@ harvest_test!(
     }
 );
 
+// system: the per-frame magic file check (Sg_MainLoop)
+harvest_test!(
+    magic_file_update,
+    0x009d_ac60,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_system::menu::bridge::magic_file_update(m, |m, f, a| {
+            let f = m.rebase(f);
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);
+
 /// The store's format round-trips, and a state of the first target applies
 /// to a fresh oracle (layout check).
 #[test]

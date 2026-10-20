@@ -24199,3 +24199,437 @@ fn round40_ability_window_matches_the_original_on_the_snapshot() {
     };
     round40_ability_window(&mut a, &mut b, &mut Xorshift(0x4040_0042));
 }
+
+/// Round 41 group A: the scrolling text window's clock reset and step,
+/// `TOTextScrollInit_008ded00` and `TOTextScrollStep_008ded60`; the
+/// scroll tick is a logging stand-in that stores the next table word as
+/// the new line count, so the second clamp sees every range.
+fn round41_text_scroll(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let next_line = alloc(a, b, 4);
+    // mov edx, [esp+4]; mov eax, [next_line]; mov [edx+0xa0], eax
+    let mut tick = vec![0x8b, 0x54, 0x24, 0x04, 0xa1];
+    tick.extend_from_slice(&next_line.to_le_bytes());
+    tick.extend_from_slice(&[0x89, 0x82, 0xa0, 0, 0, 0]);
+    round38_stands(a, b, cursor, 0, &[(0x008d_f570, vec![0], vec![], tick)]);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let w = alloc(a, b, 0x140);
+    let text = alloc(a, b, 4);
+    let mode = a.rebase(0x0186_5f00);
+    let near = |rng: &mut Xorshift| -> i32 {
+        [
+            0i32,
+            1,
+            -1,
+            2,
+            5,
+            9,
+            10,
+            11,
+            i32::MIN,
+            i32::MAX,
+            rng.next().cast_signed(),
+        ][(rng.next() % 11) as usize]
+    };
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        for j in 0..0x50 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            mode,
+            [0u32, 1, 2, 0x8000_0000][(rng.next() % 4) as usize],
+        );
+        let first = [0u32, 1, 0x80][(rng.next() % 3) as usize];
+        put(a, b, text, first | (rng.next() & 0xffff_ff00));
+        put(a, b, w + 0x98, text);
+        put(a, b, w + 0xa0, near(rng));
+        let last = if rng.next().is_multiple_of(4) {
+            near(rng)
+        } else {
+            10
+        };
+        put(a, b, w + 0xa8, last);
+        put(a, b, next_line, near(rng));
+        put(
+            a,
+            b,
+            w + 0xb4,
+            [0u32, 0, 1, 0x100, u32::MAX][(rng.next() % 5) as usize],
+        );
+        if k % 2 == 0 {
+            let want = eax(a, 0x008d_ed00, &[w]);
+            assert_eq!(want, t::text_scroll_init(b, w, call), "scroll init {k}");
+            same_memory(&format!("scroll init {k}"), a, b);
+        } else {
+            let want = eax(a, 0x008d_ed60, &[w]);
+            assert_eq!(want, t::text_scroll_step(b, w, call), "scroll step {k}");
+            same_memory(&format!("scroll step {k}"), a, b);
+        }
+    }
+}
+
+#[test]
+fn round41_text_scroll_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round41_text_scroll(&mut a, &mut b, &mut Xorshift(0x4041_0011));
+}
+
+#[test]
+fn round41_text_scroll_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round41_text_scroll(&mut a, &mut b, &mut Xorshift(0x4041_0012));
+}
+
+/// Round 41 group B: `LocalizationManager_getText` over random kits
+/// (lines of letters, `\r`, high bytes and now and then a NUL; lengths
+/// short of, at and past the text, negative and 0). The kit reader is a
+/// stand-in that counts its calls and installs the next text and length.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::many_single_char_names
+)]
+fn round41_get_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use instance::bridge as i;
+    let cells = alloc(a, b, 0x10);
+    // mov eax, [cells]; mov [ecx+0x18], eax; mov eax, [cells+4];
+    // mov [ecx+0x14], eax; inc dword [cells+8]; ret
+    let mut kit = vec![0xa1];
+    kit.extend_from_slice(&cells.to_le_bytes());
+    kit.extend_from_slice(&[0x89, 0x41, 0x18, 0xa1]);
+    kit.extend_from_slice(&(cells + 4).to_le_bytes());
+    kit.extend_from_slice(&[0x89, 0x41, 0x14, 0xff, 0x05]);
+    kit.extend_from_slice(&(cells + 8).to_le_bytes());
+    kit.push(0xc3);
+    let s = stand_in8(a, b, 0, &kit);
+    redirect(a, b, 0x006d_b2f0, s);
+    let this = alloc(a, b, 0x20);
+    let texts = [alloc(a, b, 0x1000), alloc(a, b, 0x1000)];
+    let out = alloc(a, b, 0x800);
+    let read_kit = |m: &mut Oracle, this: u32| {
+        call(m, 0x006d_b2f0, Conv::Thiscall(this), &[]);
+    };
+    for k in 0..3000u32 {
+        let mut lens = [0i32; 2];
+        for (t, len) in texts.iter().zip(&mut lens) {
+            let mut v = Vec::new();
+            let lines = rng.next() % 8;
+            for _ in 0..lines {
+                let n = if rng.next().is_multiple_of(16) {
+                    rng.next() % 1000
+                } else {
+                    rng.next() % 40
+                };
+                for _ in 0..n {
+                    let r = rng.next();
+                    v.push(match r % 23 {
+                        0 => b'\r',
+                        1 => 0,
+                        2 => 0x80 | (r >> 8) as u8,
+                        _ => b'a' + (r >> 8) as u8 % 26,
+                    });
+                }
+                v.push(b'\n');
+            }
+            for _ in 0..rng.next() % 5 {
+                v.push(b'a' + (rng.next() % 26) as u8);
+            }
+            *len = v.len() as i32;
+            v.extend((0..16).map(|_| rng.next() as u8));
+            v.resize(0x1000, 0);
+            a.write(*t, &v).unwrap();
+            b.write(*t, &v).unwrap();
+        }
+        // whole multiples of 0x100 (a zero low byte) count as lengths too
+        let pick = |rng: &mut Xorshift, len: i32| match rng.next() % 7 {
+            0 => len - 1 - (rng.next() % 3) as i32,
+            1 => len + (rng.next() % 4) as i32,
+            2 => -1 - (rng.next() % 2) as i32,
+            3 => 0,
+            4 => 0x100 * (1 + (rng.next() % 3) as i32),
+            _ => len,
+        };
+        let first_len = pick(rng, lens[0]);
+        put(a, b, this + 0x18, first_len);
+        put(a, b, this + 0x14, texts[0]);
+        let kit_len = pick(rng, lens[1]).max(1);
+        put(a, b, cells, kit_len);
+        put(a, b, cells + 4, texts[1]);
+        let index = match rng.next() % 5 {
+            0 => rng.next(),
+            1 => u32::MAX,
+            _ => rng.next() % 9,
+        };
+        let junk = rng.next();
+        for j in 0..0x200 {
+            put(a, b, out + 4 * j, rng.next());
+        }
+        let want = call(a, 0x006d_b1f0, Conv::Thiscall(this), &[index, out, junk]).eax;
+        let got = i::localization_get_text(b, this, index, out, read_kit);
+        assert_eq!(want, got, "get text {k}");
+        same_memory(&format!("get text {k}"), a, b);
+    }
+}
+
+#[test]
+fn round41_get_text_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round41_get_text(&mut a, &mut b, &mut Xorshift(0x4041_0021));
+}
+
+#[test]
+fn round41_get_text_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round41_get_text(&mut a, &mut b, &mut Xorshift(0x4041_0022));
+}
+
+/// Round 41 group C: `MagicFile_Unload` over logging stand-ins for every
+/// callee (printf through its import slot, logging the id only for the
+/// completion message); the VFX destroy and the shader-table unload
+/// stand-ins may switch the previous magic (a cell each), so every re-read
+/// of it counts. Magic ids, buffers, the pair table and the instance runs
+/// random.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round41_magic_unload(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use menu::bridge as mb;
+    let log = alloc(a, b, 0x10000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x10);
+    let seq = round38_seq(counter, table);
+    let previous = a.rebase(0x00c6_4ca8);
+    // mov eax, [cell]; mov [previous], eax
+    let switch = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xa3);
+        v.extend_from_slice(&previous.to_le_bytes());
+        v
+    };
+    let done_fmt = a.rebase(0x00b7_05f0);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0064_5320, vec![], vec![], switch(cells)),
+        (0x0082_b2a0, all(2), vec![], vec![]),
+        (0x0068_6fe0, all(1), vec![], vec![]),
+        (0x0064_5280, all(2), vec![], switch(cells + 4)),
+        (0x0064_20f0, all(1), vec![], vec![]),
+        (0x0064_20e0, vec![], vec![], switch(cells + 8)),
+        (0x0064_1da0, all(1), vec![], seq),
+        (0x009d_acc0, all(2), vec![], vec![]),
+        (0x0067_94f0, all(2), vec![], vec![]),
+        (0x0064_2fe0, all(5), vec![], vec![]),
+        (0x0064_2070, all(1), vec![], vec![]),
+        (0x0064_35e0, all(1), vec![], vec![]),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    // printf: logs the format, and the id after the completion message
+    let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x3d];
+    tail.extend_from_slice(&done_fmt.to_le_bytes());
+    tail.extend_from_slice(&[0x75, 0x13, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    tail.extend_from_slice(&cursor.to_le_bytes());
+    tail.extend_from_slice(&[0x89, 0x01, 0x83, 0x05]);
+    tail.extend_from_slice(&cursor.to_le_bytes());
+    tail.push(4);
+    let printf = stand_in8(
+        a,
+        b,
+        0x80 * stands.len() as u32,
+        &pick_logger(cursor, 0x5f, &[0], &[], &tail),
+    );
+    put(a, b, a.rebase(0x00b0_c380), printf);
+    // every callee gets the original's argument count (the stand-ins log
+    // words the caller never pushed as whatever the frame holds)
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        if let Some(&(_, n)) = arity.iter().find(|e| e.0 == sym) {
+            assert_eq!(args.len(), n, "{sym:#x} arguments");
+        }
+        eax(m, sym, args)
+    };
+    let printf_b = |m: &mut Oracle, fmt: u32, arg: Option<u32>| {
+        let mut args = vec![fmt];
+        args.extend(arg);
+        m.call(printf, Conv::Cdecl, &args).unwrap();
+    };
+    let prx = a.rebase(0x00c6_4cb0);
+    let pairs = a.rebase(mb::OP_PAIR_TABLE);
+    let runs = a.rebase(mb::VFX_RUNS);
+    let magics = [
+        u32::MAX,
+        0x1b5,
+        0x1b6,
+        0x246,
+        0x1b4,
+        0x247,
+        0x1b5,
+        0x1b6,
+        0x246,
+    ];
+    let pick_magic = |rng: &mut Xorshift| {
+        if rng.next().is_multiple_of(9) {
+            rng.next()
+        } else {
+            magics[(rng.next() % magics.len() as u32) as usize]
+        }
+    };
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x40 {
+            put(a, b, table + 4 * j, rng.next());
+        }
+        let magic = pick_magic(rng);
+        put(a, b, previous, magic);
+        put(
+            a,
+            b,
+            prx,
+            if rng.next().is_multiple_of(8) {
+                u32::MAX
+            } else {
+                rng.next()
+            },
+        );
+        for j in 0..3 {
+            let v = if rng.next().is_multiple_of(4) {
+                pick_magic(rng)
+            } else {
+                magic
+            };
+            put(a, b, cells + 4 * j, v);
+        }
+        put(a, b, a.rebase(0x0193_fdac), rng.next());
+        put(a, b, a.rebase(0x022f_b3f8), rng.next());
+        put(
+            a,
+            b,
+            a.rebase(0x022f_b3dc),
+            if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                rng.next()
+            },
+        );
+        for t in mb::MAGIC_BUFFERS {
+            for j in 0..6 {
+                let v = if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    rng.next()
+                };
+                put(a, b, a.rebase(t) + 4 * j, v);
+            }
+        }
+        let n = [-1i32, 0, 1, 2, 5, 8][(rng.next() % 6) as usize];
+        put(a, b, pairs, [n.cast_unsigned(), rng.next()]);
+        for j in 1..=9 {
+            put(a, b, pairs + 8 * j, [rng.next(), rng.next()]);
+        }
+        let n = [-1i32, 0, 1, 2, 4][(rng.next() % 5) as usize];
+        put(a, b, a.rebase(0x012f_411c), n);
+        for j in 0..4 {
+            let lo = if rng.next().is_multiple_of(3) {
+                u32::MAX - rng.next() % 3
+            } else {
+                rng.next()
+            };
+            let count = [-1i32, 0, 1, 3][(rng.next() % 4) as usize];
+            put(
+                a,
+                b,
+                runs + 16 * j,
+                [lo, rng.next(), count.cast_unsigned(), rng.next()],
+            );
+        }
+        let want = eax(a, 0x009d_a960, &[]);
+        assert_eq!(
+            want,
+            mb::magic_file_unload(b, call, printf_b),
+            "magic unload {k}"
+        );
+        same_memory(&format!("magic unload {k}"), a, b);
+    }
+}
+
+#[test]
+fn round41_magic_unload_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round41_magic_unload(&mut a, &mut b, &mut Xorshift(0x4041_0031));
+}
+
+#[test]
+fn round41_magic_unload_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round41_magic_unload(&mut a, &mut b, &mut Xorshift(0x4041_0032));
+}
+
+/// Round 41 group D: `MagicFile_Update` over logging stand-ins for
+/// `MagicFile_Unload` and `MsSetChrVisible` (its result from a table).
+fn round41_magic_update(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use menu::bridge as mb;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x40);
+    let seq = round38_seq(counter, table);
+    let stands: Vec<Stand> = vec![
+        (0x009d_a960, vec![], vec![], vec![]),
+        (0x0079_6660, vec![0, 1], vec![], seq),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let word = |rng: &mut Xorshift| match rng.next() % 4 {
+        0 => u32::MAX,
+        1 => 0xffff_fffe,
+        2 => 0x7fff_ffff,
+        _ => rng.next() % 0x300,
+    };
+    for k in 0..2000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x10 {
+            put(a, b, table + 4 * j, rng.next());
+        }
+        put(a, b, a.rebase(0x00c6_4cb0), word(rng));
+        put(a, b, a.rebase(0x00c6_4ca8), word(rng));
+        put(a, b, a.rebase(0x00c6_4cdc), word(rng));
+        let want = eax(a, 0x009d_ac60, &[]);
+        assert_eq!(want, mb::magic_file_update(b, call), "magic update {k}");
+        same_memory(&format!("magic update {k}"), a, b);
+    }
+}
+
+#[test]
+fn round41_magic_update_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round41_magic_update(&mut a, &mut b, &mut Xorshift(0x4041_0041));
+}
+
+#[test]
+fn round41_magic_update_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round41_magic_update(&mut a, &mut b, &mut Xorshift(0x4041_0042));
+}
