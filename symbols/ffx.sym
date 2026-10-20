@@ -9222,7 +9222,7 @@
 0x00861000 function AtelBGSepFade             # fh v3:bsim1.00 0x00860fa0
 0x00861160 function AtelBattleEndCallback     # fh v3:exact 0x00861100; (mode, v, map, end type): 0xc024 pushes 3; its 4th word is the 0 left from TkGetNowEventJumpMapNo(0), the end type (save +0xd0, != 6, == 1 game over), so the bridge passes 0
 0x00862680 function AtelBindEff2OffSome_00862680 # structure: (worker, which): switches off the worker's bound effects (+0x9c) by kind: walk, water, breath, draw or all (op_et_bindeff2_*_off) and clears its flag bit; callers three bind natives; next to AtelBindEff2On; name ours; ported in helpers (script round 19)
-0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0
+0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0; (worker, kind): op_et_bindeff2 + _draw_on on +0x9c, then kind 0 _walk_on (+0x38 |= 0x20), 1 _breath_on (0x40), 2 _water_on (0x80); eax the last call's / 0x80 / kind - 2; ported in helpers (script round 23)
 0x00862780 function AtelBindElemOff           # fh v3:exact 0x00862720
 0x00862800 function AtelBindFp                # (worker, fp id, bone): records the id in the worker's 4 FP slots (+0xb18) and attaches the effect to the worker's model (pppFpSetStickChr) or other object kinds (pppFpSetStickMap/pppFpSetStickMapDObj); the Switch AtelBindFp calls exactly those three and sorts between AtelBindElemOff and AtelBindFpOff, as here; callers Native_FpBind, Native_0196; was Fp_BindToWorker
 0x008628a0 function AtelBindFpOff                # layout+callees: sorts between AtelBindElemOff and AtelChangeBinaryHeader, and its named callees match the Switch 0x7100473c90 AtelBindFpOff's (similarity 1.00: pppFpResetStick); symbols from Fahrenheit's server export
@@ -9241,6 +9241,7 @@
 0x00863860 function AtelClearEffectFlag_00863860 # structure: (bit): clears bit n of g_AtelEffectFlags, the reverse of AtelSetEffectFlag; callers two effect natives; name ours; ported in helpers (script round 14)
 0x00863880 function AtelClearEffectParam      # fh v3:cg2 0x863820
 0x008638b0 function AtelClearForcePlaceId     # fh v3:bsim1.00 0x00863850
+0x008638c0 function Atel_QueueSepLoads         # (header) -> table count: g_AtelSepQueueCount = 0, then each pending (0x8000) g_AtelSepLoadList entry whose id is not in the header's separates table (+0x2c -> +0xc: n, (id, flags) pairs) is queued (ids 0x01327080, fades 0x013270a0, from 1) with fade 0xf0 / 0x78 (0x2000) / 0x168 (0x4000) and loses 0x8000; called by 0x00871780; name ours; ported in helpers (script round 23)
 0x008639e0 function AtelResetLevel            # (worker, n): level back to entry 0 (call depth, header, PC, state, float accumulator 0.0)
 0x00863ae0 function AtelClearLoveParamDisable # fh v3:cg2 0x863a80
 0x00863af0 function Atel_ClearEffectFlag2      # (n): bit n of 0x01326b74 cleared -> the mask; name ours; ported in helpers (script round 14)
@@ -9282,8 +9283,11 @@
 0x008694f0 function AtelExecReturnForce2         # layout+callees: sorts between AtelExecReturn2 and AtelFetchCommand, and its named callees match the Switch 0x710046abb0 AtelExecReturnForce2's (similarity 1.00: AtelExecReturn, AtelGetBasicWork); symbols from Fahrenheit's server export
 0x00869d60 function AtelFetchCommand          # (worker, level) -> opcode << 24 | u16 operand when the high bit is set, from the level's PC; Switch name (alphabetical slot before AtelFetchCommandMain and AtelFetchStackInteger); was Script_Fetch
 0x00869da0 function AtelFetchCommandMain      # (long, pc): AtelFetchCommand from a PC, the operand read also when long != 0 (Script_Run's breakpoints); Switch name by its alphabetical slot?
+0x00869df0 function Atel_SyncChrDir            # (worker): +0xaa 1 with a character (+0x9c): position block +0x20 = Ch_GetDir(chr) (fstp m32); type 4 has no block (writes through 0); name ours; ported in helpers (script round 23)
 0x0086a000 function AtelFetchStackInteger     # (worker, stack) -> top slot as integer, not popped (opcode 2b); Switch name: between AtelFetchCommandMain and AtelFlushAlbhedDic (0x0086a040, which reads g_AtelAlbhedDic) in the alphabetical Atel layout
 0x0086a040 function AtelFlushAlbhedDic           # layout+callees: sorts between AtelFetchStackInteger and AtelForceMusicAllStop, and its named callees match the Switch 0x7100474620 AtelFlushAlbhedDic's (similarity 1.00: TkMsImportantSet); symbols from Fahrenheit's server export
+0x0086a0e0 function Atel_UcRestore             # (): AtelUcOff, then AtelUcOn when the ctrl work had control (+0 bits 0x22, read before) and +1 bit 2, +3 bits 0x84 are clear; then +0 bit 1 restored to its old value; natives 0x0031/0x0032 and the move natives; name ours; ported in helpers (script round 23)
+0x0086a130 function Atel_UcResume              # (): Atel_UcRestore without the bit-1 restore (tail-jumps to AtelUcOn); name ours; ported in helpers (script round 23)
 0x0086a170 function AtelForceMusicAllStop     # fh switch:bsim1.00 0x71004743f0
 0x0086a1c0 function AtelFreeSepBuffer         # fh v3:exact 0x0086a150
 0x0086a290 function AtelGetActorBufferSize    # fh v3:exact 0x0086a220
@@ -9294,6 +9298,7 @@
 0x0086a5d0 function AtelGetActorId            # fh v3:bsim1.00 0x0086a560
 0x0086a5e0 function AtelGetPartyWorker        # (slot) -> the actor of g_SaveInParty[slot], -1 (empty, slot >= 3); a negative slot reads below its locals
 0x0086a650 function AtelGetActorNumber        # fh v3:cg4 0x86a5e0
+0x0086a6e0 function Atel_GetWorkerRotY         # (i) -> ST0: AtelGetBasicWork(i)'s position block (+0x284 types 5/6, +0x558 else) +0x34 (the rotation's middle angle, AtelSetBindObject's rot y); type 4 reads through 0; battle callers 0x007984c0, 0x007c0650; name ours; ported in helpers (script round 23)
 0x0086a720 function AtelGetActorStartPos      # fh v3:exact 0x0086a6b0
 0x0086a7b0 function AtelGetActorType          # (index) -> type byte of the worker header, or 7 if the index is out of range; was Script_GetWorkerType
 0x0086a7e0 function AtelGetAlbhedRikku        # fh v3:bsim1.00+call.cs 0x0086a770 cdecl
@@ -16809,6 +16814,7 @@
 0x01326cf0 label    g_AtelMCFPInWater            # four words written by AtelSetMCFPInWater (0x00870280)
 0x01326d70 label    g_AtelMsgWindows             # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
 0x01327030 label    g_AtelSepLoadList            # 8 x (id u32, flags u32): sound separates to load (flags | 0x8000 = pending, 0x008638c0 queues those with fade 0xf0/0x78 (0x2000)/0x168 (0x4000) frames); Atel_AddSepLoad
+0x0132707c label    g_AtelSepQueueCount          # i32: sound separates queued by Atel_QueueSepLoads; the ids follow at 0x01327080 and the fades (frames) at 0x013270a0, both indexed from 1
 0x013270c0 label    g_AtelPadHeld             # u16 words every 4 bytes, ORed over the frames since the update (AtelExec_Internal_871d10): +0 pad 0 held (TkGetControlerHist), +4 pad 1 held, +8 repeat, +0xc history +0x1c, +0x10 g_PadPressed, +0x14 history +8
 0x013270c8 label    g_AtelPadRepeat           # u16: TkGetControlerReptHist ORed (AtelGetControlerRept)
 0x013270cc label    g_AtelPadHist1c           # u16: the pad history's +0x1c word ORed (AtelGetControlerHist1c)

@@ -6660,4 +6660,30 @@ ported! {
         let mut frame = super::StackFrame::<4>::new();
         hp::atel_set_pos_3d(&mut mem(), w, [x, y, z], snap, frame.at())
     }
+    /// `Atel_UcRestore()`.
+    Atel_UcRestore @ 0x0086_a0e0 => extern "C" fn h_86a0e0() {
+        hp::atel_uc_restore(&mut mem());
+    }
+    /// `Atel_UcResume()`.
+    Atel_UcResume @ 0x0086_a130 => extern "C" fn h_86a130() {
+        hp::atel_uc_resume(&mut mem());
+    }
+    /// `Atel_GetWorkerRotY(i)`: `ST0`.
+    Atel_GetWorkerRotY @ 0x0086_a6e0 => extern "C" fn h_86a6e0(i: u32) -> f32 {
+        hp::atel_get_worker_rot_y(&mut mem(), i)
+    }
+    /// `Atel_SyncChrDir(worker)`: `Ch_GetDir` through the game.
+    Atel_SyncChrDir @ 0x0086_9df0 => extern "C" fn h_869df0(w: u32) {
+        hp::atel_sync_chr_dir(&mut mem(), w, |m, c| {
+            super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, 0x0082_ab80), &[c])
+        });
+    }
+    /// `AtelBindEff2On(worker, kind)`.
+    AtelBindEff2On @ 0x0086_2700 => extern "C" fn h_862700(w: u32, kind: u32) -> u32 {
+        hp::atel_bind_eff2_on(&mut mem(), w, kind)
+    }
+    /// `Atel_QueueSepLoads(header)`.
+    Atel_QueueSepLoads @ 0x0086_38c0 => extern "C" fn h_8638c0(b: u32) -> u32 {
+        hp::atel_queue_sep_loads(&mut mem(), b)
+    }
 }

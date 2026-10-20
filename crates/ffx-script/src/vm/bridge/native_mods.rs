@@ -882,14 +882,16 @@ pub fn native_01a3<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// (`0x008712a0`), `0x0086a0e0()`; 1.
 pub fn native_0031<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0087_12a0, &[w, 1]);
-    void(h, 0x0086_a0e0, 1)
+    super::helpers::atel_uc_restore(h);
+    1
 }
 
 /// `0x0032` (`0x00856da0`): `Atel_SetWorkerFlag200(worker, 0)`,
 /// `0x0086a0e0()`; 0.
 pub fn native_0032<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     call(h, 0x0087_12a0, &[w, 0]);
-    void(h, 0x0086_a0e0, 0)
+    super::helpers::atel_uc_restore(h);
+    0
 }
 
 /// `0x00f0` (`0x008576a0`): `(&v)`: `Atel_SetLineTable(worker, variable

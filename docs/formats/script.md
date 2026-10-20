@@ -2556,6 +2556,24 @@ original call the Rust ones, with the native scratch as the frame.
 `round23b_helpers_match_the_original` covers them (character, map-group
 and camera bindings come from the snapshots).
 
+The rest of round 23: `Atel_UcResume` (`0x0086a130`) runs `AtelUcOff`,
+then `AtelUcOn` when the ctrl work had given the player control (`+0`
+bits `0x22`, read first) and its `+1` bit 2 and `+3` bits `0x84` are clear;
+`Atel_UcRestore` (`0x0086a0e0`) does the same and then puts `+0` bit 1
+back as it was. `Atel_GetWorkerRotY` (`0x0086a6e0`) returns the position
+block's `+0x34` of a worker index in `ST0`; `Atel_SyncChrDir`
+(`0x00869df0`) stores `Ch_GetDir` of the worker's character into the
+block's `+0x20` when bound to it (`+0xaa` 1). `AtelBindEff2On`
+(`0x00862700`) switches the character's bind effect 2 on (`op_et_bindeff2`,
+`_draw_on`) and one of its parts (kind 0 walk, 1 breath, 2 water), marking
+it in the worker's `+0x38` (bits 5, 6, 7). `Atel_QueueSepLoads`
+(`0x008638c0`) turns the pending entries of `g_AtelSepLoadList` that the
+event header's table does not list into the separates queue
+(`g_AtelSepQueueCount`, `0x0132707c`, entries from 1: ids at
+`0x01327080`, fades at `0x013270a0`). `round23c_helpers_match_the_original`
+covers them; `op_et_bindeff2_draw_on` finds no bind-effect slot on either
+snapshot's characters, so its call is not observed there.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the
