@@ -1174,12 +1174,8 @@ fn scr_dpt(a: &mut Oracle, b: &mut Oracle) {
         .st0
         .expect("a float result");
     let rb = f64::from(camera::bridge::ms_camera_get_scr_dpt(b));
-    // the oracle reads every NaN in ST0 as the same NaN
-    if ra.is_nan() {
-        assert!(rb.is_nan(), "MsCameraGetScrDpt NaN, {rb}");
-    } else {
-        assert_eq!(ra.to_bits(), rb.to_bits(), "MsCameraGetScrDpt {ra} {rb}");
-    }
+    // bit for bit, NaN payloads too
+    assert_eq!(ra.to_bits(), rb.to_bits(), "MsCameraGetScrDpt {ra} {rb}");
 }
 
 #[test]

@@ -1051,10 +1051,15 @@ impl PortResult for f64 {
         let Some(st0) = o.ret.st0 else {
             return Err(format!("no float in ST0, port {self}"));
         };
-        if (self.is_nan() && st0.is_nan()) || st0.to_bits() == self.to_bits() {
+        // bit for bit: NaN signs and payloads too (`Ret::st0` keeps them)
+        if crate::same_float(st0, self) {
             Ok(())
         } else {
-            Err(format!("ST0 {st0}, port {self}"))
+            Err(format!(
+                "ST0 {st0} ({:#018x}), port {self} ({:#018x})",
+                st0.to_bits(),
+                self.to_bits()
+            ))
         }
     }
     fn is_float(&self) -> bool {

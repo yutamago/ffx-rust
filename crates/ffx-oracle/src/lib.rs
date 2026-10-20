@@ -97,6 +97,8 @@ pub enum Error {
     LayoutMismatch(String),
     #[error("the C runtime gave up: it called {0} (an invalid parameter, abort() or an exception)")]
     RuntimeAbort(&'static str),
+    #[error("the function at {0:#010x} left no float in ST0")]
+    NoFloat(u32),
 }
 
 impl From<unicorn_engine::uc_error> for Error {
@@ -125,11 +127,37 @@ pub enum Conv {
 pub struct Ret {
     pub eax: u32,
     pub edx: u32,
-    /// `ST0` when the x87 stack is not empty (float and double results).
+    /// `ST0` when the x87 stack is not empty (float and double results),
+    /// as `fst qword` stores it ([`f80_to_f64`]: NaN signs and payloads
+    /// kept, so compare it bit for bit, [`same_float`]).
     pub st0: Option<f64>,
-    /// `ST0`'s 80 bits (mantissa, then sign and exponent), to tell NaNs
-    /// apart: [`Ret::st0`] makes every NaN the same.
+    /// `ST0`'s 80 bits (mantissa, then sign and exponent).
     pub st0_raw: Option<[u8; 10]>,
+}
+
+impl Ret {
+    /// `ST0` as `fst dword` stores it ([`f80_to_f32`]: one rounding from
+    /// the 80 bits, NaN payloads kept).
+    #[must_use]
+    pub fn st0_f32(&self) -> Option<f32> {
+        self.st0_raw.map(f80_to_f32)
+    }
+
+    /// Whether the original's `ST0` is exactly a port's float result
+    /// ([`same_float`]; false when the x87 stack is empty).
+    #[must_use]
+    pub fn st0_is(&self, port: f64) -> bool {
+        self.st0.is_some_and(|st0| same_float(st0, port))
+    }
+
+    /// `ST0` as `fstp qword` stores it, NaN payloads kept (quieted): the
+    /// same as [`Ret::st0`] ([`f80_to_f64`]), kept for the callers that
+    /// name it; what a game-side `f64` call (`call_cdecl_f64` in
+    /// `ffx-hook`) returns.
+    #[must_use]
+    pub fn st0_f64(&self) -> Option<f64> {
+        self.st0
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -887,6 +915,19 @@ impl Oracle {
         Ok(self.call(addr, Conv::Cdecl, args)?.eax)
     }
 
+    /// Calls a cdecl function that returns a float in `ST0` and returns it
+    /// as `fst qword` stores it, NaN sign and payload kept ([`Ret::st0`]):
+    /// the callback to hand a port for an original float function.
+    ///
+    /// # Errors
+    /// As [`Oracle::call_cdecl`]; [`Error::NoFloat`] when the x87 stack is
+    /// empty at the return.
+    pub fn call_f64(&mut self, addr: u32, args: &[u32]) -> Result<f64> {
+        self.call(addr, Conv::Cdecl, args)?
+            .st0
+            .ok_or(Error::NoFloat(addr))
+    }
+
     /// Calls a function at its address in the emulator (already rebased).
     ///
     /// # Errors
@@ -1428,31 +1469,106 @@ fn map_from_snapshot(uc: &mut Unicorn<State>, addr: u64) -> bool {
     uc.mem_write(start, data).is_ok()
 }
 
-/// An x87 80-bit extended value (little-endian bytes) as f64.
+/// An x87 80-bit extended value (little-endian bytes) as `fst qword`
+/// stores it, NaN payloads kept: a NaN keeps its sign and the top 52
+/// fraction bits, quieted (a signalling NaN gets the quiet bit, as on the
+/// hardware); invalid encodings (unnormals, pseudo-NaNs, pseudo-infinities)
+/// store the default NaN (`0xfff8_0000_0000_0000`); finite values round to
+/// nearest even, overflowing to an infinity and underflowing to
+/// subnormals or zero (the game's control word `0x027f`: exceptions
+/// masked, round to nearest). Fewer than 10 bytes: a NaN.
 #[must_use]
 pub fn f80_to_f64(b: &[u8]) -> f64 {
-    if b.len() < 10 {
+    let Ok(raw) = <[u8; 10]>::try_from(b.get(..10).unwrap_or_default()) else {
         return f64::NAN;
-    }
-    let mant = u64::from_le_bytes(b[..8].try_into().expect("8 bytes"));
-    let se = u16::from_le_bytes([b[8], b[9]]);
-    let sign = if se & 0x8000 != 0 { -1.0 } else { 1.0 };
+    };
+    f64::from_bits(f80_store(raw, 52, 11))
+}
+
+/// An x87 80-bit extended value as `fst dword` stores it: the f32
+/// counterpart of [`f80_to_f64`] (a NaN keeps its sign and top 23 fraction
+/// bits, quieted; finite values round to nearest even once, from the full
+/// 64-bit mantissa).
+#[must_use]
+pub fn f80_to_f32(raw: [u8; 10]) -> f32 {
+    #[allow(clippy::cast_possible_truncation)] // 32 bits by construction
+    f32::from_bits(f80_store(raw, 23, 8) as u32)
+}
+
+/// Whether a float the original left in `ST0` and a port's result are the
+/// same bits (NaN payloads and signs included): the comparison every ST0
+/// check should make. `port` as f64; an f32 result converts exactly with
+/// `f64::from`, payload included.
+#[must_use]
+pub fn same_float(st0: f64, port: f64) -> bool {
+    st0.to_bits() == port.to_bits()
+}
+
+/// `raw` stored into an IEEE binary format with `frac` fraction bits and
+/// `ebits` exponent bits, as the x87's `fst` does at round to nearest with
+/// its exceptions masked. The result's bits, right-aligned.
+fn f80_store(raw: [u8; 10], frac: u32, ebits: u32) -> u64 {
+    let mant = u64::from_le_bytes(raw[..8].try_into().expect("8 bytes"));
+    let se = u16::from_le_bytes([raw[8], raw[9]]);
     let exp = i32::from(se & 0x7fff);
-    if exp == 0 && mant == 0 {
-        return 0.0 * sign;
-    }
+    let sign = u64::from(se >> 15) << (frac + ebits);
+    let emax = (1u64 << ebits) - 1;
+    let quiet = 1u64 << (frac - 1);
+    let indefinite = (1u64 << (frac + ebits)) | emax << frac | quiet;
+    let integer = mant >> 63 != 0;
     if exp == 0x7fff {
-        return if mant << 1 == 0 {
-            sign * f64::INFINITY
-        } else {
-            f64::NAN
-        };
+        if !integer {
+            return indefinite; // pseudo-NaN or pseudo-infinity
+        }
+        if mant << 1 == 0 {
+            return sign | emax << frac;
+        }
+        return sign | emax << frac | quiet | (mant << 1) >> (64 - frac);
     }
-    #[allow(clippy::cast_precision_loss)] // f64 holds what the game rounds to
-    let m = mant as f64 / (1u64 << 63) as f64;
-    // two steps, so subnormal results are not lost to an underflowed 2^e
-    let e = exp - 16383;
-    sign * m * 2f64.powi(e / 2) * 2f64.powi(e - e / 2)
+    if exp != 0 && !integer {
+        return indefinite; // unnormal
+    }
+    if mant == 0 {
+        return sign;
+    }
+    // value = m * 2^(e - 63) with m's top bit set (denormals and
+    // pseudo-denormals have the exponent of 1)
+    let lz = mant.leading_zeros();
+    let m = u128::from(mant << lz);
+    let bias = (1i32 << (ebits - 1)) - 1;
+    let mut be = exp.max(1) - 16383 - lz.cast_signed() + bias;
+    let mut shift = 63 - frac.cast_signed();
+    if be <= 0 {
+        shift += 1 - be;
+        be = 0;
+    }
+    if shift >= 65 {
+        return sign; // below half the smallest subnormal
+    }
+    #[allow(clippy::cast_sign_loss)] // 11..=64
+    let shift = shift as u32;
+    let mut kept = m >> shift;
+    let rem = m & ((1u128 << shift) - 1);
+    let half = 1u128 << (shift - 1);
+    if rem > half || (rem == half && kept & 1 != 0) {
+        kept += 1;
+    }
+    #[allow(clippy::cast_possible_truncation)] // at most frac + 2 bits
+    let mut kept = kept as u64;
+    if be == 0 {
+        // subnormal; a carry into bit `frac` makes the smallest normal
+        return sign | kept;
+    }
+    if kept >> (frac + 1) != 0 {
+        kept >>= 1;
+        be += 1;
+    }
+    #[allow(clippy::cast_sign_loss)] // positive here
+    let be = be as u64;
+    if be >= emax {
+        return sign | emax << frac;
+    }
+    sign | be << frac | (kept & ((1u64 << frac) - 1))
 }
 
 fn alloc(uc: &mut Unicorn<State>, len: u64) -> Result<u32> {
@@ -1518,6 +1634,120 @@ mod tests {
         assert!((f80_to_f64(&one) - 1.0).abs() < f64::EPSILON);
         let minus_half = [0, 0, 0, 0, 0, 0, 0, 0x80, 0xfe, 0xbf];
         assert!((f80_to_f64(&minus_half) + 0.5).abs() < f64::EPSILON);
+    }
+
+    /// What this CPU's `fld tbyte; fstp qword` and `fstp dword` store.
+    #[cfg(target_arch = "x86_64")]
+    fn host_store(raw: [u8; 10]) -> (u64, u32) {
+        let (mut d, mut f) = (0u64, 0u32);
+        // SAFETY: loads 10 readable bytes and stores 8 and 4 into locals;
+        // the x87 stack is left as found
+        unsafe {
+            std::arch::asm!(
+                "fld tbyte ptr [{r}]",
+                "fst qword ptr [{d}]",
+                "fstp dword ptr [{f}]",
+                r = in(reg) raw.as_ptr(),
+                d = in(reg) &raw mut d,
+                f = in(reg) &raw mut f,
+                options(nostack),
+            );
+        }
+        (d, f)
+    }
+
+    /// Bit patterns that reach every branch: random words with the
+    /// exponent at the edges of both formats and every special encoding.
+    fn f80_patterns() -> Vec<[u8; 10]> {
+        let mut x = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let exps = [
+            0,
+            1,
+            0x3f80 - 150,
+            0x3f80 - 126,
+            0x3f80 - 100,
+            0x3fff,
+            0x407f,
+            0x4080,
+            0x3c00 - 1075,
+            0x3c00 - 1022,
+            0x3c00 - 1000,
+            0x43ff,
+            0x4400,
+            0x7ffe,
+            0x7fff,
+        ];
+        let mut out = Vec::new();
+        for i in 0..200_000u64 {
+            let r = next();
+            let mut mant = next();
+            match i % 4 {
+                0 => {}
+                1 => mant &= !0x7ff,           // fits 53 bits
+                2 => mant &= !((1 << 40) - 1), // fits 24 bits
+                _ => mant |= 1 << 63,
+            }
+            let e = if i % 3 == 0 {
+                #[allow(clippy::cast_possible_truncation)]
+                let e = (r % 0x8000) as u16;
+                e
+            } else {
+                #[allow(clippy::cast_possible_truncation)]
+                let k = (r % exps.len() as u64) as usize;
+                #[allow(clippy::cast_possible_truncation)]
+                let d = ((r >> 32) % 5) as u16;
+                (exps[k] + d).saturating_sub(2).min(0x7fff)
+            };
+            let se = e | u16::from(r >> 63 != 0) << 15;
+            let mut b = [0u8; 10];
+            b[..8].copy_from_slice(&mant.to_le_bytes());
+            b[8..].copy_from_slice(&se.to_le_bytes());
+            out.push(b);
+        }
+        out
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn f80_stores_match_the_host_fpu() {
+        for raw in f80_patterns() {
+            let (d, f) = host_store(raw);
+            assert_eq!(f80_to_f64(&raw).to_bits(), d, "f64 of {raw:02x?}");
+            assert_eq!(f80_to_f32(raw).to_bits(), f, "f32 of {raw:02x?}");
+        }
+    }
+
+    #[test]
+    fn f80_nans_keep_sign_and_payload() {
+        // a negative quiet NaN with payload bits high and low
+        let mant: u64 = 0xc123_4567_89ab_cdef;
+        let mut b = [0u8; 10];
+        b[..8].copy_from_slice(&mant.to_le_bytes());
+        b[8..].copy_from_slice(&0xffffu16.to_le_bytes());
+        assert_eq!(f80_to_f64(&b).to_bits(), 0xfff8_2468_acf1_3579);
+        assert_eq!(f80_to_f32(b).to_bits(), 0xffc1_2345);
+        // a signalling one is quieted
+        b[7] = 0x81;
+        assert_eq!(f80_to_f32(b).to_bits(), 0xffc1_2345);
+        // as `fld dword` leaves an f32 NaN: an f32 port result matches
+        b[..5].fill(0);
+        let r = Ret {
+            eax: 0,
+            edx: 0,
+            st0: Some(f80_to_f64(&b)),
+            st0_raw: Some(b),
+        };
+        // (a constant `f64::from(f32 NaN)` may fold to the default NaN in
+        // release builds: Rust leaves NaN payloads of conversions open)
+        assert!(r.st0_is(f64::from_bits(0xfff8_2468_a000_0000)));
+        assert_eq!(r.st0_f32().map(f32::to_bits), Some(0xffc1_2345));
+        assert!(!r.st0_is(f64::NAN));
     }
 
     #[test]

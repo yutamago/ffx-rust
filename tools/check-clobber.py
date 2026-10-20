@@ -4,7 +4,7 @@ function (docs/porting.md). MSVC's whole-program optimisation knows when a
 leaf leaves a scratch register alone and lets the caller rely on it; a Rust
 replacement follows the ABI and clobbers all three.
 
-  FFX_GAME_DIR=... tools/check-clobber.py [NAME...]
+  FFX_GAME_DIR=... tools/check-clobber.py [--jobs N] [--no-cache] [NAME...]
 
 For every ported function (or the ones named) whose original never writes
 one of the three, every call site is followed from the return address
@@ -13,13 +13,25 @@ that register before a write is reported. The shims' thunks keep those
 registers (crates/ffx-hook/src/ported/mod.rs), so these are notes. Also
 reported, and a bug: a shim returning nothing where the original sets eax
 and a caller reads it. Exits 1 when it finds one of those.
+
+Disassembly (objdump, one run per function) is cached in
+$FFX_WORK/cache/clobber-<key>.pickle, the key a hash of FFX.exe and the
+objdump version, and the missing functions are disassembled in parallel
+(--jobs, default every CPU). --no-cache neither reads nor writes the cache.
+The output does not depend on either.
 """
+import argparse
+import bisect
+import hashlib
 import os
 import pathlib
+import pickle
 import re
 import subprocess
 import sys
+import tempfile
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import progress  # noqa: E402
@@ -37,7 +49,7 @@ READ_ONLY = {"cmp", "test", "push", "bt"}
 INSN = re.compile(r"^\s*([0-9a-f]+):\t(.*)$")
 
 
-def disasm(a, size):
+def _objdump(a, size):
     out = subprocess.run(["objdump", "-d", "--no-show-raw-insn", "-M", "intel", f"--start-address={a:#x}",
                           f"--stop-address={a + size:#x}", str(EXE)], capture_output=True, text=True,
                          check=True).stdout
@@ -47,6 +59,77 @@ def disasm(a, size):
         if m:
             code[int(m.group(1), 16)] = m.group(2).split("#")[0].strip()
     return code
+
+
+class _Cache:
+    """(address, size) -> disassembly, in memory and on disk per FFX.exe."""
+
+    def __init__(self):
+        self.code = {}
+        self.added = False
+        self.path = None
+        self.use_disk = True
+
+    def _file(self):
+        if self.path is None:
+            h = hashlib.sha256(EXE.read_bytes())
+            ver = subprocess.run(["objdump", "--version"], capture_output=True, text=True, check=True).stdout
+            h.update(ver.splitlines()[0].encode() if ver else b"")
+            h.update(INSN.pattern.encode())
+            self.path = WORK / "cache" / f"clobber-{h.hexdigest()[:16]}.pickle"
+        return self.path
+
+    def load(self):
+        if not self.use_disk:
+            return
+        try:
+            with open(self._file(), "rb") as f:
+                self.code.update(pickle.load(f))
+        except (OSError, EOFError, pickle.UnpicklingError):
+            pass
+
+    def save(self):
+        if not self.use_disk or not self.added:
+            return
+        path = self._file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        merged = {}
+        try:  # keep what a concurrent run added
+            with open(path, "rb") as f:
+                merged = pickle.load(f)
+        except (OSError, EOFError, pickle.UnpicklingError):
+            pass
+        merged.update(self.code)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
+        with os.fdopen(fd, "wb") as f:
+            pickle.dump(merged, f, protocol=pickle.HIGHEST_PROTOCOL)
+        os.replace(tmp, path)
+        self.added = False
+
+    def get(self, a, size):
+        key = (a, size)
+        code = self.code.get(key)
+        if code is None:
+            code = self.code[key] = _objdump(a, size)
+            self.added = True
+        return code
+
+    def prefetch(self, ranges, jobs):
+        todo = sorted({r for r in ranges if r not in self.code})
+        if not todo:
+            return
+        with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+            for key, code in zip(todo, pool.map(lambda r: _objdump(*r), todo, chunksize=16)):
+                self.code[key] = code
+        self.added = True
+
+
+CACHE = _Cache()
+
+
+def disasm(a, size):
+    """Address -> instruction text of `size` bytes from `a` (a copy: callers may change it)."""
+    return dict(CACHE.get(a, size))
 
 
 def regs(text):
@@ -120,10 +203,16 @@ def reserves(code, nxt, a):
     return False
 
 
-def live_after(code, site, keep):
-    """Registers of `keep` read before written on some path from after the call at `site`."""
+def next_map(code):
+    """Address -> the next instruction's address."""
     addrs = sorted(code)
-    nxt = {a: b for a, b in zip(addrs, addrs[1:])}
+    return {a: b for a, b in zip(addrs, addrs[1:])}
+
+
+def live_after(code, site, keep, nxt=None):
+    """Registers of `keep` read before written on some path from after the call at `site`."""
+    if nxt is None:
+        nxt = next_map(code)
     found = set()
     todo = [(nxt.get(site), frozenset(keep), 0)]
     seen = set()
@@ -162,10 +251,14 @@ X87_BALANCED = {
 }
 
 
-def reads_st0(code, site):
+def reads_st0(code, site, addrs=None):
     """Whether the first x87 instruction after the call at `site` reads the
-    x87 stack it left (a float result), before any load, jump or call."""
-    after = sorted(a for a in code if a > site)[:16]
+    x87 stack it left (a float result), before any load, jump or call.
+    `addrs`: `sorted(code)`, when the caller has it."""
+    if addrs is None:
+        addrs = sorted(code)
+    i = bisect.bisect_right(addrs, site)
+    after = addrs[i:i + 16]
     for a in after:
         insn = code[a]
         op = insn.split()[0] if insn else ""
@@ -177,8 +270,15 @@ def reads_st0(code, site):
 
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
+    ap.add_argument("names", nargs="*", metavar="NAME", help="only these ported functions")
+    ap.add_argument("--jobs", "-j", type=int, default=os.cpu_count() or 1,
+                    help="parallel objdump runs for uncached functions (default: every CPU)")
+    ap.add_argument("--no-cache", action="store_true", help="neither read nor write the disassembly cache")
+    args = ap.parse_args()
+    CACHE.use_disk = not args.no_cache
+    CACHE.load()
     rows = {a: (n, s) for a, n, s in progress.functions()}
-    starts = sorted(rows)
     sites = defaultdict(list)
     with open(WORK / "decomp/call_sites.tsv", encoding="utf-8") as f:
         next(f)
@@ -187,41 +287,59 @@ def main():
             if "EXTERNAL" not in callee:
                 sites[int(callee, 16)].append((int(caller, 16), int(site, 16)))
     shim = re.compile(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>\s*extern \"([\w-]+)\" fn \w+\([^)]*\)\s*(->\s*[\w:]+)?", re.M)
-    bad = dropped_n = 0
+    shims = []
     for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
         for name, addr, _abi, ret in shim.findall(f.read_text(encoding="utf-8")):
-            if sys.argv[1:] and name not in sys.argv[1:]:
+            if args.names and name not in args.names:
                 continue
-            a = int(addr.replace("_", ""), 16)
-            changed = writes(disasm(a, rows[a][1]))
-            kept = set(SCRATCH) - changed
-            if ret:
-                kept.discard("eax")
-            # a shim that returns nothing where the original leaves a value
-            # in eax its callers read (Ghidra calls many of those void)
-            dropped = {"eax"} if not ret and "eax" in changed else set()
-            floats = ret.replace("->", "").strip() in ("f32", "f64")
-            # without x87 code of its own the original leaves the x87 stack
-            # alone, and callers may keep a float on it across the call
-            # (whole-program optimisation); a shim without x87 code does too
-            x87 = any(i.split()[0].startswith("f") for i in disasm(a, rows[a][1]).values() if i)
-            if not kept and not dropped and (floats or not x87):
-                continue
-            for caller, site in sites[a]:
-                code = disasm(caller, rows[caller][1])
-                if not code.get(site, "").startswith("call"):
-                    continue  # a tail jump: the callee returns past this caller
-                live = live_after(code, site, kept)
-                if live:
-                    print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) keeps {', '.join(sorted(live))} across the call")
-                    bad += 1
-                if not floats and x87 and name not in X87_BALANCED and reads_st0(code, site):
-                    print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) reads the float the original returns in ST0; the shim returns none")
-                    dropped_n += 1
-                used = {r for r in live_after(code, site, dropped) if r == "eax"} if dropped else set()
-                if used:
-                    print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) reads the eax the original returns; the shim returns nothing")
-                    dropped_n += 1
+            shims.append((f, name, int(addr.replace("_", ""), 16), ret))
+    # disassemble what is not cached yet in parallel: the originals, then
+    # the callers of those that need their call sites checked
+    CACHE.prefetch(((a, rows[a][1]) for _, _, a, _ in shims), args.jobs)
+    checks = []
+    for f, name, a, ret in shims:
+        code = CACHE.get(a, rows[a][1])
+        changed = writes(code)
+        kept = set(SCRATCH) - changed
+        if ret:
+            kept.discard("eax")
+        # a shim that returns nothing where the original leaves a value
+        # in eax its callers read (Ghidra calls many of those void)
+        dropped = {"eax"} if not ret and "eax" in changed else set()
+        floats = ret.replace("->", "").strip() in ("f32", "f64")
+        # without x87 code of its own the original leaves the x87 stack
+        # alone, and callers may keep a float on it across the call
+        # (whole-program optimisation); a shim without x87 code does too
+        x87 = any(i.split()[0].startswith("f") for i in code.values() if i)
+        if not kept and not dropped and (floats or not x87):
+            continue
+        checks.append((f, name, a, kept, dropped, floats, x87))
+    CACHE.prefetch(((c, rows[c][1]) for _, _, a, *_ in checks for c, _ in sites[a]), args.jobs)
+    CACHE.save()
+    # per caller: its instructions, their order and successor map
+    order = {}
+    bad = dropped_n = 0
+    for f, name, a, kept, dropped, floats, x87 in checks:
+        for caller, site in sites[a]:
+            code = CACHE.get(caller, rows[caller][1])
+            if not code.get(site, "").startswith("call"):
+                continue  # a tail jump: the callee returns past this caller
+            if caller not in order:
+                addrs = sorted(code)
+                order[caller] = (addrs, {x: y for x, y in zip(addrs, addrs[1:])})
+            addrs, nxt = order[caller]
+            live = live_after(code, site, kept, nxt)
+            if live:
+                print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) keeps {', '.join(sorted(live))} across the call")
+                bad += 1
+            if not floats and x87 and name not in X87_BALANCED and reads_st0(code, site, addrs):
+                print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) reads the float the original returns in ST0; the shim returns none")
+                dropped_n += 1
+            used = {r for r in live_after(code, site, dropped, nxt) if r == "eax"} if dropped else set()
+            if used:
+                print(f"{f.name}: {name}: {rows[caller][0]} ({site:#x}) reads the eax the original returns; the shim returns nothing")
+                dropped_n += 1
+    CACHE.save()
     print(f"{bad} call sites rely on a register the original leaves alone, {dropped_n} read a dropped result")
     sys.exit(1 if dropped_n else 0)
 

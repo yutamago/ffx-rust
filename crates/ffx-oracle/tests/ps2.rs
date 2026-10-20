@@ -262,23 +262,7 @@ fn vectors_match_the_original_bit_for_bit() {
 
 /// An `f32` result from `ST0`'s 80 bits (exact: it was loaded from one).
 fn st0_f32(raw: &[u8; 10]) -> u32 {
-    let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-    let se = u16::from_le_bytes([raw[8], raw[9]]);
-    let sign = u32::from(se >> 15) << 31;
-    let exp = i32::from(se & 0x7fff);
-    if exp == 0x7fff {
-        #[allow(clippy::cast_possible_truncation)] // the top 23 fraction bits
-        let frac = ((mant >> 40) & 0x7f_ffff) as u32;
-        return sign | 0x7f80_0000 | frac;
-    }
-    if exp == 0 && mant == 0 {
-        return sign;
-    }
-    #[allow(clippy::cast_precision_loss)] // f32 values: exact
-    let v = mant as f64 / (1u64 << 63) as f64 * 2f64.powi(exp - 16383);
-    #[allow(clippy::cast_possible_truncation)] // exact
-    let f = v as f32;
-    sign | f.to_bits() & 0x7fff_ffff
+    ffx_oracle::f80_to_f32(*raw).to_bits()
 }
 
 const MATRIX_IDENTITY: u32 = 0x006e_ce60;

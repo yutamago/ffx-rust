@@ -814,4 +814,54 @@ pub mod bridge {
         let f = mem.rebase(DIGIT_RIGHT);
         call(mem, f, &[value, fx, fy, 0, sx, sy])
     }
+
+    /// `MsGetSaveConfigEnglish()` (`0x007851d0`).
+    pub const GET_SAVE_CONFIG_ENGLISH: u32 = 0x0078_51d0;
+    /// `g_CdLib + 0x10` and `+ 8`: the CD library's table read and read
+    /// wait, function pointers.
+    pub const CDLIB_READ_TABLE: Global<u32> = Global::new(0x0231_0c50);
+    pub const CDLIB_READ_SYNC: Global<u32> = Global::new(0x0231_0c48);
+    /// `user_malloc(size)`, `user_free_thunk(p)`, `getExcelBinSize(name,
+    /// buffer)`, `FlushCache(0)`.
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    pub const USER_FREE: u32 = 0x0068_7010;
+    pub const GET_EXCEL_BIN_SIZE: u32 = 0x0078_2df0;
+    pub const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    /// The two kernel files and where each goes (the pointers at
+    /// `g_AbmapNodeKinds + 4` and `g_AbmapNodeKinds`): `"sphere"`,
+    /// `"panel"`.
+    pub const LANG_FILES: [(u32, u32); 2] =
+        [(0x00b7_b5c4, 0x01a8_60e4), (0x00b7_b5cc, 0x01a8_60e0)];
+    /// The read buffer's size.
+    pub const LANG_BUFFER: u32 = 0x2_5800;
+
+    /// `eiAbmSetLang()` (`0x00a54ab0`, from `eiAbmLoad` and
+    /// `MsBattleReadDataNB`): the CD library's table 7 (English save
+    /// setting) or 0xd, then `sphere.bin` and `panel.bin` of the current
+    /// language each read into a new block (`getExcelBinSize`) and copied
+    /// (the C runtime's `memcpy`, here through `Mem`) over the block its
+    /// pointer names, the block freed; then the CD read wait and
+    /// `FlushCache(0)`, whose `eax` it returns.
+    pub fn ei_abm_set_lang(h: &mut impl ffx_bridge::Host) -> u32 {
+        let f = h.rebase(GET_SAVE_CONFIG_ENGLISH);
+        let table = if h.call(f, &[]) == 0 { 0xd } else { 7 };
+        let f = CDLIB_READ_TABLE.get(h);
+        h.call(f, &[table]);
+        for (name, dst) in LANG_FILES {
+            let f = h.rebase(USER_MALLOC);
+            let buf = h.call(f, &[LANG_BUFFER]);
+            let (f, name) = (h.rebase(GET_EXCEL_BIN_SIZE), h.rebase(name));
+            let len = h.call(f, &[name, buf]);
+            let dst: u32 = Global::new(dst).get(h);
+            let mut bytes = vec![0u8; len as usize];
+            h.read_bytes(buf, &mut bytes);
+            h.write_bytes(dst, &bytes);
+            let f = h.rebase(USER_FREE);
+            h.call(f, &[buf]);
+        }
+        let f = CDLIB_READ_SYNC.get(h);
+        h.call(f, &[0]);
+        let f = h.rebase(FLUSH_CACHE);
+        h.call(f, &[0])
+    }
 }
