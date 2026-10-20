@@ -3901,4 +3901,36 @@ ported! {
     MenuShop_BuyWindowCtrl @ 0x008d_9bd0 => extern "C" fn menu_shop_buy_window_ctrl(window: u32) {
         tk::menu_shop_buy_window_ctrl(&mut mem(), window, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuWShop_BuyConfirmCtrl(window)`: void (the dispatcher never reads eax).
+    MenuWShop_BuyConfirmCtrl @ 0x008d_7690 => extern "C" fn menu_wshop_buy_confirm_ctrl(window: u32) {
+        tk::menu_wshop_buy_confirm_ctrl(&mut mem(), window, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuWShop_SellConfirmCtrl(window)`: void (the dispatcher never reads eax).
+    MenuWShop_SellConfirmCtrl @ 0x008d_7860 => extern "C" fn menu_wshop_sell_confirm_ctrl(window: u32) {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return;
+        };
+        tk::menu_wshop_sell_confirm_ctrl(&mut m, window, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMn2DrawSelItemsHelp(window)`: ends in `TkMenuSetHelpMessage`'s tail jump (void).
+    TkMn2DrawSelItemsHelp @ 0x008d_1a20 => extern "C" fn tk_mn2_draw_sel_items_help(window: u32) {
+        tk::tk_mn2_draw_sel_items_help(&mut mem(), window, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `HelpMem_Get(reset, size)`: the block.
+    HelpMem_Get @ 0x0077_4c00 => extern "C" fn help_mem_get(reset: u32, size: i32) -> u32 {
+        tk::help_mem_get(&mut mem(), reset, size, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuExchangePlayerPos(a, b)`: void (ends in `MenuParty_RefreshMask`).
+    TkMenuExchangePlayerPos @ 0x008a_9720 => extern "C" fn tk_menu_exchange_player_pos(a: i32, b: i32) {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return;
+        };
+        tk::tk_menu_exchange_player_pos(&mut m, a, b, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuItem_OpenTargetWindow(aeons, a, b)`: `TkMenuMainRegistWindow`'s result.
+    MenuItem_OpenTargetWindow_008c9240 @ 0x008c_9240 => extern "C" fn menu_item_open_target_window(aeons: u32, a: u32, b: u32) -> u32 {
+        tk::menu_item_open_target_window(&mut mem(), aeons, a, b, &mut |_, f, a| call_ptr(f, a))
+    }
 }

@@ -9809,6 +9809,401 @@ pub mod bridge {
         }
         shop_amount_ctrl(mem, window, pads, most, false, call);
     }
+
+    /// The weapon shop's yes/no confirmation (`0x008d7690`/`0x008d7860`):
+    /// `TkMenuOpenSubCmdWindow(TkMenuMainMes(mes), TkMenuMainMes(0x1c),
+    /// TkMenuMainMes(0x1d))`, then on `TkMn2GetListMax2()` `+0x3e` 5,
+    /// `+0x37` 0 and `+0x60 = ftol(graphicUiRemapY2(493) - 208)`.
+    fn wshop_open_confirm<M: Mem>(
+        mem: &mut M,
+        mes: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let text = mem.rebase(0x008d_df80);
+        let question = call(mem, text, &[mes]);
+        let yes = call(mem, text, &[0x1c]);
+        let no = call(mem, text, &[0x1d]);
+        let open = mem.rebase(0x008e_33a0);
+        call(mem, open, &[question, yes, no]);
+        let list = mem.rebase(0x008e_3390);
+        let w = call(mem, list, &[]);
+        mem.write(w.wrapping_add(0x3e), 5u8);
+        mem.write(w.wrapping_add(0x37), 0u8);
+        let y = remap(mem, true, 493.0) - 208.0;
+        let y = ffx_bridge::x87::ftol(mem, y);
+        mem.write(w.wrapping_add(0x60), y);
+    }
+
+    /// The answer of the weapon shop's yes/no window (`TkMn2GetListMax2()`,
+    /// `i8 +0x45`): `None` while it is open (0), otherwise the window is
+    /// closed (`TOMenuCloseYesNoWindow`) and the next state is 4 for "yes"
+    /// (the `+0x48` row 0) or 6 (cancel, or "no" with sound `0x80000001`).
+    fn wshop_confirm_answer<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Option<u32> {
+        let list = mem.rebase(0x008e_3390);
+        let w = call(mem, list, &[]);
+        let answer = mem.read::<i8>(w.wrapping_add(0x45));
+        let close = mem.rebase(0x008e_2de0);
+        if answer < 0 {
+            call(mem, close, &[]);
+            return Some(6);
+        }
+        if answer == 0 {
+            return None;
+        }
+        let row = mem.read::<i16>(w.wrapping_add(0x48));
+        call(mem, close, &[]);
+        if row == 0 {
+            return Some(4);
+        }
+        let sound = mem.rebase(0x0088_6e80);
+        call(mem, sound, &[0x8000_0001]);
+        Some(6)
+    }
+
+    /// `TOMenuGetControlPad()`, `TOMenuGetControlPadRep()`,
+    /// `TOMenuGetControlPadTrg()`, results dropped.
+    fn wshop_pads<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        for f in [0x008b_e410, 0x008b_e470, 0x008b_e4b0] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+    }
+
+    /// `MenuWShop_BuyConfirmCtrl(window)` (`0x008d7690`, own name): the
+    /// weapon shop's "buy?" control. The pads and `MsGetGIL()` are read
+    /// and dropped; then by state `+0x28`: 0 and 1 go on as 2 (0 stores 1
+    /// first, overwritten by 2: left out); 2 opens the confirmation (text `0x1b`, see
+    /// [`wshop_open_confirm`]), stores 3 and goes on as 3; 3 waits for the
+    /// answer ([`wshop_confirm_answer`]) and goes on as 4 or 6; 4 buys:
+    /// sound `0x8000000e`, `0x0186ab18 = 0x007ab910(+0x5c)` (the weapon
+    /// given), `MsPayGIL(+0x60)`, `+0x45` 1, state 5; 6 cancels: `+0x45`
+    /// `0xff`, state 7; 5, 7 and others do nothing. The caller never
+    /// reads `eax`.
+    pub fn menu_wshop_buy_confirm_ctrl<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |o: u32| window.wrapping_add(o);
+        wshop_pads(mem, call);
+        let gil = mem.rebase(0x0078_4e80);
+        call(mem, gil, &[]);
+        let mut state = mem.read::<u32>(at(0x28));
+        loop {
+            match state {
+                // 0 also stores state 1, which state 2 overwrites at once
+                0 | 1 => state = 2,
+                2 | 3 => {
+                    if state == 2 {
+                        wshop_open_confirm(mem, 0x1b, remap, call);
+                        mem.write(at(0x28), 3u32);
+                    }
+                    let Some(next) = wshop_confirm_answer(mem, call) else {
+                        return;
+                    };
+                    state = next;
+                }
+                4 => {
+                    let sound = mem.rebase(0x0088_6e80);
+                    call(mem, sound, &[0x8000_000e]);
+                    let give = mem.rebase(0x007a_b910);
+                    let id = mem.read::<u32>(at(0x5c));
+                    let got = call(mem, give, &[id]);
+                    let price = mem.read::<u32>(at(0x60));
+                    mem.write(mem.rebase(0x0186_ab18), got);
+                    let pay = mem.rebase(0x0078_59a0);
+                    call(mem, pay, &[price]);
+                    mem.write(at(0x45), 1u8);
+                    mem.write(at(0x28), 5u32);
+                    return;
+                }
+                6 => {
+                    mem.write(at(0x45), 0xffu8);
+                    mem.write(at(0x28), 7u32);
+                    return;
+                }
+                _ => return,
+            }
+        }
+    }
+
+    /// `MenuWShop_SellConfirmCtrl(window)` (`0x008d7860`, own name): the
+    /// weapon shop's "sell?" control. The pads are read and dropped; then
+    /// by state `+0x28`: 0 stores 1 (and stops); 1 goes on as 2; 2 copies
+    /// the name of weapon `+0x6c` (`MsGetSaveWeapon(id, &name)`) to
+    /// `0x0186ab20`, makes it macro 0 (`TkMn2SetMacroParam(0, 0, ..)`),
+    /// opens the confirmation (text `0x29`, see [`wshop_open_confirm`]),
+    /// stores 3 and goes on as 3; 3 waits for the answer
+    /// ([`wshop_confirm_answer`]) and goes on as 4 or 6; 4 stores `+0x45` 1
+    /// and state 5 (the sale is the caller's); 6 `+0x45` `0xff`, state 7;
+    /// 5, 7 and others do nothing. `local` is a word for the name pointer
+    /// (the original reuses its argument's slot, so an ID 0xff, which
+    /// leaves it alone, copies the window's bytes). The caller never reads
+    /// `eax`.
+    pub fn menu_wshop_sell_confirm_ctrl<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |o: u32| window.wrapping_add(o);
+        wshop_pads(mem, call);
+        let mut state = mem.read::<u32>(at(0x28));
+        loop {
+            match state {
+                0 => {
+                    mem.write(at(0x28), 1u32);
+                    return;
+                }
+                1 => state = 2,
+                2 | 3 => {
+                    if state == 2 {
+                        let weapon = mem.rebase(0x007a_bbd0);
+                        let id = mem.read::<u32>(at(0x6c));
+                        // the slot holds the window until the callee
+                        // writes it (it does not for ID 0xff)
+                        mem.write(local, window);
+                        call(mem, weapon, &[id, local]);
+                        let name = mem.read::<u32>(local);
+                        let dst = mem.rebase(0x0186_ab20);
+                        for i in 0.. {
+                            let c = mem.read::<u8>(name.wrapping_add(i));
+                            mem.write(dst.wrapping_add(i), c);
+                            if c == 0 {
+                                break;
+                            }
+                        }
+                        let macro_param = mem.rebase(0x008c_2c60);
+                        call(mem, macro_param, &[0, 0, dst]);
+                        wshop_open_confirm(mem, 0x29, remap, call);
+                        mem.write(at(0x28), 3u32);
+                    }
+                    let Some(next) = wshop_confirm_answer(mem, call) else {
+                        return;
+                    };
+                    state = next;
+                }
+                4 => {
+                    mem.write(at(0x45), 1u8);
+                    mem.write(at(0x28), 5u32);
+                    return;
+                }
+                6 => {
+                    mem.write(at(0x45), 0xffu8);
+                    mem.write(at(0x28), 7u32);
+                    return;
+                }
+                _ => return,
+            }
+        }
+    }
+
+    /// `TkMn2DrawSelItemsHelp(window)` (`0x008d1a20`, Fahrenheit's name):
+    /// the help line of the selected row `i16 +0x48` of
+    /// `g_TkMenuItemList` (below `u16 +0x30`, signed). By the entry's kind
+    /// (`u8 +2`, id `u16 +0`): 1, 4..=7 `TkMn2GetCommandHelp(id)`; 2
+    /// `MsGetMenuChrInfo(id, 0)` (`TkMn2GetCommandHelp(0x30ff)` for id
+    /// 15); 3 `TkMenuMenu1Help(id + 0x1033)`; 11..=16 `TkMn2GetAbilityHelp`;
+    /// 18 `TkMn2GetItemHelp`; the id 0 of commands, abilities and items,
+    /// other kinds and rows out of range give 0. Ends in
+    /// `TkMenuSetHelpMessage(help)` (a tail jump; no caller reads `eax`).
+    pub fn tk_mn2_draw_sel_items_help<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let row = i32::from(mem.read::<i16>(window.wrapping_add(0x48)));
+        let rows = i32::from(mem.read::<u16>(window.wrapping_add(0x30)));
+        let mut help = 0;
+        if row < rows {
+            let entry = MENU_ITEM_LIST
+                .ptr(mem)
+                .addr
+                .wrapping_add(row.cast_unsigned().wrapping_mul(4));
+            let id = u32::from(mem.read::<u16>(entry));
+            let by_id = |mem: &mut M, f: u32, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+                if id == 0 {
+                    0
+                } else {
+                    let f = mem.rebase(f);
+                    call(mem, f, &[id])
+                }
+            };
+            help = match mem.read::<u8>(entry.wrapping_add(2)) {
+                1 | 4..=7 => by_id(mem, 0x008c_19e0, call),
+                2 if id == 0xf => {
+                    let f = mem.rebase(0x008c_19e0);
+                    call(mem, f, &[0x30ff])
+                }
+                2 => {
+                    let f = mem.rebase(0x0078_f7c0);
+                    call(mem, f, &[id, 0])
+                }
+                3 => {
+                    let f = mem.rebase(0x008d_dfa0);
+                    call(mem, f, &[id + 0x1033])
+                }
+                11..=16 => by_id(mem, 0x008c_1960, call),
+                18 => by_id(mem, 0x008c_1b30, call),
+                _ => 0,
+            };
+        }
+        let set = mem.rebase(0x008a_aeb0);
+        call(mem, set, &[help]);
+    }
+
+    /// `HelpMem_Get(reset, size)` (`0x00774c00`, own name): a block of the
+    /// help screen's work memory. [`HELP_MEM_USED`] is cleared when
+    /// `reset` is 0; the block is `TOMenuGetHelpWorkAdrs()` plus that,
+    /// and the use grows by `size` rounded up to 64 (signed). A
+    /// `dbgPrintf` (a `ret` in this build) and, at or over
+    /// `TOMenuGetHelpWorkSize()`, `yiAssert(0, 0x00b5313c, 0x00b533d0,
+    /// used, size)`. Returns the block.
+    pub fn help_mem_get<M: Mem>(
+        mem: &mut M,
+        reset: u32,
+        size: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008b_ec80);
+        let limit = call(mem, f, &[]);
+        if reset == 0 {
+            HELP_MEM_USED.set(mem, 0);
+        }
+        let f = mem.rebase(0x008b_ec70);
+        let base = call(mem, f, &[]);
+        let used = HELP_MEM_USED.get(mem);
+        let block = used.wrapping_add(base);
+        let up = size.wrapping_add(0x3f);
+        let up = (up.wrapping_add((up >> 31) & 0x3f) & !0x3f).cast_unsigned();
+        let used = used.wrapping_add(up);
+        HELP_MEM_USED.set(mem, used);
+        let f = mem.rebase(0x0062_f500);
+        let fmt = mem.rebase(0x00b5_33b0);
+        call(mem, f, &[fmt, block, used, limit]);
+        let used = HELP_MEM_USED.get(mem);
+        if used.cast_signed() >= limit.cast_signed() {
+            let f = mem.rebase(0x0090_ae50);
+            let (file, msg) = (mem.rebase(0x00b5_313c), mem.rebase(0x00b5_33d0));
+            call(mem, f, &[0, file, msg, used, limit]);
+        }
+        block
+    }
+
+    /// `TkMenuExchangePlayerPos(a, b)` (`0x008a9720`, Fahrenheit's name):
+    /// swaps the menu's party slots `a` and `b` ([`MENU_PLAYERS`]) and the
+    /// save's party behind them. For `b` at or past
+    /// [`MENU_PLAYER_PARTY_MASK`] (signed, the reserve) the character in
+    /// `b` is looked up in `MsGetSaveOutParty(&n)`; found at `j`, the
+    /// save's slot is `j + 3`, not found nothing is swapped. Otherwise
+    /// the slot is `b` (`MsGetSaveInParty(&n)` is called, its list
+    /// unused), nothing for a negative `b`. The swap is
+    /// `MsExchangeSaveParty(players[a], slot)` and the two bytes; always
+    /// `MenuParty_RefreshMask()` at the end (no caller reads `eax`).
+    /// `local` is a word for the count (the original uses its argument
+    /// slot).
+    pub fn tk_menu_exchange_player_pos<M: Mem>(
+        mem: &mut M,
+        slot_a: i32,
+        slot_b: i32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let players = MENU_PLAYERS.ptr(mem).addr;
+        let at = |i: i32| players.wrapping_add(i.cast_unsigned());
+        let first = u32::from(mem.read::<u8>(at(slot_a)));
+        mem.write(local, slot_b);
+        let slot = if slot_b >= MENU_PLAYER_PARTY_MASK.get(mem).cast_signed() {
+            let second = mem.read::<u8>(at(slot_b));
+            let f = mem.rebase(0x0078_52d0);
+            let list = call(mem, f, &[local]);
+            let n = mem.read::<u32>(local).cast_signed();
+            (0..n)
+                .find(|&j| mem.read::<u8>(list.wrapping_add(j.cast_unsigned())) == second)
+                .map(|j| j + 3)
+        } else {
+            let f = mem.rebase(0x0078_5270);
+            call(mem, f, &[local]);
+            Some(slot_b).filter(|&b| b >= 0)
+        };
+        if let Some(slot) = slot {
+            let f = mem.rebase(0x0078_4d00);
+            call(mem, f, &[first, slot.cast_unsigned()]);
+            let x = mem.read::<u8>(at(slot_a));
+            let y = mem.read::<u8>(at(slot_b));
+            mem.write(at(slot_a), y);
+            mem.write(at(slot_b), x);
+        }
+        let f = mem.rebase(0x008a_ae30);
+        call(mem, f, &[]);
+    }
+
+    /// `MenuItem_OpenTargetWindow(aeons, a, b)` (`0x008c9240`, own name):
+    /// the item/ability target window, `TkMenuMainAllocWindow()` kept in
+    /// [`ITEM_WINDOW2`]. Its width `+0x68` is the widest
+    /// `TkMenuDraw1612Width(TOGetSaveChrName(..))` of the party
+    /// (`aeons` 0: `TkMenuGetPlayerFromIndex2`) or the aeons
+    /// (`TkMenuGetSummonFromIndex`), at least `0x77`. Handlers `+8`
+    /// `0x008c6910`, `+0xc` `0x008c7430`, `+0x10` `0x008c80b0`, `+0x14`
+    /// `0x008c93f0`, `+0x1c` `0x008c6a50`; `+0x3e` 2, `+0x58` `aeons`,
+    /// `+0x5c` `a`, `+0x60` `b`, `u16 +0x54` `0x155`, `u16 +0x48` the
+    /// cursor `u8 0x0186a3ac[aeons]`. Returns
+    /// `TkMenuMainRegistWindow(window)`.
+    pub fn menu_item_open_target_window<M: Mem>(
+        mem: &mut M,
+        aeons: u32,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_a1a0);
+        let window = call(mem, f, &[]);
+        ITEM_WINDOW2.set(mem, window);
+        let (count, get) = if aeons == 0 {
+            (0x008a_9b30, 0x008a_9ad0)
+        } else {
+            (0x008a_9bf0, 0x008a_9bc0)
+        };
+        let f = mem.rebase(count);
+        let n = call(mem, f, &[]).cast_signed();
+        let mut width = 0x77i32;
+        for i in 0..n {
+            let f = mem.rebase(get);
+            let chr = call(mem, f, &[i.cast_unsigned()]);
+            let f = mem.rebase(0x008a_c850);
+            let name = call(mem, f, &[chr]);
+            let f = mem.rebase(0x008d_c9e0);
+            width = width.max(call(mem, f, &[name]).cast_signed());
+        }
+        let at = |o: u32| window.wrapping_add(o);
+        for (o, f) in [
+            (8, 0x008c_6910),
+            (0xc, 0x008c_7430),
+            (0x10, 0x008c_80b0),
+            (0x14, 0x008c_93f0),
+            (0x1c, 0x008c_6a50),
+        ] {
+            let handler = mem.rebase(f);
+            mem.write(at(o), handler);
+        }
+        mem.write(at(0x3e), 2u8);
+        mem.write(at(0x5c), a);
+        mem.write(at(0x60), b);
+        mem.write(at(0x58), aeons);
+        mem.write(at(0x54), 0x155u16);
+        let cursor = mem.rebase(0x0186_a3ac).wrapping_add(aeons);
+        let cursor = u16::from(mem.read::<u8>(cursor));
+        mem.write(at(0x48), cursor);
+        mem.write(at(0x68), width);
+        let f = mem.rebase(0x008a_ab00);
+        call(mem, f, &[window])
+    }
 }
 
 #[cfg(test)]

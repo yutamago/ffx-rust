@@ -9246,3 +9246,285 @@ fn menu_round22_sell_window_ctrl_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round23_wshop_confirm_ctrls_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0023_7690) else {
+        return;
+    };
+    // the yes/no window TkMn2GetListMax2 returns
+    let list = t.alloc_random(0x80);
+    return_const(&mut t, 0x008e_3390, list);
+    // TkMenuMainMes: the ID + 1 (OpenSubCmdWindow logs them)
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x008d_df80);
+        o.write(at, &[0x8b, 0x44, 0x24, 0x04, 0x40, 0xc3]).unwrap(); // mov eax, [esp + 4]; inc eax; ret
+    }
+    // the calls without arguments counted
+    for f in [
+        0x008b_e410u32,
+        0x008b_e470,
+        0x008b_e4b0,
+        0x0078_4e80,
+        0x008e_2de0,
+    ] {
+        return_counter(&mut t, f, 0);
+    }
+    for (f, n) in [
+        (0x008e_33a0u32, 3u8),
+        (0x0088_6e80, 1),
+        (0x0078_59a0, 1),
+        (0x008c_2c60, 3),
+        (0x007a_b910, 1),
+    ] {
+        let r = t.rng.next();
+        record_n(&mut t, f, n, r);
+    }
+    // MsGetSaveWeapon(id, &name): the name `names[id & 3]`, nothing for 0xff
+    let names: Vec<u32> = [&b"Longsword\0"[..], b"\0", b"Kaiser Knuckles\0", b"x\0"]
+        .iter()
+        .map(|s| t.alloc(s))
+        .collect();
+    let table = t.alloc(
+        &names
+            .iter()
+            .flat_map(|n| n.to_le_bytes())
+            .collect::<Vec<_>>(),
+    );
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04][..],              // mov eax, [esp + 4]
+        &[0x3d, 0xff, 0, 0, 0, 0x74, 0x10],         // cmp eax, 0xff; je ret
+        &[0x83, 0xe0, 0x03],                        // and eax, 3
+        &[0x8b, 0x04, 0x85], &table.to_le_bytes(),  // mov eax, [table + eax * 4]
+        &[0x8b, 0x4c, 0x24, 0x08, 0x89, 0x01],      // mov ecx, [esp + 8]; mov [ecx], eax
+        &[0xc3],                                    // ret
+    ]
+    .concat();
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(0x007a_bbd0);
+        o.write(at, &code).unwrap();
+    }
+    let local = t.b.stack_range().start + 0x100;
+    for _ in 0..1500u32 {
+        let window = t.alloc_random(0x80);
+        let state = t.rng.pick_or_any(&[0, 1, 2, 2, 3, 3, 3, 4, 5, 6, 7, 8]);
+        t.put(window + 0x28, state);
+        let id = t.rng.pick_or_any(&[0, 1, 2, 3, 0xff, 0x5003]);
+        t.put(window + 0x6c, id);
+        let answer = t.rng.pick(&[0u8, 0, 1, 1, 0x7f, 0x80, 0xff]);
+        t.put(list + 0x45, answer);
+        let row = t.rng.pick(&[0i16, 0, 1, -1, 0x100]);
+        t.put(list + 0x48, row);
+        t.twin(
+            "MenuWShop_BuyConfirmCtrl",
+            0x008d_7690,
+            &[window],
+            VOID,
+            |o| {
+                tk::menu_wshop_buy_confirm_ctrl(o, window, &mut ui_remap, &mut callback);
+                0
+            },
+        );
+        t.put(window + 0x28, state);
+        t.twin(
+            "MenuWShop_SellConfirmCtrl",
+            0x008d_7860,
+            &[window],
+            VOID,
+            |o| {
+                tk::menu_wshop_sell_confirm_ctrl(o, window, local, &mut ui_remap, &mut callback);
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// `f` replaced in both oracles by `code`.
+fn stub(t: &mut Twins, f: u32, code: &[u8]) {
+    for o in [&mut t.a, &mut t.b] {
+        let at = o.rebase(f);
+        o.write(at, code).unwrap();
+    }
+}
+
+/// `f` replaced by `mov eax, [cell]; ret`; returns the cell.
+fn return_cell(t: &mut Twins, f: u32) -> u32 {
+    let cell = t.alloc(&[0; 4]);
+    let code = [&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat();
+    stub(t, f, &code);
+    cell
+}
+
+/// `f(&n)` replaced by `n = [cell]` (left alone for -2); `return list`;
+/// returns the cell.
+fn out_count(t: &mut Twins, f: u32, list: u32) -> u32 {
+    let cell = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04][..],              // mov eax, [esp + 4]
+        &[0x8b, 0x0d], &cell.to_le_bytes(),         // mov ecx, [cell]
+        &[0x83, 0xf9, 0xfe, 0x74, 0x02],            // cmp ecx, -2; je +2 (no count)
+        &[0x89, 0x08],                              // mov [eax], ecx
+        &[0xb8], &list.to_le_bytes(), &[0xc3],      // mov eax, list; ret
+    ]
+    .concat();
+    stub(t, f, &code);
+    cell
+}
+
+#[test]
+fn menu_round23_help_and_party_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0023_1a20) else {
+        return;
+    };
+    // TkMn2DrawSelItemsHelp: every help getter logs and returns its own value
+    for (f, n) in [
+        (0x008c_1b30u32, 1u8),
+        (0x008c_1960, 1),
+        (0x008c_19e0, 1),
+        (0x0078_f7c0, 2),
+        (0x008d_dfa0, 1),
+        (0x008a_aeb0, 1),
+    ] {
+        let r = t.rng.next();
+        record_n(&mut t, f, n, r);
+    }
+    let list = t.sym(0x0159_7770);
+    for _ in 0..3000u32 {
+        let window = t.alloc_random(0x80);
+        let rows = t.rng.pick(&[0u16, 1, 5, 0x200, 0xffff]);
+        t.put(window + 0x30, rows);
+        let row = t.rng.pick(&[0i16, 1, 4, 5, -1, 0x1ff]);
+        t.put(window + 0x48, row);
+        let entry = list.wrapping_add((i32::from(row) * 4).cast_unsigned());
+        let id = t.rng.pick(&[0u16, 1, 0xf, 0x2001, 0xffff]);
+        t.put(entry, id);
+        let kind = t
+            .rng
+            .pick(&[0u8, 1, 2, 3, 4, 7, 8, 10, 11, 16, 17, 18, 19, 0xff]);
+        t.put(entry + 2, kind);
+        t.twin("TkMn2DrawSelItemsHelp", 0x008d_1a20, &[window], VOID, |o| {
+            tk::tk_mn2_draw_sel_items_help(o, window, &mut callback);
+            0
+        });
+    }
+    // HelpMem_Get: the size and base from cells, the assertion logged
+    let limit = return_cell(&mut t, 0x008b_ec80);
+    let base = return_cell(&mut t, 0x008b_ec70);
+    let r = t.rng.next();
+    record_n(&mut t, 0x0090_ae50, 5, r);
+    for _ in 0..3000u32 {
+        let l = t.rng.pick_or_any(&[0x20_0000, 0x40, 0, 0x8000_0000]);
+        t.put(limit, l);
+        let b = t.rng.int();
+        t.put(base, b);
+        let used = t.rng.pick_or_any(&[0, 0x40, 0x1f_ffc0, 0x7fff_ffc0]);
+        t.put(t.sym(0x0112_a09c), used);
+        let reset = t.rng.pick(&[0u32, 1, 0x100]);
+        let size = t
+            .rng
+            .pick_or_any(&[0, 1, 0x40, 0x41, 0xffff_ffc1, 0xffff_ffff]);
+        t.twin("HelpMem_Get", 0x0077_4c00, &[reset, size], U32, |o| {
+            w(tk::help_mem_get(o, reset, i(size), &mut callback))
+        });
+    }
+    // TkMenuExchangePlayerPos: the party lists and counts from cells
+    let party = t.alloc_random(0x10);
+    let out_n = out_count(&mut t, 0x0078_52d0, party);
+    let in_n = out_count(&mut t, 0x0078_5270, party + 8);
+    let r = t.rng.next();
+    record_n(&mut t, 0x0078_4d00, 2, r);
+    return_counter(&mut t, 0x008a_ae30, 0);
+    let local = t.b.stack_range().start + 0x100;
+    let players = t.sym(0x0184_1c14);
+    for _ in 0..3000u32 {
+        t.scramble(0x0184_1c14, 0x10);
+        let ids: Vec<u8> = (0..0x10).map(|_| t.rng.pick(&[0u8, 1, 2, 3])).collect();
+        t.put_bytes(party, &ids);
+        t.put_bytes(players, &ids);
+        let mask = t.rng.pick_or_any(&[0, 3, 4, 0xffff_ffff]);
+        t.put(t.sym(0x0184_1c24), mask);
+        let n = t.rng.pick(&[0u32, 1, 3, 8, 0xffff_ffff, 0xffff_fffe]);
+        t.put(out_n, n);
+        t.put(in_n, n);
+        let a = t.rng.pick(&[0u32, 1, 2, 7]);
+        let b = t.rng.pick(&[0u32, 1, 3, 4, 7, 0xffff_ffff]);
+        t.twin("TkMenuExchangePlayerPos", 0x008a_9720, &[a, b], VOID, |o| {
+            tk::tk_menu_exchange_player_pos(o, i(a), i(b), local, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round23_target_window_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0023_9240) else {
+        return;
+    };
+    let window = t.alloc_random(0x80);
+    return_const(&mut t, 0x008a_a1a0, window);
+    let players = return_cell(&mut t, 0x008a_9b30);
+    let aeons = return_cell(&mut t, 0x008a_9bf0);
+    // the characters: index + 0x10 (party) or + 0x18 (aeons); the name the
+    // character; the width a table entry
+    stub(
+        &mut t,
+        0x008a_9ad0,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xc0, 0x10, 0xc3],
+    );
+    stub(
+        &mut t,
+        0x008a_9bc0,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xc0, 0x18, 0xc3],
+    );
+    stub(&mut t, 0x008a_c850, &[0x8b, 0x44, 0x24, 0x04, 0xc3]);
+    let widths = t.alloc(&[0; 0x40]);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x0f][..], // mov eax, [esp + 4]; and eax, 15
+        &[0x8b, 0x04, 0x85], &widths.to_le_bytes(),       // mov eax, [widths + eax * 4]
+        &[0xc3],
+    ]
+    .concat();
+    stub(&mut t, 0x008d_c9e0, &code);
+    let r = t.rng.next();
+    record_n(&mut t, 0x008a_ab00, 1, r);
+    for _ in 0..2000u32 {
+        let fresh = t.rng.bytes(0x80);
+        t.put_bytes(window, &fresh);
+        for k in 0..0x10 {
+            let v = t
+                .rng
+                .pick_or_any(&[0, 0x76, 0x77, 0x78, 0x100, 0xffff_ffff, 0x8000_0000]);
+            t.put(widths + 4 * k, v);
+        }
+        let n = t.rng.pick(&[0u32, 1, 3, 7, 0x10, 0xffff_ffff]);
+        t.put(players, n);
+        t.put(aeons, n);
+        t.scramble(0x0186_a3ac, 4);
+        let which = t.rng.pick(&[0u32, 1, 2]);
+        let (a, b) = (t.rng.int(), t.rng.int());
+        t.twin(
+            "MenuItem_OpenTargetWindow",
+            0x008c_9240,
+            &[which, a, b],
+            U32,
+            |o| {
+                w(tk::menu_item_open_target_window(
+                    o,
+                    which,
+                    a,
+                    b,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
