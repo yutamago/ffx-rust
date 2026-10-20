@@ -1856,4 +1856,57 @@ pub mod bridge {
         vu0::scale_vector(mem, frame, frame, s);
         ke_vu0_copy_vec_xyz(mem, scaled, frame);
     }
+
+    // ---- round 34 c ----
+
+    /// `pppEiWindFun(obj, key, prog)` (`0x0075d450`): work area `a = obj +
+    /// 0xa0 + [[prog + 0xc]]`. Unless `g_pppStop`, `+0x20 += +0x24` and
+    /// `+0x1c += +0x20` (the new value). On the key's frame: `+0..+0xc` =
+    /// the key's `+0x10..+0x1c`, `+0x10` = `f32 key +0x20`, `+0x14` = `s =
+    /// key +0x24`; the emulated VU0 accumulator `0x00c8f7b0` = `x x + s s`
+    /// (`x` = `+0x10`), `Q` (`0x00c8f788`) = `sqrt(|acc|)`, the accumulator
+    /// = `vf00.x + Q` and `+0x18` = `x / acc` (each `f32`); then unless
+    /// `g_pppStop` the key's `+0x28..+0x30` are added to `+0x1c..+0x24`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ei_wind_fun(mem: &mut impl Mem, obj: u32, key: u32, prog: u32) {
+        use ffx_bridge::x87::{add, div, load, mul, sqrt, store};
+        let a = area(mem, obj, prog, 0).wrapping_add(0xa0);
+        let at = |o: u32| a.wrapping_add(o);
+        if STOP.get(mem) == 0 {
+            let t = store(add(load(mem.read(at(0x24))), load(mem.read(at(0x20)))));
+            mem.write(at(0x20), t);
+            let v = store(add(load(t), load(mem.read(at(0x1c)))));
+            mem.write(at(0x1c), v);
+        }
+        if !applies(mem, obj, key) {
+            return;
+        }
+        let words: [u32; 4] = mem.read(key.wrapping_add(0x10));
+        mem.write(a, words);
+        mem.write(at(0x10), store(load(mem.read(key.wrapping_add(0x20)))));
+        let s = load(mem.read(key.wrapping_add(0x24)));
+        mem.write(at(0x14), store(s));
+        let s = load(store(s));
+        let x = load(mem.read(at(0x10)));
+        let acc = Global::<u32>::new(0x00c8_f7b0).ptr(mem).addr;
+        let q = Global::<u32>::new(0x00c8_f788).ptr(mem).addr;
+        let sum = store(add(mul(x, x), mul(s, s)));
+        mem.write(acc, sum);
+        let r = store(sqrt(load(store(load(sum).abs()))));
+        mem.write(q, r);
+        let vf00_x: u32 = mem.read(VF00.ptr(mem).addr);
+        let d = store(add(load(vf00_x), load(r)));
+        mem.write(acc, d);
+        let y = store(div(load(mem.read(at(0x10))), load(d)));
+        mem.write(at(0x18), y);
+        if STOP.get(mem) == 0 {
+            for k in 0..3 {
+                let v = store(add(
+                    load(mem.read(key.wrapping_add(0x28 + 4 * k))),
+                    load(mem.read(at(0x1c + 4 * k))),
+                ));
+                mem.write(at(0x1c + 4 * k), v);
+            }
+        }
+    }
 }

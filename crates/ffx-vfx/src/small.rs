@@ -1578,4 +1578,60 @@ pub mod bridge {
         mem.write(sym(mem, 0x010e_7874), id);
         1
     }
+
+    // ---- round 34 c ----
+
+    /// `checkPolyImg0434(lo, n, make)` (`0x00713160`): render data for
+    /// `n` polygons of instance `(0, lo)`: none (`graphicVFXDestroy`, 0)
+    /// for `n` = 0; with `make`, `graphicVFXCreate(0, lo, 2)` and
+    /// `graphicVFXCreateDataBuffer(0, lo, 1, &6n, &6n, "NoTexture",
+    /// &1)` (the original's locals at `frame`: `+0` the format, `+4`,
+    /// `+8` the counts, `+0xc` the name copied from `g_StrNoTexture`). Then
+    /// the instance's render data `r`
+    /// (`graphicVFXGetRenderDataByInstance`, 0 when none): its `[+0x94]`
+    /// gets `+4`, `+8` = `6n`, and
+    /// `graphicDynGeoMemManagerGetBufferForSegment(r, 0, +4, +8)` must give
+    /// a buffer (else 0); `0x00cec194` = 0 and 1. Callees through `call`.
+    pub fn check_poly_img_0434<M: Mem>(
+        mem: &mut M,
+        [lo, n, make]: [u32; 3],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if n == 0 {
+            call(mem, sym(mem, 0x0064_5280), &[0, lo]);
+            return 0;
+        }
+        let count = n.wrapping_mul(6);
+        if make != 0 {
+            let (format, first, second, name) = (frame, frame + 4, frame + 8, frame + 0xc);
+            mem.write(first, count);
+            mem.write(second, count);
+            let text: [u8; 10] = mem.read(sym(mem, 0x00b4_1b50));
+            mem.write(name, text);
+            mem.write(format, 1u32);
+            call(mem, sym(mem, 0x0064_4de0), &[0, lo, 2]);
+            call(
+                mem,
+                sym(mem, 0x0064_5040),
+                &[0, lo, 1, first, second, name, format],
+            );
+        }
+        let data = call(mem, sym(mem, 0x0064_53d0), &[0, lo]);
+        if data == 0 {
+            return 0;
+        }
+        let rec = |mem: &M| mem.read::<u32>(data.wrapping_add(0x94));
+        let r = rec(mem);
+        mem.write(r.wrapping_add(4), count);
+        let r = rec(mem);
+        mem.write(r.wrapping_add(8), count);
+        let r = rec(mem);
+        let (v, i) = (mem.read(r.wrapping_add(4)), mem.read(r.wrapping_add(8)));
+        if call(mem, sym(mem, 0x0063_fdb0), &[data, 0, v, i]) == 0 {
+            return 0;
+        }
+        mem.write(sym(mem, 0x00ce_c194), 0u32);
+        1
+    }
 }

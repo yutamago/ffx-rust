@@ -19458,3 +19458,166 @@ fn round34b2_born_and_set_ups_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round34c_parts_buffers_and_lines_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_0770);
+        let cells = p.alloc(0x20);
+        for (sym, words, ret) in [
+            // pppAllFreePObject, pppStartPartFromYonish, dbgPrintf
+            (0x0071_1f20u32, &[0u8][..], None),
+            (0x0071_2560, &[0; 5], None),
+            (0x0062_f500, &[0], None),
+            // graphicVFXDestroy, Create, CreateDataBuffer (the name's
+            // first eight bytes), GetRenderDataByInstance,
+            // graphicDynGeoMemManagerGetBufferForSegment
+            (0x0064_5280, &[0, 0], None),
+            (0x0064_4de0, &[0; 3], None),
+            (0x0064_5040, &[0, 0, 0, 1, 1, 2, 1], None),
+            (0x0064_53d0, &[0, 0], Some(cells)),
+            (0x0063_fdb0, &[0; 4], Some(cells + 4)),
+            // the PS2 check after the divide, 0x00760ce0
+            (0x0062_fc90, &[4], Some(cells + 8)),
+            (0x0076_0ce0, &[0; 6], None),
+        ] {
+            far_recorder(&mut p, sym, words, ret);
+        }
+        let slots = p.sym(0x012e_9c70);
+        let stop = p.sym(ppp::bridge::STOP.sym);
+        let vf00 = p.sym(0x00c0_a004);
+        let (unit, d, data, sets) = (p.alloc(0x100), p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let (rd, rec, scratch) = (p.alloc(0x100), p.alloc(0x20), p.alloc(0x120));
+        let (m, a, b) = (p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (obj, key, prog, table) = (p.alloc(0x200), p.alloc(0x40), p.alloc(0x10), p.alloc(4));
+        for round in 0..2000 {
+            let what = |s: &str| format!("{s} round {round}");
+            // op_part_init: a key already there, an empty slot, none
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(d, 0x40, &mut rng);
+            p.set(unit + 0xd0, d);
+            p.set(d, u8::from(rng.chance(80)));
+            p.set(d + 3, rng.pick(&[0u8, 1, 2]));
+            p.set(d + 0x10, data);
+            p.set(unit + 0xd4, rng.below(8) as u8);
+            for k in 0..8 {
+                p.set(data + 4 * k, sets + 4 * k);
+            }
+            let ukey = (u32::from(p.get::<u8>(unit + 0x1e)) << 16)
+                .wrapping_add(u32::from(p.get::<u16>(unit + 0x1a)));
+            let mode = rng.below(4);
+            for i in 0..0x100 {
+                let v = match mode {
+                    0 => 0,
+                    1 => rng.next() | 1,
+                    _ => {
+                        if rng.chance(5) {
+                            0
+                        } else {
+                            rng.next() | 1
+                        }
+                    }
+                };
+                p.set(slots + 4 * i, v);
+            }
+            if mode == 3 {
+                p.set(slots + 4 * rng.below(0x100), ukey);
+            }
+            p.check(&what("part_init"), 0x0080_0770, &[unit], |o| {
+                Some(opus::bridge::op_part_init(o, unit, &mut call_original))
+            });
+
+            // checkPolyImg0434
+            let lo = rng.next();
+            let n = rng.pick(&[0u32, 1, 5, 0x100]);
+            let make = rng.pick(&[0u32, 1, 0x100]);
+            p.set(cells, if rng.chance(80) { rd } else { 0 });
+            p.set(cells + 4, rng.pick(&[0u32, 1]));
+            p.fill(rd, 0x100, &mut rng);
+            p.set(rd + 0x94, rec);
+            let flag = p.sym(0x00ce_c194);
+            p.set(flag, rng.next());
+            p.check(&what("poly_img"), 0x0071_3160, &[lo, n, make], |o| {
+                let keep = o.read(scratch, 0x120).unwrap();
+                let r = small::bridge::check_poly_img_0434(
+                    o,
+                    [lo, n, make],
+                    scratch,
+                    &mut call_original,
+                );
+                o.write(scratch, &keep).unwrap();
+                Some(r)
+            });
+
+            // the line points: some behind the eye
+            for k in 0..16u32 {
+                let x = ranged(&mut rng, -2.0, 2.0);
+                p.set(m + 4 * k, x);
+            }
+            for k in 0..4 {
+                let (x, y) = (ranged(&mut rng, -50.0, 50.0), ranged(&mut rng, -50.0, 50.0));
+                p.set(a + 4 * k, x);
+                p.set(b + 4 * k, y);
+            }
+            if rng.chance(10) {
+                let f = rng.float();
+                p.set(a + 4 * rng.below(3), f);
+            }
+            // a zero matrix: every point at w = 0, not in front
+            if rng.chance(5) {
+                for k in 0..16u32 {
+                    p.set(m + 4 * k, 0u32);
+                }
+            }
+            p.set(cells + 8, u32::from(rng.chance(15)));
+            let (p4, p5) = (rng.next(), rng.next());
+            p.check(&what("line_points"), 0x0076_1350, &[m, a, b, p4, p5], |o| {
+                let keep = o.read(scratch, 0x120).unwrap();
+                part::bridge::ppp_line_points(
+                    o,
+                    [m, a, b, p4, p5],
+                    scratch + 0x80,
+                    &mut call_original,
+                );
+                o.write(scratch, &keep).unwrap();
+                None
+            });
+
+            // pppEiWindFun
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.set(prog + 0xc, table);
+            let off = 4 * rng.below(0x30);
+            p.set(table, off);
+            for k in (0x1cu32..0x28).step_by(4) {
+                let v = rng.float();
+                p.set(obj + 0xa0 + off + k, v);
+            }
+            for k in (0x20u32..0x34).step_by(4) {
+                let v = if rng.chance(80) {
+                    ranged(&mut rng, -8.0, 8.0)
+                } else {
+                    rng.float()
+                };
+                p.set(key + k, v);
+            }
+            if rng.chance(50) {
+                let f = p.get::<u32>(obj + 0xc);
+                p.set(key, f);
+            }
+            p.set(stop, u32::from(rng.chance(20)));
+            let f = rng.float();
+            let x = rng.pick(&[0u32, 0x8000_0000, 0x3f80_0000, f]);
+            p.set(vf00, x);
+            p.check(&what("wind_fun"), 0x0075_d450, &[obj, key, prog], |o| {
+                prog::bridge::ppp_ei_wind_fun(o, obj, key, prog);
+                None
+            });
+        }
+    }
+}

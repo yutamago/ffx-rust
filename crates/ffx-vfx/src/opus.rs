@@ -4525,4 +4525,62 @@ pub mod bridge {
         unit_type_hook(mem, host, o, next, call);
         next
     }
+
+    // ---- round 34 c ----
+
+    /// `op_part_init(unit)` (`0x00800770`): the op environment's three
+    /// tables (`0x012f2090`..`98`) from the unit's ppp part `d = [unit
+    /// +0xd0]` (`get_ptr32` of `+0x14`, `+0x18`, `+0x1c`), the environment
+    /// made current; the unit's key `byte +0x1e << 16 + u16 +0x1a` gets a
+    /// slot of the 256 at `0x012e9c70`: its own (freed first:
+    /// `pppAllFreePObject` of slot `i`'s part `0x012ea070 + 0x80 i`), else
+    /// the first empty one, else slot 0x100 (freed, as the original's
+    /// loops fall through). The slot keeps the key and `unit +0xbc` = its
+    /// part. For a loaded `d` (first byte not 0) the part starts
+    /// (`pppStartPartFromYonish(part, 0x1000, [get_ptr32(d +0x10) + 4 byte
+    /// unit +0xd4], 1)`, and a fifth word, `byte d +3 == 1`, that the
+    /// callee does not read), else `dbgPrintf(0x00b58718)`. Callees
+    /// through `call`. Returns 0.
+    pub fn op_part_init<M: Mem>(
+        mem: &mut M,
+        unit: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_system::stub::ptr32;
+        let d: u32 = mem.read(unit.wrapping_add(0xd0));
+        for k in 0..3 {
+            let v = ptr32(mem.read(d.wrapping_add(0x14 + 4 * k)));
+            mem.write(g(mem, 0x012f_2090).wrapping_add(4 * k), v);
+        }
+        op_env(mem);
+        let key = (u32::from(mem.read::<u8>(unit.wrapping_add(0x1e))) << 16)
+            .wrapping_add(u32::from(mem.read::<u16>(unit.wrapping_add(0x1a))));
+        let slots = g(mem, 0x012e_9c70);
+        let parts = g(mem, 0x012e_a070);
+        let find =
+            |mem: &M, want: u32| (0..0x100u32).find(|&i| mem.read::<u32>(slots + 4 * i) == want);
+        let (i, free) = match find(mem, key) {
+            Some(i) => (i, true),
+            None => find(mem, 0).map_or((0x100, true), |i| (i, false)),
+        };
+        if free {
+            op_env(mem);
+            call(mem, g(mem, 0x0071_1f20), &[parts.wrapping_add(i << 7)]);
+        }
+        mem.write(slots.wrapping_add(4 * i), key);
+        let part = parts.wrapping_add(i << 7);
+        mem.write(unit.wrapping_add(0xbc), part);
+        if mem.read::<u8>(d) == 0 {
+            call(mem, g(mem, 0x0062_f500), &[g(mem, 0x00b5_8718)]);
+            return 0;
+        }
+        op_env(mem);
+        let d: u32 = mem.read(unit.wrapping_add(0xd0));
+        let once = u32::from(mem.read::<u8>(d.wrapping_add(3)) == 1);
+        let data = ptr32(mem.read(d.wrapping_add(0x10)));
+        let k = u32::from(mem.read::<u8>(unit.wrapping_add(0xd4)));
+        let set: u32 = mem.read(data.wrapping_add(4 * k));
+        call(mem, g(mem, 0x0071_2560), &[part, 0x1000, set, 1, once]);
+        0
+    }
 }

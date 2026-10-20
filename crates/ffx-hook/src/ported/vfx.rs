@@ -1565,6 +1565,29 @@ ported! {
         let at = frame.at();
         op::bridge::op_vector_m_to(&mut mem(), dst, a, b, at, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 34 c ----
+    /// `op_part_init(unit)`.
+    op_part_init @ 0x0080_0770 => extern "C" fn op_part_init(unit: u32) -> u32 {
+        opus::bridge::op_part_init(&mut mem(), unit, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `checkPolyImg0434(lo, n, make)`.
+    checkPolyImg0434 @ 0x0071_3160 => extern "C" fn check_poly_img_0434(lo: u32, n: u32, make: u32) -> u32 {
+        // the original's locals: three words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        small::bridge::check_poly_img_0434(&mut mem(), [lo, n, make], at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppLinePoints_00761350(m, a, b, p4, p5)`.
+    pppLinePoints_00761350 @ 0x0076_1350 => extern "C" fn ppp_line_points(m: u32, a: u32, b: u32, p4: u32, p5: u32) {
+        // the original's locals: 0x78 bytes below its ebp
+        let mut frame = super::StackFrame::<0x1e>::new();
+        let ebp = frame.at() + 0x78;
+        part::bridge::ppp_line_points(&mut mem(), [m, a, b, p4, p5], ebp, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppEiWindFun(obj, key, prog)`.
+    pppEiWindFun @ 0x0075_d450 => extern "C" fn ppp_ei_wind_fun(obj: u32, key: u32, prog: u32) {
+        prog::bridge::ppp_ei_wind_fun(&mut mem(), obj, key, prog);
+    }
     // ---- round 33 a ----
     /// `ClassDynamicGeometry_setupDynMesh(this)`.
     ClassDynamicGeometry_setupDynMesh @ 0x006a_3b30 => extern "thiscall" fn class_dynamic_geometry_setup_dyn_mesh(this: u32) -> u32 {

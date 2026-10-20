@@ -3527,7 +3527,7 @@
 0x00712e40 function pppPartCall10             # (part): as pppPartCall18 with the records' +0x10
 0x00712e80 function pppPartCall14             # (part): as pppPartCall18 with the records' +0x14
 0x00712ec0 function checkEnvMdl0434              # str-match switch: only user of 3 string(s) held once by both builds, e.g. '15281_19_0_0_128_128.dds.phyre'; Switch 0x71002e5440 checkEnvMdl0434 (symbols from Fahrenheit's server export)
-0x00713160 function checkPolyImg0434             # layout+callees: sorts between checkEnvMdl0434 and clearVFXRenderDataShp, and its named callees match the Switch 0x71002e5960 checkPolyImg0434's (similarity 1.00: graphicDynGeoMemManagerGetBufferForSegment, graphicVFXCreate, graphicVFXCreateDataBuffer, graphicVFXDestroy, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export
+0x00713160 function checkPolyImg0434             # layout+callees: sorts between checkEnvMdl0434 and clearVFXRenderDataShp, and its named callees match the Switch 0x71002e5960 checkPolyImg0434's (similarity 1.00: graphicDynGeoMemManagerGetBufferForSegment, graphicVFXCreate, graphicVFXCreateDataBuffer, graphicVFXDestroy, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export; ported r34: (lo, n, make): n 0 -> graphicVFXDestroy(0, lo), 0; make: graphicVFXCreate(0, lo, 2), CreateDataBuffer(0, lo, 1, 6n, 6n, NoTexture, 1); render data [+0x94] +4/+8 = 6n, GetBufferForSegment(r, 0, ..) != 0 -> 0x00cec194 = 0, 1
 0x00713290 function clearVFXRenderDataShp     # fh v3:exact 0x00713370; (lo, hi) -> 1 (0 without render data): every part (i32 +0x90 of 0x6c bytes at [+0x94]) gets counts +4/+8 = 0, copied to its record +0x2c + 0x1c x graphicDynGeoMemManagerGetCurrentBufferId(); ported in ffx-vfx draw.rs
 0x00713320 function clearVFXRenderDataShpWithMemset # layout+callees: sorts between clearVFXRenderDataShp and createGuildMapRenderDataBuffer, and its named callees match the Switch 0x71002dd660 clearVFXRenderDataShpWithMemset's (similarity 1.00: graphicDynGeoMemManagerGetCurrentBufferId, graphicVFXGetRenderDataByInstance); symbols from Fahrenheit's server export; (lo, hi) -> as clearVFXRenderDataShp, each part's index buffer [+0x1c] memset to 0 for 2 x [+0x68] bytes first
 0x007133e0 function createGuildMapRenderDataBuffer # fh v3:exact 0x007134c0
@@ -4162,7 +4162,7 @@
 0x0075d240 function pppColorCon               # fh v3:exact 0x0075d330
 0x0075d280 function pppPObjPoint              # ppp program table record "pppPObjPoint" (0x00c3d730) +0x8 step
 0x0075d340 function pppVertexAttend           # fh v3:exact 0x0075d430
-0x0075d450 function pppEiWindFun              # ppp program table record "pppEiWindFun" step
+0x0075d450 function pppEiWindFun              # ppp program table record "pppEiWindFun" step; ported r34: area 0: unless stop +0x20 += +0x24, +0x1c += +0x20; key frame: +0..+0xc = key+0x10.., +0x10/+0x14 = key+0x20/+0x24, VU0 acc = x x + s s, Q = sqrt|acc|, acc = vf00.x + Q, +0x18 = x / acc; unless stop key+0x28..0x30 added to +0x1c..+0x24
 0x0075d590 function pppEiWindFunCon           # ppp program table record "pppEiWindFun" (0x00c3b048) +0x1c set-up; "pppEiWindFun" (0x00c3c6f0) +0x1c set-up
 0x0075d5d0 function pppNeiLightEikyo          # fh v3:exact 0x0075d6c0
 0x0075d6c0 function pppNeiLightEikyoCon       # fh v3:exact 0x0075d7b0
@@ -4220,6 +4220,7 @@
 0x007610e0 function dumpMatrix                   # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%s=\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f %f %f %f }\\n{ %f'; Switch 0x71002d1db0 dumpMatrix (symbols from Fahrenheit's server export)
 0x00761170 function ppp_screen_to_fixed_00761170 # ours: (out, v) -> out.w: VU0 VFTOI4 x,y (* 16.0 from 0x00b313a0) and VFTOI0 z,w through ftol2_sse, v kept at 0x00c8f810, the result at 0x00c8f800 and out; caller 0x00761350 (part::bridge::ppp_screen_to_fixed)
 0x00761250 function pppDataLastPair_00761250 # ours: (data, a, b) -> b: the records from data + [data+4] (16-byte headers, kind i8 +1 until 0xff, i16 +2 entries of 20/28/32/40/24/32/40/48 bytes by kind 0..7): the +8/+0xc words of the last kind 2, 3, 6 or 7 record into a and b (0 for none); caller pppDataRcv
+0x00761350 function pppLinePoints_00761350    # cdecl(m, a, b, p4, p5): nine points a + k (b - a)/8 through m; w > 0: DivVectorXYZ, 0x0062fc90 (stub 0) == 0: ppp_screen_to_fixed into a 0x20-byte record (+0x10 w, +0x14 flag); two drawn neighbours -> 0x00760ce0(prev0, prev4, cur0, cur4, p4, p5); caller 0x007625a0; ported r34; name ours
 0x007614a0 function pppDataRcv                # fh v3:exact 0x00761590
 0x00761c00 function pppDbgAlloc                  # layout: alphabetical run between pppDataRcv and pppGetPartMatrix (1 unnamed in the gap); Switch 0x71002d1eb0 pppDbgAlloc is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00761c40 function pppGetPartMatrix          # fh switch:bsim1.00 0x71002d4cc0; (camera, screen): MsCopyScreen/CameraMatrix when [0x00d4b7f8] == 1, else copies of g_pppCameraMatrix/g_pppScreenMatrix (part::bridge::ppp_get_part_matrix)
@@ -6796,7 +6797,7 @@
 0x00800610 function op_effect_run_before      # fh v3:exact 0x00800530; (): g_OpusBattle +0x54 = +0x58 pinned frame or latched 0x02332e8c (limit 0x02332e88 = 0x02332e90 + 0xf0000), opu_main_host(0, 0), latch back when unpinned, limit 0 (op::bridge::op_effect_run_before)
 0x00800670 function op_effect_run_after       # fh v3:exact 0x00800590
 0x00800700 function op_part_fp_init           # fh v3:exact 0x00800620; ported (round 33): (part) -> 0: ppp part [part+0xd0] loaded: 0x012f2090..98 = its +0x14..+0x1c, op env, pppInitData unless op_part_init_check (opus::bridge::op_part_fp_init)
-0x00800770 function op_part_init              # fh v3:exact 0x00800690
+0x00800770 function op_part_init              # fh v3:exact 0x00800690; ported r34: (unit) -> 0: op env tables 0x012f2090.. = get_ptr32(d +0x14/18/1c), env current; key byte +0x1e << 16 + u16 +0x1a gets its slot in 0x012e9c70 (own: pppAllFreePObject first; else empty; else 0x100, freed); unit+0xbc = 0x012ea070 + 0x80 i; loaded d: pppStartPartFromYonish(part, 0x1000, [get_ptr32(d+0x10) + 4 byte unit+0xd4], 1, (d+3 == 1) unread), else dbgPrintf(0x00b58718)
 0x008008b0 function op_part_run               # fh v3:exact 0x008007d0; ported (round 33): (part) -> pppRunPart([part+0xbc], 0x30) or 0: op env tables from [part+0xd0]; done -> 0x012e9c70 entry 0, pppAllFreePObject; unloaded -> dbgPrintf (opus::bridge::op_part_run)
 0x008009c0 function op_part_free              # fh v3:exact 0x008008e0; ported (round 33): (part) -> 0: kind 3 with ppp part +0xbc: pppAllFreePObject (op env), 0x012e9c70[u16 +0x1e] = 0, +0xbb/+0xbc = 0 (opus::bridge::op_part_free)
 0x00800ab0 function opus_copy_1k_00800ab0     # (dst, src) -> src + 0x400: 0x400 bytes word by word upward; restores a 1 KB block after 0x00826950 in opu_motion_etc (0x00804beb); name ours
