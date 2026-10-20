@@ -1414,6 +1414,33 @@ ported! {
     Cache_OverFlow @ 0x0084_09a0 => extern "C" fn cache_overflow() -> u32 {
         cache::bridge::overflow(&mut mem())
     }
+
+    // ---- round 23 ----
+    /// `Cache_Clear()`.
+    Cache_Clear @ 0x0084_0030 => extern "C" fn cache_clear() {
+        cache::bridge::clear(&mut mem(), false);
+    }
+    /// `Cache_ClearFast()`.
+    Cache_ClearFast @ 0x0084_0150 => extern "C" fn cache_clear_fast() {
+        cache::bridge::clear(&mut mem(), true);
+    }
+    /// `Cache_DisposeCheck()`.
+    Cache_DisposeCheck @ 0x0084_0440 => extern "C" fn cache_dispose_check() {
+        cache::bridge::dispose_check(&mut mem());
+    }
+    /// `Cache_Dispose(kind, id, check)`.
+    Cache_Dispose @ 0x0084_0250 => extern "C" fn cache_dispose(kind: i32, id: u32, check: u32) -> u32 {
+        cache::bridge::dispose(&mut mem(), kind, id, check)
+    }
+    /// `graphicProject3DPointOntoScreenConsider2DScene(out, p)`: `1 / w`
+    /// in `ST0`.
+    graphicProject3DPointOntoScreenConsider2DScene @ 0x0064_28f0 => extern "C" fn project_point_2d(out: u32, p: u32) -> f32 {
+        ut::project_point(&mut mem(), out, p, 1)
+    }
+    /// `graphicProject3DPointOntoScreenAbmap(out, p)`: `1 / w` in `ST0`.
+    graphicProject3DPointOntoScreenAbmap @ 0x0064_28d0 => extern "C" fn project_point_abmap(out: u32, p: u32) -> f32 {
+        ut::project_point(&mut mem(), out, p, 2)
+    }
 }
 
 /// A singleton's pointer.

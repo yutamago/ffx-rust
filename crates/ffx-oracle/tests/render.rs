@@ -6764,6 +6764,13 @@ fn stub_screen_wh(t: &mut Twins, width: u32, height: u32) {
 /// helpers, `PMatrix4_RowTimes` and the screen-adjusted view run
 /// original on both sides.
 fn round22_case(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) {
+    project_case(t, rng, scene, None, what);
+}
+
+/// [`round22_case`], or with `wrapper` `(sym, mode)` the cdecl
+/// `graphicProject3DPointOntoScreen*` wrapper at `sym` on `scene` made
+/// `g_PhyreScene`.
+fn project_case(t: &mut Twins, rng: &mut Rng, scene: u32, wrapper: Option<(u32, u32)>, what: &str) {
     use ffx_bridge::x87::SSE2_AVAILABLE;
     use ffx_graphic::util::bridge as ut;
     let float = |rng: &mut Rng| -> f32 {
@@ -6804,6 +6811,13 @@ fn round22_case(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) {
     stub_screen_wh(t, width, height);
     let p = floats(t, rng, 3);
     let out = t.alloc(&rng.bytes(8));
+    if let Some((sym, mode)) = wrapper {
+        t.global(scene::bridge::SCENE.sym, scene);
+        t.check(what, sym, Conv::Cdecl, &[out, p], |g| {
+            Out::F32(ut::project_point(g, out, p, mode))
+        });
+        return;
+    }
     let mode = [0, 1, 2, 2, 3, rng.next()][rng.below(6) as usize];
     t.check(
         what,
@@ -7093,6 +7107,174 @@ fn snapshot_round22b_matches_the_original() {
             _ => {
                 round22b_overflow(&mut t, &mut rng, true, &what);
             }
+        }
+    }
+}
+
+// ---- round 23 ----
+
+/// The projection wrappers: `(sym, mode)`.
+const PROJECT_WRAPPERS: [(u32, u32); 2] = [(0x0064_28f0, 1), (0x0064_28d0, 2)];
+
+/// Stubs the cache releasers' callees. `persistent` is what
+/// `Cache_IsPersistentChr` answers. `Cache_Dispose`'s delayed-release
+/// call also replaces the first model of `entry` (when set) with `model`,
+/// so the bridge must read it again after the call.
+fn stub_release_callees(t: &mut Twins, rng: &mut Rng, persistent: u32, entry: u32, model: u32) {
+    use cache::bridge as cb;
+    t.stub_sym(cb::IS_PERSISTENT_CHR, Conv::Cdecl, 1, persistent);
+    t.stub_sym(cb::UNLOAD_TASK, Conv::Cdecl, 1, rng.next());
+    t.stub_sym(cb::USER_FREE, Conv::Cdecl, 1, rng.next());
+    t.stub_sym(cb::FREE_CLOTH_VERTEX_BUFF, Conv::Cdecl, 1, rng.next());
+    t.stub_sym(cb::EMPTY, Conv::Cdecl, 0, rng.next());
+    t.stub_sym(cb::FREE_ENTRY, Conv::Cdecl, 1, rng.next());
+    let log = t.stub(None, cb::ENABLE_DELAY_RELEASE, false, 0, 0, rng.next());
+    let at = t.cave_next;
+    let mut c = Vec::new();
+    if entry != 0 {
+        c.extend([0xc7, 0x05]); // mov dword [entry + 0x10], model
+        c.extend((entry + 0x10).to_le_bytes());
+        c.extend(model.to_le_bytes());
+    }
+    c.push(0xe9); // jmp log
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+    assert!(at + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(at, &c);
+    t.cave_next = at + c.len() as u32;
+    let f = t.rebase(cb::ENABLE_DELAY_RELEASE);
+    let mut j = vec![0xe9];
+    j.extend(at.wrapping_sub(f + 5).to_le_bytes());
+    t.write(f, &j);
+}
+
+/// One cache releaser on the cache as it is (`fresh`: a random one with
+/// small ages). Returns what `Cache_Dispose` answered (3 for the others).
+fn round23_cache(t: &mut Twins, rng: &mut Rng, fresh: bool, what: &str) -> u32 {
+    use cache::bridge as cb;
+    let table = t.rebase(cb::TABLE.sym);
+    let keys = if fresh {
+        let keys = build_cache(t, rng);
+        for i in 0..cache::SLOTS {
+            let e = t.r32(table + 4 * i);
+            if rng.chance(2) {
+                let b = t.r8(e + 8);
+                t.w8(e + 8, (b & !7) | [0, 0, 5, 7, 1, 3][rng.below(6) as usize]);
+            }
+            if rng.chance(2) {
+                t.w8(e + 5, 0);
+            }
+            if rng.chance(2) {
+                t.w8(e + 6, 0);
+            }
+        }
+        keys
+    } else {
+        (0..cache::SLOTS)
+            .map(|i| {
+                let e = t.r32(table + 4 * i);
+                (i32::from(t.r8(e + 4) as i8), t.r32(e))
+            })
+            .collect()
+    };
+    let persistent = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    let op = rng.below(4);
+    let (kind, id) = if rng.chance(5) {
+        (rng.below(6) as i32 - 1, rng.below(14))
+    } else {
+        keys[rng.below(keys.len() as u32) as usize]
+    };
+    let k = kind as u32;
+    let target = if op == 3 {
+        cb::find_live(&t.b, kind, id).unwrap_or(0)
+    } else {
+        0
+    };
+    let model = if rng.chance(3) { 0 } else { rng.next() };
+    stub_release_callees(t, rng, persistent, target, model);
+    match op {
+        0 => t.check(what, 0x0084_0030, Conv::Cdecl, &[], |g| {
+            cb::clear(g, false);
+            // eax: Cache_FreeEntry's or the caller's, which nobody reads
+            Out::None
+        }),
+        1 => t.check(what, 0x0084_0150, Conv::Cdecl, &[], |g| {
+            cb::clear(g, true);
+            // eax: as Cache_Clear's, al partly the last age
+            Out::None
+        }),
+        2 => t.check(what, 0x0084_0440, Conv::Cdecl, &[], |g| {
+            cb::dispose_check(g);
+            Out::None
+        }),
+        _ => {
+            let check = [0, 1, rng.next()][rng.below(3) as usize];
+            let mut r = 0;
+            t.check(what, 0x0084_0250, Conv::Cdecl, &[k, id, check], |g| {
+                r = cb::dispose(g, kind, id, check);
+                Out::U32(r)
+            });
+            return r;
+        }
+    }
+    3
+}
+
+#[test]
+fn round23_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2323_0023);
+    let mut answers = [0u32; 4];
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        if round % 4 == 0 {
+            let w = PROJECT_WRAPPERS[(round / 4) % 2];
+            project_case(&mut t, &mut rng, 0, Some(w), &what);
+        } else {
+            let r = round23_cache(&mut t, &mut rng, true, &what);
+            answers[match r {
+                0 => 0,
+                1 => 1,
+                u32::MAX => 2,
+                _ => 3,
+            }] += 1;
+        }
+    }
+    assert!(answers.iter().all(|&n| n > 50), "answers {answers:?}");
+}
+
+#[test]
+fn snapshot_round23_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5323_0023);
+    // the game's own cache first, each releaser on a fresh copy
+    for op in 0..8 {
+        let mut s = Twins::snapshot().unwrap();
+        let mut r = Rng(0x5323_1000 + op);
+        let what = format!("snapshot cache {op}");
+        round23_cache(&mut s, &mut r, false, &what);
+    }
+    let real = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    let real = if real != 0 && t.r32(real + 0xdc) != 0 {
+        real
+    } else {
+        0
+    };
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        if round % 2 == 0 {
+            // the game's own scene every other wrapper round
+            let scene = if round % 4 == 0 { real } else { 0 };
+            let w = PROJECT_WRAPPERS[(round / 2) % 2];
+            project_case(&mut t, &mut rng, scene, Some(w), &what);
+        } else {
+            round23_cache(&mut t, &mut rng, true, &what);
         }
     }
 }

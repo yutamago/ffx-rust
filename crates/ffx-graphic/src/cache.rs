@@ -363,4 +363,112 @@ pub mod bridge {
         h.call_sym(FREE_ENTRY, Conv::Cdecl, &[victim]);
         0
     }
+
+    /// `Cache_IsPersistentChr(id)` (cdecl): 0 in this build
+    /// (`xor eax, eax; ret`), called anyway.
+    pub const IS_PERSISTENT_CHR: u32 = 0x0084_0950;
+    /// `graphicCharacterUnloadTask_thunk_0063d9a0(model)` (cdecl, a `jmp`
+    /// to `graphicCharacterUnloadTask`).
+    pub const UNLOAD_TASK: u32 = 0x0063_d9a0;
+    /// `user_free_thunk(p)` (cdecl).
+    pub const USER_FREE: u32 = 0x0068_7010;
+    /// `Cache_FreeClothVertexBuff_00640e70(&entry.cloth_vertex_buffer)`
+    /// (cdecl).
+    pub const FREE_CLOTH_VERTEX_BUFF: u32 = 0x0064_0e70;
+    /// `graphicEnableChrClusterDelayRelease()` (cdecl, no arguments).
+    pub const ENABLE_DELAY_RELEASE: u32 = 0x0064_0090;
+    /// `Cache_Empty_00840ab0()`: `ret`.
+    pub const EMPTY: u32 = 0x0084_0ab0;
+
+    /// One of the entry's two models (`+0x10`, `+0x14`): unloaded unless
+    /// the id is persistent, then cleared. `delay` (`Cache_Dispose`'s
+    /// first model) enables the cluster's delayed release first and reads
+    /// the model again after the calls, as the original does.
+    fn release_model(h: &mut impl Host, e: u32, field: u32, delay: bool) {
+        let model: u32 = h.read(e + field);
+        if model == 0 {
+            return;
+        }
+        if delay {
+            h.call_sym(ENABLE_DELAY_RELEASE, Conv::Cdecl, &[]);
+        }
+        let id: u32 = h.read(e);
+        if h.call_sym(IS_PERSISTENT_CHR, Conv::Cdecl, &[id]) == 0 {
+            let model = if delay { h.read(e + field) } else { model };
+            h.call_sym(UNLOAD_TASK, Conv::Cdecl, &[model]);
+        }
+        h.write(e + field, 0u32);
+    }
+
+    /// A buffer field freed with `user_free_thunk`, then cleared.
+    fn release_buffer(h: &mut impl Host, e: u32, field: u32) {
+        let p: u32 = h.read(e + field);
+        if p != 0 {
+            h.call_sym(USER_FREE, Conv::Cdecl, &[p]);
+            h.write(e + field, 0u32);
+        }
+    }
+
+    /// Frees entry `e` and its render data: the two models, the cloth
+    /// mesh data (`+0x18`), the cloth vertex buffer (`+0x20`, cleared by
+    /// its callee), the mapping data (`+0x1c`), then `Cache_FreeEntry`.
+    fn release(h: &mut impl Host, e: u32, delay: bool) {
+        release_model(h, e, 0x10, delay);
+        release_model(h, e, 0x14, false);
+        release_buffer(h, e, 0x18);
+        if h.read::<u32>(e + 0x20) != 0 {
+            h.call_sym(FREE_CLOTH_VERTEX_BUFF, Conv::Cdecl, &[e + 0x20]);
+        }
+        release_buffer(h, e, 0x1c);
+        h.call_sym(FREE_ENTRY, Conv::Cdecl, &[e]);
+    }
+
+    /// `Cache_Clear()` (`fast` false) and `Cache_ClearFast()` (`fast`:
+    /// entries aged 5 or pinned stay): every live entry not in use is
+    /// freed, or flagged to be released when read (`+0x24` = 1) while it
+    /// is not read yet. Both end on `Cache_Empty_00840ab0`.
+    pub fn clear(h: &mut impl Host, fast: bool) {
+        for i in 0..SLOTS {
+            let e = entry(h, i);
+            if h.read::<u32>(e + 0xc) == 0 || h.read::<u8>(e + 5) != 0 {
+                continue;
+            }
+            let age = h.read::<u8>(e + 8) & 7;
+            if fast && (age == 5 || age == 7) {
+                continue;
+            }
+            if h.read::<u8>(e + 6) != 0 {
+                h.write(e + 0x24, 1u32);
+            } else {
+                release(h, e, false);
+            }
+        }
+        h.call_sym(EMPTY, Conv::Cdecl, &[]);
+    }
+
+    /// `Cache_DisposeCheck()`: frees every live entry of age 0, in use or
+    /// not, read or not.
+    pub fn dispose_check(h: &mut impl Host) {
+        for i in 0..SLOTS {
+            let e = entry(h, i);
+            let age = h.read::<u8>(e + 8) & 7;
+            if h.read::<u32>(e + 0xc) != 0 && age == 0 {
+                release(h, e, false);
+            }
+        }
+    }
+
+    /// `Cache_Dispose(kind, id, check)`: frees the live entry `(kind,
+    /// id)`; 1 when absent, -1 when it is in use and `check` is set, else
+    /// 0.
+    pub fn dispose(h: &mut impl Host, kind: i32, id: u32, check: u32) -> u32 {
+        let Some(e) = find_live(h, kind, id) else {
+            return 1;
+        };
+        if h.read::<u8>(e + 5) != 0 && check != 0 {
+            return u32::MAX;
+        }
+        release(h, e, true);
+        0
+    }
 }

@@ -959,3 +959,32 @@ Round 22:
   `":%s:%d] disposed from Cache."` with `ch_create_name(id)` and `id >>
   16` arithmetic), then `Cache_FreeEntry(victim)`; last comes a call of
   the empty `Cache_Empty_00840ab0`.
+
+Round 23:
+
+- `Cache_Clear()` (`0x00840030`) and `Cache_ClearFast()` (`0x00840150`),
+  cdecl: over the slots, each live entry (`+0xc` set) not in use (`+5`
+  clear) — for `Cache_ClearFast` also of age neither 5 nor 7 — gets
+  `+0x24` = 1 while it is not read yet (`+6`), else is freed. Both end
+  with a tail `jmp` to the empty `Cache_Empty_00840ab0`; `eax` is left
+  from the last free (or, for `Cache_ClearFast`, partly the last age
+  byte), which no caller reads.
+- Freeing an entry (the four releasers share it): each model (`+0x10`,
+  then `+0x14`) that is set is unloaded by
+  `graphicCharacterUnloadTask_thunk_0063d9a0` unless
+  `Cache_IsPersistentChr(id)` (`0x00840950`, always 0 in this build), then
+  cleared; `+0x18` is freed by `user_free_thunk` and cleared;
+  `Cache_FreeClothVertexBuff_00640e70(&e + 0x20)` when `+0x20` is set (the
+  field is left to it); `+0x1c` as `+0x18`; then `Cache_FreeEntry(e)`.
+- `Cache_DisposeCheck()` (`0x00840440`, cdecl): frees every live entry of
+  age 0, whether in use or read or not.
+- `Cache_Dispose(kind, id, check)` (`0x00840250`, cdecl): the first live
+  entry `(kind, id)`; 1 when there is none, -1 when it is in use and
+  `check` != 0, else it is freed and 0 returned. Before the first model,
+  `graphicEnableChrClusterDelayRelease()` runs and the model is read again
+  after it and `Cache_IsPersistentChr`.
+- `graphicProject3DPointOntoScreenConsider2DScene(out, p)` (`0x006428f0`)
+  and `graphicProject3DPointOntoScreenAbmap(out, p)` (`0x006428d0`), cdecl:
+  `PhyreScene_Project3DPointOntoScreen(g_PhyreScene, out, p, 1 or 2)`, its
+  `1 / w` left in `ST0`. (`graphicProject3DPointOntoScreen`, `0x006428b0`,
+  mode 0, is dead.)

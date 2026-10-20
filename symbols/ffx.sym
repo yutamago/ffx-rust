@@ -1748,6 +1748,7 @@
 0x0063d880 function graphicCharacterShaderSetParameter # layout+callees: sorts between graphicCharacterShaderRestore and graphicCharacterShaderSetParameterTexture, and its named callees match the Switch 0x71001db400 graphicCharacterShaderSetParameter's (similarity 1.00: Ch_GetChrRenderInstance, Phyre_CharacterShaderManager_setShaderParameter); symbols from Fahrenheit's server export
 0x0063d8e0 function graphicCharacterShaderSetParameterTexture # layout+callees: sorts between graphicCharacterSetClipPlane and graphicCheckChrClusterRelationship, and its named callees match the Switch 0x71001db510 graphicCharacterShaderSetParameterTexture's (similarity 1.00: Ch_GetChrRenderInstance, Phyre_CharacterShaderManager_setShaderParameterTexture); symbols from Fahrenheit's server export
 0x0063d940 function graphicCharacterShaderSetParameterVector_0063d940 # cdecl(chr, name, x*, y*, z*, w*): setShaderParameterVector_006dfa30 for each instance of Ch_GetChrRenderInstance(chr), returns 0; sorts after graphicCharacterShaderSetParameterTexture (0x0063d8e0), same shape as it; name ours
+0x0063d9a0 function graphicCharacterUnloadTask_thunk_0063d9a0 # jmp graphicCharacterUnloadTask; the Cache_* releasers call it on an entry's models (+0x10, +0x14); name ours
 0x0063d9c0 function graphicCheckChrClusterRelationship # fh v3:exact 0x0063db70
 0x0063da80 function graphicIsEscMenuActive    # () -> 1 when g_FFEscMenu exists and is open (+0x70) or has a selection (+0xe4 >= 0); the frame loop's callers around graphicRender test it; name ours
 0x0063dd50 function graphicClothFree             # layout+callees: sorts between graphicCheckChrClusterRelationship and graphicClothMemPrintStats, and its named callees match the Switch 0x71001ceb70 graphicClothFree's (similarity 1.00: mspace_free, user_free); symbols from Fahrenheit's server export
@@ -1803,6 +1804,7 @@
 0x00640d70 function graphicFontGetEdgeRatio   # fh v3:exact 0x00640f20
 0x00640db0 function graphicFontGetScreenWH    # fh v3:exact 0x00640f60
 0x00640dd0 function graphicFontSetUiShadowType # fh v3:cg15 0x640f80
+0x00640e70 function Cache_FreeClothVertexBuff_00640e70 # cdecl(&entry+0x20): the Cache_* releasers call it on a cache entry's cloth vertex buffer when set (and leave the field to it); platform in classes.tsv; name ours
 0x00641060 function graphicGetAbmap           # fh v3:exact 0x00641210
 0x006410a0 function graphicGetAbmapUV_006410a0 # cdecl(kind, u, v, &u_out, &v_out): SheetCellUV_00684b00 with ecx = g_GraphicAbmap (unread), the floats through the x87; returns its eax; sorts between graphicGetAbmap and graphicGetCurrentFrame; callers 0x007f49e0; name ours
 0x006410d0 function graphicGetCurrentFrame    # fh v3:cg3 0x641280
@@ -1891,8 +1893,8 @@
 0x006427f0 function graphicProcessPs2DataLoadingCallback # fh v3:exact 0x006429a0
 0x00642860 function graphicProcessWindowsMessage # fh v3:exact 0x00642a10
 0x006428b0 function graphicProject3DPointOntoScreen # layout: alphabetical run between graphicProcessWindowsMessage and graphicProject3DPointOntoScreenConsider2DScene (2 unnamed in the gap); Switch 0x71001d77b0 graphicProject3DPointOntoScreen is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x006428d0 function graphicProject3DPointOntoScreenAbmap # layout: alphabetical run between graphicProcessWindowsMessage and graphicProject3DPointOntoScreenConsider2DScene (2 unnamed in the gap); Switch 0x71001d77e0 graphicProject3DPointOntoScreenAbmap is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x006428f0 function graphicProject3DPointOntoScreenConsider2DScene # fh v3:bsim1.00 0x00642aa0
+0x006428d0 function graphicProject3DPointOntoScreenAbmap # layout: alphabetical run between graphicProcessWindowsMessage and graphicProject3DPointOntoScreenConsider2DScene (2 unnamed in the gap); Switch 0x71001d77e0 graphicProject3DPointOntoScreenAbmap is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(out, p): PhyreScene_Project3DPointOntoScreen(g_PhyreScene, out, p, 2), 1/w left in ST0; ported (render r23, util::bridge::project_point)
+0x006428f0 function graphicProject3DPointOntoScreenConsider2DScene # fh v3:bsim1.00 0x00642aa0; cdecl(out, p): PhyreScene_Project3DPointOntoScreen(g_PhyreScene, out, p, 1), 1/w left in ST0; ported (render r23, util::bridge::project_point)
 0x00642910 function graphicPushTip               # layout: alphabetical run between graphicProject3DPointOntoScreenConsider2DScene and graphicPushTipByLocId (1 unnamed in the gap); Switch 0x71001dd960 graphicPushTip is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00642930 function graphicPushTipByLocId     # fh v3:cg4 0x642ae0
 0x00642950 function graphicRegistAsyncTask    # fh v3:bsim1.00 0x00642b00
@@ -8200,12 +8202,12 @@
 0x0083fe10 function Sg_SetResource            # fh v3:exact 0x0083fe10
 0x0083fe60 function Sg_SetResourceSTR         # fh v3:exact 0x0083fe60
 0x0083ffe0 function Cache_CheckYet            # (kind, id): 2 = not registered, else whether loaded (table 0x01302f98); was ChrData_State
-0x00840030 function Cache_Clear               # fh v3:exact 0x00840030
+0x00840030 function Cache_Clear               # fh v3:exact 0x00840030; cdecl(): every live entry not in use: +0x24 = 1 while unread, else freed with its render data (models unless Cache_IsPersistentChr, user_free_thunk +0x18/+0x1c, Cache_FreeClothVertexBuff on +0x20, Cache_FreeEntry); tail jmp Cache_Empty; ported (render r23, cache::bridge::clear)
 0x00840120 function Cache_ClearCheck             # layout: alphabetical run between Cache_Clear and Cache_Dispose (2 unnamed in the gap); Switch 0x71004361b0 Cache_ClearCheck is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00840150 function Cache_ClearFast              # layout: alphabetical run between Cache_Clear and Cache_Dispose (2 unnamed in the gap); Switch 0x7100435eb0 Cache_ClearFast is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00840250 function Cache_Dispose             # fh v3:exact 0x00840250
+0x00840150 function Cache_ClearFast              # layout: alphabetical run between Cache_Clear and Cache_Dispose (2 unnamed in the gap); Switch 0x7100435eb0 Cache_ClearFast is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(): Cache_Clear but entries of age 5 or 7 (pinned) stay; ported (render r23, cache::bridge::clear)
+0x00840250 function Cache_Dispose             # fh v3:exact 0x00840250; cdecl(kind, id, check) -> 1 absent, -1 in use with check set, else 0: frees the live entry as Cache_Clear does, graphicEnableChrClusterDelayRelease before its first model (read again after the calls); ported (render r23, cache::bridge::dispose)
 0x00840340 function Cache_DisposeAll             # layout: alphabetical run between Cache_Dispose and Cache_Dump (2 unnamed in the gap); Switch 0x7100435b60 Cache_DisposeAll is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00840440 function Cache_DisposeCheck           # layout: alphabetical run between Cache_Dispose and Cache_Dump (2 unnamed in the gap); Switch 0x71004360a0 Cache_DisposeCheck is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00840440 function Cache_DisposeCheck           # layout: alphabetical run between Cache_Dispose and Cache_Dump (2 unnamed in the gap); Switch 0x71004360a0 Cache_DisposeCheck is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); cdecl(): frees every live entry of age 0 (in use or unread too) as Cache_Clear does; ported (render r23, cache::bridge::dispose_check)
 0x00840510 function Cache_Dump                # fh v3:exact 0x00840510
 0x00840560 function Cache_Entry               # fh v3:exact 0x00840560
 0x008405b0 function Cache_Entry_ClothVertexBuff # fh v3:exact 0x008405b0
@@ -8220,7 +8222,7 @@
 0x00840890 function Cache_Exist_RenderData       # layout: alphabetical run between Cache_Exist_ClothVertexBuff and Cache_Lock (4 unnamed in the gap); Switch 0x7100436430 Cache_Exist_RenderData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x008408d0 function Cache_Exist_ShadowMeshData   # layout: alphabetical run between Cache_Exist_ClothVertexBuff and Cache_Lock (4 unnamed in the gap); Switch 0x7100436480 Cache_Exist_ShadowMeshData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00840910 function Cache_Init                   # layout: alphabetical run between Cache_Exist_ClothVertexBuff and Cache_Lock (4 unnamed in the gap); Switch 0x7100436990 Cache_Init is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00840950 function Cache_IsPersistentChr        # layout: alphabetical run between Cache_Exist_ClothVertexBuff and Cache_Lock (4 unnamed in the gap); Switch 0x7100435750 Cache_IsPersistentChr is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00840950 function Cache_IsPersistentChr        # layout: alphabetical run between Cache_Exist_ClothVertexBuff and Cache_Lock (4 unnamed in the gap); Switch 0x7100435750 Cache_IsPersistentChr is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); xor eax, eax; ret (3 bytes: always 0 in this build)
 0x00840960 function Cache_Lock                   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008b4188 Cache_Lock, 2 votes, round 1
 0x008409a0 function Cache_OverFlow            # fh v3:exact 0x008409a0; cdecl() -> 1 when nothing to free, else 0: frees the live, read, unused, unpinned entry of lowest age (then lowest signed data word below 0x0fffffff), logged by dbgPrintf, through Cache_FreeEntry
 0x00840ab0 function Cache_Empty_00840ab0 # an empty function (ret); Cache_OverFlow calls it last; name ours

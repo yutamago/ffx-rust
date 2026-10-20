@@ -2082,6 +2082,14 @@ pub mod bridge {
         f32::from_bits(x87::store(x87::div(1.0, w)))
     }
 
+    /// `graphicProject3DPointOntoScreenConsider2DScene(out, p)` (mode 1)
+    /// and `graphicProject3DPointOntoScreenAbmap(out, p)` (mode 2):
+    /// [`scene_project_point`] on `g_PhyreScene`; `1 / w` in `ST0`.
+    pub fn project_point(h: &mut impl Host, out: u32, p: u32, mode: u32) -> f32 {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        scene_project_point(h, scene, out, p, mode)
+    }
+
     // ---- round 22, group 2 ----
 
     /// `SheetCellUV_00684b00(kind, u, v, &u_out, &v_out)` (`ret 0x14`; it
