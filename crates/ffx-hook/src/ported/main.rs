@@ -2197,6 +2197,11 @@ ported! {
     eiAbmSetLang @ 0x00a5_4ab0 => extern "C" fn ei_abm_set_lang() -> u32 {
         abmap::bridge::ei_abm_set_lang(&mut mem())
     }
+    /// `eiAbmCalc()`: the screen vector in this frame.
+    eiAbmCalc @ 0x00a5_3570 => extern "C" fn ei_abm_calc() -> u32 {
+        let mut w = super::StackFrame::<{ abmap::bridge::CALC_WORK as usize / 4 }>::new();
+        abmap::bridge::ei_abm_calc(&mut mem(), w.at())
+    }
     /// `eiAbmParaGet()`: `MsGetExcelData`'s strings word in this frame.
     eiAbmParaGet @ 0x00a5_4860 => extern "C" fn ei_abm_para_get() -> u32 {
         let mut w = super::StackFrame::<1>::new();

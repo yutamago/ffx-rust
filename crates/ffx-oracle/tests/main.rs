@@ -8696,3 +8696,155 @@ fn menu_list_step_snapshot() {
     let mut rng = Xorshift(0x5eed_110c);
     menu_list_step_cases(&mut a, &mut b, &mut rng, 1000);
 }
+
+/// `eiAbmCalc` with the vector and matrix originals and the rest
+/// recorded (`AbmapState_HomeOnNode` too, so the state compares as the
+/// game's); every fade frame, each pad branch, the targets near and past
+/// the edges.
+#[allow(clippy::too_many_lines)] // the stand-ins, then the grid
+fn abm_calc_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as ab;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let stands = [
+        (ab::READ_PAD, 2),
+        (ab::DBG_PRINTF, 1),
+        (ab::CTRL_ZOOM, 0),
+        (ab::CTRL_TILT, 0),
+        (ab::TRY_CHANGE_PLAYER, 0),
+        (ab::STATE_HOME_ON_NODE, 0),
+        (ab::PAD_CTRL, 0),
+        (ab::PULSE_CURSOR, 0),
+        (ab::SET_ABMAP, 5),
+        (ab::SPREAD_PLY_TAGS, 0),
+        // a state and a pad slot callback in dead functions' places
+        (0x0077_a3f0, 0),
+        (0x0077_a420, 1),
+    ];
+    for (k, &(sym, n)) in (1u32..).zip(&stands) {
+        recorder(a, b, k, sym, n, 0);
+    }
+    let code = |a: &Oracle, k: u32| a.rebase(REC_CODE) + 0x60 * k;
+    let (state, callback) = (code(a, 11), code(a, 12));
+    let home = a.rebase(ab::STATE_HOME_ON_NODE);
+    let g = alloc(a, b, 0x1_1700);
+    set(a, b, ab::ABMAP, g);
+    let pad = alloc(a, b, 0x2710);
+    set(a, b, ab::ABMAP_PAD, pad);
+    let work = b.stack_range().start + 0x1000;
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..13 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        for k in (0x1_1300..0x1_1700).step_by(4) {
+            put(a, b, g + k, rng.float());
+        }
+        // a moderate scale, edges around the target
+        let scale = [0x3f80_0000, 0x4000_0000, 0x3f00_0000, rng.float()][rng.below(4) as usize];
+        put(a, b, g + 0x1_1350, scale);
+        let near = |rng: &mut Xorshift| float_within(rng, 2000.0);
+        for o in [0x1_1308, 0x1_130c, 0x1_15fc, 0x1_1600] {
+            put(a, b, g + o, near(rng));
+        }
+        for o in [0x1_1604, 0x1_1608] {
+            let v = f32::from_bits(near(rng)) + 1500.0;
+            put(a, b, g + o, v.to_bits());
+        }
+        if rng.below(8) == 0 {
+            put(a, b, g + 0x1_1308, rng.float());
+        }
+        // exactly on an edge (scale 1: the half screen 341 x 208, less
+        // 96 for the clamp)
+        if rng.below(3) == 0 {
+            put(a, b, g + 0x1_1350, 1.0f32);
+            #[allow(clippy::cast_precision_loss)] // small integers
+            let int = |rng: &mut Xorshift| (rng.below(1000) as f32) - 500.0;
+            let (x0, x1, y0, y1) = (int(rng), int(rng) + 1500.0, int(rng), int(rng) + 1500.0);
+            let (mut x, mut y) = (int(rng), int(rng));
+            let (mut x0, mut x1, mut y1) = (x0, x1, y1);
+            match rng.below(5) {
+                0 => x = x0 + 469.0,
+                1 => x = x1 - 469.0,
+                2 => (x1, y1) = (x0 + 490.0, y0 + 224.0),
+                3 => (x, y) = (x0 + 245.0, y0 + 112.0),
+                _ => (x, y) = (x1 - 245.0, y1 - 112.0),
+            }
+            // -0 on an edge at +0: the store shows
+            match rng.below(6) {
+                0 => (x0, x) = (-245.0, -0.0),
+                1 => (x1, x) = (245.0, -0.0),
+                _ => {}
+            }
+            for (o, v) in [
+                (0x1_15fc, x0),
+                (0x1_1604, x1),
+                (0x1_1600, y0),
+                (0x1_1608, y1),
+                (0x1_1308, x),
+                (0x1_130c, y),
+            ] {
+                put(a, b, g + o, v);
+            }
+        }
+        let frame = [0u8, 1, 9, 10, 11, 14, 15, 19, 20, 0x14, 0x15, 0xff][rng.below(12) as usize];
+        put(a, b, g + 0x1_15b8, frame);
+        put(a, b, g + 0x1_166e, [0u16, 0, 1][rng.below(3) as usize]);
+        for o in [0x1_15ce, 0x1_15d0] {
+            put(a, b, g + o, [0u16, 1, 0xffff][rng.below(3) as usize]);
+        }
+        put(a, b, g + 0x1_15a8, [0, state, home][rng.below(3) as usize]);
+        for o in [0x1_15ba, 0x1_15c0, 0x1_15c7] {
+            put(
+                a,
+                b,
+                g + o,
+                [0u8, 1, rng.next().to_le_bytes()[0]][rng.below(3) as usize],
+            );
+        }
+        put(a, b, g + 0x1_1340, rng.next());
+        put(
+            a,
+            b,
+            g + 0x1_16a0,
+            [99u32, 100, 101, rng.next()][rng.below(4) as usize],
+        );
+        for k in 0..12 {
+            put(
+                a,
+                b,
+                pad + 0x340 * k + 0x34,
+                if rng.below(3) == 0 { callback } else { 0 },
+            );
+        }
+        put(a, b, pad + 0x13a3, 0u8);
+        put(
+            a,
+            b,
+            pad + 0x2700,
+            [0xffffu16, 7, 7, 0, 3][rng.below(5) as usize],
+        );
+        twin("eiAbmCalc", a, b, 0x00a5_3570, &[], |m| {
+            ab::ei_abm_calc(&mut H(m), work)
+        });
+    }
+}
+
+#[test]
+fn abm_calc_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_110d);
+    abm_calc_cases(&mut a, &mut b, &mut rng, 1500);
+}
+
+#[test]
+fn abm_calc_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_110e);
+    abm_calc_cases(&mut a, &mut b, &mut rng, 500);
+}
