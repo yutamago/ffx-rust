@@ -16498,6 +16498,7 @@ fn round31c_start_part_and_draw_work_match_the_original() {
         let (data, part, recs) = (p.alloc(0x200), p.alloc(0x80), p.alloc(0x100));
         let (env, heap_mem) = (p.alloc(0x20), p.alloc(0x2000));
         let env_cell = p.alloc(4);
+        let (patch_b, patch_c) = (p.alloc(0x80), p.alloc(0x20));
         let slot = p.sym(0x00c3_a4cc); // g_pppEnvSlot
         for round in 0..600 {
             // the environment's two heaps, sometimes too small
@@ -16508,6 +16509,7 @@ fn round31c_start_part_and_draw_work_match_the_original() {
                 (1, rng.pick(&[0x30u32, 0x1000])),
             ] {
                 let (heap, memory) = (env + 0x10 * k, heap_mem + 0x1000 * k);
+                p.fill(memory, 0x1000, &mut rng);
                 let last = memory + size - 0x10;
                 p.set(heap, [0u32, memory, last, 0]);
                 p.set(memory, [last, 0u32, 0, 0]);
@@ -16536,9 +16538,35 @@ fn round31c_start_part_and_draw_work_match_the_original() {
                 let node = data + 0x10 + 0x20 * k;
                 p.set(node, if k + 1 == chain { 0 } else { node + 0x20 });
             }
+            // the localisation patch's chain (pppStartPart, births = 0x33)
+            // (the word 0x38 past the births' first definition, births + 4)
+            p.set(data + 0x140 + 4 + 0x38, patch_b);
+            p.set(patch_b + 0x70, patch_c);
             p.fill(part, 0x80, &mut rng);
             let rate = rng.next();
             let set_ups = rng.pick(&[0u32, 1, 0x100]);
+            if round % 3 == 0 {
+                let nb = rng.pick(&[0x33u32, 2]);
+                p.set(data + 0x140, nb);
+                let lang = p.sym(0x0064_10e0); // TOGetFFXLang
+                let l = rng.pick(&[1u32, 0xb]);
+                p.a.stub_return(lang, l).unwrap();
+                p.b.stub_return(lang, l).unwrap();
+                let magic = p.sym(0x00c6_4ca0); // MagicFile_GetId's id
+                p.set(magic, rng.pick(&[0x296u32, 0x295]));
+                p.fill(patch_c, 0x20, &mut rng);
+                p.check(
+                    &format!("pppStartPart round {round}"),
+                    0x0071_23c0,
+                    &[part, rate, data, set_ups],
+                    |m| {
+                        pt::ppp_start_part(m, part, rate, data, set_ups, &mut call_original);
+                        None
+                    },
+                );
+                p.fill(part, 0x80, &mut rng);
+                p.set(data + 0x140, 1 + rng.below(4));
+            }
             p.check(
                 &format!("pppStartPartFromYonish round {round}"),
                 0x0071_2560,
@@ -16556,7 +16584,12 @@ fn round31c_start_part_and_draw_work_match_the_original() {
                 },
             );
             // ops_init_draw_work, once or again
-            p.set(p.sym(0x011a_0700), u8::from(rng.chance(30)));
+            let again = if rng.chance(30) {
+                rng.pick(&[1u8, 2, 0x80, 0xff])
+            } else {
+                0
+            };
+            p.set(p.sym(0x011a_0700), again);
             p.set(chan_ret, rng.next());
             for (at, len) in [
                 (0x0233_2870u32, 0x10u32),
