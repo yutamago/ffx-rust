@@ -267,6 +267,31 @@ pub mod bridge {
         -1
     }
 
+    /// `MsSetBtlPosReset(i)` (`0x007ab2a0`): actor `i` put back on its
+    /// battle place: turned to its formation direction (`+0x514`, one
+    /// float per formation, indexed by the signed byte `+0x511`;
+    /// `MsSetChrDirF`), then `MsGetChrBtlPos` into `local` (the original's
+    /// 16-byte frame local) and `MsSetChrPosReset` from there. `MsGetChr`
+    /// masks `i` itself. `eax` is `MsSetChrPosReset`'s (Ghidra: void).
+    pub fn ms_set_btl_pos_reset<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        i: u32,
+        local: u32,
+    ) -> i32 {
+        use ffx_bridge::x87::{load, store};
+        let a = ms_get_chr(mem, i);
+        let k = i32::from(mem.read::<i8>(a.wrapping_add(0x511)));
+        let at = a
+            .wrapping_add(0x514)
+            .wrapping_add(k.wrapping_mul(4).cast_unsigned());
+        // fld / fstp: a signalling NaN comes out quiet
+        let dir = store(load(mem.read(at)));
+        ms_set_chr_dir_f(mem, i, dir);
+        crate::pos::bridge::ms_get_chr_btl_pos(mem, trig, i, local);
+        ms_set_chr_pos_reset(mem, i, local)
+    }
+
     /// `MsStoneMove(i)` (`0x007a2750`): a petrified actor shatters out of
     /// place: `parse::COMMAND_HOLD` counted up and motion 0x4f
     /// (`MsSetMotion(i, 0x4f, 1, 0, 1)`).

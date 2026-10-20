@@ -6012,7 +6012,7 @@
 0x007ab160 function MsMoveTargetPos           # fh switch:cg2 0x71008b0578
 0x007ab170 function MsResetDirMove            # fh v3:bsim1.00 0x007ab190
 0x007ab190 function MsTurnMoveVector          # (i, actor, vec, angle): turns a move vector's x/z by angle (negated by the side of the actor's battle position); MsGetMoveTargetPos kind 9 with +0x411; named here; ported
-0x007ab2a0 function MsSetBtlPosReset             # layout+callees: sorts between MsResetDirMove and MsSetChrHeight, and its named callees match the Switch 0x710035f980 MsSetBtlPosReset's (similarity 1.00: MsGetChr, MsGetChrBtlPos, MsSetChrDirF, MsSetChrPosReset); symbols from Fahrenheit's server export
+0x007ab2a0 function MsSetBtlPosReset             # layout+callees: sorts between MsResetDirMove and MsSetChrHeight, and its named callees match the Switch 0x710035f980 MsSetBtlPosReset's (similarity 1.00: MsGetChr, MsGetChrBtlPos, MsSetChrDirF, MsSetChrPosReset); symbols from Fahrenheit's server export; (i), eax = MsSetChrPosReset's: MsSetChrDirF(i, +0x514[(i8)+0x511]) (fld/fstp: quiet), MsGetChrBtlPos into a 16-byte frame local (left unwritten for a non-actor or no place), MsSetChrPosReset from it; ported (ffx_battle::chr_damage, battle round 30)
 0x007ab300 function MsSetChrHeight            # fh v3:exact 0x007ab320
 0x007ab360 function MsSetMotion               # fh v3:exact 0x007ab380
 0x007ab500 function MsSetMotionAttackWait     # fh v3:bsim1.00 0x007ab520

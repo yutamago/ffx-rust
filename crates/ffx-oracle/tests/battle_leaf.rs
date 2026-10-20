@@ -1756,6 +1756,33 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                     .concat(),
                 );
             }
+            // small base counts and command ranks now and then: with the
+            // tables' 255 every rank clamps to 255 (MsAdjustCTB), and the
+            // menu command's rank reaching MsCalcDamageCTB goes unseen
+            if rng.below(2) == 0 {
+                for k in 0..ACTORS {
+                    let agility = i32::from(b.read(w.actor(k) + 0x5ac, 1).unwrap()[0]);
+                    let r = ffx_kernel::bridge::ms_get_rom_ctb_base(b, agility);
+                    if readable(a, r, 1) {
+                        poke(a, b, r, &[u8::try_from(rng.range(1, 30)).unwrap()]);
+                    }
+                }
+                for k in 0..3 {
+                    for j in 0..2 {
+                        let id = u32::from(u16::from_le_bytes(
+                            b.read(menu + 8 + 16 * k + 2 * j, 2)
+                                .unwrap()
+                                .try_into()
+                                .unwrap(),
+                        ));
+                        let c = ffx_kernel::bridge::rom(b, ffx_kernel::bridge::COMMAND, id, 0);
+                        if readable(a, c, 0x40) {
+                            poke(a, b, c + 0x24, &[[0u8, 1, 2, 4, 5][rng.below(5) as usize]]);
+                            poke(a, b, c + 0x39, &[u8::from(rng.below(3) != 0)]);
+                        }
+                    }
+                }
+            }
             fill(a, b, rng, frame, t::CTB_FRAME);
             // sometimes nobody in the order (the list runs out)
             if rng.below(6) == 0 {
@@ -2437,4 +2464,125 @@ fn leaf_motions_match_the_original_on_a_snapshot() {
         return;
     };
     motions(&mut a, &mut b, &mut Xorshift(0x2929_1302), false);
+}
+
+/// `MsSetBtlPosReset` (`ffx_battle::chr_damage`): its battle position goes
+/// through a 16-byte frame local that `MsGetChrBtlPos` does not always
+/// write (no file place, a non-actor), so the original's frame (at
+/// `call_top - 0x20` for one argument) starts with the bytes the port's
+/// `local` holds, and the original's frame after the call is compared with
+/// the port's `local`.
+fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use battle_common::crt::{patch, stand_in};
+    use ffx_battle::chr_damage::bridge as cd;
+    let w = world(a, b, rng, synthetic);
+    for o in [&mut *a, &mut *b] {
+        patch(o);
+    }
+    let local = scratch(a, b, 0x10);
+    let frame = a.stack_range().end - 0x100 - 0x20;
+    if w.synthetic {
+        // a position file (as battle_pos.rs's): floats, small counts and
+        // tables inside it
+        let file = scratch(a, b, 0x800);
+        let mut f: Vec<u8> = (0..0x200).flat_map(|_| float(rng).to_le_bytes()).collect();
+        let flat = rng.below(4) == 0;
+        let stride = if flat { 0x20 } else { 0x60 };
+        for g in 0..4usize {
+            let r = g * stride;
+            for c in [2, 3, 4, 5, 6, 9] {
+                f[r + c] = u8::try_from(rng.below(4)).unwrap();
+            }
+            for o in [0x10, 0x14, 0x18, 0x1c, 0x20, 0x24, 0x2c] {
+                let t = 0x400 + rng.below(0x30) * 0x10;
+                f[r + o..r + o + 4].copy_from_slice(&t.to_le_bytes());
+            }
+        }
+        f[0] = u8::from(flat);
+        f[1] = u8::try_from(1 + rng.below(4)).unwrap();
+        poke(a, b, file, &f);
+        set(a, b, ffx_battle::pos::bridge::POS_FILE, file);
+        for j in 0..ACTORS {
+            let p = w.actor(j);
+            // no ride, no current position (it would recurse), places in
+            // the file, defense positions now and then
+            poke(a, b, p + 0x43f, &[0xff]);
+            poke(a, b, p + 0x6dd, &[0]);
+            for o in [0x4fc, 0x4fd, 0x4fe] {
+                poke(a, b, p + o, &[u8::try_from(rng.below(4)).unwrap()]);
+            }
+            poke(a, b, p + 0x4fd, &[u8::try_from(rng.range(2, 12)).unwrap()]);
+            poke(a, b, p + 0x6d4, &[if rng.below(4) == 0 { 1 } else { 0xff }]);
+            for o in [0x608, 0x50d, 0xdcc, 0xde7] {
+                poke(a, b, p + o, &[u8::from(rng.below(2) == 0)]);
+            }
+            let v: Vec<u8> = (0..4).flat_map(|_| float(rng).to_le_bytes()).collect();
+            poke(a, b, p + 0x3b0, &v);
+            poke(a, b, p + 0x534, &float(rng).to_le_bytes());
+        }
+    }
+    // the actors with a character (a battle snapshot's), half the calls
+    let live: Vec<u32> = (0..ACTORS)
+        .filter(|&j| {
+            let chr: u32 = ffx_bridge::Mem::read(b, w.actor(j));
+            !w.synthetic && readable(a, chr, 0x1000)
+        })
+        .collect();
+    for _ in 0..300 {
+        let i = if !live.is_empty() && rng.below(2) == 0 {
+            live[rng.below(u32::try_from(live.len()).unwrap()) as usize]
+        } else {
+            [rng.below(ACTORS), rng.below(0x40), rng.next()][rng.below(8).min(2) as usize]
+        };
+        let p = w.actor(i % ACTORS);
+        poke(
+            a,
+            b,
+            p + 0x511,
+            &[[rng.byte() & 3, rng.byte()][rng.below(6).min(1) as usize]],
+        );
+        for k in 0..4 {
+            let dir = match rng.below(6) {
+                // ten turns or more (or NaN): the radian error line
+                0 => battle_common::world::quiet(rng.next() | 0x7f80_0001),
+                1 => (f32::from(i16::try_from(rng.range(-30000, 30000)).unwrap()) / 7.0).to_bits(),
+                _ => (f32::from(i16::try_from(rng.range(-3000, 3000)).unwrap()) / 500.0).to_bits(),
+            };
+            poke(a, b, p + 0x514 + 4 * k, &dir.to_le_bytes());
+        }
+        if w.synthetic {
+            // no character to place (Ch_ClothReset wants a real one)
+            poke(a, b, p, &[0; 4]);
+        }
+        let seed: Vec<u8> = (0..4).flat_map(|_| float(rng).to_le_bytes()).collect();
+        a.write(frame, &seed).unwrap();
+        poke(a, b, local, &seed);
+        twin("MsSetBtlPosReset", a, b, 0x007a_b2a0, &[i], ALL, |m| {
+            cd::ms_set_btl_pos_reset(m, &stand_in, i, local).cast_unsigned()
+        });
+        let v = a.read(frame, 0x10).unwrap();
+        a.write(local, &v).unwrap();
+        // MsDivVector (the sisters' summoner position) leaves the caller's
+        // saved registers in VF_B's last three words
+        let at = ffx_battle::vector::bridge::VF_B.ptr(a).addr + 4;
+        let r = a.read(at, 12).unwrap();
+        b.write(at, &r).unwrap();
+        same(&format!("MsSetBtlPosReset {i:#x}"), a, b);
+    }
+}
+
+#[test]
+fn leaf_resets_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    resets(&mut a, &mut b, &mut Xorshift(0x3030_0101), true);
+}
+
+#[test]
+fn leaf_resets_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    resets(&mut a, &mut b, &mut Xorshift(0x3030_0102), false);
 }

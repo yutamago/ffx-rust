@@ -3927,6 +3927,13 @@ ported! {
     MsSetChrPosReset @ 0x0079_6220 => extern "C" fn ms_set_chr_pos_reset(i: u32, pos: u32) -> i32 {
         chrdmg::ms_set_chr_pos_reset(&mut mem(), i, pos)
     }
+    /// `MsSetBtlPosReset(i)`: back on the battle place (its position in a
+    /// frame local, as the original's).
+    MsSetBtlPosReset @ 0x007a_b2a0 => extern "C" fn ms_set_btl_pos_reset(i: u32) -> i32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        chrdmg::ms_set_btl_pos_reset(&mut mem(), &crt_trig, i, at)
+    }
     /// `MsStoneMove(i)`.
     MsStoneMove @ 0x007a_2750 => extern "C" fn ms_stone_move(i: u32) {
         script!(s);
