@@ -152,7 +152,17 @@ to 16 u16 ids from `+2`, each record (`MenuWShop_GetRecord`) getting byte
 three: u16 lists ended by 0 (`0x00c5a2f0[i32 0x0186a25c]` for Japanese,
 `0x00c5a2c8` English, `0x00c5a260` for languages 9, 10, 11, `0x00c5a288`
 otherwise); 9, 10 and 11 without an item target count
-`PasswordGetTotalIndex()` instead.
+`PasswordGetTotalIndex()` instead. `MenuItem_TypeKey` (`0x008c4c90`) copies the character
+under the key cursor (`i32 0x0186a268`, five per row) into the first empty
+key-use cell: one byte, two for codes `0x06..0x2f`, three for `04` with a
+byte below `0x30`, then a zero and an empty next cell.
+
+`TkMenuGetDispCommand` (`0x008d2e10`) lists a menu's commands into a word
+array: the entries of `MsMenuStatusNum(0, ..)` from
+`TkMenuGetCommandOffset` (4 bytes each, u16 id at `+2`), filtered by
+`MsGetSaveCommand` (packed; for party members a missing command with a
+menu panel leaves a gap), by membership in place for sub-menu 1, or the
+weapon's and armour's abilities for kind 0.
 `MenuSelList_DrawRows` (`0x008d1620`) draws a two-column selection list:
 nine row pairs from row `first * 2 - 2`, left column at `remapX2(210)`,
 right at `remapX2(970)`, from `y + remapY2(403)` down by `remapY2(77)`.

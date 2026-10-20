@@ -13058,3 +13058,180 @@ fn menu_round27_pad_init_event_movie_wshop_list_and_key_rows_match_the_original(
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` replaced by a stub logging `args` and returning the byte of the
+/// table at `base` indexed by the low byte of argument `k`.
+fn byte_table_stub(t: &mut Twins, f: u32, log: u32, args: &[u8], k: u8, base: u32) {
+    let unused = t.alloc(&[0; 4]);
+    let mut code = seq_code_of(log, f, args, unused, &[]);
+    code.truncate(code.len() - 6);
+    #[rustfmt::skip]
+    code.extend([
+        &[0x0f, 0xb6, 0x44, 0x24, 4 + 4 * k][..], // movzx eax, byte [esp + 4 + 4k]
+        &[0x0f, 0xb6, 0x80], &base.to_le_bytes(), // movzx eax, byte [eax + base]
+        &[0xc3],
+    ].concat());
+    jump_stub(t, f, &code);
+}
+
+/// Text for the key tests: characters, two- and three-byte codes, an
+/// early end now and then.
+fn key_text(t: &mut Twins) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for _ in 0..t.rng.below(10) {
+        let r = t.rng.next().to_le_bytes();
+        match t.rng.below(6) {
+            0 => bytes.extend([6 + r[0] % 0x2a, r[1] | 1]),
+            1 => bytes.extend([4, (r[0] % 0x30) | 1, r[1] | 1]),
+            2 => bytes.extend([4, 0x30 | r[0]]),
+            3 if t.rng.below(4) == 0 => bytes.push(0),
+            _ => bytes.push(0x30 | r[0]),
+        }
+    }
+    bytes.resize(40, 0);
+    bytes
+}
+
+#[test]
+fn menu_round27_type_key_and_disp_command_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_4c90) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // MenuItem_TypeKey
+    let table = seq_stub(&mut t, 0x008c_4f80, log, 0, &[]);
+    let record = t.alloc(&[0; 0x40]);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let english = seq_stub(&mut t, 0x0078_51d0, log, 0, &[]);
+    let total = seq_stub(&mut t, 0x0079_02d0, log, 0, &[]);
+    let entry = seq_stub(&mut t, 0x0079_02a0, log, 1, &[]);
+    let name = seq_stub(&mut t, 0x008b_edd0, log, 1, &[]);
+    let (text_a, text_b) = (t.alloc(&[0; 40]), t.alloc(&[0; 40]));
+    let keys = t.sym(0x0186_a27c);
+    for _ in 0..1500 {
+        t.put(log, start);
+        t.put(table, record);
+        t.put(entry, text_a);
+        t.put(name, text_b);
+        let n = t.rng.pick(&[0u16, 1, 2, 5, 8, 9]);
+        t.put(record + 2, n);
+        for k in 0..8 {
+            let id = u16::try_from(t.rng.below(0x200)).unwrap_or(0);
+            t.put(record + 2 * k, id);
+        }
+        t.put(record + 2, n);
+        let l = t.rng.pick_or_any(&[0, 0, 1, 2, 9, 10, 11, 12]);
+        t.put(lang, l);
+        let e = t.rng.pick_or_any(&[0, 1]);
+        t.put(english, e);
+        let v = t.rng.pick(&[0u32, 1, 3, 8, 0xffff_ffff]);
+        t.put(total, v);
+        for text in [text_a, text_b] {
+            let bytes = key_text(&mut t);
+            t.put_bytes(text, &bytes);
+        }
+        let cursor = t.rng.below(60).cast_signed() - 15;
+        t.put(t.sym(0x0186_a268), cursor);
+        let mode = t.rng.below(3);
+        t.put(t.sym(0x0186_a25c), mode);
+        let target = t.rng.pick_or_any(&[0, 1, 0xffff_ffff, 0x8000_0000]);
+        t.put(t.sym(0x0186_a258), target);
+        for k in 0..12 {
+            let v = if t.rng.below(3) == 0 { 0 } else { t.rng.next() };
+            t.put(keys + 4 * k, v);
+        }
+        t.twin("MenuItem_TypeKey", 0x008c_4c90, &[], VOID, |o| {
+            tk::menu_item_type_key(o, &mut callback);
+            0
+        });
+    }
+
+    // TkMenuGetDispCommand: membership and commands by id from byte tables
+    let flags = t.alloc(&[0; 0x100]);
+    let panels = t.alloc(&[0; 0x100]);
+    let list = t.alloc(&[0; 0x60]);
+    let list_cell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0079_0200, &[0], list_cell, &[]);
+    jump_stub(&mut t, 0x0079_0200, &code);
+    let max = seq_stub(&mut t, 0x008d_2d80, log, 4, &[]);
+    let offset = seq_stub(&mut t, 0x008d_2dc0, log, 4, &[]);
+    byte_table_stub(&mut t, 0x0078_5380, log, &[0], 0, flags);
+    byte_table_stub(&mut t, 0x0078_5020, log, &[0, 1], 1, flags);
+    byte_table_stub(&mut t, 0x0078_50b0, log, &[0], 0, panels);
+    let weapon = seq_stub(&mut t, 0x008a_9c70, log, 1, &[]);
+    let armour = seq_stub(&mut t, 0x008a_9820, log, 1, &[]);
+    let gear = t.alloc(&[0; 0x900]);
+    record_stub(&mut t, 0x007a_bbd0, log, &[0], gear, 8, Some(1));
+    let mut cells = Vec::new();
+    for (f, n) in [(0x0078_5330u32, 1u8), (0x008a_8e20, 0)] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let out = t.alloc(&[0; 0x80]);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.put(list_cell, list);
+        for k in 0..0x18 {
+            let id = if t.rng.below(6) == 0 {
+                100
+            } else {
+                t.rng.below(0x100)
+            };
+            let low = t.rng.next() & 0xffff;
+            t.put(list + 4 * k, low | id << 16);
+        }
+        // half the ids missing, half without a panel
+        for table in [flags, panels] {
+            let bytes: Vec<u8> = (0..0x100).map(|_| t.rng.pick(&[0u8, 0, 1, 0x80])).collect();
+            t.put_bytes(table, &bytes);
+        }
+        for k in 0..0x120 {
+            let v = t.rng.pick(&[0u16, 0xff, 1, 0x1234, 0x100]);
+            t.put(gear + 8 * (k / 4) + 0xe + 2 * (k % 4), v);
+        }
+        let m = t.rng.pick_or_any(&[0, 1, 4, 8, 0xffff_ffff]) & 0x8000_000f;
+        t.put(max, m);
+        let o = t.rng.below(4);
+        t.put(offset, o);
+        let w0 = t.rng.pick_or_any(&[0xff, 0, 1, 0x80]) & 0xff;
+        t.put(weapon, w0);
+        let a0 = t.rng.pick_or_any(&[0xff, 0, 2, 0x81]) & 0xff;
+        t.put(armour, a0);
+        t.scramble_at(out, 0x80);
+        let kind = t.rng.pick_or_any(&[0, 0, 1, 2]);
+        let sub = t.rng.pick_or_any(&[1, 1, 0x40, 0x47, 0x48, 0x3f, 0]);
+        let chr = t.rng.pick_or_any(&[0, 7, 8, 9, 0xffff_ffff]);
+        let a = t.rng.next();
+        t.twin(
+            "TkMenuGetDispCommand",
+            0x008d_2e10,
+            &[kind, sub, a, chr, out],
+            U32,
+            |o| {
+                s(tk::tk_menu_get_disp_command(
+                    o,
+                    kind,
+                    sub,
+                    a,
+                    i(chr),
+                    out,
+                    [local, local + 4],
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+impl Twins {
+    /// Random bytes over `len` bytes at `at` (test memory), in both.
+    fn scramble_at(&mut self, at: u32, len: usize) {
+        let v = self.rng.bytes(len);
+        self.put_bytes(at, &v);
+    }
+}

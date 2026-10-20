@@ -14267,6 +14267,214 @@ pub mod bridge {
         }
         n / 3
     }
+
+    /// `MenuItem_TypeKey()` (`0x008c4c90`, name ours): puts the character
+    /// under the key cursor into the next key-use cell. The layout is
+    /// [`menu_item_key_row_count`]'s, except that languages 9, 10 and 11
+    /// without an item target take the password entries: the cursor
+    /// `i32 0x0186a268` gives row `/ 5` and column `% 5` (toward zero). The
+    /// row's text is `PasswordText_GetEntry(row)` there (nothing past
+    /// `PasswordGetTotalIndex()` rows), else `TOMenuGetNameMes(u16
+    /// list[row])`; the column skips that many characters (codes
+    /// `0x06..=0x2f` are two bytes, `04` with a byte below `0x30` three).
+    /// The cell is the first empty one of the 4-byte cells at `0x0186a280`,
+    /// at most the table's u16 `+2` minus 1. A text that ends before the
+    /// column empties the cell (and the next cell's first byte); otherwise
+    /// the character's bytes go in, then a zero and an empty next cell.
+    pub fn menu_item_type_key<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let table = call(mem, at(mem, 0x008c_4f80), &[]);
+        let lang = at(mem, 0x008a_c2f0);
+        let target = |mem: &M| mem.read::<i32>(at(mem, 0x0186_a258));
+        let list = if call(mem, lang, &[]) == 0 {
+            if call(mem, at(mem, 0x0078_51d0), &[]) == 0 {
+                let mode = mem.read::<u32>(at(mem, 0x0186_a25c));
+                mem.read::<u32>(at(mem, 0x00c5_a2f0).wrapping_add(mode.wrapping_mul(4)))
+            } else {
+                at(mem, 0x00c5_a2c8)
+            }
+        } else if call(mem, lang, &[]) == 10
+            || call(mem, lang, &[]) == 9
+            || call(mem, lang, &[]) == 11
+        {
+            if target(mem) < 0 {
+                table
+            } else {
+                at(mem, 0x00c5_a260)
+            }
+        } else if call(mem, lang, &[]) == 1 {
+            at(mem, 0x00c5_a2c8)
+        } else {
+            at(mem, 0x00c5_a288)
+        };
+        let cursor = mem.read::<i32>(at(mem, 0x0186_a268));
+        let (row, mut column) = (cursor / 5, cursor % 5);
+        let password =
+            (call(mem, lang, &[]) == 10 || call(mem, lang, &[]) == 9 || call(mem, lang, &[]) == 11)
+                && target(mem) < 0;
+        let mut p = if password {
+            let total = call(mem, at(mem, 0x0079_02d0), &[]).cast_signed();
+            if row >= total {
+                return;
+            }
+            call(mem, at(mem, 0x0079_02a0), &[row.cast_unsigned()])
+        } else {
+            let id = mem.read::<u16>(list.wrapping_add(row.cast_unsigned().wrapping_mul(2)));
+            call(mem, at(mem, 0x008b_edd0), &[u32::from(id)])
+        };
+        while column > 0 {
+            let c = mem.read::<u8>(p);
+            p = p.wrapping_add(1);
+            if c == 0 {
+                break;
+            }
+            if c.wrapping_sub(6) <= 0x29 {
+                p = p.wrapping_add(1);
+            } else if c == 4 {
+                let arg = mem.read::<u8>(p);
+                p = p.wrapping_add(1);
+                if arg < 0x30 {
+                    p = p.wrapping_add(1);
+                }
+            }
+            column -= 1;
+        }
+        let keys = at(mem, 0x0186_a280);
+        let mut k = 0u32;
+        while mem.read::<u8>(keys.wrapping_add(4 * k)) != 0 {
+            k += 1;
+        }
+        let cells = i32::from(mem.read::<u16>(table.wrapping_add(2)));
+        if k.cast_signed() >= cells {
+            k = (cells - 1).cast_unsigned();
+        }
+        let key = keys.wrapping_add(k.wrapping_mul(4));
+        if column > 0 {
+            mem.write(key, 0u8);
+            mem.write(key.wrapping_add(4), 0u8);
+            return;
+        }
+        let c = mem.read::<u8>(p);
+        mem.write(key, c);
+        if c.wrapping_sub(6) <= 0x29 {
+            mem.write(key.wrapping_add(1), mem.read::<u8>(p.wrapping_add(1)));
+        } else if c == 4 {
+            let arg = mem.read::<u8>(p.wrapping_add(1));
+            mem.write(key.wrapping_add(1), arg);
+            if arg < 0x30 {
+                mem.write(key.wrapping_add(2), mem.read::<u8>(p.wrapping_add(2)));
+                mem.write(key.wrapping_add(3), 0u8);
+                mem.write(key.wrapping_add(4), 0u8);
+                return;
+            }
+        } else {
+            mem.write(key.wrapping_add(1), 0u8);
+            mem.write(key.wrapping_add(4), 0u8);
+            return;
+        }
+        mem.write(key.wrapping_add(2), 0u8);
+        mem.write(key.wrapping_add(4), 0u8);
+    }
+
+    /// `TkMenuGetDispCommand(kind, sub, a, chr, out)` (`0x008d2e10`,
+    /// Fahrenheit's name): the commands a menu shows, into the words at
+    /// `out`. The list is `MsMenuStatusNum(0, &n)` from entry
+    /// `TkMenuGetCommandOffset(list, kind, sub, a)`, `max =
+    /// TkMenuGetCommandMax(..)` of them (4-byte entries, the u16 id at
+    /// `+2`); `out[..max]` is cleared first.
+    ///
+    /// - `sub` 1: entry by entry, the id when that party member has joined
+    ///   (`MsGetSavePlyJoin`; id 100 asks member 15), else 0. Returns
+    ///   `max`.
+    /// - `kind` 0: the abilities of the character's weapon and armour
+    ///   (`MsGetSaveWeapon` u16 `+0xe..+0x14`), packed, skipping 0 and
+    ///   `0xff`.
+    /// - otherwise the commands `MsGetSaveCommand(chr, id)` has, packed;
+    ///   for a party member (`chr < 8`) a missing one leaves a gap when
+    ///   `MsGetSaveCommandMenuPanel(id)` is set and lowers the count when
+    ///   it is not. (`sub` `0x40..=0x47` also asks `MsGetSavePlayerPtr`,
+    ///   the others `TOGetSaveGilAddress`; both results dropped.)
+    ///
+    /// Returns the count for `chr < 8`, else the commands found. `scratch`
+    /// is the original's two frame words.
+    #[allow(clippy::too_many_arguments)]
+    pub fn tk_menu_get_disp_command<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        sub: u32,
+        a: u32,
+        chr: i32,
+        out: u32,
+        scratch: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> i32 {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let id = chr.cast_unsigned();
+        let list = call(mem, at(mem, 0x0079_0200), &[0, scratch[0]]);
+        let mut max = call(mem, at(mem, 0x008d_2d80), &[list, kind, sub, a]).cast_signed();
+        let offset = call(mem, at(mem, 0x008d_2dc0), &[list, kind, sub, a]);
+        let entries = list.wrapping_add(offset.wrapping_mul(4)).wrapping_add(2);
+        let entry = |mem: &M, k: u32| u32::from(mem.read::<u16>(entries.wrapping_add(4 * k)));
+        let count = max.max(0).cast_unsigned();
+        for k in 0..count {
+            mem.write(out.wrapping_add(4 * k), 0u32);
+        }
+        let mut out = out;
+        if sub == 1 {
+            let join = at(mem, 0x0078_5380);
+            for k in 0..count {
+                let command = entry(mem, k);
+                let member = if command == 100 { 0xf } else { command };
+                if call(mem, join, &[member]) != 0 {
+                    mem.write(out, command);
+                }
+                out = out.wrapping_add(4);
+            }
+            return max;
+        }
+        let mut found = 0;
+        if kind == 0 {
+            let weapon = call(mem, at(mem, 0x008a_9c70), &[id]);
+            let armour = call(mem, at(mem, 0x008a_9820), &[id]);
+            for gear in [weapon, armour] {
+                if gear == 0xff {
+                    continue;
+                }
+                let record = call(mem, at(mem, 0x007a_bbd0), &[gear, scratch[1]]);
+                for field in [0xe, 0x10, 0x12, 0x14] {
+                    let ability = u32::from(mem.read::<u16>(record.wrapping_add(field)));
+                    if ability != 0 && ability != 0xff {
+                        mem.write(out, ability);
+                        out = out.wrapping_add(4);
+                    }
+                }
+            }
+        } else {
+            if sub.wrapping_sub(0x40) <= 7 {
+                call(mem, at(mem, 0x0078_5330), &[id]);
+            } else {
+                call(mem, at(mem, 0x008a_8e20), &[]);
+            }
+            for k in 0..count {
+                let command = entry(mem, k);
+                if call(mem, at(mem, 0x0078_5020), &[id, command]) != 0 {
+                    mem.write(out, command);
+                    out = out.wrapping_add(4);
+                    found += 1;
+                } else if chr < 8 {
+                    if call(mem, at(mem, 0x0078_50b0), &[command]) == 0 {
+                        max -= 1;
+                    } else {
+                        out = out.wrapping_add(4);
+                    }
+                }
+            }
+        }
+        if chr < 8 { max } else { found }
+    }
 }
 
 #[cfg(test)]

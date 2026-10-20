@@ -4363,6 +4363,17 @@ ported! {
     MenuItem_KeyRowCount @ 0x008c_5180 => extern "C" fn menu_item_key_row_count() -> i32 {
         tk::menu_item_key_row_count(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_TypeKey()`: its only caller ignores `eax`.
+    MenuItem_TypeKey @ 0x008c_4c90 => extern "C" fn menu_item_type_key() {
+        tk::menu_item_type_key(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuGetDispCommand(kind, sub, a, chr, out)`: the count.
+    TkMenuGetDispCommand @ 0x008d_2e10 => extern "C" fn tk_menu_get_disp_command(kind: u32, sub: u32, a: u32, chr: i32, out: u32) -> i32 {
+        // the original's two frame words (MsMenuStatusNum's and MsGetSaveWeapon's outs)
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        tk::tk_menu_get_disp_command(&mut mem(), kind, sub, a, chr, out, [scratch, scratch + 4], &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry
