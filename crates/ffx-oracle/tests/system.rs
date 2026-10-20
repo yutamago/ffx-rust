@@ -23513,6 +23513,10 @@ fn round39_gil(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         put(a, b, w + 0x20, list);
         put(a, b, list, rng.next());
         if k % 4 == 3 {
+            // the change window's state, all of it cleared by the original
+            for j in 0..8 {
+                put(a, b, a.rebase(0x0134_0800) + 4 * j, rng.next());
+            }
             let want = eax(a, 0x008a_84d0, &[w]);
             let got = t::init_btl_win_change(b, w, call);
             assert_eq!(got, want, "win change {k}");
@@ -23625,6 +23629,20 @@ fn round39_vu0_relayout(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
             for j in 0..16 {
                 put(a, b, matrix + 4 * j, float(rng));
             }
+            if k % 6 == 2 {
+                // signed zeros: only the last sums stay in memory, so x, y
+                // and z all zero; a first product of -0.0 is kept, a sum
+                // with +0.0 would make the lanes whose products are all
+                // -0.0 come out +0.0
+                for j in 0..3 {
+                    let zero = if rng.next().is_multiple_of(2) {
+                        -0.0f32
+                    } else {
+                        0.0
+                    };
+                    put(a, b, vec_in + 4 * j, zero);
+                }
+            }
             if k % 8 == 0 {
                 put(a, b, a.rebase(0x00c0_a010), float(rng));
             } else {
@@ -23687,4 +23705,126 @@ fn round39_vu0_relayout_matches_the_original_on_the_snapshot() {
         return;
     };
     round39_vu0_relayout(&mut a, &mut b, &mut Xorshift(0x4039_0052));
+}
+
+/// Round 40 group A: the choice and number-entry pad handlers
+/// (`TOFuncPadMessageSelect`, `TOFuncPadMessageInputValue`) over a logging
+/// `SndPlayClick`, on random line records and pad words. The number entry
+/// is called through a stub that sets `esi` to the window index, as
+/// `TOControlMessageWindow` has it when the cursor's column 0 reads the
+/// byte below the digit buffer (the top byte of the saved `esi`).
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    clippy::similar_names
+)]
+fn round40_pad_message(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let cell = alloc(a, b, 4);
+    let stands: Vec<Stand> = vec![(0x0088_6ba0, vec![0], vec![], ret_cell(cell))];
+    round38_stands(a, b, cursor, 0, &stands);
+    // push esi; mov esi, [esp+8]; push esi; mov eax, f; call eax;
+    // add esp, 4; pop esi; ret
+    let mut code = vec![0x56, 0x8b, 0x74, 0x24, 0x08, 0x56, 0xb8];
+    code.extend_from_slice(&a.rebase(0x008b_62b0).to_le_bytes());
+    code.extend_from_slice(&[0xff, 0xd0, 0x83, 0xc4, 0x04, 0x5e, 0xc3]);
+    let input = stand_in8(a, b, 0x80, &code);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let records = alloc(a, b, 8 * 0x40);
+    let slots = a.rebase(0x0186_8a90);
+    let (trigger, repeat) = (a.rebase(0x025d_09d4), a.rebase(0x025d_09d6));
+    let bits = |rng: &mut Xorshift, set: &[u16]| {
+        set.iter()
+            .filter(|_| rng.next().is_multiple_of(3))
+            .fold(0u16, |v, &b| v | b)
+            | if rng.next().is_multiple_of(8) {
+                rng.next() as u16
+            } else {
+                0
+            }
+    };
+    for k in 0..6000u32 {
+        put(a, b, cursor, log);
+        put(a, b, cell, rng.next());
+        let w = rng.next() % 8;
+        for i in 0..8u32 {
+            let r = records + 0x40 * i;
+            put(a, b, slots + 4 * i, r);
+            for j in 0..0x10 {
+                put(a, b, r + 4 * j, rng.next());
+            }
+            let start = (rng.next() % 4) as i8;
+            let end = start + 1 + (rng.next() % (9 - start as u32)) as i8;
+            // outside the columns, but with column `end - cursor` inside
+            // the digit buffer (0..=16) after a move
+            let column = if rng.next().is_multiple_of(8) {
+                end - 1 - (rng.next() % 15) as i8
+            } else {
+                start - 1 + (rng.next() % (end - start + 2) as u32) as i8
+            };
+            put(a, b, r + 2, column);
+            put(a, b, r + 4, start);
+            put(a, b, r + 5, end);
+            let (picks, made) = (rng.next() % 6, rng.next() % 6);
+            put(a, b, r + 6, picks as u8);
+            put(
+                a,
+                b,
+                r + 7,
+                if rng.next().is_multiple_of(8) {
+                    (rng.next() % 0x40) as u8 - 0x18
+                } else {
+                    made as u8
+                },
+            );
+            if rng.next().is_multiple_of(2) {
+                put(a, b, r + 3, column);
+            }
+            let value = match rng.next() % 4 {
+                0 => rng.next(),
+                1 => rng.next() % 1000,
+                _ => rng.next() % 1_000_000_000,
+            };
+            put(a, b, r + 0xc, value);
+            if rng.next().is_multiple_of(4) {
+                // nines and zeros in a row
+                let digits = (0..9).fold(0u32, |v, _| {
+                    v * 10 + [0, 9, 0, 9, 5][(rng.next() % 5) as usize]
+                });
+                put(a, b, r + 0xc, digits);
+            }
+        }
+        put(a, b, trigger, bits(rng, &[0x20, 0x40]));
+        put(a, b, repeat, bits(rng, &[0x1000, 0x2000, 0x4000, 0x8000]));
+        if k % 2 == 0 {
+            let want = eax(a, 0x008b_64e0, &[w]);
+            let got = t::func_pad_message_select(b, w, call);
+            if Mem::read::<u32>(a, cursor) != log {
+                assert_eq!(got, want, "select {k}");
+            }
+        } else {
+            a.call(input, Conv::Cdecl, &[w]).unwrap();
+            t::func_pad_message_input_value(b, w, call);
+        }
+        same_memory(&format!("pad message {k}"), a, b);
+    }
+}
+
+#[test]
+fn round40_pad_message_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round40_pad_message(&mut a, &mut b, &mut Xorshift(0x4040_0011));
+}
+
+#[test]
+fn round40_pad_message_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round40_pad_message(&mut a, &mut b, &mut Xorshift(0x4040_0012));
 }

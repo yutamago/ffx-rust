@@ -1264,6 +1264,14 @@ ported! {
     TOFuncPadMessageNormal @ 0x008b_64a0 => extern "C" fn to_func_pad_message_normal(w: u32) -> u32 {
         tolib::bridge::func_pad_message_normal(&mut mem(), w, call_sym)
     }
+    /// `TOFuncPadMessageSelect(w)`.
+    TOFuncPadMessageSelect @ 0x008b_64e0 => extern "C" fn to_func_pad_message_select(w: u32) -> u32 {
+        tolib::bridge::func_pad_message_select(&mut mem(), w, call_sym)
+    }
+    /// `TOFuncPadMessageInputValue(w)`.
+    TOFuncPadMessageInputValue @ 0x008b_62b0 => extern "C" fn to_func_pad_message_input_value(w: u32) {
+        tolib::bridge::func_pad_message_input_value(&mut mem(), w, call_sym);
+    }
     /// `TOMenuEndScreenX2_008e2790(w)`.
     TOMenuEndScreenX2_008e2790 @ 0x008e_2790 => extern "C" fn to_menu_end_screen_x2(w: u32) -> u32 {
         tolib::bridge::menu_end_screen_x2(&mut mem(), w, call_sym)
