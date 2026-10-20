@@ -3933,4 +3933,84 @@ ported! {
     MenuItem_OpenTargetWindow_008c9240 @ 0x008c_9240 => extern "C" fn menu_item_open_target_window(aeons: u32, a: u32, b: u32) -> u32 {
         tk::menu_item_open_target_window(&mut mem(), aeons, a, b, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2ItemRequireWindow(x, y, item, need)`: the eax the original leaves.
+    TkMn2ItemRequireWindow @ 0x008c_1c90 => extern "C" fn tk_mn2_item_require_window(x: i32, y: i32, item: u32, need: i32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::tk_mn2_item_require_window(&mut m, [x, y], item, need, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSave_KindText(kind, base)`: the text.
+    MenuSave_KindText @ 0x008b_5560 => extern "C" fn menu_save_kind_text(kind: u32, base: u32) -> u32 {
+        tk::menu_save_kind_text(&mut mem(), kind, base, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_EquipBought(id)`: `TkMsSetSaveParam`'s result.
+    MenuWShop_EquipBought @ 0x008d_9120 => extern "C" fn menu_wshop_equip_bought(id: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_wshop_equip_bought(&mut m, id, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuDrawChrNameOrCommand(chr, x, y, colour)`: the callee's result.
+    MenuDrawChrNameOrCommand @ 0x008c_0ec0 => extern "C" fn menu_draw_chr_name_or_command(chr: u32, x: u32, y: u32, colour: u32) -> u32 {
+        tk::menu_draw_chr_name_or_command(&mut mem(), [chr, x, y, colour], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuDrawLayer(layer)`: void.
+    TkMenuDrawLayer @ 0x008a_9690 => extern "C" fn tk_menu_draw_layer(layer: i32) {
+        tk::tk_menu_draw_layer(&mut mem(), layer, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuCloseAll()`: `TOSeqCtrl`'s result.
+    TkMenuCloseAll @ 0x008a_a200 => extern "C" fn tk_menu_close_all() -> u32 {
+        tk::tk_menu_close_all(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSaveLoad_SyncToggle()`: 1 when done or failed, 0 while waiting.
+    MenuSaveLoad_SyncToggle @ 0x008b_4da0 => extern "C" fn menu_save_load_sync_toggle() -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_save_load_sync_toggle(&mut m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_GrowStat(slot, chr)`: `TkMsSetSaveParam`'s result.
+    MenuSummon_GrowStat @ 0x008c_d240 => extern "C" fn menu_summon_grow_stat(slot: i32, chr: u32) -> u32 {
+        tk::menu_summon_grow_stat(&mut mem(), slot, chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkInitStartMap()`: void.
+    TkInitStartMap @ 0x0088_e880 => extern "C" fn tk_init_start_map() {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return;
+        };
+        tk::tk_init_start_map(&mut m, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSaveLoad_OpenWindow(mode)`: the window.
+    MenuSaveLoad_OpenWindow @ 0x008b_5000 => extern "C" fn menu_save_load_open_window(mode: u32) -> u32 {
+        tk::menu_save_load_open_window(&mut mem(), mode, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_EquipLoss(id)`: bit 0 HP, bit 1 MP lost.
+    MenuWShop_EquipLoss @ 0x008d_8520 => extern "C" fn menu_wshop_equip_loss(id: u32) -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_wshop_equip_loss(&mut m, id, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_OpenCommandWindow()`: `MenuWShop_OpenSubWindow4`'s result.
+    MenuWShop_OpenCommandWindow @ 0x008d_8110 => extern "C" fn menu_wshop_open_command_window() -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_wshop_open_command_window(&mut m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_Start()`: the command window's result.
+    MenuWShop_Start @ 0x008d_a7a0 => extern "C" fn menu_wshop_start() -> u32 {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return 0;
+        };
+        tk::menu_wshop_start(&mut m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
 }
