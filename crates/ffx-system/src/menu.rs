@@ -650,4 +650,111 @@ pub mod bridge {
         call(mem, 0x008b_ea20, &[]);
         call(mem, SYNC, &[])
     }
+
+    /// The ability menu's per-character list positions (`i16[8]` each):
+    /// the cursor row, the cursor column and the top row.
+    pub const ABILITY_CURSOR_ROW: u32 = 0x0186_a3b4;
+    pub const ABILITY_CURSOR_COLUMN: u32 = 0x0186_a3c4;
+    pub const ABILITY_TOP_ROW: u32 = 0x0186_a3d4;
+
+    /// `MenuAbility_OpenWindow_008c6520(w)` (own name): the ability menu's
+    /// two-column list window. `0x0186a40c` = 2, `w + 0x1c` cleared, the
+    /// list window opened (`MenuItem_OpenListWindow_008c9140(2)` into
+    /// `g_TkMenuItemWindow`) and cleared. Then for each character 0..8 the
+    /// list is built (`MenuAbility_RefreshList(chr)`) and its positions
+    /// set from the first usable entry (`g_TkMenuItemFirstUsable`, a
+    /// negative one stored back as 0): column `slot & 1` (of the whole
+    /// word), row `slot / 2`, top row `row - visible / 2 + 1` (`visible` =
+    /// `u16 window + 0x3a`), at most `(rows + 1) / 2 - visible`
+    /// (`g_TkMenuItemRows`) and at least 0. The window takes the current
+    /// player's (`TkMenuGetCurrentPlayer`, asked again for each field):
+    /// `+0x48` row, `+0x58` column (`i32`), `+0x32`/`+0x34` top row, `+0x30`
+    /// the line count and `+0x94` the entry count (`i32`), these two from
+    /// arrays in the original's frame; its list is built again,
+    /// `0x0186a408` cleared, `TOSeqInitScene(1)` (its `eax` returned).
+    ///
+    /// The frame arrays (counts then line counts, 8 `u16` each) are
+    /// indexed by the player unchecked: entry counts 8..16 read the line
+    /// counts as the original does; anything else (the stack cookie
+    /// beyond) reads 0 here, a player number the game never returns.
+    pub fn ability_open_window<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const REFRESH: u32 = 0x008c_6800;
+        const PLAYER: u32 = 0x008a_9860;
+        let window_at = mem.rebase(0x0186_a394);
+        let first_at = mem.rebase(0x0186_a3b0);
+        let count_at = mem.rebase(0x0186_a38c);
+        let (row_at, column_at, top_at) = (
+            mem.rebase(ABILITY_CURSOR_ROW),
+            mem.rebase(ABILITY_CURSOR_COLUMN),
+            mem.rebase(ABILITY_TOP_ROW),
+        );
+        let entry = |base: u32, i: u32| base.wrapping_add(i.wrapping_mul(2));
+        mem.write(mem.rebase(0x0186_a40c), 2u32);
+        mem.write(w.wrapping_add(0x1c), 0u32);
+        let window = call(mem, 0x008c_9140, &[2]);
+        mem.write(window_at, window);
+        call(mem, 0x008c_93a0, &[]);
+        // counts[0..8] then lines[0..8], as in the original's frame
+        let mut frame = [0u16; 16];
+        for i in 0..8u32 {
+            call(mem, REFRESH, &[i]);
+            let rows: i32 = mem.read(count_at);
+            let lines = rows.wrapping_add(1) / 2;
+            let mut first = mem.read::<i16>(first_at);
+            if first < 0 {
+                mem.write(first_at, 0u16);
+                first = 0;
+            }
+            let column = low16(mem.read::<u32>(first_at) & 1);
+            mem.write(entry(column_at, i), column);
+            let window: u32 = mem.read(window_at);
+            let row = low16((i32::from(first) / 2).cast_unsigned());
+            mem.write(entry(row_at, i), row);
+            let visible = mem.read::<u16>(window.wrapping_add(0x3a));
+            let top = row.wrapping_sub(visible >> 1).wrapping_add(1);
+            mem.write(entry(top_at, i), top);
+            frame[i as usize] = low16(rows.cast_unsigned());
+            let visible = i32::from(mem.read::<u16>(window.wrapping_add(0x3a)));
+            frame[8 + i as usize] = low16(lines.cast_unsigned());
+            let last = lines - visible;
+            if i32::from(top.cast_signed()) >= last {
+                mem.write(entry(top_at, i), low16(last.cast_unsigned()));
+            }
+            if mem.read::<i16>(entry(top_at, i)) < 0 {
+                mem.write(entry(top_at, i), 0u16);
+            }
+        }
+        let frame_at = |k: u32| {
+            usize::try_from(k)
+                .ok()
+                .and_then(|k| frame.get(k))
+                .copied()
+                .unwrap_or(0)
+        };
+        let player = call(mem, PLAYER, &[]);
+        let v: u16 = mem.read(entry(row_at, player));
+        mem.write(mem.read::<u32>(window_at).wrapping_add(0x48), v);
+        let player = call(mem, PLAYER, &[]);
+        let v = i32::from(mem.read::<i16>(entry(column_at, player)));
+        mem.write(mem.read::<u32>(window_at).wrapping_add(0x58), v);
+        let player = call(mem, PLAYER, &[]);
+        let v: u16 = mem.read(entry(top_at, player));
+        let window: u32 = mem.read(window_at);
+        mem.write(window.wrapping_add(0x32), v);
+        mem.write(window.wrapping_add(0x34), v);
+        let player = call(mem, PLAYER, &[]);
+        let v = frame_at(player.wrapping_add(8));
+        mem.write(mem.read::<u32>(window_at).wrapping_add(0x30), v);
+        let player = call(mem, PLAYER, &[]);
+        let v = i32::from(frame_at(player).cast_signed());
+        mem.write(mem.read::<u32>(window_at).wrapping_add(0x94), v);
+        let player = call(mem, PLAYER, &[]);
+        call(mem, REFRESH, &[player]);
+        mem.write(mem.rebase(0x0186_a408), 0u32);
+        call(mem, 0x008a_eec0, &[1])
+    }
 }

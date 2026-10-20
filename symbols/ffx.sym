@@ -10647,6 +10647,7 @@
 0x008c5440 function MenuItem_SetTarget        # (chr) 0x0186a258 = chr; own name
 0x008c5450 function TkMenuCtrlItem            # fh v3:exact 0x008c5420
 0x008c60b0 function TkMenuCtrlAbility         # fh v3:exact 0x008c6080
+0x008c6520 function MenuAbility_OpenWindow_008c6520 # cdecl(w): the ability menu's two-column list window: 0x0186a40c = 2, w+0x1c = 0, g_TkMenuItemWindow = MenuItem_OpenListWindow_008c9140(2), TkMenuItemClearWindow; per character 0..8 MenuAbility_RefreshList(chr), g_TkMenuItemFirstUsable (negative stored as 0) gives column slot&1, row slot/2, top row - visible/2 + 1 (visible u16 window+0x3a) clamped to 0..(g_TkMenuItemRows+1)/2 - visible; the current player's (TkMenuGetCurrentPlayer, asked per field) row -> +0x48, column -> i32 +0x58, top -> +0x32/+0x34, line count -> +0x30, entry count -> i32 +0x94 (the last two from u16[8] frame arrays indexed unchecked); RefreshList(player), 0x0186a408 = 0, TOSeqInitScene(1) (eax returned); ported (system r40, menu::bridge::ability_open_window); name ours
 0x008c6710 function TOAmapGetItemType         # fh v3:exact 0x008c66e0
 0x008c6730 function TOAmapMakeItemList        # fh v3:exact 0x008c6700
 0x008c6790 function TkCalcImportantListMax    # fh v3:exact 0x008c6760
@@ -16570,6 +16571,9 @@
 0x0186a394 label    g_TkMenuItemWindow        # the item menu's window (TkMenuCtrlItem, TkMenuItemCloseWindow, TkMenuItemClearWindow)
 0x0186a3a8 label    g_TkMenuAbilityCommand    # u16 the ability menu's command id (set by 0x008c6bc0; Cmd_HealAmount, MsGetRomPlyCommand in MenuAbility_ApplyHeal)
 0x0186a3b0 label    g_TkMenuItemFirstUsable   # i16 inventory slot of the first usable item, -1 for none (TkMenuItemRefresh)
+0x0186a3b4 label g_TkMenuAbilityCursorRow # i16[8] per character: the ability list's cursor row (first usable / 2), set by MenuAbility_OpenWindow_008c6520; name ours
+0x0186a3c4 label g_TkMenuAbilityCursorColumn # i16[8] per character: the cursor column (first usable & 1), MenuAbility_OpenWindow_008c6520; name ours
+0x0186a3d4 label g_TkMenuAbilityTopRow # i16[8] per character: the list's top row, MenuAbility_OpenWindow_008c6520; name ours
 0x0186a3e4 label    g_TkMenuItemGearCounts    # u16 [owner 0..6][weapon, armour] (MenuItem_CountGearByOwner)
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
 0x0186a428 label    g_TkMenuDummyAnalog       # 8 bytes; TOMenuGetDummyAnalogControler(axis) returns +4, +6, +0, +2 for axes 0-3, else 0x80

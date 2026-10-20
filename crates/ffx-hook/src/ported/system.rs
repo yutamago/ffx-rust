@@ -1280,6 +1280,10 @@ ported! {
         let scratch = frame.at();
         menu::bridge::draw_save_choice(&mut mem(), scratch, call_sym)
     }
+    /// `MenuAbility_OpenWindow_008c6520(w)`.
+    MenuAbility_OpenWindow_008c6520 @ 0x008c_6520 => extern "C" fn menu_ability_open_window(w: u32) -> u32 {
+        menu::bridge::ability_open_window(&mut mem(), w, call_sym)
+    }
     /// `TOOpenBtlWinLeft()`.
     TOOpenBtlWinLeft @ 0x008a_8620 => extern "C" fn to_open_btl_win_left() -> u32 {
         tolib::bridge::open_btl_win_side(&mut mem(), false, call_sym)

@@ -24071,3 +24071,131 @@ fn round40_save_choice_matches_the_original_on_the_snapshot() {
     };
     round40_save_choice(&mut a, &mut b, &mut Xorshift(0x4040_0032));
 }
+
+/// Round 40 group D: `MenuAbility_OpenWindow_008c6520` over logging
+/// stand-ins: `MenuAbility_RefreshList` stores the next two words of a
+/// table as the row count and the first usable slot,
+/// `TkMenuGetCurrentPlayer` returns words of its own table (mostly 0..8,
+/// sometimes 8..16, which reads the frame's line counts).
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+fn round40_ability_window(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let players = alloc(a, b, 4);
+    let player_table = alloc(a, b, 0x40);
+    let window = alloc(a, b, 0x100);
+    let w = alloc(a, b, 0x40);
+    let mut refresh = Vec::new();
+    for at in [a.rebase(0x0186_a38c), a.rebase(0x0186_a3b0)] {
+        // mov ecx, [counter]; mov edx, [table + ecx*4]; mov [at], edx;
+        // inc dword [counter]
+        refresh.extend_from_slice(&[0x8b, 0x0d]);
+        refresh.extend_from_slice(&counter.to_le_bytes());
+        refresh.extend_from_slice(&[0x8b, 0x14, 0x8d]);
+        refresh.extend_from_slice(&table.to_le_bytes());
+        refresh.extend_from_slice(&[0x89, 0x15]);
+        refresh.extend_from_slice(&at.to_le_bytes());
+        refresh.extend_from_slice(&[0xff, 0x05]);
+        refresh.extend_from_slice(&counter.to_le_bytes());
+    }
+    let mut open = vec![0xb8];
+    open.extend_from_slice(&window.to_le_bytes());
+    let seq = round38_seq(counter, table);
+    let stands: Vec<Stand> = vec![
+        (0x008c_9140, vec![0], vec![], open),
+        (0x008c_93a0, vec![], vec![], vec![]),
+        (0x008c_6800, vec![0], vec![], refresh),
+        (
+            0x008a_9860,
+            vec![],
+            vec![],
+            round38_seq(players, player_table),
+        ),
+        (0x008a_eec0, vec![0], vec![], seq),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        put(a, b, players, 0u32);
+        for j in 0..0x40 {
+            let v = match j % 2 {
+                // row counts
+                0 => match rng.next() % 6 {
+                    0 => rng.next(),
+                    1 => (rng.next() % 8).wrapping_sub(4),
+                    _ => rng.next() % 120,
+                },
+                // first usable slots (high half random)
+                _ => match rng.next() % 4 {
+                    0 => rng.next(),
+                    1 => rng.next() | 0xffff,
+                    _ => (rng.next() & 0xffff_0000) | (rng.next() % 120),
+                },
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        for j in 0..0x10 {
+            // the fourth asks for the line count, whose frame array ends at
+            // the stack cookie: 0..8 there; the fifth for the entry count
+            // (0..16 reads the frame); the others index globals (past the
+            // top rows into g_TkMenuItemGearCounts from 16 on)
+            let p = match j {
+                3 => rng.next() % 8,
+                4 => rng.next() % 16,
+                _ if rng.next().is_multiple_of(4) => rng.next() % 24,
+                _ => rng.next() % 8,
+            };
+            put(a, b, player_table + 4 * j, p);
+        }
+        for j in 0..0x40 {
+            put(a, b, window + 4 * j, rng.next());
+        }
+        put(
+            a,
+            b,
+            window + 0x3a,
+            [0u16, 1, 4, 6, 7, 12, rng.next() as u16][(rng.next() % 7) as usize],
+        );
+        for j in 0..0x10 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        for at in [
+            0x0186_a3e4u32,
+            0x0186_a3e8,
+            0x0186_a3ec,
+            0x0186_a3f0,
+            0x0186_a408,
+            0x0186_a40c,
+        ] {
+            put(a, b, a.rebase(at), rng.next());
+        }
+        let want = eax(a, 0x008c_6520, &[w]);
+        assert_eq!(
+            want,
+            t::ability_open_window(b, w, call),
+            "ability window {k}"
+        );
+        same_memory(&format!("ability window {k}"), a, b);
+    }
+}
+
+#[test]
+fn round40_ability_window_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round40_ability_window(&mut a, &mut b, &mut Xorshift(0x4040_0041));
+}
+
+#[test]
+fn round40_ability_window_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round40_ability_window(&mut a, &mut b, &mut Xorshift(0x4040_0042));
+}
