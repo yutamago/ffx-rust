@@ -732,6 +732,40 @@ Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
   0x2000000d/0x20000010, 0x12412eee and the texture words; each sets `w
   +0x1f0` 0x8001 and spins on the GS; 1, 3, 5 and anything else end.
   Returns `[w +0x334] + 0x40`.
+- `op_md_flag80_00a6acb0(obj, init)` (`0x00a6acb0`, flag `0x80` without
+  `0x300`): `0x00a6c3d0` without the fog words: `w +0x390` = `(i16 obj
+  +0x12 << 4) + [w +0x304]`, `+0x394` = `[w +0x304]`; lights by `[w
+  +0x300]`: flag `0x40` `opc(obj, w + 0x300, w)` (a bare `ret`), else
+  with `i16 obj +0x14` nonzero and no flag `0x20`
+  `op_matrix_light4_vector` into a local nothing reads. Same GS words and
+  waits; types 1, 3, 5, 7 act as 0, 2, 4, 6 (jumps `0x00a6b1f8`).
+  Returns `[w +0x334]` (no `+0x40`).
+- `op_md_one8(obj, init)` (`0x00a6b220`, none of `0x2000`, 4, `0x80`,
+  `0x300`) and `op_md_one8_fog` (`0x00a6c8b0`, with one of `0x300`): the
+  same `0x2800`-byte start (size check, init block, `w +0x334` rounded
+  to 64). `one8` has `0x00a6acb0`'s vertex words and lights, where flag
+  `0x40` first sets `[w +0x344]` to `[w +0x320]` when 0; `_fog` has no
+  lights and the fog vertex words (`+0x394`, `+0x39c`). GS words as
+  `0x00a6c3d0` plus `+0x100` 0x20000000, `+0x108` 0, `+0x2e0` 0x8001,
+  `+0x2e8` 0xe, and `+0x150` from `g_OpMdGsWordsB_011a07f0` with init
+  flag 8. No GS waits. Tags (jumps `0x00a6b6f0` / `0x00a6cd18`): `w
+  +0x1f0` 0x8001 and `+0x1f8` 0x414141 (0, 1), 0x41414141 (4, 5),
+  0x12412412 with the texture words (2, 3, 6, 7); an odd type ends the
+  chain with `dbgPrintf` (`"one8 draw mode unsuport light program"`,
+  `0x00b7c3e0`, after its mode words; `_fog`: `"(op)\top_md0_onef() light
+  no support !"`, `0x00b7c42c`, without them) and `debug_exit_trace(1)`.
+  Both return `[w +0x334] + 0x40`.
+- `op1_mdc_draw(list, init, m, view)` (`0x00a68c90`): `[init +0x20]` and
+  `[init +0x2c]` point at two local matrices `W` and `L` during the call;
+  `view` (`g_Op3dListener`, `0x0113fcd0`, when 0) is copied to a third,
+  `V`. Each of the `u16 list +4` entries (packet, matrix; 16 bytes from
+  `list + 0x10`, through `get_ptr32_func`, the identity): the matrix's
+  translation times 1000 (`f64`, `0x00b0dba0`), `L = op_mul_m(m, matrix)`,
+  the translation times 0.001 (`f64` `0x00b47c68`, an `f32` 0.001
+  widened), each an `f32` store, so both roundings stay; `W =
+  op_mul_m(V, L)`, `op_md_chara_path3(packet, init, [list])`. At the end
+  `[init +0x20]` is restored, but `[init +0x2c]` gets the old `[init
+  +0x34]`, which is also the `eax` left.
 
 ### `opus_0283` draw
 

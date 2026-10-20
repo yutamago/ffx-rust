@@ -1821,3 +1821,201 @@ fn opus_0283_draw_matches_the_original() {
         }
     }
 }
+
+// ---- round 7: the 0x2800-byte md paths, op1_mdc_draw ----------------------
+
+/// Runs one of the `0x2800`-byte `op1_md_draw` paths (`sym`) against
+/// `port(oracle, obj, init, frame)` on random packets: tags of `types`
+/// ended by one of `ends`, the size check's stand-in returning nonzero now
+/// and then, lights through `opc`'s recorder (flag `0x40`) or the real
+/// `op_matrix_light4_vector`, `dbgPrintf`/`debug_exit_trace` recorded.
+/// Checks that each recorder ran.
+fn md_2800(
+    sym: u32,
+    seed: u32,
+    types: &[i8],
+    ends: &[i8],
+    lights: bool,
+    port: impl Fn(&mut Oracle, u32, u32, u32) -> u32,
+) {
+    let what = format!("{sym:#010x}");
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(seed);
+        let (obj, init, spr) = (p.alloc(0x400), p.alloc(0x60), p.alloc(0x2c00));
+        let mats = [p.alloc(0x40), p.alloc(0x40)];
+        let skip = p.alloc(4);
+        let size = deref_recorder_with(&mut p, 0x00a6_98b0, &[0, 0, 0], Some(skip));
+        let opc = deref_recorder(&mut p, 0x00a6_d370, &[0, 0, 0]);
+        // its output is a local nothing reads: a recorder shows the calls
+        let vector_log = deref_recorder(&mut p, 0x00a6_cd80, &[0, 0, 0]);
+        let dbg = deref_recorder(&mut p, 0x0062_f500, &[0]);
+        let exit = deref_recorder(&mut p, 0x0062_f510, &[0]);
+        let mut skipped = 0;
+        for round in 0..2000 {
+            scene_lights(&mut p, &mut rng);
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(init, 0x60, &mut rng);
+            p.fill(spr, 0x400, &mut rng);
+            for sym in [0x011a_0740u32, 0x011a_07f0, 0x011a_0820] {
+                let at = p.sym(sym);
+                p.fill(at, 0x10, &mut rng);
+            }
+            spr_top(&mut p, &mut rng, spr);
+            let s = if rng.chance(5) { rng.next() | 1 } else { 0 };
+            p.set(skip, s);
+            skipped += u32::from(s != 0);
+            for (k, at) in [0x28u32, 0x2c].into_iter().enumerate() {
+                matrix(&mut p, &mut rng, mats[k]);
+                p.set(init + at, mats[k]);
+            }
+            let flags = rng.next() & !0x68 | rng.pick(&[0u32, 0x20, 0x40, 0x60, 8, 0x48]);
+            p.set(init, flags);
+            if rng.chance(50) {
+                p.set(init + 0x44, 0u32);
+            }
+            p.set(obj + 4, 0x40u32);
+            p.set(obj + 0x12, i16::try_from(rng.below(6)).unwrap() - 2);
+            p.set(obj + 0x14, rng.pick(&[0i16, 1, 3, -1]));
+            for at in [0x38u32, 0x3c] {
+                if rng.chance(50) {
+                    p.set(init + at, 0u32);
+                }
+            }
+            if rng.chance(40) {
+                p.set(init + 8, 0u16);
+            } else if rng.chance(20) {
+                p.set(init + 8, 0x100u16);
+            }
+            let (n, end) = (rng.below(8), rng.pick(ends));
+            md_tags(&mut p, &mut rng, obj + 0x40, types, n, end);
+            if round % 7 == 0 {
+                p.set(obj + 0x41, rng.pick(ends));
+            }
+            check_deep_n(&mut p, &what, sym, &[obj, init], |o, frame| {
+                Some(port(o, obj, init, frame))
+            });
+        }
+        assert!(skipped > 0 && p.get::<u32>(size) > 0, "{}: {what}", p.name);
+        if lights {
+            assert!(p.get::<u32>(opc) > 0, "{}: {what}: opc", p.name);
+            assert!(
+                p.get::<u32>(vector_log) > 0,
+                "{}: {what}: op_matrix_light4_vector",
+                p.name
+            );
+        }
+        if ends.iter().any(|&e| e & 1 != 0 && (0..8).contains(&e)) {
+            for (log, name) in [(dbg, "dbgPrintf"), (exit, "debug_exit_trace")] {
+                assert!(p.get::<u32>(log) > 0, "{}: {what}: {name}", p.name);
+            }
+        }
+    }
+}
+
+#[test]
+fn md_path_flag80_matches_the_original() {
+    md_2800(
+        0x00a6_acb0,
+        0x00a6_acb0,
+        &[0, 1, 2, 3, 4, 5, 6, 7],
+        &[8, 0x20, -1, -0x80, 0x7f],
+        true,
+        |o, obj, init, frame| {
+            hi_draw::bridge::op_md_flag80(o, obj, init, frame, &mut call_original)
+        },
+    );
+}
+
+#[test]
+fn md_path_one8_matches_the_original() {
+    md_2800(
+        0x00a6_b220,
+        0x00a6_b220,
+        &[0, 2, 4, 6],
+        &[1, 3, 5, 7, 8, 0x20, -1, -0x80, 0x7f],
+        true,
+        |o, obj, init, frame| hi_draw::bridge::op_md_one8(o, obj, init, frame, &mut call_original),
+    );
+}
+
+#[test]
+fn md_path_one8_fog_matches_the_original() {
+    md_2800(
+        0x00a6_c8b0,
+        0x00a6_c8b0,
+        &[0, 2, 4, 6],
+        &[1, 3, 5, 7, 8, 0x20, -1, -0x80, 0x7f],
+        false,
+        |o, obj, init, _| hi_draw::bridge::op_md_one8_fog(o, obj, init, &mut call_original),
+    );
+}
+
+#[test]
+fn md_path_op1_mdc_draw_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_8c90);
+        let (list, init, m, view) = (p.alloc(0x50), p.alloc(0x60), p.alloc(0x40), p.alloc(0x40));
+        let mats = [p.alloc(0x40), p.alloc(0x40), p.alloc(0x40), p.alloc(0x40)];
+        // op_md_chara_path3's stand-in copies the two matrices [init +0x20]
+        // and [init +0x2c] point at (locals of the caller) to `seen`, then
+        // logs (packet, init words 0..12, chr)
+        let seen = p.alloc(0x80);
+        let mut prefix = vec![
+            0x56, 0x57, 0x51, // push esi; push edi; push ecx
+            0x8b, 0x44, 0x24, 0x14, // mov eax, [esp + 0x14] (init)
+            0x8b, 0x70, 0x20, // mov esi, [eax + 0x20]
+            0xbf, // mov edi, seen
+        ];
+        prefix.extend(seen.to_le_bytes());
+        prefix.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 16; rep movsd
+        prefix.extend([0x8b, 0x70, 0x2c]); // mov esi, [eax + 0x2c]
+        prefix.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]);
+        prefix.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        let log = prefixed_recorder(&mut p, 0x00a6_a3a0, &prefix, &[0, 12, 0], None);
+        let listener = p.sym(0x0113_fcd0);
+        let mut counts = [0u32; 4];
+        for _ in 0..1000 {
+            p.fill(init, 0x60, &mut rng);
+            matrix(&mut p, &mut rng, m);
+            matrix(&mut p, &mut rng, view);
+            if !p.snapshot() || rng.chance(50) {
+                matrix(&mut p, &mut rng, listener);
+            }
+            for &at in &mats {
+                matrix(&mut p, &mut rng, at);
+            }
+            p.fill(list, 0x50, &mut rng);
+            let n = rng.below(4);
+            counts[n as usize] += 1;
+            p.set(list + 4, u16::try_from(n).unwrap());
+            for k in 0..n {
+                let e = list + 0x10 + 0x10 * k;
+                let mat = rng.pick(&mats);
+                p.set(e + 4, mat);
+            }
+            let v = if rng.chance(30) { 0 } else { view };
+            check_deep_n(
+                &mut p,
+                "op1_mdc_draw",
+                0x00a6_8c90,
+                &[list, init, m, v],
+                |o, frame| {
+                    Some(hi_draw::bridge::op1_mdc_draw(
+                        o,
+                        list,
+                        init,
+                        m,
+                        v,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(
+            counts.iter().all(|&c| c > 0) && p.get::<u32>(log) > 0,
+            "{}",
+            p.name
+        );
+    }
+}

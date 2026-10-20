@@ -139,6 +139,41 @@ ported! {
     op_md_flag80_fog_00a6c3d0 @ 0x00a6_c3d0 => extern "C" fn op_md_flag80_fog(obj: u32, init: u32) -> u32 {
         hi_draw::bridge::op_md_flag80_fog(&mut mem(), obj, init, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_md_flag80_00a6acb0(obj, init)`: its light local in a buffer on
+    /// this shim's stack.
+    op_md_flag80_00a6acb0 @ 0x00a6_acb0 => extern "C" fn op_md_flag80(obj: u32, init: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x50]);
+        let mut locals = Locals([0; 0x50]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x50;
+        hi_draw::bridge::op_md_flag80(&mut mem(), obj, init, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_one8(obj, init)`: its light local in a buffer on this
+    /// shim's stack.
+    op_md_one8 @ 0x00a6_b220 => extern "C" fn op_md_one8(obj: u32, init: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x50]);
+        let mut locals = Locals([0; 0x50]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x50;
+        hi_draw::bridge::op_md_one8(&mut mem(), obj, init, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_one8_fog(obj, init)`.
+    op_md_one8_fog @ 0x00a6_c8b0 => extern "C" fn op_md_one8_fog(obj: u32, init: u32) -> u32 {
+        hi_draw::bridge::op_md_one8_fog(&mut mem(), obj, init, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op1_mdc_draw(list, init, m, view)`: its three matrices in a buffer
+    /// on this shim's stack (`[init +0x20]` points into it during the
+    /// call).
+    op1_mdc_draw @ 0x00a6_8c90 => extern "C" fn op1_mdc_draw(list: u32, init: u32, m: u32, view: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xd0]);
+        let mut locals = Locals([0; 0xd0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xd0;
+        hi_draw::bridge::op1_mdc_draw(&mut mem(), list, init, m, view, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_refrection_st_float(obj, model, _, out, scale, du, dv)`: its
     /// locals in a buffer on this shim's stack.
     op_refrection_st_float @ 0x00a6_cfb0 => extern "C" fn op_refrection_st_float(obj: u32, model: u32, _unused: u32, out: u32, scale: u32, du: u32, dv: u32) -> u32 {
