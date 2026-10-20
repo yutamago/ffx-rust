@@ -6442,6 +6442,10 @@ ported! {
             menu::bridge::MagicFileCalls::printf(&mut GameMenu, m, fmt, arg);
         })
     }
+    /// `MagicFile_Update()`.
+    MagicFile_Update @ 0x009d_ac60 => extern "C" fn magic_file_update() -> u32 {
+        menu::bridge::magic_file_update(&mut mem(), call_sym)
+    }
     /// `MagicFile_SetAsyncLoad()`.
     MagicFile_SetAsyncLoad @ 0x009d_afe0 => extern "C" fn magic_file_set_async_load() -> u32 {
         menu::bridge::magic_file_async_load(&mut mem(), call_sym)

@@ -24581,3 +24581,55 @@ fn round41_magic_unload_matches_the_original_on_the_snapshot() {
     };
     round41_magic_unload(&mut a, &mut b, &mut Xorshift(0x4041_0032));
 }
+
+/// Round 41 group D: `MagicFile_Update` over logging stand-ins for
+/// `MagicFile_Unload` and `MsSetChrVisible` (its result from a table).
+fn round41_magic_update(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use menu::bridge as mb;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x40);
+    let seq = round38_seq(counter, table);
+    let stands: Vec<Stand> = vec![
+        (0x009d_a960, vec![], vec![], vec![]),
+        (0x0079_6660, vec![0, 1], vec![], seq),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let word = |rng: &mut Xorshift| match rng.next() % 4 {
+        0 => u32::MAX,
+        1 => 0xffff_fffe,
+        2 => 0x7fff_ffff,
+        _ => rng.next() % 0x300,
+    };
+    for k in 0..2000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x10 {
+            put(a, b, table + 4 * j, rng.next());
+        }
+        put(a, b, a.rebase(0x00c6_4cb0), word(rng));
+        put(a, b, a.rebase(0x00c6_4ca8), word(rng));
+        put(a, b, a.rebase(0x00c6_4cdc), word(rng));
+        let want = eax(a, 0x009d_ac60, &[]);
+        assert_eq!(want, mb::magic_file_update(b, call), "magic update {k}");
+        same_memory(&format!("magic update {k}"), a, b);
+    }
+}
+
+#[test]
+fn round41_magic_update_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round41_magic_update(&mut a, &mut b, &mut Xorshift(0x4041_0041));
+}
+
+#[test]
+fn round41_magic_update_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round41_magic_update(&mut a, &mut b, &mut Xorshift(0x4041_0042));
+}

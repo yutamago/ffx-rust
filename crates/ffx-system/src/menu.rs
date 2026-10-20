@@ -561,6 +561,33 @@ pub mod bridge {
         1
     }
 
+    /// The battle character magic 0x94/0x253 hid in battle scene
+    /// `0x01050032` (`0x00c64cdc`, set by `0x008161f0`; -1 for none).
+    pub const MAGIC_HIDDEN_BTL_CHR: Global<u32> = Global::new(0x00c6_4cdc);
+
+    /// `MagicFile_Update()` (`0x009dac60`, once a frame from
+    /// `Sg_MainLoop`): with a previous magic and its module (neither -1),
+    /// [`magic_file_unload`] (`MagicFile_Unload`, through `call`); a
+    /// character in [`MAGIC_HIDDEN_BTL_CHR`] shown again
+    /// (`MsSetChrVisible(chr, 1)`) and the word -1. Returns what the
+    /// original leaves in `eax`: `MsSetChrVisible`'s result, or -1 without
+    /// a hidden character.
+    pub fn magic_file_update<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if MAGIC_PREVIOUS_PRX.get(mem) != u32::MAX && MAGIC_PREVIOUS.get(mem) != u32::MAX {
+            call(mem, 0x009d_a960, &[]);
+        }
+        let chr = MAGIC_HIDDEN_BTL_CHR.get(mem);
+        if chr == u32::MAX {
+            return chr;
+        }
+        let r = call(mem, 0x0079_6660, &[chr, 1]);
+        MAGIC_HIDDEN_BTL_CHR.set(mem, u32::MAX);
+        r
+    }
+
     /// `0x009dafe0()`: `graphicSetMagicFileAsyncLoadEnable(mode)` by the
     /// magic id: 1 for 0x26e..=0x274, 0x15c, 0x277 and 0x27b, 3 for 0x15e,
     /// else 2 (through `call`).
