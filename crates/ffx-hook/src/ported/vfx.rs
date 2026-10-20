@@ -5285,4 +5285,35 @@ ported! {
     pppStartPartFromYonish @ 0x0071_2560 => extern "C" fn ppp_start_part_from_yonish(p: u32, rate: u32, data: u32, set_ups: u32) {
         part::bridge::ppp_start_part_from_yonish(&mut mem(), p, rate, data, set_ups, &mut |_, f, a| call_ptr(f, a));
     }
+    // ---- round 35 a ----
+    /// `pppKeGrvEff(obj, key, prog)`.
+    pppKeGrvEff @ 0x0075_9650 => extern "C" fn ppp_ke_grv_eff(obj: u32, key: u32, prog: u32) {
+        // the original's locals: the vector, below its ebp
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 0x14;
+        prog::bridge::ppp_ke_grv_eff(&mut mem(), obj, key, prog, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opus_mdc_break_matrix_00802e20(out, src)`.
+    opus_mdc_break_matrix_00802e20 @ 0x0080_2e20 => extern "C" fn opus_mdc_break_matrix(out: u32, src: u32) -> u32 {
+        opus::bridge::opus_mdc_break_matrix(&mut mem(), out, src)
+    }
+    /// `opus_mimic_screen_set_0080f680(host)`.
+    opus_mimic_screen_set_0080f680 @ 0x0080_f680 => extern "C" fn opus_mimic_screen_set(host: u32) -> u32 {
+        opus::bridge::opus_mimic_screen_set(&mut mem(), host, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_tex_ctrl_008088c0(host, cmd)`.
+    opu_tex_ctrl_008088c0 @ 0x0080_88c0 => extern "C" fn opu_tex_ctrl(host: u32, cmd: u32) -> u32 {
+        // the original's locals: the image's width and height, below its ebp
+        let mut frame = super::StackFrame::<2>::new();
+        let ebp = frame.at() + 8;
+        opus::bridge::opu_tex_ctrl(&mut mem(), host, cmd, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_level(host, cmd)`.
+    opu_level @ 0x0081_7ad0 => extern "C" fn opu_level(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_level(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_et_eff(oef, group, part, id)`.
+    op_et_eff @ 0x007f_c2e0 => extern "C" fn op_et_eff(oef: u32, group: u32, part: u32, id: u32) -> u32 {
+        et::bridge::op_et_eff(&mut mem(), oef, group, part, id, &mut |_, f, a| call_ptr(f, a))
+    }
 }

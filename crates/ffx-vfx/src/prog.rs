@@ -692,6 +692,63 @@ pub mod bridge {
         mem.write(w1 + 8, stub::ptr32(w0));
     }
 
+    /// `pppKeGrvEff(obj, key, ctrl)` (`0x00759650`): pulls work area 1
+    /// toward a [`ppp_ke_grv_tgt`] record. With its key, area 2 takes
+    /// `set_ptr32` of the target (key `+4` the part object, -1 for
+    /// `g_pppRandTarget`; `+8` the field), and an object whose frame `+0xc`
+    /// is 0 stops there. Then, unless stopped or the record is
+    /// `g_pppRandTarget`: `v = *record[2] - area 0` (`FFXVu0SubVector`),
+    /// `len = |v|` (`KeVu0VecLen`, rounded to `f32`), `v` normalised; when
+    /// the record's radius `[0]` is above `len` (ordered), `v` scaled by
+    /// `(1 - len / radius) x record[1]` (rounded to `f32`) is added to
+    /// area 1's `x, y, z`. `v` lives in the original's locals at `frame`
+    /// (its `ebp`, `-0x14`). Callees through `call`, `KeVu0VecLen`'s `ST0`
+    /// through `fcall`.
+    pub fn ppp_ke_grv_eff<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{div, load, mul, store, sub};
+        let slot = area(mem, obj, ctrl, 2).wrapping_add(0xa0);
+        if applies(mem, obj, key) {
+            let t = part_target(mem, mem.read(key + 4), mem.read(key + 8));
+            mem.write(slot, stub::ptr32(t));
+            if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+                return;
+            }
+        }
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let rec = stub::ptr32(mem.read(slot));
+        if rec == crate::rand::bridge::TARGET.ptr(mem).addr {
+            return;
+        }
+        let a1 = area(mem, obj, ctrl, 1).wrapping_add(0xa0);
+        let a0 = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let v = frame.wrapping_sub(0x14);
+        let to = stub::ptr32(mem.read(rec.wrapping_add(8)));
+        call(mem, sym(mem, 0x006e_d940), &[v, to, a0]);
+        let len = load(store(fcall(mem, sym(mem, 0x0075_fda0), &[v])));
+        call(mem, sym(mem, 0x006e_d6f0), &[v, v]);
+        let radius = load(mem.read(rec));
+        // fcomp: equal, below and unordered all skip
+        if radius.partial_cmp(&len) != Some(std::cmp::Ordering::Greater) {
+            return;
+        }
+        let k = mul(
+            sub(1.0, div(len, radius)),
+            load(mem.read(rec.wrapping_add(4))),
+        );
+        call(mem, sym(mem, 0x006e_d8f0), &[v, v, store(k)]);
+        call(mem, sym(mem, 0x0075_eca0), &[a1, a1, v]);
+    }
+
     /// A set-up that takes a CRT `rand()` between its stores: `before`,
     /// then the low half of `rand()` at `rand_at`, then `after`.
     #[allow(clippy::too_many_arguments)]

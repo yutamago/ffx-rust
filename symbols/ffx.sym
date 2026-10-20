@@ -4051,7 +4051,7 @@
 0x00759400 function KeBornPtCmlp                 # callees: its named callees match the Switch 0x710030d580 KeBornPtCmlp's (similarity 1.00: FFXVu0CopyVector, FFXVu0ScaleVector, FFXVu0SubVector, KeVu0AddVecXYZ, KeVu0CopyVecXYZ); symbols from Fahrenheit's server export; ported (round 31): (pc, pd, prog, out): spawns pd[4] particle objects (pppCreatePObject) filling the gap from the previous point (prog[0xc][0]) to this one (prog[0xc][1]) at prev + d * f * step, step +0xa8 = 1 / (pd[4] + 1) when there is no previous point
 0x007595e0 function pppKeBornPtCmpl           # ppp program table record "pppKeBornPtCmpl" step; ported (round 33): (pc, pd, prog): KeBornPtCmlp(pc, pd, prog, &local) unless g_pppStopStatus or pd+8/pd+0x10 is -1 (prog::bridge::ppp_ke_born_pt_cmpl)
 0x00759620 function pppKeBornPtCmplCon        # ppp program table record "pppKeBornPtCmpl" (0x00c3e1d0) +0x1c set-up
-0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740
+0x00759650 function pppKeGrvEff               # fh v3:exact 0x00759740; ported r35 (vfx): (obj, key, prog): pulls work area 1 toward pppKeGrvTgt's record (area 2): v = target - area 0, len, normalised; radius > len adds v x (1 - len/radius) x strength (prog::bridge::ppp_ke_grv_eff)
 0x007597a0 function pppKeGrvEffCon            # ppp program table record "pppKeGrvEff" +0x1c set-up; not a function start in the Ghidra dump
 0x007597b0 function pppKeGrvTgt               # fh v3:exact 0x007598a0
 0x00759800 function pppKeGrvTgtCon            # ppp program table record "pppKeGrvTgt" (0x00c3b368) +0x1c set-up; "pppKeGrvTgt" (0x00c3ca10) +0x1c set-up
@@ -6688,7 +6688,7 @@
 0x007fc200 function op_et_draw_flags_switch   # (h, restore) op_et_draw_flags_restore (restore) or op_et_draw_flags_save, one body with both range checks
 0x007fc2a0 function op_et_oef2_free           # (oef2) opu_unit_free_by_oef2(g_OpusBattle, oef2)
 0x007fc2c0 function op_et_oef2_start          # (oef2) op_oef2_set2(oef2); opu_et_unit(oef2, 0, 0, -1)
-0x007fc2e0 function op_et_eff                 # fh v3:exact 0x007fc200
+0x007fc2e0 function op_et_eff                 # fh v3:exact 0x007fc200; ported r35 (vfx): opu_et_unit + 0x00c48d78 = id, returns 1; debug mode swaps in the debug objects 0x023215c0/c8/d0 by flag bits 0/1/2 of 0x02321580 (et::bridge::op_et_eff)
 0x007fc450 function op_et_eff_off_signal      # fh v3:bsim1.00 0x007fc370
 0x007fc490 function op_et_eff_signal_and      # (id, u16 mask) the first g_EtEff record with this ID: object +0xb0 &= mask (op_et_eff_off_signal's |= form)
 0x007fc4d0 function op_et_eff_flags_and       # (id, mask) the first g_EtEff record with this ID: +0xc &= mask
@@ -6838,6 +6838,7 @@
 0x00802350 function opu_mdc_matrix_set_00802350 # (host, set): unit +0x30..+0x3c through r regs 0x00c8f528 into host+0..+0xc (host+0 = 0.0); host+0x80 = op_unit_m_scale(f32 +0x3c * [0x00b58398]) op_rt_m by the unit; host+0xc0 = host+0x2c0 x parent x it; opus_mdc_head_set(host+0x100, host, set, unit, i16 [[u+0xa8]+2]) | 0x40, opus_mdc_lights_get; name ours; ported (round 33, opus::bridge::opu_mdc_matrix_set)
 0x00802450 function opus_mdc_head_set_00802450 # ours: (head, mats, set, part, tex) -> op_oef2_a_get(set +0x60 [part +0x1e], 4, tex) or 0: an mdc draw head like opus_mdc_packet_set's, colour word from part +0xc8 (opus::bridge::opus_mdc_head_set)
 0x00802bd0 function opus_mdc_lights_get_00802bd0 # ours: (head, _, list, unit, nos): the 4 light colours [head +0x24] and positions [head +0x28] reset to r0, then for each nonzero u16 at nos +2k the opus_no_get unit's +0x90 position (w = +0x4c / 16) and +0xc8 colour bytes / 128; head bytes +0x4c/+0x4d = ftol(unit +0x30/+0x4c) / 2 clamped 0..0x80 (opus::bridge::opus_mdc_lights_get)
+0x00802e20 function opus_mdc_break_matrix_00802e20 # ours: (out, src) -> out: rotation from the three f32 angles src +0x90..+0x98 (ftol, 0x1000 a turn) through g_pppSinTable, position src +0x60; called by opus_mdc_break_draw; ported r35 (vfx, opus::bridge::opus_mdc_break_matrix)
 0x00802fb0 function createU16MeshBreakRenderDataBuffer # str-match switch: only user of 9 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/chr'; Switch 0x71003e7650 createU16MeshBreakRenderDataBuffer (symbols from Fahrenheit's server export)
 0x00803170 function endU16MeshBreakRenderDataBuffer # layout+callees: sorts between createU16MeshBreakRenderDataBuffer and op_mdc_mem_transfer_cue_free, and its named callees match the Switch 0x71003e8a90 endU16MeshBreakRenderDataBuffer's (similarity 1.00: FFXVu0UnitMatrix, graphicVFXSetVisible); symbols from Fahrenheit's server export
 0x00803200 function opus_hd_ptr_get_00803200  # ours: (base, i) -> get_ptr32([base + 16 (i + 1)]); caller 0x00a70000 (opus::bridge::opus_hd_ptr_get)
@@ -6913,6 +6914,7 @@
 0x00807f90 function opu_blur_00807f90         # (host, cmd): nibble 0: unit kind +0xbb = 7, u16 +0xa8 = 0, opu_id_list_add; 1: opus_blur_path3(unit); both cmd+2; else cmd; name ours; ported (round 33, opus::bridge::opu_blur)
 0x00808000 function opu_clut_load                # layout+callees: sorts between op_ota_encount1_draw and opu_tc_load, and its named callees match the Switch 0x71004039a0 opu_clut_load's (similarity 0.60: Ch_ClutCreate, Ch_ClutDispose, op_chara_hsv, op_chara_hsv_make, op_free); symbols from Fahrenheit's server export
 0x008085a0 function opu_tc_load                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. '(op)\\tno u_tc_block_monster[]\\n'; Switch 0x7100403690 opu_tc_load (symbols from Fahrenheit's server export)
+0x008088c0 function opu_tex_ctrl_008088c0     # ours: (host, cmd) -> next cmd: by flag nibble 0 texture load, 0x1000/0x2000 op_et_chr_show(1/0), 0x4000 copy an oef2 image over Ch_TexGetImage's (+ graphicCharacterReplaceSummonTexture for magic 0x276..0x27d), 0x5000 Ch_TextureAnimSetEnable(h, 0); ported r35 (vfx, opus::bridge::opu_tex_ctrl)
 0x00808a20 function opus_all_clut_dispose     # fh v3:exact 0x00808b90; (): Ch_ClutDispose of each of the first 0xd0 g_EtChr records' +0 (opus::bridge::opus_all_clut_dispose)
 0x00808a60 function opus_copy_buffer_event_00808a60 # ours: (): graphicVFXAddCopyBufferEventWithClearRGB(0, 1) in magic files 0x11b and 0x1a6 (opus::bridge::opus_copy_buffer_event)
 0x00808b00 function op_fvec4_to_ivec4_00808b00 # ours: (dst, src): src's four f32 (copied first) truncated by _ftol2 into dst's i32; called on g_Vu0_VfMove in place (vec::bridge::fvec4_to_ivec4)
@@ -6957,6 +6959,7 @@
 0x0080f460 function opus_mdc_make_mimic       # fh v3:exact 0x0080f5c0
 0x0080f580 function opus_mdc_size_get_mimic      # layout+callees: sorts between opus_mdc_make_mimic and opus_mimic_check, and its named callees match the Switch 0x71003ebf00 opus_mdc_size_get_mimic's (similarity 1.00: Ch_ModelCalcSizeEffectPacket, opus_get_osu_by_draw); symbols from Fahrenheit's server export
 0x0080f630 function opus_mimic_check          # fh v3:exact 0x0080f790
+0x0080f680 function opus_mimic_screen_set_0080f680 # ours: (host): magic 0x25c/0x267 clear unit +0xc8; graphicActivateBlurEffectEx(0), 0x643830 rgba (bytes +0xc8.. / 128), 0x643890, 0x643860, graphicSetFlipVsnc(calculateVFXSP_AlphaFunction(+0xc2)); sorts after opus_mimic_check; ported r35 (vfx, opus::bridge::opus_mimic_screen_set)
 0x00810240 function opp_dbg_draw_spl             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'u_dbg_draw_spl error'; Switch 0x71003f65e0 opp_dbg_draw_spl (symbols from Fahrenheit's server export)
 0x008106a0 function SetFieldConst210_008106a0    # auto-port shape (store constant to field, cdecl): u8[(a0 + 0x210)] = 0xff; return 0x0; callers: no direct caller; name ours
 0x008106c0 function CopyField21b_008106c0        # auto-port shape (store copy to field, cdecl): t0 = u8[(a0 + 0x21b)]; u8[(a0 + 0x210)] = t0; return (a2 + 0x2); callers: no direct caller; name ours
@@ -7041,7 +7044,7 @@
 0x008177f0 function opu_signal_etc_008177f0   # (host, cmd): opu_flag_etc_008176f0 on the unit's u16 signals +0xb0 (no shift); name ours; ported (round 33, opus::bridge::opu_flag_etc)
 0x008178f0 function opu_eff_flag_008178f0     # (host, cmd): g_EtEff[unit u16 +0x14] +0xc flags vs (i16 +4 << 16 | i16 +2): nibble&7 0 set, 1 clear, 2/3 jump i16 +6 on any/none, 4/5 wait on any/none; name ours
 0x008179b0 function opu_signal_other_008179b0 # (host, cmd): opu_flag_etc on the u16 signals +0xb0 of unit u16 cmd+2 (opus_no_get), bits at cmd+4, jump at cmd+6, lengths 2 more; name ours; ported (round 33, opus::bridge::opu_flag_etc)
-0x00817ad0 function opu_level                    # callees: its named callees match the Switch 0x71003fd8e0 opu_level's (similarity 1.00: Ch_EffectGetEffectLevel, Ch_EffectSetEffectLevel, MsGetChrMotionSignal); symbols from Fahrenheit's server export
+0x00817ad0 function opu_level                    # callees: its named callees match the Switch 0x71003fd8e0 opu_level's (similarity 1.00: Ch_EffectGetEffectLevel, Ch_EffectSetEffectLevel, MsGetChrMotionSignal); symbols from Fahrenheit's server export; ported r35 (vfx): (host, cmd) -> next cmd: effect level / motion signal tests by flag nibble (jump, halt, Ch_EffectSetEffectLevel) (opus::bridge::opu_level)
 0x00817c30 function op_add64                  # (dst, src, n) 64-bit dst = src + (i32) n
 0x00817cc0 function vfx_vec_w_add             # (dst, v, s) dst.w = v.w + s; callers 0x0088a500, 0x0088abd0
 0x00817e60 function opu_ground_branch_00817e60 # (host, cmd): MsGetChrGround(byte unit+0x18) vs f32 unit+0x94: nibble 0 jumps by i16 cmd+2 when ground >= y, 1 when <= y (else cmd+4, NaN never jumps); else cmd; name ours; ported (round 33, opus::bridge::opu_ground_branch)
@@ -15663,6 +15666,7 @@
 0x00c44bf0 label    g_pppSinTable                # 4096 f32 sines over a turn: pppGetRotMatrix* read [(a>>4)&0xfff] and [((a+0x4000)>>4)&0xfff] (cosine)
 0x00c48bf0 label    g_OpUpVector                 # f32 x4: the up vector op_vector_m crosses the view direction with
 0x00c48c00 label    g_OpUpVectorAlt              # f32 x4: op_vector_m's up vector when the direction's x and z bits (and the emulated a0/a1 high words) are all zero
+0x00c48d78 label    g_OpEtEffId               # the id op_et_eff (0x007fc2e0) last started a unit with: written after opu_et_unit, or before it on the debug paths; ours (vfx r35, et::bridge::ET_EFF_ID)
 0x00c48e44 label    g_OpuMdc2000AmbientIds        # opu_mdc_0x2000_ambient 0x008041c0: 7 magic ids whose ambient becomes 0x80
 0x00c49458 label    g_SqsRpcSend                 # pointer to the sound RPC send buffer (0x40 bytes; Sqs_CallRpc, SqsSeSeparateMaskClear writes the SE mask there)
 0x00c4945c label    g_SqsRpcSend2                # pointer to the second RPC client's send buffer (Sqs_CallRpc2)
