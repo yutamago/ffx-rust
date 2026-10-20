@@ -231,3 +231,16 @@ p` sets the flag nibbles to `(p & 0xf) - 1` and `(p & 0xf0) - 0x40`, `0b
 p` draws button icon `p` at 0.65, 1 lower for icons `0x34..0x37`), group
 3 a macro (`TOAddPktChangeMacro_help`, unless `key` is -1), group 4 a
 glyph (shadow then face, 0.78).
+
+Two 16x12 siblings write into a packet (`g_TOPktCursor` `0x018716cc`,
+returned) through the same pen, with byte `+0x1a` choosing an edge font
+(1) over shadow and face: `MenuMes_AddPktFont1612` (`0x008e4af0`) and
+`MenuMes_AddPktFont1612Icons` (`0x008e4e60`). Both draw `0b` icons at
+0.73 and advance by the icon width plus 1. The first has English quirks
+(at y `0x163` a leading `48 73 78 82 7f` is skipped; at `(0xd6, 0xbb)` a
+text starting with `h` starts at x 200) and places icons at `y + 4.5 +
+AdjustButtonIconY`; the second places them at `y + 4.0 +
+AdjustButtonIconY` in Japanese and at `y + 5.0` otherwise, 2.5 higher for
+the icons `0x20..0x22`, `0x34..0x37`, `0x42`, and `0x30`/`0x48` while
+y is below 350. At y `0x163` both lift glyphs while drawing them (1 in Japanese,
+else 2 or 3).

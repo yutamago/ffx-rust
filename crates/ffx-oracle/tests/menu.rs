@@ -13228,6 +13228,179 @@ fn menu_round27_type_key_and_disp_command_match_the_original() {
     eprintln!("{} calls", t.calls);
 }
 
+#[test]
+fn menu_round27_font1612_texts_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_4af0) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    // TOAddFontWidthSpace moves the pen's x; the face pass the packet cursor
+    let pen_x = t.sym(0x025d_09a4);
+    let moved = t.alloc(&[0; 4]);
+    let mut extra = [&[0xa1][..], &moved.to_le_bytes()].concat(); // mov eax, [moved]
+    extra.extend([&[0xa3][..], &pen_x.to_le_bytes()].concat()); // mov [pen_x], eax
+    let mut cells = vec![seq_stub(&mut t, 0x008e_8ed0, log, 3, &extra)];
+    let cursor = t.sym(0x0187_16cc);
+    // the face pass also logs the pen's x
+    let l = log.to_le_bytes();
+    let mut bump = [&[0x83, 0x05][..], &cursor.to_le_bytes(), &[0x10]].concat(); // add dword [cursor], 0x10
+    #[rustfmt::skip]
+    bump.extend([
+        &[0xa1][..], &pen_x.to_le_bytes(), // mov eax, [pen_x]
+        &[0x8b, 0x0d], &l,                 // mov ecx, [log]
+        &[0x89, 0x01],                     // mov [ecx], eax
+        &[0x83, 0x05], &l, &[0x04],        // add dword [log], 4
+    ].concat());
+    cells.push(seq_stub(&mut t, 0x0090_6270, log, 2, &bump));
+    for (f, n) in [
+        (0x0090_6260u32, 2u8),
+        (0x0090_6290, 2),
+        (0x0064_3af0, 1),
+        (0x0064_0dd0, 1),
+        (0x008b_7240, 2),
+        (0x008b_1350, 2),
+        (0x008f_8ee0, 8),
+        (0x008b_1330, 0),
+        (0x008e_9b80, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let floats = [
+        float_stub(&mut t, 0x008e_5280, log, 5),
+        float_stub(&mut t, 0x008f_a800, log, 2),
+    ];
+    let text = t.alloc(&[0; 64]);
+    for round in 0..3000 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        for c in floats {
+            let v = quiet_float(&mut t);
+            t.put(c, v);
+        }
+        let v = if t.rng.below(4) == 0 {
+            (-0.0f32).to_bits()
+        } else {
+            quiet_float(&mut t)
+        };
+        t.put(moved, v);
+        // every eighth round the English x 200 case: (0xd6, 0xbb) and "h"
+        let english_h = round % 8 == 0;
+        let l = if english_h {
+            1
+        } else {
+            t.rng.pick_or_any(&[0, 0, 1, 1, 2, 9])
+        };
+        t.put(lang, l);
+        let mut bytes = Vec::new();
+        match if english_h { 2 } else { t.rng.below(6) } {
+            0 => bytes.extend([0x48, 0x73, 0x78, 0x82, 0x7f]),
+            1 => bytes.extend([0x48, 0x73, 0x78, 0x82, 0x7e]),
+            2 => bytes.push(b'h'),
+            _ => {}
+        }
+        for _ in 0..t.rng.below(9) {
+            let r = t.rng.next().to_le_bytes();
+            let token: Vec<u8> = match t.rng.below(10) {
+                0 => vec![t.rng.pick(&[1u8, 2, 3])],
+                1 => vec![7, t.rng.pick(&[0xe0, 0xe1, 0xe8, 0xef, 0xf0, r[0] | 1])],
+                2 => vec![0xa, r[0]],
+                3 => vec![
+                    0xb,
+                    t.rng.pick(&[
+                        0x20,
+                        0x22,
+                        0x23,
+                        0x30,
+                        0x33,
+                        0x34,
+                        0x37,
+                        0x38,
+                        0x42,
+                        0x48,
+                        r[0] | 1,
+                    ]),
+                ],
+                4 => vec![t.rng.pick(&[8u8, 9, 0xd, 0xe, 0x10]), r[0] | 1],
+                5 => vec![0x12 + t.rng.below(0x12).to_le_bytes()[0], r[0] | 1],
+                6 => vec![t.rng.pick(&[4u8, 5, 6, 0xc, 0xf, 0x11]), r[0] | 1],
+                7 => vec![0x47, 0x47],
+                _ => vec![0x30 | r[1]],
+            };
+            bytes.extend(token);
+        }
+        bytes.truncate(56);
+        bytes.resize(64, 0);
+        t.put_bytes(text, &bytes);
+        t.scramble(0x025d_09a0, 0x20);
+        t.scramble(0x0184_1d50, 0x40);
+        let key = t.rng.pick_or_any(&[0xffff_ffff, 0, 1]);
+        let x = if english_h {
+            0xd6
+        } else {
+            t.rng.pick_or_any(&[0xd6, 0, 100])
+        };
+        let y = if english_h {
+            0xbb
+        } else {
+            t.rng.pick_or_any(&[0x163, 0xbb, 340, 350, 360])
+        };
+        let (packet, flags, edge) = (
+            t.rng.next(),
+            t.rng.next(),
+            t.rng.pick_or_any(&[1, 0, 0x101]),
+        );
+        let rgba = [t.rng.next(), t.rng.next(), t.rng.next(), t.rng.next()];
+        let args = [
+            key, text, x, y, flags, edge, rgba[0], rgba[1], rgba[2], rgba[3],
+        ];
+        if round % 2 == 0 {
+            t.twin(
+                "MenuMes_AddPktFont1612",
+                0x008e_4af0,
+                &[&[packet][..], &args].concat(),
+                U32,
+                |o| {
+                    w(tk::menu_mes_add_pkt_font1612(
+                        o,
+                        packet,
+                        key,
+                        text,
+                        [i(x), i(y)],
+                        [flags, edge],
+                        rgba,
+                        &mut callback,
+                        &mut fcallback,
+                    ))
+                },
+            );
+        } else {
+            t.twin(
+                "MenuMes_AddPktFont1612Icons",
+                0x008e_4e60,
+                &[&[packet][..], &args].concat(),
+                U32,
+                |o| {
+                    w(tk::menu_mes_add_pkt_font1612_icons(
+                        o,
+                        packet,
+                        key,
+                        text,
+                        [i(x), i(y)],
+                        [flags, edge],
+                        rgba,
+                        &mut callback,
+                        &mut fcallback,
+                    ))
+                },
+            );
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
 impl Twins {
     /// Random bytes over `len` bytes at `at` (test memory), in both.
     fn scramble_at(&mut self, at: u32, len: usize) {

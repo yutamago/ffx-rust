@@ -13749,6 +13749,34 @@ pub mod bridge {
         buf
     }
 
+    /// Text code `07 p`: the pen's f32 x at `pen_x` moves right by `p -
+    /// 0xe0` for `p` in `0xe1..=0xef` (the help and 16x12 text drawers).
+    fn pen_step_x<M: Mem>(mem: &mut M, p: u32, pen_x: u32) {
+        use ffx_bridge::x87::{add, load, store};
+        let step = mem.read::<u8>(p + 1);
+        if step > 0xe0 && step < 0xf0 {
+            let step = store(f64::from(step - 0xe0));
+            let moved = add(load(step), load(mem.read(pen_x)));
+            mem.write(pen_x, store(moved));
+        }
+    }
+
+    /// Text code `0a p`: the pen's flag byte gets low nibble `(p & 0xf) -
+    /// 1` when that is nonzero and high nibble `(p & 0xf0) - 0x40` when
+    /// that is at least `0x40`.
+    fn pen_set_flags<M: Mem>(mem: &mut M, p: u32, pen_flags: u32) {
+        let arg = mem.read::<u8>(p + 1);
+        let mut f = mem.read::<u8>(pen_flags);
+        if arg & 0xf != 0 {
+            f = f & 0xf0 | ((arg & 0xf) - 1);
+            mem.write(pen_flags, f);
+        }
+        if arg & 0xf0 >= 0x40 {
+            f = f & 0xf | ((arg & 0xf0) - 0x40);
+            mem.write(pen_flags, f);
+        }
+    }
+
     /// `DrawMesFontLClutTypeRGBA_ForHelp(key, text, x, y, flags, r, g, b,
     /// a)` (`0x008e75c0`, Fahrenheit's name): draws a help text through the
     /// pen at `0x025d09a0`.
@@ -13822,26 +13850,10 @@ pub mod bridge {
                     let down = add(load(mem.read(pen_y)), 16.0);
                     mem.write(pen_y, store(down));
                 }
-                2 if code == 7 => {
-                    let step = mem.read::<u8>(p + 1);
-                    if step > 0xe0 && step < 0xf0 {
-                        let step = store(f64::from(step - 0xe0));
-                        let moved = add(load(step), load(mem.read(pen_x)));
-                        mem.write(pen_x, store(moved));
-                    }
-                }
+                2 if code == 7 => pen_step_x(mem, p, pen_x),
                 2 => {
                     if code == 0xa {
-                        let arg = mem.read::<u8>(p + 1);
-                        let mut f = mem.read::<u8>(pen_flags);
-                        if arg & 0xf != 0 {
-                            f = f & 0xf0 | ((arg & 0xf) - 1);
-                            mem.write(pen_flags, f);
-                        }
-                        if arg & 0xf0 >= 0x40 {
-                            f = f & 0xf | ((arg & 0xf0) - 0x40);
-                            mem.write(pen_flags, f);
-                        }
+                        pen_set_flags(mem, p, pen_flags);
                     }
                     if code == 0xb {
                         let icon = u32::from(mem.read::<u8>(p + 1));
@@ -14474,6 +14486,287 @@ pub mod bridge {
             }
         }
         if chr < 8 { max } else { found }
+    }
+
+    /// `MenuMes_AddPktFont1612(cursor, key, text, x, y, flags, edge, r, g,
+    /// b, a)` (`0x008e4af0`, name ours): 16x12 text into the packet at
+    /// `cursor` (`g_TOPktCursor` `0x018716cc`, returned when done) through
+    /// the pen at `0x025d09a0`, like [`draw_mes_font_lclut_type_rgba_for_help`]
+    /// with these differences:
+    ///
+    /// - The pen's byte `+0x1a` is `edge`, `+0x1b` `flags`.
+    /// - English (`TOGetFFXLangJmp()` 1): with `y` 0x163 a leading
+    ///   `48 73 78 82 7f` is skipped; at `(0xd6, 0xbb)` a text starting
+    ///   with `h` starts at x 200.
+    /// - Characters: with `edge` 1 the edge font (`0x00906260`) then the
+    ///   face (`0x00906270`), else shadow (`0x00906290`) and face between
+    ///   draw/shadow types; `y` 0x163 lowers each by 1 (Japanese) or 2.
+    /// - `0b` icons: scale 0.73 at `f32(y + 4.5 + AdjustButtonIconY(..))`,
+    ///   then `x += width + 1`; only `0b` calls `resetButtonData()`.
+    /// - Macros: `TOAddPktChangeMacro(key, text, pen)` unless `key` is -1.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn menu_mes_add_pkt_font1612<M: Mem>(
+        mem: &mut M,
+        cursor: u32,
+        key: u32,
+        text: u32,
+        [left, top]: [i32; 2],
+        [flags, edge]: [u32; 2],
+        rgba: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, store, sub};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ICON_SCALE: u32 = 0x3f3a_e148; // 0.73
+        const STAMP: i32 = 0x163;
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let (pen, glyph) = (at(mem, 0x025d_09a0), at(mem, 0x0184_1d50));
+        let (pen_x, pen_y, pen_flags) = (pen + 4, pen + 8, pen + 0x1b);
+        let packet = at(mem, 0x0187_16cc);
+        for k in 0..16 {
+            mem.write(glyph + 4 * k, 0u32);
+        }
+        for off in [0xc, 0x10, 0x14] {
+            mem.write(pen + off, 0u32);
+        }
+        mem.write(packet, cursor);
+        let start = store(f64::from(left));
+        mem.write(pen, u32::from_le_bytes(rgba.map(|c| c.to_le_bytes()[0])));
+        mem.write(pen_x, start);
+        mem.write(pen_y, store(f64::from(top)));
+        mem.write(pen + 0x18, ((flags & 0xff) << 24) | ((edge & 0xff) << 16));
+        let lang = at(mem, 0x008a_c2f0);
+        let mut p = text;
+        if call(mem, lang, &[]) == 1 {
+            let stamp = [0x48u8, 0x73, 0x78, 0x82, 0x7f];
+            if top == STAMP && (0..5).all(|k| mem.read::<u8>(p + k) == stamp[k as usize]) {
+                p += 5;
+            }
+            if left == 0xd6 && top == 0xbb && mem.read::<u8>(p) == b'h' {
+                mem.write(pen_x, 200.0f32.to_bits());
+            }
+        }
+        let group = at(mem, 0x008d_f610);
+        let skip = at(mem, 0x008d_fd80);
+        loop {
+            let code = mem.read::<u8>(p);
+            if code == 0 {
+                break;
+            }
+            match call(mem, group, &[u32::from(code)]) {
+                1 => {
+                    mem.write(pen_x, store(load(start)));
+                    let down = add(load(mem.read(pen_y)), 16.0);
+                    mem.write(pen_y, store(down));
+                }
+                2 if code == 7 => pen_step_x(mem, p, pen_x),
+                2 => {
+                    if code == 0xa {
+                        pen_set_flags(mem, p, pen_flags);
+                    }
+                    if code == 0xb {
+                        let icon = u32::from(mem.read::<u8>(p + 1));
+                        call(mem, at(mem, 0x008b_1350), &[icon, u32::MAX]);
+                        let colour = [rgba[0], rgba[1], rgba[2], rgba[3]];
+                        let adjust = at(mem, 0x008e_5280);
+                        let raise = fcall(
+                            mem,
+                            adjust,
+                            &[ICON_SCALE, colour[0], colour[1], colour[2], colour[3]],
+                        );
+                        let y = store(add(raise, add(load(mem.read(pen_y)), 4.5)));
+                        let x = store(load(mem.read(pen_x)));
+                        let draw = at(mem, 0x008f_8ee0);
+                        call(
+                            mem,
+                            draw,
+                            &[
+                                icon, x, y, ICON_SCALE, colour[0], colour[1], colour[2], colour[3],
+                            ],
+                        );
+                        let width = fcall(mem, at(mem, 0x008f_a800), &[icon, ICON_SCALE]);
+                        let moved = add(add(width, 1.0), load(mem.read(pen_x)));
+                        mem.write(pen_x, store(moved));
+                        call(mem, at(mem, 0x008b_1330), &[]);
+                    }
+                }
+                3 => {
+                    if key != u32::MAX {
+                        call(mem, at(mem, 0x008e_9b80), &[key, p, pen]);
+                    }
+                }
+                4 => {
+                    call(mem, at(mem, 0x008b_7240), &[p, glyph]);
+                    if top == STAMP {
+                        let rise = if call(mem, lang, &[]) == 0 { 1.0 } else { 2.0 };
+                        mem.write(pen_y, store(add(load(mem.read(pen_y)), rise)));
+                    }
+                    let face = at(mem, 0x0090_6270);
+                    if mem.read::<u8>(pen + 0x1a) == 1 {
+                        call(mem, at(mem, 0x0090_6260), &[pen, glyph]);
+                        call(mem, face, &[pen, glyph]);
+                    } else {
+                        let (draw_type, shadow) = (at(mem, 0x0064_3af0), at(mem, 0x0064_0dd0));
+                        call(mem, draw_type, &[1]);
+                        call(mem, shadow, &[0]);
+                        call(mem, at(mem, 0x0090_6290), &[pen, glyph]);
+                        call(mem, shadow, &[1]);
+                        call(mem, face, &[pen, glyph]);
+                        call(mem, draw_type, &[0]);
+                    }
+                    call(mem, at(mem, 0x008e_8ed0), &[pen, glyph, SCALE]);
+                    if top == STAMP {
+                        let rise = if call(mem, lang, &[]) == 0 { 1.0 } else { 2.0 };
+                        mem.write(pen_y, store(sub(load(mem.read(pen_y)), rise)));
+                    }
+                }
+                _ => {}
+            }
+            p = call(mem, skip, &[p]);
+        }
+        mem.read(packet)
+    }
+
+    /// `MenuMes_AddPktFont1612Icons(cursor, key, text, x, y, flags, edge,
+    /// r, g, b, a)` (`0x008e4e60`, name ours): the sibling of
+    /// [`menu_mes_add_pkt_font1612`] without the English stamp checks, and:
+    ///
+    /// - Characters: with `edge` 1 the edge font and the face, no rise;
+    ///   else, with `y` 0x163, the pen goes up by 1 (Japanese) or 3 for the
+    ///   shadow and face passes and back before `TOAddFontWidthSpace`.
+    /// - `0b` icons at scale 0.73: Japanese at `f32(y + 4.0 +
+    ///   AdjustButtonIconY(..))`; other languages at `f32(y' + 5.0)` with
+    ///   `y' = f32(y - 2.5)` for icons `0x34..=0x37`, `0x20..=0x22`, `0x42`,
+    ///   and `0x48`/`0x30` while `350.0 > y`, else `y' = y`. Then `x +=
+    ///   width + 1`. Every control code but `07` ends with
+    ///   `resetButtonData()`.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn menu_mes_add_pkt_font1612_icons<M: Mem>(
+        mem: &mut M,
+        cursor: u32,
+        key: u32,
+        text: u32,
+        [left, top]: [i32; 2],
+        [flags, edge]: [u32; 2],
+        rgba: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, store, sub};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ICON_SCALE: u32 = 0x3f3a_e148; // 0.73
+        const STAMP: i32 = 0x163;
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let (pen, glyph) = (at(mem, 0x025d_09a0), at(mem, 0x0184_1d50));
+        let (pen_x, pen_y, pen_flags) = (pen + 4, pen + 8, pen + 0x1b);
+        let packet = at(mem, 0x0187_16cc);
+        for k in 0..16 {
+            mem.write(glyph + 4 * k, 0u32);
+        }
+        for off in [0xc, 0x10, 0x14] {
+            mem.write(pen + off, 0u32);
+        }
+        mem.write(packet, cursor);
+        let start = store(f64::from(left));
+        mem.write(pen, u32::from_le_bytes(rgba.map(|c| c.to_le_bytes()[0])));
+        mem.write(pen_x, start);
+        mem.write(pen_y, store(f64::from(top)));
+        mem.write(pen + 0x18, ((flags & 0xff) << 24) | ((edge & 0xff) << 16));
+        let lang = at(mem, 0x008a_c2f0);
+        let group = at(mem, 0x008d_f610);
+        let skip = at(mem, 0x008d_fd80);
+        let mut p = text;
+        loop {
+            let code = mem.read::<u8>(p);
+            if code == 0 {
+                break;
+            }
+            match call(mem, group, &[u32::from(code)]) {
+                1 => {
+                    mem.write(pen_x, store(load(start)));
+                    let down = add(load(mem.read(pen_y)), 16.0);
+                    mem.write(pen_y, store(down));
+                }
+                2 if code == 7 => pen_step_x(mem, p, pen_x),
+                2 => {
+                    if code == 0xa {
+                        pen_set_flags(mem, p, pen_flags);
+                    }
+                    if code == 0xb {
+                        let icon = mem.read::<u8>(p + 1);
+                        let id = u32::from(icon);
+                        call(mem, at(mem, 0x008b_1350), &[id, u32::MAX]);
+                        let colour = [rgba[0], rgba[1], rgba[2], rgba[3]];
+                        let y = if call(mem, lang, &[]) == 0 {
+                            let adjust = at(mem, 0x008e_5280);
+                            let raise = fcall(
+                                mem,
+                                adjust,
+                                &[ICON_SCALE, colour[0], colour[1], colour[2], colour[3]],
+                            );
+                            store(add(raise, add(load(mem.read(pen_y)), 4.0)))
+                        } else {
+                            let mut y = store(load(mem.read(pen_y)));
+                            let low = (0x34..=0x37).contains(&icon)
+                                || (0x20..=0x22).contains(&icon)
+                                || (350.0 > load(y) && (icon == 0x48 || icon == 0x30))
+                                || icon == 0x42;
+                            if low {
+                                y = store(sub(load(y), 2.5));
+                            }
+                            store(add(load(y), 5.0))
+                        };
+                        let x = store(load(mem.read(pen_x)));
+                        let draw = at(mem, 0x008f_8ee0);
+                        call(
+                            mem,
+                            draw,
+                            &[
+                                id, x, y, ICON_SCALE, colour[0], colour[1], colour[2], colour[3],
+                            ],
+                        );
+                        let width = fcall(mem, at(mem, 0x008f_a800), &[id, ICON_SCALE]);
+                        let moved = add(add(width, 1.0), load(mem.read(pen_x)));
+                        mem.write(pen_x, store(moved));
+                    }
+                    call(mem, at(mem, 0x008b_1330), &[]);
+                }
+                3 => {
+                    if key != u32::MAX {
+                        call(mem, at(mem, 0x008e_9b80), &[key, p, pen]);
+                    }
+                }
+                4 => {
+                    call(mem, at(mem, 0x008b_7240), &[p, glyph]);
+                    let face = at(mem, 0x0090_6270);
+                    if mem.read::<u8>(pen + 0x1a) == 1 {
+                        call(mem, at(mem, 0x0090_6260), &[pen, glyph]);
+                        call(mem, face, &[pen, glyph]);
+                    } else {
+                        if top == STAMP {
+                            let rise = if call(mem, lang, &[]) == 0 { 1.0 } else { 3.0 };
+                            mem.write(pen_y, store(add(load(mem.read(pen_y)), rise)));
+                        }
+                        let (draw_type, shadow) = (at(mem, 0x0064_3af0), at(mem, 0x0064_0dd0));
+                        call(mem, draw_type, &[1]);
+                        call(mem, shadow, &[0]);
+                        call(mem, at(mem, 0x0090_6290), &[pen, glyph]);
+                        call(mem, shadow, &[1]);
+                        call(mem, face, &[pen, glyph]);
+                        call(mem, draw_type, &[0]);
+                        if top == STAMP {
+                            let rise = if call(mem, lang, &[]) == 0 { 1.0 } else { 3.0 };
+                            mem.write(pen_y, store(sub(load(mem.read(pen_y)), rise)));
+                        }
+                    }
+                    call(mem, at(mem, 0x008e_8ed0), &[pen, glyph, SCALE]);
+                }
+                _ => {}
+            }
+            p = call(mem, skip, &[p]);
+        }
+        mem.read(packet)
     }
 }
 

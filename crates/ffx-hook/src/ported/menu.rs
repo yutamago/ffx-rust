@@ -4374,6 +4374,14 @@ ported! {
         let scratch = frame.at();
         tk::tk_menu_get_disp_command(&mut mem(), kind, sub, a, chr, out, [scratch, scratch + 4], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuMes_AddPktFont1612(cursor, key, text, x, y, flags, edge, r, g, b, a)`: the packet cursor.
+    MenuMes_AddPktFont1612 @ 0x008e_4af0 => extern "C" fn menu_mes_add_pkt_font1612(cursor: u32, key: u32, text: u32, x: i32, y: i32, flags: u32, edge: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tk::menu_mes_add_pkt_font1612(&mut mem(), cursor, key, text, [x, y], [flags, edge], [r, g, b, a], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
+    /// `MenuMes_AddPktFont1612Icons(cursor, key, text, x, y, flags, edge, r, g, b, a)`: the packet cursor.
+    MenuMes_AddPktFont1612Icons @ 0x008e_4e60 => extern "C" fn menu_mes_add_pkt_font1612_icons(cursor: u32, key: u32, text: u32, x: i32, y: i32, flags: u32, edge: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
+        tk::menu_mes_add_pkt_font1612_icons(&mut mem(), cursor, key, text, [x, y], [flags, edge], [r, g, b, a], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry
