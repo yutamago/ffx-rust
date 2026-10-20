@@ -5928,4 +5928,373 @@ pub mod bridge {
             fail
         }
     }
+
+    /// `opu_jump_etc2(host, cmd)` (`0x00816e50`, opus command table
+    /// `0x00c49150`) -> the next command: tests that branch to `cmd + i16
+    /// cmd +2` or go on to `cmd + 4`, by the flag nibble (`u` = the host's
+    /// unit, `c` = byte `u +0x18`, `h` = `g_EtChrHandles[c]`): 0 on
+    /// `MsGetChrFly(c)` set, or clear with flag 0x800; 0x1000 on
+    /// `MsGetDamageResult(g_EtEff[u16 u +0x14] +0, c, 0, 0, host)` = 1;
+    /// 0x2000 on `c` below 8; 0x4000 when a character of the effect record
+    /// (bytes `+0x10..` of its `+8` count) has a status record
+    /// (`opus_get_chr_status_index(handle, 0, 0)`) whose number (`g_EtChr
+    /// +4`) is 0x10b2..0x10b4 or 0x1121..0x1123; 0x5000 when
+    /// `Sg_MemGet(0)`, `(1)` and `(2)` are all below 0x1e0000; 0x6000 on
+    /// bit 0 of `h`'s status record byte `+0x17` (its index unchecked).
+    /// 0x3000 follows `h`'s field mode (`Ch_GetFieldMode`) into its status
+    /// record's byte `+0x16`: unless `h` is hidden, has no record or the
+    /// mode is the same, a new mode 2 stores 2 and returns `cmd + i16 cmd
+    /// +2` from 0, else `cmd`; mode 0 stores 0 and returns `cmd + i16 cmd
+    /// +4` from 2, else `cmd`; another mode stores 0; those `cmd + 6`.
+    /// Other nibbles `cmd`. Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_jump_etc2<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = unit(mem, host);
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let i = u32::from(mem.read::<u16>(u.wrapping_add(0x14)));
+        let rec = EFF.ptr(mem).addr.wrapping_add(i << 5);
+        let rel = |mem: &M, at: u32| {
+            cmd.wrapping_add(i32::from(mem.read::<i16>(cmd.wrapping_add(at))).cast_unsigned())
+        };
+        let chr = |mem: &M| u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let handle = |mem: &M, c: u32| crate::et::bridge::CHR_HANDLES.ptr(mem).at(c).get(mem);
+        let chrs = g(mem, 0x012a_22c0);
+        let status = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, h: u32| {
+            let f = g(mem, 0x007f_e970);
+            call(mem, f, &[h, 0, 0])
+        };
+        let jump = match flags & 0xf000 {
+            0 => {
+                let c = chr(mem);
+                let fly = call(mem, g(mem, 0x0079_4f70), &[c]) != 0;
+                fly == (flags & 0x800 == 0)
+            }
+            0x1000 => {
+                let id: u32 = mem.read(rec);
+                let c = chr(mem);
+                call(mem, g(mem, 0x0079_a920), &[id, c, 0, 0, host]) == 1
+            }
+            0x2000 => chr(mem) < 8,
+            0x3000 => {
+                let h = handle(mem, chr(mem));
+                if call(mem, g(mem, 0x0082_abd0), &[h]) != 0 {
+                    return cmd.wrapping_add(6);
+                }
+                let s = status(mem, call, h);
+                if s.cast_signed() < 0 {
+                    return cmd.wrapping_add(6);
+                }
+                let at = chrs.wrapping_add(s << 5).wrapping_add(0x16);
+                let mode = call(mem, g(mem, 0x0082_ab90), &[h]);
+                let old: u8 = mem.read(at);
+                if mode == u32::from(old) {
+                    return cmd.wrapping_add(6);
+                }
+                return match mode {
+                    2 => {
+                        mem.write(at, 2u8);
+                        if old == 0 { rel(mem, 2) } else { cmd }
+                    }
+                    0 => {
+                        mem.write(at, 0u8);
+                        if old == 2 { rel(mem, 4) } else { cmd }
+                    }
+                    _ => {
+                        mem.write(at, 0u8);
+                        cmd.wrapping_add(6)
+                    }
+                };
+            }
+            0x4000 => {
+                let mut k = 0u32;
+                let mut hit = false;
+                while k < u32::from(mem.read::<u8>(rec.wrapping_add(8))) {
+                    let c = u32::from(mem.read::<u8>(rec.wrapping_add(0x10 + k)));
+                    let h = handle(mem, c);
+                    let s = status(mem, call, h);
+                    if s.cast_signed() >= 0 {
+                        let no: u32 = mem.read(chrs.wrapping_add(s << 5).wrapping_add(4));
+                        if matches!(no, 0x10b2..=0x10b4 | 0x1121..=0x1123) {
+                            hit = true;
+                            break;
+                        }
+                    }
+                    k += 1;
+                }
+                hit
+            }
+            0x5000 => {
+                let f = g(mem, 0x0083_bff0);
+                (0..3).all(|k| call(mem, f, &[k]).cast_signed() < 0x1e_0000)
+            }
+            0x6000 => {
+                let h = handle(mem, chr(mem));
+                let s = status(mem, call, h);
+                let b: u8 = mem.read(chrs.wrapping_add(s << 5).wrapping_add(0x17));
+                b & 1 != 0
+            }
+            _ => return cmd,
+        };
+        if jump {
+            rel(mem, 2)
+        } else {
+            cmd.wrapping_add(4)
+        }
+    }
+
+    /// `opu_matrix_etc(host, cmd)` (`0x00801ab0`, opus command table
+    /// `0x00c490f0`) -> the next command: the unit `u`'s matrix (`+0xc0`)
+    /// and point (`+0x90`) by the flag nibble (`h` = `g_EtChrHandles[byte
+    /// u +0x18]`; `host +0` and `+0x40` serve as scratch matrices): 0 the
+    /// point into the space of the parent `i16 cmd +2` names
+    /// (`opus_parent_get` with `u16 u +0xb8` set to it meanwhile;
+    /// `FFXVu0InversMatrix(host, parent)`, `op_apply_m_w1`) and `u +0x40` =
+    /// 16 x the point, `cmd + 4`; 0x1000 the matrix = bone `i16 cmd +2`
+    /// (`opus_get_bone_matrix`), `cmd + 4`; 0x2000 `u +0xf0` = the point
+    /// through the matrix; 0x3000 matrix x `host +0x280`; 0x4000 the matrix
+    /// moved by the point (`op_trans_m`); 0x5000 the matrix = the root
+    /// matrix x the bone (`cmd + 4`); 0x6000 `opus_chr_org_set(h, matrix)`;
+    /// 0x7000 the matrix x the rotation of `u +0x30`; 0x8000 the matrix x
+    /// the root matrix; these `cmd + 2`, others `cmd`. Callees through
+    /// `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_matrix_etc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = unit(mem, host);
+        let c = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(c).get(mem);
+        let (m, p) = (u.wrapping_add(0xc0), u.wrapping_add(0x90));
+        let no = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let mut go = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = g(mem, f);
+            call(mem, f, args)
+        };
+        match nibble(mem, host) {
+            0 => {
+                let parent = u.wrapping_add(0xb8);
+                let keep: u16 = mem.read(parent);
+                let n: u16 = mem.read(cmd.wrapping_add(2));
+                mem.write(parent, n);
+                let pm = go(mem, 0x0080_1f00, &[host, u]);
+                go(mem, 0x006e_d450, &[host, pm]);
+                go(mem, 0x007e_79a0, &[p, host, p]);
+                let s: u32 = mem.read(g(mem, 0x00b9_231c));
+                go(mem, 0x007e_a850, &[u.wrapping_add(0x40), p, s]);
+                mem.write(parent, keep);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                go(mem, 0x0080_5430, &[m, h, no]);
+                cmd.wrapping_add(4)
+            }
+            0x2000 => {
+                go(mem, 0x007e_79a0, &[u.wrapping_add(0xf0), m, p]);
+                cmd.wrapping_add(2)
+            }
+            0x3000 => {
+                go(mem, 0x007e_83b0, &[m, m, host.wrapping_add(0x280)]);
+                cmd.wrapping_add(2)
+            }
+            0x4000 => {
+                go(mem, 0x007e_a550, &[m, m, p]);
+                cmd.wrapping_add(2)
+            }
+            0x5000 => {
+                go(mem, 0x0080_5400, &[host, h]);
+                let b = host.wrapping_add(0x40);
+                go(mem, 0x0080_5430, &[b, h, no]);
+                go(mem, 0x007e_83b0, &[m, host, b]);
+                cmd.wrapping_add(4)
+            }
+            0x6000 => {
+                go(mem, 0x0080_53a0, &[h, m]);
+                cmd.wrapping_add(2)
+            }
+            0x7000 => {
+                go(mem, 0x007e_a6d0, &[host]);
+                go(mem, 0x007e_9530, &[host, host, u.wrapping_add(0x30)]);
+                go(mem, 0x007e_83b0, &[m, m, host]);
+                cmd.wrapping_add(2)
+            }
+            0x8000 => {
+                go(mem, 0x0080_5400, &[host, h]);
+                go(mem, 0x007e_83b0, &[m, host, m]);
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opu_local_etc(host, cmd)` (`0x008017d0`, opus command table
+    /// `0x00c49064`) -> `cmd + 6`: a local frame between two units (`a`, `b`
+    /// = `opus_no_get` of `u16 cmd +2` and `+4` from the host's unit `u`),
+    /// through the emulated registers as the original does: `at` (`0x00c8f528`)
+    /// = (1, 0), `0x00c8f970` = `b`'s point (`+0x90`), the move register
+    /// (`0x00c8f980`) = `b - a` (`f32`, all four), `restoreVf00Register`;
+    /// `host +0` = that vector and `[g_pppColorConShift + host + 0xc]` =
+    /// `at.x` (the shift then 0). With flag 0x400 `host +0x10` = r0 and
+    /// `op_vector_m(host + 0x40, host + 0x10, host)`; else
+    /// `op_vector_m(host + 0x40, u + 0x90, host)`, `at` = (1, 0), the move
+    /// register = `u`'s point, `host +0x70` = it and `[shift + host +
+    /// 0x7c]` = `at.x` (the shift 0). Then `u +0xc0` = `host +0x280` x that
+    /// matrix with flag 0x8000, else `FFXVu0CameraMatrix(u + 0xc0, u +
+    /// 0x90, host, 0x00c48ca0)` with flag 0x200, else the matrix
+    /// (`op_m_copy`). Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_local_etc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store, sub};
+        let u = unit(mem, host);
+        let list = host.wrapping_add(0x300);
+        let (na, nb) = (
+            u32::from(mem.read::<u16>(cmd.wrapping_add(2))),
+            u32::from(mem.read::<u16>(cmd.wrapping_add(4))),
+        );
+        let a = opus_no_get(mem, list, u, na);
+        let b = opus_no_get(mem, list, u, nb);
+        let (at, mv, tmp) = (
+            g(mem, 0x00c8_f528),
+            g(mem, 0x00c8_f980),
+            g(mem, 0x00c8_f970),
+        );
+        let shift = g(mem, 0x00c8_b500);
+        mem.write(at, [1.0f32.to_bits(), 0]);
+        let pa: [u32; 4] = mem.read(a.wrapping_add(0x90));
+        mem.write(mv, pa);
+        let pb: [u32; 4] = mem.read(b.wrapping_add(0x90));
+        mem.write(tmp, pb);
+        let d: [u32; 4] = std::array::from_fn(|k| store(sub(load(pb[k]), load(pa[k]))));
+        mem.write(mv, d);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let v: [u32; 4] = mem.read(mv);
+        mem.write(host, v);
+        let put_at = |mem: &mut M, off: u32| {
+            let s: u32 = mem.read(shift);
+            let x: u32 = mem.read(at);
+            mem.write(s.wrapping_add(host).wrapping_add(off), x);
+            mem.write(shift, 0u32);
+        };
+        put_at(mem, 0xc);
+        let m = host.wrapping_add(0x40);
+        let flags = |mem: &M| mem.read::<u16>(host.wrapping_add(0x21a));
+        if flags(mem) & 0x400 != 0 {
+            let r0: [u32; 4] = mem.read(crate::ppp::bridge::R0.ptr(mem).addr);
+            mem.write(host.wrapping_add(0x10), r0);
+            call(
+                mem,
+                g(mem, 0x007e_a760),
+                &[m, host.wrapping_add(0x10), host],
+            );
+        } else {
+            let p = u.wrapping_add(0x90);
+            call(mem, g(mem, 0x007e_a760), &[m, p, host]);
+            mem.write(at, [1.0f32.to_bits(), 0]);
+            let pu: [u32; 4] = mem.read(p);
+            mem.write(mv, pu);
+            mem.write(host.wrapping_add(0x70), pu);
+            put_at(mem, 0x7c);
+        }
+        let um = u.wrapping_add(0xc0);
+        let f = flags(mem);
+        if f & 0x8000 != 0 {
+            call(mem, g(mem, 0x007e_83b0), &[um, host.wrapping_add(0x280), m]);
+        } else if f & 0x200 != 0 {
+            let c = g(mem, 0x00c4_8ca0);
+            call(
+                mem,
+                g(mem, 0x0062_fc80),
+                &[um, u.wrapping_add(0x90), host, c],
+            );
+        } else {
+            call(mem, g(mem, 0x007e_8010), &[um, m]);
+        }
+        cmd.wrapping_add(6)
+    }
+
+    /// `0x008187b0` (`opu_v_lerp`, ours; opus command table `0x00c49110`)
+    /// -> `cmd + 6`: the unit `u`'s point between two units (`a`, `b` =
+    /// `opus_no_get` of `u16 cmd +2` and `+4`), `t` = `u f32 +0x40`, through
+    /// the emulated registers as the original does: `0x00c8f8d0` = `u
+    /// +0x40..`, `0x00c8f8f0` = `a`'s point, `0x00c8f900` = `b`'s, `d` at
+    /// `0x00c8f970` = `f32(b - a)` (x, y, z; `w` kept), `at` (`0x00c8f528`)
+    /// = (1/256, 0), the move register (`0x00c8f980`) = (1/256, 0, `at.z`,
+    /// `at.w`); `restoreVf00Register`; then `d` = `f32(f32(t d) x move.x) +
+    /// a` per axis, `at` = `d`; `[g_pppColorConShift + u + 0x90]` and
+    /// `+0x94` = `d.x`, `d.y`, `u +0x98` = `d.z`; finally `at` = (`d.z`,
+    /// r0.z, `d.w`, r0.w) and the shift 0.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_v_lerp(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let u = unit(mem, host);
+        let list = host.wrapping_add(0x300);
+        let (na, nb) = (
+            u32::from(mem.read::<u16>(cmd.wrapping_add(2))),
+            u32::from(mem.read::<u16>(cmd.wrapping_add(4))),
+        );
+        let a = opus_no_get(mem, list, u, na);
+        let b = opus_no_get(mem, list, u, nb);
+        let at = g(mem, 0x00c8_f528);
+        let (pt, ra, rb, d, mv) = (
+            g(mem, 0x00c8_f8d0),
+            g(mem, 0x00c8_f8f0),
+            g(mem, 0x00c8_f900),
+            g(mem, 0x00c8_f970),
+            g(mem, 0x00c8_f980),
+        );
+        let step = 0x3b80_0000u32;
+        mem.write(at, [step, 0]);
+        let p: [u32; 4] = mem.read(u.wrapping_add(0x40));
+        mem.write(pt, p);
+        let pa: [u32; 4] = mem.read(a.wrapping_add(0x90));
+        mem.write(ra, pa);
+        let pb: [u32; 4] = mem.read(b.wrapping_add(0x90));
+        mem.write(rb, pb);
+        for (k, at) in (0..3).zip((d..).step_by(4)) {
+            mem.write(at, store(sub(load(pb[k]), load(pa[k]))));
+        }
+        let hi: [u32; 2] = mem.read(at.wrapping_add(8));
+        mem.write(mv, [step, 0, hi[0], hi[1]]);
+        ffx_ps2::ee::bridge::restore_vf00(mem);
+        let t = load(mem.read(pt));
+        for k in 0..3u32 {
+            let v = store(mul(t, load(mem.read(d + 4 * k))));
+            mem.write(d + 4 * k, v);
+        }
+        let s = load(mem.read(mv));
+        for k in 0..3u32 {
+            let v = store(mul(s, load(mem.read(d + 4 * k))));
+            mem.write(d + 4 * k, v);
+        }
+        let mut r = [0u32; 4];
+        for (k, at_k) in (0..3).zip((d..).step_by(4)) {
+            let v = store(add(load(mem.read(at_k)), load(pa[k])));
+            mem.write(at_k, v);
+            r[k] = v;
+        }
+        r[3] = mem.read(d + 0xc);
+        mem.write(at, r);
+        let shift = g(mem, 0x00c8_b500);
+        for (k, off) in [(0usize, 0x90u32), (1, 0x94)] {
+            let sh: u32 = mem.read(shift);
+            mem.write(sh.wrapping_add(u).wrapping_add(off), r[k]);
+        }
+        let r0: [u32; 4] = mem.read(crate::ppp::bridge::R0.ptr(mem).addr);
+        mem.write(at, [r[2], r0[2], r[3], r0[3]]);
+        mem.write(u.wrapping_add(0x98), r[2]);
+        mem.write(shift, 0u32);
+        cmd.wrapping_add(6)
+    }
 }

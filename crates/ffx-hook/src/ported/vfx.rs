@@ -5535,4 +5535,21 @@ ported! {
         let img = frame.at();
         op::bridge::op_oef2_tex_clut_cue_trans(&mut mem(), img, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 37 c ----
+    /// `opu_jump_etc2(host, cmd)`.
+    opu_jump_etc2 @ 0x0081_6e50 => extern "C" fn opu_jump_etc2(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_jump_etc2(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_matrix_etc(host, cmd)`.
+    opu_matrix_etc @ 0x0080_1ab0 => extern "C" fn opu_matrix_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_matrix_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_local_etc(host, cmd)`.
+    opu_local_etc @ 0x0080_17d0 => extern "C" fn opu_local_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_local_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_lerp(host, cmd)` (`0x008187b0`).
+    opu_v_lerp @ 0x0081_87b0 => extern "C" fn opu_v_lerp(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_lerp(&mut mem(), host, cmd)
+    }
 }
