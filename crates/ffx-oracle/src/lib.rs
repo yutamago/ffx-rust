@@ -149,6 +149,15 @@ impl Ret {
     pub fn st0_is(&self, port: f64) -> bool {
         self.st0.is_some_and(|st0| same_float(st0, port))
     }
+
+    /// `ST0` as `fstp qword` stores it, NaN payloads kept (quieted): the
+    /// same as [`Ret::st0`] ([`f80_to_f64`]), kept for the callers that
+    /// name it; what a game-side `f64` call (`call_cdecl_f64` in
+    /// `ffx-hook`) returns.
+    #[must_use]
+    pub fn st0_f64(&self) -> Option<f64> {
+        self.st0
+    }
 }
 
 #[derive(Clone, Copy)]

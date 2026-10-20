@@ -331,6 +331,52 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 ALL,
                 |m| act::ms_get_cursor_target(m, chr, sel, cmd, ev),
             );
+            // the same through a command ID (round 30)
+            let id = [
+                0x3000 | rng.below(0x40),
+                0x2000 | rng.below(0x40),
+                0x4000 | rng.below(0x40),
+            ][rng.below(3) as usize];
+            let flags = [
+                rng.below(0x400),
+                0x200 | rng.below(0x100),
+                0x100 | rng.below(2),
+                rng.next() | 0x8000_0000,
+            ][rng.below(4) as usize];
+            // actors waiting on this command's event or another
+            for _ in 0..3 {
+                let p = w.actor(rng.below(ACTORS));
+                poke(a, b, p + 0xddd, &[u8::from(rng.below(3) != 0)]);
+                let e = [id, 0xff, rng.below(0x1_0000)][rng.below(3) as usize];
+                poke(
+                    a,
+                    b,
+                    p + 0xdde,
+                    &u16::try_from(e & 0xffff).unwrap().to_le_bytes(),
+                );
+            }
+            twin(
+                "MsGetCommandTarget2",
+                a,
+                b,
+                0x0079_9790,
+                &[chr, id, flags, rng.next()],
+                ALL,
+                |m| ffx_battle::minor::bridge::ms_get_command_target2(m, chr, id, flags),
+            );
+            let (set, targets) = (
+                rng.next(),
+                [rng.next(), 1 << rng.below(0x1f), 0][rng.below(3) as usize],
+            );
+            twin(
+                "MsGetSameTarget",
+                a,
+                b,
+                0x0079_9a10,
+                &[chr, set, targets, id],
+                ALL,
+                |m| ffx_battle::minor::bridge::ms_get_same_target(m, chr, set, targets, id),
+            );
             let (u, t) = (rng.below(0x20), [0, rng.below(0x20)][rng.below(2) as usize]);
             twin("MsGetGuardChr", a, b, 0x0078_eef0, &[u, t], ALL, |m| {
                 act::ms_get_guard_chr(m, u, t)

@@ -150,4 +150,54 @@ pub mod bridge {
         let (f, path) = (h.rebase(READ_WHOLE_FILE), h.rebase(path));
         h.call(f, &[path, 0])
     }
+
+    /// `g_CdLib_SectorTable` and the two words after it: the file
+    /// tables `pc_fat_index_filename_set` reads.
+    pub const FAT_TABLES: [u32; 3] = [0x0231_0c68, 0x0231_0c6c, 0x0231_0c70];
+    /// `g_FFXHddMode` (`u8`).
+    pub const HDD_MODE: Global<u8> = Global::new(0x0133_c913);
+    /// `0x00a42ab0(path, &size)`: [`READ_WHOLE_FILE`]'s twin for the third
+    /// table.
+    pub const READ_WHOLE_FILE_2: u32 = 0x00a4_2ab0;
+    /// The CD build's three paths (`host0:/ffx/proj/battle/jp/cddata/...`)
+    /// and the HDD build's two (`host0:/ffx/proj/prog/cdidx/jp/...`), whose
+    /// bytes `+0x1a`, `+0x1b` (the `jp`) take the country name.
+    pub const FAT_CD_PATHS: [u32; 3] = [0x00c8_5d44, 0x00c8_5d70, 0x00c8_5d9c];
+    pub const FAT_HDD_PATHS: [u32; 2] = [0x00c8_5dc8, 0x00c8_5df0];
+    /// The country name buffer's size in `pc_fat_index_filename_set`'s
+    /// frame.
+    pub const FAT_COUNTRY_WORK: u32 = 0x10;
+
+    /// `pc_fat_index_filename_set()` (`0x00a42fc0`, from `CdEnvInit`):
+    /// `MsSetCountryName` into `work` ([`FAT_COUNTRY_WORK`] bytes); without
+    /// [`HDD_MODE`] the three CD tables (`pc_ReadWholeFile` twice, then
+    /// [`READ_WHOLE_FILE_2`]); with it the country's two letters into both
+    /// HDD paths, their two tables and 0 for the third. Each read takes
+    /// `(path, 0)`; returns the last read's block.
+    pub fn pc_fat_index_filename_set(h: &mut impl Host, work: u32) -> u32 {
+        fn read(h: &mut impl Host, f: u32, path: u32, table: u32) -> u32 {
+            let (f, path, table) = (h.rebase(f), h.rebase(path), h.rebase(table));
+            let block = h.call(f, &[path, 0]);
+            h.write(table, block);
+            block
+        }
+        let f = h.rebase(SET_COUNTRY_NAME);
+        h.call(f, &[work]);
+        if HDD_MODE.get(h) == 0 {
+            read(h, READ_WHOLE_FILE, FAT_CD_PATHS[0], FAT_TABLES[0]);
+            read(h, READ_WHOLE_FILE, FAT_CD_PATHS[1], FAT_TABLES[1]);
+            return read(h, READ_WHOLE_FILE_2, FAT_CD_PATHS[2], FAT_TABLES[2]);
+        }
+        let country: [u8; 2] = h.read(work);
+        for path in FAT_HDD_PATHS {
+            let at = h.rebase(path) + 0x1a;
+            h.write(at, country[0]);
+            h.write(at + 1, country[1]);
+        }
+        read(h, READ_WHOLE_FILE, FAT_HDD_PATHS[0], FAT_TABLES[0]);
+        let block = read(h, READ_WHOLE_FILE, FAT_HDD_PATHS[1], FAT_TABLES[1]);
+        let at = h.rebase(FAT_TABLES[2]);
+        h.write(at, 0u32);
+        block
+    }
 }
