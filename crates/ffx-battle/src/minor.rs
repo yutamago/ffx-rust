@@ -3146,4 +3146,157 @@ pub mod bridge {
         let w = sub(mul(v, f(c, 0)), mul(u, f(c, 2)));
         store(div(add(load(t), w), d))
     }
+
+    /// `MsGetCommandTarget2(i, id, flags, _)` (`0x00799790`): the cursor's
+    /// targets (`MsGetCursorTarget(i, selector, MsGetComData(id, 0), id)`)
+    /// for command `id`: flags with bit 0x200 give the selector (their low
+    /// byte); otherwise it is -15 or -14 by `flags`' low byte (or, for
+    /// negative flags, the command's `+0x1a` bit 1 clear) and whether `i`
+    /// is a monster (`MsGetRamChrMonster`); with bit 0x100 (flags not
+    /// negative) `i` itself is left out.
+    pub fn ms_get_command_target2(mem: &mut impl Mem, i: u32, id: u32, flags: u32) -> u32 {
+        let c = crate::stat::bridge::ms_get_com_data(mem, id, 0);
+        let mut f = flags;
+        let selector = if f.cast_signed() >= 0 && f & 0x200 != 0 {
+            f & 0xff
+        } else {
+            if f.cast_signed() < 0 {
+                f = u32::from(!byte(mem, c, 0x1a) >> 1 & 1);
+            }
+            let low = f & 0xff != 0;
+            let pick = if crate::actor::bridge::ms_get_ram_chr_monster(i) == 0 {
+                low
+            } else {
+                !low
+            };
+            u32::from(pick).wrapping_sub(0xf)
+        };
+        let r = crate::actor::bridge::ms_get_cursor_target(mem, i, selector, c, id);
+        if f.cast_signed() >= 0 && f & 0x100 != 0 {
+            r & !(1 << (i & 0x1f))
+        } else {
+            r
+        }
+    }
+
+    /// `MsGetSameTarget(i, set, targets, id)` (`0x00799a10`): command
+    /// `id`'s target spread (`+0x1a` bits 2-3, `MsGetComData`): 1 adds to
+    /// `targets` every actor of `set` in the group (`MsGetChrGroup`) of
+    /// the first of `targets` (-1 without one); 2 is `set`, 3 `i` alone, 0
+    /// `targets` as they are.
+    pub fn ms_get_same_target(mem: &mut impl Mem, i: u32, set: u32, targets: u32, id: u32) -> u32 {
+        use crate::actor::bridge::ms_get_chr_group;
+        let c = crate::stat::bridge::ms_get_com_data(mem, id, 0);
+        match mem.read::<u16>(c.wrapping_add(0x1a)) >> 2 & 3 {
+            1 => {}
+            2 => return set,
+            3 => return 1 << (i & 0x1f),
+            _ => return targets,
+        }
+        let bit = |v: u32, k: u32| (v.cast_signed() >> k) & 1 != 0;
+        let group = (0..0x1f)
+            .find(|&k| bit(targets, k))
+            .map_or(u32::MAX, |k| ms_get_chr_group(mem, k));
+        let mut out = targets;
+        for k in 0..0x1f {
+            if bit(set, k) && ms_get_chr_group(mem, k) == group {
+                out |= 1 << k;
+            }
+        }
+        out
+    }
+
+    /// `MsActReCommand(i)` (`0x007acc90`): with an action running
+    /// ([`ACTION`] not -1), the command ID of actor `i`'s source's
+    /// (`+0xded`, then its `+0xc`) running command list (`MsGetCommand(i,
+    /// 0, -1, list, &id)`, `id` 0 at first); for 0x3074-0x3077 the reel
+    /// entry's (`MsGetReelEntry_007b19d0(id - 0x3074)`) `u16 +2` instead
+    /// when there is one and it is not 0. 0 without an action. `local` is
+    /// the original's frame word for `id`.
+    ///
+    /// [`ACTION`]: crate::misc::bridge::ACTION
+    pub fn ms_act_re_command(mem: &mut impl Mem, i: u32, local: u32) -> u32 {
+        use crate::actor::bridge::{ms_get_chr, ms_get_chr_command};
+        mem.write(local, 0u32);
+        if crate::misc::bridge::ACTION.get(mem) == -1 {
+            return 0;
+        }
+        let src = byte(mem, ms_get_chr(mem, i), 0xded).cast_signed();
+        let k = byte(mem, ms_get_chr(mem, i32::from(src).cast_unsigned()), 0xc);
+        let cmd = ms_get_chr_command(mem, u32::from(k));
+        let list = cmd.wrapping_add(u32::from(byte(mem, cmd, 2)) * 0x10 + 8);
+        crate::command::bridge::ms_get_command(mem, u32::MAX, list, local);
+        let id: u32 = mem.read(local);
+        let reel = id.wrapping_sub(0x3074);
+        if reel > 3 {
+            return id;
+        }
+        let e = crate::misc::bridge::ms_get_reel_entry(mem, reel);
+        if e == 0 {
+            return id;
+        }
+        match mem.read::<u16>(e.wrapping_add(2)) {
+            0 => id,
+            v => u32::from(v),
+        }
+    }
+
+    /// `MsChangeWeaponWakka(i)` (`0x007ad640`): the first equipment entry
+    /// ([`EQUIPMENT`], 200 of 0x16 bytes) in use (`+2`) with flag 8 and
+    /// without flag 2 (`+3`) becomes field item `i`'s weapon
+    /// (`MsFieldItemGetMes(i)`): when the message has one (`i8 +0xd2`
+    /// above 0), its first equipment slot (`+0xfe`) is copied over the
+    /// entry, keeping the entry's `u16 +0`, `+2` and `+6`. 1; 0 without
+    /// such an entry.
+    pub fn ms_change_weapon_wakka<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+    ) -> u32 {
+        let base = EQUIPMENT.ptr(mem).addr;
+        let Some(e) = (0..200).map(|k| base + 0x16 * k).find(|&e| {
+            let f = byte(mem, e, 3);
+            byte(mem, e, 2) != 0 && f & 8 != 0 && f & 2 == 0
+        }) else {
+            return 0;
+        };
+        ms_field_item_get_mes(mem, call, i);
+        let mes = FIELD_ITEM_MES.ptr(mem).addr;
+        if byte(mem, mes, 0xd2).cast_signed() > 0 {
+            let (b2, b6) = (byte(mem, e, 2), byte(mem, e, 6));
+            let id: u16 = mem.read(e);
+            let slot: [u8; 0x16] = mem.read(mes.wrapping_add(0xfe));
+            mem.write(e, slot);
+            mem.write(e, id);
+            mem.write(e.wrapping_add(2), b2);
+            mem.write(e.wrapping_add(6), b6);
+        }
+        1
+    }
+
+    /// `MsSetSaveCommandMenuPanel(id, on)` (`0x00785d40`): command `id`'s
+    /// bit on the menu panel ([`MENU_PANEL`], as
+    /// [`ms_get_save_command_menu_panel`]) set (`on`) or cleared; the bit
+    /// set (0 when cleared, or for an ID not 0x3xxx). Past ten words (from
+    /// 0x3060) only the result.
+    pub fn ms_set_save_command_menu_panel(mem: &mut impl Mem, id: u32, on: u32) -> u32 {
+        if id & 0xffff_f000 != 0x3000 {
+            return 0;
+        }
+        let panel = MENU_PANEL.ptr(mem).addr;
+        let (at, k) = if id.cast_signed() < 0x3060 {
+            let k = id & 0xfff;
+            (Some(panel + 2 * (k >> 4)), k)
+        } else {
+            let k = id.wrapping_sub(0x60) & 0xfff;
+            ((k >> 4 < 10).then_some(panel + 0xc + 2 * (k >> 4)), k)
+        };
+        let bit = 1u16 << (k & 0xf);
+        let v = if on != 0 { bit } else { 0 };
+        if let Some(at) = at {
+            let w = mem.read::<u16>(at) & !bit | v;
+            mem.write(at, w);
+        }
+        u32::from(v)
+    }
 }

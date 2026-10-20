@@ -254,6 +254,37 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             twin("MsFieldItemGetMes", a, b, 0x0079_8ff0, &[t], ALL, |m| {
                 g::ms_field_item_get_mes(m, &mut call_original, t)
             });
+            // Wakka's weapon change: some entries in use, flagged 8, not 2
+            // (the first now and then), a gear treasure (kind 5) mostly
+            let eq = g::EQUIPMENT.ptr(b).addr;
+            // (not on the image alone: no gear tables there)
+            if !synthetic && rng.below(3) != 0 {
+                poke(a, b, r, &[5]);
+            }
+            if rng.below(3) == 0 {
+                poke(a, b, eq + 2, &[rng.byte() | 1, 8]);
+            }
+            for _ in 0..8 {
+                let e = eq + 0x16 * rng.below(200);
+                poke(
+                    a,
+                    b,
+                    e + 2,
+                    &[
+                        [0, 1, rng.byte() | 1][rng.below(3) as usize],
+                        [8, 0xa, rng.byte()][rng.below(3) as usize],
+                    ],
+                );
+            }
+            if rng.below(3) == 0 {
+                for k in 0..200 {
+                    poke(a, b, eq + 0x16 * k + 3, &[0]);
+                }
+            }
+            twin("MsChangeWeaponWakka", a, b, 0x007a_d640, &[t], ALL, |m| {
+                g::ms_change_weapon_wakka(m, &mut call_original, t)
+            });
+            same("MsChangeWeaponWakka", a, b);
         }
         // a scene: its field and formation from the encounter tables (any
         // on the image)
@@ -2236,6 +2267,72 @@ fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             |m| g::ms_get_save_command_menu_panel(m, id),
         );
         same("MsGetSaveCommandMenuPanel", a, b);
+        let on = [0, 1, rng.next()][rng.below(3) as usize];
+        twin(
+            "MsSetSaveCommandMenuPanel",
+            a,
+            b,
+            0x0078_5d40,
+            &[id, on],
+            ALL,
+            |m| g::ms_set_save_command_menu_panel(m, id, on),
+        );
+        same("MsSetSaveCommandMenuPanel", a, b);
+        // a command again: the action, the source, the reels
+        set(
+            a,
+            b,
+            ffx_battle::misc::bridge::ACTION,
+            [-1, 0, rng.next().cast_signed()][rng.below(3) as usize],
+        );
+        let i = [rng.below(ACTORS), rng.next()][rng.below(5).min(1) as usize];
+        let p = ffx_battle::actor::bridge::ms_get_chr(b, i);
+        poke(
+            a,
+            b,
+            p + 0xded,
+            &[[u8::try_from(rng.below(ACTORS)).unwrap(), 0xff][rng.below(4).min(1) as usize]],
+        );
+        for k in 0..ACTORS {
+            poke(
+                a,
+                b,
+                w.actor(k) + 0xc,
+                &[u8::try_from(rng.below(ACTORS)).unwrap()],
+            );
+        }
+        fill(
+            a,
+            b,
+            rng,
+            ffx_battle::misc::bridge::REEL_ENTRIES.ptr(b).addr,
+            0x10,
+        );
+        if rng.below(2) == 0 {
+            let at = ffx_battle::misc::bridge::REEL_ENTRIES.ptr(b).addr + 4 * rng.below(4) + 2;
+            poke(a, b, at, &[0, 0]);
+        }
+        // the source's command list: one of the reels' commands, mostly
+        let src = b.read(p + 0xded, 1).unwrap()[0];
+        let sp = ffx_battle::actor::bridge::ms_get_chr(b, u32::from(src));
+        let k = b.read(sp + 0xc, 1).unwrap()[0];
+        let cmd = ffx_battle::actor::bridge::ms_get_chr_command(b, u32::from(k));
+        if readable(a, cmd, 0x60) && rng.below(4) != 0 {
+            let n = u32::from(b.read(cmd + 2, 1).unwrap()[0]);
+            let id = u16::try_from(0x3073 + rng.below(6)).unwrap();
+            poke(
+                a,
+                b,
+                cmd + 8 + 0x10 * n,
+                &[id.to_le_bytes(), 0xffu16.to_le_bytes()].concat(),
+            );
+        }
+        twin("MsActReCommand", a, b, 0x007a_cc90, &[i], ALL, |m| {
+            g::ms_act_re_command(m, i, local)
+        });
+        let v = b.read(local, 4).unwrap();
+        a.write(local, &v).unwrap();
+        same("MsActReCommand", a, b);
         let (k, v) = (rng.below(4), rng.next());
         twin(
             "MsSetChrShadowMode",

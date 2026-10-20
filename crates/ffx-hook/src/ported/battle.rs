@@ -4071,6 +4071,28 @@ ported! {
     MsLineSideDist_007b6f10 @ 0x007b_6f10 => extern "C" fn ms_line_side_dist(flip: u32, a: u32, b: u32, c: u32) -> f32 {
         f32::from_bits(minor::ms_line_side_dist(&mem(), flip, a, b, c))
     }
+    /// `MsGetCommandTarget2(i, id, flags, _)`.
+    MsGetCommandTarget2 @ 0x0079_9790 => extern "C" fn ms_get_command_target2(i: u32, id: u32, flags: u32, _x: u32) -> u32 {
+        minor::ms_get_command_target2(&mut mem(), i, id, flags)
+    }
+    /// `MsGetSameTarget(i, set, targets, id)`.
+    MsGetSameTarget @ 0x0079_9a10 => extern "C" fn ms_get_same_target(i: u32, set: u32, targets: u32, id: u32) -> u32 {
+        minor::ms_get_same_target(&mut mem(), i, set, targets, id)
+    }
+    /// `MsActReCommand(i)`: the command ID in this call's frame.
+    MsActReCommand @ 0x007a_cc90 => extern "C" fn ms_act_re_command(i: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        minor::ms_act_re_command(&mut mem(), i, at)
+    }
+    /// `MsChangeWeaponWakka(i)`.
+    MsChangeWeaponWakka @ 0x007a_d640 => extern "C" fn ms_change_weapon_wakka(i: u32) -> u32 {
+        minor::ms_change_weapon_wakka(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsSetSaveCommandMenuPanel(id, on)`.
+    MsSetSaveCommandMenuPanel @ 0x0078_5d40 => extern "C" fn ms_set_save_command_menu_panel(id: u32, on: u32) -> u32 {
+        minor::ms_set_save_command_menu_panel(&mut mem(), id, on)
+    }
     /// `MsRegSEplay3(i, se)`.
     MsRegSEplay3 @ 0x007a_0170 => extern "C" fn ms_reg_se_play3(i: u32, se: u32) -> u32 {
         afterdmg::ms_reg_se_play3(&mut mem(), &crt_trig, &mut call_ptr, i, se)

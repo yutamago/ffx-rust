@@ -3188,7 +3188,11 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
                         let mut c = game_call_o;
                         ad::ms_reg_se_play(m, &stand_in, &mut c, i, se)
                     });
-                    // MsRegSEplay3: the same unless hasted
+                    // MsRegSEplay3: the same unless hasted (the sound just
+                    // played forgotten, mostly)
+                    if rng.below(4) != 0 {
+                        set(a, b, ad::LAST_SE, 0);
+                    }
                     let p = ffx_battle::actor::bridge::ms_get_chr(b, i & 0xff);
                     poke(a, b, p + 0x613, &[u8::from(rng.below(2) == 0)]);
                     twin("MsRegSEplay3", a, b, 0x007a_0170, &[i, se], ALL, |m| {
