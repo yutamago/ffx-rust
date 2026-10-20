@@ -114,21 +114,14 @@ impl Host for G<'_> {
             host::Conv::Fastcall => Conv::Fastcall,
         };
         let r = self.0.call(addr, conv, args).unwrap();
-        let (Some(v), Some(raw)) = (r.st0, r.st0_raw) else {
+        // as the caller's `fstp m32` stores it
+        let Some(v) = r.st0_f32() else {
             panic!("call_st0 {addr:#x}: no float in ST0");
         };
         // pop the result, as the caller's fstp does
         let pop = self.0.rebase(TRAMPOLINE) + 16;
         self.0.call(pop, Conv::Cdecl, &[]).unwrap();
-        // as `fstp m32`: a NaN keeps its sign and top fraction bits
-        let bits = if v.is_nan() {
-            let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-            let sign = u32::from(raw[9] >> 7) << 31;
-            sign | 0x7fc0_0000 | ((mant >> 40) as u32 & 0x007f_ffff)
-        } else {
-            ffx_bridge::x87::store(v)
-        };
-        f32::from_bits(bits)
+        v
     }
     fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
         let at = self.0.rebase(TRAMPOLINE);
@@ -137,18 +130,11 @@ impl Host for G<'_> {
             .0
             .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
             .unwrap();
-        let (Some(v), Some(raw)) = (r.st0, r.st0_raw) else {
+        let Some(v) = r.st0_f32() else {
             panic!("call_intrinsic {addr:#x}: no float in ST0");
         };
         self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
-        let bits = if v.is_nan() {
-            let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-            let sign = u32::from(raw[9] >> 7) << 31;
-            sign | 0x7fc0_0000 | ((mant >> 40) as u32 & 0x007f_ffff)
-        } else {
-            ffx_bridge::x87::store(v)
-        };
-        f32::from_bits(bits)
+        v
     }
     fn scratch(&mut self) -> u32 {
         // the bottom of the emulated stack: no call reaches that deep, and
@@ -6764,6 +6750,13 @@ fn stub_screen_wh(t: &mut Twins, width: u32, height: u32) {
 /// helpers, `PMatrix4_RowTimes` and the screen-adjusted view run
 /// original on both sides.
 fn round22_case(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) {
+    project_case(t, rng, scene, None, what);
+}
+
+/// [`round22_case`], or with `wrapper` `(sym, mode)` the cdecl
+/// `graphicProject3DPointOntoScreen*` wrapper at `sym` on `scene` made
+/// `g_PhyreScene`.
+fn project_case(t: &mut Twins, rng: &mut Rng, scene: u32, wrapper: Option<(u32, u32)>, what: &str) {
     use ffx_bridge::x87::SSE2_AVAILABLE;
     use ffx_graphic::util::bridge as ut;
     let float = |rng: &mut Rng| -> f32 {
@@ -6804,6 +6797,13 @@ fn round22_case(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) {
     stub_screen_wh(t, width, height);
     let p = floats(t, rng, 3);
     let out = t.alloc(&rng.bytes(8));
+    if let Some((sym, mode)) = wrapper {
+        t.global(scene::bridge::SCENE.sym, scene);
+        t.check(what, sym, Conv::Cdecl, &[out, p], |g| {
+            Out::F32(ut::project_point(g, out, p, mode))
+        });
+        return;
+    }
     let mode = [0, 1, 2, 2, 3, rng.next()][rng.below(6) as usize];
     t.check(
         what,
@@ -7094,5 +7094,569 @@ fn snapshot_round22b_matches_the_original() {
                 round22b_overflow(&mut t, &mut rng, true, &what);
             }
         }
+    }
+}
+
+// ---- round 23 ----
+
+/// The projection wrappers: `(sym, mode)`.
+const PROJECT_WRAPPERS: [(u32, u32); 2] = [(0x0064_28f0, 1), (0x0064_28d0, 2)];
+
+/// Stubs the cache releasers' callees. `persistent` is what
+/// `Cache_IsPersistentChr` answers. `Cache_Dispose`'s delayed-release
+/// call also replaces the first model of `entry` (when set) with `model`,
+/// so the bridge must read it again after the call.
+fn stub_release_callees(t: &mut Twins, rng: &mut Rng, persistent: u32, entry: u32, model: u32) {
+    use cache::bridge as cb;
+    t.stub_sym(cb::IS_PERSISTENT_CHR, Conv::Cdecl, 1, persistent);
+    t.stub_sym(cb::UNLOAD_TASK, Conv::Cdecl, 1, rng.next());
+    t.stub_sym(cb::USER_FREE, Conv::Cdecl, 1, rng.next());
+    t.stub_sym(cb::FREE_CLOTH_VERTEX_BUFF, Conv::Cdecl, 1, rng.next());
+    t.stub_sym(cb::EMPTY, Conv::Cdecl, 0, rng.next());
+    t.stub_sym(cb::FREE_ENTRY, Conv::Cdecl, 1, rng.next());
+    let log = t.stub(None, cb::ENABLE_DELAY_RELEASE, false, 0, 0, rng.next());
+    let at = t.cave_next;
+    let mut c = Vec::new();
+    if entry != 0 {
+        c.extend([0xc7, 0x05]); // mov dword [entry + 0x10], model
+        c.extend((entry + 0x10).to_le_bytes());
+        c.extend(model.to_le_bytes());
+    }
+    c.push(0xe9); // jmp log
+    c.extend(log.wrapping_sub(at + c.len() as u32 + 4).to_le_bytes());
+    assert!(at + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(at, &c);
+    t.cave_next = at + c.len() as u32;
+    let f = t.rebase(cb::ENABLE_DELAY_RELEASE);
+    let mut j = vec![0xe9];
+    j.extend(at.wrapping_sub(f + 5).to_le_bytes());
+    t.write(f, &j);
+}
+
+/// One cache releaser on the cache as it is (`fresh`: a random one with
+/// small ages). Returns what `Cache_Dispose` answered (3 for the others).
+fn round23_cache(t: &mut Twins, rng: &mut Rng, fresh: bool, what: &str) -> u32 {
+    use cache::bridge as cb;
+    let table = t.rebase(cb::TABLE.sym);
+    let keys = if fresh {
+        let keys = build_cache(t, rng);
+        for i in 0..cache::SLOTS {
+            let e = t.r32(table + 4 * i);
+            if rng.chance(2) {
+                let b = t.r8(e + 8);
+                t.w8(e + 8, (b & !7) | [0, 0, 5, 7, 1, 3][rng.below(6) as usize]);
+            }
+            if rng.chance(2) {
+                t.w8(e + 5, 0);
+            }
+            if rng.chance(2) {
+                t.w8(e + 6, 0);
+            }
+        }
+        keys
+    } else {
+        (0..cache::SLOTS)
+            .map(|i| {
+                let e = t.r32(table + 4 * i);
+                (i32::from(t.r8(e + 4) as i8), t.r32(e))
+            })
+            .collect()
+    };
+    let persistent = if rng.chance(4) { rng.next() | 1 } else { 0 };
+    let op = rng.below(4);
+    let (kind, id) = if rng.chance(5) {
+        (rng.below(6) as i32 - 1, rng.below(14))
+    } else {
+        keys[rng.below(keys.len() as u32) as usize]
+    };
+    let k = kind as u32;
+    let target = if op == 3 {
+        cb::find_live(&t.b, kind, id).unwrap_or(0)
+    } else {
+        0
+    };
+    let model = if rng.chance(3) { 0 } else { rng.next() };
+    stub_release_callees(t, rng, persistent, target, model);
+    match op {
+        0 => t.check(what, 0x0084_0030, Conv::Cdecl, &[], |g| {
+            cb::clear(g, false);
+            // eax: Cache_FreeEntry's or the caller's, which nobody reads
+            Out::None
+        }),
+        1 => t.check(what, 0x0084_0150, Conv::Cdecl, &[], |g| {
+            cb::clear(g, true);
+            // eax: as Cache_Clear's, al partly the last age
+            Out::None
+        }),
+        2 => t.check(what, 0x0084_0440, Conv::Cdecl, &[], |g| {
+            cb::dispose_check(g);
+            Out::None
+        }),
+        _ => {
+            let check = [0, 1, rng.next()][rng.below(3) as usize];
+            let mut r = 0;
+            t.check(what, 0x0084_0250, Conv::Cdecl, &[k, id, check], |g| {
+                r = cb::dispose(g, kind, id, check);
+                Out::U32(r)
+            });
+            return r;
+        }
+    }
+    3
+}
+
+#[test]
+fn round23_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2323_0023);
+    let mut answers = [0u32; 4];
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        if round % 4 == 0 {
+            let w = PROJECT_WRAPPERS[(round / 4) % 2];
+            project_case(&mut t, &mut rng, 0, Some(w), &what);
+        } else {
+            let r = round23_cache(&mut t, &mut rng, true, &what);
+            answers[match r {
+                0 => 0,
+                1 => 1,
+                u32::MAX => 2,
+                _ => 3,
+            }] += 1;
+        }
+    }
+    assert!(answers.iter().all(|&n| n > 50), "answers {answers:?}");
+}
+
+#[test]
+fn snapshot_round23_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5323_0023);
+    // the game's own cache first, each releaser on a fresh copy
+    for op in 0..8 {
+        let mut s = Twins::snapshot().unwrap();
+        let mut r = Rng(0x5323_1000 + op);
+        let what = format!("snapshot cache {op}");
+        round23_cache(&mut s, &mut r, false, &what);
+    }
+    let real = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    let real = if real != 0 && t.r32(real + 0xdc) != 0 {
+        real
+    } else {
+        0
+    };
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        if round % 2 == 0 {
+            // the game's own scene every other wrapper round
+            let scene = if round % 4 == 0 { real } else { 0 };
+            let w = PROJECT_WRAPPERS[(round / 2) % 2];
+            project_case(&mut t, &mut rng, scene, Some(w), &what);
+        } else {
+            round23_cache(&mut t, &mut rng, true, &what);
+        }
+    }
+}
+
+// ---- round 23, group 2: the 2D scene's layers ----
+
+/// A name for an instance: the pattern, inside other text or not, a
+/// neighbour number, or a long one that runs into the original's pattern
+/// buffer (at most `max` bytes before the NUL).
+fn layer_name(rng: &mut Rng, pattern: &str, max: usize) -> Vec<u8> {
+    let letters = |rng: &mut Rng, n: usize| -> String {
+        (0..n)
+            .map(|_| {
+                ["a", "e", "l", "y", "r", "s", "c", "n", "1", "2", "_"][rng.below(11) as usize]
+            })
+            .collect()
+    };
+    let mut s = match rng.below(8) {
+        0 => pattern.to_string(),
+        1 => format!("{}{pattern}{}", letters(rng, 3), letters(rng, 2)),
+        2 => format!("{pattern}{}", rng.below(10)),
+        3 => format!("x{}", &pattern[..pattern.len() - 1]),
+        4 => {
+            let n = rng.below(12) as usize;
+            letters(rng, n)
+        }
+        5 => {
+            // long: what passes the name buffer becomes the pattern
+            let n = max - rng.below(12) as usize;
+            let mut s = letters(rng, n);
+            if rng.chance(2) {
+                s.replace_range(..pattern.len(), pattern);
+            }
+            s
+        }
+        6 => "a".repeat(max - rng.below(4) as usize),
+        _ => String::new(),
+    }
+    .into_bytes();
+    s.truncate(max);
+    s.push(0);
+    s
+}
+
+/// A list of the 2D level: nodes of `PhyreSceneCursor_*` (`+0` next,
+/// `+8` link, `+0x2c` class, `+0x34` position, `+0x3c` count, `+0x40`
+/// set), linked from the end node (`list +0x1c`); each node's instances
+/// (`+4` floats, `+0x1c` target, `+0x2c` the tagged name), some slots
+/// skipped by the link chain. Returns the list.
+fn build_layer_list(t: &mut Twins, rng: &mut Rng, patterns: &[String], max: usize) -> u32 {
+    let class = t.rebase(ffx_graphic::util::bridge::CURSOR_CLASS);
+    let list = t.alloc(&rng.bytes(0x40));
+    let end = list + 0x1c;
+    let n = rng.below(4) as usize;
+    let nodes: Vec<u32> = (0..n).map(|_| t.alloc(&rng.bytes(0x48))).collect();
+    for (k, &node) in nodes.iter().enumerate() {
+        t.w32(node, nodes.get(k + 1).copied().unwrap_or(end));
+        let stride = [0x40, 0x48, 0x60][rng.below(3) as usize];
+        let offset = [0, 8, 0x10][rng.below(3) as usize];
+        let fake = t.alloc(&rng.bytes(0x90));
+        t.w32(fake + 0x1c, stride);
+        t.w32(fake + 0x8c, offset);
+        // a node of another class is passed over by the cursor
+        t.w32(fake + 0x40, if rng.chance(6) { 0 } else { class });
+        t.w32(node + 0x2c, fake);
+        t.w32(node + 0x40, u32::from(!rng.chance(8)));
+        let slots = 1 + rng.below(5);
+        let region = t.alloc(&rng.bytes((slots * stride + 0x60) as usize));
+        let far = region + slots * stride + 0x40;
+        t.w32(far, far + 4);
+        for j in 0..slots {
+            let obj = region + j * stride + offset;
+            let floats: Vec<u8> = (0..12).flat_map(|_| rng.float().to_le_bytes()).collect();
+            let m = t.alloc(&floats);
+            t.w32(obj + 4, m);
+            let target = if rng.chance(4) {
+                0
+            } else {
+                t.alloc(&rng.bytes(0x20))
+            };
+            t.w32(obj + 0x1c, target);
+            let pattern = &patterns[rng.below(patterns.len() as u32) as usize];
+            let name = layer_name(rng, pattern, max);
+            let at = t.alloc(&name);
+            t.w32(obj + 0x2c, at | u32::from(rng.chance(3)));
+        }
+        // the link: never met, or a slot (then its word, the next link)
+        let link = if rng.chance(2) {
+            far
+        } else {
+            region + rng.below(slots + 1) * stride
+        };
+        let next = if rng.chance(2) {
+            far
+        } else {
+            region + (1 + rng.below(slots)) * stride
+        };
+        if link != far && next > link {
+            t.w32(link, next);
+        } else if link != far {
+            t.w32(link, far);
+        }
+        t.w32(node + 8, link);
+        t.w32(node + 0x34, region);
+        t.w32(node + 0x3c, slots);
+    }
+    t.w32(end, nodes.first().copied().unwrap_or(end));
+    list
+}
+
+/// A random scene with a 2D level of up to four lists.
+fn build_layer_scene(t: &mut Twins, rng: &mut Rng, patterns: &[String], max: usize) -> u32 {
+    let scene = t.alloc(&rng.bytes(0xfa00));
+    t.w8(scene + 0x93c, u8::from(!rng.chance(8)));
+    t.w32(
+        scene + 0x1128,
+        if rng.chance(8) { 0 } else { rng.next() | 1 },
+    );
+    let n = rng.below(5);
+    let lists: Vec<u8> = (0..n)
+        .flat_map(|_| build_layer_list(t, rng, patterns, max).to_le_bytes())
+        .collect();
+    let at = t.alloc(&lists);
+    t.w32(scene + 0x112c, n);
+    t.w32(scene + 0x1134, at);
+    scene
+}
+
+/// One of the six layer functions on `scene` (a fresh one when 0).
+fn round23b_case(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    let op = rng.below(6);
+    let scenes = op.is_multiple_of(3);
+    // a layer past 99 overruns the original's 8-byte pattern buffer
+    let n = if scenes {
+        [0, 1, 1, 2, 3, rng.below(20), rng.next()][rng.below(7) as usize]
+    } else {
+        (rng.below(109) as i32 - 9) as u32
+    };
+    let (prefix, max) = if scenes {
+        ("scene", 151)
+    } else {
+        ("layer", 59)
+    };
+    let patterns: Vec<String> = [n, n.wrapping_add(1), n / 10, rng.below(4)]
+        .iter()
+        .map(|&k| format!("{prefix}{}", k as i32))
+        .collect();
+    let scene = if scene == 0 {
+        build_layer_scene(t, rng, &patterns, max)
+    } else {
+        scene
+    };
+    let int = |rng: &mut Rng| {
+        [
+            0,
+            1,
+            rng.below(64),
+            rng.below(64).wrapping_neg(),
+            rng.next(),
+        ][rng.below(5) as usize]
+    };
+    let (x, y) = (int(rng), int(rng));
+    let (sx, sy) = (rng.float(), rng.float());
+    t.global(scene::bridge::SCENE.sym, scene);
+    match op {
+        0 => t.check(what, 0x0065_87d0, Conv::Thiscall(scene), &[n], |g| {
+            ut::change_2d_scene_num(g, scene, n);
+            Out::None
+        }),
+        1 => t.check(what, 0x0065_8350, Conv::Thiscall(scene), &[n, x, y], |g| {
+            ut::change_layer_offset(g, scene, n, x, y);
+            Out::None
+        }),
+        2 => t.check(
+            what,
+            0x0065_8570,
+            Conv::Thiscall(scene),
+            &[n, x, y, sx.to_bits(), sy.to_bits()],
+            |g| {
+                ut::change_layer_scale(g, scene, n, x, y, sx, sy);
+                Out::None
+            },
+        ),
+        3 => t.check(what, 0x0063_9d90, Conv::Cdecl, &[n], |g| {
+            ut::graphic_change_scene_num(g, n);
+            Out::None
+        }),
+        4 => t.check(what, 0x0063_9d40, Conv::Cdecl, &[n, x, y], |g| {
+            ut::graphic_change_layer_offset(g, n, x, y);
+            Out::None
+        }),
+        _ => t.check(
+            what,
+            0x0063_9d60,
+            Conv::Cdecl,
+            &[n, x, y, sx.to_bits(), sy.to_bits()],
+            |g| {
+                ut::graphic_change_layer_scale(g, n, x, y, sx, sy);
+                Out::None
+            },
+        ),
+    }
+}
+
+#[test]
+fn round23b_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2323_b023);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round23b_case(&mut t, &mut rng, 0, &what);
+    }
+}
+
+#[test]
+fn snapshot_round23b_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5323_b023);
+    let real = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    let loaded = real != 0 && t.r8(real + 0x93c) != 0;
+    eprintln!("the snapshot's scene {real:#x}: 2D level loaded {loaded}");
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        // the game's own scene every other round
+        let scene = if round % 2 == 0 && real != 0 { real } else { 0 };
+        round23b_case(&mut t, &mut rng, scene, &what);
+    }
+}
+
+// ---- round 23, group 3 ----
+
+/// A recording stub for `thiscall (a, record*)`, `ret 8`: logs the tag,
+/// `ecx`, `a` and the record's four words (its address differs: the
+/// original's stack, the bridge's scratch).
+fn stub_record4(t: &mut Twins, sym: u32, ret: u32) {
+    let at = t.rebase(sym);
+    let log = t.log;
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(sym.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // [eax+8] = a
+    c.extend([0x56, 0x8b, 0x74, 0x24, 0x0c]); // push esi; mov esi, [esp+0xc]
+    for k in 0..4u8 {
+        c.extend([0x8b, 0x56, 4 * k, 0x89, 0x50, 0xc + 4 * k]); // [eax+0xc+4k] = record[k]
+    }
+    c.push(0x5e); // pop esi
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.extend([0xc2, 0x08, 0x00]); // ret 8
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+/// `TextureAnimationManager_updateSamplers_006b44a0` on a random manager:
+/// animations named from a few names, frames in and out of range, slots
+/// of -1, textures past the count, parameter slots typed 2 or not.
+/// Returns how many records were set.
+fn round23c_case(t: &mut Twins, rng: &mut Rng, what: &str) -> u32 {
+    use managers::bridge as mb;
+    let names: Vec<u32> = ["texA", "texB", "anim1", "anim10"]
+        .iter()
+        .map(|s| cstr(t, s))
+        .collect();
+    let this = t.alloc(&rng.bytes(0x90));
+    t.w32(this + 4, u32::from(!rng.chance(10)));
+    // the textures
+    let ntex = rng.below(6);
+    let textures: Vec<u8> = (0..ntex + 2)
+        .flat_map(|_| if rng.chance(4) { 0 } else { rng.next() | 1 }.to_le_bytes())
+        .collect();
+    let tex = t.alloc(&textures);
+    t.w32(
+        this + 0x5c,
+        ntex | if rng.chance(2) { 0x8000_0000 } else { 0 },
+    );
+    t.w32(this + 0x60, tex);
+    t.w32(this + 0xc, rng.below(5));
+    t.w32(this + 0x10, rng.below(4));
+    // the animations
+    let nanim = rng.below(4);
+    let anims = t.alloc(&rng.bytes(0x20 * nanim as usize + 4));
+    for k in 0..nanim {
+        let a = anims + 0x20 * k;
+        let name = names[rng.below(4) as usize];
+        t.w32(a + 4, name | u32::from(rng.chance(3)));
+        let nslots = rng.below(4);
+        let slots: Vec<u8> = (0..=nslots)
+            .flat_map(|_| {
+                let v = if rng.chance(4) {
+                    u32::MAX
+                } else {
+                    rng.below(ntex + 3)
+                };
+                v.to_le_bytes()
+            })
+            .collect();
+        let s = t.alloc(&slots);
+        t.w32(a + 8, nslots | if rng.chance(3) { 0x8000_0000 } else { 0 });
+        t.w32(a + 0xc, s);
+        let frame = [u32::MAX, 0, 1, rng.below(nslots + 2)][rng.below(4) as usize];
+        t.w32(a + 0x18, frame);
+    }
+    t.w32(this + 0x7c, nanim);
+    t.w32(this + 0x80, anims);
+    let offset = [0u32, 2, 4, 8, 0x10][rng.below(5) as usize];
+    // the sampler parameter, its offset and size
+    let param = if rng.chance(6) {
+        0
+    } else {
+        let p = t.alloc(&rng.bytes(0x10));
+        let size = [4u16, 8, 0x10, 0x30, 0xe010][rng.below(5) as usize];
+        t.write(p + 8, &(offset as u16).to_le_bytes());
+        t.write(p + 0xa, &size.to_le_bytes());
+        p
+    };
+    // the materials
+    let nmat = rng.below(6);
+    let mut mats = Vec::new();
+    for _ in 0..nmat {
+        if rng.chance(6) {
+            mats.extend(0u32.to_le_bytes());
+            continue;
+        }
+        let mat = t.alloc(&rng.bytes(0x20));
+        t.w32(mat, rng.next());
+        let buf = t.alloc(&rng.bytes(0x40));
+        let value = t.alloc(&rng.bytes(8));
+        t.w8(value + 2, [2, 2, 1, 3][rng.below(4) as usize]);
+        t.w32(buf + offset + 8, if rng.chance(5) { 0 } else { value });
+        t.w32(buf, [0x10, 0x20, 0x40, rng.next()][rng.below(4) as usize]);
+        t.w32(mat + 4, buf);
+        let name = names[rng.below(4) as usize];
+        t.w32(mat + 0x10, name | u32::from(rng.chance(3)));
+        mats.extend(mat.to_le_bytes());
+    }
+    let list = t.alloc(&mats);
+    t.w32(
+        this + 0x74,
+        nmat | if rng.chance(3) { 0x8000_0000 } else { 0 },
+    );
+    t.w32(this + 0x78, list);
+    t.stub_sym(mb::SHADER_PARAMS_FIND, Conv::Thiscall(0), 1, param);
+    stub_record4(t, mb::SET_PARAM_VALUE, rng.next());
+    t.check(what, 0x006b_44a0, Conv::Fastcall, &[this], |g| {
+        mb::update_samplers(g, this);
+        Out::None
+    });
+    t.r32(t.log)
+}
+
+#[test]
+fn round23c_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2323_c023);
+    let mut set = 0;
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        set += round23c_case(&mut t, &mut rng, &what);
+    }
+    eprintln!("stub calls: {set}");
+    assert!(set > 150, "stub calls: {set}");
+}
+
+#[test]
+fn snapshot_round23c_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5323_c023);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round23c_case(&mut t, &mut rng, &what);
     }
 }

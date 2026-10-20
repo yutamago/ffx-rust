@@ -1414,6 +1414,61 @@ ported! {
     Cache_OverFlow @ 0x0084_09a0 => extern "C" fn cache_overflow() -> u32 {
         cache::bridge::overflow(&mut mem())
     }
+
+    // ---- round 23 ----
+    /// `Cache_Clear()`.
+    Cache_Clear @ 0x0084_0030 => extern "C" fn cache_clear() {
+        cache::bridge::clear(&mut mem(), false);
+    }
+    /// `Cache_ClearFast()`.
+    Cache_ClearFast @ 0x0084_0150 => extern "C" fn cache_clear_fast() {
+        cache::bridge::clear(&mut mem(), true);
+    }
+    /// `Cache_DisposeCheck()`.
+    Cache_DisposeCheck @ 0x0084_0440 => extern "C" fn cache_dispose_check() {
+        cache::bridge::dispose_check(&mut mem());
+    }
+    /// `Cache_Dispose(kind, id, check)`.
+    Cache_Dispose @ 0x0084_0250 => extern "C" fn cache_dispose(kind: i32, id: u32, check: u32) -> u32 {
+        cache::bridge::dispose(&mut mem(), kind, id, check)
+    }
+    /// `graphicProject3DPointOntoScreenConsider2DScene(out, p)`: `1 / w`
+    /// in `ST0`.
+    graphicProject3DPointOntoScreenConsider2DScene @ 0x0064_28f0 => extern "C" fn project_point_2d(out: u32, p: u32) -> f32 {
+        ut::project_point(&mut mem(), out, p, 1)
+    }
+    /// `graphicProject3DPointOntoScreenAbmap(out, p)`: `1 / w` in `ST0`.
+    graphicProject3DPointOntoScreenAbmap @ 0x0064_28d0 => extern "C" fn project_point_abmap(out: u32, p: u32) -> f32 {
+        ut::project_point(&mut mem(), out, p, 2)
+    }
+    /// `PhyreScene_change2DSceneNum(this, n)`.
+    PhyreScene_change2DSceneNum @ 0x0065_87d0 => extern "thiscall" fn scene_change_2d_scene_num(this: u32, n: u32) {
+        ut::change_2d_scene_num(&mut mem(), this, n);
+    }
+    /// `PhyreScene_changeLayerOffset_00658350(this, layer, x, y)`.
+    PhyreScene_changeLayerOffset_00658350 @ 0x0065_8350 => extern "thiscall" fn scene_change_layer_offset(this: u32, layer: u32, x: u32, y: u32) {
+        ut::change_layer_offset(&mut mem(), this, layer, x, y);
+    }
+    /// `PhyreScene_changeLayerScale_00658570(this, layer, x, y, sx, sy)`.
+    PhyreScene_changeLayerScale_00658570 @ 0x0065_8570 => extern "thiscall" fn scene_change_layer_scale(this: u32, layer: u32, x: u32, y: u32, sx: u32, sy: u32) {
+        ut::change_layer_scale(&mut mem(), this, layer, x, y, f32::from_bits(sx), f32::from_bits(sy));
+    }
+    /// `graphicChangeLayerOffset_00639d40(layer, x, y)`.
+    graphicChangeLayerOffset_00639d40 @ 0x0063_9d40 => extern "C" fn graphic_change_layer_offset(layer: u32, x: u32, y: u32) {
+        ut::graphic_change_layer_offset(&mut mem(), layer, x, y);
+    }
+    /// `graphicChangeLayerScale_00639d60(layer, x, y, sx, sy)`.
+    graphicChangeLayerScale_00639d60 @ 0x0063_9d60 => extern "C" fn graphic_change_layer_scale(layer: u32, x: u32, y: u32, sx: u32, sy: u32) {
+        ut::graphic_change_layer_scale(&mut mem(), layer, x, y, f32::from_bits(sx), f32::from_bits(sy));
+    }
+    /// `graphicChangeSceneNum_00639d90(n)`.
+    graphicChangeSceneNum_00639d90 @ 0x0063_9d90 => extern "C" fn graphic_change_scene_num(n: u32) {
+        ut::graphic_change_scene_num(&mut mem(), n);
+    }
+    /// `TextureAnimationManager_updateSamplers_006b44a0(this)`.
+    TextureAnimationManager_updateSamplers_006b44a0 @ 0x006b_44a0 => extern "fastcall" fn tex_anim_update_samplers(this: u32) {
+        mg::update_samplers(&mut mem(), this);
+    }
 }
 
 /// A singleton's pointer.

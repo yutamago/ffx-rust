@@ -2082,6 +2082,14 @@ pub mod bridge {
         f32::from_bits(x87::store(x87::div(1.0, w)))
     }
 
+    /// `graphicProject3DPointOntoScreenConsider2DScene(out, p)` (mode 1)
+    /// and `graphicProject3DPointOntoScreenAbmap(out, p)` (mode 2):
+    /// [`scene_project_point`] on `g_PhyreScene`; `1 / w` in `ST0`.
+    pub fn project_point(h: &mut impl Host, out: u32, p: u32, mode: u32) -> f32 {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        scene_project_point(h, scene, out, p, mode)
+    }
+
     // ---- round 22, group 2 ----
 
     /// `SheetCellUV_00684b00(kind, u, v, &u_out, &v_out)` (`ret 0x14`; it
@@ -2218,5 +2226,266 @@ pub mod bridge {
         }
         SPD_CTRL_B8.set(h, u32::from(speed_up));
         f32::from_bits(scaled)
+    }
+
+    // ---- round 23, group 2: the 2D scene's layers ----
+
+    /// `PhyreSceneCursor_Begin_00637730(cursor)` (`thiscall`): seeks the
+    /// first valid node and sets the cursor up on it.
+    pub const CURSOR_BEGIN: u32 = 0x0063_7730;
+    /// `PhyreSceneCursor_Next_006377a0(cursor)` (`thiscall`): steps to the
+    /// next valid node.
+    pub const CURSOR_NEXT: u32 = 0x0063_77a0;
+    /// The class descriptor the cursors filter on (`0x00ca7228`).
+    pub const CURSOR_CLASS: u32 = 0x00ca_7228;
+
+    /// The cursor's words (`PhyreSceneCursor_SetNode`, [`cursor_set_node`]).
+    const POS: u32 = 0;
+    const LINK: u32 = 4;
+    const STRIDE: u32 = 8;
+    const COUNT: u32 = 0xc;
+    const OFFSET: u32 = 0x10;
+
+    /// Visits the instances of every list of the scene's 2D level, as the
+    /// three layer functions walk them: with the level loaded (byte
+    /// `+0x93c`) and `+0x1128` set, each of the `+0x112c` lists at
+    /// `+0x1134` gets a cursor (in [`Host::scratch`], as the original's on
+    /// its stack: end node the list's `+0x1c`, node its first unless the
+    /// list is empty, class [`CURSOR_CLASS`]), begun by [`CURSOR_BEGIN`].
+    /// While it counts, the instance at `offset + pos` is visited; the
+    /// position then steps by the stride, and where it meets the link the
+    /// link follows itself and the step repeats (that slot is not
+    /// visited); at the count's end [`CURSOR_NEXT`] moves to the next node.
+    /// `visit` returning true ends the list.
+    fn for_each_instance<H: Host>(
+        h: &mut H,
+        scene: u32,
+        mut visit: impl FnMut(&mut H, u32) -> bool,
+    ) {
+        if h.read::<u8>(scene + 0x93c) == 0 || h.read::<u32>(scene + 0x1128) == 0 {
+            return;
+        }
+        let cursor = h.scratch();
+        let class = h.rebase(CURSOR_CLASS);
+        let mut list = 0;
+        while list < h.read::<u32>(scene + 0x112c) {
+            let lists: u32 = h.read(scene + 0x1134);
+            let end = h.read::<u32>(lists + 4 * list).wrapping_add(0x1c);
+            let first: u32 = h.read(end);
+            for k in 0..5 {
+                h.write(cursor + 4 * k, 0u32);
+            }
+            h.write(cursor + 0x14, end);
+            h.write(cursor + 0x18, if first == end { 0 } else { first });
+            h.write(cursor + 0x1c, class);
+            h.call_sym(CURSOR_BEGIN, Conv::Thiscall(cursor), &[]);
+            'nodes: loop {
+                let mut count: u32 = h.read(cursor + COUNT);
+                if count == 0 {
+                    break;
+                }
+                let mut pos: u32 = h.read(cursor + POS);
+                let mut link: u32 = h.read(cursor + LINK);
+                'instances: loop {
+                    let instance = h.read::<u32>(cursor + OFFSET).wrapping_add(pos);
+                    if visit(h, instance) {
+                        break 'nodes;
+                    }
+                    // the original also stores the three back into the
+                    // cursor, which the next node's set-up overwrites
+                    loop {
+                        pos = pos.wrapping_add(h.read(cursor + STRIDE));
+                        count -= 1;
+                        if link == pos {
+                            link = h.read(link);
+                            if count == 0 {
+                                break 'instances;
+                            }
+                        } else if count == 0 {
+                            break 'instances;
+                        } else {
+                            continue 'instances;
+                        }
+                    }
+                }
+                h.call_sym(CURSOR_NEXT, Conv::Thiscall(cursor), &[]);
+            }
+            list += 1;
+        }
+    }
+
+    /// The original's two stack buffers, a name buffer of `name_len`
+    /// bytes followed by the pattern's (`"scene%d"` / `"layer%d"`). The
+    /// name is copied without a bound, so a long one runs into the pattern
+    /// (and stays there for the next instances); one that reaches past
+    /// both overwrites the stack cookie, and the original ends the process
+    /// on return.
+    struct NameFrame {
+        bytes: Vec<u8>,
+        name_len: usize,
+    }
+
+    impl NameFrame {
+        /// The frame with `pattern` `sprintf`ed into its buffer of
+        /// `pattern_len` bytes (cut there: the original's would run into
+        /// its cookie).
+        fn new(name_len: usize, pattern_len: usize, pattern: &str) -> Self {
+            let mut bytes = vec![0; name_len + pattern_len];
+            for (at, b) in bytes[name_len..].iter_mut().zip(pattern.bytes()) {
+                *at = b;
+            }
+            Self { bytes, name_len }
+        }
+
+        /// The C string at `at` in the frame.
+        fn c_str(&self, at: usize) -> &[u8] {
+            let s = &self.bytes[at..];
+            &s[..s.iter().position(|&b| b == 0).unwrap_or(s.len())]
+        }
+
+        /// Copies the instance's name (`+0x2c`, a pointer whose low bit is
+        /// a flag) into the frame; whether the pattern is in it (`strstr`).
+        fn name_matches(&mut self, m: &impl Mem, instance: u32) -> bool {
+            let tagged: u32 = m.read(instance + 0x2c);
+            let name = tagged - (tagged & 1);
+            for (i, at) in (0u32..).zip(self.bytes.iter_mut()) {
+                *at = m.read(name.wrapping_add(i));
+                if *at == 0 {
+                    break;
+                }
+            }
+            let (hay, needle) = (self.c_str(0), self.c_str(self.name_len));
+            needle.is_empty() || hay.windows(needle.len()).any(|w| w == needle)
+        }
+    }
+
+    /// `PhyreScene_change2DSceneNum(scene, n)` (`thiscall`, `ret 4`): sets
+    /// `+0xf9c4` (byte) when `n` is 1 and `+0x11d8` = `n`; then every
+    /// instance of the 2D level ([`for_each_instance`]) whose name holds
+    /// `"scene<n>"` becomes its target's (`+0x1c`, when set) `+0x1c`, the
+    /// others clear it.
+    pub fn change_2d_scene_num(h: &mut impl Host, scene: u32, n: u32) {
+        if n == 1 {
+            h.write(scene + 0xf9c4, 1u8);
+        }
+        #[allow(clippy::cast_possible_wrap)] // `%d`
+        let mut frame = NameFrame::new(100, 52, &format!("scene{}", n as i32));
+        h.write(scene + 0x11d8, n);
+        for_each_instance(h, scene, |h, instance| {
+            let matched = frame.name_matches(h, instance);
+            let target: u32 = h.read(instance + 0x1c);
+            if target != 0 {
+                h.write(target + 0x1c, if matched { instance } else { 0 });
+            }
+            false
+        });
+    }
+
+    /// The 12 floats of the first instance named `"layer<layer>"` in each
+    /// list (its `+4`), changed by `change`; that ends the list. The
+    /// original copies them to its stack (`rep movs`) and back through the
+    /// x87, so every one goes through [`x87::round_trip`] on the way back.
+    fn change_layer<H: Host>(
+        h: &mut H,
+        scene: u32,
+        layer: u32,
+        mut change: impl FnMut(&mut [f32; 12]),
+    ) {
+        #[allow(clippy::cast_possible_wrap)] // `%d`
+        let mut frame = NameFrame::new(52, 8, &format!("layer{}", layer as i32));
+        for_each_instance(h, scene, |h, instance| {
+            if !frame.name_matches(h, instance) {
+                return false;
+            }
+            let at: u32 = h.read(instance + 4);
+            let mut v = [0f32; 12];
+            for (i, x) in (0u32..).zip(v.iter_mut()) {
+                *x = f32::from_bits(h.read(at + 4 * i));
+            }
+            change(&mut v);
+            // the changed ones come from `fstp` and pass unchanged
+            for (i, x) in (0u32..).zip(v) {
+                h.write(at + 4 * i, x87::round_trip(x).to_bits());
+            }
+            true
+        });
+    }
+
+    /// `fild dword` then `fstp dword`: an int as the float the original
+    /// keeps on its stack.
+    #[allow(clippy::cast_possible_wrap)] // `fild` is signed
+    fn int_float(v: u32) -> f32 {
+        f32::from_bits(x87::store(f64::from(v as i32)))
+    }
+
+    /// `PhyreScene_changeLayerOffset_00658350(scene, layer, x, y)`
+    /// (`thiscall`, `ret 0xc`; name ours): in [`change_layer`], `[8] +=
+    /// x * [1]` and `[9] += y * [3]` (`x`, `y` ints made floats).
+    pub fn change_layer_offset(h: &mut impl Host, scene: u32, layer: u32, x: u32, y: u32) {
+        let (x, y) = (int_float(x), int_float(y));
+        change_layer(h, scene, layer, |v| {
+            v[8] = x87::Reg::load(x).mul_m32(v[1]).add_m32(v[8]).store();
+            v[9] = (x87::Reg::load(y) * x87::Reg::load(v[3]) + x87::Reg::load(v[9])).store();
+        });
+    }
+
+    /// `PhyreScene_changeLayerScale_00658570(scene, layer, x, y, sx, sy)`
+    /// (`thiscall`, `ret 0x14`; name ours): in [`change_layer`], `[1] =
+    /// -2.5 sx` and `[3] = -2.5 sy`, with `[8] += (2.5 sx + [1]) * x *
+    /// 0.5` and `[9] += (2.5 sy + [3]) * y * 0.5` on the old `[1]`, `[3]`
+    /// (`x`, `y` ints made floats; 2.5 and 0.5 the doubles at `0x00b43d70`
+    /// and `0x00b92220`).
+    pub fn change_layer_scale(
+        h: &mut impl Host,
+        scene: u32,
+        layer: u32,
+        x: u32,
+        y: u32,
+        sx: f32,
+        sy: f32,
+    ) {
+        let k = x87::Reg::constant(2.5);
+        let half = x87::Reg::constant(0.5);
+        let (x, y) = (int_float(x), int_float(y));
+        change_layer(h, scene, layer, |v| {
+            let sx = x87::Reg::load(sx);
+            let sy = x87::Reg::load(sy);
+            let a = (sx * k).add_m32(v[1]);
+            v[8] = (a * x87::Reg::load(x) * half + x87::Reg::load(v[8])).store();
+            let b = (sy * k).add_m32(v[3]).mul_m32(y);
+            v[9] = (half * b + x87::Reg::load(v[9])).store();
+            v[1] = (-sx * k).store();
+            v[3] = (k * -sy).store();
+        });
+    }
+
+    /// `graphicChangeLayerOffset_00639d40(layer, x, y)` (cdecl; name ours):
+    /// [`change_layer_offset`] on `g_PhyreScene`.
+    pub fn graphic_change_layer_offset(h: &mut impl Host, layer: u32, x: u32, y: u32) {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        change_layer_offset(h, scene, layer, x, y);
+    }
+
+    /// `graphicChangeLayerScale_00639d60(layer, x, y, sx, sy)` (cdecl; name
+    /// ours): [`change_layer_scale`] on `g_PhyreScene`, the floats passed
+    /// on through the x87.
+    pub fn graphic_change_layer_scale(
+        h: &mut impl Host,
+        layer: u32,
+        x: u32,
+        y: u32,
+        sx: f32,
+        sy: f32,
+    ) {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        let (sx, sy) = (x87::round_trip(sx), x87::round_trip(sy));
+        change_layer_scale(h, scene, layer, x, y, sx, sy);
+    }
+
+    /// `graphicChangeSceneNum_00639d90(n)` (cdecl; name ours):
+    /// [`change_2d_scene_num`] on `g_PhyreScene`.
+    pub fn graphic_change_scene_num(h: &mut impl Host, n: u32) {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        change_2d_scene_num(h, scene, n);
     }
 }

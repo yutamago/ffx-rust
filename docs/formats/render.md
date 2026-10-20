@@ -959,3 +959,92 @@ Round 22:
   `":%s:%d] disposed from Cache."` with `ch_create_name(id)` and `id >>
   16` arithmetic), then `Cache_FreeEntry(victim)`; last comes a call of
   the empty `Cache_Empty_00840ab0`.
+
+Round 23:
+
+- `Cache_Clear()` (`0x00840030`) and `Cache_ClearFast()` (`0x00840150`),
+  cdecl: over the slots, each live entry (`+0xc` set) not in use (`+5`
+  clear) — for `Cache_ClearFast` also of age neither 5 nor 7 — gets
+  `+0x24` = 1 while it is not read yet (`+6`), else is freed. Both end
+  with a tail `jmp` to the empty `Cache_Empty_00840ab0`; `eax` is left
+  from the last free (or, for `Cache_ClearFast`, partly the last age
+  byte), which no caller reads.
+- Freeing an entry (the four releasers share it): each model (`+0x10`,
+  then `+0x14`) that is set is unloaded by
+  `graphicCharacterUnloadTask_thunk_0063d9a0` unless
+  `Cache_IsPersistentChr(id)` (`0x00840950`, always 0 in this build), then
+  cleared; `+0x18` is freed by `user_free_thunk` and cleared;
+  `Cache_FreeClothVertexBuff_00640e70(&e + 0x20)` when `+0x20` is set (the
+  field is left to it); `+0x1c` as `+0x18`; then `Cache_FreeEntry(e)`.
+- `Cache_DisposeCheck()` (`0x00840440`, cdecl): frees every live entry of
+  age 0, whether in use or read or not.
+- `Cache_Dispose(kind, id, check)` (`0x00840250`, cdecl): the first live
+  entry `(kind, id)`; 1 when there is none, -1 when it is in use and
+  `check` != 0, else it is freed and 0 returned. Before the first model,
+  `graphicEnableChrClusterDelayRelease()` runs and the model is read again
+  after it and `Cache_IsPersistentChr`.
+- `graphicProject3DPointOntoScreenConsider2DScene(out, p)` (`0x006428f0`)
+  and `graphicProject3DPointOntoScreenAbmap(out, p)` (`0x006428d0`), cdecl:
+  `PhyreScene_Project3DPointOntoScreen(g_PhyreScene, out, p, 1 or 2)`, its
+  `1 / w` left in `ST0`. (`graphicProject3DPointOntoScreen`, `0x006428b0`,
+  mode 0, is dead.)
+
+Round 23, the 2D scene's layers:
+
+- The walk (`PhyreScene_change2DSceneNum`, `PhyreScene_changeLayerOffset_00658350`,
+  `PhyreScene_changeLayerScale_00658570`): with the scene's 2D level loaded
+  (byte `+0x93c`) and `+0x1128` set, each of the `+0x112c` lists at
+  `+0x1134` gets a cursor on the stack: `+0x14` the end node (the list
+  `+0x1c`), `+0x18` its first node (0 when the end node points at itself),
+  `+0x1c` the class `0x00ca7228`, the first five words 0.
+  `PhyreSceneCursor_Begin_00637730` seeks the first valid node and sets the
+  cursor up (`PhyreSceneCursor_SetNode`). While the count (`+0xc`) is not 0,
+  the instance at `+0x10` + position (`+0`) is visited; the position then
+  steps by the stride (`+8`), the count drops, and where the position meets
+  the link (`+4`) the link follows itself (`*link`) and the step repeats,
+  so that slot is not visited. At the count's end
+  `PhyreSceneCursor_Next_006377a0` moves to the next node.
+- An instance's name is the pointer at `+0x2c` less its low bit. The
+  original copies it without a bound into a stack buffer (100 bytes in
+  `change2DSceneNum`, 52 in the layer functions) that lies just below its
+  `sprintf`ed pattern (`"scene%d"`, 52 bytes; `"layer%d"`, 8 bytes, so
+  layers past 99 or below -9 overrun into the stack cookie), then
+  `strstr`s the pattern in it: a longer name overwrites the pattern, for
+  the rest of the call.
+- `PhyreScene_change2DSceneNum(scene, n)` (`0x006587d0`, `thiscall`, `ret
+  4`): `+0xf9c4` = 1 (byte) when `n` is 1, `+0x11d8` = `n`; every visited
+  instance with a target (`+0x1c`) sets the target's `+0x1c` to itself
+  when its name holds `"scene<n>"`, else to 0.
+- `PhyreScene_changeLayerOffset_00658350(scene, layer, x, y)` (`ret 0xc`)
+  and `PhyreScene_changeLayerScale_00658570(scene, layer, x, y, sx, sy)`
+  (`ret 0x14`): the first instance of each list whose name holds
+  `"layer<layer>"` has its 12 floats (pointer `+4`) changed, which ends
+  that list. `x` and `y` are ints made floats (`fild`, `fstp m32`). Offset:
+  `[8] += x * [1]`, `[9] += y * [3]`. Scale (2.5 and 0.5 the doubles at
+  `0x00b43d70`, `0x00b92220`): `[8] += (2.5 sx + [1]) * x * 0.5`, `[9] +=
+  0.5 * ((2.5 sy + [3]) * y)`, then `[1] = -2.5 sx`, `[3] = -2.5 sy`. The
+  floats go through the x87 on the way back (a signalling NaN comes out
+  quiet).
+- `graphicChangeLayerOffset_00639d40(layer, x, y)`,
+  `graphicChangeLayerScale_00639d60(layer, x, y, sx, sy)` and
+  `graphicChangeSceneNum_00639d90(n)` (cdecl; names ours, sorting after
+  `graphicChangeLayerAlpha`): the three on `g_PhyreScene`.
+
+Round 23, texture-animation samplers:
+
+- `TextureAnimationManager_updateSamplers_006b44a0(this)` (`0x006b44a0`,
+  fastcall; name ours): nothing unless `+4` is set. For each animated
+  material `i` (`+0x78`, `+0x74` of them with a flag bit, the count read
+  again each pass; a material has its shader at `+0`, its parameter
+  buffer at `+4`, its animation's name, a `PString`, at `+0x10`):
+  `TextureAnimation_FindByName` gives the animation; its frame (`+0x18`,
+  -1 none, below `+8` with a flag bit) picks a slot in `+0xc` (-1 none),
+  plus `+0x10` when `i >= +0xc`; the slot, below `+0x5c` (flag bit),
+  picks the texture in `+0x60`. With a texture and a `"TextureSampler"`
+  (`0x00b3017c`) parameter (`ShaderParams_FindByName` on the shader),
+  `Render_SurfaceFormat_0066e4f0(buffer, param, &record)` gets the record
+  `(0xff, 0, sampler, texture)`: `sampler` is `this + 0x38` when the
+  parameter's slot (offset `+8` at least 4, size the low 13 bits of
+  `+0xa`, offset + size within the buffer's first word) holds a value
+  (`+8`) whose byte `+2` is 2, else `this + 0x14`. (The frame's -1 test is
+  redundant: -1 is never below the 31-bit count.)
