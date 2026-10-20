@@ -5787,7 +5787,7 @@
 0x007a0100 function MsRegSEplay               # fh v3:exact+call.cs 0x007a0120 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, 0) unless it is g_BtlLastSe (0x0112c8e4); ported (battle round 13)
 0x007a0140 function MsRegSEplay2              # fh v3:exact+call.cs 0x007a0160 cdecl; ours: (i, se): MsSEP3Dregist(3, i, se|bit31, once); ported (battle round 13)
 0x007a0170 function MsRegSEplay3                 # layout: alphabetical run between MsRegSEplay2 and MsRegistSEdata (1 unnamed in the gap); Switch 0x71003784b0 MsRegSEplay3 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i, se) -> MsRegSEplay(i, se) unless actor (u8)i is hasted (+0x613): 0 (as MsChrSePlayUnhasted_0079fdf0); ported (ffx_battle::after_damage, battle round 30)
-0x007a01b0 function MsRegistSEdata            # fh v3:exact 0x007a01d0
+0x007a01b0 function MsRegistSEdata            # fh v3:exact 0x007a01d0; ported (ffx_battle::sound, battle round 32): (actor, sep) -> -1 without a file, else 0: sep = count, section offsets; section = count, block offsets (0 none), end; section 0 block numbers (SndGetSepNumber) to actor+0xeac (first 32) or g_SepTransTable (first 128); a section with blocks queued (MsSEPtransRegist(actor+0xc or 0xff, first, end-first, section)), actor +0xf2e/+0xf2d or g_SepTransScene counted up
 0x007a0370 function MsSEPbattleClear          # fh v3:exact 0x007a0390; ours: SndSepClear each g_SepTransTable word, slot zeroed; byte 0x0112c029 cleared; eax garbage (last word read); ported (battle round 14)
 0x007a0400 function MsSEPchrClear             # fh v3:exact 0x007a0420
 0x007a04b0 function MsSEPtransAmount          # fh v3:bsim1.00 0x007a04d0
@@ -5795,10 +5795,10 @@
 0x007a04d0 function MsSEPtransCheckWave          # layout: alphabetical run between MsSEPtransCheck and MsSEPtransInit (1 unnamed in the gap); Switch 0x7100376d20 MsSEPtransCheckWave is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007a0500 function MsSEPtransInit            # fh v3:exact 0x007a0520
 0x007a0540 function MsSEPtransProcess         # fh v3:exact 0x007a0560; ours: g_BtlSepTrans > 0: record 0x011360c8 + 12*g_SepTransState: state 0 sends (type 0 SndSepTransSepOnly, else SndStandbyBattleWave), state 1 after SndSyncWaveTrans(0) 0: type 1 SndStandbySepWave (state 2), else ends (actor +0xf2d down, +0xf2c at 0; 0xff: 0x0112c02a down, at 0 g_SepTransFlag 1 + MsBtlReadSceneFree), index +1 mod 16; -1, none 0; dbgPrintf reads the data's first byte; ported (battle round 14)
-0x007a06b0 function MsSEPtransRegist             # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100376d60 MsSEPtransRegist is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007a0720 function MsSetVoice                   # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100377ca0 MsSetVoice is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007a06b0 function MsSEPtransRegist             # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100376d60 MsSEPtransRegist is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (ffx_battle::sound, battle round 32): cdecl (actor, data, size, kind): MsSEPtransProcess while g_BtlSepTrans >= 16, then record (state[0] + count) signed %16 of g_SepTransQueue = data, size, kind +8, actor +9, state 0; count up; eax = size with kind in the low byte
+0x007a0720 function MsSetVoice                   # layout: alphabetical run between MsSEPtransProcess and MsSetVoiceCheck (2 unnamed in the gap); Switch 0x7100377ca0 MsSetVoice is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (ffx_battle::sound, battle round 32): (i, line, flags, actor, out): line >= 0: MsAtelRequestInit, MsAtelRequestAdd(2, 1/0, 0x4f+i and 0x4d + monster, line), MsAtelRequestExe(2, 0, 0x4f+i, flags, actor, out) >= 0 -> 1, else 0
 0x007a07b0 function MsSetVoiceCheck           # fh v3:exact 0x007a07d0
-0x007a0820 function MsSoundStreamPlay            # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23 SHOUT %d:%d SEQ %d\\n'; Switch 0x7100377be0 MsSoundStreamPlay (symbols from Fahrenheit's server export)
+0x007a0820 function MsSoundStreamPlay            # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23 SHOUT %d:%d SEQ %d\\n'; Switch 0x7100377be0 MsSoundStreamPlay (symbols from Fahrenheit's server export); ported (ffx_battle::sound, battle round 32): (speaker, line): -1 while SndIsReadShoutVoiceStatus; speaker < 0 plays stream line; 0-7 x 0-7 g_BtlShoutStreams (0xff none) via SndStartShoutStream(stream, 0x3f, 0x7f); 0
 0x007a08a0 function MsSEP3DfadeOut            # fh v3:exact 0x007a08c0; ours: (se, frames) a node not fading (+4 0) gets +4 = +6 = frames: 1; ported (battle round 13)
 0x007a08e0 function MsSEP3DfadeOutAll         # fh v3:exact 0x007a0900
 0x007a0910 function MsSEP3Dinit               # fh v3:exact 0x007a0930
@@ -15949,6 +15949,7 @@
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
 0x00c424b0 label g_BtlNumberFrames          # MsNumberDrawProcess: 3-byte rows (x offset i8, y offset i8, alpha) by a number character's age less its place; name ours
+0x00c42510 label g_BtlShoutStreams          # u8[8][8] shout streams by speaker and line, 0xff none (MsSoundStreamPlay 0x007a0820); name ours
 0x00c42550 label g_BtlChrSeTable           # u16[0x21] party members' sounds by kind (MsChrSeGet_0079fe80; bits 8-11 variants, top nibble the source); name ours
 0x00c42598 label g_BtlChrSeTableOther      # u16[0x21] sounds by kind of actors 8-0x13 and 0x1c on (MsChrSeGet_0079fe80); name ours
 0x00c425e0 label g_BtlChrSeTableMonster    # u16[0x21] monsters' (0x14-0x1b) sounds by kind (MsChrSeGet_0079fe80); name ours
@@ -16205,6 +16206,7 @@
 0x0112a908 label g_BtlDebugNoVariance         # i8, DmgCalc passes 1 - it as MsCalcDamageCommand's vary; debug native case 6
 0x0112a909 label g_BtlDebugNoCrit             # u8, DmgCalc skips DmgCalc_Crit; debug native case 7
 0x0112a90a label g_BtlDebugAlwaysHit          # u8, DmgCalc_CheckHit never misses, statuses and Bribe always land; debug native case 8
+0x0112a90b label g_BtlDebugShoutTrace       # u8, MsSoundStreamPlay dbgPrintf of speaker, line and stream (debug); name ours
 0x0112a90c label g_BtlDebugNoCost             # u8, MsCalcMagic ignores the command's +0x26 cost; debug native case 5
 0x0112a90d label g_BtlDebugAlwaysCrit         # u8, DmgCalc_Crit always doubles; debug native case 0xd
 0x0112a90e label g_BtlDebugDamage1            # u8, DmgCalc: every HP/MP hit does 1; debug native case 0xe

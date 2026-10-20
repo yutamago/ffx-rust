@@ -30,6 +30,7 @@ use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::screen::bridge as screen;
 use ffx_battle::shake::bridge as shake;
+use ffx_battle::sound::bridge as sound;
 use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
 use ffx_battle::view::bridge as view;
@@ -5166,5 +5167,21 @@ ported! {
     /// `MsEffectMagicMotion(w)`.
     MsEffectMagicMotion @ 0x0078_7c30 => extern "C" fn ms_effect_magic_motion(w: u32) -> u32 {
         esig::ms_effect_magic_motion(&mut mem(), &mut call_ptr, w)
+    }
+    /// `MsSEPtransRegist(actor, data, size, kind)`.
+    MsSEPtransRegist @ 0x007a_06b0 => extern "C" fn ms_sep_trans_regist(actor: u32, data: u32, size: u32, kind: u32) -> u32 {
+        sound::ms_sep_trans_regist(&mut mem(), &mut call_ptr, actor, data, size, kind)
+    }
+    /// `MsRegistSEdata(actor, sep)`.
+    MsRegistSEdata @ 0x007a_01b0 => extern "C" fn ms_regist_se_data(actor: u32, sep: u32) -> i32 {
+        sound::ms_regist_se_data(&mut mem(), &mut call_ptr, actor, sep)
+    }
+    /// `MsSetVoice(i, line, flags, actor, out)`.
+    MsSetVoice @ 0x007a_0720 => extern "C" fn ms_set_voice(i: u32, line: u32, flags: u32, actor: u32, out: u32) -> u32 {
+        sound::ms_set_voice(&mut mem(), &mut call_ptr, i, line, [flags, actor, out])
+    }
+    /// `MsSoundStreamPlay(speaker, line)`.
+    MsSoundStreamPlay @ 0x007a_0820 => extern "C" fn ms_sound_stream_play(speaker: i32, line: u32) -> i32 {
+        sound::ms_sound_stream_play(&mut mem(), &mut call_ptr, speaker, line)
     }
 }

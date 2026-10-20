@@ -3488,3 +3488,213 @@ fn leaf_resets_match_the_original_on_a_snapshot() {
     };
     resets(&mut a, &mut b, &mut Xorshift(0x3030_0102), false);
 }
+
+/// Group J (round 32, `ffx_battle::sound`): the SEP transfers queued from
+/// a sound file (`MsRegistSEdata`, `MsSEPtransRegist`), a voice line
+/// (`MsSetVoice`) and a shout stream (`MsSoundStreamPlay`). The sound
+/// callees are stubs: `SndGetSepNumber` logs its blocks (a result that
+/// changes each call), the shout callees log theirs, `MsAtelRequestExe`
+/// keeps its last call, and the transfer callees of a full queue's
+/// `MsSEPtransProcess` end at once (`SndSyncWaveTrans` 0).
+fn sounds(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use ffx_battle::battle_end::bridge as be;
+    use ffx_battle::sound::bridge as so;
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x110 * 8);
+    let callees: [(u32, u8); 8] = [
+        (so::SND_GET_SEP_NUMBER, 1),
+        (so::SND_IS_READ_SHOUT_VOICE_STATUS, 0),
+        (so::SND_START_SHOUT_STREAM, 3),
+        (so::MS_ATEL_REQUEST_EXE, 6),
+        (be::SND_SEP_TRANS_SEP_ONLY, 2),
+        (be::SND_STANDBY_BATTLE_WAVE, 2),
+        (be::SND_SYNC_WAVE_TRANS, 1),
+        (be::SND_STANDBY_SEP_WAVE, 0),
+    ];
+    let slot = |k: u32| rec + 0x110 * k;
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(callees) {
+            if n > 4 {
+                recording_stub(o, f, STUBS_D + 0x60 * k, slot(k), n, 0);
+            } else {
+                logging_stub(o, f, STUBS_D + 0x60 * k, slot(k), n, 0);
+            }
+        }
+    }
+    let file = scratch(a, b, 0x1000);
+    // one of the values (all drawn first)
+    macro_rules! pick {
+        ($rng:expr, [$($v:expr),+ $(,)?] $(,)?) => {{
+            let v = [$($v),+];
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+    let queue = be::SEP_TRANS_QUEUE.ptr(b).addr;
+    let count = ffx_battle::state::bridge::SEP_TRANS;
+    let state = g::SEP_TRANS_STATE;
+    for _ in 0..400 {
+        // the queue: records of actors (the scene's would free its
+        // buffer), any state and kind; a count that is full now and then
+        for k in 0..16 {
+            let r = queue + 12 * k;
+            // (the transfer reads its data's first byte)
+            poke(a, b, r, &(file + rng.below(0x1000)).to_le_bytes());
+            poke(a, b, r + 4, &rng.next().to_le_bytes());
+            let kind = u8::try_from(pick!(rng, [0, 1, 1, 2])).unwrap();
+            let who = u8::try_from(rng.below(ACTORS)).unwrap();
+            let st = u8::try_from(rng.below(3)).unwrap();
+            poke(a, b, r + 8, &[kind, who, st]);
+        }
+        let n = {
+            let r = rng.below(16);
+            pick!(rng, [r, r, 0, 15, 16, 17])
+        };
+        set(a, b, count, n);
+        // (a negative first index only while the queue is not full: a
+        // full one would end a record outside the queue)
+        let first = {
+            let r = rng.below(16);
+            if n < 16 && rng.below(8) == 0 {
+                0xffff_fff3
+            } else {
+                pick!(rng, [r, r, 0, 15])
+            }
+        };
+        // (word 0 of the state; the count is its word 1)
+        poke(a, b, state.ptr(b).addr, &first.to_le_bytes());
+        set(a, b, be::SEP_TRANS_SCENE, rng.byte());
+        poke(a, b, slot(0) + 4, &rng.next().to_le_bytes());
+        let actor = w.actor(rng.below(ACTORS));
+        for o in [0xc, 0xf2d, 0xf2e] {
+            poke(a, b, actor + o, &[rng.byte()]);
+        }
+        let op = rng.below(4);
+        if op == 1 {
+            // a file of up to 4 transfers fills no queue
+            set(a, b, count, rng.below(12));
+        }
+        match op {
+            0 => {
+                let args = [
+                    pick!(rng, [0xff, rng.below(ACTORS), rng.next()]),
+                    file + rng.below(0x1000),
+                    rng.next(),
+                    pick!(rng, [0, 1, 2, rng.next()]),
+                ];
+                twin("MsSEPtransRegist", a, b, 0x007a_06b0, &args, ALL, |m| {
+                    so::ms_sep_trans_regist(m, &mut call, args[0], args[1], args[2], args[3])
+                });
+                same(&format!("MsSEPtransRegist {args:x?}"), a, b);
+            }
+            1 => {
+                // a sound file: sections of blocks (0 none) and an end
+                let mut f = vec![0u8; 0x1000];
+                let put = |f: &mut Vec<u8>, at: usize, v: u32| {
+                    f[at..at + 4].copy_from_slice(&v.to_le_bytes());
+                };
+                let sections = pick!(rng, [1, 2, 3, 4, 4, 0, u32::MAX]);
+                put(&mut f, 0, sections);
+                let mut at = 0x20usize;
+                for s in 0..4usize {
+                    let none = rng.below(6) == 0;
+                    put(
+                        &mut f,
+                        4 + 4 * s,
+                        if none { 0 } else { u32::try_from(at).unwrap() },
+                    );
+                    let blocks = {
+                        let r = rng.below(0x24);
+                        pick!(rng, [r, r, r, 0, u32::MAX, 0x21, 0x88])
+                    };
+                    put(&mut f, at, blocks);
+                    let words = usize::try_from(blocks.cast_signed().max(0))
+                        .unwrap()
+                        .min(0x88)
+                        + 1;
+                    for k in 0..words {
+                        let o = if rng.below(3) == 0 {
+                            0
+                        } else {
+                            0x800 + rng.below(0x700)
+                        };
+                        put(&mut f, at + 4 + 4 * k, o);
+                    }
+                    at += 4 * (words + 1);
+                }
+                poke(a, b, file, &f);
+                let who = pick!(rng, [actor, actor, 0]);
+                let sep = if rng.below(10) == 0 { 0 } else { file };
+                // the table the scene's numbers go to, and the actor's
+                let t = g::SEP_TRANS_TABLE.ptr(b).addr;
+                poke(a, b, t, &vec![0xee; 0x200]);
+                poke(a, b, actor + 0xeac, &[0xdd; 0x80]);
+                twin("MsRegistSEdata", a, b, 0x007a_01b0, &[who, sep], ALL, |m| {
+                    so::ms_regist_se_data(m, &mut call, who, sep).cast_unsigned()
+                });
+                same(&format!("MsRegistSEdata {who:#x}"), a, b);
+            }
+            2 => {
+                let i = pick!(rng, [rng.below(ACTORS), rng.below(ACTORS), rng.next()]);
+                let line = pick!(rng, [rng.below(0x40), u32::MAX, 0x8000_0000, 0x1_2345]);
+                let r = pick!(rng, [0, 1, u32::MAX, 0x8000_0000, 0x7fff_ffff]);
+                poke(a, b, slot(3) + 4 + 4 * 6, &r.to_le_bytes());
+                set(
+                    a,
+                    b,
+                    ffx_battle::state::bridge::ATEL_COUNT,
+                    pick!(rng, [0i32, 3, 15, 16]),
+                );
+                let more = [rng.next(), rng.next(), rng.next()];
+                let args = [i, line, more[0], more[1], more[2]];
+                twin("MsSetVoice", a, b, 0x007a_0720, &args, ALL, |m| {
+                    so::ms_set_voice(m, &mut call, i, line, more)
+                });
+                same(&format!("MsSetVoice {args:x?}"), a, b);
+            }
+            _ => {
+                poke(
+                    a,
+                    b,
+                    slot(1) + 4,
+                    &pick!(rng, [0u32, 0, 0, 1]).to_le_bytes(),
+                );
+                set(a, b, so::DEBUG_SHOUT_TRACE, u8::from(rng.below(2) == 0));
+                let speaker = pick!(
+                    rng,
+                    [rng.below(8), rng.below(8), u32::MAX, 0xffff_fffb, 8, 100],
+                );
+                let line = pick!(rng, [rng.below(8), rng.below(8), 8, u32::MAX, rng.next()]);
+                twin(
+                    "MsSoundStreamPlay",
+                    a,
+                    b,
+                    0x007a_0820,
+                    &[speaker, line],
+                    ALL,
+                    |m| {
+                        so::ms_sound_stream_play(m, &mut call, speaker.cast_signed(), line)
+                            .cast_unsigned()
+                    },
+                );
+                same(&format!("MsSoundStreamPlay {speaker:#x} {line:#x}"), a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn leaf_sounds_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    sounds(&mut a, &mut b, &mut Xorshift(0x3232_0101), true);
+}
+
+#[test]
+fn leaf_sounds_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    sounds(&mut a, &mut b, &mut Xorshift(0x3232_0102), false);
+}

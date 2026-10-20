@@ -59,6 +59,7 @@ pub mod save;
 pub mod save_param;
 pub mod screen;
 pub mod shake;
+pub mod sound;
 pub mod special;
 pub mod stat;
 pub mod stat_set;
