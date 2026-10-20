@@ -5871,7 +5871,7 @@
 0x0075e7d0	dead	unreachable from the entry point and every pointer table
 0x0075e870	logic	default (no rule: ported to be safe)
 0x0075e8f0	dead	unreachable from the entry point and every pointer table
-0x0075e990	dead	unreachable from the entry point and every pointer table
+0x0075e990	dead	reviewed: third byte-identical copy of pppKeAngleXY 0x7590e0, no callers (effects round 32)
 0x0075eab0	dead	unreachable from the entry point and every pointer table
 0x0075eaf0	dead	unreachable from the entry point and every pointer table
 0x0075eb40	dead	unreachable from the entry point and every pointer table

@@ -314,6 +314,7 @@ REVIEWED = {
     0x006e4470: ("platform", "DepthBiasHooks_onSceneLoaded: PC-port hook, Sg_SetMapAlphaFast(0) by scene name (system round 40)"),
     0x006f0510: ("debug", "SaveDataManager_debugSave_Internal: raw save dump via _wfopen, from 0x6f1c40 (system round 40)"),
     0x006882a0: ("debug", "StackWalker call-stack line formatting for crash traces (system round 40)"),
+    0x0075e990: ("dead", "third byte-identical copy of pppKeAngleXY 0x7590e0, no callers (effects round 32)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
