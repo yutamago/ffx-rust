@@ -14854,3 +14854,105 @@ fn menu_round29_gear_window_pack_key_cursor_and_ap_steps_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round29_window_callbacks_and_config_options_match_the_original() {
+    let Some(mut t) = setup_any(0x0029_0006) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let choice = seq_stub(&mut t, 0x008d_b840, log, 0, &[]);
+    let mut cells = vec![choice];
+    for (f, n) in [
+        (0x008b_44b0u32, 1u8),
+        (0x008d_1a20, 1),
+        (0x008d_0eb0, 1),
+        (0x0090_0f60, 2),
+        (0x008d_5750, 2),
+        (0x008c_c170, 1),
+        (0x0087_2480, 1),
+        (0x0087_24f0, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let ev = seq_stub(&mut t, 0x0078_5240, log, 0, &[]);
+    let menu = seq_stub(&mut t, 0x0078_5290, log, 0, &[]);
+    let block = t.alloc(&[0; 0x600]);
+    let flags = t.alloc(&[0; 4]);
+    t.put(ev, block);
+    t.put(menu, flags);
+    let sub = t.alloc(&[0; 0x100]);
+    t.put(t.sym(0x023c_c128), sub);
+    let ids = t.alloc(&[0; 0x200]);
+    t.put(t.sym(0x0186_aa38), ids);
+    let win = t.alloc(&[0; 0x100]);
+    for round in 0..600u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let sel = t.rng.pick(&[0u32, 0, 1, 0x100]);
+        t.put(cells[5], sel);
+        let c = t.rng.pick(&[0u32, 4, 5, 6, 0xffff_ffff, 0x105]);
+        t.put(choice, c);
+        t.scramble_at(win, 0x100);
+        t.scramble_at(ids, 0x200);
+        let row = t.rng.pick(&[0u8, 0, 1, 2, 0x7f, 0x80, 0xff]);
+        t.put(win + 0x45, row);
+        let row = t.rng.pick(&[0u8, 0, 1, 2, 0x7f, 0x80, 0xff]);
+        t.put(sub + 0x45, row);
+        let v = t.rng.pick(&[0u32, 0, 1, 2, 0x100, 0x8000_0000]);
+        t.put(win + 8, v);
+        t.scramble_at(flags, 4);
+        let k = t.rng.below(0x100);
+        match round % 10 {
+            0 => t.twin("MenuTuto_ChoiceIs5", 0x008d_b860, &[], U32, |o| {
+                w(tk::menu_tuto_choice_is5(o, &mut callback))
+            }),
+            1 => t.twin("MenuKaizou_ListWindowCtrl", 0x008d_5810, &[win], U32, |o| {
+                w(tk::menu_kaizou_list_window_ctrl(o, win, &mut callback))
+            }),
+            2..=4 => {
+                let which = round % 10 - 2;
+                let (name, f) = [
+                    ("MenuWShop_SellWindowCtrl", 0x008d_9df0),
+                    ("MenuItem_GearWindowCtrl", 0x008c_7630),
+                    ("MenuLimit_ModeWindowCtrl", 0x008d_0e90),
+                ][which as usize];
+                t.twin(name, f, &[win], U32, |o| {
+                    w(tk::menu_list_window_ctrl_by_row(
+                        o,
+                        which,
+                        win,
+                        &mut callback,
+                    ))
+                });
+            }
+            5 => t.twin(
+                "MenuSubCmd_SetBrush_008e4a60",
+                0x008e_4a60,
+                &[win],
+                U32,
+                |o| w(tk::menu_sub_cmd_set_brush(o, win, &mut callback)),
+            ),
+            6 => t.twin(
+                "MenuKaizou_IsSelectable",
+                0x008d_57a0,
+                &[win, k],
+                U32,
+                |o| w(tk::menu_kaizou_is_selectable(o, k, &mut callback)),
+            ),
+            _ => {
+                let which = round % 10 - 7;
+                let (name, f) = [
+                    ("MenuConfig_SetBgmType", 0x008c_b0b0),
+                    ("MenuConfig_SetVibration", 0x008c_afa0),
+                    ("MenuConfig_GetSoundMode", 0x008c_b430),
+                ][which as usize];
+                t.twin(name, f, &[win], U32, |o| {
+                    w(tk::menu_config_option(o, which, win, &mut callback))
+                });
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

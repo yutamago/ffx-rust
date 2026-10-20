@@ -11080,6 +11080,7 @@
 0x008c6d00 function MenuAbility_ApplyHeal_008c6d00 # (target, ...) Cmd_HealAmount of the command at 0x0186a3a8; for an all-targets command TkMenuAddHPCapped on every aeon / party member the record's +0x22 bits select; caller TkMenuCtrlAbility; own name
 0x008c6dd0 function MenuItem_ListWindowCtrl_008c6dd0 # the item list window's control (+0xc of the window MenuItem_OpenListWindow opens): states at +0x28, pad trigger 0x20 decides through the window's +0x1c check (SndSepPlaySimple 0x80000001 / 0x80000003), 0x40 cancels, up/down/page scroll the cursor +0x48; own name
 0x008c7430 function MenuItem_TargetWindowCtrl_008c7430 # the target (party member or aeon) window's control (+0xc of MenuItem_OpenTargetWindow's window): TkMenuWindowStepFade, states at +0x28, cursor over TkMenuGetPlayerListMax / TkMenuGetSummonListMax; own name
+0x008c7630 function MenuItem_GearWindowCtrl  # (w): the gear list window's +0xc: TkMenuListWindowCtrl_008b44b0(w) (tail call) while i8 w+0x45 >= 0, else eax = w; ported in menu round 29; name ours
 0x008c7650 function MenuItem_RefreshHelp_008c7650 # the item list window's help line: by window kind (+0x43: 0 item -> TkMenuGetItemHelp, 1 key item -> TkMenuGetImportantHelp, else command -> TkMenuGetCommandHelp) of the entry under the cursor, TkMenuSetHelpMessage; callers TkMenuCtrlAbility and MenuItem_ListWindowCtrl; own name; ported in menu round 22
 0x008c7750 function MenuItem_ListWindowDraw_008c7750 # the item list window's draw (+0x10 of MenuItem_OpenListWindow's window): scissored menu window, scroll parts (DrawCrossMenuScrollParts), the rows and the cursor (0x008c7af0); own name
 0x008c7af0 function MenuItem_DrawListCursor_008c7af0 # (window, x, y) the list cursor at row +0x48 - top +0x32 (TkMn2DrawCrossCmdCursor), blinking with TkMenuGetTimer in mode 2; caller MenuItem_ListWindowDraw; own name
@@ -11141,10 +11142,13 @@
 0x008caef0 function MenuConfig_SetBit11       # (option) bit 11 set when +8 is 0; own name
 0x008caf20 function MenuConfig_GetBit6        # (option) +8 = !bit 6; own name
 0x008caf40 function MenuConfig_SetBit6        # (option) bit 6 set when +8 is 0; own name
+0x008cafa0 function MenuConfig_SetVibration  # (opt): MsGetSaveMenu() bit 4 set when opt+8 is 0, cleared otherwise; tail TkRefreshActuator(opt); ported in menu round 29; name ours
 0x008cafd0 function MenuConfig_GetEnglish     # (option) +8 = MsGetSaveConfigEnglish() != 1 (that stub returns 0 on PC); own name
 0x008caff0 function MenuConfig_SetEnglish     # (option) tail call MsSetSaveConfigEnglish(+8 == 0); own name
 0x008cb090 function MenuConfig_GetSaveFlag    # (option) +8 = save byte +0x5ec bit 0; own name
+0x008cb0b0 function MenuConfig_SetBgmType    # (opt): MsGetSaveEventAddress() byte +0x5ec = (opt+8 != 0); tail iMusicRefreshBgmType(opt); ported in menu round 29; name ours
 0x008cb0e0 function TkMenuCtrlConfig          # fh v3:exact 0x008cb0b0
+0x008cb430 function MenuConfig_GetSoundMode  # (opt): opt+0xc = 1, opt+8 = 1 when MsGetSaveMenu()'s bit 0 is clear; tail TkRefreshSoundMode(opt); ported in menu round 29; name ours
 0x008cb490 function MenuConfig_GetBit8        # (option) +0xc = 1, +8 = !bit 8 (voice); own name
 0x008cb500 function MenuConfig_GetBit9        # (option) +0xc = bit 8, +8 = !bit 9; own name
 0x008cba20 function MenuParty_CursorNext      # (): i8 0x0186a444 on (wrapping to 0) to the next slot whose +0xc is 1; name ours
@@ -11197,6 +11201,7 @@
 0x008d0d50 function MenuLimit_OpenWindow      # (arg) window 0x0186a714: MenuLimit_WindowIdle, 0x008d0e90, 0x008d16f0, 0x008d1bb0; rows TkMn2GetListMax, 7 visible; own name
 0x008d0dd0 function MenuLimit_OpenModeWindow # (chr): window over TkMn2RefreshList(1) (overdrive modes): callbacks MenuLimit_WindowIdle/0x008d0e90/0x008d16f0/0x008d1bb0, +0x3e 0x201, +0x58 chr, +0x45 0xff, rows TkMn2GetListMax, +0x36 3, 7 visible, scroll +0x32/+0x34 = u16 [0x0186a7a0 + 4 chr], cursor +0x48 = u16 [0x0186a7e0 + 4 chr]; registered, kept at 0x0186a718; caller TkMenuCtrlLimit; ported in menu round 29; name ours
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
+0x008d0e90 function MenuLimit_ModeWindowCtrl # (w): the overdrive mode window's +0xc: TkMn2CtrlSelItemsWindow(w) (tail call) while i8 w+0x45 is 0, else eax = w; ported in menu round 29; name ours
 0x008d0eb0 function TkMn2CtrlSelItemsWindow  # layout+callees: sorts between TkMn2ArmsRefreshArms and TkMn2DrawSelItemsHelp, and its named callees match the Switch 0x71004d3a50 TkMn2CtrlSelItemsWindow's (similarity 0.71: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg, TkMn2DrawSelItemsHelp); symbols from Fahrenheit's server export; (w): two-column selection window state machine (+0x28, jump table 0x008d13b4): cursor i16 +0x48 (bit 0 = column), confirm via +0x1c, page scroll 0x111, row scroll 0x333; ported in menu round 28
 0x008d15a0 function MenuSelList_DrawCursor   # (window): TkMn2DrawCrossCursor(f32(MenuSelList_CursorX(window)), f32(remapY2(493) + remapY2(77) * f32((i16 +0x48 >> 1) - i16 +0x32)), 0) (eax); caller 0x008d1400; ported in menu round 25; name ours
 0x008d1620 function MenuSelList_DrawRows     # (window, fixed, first, _, y int): nine row pairs from row first*2-2 at y0 = f32(remapY2(403) + y), step remapY2(77); columns remapX2(210)/remapX2(970), each MenuSelList_DrawRow(window, x, y, row, fixed); caller 0x008d1400; ported in menu round 27; name ours
@@ -11247,8 +11252,10 @@
 0x008d56f0 function MenuKaizou_WeaponByte4    # (w): MsGetSaveWeapon(u16 [0x0186aa38][i16 w+0x48], &local): -1 when its byte +2 is 0, else its byte +4; name ours
 0x008d5730 function MenuKaizou_ItemUsable     # (list, i) item list byte +3 != 0xff; own name
 0x008d5750 function MenuEquip_IsSelectable    # (id, any): MsGetSaveWeapon(id, &unused) slot: 0 when empty (+2) or flag 2 (+3); 1 with any; 0 for flags 4/8; else MenuList_IsEmptySlot; name ours
+0x008d57a0 function MenuKaizou_IsSelectable  # (_, k): MenuEquip_IsSelectable(u16 [0x0186aa38][k], 1) != 0; ported in menu round 29; name ours
 0x008d57d0 function TkMenuKaizouCloseWindow2  # (): close request for 0x0186aa34 (customize menu: UpdateGearCustomizationMenuState reads it), forget it
 0x008d57f0 function TkMenuKaizouCloseWindow   # (): close request for 0x0186aa30 (TkMenuCtrlKaizou's), forget it
+0x008d5810 function MenuKaizou_ListWindowCtrl # (w): the customise list's +0xc: TkMenuListWindowCtrl_008b44b0(w), then tail TkMn2DrawSelItemsHelp(w); ported in menu round 29; name ours
 0x008d5830 function UpdateGearCustomizationMenuState # fh call.cs cdecl
 0x008d5f60 function DrawGearCustomizationMenu # fh call.cs cdecl
 0x008d6560 function MenuKaizou_DrawRows      # (window, fixed, first, _, y): MenuKaizou_DrawRow for rows first-1..first+10 at f32 remapX2(209), y = f32(remapY2(244) + f32 y) then += remapY2(75); caller 0x008d5d50; ported in menu round 24; name ours
@@ -11299,6 +11306,7 @@
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008d9bd0 function MenuShop_BuyWindowCtrl # (window): the item shop buy window's control (+0xc callback of MenuShop_OpenBuyWindow): as MenuShop_SellWindowCtrl with the limit MsGetGIL() / +0x60 (at most 99 - owned +0x64) and MsSaveItemUse(+0x5c, +n), MsPayGIL(+n * +0x60); ported in menu round 22; name ours
+0x008d9df0 function MenuWShop_SellWindowCtrl # (w): the weapon shop sell window's +0xc: TkMn2CtrlSelItemsWindow(w) (tail call) while i8 +0x45 of the open sub-command window g_TkMenuSubCmdWindow is above 0, else eax = that window; ported in menu round 29; name ours
 0x008d9e20 function MenuShop_SellWindowCtrl # (window): the item shop sell window's control (+0xc callback set by MenuShop_OpenSellWindow, its only reference): state +0x28 (8-way switch), the amount u16 +0x48 stepped ±1 (left/right) and ±10 (up/down) within 1..+0x64 (SndSepPlaySimple 0x80000001), on confirm +0x45 = 1, MsSaveItemUse(+0x5c, -amount), MsPayGIL(-(amount * +0x60)) (the sale), state 5; cancel +0x45 = 0xff, state 7; ported in menu round 22; renamed menu round 22 (was TkMenuCtrlSelFileWindow, a 0.67 Switch callee-similarity match from Fahrenheit's server export: no file selection here); name ours
 0x008da7a0 function MenuWShop_Start           # (): MenuWShop_OpenWindow3(), the command window as MenuWShop_OpenCommandWindow, tutorial windows 0x0186ac34/38 = 0; returns TkMenuOpenSubCmdWindowRect s result; caller TkMenuCtrlWShop; ported in menu round 23; name ours
 0x008da860 function MenuShop_OpenBuyWindow    # (parent): item shop buy-amount window into 0x0186ac3c (TkMenuWShopCloseWindow): +0xc 0x008d9bd0, +0x10 0x008d9fe0, +0x14 0x008daae0, +0x3e 4, +0x36 3, +0x58 parent, +0x5c id = u16 TkMn2GetExcelData(g_TkMenuWShopList, [0x0186ac2c]) [+2 + 2*i16 parent+0x48], +0x60 MenuShop_Price(id), +0x64 MsGetSaveItemNum(id), +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
@@ -11322,6 +11330,7 @@
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
 0x008db7e0 function MenuTuto_RestoreNames     # (): 18 names (MsGetSaveChrName 0..17) copied back from the same offsets in *0x01871524 (the tutorial's save copy), and save +0xd1 into MsGetSaveEventAddress(); caller TkMenuCtrlTuto; name ours
 0x008db840 function MenuTuto_GetChoice        # 0x01871528 when 0x025d16bc is set, else -1; own name
+0x008db860 function MenuTuto_ChoiceIs5       # (): MenuTuto_GetChoice() == 5; ported in menu round 29; name ours
 0x008db870 function DrawBlackBackGround       # fh v3:exact 0x008db850
 0x008dbd40 function MenuDraw_SpriteP          # (p, x, y, entry) MenuDraw_Sp3Body tint 0x80; own name
 0x008dbd70 function MenuDraw_SpritePA         # (p, x, y, entry, alpha); own name
@@ -11519,6 +11528,7 @@
 0x008e49f0 function TkMenuRestartSubCmdWindow1 # (): 0x023cc124 +0x45 = 0, +0x28 = 1 (TkMenuRestartSubCmdWindow2 does 0x023cc128)
 0x008e4a10 function MenuSubCmd_SetValue       # (v) u16 +0x38 of 0x023cc128; own name
 0x008e4a30 function MenuSubCmd_SetValue2      # (v) u16 +0x38 of 0x023cc124; own name
+0x008e4a60 function MenuSubCmd_SetBrush_008e4a60 # (w): TOMenuSet_018762ee(w+0x90 + 15, 0); eax 1; ported in menu round 29; name ours
 0x008e4a90 function MenuSubCmd_CursorAtTop    # (window) i16 +0x46 < 1; own name
 0x008e4ab0 function MenuSubCmd_CenterOpen     # (): MenuSubCmd_CenterX(g_TkMenuSubCmdWindow) when one is open, else 0; name ours
 0x008e4ad0 function MenuSubCmd_CenterX        # (window) +0x4a = (512 - i16 +0x4e) / 2; own name

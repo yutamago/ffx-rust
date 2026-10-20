@@ -1617,6 +1617,46 @@ ported! {
     BtlEnd_CountApSteps @ 0x008b_a550 => extern "C" fn btl_end_count_ap_steps() -> u32 {
         tk::btl_end_count_ap_steps(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuTuto_ChoiceIs5()`.
+    MenuTuto_ChoiceIs5 @ 0x008d_b860 => extern "C" fn menu_tuto_choice_is5() -> u32 {
+        tk::menu_tuto_choice_is5(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_ListWindowCtrl(w)`: the help draw's `eax`.
+    MenuKaizou_ListWindowCtrl @ 0x008d_5810 => extern "C" fn menu_kaizou_list_window_ctrl(w: u32) -> u32 {
+        tk::menu_kaizou_list_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_SellWindowCtrl(w)`.
+    MenuWShop_SellWindowCtrl @ 0x008d_9df0 => extern "C" fn menu_wshop_sell_window_ctrl(w: u32) -> u32 {
+        tk::menu_list_window_ctrl_by_row(&mut mem(), 0, w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_GearWindowCtrl(w)`.
+    MenuItem_GearWindowCtrl @ 0x008c_7630 => extern "C" fn menu_item_gear_window_ctrl(w: u32) -> u32 {
+        tk::menu_list_window_ctrl_by_row(&mut mem(), 1, w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuLimit_ModeWindowCtrl(w)`.
+    MenuLimit_ModeWindowCtrl @ 0x008d_0e90 => extern "C" fn menu_limit_mode_window_ctrl(w: u32) -> u32 {
+        tk::menu_list_window_ctrl_by_row(&mut mem(), 2, w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_SetBrush_008e4a60(w)`: 1.
+    MenuSubCmd_SetBrush_008e4a60 @ 0x008e_4a60 => extern "C" fn menu_sub_cmd_set_brush(w: u32) -> u32 {
+        tk::menu_sub_cmd_set_brush(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_IsSelectable(_, k)`.
+    MenuKaizou_IsSelectable @ 0x008d_57a0 => extern "C" fn menu_kaizou_is_selectable(_a: u32, k: u32) -> u32 {
+        tk::menu_kaizou_is_selectable(&mut mem(), k, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetBgmType(opt)`.
+    MenuConfig_SetBgmType @ 0x008c_b0b0 => extern "C" fn menu_config_set_bgm_type(opt: u32) -> u32 {
+        tk::menu_config_option(&mut mem(), 0, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetVibration(opt)`.
+    MenuConfig_SetVibration @ 0x008c_afa0 => extern "C" fn menu_config_set_vibration(opt: u32) -> u32 {
+        tk::menu_config_option(&mut mem(), 1, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_GetSoundMode(opt)`.
+    MenuConfig_GetSoundMode @ 0x008c_b430 => extern "C" fn menu_config_get_sound_mode(opt: u32) -> u32 {
+        tk::menu_config_option(&mut mem(), 2, opt, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

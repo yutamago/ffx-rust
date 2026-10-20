@@ -259,6 +259,14 @@ the same way (`TkMenuMainAllocWindow`, list, callbacks, rows,
 The overdrive mode window restores its scroll (`+0x32`, `+0x34`) and
 cursor (`+0x48`) from `chr`'s `u16` in the 4-byte entries at
 `0x0186a7a0` and `0x0186a7e0`.
+The list windows' `+0xc` controllers pass on to the generic ones by a
+row byte `+0x45`: `MenuItem_GearWindowCtrl` (`0x008c7630`) runs
+`TkMenuListWindowCtrl_008b44b0` while the window's is not negative,
+`MenuLimit_ModeWindowCtrl` (`0x008d0e90`) `TkMn2CtrlSelItemsWindow` while
+it is 0, `MenuWShop_SellWindowCtrl` (`0x008d9df0`) the same while the
+open sub-command window's (`0x023cc128`) is above 0;
+`MenuKaizou_ListWindowCtrl` (`0x008d5810`) runs the list controller,
+then `TkMn2DrawSelItemsHelp`.
 `MenuItem_OpenGearWindow` (`0x008c9330`) opens the item menu's gear list
 over `TkMn2RefreshWeaponShopSell2` (kept at `0x0186a37c`, gear mode off,
 rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
@@ -294,6 +302,14 @@ scroll by a page (by `0x111`). Confirm (`0x20`) asks the `+0x1c` callback
 `MenuConfig_DrawRows()` (`0x008cbab0`) draws the page: `TODrawMenuBG`,
 then `MenuConfig_DrawOptionRow(0, 0, row)` and
 `TkMn2DrawKickSyncPacket2()` for each of `g_TkMenuConfigRows`.
+Option callbacks get the option record, whose `+8` is the value:
+`MenuConfig_SetBgmType` (`0x008cb0b0`) stores `value != 0` in the save
+event block's byte `+0x5ec` and calls `iMusicRefreshBgmType`;
+`MenuConfig_SetVibration` (`0x008cafa0`) sets the menu settings' bit 4
+(`MsGetSaveMenu()`) for value 0, clears it otherwise, and calls
+`TkRefreshActuator`; `MenuConfig_GetSoundMode` (`0x008cb430`) sets
+`+0xc` to 1 and the value to 1 when the settings' bit 0 is clear, then
+calls `TkRefreshSoundMode`.
 ## Characters and aeons
 
 `g_TkMenuPlayers` (`0x01841c14`) and `g_TkMenuSummons` (`0x01841c38`) are

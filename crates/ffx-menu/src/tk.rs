@@ -4802,6 +4802,140 @@ pub mod bridge {
         any
     }
 
+    /// `MenuTuto_ChoiceIs5()` (`0x008db860`): `MenuTuto_GetChoice() == 5`.
+    pub fn menu_tuto_choice_is5<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008d_b840);
+        u32::from(call(mem, f, &[]) == 5)
+    }
+
+    /// `MenuKaizou_ListWindowCtrl(w)` (`0x008d5810`, the customise list's
+    /// `+0xc`): `TkMenuListWindowCtrl_008b44b0(w)`, then
+    /// `TkMn2DrawSelItemsHelp(w)` and its `eax`.
+    pub fn menu_kaizou_list_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008b_44b0);
+        call(mem, f, &[w]);
+        let f = mem.rebase(0x008d_1a20);
+        call(mem, f, &[w])
+    }
+
+    /// The list window callbacks that hand the window to a controller by
+    /// its `i8 +0x45` (a sub-window's row; `eax` the window tested
+    /// otherwise):
+    /// - `MenuWShop_SellWindowCtrl(w)` (`0x008d9df0`): while the open
+    ///   sub-command window's (`0x023cc128`) is above 0,
+    ///   `TkMn2CtrlSelItemsWindow(w)`;
+    /// - `MenuItem_GearWindowCtrl(w)` (`0x008c7630`): while `w`'s is not
+    ///   negative, `TkMenuListWindowCtrl_008b44b0(w)`;
+    /// - `MenuLimit_ModeWindowCtrl(w)` (`0x008d0e90`): while `w`'s is 0,
+    ///   `TkMn2CtrlSelItemsWindow(w)`.
+    pub fn menu_list_window_ctrl_by_row<M: Mem>(
+        mem: &mut M,
+        which: u32,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (tested, run, f) = match which {
+            0 => {
+                let sub: u32 = mem.read(mem.rebase(0x023c_c128));
+                (sub, mem.read::<i8>(sub.wrapping_add(0x45)) > 0, 0x008d_0eb0)
+            }
+            1 => (w, mem.read::<i8>(w.wrapping_add(0x45)) >= 0, 0x008b_44b0),
+            _ => (w, mem.read::<i8>(w.wrapping_add(0x45)) == 0, 0x008d_0eb0),
+        };
+        if !run {
+            return tested;
+        }
+        let f = mem.rebase(f);
+        call(mem, f, &[w])
+    }
+
+    /// `MenuSubCmd_SetBrush_008e4a60(w)` (`0x008e4a60`):
+    /// `TOMenuSet_018762ee(w +0x90 + 15, 0)`; 1.
+    pub fn menu_sub_cmd_set_brush<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let i = mem.read::<u32>(w.wrapping_add(0x90)).wrapping_add(0xf);
+        let f = mem.rebase(0x0090_0f60);
+        call(mem, f, &[i, 0]);
+        1
+    }
+
+    /// `MenuKaizou_IsSelectable(_, k)` (`0x008d57a0`): whether weapon `k`
+    /// of the customise list (`u16` at `[0x0186aa38]`) is selectable
+    /// (`MenuEquip_IsSelectable(id, 1)` non-zero).
+    pub fn menu_kaizou_is_selectable<M: Mem>(
+        mem: &mut M,
+        k: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let list: u32 = mem.read(mem.rebase(0x0186_aa38));
+        let id = u32::from(mem.read::<u16>(list.wrapping_add(k.wrapping_mul(2))));
+        let f = mem.rebase(0x008d_5750);
+        u32::from(call(mem, f, &[id, 1]) != 0)
+    }
+
+    /// The config menu's option callbacks, over an option record whose
+    /// `+8` is the value:
+    /// - `MenuConfig_SetBgmType(opt)` (`0x008cb0b0`): the save event
+    ///   block's (`MsGetSaveEventAddress()`) byte `+0x5ec` = value != 0,
+    ///   then `iMusicRefreshBgmType(opt)`;
+    /// - `MenuConfig_SetVibration(opt)` (`0x008cafa0`): the menu settings'
+    ///   (`MsGetSaveMenu()`) bit 4 set for value 0, cleared otherwise,
+    ///   then `TkRefreshActuator(opt)`;
+    /// - `MenuConfig_GetSoundMode(opt)` (`0x008cb430`): `+0xc` = 1, value
+    ///   = 1 when the settings' bit 0 is clear, then
+    ///   `TkRefreshSoundMode(opt)`.
+    ///
+    /// Each returns the last call's `eax`.
+    pub fn menu_config_option<M: Mem>(
+        mem: &mut M,
+        which: u32,
+        opt: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let value = opt.wrapping_add(8);
+        let next = match which {
+            0 => {
+                let f = mem.rebase(0x0078_5240);
+                let ev = call(mem, f, &[]);
+                let on = mem.read::<u32>(value) != 0;
+                mem.write(ev.wrapping_add(0x5ec), u8::from(on));
+                0x008c_c170
+            }
+            1 => {
+                let f = mem.rebase(0x0078_5290);
+                let menu = call(mem, f, &[]);
+                let flags: u32 = mem.read(menu);
+                let flags = if mem.read::<u32>(value) == 0 {
+                    flags | 0x10
+                } else {
+                    flags & !0x10
+                };
+                mem.write(menu, flags);
+                0x0087_2480
+            }
+            _ => {
+                let f = mem.rebase(0x0078_5290);
+                let menu = call(mem, f, &[]);
+                mem.write(opt.wrapping_add(0xc), 1u32);
+                let bit = u32::from(!mem.read::<u8>(menu) & 1);
+                mem.write(value, bit);
+                0x0087_24f0
+            }
+        };
+        let f = mem.rebase(next);
+        call(mem, f, &[opt])
+    }
+
     /// The sub-command window openers (`0x008e33d0`
     /// `TkMenuOpenSubCmdWindowMain`, `0x008e3470`, `0x008e3510`,
     /// `0x008e35b0`): kept in `0x023cc120`; 2 rows of 2, cursor 1, `+0x37`
