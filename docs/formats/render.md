@@ -1048,3 +1048,91 @@ Round 23, texture-animation samplers:
   `+0xa`, offset + size within the buffer's first word) holds a value
   (`+8`) whose byte `+2` is 2, else `this + 0x14`. (The frame's -1 test is
   redundant: -1 is never below the 31-bit count.)
+
+Round 24, the view-projection matrix and the speed control's tick
+(`ffx_graphic::util::bridge24`):
+
+- `PhyreScene_getViewProjectionMatrix(scene, out)` (`0x0065e660`,
+  thiscall, `ret 4`, returns `out`): the free camera (`g_FreeCamera`,
+  `0x00ccc830`) is made on first use (`operator_new(0x340)`,
+  `FreeCamera_FreeCamera`, 0 when the allocation fails). While it is off
+  (bytes `+0x338`, `+0x33c` and word `+0` clear), the scene's camera
+  (`*(scene +0xdc)`) takes `scene +0xfa04` as its transform (`+0xb4`) and
+  `Phyre_PCamera_updateViewMatrices` runs on camera `+4`. `out` = the
+  camera's 4x4 at `+0x74` (`PMatrix4_Copy_00453340`) times the
+  translation `[1 0 0 0; 0 1 0 0; 0 0 1 0; x y 0 1]`, `x`, `y` the floats
+  at `scene +0xfa34`, `+0xfa38`. Unless byte `+0xf9c7` or
+  `g_PhyreScene3D` is set, `out` then takes the screen adjustment of
+  `PhyreScene_GetScreenAdjustedView_00651650` (`[1 0 0 0; 0 4/3 0 0; 0 0
+  1 0; 0 d 0 1]`, `d = 0.33333337 - 2 (+0xf9c0 + +0xf9bc)` as a float),
+  copied in by `PMatrix4_Copy_00453340`. Each product goes row by row
+  (bottom first) through `PMatrix4_RowTimes_004c9c20` into locals, then
+  back. Both snapshots have the free camera made and a 3D scene.
+- `SpdCtrl_Tick()` (`0x006f7470`): once `g_SpdCtrl_Ready`, the speed-up
+  button (`inputIsPressButton(0x10000)`) steps the level (`g_SpdCtrl_b4`,
+  signed `(level + 1) % 3`) when `g_IggyMenuManager` (`0x01984c6c`),
+  `TipSystem_Get()` and `IconPanel_get()` are all there: both icons hidden
+  (`IconPanel_hideIcon` 0 and 1), `g_SpdCtrl_c0` cleared, then for level 1
+  or 2 icon `level - 1` shown (`IconPanel_showIcon`, its menu into
+  `g_SpdCtrl_c0`) and tip `0x2fd` / `0x2fe` pushed, else tip `0x2ff`. A
+  shown icon while the speed-up is not running (`g_SpdCtrl_b8` clear)
+  gets `"OnDisable"` (`IggyMenu_callIggyAS3External`). It then
+  tail-jumps to `SpdCtrl_UpdateSubtitleMute_006f7230` (no function in
+  Ghidra): in battle (`MsBattleCheck`) at a level other than 0 the battle
+  subtitles are muted (`MsMuteBattleSubTitle(1)`), else unmuted, each
+  only on a change of `g_SpdCtrl_SubtitleMuted` (`0x00ce82bd`, set before
+  the call).
+
+Round 24, group 2: shadow meshes and texture-animation names:
+
+- `ShadowDynamicMesh_updateBuffers_006789f0(_, src, streams, indices)`
+  (`0x006789f0`, `ShadowDynamicMesh_vftable` slot 5, `ret 0x10`, `ecx`
+  unread; name ours): with `n` = `src +0x24`, `12 n` bytes from `src
+  +0x10` go to vertex stream 0, `16 n` from `+0x14` to stream 1 (only
+  when that stream has data), `8 n` from `+0x18` to stream 2 and `12 n`
+  from `+0x1c` to stream 3 (`memcpy`; a stream is an object with its data
+  at `+0x3c` and its count at `+4`, `streams` four pointers, 0 for none:
+  streams 0, 2, 3 are written even without data). Each present stream's
+  count = `n`; the `src +0x28` index words at `src +0x20` go one by one
+  to `indices +0x38`, `indices +8` = their count, `src +4` = 0. Returns
+  0.
+- `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0(a, b, c, x,
+  y, w, h, sw, sh, d, e)` (`0x00643eb0`, cdecl; name ours, sorting
+  between `graphicSwitchGPUMode` and
+  `graphicTextureAnimationSetMaterialVisiability`): two names, `"G"`
+  (`*0x00c322a0`) + `a` and `"Animation"` (`*0x00c322a4`) + `b`, each
+  number below 20 (signed: -3 reads the `"Animation"` pointer, other
+  negatives null or unmapped ones) taken from the string table at
+  `0x00c322b0`, else written by `sprintf "%d"`; then
+  `TextureAnimationManager_setAnimatedMaterialsChar(s1, s2, c, x / sw, y
+  / sh, w / sw, h / sh, d, e)` on the manager, each quotient a float, 0
+  for a zero divisor (a NaN divides). Returns that call's `eax`.
+- `graphicTextureAnimationSetMaterialUV_00644150(a, b, u, v, key)`
+  (`0x00644150`, cdecl; name ours): the same names, both by `sprintf`,
+  then `TextureAnimationManager_setMaterialUV_006b33c0(s1, s2, u, v,
+  key)`.
+- `TextureAnimationManager_setMaterialUV_006b33c0(mgr, s1, s2, u, v,
+  key)` (`0x006b33c0`, thiscall, `ret 0x14`; name ours; the names are not
+  read): `u' = u - 0.01`, `v' = v - 0.01` (floats). The manager's list
+  (`+0x70`, `+0x6c` entries with a flag bit, 12 bytes: set index, key)
+  gives `key`'s set (`+0x68`, 32 bytes each); a set with slots (`+8`)
+  has its animation (`+0xc`) marked (byte `+0x34`). Each material of the
+  animation (`+0x38`, an array) with a texture index (`+0x74`) and an
+  object index (`+0x78`) both non-negative takes the texture
+  `PArray_Data_004d45a0(*(key +4)[obj] +0x10)[tex]`; with it and
+  `TextureAnimation_FindMaterial(anim, anim +0x18, set +0x18` without
+  its low bit`)`, its parameters, each when set, go to the texture's
+  buffer (`+4`) in this order: sampler `+4` (record `(0xff, 0, mgr
+  +0x38, material)`, `Render_SurfaceFormat_0066e4f0`), scale `+0x50`
+  `(1.02, 1.02)`, offset `+0x38` `(u', v')`
+  (`ShaderParam_CopyToBuffer_00698960`), value `+0x20` 1.0
+  (`ShaderParamBuffer_SetValue2`), then sampler `+8`, scale `+0x54`,
+  offset `+0x3c` `(u', v' - 1)`, value `+0x24`.
+- `graphicCameraGetViewProjectionMatrix(out)` (`0x00639590`, cdecl):
+  `PhyreScene_getViewProjectionMatrix` of `g_PhyreScene` into a local,
+  then its 16 words copied to `out`.
+- `TexAnim_SetMaterialsChar_0077fbf0(a, b, c, x, y, w, h, sw, sh, d, e)`
+  (`0x0077fbf0`, cdecl; name ours; called by `chr_texanim_main_sub_new`
+  and `tex_anim_no_set_new`): nothing (eax 0) when `e` is 0, else
+  `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0` with the
+  six signed 16-bit values `x`..`sh` made floats; returns its `eax`.

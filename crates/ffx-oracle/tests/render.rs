@@ -7660,3 +7660,727 @@ fn snapshot_round23c_matches_the_original() {
         round23c_case(&mut t, &mut rng, &what);
     }
 }
+
+// ---- round 24 ----
+
+/// `PhyreScene_getViewProjectionMatrix` on `scene` (a fresh one when 0):
+/// `PMatrix4_RowTimes` and `PMatrix4_Copy_00453340` run original on both
+/// sides; the free camera's construction and the camera update are
+/// recording stubs. Returns which way it went (bit 0: the camera update,
+/// bit 1: the screen adjustment, bit 2: a new free camera).
+fn round24_view_projection(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) -> u32 {
+    use ffx_graphic::util::bridge24 as b;
+    let fl = |rng: &mut Rng| -> f32 {
+        if rng.chance(3) {
+            rng.float()
+        } else {
+            (rng.below(41) as f32 - 20.0) / 16.0
+        }
+    };
+    let floats = |rng: &mut Rng, n: usize| -> Vec<u8> {
+        (0..n).flat_map(|_| fl(rng).to_le_bytes()).collect()
+    };
+    let scene = if scene == 0 {
+        let s = t.alloc(&rng.bytes(0xfa40));
+        for off in [0xf9bc, 0xf9c0, 0xfa34, 0xfa38] {
+            let v = fl(rng);
+            t.write(s + off, &v.to_le_bytes());
+        }
+        t.w8(s + 0xf9c7, u8::from(rng.chance(3)));
+        let cam = t.alloc(&floats(rng, 0x40));
+        t.w32(s + 0xdc, cam);
+        t.w8(t.rebase(scene::bridge::IS_3D.sym), u8::from(rng.chance(3)));
+        s
+    } else {
+        scene
+    };
+    // a free camera, on or off (as the stubbed constructor leaves it too)
+    let free_camera = |t: &mut Twins, rng: &mut Rng| {
+        let fc = t.zeros(0x340);
+        if rng.chance(3) {
+            t.w8(fc + 0x338, rng.next() as u8 | 1);
+        }
+        if rng.chance(3) {
+            t.w8(fc + 0x33c, rng.next() as u8 | 1);
+        }
+        if rng.chance(3) {
+            t.w32(fc, rng.next() | 1);
+        }
+        fc
+    };
+    let fresh = free_camera(t, rng);
+    let mut flags = 0;
+    if rng.chance(4) {
+        t.global(b::FREE_CAMERA.sym, 0);
+        flags |= 4;
+    } else {
+        let fc = free_camera(t, rng);
+        t.global(b::FREE_CAMERA.sym, fc);
+    }
+    t.stub_sym(b::OPERATOR_NEW, Conv::Cdecl, 1, fresh);
+    t.stub_sym(b::FREE_CAMERA_CTOR, Conv::Thiscall(0), 0, fresh);
+    t.stub_sym(
+        ffx_graphic::state::bridge::CAMERA_UPDATE_VIEW,
+        Conv::Thiscall(0),
+        0,
+        rng.next(),
+    );
+    let fc = t.r32(t.rebase(b::FREE_CAMERA.sym));
+    let fc = if fc == 0 { fresh } else { fc };
+    if t.r8(fc + 0x338) == 0 && t.r8(fc + 0x33c) == 0 && t.r32(fc) == 0 {
+        flags |= 1;
+    }
+    if t.r8(scene + 0xf9c7) == 0 && t.r8(t.rebase(scene::bridge::IS_3D.sym)) == 0 {
+        flags |= 2;
+    }
+    let out = t.alloc(&floats(rng, 16));
+    t.check(what, 0x0065_e660, Conv::Thiscall(scene), &[out], |g| {
+        Out::U32(b::scene_view_projection(g, scene, out))
+    });
+    flags
+}
+
+/// `SpdCtrl_Tick` with its callees as recording stubs. Returns which way
+/// it went (bit 0: the level stepped, bit 1: `"OnDisable"`, bit 2: a
+/// subtitle mute call).
+fn round24_spd_ctrl_tick(t: &mut Twins, rng: &mut Rng, keep: bool, what: &str) -> u32 {
+    use ffx_graphic::util::bridge as ut;
+    use ffx_graphic::util::bridge24 as b;
+    if !keep {
+        t.w8(t.rebase(ut::SPD_CTRL_ENABLED.sym), u8::from(!rng.chance(6)));
+        let mgr = if rng.chance(6) { 0 } else { rng.next() | 1 };
+        t.global(b::IGGY_MENU_MANAGER.sym, mgr);
+        let level = [0, 1, 2, 3, u32::MAX, 0x7fff_ffff, rng.next()][rng.below(7) as usize];
+        t.global(ut::SPD_CTRL_B4.sym, level);
+        t.global(
+            ut::SPD_CTRL_B8.sym,
+            [0, 1, rng.next()][rng.below(3) as usize],
+        );
+        t.global(ut::SPD_CTRL_C0.sym, [0, rng.next()][rng.below(2) as usize]);
+        t.w8(
+            t.rebase(b::SPD_CTRL_SUBTITLE_MUTED.sym),
+            [0, 1, 0x80][rng.below(3) as usize],
+        );
+    }
+    let pick = |rng: &mut Rng, n: u32| if rng.chance(n) { 0 } else { rng.next() | 1 };
+    let pressed = u32::from(rng.chance(2));
+    t.stub_sym(ut::INPUT_IS_PRESS_BUTTON, Conv::Cdecl, 1, pressed);
+    let tips = pick(rng, 6);
+    t.stub_sym(b::TIP_SYSTEM_GET, Conv::Cdecl, 0, tips);
+    let panel = pick(rng, 6);
+    t.stub_sym(b::ICON_PANEL_GET, Conv::Cdecl, 0, panel);
+    t.stub_sym(b::ICON_PANEL_HIDE_ICON, Conv::Thiscall(0), 1, rng.next());
+    let menu = pick(rng, 3);
+    t.stub_sym(b::ICON_PANEL_SHOW_ICON, Conv::Thiscall(0), 1, menu);
+    t.stub_sym(b::TIP_SYSTEM_PUSH_TIP, Conv::Thiscall(0), 1, rng.next());
+    t.stub_sym(ut::IGGY_CALL_AS3_EXTERNAL, Conv::Thiscall(0), 5, rng.next());
+    t.stub_sym(
+        b::MS_BATTLE_CHECK,
+        Conv::Cdecl,
+        0,
+        [0, 1, rng.next()][rng.below(3) as usize],
+    );
+    t.stub_sym(b::MS_MUTE_BATTLE_SUBTITLE, Conv::Cdecl, 1, rng.next());
+    t.check(what, 0x006f_7470, Conv::Cdecl, &[], |g| {
+        b::spd_ctrl_tick(g);
+        Out::None
+    });
+    // what the log shows
+    let n = t.r32(t.log);
+    let mut seen = 0;
+    for k in 0..n {
+        match t.r32(t.log + 4 + 0x20 * k) {
+            x if x == b::ICON_PANEL_HIDE_ICON => seen |= 1,
+            x if x == ut::IGGY_CALL_AS3_EXTERNAL => seen |= 2,
+            x if x == b::MS_MUTE_BATTLE_SUBTITLE => seen |= 4,
+            _ => {}
+        }
+    }
+    seen
+}
+
+#[test]
+fn round24_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2424_0024);
+    let mut vp = [0u32; 8];
+    let mut tick = [0u32; 8];
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        vp[round24_view_projection(&mut t, &mut rng, 0, &what) as usize] += 1;
+        t.reset();
+        t.log = t.zeros(0x8000);
+        tick[round24_spd_ctrl_tick(&mut t, &mut rng, false, &what) as usize] += 1;
+    }
+    eprintln!("view projection {vp:?}, tick {tick:?}");
+    for (k, n) in vp.iter().enumerate() {
+        assert!(*n > 30, "view projection way {k}: {n}");
+    }
+    // "OnDisable" only follows a step
+    for k in [0, 1, 3, 4, 5, 7] {
+        assert!(tick[k] > 20, "tick way {k}: {}", tick[k]);
+    }
+}
+
+#[test]
+fn snapshot_round24_matches_the_original() {
+    use ffx_graphic::util::bridge24 as b;
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    // the game's own scene, camera and free camera, all original
+    let scene = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    if scene != 0 && t.r32(scene + 0xdc) != 0 {
+        let out = t.zeros(0x40);
+        eprintln!(
+            "free camera {:#x}, 3D {}",
+            t.r32(t.rebase(b::FREE_CAMERA.sym)),
+            t.r8(t.rebase(scene::bridge::IS_3D.sym))
+        );
+        t.check(
+            "snapshot scene",
+            0x0065_e660,
+            Conv::Thiscall(scene),
+            &[out],
+            |g| Out::U32(b::scene_view_projection(g, scene, out)),
+        );
+    }
+    let mut rng = Rng(0x5424_0024);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        let real = if round % 2 == 0 { scene } else { 0 };
+        round24_view_projection(&mut t, &mut rng, real, &what);
+        t.reset();
+        // the game's own speed control state first
+        round24_spd_ctrl_tick(&mut t, &mut rng, round == 0, &what);
+    }
+}
+
+// ---- round 24, group 2 ----
+
+/// What a [`stub_log`] stub records of one stack argument.
+#[derive(Clone, Copy)]
+enum LogArg {
+    /// The word.
+    Word,
+    /// `n` words at the pointer (a local of the caller: the address
+    /// differs between the original and the bridge).
+    Deref(u8),
+    /// The C string at the pointer, with its NUL.
+    Str,
+}
+
+/// A recording stub over the original at `sym` that logs its tag, `ecx`
+/// and its stack arguments as `args` says (in `entries` log entries),
+/// pops `pops` words and returns `ret`.
+fn stub_log(t: &mut Twins, sym: u32, args: &[LogArg], entries: u8, pops: u16, ret: u32) {
+    let log = t.log;
+    let mut c = vec![0x8b, 0x15];
+    c.extend(log.to_le_bytes()); // mov edx, [log]
+    c.extend([0xc1, 0xe2, 0x05]); // shl edx, 5
+    c.extend([0x81, 0xc2]);
+    c.extend((log + 4).to_le_bytes()); // add edx, log + 4
+    c.extend([0xc7, 0x02]);
+    c.extend(sym.to_le_bytes()); // mov [edx], tag
+    c.extend([0x89, 0x4a, 0x04]); // mov [edx+4], ecx
+    c.extend([0x56, 0x57, 0x8d, 0x7a, 0x08]); // push esi; push edi; lea edi, [edx+8]
+    for (k, a) in args.iter().enumerate() {
+        let disp = 0xc + 4 * k as u8;
+        match a {
+            LogArg::Word => c.extend([0x8b, 0x44, 0x24, disp, 0xab]), // mov eax, [esp+d]; stosd
+            LogArg::Deref(n) => {
+                c.extend([0x8b, 0x74, 0x24, disp]); // mov esi, [esp+d]
+                c.extend([0xb9, *n, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, n; rep movsd
+            }
+            LogArg::Str => {
+                c.extend([0x8b, 0x74, 0x24, disp]); // mov esi, [esp+d]
+                c.extend([0xac, 0xaa, 0x84, 0xc0, 0x75, 0xfa]); // lodsb; stosb; test al, al; jnz
+            }
+        }
+    }
+    c.extend([0x5f, 0x5e, 0x83, 0x05]); // pop edi; pop esi; add dword [log], entries
+    c.extend(log.to_le_bytes());
+    c.push(entries);
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.push(0xc2);
+    c.extend((pops * 4).to_le_bytes()); // ret pops*4
+    let addr = t.cave_next;
+    assert!(addr + c.len() as u32 <= t.cave + CAVE_LEN, "cave full");
+    t.write(addr, &c);
+    t.cave_next = addr + c.len() as u32;
+    let at = t.rebase(sym);
+    let mut j = vec![0xe9];
+    j.extend(addr.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+/// `ShadowDynamicMesh_updateBuffers_006789f0` on a fresh mesh. Returns
+/// whether stream 1 was filled.
+fn round24_shadow_mesh(t: &mut Twins, rng: &mut Rng, what: &str) -> bool {
+    use ffx_graphic::util::bridge24 as b;
+    let n = if rng.chance(5) { 0 } else { rng.below(6) };
+    let nidx = rng.below(9);
+    let src = t.alloc(&rng.bytes(0x30));
+    t.w32(src + 0x24, n);
+    t.w32(src + 0x28, nidx);
+    for (off, size) in [(0x10, 12), (0x14, 16), (0x18, 8), (0x1c, 12)] {
+        let a = t.alloc(&rng.bytes((size * n + 4) as usize));
+        t.w32(src + off, a);
+    }
+    let idx = t.alloc(&rng.bytes((4 * nidx + 4) as usize));
+    t.w32(src + 0x20, idx);
+    let mut streams = Vec::new();
+    let mut filled = false;
+    for k in 0..4u32 {
+        // streams 0, 2 and 3 are written to whatever they hold: only
+        // without vertices may they be missing
+        let optional = k == 1 || n == 0;
+        let s = if optional && rng.chance(3) {
+            0
+        } else {
+            let s = t.alloc(&rng.bytes(0x40));
+            let data = if optional && rng.chance(3) {
+                0
+            } else {
+                t.alloc(&rng.bytes((16 * n + 4) as usize))
+            };
+            t.w32(s + 0x3c, data);
+            if k == 1 && data != 0 && n != 0 {
+                filled = true;
+            }
+            s
+        };
+        streams.extend(s.to_le_bytes());
+    }
+    let streams = t.alloc(&streams);
+    let ib = t.alloc(&rng.bytes(0x40));
+    let out = t.alloc(&rng.bytes((4 * nidx + 4) as usize));
+    t.w32(ib + 0x38, out);
+    let first = rng.next();
+    t.check(
+        what,
+        0x0067_89f0,
+        Conv::Stdcall,
+        &[first, src, streams, ib],
+        |g| Out::U32(b::shadow_dynamic_mesh_update_buffers(g, src, streams, ib)),
+    );
+    filled
+}
+
+/// A float argument: often an exact small one, a zero of either sign, or
+/// anything but a signalling NaN.
+fn round24_float(rng: &mut Rng) -> u32 {
+    match rng.below(4) {
+        0 => [0, 0x8000_0000][rng.below(2) as usize],
+        1 => ((rng.below(41) as f32 - 20.0) / 8.0).to_bits(),
+        _ => rng.float().to_bits(),
+    }
+}
+
+/// A name number: a table one (0..19, -3 the `"Animation"` pointer before
+/// the table; other negatives read null or unmapped pointers there), or
+/// one `sprintf` writes.
+fn round24_name_number(rng: &mut Rng) -> u32 {
+    [
+        rng.below(20),
+        20,
+        rng.below(1000),
+        0x7fff_ffff,
+        (-3i32) as u32,
+        // index 0x8000_0000 * 4 wraps to the table's first entry
+        0x8000_0000,
+    ][rng.below(6) as usize]
+}
+
+/// The frame the bridge gets for the original's locals: the bottom of
+/// the emulated stack, which the diff leaves out.
+fn round24_frame(t: &Twins) -> u32 {
+    t.b.stack_range().start + 0x400
+}
+
+/// `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0`.
+fn round24_set_animated(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    use ffx_graphic::util::bridge24 as b;
+    t.stub_sym(ut::TEX_ANIM_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+    let mut args = vec![LogArg::Str, LogArg::Str];
+    args.extend([LogArg::Word; 7]);
+    stub_log(
+        t,
+        b::TEX_ANIM_SET_ANIMATED_MATERIALS_CHAR,
+        &args,
+        8,
+        9,
+        rng.next(),
+    );
+    let mut p = [0u32; 11];
+    p[0] = round24_name_number(rng);
+    p[1] = round24_name_number(rng);
+    p[2] = rng.next();
+    for v in &mut p[3..9] {
+        *v = round24_float(rng);
+    }
+    p[9] = rng.next();
+    p[10] = rng.next();
+    let frame = round24_frame(t);
+    t.check(what, 0x0064_3eb0, Conv::Cdecl, &p, |g| {
+        Out::U32(b::graphic_tex_anim_set_animated_materials_char(g, frame, p))
+    });
+}
+
+/// `graphicTextureAnimationSetMaterialUV_00644150`.
+fn round24_set_material_uv(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    use ffx_graphic::util::bridge24 as b;
+    t.stub_sym(ut::TEX_ANIM_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+    let args = [
+        LogArg::Str,
+        LogArg::Str,
+        LogArg::Word,
+        LogArg::Word,
+        LogArg::Word,
+    ];
+    // the stub goes over a function tested on its own: put it back after
+    let at = t.rebase(b::TEX_ANIM_SET_MATERIAL_UV);
+    let mut entry = [0u8; 5];
+    t.b.read_bytes(at, &mut entry);
+    stub_log(t, b::TEX_ANIM_SET_MATERIAL_UV, &args, 4, 5, rng.next());
+    let p = [
+        round24_name_number(rng),
+        round24_name_number(rng),
+        round24_float(rng),
+        round24_float(rng),
+        rng.next(),
+    ];
+    let frame = round24_frame(t);
+    t.check(what, 0x0064_4150, Conv::Cdecl, &p, |g| {
+        b::graphic_tex_anim_set_material_uv(g, frame, p);
+        Out::None
+    });
+    t.write(at, &entry);
+}
+
+/// `TextureAnimationManager_setMaterialUV_006b33c0` on a fresh manager,
+/// its callees recording stubs (`PArray_Data` original). Returns the
+/// number of logged calls.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one object graph
+fn round24_material_uv(t: &mut Twins, rng: &mut Rng, what: &str) -> u32 {
+    use ffx_graphic::util::bridge24 as b;
+    let flag = |rng: &mut Rng| if rng.chance(3) { 0x8000_0000 } else { 0 };
+    // the key: an object list whose objects hold texture arrays
+    let nobj = 2;
+    let mut objs = Vec::new();
+    for _ in 0..nobj {
+        let ntex = [1u32, 3][rng.below(2) as usize];
+        // three textures either way: a one-element array keeps it inline
+        // and the material's index (below 3) reads on past it
+        let texes: Vec<u32> = (0..3)
+            .map(|_| {
+                if rng.chance(5) {
+                    0
+                } else {
+                    let tex = t.alloc(&rng.bytes(8));
+                    t.w32(tex + 4, rng.next() | 1);
+                    tex
+                }
+            })
+            .collect();
+        let arr = t.alloc(&rng.bytes(0x10));
+        t.w32(arr, ntex | flag(rng));
+        if ntex == 1 {
+            for (k, v) in (0u32..).zip(&texes) {
+                t.w32(arr + 4 + 4 * k, *v);
+            }
+        } else {
+            let data: Vec<u8> = texes.iter().flat_map(|v| v.to_le_bytes()).collect();
+            let d = t.alloc(&data);
+            t.w32(arr + 4, d);
+        }
+        let obj = t.alloc(&rng.bytes(0x20));
+        t.w32(obj + 0x10, arr);
+        objs.extend(obj.to_le_bytes());
+    }
+    let objs = t.alloc(&objs);
+    let key = t.alloc(&rng.bytes(8));
+    t.w32(key + 4, objs);
+    // the animation and its materials
+    let nmat = rng.below(5);
+    let mut mats = Vec::new();
+    for _ in 0..nmat {
+        let m = t.zeros(0x80);
+        let ti = if rng.chance(6) {
+            u32::MAX - rng.below(3)
+        } else {
+            rng.below(3)
+        };
+        let oi = if rng.chance(6) {
+            0x8000_0000 | rng.next()
+        } else {
+            rng.below(nobj)
+        };
+        t.w32(m + 0x74, ti);
+        t.w32(m + 0x78, oi);
+        for off in [4, 8, 0x20, 0x24, 0x38, 0x3c, 0x50, 0x54] {
+            if !rng.chance(3) {
+                t.w32(m + off, rng.next() | 1);
+            }
+        }
+        mats.extend(m.to_le_bytes());
+    }
+    let mat_arr = t.alloc(&mats);
+    let mats = t.alloc(&rng.bytes(8));
+    t.w32(mats, nmat | flag(rng));
+    t.w32(mats + 4, mat_arr);
+    let anim = t.alloc(&rng.bytes(0x40));
+    t.w32(anim + 0x38, mats);
+    // the sets
+    let nsets = 1 + rng.below(3);
+    let sets = t.alloc(&rng.bytes(0x20 * nsets as usize));
+    for k in 0..nsets {
+        let s = sets + 0x20 * k;
+        let slots = if rng.chance(5) { 0 } else { 1 + rng.below(4) };
+        t.w32(s + 8, slots | flag(rng));
+        t.w32(s + 0xc, anim);
+    }
+    // the manager's list
+    let n = rng.below(4);
+    let hit = if rng.chance(5) {
+        u32::MAX
+    } else {
+        rng.below(n.max(1))
+    };
+    let mut list = Vec::new();
+    for k in 0..n {
+        let other = rng.next();
+        for v in [
+            rng.below(nsets),
+            if k == hit { key } else { other },
+            rng.next(),
+        ] {
+            list.extend(v.to_le_bytes());
+        }
+    }
+    let list = t.alloc(&list);
+    let mgr = t.alloc(&rng.bytes(0x80));
+    t.w32(mgr + 0x68, sets);
+    t.w32(mgr + 0x6c, n | flag(rng));
+    t.w32(mgr + 0x70, list);
+    let material = if rng.chance(5) { 0 } else { rng.next() | 1 };
+    t.stub_sym(b::TEX_ANIM_FIND_MATERIAL, Conv::Thiscall(0), 3, material);
+    let deref = |n| [LogArg::Word, LogArg::Deref(n)];
+    stub_log(
+        t,
+        ffx_graphic::managers::bridge::SET_PARAM_VALUE,
+        &deref(4),
+        1,
+        2,
+        rng.next(),
+    );
+    stub_log(
+        t,
+        b::SHADER_PARAM_COPY_TO_BUFFER,
+        &deref(2),
+        1,
+        2,
+        rng.next(),
+    );
+    stub_log(t, b::SHADER_PARAM_SET_VALUE2, &deref(1), 1, 2, rng.next());
+    let (u, v) = (round24_float(rng), round24_float(rng));
+    let p = [rng.next(), rng.next(), u, v, key];
+    t.check(what, 0x006b_33c0, Conv::Thiscall(mgr), &p, |g| {
+        b::tex_anim_set_material_uv(g, mgr, u, v, key);
+        Out::None
+    });
+    t.r32(t.log)
+}
+
+#[test]
+fn round24b_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2424_b024);
+    let (mut filled, mut calls) = (0, 0);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        filled += u32::from(round24_shadow_mesh(
+            &mut t,
+            &mut rng,
+            &format!("{what} shadow mesh"),
+        ));
+        round24_set_animated(&mut t, &mut rng, &format!("{what} set animated"));
+        round24_set_material_uv(&mut t, &mut rng, &format!("{what} set material uv"));
+        t.reset();
+        t.log = t.zeros(0x8000);
+        calls +=
+            u32::from(round24_material_uv(&mut t, &mut rng, &format!("{what} material uv")) > 0);
+    }
+    eprintln!("stream 1 filled {filled}, set-material-uv rounds with calls {calls}");
+    assert!(filled > 300, "{filled}");
+    assert!(calls > 300, "{calls}");
+}
+
+#[test]
+fn snapshot_round24b_matches_the_original() {
+    use ffx_graphic::util::bridge24 as b;
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    // the game's own texture animations, all original (in their own
+    // oracles: a faulting run leaves them unusable for the diff)
+    let mgr = t.r32(t.rebase(0x00cc_caa8));
+    if mgr != 0 {
+        let n = t.r32(mgr + 0x6c) & 0x7fff_ffff;
+        let list = t.r32(mgr + 0x70);
+        eprintln!("texture animation manager {mgr:#x}: {n} entries");
+        for k in 0..n.min(16) {
+            let key = t.r32(list + 12 * k + 4);
+            let p = [0, 0, 0.25f32.to_bits(), 0.75f32.to_bits(), key];
+            // some entries reach memory the snapshot lacks: a first run of
+            // the original on both sides (same writes) tells
+            let at = t.rebase(0x006b_33c0);
+            let ra = t.a.call(at, Conv::Thiscall(mgr), &p);
+            let rb = t.b.call(at, Conv::Thiscall(mgr), &p);
+            assert_eq!(ra.is_ok(), rb.is_ok());
+            if ra.is_err() {
+                eprintln!("snapshot entry {k}: the original faults; stopping");
+                break;
+            }
+            t.check(
+                &format!("snapshot entry {k}"),
+                0x006b_33c0,
+                Conv::Thiscall(mgr),
+                &p,
+                |g| {
+                    b::tex_anim_set_material_uv(g, mgr, p[2], p[3], key);
+                    Out::None
+                },
+            );
+        }
+    }
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5424_b024);
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round24_shadow_mesh(&mut t, &mut rng, &format!("{what} shadow mesh"));
+        round24_set_animated(&mut t, &mut rng, &format!("{what} set animated"));
+        round24_set_material_uv(&mut t, &mut rng, &format!("{what} set material uv"));
+        t.reset();
+        round24_material_uv(&mut t, &mut rng, &format!("{what} material uv"));
+    }
+}
+
+// ---- round 24, group 3 ----
+
+/// `graphicCameraGetViewProjectionMatrix` on a fresh scene (as
+/// [`round24_view_projection`] builds it) or the game's (`real`).
+fn round24_camera_view_projection(t: &mut Twins, rng: &mut Rng, real: bool, what: &str) {
+    use ffx_graphic::util::bridge24 as b;
+    if !real {
+        // the scene and stubs of round24_view_projection, then ours
+        let scene = t.alloc(&rng.bytes(0xfa40));
+        for off in [0xf9bc, 0xf9c0, 0xfa34, 0xfa38] {
+            t.write(scene + off, &round24_float(rng).to_le_bytes());
+        }
+        t.w8(scene + 0xf9c7, u8::from(rng.chance(3)));
+        let cam: Vec<u8> = (0..0x40).flat_map(|_| rng.float().to_le_bytes()).collect();
+        let cam = t.alloc(&cam);
+        t.w32(scene + 0xdc, cam);
+        t.w8(t.rebase(scene::bridge::IS_3D.sym), u8::from(rng.chance(3)));
+        t.global(scene::bridge::SCENE.sym, scene);
+        let fc = t.zeros(0x340);
+        if rng.chance(2) {
+            t.w8(fc + 0x338, 1);
+        }
+        t.global(b::FREE_CAMERA.sym, fc);
+        t.stub_sym(
+            ffx_graphic::state::bridge::CAMERA_UPDATE_VIEW,
+            Conv::Thiscall(0),
+            0,
+            rng.next(),
+        );
+    }
+    let out = t.alloc(&rng.bytes(0x40));
+    let tmp = round24_frame(t);
+    t.check(what, 0x0063_9590, Conv::Cdecl, &[out], |g| {
+        b::graphic_camera_view_projection(g, tmp, out);
+        Out::None
+    });
+}
+
+/// `TexAnim_SetMaterialsChar_0077fbf0` (the callee original on one side,
+/// ours on the other; its callees recording stubs).
+fn round24_set_materials_char(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    use ffx_graphic::util::bridge24 as b;
+    t.stub_sym(ut::TEX_ANIM_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+    let mut args = vec![LogArg::Str, LogArg::Str];
+    args.extend([LogArg::Word; 7]);
+    stub_log(
+        t,
+        b::TEX_ANIM_SET_ANIMATED_MATERIALS_CHAR,
+        &args,
+        8,
+        9,
+        rng.next(),
+    );
+    let mut p = [0u32; 11];
+    p[0] = round24_name_number(rng);
+    p[1] = round24_name_number(rng);
+    p[2] = rng.next();
+    for v in &mut p[3..9] {
+        // signed 16-bit values, zeros often, garbage in the high word
+        let w = [0, 1, 0xffff, 0x8000, 0x7fff, rng.next() & 0xffff][rng.below(6) as usize];
+        *v = w | (rng.next() & 0xffff_0000);
+    }
+    p[9] = rng.next();
+    p[10] = if rng.chance(4) { 0 } else { rng.next() };
+    let frame = round24_frame(t);
+    t.check(what, 0x0077_fbf0, Conv::Cdecl, &p, |g| {
+        Out::U32(b::tex_anim_set_materials_char(g, frame, p))
+    });
+}
+
+#[test]
+fn round24c_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2424_c024);
+    for round in 0..2000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round24_camera_view_projection(&mut t, &mut rng, false, &format!("{what} camera"));
+        round24_set_materials_char(&mut t, &mut rng, &format!("{what} materials char"));
+    }
+}
+
+#[test]
+fn snapshot_round24c_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5424_c024);
+    // the game's own scene and free camera, all original
+    if t.r32(t.rebase(scene::bridge::SCENE.sym)) != 0 {
+        round24_camera_view_projection(&mut t, &mut rng, true, "snapshot camera");
+    }
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round24_camera_view_projection(&mut t, &mut rng, false, &format!("{what} camera"));
+        round24_set_materials_char(&mut t, &mut rng, &format!("{what} materials char"));
+    }
+}

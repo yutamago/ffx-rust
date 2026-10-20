@@ -2489,3 +2489,617 @@ pub mod bridge {
         change_2d_scene_num(h, scene, n);
     }
 }
+
+/// Round 24: the view-projection matrix and the speed control's tick.
+#[allow(clippy::many_single_char_names)] // matrix rows
+pub mod bridge24 {
+    use super::bridge::TEX_ANIM_GET_INSTANCE;
+    use super::bridge::{
+        IGGY_CALL_AS3_EXTERNAL, INPUT_IS_PRESS_BUTTON, MATRIX4_COPY_453340, ROW_TIMES,
+        SCREEN_ADJUST_ASPECT, SCREEN_ADJUST_THIRD, SPD_CTRL_B4, SPD_CTRL_B8, SPD_CTRL_C0,
+        SPD_CTRL_ENABLED, SPD_CTRL_ON_DISABLE,
+    };
+    use crate::host::{Conv, Host};
+    use crate::state::bridge::CAMERA_UPDATE_VIEW as CAMERA_UPDATE_VIEW_MATRICES;
+    use ffx_bridge::{Global, x87};
+
+    /// A float as `fld`/`fstp` moves it.
+    fn rt(bits: u32) -> u32 {
+        x87::round_trip(f32::from_bits(bits)).to_bits()
+    }
+
+    /// `g_FreeCamera` (`0x00ccc830`), `operator_new` and
+    /// `FreeCamera_FreeCamera(this)` (`thiscall`, returns `this`).
+    pub const FREE_CAMERA: Global<u32> = Global::new(0x00cc_c830);
+    pub const OPERATOR_NEW: u32 = 0x0063_0310;
+    pub const FREE_CAMERA_CTOR: u32 = 0x0067_fe70;
+    /// The size `getViewProjectionMatrix` allocates for the free camera.
+    pub const FREE_CAMERA_SIZE: u32 = 0x340;
+
+    /// `out` = `out` times `m`, row by row as the original does it: each
+    /// row of `out` (bottom first) through `PMatrix4_RowTimes(m, tmp, row)`
+    /// into its own temporary, then the four results copied over `out`
+    /// (`fld`/`fstp`).
+    fn rows_times(h: &mut impl Host, out: u32, m: u32, tmp: u32) {
+        for r in (0..4u32).rev() {
+            h.call_sym(
+                ROW_TIMES,
+                Conv::Thiscall(m),
+                &[tmp + 0x10 * r, out + 0x10 * r],
+            );
+        }
+        for i in 0..16 {
+            let v = rt(h.read(tmp + 4 * i));
+            h.write(m + 4 * i, v);
+        }
+    }
+
+    /// Writes `[1 0 0 0; 0 k 0 0; 0 0 1 0; x y 0 1]` at `m`.
+    fn affine(h: &mut impl Host, m: u32, k: u32, x: u32, y: u32) {
+        let one = 1f32.to_bits();
+        let p = [one, 0, 0, 0, 0, k, 0, 0, 0, 0, one, 0, x, y, 0, one];
+        for (i, v) in (0u32..).zip(p) {
+            h.write(m + 4 * i, v);
+        }
+    }
+
+    /// `PhyreScene_getViewProjectionMatrix(scene, out)` (`0x0065e660`,
+    /// `thiscall`, `ret 4`): the camera's view-projection matrix, moved by
+    /// the scene's screen offset and, in a 2D scene, adjusted to the
+    /// screen. Returns `out`.
+    ///
+    /// The free camera is made on first use (`operator_new(0x340)`,
+    /// `FreeCamera_FreeCamera`; 0 when the allocation fails). When it is
+    /// off (bytes `+0x338` and `+0x33c` and word `+0` clear) the scene's
+    /// camera (`*(scene +0xdc)`) takes `scene +0xfa04` as its transform
+    /// (`+0xb4`) and updates its view matrices (`Phyre_PCamera_updateViewMatrices`
+    /// on camera `+4`). `out` = the camera's 4x4 at `+0x74`
+    /// (`PMatrix4_Copy_00453340`) times the translation by
+    /// `(scene +0xfa34, scene +0xfa38)` (`[1 0 0 0; 0 1 0 0; 0 0 1 0; x y
+    /// 0 1]`). Unless the scene draws as 3D (byte `+0xf9c7`, or
+    /// `g_PhyreScene3D`), it then takes the screen adjustment of
+    /// `PhyreScene_GetScreenAdjustedView_00651650` (`[1 0 0 0; 0 4/3 0 0;
+    /// 0 0 1 0; 0 d 0 1]`, `d = 0.33333337 - 2 * (scene +0xf9c0 + scene
+    /// +0xf9bc)` stored as a float), the result copied into `out` by
+    /// `PMatrix4_Copy_00453340`. The products go row by row through
+    /// `PMatrix4_RowTimes` ([`rows_times`]); the matrix and temporaries
+    /// are the original's locals ([`Host::scratch`]).
+    pub fn scene_view_projection(h: &mut impl Host, scene: u32, out: u32) -> u32 {
+        let mut cam = FREE_CAMERA.get(h);
+        if cam == 0 {
+            let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[FREE_CAMERA_SIZE]);
+            cam = if p == 0 {
+                0
+            } else {
+                h.call_sym(FREE_CAMERA_CTOR, Conv::Thiscall(p), &[])
+            };
+            FREE_CAMERA.set(h, cam);
+        }
+        if h.read::<u8>(cam.wrapping_add(0x338)) == 0
+            && h.read::<u8>(cam.wrapping_add(0x33c)) == 0
+            && h.read::<u32>(cam) == 0
+        {
+            let camera: u32 = h.read(scene + 0xdc);
+            h.write(camera.wrapping_add(0xb4), scene + 0xfa04);
+            let camera: u32 = h.read(scene + 0xdc);
+            h.call_sym(
+                CAMERA_UPDATE_VIEW_MATRICES,
+                Conv::Thiscall(camera.wrapping_add(4)),
+                &[],
+            );
+        }
+        let camera: u32 = h.read(scene + 0xdc);
+        h.call_sym(
+            MATRIX4_COPY_453340,
+            Conv::Thiscall(out),
+            &[camera.wrapping_add(0x74)],
+        );
+        let m = h.scratch();
+        let tmp = m + 0x40;
+        let x = rt(h.read(scene + 0xfa34));
+        let y = rt(h.read(scene + 0xfa38));
+        affine(h, m, 1f32.to_bits(), x, y);
+        rows_times(h, out, m, tmp);
+        for i in 0..16 {
+            let v = rt(h.read(m + 4 * i));
+            h.write(out + 4 * i, v);
+        }
+        if h.read::<u8>(scene + 0xf9c7) != 0 || crate::scene::bridge::IS_3D.get(h) != 0 {
+            return out;
+        }
+        let k = rt(h.read(h.rebase(SCREEN_ADJUST_ASPECT)));
+        let third = f64::from_bits(h.read(h.rebase(SCREEN_ADJUST_THIRD)));
+        let a = x87::load(h.read(scene + 0xf9c0));
+        let s = x87::add(a, x87::load(h.read(scene + 0xf9bc)));
+        let d = x87::store(x87::sub(third, x87::add(s, s)));
+        affine(h, m, k, 0, d);
+        rows_times(h, out, m, tmp);
+        h.call_sym(MATRIX4_COPY_453340, Conv::Thiscall(out), &[m]);
+        out
+    }
+
+    /// `g_IggyMenuManager` (`0x01984c6c`, `IggyMenuManager_createInstance`).
+    pub const IGGY_MENU_MANAGER: Global<u32> = Global::new(0x0198_4c6c);
+    /// Whether the battle subtitles are muted for the speed-up (a byte
+    /// beside `SPD_CTRL_ENABLED`).
+    pub const SPD_CTRL_SUBTITLE_MUTED: Global<u8> = Global::new(0x00ce_82bd);
+    /// The speed-up button `SpdCtrl_Tick` checks.
+    pub const SPD_CTRL_BUTTON: u32 = 0x1_0000;
+    /// `TipSystem_Get()`, `TipSystem_PushTip(tips, id)` (`thiscall`).
+    pub const TIP_SYSTEM_GET: u32 = 0x006e_8750;
+    pub const TIP_SYSTEM_PUSH_TIP: u32 = 0x006e_8770;
+    /// `IconPanel_get()`, `IconPanel_hideIcon(panel, i)` and
+    /// `IconPanel_showIcon(panel, i)` (`thiscall`, `ret 4`).
+    pub const ICON_PANEL_GET: u32 = 0x006f_78b0;
+    pub const ICON_PANEL_HIDE_ICON: u32 = 0x006f_7900;
+    pub const ICON_PANEL_SHOW_ICON: u32 = 0x006f_7970;
+    /// `MsBattleCheck()` and `MsMuteBattleSubTitle(on)`.
+    pub const MS_BATTLE_CHECK: u32 = 0x0078_0c90;
+    pub const MS_MUTE_BATTLE_SUBTITLE: u32 = 0x0078_5990;
+    /// The tips shown for speed levels 1, 2 and 0.
+    pub const SPD_CTRL_TIPS: [u32; 3] = [0x2ff, 0x2fd, 0x2fe];
+
+    /// `SpdCtrl_Tick()` (`0x006f7470`): once the speed control is ready,
+    /// the speed-up button (`inputIsPressButton(0x10000)`) with the Iggy
+    /// menus, the tips and the icon panel up steps the level (`SPD_CTRL_B4`,
+    /// 0, 1, 2 round, a signed `% 3`): both icons hidden, the level's icon
+    /// shown (its menu into `SPD_CTRL_C0`, else 0) and its tip pushed
+    /// (`0x2fd`, `0x2fe`, or `0x2ff` for off); a shown icon while the
+    /// speed-up is not running (`SPD_CTRL_B8`) gets `"OnDisable"`. Then
+    /// (also without the button) [`spd_ctrl_update_subtitle_mute`].
+    pub fn spd_ctrl_tick(h: &mut impl Host) {
+        if SPD_CTRL_ENABLED.get(h) == 0 {
+            return;
+        }
+        if h.call_sym(INPUT_IS_PRESS_BUTTON, Conv::Cdecl, &[SPD_CTRL_BUTTON]) != 0 {
+            if IGGY_MENU_MANAGER.get(h) == 0
+                || h.call_sym(TIP_SYSTEM_GET, Conv::Cdecl, &[]) == 0
+                || h.call_sym(ICON_PANEL_GET, Conv::Cdecl, &[]) == 0
+            {
+                return;
+            }
+            #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)] // idiv
+            let level = (SPD_CTRL_B4.get(h).wrapping_add(1) as i32 % 3) as u32;
+            SPD_CTRL_B4.set(h, level);
+            for i in 0..2 {
+                let panel = h.call_sym(ICON_PANEL_GET, Conv::Cdecl, &[]);
+                h.call_sym(ICON_PANEL_HIDE_ICON, Conv::Thiscall(panel), &[i]);
+            }
+            let level = SPD_CTRL_B4.get(h);
+            SPD_CTRL_C0.set(h, 0);
+            let tip = if level == 1 || level == 2 {
+                let panel = h.call_sym(ICON_PANEL_GET, Conv::Cdecl, &[]);
+                let menu = h.call_sym(ICON_PANEL_SHOW_ICON, Conv::Thiscall(panel), &[level - 1]);
+                SPD_CTRL_C0.set(h, menu);
+                SPD_CTRL_TIPS[level as usize]
+            } else {
+                SPD_CTRL_TIPS[0]
+            };
+            let tips = h.call_sym(TIP_SYSTEM_GET, Conv::Cdecl, &[]);
+            h.call_sym(TIP_SYSTEM_PUSH_TIP, Conv::Thiscall(tips), &[tip]);
+            let menu = SPD_CTRL_C0.get(h);
+            if SPD_CTRL_B8.get(h) == 0 && menu != 0 {
+                let name = h.rebase(SPD_CTRL_ON_DISABLE);
+                h.call_sym(
+                    IGGY_CALL_AS3_EXTERNAL,
+                    Conv::Thiscall(menu),
+                    &[0, name, 0, 0, 1],
+                );
+            }
+        }
+        spd_ctrl_update_subtitle_mute(h);
+    }
+
+    /// `SpdCtrl_UpdateSubtitleMute_006f7230()` (name ours; Ghidra has no
+    /// function there, only `SpdCtrl_Tick`'s tail jump reaches it): the
+    /// battle subtitles muted (`MsMuteBattleSubTitle(1)`) while in battle
+    /// (`MsBattleCheck`) at a speed level other than 0, unmuted otherwise;
+    /// [`SPD_CTRL_SUBTITLE_MUTED`] keeps the state, set before each call,
+    /// and only a change calls.
+    pub fn spd_ctrl_update_subtitle_mute(h: &mut impl Host) {
+        let mute = h.call_sym(MS_BATTLE_CHECK, Conv::Cdecl, &[]) != 0 && SPD_CTRL_B4.get(h) != 0;
+        if (SPD_CTRL_SUBTITLE_MUTED.get(h) != 0) != mute {
+            SPD_CTRL_SUBTITLE_MUTED.set(h, u8::from(mute));
+            h.call_sym(MS_MUTE_BATTLE_SUBTITLE, Conv::Cdecl, &[u32::from(mute)]);
+        }
+    }
+
+    // ---- round 24, group 2 ----
+
+    /// Copies `n` bytes from `src` to `dst` as the CRT's `memcpy` does
+    /// (overlap-safe in MSVC's).
+    fn copy_bytes(h: &mut impl Host, dst: u32, src: u32, n: u32) {
+        if n == 0 {
+            return;
+        }
+        let mut buf = vec![0; n as usize];
+        h.read_bytes(src, &mut buf);
+        h.write_bytes(dst, &buf);
+    }
+
+    /// `ShadowDynamicMesh_updateBuffers_006789f0(_, src, streams, indices)`
+    /// (`0x006789f0`, `ShadowDynamicMesh`'s vtable slot 5, `ret 0x10`,
+    /// `ecx` unread; name ours): the mesh data `src` into the four vertex
+    /// streams (`streams[0..4]`, each an object with its data at `+0x3c`
+    /// and its count at `+4`, or 0) and the index buffer (`indices`: data
+    /// `+0x38`, count `+8`). With `n` = `src +0x24` vertices: `12 n` bytes
+    /// from `src +0x10` into stream 0, `16 n` from `+0x14` into stream 1
+    /// (only when it has data), `8 n` from `+0x18` into stream 2 and `12 n`
+    /// from `+0x1c` into stream 3 (`memcpy`, to a null destination too);
+    /// each present stream's count = `n`. The `src +0x28` index words at
+    /// `src +0x20` are copied one by one (the source pointer read again
+    /// each time), the index count set, and `src +4` cleared. Returns 0.
+    pub fn shadow_dynamic_mesh_update_buffers(
+        h: &mut impl Host,
+        src: u32,
+        streams: u32,
+        indices: u32,
+    ) -> u32 {
+        let data: [u32; 4] = std::array::from_fn(|k| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            let s: u32 = h.read(streams + 4 * k as u32);
+            if s == 0 {
+                0
+            } else {
+                h.read(s.wrapping_add(0x3c))
+            }
+        });
+        let nidx: u32 = h.read(src.wrapping_add(0x28));
+        let n: u32 = h.read(src.wrapping_add(0x24));
+        let from = |off: u32| src.wrapping_add(off);
+        let f = h.read(from(0x10));
+        copy_bytes(h, data[0], f, n.wrapping_mul(12));
+        if data[1] != 0 {
+            let f = h.read(from(0x14));
+            copy_bytes(h, data[1], f, n.wrapping_mul(16));
+        }
+        let f = h.read(from(0x18));
+        copy_bytes(h, data[2], f, n.wrapping_mul(8));
+        let f = h.read(from(0x1c));
+        copy_bytes(h, data[3], f, n.wrapping_mul(12));
+        for k in 0..4 {
+            let s: u32 = h.read(streams + 4 * k);
+            if s != 0 {
+                h.write(s.wrapping_add(4), n);
+            }
+        }
+        let out: u32 = h.read(indices.wrapping_add(0x38));
+        for i in 0..nidx {
+            let from: u32 = h.read(src.wrapping_add(0x20));
+            let v: u32 = h.read(from.wrapping_add(4 * i));
+            h.write(out.wrapping_add(4 * i), v);
+        }
+        h.write(indices.wrapping_add(8), nidx);
+        // never 0 here: the original reads src +0x24 first
+        if src != 0 {
+            h.write(src.wrapping_add(4), 0u32);
+        }
+        0
+    }
+
+    /// The prefixes of the texture-animation names: pointers to `"G"`
+    /// (`0x00c322a0`) and `"Animation"` (`0x00c322a4`), and the numbers
+    /// `"0"`..`"19"` (`0x00c322b0`, 20 string pointers).
+    pub const TEX_ANIM_PREFIX_G: u32 = 0x00c3_22a0;
+    pub const TEX_ANIM_PREFIX_ANIMATION: u32 = 0x00c3_22a4;
+    pub const TEX_ANIM_NUMBERS: u32 = 0x00c3_22b0;
+    /// `TextureAnimationManager_setAnimatedMaterialsChar(mgr, s1, s2, c, u,
+    /// v, w, h, d, e)` (`thiscall`, `ret 0x24`).
+    pub const TEX_ANIM_SET_ANIMATED_MATERIALS_CHAR: u32 = 0x006b_3060;
+    /// `TextureAnimationManager_setMaterialUV_006b33c0(mgr, s1, s2, u, v,
+    /// key)` (`thiscall`, `ret 0x14`).
+    pub const TEX_ANIM_SET_MATERIAL_UV: u32 = 0x006b_33c0;
+
+    /// The C string at `at`, without its NUL.
+    #[allow(clippy::cast_possible_truncation)] // 32-bit addresses
+    fn c_str(h: &impl Host, at: u32) -> Vec<u8> {
+        let mut s = Vec::new();
+        loop {
+            let c: u8 = h.read(at.wrapping_add(s.len() as u32));
+            if c == 0 {
+                return s;
+            }
+            s.push(c);
+        }
+    }
+
+    /// `strcpy(dst, *prefix)` then `strcat(dst, number)`, the number as
+    /// `sprintf(buf, "%d", n)` writes it (into `buf`); with `table`, the
+    /// table's string for an `n` below 20 (signed) instead.
+    fn tex_anim_name(h: &mut impl Host, dst: u32, prefix: u32, n: u32, table: bool, buf: u32) {
+        let p: u32 = h.read(h.rebase(prefix));
+        let mut s = c_str(h, p);
+        s.push(0);
+        h.write_bytes(dst, &s);
+        #[allow(clippy::cast_possible_wrap)] // signed compare
+        let src = if table && (n as i32) < 0x14 {
+            let at = h.rebase(TEX_ANIM_NUMBERS).wrapping_add(n.wrapping_mul(4));
+            h.read(at)
+        } else {
+            #[allow(clippy::cast_possible_wrap)] // %d
+            let mut t = format!("{}", n as i32).into_bytes();
+            t.push(0);
+            h.write_bytes(buf, &t);
+            buf
+        };
+        let mut t = c_str(h, src);
+        t.push(0);
+        #[allow(clippy::cast_possible_truncation)] // 32-bit addresses
+        let end = dst.wrapping_add(c_str(h, dst).len() as u32);
+        h.write_bytes(end, &t);
+    }
+
+    /// `a / b` as the x87 divides two floats, stored as a float; 0 when
+    /// `b` is zero (a NaN divides).
+    fn div_or_zero(a: u32, b: u32) -> u32 {
+        let b = x87::load(b);
+        if b == 0.0 {
+            0
+        } else {
+            x87::store(x87::div(x87::load(a), b))
+        }
+    }
+
+    /// `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0(a, b, c,
+    /// x, y, w, h, sw, sh, d, e)` (`0x00643eb0`, cdecl; name ours, sorts
+    /// before `graphicTextureAnimationSetMaterialVisiability`): the names
+    /// `"G" + a` and `"Animation" + b` (a number below 20, signed, from the
+    /// table at `0x00c322b0`, else `sprintf "%d"`) in `frame` (`+0x100`,
+    /// `+0x200`; `+0` the `sprintf` buffer, as the original's 0x300-byte
+    /// frame), then `setAnimatedMaterialsChar(s1, s2, c, x / sw, y / sh, w
+    /// / sw, h / sh, d, e)` on `TextureAnimationManager_GetInstance()`,
+    /// each quotient a float, 0 for a zero divisor. Returns its `eax`
+    /// (the cookie check leaves it).
+    pub fn graphic_tex_anim_set_animated_materials_char(
+        h: &mut impl Host,
+        frame: u32,
+        p: [u32; 11],
+    ) -> u32 {
+        let (s1, s2) = (frame + 0x100, frame + 0x200);
+        tex_anim_name(h, s1, TEX_ANIM_PREFIX_G, p[0], true, frame);
+        tex_anim_name(h, s2, TEX_ANIM_PREFIX_ANIMATION, p[1], true, frame);
+        let w = div_or_zero(p[5], p[7]);
+        let hh = div_or_zero(p[6], p[8]);
+        let u = div_or_zero(p[3], p[7]);
+        let v = div_or_zero(p[4], p[8]);
+        let mgr = h.call_sym(TEX_ANIM_GET_INSTANCE, Conv::Cdecl, &[]);
+        // nine words: the game's host passes up to twelve to a thiscall
+        // (`host.rs`), as `specular_set_params` does
+        let args: [u32; 9] = [s1, s2, p[2], u, v, w, hh, p[9], p[10]];
+        h.call_sym(
+            TEX_ANIM_SET_ANIMATED_MATERIALS_CHAR,
+            Conv::Thiscall(mgr),
+            &args,
+        )
+    }
+
+    /// `graphicTextureAnimationSetMaterialUV_00644150(a, b, u, v, key)`
+    /// (`0x00644150`, cdecl; name ours): the names `"G" + a` and
+    /// `"Animation" + b` (`sprintf "%d"`) in `frame` (`+0`, `+0x100`;
+    /// `+0x200` the `sprintf` buffer), then
+    /// `TextureAnimationManager_setMaterialUV_006b33c0(s1, s2, u, v, key)`
+    /// on `TextureAnimationManager_GetInstance()`.
+    pub fn graphic_tex_anim_set_material_uv(h: &mut impl Host, frame: u32, p: [u32; 5]) {
+        let (s1, s2, buf) = (frame, frame + 0x100, frame + 0x200);
+        tex_anim_name(h, s1, TEX_ANIM_PREFIX_G, p[0], false, buf);
+        tex_anim_name(h, s2, TEX_ANIM_PREFIX_ANIMATION, p[1], false, buf);
+        let mgr = h.call_sym(TEX_ANIM_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(
+            TEX_ANIM_SET_MATERIAL_UV,
+            Conv::Thiscall(mgr),
+            &[s1, s2, rt(p[2]), rt(p[3]), p[4]],
+        );
+    }
+
+    /// `PArray_Data_004d45a0(array)` (`thiscall`; name ours): an array's
+    /// elements (inline at `+4` for one, the pointer at `+4` for more, 0
+    /// for none).
+    pub const ARRAY_DATA: u32 = 0x004d_45a0;
+    /// `TextureAnimation_FindMaterial(mgr, anim, list, key)`,
+    /// `ShaderParam_CopyToBuffer_00698960(buffer, param, value)` and
+    /// `ShaderParamBuffer_SetValue2(buffer, param, value)` (both
+    /// `ret 8`, `ecx` the buffer as the original passes it).
+    pub const TEX_ANIM_FIND_MATERIAL: u32 = 0x006b_1e40;
+    pub const SHADER_PARAM_COPY_TO_BUFFER: u32 = 0x0069_8960;
+    pub const SHADER_PARAM_SET_VALUE2: u32 = 0x0063_86c0;
+    /// The `0.01` (`f64`) taken off the offsets and the `1.02` (`f32`)
+    /// scale.
+    pub const MATERIAL_UV_INSET: u32 = 0x00b1_f2b8;
+    pub const MATERIAL_UV_SCALE: u32 = 0x00b4_8628;
+
+    /// `TextureAnimationManager_setMaterialUV_006b33c0(mgr, _, _, u, v,
+    /// key)` (`0x006b33c0`, `thiscall`, `ret 0x14`; name ours, the two
+    /// name arguments unread): the entry of `key` in the manager's list
+    /// (`+0x70`, `+0x6c` of them with a flag bit, 12 bytes each, the key at
+    /// `+4`, its animation set's index at `+0`) picks the set (`+0x68`, 32
+    /// bytes each); a set with slots (`+8`, flag bit) has its animation
+    /// (`+0xc`) marked (byte `+0x34`). For each material `m` of the
+    /// animation (`+0x38`: an array, count with a flag bit read again each
+    /// pass) with texture index `+0x74` and object index `+0x78` both
+    /// non-negative, the texture (`PArray_Data` of `key`'s object `+0x78`
+    /// at `+0x10`, element `+0x74`) and the material
+    /// (`TextureAnimation_FindMaterial(anim, anim +0x18, set +0x18` less
+    /// its low bit`)`) both there, on the texture's buffer (`+4`, read
+    /// again for each): the two samplers (`+4`, `+8`) get the record
+    /// `(0xff, 0, mgr +0x38, material)` (`Render_SurfaceFormat_0066e4f0`),
+    /// the scales (`+0x50`, `+0x54`) `(1.02, 1.02)`, the offsets `+0x38`
+    /// `(u', v')` and `+0x3c` `(u', v' - 1)`, the values `+0x20`, `+0x24`
+    /// 1.0 (`ShaderParamBuffer_SetValue2`), each only when its parameter is
+    /// set, in that order (`+4`, `+0x50`, `+0x38`, `+0x20`, `+8`, `+0x54`,
+    /// `+0x3c`, `+0x24`). `u'`, `v'` are `u - 0.01`, `v - 0.01` as floats.
+    /// The records and values are the original's locals
+    /// ([`Host::scratch`], at their frame offsets).
+    pub fn tex_anim_set_material_uv(h: &mut impl Host, mgr: u32, u: u32, v: u32, key: u32) {
+        let inset = f64::from_bits(h.read(h.rebase(MATERIAL_UV_INSET)));
+        let u = x87::store(x87::sub(x87::load(u), inset));
+        let v = x87::store(x87::sub(x87::load(v), inset));
+        let n = h.read::<u32>(mgr + 0x6c) & 0x7fff_ffff;
+        let list: u32 = h.read(mgr + 0x70);
+        let entry = |i: u32| list.wrapping_add(i.wrapping_mul(12));
+        let Some(i) = (0..n).find(|&i| h.read::<u32>(entry(i).wrapping_add(4)) == key) else {
+            return;
+        };
+        let set = h.read::<u32>(entry(i)) << 5;
+        let sets: u32 = h.read(mgr + 0x68);
+        // the slot count, less its flag bit
+        let slots = h.read::<u32>(sets.wrapping_add(set).wrapping_add(8)) & 0x7fff_ffff;
+        if slots == 0 {
+            return;
+        }
+        let anim: u32 = h.read(sets.wrapping_add(set).wrapping_add(0xc));
+        h.write(anim.wrapping_add(0x34), 1u8);
+        let set = (h.read::<u32>(entry(i)) << 5).wrapping_add(h.read(mgr + 0x68));
+        if set == 0 {
+            return;
+        }
+        // the original's frame from -0x54
+        let frame = h.scratch();
+        let local = |off: u32| frame + 0x54 - off;
+        let scale = rt(h.read(h.rebase(MATERIAL_UV_SCALE)));
+        let mut j = 0;
+        loop {
+            let mats: u32 = h.read(anim.wrapping_add(0x38));
+            if j >= h.read::<u32>(mats) & 0x7fff_ffff {
+                break;
+            }
+            let arr: u32 = h.read(mats.wrapping_add(4));
+            let m: u32 = h.read(arr.wrapping_add(4 * j));
+            j += 1;
+            let ti: u32 = h.read(m.wrapping_add(0x74));
+            let oi: u32 = h.read(m.wrapping_add(0x78));
+            #[allow(clippy::cast_possible_wrap)] // signed indices
+            if (ti as i32) < 0 || (oi as i32) < 0 {
+                continue;
+            }
+            let objs: u32 = h.read(key.wrapping_add(4));
+            let obj: u32 = h.read(objs.wrapping_add(oi.wrapping_mul(4)));
+            let textures: u32 = h.read(obj.wrapping_add(0x10));
+            let data = h.call_sym(ARRAY_DATA, Conv::Thiscall(textures), &[]);
+            let tex: u32 = h.read(data.wrapping_add(ti.wrapping_mul(4)));
+            if tex == 0 {
+                continue;
+            }
+            let k = h
+                .read::<u32>(set.wrapping_add(0x18))
+                .wrapping_sub(u32::from(h.read::<u8>(set.wrapping_add(0x18)) & 1));
+            let list: u32 = h.read(anim.wrapping_add(0x18));
+            let material = h.call_sym(
+                TEX_ANIM_FIND_MATERIAL,
+                Conv::Thiscall(mgr),
+                &[anim, list, k],
+            );
+            if material == 0 {
+                continue;
+            }
+            let ctx = UvMaterial {
+                m,
+                tex,
+                words: [0xff, 0, mgr + 0x38, material],
+            };
+            ctx.sampler(h, 4, local(0x44));
+            ctx.pair(h, 0x50, local(0x1c), [scale, scale]);
+            ctx.pair(h, 0x38, local(0x24), [rt(u), rt(v)]);
+            ctx.value(h, 0x20, local(8));
+            ctx.sampler(h, 8, local(0x54));
+            ctx.pair(h, 0x54, local(0x2c), [scale, scale]);
+            let v1 = x87::store(x87::sub(x87::load(v), 1.0));
+            ctx.pair(h, 0x3c, local(0x34), [rt(u), v1]);
+            ctx.value(h, 0x24, local(8));
+        }
+    }
+
+    /// One material of [`tex_anim_set_material_uv`]: the material `m`, the
+    /// texture `tex` and the sampler record's words.
+    struct UvMaterial {
+        m: u32,
+        tex: u32,
+        words: [u32; 4],
+    }
+
+    impl UvMaterial {
+        /// The parameter at `m + off`, or `None`; and the texture's buffer.
+        fn param(&self, h: &mut impl Host, off: u32) -> Option<(u32, u32)> {
+            let param: u32 = h.read(self.m.wrapping_add(off));
+            if param == 0 {
+                return None;
+            }
+            Some((param, h.read(self.tex.wrapping_add(4))))
+        }
+
+        /// The sampler record at `rec`, by `Render_SurfaceFormat_0066e4f0`.
+        fn sampler(&self, h: &mut impl Host, off: u32, rec: u32) {
+            let Some((param, buffer)) = self.param(h, off) else {
+                return;
+            };
+            for (w, v) in (0u32..).zip(self.words) {
+                h.write(rec + 4 * w, v);
+            }
+            h.call_sym(
+                crate::managers::bridge::SET_PARAM_VALUE,
+                Conv::Thiscall(buffer),
+                &[param, rec],
+            );
+        }
+
+        /// Two floats at `at`, by `ShaderParam_CopyToBuffer_00698960`.
+        fn pair(&self, h: &mut impl Host, off: u32, at: u32, xy: [u32; 2]) {
+            let Some((param, buffer)) = self.param(h, off) else {
+                return;
+            };
+            h.write(at, xy[0]);
+            h.write(at + 4, xy[1]);
+            h.call_sym(
+                SHADER_PARAM_COPY_TO_BUFFER,
+                Conv::Thiscall(buffer),
+                &[param, at],
+            );
+        }
+
+        /// 1.0 at `at` (stored first, parameter or not), by
+        /// `ShaderParamBuffer_SetValue2`.
+        fn value(&self, h: &mut impl Host, off: u32, at: u32) {
+            h.write(at, 1f32.to_bits());
+            if let Some((param, buffer)) = self.param(h, off) {
+                h.call_sym(
+                    SHADER_PARAM_SET_VALUE2,
+                    Conv::Thiscall(buffer),
+                    &[param, at],
+                );
+            }
+        }
+    }
+
+    // ---- round 24, group 3 ----
+
+    /// `graphicCameraGetViewProjectionMatrix(out)` (`0x00639590`, cdecl):
+    /// [`scene_view_projection`] of `g_PhyreScene` into the local `tmp`
+    /// (16 words, the original's frame), then copied to `out` word by word
+    /// (`rep movsd`).
+    pub fn graphic_camera_view_projection(h: &mut impl Host, tmp: u32, out: u32) {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        scene_view_projection(h, scene, tmp);
+        for i in 0..16 {
+            let v: u32 = h.read(tmp + 4 * i);
+            h.write(out.wrapping_add(4 * i), v);
+        }
+    }
+
+    /// `TexAnim_SetMaterialsChar_0077fbf0(a, b, c, x, y, w, h, sw, sh, d,
+    /// e)` (`0x0077fbf0`, cdecl; name ours, between `chr_texanim_set_new`
+    /// and `TexAnim_StartNew`): unless `e` is 0 (returned then),
+    /// [`graphic_tex_anim_set_animated_materials_char`] with the six
+    /// signed 16-bit values `x`..`sh` made floats (`fild`, exact); returns
+    /// its `eax`. `frame` is that callee's (0x300 bytes).
+    pub fn tex_anim_set_materials_char(h: &mut impl Host, frame: u32, p: [u32; 11]) -> u32 {
+        if p[10] == 0 {
+            return 0;
+        }
+        let mut q = p;
+        for v in &mut q[3..9] {
+            #[allow(clippy::cast_possible_truncation)] // the low word, signed
+            let w = (*v as u16).cast_signed();
+            *v = f32::from(w).to_bits();
+        }
+        graphic_tex_anim_set_animated_materials_char(h, frame, q)
+    }
+}

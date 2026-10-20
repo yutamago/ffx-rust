@@ -1469,6 +1469,48 @@ ported! {
     TextureAnimationManager_updateSamplers_006b44a0 @ 0x006b_44a0 => extern "fastcall" fn tex_anim_update_samplers(this: u32) {
         mg::update_samplers(&mut mem(), this);
     }
+
+    // ---- round 24 ----
+    /// `PhyreScene_getViewProjectionMatrix(this, out)`.
+    PhyreScene_getViewProjectionMatrix @ 0x0065_e660 => extern "thiscall" fn scene_view_projection(this: u32, out: u32) -> u32 {
+        ffx_graphic::util::bridge24::scene_view_projection(&mut mem(), this, out)
+    }
+    /// `SpdCtrl_Tick()`.
+    SpdCtrl_Tick @ 0x006f_7470 => extern "C" fn spd_ctrl_tick() {
+        ffx_graphic::util::bridge24::spd_ctrl_tick(&mut mem());
+    }
+    /// `ShadowDynamicMesh_updateBuffers_006789f0(_, src, streams, indices)` (vtable slot 5, `ecx` unread).
+    ShadowDynamicMesh_updateBuffers_006789f0 @ 0x0067_89f0 => extern "stdcall" fn shadow_dynamic_mesh_update_buffers(_unused: u32, src: u32, streams: u32, indices: u32) -> u32 {
+        ffx_graphic::util::bridge24::shadow_dynamic_mesh_update_buffers(&mut mem(), src, streams, indices)
+    }
+    /// `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0(a, b, c, x, y, w, h, sw, sh, d, e)`: its 0x300-byte frame here.
+    graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0 @ 0x0064_3eb0 => extern "C" fn graphic_tex_anim_set_animated_materials_char(a: u32, b: u32, c: u32, x: u32, y: u32, w: u32, h: u32, sw: u32, sh: u32, d: u32, e: u32) -> u32 {
+        let mut frame = super::StackFrame::<0xc0>::new();
+        let at = frame.at();
+        ffx_graphic::util::bridge24::graphic_tex_anim_set_animated_materials_char(&mut mem(), at, [a, b, c, x, y, w, h, sw, sh, d, e])
+    }
+    /// `graphicTextureAnimationSetMaterialUV_00644150(a, b, u, v, key)`: its 0x300-byte frame here.
+    graphicTextureAnimationSetMaterialUV_00644150 @ 0x0064_4150 => extern "C" fn graphic_tex_anim_set_material_uv(a: u32, b: u32, u: u32, v: u32, key: u32) {
+        let mut frame = super::StackFrame::<0xc0>::new();
+        let at = frame.at();
+        ffx_graphic::util::bridge24::graphic_tex_anim_set_material_uv(&mut mem(), at, [a, b, u, v, key]);
+    }
+    /// `TextureAnimationManager_setMaterialUV_006b33c0(this, s1, s2, u, v, key)` (the names unread).
+    TextureAnimationManager_setMaterialUV_006b33c0 @ 0x006b_33c0 => extern "thiscall" fn tex_anim_set_material_uv(this: u32, _s1: u32, _s2: u32, u: u32, v: u32, key: u32) {
+        ffx_graphic::util::bridge24::tex_anim_set_material_uv(&mut mem(), this, u, v, key);
+    }
+    /// `graphicCameraGetViewProjectionMatrix(out)`: its 16-word local here.
+    graphicCameraGetViewProjectionMatrix @ 0x0063_9590 => extern "C" fn graphic_camera_view_projection(out: u32) {
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        ffx_graphic::util::bridge24::graphic_camera_view_projection(&mut mem(), at, out);
+    }
+    /// `TexAnim_SetMaterialsChar_0077fbf0(a, b, c, x, y, w, h, sw, sh, d, e)`: the callee's 0x300-byte frame here.
+    TexAnim_SetMaterialsChar_0077fbf0 @ 0x0077_fbf0 => extern "C" fn tex_anim_set_materials_char(a: u32, b: u32, c: u32, x: u32, y: u32, w: u32, h: u32, sw: u32, sh: u32, d: u32, e: u32) -> u32 {
+        let mut frame = super::StackFrame::<0xc0>::new();
+        let at = frame.at();
+        ffx_graphic::util::bridge24::tex_anim_set_materials_char(&mut mem(), at, [a, b, c, x, y, w, h, sw, sh, d, e])
+    }
 }
 
 /// A singleton's pointer.
