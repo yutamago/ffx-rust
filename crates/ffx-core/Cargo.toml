@@ -9,5 +9,10 @@ rust-version.workspace = true
 [dependencies]
 miniz_oxide.workspace = true
 
+[features]
+# Mutant schemata for tools/mutants.py: `mutant(id)` reads FFX_MUTANT. Never
+# enabled in a release build; without it `mutant` is a constant `false`.
+mutants = []
+
 [lints]
 workspace = true
