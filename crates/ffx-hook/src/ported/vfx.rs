@@ -851,6 +851,17 @@ ported! {
     op_chara_hsv_size_get @ 0x0080_7b20 => extern "C" fn op_chara_hsv_size_get(chr: u32) -> u32 {
         op::bridge::op_chara_hsv_size_get(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_chara_hsv_make(chr, buf)`.
+    op_chara_hsv_make @ 0x0080_79f0 => extern "C" fn op_chara_hsv_make(chr: u32, buf: u32) -> u32 {
+        op::bridge::op_chara_hsv_make(&mut mem(), chr, buf, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_chara_hsv(chr, buf, hue, sat, val, mix)`.
+    op_chara_hsv @ 0x0080_7870 => extern "C" fn op_chara_hsv(chr: u32, buf: u32, hue: i32, sat: i32, val: i32, mix: i32) -> u32 {
+        // the original's local: the shade Ch_CalcLight reads
+        let mut frame = super::StackFrame::<1>::new();
+        let at = frame.at();
+        op::bridge::op_chara_hsv(&mut mem(), chr, buf, [hue, sat, val, mix], at, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_chara_packet_size_get(chr, mode, visible)`.
     op_chara_packet_size_get @ 0x0080_37c0 => extern "C" fn op_chara_packet_size_get(chr: u32, mode: u32, visible: u32) -> u32 {
         op::bridge::op_chara_packet_size_get(&mut mem(), chr, mode, visible, &mut |_, f, a| call_ptr(f, a))
@@ -4132,6 +4143,10 @@ ported! {
     /// `pppViewOutCode(x, y)`.
     pppViewOutCode @ 0x0072_8dd0 => extern "C" fn ppp_view_out_code(x: f32, y: f32) -> u32 {
         small::ppp_view_out_code(x, y)
+    }
+    /// `pppCheckViewCylinder(m, v, far, radius, height)`.
+    pppCheckViewCylinder @ 0x0072_8f10 => extern "C" fn ppp_check_view_cylinder(m: u32, v: u32, far: f32, radius: f32, height: f32) -> u32 {
+        small::bridge::ppp_check_view_cylinder(&mem(), m, v, far, radius, height)
     }
     /// `hashU(s)`.
     hashU @ 0x0071_6570 => extern "C" fn hash_u(s: u32) -> u32 {

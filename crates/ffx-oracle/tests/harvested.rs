@@ -103,6 +103,17 @@ harvest_test!(
     |m: &mut Oracle, s| { ffx_kernel::bridge::ms_get_excel_data(m, int(s, 0), s.arg(1), s.arg(2)) }
 );
 
+// effects: the particle frame loop's view test
+harvest_test!(
+    ppp_check_view_cylinder,
+    0x0072_8f10,
+    args = 5,
+    |m: &mut Oracle, s| {
+        let f = |i| f32::from_bits(s.arg(i));
+        ffx_vfx::small::bridge::ppp_check_view_cylinder(m, s.arg(0), s.arg(1), f(2), f(3), f(4))
+    }
+);
+
 /// The store's format round-trips, and a state of the first target applies
 /// to a fresh oracle (layout check).
 #[test]
