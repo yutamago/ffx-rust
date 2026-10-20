@@ -9356,7 +9356,7 @@
 0x00814790	logic	default (no rule: ported to be safe)
 0x00814800	logic	default (no rule: ported to be safe)
 0x008148c0	logic	default (no rule: ported to be safe)
-0x00814a00	logic	default (no rule: ported to be safe)
+0x00814a00	debug	reviewed: opu_file: dumps textures/CLUTs to host0:/home/yonishi/... via sceOpen/sceWrite with dbgPrintf (effects round 37)
 0x00814c40	dead	unreachable from the entry point and every pointer table
 0x00814c90	logic	default (no rule: ported to be safe)
 0x00814d20	logic	default (no rule: ported to be safe)
@@ -17354,7 +17354,7 @@
 0x00a73700	dead	unreachable from the entry point and every pointer table
 0x00a73740	logic	default (no rule: ported to be safe)
 0x00a73810	logic	default (no rule: ported to be safe)
-0x00a73c20	logic	default (no rule: ported to be safe)
+0x00a73c20	glue	reviewed: createGT3MeshBreakRenderDataBuffer: PC renderer data-buffer creator (sprintf texture name, graphicVFXCreate/CreateDataBuffer), like 0x715a40/0x716050 (PC2 vfx-hi round 5)
 0x00a73d90	logic	default (no rule: ported to be safe)
 0x00a74410	logic	default (no rule: ported to be safe)
 0x00a744e0	logic	default (no rule: ported to be safe)
