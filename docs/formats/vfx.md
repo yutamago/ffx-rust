@@ -531,7 +531,7 @@ matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
 ## High range (`0x00a30000..0x00a80000`)
 
 Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs`, `hi_draw.rs`,
-and `hi_opus.rs`; the shims are
+`hi_opus.rs` and `hi_0283.rs`; the shims are
 `crates/ffx-hook/src/ported/vfx_hi.rs`, the oracle tests
 `crates/ffx-oracle/tests/vfx_hi.rs`.
 
@@ -732,6 +732,33 @@ Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
   0x2000000d/0x20000010, 0x12412eee and the texture words; each sets `w
   +0x1f0` 0x8001 and spins on the GS; 1, 3, 5 and anything else end.
   Returns `[w +0x334] + 0x40`.
+
+### `opus_0283` draw
+
+`opus_0283_draw(obj, rec)` (`0x00a76770`, kind 0x1000 of
+`opp_part_a76720`) does nothing while `g_GraphicSkipFrame` is set. It
+builds a packet at `b = [obj +0x328]`: header `+0` 0, `+4` 0x20, `+8`
+0x5040, `+0x10` 0x08000200, `+0x14` 0x880000, `u16 +0x20` 0x600, `u16
++0x22` the low half of `+0x10`, `+0x28` 0x1a00; 16 x 32 quads of 0x28
+bytes from `+0x30` (colours 0x80808080 x 4, vertex numbers `33 row +
+col`, `+1`, `+33`, `+34`, texture `u16` pairs `(0x80 col, 0xd0 row)` to
+`(+0x80, +0xd0)`), the end tag's type byte 0xff after them. The vertex
+table at `+0x5040`, 17 rows of 33 `i16` triples: with `r = rec +0x30`,
+`k = f32(rec +0x34 / 256)`, `x = 8 j - 128`, `y = 13 i - 104`, `d =
+f32(y^2 + x^2 + r^2)`, `s = f32(sqrt d)`, `q = f32(f32(s - f32(f32(s -
+r) k)) / s)`: `ftol(q x 128 x 1.333)`, `ftol(q y 128 x 1.333)`, `ftol(-128
+q r)` (1.333 is `f64` `0x00b7c570`; low halves stored). The request at
+`obj +0x100` (`+0` 0x90, `+4` `b + 0xd040`, `u16 +8` `rec +0xc2`, `+0x18`
+`rec +0xc8`, `+0x20` `obj + 0xc0`, `+0x34` `[obj +0x354]`, `+0x38` `b +
+[b +8]`, `+0x40` `rec +0xc4`, the rest 0), the matrix `obj +0x80`
+(`op_unit_m_scale(f32(rec +0x3c x 2^-21))`, `op_trans_m(rec + 0x90)`, the
+parent's matrix (`opus_parent_get`) times it, copied to `obj +0xc0`).
+Then `updateVFXRenderData(0, id, part, obj + 0x100)` and
+`graphicVFXUpdate(0, id)` when `(0, id)` has render data, else
+`InitVFXRenderData(0, id, part, obj + 0x100, 8)`, `id` =
+`MagicFile_GetMagicId()`; `part` is a stack local with only `+0x1c` (=
+`b`) set, the only word the renderer reads. Ported in
+`crates/ffx-vfx/src/hi_0283.rs`.
 
 ### `opus_0437` dots
 

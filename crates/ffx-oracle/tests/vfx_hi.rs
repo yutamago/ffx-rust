@@ -12,7 +12,7 @@ use std::sync::{Arc, OnceLock};
 
 use ffx_bridge::{Global, Mem, Value};
 use ffx_oracle::{Conv, Oracle, Pages};
-use ffx_vfx::{hi_draw, hi_light, hi_md, hi_opus, x87};
+use ffx_vfx::{hi_0283, hi_draw, hi_light, hi_md, hi_opus, x87};
 
 fn exe() -> Option<PathBuf> {
     let dir = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
@@ -1733,5 +1733,91 @@ fn md_flag80_fog_matches_the_original() {
             );
         }
         assert!(skipped > 0 && p.get::<u32>(log) > 0, "{}", p.name);
+    }
+}
+
+/// A recorder whose third argument (a render-data part) is logged as the
+/// part's `+0x1c`, the only word the renderer reads from it.
+fn part_recorder(p: &mut Pair, sym: u32, words: &[u8]) -> u32 {
+    let prefix = [
+        0x8b, 0x44, 0x24, 0x0c, // mov eax, [esp + 0xc]
+        0x8b, 0x40, 0x1c, // mov eax, [eax + 0x1c]
+        0x89, 0x44, 0x24, 0x0c, // mov [esp + 0xc], eax
+    ];
+    prefixed_recorder(p, sym, &prefix, words, None)
+}
+
+/// A part radius: realistic sizes, now and then anything.
+fn radius(rng: &mut Xorshift) -> u32 {
+    match rng.below(4) {
+        0 => rng.float(),
+        1 => finite(rng),
+        _ => (f32::from(u16::try_from(rng.below(4000)).unwrap()) - 200.0).to_bits(),
+    }
+}
+
+#[test]
+fn opus_0283_draw_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_6770);
+        let (obj, rec, b) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0xd100));
+        let (id, has, parent, pm) = (p.alloc(4), p.alloc(4), p.alloc(4), p.alloc(0x40));
+        returns_cell(&mut p, 0x009d_a3b0, id);
+        // logs (lo, hi) and returns the cell `has`
+        let lookup = deref_recorder_with(&mut p, 0x0064_53d0, &[0, 0], Some(has));
+        returns_cell(&mut p, 0x0080_1f00, parent);
+        p.set(parent, pm);
+        let update = part_recorder(&mut p, 0x0071_8610, &[0, 0, 0, 0]);
+        let init = part_recorder(&mut p, 0x0071_1180, &[0, 0, 0, 0, 0]);
+        let vfx_update = deref_recorder(&mut p, 0x0064_58a0, &[0, 0]);
+        let skip = p.sym(0x012f_b7d0);
+        let mut skipped = 0;
+        for round in 0..60 {
+            if round % 10 == 0 {
+                p.fill(b, 0xd100, &mut rng);
+            }
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(rec, 0x100, &mut rng);
+            p.set(obj + 0x328, b);
+            matrix(&mut p, &mut rng, pm);
+            for at in [0x90u32, 0x94, 0x98] {
+                let x = finite(&mut rng);
+                p.set(rec + at, x);
+            }
+            p.set(rec + 0x30, radius(&mut rng));
+            let bulge = match rng.below(3) {
+                0 => rng.float(),
+                1 => finite(&mut rng),
+                _ => (f32::from(u16::try_from(rng.below(512)).unwrap()) - 128.0).to_bits(),
+            };
+            p.set(rec + 0x34, bulge);
+            p.set(rec + 0x3c, radius(&mut rng));
+            let id_v = rng.next();
+            p.set(id, id_v);
+            let has_v = if rng.chance(50) { 0 } else { rng.next() | 1 };
+            p.set(has, has_v);
+            let s = u32::from(rng.chance(10));
+            p.set(skip, s);
+            skipped += s;
+            check_deep_n(
+                &mut p,
+                "opus_0283_draw",
+                0x00a7_6770,
+                &[obj, rec],
+                |o, frame| {
+                    hi_0283::bridge::opus_0283_draw(o, obj, rec, frame, &mut call_original);
+                    None
+                },
+            );
+        }
+        assert!(skipped > 0, "{}: never skipped", p.name);
+        for (log, what) in [
+            (lookup, "graphicVFXGetRenderDataByInstance"),
+            (update, "update"),
+            (init, "init"),
+            (vfx_update, "graphicVFXUpdate"),
+        ] {
+            assert!(p.get::<u32>(log) > 0, "{}: {what} never ran", p.name);
+        }
     }
 }
