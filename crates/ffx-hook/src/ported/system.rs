@@ -1252,6 +1252,38 @@ ported! {
     TOWaitBtlWinPrepare_008a8ac0 @ 0x008a_8ac0 => extern "C" fn to_wait_btl_win_prepare(w: u32) -> u32 {
         tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Prepare, w, call_sym)
     }
+    /// `TOWaitBtlWinChange(w)`.
+    TOWaitBtlWinChange @ 0x008a_87a0 => extern "C" fn to_wait_btl_win_change(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::Change, w, call_sym)
+    }
+    /// `TOWaitBtlWinStdMode2_008a8b50(w)`.
+    TOWaitBtlWinStdMode2_008a8b50 @ 0x008a_8b50 => extern "C" fn to_wait_btl_win_std_mode2(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::StdMode2, w, call_sym)
+    }
+    /// `TOWaitBtlWinStdMode3_008a8b90(w)`.
+    TOWaitBtlWinStdMode3_008a8b90 @ 0x008a_8b90 => extern "C" fn to_wait_btl_win_std_mode3(w: u32) -> u32 {
+        tolib::bridge::wait_btl_win(&mut mem(), tolib::bridge::WaitBtlWin::StdMode3, w, call_sym)
+    }
+    /// `TOBtlGetChangePad(w)`.
+    TOBtlGetChangePad @ 0x008a_2160 => extern "C" fn to_btl_get_change_pad(w: u32) -> u32 {
+        tolib::bridge::btl_get_change_pad(&mut mem(), w, call_sym)
+    }
+    /// `TkMenuInitSaveChoice_008b3680(w)`.
+    TkMenuInitSaveChoice_008b3680 @ 0x008b_3680 => extern "C" fn tk_menu_init_save_choice(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        menu::bridge::init_save_choice(&mut mem(), w, scratch, call_sym)
+    }
+    /// `TkMenuDrawSaveChoice_008b3860()`.
+    TkMenuDrawSaveChoice_008b3860 @ 0x008b_3860 => extern "C" fn tk_menu_draw_save_choice() -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        menu::bridge::draw_save_choice(&mut mem(), scratch, call_sym)
+    }
+    /// `MenuAbility_OpenWindow_008c6520(w)`.
+    MenuAbility_OpenWindow_008c6520 @ 0x008c_6520 => extern "C" fn menu_ability_open_window(w: u32) -> u32 {
+        menu::bridge::ability_open_window(&mut mem(), w, call_sym)
+    }
     /// `TOOpenBtlWinLeft()`.
     TOOpenBtlWinLeft @ 0x008a_8620 => extern "C" fn to_open_btl_win_left() -> u32 {
         tolib::bridge::open_btl_win_side(&mut mem(), false, call_sym)
@@ -1263,6 +1295,14 @@ ported! {
     /// `TOFuncPadMessageNormal(w)`.
     TOFuncPadMessageNormal @ 0x008b_64a0 => extern "C" fn to_func_pad_message_normal(w: u32) -> u32 {
         tolib::bridge::func_pad_message_normal(&mut mem(), w, call_sym)
+    }
+    /// `TOFuncPadMessageSelect(w)`.
+    TOFuncPadMessageSelect @ 0x008b_64e0 => extern "C" fn to_func_pad_message_select(w: u32) -> u32 {
+        tolib::bridge::func_pad_message_select(&mut mem(), w, call_sym)
+    }
+    /// `TOFuncPadMessageInputValue(w)`.
+    TOFuncPadMessageInputValue @ 0x008b_62b0 => extern "C" fn to_func_pad_message_input_value(w: u32) {
+        tolib::bridge::func_pad_message_input_value(&mut mem(), w, call_sym);
     }
     /// `TOMenuEndScreenX2_008e2790(w)`.
     TOMenuEndScreenX2_008e2790 @ 0x008e_2790 => extern "C" fn to_menu_end_screen_x2(w: u32) -> u32 {
