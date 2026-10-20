@@ -863,9 +863,9 @@
 0x00639b30	logic	scene state the renderer needs (original look first): graphicCameraSetWorldMatrixSub
 0x00639d10	platform	only called from platform code (FFXApplication_render)
 0x00639d20	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicChangeLayerAlpha
-0x00639d40	logic	default (no rule: ported to be safe)
-0x00639d60	logic	default (no rule: ported to be safe)
-0x00639d90	logic	default (no rule: ported to be safe)
+0x00639d40	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicChangeLayerOffset_00639d40
+0x00639d60	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicChangeLayerScale_00639d60
+0x00639d90	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicChangeSceneNum_00639d90
 0x00639db0	glue	calls PhyreEngine Phyre_PhyreFree
 0x00639ea0	dead	unreachable from the entry point and every pointer table
 0x00639ff0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicCharacterInsertDrawSituation
@@ -1624,8 +1624,8 @@
 0x00657a50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_bootInit
 0x006582a0	platform	only called from platform code (0x639d10)
 0x006582e0	glue	reviewed: MaterialColour shader parameter (PC2 render/pc-ui round 1)
-0x00658350	logic	default (no rule: ported to be safe)
-0x00658570	logic	default (no rule: ported to be safe)
+0x00658350	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_changeLayerOffset_00658350
+0x00658570	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_changeLayerScale_00658570
 0x006587d0	logic	scene state the renderer needs (original look first): PhyreScene_change2DSceneNum
 0x006589e0	glue	only called from glue code (PhyreScene_render)
 0x00658ae0	glue	only called from glue code (PhyreScene_render and 1 more)
@@ -3149,7 +3149,7 @@
 0x006b42c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_SetFrame
 0x006b4330	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_unregisterChararcterInstance
 0x006b4450	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationInfo_update
-0x006b44a0	logic	default (no rule: ported to be safe)
+0x006b44a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_updateSamplers_006b44a0
 0x006b45e0	dead	unreachable from the entry point and every pointer table
 0x006b47e0	logic	default (no rule: ported to be safe)
 0x006b4830	dead	unreachable from the entry point and every pointer table
@@ -12402,7 +12402,7 @@
 0x0087e960	dead	unreachable from the entry point and every pointer table
 0x0087ea00	dead	unreachable from the entry point and every pointer table
 0x0087ed30	dead	unreachable from the entry point and every pointer table
-0x0087ee10	logic	default (no rule: ported to be safe)
+0x0087ee10	debug	reviewed: prints worker +0xb04/+0xb08 with TkPutDebugFontStringP; only callers 0x87b3e0/0x87b400 have no callers or data refs (PC2 script round 22)
 0x0087eef0	dead	unreachable from the entry point and every pointer table
 0x0087ef10	dead	unreachable from the entry point and every pointer table
 0x0087ef20	dead	unreachable from the entry point and every pointer table
@@ -13289,7 +13289,7 @@
 0x008abb00	glue	reviewed: vtable call wrapper (system round 21)
 0x008abb10	dead	unreachable from the entry point and every pointer table
 0x008abd00	logic	debug-sounding name, but used by logic: TOControlMessageWindow, TOControlMessageWindowForMenu, TkBtlEndCtrl
-0x008abd20	logic	debug-sounding name, but used by logic: 0x76e4b0, 0x76f470, MsBattleProcess
+0x008abd20	logic	debug-sounding name, but used by logic: MsBattleProcess, cd_read_thread_sector, menu_list_step
 0x008abd30	glue	GS packet API (TODrawMessageWindow): appends to or kicks a packet; replaced by ffx-render
 0x008abe40	glue	GS packet API (TODrawMessageWindowForMenu): appends to or kicks a packet; replaced by ffx-render
 0x008abf30	dead	unreachable from the entry point and every pointer table

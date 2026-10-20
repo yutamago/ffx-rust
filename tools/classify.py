@@ -350,6 +350,7 @@ REVIEWED = {
     0x00643b80: ("dead", "no callers; inverts the camera matrix and calls 0x4f93f0 on an unread result (PC2 render round 22)"),
     0x00a73c20: ("glue", "createGT3MeshBreakRenderDataBuffer: PC renderer data-buffer creator (sprintf texture name, graphicVFXCreate/CreateDataBuffer), like 0x715a40/0x716050 (PC2 vfx-hi round 5)"),
     0x00814a00: ("debug", "opu_file: dumps textures/CLUTs to host0:/home/yonishi/... via sceOpen/sceWrite with dbgPrintf (effects round 37)"),
+    0x0087ee10: ("debug", "prints worker +0xb04/+0xb08 with TkPutDebugFontStringP; only callers 0x87b3e0/0x87b400 have no callers or data refs (PC2 script round 22)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
