@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 ffx-bridge.workspace = true
 goblin.workspace = true
+lz4_flex.workspace = true
 thiserror.workspace = true
 unicorn-engine.workspace = true
 

@@ -751,6 +751,7 @@ dependencies = [
  "ffx-vfx",
  "flate2",
  "goblin",
+ "lz4_flex",
  "thiserror",
  "unicorn-engine",
 ]
