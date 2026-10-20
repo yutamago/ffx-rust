@@ -7285,7 +7285,7 @@ fn check_st0(
         .unwrap_or_else(|| panic!("{}: {what}: no float in ST0", p.name));
     let mine = rust(&mut p.b);
     assert!(
-        st0.to_bits() == mine.to_bits() || (st0.is_nan() && mine.is_nan()),
+        ffx_oracle::same_float(st0, mine),
         "{}: {what}: {st0} vs {mine}",
         p.name
     );
@@ -7305,10 +7305,8 @@ fn float_stub(p: &mut Pair, sym: u32, at: u32) {
 
 /// An original that returns in `ST0`, called from a bridge.
 fn call_original_f(m: &mut Oracle, f: u32, args: &[u32]) -> f64 {
-    m.call(f, Conv::Cdecl, args)
+    m.call_f64(f, args)
         .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
-        .st0
-        .unwrap_or_else(|| panic!("{f:#x}: no float in ST0"))
 }
 
 #[test]
@@ -10082,17 +10080,7 @@ fn rotated_points_match_the_original() {
 /// `ST0` stored as `fstp dword`: a NaN keeps its sign and top fraction
 /// bits.
 fn st0_f32(r: &ffx_oracle::Ret) -> f32 {
-    let raw = r.st0_raw.expect("a float in ST0");
-    let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-    let se = u16::from_le_bytes([raw[8], raw[9]]);
-    if se & 0x7fff == 0x7fff && mant << 1 != 0 {
-        let frac = u32::try_from((mant >> 40) & 0x7f_ffff).unwrap();
-        f32::from_bits(u32::from(se >> 15) << 31 | 0x7f80_0000 | frac)
-    } else {
-        #[allow(clippy::cast_possible_truncation)] // fstp m32
-        let v = r.st0.unwrap_or(f64::NAN) as f32;
-        v
-    }
+    r.st0_f32().expect("a float in ST0")
 }
 
 #[test]
@@ -10703,13 +10691,10 @@ fn opus_rt_m_chara_matches_the_original() {
                 p.set(angles + i, a);
                 p.set(trans + i, t);
             }
-            // no NaNs from the ST0 stand-ins: the oracle's ST0 result
-            // (f80_to_f64) drops their sign and payload, the hardware keeps
-            // them
+            // quiet NaNs from the ST0 stand-ins too: `Ret::st0` keeps their
+            // sign and payload, as the hardware does
             for i in (0..0x10).step_by(4) {
-                let v = rng.float();
-                let v = if x87::is_nan(v) { finite(&mut rng) } else { v };
-                p.set(cells + i, v);
+                p.set(cells + i, rng.float());
             }
             p.fill(vu0, 0x40, &mut rng);
             p.fill(vu1, 0x40, &mut rng);
@@ -11953,9 +11938,9 @@ fn opp_anmm_matches_the_original() {
             }
             p.set(cells, rng.pick(&[0u32, 1]));
             p.set(cells + 4, rng.next());
-            // Ch_GetDataScale's ST0 reaches the port as f64: no NaN payloads
-            let ds = finite(&mut rng);
-            p.set(cells + 8, ds);
+            // Ch_GetDataScale's ST0 reaches the port as f64, NaN payloads
+            // kept
+            p.set(cells + 8, rng.float());
             // the texture animation: 1..3 frames, frame data at +0x40
             let frames = rng.below(3) + 1;
             p.set(anim + 4, u16::try_from(frames).unwrap());
@@ -19046,24 +19031,6 @@ fn round34a_wrappers_and_commands_match_the_original() {
     }
 }
 
-/// [`call_original_f`] that keeps a NaN's sign and payload (the top
-/// significand bits), as the hardware hands it on.
-fn call_original_f_nan(m: &mut Oracle, f: u32, args: &[u32]) -> f64 {
-    let r = m
-        .call(f, Conv::Cdecl, args)
-        .unwrap_or_else(|e| panic!("{f:#x}: {e}"));
-    let raw = r
-        .st0_raw
-        .unwrap_or_else(|| panic!("{f:#x}: no float in ST0"));
-    let v = r.st0.unwrap_or(f64::NAN);
-    if !v.is_nan() {
-        return v;
-    }
-    let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-    let sign = u64::from(raw[9] >> 7) << 63;
-    f64::from_bits(sign | 0x7ff0_0000_0000_0000 | (mant >> 11) & 0x000f_ffff_ffff_ffff)
-}
-
 /// A stand-in for `pppKeAngleXY(v, out)` at `sym` (through a jump): logs
 /// `v`'s two words (8-byte entries after a count), writes the word at
 /// `val` to `*out` and returns the word at `ret`. Returns the log.
@@ -19211,7 +19178,7 @@ fn round34b_draws_and_commands_match_the_original() {
                     prog,
                     scratch + 0x20,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 );
                 m.write(scratch, &keep).unwrap();
                 None
@@ -19792,7 +19759,7 @@ fn round35a_gravity_matrix_and_commands_match_the_original() {
                     prog,
                     scratch + 0x20,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 );
                 m.write(scratch, &keep).unwrap();
                 None
@@ -20059,7 +20026,7 @@ fn round35b_born_homing_and_unit_floats_match_the_original() {
                         out,
                         scratch + 0x20,
                         &mut call_original,
-                        &mut call_original_f_nan,
+                        &mut call_original_f,
                     );
                     m.write(scratch, &k).unwrap();
                     None
@@ -20176,7 +20143,7 @@ fn round35b_born_homing_and_unit_floats_match_the_original() {
                     prog,
                     scratch + 0x40,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 );
                 m.write(scratch, &k).unwrap();
                 None
@@ -20211,7 +20178,7 @@ fn round35b_born_homing_and_unit_floats_match_the_original() {
                     host,
                     cmd,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 ))
             });
 
@@ -20255,7 +20222,7 @@ fn round35b_born_homing_and_unit_floats_match_the_original() {
                     cmd,
                     [EDI, ESI, EBX],
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 ))
             });
 
@@ -20312,7 +20279,7 @@ fn round35b_born_homing_and_unit_floats_match_the_original() {
                     cmd,
                     [EBX, EDI, ESI],
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 ))
             });
         }
@@ -20751,7 +20718,7 @@ fn round36a_trails_point_lights_and_commands_match_the_original() {
                     host,
                     cmd,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 ))
             });
 
@@ -20937,7 +20904,7 @@ fn round36b_rotation_point_light_models_and_shape_fields_match_the_original() {
                     host,
                     cmd,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 ))
             });
 
@@ -21226,7 +21193,7 @@ fn round36c_vertex_point_lights_and_shape_field_emits_match_the_original() {
                         def,
                         ctrl,
                         &mut call_original,
-                        &mut call_original_f_nan,
+                        &mut call_original_f,
                     ))
                 });
             }
@@ -21257,7 +21224,7 @@ fn round36c_vertex_point_lights_and_shape_field_emits_match_the_original() {
                     scratch + 0x50,
                     junk,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 );
                 m.write(scratch, &keep).unwrap();
                 Some(r)

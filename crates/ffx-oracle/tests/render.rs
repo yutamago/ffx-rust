@@ -388,7 +388,7 @@ impl Twins {
                 let st0 = ra.st0.expect("a float in ST0");
                 let ours = f64::from(v);
                 assert!(
-                    st0.to_bits() == ours.to_bits() || (st0.is_nan() && ours.is_nan()),
+                    ffx_oracle::same_float(st0, ours),
                     "{what}: st0 {st0} vs {ours}"
                 );
             }

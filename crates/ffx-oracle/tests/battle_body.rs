@@ -120,10 +120,7 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, out: u32) {
             .unwrap();
         let ra = ra.st0.expect("a float");
         let rb = f64::from(rust(b, i));
-        assert!(
-            ra.to_bits() == rb.to_bits() || (ra.is_nan() && rb.is_nan()),
-            "{name} {i:#x}: {ra} {rb}"
-        );
+        assert!(ffx_oracle::same_float(ra, rb), "{name} {i:#x}: {ra} {rb}");
     }
     twin("MsGetChrDir", a, b, 0x0079_4d20, &[i, out], ALL, |m| {
         body::ms_get_chr_dir(m, i, out).cast_unsigned()
@@ -540,10 +537,7 @@ fn scans(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, v: u32) {
             .st0
             .expect("a float");
         let rb = f64::from(rust(b, v, v + 0x10));
-        assert!(
-            ra.to_bits() == rb.to_bits() || (ra.is_nan() && rb.is_nan()),
-            "{name}: {ra} {rb}"
-        );
+        assert!(ffx_oracle::same_float(ra, rb), "{name}: {ra} {rb}");
     }
     let ra = a
         .call(a.rebase(0x0079_8930), ffx_oracle::Conv::Cdecl, &[])
