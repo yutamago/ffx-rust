@@ -5565,3 +5565,70 @@ fn decode_snapshot() {
     let mut rng = Xorshift(0x5eed_0f02);
     decode_cases(&mut a, &mut b, &mut rng, 60);
 }
+
+// Main round 15: the `MsGetSaveCommand(chr, cmd)` accessors of the
+// function table at `0x00c410c8`.
+
+const MS_GET_SAVE_COMMAND: u32 = 0x0078_5020;
+
+/// Each accessor against its bridge; `stub` puts a recorder over
+/// `MsGetSaveCommand` (it logs both arguments and returns a random word),
+/// else both run the original.
+fn save_command_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32, stub: bool) {
+    let log = a.rebase(REC_LOG);
+    let ret = a.rebase(REC_RETS) + 4 * 97;
+    if stub {
+        recorder(a, b, 97, MS_GET_SAVE_COMMAND, 2, 0);
+    }
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{sym:#x}: {e}"))
+            .eax
+    };
+    for _ in 0..rounds {
+        for &(at, _) in &ffx_sg::savecmd::bridge::SAVE_COMMANDS {
+            if stub {
+                put(a, b, log, 0u32);
+                put(a, b, ret, rng.next());
+            }
+            // the original indexes the save data by chr: any word only
+            // under the recorder
+            let chr = if stub && rng.below(4) == 0 {
+                rng.next()
+            } else {
+                rng.below(20)
+            };
+            twin("KernelSaveCommand", a, b, at, &[chr], |m| {
+                ffx_sg::savecmd::bridge::kernel_save_command(m, at, chr, call)
+            });
+        }
+    }
+}
+
+#[test]
+fn save_command_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f03);
+    save_command_cases(&mut a, &mut b, &mut rng, 4, true);
+}
+
+#[test]
+fn save_command_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f04);
+    save_command_cases(&mut a, &mut b, &mut rng, 2, true);
+}
+
+#[test]
+fn save_command_original_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f05);
+    save_command_cases(&mut a, &mut b, &mut rng, 2, false);
+}

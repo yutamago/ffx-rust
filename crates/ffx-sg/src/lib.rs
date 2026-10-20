@@ -16,6 +16,7 @@ pub mod gs;
 pub mod light;
 pub mod player;
 pub mod quat;
+pub mod savecmd;
 pub mod scratch;
 pub mod seq;
 pub mod state;
