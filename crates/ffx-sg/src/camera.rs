@@ -465,4 +465,109 @@ pub mod bridge {
         let f = h.rebase(SET_CHECK_CHANGE);
         h.call(f, &[id, side, 1, 0])
     }
+
+    /// The screens (`0x01137010`, 0x1c0 bytes each): `+0` and `+4` the
+    /// depths `Cam_Apply` turns into the field of view, `+0xc` its
+    /// divisor, `+0x78` 256 for a split screen.
+    pub const APPLY_SCREENS: u32 = 0x0113_7010;
+    /// 2 when the field of view uses 3/4 of the angle (`0x01136fc0`).
+    pub const APPLY_NARROW: Global<u32> = Global::new(0x0113_6fc0);
+    /// 1 when camera 1 draws through the sub matrix (`0x01137280`).
+    pub const APPLY_SUB: Global<u8> = Global::new(0x0113_7280);
+    /// `g_CameraMatrix` (`0x02311440`).
+    pub const CAMERA_MATRIX: u32 = 0x0231_1440;
+    /// The callees: `graphicCameraSetFOVy(&f)`, `graphicCameraSetAspectRatio
+    /// (&f)`, `MagicFile_GetMagicId()`, `graphicCameraSetWorldMatrixSub(m,
+    /// cam)`, `SplitScreenStart(0)`, `SplitScreenSetCamera(m)`,
+    /// `0x00638d20()`, `graphicCameraSetWorldMatrix(m)`.
+    pub const SET_FOVY: u32 = 0x0063_95e0;
+    pub const SET_ASPECT: u32 = 0x0063_95c0;
+    pub const MAGIC_ID: u32 = 0x009d_a3b0;
+    pub const SET_WORLD_SUB: u32 = 0x0063_9b30;
+    pub const SPLIT_START: u32 = 0x0063_8d40;
+    pub const SPLIT_SET_CAMERA: u32 = 0x0063_8aa0;
+    pub const SPLIT_END: u32 = 0x0063_8d20;
+    pub const SET_WORLD: u32 = 0x0063_9860;
+    /// [`cam_apply`]'s work: the field of view and the aspect ratio
+    /// (`f32` each) the renderer reads through pointers.
+    pub const APPLY_WORK: u32 = 8;
+    /// `.rdata` `f64`: 2, 512, 448, 0.75, 256.
+    const K2: u32 = 0x00b9_2270;
+    const K512: u32 = 0x00b4_1d38;
+    const K448: u32 = 0x00b5_0210;
+    const K075: u32 = 0x00b5_1bd0;
+    const K256: u32 = 0x00b9_22f0;
+
+    /// `Cam_Apply(camera)` (`0x007bc980`; from `MsScreenProcess` and
+    /// `0x0076edc0`): the renderer's camera from screen `camera`
+    /// ([`APPLY_SCREENS`]): with `h = f32(512 / (2 a))` and `w = f32(448 /
+    /// (2 b))` (`a`, `b` its `+0`, `+4`), the field of view `f32(2 f32(atan(w
+    /// / c)))` (`c` its `+0xc`; `atan(0.75 w / c)` when [`APPLY_NARROW`] is
+    /// 2) and the aspect ratio `f32(h / w)` go to `graphicCameraSetFOVy`
+    /// and `graphicCameraSetAspectRatio` through `work` ([`APPLY_WORK`]).
+    /// Then the view `g_CameraMatrix`: for magic 0x98 or 0x259 on camera 1
+    /// with [`APPLY_SUB`] set through `graphicCameraSetWorldMatrixSub(m,
+    /// 1)`; else on a split screen (`+0x78` exactly 256) `SplitScreenStart
+    /// (0)` and, for camera 1, `SplitScreenSetCamera(m)`; else (and for the
+    /// other split cameras) `graphicCameraSetWorldMatrix(m)`, after
+    /// `0x00638d20()` when not split. `atan` stands for `_CIatan` (its
+    /// result stored as `f32` bits).
+    pub fn cam_apply<M, C>(
+        mem: &mut M,
+        cam: u32,
+        work: u32,
+        call: &mut C,
+        mut atan: impl FnMut(&mut M, f64) -> u32,
+    ) where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let k = |mem: &M, a: u32| mem.read::<f64>(mem.rebase(a));
+        let screen = mem
+            .rebase(APPLY_SCREENS)
+            .wrapping_add(cam.wrapping_mul(0x1c0));
+        let field = |mem: &M, o: u32| x87::load(mem.read(screen.wrapping_add(o)));
+        let two = k(mem, K2);
+        let height = x87::store(x87::div(k(mem, K512), x87::mul(field(mem, 0), two)));
+        let width = x87::store(x87::div(k(mem, K448), x87::mul(two, field(mem, 4))));
+        let depth = x87::load(x87::store(field(mem, 0xc)));
+        let q = x87::div(x87::load(width), depth);
+        let mut fov = x87::store(x87::mul(x87::load(atan(mem, q)), two));
+        if APPLY_NARROW.get(mem) == 2 {
+            let narrow = atan(mem, x87::mul(q, k(mem, K075)));
+            fov = x87::store(x87::mul(x87::load(narrow), two));
+        }
+        let aspect = x87::store(x87::div(x87::load(height), x87::load(width)));
+        mem.write(work, fov);
+        mem.write(work + 4, aspect);
+        let f = mem.rebase(SET_FOVY);
+        call(mem, f, &[work]);
+        let f = mem.rebase(SET_ASPECT);
+        call(mem, f, &[work + 4]);
+        let f = mem.rebase(MAGIC_ID);
+        let special = call(mem, f, &[]) == 0x98 || call(mem, f, &[]) == 0x259;
+        let m = mem.rebase(CAMERA_MATRIX);
+        if special && cam == 1 && APPLY_SUB.get(mem) == 1 {
+            let f = mem.rebase(SET_WORLD_SUB);
+            call(mem, f, &[m, cam]);
+            return;
+        }
+        // fucompp: equal and ordered
+        #[allow(clippy::float_cmp)] // the exact compare the original makes
+        let split = field(mem, 0x78) == k(mem, K256);
+        if split {
+            let f = mem.rebase(SPLIT_START);
+            call(mem, f, &[0]);
+            if cam == 1 {
+                let f = mem.rebase(SPLIT_SET_CAMERA);
+                call(mem, f, &[m]);
+                return;
+            }
+        } else {
+            let f = mem.rebase(SPLIT_END);
+            call(mem, f, &[]);
+        }
+        let f = mem.rebase(SET_WORLD);
+        call(mem, f, &[m]);
+    }
 }

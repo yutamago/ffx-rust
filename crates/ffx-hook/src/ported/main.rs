@@ -1743,6 +1743,11 @@ ported! {
     AbmapPadEntryDrawStat @ 0x00a4_fa30 => extern "C" fn abmap_pad_entry_draw_stat(_p: u32, entry: u32, _i: u32, x: u32, y: u32) -> u32 {
         abmap::bridge::abmap_pad_entry_draw_stat(&mut mem(), entry, x, y, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    /// `Cam_Apply(camera)`.
+    Cam_Apply @ 0x007b_c980 => extern "C" fn cam_apply(cam: u32) {
+        let mut w = super::StackFrame::<{ camera::bridge::APPLY_WORK as usize / 4 }>::new();
+        camera::bridge::cam_apply(&mut mem(), cam, w.at(), &mut |_, f, a| super::call_cdecl(f, a), |_, x| crt(Crt::Atan, x).to_bits());
+    }
     /// `sa_meth01dec(src, dst, size)`.
     sa_meth01dec @ 0x00a4_3bc0 => extern "C" fn sa_meth01dec(src: u32, dst: u32, size: u32) -> u32 {
         decode::bridge::sa_meth01dec(&mut mem(), src, dst, size)
@@ -2166,6 +2171,7 @@ fn crt(c: Crt, x: f64) -> f32 {
         Crt::Sin => 0x0094_98c8,
         Crt::Cos => 0x0094_98c2,
         Crt::Acos => 0x0094_98da,
+        Crt::Atan => 0x0094_9d5c,
     };
     // SAFETY: the thunk jumps to the CRT's intrinsic, which takes its
     // argument in ST0 and returns in ST0 (eax, ecx, edx, the x87 and SSE

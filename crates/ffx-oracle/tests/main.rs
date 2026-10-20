@@ -1632,6 +1632,7 @@ fn stand_in(c: ffx_sg::quat::Crt, x: f64) -> f32 {
         ffx_sg::quat::Crt::Cos => (x * x).store(),
         ffx_sg::quat::Crt::Sin => (x + x).store(),
         ffx_sg::quat::Crt::Acos => (x + Reg::ONE).store(),
+        ffx_sg::quat::Crt::Atan => (-x).store(),
     }
 }
 
@@ -6513,4 +6514,100 @@ fn pad_entry_snapshot() {
     };
     let mut rng = Xorshift(0x5eed_0f17);
     pad_entry_cases(&mut a, &mut b, &mut rng, 120);
+}
+
+/// `Cam_Apply` over recorders (the two pointer callees through a logging
+/// stand-in that keeps the value) and `_CIatan` as `-x`.
+fn cam_apply_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    patch_atan(a);
+    patch_atan(b);
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let ptr_log = alloc(a, b, 4 + 8 * 4);
+    for (sym, k) in [(c::SET_FOVY, 0u32), (c::SET_ASPECT, 1)] {
+        // each its own log: count, then the value
+        let (stub, _) = deref_logger(ptr_log + 0x10 * k, &[], 0, 4, &[]);
+        redirect_to(a, b, sym, &stub);
+    }
+    recorder(a, b, 121, c::MAGIC_ID, 0, 0);
+    recorder(a, b, 122, c::SET_WORLD_SUB, 2, 0);
+    recorder(a, b, 123, c::SPLIT_START, 1, 0);
+    recorder(a, b, 124, c::SPLIT_SET_CAMERA, 1, 0);
+    recorder(a, b, 125, c::SPLIT_END, 0, 0);
+    recorder(a, b, 126, c::SET_WORLD, 1, 0);
+    let work = b.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let atan = |_: &mut Oracle, x: f64| ffx_bridge::x87::store(-x);
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, ptr_log, 0u32);
+        put(a, b, ptr_log + 0x10, 0u32);
+        let cam = match rng.below(8) {
+            0 => 0,
+            1 => 2,
+            2 => 3,
+            _ => 1,
+        };
+        let screen = a.rebase(c::APPLY_SCREENS) + cam * 0x1c0;
+        for o in [0u32, 4, 0xc] {
+            let v = if rng.below(6) == 0 {
+                rng.float()
+            } else {
+                float_within(rng, 400.0)
+            };
+            put(a, b, screen + o, v);
+        }
+        let split = if rng.below(2) == 0 {
+            256f32.to_bits()
+        } else {
+            rng.float()
+        };
+        put(a, b, screen + 0x78, split);
+        set(
+            a,
+            b,
+            c::APPLY_NARROW,
+            if rng.below(2) == 0 { 2 } else { rng.below(4) },
+        );
+        set(
+            a,
+            b,
+            c::APPLY_SUB,
+            if rng.below(2) == 0 {
+                1
+            } else {
+                rng.next().to_le_bytes()[0]
+            },
+        );
+        let magic = [0x98, 0x259, rng.below(0x300)][rng.below(3) as usize];
+        let at = ret(a, 121);
+        put(a, b, at, magic);
+        let _ = n;
+        twin("Cam_Apply", a, b, 0x007b_c980, &[cam], |m| {
+            c::cam_apply(m, cam, work, call, atan);
+        });
+    }
+}
+
+#[test]
+fn cam_apply_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f18);
+    cam_apply_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn cam_apply_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f19);
+    cam_apply_cases(&mut a, &mut b, &mut rng, 100);
 }

@@ -16,6 +16,8 @@ pub enum Crt {
     Cos,
     /// `_CIacos`.
     Acos,
+    /// `_CIatan`.
+    Atan,
 }
 
 /// The originals over game memory (`ffx_bridge::Mem`).
