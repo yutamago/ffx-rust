@@ -10487,3 +10487,232 @@ fn menu_round24_plates_rows_and_slides_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round24_eases_pads_and_kaizou_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0024_c6f0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let r = t.rng.next();
+
+    // MenuScene_KeyEase: _CIcos through the stand-ins
+    install_x87(&mut t);
+    for _ in 0..2000 {
+        let key = t
+            .rng
+            .pick(&[0u32, 0x1000, 0x2000, 0x3000, 0x4000, 0x5000, 0x7000])
+            | (t.rng.next() & !0x7000);
+        let frames = t
+            .rng
+            .pick_or_any(&[0, 1, 2, 3, 30, 0xffff_ffff, 0x8000_0000]);
+        let frame = match t.rng.below(3) {
+            0 => t.rng.int(),
+            _ => t.rng.below(frames.clamp(1, 64) + 1),
+        };
+        t.twin_f(
+            "MenuScene_KeyEase",
+            0x00a7_c6f0,
+            &[key, frame, frames],
+            |o| {
+                tk::menu_scene_key_ease(o, key, i(frame), i(frames), &mut |o, v| {
+                    x87_call(o, 0x00b0_c3b4, v, None)
+                })
+            },
+        );
+    }
+
+    // Pad_RepeatButton: inputGetCurTime from a cell
+    let now = t.alloc(&[0; 4]);
+    stub(
+        &mut t,
+        0x0063_0c60,
+        &[&[0xd9, 0x05][..], &now.to_le_bytes(), &[0xc3]].concat(),
+    );
+    let work = t.alloc_random(0x200);
+    for _ in 0..3000 {
+        let time = match t.rng.below(4) {
+            0 => quiet_float(&mut t),
+            _ => t.rng.float(0.0, 100.0).to_bits(),
+        };
+        t.put(now, time);
+        let i = t.rng.below(4);
+        let slot = t.rng.pick(&[0u32, 1, 2, 3, 0x1_0002, 0xffff_0001]);
+        let k = i + 4 * (slot & 3);
+        let (counter, timer, last) = (
+            work + 0xa0 + 2 * k,
+            work + 0xb0 + 4 * k,
+            work + 0xd0 + 4 * k,
+        );
+        let left = match t.rng.below(4) {
+            0 => quiet_float(&mut t),
+            1 => 0,
+            _ => t.rng.float(-1.0, 1.0).to_bits(),
+        };
+        t.put(timer, left);
+        let then = match t.rng.below(4) {
+            0 => quiet_float(&mut t),
+            1 => time,
+            _ => (f32::from_bits(time) - t.rng.float(0.0, 1.0)).to_bits(),
+        };
+        t.put(last, then);
+        let c = t.rng.bytes(2);
+        t.put_bytes(counter, &c);
+        t.scramble(0x00c5_4e34, 8);
+        let bits = [0u32, 1, 2, 3, 0xffff, 0x1_0001, 0x8000];
+        let pressed = t.rng.pick_or_any(&bits);
+        let held = if t.rng.below(2) == 0 {
+            pressed
+        } else {
+            t.rng.pick_or_any(&bits)
+        };
+        let b = t.rng.next();
+        // a scrambled mask so every bit matters
+        let args = [work, b, i, pressed, held, slot];
+        t.twin("Pad_RepeatButton", 0x0088_9980, &args, U32, |o| {
+            w(tk::pad_repeat_button(
+                o,
+                work,
+                [i, pressed, held, slot],
+                // the stand-in's `fld dword [now]`, read directly (the
+                // oracle's ST0 read drops NaN payloads)
+                &mut |o| f64::from(f32::from_bits(Mem::read(o, now))),
+            ))
+        });
+    }
+
+    // the customise menu: MsGetSaveWeapon returns a record and a name
+    let rec = t.alloc(&[0; 8]);
+    let names = t.alloc(&[0; 4]);
+    let (_, mut code) = log_args(&mut t, 1);
+    #[rustfmt::skip]
+    code.extend([
+        &[0x8b, 0x44, 0x24, 0x08][..],              // mov eax, [esp + 8]
+        &[0x8b, 0x0d], &names.to_le_bytes(),        // mov ecx, [names]
+        &[0x89, 0x08],                              // mov [eax], ecx
+        &[0xb8], &rec.to_le_bytes(), &[0xc3],       // mov eax, rec; ret
+    ]
+    .concat());
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+    // ToGetBtlEasyFontWidth: the width from a cell, the other words logged
+    let width = t.alloc(&[0; 4]);
+    let buf = t.alloc(&[0; 0x4000]);
+    let log = t.alloc(&buf.to_le_bytes());
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &log.to_le_bytes()].concat();
+    for k in [0u8, 2, 3, 4] {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    #[rustfmt::skip]
+    code.extend([
+        &[0x83, 0x05][..], &log.to_le_bytes(), &[20],  // add dword [log], 20
+        &[0x8b, 0x44, 0x24, 0x08],                     // mov eax, [esp + 8]
+        &[0x8b, 0x0d], &width.to_le_bytes(),           // mov ecx, [width]
+        &[0x89, 0x08, 0xc3],                           // mov [eax], ecx; ret
+    ]
+    .concat());
+    jump_stub(&mut t, 0x0090_5290, &code);
+    for (f, n) in [(0x0090_5ab0u32, 6u8), (0x008f_5f70, 5), (0x008e_67f0, 4)] {
+        record_far(&mut t, f, n, r);
+    }
+    let selectable = t.alloc(&[0; 4]);
+    let (_, mut code) = log_args(&mut t, 2);
+    code.extend([&[0xa1][..], &selectable.to_le_bytes(), &[0xc3]].concat());
+    jump_stub(&mut t, 0x008d_5750, &code);
+    let list = t.alloc_random(0x400);
+    t.put(t.sym(0x0186_aa38), list);
+    for _ in 0..500 {
+        let n = t.rng.next();
+        t.put(names, n);
+        let wd = quiet_float(&mut t);
+        t.put(width, wd);
+        let x = t.rng.int();
+        let y = t.rng.int();
+        let k = t.rng.below(0x200);
+        t.twin(
+            "MenuKaizou_DrawWeaponTitle",
+            0x008d_6660,
+            &[x, y, k],
+            VOID,
+            |o| {
+                tk::menu_kaizou_draw_weapon_title(
+                    o,
+                    [i(x), i(y), i(k)],
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+    for _ in 0..1000 {
+        let window = t.alloc_random(0x80);
+        let rows = t.rng.pick(&[0u16, 1, 5, 0x200]);
+        t.put(window + 0x30, rows);
+        let scroll = t.rng.pick(&[0i16, 1, -1, 0x7fff, -0x8000]);
+        t.put(window + 0x46, scroll);
+        let row = t.rng.pick(&[0u32, 1, 4, 5, 0x1ff, 0xffff_ffff]);
+        let have = t.rng.pick(&[0u8, 1, 1, 0x80]);
+        t.put(rec + 2, have);
+        let flags = t.rng.pick(&[0u8, 2, 1, 0xfd, 0xff]);
+        t.put(rec + 3, flags);
+        let sel = t.rng.pick(&[0u32, 0, 1, 0x100]);
+        t.put(selectable, sel);
+        let fixed = t.rng.pick(&[0u32, 0, 1, 0xffff_ffff]);
+        let x = quiet_float(&mut t);
+        let y = t.rng.float(-100.0, 600.0).to_bits();
+        t.twin(
+            "MenuKaizou_DrawRow",
+            0x008d_6760,
+            &[window, x, y, row, fixed],
+            VOID,
+            |o| {
+                tk::menu_kaizou_draw_row(
+                    o,
+                    window,
+                    [f32::from_bits(x), f32::from_bits(y)],
+                    [i(row), i(fixed)],
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+
+    // MenuPlayer_DrawFaceSlide: eight party members in a scrambled order
+    return_const(&mut t, 0x008a_9b30, 8);
+    record_n(&mut t, 0x008c_0250, 5, 0x66);
+    record_n(&mut t, 0x008c_2c30, 4, 0x77);
+    for round in 0..400u32 {
+        let flag = t.rng.pick(&[0u32, 1, 0x100]);
+        return_const(&mut t, 0x008a_8e50, flag);
+        let step = match t.rng.below(3) {
+            0 => t.rng.next(),
+            _ => t.rng.below(0x200),
+        };
+        t.put(t.sym(0x0186_a9ec), step);
+        t.scramble(0x023c_c458, 0x24);
+        t.scramble(0x0184_1c14, 8);
+        let xywh: [u32; 4] = std::array::from_fn(|_| quiet_float(&mut t));
+        let slide = match round % 4 {
+            0 => 0,
+            1 => t.rng.next(),
+            _ => t.rng.below(0x2000).wrapping_sub(0x1000),
+        };
+        let (cur, next) = (t.rng.below(16), t.rng.below(16));
+        let args = [xywh[0], xywh[1], xywh[2], xywh[3], slide, cur, next];
+        t.twin("MenuPlayer_DrawFaceSlide", 0x008d_32b0, &args, U32, |o| {
+            w(tk::menu_player_draw_face_slide(
+                o,
+                xywh,
+                slide.cast_signed(),
+                [cur, next],
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

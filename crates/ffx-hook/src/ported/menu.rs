@@ -4081,4 +4081,37 @@ ported! {
     MenuNameEntry_DrawSummonFaceSlide @ 0x008d_35a0 => extern "C" fn menu_name_entry_draw_summon_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
         tk::menu_name_entry_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuPlayer_DrawFaceSlide(x, y, w, h, t, cur, next)`: the last
+    /// call's result.
+    MenuPlayer_DrawFaceSlide @ 0x008d_32b0 => extern "C" fn menu_player_draw_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
+        tk::menu_player_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuScene_KeyEase(key, frame, frames)`: in `ST0`.
+    MenuScene_KeyEase @ 0x00a7_c6f0 => extern "C" fn menu_scene_key_ease(key: u32, frame: i32, frames: i32) -> f32 {
+        tk::menu_scene_key_ease(&mut mem(), key, frame, frames, &mut |_, v| crt_x87(0x00b0_c3b4, v, None))
+    }
+    /// `MenuKaizou_DrawWeaponTitle(x, y, i)`: void.
+    MenuKaizou_DrawWeaponTitle @ 0x008d_6660 => extern "C" fn menu_kaizou_draw_weapon_title(x: i32, y: i32, i: i32) {
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_kaizou_draw_weapon_title(&mut mem(), [x, y, i], local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuKaizou_DrawRow(window, x, y, row, fixed)`: void.
+    MenuKaizou_DrawRow @ 0x008d_6760 => extern "C" fn menu_kaizou_draw_row(window: u32, x: u32, y: u32, row: i32, fixed: i32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_kaizou_draw_row(&mut mem(), window, [f32::from_bits(x), f32::from_bits(y)], [row, fixed], local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Pad_RepeatButton(work, _, i, now, prev, slot)`: the bits in `ax`.
+    Pad_RepeatButton @ 0x0088_9980 => extern "C" fn pad_repeat_button(work: u32, _b: u32, i: u32, now: u32, prev: u32, slot: u32) -> u32 {
+        tk::pad_repeat_button(&mut mem(), work, [i, now, prev, slot], &mut |_| input_get_cur_time())
+    }
+}
+
+/// `inputGetCurTime()` (`0x00630c60`) through the game's entry: the result
+/// in `ST0`, read back as a double.
+fn input_get_cur_time() -> f64 {
+    let f = crate::rebase(0x0063_0c60);
+    // SAFETY: a cdecl function of no arguments returning in ST0.
+    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f)() }
 }

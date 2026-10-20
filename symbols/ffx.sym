@@ -9788,6 +9788,7 @@
 0x008894f0 function TkSetPadButtonMap         # (a, b, i, to): g_PadButtonMap[a + b][i] = to (Pad_MapButtons reads it)
 0x00889510 function Pad_CheckPressMode        # (port, slot, ret, status): scePadInfoPressMode == 1: 7 when status[1] & 0xf != 9 and scePadEnterPressMode != 0, else ret; otherwise TkGetControlerWork(port, slot) +0x82 = 0, ret; caller 0x00889050; name ours
 0x008898a0 function Pad_ReadCurrDevice # cdecl(a, b, work, pad) -> work: inputGetCurrDeviceButtonInfo() with opposite directions cancelled (0xa000 -> & 0x5fff, 0x5000 -> & 0xafff); pad mode byte +1: 6 fills 2*(low nibble)-3 bytes from +3 with 0x80, sets 0x42, work+0x98 = 0; 2 becomes 0x22; else buttons to u16 work+0x9a/+0x98; caller 0x00888f90; ported in menu round 22; name ours
+0x00889980 function Pad_RepeatButton         # (work, _, i, now, prev, slot) -> ax: key repeat of button i (mask u16 0x00c54e34[i] on now/prev); k = i + 4 slot: counter u16 work+0xa0[k], timer f32 +0xb0[k], last time f32 +0xd0[k]; held (now == prev): timer -= inputGetCurTime() - last, below 0 restarts at i16 +0x96 / 30 (counter = it) and repeats; newly pressed: timer i16 +0x94 / 30, counts when (now ^ prev) & prev == 0; time stored as last; eax high half = slot's; caller 0x00889940 (i 0-3); ported in menu round 24; name ours
 0x00889a80 function TkUpdateScanControler     # fh v3:exact 0x008899f0
 0x00889aa0 function Pad_StickToByte           # (f32 axis): al = 0x80 - ftol(axis * -127.0) (double 0x00b5dee8), eax's upper 24 bits from the ftol; caller 0x00889570 (stick bytes +0x84..0x87); name ours
 0x00889ac0 function TkFindPadButton           # (a, b, k) -> where in g_PadButtonMap[a + b] the code g_PadButtonCodes[k] is, -1 if nowhere
@@ -10815,6 +10816,7 @@
 0x008d3200 function TkMenuWindowFadedOut      # (window) -> whether the fade +0x52 is 0
 0x008d3220 function MenuStatus_OffsetRect     # (dx, dy, out, rect, sized) 24-byte rect copy moved; size from 0x0186a8a4 when sized; own name
 0x008d3280 function TkMn2StepStatusBG         # (): i16 0x0186aa00 += step (0x0186a9fc), kept in 0..0x1000
+0x008d32b0 function MenuPlayer_DrawFaceSlide # (x, y, w, h, t, cur, next): MenuSummon_DrawFaceSlide with TkMenuGetPlayerFromIndex2 for the faces; caller 0x008d4ee0; ported in menu round 24; name ours
 0x008d33b0 function MenuNameEntry_DrawCharFaceSlide # (x, y, w, h, t, cur, next): MenuSummon_DrawFaceSlide without the TkMenuGetSummonFromIndex lookups (faces as given); caller 0x008c3ec0 (target < 8); byte copy at 0x008d35a0; ported in menu round 24; name ours
 0x008d34a0 function MenuSummon_DrawFaceSlide  # (x, y, w, h, t, cur, next): TkMn2DrawCrossCharFace of aeon cur (TkMenuGetSummonFromIndex) when TOMenuGetFirstReadEndFlag; with t != 0 aeon next's face at x + 0x0186a9ec*t/4096 (ftol'd) under font shade alpha (0x1000-|t|)>>5 (Save/Set/RestoreFontShade); name ours
 0x008d35a0 function MenuNameEntry_DrawSummonFaceSlide # (x, y, w, h, t, cur, next): byte copy of MenuNameEntry_DrawCharFaceSlide; caller 0x008c3ec0 (target >= 8); ported in menu round 24; name ours
@@ -10840,6 +10842,8 @@
 0x008d57f0 function TkMenuKaizouCloseWindow   # (): close request for 0x0186aa30 (TkMenuCtrlKaizou's), forget it
 0x008d5830 function UpdateGearCustomizationMenuState # fh call.cs cdecl
 0x008d5f60 function DrawGearCustomizationMenu # fh call.cs cdecl
+0x008d6660 function MenuKaizou_DrawWeaponTitle # (x, y, i): TODrawMenuPlateXYWHType(f32 x, f32 y, remapX2(740), remapY2(60), 5); name of MsGetSaveWeapon(u16 [0x0186aa38][i]) centred: ToGetBtlEasyFontWidth(name, &w, 0, 0.78, 1), ToMakeBtlEasyFont(name, f32(remapX2(370) + x - w/2), f32(remapY2(8) + y), 0, 0.78, 1); caller DrawGearCustomizationMenu; ported in menu round 24; name ours
+0x008d6760 function MenuKaizou_DrawRow       # (window, x, y, row, fixed): MenuWeapon_DrawRow for the customise list u16 [0x0186aa38] (scroll line remapY2(75)); name only when the MsGetSaveWeapon record has +2 and not +3 bit 1, colour = !MenuEquip_IsSelectable(id, 0); caller 0x008d6560; ported in menu round 24; name ours
 0x008d6d60 function MenuKaizou_OpenWindow     # (): TkMenuMainAllocWindow: +8 0x008d56e0, +0xc UpdateGearCustomizationMenuState, +0x10 0x008d6860, +0x14 0x008d6e30, +0x1c 0x008d57a0, +0x48/+0x32 0, +0x30 u16 0x0186aa3c, +0x3e u16 0x101, +0x42 1, +0x36 u16 3, +0x3a 9; registered, then kept in 0x0186aa30; returns the registration's result; caller 0x008d5540; name ours
 0x008d6e00 function MenuKaizou_RestartWindow2 # TkMenuRestartSelFileWindow(0x0186aa34); own name
 0x008d7590 function SetGlobals_008d7590          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x0186ab1c] = a1; u32[&0x0186aba0] = 0xffffffff; return a1; callers: no direct caller; name ours
@@ -13506,6 +13510,7 @@
 0x00a7bb00 function TkMenuInitSeq             # fh v3:bsim1.00 0x00a7bb00
 0x00a7bb60 function TkMenuIsStartScene           # (i, handle) -> the record when its +4 flag bit 31 is set, else 0 (TkMenuStartScene sets bits 31 and 30, TkMenuIsTermScene tests bit 30); the Switch TkMenuIsStartScene (52 bytes, like TkMenuIsTermScene) sorts between TkMenuInitSeq and TkMenuIsTermScene, as here
 0x00a7bb90 function TkMenuIsTermScene         # fh v3:exact 0x00a7bb90
+0x00a7c6f0 function MenuScene_KeyEase        # (key, frame, frames) -> ST0: t = f32(frame) / f32(frames) (1 for 0 frames); key & 0x7000: 0x2000 1-(1-t)^2, 0x3000 t^2, 0x4000 (cos(clamp((1-t) pi, 0, pi)) + 1) * 0.5 (_CIcos), else t; f32 at each step; caller 0x00a7b290; ported in menu round 24; name ours
 0x00a7c7f0 function TkMenuSetSceneDataAdrs    # fh v3:bsim1.00 0x00a7c7f0
 0x00a7c810 function TkMenuSetSceneOffset      # (i, handle, x, y): the record's +8/+0xa; the Switch TkMenuSetSceneOffset (40 bytes, called by TOSeqSetSceneOffset) sorts after TkMenuSetSceneDataAdrs, as here; caller TOSeqSetScenePosByName; was TkMenuSetScenePos
 0x00a7c880 function TkMenuStartScene          # fh v3:exact 0x00a7c880
