@@ -4285,6 +4285,22 @@ ported! {
         let text = frame.at();
         tk::draw_cross_menu_summon_plate_clut(&mut mem(), chr, [x, y], alpha, text, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2DrawSummonPlateCheckHP(x, y, chr)`: the last call's `eax`.
+    TkMn2DrawSummonPlateCheckHP @ 0x008c_eb00 => extern "C" fn tk_mn2_draw_summon_plate_check_hp(x: i32, y: i32, chr: i32) -> u32 {
+        tk::tk_mn2_draw_summon_plate_check_hp(&mut mem(), [x, y], chr, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ReadAndUpdate(port, slot, pad)`: its only caller ignores `eax`.
+    Pad_ReadAndUpdate @ 0x0088_8f90 => extern "C" fn pad_read_and_update(port: u32, slot: u32, pad: u32) {
+        tk::pad_read_and_update(&mut mem(), port, slot, pad, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSelList_DrawRows(window, fixed, first, _, y)`: its only caller ignores `eax`.
+    MenuSelList_DrawRows @ 0x008d_1620 => extern "C" fn menu_sel_list_draw_rows(window: u32, fixed: u32, first: i32, _a: u32, y: i32) {
+        tk::menu_sel_list_draw_rows(&mut mem(), window, fixed, first, y, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkBtlEndGetText(id)`: the text pointer.
+    TkBtlEndGetText @ 0x008b_da60 => extern "C" fn tk_btl_end_get_text(id: u32) -> u32 {
+        tk::tk_btl_end_get_text(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry

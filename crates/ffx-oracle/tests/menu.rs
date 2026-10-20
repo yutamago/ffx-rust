@@ -12398,3 +12398,119 @@ fn menu_round26_summon_plate_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round27_summon_plate_check_pad_rows_and_btl_end_text_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_eb00) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008a_99f0u32, 1u8),
+        (0x008e_6e10, 4),
+        (0x008e_7110, 4),
+        (0x008c_d720, 3),
+        (0x0088_98a0, 4),
+        (0x0088_9570, 3),
+        (0x0063_0e20, 3),
+        (0x008d_1820, 5),
+        (0x0078_51f0, 0),
+        (0x0078_fb60, 2),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let hp = seq_stub(&mut t, 0x008a_98c0, log, 1, &[]);
+    let sub_cmd = t.sym(0x023c_c128);
+    let marks = t.sym(0x0186_a5b0);
+    let window = t.alloc(&[0; 0x98]);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let v = t
+            .rng
+            .pick(&[0u32, 1, 0xffff_ffff, 0x8000_0000, 0x7fff_ffff, 5]);
+        t.put(hp, v);
+        // the sub-command window: none, or a row marked 0, 1 or 2
+        let open = t.rng.below(4) != 0;
+        t.put(sub_cmd, if open { window } else { 0 });
+        let row = t.rng.below(24).cast_signed() - 4;
+        t.put(window + 0x48, i16::try_from(row).unwrap_or(0));
+        for k in -4..20 {
+            let m = t.rng.pick(&[0u8, 1, 1, 2]);
+            t.put(marks.wrapping_add_signed(k), m);
+        }
+        let chr = t
+            .rng
+            .pick_or_any(&[0, 7, 8, 13, 14, 15, 0xffff_ffff, 0x8000_0000]);
+        let (x, y) = (t.rng.int(), t.rng.int());
+        t.twin(
+            "TkMn2DrawSummonPlateCheckHP",
+            0x008c_eb00,
+            &[x, y, chr],
+            U32,
+            |o| {
+                w(tk::tk_mn2_draw_summon_plate_check_hp(
+                    o,
+                    [i(x), i(y)],
+                    i(chr),
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+
+        // a pad's frame: work records 0..7, vibration on or off
+        let (port, slot) = (t.rng.below(4), t.rng.below(4));
+        let work = tk::tk_get_controler_work(&t.b, i(port), i(slot));
+        for off in [0x98u32, 0x99, 0x9d, 0xfe, 0xff] {
+            let b = t.rng.pick(&[0u8, 1, 0x80, 0xff]);
+            t.put(work + off, b);
+        }
+        let pad = t.rng.next();
+        t.twin(
+            "Pad_ReadAndUpdate",
+            0x0088_8f90,
+            &[port, slot, pad],
+            VOID,
+            |o| {
+                tk::pad_read_and_update(o, port, slot, pad, &mut callback);
+                0
+            },
+        );
+
+        let (list, fixed, first, y) = (
+            t.rng.next(),
+            t.rng.pick_or_any(&[0, 1]),
+            t.rng.int(),
+            t.rng.int(),
+        );
+        let unused = t.rng.next();
+        t.twin(
+            "MenuSelList_DrawRows",
+            0x008d_1620,
+            &[list, fixed, first, unused, y],
+            VOID,
+            |o| {
+                tk::menu_sel_list_draw_rows(
+                    o,
+                    list,
+                    fixed,
+                    i(first),
+                    i(y),
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+
+        let id = t.rng.int();
+        t.twin("TkBtlEndGetText", 0x008b_da60, &[id], U32, |o| {
+            w(tk::tk_btl_end_get_text(o, id, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

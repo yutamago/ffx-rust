@@ -13565,6 +13565,121 @@ pub mod bridge {
         }
         eax
     }
+
+    /// `TkMn2DrawSummonPlateCheckHP(x, y, chr)` (`0x008ceb00`, Fahrenheit's
+    /// name): a character's plate, with HP/MP while `TkMenuGetHP(chr) > 0`.
+    ///
+    /// The colour is `MenuPlayer_DamageClass(chr)`, or 1 when the open
+    /// sub-command window's (`0x023cc128`) row `i16 +0x48` is marked 1 in
+    /// the bytes at `0x0186a5b0` and `chr > 13` (signed). Alive:
+    /// `DrawCrossMenuSummonPlateClut(chr, f32(x), f32(y), colour)`.
+    /// Otherwise `DrawCrossMenuSummonPlateNoHPMPClut(chr, f32(x), f32(y),
+    /// colour)` with colour `0x53` unless the window case set 1, then
+    /// `TkMn2DrawCrossSummonBattleCountPlate(f32(remapX2(428) + f32(x)),
+    /// f32(y), chr)`. Returns the last call's `eax`.
+    pub fn tk_mn2_draw_summon_plate_check_hp<M: Mem>(
+        mem: &mut M,
+        [x, y]: [i32; 2],
+        chr: i32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, store};
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let id = chr.cast_unsigned();
+        let hp = call(mem, at(mem, 0x008a_98c0), &[id]);
+        let mut colour = call(mem, at(mem, 0x008a_99f0), &[id]);
+        let window = mem.read::<u32>(at(mem, 0x023c_c128));
+        let marked = window != 0 && {
+            let row = i32::from(mem.read::<i16>(window.wrapping_add(0x48)));
+            mem.read::<u8>(at(mem, 0x0186_a5b0).wrapping_add_signed(row)) == 1 && chr > 13
+        };
+        if marked {
+            colour = 1;
+        }
+        let (fx, fy) = (store(f64::from(x)), store(f64::from(y)));
+        if hp.cast_signed() > 0 {
+            return call(mem, at(mem, 0x008e_6e10), &[id, fx, fy, colour]);
+        }
+        if !marked {
+            colour = 0x53;
+        }
+        call(mem, at(mem, 0x008e_7110), &[id, fx, fy, colour]);
+        let left = store(add(remap(mem, false, 428.0), load(fx)));
+        call(mem, at(mem, 0x008c_d720), &[left, fy, id])
+    }
+
+    /// `Pad_ReadAndUpdate(port, slot, pad)` (`0x00888f90`, name ours): one
+    /// pad's frame. With `work = TkGetControlerWork(port, slot)`:
+    /// `Pad_ReadCurrDevice(port, slot, work, pad)`, `Pad_UpdateAnalog(work,
+    /// pad, u16 work +0x98)`, and when byte `+0x9d` is set
+    /// `inputSetVibration(port, byte +0xff, byte +0xfe)`. The original also
+    /// calls `scePadRead_ps2`, which is `xor eax, eax; ret` on PC; left out.
+    /// Its only caller (`0x00889050`) ignores `eax`.
+    pub fn pad_read_and_update<M: Mem>(
+        mem: &mut M,
+        port: u32,
+        slot: u32,
+        pad: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let work = tk_get_controler_work(mem, port.cast_signed(), slot.cast_signed());
+        let read = mem.rebase(0x0088_98a0);
+        call(mem, read, &[port, slot, work, pad]);
+        let buttons = u32::from(mem.read::<u16>(work.wrapping_add(0x98)));
+        let analog = mem.rebase(0x0088_9570);
+        call(mem, analog, &[work, pad, buttons]);
+        if mem.read::<u8>(work.wrapping_add(0x9d)) != 0 {
+            let large = u32::from(mem.read::<u8>(work.wrapping_add(0xff)));
+            let small = u32::from(mem.read::<u8>(work.wrapping_add(0xfe)));
+            let vibrate = mem.rebase(0x0063_0e20);
+            call(mem, vibrate, &[port, large, small]);
+        }
+    }
+
+    /// `MenuSelList_DrawRows(window, fixed, first, _, y)` (`0x008d1620`,
+    /// name ours): nine two-column rows of a selection list from row
+    /// `first * 2 - 2`. Row pairs start at `f32(remapY2(403) + f32(y))` and
+    /// step by `remapY2(77)` (rounded to `f32` each time); the left column
+    /// is at `remapX2(210)`, the right at `remapX2(970)`, each drawn by
+    /// `MenuSelList_DrawRow(window, x, y, row, fixed)`. Its only caller
+    /// (`0x008d1400`) ignores `eax`.
+    pub fn menu_sel_list_draw_rows<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        fixed: u32,
+        first: i32,
+        y: i32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, store};
+        let draw_row = mem.rebase(0x008d_1820);
+        let mut top = store(add(remap(mem, true, 403.0), load(store(f64::from(y)))));
+        let mut row = first.wrapping_mul(2).wrapping_sub(2);
+        for _ in 0..9 {
+            for (column, x) in [(0, 210.0), (1, 970.0)] {
+                let left = store(remap(mem, false, x));
+                let r = row.wrapping_add(column).cast_unsigned();
+                call(mem, draw_row, &[window, left, top, r, fixed]);
+            }
+            top = store(add(remap(mem, true, 77.0), load(top)));
+            row = row.wrapping_add(2);
+        }
+    }
+
+    /// `TkBtlEndGetText(id)` (`0x008bda60`, Fahrenheit's name):
+    /// `MsMenuGetBtlEndText(id, MsGetSaveConfigHiragana())` (`eax`).
+    pub fn tk_btl_end_get_text<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let hiragana = mem.rebase(0x0078_51f0);
+        let hiragana = call(mem, hiragana, &[]);
+        let text = mem.rebase(0x0078_fb60);
+        call(mem, text, &[id, hiragana])
+    }
 }
 
 #[cfg(test)]

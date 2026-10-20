@@ -127,6 +127,9 @@ byte at an offset into the character's save record
 rows; `MenuWShop_DrawBuyRows` `0x008d8c30` and `MenuWShop_DrawSellRows`
 `0x008d8ee0`, nine) and `MenuSummon_DrawGrowRows` (`0x008ce520`, eleven)
 draw a fixed number of rows from a first index.
+`MenuSelList_DrawRows` (`0x008d1620`) draws a two-column selection list:
+nine row pairs from row `first * 2 - 2`, left column at `remapX2(210)`,
+right at `remapX2(970)`, from `y + remapY2(403)` down by `remapY2(77)`.
 
 ## Characters and aeons
 
@@ -138,7 +141,12 @@ the u8 ids the menu cycles through, indexed by `g_TkMenuCurrentPlayerPos`
 aeons (`TkMn2DrawOverDrive` draws the Overdrive mode only below 8).
 `DrawCrossMenuSummonPlateClut` (`0x008e6e10`) draws a name with HP and MP
 as `"%5d/%5d"` and `"%4d/%4d"` (current/max); language 11 widens the
-labels.
+labels. `TkMn2DrawSummonPlateCheckHP` (`0x008ceb00`) picks it while HP is
+above 0, else the plate without HP/MP plus the battle count plate. Its
+colour is `MenuPlayer_DamageClass`, or 1 for ids above 13 whose row in
+the open sub-command window (`0x023cc128`, row `i16 +0x48`) is marked 1
+in the bytes at `0x0186a5b0`; a dead character without that mark gets
+`0x53`.
 
 ## Save/load slots
 
@@ -161,3 +169,6 @@ centred) from `inputGetCurrDeviceStickInfo`'s floats 2, 3, 0, 1,
 `+0x90`/`+0x91` the d-pad pressure bytes, and direction bits of u16
 `+0x9a` from bytes `+0x86` (`0x8000`/`0x2000`) and `+0x87`
 (`0x4000`/`0x1000`) past `0x10`/`0xf0`.
+`Pad_ReadAndUpdate` (`0x00888f90`) is one pad's frame: `Pad_ReadCurrDevice`,
+`Pad_UpdateAnalog` with the buttons at u16 `+0x98`, and, when byte
+`+0x9d` is set, `inputSetVibration(port, +0xff, +0xfe)` (bytes).
