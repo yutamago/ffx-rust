@@ -1491,4 +1491,335 @@ pub mod bridge {
             p = p.wrapping_add(0xb0);
         }
     }
+
+    // ---- round 36 b ----
+
+    /// `0x00742980` (`pppDrawShapeFieldStep`, ours; `(base, def, w)`,
+    /// called by `pppDrawShapeFieldDraw`): each live (bit 0) 0xa0-byte
+    /// particle `p` (index `i`): `p +8` counts up and at `w +0x54` the
+    /// particle dies (bit 0 cleared, from the flags read before) and, on the
+    /// [`SHAPE_FIELD_PLAIN_LEVELS`] (`graphicLevelGetNameHash()`), gets
+    /// `graphicVFXDestroy(id)` with the 64-bit `id = (base << 32) + 0x32 i +
+    /// g_pppCurrentProgram` (both sign-extended); the step still runs: `p
+    /// +0x20 += def +0x60`, `p +0x10 += p +0x20` (`FFXVu0AddVector`), `p
+    /// +0x40 += def +0xa0`, `p +0x30 += p +0x40` (`f32`), and the animation
+    /// steps by `u16 def +0xc`. Callees through `call`.
+    pub fn ppp_draw_shape_field_step<M: Mem>(
+        mem: &mut M,
+        base: u32,
+        def: u32,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let (parts, anim, n) = shape_field_parts(mem, def, w);
+        let mut p = parts;
+        let mut id = 0i32;
+        for _ in 0..n.max(0) {
+            let flags: u32 = mem.read(p);
+            if flags & 1 != 0 {
+                let frame = u32::from(mem.read::<u16>(p.wrapping_add(6)));
+                let age = mem.read::<u32>(p.wrapping_add(8)).wrapping_add(1);
+                mem.write(p.wrapping_add(8), age);
+                if age >= mem.read::<u32>(w.wrapping_add(0x54)) {
+                    mem.write(p, flags & !1);
+                    let hash = call(mem, g(mem, 0x0064_1da0), &[]);
+                    if SHAPE_FIELD_PLAIN_LEVELS.contains(&hash) {
+                        let prog = mem.read::<i32>(g(mem, CURRENT_PROGRAM));
+                        let v = (i64::from(base) << 32)
+                            .wrapping_add(i64::from(id))
+                            .wrapping_add(i64::from(prog))
+                            .cast_unsigned();
+                        #[allow(clippy::cast_possible_truncation)] // the halves
+                        let (lo, hi) = (v as u32, (v >> 32) as u32);
+                        call(mem, g(mem, 0x0064_5280), &[lo, hi]);
+                    }
+                }
+                add3(
+                    mem,
+                    p.wrapping_add(0x20),
+                    def.wrapping_add(0x60),
+                    p.wrapping_add(0x20),
+                );
+                let at = p.wrapping_add(0x10);
+                call(mem, g(mem, 0x006e_d290), &[at, at, p.wrapping_add(0x20)]);
+                add3(
+                    mem,
+                    p.wrapping_add(0x40),
+                    def.wrapping_add(0xa0),
+                    p.wrapping_add(0x40),
+                );
+                add3(
+                    mem,
+                    p.wrapping_add(0x30),
+                    p.wrapping_add(0x30),
+                    p.wrapping_add(0x40),
+                );
+                let step: u16 = mem.read(def.wrapping_add(0xc));
+                shape_field_anim(mem, p, step, anim, frame);
+            }
+            p = p.wrapping_add(0xa0);
+            id = id.wrapping_add(0x32);
+        }
+    }
+
+    /// `0x00744d80` (`pppDrawShapeFieldSpdEmit`, ours; `(obj, def, ctrl)`,
+    /// called by `pppDrawShapeFieldSpdDraw`): the work area `a = obj +
+    /// *ctrl[+0xc]` keeps a countdown at `+0xe8`; when it is 0, `u8 def
+    /// +0xb0` particles are born at the ring index `a +0xec` (wrapping at
+    /// `def +8`) of the array `get_ptr32_func(a +0xe0)`, 0xa0 bytes each:
+    /// bit 0 set, `+4`, `+8` = 0, `+0x20` = `def +0x40` randomised by `def
+    /// +0x50` (`KeVecAddRandom`), `+0x30` = `def +0x60` scaled by `def
+    /// +0x70` (`KeVecScaleRandom`), `+0x40` = `def +0x80`, `+0x50` =
+    /// `vf00` plus `def +0xa0`, `+0x60` the unit matrix turned about z by
+    /// `f32 (+0x58 x 4096 / 360)` (`op_rot_m_z`), `+0x10` = `vf00` plus
+    /// `def +0x10` (mode `u8 def +0x20`), and the countdown starts again
+    /// at `u8 def +0xb1`. Then it counts down by one; returns the new value
+    /// (left in `eax`). Callees through `call`.
+    pub fn ppp_draw_shape_field_spd_emit<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        shape_field_emit(mem, obj, def, ctrl, Emit::<NoFloat<M>>::Spd, call)
+    }
+
+    /// `0x00742750` (`pppDrawShapeFieldEmit`, ours; `(obj, def, ctrl)`,
+    /// called by `pppDrawShapeFieldDraw`): as
+    /// [`ppp_draw_shape_field_spd_emit`] with the count at `u8 def +0xc0`
+    /// and the restart at `+0xc1`, `+0x30` = `def +0x70` scaled by `def
+    /// +0x80`, `+0x40` = `def +0x90`, `+0x50` randomised by `def +0xb0`,
+    /// and `+0x60` turned by `pppGetRotMatrixZ(ftol(t x 4096 x 16 / 360))`,
+    /// `t` the angle `f32 +0x58` brought into 0..360 by one turn (+360
+    /// below 0, -360 above 360, rounded to `f32`; NaN as it is).
+    pub fn ppp_draw_shape_field_emit<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        shape_field_emit(mem, obj, def, ctrl, Emit::<NoFloat<M>>::Plain, call)
+    }
+
+    /// `0x00743b60` (`pppDrawShapeFieldRevEmit`, ours; `(obj, def, ctrl)`,
+    /// called by `pppDrawShapeFieldRevDraw`): [`ppp_draw_shape_field_emit`]'s
+    /// layout with the `Spd` angle (`op_rot_m_z`), and after it, for bit 2
+    /// then bit 1 of `def +0xf1`, when `op_random(1.0)` is above 0 the `x`
+    /// (then `y`) of `+0x30` and `+0x40` change sign.
+    pub fn ppp_draw_shape_field_rev_emit<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        shape_field_emit(mem, obj, def, ctrl, Emit::Rev(fcall), call)
+    }
+
+    /// The float callback type of the emits that call none.
+    type NoFloat<M> = fn(&mut M, u32, &[u32]) -> f64;
+
+    /// Which shape field emit: its layout, angle and flips.
+    enum Emit<'a, F> {
+        Spd,
+        Plain,
+        /// With `op_random`'s `ST0` through the callback.
+        Rev(&'a mut F),
+    }
+
+    /// The three shape field emits.
+    #[allow(clippy::many_single_char_names)]
+    fn shape_field_emit<M: Mem, F: FnMut(&mut M, u32, &[u32]) -> f64>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        mut kind: Emit<'_, F>,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store, sub};
+        let plain = !matches!(kind, Emit::Spd);
+        // count, restart, velocity, its scale, acceleration, angle range
+        let (count, restart, vel, vel_scale, acc, spin) = if plain {
+            (0xc0, 0xc1, 0x70, 0x80, 0x90, 0xb0)
+        } else {
+            (0xb0, 0xb1, 0x60, 0x70, 0x80, 0xa0)
+        };
+        let off: u32 = mem.read(mem.read::<u32>(ctrl.wrapping_add(0xc)));
+        let a = obj.wrapping_add(off);
+        let mut timer: u32 = mem.read(a.wrapping_add(0xe8));
+        if timer == 0 {
+            let vf00 = crate::prog::bridge::VF00.ptr(mem).addr;
+            let copy = |mem: &mut M, to: u32, from: u32| {
+                for k in 0..3 {
+                    let v = store(load(mem.read(from.wrapping_add(4 * k))));
+                    mem.write(to.wrapping_add(4 * k), v);
+                }
+                mem.write(to.wrapping_add(0xc), 0u32);
+            };
+            let set_vf00 = |mem: &mut M, to: u32| {
+                for k in 0..4 {
+                    let v: u32 = mem.read(vf00.wrapping_add(4 * k));
+                    mem.write(to.wrapping_add(4 * k), v);
+                }
+            };
+            let mut i = 0i32;
+            while i < i32::from(mem.read::<u8>(def.wrapping_add(count))) {
+                let parts = ffx_system::stub::ptr32(mem.read(a.wrapping_add(0xe0)));
+                let idx: u32 = mem.read(a.wrapping_add(0xec));
+                let p = parts.wrapping_add(idx.wrapping_mul(0xa0));
+                let flags: u32 = mem.read(p);
+                mem.write(p, flags | 1);
+                mem.write(p.wrapping_add(4), [0u32; 2]);
+                set_vf00(mem, p.wrapping_add(0x10));
+                let add_random = g(mem, 0x0076_6f10);
+                let scale_random = g(mem, 0x0076_6f70);
+                copy(mem, p.wrapping_add(0x20), def.wrapping_add(0x40));
+                let args = [p.wrapping_add(0x20), def.wrapping_add(0x50), 0];
+                call(mem, add_random, &args);
+                copy(mem, p.wrapping_add(0x30), def.wrapping_add(vel));
+                let args = [p.wrapping_add(0x30), def.wrapping_add(vel_scale), 0];
+                call(mem, scale_random, &args);
+                copy(mem, p.wrapping_add(0x40), def.wrapping_add(acc));
+                set_vf00(mem, p.wrapping_add(0x50));
+                let args = [p.wrapping_add(0x50), def.wrapping_add(spin), 0];
+                call(mem, add_random, &args);
+                let m = p.wrapping_add(0x60);
+                call(mem, g(mem, 0x006e_d9a0), &[m]);
+                let k4096: f64 = mem.read(g(mem, 0x00b5_15c8));
+                let k360: f64 = mem.read(g(mem, 0x00b4_8380));
+                let angle = load(mem.read(p.wrapping_add(0x58)));
+                if matches!(kind, Emit::Plain) {
+                    let k16: f64 = mem.read(g(mem, 0x00b3_13a0));
+                    let top = load(mem.read(g(mem, 0x00b5_15d0)));
+                    let t = if angle < 0.0 {
+                        load(store(add(angle, k360)))
+                    } else if top < angle {
+                        load(store(sub(angle, k360)))
+                    } else {
+                        angle
+                    };
+                    let turn = ftol(mem, div(mul(mul(t, k4096), k16), k360));
+                    call(mem, g(mem, 0x0072_cb10), &[m, turn]);
+                } else {
+                    let turn = div(mul(angle, k4096), k360);
+                    call(mem, g(mem, 0x007e_9760), &[m, m, store(turn)]);
+                }
+                if let Emit::Rev(fcall) = &mut kind {
+                    let flips: u8 = mem.read(def.wrapping_add(0xf1));
+                    for (bit, o) in [(2u8, 0u32), (1, 4)] {
+                        if flips & bit == 0 {
+                            continue;
+                        }
+                        let r = fcall(mem, g(mem, 0x007e_6700), &[1f32.to_bits()]);
+                        if 0.0 < r {
+                            for at in [0x30 + o, 0x40 + o] {
+                                let v = load(mem.read(p.wrapping_add(at)));
+                                mem.write(p.wrapping_add(at), store(-v));
+                            }
+                        }
+                    }
+                }
+                set_vf00(mem, p.wrapping_add(0x10));
+                let mode = u32::from(mem.read::<u8>(def.wrapping_add(0x20)));
+                let args = [p.wrapping_add(0x10), def.wrapping_add(0x10), mode];
+                call(mem, add_random, &args);
+                let next = mem.read::<u32>(a.wrapping_add(0xec)).wrapping_add(1);
+                mem.write(a.wrapping_add(0xec), next);
+                if next >= mem.read::<u32>(def.wrapping_add(8)) {
+                    mem.write(a.wrapping_add(0xec), 0u32);
+                }
+                i += 1;
+            }
+            timer = u32::from(mem.read::<u8>(def.wrapping_add(restart)));
+        }
+        let left = timer.wrapping_sub(1);
+        mem.write(a.wrapping_add(0xe8), left);
+        left
+    }
+
+    /// `0x00756320` (`pppDrawRainAlloc`, ours; `(def, work)`, called by
+    /// `pppDrawRainDraw`): `work +4` = `pppMemAlloc(env, env +0x10, size)`
+    /// for `n = def +8` drops of 0x30 bytes (0 and nothing else when that fails), each
+    /// drop `q`: `+0..+8` = `op_random(f32 def +4)` plus the camera position
+    /// (row 3 of `FFXVu0InversMatrix(g_pppCameraMatrix)`, in the original's
+    /// locals at `frame - 0x44`, `frame` its `ebp`; also to `g_Vu0_VfMove`),
+    /// `+0xc` = 1.0, `+0x10` = `def +0x10..+0x18` (w 0) plus
+    /// `KeVecAddRandom(def +0x20)` (also to `g_Vu0_VfMove`), `+0x20` that
+    /// normalised (`FFXVu0Normalize`) and scaled by minus `op_random(def
+    /// +0x34) + def +0x30` (`rcuiScaleVector_copy_00756600`, `junk` the three
+    /// words it reads past its arguments: the caller's saved `edi`, `esi`,
+    /// `ebx`); then `work +0` = `def`. Returns 1, or 0 on the failure.
+    /// Callees through `call`, `op_random`'s `ST0` through `fcall`.
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
+    pub fn ppp_draw_rain_alloc<M: Mem>(
+        mem: &mut M,
+        def: u32,
+        work: u32,
+        frame: u32,
+        junk: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, store};
+        use ffx_system::stub::{is_ptr32_null, ptr32};
+        let inverse = frame.wrapping_sub(0x44);
+        call(mem, g(mem, 0x006e_d450), &[inverse, g(mem, 0x0230_ff60)]);
+        let vf_move = g(mem, 0x00c8_f980);
+        let copy4 = |mem: &mut M, to: u32, from: u32| {
+            for k in 0..4 {
+                let v: u32 = mem.read(from.wrapping_add(4 * k));
+                mem.write(to.wrapping_add(4 * k), v);
+            }
+        };
+        let eye = inverse.wrapping_add(0x30);
+        copy4(mem, vf_move, eye);
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let n: u32 = mem.read(def.wrapping_add(8));
+        let size = n.wrapping_mul(0x30);
+        let buf = call(
+            mem,
+            g(mem, 0x0071_6a30),
+            &[env, env.wrapping_add(0x10), size],
+        );
+        let p = ptr32(buf);
+        mem.write(work.wrapping_add(4), p);
+        if is_ptr32_null(p) != 0 {
+            return 0;
+        }
+        let random = g(mem, 0x007e_6700);
+        let mut i = 0u32;
+        while i < mem.read::<u32>(def.wrapping_add(8)) {
+            let q = buf.wrapping_add(0x30 * i);
+            i += 1;
+            for k in 0..3 {
+                let spread: u32 = mem.read(def.wrapping_add(4));
+                let r = fcall(mem, random, &[store(load(spread))]);
+                let e = load(mem.read(eye.wrapping_add(4 * k)));
+                mem.write(q.wrapping_add(4 * k), store(add(r, e)));
+            }
+            mem.write(q.wrapping_add(0xc), 1f32);
+            let dir = q.wrapping_add(0x10);
+            for k in 0..3 {
+                let v = store(load(mem.read(def.wrapping_add(0x10 + 4 * k))));
+                mem.write(dir.wrapping_add(4 * k), v);
+            }
+            mem.write(dir.wrapping_add(0xc), 0u32);
+            call(mem, g(mem, 0x0076_6f10), &[dir, def.wrapping_add(0x20), 0]);
+            copy4(mem, vf_move, dir);
+            let vel = q.wrapping_add(0x20);
+            copy4(mem, vel, dir);
+            call(mem, g(mem, 0x006e_d6f0), &[vel, vel]);
+            let spread: u32 = mem.read(def.wrapping_add(0x34));
+            let r = fcall(mem, random, &[store(load(spread))]);
+            let speed = store(-add(r, load(mem.read(def.wrapping_add(0x30)))));
+            let args = [vel, vel, store(load(speed)), junk[0], junk[1], junk[2]];
+            call(mem, g(mem, 0x0075_6600), &args);
+        }
+        mem.write(work, ptr32(def));
+        1
+    }
 }

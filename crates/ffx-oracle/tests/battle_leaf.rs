@@ -1381,6 +1381,31 @@ fn natives(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
     let local = scratch(a, b, 0x10);
     let actor_byte = scratch(a, b, 4);
     let spline_var = scratch(a, b, 0x10);
+    let point = scratch(a, b, 0x10);
+    // round 31: MsAtelCameraSetBtlPc_007badb0's callees, recording stubs
+    // (results at `pc_res(k, args)`) and Ch_SetHideBattle logging
+    let pc_rec = scratch(a, b, 0x200);
+    let pc_callees: [(u32, u8); 5] = [
+        (n::MS_GET_BATTLE_SCENE, 0),
+        (n::MAGIC_FILE_GET_MAGIC_ID, 0),
+        (n::MAGIC_FILE_GET_HANDLE, 0),
+        (n::GRAPHIC_LEVEL_GET_NAME_HASH, 0),
+        (n::CH_GET_ID, 1),
+    ];
+    let pc_result = |k: u32| pc_rec + 0x20 * k + 4 + 4 * u32::from(pc_callees[k as usize].1);
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, args)) in (0u32..).zip(pc_callees) {
+            recording_stub(o, f, STUBS_E + 0x2a0 + 0x20 * k, pc_rec + 0x20 * k, args, 0);
+        }
+        logging_stub(
+            o,
+            n::CH_SET_HIDE_BATTLE,
+            STUBS_E + 0x2a0 + 0xa0,
+            pc_rec + 0xa0,
+            2,
+            0,
+        );
+    }
     for round in 0..400 {
         // the worker's camera: none yet or one
         let work = [0, rng.next(), 0x0001_0100 | rng.below(3)][rng.below(3) as usize];
@@ -1559,7 +1584,208 @@ fn natives(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
             _ => {}
         }
         same(&format!("natives {}", round % 12), a, b);
+        // round 31: the direction vector native and its setter, on a camera
+        // whose current request is the worker's camera or not
+        poke(a, b, cursor, &words_at.to_le_bytes());
+        let cam = [0x0001_0100 | rng.below(3), rng.next()][rng.below(4).min(1) as usize];
+        if rng.below(4) != 0 {
+            poke(a, b, worker + 0x3c, &cam.to_le_bytes());
+        }
+        dir_vector_camera(a, b, rng, cam & 0xff, cam, point);
+        if round % 3 == 2 {
+            // six scenarios a round (each fix's conditions one at a time)
+            for _ in 0..6 {
+                poke(a, b, cursor, &words_at.to_le_bytes());
+                let (side, mode) = pc_camera(a, b, rng, [worker, words_at], &pc_result);
+                nat!(
+                    "MsAtelCameraSetBtlPc_007badb0",
+                    0x007b_adb0,
+                    &[worker, 0, stack, side, mode],
+                    |m, cc| { n::ms_atel_camera_set_btl_pc(m, &mut cc, worker, stack, side, mode) }
+                );
+                same("MsAtelCameraSetBtlPc_007badb0", a, b);
+            }
+        } else if round % 3 == 0 {
+            // (its EAX, a camera ID or MsVectorNormal2's, is read by no
+            // caller: both natives return 0)
+            twin(
+                "MsAtelCameraDirVector_007bb210",
+                a,
+                b,
+                0x007b_b210,
+                &[worker, 0, stack, side],
+                0,
+                |m| {
+                    let mut cc = n::Calls {
+                        call: &mut c,
+                        fcall: &mut fc,
+                    };
+                    n::ms_atel_camera_dir_vector(m, &mut cc, worker, stack, side, 0);
+                    0
+                },
+            );
+            // the scale's third word: the original's frame pointer
+            vf2_word(a, b, 8);
+        } else {
+            let args = [cam, side, float(rng), float(rng), float(rng)];
+            let r = a.call(a.rebase(0x007b_ce80), Conv::Cdecl, &args).unwrap();
+            assert!(r.st0.is_none());
+            // the stray words: the harness's esi and ebp, its return
+            // address (the oracle's sentinel, taken from `a`)
+            let vf2 = ffx_battle::vector::bridge::VF_M.ptr(a).addr + 0x20;
+            let ret = u32::from_le_bytes(a.read(vf2 + 12, 4).unwrap().try_into().unwrap());
+            ffx_battle::camera::bridge::ms_camera_set_dir_vector(
+                b,
+                args[0],
+                args[1],
+                args[2],
+                args[3],
+                args[4],
+                [0x2222_2222, 0x4444_4444, ret],
+            );
+        }
+        same(&format!("dir vector {}", round % 3), a, b);
     }
+}
+
+/// Camera `k`'s current request `id` (slot 0 live, the others not) or not
+/// (a quarter of the time), both sides' positions and the point `+0xbc`
+/// points at (`point`, a vector of floats) or null when not live.
+fn dir_vector_camera(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    k: u32,
+    id: u32,
+    point: u32,
+) {
+    use ffx_battle::camera::bridge as cam;
+    if k > 2 {
+        return;
+    }
+    let slots = cam::SLOTS_AT.ptr(b).addr + k * cam::CAMERA_SIZE;
+    let live = rng.below(4) != 0;
+    let mut bytes = vec![0u8; 0x20];
+    bytes[..4].copy_from_slice(&(if live { id } else { id ^ 0x100 }).to_le_bytes());
+    bytes[4] = u8::from(rng.below(8) == 0);
+    for s in 1..4 {
+        bytes[8 * s + 5] = 1;
+    }
+    poke(a, b, slots, &bytes);
+    let base = cam::CAMERAS.ptr(b).addr + k * cam::CAMERA_SIZE;
+    poke(
+        a,
+        b,
+        point,
+        &(0..4)
+            .flat_map(|_| float(rng).to_le_bytes())
+            .collect::<Vec<u8>>(),
+    );
+    for side in 0..2 {
+        let s = base + side * 0x61c;
+        poke(
+            a,
+            b,
+            s + 0x50,
+            &(0..4)
+                .flat_map(|_| float(rng).to_le_bytes())
+                .collect::<Vec<u8>>(),
+        );
+        poke(a, b, s + 0xbc, &point.to_le_bytes());
+    }
+}
+
+/// The state `MsAtelCameraSetBtlPc_007badb0`'s fixes look at, one fix's
+/// whole scenario at a time (scene, magic, side, mode and the popped
+/// `dist` and `x`, words 0 and 3, at the values it compares with), one of
+/// its conditions broken half the time: the callees' results
+/// (`res(k)`: scene, magic, magic file handle, level hash, `Ch_GetId`),
+/// the command actor and its character word, the hide queue. Returns
+/// `(side, mode)`. (The 0xd40000, 0x1a30004 and 0x1f60004 fixes compare
+/// with products only single precision makes: never met.)
+fn pc_camera(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    [worker, words_at]: [u32; 2],
+    res: &dyn Fn(u32) -> u32,
+) -> (u32, u32) {
+    use ffx_battle::visible::bridge as vis;
+    // scene, magic, side, mode, dist * 100, x * 100
+    let scenarios: [(u32, u32, u32, u32, f32, f32); 12] = [
+        (0x00d4_0000, 0xfb, 0, 0, -150.0, 88.99999),
+        (0x01a3_0004, 0x58, 0, 0, 228.99997, 40.0),
+        (0x01f6_0004, 0xc9, 0, 0, 300.0, 3.999_999),
+        (0x025c_0013, 0x4c, 1, 2, 150.0, 40.0),
+        (0x025c_0013, 0x137, 1, 2, 150.0, 40.0),
+        (0x0159_0000, 0xa3, 1, 2, 520.0, 40.0),
+        (0x0001_0000, 0x2c1, 1, 1, 3050.0, 40.0),
+        (0x0001_0000, 0x2c1, 1, 1, 2860.0, 40.0),
+        (0x0001_0000, 0x2c0, 1, 1, 1000.0, 40.0),
+        // below both bounds: truncations of -3 and -2 (their sign matters)
+        (0x0001_0000, 0x2c1, 1, 1, 2700.0, 40.0),
+        (0x0001_0000, 0x2c0, 1, 1, 800.0, 40.0),
+        (0x01ae_000a, 0x92, 0, 1, 1000.0, 18.5),
+    ];
+    let (mut scene, mut magic, mut side, mut mode, mut dist, mut x) =
+        scenarios[rng.below(12) as usize];
+    let mut handle = 3;
+    let mut hash = 0x200f;
+    let mut id = 0x10c1;
+    let mut who = u8::try_from(rng.below(ACTORS)).unwrap();
+    let mut chr = rng.next() | 1;
+    if rng.below(2) == 0 {
+        match rng.below(10) {
+            0 => scene ^= 1 << rng.below(28),
+            1 => magic ^= 1 << rng.below(10),
+            2 => side ^= 1 + rng.below(2),
+            3 => mode ^= 1 + rng.below(3),
+            4 => dist = f32::from_bits(dist.to_bits() ^ (1 << rng.below(31))),
+            5 => x = f32::from_bits(x.to_bits() ^ (1 << rng.below(31))),
+            6 => handle = u32::MAX,
+            7 => hash ^= 1,
+            8 => id ^= 1 << rng.below(16),
+            _ => {
+                if rng.below(2) == 0 {
+                    who = 0xff;
+                } else {
+                    chr = u32::MAX;
+                }
+            }
+        }
+    }
+    for (k, v) in [scene, magic, handle, hash, id].into_iter().enumerate() {
+        poke(a, b, res(u32::try_from(k).unwrap()), &v.to_le_bytes());
+    }
+    set(a, b, ffx_battle::actor::bridge::COMMAND_ACTOR, who);
+    if who != 0xff {
+        let p = ffx_battle::actor::bridge::ms_get_chr(b, u32::from(who));
+        poke(a, b, p, &chr.to_le_bytes());
+    }
+    set(
+        a,
+        b,
+        vis::HIDE_QUEUE_LAST,
+        [0i32, 1, 3][rng.below(3) as usize],
+    );
+    let q = vis::HIDE_QUEUE.ptr(b).addr;
+    for k in 0..4 {
+        poke(a, b, q + 4 * k, &rng.next().to_le_bytes());
+    }
+    // the worker's camera: none yet (MsAtelGetCameraID kind 2) half the time
+    if rng.below(2) == 0 {
+        poke(a, b, worker + 0x3c, &[0; 4]);
+    }
+    poke(a, b, words_at, &dist.to_bits().to_le_bytes());
+    poke(a, b, words_at + 12, &x.to_bits().to_le_bytes());
+    (side, mode)
+}
+
+/// Copies `VF2`'s word at `off` from `a` to `b`.
+fn vf2_word(a: &mut Oracle, b: &mut Oracle, off: u32) {
+    let at = ffx_battle::vector::bridge::VF_M.ptr(a).addr + 0x20 + off;
+    let w = a.read(at, 4).unwrap();
+    b.write(at, &w).unwrap();
 }
 
 #[test]

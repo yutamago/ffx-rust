@@ -1279,7 +1279,7 @@ fn floats_match_the_original() {
         let want = r.st0.expect("a float in st0");
         let got = f64::from(ffx_menu::math::wrap_angle(a));
         assert!(
-            want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
+            ffx_oracle::same_float(want, got),
             "Math_WrapAngle({a}): {want} vs {got}"
         );
     }
@@ -1452,7 +1452,7 @@ fn players_vibration_and_degrees_match_the_original() {
         let want = r.st0.expect("a float in st0");
         let got = f64::from(ffx_menu::math::deg_to_rad(a));
         assert!(
-            want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
+            ffx_oracle::same_float(want, got),
             "TkDegtoRad({a}): {want} vs {got}"
         );
     }
@@ -1488,10 +1488,7 @@ fn players_vibration_and_degrees_match_the_original() {
 fn same_float(what: &str, want: Option<f64>, got: f32) {
     let want = want.expect("a float in st0");
     let got = f64::from(got);
-    assert!(
-        want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
-        "{what}: {want} vs {got}"
-    );
+    assert!(ffx_oracle::same_float(want, got), "{what}: {want} vs {got}");
 }
 
 #[test]
@@ -5588,18 +5585,8 @@ fn x87_call(o: &mut Oracle, slot: u32, a: f64, b: Option<f64>) -> f64 {
     let r = o.call(at, Conv::Cdecl, &w).unwrap();
     let pop = o.rebase(X87_CODE + 0x60);
     o.call(pop, Conv::Cdecl, &[]).unwrap();
-    let v = r.st0.expect("a float result");
-    if !v.is_nan() {
-        return v;
-    }
-    // `st0` makes every NaN the same: the sign and payload from the 80 bits
-    let raw = r.st0_raw.expect("a float result");
-    let mut m = [0; 8];
-    m.copy_from_slice(&raw[..8]);
-    let sign = u64::from(raw[9] >> 7) << 63;
-    f64::from_bits(
-        sign | 0x7ff0_0000_0000_0000 | ((u64::from_le_bytes(m) >> 11) & 0x000f_ffff_ffff_ffff),
-    )
+    // NaN sign and payload kept
+    r.st0.expect("a float result")
 }
 
 #[test]
@@ -10575,9 +10562,11 @@ fn menu_round24_eases_pads_and_kaizou_match_the_original() {
                 o,
                 work,
                 [i, pressed, held, slot],
-                // the stand-in's `fld dword [now]`, read directly (the
-                // oracle's ST0 read drops NaN payloads)
-                &mut |o| f64::from(f32::from_bits(Mem::read(o, now))),
+                // the stand-in's `fld dword [now]`, run
+                &mut |o| {
+                    let f = o.rebase(0x0063_0c60);
+                    fcallback(o, f, &[])
+                },
             ))
         });
     }
@@ -12520,21 +12509,10 @@ fn menu_round27_summon_plate_check_pad_rows_and_btl_end_text_match_the_original(
     eprintln!("{} calls", t.calls);
 }
 
-/// [`callback`] for a callee returning in `ST0`: the value with a NaN's
-/// sign and payload kept (`Ret::st0` makes every NaN the same).
+/// [`callback`] for a callee returning in `ST0` ([`Oracle::call_f64`]: NaN
+/// signs and payloads kept).
 fn fcallback(o: &mut Oracle, f: u32, args: &[u32]) -> f64 {
-    let r = o.call(f, Conv::Cdecl, args).unwrap();
-    let raw = r.st0_raw.expect("a float result");
-    let v = r.st0.expect("a float result");
-    if !v.is_nan() {
-        return v;
-    }
-    let mut m = [0; 8];
-    m.copy_from_slice(&raw[..8]);
-    let sign = u64::from(raw[9] >> 7) << 63;
-    f64::from_bits(
-        sign | 0x7ff0_0000_0000_0000 | ((u64::from_le_bytes(m) >> 11) & 0x000f_ffff_ffff_ffff),
-    )
+    o.call_f64(f, args).unwrap()
 }
 
 #[test]
