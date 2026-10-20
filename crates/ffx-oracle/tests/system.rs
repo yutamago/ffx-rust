@@ -24395,3 +24395,189 @@ fn round41_get_text_matches_the_original_on_the_snapshot() {
     };
     round41_get_text(&mut a, &mut b, &mut Xorshift(0x4041_0022));
 }
+
+/// Round 41 group C: `MagicFile_Unload` over logging stand-ins for every
+/// callee (printf through its import slot, logging the id only for the
+/// completion message); the VFX destroy and the shader-table unload
+/// stand-ins may switch the previous magic (a cell each), so every re-read
+/// of it counts. Magic ids, buffers, the pair table and the instance runs
+/// random.
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round41_magic_unload(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use menu::bridge as mb;
+    let log = alloc(a, b, 0x10000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x10);
+    let seq = round38_seq(counter, table);
+    let previous = a.rebase(0x00c6_4ca8);
+    // mov eax, [cell]; mov [previous], eax
+    let switch = |cell: u32| {
+        let mut v = vec![0xa1];
+        v.extend_from_slice(&cell.to_le_bytes());
+        v.push(0xa3);
+        v.extend_from_slice(&previous.to_le_bytes());
+        v
+    };
+    let done_fmt = a.rebase(0x00b7_05f0);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0064_5320, vec![], vec![], switch(cells)),
+        (0x0082_b2a0, all(2), vec![], vec![]),
+        (0x0068_6fe0, all(1), vec![], vec![]),
+        (0x0064_5280, all(2), vec![], switch(cells + 4)),
+        (0x0064_20f0, all(1), vec![], vec![]),
+        (0x0064_20e0, vec![], vec![], switch(cells + 8)),
+        (0x0064_1da0, all(1), vec![], seq),
+        (0x009d_acc0, all(2), vec![], vec![]),
+        (0x0067_94f0, all(2), vec![], vec![]),
+        (0x0064_2fe0, all(5), vec![], vec![]),
+        (0x0064_2070, all(1), vec![], vec![]),
+        (0x0064_35e0, all(1), vec![], vec![]),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    // printf: logs the format, and the id after the completion message
+    let mut tail = vec![0x8b, 0x44, 0x24, 0x04, 0x3d];
+    tail.extend_from_slice(&done_fmt.to_le_bytes());
+    tail.extend_from_slice(&[0x75, 0x13, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+    tail.extend_from_slice(&cursor.to_le_bytes());
+    tail.extend_from_slice(&[0x89, 0x01, 0x83, 0x05]);
+    tail.extend_from_slice(&cursor.to_le_bytes());
+    tail.push(4);
+    let printf = stand_in8(
+        a,
+        b,
+        0x80 * stands.len() as u32,
+        &pick_logger(cursor, 0x5f, &[0], &[], &tail),
+    );
+    put(a, b, a.rebase(0x00b0_c380), printf);
+    // every callee gets the original's argument count (the stand-ins log
+    // words the caller never pushed as whatever the frame holds)
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        if let Some(&(_, n)) = arity.iter().find(|e| e.0 == sym) {
+            assert_eq!(args.len(), n, "{sym:#x} arguments");
+        }
+        eax(m, sym, args)
+    };
+    let printf_b = |m: &mut Oracle, fmt: u32, arg: Option<u32>| {
+        let mut args = vec![fmt];
+        args.extend(arg);
+        m.call(printf, Conv::Cdecl, &args).unwrap();
+    };
+    let prx = a.rebase(0x00c6_4cb0);
+    let pairs = a.rebase(mb::OP_PAIR_TABLE);
+    let runs = a.rebase(mb::VFX_RUNS);
+    let magics = [
+        u32::MAX,
+        0x1b5,
+        0x1b6,
+        0x246,
+        0x1b4,
+        0x247,
+        0x1b5,
+        0x1b6,
+        0x246,
+    ];
+    let pick_magic = |rng: &mut Xorshift| {
+        if rng.next().is_multiple_of(9) {
+            rng.next()
+        } else {
+            magics[(rng.next() % magics.len() as u32) as usize]
+        }
+    };
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x40 {
+            put(a, b, table + 4 * j, rng.next());
+        }
+        let magic = pick_magic(rng);
+        put(a, b, previous, magic);
+        put(
+            a,
+            b,
+            prx,
+            if rng.next().is_multiple_of(8) {
+                u32::MAX
+            } else {
+                rng.next()
+            },
+        );
+        for j in 0..3 {
+            let v = if rng.next().is_multiple_of(4) {
+                pick_magic(rng)
+            } else {
+                magic
+            };
+            put(a, b, cells + 4 * j, v);
+        }
+        put(a, b, a.rebase(0x0193_fdac), rng.next());
+        put(a, b, a.rebase(0x022f_b3f8), rng.next());
+        put(
+            a,
+            b,
+            a.rebase(0x022f_b3dc),
+            if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                rng.next()
+            },
+        );
+        for t in mb::MAGIC_BUFFERS {
+            for j in 0..6 {
+                let v = if rng.next().is_multiple_of(3) {
+                    0
+                } else {
+                    rng.next()
+                };
+                put(a, b, a.rebase(t) + 4 * j, v);
+            }
+        }
+        let n = [-1i32, 0, 1, 2, 5, 8][(rng.next() % 6) as usize];
+        put(a, b, pairs, [n.cast_unsigned(), rng.next()]);
+        for j in 1..=9 {
+            put(a, b, pairs + 8 * j, [rng.next(), rng.next()]);
+        }
+        let n = [-1i32, 0, 1, 2, 4][(rng.next() % 5) as usize];
+        put(a, b, a.rebase(0x012f_411c), n);
+        for j in 0..4 {
+            let lo = if rng.next().is_multiple_of(3) {
+                u32::MAX - rng.next() % 3
+            } else {
+                rng.next()
+            };
+            let count = [-1i32, 0, 1, 3][(rng.next() % 4) as usize];
+            put(
+                a,
+                b,
+                runs + 16 * j,
+                [lo, rng.next(), count.cast_unsigned(), rng.next()],
+            );
+        }
+        let want = eax(a, 0x009d_a960, &[]);
+        assert_eq!(
+            want,
+            mb::magic_file_unload(b, call, printf_b),
+            "magic unload {k}"
+        );
+        same_memory(&format!("magic unload {k}"), a, b);
+    }
+}
+
+#[test]
+fn round41_magic_unload_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round41_magic_unload(&mut a, &mut b, &mut Xorshift(0x4041_0031));
+}
+
+#[test]
+fn round41_magic_unload_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round41_magic_unload(&mut a, &mut b, &mut Xorshift(0x4041_0032));
+}

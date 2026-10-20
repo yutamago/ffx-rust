@@ -12640,7 +12640,7 @@
 0x009da7a0 function MagicFile_SetMagicId      # fh v3:exact 0x009da780; cdecl(id): 0x2c7 -> 0x296; with handle 0x00c64cac -1 stores g_MagicFile_MagicId and printf(0x00b706bc, id), else printf(0x00b706e0, id) only
 0x009da7f0 function MagicFile_Start           # fh v3:exact 0x009da7d0; () no handle: printf, 0; else graphicSetGameOverNotify(id == 0x29e), *0x022fb6a0(g_MagicImports), printf id, 0xa8 graphicSetChrFogFade(1), 0x1b2/0x262 resetZanmatoSepList; 1
 0x009da880 function MagicFile_Stop            # fh v3:exact 0x009da860; (): g_VfxPhase = 0; no file: printf, 0; battle: graphicSetMaterialColourScale2(1,1,1,1); 0x01940abc = 0x01940ac0 = 0, printf id; 0x114 graphicVFXDestroy(6,0), 0xa8 graphicSetChrFogFade(0), 0x158/0x1b5/0x1b6 0x01940ac4 = 1; MagicFile_Cleanup; 1
-0x009da960 function MagicFile_Unload          # fh v3:exact 0x009da940
+0x009da960 function MagicFile_Unload          # fh v3:exact 0x009da940; cdecl() -> 1, or 0 (printf, graphicSetMagicFileAsyncLoadEnable(1)) when 0x00c64cb0 or 0x00c64ca8 is -1; clears IsNexData, graphicVFXDestroyAllExceptFieldAndEternal, 0x1b5/0x1b6: Ch_SetHideEffect(0x022fb3dc, 1), frees 0x022fb3e0/0x022fb3c8 [5] (0x00686fe0), graphicVFXDestroy(kind, 0x1b5) for 0,1,2,1000..1002,100..102; 0x246: every g_OpPairTable pair destroyed and the table cleared; texture/shader table unload, MagicFile_ClearPreloadedPrx(graphicLevelGetNameHash(), magic), PhyreFIOS_UnloadMagicfilePrx(0x00c64cb0, 0), every g_VfxInstanceRuns instance destroyed, movie_disp2(0,0,0,0,0), 0x00c64ca8 = 0x00c64cb0 = -1, graphicMagicSetToBeDeletePath(""); its preload scan (0x0193fd40) only reads, result unused; ported (system round 41)
 0x009dac60 function MagicFile_Update          # fh v3:exact 0x009dac40
 0x009daca0 function MagicFile_clearAllPreloadedPrx # fh v3:exact 0x009dac80
 0x009dacc0 function MagicFile_ClearPreloadedPrx_009dacc0 # (id, index): PhyreFIOS_UnloadMagicfilePrx of the matching preload handle, "MagicFilePreload: clearPreloadedPrx id=%d, index=%d"; callers MagicFile_Unload, MagicFile_clearAllPreloadedPrx; own name
@@ -15639,8 +15639,9 @@
 0x00c5e790 label    g_GuidePacketStrides         # bytes per primitive of the minimap mesh's packet types 0-7 (0x14 0x1c 0x20 0x28 0x18 0x20 0x28 0x30); type 0: triangles, vertex indices at +0xc
 0x00c613b0 label    g_PageManager             # the page manager (PageAlloc/PageCommit/PageQueueDecommit/PageRelease pass it); ffx_system::heap has the layout
 0x00c64ca0 label    g_MagicFile_MagicId       # MagicFile_GetMagicId; -1 = none (MagicFile_GetEffectOverlayTable checks)
+0x00c64ca8 label g_MagicFile_PreviousId # the magic MagicFile_Cleanup keeps as the previous one; MagicFile_Unload unloads it and sets -1; MagicFile_GetToBeDeleteMagicId returns it; name ours
 0x00c64cac label    g_MagicFile_Handle        # MagicFile_GetHandle; -1 = none (MagicFile_GetEffectOverlayTable checks)
-0x00c64cb0 label g_BtlCommandWait          # i32: MsCommandCueProcess waits unless -1
+0x00c64cb0 label g_BtlCommandWait          # i32: MsCommandCueProcess waits unless -1; also the previous magic's module handle: MagicFile_Cleanup moves g_MagicFile_Handle here, MagicFile_Unload passes it to PhyreFIOS_UnloadMagicfilePrx and sets -1 (so the battle waits while a magic module is still loaded)
 0x00c64ce8 label g_MagicImports                # 744 slots (0xba0 bytes) handed to every magic_*.dll's InitMagicPRX: 658 FFX.exe functions (effects 278, battle 114, map 104, characters 83, ...), the overlays' only way into the game
 0x00c86b60 label    g_NkzAuronLimitTime          # f32 per level, NkzGetAuronLimitTime (4.0 4.0 4.0 3.0)
 0x00c86b70 label    g_NkzAuronLimitButtons       # 0x20 bytes per sequence, NkzGetAuronLimitButtonData
@@ -16209,6 +16210,7 @@
 0x012a89a8 label    g_OpWotNodes              # 0x1023 16-byte nodes op_ot_draw relinks while g_OpWotTrigger is set (+4 next node, +8 itself); name ours
 0x012f4110 label    g_ChrHsvPending           # u32: a weapon colour change waits on g_ChrHsvInstance's clut (op_chara_hsv_make 0x008079f0 sets it for kind 6); Ch_ClutDispose 0x0083c810 undoes it on weapon (6, 0) and clears both
 0x012f4114 label    g_ChrHsvInstance          # renderer instance of the pending colour change (op_chara_hsv sets it)
+0x012f411c label g_VfxInstanceRunCount # i32 count of g_VfxInstanceRuns; the KaGra001 render path (0x00810xxx, g_VfxPass) appends; MagicFile_Unload destroys every run's instances and clears it; name ours
 0x012f4140 label    g_SqsWaveInfoDone            # non-zero: SqsInitWaveInfo does nothing
 0x012f4144 label    g_SqsPlayMode                # SqsSetPlayMode's mode (0..2)
 0x012f4148 label    g_SqsDebugFlags              # bit 0: dbgPrintf before sending a full IOP command queue (the command builders)
@@ -16710,6 +16712,10 @@
 0x0228615c label    g_OpdNumPal                  # byte palette of the number printer (opd_num_pal_set/default)
 0x022881d4 label    g_OpdNumFrames               # u16 counted up by opd_num_vdisp
 0x022c9760 label    g_OpdHeapDisplay             # 4 x 0x40 heap gauges: +0 flags (0xffff none, bits 8-11 priority, 0x8000 ppp heap at +4), +8 used, +0xc total (opd_heap_display_*)
+0x022fb3c8 label g_MagicBuffersB # 5 aligned allocations magic 0x1b5/0x1b6 make (effect code in 0x00a60000..0x00a6ffff); MagicFile_Unload frees them (0x00686fe0); name ours
+0x022fb3dc label g_MagicHiddenChr # character whose effects magic 0x1b5/0x1b6 hide (from g_EtChrHandles); MagicFile_Unload Ch_SetHideEffect(chr, 1) and clears it; name ours
+0x022fb3e0 label g_MagicBuffersA # 5 aligned allocations magic 0x1b5/0x1b6 make (effect code in 0x00a60000..0x00a6ffff); MagicFile_Unload frees them; name ours
+0x022fb3f8 label g_MagicCounter2c6 # a counter magic 0x2c6 keeps (below 0x27b); MagicFile_Unload clears it; name ours
 0x022fb400 label    g_OpPairTable                # dword count, then (a, b) word pairs from entry 1 (op_pair_index_00a70ce0; the count's carry goes into +4)
 0x022fb4d4 label    g_MenuWaitFrames           # CT_401D_init (0x00a78210) sets 1; Native_MenuOpen_Poll counts it down
 0x022fb4d8 label    g_ChrWaitMotionFrames     # frames Native_ChrWaitMotion_Poll_501e waited, counted while 0x012fb80c is 1
@@ -16798,6 +16804,7 @@
 0x02332e98 label    g_OpOtFrameWords          # two words op_ot_draw clears each frame; nothing else in the dump references them; name ours
 0x02332ea0 label    g_OpSprFlag               # byte beside g_OpSprTop, cleared by ops_init_spr (0x007e6c30); use unknown
 0x02332ea1 label    g_OpSprTop                   # i8 top index of g_OpSprStack (op_spr_alloc, op_spr_free)
+0x02332ec0 label g_VfxInstanceRuns # 16-byte records: u64 first instance key, i32 count, pad; MagicFile_Unload destroys key + i (64-bit add) for i < count; name ours
 0x023c3520 label    g_OpOef2StreamPlaying     # 2 stream cues op_oef2_sound_cue_loop last started (0x00887440); name ours
 0x023c3540 label    g_OpOef2SoundCueRing      # 32 cue pointers queued by op_oef2_sound_cue_push (arguments at 0x023c35c0)
 0x023c35c0 label    g_OpOef2SoundCueArgs      # the arguments of g_OpOef2SoundCueRing
