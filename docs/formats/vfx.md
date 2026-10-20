@@ -530,7 +530,7 @@ matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
 
 ## High range (`0x00a30000..0x00a80000`)
 
-Ported in `crates/ffx-vfx/src/hi_md.rs` and `hi_opus.rs`; the shims are
+Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs` and `hi_opus.rs`; the shims are
 `crates/ffx-hook/src/ported/vfx_hi.rs`, the oracle tests
 `crates/ffx-oracle/tests/vfx_hi.rs`.
 
@@ -587,6 +587,44 @@ A packet's tags start at `+0x20`: type byte `+1`, `i16` count `+2`.
   multiplied by 1000 for the product and divided by 1000 after, as `f32`
   both times, so it keeps both roundings.
 
+### Vertex lights
+
+Three set-ups before a model draw, from `0x00a6d380` on. The fog
+vectors `g_OpFog + 0x10` and `+0x40` (`0x011a0020`, `0x011a0050`) go
+through the EE's `v0` (`0x00c8f528`; the first leaves its `x` alone) into
+`work +0x280` and `+0x290`. Each "light" matrix is a copy of `[model
++0x2c]` with `x` and `y` of rows 0..2 negated (`fchs`).
+
+- `op_vertex_normal_point44_ffx(obj, model, work, chr)` (`0x00a6d380`;
+  16-aligned frame): the model matrix `[model +0x28]` becomes light x
+  inverse(`[model +0x2c]`) x it (`sceVu0InversMatrix4x4`, two
+  `FFXVu0MulMatrix`); `op_ffxlight_to_omdlight(w + 0x80, w + 0xc0, w +
+  0x100)` and `op_matrix_light4_vector(w + 0xc0, w + 0xc0, light)` with `w
+  = [work +0x390]`; the fog vectors. With a character: `Ch_DrawCalcShade`,
+  the colour scale `work +0x370..+0x37c` x 1/128 (`f32` each) and
+  `graphicPS2LightingSetupEffect(instance, name[0] == 'w', matrix, [model
+  +0x24], f32 byte +0x4d, w + 0xc0, w + 0x80, f32 byte +0x4c, shade,
+  scale, 0)`, whose `eax` (0) it returns; 0 without one.
+- `op_vertex_normal_point44_ffx_2` (`0x00a6d670`, same arguments): only
+  with a character; the lights are locals
+  (`op_ffxlight_to_omdlight_0279`), no fog vectors, the scale is (1, 1,
+  0.5, `w`) for magic 0x245 (`MagicFile_GetMagicId`), and the last
+  argument 1.
+- `op_0437_vertex_normal_point44_ffx(packet, model, work, base, mul1,
+  mul0, slot)` (`0x00a6d890`): the vertex colours into
+  `g_MagicBuffersA[slot]` (`0x022fb3e0`; made on first use,
+  `user_aligned_malloc(i16 packet +0x14 x 16, 16)`). Lights as locals
+  (`op_ffxlight_to_omdlight`, `op_matrix_light4_vector` with `[model
+  +0x2c]`), the fog vectors; then the `i16` stream at `packet + [packet
+  +0x1c] + 0x10`, `i16 packet +0x12` groups of a count and that many
+  vertex numbers `v`, `i = (v << 2) as i16`: the normal `-[model
+  +0x3c][i..i+3]` (w 1) through the directions (`FFXVu0ApplyMatrix`),
+  negatives to +0, w 1, through the colours; per channel negatives to +0,
+  `c = f32(c x f32(byte +0x4c / 128))`, `buffer[i + k] = f32((c x
+  mul0[k] x mul1[k] + base[k]) / 255)` (`f64` 255 at `0x00b170c0`).
+  Returns `packet` without groups, else the count. It also normalises
+  rows 0..2 of `[model +0x2c]` (`_CIsqrt`) into a local nothing reads.
+
 ### oef2 entry links
 
 `op_oef2_entry_link_00a6a320(e, i)` (`0x00a6a320`, from `opu_part_init`
@@ -637,6 +675,16 @@ The dot buffer `b`: `b[0]` the entry count, `b[1]` the next entry
   piece stops the draw. With all three and a valid fill buffer, the fill
   request (`JobSchedule_pppPart_getFillBufferRequest(b[0])`) gets kind 4,
   the three segments, `b + 0x10` and `b[0]`.
+
+### `opus_0437` polygons
+
+`opus_0437_poly_init_00a6e1b0(b, list, m, k)` (`0x00a6e1b0`,
+`opp_0437_cmd_a6dbe0` kind 0x4000) lays out the buffer
+`opus_0437_poly_check` (`0x00a6ed40`) reads: `u16 +0` `k`, `u16 +2` 0,
+`u16 +4` `op_md_list_count10(list)`; `k` 0x60-byte entries from `+0x30`
+(`u16 +0xc` 0xffff each), `ptr32 +0xc` their end, from which
+`op_md_list_count10(list)` `u16`s are 0xffff; the box
+`op_md_list_bounds(list, m, b + 0x10, b + 0x20)` (its `eax` returned).
 
 ### `opus_0582` dots
 

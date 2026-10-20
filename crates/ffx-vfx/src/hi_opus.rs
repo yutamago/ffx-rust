@@ -278,4 +278,51 @@ pub mod bridge {
         }
         go(mem, 0x007e_6a60, &[0x1100], call)
     }
+
+    /// `opus_0437_poly_init_00a6e1b0(b, list, m, k)` (`0x00a6e1b0`,
+    /// `opp_0437_cmd_a6dbe0` kind 0x4000): the `opus_0437` polygon
+    /// buffer's header: `u16 b +0` = `k`, `u16 +2` = 0, `u16 +4` =
+    /// `op_md_list_count10_00a6a2b0(list)`; `k` 0x60-byte entries from
+    /// `b +0x30`, each `u16 +0xc` = 0xffff; `ptr32 b +0xc` = their end,
+    /// from which `op_md_list_count10(list)` (asked again) `u16`s are
+    /// 0xffff (two at a time, as words); then
+    /// `op_md_list_bounds_00a6a0c0(list, m, b +0x10, b +0x20)`, whose
+    /// `eax` it returns. Callees through `call`.
+    pub fn opus_0437_poly_init<M: Mem>(
+        mem: &mut M,
+        b: u32,
+        list: u32,
+        m: u32,
+        k: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        mem.write(b, k as u16);
+        mem.write(b.wrapping_add(2), 0u16);
+        let n = go(mem, 0x00a6_a2b0, &[list], call);
+        #[allow(clippy::cast_possible_truncation)]
+        mem.write(b.wrapping_add(4), n as u16);
+        let mut at = b.wrapping_add(0x30);
+        for _ in 0..k.cast_signed().max(0) {
+            mem.write(at.wrapping_add(0xc), 0xffffu16);
+            at = at.wrapping_add(0x60);
+        }
+        mem.write(b.wrapping_add(0xc), at);
+        let n = go(mem, 0x00a6_a2b0, &[list], call);
+        if n.cast_signed() > 0 {
+            for _ in 0..n >> 1 {
+                mem.write(at, u32::MAX);
+                at = at.wrapping_add(4);
+            }
+            if n & 1 != 0 {
+                mem.write(at, 0xffffu16);
+            }
+        }
+        go(
+            mem,
+            0x00a6_a0c0,
+            &[list, m, b.wrapping_add(0x10), b.wrapping_add(0x20)],
+            call,
+        )
+    }
 }

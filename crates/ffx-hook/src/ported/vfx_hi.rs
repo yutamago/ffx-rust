@@ -4,7 +4,7 @@
 //! original leaves a result in `eax` return the full `u32`.
 
 use super::{mem, ported};
-use ffx_vfx::{hi_md, hi_opus};
+use ffx_vfx::{hi_light, hi_md, hi_opus};
 
 /// An original cdecl function through its address (rebased by the bridge).
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
@@ -78,5 +78,39 @@ ported! {
     /// `opus_0437_dot_draw(b)`.
     opus_0437_dot_draw @ 0x00a6_e2e0 => extern "C" fn opus_0437_dot_draw(b: u32) -> u32 {
         hi_opus::bridge::opus_0437_dot_draw(&mut mem(), b, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_0437_poly_init_00a6e1b0(b, list, m, k)`.
+    opus_0437_poly_init_00a6e1b0 @ 0x00a6_e1b0 => extern "C" fn opus_0437_poly_init(b: u32, list: u32, m: u32, k: u32) -> u32 {
+        hi_opus::bridge::opus_0437_poly_init(&mut mem(), b, list, m, k, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_vertex_normal_point44_ffx(obj, model, work, chr)`: its locals
+    /// in a buffer on this shim's stack.
+    op_vertex_normal_point44_ffx @ 0x00a6_d380 => extern "C" fn op_vertex_normal_point44_ffx(_obj: u32, model: u32, work: u32, chr: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x100]);
+        let mut locals = Locals([0; 0x100]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x100;
+        hi_light::bridge::op_vertex_normal_point44_ffx(&mut mem(), model, work, chr, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_vertex_normal_point44_ffx_2(obj, model, work, chr)`: its
+    /// locals in a buffer on this shim's stack.
+    op_vertex_normal_point44_ffx_2 @ 0x00a6_d670 => extern "C" fn op_vertex_normal_point44_ffx_2(_obj: u32, model: u32, work: u32, chr: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x190]);
+        let mut locals = Locals([0; 0x190]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x190;
+        hi_light::bridge::op_vertex_normal_point44_ffx_2(&mut mem(), model, work, chr, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_0437_vertex_normal_point44_ffx(packet, model, work, base, mul1,
+    /// mul0, slot)`: its locals in a buffer on this shim's stack.
+    op_0437_vertex_normal_point44_ffx @ 0x00a6_d890 => extern "C" fn op_0437_vertex_normal_point44_ffx(packet: u32, model: u32, work: u32, base: u32, mul1: u32, mul0: u32, slot: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x110]);
+        let mut locals = Locals([0; 0x110]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x110;
+        hi_light::bridge::op_0437_vertex_normal_point44_ffx(&mut mem(), packet, model, work, [base, mul1, mul0], slot, frame, &mut |_, f, a| call_ptr(f, a))
     }
 }
