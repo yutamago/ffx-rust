@@ -1444,6 +1444,70 @@ ported! {
     op_irandom_p @ 0x007e_5d50 => extern "C" fn op_irandom_p(n: u32, b: u32, c: u32, d: u32) -> u32 {
         rand::bridge::op_irandom_core(&mut mem(), [n, b, c, d])
     }
+    // ---- round 34 a ----
+    /// `op_init_draw()`.
+    op_init_draw @ 0x007e_c410 => extern "C" fn op_init_draw() -> u32 {
+        small::bridge::op_init_draw(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_ovl_effect_forced_free()`.
+    op_ovl_effect_forced_free @ 0x007f_cd50 => extern "C" fn op_ovl_effect_forced_free() -> u32 {
+        small::bridge::op_ovl_effect_forced_free(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ResetSlots_00888910(works)`.
+    Pad_ResetSlots_00888910 @ 0x0088_8910 => extern "C" fn pad_reset_slots(works: u32) -> u32 {
+        small::bridge::pad_reset_slots(&mut mem(), works, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `InitVFXZBufClearRenderData(lo, hi)`.
+    InitVFXZBufClearRenderData @ 0x0071_1680 => extern "C" fn init_vfx_zbuf_clear_render_data(lo: u32, hi: u32) -> u32 {
+        small::bridge::init_vfx_zbuf_clear_render_data(&mut mem(), lo, hi, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `create0706AccRenderDataBuffer(lo, hi, tex_lo, tex_hi)`.
+    create0706AccRenderDataBuffer @ 0x007f_a5c0 => extern "C" fn create_0706_acc_render_data_buffer(lo: u32, hi: u32, tex_lo: u32, tex_hi: u32) -> u32 {
+        // the original's locals: three words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        small::bridge::create_0706_acc_render_data_buffer(&mut mem(), [lo, hi, tex_lo, tex_hi], at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `ShadowEntries_Init_006d54c0(this, n, buf)`.
+    ShadowEntries_Init_006d54c0 @ 0x006d_54c0 => extern "thiscall" fn shadow_entries_init(this: u32, n: u32, buf: u32) -> u32 {
+        small::bridge::shadow_entries_init(&mut mem(), this, n, buf, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: ShadowEntry_Init, thiscall of one stack word (`ret 4`).
+            unsafe {
+                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                g(this, a.first().copied().unwrap_or(0))
+            }
+        })
+    }
+    /// `pppInitProtocolDriver(d, a, b, c, e)`.
+    pppInitProtocolDriver @ 0x0076_b2d0 => extern "C" fn ppp_init_protocol_driver(d: u32, a: u32, b: u32, c: u32, e: u32) -> u32 {
+        small::bridge::ppp_init_protocol_driver(&mut mem(), [d, a, b, c, e], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppShapeRevMatrix_00741470(obj, _, prog)`.
+    pppShapeRevMatrix_00741470 @ 0x0074_1470 => extern "C" fn ppp_shape_rev_matrix(obj: u32, _unused: u32, prog: u32) -> u32 {
+        mat::bridge::ppp_shape_rev_matrix(&mut mem(), obj, prog)
+    }
+    /// `pppKeLnsClmDraw(obj, key, prog)`: its stack locals in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppKeLnsClmDraw @ 0x0075_a3a0 => extern "C" fn ppp_ke_lns_clm_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_clm_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_end_all(host)`.
+    opu_end_all @ 0x007f_d720 => extern "C" fn opu_end_all(host: u32) -> u32 {
+        opus::bridge::opu_end_all(&mut mem(), host, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_ffx(host, cmd)`.
+    opu_ffx @ 0x0081_6680 => extern "C" fn opu_ffx(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_ffx(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_2d(host, cmd)`.
+    opu_v_2d @ 0x0081_8dc0 => extern "C" fn opu_v_2d(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_2d(&mut mem(), host, cmd)
+    }
     // ---- round 33 a ----
     /// `ClassDynamicGeometry_setupDynMesh(this)`.
     ClassDynamicGeometry_setupDynMesh @ 0x006a_3b30 => extern "thiscall" fn class_dynamic_geometry_setup_dyn_mesh(this: u32) -> u32 {

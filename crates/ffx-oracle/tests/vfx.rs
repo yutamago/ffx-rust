@@ -5595,7 +5595,8 @@ fn far_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
     log
 }
 
-/// The code of a [`deref_recorder_with`] and its log.
+/// The code of a [`deref_recorder_with`] and its log. A word count of
+/// [`SKIP`] leaves that argument out (a pointer into the caller's frame).
 fn deref_recorder_code(p: &mut Pair, words: &[u8], ret: Option<u32>) -> (Vec<u8>, u32) {
     let log = p.alloc(4 + 0x100 * 64);
     let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
@@ -5604,6 +5605,9 @@ fn deref_recorder_code(p: &mut Pair, words: &[u8], ret: Option<u32>) -> (Vec<u8>
     c.extend([0xc1, 0xe1, 0x06]); // shl ecx, 6
     let mut pos = 0u32;
     for (k, &n) in (0u8..).zip(words) {
+        if n == SKIP {
+            continue;
+        }
         c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
         if n == 0 {
             c.extend([0x89, 0x81]); // mov [ecx + slot], eax
@@ -5626,6 +5630,9 @@ fn deref_recorder_code(p: &mut Pair, words: &[u8], ret: Option<u32>) -> (Vec<u8>
     c.push(0xc3);
     (c, log)
 }
+
+/// A recorder word count that leaves the argument out.
+const SKIP: u8 = 0xff;
 
 /// [`deref_recorder_with`] with 32-word entries (31 logged words), for
 /// requests too large for the 16-word form.
@@ -9660,6 +9667,9 @@ fn lns_case(name: &str, sym: u32, args: usize, rust: impl Fn(&mut Oracle, [u32; 
             wide_recorder(&mut p, d, &[7, 0], None);
         }
         deref_recorder(&mut p, 0x0076_a690, &[4]);
+        // pppKeLnsClmUpdate and KeLnsClm_Draw
+        deref_recorder(&mut p, 0x0075_a6a0, &[0, 0, 0]);
+        wide_recorder(&mut p, 0x0076_96c0, &[7, 0], None);
         let (obj, key, prog, table, part) = (
             p.alloc(0x200),
             p.alloc(0x20),
@@ -9737,6 +9747,14 @@ fn lns_draws_match_the_original() {
             l::ppp_ke_lns_draw(o, kind, obj, key, prog, frame, &mut call_original)
         });
     }
+    lns_case(
+        "pppKeLnsClmDraw",
+        0x0075_a3a0,
+        3,
+        |o, [obj, key, prog], frame| {
+            l::ppp_ke_lns_clm_draw(o, obj, key, prog, frame, &mut call_original)
+        },
+    );
 }
 
 #[test]
@@ -18804,6 +18822,226 @@ fn round33e2_mdc_matrix_set_matches_the_original() {
                     None
                 },
             );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round34a_wrappers_and_commands_match_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_6680);
+        let cells = p.alloc(0x40);
+        for (sym, words, ret) in [
+            // ops_init_draw_work, ops_init_spr
+            (0x007e_c890u32, &[][..], Some(cells)),
+            (0x007e_6c30, &[], Some(cells + 4)),
+            // opus_end_all_sub, op_ovl_effect_free
+            (0x007f_e6c0, &[0], None),
+            (0x007f_cd60, &[], Some(cells + 8)),
+            // createZBufClearRenderData, graphicVFXSetup, graphicVFXDestroy
+            (0x0071_6110, &[0, 0], Some(cells + 12)),
+            (0x0064_5780, &[0, 0], Some(cells + 16)),
+            (0x0064_5280, &[0, 0], Some(cells + 20)),
+            // graphicVFXIsTextureWithBpLoaded, graphicVFXCreate,
+            // graphicVFXCreateDataBuffer (the name is the caller's local)
+            (0x0064_5450, &[0, 0, 0, 0, 0, 0, SKIP], Some(cells + 24)),
+            (0x0064_4de0, &[0; 3], None),
+            (0x0064_5040, &[0, 0, 0, 1, 1, SKIP, 1], None),
+            // SetDebugHandler
+            (0x0062_f4d0, &[0, 0], None),
+            // MsEffectReady, MsEffectMotionLevel
+            (0x0078_8200, &[0, 0], None),
+            (0x0078_7ca0, &[0], Some(cells + 28)),
+            // Sg_EnableCalcMap, DrawMap, DrawMenu, DrawGui
+            (0x0082_0440, &[0], None),
+            (0x0082_0400, &[0], None),
+            (0x0082_0460, &[0], None),
+            (0x0082_0420, &[0], None),
+        ] {
+            far_recorder(&mut p, sym, words, ret);
+        }
+        // ShadowEntry_Init
+        thiscall_recorder_n(&mut p, 0x006d_3560, 1, 0x1234_5670);
+        // GetCurrentThreadId through its import slot
+        let code = [0xb8, 0x78, 0x56, 0x34, 0x12, 0xc3]; // mov eax, 0x12345678; ret
+        let to = p.a.alloc_code(&code).unwrap();
+        assert_eq!(p.b.alloc_code(&code).unwrap(), to);
+        let slot = p.sym(0x00b0_c108);
+        p.set(slot, to);
+        let eff = p.sym(et::bridge::EFF.sym);
+        let pray = p.sym(op::bridge::PRAY_EFFECT.sym);
+        let cpart = p.sym(0x0230_ffe4);
+        let (host, unit, cmd, parts) = (
+            p.alloc(0x400),
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x1000),
+        );
+        let (works, this, buf, scratch, ends) = (
+            p.alloc(0x80),
+            p.alloc(0x40),
+            p.alloc(0x1000),
+            p.alloc(0x120),
+            p.alloc(4),
+        );
+        let (obj, prog, table, part) =
+            (p.alloc(0x200), p.alloc(0x10), p.alloc(0x10), p.alloc(0x80));
+        p.set(ends, -1i16);
+        for round in 0..2000 {
+            let what = |s: &str| format!("{s} round {round}");
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x40, &mut rng);
+            p.set(host + 0x220, unit);
+            for k in 0..8 {
+                let r = rng.next();
+                p.set(cells + 4 * k, rng.pick(&[0u32, 1, 0x8000_0000, r]));
+            }
+
+            // the wrappers
+            p.check(&what("op_init_draw"), 0x007e_c410, &[], |m| {
+                Some(small::bridge::op_init_draw(m, &mut call_original))
+            });
+            p.check(&what("forced_free"), 0x007f_cd50, &[], |m| {
+                Some(small::bridge::op_ovl_effect_forced_free(
+                    m,
+                    &mut call_original,
+                ))
+            });
+            p.fill(works, 0x80, &mut rng);
+            p.check(&what("pad_reset_slots"), 0x0088_8910, &[works], |m| {
+                Some(small::bridge::pad_reset_slots(m, works, &mut call_original))
+            });
+            let (lo, hi) = (rng.next(), rng.next());
+            p.check(&what("zbuf_clear"), 0x0071_1680, &[lo, hi], |m| {
+                Some(small::bridge::init_vfx_zbuf_clear_render_data(
+                    m,
+                    lo,
+                    hi,
+                    &mut call_original,
+                ))
+            });
+            let tex = [lo, hi, rng.next(), rng.next()];
+            p.check(&what("acc_buffer"), 0x007f_a5c0, &tex, |m| {
+                let keep = m.read(scratch, 0x120).unwrap();
+                let r = small::bridge::create_0706_acc_render_data_buffer(
+                    m,
+                    tex,
+                    scratch,
+                    &mut call_original,
+                );
+                m.write(scratch, &keep).unwrap();
+                Some(r)
+            });
+
+            // the shadow entries
+            p.fill(this, 0x40, &mut rng);
+            p.fill(buf, 0x800, &mut rng);
+            let n = rng.pick(&[0u32, 1, 2, 3, 5, u32::MAX]);
+            check_conv(
+                &mut p,
+                &what("shadow_entries"),
+                0x006d_54c0,
+                Conv::Thiscall(this),
+                &[n, buf],
+                |m| {
+                    Some(small::bridge::shadow_entries_init(
+                        m,
+                        this,
+                        n,
+                        buf,
+                        &mut call_original_this,
+                    ))
+                },
+            );
+
+            // pppInitProtocolDriver
+            let args = [obj, rng.next(), rng.next(), rng.next(), rng.next()];
+            p.check(&what("protocol_driver"), 0x0076_b2d0, &args, |m| {
+                Some(small::bridge::ppp_init_protocol_driver(
+                    m,
+                    args,
+                    &mut call_original,
+                ))
+            });
+
+            // the shape-rev matrix
+            p.fill(obj, 0x200, &mut rng);
+            for k in (0xa0..0x200).step_by(4) {
+                let v = rng.float();
+                p.set(obj + k, v);
+            }
+            for k in 0..3 {
+                p.set(table + 4 * k, 4 * rng.below(0x50));
+                let v = rng.float();
+                p.set(part + 0x60 + 4 * k, v);
+            }
+            p.set(prog + 0xc, table);
+            p.set(cpart, part);
+            let x = rng.next();
+            p.check(&what("shape_rev"), 0x0074_1470, &[obj, x, prog], |m| {
+                Some(mat::bridge::ppp_shape_rev_matrix(m, obj, prog))
+            });
+
+            // opu_end_all
+            p.check(&what("end_all"), 0x007f_d720, &[host], |m| {
+                Some(o::opu_end_all(m, host, &mut call_original))
+            });
+
+            // opu_ffx
+            let i = rng.below(512);
+            p.set(unit + 0x14, i as u16);
+            p.set(eff + 0x20 * i, rng.next());
+            p.set(pray, u8::from(rng.chance(50)));
+            p.set(cmd + 2, rng.pick(&[0i16, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1]));
+            p.set(cells + 28, rng.pick(&[0u32, 1, 2, u32::MAX, 0x8000_0000]));
+            p.check(&what("ffx"), 0x0081_6680, &[host, cmd], |m| {
+                Some(o::opu_ffx(m, host, cmd, &mut call_original))
+            });
+
+            // opu_v_2d: to itself, its parent or a number nobody has
+            for k in (0..0x1000).step_by(4) {
+                let v = ranged(&mut rng, -3.0, 3.0);
+                p.set(parts + k, v);
+            }
+            for k in (0x80..0x100).step_by(4) {
+                let v = ranged(&mut rng, -3.0, 3.0);
+                p.set(host + k, v);
+            }
+            for k in (0x2c0..0x300).step_by(4) {
+                let v = ranged(&mut rng, -3.0, 3.0);
+                p.set(host + k, v);
+            }
+            for j in 0..16 {
+                let u = parts + 0x100 * j;
+                p.set(u, 1u32);
+                p.set(u + 0x1c, rng.below(16) as u16);
+                p.set(u + 0x1e, 0u8);
+                p.set(u + 0x1a, 0x7000u16);
+                p.set(u + 0xb8, rng.pick(&[0u16, 0xff00, 0xffff, 0x7fff]));
+            }
+            let me = parts + 0x100 * rng.below(16);
+            p.set(host + 0x220, me);
+            p.set(host + 0x320, parts);
+            for at in [0x310u32, 0x314, 0x318] {
+                p.set(host + at, ends);
+            }
+            p.set(
+                me + 0x40,
+                if rng.chance(80) {
+                    ranged(&mut rng, -4.0, 4.0)
+                } else {
+                    rng.float()
+                },
+            );
+            let flags = (rng.pick(&[0u32, 0, 0, 0x1000, 0x8000]) | rng.below(0x1000)) as u16;
+            p.set(host + 0x21a, flags);
+            p.set(cmd + 2, rng.pick(&[0xff00u16, 0xffff, 3]));
+            p.check(&what("v_2d"), 0x0081_8dc0, &[host, cmd], |m| {
+                Some(o::opu_v_2d(m, host, cmd))
+            });
         }
     }
 }
