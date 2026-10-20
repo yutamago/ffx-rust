@@ -26,6 +26,7 @@ pub mod camera_native;
 pub mod chr_damage;
 pub mod command;
 pub mod cue;
+pub mod cursor;
 pub mod damage;
 pub mod damage_end;
 pub mod death;

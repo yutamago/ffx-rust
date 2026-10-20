@@ -7,6 +7,7 @@ use ffx_battle::atel::bridge as atel;
 use ffx_battle::battle_end::bridge as bend;
 use ffx_battle::camera_native::bridge as camnat;
 use ffx_battle::chr_damage::bridge as chrdmg;
+use ffx_battle::cursor::bridge as cursor;
 use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
 use ffx_battle::effect::bridge as effect;
@@ -5275,6 +5276,34 @@ ported! {
         let mut request = super::StackFrame::<{ (read::WEAPON_REQUEST / 4) as usize }>::new();
         let at = request.at();
         read::ms_btl_read_weapon(&mut mem(), &mut call_ptr, at)
+    }
+    /// `getSparedLmtPos(i, x, y)`: the original's frame locals in the
+    /// port's frame; `eax` the y.
+    getSparedLmtPos @ 0x0079_6c30 => extern "C" fn get_spared_lmt_pos(i: u32, x: u32, y: u32) -> u32 {
+        let mut local = super::StackFrame::<8>::new();
+        let at = local.at();
+        let (mut call, mut fcall) = (call_ptr, call_f32);
+        cursor::get_spared_lmt_pos(&mut mem(), &crt_trig, [&mut call, &mut fcall], [i, x, y], at)
+    }
+    /// `MsGetChrLimitBarFlag(i)`: the original's frame locals in the
+    /// port's frame; the result in `eax` (Ghidra: void).
+    MsGetChrLimitBarFlag @ 0x0079_5250 => extern "C" fn ms_get_chr_limit_bar_flag(i: u32) -> u32 {
+        let mut local = super::StackFrame::<{ (cursor::LIMIT_BAR_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        cursor::ms_get_chr_limit_bar_flag(&mut mem(), &crt_trig, &mut call_ptr, &mut call_f32, i, at)
+    }
+    /// `MsCalcCursorPos()`: the original's frame locals in the port's
+    /// frame.
+    MsCalcCursorPos @ 0x0079_f380 => extern "C" fn ms_calc_cursor_pos() {
+        let mut local = super::StackFrame::<{ (cursor::CURSOR_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        cursor::ms_calc_cursor_pos(&mut mem(), &crt_trig, &mut call_ptr, &mut call_f32, at);
+    }
+    /// `MsBattleCursorCalc()`: as [`ms_calc_cursor_pos`].
+    MsBattleCursorCalc @ 0x0078_0cc0 => extern "C" fn ms_battle_cursor_calc() {
+        let mut local = super::StackFrame::<{ (cursor::CURSOR_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        cursor::ms_battle_cursor_calc(&mut mem(), &crt_trig, &mut call_ptr, &mut call_f32, at);
     }
     /// `MsCDreadWeaponDone_00783fc0(done)`: the CD object's callback; the
     /// next read's request block in the port's frame.

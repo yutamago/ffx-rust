@@ -4233,3 +4233,359 @@ fn leaf_reads_match_the_original_on_a_snapshot() {
     };
     reads(&mut a, &mut b, &mut Xorshift(0x3333_0102), false);
 }
+
+/// Round 33's cursors and overdrive bars (`ffx_battle::cursor`):
+/// `getSparedLmtPos`, `MsGetChrLimitBarFlag`, `MsCalcCursorPos`,
+/// `MsBattleCursorCalc`. Stubs in both oracles: the screen size
+/// (`graphicFontGetScreenWH` writes the two words at `rec`), the
+/// projection (its results from a ring of 64 entries at `rec + 0x10`:
+/// the two words and the `f32` it returns; it logs the point at the
+/// entry's `+0x400`), `graphicUiRemapY2` (its argument times the
+/// `f32` at `rec + 8`), `MagicFile_GetMagicId` and `MsNumberDrawProcess`
+/// (logging). The positions (`MsGetChrPos`, `Ch_OptposGet`, ...) are the
+/// originals' and the ports'; the originals' frames are their own, the
+/// ports' at `local` (copied after).
+// screen coordinates through f32, as the game's
+#[allow(clippy::cast_precision_loss)]
+fn cursors(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use battle_common::crt::{patch, stand_in};
+    use ffx_battle::cursor::bridge as cu;
+    // the character the others ride (hidden, never picked)
+    const RIDE: u32 = ACTORS - 1;
+    macro_rules! pick {
+        ($rng:expr, [$($v:expr),+ $(,)?] $(,)?) => {{
+            let v = [$($v),+];
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x900);
+    let table = rec + 0x10;
+    let logs = scratch(a, b, 0x110 * 2);
+    let local = scratch(a, b, 0x80);
+    let out_words = scratch(a, b, 8);
+    for o in [&mut *a, &mut *b] {
+        patch(o);
+        // the screen size: [arg0] = [rec], [arg1] = [rec + 4]
+        let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d];
+        code.extend(rec.to_le_bytes());
+        code.extend([0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]);
+        code.extend((rec + 4).to_le_bytes());
+        code.extend([0x89, 0x08, 0xc3]);
+        let at = o.rebase(STUBS_D);
+        o.write(at, &code).unwrap();
+        redirect(o, cu::FONT_GET_SCREEN_WH, STUBS_D);
+        // the projection: entry n & 63 of the table (n at rec + 0xc)
+        let mut code = vec![0x8b, 0x0d];
+        code.extend((rec + 0xc).to_le_bytes());
+        code.extend([0xff, 0x05]);
+        code.extend((rec + 0xc).to_le_bytes());
+        code.extend([0x83, 0xe1, 0x3f, 0xc1, 0xe1, 0x04, 0x81, 0xc1]);
+        code.extend(table.to_le_bytes());
+        code.extend([
+            0x8b, 0x54, 0x24, 0x04, 0x8b, 0x01, 0x89, 0x02, 0x8b, 0x41, 0x04, 0x89, 0x42, 0x04,
+        ]);
+        code.extend([0x8b, 0x54, 0x24, 0x08]);
+        for k in 0..4u8 {
+            // mov eax,[edx+4k]; mov [ecx+0x400+4k],eax
+            code.extend([0x8b, 0x42, 4 * k, 0x89, 0x81]);
+            code.extend((0x400 + 4 * u32::from(k)).to_le_bytes());
+        }
+        code.extend([0xd9, 0x41, 0x08, 0xc3]);
+        let at = o.rebase(STUBS_D + 0x40);
+        o.write(at, &code).unwrap();
+        redirect(o, cu::PROJECT_POINT, STUBS_D + 0x40);
+        // graphicUiRemapY2: fld [esp+4]; fmul dword [rec + 8]; ret
+        let mut code = vec![0xd9, 0x44, 0x24, 0x04, 0xd8, 0x0d];
+        code.extend((rec + 8).to_le_bytes());
+        code.push(0xc3);
+        let at = o.rebase(STUBS_D + 0xc0);
+        o.write(at, &code).unwrap();
+        redirect(o, cu::UI_REMAP_Y2, STUBS_D + 0xc0);
+        logging_stub(o, cu::MAGIC_FILE_GET_MAGIC_ID, STUBS_D + 0x100, logs, 0, 0);
+        logging_stub(
+            o,
+            cu::MS_NUMBER_DRAW_PROCESS,
+            STUBS_D + 0x140,
+            logs + 0x110,
+            0,
+            0,
+        );
+    }
+    // the spare heights: three slots of 0xc bytes
+    if w.synthetic || !readable(a, ffx_battle::minor::bridge::CHR_EXTRA.get(b), 0x24) {
+        let e = scratch(a, b, 0x24);
+        set(a, b, ffx_battle::minor::bridge::CHR_EXTRA, e);
+    }
+    let extra = ffx_battle::minor::bridge::CHR_EXTRA.get(b);
+    let camera = {
+        let sel = u32::from(ffx_battle::camera::bridge::SELECTED.get(b));
+        ffx_battle::camera::bridge::SLOTS_AT.ptr(b).addr
+            + (sel & 0xff) * ffx_battle::camera::bridge::CAMERA_SIZE
+    };
+    let fake = scratch(a, b, 0x1000);
+    let ride = w.actor(RIDE);
+    poke(a, b, ride, &fake.to_le_bytes());
+    poke(a, b, ride + 0x10, &[0]);
+    poke(a, b, ride + 0x43f, &[0xff]);
+    let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+    let mut fc = |m: &mut Oracle, f: u32, args: &[u32]| {
+        let r = m.call(f, Conv::Cdecl, args).unwrap();
+        battle_common::crt::f80_to_f32(r.st0_raw.unwrap())
+    };
+    for round in 0..200 {
+        let (sw, sh) = pick!(
+            rng,
+            [
+                (512u32, 416u32),
+                (512, 416),
+                (1920, 1080),
+                (640, 480),
+                (1280, 720),
+                (0, 0),
+                (0x100_0001, 0x100_0003),
+            ]
+        );
+        poke(a, b, rec, &[sw.to_le_bytes(), sh.to_le_bytes()].concat());
+        let factor = pick!(rng, [0.5f32, 0.5, 0.25, 0.45, 1.0]);
+        poke(a, b, rec + 8, &factor.to_le_bytes());
+        poke(a, b, rec + 0xc, &[0; 4]);
+        // the table: points on and off the 512 x 416 screen at this size
+        let sx = sw as f32 / 512.0;
+        let sy = sh as f32 / 416.0;
+        for k in 0..64 {
+            let x = pick!(
+                rng,
+                [rng.range(-60, 600), rng.range(0, 513), 0x200, 0x201, 256]
+            );
+            let y = pick!(
+                rng,
+                [
+                    rng.range(-60, 480),
+                    rng.range(5, 420),
+                    10,
+                    9,
+                    0x196,
+                    0x197,
+                    rng.range(70, 90),
+                    rng.range(180, 400),
+                    // the limits at 0.5 (380, 80) and their spare moves
+                    390,
+                    380,
+                    370,
+                    70,
+                    80,
+                    90,
+                    -5,
+                ]
+            );
+            #[allow(clippy::cast_possible_truncation)]
+            let ox = ((x - 256) as f32 * sx).round() as i32;
+            #[allow(clippy::cast_possible_truncation)]
+            let oy = ((y - 208) as f32 * sy).round() as i32;
+            // (now and then a projection no f32 holds exactly)
+            let (ox, oy) = if rng.below(16) == 0 {
+                (0x100_0001 + 2 * rng.range(0, 100), oy)
+            } else {
+                (ox, oy)
+            };
+            let w = pick!(rng, [1.0f32, 0.5, 2.0, 0.0, -1.0, f32::NAN, 1e-3]);
+            let e = table + 16 * k;
+            poke(
+                a,
+                b,
+                e,
+                &[ox.to_le_bytes(), oy.to_le_bytes(), w.to_le_bytes(), [0; 4]].concat(),
+            );
+        }
+        for k in 0..3 {
+            let h = pick!(rng, [0.0f32, 12.5, -30.0, rng.range(-100, 100) as f32]);
+            poke(a, b, extra + 12 * k + 8, &h.to_le_bytes());
+        }
+        fill(a, b, rng, camera, 0x20);
+        poke(
+            a,
+            b,
+            logs + 4,
+            &pick!(rng, [0u32, 0x130, 0x254, 0x58]).to_le_bytes(),
+        );
+        poke(a, b, local, &[0; 0x80]);
+        let i = pick!(
+            rng,
+            [
+                rng.below(ACTORS),
+                rng.below(0x12),
+                rng.below(ACTORS) | 0x100
+            ]
+        );
+        let actor = ffx_battle::actor::bridge::ms_get_chr(b, i);
+        for at in [0x15u32, 0x718, 0x719] {
+            poke(a, b, actor + at, &[pick!(rng, [1u8, 1, 1, 0, rng.byte()])]);
+        }
+        // (an actor without a character on no other one's would leave the
+        // position as the original's frame holds it: every one rides
+        // RIDE's character, its optional positions)
+        for k in 0..RIDE {
+            poke(a, b, w.actor(k) + 0x43f, &[u8::try_from(RIDE).unwrap()]);
+            poke(
+                a,
+                b,
+                w.actor(k) + 0x441,
+                &[u8::try_from(rng.below(0x20)).unwrap()],
+            );
+        }
+        for k in 0..0x20 {
+            let v = [
+                rng.range(-200, 200) as f32,
+                rng.range(-50, 50) as f32,
+                rng.range(-200, 200) as f32,
+                pick!(rng, [1.0f32, 0.0, 2.0]),
+            ];
+            let bytes: Vec<u8> = v.iter().flat_map(|f| f.to_le_bytes()).collect();
+            poke(
+                a,
+                b,
+                fake + ffx_chara::attach::bridge::OPTPOS + 16 * k,
+                &bytes,
+            );
+        }
+        let f40 = pick!(rng, [1.0f32, 0.0, -0.0, 3.5, -2.0, f32::NAN]);
+        poke(a, b, actor + 0x40, &f40.to_le_bytes());
+        let lift = pick!(rng, [0.0f32, 10.0, -5.5, f32::NAN]);
+        poke(a, b, actor + 0x4ec, &lift.to_le_bytes());
+        match round % 4 {
+            0 => {
+                for _ in 0..12 {
+                    let i = pick!(
+                        rng,
+                        [rng.below(RIDE), rng.below(8), rng.below(RIDE) | 0x100]
+                    );
+                    poke(a, b, rec + 0xc, &rng.below(64).to_le_bytes());
+                    let (x, y) = (out_words, out_words + 4);
+                    twin("getSparedLmtPos", a, b, 0x0079_6c30, &[i, x, y], ALL, |m| {
+                        cu::get_spared_lmt_pos(m, &stand_in, [&mut call, &mut fc], [i, x, y], local)
+                    });
+                    let keep = b.read(local, 0x80).unwrap();
+                    a.write(local, &keep).unwrap();
+                    same(&format!("getSparedLmtPos {i:#x}"), a, b);
+                }
+            }
+            1 | 2 => {
+                // its exits mostly open, the camera mostly at level 0
+                for _ in 0..12 {
+                    let i = pick!(
+                        rng,
+                        [rng.below(RIDE), rng.below(0x12), rng.below(RIDE) | 0x100]
+                    );
+                    let actor = ffx_battle::actor::bridge::ms_get_chr(b, i);
+                    for at in [0x15u32, 0x718, 0x719] {
+                        poke(
+                            a,
+                            b,
+                            actor + at,
+                            &[pick!(rng, [1u8, 1, 1, 1, 1, 1, 0, rng.byte()])],
+                        );
+                    }
+                    let f40 = pick!(rng, [1.0f32, 1.0, 3.5, 0.0, -0.0, -2.0, f32::NAN]);
+                    poke(a, b, actor + 0x40, &f40.to_le_bytes());
+                    let magic = pick!(rng, [0u32, 0, 0, 0, 0x130, 0x254, 0x58]);
+                    poke(a, b, logs + 4, &magic.to_le_bytes());
+                    // the camera's level: slot 0's (byte 2 of its ID), or
+                    // random slots
+                    if rng.below(4) == 0 {
+                        fill(a, b, rng, camera, 0x20);
+                    } else {
+                        let mut slots = [0u8; 0x20];
+                        slots[2] = u8::try_from(pick!(rng, [0u32, 0, 5, 6, 3])).unwrap();
+                        poke(a, b, camera, &slots);
+                    }
+                    // the projections it will use: on the screen first, then
+                    // at the limits (380 and 80 at 0.5) and the spare moves
+                    let c = rng.below(64);
+                    poke(a, b, rec + 0xc, &c.to_le_bytes());
+                    for j in 0..5 {
+                        if rng.below(3) == 0 {
+                            continue;
+                        }
+                        let x = rng.range(0, 0x201);
+                        let y = if j == 0 {
+                            pick!(
+                                rng,
+                                [rng.range(380, 407), rng.range(10, 81), 390, 85, 0x196]
+                            )
+                        } else {
+                            pick!(rng, [390, 380, 370, 70, 80, 90, rng.range(0, 480)])
+                        };
+                        #[allow(clippy::cast_possible_truncation)]
+                        let ox = ((x - 256) as f32 * sx).round() as i32;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let oy = ((y - 208) as f32 * sy).round() as i32;
+                        let e = table + 16 * ((c + j) & 63);
+                        poke(
+                            a,
+                            b,
+                            e,
+                            &[ox.to_le_bytes(), oy.to_le_bytes(), 1.0f32.to_le_bytes()].concat(),
+                        );
+                    }
+                    twin("MsGetChrLimitBarFlag", a, b, 0x0079_5250, &[i], ALL, |m| {
+                        cu::ms_get_chr_limit_bar_flag(m, &stand_in, &mut call, &mut fc, i, local)
+                    });
+                    let keep = b.read(local, 0x80).unwrap();
+                    a.write(local, &keep).unwrap();
+                    same(&format!("MsGetChrLimitBarFlag {i:#x}"), a, b);
+                }
+            }
+            _ => {
+                // every actor shown or not, with and without optional points
+                // (the ridden one shown at times too: its own optional
+                // positions, its character's zeros)
+                for k in 0..ACTORS {
+                    let p = w.actor(k);
+                    poke(a, b, p + 0x10, &[pick!(rng, [0u8, 1, 1])]);
+                    poke(a, b, p + 0x442, &[pick!(rng, [0xffu8, 0, 1, 3])]);
+                    poke(a, b, p + 0xdf9, &[pick!(rng, [0xffu8, 0, 2])]);
+                    let lift = pick!(rng, [0.0f32, 4.0, -2.5, f32::NAN]);
+                    poke(a, b, p + 0x4e8, &lift.to_le_bytes());
+                }
+                if rng.below(2) == 0 {
+                    set(
+                        a,
+                        b,
+                        ffx_battle::state::bridge::STATUS,
+                        pick!(rng, [0i8, 1, 0x13]),
+                    );
+                    twin("MsBattleCursorCalc", a, b, 0x0078_0cc0, &[], 0, |m| {
+                        cu::ms_battle_cursor_calc(m, &stand_in, &mut call, &mut fc, local);
+                        0
+                    });
+                } else {
+                    twin("MsCalcCursorPos", a, b, 0x0079_f380, &[], 0, |m| {
+                        cu::ms_calc_cursor_pos(m, &stand_in, &mut call, &mut fc, local);
+                        0
+                    });
+                }
+            }
+        }
+        // the port's frame (the originals' are on their stacks)
+        let keep = b.read(local, 0x80).unwrap();
+        a.write(local, &keep).unwrap();
+        same(&format!("cursors {round} {i:#x}"), a, b);
+    }
+}
+
+#[test]
+fn leaf_cursors_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    cursors(&mut a, &mut b, &mut Xorshift(0x3333_0201), true);
+}
+
+#[test]
+fn leaf_cursors_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    cursors(&mut a, &mut b, &mut Xorshift(0x3333_0202), false);
+}

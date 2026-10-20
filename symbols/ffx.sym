@@ -5055,7 +5055,7 @@
 0x00780c70 function Enc_ResetAll_00780c70 # ours: (map): ResetEncountExe(0), Enc_ResetWeights(map, 0); no direct callers; ported (ffx_battle::minor, battle round 30)
 0x00780c90 function MsBattleCheck             # fh v3:exact+call.cs 0x00780d60 cdecl
 0x00780cb0 function MsBattleChrStart          # fh v3:bsim1.00 0x00780d80
-0x00780cc0 function MsBattleCursorCalc        # fh v3:exact 0x00780d90
+0x00780cc0 function MsBattleCursorCalc        # fh v3:exact 0x00780d90; ported (ffx_battle::cursor, battle round 33): with MsBattleGetStatus, MsCalcCursorPos then jmp MsNumberDrawProcess
 0x00780ce0 function MsBattleCursorType        # fh v3:bsim1.00 0x00780db0
 0x00780cf0 function MsBattleDisposeAtEvent    # fh v3:bsim1.00 0x00780dc0
 0x00780d00 function MsBattleDraw              # name from Fahrenheit (fh v3:cg2 0x780dd0); () -> FFXIsDebug(); when set it jumps to 0x007c8ae0, a bare ret (the debug draw left out); ported (ffx_battle::minor, battle round 29)
@@ -5530,7 +5530,7 @@
 0x007950f0 function MsGetChrHeight            # fh v3:cg11 0x795100
 0x00795130 function MsGetChrInBattle             # layout: alphabetical run between MsGetChrHeight and MsGetChrInfo (1 unnamed in the gap); Switch 0x7100347470 MsGetChrInBattle is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00795170 function MsGetChrInfo              # fh v3:exact 0x00795180
-0x00795250 function MsGetChrLimitBarFlag      # fh v3:exact 0x00795260
+0x00795250 function MsGetChrLimitBarFlag      # fh v3:exact 0x00795260; eax = shown flag (0 for magic 0x130/0x254, no bar +0x718/+0x719, +0x15 clear, +0x40 == 0; 0 off screen / behind; 1 else), Ghidra says void; bar x,y -> +0xf54/+0xf58 with the spare moves past graphicUiRemapY2(760) (-10) and before (160) (+10) at camera level <= 5; ported (ffx_battle::cursor, battle round 33)
 0x00795550 function MsGetChrLimitGauge        # fh v3:cg7 0x795560
 0x00795590 function MsGetChrLimitGaugeMax     # fh v3:cg7 0x7955a0
 0x007955d0 function MsGetChrLimitType            # layout: alphabetical run between MsGetChrLimitGaugeMax and MsGetChrModelID (1 unnamed in the gap); Switch 0x7100347a70 MsGetChrLimitType is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5593,7 +5593,7 @@
 0x007969f0 function MsSetTargetDir            # fh v3:exact 0x00796a00
 0x00796b40 function getAllPCEquips               # layout+callees: sorts between MsSetTargetDir and getSparedLmtPos, and its named callees match the Switch 0x710034cef0 getAllPCEquips's (similarity 0.75: MsGetSaveChrArmorModel, MsGetSaveChrWeaponModel, ch_create_name); symbols from Fahrenheit's server export
 0x00796bb0 function MsSetChrExtraSlot_00796bb0 # ours: (i) -> actor (u8)i's character's slot in g_BtlChrExtra (3 x 0xc: in-use byte, character): its own, else the first free taken, else slot 0 taken over; callers MesSetChrTargetPosToLimitSparePosy, getSparedLmtPos; ported (ffx_battle::minor, battle round 30)
-0x00796c30 function getSparedLmtPos           # fh v3:exact 0x00796c40
+0x00796c30 function getSparedLmtPos           # fh v3:exact 0x00796c40; (i, &x, &y), eax = y: MsGetChrPos at MsGetChrGround - g_BtlChrExtra slot +8, projected, x/sx+256, y/sy+208 (sx = w/512, sy = h/416); ported (ffx_battle::cursor, battle round 33)
 0x00796d10 function MsChrInExtra_00796d10 # ours: (i) -> 1 when an actor's character is in one of the three 12-byte g_BtlChrExtra records in use (+0 on, +4 chr); caller MsGetChrLimitBarFlag; ported (ffx_battle::minor, battle round 29)
 0x00796d70 function msCheckSameTarget         # fh v3:exact 0x00796d80
 0x00796dc0 function MsDebugFullCommand_00796dc0 # fh switch:cg2 0x7100370fc0; ours: what it does is MsChrDispose (i, actor, flags): the model by flags 8/1, a loaded actor's weapon effect, motion group (4), data (2), +0x48, sound slots; ported (battle round 13)
@@ -5798,7 +5798,7 @@
 0x0079f230 function MsStructClear             # fh v3:exact 0x0079f250
 0x0079f260 function MsStructFill              # fh v3:exact 0x0079f280
 0x0079f290 function MsCalAndGetChrTargetPos      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100361ad0 MsCalAndGetChrTargetPos, 4 votes, round 1
-0x0079f380 function MsCalcCursorPos           # fh v3:exact 0x0079f3a0
+0x0079f380 function MsCalcCursorPos           # fh v3:exact 0x0079f3a0; ported (ffx_battle::cursor, battle round 33): every shown actor: target point (optpos (i8)+0xdf9 / MsGetChrCenterPos) projected to +0xf34..+0xf40 (x -0x200 behind), camera point (optpos +0x442 / MsGetChrCameraPos) minus +0x4e8 in y to +0xf44/+0xf48 and clamped 0x1b..0x1e5, 0x22..0x187 to +0xf4c/+0xf50; MsMulMatrix(screen, camera) into a frame local nobody reads
 0x0079f5e0 function MsNumberCalcProcess       # fh v3:exact 0x0079f600
 0x0079f660 function MsNumberDrawProcess       # fh v3:exact 0x0079f680; ours: (): outside g_BtlStatus 0x1f-0x21 each shown actor with flag 0x4000 at +0x616 and HP draws its counter +0x5c8 in digits pulsing with sin(+0xf6c += +0x5c9/(+0x5c8+1)/8) (colour t*12+140, t*12+50, t*6+60, t = sin+1), then each number character of g_BtlNumberList past its delay: table 0x00c424b0 by age - place (x, y, alpha; fading its last 5 frames), colour 0 bounces, 1 (green) rises by age/2, 2 by age; all through TOBtlSetDamageValue (the original's colour/alpha words carry stack garbage above their low bytes, which it drops); ported (ffx_battle::input, battle round 26)
 0x0079f990 function MsNumberFreeMem              # layout: alphabetical run between MsNumberDrawProcess and MsNumberGetMem (1 unnamed in the gap); Switch 0x7100361a60 MsNumberFreeMem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (battle round 18)
