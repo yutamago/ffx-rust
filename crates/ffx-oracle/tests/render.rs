@@ -114,21 +114,14 @@ impl Host for G<'_> {
             host::Conv::Fastcall => Conv::Fastcall,
         };
         let r = self.0.call(addr, conv, args).unwrap();
-        let (Some(v), Some(raw)) = (r.st0, r.st0_raw) else {
+        // as the caller's `fstp m32` stores it
+        let Some(v) = r.st0_f32() else {
             panic!("call_st0 {addr:#x}: no float in ST0");
         };
         // pop the result, as the caller's fstp does
         let pop = self.0.rebase(TRAMPOLINE) + 16;
         self.0.call(pop, Conv::Cdecl, &[]).unwrap();
-        // as `fstp m32`: a NaN keeps its sign and top fraction bits
-        let bits = if v.is_nan() {
-            let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-            let sign = u32::from(raw[9] >> 7) << 31;
-            sign | 0x7fc0_0000 | ((mant >> 40) as u32 & 0x007f_ffff)
-        } else {
-            ffx_bridge::x87::store(v)
-        };
-        f32::from_bits(bits)
+        v
     }
     fn call_intrinsic(&mut self, addr: u32, x: f64) -> f32 {
         let at = self.0.rebase(TRAMPOLINE);
@@ -137,18 +130,11 @@ impl Host for G<'_> {
             .0
             .call(at, Conv::Cdecl, &[b as u32, (b >> 32) as u32, addr])
             .unwrap();
-        let (Some(v), Some(raw)) = (r.st0, r.st0_raw) else {
+        let Some(v) = r.st0_f32() else {
             panic!("call_intrinsic {addr:#x}: no float in ST0");
         };
         self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
-        let bits = if v.is_nan() {
-            let mant = u64::from_le_bytes(raw[..8].try_into().unwrap());
-            let sign = u32::from(raw[9] >> 7) << 31;
-            sign | 0x7fc0_0000 | ((mant >> 40) as u32 & 0x007f_ffff)
-        } else {
-            ffx_bridge::x87::store(v)
-        };
-        f32::from_bits(bits)
+        v
     }
     fn scratch(&mut self) -> u32 {
         // the bottom of the emulated stack: no call reaches that deep, and
