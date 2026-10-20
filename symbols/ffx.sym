@@ -10631,6 +10631,7 @@
 0x008c1100 function TkMn2DrawMesM             # fh switch:bsim1.00 0x71004c5fb0
 0x008c1150 function TkMn2DrawMesMR            # fh switch:bsim1.00 0x71004c6040
 0x008c11b0 function MenuMn2_EmitPacket        # (a, b, kind): g_TkMn2DrawY += 16, then g_TkMn2DrawY = 0x008f1b50(g_TkMn2DrawY, a, b, kind) (the packet's end; returned); caller 0x008c7c30; name ours
+0x008c11e0 function MenuStatus_DrawLayoutRow # (x, y, chr): TkMn2DrawRect from the i16/u32 fields at 0x023cc13e..0x023cc148 when chr's bit is in TOMenuGetYesNoWindow(); g_TkMn2DrawY += 16, then = TOMenuDrawChrLayoutPlate(g_TkMn2DrawY, chr, x, y) (returned); MenuStatus_DrawPage page 2 (jump table 0x008d5134); ported in menu round 26; name ours
 0x008c1260 function MenuItem_DrawChrSmallPlate # (x, y, chr) -> TOMenuDrawChrSmallPlate_008f51e0(chr, x, y) (floats through fld/fstp); caller 0x008c9570; ported in menu round 24; name ours
 0x008c1280 function TkMn2DrawRect                # layout+callees: sorts between TkMn2DrawMesMR and TkMn2DrawScissorClear, and its named callees match the Switch 0x71004c5340 TkMn2DrawRect's (similarity 1.00: graphicDrawUIElement); symbols from Fahrenheit's server export
 0x008c1370 function TkMn2DrawScissorClear     # fh switch:bsim1.00 0x71004c5480
@@ -10872,13 +10873,17 @@
 0x008d35a0 function MenuNameEntry_DrawSummonFaceSlide # (x, y, w, h, t, cur, next): byte copy of MenuNameEntry_DrawCharFaceSlide; caller 0x008c3ec0 (target >= 8); ported in menu round 24; name ours
 0x008d3690 function TkMn2DrawCrossLimitParam     # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e31c0 TkMn2DrawCrossLimitParam's (similarity 1.00: TODrawCrossBoxXYWHC2, TOMkpShapeXYWHUVC2, graphicGetTime, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
 0x008d3c40 function TkMn2DrawLimitParam          # layout+callees: sorts between TkMn2DrawCrossLimitParam and TkMn2DrawOverDrive, and its named callees match the Switch 0x71004e30c0 TkMn2DrawLimitParam's (similarity 1.00: TkMn2DrawRect); symbols from Fahrenheit's server export
-0x008d3d70 function TkMn2DrawOverDrive           # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e3b50 TkMn2DrawOverDrive's (similarity 0.83: TODrawMenuPlateXYWHType, TOMkpShapeXYWHUVC2, TkMenuGetLimit, TkMenuGetLimitMax, TkMenuMenu1Mes); symbols from Fahrenheit's server export
+0x008d3d70 function TkMn2DrawOverDrive       # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e3b50 TkMn2DrawOverDrive's (similarity 0.83: TODrawMenuPlateXYWHType, TOMkpShapeXYWHUVC2, TkMenuGetLimit, TkMenuGetLimitMax, TkMenuMenu1Mes); symbols from Fahrenheit's server export; (x, y, chr): x, y relative to the status rect 0x0186a888; chr < 8 plates, else MenuStatus_OffsetRect + TkMn2DrawCommonPlateL; TkMn2DrawCrossLimitParam(.., TkMenuGetLimit, TkMenuGetLimitMax); MenuStatus_DrawPage pages 0 and 3; ported in menu round 26
 0x008d4170 function TkMn2DrawStatusBG            # layout+callees: sorts between TkMenuGetCommandOffset and TkMn2GetStatusPos, and its named callees match the Switch 0x71004e2fe0 TkMn2DrawStatusBG's (similarity 1.00: TOMkpShapeXYWHUVC2, graphicUiRemapY2); symbols from Fahrenheit's server export
+0x008d4280 function MenuSummon_DrawCommandRows # (_, x): u16 0x0186aa24 + u16 0x0186aa28 rows of MenuSummon_DrawCommandRow, spaced (remapY2(0x11d - 60n) / (n + 1)) + remapY2(60); MenuStatus_DrawPage page 1; ported in menu round 26; name ours
+0x008d4350 function MenuSummon_DrawCommandRow # (x, y, i): plate, shape, TOMenuGetStatusMes(i < u16 0x0186aa24 ? 0x15 : 0x16) right-aligned, TkMn2GetCommandName(u16 0x0186aa04[i]); caller MenuSummon_DrawCommandRows; ported in menu round 26; name ours
+0x008d4540 function MenuStatus_DrawEquipPlate # (chr, x): two plates, TOMenuGetStatusMes(5)/(6) right-aligned, DrawCrossMenuIconWeaponName of TkMenuGetWeapon/TkMenuGetArmor (armour 0xff: TOMenuGetStatusMes(0x17)); MenuStatus_DrawPage page 0; ported in menu round 26; name ours
 0x008d4910 function TkMn2GetStatusBG          # () -> i16 0x0186aa00, sign-extended
 0x008d4920 function TkMn2GetStatusPos            # str-match switch: only user of 50 string(s) held once by both builds, e.g. 'pos_6nameplt'; Switch 0x71004e2ac0 TkMn2GetStatusPos (symbols from Fahrenheit's server export)
 0x008d4e30 function MenuStatus_GetPos         # (out, alt) u16 pair 0x0186a900 (alt 0x0186a948) + status origin 0x0186a86c; own name
 0x008d4e80 function MenuStatus_GetPos2        # (out, alt) u16 pair 0x0186a918 (alt 0x0186a960) + status origin; own name
 0x008d4ed0 function TkMn2InitStatusBG         # (): both i16 of g_TkMn2StatusBG = 0; Switch symbol name (BSim)
+0x008d4ee0 function MenuStatus_DrawPage      # (x, y, chr, page, a, b, c, _, t): face slide (pages 0, 1), then a jump table at 0x008d5134 on page 0..3 (MenuStatus_DrawEquipPlate + TkMn2DrawOverDrive + TOMenuDrawChrStatusPlate, MenuSummon_DrawCommandRows, MenuStatus_DrawLayoutRow, TkMn2DrawOverDrive); always TkMn2DrawKickPacket (returned); caller 0x008d2710; ported in menu round 26; name ours
 0x008d5180 function TkMn2MainStatusPlayerStatus  # callees: its named callees match the Switch 0x71004e4bd0 TkMn2MainStatusPlayerStatus's (similarity 0.73: MsGetSavePlayerPtr, TODrawMenuPlateXYWHType, TOMenuGetStatusMes, TOMkpCrossExtMesFontLClut, TOMkpShapeXYWHUV); symbols from Fahrenheit's server export
 0x008d54a0 function toGetStatusWeaponMesPos      # callees: its named callees match the Switch 0x71004e4300 toGetStatusWeaponMesPos's (similarity 1.00: TOMenuGetStatusMes, ToGetBtlEasyFontWidth, graphicUiRemapX2); symbols from Fahrenheit's server export; () -> ftol(remapX2(1020) - max width of status captions 5 and 6 (ToGetBtlEasyFontWidth(TOMenuGetStatusMes(k), &w, 0, 0.78, 1.0))); caller 0x008cf990; ported in menu round 22
 0x008d5540 function TkMenuCtrlKaizou          # fh v3:exact 0x008d5510
@@ -16695,8 +16700,10 @@
 0x0186a630 label    g_TkMenuEquipItem         # MenuEquip_PickItem
 0x0186a820 label    g_TkMenuStatusWindows     # status menu windows by index (MenuStatus_CloseWindow)
 0x0186a86c label    g_TkMenuStatusOrigin      # u16 x, y
+0x0186a888 label g_TkMenuStatusOverDriveRect # 24-byte status rect (i16 x, y at +0, +2): TkMn2DrawOverDrive subtracts x, y; MenuStatus_DrawPage page 0 draws the panel at its x + ease; 0x0186a8a0 is the next rect (page 3); name ours
 0x0186a8a4 label    g_TkMenuStatusRectSize    # u16 w, h (MenuStatus_OffsetRect)
 0x0186a9fc label    g_TkMn2StatusBG           # i16 step, i16 value 0..0x1000 (TkMn2InitStatusBG, TMn2SetStatusBGDiff, TkMn2StepStatusBG, TkMn2GetStatusBG)
+0x0186aa04 label g_TkMenuSummonCommands   # u16[] aeon command ids (MenuSummon_BuildCommandList); counts u16 0x0186aa24 and 0x0186aa28; MenuSummon_DrawCommandRow; name ours
 0x0186aaf0 label    g_TkMenuWShopSubWindows   # 5 more weapon shop windows (MenuWShop_CloseSubWindow0..4)
 0x0186abac label    g_TkMenuWShopTable        # MenuWShop_GetRecord
 0x0186ac20 label    g_TkMenuWShopList         # u32 id, slot count (+4), ?, table (+0xc) (MenuWShop_CountSlots)
