@@ -4013,4 +4013,40 @@ ported! {
         };
         tk::menu_wshop_start(&mut m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkCdReadWithMallocWithMessage(dir, file)`: the buffer.
+    TkCdReadWithMallocWithMessage @ 0x0088_d2c0 => extern "C" fn tk_cd_read_with_malloc_with_message(dir: u32, file: i32) -> u32 {
+        tk::tk_cd_read_with_malloc_with_message(&mut mem(), dir, file, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSave_DicText(out, _, _, index)`: void.
+    MenuSave_DicText @ 0x008b_43e0 => extern "C" fn menu_save_dic_text(out: u32, _b: u32, _c: u32, index: i32) {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return;
+        };
+        tk::menu_save_dic_text(&mut m, out, index, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuItem_DrawCellCursor(_, x, y)`: void.
+    MenuItem_DrawCellCursor @ 0x008c_4a90 => extern "C" fn menu_item_draw_cell_cursor(_a: u32, x: i32, y: i32) {
+        tk::menu_item_draw_cell_cursor(&mut mem(), [x, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuItem_UseOnTargets(target)`: void.
+    MenuItem_UseOnTargets @ 0x008c_8d50 => extern "C" fn menu_item_use_on_targets(target: u32) {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return;
+        };
+        tk::menu_item_use_on_targets(&mut m, target, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuWeapon_DrawRow(window, x, y, row, fixed)`: void.
+    MenuWeapon_DrawRow @ 0x008d_0170 => extern "C" fn menu_weapon_draw_row(window: u32, x: u32, y: u32, row: i32, fixed: i32) {
+        let mut m = mem();
+        let Some(local) = ffx_bridge::Host::callee_scratch(&mut m) else {
+            return;
+        };
+        tk::menu_weapon_draw_row(&mut m, window, [f32::from_bits(x), f32::from_bits(y)], [row, fixed], local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Pad_ActuatorIds(port, slot)`: `(large << 8) | small`.
+    Pad_ActuatorIds @ 0x0088_8a70 => extern "C" fn pad_actuator_ids(port: u32, slot: u32) -> u32 {
+        tk::pad_actuator_ids(&mut mem(), port, slot, &mut |_, f, a| call_ptr(f, a))
+    }
 }

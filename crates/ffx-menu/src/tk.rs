@@ -10768,6 +10768,285 @@ pub mod bridge {
         }
         r
     }
+
+    /// `TkCdReadWithMallocWithMessage(dir, file)` (`0x0088d2c0`,
+    /// Fahrenheit's name; caller `AtelEventSetUp`): reads a file into a
+    /// new buffer. With the CD object `GetCD()`: `+0x10(dir)` selects the
+    /// directory, the size is `+0x14(file)` or, for an Eternal Calm scene
+    /// (`isEternalCalmScene(file / 18)`, signed: the
+    /// scene of a file pair), `getEternalCalmSceneSize(file / 18)`. `Sg_MemSetAlign(0x40)`, the
+    /// buffer `user_malloc(size rounded up to 0x800)` (signed), its first
+    /// word 0, `FlushCache(0)`, the read `+0(file, buffer, 0, 0)`, the
+    /// sync `+8(0)`, `FlushCache(0)`; four `AtelPs2DebugString` marks
+    /// (`0x00b5e9c0`, `d0`, `e4`, `f0`) between. Returns the buffer.
+    pub fn tk_cd_read_with_malloc_with_message<M: Mem>(
+        mem: &mut M,
+        dir: u32,
+        file: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0076_d0d0);
+        let cd = call(mem, f, &[]);
+        let select = mem.read::<u32>(cd.wrapping_add(0x10));
+        call(mem, select, &[dir]);
+        let size_of = mem.read::<u32>(cd.wrapping_add(0x14));
+        let mut size = call(mem, size_of, &[file.cast_unsigned()]);
+        let scene = (file / 18).cast_unsigned();
+        let f = mem.rebase(0x0067_ab50);
+        if call(mem, f, &[scene]) != 0 {
+            let f = mem.rebase(0x0067_aae0);
+            size = call(mem, f, &[scene]);
+        }
+        let mark = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, at: u32| {
+            let f = mem.rebase(0x0087_3c70);
+            let text = mem.rebase(at);
+            call(mem, f, &[text]);
+        };
+        mark(mem, call, 0x00b5_e9c0);
+        let f = mem.rebase(0x0083_c4a0);
+        call(mem, f, &[0x40]);
+        let up = size.cast_signed().wrapping_add(0x7ff);
+        let up = up.wrapping_add((up >> 31) & 0x7ff) & !0x7ff;
+        let f = mem.rebase(0x0068_7020);
+        let buffer = call(mem, f, &[up.cast_unsigned()]);
+        mark(mem, call, 0x00b5_e9d0);
+        mem.write(buffer, 0u32);
+        let flush = mem.rebase(0x0062_f4c0);
+        call(mem, flush, &[0]);
+        mark(mem, call, 0x00b5_e9e4);
+        let read = mem.read::<u32>(cd);
+        call(mem, read, &[file.cast_unsigned(), buffer, 0, 0]);
+        mark(mem, call, 0x00b5_e9f0);
+        let sync = mem.read::<u32>(cd.wrapping_add(8));
+        call(mem, sync, &[0]);
+        call(mem, flush, &[0]);
+        buffer
+    }
+
+    /// `MenuSave_DicText(out, _, _, index)` (`0x008b43e0`, own name;
+    /// caller `0x008b42e0`): text `index` of the save screen's dictionary
+    /// into `out` (Shift-JIS, through `local`, 0x40 bytes in the
+    /// original). In Japanese (`TOGetFFXLangJmp()` and
+    /// `MsGetSaveConfigEnglish()` both 0) the text is
+    /// `0x0086c430(index, 0)`; otherwise entry `index` of
+    /// `TOGetSaveDicAdrs(MsGetSaveConfigEnglish())`, at its `u16 +2`
+    /// offset. `TOFFXToSJIS(text, local)`, then `out` = `local` (`out` is
+    /// emptied first, so the append is a copy). No caller reads `eax`.
+    pub fn menu_save_dic_text<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        index: i32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        mem.write(out, 0u8);
+        let english = mem.rebase(0x0078_51d0);
+        let f = mem.rebase(0x008a_c2f0);
+        let japanese = call(mem, f, &[]) == 0 && call(mem, english, &[]) == 0;
+        let text = if japanese {
+            let lang = call(mem, english, &[]);
+            let f = mem.rebase(0x0086_c430);
+            call(mem, f, &[index.cast_unsigned(), lang])
+        } else {
+            let lang = call(mem, english, &[]);
+            let f = mem.rebase(0x008b_7f60);
+            let dic = call(mem, f, &[lang]);
+            let entry = dic.wrapping_add(index.cast_unsigned().wrapping_mul(4));
+            entry.wrapping_add(u32::from(mem.read::<u16>(entry.wrapping_add(2))))
+        };
+        let f = mem.rebase(0x008b_6200);
+        call(mem, f, &[text, local]);
+        let mut end = out;
+        while mem.read::<u8>(end) != 0 {
+            end = end.wrapping_add(1);
+        }
+        let mut i = 0u32;
+        loop {
+            let c = mem.read::<u8>(local.wrapping_add(i));
+            mem.write(end.wrapping_add(i), c);
+            if c == 0 {
+                break;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `MenuItem_DrawCellCursor(_, x, y)` (`0x008c4a90`, own name; caller
+    /// `0x008c4030`): with `0x0186a270` 1, the command cursor
+    /// `TkMn2DrawCrossCmdCursor(f32(cx), f32(cy), 0)` at `cx =
+    /// ftol(remapX2(265) + f32(x))` and `cy = ftol(f32(row) * step + top)`,
+    /// `top = ftol(remapY2(508) + f32(y))`, `row` the `i32` at
+    /// `0x0186a26c`, `step = f32(remapY2(420) / f32(MenuItem_CursorCount()))`.
+    /// No caller reads `eax`.
+    pub fn menu_item_draw_cell_cursor<M: Mem>(
+        mem: &mut M,
+        [x, y]: [i32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if mem.read::<u32>(mem.rebase(0x0186_a270)) != 1 {
+            return;
+        }
+        #[allow(clippy::cast_precision_loss)] // fild, fstp dword
+        let float = |v: i32| v as f32;
+        let left = remap(mem, false, 265.0) + f64::from(float(x));
+        let left = ffx_bridge::x87::ftol(mem, left).cast_signed();
+        let top = remap(mem, true, 508.0) + f64::from(float(y));
+        let top = ffx_bridge::x87::ftol(mem, top).cast_signed();
+        let height = remap(mem, true, 420.0);
+        let f = mem.rebase(0x008c_5030);
+        let count = call(mem, f, &[]).cast_signed();
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let step = (height / f64::from(float(count))) as f32;
+        let row = mem.read::<u32>(mem.rebase(0x0186_a26c)).cast_signed();
+        let at = f64::from(float(row)) * f64::from(step) + f64::from(top);
+        let at = ffx_bridge::x87::ftol(mem, at).cast_signed();
+        let f = mem.rebase(0x008c_0580);
+        call(mem, f, &[float(left).to_bits(), float(at).to_bits(), 0]);
+    }
+
+    /// `MenuItem_UseOnTargets(target)` (`0x008c8d50`, own name; caller
+    /// `TkMenuCtrlItem`): applies command [`ABILITY_COMMAND`]'s healing
+    /// (`TkMenuItemHealAmount(cmd, who, 1)` then `MenuItem_AddMP(who,
+    /// amount)`) to `target` when the command has one target
+    /// (`0x0186a391` 1), else, by `TkMsGetRomItem(cmd, &n)`'s `+0x22`
+    /// flags, to every aeon (`0x80`) and every party member (`0x40`). The
+    /// target's amount is computed first in every case. No caller reads
+    /// `eax`.
+    pub fn menu_item_use_on_targets<M: Mem>(
+        mem: &mut M,
+        target: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let cmd = |mem: &M| u32::from(mem.read::<u16>(mem.rebase(0x0186_a3a8)));
+        let heal = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, who: u32| {
+            let f = mem.rebase(0x008c_69a0);
+            let c = cmd(mem);
+            let amount = call(mem, f, &[c, who, 1]);
+            let f = mem.rebase(0x008c_8e20);
+            call(mem, f, &[who, amount]);
+        };
+        // the target's amount comes first, used or not
+        let f = mem.rebase(0x008c_69a0);
+        let c = cmd(mem);
+        let amount = call(mem, f, &[c, target, 1]);
+        if mem.read::<u8>(mem.rebase(0x0186_a391)) == 1 {
+            let f = mem.rebase(0x008c_8e20);
+            call(mem, f, &[target, amount]);
+            return;
+        }
+        let f = mem.rebase(0x008a_b280);
+        let c = cmd(mem);
+        let item = call(mem, f, &[c, local]);
+        for (bit, count, get) in [
+            (0x80u8, 0x008a_9bf0, 0x008a_9bc0),
+            (0x40, 0x008a_9b30, 0x008a_9ad0),
+        ] {
+            if mem.read::<u8>(item.wrapping_add(0x22)) & bit == 0 {
+                continue;
+            }
+            let f = mem.rebase(count);
+            let n = call(mem, f, &[]).cast_signed();
+            for i in 0..n {
+                let f = mem.rebase(get);
+                let who = call(mem, f, &[i.cast_unsigned()]);
+                heal(mem, call, who);
+            }
+        }
+    }
+
+    /// `MenuWeapon_DrawRow(window, x, y, row, fixed)` (`0x008d0170`, own
+    /// name; caller `0x008d0250`; `x`, `y` `f32`): unless `fixed`, `y`
+    /// scrolls up by `remapY2(79) * i16 +0x46 / 4096` (double, stored as
+    /// a float). A row in `0..u16 +0x30` gets a plate
+    /// `TODrawMenuPlateXYWHType(x, y, remapX2(740), remapY2(60), 5)` and,
+    /// for a nonzero `g_TkMenuItemList` id, `MsGetSaveWeapon(id, &name)`
+    /// (unused) and `DrawCrossMenuIconWeaponName(id, x, y, 0)`. No caller
+    /// reads `eax`.
+    pub fn menu_weapon_draw_row<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [x, y]: [f32; 2],
+        [row, fixed]: [i32; 2],
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let round = |v: f64| v as f32;
+        // the floats pass through fld/fstp (an sNaN comes out quiet)
+        let x = ffx_bridge::x87::round_trip(x);
+        let mut y = ffx_bridge::x87::round_trip(y);
+        if fixed == 0 {
+            let line = remap(mem, true, 79.0);
+            let scroll = f64::from(mem.read::<i16>(window.wrapping_add(0x46)));
+            y = round(f64::from(y) - line * scroll * (1.0 / 4096.0));
+        }
+        let rows = i32::from(mem.read::<u16>(window.wrapping_add(0x30)));
+        if row < 0 || row >= rows {
+            return;
+        }
+        let height = round(remap(mem, true, 60.0)).to_bits();
+        let width = round(remap(mem, false, 740.0)).to_bits();
+        let f = mem.rebase(0x008f_5f70);
+        call(mem, f, &[x.to_bits(), y.to_bits(), width, height, 5]);
+        let entry = MENU_ITEM_LIST
+            .ptr(mem)
+            .addr
+            .wrapping_add(row.cast_unsigned() * 4);
+        let id = u32::from(mem.read::<u16>(entry));
+        if id == 0 {
+            return;
+        }
+        let f = mem.rebase(0x007a_bbd0);
+        call(mem, f, &[id, local]);
+        let id = u32::from(mem.read::<u16>(entry));
+        let f = mem.rebase(0x008e_67f0);
+        call(mem, f, &[id, x.to_bits(), y.to_bits(), 0]);
+    }
+
+    /// `Pad_ActuatorIds(port, slot)` (`0x00888a70`, own name; caller
+    /// `0x00889050`): the pad's small and large motor actuators, `(large
+    /// << 8) | small`, `0xffff` without actuators
+    /// (`scePadInfoAct(port, slot, -1, 0)` 0) or combinations. For each
+    /// combination `c` (`scePadInfoComb(port, slot, -1, 0)` of them) the
+    /// actuators `scePadInfoComb(port, slot, c, k)` (`k` below
+    /// `scePadInfoComb(port, slot, c, -1)`) whose kind
+    /// `scePadInfoAct(port, slot, a, 2)` is 1 (small) or 2 (large),
+    /// starting from `0xff`; the first combination whose two values OR to
+    /// something other than `0xff` is the answer, else the last one.
+    pub fn pad_actuator_ids<M: Mem>(
+        mem: &mut M,
+        port: u32,
+        slot: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let act = mem.rebase(0x0062_fb40);
+        let comb = mem.rebase(0x0062_fb50);
+        let (mut large, mut small) = (0xffu32, 0xffu32);
+        if call(mem, act, &[port, slot, u32::MAX, 0]) == 0 {
+            return 0xffff;
+        }
+        let combs = call(mem, comb, &[port, slot, u32::MAX, 0]).cast_signed();
+        for c in 0..combs {
+            let c = c.cast_unsigned();
+            let n = call(mem, comb, &[port, slot, c, u32::MAX]).cast_signed();
+            (large, small) = (0xff, 0xff);
+            for k in 0..n {
+                let a = call(mem, comb, &[port, slot, c, k.cast_unsigned()]);
+                match call(mem, act, &[port, slot, a, 2]) {
+                    1 => small = a,
+                    2 => large = a,
+                    _ => {}
+                }
+            }
+            if large | small != 0xff {
+                break;
+            }
+        }
+        (large << 8) | small
+    }
 }
 
 #[cfg(test)]

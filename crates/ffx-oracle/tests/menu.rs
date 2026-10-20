@@ -10015,3 +10015,287 @@ fn menu_round23_shop_and_summon_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round23_reads_cursors_and_pads_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0023_d2c0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let r = t.rng.next();
+
+    // TkCdReadWithMallocWithMessage: the CD object's methods log in test space
+    let cd = t.alloc(&[0; 0x20]);
+    return_const(&mut t, 0x0076_d0d0, cd);
+    let size = t.alloc(&[0; 4]);
+    let calm = t.alloc(&[0; 4]);
+    for (o, n) in [(0u32, 4u8), (8, 1), (0x10, 1)] {
+        let (_, mut code) = log_args(&mut t, n);
+        code.extend([0xb8, 0x11, 0, 0, 0, 0xc3]); // mov eax, 0x11; ret
+        let f = test_code(&mut t, &code);
+        t.put(cd + o, f);
+    }
+    let (_, mut code) = log_args(&mut t, 1);
+    code.extend([&[0xa1][..], &size.to_le_bytes(), &[0xc3]].concat()); // mov eax, [size]; ret
+    let f = test_code(&mut t, &code);
+    t.put(cd + 0x14, f);
+    let (_, mut code) = log_args(&mut t, 1);
+    code.extend([&[0xa1][..], &calm.to_le_bytes(), &[0xc3]].concat());
+    jump_stub(&mut t, 0x0067_ab50, &code);
+    let heap = t.alloc(&[0; 0x40]);
+    for (f, n, ret) in [
+        (0x0067_aae0u32, 1u8, 0x1234u32),
+        (0x0087_3c70, 1, r),
+        (0x0083_c4a0, 1, r),
+        (0x0062_f4c0, 1, r),
+    ] {
+        record_far(&mut t, f, n, ret);
+    }
+    // user_malloc: a buffer, the size logged
+    let (_, mut code) = log_args(&mut t, 1);
+    code.extend([&[0xb8][..], &heap.to_le_bytes(), &[0xc3]].concat());
+    jump_stub(&mut t, 0x0068_7020, &code);
+    for _ in 0..300 {
+        let s = t
+            .rng
+            .pick_or_any(&[0, 1, 0x800, 0x801, 0x7fff_f900, 0xffff_ffff]);
+        t.put(size, s);
+        let c = t.rng.pick(&[0u32, 0, 1, 2]);
+        t.put(calm, c);
+        t.scramble(heap, 8);
+        let dir = t.rng.int();
+        let file = t.rng.pick_or_any(&[0, 9, 17, 18, 0xffff_fff7, 0x8000_0000]);
+        t.twin(
+            "TkCdReadWithMallocWithMessage",
+            0x0088_d2c0,
+            &[dir, file],
+            U32,
+            |o| {
+                w(tk::tk_cd_read_with_malloc_with_message(
+                    o,
+                    dir,
+                    i(file),
+                    &mut callback,
+                ))
+            },
+        );
+    }
+
+    // MenuSave_DicText: the language from cells, the texts copied by
+    // TOFFXToSJIS as they are
+    let lang = return_cell(&mut t, 0x008a_c2f0);
+    // MsGetSaveConfigEnglish flips by a key on every read
+    let (english, flip) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0xa1][..], &english.to_le_bytes(),        // mov eax, [english]
+        &[0x8b, 0x0d], &flip.to_le_bytes(),         // mov ecx, [flip]
+        &[0x31, 0x0d], &english.to_le_bytes(),      // xor [english], ecx
+        &[0xc3],
+    ]
+    .concat();
+    jump_stub(&mut t, 0x0078_51d0, &code);
+    // the dictionary, its texts behind it
+    let dic = t.alloc(&[&[0; 0x40][..], b"Save\0Load completed\0\0"].concat());
+    let texts = dic + 0x40;
+    record_far(&mut t, 0x0086_c430, 2, texts + 5);
+    record_far(&mut t, 0x008b_7f60, 1, dic);
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x4c, 0x24, 0x04][..],              // mov ecx, [esp + 4] (from)
+        &[0x8b, 0x54, 0x24, 0x08],                  // mov edx, [esp + 8] (to)
+        &[0x8a, 0x01, 0x88, 0x02, 0x41, 0x42],      // mov al, [ecx]; mov [edx], al; inc ecx; inc edx
+        &[0x84, 0xc0, 0x75, 0xf6, 0xc3],            // test al, al; jne; ret
+    ]
+    .concat();
+    jump_stub(&mut t, 0x008b_6200, &code);
+    let out = t.alloc(&[0; 0x40]);
+    for _ in 0..300 {
+        let l = t.rng.pick(&[0u32, 0, 1]);
+        t.put(lang, l);
+        let e = t.rng.pick(&[0u32, 0, 1]);
+        t.put(english, e);
+        let k = t.rng.pick(&[0u32, 0, 1]);
+        t.put(flip, k);
+        let index = t.rng.pick(&[0u32, 1, 3, 7]);
+        // the entry's offset points at the texts
+        let entry = dic + 4 * index;
+        let off = t.rng.pick(&[0u32, 5]) + texts - entry;
+        t.put(entry + 2, u16::try_from(off).unwrap());
+        t.scramble(out, 0x40);
+        t.twin(
+            "MenuSave_DicText",
+            0x008b_43e0,
+            &[out, 0, 0, index],
+            VOID,
+            |o| {
+                tk::menu_save_dic_text(o, out, i(index), local, &mut callback);
+                0
+            },
+        );
+    }
+
+    // MenuItem_DrawCellCursor
+    let count = return_cell(&mut t, 0x008c_5030);
+    record_far(&mut t, 0x008c_0580, 3, r);
+    for _ in 0..1000 {
+        let on = t.rng.pick(&[0u32, 1, 1, 1, 2]);
+        t.put(t.sym(0x0186_a270), on);
+        let n = t
+            .rng
+            .pick_or_any(&[0, 1, 3, 9, 0xffff_ffff, 0x0100_0001, 0x0100_0003]);
+        t.put(count, n);
+        let row = t.rng.pick_or_any(&[0, 1, 2, 8, 0xffff_ffff, 0x7fff_ffff]);
+        t.put(t.sym(0x0186_a26c), row);
+        let x = t.rng.pick_or_any(&[0, 10, 0xffff_fff6, 0x0100_0001]);
+        let y = t.rng.pick_or_any(&[0, 10, 0xffff_fff6, 0x7fff_ffff]);
+        t.twin(
+            "MenuItem_DrawCellCursor",
+            0x008c_4a90,
+            &[0, x, y],
+            VOID,
+            |o| {
+                tk::menu_item_draw_cell_cursor(o, [i(x), i(y)], &mut ui_remap, &mut callback);
+                0
+            },
+        );
+    }
+
+    // MenuItem_UseOnTargets
+    let item = t.alloc_random(0x40);
+    for (f, n, ret) in [
+        (0x008c_8e20u32, 2u8, r),
+        (0x008a_b280, 1, item), // the second argument is a stack address
+    ] {
+        record_far(&mut t, f, n, ret);
+    }
+    // the heal amount: who * 3 + command, logged
+    let (_, mut code) = log_args(&mut t, 3);
+    code.extend([0x8b, 0x44, 0x24, 0x08, 0x8d, 0x04, 0x40]); // mov eax, [esp + 8]; lea eax, [eax + eax * 2]
+    code.extend([0x03, 0x44, 0x24, 0x04, 0xc3]); // add eax, [esp + 4]; ret
+    jump_stub(&mut t, 0x008c_69a0, &code);
+    let aeons = return_cell(&mut t, 0x008a_9bf0);
+    let party = return_cell(&mut t, 0x008a_9b30);
+    stub(
+        &mut t,
+        0x008a_9bc0,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xc0, 0x20, 0xc3],
+    );
+    stub(
+        &mut t,
+        0x008a_9ad0,
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xc0, 0x10, 0xc3],
+    );
+    for _ in 0..500 {
+        let single = t.rng.pick(&[0u8, 1, 1, 2]);
+        t.put(t.sym(0x0186_a391), single);
+        t.scramble(0x0186_a3a8, 2);
+        let flags = t.rng.pick(&[0u8, 0x40, 0x80, 0xc0, 0x3f]);
+        t.put(item + 0x22, flags);
+        for cell in [aeons, party] {
+            let n = t.rng.pick(&[0u32, 1, 3, 0xffff_ffff]);
+            t.put(cell, n);
+        }
+        let target = t.rng.int();
+        t.twin("MenuItem_UseOnTargets", 0x008c_8d50, &[target], VOID, |o| {
+            tk::menu_item_use_on_targets(o, target, local, &mut callback);
+            0
+        });
+    }
+
+    // MenuWeapon_DrawRow: MsGetSaveWeapon keeps the ID it was asked for
+    let weapon_id = t.alloc(&[0; 4]);
+    for (f, n) in [(0x008f_5f70u32, 5u8), (0x008e_67f0, 4)] {
+        record_far(&mut t, f, n, r);
+    }
+    #[rustfmt::skip]
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x08][..],              // mov eax, [esp + 8]
+        &[0xc7, 0x00], &0x1234u32.to_le_bytes(),    // mov dword [eax], 0x1234
+        &[0x8b, 0x44, 0x24, 0x04],                  // mov eax, [esp + 4]
+        &[0xa3], &weapon_id.to_le_bytes(), &[0xc3], // mov [weapon_id], eax; ret
+    ]
+    .concat();
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+    let list = t.sym(0x0159_7770);
+    // (weapon_id is set by the MsGetSaveWeapon stand-in)
+    for _ in 0..1000 {
+        let window = t.alloc_random(0x80);
+        let rows = t.rng.pick(&[0u16, 1, 5, 0x200]);
+        t.put(window + 0x30, rows);
+        let scroll = t.rng.pick(&[0i16, 1, -1, 0x7fff, -0x8000]);
+        t.put(window + 0x46, scroll);
+        let row = t.rng.pick(&[0u32, 1, 4, 5, 0x1ff, 0xffff_ffff]);
+        if row < 0x200 {
+            let id = t.rng.pick(&[0u16, 0x5001, 0xffff]);
+            t.put(list + 4 * row, id);
+        }
+        let fixed = t.rng.pick(&[0u32, 0, 1, 0xffff_ffff]);
+        let x = t.rng.float(-100.0, 600.0);
+        let y = t.rng.float(-100.0, 600.0);
+        t.twin(
+            "MenuWeapon_DrawRow",
+            0x008d_0170,
+            &[window, x.to_bits(), y.to_bits(), row, fixed],
+            VOID,
+            |o| {
+                tk::menu_weapon_draw_row(
+                    o,
+                    window,
+                    [x, y],
+                    [i(row), i(fixed)],
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+    }
+
+    // Pad_ActuatorIds: the pad answers from a table
+    let answers = t.alloc(&[0; 0x400]);
+    // scePadInfoAct(port, slot, a, k): k 0 the count cell, else answers[(a + k) & 0xff]
+    #[rustfmt::skip]
+    let act: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x10, 0x85, 0xc0, 0x75, 0x06][..], // mov eax, [esp + 16]; test eax, eax; jne +6
+        &[0xa1], &answers.to_le_bytes(), &[0xc3],               // mov eax, [answers]; ret
+        &[0x8b, 0x44, 0x24, 0x0c, 0x03, 0x44, 0x24, 0x10],     // mov eax, [esp + 12]; add eax, [esp + 16]
+        &[0x25, 0xff, 0, 0, 0],                                 // and eax, 0xff
+        &[0x8b, 0x04, 0x85], &(answers + 0x100).to_le_bytes(),  // mov eax, [answers + 0x100 + eax * 4]
+        &[0xc3],
+    ]
+    .concat();
+    jump_stub(&mut t, 0x0062_fb40, &act);
+    // scePadInfoComb(port, slot, c, k): c -1 the combinations cell; k -1
+    // a count; else (c * 4 + k) * 7 & 0xff
+    #[rustfmt::skip]
+    let comb: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x0c, 0x83, 0xf8, 0xff, 0x75, 0x06][..], // mov eax, [esp + 12]; cmp eax, -1; jne +6
+        &[0xa1], &(answers + 4).to_le_bytes(), &[0xc3],               // mov eax, [answers + 4]; ret
+        &[0x8b, 0x4c, 0x24, 0x10, 0x83, 0xf9, 0xff, 0x75, 0x06],      // mov ecx, [esp + 16]; cmp ecx, -1; jne +6
+        &[0xa1], &(answers + 8).to_le_bytes(), &[0xc3],               // mov eax, [answers + 8]; ret
+        &[0x8d, 0x04, 0x81, 0x6b, 0xc0, 0x07, 0x25, 0xff, 0, 0, 0],   // lea eax, [ecx + eax * 4]; imul eax, 7; and eax, 0xff
+        &[0xc3],
+    ]
+    .concat();
+    jump_stub(&mut t, 0x0062_fb50, &comb);
+    for _ in 0..500 {
+        let any = t.rng.pick(&[0u32, 1, 1, 1, 2]);
+        t.put(answers, any);
+        let combs = t.rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff]);
+        t.put(answers + 4, combs);
+        let n = t.rng.pick(&[0u32, 1, 2, 4]);
+        t.put(answers + 8, n);
+        for k in 0..0x100 {
+            let kind = t.rng.pick(&[0u32, 0, 1, 2, 3]);
+            t.put(answers + 0x100 + 4 * k, kind);
+        }
+        let (port, slot) = (t.rng.below(2), t.rng.below(2));
+        t.twin("Pad_ActuatorIds", 0x0088_8a70, &[port, slot], U32, |o| {
+            w(tk::pad_actuator_ids(o, port, slot, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
