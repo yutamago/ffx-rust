@@ -374,4 +374,155 @@ pub mod bridge {
             }
         }
     }
+
+    const FFX_VU0_UNIT_MATRIX: u32 = 0x006e_d9a0;
+    const FFX_VU0_NORMALIZE: u32 = 0x006e_d6f0;
+    const FFX_VU0_COPY_VECTOR: u32 = 0x006e_d370;
+    const OP_UNIT_M_SCALE: u32 = 0x007e_a700;
+    const OP_MUL_M: u32 = 0x007e_83b0;
+    /// `f64` 3 (`0x00b2c5c8`).
+    const K_3: u32 = 0x00b2_c5c8;
+    /// `f64` 1/4096 (`0x00b50190`).
+    const K_4096TH: u32 = 0x00b5_0190;
+    /// `g_Vu0FixedRound`, `f64` 0.5 (`0x00b92220`).
+    const K_HALF_F64: u32 = 0x00b9_2220;
+
+    /// `0x1000 / d` (`idiv`); the original faults on 0, the port gives 0.
+    fn idiv_4096(d: u32) -> i32 {
+        0x1000i32.checked_div(d.cast_signed()).unwrap_or(0)
+    }
+
+    /// `(a % d) * k` (`idiv`, `imul`); the original faults where `%` does
+    /// (`d` 0, or `i32::MIN % -1`), the port gives `0 * k` there.
+    fn wrap_step(a: u32, d: u32, k: i32) -> i32 {
+        a.cast_signed()
+            .checked_rem(d.cast_signed())
+            .unwrap_or(0)
+            .wrapping_mul(k)
+    }
+
+    /// An `i32` as `fild`/`fstp m32` gives it, back in `f64`.
+    #[allow(clippy::cast_precision_loss)] // the rounding to f32 is the point
+    fn int_f32(n: i32) -> f64 {
+        f64::from(n as f32)
+    }
+
+    /// `op_refrection_st_float(obj, model, _, out, scale, du, dv)`
+    /// (`0x00a6cfb0`; from `op_md_ref_nolight`, `opus_0279_draw` and
+    /// `0x00a705f0`): refraction texture coordinates. The locals lie
+    /// below `frame` (the original's `ebp`). The matrix `u` (at `frame -
+    /// 0x84`) is the unit matrix with rows 0..2 `FFXVu0Normalize`d from
+    /// `[model +0x2c]`; the matrix `s` (at `frame - 0xc4`) is
+    /// `op_unit_m_scale` by `f32(f32(scale) / 4096)`, then `op_mul_m(s,
+    /// u, s)`. With `ku = 0x1000 / du` and `kv = 0x1000 / dv`, for each of
+    /// the `i16 obj +0x12` groups `i`: `p` is `s` times the `i`-th vector
+    /// at `[model +0x38]` (`FFXVu0ApplyMatrix`), `fu = f32((ftol(p.x) %
+    /// du) x ku) / 4096` and `fv` the same from `p.y`. The group's
+    /// vertices: vertex `i` without a stream (`[obj +0x1c]` 0), else the
+    /// next count and that many vertex numbers of the `i16` stream at
+    /// `obj + 0x10 + [obj +0x1c]`. Each vertex `v`: `t` is `u` times the
+    /// `v`-th vector at `[model +0x3c]` with `w` 1; `out[v].x =
+    /// f32(f32((t.x + 3) x 0.5) + fu)`,
+    /// `.y` the same from `t.y` and `fv` (16 bytes a vertex). Callees
+    /// through `call`. Returns `eax` as left: the group count reread at
+    /// the end, or with no group `obj` (stream) or 0.
+    #[allow(clippy::too_many_arguments)]
+    pub fn op_refrection_st_float<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        model: u32,
+        out: u32,
+        scale: u32,
+        du: u32,
+        dv: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let u = frame.wrapping_sub(0x84);
+        let s = frame.wrapping_sub(0xc4);
+        go(mem, FFX_VU0_UNIT_MATRIX, &[u], call);
+        for row in 0..3u32 {
+            let src: u32 = mem.read(model.wrapping_add(0x2c));
+            go(
+                mem,
+                FFX_VU0_NORMALIZE,
+                &[u.wrapping_add(0x10 * row), src.wrapping_add(0x10 * row)],
+                call,
+            );
+        }
+        let k = f64_at(mem, K_4096TH);
+        let f = x87::store(x87::mul(int_f32(scale.cast_signed()), k));
+        go(mem, OP_UNIT_M_SCALE, &[s, f], call);
+        go(mem, OP_MUL_M, &[s, u, s], call);
+        let (ku, kv) = (idiv_4096(du), idiv_4096(dv));
+        let stream: u32 = mem.read(obj.wrapping_add(0x1c));
+        let mut at = obj.wrapping_add(0x10).wrapping_add(stream);
+        let (p, t) = if stream == 0 {
+            (frame.wrapping_sub(0x44), frame.wrapping_sub(0x14))
+        } else {
+            (frame.wrapping_sub(0x34), frame.wrapping_sub(0x24))
+        };
+        let groups = |mem: &M| i32::from(mem.read::<i16>(obj.wrapping_add(0x12)));
+        if groups(mem) <= 0 {
+            return if stream == 0 { 0 } else { obj };
+        }
+        let (k3, half) = (f64_at(mem, K_3), f64_at(mem, K_HALF_F64));
+        let mut i = 0u32;
+        loop {
+            let pos: u32 = mem.read(model.wrapping_add(0x38));
+            go(
+                mem,
+                FFX_VU0_APPLY_MATRIX,
+                &[p, s, pos.wrapping_add(16 * i)],
+                call,
+            );
+            let a = x87::ftol(mem, x87::load(mem.read(p)));
+            let su = wrap_step(a, du, ku);
+            let b = x87::ftol(mem, x87::load(mem.read(p.wrapping_add(4))));
+            let sv = wrap_step(b, dv, kv);
+            // f32(n) x 1/4096, exact in f64
+            let fu = x87::mul(int_f32(su), k);
+            let fv = x87::mul(k, int_f32(sv));
+            let mut one = |mem: &mut M, v: u32, src: u32| {
+                if stream == 0 {
+                    let words: [u32; 4] = mem.read(src);
+                    mem.write(t, words);
+                } else {
+                    go(mem, FFX_VU0_COPY_VECTOR, &[t, src], call);
+                }
+                mem.write(t.wrapping_add(0xc), 1.0f32);
+                go(mem, FFX_VU0_APPLY_MATRIX, &[t, u, t], call);
+                let x = x87::load(mem.read(t));
+                mem.write(t, x87::store(x87::mul(x87::add(x, k3), half)));
+                let y = x87::load(mem.read(t.wrapping_add(4)));
+                mem.write(
+                    t.wrapping_add(4),
+                    x87::store(x87::mul(x87::add(k3, y), half)),
+                );
+                let x = x87::load(mem.read(t));
+                let dst = out.wrapping_add(v);
+                mem.write(dst, x87::store(x87::add(x, fu)));
+                let y = x87::load(mem.read(t.wrapping_add(4)));
+                mem.write(dst.wrapping_add(4), x87::store(x87::add(fv, y)));
+            };
+            if stream == 0 {
+                let normals: u32 = mem.read(model.wrapping_add(0x3c));
+                one(mem, 16 * i, normals.wrapping_add(16 * i));
+            } else {
+                let n = mem.read::<i16>(at);
+                at = at.wrapping_add(2);
+                for _ in 0..n.max(0) {
+                    let v = i32::from(mem.read::<i16>(at)).cast_unsigned() << 4;
+                    let normals: u32 = mem.read(model.wrapping_add(0x3c));
+                    one(mem, v, normals.wrapping_add(v));
+                    at = at.wrapping_add(2);
+                }
+            }
+            i += 1;
+            let n = groups(mem);
+            if i.cast_signed() >= n {
+                return n.cast_unsigned();
+            }
+        }
+    }
 }

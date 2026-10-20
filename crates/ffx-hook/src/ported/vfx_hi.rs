@@ -4,7 +4,7 @@
 //! original leaves a result in `eax` return the full `u32`.
 
 use super::{mem, ported};
-use ffx_vfx::{hi_light, hi_md, hi_opus};
+use ffx_vfx::{hi_draw, hi_light, hi_md, hi_opus};
 
 /// An original cdecl function through its address (rebased by the bridge).
 fn call_ptr(f: u32, args: &[u32]) -> u32 {
@@ -112,5 +112,37 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // a 32-bit process
         let frame = locals.0.as_mut_ptr() as u32 + 0x110;
         hi_light::bridge::op_0437_vertex_normal_point44_ffx(&mut mem(), packet, model, work, [base, mul1, mul0], slot, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_chara_path3(obj, init, chr)`.
+    op_md_chara_path3 @ 0x00a6_a3a0 => extern "C" fn op_md_chara_path3(obj: u32, init: u32, chr: u32) -> u32 {
+        hi_draw::bridge::op_md_chara_path3(&mut mem(), obj, init, chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_x64_00a6b710(obj, init)`: its locals in a buffer on this
+    /// shim's stack.
+    op_md_x64_00a6b710 @ 0x00a6_b710 => extern "C" fn op_md_x64(obj: u32, init: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x60]);
+        let mut locals = Locals([0; 0x60]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        hi_draw::bridge::op_md_x64(&mut mem(), obj, init, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_x64_fog_00a6bfe0(obj, init)`.
+    op_md_x64_fog_00a6bfe0 @ 0x00a6_bfe0 => extern "C" fn op_md_x64_fog(obj: u32, init: u32) -> u32 {
+        hi_draw::bridge::op_md_x64_fog(&mut mem(), obj, init)
+    }
+    /// `op_refrection_st_float(obj, model, _, out, scale, du, dv)`: its
+    /// locals in a buffer on this shim's stack.
+    op_refrection_st_float @ 0x00a6_cfb0 => extern "C" fn op_refrection_st_float(obj: u32, model: u32, _unused: u32, out: u32, scale: u32, du: u32, dv: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x100]);
+        let mut locals = Locals([0; 0x100]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x100;
+        hi_light::bridge::op_refrection_st_float(&mut mem(), obj, model, out, scale, du, dv, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_map_draw_init_00a753f0(b, pos)`.
+    opp_map_draw_init_00a753f0 @ 0x00a7_53f0 => extern "C" fn opp_map_draw_init(b: u32, pos: u32) -> u32 {
+        hi_opus::bridge::opp_map_draw_init(&mut mem(), b, pos, &mut |_, f, a| call_ptr(f, a))
     }
 }

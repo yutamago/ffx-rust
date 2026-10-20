@@ -325,4 +325,143 @@ pub mod bridge {
             call,
         )
     }
+
+    /// `f64` 2048 (`0x00b51bc0`).
+    const K_2048: u32 = 0x00b5_1bc0;
+    /// `f64` 256 (`0x00b922f0`).
+    const K_256: u32 = 0x00b9_22f0;
+    /// `f64` 208 (`0x00b54c70`).
+    const K_208: u32 = 0x00b5_4c70;
+    /// `f64` 1/512 (`0x00b41cc0`).
+    const K_512TH: u32 = 0x00b4_1cc0;
+    /// `f32` 0.8125 (`0x00b582f8`).
+    const K_0_8125: u32 = 0x00b5_82f8;
+    /// `f64` 1792 (`0x00b583b8`).
+    const K_1792: u32 = 0x00b5_83b8;
+    /// `f64` 1840 (`0x00b51bb8`).
+    const K_1840: u32 = 0x00b5_1bb8;
+    /// `f32` 0.001 (`0x00b368a4`).
+    const K_0_001: u32 = 0x00b3_68a4;
+    /// `f32` 0.01 (`0x00b1f2b0`).
+    const K_0_01: u32 = 0x00b1_f2b0;
+    const OP_RANDOM_P: u32 = 0x007e_6780;
+
+    /// The map buffer's entries: 0x740 of them, 0x58 bytes each, from
+    /// `b + 0x20`.
+    const MAP_ENTRIES: u32 = 0x740;
+    const MAP_ENTRY: u32 = 0x58;
+
+    /// `opp_map_draw_init_00a753f0(b, pos)` (`0x00a753f0`; kind 0 of
+    /// `opp_map_draw_a74c60`): `[b]` = 0, then with `X = f32(pos.x +
+    /// 2048)`, `Y = f32(pos.y + 2048)` and `k` = 1/512 the 0x740 entries
+    /// `e` (0x58 bytes from `b + 0x20`) round a 512 x 416 rectangle, each
+    /// side's `i` counted in `f32` (`x0 = X - 256`, `y0 = Y - 208` kept
+    /// unrounded until the store):
+    /// - 0x200 bottom ones: `+0x10` `x0 + i`, `+0x14` `f32(y0)`, `+0x18`
+    ///   0, `+0x38` `i k`, `+0x3c` 0;
+    /// - 0x1a0 right: `+0x10` `f32(X + 256)`, `+0x14` `y0 + i`, `+0x18` 0,
+    ///   `+0x38` 1, `+0x3c` `i k`;
+    /// - 0x200 top, `i` from 0x1ff down: `+0x10` `x0 + i`, `+0x14` `f32(Y +
+    ///   208)`, `+0x18` 0, `+0x38` `i k`, `+0x3c` 0.8125;
+    /// - 0x1a0 left, `i` from 0x19f down: `+0x10` `f32(x0)`, `+0x14` `y0 +
+    ///   i`, `+0x18` 0, and the next entry's `+0x38` 0 and `+0x3c` `i k`
+    ///   (the original's off-by-one: the side's first entry keeps its old
+    ///   uv, and the last pair lands 8 bytes past the 0x27e20-byte
+    ///   buffer).
+    ///
+    /// Then every entry: `+0` `X`, `+4` `Y`, `+8` 0, `+0x20` and `+0x24`
+    /// 0x80808080, `+0x30` `f32((X - 1792) k)`, `+0x34` `f32(k (Y -
+    /// 1840))`, `+0x40..+0x48` 0, `op_random_p(0.001)` (dropped; through
+    /// `call`), `+0x4c` 0.01, `+0x50` and `+0x54` 0. Returns `eax` as the
+    /// last `op_random_p` left it.
+    pub fn opp_map_draw_init<M: Mem>(
+        mem: &mut M,
+        b: u32,
+        pos: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87;
+        let f64_at = |mem: &M, sym: u32| -> f64 { mem.read(mem.rebase(sym)) };
+        let f32_at = |mem: &M, sym: u32| -> u32 { mem.read(mem.rebase(sym)) };
+        mem.write(b, 0u32);
+        let k2048 = f64_at(mem, K_2048);
+        let x = x87::store(x87::add(x87::load(mem.read(pos)), k2048));
+        let y = x87::store(x87::add(k2048, x87::load(mem.read(pos.wrapping_add(4)))));
+        let (xf, yf) = (x87::load(x), x87::load(y));
+        let x0 = x87::sub(xf, f64_at(mem, K_256));
+        let y0 = x87::sub(yf, f64_at(mem, K_208));
+        let k = f64_at(mem, K_512TH);
+        let entry = |j: u32| b.wrapping_add(0x20 + MAP_ENTRY * j);
+        let at = |e: u32, o: u32, v: u32, mem: &mut M| mem.write(e.wrapping_add(o), v);
+        // an f32 count, exact
+        #[allow(clippy::cast_precision_loss)]
+        let fi = |i: u32| f64::from(i as f32);
+        let zero = 0u32;
+        let one = 1.0f32.to_bits();
+        let y0f = x87::store(y0);
+        let mut j = 0u32;
+        for i in 0..0x200u32 {
+            let e = entry(j);
+            at(e, 0x10, x87::store(x87::add(fi(i), x0)), mem);
+            at(e, 0x14, y0f, mem);
+            at(e, 0x18, zero, mem);
+            at(e, 0x38, x87::store(x87::mul(fi(i), k)), mem);
+            at(e, 0x3c, zero, mem);
+            j += 1;
+        }
+        let right = x87::store(x87::add(f64_at(mem, K_256), xf));
+        for i in 0..0x1a0u32 {
+            let e = entry(j);
+            at(e, 0x10, right, mem);
+            at(e, 0x14, x87::store(x87::add(fi(i), y0)), mem);
+            at(e, 0x18, zero, mem);
+            at(e, 0x38, one, mem);
+            at(e, 0x3c, x87::store(x87::mul(fi(i), k)), mem);
+            j += 1;
+        }
+        let top = x87::store(x87::add(yf, f64_at(mem, K_208)));
+        let v = f32_at(mem, K_0_8125);
+        for i in (0..0x200u32).rev() {
+            let e = entry(j);
+            at(e, 0x10, x87::store(x87::add(fi(i), x0)), mem);
+            at(e, 0x14, top, mem);
+            at(e, 0x18, zero, mem);
+            at(e, 0x38, x87::store(x87::mul(fi(i), k)), mem);
+            at(e, 0x3c, v, mem);
+            j += 1;
+        }
+        let left = x87::store(x0);
+        for i in (0..0x1a0u32).rev() {
+            let e = entry(j);
+            at(e, 0x10, left, mem);
+            at(e, 0x14, x87::store(x87::add(fi(i), y0)), mem);
+            at(e, 0x18, zero, mem);
+            let next = entry(j + 1);
+            at(next, 0x38, zero, mem);
+            at(next, 0x3c, x87::store(x87::mul(fi(i), k)), mem);
+            j += 1;
+        }
+        let u = x87::store(x87::mul(x87::sub(xf, f64_at(mem, K_1792)), k));
+        let w = x87::store(x87::mul(k, x87::sub(yf, f64_at(mem, K_1840))));
+        let (small, tiny) = (f32_at(mem, K_0_001), f32_at(mem, K_0_01));
+        let mut eax = 0;
+        for j in 0..MAP_ENTRIES {
+            let e = entry(j);
+            at(e, 0, x, mem);
+            at(e, 0x20, 0x8080_8080, mem);
+            at(e, 0x24, 0x8080_8080, mem);
+            at(e, 4, y, mem);
+            at(e, 8, zero, mem);
+            at(e, 0x30, u, mem);
+            at(e, 0x34, w, mem);
+            for o in [0x40u32, 0x44, 0x48] {
+                at(e, o, zero, mem);
+            }
+            eax = go(mem, OP_RANDOM_P, &[small], call);
+            at(e, 0x4c, tiny, mem);
+            at(e, 0x50, zero, mem);
+            at(e, 0x54, zero, mem);
+        }
+        eax
+    }
 }
