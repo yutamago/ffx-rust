@@ -12167,6 +12167,320 @@ pub mod bridge {
         }
         eax
     }
+    /// `MenuItem_SortGearByOwner()` (`0x008c9fb0`, own name; caller
+    /// `TkMenuCtrlItem`, which reads the result): orders the gear list by
+    /// owner. With `n = TkMn2GetNameModeMax()`, `owners[i]` is the byte
+    /// `+4` of `MsGetSaveWeapon(id_i, &local)` for the first `n` entries
+    /// of [`MENU_ITEM_LIST`]. For owners 0..7 in turn the group of
+    /// `weapons + armour` entries (`u16` pairs at `0x0186a3e4`) starting
+    /// after the previous groups is walked; an entry of another owner is
+    /// swapped (`SwapSaveGear(id, id_j)`, and the two owner bytes) with
+    /// `j = Menu_FindByte(owners, owner, from, n)`, `from` first the
+    /// group's end and after each swap `j + 1`. Returns 1, or 0 when a
+    /// search finds nothing. `owners` is the 0x400-byte buffer (the
+    /// original's frame; bytes past `n` are whatever it holds), `local`
+    /// `MsGetSaveWeapon`'s out word.
+    pub fn menu_item_sort_gear_by_owner<M: Mem>(
+        mem: &mut M,
+        owners: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rebase = |mem: &M, a: u32| mem.rebase(a);
+        let list = MENU_ITEM_LIST.ptr(mem).addr;
+        let id = |mem: &M, i: u32| u32::from(mem.read::<u16>(list.wrapping_add(i.wrapping_mul(4))));
+        let name_max = rebase(mem, 0x008c_1bc0);
+        let n = call(mem, name_max, &[]).cast_signed();
+        let weapon = rebase(mem, 0x007a_bbd0);
+        for i in 0..n.max(0).cast_unsigned() {
+            let rec = call(mem, weapon, &[id(mem, i), local]);
+            let owner = mem.read::<u8>(rec.wrapping_add(4));
+            mem.write(owners.wrapping_add(i), owner);
+        }
+        let counts = rebase(mem, 0x0186_a3e4);
+        let (find, swap) = (rebase(mem, 0x008c_9bc0), rebase(mem, 0x007a_b9f0));
+        let mut base = 0u32;
+        for owner in 0..7u32 {
+            let pair = counts.wrapping_add(owner * 4);
+            let count = u32::from(mem.read::<u16>(pair)) + u32::from(mem.read::<u16>(pair + 2));
+            let end = base.wrapping_add(count);
+            let mut searched = end.wrapping_sub(1);
+            for k in 0..count {
+                let slot = owners.wrapping_add(base).wrapping_add(k);
+                let had = mem.read::<u8>(slot);
+                if u32::from(had) == owner {
+                    continue;
+                }
+                let from = searched.wrapping_add(1);
+                let j = call(mem, find, &[owners, owner, from, n.cast_unsigned()]);
+                if j.cast_signed() < 0 {
+                    return 0;
+                }
+                let (mine, theirs) = (id(mem, base.wrapping_add(k)), id(mem, j));
+                call(mem, swap, &[mine, theirs]);
+                let other = owners.wrapping_add(j);
+                let moved = mem.read::<u8>(other);
+                mem.write(slot, moved);
+                mem.write(other, had);
+                searched = j;
+            }
+            base = end;
+        }
+        1
+    }
+
+    /// The plate and the price backing of a shop row (`MenuShop_DrawRow`,
+    /// `MenuWShop_DrawBuyRow`, `MenuWShop_DrawSellRow`):
+    /// `TODrawMenuPlateXYWHType(x, y, f32(remapX2(740)), f32(remapY2(60)),
+    /// 5)`, then `TOMkpShapeXYWHUVC2(-1, f32(remapX2(460) + x),
+    /// f32(remapY2(3) + y), f32(remapX2(250)), f32(remapY2(54)), 1515, 170,
+    /// 1715, 228, 0x80808080, 0x808080)` (each y remapped before its x).
+    fn shop_row_frame<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, round_trip, store};
+        let (xb, yb) = (round_trip(x).to_bits(), round_trip(y).to_bits());
+        let height = store(remap(mem, true, 60.0));
+        let width = store(remap(mem, false, 740.0));
+        let plate = mem.rebase(0x008f_5f70);
+        call(mem, plate, &[xb, yb, width, height, 5]);
+        let height = store(remap(mem, true, 54.0));
+        let width = store(remap(mem, false, 250.0));
+        let top = store(add(remap(mem, true, 3.0), load(yb)));
+        let left = store(add(remap(mem, false, 460.0), load(xb)));
+        let uv = [1515f32, 170.0, 1715.0, 228.0].map(f32::to_bits);
+        let shape = mem.rebase(0x0090_3ee0);
+        #[rustfmt::skip]
+        call(mem, shape, &[0xffff_ffff, left, top, width, height, uv[0], uv[1], uv[2], uv[3], 0x8080_8080, 0x0080_8080]);
+    }
+
+    /// A shop row's price: `ToMakeBtlEasyDigitRight(price, tx, ty, 0x25,
+    /// 0.78, 0.0)` at `tx = f32(remapX2(686) + x)`, `ty = f32(remapY2(9) +
+    /// y)` (y remapped first).
+    fn shop_row_price<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        price: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, store};
+        let ty = store(add(remap(mem, true, 9.0), load(y.to_bits())));
+        let tx = store(add(remap(mem, false, 686.0), load(x.to_bits())));
+        let digits = mem.rebase(0x0090_55c0);
+        call(mem, digits, &[price, tx, ty, 0x25, 0.78f32.to_bits(), 0]);
+    }
+
+    /// A weapon shop row's name: `DrawCrossMenuIconWeaponName2(rec,
+    /// f32(x - remapX2(50)), y, grey)`.
+    fn wshop_row_name<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        rec: u32,
+        grey: bool,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, round_trip, store, sub};
+        let yb = round_trip(y).to_bits();
+        let left = store(sub(load(x.to_bits()), remap(mem, false, 50.0)));
+        let name = mem.rebase(0x008e_6970);
+        call(mem, name, &[rec, left, yb, u32::from(grey)])
+    }
+
+    /// `MenuShop_DrawRow(window, x, y, row, ids)` (`0x008dac70`, own name;
+    /// caller `0x008dabf0`; `x`, `y` `f32`): for `row` within the `u16`
+    /// count at `window + 0x30`, item `id = u16 ids[1 + row]` with `price =
+    /// MenuShop_Price(id)` (asked first): the shop row frame, the price,
+    /// and `DrawCrossMenuIconItemName(id, x, y, !MenuShop_CanBuy(id))`,
+    /// whose `eax` is returned. Out of range: the count when `row` is past
+    /// it (the original's `eax`), 0 for a negative row (the original
+    /// leaves its caller's `eax`; no caller reads it).
+    pub fn menu_shop_draw_row<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [x, y]: [f32; 2],
+        row: i32,
+        ids: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::round_trip;
+        let Some(id) = shop_row_id(mem, window, row, ids) else {
+            return shop_row_out(mem, window, row);
+        };
+        let f = mem.rebase(0x008d_b3b0);
+        let price = call(mem, f, &[id]);
+        shop_row_frame(mem, [x, y], remap, call);
+        shop_row_price(mem, [x, y], price, remap, call);
+        let f = mem.rebase(0x008d_ab30);
+        let grey = call(mem, f, &[id]) == 0;
+        let (xb, yb) = (round_trip(x).to_bits(), round_trip(y).to_bits());
+        let f = mem.rebase(0x008e_6700);
+        call(mem, f, &[id, xb, yb, u32::from(grey)])
+    }
+
+    /// The `u16 ids[1 + row]` of a shop row in range (`0 <= row <` the
+    /// `u16` at `window + 0x30`).
+    fn shop_row_id(mem: &impl Mem, window: u32, row: i32, ids: u32) -> Option<u32> {
+        let count = i32::from(mem.read::<u16>(window.wrapping_add(0x30)));
+        if row < 0 || row >= count {
+            return None;
+        }
+        let at = ids.wrapping_add(2).wrapping_add(row.cast_unsigned() * 2);
+        Some(u32::from(mem.read::<u16>(at)))
+    }
+
+    /// What a shop row out of range leaves in `eax`: the count when `row`
+    /// is past it, 0 for a negative row.
+    fn shop_row_out(mem: &impl Mem, window: u32, row: i32) -> u32 {
+        if row < 0 {
+            0
+        } else {
+            u32::from(mem.read::<u16>(window.wrapping_add(0x30)))
+        }
+    }
+
+    /// `MenuWShop_DrawBuyRow(window, x, y, row, ids)` (`0x008d8cb0`, own
+    /// name; caller `0x008d8c30`): as [`menu_shop_draw_row`] for a weapon
+    /// shop entry: `rec = MenuWShop_GetRecord(id)`, `price =
+    /// MenuShop_WeaponPrice(rec)`, the frame and price, then the name
+    /// greyed when `MenuWShop_CanAfford(rec)` is 0. Returns the name
+    /// call's `eax`.
+    pub fn menu_wshop_draw_buy_row<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [x, y]: [f32; 2],
+        row: i32,
+        ids: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let Some(id) = shop_row_id(mem, window, row, ids) else {
+            return shop_row_out(mem, window, row);
+        };
+        let f = mem.rebase(0x008d_9170);
+        let rec = call(mem, f, &[id]);
+        let f = mem.rebase(0x008d_9370);
+        let price = call(mem, f, &[rec]);
+        shop_row_frame(mem, [x, y], remap, call);
+        shop_row_price(mem, [x, y], price, remap, call);
+        let f = mem.rebase(0x008d_85d0);
+        let grey = call(mem, f, &[rec]) == 0;
+        wshop_row_name(mem, [x, y], rec, grey, remap, call)
+    }
+
+    /// `MenuWShop_DrawSellRow(window, x, y, row)` (`0x008d8f60`, own name;
+    /// caller `0x008d8ee0`): for `row` in range, the shop row frame; then,
+    /// unless the [`MENU_ITEM_LIST`] entry's id is 0 (returns 0), `rec =
+    /// MsGetSaveWeapon(id, &local)`, its price
+    /// `MenuShop_WeaponSellPrice(rec)` and the name, greyed when the
+    /// entry's byte `+3` is 0. Returns the name call's `eax`; out of range
+    /// as [`menu_shop_draw_row`].
+    pub fn menu_wshop_draw_sell_row<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [x, y]: [f32; 2],
+        row: i32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let count = i32::from(mem.read::<u16>(window.wrapping_add(0x30)));
+        if row < 0 || row >= count {
+            return shop_row_out(mem, window, row);
+        }
+        shop_row_frame(mem, [x, y], remap, call);
+        let entry = MENU_ITEM_LIST
+            .ptr(mem)
+            .addr
+            .wrapping_add(row.cast_unsigned() * 4);
+        let id = u32::from(mem.read::<u16>(entry));
+        if id == 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x007a_bbd0);
+        let rec = call(mem, f, &[id, local]);
+        let f = mem.rebase(0x008d_9410);
+        let price = call(mem, f, &[rec]);
+        shop_row_price(mem, [x, y], price, remap, call);
+        let grey = mem.read::<u8>(entry.wrapping_add(3)) == 0;
+        wshop_row_name(mem, [x, y], rec, grey, remap, call)
+    }
+
+    /// `MenuSummon_DrawGrowRow(window, x, y, row, fixed)` (`0x008ce5c0`,
+    /// own name; caller `0x008ce520`; `x`, `y` `f32`): an aeon stat row.
+    /// Unless `fixed`, `y` scrolls first: `f32(y - remapY2(70) * i16
+    /// window[0x46] / 4096)`. For `row` within the `u16` count at `+0x30`:
+    /// the plate `TODrawMenuPlateXYWHType(x, y, f32(remapX2(740)),
+    /// f32(remapY2(54)), 0xe)`; `grey` when bit `row` of
+    /// `g_TkMenuSummonGrowMask` is clear; the name
+    /// `ToMakeBtlEasyFont(TOMenuGetSummonMes(name), f32(remapX2(200) + x),
+    /// f32(remapY2(6) + y), grey, 0.78, 1.0)` and the value
+    /// `ToMakeBtlEasyDigitRight(MenuSummon_GetStat(
+    /// MsGetSavePlayerPtr(TkMenuGetCurrentSummon()), desc, 1),
+    /// f32(remapX2(650) + x), f32(remapY2(6) + y), grey, 0.68, 0.0)`, with
+    /// `desc` the stat's 0x1c-byte record at `0x00c5a608` (`name` its word
+    /// `+4`). Returns the digits' `eax`; out of range the count, or 0 for
+    /// a negative row (the original's `eax` there is its caller's, or the
+    /// scroll word when it scrolled; no caller reads it).
+    pub fn menu_summon_draw_grow_row<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [x, y]: [f32; 2],
+        row: i32,
+        fixed: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, round_trip, store, sub};
+        let mut yb = y.to_bits();
+        if fixed == 0 {
+            let top = load(yb);
+            let step = remap(mem, true, 70.0);
+            let scroll = f64::from(mem.read::<i16>(window.wrapping_add(0x46)));
+            yb = store(sub(top, mul(mul(step, scroll), 1.0 / 4096.0)));
+        }
+        let count = i32::from(mem.read::<u16>(window.wrapping_add(0x30)));
+        if row < 0 || row >= count {
+            return shop_row_out(mem, window, row);
+        }
+        let xb = round_trip(x).to_bits();
+        let yb = round_trip(f32::from_bits(yb)).to_bits();
+        let height = store(remap(mem, true, 54.0));
+        let width = store(remap(mem, false, 740.0));
+        let plate = mem.rebase(0x008f_5f70);
+        call(mem, plate, &[xb, yb, width, height, 0xe]);
+        let mask = mem.read::<u32>(mem.rebase(0x0186_a600));
+        let grey = u32::from(mask & (1u32 << (row.cast_unsigned() & 0x1f)) == 0);
+        let desc = mem
+            .rebase(0x00c5_a608)
+            .wrapping_add(row.cast_unsigned() * 0x1c);
+        let ty = store(add(remap(mem, true, 6.0), load(yb)));
+        let tx = store(add(remap(mem, false, 200.0), load(xb)));
+        let f = mem.rebase(0x008b_eeb0);
+        let name = mem.read::<u32>(desc.wrapping_add(4));
+        let text = call(mem, f, &[name]);
+        let font = mem.rebase(0x0090_5ab0);
+        call(
+            mem,
+            font,
+            &[text, tx, ty, grey, 0.78f32.to_bits(), 1f32.to_bits()],
+        );
+        let f = mem.rebase(0x008a_9880);
+        let summon = call(mem, f, &[]);
+        let f = mem.rebase(0x0078_5330);
+        let player = call(mem, f, &[summon]);
+        let f = mem.rebase(0x008c_eca0);
+        let value = call(mem, f, &[player, desc, 1]);
+        let ty = store(add(remap(mem, true, 6.0), load(yb)));
+        let tx = store(add(remap(mem, false, 650.0), load(xb)));
+        let digits = mem.rebase(0x0090_55c0);
+        call(mem, digits, &[value, tx, ty, grey, 0.68f32.to_bits(), 0])
+    }
 }
 
 #[cfg(test)]

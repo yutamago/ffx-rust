@@ -4165,6 +4165,31 @@ ported! {
         let local = frame.at();
         tk::menu_sel_list_cursor_x(&mut mem(), window, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_SortGearByOwner()`: 1, or 0 when a search fails.
+    MenuItem_SortGearByOwner @ 0x008c_9fb0 => extern "C" fn menu_item_sort_gear_by_owner() -> u32 {
+        // the original's 0x400-byte owner buffer and MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<257>::new();
+        let owners = frame.at();
+        tk::menu_item_sort_gear_by_owner(&mut mem(), owners, owners.wrapping_add(0x400), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_DrawRow(window, x, y, row, ids)`: the name call's `eax`.
+    MenuShop_DrawRow @ 0x008d_ac70 => extern "C" fn menu_shop_draw_row(window: u32, x: f32, y: f32, row: i32, ids: u32) -> u32 {
+        tk::menu_shop_draw_row(&mut mem(), window, [x, y], row, ids, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawBuyRow(window, x, y, row, ids)`: the name call's `eax`.
+    MenuWShop_DrawBuyRow @ 0x008d_8cb0 => extern "C" fn menu_wshop_draw_buy_row(window: u32, x: f32, y: f32, row: i32, ids: u32) -> u32 {
+        tk::menu_wshop_draw_buy_row(&mut mem(), window, [x, y], row, ids, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawSellRow(window, x, y, row)`: the name call's `eax`.
+    MenuWShop_DrawSellRow @ 0x008d_8f60 => extern "C" fn menu_wshop_draw_sell_row(window: u32, x: f32, y: f32, row: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_wshop_draw_sell_row(&mut mem(), window, [x, y], row, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_DrawGrowRow(window, x, y, row, fixed)`: the digits' `eax`.
+    MenuSummon_DrawGrowRow @ 0x008c_e5c0 => extern "C" fn menu_summon_draw_grow_row(window: u32, x: f32, y: f32, row: i32, fixed: u32) -> u32 {
+        tk::menu_summon_draw_grow_row(&mut mem(), window, [x, y], row, fixed, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMn2DrawCrossSummonBattleCountPlate(x, y, chr)`: the last font call's `eax`.
     TkMn2DrawCrossSummonBattleCountPlate @ 0x008c_d720 => extern "C" fn tk_mn2_draw_cross_summon_battle_count_plate(x: f32, y: f32, chr: u32) -> u32 {
         tk::tk_mn2_draw_cross_summon_battle_count_plate(&mut mem(), [x, y], chr, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
