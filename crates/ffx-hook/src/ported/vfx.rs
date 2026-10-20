@@ -5624,4 +5624,9 @@ ported! {
         let vec = frame.at();
         opus::bridge::opu_matrix_bone(&mut mem(), host, cmd, vec, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 38 d ----
+    /// `opus_encount0_draw(host, unit, grid)` (`0x007f81e0`).
+    opus_encount0_draw @ 0x007f_81e0 => extern "C" fn opus_encount0_draw(host: u32, unit: u32, grid: u32) -> u32 {
+        opus::bridge::opus_encount0_draw(&mut mem(), host, unit, grid, &mut |_, f, a| call_ptr(f, a))
+    }
 }

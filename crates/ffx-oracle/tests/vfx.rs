@@ -23125,3 +23125,88 @@ fn round38c_loop_and_bone_matrices_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round38d_encounter_grid_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_81e0);
+        let (host, parts, lists, grid) = (
+            p.alloc(0x400),
+            p.alloc(0x2000),
+            p.alloc(0x60),
+            p.alloc(0x700),
+        );
+        let sse2 = p.sym(ffx_bridge::x87::SSE2_AVAILABLE.sym);
+        for round in 0..1000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            opus_host(&mut p, &mut rng, host, parts, lists);
+            let unit: u32 = p.get(host + 0x220);
+            let up = rng.pick(&[0u16, 0xff00, 0xffff]);
+            p.set(unit + 0xb8, up);
+            for k in 0..0x30u32 {
+                let v = ranged(&mut rng, -3.0, 3.0);
+                p.set(host + 0x280 + 4 * (k & 0xf), v);
+                p.set(host + 0x2c0 + 4 * (k & 0xf), v);
+                p.set(unit + 0x30 + 4 * (k & 0x1f), v);
+            }
+            for at in [0x3cu32, 0x4c] {
+                let v = ranged(&mut rng, 0.0, 600.0);
+                p.set(unit + at, v);
+            }
+            for at in [0x60u32, 0x64, 0x68] {
+                let v = if rng.chance(95) {
+                    ranged(&mut rng, -40.0, 40.0)
+                } else {
+                    rng.float()
+                };
+                p.set(unit + at, v);
+            }
+            for at in [0x50u32, 0x54, 0x58] {
+                let v = ranged(&mut rng, -0.5, 0.5);
+                p.set(unit + at, v);
+            }
+            p.set(host + 0x212, rng.pick(&[0u16, 0, 1]));
+            p.fill(grid, 0x700, &mut rng);
+            let sides = if rng.chance(10) {
+                [0u16, 3, 2]
+            } else {
+                [
+                    1 + rng.below(4) as u16,
+                    1 + rng.below(4) as u16,
+                    1 + rng.below(3) as u16,
+                ]
+            };
+            for (k, v) in [2u32, 4, 6].into_iter().zip(sides) {
+                p.set(grid + k, v);
+            }
+            for r in 0..48u32 {
+                for k in 0..3u32 {
+                    let v = if rng.chance(97) {
+                        ranged(&mut rng, -3000.0, 3000.0)
+                    } else {
+                        rng.float()
+                    };
+                    p.set(grid + 0x30 + 0x20 * r + 4 * k, v);
+                    let v = ranged(&mut rng, -3.0, 3.0);
+                    p.set(grid + 0x40 + 0x20 * r + 4 * k, v);
+                }
+            }
+            p.set(sse2, u32::from(rng.chance(50)));
+            p.check(
+                &what("opus_encount0_draw"),
+                0x007f_81e0,
+                &[host, unit, grid],
+                |m| {
+                    Some(opus::bridge::opus_encount0_draw(
+                        m,
+                        host,
+                        unit,
+                        grid,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}

@@ -3079,6 +3079,106 @@ pub mod bridge {
         call(mem, g(mem, 0x0071_1180), &[0, unit, part, host, fl])
     }
 
+    /// `opus_encount0_draw(host, unit, grid)` (`0x007f81e0`, from
+    /// `opu_encount`): the encounter grid's particle matrices. `host`'s
+    /// draw head: `+0x118` 0x80808080, `+0x110` 0, `u16 +0x108` = unit
+    /// `+0xc2`, `+0x100` = `u16 +0xc0`, `+0x10c` = `+0xd0`, `+0x11c`,
+    /// `+0x138`, `+0x144` 0, `+0x140` = `+0xc4`, `+0x120` = `host +0xc0`,
+    /// `+0x104` = `host +0x328`. `host +0x40` = `op_unit_m_scale(f32(unit
+    /// +0x3c / 2^21))`, its `+0x54` x= `unit +0x4c / 256`. The grid (`u16
+    /// +2`, `+4`, `+6` its sides, `n` = `+2` x 64) has 32-byte records
+    /// from `+0x30`: unless `host u16 +0x212`, each moves by the unit's
+    /// `+0x60` (position) and `+0x50` (angles at `+0x10`). The record's
+    /// position wraps into `[-n/2, n/2)` (`ftol` mod `n`) at `host +0`
+    /// (`w` 1), `host +0x80` = `op_rt_m(host +0x40, angles, host)` x
+    /// `opus_parent_get(host, unit)`, `host +0xc0` = `host +0x2c0` x that,
+    /// `+0x130` = `host +0x80`, `+0x134` = `host +0x354`. Returns the
+    /// original's eax: `u16 grid +4` after the last record, else 0.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opus_encount0_draw<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        unit: u32,
+        grid: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{Reg, ftol, round_trip};
+        let h = |k: u32| host.wrapping_add(k);
+        let u = |k: u32| unit.wrapping_add(k);
+        let fl = |mem: &M, at: u32| f32::from_bits(mem.read(at));
+        mem.write(h(0x118), 0x8080_8080u32);
+        mem.write(h(0x110), 0u32);
+        let scale = round_trip(fl(mem, u(0x3c)));
+        let w: u16 = mem.read(u(0xc2));
+        mem.write(h(0x108), w);
+        let w = u32::from(mem.read::<u16>(u(0xc0)));
+        mem.write(h(0x100), w);
+        let w: u32 = mem.read(u(0xd0));
+        mem.write(h(0x10c), w);
+        mem.write(h(0x11c), 0u32);
+        let w: u32 = mem.read(u(0xc4));
+        mem.write(h(0x140), w);
+        mem.write(h(0x138), 0u32);
+        mem.write(h(0x144), 0u32);
+        mem.write(h(0x120), h(0xc0));
+        let w: u32 = mem.read(h(0x328));
+        mem.write(h(0x104), w);
+        let mv: [f32; 6] = [0x60, 0x64, 0x68, 0x50, 0x54, 0x58].map(|k| round_trip(fl(mem, u(k))));
+        let s = (Reg::load(scale) * Reg::constant(4.768_371_582_031_25e-7)).store();
+        call(mem, g(mem, 0x007e_a700), &[h(0x40), s.to_bits()]);
+        let y = (Reg::load(fl(mem, u(0x4c))) * Reg::constant(0.003_906_25))
+            .mul_m32(fl(mem, h(0x54)))
+            .store();
+        mem.write(h(0x54), y);
+        let side = |mem: &M, k: u32| u32::from(mem.read::<u16>(grid.wrapping_add(k)));
+        let n = side(mem, 2) << 6;
+        let half = n.cast_signed() / 2;
+        let count = |mem: &M| {
+            side(mem, 6)
+                .wrapping_mul(side(mem, 4))
+                .wrapping_mul(side(mem, 2))
+        };
+        let mut ret = 0;
+        let mut rec = grid.wrapping_add(0x30);
+        let mut i = 0u32;
+        while i.cast_signed() < count(mem).cast_signed() {
+            if mem.read::<u16>(h(0x212)) == 0 {
+                for (k, at) in [0u32, 4, 8, 0x10, 0x14, 0x18].into_iter().enumerate() {
+                    let p = rec.wrapping_add(at);
+                    let v = Reg::load(mv[k]).add_m32(fl(mem, p)).store();
+                    mem.write(p, v);
+                }
+            }
+            for k in 0..3u32 {
+                let v =
+                    ftol(mem, Reg::load(fl(mem, rec.wrapping_add(4 * k))).value()).cast_signed();
+                let mut r = v.wrapping_rem(n.cast_signed());
+                if r < 0 {
+                    r = r.wrapping_add(n.cast_signed());
+                }
+                #[allow(clippy::cast_precision_loss)] // fild, then fstp m32
+                let f = r.wrapping_sub(half) as f32;
+                mem.write(h(4 * k), f);
+            }
+            mem.write(h(0xc), 1.0f32);
+            call(
+                mem,
+                g(mem, 0x007e_9850),
+                &[h(0x80), h(0x40), rec.wrapping_add(0x10), host],
+            );
+            let parent = call(mem, g(mem, 0x0080_1f00), &[host, unit]);
+            call(mem, g(mem, 0x007e_83b0), &[h(0x80), parent, h(0x80)]);
+            call(mem, g(mem, 0x007e_83b0), &[h(0xc0), h(0x2c0), h(0x80)]);
+            i += 1;
+            mem.write(h(0x130), h(0x80));
+            let w: u32 = mem.read(h(0x354));
+            mem.write(h(0x134), w);
+            ret = side(mem, 4);
+            rec = rec.wrapping_add(0x20);
+        }
+        ret
+    }
+
     /// `opus_encount5_make(set, pos)` (`0x007f9280`): the encounter
     /// swirl's 0x740 particles, a ring of 96-byte records from `set +0x20`
     /// round a 512 x 416 rectangle centred on `A = f32(pos.x + 2048)`, `B =
