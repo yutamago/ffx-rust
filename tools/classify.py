@@ -344,6 +344,7 @@ REVIEWED = {
     0x008ba390: ("glue", "9-byte frame then jmp MsSaveAddAP_00784610 (menu round 27)"),
     0x00798950: ("platform", "Rng_ClockSeed: XORs the system time bytes; the harness hooks this address for its seed (battle round 30)"),
     0x00790430: ("platform", "PasswordTextRead's file loader: fiosOpen/sceLseek/sceRead/sceClose, TkMalloc/TkFree, memcpy only (battle round 30)"),
+    0x0084ed10: ("debug", "DECI2 protocol handler: 0x84eee0 passes it only to sceDeci2Open 0x62f680 (xor eax,eax; ret), so it never runs (main round 16)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

@@ -21,6 +21,18 @@ fn crt_atan(_: &mut Oracle, x: f64) -> u32 {
     ffx_bridge::x87::store(x.atan())
 }
 
+/// `_CIsin` and `_CIcos` for the port's side: the host's, stored as `f32`
+/// (`f32` bits in and out, as the battle vector code calls them).
+fn crt_vector_trig(t: ffx_battle::pos::bridge::Trig, x: u32) -> u32 {
+    use ffx_battle::pos::bridge::Trig;
+    let x = f64::from(f32::from_bits(x));
+    ffx_bridge::x87::store(match t {
+        Trig::Sin => x.sin(),
+        Trig::Cos => x.cos(),
+        Trig::Atan => x.atan(),
+    })
+}
+
 // ps2_emu: VU0 helpers (float math on vectors and matrices)
 harvest_test!(
     ffx_vu0_apply_matrix,
@@ -303,5 +315,43 @@ harvest_test!(
     args = 1,
     |m: &mut Oracle, s| {
         ffx_battle::minor::bridge::ms_walk_ability_process(m, s.arg(0));
+    }
+);
+// main round 16: the free camera, the effect read poll, the id map move,
+// the motion update
+harvest_test!(
+    sg_camera_set_player,
+    0x0083_f2e0,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        ffx_sg::state::bridge::camera_set_player(&mut OracleHost(m), &crt_vector_trig)
+    }
+);
+harvest_test!(
+    sg_effect_read_poll,
+    0x0082_2250,
+    args = 0,
+    |m: &mut Oracle, _s| { ffx_sg::state::bridge::effect_read_poll(&mut OracleHost(m)) }
+);
+harvest_test!(
+    sg_id_chr_move,
+    0x0083_e5f0,
+    args = 1,
+    |m: &mut Oracle, s| {
+        let point = m.stack_range().start + 0x1000;
+        let fcall = &mut |h: &mut OracleHost<'_>, f: u32, a: &[u32]| {
+            let r = h.0.call(f, Conv::Cdecl, a).unwrap();
+            // the next call starts with an empty x87 stack (`Oracle::call`)
+            r.st0_f64().unwrap()
+        };
+        ffx_sg::state::bridge::id_chr_move(&mut OracleHost(m), s.arg(0), point, fcall);
+    }
+);
+harvest_test!(
+    sg_update_motion,
+    0x0083_8c90,
+    args = 2,
+    |m: &mut Oracle, s| {
+        ffx_sg::seq::bridge::update_motion(&mut OracleHost(m), s.arg(0), s.arg(1));
     }
 );
