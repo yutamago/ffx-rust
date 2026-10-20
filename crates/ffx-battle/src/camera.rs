@@ -129,6 +129,34 @@ pub mod bridge {
     /// Bytes per screen.
     pub const SCREEN_SIZE: u32 = 0x1c0;
 
+    /// `Cam_SetScreenCameraNo_007bc870(screen, camera)` (`0x007bc870`):
+    /// screen `screen`'s camera byte (`+0xc1`, which `Cam_SetScreenCamera`
+    /// sets with its on byte) to the low byte of `camera`, for screens
+    /// 0..=2 (unsigned); the others ignored.
+    pub fn cam_set_screen_camera_no(mem: &mut impl Mem, screen: u32, camera: u32) {
+        if screen <= 2 {
+            let at = SCREENS.ptr(mem).addr + SCREEN_SIZE * screen + 0xc1;
+            mem.write(at, camera.to_le_bytes()[0]);
+        }
+    }
+
+    /// `Cam_GetRefPos_007bd4b0(cam, side, &x, &y, &z)` (`0x007bd4b0`):
+    /// `Cam_GetPos`' twin for the side's point at `+0x40` (the one before
+    /// the position at `+0x50`) of camera `cam` (a byte), side bit 0 of
+    /// `side`; null outputs skipped, each float through `fld`/`fstp`. `EAX`
+    /// ends as the side's offset.
+    pub fn cam_get_ref_pos(mem: &mut impl Mem, cam: u32, side: u32, out: [u32; 3]) -> u32 {
+        let off = (side & 1) * 0x61c;
+        let base = CAMERAS.ptr(mem).addr + (cam & 0xff) * CAMERA_SIZE + off + 0x40;
+        for (k, o) in (0..).zip(out) {
+            if o != 0 {
+                let x: u32 = mem.read(base + 4 * k);
+                mem.write(o, x87_copy(x));
+            }
+        }
+        off
+    }
+
     fn slots(mem: &impl Mem, cam: u32) -> [Slot; SLOTS] {
         let base = SLOTS_AT.ptr(mem).addr + (cam & 0xff) * CAMERA_SIZE;
         #[allow(clippy::cast_possible_truncation)] // 0..4

@@ -4861,6 +4861,7 @@
 0x00780cf0 function MsBattleDisposeAtEvent    # fh v3:bsim1.00 0x00780dc0
 0x00780d00 function MsBattleDraw              # fh v3:cg2 0x780dd0
 0x00780d10 function MsBattleEncountExe        # random encounter roll; on a hit writes field 0x0112c256, group 0x0112c258, formation 0x0112c259, raises 0x0112a8e2; was Enc_Check
+0x00780fe0 function MsBattleEncountFlag # fh switch:bsim1.00 0x7100339530; (v): g_BtlEncountFade = v & 1; caller FUN_00867950; ported (ffx_battle::misc, battle round 29)
 0x00780ff0 function ResetEncountExe           # cdecl(full): resets the encounter step counters; was Enc_Reset
 0x00781020 function MsBattleExe               # (mode, field, group, formation): loads btl/<field>_<nn> and sets the battle up; was Battle_Load; ported (battle round 20)
 0x00781530 function MsBattleExeClear          # fh v3:exact 0x00781600
@@ -4933,6 +4934,7 @@
 0x007849c0 function MsDebugFullGill           # fh v3:bsim1.00 0x00784a80
 0x007849d0 function MsDebugFullItem           # fh v3:exact 0x00784a90
 0x00784ac0 function MsDebugFullMember         # fh v3:exact 0x00784b80
+0x00784ae0 function MsDebugSetAllSP_00784ae0 # ours: (): every ply_save record's SP byte (+0x3b, TkMenuSetSP's) of the 18 = 0x62, eax one record past the last (0x01132aff); callers Native_707d, Ms_Gui_BattleConfigProc (debug menu), FUN_006b8ce0; ported (ffx_battle::misc, battle round 29)
 0x00784b60 function MsDebugFullSummon            # layout+callees: sorts between MsDebugFullMember and MsExchangeSaveParty, and its named callees match the Switch 0x7100370f30 MsDebugFullSummon's (similarity 1.00: MsSetSavePlyJoin); symbols from Fahrenheit's server export
 0x00784d00 function MsExchangeSaveParty       # (chr or 0xff, slot): puts chr in party slot (0-2 front, 3-19 reserve, table 0x011307e8), the slot's old occupant takes chr's old place; refuses locked chars (0x01132088 bit 2); was Party_SwapIn; the reserve's entries above 7 cleared first; chr's place: reserve, front, else (may join) the first empty reserve then front slot; neither fixed (MsGetSavePlyFix); -1 swapped, else 0; ported (battle round 22, ffx_battle::save)
 0x00784e40 function MsGetBattleMessageFlag       # layout: alphabetical run between MsExchangeSaveParty and MsGetCheckEnglish (1 unnamed in the gap); Switch 0x7100372350 MsGetBattleMessageFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5009,8 +5011,8 @@
 0x00787340 function getInterValefor           # fh v3:bsim1.00 0x00787400
 0x00787350 function getPlayTime                  # layout: alphabetical run between getInterValefor and getScenerioFlag (1 unnamed in the gap); Switch 0x7100376640 getPlayTime is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00787360 function getScenerioFlag           # fh v3:bsim1.00+call.cs 0x00787420 cdecl
-0x00787370 function isNeedRenamePlayer        # fh switch:bsim1.00+call.cs 0x7100376a60 cdecl
-0x00787390 function isNeedShowJapanLogo       # fh v4:imported+call.cs cdecl
+0x00787370 function isNeedRenamePlayer        # fh switch:bsim1.00+call.cs 0x7100376a60 cdecl; (lang_was): 1 when (i8)lang_was != TOGetFFXLang() (thunk 0x008ac2f0), else 0; caller SaveDataMachine_ReadFile; ported (ffx_battle::misc, battle round 29)
+0x00787390 function isNeedShowJapanLogo       # fh v4:imported+call.cs cdecl; (): TOGetFFXLang() (thunk 0x008ac2f0) == 0; caller FUN_006f0c60; ported (ffx_battle::misc, battle round 29)
 0x007873a0 function resetDefaultPlayerNameStatus # layout+callees: sorts between isNeedShowJapanLogo and setDefaultPlayerName, and its named callees match the Switch 0x7100376920 resetDefaultPlayerNameStatus's (similarity 1.00: TOGetFFXLang, setDefaultPlayerName); symbols from Fahrenheit's server export
 0x007873d0 function setBtlchrParam               # layout+callees: sorts between isNeedShowJapanLogo and setDefaultPlayerName, and its named callees match the Switch 0x7100376190 setBtlchrParam's (similarity 1.00: MsGetChr, MsGetChrTop); symbols from Fahrenheit's server export
 0x00787470 function setDefaultPlayerName      # fh v3:exact 0x00787530
@@ -5048,7 +5050,7 @@
 0x00788430 function MsEffectSetSpeed          # fh v3:exact+call.cs 0x007884f0 cdecl
 0x00788480 function MsEffectStart             # fh v3:exact+call.cs 0x00788540 cdecl
 0x00788920 function MsEffectTerminate         # fh v3:exact 0x007889e0; ported (battle round 23): (id) actor id&0xff (0 without MsGetChrTop), kind (id>>8)&0xff: 2 +0xdfb 5->6 else MsBattleError("effect does not ready call" 0x00b54a00); 4 +0x3f7/+0x436 cleared when both set; 7/8 +0xe12/+0xe13 down to 0; 9 +0xea4 cleared when == id; 10 g_BtlResetWait cleared; 0xe g_BtlCommandHold2 down; 0xf as 4 plus g_BtlStoneStarted down, +0xe17 = 1; 0x80 g_BtlEventEffectStat 6; then g_BtlEffectCameraMode cleared when g_BtlEffectCameraCall == id (sete/dec/and); eax garbage (void)
-0x00788b20 function MsEffectWaitFlag             # layout: alphabetical run between MsEffectTerminate and MsEffectWeaponFree (1 unnamed in the gap); Switch 0x71003514e0 MsEffectWaitFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00788b20 function MsEffectWaitFlag             # layout: alphabetical run between MsEffectTerminate and MsEffectWeaponFree (1 unnamed in the gap); Switch 0x71003514e0 MsEffectWaitFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (v): g_BtlResetWait2 = v & 1; callers opu_mdc_break, opu_sys; ported (ffx_battle::misc, battle round 29)
 0x00788b30 function MsEffectWeaponFree        # fh v3:exact 0x00788bf0
 0x00788b70 function MsEffectWeaponInit        # fh v3:exact 0x00788c30
 0x00788b90 function MsEventEffectFree         # fh v3:exact 0x00788c50; ported (battle round 20)
@@ -5188,9 +5190,9 @@
 0x0078fe60 function MsMenuInitText            # fh v3:bsim1.00 0x0078feb0
 0x0078fe80 function MsMenuInvElement             # layout: alphabetical run between MsMenuInitText and MsMenuOpenTitleWindow (1 unnamed in the gap); Switch 0x710035e170 MsMenuInvElement is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0078fea0 function MsMenuOpenTitleWindow     # fh v3:exact 0x0078fef0
-0x0078fed0 function MsMenuReadTextDone_0078fed0 # (request): menu text request+0xc (<= 0x10) not busy (g_BtlMenuText[i] = 0); MsMenuReadText's async read completion; name ours
+0x0078fed0 function MsMenuReadTextDone_0078fed0 # (request): menu text request+0xc (<= 0x10) not busy (g_BtlMenuText[i] = 0); MsMenuReadText's async read completion; name ours; ported (ffx_battle::misc, battle round 29)
 0x0078fef0 function MsMenuReadText            # fh v3:exact 0x0078ff40; ported (battle round 21): (i, load) -> 0 (-1 past 0x10): g_BtlMenuText[i] busy, size +4 from its kernel file (13 names) or MsGetFileSize(0x27, load ? 9 : 0x27, i), block +8 (ptr32 handle) made once; kernel texts copied, CD texts (2, 0xd, 0xf, 0x10) read async with 0x0078fed0 and a stack request (+0xc = i)
-0x007901f0 function MsMenuSetWindowSystem        # layout: alphabetical run between MsMenuReadText and MsMenuStatusNum (1 unnamed in the gap); Switch 0x710035e8c0 MsMenuSetWindowSystem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007901f0 function MsMenuSetWindowSystem        # layout: alphabetical run between MsMenuReadText and MsMenuStatusNum (1 unnamed in the gap); Switch 0x710035e8c0 MsMenuSetWindowSystem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (v): g_BtlSetCommandFlag = (u8)v; ported (ffx_battle::misc, battle round 29)
 0x00790200 function MsMenuStatusNum           # fh switch:bsim1.00 0x710035e010
 0x00790220 function MsMenuStatusNumSize       # fh switch:bsim1.00 0x710035e030
 0x00790260 function MsTestCheckMotion         # fh v3:bsim1.00 0x007902b0
@@ -5916,7 +5918,7 @@
 0x007a8620 function Native_7000                # 0x7000: actor +0xdf2 = 0; 0; ported in native_btl/native_msg (script round 8)
 0x007a8650 function Native_7125 # 0x7125: () -> 0; MsAttachWeapon(4, 0) for actor 4; ported in native_btl2 (script round 18); name ours
 0x007a8680 function Native_70e7 # 0x70e7: args (command int) -> actor +0xdc0 = 0x007996d0(actor, command, !(rec +0x1a) >> 1 & 1, 1), rec = 0x0078ce50(actor, 0, -1, 0, &command); ported in native_btl2 (script round 18); name ours
-0x007a86e0 function Clamp0To6_007a86e0           # structure: (n) -> n clamped to 0..6; called by the eight battle natives 0x007a6060..0x007a6e10 next to Native_7000; name ours
+0x007a86e0 function Clamp0To6_007a86e0           # structure: (n) -> n clamped to 0..6; called by the eight battle natives 0x007a6060..0x007a6e10 next to Native_7000; name ours; ported (ffx_battle::misc, battle round 29)
 0x007a8700 function GetFieldPtr0_007a8700        # auto-port shape (return address of a field's target, cdecl): t0 = u32[a0]; return (((t0 == 0x0) * 0x4) + 0x1); callers: Native_703c_Poll, Native_7097_Poll, Native_BtlRunEvent_Poll and 4 more; name ours
 0x007a8720 function MsGetBasicDivide          # callees: its named callees match the Switch 0x7100382290 MsGetBasicDivide's (similarity 1.00: MsGetChr, MsGetChrDir, MsNearRag); symbols from Fahrenheit's server export; (i, n, mode) -> eax: the turn d = f32(MsNearRag(facing, +0x514[i8 +0x511]) - facing) (facing MsNearRag(0, MsGetChrDir)), deg = d*180/g_PiF64 + 360 times f32(n): mode ? trunc(/360) % n : (1 - trunc(/-180)) % 2n / 2; caller Native_708f; ported (ffx_battle::body, battle round 28)
 0x007a87f0 function MsGetDirDivide            # callees: its named callees match the Switch 0x7100382180 MsGetDirDivide's (similarity 1.00: MsGetChrDir, MsNearRag, MsPointLen, MsVectorRect2Polar); symbols from Fahrenheit's server export; (from, to, i, n, mode) -> eax: MsGetBasicDivide's sectors of the turn from actor i's facing to the yaw from -> to (MsVectorRect2Polar, MsNearRag), 0 turn when MsPointLen is 0.0; callers Native_702c, Native_700d; ported (ffx_battle::body, battle round 28)
@@ -6074,6 +6076,7 @@
 0x007b13c0 function MsLimitTypeTurnCheck      # fh v3:exact+call.cs 0x007b13d0 cdecl
 0x007b1540 function MsLimitTypeWinCheck       # fh v3:exact+call.cs 0x007b1550 cdecl; ours: actors 0-6 with +0xdc8: MsLimitTypeExpGet(i, 0xb, 0), +0x5bb 0xb: MsLimitUp(i, a, 0x14); returns their count; ported (battle round 14)
 0x007b1590 function MsLimitUp                 # fh v3:exact+call.cs 0x007b15a0 cdecl
+0x007b19d0 function MsGetReelEntry_007b19d0 # ours: (i) -> &g_BtlReelEntries[i] (4 bytes each, i < 4 unsigned) else 0; callers MsActReCommand, FUN_007b1910, MsSetReelResult (byte +1 a count, +0 a value); ported (ffx_battle::misc, battle round 29)
 0x007b1a70 function MsRestartMagicCamera      # fh switch:bsim1.00 0x710035cc00
 0x007b1aa0 function MsSetLimitParty           # fh v3:exact 0x007b1ab0
 0x007b1b50 function MsSetReelResult           # fh v3:exact 0x007b1b60
@@ -6125,7 +6128,10 @@
 0x007b7e20 function MsEffectChrMotionOut         # layout+callees: sorts between MsEffectChrMotionIn and MsEffectGetBufferAddress, and its named callees match the Switch 0x7100391670 MsEffectChrMotionOut's (similarity 1.00: MsGetChr, MsSetMotion); symbols from Fahrenheit's server export
 0x007b7e80 function MsEffectChrMotionSync        # layout+callees: sorts between MsEffectChrMotionIn and MsEffectGetBufferAddress, and its named callees match the Switch 0x71003917b0 MsEffectChrMotionSync's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export
 0x007b7eb0 function MsEffectGetBufferAddress  # fh switch:bsim1.00 0x7100391ac0
+0x007b7ed0 function MsEffectGetCameraBuf_007b7ed0 # ours: (i) -> g_BtlEffectCameraWords[i] (i <= 15 unsigned) else 0; the word twin of MsEffectSetCameraBufFloat's floats; caller Native_70c6; ported (ffx_battle::misc, battle round 29)
+0x007b7ef0 function MsEffectGetCameraBufFloat_007b7ef0 # ours: (i) -> ST0 g_BtlEffectCameraFloats[i] (i <= 15 unsigned) else 0.0, through a local; caller Native_70c7; ported (ffx_battle::misc, battle round 29)
 0x007b7f20 function MsGetBattle112be90        # g_MagicImports slot 592 (2 overlays): returns the dword at 0x0112be90; hidden from the dump
+0x007b7f30 function MsEffectSetCameraBuf_007b7f30 # ours: (i, v): g_BtlEffectCameraWords[i] = v for i <= 15 (unsigned); no direct caller (a native's table); ported (ffx_battle::misc, battle round 29)
 0x007b7f50 function MsEffectSetCameraBufFloat # fh v3:exact 0x007b7ed0
 0x007b7f70 function Native_CamFocusTimeLinear    # 0x602e: args (frames) -> 0; linear transition time for the battle camera's focus point (half 0, 0x007bde50 type 1); paired with 0x6010 (eye half)
 0x007b7fe0 function Native_602f # 0x602f: (frames): MsCameraMoveFrame(cam, 0, 1, frames, 1); 0; ported in native_mods (script round 19); name ours
@@ -6302,6 +6308,7 @@
 0x007bc110 function MsScreenProcess           # cdecl(camera) -> 1 for camera >= 3 (signed), -1 for a screen off, else 0: g_CameraSelected -1 then the screen's camera; magics 0x98/0x259 on screen 1 with screen 1 off: graphicCameraSetWorldMatrixSub(0, 0); g_Camera, g_BtlScreen; each side: position +0x40 = saved +0x80, centre +0x60 = (size - display) / 2, links +0xc2 (1 size, 2 corner, 3 centring after), four MsCameraMoveCalc lanes +0xdc; two shakes +0x16c; positions/centres truncated (ftol); view: override (MsScreenMatrix, MsCameraMatrix of the override eye/look-at/up/roll), camera matrices on (screen offset only), else near plane (magic 0x21c map 0xd0), MsCameraMatrix of the camera's eye +0x65c and look-at +0x40 (levels 0x1505/0x822/0x1883 with 0x00c421e8 and 0x00c421e4 negative: squared lengths within 0.01..1e9), graphicScreenSetOffset/DttOffset, Cam_Apply around MagicFile_NeedRestoreCamera's saved matrices; camera focus +0xca8/+0xcac.. into the screen +0xd0.. and Sg_SetFocus/Sg_EnFocus; was Cam_Update; ported (ffx_battle::screen, battle round 27; runs inside the gfx::live wrapper, the hook table's MsScreenProcess entry)
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
+0x007bc870 function Cam_SetScreenCameraNo_007bc870 # ours: (screen, camera): screen <= 2 (unsigned): byte +0xc1 (the camera Cam_SetScreenCamera sets) of screen 0x01137000 + screen*0x1c0 = (u8)camera; masked copy of Cam_SetScreenCameraOn (+0xc0); caller Native_6075; ported (ffx_battle::camera, battle round 29)
 0x007bc930 function Cam_SetScreenCameraOn     # (screen, on): byte +0xc0 of g_Screens[screen] for screens 0..2 (MsScreen's per-frame code takes g_Camera from the screen's camera +0xc1 when it is set); caller Native_604e; name ours; ported (ffx_sg::camera)
 0x007bc950 function Cam_SetScreenCamera       # (screen, on, camera): bytes +0xc0 and +0xc1 (the camera, g_DebugCamera for screen 0) of g_Screens[screen] for screens 0..2; caller Native_604f; name ours; ported (ffx_sg::camera)
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override
@@ -6317,6 +6324,8 @@
 0x007bd340 function MsCameraGetNum            # fh v3:exact 0x007bd2c0
 0x007bd420 function Cam_GetPos                   # (camera, side, &x, &y, &z): side position at camera +0x50
 0x007bd470 function MsCameraGetPosNow         # fh v3:exact 0x007bd3f0
+0x007bd4b0 function Cam_GetRefPos_007bd4b0 # ours: (cam, side, &x, &y, &z): Cam_GetPos' twin for the side's point at +0x40 (0x01137580 + (u8)cam*0xda0 + (side&1)*0x61c), null outputs skipped, eax the side offset; caller FUN_007ba460; ported (ffx_battle::camera, battle round 29)
+0x007bd500 function MsCameraGetRollNow_007bd500 # ours: () -> ST0 [g_Camera] + 0xc90 (the roll now, MsCameraSetRoll's); caller Native_6077_ResultF; ported (ffx_battle::misc, battle round 29)
 0x007bd510 function MsCameraGetScrDpt         # fh v3:bsim1.00 0x007bd490
 0x007bd520 function MsCameraGetSplineAddress     # layout: alphabetical run between MsCameraGetScrDpt and MsCameraIDcheck (1 unnamed in the gap); Switch 0x710039dcc0 MsCameraGetSplineAddress is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007bd560 function MsCameraIDcheck           # fh v3:exact 0x007bd4e0
@@ -6369,6 +6378,10 @@
 0x007c0ab0 function MsSetNormalUpVector       # fh v3:exact 0x007c0a30
 0x007c0ae0 function MsCameraFocusWeights_007c0ae0 # ours: (side, mv): records of mv+8 (count, 0x30 each from +0x10): weight = (|side+0x30 - point| (lanes masked by mv[3] bits 1-3, _CIsqrt) + 1, squared with bit 0) / +0xc into +0x1c; side +0x60.. = sum(value * total/weight) / sum(total/weight), x plus mv+0x40; caller MsCameraProcess; ported (ffx_battle::camera, battle round 25)
 0x007c0d40 function MsCameraNearPoints_007c0d40 # ours: (_, side, chan) -> eax: for each of chan+4 (re-read) filters (0x20 bytes from chan+0x90) of kind 4 or 5: chan byte 1 -> MsVectorPolar2Rect as MsCameraMoveStep_007bcab0 (radius words caller's ebx, edi, esi); chan+0x1d cleared, spline_get_near_point_init(chan+8, x, y, z, chan+0x1e), chan+0x24 = spline_get_near_point(chan+8, x, y, z, 3 locals, kind == 5); eax = how many such filters; caller MsCameraProcess; ported (ffx_battle::camera, battle round 27)
+0x007c0e60 function setScreenDataAspectZ # fh switch:bsim1.00 0x710039e120; (f): 0x0113701c = f (fld/fstp); caller FUN_0076edc0; ported (ffx_battle::misc, battle round 29)
+0x007c1000 function Vu0MaddaScalar4_007c1000 # ours: (out, v, _, _, s) -> out: out[k] = f32(v[k]*s + g_Vu0Acc[k]) for the 4 floats (args 3 and 4 unused); caller FUN_0088abd0; ported (ffx_battle::misc, battle round 29)
+0x007c1110 function pppVec4Copy_007c1110 # ours: exact copy of pppVec4Copy (tools/dupes.py family 1011): (dst, src) the 4 floats through fld/fstp; caller op_shape_draw; ported (ffx_vfx::op through battle.rs, battle round 29)
+0x007c11c0 function Vec4Scale4_007c11c0 # ours: (out, v, sx, sy, sz, sw) -> out: out[k] = f32(v[k] * s_k); callers FUN_0088a500, FUN_0088abd0; ported (ffx_battle::misc, battle round 29)
 0x007c1480 function MsAddPoint                # fh v3:cg21 0x7c1400
 0x007c1550 function MsApplyMatrix             # fh v3:cg6 0x7c14d0
 0x007c1790 function MsBillBoardMatrix            # layout+callees: sorts between MsApplyMatrix and MsCameraMatrix, and its named callees match the Switch 0x710039ed40 MsBillBoardMatrix's (similarity 1.00: restoreVf00Register); symbols from Fahrenheit's server export
@@ -6409,6 +6422,7 @@
 0x007c6110 function Ms_Gui_BattleConsoleProc  # fh v3:exact 0x007c6080
 0x007c6d80 function enterBattle               # fh switch:bsim1.00 0x71003a8a40
 0x007c6da0 function GetGlobal01139e48_007c6da0   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01139e48]; return t0; callers: ; name ours
+0x007c6db0 function GetGlobal00c44248_007c6db0 # ours: () -> [0x00c44248]; callers FUN_006b81d0, MapNameText_Show_006bb480; ported (ffx_battle::misc, battle round 29)
 0x007c6e20 function Ms_Gui_BattleConfigProc   # fh v3:cg16 0x7c6d90
 0x007c86e0 function Gui_MasakiInit            # fh v3:exact 0x007c8650
 0x007c8930 function Ms_SetTableEntry_007c8930    # auto-port shape (store argument to table, cdecl): u32[((a0 * 0x4) + &0x01139f14)] = a1; return a0; callers: Ms_Gui_CameraProc, Ms_Gui_ReferencePos; name ours
@@ -6425,9 +6439,11 @@
 0x007cd800 function MsDebugEnvSave            # fh v3:exact 0x007cd730
 0x007ceb30 function MsCheckMemory                # str-match switch: only user of 4 string(s) held once by both builds, e.g. '------------ ERROR MALLOC %d\\n'; Switch 0x71003b7260 MsCheckMemory (symbols from Fahrenheit's server export)
 0x007cef60 function MsExecuteCommand             # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[Command Execution "%s"]\\n'; Switch 0x71003b7dc0 MsExecuteCommand (symbols from Fahrenheit's server export)
+0x007cf000 function NameHash_007cf000 # ours: (s) -> sum over bytes of (i8)(A-Z lowered) ^ (0x6f * index), wrapping; no direct caller; exact copy FUN_007e1bf0 (dead); ported (ffx_battle::misc, battle round 29)
 0x007cf640 function MsSetHashValue            # fh v3:exact 0x007cf570
 0x007cf6a0 function MsSmall                      # layout: alphabetical run between MsSetHashValue and MsStrCopy (1 unnamed in the gap); Switch 0x71003b61f0 MsSmall is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x007cf6c0 function MsStrCopy                 # fh v3:exact 0x007cf5f0
+0x007cf860 function op_file_puts_007cf860 # ours: exact copy of op_file_puts_007e2fb0 (tools/dupes.py family 1925): (file, s) into the op file's write buffer, flushes through sceWrite; callers MsCheckMemory, ms_free, FUN_007cf970, FUN_007cf9f0; ported (ffx_vfx::op through battle.rs, battle round 29)
 0x007cf8f0 function ms_free                      # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'free   %10d\\n'; Switch 0x71003b7110 ms_free (symbols from Fahrenheit's server export)
 0x007cfb20 function MsDebugGetCameraMode      # fh switch:cg2 0x71008b03e8
 0x007cfb60 function MsDebugSetCameraMode         # layout+callees: sorts between MsDebugGetCameraMode and Ms_Gui_InfoProc, and its named callees match the Switch 0x71003b3960 MsDebugSetCameraMode's (similarity 1.00: MsCameraGetNum); symbols from Fahrenheit's server export
@@ -15580,6 +15596,7 @@
 0x00c44238 label g_NearPlaneDefault_00c44238 # ours: u8, MsScreenProcess: 1 while the near plane is the default 1.0 (cleared when magic 0x21c on map 0xd0 moves it getNearPlane() + 2.0 out, set again with setNearPlane(1.0))
 0x00c4423c label g_CameraSelected          # u8 read: the camera whose slots MsGetNowSelectedCamraLevel weighs; MsScreenProcess writes it as a u32 (-1, then the screen's camera)
 0x00c44240 label g_BtlScreenSize              # [u32; 2]; The screen size MsScreenInit stores.
+0x00c44248 label g_GlobalC44248 # u32 GetGlobal00c44248_007c6db0 returns (map name banner); meaning open
 0x00c44270 label g_BtlPosHashList          # name list MsBtlPosInit hashes ("StartData", ...)
 0x00c44a50 function MsPreProcess                 # str-match switch: only user of 1 string(s) held once by both builds, e.g. '%23include'; Switch 0x71003beea0 MsPreProcess (symbols from Fahrenheit's server export)
 0x00c44bb8 label    g_OpPsmBlockFactor           # byte per pixel format: the factor op_oef2_tex_clut_ovl_add multiplies height by stride with (then / 16 / 256) to get a CLUT area's last block
@@ -15893,6 +15910,7 @@
 0x0112bde8 label g_BtlGround               # f32 ground height: MsSetChrHeight puts mode-0 actors at ground - height/2 + actor +0x538
 0x0112bdf0 label g_BtlMenuCommand             # [u32; 0x12]; The menu command MsSetMenuCommand copies (0x48 bytes) and its flag.
 0x0112be38 label g_BtlMimic                # 0x48 bytes cleared by MsInitMimic
+0x0112be80 label g_BtlReelEntries # 4 x 4 bytes (MsGetReelEntry_007b19d0): +1 a count, +0 a value (FUN_007b1910)
 0x0112be90 label g_BtlGilAmount               # i32, gil offered (DmgCalc_Bribe) or thrown (MsCalcDamageCommand formula 0x15: gil / 10)
 0x0112be94 label g_BtlMimicGil             # i32, g_BtlGilAmount when the mimic cue g_BtlMimic was saved (MsSetChrMimic)
 0x0112be98 label g_BtlEffectBuffer            # u32; The effect buffer and its size (MsEffectGetBufferAddress).
@@ -16138,6 +16156,7 @@
 0x01136a7c label g_BtlActionRequestTurn    # u8, the block's +4; MsActionRequest copies the out cue's into it
 0x01136ac4 label g_BtlBallOffset           # [f32; 4] MsGetChrInfo kind 0xd of the thrower's targets (MsSetBallSplineInit 0x007b7c80), added to the ball's end (MsSetBallSpline, battle round 17); name ours
 0x01136ad8 label g_BtlEffectCameraFloats      # [u32; 16]; 16 floats MsEffectSetCameraBufFloat sets.
+0x01136b18 label g_BtlEffectCameraWords # [u32; 16] after g_BtlEffectCameraFloats (MsEffectGetCameraBuf_007b7ed0 / MsEffectSetCameraBuf_007b7f30)
 0x01136b58 label g_BtlHideMask             # u32, with g_ActorPropertyLatch: msSetChrVisibleReq queues a hidden character (0x02311060) instead of hiding it
 0x01136b5c label    g_CamWaitFrames            # Native_CamWait (0x007b9be0) debug frame count
 0x01136b60 label g_BtlSplines                 # [u32; 2]; Reset by MsSplineInit.
@@ -16149,6 +16168,7 @@
 0x01136fd8 label    g_CamOverrideLookAt          # override camera look-at, vec4 (game space)
 0x01136fe8 label    g_CamOverrideUp              # override camera up vector, vec4 (reset to (0,-1,0)-ish: 0x01136fec = -1.0)
 0x01137000 label g_Screens                   # 3 screens of 0x1c0 bytes right before g_Cameras: +0x30/+0x34 f32 shake offsets, +0x16c/+0x190 shake flags (MsScreenResetShake 0x007c56c0)
+0x0113701c label g_ScreenDataAspectZ # f32 setScreenDataAspectZ stores (inside screen 0 of 0x01137000, +0x1c)
 0x011370c1 label g_DebugCamera             # u8 (a byte of the first screen): the camera MsDebugGetCameraMode reads (mode byte +0xf2 of side/channel)
 0x011370d0 label g_BtlScreenFocus             # i32; The three screens' focus, -1 for none (MsScreenFocusReset), 0x1c0 bytes apart.
 0x01137540 label    g_Cameras                    # ?3 cameras x 0xda0: two sides of 0x61c each (0 = ref, 1 = cam), channels of 0x130 at +0xc0, channel table at 0x011381a8

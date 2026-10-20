@@ -1427,6 +1427,97 @@ ported! {
     MsEffectSetCameraBufFloat @ 0x007b_7f50 => extern "C" fn ms_effect_set_camera_buf_float(i: u32, f: u32) {
         misc::ms_effect_set_camera_buf_float(&mut mem(), i, f);
     }
+    /// `MsEffectGetCameraBufFloat_007b7ef0(i)`: on the x87 stack.
+    MsEffectGetCameraBufFloat_007b7ef0 @ 0x007b_7ef0 => extern "C" fn ms_effect_get_camera_buf_float(i: u32) -> f32 {
+        f32::from_bits(misc::ms_effect_get_camera_buf_float(&mem(), i))
+    }
+    /// `MsEffectGetCameraBuf_007b7ed0(i)`.
+    MsEffectGetCameraBuf_007b7ed0 @ 0x007b_7ed0 => extern "C" fn ms_effect_get_camera_buf(i: u32) -> u32 {
+        misc::ms_effect_get_camera_buf(&mem(), i)
+    }
+    /// `MsEffectSetCameraBuf_007b7f30(i, v)`.
+    MsEffectSetCameraBuf_007b7f30 @ 0x007b_7f30 => extern "C" fn ms_effect_set_camera_buf(i: u32, v: u32) {
+        misc::ms_effect_set_camera_buf(&mut mem(), i, v);
+    }
+    /// `GetGlobal00c44248_007c6db0()`.
+    GetGlobal00c44248_007c6db0 @ 0x007c_6db0 => extern "C" fn get_global_00c44248() -> u32 {
+        misc::get_global_00c44248(&mem())
+    }
+    /// `MsMenuSetWindowSystem(v)`.
+    MsMenuSetWindowSystem @ 0x0079_01f0 => extern "C" fn ms_menu_set_window_system(v: u32) {
+        misc::ms_menu_set_window_system(&mut mem(), v);
+    }
+    /// `MsBattleEncountFlag(v)`.
+    MsBattleEncountFlag @ 0x0078_0fe0 => extern "C" fn ms_battle_encount_flag(v: u32) {
+        misc::ms_battle_encount_flag(&mut mem(), v);
+    }
+    /// `MsEffectWaitFlag(v)`.
+    MsEffectWaitFlag @ 0x0078_8b20 => extern "C" fn ms_effect_wait_flag(v: u32) {
+        misc::ms_effect_wait_flag(&mut mem(), v);
+    }
+    /// `setScreenDataAspectZ(f)`.
+    setScreenDataAspectZ @ 0x007c_0e60 => extern "C" fn set_screen_data_aspect_z(f: u32) {
+        misc::set_screen_data_aspect_z(&mut mem(), f);
+    }
+    /// `MsCameraGetRollNow_007bd500()`: on the x87 stack.
+    MsCameraGetRollNow_007bd500 @ 0x007b_d500 => extern "C" fn ms_camera_get_roll_now() -> f32 {
+        f32::from_bits(misc::ms_camera_get_roll_now(&mem()))
+    }
+    /// `Clamp0To6_007a86e0(n)`.
+    Clamp0To6_007a86e0 @ 0x007a_86e0 => extern "C" fn clamp0_to6(n: u32) -> u32 {
+        misc::clamp0_to6(n)
+    }
+    /// `MsDebugSetAllSP_00784ae0()`.
+    MsDebugSetAllSP_00784ae0 @ 0x0078_4ae0 => extern "C" fn ms_debug_set_all_sp() -> u32 {
+        misc::ms_debug_set_all_sp(&mut mem())
+    }
+    /// `MsGetReelEntry_007b19d0(i)`.
+    MsGetReelEntry_007b19d0 @ 0x007b_19d0 => extern "C" fn ms_get_reel_entry(i: u32) -> u32 {
+        misc::ms_get_reel_entry(&mem(), i)
+    }
+    /// `Vec4Scale4_007c11c0(out, v, sx, sy, sz, sw)`.
+    Vec4Scale4_007c11c0 @ 0x007c_11c0 => extern "C" fn vec4_scale4(out: u32, v: u32, sx: u32, sy: u32, sz: u32, sw: u32) -> u32 {
+        misc::vec4_scale4(&mut mem(), out, v, [sx, sy, sz, sw])
+    }
+    /// `Vu0MaddaScalar4_007c1000(out, v, _, _, s)`.
+    Vu0MaddaScalar4_007c1000 @ 0x007c_1000 => extern "C" fn vu0_madda_scalar4(out: u32, v: u32, _a: u32, _b: u32, s: u32) -> u32 {
+        misc::vu0_madda_scalar4(&mut mem(), out, v, s)
+    }
+    /// `MsMenuReadTextDone_0078fed0(request)`.
+    MsMenuReadTextDone_0078fed0 @ 0x0078_fed0 => extern "C" fn ms_menu_read_text_done(request: u32) {
+        misc::ms_menu_read_text_done(&mut mem(), request);
+    }
+    /// `isNeedShowJapanLogo()`: the language from `TOGetFFXLang`, through
+    /// the thunk the original calls.
+    isNeedShowJapanLogo @ 0x0078_7390 => extern "C" fn is_need_show_japan_logo() -> u32 {
+        misc::is_need_show_japan_logo(call0(0x008a_c2f0))
+    }
+    /// `isNeedRenamePlayer(lang_was)`: the language as above.
+    isNeedRenamePlayer @ 0x0078_7370 => extern "C" fn is_need_rename_player(lang_was: u32) -> u32 {
+        misc::is_need_rename_player(lang_was, call0(0x008a_c2f0))
+    }
+    /// `NameHash_007cf000(s)`.
+    NameHash_007cf000 @ 0x007c_f000 => extern "C" fn name_hash(s: u32) -> u32 {
+        misc::name_hash(&mem(), s)
+    }
+    /// `Cam_SetScreenCameraNo_007bc870(screen, camera)`.
+    Cam_SetScreenCameraNo_007bc870 @ 0x007b_c870 => extern "C" fn cam_set_screen_camera_no(screen: u32, camera: u32) {
+        camera::cam_set_screen_camera_no(&mut mem(), screen, camera);
+    }
+    /// `Cam_GetRefPos_007bd4b0(cam, side, x, y, z)`.
+    Cam_GetRefPos_007bd4b0 @ 0x007b_d4b0 => extern "C" fn cam_get_ref_pos(cam: u32, side: u32, x: u32, y: u32, z: u32) -> u32 {
+        camera::cam_get_ref_pos(&mut mem(), cam, side, [x, y, z])
+    }
+    /// `pppVec4Copy_007c1110(dst, src)`: the same code as `pppVec4Copy`
+    /// (tools/dupes.py).
+    pppVec4Copy_007c1110 @ 0x007c_1110 => extern "C" fn ppp_vec4_copy_007c1110(dst: u32, src: u32) {
+        ffx_vfx::op::bridge::ppp_vec4_copy(&mut mem(), dst, src);
+    }
+    /// `op_file_puts_007cf860(file, s)`: the same code as
+    /// `op_file_puts_007e2fb0` (tools/dupes.py); `sceWrite` through the game.
+    op_file_puts_007cf860 @ 0x007c_f860 => extern "C" fn op_file_puts_007cf860(file: u32, s: u32) -> u32 {
+        ffx_vfx::op::bridge::op_file_puts(&mut mem(), file, s, &mut |_, f, a| super::call_cdecl(f, a)).unwrap_or(0)
+    }
 
     /// `MsGetChrBit(chr, selector, all, any)`: a set of actors as bits.
     MsGetChrBit @ 0x0079_4330 => extern "C" fn ms_get_chr_bit(chr: u32, selector: u32, all: i32, any: i32) -> u32 {
