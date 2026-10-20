@@ -2002,7 +2002,7 @@
 0x00670760	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_textureVideoUnload
 0x006708e0	glue	only called from glue code (graphicFinalize)
 0x00670920	glue	only called from glue code (graphicFinalize)
-0x00670960	logic	default (no rule: ported to be safe)
+0x00670960	platform	reviewed: fastcall teardown of the scene cluster map (+0x11dc): ClusterManager_releasePCluster, operator delete, std::map walk (PC2 render round 23)
 0x00670b00	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): PhyreScene_unloadAtelVFXTexture_00670b00
 0x00670b20	glue	calls PhyreEngine Phyre_PRendering_PRenderer_syncRender
 0x00670ea0	glue	only called from glue code (graphicFinalize)
