@@ -561,6 +561,82 @@ pub mod bridge {
         }
     }
 
+    /// `op_oef2_tex_clut_cue_trans()` (`0x007e4c30`): uploads every queued
+    /// texture (the 64 words at `0x011a01a0`; each slot's words `+0x100`
+    /// and `+0x200` cleared with it) to the emulated GS. A texture record
+    /// `t` gives `dbp` = `u16 t +0 & 0x3fff`, `dbw` = `(u8 t +0xa x 16) >>
+    /// 6`, `psm` = `u8 t +0x18`, `dsax` = `u8 t +8 x 16`, `dsay` = `u8 t +9
+    /// x 16`, width `u16 t +0xc`, height `u16 t +0xe` and data `t +0x14`.
+    /// Below 0x40000 texels one load (`sceGsSetDefLoadImage(img, dbp, dbw,
+    /// psm, dsax, dsay, w, h)`, `FlushCache(0)`, `sceGsSyncPath(0, 0)`,
+    /// `sceGsExecLoadImage(img, data)`); else bands of 256 rows from `dsay`
+    /// 0, `dbp` and the data moving by `w` and `w x 256` per band, each
+    /// followed by another sync. Then a sync and `op_texflush()`. Finally
+    /// the cue head and count (one word at `0x011a04a0`) are 0. Callees
+    /// through `call`; the load image record lives at `img` (the
+    /// original's `ebp - 0x60`). Returns 0.
+    #[allow(clippy::many_single_char_names, clippy::similar_names)]
+    pub fn op_oef2_tex_clut_cue_trans<M: Mem>(
+        mem: &mut M,
+        img: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let (set_load, flush, sync, exec, texflush) = (
+            f(mem, 0x0062_f820),
+            f(mem, 0x0062_f4c0),
+            f(mem, 0x0062_f880),
+            f(mem, 0x0062_f7a0),
+            f(mem, 0x007e_c790),
+        );
+        let slots = f(mem, 0x011a_01a0);
+        for k in 0..64u32 {
+            let slot = slots.wrapping_add(4 * k);
+            let t: u32 = mem.read(slot);
+            if t != 0 {
+                let dbp = u32::from(mem.read::<u16>(t) & 0x3fff);
+                let h = u32::from(mem.read::<u16>(t.wrapping_add(0xe)));
+                let dbw = u32::from(mem.read::<u8>(t.wrapping_add(0xa))) << 4 >> 6;
+                let dsax = u32::from(mem.read::<u8>(t.wrapping_add(8))) << 4;
+                let w = u32::from(mem.read::<u16>(t.wrapping_add(0xc)));
+                let psm = |mem: &M| u32::from(mem.read::<u8>(t.wrapping_add(0x18)));
+                if h.wrapping_mul(w).cast_signed() < 0x40000 {
+                    let dsay = u32::from(mem.read::<u8>(t.wrapping_add(9))) << 4;
+                    let args = [img, dbp, dbw, psm(mem), dsax, dsay, w, h];
+                    call(mem, set_load, &args);
+                    call(mem, flush, &[0]);
+                    call(mem, sync, &[0, 0]);
+                    let data: u32 = mem.read(t.wrapping_add(0x14));
+                    call(mem, exec, &[img, data]);
+                } else {
+                    let mut at = dbp;
+                    let mut data: u32 = mem.read(t.wrapping_add(0x14));
+                    let mut rows = 0u32;
+                    let mut left = h;
+                    while rows < h {
+                        rows += 0x100;
+                        let n = if rows <= h { 0x100 } else { left };
+                        call(mem, set_load, &[img, at, dbw, psm(mem), dsax, 0, w, n]);
+                        call(mem, flush, &[0]);
+                        call(mem, sync, &[0, 0]);
+                        call(mem, exec, &[img, data]);
+                        call(mem, sync, &[0, 0]);
+                        at = at.wrapping_add(w);
+                        data = data.wrapping_add(w << 8);
+                        left = left.wrapping_sub(0x100);
+                    }
+                }
+                call(mem, sync, &[0, 0]);
+                call(mem, texflush, &[]);
+            }
+            for off in [0u32, 0x100, 0x200] {
+                mem.write(slot.wrapping_add(off), 0u32);
+            }
+        }
+        mem.write(OEF2_CLUT_CUE_HEAD.ptr(mem).addr, 0u32);
+        0
+    }
+
     /// `op_oef2_tex_clut_cue_loop()` (`0x007e4720`): works off the CLUT
     /// cue ring from its head, at least one slot: a texture (`0x011a01a0`)
     /// goes to `op_oef2_texture_load(tex, 1)` (through `call`) and counts
