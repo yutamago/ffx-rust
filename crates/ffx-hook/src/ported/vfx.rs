@@ -20,6 +20,31 @@ fn crt_srand(seed: u32) {
     }
 }
 
+/// MSVCR110's `_CIatan` (`ST0` in and out) through the game's import slot
+/// (`0x00b0c450`, behind the thunk `0x00949d5c`), on an x87 value the
+/// caller left unrounded (a 53-bit quotient, exactly an `f64`).
+fn crt_atan(x: f64) -> f64 {
+    let slot = crate::rebase(0x00b0_c450) as *const usize;
+    let mut out = 0f64;
+    // SAFETY: the slot holds the CRT's `_CIatan`, which takes its operand
+    // in ST0 and leaves the result there; the asm loads it, calls it and
+    // stores the result through edi, leaving the x87 stack empty.
+    unsafe {
+        let f = slot.read();
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "fstp qword ptr [edi]",
+            x = in(reg) &raw const x,
+            // edi: the callee keeps it (eax, ecx and edx it may not)
+            in("edi") &raw mut out,
+            f = in(reg) f,
+            clobber_abi("C"),
+        );
+    }
+    out
+}
+
 /// MSVCR110's `_CIatan2` (the x87 form: `ST1` = y, `ST0` = x, the result in
 /// `ST0`), through the game's import slot (`0x00b0c3b0`).
 fn crt_atan2(y: f64, x: f64) -> f64 {
@@ -318,6 +343,36 @@ ported! {
     /// `pppSRandCV_Draw(two)`: one spread draw, in ST0.
     pppSRandCV_Draw @ 0x0073_2f30 => extern "C" fn ppp_srand_cv_draw(two: u32) -> f32 {
         rand::bridge::ppp_srand_draw(&mut mem(), Spread::Plain, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandUpCV_Draw(two)`: one spread draw, in ST0 (the same code as `pppSRandUpFV_Draw`, tools/dupes.py).
+    pppSRandUpCV_Draw @ 0x0073_3230 => extern "C" fn ppp_srand_up_cv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Up, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandDownCV_Draw(two)`: one spread draw, in ST0 (the same code as `pppSRandDownFV_Draw`, tools/dupes.py).
+    pppSRandDownCV_Draw @ 0x0073_3530 => extern "C" fn ppp_srand_down_cv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Down, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandHCV_Draw(two)`: one spread draw, in ST0 (the same code as `pppSRandFV_Draw`, tools/dupes.py).
+    pppSRandHCV_Draw @ 0x0073_3820 => extern "C" fn ppp_srand_hcv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Plain, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandUpHCV_Draw(two)`: one spread draw, in ST0 (the same code as `pppSRandUpFV_Draw`, tools/dupes.py).
+    pppSRandUpHCV_Draw @ 0x0073_3b30 => extern "C" fn ppp_srand_up_hcv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Up, two & 0xff != 0, &mut |_, seed| {
+            crt_srand(seed);
+        })
+    }
+    /// `pppSRandDownHCV_Draw(two)`: one spread draw, in ST0 (the same code as `pppSRandDownFV_Draw`, tools/dupes.py).
+    pppSRandDownHCV_Draw @ 0x0073_3e40 => extern "C" fn ppp_srand_down_hcv_draw(two: u32) -> f32 {
+        rand::bridge::ppp_srand_draw(&mut mem(), Spread::Down, two & 0xff != 0, &mut |_, seed| {
             crt_srand(seed);
         })
     }
@@ -814,6 +869,20 @@ ported! {
     pppKeBornRnd6 @ 0x0075_9200 => extern "C" fn ppp_ke_born_rnd6(obj: u32, key: u32, ctrl: u32) {
         let kind = prog::bridge::BornRnd::Rnd6;
         prog::bridge::ppp_ke_born_rnd(&mut mem(), kind, obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd2_Born(obj, def, shape, out)`.
+    pppKeBornRnd2_Born @ 0x0075_8840 => extern "C" fn ppp_ke_born_rnd2_born(obj: u32, def: u32, shape: u32, out: u32) {
+        // the original's local vector
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_rnd2_born(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeBornRnd5_Born(obj, def, shape, out)`.
+    pppKeBornRnd5_Born @ 0x0075_8fc0 => extern "C" fn ppp_ke_born_rnd5_born(obj: u32, def: u32, shape: u32, out: u32) {
+        // the original's local vector
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_rnd2_born(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
     }
     /// `op_oef2_se_on(cue, pan, vol)`.
     op_oef2_se_on @ 0x007f_fe10 => extern "C" fn op_oef2_se_on(cue: u32, pan: u32, vol: u32) -> u32 {
@@ -4147,6 +4216,26 @@ ported! {
     /// `pppCheckViewCylinder(m, v, far, radius, height)`.
     pppCheckViewCylinder @ 0x0072_8f10 => extern "C" fn ppp_check_view_cylinder(m: u32, v: u32, far: f32, radius: f32, height: f32) -> u32 {
         small::bridge::ppp_check_view_cylinder(&mem(), m, v, far, radius, height)
+    }
+    /// `pppKeAngleXY_007590e0(v, out)`: `_CIatan` through its import slot.
+    pppKeAngleXY_007590e0 @ 0x0075_90e0 => extern "C" fn ppp_ke_angle_xy_007590e0(v: u32, out: u32) -> u32 {
+        small::bridge::ppp_angle_xy(&mut mem(), v, out, &mut |_, t| crt_atan(t))
+    }
+    /// `pppKeAngleXY_0075e1f0(v, out)`: `_CIatan` through its import slot.
+    pppKeAngleXY_0075e1f0 @ 0x0075_e1f0 => extern "C" fn ppp_ke_angle_xy_0075e1f0(v: u32, out: u32) -> u32 {
+        small::bridge::ppp_angle_xy(&mut mem(), v, out, &mut |_, t| crt_atan(t))
+    }
+    /// `pppShapeCameraStep_007472b0(obj, key)`.
+    pppShapeCameraStep_007472b0 @ 0x0074_72b0 => extern "C" fn ppp_shape_step_007472b0(obj: u32, key: u32) {
+        draw::bridge::ppp_shape_step(&mut mem(), draw::bridge::ShapeStep::Camera, obj, key);
+    }
+    /// `pppShapeCameraDisPosStep_00748500(obj, key)`.
+    pppShapeCameraDisPosStep_00748500 @ 0x0074_8500 => extern "C" fn ppp_shape_step_00748500(obj: u32, key: u32) {
+        draw::bridge::ppp_shape_step(&mut mem(), draw::bridge::ShapeStep::Camera, obj, key);
+    }
+    /// `pppShapeFieldRevStep_00743da0(obj, key)`.
+    pppShapeFieldRevStep_00743da0 @ 0x0074_3da0 => extern "C" fn ppp_shape_step_00743da0(obj: u32, key: u32) {
+        draw::bridge::ppp_shape_step(&mut mem(), draw::bridge::ShapeStep::FieldRev, obj, key);
     }
     /// `hashU(s)`.
     hashU @ 0x0071_6570 => extern "C" fn hash_u(s: u32) -> u32 {

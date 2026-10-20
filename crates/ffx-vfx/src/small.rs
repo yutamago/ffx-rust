@@ -87,6 +87,57 @@ pub fn check_view_cylinder(point: [f32; 3], far: f32, radius: f32, height: f32) 
         & ppp_view_out_code(x0, y0)
 }
 
+/// The core of the effect programs' 2D angle (`0x007590e0`, `0x0075e1f0`):
+/// the angle of `(x, y)` in -pi..pi, `None` for (0, 0). With `x * y`
+/// (as `f32`) above 0 it is `atan(y / x)` (the quotient unrounded, the
+/// angle stored as `f32`) plus 0 (`x > 0`) or `f32(-pi)`; below 0,
+/// `f32(+-pi / 2)` (the sign of `y`) minus `atan(x / y)`; else, with
+/// `x` not 0 (or a NaN), 0 or `pi` by the sign of `x`, and with `x` 0,
+/// `+-pi / 2` by the sign of `y`. The constants are the original's
+/// doubles (3.141592654, 1.570796327); NaNs take the "not above 0"
+/// side of each test. `atan` is the C runtime's `_CIatan` on the x87
+/// value.
+pub fn angle_xy(x: f32, y: f32, atan: &mut impl FnMut(f64) -> f64) -> Option<f32> {
+    use crate::x87::{MUL, Reg};
+    // the original's doubles (0x00b51548, 0x00b51670), not the exact ones
+    #[allow(clippy::approx_constant)]
+    const PI: f64 = 3.141_592_654;
+    #[allow(clippy::approx_constant)]
+    const HALF_PI: f64 = 1.570_796_327;
+    const DIV: crate::x87::Op = |a, b| a / b;
+    // the register as the f64 the shim loads (a NaN keeps its payload)
+    let reg = |r: Reg| match r {
+        Reg::Num(v) => v,
+        Reg::Nan(b) => f64::from(f32::from_bits(b)),
+    };
+    #[allow(clippy::cast_possible_truncation)] // fstp m32
+    let to_f32 = |v: f64| v as f32;
+    let prod = f64::from(Reg::load_f32(x).mem(MUL, y).store());
+    let (fx, fy) = (f64::from(x), f64::from(y));
+    if prod > 0.0 {
+        let off = to_f32(if 0.0 < fx { 0.0 } else { -PI });
+        let r = to_f32(atan(reg(Reg::load_f32(y).mem(DIV, x))));
+        return Some(Reg::load_f32(r).mem(crate::x87::ADD, off).store());
+    }
+    if prod < 0.0 {
+        let off = to_f32(if 0.0 < fy { HALF_PI } else { -HALF_PI });
+        let r = to_f32(atan(reg(Reg::load_f32(x).mem(DIV, y))));
+        let d = Reg::Num(off.into()).reg(crate::x87::SUB, Reg::load_f32(r));
+        return Some(d.store());
+    }
+    // (a NaN is not 0 either)
+    let angle = if fx != 0.0 {
+        if 0.0 < fx { 0.0 } else { PI }
+    } else if fy == 0.0 {
+        return None;
+    } else if 0.0 < fy {
+        HALF_PI
+    } else {
+        -HALF_PI
+    };
+    Some(to_f32(angle))
+}
+
 /// The four-texel average of [`bridge::op_texels_box`] (`row_a[2i]`,
 /// `row_b[2i]`, `row_a[2i + 1]`, `row_b[2i + 1]`): per byte of the RGBA
 /// words, `(a + b + c + d + 2) >> 2`, carried in two halves (bytes 0
@@ -143,6 +194,23 @@ pub mod bridge {
             ffx_system::math::mul4x4_component(i, x, col)
         });
         super::check_view_cylinder(p, far, radius, height)
+    }
+
+    /// The effect programs' 2D angle (`0x007590e0`, and the copy
+    /// `0x0075e1f0`) of the vector at `v` (`x`, `y`) into `*out`:
+    /// [`super::angle_xy`]; returns 1, or 0 (nothing written) for (0, 0).
+    pub fn ppp_angle_xy<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        out: u32,
+        atan: &mut impl FnMut(&mut M, f64) -> f64,
+    ) -> u32 {
+        let (x, y) = (rf(mem, v), rf(mem, v.wrapping_add(4)));
+        let Some(a) = super::angle_xy(x, y, &mut |t| atan(mem, t)) else {
+            return 0;
+        };
+        mem.write(out, a);
+        1
     }
 
     /// `hashU(s)` (`0x00716570`): [`super::hash_u`] of the NUL-terminated

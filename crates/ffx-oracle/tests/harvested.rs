@@ -114,6 +114,17 @@ harvest_test!(
     }
 );
 
+// effects: pppDrawShapeCameraDraw's particle step
+harvest_test!(
+    ppp_shape_camera_step,
+    0x0074_72b0,
+    args = 2,
+    |m: &mut Oracle, s| {
+        let kind = ffx_vfx::draw::bridge::ShapeStep::Camera;
+        ffx_vfx::draw::bridge::ppp_shape_step(m, kind, s.arg(0), s.arg(1));
+    }
+);
+
 /// The store's format round-trips, and a state of the first target applies
 /// to a fresh oracle (layout check).
 #[test]

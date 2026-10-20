@@ -3707,10 +3707,15 @@
 0x00732dd0 function pppSRandCV                # ppp program table record "pppSRandCV" step: four draws whenever the key applies (flag +0xc), i8 factors at +8, byte targets += ftol(w k - k)
 0x00732f30 function pppSRandCV_Draw           # pppSRandCV's draw; ours: = rand::bridge::ppp_srand_draw(Spread::Plain), the byte argument picking the two-draw form, result in ST0 (oracle parity)
 0x007330e0 function pppSRandUpCV              # ppp program table record "pppSRandUpCV" step: as pppSRandCV, ftol(k w)
+0x00733230 function pppSRandUpCV_Draw         # pppSRandUpCV's draw (its step 0x007330e0 calls it); ours: byte-identical to pppSRandUpFV_Draw 0x00732970 but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x007333e0 function pppSRandDownCV            # ppp program table record "pppSRandDownCV" step
+0x00733530 function pppSRandDownCV_Draw       # pppSRandDownCV's draw (its step 0x007333e0 calls it); ours: byte-identical to pppSRandDownFV_Draw 0x00732c00 but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x007336e0 function pppSRandHCV               # fh v3:exact 0x007337b0
+0x00733820 function pppSRandHCV_Draw          # pppSRandHCV's draw (its step 0x007336e0 calls it); ours: byte-identical to pppSRandFV_Draw 0x007326e0 (and pppSRandCV_Draw) but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x00733a00 function pppSRandUpHCV             # ppp program table record "pppSRandUpHCV" step: as pppSRandHCV, cbw(ftol(k w))
+0x00733b30 function pppSRandUpHCV_Draw        # pppSRandUpHCV's draw (its step 0x00733a00 calls it); ours: byte-identical to pppSRandUpFV_Draw 0x00732970 but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x00733d10 function pppSRandDownHCV           # ppp program table record "pppSRandDownHCV" step
+0x00733e40 function pppSRandDownHCV_Draw      # pppSRandDownHCV's draw (its step 0x00733d10 calls it); ours: byte-identical to pppSRandDownFV_Draw 0x00732c00 but for relative branches (tools/dupes.py), rand::bridge::ppp_srand_draw
 0x00734020 function pppKeMatSN                # ppp program table record "pppKeMatSN" step (aligned-stack prologue): area 0 +0x80 takes area 1's three angles; pppGetRotMatrixXYZ(area0 + 0x40, old - new as i32); +0x70/+0x74 from 0x00c3e6e0
 0x007340f0 function pppKeMatSNCon             # fh v3:exact 0x007341c0
 0x00734130 function pppMatrixLoc              # fh v3:exact 0x00734200
@@ -3866,6 +3871,7 @@
 0x00742cc0 function pppDrawShapeFieldDraw     # ppp program table record "pppDrawShapeField" draw
 0x00742f20 function pppDrawShapeFieldAlloc_00742f20 # ours: (obj, key, prog) -> 1/0: pppDrawShapeFieldDraw's (0x00742cc0) buffers: work +0x40 = pppMemAlloc([key+8] * 0xa0) cleared, +0x44 = 12 bytes, +0x50 = [work+0x54] * 8 cleared; 0 when is_ptr32_null; byte-identical to 0x00744260 (draw::bridge::shape_alloc FIELD_ALLOC)
 0x00743030 function pppShapeFieldRenderOn_00743030 # ours: () -> 0 when graphicLevelGetNameHash() is one of 0x76f, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139, else 1; 0x00741b90 and pppDrawShapeFieldDraw skip their shape-field render data on 0 (draw::bridge::shape_field_render_on)
+0x00743da0 function pppShapeFieldRevStep_00743da0 # ours: cdecl(obj, key), called by pppDrawShapeFieldRevDraw 0x00744040: obj+8 0xa0-byte particles at ptr32(key+0x40): age/lifetime, velocity and spin steps, frame clock over the shape ptr32(env+0x24[obj+4]) entries; as 0x007472b0 with key+0x54, obj+0x60, obj+0xa0 (draw::bridge::ppp_shape_step)
 0x00743f00 function pppDrawShapeFieldRevCon   # ppp program table record "pppDrawShapeFieldRev" +0x1c set-up; ours: (draw::bridge::shape_con FIELD_REV_CON)
 0x00743f80 function pppDrawShapeFieldRevDes   # ppp program table record "pppDrawShapeFieldRev" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_REV_DES)
 0x00744040 function pppDrawShapeFieldRevDraw  # ppp program table record "pppDrawShapeFieldRev" draw
@@ -3877,10 +3883,12 @@
 0x00746280 function pppDrawShapeFieldGlobalDes # ppp program table record "pppDrawShapeFieldGlobal" +0x24 destructor; ours: (draw::bridge::ppp_des FIELD_GLOBAL_DES)
 0x00746320 function pppDrawShapeFieldGlobalDraw # ppp program table record "pppDrawShapeFieldGlobal" draw
 0x00746540 function pppDrawShapeFieldGlobalAlloc_00746540 # ours: (obj, key, prog) -> 1/0: pppDrawShapeFieldGlobalDraw's buffers: work +0x40 = [key+8] * 0xb0 cleared, +0x4c = [work+0x50] * 8 cleared (draw::bridge::shape_alloc FIELD_GLOBAL_ALLOC)
+0x007472b0 function pppShapeCameraStep_007472b0 # ours: cdecl(obj, key), called by pppDrawShapeCameraDraw 0x00747540: obj+8 0xa0-byte particles at ptr32(key+0x40): age/lifetime, velocity and spin steps, frame clock over the shape ptr32(env+0x24[obj+4]) entries; lifetime key+0x50, velocity step obj+0x50, spin step obj+0x90 (draw::bridge::ppp_shape_step)
 0x00747410 function pppDrawShapeCameraCon     # ppp program table record "pppDrawShapeCamera" +0x1c set-up; ours: (draw::bridge::shape_con CAMERA_CON)
 0x00747490 function pppDrawShapeCameraDes     # ppp program table record "pppDrawShapeCamera" +0x24 destructor; ours: destroys the instance before and after the frees (draw::bridge::ppp_des CAMERA_DES)
 0x00747540 function pppDrawShapeCameraDraw    # ppp program table record "pppDrawShapeCamera" draw
 0x00747760 function pppDrawShapeCameraAlloc_00747760 # ours: pppDrawShapeCameraDraw's buffers: pppDrawShapeFieldGlobalAlloc_00746540 with 0xa0-byte records; byte-identical to 0x007489b0 (draw::bridge::shape_alloc CAMERA_ALLOC)
+0x00748500 function pppShapeCameraDisPosStep_00748500 # ours: cdecl(obj, key), called by pppDrawShapeCameraDisPosDraw 0x00748790: obj+8 0xa0-byte particles at ptr32(key+0x40): age/lifetime, velocity and spin steps, frame clock over the shape ptr32(env+0x24[obj+4]) entries; byte-identical to 0x007472b0 but for relative branches (draw::bridge::ppp_shape_step)
 0x00748660 function pppDrawShapeCameraDisPosCon # ppp program table record "pppDrawShapeCameraDisPos" +0x1c set-up; ours: (draw::bridge::shape_con CAMERA_CON)
 0x007486e0 function pppDrawShapeCameraDisPosDes # ppp program table record "pppDrawShapeCameraDisPos" +0x24 destructor; ours: (draw::bridge::ppp_des CAMERA_DES)
 0x00748790 function pppDrawShapeCameraDisPosDraw # ppp program table record "pppDrawShapeCameraDisPos" draw
@@ -4012,7 +4020,7 @@
 0x00758790 function pppKeBornRndCon           # ppp program table record "pppKeBornRnd" (0x00c3aff8) +0x1c set-up; "pppKeBornRnd" (0x00c3c6a0) +0x1c set-up
 0x007587b0 function pppKeBornRnd2             # fh v3:cg2 0x7588a0
 0x00758820 function pppKeBornRnd2Con          # ppp program table record "pppKeBornRnd2" (0x00c3aee0) +0x1c set-up; "pppKeBornRnd2" (0x00c3c588) +0x1c set-up
-0x00758840 function pppKeBornRnd2_Born        # fh v3:cg5 0x758930
+0x00758840 function pppKeBornRnd2_Born        # fh v3:cg5 0x758930; cdecl(obj, def, shape, out): unless magic id 0x2a9, pppCreatePObject(part, records + 16 def[+0x10]) into *out (+4 = obj), i16 shape * obj matrix -> child area def[+0x14] pos, (that - obj+0x40) normalised * f32 def[+8] -> area def[+0x1c] (prog::bridge::ppp_ke_born_rnd2_born)
 0x00758960 function pppKeBornRnd3             # fh v3:cg2 0x758a50
 0x007589d0 function pppKeBornRnd3Con          # ppp program table record "pppKeBornRnd3" (0x00c3aeb8) +0x1c set-up; "pppKeBornRnd3" (0x00c3c560) +0x1c set-up
 0x007589f0 function pppKeBornRnd3_Born        # fh v3:exact 0x00758ae0
@@ -4021,7 +4029,8 @@
 0x00758df0 function pppKeBornRnd4             # fh switch:cg2 0x710030e150
 0x00758f20 function pppKeBornRnd5             # ppp program table record "pppKeBornRnd5" step
 0x00758f90 function pppKeBornRnd5Con          # ppp program table record "pppKeBornRnd5" (0x00c3a9e0) +0x1c set-up; "pppKeBornRnd5" (0x00c3c088) +0x1c set-up
-0x00758fc0 function pppKeBornRnd5_Born        # fh v3:cg8 0x7590b0
+0x00758fc0 function pppKeBornRnd5_Born        # fh v3:cg8 0x7590b0; byte-identical copy of pppKeBornRnd2_Born 0x00758840 but for relative branches (prog::bridge::ppp_ke_born_rnd2_born)
+0x007590e0 function pppKeAngleXY_007590e0      # ours: cdecl(v, out) -> 1/0: the angle of (v.x, v.y) in -pi..pi via _CIatan on the unrounded quotient, +-f32(pi) / f32(pi/2) offsets from the doubles 3.141592654/1.570796327; (0, 0) returns 0 untouched; pppKeBornRnd6_Born calls it (small::angle_xy)
 0x00759200 function pppKeBornRnd6             # ppp program table record "pppKeBornRnd6" step
 0x00759270 function pppKeBornRnd6Con          # ppp program table record "pppKeBornRnd6" (0x00c3af80) +0x1c set-up; "pppKeBornRnd6" (0x00c3c628) +0x1c set-up
 0x007592a0 function pppKeBornRnd6_Born        # fh v3:exact 0x00759390
@@ -4160,6 +4169,7 @@
 0x0075df90 function pppFpPointLightVsfScl     # ppp program table record "pppFpPointLightVsfScl" step
 0x0075e1d0 function pppFpPointLightVsfSclCon  # ppp program table record "pppFpPointLightVsfScl" +0x1c set-up; not a function start in the Ghidra dump
 0x0075e1e0 function pppFpPointLightVsfSclCon2 # ppp program table record "pppFpPointLightVsfScl" +0x20 set-up; not a function start in the Ghidra dump
+0x0075e1f0 function pppKeAngleXY_0075e1f0      # ours: cdecl(v, out) -> 1/0: the angle of (v.x, v.y) in -pi..pi via _CIatan on the unrounded quotient, +-f32(pi) / f32(pi/2) offsets from the doubles 3.141592654/1.570796327; (0, 0) returns 0 untouched; the same code as 0x007590e0 (tools/dupes.py; 0x0075e990 is a dead third copy) (small::angle_xy)
 0x0075e310 function pppKeMvYpEff              # fh v3:exact 0x0075e400
 0x0075e430 function pppKeDrct                 # fh v3:exact 0x0075e520
 0x0075e470 function pppKeDrctCon              # fh v3:exact 0x0075e560

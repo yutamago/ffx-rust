@@ -886,4 +886,94 @@ pub mod bridge {
         mem.write(at(0x7c), store(mul(load(vis), f(mem, at(0x7c)))));
         mem.write(at(0xac), vis);
     }
+
+    /// Where a shape particle step finds its key's fields: the lifetime
+    /// (`u32`), the velocity step and the spin step (three `f32` each).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ShapeStep {
+        /// `0x007472b0` (`pppDrawShapeCameraDraw`) and `0x00748500`
+        /// (`pppDrawShapeCameraDisPosDraw`): `+0x50`, `+0x50`, `+0x90`.
+        Camera,
+        /// `0x00743da0` (`pppDrawShapeFieldRevDraw`): `+0x54`, `+0x60`,
+        /// `+0xa0`.
+        FieldRev,
+    }
+
+    /// The shape draws' particle step (`0x007472b0`, `0x00748500`,
+    /// `0x00743da0`; [`ShapeStep`] picks the key layout) over `obj +8`
+    /// (`i32`) 0xa0-byte particles at `ptr32(key +0x40)`, with the shape
+    /// `ptr32(env +0x24 [obj +4])`. Each live one (bit 0 of `+0`): its age
+    /// `+8` counts up (at the key's lifetime or past, unsigned, bit 0
+    /// clears); its velocity `+0x20..+0x28` gets the key's velocity step
+    /// (`obj` value first) and moves the position `+0x10`
+    /// (`FFXVu0AddVector`, four lanes); its spin speed `+0x40..+0x48` gets
+    /// the spin step and turns `+0x30..+0x38`. The frame clock `u16 +4`
+    /// adds `u16 obj +0xc`; at the frame's length (`i16 shape +0x12 + 8 f`
+    /// for frame `f = u16 +6`, compared as `i32` from a `u16` clock) it
+    /// drops by it and the frame steps on; past the last (`i16 shape +6`)
+    /// a looping frame (bit 7 of `shape +0x14 + 8 f`) clears clock and
+    /// frame (one dword), else the clock clears and the frame stays.
+    pub fn ppp_shape_step<M: Mem>(mem: &mut M, kind: ShapeStep, obj: u32, key: u32) {
+        use crate::x87::add;
+        use ffx_system::stub::ptr32;
+        let (life, vel, spin) = match kind {
+            ShapeStep::Camera => (0x50, 0x50, 0x90),
+            ShapeStep::FieldRev => (0x54, 0x60, 0xa0),
+        };
+        let count: i32 = mem.read(obj.wrapping_add(8));
+        let parts = ptr32(mem.read(key.wrapping_add(0x40)));
+        let env: u32 = mem.read(mem.read::<u32>(g(mem, ENV_SLOT)));
+        let shapes: u32 = mem.read(env.wrapping_add(0x24));
+        let no: u32 = mem.read(obj.wrapping_add(4));
+        let shape = ptr32(mem.read(shapes.wrapping_add(no.wrapping_mul(4))));
+        let f = |mem: &M, a: u32| mem.read::<f32>(a);
+        let mut r = parts;
+        for _ in 0..count.max(0) {
+            let flags: u32 = mem.read(r);
+            if flags & 1 != 0 {
+                let frame = u32::from(mem.read::<u16>(r.wrapping_add(6)));
+                let age = mem.read::<u32>(r.wrapping_add(8)).wrapping_add(1);
+                mem.write(r.wrapping_add(8), age);
+                if age >= mem.read::<u32>(key.wrapping_add(life)) {
+                    mem.write(r, flags & !1);
+                }
+                for (o, at) in [(vel, 0x20), (spin, 0x40)] {
+                    for i in 0..3 {
+                        let (src, dst) = (obj.wrapping_add(o + 4 * i), r.wrapping_add(at + 4 * i));
+                        let v = add(f(mem, src), f(mem, dst));
+                        mem.write(dst, v);
+                    }
+                    if at == 0x20 {
+                        let pos = r.wrapping_add(0x10);
+                        ffx_ps2::vu0::bridge::add_vector(mem, pos, pos, r.wrapping_add(0x20));
+                    }
+                }
+                for i in 0..3 {
+                    let (src, dst) = (r.wrapping_add(0x40 + 4 * i), r.wrapping_add(0x30 + 4 * i));
+                    let v = add(f(mem, src), f(mem, dst));
+                    mem.write(dst, v);
+                }
+                let step: u16 = mem.read(obj.wrapping_add(0xc));
+                let clock = step.wrapping_add(mem.read(r.wrapping_add(4)));
+                mem.write(r.wrapping_add(4), clock);
+                let entry = shape.wrapping_add(8 * frame);
+                let len: u16 = mem.read(entry.wrapping_add(0x12));
+                if i32::from(clock) >= i32::from(len.cast_signed()) {
+                    mem.write(r.wrapping_add(4), clock.wrapping_sub(len));
+                    let next = mem.read::<u16>(r.wrapping_add(6)).wrapping_add(1);
+                    mem.write(r.wrapping_add(6), next);
+                    let last = i32::from(mem.read::<i16>(shape.wrapping_add(6)));
+                    if i32::from(next) >= last {
+                        if mem.read::<u8>(entry.wrapping_add(0x14)) & 0x80 != 0 {
+                            mem.write(r.wrapping_add(4), 0u32);
+                        } else {
+                            mem.write(r.wrapping_add(4), 0u16);
+                            mem.write(r.wrapping_add(6), next.wrapping_sub(1));
+                        }
+                    }
+                }
+            }
+            r = r.wrapping_add(0xa0);
+        }
+    }
 }
