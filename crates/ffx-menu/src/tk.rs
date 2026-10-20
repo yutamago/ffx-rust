@@ -1757,6 +1757,164 @@ pub mod bridge {
         list.wrapping_add(end_row.cast_unsigned().wrapping_mul(4))
     }
 
+    /// `TkMn2RefreshList(kind)` (`0x008c2360`):
+    /// `TkMn2BuildItemList_008c2390(kind, 0)`.
+    pub fn tk_mn2_refresh_list<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x008c_2390);
+        call(mem, f, &[kind, 0]);
+    }
+
+    /// The weapon list's length (`MenuWeapon_BuildKindList`).
+    pub const MENU_WEAPON_KIND_COUNT: Global<u32> = Global::new(0x0186_a620);
+
+    /// `MenuWeapon_BuildKindList(_, kind)` (`0x008cfd20`): the current
+    /// character's weapons of `kind` (`TkMn2BuildItemList_008c2390(0x14,
+    /// kind)` through its thunk `0x008c2380`), their count kept in
+    /// [`MENU_WEAPON_KIND_COUNT`] and returned.
+    pub fn menu_weapon_build_kind_list<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008c_2380);
+        call(mem, f, &[0x14, kind]);
+        let f = mem.rebase(0x008c_1bb0);
+        let n = call(mem, f, &[]);
+        MENU_WEAPON_KIND_COUNT.set(mem, n);
+        n
+    }
+
+    /// `MenuKaizou_BuildList(k)` (`0x008d6dd0`): the customisations for
+    /// weapon `k` of the customise menu's list (`u16` ids at
+    /// `[0x0186aa38]`): `TkMn2BuildItemList_008c2390(5,
+    /// MsGetSaveWeapon(id, local))` through the thunk `0x008c2380`.
+    pub fn menu_kaizou_build_list<M: Mem>(
+        mem: &mut M,
+        k: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let list: u32 = mem.read(mem.rebase(0x0186_aa38));
+        let id = u32::from(mem.read::<u16>(list.wrapping_add(k.wrapping_mul(2))));
+        let f = mem.rebase(0x007a_bbd0);
+        let rec = call(mem, f, &[id, local]);
+        let f = mem.rebase(0x008c_2380);
+        call(mem, f, &[5, rec]);
+    }
+
+    /// `Pad_InitWorks()` (`0x00889340`): `Pad_InitWork(port, 0)` for ports
+    /// 0 and 1.
+    pub fn pad_init_works<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let f = mem.rebase(0x0088_9360);
+        for port in 0..2 {
+            call(mem, f, &[port, 0]);
+        }
+    }
+
+    /// `MenuConfig_DrawRows()` (`0x008cbab0`): the menu background
+    /// (`TODrawMenuBG`), then each of [`MENU_CONFIG_ROWS`] rows
+    /// (`MenuConfig_DrawOptionRow(0, 0, row)`, `TkMn2DrawKickSyncPacket2()`
+    /// after each); the last call's `eax`.
+    pub fn menu_config_draw_rows<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008f_5c10);
+        let mut r = call(mem, f, &[]);
+        let mut row = 0u32;
+        while row.cast_signed() < MENU_CONFIG_ROWS.get(mem) {
+            let f = mem.rebase(0x008c_bae0);
+            call(mem, f, &[0, 0, row]);
+            let f = mem.rebase(0x008c_0cd0);
+            r = call(mem, f, &[]);
+            row += 1;
+        }
+        r
+    }
+
+    /// `BtlEnd_AddAP_008bdaf0(chr, ap, mark)` (`0x008bdaf0`): when `ap`
+    /// on top of the AP saved (`BtlEnd_GetSaveNextAP`) reaches the next
+    /// level (`BtlEnd_GetNextAP`), the level-up mark
+    /// (`TOBtlEndSetFlagMark(chr, mark)`), `ap` cut to what is missing
+    /// when the sphere level (`BtlEnd_GetSP`) is 98; then
+    /// `0x008ba390(chr, ap)` and its `eax`.
+    pub fn btl_end_add_ap<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        ap: u32,
+        mark: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let f = fun(mem, 0x008b_da00);
+        let saved = call(mem, f, &[chr]);
+        let f = fun(mem, 0x008b_da40);
+        let next = call(mem, f, &[chr]).cast_signed();
+        let mut ap = ap;
+        if next <= saved.wrapping_add(ap).cast_signed() {
+            let f = fun(mem, 0x008b_da50);
+            if call(mem, f, &[chr]) == 0x62 {
+                ap = next.cast_unsigned().wrapping_sub(saved);
+            }
+            // saved + ap still reaches next
+            let f = fun(mem, 0x008b_e020);
+            call(mem, f, &[chr, mark]);
+        }
+        let f = fun(mem, 0x008b_a390);
+        call(mem, f, &[chr, ap])
+    }
+
+    /// The battle-end message about a celestial weapon
+    /// (`TkBtlEndCheckLegendWeapon`).
+    pub const BTL_END_LEGEND_TEXT: Global<u32> = Global::new(0x025c_c590);
+
+    /// `TkBtlEndCheckLegendWeapon()` (`0x008ba5c0`): counts the six weapon
+    /// spoil slots (`u16` at `0x02310f8e`) whose `MsGetSaveWeapon` record
+    /// is in use (`+2`) with flags `+3 & 0xd`; for exactly one, its name
+    /// (`MsGetSaveWeaponName`) as macro 7's value and text `0x401b`, else
+    /// text `0x401c` (`TkBtlEndGetText`) into [`BTL_END_LEGEND_TEXT`];
+    /// returns the count. `local` is `MsGetSaveWeapon`'s out word.
+    pub fn tk_btl_end_check_legend_weapon<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let slots = fun(mem, 0x0231_0f8e);
+        let (mut n, mut name) = (0u32, 0u32);
+        for k in 0..6 {
+            let id = u32::from(mem.read::<u16>(slots.wrapping_add(2 * k)));
+            let f = fun(mem, 0x007a_bbd0);
+            let rec = call(mem, f, &[id, local]);
+            if mem.read::<u8>(rec.wrapping_add(2)) != 0
+                && mem.read::<u8>(rec.wrapping_add(3)) & 0xd != 0
+            {
+                n += 1;
+                let f = fun(mem, 0x007a_bdf0);
+                name = call(mem, f, &[id]);
+            }
+        }
+        let text = if n == 1 {
+            let f = fun(mem, 0x008b_8960);
+            call(mem, f, &[7, 0, 0]);
+            let f = fun(mem, 0x008b_8980);
+            call(mem, f, &[7, 0, name]);
+            let f = fun(mem, 0x008b_8680);
+            call(mem, f, &[7]);
+            0x401b
+        } else {
+            0x401c
+        };
+        let f = fun(mem, 0x008b_da60);
+        let t = call(mem, f, &[text]);
+        BTL_END_LEGEND_TEXT.set(mem, t);
+        n
+    }
+
     /// One `{u16 id, u8 kind, u8 value}` list entry at `*e`, then the next.
     fn put(mem: &mut impl Mem, e: &mut u32, id: u32, kind: u8, value: u8) {
         #[allow(clippy::cast_possible_truncation)] // a u16 id

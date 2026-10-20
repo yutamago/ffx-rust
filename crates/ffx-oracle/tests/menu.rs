@@ -14539,3 +14539,101 @@ fn menu_round29_pre_save_time() {
     assert_eq!(tk::pre_save_time(3_600_000), "999:59:59");
     assert_eq!(tk::pre_save_time(3723), "001:02:03");
 }
+
+#[test]
+fn menu_round29_list_wrappers_config_rows_and_btl_end_match_the_original() {
+    let Some(mut t) = setup_any(0x0029_0003) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x200;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    seq_stub(&mut t, 0x008c_2390, log, 2, &[]);
+    seq_stub(&mut t, 0x008c_2380, log, 2, &[]);
+    let list_max = seq_stub(&mut t, 0x008c_1bb0, log, 0, &[]);
+    let records = t.alloc(&[0; 0x900]);
+    record_stub(&mut t, 0x007a_bbd0, log, &[0], records, 8, Some(1));
+    seq_stub(&mut t, 0x0088_9360, log, 2, &[]);
+    let bg = seq_stub(&mut t, 0x008f_5c10, log, 0, &[]);
+    seq_stub(&mut t, 0x008c_bae0, log, 3, &[]);
+    let kick = counter_stub(&mut t, 0x008c_0cd0, 0x1234_5678);
+    let saved = seq_stub(&mut t, 0x008b_da00, log, 1, &[]);
+    let next = seq_stub(&mut t, 0x008b_da40, log, 1, &[]);
+    let sp = seq_stub(&mut t, 0x008b_da50, log, 1, &[]);
+    seq_stub(&mut t, 0x008b_e020, log, 2, &[]);
+    let add = seq_stub(&mut t, 0x008b_a390, log, 2, &[]);
+    let names = t.alloc(&[0; 0x400]);
+    word_table_stub(&mut t, 0x007a_bdf0, log, &[0], 0, names);
+    seq_stub(&mut t, 0x008b_8960, log, 3, &[]);
+    seq_stub(&mut t, 0x008b_8980, log, 3, &[]);
+    seq_stub(&mut t, 0x008b_8680, log, 1, &[]);
+    let text = seq_stub(&mut t, 0x008b_da60, log, 1, &[]);
+    let ids = t.alloc(&[0; 0x200]);
+    t.put(t.sym(0x0186_aa38), ids);
+    let rows = t.sym(tk::MENU_CONFIG_ROWS.sym);
+    let slots = t.sym(0x0231_0f8e);
+    for round in 0..400u32 {
+        t.put(log, start);
+        t.scramble_at(ids, 0x200);
+        let v = bytes_of(&mut t, 0x900, &[0, 0, 1, 2, 4, 8, 0xd, 0xff]);
+        t.put_bytes(records, &v);
+        t.scramble_at(names, 0x400);
+        reroll(&mut t, &[list_max, bg, add, text]);
+        let kind = t.rng.pick(&[0u32, 1, 2, 5, 0x13, 0x14, 0xffff_ffff]);
+        let other = t.rng.next();
+        t.twin("TkMn2RefreshList", 0x008c_2360, &[kind], VOID, |o| {
+            tk::tk_mn2_refresh_list(o, kind, &mut callback);
+            0
+        });
+        t.twin(
+            "MenuWeapon_BuildKindList",
+            0x008c_fd20,
+            &[other, kind],
+            U32,
+            |o| w(tk::menu_weapon_build_kind_list(o, kind, &mut callback)),
+        );
+        let k = t.rng.below(0x100);
+        t.twin("MenuKaizou_BuildList", 0x008d_6dd0, &[k], VOID, |o| {
+            tk::menu_kaizou_build_list(o, k, local, &mut callback);
+            0
+        });
+        t.twin("Pad_InitWorks", 0x0088_9340, &[], VOID, |o| {
+            tk::pad_init_works(o, &mut callback);
+            0
+        });
+        let n = t.rng.pick(&[-1i32, 0, 1, 2, 5, 12]);
+        t.put(rows, n);
+        t.twin("MenuConfig_DrawRows", 0x008c_bab0, &[], U32, |o| {
+            w(tk::menu_config_draw_rows(o, &mut callback))
+        });
+        // BtlEnd_AddAP: around the next level, sphere level 98 or not
+        let s = t.rng.pick(&[0u32, 10, 100, 0x7fff_fff0, 0xffff_fff0]);
+        t.put(saved, s);
+        let ap = t.rng.pick(&[0u32, 1, 5, 50, 0x7fff_ffff, 0xffff_ffff]);
+        let delta = t.rng.pick(&[-2i32, -1, 0, 1, 2, 60, -60]);
+        let nx = s.wrapping_add(ap).wrapping_add(delta.cast_unsigned());
+        let nx = if round % 5 == 0 { t.rng.next() } else { nx };
+        t.put(next, nx);
+        let l = t.rng.pick(&[0x62u32, 0x62, 0x61, 0x63, 0, 0x162]);
+        t.put(sp, l);
+        let (chr, mark) = (t.rng.below(8), t.rng.next());
+        t.twin(
+            "BtlEnd_AddAP_008bdaf0",
+            0x008b_daf0,
+            &[chr, ap, mark],
+            U32,
+            |o| w(tk::btl_end_add_ap(o, chr, ap, mark, &mut callback)),
+        );
+        // TkBtlEndCheckLegendWeapon: six slots, often only one in use
+        for k in 0..6 {
+            let id = t.rng.pick(&[0u16, 1, 2, 0x10, 0x8f, 0x1ff, 0x103]);
+            t.put(slots + 2 * k, id);
+        }
+        t.twin("TkBtlEndCheckLegendWeapon", 0x008b_a5c0, &[], U32, |o| {
+            w(tk::tk_btl_end_check_legend_weapon(o, local, &mut callback))
+        });
+    }
+    let k = Mem::read::<u32>(&t.a, kick);
+    assert!(k > 100, "{k} kicks");
+    eprintln!("{} calls", t.calls);
+}

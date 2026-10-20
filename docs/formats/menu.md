@@ -231,6 +231,13 @@ anything above `0x15` list nothing):
 entries shown, at least 1: for `0x13`/`0x15` up to the last owned
 weapon (MsGetSaveWeapon `+2`), for 5 without the missing rows.
 
+`TkMn2RefreshList(kind)` (`0x008c2360`) is `TkMn2BuildItemList(kind,
+0)`; `MenuWeapon_BuildKindList(_, kind)` (`0x008cfd20`) builds kind
+`0x14` for weapon kind `kind` and keeps the count in `0x0186a620`;
+`MenuKaizou_BuildList(k)` (`0x008d6dd0`) builds kind 5 for the record of
+weapon `k` of the customise list (`u16` ids at `[0x0186aa38]`). Both go
+through the thunk `0x008c2380` (a `jmp`).
+
 ## Config menu
 
 `MenuConfig_DrawOptionRow` (`0x008cbae0`) draws row `row` of the config
@@ -256,6 +263,9 @@ direction is held); page up/down (repeat bits 1/2 with the pad on 1/2)
 scroll by a page (by `0x111`). Confirm (`0x20`) asks the `+0x1c` callback
 `(w, cursor, picks)` first (negative: wait, 0: buzzer `0x80000003`).
 
+`MenuConfig_DrawRows()` (`0x008cbab0`) draws the page: `TODrawMenuBG`,
+then `MenuConfig_DrawOptionRow(0, 0, row)` and
+`TkMn2DrawKickSyncPacket2()` for each of `g_TkMenuConfigRows`.
 ## Characters and aeons
 
 `g_TkMenuPlayers` (`0x01841c14`) and `g_TkMenuSummons` (`0x01841c38`) are
@@ -382,3 +392,17 @@ the tangent normalised (`x^2 + y^2 + z^2`, `MsDivSqrt` into `g_Vu0_Q`,
 `w` from `vf00.w`). The quadratic writes three weights into a 16-byte
 frame buffer and copies all 16 bytes, so `0x00c8f7dc` gets a frame word
 nobody wrote (no helper reads it).
+
+## Battle end
+
+`TkBtlEndCheckLegendWeapon()` (`0x008ba5c0`) counts the six weapon spoil
+slots (`u16` at `0x02310f8e`) whose `MsGetSaveWeapon` record is in use
+(`+2`) with any of flags `+3 & 0xd`. For exactly one, its name
+(`MsGetSaveWeaponName`) becomes macro 7's value and the message is
+`TkBtlEndGetText(0x401b)`, otherwise `0x401c`; the message goes to
+`0x025cc590` and the count is returned.
+`BtlEnd_AddAP_008bdaf0(chr, ap, mark)` (`0x008bdaf0`) marks a level-up
+(`TOBtlEndSetFlagMark(chr, mark)`) when the AP saved
+(`BtlEnd_GetSaveNextAP`) plus `ap` reaches `BtlEnd_GetNextAP` (signed);
+at sphere level 98 (`BtlEnd_GetSP`) `ap` is cut to the AP still missing.
+It then hands `(chr, ap)` to `0x008ba390`.

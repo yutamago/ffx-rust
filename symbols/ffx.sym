@@ -10148,6 +10148,7 @@
 0x00888f90 function Pad_ReadAndUpdate        # (port, slot, pad): work = TkGetControlerWork(port, slot); scePadRead_ps2 (PC stub returning 0), Pad_ReadCurrDevice(port, slot, work, pad), Pad_UpdateAnalog(work, pad, u16 work +0x98), inputSetVibration(port, byte +0xff, byte +0xfe) when byte +0x9d is set; caller 0x00889050 ignores eax; ported in menu round 27; name ours
 0x00889000 function Pad_ResetAnalog           # (work) +0x84/+0x90 = 0x80808080, +0x88/+0x8c = 0; own name
 0x00889030 function Pad_ResetAnalogAt0C       # (work) +0xc/+0x18 = 0x80808080, +0x10/+0x14 = 0; own name
+0x00889340 function Pad_InitWorks            # (): Pad_InitWork(port, 0) for ports 0 and 1; caller TkInit; ported in menu round 29; name ours
 0x00889360 function Pad_InitWork             # (port, slot): work = TkGetControlerWork(port, slot): u16 +0x9d = 0x100, byte +0x9f = 1, +0x94 = 0x5000c; Pad_ResetMode, op_slot_bytes_reset_008888e0, Pad_ResetSlots_00888910 (work), Pad_ClearAnalogWork(port, slot); bytes +0x9c, +0x83 = 0; TkSetPadButtonMap(port, slot, i, i) for i in 0..16; caller 0x00889340 (ports 0, 1); ported in menu round 27; name ours
 0x008893e0 function TkScanControler          # fh v3:exact 0x00889350; (): SaveDataIsBusy (thunk 0x00822560, result unused), then Pad_UpdateFrame(pad, 0, TkGetControlerWork2(pad, 0)) for pads 0, 1 (eax: the last); callers Sg_MainLoop, 0x00821e80, TOControlBtlWindow; ported in menu round 25
 0x00889410 function TkUpdateControlerActuator # (work): with the actuator mode (+0x9d, TkSetControlerActuatorMode) on, motor bytes +0xf8/+0xf9 = +0xfe/+0xff >> +0xf6/+0xf7; off, both 0
@@ -10851,7 +10852,7 @@
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
 0x008ba400 function BtlEnd_CompactList        # entries (14 bytes from 0x01869f20, count u8 0x01869f18) with +9 set swapped to the front, +2 stays; at most 3; own name
 0x008ba590 function BtlEnd_StepGil            # (): step [0x01869f10] (or the whole rest [0x01869f14] when not below it, unsigned) off the rest, paid with BtlEnd_AddGil (MsPayGIL(-x)): so g_TkBtlEndGil counts gil; returns 1 while some remains; name ours
-0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420
+0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420; (), eax = count: the six weapon spoil slots (u16 0x02310f8e) whose MsGetSaveWeapon record is in use (+2) with flags +3 & 0xd; exactly one: its name (MsGetSaveWeaponName) as macro 7's value (TOMacroSetType/Value(7, 0, ..), TOResetMessageVars(7)) and TkBtlEndGetText(0x401b), else 0x401c, into g_BtlEndLegendText; ported in menu round 29
 0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620
 0x008bb690 function BtlEnd_StepEntry         # (i) -> 1 in state 2/5: g_TkBtlEndList entry i (i16 +2 timer, +4 state, +6 chr): 0/3 timer-1, below 0 -> 1 (timer 0; state 0 returns 0 at once)/4; 1/4 timer+0xe3, from 0x1000 -> 2/5 (timer 0x1000); 2 timer 0x1000; then BtlEnd_GetSP(chr) >= 99: SetTable_02310f20(chr, 0); jump table 0x008bb77c; caller TkBtlEndCtrl; ported in menu round 24; name ours
 0x008bc340 function TkBtlEndDraw                 # the after-battle results screen's draw: its callees (TOMenuOpenPktBuffTmp, TOMkpShapeXYWHUV, DrawWaterWaveShapeC2, TOGetSaveChrName, ToMakeBtlEasyEdgeFont*, ToMakeBtlEasyDigitRight, TOGetFFXLang, the cos/sin lookups) are the Switch TkBtlEndDraw's (9536 bytes there, split into helpers here), and it sorts after TkBtlEndCtrl; called from 0x008bb7d6 (a block of 0x008bb690, which TkBtlEndCtrl calls)
@@ -10862,6 +10863,7 @@
 0x008bda50 function BtlEnd_GetSP              # (chr) tail call MsGetSaveSP (TkMenuGetSP copy in the battle-end file); own name
 0x008bda60 function TkBtlEndGetText          # fh switch:bsim1.00+call.cs 0x71004b25f0 cdecl; (id) -> MsMenuGetBtlEndText(id, MsGetSaveConfigHiragana()) (eax; Native_015b reads it); ported in menu round 27
 0x008bda80 function BtlEnd_SelectedWeapon     # (): MsGetSaveWeapon(id, local): id u16 0x02310f8e[[0x0186a1a4]] (spoils) when [0x0186a19c] (inverted while [0x0186a1a8]) != 0, else u16 [0x025cc580][[0x0186a190] + [0x0186a1a0]]; caller TkBtlEndCtrl; name ours
+0x008bdaf0 function BtlEnd_AddAP_008bdaf0    # (chr, ap, mark): when BtlEnd_GetSaveNextAP(chr) + ap reaches BtlEnd_GetNextAP(chr) (signed), TOBtlEndSetFlagMark(chr, mark), and at sphere level 98 (BtlEnd_GetSP) ap = next - saved; then 0x008ba390(chr, ap)'s eax; caller 0x008ba4e0; ported in menu round 29; name ours
 0x008bdb60 function BtlEnd_SetFlag            # 0x01869fbc = 1; own name
 0x008bdb70 function TkBtlEndInit              # fh v3:exact 0x008bdb30
 0x008bde00 function BtlEnd_BuildList_008bde00 # (): 0x01869f19 = any counted character (g_BtlCountsBattle) with a nonzero g_TkBtlEndResults; one 14-byte g_TkBtlEndList entry per counted character (+0 BtlEnd_RowX(n, count), +2 6n, +6 chr, +8 TkMenuGetPlayerDamegedColor, +9 BtlEnd_InParty), count to 0x01869f18, then BtlEnd_CompactList (its eax); ported (system round 35); name ours
@@ -11005,7 +11007,7 @@
 0x008c22f0 function MenuMn2_Plus80            # (v) v + 0x80; own name
 0x008c2300 function TkMn2RestoreFontShade     # (): the four g_TkMn2FontShade words back from the copies after each (0x023cc474, 0x46c, 0x464, 0x45c)
 0x008c2330 function TkMn2SaveFontShade        # (): the four g_TkMn2FontShade words to the copies after each
-0x008c2360 function TkMn2RefreshList          # fh switch:bsim1.00 0x71004c4110
+0x008c2360 function TkMn2RefreshList         # fh switch:bsim1.00 0x71004c4110; (kind): TkMn2BuildItemList_008c2390(kind, 0); ported in menu round 29
 0x008c2390 function TkMn2BuildItemList_008c2390 # structure: fills a menu list from the save's items and weapons (MsGetSaveWeaponList, MsSaveItemTypeBuffer/NumBuffer, TkMsGetRomItem, TkMenuSummonEnable, ...); callers TkMn2RefreshList and two menu screens; name ours; cdecl(kind, arg), void: clears g_TkMenuItemList/Counts, fills {u16 id, u8 kind, u8 value} by kind (jump tables 0x008c2a7c/0x008c2aa4 on kind 0..0x15, 0x008c2abc on the character 0..4): 0/2 commands of the current character/aeon (TkMenuGetCommandMax/Offset, MsGetSaveCommand, menu-panel gaps), aeon 1 summons 8..15 (0x102), 1 overdrive modes (0x103, order 0x00c8765c), 3 aeon grow list (kinds 4..7), 5 customisations (0xb..0x10, missing ones 0xff110000 after the shown rows), 6/7 inventory (0x12), 0x13/0x15 every weapon, 0x14 the character's weapons of kind arg; g_TkMn2ListMax = written, g_TkMn2NameModeMax = shown (min 1); ported in menu round 29
 0x008c2ad0 function TkMn2SeqGetColor          # (name) TOSeqGetColor(1, name, &local), the word returned; Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
 0x008c2af0 function TkMn2SeqGetColorCustom    # (i, name) TOSeqGetColor(i, ...); Switch name: the four TkMn2SeqGet{Color,ColorCustom,Num,NumCustom} names fill the last four slots before TkMn2SeqGetPos in order
@@ -11143,6 +11145,7 @@
 0x008cba20 function MenuParty_CursorNext      # (): i8 0x0186a444 on (wrapping to 0) to the next slot whose +0xc is 1; name ours
 0x008cba60 function MenuParty_CursorPrev      # (): i8 0x0186a444 back (wrapping to count 0x0186a448 - 1) to the previous slot (0x0186a44c) whose +0xc is 1; name ours
 0x008cbaa0 function GetDerefU32_008cbaa0         # auto-port shape (return deref u32 (pointer chain), cdecl): t0 = u32[&0x0186a44c]; t1 = u32[(t0 + (a0 * 0x4))]; return t1; callers: ; name ours
+0x008cbab0 function MenuConfig_DrawRows      # (): TODrawMenuBG, then MenuConfig_DrawOptionRow(0, 0, row) and TkMn2DrawKickSyncPacket2 for each of g_TkMenuConfigRows; eax of the last call; ported in menu round 29; name ours
 0x008cbae0 function MenuConfig_DrawOptionRow # (_, _, row): one config menu row: record GetDerefU32_008cbaa0(row) (count +4, choice +8, enabled +0xc, title u16 +0x18, option texts u16 every 4 bytes from +0x1c), rows share 740 PS2 px (g_TkMenuConfigRows); frame 0x008cb530, title, backing shape, cross cursor, options (measured at 0.68, drawn at 0.78), brush on the choice, help on the cursor row; the PC row (g_TkMenuConfigLocRow) uses SaveDataGetLoc 0x1cd / 0x1d0-2k / 0x1d1-2k; caller 0x008cbab0; ported in menu round 28; name ours
 0x008cc150 function SndSetBgmTypeSave         # (on) -> eax of iMusicRefreshBgmType (tail call): MsGetSaveEventAddress() +0x5ec = (on != 0), then iMusicRefreshBgmType queues it; callers Native_0264 and Native_0267_Poll's choices; name ours (snd::bridge::snd_set_bgm_type_save)
 0x008cc170 function iMusicRefreshBgmType      # fh v3:exact 0x008cc140
@@ -11176,6 +11179,7 @@
 0x008cf950 function MenuEquip_WindowIdle      # (window) +0x28 = 0 (window +8 callback); own name
 0x008cf970 function TkMenuEquipCloseWindow    # (): close request for 0x0186a61c (TkMenuCtrlEquip's), forget it
 0x008cfc30 function MenuEquip_IsAltMode       # 0x0186a624 != 0; own name
+0x008cfd20 function MenuWeapon_BuildKindList # (_, kind): TkMn2BuildItemList_008c2390(0x14, kind) via the thunk 0x008c2380 (the current character's weapons of kind), g_TkMenuWeaponKindCount = TkMn2GetListMax(), returned; ported in menu round 29; name ours
 0x008cfd40 function TkMenuEquipClearWindow    # (): 0x0186a61c +0x45 = 0, +0x28 = 0
 0x008cfd70 function TkMn2ArmsRefreshArms         # callees: its named callees match the Switch 0x71004b69a0 TkMn2ArmsRefreshArms's (similarity 1.00: AtelChangeCurrentCtrl, AtelGetBasicWork, AtelGetBindPC, AtelGetTotalActorNumber2, AtelSetCurrentCtrl); symbols from Fahrenheit's server export
 0x008d0170 function MenuWeapon_DrawRow        # (window, x, y, row, fixed): fixed 0: y -= remapY2(79) * i16 +0x46 / 4096; row in 0..u16 +0x30: TODrawMenuPlateXYWHType(x, y, remapX2(740), remapY2(60), 5) and for a nonzero g_TkMenuItemList id MsGetSaveWeapon(id, &name) (unused), DrawCrossMenuIconWeaponName(id, x, y, 0); caller 0x008d0250; ported in menu round 23; name ours
@@ -11244,6 +11248,7 @@
 0x008d6660 function MenuKaizou_DrawWeaponTitle # (x, y, i): TODrawMenuPlateXYWHType(f32 x, f32 y, remapX2(740), remapY2(60), 5); name of MsGetSaveWeapon(u16 [0x0186aa38][i]) centred: ToGetBtlEasyFontWidth(name, &w, 0, 0.78, 1), ToMakeBtlEasyFont(name, f32(remapX2(370) + x - w/2), f32(remapY2(8) + y), 0, 0.78, 1); caller DrawGearCustomizationMenu; ported in menu round 24; name ours
 0x008d6760 function MenuKaizou_DrawRow       # (window, x, y, row, fixed): MenuWeapon_DrawRow for the customise list u16 [0x0186aa38] (scroll line remapY2(75)); name only when the MsGetSaveWeapon record has +2 and not +3 bit 1, colour = !MenuEquip_IsSelectable(id, 0); caller 0x008d6560; ported in menu round 24; name ours
 0x008d6d60 function MenuKaizou_OpenWindow     # (): TkMenuMainAllocWindow: +8 0x008d56e0, +0xc UpdateGearCustomizationMenuState, +0x10 0x008d6860, +0x14 0x008d6e30, +0x1c 0x008d57a0, +0x48/+0x32 0, +0x30 u16 0x0186aa3c, +0x3e u16 0x101, +0x42 1, +0x36 u16 3, +0x3a 9; registered, then kept in 0x0186aa30; returns the registration's result; caller 0x008d5540; name ours
+0x008d6dd0 function MenuKaizou_BuildList     # (k): TkMn2BuildItemList_008c2390(5, MsGetSaveWeapon(u16 [0x0186aa38][k], &local)) via the thunk 0x008c2380: the customisations for the customise list's weapon k; ported in menu round 29; name ours
 0x008d6e00 function MenuKaizou_RestartWindow2 # TkMenuRestartSelFileWindow(0x0186aa34); own name
 0x008d7590 function SetGlobals_008d7590          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x0186ab1c] = a1; u32[&0x0186aba0] = 0xffffffff; return a1; callers: no direct caller; name ours
 0x008d75d0 function MenuWShop_ItemPresent     # (list, i) item list u16 id != 0; own name
@@ -17127,6 +17132,7 @@
 0x0186a5fc label    g_TkMenuSummonRestartCount# <= 1: MenuSummon_RestartWindow sets state 0, else 2
 0x0186a600 label    g_TkMenuSummonGrowMask    # aeon stats that grow and can be paid for (MenuSummon_RefreshGrowMasks)
 0x0186a604 label    g_TkMenuSummonAffordMask  # aeon stats whose growth items the party has (MenuSummon_RefreshGrowMasks)
+0x0186a620 label g_TkMenuWeaponKindCount  # u32: entries of the weapon kind list (MenuWeapon_BuildKindList); name ours
 0x0186a624 label    g_TkMenuEquipAltMode      # toggled in TkMenuCtrlEquip (MenuEquip_IsAltMode)
 0x0186a630 label    g_TkMenuEquipItem         # MenuEquip_PickItem
 0x0186a820 label    g_TkMenuStatusWindows     # status menu windows by index (MenuStatus_CloseWindow)
@@ -17367,6 +17373,7 @@
 0x023cc420 label g_TkMenuStatusPlateShift # two i16 (x, y) TkMn2MainStatusPlayerStatus passes as TkMn2DrawStatusPlate's third and fourth words (which it ignores)
 0x023cc458 label    g_TkMn2FontShade          # 4 words 8 bytes apart, stored downwards: TkMn2SetFontShade(s0..s3) puts s0 at 0x023cc470, s3 here
 0x025cc580 label g_BtlEndSpoilWeapons      # u16 *: the weapon spoils' IDs (BtlEnd_DrawWeaponPlate_008be0d0 0x008be0f1)
+0x025cc590 label g_BtlEndLegendText       # the battle-end celestial weapon message, TkBtlEndGetText(0x401b or 0x401c) (TkBtlEndCheckLegendWeapon); name ours
 0x025d06a0 label g_BtlSpecialTexture       # char[] the special texture's path (graphicMenuLoadSpecialTexture(8, it, 0) from MsBtlReadManage unless TkGetLang)
 0x025d09a0 label g_TOFontPen              # the text pen (0x20 bytes): u8 r, g, b, a, f32 x +4, f32 y +8, byte +0x1b flags (colour nibbles); DrawMesFontLClutTypeRGBA_ForHelp sets it, TOAddPktBaseMesFontLClutTypeRGBA/TOAddPktMesFont1612 use it
 0x025d09c0 label    g_TOPadGetCtrl            # u8: SetTOPadGetCtrl
