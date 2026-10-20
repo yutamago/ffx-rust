@@ -10,6 +10,7 @@ use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
 use ffx_battle::effect::bridge as effect;
+use ffx_battle::et_effect::bridge as eteff;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exe::bridge as exe;
 use ffx_battle::exec::bridge as exec;
@@ -4127,6 +4128,39 @@ ported! {
     MsSetChrEffectNext_0079ebe0 @ 0x0079_ebe0 => extern "C" fn ms_set_chr_effect_next(i: u32, a: u32, b: u32) -> u32 {
         afterdmg::ms_set_chr_effect_next(&mut mem(), &mut call_ptr, i, a, b)
     }
+    // ---- round 31 b: the op_et_eff wrappers ----
+    /// `MsSetChrEffect_0079eb10(i, group, kind, effect, global)`: `op_et_eff` through the game.
+    MsSetChrEffect_0079eb10 @ 0x0079_eb10 => extern "C" fn ms_set_chr_effect(i: u32, group: u32, kind: u32, effect: u32, global: u32) -> u32 {
+        eteff::ms_set_chr_effect(&mut mem(), &mut call_ptr, i, group, kind, effect, global)
+    }
+    /// `0x0079eba0(i, group, effect)`.
+    MsSetChrEffect8_0079eba0 @ 0x0079_eba0 => extern "C" fn ms_set_chr_effect8(i: u32, group: u32, effect: u32) -> u32 {
+        eteff::ms_set_chr_effect8(&mut mem(), &mut call_ptr, i, group, effect)
+    }
+    /// `0x0079ec40(i, group, effect)`.
+    MsSetOwnerEffect8_0079ec40 @ 0x0079_ec40 => extern "C" fn ms_set_owner_effect8(i: u32, group: u32, effect: u32) -> u32 {
+        eteff::ms_set_owner_effect8(&mut mem(), &mut call_ptr, i, group, effect)
+    }
+    /// `0x0079eca0(i, group, effect)`.
+    MsSetOwnerEffect7_0079eca0 @ 0x0079_eca0 => extern "C" fn ms_set_owner_effect7(i: u32, group: u32, effect: u32) -> u32 {
+        eteff::ms_set_owner_effect7(&mut mem(), &mut call_ptr, i, group, effect)
+    }
+    /// `MsEtCriticalEffect(i)`.
+    MsEtCriticalEffect @ 0x0079_e590 => extern "C" fn ms_et_critical_effect(i: u32) -> u32 {
+        eteff::ms_et_critical_effect(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsEffectSetGuard(i)`: the sound through `MsRegSEplay`'s port.
+    MsEffectSetGuard @ 0x0079_e510 => extern "C" fn ms_effect_set_guard(i: u32) -> u32 {
+        eteff::ms_effect_set_guard(&mut mem(), &mut call_ptr, &mut |m, i, se| afterdmg::ms_reg_se_play(m, &crt_trig, &mut call_ptr, i, se), i)
+    }
+    /// `MsSetWeaponEffectAttribute(i, actor)`.
+    MsSetWeaponEffectAttribute @ 0x0079_ed40 => extern "C" fn ms_set_weapon_effect_attribute(i: u32, actor: u32) -> u32 {
+        eteff::ms_set_weapon_effect_attribute(&mut mem(), &mut call_ptr, i, actor)
+    }
+    /// `MsMagicEffectStart(i, summon)`: the sound through `MsRegSEplay`'s port.
+    MsMagicEffectStart @ 0x0079_e8c0 => extern "C" fn ms_magic_effect_start(i: u32, summon: u32) -> u32 {
+        eteff::ms_magic_effect_start(&mut mem(), &mut call_ptr, &mut |m, i, se| afterdmg::ms_reg_se_play(m, &crt_trig, &mut call_ptr, i, se), i, summon)
+    }
     /// `MsSetStealEffect(i, got)`.
     MsSetStealEffect @ 0x0079_ed00 => extern "C" fn ms_set_steal_effect(i: u32, got: u32) {
         afterdmg::ms_set_steal_effect(&mut mem(), &mut call_ptr, i, got);
@@ -4552,6 +4586,24 @@ ported! {
         native!(c);
         camnat::ms_atel_camera_yaw(&mut mem(), &mut c, w, s, side)
     }
+    /// `MsAtelCameraSetBtlPc_007badb0(worker, args, stack, side, mode)`.
+    MsAtelCameraSetBtlPc_007badb0 @ 0x007b_adb0 => extern "C" fn ms_atel_camera_set_btl_pc(w: u32, _args: u32, s: u32, side: u32, mode: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_set_btl_pc(&mut mem(), &mut c, w, s, side, mode)
+    }
+    /// `MsAtelCameraDirVector_007bb210(worker, args, stack, side)`: the
+    /// original's frame pointer (a VU register 2 word only) has no
+    /// counterpart here: 0.
+    MsAtelCameraDirVector_007bb210 @ 0x007b_b210 => extern "C" fn ms_atel_camera_dir_vector(w: u32, _args: u32, s: u32, side: u32) {
+        native!(c);
+        camnat::ms_atel_camera_dir_vector(&mut mem(), &mut c, w, s, side, 0);
+    }
+    /// `MsCameraSetDirVector_007bce80(id, side, scale, p, q)`: its only
+    /// caller is `MsAtelCameraDirVector_007bb210` (ported, it calls the
+    /// Rust); the scale's stray words (VU register 2 only) as 0.
+    MsCameraSetDirVector_007bce80 @ 0x007b_ce80 => extern "C" fn ms_camera_set_dir_vector(id: u32, side: u32, scale: u32, p: u32, q: u32) {
+        ffx_battle::camera::bridge::ms_camera_set_dir_vector(&mut mem(), id, side, scale, p, q, [0; 3]);
+    }
     /// `MsAtelCameraSpline_007bb970(worker, args, stack, side)`.
     MsAtelCameraSpline_007bb970 @ 0x007b_b970 => extern "C" fn ms_atel_camera_spline(w: u32, _args: u32, s: u32, side: u32) -> u32 {
         native!(c);
@@ -4631,6 +4683,17 @@ ported! {
     MsGetMoveTargetDist @ 0x007a_b540 => extern "C" fn ms_get_move_target_dist(i: u32, kind: u32, with: u32, speed: u32, n: u32, accel: u32, brake: u32, a: u32, b: u32, c: u32, gravity: u32) {
         let mut m = mem();
         predict::ms_get_move_target_dist(&mut target::Dm::new(&mut m), &host(), i, kind, with, speed, n, accel, brake, [a, b, c], gravity, None);
+    }
+    /// `MsGetTargetDist(i, kind, flat)`: on the x87 stack; the caller's
+    /// registers (VU words only) are not known here.
+    MsGetTargetDist @ 0x007a_9a40 => extern "C" fn ms_get_target_dist(i: u32, kind: u32, flat: u32) -> f32 {
+        let mut m = mem();
+        f32::from_bits(predict::ms_get_target_dist(&mut target::Dm::new(&mut m), &host(), i, kind, flat, None))
+    }
+    /// `MsSetMove(i, kind)`: on the x87 stack.
+    MsSetMove @ 0x007a_9fc0 => extern "C" fn ms_set_move(i: u32, kind: u32) -> f32 {
+        let mut m = mem();
+        f32::from_bits(predict::ms_set_move(&mut target::Dm::new(&mut m), &host(), i, kind))
     }
     /// `MsGetChrPredictPos(i)`: one frame of actor `i`'s move; the
     /// caller's registers (the radius words) are not known here.

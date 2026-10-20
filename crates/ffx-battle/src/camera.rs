@@ -1507,6 +1507,39 @@ pub mod bridge {
         mem.write(s + 0x70, [0u32; 3]);
     }
 
+    /// `MsCameraSetDirVector_007bce80(id, side, scale, p, q)`
+    /// (`0x007bce80`, name ours: [`ms_camera_reset_dir_vector`]'s
+    /// counterpart): for the camera's current request `id`, side
+    /// `side & 1`'s `+0x33` flag on, `+0x38` = `p`, `+0x3c` = `q`, and its
+    /// `+0x70` vector the direction from its position (`+0x50`) away from
+    /// the point `+0xbc` points at, `scale` long (`MsVectorNormal2`).
+    ///
+    /// The original passes `MsVectorNormal2` the scale alone; the scale's
+    /// other three words are what its own stack holds above it: its
+    /// caller's `esi` and `ebp` and its return address (`junk`, in that
+    /// order). They reach only VU register 2 (`ffx_battle::vector`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_camera_set_dir_vector(
+        mem: &mut impl Mem,
+        id: u32,
+        side: u32,
+        scale: u32,
+        p: u32,
+        q: u32,
+        junk: [u32; 3],
+    ) {
+        if current_request(mem, id) != id {
+            return;
+        }
+        let s = camera_base(mem, id) + (side & 1) * 0x61c;
+        mem.write(s + 0x38, x87_copy(p));
+        mem.write(s + 0x33, 1u8);
+        mem.write(s + 0x3c, x87_copy(q));
+        let to: u32 = mem.read(s + 0xbc);
+        let scale = [x87_copy(scale), junk[0], junk[1], junk[2]];
+        crate::vector::bridge::ms_vector_normal2(mem, s + 0x70, s + 0x50, to, scale);
+    }
+
     /// `MsCameraSetFocus(id, side, v)` (`0x007bf280`): for a live request,
     /// camera `id & 0xff`'s focus flag (`+0xca8`) on and channel `id >> 8`'s
     /// focus for the side (`+0xccc` + 0x30 channel + 4 side) = `v`; for

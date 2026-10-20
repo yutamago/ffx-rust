@@ -6343,7 +6343,143 @@ fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: 
     }
 }
 
-fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+/// Which of [`check`]'s sections run, and how often. The whole test
+/// ([`Sel::ALL`]) runs every section 400 times and the teardown 200
+/// times, in one random stream; a `part_*` test (round 31, [`part!`])
+/// runs one section on the same set-up, so a mutation run can select the
+/// sections that reach its functions (`MUT_FILTER=part_moves`) instead
+/// of paying ~200 s for the whole file per mutant.
+struct Sel {
+    /// The sections by name; empty for all.
+    only: &'static [&'static str],
+    iters: u32,
+    teardowns: u32,
+}
+
+impl Sel {
+    const ALL: Sel = Sel {
+        only: &[],
+        iters: 400,
+        teardowns: 200,
+    };
+
+    fn on(&self, name: &str) -> bool {
+        self.only.is_empty() || self.only.contains(&name)
+    }
+
+    /// A section the whole test runs when `chance` came up: a part test
+    /// runs it every time (the random draw still happens first).
+    fn pick(&self, chance: bool, name: &str) -> bool {
+        if self.only.is_empty() {
+            chance
+        } else {
+            self.on(name)
+        }
+    }
+}
+
+/// One section of [`check`] on the image and on `FFX_SNAPSHOT`, `n`
+/// rounds (the teardown `n` times), after the sections it needs (listed
+/// first: what they leave behind, a section of the whole test reads; found
+/// by trying them on the image and both snapshots). `effect_start` has
+/// none: it needs sections later in the whole test's loop.
+macro_rules! part {
+    ($name:ident, $section:literal, $n:expr) => {
+        part!($name, [$section], $n);
+    };
+    ($name:ident, [$($section:literal),+], $n:expr) => {
+        mod $name {
+            use super::*;
+
+            const SEL: Sel = Sel {
+                only: &[$($section),+],
+                iters: $n,
+                teardowns: $n,
+            };
+
+            #[test]
+            fn image() {
+                let Some((mut a, mut b)) = synthetic() else {
+                    return;
+                };
+                check(&mut a, &mut b, &mut Xorshift(0x7a46_1001), true, &SEL);
+            }
+
+            #[test]
+            fn snapshot() {
+                let Some((mut a, mut b)) = battle_common::snapshot() else {
+                    return;
+                };
+                check(&mut a, &mut b, &mut Xorshift(0x7a46_1002), false, &SEL);
+            }
+        }
+    };
+}
+
+part!(part_calls, "calls", 60);
+part!(part_near, "near", 60);
+part!(part_status, "status", 60);
+part!(part_actions, "actions", 60);
+part!(part_exchange, "exchange", 60);
+part!(part_effects, "effects", 60);
+part!(part_parse, ["status", "effects", "parse"], 60);
+part!(part_command_cue, ["calls", "status", "command_cue"], 60);
+part!(part_process, "process", 60);
+part!(part_deaths, ["status", "deaths"], 60);
+part!(part_input, ["exchange", "input"], 60);
+part!(
+    part_damage_end,
+    [
+        "near",
+        "actions",
+        "exchange",
+        "effects",
+        "parse",
+        "damage_end"
+    ],
+    60
+);
+part!(part_models_freed, "models_freed", 60);
+part!(part_battle_end, ["process", "battle_end"], 60);
+part!(part_battle_frame, "battle_frame", 60);
+part!(part_save_params, "save_params", 60);
+part!(part_messages_and_cameras, "messages_and_cameras", 60);
+part!(part_moves, "moves", 100);
+part!(part_move_steps, "move_steps", 60);
+part!(part_ball_splines, "ball_splines", 60);
+part!(part_motions, ["status", "save_params", "motions"], 60);
+part!(
+    part_atel_update0,
+    ["status", "save_params", "motions", "atel_update0"],
+    40
+);
+part!(part_special_stage, "special_stage", 60);
+part!(part_bridge_to_event, "bridge_to_event", 40);
+part!(part_setup_leaves, "setup_leaves", 40);
+part!(part_exe_leaves, "exe_leaves", 40);
+part!(
+    part_read_leaves,
+    ["exchange", "save_params", "read_leaves"],
+    40
+);
+part!(
+    part_read_manage,
+    ["exchange", "save_params", "read_manage"],
+    40
+);
+part!(part_debug_full_command, "debug_full_command", 40);
+part!(part_weapon_plate, "weapon_plate", 40);
+part!(part_init_leaves, "init_leaves", 40);
+part!(part_save_start, "save_start", 40);
+part!(part_battle_init, "battle_init", 40);
+part!(part_battle_process, "battle_process", 40);
+part!(part_read_set_scene, "read_set_scene", 40);
+part!(part_read_monster, "read_monster", 40);
+part!(part_target_dist, "target_dist", 150);
+part!(part_et_effects, "et_effects", 200);
+part!(part_teardown, "teardown", 100);
+
+fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, sel: &Sel) {
     patch(a);
     patch(b);
     let w = world(a, b, rng, synthetic);
@@ -6571,6 +6707,10 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let scene_file = scratch(a, b, 0x200);
     let mut scene_rng = Xorshift(0x22e5_0101 ^ u32::from(synthetic));
     let mut init_rng = Xorshift(0x21e5_0101 ^ u32::from(synthetic));
+    // MsSetMove and MsGetTargetDist (round 31)
+    let mut r31 = Xorshift(0x31e5_0001 ^ u32::from(synthetic));
+    // the op_et_eff wrappers (round 31)
+    let mut et_rng = Xorshift(0x31e5_0101 ^ u32::from(synthetic));
     for o in [&mut *a, &mut *b] {
         logging_stub(
             o,
@@ -6590,71 +6730,117 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
     }
     bridge_stubs(a, b, btables, brec);
-    for _ in 0..400 {
+    for _ in 0..sel.iters {
         file(a, b, rng, &f);
         dress(a, b, rng, &w, &f);
-        calls(a, b, rng, &w, out, !synthetic);
+        if sel.on("calls") {
+            calls(a, b, rng, &w, out, !synthetic);
+        }
         // on the dressed actors (status and actions change their fields)
-        near(a, b, rng, &w, out);
-        status(a, b, rng, &w, out);
-        actions(a, b, rng, &w, out);
-        exchange(a, b, rng, &w, out, xrec);
-        effects(a, b, rng, &w, erec, files);
-        for _ in 0..3 {
-            parse(a, b, rng, &w, out, srec + 2 * EXCHANGE_REC);
+        if sel.on("near") {
+            near(a, b, rng, &w, out);
         }
-        for _ in 0..3 {
-            command_cue(a, b, rng, &w, out, srec);
+        if sel.on("status") {
+            status(a, b, rng, &w, out);
         }
-        process(a, b, rng, &w, prec, srec, out);
-        deaths(a, b, rng, &w, out);
-        input(a, b, &w, out, irec);
-        damage_end(a, b, rng, &w, out);
-        models_freed(a, b, &mut r18m, &w, crec);
-        battle_end(a, b, rng, &w, out, [nrec, erec, prec, srec], files);
-        battle_frame(a, b, rng, &w, out, grec);
-        effect_start(a, b, &mut r15, &w, out, effrec, [prec, srec, erec], cam);
-        save_params(a, b, &mut r15, &w, out, effrec, xrec);
-        messages_and_cameras(a, b, &mut r15, mrec, !synthetic);
-        moves(a, b, &mut r16, &w, out);
+        if sel.on("actions") {
+            actions(a, b, rng, &w, out);
+        }
+        if sel.on("exchange") {
+            exchange(a, b, rng, &w, out, xrec);
+        }
+        if sel.on("effects") {
+            effects(a, b, rng, &w, erec, files);
+        }
+        if sel.on("parse") {
+            for _ in 0..3 {
+                parse(a, b, rng, &w, out, srec + 2 * EXCHANGE_REC);
+            }
+        }
+        if sel.on("command_cue") {
+            for _ in 0..3 {
+                command_cue(a, b, rng, &w, out, srec);
+            }
+        }
+        if sel.on("process") {
+            process(a, b, rng, &w, prec, srec, out);
+        }
+        if sel.on("deaths") {
+            deaths(a, b, rng, &w, out);
+        }
+        if sel.on("input") {
+            input(a, b, &w, out, irec);
+        }
+        if sel.on("damage_end") {
+            damage_end(a, b, rng, &w, out);
+        }
+        if sel.on("models_freed") {
+            models_freed(a, b, &mut r18m, &w, crec);
+        }
+        if sel.on("battle_end") {
+            battle_end(a, b, rng, &w, out, [nrec, erec, prec, srec], files);
+        }
+        if sel.on("battle_frame") {
+            battle_frame(a, b, rng, &w, out, grec);
+        }
+        if sel.on("effect_start") {
+            effect_start(a, b, &mut r15, &w, out, effrec, [prec, srec, erec], cam);
+        }
+        if sel.on("save_params") {
+            save_params(a, b, &mut r15, &w, out, effrec, xrec);
+        }
+        if sel.on("messages_and_cameras") {
+            messages_and_cameras(a, b, &mut r15, mrec, !synthetic);
+        }
+        if sel.on("moves") {
+            moves(a, b, &mut r16, &w, out);
+        }
         let whole = r17.below(2) == 0;
-        move_steps(a, b, &mut r17, &w, &f, whole);
-        ball_splines(a, b, &mut r17, &w, &f, out);
-        motions(a, b, &mut r18m, &w, &f, work);
-        if r19.below(4) == 0 {
+        if sel.on("move_steps") {
+            move_steps(a, b, &mut r17, &w, &f, whole);
+        }
+        if sel.on("ball_splines") {
+            ball_splines(a, b, &mut r17, &w, &f, out);
+        }
+        if sel.on("motions") {
+            motions(a, b, &mut r18m, &w, &f, work);
+        }
+        if sel.pick(r19.below(4) == 0, "atel_update0") {
             atel_update0(a, b, &mut r19, &w, work, locals);
         }
-        special_stage(a, b, &mut r19, &w, work, locals);
-        if r19.below(6) == 0 {
+        if sel.on("special_stage") {
+            special_stage(a, b, &mut r19, &w, work, locals);
+        }
+        if sel.pick(r19.below(6) == 0, "bridge_to_event") {
             bridge_to_event(a, b, &mut r19, &w, &f, btables, brec);
         }
-        if r19.below(4) == 0 {
+        if sel.pick(r19.below(4) == 0, "setup_leaves") {
             setup_leaves(a, b, &mut r19, grec2, heap, out);
         }
-        if r19.below(4) == 0 {
+        if sel.pick(r19.below(4) == 0, "exe_leaves") {
             exe_leaves(a, b, &mut r19, erec2, actor_heap, out);
         }
-        if r20.below(4) == 0 {
+        if sel.pick(r20.below(4) == 0, "read_leaves") {
             read_leaves(a, b, &mut r20, &w, erec2, out);
         }
-        if r21.below(2) == 0 {
+        if sel.pick(r21.below(2) == 0, "read_manage") {
             read_manage(a, b, &mut r21, &w, rmrec, effrec, rmdata, out);
         }
-        if r28.below(4) == 0 {
+        if sel.pick(r28.below(4) == 0, "debug_full_command") {
             debug_full_command(a, b, &mut r28, rmrec, dfc, synthetic);
         }
         // snapshots only: the weapon's name reads kernel tables the image
         // lacks
-        if !synthetic && r28.below(3) == 0 {
+        if !synthetic && sel.pick(r28.below(3) == 0, "weapon_plate") {
             weapon_plate(a, b, &mut r28, rmrec, dfc);
         }
-        if init_rng.below(3) == 0 {
+        if sel.pick(init_rng.below(3) == 0, "init_leaves") {
             init_leaves(a, b, &mut init_rng, rmrec, iheap, idata);
         }
-        if save_rng.below(4) == 0 {
+        if sel.pick(save_rng.below(4) == 0, "save_start") {
             save_start(a, b, &mut save_rng, rmrec, sblock, iheap, sdata);
         }
-        if binit_rng.below(4) == 0 {
+        if sel.pick(binit_rng.below(4) == 0, "battle_init") {
             battle_init(
                 a,
                 b,
@@ -6663,7 +6849,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 [iheap, sblock, battle_init_dest, battle_init_data],
             );
         }
-        if process_rng.below(2) == 0 {
+        if sel.pick(process_rng.below(2) == 0, "battle_process") {
             battle_process(
                 a,
                 b,
@@ -6673,10 +6859,10 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 battle_init_data + 0x60,
             );
         }
-        if scene_rng.below(3) == 0 {
+        if sel.pick(scene_rng.below(3) == 0, "read_set_scene") {
             read_set_scene(a, b, &mut scene_rng, scene_rec, scene_file);
         }
-        if monster_rng.below(3) == 0 {
+        if sel.pick(monster_rng.below(3) == 0, "read_monster") {
             read_monster(
                 a,
                 b,
@@ -6686,11 +6872,21 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
                 battle_init_dest,
             );
         }
+        if sel.on("target_dist") {
+            target_dist(a, b, &mut r31, &w, &f);
+        }
+        if sel.on("et_effects") {
+            for _ in 0..4 {
+                et_effects(a, b, &mut et_rng, rec);
+            }
+        }
     }
     // the teardown last (it clears the actors and the script managers)
-    let mut r18 = Xorshift(0x18e5_0001 ^ u32::from(synthetic));
-    for _ in 0..200 {
-        teardown(a, b, &mut r18, work);
+    if sel.on("teardown") {
+        let mut r18 = Xorshift(0x18e5_0001 ^ u32::from(synthetic));
+        for _ in 0..sel.teardowns {
+            teardown(a, b, &mut r18, work);
+        }
     }
 }
 
@@ -7245,12 +7441,262 @@ fn move_steps(
     }
 }
 
+/// `MsGetTargetDist` and `MsSetMove` (round 31) on the dressed actors:
+/// every move kind and `MsGetChrInfo` property, the original's locals
+/// zeroed like the Rust frames (a kind `MsGetMoveTargetPos` writes
+/// nothing for leaves them as they were). Kind 15 reads its handle's
+/// optional position, which faults on the synthetic handles; kind 17 is
+/// left out as in [`moves`].
+fn target_dist(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, f: &Fakes) {
+    use ffx_battle::predict::bridge as pr;
+    let h = host();
+    if rng.below(2) == 0 {
+        sane_actors(a, b, rng, w, f);
+    }
+    let i = if rng.below(8) == 0 {
+        // an index MsBtlChrNumCheck refuses: no position
+        [ACTORS, 0xff, 0x100 + rng.below(ACTORS)][rng.below(3) as usize]
+    } else {
+        rng.below(ACTORS)
+    };
+    let kind = [0u32, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 18, 19]
+        [rng.below(17) as usize]
+        | [0, 0x40, 0x80, 0xc0][rng.below(4) as usize];
+    let flat = [0, 1, 0x100, rng.next()][rng.below(4) as usize];
+    // kind 9's turn (MsTurnMoveVector) carries its frame's garbage into
+    // the VU registers: off here, as in `moves`
+    if i < ACTORS {
+        poke(a, b, w.actor(i) + 0x411, &[0]);
+    }
+    // widths (the model's +0x4e4 times its x scale +0x3a8) whose sums
+    // an f32 cannot hold
+    for k in 0..ACTORS {
+        let p = w.actor(k);
+        for o in [0x4e4, 0x3a8] {
+            let x = f32::from(i16::try_from(rng.range(1, 3000)).unwrap()) / 37.0;
+            poke(a, b, p + o, &x.to_bits().to_le_bytes());
+        }
+    }
+    let args = [i, kind, flat];
+    zero_stack(a);
+    ftwin("MsGetTargetDist", a, b, 0x007a_9a40, &args, |m| {
+        dm(m, |m| {
+            pr::ms_get_target_dist(m, &h, i, kind, flat, Some(HARNESS))
+        })
+    });
+    local_words(a, b);
+    same(&format!("MsGetTargetDist {args:x?}"), a, b);
+    let info = rng.below(15);
+    let args = [i, info];
+    zero_stack(a);
+    ftwin("MsSetMove", a, b, 0x007a_9fc0, &args, |m| {
+        dm(m, |m| pr::ms_set_move(m, &h, i, info))
+    });
+    local_words(a, b);
+    same(&format!("MsSetMove {args:x?}"), a, b);
+}
+
+/// The `op_et_eff` wrappers (round 31, `ffx_battle::et_effect`) on the
+/// dressed actors: `op_et_eff` is the recording stub (its last call's
+/// arguments compared), its result at `rec + 0x34` positive, zero or
+/// negative at random; the sounds run `MsRegSEplay` (the port in the
+/// Rust, as the shims do).
+fn et_effects(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32) {
+    use ffx_battle::after_damage::bridge as ad;
+    use ffx_battle::et_effect::bridge as et;
+    // indices MsBtlChrNumCheck refuses: the spare actor (0xff) and the
+    // records from 0x1f, whose fields the actor's offsets reach as well
+    let i = if rng.below(5) == 0 {
+        [
+            0xff,
+            0x1ff,
+            ACTORS + rng.below(0x3e),
+            0x100 + rng.below(ACTORS),
+        ][rng.below(4) as usize]
+    } else {
+        rng.below(ACTORS)
+    };
+    let p = ffx_battle::actor::bridge::ms_get_chr(b, i);
+    let pick =
+        |rng: &mut Xorshift, v: &[u32]| v[rng.below(u32::try_from(v.len()).unwrap()) as usize];
+    let result = pick(rng, &[1, 0x4000_0123, 0, 0x8000_0000, u32::MAX]);
+    poke(a, b, rec + 0x34, &result.to_le_bytes());
+    for o in [0xe1e, 0xe22, 0xe24, 0xe28] {
+        let n = u16::try_from({
+            let r = rng.below(0x400);
+            pick(rng, &[0, 1, 0x7f, 0xffff, r])
+        })
+        .unwrap();
+        poke(a, b, p + o, &n.to_le_bytes());
+    }
+    poke(a, b, p + 0x4c, &rng.next().to_le_bytes());
+    poke(
+        a,
+        b,
+        p + 0xe12,
+        &[u8::try_from(rng.below(0x100)).unwrap(); 2],
+    );
+    let flags = {
+        let r = rng.below(0x1_0000);
+        pick(rng, &[0, 0x40, 0x2000, 0x2040, r])
+    };
+    poke(
+        a,
+        b,
+        p + 0x616,
+        &u16::try_from(flags).unwrap().to_le_bytes(),
+    );
+    poke(a, b, p + 0x5d9, &[u8::try_from(rng.below(0x100)).unwrap()]);
+    poke(a, b, p + 0xdcd, &[u8::from(rng.below(4) == 0)]);
+    for s in 0..4 {
+        let v = if rng.below(2) == 0 { 0 } else { rng.next() };
+        poke(a, b, p + 0xe90 + 4 * s, &v.to_le_bytes());
+    }
+    let ea0 = if rng.below(5) == 0 { rng.next() } else { 0 };
+    poke(a, b, p + 0xea0, &ea0.to_le_bytes());
+    for (o, n) in [(0xe0f, 5), (0x505, 3), (0x5c0, 4)] {
+        let on = rng.below(n) == 0;
+        poke(a, b, p + o, &[u8::from(if o == 0xe0f { !on } else { on })]);
+    }
+    for o in [0xe10, 0xe11] {
+        let e = u8::try_from({
+            let r = rng.below(0x100);
+            pick(
+                rng,
+                &[
+                    0, 0, 0x1e, 0x1f, 0x20, 0x21, 0x34, 0x36, 0x37, 0x38, 0x39, 0x1d, r,
+                ],
+            )
+        })
+        .unwrap();
+        poke(a, b, p + o, &[e]);
+    }
+    set(
+        a,
+        b,
+        ffx_battle::state::bridge::UNDERWATER,
+        i8::from(rng.below(3) == 0),
+    );
+    let summoner = i8::try_from(pick(rng, &[0, 1, 5, ACTORS - 1])).unwrap();
+    set(a, b, ffx_battle::target::bridge::SUMMONER, summoner);
+    set(a, b, et::DEBUG_EFFECT_NO_OWNER, u8::from(rng.below(2) == 0));
+    set(a, b, ffx_battle::status::bridge::EFFECT_OWNER, rng.next());
+    let group = {
+        let r = rng.next();
+        pick(rng, &[0, 1, r])
+    };
+    let effect = rng.below(0x100);
+    let mut reg_se = |m: &mut t::Dm<'_>, i: u32, se: u32| {
+        ad::ms_reg_se_play(m, &stand_in, &mut game_call, i, se)
+    };
+    match rng.below(10) {
+        0 => {
+            let kind = {
+                let r = rng.next();
+                pick(rng, &[1, 0, 8, r])
+            };
+            let global = rng.below(2);
+            let args = [i, group, kind, effect, global];
+            twin(
+                "MsSetChrEffect_0079eb10",
+                a,
+                b,
+                0x0079_eb10,
+                &args,
+                ALL,
+                |m| {
+                    dm(m, |m| {
+                        et::ms_set_chr_effect(m, &mut game_call, i, group, kind, effect, global)
+                    })
+                },
+            );
+        }
+        1 => twin(
+            "FUN_0079eba0",
+            a,
+            b,
+            0x0079_eba0,
+            &[i, group, effect],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    et::ms_set_chr_effect8(m, &mut game_call, i, group, effect)
+                })
+            },
+        ),
+        2 => twin(
+            "FUN_0079ec40",
+            a,
+            b,
+            0x0079_ec40,
+            &[i, group, effect],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    et::ms_set_owner_effect8(m, &mut game_call, i, group, effect)
+                })
+            },
+        ),
+        3 => twin(
+            "FUN_0079eca0",
+            a,
+            b,
+            0x0079_eca0,
+            &[i, group, effect],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    et::ms_set_owner_effect7(m, &mut game_call, i, group, effect)
+                })
+            },
+        ),
+        4 => twin("MsEtCriticalEffect", a, b, 0x0079_e590, &[i], ALL, |m| {
+            dm(m, |m| et::ms_et_critical_effect(m, &mut game_call, i))
+        }),
+        5 => twin("MsEffectSetGuard", a, b, 0x0079_e510, &[i], ALL, |m| {
+            dm(m, |m| {
+                et::ms_effect_set_guard(m, &mut game_call, &mut reg_se, i)
+            })
+        }),
+        6 => twin(
+            "MsSetWeaponEffectAttribute",
+            a,
+            b,
+            0x0079_ed40,
+            &[i, p],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    et::ms_set_weapon_effect_attribute(m, &mut game_call, i, p)
+                })
+            },
+        ),
+        _ => {
+            let summon = u32::from(rng.below(4) == 0);
+            twin(
+                "MsMagicEffectStart",
+                a,
+                b,
+                0x0079_e8c0,
+                &[i, summon],
+                ALL,
+                |m| {
+                    dm(m, |m| {
+                        et::ms_magic_effect_start(m, &mut game_call, &mut reg_se, i, summon)
+                    })
+                },
+            );
+        }
+    }
+    same(&format!("et effect {i:#x}"), a, b);
+}
+
 #[test]
 fn targets_match_the_original() {
     let Some((mut a, mut b)) = synthetic() else {
         return;
     };
-    check(&mut a, &mut b, &mut Xorshift(0x7a46_0001), true);
+    check(&mut a, &mut b, &mut Xorshift(0x7a46_0001), true, &Sel::ALL);
 }
 
 #[test]
@@ -7258,7 +7704,7 @@ fn targets_match_the_original_on_a_snapshot() {
     let Some((mut a, mut b)) = snapshot() else {
         return;
     };
-    check(&mut a, &mut b, &mut Xorshift(0x7a46_0002), false);
+    check(&mut a, &mut b, &mut Xorshift(0x7a46_0002), false, &Sel::ALL);
 }
 
 /// The actors' motions each frame (`ffx_battle::motion`, round 18 group
