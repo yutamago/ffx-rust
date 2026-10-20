@@ -198,7 +198,11 @@ ported targets on each snapshot), `Yn_FieldProc` (`0x0091a8c0`) and
 `MsBattleProcess` (`0x00790c10`). The store stays outside git; rerun the
 script after a new snapshot or a new hook.
 
-A test is one line (`crates/ffx-oracle/tests/harvested.rs`):
+A test is one line at the end of its module's file,
+`crates/ffx-oracle/tests/harvested_<module>.rs` (`harvested_main.rs` for ffx-sg,
+`harvested_battle.rs`, `harvested_vfx.rs`, and so on). `harvested.rs` keeps only
+the store's layout check; the shared helpers are in `tests/common/mod.rs`. The
+example is from `harvested_main.rs`:
 
 ```rust
 harvest_test!(sg_seq_step, 0x0083_7900, args = 1, |m: &mut Oracle, s| {
