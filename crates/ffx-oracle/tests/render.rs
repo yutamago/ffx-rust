@@ -8280,3 +8280,107 @@ fn snapshot_round24b_matches_the_original() {
         round24_material_uv(&mut t, &mut rng, &format!("{what} material uv"));
     }
 }
+
+// ---- round 24, group 3 ----
+
+/// `graphicCameraGetViewProjectionMatrix` on a fresh scene (as
+/// [`round24_view_projection`] builds it) or the game's (`real`).
+fn round24_camera_view_projection(t: &mut Twins, rng: &mut Rng, real: bool, what: &str) {
+    use ffx_graphic::util::bridge24 as b;
+    if !real {
+        // the scene and stubs of round24_view_projection, then ours
+        let scene = t.alloc(&rng.bytes(0xfa40));
+        for off in [0xf9bc, 0xf9c0, 0xfa34, 0xfa38] {
+            t.write(scene + off, &round24_float(rng).to_le_bytes());
+        }
+        t.w8(scene + 0xf9c7, u8::from(rng.chance(3)));
+        let cam: Vec<u8> = (0..0x40).flat_map(|_| rng.float().to_le_bytes()).collect();
+        let cam = t.alloc(&cam);
+        t.w32(scene + 0xdc, cam);
+        t.w8(t.rebase(scene::bridge::IS_3D.sym), u8::from(rng.chance(3)));
+        t.global(scene::bridge::SCENE.sym, scene);
+        let fc = t.zeros(0x340);
+        if rng.chance(2) {
+            t.w8(fc + 0x338, 1);
+        }
+        t.global(b::FREE_CAMERA.sym, fc);
+        t.stub_sym(
+            ffx_graphic::state::bridge::CAMERA_UPDATE_VIEW,
+            Conv::Thiscall(0),
+            0,
+            rng.next(),
+        );
+    }
+    let out = t.alloc(&rng.bytes(0x40));
+    let tmp = round24_frame(t);
+    t.check(what, 0x0063_9590, Conv::Cdecl, &[out], |g| {
+        b::graphic_camera_view_projection(g, tmp, out);
+        Out::None
+    });
+}
+
+/// `TexAnim_SetMaterialsChar_0077fbf0` (the callee original on one side,
+/// ours on the other; its callees recording stubs).
+fn round24_set_materials_char(t: &mut Twins, rng: &mut Rng, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    use ffx_graphic::util::bridge24 as b;
+    t.stub_sym(ut::TEX_ANIM_GET_INSTANCE, Conv::Cdecl, 0, rng.next());
+    let mut args = vec![LogArg::Str, LogArg::Str];
+    args.extend([LogArg::Word; 7]);
+    stub_log(
+        t,
+        b::TEX_ANIM_SET_ANIMATED_MATERIALS_CHAR,
+        &args,
+        8,
+        9,
+        rng.next(),
+    );
+    let mut p = [0u32; 11];
+    p[0] = round24_name_number(rng);
+    p[1] = round24_name_number(rng);
+    p[2] = rng.next();
+    for v in &mut p[3..9] {
+        // signed 16-bit values, zeros often, garbage in the high word
+        let w = [0, 1, 0xffff, 0x8000, 0x7fff, rng.next() & 0xffff][rng.below(6) as usize];
+        *v = w | (rng.next() & 0xffff_0000);
+    }
+    p[9] = rng.next();
+    p[10] = if rng.chance(4) { 0 } else { rng.next() };
+    let frame = round24_frame(t);
+    t.check(what, 0x0077_fbf0, Conv::Cdecl, &p, |g| {
+        Out::U32(b::tex_anim_set_materials_char(g, frame, p))
+    });
+}
+
+#[test]
+fn round24c_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2424_c024);
+    for round in 0..2000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round24_camera_view_projection(&mut t, &mut rng, false, &format!("{what} camera"));
+        round24_set_materials_char(&mut t, &mut rng, &format!("{what} materials char"));
+    }
+}
+
+#[test]
+fn snapshot_round24c_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5424_c024);
+    // the game's own scene and free camera, all original
+    if t.r32(t.rebase(scene::bridge::SCENE.sym)) != 0 {
+        round24_camera_view_projection(&mut t, &mut rng, true, "snapshot camera");
+    }
+    for round in 0..300 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        round24_camera_view_projection(&mut t, &mut rng, false, &format!("{what} camera"));
+        round24_set_materials_char(&mut t, &mut rng, &format!("{what} materials char"));
+    }
+}

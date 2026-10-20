@@ -1695,7 +1695,7 @@
 0x00639500 function graphicBrokenScreenUpdatePolygonData # layout: alphabetical run between graphicBrokenScreenInitializeBlockDataWithGivenBuffer and graphicCameraGetFOVy (6 unnamed in the gap); Switch 0x71001d9bb0 graphicBrokenScreenUpdatePolygonData is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00639540 function graphicBrokenScreenUpdatePolygonWMatrix # layout: alphabetical run between graphicBrokenScreenInitializeBlockDataWithGivenBuffer and graphicCameraGetFOVy (6 unnamed in the gap); Switch 0x71001d9c50 graphicBrokenScreenUpdatePolygonWMatrix is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00639570 function graphicCameraGetFOVy      # fh v3:bsim1.00 0x00639720
-0x00639590 function graphicCameraGetViewProjectionMatrix # fh v3:exact 0x00639740
+0x00639590 function graphicCameraGetViewProjectionMatrix # fh v3:exact 0x00639740; cdecl(out): PhyreScene_getViewProjectionMatrix(g_PhyreScene, local) then 16 words copied to out (rep movsd); ported (render round 24)
 0x006395c0 function graphicCameraSetAspectRatio # fh v3:bsim1.00 0x00639770
 0x006395e0 function graphicCameraSetFOVy      # cdecl(float* radians): the camera's field of view for the renderer (Cam_Apply: 2 atan of the screen depth's ratio); was Render_SetFov
 0x00639600 function graphicCameraSetLookAt       # layout: alphabetical run between graphicCameraSetFOVy and graphicCameraSetWorldMatrix (1 unnamed in the gap); Switch 0x71001d13c0 graphicCameraSetLookAt is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5030,6 +5030,7 @@
 0x0077f360 function chr_texanim_main_sub_new     # the new-format texture-animation step of chr_texanim_main; the Switch chr_texanim_main_sub_new (1760 bytes) sorts between chr_texanim_draw_sub_new and chr_texanim_memory_move_new, as here
 0x0077f970 function chr_texanim_memory_move_new # Switch name (0x7100330d60): in the new-format file (between chr_texanim_draw_sub_new and _set_new); entry source, record words into work +0xd28
 0x0077f9c0 function chr_texanim_set_new       # fh v3:exact 0x0077fa90
+0x0077fbf0 function TexAnim_SetMaterialsChar_0077fbf0 # cdecl(a, b, c, x, y, w, h, sw, sh, d, e): unless e is 0 (eax 0), graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0 with the six signed 16-bit values made floats, returning its eax; callers chr_texanim_main_sub_new, tex_anim_no_set_new; between chr_texanim_set_new and TexAnim_StartNew; name ours; ported (render round 24)
 0x0077fc90 function TexAnim_StartNew          # structure: cdecl(i, which, pos): g_ChrTexAnim[i]'s work animation which (0x34 bytes) restarted: u16 +0x24 = pos, +0xc/+0x1c/+0x20 and floats +0x2c..+0x38 = 0; returns 0 (i when unloaded); new-format file (before tex_anim_no_set_new); name ours
 0x0077fce0 function tex_anim_no_set_new       # fh v3:exact 0x0077fdb0
 0x0077fda0 function TexAnim_ResetPos          # cdecl(i, which, v): g_ChrTexAnim[i]'s work animation which (0x34 bytes: +0xc = v, +0x1c, +0x20, floats +0x2c..0x38 = 0), or every active one (+0xd08 + n == 1) for which 1; name ours

@@ -3068,4 +3068,38 @@ pub mod bridge24 {
             }
         }
     }
+
+    // ---- round 24, group 3 ----
+
+    /// `graphicCameraGetViewProjectionMatrix(out)` (`0x00639590`, cdecl):
+    /// [`scene_view_projection`] of `g_PhyreScene` into the local `tmp`
+    /// (16 words, the original's frame), then copied to `out` word by word
+    /// (`rep movsd`).
+    pub fn graphic_camera_view_projection(h: &mut impl Host, tmp: u32, out: u32) {
+        let scene = crate::scene::bridge::SCENE.get(h);
+        scene_view_projection(h, scene, tmp);
+        for i in 0..16 {
+            let v: u32 = h.read(tmp + 4 * i);
+            h.write(out.wrapping_add(4 * i), v);
+        }
+    }
+
+    /// `TexAnim_SetMaterialsChar_0077fbf0(a, b, c, x, y, w, h, sw, sh, d,
+    /// e)` (`0x0077fbf0`, cdecl; name ours, between `chr_texanim_set_new`
+    /// and `TexAnim_StartNew`): unless `e` is 0 (returned then),
+    /// [`graphic_tex_anim_set_animated_materials_char`] with the six
+    /// signed 16-bit values `x`..`sh` made floats (`fild`, exact); returns
+    /// its `eax`. `frame` is that callee's (0x300 bytes).
+    pub fn tex_anim_set_materials_char(h: &mut impl Host, frame: u32, p: [u32; 11]) -> u32 {
+        if p[10] == 0 {
+            return 0;
+        }
+        let mut q = p;
+        for v in &mut q[3..9] {
+            #[allow(clippy::cast_possible_truncation)] // the low word, signed
+            let w = (*v as u16).cast_signed();
+            *v = f32::from(w).to_bits();
+        }
+        graphic_tex_anim_set_animated_materials_char(h, frame, q)
+    }
 }

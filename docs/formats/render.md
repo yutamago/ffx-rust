@@ -1128,3 +1128,11 @@ Round 24, group 2: shadow meshes and texture-animation names:
   (`ShaderParam_CopyToBuffer_00698960`), value `+0x20` 1.0
   (`ShaderParamBuffer_SetValue2`), then sampler `+8`, scale `+0x54`,
   offset `+0x3c` `(u', v' - 1)`, value `+0x24`.
+- `graphicCameraGetViewProjectionMatrix(out)` (`0x00639590`, cdecl):
+  `PhyreScene_getViewProjectionMatrix` of `g_PhyreScene` into a local,
+  then its 16 words copied to `out`.
+- `TexAnim_SetMaterialsChar_0077fbf0(a, b, c, x, y, w, h, sw, sh, d, e)`
+  (`0x0077fbf0`, cdecl; name ours; called by `chr_texanim_main_sub_new`
+  and `tex_anim_no_set_new`): nothing (eax 0) when `e` is 0, else
+  `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0` with the
+  six signed 16-bit values `x`..`sh` made floats; returns its `eax`.
