@@ -627,4 +627,45 @@ pub mod bridge {
         }
         ms_atel_get_camera(mem, c, w, kind, cam)
     }
+
+    /// `MsSplineRegist(cam, which)` (`0x007baac0`): for camera `cam` (as
+    /// `MsCameraGetID` gives it back), a point appended to built-in spline
+    /// `which & 1` (eye 1, focus 0; at most 0x20 points: the count at
+    /// [`SPLINE_COUNTS`] grows first, the point at `+0x10 * count` of the
+    /// spline's record): the camera side's position (`g_Cameras + 0xda0 *
+    /// (cam & 0xff) + 0x61c * which + 0x80`, three words through
+    /// `fld`/`fstp`) and the camera's `+0xc94` angle near 0
+    /// (`MsNearRag(0, angle)`). Its `eax` is never read (the eye and focus
+    /// path natives drop it).
+    pub fn ms_spline_regist(mem: &mut impl Mem, cam: u32, which: u32) {
+        use ffx_bridge::x87::round_trip;
+        if crate::camera::bridge::ms_camera_get_id(mem, cam) != cam {
+            return;
+        }
+        let which = which & 1;
+        let at = mem.rebase(SPLINE_COUNTS) + 4 * which;
+        let n: i32 = mem.read(at);
+        if n >= 0x20 {
+            return;
+        }
+        let n = n + 1;
+        mem.write(at, n);
+        let camera = crate::camera::bridge::CAMERAS
+            .ptr(mem)
+            .addr
+            .wrapping_add((cam & 0xff) * 0xda0);
+        let side = camera.wrapping_add(which * 0x61c);
+        let point = mem.rebase(SPLINE_RECORDS).wrapping_add(
+            (which * 0x21)
+                .wrapping_add(n.cast_unsigned())
+                .wrapping_mul(0x10),
+        );
+        for k in 0..3 {
+            let v: f32 = mem.read(side.wrapping_add(0x80 + 4 * k));
+            mem.write(point.wrapping_add(4 * k), round_trip(v));
+        }
+        let angle: f32 = mem.read(camera.wrapping_add(0xc94));
+        let near = crate::vector::bridge::ms_near_rag(mem, 0, round_trip(angle).to_bits());
+        mem.write(point.wrapping_add(0xc), near);
+    }
 }

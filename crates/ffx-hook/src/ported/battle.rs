@@ -5184,4 +5184,23 @@ ported! {
     MsSoundStreamPlay @ 0x007a_0820 => extern "C" fn ms_sound_stream_play(speaker: i32, line: u32) -> i32 {
         sound::ms_sound_stream_play(&mut mem(), &mut call_ptr, speaker, line)
     }
+    /// `MsMoveSpline(spline, i, frames, speed, byte)`.
+    MsMoveSpline @ 0x007a_b010 => extern "C" fn ms_move_spline(spline: u32, i: u32, frames: u32, speed: u32, byte: u32) {
+        predict::ms_move_spline(&mut mem(), spline, i, frames, speed, byte);
+    }
+    /// `MsSplineRegist(cam, which)`.
+    MsSplineRegist @ 0x007b_aac0 => extern "C" fn ms_spline_regist(cam: u32, which: u32) {
+        camnat::ms_spline_regist(&mut mem(), cam, which);
+    }
+    /// `MsSearchScriptTarget_007a8f60(i, id, selector, kind, _, mode)`: the
+    /// pick in this call's frame.
+    MsSearchScriptTarget_007a8f60 @ 0x007a_8f60 => extern "C" fn ms_search_script_target(i: u32, id: u32, selector: u32, kind: u32, _unused: u32, mode: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        minor::ms_search_script_target(&mut mem(), &crt_trig, [i, id, selector, kind, mode], at)
+    }
+    /// `MsSetCommandScriptTarget_007a8b40(i, id, flags)`.
+    MsSetCommandScriptTarget_007a8b40 @ 0x007a_8b40 => extern "C" fn ms_set_command_script_target(i: u32, id: u32, flags: u32) -> u32 {
+        minor::ms_set_command_script_target(&mut mem(), i, id, flags)
+    }
 }

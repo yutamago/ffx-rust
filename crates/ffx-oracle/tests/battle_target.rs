@@ -7293,6 +7293,16 @@ fn ball_splines(
         });
         local_words(a, b);
         same(&format!("MsMoveSplineRegist {args:x?}"), a, b);
+        // MsMoveSpline (round 32) on the same spline and actor: speeds now
+        // and then held (+0x41b)
+        let p = w.actor(i);
+        poke(a, b, p + 0x41b, &[u8::from(rng.below(3) == 0)]);
+        let args = [k, i, rng.next(), float(rng), rng.next()];
+        twin("MsMoveSpline", a, b, 0x007a_b010, &args, 0, |m| {
+            pr::ms_move_spline(m, k, i, args[2], args[3], args[4]);
+            0
+        });
+        same(&format!("MsMoveSpline {args:x?}"), a, b);
     }
     // MsSetBallSpline: thrower i, catcher +0x14, the ball state +0x420
     let i = rng.below(ACTORS);

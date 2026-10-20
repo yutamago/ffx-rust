@@ -3206,6 +3206,48 @@ pub mod bridge {
         out
     }
 
+    /// `MsSearchScriptTarget_007a8f60(i, id, selector, kind, _, mode)`
+    /// (`0x007a8f60`, name ours; the battle script natives 0x70f9 and
+    /// 0x70fb): actor `i`'s script targets (`+0xdc0`,
+    /// [`ms_set_chr_script_targets`]) become command `id`'s choice
+    /// ([`ms_get_same_target`]) between `selector`'s actors
+    /// (`MsGetChrBit(i, selector, 0, 1)`) and those of them with property
+    /// `kind` by `mode` (`MsActTargetSearch(i, selector, kind, _, 4, mode,
+    /// 0, &pick)`; the fifth word is never used). The one it picked
+    /// (`pick`, at `local`, the original's frame word; 0xff for none).
+    pub fn ms_search_script_target<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        [i, id, selector, kind, mode]: [u32; 5],
+        local: u32,
+    ) -> u32 {
+        let set = crate::actor::bridge::ms_get_chr_bit(mem, i, selector, 0, 1);
+        let found = crate::stat::bridge::ms_act_target_search(
+            mem, trig, i, selector, kind, 4, mode, 0, local,
+        );
+        let targets = ms_get_same_target(mem, i, set, found, id);
+        ms_set_chr_script_targets(mem, i, targets);
+        mem.read(local)
+    }
+
+    /// `MsSetCommandScriptTarget_007a8b40(i, id, flags)` (`0x007a8b40`,
+    /// name ours; the battle script natives 0x70f4 and 0x70fb): actor
+    /// `i`'s script targets (`+0xdc0`) become command `id`'s
+    /// ([`ms_get_command_target2`]); they are returned while `i` can use
+    /// the command (`MsCheckUseCommand(i, MsGetComData(id, 0), 0)` not
+    /// negative), else 0.
+    pub fn ms_set_command_script_target(mem: &mut impl Mem, i: u32, id: u32, flags: u32) -> u32 {
+        let a = crate::actor::bridge::ms_get_chr(mem, i);
+        let targets = ms_get_command_target2(mem, i, id, flags);
+        mem.write(a.wrapping_add(0xdc0), targets);
+        let c = crate::stat::bridge::ms_get_com_data(mem, id, 0);
+        if crate::command::bridge::ms_check_use_command(mem, i, c, 0) < 0 {
+            0
+        } else {
+            targets
+        }
+    }
+
     /// `MsActReCommand(i)` (`0x007acc90`): with an action running
     /// ([`ACTION`] not -1), the command ID of actor `i`'s source's
     /// (`+0xded`, then its `+0xc`) running command list (`MsGetCommand(i,

@@ -592,6 +592,57 @@ pub mod bridge {
         }
     }
 
+    /// `MsMoveSpline(spline, i, frames, speed, byte)` (`0x007ab010`): actor
+    /// `i` sets off along move spline `spline` (0-2, one with points): its
+    /// count copied to its first word, move kind `+0x415` 7, `+0x417` 0,
+    /// frame `+0x452` 0 of `frames` (`+0x45a`, 16 bits), the spline at
+    /// `+0x454` (16 bits), `+0x42a` the low byte of `byte`, speed `+0x46c`
+    /// (`fld`/`fstp`; 0 with `+0x41b` set), then its direction into
+    /// `+0x490` (`MsGetChrDir`). Its `eax` is never read (both callers,
+    /// the battle script natives 0x7049 and 0x7076, drop it).
+    pub fn ms_move_spline(
+        mem: &mut impl Mem,
+        spline: u32,
+        i: u32,
+        frames: u32,
+        speed: u32,
+        byte: u32,
+    ) {
+        let k = spline;
+        if k > 2 {
+            return;
+        }
+        let counts = crate::misc::bridge::MOVE_SPLINES.ptr(mem).addr;
+        let count: i32 = mem.read(counts + 4 * k);
+        if count <= 0 {
+            return;
+        }
+        let data = crate::target::bridge::MOVE_SPLINES
+            .ptr(mem)
+            .addr
+            .wrapping_add(k * 0x210);
+        mem.write(data, count);
+        let a = ms_get_chr(mem, i);
+        let low = |v: u32| {
+            let [b0, b1, _, _] = v.to_le_bytes();
+            u16::from_le_bytes([b0, b1])
+        };
+        mem.write(a.wrapping_add(0x415), 7u8);
+        mem.write(a.wrapping_add(0x417), 0u8);
+        mem.write(a.wrapping_add(0x452), 0u16);
+        mem.write(a.wrapping_add(0x45a), low(frames));
+        mem.write(a.wrapping_add(0x454), low(k));
+        let speed = if mem.read::<u8>(a.wrapping_add(0x41b)) != 0 {
+            0
+        } else {
+            speed
+        };
+        mem.write(a.wrapping_add(0x42a), byte.to_le_bytes()[0]);
+        let speed = ffx_bridge::x87::round_trip(f32::from_bits(speed));
+        mem.write(a.wrapping_add(0x46c), speed.to_bits());
+        crate::body::bridge::ms_get_chr_dir(mem, i, a.wrapping_add(0x490));
+    }
+
     /// `MsMoveSplineRegist(k, i, kind, point)` (`0x007ab0b0`): appends a
     /// point to move spline `k` (0-2, at most 0x20 points; the count
     /// `g_BtlMoveSplines[k]` first grows, the point going to `+0x10 *
