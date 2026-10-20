@@ -1139,4 +1139,86 @@ pub mod bridge {
     fn load_bits(bits: u32) -> u32 {
         ffx_bridge::x87::store(ffx_bridge::x87::load(bits))
     }
+
+    // ---- round 35 b ----
+
+    /// `pppEiZCrctDisPosDraw(obj, key, ctrl)` (`0x00735ee0`): the matrix
+    /// `m` (in the original's locals at `frame - 0x44`, `frame` its `ebp`)
+    /// gets the object's rows `+0x10`, `+0x20`, `+0x30` scaled by the key's
+    /// `f32 +0x20`, `+0x24`, `+0x28` (`FFXVu0ScaleVector`) and the position
+    /// `obj +0x40 - g_pppWorldMatrix +0x30` (each `f32`) with 1.0. By the
+    /// key's byte `+0x30`: 0 adds the key's `+0x10..+0x18` to the
+    /// position, then `m = g_pppViewMatrix x m` (`FFXVu0MulMatrix(m,
+    /// view, m)`); 1 multiplies first, then adds to the product's position;
+    /// 2 `m = g_pppWorldMatrix x m`, adds the current part's scale `+0x60`
+    /// times the key's offsets, then `m = g_pppCameraMatrix x m`; others
+    /// leave it. `m` is copied into work area 0 (`FFXVu0CopyMatrix`).
+    /// Callees through `call`.
+    pub fn ppp_ei_z_crct_dis_pos_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let part: u32 = mem.read(g(mem, 0x0230_ffe4));
+        let offsets: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let area = obj
+            .wrapping_add(0xa0)
+            .wrapping_add(mem.read::<u32>(offsets));
+        let m = frame.wrapping_sub(0x44);
+        let scale = g(mem, 0x006e_d8f0);
+        for k in 0..3 {
+            let s = store(load(mem.read(key.wrapping_add(0x20 + 4 * k))));
+            call(
+                mem,
+                scale,
+                &[m + 0x10 * k, obj.wrapping_add(0x10 + 0x10 * k), s],
+            );
+        }
+        let pos = m.wrapping_add(0x30);
+        let world = g(mem, 0x0230_ffa0);
+        let f = |mem: &M, at: u32| load(mem.read(at));
+        for k in 0..3 {
+            let v = sub(
+                f(mem, obj.wrapping_add(0x40 + 4 * k)),
+                f(mem, world.wrapping_add(0x30 + 4 * k)),
+            );
+            mem.write(pos + 4 * k, store(v));
+        }
+        mem.write(pos + 0xc, 1f32);
+        let mul_matrix = g(mem, 0x006e_d5c0);
+        let add_key = |mem: &mut M, scaled: bool| {
+            for k in 0..3 {
+                let o = f(mem, key.wrapping_add(0x10 + 4 * k));
+                let o = if scaled {
+                    mul(f(mem, part.wrapping_add(0x60 + 4 * k)), o)
+                } else {
+                    o
+                };
+                let v = add(o, f(mem, pos + 4 * k));
+                mem.write(pos + 4 * k, store(v));
+            }
+        };
+        let view = g(mem, 0x0230_ff20);
+        match mem.read::<u8>(key.wrapping_add(0x30)) {
+            0 => {
+                add_key(mem, false);
+                call(mem, mul_matrix, &[m, view, m]);
+            }
+            1 => {
+                call(mem, mul_matrix, &[m, view, m]);
+                add_key(mem, false);
+            }
+            2 => {
+                call(mem, mul_matrix, &[m, world, m]);
+                add_key(mem, true);
+                call(mem, mul_matrix, &[m, g(mem, 0x0230_ff60), m]);
+            }
+            _ => {}
+        }
+        call(mem, g(mem, 0x006e_d360), &[area, m]);
+    }
 }

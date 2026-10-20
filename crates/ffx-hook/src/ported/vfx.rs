@@ -5316,4 +5316,44 @@ ported! {
     op_et_eff @ 0x007f_c2e0 => extern "C" fn op_et_eff(oef: u32, group: u32, part: u32, id: u32) -> u32 {
         et::bridge::op_et_eff(&mut mem(), oef, group, part, id, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 35 b ----
+    /// `pppKeBornRnd6_Born(obj, def, shape, out)`.
+    pppKeBornRnd6_Born @ 0x0075_92a0 => extern "C" fn ppp_ke_born_rnd6_born(obj: u32, def: u32, shape: u32, out: u32) {
+        // the original's locals: the angle and the vector, below its ebp
+        let mut frame = super::StackFrame::<8>::new();
+        let ebp = frame.at() + 0x20;
+        prog::bridge::ppp_ke_born_rnd6_born(&mut mem(), obj, def, shape, out, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opu_part_init(host, cmd)`.
+    opu_part_init @ 0x0080_b670 => extern "C" fn opu_part_init(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_part_init(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_sloop(host, cmd)`: `op_irandom_p`'s three extra words (the
+    /// caller's saved registers) go in as 0, as for `opu_wait_cond`.
+    opu_sloop @ 0x0081_7300 => extern "C" fn opu_sloop(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_sloop(&mut mem(), host, cmd, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `pppEiZCrctDisPosDraw(obj, key, ctrl)`.
+    pppEiZCrctDisPosDraw @ 0x0073_5ee0 => extern "C" fn ppp_ei_z_crct_dis_pos_draw(obj: u32, key: u32, ctrl: u32) {
+        // the original's locals: the matrix, below its ebp
+        let mut frame = super::StackFrame::<17>::new();
+        let ebp = frame.at() + 0x44;
+        draw::bridge::ppp_ei_z_crct_dis_pos_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opu_float_cmp_0080c7c0(host, cmd)`.
+    opu_float_cmp_0080c7c0 @ 0x0080_c7c0 => extern "C" fn opu_float_cmp(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_float_cmp(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeHmgEff(obj, key, ctrl)`.
+    pppKeHmgEff @ 0x0075_9bf0 => extern "C" fn ppp_ke_hmg_eff(obj: u32, key: u32, ctrl: u32) {
+        // the original's locals: the three vectors (and the length), below its ebp
+        let mut frame = super::StackFrame::<14>::new();
+        let ebp = frame.at() + 0x38;
+        prog::bridge::ppp_ke_hmg_eff(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opu_gw_etc(host, cmd)`: `op_irandom_p`'s three extra words go in as
+    /// 0, as for `opu_sloop`.
+    opu_gw_etc @ 0x0080_ca80 => extern "C" fn opu_gw_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_gw_etc(&mut mem(), host, cmd, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
 }
