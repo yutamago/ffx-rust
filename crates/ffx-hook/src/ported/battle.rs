@@ -5,6 +5,7 @@ use ffx_battle::action::bridge as action;
 use ffx_battle::after_damage::bridge as afterdmg;
 use ffx_battle::atel::bridge as atel;
 use ffx_battle::battle_end::bridge as bend;
+use ffx_battle::camera_native::bridge as camnat;
 use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
@@ -110,6 +111,20 @@ fn cd_call<M>(m: &mut M, f: u32, args: &[u32]) -> u32 {
 fn regist_signal<M>(_: &mut M, block: [u32; 8]) -> u32 {
     #[allow(clippy::cast_possible_truncation)] // 32-bit process
     call1(0x0086_e9e0, block.as_ptr() as u32)
+}
+
+/// The camera natives' calls (`ffx_battle::camera_native`): the script's
+/// functions and the camera setters through the game, `AtelPopStackFloat`
+/// with its `f32` result.
+macro_rules! native {
+    ($c:ident) => {
+        let mut call = call_ptr;
+        let mut fcall = call_f32;
+        let mut $c = camnat::Calls {
+            call: &mut call,
+            fcall: &mut fcall,
+        };
+    };
 }
 
 /// The script calls of `ffx_battle::atel` (the script module's code).
@@ -4232,6 +4247,88 @@ ported! {
     MsCameraSetAtelYaw_007befc0 @ 0x007b_efc0 => extern "C" fn ms_camera_set_atel_yaw(id: u32, side: u32, yaw: u32, pitch: u32, length: u32) -> u32 {
         let mut m = mem();
         camera::ms_camera_set_atel_yaw(&mut target::Dm::new(&mut m), &host(), &mut call_ptr, id, side, yaw, pitch, length)
+    }
+    /// `MsAtelGetCamera_007baa50(worker, kind, cam)`: the script's
+    /// functions through the game.
+    MsAtelGetCamera_007baa50 @ 0x007b_aa50 => extern "C" fn ms_atel_get_camera(w: u32, kind: u32, cam: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_get_camera(&mut mem(), &mut c, w, kind, cam)
+    }
+    /// `MsAtelCameraMoveAcc_007ba5b0(worker, args, stack, side, mode)`.
+    MsAtelCameraMoveAcc_007ba5b0 @ 0x007b_a5b0 => extern "C" fn ms_atel_camera_move_acc(w: u32, _args: u32, s: u32, side: u32, mode: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_move_acc(&mut mem(), &mut c, w, s, side, mode)
+    }
+    /// `MsAtelCameraShake(worker, args, stack, side, kind)`.
+    MsAtelCameraShake @ 0x007b_b8c0 => extern "C" fn ms_atel_camera_shake(w: u32, _args: u32, s: u32, side: u32, kind: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_shake(&mut mem(), &mut c, w, s, side, kind)
+    }
+    /// `MsAtelScreenShake(worker, args, stack, kind)`.
+    MsAtelScreenShake @ 0x007b_b840 => extern "C" fn ms_atel_screen_shake(w: u32, _args: u32, s: u32, kind: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_screen_shake(&mut mem(), &mut c, w, s, kind)
+    }
+    /// `MsAtelCameraLineFilter_007bb2b0(worker, args, stack, side, kind)`.
+    MsAtelCameraLineFilter_007bb2b0 @ 0x007b_b2b0 => extern "C" fn ms_atel_camera_line_filter(w: u32, _args: u32, s: u32, side: u32, kind: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_line_filter(&mut mem(), &mut c, w, s, side, kind)
+    }
+    /// `MsAtelCameraMoveDivide_007bb520(worker, args, stack, side)`.
+    MsAtelCameraMoveDivide_007bb520 @ 0x007b_b520 => extern "C" fn ms_atel_camera_move_divide(w: u32, _args: u32, s: u32, side: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_move_divide(&mut mem(), &mut c, w, s, side)
+    }
+    /// `MsAtelCameraEyeAddArea_007bb410(worker, args, stack, side, short)`.
+    MsAtelCameraEyeAddArea_007bb410 @ 0x007b_b410 => extern "C" fn ms_atel_camera_eye_add_area(w: u32, _args: u32, s: u32, side: u32, short: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_eye_add_area(&mut mem(), &mut c, w, s, side, short)
+    }
+    /// `MsAtelCameraFocus_007bab90(worker, args, stack, side)`: the focus
+    /// vector in this call's frame.
+    MsAtelCameraFocus_007bab90 @ 0x007b_ab90 => extern "C" fn ms_atel_camera_focus(w: u32, _args: u32, s: u32, side: u32) -> u32 {
+        native!(c);
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        camnat::ms_atel_camera_focus(&mut mem(), &mut c, w, s, side, at)
+    }
+    /// `MsAtelCameraYaw_007bac40(worker, args, stack, side)`.
+    MsAtelCameraYaw_007bac40 @ 0x007b_ac40 => extern "C" fn ms_atel_camera_yaw(w: u32, _args: u32, s: u32, side: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_yaw(&mut mem(), &mut c, w, s, side)
+    }
+    /// `MsAtelCameraSpline_007bb970(worker, args, stack, side)`.
+    MsAtelCameraSpline_007bb970 @ 0x007b_b970 => extern "C" fn ms_atel_camera_spline(w: u32, _args: u32, s: u32, side: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_spline(&mut mem(), &mut c, w, s, side)
+    }
+    /// `MsAtelCameraSetBtl_007bad10(worker, args, stack, side)`.
+    MsAtelCameraSetBtl_007bad10 @ 0x007b_ad10 => extern "C" fn ms_atel_camera_set_btl(w: u32, _args: u32, s: u32, side: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_set_btl(&mut mem(), &mut c, w, s, side)
+    }
+    /// `MsAtelCameraRefAddCircleArea_007bb370(worker, args, stack, side,
+    /// kind)`.
+    MsAtelCameraRefAddCircleArea_007bb370 @ 0x007b_b370 => extern "C" fn ms_atel_camera_ref_add_circle_area(w: u32, _args: u32, s: u32, side: u32, kind: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_ref_add_circle_area(&mut mem(), &mut c, w, s, side, kind)
+    }
+    /// `MsCameraSetChannelFlagF5_007bf1a0(id, side, on)`.
+    MsCameraSetChannelFlagF5_007bf1a0 @ 0x007b_f1a0 => extern "C" fn ms_camera_set_channel_flag_f5(id: u32, side: u32, on: u32) {
+        camera::ms_camera_set_channel_flag_f5(&mut mem(), id, side, on);
+    }
+    /// `MsCameraRefAddCircleArea_007bf1f0(id, side, kind, x, y, r)`.
+    MsCameraRefAddCircleArea_007bf1f0 @ 0x007b_f1f0 => extern "C" fn ms_camera_ref_add_circle_area(id: u32, side: u32, kind: u32, x: u32, y: u32, r: u32) {
+        camera::ms_camera_ref_add_circle_area(&mut mem(), id, side, kind, [x, y, r]);
+    }
+    /// `MsCameraBlurIfCurrent_007bcdd0(id, weight)`: `Sg_Blur` through the
+    /// game.
+    MsCameraBlurIfCurrent_007bcdd0 @ 0x007b_cdd0 => extern "C" fn ms_camera_blur_if_current(id: u32, weight: u32) {
+        camera::ms_camera_blur_if_current(&mut mem(), &mut call_ptr, id, weight);
+    }
+    /// `MsDivSqrt_007c13c0(out, a, b)`.
+    MsDivSqrt_007c13c0 @ 0x007c_13c0 => extern "C" fn ms_div_sqrt(out: u32, a: u32, b: u32) {
+        misc::ms_div_sqrt(&mut mem(), out, a, b);
     }
     /// `MsAtelGetCameraID(owner, kind, cam)`.
     MsAtelGetCameraID @ 0x007b_a780 => extern "C" fn ms_atel_get_camera_id(owner: u32, kind: u32, cam: u32) -> u32 {

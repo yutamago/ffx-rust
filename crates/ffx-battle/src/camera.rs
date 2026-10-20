@@ -140,6 +140,70 @@ pub mod bridge {
         }
     }
 
+    /// Where request `id`'s channel record of side `side & 1` starts: camera
+    /// `id & 0xff`, channel `id >> 8 & 0xff` (0x130 bytes each), from
+    /// `+0xf0` of the side.
+    fn channel_at(mem: &impl Mem, id: u32, side: u32) -> u32 {
+        CAMERAS.ptr(mem).addr
+            + (id & 0xff) * CAMERA_SIZE
+            + (id >> 8 & 0xff) * 0x130
+            + (side & 1) * 0x61c
+            + 0xf0
+    }
+
+    /// `MsCameraSetChannelFlagF5_007bf1a0(id, side, on)` (`0x007bf1a0`):
+    /// with request `id` live ([`ms_camera_id_check`]), its channel's byte
+    /// `+5` (`0x01137635`) = bit 0 of `on`.
+    pub fn ms_camera_set_channel_flag_f5(mem: &mut impl Mem, id: u32, side: u32, on: u32) {
+        if ms_camera_id_check(mem, id) != 0 {
+            let at = channel_at(mem, id, side) + 5;
+            mem.write(at, on.to_le_bytes()[0] & 1);
+        }
+    }
+
+    /// `MsCameraRefAddCircleArea_007bf1f0(id, side, kind, x, y, r)`
+    /// (`0x007bf1f0`): with request `id` live, one more of its channel's
+    /// five 0x20-byte areas (count `+4`): `f32`s `+0xa8` = `x`, `+0xac` = `y`,
+    /// `+0x9c` = `r` (through `fld`/`fstp`), `+0x90` = 3 for a `kind`, else
+    /// 1. Full (5), nothing.
+    pub fn ms_camera_ref_add_circle_area(
+        mem: &mut impl Mem,
+        id: u32,
+        side: u32,
+        kind: u32,
+        area: [u32; 3],
+    ) {
+        if ms_camera_id_check(mem, id) == 0 {
+            return;
+        }
+        let ch = channel_at(mem, id, side);
+        let n: u8 = mem.read(ch + 4);
+        if n >= 5 {
+            return;
+        }
+        let rec = ch + 0x20 * u32::from(n);
+        mem.write(rec + 0xa8, x87_copy(area[0]));
+        mem.write(rec + 0xac, x87_copy(area[1]));
+        mem.write(rec + 0x9c, x87_copy(area[2]));
+        mem.write(rec + 0x90, 2 * u32::from(kind != 0) + 1);
+        mem.write(ch + 4, n + 1);
+    }
+
+    /// `MsCameraBlurIfCurrent_007bcdd0(id, weight)` (`0x007bcdd0`): when
+    /// request `id` is its camera's current one ([`ms_camera_get_id`]),
+    /// `Sg_Blur(weight)` (main, through `call`).
+    pub fn ms_camera_blur_if_current<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+        weight: u32,
+    ) {
+        if ms_camera_get_id(mem, id & 0xff) == id {
+            let f = mem.rebase(crate::damage_end::bridge::SG_BLUR);
+            call(mem, f, &[weight]);
+        }
+    }
+
     /// `Cam_GetRefPos_007bd4b0(cam, side, &x, &y, &z)` (`0x007bd4b0`):
     /// `Cam_GetPos`' twin for the side's point at `+0x40` (the one before
     /// the position at `+0x50`) of camera `cam` (a byte), side bit 0 of

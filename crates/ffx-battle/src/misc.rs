@@ -542,4 +542,21 @@ pub mod bridge {
             p = p.wrapping_add(1);
         }
     }
+
+    /// `MsDivSqrt_007c13c0(out, a, b)` (`0x007c13c0`): `out` = `a` over the
+    /// square root of `|b|` (`f32`s; `_CIsqrt`, rounded to `f32`, the
+    /// division in `f64` of `a`), or 0.0 when `|b|` is 0.0.
+    pub fn ms_div_sqrt(mem: &mut impl Mem, out: u32, a: u32, b: u32) {
+        use ffx_bridge::x87::{div, load, sqrt, store};
+        let t = store(load(b).abs());
+        // `fucom` with 0.0: a NaN takes the root
+        #[allow(clippy::float_cmp)]
+        let v = if load(t) == 0.0 {
+            0
+        } else {
+            let root = store(sqrt(load(t)));
+            store(div(load(a), load(root)))
+        };
+        mem.write(out, v);
+    }
 }

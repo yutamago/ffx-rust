@@ -710,6 +710,9 @@ fn leaf_helpers_match_the_original_on_a_snapshot() {
 /// group D's recording stubs.
 const STUBS_D: u32 = 0x007c_9f10;
 
+/// `FUN_007c1790` (0x44f bytes, unreachable): more stub room.
+const STUBS_E: u32 = 0x007c_1790;
+
 /// Group D's callees of other modules, recording stubs in both oracles:
 /// (function, arguments, result).
 fn d_stubs() -> [(u32, u8, u32); 13] {
@@ -1165,4 +1168,450 @@ fn leaf_setters_match_the_original_on_a_snapshot() {
         return;
     };
     setters(&mut a, &mut b, &mut Xorshift(0x2929_0d02), false);
+}
+
+/// Machine code for a stub: each word of `words` emitted as `op` with the
+/// address after it.
+fn code_with(parts: &[(&[u8], Option<u32>)]) -> Vec<u8> {
+    let mut code = Vec::new();
+    for (op, imm) in parts {
+        code.extend(*op);
+        if let Some(v) = imm {
+            code.extend(v.to_le_bytes());
+        }
+    }
+    code
+}
+
+/// Jumps from the function at `f` (ffx.sym) to code written at `at`.
+fn hook_to(o: &mut Oracle, f: u32, at: u32, code: &[u8]) {
+    let at = o.rebase(at);
+    o.write(at, code).unwrap();
+    let entry = o.rebase(f);
+    let rel = at.wrapping_sub(entry + 5);
+    o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+        .unwrap();
+}
+
+/// Group E: the camera natives, their camera, the channel setters, the
+/// blur check, `MsDivSqrt`.
+fn natives(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use ffx_battle::camera_native::bridge as n;
+    let _w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x600);
+    let words_at = scratch(a, b, 0x80);
+    let cursor = rec;
+    // the setters and the script's lookups: recording stubs (count,
+    // arguments, result), 0x40 bytes of `rec` each from 0x40
+    let recorded: [(u32, u8, u32); 15] = [
+        (ffx_battle::atel::bridge::ATEL_GET_ACTOR_ID, 1, 0),
+        (n::ATEL_GET_EVENT_MAP_CAMERA_ID, 0, 0),
+        (n::ATEL_GET_REAL_VAR_ADRS, 2, 0),
+        (ffx_battle::motion::bridge::ATEL_GET_BATTLE_ID_ADRS2, 1, 0),
+        (n::MS_CAMERA_MOVE_ACC, 7, 0x31),
+        (n::MS_CAMERA_SHAKE, 8, 0x32),
+        (n::MS_SCREEN_SHAKE, 7, 0x33),
+        (n::MS_CAMERA_ADD_LINE_FILTER, 8, 0x34),
+        (n::MS_CAMERA_MOVE_DIVIDE, 6, 0x35),
+        (n::MS_CAMERA_SET_AIM_POLAR, 8, 0x36),
+        (n::MS_CAMERA_SET_AIM_POLAR2, 9, 0x37),
+        (n::MS_CAMERA_SET_ATEL_YAW, 6, 0x38),
+        (n::MS_CAMERA_SET_SPLINE, 6, 0x39),
+        (n::MS_CAMERA_SET_BTL, 10, 0x3a),
+        (n::MS_CAMERA_REF_ADD_CIRCLE_AREA, 6, 0x3b),
+    ];
+    let slot = |k: u32| rec + 0x40 + 0x40 * k;
+    let result = |k: u32| slot(k) + 4 + 4 * u32::from(recorded[k as usize].1);
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, args, r)) in (0u32..).zip(recorded) {
+            // (up to 10 arguments: 0x70 bytes of code each, 12 in
+            // MsBtlPosPrintBin, the rest in FUN_007c1790, also unreachable)
+            let at = if k < 12 {
+                STUBS_D + 0x70 * k
+            } else {
+                STUBS_E + 0x70 * (k - 12)
+            };
+            recording_stub(o, f, at, slot(k), args, r);
+        }
+        // the pops: one words_at of words for both kinds, a cursor at `rec`
+        let int = code_with(&[
+            (&[0xa1], Some(cursor)),
+            (&[0x83, 0x05], Some(cursor)),
+            (&[0x04, 0x8b, 0x00, 0xc3], None),
+        ]);
+        hook_to(
+            o,
+            ffx_battle::motion::bridge::ATEL_POP_STACK_INTEGER,
+            STUBS_E + 0x70 * 3,
+            &int,
+        );
+        let float = code_with(&[
+            (&[0xa1], Some(cursor)),
+            (&[0x83, 0x05], Some(cursor)),
+            (&[0x04, 0xd9, 0x00, 0xc3], None),
+        ]);
+        hook_to(
+            o,
+            n::ATEL_POP_STACK_FLOAT,
+            STUBS_E + 0x70 * 3 + 0x20,
+            &float,
+        );
+        // MsCameraSetAtelFocus: its four words and the vector it points at
+        let focus_rec = rec + 0x500;
+        let mut parts: Vec<(&[u8], Option<u32>)> = vec![(&[0xff, 0x05], Some(focus_rec))];
+        let loads: [[u8; 4]; 4] = [
+            [0x8b, 0x44, 0x24, 4],
+            [0x8b, 0x44, 0x24, 8],
+            [0x8b, 0x44, 0x24, 0xc],
+            [0x8b, 0x44, 0x24, 0x10],
+        ];
+        for (k, l) in (0u32..).zip(&loads) {
+            parts.push((l, None));
+            parts.push((&[0xa3], Some(focus_rec + 4 + 4 * k)));
+        }
+        parts.push((&[0x8b, 0x4c, 0x24, 0x14], None));
+        let fields: [[u8; 3]; 3] = [[0x8b, 0x41, 0], [0x8b, 0x41, 4], [0x8b, 0x41, 8]];
+        for (k, l) in (0u32..).zip(&fields) {
+            parts.push((l, None));
+            parts.push((&[0xa3], Some(focus_rec + 0x14 + 4 * k)));
+        }
+        parts.push((&[0xa1], Some(focus_rec + 0x20)));
+        parts.push((&[0xc3], None));
+        let focus = code_with(&parts);
+        assert!(focus.len() <= 0x80);
+        hook_to(o, n::MS_CAMERA_SET_ATEL_FOCUS, STUBS_E + 0x70 * 4, &focus);
+        // Sg_Blur
+        recording_stub(
+            o,
+            ffx_battle::damage_end::bridge::SG_BLUR,
+            STUBS_E + 0x70 * 5,
+            rec + 0x540,
+            1,
+            0,
+        );
+    }
+    let worker = scratch(a, b, 0x100);
+    let stack = scratch(a, b, 0x10);
+    let local = scratch(a, b, 0x10);
+    let actor_byte = scratch(a, b, 4);
+    let spline_var = scratch(a, b, 0x10);
+    for round in 0..400 {
+        // the worker's camera: none yet or one
+        let work = [0, rng.next(), 0x0001_0100 | rng.below(3)][rng.below(3) as usize];
+        poke(a, b, worker + 0x3c, &work.to_le_bytes());
+        // the script's camera table: some cameras got
+        fill(
+            a,
+            b,
+            rng,
+            ffx_battle::minor::bridge::ATEL_CAMERA.ptr(b).addr,
+            0x30,
+        );
+        for k in 0..12u32 {
+            if rng.below(2) == 0 {
+                poke(
+                    a,
+                    b,
+                    ffx_battle::minor::bridge::ATEL_CAMERA.ptr(b).addr + 4 * k,
+                    &[0; 4],
+                );
+            }
+        }
+        // the actor and the event map's camera: the same or not
+        let actor = rng.below(4);
+        poke(a, b, result(0), &actor.to_le_bytes());
+        poke(
+            a,
+            b,
+            result(1),
+            &[actor, rng.below(4)][rng.below(2) as usize].to_le_bytes(),
+        );
+        poke(
+            a,
+            b,
+            result(2),
+            &[0, spline_var][rng.below(3).min(1) as usize].to_le_bytes(),
+        );
+        poke(a, b, result(3), &actor_byte.to_le_bytes());
+        fill(a, b, rng, actor_byte, 1);
+        // the stack's words: floats or integers, read as the pops ask
+        let words: Vec<u8> = (0..0x20)
+            .flat_map(|_| {
+                match rng.below(4) {
+                    0 => rng.range(-3, 400).cast_unsigned(),
+                    1 => [0, 1, 2, 3][rng.below(4) as usize],
+                    _ => float(rng),
+                }
+                .to_le_bytes()
+            })
+            .collect();
+        poke(a, b, words_at, &words);
+        poke(a, b, cursor, &words_at.to_le_bytes());
+        // the built-in splines' counts
+        for k in 0..2u32 {
+            poke(
+                a,
+                b,
+                a.rebase(n::SPLINE_COUNTS) + 4 * k,
+                &rng.range(0, 6).to_le_bytes(),
+            );
+        }
+        let (side, x) = (
+            rng.below(3),
+            [rng.below(4), rng.next()][rng.below(2) as usize],
+        );
+        let short = [rng.below(4), 0xffff_ffff, rng.next()][rng.below(3) as usize];
+        let mut c = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+        let mut fc = |m: &mut Oracle, f: u32, args: &[u32]| {
+            let r = m.call(f, ffx_oracle::Conv::Cdecl, args).unwrap();
+            battle_common::crt::f80_to_f32(r.st0_raw.unwrap())
+        };
+        macro_rules! nat {
+            ($name:expr, $sym:expr, $args:expr, |$m:ident, $cc:ident| $body:block) => {{
+                twin($name, a, b, $sym, $args, ALL, |$m| {
+                    let mut $cc = n::Calls {
+                        call: &mut c,
+                        fcall: &mut fc,
+                    };
+                    $body
+                });
+            }};
+        }
+        match round % 12 {
+            0 => {
+                let (kind, cm) = (rng.below(5), rng.below(4));
+                nat!(
+                    "MsAtelGetCamera",
+                    0x007b_aa50,
+                    &[worker, kind, cm],
+                    |m, cc| { n::ms_atel_get_camera(m, &mut cc, worker, kind, cm) }
+                );
+            }
+            1 => nat!(
+                "MsAtelCameraMoveAcc",
+                0x007b_a5b0,
+                &[worker, 0, stack, side, x],
+                |m, cc| { n::ms_atel_camera_move_acc(m, &mut cc, worker, stack, side, x) }
+            ),
+            2 => nat!(
+                "MsAtelCameraShake",
+                0x007b_b8c0,
+                &[worker, 0, stack, side, x],
+                |m, cc| { n::ms_atel_camera_shake(m, &mut cc, worker, stack, side, x) }
+            ),
+            3 => nat!(
+                "MsAtelScreenShake",
+                0x007b_b840,
+                &[worker, 0, stack, x],
+                |m, cc| { n::ms_atel_screen_shake(m, &mut cc, worker, stack, x) }
+            ),
+            4 => nat!(
+                "MsAtelCameraLineFilter",
+                0x007b_b2b0,
+                &[worker, 0, stack, side, x],
+                |m, cc| { n::ms_atel_camera_line_filter(m, &mut cc, worker, stack, side, x) }
+            ),
+            5 => nat!(
+                "MsAtelCameraMoveDivide",
+                0x007b_b520,
+                &[worker, 0, stack, side],
+                |m, cc| { n::ms_atel_camera_move_divide(m, &mut cc, worker, stack, side) }
+            ),
+            6 => nat!(
+                "MsAtelCameraEyeAddArea",
+                0x007b_b410,
+                &[worker, 0, stack, side, short],
+                |m, cc| { n::ms_atel_camera_eye_add_area(m, &mut cc, worker, stack, side, short) }
+            ),
+            7 => {
+                fill(a, b, rng, local, 12);
+                nat!(
+                    "MsAtelCameraFocus",
+                    0x007b_ab90,
+                    &[worker, 0, stack, side],
+                    |m, cc| { n::ms_atel_camera_focus(m, &mut cc, worker, stack, side, local) }
+                );
+                // (the original's vector is in its frame)
+                let v = b.read(local, 12).unwrap();
+                a.write(local, &v).unwrap();
+            }
+            8 => nat!(
+                "MsAtelCameraYaw",
+                0x007b_ac40,
+                &[worker, 0, stack, side],
+                |m, cc| { n::ms_atel_camera_yaw(m, &mut cc, worker, stack, side) }
+            ),
+            9 => {
+                // the spline popped last: 0, 1 or a variable
+                poke(
+                    a,
+                    b,
+                    words_at + 12,
+                    &[0u32, 1, 2, 7][rng.below(4) as usize].to_le_bytes(),
+                );
+                nat!(
+                    "MsAtelCameraSpline",
+                    0x007b_b970,
+                    &[worker, 0, stack, side],
+                    |m, cc| { n::ms_atel_camera_spline(m, &mut cc, worker, stack, side) }
+                );
+            }
+            10 => nat!(
+                "MsAtelCameraSetBtl",
+                0x007b_ad10,
+                &[worker, 0, stack, side],
+                |m, cc| { n::ms_atel_camera_set_btl(m, &mut cc, worker, stack, side) }
+            ),
+            11 => nat!(
+                "MsAtelCameraRefAddCircleArea",
+                0x007b_b370,
+                &[worker, 0, stack, side, x],
+                |m, cc| {
+                    n::ms_atel_camera_ref_add_circle_area(m, &mut cc, worker, stack, side, x)
+                }
+            ),
+            _ => {}
+        }
+        same(&format!("natives {}", round % 12), a, b);
+    }
+}
+
+#[test]
+fn leaf_natives_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    for o in [&mut a, &mut b] {
+        battle_common::crt::patch(o);
+    }
+    natives(&mut a, &mut b, &mut Xorshift(0x2929_0e01), true);
+}
+
+#[test]
+fn leaf_natives_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    for o in [&mut a, &mut b] {
+        battle_common::crt::patch(o);
+    }
+    natives(&mut a, &mut b, &mut Xorshift(0x2929_0e02), false);
+}
+
+/// Group E's camera setters on random slots and channels, the blur check
+/// (`Sg_Blur` a recording stub) and `MsDivSqrt`.
+fn camera_setters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_battle::camera::bridge as cam;
+    let rec = scratch(a, b, 0x10);
+    let local = scratch(a, b, 0x10);
+    for o in [&mut *a, &mut *b] {
+        recording_stub(
+            o,
+            ffx_battle::damage_end::bridge::SG_BLUR,
+            STUBS_D,
+            rec,
+            1,
+            0,
+        );
+    }
+    let mut c = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+    let cameras = cam::CAMERAS.ptr(b).addr;
+    for _ in 0..400 {
+        // the camera's own setters on random slots and channels
+        let k = rng.below(3);
+        let base = cameras + k * cam::CAMERA_SIZE;
+        fill(a, b, rng, base + 0xc68, 0x20);
+        let id = k
+            | [rng.below(4), 0x80 | rng.below(4)][rng.below(2) as usize] << 8
+            | [0, rng.below(4) + 1][rng.below(2) as usize] << 16;
+        for s in 0..4 {
+            if rng.below(2) == 0 {
+                poke(a, b, base + 0xc68 + 8 * s, &id.to_le_bytes());
+                poke(
+                    a,
+                    b,
+                    base + 0xc68 + 8 * s + 4,
+                    &[u8::from(rng.below(4) == 0), u8::from(rng.below(4) == 0), 0],
+                );
+            }
+        }
+        for side in 0..2 {
+            for ch in [0, 1, 2, 3, 0x80, 0x81, 0x82, 0x83] {
+                let at = base + side * 0x61c + ch * 0x130 + 0xf0;
+                poke(a, b, at + 4, &[u8::try_from(rng.below(7)).unwrap()]);
+            }
+        }
+        let (side, on) = (rng.next(), rng.next());
+        twin(
+            "MsCameraSetChannelFlagF5",
+            a,
+            b,
+            0x007b_f1a0,
+            &[id, side, on],
+            0,
+            |m| {
+                cam::ms_camera_set_channel_flag_f5(m, id, side, on);
+                0
+            },
+        );
+        let area = [float(rng), float(rng), float(rng)];
+        let kind = [0, 1, rng.next()][rng.below(3) as usize];
+        twin(
+            "MsCameraRefAddCircleArea",
+            a,
+            b,
+            0x007b_f1f0,
+            &[id, side, kind, area[0], area[1], area[2]],
+            0,
+            |m| {
+                cam::ms_camera_ref_add_circle_area(m, id, side, kind, area);
+                0
+            },
+        );
+        let weight = rng.next();
+        twin(
+            "MsCameraBlurIfCurrent",
+            a,
+            b,
+            0x007b_cdd0,
+            &[id, weight],
+            0,
+            |m| {
+                cam::ms_camera_blur_if_current(m, &mut c, id, weight);
+                0
+            },
+        );
+        let (x, y) = (
+            float(rng),
+            [0, 0x8000_0000, float(rng)][rng.below(3) as usize],
+        );
+        twin("MsDivSqrt", a, b, 0x007c_13c0, &[local, x, y], 0, |m| {
+            ffx_battle::misc::bridge::ms_div_sqrt(m, local, x, y);
+            0
+        });
+
+        same("camera setters", a, b);
+    }
+}
+
+#[test]
+fn leaf_natives_camera_setters_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    for o in [&mut a, &mut b] {
+        battle_common::crt::patch(o);
+    }
+    camera_setters(&mut a, &mut b, &mut Xorshift(0x2929_0f01));
+}
+
+#[test]
+fn leaf_natives_camera_setters_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    for o in [&mut a, &mut b] {
+        battle_common::crt::patch(o);
+    }
+    camera_setters(&mut a, &mut b, &mut Xorshift(0x2929_0f02));
 }

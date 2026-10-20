@@ -22,6 +22,7 @@ pub mod atel;
 pub mod battle_end;
 pub mod body;
 pub mod camera;
+pub mod camera_native;
 pub mod chr_damage;
 pub mod command;
 pub mod cue;
