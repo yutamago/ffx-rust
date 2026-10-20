@@ -609,6 +609,80 @@ pub mod bridge {
         mem.write(w1.wrapping_add(0xa0), v);
     }
 
+    /// `pppKeHitChkPxB(obj, key, ctrl)` (`0x007599b0`): area 2 (`w` =
+    /// its `+0xa0`) checks once whether the segment from area 0 along
+    /// area 1 hits a ball (byte `w +0x10` bit 0 set on the hit stops it).
+    /// On the key's frame `w +0x14` = the target (key `+4` the part
+    /// object, -1 for `g_pppRandTarget`; key `+8` the field) and bit 1 =
+    /// key byte `+0xc` (stop at the hit); nothing more at frame 0. Then,
+    /// unless stopped or aimed at `g_pppRandTarget`, with a non-zero
+    /// radius (the target's `f32 +0`; the ball's centre is the vector at
+    /// the target's `+4`): `KeVu0ItrsBallLine` of `(area 0 - centre, area
+    /// 1, radius)`; a hit at `t` in `[-0, 1]` (or NaN) sets bit 0 and adds
+    /// `centre + (area 0 - centre) + t area 1` to `w`; with bit 1, area 1's
+    /// `xyz` = `w - area 0` and the frame (`obj +0xc`) = 0xffff0000.
+    ///
+    /// The ball query (0x28 bytes) and the scaled vector (16 bytes at
+    /// `+0x3c`) live at `frame`, the original's `ebp - 0x50`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ke_hit_chk_px_b<M: Mem>(mem: &mut M, obj: u32, key: u32, ctrl: u32, frame: u32) {
+        use ffx_bridge::x87::{load, round_trip};
+        use ffx_ps2::vu0::bridge as vu0;
+        let w = area(mem, obj, ctrl, 2).wrapping_add(0xa0);
+        let flags = w.wrapping_add(0x10);
+        if mem.read::<u8>(flags) & 1 != 0 {
+            return;
+        }
+        if applies(mem, obj, key) {
+            let n: u32 = mem.read(key.wrapping_add(4));
+            let at: u32 = mem.read(key.wrapping_add(8));
+            let t = stub::ptr32(part_target(mem, n, at));
+            mem.write(w.wrapping_add(0x14), t);
+            if mem.read::<u8>(key.wrapping_add(0xc)) != 0 {
+                let b: u8 = mem.read(flags);
+                mem.write(flags, b | 2);
+            }
+            if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+                return;
+            }
+        }
+        let rand = crate::rand::bridge::TARGET.ptr(mem).addr;
+        let target = |mem: &M| stub::ptr32(mem.read(w.wrapping_add(0x14)));
+        if STOP.get(mem) != 0 || target(mem) == rand {
+            return;
+        }
+        let a = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let d = area(mem, obj, ctrl, 1).wrapping_add(0xa0);
+        let t = target(mem);
+        if load(mem.read(t)) == 0.0 {
+            return;
+        }
+        let r = round_trip(mem.read(t));
+        mem.write(frame.wrapping_add(0x20), r);
+        let centre = stub::ptr32(mem.read(t.wrapping_add(4)));
+        vu0::sub_vector(mem, frame, a, centre);
+        vu0::copy_vector(mem, frame.wrapping_add(0x10), d);
+        if ke::ke_vu0_itrs_ball_line(mem, frame) == 0 {
+            return;
+        }
+        let hit: f32 = mem.read(frame.wrapping_add(0x24));
+        if hit < 0.0 || hit > 1.0 {
+            return;
+        }
+        let b: u8 = mem.read(flags);
+        mem.write(flags, b | 1);
+        let s = frame.wrapping_add(0x3c);
+        vu0::scale_vector(mem, s, frame.wrapping_add(0x10), round_trip(hit));
+        vu0::add_vector(mem, s, s, frame);
+        let t = target(mem);
+        let centre = stub::ptr32(mem.read(t.wrapping_add(4)));
+        vu0::add_vector(mem, w, centre, s);
+        if mem.read::<u8>(flags) & 2 != 0 {
+            ffx_field::vu0::bridge::ke_vu0_sub_vec_xyz(mem, d, w, a);
+            mem.write(obj.wrapping_add(0xc), 0xffff_0000u32);
+        }
+    }
+
     /// `pppNeiPointLight(obj, key, ctrl)` (`0x0075d700`): with its key,
     /// pointers to areas 1 and 2 and the key's three floats added; then the
     /// running sums `w[1] += w[0]`, `w[2] += w[1]`.

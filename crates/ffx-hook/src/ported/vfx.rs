@@ -5480,4 +5480,76 @@ ported! {
     opu_init @ 0x007f_da80 => extern "C" fn opu_init(no: u32, data: u32, owner: u32, obj: u32, n: u32, _unused: u32, show: u32) -> u32 {
         opus::bridge::opu_init(&mut mem(), no, data, owner, obj, n, show, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 37 a ----
+    /// `opus_unit_on(host, cmd)`.
+    opus_unit_on @ 0x0080_af70 => extern "C" fn opus_unit_on(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opus_unit_on(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_en(host, cmd)`.
+    opu_v_en @ 0x0081_8ed0 => extern "C" fn opu_v_en(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_en(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_trail_point(host, cmd)` (`0x008171a0`).
+    opu_trail_point @ 0x0081_71a0 => extern "C" fn opu_trail_point(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_trail_point(&mut mem(), host, cmd)
+    }
+    /// `opu_et_init()`.
+    opu_et_init @ 0x007f_d760 => extern "C" fn opu_et_init() -> u32 {
+        opus::bridge::opu_et_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeHitChkPxB(obj, key, ctrl)`.
+    pppKeHitChkPxB @ 0x0075_99b0 => extern "C" fn ppp_ke_hit_chk_px_b(obj: u32, key: u32, ctrl: u32) {
+        // the original's locals: the ball query and the scaled vector
+        let mut frame = super::StackFrame::<19>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_hit_chk_px_b(&mut mem(), obj, key, ctrl, at);
+    }
+    /// `opus_0706_noise_draw(obj)`.
+    opus_0706_noise_draw @ 0x007f_73d0 => extern "C" fn opus_0706_noise_draw(obj: u32) -> u32 {
+        // the original's locals, below its ebp
+        let mut frame = super::StackFrame::<0x1a>::new();
+        let ebp = frame.at() + 0x68;
+        wave::bridge::opus_0706_noise_draw(&mut mem(), obj, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 37 b ----
+    /// `opu_gs_etc(host, cmd)` (`0x00808380`).
+    opu_gs_etc @ 0x0080_8380 => extern "C" fn opu_gs_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_gs_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_bind_etc(host, cmd)` (`0x00814520`).
+    opu_bind_etc @ 0x0081_4520 => extern "C" fn opu_bind_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_bind_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `setPolyTris0434(id, tris, setup)` (`0x00712690`).
+    setPolyTris0434 @ 0x0071_2690 => extern "C" fn set_poly_tris_0434(id: u32, tris: u32, setup: u32) -> u32 {
+        small::bridge::set_poly_tris_0434(&mut mem(), id, tris, setup, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `update0706NoiseRenderData(lo, hi, x)` (`0x007fa890`).
+    update0706NoiseRenderData @ 0x007f_a890 => extern "C" fn update_0706_noise_render_data(lo: u32, hi: u32, x: u32) -> u32 {
+        small::bridge::update_0706_noise_render_data(&mut mem(), lo, hi, x, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `op_oef2_tex_clut_cue_trans()`.
+    op_oef2_tex_clut_cue_trans @ 0x007e_4c30 => extern "C" fn op_oef2_tex_clut_cue_trans() -> u32 {
+        // the original's load image record, below its ebp
+        let mut frame = super::StackFrame::<0x18>::new();
+        let img = frame.at();
+        op::bridge::op_oef2_tex_clut_cue_trans(&mut mem(), img, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 37 c ----
+    /// `opu_jump_etc2(host, cmd)`.
+    opu_jump_etc2 @ 0x0081_6e50 => extern "C" fn opu_jump_etc2(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_jump_etc2(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_matrix_etc(host, cmd)`.
+    opu_matrix_etc @ 0x0080_1ab0 => extern "C" fn opu_matrix_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_matrix_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_local_etc(host, cmd)`.
+    opu_local_etc @ 0x0080_17d0 => extern "C" fn opu_local_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_local_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_lerp(host, cmd)` (`0x008187b0`).
+    opu_v_lerp @ 0x0081_87b0 => extern "C" fn opu_v_lerp(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_lerp(&mut mem(), host, cmd)
+    }
 }

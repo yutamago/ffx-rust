@@ -363,3 +363,9 @@ harvest_test!(sg_frame_sync, 0x0082_1e80, args = 1, |m: &mut Oracle, s| {
     };
     ffx_sg::state::bridge::frame_sync(&mut OracleHost(m), s.arg(0), time)
 });
+// effects (round 37)
+harvest_test!(opu_bind_etc, 0x0081_4520, args = 2, |m: &mut Oracle, s| {
+    ffx_vfx::opus::bridge::opu_bind_etc(m, s.arg(0), s.arg(1), &mut |m, f, a| {
+        m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+    })
+});
