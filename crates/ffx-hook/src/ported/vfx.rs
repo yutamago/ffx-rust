@@ -884,6 +884,46 @@ ported! {
         let at = frame.at();
         prog::bridge::ppp_ke_born_rnd2_born(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppChrSclXYZMatrix(obj, key)`.
+    pppChrSclXYZMatrix @ 0x0073_4910 => extern "C" fn ppp_chr_scl_xyz_matrix(obj: u32, key: u32) {
+        // the original's local scale matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        let kind = prog::bridge::ChrScl::Xyz;
+        prog::bridge::ppp_chr_scl_matrix(&mut mem(), kind, obj, key, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppChrSclXZMatrix(obj, key)`.
+    pppChrSclXZMatrix @ 0x0073_49b0 => extern "C" fn ppp_chr_scl_xz_matrix(obj: u32, key: u32) {
+        // the original's local scale matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        let kind = prog::bridge::ChrScl::Xz;
+        prog::bridge::ppp_chr_scl_matrix(&mut mem(), kind, obj, key, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppChrSclYMatrix(obj, key)`.
+    pppChrSclYMatrix @ 0x0073_4a30 => extern "C" fn ppp_chr_scl_y_matrix(obj: u32, key: u32) {
+        // the original's local scale matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        let kind = prog::bridge::ChrScl::Y;
+        prog::bridge::ppp_chr_scl_matrix(&mut mem(), kind, obj, key, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppChrYSclXYZMatrix(obj)`: it reads no key.
+    pppChrYSclXYZMatrix @ 0x0073_4aa0 => extern "C" fn ppp_chr_y_scl_xyz_matrix(obj: u32) {
+        // the original's local scale matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        let kind = prog::bridge::ChrScl::YXyz;
+        prog::bridge::ppp_chr_scl_matrix(&mut mem(), kind, obj, 0, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppChrXSclXYZMatrix(obj, key)`.
+    pppChrXSclXYZMatrix @ 0x0073_4af0 => extern "C" fn ppp_chr_x_scl_xyz_matrix(obj: u32, key: u32) {
+        // the original's local scale matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        let kind = prog::bridge::ChrScl::XXyz;
+        prog::bridge::ppp_chr_scl_matrix(&mut mem(), kind, obj, key, at, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `op_oef2_se_on(cue, pan, vol)`.
     op_oef2_se_on @ 0x007f_fe10 => extern "C" fn op_oef2_se_on(cue: u32, pan: u32, vol: u32) -> u32 {
         op::bridge::op_oef2_se_on(&mut mem(), cue, pan, vol, &mut |_, f, a| call_ptr(f, a))

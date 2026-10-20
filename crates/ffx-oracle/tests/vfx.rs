@@ -17209,3 +17209,58 @@ fn round32f_shape_camera_emit_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::cast_precision_loss)]
+fn round32g_chr_scl_matrix_matches_the_original() {
+    use prog::bridge::{self as pb, ChrScl};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_4910);
+        let (obj, key, frame) = (p.alloc(0x60), p.alloc(0x10), p.alloc(0x40));
+        let scale = p.sym(pb::CHR_SCALE.sym);
+        let num = |rng: &mut Xorshift| {
+            if rng.chance(5) {
+                f32::from_bits(rng.pick(&[0x7fc0_0001u32, 0xffd0_0000, 0, 0x8000_0000]))
+            } else {
+                (rng.below(4000) as f32 - 2000.0) / 256.0
+            }
+        };
+        for round in 0..3000 {
+            for (at, kind, args) in [
+                (0x0073_4910u32, ChrScl::Xyz, 2),
+                (0x0073_49b0, ChrScl::Xz, 2),
+                (0x0073_4a30, ChrScl::Y, 2),
+                (0x0073_4aa0, ChrScl::YXyz, 1),
+                (0x0073_4af0, ChrScl::XXyz, 2),
+            ] {
+                for i in 0..0x18u32 {
+                    p.set(obj + 4 * i, num(&mut rng));
+                }
+                for i in 0..3 {
+                    p.set(scale + 4 * i, num(&mut rng));
+                }
+                p.set(key, rng.next());
+                p.set(key + 4, num(&mut rng));
+                // the cap: often near the scale, sometimes above or equal
+                let cap = if rng.chance(30) {
+                    p.get::<f32>(scale) * 1.5
+                } else {
+                    num(&mut rng)
+                };
+                p.set(key + 8, cap);
+                let a = [obj, key];
+                p.check(
+                    &format!("{kind:?} {at:#x} round {round}"),
+                    at,
+                    &a[..args],
+                    |m| {
+                        let keep = m.read(frame, 0x40).unwrap();
+                        pb::ppp_chr_scl_matrix(m, kind, obj, key, frame, &mut call_original);
+                        m.write(frame, &keep).unwrap();
+                        None
+                    },
+                );
+            }
+        }
+    }
+}

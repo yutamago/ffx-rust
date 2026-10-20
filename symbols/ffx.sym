@@ -3724,11 +3724,11 @@
 0x00734400 function pppKeOfsMatXYZ            # ppp program table record "pppKeOfsMatXYZ" step: obj+0x10 = XYZ rotation of area 1 scaled by area 2 about the pivot p = area0[+0x10] + area0[+0x20]: position = area0 + p - M p
 0x00734640 function pppParMatrix              # fh v3:exact 0x00734710
 0x00734880 function pppKeParMatR              # fh v3:exact 0x00734950
-0x00734910 function pppChrSclXYZMatrix        # ppp program table record "pppChrSclXYZMatrix" step
-0x007349b0 function pppChrSclXZMatrix         # ppp program table record "pppChrSclXZMatrix" step
-0x00734a30 function pppChrSclYMatrix          # ppp program table record "pppChrSclYMatrix" step
-0x00734aa0 function pppChrYSclXYZMatrix       # ppp program table record "pppChrYSclXYZMatrix" step
-0x00734af0 function pppChrXSclXYZMatrix       # ppp program table record "pppChrXSclXYZMatrix" step
+0x00734910 function pppChrSclXYZMatrix        # ppp program table record "pppChrSclXYZMatrix" step; ours: cdecl(obj, key): obj+0x10 = FFXVu0MulMatrix(diag(sx, sy, sx), obj+0x10), s = f32(c + c*key[+4]) of g_pppChrScale, capped at key[+8] (prog::bridge::ppp_chr_scl_matrix)
+0x007349b0 function pppChrSclXZMatrix         # ppp program table record "pppChrSclXZMatrix" step; ours: as pppChrSclXYZMatrix with diag(sx, 1, sx), s = f32(key[+4]*c + c) (prog::bridge::ppp_chr_scl_matrix)
+0x00734a30 function pppChrSclYMatrix          # ppp program table record "pppChrSclYMatrix" step; ours: as pppChrSclXYZMatrix with diag(1, sy, 1), s = f32(key[+4]*c + c) (prog::bridge::ppp_chr_scl_matrix)
+0x00734aa0 function pppChrYSclXYZMatrix       # ppp program table record "pppChrYSclXYZMatrix" step; ours: cdecl(obj): reads its own unit matrix's m22 (1.0) for all three, so obj+0x10 = MulMatrix(unit, obj+0x10) (prog::bridge::ppp_chr_scl_matrix)
+0x00734af0 function pppChrXSclXYZMatrix       # ppp program table record "pppChrXSclXYZMatrix" step; ours: as pppChrSclXYZMatrix with diag(sx, sx, sx), s = f32(key[+4]*c + c) (prog::bridge::ppp_chr_scl_matrix)
 0x00734b70 function pppDrawMatrix             # ppp program table record "pppDrawMatrix" draw: obj+0x9c = 0, then tail-jumps to FFXVu0MulMatrix(obj+0x50, g_pppViewMatrixCopy, obj+0x10)
 0x00734ba0 function pppDrawMatrixLoop         # ppp program table record "pppDrawMatrixLoop" draw: the same code as pppDrawMatrix
 0x00734bd0 function pppDrawMatrixFront        # fh v3:exact 0x00734ca0
@@ -16701,6 +16701,7 @@
 0x0230fd30 label    g_pppUserFuncs            # user function table pppCallUsrFunc / 0x00757370 index by the part's byte +0xe; pppAllFreePObject clears it
 0x0230fd34 label    g_pppStopStatus              # set by pppFpStopStatus; the ppp per-frame steps (pppColor, pppAngle, ...) do nothing while nonzero
 0x0230fd3c label    g_pppMemAllocFailed       # pppMemAlloc: 1 when neither heap had room
+0x0230fd50 label    g_pppChrScale             # f32 x, y, z: the character scale the pppChr*Scl*Matrix steps (0x00734910..0x00734af0) read; rcefParProc 0x0092f010 sets x, y from the model size, opu_part_run 0x0080b800 all three to +0x3c / 256, pppDataRcv 0x007614a0 copies x
 0x0230fde0 label    g_pppWoodMatrix           # the billboard rotation pppDrawMatrixWoodSta builds (FFXVu0CopyMatrix from 0x0230fee0); pppDrawMatrixWood turns the scaled rows by it
 0x0230fe20 label    g_pppViewMatrixCopy       # FFXVu0CopyMatrix of g_pppViewMatrix (0x00920000.c); pppDrawMatrix multiplies the object's matrix by it
 0x0230fe60 label    g_pppScreenMatrix         # MsCopyScreenMatrix(0x0230fe60) in pppOtFunc_Control (0x00716ac0) before the g_pppOtList draws
