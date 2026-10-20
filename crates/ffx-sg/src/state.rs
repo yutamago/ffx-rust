@@ -1681,6 +1681,328 @@ pub mod bridge {
         0x00b4_1d80,
     ];
 
+    /// `Sg_MapInit`'s callees and data: `yiReset`, `yiMapSetup(objects,
+    /// textures)`, `Sg_PcRead(path)`, `Sg_IdFixupAndSet(id)`, `dbgPrintf`,
+    /// the C runtime's `sprintf` (through its import slot); the debug line
+    /// (`g_DebugLine`, the shade map's directory), the debug map list's
+    /// flag, the chosen map's directory and name (pointers).
+    pub const YI_RESET: u32 = 0x0090_9e60;
+    pub const YI_MAP_SETUP: u32 = 0x0090_9680;
+    pub const PC_READ: u32 = 0x0083_ae30;
+    pub const ID_FIXUP_AND_SET: u32 = 0x0084_4bc0;
+    pub const SPRINTF_SLOT: Global<u32> = Global::new(0x00b0_c3dc);
+    pub const DEBUG_LINE: u32 = 0x023c_4000;
+    pub const MAP_SHADE: Global<u8> = Global::new(0x0130_34b9);
+    pub const MAP_DIRS: u32 = 0x0130_3580;
+    pub const MAP_DIR: Global<u32> = Global::new(0x0130_3640);
+    pub const MAP_NAME: Global<u32> = Global::new(0x0130_3644);
+    /// The formats: `".../master/%s/%s/bin"`, `".../sugi/data/%s/%s/map"`,
+    /// `".../btlmaster/%s/%s/bin"`, `"shd=%s\ndir=%s\n"`,
+    /// `"%s/mapobjdata.vpb"`, `"%s/maptexdata.txb"`, `"%s/ffxmap.id"`.
+    pub const FMT_MASTER: u32 = 0x00b5_a9a8;
+    pub const FMT_SUGI: u32 = 0x00b5_a984;
+    pub const FMT_BATTLE: u32 = 0x00b5_a9d8;
+    pub const FMT_SHADE_LOG: u32 = 0x00b5_a9c8;
+    pub const FMT_OBJECTS: u32 = 0x00b5_a9fc;
+    pub const FMT_TEXTURES: u32 = 0x00b5_aa10;
+    pub const FMT_IDS: u32 = 0x00b5_aa24;
+    /// `Sg_MapInit`'s three 0x40-byte path buffers, as its frame holds them
+    /// (`work`: the textures path, the map directory, the objects path).
+    pub const MAP_INIT_WORK: u32 = 0xc0;
+
+    /// `Sg_MapInit()` (`0x00844d10`, from `WMainProc` and `Sg_Test`):
+    /// `yiReset`, the debug line cleared, the selected map's directory and
+    /// name into [`MAP_DIR`] and [`MAP_NAME`]; the map directory from the
+    /// selection: 0 `master`, 2 `btlmaster`, 1 `sugi` (with
+    /// [`MAP_SHADE`] the `sugi` path goes into the debug line, the map is
+    /// `master/<name[..4]>/<name[..6]>`, and `dbgPrintf` logs both; any
+    /// other selection leaves the buffer as it was). Then `yiMapSetup` with
+    /// the objects and textures paths, and `Sg_IdFixupAndSet` with the id
+    /// file `Sg_PcRead` returns (from the debug line's directory first when
+    /// set). `work` holds the three paths ([`MAP_INIT_WORK`] bytes).
+    pub fn map_init(h: &mut impl ffx_bridge::Host, work: u32) {
+        fn call(h: &mut impl ffx_bridge::Host, f: u32, args: &[u32]) -> u32 {
+            let f = h.rebase(f);
+            h.call(f, args)
+        }
+        let (textures, dir, objects) = (work, work + 0x40, work + 0x80);
+        call(h, YI_RESET, &[]);
+        let line = h.rebase(DEBUG_LINE);
+        h.write(line, 0u8);
+        let select = MAP_DIR_SELECT.get(h);
+        let base = select.wrapping_mul(0x40);
+        let map_dir = h.rebase(MAP_DIRS).wrapping_add(base);
+        let map_name = h.rebase(MAP_NAMES.sym).wrapping_add(base);
+        MAP_DIR.set(h, map_dir);
+        MAP_NAME.set(h, map_name);
+        let sprintf = SPRINTF_SLOT.get(h);
+        let format = match map_get_dir_select(h) {
+            0 => Some(FMT_MASTER),
+            2 => Some(FMT_BATTLE),
+            1 if MAP_SHADE.get(h) == 0 => Some(FMT_SUGI),
+            1 => {
+                let f = h.rebase(FMT_SUGI);
+                h.call(sprintf, &[line, f, map_dir, map_name]);
+                // the name twice, cut to 4 and to 6 characters
+                let name = MAP_NAME.get(h);
+                for (to, cut) in [(objects, 4), (textures, 6)] {
+                    for k in 0..0x1_0000 {
+                        let c: u8 = h.read(name.wrapping_add(k));
+                        h.write(to + k, c);
+                        if c == 0 {
+                            break;
+                        }
+                    }
+                    h.write(to + cut, 0u8);
+                }
+                let f = h.rebase(FMT_MASTER);
+                h.call(sprintf, &[dir, f, objects, textures]);
+                let f = h.rebase(FMT_SHADE_LOG);
+                call(h, DBG_PRINTF, &[f, line, dir]);
+                None
+            }
+            _ => None,
+        };
+        if let Some(format) = format {
+            let f = h.rebase(format);
+            h.call(sprintf, &[dir, f, map_dir, map_name]);
+        }
+        let f = h.rebase(FMT_OBJECTS);
+        h.call(sprintf, &[objects, f, dir]);
+        let f = h.rebase(FMT_TEXTURES);
+        h.call(sprintf, &[textures, f, dir]);
+        call(h, YI_MAP_SETUP, &[objects, textures]);
+        let ids = h.rebase(FMT_IDS);
+        let mut id = 0;
+        if h.read::<u8>(line) != 0 {
+            h.call(sprintf, &[objects, ids, line]);
+            id = call(h, PC_READ, &[objects]);
+        }
+        if id == 0 {
+            h.call(sprintf, &[objects, ids, dir]);
+            id = call(h, PC_READ, &[objects]);
+        }
+        call(h, ID_FIXUP_AND_SET, &[id]);
+    }
+
+    /// `Sg_EffectReadPoll`'s state: the battle effect read's and the event
+    /// effect read's frame counters (`i32`, -1 idle;
+    /// `g_BtlEffectReadClear`, `g_BtlEventEffectClear`) and whether each
+    /// file was taken preloaded (`g_BtlEffectPreloaded` and the word
+    /// after it).
+    pub const EFFECT_READ_FRAMES: Global<i32> = Global::new(0x00c4_21e8);
+    pub const EVENT_READ_FRAMES: Global<i32> = Global::new(0x00c4_21e4);
+    pub const EFFECT_PRELOADED: Global<u32> = Global::new(0x012f_b8b8);
+    pub const EVENT_PRELOADED: Global<u32> = Global::new(0x012f_b8bc);
+    /// Its callees: `graphicIsMagicFileAsyncLoadAvailable`,
+    /// `GetU32_01940ab4`, the PRX checks `0x006793d0` (state 3,
+    /// `Compare_006f9b70`) and `0x006793b0` (`PhyreFIOS_LoadPrxIdle`'s
+    /// thunk: > 0 an error, 2 out of kernel memory), `MsEffectReadError`,
+    /// `dbgPrintf`, `IsLoadTexture`, `MsEffectReadComplete`,
+    /// `0x006420d0` (the magic file loaded), `MsEventEffectReadComplete`,
+    /// `MsEffectReadStatInit`.
+    pub const ASYNC_LOAD_AVAILABLE: u32 = 0x0064_1c60;
+    pub const GETU32_01940AB4: u32 = 0x009d_a2c0;
+    pub const PRX_READY: u32 = 0x0067_93d0;
+    pub const PRX_ERROR: u32 = 0x0067_93b0;
+    pub const EFFECT_READ_ERROR: u32 = 0x0078_81b0;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const IS_LOAD_TEXTURE: u32 = 0x009d_a280;
+    pub const EFFECT_READ_COMPLETE: u32 = 0x0078_8110;
+    pub const MAGIC_FILE_LOADED: u32 = 0x0064_20d0;
+    pub const EVENT_EFFECT_READ_COMPLETE: u32 = 0x0078_8d10;
+    pub const EFFECT_READ_STAT_INIT: u32 = 0x0078_81c0;
+    /// `"MagicFile: No kernel memory.\n"`.
+    pub const NO_KERNEL_MEMORY: u32 = 0x00b5_9084;
+
+    /// `Sg_EffectReadPoll()` (`0x00822250`, name ours; from
+    /// `0x00821e80`): one frame of the battle effect read and the event
+    /// effect read. Each running read (frame counter >= 0) counts a frame;
+    /// without the async magic file load the read completes at once.
+    /// Otherwise it waits for the PRX (state 3), reports a PRX error (the
+    /// effect read only), and without `IsLoadTexture` resets the read
+    /// state; with it, a preloaded file (async 1) completes first, and the
+    /// read ends once the magic file is loaded, completing then unless it
+    /// already did. An ended read's counter goes to -1, its preloaded flag
+    /// to 0. Returns `eax` as the original leaves it: the event counter
+    /// when that read is idle, else its last call's result.
+    pub fn effect_read_poll(h: &mut impl ffx_bridge::Host) -> u32 {
+        fn call(h: &mut impl ffx_bridge::Host, f: u32) -> u32 {
+            let f = h.rebase(f);
+            h.call(f, &[])
+        }
+        let available = call(h, ASYNC_LOAD_AVAILABLE);
+        let frames = EFFECT_READ_FRAMES.get(h);
+        if frames >= 0 {
+            EFFECT_READ_FRAMES.set(h, frames.wrapping_add(1));
+            let ended = if available == 0 || call(h, GETU32_01940AB4) != 0 {
+                call(h, EFFECT_READ_COMPLETE);
+                true
+            } else if call(h, PRX_READY) == 0 {
+                false
+            } else {
+                let error = call(h, PRX_ERROR).cast_signed();
+                if error > 0 {
+                    call(h, EFFECT_READ_ERROR);
+                    if error == 2 {
+                        let (f, text) = (h.rebase(DBG_PRINTF), h.rebase(NO_KERNEL_MEMORY));
+                        h.call(f, &[text]);
+                    }
+                }
+                if call(h, IS_LOAD_TEXTURE) == 0 {
+                    call(h, EFFECT_READ_STAT_INIT);
+                    true
+                } else {
+                    if available == 1 && EFFECT_PRELOADED.get(h) == 0 {
+                        call(h, EFFECT_READ_COMPLETE);
+                        EFFECT_PRELOADED.set(h, available);
+                    }
+                    if call(h, MAGIC_FILE_LOADED) == 0 {
+                        false
+                    } else {
+                        if EFFECT_PRELOADED.get(h) == 0 {
+                            call(h, EFFECT_READ_COMPLETE);
+                        }
+                        true
+                    }
+                }
+            };
+            if ended {
+                EFFECT_PRELOADED.set(h, 0);
+                EFFECT_READ_FRAMES.set(h, -1);
+            }
+        }
+        let frames = EVENT_READ_FRAMES.get(h);
+        if frames < 0 {
+            return frames.cast_unsigned();
+        }
+        let frames = frames.wrapping_add(1);
+        EVENT_READ_FRAMES.set(h, frames);
+        let last = if available == 0 {
+            call(h, EVENT_EFFECT_READ_COMPLETE)
+        } else {
+            let r = call(h, PRX_READY);
+            if r == 0 {
+                return r;
+            }
+            if call(h, IS_LOAD_TEXTURE) == 0 {
+                call(h, EFFECT_READ_STAT_INIT)
+            } else {
+                if available == 1 && EVENT_PRELOADED.get(h) == 0 {
+                    call(h, EVENT_EFFECT_READ_COMPLETE);
+                    EVENT_PRELOADED.set(h, available);
+                }
+                let r = call(h, MAGIC_FILE_LOADED);
+                if r == 0 {
+                    return r;
+                }
+                if EVENT_PRELOADED.get(h) == 0 {
+                    call(h, EVENT_EFFECT_READ_COMPLETE)
+                } else {
+                    r
+                }
+            }
+        };
+        EVENT_READ_FRAMES.set(h, -1);
+        EVENT_PRELOADED.set(h, 0);
+        last
+    }
+
+    /// The free camera's distance now (`f32`), easing toward
+    /// [`FREE_CAM_DIST`].
+    pub const FREE_CAM_DIST_NOW: Global<f32> = Global::new(0x0130_1bb4);
+    /// The free camera's offset from the player (`f32` x, y, z; y is
+    /// [`FREE_CAM_HEIGHT`]).
+    pub const FREE_CAM_OFFSET: u32 = 0x00c4_dee0;
+    /// `Sg_CameraSetPlayer`'s constants: the easing 0.125 and the height
+    /// 10 (`f64`), the yaw bound pi/2 as `f64` (compared) and `f32`
+    /// (stored), and their negatives.
+    pub const EASE: Global<f64> = Global::new(0x00b9_2200);
+    pub const PLAYER_HEIGHT: Global<f64> = Global::new(0x00b9_22b0);
+    pub const YAW_MAX: Global<f64> = Global::new(0x00b5_82e8);
+    pub const YAW_MAX_F32: Global<f32> = Global::new(0x00b5_99c0);
+    pub const YAW_MIN: Global<f64> = Global::new(0x00b5_a490);
+    pub const YAW_MIN_F32: Global<f32> = Global::new(0x00b5_a488);
+    /// `Ch_GetFieldMode(chr)` (`0x0082ab90`): called for the player, its
+    /// result unused.
+    pub const CH_GET_FIELD_MODE: u32 = 0x0082_ab90;
+
+    /// `Sg_CameraSetPlayer()` (`0x0083f2e0`, from `Sg_MainLoop`): the free
+    /// camera behind the player. The distance eases an eighth of the way
+    /// toward [`FREE_CAM_DIST`]; the reference point is the player's
+    /// position (`Sg_GetPlayerPos`; 0 without a player) 10 down, plus
+    /// [`FREE_CAM_OFFSET`]; the yaw is held to +-pi/2 and the distance to
+    /// at least 1 (a NaN passes both); the position is the reference plus
+    /// `-dist * (sin p cos y, sin y, cos p cos y)` with the CRT's `sin` and
+    /// `cos` (`trig`, `f32` bits in and out; yaw = [`FREE_CAM_YAW`], p =
+    /// [`FREE_CAM_PITCH`]). Ends in `Sg_CameraPutRects`, whose `eax` it
+    /// returns.
+    #[allow(clippy::similar_names)] // the sines and cosines
+    pub fn camera_set_player(
+        h: &mut impl ffx_bridge::Host,
+        trig: &dyn Fn(ffx_battle::pos::bridge::Trig, u32) -> u32,
+    ) -> u32 {
+        use crate::camera::bridge::{CAMERA_POS, CAMERA_REF};
+        use ffx_battle::pos::bridge::Trig;
+        use ffx_bridge::x87::{self, Reg};
+        let now = Reg::load(FREE_CAM_DIST_NOW.get(h));
+        let step = Reg::load(FREE_CAM_DIST.get(h));
+        let eased = now - (now - step) * Reg::constant(EASE.get(h));
+        FREE_CAM_DIST_NOW.set(h, eased.store());
+        let r = h.rebase(CAMERA_REF.sym);
+        if get_player_pos(h, r) != 0 {
+            CAMERA_REF.set(h, [0.0; 3]);
+        }
+        let player = get_player(h);
+        if player != 0 {
+            let f = h.rebase(CH_GET_FIELD_MODE);
+            h.call(f, &[player]);
+        }
+        let [x, y, z] = CAMERA_REF.get(h);
+        let y = (Reg::load(y) - Reg::constant(PLAYER_HEIGHT.get(h))).store();
+        let offset: [f32; 3] = h.read(h.rebase(FREE_CAM_OFFSET));
+        let reference = [
+            Reg::load(x).add_m32(offset[0]).store(),
+            Reg::load(y).add_m32(offset[1]).store(),
+            Reg::load(z).add_m32(offset[2]).store(),
+        ];
+        CAMERA_REF.set(h, reference);
+        let yaw = FREE_CAM_YAW.get(h);
+        if x87::load(yaw.to_bits()) > YAW_MAX.get(h) {
+            FREE_CAM_YAW.set(h, YAW_MAX_F32.get(h));
+        }
+        let mut yaw = FREE_CAM_YAW.get(h);
+        if x87::load(yaw.to_bits()) < YAW_MIN.get(h) {
+            FREE_CAM_YAW.set(h, YAW_MIN_F32.get(h));
+            yaw = FREE_CAM_YAW.get(h);
+        }
+        if x87::load(FREE_CAM_DIST_NOW.get(h).to_bits()) < 1.0 {
+            FREE_CAM_DIST_NOW.set(h, 1.0);
+        }
+        let f = |t: Trig, v: f32| f32::from_bits(trig(t, v.to_bits()));
+        let sin_yaw = x87::round_trip(f(Trig::Sin, yaw));
+        let cos_yaw = x87::round_trip(f(Trig::Cos, FREE_CAM_YAW.get(h)));
+        let pitch = FREE_CAM_PITCH.get(h);
+        let sin_pitch = f(Trig::Sin, pitch);
+        let x = Reg::load(sin_pitch).mul_m32(cos_yaw).store();
+        let cos_pitch = f(Trig::Cos, pitch);
+        let z = Reg::load(cos_pitch).mul_m32(cos_yaw).store();
+        let back = (-Reg::load(FREE_CAM_DIST_NOW.get(h))).store();
+        let x = Reg::load(back).mul_m32(x).store();
+        let y = Reg::load(back).mul_m32(sin_yaw).store();
+        let z = Reg::load(back).mul_m32(z).store();
+        let [rx, ry, rz] = CAMERA_REF.get(h);
+        CAMERA_POS.set(
+            h,
+            [
+                Reg::load(rx).add_m32(x).store(),
+                Reg::load(ry).add_m32(y).store(),
+                Reg::load(rz).add_m32(z).store(),
+            ],
+        );
+        crate::camera::bridge::sg_camera_put_rects(h)
+    }
+
     /// `Sg_ControlCamera()` (`0x0083f4b0`): the free camera from the pad.
     /// The right stick (outside the dead zone `0x51..0xaf`) turns yaw and
     /// pitch by `(stick - 0x80)` degrees / 12, each wrapped once into `-pi..

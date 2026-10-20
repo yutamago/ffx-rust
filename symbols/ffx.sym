@@ -7426,6 +7426,7 @@
 0x00821d50 function Sg_SetthDispEnable        # fh v3:bsim1.00 0x00821e70
 0x00821d60 function Sg_SyncCutScene              # layout+callees: sorts between Sg_SetthDispEnable and achievementUnlockAchievement, and its named callees match the Switch 0x710042caa0 Sg_SyncCutScene's (similarity 1.00: iSyncGetData); symbols from Fahrenheit's server export
 0x00821e30 function Sg_ToggleTkAnti           # (): byte 0x012fbbb7 = (it - 1) & 1 (flips Sg_EnableTkAnti's switch); WMainProc's key handler
+0x00822250 function Sg_EffectReadPoll         # ours: (), from 0x00821e80 every frame: the battle effect read (counter 0x00c421e8, preloaded 0x012fb8b8) and the event effect read (0x00c421e4, 0x012fb8bc) each count a frame while >= 0; no async magic load: complete now; else wait for PRX state 3 (0x006793d0), PRX error > 0: MsEffectReadError (2: dbgPrintf no kernel memory), !IsLoadTexture: MsEffectReadStatInit and end; async 1 completes a preloaded file first; ends when 0x006420d0 says loaded; ended: counter -1, preloaded 0; ported (ffx_sg::state, main round 16)
 0x00822380 function achievementUnlockAchievement # fh call.cs cdecl
 0x008223a0 function drawDreamEffect           # fh v3:exact 0x00822430
 0x00822410 function dreamParamReset           # fh switch:cg2 0x710042da00
@@ -7912,9 +7913,10 @@
 0x00836240 function Sg_LightGetNormalMatrixPtr # () -> 0x01300978, the matrix Sg_LightSetDir fills; Switch name
 0x00836250 function Sg_LightSetChr            # (chr): light matrices from the character's own directions/colours (+0x384.., +0x3c4.., chosen by the i8 at +0x188) or the global ones; Switch name
 0x00836310 function Sg_LightSetColor          # fh v3:exact 0x00836390; cdecl(kind, rgba) -> eax: kind 0..3 (unsigned): 4 words of rgba into light colour kind (0x00c49744 + 16 kind); FFXVu0LightColorMatrix(0x023c4400, the four colours); graphicCharacterLightingSetLightColor(kind, r, g, b) returned; ported in ffx_sg::light (main round 15)
+0x00836400 function Sg_LightSetColorRGB       # ours (sorts between Sg_LightSetColor and Sg_LightSetDir, like Sg_LightSetDirXYZ): cdecl(kind, r, g, b f32): Sg_LightSetColor(kind, &(r, g, b, 0)) (fld/fstp each), its eax; caller Native_4012; ported (ffx_sg::light, main round 16)
 0x00836430 function Sg_LightSetDir            # fh v3:exact 0x008364b0
 0x008364f0 function Sg_LightSetDirXYZ         # (i, x, y, z): Sg_LightSetDir(i, &(x, y, z, 0)); script native at 0x00a77f70; between Sg_LightSetDir and Light_Set; name ours; ported (ffx_sg::control)
-0x00836520 function Light_Set                    # (light 0-3, r, g, b, pitch deg, yaw deg): color /255 (0x00836310) and direction from the two angles (0x00836430)
+0x00836520 function Light_Set                    # (light 0-3, r, g, b, pitch deg, yaw deg): color /255 (0x00836310) and direction from the two angles (0x00836430); exactly: colour f32(f32(int)/255) each, 4th word the frame's never-written local; direction (sin p cos y, sin y, cos p cos y) with each angle Angle_Wrap(f32(f32(deg) * 3.141592 / 180)), the CRT's sin/cos; g_FFXIsDebug: 0x0084eb10(args); eax the last call's; ported (ffx_sg::light, main round 16)
 0x00836640 function Sg_SetSuimen              # fh switch:bsim1.00 0x71004143a0
 0x00836660 function Sg_SetWaterLimit          # (h): f32 0x013009dc; Fahrenheit Switch BSim 1.00 0x71004143d0
 0x00836670 function Sg_VectorGetLength        # (v) -> sqrt((x² + y²) + z²) through _CIsqrt, as f32; Switch name order after Sg_SetWaterLimit
@@ -8150,7 +8152,7 @@
 0x0083f260 function Sg_CameraGetPos           # fh switch:bsim1.00 0x710042a480
 0x0083f2a0 function Sg_CameraGetRef           # (&v) -> 0x00c4ded0 (the reference point, copied to v); Switch name beside Sg_CameraGetPos
 0x0083f2d0 function Sg_CameraGetYaw            # jmp MsCameraGetYaw (0x007bcf20): the camera yaw in ST0, for Sg_ControlPlayer (0x0082d180); a thunk outside functions.tsv; name ours
-0x0083f2e0 function Sg_CameraSetPlayer        # fh v3:exact 0x0083f2e0
+0x0083f2e0 function Sg_CameraSetPlayer        # fh v3:exact 0x0083f2e0; (): distance 0x01301bb4 eases 1/8 toward 0x01301bb8; reference 0x00c4ded0 = player pos (0 without) - 10 in y + offset 0x00c4dee0; yaw 0x00c4def0 held to +-pi/2, distance >= 1; position 0x00c4dec0 = ref - dist (sin p cos y, sin y, cos p cos y) (CRT sin/cos), then Sg_CameraPutRects (eax); Ch_GetFieldMode(player) result unused; ported (ffx_sg::state, main round 16)
 0x0083f4b0 function Sg_ControlCamera             # layout: alphabetical run between Sg_CameraSetPlayer and Sg_ControlMouseCamera (1 unnamed in the gap); Switch 0x710042a6d0 Sg_ControlCamera is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0083f6f0 function Sg_ControlMouseCamera     # fh v3:bsim1.00 0x0083f6f0
 0x0083f700 function SetGlobal01301bc4_0083f700   # auto-port shape (store argument to global, cdecl): u32[&0x01301bc4] = a0; return a0; callers: Sg_MainInit; name ours
@@ -8162,7 +8164,7 @@
 0x0083f8e0 function Setup1TIM                    # layout+callees: sorts between Load1TIM and Sg_GetResource, and its named callees match the Switch 0x7100436f70 Setup1TIM's (similarity 0.67: sceGsSetDefLoadImage, user_malloc); symbols from Fahrenheit's server export
 0x0083fbe0 function Sg_GetResource            # fh v3:exact 0x0083fbe0
 0x0083fc30 function Sg_GetResourceSTR         # fh v3:exact 0x0083fc30
-0x0083fc50 function Sg_LoadVramResource       # fh v3:exact 0x0083fc50
+0x0083fc50 function Sg_LoadVramResource       # fh v3:exact 0x0083fc50; (): the 20 VRAM resource starts at 0x00c4df02 + 4k (u16 running sum of the i8 counts at +1, from 2), sceGsSetDefStoreImage(frame, 0x2efc, 1, 0, 0, 0, 16, 16), store into 0x01301bf0; unless it reads 0x29 0xff, Sg_SaveVramResource; dbgPrintf res_ok/res_dame (eax); ported (ffx_sg::gs, main round 16)
 0x0083fd20 function Sg_SaveResourceCheck      # fh v3:exact 0x0083fd20
 0x0083fd60 function Sg_SaveVramResource       # fh v3:exact 0x0083fd60
 0x0083fe10 function Sg_SetResource            # fh v3:exact 0x0083fe10
@@ -8281,7 +8283,7 @@
 0x00844cd0 function Sg_MapGetDirSelect        # fh v3:bsim1.00 0x00844cd0
 0x00844ce0 function Sg_MapGetEnableShade      # () -> i8 0x013034b9 (set by Sg_MapInit); Switch name beside Sg_MapGetDirSelect/Sg_MapGetName
 0x00844cf0 function Sg_MapGetName             # fh v3:exact 0x00844cf0
-0x00844d10 function Sg_MapInit                # fh v3:exact 0x00844d10
+0x00844d10 function Sg_MapInit                # fh v3:exact 0x00844d10; (): yiReset, g_DebugLine cleared, 0x01303640/44 = dir/name of selection 0x00c4df50 (0x01303580/0x013034c0 + 64 i); path by Sg_MapGetDirSelect: 0 master, 2 btlmaster, 1 sugi (byte 0x013034b9 set: sugi path into g_DebugLine, master/<name[..4]>/<name[..6]>, dbgPrintf shd/dir), other: the frame's buffer unset; yiMapSetup(objects .vpb, textures .txb); Sg_PcRead(<debug line or dir>/ffxmap.id) into Sg_IdFixupAndSet; ported (ffx_sg::state, main round 16)
 0x00844eb0 function Sg_MapInitAll             # fh v3:bsim1.00 0x00844eb0
 0x00844f90 function Sg_MapSetDirSelect        # fh v3:bsim1.00 0x00844f90
 0x00844fa0 function Sg_MapSetEnableShade      # (v): byte 0x013034b9 = v; partner of Sg_MapGetEnableShade
@@ -13286,7 +13288,7 @@
 0x00a42c00 function PcFileName_00a42c00         # (loc) -> 0x01a85c30 or 0: the PC name of CD name-table entry loc ($USER$ -> Sg_GetUserName2, set_read_chgname pairs, dbg_/200thunder_/full_ prefixes), "file name NULL !!!!!"; callers CDfileName_PC 0xa42830, 0xa42850 and the file-size readers; ported (cd.rs); name ours
 0x00a42f30 function clear_read_chgname        # fh v3:exact 0x00a42f30
 0x00a42fa0 function GetFullArenaLocalization # () -> u32 at 0x01a85ba8; name ours
-0x00a42fc0 function pc_fat_index_filename_set    # str-match switch: only user of 5 string(s) held once by both builds, e.g. 'host0:/ffx/proj/battle/jp/cddata/cdrom.mdg'; Switch 0x71008588c0 pc_fat_index_filename_set (symbols from Fahrenheit's server export)
+0x00a42fc0 function pc_fat_index_filename_set    # str-match switch: only user of 5 string(s) held once by both builds, e.g. 'host0:/ffx/proj/battle/jp/cddata/cdrom.mdg'; Switch 0x71008588c0 pc_fat_index_filename_set (symbols from Fahrenheit's server export); (): MsSetCountryName(frame); g_FFXHddMode 0: tables 0x02310c68/6c/70 from pc_ReadWholeFile x2 and 0x00a42ab0 of the three cddata paths, else the two letters into the cdidx paths (+0x1a) and their two tables, third 0; eax the last read; ported (ffx_sg::cdread, main round 16)
 0x00a43080 function pc_module_sizetbl_set     # fh v3:cg2 0xa43080; cdecl() -> eax: MsSetCountryName(local 0x10-byte buffer, unused after), then pc_ReadWholeFile_00a42a00("host0:/ffx/proj/prog/cdidx/jp/modulesize.bin" 0x00c85e44, 0) returned (the same code as pc_sizetbl_set but the path); ported in ffx_sg::cdread (main round 15)
 0x00a430c0 function pc_sizetbl_set            # fh v3:cg2 0xa430c0; cdecl() -> eax: as pc_module_sizetbl_set with ".../sizetbl.bin" (0x00c85e18); ported in ffx_sg::cdread (main round 15)
 0x00a43100 function pc_sizetbl_set_Ex         # fh v3:exact 0x00a43100; cdecl() -> eax: pc_ReadWholeFile_00a42a00(".../sizetbl.vita.bin" 0x00c85e74, &g_Cd_ExSizeCount), the byte count made words (/ 4 toward zero), the block returned; ported in ffx_sg::cdread (main round 15)
@@ -13395,7 +13397,7 @@
 0x00a547e0 function GetGlobal01a85f70_00a547e0   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01a85f70]; return t0; callers: ; name ours
 0x00a54810 function eiAbmLoad                 # fh v3:exact 0x00a54810
 0x00a54860 function eiAbmParaGet              # fh v3:exact+call.cs 0x00a54860 cdecl
-0x00a54ab0 function eiAbmSetLang              # fh v3:exact 0x00a54ab0
+0x00a54ab0 function eiAbmSetLang              # fh v3:exact 0x00a54ab0; (): CD library table read (g_CdLib+0x10) 7 if MsGetSaveConfigEnglish else 0xd, then sphere/panel .bin through getExcelBinSize into a user_malloc block, memcpy over *0x01a860e4 / *0x01a860e0, freed; read wait (g_CdLib+8), FlushCache(0) (eax); ported (ffx_sg::abmap, main round 16)
 0x00a54b40 function eiAbmStart                # fh v3:exact 0x00a54b40
 0x00a56160 function AbmapPadActivateHandler  # (panel, entry, choice, confirmed) -> g_Abmap: AbmapResetHelp; choice 0: sfx 0x80000052, spendSlv(+0x115bc, +0x1161c); 1: cancel sfx, the character's bit off pending links (+2 bit 3; +0x116ac = 1), back on +0x11630 (AbmapSetChrMarker, AbmapPositionPlyTag, +0x115c7 = 1, AbmapResetCursorCamera, AbmapInitHoming 0.5, AbmapState_HomeOnNode pushed); then link nibbles +2 cleared, g_AbmapPad+0x1d63 = 0, +0x16c0.. copied, +0x1161c = 0; a g_AbmapPad +0x2704 handler; name ours; ported in ffx-pcui panel (pc-ui round 7)
 0x00a563b0 function AbmapUpdateMovingChrPos   # fh v3:exact 0x00a563b0 +AbmapUpdateMovingChrPos

@@ -2165,6 +2165,41 @@ ported! {
     Cam_SetScreenVector @ 0x007b_c890 => extern "C" fn cam_set_screen_vector(screen: u32, x: i32, y: i32, z: i32, w: i32, v: u32) -> u32 {
         camera::bridge::set_screen_vector(&mut mem(), screen, [x, y, z, w], v)
     }
+    /// `Sg_LightSetColorRGB(kind, r, g, b)`.
+    Sg_LightSetColorRGB @ 0x0083_6400 => extern "C" fn sg_light_set_color_rgb(kind: u32, r: f32, g: f32, b: f32) -> u32 {
+        light::bridge::sg_light_set_color_rgb(&mut mem(), kind, r, g, b)
+    }
+    /// `Light_Set(light, r, g, b, pitch, yaw)`: the CRT's sine and cosine.
+    Light_Set @ 0x0083_6520 => extern "C" fn light_set(light: u32, r: i32, g: i32, b: i32, pitch: i32, yaw: i32) -> u32 {
+        light::bridge::light_set(&mut mem(), &crt_vector_trig, light, [r, g, b], pitch, yaw)
+    }
+    /// `eiAbmSetLang()`.
+    eiAbmSetLang @ 0x00a5_4ab0 => extern "C" fn ei_abm_set_lang() -> u32 {
+        abmap::bridge::ei_abm_set_lang(&mut mem())
+    }
+    /// `pc_fat_index_filename_set()`: the country name in this frame.
+    pc_fat_index_filename_set @ 0x00a4_2fc0 => extern "C" fn pc_fat_index_filename_set() -> u32 {
+        let mut w = super::StackFrame::<{ cdread::bridge::FAT_COUNTRY_WORK as usize / 4 }>::new();
+        cdread::bridge::pc_fat_index_filename_set(&mut mem(), w.at())
+    }
+    /// `Sg_LoadVramResource()`: the store request in this frame.
+    Sg_LoadVramResource @ 0x0083_fc50 => extern "C" fn sg_load_vram_resource() -> u32 {
+        let mut w = super::StackFrame::<{ gs::bridge::STORE_IMAGE_WORK as usize / 4 }>::new();
+        gs::bridge::load_vram_resource(&mut mem(), w.at(), &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Sg_CameraSetPlayer()`: the CRT's sine and cosine.
+    Sg_CameraSetPlayer @ 0x0083_f2e0 => extern "C" fn sg_camera_set_player() -> u32 {
+        state::bridge::camera_set_player(&mut mem(), &crt_vector_trig)
+    }
+    /// `Sg_EffectReadPoll()`.
+    Sg_EffectReadPoll @ 0x0082_2250 => extern "C" fn sg_effect_read_poll() -> u32 {
+        state::bridge::effect_read_poll(&mut mem())
+    }
+    /// `Sg_MapInit()`: the three paths in this frame.
+    Sg_MapInit @ 0x0084_4d10 => extern "C" fn sg_map_init() {
+        let mut w = super::StackFrame::<{ state::bridge::MAP_INIT_WORK as usize / 4 }>::new();
+        state::bridge::map_init(&mut mem(), w.at());
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in
