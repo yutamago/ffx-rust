@@ -11866,6 +11866,307 @@ pub mod bridge {
         let f = r(mem, 0x008c_5280);
         call(mem, f, &[name])
     }
+    /// `MenuItem_DrawRowPairs(window, _, pair, x, y)` (`0x008daea0`, own
+    /// name; caller `0x008da470`; `x`, `y` `f32`): ten pairs of
+    /// `MenuItem_DrawRow(window, x', y', row)`, rows `2 pair + k` for `k`
+    /// in `0..20`, the left one at `x' = f32(graphicUiRemapX2(210) + x)`,
+    /// the right one at `f32(graphicUiRemapX2(978) + x)` (both remapped
+    /// again for every pair), `y'` from `y` and after each pair
+    /// `f32(graphicUiRemapY2(77) + y')`. The original's `eax` is what the
+    /// last remap leaves (no caller reads it).
+    pub fn menu_item_draw_row_pairs<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        pair: u32,
+        [x, y]: [f32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, round_trip, store};
+        let draw = mem.rebase(0x008d_af50);
+        let mut top = round_trip(y).to_bits();
+        let mut row = pair.wrapping_mul(2);
+        for _ in 0..10 {
+            for (k, column) in [(0, 210.0), (1, 978.0)] {
+                let left = store(add(remap(mem, false, column), load(x.to_bits())));
+                call(mem, draw, &[window, left, top, row.wrapping_add(k)]);
+            }
+            top = store(add(remap(mem, true, 77.0), load(top)));
+            row = row.wrapping_add(2);
+        }
+    }
+
+    /// `Pad_UpdateFrame(a, b)` (`0x00889790`, own name; caller
+    /// `TkScanControler`): with `work = TkGetControlerWork(a, b)`, the
+    /// previous frame `TkGetControlerFrame(work, 0)` is read, the ring's
+    /// newest index (`u8 +0x9c`) steps (`+1 & 3`) and the new frame `cur
+    /// = TkGetControlerFrame(work, 0)` gets the bytes `+0x80`, `+0x82` at
+    /// `+0`, `+1`. By the mode byte `+0x81` (read before the step): 1, the
+    /// live buttons: `u16 +0x98` at `+2` and `+4`, `+0x9a` at `+0x1e`, the
+    /// edges against the previous frame's `+2` at `+6` (pressed, `(old ^
+    /// new) & new`) and `+8` (released), the 16 bytes from `work + 0x84`
+    /// at `+0xc`, and `Pad_RepeatButtons` for slot 0 (`+0x98` against the
+    /// old `+2`) into `+0xa` and slot 1 (`+0x9a` against the old `+0x1e`)
+    /// into `+0x1c`; 2, the previous frame's 32 bytes copied (by words),
+    /// then the edges `+6..+0xc` and `+0x1c` cleared. Without the byte
+    /// `+0x9e`, `Pad_ResetWork(cur)`. Returns what the original leaves in
+    /// `eax`: `Pad_ResetWork`'s result, else the slot-1 repeats (mode 1),
+    /// 0 (mode 2) or the `u16 +0x9a`.
+    pub fn pad_update_frame<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let get_work = mem.rebase(0x0088_8ec0);
+        let get_frame = mem.rebase(0x0088_8b60);
+        let work = call(mem, get_work, &[a, b]);
+        let at = |o: u32| work.wrapping_add(o);
+        let prev = call(mem, get_frame, &[work, 0]);
+        let mode = mem.read::<u8>(at(0x81));
+        let newest = mem.read::<u8>(at(0x9c)).wrapping_add(1) & 3;
+        mem.write(at(0x9c), newest);
+        let cur = call(mem, get_frame, &[work, 0]);
+        let now = u32::from(mem.read::<u16>(at(0x98)));
+        let now2 = u32::from(mem.read::<u16>(at(0x9a)));
+        let v = mem.read::<u8>(at(0x80));
+        mem.write(cur, v);
+        let v = mem.read::<u8>(at(0x82));
+        mem.write(cur.wrapping_add(1), v);
+        let mut eax = now2;
+        match mode {
+            1 => {
+                let repeat = mem.rebase(0x0088_9940);
+                #[allow(clippy::cast_possible_truncation)] // u16 stores
+                let half = |v: u32| v as u16;
+                mem.write(cur.wrapping_add(0x1e), half(now2));
+                mem.write(cur.wrapping_add(2), half(now));
+                mem.write(cur.wrapping_add(4), half(now));
+                let old = u32::from(mem.read::<u16>(prev.wrapping_add(2)));
+                let old2 = u32::from(mem.read::<u16>(prev.wrapping_add(0x1e)));
+                let changed = old ^ now;
+                mem.write(cur.wrapping_add(6), half(changed & now));
+                mem.write(cur.wrapping_add(8), half(changed & old));
+                for k in 0..16 {
+                    let v = mem.read::<u8>(at(0x84 + k));
+                    mem.write(cur.wrapping_add(0xc + k), v);
+                }
+                let r = call(mem, repeat, &[work, cur, now, old, 0]);
+                mem.write(cur.wrapping_add(0xa), half(r));
+                eax = call(mem, repeat, &[work, cur, now2, old2, 1]);
+                mem.write(cur.wrapping_add(0x1c), half(eax));
+            }
+            2 => {
+                for k in 0..8 {
+                    let v = mem.read::<u32>(prev.wrapping_add(4 * k));
+                    mem.write(cur.wrapping_add(4 * k), v);
+                }
+                mem.write(cur.wrapping_add(6), 0u32);
+                mem.write(cur.wrapping_add(0xa), 0u16);
+                mem.write(cur.wrapping_add(0x1c), 0u16);
+                eax = 0;
+            }
+            _ => {}
+        }
+        if mem.read::<u8>(at(0x9e)) == 0 {
+            let reset = mem.rebase(0x0088_8970);
+            eax = call(mem, reset, &[cur]);
+        }
+        eax
+    }
+
+    /// `TkMenuDrawAll()` (`0x008aa290`, own name; caller `0x008a9ca0`):
+    /// nothing while the first read is not done (`i8 0x01340859` 0), the
+    /// word `0x01871538` set and the map not 0x17e. Else
+    /// `TkMenuDrawInitString()`, `TkMenuDrawScissorClear()`, the
+    /// background `TODrawMenuBGC2(c0, c1)` unless `graphicGetAbmap()` is 1
+    /// (the colours from the bytes `0x025d167c, 7e, 7d, 7f` and `0x025d1678,
+    /// 7a, 79, 7b`, high byte first; both `0x80000000` in menu mode
+    /// `0x0040....`), `TkMenuDrawKick()`, `TkVU1SyncPath()`,
+    /// `TkMenuDrawLayer(0)`, the draw callback `+4(menu)` of each of the 25
+    /// [`MENU_SLOTS`] menus whose bit is clear in `0x018408f0` (read each
+    /// time) and whose `+0x19` or `+0x1b` byte is set, the main task's
+    /// first word called, `TkMenuDrawLayer(1..=8)`, `TkMenuDrawKick()` and
+    /// (a tail jump) `TkVU1SyncPath()`, whose `eax` is returned (0 on the
+    /// early return, where the original leaves its caller's `eax`; the
+    /// caller does not read it).
+    pub fn tk_menu_draw_all<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        if mem.read::<u8>(r(mem, 0x0134_0859)) == 0
+            && mem.read::<u32>(r(mem, 0x0187_1538)) != 0
+            && mem.read::<u32>(r(mem, 0x0133_0844)) != 0x17e
+        {
+            return 0;
+        }
+        for f in [0x008d_ce30, 0x008d_d440] {
+            let f = r(mem, f);
+            call(mem, f, &[]);
+        }
+        let colour = |mem: &M, bytes: [u32; 4]| {
+            bytes.iter().fold(0u32, |c, &a| {
+                (c << 8) | u32::from(mem.read::<u8>(mem.rebase(a)))
+            })
+        };
+        let mut c0 = colour(mem, [0x025d_167c, 0x025d_167e, 0x025d_167d, 0x025d_167f]);
+        let mut c1 = colour(mem, [0x025d_1678, 0x025d_167a, 0x025d_1679, 0x025d_167b]);
+        if MN2_MENU_MODE.get(mem) & 0xffff_0000 == 0x0040_0000 {
+            (c0, c1) = (0x8000_0000, 0x8000_0000);
+        }
+        let f = r(mem, 0x0064_1060);
+        if call(mem, f, &[]) != 1 {
+            let f = r(mem, 0x008f_5c60);
+            call(mem, f, &[c0, c1]);
+        }
+        let (kick, sync, layer) = (
+            r(mem, 0x008d_ce50),
+            r(mem, 0x0088_ec60),
+            r(mem, 0x008a_9690),
+        );
+        call(mem, kick, &[]);
+        call(mem, sync, &[]);
+        call(mem, layer, &[0]);
+        let slots = MENU_SLOTS.ptr(mem).addr;
+        let mask = MENU_MAIN_ACTIVE_MASK.ptr(mem).addr.wrapping_add(4);
+        for i in 0..25u32 {
+            let menu = mem.read::<u32>(slots.wrapping_add(i * 4));
+            if menu == 0 || mem.read::<u32>(mask) & (1 << i) != 0 {
+                continue;
+            }
+            if mem.read::<u8>(menu.wrapping_add(0x19)) == 0
+                && mem.read::<u8>(menu.wrapping_add(0x1b)) == 0
+            {
+                continue;
+            }
+            let f = mem.read::<u32>(menu.wrapping_add(4));
+            if f != 0 {
+                call(mem, f, &[menu]);
+            }
+        }
+        let task = MENU_MAIN_TASK.get(mem);
+        if task != 0 {
+            let f = mem.read::<u32>(task);
+            call(mem, f, &[]);
+        }
+        for l in 1..=8 {
+            call(mem, layer, &[l]);
+        }
+        call(mem, kick, &[]);
+        call(mem, sync, &[])
+    }
+
+    /// `MenuSelList_CursorX(window)` (`0x008d1bc0`, own name; caller
+    /// `0x008d15a0`, which hands it to `TkMn2DrawCrossCursor`): the
+    /// cursor's x on a two-column list, in `ST0` (`f32`). The column's
+    /// left `base = f32(graphicUiRemapX2(970))` when bit 0 of `+0x48` (the
+    /// cursor) is set, else `f32(graphicUiRemapX2(210))`. Over the `u16
+    /// +0x30` entries of [`MENU_ITEM_LIST`] (count read each time) whose
+    /// byte `+3` is set, by the byte `+2`: 1 returns `f32(remapX2(140) +
+    /// base)` at once; 2 measures `AtelGetSummonNameforFinalBattleSelector
+    /// (id)`, 3 `TkMenuMenu1Mes(id + 0x1033)`, with
+    /// `ToGetBtlEasyFontWidth(text, &w, 0, 0.78, 1.0)` and keeps the
+    /// largest `w` (only a larger one, so NaNs are skipped). Then
+    /// `f32((remapX2(740) - widest) * 0.5 + base - remapX2(40))`. `local`
+    /// is `w`'s word (the original uses its argument slot).
+    pub fn menu_sel_list_cursor_x<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> f32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let column = if mem.read::<u8>(window.wrapping_add(0x48)) & 1 == 0 {
+            210.0
+        } else {
+            970.0
+        };
+        let base = store(remap(mem, false, column));
+        let list = MENU_ITEM_LIST.ptr(mem).addr;
+        let count = |mem: &M| u32::from(mem.read::<u16>(window.wrapping_add(0x30)));
+        let width = mem.rebase(0x0090_5290);
+        let mut widest = 0f32.to_bits();
+        let mut i = 0u32;
+        while i < count(mem) {
+            let entry = list.wrapping_add(i * 4);
+            if mem.read::<u8>(entry.wrapping_add(3)) != 0 {
+                let id = u32::from(mem.read::<u16>(entry));
+                let text = match mem.read::<u8>(entry.wrapping_add(2)) {
+                    1 => {
+                        let x = add(remap(mem, false, 140.0), load(base));
+                        return f32::from_bits(store(x));
+                    }
+                    2 => Some((0x0087_3b50, id)),
+                    3 => Some((0x008d_dfc0, id + 0x1033)),
+                    _ => None,
+                };
+                if let Some((f, arg)) = text {
+                    let f = mem.rebase(f);
+                    let text = call(mem, f, &[arg]);
+                    let scale = [0.78f32.to_bits(), 1f32.to_bits()];
+                    call(mem, width, &[text, local, 0, scale[0], scale[1]]);
+                    let w = mem.read::<u32>(local);
+                    if load(w) > load(widest) {
+                        widest = store(load(w));
+                    }
+                }
+            }
+            i += 1;
+        }
+        let span = sub(remap(mem, false, 740.0), load(widest));
+        let left = add(mul(span, 0.5), load(base));
+        f32::from_bits(store(sub(left, remap(mem, false, 40.0))))
+    }
+
+    /// `TkMn2DrawCrossSummonBattleCountPlate(x, y, chr)` (`0x008cd720`,
+    /// Fahrenheit's name; caller `TkMn2DrawSummonPlateCheckHP`; `x`, `y`
+    /// `f32`): with `p = MsGetSavePlayerPtr(chr)`, the plate
+    /// `TOMkpShapeXYWHUVC2(-1, x, f32(remapY2(5) + y), f32(remapX2(424)),
+    /// f32(remapY2(54)), 1515, 170, 1959, 228, 0x803c3e1a, 0x3c3e1a)` (the
+    /// remaps in the order 54, 424, 5); the caption
+    /// `TOMkpCrossExtMesFontLClut(0, TkMenuStatusMes(0x18), tx, ty, 0x53,
+    /// 0.78, 1.0)` with `tx = f32(remapX2(300) + x)` and
+    /// `ty = f32(remapY2(12) + y)` (y remapped first); the count
+    /// `TkMn2SetMacroParam(4, 1, u8 p[0x3d])`; and the same line for
+    /// `TkMenuStatusMes(0x19)` at `remapX2(86)` with flags 0, whose `eax`
+    /// is returned.
+    pub fn tk_mn2_draw_cross_summon_battle_count_plate<M: Mem>(
+        mem: &mut M,
+        [x, y]: [f32; 2],
+        chr: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, round_trip, store};
+        let get_player = mem.rebase(0x0078_5330);
+        let player = call(mem, get_player, &[chr]);
+        let height = store(remap(mem, true, 54.0));
+        let width = store(remap(mem, false, 424.0));
+        let top = store(add(remap(mem, true, 5.0), load(y.to_bits())));
+        let uv = [1515f32, 170.0, 1959.0, 228.0].map(f32::to_bits);
+        let xb = round_trip(x).to_bits();
+        let shape = mem.rebase(0x0090_3ee0);
+        #[rustfmt::skip]
+        call(mem, shape, &[0xffff_ffff, xb, top, width, height, uv[0], uv[1], uv[2], uv[3], 0x803c_3e1a, 0x003c_3e1a]);
+        let mes = mem.rebase(0x008d_e140);
+        let font = mem.rebase(0x0090_16b0);
+        let scale = [0.78f32.to_bits(), 1f32.to_bits()];
+        let mut eax = 0;
+        for (column, id, flags) in [(300.0, 0x18, 0x53), (86.0, 0x19, 0)] {
+            if id == 0x19 {
+                let count = u32::from(mem.read::<u8>(player.wrapping_add(0x3d)));
+                let macro_param = mem.rebase(0x008c_2c60);
+                call(mem, macro_param, &[4, 1, count]);
+            }
+            let ty = store(add(remap(mem, true, 12.0), load(y.to_bits())));
+            let tx = store(add(remap(mem, false, column), load(x.to_bits())));
+            let text = call(mem, mes, &[id]);
+            eax = call(mem, font, &[0, text, tx, ty, flags, scale[0], scale[1]]);
+        }
+        eax
+    }
 }
 
 #[cfg(test)]

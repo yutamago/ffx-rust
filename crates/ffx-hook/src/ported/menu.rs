@@ -4147,6 +4147,28 @@ ported! {
     NameInputChrChange @ 0x008c_33f0 => extern "C" fn name_input_chr_change(chr: u32) -> u32 {
         tk::name_input_chr_change(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_DrawRowPairs(window, _, pair, x, y)`: ten row pairs.
+    MenuItem_DrawRowPairs @ 0x008d_aea0 => extern "C" fn menu_item_draw_row_pairs(window: u32, _unused: u32, pair: u32, x: f32, y: f32) {
+        tk::menu_item_draw_row_pairs(&mut mem(), window, pair, [x, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Pad_UpdateFrame(a, b)`: `Pad_ResetWork`'s or the last value's `eax`.
+    Pad_UpdateFrame @ 0x0088_9790 => extern "C" fn pad_update_frame(a: u32, b: u32) -> u32 {
+        tk::pad_update_frame(&mut mem(), a, b, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuDrawAll()`: `TkVU1SyncPath`'s result.
+    TkMenuDrawAll @ 0x008a_a290 => extern "C" fn tk_menu_draw_all() -> u32 {
+        tk::tk_menu_draw_all(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSelList_CursorX(window)`: in `ST0`.
+    MenuSelList_CursorX @ 0x008d_1bc0 => extern "C" fn menu_sel_list_cursor_x(window: u32) -> f32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_sel_list_cursor_x(&mut mem(), window, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2DrawCrossSummonBattleCountPlate(x, y, chr)`: the last font call's `eax`.
+    TkMn2DrawCrossSummonBattleCountPlate @ 0x008c_d720 => extern "C" fn tk_mn2_draw_cross_summon_battle_count_plate(x: f32, y: f32, chr: u32) -> u32 {
+        tk::tk_mn2_draw_cross_summon_battle_count_plate(&mut mem(), [x, y], chr, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `inputGetCurTime()` (`0x00630c60`) through the game's entry: the result
