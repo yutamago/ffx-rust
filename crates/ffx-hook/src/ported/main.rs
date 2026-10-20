@@ -4,8 +4,8 @@
 
 use ffx_sg::quat::Crt;
 use ffx_sg::{
-    camera, cdread, chpacket, cloth, control, decode, envelope, gs, light, player, quat, savecmd,
-    seq, state, vec,
+    abmap, camera, cdread, chpacket, cloth, control, decode, envelope, gs, light, player, quat,
+    savecmd, seq, state, vec,
 };
 
 use super::{mem, ported};
@@ -1219,6 +1219,24 @@ ported! {
     /// `KernelSaveCommand_3075_00770ee0(chr)`: `MsGetSaveCommand(chr, 0x3075)`.
     KernelSaveCommand_3075_00770ee0 @ 0x0077_0ee0 => extern "C" fn kernel_save_command_00770ee0(chr: u32) -> u32 {
         savecmd::bridge::kernel_save_command(&mut mem(), 0x0077_0ee0, chr, call_sym)
+    }
+    /// `AbmapDrawNodeHalos()`.
+    AbmapDrawNodeHalos @ 0x00a5_0290 => extern "C" fn abmap_draw_node_halos() {
+        // laid out and aligned as the original's frame
+        #[repr(C, align(16))]
+        struct Work([u8; abmap::bridge::NODE_WORK as usize]);
+        let mut work = Work([0; abmap::bridge::NODE_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_draw_node_halos(&mut mem(), w, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `AbmapDrawNodeSpheres()`.
+    AbmapDrawNodeSpheres @ 0x00a5_05e0 => extern "C" fn abmap_draw_node_spheres() {
+        // laid out and aligned as the original's frame
+        #[repr(C, align(16))]
+        struct Work([u8; abmap::bridge::NODE_WORK as usize]);
+        let mut work = Work([0; abmap::bridge::NODE_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_draw_node_spheres(&mut mem(), w, &mut |_, f, a| super::call_cdecl(f, a));
     }
     /// `sa_meth01dec(src, dst, size)`.
     sa_meth01dec @ 0x00a4_3bc0 => extern "C" fn sa_meth01dec(src: u32, dst: u32, size: u32) -> u32 {

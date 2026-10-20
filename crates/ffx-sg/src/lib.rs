@@ -4,6 +4,7 @@
 //! becomes a core (portable, on its own types) and a `bridge` function
 //! over game memory (`docs/porting.md`), one module per area.
 
+pub mod abmap;
 pub mod assert;
 pub mod camera;
 pub mod cdread;

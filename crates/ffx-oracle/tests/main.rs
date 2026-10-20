@@ -5632,3 +5632,309 @@ fn save_command_original_snapshot() {
     let mut rng = Xorshift(0x5eed_0f05);
     save_command_cases(&mut a, &mut b, &mut rng, 2, false);
 }
+
+// Main round 15: the sphere grid draws (`ffx_sg::abmap`).
+
+/// A cdecl logging stand-in: appends the words of the arguments `args`,
+/// `len` bytes at argument `ptr` and 0x40 bytes behind each of its pointer
+/// fields `fields` to `log + 4 + count * entry` (`count` at `log`); the
+/// logged pointer fields are made relative to the struct (frames differ,
+/// the layout must not). Returns 0; keeps `esi`/`edi`.
+fn deref_logger(log: u32, args: &[u8], ptr: u8, len: u32, fields: &[u8]) -> (Vec<u8>, u32) {
+    let fields_len = 0x40 * u32::try_from(fields.len()).unwrap();
+    let args_len = 4 * u32::try_from(args.len()).unwrap();
+    let entry = args_len + len + fields_len;
+    let arg_at = |i: u8| 0x0c + 4 * i; // after the two pushes and the return
+    let mut c = vec![0x56, 0x57, 0xa1]; // push esi; push edi; mov eax, [log]
+    c.extend(log.to_le_bytes());
+    c.extend([0x69, 0xf8]); // imul edi, eax, entry
+    c.extend(entry.to_le_bytes());
+    c.extend([0x81, 0xc7]); // add edi, log + 4
+    c.extend((log + 4).to_le_bytes());
+    c.extend([0xff, 0x05]); // inc dword [log]
+    c.extend(log.to_le_bytes());
+    for &i in args {
+        c.extend([0x8b, 0x44, 0x24, arg_at(i), 0xab]); // mov eax, [esp+..]; stosd
+    }
+    c.extend([0x8b, 0x74, 0x24, arg_at(ptr), 0xb9]); // mov esi, [esp+..]; mov ecx, len/4
+    c.extend((len / 4).to_le_bytes());
+    c.extend([0xf3, 0xa5]); // rep movsd
+    for &f in fields {
+        c.extend([0x8b, 0x74, 0x24, arg_at(ptr), 0x8b, 0x76, f]); // mov esi, [[esp+..]+f]
+        c.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]);
+    }
+    c.extend([0x81, 0xef]); // sub edi, len + fields: back to the struct's copy
+    c.extend((len + fields_len).to_le_bytes());
+    for &f in fields {
+        // mov eax, [edi+f]; test eax, eax; jz +4; sub eax, [esp+ptr]; mov [edi+f], eax
+        c.extend([
+            0x8b,
+            0x47,
+            f,
+            0x85,
+            0xc0,
+            0x74,
+            0x04,
+            0x2b,
+            0x44,
+            0x24,
+            arg_at(ptr),
+        ]);
+        c.extend([0x89, 0x47, f]);
+    }
+    c.extend([0x31, 0xc0, 0x5f, 0x5e, 0xc3]); // xor eax, eax; pop edi; pop esi; ret
+    (c, entry)
+}
+
+/// Puts `code` in both and jumps `sym` there.
+fn redirect_to(a: &mut Oracle, b: &mut Oracle, sym: u32, code: &[u8]) {
+    let at = a.alloc_code(code).unwrap();
+    assert_eq!(b.alloc_code(code).unwrap(), at);
+    for o in [a, b] {
+        let from = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(at.wrapping_sub(from + 5).to_le_bytes());
+        o.write(from, &j).unwrap();
+    }
+}
+
+/// Random float bits in `[-m, m)`.
+fn float_within(rng: &mut Xorshift, m: f32) -> u32 {
+    #[allow(clippy::cast_precision_loss)] // a fraction
+    let t = rng.below(1 << 20) as f32 / (1 << 20) as f32;
+    (m * (2.0 * t - 1.0)).to_bits()
+}
+
+/// A sphere grid in `ab`: `nodes` nodes (x, y `i16`, kind `u16 +6`, some
+/// 0xffff), 16 kinds with sizes, the cursor near the nodes, its range, a
+/// view matrix; the EE zero register and models random.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_precision_loss
+)] // bytes and halves of random words, small floats
+fn abmap_grid(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, ab: u32, nodes: u32) {
+    put(a, b, ab + 2, nodes as u16);
+    let span = [64, 256, 1024][rng.below(3) as usize];
+    for k in 0..nodes {
+        let n = ab + 0x808 + 0x28 * k;
+        let bytes: Vec<u8> = (0..0x28).map(|_| rng.next() as u8).collect();
+        a.write(n, &bytes).unwrap();
+        b.write(n, &bytes).unwrap();
+        put(a, b, n, (rng.below(2 * span) as i32 - span as i32) as i16);
+        put(
+            a,
+            b,
+            n + 2,
+            (rng.below(2 * span) as i32 - span as i32) as i16,
+        );
+        let z = if rng.below(4) == 0 {
+            rng.next() as i16 / 64
+        } else {
+            0
+        };
+        put(a, b, n + 4, z);
+        let kind = if rng.below(6) == 0 {
+            0xffff
+        } else {
+            rng.below(16) as u16
+        };
+        put(a, b, n + 6, kind);
+    }
+    for k in 0..16 {
+        let size = match rng.below(32) {
+            0 => 0x7fc0_0000,
+            1 => 0,
+            _ => float_within(rng, 2.0),
+        };
+        put(a, b, ab + 0xf838 + 0x30 * k, size);
+        put(a, b, ab + 0xf83c + 0x30 * k, rng.next() as u16);
+    }
+    for i in 0..3 {
+        let m = if i == 2 {
+            span as f32 / 8.0
+        } else {
+            span as f32
+        };
+        put(a, b, ab + 0x11520 + 4 * i, float_within(rng, m));
+    }
+    let range = match rng.below(8) {
+        0 => 0,
+        1 => 0x7fc0_0000,
+        _ => (rng.below(span * 2) as f32 + 1.0).to_bits(),
+    };
+    put(a, b, ab + 0x115a0, range);
+    for i in 0..16 {
+        put(a, b, ab + 0x113e0 + 4 * i, float_within(rng, 2.0));
+    }
+    put(a, b, ab + 0x116a4, rng.next());
+    let r0 = a.rebase(0x00c8_f508);
+    for i in 0..4 {
+        put(
+            a,
+            b,
+            r0 + 4 * i,
+            if rng.below(2) == 0 { 0 } else { rng.next() },
+        );
+    }
+    for m in [0x0230_57ec, 0x0230_57f4] {
+        let at = a.rebase(m);
+        put(a, b, at, rng.next());
+    }
+}
+
+/// Fills the frames in both with the same 16-byte pattern, so the
+/// requests' unset fields read alike (both frames are 16-byte aligned).
+fn fill_frames(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, work: u32, len: usize) {
+    let unit: Vec<u8> = (0..16).map(|_| rng.next().to_le_bytes()[0]).collect();
+    let top = a.stack_range().end;
+    let pattern: Vec<u8> = unit.iter().copied().cycle().take(0x2f00).collect();
+    a.write(top - 0x3000, &pattern).unwrap();
+    b.write(work, &pattern[..len]).unwrap();
+}
+
+/// One node at the origin (kind 0, size 1) and the cursor at `(x, y, 0)`
+/// with range `r`: the halo's rounding and boundary cases.
+fn halo_edge(a: &mut Oracle, b: &mut Oracle, ab: u32, r: f32, x: f32, y: f32) {
+    put(a, b, ab + 2, 1u16);
+    for o in [0u32, 2, 4] {
+        put(a, b, ab + 0x808 + o, 0u16);
+    }
+    put(a, b, ab + 0x808 + 6, 0u16);
+    put(a, b, ab + 0xf838, 1f32.to_bits());
+    put(a, b, ab + 0x115a0, r.to_bits());
+    put(a, b, ab + 0x11520, x.to_bits());
+    put(a, b, ab + 0x11524, y.to_bits());
+    put(a, b, ab + 0x11528, 0u32);
+}
+
+fn node_halo_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as g;
+    let log = alloc(a, b, 4 + 0x170 * 30);
+    let (stub, _) = deref_logger(log, &[0, 2, 3], 1, 0x50, &[0x20, 0x2c, 0x44]);
+    redirect_to(a, b, g::MD_DRAW, &stub);
+    let ab = alloc(a, b, 0x1_4000);
+    set(a, b, g::ABMAP, ab);
+    let work = b.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let mut draws = 0;
+    // f32 roundings and bounds: d2, v, dist and 65536 / r rounded; v at
+    // 0x1000 exactly; d2 at r * r / 2 exactly
+    let edges: [(f32, f32, f32); 6] = [
+        (256.0, 59.458_03, 23.68),
+        (29.0, 7.25, 0.0),
+        (7.0, 1.749_999_9, 0.0),
+        (256.0, 16.0, 0.0),
+        (16.0, 8.0, 8.0),
+        (256.0, 64.0, 0.0),
+    ];
+    for n in 0..rounds + 6 {
+        if let Some(&(r, x, y)) = edges.get(n as usize) {
+            abmap_grid(a, b, rng, ab, 1);
+            halo_edge(a, b, ab, r, x, y);
+        } else {
+            let nodes = if n % 8 == 0 { 60 } else { rng.below(20) };
+            abmap_grid(a, b, rng, ab, nodes);
+        }
+        put(a, b, log, 0u32);
+        fill_frames(a, b, rng, work, g::NODE_WORK as usize);
+        twin("AbmapDrawNodeHalos", a, b, 0x00a5_0290, &[], |m| {
+            g::abmap_draw_node_halos(m, work, call);
+        });
+        draws += Mem::read::<u32>(a, log);
+    }
+    assert!(draws > rounds, "{draws} draws");
+}
+
+#[test]
+fn node_halos_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f06);
+    node_halo_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn node_halos_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f07);
+    node_halo_cases(&mut a, &mut b, &mut rng, 100);
+}
+
+#[allow(clippy::cast_possible_truncation)] // bytes and halves of random words
+fn node_sphere_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as g;
+    let log = alloc(a, b, 4 + 0x170 * 7 * 64);
+    let (stub, _) = deref_logger(log, &[0, 2, 3], 1, 0x50, &[0x20, 0x2c, 0x44]);
+    redirect_to(a, b, g::MD_DRAW_SPHE, &stub);
+    let ab = alloc(a, b, 0x1_4000);
+    set(a, b, g::ABMAP, ab);
+    let work = b.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let sin1 = a.rebase(0x00c4_4bf4);
+    for n in 0..rounds {
+        let nodes = if n % 8 == 0 { 60 } else { rng.below(12) };
+        abmap_grid(a, b, rng, ab, nodes);
+        // part offsets: 0x1000 for some kinds, else small
+        for k in 0..16 {
+            let rec = ab + 0xf83c + 0x30 * k;
+            put(a, b, rec, if rng.below(4) == 0 { 0x1000u16 } else { 0 });
+            for i in 0..14 {
+                put(a, b, rec + 2 * i, (rng.below(0x200) as i16) - 0x100);
+            }
+            if rng.below(4) == 0 {
+                put(a, b, rec, 0x1000u16);
+            }
+        }
+        put(a, b, ab + 0x115c9, rng.next() as u8);
+        put(a, b, ab + 0x11698, rng.next());
+        if n == 0 {
+            // a sine where 0.15 as f32 and as f64 truncate apart (-3, -2):
+            // entry 1 for node 0, every node lit
+            put(a, b, sin1, 0x3e55_5555u32);
+            put(a, b, ab + 0x11698, 0u32);
+            put(a, b, ab + 0x115c9, 0xffu8);
+            for k in 0..nodes {
+                let node = ab + 0x808 + 0x28 * k;
+                put(a, b, node + 0x26, 0x10u16);
+                put(a, b, node + 0x21, 0xffu8);
+                put(a, b, node + 6, 1u16);
+            }
+            put(a, b, ab + 0xf83c + 0x30, 0u16);
+        }
+        put(a, b, log, 0u32);
+        fill_frames(a, b, rng, work, g::NODE_WORK as usize);
+        twin("AbmapDrawNodeSpheres", a, b, 0x00a5_05e0, &[], |m| {
+            g::abmap_draw_node_spheres(m, work, call);
+        });
+    }
+}
+
+#[test]
+fn node_spheres_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f08);
+    node_sphere_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn node_spheres_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f09);
+    node_sphere_cases(&mut a, &mut b, &mut rng, 60);
+}

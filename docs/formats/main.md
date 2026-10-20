@@ -816,3 +816,30 @@ A reference starting at `out < dst + 0x7ff` (method 1) or
 copies unchecked: method 1 at `dst + 0x7ff` with distance 0x800 reads
 `dst[-1]`. Method 2's bound can change nothing (its distance is at most
 0x1000).
+
+## Round 15: sphere grid halos and node spheres (`crates/ffx-sg/src/abmap.rs`)
+
+`AbmapDrawNodeHalos` (`0x00a50290`) and `AbmapDrawNodeSpheres`
+(`0x00a505e0`), both from the grid's draw pass `0x00a54660`, build an effect
+draw request in their frame (from `ebp - 0x140`, `ebp` 16-byte aligned):
+
+| offset | field |
+|---|---|
+| `+0x00` | kind: 0x44 halo; 0x2c lit part, 0x24 dark part (spheres: left as it was for empty nodes) |
+| `+0x04` | `g_AbmapFile` (`0x01740870`) |
+| `+0x08` | `u16`: 0x48 halo, 0x8064 sphere |
+| `+0x18` | RGBA tint (halo 0x808080, alpha `a >> 3`) |
+| `+0x20` | view (`g_Abmap + 0x113e0`) times the node matrix, at `+0x78` of the request |
+| `+0x24`, `+0x28` | `g_Abmap + 0x11560`, `g_Abmap + 0x11520` |
+| `+0x2c` | the node (or part) matrix, at `+0xb8` |
+| `+0x44` | four vectors at `+0xf8`: the EE zero register (`0x00c8f508`), the last `(r0.x, r0.y, depth, 1)` |
+| `+0x4c`, `+0x4d` | halo bytes 0 and `2a` |
+
+`+0x0b`, `+0x30`, `+0x34` and `+0x48` are never set. Halos go through
+`op1_md_draw_eiabm(model, request, 4, g_Abmap[+0x116a4])` on nodes in
+`(r / 16, r / sqrt 2)` of the cursor (`v = ftol(dist * 65536 / r)`), 25 at
+most. Spheres draw seven parts per node through
+`op1_md_draw_eiabm_sphe(model, request, node, part)`; part offsets are `i16`
+pairs from `+0xf83c` of the kind's record (0x1000 first: no offsets), colours
+from `0x00c8659c` (panel bit set, scaled by `(0x6c - ftol(-14.4 sin)) / 128`)
+or `0x00c86644`.
