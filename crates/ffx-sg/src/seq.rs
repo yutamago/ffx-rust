@@ -1148,4 +1148,126 @@ pub mod bridge {
             }
         }
     }
+
+    /// `SG_UpdateMotion`'s callees: `Ch_MotionLoopFrame(chr)`,
+    /// `SG_ApplyRawClip(chr, clip, t, frame)`, `Sg_GetKeepFps()`,
+    /// `SG_SeqFrame(chr)`, `SG_SampleChannels(chr)`,
+    /// `SG_BlendToTarget(chr, n)`, `SG_ApplyBones(chr)`.
+    pub const MOTION_LOOP_FRAME: u32 = 0x0083_92d0;
+    pub const APPLY_RAW_CLIP: u32 = 0x0083_8750;
+    pub const GET_KEEP_FPS: u32 = 0x0082_05a0;
+    pub const SEQ_FRAME: u32 = 0x0083_77c0;
+    pub const SAMPLE_CHANNELS: u32 = 0x0083_93c0;
+    pub const BLEND_TO_TARGET: u32 = 0x0083_95b0;
+    pub const APPLY_BONES: u32 = 0x0083_8f70;
+    /// `g_ChrMotionHalf` (motion at half speed) and the frame-rate scale
+    /// (`/ 256`) a kept frame rate applies (`0x023cbbec`).
+    pub const MOTION_HALF: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0130_17f8);
+    pub const KEEP_FPS_SCALE: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x023c_bbec);
+
+    /// `SG_UpdateMotion(chr, apply)` (`0x00838c90`, from `Ch_CalcMain`):
+    /// one frame of a character's motion. A raw clip (`+0x194` bit 0x40,
+    /// clip `+0x800`) with flag bit 31 advances its time `+0x740` by the
+    /// speed `i16 +0x754` (halved with `g_ChrMotionHalf`), wrapped into the
+    /// clip's `i16` length (x256), and applies the frame after it,
+    /// wrapped likewise; without bit 31 it loops the motion frame and then
+    /// samples, blends and applies like a sequence. A sequence (`+0x714`
+    /// set) takes the step `((speed * i16 +0x750) >> 8) * +0x7e0 / 0x1e00`
+    /// (scaled by `0x023cbbec / 256` when bit 0x100000 keeps the frame
+    /// rate) into `+0x756`, runs `SG_SeqFrame`, halves the step with
+    /// `g_ChrMotionHalf`, and with `apply` samples, blends over `i16
+    /// +0x752` frames (counting it down to 1) and applies the bones; the
+    /// step goes onto `+0x740`. Then a weapon (`+0x19c`, kinds 0x403d..=
+    /// 0x4041) copies three of its owner's vectors.
+    pub fn update_motion<H: ffx_bridge::Host>(h: &mut H, chr: u32, apply: u32) {
+        fn call(h: &mut impl ffx_bridge::Host, f: u32, args: &[u32]) -> u32 {
+            let f = h.rebase(f);
+            h.call(f, args)
+        }
+        let at = |o: u32| chr.wrapping_add(o);
+        let half = |h: &H, v: i32| if MOTION_HALF.get(h) != 0 { v / 2 } else { v };
+        let step = |h: &H| {
+            let a = i32::from(h.read::<i16>(at(0x750)));
+            let b = i32::from(h.read::<i16>(at(0x754)));
+            let k: i32 = h.read(at(0x7e0));
+            (a.wrapping_mul(b) >> 8).wrapping_mul(k) / 0x1e00
+        };
+        let flags: u32 = h.read(at(0x194));
+        let mut advance = None;
+        if flags & 0x40 != 0 {
+            let clip: u32 = h.read(at(0x800));
+            if clip == 0 {
+                return;
+            }
+            if flags & 0x8000_0000 != 0 {
+                let speed = half(h, i32::from(h.read::<i16>(at(0x754))));
+                let mut t = h.read::<i32>(at(0x740)).wrapping_add(speed);
+                h.write(at(0x740), t);
+                let len = |h: &H| i32::from(h.read::<i16>(clip)) << 8;
+                while t >= len(h) {
+                    t = t.wrapping_sub(len(h));
+                    h.write(at(0x740), t);
+                }
+                while t < 0 {
+                    t = t.wrapping_add(len(h));
+                    h.write(at(0x740), t);
+                }
+                let n = i32::from(h.read::<i16>(clip));
+                let mut frame = (t >> 8) + 1;
+                while frame >= n {
+                    frame -= n;
+                }
+                while frame < 0 {
+                    frame += n;
+                }
+                let raw: u32 = h.read(clip.wrapping_add(4));
+                call(
+                    h,
+                    APPLY_RAW_CLIP,
+                    &[chr, raw, t.cast_unsigned(), frame.cast_unsigned()],
+                );
+            } else {
+                call(h, MOTION_LOOP_FRAME, &[chr]);
+                let s = step(h);
+                advance = Some((half(h, s), true));
+            }
+        } else if h.read::<u32>(at(0x714)) != 0 {
+            let mut s = step(h);
+            if flags & 0x10_0000 != 0 && call(h, GET_KEEP_FPS, &[]) != 0 {
+                s = (s.cast_unsigned().wrapping_mul(KEEP_FPS_SCALE.get(h)) >> 8).cast_signed();
+            }
+            let [lo, hi, _, _] = s.to_le_bytes();
+            h.write(at(0x756), u16::from_le_bytes([lo, hi]));
+            call(h, SEQ_FRAME, &[chr]);
+            advance = Some((half(h, s), apply != 0));
+        }
+        if let Some((s, sample)) = advance {
+            if sample {
+                call(h, SAMPLE_CHANNELS, &[chr]);
+                let n = i32::from(h.read::<i16>(at(0x752))).cast_unsigned();
+                call(h, BLEND_TO_TARGET, &[chr, n]);
+                call(h, APPLY_BONES, &[chr]);
+                let blend: i16 = h.read(at(0x752));
+                if blend > 1 {
+                    let left = blend - 1;
+                    h.write(at(0x752), if left < 1 { 1 } else { left });
+                }
+            }
+            let t: i32 = h.read(at(0x740));
+            h.write(at(0x740), t.wrapping_add(s));
+        }
+        let owner: u32 = h.read(at(0x19c));
+        let kind: u16 = h.read(chr);
+        if owner == 0 || !(0x403d..=0x4041).contains(&kind) {
+            return;
+        }
+        for (from, to) in [(0xd44, 0x244), (0xea4, 0x3a4), (0x1004, 0x504)] {
+            // the owner and both pointers read again for each vector
+            let owner: u32 = h.read(at(0x19c));
+            let src: u32 = h.read(owner.wrapping_add(0x328));
+            let dst: u32 = h.read(at(0x328));
+            let v: [u32; 4] = h.read(src.wrapping_add(from));
+            h.write(dst.wrapping_add(to), v);
+        }
+    }
 }

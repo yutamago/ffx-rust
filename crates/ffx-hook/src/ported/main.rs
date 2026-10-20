@@ -2210,6 +2210,10 @@ ported! {
         let mut w = super::StackFrame::<4>::new();
         state::bridge::id_chr_move(&mut mem(), chr, w.at(), &mut |_, f, a| super::call_cdecl_f64(f, a));
     }
+    /// `SG_UpdateMotion(chr, apply)`.
+    SG_UpdateMotion @ 0x0083_8c90 => extern "C" fn sg_update_motion(chr: u32, apply: u32) {
+        seq::bridge::update_motion(&mut mem(), chr, apply);
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

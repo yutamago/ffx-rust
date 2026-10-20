@@ -7709,3 +7709,124 @@ fn id_chr_move_snapshot() {
     let mut rng = Xorshift(0x5eed_1018);
     id_chr_move_cases(&mut a, &mut b, &mut rng, 500);
 }
+
+/// `SG_UpdateMotion` over recorders: raw clips (bit 31 or not), sequences
+/// with and without the kept frame rate, both `apply`s, the half speed,
+/// blend counters around 1, weapons of the five kinds and others.
+fn update_motion_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::seq::bridge as sq;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    for (k, (sym, n)) in (1..).zip([
+        (sq::MOTION_LOOP_FRAME, 1),
+        (sq::APPLY_RAW_CLIP, 4),
+        (sq::GET_KEEP_FPS, 0),
+        (sq::SEQ_FRAME, 1),
+        (sq::SAMPLE_CHANNELS, 1),
+        (sq::BLEND_TO_TARGET, 2),
+        (sq::APPLY_BONES, 1),
+    ]) {
+        recorder(a, b, k, sym, n, 0);
+    }
+    let chr = alloc(a, b, 0x900);
+    let owner = alloc(a, b, 0x400);
+    let skins = [alloc(a, b, 0x600), alloc(a, b, 0x1100)];
+    let clip = alloc(a, b, 8);
+    let small = |rng: &mut Xorshift| -> i16 {
+        match rng.below(4) {
+            0 => rng.next().to_le_bytes()[0].into(),
+            1 => -i16::from(rng.next().to_le_bytes()[0]),
+            _ => i16::from_le_bytes(rng.next().to_le_bytes()[..2].try_into().unwrap()),
+        }
+    };
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..8 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        put(a, b, ret(a, 3), u32::from(rng.below(2) == 0));
+        let mut flags = rng.next() & !(0x40 | 0x8000_0000 | 0x10_0000);
+        if rng.below(2) == 0 {
+            flags |= 0x40;
+        }
+        if rng.below(2) == 0 {
+            flags |= 0x8000_0000;
+        }
+        if rng.below(2) == 0 {
+            flags |= 0x10_0000;
+        }
+        put(a, b, chr + 0x194, flags);
+        put(a, b, chr + 0x800, if rng.below(8) == 0 { 0 } else { clip });
+        let len = 1 + i32::from(rng.next().to_le_bytes()[0]) + 0x100 * i32::from(rng.below(2) == 0);
+        put(a, b, clip, i16::try_from(len).unwrap());
+        put(a, b, clip + 4, rng.next());
+        let speed = small(rng);
+        let half = rng.below(2) == 0;
+        set(a, b, sq::MOTION_HALF, u32::from(half));
+        let moved = if half {
+            i32::from(speed) / 2
+        } else {
+            i32::from(speed)
+        };
+        // the time after the move: anywhere, a multiple of the length, or -1
+        let t = match rng.below(4) {
+            0 => (len << 8) * rng.below(4).cast_signed(),
+            1 => -1,
+            _ => rng.int() << rng.below(10),
+        };
+        put(a, b, chr + 0x740, t.wrapping_sub(moved));
+        put(a, b, chr + 0x714, u32::from(rng.below(5) != 0));
+        put(a, b, chr + 0x750, small(rng));
+        put(a, b, chr + 0x754, speed);
+        put(
+            a,
+            b,
+            chr + 0x752,
+            [0i16, 1, 2, 3, small(rng)][rng.below(5) as usize],
+        );
+        put(a, b, chr + 0x7e0, rng.int());
+        set(a, b, sq::KEEP_FPS_SCALE, rng.below(0x200));
+        put(
+            a,
+            b,
+            chr,
+            [
+                0x403du16,
+                0x4041,
+                0x403c,
+                0x4042,
+                0x403f,
+                rng.next().to_le_bytes()[0].into(),
+            ][rng.below(6) as usize],
+        );
+        put(a, b, chr + 0x19c, if rng.below(4) == 0 { 0 } else { owner });
+        put(a, b, owner + 0x328, skins[1]);
+        put(a, b, chr + 0x328, skins[0]);
+        for k in 0..0x440 {
+            put(a, b, skins[1] + 4 * k, rng.next());
+        }
+        let apply = [0, 1, rng.next()][rng.below(3) as usize];
+        twin("SG_UpdateMotion", a, b, 0x0083_8c90, &[chr, apply], |m| {
+            sq::update_motion(&mut H(m), chr, apply);
+        });
+    }
+}
+
+#[test]
+fn update_motion_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1019);
+    update_motion_cases(&mut a, &mut b, &mut rng, 1500);
+}
+
+#[test]
+fn update_motion_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_101a);
+    update_motion_cases(&mut a, &mut b, &mut rng, 400);
+}
