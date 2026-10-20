@@ -1291,9 +1291,9 @@ through the game.
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.
 
-**241 functions, 41286 bytes** (137 named). By blockers: 0: 157, 1: 65, 2: 14, 3: 1, 4: 2, 5: 1, 7: 1.
+**214 functions, 40522 bytes** (120 named). By blockers: 0: 133, 1: 63, 2: 14, 4: 2, 5: 1, 7: 1.
 
-The battle loop's top level still open (ported in round 29: small leaves (the effect camera buffers, the screen camera byte, the reel entries, the VU0-style vector helpers, the language checks) and two copies of vfx ports; in round 28: `MsDebugFullCommand`, the camera request setters, `MsCameraSetSpline`(2), `MsAtelGetCameraID`, `MsGetComInfo`, `MsGetBasicDivide`, `MsGetDirDivide`, the results screen's weapon plate; `MsCameraProcess`, `MsScreenProcess` (run by the `gfx::live` wrapper) and `MsCameraProcess`' last steps in round 27, `MsCamSetBtl`, `MsCameraSetBtl`, `MsCameraMoveAcc`, `MsCameraMoveFrame`, `MsTransSpPos`, `MsSpCameraProcess`, `MsNumberDrawProcess` and `MsCameraProcess` leaves in round 26, the camera's `MsCameraMatrix`, `MsScreenMatrix`, shakes, screen moves and setters in round 25, `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below):
+The battle loop's top level still open (ported in round 29: small leaves (the effect camera buffers, the screen camera byte, the reel entries, the VU0-style vector helpers, the language checks), two copies of vfx ports, the actor and save accessors around MsGetChr (elements, Libra fields, motion bytes) and their wrappers (MsGetRomBtlText, MsSetChrVisibleMain, MsFieldItemGet(Mes), MsSetSavePartyMember, PasswordGetTotalIndex); in round 28: `MsDebugFullCommand`, the camera request setters, `MsCameraSetSpline`(2), `MsAtelGetCameraID`, `MsGetComInfo`, `MsGetBasicDivide`, `MsGetDirDivide`, the results screen's weapon plate; `MsCameraProcess`, `MsScreenProcess` (run by the `gfx::live` wrapper) and `MsCameraProcess`' last steps in round 27, `MsCamSetBtl`, `MsCameraSetBtl`, `MsCameraMoveAcc`, `MsCameraMoveFrame`, `MsTransSpPos`, `MsSpCameraProcess`, `MsNumberDrawProcess` and `MsCameraProcess` leaves in round 26, the camera's `MsCameraMatrix`, `MsScreenMatrix`, shakes, screen moves and setters in round 25, `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below):
 
 None: the battle loop's top level is ported.
 
@@ -1307,34 +1307,7 @@ None: the battle loop's top level is ported.
 | 0 | 1 | `0x0092cf00` | `MsDebugDrawBoard` |  |
 | 0 | 15 | `0x00780d00` | `MsBattleDraw` |  |
 | 0 | 15 | `0x007881b0` | `MsEffectReadError` |  |
-| 0 | 21 | `0x0078f8f0` | `MsGetRomBtlText` |  |
-| 0 | 21 | `0x0078fb60` | `MsMenuGetBtlEndText` |  |
-| 0 | 21 | `0x00796860` | `MsSetChrVisibleMain` |  |
-| 0 | 23 | `0x0078fae0` | `FUN_0078fae0` |  |
-| 0 | 23 | `0x0079af40` | `MsGetRamChrStr` |  |
-| 0 | 24 | `0x00788b70` | `MsEffectWeaponInit` |  |
-| 0 | 24 | `0x0078f910` | `FUN_0078f910` |  |
-| 0 | 24 | `0x0078fe80` | `MsMenuInvElement` |  |
-| 0 | 24 | `0x00790240` | `FUN_00790240` |  |
-| 0 | 25 | `0x00784e40` | `MsGetBattleMessageFlag` |  |
-| 0 | 25 | `0x0078fac0` | `FUN_0078fac0` |  |
-| 0 | 25 | `0x00795640` | `MsGetChrMotionLevel` |  |
-| 0 | 25 | `0x007aaff0` | `FUN_007aaff0` |  |
-| 0 | 25 | `0x00874200` | `MsSetSaveCommandWithPrefix` |  |
-| 0 | 26 | `0x00798fd0` | `MsFieldItemGet` |  |
 | 0 | 27 | `0x007b75a0` | `FUN_007b75a0` |  |
-| 0 | 28 | `0x0079adb0` | `MsGetRamChrFemale` |  |
-| 0 | 28 | `0x007b0500` | `FUN_007b0500` |  |
-| 0 | 29 | `0x0079e4f0` | `MsEffectSendSignal` |  |
-| 0 | 29 | `0x007aaac0` | `FUN_007aaac0` |  |
-| 0 | 30 | `0x007902d0` | `PasswordGetTotalIndex` |  |
-| 0 | 35 | `0x007af2f0` | `MsCheckDefenseMotion` |  |
-| 0 | 36 | `0x007b7e80` | `MsEffectChrMotionSync` |  |
-| 0 | 37 | `0x00782940` | `FUN_00782940` |  |
-| 0 | 38 | `0x00786950` | `MsSetSavePartyMember` |  |
-| 0 | 38 | `0x00798ff0` | `MsFieldItemGetMes` |  |
-| 0 | 40 | `0x00786aa0` | `FUN_00786aa0` |  |
-| 0 | 40 | `0x007902a0` | `FUN_007902a0` |  |
 | 0 | 40 | `0x007b1a70` | `MsRestartMagicCamera` |  |
 | 0 | 41 | `0x00796880` | `FUN_00796880` |  |
 | 0 | 41 | `0x007968b0` | `FUN_007968b0` |  |
@@ -1386,6 +1359,7 @@ None: the battle loop's top level is ported.
 | 0 | 70 | `0x007c13c0` | `FUN_007c13c0` |  |
 | 0 | 72 | `0x00788d10` | `MsEventEffectReadComplete` |  |
 | 0 | 73 | `0x00796430` | `FUN_00796430` |  |
+| 0 | 73 | `0x0079d090` | `FUN_0079d090` |  |
 | 0 | 76 | `0x00798840` | `FUN_00798840` |  |
 | 0 | 76 | `0x007bf1a0` | `FUN_007bf1a0` |  |
 | 0 | 77 | `0x00796070` | `FUN_00796070` |  |
@@ -1411,6 +1385,7 @@ None: the battle loop's top level is ported.
 | 0 | 98 | `0x007b19f0` | `FUN_007b19f0` |  |
 | 0 | 105 | `0x0079a440` | `MsGetChrID` |  |
 | 0 | 105 | `0x007b7c80` | `MsSetBallSplineInit` |  |
+| 0 | 108 | `0x007b7d00` | `MsEffectChrGetLoveLoveMax` |  |
 | 0 | 109 | `0x007abca0` | `Equip_RebuildWearers` |  |
 | 0 | 111 | `0x007a06b0` | `MsSEPtransRegist` |  |
 | 0 | 112 | `0x00787c30` | `MsEffectMagicMotion` |  |
@@ -1436,6 +1411,7 @@ None: the battle loop's top level is ported.
 | 0 | 147 | `0x007baac0` | `MsSplineRegist` |  |
 | 0 | 147 | `0x007bad10` | `FUN_007bad10` |  |
 | 0 | 150 | `0x007828a0` | `Enc_ResetWeights` |  |
+| 0 | 150 | `0x007ad640` | `MsChangeWeaponWakka` |  |
 | 0 | 150 | `0x007ba5b0` | `FUN_007ba5b0` |  |
 | 0 | 155 | `0x00799a10` | `MsGetSameTarget` |  |
 | 0 | 157 | `0x007bce80` | `FUN_007bce80` |  |
@@ -1476,12 +1452,11 @@ None: the battle loop's top level is ported.
 | 1 | 56 | `0x0079eba0` | `FUN_0079eba0` | MsSetChrEffect_0079eb10 |
 | 1 | 58 | `0x00798720` | `FUN_00798720` | MsBindCamera |
 | 1 | 66 | `0x0079e590` | `MsEtCriticalEffect` | op_et_eff |
-| 1 | 73 | `0x0079d090` | `FUN_0079d090` | MsGetBattleMessageFlag |
 | 1 | 83 | `0x0079ec40` | `FUN_0079ec40` | op_et_eff |
 | 1 | 83 | `0x0079eca0` | `FUN_0079eca0` | op_et_eff |
 | 1 | 89 | `0x00783f60` | `MsBtlReadWeapon` | MsCDreadWeapon |
 | 1 | 95 | `0x00782ba0` | `FUN_00782ba0` | Enc_ResetWeights |
-| 1 | 108 | `0x007b7d00` | `MsEffectChrGetLoveLoveMax` | MsGetRamChrFemale |
+| 1 | 103 | `0x00784000` | `FUN_00784000` | MsRegistSEdata |
 | 1 | 114 | `0x0079e510` | `MsEffectSetGuard` | FUN_0079ec40 |
 | 1 | 123 | `0x007932b0` | `MesSetChrTargetPosToLimitSparePosy` | FUN_00796bb0 |
 | 1 | 123 | `0x007cf970` | `FUN_007cf970` | debug_exit_trace |
@@ -1492,7 +1467,6 @@ None: the battle loop's top level is ported.
 | 1 | 135 | `0x0079eb10` | `MsSetChrEffect_0079eb10` | op_et_eff |
 | 1 | 139 | `0x007b75c0` | `FUN_007b75c0` | FUN_00793dc0 |
 | 1 | 143 | `0x007962d0` | `MsSetChrShadowMode` | MsSetChrShadowMode |
-| 1 | 150 | `0x007ad640` | `MsChangeWeaponWakka` | MsFieldItemGetMes |
 | 1 | 152 | `0x007bb210` | `FUN_007bb210` | FUN_007bce80 |
 | 1 | 155 | `0x007a8b40` | `FUN_007a8b40` | MsGetCommandTarget2 |
 | 1 | 155 | `0x007bb370` | `MsAtelCameraRefAddCircleArea_007bb370` | FUN_007bf1f0 |
@@ -1526,7 +1500,6 @@ None: the battle loop's top level is ported.
 | 2 | 30 | `0x00796680` | `FUN_00796680` | FUN_00796880, FUN_007968b0 |
 | 2 | 49 | `0x00783fc0` | `FUN_00783fc0` | MsBtlReadWeapon, FUN_00784000 |
 | 2 | 83 | `0x007a8f60` | `FUN_007a8f60` | MsGetSameTarget, FUN_00796430 |
-| 2 | 103 | `0x00784000` | `FUN_00784000` | MsRegistSEdata, MsEffectWeaponInit |
 | 2 | 133 | `0x00782d60` | `MsWalkAbilityProcess` | MsSaveAddHP, FUN_00785ae0 |
 | 2 | 206 | `0x007bb5d0` | `FUN_007bb5d0` | Cam_SetPolar, Cam_AddPolar |
 | 2 | 211 | `0x00796c30` | `getSparedLmtPos` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796bb0 |
@@ -1537,7 +1510,7 @@ None: the battle loop's top level is ported.
 | 2 | 623 | `0x007976a0` | `MsAtelChrInit` | FUN_00798720, FUN_007987b0 |
 | 2 | 1234 | `0x0079c110` | `MsSetRamChrData` | MsGetChrID, MsSetRamChr |
 | 2 | 1624 | `0x0079b4f0` | `MsSetRamChr` | FUN_0079ca80, MsSetCommandUse |
-| 3 | 7007 | `0x007b4b70` | `MsSetChrStatInfo` | MsSetSavePlyJoin, MsSetChrShadowMode, MsSetChrVisibleMain |
+| 2 | 7007 | `0x007b4b70` | `MsSetChrStatInfo` | MsSetSavePlyJoin, MsSetChrShadowMode |
 | 4 | 167 | `0x007b74d0` | `FUN_007b74d0` | FUN_007b77c0, FUN_007b75c0, FUN_007b7680, FUN_007b7650 |
 | 4 | 766 | `0x00795250` | `MsGetChrLimitBarFlag` | graphicProject3DPointOntoScreenConsider2DScene, FUN_00796d10, MesSetChrTargetPosToLimitSparePosy, getSparedLmtPos |
 | 5 | 702 | `0x007938e0` | `MsBtlWeaponRegist` | ChN_DataDispose, Ch_Allocate, MsSetWeaponEffectAttribute, Ch_Dispose, FUN_00796f70 |

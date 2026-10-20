@@ -744,4 +744,283 @@ pub mod bridge {
             .cast_unsigned()
             .wrapping_add(crate::misc::bridge::FIELD_TABLE2.get(mem))
     }
+
+    // Round 29: actor and save accessors, the wrappers around them.
+
+    /// `MsGetCheckEnglish` (`0x00784e60`), called through the game.
+    pub const MS_GET_CHECK_ENGLISH: u32 = 0x0078_4e60;
+    /// `op_et_weapon_init(oef2, no)` (vfx), called through the game.
+    pub const OP_ET_WEAPON_INIT: u32 = 0x007f_cb60;
+    /// `op_et_bindeff_send_common_signal(h, bits)` (vfx), called through
+    /// the game.
+    pub const OP_ET_SEND_COMMON_SIGNAL: u32 = 0x007f_bdf0;
+    /// `TOGetFFXLangJmp` (the thunk to `TOGetFFXLang`, system), called
+    /// through the game.
+    pub const TO_GET_FFX_LANG_JMP: u32 = 0x008a_c2f0;
+    /// The battle message flag `MsGetBattleMessageFlag` checks.
+    pub const BATTLE_MESSAGE_OFF: Global<u8> = Global::new(0x0112_ca17);
+    /// The spoils `MsFieldItemGetMes` clears (kind 0xb) and fills.
+    pub const FIELD_ITEM_MES: Global<u8> = Global::new(0x0231_0ce0);
+    /// The password text file: a table of `(offset, _)` pairs, 8 bytes each,
+    /// whose offsets are from the file's start (`PasswordText_GetEntry`).
+    pub const PASSWORD_TEXT: Global<u32> = Global::new(0x0231_1088);
+
+    fn game<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        sym: u32,
+        args: &[u32],
+    ) -> u32 {
+        let f = mem.rebase(sym);
+        call(mem, f, args)
+    }
+
+    /// `MsGetRomBtlText(id, second)` (`0x0078f8f0`): menu text 0's name
+    /// (`MsMenuGetText(0, id, second)`).
+    pub fn ms_get_rom_btl_text(mem: &impl Mem, id: u32, second: u32) -> u32 {
+        crate::menu::bridge::ms_menu_get_text(mem, 0, id, second)
+    }
+
+    /// `MsMenuGetBtlEndText(id, second)` (`0x0078fb60`): menu text 4's name
+    /// (`MsMenuGetText(4, id, second)`).
+    pub fn ms_menu_get_btl_end_text(mem: &impl Mem, id: u32, second: u32) -> u32 {
+        crate::menu::bridge::ms_menu_get_text(mem, 4, id, second)
+    }
+
+    /// `MsSetChrVisibleMain(i, v)` (`0x00796860`): visibility request 0 of
+    /// actor `i` (`msSetChrVisibleReq(i, 0, v)`).
+    pub fn ms_set_chr_visible_main<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+        v: u32,
+    ) -> u32 {
+        crate::visible::bridge::ms_set_chr_visible_req(mem, call, i, 0, v)
+    }
+
+    /// `MsGetChrLibraName_0078fae0(i)` (`0x0078fae0`): actor `i & 0xff`'s
+    /// address plus 0x64d (the Libra window's text, `TOBtlSetLibraWindowParam`).
+    pub fn ms_get_chr_libra_name(mem: &impl Mem, i: u32) -> u32 {
+        actor_of(mem, i & 0xff).wrapping_add(0x64d)
+    }
+
+    /// `MsGetRamChrStr(i)` (`0x0079af40`): byte `+0x5a8` of actor `i`
+    /// (`MsGetChr` masks it), zero-extended.
+    pub fn ms_get_ram_chr_str(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(byte(mem, actor_of(mem, i), 0x5a8))
+    }
+
+    /// A byte of actor `i & 0xff` in AL over the actor's address (EAX as
+    /// the original's `mov al` leaves it).
+    fn byte_over(mem: &impl Mem, i: u32, o: u32) -> u32 {
+        let a = actor_of(mem, i & 0xff);
+        (a & !0xff) | u32::from(byte(mem, a, o))
+    }
+
+    /// `MsMenuAbsElement_0078f910(i)` (`0x0078f910`): the absorbed elements
+    /// (`+0x5da`), in AL over the actor's address.
+    pub fn ms_menu_abs_element(mem: &impl Mem, i: u32) -> u32 {
+        byte_over(mem, i, 0x5da)
+    }
+
+    /// `MsMenuInvElement(i)` (`0x0078fe80`): the nullified elements
+    /// (`+0x5db`), in AL over the actor's address.
+    pub fn ms_menu_inv_element(mem: &impl Mem, i: u32) -> u32 {
+        byte_over(mem, i, 0x5db)
+    }
+
+    /// `MsMenuWeakElement_00790240(i)` (`0x00790240`): the weak elements
+    /// (`+0x5dd`), in AL over the actor's address.
+    pub fn ms_menu_weak_element2(mem: &impl Mem, i: u32) -> u32 {
+        byte_over(mem, i, 0x5dd)
+    }
+
+    /// `MsGetChrLibraWord_0078fac0(i)` (`0x0078fac0`): the `u16` `+0x65a`
+    /// of actor `i & 0xff` in AX over the actor's address.
+    pub fn ms_get_chr_libra_word(mem: &impl Mem, i: u32) -> u32 {
+        let a = actor_of(mem, i & 0xff);
+        (a & !0xffff) | u32::from(mem.read::<u16>(a.wrapping_add(0x65a)))
+    }
+
+    /// `MsGetChrMotionLevel(i)` (`0x00795640`): the signed byte `+0x420` of
+    /// actor `i & 0xff`.
+    pub fn ms_get_chr_motion_level(mem: &impl Mem, i: u32) -> u32 {
+        i32::from(byte(mem, actor_of(mem, i & 0xff), 0x420).cast_signed()).cast_unsigned()
+    }
+
+    /// `MsMotionSpeedResetChr_007aaff0(i)` (`0x007aaff0`): `MsMotionSpeedReset`
+    /// on actor `i & 0xff`; `EAX` is the actor, as that leaves it.
+    pub fn ms_motion_speed_reset_chr(mem: &mut impl Mem, i: u32) -> u32 {
+        let a = actor_of(mem, i & 0xff);
+        crate::actor::bridge::ms_motion_speed_reset(mem, a);
+        a
+    }
+
+    /// `MsGetBattleMessageFlag()` (`0x00784e40`): -1 when `MsGetCheckEnglish`
+    /// (through `call`) is not 0 and [`BATTLE_MESSAGE_OFF`] is 0, else 0.
+    pub fn ms_get_battle_message_flag<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+    ) -> u32 {
+        let english = game(mem, call, MS_GET_CHECK_ENGLISH, &[]);
+        if english != 0 && BATTLE_MESSAGE_OFF.get(mem) == 0 {
+            u32::MAX
+        } else {
+            0
+        }
+    }
+
+    /// `MsSetSaveCommandWithPrefix(chr, id, on)` (`0x00874200`):
+    /// `MsSetSaveCommand(chr, 0x3000 | id & 0xfff, on)`.
+    pub fn ms_set_save_command_with_prefix(mem: &mut impl Mem, chr: u32, id: u32, on: u32) -> u32 {
+        crate::ability::bridge::ms_set_save_command(mem, chr, id & 0xfff | 0x3000, on)
+    }
+
+    /// `MsEffectWeaponInit(oef2, i)` (`0x00788b70`): actor `i`'s byte
+    /// `+0x35` set, then `op_et_weapon_init(oef2, i)` (through `call`; the
+    /// original jumps to it), whose result it returns.
+    pub fn ms_effect_weapon_init<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        oef2: u32,
+        i: u32,
+    ) -> u32 {
+        let a = actor_of(mem, i);
+        mem.write(a.wrapping_add(0x35), 1u8);
+        game(mem, call, OP_ET_WEAPON_INIT, &[oef2, i])
+    }
+
+    /// `MsFieldItemGet(i)` (`0x00798fd0`): field item `i` into the battle's
+    /// spoils (`msFieldItemGet(i, g_BtlCountsBattle)`); returns them.
+    pub fn ms_field_item_get_battle<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+    ) -> u32 {
+        let spoils = crate::flow::bridge::COUNTS_BATTLE.ptr(mem).addr;
+        crate::reward::bridge::ms_field_item_get(mem, call, i, spoils);
+        spoils
+    }
+
+    /// `MsFieldItemGetMes(i)` (`0x00798ff0`): [`FIELD_ITEM_MES`] cleared
+    /// (`MsBtlGetClear_007993e0(it, 0xb)`), field item `i` into it; returns
+    /// it.
+    pub fn ms_field_item_get_mes<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+    ) -> u32 {
+        let spoils = FIELD_ITEM_MES.ptr(mem).addr;
+        crate::init::bridge::ms_btl_get_clear(mem, spoils, 0xb);
+        crate::reward::bridge::ms_field_item_get(mem, call, i, spoils);
+        spoils
+    }
+
+    /// `MsGetRamChrFemale(i)` (`0x0079adb0`): bit 1 of actor `i`'s `+0x590`.
+    pub fn ms_get_ram_chr_female(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(byte(mem, actor_of(mem, i), 0x590)) >> 1 & 1
+    }
+
+    /// `MsClearChrDfd_007b0500(cue)` (`0x007b0500`): byte `+0xdfd` of the
+    /// actor the cue names (its byte `+0xc`) cleared.
+    pub fn ms_clear_chr_dfd(mem: &mut impl Mem, cue: u32) {
+        let i = u32::from(byte(mem, cue, 0xc));
+        let a = actor_of(mem, i);
+        mem.write(a.wrapping_add(0xdfd), 0u8);
+    }
+
+    /// `MsEffectSendSignal(i, bits)` (`0x0079e4f0`): `bits` to actor `i`'s
+    /// character (`MsGetChrHandle`) through
+    /// `op_et_bindeff_send_common_signal(handle, bits)` (`call`), its result;
+    /// 0 without a character.
+    pub fn ms_effect_send_signal<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+        bits: u32,
+    ) -> u32 {
+        let h = crate::actor::bridge::ms_get_chr_handle(mem, i);
+        if h == 0 {
+            return 0;
+        }
+        game(mem, call, OP_ET_SEND_COMMON_SIGNAL, &[h, bits])
+    }
+
+    /// `MsChrMotionSpeedOn_007aaac0(i)` (`0x007aaac0`): 1 when actor `i`'s
+    /// motion speed byte (`+0x415`, which `MsMotionSpeedReset` clears) is
+    /// set.
+    pub fn ms_chr_motion_speed_on(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(byte(mem, actor_of(mem, i), 0x415) != 0)
+    }
+
+    /// `PasswordGetTotalIndex()` (`0x007902d0`): 9 when the language
+    /// (`TOGetFFXLang` through its thunk and `call`) is 9; else, asking
+    /// again, 10 for 10 and 0 for the rest.
+    pub fn password_get_total_index<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+    ) -> u32 {
+        let lang = game(mem, call, TO_GET_FFX_LANG_JMP, &[]);
+        if lang == 9 {
+            return 9;
+        }
+        if game(mem, call, TO_GET_FFX_LANG_JMP, &[]) == 10 {
+            10
+        } else {
+            0
+        }
+    }
+
+    /// `MsCheckDefenseMotion(actor)` (`0x007af2f0`): 1 when the actor's
+    /// `u16` `+0x616` has a bit of 0x2840, else 0.
+    pub fn ms_check_defense_motion(mem: &impl Mem, actor: u32) -> u32 {
+        u32::from(mem.read::<u16>(actor.wrapping_add(0x616)) & 0x2840 != 0)
+    }
+
+    /// `MsEffectChrMotionSync(i)` (`0x007b7e80`): 1 while actor `i & 0xff`
+    /// has a motion (`+0x432` set), else 0.
+    pub fn ms_effect_chr_motion_sync(mem: &impl Mem, i: u32) -> u32 {
+        u32::from(byte(mem, actor_of(mem, i & 0xff), 0x432) != 0)
+    }
+
+    /// `MsFldGetSceneHigh_00782940(scene)` (`0x00782940`): the high nibble of
+    /// byte `+1` of the scene's formation (`MsFldGetScene(scene, 0, 0, 0)`),
+    /// 0 without one.
+    pub fn ms_fld_get_scene_high(mem: &mut impl Mem, scene: u32) -> u32 {
+        let f = crate::process::bridge::ms_fld_get_scene(mem, scene, 0, 0, 0);
+        if f == 0 {
+            0
+        } else {
+            u32::from(byte(mem, f, 1)) >> 4
+        }
+    }
+
+    /// `MsSetSavePartyMember(a, b, c)` (`0x00786950`): the three into front
+    /// slots 0, 1, 2 (`MsExchangeSaveParty`), in that order; the last one's
+    /// result.
+    pub fn ms_set_save_party_member(mem: &mut impl Mem, a: u32, b: u32, c: u32) -> u32 {
+        use crate::save::bridge::ms_exchange_save_party;
+        ms_exchange_save_party(mem, a, 0);
+        ms_exchange_save_party(mem, b, 1);
+        ms_exchange_save_party(mem, c, 2)
+    }
+
+    /// `MsSetSavePlyBit4_00786aa0(chr, on)` (`0x00786aa0`): bit 4 of
+    /// character `chr & 0xff`'s `ply_save` flags (`+0x2c`, which
+    /// `MsSetSavePlyJoin` sets with bit 0) to bit 0 of `on`.
+    pub fn ms_set_save_ply_bit4(mem: &mut impl Mem, chr: u32, on: u32) {
+        let at = crate::save::bridge::PLY_SAVE.ptr(mem).addr + (chr & 0xff) * 0x94 + 0x2c;
+        let old: u8 = mem.read(at);
+        let bit = on.to_le_bytes()[0] << 4;
+        mem.write(at, old ^ ((bit ^ old) & 0x10));
+    }
+
+    /// `PasswordText_GetEntry_007902a0(i)` (`0x007902a0`): entry `i` of the
+    /// password text file ([`PASSWORD_TEXT`], through `get_ptr32_func`: the
+    /// pointer itself): the file plus the offset at `+8 i`.
+    pub fn password_text_get_entry(mem: &impl Mem, i: u32) -> u32 {
+        let file = PASSWORD_TEXT.get(mem);
+        let off: u32 = mem.read(file.wrapping_add(i.wrapping_mul(8)));
+        file.wrapping_add(off)
+    }
 }

@@ -1862,6 +1862,114 @@ ported! {
     MsMenuDefCountStatus @ 0x0078_faa0 => extern "C" fn ms_menu_def_count_status(i: u32) -> u32 {
         minor::ms_menu_def_count_status(&mem(), i)
     }
+    /// `MsGetRomBtlText(id, second)`.
+    MsGetRomBtlText @ 0x0078_f8f0 => extern "C" fn ms_get_rom_btl_text(id: u32, second: u32) -> u32 {
+        minor::ms_get_rom_btl_text(&mem(), id, second)
+    }
+    /// `MsMenuGetBtlEndText(id, second)`.
+    MsMenuGetBtlEndText @ 0x0078_fb60 => extern "C" fn ms_menu_get_btl_end_text(id: u32, second: u32) -> u32 {
+        minor::ms_menu_get_btl_end_text(&mem(), id, second)
+    }
+    /// `MsSetChrVisibleMain(i, v)`.
+    MsSetChrVisibleMain @ 0x0079_6860 => extern "C" fn ms_set_chr_visible_main(i: u32, v: u32) -> u32 {
+        minor::ms_set_chr_visible_main(&mut mem(), &mut call_ptr, i, v)
+    }
+    /// `MsGetChrLibraName_0078fae0(i)`.
+    MsGetChrLibraName_0078fae0 @ 0x0078_fae0 => extern "C" fn ms_get_chr_libra_name(i: u32) -> u32 {
+        minor::ms_get_chr_libra_name(&mem(), i)
+    }
+    /// `MsGetRamChrStr(i)`.
+    MsGetRamChrStr @ 0x0079_af40 => extern "C" fn ms_get_ram_chr_str(i: u32) -> u32 {
+        minor::ms_get_ram_chr_str(&mem(), i)
+    }
+    /// `MsMenuAbsElement_0078f910(i)`.
+    MsMenuAbsElement_0078f910 @ 0x0078_f910 => extern "C" fn ms_menu_abs_element(i: u32) -> u32 {
+        minor::ms_menu_abs_element(&mem(), i)
+    }
+    /// `MsMenuInvElement(i)`.
+    MsMenuInvElement @ 0x0078_fe80 => extern "C" fn ms_menu_inv_element(i: u32) -> u32 {
+        minor::ms_menu_inv_element(&mem(), i)
+    }
+    /// `MsMenuWeakElement_00790240(i)`.
+    MsMenuWeakElement_00790240 @ 0x0079_0240 => extern "C" fn ms_menu_weak_element2(i: u32) -> u32 {
+        minor::ms_menu_weak_element2(&mem(), i)
+    }
+    /// `MsGetChrLibraWord_0078fac0(i)`.
+    MsGetChrLibraWord_0078fac0 @ 0x0078_fac0 => extern "C" fn ms_get_chr_libra_word(i: u32) -> u32 {
+        minor::ms_get_chr_libra_word(&mem(), i)
+    }
+    /// `MsGetChrMotionLevel(i)`.
+    MsGetChrMotionLevel @ 0x0079_5640 => extern "C" fn ms_get_chr_motion_level(i: u32) -> u32 {
+        minor::ms_get_chr_motion_level(&mem(), i)
+    }
+    /// `MsMotionSpeedResetChr_007aaff0(i)`.
+    MsMotionSpeedResetChr_007aaff0 @ 0x007a_aff0 => extern "C" fn ms_motion_speed_reset_chr(i: u32) -> u32 {
+        minor::ms_motion_speed_reset_chr(&mut mem(), i)
+    }
+    /// `MsGetBattleMessageFlag()`: `MsGetCheckEnglish` through the game.
+    MsGetBattleMessageFlag @ 0x0078_4e40 => extern "C" fn ms_get_battle_message_flag() -> u32 {
+        minor::ms_get_battle_message_flag(&mut mem(), &mut call_ptr)
+    }
+    /// `MsSetSaveCommandWithPrefix(chr, id, on)`.
+    MsSetSaveCommandWithPrefix @ 0x0087_4200 => extern "C" fn ms_set_save_command_with_prefix(chr: u32, id: u32, on: u32) -> u32 {
+        minor::ms_set_save_command_with_prefix(&mut mem(), chr, id, on)
+    }
+    /// `MsEffectWeaponInit(oef2, i)`: `op_et_weapon_init` through the game.
+    MsEffectWeaponInit @ 0x0078_8b70 => extern "C" fn ms_effect_weapon_init(oef2: u32, i: u32) -> u32 {
+        minor::ms_effect_weapon_init(&mut mem(), &mut call_ptr, oef2, i)
+    }
+    /// `MsFieldItemGet(i)`.
+    MsFieldItemGet @ 0x0079_8fd0 => extern "C" fn ms_field_item_get_battle(i: u32) -> u32 {
+        minor::ms_field_item_get_battle(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsFieldItemGetMes(i)`.
+    MsFieldItemGetMes @ 0x0079_8ff0 => extern "C" fn ms_field_item_get_mes(i: u32) -> u32 {
+        minor::ms_field_item_get_mes(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsGetRamChrFemale(i)`.
+    MsGetRamChrFemale @ 0x0079_adb0 => extern "C" fn ms_get_ram_chr_female(i: u32) -> u32 {
+        minor::ms_get_ram_chr_female(&mem(), i)
+    }
+    /// `MsClearChrDfd_007b0500(cue)`.
+    MsClearChrDfd_007b0500 @ 0x007b_0500 => extern "C" fn ms_clear_chr_dfd(cue: u32) {
+        minor::ms_clear_chr_dfd(&mut mem(), cue);
+    }
+    /// `MsEffectSendSignal(i, bits)`: the signal through the game.
+    MsEffectSendSignal @ 0x0079_e4f0 => extern "C" fn ms_effect_send_signal(i: u32, bits: u32) -> u32 {
+        minor::ms_effect_send_signal(&mut mem(), &mut call_ptr, i, bits)
+    }
+    /// `MsChrMotionSpeedOn_007aaac0(i)`.
+    MsChrMotionSpeedOn_007aaac0 @ 0x007a_aac0 => extern "C" fn ms_chr_motion_speed_on(i: u32) -> u32 {
+        minor::ms_chr_motion_speed_on(&mem(), i)
+    }
+    /// `PasswordGetTotalIndex()`: the language through the game.
+    PasswordGetTotalIndex @ 0x0079_02d0 => extern "C" fn password_get_total_index() -> u32 {
+        minor::password_get_total_index(&mut mem(), &mut call_ptr)
+    }
+    /// `MsCheckDefenseMotion(actor)`.
+    MsCheckDefenseMotion @ 0x007a_f2f0 => extern "C" fn ms_check_defense_motion(actor: u32) -> u32 {
+        minor::ms_check_defense_motion(&mem(), actor)
+    }
+    /// `MsEffectChrMotionSync(i)`.
+    MsEffectChrMotionSync @ 0x007b_7e80 => extern "C" fn ms_effect_chr_motion_sync(i: u32) -> u32 {
+        minor::ms_effect_chr_motion_sync(&mem(), i)
+    }
+    /// `MsFldGetSceneHigh_00782940(scene)`.
+    MsFldGetSceneHigh_00782940 @ 0x0078_2940 => extern "C" fn ms_fld_get_scene_high(scene: u32) -> u32 {
+        minor::ms_fld_get_scene_high(&mut mem(), scene)
+    }
+    /// `MsSetSavePartyMember(a, b, c)`.
+    MsSetSavePartyMember @ 0x0078_6950 => extern "C" fn ms_set_save_party_member(a: u32, b: u32, c: u32) -> u32 {
+        minor::ms_set_save_party_member(&mut mem(), a, b, c)
+    }
+    /// `MsSetSavePlyBit4_00786aa0(chr, on)`.
+    MsSetSavePlyBit4_00786aa0 @ 0x0078_6aa0 => extern "C" fn ms_set_save_ply_bit4(chr: u32, on: u32) {
+        minor::ms_set_save_ply_bit4(&mut mem(), chr, on);
+    }
+    /// `PasswordText_GetEntry_007902a0(i)`.
+    PasswordText_GetEntry_007902a0 @ 0x0079_02a0 => extern "C" fn password_text_get_entry(i: u32) -> u32 {
+        minor::password_text_get_entry(&mem(), i)
+    }
     /// `MsMenuHalfElement(i)`.
     MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
         minor::ms_menu_half_element(&mem(), i)
