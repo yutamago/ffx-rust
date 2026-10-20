@@ -1082,3 +1082,49 @@ Round 24, the view-projection matrix and the speed control's tick
   subtitles are muted (`MsMuteBattleSubTitle(1)`), else unmuted, each
   only on a change of `g_SpdCtrl_SubtitleMuted` (`0x00ce82bd`, set before
   the call).
+
+Round 24, group 2: shadow meshes and texture-animation names:
+
+- `ShadowDynamicMesh_updateBuffers_006789f0(_, src, streams, indices)`
+  (`0x006789f0`, `ShadowDynamicMesh_vftable` slot 5, `ret 0x10`, `ecx`
+  unread; name ours): with `n` = `src +0x24`, `12 n` bytes from `src
+  +0x10` go to vertex stream 0, `16 n` from `+0x14` to stream 1 (only
+  when that stream has data), `8 n` from `+0x18` to stream 2 and `12 n`
+  from `+0x1c` to stream 3 (`memcpy`; a stream is an object with its data
+  at `+0x3c` and its count at `+4`, `streams` four pointers, 0 for none:
+  streams 0, 2, 3 are written even without data). Each present stream's
+  count = `n`; the `src +0x28` index words at `src +0x20` go one by one
+  to `indices +0x38`, `indices +8` = their count, `src +4` = 0. Returns
+  0.
+- `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0(a, b, c, x,
+  y, w, h, sw, sh, d, e)` (`0x00643eb0`, cdecl; name ours, sorting
+  between `graphicSwitchGPUMode` and
+  `graphicTextureAnimationSetMaterialVisiability`): two names, `"G"`
+  (`*0x00c322a0`) + `a` and `"Animation"` (`*0x00c322a4`) + `b`, each
+  number below 20 (signed: -3 reads the `"Animation"` pointer, other
+  negatives null or unmapped ones) taken from the string table at
+  `0x00c322b0`, else written by `sprintf "%d"`; then
+  `TextureAnimationManager_setAnimatedMaterialsChar(s1, s2, c, x / sw, y
+  / sh, w / sw, h / sh, d, e)` on the manager, each quotient a float, 0
+  for a zero divisor (a NaN divides). Returns that call's `eax`.
+- `graphicTextureAnimationSetMaterialUV_00644150(a, b, u, v, key)`
+  (`0x00644150`, cdecl; name ours): the same names, both by `sprintf`,
+  then `TextureAnimationManager_setMaterialUV_006b33c0(s1, s2, u, v,
+  key)`.
+- `TextureAnimationManager_setMaterialUV_006b33c0(mgr, s1, s2, u, v,
+  key)` (`0x006b33c0`, thiscall, `ret 0x14`; name ours; the names are not
+  read): `u' = u - 0.01`, `v' = v - 0.01` (floats). The manager's list
+  (`+0x70`, `+0x6c` entries with a flag bit, 12 bytes: set index, key)
+  gives `key`'s set (`+0x68`, 32 bytes each); a set with slots (`+8`)
+  has its animation (`+0xc`) marked (byte `+0x34`). Each material of the
+  animation (`+0x38`, an array) with a texture index (`+0x74`) and an
+  object index (`+0x78`) both non-negative takes the texture
+  `PArray_Data_004d45a0(*(key +4)[obj] +0x10)[tex]`; with it and
+  `TextureAnimation_FindMaterial(anim, anim +0x18, set +0x18` without
+  its low bit`)`, its parameters, each when set, go to the texture's
+  buffer (`+4`) in this order: sampler `+4` (record `(0xff, 0, mgr
+  +0x38, material)`, `Render_SurfaceFormat_0066e4f0`), scale `+0x50`
+  `(1.02, 1.02)`, offset `+0x38` `(u', v')`
+  (`ShaderParam_CopyToBuffer_00698960`), value `+0x20` 1.0
+  (`ShaderParamBuffer_SetValue2`), then sampler `+8`, scale `+0x54`,
+  offset `+0x3c` `(u', v' - 1)`, value `+0x24`.

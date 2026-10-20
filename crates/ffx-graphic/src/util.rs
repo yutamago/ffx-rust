@@ -2493,6 +2493,7 @@ pub mod bridge {
 /// Round 24: the view-projection matrix and the speed control's tick.
 #[allow(clippy::many_single_char_names)] // matrix rows
 pub mod bridge24 {
+    use super::bridge::TEX_ANIM_GET_INSTANCE;
     use super::bridge::{
         IGGY_CALL_AS3_EXTERNAL, INPUT_IS_PRESS_BUTTON, MATRIX4_COPY_453340, ROW_TIMES,
         SCREEN_ADJUST_ASPECT, SCREEN_ADJUST_THIRD, SPD_CTRL_B4, SPD_CTRL_B8, SPD_CTRL_C0,
@@ -2700,6 +2701,371 @@ pub mod bridge24 {
         if (SPD_CTRL_SUBTITLE_MUTED.get(h) != 0) != mute {
             SPD_CTRL_SUBTITLE_MUTED.set(h, u8::from(mute));
             h.call_sym(MS_MUTE_BATTLE_SUBTITLE, Conv::Cdecl, &[u32::from(mute)]);
+        }
+    }
+
+    // ---- round 24, group 2 ----
+
+    /// Copies `n` bytes from `src` to `dst` as the CRT's `memcpy` does
+    /// (overlap-safe in MSVC's).
+    fn copy_bytes(h: &mut impl Host, dst: u32, src: u32, n: u32) {
+        if n == 0 {
+            return;
+        }
+        let mut buf = vec![0; n as usize];
+        h.read_bytes(src, &mut buf);
+        h.write_bytes(dst, &buf);
+    }
+
+    /// `ShadowDynamicMesh_updateBuffers_006789f0(_, src, streams, indices)`
+    /// (`0x006789f0`, `ShadowDynamicMesh`'s vtable slot 5, `ret 0x10`,
+    /// `ecx` unread; name ours): the mesh data `src` into the four vertex
+    /// streams (`streams[0..4]`, each an object with its data at `+0x3c`
+    /// and its count at `+4`, or 0) and the index buffer (`indices`: data
+    /// `+0x38`, count `+8`). With `n` = `src +0x24` vertices: `12 n` bytes
+    /// from `src +0x10` into stream 0, `16 n` from `+0x14` into stream 1
+    /// (only when it has data), `8 n` from `+0x18` into stream 2 and `12 n`
+    /// from `+0x1c` into stream 3 (`memcpy`, to a null destination too);
+    /// each present stream's count = `n`. The `src +0x28` index words at
+    /// `src +0x20` are copied one by one (the source pointer read again
+    /// each time), the index count set, and `src +4` cleared. Returns 0.
+    pub fn shadow_dynamic_mesh_update_buffers(
+        h: &mut impl Host,
+        src: u32,
+        streams: u32,
+        indices: u32,
+    ) -> u32 {
+        let data: [u32; 4] = std::array::from_fn(|k| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            let s: u32 = h.read(streams + 4 * k as u32);
+            if s == 0 {
+                0
+            } else {
+                h.read(s.wrapping_add(0x3c))
+            }
+        });
+        let nidx: u32 = h.read(src.wrapping_add(0x28));
+        let n: u32 = h.read(src.wrapping_add(0x24));
+        let from = |off: u32| src.wrapping_add(off);
+        let f = h.read(from(0x10));
+        copy_bytes(h, data[0], f, n.wrapping_mul(12));
+        if data[1] != 0 {
+            let f = h.read(from(0x14));
+            copy_bytes(h, data[1], f, n.wrapping_mul(16));
+        }
+        let f = h.read(from(0x18));
+        copy_bytes(h, data[2], f, n.wrapping_mul(8));
+        let f = h.read(from(0x1c));
+        copy_bytes(h, data[3], f, n.wrapping_mul(12));
+        for k in 0..4 {
+            let s: u32 = h.read(streams + 4 * k);
+            if s != 0 {
+                h.write(s.wrapping_add(4), n);
+            }
+        }
+        let out: u32 = h.read(indices.wrapping_add(0x38));
+        for i in 0..nidx {
+            let from: u32 = h.read(src.wrapping_add(0x20));
+            let v: u32 = h.read(from.wrapping_add(4 * i));
+            h.write(out.wrapping_add(4 * i), v);
+        }
+        h.write(indices.wrapping_add(8), nidx);
+        // never 0 here: the original reads src +0x24 first
+        if src != 0 {
+            h.write(src.wrapping_add(4), 0u32);
+        }
+        0
+    }
+
+    /// The prefixes of the texture-animation names: pointers to `"G"`
+    /// (`0x00c322a0`) and `"Animation"` (`0x00c322a4`), and the numbers
+    /// `"0"`..`"19"` (`0x00c322b0`, 20 string pointers).
+    pub const TEX_ANIM_PREFIX_G: u32 = 0x00c3_22a0;
+    pub const TEX_ANIM_PREFIX_ANIMATION: u32 = 0x00c3_22a4;
+    pub const TEX_ANIM_NUMBERS: u32 = 0x00c3_22b0;
+    /// `TextureAnimationManager_setAnimatedMaterialsChar(mgr, s1, s2, c, u,
+    /// v, w, h, d, e)` (`thiscall`, `ret 0x24`).
+    pub const TEX_ANIM_SET_ANIMATED_MATERIALS_CHAR: u32 = 0x006b_3060;
+    /// `TextureAnimationManager_setMaterialUV_006b33c0(mgr, s1, s2, u, v,
+    /// key)` (`thiscall`, `ret 0x14`).
+    pub const TEX_ANIM_SET_MATERIAL_UV: u32 = 0x006b_33c0;
+
+    /// The C string at `at`, without its NUL.
+    #[allow(clippy::cast_possible_truncation)] // 32-bit addresses
+    fn c_str(h: &impl Host, at: u32) -> Vec<u8> {
+        let mut s = Vec::new();
+        loop {
+            let c: u8 = h.read(at.wrapping_add(s.len() as u32));
+            if c == 0 {
+                return s;
+            }
+            s.push(c);
+        }
+    }
+
+    /// `strcpy(dst, *prefix)` then `strcat(dst, number)`, the number as
+    /// `sprintf(buf, "%d", n)` writes it (into `buf`); with `table`, the
+    /// table's string for an `n` below 20 (signed) instead.
+    fn tex_anim_name(h: &mut impl Host, dst: u32, prefix: u32, n: u32, table: bool, buf: u32) {
+        let p: u32 = h.read(h.rebase(prefix));
+        let mut s = c_str(h, p);
+        s.push(0);
+        h.write_bytes(dst, &s);
+        #[allow(clippy::cast_possible_wrap)] // signed compare
+        let src = if table && (n as i32) < 0x14 {
+            let at = h.rebase(TEX_ANIM_NUMBERS).wrapping_add(n.wrapping_mul(4));
+            h.read(at)
+        } else {
+            #[allow(clippy::cast_possible_wrap)] // %d
+            let mut t = format!("{}", n as i32).into_bytes();
+            t.push(0);
+            h.write_bytes(buf, &t);
+            buf
+        };
+        let mut t = c_str(h, src);
+        t.push(0);
+        #[allow(clippy::cast_possible_truncation)] // 32-bit addresses
+        let end = dst.wrapping_add(c_str(h, dst).len() as u32);
+        h.write_bytes(end, &t);
+    }
+
+    /// `a / b` as the x87 divides two floats, stored as a float; 0 when
+    /// `b` is zero (a NaN divides).
+    fn div_or_zero(a: u32, b: u32) -> u32 {
+        let b = x87::load(b);
+        if b == 0.0 {
+            0
+        } else {
+            x87::store(x87::div(x87::load(a), b))
+        }
+    }
+
+    /// `graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0(a, b, c,
+    /// x, y, w, h, sw, sh, d, e)` (`0x00643eb0`, cdecl; name ours, sorts
+    /// before `graphicTextureAnimationSetMaterialVisiability`): the names
+    /// `"G" + a` and `"Animation" + b` (a number below 20, signed, from the
+    /// table at `0x00c322b0`, else `sprintf "%d"`) in `frame` (`+0x100`,
+    /// `+0x200`; `+0` the `sprintf` buffer, as the original's 0x300-byte
+    /// frame), then `setAnimatedMaterialsChar(s1, s2, c, x / sw, y / sh, w
+    /// / sw, h / sh, d, e)` on `TextureAnimationManager_GetInstance()`,
+    /// each quotient a float, 0 for a zero divisor. Returns its `eax`
+    /// (the cookie check leaves it).
+    pub fn graphic_tex_anim_set_animated_materials_char(
+        h: &mut impl Host,
+        frame: u32,
+        p: [u32; 11],
+    ) -> u32 {
+        let (s1, s2) = (frame + 0x100, frame + 0x200);
+        tex_anim_name(h, s1, TEX_ANIM_PREFIX_G, p[0], true, frame);
+        tex_anim_name(h, s2, TEX_ANIM_PREFIX_ANIMATION, p[1], true, frame);
+        let w = div_or_zero(p[5], p[7]);
+        let hh = div_or_zero(p[6], p[8]);
+        let u = div_or_zero(p[3], p[7]);
+        let v = div_or_zero(p[4], p[8]);
+        let mgr = h.call_sym(TEX_ANIM_GET_INSTANCE, Conv::Cdecl, &[]);
+        // nine words: the game's host passes up to twelve to a thiscall
+        // (`host.rs`), as `specular_set_params` does
+        let args: [u32; 9] = [s1, s2, p[2], u, v, w, hh, p[9], p[10]];
+        h.call_sym(
+            TEX_ANIM_SET_ANIMATED_MATERIALS_CHAR,
+            Conv::Thiscall(mgr),
+            &args,
+        )
+    }
+
+    /// `graphicTextureAnimationSetMaterialUV_00644150(a, b, u, v, key)`
+    /// (`0x00644150`, cdecl; name ours): the names `"G" + a` and
+    /// `"Animation" + b` (`sprintf "%d"`) in `frame` (`+0`, `+0x100`;
+    /// `+0x200` the `sprintf` buffer), then
+    /// `TextureAnimationManager_setMaterialUV_006b33c0(s1, s2, u, v, key)`
+    /// on `TextureAnimationManager_GetInstance()`.
+    pub fn graphic_tex_anim_set_material_uv(h: &mut impl Host, frame: u32, p: [u32; 5]) {
+        let (s1, s2, buf) = (frame, frame + 0x100, frame + 0x200);
+        tex_anim_name(h, s1, TEX_ANIM_PREFIX_G, p[0], false, buf);
+        tex_anim_name(h, s2, TEX_ANIM_PREFIX_ANIMATION, p[1], false, buf);
+        let mgr = h.call_sym(TEX_ANIM_GET_INSTANCE, Conv::Cdecl, &[]);
+        h.call_sym(
+            TEX_ANIM_SET_MATERIAL_UV,
+            Conv::Thiscall(mgr),
+            &[s1, s2, rt(p[2]), rt(p[3]), p[4]],
+        );
+    }
+
+    /// `PArray_Data_004d45a0(array)` (`thiscall`; name ours): an array's
+    /// elements (inline at `+4` for one, the pointer at `+4` for more, 0
+    /// for none).
+    pub const ARRAY_DATA: u32 = 0x004d_45a0;
+    /// `TextureAnimation_FindMaterial(mgr, anim, list, key)`,
+    /// `ShaderParam_CopyToBuffer_00698960(buffer, param, value)` and
+    /// `ShaderParamBuffer_SetValue2(buffer, param, value)` (both
+    /// `ret 8`, `ecx` the buffer as the original passes it).
+    pub const TEX_ANIM_FIND_MATERIAL: u32 = 0x006b_1e40;
+    pub const SHADER_PARAM_COPY_TO_BUFFER: u32 = 0x0069_8960;
+    pub const SHADER_PARAM_SET_VALUE2: u32 = 0x0063_86c0;
+    /// The `0.01` (`f64`) taken off the offsets and the `1.02` (`f32`)
+    /// scale.
+    pub const MATERIAL_UV_INSET: u32 = 0x00b1_f2b8;
+    pub const MATERIAL_UV_SCALE: u32 = 0x00b4_8628;
+
+    /// `TextureAnimationManager_setMaterialUV_006b33c0(mgr, _, _, u, v,
+    /// key)` (`0x006b33c0`, `thiscall`, `ret 0x14`; name ours, the two
+    /// name arguments unread): the entry of `key` in the manager's list
+    /// (`+0x70`, `+0x6c` of them with a flag bit, 12 bytes each, the key at
+    /// `+4`, its animation set's index at `+0`) picks the set (`+0x68`, 32
+    /// bytes each); a set with slots (`+8`, flag bit) has its animation
+    /// (`+0xc`) marked (byte `+0x34`). For each material `m` of the
+    /// animation (`+0x38`: an array, count with a flag bit read again each
+    /// pass) with texture index `+0x74` and object index `+0x78` both
+    /// non-negative, the texture (`PArray_Data` of `key`'s object `+0x78`
+    /// at `+0x10`, element `+0x74`) and the material
+    /// (`TextureAnimation_FindMaterial(anim, anim +0x18, set +0x18` less
+    /// its low bit`)`) both there, on the texture's buffer (`+4`, read
+    /// again for each): the two samplers (`+4`, `+8`) get the record
+    /// `(0xff, 0, mgr +0x38, material)` (`Render_SurfaceFormat_0066e4f0`),
+    /// the scales (`+0x50`, `+0x54`) `(1.02, 1.02)`, the offsets `+0x38`
+    /// `(u', v')` and `+0x3c` `(u', v' - 1)`, the values `+0x20`, `+0x24`
+    /// 1.0 (`ShaderParamBuffer_SetValue2`), each only when its parameter is
+    /// set, in that order (`+4`, `+0x50`, `+0x38`, `+0x20`, `+8`, `+0x54`,
+    /// `+0x3c`, `+0x24`). `u'`, `v'` are `u - 0.01`, `v - 0.01` as floats.
+    /// The records and values are the original's locals
+    /// ([`Host::scratch`], at their frame offsets).
+    pub fn tex_anim_set_material_uv(h: &mut impl Host, mgr: u32, u: u32, v: u32, key: u32) {
+        let inset = f64::from_bits(h.read(h.rebase(MATERIAL_UV_INSET)));
+        let u = x87::store(x87::sub(x87::load(u), inset));
+        let v = x87::store(x87::sub(x87::load(v), inset));
+        let n = h.read::<u32>(mgr + 0x6c) & 0x7fff_ffff;
+        let list: u32 = h.read(mgr + 0x70);
+        let entry = |i: u32| list.wrapping_add(i.wrapping_mul(12));
+        let Some(i) = (0..n).find(|&i| h.read::<u32>(entry(i).wrapping_add(4)) == key) else {
+            return;
+        };
+        let set = h.read::<u32>(entry(i)) << 5;
+        let sets: u32 = h.read(mgr + 0x68);
+        // the slot count, less its flag bit
+        let slots = h.read::<u32>(sets.wrapping_add(set).wrapping_add(8)) & 0x7fff_ffff;
+        if slots == 0 {
+            return;
+        }
+        let anim: u32 = h.read(sets.wrapping_add(set).wrapping_add(0xc));
+        h.write(anim.wrapping_add(0x34), 1u8);
+        let set = (h.read::<u32>(entry(i)) << 5).wrapping_add(h.read(mgr + 0x68));
+        if set == 0 {
+            return;
+        }
+        // the original's frame from -0x54
+        let frame = h.scratch();
+        let local = |off: u32| frame + 0x54 - off;
+        let scale = rt(h.read(h.rebase(MATERIAL_UV_SCALE)));
+        let mut j = 0;
+        loop {
+            let mats: u32 = h.read(anim.wrapping_add(0x38));
+            if j >= h.read::<u32>(mats) & 0x7fff_ffff {
+                break;
+            }
+            let arr: u32 = h.read(mats.wrapping_add(4));
+            let m: u32 = h.read(arr.wrapping_add(4 * j));
+            j += 1;
+            let ti: u32 = h.read(m.wrapping_add(0x74));
+            let oi: u32 = h.read(m.wrapping_add(0x78));
+            #[allow(clippy::cast_possible_wrap)] // signed indices
+            if (ti as i32) < 0 || (oi as i32) < 0 {
+                continue;
+            }
+            let objs: u32 = h.read(key.wrapping_add(4));
+            let obj: u32 = h.read(objs.wrapping_add(oi.wrapping_mul(4)));
+            let textures: u32 = h.read(obj.wrapping_add(0x10));
+            let data = h.call_sym(ARRAY_DATA, Conv::Thiscall(textures), &[]);
+            let tex: u32 = h.read(data.wrapping_add(ti.wrapping_mul(4)));
+            if tex == 0 {
+                continue;
+            }
+            let k = h
+                .read::<u32>(set.wrapping_add(0x18))
+                .wrapping_sub(u32::from(h.read::<u8>(set.wrapping_add(0x18)) & 1));
+            let list: u32 = h.read(anim.wrapping_add(0x18));
+            let material = h.call_sym(
+                TEX_ANIM_FIND_MATERIAL,
+                Conv::Thiscall(mgr),
+                &[anim, list, k],
+            );
+            if material == 0 {
+                continue;
+            }
+            let ctx = UvMaterial {
+                m,
+                tex,
+                words: [0xff, 0, mgr + 0x38, material],
+            };
+            ctx.sampler(h, 4, local(0x44));
+            ctx.pair(h, 0x50, local(0x1c), [scale, scale]);
+            ctx.pair(h, 0x38, local(0x24), [rt(u), rt(v)]);
+            ctx.value(h, 0x20, local(8));
+            ctx.sampler(h, 8, local(0x54));
+            ctx.pair(h, 0x54, local(0x2c), [scale, scale]);
+            let v1 = x87::store(x87::sub(x87::load(v), 1.0));
+            ctx.pair(h, 0x3c, local(0x34), [rt(u), v1]);
+            ctx.value(h, 0x24, local(8));
+        }
+    }
+
+    /// One material of [`tex_anim_set_material_uv`]: the material `m`, the
+    /// texture `tex` and the sampler record's words.
+    struct UvMaterial {
+        m: u32,
+        tex: u32,
+        words: [u32; 4],
+    }
+
+    impl UvMaterial {
+        /// The parameter at `m + off`, or `None`; and the texture's buffer.
+        fn param(&self, h: &mut impl Host, off: u32) -> Option<(u32, u32)> {
+            let param: u32 = h.read(self.m.wrapping_add(off));
+            if param == 0 {
+                return None;
+            }
+            Some((param, h.read(self.tex.wrapping_add(4))))
+        }
+
+        /// The sampler record at `rec`, by `Render_SurfaceFormat_0066e4f0`.
+        fn sampler(&self, h: &mut impl Host, off: u32, rec: u32) {
+            let Some((param, buffer)) = self.param(h, off) else {
+                return;
+            };
+            for (w, v) in (0u32..).zip(self.words) {
+                h.write(rec + 4 * w, v);
+            }
+            h.call_sym(
+                crate::managers::bridge::SET_PARAM_VALUE,
+                Conv::Thiscall(buffer),
+                &[param, rec],
+            );
+        }
+
+        /// Two floats at `at`, by `ShaderParam_CopyToBuffer_00698960`.
+        fn pair(&self, h: &mut impl Host, off: u32, at: u32, xy: [u32; 2]) {
+            let Some((param, buffer)) = self.param(h, off) else {
+                return;
+            };
+            h.write(at, xy[0]);
+            h.write(at + 4, xy[1]);
+            h.call_sym(
+                SHADER_PARAM_COPY_TO_BUFFER,
+                Conv::Thiscall(buffer),
+                &[param, at],
+            );
+        }
+
+        /// 1.0 at `at` (stored first, parameter or not), by
+        /// `ShaderParamBuffer_SetValue2`.
+        fn value(&self, h: &mut impl Host, off: u32, at: u32) {
+            h.write(at, 1f32.to_bits());
+            if let Some((param, buffer)) = self.param(h, off) {
+                h.call_sym(
+                    SHADER_PARAM_SET_VALUE2,
+                    Conv::Thiscall(buffer),
+                    &[param, at],
+                );
+            }
         }
     }
 }
