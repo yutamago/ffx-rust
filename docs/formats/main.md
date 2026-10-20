@@ -843,3 +843,20 @@ most. Spheres draw seven parts per node through
 pairs from `+0xf83c` of the kind's record (0x1000 first: no offsets), colours
 from `0x00c8659c` (panel bit set, scaled by `(0x6c - ftol(-14.4 sin)) / 128`)
 or `0x00c86644`.
+
+## Round 15: the sphere grid link strip (`AbmapDrawLinkStrip`, `0x00a521a0`)
+
+`AbmapDrawLinkStrip(p, points, n)` draws a link as textured quads from `n`
+triples of 2D points (0x18 bytes: centre, two offsets). Its record `p`
+(at least 0x1ec bytes): `+0x00/+0x10/+0x20` the three points as `(x, y, 0,
+1)`, `+0x30/+0x40/+0x50` them projected (`FFXVu0ApplyMatrix` through
+`g_Abmap + 0x113e0` for the centre, `+0x114e0` for the offsets, each divided
+by the centre's w with `FFXVu0DivVectorXYZ`), `+0x60..+0xcc` the previous
+triple's 1/16 fixed-point screen points, `+0xd0..+0x13c` the current one's
+(centre, then each offset at 1x, 2x / W, 4x / W, W = `f32(g_Abmap[+0x11350]
+* 0.6 + 0.1)`), `+0x140..+0x158` and `+0x1e0..+0x1e8` the GS packet's header
+fields. A centre w of 0 or below ends the strip; a NaN w does not (`fcomp`
+sets C0 for both "below" and unordered, and the code tests C0 for 0 < w).
+The packet is `[0x01a860f0]`; each segment is two `graphicDrawUIAbmapElement`
+quads (kinds 9 and 12) whose texture tile is the packet's bytes `+0x11`,
+`+0x10`.

@@ -1238,6 +1238,11 @@ ported! {
         let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
         abmap::bridge::abmap_draw_node_spheres(&mut mem(), w, &mut |_, f, a| super::call_cdecl(f, a));
     }
+    /// `AbmapDrawLinkStrip(p, points, n)`.
+    AbmapDrawLinkStrip @ 0x00a5_21a0 => extern "C" fn abmap_draw_link_strip(p: u32, points: u32, n: u32) {
+        let mut w = super::StackFrame::<{ abmap::bridge::STRIP_WORK as usize / 4 }>::new();
+        abmap::bridge::abmap_draw_link_strip(&mut mem(), p, points, n, w.at(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
     /// `sa_meth01dec(src, dst, size)`.
     sa_meth01dec @ 0x00a4_3bc0 => extern "C" fn sa_meth01dec(src: u32, dst: u32, size: u32) -> u32 {
         decode::bridge::sa_meth01dec(&mut mem(), src, dst, size)

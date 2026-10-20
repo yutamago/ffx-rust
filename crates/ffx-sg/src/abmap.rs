@@ -6,6 +6,8 @@
 
 /// The originals over game memory (`ffx_bridge::Mem`).
 pub mod bridge {
+    use std::cmp::Ordering;
+
     use ffx_bridge::{Global, Mem, x87};
 
     /// The sphere grid data (`g_Abmap`, `LoadAbmap`): `i16 +2` node count,
@@ -332,6 +334,313 @@ pub mod bridge {
                 }
             }
             node = node.wrapping_add(0x28);
+        }
+    }
+
+    /// `FFXVu0ApplyMatrix(dst, m, v)`.
+    pub const APPLY_MATRIX: u32 = 0x006e_d2e0;
+    /// `FFXVu0DivVectorXYZ(dst, v, s)`.
+    pub const DIV_VECTOR_XYZ: u32 = 0x006e_d420;
+    /// `graphicDrawUIAbmapElement(verts, scratch, kind)`.
+    pub const DRAW_UI_ELEMENT: u32 = 0x0063_e930;
+    /// The GS packet the strip patches (`[0x01a860f0]`).
+    pub const STRIP_PACKET: u32 = 0x01a8_60f0;
+    /// The word the emulated GS register writes land in; the strip waits
+    /// while its bit 8 is set.
+    pub const GS_SINK: u32 = 0x0230_56e8;
+    /// [`abmap_draw_link_strip`]'s work: the four vertices (`x, y, u, v`
+    /// and four colour words each, 0x20 bytes) it hands to
+    /// `graphicDrawUIAbmapElement`.
+    pub const STRIP_WORK: u32 = 0x80;
+
+    /// `.rdata` (`f64` unless noted): 0.6 and 0.1 (the strip's divisor
+    /// from `g_Abmap[+0x11350]`), 128 (`f32`) and 128, 16
+    /// (`g_Vu0FixedScale`), 1/16, 2048, 256, 208, 12, 13, 1/64, 20, 19, 11.
+    const K0_6: u32 = 0x00b4_8320;
+    const K0_1: u32 = 0x00b9_21f0;
+    const K128_F32: u32 = 0x00b5_01bc;
+    const K128: u32 = 0x00b4_c170;
+    const K16: u32 = 0x00b3_13a0;
+    const K1_16: u32 = 0x00b9_21e0;
+    const K2048: u32 = 0x00b5_1bc0;
+    const K256: u32 = 0x00b9_22f0;
+    const K208: u32 = 0x00b5_4c70;
+    const K12: u32 = 0x00b4_b468;
+    const K13: u32 = 0x00b4_b470;
+    const K1_64: u32 = 0x00b5_1648;
+    const K20: u32 = 0x00b4_9968;
+    const K19: u32 = 0x00b4_b478;
+    const K11: u32 = 0x00b5_f1b0;
+
+    /// `x` (a point's coordinate in 1/16) on the screen:
+    /// `f32(x) / 16 - 2048 + off`.
+    fn screen(mem: &impl Mem, x: i32, off: u32) -> u32 {
+        let v = x87::load(x87::store(f64::from(x)));
+        let k = |a| rdata_f64(mem, a);
+        x87::store(x87::add(x87::sub(x87::mul(v, k(K1_16)), k(K2048)), k(off)))
+    }
+
+    /// A texture coordinate: `(tile * step + off) / 64`.
+    fn tex(mem: &impl Mem, tile: u8, step: u32, off: f64) -> u32 {
+        let k = |a| rdata_f64(mem, a);
+        x87::store(x87::mul(
+            x87::add(x87::mul(f64::from(tile), k(step)), off),
+            k(K1_64),
+        ))
+    }
+
+    /// The fixed-point screen offsets of the vector at `p + vec` (already
+    /// divided by w): `ftol(v * 16)` plus the origin `p + origin` into
+    /// `p + outs[0]`, then `v` doubled (stored) twice, each time `ftol(f32(
+    /// ftol(v * 16)) / w)` plus the origin into `outs[1]`, `outs[2]`.
+    #[allow(clippy::many_single_char_names)] // p, w, x, y, v, q: as documented
+    fn offsets(mem: &mut impl Mem, p: u32, vec: u32, origin: u32, outs: [u32; 3], w: f64) {
+        let k16 = rdata_f64(mem, K16);
+        let fixed =
+            |mem: &mut _, at: u32| x87::ftol(mem, x87::mul(x87::load(Mem::read(mem, at)), k16));
+        let (x, y) = (p + vec, p + vec + 4);
+        let out = p + outs[0];
+        let v = fixed(mem, x);
+        mem.write(out, v);
+        let v = fixed(mem, y);
+        mem.write(out + 4, v);
+        for (at, o) in [(out, origin), (out + 4, origin + 4)] {
+            let v = mem.read::<u32>(at).wrapping_add(mem.read(p + o));
+            mem.write(at, v);
+        }
+        for &k in &outs[1..] {
+            let out = p + k;
+            for at in [x, y] {
+                let doubled = x87::load(mem.read(at));
+                mem.write(at, x87::store(x87::add(doubled, doubled)));
+            }
+            let v = fixed(mem, x);
+            mem.write(out, v);
+            let v = fixed(mem, y);
+            mem.write(out + 4, v);
+            for (at, o) in [(out, origin), (out + 4, origin + 4)] {
+                let int = f64::from(mem.read::<i32>(at));
+                let q = x87::ftol(mem, x87::div(x87::load(x87::store(int)), w));
+                mem.write(at, q.wrapping_add(mem.read(p + o)));
+            }
+        }
+    }
+
+    /// `AbmapDrawLinkStrip(p, points, n)` (`0x00a521a0`, name ours; from
+    /// `0x00a4b4b0`): a sphere grid link drawn as a strip of textured
+    /// quads, `p` its work record (at least `0x1ec` bytes), `points` `n`
+    /// triples of 2D points (0x18 bytes each: the centre `a`, the offsets
+    /// `b`, `c`).
+    ///
+    /// For each triple: `p[0..4] = (a, 0, 1)` through the view `g_Abmap +
+    /// 0x113e0` into `p + 0x30` (`FFXVu0ApplyMatrix`); it ends when that w
+    /// (`p + 0x3c`) is 0 or below (a NaN goes on). Then the point divided by w
+    /// (`FFXVu0DivVectorXYZ`), `b` and `c` (`p + 0x10`, `p + 0x20`, with
+    /// z 0, w 1) through `g_Abmap + 0x114e0` into `p + 0x40`, `p + 0x50`,
+    /// divided by the same w. In 1/16 (`ftol(v * 16)`): the centre at `p + 0x60`
+    /// (the first triple) or `p + 0xd0` (the rest); `b` and `c` added to
+    /// it once, then doubled and quadrupled and divided by `W =
+    /// f32(g_Abmap[+0x11350] * 0.6 + 0.1)`.
+    ///
+    /// After the first triple, the GS packet at `[0x01a860f0]` gets its
+    /// header and fixed words (twice over, after waiting for bit 8 of
+    /// `0x023056e8` to clear): words `0x8007`, `p[0x1e0] << 15 |
+    /// 0x30004000`, `0x55e`, 0; `p + 0x140..0x158` sign-extended at `+0x10`
+    /// and every 0x30 bytes after, each followed by 1, 0; `p[0x1e4]` and
+    /// `p[0x1e8]` at the vertices' third words. The colour is `ftol(128)`,
+    /// or `ftol(f32(g_Abmap[+0x11620] * 128))` when byte `+0x13` of the
+    /// packet is 1.
+    ///
+    /// Each later triple fills the packet's positions from the previous
+    /// (`p + 0x60..`) and the current (`p + 0xd0..`) offsets, then draws
+    /// two quads through `graphicDrawUIAbmapElement(work, 0, 9)` and `(work,
+    /// 0, 12)`: corners `(x / 16 - 2048 + 256, y / 16 - 2048 + 208)` of
+    /// packet words `+0x80, +0x90, +0xb0, +0xc0` and `+0xe0, +0xf0, +0x110,
+    /// +0x120`; texture tile `(s, t)` = packet bytes `+0x11`, `+0x10`: `u =
+    /// (12 s + 13 | 20) / 64`, `v = (20 t + 12 | 19) / 64` for the first
+    /// quad, `(20 t + 0 | 11) / 64` for the second. Then the current
+    /// offsets become the previous ones (`p + 0xd0..0x140` to `p + 0x60`).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn abmap_draw_link_strip<M, C>(
+        mem: &mut M,
+        p: u32,
+        points: u32,
+        n: u32,
+        work: u32,
+        call: &mut C,
+    ) where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let g = ABMAP.get(mem);
+        let w = x87::store(x87::add(
+            x87::mul(
+                x87::load(mem.read(g.wrapping_add(0x11350))),
+                rdata_f64(mem, K0_6),
+            ),
+            rdata_f64(mem, K0_1),
+        ));
+        let w = x87::load(w);
+        let mut color = rdata_f32(mem, K128_F32);
+        // one triple's projection (the first also sets the points' z and
+        // w); false when its w is not above 0
+        let project = |mem: &mut M, call: &mut C, q: u32, first: bool| -> bool {
+            for (i, o) in [(0u32, 0u32), (1, 8), (2, 0x10)] {
+                let at = p + 0x10 * i;
+                mem.write(at, mem.read::<u32>(q + o));
+                mem.write(at + 4, mem.read::<u32>(q + o + 4));
+                if first {
+                    mem.write(at + 8, 0u32);
+                    mem.write(at + 0xc, 1f32.to_bits());
+                }
+                let (to, m) = if i == 0 {
+                    (0x30, 0x113e0)
+                } else {
+                    (0x30 + 0x10 * i, 0x114e0)
+                };
+                let m = ABMAP.get(mem).wrapping_add(m);
+                let f = mem.rebase(APPLY_MATRIX);
+                call(mem, f, &[p + to, m, at]);
+                // fcomp sets C0 for 0 < w and for NaN: only 0 and below end
+                let w_order = x87::load(mem.read(p + 0x3c)).partial_cmp(&0.0);
+                if i == 0 && matches!(w_order, Some(Ordering::Less | Ordering::Equal)) {
+                    return false;
+                }
+                let pw = x87::store(x87::load(mem.read(p + 0x3c)));
+                let f = mem.rebase(DIV_VECTOR_XYZ);
+                call(mem, f, &[p + to, p + to, pw]);
+            }
+            true
+        };
+
+        if !project(mem, call, points, true) {
+            return;
+        }
+        let k16 = rdata_f64(mem, K16);
+        for (at, from) in [(0x60u32, 0x30u32), (0x64, 0x34)] {
+            let v = x87::ftol(mem, x87::mul(x87::load(mem.read(p + from)), k16));
+            mem.write(p + at, v);
+        }
+        offsets(mem, p, 0x40, 0x60, [0x70, 0x90, 0xb0], w);
+        offsets(mem, p, 0x50, 0x60, [0x80, 0xa0, 0xc0], w);
+
+        // spins as the original does (the tests keep the bit clear)
+        while mem.read::<u32>(mem.rebase(GS_SINK)) & 0x100 != 0 {}
+        let mut packet = 0;
+        for _ in 0..2 {
+            packet = mem.read::<u32>(mem.rebase(STRIP_PACKET));
+            let tag = mem.read::<u32>(p + 0x1e0) << 15 | 0x3000_4000;
+            mem.write(packet, 0x8007u32);
+            let again = mem.read::<u32>(mem.rebase(STRIP_PACKET));
+            mem.write(packet + 8, 0x55eu32);
+            mem.write(again + 4, tag);
+            mem.write(packet + 0xc, 0u32);
+            for k in 0..7 {
+                let v = mem.read::<i32>(p + 0x140 + 4 * k);
+                let at = packet + 0x10 + 0x30 * k;
+                mem.write(at, v);
+                mem.write(at + 4, v >> 31);
+                mem.write(at + 8, 1u32);
+                mem.write(at + 0xc, 0u32);
+            }
+            let first = [(0x28u32, 0x8000u32), (0x38, 0), (0x58, 0), (0x68, 0)];
+            let middle = [0x88u32, 0x98, 0xb8, 0xc8, 0xe8, 0xf8, 0x118, 0x128];
+            for (o, next) in first {
+                mem.write(packet + o, mem.read::<u32>(p + 0x1e4));
+                mem.write(packet + o + 4, next);
+            }
+            for o in middle {
+                mem.write(packet + o, mem.read::<u32>(p + 0x1e8));
+                mem.write(packet + o + 4, 0u32);
+            }
+            for o in [0x148u32, 0x158] {
+                mem.write(packet + o, mem.read::<u32>(p + 0x1e4));
+                mem.write(packet + o + 4, 0u32);
+            }
+        }
+        if mem.read::<u8>(packet + 0x13) == 1 {
+            let g = ABMAP.get(mem);
+            let level = x87::load(mem.read(g.wrapping_add(0x11620)));
+            color = x87::store(x87::mul(level, rdata_f64(mem, K128)));
+        }
+
+        let mut left = n.wrapping_sub(1);
+        let mut q = points;
+        loop {
+            q = q.wrapping_add(0x18);
+            if !project(mem, call, q, false) {
+                return;
+            }
+            for (at, from) in [(0xd0u32, 0x30u32), (0xd4, 0x34)] {
+                let v = x87::ftol(mem, x87::mul(x87::load(mem.read(p + from)), k16));
+                mem.write(p + at, v);
+            }
+            offsets(mem, p, 0x40, 0xd0, [0xe0, 0x100, 0x120], w);
+            offsets(mem, p, 0x50, 0xd0, [0xf0, 0x110, 0x130], w);
+
+            let packet = mem.read::<u32>(mem.rebase(STRIP_PACKET));
+            mem.write(packet + 0x20, mem.read::<u32>(p + 0x70));
+            let again = mem.read::<u32>(mem.rebase(STRIP_PACKET));
+            mem.write(again + 0x24, mem.read::<u32>(p + 0x74));
+            for (to, from) in [
+                (0x30u32, 0xe0u32),
+                (0x50, 0x80),
+                (0x60, 0xf0),
+                (0x80, 0x90),
+                (0x90, 0x100),
+                (0xb0, 0xa0),
+                (0xc0, 0x110),
+                (0xe0, 0xb0),
+                (0xf0, 0x120),
+                (0x110, 0xc0),
+                (0x120, 0x130),
+                (0x140, 0x60),
+                (0x150, 0xd0),
+            ] {
+                mem.write(packet + to, mem.read::<u32>(p + from));
+                mem.write(packet + to + 4, mem.read::<u32>(p + from + 4));
+            }
+
+            // the two quads: corners from packet words, texture tile
+            // (packet bytes +0x11, +0x10)
+            let tint = x87::ftol(mem, x87::load(color));
+            for v in 0..4 {
+                for c in 0..4 {
+                    mem.write(work + 0x20 * v + 0x10 + 4 * c, tint);
+                }
+            }
+            for (corners, v_off, kind) in [
+                ([0x80u32, 0x90, 0xb0, 0xc0], [K12, K19], 9u32),
+                ([0xe0, 0xf0, 0x110, 0x120], [0, K11], 0xc),
+            ] {
+                for (k, &c) in (0u32..).zip(&corners) {
+                    let vert = work + 0x20 * k;
+                    let x = screen(mem, mem.read(packet + c), K256);
+                    let y = screen(mem, mem.read(packet + c + 4), K208);
+                    mem.write(vert, x);
+                    mem.write(vert + 4, y);
+                }
+                for k in 0..4u32 {
+                    let vert = work + 0x20 * k;
+                    let s = mem.read::<u8>(packet + 0x11);
+                    let u_off = rdata_f64(mem, if k % 2 == 0 { K13 } else { K20 });
+                    mem.write(vert + 8, tex(mem, s, K12, u_off));
+                    let t = mem.read::<u8>(packet + 0x10);
+                    let off = v_off[(k / 2) as usize];
+                    let v_add = if off == 0 { 0.0 } else { rdata_f64(mem, off) };
+                    mem.write(vert + 0xc, tex(mem, t, K20, v_add));
+                }
+                let f = mem.rebase(DRAW_UI_ELEMENT);
+                call(mem, f, &[work, 0, kind]);
+            }
+
+            for k in 0..0x1c {
+                mem.write(p + 0x60 + 4 * k, mem.read::<u32>(p + 0xd0 + 4 * k));
+            }
+            left = left.wrapping_sub(1);
+            if left == 0 {
+                return;
+            }
         }
     }
 }

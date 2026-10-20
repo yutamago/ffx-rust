@@ -5938,3 +5938,147 @@ fn node_spheres_snapshot() {
     let mut rng = Xorshift(0x5eed_0f09);
     node_sphere_cases(&mut a, &mut b, &mut rng, 60);
 }
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)] // bytes of random words, small floats
+fn link_strip_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as g;
+    let log = alloc(a, b, 4 + 0x88 * 64);
+    let (stub, _) = deref_logger(log, &[1, 2], 0, 0x80, &[]);
+    redirect_to(a, b, g::DRAW_UI_ELEMENT, &stub);
+    let ab = alloc(a, b, 0x1_4000);
+    set(a, b, g::ABMAP, ab);
+    let packet = alloc(a, b, 0x160);
+    put(a, b, a.rebase(g::STRIP_PACKET), packet);
+    let p = alloc(a, b, 0x200);
+    let points = alloc(a, b, 0x18 * 10);
+    let work = b.stack_range().start + 0x1000;
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let mut draws = 0;
+    for n in 0..rounds {
+        let bytes: Vec<u8> = (0..0x200).map(|_| rng.next() as u8).collect();
+        a.write(p, &bytes).unwrap();
+        b.write(p, &bytes).unwrap();
+        if rng.below(2) == 0 {
+            // packet byte +0x13: the top byte of p + 0x140
+            put(a, b, p + 0x143, 1u8);
+        }
+        for i in 0..16 {
+            put(a, b, ab + 0x113e0 + 4 * i, float_within(rng, 2.0));
+            put(a, b, ab + 0x114e0 + 4 * i, float_within(rng, 2.0));
+        }
+        put(a, b, ab + 0x113e0 + 0xc, float_within(rng, 0.01));
+        put(a, b, ab + 0x113e0 + 0x1c, float_within(rng, 0.01));
+        put(
+            a,
+            b,
+            ab + 0x113e0 + 0x3c,
+            (4.0 + rng.below(4) as f32).to_bits(),
+        );
+        put(a, b, ab + 0x11350, float_within(rng, 4.0));
+        put(a, b, ab + 0x11620, float_within(rng, 2.0));
+        put(a, b, a.rebase(g::GS_SINK), rng.next() & !0x100);
+        for i in 0..60 {
+            put(a, b, points + 4 * i, float_within(rng, 100.0));
+        }
+        let mut count = 2 + rng.below(5);
+        match n % 8 {
+            // the first w at or below 0: 0, -1, NaN
+            1 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0u32);
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                let w = [0u32, (-1f32).to_bits(), 0x7fc0_0000][(n / 8 % 3) as usize];
+                put(a, b, ab + 0x113e0 + 0x3c, w);
+            }
+            // a tiny w: offsets past 2^24 (the f32 roundings of the
+            // integers) and a divisor where 0.1 as f32 and f64 round apart
+            4 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0u32);
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                put(a, b, ab + 0x113e0 + 0x3c, 1e-3f32.to_bits());
+                put(a, b, ab + 0x11350, 0x3204_e52du32);
+            }
+            // a corner of 2^24 + 1: 2^24 from b (x 524288 through a unit
+            // rotation, doubled, at W 1) plus the centre's 1 (x 1/16)
+            6 => {
+                for i in 0..16 {
+                    put(a, b, ab + 0x113e0 + 4 * i, 0u32);
+                    put(a, b, ab + 0x114e0 + 4 * i, 0u32);
+                }
+                put(a, b, ab + 0x113e0 + 0x30, 0.0625f32.to_bits());
+                put(a, b, ab + 0x113e0 + 0x3c, 1f32.to_bits());
+                put(a, b, ab + 0x114e0, 1f32.to_bits());
+                put(a, b, ab + 0x114e0 + 0x14, 1f32.to_bits());
+                put(a, b, ab + 0x11350, 1.5f32.to_bits());
+                for t in 0..10 {
+                    put(a, b, points + 0x18 * t + 8, 524_288f32.to_bits());
+                }
+                count = 2;
+            }
+            5 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0u32);
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                put(a, b, ab + 0x113e0 + 0x3c, 1e-4f32.to_bits());
+                put(a, b, ab + 0x11350, (1.0 + rng.below(4) as f32).to_bits());
+            }
+            // a later one: x of triple 3 far out along a steep w
+            2 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0.1f32.to_bits());
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                put(a, b, ab + 0x113e0 + 0x3c, 1f32.to_bits());
+                for t in 0..10 {
+                    put(a, b, points + 0x18 * t, (rng.below(5) as f32).to_bits());
+                }
+                put(a, b, points + 0x18 * 3, (-20f32).to_bits());
+                count = 6;
+            }
+            // n = 1 runs on until a w fails (triple 2 here)
+            3 => {
+                put(a, b, ab + 0x113e0 + 0xc, 0.1f32.to_bits());
+                put(a, b, ab + 0x113e0 + 0x1c, 0u32);
+                put(a, b, ab + 0x113e0 + 0x3c, 1f32.to_bits());
+                for t in 0..10 {
+                    put(a, b, points + 0x18 * t, (rng.below(5) as f32).to_bits());
+                }
+                put(a, b, points + 0x18 * 2, (-20f32).to_bits());
+                count = 1;
+            }
+            _ => {}
+        }
+        put(a, b, log, 0u32);
+        fill_frames(a, b, rng, work, g::STRIP_WORK as usize);
+        twin(
+            "AbmapDrawLinkStrip",
+            a,
+            b,
+            0x00a5_21a0,
+            &[p, points, count],
+            |m| {
+                g::abmap_draw_link_strip(m, p, points, count, work, call);
+            },
+        );
+        draws += Mem::read::<u32>(a, log);
+    }
+    assert!(draws > rounds, "{draws} draws");
+}
+
+#[test]
+fn link_strip_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0a);
+    link_strip_cases(&mut a, &mut b, &mut rng, 200);
+}
+
+#[test]
+fn link_strip_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f0b);
+    link_strip_cases(&mut a, &mut b, &mut rng, 60);
+}
