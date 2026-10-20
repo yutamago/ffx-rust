@@ -1,0 +1,733 @@
+<!doctype html>
+<!-- The status page (tools/status.py copies it next to data.js). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FFX rewrite status</title>
+<style>
+:root {
+  color-scheme: dark;
+  --page: #0e0e0d;
+  --surface-1: #1a1a19;
+  --surface-2: #222221;
+  --hairline: #2c2c2a;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8c8b82;
+  --replaced: #3987e5;
+  --to-port: #d95926;
+  --named: #199e70;
+  --rest: #4a4945;
+  --unnamed: #34342f;
+  --library: #262624;
+  --live: #0ca30c;
+  --seq-0: #242423;
+  --seq-1: #104281;
+  --seq-2: #1c5cab;
+  --seq-3: #2a78d6;
+  --seq-4: #5598e7;
+  --seq-5: #86b6ef;
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--page); color: var(--text-primary); }
+body {
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background:
+    radial-gradient(1200px 500px at 15% -10%, rgba(57, 135, 229, .10), transparent 60%),
+    radial-gradient(900px 400px at 95% 0%, rgba(25, 158, 112, .06), transparent 60%),
+    var(--page);
+  min-height: 100vh;
+}
+.wrap { max-width: 1320px; margin: 0 auto; padding: 28px 28px 60px; }
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 22px; }
+h1 { font-size: 22px; font-weight: 650; letter-spacing: .2px; margin: 0; }
+h1 .arrow { color: var(--text-muted); font-weight: 400; margin: 0 6px; }
+.sub { color: var(--text-muted); margin-top: 4px; }
+.head-meta { text-align: right; color: var(--text-secondary); font-size: 13px; }
+.head-meta code { font-family: var(--mono); color: var(--text-primary); }
+.live { display: inline-flex; align-items: center; gap: 7px; color: var(--text-secondary); }
+.live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 0 0 rgba(12, 163, 12, .6); animation: ping 2.4s infinite; }
+.live.stale .dot { background: var(--text-muted); animation: none; }
+@keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(12, 163, 12, .55); } 80%, 100% { box-shadow: 0 0 0 9px rgba(12, 163, 12, 0); } }
+
+.card { background: var(--surface-1); border: 1px solid var(--hairline); border-radius: 14px; padding: 18px 20px; }
+.card h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .9px; color: var(--text-secondary); margin: 0 0 4px; }
+.card .hint { color: var(--text-muted); font-size: 12.5px; margin: 0 0 14px; }
+
+.tiles { display: grid; grid-template-columns: 1.5fr repeat(4, 1fr); gap: 14px; margin-bottom: 14px; }
+.tile .label { color: var(--text-secondary); font-size: 12.5px; }
+.tile .value { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -.5px; margin-top: 2px; }
+.tile .value small { font-size: 15px; color: var(--text-muted); font-weight: 500; letter-spacing: 0; }
+.tile .foot { color: var(--text-muted); font-size: 12.5px; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.tile.hero .value { font-size: 44px; }
+.meter { position: relative; height: 8px; border-radius: 4px; background: var(--surface-2); margin-top: 12px; overflow: hidden; display: flex; gap: 2px; }
+.meter > span { display: block; height: 100%; }
+.meter > span:first-child { border-radius: 4px 0 0 4px; }
+.meter > span:last-child { border-radius: 0 4px 4px 0; }
+
+.grid-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 14px; margin-bottom: 14px; }
+.grid-two { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; margin-bottom: 14px; }
+@media (max-width: 1050px) { .grid-main, .grid-two { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(2, 1fr); } }
+
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px; padding: 2px; }
+.seg button { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 6px; color: var(--text-secondary); font-size: 12.5px; }
+.seg button[aria-pressed="true"] { background: #33332f; color: var(--text-primary); }
+.seg button:focus-visible { outline: 2px solid var(--replaced); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-secondary); font-size: 12.5px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+#mapBox { position: relative; width: 100%; aspect-ratio: 1; }
+#mapBox canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 8px; }
+#mapBox canvas.base { image-rendering: pixelated; }
+
+.mods { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.mods th { text-align: left; color: var(--text-muted); font-weight: 500; font-size: 12px; padding: 0 8px 8px; border-bottom: 1px solid var(--hairline); }
+.mods th.num, .mods td.num { text-align: right; }
+.mods td.num, .mods th { white-space: nowrap; }
+.mods td { padding: 7px 8px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+.mods tr:last-child td { border-bottom: 0; }
+.mods tbody tr { cursor: pointer; transition: background .12s; }
+.mods tbody tr:hover { background: rgba(255, 255, 255, .025); }
+.mods tbody tr.focus { background: rgba(57, 135, 229, .09); }
+.mods .name { font-weight: 600; white-space: nowrap; }
+.mods .kb { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.bar { display: flex; gap: 2px; height: 10px; width: 100%; min-width: 120px; }
+.bar span { height: 100%; }
+.bar span:first-child { border-radius: 4px 0 0 4px; }
+.bar span:last-child { border-radius: 0 4px 4px 0; }
+.pct { font-weight: 600; }
+.delta { color: var(--text-muted); font-size: 12px; }
+svg text { font-family: inherit; }
+
+#pulse { width: 100%; overflow-x: auto; }
+.pulse-legend { display: flex; align-items: center; gap: 4px; justify-content: flex-end; color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+.pulse-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+
+.feed { display: flex; flex-direction: column; gap: 12px; max-height: 520px; overflow-y: auto; padding-right: 4px; }
+.feed .item { border-left: 2px solid var(--hairline); padding-left: 12px; }
+.feed .when { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.feed .when code { font-family: var(--mono); color: var(--text-secondary); }
+.feed .subject { color: var(--text-primary); margin: 2px 0 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 6px; padding: 1px 7px; color: var(--text-secondary); }
+.chip b { color: var(--text-muted); font-weight: 400; margin-right: 5px; }
+.more { color: var(--text-muted); font-size: 12px; align-self: center; }
+
+.lib td { color: var(--text-secondary); }
+footer { color: var(--text-muted); font-size: 12.5px; margin-top: 22px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+footer code { font-family: var(--mono); color: var(--text-secondary); }
+
+#tip { position: fixed; pointer-events: none; z-index: 10; background: #0b0b0a; border: 1px solid #3a3a37; border-radius: 9px; padding: 9px 11px; font-size: 12.5px; color: var(--text-secondary); box-shadow: 0 10px 30px rgba(0, 0, 0, .5); max-width: 340px; opacity: 0; transition: opacity .08s; font-variant-numeric: tabular-nums; }
+#tip.on { opacity: 1; }
+#tip .t { color: var(--text-primary); font-weight: 600; font-family: var(--mono); word-break: break-all; }
+#tip .r { display: flex; justify-content: space-between; gap: 18px; }
+#tip .r span:last-child { color: var(--text-primary); }
+#tip i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+.empty { color: var(--text-muted); padding: 40px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>FFX.exe<span class="arrow">→</span>Rust</h1>
+      <div class="sub">Decompilation and porting status, per module</div>
+    </div>
+    <div class="head-meta">
+      <div class="live" id="live"><span class="dot"></span><span id="liveText">loading</span></div>
+      <div id="headInfo"></div>
+    </div>
+  </header>
+  <div id="app"><div class="card empty">No data yet: run <code>tools/status.sh</code>.</div></div>
+  <footer>
+    <span>Update: <code>tools/status.sh</code> (background) or <code>tools/status.sh --wait</code>. Numbers: <code>tools/progress.py</code>.</span>
+    <span id="took"></span>
+  </footer>
+</div>
+<div id="tip"></div>
+<script src="data.js"></script>
+<script>
+"use strict";
+const C = (() => {
+  const s = getComputedStyle(document.documentElement);
+  const v = n => s.getPropertyValue(n).trim();
+  return {
+    replaced: v("--replaced"), toPort: v("--to-port"), named: v("--named"), rest: v("--rest"),
+    unnamed: v("--unnamed"), library: v("--library"), hair: v("--hairline"), muted: v("--text-muted"),
+    secondary: v("--text-secondary"), primary: v("--text-primary"), surface: v("--surface-1"),
+    seq: [0, 1, 2, 3, 4, 5].map(i => v("--seq-" + i)),
+  };
+})();
+const $ = id => document.getElementById(id);
+const fmt = n => n.toLocaleString("en-US");
+const kb = b => b >= 1024 * 1024 ? (b / 1048576).toFixed(2) + " MB" : Math.round(b / 1024) + " KB";
+const pct = (a, b, d = 1) => b ? (100 * a / b).toFixed(d) + "%" : "–";
+const hex = a => "0x" + a.toString(16).padStart(8, "0");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+function ago(t) {
+  const s = Math.max(0, Date.now() / 1000 - t);
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  return Math.floor(s / 86400) + " d ago";
+}
+const when = t => new Date(t * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+// ---- tooltip -----------------------------------------------------------
+const tip = $("tip");
+function showTip(html, ev) {
+  tip.innerHTML = html;
+  tip.classList.add("on");
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - pad;
+  if (y + h > innerHeight - 8) y = ev.clientY - h - pad;
+  tip.style.left = x + "px";
+  tip.style.top = y + "px";
+}
+const hideTip = () => tip.classList.remove("on");
+const row = (k, v) => `<div class="r"><span>${k}</span><span>${v}</span></div>`;
+
+// ---- state ---------------------------------------------------------------
+let D = null, current = 0;
+const ui = { mapMode: "port", scope: "game", focus: null };
+
+function gameTotals(counts) {
+  const t = {};
+  for (const [m, c] of Object.entries(counts)) {
+    if (D.kinds[m] !== "game") continue;
+    for (const [k, v] of Object.entries(c)) t[k] = (t[k] || 0) + v;
+  }
+  return t;
+}
+
+function render() {
+  D = window.FFX_STATUS;
+  if (!D || !D.history.length) return;
+  current = D.generated;
+  const last = D.history[D.history.length - 1];
+  $("headInfo").innerHTML = `<code>${esc(D.ref)}</code> @ <code>${esc(D.head)}</code> · ${esc(D.head_subject.slice(0, 70))}`;
+  $("took").textContent = `generated ${when(D.generated)} in ${D.took} s · ${D.history.length} snapshots`;
+  updateLive();
+  $("app").innerHTML = `
+    <section class="tiles" id="tiles"></section>
+    <section class="grid-main">
+      <div class="card">
+        <div class="toolbar">
+          <div><h2>The binary</h2></div>
+          <div style="display:flex;gap:8px">
+            <div class="seg" id="mapMode"><button data-v="port">Porting</button><button data-v="names">Naming</button></div>
+            <div class="seg" id="scope"><button data-v="game">Game code</button><button data-v="all">Whole exe</button></div>
+          </div>
+        </div>
+        <p class="hint">Every function of FFX.exe in address order along a Hilbert curve; neighbours in the binary stay neighbours on the map. Lines separate modules.</p>
+        <div id="mapBox"><canvas class="base" id="mapBase"></canvas><canvas id="mapOver"></canvas></div>
+        <div class="legend" id="mapLegend" style="margin-top:12px"></div>
+      </div>
+      <div class="card">
+        <h2>Modules</h2>
+        <p class="hint">Share of each module's code, by bytes; the change over the last 24 h under each share. Click a module to find it on the map.</p>
+        <table class="mods" id="mods"></table>
+        <div class="legend" style="margin-top:12px">
+          <span><i style="background:${C.replaced}"></i>Replaced by Rust</span>
+          <span><i style="background:${C.toPort}"></i>Logic left to port</span>
+          <span><i style="background:${C.rest}"></i>Glue, platform, debug, dead</span>
+        </div>
+      </div>
+    </section>
+    <section class="card" style="margin-bottom:14px">
+      <h2>Pulse</h2>
+      <p class="hint" id="pulseHint"></p>
+      <div id="pulse"></div>
+      <div class="pulse-legend">Less ${C.seq.map(c => `<i style="background:${c}"></i>`).join("")} More</div>
+    </section>
+    <section class="grid-two">
+      <div class="card">
+        <h2>Trajectory</h2>
+        <p class="hint">Share of the game's code, by bytes, at every commit to ${esc(D.ref)}.</p>
+        <div id="traj"></div>
+        <div class="legend" style="margin-top:6px">
+          <span><i style="background:${C.replaced}"></i>Replaced by Rust</span>
+          <span><i style="background:${C.named}"></i>Named</span>
+        </div>
+        <h2 style="margin-top:22px">Logic left to port</h2>
+        <p class="hint" id="burnHint"></p>
+        <div id="burn"></div>
+      </div>
+      <div class="card">
+        <h2>Recent ports</h2>
+        <p class="hint">Functions that became Rust, newest first.</p>
+        <div class="feed" id="feed"></div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Libraries</h2>
+      <p class="hint">Replaced at the boundary the game uses, not function by function.</p>
+      <table class="mods lib" id="libs"></table>
+    </section>`;
+  renderTiles(last);
+  renderModules(last);
+  bindSeg("mapMode", "mapMode", drawMap);
+  bindSeg("scope", "scope", () => { layoutMap(); drawMap(); });
+  layoutMap();
+  drawMap();
+  renderPulse();
+  renderTrajectory();
+  renderFeed();
+  renderLibs(last);
+}
+
+function bindSeg(id, key, cb) {
+  const el = $(id);
+  const sync = () => el.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === ui[key]));
+  el.addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    ui[key] = b.dataset.v;
+    sync();
+    cb();
+  });
+  sync();
+}
+
+// ---- tiles ---------------------------------------------------------------
+function since(hours) {
+  const t0 = D.history[D.history.length - 1].t - hours * 3600;
+  let base = D.history[0];
+  for (const e of D.history) { if (e.t <= t0) base = e; else break; }
+  return base;
+}
+function renderTiles(last) {
+  const g = gameTotals(last.counts);
+  const g24 = gameTotals(since(24).counts);
+  const ported24 = D.history.filter(e => e.t > last.t - 86400).reduce((n, e) => n + e.added.filter(a => D.kinds[a[2]] === "game").length, 0);
+  const rest = g.bytes - g.replaced_bytes - g.to_port_bytes;
+  const dp = 100 * (g.replaced_bytes / g.bytes - g24.replaced_bytes / g24.bytes);
+  $("tiles").innerHTML = `
+    <div class="card tile hero">
+      <div class="label">Game code replaced by Rust</div>
+      <div class="value">${pct(g.replaced_bytes, g.bytes)}</div>
+      <div class="foot">${kb(g.replaced_bytes)} of ${kb(g.bytes)} · ${dp >= 0 ? "+" : ""}${dp.toFixed(1)} pts in 24 h</div>
+      <div class="meter">
+        <span style="width:${100 * g.replaced_bytes / g.bytes}%;background:${C.replaced}"></span>
+        <span style="width:${100 * g.to_port_bytes / g.bytes}%;background:${C.toPort}"></span>
+        <span style="width:${100 * rest / g.bytes}%;background:${C.rest}"></span>
+      </div>
+    </div>
+    <div class="card tile">
+      <div class="label">Functions replaced</div>
+      <div class="value">${fmt(g.replaced)}</div>
+      <div class="foot">of ${fmt(g.functions)} game functions</div>
+    </div>
+    <div class="card tile">
+      <div class="label">Logic left to port</div>
+      <div class="value">${fmt(g.to_port)}</div>
+      <div class="foot">functions · ${kb(g.to_port_bytes)}</div>
+    </div>
+    <div class="card tile">
+      <div class="label">Functions named</div>
+      <div class="value">${pct(g.named, g.functions, 0)}</div>
+      <div class="foot">${fmt(g.named)} in symbols/ffx.sym</div>
+    </div>
+    <div class="card tile">
+      <div class="label">Ported in the last 24 h</div>
+      <div class="value">${fmt(ported24)}</div>
+      <div class="foot">functions, over ${D.history.filter(e => e.t > last.t - 86400).length} commits</div>
+    </div>`;
+}
+
+// ---- modules ---------------------------------------------------------------
+function gameModules(counts) {
+  return Object.keys(counts).filter(m => D.kinds[m] === "game").sort((a, b) => counts[b].bytes - counts[a].bytes);
+}
+function seriesOf(m) {
+  return D.history.filter(e => e.counts[m]).map(e => ({ t: e.t, v: e.counts[m].replaced_bytes / e.counts[m].bytes }));
+}
+function sparkline(pts, w = 90, h = 24) {
+  if (pts.length < 2) return "";
+  const t0 = D.history[0].t, t1 = D.history[D.history.length - 1].t;
+  const x = t => 2 + (w - 4) * (t - t0) / Math.max(1, t1 - t0);
+  const y = v => h - 2 - (h - 4) * v;
+  const d = pts.map((p, i) => (i ? "L" : "M") + x(p.t).toFixed(1) + "," + y(p.v).toFixed(1)).join("");
+  const lp = pts[pts.length - 1];
+  return `<svg width="${w}" height="${h}" aria-hidden="true"><path d="${d}" fill="none" stroke="${C.replaced}" stroke-width="1.5" stroke-linejoin="round"/><circle cx="${x(lp.t)}" cy="${y(lp.v)}" r="2.5" fill="${C.replaced}" stroke="${C.surface}" stroke-width="1.5"/></svg>`;
+}
+function renderModules(last) {
+  const base = since(24).counts;
+  const mods = gameModules(last.counts);
+  $("mods").innerHTML = `<thead><tr><th>Module</th><th>Code</th><th class="num" title="change over the last 24 h below">Replaced</th><th class="num">To port</th><th class="num">Named</th><th>Over time</th></tr></thead><tbody>${mods.map(m => {
+    const c = last.counts[m], b = c.bytes;
+    const restB = Math.max(0, b - c.replaced_bytes - c.to_port_bytes);
+    const prev = base[m] ? 100 * base[m].replaced_bytes / base[m].bytes : 0;
+    const dp = 100 * c.replaced_bytes / b - prev;
+    return `<tr data-m="${m}" class="${ui.focus === m ? "focus" : ""}">
+      <td><div class="name">${m}</div><div class="kb">${kb(b)} · ${fmt(c.functions)} fn</div></td>
+      <td style="width:30%"><div class="bar">
+        ${c.replaced_bytes ? `<span style="width:${100 * c.replaced_bytes / b}%;background:${C.replaced}"></span>` : ""}
+        ${c.to_port_bytes ? `<span style="width:${100 * c.to_port_bytes / b}%;background:${C.toPort}"></span>` : ""}
+        ${restB ? `<span style="width:${100 * restB / b}%;background:${C.rest}"></span>` : ""}
+      </div></td>
+      <td class="num"><span class="pct">${pct(c.replaced_bytes, b, 0)}</span><div class="delta">${Math.abs(dp) >= .05 ? (dp > 0 ? "+" : "") + dp.toFixed(1) + " pts" : "&nbsp;"}</div></td>
+      <td class="num">${fmt(c.to_port)}<div class="delta">${kb(c.to_port_bytes)}</div></td>
+      <td class="num">${pct(c.named, c.functions, 0)}</td>
+      <td>${sparkline(seriesOf(m))}</td>
+    </tr>`;
+  }).join("")}</tbody>`;
+  $("mods").onclick = e => {
+    const tr = e.target.closest("tr[data-m]");
+    if (!tr) return;
+    ui.focus = ui.focus === tr.dataset.m ? null : tr.dataset.m;
+    document.querySelectorAll("#mods tbody tr").forEach(r => r.classList.toggle("focus", r.dataset.m === ui.focus));
+    drawMap();
+    renderPulse();
+  };
+  $("mods").onmousemove = e => {
+    const tr = e.target.closest("tr[data-m]");
+    if (!tr) return hideTip();
+    const c = last.counts[tr.dataset.m];
+    showTip(`<div class="t">${tr.dataset.m}</div>
+      ${row(`<i style="background:${C.replaced}"></i>Replaced`, `${fmt(c.replaced)} fn · ${kb(c.replaced_bytes)}`)}
+      ${row(`<i style="background:${C.toPort}"></i>Logic to port`, `${fmt(c.to_port)} fn · ${kb(c.to_port_bytes)}`)}
+      ${row("Wrapped", fmt(c.wrapped))}
+      ${row("Named", `${fmt(c.named)} of ${fmt(c.functions)}`)}`, e);
+  };
+  $("mods").onmouseleave = hideTip;
+}
+
+// ---- the binary map ----------------------------------------------------------
+const ORDER = 8, SIDE = 1 << ORDER, CELLS = SIDE * SIDE;
+const HX = new Uint16Array(CELLS), HY = new Uint16Array(CELLS), HD = new Uint32Array(CELLS);
+for (let d = 0; d < CELLS; d++) {
+  let x = 0, y = 0, t = d;
+  for (let s = 1; s < SIDE; s *= 2) {
+    const rx = 1 & (t >> 1), ry = 1 & (t ^ rx);
+    if (!ry) { if (rx) { x = s - 1 - x; y = s - 1 - y; } const tmp = x; x = y; y = tmp; }
+    x += s * rx; y += s * ry; t >>= 2;
+  }
+  HX[d] = x; HY[d] = y; HD[y * SIDE + x] = d;
+}
+let M = null; // the current layout
+function layoutMap() {
+  const F = D.map, n = F.addr.length;
+  const game = F.kinds.map(k => k === "game");
+  const idx = [];
+  for (let i = 0; i < n; i++) if (ui.scope === "all" || game[F.module[i]]) idx.push(i);
+  const off = new Float64Array(idx.length + 1);
+  for (let j = 0; j < idx.length; j++) off[j + 1] = off[j] + F.size[idx[j]];
+  const per = off[idx.length] / CELLS;
+  // the function at each cell's middle
+  const at = new Int32Array(CELLS);
+  let j = 0;
+  for (let d = 0; d < CELLS; d++) {
+    const mid = (d + .5) * per;
+    while (j < idx.length - 1 && off[j + 1] <= mid) j++;
+    at[d] = j;
+  }
+  M = { idx, off, per, at };
+}
+function stateColor(i, mode) {
+  const F = D.map;
+  const game = F.kinds[F.module[i]] === "game";
+  if (mode === "names") return !game ? C.library : F.named[i] ? C.named : C.unnamed;
+  const st = F.states[F.state[i]];
+  if (st === "replaced") return C.replaced;
+  if (!game) return C.library;
+  return F.categories[F.category[i]] === "logic" ? C.toPort : C.rest;
+}
+function drawMap() {
+  const box = $("mapBox"), base = $("mapBase"), over = $("mapOver");
+  const F = D.map;
+  // colors: each cell mixes its functions by their bytes in it
+  const img = new ImageData(SIDE, SIDE);
+  const acc = new Float32Array(CELLS * 3);
+  const cache = new Map();
+  const col = i => { const c = stateColor(i, ui.mapMode); let v = cache.get(c); if (!v) cache.set(c, v = rgb(c)); return v; };
+  for (let j = 0; j < M.idx.length; j++) {
+    const a = M.off[j], b = M.off[j + 1], c = col(M.idx[j]);
+    for (let d = Math.floor(a / M.per); d < CELLS && d * M.per < b; d++) {
+      const w = Math.min(b, (d + 1) * M.per) - Math.max(a, d * M.per);
+      acc[d * 3] += c[0] * w; acc[d * 3 + 1] += c[1] * w; acc[d * 3 + 2] += c[2] * w;
+    }
+  }
+  const focus = ui.focus ? F.modules.indexOf(ui.focus) : -1;
+  for (let d = 0; d < CELLS; d++) {
+    const p = (HY[d] * SIDE + HX[d]) * 4;
+    const dim = focus >= 0 && F.module[M.idx[M.at[d]]] !== focus ? .28 : 1;
+    img.data[p] = acc[d * 3] / M.per * dim;
+    img.data[p + 1] = acc[d * 3 + 1] / M.per * dim;
+    img.data[p + 2] = acc[d * 3 + 2] / M.per * dim;
+    img.data[p + 3] = 255;
+  }
+  base.width = base.height = SIDE;
+  base.getContext("2d").putImageData(img, 0, 0);
+
+  // module borders and labels, at screen resolution
+  const css = box.clientWidth, dpr = devicePixelRatio || 1, px = css * dpr;
+  over.width = over.height = px;
+  const g = over.getContext("2d"), k = px / SIDE;
+  const modAt = (x, y) => F.module[M.idx[M.at[HD[y * SIDE + x]]]];
+  g.strokeStyle = "rgba(14,14,13,.9)";
+  g.lineWidth = Math.max(1, dpr * 1.25);
+  g.beginPath();
+  for (let y = 0; y < SIDE; y++) for (let x = 0; x < SIDE; x++) {
+    const m = modAt(x, y);
+    if (x + 1 < SIDE && modAt(x + 1, y) !== m) { g.moveTo((x + 1) * k, y * k); g.lineTo((x + 1) * k, (y + 1) * k); }
+    if (y + 1 < SIDE && modAt(x, y + 1) !== m) { g.moveTo(x * k, (y + 1) * k); g.lineTo((x + 1) * k, (y + 1) * k); }
+  }
+  g.stroke();
+  // each module's name at the middle of its longest stretch
+  const best = new Map();
+  let start = 0;
+  for (let d = 1; d <= CELLS; d++) {
+    const m = d < CELLS ? F.module[M.idx[M.at[d]]] : -1, pm = F.module[M.idx[M.at[d - 1]]];
+    if (m !== pm) {
+      const len = d - start;
+      if (!best.has(pm) || best.get(pm)[1] < len) best.set(pm, [start, len]);
+      start = d;
+    }
+  }
+  g.font = `600 ${Math.round(12 * dpr)}px system-ui, sans-serif`;
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  for (const [m, [s, len]] of best) {
+    if (len < CELLS / 250) continue;
+    const d = s + (len >> 1), x = (HX[d] + .5) * k, y = (HY[d] + .5) * k;
+    const name = F.modules[m];
+    g.lineWidth = 4 * dpr;
+    g.strokeStyle = "rgba(10,10,9,.85)";
+    g.strokeText(name, x, y);
+    g.fillStyle = focus < 0 || focus === m ? C.primary : C.muted;
+    g.fillText(name, x, y);
+  }
+  M.k = k / dpr;
+
+  $("mapLegend").innerHTML = ui.mapMode === "port"
+    ? `<span><i style="background:${C.replaced}"></i>Replaced by Rust</span><span><i style="background:${C.toPort}"></i>Logic left to port</span><span><i style="background:${C.rest}"></i>Glue, platform, debug, dead</span>${ui.scope === "all" ? `<span><i style="background:${C.library};outline:1px solid ${C.hair}"></i>Library</span>` : ""}`
+    : `<span><i style="background:${C.named}"></i>Named</span><span><i style="background:${C.unnamed}"></i>Unnamed</span>${ui.scope === "all" ? `<span><i style="background:${C.library};outline:1px solid ${C.hair}"></i>Library</span>` : ""}`;
+
+  over.onmousemove = e => {
+    const r = over.getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) / r.width * SIDE), y = Math.floor((e.clientY - r.top) / r.height * SIDE);
+    if (x < 0 || y < 0 || x >= SIDE || y >= SIDE) return hideTip();
+    const j = M.at[HD[y * SIDE + x]], i = M.idx[j];
+    const st = F.states[F.state[i]], cat = F.categories[F.category[i]];
+    const label = st === "replaced" ? "replaced by Rust" : st === "wrapped" ? "wrapped (original still runs)"
+      : F.kinds[F.module[i]] === "library" ? "library" : cat === "logic" ? "logic, to port" : "not ported 1:1";
+    showTip(`<div class="t">${esc(F.names[i] || "sub_" + F.addr[i].toString(16).padStart(8, "0"))}</div>
+      ${row("Address", hex(F.addr[i]))}
+      ${row("Size", fmt(F.size[i]) + " bytes")}
+      ${row("Module", F.modules[F.module[i]])}
+      ${row("State", `<i style="background:${stateColor(i, "port")}"></i>${label}`)}
+      ${cat ? row("Class", cat) : ""}
+      ${row("Named", F.named[i] ? "yes" : "no")}`, e);
+  };
+  over.onmouseleave = hideTip;
+  over.onclick = e => {
+    const r = over.getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) / r.width * SIDE), y = Math.floor((e.clientY - r.top) / r.height * SIDE);
+    const m = F.modules[F.module[M.idx[M.at[HD[y * SIDE + x]]]]];
+    if (D.kinds[m] !== "game") return;
+    ui.focus = ui.focus === m ? null : m;
+    document.querySelectorAll("#mods tbody tr").forEach(r => r.classList.toggle("focus", r.dataset.m === ui.focus));
+    drawMap();
+    renderPulse();
+  };
+}
+
+// ---- pulse: ports per module per time bucket ---------------------------------
+function renderPulse() {
+  const H = D.history, t1 = Date.now() / 1000;
+  const steps = [1, 2, 3, 4, 6, 8, 12, 24, 48, 168].map(h => h * 3600);
+  const t0raw = H[0].t;
+  const width = $("pulse").clientWidth || 1000;
+  const labelW = 86, cellMax = 14, gap = 2;
+  const maxCols = Math.max(20, Math.floor((width - labelW) / (cellMax * .75 + gap)));
+  const step = steps.find(s => (t1 - t0raw) / s <= maxCols) || steps[steps.length - 1];
+  // buckets aligned to local midnight
+  const mid = new Date(t0raw * 1000); mid.setHours(0, 0, 0, 0);
+  let t0 = mid.getTime() / 1000;
+  while (t0 + step <= t0raw) t0 += step;
+  const cols = Math.ceil((t1 - t0) / step);
+  const mods = ["all game code", ...gameModules(H[H.length - 1].counts)];
+  const grid = mods.map(() => new Array(cols).fill(null).map(() => []));
+  for (const e of H) {
+    const c = Math.min(cols - 1, Math.floor((e.t - t0) / step));
+    for (const a of e.added) {
+      if (D.kinds[a[2]] !== "game") continue;
+      grid[0][c].push(a);
+      const r = mods.indexOf(a[2]);
+      if (r > 0) grid[r][c].push(a);
+    }
+  }
+  // GitHub-style levels: quartiles of the non-empty cells (the total row on its own)
+  const levels = rows => {
+    const v = rows.flat().map(x => x.length).filter(Boolean).sort((a, b) => a - b);
+    const q = f => v[Math.min(v.length - 1, Math.floor(f * v.length))] || 1;
+    return [q(.25), q(.5), q(.75), q(.92)];
+  };
+  const lvTotal = levels([grid[0]]), lvMods = levels(grid.slice(1));
+  const level = (n, lv) => !n ? 0 : n <= lv[0] ? 1 : n <= lv[1] ? 2 : n <= lv[2] ? 3 : n <= lv[3] ? 4 : 5;
+  const cell = Math.max(6, Math.min(cellMax, Math.floor((width - labelW) / cols) - gap));
+  const pitch = cell + gap, top = 22, totalGap = 8;
+  const W = labelW + cols * pitch, Hh = top + mods.length * pitch + totalGap;
+  const hours = step / 3600;
+  $("pulseHint").textContent = `Functions ported per ${hours >= 24 ? (hours / 24) + " day" + (hours > 24 ? "s" : "") : hours + " hour" + (hours > 1 ? "s" : "")}, per module. The top row is the whole game on its own scale.`;
+  let s = `<svg width="${W}" height="${Hh}" role="img" aria-label="Ports per module over time">`;
+  // day ticks
+  const starts = [];
+  for (let c = 0, lastDay = ""; c < cols; c++) {
+    const day = new Date((t0 + c * step) * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    if (day !== lastDay) { lastDay = day; starts.push([labelW + c * pitch, day, c]); }
+  }
+  starts.forEach(([x, day, c], i) => {
+    // a day cut short at the start gives way to the next
+    if (!starts[i + 1] || starts[i + 1][0] - x >= 48) s += `<text x="${x}" y="12" fill="${C.muted}" font-size="11">${day}</text>`;
+    if (c) s += `<line x1="${x - gap / 2}" x2="${x - gap / 2}" y1="16" y2="${Hh}" stroke="${C.hair}"/>`;
+  });
+  mods.forEach((m, r) => {
+    const y = top + r * pitch + (r ? totalGap : 0);
+    const dim = ui.focus && r && m !== ui.focus;
+    s += `<text x="${labelW - 10}" y="${y + cell / 2 + 4}" text-anchor="end" font-size="12" fill="${r === 0 || m === ui.focus ? C.primary : dim ? C.muted : C.secondary}" font-weight="${r === 0 || m === ui.focus ? 600 : 400}">${m === "all game code" ? "all" : m}</text>`;
+    for (let c = 0; c < cols; c++) {
+      const n = grid[r][c].length;
+      const lv = level(n, r ? lvMods : lvTotal);
+      const future = t0 + c * step > t1;
+      s += `<rect data-r="${r}" data-c="${c}" x="${labelW + c * pitch}" y="${y}" width="${cell}" height="${cell}" rx="2.5" fill="${C.seq[lv]}" opacity="${future ? 0 : dim ? .35 : 1}"/>`;
+    }
+  });
+  s += "</svg>";
+  const el = $("pulse");
+  el.innerHTML = s;
+  el.onmousemove = e => {
+    const rc = e.target.closest("rect");
+    if (!rc) return hideTip();
+    const r = +rc.dataset.r, c = +rc.dataset.c, list = grid[r][c];
+    const a = new Date((t0 + c * step) * 1000), b = new Date((t0 + (c + 1) * step) * 1000);
+    const f = d => d.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
+    const names = list.slice(0, 8).map(x => `<div style="font-family:var(--mono);color:var(--text-primary)">${esc(x[1])}${r ? "" : ` <span style="color:var(--text-muted)">${x[2]}</span>`}</div>`).join("");
+    showTip(`<div class="t" style="font-family:inherit">${r ? mods[r] : "all game code"}</div>
+      <div style="margin-bottom:4px">${f(a)} – ${f(b)}</div>
+      ${row("Functions ported", fmt(list.length))}
+      ${names ? `<div style="margin-top:6px">${names}${list.length > 8 ? `<div>+${list.length - 8} more</div>` : ""}</div>` : ""}`, e);
+  };
+  el.onmouseleave = hideTip;
+}
+
+// ---- line charts ---------------------------------------------------------------
+function lineChart(el, series, opt) {
+  const W = el.clientWidth || 600, H = opt.height || 220;
+  const L = 58, R = 64, T = 10, B = 26;
+  const pts = series.flatMap(s => s.points);
+  const t0 = Math.min(...pts.map(p => p.t)), t1 = Math.max(...pts.map(p => p.t));
+  const ymax = opt.ymax ?? Math.max(...pts.map(p => p.v)) * 1.1;
+  const x = t => L + (W - L - R) * (t - t0) / Math.max(1, t1 - t0);
+  const y = v => T + (H - T - B) * (1 - v / ymax);
+  let s = `<svg width="${W}" height="${H}" role="img" aria-label="${esc(opt.label)}">`;
+  for (let i = 0; i <= 4; i++) {
+    const v = ymax * i / 4, yy = y(v);
+    s += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${C.hair}"/>`;
+    s += `<text x="${L - 8}" y="${yy + 4}" text-anchor="end" font-size="11" fill="${C.muted}">${opt.fmtY(v)}</text>`;
+  }
+  // a tick each day
+  const d = new Date(t0 * 1000); d.setHours(24, 0, 0, 0);
+  const days = (t1 - t0) / 86400, every = Math.max(1, Math.ceil(days / 8));
+  for (let t = d.getTime() / 1000, i = 0; t < t1; t += 86400, i++) {
+    if (i % every) continue;
+    s += `<line x1="${x(t)}" x2="${x(t)}" y1="${H - B}" y2="${H - B + 4}" stroke="${C.muted}"/>`;
+    s += `<text x="${x(t)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="${C.muted}">${new Date(t * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</text>`;
+  }
+  s += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="${C.muted}" stroke-opacity=".5"/>`;
+  for (const se of series) {
+    const p = se.points;
+    // a step line: the counts hold until the next commit
+    let path = "";
+    p.forEach((q, i) => { path += i ? `H${x(q.t).toFixed(1)}V${y(q.v).toFixed(1)}` : `M${x(q.t).toFixed(1)},${y(q.v).toFixed(1)}`; });
+    if (se.area) s += `<path d="${path}V${y(0)}H${x(p[0].t)}Z" fill="${se.color}" fill-opacity=".10"/>`;
+    s += `<path d="${path}" fill="none" stroke="${se.color}" stroke-width="2" stroke-linejoin="round"/>`;
+    const lp = p[p.length - 1];
+    s += `<circle cx="${x(lp.t)}" cy="${y(lp.v)}" r="4" fill="${se.color}" stroke="${C.surface}" stroke-width="2"/>`;
+    s += `<text x="${x(lp.t) + 9}" y="${y(lp.v) + 4}" font-size="12" font-weight="600" fill="${C.primary}">${opt.fmtV(lp.v)}</text>`;
+  }
+  s += `<g class="hover" style="display:none"><line y1="${T}" y2="${H - B}" stroke="${C.secondary}" stroke-opacity=".5"/>${series.map(se => `<circle r="4.5" fill="${se.color}" stroke="${C.surface}" stroke-width="2"/>`).join("")}</g>`;
+  s += `<rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent"/></svg>`;
+  el.innerHTML = s;
+  const svg = el.querySelector("svg"), hov = svg.querySelector(".hover");
+  svg.onmousemove = e => {
+    const r = svg.getBoundingClientRect(), mx = e.clientX - r.left;
+    if (mx < L || mx > W - R) { hov.style.display = "none"; return hideTip(); }
+    const t = t0 + (mx - L) / (W - L - R) * (t1 - t0);
+    const at = se => { let q = se.points[0]; for (const p of se.points) { if (p.t <= t) q = p; else break; } return q; };
+    hov.style.display = "";
+    hov.querySelector("line").setAttribute("x1", mx);
+    hov.querySelector("line").setAttribute("x2", mx);
+    const qs = series.map(at);
+    hov.querySelectorAll("circle").forEach((c, i) => { c.setAttribute("cx", mx); c.setAttribute("cy", y(qs[i].v)); });
+    const e0 = qs[0].e;
+    showTip(`<div style="margin-bottom:4px">${when(e0.t)} · <span style="font-family:var(--mono)">${e0.sha}</span></div>
+      ${series.map((se, i) => row(`<i style="background:${se.color}"></i>${se.name}`, opt.fmtV(qs[i].v))).join("")}
+      <div style="margin-top:4px;color:var(--text-muted)">${esc(e0.subject)}</div>`, e);
+  };
+  svg.onmouseleave = () => { hov.style.display = "none"; hideTip(); };
+}
+function renderTrajectory() {
+  const H = D.history.map(e => ({ e, g: gameTotals(e.counts) }));
+  lineChart($("traj"), [
+    { name: "Named", color: C.named, area: false, points: H.map(({ e, g }) => ({ t: e.t, v: 100 * g.named_bytes / g.bytes, e })) },
+    { name: "Replaced", color: C.replaced, area: true, points: H.map(({ e, g }) => ({ t: e.t, v: 100 * g.replaced_bytes / g.bytes, e })) },
+  ], { label: "Share of game code replaced and named over time", ymax: 100, fmtY: v => v + "%", fmtV: v => v.toFixed(1) + "%" });
+  // the burn-down starts with symbols/classes.tsv
+  const B = H.filter(({ g }) => g.logic_bytes > 0);
+  if (B.length < 2) { $("burnHint").textContent = "Starts once symbols/classes.tsv exists."; return; }
+  lineChart($("burn"), [
+    { name: "Logic to port", color: C.toPort, area: true, points: B.map(({ e, g }) => ({ t: e.t, v: g.to_port_bytes / 1024, e })) },
+  ], { label: "Logic left to port over time", height: 170, fmtY: v => Math.round(v) + " KB", fmtV: v => Math.round(v) + " KB" });
+  const now = B[B.length - 1], ago2 = B.find(({ e }) => e.t >= now.e.t - 2 * 86400) || B[0];
+  const days = (now.e.t - ago2.e.t) / 86400;
+  const rate = days > 0 ? (ago2.g.to_port_bytes - now.g.to_port_bytes) / days : 0;
+  $("burnHint").textContent = `Logic functions (symbols/classes.tsv) not replaced yet, in KB. ` + (rate > 0
+    ? `Over the last ${days.toFixed(1)} days it went down ${kb(rate)} a day; at that pace the rest takes about ${Math.ceil(now.g.to_port_bytes / rate)} days.`
+    : `It has not gone down over the last two days.`);
+}
+
+// ---- feed and libraries ---------------------------------------------------------
+function renderFeed() {
+  const items = D.history.filter(e => e.added.length && e !== D.history[0]).slice(-25).reverse();
+  $("feed").innerHTML = items.map(e => `<div class="item">
+      <div class="when">${ago(e.t)} · ${when(e.t)} · <code>${e.sha}</code> · <b style="color:var(--text-secondary)">+${e.added.length}</b></div>
+      <div class="subject">${esc(e.subject)}</div>
+      <div class="chips">${e.added.slice(0, 10).map(a => `<span class="chip" title="${hex(a[0])}"><b>${a[2]}</b>${esc(a[1])}</span>`).join("")}${e.added.length > 10 ? `<span class="more">+${e.added.length - 10} more</span>` : ""}</div>
+    </div>`).join("") || `<div class="empty">Nothing yet.</div>`;
+}
+function renderLibs(last) {
+  const libs = Object.keys(last.counts).filter(m => D.kinds[m] === "library").sort((a, b) => last.counts[b].bytes - last.counts[a].bytes);
+  $("libs").innerHTML = `<thead><tr><th>Library</th><th class="num">Functions</th><th class="num">Code</th><th class="num">Named</th><th class="num" title="change over the last 24 h below">Replaced</th><th class="num">Wrapped</th></tr></thead><tbody>${libs.map(m => {
+    const c = last.counts[m];
+    return `<tr><td class="name">${m}</td><td class="num">${fmt(c.functions)}</td><td class="num">${kb(c.bytes)}</td><td class="num">${pct(c.named, c.functions)}</td><td class="num">${fmt(c.replaced)}</td><td class="num">${fmt(c.wrapped)}</td></tr>`;
+  }).join("")}</tbody>`;
+}
+
+// ---- live updates: data.js is reloaded every 30 s (works from file:// too) ----------
+function updateLive() {
+  if (!D) return;
+  const fresh = Date.now() / 1000 - D.head_time < 6 * 3600;
+  $("live").classList.toggle("stale", !fresh);
+  $("liveText").textContent = `updated ${ago(D.generated)} · last commit ${ago(D.head_time)}`;
+}
+function poll() {
+  const s = document.createElement("script");
+  s.src = "data.js?" + Date.now();
+  s.onload = () => { s.remove(); if (window.FFX_STATUS && window.FFX_STATUS.generated !== current) render(); else updateLive(); };
+  s.onerror = () => s.remove();
+  document.head.appendChild(s);
+}
+setInterval(poll, 30000);
+let rt;
+addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => D && render(), 150); });
+if (window.FFX_STATUS) render();
+</script>
+</body>
+</html>
