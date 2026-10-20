@@ -5390,4 +5390,13 @@ ported! {
         let ebp = frame.at() + 0x14;
         part::bridge::ppp_pobj_pos_rot(&mut mem(), pos, rot, target, ebp, &mut |_, f, a| call_ptr(f, a));
     }
+    // ---- round 35 d ----
+    /// `pppDrawShapeFieldSpdStep_00744f60(def, w)`.
+    pppDrawShapeFieldSpdStep_00744f60 @ 0x0074_4f60 => extern "C" fn ppp_draw_shape_field_spd_step(def: u32, w: u32) {
+        draw::bridge::ppp_draw_shape_field_spd_step(&mut mem(), def, w, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldGlobalStep_007460b0(def, w)`.
+    pppDrawShapeFieldGlobalStep_007460b0 @ 0x0074_60b0 => extern "C" fn ppp_draw_shape_field_global_step(def: u32, w: u32) {
+        draw::bridge::ppp_draw_shape_field_global_step(&mut mem(), def, w, &mut |_, f, a| call_ptr(f, a));
+    }
 }

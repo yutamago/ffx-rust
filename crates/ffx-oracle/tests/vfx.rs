@@ -20568,3 +20568,81 @@ fn round35c_zbuf_init_axes_and_shape_fields_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round35d_shape_field_steps_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_4f60);
+        let slot = p.sym(heap::bridge::ENV_SLOT.sym);
+        let (env_cell, env, table, anim, def, w, parts, vels) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x20),
+            p.alloc(0x100),
+            p.alloc(0x100),
+            p.alloc(0x80),
+            p.alloc(0xb0 * 8),
+            p.alloc(0x100),
+        );
+        p.set(slot, env_cell);
+        p.set(env_cell, env);
+        p.set(env + 0x24, table);
+        for round in 0..2000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            // the animation: frame lengths, flags and the frame count
+            p.fill(anim, 0x100, &mut rng);
+            let frames = rng.below(6) as i16;
+            p.set(anim + 6, frames);
+            for f in 0..8 {
+                p.set(
+                    anim + 8 * f + 0x12,
+                    rng.pick(&[0u16, 1, 3, 8, 0x8000, 0xffff]),
+                );
+                p.set(anim + 8 * f + 0x14, rng.pick(&[0u8, 0x80, 0x7f, 0xff]));
+            }
+            let i = rng.below(8);
+            p.set(def + 4, i);
+            p.set(table + 4 * i, anim);
+            p.set(def + 8, rng.pick(&[0u32, 1, 3, 8, u32::MAX]));
+            p.set(def + 0xc, rng.pick(&[0u16, 1, 2, 5, 0xffff]));
+            for k in 0..8 {
+                let v = rng.float();
+                p.set(def + 0x90 + 4 * k, v);
+            }
+            p.set(w + 0x40, parts);
+            p.set(w + 0x54, vels);
+            for k in 0..0x40 {
+                let v = rng.float();
+                p.set(vels + 4 * k, v);
+            }
+            let (life, life2) = (rng.below(6), rng.below(6));
+            p.set(w + 0x50, life);
+            p.set(w + 0x58, life2);
+            let spd = rng.chance(50);
+            let stride = if spd { 0xa0 } else { 0xb0 };
+            for k in 0..8 {
+                let at = parts + stride * k;
+                for j in 0..0x2c {
+                    let v = rng.float();
+                    p.set(at + 4 * j, v);
+                }
+                p.set(at, rng.next() | u32::from(rng.chance(70)));
+                p.set(at + 4, rng.pick(&[0u16, 2, 7, 0x7ffe, 0xfffe]));
+                p.set(at + 6, rng.below(6) as u16);
+                p.set(at + 8, rng.below(6));
+            }
+            if spd {
+                p.check(&what("spd_step"), 0x0074_4f60, &[def, w], |m| {
+                    draw::bridge::ppp_draw_shape_field_spd_step(m, def, w, &mut call_original);
+                    None
+                });
+            } else {
+                p.check(&what("global_step"), 0x0074_60b0, &[def, w], |m| {
+                    draw::bridge::ppp_draw_shape_field_global_step(m, def, w, &mut call_original);
+                    None
+                });
+            }
+        }
+    }
+}

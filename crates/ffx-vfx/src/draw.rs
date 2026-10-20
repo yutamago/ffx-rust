@@ -1339,4 +1339,156 @@ pub mod bridge {
         }
         1
     }
+
+    // ---- round 35 d ----
+
+    /// The animation of the shape field steps: the record's `u16 +4`
+    /// (time) goes on by `step`; reaching `i16 anim[8 frame +0x12]` (the
+    /// frame's length, `frame` the record's `u16 +6` read before) it drops
+    /// by it and the frame goes on; past the last frame (`i16 anim +6`) a
+    /// frame flagged `0x80` (byte `anim[8 frame +0x14]`) clears time and
+    /// frame (one word), else the time is 0 and the frame stays.
+    fn shape_field_anim(mem: &mut impl Mem, rec: u32, step: u16, anim: u32, frame: u32) {
+        let entry = anim.wrapping_add(frame << 3);
+        let time = step.wrapping_add(mem.read::<u16>(rec + 4));
+        mem.write(rec + 4, time);
+        let length = mem.read::<u16>(entry.wrapping_add(0x12));
+        if i32::from(time) < i32::from(length.cast_signed()) {
+            return;
+        }
+        let next = mem.read::<u16>(rec + 6).wrapping_add(1);
+        mem.write(rec + 4, time.wrapping_sub(length));
+        mem.write(rec + 6, next);
+        if i32::from(next) < i32::from(mem.read::<i16>(anim.wrapping_add(6))) {
+            return;
+        }
+        if mem.read::<u8>(entry.wrapping_add(0x14)) & 0x80 != 0 {
+            mem.write(rec + 4, 0u32);
+        } else {
+            mem.write(rec + 4, 0u16);
+            mem.write(rec + 6, next.wrapping_sub(1));
+        }
+    }
+
+    /// The particle array (`get_ptr32_func(w +0x40)`), the animation
+    /// (`get_ptr32_func` of word `def +4` of the current environment's
+    /// table `+0x24`) and the count (`i32 def +8`) of a shape field step.
+    fn shape_field_parts(mem: &impl Mem, def: u32, w: u32) -> (u32, u32, i32) {
+        use ffx_system::stub::ptr32;
+        let parts = ptr32(mem.read(w.wrapping_add(0x40)));
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let table: u32 = mem.read(env.wrapping_add(0x24));
+        let i: u32 = mem.read(def.wrapping_add(4));
+        let anim = ptr32(mem.read(table.wrapping_add(i << 2)));
+        (parts, anim, mem.read(def.wrapping_add(8)))
+    }
+
+    /// `f32 [to + 4k] = [a + 4k] + [b + 4k]` for `k` 0..3 (`fld a; fadd b`).
+    fn add3(mem: &mut impl Mem, to: u32, a: u32, b: u32) {
+        use ffx_bridge::x87::{add, load, store};
+        for k in 0..3 {
+            let v = add(load(mem.read(a + 4 * k)), load(mem.read(b + 4 * k)));
+            mem.write(to + 4 * k, store(v));
+        }
+    }
+
+    /// `0x00744f60` (`pppDrawShapeFieldSpdStep`, ours; `(def, w)`, called
+    /// by `pppDrawShapeFieldSpdDraw`): each live (bit 0) 0xa0-byte
+    /// particle `p` of `def +8`: `p +0x10 += vel[i32 p +8]`
+    /// (`FFXVu0AddVector`, `vel` the 16-byte vectors at `get_ptr32_func(w
+    /// +0x54)`), `p +0x40 += def +0x90` and `p +0x30 += p +0x40` (`x, y,
+    /// z`, `f32`), the animation steps by `u16 def +0xc`, then `p +8` counts
+    /// up and the particle dies (bit 0 cleared) at `w +0x58`. Callees
+    /// through `call`.
+    pub fn ppp_draw_shape_field_spd_step<M: Mem>(
+        mem: &mut M,
+        def: u32,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let (parts, anim, n) = shape_field_parts(mem, def, w);
+        let mut p = parts;
+        for _ in 0..n.max(0) {
+            if mem.read::<u32>(p) & 1 != 0 {
+                let frame = u32::from(mem.read::<u16>(p.wrapping_add(6)));
+                let vels = ffx_system::stub::ptr32(mem.read(w.wrapping_add(0x54)));
+                let vel = vels.wrapping_add(mem.read::<u32>(p.wrapping_add(8)) << 4);
+                let at = p.wrapping_add(0x10);
+                call(mem, g(mem, 0x006e_d290), &[at, at, vel]);
+                add3(
+                    mem,
+                    p.wrapping_add(0x40),
+                    def.wrapping_add(0x90),
+                    p.wrapping_add(0x40),
+                );
+                add3(
+                    mem,
+                    p.wrapping_add(0x30),
+                    p.wrapping_add(0x40),
+                    p.wrapping_add(0x30),
+                );
+                let step: u16 = mem.read(def.wrapping_add(0xc));
+                shape_field_anim(mem, p, step, anim, frame);
+                let age = mem.read::<u32>(p.wrapping_add(8)).wrapping_add(1);
+                mem.write(p.wrapping_add(8), age);
+                if age >= mem.read::<u32>(w.wrapping_add(0x58)) {
+                    let flags = mem.read::<u32>(p) & !1;
+                    mem.write(p, flags);
+                }
+            }
+            p = p.wrapping_add(0xa0);
+        }
+    }
+
+    /// `0x007460b0` (`pppDrawShapeFieldGlobalStep`, ours; `(def, w)`,
+    /// called by `pppDrawShapeFieldGlobalDraw`): each live (bit 0)
+    /// 0xb0-byte particle `p` of `def +8`: `p +8` counts up and the
+    /// particle dies (bit 0 cleared, from the flags read before) at `w
+    /// +0x50`, but this step still runs: `p +0x20 += p +0x30`, `p +0x10 +=
+    /// p +0x20` (`FFXVu0AddVector`), `p +0x50 += def +0xa0`, `p +0x40 += p
+    /// +0x50` (`x, y, z`, `f32`), and the animation steps by `u16 def
+    /// +0xc`. Callees through `call`.
+    pub fn ppp_draw_shape_field_global_step<M: Mem>(
+        mem: &mut M,
+        def: u32,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let (parts, anim, n) = shape_field_parts(mem, def, w);
+        let mut p = parts;
+        for _ in 0..n.max(0) {
+            let flags: u32 = mem.read(p);
+            if flags & 1 != 0 {
+                let frame = u32::from(mem.read::<u16>(p.wrapping_add(6)));
+                let age = mem.read::<u32>(p.wrapping_add(8)).wrapping_add(1);
+                mem.write(p.wrapping_add(8), age);
+                if age >= mem.read::<u32>(w.wrapping_add(0x50)) {
+                    mem.write(p, flags & !1);
+                }
+                let add = g(mem, 0x006e_d290);
+                let (pos, vel, acc) = (
+                    p.wrapping_add(0x10),
+                    p.wrapping_add(0x20),
+                    p.wrapping_add(0x30),
+                );
+                call(mem, add, &[vel, vel, acc]);
+                call(mem, add, &[pos, pos, vel]);
+                add3(
+                    mem,
+                    p.wrapping_add(0x50),
+                    def.wrapping_add(0xa0),
+                    p.wrapping_add(0x50),
+                );
+                add3(
+                    mem,
+                    p.wrapping_add(0x40),
+                    p.wrapping_add(0x40),
+                    p.wrapping_add(0x50),
+                );
+                let step: u16 = mem.read(def.wrapping_add(0xc));
+                shape_field_anim(mem, p, step, anim, frame);
+            }
+            p = p.wrapping_add(0xb0);
+        }
+    }
 }
