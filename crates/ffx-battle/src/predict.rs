@@ -123,6 +123,60 @@ pub mod bridge {
             mem.write(at(0x4a0), 0u32);
         });
     }
+
+    /// `MsGetTargetDist(i, kind, flat)` (`0x007a9a40`): how far actor `i`
+    /// still is from [`ms_get_move_target_pos`]'s point for move kind
+    /// `kind` (its position less the point, `y` zeroed when `flat`), less
+    /// the distance that move keeps; an `f32` (the original's ST0). The
+    /// point's `done` pointer is null. `regs` are the caller's `edi`,
+    /// `esi`, `ebx` (see `ffx_battle::target`): `MsGetMoveTargetPos` sees
+    /// `esi` holding `i` and the caller's `edi` and `ebx`.
+    pub fn ms_get_target_dist(
+        mem: &mut Dm<'_>,
+        host: &Host<'_>,
+        i: u32,
+        kind: u32,
+        flat: u32,
+        regs: Option<Regs>,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store, sub};
+        let a = ms_get_chr(mem, i);
+        mem.frame(0x20, |mem, f| {
+            let (to, pos) = (f, f + 0x10);
+            let regs = regs.map(|r| Regs { esi: i, ..r });
+            let keep = ms_get_move_target_pos(mem, host, i, a, kind, to, 0, regs);
+            crate::pos::bridge::ms_get_chr_pos(mem, host.trig, i, pos);
+            v::ms_sub_point(mem, pos, pos, to);
+            if flat != 0 {
+                mem.write(pos + 4, 0.0f32.to_bits());
+            }
+            let len = v::ms_vector_len(mem, pos);
+            store(sub(load(len.to_bits()), load(keep)))
+        })
+    }
+
+    /// `MsSetMove(i, kind)` (`0x007a9fc0`): the room actor `i` has before
+    /// its targets: its distance to their mean position for property
+    /// `kind` (`MsGetChrTargetInfo`) less its width and their mean width;
+    /// 0 when `MsGetChrTargetInfo` says 0 (no target other than itself).
+    /// An `f32` (the original's ST0).
+    pub fn ms_set_move(mem: &mut Dm<'_>, host: &Host<'_>, i: u32, kind: u32) -> u32 {
+        use crate::target::bridge::ms_get_chr_target_info;
+        use ffx_bridge::x87::{add, load, store, sub};
+        ms_get_chr(mem, i);
+        mem.frame(0x24, |mem, f| {
+            let (to, pos, width) = (f, f + 0x10, f + 0x20);
+            crate::pos::bridge::ms_get_chr_pos(mem, host.trig, i, pos);
+            if ms_get_chr_target_info(mem, host, i, kind, to, width, 0) == 0 {
+                return 0.0f32.to_bits();
+            }
+            v::ms_sub_point(mem, pos, pos, to);
+            let dist = v::ms_vector_len(mem, pos).to_bits();
+            let mine = crate::actor::bridge::ms_get_chr_width(mem, i).to_bits();
+            let room = add(load(mine), load(mem.read(width)));
+            store(sub(load(dist), room))
+        })
+    }
     /// `fld lim; fcomp d` then `fld -lim; fcom d` as the move step clamps
     /// a turn `d` to `±lim` (both `f32` bits): `lim` when `lim < d`,
     /// `-lim` (stored) when `-lim > d`, NaN comparisons leaving `d`.
