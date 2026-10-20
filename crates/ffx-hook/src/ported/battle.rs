@@ -2099,6 +2099,136 @@ ported! {
     MsEffectReadStatInit @ 0x0078_81c0 => extern "C" fn ms_effect_read_stat_init() {
         minor::ms_effect_read_stat_init(&mut mem());
     }
+    /// `SetFileTables_00776f00()`.
+    SetFileTables_00776f00 @ 0x0077_6f00 => extern "C" fn set_file_tables() {
+        minor::set_file_tables(&mut mem());
+    }
+    /// `MsComBufAdd_0079d2a0(a, b, c)`.
+    MsComBufAdd_0079d2a0 @ 0x0079_d2a0 => extern "C" fn ms_com_buf_add(first: u32, second: u32, third: u32) -> u32 {
+        minor::ms_com_buf_add(&mut mem(), first, second, third)
+    }
+    /// `MsSetChrScriptTargets_00796430(i, bits)`.
+    MsSetChrScriptTargets_00796430 @ 0x0079_6430 => extern "C" fn ms_set_chr_script_targets(i: u32, bits: u32) -> u32 {
+        minor::ms_set_chr_script_targets(&mut mem(), i, bits)
+    }
+    /// `MsGetMapCenter(out)`: `yiGetBattleCenter` through the game.
+    MsGetMapCenter @ 0x0078_2ae0 => extern "C" fn ms_get_map_center(out: u32) -> u32 {
+        minor::ms_get_map_center(&mut mem(), &mut call_ptr, out)
+    }
+    /// `MsAnyChrMotion_007a8be0(bits)`.
+    MsAnyChrMotion_007a8be0 @ 0x007a_8be0 => extern "C" fn ms_any_chr_motion(bits: u32) -> u32 {
+        minor::ms_any_chr_motion(&mem(), bits)
+    }
+    /// `MsEffectSetSpeed(i, speed)`.
+    MsEffectSetSpeed @ 0x0078_8430 => extern "C" fn ms_effect_set_speed(i: u32, speed: u32) -> u32 {
+        minor::ms_effect_set_speed(&mut mem(), i, speed)
+    }
+    /// `MsShowBattleMessage_0079d090(msg)`: the window through the game.
+    MsShowBattleMessage_0079d090 @ 0x0079_d090 => extern "C" fn ms_show_battle_message(msg: u32) -> u32 {
+        minor::ms_show_battle_message(&mut mem(), &mut call_ptr, msg)
+    }
+    /// `MsAbilityMapSetCommand_00798840(chr, id)`.
+    MsAbilityMapSetCommand_00798840 @ 0x0079_8840 => extern "C" fn ms_ability_map_set_command(chr: u32, id: u32) {
+        minor::ms_ability_map_set_command(&mut mem(), chr, id);
+    }
+    /// `MsSetChrGravMode_00796070(i, mode)`.
+    MsSetChrGravMode_00796070 @ 0x0079_6070 => extern "C" fn ms_set_chr_grav_mode(i: u32, mode: u32) -> u32 {
+        minor::ms_set_chr_grav_mode(&mut mem(), i, mode)
+    }
+    /// `MsEffectCheckMotion2(i)`.
+    MsEffectCheckMotion2 @ 0x0078_78a0 => extern "C" fn ms_effect_check_motion2(i: u32) -> u32 {
+        minor::ms_effect_check_motion2(&mut mem(), i)
+    }
+    /// `MsChangeWeaponInvisible(chr, off)`.
+    MsChangeWeaponInvisible @ 0x007a_d5e0 => extern "C" fn ms_change_weapon_invisible(chr: u32, off: u32) {
+        minor::ms_change_weapon_invisible(&mut mem(), chr, off);
+    }
+    /// `MsGetChrLiftHeight_00794990(i)`: on the x87 stack.
+    MsGetChrLiftHeight_00794990 @ 0x0079_4990 => extern "C" fn ms_get_chr_lift_height(i: u32) -> f32 {
+        f32::from_bits(minor::ms_get_chr_lift_height(&mem(), i))
+    }
+    /// `MsRandCheck_007a8ad0(id, n)`: `dbgPrintf` through the game.
+    MsRandCheck_007a8ad0 @ 0x007a_8ad0 => extern "C" fn ms_rand_check(id: u32, n: u32) -> u32 {
+        minor::ms_rand_check(&mut mem(), &mut call_ptr, id, n)
+    }
+    /// `MsBattleDraw()`: `FFXIsDebug` through the game.
+    MsBattleDraw @ 0x0078_0d00 => extern "C" fn ms_battle_draw() -> u32 {
+        minor::ms_battle_draw(&mut mem(), &mut call_ptr)
+    }
+    /// `MsEffectReadError()`.
+    MsEffectReadError @ 0x0078_81b0 => extern "C" fn ms_effect_read_error() -> u32 {
+        minor::ms_effect_read_error(&mem())
+    }
+    /// `MsSetAllVisible_00796680(v)`.
+    MsSetAllVisible_00796680 @ 0x0079_6680 => extern "C" fn ms_set_all_visible(v: u32) -> u32 {
+        minor::ms_set_all_visible(&mut mem(), &mut call_ptr, v)
+    }
+    /// `MsChrUnableToAct_0079a080(i)`.
+    MsChrUnableToAct_0079a080 @ 0x0079_a080 => extern "C" fn ms_chr_unable_to_act(i: u32) -> u32 {
+        minor::ms_chr_unable_to_act(&mem(), i)
+    }
+    /// `MsAtelSetHandlerByte_007987b0(kind, i, n, v)`: `AtelGetBattleIdAdrs`
+    /// through the game.
+    MsAtelSetHandlerByte_007987b0 @ 0x0079_87b0 => extern "C" fn ms_atel_set_handler_byte(kind: u32, owner: u32, n: u32, value: u32) -> u32 {
+        minor::ms_atel_set_handler_byte(&mut mem(), &mut call_ptr, kind, owner, n, value)
+    }
+    /// `MsChrGroundFlag_00794db0(i)`.
+    MsChrGroundFlag_00794db0 @ 0x0079_4db0 => extern "C" fn ms_chr_ground_flag(i: u32) -> u32 {
+        minor::ms_chr_ground_flag(&mem(), i)
+    }
+    /// `MsPauseChrEffect(i, on)`: the bound effects through the game.
+    MsPauseChrEffect @ 0x0079_ea40 => extern "C" fn ms_pause_chr_effect(i: u32, on: u32) -> u32 {
+        minor::ms_pause_chr_effect(&mut mem(), &mut call_ptr, i, on)
+    }
+    /// `MsEventEffectReadComplete()`: the magic file's calls through the
+    /// game.
+    MsEventEffectReadComplete @ 0x0078_8d10 => extern "C" fn ms_event_effect_read_complete() -> u32 {
+        minor::ms_event_effect_read_complete(&mut mem(), &mut call_ptr)
+    }
+    /// `MsChrInExtra_00796d10(i)`.
+    MsChrInExtra_00796d10 @ 0x0079_6d10 => extern "C" fn ms_chr_in_extra(i: u32) -> u32 {
+        minor::ms_chr_in_extra(&mem(), i)
+    }
+    /// `MsAddNextCtb_0079a020(i, rank, ctb, haste, slow)`.
+    MsAddNextCtb_0079a020 @ 0x0079_a020 => extern "C" fn ms_add_next_ctb(i: u32, rank: u32, ctb: u32, haste: u32, slow: u32) {
+        minor::ms_add_next_ctb(&mut mem(), i, rank, ctb, haste, slow);
+    }
+    /// `MsResetAvoidFlag(i, selector)`.
+    MsResetAvoidFlag @ 0x0078_d620 => extern "C" fn ms_reset_avoid_flag(i: u32, selector: u32) -> u32 {
+        minor::ms_reset_avoid_flag(&mut mem(), i, selector)
+    }
+    /// `MsGetDamageLimit(i, j)`.
+    MsGetDamageLimit @ 0x0079_a860 => extern "C" fn ms_get_damage_limit(i: u32, j: u32) -> u32 {
+        minor::ms_get_damage_limit(&mem(), i, j)
+    }
+    /// `MsSetChrByte446_007b75a0(i, v)`.
+    MsSetChrByte446_007b75a0 @ 0x007b_75a0 => extern "C" fn ms_set_chr_byte446(i: u32, v: u32) {
+        minor::ms_set_chr_byte446(&mut mem(), i, v);
+    }
+    /// `MsSetChrSpeedBytes_00795d40(i, v)`.
+    MsSetChrSpeedBytes_00795d40 @ 0x0079_5d40 => extern "C" fn ms_set_chr_speed_bytes(i: u32, v: u32) -> u32 {
+        minor::ms_set_chr_speed_bytes(&mut mem(), i, v)
+    }
+    /// `MsSetChrFloat53c_00795ff0(i, flag, f)`.
+    MsSetChrFloat53c_00795ff0 @ 0x0079_5ff0 => extern "C" fn ms_set_chr_float53c(i: u32, flag: u32, f: u32) -> u32 {
+        minor::ms_set_chr_float53c(&mut mem(), i, flag, f)
+    }
+    /// `MsSetChrRot_00795dd0(i, f)`.
+    MsSetChrRot_00795dd0 @ 0x0079_5dd0 => extern "C" fn ms_set_chr_rot(i: u32, f: u32) -> u32 {
+        minor::ms_set_chr_rot(&mut mem(), i, f)
+    }
+    /// `PasswordTextDispose()`: the free through the game.
+    PasswordTextDispose @ 0x0079_02f0 => extern "C" fn password_text_dispose() {
+        minor::password_text_dispose(&mut mem(), &mut call_ptr);
+    }
+    /// `MsGetChrReelKind_007b19f0(i)`.
+    MsGetChrReelKind_007b19f0 @ 0x007b_19f0 => extern "C" fn ms_get_chr_reel_kind(i: u32) -> u32 {
+        minor::ms_get_chr_reel_kind(&mem(), i)
+    }
+    /// `MsAddEquipment_007ab910(rec)`.
+    MsAddEquipment_007ab910 @ 0x007a_b910 => extern "C" fn ms_add_equipment(rec: u32) -> u32 {
+        minor::ms_add_equipment(&mut mem(), rec)
+    }
     /// `MsMenuHalfElement(i)`.
     MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
         minor::ms_menu_half_element(&mem(), i)

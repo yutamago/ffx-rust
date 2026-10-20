@@ -705,3 +705,464 @@ fn leaf_helpers_match_the_original_on_a_snapshot() {
     };
     helpers(&mut a, &mut b, &mut Xorshift(0x2929_0c02), false);
 }
+
+/// `MsBtlPosPrintBin` (`0x007c9f10`, 0x57f bytes, unreachable): room for
+/// group D's recording stubs.
+const STUBS_D: u32 = 0x007c_9f10;
+
+/// Group D's callees of other modules, recording stubs in both oracles:
+/// (function, arguments, result).
+fn d_stubs() -> [(u32, u8, u32); 13] {
+    [
+        (g::YI_GET_BATTLE_CENTER, 1, 0x55),
+        (g::TO_DRAW_AMES_CENTERMES, 2, 0),
+        (g::FFX_IS_DEBUG, 0, 0),
+        (g::DBG_PRINTF, 4, 0x11),
+        (g::ATEL_GET_BATTLE_ID_ADRS, 1, 0),
+        (g::OP_ET_BINDEFF_DRAW_ON, 1, 0x21),
+        (g::OP_ET_BINDEFF_DRAW_OFF, 1, 0x22),
+        (g::OP_OVL_EFFECT_INIT, 0, 0x23),
+        (g::GRAPHIC_MAGIC_ASYNC, 0, 0),
+        (g::MAGIC_FILE_START, 0, 0x24),
+        (g::MAGIC_FILE_OVERLAY_TABLE, 1, 0),
+        (g::FREE_00687010, 1, 0),
+        (g::IS_PTR32_NULL, 1, 0),
+    ]
+}
+
+/// Group D: setters and checks on the actors, the message and effect
+/// glue, the equipment list's free slot.
+fn setters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use battle_common::crt::patch;
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x200);
+    let stubs = d_stubs();
+    for o in [&mut *a, &mut *b] {
+        patch(o);
+        for (k, (f, n, r)) in (0u32..).zip(stubs) {
+            recording_stub(o, f, STUBS_D + 0x40 * k, rec + 0x20 * k, n, r);
+        }
+        // op_ovl_effect_init keeps the event effect table it sees
+        // (`mov eax, [table]; mov [rec + 0x1fc], eax; ret`)
+        let table = g::EVENT_EFFECT_TABLE.ptr(o).addr;
+        let at = o.rebase(STUBS_D + 0x40 * 13);
+        let mut code = vec![0xa1];
+        code.extend(table.to_le_bytes());
+        code.push(0xa3);
+        code.extend((rec + 0x1fc).to_le_bytes());
+        code.push(0xc3);
+        o.write(at, &code).unwrap();
+        let entry = o.rebase(g::OP_OVL_EFFECT_INIT);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    // the stub results: the word after the arguments
+    let result = |k: u32| rec + 0x20 * k + 4 + 4 * u32::from(stubs[k as usize].1);
+    let area = scratch(a, b, 0x400);
+    let messages = scratch(a, b, 0x100);
+    let extra = scratch(a, b, 0x24);
+    set(a, b, g::CHR_EXTRA, extra);
+    let password = scratch(a, b, 0x10);
+    let rank_tables = scratch(a, b, 0x80);
+    let equipment = g::EQUIPMENT.ptr(b).addr;
+    for round in 0..300 {
+        if w.synthetic || round % 2 == 0 {
+            dress(a, b, rng, w.actors);
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                for (at, len) in [
+                    (0x34, 1),
+                    (0x3f0, 1),
+                    (0x400, 5),
+                    (0x41e, 1),
+                    (0x425, 1),
+                    (0x434, 1),
+                    (0x446, 1),
+                    (0x4c, 4),
+                    (0x4fc, 1),
+                    (0x509, 1),
+                    (0x50d, 1),
+                    (0x510, 1),
+                    (0x5d0, 4),
+                    (0x608, 1),
+                    (0x6d8, 1),
+                    (0x776, 0x5b0),
+                    (0xdc0, 4),
+                    (0xdcc, 3),
+                    (0xdd4, 1),
+                    (0xde7, 1),
+                    (0xf5c, 2),
+                ] {
+                    fill(a, b, rng, p + at, len);
+                }
+                poke(a, b, p + 0x534, &float(rng).to_le_bytes());
+                poke(a, b, p + 0x53c, &float(rng).to_le_bytes());
+                let reel =
+                    [0x3074u16, 0x3075, 0x3076, 0x3077, 0x3073, 0x3078][rng.below(6) as usize];
+                poke(a, b, p + 0xf5c, &reel.to_le_bytes());
+            }
+        }
+        if w.synthetic {
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                poke(a, b, p, &[0; 4]);
+                poke(a, b, p + 0x13, &[0xff]);
+                poke(a, b, p + 0x440, &[0]);
+            }
+        }
+        let i = if rng.below(6) == 0 {
+            rng.next()
+        } else {
+            rng.below(0x22)
+        };
+        // a file of tables, or none
+        let file = area;
+        fill(a, b, rng, file, 0x20);
+        set(a, b, g::TABLE_FILE, [0, file][rng.below(4).min(1) as usize]);
+        set(a, b, g::TABLE_FILE2, file + 4);
+        twin("SetFileTables", a, b, 0x0077_6f00, &[], 0, |m| {
+            g::set_file_tables(m);
+            0
+        });
+        // the command buffer: room or full
+        set(
+            a,
+            b,
+            ffx_battle::misc::bridge::COM_BUF,
+            rng.range(-2, 10).cast_unsigned(),
+        );
+        let (x, y, z) = (rng.next(), rng.next(), rng.next());
+        twin("MsComBufAdd", a, b, 0x0079_d2a0, &[x, y, z], ALL, |m| {
+            g::ms_com_buf_add(m, x, y, z)
+        });
+        let bits =
+            [rng.next(), 0x8000_0000 | rng.next(), 1 << rng.below(31)][rng.below(3) as usize];
+        twin(
+            "MsSetChrScriptTargets",
+            a,
+            b,
+            0x0079_6430,
+            &[i, bits],
+            ALL,
+            |m| g::ms_set_chr_script_targets(m, i, bits),
+        );
+        set(a, b, g::MAP_CENTER_OWN, u8::from(rng.below(2) == 0));
+        fill(
+            a,
+            b,
+            rng,
+            ffx_battle::minor::bridge::BATTLE_MEM.ptr(b).addr,
+            0x10,
+        );
+        let out = area + 0x40;
+        twin("MsGetMapCenter", a, b, 0x0078_2ae0, &[out], ALL, |m| {
+            g::ms_get_map_center(m, &mut call_original, out)
+        });
+        twin("MsAnyChrMotion", a, b, 0x007a_8be0, &[bits], ALL, |m| {
+            g::ms_any_chr_motion(m, bits)
+        });
+        let speed = [rng.below(0x200), 0xffff_ffff, rng.next()][rng.below(3) as usize];
+        twin(
+            "MsEffectSetSpeed",
+            a,
+            b,
+            0x0078_8430,
+            &[i, speed],
+            ALL,
+            |m| g::ms_effect_set_speed(m, i, speed),
+        );
+        // the message table: some messages, the windows on or off, the
+        // English check (TkGetLang) and the message flag
+        fill(a, b, rng, messages, 0x100);
+        set(
+            a,
+            b,
+            g::BATTLE_MESSAGES,
+            [0, messages][rng.below(4).min(1) as usize],
+        );
+        set(a, b, g::MESSAGE_WINDOWS_ON, rng.below(2));
+        set(
+            a,
+            b,
+            ffx_menu::tk::bridge::LANG,
+            [1i8, 0, 2][rng.below(3) as usize],
+        );
+        set(a, b, g::BATTLE_MESSAGE_OFF, u8::from(rng.below(4) == 0));
+        let msg = rng.below(0x10);
+        twin("MsShowBattleMessage", a, b, 0x0079_d090, &[msg], ALL, |m| {
+            g::ms_show_battle_message(m, &mut call_original, msg)
+        });
+        let (chr, id) = (
+            rng.below(8),
+            [0x3000 | rng.below(0x1000), rng.next()][rng.below(3).min(1) as usize],
+        );
+        twin(
+            "MsAbilityMapSetCommand",
+            a,
+            b,
+            0x0079_8840,
+            &[chr, id],
+            0,
+            |m| {
+                g::ms_ability_map_set_command(m, chr, id);
+                0
+            },
+        );
+        let mode = rng.next();
+        twin(
+            "MsSetChrGravMode",
+            a,
+            b,
+            0x0079_6070,
+            &[i, mode],
+            ALL,
+            |m| g::ms_set_chr_grav_mode(m, i, mode),
+        );
+        twin("MsEffectCheckMotion2", a, b, 0x0078_78a0, &[i], ALL, |m| {
+            g::ms_effect_check_motion2(m, i)
+        });
+        let (c, off) = (
+            [rng.below(8), rng.next()][rng.below(4).min(1) as usize],
+            rng.next(),
+        );
+        twin(
+            "MsChangeWeaponInvisible",
+            a,
+            b,
+            0x007a_d5e0,
+            &[c, off],
+            0,
+            |m| {
+                g::ms_change_weapon_invisible(m, c, off);
+                0
+            },
+        );
+        ftwin("MsGetChrLiftHeight", a, b, 0x0079_4990, &[i], |m| {
+            g::ms_get_chr_lift_height(m, i)
+        });
+        set(
+            a,
+            b,
+            g::RAND_FIXED,
+            [0u16, 5, 0x1234][rng.below(3) as usize],
+        );
+        let (rid, rn) = (
+            [0, 5, rng.below(0x10)][rng.below(3) as usize],
+            rng.range(-2, 0x120).cast_unsigned(),
+        );
+        twin("MsRandCheck", a, b, 0x007a_8ad0, &[rid, rn], ALL, |m| {
+            g::ms_rand_check(m, &mut call_original, rid, rn)
+        });
+        poke(a, b, result(2), &u32::from(rng.below(2) == 0).to_le_bytes());
+        twin("MsBattleDraw", a, b, 0x0078_0d00, &[], ALL, |m| {
+            g::ms_battle_draw(m, &mut call_original)
+        });
+        set(a, b, ffx_battle::parse::bridge::EFFECT_READ_CHR, rng.next());
+        twin("MsEffectReadError", a, b, 0x0078_81b0, &[], ALL, |m| {
+            g::ms_effect_read_error(m)
+        });
+        if round % 4 == 0 {
+            let v = rng.below(3);
+            twin("MsSetAllVisible", a, b, 0x0079_6680, &[v], ALL, |m| {
+                g::ms_set_all_visible(m, &mut call_original, v)
+            });
+        }
+        twin("MsChrUnableToAct", a, b, 0x0079_a080, &[i], ALL, |m| {
+            g::ms_chr_unable_to_act(m, i)
+        });
+        // a handler's battle work byte: AtelGetBattleIdAdrs gives the area
+        poke(a, b, result(4), &(area + 0x80).to_le_bytes());
+        let (kind, owner, n, v) = (rng.below(6), rng.below(4), rng.below(4), rng.next());
+        twin(
+            "MsAtelSetHandlerByte",
+            a,
+            b,
+            0x0079_87b0,
+            &[kind, owner, n, v],
+            ALL,
+            |m| g::ms_atel_set_handler_byte(m, &mut call_original, kind, owner, n, v),
+        );
+        twin("MsChrGroundFlag", a, b, 0x0079_4db0, &[i], ALL, |m| {
+            g::ms_chr_ground_flag(m, i)
+        });
+        let on = rng.below(2) * rng.next();
+        twin("MsPauseChrEffect", a, b, 0x0079_ea40, &[i, on], ALL, |m| {
+            g::ms_pause_chr_effect(m, &mut call_original, i, on)
+        });
+        poke(a, b, result(8), &rng.below(2).to_le_bytes());
+        poke(
+            a,
+            b,
+            result(10),
+            &[0, rng.next()][rng.below(2) as usize].to_le_bytes(),
+        );
+        set(
+            a,
+            b,
+            ffx_battle::state::bridge::EVENT_EFFECT_STAT,
+            [0i8, 1, 3][rng.below(3) as usize],
+        );
+        twin(
+            "MsEventEffectReadComplete",
+            a,
+            b,
+            0x0078_8d10,
+            &[],
+            ALL,
+            |m| g::ms_event_effect_read_complete(m, &mut call_original),
+        );
+        // the extra records: on or off, an actor's character or another
+        let actor = ffx_battle::actor::bridge::ms_get_chr(b, i);
+        let chr: u32 = u32::from_le_bytes(b.read(actor, 4).unwrap().try_into().unwrap());
+        for k in 0..3 {
+            let e = extra + 12 * k;
+            poke(a, b, e, &[u8::from(rng.below(2) == 0)]);
+            poke(
+                a,
+                b,
+                e + 4,
+                &[chr, rng.next()][rng.below(2) as usize].to_le_bytes(),
+            );
+        }
+        twin("MsChrInExtra", a, b, 0x0079_6d10, &[i], ALL, |m| {
+            g::ms_chr_in_extra(m, i)
+        });
+        // CTB: the counters near their ends
+        let j = rng.below(ACTORS);
+        fill(a, b, rng, rank_tables, 0x80);
+        for at in [rank_tables + 0x40 + j, rank_tables + 0x60 + j] {
+            poke(
+                a,
+                b,
+                at,
+                &[[0u8, 1, 0xfd, 0xfe, 0xff, 3][rng.below(6) as usize]],
+            );
+        }
+        let rank = rng.range(-1, 6).cast_unsigned();
+        twin(
+            "MsAddNextCtb",
+            a,
+            b,
+            0x0079_a020,
+            &[j, rank, rank_tables, rank_tables + 0x40, rank_tables + 0x60],
+            0,
+            |m| {
+                g::ms_add_next_ctb(
+                    m,
+                    j,
+                    rank,
+                    rank_tables,
+                    rank_tables + 0x40,
+                    rank_tables + 0x60,
+                );
+                0
+            },
+        );
+        let sel = [rng.below(0x20), rng.range(-24, 0).cast_unsigned()][rng.below(2) as usize];
+        twin("MsResetAvoidFlag", a, b, 0x0078_d620, &[i, sel], ALL, |m| {
+            g::ms_reset_avoid_flag(m, i, sel)
+        });
+        // the damage limit records name actor i and its command's byte +2
+        let i8 = i & 0xff;
+        if ffx_battle::actor::bridge::ms_btl_chr_num_check(i8) != 0 {
+            let cmd = ffx_battle::actor::bridge::ms_get_chr_command(b, i8);
+            let cb = b.read(cmd + 2, 1).unwrap()[0];
+            let tgt = ffx_battle::actor::bridge::ms_get_chr(b, j);
+            for k in 0..2 {
+                let e = tgt + 0x776 + 0x2d8 * k;
+                if rng.below(2) == 0 {
+                    poke(
+                        a,
+                        b,
+                        e,
+                        &[
+                            u8::try_from(i8).unwrap(),
+                            [cb, cb ^ 1][rng.below(3).min(1) as usize],
+                        ],
+                    );
+                }
+            }
+        }
+        twin("MsGetDamageLimit", a, b, 0x0079_a860, &[i, j], ALL, |m| {
+            g::ms_get_damage_limit(m, i, j)
+        });
+        let v = rng.next();
+        twin("MsSetChrByte446", a, b, 0x007b_75a0, &[i, v], 0, |m| {
+            g::ms_set_chr_byte446(m, i, v);
+            0
+        });
+        twin("MsSetChrSpeedBytes", a, b, 0x0079_5d40, &[i, v], ALL, |m| {
+            g::ms_set_chr_speed_bytes(m, i, v)
+        });
+        let f = float(rng);
+        twin(
+            "MsSetChrFloat53c",
+            a,
+            b,
+            0x0079_5ff0,
+            &[i, v, f],
+            ALL,
+            |m| g::ms_set_chr_float53c(m, i, v, f),
+        );
+        // (finite: Ch_SetRot prints non-finite angles with dbgPrintf, which
+        // its port leaves out)
+        let f = if f & 0x7f80_0000 == 0x7f80_0000 {
+            0x3fc9_0fdb
+        } else {
+            f
+        };
+        twin("MsSetChrRot", a, b, 0x0079_5dd0, &[i, f], ALL, |m| {
+            g::ms_set_chr_rot(m, i, f)
+        });
+        set(a, b, g::PASSWORD_TEXT_ON, rng.below(2));
+        set(
+            a,
+            b,
+            g::PASSWORD_TEXT,
+            [0, password][rng.below(4).min(1) as usize],
+        );
+        twin("PasswordTextDispose", a, b, 0x0079_02f0, &[], 0, |m| {
+            g::password_text_dispose(m, &mut call_original);
+            0
+        });
+        twin("MsGetChrReelKind", a, b, 0x007b_19f0, &[i], ALL, |m| {
+            g::ms_get_chr_reel_kind(m, i)
+        });
+        // the equipment list: full or with free slots
+        let (full, last) = (rng.below(4) == 0, rng.below(4) == 0);
+        for k in 0..200 {
+            let used = full || (last && k < 199) || (!last && rng.below(4) != 0);
+            poke(a, b, equipment + 22 * k + 2, &[u8::from(used)]);
+        }
+        fill(a, b, rng, area + 0x100, 0x18);
+        if round % 2 == 0 {
+            twin(
+                "MsAddEquipment",
+                a,
+                b,
+                0x007a_b910,
+                &[area + 0x100],
+                ALL,
+                |m| g::ms_add_equipment(m, area + 0x100),
+            );
+        }
+        same("setters", a, b);
+    }
+}
+
+#[test]
+fn leaf_setters_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    setters(&mut a, &mut b, &mut Xorshift(0x2929_0d01), true);
+}
+
+#[test]
+fn leaf_setters_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    setters(&mut a, &mut b, &mut Xorshift(0x2929_0d02), false);
+}
