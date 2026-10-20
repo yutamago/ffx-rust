@@ -774,4 +774,51 @@ pub mod bridge {
         mem.write(at, c as u8);
         cmd.wrapping_add(2)
     }
+
+    /// `opp_anmm_fin_en_bone5(host, set, cmd, work)` (`0x00810e20`): a
+    /// random bone from the command's list (`t = cmd + i16 cmd +2`: `u16`
+    /// count `n`, then `i16` bones): `op_irandom_p(n)` (`junk` as for
+    /// [`wait_random`]), at most `n - 1` (as `i16`s); the sprite's `+0x40`
+    /// = the bone, `+0x44` = its parent (`Ch_ElemGetParent` of the part's
+    /// character handle, through `call`; negative as 0), as floats; the
+    /// CRT's `rand()` (through `rand`, its result unused); `+0x48` =
+    /// `op_random_p(1)`; byte `+0x4e` = 4. Returns `cmd + 4`.
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
+    pub fn fin_en_bone5<M: Mem>(
+        mem: &mut M,
+        set: u32,
+        cmd: u32,
+        work: u32,
+        junk: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        rand_fn: &mut impl FnMut(&mut M) -> u32,
+    ) -> u32 {
+        let no = u32::from(mem.read::<u16>(work.wrapping_add(0x4c)));
+        let part = (no << 8).wrapping_add(mem.read(set.wrapping_add(0x20)));
+        let t = i32::from(mem.read::<i16>(cmd.wrapping_add(2)))
+            .cast_unsigned()
+            .wrapping_add(cmd);
+        let n: i16 = mem.read(t);
+        let arg = i32::from(n).cast_unsigned();
+        #[allow(clippy::cast_possible_truncation)] // movzx eax, ax
+        let mut r = rand::op_irandom_core(mem, [arg, junk[0], junk[1], junk[2]]) as u16;
+        if r.cast_signed() >= n {
+            r = n.wrapping_sub(1).cast_unsigned();
+        }
+        let e = i32::from(r.cast_signed()).cast_unsigned();
+        let bone = i32::from(mem.read::<i16>(t.wrapping_add(2 * e).wrapping_add(2)));
+        let chr = u32::from(mem.read::<u8>(part.wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        #[allow(clippy::cast_possible_truncation)] // movzx eax, ax
+        let parent = call(mem, word(mem, 0x0083_3cf0), &[h, bone.cast_unsigned()]) as u16;
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp m32: exact for i16 values
+        mem.write(work.wrapping_add(0x40), bone as f32);
+        let parent = parent.cast_signed().max(0);
+        mem.write(work.wrapping_add(0x44), f32::from(parent));
+        rand_fn(mem);
+        let v = rand::op_random_p(mem, 1.0);
+        mem.write(work.wrapping_add(0x48), v);
+        mem.write(work.wrapping_add(0x4e), 4u8);
+        cmd.wrapping_add(4)
+    }
 }

@@ -1629,6 +1629,64 @@ ported! {
     opu_kind2_0081c460 @ 0x0081_c460 => extern "C" fn opu_kind2(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_kind2(&mut mem(), host, cmd)
     }
+    // ---- round 33 c ----
+    /// `pppExSendPacket(rpc, tag, data, n)`.
+    pppExSendPacket @ 0x0076_b210 => extern "C" fn ppp_ex_send_packet(rpc: u32, tag: u32, data: u32, n: u32) -> u32 {
+        ppp::bridge::ppp_ex_send_packet(&mut mem(), rpc, tag, data, n, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_part_run(part)`.
+    op_part_run @ 0x0080_08b0 => extern "C" fn op_part_run(part: u32) -> u32 {
+        opus::bridge::op_part_run(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_prog_set_0080ad20(host, cmd)`.
+    opu_prog_set_0080ad20 @ 0x0080_ad20 => extern "C" fn opu_prog_set(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_prog_set(&mut mem(), host, cmd)
+    }
+    /// `opu_osu_load_pos_0080b460(host, cmd)`.
+    opu_osu_load_pos_0080b460 @ 0x0080_b460 => extern "C" fn opu_osu_load_pos(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_osu_load_pos(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anmm_fin_en_bone5(host, set, cmd, work)`.
+    opp_anmm_fin_en_bone5 @ 0x0081_0e20 => extern "C" fn opp_anmm_fin_en_bone5(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let _ = host;
+        anmm::bridge::fin_en_bone5(&mut mem(), set, cmd, work, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_| crt_rand())
+    }
+    /// `DynGeo_ResetCurrentBuffer_0069fcb0(this)`.
+    DynGeo_ResetCurrentBuffer_0069fcb0 @ 0x0069_fcb0 => extern "thiscall" fn dyn_geo_reset_current_buffer(this: u32) -> u32 {
+        small::bridge::dyn_geo_reset_current_buffer(&mut mem(), this, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsClmTDraw(obj, key, prog)`.
+    pppKeLnsClmTDraw @ 0x0075_a540 => extern "C" fn ppp_ke_lns_clm_t_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        lns::bridge::ppp_ke_lns_clm_t_draw(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeLnsLpTDraw(obj, key, prog)`: its stack locals (and
+    /// pppKeLnsLpDraw's) in a buffer on this shim's stack (the frame
+    /// pointer at its end).
+    pppKeLnsLpTDraw @ 0x0075_b160 => extern "C" fn ppp_ke_lns_lp_t_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        // its vector at frame - 0x14, pppKeLnsLpDraw's 0x30 bytes below
+        // (frame - 0x40) & !0xf
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        lns::bridge::ppp_ke_lns_lp_t_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `create0706NoiseRenderDataBuffer(lo, hi)`.
+    create0706NoiseRenderDataBuffer @ 0x007f_a510 => extern "C" fn create_0706_noise_render_data_buffer(lo: u32, hi: u32) -> u32 {
+        // the original's locals: three words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        small::bridge::create_0706_noise_render_data_buffer(&mut mem(), lo, hi, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_en_etc(host, cmd)`.
+    opu_en_etc @ 0x0081_5f60 => extern "C" fn opu_en_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_en_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_fin_type(host, cmd)`.
+    opu_fin_type @ 0x0081_67b0 => extern "C" fn opu_fin_type(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_fin_type(&mut mem(), host, cmd, &mut |_, y, x| crt_atan2(y, x))
+    }
     /// `opu_end(obj, cmd)`.
     opu_end @ 0x0080_c3f0 => extern "C" fn opu_end(obj: u32, cmd: u32) -> u32 {
         opus::bridge::opu_end(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

@@ -3695,4 +3695,190 @@ pub mod bridge {
         crate::op::bridge::opu_id_list_add(mem, host.wrapping_add(0x300), id);
         cmd.wrapping_add(4)
     }
+
+    /// `0x0080ad20` (`opu_prog_set`, ours): program slot `k` = flag bits
+    /// 12..13 of the unit (`[unit +4 k]`); slot 0 takes the first null one
+    /// of 1..3 (`is_ptr32_null`), none returning `cmd + 4` at once. The slot
+    /// = `cmd + i16 cmd +2` (`set_ptr32`), the unit's byte `+0x1f` gets bit
+    /// `k` with flag bit 15, its byte `+0x10 + k` = 0. Returns `cmd + 4`.
+    pub fn opu_prog_set(mem: &mut impl Mem, host: u32, cmd: u32) -> u32 {
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let u = unit(mem, host);
+        let mut k = u32::from(flags >> 12 & 3);
+        if k == 0 {
+            match (1..4)
+                .find(|&i| ffx_system::stub::is_ptr32_null(mem.read(u.wrapping_add(4 * i))) != 0)
+            {
+                Some(i) => k = i,
+                None => return cmd.wrapping_add(4),
+            }
+        }
+        let to = i32::from(mem.read::<i16>(cmd.wrapping_add(2)))
+            .cast_unsigned()
+            .wrapping_add(cmd);
+        mem.write(u.wrapping_add(4 * k), ffx_system::stub::ptr32(to));
+        let bit = u8::from(flags & 0x8000 != 0) << k & 0xf;
+        let at = u.wrapping_add(0x1f);
+        mem.write(at, mem.read::<u8>(at) | bit);
+        mem.write(u.wrapping_add(0x10 + k), 0u8);
+        cmd.wrapping_add(4)
+    }
+
+    /// `0x0080b460` (`opu_osu_load_pos`, ours): without flag bits 8..11
+    /// [`opu_osu_load`], then the eight `i16` at `d = cmd + i16 cmd +4` as
+    /// floats into the host's object (`[host]`) `+0x30..+0x4c` (the load
+    /// through `call`). Returns
+    /// `cmd + 6`; with the bits `cmd`.
+    pub fn opu_osu_load_pos<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mem.read::<u16>(host.wrapping_add(0x21a)) & 0xf00 != 0 {
+            return cmd;
+        }
+        call(mem, g(mem, 0x0080_ae30), &[host, cmd]);
+        let d = i32::from(mem.read::<i16>(cmd.wrapping_add(4)))
+            .cast_unsigned()
+            .wrapping_add(cmd);
+        let obj: u32 = mem.read(host);
+        for k in 0..8 {
+            let v = f32::from(mem.read::<i16>(d.wrapping_add(2 * k)));
+            mem.write(obj.wrapping_add(0x30 + 4 * k), v);
+        }
+        cmd.wrapping_add(6)
+    }
+
+    /// `op_part_run(part)` (`0x008008b0`): the op environment's tables from
+    /// the ppp part data (`[part +0xd0]`, as [`op_part_fp_init`]); for a
+    /// loaded one `pppRunPart([part +0xbc], 0x30)` (through `call`): when
+    /// that is done (not 0), its entry in `0x012e9c70` cleared and
+    /// `pppAllFreePObject`. Returns `pppRunPart`'s result, or 0 (an unloaded
+    /// one prints a message, `dbgPrintf`).
+    pub fn op_part_run<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let data: u32 = mem.read(part.wrapping_add(0xd0));
+        let ppp: u32 = mem.read(part.wrapping_add(0xbc));
+        for k in 0..3 {
+            let v = ffx_system::stub::ptr32(mem.read(data.wrapping_add(0x14 + 4 * k)));
+            mem.write(g(mem, 0x012f_2090).wrapping_add(4 * k), v);
+        }
+        op_env(mem);
+        if mem.read::<u8>(data) == 0 {
+            call(mem, g(mem, 0x0062_f500), &[g(mem, 0x00b5_8778)]);
+            return 0;
+        }
+        op_env(mem);
+        let done = call(mem, g(mem, 0x0071_2250), &[ppp, 0x30]);
+        if done != 0 {
+            let i = u32::from(mem.read::<u16>(ppp.wrapping_add(0x1e)));
+            mem.write(g(mem, 0x012e_9c70).wrapping_add(4 * i), 0u32);
+            op_env(mem);
+            crate::part::bridge::ppp_all_free_pobject(mem, ppp, call);
+        }
+        done
+    }
+
+    /// `opu_fin_type(host, cmd)` (`0x008167b0`): no flag bits: the unit's
+    /// `+0x48` = the direction (`op_deg_get(x, z, other x, other z, unit
+    /// +0x40)`, which also stores the distance at `+0x40`) to unit `u16 cmd
+    /// +2` ([`opus_no_get`]), `cmd + 4`; nibble 1: byte `+0xba` = 0 and
+    /// `+0x40 = op_xyz_scale(+0x90, 16)`, `cmd + 4`; else `cmd`. The unit's
+    /// byte `+0xb2` loses bit 2 in every case.
+    pub fn opu_fin_type<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        atan2: &mut impl FnMut(&mut M, f64, f64) -> f64,
+    ) -> u32 {
+        use crate::x87::load_f32;
+        let u = unit(mem, host);
+        let next = match nibble(mem, host) {
+            0 => {
+                let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+                let other = opus_no_get(mem, host.wrapping_add(0x300), u, no);
+                let rd = |mem: &M, at: u32| load_f32(mem.read(at));
+                let at = u.wrapping_add(0x40);
+                let p = [
+                    rd(mem, at),
+                    rd(mem, u.wrapping_add(0x48)),
+                    rd(mem, other.wrapping_add(0x40)),
+                    rd(mem, other.wrapping_add(0x48)),
+                ];
+                let d = crate::op::bridge::op_deg_get(mem, p, at, atan2);
+                mem.write(u.wrapping_add(0x48), d);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                let s: f32 = mem.read(g(mem, 0x00b9_231c));
+                mem.write(u.wrapping_add(0xba), 0u8);
+                crate::op::bridge::op_xyz_scale(
+                    mem,
+                    u.wrapping_add(0x40),
+                    u.wrapping_add(0x90),
+                    s.to_bits(),
+                );
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        };
+        let b = u.wrapping_add(0xb2);
+        mem.write(b, mem.read::<u8>(b) & 0xfb);
+        next
+    }
+
+    /// `opu_en_etc(host, cmd)` (`0x00815f60`): by the command's `i16 +2`:
+    /// 0 sets the wind of the unit's character (`g_EtChrHandles[byte unit
+    /// +0x18]`): `Ch_WindSet(h, +0x30 / 256, angle, +0x38 +
+    /// op_random(10))` with `angle` = `((ftol(+0x34) + 0x400) & 0xfff) /
+    /// 4096 * 360 - 90` (`f32` each); 1 `Ch_WindSetEnable(h, 0)`; both
+    /// `cmd + 4` (callees through `call`). Other values return `cmd`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_en_etc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{MUL, Reg, SUB};
+        let u = unit(mem, host);
+        let chr = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(chr).get(mem);
+        match mem.read::<i16>(cmd.wrapping_add(2)) {
+            0 => {
+                let rd = |mem: &M, at: u32| mem.read::<f32>(u.wrapping_add(at));
+                let k = |mem: &M, at: u32| mem.read::<f64>(g(mem, at));
+                let turn = ffx_bridge::x87::ftol(mem, Reg::load_f32(rd(mem, 0x34)).value());
+                #[allow(clippy::cast_precision_loss)] // below 4096: fild is exact
+                let t = (turn.wrapping_add(0x400) & 0xfff) as f32;
+                let angle = Reg::load_f32(t)
+                    .constant(MUL, k(mem, 0x00b5_0190))
+                    .constant(MUL, k(mem, 0x00b4_8380))
+                    .constant(SUB, k(mem, 0x00b5_8cd0))
+                    .store();
+                let w = crate::x87::load_f32(rd(mem, 0x38));
+                let ten: f32 = mem.read(g(mem, 0x00b9_2318));
+                let r = crate::rand::bridge::op_random(mem, ten);
+                let b = Reg::load_f32(r).mem(crate::x87::ADD, w).store();
+                let s = Reg::load_f32(rd(mem, 0x30))
+                    .constant(MUL, k(mem, 0x00b5_0198))
+                    .store();
+                call(
+                    mem,
+                    g(mem, 0x0082_4c90),
+                    &[h, s.to_bits(), angle.to_bits(), b.to_bits()],
+                );
+                cmd.wrapping_add(4)
+            }
+            1 => {
+                call(mem, g(mem, 0x0082_4cc0), &[h, 0]);
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        }
+    }
 }

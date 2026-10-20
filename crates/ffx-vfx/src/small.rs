@@ -1121,4 +1121,75 @@ pub mod bridge {
         call(mem, sym(mem, 0x0071_dbd0), &args);
         call(mem, sym(mem, 0x0064_58a0), &[6, 0]);
     }
+
+    /// `create0706NoiseRenderDataBuffer(lo, hi)` (`0x007fa510`): the
+    /// original's locals at `frame` (`+0` format 1, `+4` height, `+8`
+    /// width, `+0xc` the name, `sprintf` of the format string at
+    /// `0x00b45b3c` through the import slot `0x00b0c3dc`);
+    /// `graphicVFXCreate(lo, hi, 0x20000000)`, then
+    /// `graphicVFXCreateDataBuffer(lo, hi, 1, &width 0x700, &height 0xa80,
+    /// name, &format)` (all through `call`); `0x012e9644` = 1. Returns 1.
+    pub fn create_0706_noise_render_data_buffer<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (format, height, width, name) = (frame, frame + 4, frame + 8, frame + 0xc);
+        mem.write(width, 0u32);
+        mem.write(height, 0u32);
+        mem.write(format, 1u32);
+        let sprintf: u32 = mem.read(sym(mem, 0x00b0_c3dc));
+        call(mem, sprintf, &[name, sym(mem, 0x00b4_5b3c)]);
+        mem.write(width, 0x700u32);
+        mem.write(height, 0xa80u32);
+        call(mem, sym(mem, 0x0064_4de0), &[lo, hi, 0x2000_0000]);
+        call(
+            mem,
+            sym(mem, 0x0064_5040),
+            &[lo, hi, 1, width, height, name, format],
+        );
+        mem.write(sym(mem, 0x012e_9644), 1u32);
+        1
+    }
+
+    /// `0x0069fcb0` (`DynGeo_ResetCurrentBuffer`, ours; thiscall `(this)`):
+    /// `this +0x10` = `graphicDynGeoMemManagerGetCurrentBufferId()` (through
+    /// `call`); that buffer's record (`[[this + 4 id] +0x94]`, read again
+    /// for each step) gets `+4`, `+8` = 0 and its arrays zeroed (`memset`):
+    /// `[+0x14]` 0x1f40 bytes, `[+0x1c]` 0xbb8, `[+0x10]` 0x1770, `[+0x18]`
+    /// 0xfa0, `[+0xc]` 0x1770. Returns the last array (`memset`'s eax).
+    pub fn dyn_geo_reset_current_buffer<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = call(mem, sym(mem, 0x0063_ff50), &[]);
+        mem.write(this.wrapping_add(0x10), id);
+        let rec = |mem: &M| {
+            let id: u32 = mem.read(this.wrapping_add(0x10));
+            let b: u32 = mem.read(this.wrapping_add(id.wrapping_mul(4)));
+            mem.read::<u32>(b.wrapping_add(0x94))
+        };
+        let r = rec(mem);
+        mem.write(r.wrapping_add(4), 0u32);
+        let r = rec(mem);
+        mem.write(r.wrapping_add(8), 0u32);
+        let mut last = 0;
+        for (off, n) in [
+            (0x14, 0x1f40),
+            (0x1c, 0xbb8),
+            (0x10, 0x1770),
+            (0x18, 0xfa0),
+            (0xc, 0x1770),
+        ] {
+            let dst: u32 = mem.read(rec(mem).wrapping_add(off));
+            for i in (0..n).step_by(4) {
+                mem.write(dst.wrapping_add(i), 0u32);
+            }
+            last = dst;
+        }
+        last
+    }
 }
