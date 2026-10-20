@@ -4049,4 +4049,110 @@ ported! {
     Pad_ActuatorIds @ 0x0088_8a70 => extern "C" fn pad_actuator_ids(port: u32, slot: u32) -> u32 {
         tk::pad_actuator_ids(&mut mem(), port, slot, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_DrawChrSmallPlate(x, y, chr)`: the plate's result.
+    MenuItem_DrawChrSmallPlate @ 0x008c_1260 => extern "C" fn menu_item_draw_chr_small_plate(x: u32, y: u32, chr: u32) -> u32 {
+        tk::menu_item_draw_chr_small_plate(&mut mem(), [f32::from_bits(x), f32::from_bits(y)], chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuConfigHelp(id)`: the help line.
+    TkMenuConfigHelp @ 0x008d_c970 => extern "C" fn tk_menu_config_help(id: u32) -> u32 {
+        tk::tk_menu_config_help(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWeapon_DrawRows(window, fixed, first, _, y)`: void.
+    MenuWeapon_DrawRows @ 0x008d_0250 => extern "C" fn menu_weapon_draw_rows(window: u32, fixed: i32, first: i32, _d: u32, y: i32) {
+        tk::menu_weapon_draw_rows(&mut mem(), window, [fixed, first, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSave_BuildIconSys(n, b, index)`: void.
+    MenuSave_BuildIconSys @ 0x008b_42e0 => extern "C" fn menu_save_build_icon_sys(n: u32, b: u32, index: u32) {
+        let mut frame = super::StackFrame::<0x40>::new();
+        let local = frame.at();
+        tk::menu_save_build_icon_sys(&mut mem(), [n, b, index], local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `BtlEnd_StepEntry(i)`: 1 in state 2 or 5.
+    BtlEnd_StepEntry @ 0x008b_b690 => extern "C" fn btl_end_step_entry(i: u32) -> u32 {
+        tk::btl_end_step_entry(&mut mem(), i, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_DrawCharFaceSlide(x, y, w, h, t, cur, next)`: the
+    /// last call's result.
+    MenuNameEntry_DrawCharFaceSlide @ 0x008d_33b0 => extern "C" fn menu_name_entry_draw_char_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
+        tk::menu_name_entry_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_DrawSummonFaceSlide(x, y, w, h, t, cur, next)`: the
+    /// same body.
+    MenuNameEntry_DrawSummonFaceSlide @ 0x008d_35a0 => extern "C" fn menu_name_entry_draw_summon_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
+        tk::menu_name_entry_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuPlayer_DrawFaceSlide(x, y, w, h, t, cur, next)`: the last
+    /// call's result.
+    MenuPlayer_DrawFaceSlide @ 0x008d_32b0 => extern "C" fn menu_player_draw_face_slide(x: u32, y: u32, w: u32, h: u32, t: i32, cur: u32, next: u32) -> u32 {
+        tk::menu_player_draw_face_slide(&mut mem(), [x, y, w, h], t, [cur, next], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuScene_KeyEase(key, frame, frames)`: in `ST0`.
+    MenuScene_KeyEase @ 0x00a7_c6f0 => extern "C" fn menu_scene_key_ease(key: u32, frame: i32, frames: i32) -> f32 {
+        tk::menu_scene_key_ease(&mut mem(), key, frame, frames, &mut |_, v| crt_x87(0x00b0_c3b4, v, None))
+    }
+    /// `MenuKaizou_DrawWeaponTitle(x, y, i)`: void.
+    MenuKaizou_DrawWeaponTitle @ 0x008d_6660 => extern "C" fn menu_kaizou_draw_weapon_title(x: i32, y: i32, i: i32) {
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_kaizou_draw_weapon_title(&mut mem(), [x, y, i], local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuKaizou_DrawRow(window, x, y, row, fixed)`: void.
+    MenuKaizou_DrawRow @ 0x008d_6760 => extern "C" fn menu_kaizou_draw_row(window: u32, x: u32, y: u32, row: i32, fixed: i32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_kaizou_draw_row(&mut mem(), window, [f32::from_bits(x), f32::from_bits(y)], [row, fixed], local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Pad_RepeatButton(work, _, i, now, prev, slot)`: the bits in `ax`.
+    Pad_RepeatButton @ 0x0088_9980 => extern "C" fn pad_repeat_button(work: u32, _b: u32, i: u32, now: u32, prev: u32, slot: u32) -> u32 {
+        tk::pad_repeat_button(&mut mem(), work, [i, now, prev, slot], &mut |_| input_get_cur_time())
+    }
+    /// `Pad_RepeatButtons(work, b, now, prev, slot)`: the bits in `ax`.
+    Pad_RepeatButtons @ 0x0088_9940 => extern "C" fn pad_repeat_buttons(work: u32, b: u32, now: u32, prev: u32, slot: u32) -> u32 {
+        tk::pad_repeat_buttons(&mut mem(), work, [b, now, prev, slot], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_DrawRows(window, fixed, first, _, y)`: void.
+    MenuKaizou_DrawRows @ 0x008d_6560 => extern "C" fn menu_kaizou_draw_rows(window: u32, fixed: i32, first: i32, _d: u32, y: i32) {
+        tk::menu_kaizou_draw_rows(&mut mem(), window, [fixed, first, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Math_SemicircleTable(out, n, r)`: `out`.
+    Math_SemicircleTable @ 0x008c_ac70 => extern "C" fn math_semicircle_table(out: u32, n: i32, r: i32) -> u32 {
+        // _CIsin and _CIacos through the C runtime's import slots
+        tk::math_semicircle_table(&mut mem(), out, [n, r], &mut |_, sin, v| crt_x87(if sin { 0x00b0_c3b8 } else { 0x00b0_c3c4 }, v, None))
+    }
+    /// `MenuAbility_CommandTargetMask(cmd)`: 1 with aeons only, else 0.
+    MenuAbility_CommandTargetMask_008c6bc0 @ 0x008c_6bc0 => extern "C" fn menu_ability_command_target_mask(cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_ability_command_target_mask(&mut mem(), cmd, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_SortInventory()`: void.
+    MenuItem_SortInventory @ 0x008c_8fe0 => extern "C" fn menu_item_sort_inventory() {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_sort_inventory(&mut mem(), local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuItem_ItemTargetMask(item)`: 1 with aeons only, else 0.
+    MenuItem_ItemTargetMask_008c8a30 @ 0x008c_8a30 => extern "C" fn menu_item_item_target_mask(item: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_item_target_mask(&mut mem(), item, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawRow(window, x, y, row)`: void.
+    MenuItem_DrawRow @ 0x008d_af50 => extern "C" fn menu_item_draw_row(window: u32, x: u32, y: u32, row: i32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_draw_row(&mut mem(), window, [f32::from_bits(x), f32::from_bits(y)], row, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `NameInputChrChange(chr)`: `Menu_ParseItemKeys`'s result.
+    NameInputChrChange @ 0x008c_33f0 => extern "C" fn name_input_chr_change(chr: u32) -> u32 {
+        tk::name_input_chr_change(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+}
+
+/// `inputGetCurTime()` (`0x00630c60`) through the game's entry: the result
+/// in `ST0`, read back as a double.
+fn input_get_cur_time() -> f64 {
+    let f = crate::rebase(0x0063_0c60);
+    // SAFETY: a cdecl function of no arguments returning in ST0.
+    unsafe { std::mem::transmute::<usize, unsafe extern "C" fn() -> f64>(f)() }
 }
