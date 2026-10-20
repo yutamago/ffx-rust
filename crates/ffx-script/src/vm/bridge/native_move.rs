@@ -3228,14 +3228,15 @@ pub fn native_0203_poll<H: NativeHost>(h: &mut H, w: u32, a: u32, _s: u32) -> u3
 }
 
 /// `Native_0203_Result` (`0x0085dc10`): the chr pushed back,
-/// `0x0085d000(worker, args, stack)`, `0x00863650(worker id)`; the
+/// `0x0085d000(worker, args, stack)`, `Atel_ClearBindMask(worker id)`
+/// (`0x00863650`); the
 /// former's result.
 pub fn native_0203_result<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
     let v = h.read::<u32>(a);
     atel_push_stack_integer(h, s, v);
     let r = call(h, 0x0085_d000, &[w, a, s]);
     let id = u32::from(h.read::<u16>(w + worker::ID));
-    call(h, 0x0086_3650, &[id]);
+    super::helpers::atel_clear_bind_mask(h, id);
     r
 }
 

@@ -1587,3 +1587,205 @@ pub fn atel_request_trigger(h: &mut impl ffx_bridge::Host, from: u32, to: u32, k
     super::atel_set_current_ctrl(h, old);
     r
 }
+
+// ---- script round 22 ----
+
+/// `Atel_ClearBindMask(n)` (`0x00863650`): [`atel_set_bind_mask`]'s
+/// counterpart, bind-mask bit n (below 0x200, signed division) cleared and
+/// the union `0x01326b94` recomputed. Returns the `EAX` it leaves (the
+/// loop's end address; n itself for n >= 0x200, where the original leaves
+/// the caller's).
+pub fn atel_clear_bind_mask(m: &mut impl Mem, n: u32) -> u32 {
+    let k = n.cast_signed();
+    if k >= 0x200 {
+        return n;
+    }
+    let idx = k / 32;
+    let bit = 1_u32.wrapping_shl((k % 32).cast_unsigned());
+    let at = m
+        .rebase(BIND_MASKS)
+        .wrapping_add(idx.cast_unsigned().wrapping_mul(4));
+    let v = m.read::<u32>(at);
+    m.write(at, v & !bit);
+    let base = m.rebase(BIND_MASKS);
+    let mut all = 0;
+    for i in 0..16 {
+        all |= m.read::<u32>(base + 4 * i);
+    }
+    m.write(m.rebase(BIND_MASK_ALL), all);
+    base + 0x48
+}
+
+/// `g_EventSprites` (`0x01327148`): 128 records of `0x1c` bytes.
+const EVENT_SPRITES: u32 = 0x0132_7148;
+
+/// A sprite slot clamped to `0..=0x7f`, and a byte value to `0..=0xff`.
+fn sprite_slot(i: u32) -> u32 {
+    i.cast_signed().clamp(0, 0x7f).cast_unsigned()
+}
+
+fn byte_value(v: u32) -> u8 {
+    // the clamp makes it fit
+    u8::try_from(v.cast_signed().clamp(0, 0xff)).unwrap_or(0)
+}
+
+/// `Atel_SetSpriteAlpha(i, alpha)` (`0x00874ad0`): sprite i's `+1` (alpha)
+/// = alpha, i clamped to `0..=0x7f` and alpha to `0..=0xff`. Returns the
+/// `EAX` it leaves, `i * 7`.
+pub fn atel_set_sprite_alpha(m: &mut impl Mem, i: u32, alpha: u32) -> u32 {
+    let i = sprite_slot(i);
+    let at = m.rebase(EVENT_SPRITES) + i * 0x1c + 1;
+    m.write(at, byte_value(alpha));
+    i * 7
+}
+
+/// `Atel_SetSpriteColor(i, r, g, b)` (`0x008749f0`): sprite i's `+0x10`,
+/// `+0x11`, `+0x12` = r, g, b, each clamped to `0..=0xff` (i to
+/// `0..=0x7f`). Returns the `EAX` it leaves, `i * 7`.
+pub fn atel_set_sprite_color(m: &mut impl Mem, i: u32, r: u32, g: u32, b: u32) -> u32 {
+    let i = sprite_slot(i);
+    let at = m.rebase(EVENT_SPRITES) + i * 0x1c;
+    let (r, g, b) = (byte_value(r), byte_value(g), byte_value(b));
+    m.write(at + 0x11, g);
+    m.write(at + 0x10, r);
+    m.write(at + 0x12, b);
+    i * 7
+}
+
+/// `Atel_GetVoiceStreamParams(id, &a, &b)` (`0x00885ba0`): the voice id's
+/// decimal digits 4-5 of `id >> 12` (`(id >> 12) / 10000 % 100`) below 21
+/// give `a` = 0x19, `b` = 1, else `a` = 0x1b, `b` = 0. Returns the `EAX` it
+/// leaves, `&b`.
+pub fn atel_get_voice_stream_params(m: &mut impl Mem, id: u32, a: u32, b: u32) -> u32 {
+    let low = (id >> 12) / 10000 % 100 < 0x15;
+    m.write(a, if low { 0x19_u32 } else { 0x1b });
+    m.write(b, u32::from(low));
+    b
+}
+
+/// One byte of `Atel_NameToLang1` (`0x00875220`): `0x5a..=0x73` down by 10,
+/// `0x74..=0x8d` down by 4, `>` `R` `S` to `<` `j` `l`, the rest kept.
+fn name_to_lang1(c: u8) -> u8 {
+    match c {
+        0x5a..=0x73 => c - 10,
+        0x74..=0x8d => c - 4,
+        b'>' => b'<',
+        b'R' => b'j',
+        b'S' => b'l',
+        _ => c,
+    }
+}
+
+/// One byte of `Atel_NameFromLang1` (`0x00875370`), the inverse:
+/// `0x50..=0x69` up by 10, `0x70..=0x89` up by 4, `<` `j` `l` to `>` `R`
+/// `S`, the rest kept.
+fn name_from_lang1(c: u8) -> u8 {
+    match c {
+        0x50..=0x69 => c + 10,
+        0x70..=0x89 => c + 4,
+        b'<' => b'>',
+        b'j' => b'R',
+        b'l' => b'S',
+        _ => c,
+    }
+}
+
+/// Copies the C string at `src` to `dst` through `f`, byte by byte (the
+/// read of each byte follows the write of the one before, as in the
+/// original, so overlapping buffers behave alike). Returns the address of
+/// the terminating NUL written, the `EAX` the originals leave.
+fn map_name(m: &mut impl Mem, src: u32, dst: u32, f: fn(u8) -> u8) -> u32 {
+    let mut i = 0_u32;
+    loop {
+        let c = m.read::<u8>(src.wrapping_add(i));
+        let at = dst.wrapping_add(i);
+        if c == 0 {
+            m.write(at, 0_u8);
+            return at;
+        }
+        m.write(at, f(c));
+        i = i.wrapping_add(1);
+    }
+}
+
+/// `Atel_NameToLang1(src, dst)` (`0x00875220`): a character name copied
+/// into language 1's encoding (`setDefaultPlayerName`, `0x00787470`).
+pub fn atel_name_to_lang1(m: &mut impl Mem, src: u32, dst: u32) -> u32 {
+    map_name(m, src, dst, name_to_lang1)
+}
+
+/// `Atel_NameFromLang1(src, dst)` (`0x00875370`): the inverse, for
+/// languages 9 and 10.
+pub fn atel_name_from_lang1(m: &mut impl Mem, src: u32, dst: u32) -> u32 {
+    map_name(m, src, dst, name_from_lang1)
+}
+
+/// Whether the worker is of type 5 or 6, and the `EAX` the type test
+/// leaves otherwise (the header pointer with its low byte the type minus
+/// 5).
+fn kind56(m: &impl Mem, w: u32) -> Result<(), u32> {
+    let h = m.read::<u32>(w);
+    let t = m.read::<u8>(h).wrapping_sub(5);
+    if t < 2 {
+        Ok(())
+    } else {
+        Err(h & !0xff | u32::from(t))
+    }
+}
+
+/// `Atel_ResetLineTable(worker)` (`0x0086d110`): for types 5 and 6 with a
+/// table at `+0x2e4`, its eight `(key u32, value u8)` slots (8 bytes each,
+/// the ones opcode `7a` sets) = `(0xffff, 3)`. Returns the `EAX` it leaves:
+/// the table, or the type test's.
+pub fn atel_reset_line_table(m: &mut impl Mem, w: u32) -> u32 {
+    if let Err(eax) = kind56(m, w) {
+        return eax;
+    }
+    let t = m.read::<u32>(w + 0x2e4);
+    if t != 0 {
+        for i in 0..8 {
+            m.write(t + i * 8, 0xffff_u32);
+            m.write(t + i * 8 + 4, 3_u8);
+        }
+    }
+    t
+}
+
+/// `Atel_FreeLineSignals(worker)` (`0x0086d1c0`): for types 5 and 6 with a
+/// table at `+0x2e4`, its 16 signal nodes (`+0x40`, 0x18 bytes each) are
+/// pushed one by one onto the worker's free list (`+0x88`): the node's
+/// `next` = the old head, its `prev` = the list head, the old head's `prev`
+/// = the node. Returns the `EAX` it leaves: the table `+ 0x1dc`, 0 without
+/// one, or the type test's.
+pub fn atel_free_line_signals(m: &mut impl Mem, w: u32) -> u32 {
+    if let Err(eax) = kind56(m, w) {
+        return eax;
+    }
+    let t = m.read::<u32>(w + 0x2e4);
+    if t == 0 {
+        return 0;
+    }
+    let head = w + 0x88;
+    for i in 0..16 {
+        let node = t + 0x40 + i * 0x18;
+        let old = m.read::<u32>(head);
+        if old != 0 {
+            m.write(old + 4, node);
+        }
+        m.write(head, node);
+        m.write(node + 4, head);
+        m.write(node, old);
+    }
+    t + 0x1dc
+}
+
+/// `Atel_SetLineTable(worker, table)` (`0x0086d190`): for types 5 and 6
+/// `+0x2e4` = table; then [`atel_free_line_signals`] and
+/// [`atel_reset_line_table`], whose `EAX` it returns.
+pub fn atel_set_line_table(m: &mut impl Mem, w: u32, table: u32) -> u32 {
+    if kind56(m, w).is_ok() {
+        m.write(w + 0x2e4, table);
+    }
+    atel_free_line_signals(m, w);
+    atel_reset_line_table(m, w)
+}
