@@ -10,12 +10,16 @@ wins, else the one holding it once when any whitespace may separate its tokens
 The worktree is synced (rsync) into a private copy, MUT_WORK (default
 ~/ffx-work/mutants/<worktree name>), so the worktree itself is never edited.
 There each mutation site becomes a schema,
-`if ffx_core::mutant(k) { new } else { old }`, around the smallest expression
+`if ffx_core::mutant(k) { new } else { old }` (in parentheses for an
+expression, in braces for a match arm's body), around the smallest expression
 or statement run holding the change (found by tools/mutants-rs, a syn helper
 built on first use). The ffx-oracle test binary is built once with
-`--features ffx-core/mutants`; a schema the compiler rejects moves to the next
-larger node, and after a few rounds to the old rebuild-per-mutant path, so no
-mutant is lost. Mutants then run in parallel (MUT_JOBS, default cores / 2),
+`--features ffx-core/mutants`. A schema the compiler rejects (an error span
+inside it) moves to the next larger node, and after a few rounds to the old
+rebuild-per-mutant path, so no mutant is lost; errors whose spans point into
+no schema are traced to their schemata by building halves, and only those
+are dropped to the rebuild path. A mutant that does not build on its own is an
+ERROR. Mutants then run in parallel (MUT_JOBS, default cores / 2),
 each with FFX_MUTANT=k on the image and every snapshot in MUT_SNAPS.
 
 Settings (environment, as in the agents' mut22.py; flags override):
@@ -26,6 +30,10 @@ Settings (environment, as in the agents' mut22.py; flags override):
   MUT_JOBS    parallel runs (default cores / 2)
   MUT_TIMEOUT seconds per run (default max(120, 20 x the unmutated run))
   MUT_SCHEMA  0 = no schemata, every mutant rebuilds (the old way)
+
+`mutants.py --self-test` checks the schema rewrite on a small built-in file
+(match arms, overlapping deletions, a tail insertion, a const) with rustc
+alone: one build, and every schema behaves as its mutant rebuilt.
 
 Verdicts, one line per mutant in list order: KILLED, SURVIVED, ERROR or
 NOMATCH, a tab, the name. A run with a failed test, or one that times out (a
@@ -313,8 +321,10 @@ class Schemata:
             pieces.append(self.text[pos:s])
             at += len(self.text[pos:s])
             a_text, a_ranges = self._render(s, e, inner)
-            paren = c["kind"] == "expr"
-            w = "(" if paren else ""
+            # an expression goes in parentheses; a match arm's body in braces
+            # (a parenthesised block would need a comma after the arm)
+            open_, close = {"expr": ("(", ")"), "arm": ("{", "}")}.get(c["kind"], ("", ""))
+            w = open_
             b_ranges = {}
             for n, k in enumerate(group):
                 w += ("if " if n == 0 else " else if ") + f"{self.path}({k}) {{\n"
@@ -322,7 +332,7 @@ class Schemata:
                 w += self.chosen(k)["b"] + "\n}"
             w += " else {\n"
             a_at = at + len(w)
-            w += a_text + "\n}" + (")" if paren else "")
+            w += a_text + "\n}" + close
             ranges.append((at, at + len(w), group, b_ranges))
             ranges += [(rs + a_at, re_ + a_at, g, {k: (x + a_at, y + a_at) for k, (x, y) in br.items()})
                        for rs, re_, g, br in a_ranges]
@@ -361,7 +371,141 @@ def helper():
     return exe
 
 
+def make_schemata(hx, rel, text, sites, core):
+    """(Schemata of `rel`, ids without a node) for {id: (start, end, new)}; (None, ids) if the helper fails."""
+    ks = list(sites)
+    sc = Schemata(rel, text, core)
+    req = [{"start": len(text[: sites[k][0]].encode()), "end": len(text[: sites[k][1]].encode()),
+            "new": sites[k][2]} for k in ks]
+    out = subprocess.run([str(hx)], input=json.dumps({"src": text, "sites": req}), capture_output=True, text=True)
+    if out.returncode:
+        log(f"{rel}: mutants-rs failed: {out.stderr.strip()}")
+        return None, ks
+    btext = text.encode()
+    none = []
+    for k, cands in zip(ks, json.loads(out.stdout)):
+        # helper offsets are bytes; the schema works on str offsets
+        for c in cands if len(btext) != len(text) else []:
+            c["start"] = len(btext[: c["start"]].decode())
+            c["end"] = len(btext[: c["end"]].decode())
+        if cands:
+            sc.cands[k], sc.pick[k] = cands, 0
+        else:
+            none.append(k)
+    return sc, none
+
+
+SELF_TEST_SRC = """\
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+
+static G: AtomicU32 = AtomicU32::new(0);
+const LIMIT: u32 = 4;
+
+pub fn mutant(k: u32) -> bool {
+    std::env::var("M").ok().and_then(|v| v.parse().ok()) == Some(k)
+}
+
+fn go(x: u32) {
+    G.fetch_add(x, Relaxed);
+}
+
+fn call(x: u32) -> u32 {
+    x * 0x101
+}
+
+pub fn step(state: u32, done: &mut u32) -> u32 {
+    match state {
+        0 => {
+            go(1);
+            *done = 1;
+        }
+        5 => *done = 1,
+        6 => go(2),
+        _ if state > LIMIT => {}
+        _ => return 9,
+    }
+    call(3)
+}
+
+fn main() {
+    let mut out = Vec::new();
+    for s in [0, 5, 6, 7, 1] {
+        let mut d = 0;
+        let r = step(s, &mut d);
+        out.push((r, d, G.load(Relaxed)));
+    }
+    println!("{out:?}");
+}
+"""
+
+# (name, old, new); "const" has no node (mutant() is not a const fn) and rebuilds
+SELF_TEST_MUTANTS = [
+    ("arm-unbraced", "5 => *done = 1,", "5 => go(5),"),
+    ("arm-literal", "5 => *done = 1,", "5 => *done = 2,"),
+    ("arm-call", "6 => go(2),", "6 => go(3),"),
+    ("arm-del-go", "go(1);\n            *done = 1;", "*done = 1;"),  # overlaps the next one in whitespace
+    ("arm-del-done", "go(1);\n            *done = 1;", "go(1);"),
+    ("tail-append", "call(3)\n}", "call(3) & 0xff\n}"),  # an insertion right after a tail expression
+    ("guard", "_ if state > LIMIT => {}", "_ if state >= LIMIT => {}"),
+    ("const", "const LIMIT: u32 = 4;", "const LIMIT: u32 = 5;"),
+]
+
+
+def self_test():
+    """Schemata of match arms, overlapping deletions and tail insertions must build in one pass and
+    behave as the mutants rebuilt one by one (needs only rustc)."""
+    import tempfile
+
+    hx = helper()
+    text = SELF_TEST_SRC
+    sites = {}
+    for k, (name, a, b) in enumerate(SELF_TEST_MUTANTS, 1):
+        assert text.count(a) == 1, name
+        s = text.index(a)
+        sites[k] = site(text, s, s + len(a), b)
+    sc, none = make_schemata(hx, "self-test.rs", text, sites, "crate::mutant")
+    fails = []
+    want_none = [k for k, m in enumerate(SELF_TEST_MUTANTS, 1) if m[0] == "const"]
+    if sc is None or none != want_none:
+        fails.append(f"without a node: {none}, expected {want_none}")
+    acc, gone = sc.resolve(sorted(sc.cands))
+    if gone:
+        fails.append(f"no compatible node: {gone}")
+    with tempfile.TemporaryDirectory(prefix="mutants-self-test-") as d:
+        d = pathlib.Path(d)
+
+        def compile_(src, name):
+            (d / f"{name}.rs").write_text(src)
+            r = subprocess.run(["rustc", "--edition", "2024", "-A", "warnings", "-o", str(d / name),
+                                str(d / f"{name}.rs")], capture_output=True, text=True)
+            return (d / name) if r.returncode == 0 else r.stderr
+
+        exe = compile_(sc.render(acc), "schema")
+        if not isinstance(exe, pathlib.Path):
+            fails.append("the schema build failed:\n" + exe[:3000])
+        else:
+            for k in [0, *acc]:
+                s, e, new = sites[k] if k else (0, 0, "")
+                ref = compile_(text[:s] + new + text[e:], f"m{k}")
+                if not isinstance(ref, pathlib.Path):
+                    fails.append(f"mutant {k} does not build alone:\n{ref[:1000]}")
+                    continue
+                env = dict(os.environ, M=str(k))
+                got = subprocess.run([str(exe)], env=env, capture_output=True, text=True).stdout
+                want = subprocess.run([str(ref)], capture_output=True, text=True).stdout
+                name = SELF_TEST_MUTANTS[k - 1][0] if k else "unmutated"
+                log(f"{'ok' if got == want else 'DIFFERS'}\t{name} ({sc.chosen(k)['kind'] if k else '-'})")
+                if got != want:
+                    fails.append(f"{name}: schema prints {got.strip()}, rebuilt prints {want.strip()}")
+    for f in fails:
+        log(f)
+    log("self-test " + ("failed" if fails else f"passed: {len(acc)} schemata in one build, {len(none)} without a node"))
+    sys.exit(1 if fails else 0)
+
+
 def main():
+    if sys.argv[1:] == ["--self-test"]:
+        self_test()
     env = os.environ
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("worktree")
@@ -421,70 +565,109 @@ def main():
             if not ks:
                 continue
             core = "crate::mutant" if pathlib.PurePath(f).parts[:2] == ("crates", "ffx-core") else "::ffx_core::mutant"
-            sc = Schemata(f, orig[f], core)
-            sites = [{"start": len(orig[f][: where[k][1][0]].encode()),
-                      "end": len(orig[f][: where[k][1][1]].encode()), "new": where[k][1][2]} for k in ks]
-            out = subprocess.run([str(hx)], input=json.dumps({"src": orig[f], "sites": sites}),
-                                 capture_output=True, text=True)
-            if out.returncode:
-                log(f"{f}: mutants-rs failed: {out.stderr.strip()}")
+            sc, none = make_schemata(hx, f, orig[f], {k: where[k][1] for k in ks}, core)
+            if sc is None:
                 fallback += ks
                 continue
-            bfile = orig[f].encode()
-            for k, cands in zip(ks, json.loads(out.stdout)):
-                # helper offsets are bytes; the schema works on str offsets
-                for c in cands if len(bfile) != len(orig[f]) else []:
-                    c["start"] = len(bfile[: c["start"]].decode())
-                    c["end"] = len(bfile[: c["end"]].decode())
-                if cands:
-                    sc.cands[k], sc.pick[k] = cands, 0
-                else:
-                    fallback.append(k)
+            fallback += none
             schema[f] = sc
             r.need_core(f)
 
     exe = None
     active = {f: sorted(sc.cands) for f, sc in schema.items()}
-    for rnd in range(MAX_ROUNDS):
-        if not any(active.values()):
-            break
+
+    def attempt(act):
+        """Write the schemata of `act` ({file: ids}) into the copy and build."""
+        for f, sc in schema.items():
+            (r.tree / f).write_text(sc.render(act.get(f, [])))
+        return r.build()
+
+    def attribute(errors):
+        """(ids whose schema an error points into, errors no schema explains)."""
+        blamed, loose = set(), []
+        for f, byte, msg in errors:
+            sc = schema.get(f)
+            ks = None
+            if sc and byte is not None:
+                ks = sc.blame(len((r.tree / f).read_bytes()[:byte].decode(errors="replace")))
+            if ks:
+                blamed.update(ks)
+            else:
+                loose.append((f, msg))
+        return blamed, loose
+
+    def culprits(cands, base, dirty=False):
+        """The (file, id) in `cands` whose schemata, built with `base`, give errors outside every schema.
+
+        Bisects with builds of subsets (`dirty`: this set is known to give
+        them); attributed errors in those builds are left to the rounds below."""
+        if not cands:
+            return []
+        if dirty:
+            return halves(cands, base)
+        act = {}
+        for f, k in base + cands:
+            act.setdefault(f, []).append(k)
+        t0 = time.time()
+        exe_s, errs = attempt(act)
+        loose = [] if exe_s else attribute(errs)[1]
+        log(f"  bisect {len(cands)} of {len(base) + len(cands)}: "
+            f"{'clean' if not loose else f'{len(loose)} unattributed'}, {time.time() - t0:.0f}s")
+        if not loose:
+            return []
+        return halves(cands, base)
+
+    def halves(cands, base):
+        if len(cands) == 1:
+            return cands
+        half = len(cands) // 2
+        bad = culprits(cands[:half], base)
+        # the whole set is dirty: with nothing to blame in the first half, the second half is too
+        return bad + culprits(cands[half:], base + [c for c in cands[:half] if c not in bad], dirty=not bad)
+
+    rnd = 0
+    while any(active.values()) and rnd <= MAX_ROUNDS:
+        last = rnd >= MAX_ROUNDS - 1
         for f, sc in schema.items():
             acc, gone = sc.resolve(active[f])
             active[f] = acc
             fallback += gone
-            (r.tree / f).write_text(sc.render(acc))
         if args.dry_run:
-            for f in schema:
+            for f, sc in schema.items():
+                (r.tree / f).write_text(sc.render(active[f]))
                 subprocess.run(["diff", "-u", str(r.wt / f), str(r.tree / f)])
             log(f"dry run: {sum(map(len, active.values()))} schemata, {len(fallback)} without a node")
             return
         t0 = time.time()
-        exe, errors = r.build()
-        log(f"schema build {rnd + 1}: {sum(map(len, active.values()))} mutants, "
+        exe, errors = attempt(active)
+        rnd += 1
+        log(f"schema build {rnd}: {sum(map(len, active.values()))} mutants, "
             f"{len(errors)} errors, {time.time() - t0:.0f}s")
         if exe:
             break
-        blamed, lost = set(), False
-        for f, byte, msg in errors:
-            sc = schema.get(f)
-            ks = sc.blame(len((r.tree / f).read_bytes()[:byte].decode(errors="replace"))) if sc else None
-            if not ks:
+        blamed, loose = attribute(errors)
+        if loose:
+            # no span points into a schema (a cascade, or a cause elsewhere):
+            # find the schemata behind it by building halves, drop only those
+            for f, msg in loose[:5]:
                 log(f"unattributed error ({f}): {msg[:300]}")
-                lost = True
-            else:
-                blamed.update(ks)
-        if lost:
-            break
+            bad = culprits([(f, k) for f in active for k in active[f]], [], dirty=True)
+            log("dropped from the schema build: " + " ".join(muts[k - 1][0] for _, k in bad))
+            for f, k in bad:
+                active[f].remove(k)
+                fallback.append(k)
         for f, sc in schema.items():
             keep = []
             for k in active[f]:
-                if k in blamed and not sc.advance(k):
-                    fallback.append(k)
-                elif k not in blamed or sc.pick[k] < len(sc.cands[k]):
+                if k not in blamed:
                     keep.append(k)
+                elif not last and sc.advance(k):
+                    keep.append(k)  # try the next larger node
+                else:
+                    fallback.append(k)
             active[f] = keep
     if not exe:
-        # every schema still active falls back; build the plain tree for the baseline
+        # nothing left as a schema (or the rounds ran out): build the plain tree for the baseline
         for f in schema:
             fallback += active[f]
             active[f] = []
