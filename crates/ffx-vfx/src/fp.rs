@@ -121,6 +121,182 @@ pub mod bridge {
         bit
     }
 
+    /// `pppFpPointLightModel(obj, key, ctrl)` (`0x0075d930`) and, with
+    /// `scaled`, `pppFpPointLightModelScl` (`0x0075dd70`): for a model
+    /// (`key +0x10` = `n`, not 0xffff: `get_ptr32_func` of word `+0x1c` of
+    /// entry `n` of the environment's 0x20-byte table at `env +0x20`), one
+    /// light per model point (`i16 model +0x12` of them, 6-byte `i16` points
+    /// from `model + model[+8]`), as [`Lights::point`]. Callees through
+    /// `call`. Returns what the original leaves in `eax`: the bit, or
+    /// without a model `key` (`Scl`: the scale area's table word).
+    pub fn ppp_fp_point_light_model<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        scaled: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let offs: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let n: u32 = mem.read(key.wrapping_add(0x10));
+        if n == 0xffff {
+            return if scaled {
+                mem.read(offs.wrapping_add(0xc))
+            } else {
+                key
+            };
+        }
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let models: u32 = mem.read(env.wrapping_add(0x20));
+        let model =
+            ffx_system::stub::ptr32(mem.read(models.wrapping_add(n << 5).wrapping_add(0x1c)));
+        let lights = Lights::new(mem, obj, key, offs, scaled);
+        let mut p = model.wrapping_add(mem.read(model.wrapping_add(8)));
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<i16>(model.wrapping_add(0x12))) {
+            lights.point(mem, p, call);
+            p = p.wrapping_add(6);
+            i += 1;
+        }
+        lights.done(mem)
+    }
+
+    /// `pppFpPointLightVsf(obj, key, ctrl)` (`0x0075db30`) and, with
+    /// `scaled`, `pppFpPointLightVsfScl` (`0x0075df90`): as
+    /// [`ppp_fp_point_light_model`] over a vertex selection: entry `i16 key
+    /// +0x10` of the environment's 8-byte table at `env +0x28` (`i16 +0`
+    /// the model, `i16 +2` the count, `+4` the `u16` vertex numbers),
+    /// the vertices (6-byte `i16`) at `get_ptr32_func(obj +0x90)`, or when
+    /// that is 0 at `get_ptr32_func` of word `+0x14` of the model's entry in
+    /// the table at `env +0x20`. Callees through `call`. Returns what the
+    /// original leaves in `eax`: the bit, or the table address when the
+    /// entry's address is 0.
+    pub fn ppp_fp_point_light_vsf<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        scaled: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_system::stub::ptr32;
+        let offs: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let env = |mem: &M| mem.read::<u32>(crate::heap::bridge::ENV_SLOT.get(mem));
+        let table: u32 = mem.read(env(mem).wrapping_add(0x28));
+        let n = i32::from(mem.read::<i16>(key.wrapping_add(0x10))).cast_unsigned();
+        let sel = table.wrapping_add(n << 3);
+        if sel == 0 {
+            return table;
+        }
+        let mut verts = ptr32(mem.read(obj.wrapping_add(0x90)));
+        if verts == 0 {
+            let models: u32 = mem.read(env(mem).wrapping_add(0x20));
+            let m = i32::from(mem.read::<i16>(sel)).cast_unsigned();
+            verts = ptr32(mem.read(models.wrapping_add(m << 5).wrapping_add(0x14)));
+        }
+        let lights = Lights::new(mem, obj, key, offs, scaled);
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<i16>(sel.wrapping_add(2))) {
+            let list = ptr32(mem.read(sel.wrapping_add(4)));
+            let at = list.wrapping_add(2 * i.cast_unsigned());
+            let k = u32::from(mem.read::<u16>(at));
+            lights.point(mem, verts.wrapping_add(k * 6), call);
+            i += 1;
+        }
+        lights.done(mem)
+    }
+
+    /// What the four model point light steps share: the position (work
+    /// area 2 of `ctrl`'s offsets plus `g_pppWorldMatrix`'s translation,
+    /// each `f32`), the colour (work area 1's `i16 +0..+4` times its `i16
+    /// +6 >> 7`, `>> 14` each), the attenuation (`f32 key +0xc`, or
+    /// `[0x00b92268]` (2.0) when that is 0) and, for the `Scl` steps, the
+    /// scale area (word 3).
+    struct Lights {
+        key: u32,
+        pos: [f64; 3],
+        rgb: [u32; 3],
+        att: u32,
+        scale: Option<u32>,
+    }
+
+    impl Lights {
+        fn new(mem: &impl Mem, obj: u32, key: u32, offs: u32, scaled: bool) -> Self {
+            use ffx_bridge::x87::{add, load, store};
+            let area = |k: u32| {
+                obj.wrapping_add(0xa0)
+                    .wrapping_add(mem.read(offs.wrapping_add(4 * k)))
+            };
+            let (colour, pos) = (area(1), area(2));
+            let half = |o: u32| i32::from(mem.read::<i16>(colour.wrapping_add(o)));
+            let s = half(6) >> 7;
+            let world = crate::mat::bridge::WORLD.ptr(mem).addr;
+            let pos = [0u32, 4, 8].map(|o| {
+                let w = load(mem.read(world.wrapping_add(0x30 + o)));
+                load(store(add(load(mem.read(pos.wrapping_add(o))), w)))
+            });
+            let rgb = [0, 2, 4].map(|o| (half(o).wrapping_mul(s) >> 14).cast_unsigned());
+            let mut att: u32 = mem.read(key.wrapping_add(0xc));
+            if load(att) == 0.0 {
+                att = mem.read(Global::<u32>::new(0x00b9_2268).ptr(mem).addr);
+            }
+            let scale = scaled.then(|| area(3));
+            Self {
+                key,
+                pos,
+                rgb,
+                att,
+                scale,
+            }
+        }
+
+        /// One light at the `i16` point `at` (`Scl`: times the scale area's
+        /// floats), each coordinate `f32`: while `g_FpPointLightA` is below
+        /// the cap, `Sg_PLightDefine(A, x, y, z, radius f32 key +4, r, g, b,
+        /// light u8 key +8)` and `Sg_PLightSetAttenuation(A, att)`; then
+        /// `g_FpPointLightA` counts up.
+        #[allow(clippy::many_single_char_names)]
+        fn point<M: Mem>(
+            &self,
+            mem: &mut M,
+            at: u32,
+            call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        ) {
+            use ffx_bridge::x87::{add, load, mul, store};
+            let sym = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+            let mut xyz = [0u32; 3];
+            for ((o, base), out) in (0u32..).step_by(2).zip(self.pos).zip(&mut xyz) {
+                let v = f64::from(mem.read::<i16>(at.wrapping_add(o)));
+                let d = match self.scale {
+                    Some(s) => mul(v, load(mem.read(s.wrapping_add(2 * o)))),
+                    None => v,
+                };
+                *out = store(add(base, d));
+            }
+            let lit = POINT_LIGHT_A.get(mem);
+            if lit.cast_signed() < POINT_LIGHT_CAP.get(mem) {
+                let light = u32::from(mem.read::<u8>(self.key.wrapping_add(8)));
+                let radius: u32 = mem.read(self.key.wrapping_add(4));
+                let [x, y, z] = xyz;
+                let [r, g, b] = self.rgb;
+                let args = [lit, x, y, z, radius, r, g, b, light];
+                call(mem, sym(mem, 0x0083_19b0), &args);
+                let at = POINT_LIGHT_A.get(mem);
+                call(mem, sym(mem, 0x0083_1bf0), &[at, self.att]);
+            }
+            let next = POINT_LIGHT_A.get(mem).wrapping_add(1);
+            POINT_LIGHT_A.set(mem, next);
+        }
+
+        /// `g_FpPointLightB` gets bit `light & 31`; returns the bit.
+        fn done(&self, mem: &mut impl Mem) -> u32 {
+            let bit = 1u32 << (mem.read::<u8>(self.key.wrapping_add(8)) & 31);
+            let old = POINT_LIGHT_B.get(mem);
+            POINT_LIGHT_B.set(mem, old | bit);
+            bit
+        }
+    }
+
     /// The table's entry count and the address of entry 0's ID.
     fn table(mem: &impl Mem) -> Option<(u32, u32)> {
         let t = DATA.get(mem);

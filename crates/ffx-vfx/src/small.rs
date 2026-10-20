@@ -1734,4 +1734,145 @@ pub mod bridge {
         }
         call(mem, sym(mem, 0x0071_6b70), &[sym(mem, 0x0230_fff0)])
     }
+
+    // ---- the trail rings (`CopyFields_007e5f30` sets one up) ----
+    //
+    // A ring: `u16 +2` flags (0x8000: keep the lengths), `u16 +4` its size
+    // `n`, `u16 +6` the head, `u16 +8` the points held, `u16 +0xa` a life,
+    // and `n` 16-byte points from `+0x10` (x, y, z, and `w` the length of
+    // the trail from the head to that point).
+
+    /// The slot offset `(i % n) << 4` the pushes use, cut to 16 bits
+    /// (`movzx` after the shift); 0 when `n` is 0.
+    fn slot16(i: u32, n: u32) -> u32 {
+        (i.checked_rem(n).unwrap_or(0) << 4) & 0xffff
+    }
+
+    /// Copies the 16 bytes at `src` to `dst`, a word at a time.
+    fn copy4(mem: &mut impl Mem, dst: u32, src: u32) {
+        for k in 0..4 {
+            let w: u32 = mem.read(src.wrapping_add(4 * k));
+            mem.write(dst.wrapping_add(4 * k), w);
+        }
+    }
+
+    /// The trail lengths: the head point's `w` = 0, then for each older
+    /// point, `w` = the previous `w` + the distance to the next newer
+    /// point (each difference, the length and the sum stored as `f32`; the
+    /// squares summed as x, y, then z). The original divides by the size
+    /// without a check there, so with a size of 0 and two points it faults:
+    /// this stops instead.
+    #[allow(clippy::many_single_char_names)]
+    fn trail_lengths(mem: &mut impl Mem, ring: u32) {
+        use ffx_bridge::x87::{add, load, mul, sqrt, store, sub};
+        let pts = ring.wrapping_add(0x10);
+        let n = u32::from(mem.read::<u16>(ring.wrapping_add(4)));
+        let mut h = u32::from(mem.read::<u16>(ring.wrapping_add(6)));
+        let first = h.checked_rem(n).unwrap_or(0) << 4;
+        mem.write(pts.wrapping_add(first).wrapping_add(0xc), 0u32);
+        let mut sum = store(0.0);
+        let mut k = 1u32;
+        while k < u32::from(mem.read::<u16>(ring.wrapping_add(8))) {
+            let n = u32::from(mem.read::<u16>(ring.wrapping_add(4)));
+            let a = pts.wrapping_add(h.checked_rem(n).unwrap_or(0) << 4);
+            h = h.wrapping_sub(1) & 0xffff;
+            let Some(r) = h.checked_rem(n) else { return };
+            let b = pts.wrapping_add(r << 4);
+            let mut dv = [0f64; 3];
+            for (o, v) in (0u32..).step_by(4).zip(dv.iter_mut()) {
+                let x = sub(
+                    load(mem.read(a.wrapping_add(o))),
+                    load(mem.read(b.wrapping_add(o))),
+                );
+                *v = load(store(x));
+            }
+            let [dx, dy, dz] = dv;
+            let len2 = add(add(mul(dx, dx), mul(dy, dy)), mul(dz, dz));
+            let len = store(sqrt(len2));
+            sum = store(add(load(len), load(sum)));
+            mem.write(b.wrapping_add(0xc), sum);
+            k += 1;
+        }
+    }
+
+    /// `0x007e5f80` (`op_trail_push`, ours; `(ring, point, life)`, called
+    /// by `0x0081b9b0`): `n` times (the size, read each time), the head
+    /// advances and the 16 bytes at `point` go into its slot; the count
+    /// grows up to the size, a non-zero low half of `life` goes to `+0xa`,
+    /// and with flag 0x8000 the lengths are redone. Returns the size (left
+    /// in `eax`).
+    #[allow(clippy::similar_names)]
+    pub fn op_trail_push(mem: &mut impl Mem, ring: u32, point: u32, life: u32) -> u32 {
+        let mut i = 0u32;
+        loop {
+            let n = u32::from(mem.read::<u16>(ring.wrapping_add(4)));
+            if i >= n {
+                return n;
+            }
+            let head = mem.read::<u16>(ring.wrapping_add(6)).wrapping_add(1);
+            mem.write(ring.wrapping_add(6), head);
+            let n = u32::from(mem.read::<u16>(ring.wrapping_add(4)));
+            let slot = slot16(u32::from(head), n);
+            copy4(mem, ring.wrapping_add(0x10).wrapping_add(slot), point);
+            let held = mem.read::<u16>(ring.wrapping_add(8)).wrapping_add(1);
+            if held <= mem.read::<u16>(ring.wrapping_add(4)) {
+                mem.write(ring.wrapping_add(8), held);
+            }
+            #[allow(clippy::cast_possible_truncation)] // the low half
+            let life16 = life as u16;
+            if life16 != 0 {
+                mem.write(ring.wrapping_add(0xa), life16);
+            }
+            if mem.read::<u16>(ring.wrapping_add(2)) & 0x8000 != 0 {
+                trail_lengths(mem, ring);
+            }
+            i += 1;
+        }
+    }
+
+    /// `0x007e6110` (`op_trail_add`, ours; `(ring, point, fill, life)`,
+    /// called by `0x008171a0`): with `fill` 0 a push as in
+    /// [`op_trail_push`] (once); else, while the ring is not full, the
+    /// point goes behind the oldest (`(head - held) % n`; the first one
+    /// advances the head instead) and the count grows. Then the lengths
+    /// with flag 0x8000. Returns 0.
+    #[allow(clippy::similar_names)]
+    pub fn op_trail_add(mem: &mut impl Mem, ring: u32, point: u32, fill: u32, life: u32) -> u32 {
+        let pts = ring.wrapping_add(0x10);
+        if fill == 0 {
+            let head = mem.read::<u16>(ring.wrapping_add(6)).wrapping_add(1);
+            mem.write(ring.wrapping_add(6), head);
+            let n = u32::from(mem.read::<u16>(ring.wrapping_add(4)));
+            copy4(mem, pts.wrapping_add(slot16(u32::from(head), n)), point);
+            let held = mem.read::<u16>(ring.wrapping_add(8)).wrapping_add(1);
+            if held <= mem.read::<u16>(ring.wrapping_add(4)) {
+                mem.write(ring.wrapping_add(8), held);
+            }
+            #[allow(clippy::cast_possible_truncation)] // the low half
+            let life16 = life as u16;
+            if life16 != 0 {
+                mem.write(ring.wrapping_add(0xa), life16);
+            }
+        } else {
+            let held = mem.read::<u16>(ring.wrapping_add(8));
+            let n = mem.read::<u16>(ring.wrapping_add(4));
+            if held < n {
+                let slot = if held == 0 {
+                    let head = mem.read::<u16>(ring.wrapping_add(6)).wrapping_add(1);
+                    mem.write(ring.wrapping_add(6), head);
+                    0
+                } else {
+                    let back = mem.read::<u16>(ring.wrapping_add(6)).wrapping_sub(held);
+                    slot16(u32::from(back), u32::from(n))
+                };
+                copy4(mem, pts.wrapping_add(slot), point);
+                let held = mem.read::<u16>(ring.wrapping_add(8)).wrapping_add(1);
+                mem.write(ring.wrapping_add(8), held);
+            }
+        }
+        if mem.read::<u16>(ring.wrapping_add(2)) & 0x8000 != 0 {
+            trail_lengths(mem, ring);
+        }
+        0
+    }
 }
