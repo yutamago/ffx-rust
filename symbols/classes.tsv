@@ -846,7 +846,7 @@
 0x006393a0	glue	thin wrapper: only forwards to glue code (BrokenScreenEffect_GetInstance)
 0x006393c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_BufferSize
 0x00639410	dead	unreachable from the entry point and every pointer table
-0x00639450	logic	default (no rule: ported to be safe)
+0x00639450	glue	thin wrapper: only forwards to glue code (BrokenScreenEffect_GetInstance, ShadowEntries_Init_006d54c0)
 0x00639470	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicBrokenScreenInitializeBlockDataWithGivenBuffer
 0x00639490	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicBrokenScreenReset
 0x006394a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicBrokenScreenStartKeepFrame
@@ -3678,7 +3678,7 @@
 0x006d5180	logic	default (no rule: ported to be safe)
 0x006d5190	glue	only called from glue code (graphicBrokenScreenUpdatePolygonData and 1 more)
 0x006d51d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_initialize
-0x006d54c0	logic	default (no rule: ported to be safe)
+0x006d54c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowEntries_Init_006d54c0
 0x006d55b0	glue	only called from glue code (graphicBrokenScreenInitializeBlockDataWithGivenBuffer)
 0x006d5670	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_isActivatedForCurrentFrame
 0x006d5680	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): BrokenScreenEffect_render
@@ -6825,7 +6825,7 @@
 0x00780cb0	logic	default (no rule: ported to be safe)
 0x00780cc0	logic	default (no rule: ported to be safe)
 0x00780ce0	logic	default (no rule: ported to be safe)
-0x00780cf0	logic	default (no rule: ported to be safe)
+0x00780cf0	debug	reviewed: MsBattleDisposeAtEvent: a single ret (no-op stub) (battle round 29)
 0x00780d00	logic	default (no rule: ported to be safe)
 0x00780d10	logic	default (no rule: ported to be safe)
 0x00780fe0	logic	default (no rule: ported to be safe)
@@ -6898,7 +6898,7 @@
 0x007845b0	dead	unreachable from the entry point and every pointer table
 0x007845e0	logic	default (no rule: ported to be safe)
 0x00784610	logic	default (no rule: ported to be safe)
-0x007846e0	logic	default (no rule: ported to be safe)
+0x007846e0	debug	reviewed: MsCheatPlayerPowerfulOff: a single ret (no-op stub) (battle round 29)
 0x00784720	logic	default (no rule: ported to be safe)
 0x00784830	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00784860	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -6906,7 +6906,7 @@
 0x007849c0	debug	debug name: MsDebugFullGill
 0x007849d0	debug	debug name: MsDebugFullItem
 0x00784ac0	debug	reviewed: MsDebugFullMember: only under the debug menu toggle 0x0112a905 (battle round 21)
-0x00784ae0	logic	default (no rule: ported to be safe)
+0x00784ae0	debug	debug name: MsDebugSetAllSP_00784ae0
 0x00784b00	debug	only called from debug code (Ms_Gui_BattleConfigProc)
 0x00784b60	logic	debug-sounding name, but used by logic: Native_707d
 0x00784b80	debug	only called from debug code (Ms_Gui_BattleConfigProc)
@@ -7250,7 +7250,7 @@
 0x00792d60	logic	default (no rule: ported to be safe)
 0x00792de0	logic	default (no rule: ported to be safe)
 0x00792e50	logic	default (no rule: ported to be safe)
-0x00792e70	logic	default (no rule: ported to be safe)
+0x00792e70	debug	reviewed: MsSetMouseCamera: a single ret (no-op stub) (battle round 29)
 0x00792e80	logic	default (no rule: ported to be safe)
 0x00792ee0	logic	default (no rule: ported to be safe)
 0x00792f20	debug	debug name: MsBattleProcess_DebugStatus_00792f20
@@ -15776,7 +15776,7 @@
 0x0092cce0	logic	default (no rule: ported to be safe)
 0x0092ccf0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x0092cdd0	debug	unreachable from the entry point and every pointer table; debug name or strings
-0x0092cf00	logic	default (no rule: ported to be safe)
+0x0092cf00	debug	reviewed: MsDebugDrawBoard: a single ret (no-op stub) (battle round 29)
 0x0092cfa0	glue	GS/DMA packet writer (rcPacketDataCloseAdr, rcPacketDataDraw, rcPacketDataInit; writes no game state): replaced by ffx-render
 0x0092d230	logic	default (no rule: ported to be safe)
 0x0092d320	debug	only called from debug code (rcbgPalAlloc and 2 more)

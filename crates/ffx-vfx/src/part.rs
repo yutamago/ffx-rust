@@ -1533,4 +1533,80 @@ pub mod bridge {
             i += 1;
         }
     }
+
+    /// `0x00761350(m, a, b, p4, p5)` (`pppLinePoints`, ours; called by
+    /// `0x007625a0`): nine points from `a` toward `b` in steps of `(b - a)
+    /// x [0x00b92200]` (1/8, `f32` each), each through `m`
+    /// (`FFXVu0ApplyMatrix`, `w` 1). A point in front (`w > 0`) is divided
+    /// by its `w` (`FFXVu0DivVectorXYZ`) and, unless `0x0062fc90(v)` (a
+    /// PS2 check, a stub giving 0 on PC) says otherwise, turned into screen
+    /// words (`ppp_screen_to_fixed`) in a 0x20-byte record (`+0x10` the
+    /// `w`, byte `+0x14` 0; 1 for a point not drawn). From the second
+    /// point on, two drawn neighbours go to `0x00760ce0(prev +0, prev +4,
+    /// cur +0, cur +4, p4, p5)`. The original's locals at `frame` (its
+    /// `ebp`: the step at `-0x38`, the point `-0x14`, the transformed one
+    /// `-0x24`, the records `-0x58` and `-0x78`). Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_line_points<M: Mem>(
+        mem: &mut M,
+        [m, a, b, p4, p5]: [u32; 5],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use crate::x87::{ADD, MUL, Reg, SUB};
+        let local = |o: u32| frame.wrapping_sub(o);
+        let (step, pos, v, cur, prev) = (
+            local(0x38),
+            local(0x14),
+            local(0x24),
+            local(0x58),
+            local(0x78),
+        );
+        let k: f64 = mem.read(Global::<u32>::new(0x00b9_2200).ptr(mem).addr);
+        for i in 0..3u32 {
+            let bi: u32 = mem.read(b.wrapping_add(4 * i));
+            let ai: f32 = mem.read(a.wrapping_add(4 * i));
+            let d = Reg::load(bi).mem(SUB, ai).constant(MUL, k).store();
+            mem.write(step.wrapping_add(4 * i), d);
+        }
+        for i in 0..3u32 {
+            let ai: u32 = mem.read(a.wrapping_add(4 * i));
+            mem.write(pos.wrapping_add(4 * i), crate::x87::load(ai));
+        }
+        mem.write(pos.wrapping_add(0xc), 1f32);
+        let sym = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        for n in 0..9 {
+            call(mem, sym(mem, 0x006e_d2e0), &[v, m, pos]);
+            let w: u32 = mem.read(v.wrapping_add(0xc));
+            let mut flag = 1u8;
+            if Reg::load(w).value() > 0.0 {
+                call(mem, sym(mem, 0x006e_d420), &[v, v, crate::x87::load(w)]);
+                if call(mem, sym(mem, 0x0062_fc90), &[v]) == 0 {
+                    call(mem, sym(mem, 0x0076_1170), &[cur, v]);
+                    let w: u32 = mem.read(v.wrapping_add(0xc));
+                    mem.write(cur.wrapping_add(0x10), crate::x87::load(w));
+                    flag = 0;
+                }
+            }
+            mem.write(cur.wrapping_add(0x14), flag);
+            if n != 0 && flag == 0 && mem.read::<u8>(prev.wrapping_add(0x14)) == 0 {
+                let args = [
+                    mem.read(prev),
+                    mem.read(prev.wrapping_add(4)),
+                    mem.read(cur),
+                    mem.read(cur.wrapping_add(4)),
+                    p4,
+                    p5,
+                ];
+                call(mem, sym(mem, 0x0076_0ce0), &args);
+            }
+            for i in 0..3u32 {
+                let p: u32 = mem.read(pos.wrapping_add(4 * i));
+                let d: f32 = mem.read(step.wrapping_add(4 * i));
+                mem.write(pos.wrapping_add(4 * i), Reg::load(p).mem(ADD, d).store());
+            }
+            let record: [u32; 8] = mem.read(cur);
+            mem.write(prev, record);
+        }
+    }
 }

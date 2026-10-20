@@ -983,4 +983,51 @@ pub mod bridge {
         );
         vu0::copy_vector(mem, pos, out);
     }
+
+    /// `0x00741470(obj, _, prog)` (`pppShapeRevMatrix`, ours; the
+    /// `pppDrawShapeRevDraw` set-up): with the work areas `w0`, `w1`, `w2`
+    /// at `obj + 0xa0 + [[prog + 0xc] + 4k]`, the object's matrix `+0x10` =
+    /// the identity (`FFXVu0UnitMatrix`) with the diagonal `w2`'s `x`
+    /// (negated when byte `w0 +1` has bit 1), `y` (bit 0) and `z`; its
+    /// position `+0x40..+0x4c` = `w1`'s `x, y, z` (`w` kept); the rows
+    /// scaled by the current part's `+0x60`, `+0x64`, `+0x68` into `+0x50`,
+    /// `+0x60`, `+0x70` (`FFXVu0ScaleVector`); `+0x80` = the position
+    /// through `g_pppViewMatrix` (`FFXVu0ApplyMatrix`, whose eax it
+    /// returns). Floats through the FPU (a signalling NaN comes out quiet).
+    pub fn ppp_shape_rev_matrix<M: Mem>(mem: &mut M, obj: u32, prog: u32) -> u32 {
+        use ffx_bridge::x87::{load, store};
+        let offs: u32 = mem.read(prog.wrapping_add(0xc));
+        let [o0, o1, o2]: [u32; 3] = mem.read(offs);
+        let area = |o: u32| obj.wrapping_add(0xa0).wrapping_add(o);
+        let (w0, w1, w2) = (area(o0), area(o1), area(o2));
+        let part = CURRENT_PART.get(mem);
+        let m = obj.wrapping_add(0x10);
+        vu0::matrix_identity(mem, m);
+        let f = |mem: &M, a: u32| load(mem.read(a));
+        let neg = |x: f64, on: bool| if on { -x } else { x };
+        let flags = mem.read::<u8>(w0.wrapping_add(1));
+        let x = neg(f(mem, w2), flags & 2 != 0);
+        mem.write(m, store(x));
+        let flags = mem.read::<u8>(w0.wrapping_add(1));
+        let y = neg(f(mem, w2.wrapping_add(4)), flags & 1 != 0);
+        mem.write(obj.wrapping_add(0x24), store(y));
+        let z = f(mem, w2.wrapping_add(8));
+        mem.write(obj.wrapping_add(0x38), store(z));
+        let pos = obj.wrapping_add(0x40);
+        for k in 0..3 {
+            let v = f(mem, w1.wrapping_add(4 * k));
+            mem.write(pos.wrapping_add(4 * k), store(v));
+        }
+        for k in 0..3 {
+            let s = f32::from_bits(store(load(mem.read(part.wrapping_add(0x60 + 4 * k)))));
+            vu0::scale_vector(
+                mem,
+                obj.wrapping_add(0x50 + 0x10 * k),
+                m.wrapping_add(0x10 * k),
+                s,
+            );
+        }
+        let view = VIEW.ptr(mem).addr;
+        vu0::apply_matrix(mem, obj.wrapping_add(0x80), view, pos)
+    }
 }
