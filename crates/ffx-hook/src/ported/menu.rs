@@ -4218,6 +4218,73 @@ ported! {
     TkMn2DrawCrossSummonBattleCountPlate @ 0x008c_d720 => extern "C" fn tk_mn2_draw_cross_summon_battle_count_plate(x: f32, y: f32, chr: u32) -> u32 {
         tk::tk_mn2_draw_cross_summon_battle_count_plate(&mut mem(), [x, y], chr, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2DrawOverDrive(x, y, chr)`: the last call's `eax`.
+    TkMn2DrawOverDrive @ 0x008d_3d70 => extern "C" fn tk_mn2_draw_over_drive(x: i32, y: i32, chr: i32) -> u32 {
+        // the original's 24-byte plate rectangle
+        let mut frame = super::StackFrame::<6>::new();
+        let plate = frame.at();
+        tk::tk_mn2_draw_over_drive(&mut mem(), [x, y], chr, plate, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_DrawLayoutRow(x, y, chr)`: the new draw cursor.
+    MenuStatus_DrawLayoutRow @ 0x008c_11e0 => extern "C" fn menu_status_draw_layout_row(x: i32, y: i32, chr: u32) -> u32 {
+        tk::menu_status_draw_layout_row(&mut mem(), [x, y], chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_DrawEquipPlate(chr, x)`: the last call's `eax`.
+    MenuStatus_DrawEquipPlate @ 0x008d_4540 => extern "C" fn menu_status_draw_equip_plate(chr: u32, x: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::menu_status_draw_equip_plate(&mut mem(), chr, x, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_DrawCommandRows(_, x)`: its only caller calls on.
+    MenuSummon_DrawCommandRows @ 0x008d_4280 => extern "C" fn menu_summon_draw_command_rows(_unused: u32, x: i32) {
+        tk::menu_summon_draw_command_rows(&mut mem(), x, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSummon_DrawCommandRow(x, y, i)`: the name's font `eax`.
+    MenuSummon_DrawCommandRow @ 0x008d_4350 => extern "C" fn menu_summon_draw_command_row(x: i32, y: i32, i: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::menu_summon_draw_command_row(&mut mem(), [x, y], i, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_DrawPage(x, y, chr, page, a, b, c, _, t)`: `TkMn2DrawKickPacket`'s `eax`.
+    MenuStatus_DrawPage @ 0x008d_4ee0 => extern "C" fn menu_status_draw_page(x: i32, y: i32, chr: u32, page: u32, a: u32, b: u32, c: u32, _unused: u32, t: i32) -> u32 {
+        tk::menu_status_draw_page(&mut mem(), [x, y], chr, page, [a, b, c], t, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSelList_DrawRow(window, x, y, row, fixed)`: its only caller ignores `eax`.
+    MenuSelList_DrawRow @ 0x008d_1820 => extern "C" fn menu_sel_list_draw_row(window: u32, x: f32, y: f32, row: i32, fixed: u32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::menu_sel_list_draw_row(&mut mem(), window, [x, y], row, fixed != 0, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMn2DrawStatusPlate(x, y, _, _, chr, mes, field)`: the digits' `eax`.
+    TkMn2DrawStatusPlate @ 0x008c_1490 => extern "C" fn tk_mn2_draw_status_plate(x: i32, y: i32, _a: u32, _b: u32, chr: u32, mes: u32, field: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::tk_mn2_draw_status_plate(&mut mem(), [x, y], chr, mes, field, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_DrawOptionRow(i, x, _, _, fade)`: the last call's `eax`.
+    MenuMain_DrawOptionRow @ 0x008e_22a0 => extern "C" fn menu_main_draw_option_row(index: i32, x: f32, _a: u32, _b: u32, fade: i32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::menu_main_draw_option_row(&mut mem(), index, x, fade, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_UpdateAnalog(work, raw, buttons)`: its only caller ignores `eax`.
+    Pad_UpdateAnalog @ 0x0088_9570 => extern "C" fn pad_update_analog(work: u32, raw: u32, buttons: u32) {
+        tk::pad_update_analog(&mut mem(), work, raw, buttons, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSaveLoad_DrawSlotRow(window, x, y, row, mode)`: its only caller ignores `eax`.
+    MenuSaveLoad_DrawSlotRow @ 0x008b_4b70 => extern "C" fn menu_save_load_draw_slot_row(window: u32, x: i32, y: i32, row: i32, mode: u32) {
+        // the original's 8-byte sprintf buffer
+        let mut frame = super::StackFrame::<2>::new();
+        let digits = frame.at();
+        tk::menu_save_load_draw_slot_row(&mut mem(), window, [x, y], row, mode, digits, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `DrawCrossMenuSummonPlateClut(chr, x, y, alpha)`: the MP text's `eax`.
+    DrawCrossMenuSummonPlateClut @ 0x008e_6e10 => extern "C" fn draw_cross_menu_summon_plate_clut(chr: u32, x: f32, y: f32, alpha: u32) -> u32 {
+        // the original's 32-byte sprintf buffer
+        let mut frame = super::StackFrame::<8>::new();
+        let text = frame.at();
+        tk::draw_cross_menu_summon_plate_clut(&mut mem(), chr, [x, y], alpha, text, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry
