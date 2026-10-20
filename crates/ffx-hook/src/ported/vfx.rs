@@ -5570,4 +5570,34 @@ ported! {
     pppNeiPointLightAdd @ 0x0074_b9c0 => extern "C" fn ppp_nei_point_light_add(obj: u32, r: u32, acc: u32) {
         part::bridge::ppp_nei_point_light_add(&mut mem(), obj, r, acc, 0);
     }
+    // ---- round 38 b ----
+    /// `opp_md(host, set)` (`0x008020a0`): the part record (the original's
+    /// local) in this shim's frame.
+    opp_md @ 0x0080_20a0 => extern "C" fn opp_md(host: u32, set: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let part = frame.at();
+        opus::bridge::opp_md(&mut mem(), host, set, part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_se_00814150(host, cmd)`.
+    opu_se_00814150 @ 0x0081_4150 => extern "C" fn opu_se(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_se(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `checkEnvMdl0434(id, n, make, rd0, rd1)`: the names and counts
+    /// below this shim's frame pointer.
+    checkEnvMdl0434 @ 0x0071_2ec0 => extern "C" fn check_env_mdl_0434(id: u32, n: u32, make: u32, rd0: u32, rd1: u32) -> u32 {
+        let mut frame = super::StackFrame::<0x88>::new();
+        let ebp = frame.at() + 0x220;
+        small::bridge::check_env_mdl_0434(&mut mem(), id, n, make, rd0, rd1, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opusTree_Erase(this, out, at)` (`0x008075b0`, `ret 8`).
+    opusTree_Erase @ 0x0080_75b0 => extern "thiscall" fn opus_tree_erase(this: u32, out: u32, at: u32) -> u32 {
+        tree::bridge::opus_tree_erase(
+            &mut mem(),
+            this,
+            out,
+            at,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, this, a| super::call_thiscall(f, this, a),
+        )
+    }
 }

@@ -1876,6 +1876,106 @@ pub mod bridge {
         0
     }
 
+    /// `checkEnvMdl0434(id, n, make, rd0, rd1)` (`0x00712ec0`): the two
+    /// instances `(0, id)` and `(1, id)` (`id` sign-extended into the
+    /// high word) of effect 0434's environment model. `n` 0 destroys both
+    /// (`graphicVFXDestroy`) and returns 0. With `make`, each is created
+    /// (`graphicVFXCreate(lo, id, 10)`, then `graphicVFXCreateDataBuffer(lo,
+    /// id, 1, &3n, &3n, name, &1)`) with the texture name (instance 0:
+    /// `"15281_19_0_0_128_128.dds.phyre"` (0x00b50130) once after
+    /// `0x00cec198` is set, which clears it, else `"15280_..."`
+    /// (0x00b50150); instance 1 `"13600_19_0_0_128_64.dds.phyre"`
+    /// (0x00b50170)) replaced by the one `graphicVFXIsTextureLoaded(name,
+    /// found, 0, 0, 0, 0)` finds. Then for each instance in turn: no render
+    /// data, or no segment-0 buffer
+    /// (`graphicDynGeoMemManagerGetBufferForSegment(d, 0, [d +0x94] +4,
+    /// +8)`, after `[d +0x94] +0x24` = 1), returns 0; else `rd0` / `rd1`
+    /// (when not null) = the render data. Success clears
+    /// `g_PolyTris0434Count` and returns 1. All callees through `call`.
+    ///
+    /// The locals are below `frame` (the original's frame pointer): the
+    /// counts at `frame - 0x208`, `- 0x214`, `- 0x20c`, the found name at
+    /// `frame - 0x204`, the name at `frame - 0x104`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn check_env_mdl_0434<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        n: u32,
+        make: u32,
+        rd0: u32,
+        rd1: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = sym(mem, at);
+            call(mem, f, args)
+        };
+        if n == 0 {
+            go(mem, 0x0064_5280, &[0, id]);
+            go(mem, 0x0064_5280, &[1, id]);
+            return 0;
+        }
+        let local = |off: u32| frame.wrapping_sub(off);
+        let (name, found) = (local(0x104), local(0x204));
+        if make != 0 {
+            let flag = sym(mem, 0x00ce_c198);
+            mem.write(local(0x208), n.wrapping_mul(3));
+            mem.write(local(0x214), n.wrapping_mul(3));
+            mem.write(local(0x20c), 1u32);
+            for lo in [0, 1] {
+                let (src, len) = if lo == 1 {
+                    (0x00b5_0170, 30)
+                } else if mem.read::<u32>(flag) != 0 {
+                    mem.write(flag, 0u32);
+                    (0x00b5_0130, 31)
+                } else {
+                    (0x00b5_0150, 31)
+                };
+                let src = sym(mem, src);
+                for i in 0..len {
+                    let b: u8 = mem.read(src + i);
+                    mem.write(name + i, b);
+                }
+                if go(mem, 0x0064_5400, &[name, found, 0, 0, 0, 0]) != 0 {
+                    let mut i = 0;
+                    loop {
+                        let b: u8 = mem.read(found.wrapping_add(i));
+                        mem.write(name.wrapping_add(i), b);
+                        i += 1;
+                        if b == 0 {
+                            break;
+                        }
+                    }
+                }
+                go(mem, 0x0064_4de0, &[lo, id, 10]);
+                let (c0, c1, one) = (local(0x208), local(0x214), local(0x20c));
+                go(mem, 0x0064_5040, &[lo, id, 1, c0, c1, name, one]);
+            }
+        }
+        for (lo, out) in [(0, rd0), (1, rd1)] {
+            let d = go(mem, 0x0064_53d0, &[lo, id]);
+            if d == 0 {
+                return 0;
+            }
+            let bufs: u32 = mem.read(d.wrapping_add(0x94));
+            mem.write(bufs.wrapping_add(0x24), 1u32);
+            let bufs: u32 = mem.read(d.wrapping_add(0x94));
+            let (v, i): (u32, u32) = (
+                mem.read(bufs.wrapping_add(4)),
+                mem.read(bufs.wrapping_add(8)),
+            );
+            if go(mem, 0x0063_fdb0, &[d, 0, v, i]) == 0 {
+                return 0;
+            }
+            if out != 0 {
+                mem.write(out, d);
+            }
+        }
+        mem.write(sym(mem, 0x00ce_c194), 0u32);
+        1
+    }
+
     /// `0x00712690` (`setPolyTris0434`, ours; next to `checkEnvMdl0434` in
     /// the table at `0x00c659dc`) `(id, tris, setup)`: the render data of
     /// instances `(0, id)` and `(1, id)` (0 when either is missing). With

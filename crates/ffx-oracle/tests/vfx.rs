@@ -22473,3 +22473,296 @@ fn round38a_encounter_ring_and_noise_update_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round38b_model_draw_and_sound_commands_match_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_20a0);
+        let cells = p.alloc(0x20);
+        let (rd_cell, upd_cell, init_cell, a_cell, check_cell, music_cell) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+        );
+        far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd_cell));
+        far_recorder(&mut p, 0x0071_8610, &[0, 0, SKIP, 0], None);
+        far_recorder(&mut p, 0x0064_58a0, &[0, 0], Some(upd_cell));
+        far_recorder(&mut p, 0x0071_1180, &[0, 0, SKIP, 0, 0], Some(init_cell));
+        // opu_se's callees
+        far_recorder(&mut p, 0x007f_ff30, &[0], None);
+        far_recorder(&mut p, 0x0080_02c0, &[0, 0, 0, 0], None);
+        far_recorder(&mut p, 0x007e_3810, &[0, 0, 0], Some(a_cell));
+        far_recorder(&mut p, 0x007f_fe10, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x0080_00f0, &[0], Some(check_cell));
+        far_recorder(&mut p, 0x007f_fc60, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x007f_fd20, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x0080_0390, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x0079_fd20, &[0, 0], None);
+        far_recorder(&mut p, 0x0088_63f0, &[], Some(music_cell));
+        far_recorder(&mut p, 0x0088_6b40, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x007f_fde0, &[0, 0], None);
+        let (host, parts, lists, cmd, set) = (
+            p.alloc(0x800),
+            p.alloc(0x2000),
+            p.alloc(0x60),
+            p.alloc(0x10),
+            p.alloc(0x60),
+        );
+        let scratch = p.alloc(0x20);
+        let draw_flags = p.sym(0x012a_84c0);
+        let handles = p.sym(0x012a_8100);
+        let sse2 = p.sym(ffx_bridge::x87::SSE2_AVAILABLE.sym);
+        for round in 0..2000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            opus_host(&mut p, &mut rng, host, parts, lists);
+            p.fill(host + 0x400, 0x400, &mut rng);
+            let unit: u32 = p.get(host + 0x220);
+            for k in 0..0x30u32 {
+                let v = ranged(&mut rng, -3.0, 3.0);
+                p.set(host + 0x280 + 4 * (k & 0xf), v);
+                p.set(unit + 0x30 + 4 * (k & 0x1f), v);
+            }
+            for at in [0x3cu32, 0x4c] {
+                let v = match rng.below(10) {
+                    0 => rng.float(),
+                    1 => rng.pick(&[0.0f32, 255.0, -0.5, 255.5, 256.0]).to_bits(),
+                    _ => ranged(&mut rng, -300.0, 600.0),
+                };
+                p.set(unit + at, v);
+            }
+            for at in [0xa8u32, 0xa9] {
+                let s = rng.pick(&[0u8, 1, 2, 3, 4, 5, 0xff, 0x81]);
+                p.set(unit + at, s);
+            }
+            // the parent: own, the unit's, up the chain, or by number
+            let up = rng.pick(&[0u16, 0xff00, 0xffff, 0xfffe, 0xfffd]);
+            let by_no = rng.below(0x10) as u16;
+            p.set(unit + 0xb8, if rng.chance(30) { by_no } else { up });
+            let chr = rng.below(0x100);
+            p.set(unit + 0x18, chr as u8);
+            p.set(draw_flags + chr, rng.pick(&[0u8, 0, 0, 4, 8, 0xff]));
+            p.set(unit + 0xb3, rng.pick(&[0u8, 4, 8, 0x0c]));
+            p.fill(set, 0x60, &mut rng);
+            p.fill(scratch, 0x20, &mut rng);
+            let any = rng.next();
+            p.set(rd_cell, rng.pick(&[0u32, 0, 1, any]));
+            for c in [upd_cell, init_cell] {
+                let v = rng.next();
+                p.set(c, v);
+            }
+            p.set(sse2, u32::from(rng.chance(50)));
+            p.check(&what("opp_md"), 0x0080_20a0, &[host, set], |m| {
+                let keep = m.read(scratch, 0x20).unwrap();
+                let r = o::opp_md(m, host, set, scratch, &mut call_original);
+                let shape: u32 = Mem::read(m, unit + 0xe0);
+                let at: u32 = Mem::read(m, scratch + 0x1c);
+                let hidden = Mem::read::<u8>(m, unit + 0xb3) & Mem::read::<u8>(m, draw_flags + chr);
+                assert!(hidden != 0 || at == shape, "opp_md: the part's shape");
+                m.write(scratch, &keep).unwrap();
+                Some(r)
+            });
+
+            // opu_se: every nibble, the 0x800 flag, shifts to 32 and on
+            let flags = (rng.below(0x10) << 12)
+                | (rng.below(0x1000) & !0x800)
+                | if rng.chance(30) { 0x800 } else { 0 };
+            p.set(host + 0x21a, flags as u16);
+            let unit: u32 = p.get(host + 0x220);
+            let k = rng.pick(&[0u8, 1, 2, 7, 15, 16, 17, 31, 32, 33, 200]);
+            p.set(unit + 0x1e, k);
+            p.fill(cmd, 0x10, &mut rng);
+            for c in [a_cell, check_cell, music_cell] {
+                let any = rng.next();
+                let v = rng.pick(&[0u32, 0, 1, 0x8000_0000, any]);
+                p.set(c, v);
+            }
+            for i in 0..0x21u32 {
+                let v = if rng.chance(50) { 0 } else { rng.next() };
+                p.set(handles + 4 * i, v);
+            }
+            p.check(&what("opu_se"), 0x0081_4150, &[host, cmd], |m| {
+                Some(o::opu_se(m, host, cmd, &mut call_original))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round38b_env_model_0434_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_2ec0);
+        let cells = p.alloc(0x20);
+        let (loaded_cell, buf_cell) = (cells + 8, cells + 0xc);
+        render_data_by_lo(&mut p, 0x0064_53d0, cells);
+        far_recorder(&mut p, 0x0064_5280, &[0, 0], None);
+        far_recorder(
+            &mut p,
+            0x0064_5400,
+            &[8, SKIP, 0, 0, 0, 0],
+            Some(loaded_cell),
+        );
+        far_recorder(&mut p, 0x0064_4de0, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x0064_5040, &[0, 0, 0, 1, 1, 8, 1], None);
+        far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(buf_cell));
+        let (d0, d1, b0, b1) = (p.alloc(0x100), p.alloc(0x100), p.alloc(0x40), p.alloc(0x40));
+        let (out0, out1) = (p.alloc(4), p.alloc(4));
+        let scratch = p.alloc(0x220);
+        let ebp_b = scratch + 0x220;
+        // the original's frame pointer below the oracle's call (5 words)
+        let ebp_a = p.a.stack_range().end - 0x100 - 0x14 - 4 - 4;
+        let (flag, count) = (p.sym(0x00ce_c198), p.sym(0x00ce_c194));
+        for round in 0..2000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            p.set(cells, rng.pick(&[0u32, d0, d0, d0]));
+            p.set(cells + 4, rng.pick(&[0u32, d1, d1, d1]));
+            p.fill(d0, 0x100, &mut rng);
+            p.fill(d1, 0x100, &mut rng);
+            p.set(d0 + 0x94, b0);
+            p.set(d1 + 0x94, b1);
+            p.fill(b0, 0x40, &mut rng);
+            p.fill(b1, 0x40, &mut rng);
+            p.set(loaded_cell, u32::from(rng.chance(50)));
+            p.set(buf_cell, rng.pick(&[0u32, 1, 1, 1]));
+            p.set(flag, u32::from(rng.chance(30)));
+            let c = rng.next();
+            p.set(count, c);
+            // the frames: the same bytes on the original's stack and in ours,
+            // the found name a string of up to 31 letters
+            for off in (0..0x220u32).step_by(4) {
+                let v = rng.next();
+                Mem::write(&mut p.a, ebp_a - 0x220 + off, v);
+                p.set(scratch + off, v);
+            }
+            let len = rng.below(32);
+            for i in 0..=len {
+                let ch = if i == len {
+                    0
+                } else {
+                    b'a' + rng.below(26) as u8
+                };
+                Mem::write(&mut p.a, ebp_a - 0x204 + i, ch);
+                p.set(ebp_b - 0x204 + i, ch);
+            }
+            let any = rng.next();
+            let id = rng.pick(&[0u32, 5, 0x7fff_ffff, 0x8000_0000, any]);
+            let any = rng.next();
+            let n = rng.pick(&[0u32, 0, 1, 2, 0x100, any]);
+            let any = rng.next();
+            let make = rng.pick(&[0u32, 1, any]);
+            let r0 = if rng.chance(20) { 0 } else { out0 };
+            let r1 = if rng.chance(20) { 0 } else { out1 };
+            p.check(
+                &what("checkEnvMdl0434"),
+                0x0071_2ec0,
+                &[id, n, make, r0, r1],
+                |m| {
+                    let keep = m.read(scratch, 0x220).unwrap();
+                    let r = small::bridge::check_env_mdl_0434(
+                        m,
+                        id,
+                        n,
+                        make,
+                        r0,
+                        r1,
+                        ebp_b,
+                        &mut call_original,
+                    );
+                    m.write(scratch, &keep).unwrap();
+                    Some(r)
+                },
+            );
+        }
+    }
+}
+
+/// A red-black tree of `n` nodes in the MSVC `std::_Tree` layout at
+/// `base` (the header first, 0x18-byte nodes), its object at `tree`
+/// (`+0` the header, `+4` the size): a balanced tree, red on its last
+/// level when that is not full. Returns the nodes.
+fn build_rb_tree(p: &mut Pair, tree: u32, base: u32, n: u32) -> Vec<u32> {
+    fn mk(
+        p: &mut Pair,
+        base: u32,
+        lo: u32,
+        hi: u32,
+        parent: u32,
+        depth: u32,
+        red: Option<u32>,
+    ) -> u32 {
+        let head = base;
+        if lo >= hi {
+            return head;
+        }
+        let mid = lo + (hi - lo) / 2;
+        let node = base + 0x18 * (1 + mid);
+        let l = mk(p, base, lo, mid, node, depth + 1, red);
+        let r = mk(p, base, mid + 1, hi, node, depth + 1, red);
+        p.set(node, l);
+        p.set(node + 4, parent);
+        p.set(node + 8, r);
+        p.set(node + 0xc, u8::from(red != Some(depth)));
+        p.set(node + 0xd, 0u8);
+        p.set(node + 0x10, mid);
+        node
+    }
+    let head = base;
+    let full = (n + 1).is_power_of_two();
+    let last = (n + 1)
+        .next_power_of_two()
+        .trailing_zeros()
+        .saturating_sub(1);
+    let red = if full || n == 0 { None } else { Some(last) };
+    let root = mk(p, base, 0, n, head, 0, red);
+    p.set(head + 4, root);
+    p.set(head, if n == 0 { head } else { base + 0x18 });
+    p.set(head + 8, if n == 0 { head } else { base + 0x18 * n });
+    p.set(head + 0xc, 1u8);
+    p.set(head + 0xd, 1u8);
+    p.set(tree, head);
+    p.set(tree + 4, n);
+    (0..n).map(|i| base + 0x18 * (1 + i)).collect()
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn round38b_tree_erase_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_75b0);
+        far_recorder(&mut p, 0x0063_0390, &[0], None);
+        // the header (std::_Xout_of_range, which throws) is not erased:
+        // the original's code after that call assumes it never returns
+        let (tree, base, out) = (p.alloc(8), p.alloc(0x18 * 70), p.alloc(4));
+        let this_call = |m: &mut Oracle, f: u32, this: u32, a: &[u32]| {
+            m.call(f, Conv::Thiscall(this), a).unwrap().eax
+        };
+        for round in 0..300u32 {
+            let n = rng.pick(&[0u32, 1, 2, 3, 5, 7, 8, 15, 20, 31, 32, 50, 64]);
+            let mut live = build_rb_tree(&mut p, tree, base, n);
+            loop {
+                if live.is_empty() {
+                    break;
+                }
+                let at = live.remove(rng.below(live.len() as u32) as usize);
+                let what = format!("opusTree_Erase round {round} n {n} at {at:#x}");
+                let f = p.sym(0x0080_75b0);
+                let r = p.a.call(f, Conv::Thiscall(tree), &[out, at]).unwrap();
+                let mine = tree::bridge::opus_tree_erase(
+                    &mut p.b,
+                    tree,
+                    out,
+                    at,
+                    &mut call_original,
+                    &mut this_call.clone(),
+                );
+                assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+                p.same(&what);
+            }
+        }
+    }
+}

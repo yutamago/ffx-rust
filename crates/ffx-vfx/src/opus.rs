@@ -2735,6 +2735,232 @@ pub mod bridge {
         call(mem, g(mem, 0x0082_b480), &[h, x, y, z])
     }
 
+    /// `opu_se_00814150(host, cmd)` (ours; opus table `0x00c48f74`): the
+    /// sound commands, by the nibble `host u16 +0x21a >> 12`. With `unit`
+    /// = `host +0x220`, `oef` = `host +0x360 + 4 unit +0x1e` and `ch` = 8
+    /// for flag 0x800, else `0x10000 << unit +0x1e` (0 from 32), `a(n)` =
+    /// `op_oef2_a_get(oef, 6, u16 cmd +2)`: 0 `op_oef2_se_on(a, 0x40,
+    /// 0x100)` -> cmd+4; 1 `op_oef2_sound_cue_multi(oef, 0, 1000, ch)`;
+    /// 2 `op_oef2_sep_free_all(ch)`; 3 `op_oef2_sound_cue_check(ch)`:
+    /// nonzero sets `host +0x210` = 1 and returns cmd; 4 / 5
+    /// `op_oef2_se_3d_on` / `_move(a, unit + 0x90, 0x100)` -> cmd+6; 6
+    /// `op_oef2_stream_cue(a, i16 cmd +4, ch)` -> cmd+6; 7 / 8
+    /// `MsChrSEfoot(unit +0x18, 1 / 0)`; 9 / 0xa the same for each of the
+    /// first 32 characters with a handle (`g_EtChrHandles`); 0xb
+    /// `op_oef2_se_volume(a, i16 cmd +4)` -> cmd+6; 0xc
+    /// `SndMusicVolumeTranslate(music, i16 cmd +2, 0)` when
+    /// `SndGetNowPlayMusic()` is not negative -> cmd+4. 1, 2, 3 and 7..=0xa
+    /// return cmd+2, others cmd. All callees through `call`.
+    pub fn opu_se<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let k = u32::from(mem.read::<u8>(unit.wrapping_add(0x1e)));
+        let flags = u32::from(mem.read::<u16>(host.wrapping_add(0x21a)));
+        let oef: u32 = mem.read(host.wrapping_add(0x360 + 4 * k));
+        let ch = if flags & 0x800 != 0 {
+            8
+        } else {
+            0x1_0000u32.checked_shl(k).unwrap_or(0)
+        };
+        let next = cmd.wrapping_add(2);
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let a = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let n = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+            go(mem, 0x007e_3810, &[oef, 6, n])
+        };
+        let word =
+            |mem: &M, at: u32| i32::from(mem.read::<i16>(cmd.wrapping_add(at))).cast_unsigned();
+        let foot = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, v: u32| {
+            let handles = g(mem, 0x012a_8100);
+            for i in 0..0x20u32 {
+                if mem.read::<u32>(handles.wrapping_add(4 * i)) != 0 {
+                    go(mem, 0x0079_fd20, &[i, v]);
+                }
+            }
+        };
+        match flags & 0xf000 {
+            0 => {
+                let c = a(mem, &mut go);
+                go(mem, 0x007f_fe10, &[c, 0x40, 0x100]);
+                cmd.wrapping_add(4)
+            }
+            0x1000 => {
+                go(mem, 0x0080_02c0, &[oef, 0, 1000, ch]);
+                next
+            }
+            0x2000 => {
+                go(mem, 0x007f_ff30, &[ch]);
+                next
+            }
+            0x3000 => {
+                if go(mem, 0x0080_00f0, &[ch]) == 0 {
+                    return next;
+                }
+                mem.write(host.wrapping_add(0x210), 1u8);
+                cmd
+            }
+            f @ (0x4000 | 0x5000) => {
+                let c = a(mem, &mut go);
+                let at = if f == 0x4000 {
+                    0x007f_fd20
+                } else {
+                    0x007f_fc60
+                };
+                go(mem, at, &[c, unit.wrapping_add(0x90), 0x100]);
+                cmd.wrapping_add(6)
+            }
+            0x6000 => {
+                let c = a(mem, &mut go);
+                let w = word(mem, 4);
+                go(mem, 0x0080_0390, &[c, w, ch]);
+                cmd.wrapping_add(6)
+            }
+            f @ (0x7000 | 0x8000) => {
+                let chr = u32::from(mem.read::<u8>(unit.wrapping_add(0x18)));
+                go(mem, 0x0079_fd20, &[chr, u32::from(f == 0x7000)]);
+                next
+            }
+            f @ (0x9000 | 0xa000) => {
+                foot(mem, &mut go, u32::from(f == 0x9000));
+                next
+            }
+            0xb000 => {
+                let c = a(mem, &mut go);
+                let w = word(mem, 4);
+                go(mem, 0x007f_fde0, &[c, w]);
+                cmd.wrapping_add(6)
+            }
+            0xc000 => {
+                let music = go(mem, 0x0088_63f0, &[]);
+                if music.cast_signed() >= 0 {
+                    let w = word(mem, 2);
+                    go(mem, 0x0088_6b40, &[music, w, 0]);
+                }
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opp_md(host, set)` (`0x008020a0`, opp table entry `0x00c48e80`):
+    /// the unit's model draw. Nothing when the unit's flags `+0xb3` share
+    /// a bit with its character's `g_EtChrDrawFlags` byte (`u8 +0x18`;
+    /// that byte is returned). Else `host +0x18` = unit `+0xc8`, `+0x10`
+    /// and `+0x14` cleared, and for the selectors `i8 +0xa8` (value `f32
+    /// +0x3c`) then `+0xa9` (`+0x4c`), two jump tables: 1 sets the scale
+    /// (else `g_AlphaScaleNormal`, 256), 2 the alpha byte `+0x1b` (0xff
+    /// above 255, 0 below 0, else truncated: a NaN gives 0), 3 `+0x10` and
+    /// 4 `+0x14` = `ftol(value) << 16`. Then `+8`/`+9` = unit bytes
+    /// `+0xc2`/`+0xc3`, `+0` = `u16 +0xc0`, `+0xc` = `+0xd0`; the matrix `m`
+    /// = `host +0x80`: `op_unit_m_scale(m, f32(scale / 2^21))`,
+    /// `op_rt_m(m, m, unit +0x30, unit +0x90)`, `op_mul_m(m,
+    /// opus_parent_get(host, unit), m)`; `+0x1c`, `+0x38`, `+0x3c`, `+0x44`
+    /// = 0, `+0x40` = unit `+0xc4`, `+0x20` = `+0x30` = `m`, `+4` = `set
+    /// +0x28`, `+0x34` = `set +0x54`. The part record `part` (the
+    /// original's 0x20-byte local; only `+0x1c` is written, the shape
+    /// `set_ptr32(unit +0xe0)`) goes to instance `(0, unit)`:
+    /// `updateVFXRenderData` and `graphicVFXUpdate` (its eax returned)
+    /// when it has render data, else `InitVFXRenderData` with flags
+    /// `alpha function(+8) | z(+0x44) unless +0 bit 0x2000 | 0x40 for bit
+    /// 3` (its eax returned). All callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opp_md<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        set: u32,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, round_trip, store};
+        let unit: u32 = mem.read(host.wrapping_add(0x220));
+        let u = |k: u32| unit.wrapping_add(k);
+        let h = |k: u32| host.wrapping_add(k);
+        let chr = u32::from(mem.read::<u8>(u(0x18)));
+        let flags: u8 = mem.read(g(mem, 0x012a_84c0).wrapping_add(chr));
+        if mem.read::<u8>(u(0xb3)) & flags != 0 {
+            return u32::from(flags);
+        }
+        let w: u32 = mem.read(u(0xc8));
+        mem.write(h(0x18), w);
+        let mut scale = round_trip(f(mem, g(mem, 0x00b5_01c0)));
+        mem.write(h(0x10), 0u32);
+        mem.write(h(0x14), 0u32);
+        for (sel, at) in [(0xa8, 0x3c), (0xa9, 0x4c)] {
+            let x = f(mem, u(at));
+            match mem.read::<i8>(u(sel)) {
+                1 => scale = round_trip(x),
+                2 => {
+                    let a = if x > 255.0 {
+                        0xff
+                    } else if x < 0.0 || x.is_nan() {
+                        0
+                    } else {
+                        // fistp with the rounding control set to chop
+                        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                        let t = x as u8;
+                        t
+                    };
+                    mem.write(h(0x1b), a);
+                }
+                3 => mem.write(h(0x10), ftol(mem, load(x.to_bits())) << 16),
+                4 => mem.write(h(0x14), ftol(mem, load(x.to_bits())) << 16),
+                _ => {}
+            }
+        }
+        let b: u8 = mem.read(u(0xc2));
+        mem.write(h(8), b);
+        let s = store(mul(load(scale.to_bits()), 4.768_371_582_031_25e-7));
+        let b: u8 = mem.read(u(0xc3));
+        mem.write(h(9), b);
+        let w = u32::from(mem.read::<u16>(u(0xc0)));
+        mem.write(host, w);
+        let w: u32 = mem.read(u(0xd0));
+        mem.write(h(0xc), w);
+        let m = h(0x80);
+        call(mem, g(mem, 0x007e_a700), &[m, s]);
+        call(mem, g(mem, 0x007e_9850), &[m, m, u(0x30), u(0x90)]);
+        let parent = call(mem, g(mem, 0x0080_1f00), &[host, unit]);
+        call(mem, g(mem, 0x007e_83b0), &[m, parent, m]);
+        mem.write(h(0x1c), 0u32);
+        let w: u32 = mem.read(u(0xc4));
+        mem.write(h(0x40), w);
+        for k in [0x38, 0x3c] {
+            mem.write(h(k), 0u32);
+        }
+        mem.write(h(0x20), m);
+        mem.write(h(0x44), 0u32);
+        let w: u32 = mem.read(set.wrapping_add(0x28));
+        mem.write(h(4), w);
+        mem.write(h(0x30), m);
+        let w: u32 = mem.read(set.wrapping_add(0x54));
+        mem.write(h(0x34), w);
+        let shape: u32 = mem.read(u(0xe0));
+        let shape = call(mem, g(mem, 0x00a4_4700), &[shape]);
+        mem.write(part.wrapping_add(0x1c), shape);
+        if call(mem, g(mem, 0x0064_53d0), &[0, unit]) != 0 {
+            call(mem, g(mem, 0x0071_8610), &[0, unit, part, host]);
+            return call(mem, g(mem, 0x0064_58a0), &[0, unit]);
+        }
+        let a = u32::from(mem.read::<u8>(h(8)));
+        let mut fl = call(mem, g(mem, 0x0071_2c30), &[a]);
+        let top: u32 = mem.read(host);
+        if top & 0x2000 == 0 {
+            let z: u32 = mem.read(h(0x44));
+            fl |= call(mem, g(mem, 0x0071_2d00), &[z]);
+        }
+        if top & 8 != 0 {
+            fl |= 0x40;
+        }
+        call(mem, g(mem, 0x0071_1180), &[0, unit, part, host, fl])
+    }
+
     /// `opus_encount5_make(set, pos)` (`0x007f9280`): the encounter
     /// swirl's 0x740 particles, a ring of 96-byte records from `set +0x20`
     /// round a 512 x 416 rectangle centred on `A = f32(pos.x + 2048)`, `B =
