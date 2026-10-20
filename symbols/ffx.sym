@@ -1654,6 +1654,8 @@
 0x00636410 function asyncFFXInitialize        # fh switch:bsim1.00 0x71001cbb10
 0x006365f0 function batchSetClothVertexBuffers   # str-match switch: only user of the string 'ClothWorld' held once by both builds; Switch 0x71001cfcf0 batchSetClothVertexBuffers (the address fh switch:cg2 had given to 0x0063b290)
 0x00636d60 function std_Tree_erase_range_00636d60 # MSVC std::map erase(first, last); callers AssetListReader's destructor and others; the render agent's finding; own name
+0x00637730 function PhyreSceneCursor_Begin_00637730 # thiscall(cursor): while PhyreCursor_IsValid_copy_00637f80 fails, the node (+0x18) follows itself (0 at the end node +0x14); then PhyreSceneCursor_SetNode on it, or the first five words cleared; the layer functions 0x00658350/0x00658570/0x006587d0 begin their cursors with it; glue in classes.tsv; name ours
+0x006377a0 function PhyreSceneCursor_Next_006377a0 # thiscall(cursor): PhyreSceneCursor_Begin_00637730 stepping first (the next valid node); name ours
 0x00637860 function graphicAsyncTaskCallback  # fh v3:exact 0x00637a10
 0x00637980 function graphicCharacterUnloadTask # fh v3:exact 0x00637b30
 0x00637d90 function FlashSpriteRenderer_Initialize # fh switch:bsim1.00 0x71000028f0 FlashSpriteRenderer::Initialize
@@ -1699,6 +1701,9 @@
 0x00639860 function graphicCameraSetWorldMatrix # cdecl(view matrix*): the camera's view for the renderer; Cam_Apply passes 0x02311440; was Render_SetView
 0x00639b30 function graphicCameraSetWorldMatrixSub # fh v3:exact 0x00639ce0
 0x00639d20 function graphicChangeLayerAlpha   # cdecl(layer, alpha): PhyreScene_SetLayerMaterialAlpha on g_PhyreScene; alphabetical run between graphicCameraSetWorldMatrixSub and graphicCharacterInsertDrawSituation; name ours
+0x00639d40 function graphicChangeLayerOffset_00639d40 # cdecl(layer, x, y): PhyreScene_changeLayerOffset_00658350 on g_PhyreScene; sorts between graphicChangeLayerAlpha (0x00639d20) and graphicCharacterInsertDrawSituation; ported (render r23, util::bridge::graphic_change_layer_offset); name ours
+0x00639d60 function graphicChangeLayerScale_00639d60 # cdecl(layer, x, y, sx, sy): PhyreScene_changeLayerScale_00658570 on g_PhyreScene (floats through the x87); ported (render r23, util::bridge::graphic_change_layer_scale); name ours
+0x00639d90 function graphicChangeSceneNum_00639d90 # cdecl(n): PhyreScene_change2DSceneNum on g_PhyreScene; ported (render r23, util::bridge::graphic_change_scene_num); name ours
 0x00639ff0 function graphicCharacterInsertDrawSituation # fh v3:exact 0x0063a1b0
 0x0063a010 function graphicCharacterInstanceAddToPipeline # layout: alphabetical run between graphicCharacterInsertDrawSituation and graphicCharacterInstanceDestroy (1 unnamed in the gap); Switch 0x71001ce510 graphicCharacterInstanceAddToPipeline is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0063a030 function graphicCharacterInstanceDestroy # fh v3:exact 0x0063a1f0
@@ -2160,7 +2165,9 @@
 0x006579d0 function PhyreScene_beginRenderOpeningScreen # str-match switch: only user of 2 string(s) held once by both builds, e.g. '/FFX_Data/GameData/PS3Data/flash/OpeningScreen.swf'; Switch 0x710020bdc0 PhyreScene::beginRenderOpeningScreen (symbols from Fahrenheit's server export)
 0x00657a50 function PhyreScene_bootInit          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71001ead10 PhyreScene::bootInit, 3 votes, round 1
 0x006582e0 function PhyreScene_SetLayerMaterialAlpha # thiscall(scene, layer, alpha), ret 8: with +0x93c and +0x1128 set, TextureAnimationManager_getMaterialByLayNum(layer) gets MaterialColour (1, 1, 1, alpha / 128) through ShaderParamBuffer_SetValue; name ours
-0x006587d0 function PhyreScene_change2DSceneNum  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'scene%d'; Switch 0x71001f1a80 PhyreScene::change2DSceneNum (symbols from Fahrenheit's server export)
+0x00658350 function PhyreScene_changeLayerOffset_00658350 # thiscall(scene, layer, x, y), ret 0xc: with +0x93c and +0x1128 set, per list of +0x1134 (+0x112c of them) a PhyreSceneCursor walk; the first instance whose name (+0x2c, tagged) holds "layer%d" gets its 12 floats (+4) [8] += x*[1], [9] += y*[3] (x, y ints made floats) and ends the list; ported (render r23, util::bridge::change_layer_offset); name ours
+0x00658570 function PhyreScene_changeLayerScale_00658570 # thiscall(scene, layer, x, y, sx, sy), ret 0x14: as PhyreScene_changeLayerOffset_00658350, [8] += (2.5 sx + [1]) x 0.5, [9] += (2.5 sy + [3]) y 0.5, then [1] = -2.5 sx, [3] = -2.5 sy; ported (render r23, util::bridge::change_layer_scale); name ours
+0x006587d0 function PhyreScene_change2DSceneNum  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'scene%d'; Switch 0x71001f1a80 PhyreScene::change2DSceneNum (symbols from Fahrenheit's server export); thiscall(scene, n), ret 4: +0xf9c4 = 1 when n == 1, +0x11d8 = n, then each instance of the 2D level's lists whose name holds "scene%d" becomes its target's (+0x1c) +0x1c, the others clear it; ported (render r23, util::bridge::change_2d_scene_num)
 0x00659090 function PhyreScene_releaseVFXMeshes # thiscall(this): add ecx, 0x10d54; jmp 0x00636970 (graphicVFXUnloadLevelData's last call); name ours (the Ghidra dump's operator_new_00659090 from a Switch BSim match does not fit)
 0x006590d0 function std_string_compare_006590d0  # MSVC std::string compare (memcmp of the shorter length, then the lengths); the render agent's finding; own name
 0x00659290 function PhyreScene_convertMapPath # fh v3:exact 0x00659420 PhyreScene::convertMapPath

@@ -7278,3 +7278,236 @@ fn snapshot_round23_matches_the_original() {
         }
     }
 }
+
+// ---- round 23, group 2: the 2D scene's layers ----
+
+/// A name for an instance: the pattern, inside other text or not, a
+/// neighbour number, or a long one that runs into the original's pattern
+/// buffer (at most `max` bytes before the NUL).
+fn layer_name(rng: &mut Rng, pattern: &str, max: usize) -> Vec<u8> {
+    let letters = |rng: &mut Rng, n: usize| -> String {
+        (0..n)
+            .map(|_| {
+                ["a", "e", "l", "y", "r", "s", "c", "n", "1", "2", "_"][rng.below(11) as usize]
+            })
+            .collect()
+    };
+    let mut s = match rng.below(8) {
+        0 => pattern.to_string(),
+        1 => format!("{}{pattern}{}", letters(rng, 3), letters(rng, 2)),
+        2 => format!("{pattern}{}", rng.below(10)),
+        3 => format!("x{}", &pattern[..pattern.len() - 1]),
+        4 => {
+            let n = rng.below(12) as usize;
+            letters(rng, n)
+        }
+        5 => {
+            // long: what passes the name buffer becomes the pattern
+            let n = max - rng.below(12) as usize;
+            let mut s = letters(rng, n);
+            if rng.chance(2) {
+                s.replace_range(..pattern.len(), pattern);
+            }
+            s
+        }
+        6 => "a".repeat(max - rng.below(4) as usize),
+        _ => String::new(),
+    }
+    .into_bytes();
+    s.truncate(max);
+    s.push(0);
+    s
+}
+
+/// A list of the 2D level: nodes of `PhyreSceneCursor_*` (`+0` next,
+/// `+8` link, `+0x2c` class, `+0x34` position, `+0x3c` count, `+0x40`
+/// set), linked from the end node (`list +0x1c`); each node's instances
+/// (`+4` floats, `+0x1c` target, `+0x2c` the tagged name), some slots
+/// skipped by the link chain. Returns the list.
+fn build_layer_list(t: &mut Twins, rng: &mut Rng, patterns: &[String], max: usize) -> u32 {
+    let class = t.rebase(ffx_graphic::util::bridge::CURSOR_CLASS);
+    let list = t.alloc(&rng.bytes(0x40));
+    let end = list + 0x1c;
+    let n = rng.below(4) as usize;
+    let nodes: Vec<u32> = (0..n).map(|_| t.alloc(&rng.bytes(0x48))).collect();
+    for (k, &node) in nodes.iter().enumerate() {
+        t.w32(node, nodes.get(k + 1).copied().unwrap_or(end));
+        let stride = [0x40, 0x48, 0x60][rng.below(3) as usize];
+        let offset = [0, 8, 0x10][rng.below(3) as usize];
+        let fake = t.alloc(&rng.bytes(0x90));
+        t.w32(fake + 0x1c, stride);
+        t.w32(fake + 0x8c, offset);
+        // a node of another class is passed over by the cursor
+        t.w32(fake + 0x40, if rng.chance(6) { 0 } else { class });
+        t.w32(node + 0x2c, fake);
+        t.w32(node + 0x40, u32::from(!rng.chance(8)));
+        let slots = 1 + rng.below(5);
+        let region = t.alloc(&rng.bytes((slots * stride + 0x60) as usize));
+        let far = region + slots * stride + 0x40;
+        t.w32(far, far + 4);
+        for j in 0..slots {
+            let obj = region + j * stride + offset;
+            let floats: Vec<u8> = (0..12).flat_map(|_| rng.float().to_le_bytes()).collect();
+            let m = t.alloc(&floats);
+            t.w32(obj + 4, m);
+            let target = if rng.chance(4) {
+                0
+            } else {
+                t.alloc(&rng.bytes(0x20))
+            };
+            t.w32(obj + 0x1c, target);
+            let pattern = &patterns[rng.below(patterns.len() as u32) as usize];
+            let name = layer_name(rng, pattern, max);
+            let at = t.alloc(&name);
+            t.w32(obj + 0x2c, at | u32::from(rng.chance(3)));
+        }
+        // the link: never met, or a slot (then its word, the next link)
+        let link = if rng.chance(2) {
+            far
+        } else {
+            region + rng.below(slots + 1) * stride
+        };
+        let next = if rng.chance(2) {
+            far
+        } else {
+            region + (1 + rng.below(slots)) * stride
+        };
+        if link != far && next > link {
+            t.w32(link, next);
+        } else if link != far {
+            t.w32(link, far);
+        }
+        t.w32(node + 8, link);
+        t.w32(node + 0x34, region);
+        t.w32(node + 0x3c, slots);
+    }
+    t.w32(end, nodes.first().copied().unwrap_or(end));
+    list
+}
+
+/// A random scene with a 2D level of up to four lists.
+fn build_layer_scene(t: &mut Twins, rng: &mut Rng, patterns: &[String], max: usize) -> u32 {
+    let scene = t.alloc(&rng.bytes(0xfa00));
+    t.w8(scene + 0x93c, u8::from(!rng.chance(8)));
+    t.w32(
+        scene + 0x1128,
+        if rng.chance(8) { 0 } else { rng.next() | 1 },
+    );
+    let n = rng.below(5);
+    let lists: Vec<u8> = (0..n)
+        .flat_map(|_| build_layer_list(t, rng, patterns, max).to_le_bytes())
+        .collect();
+    let at = t.alloc(&lists);
+    t.w32(scene + 0x112c, n);
+    t.w32(scene + 0x1134, at);
+    scene
+}
+
+/// One of the six layer functions on `scene` (a fresh one when 0).
+fn round23b_case(t: &mut Twins, rng: &mut Rng, scene: u32, what: &str) {
+    use ffx_graphic::util::bridge as ut;
+    let op = rng.below(6);
+    let scenes = op.is_multiple_of(3);
+    // a layer past 99 overruns the original's 8-byte pattern buffer
+    let n = if scenes {
+        [0, 1, 1, 2, 3, rng.below(20), rng.next()][rng.below(7) as usize]
+    } else {
+        (rng.below(109) as i32 - 9) as u32
+    };
+    let (prefix, max) = if scenes {
+        ("scene", 151)
+    } else {
+        ("layer", 59)
+    };
+    let patterns: Vec<String> = [n, n.wrapping_add(1), n / 10, rng.below(4)]
+        .iter()
+        .map(|&k| format!("{prefix}{}", k as i32))
+        .collect();
+    let scene = if scene == 0 {
+        build_layer_scene(t, rng, &patterns, max)
+    } else {
+        scene
+    };
+    let int = |rng: &mut Rng| {
+        [
+            0,
+            1,
+            rng.below(64),
+            rng.below(64).wrapping_neg(),
+            rng.next(),
+        ][rng.below(5) as usize]
+    };
+    let (x, y) = (int(rng), int(rng));
+    let (sx, sy) = (rng.float(), rng.float());
+    t.global(scene::bridge::SCENE.sym, scene);
+    match op {
+        0 => t.check(what, 0x0065_87d0, Conv::Thiscall(scene), &[n], |g| {
+            ut::change_2d_scene_num(g, scene, n);
+            Out::None
+        }),
+        1 => t.check(what, 0x0065_8350, Conv::Thiscall(scene), &[n, x, y], |g| {
+            ut::change_layer_offset(g, scene, n, x, y);
+            Out::None
+        }),
+        2 => t.check(
+            what,
+            0x0065_8570,
+            Conv::Thiscall(scene),
+            &[n, x, y, sx.to_bits(), sy.to_bits()],
+            |g| {
+                ut::change_layer_scale(g, scene, n, x, y, sx, sy);
+                Out::None
+            },
+        ),
+        3 => t.check(what, 0x0063_9d90, Conv::Cdecl, &[n], |g| {
+            ut::graphic_change_scene_num(g, n);
+            Out::None
+        }),
+        4 => t.check(what, 0x0063_9d40, Conv::Cdecl, &[n, x, y], |g| {
+            ut::graphic_change_layer_offset(g, n, x, y);
+            Out::None
+        }),
+        _ => t.check(
+            what,
+            0x0063_9d60,
+            Conv::Cdecl,
+            &[n, x, y, sx.to_bits(), sy.to_bits()],
+            |g| {
+                ut::graphic_change_layer_scale(g, n, x, y, sx, sy);
+                Out::None
+            },
+        ),
+    }
+}
+
+#[test]
+fn round23b_matches_the_original() {
+    let Some(mut t) = Twins::image() else { return };
+    let mut rng = Rng(0x2323_b023);
+    for round in 0..3000 {
+        t.reset();
+        t.a.reset_heap();
+        t.b.reset_heap();
+        t.log = t.zeros(0x8000);
+        let what = format!("round {round}");
+        round23b_case(&mut t, &mut rng, 0, &what);
+    }
+}
+
+#[test]
+fn snapshot_round23b_matches_the_original() {
+    let Some(mut t) = Twins::snapshot() else {
+        return;
+    };
+    let mut rng = Rng(0x5323_b023);
+    let real = t.r32(t.rebase(scene::bridge::SCENE.sym));
+    let loaded = real != 0 && t.r8(real + 0x93c) != 0;
+    eprintln!("the snapshot's scene {real:#x}: 2D level loaded {loaded}");
+    for round in 0..400 {
+        t.reset();
+        let what = format!("snapshot round {round}");
+        // the game's own scene every other round
+        let scene = if round % 2 == 0 && real != 0 { real } else { 0 };
+        round23b_case(&mut t, &mut rng, scene, &what);
+    }
+}

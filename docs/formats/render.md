@@ -988,3 +988,44 @@ Round 23:
   `PhyreScene_Project3DPointOntoScreen(g_PhyreScene, out, p, 1 or 2)`, its
   `1 / w` left in `ST0`. (`graphicProject3DPointOntoScreen`, `0x006428b0`,
   mode 0, is dead.)
+
+Round 23, the 2D scene's layers:
+
+- The walk (`PhyreScene_change2DSceneNum`, `PhyreScene_changeLayerOffset_00658350`,
+  `PhyreScene_changeLayerScale_00658570`): with the scene's 2D level loaded
+  (byte `+0x93c`) and `+0x1128` set, each of the `+0x112c` lists at
+  `+0x1134` gets a cursor on the stack: `+0x14` the end node (the list
+  `+0x1c`), `+0x18` its first node (0 when the end node points at itself),
+  `+0x1c` the class `0x00ca7228`, the first five words 0.
+  `PhyreSceneCursor_Begin_00637730` seeks the first valid node and sets the
+  cursor up (`PhyreSceneCursor_SetNode`). While the count (`+0xc`) is not 0,
+  the instance at `+0x10` + position (`+0`) is visited; the position then
+  steps by the stride (`+8`), the count drops, and where the position meets
+  the link (`+4`) the link follows itself (`*link`) and the step repeats,
+  so that slot is not visited. At the count's end
+  `PhyreSceneCursor_Next_006377a0` moves to the next node.
+- An instance's name is the pointer at `+0x2c` less its low bit. The
+  original copies it without a bound into a stack buffer (100 bytes in
+  `change2DSceneNum`, 52 in the layer functions) that lies just below its
+  `sprintf`ed pattern (`"scene%d"`, 52 bytes; `"layer%d"`, 8 bytes, so
+  layers past 99 or below -9 overrun into the stack cookie), then
+  `strstr`s the pattern in it: a longer name overwrites the pattern, for
+  the rest of the call.
+- `PhyreScene_change2DSceneNum(scene, n)` (`0x006587d0`, `thiscall`, `ret
+  4`): `+0xf9c4` = 1 (byte) when `n` is 1, `+0x11d8` = `n`; every visited
+  instance with a target (`+0x1c`) sets the target's `+0x1c` to itself
+  when its name holds `"scene<n>"`, else to 0.
+- `PhyreScene_changeLayerOffset_00658350(scene, layer, x, y)` (`ret 0xc`)
+  and `PhyreScene_changeLayerScale_00658570(scene, layer, x, y, sx, sy)`
+  (`ret 0x14`): the first instance of each list whose name holds
+  `"layer<layer>"` has its 12 floats (pointer `+4`) changed, which ends
+  that list. `x` and `y` are ints made floats (`fild`, `fstp m32`). Offset:
+  `[8] += x * [1]`, `[9] += y * [3]`. Scale (2.5 and 0.5 the doubles at
+  `0x00b43d70`, `0x00b92220`): `[8] += (2.5 sx + [1]) * x * 0.5`, `[9] +=
+  0.5 * ((2.5 sy + [3]) * y)`, then `[1] = -2.5 sx`, `[3] = -2.5 sy`. The
+  floats go through the x87 on the way back (a signalling NaN comes out
+  quiet).
+- `graphicChangeLayerOffset_00639d40(layer, x, y)`,
+  `graphicChangeLayerScale_00639d60(layer, x, y, sx, sy)` and
+  `graphicChangeSceneNum_00639d90(n)` (cdecl; names ours, sorting after
+  `graphicChangeLayerAlpha`): the three on `g_PhyreScene`.
