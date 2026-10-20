@@ -1508,6 +1508,63 @@ ported! {
     opu_v_2d @ 0x0081_8dc0 => extern "C" fn opu_v_2d(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_v_2d(&mut mem(), host, cmd)
     }
+    // ---- round 34 b ----
+    /// `pppKeThDraw(obj, key, prog)`.
+    pppKeThDraw @ 0x0073_6580 => extern "C" fn ppp_ke_th_draw(obj: u32, key: u32, prog: u32) -> u32 {
+        // the original's locals: the scale pair and the colour, below its ebp
+        let mut frame = super::StackFrame::<10>::new();
+        let ebp = frame.at() + 0x28;
+        prog::bridge::ppp_ke_th_draw(&mut mem(), obj, key, prog, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeMvYpEff(obj, key, prog)`.
+    pppKeMvYpEff @ 0x0075_e310 => extern "C" fn ppp_ke_mv_yp_eff(obj: u32, key: u32, prog: u32) {
+        let _ = key;
+        // the original's locals: the vector and the angle, below its ebp
+        let mut frame = super::StackFrame::<5>::new();
+        let ebp = frame.at() + 0x14;
+        prog::bridge::ppp_ke_mv_yp_eff(&mut mem(), obj, prog, ebp, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
+    /// `opu_float_calc_0080c6a0(host, cmd)`.
+    opu_float_calc_0080c6a0 @ 0x0080_c6a0 => extern "C" fn opu_float_calc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_float_calc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_wait_cond_0080c520(host, cmd)`: `op_irandom_p`'s three extra
+    /// words (the caller's saved registers) go in as 0, as the shim of
+    /// `opp_anmm_frame_random` does.
+    opu_wait_cond_0080c520 @ 0x0080_c520 => extern "C" fn opu_wait_cond(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_wait_cond(&mut mem(), host, cmd, [0; 3])
+    }
+    /// `opu_float_move_0080c940(host, cmd)`.
+    opu_float_move_0080c940 @ 0x0080_c940 => extern "C" fn opu_float_move(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_float_move(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpPointLight(obj, key, prog)`.
+    pppFpPointLight @ 0x0075_d7f0 => extern "C" fn ppp_fp_point_light(obj: u32, key: u32, prog: u32) -> u32 {
+        fp::bridge::ppp_fp_point_light(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeBornRnd4(obj, def, shape, out)`.
+    pppKeBornRnd4 @ 0x0075_8df0 => extern "C" fn ppp_ke_born_rnd4(obj: u32, def: u32, shape: u32, out: u32) {
+        // the original's local vector
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_rnd4(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawMdlCameraTex_0073dfe0(rec, m)`.
+    pppDrawMdlCameraTex_0073dfe0 @ 0x0073_dfe0 => extern "C" fn ppp_draw_mdl_camera_tex(rec: u32, m: u32) {
+        mdl::bridge::ppp_draw_mdl_camera_tex(&mut mem(), rec, m, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldSpdInit_00745610(p, src)`.
+    pppDrawShapeFieldSpdInit_00745610 @ 0x0074_5610 => extern "C" fn ppp_shape_field_spd_init(p: u32, src: u32) {
+        draw::bridge::ppp_shape_field_spd_init(&mut mem(), p, src, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_vector_m_to_007e7330(dst, a, b)`.
+    op_vector_m_to_007e7330 @ 0x007e_7330 => extern "C" fn op_vector_m_to(dst: u32, a: u32, b: u32) -> u32 {
+        // the original's local vector, with room above it for the colour
+        // shift's `w`
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        op::bridge::op_vector_m_to(&mut mem(), dst, a, b, at, &mut |_, f, a| call_ptr(f, a))
+    }
     // ---- round 33 a ----
     /// `ClassDynamicGeometry_setupDynMesh(this)`.
     ClassDynamicGeometry_setupDynMesh @ 0x006a_3b30 => extern "thiscall" fn class_dynamic_geometry_setup_dyn_mesh(this: u32) -> u32 {

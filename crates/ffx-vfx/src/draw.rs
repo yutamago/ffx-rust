@@ -1082,4 +1082,61 @@ pub mod bridge {
         let reload = u32::from(mem.read::<u8>(key.wrapping_add(0xb1)));
         mem.write(w.wrapping_add(0xe4), reload.wrapping_sub(1));
     }
+
+    /// `0x00745610(p, src)` (`pppDrawShapeFieldSpdInit`, ours; called by
+    /// `0x00745f70`): a particle `p` from the source `src`: bit 0 of `+0`
+    /// set, `+4`, `+8` = 0; `+0x10` = `vf00`; `+0x20` = `src +0x40` (xyz, w
+    /// 0) plus `KeVecAddRandom(.., src +0x50, 0)`; `+0x30` = `src +0x60`
+    /// (w 0); `+0x40` = `src +0x70` (w 0) through
+    /// `KeVecScaleRandom(.., src +0x80, 0)`; `+0x50` = `src +0x90` (w 0);
+    /// `+0x60` = `vf00` plus `KeVecAddRandom(.., src +0xb0, 0)`; `+0x70` =
+    /// the unit matrix turned about z by `f32 +0x68 x 4096 / 360`
+    /// (`[0x00b515c8]`, `[0x00b48380]`; `op_rot_m_z`). The `KeVec*` callees
+    /// through `call`. Floats through the FPU.
+    pub fn ppp_shape_field_spd_init<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        src: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{div, load, mul, store};
+        let at = |o: u32| p.wrapping_add(o);
+        let copy3 = |mem: &mut M, to: u32, from: u32| {
+            for k in 0..3 {
+                let v = load(mem.read(src.wrapping_add(from + 4 * k)));
+                mem.write(at(to + 4 * k), store(v));
+            }
+            mem.write(at(to + 0xc), 0f32);
+        };
+        let w: u32 = mem.read(p);
+        mem.write(p, w | 1);
+        mem.write(at(4), 0u32);
+        mem.write(at(8), 0u32);
+        let vf00: [u32; 4] = mem.read(g(mem, 0x00c0_a004));
+        mem.write(at(0x10), vf00);
+        copy3(mem, 0x20, 0x40);
+        let add_random = g(mem, 0x0076_6f10);
+        call(mem, add_random, &[at(0x20), src.wrapping_add(0x50), 0]);
+        copy3(mem, 0x30, 0x60);
+        copy3(mem, 0x40, 0x70);
+        call(
+            mem,
+            g(mem, 0x0076_6f70),
+            &[at(0x40), src.wrapping_add(0x80), 0],
+        );
+        copy3(mem, 0x50, 0x90);
+        let vf00: [u32; 4] = mem.read(g(mem, 0x00c0_a004));
+        mem.write(at(0x60), vf00);
+        call(mem, add_random, &[at(0x60), src.wrapping_add(0xb0), 0]);
+        let m = at(0x70);
+        ffx_ps2::vu0::bridge::matrix_identity(mem, m);
+        let (k1, k2): (f64, f64) = (mem.read(g(mem, 0x00b5_15c8)), mem.read(g(mem, 0x00b4_8380)));
+        let a = store(div(mul(load(mem.read(at(0x68))), k1), k2));
+        crate::op::bridge::op_rt_m(mem, m, m, f32::from_bits(load_bits(a)), crate::mat::Axis::Z);
+    }
+
+    /// `f32` bits through `fld m32; fstp m32` (a signalling NaN quiet).
+    fn load_bits(bits: u32) -> u32 {
+        ffx_bridge::x87::store(ffx_bridge::x87::load(bits))
+    }
 }
