@@ -6,9 +6,9 @@
 //! ship's event running). Needs `FFX_GAME_DIR` and `FFX_SNAPSHOT`; skipped
 //! otherwise.
 //!
-//! Float results come back in `ST0`, which the oracle reads as an `f64`:
-//! they compare exactly, NaNs only as NaNs (their bits are checked where
-//! the code stores them). `_ftol2_sse` pops each one.
+//! Float results come back in `ST0`, which the oracle reads as an `f64`
+//! (`fst qword`, NaN payloads kept): they compare bit for bit, NaNs
+//! included. `_ftol2_sse` pops each one.
 
 // a and b are the two oracles (original, bridge) throughout; w, l, s a worker,
 // its level and its stack
@@ -120,7 +120,7 @@ impl run::NativeHost for Run<'_> {
         // pop it, as the original's fstp does
         let ftol = self.0.rebase(FTOL2);
         self.0.call(ftol, Conv::Cdecl, &[]).unwrap();
-        f80_to_f64(raw)
+        ffx_oracle::f80_to_f64(&raw)
     }
     fn call_intrinsic2(&mut self, addr: u32, a: f64, b: f64) -> f64 {
         let at = self.0.rebase(TRAMPOLINE);
@@ -130,7 +130,7 @@ impl run::NativeHost for Run<'_> {
         let r = self.0.call(at, Conv::Cdecl, &args).unwrap();
         let raw = r.st0_raw.expect("the intrinsic leaves ST0");
         self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
-        f80_to_f64(raw)
+        ffx_oracle::f80_to_f64(&raw)
     }
     fn call_intrinsic1(&mut self, addr: u32, a: f64) -> f64 {
         let at = self.0.rebase(TRAMPOLINE);
@@ -140,18 +140,13 @@ impl run::NativeHost for Run<'_> {
         let r = self.0.call(at + 19, Conv::Cdecl, &args).unwrap();
         let raw = r.st0_raw.expect("the intrinsic leaves ST0");
         self.0.call(at + 16, Conv::Cdecl, &[]).unwrap();
-        f80_to_f64(raw)
+        ffx_oracle::f80_to_f64(&raw)
     }
     fn scratch(&mut self) -> u32 {
         // the bottom of the emulated stack: no call reaches that deep, and
         // the comparisons leave the stack out, as the originals' locals are
         self.0.stack_range().start + 0x100
     }
-}
-
-/// An 80-bit x87 value as `fstp m64` stores it, NaN payloads kept.
-fn f80_to_f64(raw: [u8; 10]) -> f64 {
-    ffx_oracle::f80_to_f64(&raw)
 }
 
 struct Xorshift(u32);
@@ -194,14 +189,10 @@ fn orig_float(a: &mut Oracle, f: u32, args: &[u32]) -> f64 {
     x
 }
 
-/// Whether an `ST0` result is the bridge's `f32` bits.
+/// Whether an `ST0` result is the bridge's `f32` bits, bit for bit (NaN
+/// payloads and signs included, as `fld dword` widens them).
 fn same_float(st0: f64, bits: u32) -> bool {
-    let f = f32::from_bits(bits);
-    if f.is_nan() {
-        st0.is_nan()
-    } else {
-        st0.to_bits() == f64::from(f).to_bits()
-    }
+    ffx_oracle::same_float(st0, f64::from(f32::from_bits(bits)))
 }
 
 /// Every byte written must agree, except inside words that hold an address
@@ -2668,7 +2659,7 @@ fn native_case(a: &mut Oracle, b: &mut Oracle, w: u32, sym: u32, push: &[(u8, u3
             let raw = ra.st0_raw.expect("ST0");
             orig(a, FTOL2, &[]);
             let rb = f(&mut Run(b), w, args, s);
-            let x = f80_to_f64(raw);
+            let x = ffx_oracle::f80_to_f64(&raw);
             assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
         }
         None => panic!("{what}: not in find"),
@@ -3154,7 +3145,7 @@ fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32) {
                         let raw = ra.st0_raw.expect("ST0");
                         orig(a, FTOL2, &[]);
                         let rb = f(&mut Run(b), w, args, s);
-                        let x = f80_to_f64(raw);
+                        let x = ffx_oracle::f80_to_f64(&raw);
                         assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
                     }
                     None => panic!("{what}: not in find"),
@@ -4926,7 +4917,7 @@ fn round19_natives_match_the_original() {
                             let raw = ra.st0_raw.expect("ST0");
                             orig(a, FTOL2, &[]);
                             let rb = f(&mut Run(b), w, args, s);
-                            let x = f80_to_f64(raw);
+                            let x = ffx_oracle::f80_to_f64(&raw);
                             assert!(ffx_oracle::same_float(x, rb), "{what}: ST0 {x} vs {rb}");
                         }
                         None => panic!("{what}: not in find"),
@@ -5354,4 +5345,234 @@ fn round22_helpers_match_the_original() {
         }
     }
     eprintln!("{compared} round-22 cases compared ({battle} moves on a battle actor)");
+}
+
+/// A worker of type `kind` with room for every move and turn block
+/// (`0x1000` bytes): each level block's move (`+0x44`) and turn (`+0x48`)
+/// pointer is one of the worker's own blocks, every block's mode (`+2`)
+/// random, idle or busy.
+fn r23_worker(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, kind: u8) -> u32 {
+    let hdr = alloc_both(a, b, 0x40);
+    poke(a, b, hdr, kind);
+    let w = alloc_both(a, b, 0x1000);
+    poke(a, b, w, hdr);
+    poke(a, b, w + worker::LEVEL, u8::try_from(rng.below(9)).unwrap());
+    for i in 0..13 {
+        let modes = [0, 0x7f, 0x80, 0x1f, 0x20, 0x4000, rng.next() & 0xffff];
+        let m = modes[rng.below(7) as usize];
+        poke(a, b, w + 0x5ba + i * 0x4c, u16::try_from(m).unwrap());
+        let m = modes[rng.below(7) as usize];
+        poke(a, b, w + 0x866 + i * 0x44, u16::try_from(m).unwrap());
+    }
+    for l in 0..9 {
+        let blk = w + 0x12c + l * 0x4c;
+        poke(a, b, blk + 0x44, w + 0x5b8 + rng.below(13) * 0x4c);
+        poke(a, b, blk + 0x48, w + 0x864 + rng.below(13) * 0x44);
+    }
+    w
+}
+
+/// A mask and mode for the block helpers: the shared and `0x20`/`0x100`
+/// bits in every combination, random bits besides.
+fn r23_mask_mode(rng: &mut Xorshift, round: u32) -> (u32, u32) {
+    let mask = match round % 5 {
+        0 => 0,
+        1 => u32::MAX,
+        2 => 1 << rng.below(32),
+        _ => rng.next(),
+    };
+    let flags = [0, 0x20, 0x100, 0x120][(round % 4) as usize];
+    let mode = rng.next()
+        & !0x120
+        & if round.is_multiple_of(3) {
+            0xffff
+        } else {
+            u32::MAX
+        }
+        | flags;
+    (mask, mode)
+}
+
+/// The four block helpers on worker `w`: share at `level`, start at the
+/// worker's own level.
+fn r23_blocks(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: u32,
+    level: u32,
+    round: u32,
+    what: &str,
+) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let (mask, mode) = r23_mask_mode(rng, round);
+    let param = rng.next();
+    let what = format!("{what} level {level:#x} mask {mask:#x} mode {mode:#x}");
+    r22_case(
+        a,
+        b,
+        0x0087_0440,
+        &[w, level, mask, mode],
+        true,
+        &format!("Atel_ShareMoveBlock {what}"),
+        |r| hp::atel_share_move_block(r, w, level, mask, mode),
+    );
+    r22_case(
+        a,
+        b,
+        0x0087_1090,
+        &[w, level, mask, mode],
+        true,
+        &format!("Atel_ShareTurnBlock {what}"),
+        |r| hp::atel_share_turn_block(r, w, level, mask, mode),
+    );
+    r22_case(
+        a,
+        b,
+        0x0087_03e0,
+        &[w, mask, mode, param],
+        true,
+        &format!("Atel_StartMoveBlock {what}"),
+        |r| hp::atel_start_move_block(r, w, mask, mode, param),
+    );
+    r22_case(
+        a,
+        b,
+        0x0087_1030,
+        &[w, mask, mode, param],
+        true,
+        &format!("Atel_StartTurnBlock {what}"),
+        |r| hp::atel_start_turn_block(r, w, mask, mode, param),
+    );
+}
+
+/// `Atel_AddSepLoad` on random lists: counts from -1 to 9, ids already
+/// listed or not, every group bit against random selected groups.
+fn r23_sep_loads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) -> u32 {
+    use ffx_script::vm::bridge::helpers as hp;
+    let count = a.rebase(0x0132_5b78);
+    let list = a.rebase(0x0132_7030);
+    let groups = a.rebase(0x0132_6bdc);
+    for round in 0..rounds {
+        let n = [0, 1, 7, 8, 9, -1, 3][(round % 7) as usize];
+        if round % 3 != 2 {
+            poke(a, b, count, n);
+        }
+        for i in 0..8 {
+            poke(a, b, list + i * 8, rng.below(6));
+            poke(a, b, list + i * 8 + 4, rng.next());
+        }
+        poke(a, b, groups, u8::try_from(rng.below(256)).unwrap());
+        let id = if round % 2 == 0 {
+            rng.below(8)
+        } else {
+            rng.next()
+        };
+        let group = match round % 4 {
+            0 => 0,
+            1 => 1 << (16 + rng.below(7)),
+            2 => rng.next() & 0x7f_0000,
+            _ => rng.next(),
+        };
+        let flags = group | rng.next() & 0xffff;
+        r22_case(
+            a,
+            b,
+            0x0086_e250,
+            &[id, flags],
+            true,
+            &format!("Atel_AddSepLoad({id:#x}, {flags:#x}) round {round}"),
+            |r| hp::atel_add_sep_load(r, id, flags),
+        );
+    }
+    rounds
+}
+
+/// Round 23's helpers against the original: the move/turn block setters
+/// on synthetic workers of every type and level (image), then on every
+/// actor of every ctrl work in use (`FFX_SNAPSHOT`); `Atel_AddSepLoad` on
+/// both.
+#[test]
+fn round23_helpers_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0023);
+    let mut compared = 0;
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        compared += r23_sep_loads(&mut a, &mut b, &mut rng, 200);
+        for round in 0..240_u32 {
+            let kind = [0, 1, 4, 5, 6, 7][(round % 6) as usize];
+            let w = r23_worker(&mut a, &mut b, &mut rng, kind);
+            let level = match round % 8 {
+                0 => u32::MAX,
+                1 => 12,
+                2 => 9,
+                _ => rng.below(9),
+            };
+            r23_blocks(
+                &mut a,
+                &mut b,
+                &mut rng,
+                w,
+                level,
+                round,
+                &format!("image type {kind} round {round}"),
+            );
+            compared += 4;
+        }
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    {
+        let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+        let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+        compared += r23_sep_loads(&mut a, &mut b, &mut rng, 60);
+    }
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let mut real = 0;
+    for c in ctrls {
+        let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        let ws = actors(&mut a, &mut b);
+        for (i, &w) in ws.iter().enumerate().take(24) {
+            // only workers with move and turn blocks: every level's
+            // pointers into its own blocks (the 0x100 mode reads them)
+            let own = (0..9).all(|l| {
+                let at = w + 0x12c + l * 0x4c;
+                let mv = Mem::read::<u32>(&b, at + 0x44).wrapping_sub(w + 0x5b8);
+                let tn = Mem::read::<u32>(&b, at + 0x48).wrapping_sub(w + 0x864);
+                mv < 9 * 0x4c && tn < 9 * 0x44
+            });
+            if !own {
+                continue;
+            }
+            real += 1;
+            for round in 0..6_u32 {
+                let level = if round == 0 {
+                    u32::from(Mem::read::<u8>(&b, w + worker::LEVEL))
+                } else {
+                    rng.below(9)
+                };
+                r23_blocks(
+                    &mut a,
+                    &mut b,
+                    &mut rng,
+                    w,
+                    level,
+                    round,
+                    &format!("ctrl {c:#x} worker {i} round {round}"),
+                );
+                compared += 4;
+            }
+        }
+    }
+    eprintln!("{compared} round-23 cases compared ({real} real workers)");
+    assert!(real > 0, "no worker with move blocks");
 }

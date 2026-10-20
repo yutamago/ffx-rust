@@ -8604,7 +8604,7 @@
 0x00856b10 function Native_01a1 # 0x01a1: (i, a f, b f, c f, d f): yiSetMIMeParamDObj(i, &(a, b, c, d)) (0x0090a4d0); 1; ported in native_mods (script round 19); name ours
 0x00856ba0 function Native_0031 # 0x0031: Atel_SetWorkerFlag200(worker, 1) (0x008712a0), 0x0086a0e0(); 1; ported in native_mods (script round 19); name ours
 0x00856bc0 function Native_00ec              # 0x00ec: (chr): its party slot (0..=2, 0x007852f0), -1 when absent; ported in native_move (script round 11)
-0x00856c30 function Native_MoveStart             # 0x0018: args (slotMask, mode, param); current move slot: +0x00 = param, +0x02 = mode (low 7 bits: 1 walk, 2 walk at speed, 5/6/7/9 timed, 9 jump arc), slots in mask (bit 0x20 = all) share it (FUN_00870440); arrive radius 0 adds 0x800; scripts "0, 0xc001, 0" then 0x001a
+0x00856c30 function Native_MoveStart             # 0x0018: args (slotMask, mode, param); current move slot: +0x00 = param, +0x02 = mode (low 7 bits: 1 walk, 2 walk at speed, 5/6/7/9 timed, 9 jump arc), slots in mask (bit 0x20 = all) share it (Atel_ShareMoveBlock); arrive radius 0 adds 0x800; scripts "0, 0xc001, 0" then 0x001a
 0x00856da0 function Native_0032 # 0x0032: Atel_SetWorkerFlag200(worker, 0), 0x0086a0e0(); 0; ported in native_mods (script round 19); name ours
 0x00856dc0 function Native_024d              # 0x024d: (on): the current ctrl work's +0x210 bit 6; on != 0; ported in native_move (script round 11)
 0x00856e00 function Native_01db # 0x01db: args (v int) -> v: 0x00876290(v); ported in native_sys (script round 18); name ours
@@ -8627,7 +8627,7 @@
 0x008574b0 function Native_0244              # 0x0244: 0x007fb690(); 1; ported in native_move (script round 11)
 0x008574c0 function Native_01a5               # 0x01a5: `(a, b)` -> `0x00909e30(a, b)`; 1. (ffx_script::vm::bridge::native_map)
 0x008574f0 function Native_SetTalkAngle          # 0x0063: args (radians); pos block +0x3c; talk check passes it to FUN_0088b780 with the player yaw; usually 1.047 (60 degrees); ported in native_btl/native_move (script round 10)
-0x00857520 function Native_TurnStart             # 0x0019: args (slotMask, mode, param); turn struct +0x00 = param, +0x02 = mode (low 5 bits: 2 timed turn, 3 ...), FUN_00871030/FUN_00871090 spread it to the slots in mask; scripts "0, 0xd002, 0" / "0, 0x1003, 0" then 0x001b
+0x00857520 function Native_TurnStart             # 0x0019: args (slotMask, mode, param); turn struct +0x00 = param, +0x02 = mode (low 5 bits: 2 timed turn, 3 ...), Atel_StartTurnBlock/Atel_ShareTurnBlock spread it to the slots in mask; scripts "0, 0xd002, 0" / "0, 0x1003, 0" then 0x001b
 0x00857660 function Native_01dd # 0x01dd: args (v int) start: v into the argument word; -> v; ported in native_sys (script round 18); name ours
 0x00857680 function Native_Random16              # 0x00a9: args () -> Rng_Next(2) & 0xffff (Ghidra misses this function; checked in the disassembly); scripts follow it with `pushimm 5; mod`; ported in native_move (script round 11)
 0x00857690 function Native_0245              # 0x0245: 0x007fb680(); 1; ported in native_move (script round 11)
@@ -9450,6 +9450,7 @@
 0x0086dfb0 function Script_StoreVar           # (worker, stack, var, mode): opcodes 20/21/23/24; pops the value (float for f32 vars), with mode bit 0x80 an index under it, then AtelSetValueFloat/AtelSetValueInteger with clamp = bit 0; resolves the address once beforehand for nothing; returns 0
 0x0086e100 function Script_PushVarElem        # (worker, stack, var): opcode 22 (pushva): pops an index, then Script_PushVar
 0x0086e160 function Script_PushVarRef         # (worker, stack, var): opcode 27: pops an index, pushes the var's location word + index (clamped) * element size (a reference, not an address)
+0x0086e250 function Atel_AddSepLoad            # (id, flags) -> 0 added / -1 listed / 1 full or group not selected: with fewer than 8 entries in g_AtelSepLoadList, flags' group bits 0x7e0000 (none = group 0, bit 16) against (g_AtelSepGroupMask | 1) << 16, appends (id, flags | 0x8000); called by 0x00866520 for the event header's sound separates (+0x2c table +0xc, the list AtelEventKickBGSep walks); name ours; ported in helpers (script round 23)
 0x0086e310 function AtelPushMember            # fh call.cs cdecl
 0x0086e3c0 function AtelPushStackFloat        # (worker, stack, float): slot kind 2; full stack (19) drops it, g_AtelError = 0; Switch name: precedes AtelPushStackInteger in both builds; was Script_PushFloat
 0x0086e3f0 function AtelPushStackInteger      # (worker, stack, value): slot kind 1; full stack (19) drops it, g_AtelError = 0; depth not checked below 0; was Script_PushInt
@@ -9518,6 +9519,8 @@
 0x008702e0 function AtelSetMenuExecStatus     # fh v3:bsim1.00 0x00870280
 0x008702f0 function Atel_SetEffectFlag2        # (n): bit n of 0x01326b74 set -> the bit; name ours; ported in helpers (script round 14)
 0x008703b0 function AtelSetMoveHokanMode      # fh switch:bsim1.00 0x71004729f0; ported in helpers (script round 19)
+0x008703e0 function Atel_StartMoveBlock        # (worker, mask, mode, param): current level's move block (+0x5b8 + (+0x32)*0x4c) +0 = param, +2 = mode, +6 = 0 (u16), then Atel_ShareMoveBlock(worker, level, mask, mode) (its eax); Native_MoveStart's tail; name ours; ported in helpers (script round 23)
+0x00870440 function Atel_ShareMoveBlock        # (worker, level, mask, mode): level block (+0x12c + clamp(level)*0x4c) +0x44 = the level's move block +0x5b8 + level*0x4c; so for every level i <= level (7 with mode 0x20) with bit i in mask | 1 << level, with mode 0x100 only when the current block's +2 & 0xff80 is clear; clamp 0..1 for types 5/6 else 0..8; name ours; ported in helpers (script round 23)
 0x00870520 function SetField_00870520            # auto-port shape (store argument to field, cdecl): u16[(((a1 * 0x4c) + a0) + 0x5bc)] = (a2 & 0xffff); return a0; callers: ; name ours
 0x00870870 function AtelSetMyWorkAdrs         # fh v3:exact 0x00870810
 0x008708e0 function AtelSetNowEventJumpMapNo  # fh switch:bsim1.00 0x7100461a10
@@ -9530,6 +9533,8 @@
 0x00870f60 function AtelSetShopRatio          # fh v3:bsim1.00 0x00870f00
 0x00870fc0 function SetDeref_00870fc0            # auto-port shape (store argument to deref, cdecl): t0 = u8[(a0 + 0x32)]; u32[(((t0 * 0x4c) + a0) + 0x5cc)] = a1; return a1; callers: ; name ours
 0x00870fe0 function Atel_SetWorkerFlag36_8     # (worker, on): +0x36 bit 3 set/cleared -> the bit; name ours; ported in helpers (script round 14)
+0x00871030 function Atel_StartTurnBlock        # (worker, mask, mode, param): current level's turn block (+0x864 + (+0x32)*0x44) +0 = param, +2 = mode, +6 = 0 (u16), then Atel_ShareTurnBlock (its eax); Native_TurnStart's tail; name ours; ported in helpers (script round 23)
+0x00871090 function Atel_ShareTurnBlock        # (worker, level, mask, mode): Atel_ShareMoveBlock's twin for the turn blocks (+0x864 + level*0x44, level block +0x48, busy bits 0xffe0); name ours; ported in helpers (script round 23)
 0x00871170 function SetField_00871170            # auto-port shape (store argument to field, cdecl): u16[((a0 + (((a1 << 0x4) + a1) * 0x4)) + 0x868)] = (a2 & 0xffff); return a0; callers: ; name ours
 0x00871190 function AtelSetUpCtrlWork         # fh v3:exact 0x00871130; ported in helpers (script round 19)
 0x00871210 function Msg_ClampChoices             # (window, mode): with mode bit 2, clamps the choice cursors +0x1e/+0x1f/+0x22/+0x23 to the counts in Msg_Flags (window +0x16); drops bit 2 (no choices) / bit 0x40; returns the flags
@@ -16782,6 +16787,7 @@
 0x01325af0 label    g_AtelVoiceId              # the voice Native_VoiceStandby (0x0085cd00) set; used by VoiceStart and its end
 0x01325b70 label    g_MsgLastIndex            # last message index looked up (written by Msg_Text, Msg_TextAlt, Msg_Text1, Msg_Get)
 0x01325b74 label    g_MsgNone                 # what the Msg_ lookups return without a message table (an empty string)
+0x01325b78 label    g_AtelSepLoadCount           # i32: entries in g_AtelSepLoadList (0..8); zeroed by 0x00866520, AtelInitSaveWork, AtelJumpGameOver; Atel_AddSepLoad appends
 0x01325b90 label    g_AtelAlbhedDic              # two words written by AtelRegistAlbhedDic (0x0086e820)
 0x01325b98 label    g_TkScalePair             # 2 x f32 (Tk_GetScale)
 0x01325ba0 label    g_AtelCtrlWorks              # 7 ctrl works x 0x238 (AtelGetCtrlWork); g_ScriptContext follows; layout in ffx_script::vm::ctrl
@@ -16798,9 +16804,11 @@
 0x01326b84 label    g_AtelBattleEndMovieFadeout  # three words written by AtelRegistBattleEndMovieFadeout (0x0086e840)
 0x01326b90 label    g_AtelLoveParamDisable       # cleared by AtelClearLoveParamDisable (0x00863ae0)
 0x01326bd8 label    g_GameSpeed                  # f32: Script_Run multiplies a worker's speed (+0x94) by it into its accumulator (+0x98)
+0x01326bdc label    g_AtelSepGroupMask           # u8: sound-separate groups selected (bit n set by 0x00870f70, cleared by 0x00863fc0); Atel_AddSepLoad tests (mask | 1) << 16 against the entry's flags; 0x00866520 clears it
 0x01326ce0 label    g_AtelEffectParams           # four words: AtelGetEffectParam (0x0086b050), AtelClearEffectParam (0x00863880)
 0x01326cf0 label    g_AtelMCFPInWater            # four words written by AtelSetMCFPInWater (0x00870280)
 0x01326d70 label    g_AtelMsgWindows             # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
+0x01327030 label    g_AtelSepLoadList            # 8 x (id u32, flags u32): sound separates to load (flags | 0x8000 = pending, 0x008638c0 queues those with fade 0xf0/0x78 (0x2000)/0x168 (0x4000) frames); Atel_AddSepLoad
 0x013270c0 label    g_AtelPadHeld             # u16 words every 4 bytes, ORed over the frames since the update (AtelExec_Internal_871d10): +0 pad 0 held (TkGetControlerHist), +4 pad 1 held, +8 repeat, +0xc history +0x1c, +0x10 g_PadPressed, +0x14 history +8
 0x013270c8 label    g_AtelPadRepeat           # u16: TkGetControlerReptHist ORed (AtelGetControlerRept)
 0x013270cc label    g_AtelPadHist1c           # u16: the pad history's +0x1c word ORed (AtelGetControlerHist1c)

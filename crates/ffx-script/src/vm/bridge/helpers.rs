@@ -1789,3 +1789,137 @@ pub fn atel_set_line_table(m: &mut impl Mem, w: u32, table: u32) -> u32 {
     atel_free_line_signals(m, w);
     atel_reset_line_table(m, w)
 }
+
+/// The move or turn variant of the block helpers below.
+struct BlockKind {
+    /// Where a level block (`+0x12c + level*0x4c`) keeps the pointer.
+    slot: u32,
+    /// The worker's own blocks: `+base + level*stride`.
+    base: u32,
+    stride: u32,
+    /// The mode bits that mark a block busy (`+2`).
+    busy: u16,
+}
+
+const MOVE_BLOCK: BlockKind = BlockKind {
+    slot: 0x44,
+    base: 0x5b8,
+    stride: 0x4c,
+    busy: 0xff80,
+};
+const TURN_BLOCK: BlockKind = BlockKind {
+    slot: 0x48,
+    base: 0x864,
+    stride: 0x44,
+    busy: 0xffe0,
+};
+
+/// `0x00870440`/`0x00871090(worker, level, mask, mode)`: the level's own
+/// block (`level` unclamped) becomes the clamped level's block, and that of
+/// every level `i` up to `level` (7 with mode bit `0x20`) whose bit is in
+/// `mask | 1 << level`; with mode bit `0x100` only levels whose current
+/// block is idle (`+2 & busy` clear). Returns the `EAX` the loop leaves.
+fn share_block(m: &mut impl Mem, k: &BlockKind, w: u32, level: u32, mask: u32, mode: u32) -> u32 {
+    let slot = |l: u32| w + 0x12c + l * 0x4c + k.slot;
+    let block = w
+        .wrapping_add(k.base)
+        .wrapping_add(level.wrapping_mul(k.stride));
+    let at = slot(clamp_level(m, w, level));
+    m.write(at, block);
+    let mask = mask | 1 << (level & 31);
+    let last = if mode & 0x20 != 0 { 7 } else { level };
+    let mut eax = 1 << (level & 31);
+    let mut i = 0_u32;
+    while i.cast_signed() <= last.cast_signed() {
+        let l = clamp_level(m, w, i);
+        eax = l * 0x4c;
+        if mask & 1_u32.rotate_left(i) != 0 {
+            let idle = if mode & 0x100 == 0 {
+                true
+            } else {
+                eax = m.read::<u32>(slot(l));
+                m.read::<u16>(eax + 2) & k.busy == 0
+            };
+            if idle {
+                eax = block;
+                m.write(slot(l), block);
+            }
+        }
+        i = i.wrapping_add(1);
+    }
+    eax
+}
+
+/// `Atel_ShareMoveBlock` (`0x00870440`): [`share_block`] for the move
+/// blocks (`+0x5b8 + level*0x4c`, level block `+0x44`, busy `0xff80`).
+pub fn atel_share_move_block(m: &mut impl Mem, w: u32, level: u32, mask: u32, mode: u32) -> u32 {
+    share_block(m, &MOVE_BLOCK, w, level, mask, mode)
+}
+
+/// `Atel_ShareTurnBlock` (`0x00871090`): [`share_block`] for the turn
+/// blocks (`+0x864 + level*0x44`, level block `+0x48`, busy `0xffe0`).
+pub fn atel_share_turn_block(m: &mut impl Mem, w: u32, level: u32, mask: u32, mode: u32) -> u32 {
+    share_block(m, &TURN_BLOCK, w, level, mask, mode)
+}
+
+/// `0x008703e0`/`0x00871030(worker, mask, mode, param)`: the current
+/// level's own block gets `+0` = param, `+2` = mode, `+6` = 0 (16 bits
+/// each), then is shared with the levels in `mask` ([`share_block`]).
+fn start_block(m: &mut impl Mem, k: &BlockKind, w: u32, mask: u32, mode: u32, param: u32) -> u32 {
+    let level = u32::from(m.read::<u8>(w + 0x32));
+    let block = w + k.base + level * k.stride;
+    #[allow(clippy::cast_possible_truncation)] // 16-bit fields
+    {
+        m.write(block, param as u16);
+        m.write(block + 2, mode as u16);
+    }
+    m.write(block + 6, 0_u16);
+    share_block(m, k, w, level, mask, mode)
+}
+
+/// `Atel_StartMoveBlock` (`0x008703e0`, `Native_MoveStart`'s tail).
+pub fn atel_start_move_block(m: &mut impl Mem, w: u32, mask: u32, mode: u32, param: u32) -> u32 {
+    start_block(m, &MOVE_BLOCK, w, mask, mode, param)
+}
+
+/// `Atel_StartTurnBlock` (`0x00871030`, `Native_TurnStart`'s tail).
+pub fn atel_start_turn_block(m: &mut impl Mem, w: u32, mask: u32, mode: u32, param: u32) -> u32 {
+    start_block(m, &TURN_BLOCK, w, mask, mode, param)
+}
+
+/// `g_AtelSepLoadCount` (`0x01325b78`, `i32`) and `g_AtelSepLoadList`
+/// (`0x01327030`, 8 x `(id, flags)`): the sound separates an event asks
+/// for; `g_AtelSepGroupMask` (`0x01326bdc`, `u8`) the groups selected.
+const SEP_LOAD_COUNT: u32 = 0x0132_5b78;
+const SEP_LOAD_LIST: u32 = 0x0132_7030;
+const SEP_GROUP_MASK: u32 = 0x0132_6bdc;
+
+/// `Atel_AddSepLoad(id, flags)` (`0x0086e250`): with fewer than 8 entries,
+/// -1 when `id` is listed already; else, when the flags' group bits
+/// (`0x7e0000`, none = group 0) meet the selected groups (`mask | 1` from
+/// bit 16), appends `(id, flags | 0x8000)` and returns 0. Else 1.
+pub fn atel_add_sep_load(m: &mut impl Mem, id: u32, flags: u32) -> u32 {
+    let count = m.rebase(SEP_LOAD_COUNT);
+    let n = m.read::<i32>(count);
+    if n >= 8 {
+        return 1;
+    }
+    let base = m.rebase(SEP_LOAD_LIST);
+    let list = |i: i32| base + i.cast_unsigned() * 8;
+    if (0..n).any(|i| m.read::<u32>(list(i)) == id) {
+        return u32::MAX;
+    }
+    let groups = if flags & 0x7e_0000 == 0 {
+        flags | 0x1_0000
+    } else {
+        flags
+    };
+    let selected = u32::from(m.read::<u8>(m.rebase(SEP_GROUP_MASK)) | 1) << 16;
+    if groups & selected == 0 {
+        return 1;
+    }
+    m.write(list(n), id);
+    m.write(list(n) + 4, flags | 0x8000);
+    m.write(count, n + 1);
+    0
+}
