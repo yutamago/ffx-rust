@@ -3531,7 +3531,7 @@
 0x007116d0 function pppNoiseBlurDraw_007116d0 # (a0..a6): 0x00cec19c = 0; instance (6, 0): render data made when missing (pppCreateD3D11FrameBufferData(6, 0, a2), graphicVFXSetup; failing -> graphicVFXDestroy), updateVFXRenderData_NoiseBlur(6, 0, a0..a6), graphicVFXUpdate; name ours (its update callee); ported (round 33, small::bridge::ppp_noise_blur_draw)
 0x00711750 function pppAkazaScrFltDraw_00711750 # (lo, hi, a, b): graphicVFXAddCopyBufferEvent(0, 1), render data made when missing (pppCreateFrameBufferData, graphicVFXSetup; failing -> graphicVFXDestroy), updateVFXRenderData_AkazaScrFlt(lo, hi, a, b), graphicVFXUpdateType4; name ours (its update callee); ported (round 33, small::bridge::ppp_akaza_scr_flt_draw)
 0x00711830 function pppKaGra001Draw_00711830  # (hi, a, rec): instance (g_pppCurrentProgram, sign + hi): render data -> updateVFXRenderData_KaGra001(inst, a, rec), graphicVFXUpdate; else made first (FUN_00715dc0(inst, a, rec, alpha fn | rec+0x44 != 0 | byte rec bit 3 -> 0x40), graphicVFXSetup; failing -> graphicVFXDestroy); name ours (its update callee); ported (round 33, small::bridge::ppp_ka_gra001_draw)
-0x00711910 function UpdatePhyreViewProjectionMatrix # fh v3:exact 0x007119f0
+0x00711910 function UpdatePhyreViewProjectionMatrix # fh v3:exact 0x007119f0; ported (round 39): MsCopyCameraMatrix -> sceVu0InversMatrix4x4 in place -> x/y columns negated (fchs), w column (0,0,0,1); g_pppFillMatrix2 = FFXVu0MulMatrix(graphicCameraGetViewProjectionMatrix, it), g_pppFillMatrix3 = its inverse (fp::bridge::update_phyre_view_projection_matrix)
 0x007119d0 function VertexGroupApplyZMatZClip # fh v3:exact 0x00711ab0 ; (m, a, b, c, d, flags) -> 0 drawn / 1 clipped: m = b*(a*m) style FFXVu0MulMatrix chain, screen depths of rows 0..3 through g_ScreenMatrix columns 2/3 with f32 rounding per step, clip when all lie outside [0, 2^23]; REVIEWED: not portable exactly: with flags bit 8 (from the shape data, *(short *)param_3 at its six call sites) the row-3 sum adds the never-written local at ebp-8 (local_18[3]), so the clip decision for rows 0..2 out of range comes from stack garbage (cf. field 0x922dc0)
 0x00711f20 function pppAllFreePObject         # fh v3:exact 0x00712000 _pppAllFreePObject
 0x00711fa0 function pppInitData               # fh v3:exact 0x00712080 _pppInitData
@@ -3863,6 +3863,7 @@
 0x0073cfe0 function pppDrawMdlPSimCon2        # ppp program table record "pppDrawMdlPSim" (0x00c3b4d0) +0x20 second set-up; "pppDrawMdlPSim" (0x00c3cb78) +0x20 second set-up
 0x0073d010 function pppDrawMdlPSimDes         # ppp program table record "pppDrawMdlPSim" +0x24 destructor
 0x0073d070 function pppDrawMdlPSimDraw        # ppp program table record "pppDrawMdlPSim" draw
+0x0073d4d0 function pppDrawMdlPSimInit        # ours (from pppDrawMdlPSimDraw, its only caller): cdecl(obj, def, sim) -> 1 (0: no model 0xffff / no OMD env+0x20 model +0x1c / pppMemAlloc failed): rcbgPSimNew, CreateFromOMD(scale = pppVu0Length(obj+0x10)), <= 4 nails from shapes i16 def+0x7a.. (jump table 0x0073d7a4), damp/gravity/wind, OMD input flags 4/0x14/0x2000/0x200/8/0x20, sim+4..+0x18 = 0, +0x1c = def; ported round 39 (prog::bridge::ppp_draw_mdl_psim_init)
 0x0073d7c0 function pppVu0Length_2            # the pppVu0Length body again (pppDrawMdlPSimDraw)
 0x0073d8c0 function pppDrawMdlCameraCon       # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x1c set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x1c set-up
 0x0073d8f0 function pppDrawMdlCameraCon2      # ppp program table record "pppDrawMdlCamera" (0x00c3b688) +0x20 second set-up; "pppDrawMdlCamera" (0x00c3cd30) +0x20 second set-up
@@ -6880,7 +6881,7 @@
 0x007eaa60 function op_color_shift_store_half # (src, base) u16 base + g_pppColorConShift = *src; the shift cleared
 0x007eaa90 function op_log2_ceil              # (n) -> the smallest k with 2^k >= n (0 for n <= 1)
 0x007eaac0 function magic_ret0_007eaac0       # g_MagicImports slot 252 (2 overlays): xor eax, eax; ret; hidden from the dump
-0x007eaad0 function op_flash_path3            # fh v3:exact 0x007ea9e0
+0x007eaad0 function op_flash_path3            # fh v3:exact 0x007ea9e0; ported (round 39): cdecl(rgba, flags, alpha) on the raw stack words: flag 0x20 -> a = alpha, bit cleared; magic 0x182 scales rgb by a/128 (truncated, low byte); graphicVFXAddScreenFadeEvent on the overlapping words at +0..+4; spr packet 0x70000007/0x8001/0x00e441ee (not relocated), r0, pextlh(pextlb(rgba, r0), r0) at +0x40, 0x011a0770 words at +0x70; sceDmaSend(*0x023328e0) between sceGsSyncPath (op::bridge::op_flash_path3)
 0x007eadd0 function op_frame_draw_acc_path3      # layout+callees: sorts between op_flash_path3 and op_func_after_ot3d_free, and its named callees match the Switch 0x71003cace0 op_frame_draw_acc_path3's (similarity 0.75: FlushCache, sceDmaSend, sceGsSyncPath); symbols from Fahrenheit's server export
 0x007eb300 function op_func_after_ot3d_free   # op_func_ot_free(slot, 0x20): the free of op_func_after_ot3d_set's list
 0x007eb320 function op_func_after_ot3d_set    # fh v3:bsim1.00 0x007eb230
@@ -7193,6 +7194,7 @@
 0x00806e40 function FieldAddr4_00806e40          # auto-port shape (return argument + offset, cdecl): return (a0 + 0x4); callers: no direct caller; name ours
 0x00806eb0 function std_Tree_Rrotate_copy_00806eb0 # the same code as std_Tree_Rrotate_00a41b40 (0x00a41b40; call targets equal), a copy the compiler kept; own name
 0x00806f10 function std_Tree_Rrotate_copy_00806f10 # the same code as std_Tree_Rrotate_00a41b40 (0x00a41b40; call targets equal), a copy the compiler kept; own name
+0x00807510 function opusTree_EraseRange       # ours: MSVC std::_Tree::erase(first, last) for the opus trees, thiscall (this, out, first, last), ret 0xc: whole tree -> _Tree::clear 0x00807120, *out = begin; else opusTree_Erase each node, successor taken first (++iterator inline); *out = last; ported round 39 (tree::bridge::opus_tree_erase_range)
 0x008075b0 function opusTree_Erase            # ours: MSVC std::_Tree::erase(iterator) for the opus trees, thiscall (this, out, at), ret 8, from 0x00807510: red-black unlink + fix-up (rotations 0x00806d10/0x00806f10, min/max 0x00806dd0/0x00806d90), operator_delete, size-1, *out = successor; header -> std::_Xout_of_range (copies of the same code: 0x006271d0, 0x0069b010, 0x006a1a70, 0x008072b0, 0x00a41ff0); ported round 38
 0x00807830 function yonExtMapDeleteId         # fh v3:bsim1.00 0x00807750
 0x00807860 function yonExtMapRegister         # fh v3:bsim1.00 0x00807780

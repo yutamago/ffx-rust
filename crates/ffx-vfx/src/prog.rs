@@ -1354,6 +1354,144 @@ pub mod bridge {
         MDL_INF_ACTIVE.set(mem, 0);
     }
 
+    /// `0x0073d4d0` (`pppDrawMdlPSimInit`, ours; from `pppDrawMdlPSimDraw`,
+    /// `(obj, def, sim)`): a cloth simulation for the model `def +4`
+    /// (0xffff: none, 0) whose OMD (`env +0x20` model `+0x1c`) is set
+    /// (else 0). `*sim` = `rcbgPSimNew()`, made from the OMD scaled by the
+    /// length of `obj`'s first matrix row (`pppVu0Length`,
+    /// `rcbgPSimCreateFromOMD`); `byte def +0x22` (at most 4) nails
+    /// (`rcbgPSimSetInitCnt`), nail `k` from shape `i16 def +0x7a + 2k`'s
+    /// (`env +0x28`) `u16` indices widened into a `pppMemAlloc` buffer
+    /// (`rcbgPSimAddNail`, freed after; a failed alloc returns 0 there).
+    /// Damping `f32 def +0x24` when byte `+0x23`, gravity `def +0x30`
+    /// when `+0x28`, wind (direction `+0x50`, position `+0x60`, power
+    /// `+0x70`) when `+0x40`; vectors with `w` 0, and every float copied
+    /// through x87 (signalling NaNs come out quiet). The OMD input word
+    /// (`rcbgPSimGetOmdIn`) = 4, 0x14 with byte `+0x74`, then bit 4 off
+    /// and 0x2000 on with `+0x75`, 0x200 with `+0x76`, 8 with `+0x77`,
+    /// 0x20 without `+0x78`. `sim +4..+0x1c` = 0.0, `+0x1c` = `def`.
+    /// Returns 1. The rcbg calls go through `call`; `local` is the
+    /// original's two vectors (0x20 bytes).
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_draw_mdl_psim_init<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        sim: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::heap::bridge::{ENV_SLOT, ppp_mem_alloc, ppp_mem_free};
+        use ffx_bridge::x87::{load, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = Global::<u32>::new(at).ptr(mem).addr;
+            call(mem, f, args)
+        };
+        let copy = |mem: &M, at: u32| store(load(mem.read(def.wrapping_add(at))));
+        let env = |mem: &M| mem.read::<u32>(ENV_SLOT.get(mem));
+        let model: u32 = mem.read(def.wrapping_add(4));
+        if model == 0xffff {
+            return 0;
+        }
+        let models: u32 = mem.read(env(mem).wrapping_add(0x20));
+        let omd = stub::ptr32(
+            mem.read(
+                model
+                    .wrapping_shl(5)
+                    .wrapping_add(0x1c)
+                    .wrapping_add(models),
+            ),
+        );
+        if omd == 0 {
+            return 0;
+        }
+        let made = go(mem, 0x0091_fe40, &[]);
+        mem.write(sim, stub::ptr32(made));
+        let scale = crate::mat::bridge::ppp_vu0_length(mem, obj.wrapping_add(0x10));
+        let s = stub::ptr32(mem.read(sim));
+        go(mem, 0x0091_fd00, &[s, omd, store(load(scale.to_bits()))]);
+        let nails = u32::from(mem.read::<u8>(def.wrapping_add(0x22))).min(4);
+        let s = stub::ptr32(mem.read(sim));
+        go(mem, 0x0091_fef0, &[s, nails]);
+        for k in 0..nails {
+            // a jump table on k (0x0073d7a4)
+            let index = i32::from(mem.read::<i16>(def.wrapping_add(0x7a + 2 * k))).cast_unsigned();
+            let shapes: u32 = mem.read(env(mem).wrapping_add(0x28));
+            let shape = index.wrapping_mul(8).wrapping_add(shapes);
+            let count = |mem: &M| i32::from(mem.read::<i16>(shape.wrapping_add(2)));
+            let e = env(mem);
+            let size = count(mem).wrapping_shl(2).cast_unsigned();
+            let buf = ppp_mem_alloc(mem, e, e.wrapping_add(0x10), size);
+            if buf == 0 {
+                return 0;
+            }
+            let mut i = 0i32;
+            while i < count(mem) {
+                let list = stub::ptr32(mem.read(shape.wrapping_add(4)));
+                let at = i.cast_unsigned();
+                let v = u32::from(mem.read::<u16>(at.wrapping_mul(2).wrapping_add(list)));
+                mem.write(at.wrapping_mul(4).wrapping_add(buf), v);
+                i += 1;
+            }
+            let n = count(mem).cast_unsigned();
+            let s = stub::ptr32(mem.read(sim));
+            go(mem, 0x0091_f850, &[s, k, buf, n]);
+            let e = env(mem);
+            ppp_mem_free(mem, e, e.wrapping_add(0x10), buf);
+        }
+        if mem.read::<u8>(def.wrapping_add(0x23)) != 0 {
+            let damp = copy(mem, 0x24);
+            let s = stub::ptr32(mem.read(sim));
+            go(mem, 0x0091_f7a0, &[s, damp]);
+        }
+        let (dir, pos) = (local, local.wrapping_add(0x10));
+        let vector = |mem: &mut M, to: u32, from: u32| {
+            for i in 0..3 {
+                let v = copy(mem, from + 4 * i);
+                mem.write(to.wrapping_add(4 * i), v);
+            }
+            mem.write(to.wrapping_add(0xc), 0u32);
+        };
+        if mem.read::<u8>(def.wrapping_add(0x28)) != 0 {
+            vector(mem, pos, 0x30);
+            let s = stub::ptr32(mem.read(sim));
+            go(mem, 0x0091_f7c0, &[s, pos]);
+        }
+        if mem.read::<u8>(def.wrapping_add(0x40)) != 0 {
+            vector(mem, dir, 0x50);
+            vector(mem, pos, 0x60);
+            let power = copy(mem, 0x70);
+            let s = stub::ptr32(mem.read(sim));
+            go(mem, 0x0091_f980, &[s, dir, pos, power]);
+        }
+        let s = stub::ptr32(mem.read(sim));
+        let input = go(mem, 0x0091_fdc0, &[s]);
+        let flag = |mem: &M, at: u32| mem.read::<u8>(def.wrapping_add(at)) != 0;
+        mem.write(input, 4u32);
+        if flag(mem, 0x74) {
+            mem.write(input, 0x14u32);
+        }
+        if flag(mem, 0x75) {
+            let w: u32 = mem.read(input);
+            mem.write(input, w & !0x10 | 0x2000);
+        }
+        for (at, bit) in [(0x76, 0x200u32), (0x77, 8)] {
+            if flag(mem, at) {
+                let w: u32 = mem.read(input);
+                mem.write(input, w | bit);
+            }
+        }
+        if !flag(mem, 0x78) {
+            let w: u32 = mem.read(input);
+            mem.write(input, w | 0x20);
+        }
+        for i in (1..7u32).rev() {
+            mem.write(sim.wrapping_add(4 * i), 0u32);
+        }
+        mem.write(sim.wrapping_add(0x1c), stub::ptr32(def));
+        1
+    }
+
     /// `rcbgPSimClearOMD(sim)` (`0x0091f9b0`), called through `call`.
     const PSIM_CLEAR_OMD: u32 = 0x0091_f9b0;
     /// `0x0091fd40(sim)` (releases the simulation and `rcFree`s it),

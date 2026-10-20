@@ -23394,3 +23394,227 @@ fn round39a_opu_motion_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn round39b_tree_erase_range_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_7510);
+        let log = far_recorder(&mut p, 0x0063_0390, &[0], None); // operator_delete
+        let (tree, base, out, local) = (p.alloc(8), p.alloc(0x18 * 70), p.alloc(4), p.alloc(4));
+        let this_call = |m: &mut Oracle, f: u32, this: u32, a: &[u32]| {
+            m.call(f, Conv::Thiscall(this), a).unwrap().eax
+        };
+        for round in 0..1500u32 {
+            p.set(log, 0u32);
+            let n = rng.pick(&[0u32, 1, 2, 3, 5, 7, 8, 15, 20, 31, 32, 50, 64]);
+            build_rb_tree(&mut p, tree, base, n);
+            // in-order position k is node k; n the header (end)
+            let node = |k: u32| if k == n { base } else { base + 0x18 * (1 + k) };
+            let a = rng.below(n + 1);
+            let b = a + rng.below(n + 1 - a);
+            let (a, b) = if rng.chance(15) { (0, n) } else { (a, b) };
+            let (first, last) = (node(a), node(b));
+            let what = format!("erase range round {round} n {n} [{a}, {b})");
+            let f = p.sym(0x0080_7510);
+            let r =
+                p.a.call(f, Conv::Thiscall(tree), &[out, first, last])
+                    .unwrap();
+            let keep: u32 = Mem::read(&p.b, local);
+            let mine = tree::bridge::opus_tree_erase_range(
+                &mut p.b,
+                tree,
+                out,
+                first,
+                last,
+                local,
+                &mut call_original,
+                &mut this_call.clone(),
+            );
+            Mem::write(&mut p.b, local, keep);
+            assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+            p.same(&what);
+        }
+    }
+}
+
+#[test]
+fn round39b_update_phyre_view_projection_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_1910);
+        // the battle camera and the renderer's view-projection: stand-ins
+        // that fill their argument (a frame address: not logged) from `cam`
+        // and `vp`
+        let (cam, vp, log, local) = (p.alloc(0x40), p.alloc(0x40), p.alloc(8), p.alloc(0x80));
+        out_stand_in(&mut p, 0x007c_0070, 0, cam, 16, log, 0, log);
+        out_stand_in(&mut p, 0x0063_9590, 0, vp, 16, log, 0, log);
+        for round in 0..3000u32 {
+            for (src, k) in [(cam, 0u32), (vp, 1)] {
+                for i in 0..16u32 {
+                    let d = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+                    let v = match rng.below(20) {
+                        0 => f32::from_bits(finite(&mut rng)),
+                        1 => rng.pick(&[0.0f32, -0.0, f32::INFINITY, f32::from_bits(0x7fc0_1234)]),
+                        2 if k == 0 => 0.0,
+                        _ => d + f32::from_bits(ranged(&mut rng, -2.0, 2.0)),
+                    };
+                    p.set(src + 4 * i, v);
+                }
+            }
+            p.check(
+                &format!("UpdatePhyreViewProjectionMatrix round {round}"),
+                0x0071_1910,
+                &[],
+                |m| {
+                    let keep = m.read(local, 0x80).unwrap();
+                    fp::bridge::update_phyre_view_projection_matrix(m, local, &mut call_original);
+                    m.write(local, &keep).unwrap();
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+fn round39b_flash_path3_matches_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_aad0);
+        // the fade event (renderer) and the PS2 path: recorded
+        let logs = [
+            far_recorder(&mut p, 0x0064_4d40, &[0; 5], None),
+            far_recorder(&mut p, 0x0062_f880, &[0, 0], None),
+            far_recorder(&mut p, 0x0062_f710, &[0, 0], None),
+        ];
+        let spr = p.alloc(0x200);
+        let (magic, r0, tail, chan) = (
+            p.sym(0x00c6_4ca0),
+            p.sym(0x00c8_f508),
+            p.sym(0x011a_0770),
+            p.sym(0x0233_28e0),
+        );
+        for round in 0..3000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.put(o::SPR_TOP, 0i8);
+            p.set(p.sym(o::SPR_STACK.sym), spr);
+            p.fill(spr, 0x100, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.fill(tail, 0x10, &mut rng);
+            p.set(chan, rng.next());
+            p.set(magic, rng.pick(&[0x182u32, 0x182, 0x181, 0]));
+            let rgba = rng.next();
+            let any = rng.next();
+            let flags = rng.pick(&[0x20u32, 0x21, 0xff, 0x1f, 0, any]);
+            let alpha = rng.next();
+            p.check(
+                &format!("op_flash_path3 round {round} {rgba:#x} {flags:#x} {alpha:#x}"),
+                0x007e_aad0,
+                &[rgba, flags, alpha],
+                |m| {
+                    o::op_flash_path3(m, rgba, flags, alpha, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round39b_psim_init_matches_the_original() {
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_d4d0);
+        let rets = p.alloc(8);
+        // the rcbg simulation calls: recorded (vectors read through)
+        let logs = [
+            far_recorder(&mut p, 0x0091_fe40, &[], Some(rets)), // rcbgPSimNew
+            far_recorder(&mut p, 0x0091_fd00, &[0, 0, 0], None), // CreateFromOMD
+            far_recorder(&mut p, 0x0091_fef0, &[0, 0], None),   // SetInitCnt
+            far_recorder(&mut p, 0x0091_f850, &[0, 0, 0, 0], None), // AddNail
+            far_recorder(&mut p, 0x0091_f7a0, &[0, 0], None),   // AddDamp
+            far_recorder(&mut p, 0x0091_f7c0, &[0, 4], None),   // AddGravity
+            far_recorder(&mut p, 0x0091_f980, &[0, 4, 4, 0], None), // AddWind
+            far_recorder(&mut p, 0x0091_fdc0, &[0], Some(rets + 4)), // GetOmdIn
+        ];
+        let (env_slot, env, arena) = (p.alloc(4), p.alloc(0x40), p.alloc(0x2000));
+        // models up to 0xffff (the 'none' id must stop before reading its slot);
+        // shapes -8..8 (signed)
+        let (models, shapes, lists) = (p.alloc(0x20 * 0x1_0000), p.alloc(0x80), p.alloc(0x400));
+        let (obj, def, sim, input, local) = (
+            p.alloc(0x40),
+            p.alloc(0x100),
+            p.alloc(0x20),
+            p.alloc(4),
+            p.alloc(0x20),
+        );
+        p.put(heap::bridge::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        p.set(rets + 4, input);
+        for round in 0..2000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.check("pppInitEnv", 0x0071_69d0, &[env, 0, arena, 0x2000], |m| {
+                heap::bridge::ppp_init_env(m, env, 0, arena, 0x2000);
+                None
+            });
+            p.set(env + 0x20, models);
+            p.set(env + 0x28, shapes + 0x40);
+            p.set(models + 0x20 * 0xffff + 0x1c, 0x1234u32);
+            for m in 0..4u32 {
+                let omd = if rng.chance(15) { 0 } else { 0x1000 + m };
+                p.set(models + 0x20 * m + 0x1c, omd);
+            }
+            for s in 0..16u32 {
+                let n = rng.pick(&[0i16, 1, 3, 8, 12, 0x7fff, -1]);
+                p.set(shapes + 8 * s + 2, n);
+                p.set(shapes + 8 * s + 4, lists + 0x40 * s);
+            }
+            for i in 0..0x200u32 {
+                p.set(lists + 2 * i, rng.next() as u16);
+            }
+            p.set(rets, rng.next());
+            p.fill(def, 0x100, &mut rng);
+            p.set(def + 4, rng.pick(&[0xffffu32, 0, 1, 2, 3]));
+            p.set(def + 0x22, rng.below(7) as u8);
+            for k in 0..4u32 {
+                p.set(def + 0x7a + 2 * k, rng.below(16) as i16 - 8);
+            }
+            for at in [0x23u32, 0x28, 0x40, 0x74, 0x75, 0x76, 0x77, 0x78] {
+                p.set(def + at, rng.pick(&[0u8, 0, 1, 0x80]));
+            }
+            for at in [
+                0x24u32, 0x30, 0x34, 0x38, 0x50, 0x54, 0x58, 0x60, 0x64, 0x68, 0x70,
+            ] {
+                let v = if rng.chance(5) {
+                    0x7fc0_0001
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(def + at, v);
+            }
+            for i in 0..4u32 {
+                p.set(obj + 0x10 + 4 * i, ranged(&mut rng, -20.0, 20.0));
+            }
+            p.fill(sim, 0x20, &mut rng);
+            // the frame's vectors start dirty (their w must be written)
+            p.fill(local, 0x20, &mut rng);
+            p.set(input, rng.next());
+            p.check(
+                &format!("pppDrawMdlPSimInit round {round}"),
+                0x0073_d4d0,
+                &[obj, def, sim],
+                |m| {
+                    let keep = m.read(local, 0x20).unwrap();
+                    let r = pb::ppp_draw_mdl_psim_init(m, obj, def, sim, local, &mut call_original);
+                    m.write(local, &keep).unwrap();
+                    Some(r)
+                },
+            );
+        }
+    }
+}

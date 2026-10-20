@@ -313,6 +313,58 @@ pub mod bridge {
         out
     }
 
+    /// `0x00807510` (`opusTree_EraseRange`, ours; MSVC's
+    /// `std::_Tree::erase(first, last)` on an opus tree, thiscall `(this,
+    /// out, first, last)`, `ret 0xc`): the whole tree (`first` its
+    /// leftmost node, `last` the header) is cleared by `0x00807120`
+    /// (`_Tree::clear`, through `this_call`) and `*out` = the header's
+    /// leftmost (the header). Otherwise each node from `first` up to
+    /// `last` goes through `opusTree_Erase` (its successor taken first:
+    /// the leftmost of a right subtree, else the first ancestor it is not
+    /// the right child of; the header stays put, and erasing it throws);
+    /// `*out` = `last`. Returns `out`. `local` is the original's word that
+    /// `opusTree_Erase` writes each successor to.
+    #[allow(clippy::too_many_arguments)]
+    pub fn opus_tree_erase_range<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        out: u32,
+        first: u32,
+        last: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let head = rd(mem, this);
+        if first == rd(mem, head) && last == head {
+            let f = ffx_bridge::Global::<u32>::new(0x0080_7120).ptr(mem).addr;
+            this_call(mem, f, this, &[]);
+            let begin = rd(mem, rd(mem, this));
+            mem.write(out, begin);
+            return out;
+        }
+        let mut at = first;
+        while at != last {
+            let next = if nil(mem, at) {
+                at
+            } else if !nil(mem, rd(mem, at.wrapping_add(8))) {
+                opus_tree_min(mem, rd(mem, at.wrapping_add(8)))
+            } else {
+                let mut child = at;
+                let mut up = rd(mem, at.wrapping_add(4));
+                while !nil(mem, up) && child == rd(mem, up.wrapping_add(8)) {
+                    child = up;
+                    up = rd(mem, up.wrapping_add(4));
+                }
+                up
+            };
+            opus_tree_erase(mem, this, local, at, call, this_call);
+            at = next;
+        }
+        mem.write(out, at);
+        out
+    }
+
     /// `opusTree_Min(node)` (`0x00806db0`): the leftmost node below
     /// `node` (following `+0` until the next is nil).
     pub fn opus_tree_min(mem: &impl Mem, node: u32) -> u32 {

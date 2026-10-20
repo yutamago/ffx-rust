@@ -5611,6 +5611,41 @@ ported! {
             &mut |_, f, this, a| super::call_thiscall(f, this, a),
         )
     }
+    /// `opusTree_EraseRange(this, out, first, last)` (`0x00807510`, `ret
+    /// 0xc`): the word `opusTree_Erase` writes in this shim's frame.
+    opusTree_EraseRange @ 0x0080_7510 => extern "thiscall" fn opus_tree_erase_range(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tree::bridge::opus_tree_erase_range(
+            &mut mem(),
+            this,
+            out,
+            first,
+            last,
+            local,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, this, a| super::call_thiscall(f, this, a),
+        )
+    }
+    /// `UpdatePhyreViewProjectionMatrix()` (`0x00711910`): the two local
+    /// matrices in this shim's frame.
+    UpdatePhyreViewProjectionMatrix @ 0x0071_1910 => extern "C" fn update_phyre_view_projection_matrix() {
+        let mut frame = super::StackFrame::<32>::new();
+        let local = frame.at();
+        fp::bridge::update_phyre_view_projection_matrix(&mut mem(), local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_flash_path3(rgba, flags, alpha)` (`0x007eaad0`): the argument
+    /// words whole (the fade event's overlap their upper bytes).
+    op_flash_path3 @ 0x007e_aad0 => extern "C" fn op_flash_path3(rgba: u32, flags: u32, alpha: u32) {
+        op::bridge::op_flash_path3(&mut mem(), rgba, flags, alpha, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawMdlPSimInit(obj, def, sim)` (`0x0073d4d0`): the two local
+    /// vectors in this shim's frame.
+    pppDrawMdlPSimInit @ 0x0073_d4d0 => extern "C" fn ppp_draw_mdl_psim_init(obj: u32, def: u32, sim: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let local = frame.at();
+        prog::bridge::ppp_draw_mdl_psim_init(&mut mem(), obj, def, sim, local, &mut |_, f, a| call_ptr(f, a))
+    }
     // ---- round 38 c ----
     /// `setPolyQuad0434(id, quad, setup)` (`0x007128d0`).
     setPolyQuad0434 @ 0x0071_28d0 => extern "C" fn set_poly_quad_0434(id: u32, quad: u32, setup: u32) -> u32 {
