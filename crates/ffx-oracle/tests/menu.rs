@@ -12307,3 +12307,94 @@ fn menu_round26_pad_analog_and_save_slot_rows_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Code logging `id`, the string at `[esp + 4]` with its terminator (a
+/// frame buffer) and the word arguments `args` (indices), returning
+/// `[cell]`.
+fn seq_code_str_args(log: u32, id: u32, args: &[u8], cell: u32) -> Vec<u8> {
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+    code.extend([&[0xc7, 0x01][..], &id.to_le_bytes()].concat()); // mov dword [ecx], id
+    #[rustfmt::skip]
+    code.extend([
+        0x83, 0xc1, 0x04,       // add ecx, 4
+        0x8b, 0x54, 0x24, 0x04, // mov edx, [esp + 4]
+        0x8a, 0x02,             // copy: mov al, [edx]
+        0x88, 0x01,             // mov [ecx], al
+        0x41, 0x42,             // inc ecx; inc edx
+        0x84, 0xc0,             // test al, al
+        0x75, 0xf6,             // jnz copy
+    ]);
+    for &k in args {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x01, 0x83, 0xc1, 0x04]); // mov eax, [esp + 4 + 4k]; mov [ecx], eax; add ecx, 4
+    }
+    code.extend([&[0x89, 0x0d][..], &l].concat()); // mov [log], ecx
+    code.extend([&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()); // mov eax, [cell]; ret
+    code
+}
+
+#[test]
+fn menu_round26_summon_plate_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0026_6e10) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008a_c850u32, 1u8),
+        (0x0090_5930, 6),
+        (0x0090_3bb0, 9),
+        (0x008a_98c0, 1),
+        (0x008a_9990, 1),
+        (0x008a_9970, 1),
+        (0x008a_99b0, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let text_cell = t.alloc(&[0; 4]);
+    let code = seq_code_str_args(log, 0x0090_1660, &[1, 2, 3, 4, 5], text_cell);
+    jump_stub(&mut t, 0x0090_1660, &code);
+    cells.push(text_cell);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let l = t.rng.pick(&[0u32, 1, 11, 11, 12, 0xb00]);
+        t.put(lang, l);
+        // HP/MP values: small, wide or negative (the format is %5d/%4d)
+        for &c in &cells[3..7] {
+            let v = t
+                .rng
+                .pick(&[0u32, 1, 999, 9999, 99_999, 0xffff_ffff, 0x8000_0000]);
+            let v = if t.rng.below(2) == 0 {
+                v
+            } else {
+                t.rng.below(100_000)
+            };
+            t.put(c, v);
+        }
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let (chr, alpha) = (t.rng.next(), t.rng.next());
+        t.twin(
+            "DrawCrossMenuSummonPlateClut",
+            0x008e_6e10,
+            &[chr, x, y, alpha],
+            U32,
+            |o| {
+                w(tk::draw_cross_menu_summon_plate_clut(
+                    o,
+                    chr,
+                    [f32::from_bits(x), f32::from_bits(y)],
+                    alpha,
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}

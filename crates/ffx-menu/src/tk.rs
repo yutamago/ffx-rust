@@ -13466,6 +13466,105 @@ pub mod bridge {
         let (tx, ty) = (to_f32(x.wrapping_add(0x1b3)), to_f32(y.wrapping_add(5)));
         call(mem, timer, &[frames, tx, ty, 0]);
     }
+    /// `DrawCrossMenuSummonPlateClut(chr, x, y, alpha)` (`0x008e6e10`,
+    /// Fahrenheit's name): a character's name and HP/MP plate.
+    ///
+    /// - The name: `ToMakeBtlEasyEdgeFont(TOGetSaveChrName(chr),
+    ///   f32(remapX2(160) + x), f32(remapY2(10) + y), alpha, 0.82, 1)`.
+    /// - Offsets `(wide, tall, shift)` are `(22, 1, 11)` when
+    ///   `TOGetFFXLangJmp()` is 11, else 0.
+    /// - HP: label shape 0x21 (`TOMkpShapeXYWHUV`) at `(remapX2(480) + x,
+    ///   remapY2(8) + y)`, sized `remapX2(wide + 61.5)` by
+    ///   `remapY2(tall + 23)`, texels `(356, 15, wide + 436, 41 + tall) / 1024`; then
+    ///   `sprintf(text, "%5d/%5d", TkMenuGetHP(chr), TkMenuGetMaxHP(chr))`
+    ///   (max asked first) through `TOMkpCrossEasyStrFontSClut(text,
+    ///   remapX2(594) + x + shift, remapY2(9) + y, 0x25, 0.68, 0)`.
+    /// - MP: shape 0x22 at `(remapX2(530) + x, remapY2(35) + y)`, sized
+    ///   `remapX2(wide + 49)` by `remapY2(23)`, texels `(510, 15, wide + 570,
+    ///   41) / 1024`; `"%4d/%4d"` of
+    ///   the MP at `(remapX2(615) + x + shift, remapY2(37) + y)`.
+    ///
+    /// Each value is rounded to `f32`; remaps run `h`, `w`, `y`, `x`.
+    /// `text` is the original's 32-byte frame buffer. Returns the last text
+    /// call's `eax`.
+    pub fn draw_cross_menu_summon_plate_clut<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        [x, y]: [f32; 2],
+        alpha: u32,
+        text: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store};
+        const TEXEL: f64 = 1.0 / 1024.0;
+        let (xf, yf) = (load(x.to_bits()), load(y.to_bits()));
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let name_y = store(add(remap(mem, true, 10.0), yf));
+        let name_x = store(add(remap(mem, false, 160.0), xf));
+        let chr_name = at(mem, 0x008a_c850);
+        let name = call(mem, chr_name, &[chr]);
+        let edge_font = at(mem, 0x0090_5930);
+        let name_scale = [0.82f32, 1.0].map(f32::to_bits);
+        call(
+            mem,
+            edge_font,
+            &[name, name_x, name_y, alpha, name_scale[0], name_scale[1]],
+        );
+        let lang = at(mem, 0x008a_c2f0);
+        let (wide, tall, shift) = if call(mem, lang, &[]) == 11 {
+            (22.0, 1.0, 11.0)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        let f32_of = |v: f64| f32::from_bits(store(v));
+        let shape = at(mem, 0x0090_3bb0);
+        let sprintf = mem.read::<u32>(at(mem, 0x00b0_c3dc));
+        let str_font = at(mem, 0x0090_1660);
+        let digit_scale = 0.68f32.to_bits();
+        // (shape, x, y, w, h, uv, value, max, format, text x, text y)
+        let hp = (
+            0x21,
+            [480.0, 8.0],
+            [f32_of(add(wide, 61.5)), f32_of(add(tall, 23.0))],
+            [356.0f32, 15.0].map(|v| (v / 1024.0).to_bits()),
+            [
+                store(mul(TEXEL, add(wide, 436.0))),
+                store(mul(add(41.0, tall), TEXEL)),
+            ],
+            [0x008a_98c0, 0x008a_9990, 0x00b6_684c],
+            [594.0, 9.0],
+        );
+        let mp = (
+            0x22,
+            [530.0, 35.0],
+            [f32_of(add(wide, 49.0)), 23.0],
+            [510.0f32, 15.0].map(|v| (v / 1024.0).to_bits()),
+            [
+                store(mul(add(wide, 570.0), TEXEL)),
+                (41.0f32 / 1024.0).to_bits(),
+            ],
+            [0x008a_9970, 0x008a_99b0, 0x00b6_6854],
+            [615.0, 37.0],
+        );
+        let mut eax = 0;
+        for (id, [sx, sy], [sw, sh], [u0, v0], [u1, v1], [value, max, format], [tx, ty]) in [hp, mp]
+        {
+            let h = store(remap(mem, true, sh));
+            let w = store(remap(mem, false, sw));
+            let top = store(add(remap(mem, true, sy), yf));
+            let left = store(add(remap(mem, false, sx), xf));
+            call(mem, shape, &[id, left, top, w, h, u0, v0, u1, v1]);
+            let (value, max) = (at(mem, value), at(mem, max));
+            let max = call(mem, max, &[chr]);
+            let value = call(mem, value, &[chr]);
+            call(mem, sprintf, &[text, at(mem, format), value, max]);
+            let top = store(add(remap(mem, true, ty), yf));
+            let left = store(add(add(remap(mem, false, tx), xf), shift));
+            eax = call(mem, str_font, &[text, left, top, 0x25, digit_scale, 0]);
+        }
+        eax
+    }
 }
 
 #[cfg(test)]

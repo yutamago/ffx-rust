@@ -4278,6 +4278,13 @@ ported! {
         let digits = frame.at();
         tk::menu_save_load_draw_slot_row(&mut mem(), window, [x, y], row, mode, digits, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `DrawCrossMenuSummonPlateClut(chr, x, y, alpha)`: the MP text's `eax`.
+    DrawCrossMenuSummonPlateClut @ 0x008e_6e10 => extern "C" fn draw_cross_menu_summon_plate_clut(chr: u32, x: f32, y: f32, alpha: u32) -> u32 {
+        // the original's 32-byte sprintf buffer
+        let mut frame = super::StackFrame::<8>::new();
+        let text = frame.at();
+        tk::draw_cross_menu_summon_plate_clut(&mut mem(), chr, [x, y], alpha, text, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry

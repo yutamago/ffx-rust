@@ -136,6 +136,9 @@ the u8 ids the menu cycles through, indexed by `g_TkMenuCurrentPlayerPos`
 (`TkMenuGetCurrentPlayer` `0x008a9860`, `TkMenuGetCurrentSummon`
 `0x008a9880`). Character ids below 8 are party members; 8 and up are
 aeons (`TkMn2DrawOverDrive` draws the Overdrive mode only below 8).
+`DrawCrossMenuSummonPlateClut` (`0x008e6e10`) draws a name with HP and MP
+as `"%5d/%5d"` and `"%4d/%4d"` (current/max); language 11 widens the
+labels.
 
 ## Save/load slots
 
