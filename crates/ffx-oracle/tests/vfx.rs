@@ -20718,7 +20718,7 @@ fn round36a_trails_point_lights_and_commands_match_the_original() {
                     host,
                     cmd,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 ))
             });
 
@@ -20904,7 +20904,7 @@ fn round36b_rotation_point_light_models_and_shape_fields_match_the_original() {
                     host,
                     cmd,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 ))
             });
 
@@ -21193,7 +21193,7 @@ fn round36c_vertex_point_lights_and_shape_field_emits_match_the_original() {
                         def,
                         ctrl,
                         &mut call_original,
-                        &mut call_original_f_nan,
+                        &mut call_original_f,
                     ))
                 });
             }
@@ -21224,7 +21224,7 @@ fn round36c_vertex_point_lights_and_shape_field_emits_match_the_original() {
                     scratch + 0x50,
                     junk,
                     &mut call_original,
-                    &mut call_original_f_nan,
+                    &mut call_original_f,
                 );
                 m.write(scratch, &keep).unwrap();
                 Some(r)
