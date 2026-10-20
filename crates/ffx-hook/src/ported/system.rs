@@ -1268,6 +1268,18 @@ ported! {
     TOBtlGetChangePad @ 0x008a_2160 => extern "C" fn to_btl_get_change_pad(w: u32) -> u32 {
         tolib::bridge::btl_get_change_pad(&mut mem(), w, call_sym)
     }
+    /// `TkMenuInitSaveChoice_008b3680(w)`.
+    TkMenuInitSaveChoice_008b3680 @ 0x008b_3680 => extern "C" fn tk_menu_init_save_choice(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        menu::bridge::init_save_choice(&mut mem(), w, scratch, call_sym)
+    }
+    /// `TkMenuDrawSaveChoice_008b3860()`.
+    TkMenuDrawSaveChoice_008b3860 @ 0x008b_3860 => extern "C" fn tk_menu_draw_save_choice() -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        let scratch = frame.at();
+        menu::bridge::draw_save_choice(&mut mem(), scratch, call_sym)
+    }
     /// `TOOpenBtlWinLeft()`.
     TOOpenBtlWinLeft @ 0x008a_8620 => extern "C" fn to_open_btl_win_left() -> u32 {
         tolib::bridge::open_btl_win_side(&mut mem(), false, call_sym)

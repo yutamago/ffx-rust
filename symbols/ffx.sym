@@ -10330,8 +10330,10 @@
 0x008b3580 function TOSaveMenuOpen_008b3580 # cdecl(menu): as TOLoadMenuOpen with 0x0186628a = 0; name ours
 0x008b3610 function TOClearBlock_008b3610     # (): memset(AddrOfGlobal0159e468_008b3630(), 0, 0x400); name ours
 0x008b3630 function AddrOfGlobal0159e468_008b3630 # auto-port shape (return address of global, cdecl): return &0x0159e468; callers: ; name ours
+0x008b3680 function TkMenuInitSaveChoice_008b3680 # cdecl(w): the +8 function of the save choice window 0x008b3c70 registers: TOGetMessageWH(0, TOMenuGetSaveMes(0x2000), &w, &h, 0, 0) into its frame (unused), w+0x28 = 0, u16 0x01866288 = widest TkMenuDraw1612Width(TOMenuGetSaveMes(0x2001/0x2002)) (signed > against the u16), TOSeqStartScene(1, "scene2"), TOSeqStopScene(1, "scene3"/"scene33"/"scene34"); returns the last eax; ported (system r40, menu::bridge::init_save_choice); name ours
 0x008b3730 function TOSaveSlotShown_008b3730 # cdecl(_, i): g_TkSaveSlots[i] == 1, or with byte 0x0186628a set <= 2 or 4; name ours
 0x008b3790 function TOCloseHelpWindow_008b3790 # (): window 0x0186625c: +0x41 = 1, pointer cleared; name ours
+0x008b3860 function TkMenuDrawSaveChoice_008b3860 # (): the +0x10 draw function of the same window: TkVU1SyncPath, TOMenuOpenPktBuffTmp; question 0x2000 measured (h + 10, ftol(w)), widest of choices 0x2001/0x2002 (second kept when its f32 width > first as i16); box 0x008f9a40(x, y, w + 0x3e, h + 0x45) centred on 0x200 x 0x1a0, TOMkpShapeXY(0x2b, x+8, y+8), question 0x00901cb0(text, x+0x2e, y+0xd, 0), choices at ((0x200 - widest)/2, h + 0xd + y) 0x14 apart, greyed when byte 0x01866268[i] is 0, cursor TOMakePktShapeCursor(0, x, y) on row u32 0x01866264; TOMenuDrawKickTmp, TkVU1SyncPath (its eax returned); ported (system r40, menu::bridge::draw_save_choice); name ours
 0x008b3a40 function TOMenuMakeSaveFileName       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BASLUS-20312'; Switch 0x71004dde30 TOMenuMakeSaveFileName (symbols from Fahrenheit's server export); (): 0x023cc0a0 = product code by TOGetFFXLang (0/16 BISLPS-25088, 1 BASLUS-20312, 2 BESCES-50491, 3 -50494, 4 -50492, 5 -50493, 9 BKSLPM-67513, 17 BISLPM-65115, 18 BESCES-50490, others unchanged) + 'FF0906%02d'; 0x01866240 = 0
 0x008b3cf0 function AtelAllClearCallbackQue   # fh switch:bsim1.00 0x710044df20
 0x008b3d10 function SetFieldConst28_008b3d10     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x28)] = 0x0; return a0; callers: no direct caller; name ours
@@ -16536,9 +16538,12 @@
 0x01865f00 label    g_FFXVideoMode            # TOGetFFXVideoMode
 0x01865f20 label g_TOSeqSlots # 0x100 per scene: 8 slots of 0x20 (+0 u16 state: 0 free, 1..3 running, 4 stopped; +4 u16 draw-continue; +8 name; +0x1c handle): TOSeqStartScene/StopScene/InitAllScene/CheckTermScene; name ours
 0x01866254 label    g_TkMenuSaveLoadWindow    # the save/load menu's window (TkMenuCtrlSaveLoad, TkMenuSaveLoadCloseWindow)
+0x01866264 label g_TkMenuSaveChoiceRow # u32 the save choice window's cursor row (TkMenuDrawSaveChoice_008b3860 draws the cursor there); name ours
+0x01866268 label g_TkMenuSaveChoiceEnabled # u8[2] the save choice window's choices; 0 draws one greyed (TkMenuDrawSaveChoice_008b3860); name ours
 0x0186626a label    g_TkMenuSaveLoadToggles   # 2 x u8 (MenuSaveLoad_ResetToggles)
 0x01866278 label    g_TkSaveSlotsUsed         # MenuSaveLoad_MarkSlots
 0x0186627c label g_MenuSaveCounter # u32: MenuSave_PackSave adds 1 per save and stores it capped at 0x80000000 in the header's +0; name ours
+0x01866288 label g_TkMenuSaveChoiceWidth # u16 the widest save choice text (TkMenuInitSaveChoice_008b3680); name ours
 0x01866290 label    g_TkSaveSlots             # 99 x u8 slot states (0 free, 1 used, 3 marked)
 0x018663c4 label    g_TkMenuSaveLoadActive    # cleared by TkMenuSaveLoadActive
 0x018676f0 label    g_MsgWindows              # message window pointers: +0 in use (i16), +0x2c state, +0x2e status (TOGetMessageStatus), +0x100 handler per state, +0x114 current handler (TOCloseMessage, TOSetMessageFunc, TOControlMessage)

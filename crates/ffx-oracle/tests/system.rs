@@ -23980,3 +23980,94 @@ fn round40_change_pad_matches_the_original_on_the_snapshot() {
     };
     round40_change_pad(&mut a, &mut b, &mut Xorshift(0x4040_0022));
 }
+
+/// Round 40 group C: the save menu's choice window,
+/// `TkMenuInitSaveChoice_008b3680` and `TkMenuDrawSaveChoice_008b3860`,
+/// over logging stand-ins; the `TOGetMessageWH` stand-in stores the next
+/// two table words as the width (`f32`) and height.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn round40_save_choice(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_system::menu::bridge as t;
+    let log = alloc(a, b, 0x8000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let seq = round38_seq(counter, table);
+    // the next table word to [esp + 0xc] (&w) and the one after to
+    // [esp + 0x10] (&h)
+    let mut wh = Vec::new();
+    for off in [0x0cu8, 0x10] {
+        wh.extend_from_slice(&[0x8b, 0x0d]);
+        wh.extend_from_slice(&counter.to_le_bytes());
+        wh.extend_from_slice(&[0x8b, 0x14, 0x8d]);
+        wh.extend_from_slice(&table.to_le_bytes());
+        wh.extend_from_slice(&[0x8b, 0x44, 0x24, off, 0x89, 0x10, 0xff, 0x05]);
+        wh.extend_from_slice(&counter.to_le_bytes());
+    }
+    let stands: Vec<Stand> = vec![
+        (0x0088_ec60, vec![], vec![], seq.clone()),
+        (0x008b_ef30, vec![], vec![], vec![]),
+        (0x008b_ee30, vec![0], vec![], seq.clone()),
+        (0x008b_9650, vec![0, 1, 4, 5], vec![], wh),
+        (0x008d_c9e0, vec![0], vec![], seq.clone()),
+        (0x008a_f0d0, vec![0, 1], vec![], seq.clone()),
+        (0x008a_f4f0, vec![0, 1], vec![], seq),
+        (0x008f_9a40, vec![0, 1, 2, 3], vec![], vec![]),
+        (0x0090_3a10, vec![0, 1, 2], vec![], vec![]),
+        (0x0090_1cb0, vec![0, 1, 2, 3], vec![], vec![]),
+        (0x008f_eb00, vec![0, 1, 2], vec![], vec![]),
+        (0x008b_ea20, vec![], vec![], vec![]),
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| eax(m, sym, args);
+    let scratch = b.stack_range().start + 0x1000;
+    let w = alloc(a, b, 0x40);
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x100 {
+            let v = match rng.next() % 5 {
+                0 => rng.next(),
+                1 => rng.float().to_bits(),
+                2 => rng.next() % 0x300,
+                _ => ((rng.next() % 6000) as f32 / 10.0).to_bits(),
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        for j in 0..0x10 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        put(a, b, a.rebase(0x0186_6268), rng.next() as u16 & 0x0101);
+        put(
+            a,
+            b,
+            a.rebase(0x0186_6264),
+            [0u32, 1, 2, rng.next()][(rng.next() % 4) as usize],
+        );
+        put(a, b, a.rebase(0x0186_6288), rng.next() as u16);
+        if k % 2 == 0 {
+            let want = eax(a, 0x008b_3860, &[]);
+            assert_eq!(want, t::draw_save_choice(b, scratch, call), "draw {k}");
+        } else {
+            let want = eax(a, 0x008b_3680, &[w]);
+            assert_eq!(want, t::init_save_choice(b, w, scratch, call), "init {k}");
+        }
+        same_memory(&format!("save choice {k}"), a, b);
+    }
+}
+
+#[test]
+fn round40_save_choice_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round40_save_choice(&mut a, &mut b, &mut Xorshift(0x4040_0031));
+}
+
+#[test]
+fn round40_save_choice_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round40_save_choice(&mut a, &mut b, &mut Xorshift(0x4040_0032));
+}

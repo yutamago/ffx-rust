@@ -517,4 +517,137 @@ pub mod bridge {
     ) -> u32 {
         menu_text(mem, 0x0078_fbb0, 0xc, id, call)
     }
+
+    /// The low half of a word (`mov [..], ax` / `movzx .., ax`).
+    fn low16(v: u32) -> u16 {
+        let b = v.to_le_bytes();
+        u16::from_le_bytes([b[0], b[1]])
+    }
+
+    /// `i16` of the low half (`movsx .., ax`).
+    fn signed16(v: u32) -> i32 {
+        i32::from(low16(v).cast_signed())
+    }
+
+    /// The save choice window's texts in `TOMenuGetSaveMes`: the question
+    /// (0x2000) and the two choices (0x2001, 0x2002).
+    const SAVE_QUESTION: u32 = 0x2000;
+
+    /// `TkMenuInitSaveChoice_008b3680(w)` (own name; the `+8` function of
+    /// the window `0x008b3c70` registers, the one drawn by
+    /// [`draw_save_choice`]): the question measured
+    /// (`TOGetMessageWH(0, text, ..)`, the results left in the frame,
+    /// `scratch` here, 8 bytes), `w + 0x28` cleared, the widest choice
+    /// (`TkMenuDraw1612Width` of texts 0x2001 and 0x2002, compared signed
+    /// against the `u16`) kept in `u16 0x01866288`, then scenes `scene2`
+    /// started and `scene3`, `scene33`, `scene34` stopped on layer 1
+    /// (`TOSeqStartScene` / `TOSeqStopScene`); returns the last one's
+    /// `eax`.
+    pub fn init_save_choice<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const SAVE_MES: u32 = 0x008b_ee30;
+        let text = call(mem, SAVE_MES, &[SAVE_QUESTION]);
+        call(
+            mem,
+            0x008b_9650,
+            &[0, text, scratch, scratch.wrapping_add(4), 0, 0],
+        );
+        mem.write(w.wrapping_add(0x28), 0u32);
+        let widest = mem.rebase(0x0186_6288);
+        mem.write(widest, 0u16);
+        for id in [SAVE_QUESTION + 1, SAVE_QUESTION + 2] {
+            let text = call(mem, SAVE_MES, &[id]);
+            let width = call(mem, 0x008d_c9e0, &[text]);
+            if width.cast_signed() > i32::from(mem.read::<u16>(widest)) {
+                mem.write(widest, low16(width));
+            }
+        }
+        let scene = |mem: &M, at: u32| mem.rebase(at);
+        let s = scene(mem, 0x00b6_2fc4);
+        call(mem, 0x008a_f0d0, &[1, s]);
+        let mut eax = 0;
+        for at in [0x00b6_2fcc, 0x00b6_2fd4, 0x00b6_2fdc] {
+            let s = scene(mem, at);
+            eax = call(mem, 0x008a_f4f0, &[1, s]);
+        }
+        eax
+    }
+
+    /// `TkMenuDrawSaveChoice_008b3860()` (own name; the `+0x10` draw
+    /// function of the window `0x008b3c70` registers): the save menu's
+    /// two-choice box. Between `TkVU1SyncPath` calls and with the temporary
+    /// packet buffer open (`TOMenuOpenPktBuffTmp` .. `TOMenuDrawKickTmp`):
+    /// - the question (`TOMenuGetSaveMes(0x2000)`) measured with
+    ///   `TOGetMessageWH(0, text, &w, &h, 0, 0)`; `h + 10` and `ftol(w)`
+    ///   (low halves) are its size; the choices' widths are `ftol` of
+    ///   theirs, the second kept only when wider than the first (an x87
+    ///   compare against the first as `i16`; a NaN keeps the first);
+    /// - the box `0x008f9a40(x, y, w + 0x3e, h + 0x45)` centred on a
+    ///   0x200 × 0x1a0 screen (halves truncated toward 0, sizes as `i16`),
+    ///   the shape 0x2b at `(x + 8, y + 8)` (`TOMkpShapeXY`), the
+    ///   question at `(x + 0x2e, y + 0xd)` (`0x00901cb0(text, x, y, 0)`);
+    /// - each choice at `((0x200 - widest) / 2, h + 0xd + y)`, 0x14 apart,
+    ///   greyed (last argument 1) when its byte at `0x01866268` is 0, with
+    ///   the cursor (`TOMakePktShapeCursor(0, x, y)`) on the row
+    ///   `0x01866264` holds.
+    ///
+    /// `scratch` (8 bytes) holds `TOGetMessageWH`'s results (the
+    /// original's frame). Returns the last `TkVU1SyncPath`'s `eax`.
+    pub fn draw_save_choice<M: Mem>(
+        mem: &mut M,
+        scratch: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::ftol;
+        const SYNC: u32 = 0x0088_ec60;
+        const SAVE_MES: u32 = 0x008b_ee30;
+        const TEXT: u32 = 0x0090_1cb0;
+        let (out_w, out_h) = (scratch, scratch.wrapping_add(4));
+        // TOGetMessageWH(0, TOMenuGetSaveMes(id), &w, &h, 0, 0)
+        let measure = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, id: u32| {
+            let text = call(mem, SAVE_MES, &[id]);
+            call(mem, 0x008b_9650, &[0, text, out_w, out_h, 0, 0]);
+        };
+        let width = |mem: &M| ftol(mem, f64::from(mem.read::<f32>(out_w)));
+        call(mem, SYNC, &[]);
+        call(mem, 0x008b_ef30, &[]);
+        measure(mem, &mut call, SAVE_QUESTION);
+        let height = mem.read::<u16>(out_h).wrapping_add(10);
+        let question_w = low16(width(mem));
+        measure(mem, &mut call, SAVE_QUESTION + 1);
+        let first = low16(width(mem));
+        let mut widest = first;
+        measure(mem, &mut call, SAVE_QUESTION + 2);
+        let second: f32 = mem.read(out_w);
+        if f64::from(second) > f64::from(first.cast_signed()) {
+            widest = low16(width(mem));
+        }
+        let box_w = i32::from(question_w.wrapping_add(0x3e).cast_signed());
+        let box_h = i32::from(height.wrapping_add(0x45).cast_signed());
+        let x = signed16(((0x200 - box_w) / 2).cast_unsigned());
+        let y = signed16(((0x1a0 - box_h) / 2).cast_unsigned());
+        let choice_x = ((0x200 - i32::from(widest.cast_signed())) / 2).cast_unsigned();
+        let mut row = i32::from(height.cast_signed()) + 0xd + y;
+        let at = |v: i32| v.cast_unsigned();
+        call(mem, 0x008f_9a40, &[at(x), at(y), at(box_w), at(box_h)]);
+        call(mem, 0x0090_3a10, &[0x2b, at(x + 8), at(y + 8)]);
+        let text = call(mem, SAVE_MES, &[SAVE_QUESTION]);
+        call(mem, TEXT, &[text, at(x + 0x2e), at(y + 0xd), 0]);
+        let enabled = mem.rebase(0x0186_6268);
+        for i in 0..2u32 {
+            let grey = u32::from(mem.read::<u8>(enabled.wrapping_add(i)) == 0);
+            let text = call(mem, SAVE_MES, &[SAVE_QUESTION + 1 + i]);
+            call(mem, TEXT, &[text, choice_x, at(row), grey]);
+            if i == mem.read::<u32>(mem.rebase(0x0186_6264)) {
+                call(mem, 0x008f_eb00, &[0, choice_x, at(row)]);
+            }
+            row = row.wrapping_add(0x14);
+        }
+        call(mem, 0x008b_ea20, &[]);
+        call(mem, SYNC, &[])
+    }
 }
