@@ -42,22 +42,15 @@ def rets(a, size):
     return {int(m.group(1) or "0", 16) for m in re.finditer(r"\tret\s*(?:\$0x([0-9a-f]+))?", out)}
 
 
-# hooks written by hand (wrappers, mods, the harness) outside the ported tables
-hand = {}
-for f in sorted((progress.REPO / "crates/ffx-hook/src").glob("*.rs")):
-    for name, addr in re.findall(r'name: "(\w+)",\s*address: 0x([0-9a-f_]+),', f.read_text(encoding="utf-8")):
-        hand[int(addr.replace("_", ""), 16)] = f"{f.name}: {name}"
+# ported twice, or ported and hooked by hand (wrappers, mods, the harness)
+for line in progress.duplicate_hooks():
+    print(line)
+    bad += 1
 
 for f in sorted((progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
     for name, addr, abi, args in SHIM.findall(f.read_text(encoding="utf-8")):
         a = int(addr.replace("_", ""), 16)
         where = f"{f.name}: {name} @ {a:#010x}"
-        if a in seen:
-            print(f"{where}: also ported as {seen[a]}")
-            bad += 1
-        if a in hand:
-            print(f"{where}: also hooked by hand ({hand[a]})")
-            bad += 1
         seen[a] = name
         if a not in rows:
             print(f"{where}: not a function start in the dump")

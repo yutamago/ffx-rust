@@ -26,6 +26,8 @@ function:
   printed before each (for a switch, the case labels).
 - `frame`: the `[ebp + off]` slots at entry (decimal offsets) with their
   type (`f32`, `f64` or `u32`) and Rust name.
+- `stack` (optional): the `[esp + off]` slots at entry (decimal offsets,
+  4 = the first argument) of an esp-based frame, typed like `frame`.
 - `fpu`: the x87 stack at entry, bottom first, as Rust f64 expressions.
 - `calls`: the argument count of every called function; `st0_calls` give a
   Rust template (`{0}` is the first argument, an f32) for functions that
@@ -234,6 +236,7 @@ def run(a, st, out, ind):
 for label, entry in cfg['entries'].items():
     st = St()
     st.frame = {int(k): tuple(v) for k, v in cfg.get('frame', {}).items()}
+    st.stack = {int(k): tuple(v) for k, v in cfg.get('stack', {}).items()}
     st.fpu = list(cfg.get('fpu', []))
     out = []
     start = int(entry, 16)

@@ -4,6 +4,11 @@
 depends on them, their ffx-oracle tests on the image alone and on both
 snapshots, then the hook build and the replays.
 
+Before building anything it checks that no function is hooked twice: a
+merge that brings in a second `ported!` for an address already ported or
+hooked by hand elsewhere (two branches porting one function) fails here,
+not in check-ported after the build.
+
 Oracle tests are chosen narrowly: the test files of the crates the batch
 touches (not of every crate depending on them), the test files it changed,
 and the modules whose hook shims it changed. Every FULL_EVERY-th run, or with
@@ -19,6 +24,9 @@ import os
 import pathlib
 import subprocess
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import progress  # noqa: E402
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 GAME = pathlib.Path(os.environ.get("FFX_GAME_DIR", pathlib.Path.home() / "steam-games/FFX-X2-HD"))
@@ -52,6 +60,12 @@ def main():
     base = args[0] if args else "origin/main"
     changed = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"], cwd=REPO,
                              capture_output=True, text=True, check=True).stdout.split()
+    # two branches porting one function: fail before the build
+    dup = progress.duplicate_hooks(REPO)
+    for line in dup:
+        print(f"duplicate hook: {line}")
+    if dup:
+        sys.exit(f"failed: {len(dup)} function(s) hooked twice (merge one port, drop the other)")
     meta = json.loads(subprocess.run(["cargo", "metadata", "--format-version", "1", "--no-deps"], cwd=REPO,
                                      capture_output=True, text=True, check=True).stdout)
     crates = {p["name"]: pathlib.Path(p["manifest_path"]).parent.relative_to(REPO).as_posix()

@@ -4,7 +4,7 @@ whose callees are all ported already, or library code (left to the
 original for now), or nothing at all. Leaves first, then by callers (the
 functions most used), then smaller first.
 
-  tools/worklist.py [--module M] [--limit N] [--named] [--max-bytes B]
+  tools/worklist.py [--module M | --global] [--unclaimed] [--limit N] [--named] [--max-bytes B]
 
 Columns: address, module, bytes, callers, name (and calls into imports,
 which need a platform equivalent). Functions too short to hook that only
@@ -14,6 +14,11 @@ Only logic is listed (symbols/classes.tsv, tools/classify.py), and only
 logic callees block: glue, platform, debug and dead functions are not
 ported exactly, so a port keeps calling the original for them (through
 the bridge). --all lists every category.
+
+--global is the default made explicit: every game module in one list (an
+error with --module). --unclaimed leaves out functions another agent has
+claimed (tools/claim.py); stale claims (over 12 hours) are listed again,
+marked.
 """
 import argparse
 import os
@@ -48,7 +53,15 @@ def main():
     ap.add_argument("--max-bytes", type=int, default=0)
     ap.add_argument("--min-bytes", type=int, default=5)
     ap.add_argument("--all", action="store_true", help="every category, not only logic")
+    ap.add_argument("--global", dest="glob", action="store_true", help="every game module (the default)")
+    ap.add_argument("--unclaimed", action="store_true", help="skip functions claimed with tools/claim.py")
     args = ap.parse_args()
+    if args.glob and args.module:
+        ap.error("--global and --module exclude each other")
+    taken = {}
+    if args.unclaimed:
+        import claim
+        taken = claim.claims()
 
     names = progress.symbols()
     rows = progress.functions()
@@ -96,6 +109,8 @@ def main():
             continue
         if args.max_bytes and s > args.max_bytes:
             continue
+        if a in taken and not taken[a]["stale"]:
+            continue
         b = blocking(a)
         if b:
             continue
@@ -103,7 +118,8 @@ def main():
     out.sort()
     for _, neg_callers, s, a, m in out[: args.limit]:
         imp = f" (+{imports[a]} imports)" if imports[a] else ""
-        print(f"0x{a:08x} {m:8} {s:6} {-neg_callers:5}  {names.get(a, '')}{imp}")
+        stale = f" (stale claim: {taken[a].get('agent')})" if a in taken else ""
+        print(f"0x{a:08x} {m:8} {s:6} {-neg_callers:5}  {names.get(a, '')}{imp}{stale}")
     print(f"{len(out)} ready", file=sys.stderr)
 
 

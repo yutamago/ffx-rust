@@ -122,6 +122,29 @@ def ported():
     return out
 
 
+def duplicate_hooks(repo=None):
+    """Problem lines for functions hooked in two places: an address with two
+    `ported!` entries (in one file or in two module tables), or ported and
+    also hooked by hand in crates/ffx-hook/src (wrappers, mods, the
+    harness). check-ported.py and verify-batch.py (before the build) use it."""
+    repo = pathlib.Path(repo or REPO)
+    hand = {}
+    for f in sorted((repo / "crates/ffx-hook/src").glob("*.rs")):
+        for name, addr in re.findall(r'name: "(\w+)",\s*address: 0x([0-9a-f_]+),', f.read_text(encoding="utf-8")):
+            hand[int(addr.replace("_", ""), 16)] = f"{f.name}: {name}"
+    seen, out = {}, []
+    for f in sorted((repo / "crates/ffx-hook/src/ported").glob("*.rs")):
+        for name, addr in re.findall(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>", f.read_text(encoding="utf-8"), re.M):
+            a = int(addr.replace("_", ""), 16)
+            where = f"{f.name}: {name} @ {a:#010x}"
+            if a in seen:
+                out.append(f"{where}: also ported as {seen[a]}")
+            if a in hand:
+                out.append(f"{where}: also hooked by hand ({hand[a]})")
+            seen.setdefault(a, f"{name} ({f.name})")
+    return out
+
+
 def functions():
     path = WORK / "decomp/functions.tsv"
     if not path.exists():

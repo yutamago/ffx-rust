@@ -88,6 +88,43 @@ and the replays. Every fourth run, or with `--full`, the oracle tests of every
 dependent crate run too. The game-data tests that read the whole archive run
 separately, now and then.
 
+Before building, it fails when a function is hooked twice: two `ported!`
+entries for one address (two branches porting the same function, now
+merged), or a `ported!` entry for an address hooked by hand in
+`crates/ffx-hook/src`. Keep one port and drop the other.
+
+## Claims and work packets
+
+Agents pick work from one global list and claim each function first, so two
+never port the same one:
+
+```bash
+tools/worklist.py --global --unclaimed --limit 20   # leaves first, every game module
+tools/claim.py 0x007ab910 0x007abeb0 --agent battle-r40   # all or nothing
+tools/claim.py --list                                # stale claims (>12 h) marked
+tools/claim.py --release --all --agent battle-r40    # on commit
+tools/packet.py 0x007ab910 --out ~/ffx-work/packets/0x007ab910.md
+tools/packet.py --batch "--global --unclaimed --limit 10" --dir ~/ffx-work/packets/r40
+```
+
+A claim is a file in `~/ffx-work/claims` (`$FFX_CLAIMS`) made with
+`O_EXCL`; `--force` takes over a stale one. The port still goes into the
+function's module crate.
+
+A packet (`tools/packet.py`, needs `FFX_GAME_DIR`) is one markdown file with
+what porting the function needs: module, category, callers and claim; the
+measured convention; every callee with its convention, stack words, x87
+result and ported state (the Rust path behind its shim) or "call through the
+game"; the globals and labels it touches (relocations, `data_refs.tsv`,
+`ffx.sym` comments, `.rdata` constants decoded); a trap scan (stack slots
+read on a path that never writes them, x87 use, calls with fewer words set
+up than the callee reads, eax returned where Ghidra says void, pushed
+image-range constants without a relocation); Ghidra's C and the annotated
+asm; for x87-heavy code a `tools/x87-lift.py` draft (reference only,
+rewrite by hand); and a test skeleton for the module's oracle file. The
+machine-code facts come from linear scans and are heuristics: check them
+against the asm.
+
 ## Progress and ownership
 
 ```bash
