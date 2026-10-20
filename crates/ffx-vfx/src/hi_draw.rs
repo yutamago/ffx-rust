@@ -1,9 +1,10 @@
-//! The op layer's model draw set-ups at `0x00a6a3a0..0x00a6c8b0`
-//! (`op_md_chara_path3` and four `op1_md_draw` paths: flag 4 with and
-//! without `0x300`, flag `0x2000`, flag `0x80` with `0x300`;
-//! `docs/formats/vfx.md`, "High range"). Each takes `0x1800` (or
-//! `0x2800`) bytes of the op scratch stack as its work area `w`, fills the
-//! PS2 packet words there and pops it again.
+//! The op layer's model draw set-ups at `0x00a68c90..0x00a6cd40`
+//! (`op_md_chara_path3`, `op1_mdc_draw` and the `op1_md_draw` paths:
+//! flag 4 with and without `0x300`, flag `0x2000`, flag `0x80` with and
+//! without `0x300`, `op_md_one8` and `_fog`; `docs/formats/vfx.md`, "High
+//! range"). Each path takes `0x1800` (or `0x2800`) bytes of the op scratch
+//! stack as its work area `w`, fills the PS2 packet words there and pops
+//! it again.
 
 #![allow(clippy::many_single_char_names)]
 
@@ -572,9 +573,43 @@ pub mod bridge {
         init: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
+        let w = match setup_2800(mem, obj, init, call) {
+            Ok(w) => w,
+            Err(early) => return early,
+        };
+        fog_vertex_area(mem, obj, w);
+        let tags = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+        gs_words_2800(mem, obj, w, false);
+        gs_wait(mem);
+        tags_80(mem, w, tags, false);
+        spr_pop(mem);
+        let end: u32 = mem.read(w.wrapping_add(0x334));
+        end.wrapping_add(0x40)
+    }
+
+    /// `dbgPrintf` and `debug_exit_trace` (both bare `ret`s here).
+    const DBG_PRINTF: u32 = 0x0062_f500;
+    const DEBUG_EXIT_TRACE: u32 = 0x0062_f510;
+    /// `"one8 draw mode unsuport light program ---..."` (`0x00b7c3e0`).
+    const ONE8_MSG: u32 = 0x00b7_c3e0;
+    /// `"(op)\top_md0_onef() light no support !\n"` (`0x00b7c42c`).
+    const ONE8_FOG_MSG: u32 = 0x00b7_c42c;
+
+    /// The start the `0x2800`-byte paths share: `Err([init +0x34])` when
+    /// `op_md_packet_size_check(obj, [init +0x34], 1)` (always 0) is
+    /// nonzero; else pushes the work area `w` (top byte first), copies the
+    /// init block ([`copy_init`]), rounds `w +0x334` up to 64 (`&
+    /// 0x0fffffc0`), defaults `w +0x338`/`+0x33c` (`+0x33c` stored first)
+    /// and sets the colour from the signed bytes `w +0x31c..`.
+    fn setup_2800<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> Result<u32, u32> {
         let size: u32 = mem.read(init.wrapping_add(0x34));
         if go(mem, OP_MD_PACKET_SIZE_CHECK, &[obj, size, 1], call) != 0 {
-            return mem.read(init.wrapping_add(0x34));
+            return Err(mem.read(init.wrapping_add(0x34)));
         }
         let w = spr_push_n(mem, true, 0x2800);
         copy_init(mem, init, w);
@@ -582,34 +617,75 @@ pub mod bridge {
         mem.write(w.wrapping_add(0x334), end.wrapping_add(0x3f) & 0x0fff_ffc0);
         default_bases(mem, obj, w, false);
         colour_from_bytes(mem, w.wrapping_add(0x31c), w);
+        Ok(w)
+    }
+
+    /// The fog paths' vertex words: `w +0x394` = `[w +0x304]`, `+0x39c` =
+    /// `(i16 obj +0x12 << 4) + [w +0x304]` (read twice).
+    fn fog_vertex_area(mem: &mut impl Mem, obj: u32, w: u32) {
         let base: u32 = mem.read(w.wrapping_add(0x304));
         mem.write(w.wrapping_add(0x394), base);
         let n = i32::from(mem.read::<i16>(obj.wrapping_add(0x12))).cast_unsigned();
         let base: u32 = mem.read(w.wrapping_add(0x304));
         mem.write(w.wrapping_add(0x39c), (n << 4).wrapping_add(base));
-        let tags = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+    }
+
+    /// The GS words of the `0x2800`-byte paths: `+0x110` 0x8001, `+0x118`
+    /// 0xeeeee, `+0x128` 6, `+0x130`/`+0x134` ([`fog_bytes`]), `+0x138`
+    /// 0x42, `+0x140` 16 bytes from `0x011a0820`, `+0x150` 16 bytes from
+    /// `0x011a0740`, `+0x160` 0 with `[obj]` flag 4 else 5, `+0x168` 8,
+    /// `+0x180` the address `0x012a8da8`. `one8` (`op_md_one8` and
+    /// `_fog`) also sets `+0x100` 0x20000000, `+0x108` 0, `+0x2e0` 0x8001
+    /// and `+0x2e8` 0xe, and takes `+0x150` from `0x011a07f0` with init
+    /// flag 8.
+    fn gs_words_2800(mem: &mut impl Mem, obj: u32, w: u32, one8: bool) {
+        if one8 {
+            mem.write(w.wrapping_add(0x100), 0x2000_0000u32);
+            mem.write(w.wrapping_add(0x108), 0u32);
+        }
         mem.write(w.wrapping_add(0x110), 0x8001u32);
         mem.write(w.wrapping_add(0x118), 0x000e_eeeeu32);
         mem.write(w.wrapping_add(0x128), 6u32);
         fog_bytes(mem, obj, w);
         mem.write(w.wrapping_add(0x138), 0x42u32);
         copy_words(mem, MD_GS_WORDS_C, w, 0x140);
-        copy_words(mem, MD_GS_WORDS_A, w, 0x150);
+        let words = if one8 && mem.read::<u8>(w.wrapping_add(0x300)) & 8 != 0 {
+            MD_GS_WORDS_B
+        } else {
+            MD_GS_WORDS_A
+        };
+        copy_words(mem, words, w, 0x150);
         let alpha = alpha_test(mem, obj);
         mem.write(w.wrapping_add(0x160), alpha);
         mem.write(w.wrapping_add(0x168), 8u32);
+        if one8 {
+            mem.write(w.wrapping_add(0x2e0), 0x8001u32);
+            mem.write(w.wrapping_add(0x2e8), 0xeu32);
+        }
         let block = mem.rebase(MD_PATH3_BLOCK);
         mem.write(w.wrapping_add(0x180), block);
-        gs_wait(mem);
+    }
+
+    /// The tags of the flag-`0x80` paths from `tags` (type `i8 +1`, step
+    /// 0x10): 0 and 4 set `w +0x100` 0x20000009 / 0x2000000b, `+0x1f0`
+    /// 0x8001, `+0x1f8` 0x414141ee; 2 and 6 `+0x100` 0x2000000d /
+    /// 0x20000010, `+0x1f8` 0x12412eee, the texture words and `+0x128` 6;
+    /// each waits for the GS. With `pairs` the odd types act as the even
+    /// one below them (`0x00a6acb0`), else they end the chain
+    /// (`0x00a6c3d0`); 8 and up or negative end it.
+    fn tags_80(mem: &mut impl Mem, w: u32, tags: u32, pairs: bool) {
         let init = w.wrapping_add(0x300);
         let mut tag = tags;
         loop {
-            let (gif, mode, textured) = match mem.read::<i8>(tag.wrapping_add(1)) {
+            let ty = mem.read::<i8>(tag.wrapping_add(1));
+            if !(0..8).contains(&ty) || (!pairs && ty & 1 != 0) {
+                break;
+            }
+            let (gif, mode, textured) = match ty >> 1 {
                 0 => (0x2000_0009u32, 0x4141_41eeu32, false),
-                2 => (0x2000_000d, 0x1241_2eee, true),
-                4 => (0x2000_000b, 0x4141_41ee, false),
-                6 => (0x2000_0010, 0x1241_2eee, true),
-                _ => break,
+                1 => (0x2000_000d, 0x1241_2eee, true),
+                2 => (0x2000_000b, 0x4141_41ee, false),
+                _ => (0x2000_0010, 0x1241_2eee, true),
             };
             mem.write(w.wrapping_add(0x100), gif);
             tag_mode(mem, w, mode);
@@ -620,8 +696,244 @@ pub mod bridge {
             gs_wait(mem);
             tag = tag.wrapping_add(0x10);
         }
+    }
+
+    /// The lights of `0x00a6acb0` and `op_md_one8` by `[p]` (`p = w
+    /// +0x300`): with flag `0x40`, `opc(obj, p, w)` (a bare `ret`; `one8`
+    /// first sets `[p +0x44]` to `[p +0x20]` when it is 0); else, with `i16
+    /// obj +0x14` nonzero and no flag `0x20`, `op_matrix_light4_vector(local,
+    /// [p +0x28], [p +0x2c])` into the local at `frame - 0x44`, which
+    /// nothing reads.
+    fn lights_2800<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        w: u32,
+        frame: u32,
+        one8: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let p = w.wrapping_add(0x300);
+        let flags: u32 = mem.read(p);
+        if flags & 0x40 != 0 {
+            if one8 && mem.read::<u32>(p.wrapping_add(0x44)) == 0 {
+                let x: u32 = mem.read(p.wrapping_add(0x20));
+                mem.write(p.wrapping_add(0x44), x);
+            }
+            go(mem, OPC, &[obj, p, w], call);
+        } else if mem.read::<i16>(obj.wrapping_add(0x14)) != 0 && flags & 0x20 == 0 {
+            let m: u32 = mem.read(p.wrapping_add(0x28));
+            let c: u32 = mem.read(p.wrapping_add(0x2c));
+            let local = frame.wrapping_sub(0x44);
+            go(mem, OP_MATRIX_LIGHT4_VECTOR, &[local, m, c], call);
+        }
+    }
+
+    /// `op_md_flag80_00a6acb0(obj, init)` (`0x00a6acb0`; `op1_md_draw`'s
+    /// path for packets with flag `0x80` and none of `0x300`): as
+    /// [`op_md_flag80_fog`] (`[init +0x34]` back when the size check
+    /// fires, the `0x2800`-byte work area, the GS words, a GS wait), but
+    /// `w +0x390` = `(i16 obj +0x12 << 4) + [w +0x304]` and `+0x394` = `[w
+    /// +0x304]`, the lights ([`lights_2800`], the local at `frame -
+    /// 0x44`), and types 1, 3, 5, 7 act as 0, 2, 4, 6 (jumps
+    /// `0x00a6b1f8`). Pops `w`; returns `[w +0x334]`. Callees through
+    /// `call`.
+    pub fn op_md_flag80<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = match setup_2800(mem, obj, init, call) {
+            Ok(w) => w,
+            Err(early) => return early,
+        };
+        vertex_area(mem, obj, w, w.wrapping_add(0x304), 4);
+        lights_2800(mem, obj, w, frame, false, call);
+        let tags = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+        gs_words_2800(mem, obj, w, false);
+        gs_wait(mem);
+        tags_80(mem, w, tags, true);
+        spr_pop(mem);
+        mem.read(w.wrapping_add(0x334))
+    }
+
+    /// The tags of `op_md_one8` and `_fog` from `tags` (type `i8 +1`, step
+    /// 0x10): `w +0x1f0` 0x8001 and `+0x1f8` 0x414141 (0, 1), 0x41414141 (4,
+    /// 5) or 0x12412412 with the texture words (2, 3, 6, 7). An odd type
+    /// ends the chain with `dbgPrintf(msg)` and `debug_exit_trace(1)`
+    /// (`op_md_one8` after its mode words, `_fog` with none: `fog_odd`); 8
+    /// and up or negative end it.
+    fn tags_one8<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        tags: u32,
+        fog_odd: bool,
+        msg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let init = w.wrapping_add(0x300);
+        let mut tag = tags;
+        loop {
+            let ty = mem.read::<i8>(tag.wrapping_add(1));
+            if !(0..8).contains(&ty) {
+                return;
+            }
+            if !(fog_odd && ty & 1 != 0) {
+                match ty >> 1 {
+                    0 => tag_mode(mem, w, 0x0041_4141),
+                    2 => tag_mode(mem, w, 0x4141_4141),
+                    _ => {
+                        tag_mode(mem, w, 0x1241_2412);
+                        tex_words(mem, w, init, tag);
+                    }
+                }
+            }
+            if ty & 1 != 0 {
+                let msg = mem.rebase(msg);
+                go(mem, DBG_PRINTF, &[msg], call);
+                go(mem, DEBUG_EXIT_TRACE, &[1], call);
+                return;
+            }
+            tag = tag.wrapping_add(0x10);
+        }
+    }
+
+    /// `op_md_one8(obj, init)` (`0x00a6b220`; `op1_md_draw`'s path for
+    /// packets with none of flags `0x2000`, 4, `0x80`, `0x300`): the
+    /// `0x2800`-byte start ([`setup_2800`]; `[init +0x34]` back when the
+    /// size check fires), `w +0x390` = `(i16 obj +0x12 << 4) + [w +0x304]`
+    /// and `+0x394` = `[w +0x304]`, the lights ([`lights_2800`]), the GS
+    /// words ([`gs_words_2800`] with the `one8` extras), then the tags
+    /// ([`tags_one8`], jumps `0x00a6b6f0`; an odd type reports
+    /// `0x00b7c3e0`). No GS wait. Pops `w`; returns `[w +0x334] + 0x40`.
+    /// Callees through `call`.
+    pub fn op_md_one8<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = match setup_2800(mem, obj, init, call) {
+            Ok(w) => w,
+            Err(early) => return early,
+        };
+        vertex_area(mem, obj, w, w.wrapping_add(0x304), 4);
+        lights_2800(mem, obj, w, frame, true, call);
+        let tags = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+        gs_words_2800(mem, obj, w, true);
+        tags_one8(mem, w, tags, false, ONE8_MSG, call);
         spr_pop(mem);
         let end: u32 = mem.read(w.wrapping_add(0x334));
         end.wrapping_add(0x40)
+    }
+
+    /// `op_md_one8_fog(obj, init)` (`0x00a6c8b0`; `op1_md_draw`'s path for
+    /// packets with one of `0x300` and none of `0x2000`, 4, `0x80`): as
+    /// [`op_md_one8`] without the lights, with the fog paths' vertex words
+    /// (`w +0x394` = `[w +0x304]`, `+0x39c` = `(i16 obj +0x12 << 4) + [w
+    /// +0x304]`); an odd type sets no mode words and reports `0x00b7c42c`
+    /// (jumps `0x00a6cd18`). Returns `[w +0x334] + 0x40`. Callees through
+    /// `call`.
+    pub fn op_md_one8_fog<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = match setup_2800(mem, obj, init, call) {
+            Ok(w) => w,
+            Err(early) => return early,
+        };
+        fog_vertex_area(mem, obj, w);
+        let tags = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+        gs_words_2800(mem, obj, w, true);
+        tags_one8(mem, w, tags, true, ONE8_FOG_MSG, call);
+        spr_pop(mem);
+        let end: u32 = mem.read(w.wrapping_add(0x334));
+        end.wrapping_add(0x40)
+    }
+
+    /// `get_ptr32_func` (`0x00a44650`): returns its argument.
+    fn ptr32(p: u32) -> u32 {
+        ffx_system::stub::ptr32(p)
+    }
+
+    /// `f64` 1000 (`0x00b0dba0`) and 0.001 as an `f32` widened
+    /// (`0x00b47c68`): the scales round `op1_mdc_draw`'s product.
+    const K_1000: u32 = 0x00b0_dba0;
+    const K_1000TH: u32 = 0x00b4_7c68;
+    const OP_M_COPY: u32 = 0x007e_8010;
+    const OP_MD_CHARA_PATH3: u32 = 0x00a6_a3a0;
+    /// `g_Op3dListener`, the matrix used when `op1_mdc_draw` gets none.
+    const OP_3D_LISTENER: u32 = 0x0113_fcd0;
+
+    /// The translation `+0x30..+0x38` of the matrix `[entry +4]` times `k`
+    /// (`fmul qword`, each stored as an `f32`; the pointer reread each
+    /// time).
+    fn scale_translation(mem: &mut impl Mem, entry: u32, k: f64) {
+        for o in [0x30u32, 0x34, 0x38] {
+            let t = ptr32(mem.read(entry.wrapping_add(4))).wrapping_add(o);
+            let x = x87::store(x87::mul(x87::load(mem.read(t)), k));
+            mem.write(t, x);
+        }
+    }
+
+    /// `op1_mdc_draw(list, init, m, view)` (`0x00a68c90`): draws each
+    /// packet of a character model list through `op_md_chara_path3`.
+    /// `[init +0x20]` is pointed at the local matrix `frame - 0x84` and
+    /// `[init +0x2c]` at `frame - 0x44`; `view` (or `g_Op3dListener`
+    /// when 0) is copied to `frame - 0xc4` (`op_m_copy`). For each of the
+    /// `u16 list +4` entries (16 bytes from `list + 0x10`: packet, matrix):
+    /// the matrix's translation `+0x30..+0x38` times 1000 (each an `f32`),
+    /// `op_mul_m(frame - 0x44, m, matrix)`, the translation times 0.001
+    /// (`f32` again), `op_mul_m(frame - 0x84, frame - 0xc4, frame - 0x44)`
+    /// and `op_md_chara_path3(packet, init, [list])`. Then `[init +0x20]`
+    /// gets its old value back, and `[init +0x2c]` the old `[init +0x34]`
+    /// (as the original does), which is also the result. Callees through
+    /// `call`.
+    pub fn op1_mdc_draw<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        init: u32,
+        m: u32,
+        view: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (world, local, eye) = (
+            frame.wrapping_sub(0x84),
+            frame.wrapping_sub(0x44),
+            frame.wrapping_sub(0xc4),
+        );
+        let old_20: u32 = mem.read(init.wrapping_add(0x20));
+        mem.write(init.wrapping_add(0x20), world);
+        mem.write(init.wrapping_add(0x2c), local);
+        let view = if view == 0 {
+            mem.rebase(OP_3D_LISTENER)
+        } else {
+            view
+        };
+        go(mem, OP_M_COPY, &[eye, view], call);
+        let old_34: u32 = mem.read(init.wrapping_add(0x34));
+        let up: f64 = mem.read(mem.rebase(K_1000));
+        let down: f64 = mem.read(mem.rebase(K_1000TH));
+        let n = mem.read::<u16>(list.wrapping_add(4));
+        let mut at = list.wrapping_add(0x10);
+        for _ in 0..n {
+            scale_translation(mem, at, up);
+            let tm = ptr32(mem.read(at.wrapping_add(4)));
+            go(mem, OP_MUL_M, &[local, m, tm], call);
+            scale_translation(mem, at, down);
+            go(mem, OP_MUL_M, &[world, eye, local], call);
+            let chr: u32 = mem.read(list);
+            let packet = ptr32(mem.read(at));
+            go(mem, OP_MD_CHARA_PATH3, &[packet, init, chr], call);
+            at = at.wrapping_add(0x10);
+        }
+        mem.write(init.wrapping_add(0x20), old_20);
+        mem.write(init.wrapping_add(0x2c), old_34);
+        old_34
     }
 }
