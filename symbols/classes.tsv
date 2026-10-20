@@ -990,7 +990,7 @@
 0x00640e70	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (mspace_free, user_free_thunk)
 0x00641060	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetAbmap
 0x00641080	glue	thin wrapper: only forwards to glue code (PhyreScene_getChaPos)
-0x006410a0	logic	default (no rule: ported to be safe)
+0x006410a0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetAbmapUV_006410a0
 0x006410d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicGetCurrentFrame
 0x006410e0	logic	default (no rule: ported to be safe)
 0x00641100	glue	calls PhyreEngine Phyre_PFramework_PApplication_GetApplication
@@ -1175,7 +1175,7 @@
 0x00643af0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSetUiDrawType
 0x00643b10	logic	default (no rule: ported to be safe)
 0x00643b30	glue	reviewed: forwarder to PhyreEngine/managers (PC2 render/pc-ui round 1)
-0x00643b80	logic	default (no rule: ported to be safe)
+0x00643b80	dead	reviewed: no callers; inverts the camera matrix and calls 0x4f93f0 on an unread result (PC2 render round 22)
 0x00643bc0	dead	unreachable from the entry point and every pointer table
 0x00643cc0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSgSetSpecular
 0x00643db0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicShaderGetVertexInfo
@@ -1473,7 +1473,7 @@
 0x0064f7f0	glue	calls PhyreEngine Phyre_PhyreMalloc_0042fb80
 0x0064f860	glue	calls PhyreEngine Phyre_PhyreMalloc_0042fb80
 0x0064f8d0	platform	thin wrapper: only forwards to platform code (ThrowStdException_0064fa50)
-0x0064f970	logic	default (no rule: ported to be safe)
+0x0064f970	platform	reviewed: ATL resource lookup (FindResourceExW over CAtlBaseModule) (PC2 render round 22)
 0x0064f9e0	dead	unreachable from the entry point and every pointer table
 0x0064fa20	dead	unreachable from the entry point and every pointer table
 0x0064fa50	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): ThrowStdException_0064fa50
@@ -1517,7 +1517,7 @@
 0x00652410	dead	unreachable from the entry point and every pointer table
 0x00652470	logic	default (no rule: ported to be safe)
 0x006525e0	dead	unreachable from the entry point and every pointer table
-0x00652600	logic	default (no rule: ported to be safe)
+0x00652600	platform	reviewed: ATL CSimpleStringT<wchar_t> preallocate/reallocate (PC2 render round 22)
 0x00652660	dead	unreachable from the entry point and every pointer table
 0x006526a0	logic	scene state the renderer needs (original look first): PhyreScene_Project3DPointOntoScreen
 0x006528d0	platform	thin wrapper: only forwards to platform code (0x654950)
@@ -4315,7 +4315,7 @@
 0x006f78d0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_hideAllIcons
 0x006f7900	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_hideIcon
 0x006f7940	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_setVisible
-0x006f7970	logic	default (no rule: ported to be safe)
+0x006f7970	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): IconPanel_showIcon
 0x006f79d0	glue	only called from glue code (PhyreScene_animate)
 0x006f79e0	dead	unreachable from the entry point and every pointer table
 0x006f79f0	dead	unreachable from the entry point and every pointer table
@@ -5657,7 +5657,7 @@
 0x00756320	logic	default (no rule: ported to be safe)
 0x007564d0	dead	unreachable from the entry point and every pointer table
 0x007565b0	dead	unreachable from the entry point and every pointer table
-0x00756600	logic	debug-sounding name, but used by logic: 0x755a00, 0x756320
+0x00756600	logic	debug-sounding name, but used by logic: 0x755a00, pppDrawRainAlloc_00756320
 0x007566a0	logic	default (no rule: ported to be safe)
 0x007566d0	logic	default (no rule: ported to be safe)
 0x007566e0	logic	default (no rule: ported to be safe)
@@ -9356,7 +9356,7 @@
 0x00814790	logic	default (no rule: ported to be safe)
 0x00814800	logic	default (no rule: ported to be safe)
 0x008148c0	logic	default (no rule: ported to be safe)
-0x00814a00	logic	default (no rule: ported to be safe)
+0x00814a00	debug	reviewed: opu_file: dumps textures/CLUTs to host0:/home/yonishi/... via sceOpen/sceWrite with dbgPrintf (effects round 37)
 0x00814c40	dead	unreachable from the entry point and every pointer table
 0x00814c90	logic	default (no rule: ported to be safe)
 0x00814d20	logic	default (no rule: ported to be safe)
@@ -17354,7 +17354,7 @@
 0x00a73700	dead	unreachable from the entry point and every pointer table
 0x00a73740	logic	default (no rule: ported to be safe)
 0x00a73810	logic	default (no rule: ported to be safe)
-0x00a73c20	logic	default (no rule: ported to be safe)
+0x00a73c20	glue	reviewed: createGT3MeshBreakRenderDataBuffer: PC renderer data-buffer creator (sprintf texture name, graphicVFXCreate/CreateDataBuffer), like 0x715a40/0x716050 (PC2 vfx-hi round 5)
 0x00a73d90	logic	default (no rule: ported to be safe)
 0x00a74410	logic	default (no rule: ported to be safe)
 0x00a744e0	logic	default (no rule: ported to be safe)

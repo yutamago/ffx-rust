@@ -1875,4 +1875,169 @@ pub mod bridge {
         }
         0
     }
+
+    /// `0x00712690` (`setPolyTris0434`, ours; next to `checkEnvMdl0434` in
+    /// the table at `0x00c659dc`) `(id, tris, setup)`: the render data of
+    /// instances `(0, id)` and `(1, id)` (0 when either is missing). With
+    /// `tris` each gets one triangle more, slot `n` = `0x00cec194` (then
+    /// counted up): for corner `k` (0..2) of record `tris + 0x10 + 0x30 k`
+    /// (instance 1: `+0xa0`) its `+0x10..+0x18` to the positions (`[+0x94]
+    /// +0xc`, 12 bytes per vertex), `+0..+0xc` to the colours (`+0x14`, 16
+    /// bytes), `-0x10..-0xc` to the texture coordinates (`+0x18`, 8 bytes)
+    /// and the `u16` index `3n + k` to `+0x1c`. Without, both get the unit
+    /// matrix (`FFXVu0UnitMatrix`) and are made visible, then set up
+    /// (`graphicVFXSetup`) with `setup`, else updated (`graphicVFXUpdate`).
+    /// Returns 1. Callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn set_poly_tris_0434<M: Mem>(
+        mem: &mut M,
+        id: u32,
+        tris: u32,
+        setup: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let get = sym(mem, 0x0064_53d0);
+        let a = call(mem, get, &[0, id]);
+        if a == 0 {
+            return 0;
+        }
+        let b = call(mem, get, &[1, id]);
+        if b == 0 {
+            return 0;
+        }
+        let count = sym(mem, 0x00ce_c194);
+        if tris != 0 {
+            for (data, src) in [(a, tris.wrapping_add(0x10)), (b, tris.wrapping_add(0xa0))] {
+                let bufs: u32 = mem.read(data.wrapping_add(0x94));
+                let buf = |mem: &M, at: u32| mem.read::<u32>(bufs.wrapping_add(at));
+                let n: u32 = mem.read(count);
+                for k in 0..3u32 {
+                    let v = n.wrapping_mul(3).wrapping_add(k);
+                    let s = src.wrapping_add(0x30 * k);
+                    let pos: [u32; 3] = mem.read(s.wrapping_add(0x10));
+                    mem.write(buf(mem, 0xc).wrapping_add(v.wrapping_mul(12)), pos);
+                    let col: [u32; 4] = mem.read(s);
+                    mem.write(buf(mem, 0x14).wrapping_add(v.wrapping_mul(16)), col);
+                    let uv: [u32; 2] = mem.read(s.wrapping_sub(0x10));
+                    mem.write(buf(mem, 0x18).wrapping_add(v.wrapping_mul(8)), uv);
+                    #[allow(clippy::cast_possible_truncation)] // the u16 index
+                    mem.write(buf(mem, 0x1c).wrapping_add(v.wrapping_mul(2)), v as u16);
+                }
+            }
+            let n: u32 = mem.read(count);
+            mem.write(count, n.wrapping_add(1));
+            return 1;
+        }
+        let unit = sym(mem, 0x006e_d9a0);
+        call(mem, unit, &[a]);
+        call(mem, unit, &[b]);
+        let (visible, set, update) = (
+            sym(mem, 0x0064_5710),
+            sym(mem, 0x0064_5780),
+            sym(mem, 0x0064_58a0),
+        );
+        for lo in [0, 1] {
+            call(mem, visible, &[lo, id, 1]);
+            call(mem, if setup != 0 { set } else { update }, &[lo, id]);
+        }
+        1
+    }
+
+    /// `0x007fa890` (`update0706NoiseRenderData`, ours; from `0x007fa750`)
+    /// `(lo, hi, x)`: with the instance's render data `d` and its segment-0
+    /// buffer (`graphicDynGeoMemManagerGetBufferForSegment(d, 0, [d +0x94]
+    /// +4, +8)`; 0 without either), fills 448 quads (0x5400 bytes of
+    /// positions): quad `i` spans `c` to `c' = f32(c + 0.00223214...)`
+    /// (`c` from 0): corners `x` -1/1, `y` `f32((c - 0.5) x 2)` and
+    /// `f32((c' - 0.5) x 2)`, `z` -0.9999; texture `u` = `r` and `f32(r +
+    /// 1)` with `r` = `op_random(x)` (through `fcall`), `v` = `c` and `c'`;
+    /// colours 0.5; indices `4i`, `4i+1`, `4i+2`, `4i+1`, `4i+2`, `4i+3`.
+    /// Then the unit matrix (`FFXVu0UnitMatrix(d)`), `d +0x80` = 0, a
+    /// ±9999999 box at `+0x98..+0xac`, `graphicVFXSetVisible(lo, hi, 1)`
+    /// and `0x012e9640` = 1. Returns 1.
+    #[allow(clippy::many_single_char_names)]
+    pub fn update_0706_noise_render_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let d = call(mem, sym(mem, 0x0064_53d0), &[lo, hi]);
+        if d == 0 {
+            return 0;
+        }
+        let bufs: u32 = mem.read(d.wrapping_add(0x94));
+        let (nv, ni) = (
+            mem.read(bufs.wrapping_add(4)),
+            mem.read(bufs.wrapping_add(8)),
+        );
+        if call(mem, sym(mem, 0x0063_fdb0), &[d, 0, nv, ni]) == 0 {
+            return 0;
+        }
+        let half: f64 = mem.read(sym(mem, 0x00b9_2220));
+        let two: f64 = mem.read(sym(mem, 0x00b9_2270));
+        let step: f64 = mem.read(sym(mem, 0x00b5_83f8));
+        let flip: u32 = mem.read(sym(mem, 0x00b9_2340));
+        let near: u32 = mem.read(sym(mem, 0x00b4_7ca0));
+        let colour: u32 = mem.read(sym(mem, 0x00b9_2194));
+        let one = 1.0f32.to_bits();
+        let mut c = 0u32;
+        let rnd = sym(mem, 0x007e_6700);
+        // fld/fstp of the argument into op_random's slot
+        let x = ffx_bridge::x87::round_trip(f32::from_bits(x)).to_bits();
+        for i in 0..448u32 {
+            let bufs: u32 = mem.read(d.wrapping_add(0x94));
+            let buf = |mem: &M, at: u32| mem.read::<u32>(bufs.wrapping_add(at));
+            let (uv, col, idx, pos) = (
+                buf(mem, 0x18).wrapping_add(0x20 * i),
+                buf(mem, 0x14).wrapping_add(0x40 * i),
+                buf(mem, 0x1c).wrapping_add(0xc * i),
+                buf(mem, 0xc).wrapping_add(0x30 * i),
+            );
+            let r = store(fcall(mem, rnd, &[x]));
+            for (at, v) in [(0x18, flip), (0, flip), (0x24, one), (0xc, one)] {
+                mem.write(pos.wrapping_add(at), v);
+            }
+            for at in [0x2c, 0x20, 0x14, 8] {
+                mem.write(pos.wrapping_add(at), near);
+            }
+            let cf = load(c);
+            let y0 = store(mul(sub(cf, half), two));
+            mem.write(pos.wrapping_add(0x10), y0);
+            mem.write(pos.wrapping_add(4), y0);
+            let n = add(cf, step);
+            let y1 = store(mul(sub(n, half), two));
+            mem.write(pos.wrapping_add(0x28), y1);
+            mem.write(pos.wrapping_add(0x1c), y1);
+            mem.write(uv.wrapping_add(0x10), r);
+            mem.write(uv, r);
+            let r1 = store(add(load(r), 1.0));
+            mem.write(uv.wrapping_add(0x18), r1);
+            mem.write(uv.wrapping_add(8), r1);
+            mem.write(uv.wrapping_add(0xc), c);
+            mem.write(uv.wrapping_add(4), c);
+            let next = store(n);
+            mem.write(uv.wrapping_add(0x1c), next);
+            mem.write(uv.wrapping_add(0x14), next);
+            mem.write(col, [colour; 16]);
+            #[allow(clippy::cast_possible_truncation)] // 16-bit indices
+            let b = (i * 4) as u16;
+            for (k, v) in [(0u32, 0u16), (2, 2), (4, 2), (1, 1), (3, 1), (5, 3)] {
+                mem.write(idx.wrapping_add(2 * k), b.wrapping_add(v));
+            }
+            c = next;
+        }
+        call(mem, sym(mem, 0x006e_d9a0), &[d]);
+        mem.write(d.wrapping_add(0x80), 0u32);
+        let lo_box: u32 = mem.read(sym(mem, 0x00b5_1660));
+        let hi_box: u32 = mem.read(sym(mem, 0x00b5_1658));
+        mem.write(d.wrapping_add(0x98), [lo_box; 3]);
+        mem.write(d.wrapping_add(0xa4), [hi_box; 3]);
+        call(mem, sym(mem, 0x0064_5710), &[lo, hi, 1]);
+        mem.write(sym(mem, 0x012e_9640), 1u32);
+        1
+    }
 }

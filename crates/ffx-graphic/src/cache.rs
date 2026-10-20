@@ -297,4 +297,70 @@ pub mod bridge {
             m.write(e + 8, b | 7);
         }
     }
+
+    /// `dbgPrintf(format, ...)` (cdecl) and `Cache_FreeEntry(e)` (cdecl).
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const FREE_ENTRY: u32 = 0x0084_0ec0;
+    /// `Cache_OverFlow`'s messages: `"SG:\x1b[31mMemory overflow!! "`, the
+    /// kind tags `"[CHR"`, `"[MOT"`, `"[MAP"`, `"[BGM"` (kinds 1-4) and
+    /// `":%s:%d] disposed from Cache.\x1b[m\n"`.
+    pub const OVERFLOW_MESSAGE: u32 = 0x00b5_a550;
+    pub const OVERFLOW_KIND_TAGS: [u32; 4] = [0x00b5_a56c, 0x00b5_a574, 0x00b5_a57c, 0x00b5_a584];
+    pub const OVERFLOW_DISPOSED: u32 = 0x00b5_a58c;
+
+    /// `Cache_OverFlow()` (`0x008409a0`): frees one live entry that is
+    /// neither unread nor in use nor pinned; 1 when there is none, else 0.
+    ///
+    /// The victim: over the slots in order, an entry with a lower age
+    /// (flags bits 0-2, starting from 100) takes the place and the age;
+    /// one with the same age as the current one takes it when its data
+    /// word, as a signed number, is below the lowest seen so far (starting
+    /// from `0x0fffffff`). The lowest data is not reset when the age drops,
+    /// and an entry that takes the place by age also updates it when lower.
+    /// The victim is logged (`dbgPrintf`: the message, its kind's tag, its
+    /// name and the id's high half), then `Cache_FreeEntry`. The original
+    /// also calls `0x00840ab0`, an empty function, last.
+    pub fn overflow(h: &mut impl Host) -> u32 {
+        let mut victim = 0;
+        let mut lowest_age = 100;
+        let mut lowest_data = 0x0fff_ffff;
+        for i in 0..SLOTS {
+            let e = entry(h, i);
+            #[allow(clippy::cast_possible_wrap)] // compared signed
+            let data = h.read::<u32>(e + 0xc) as i32;
+            if data == 0 || h.read::<u8>(e + 6) != 0 || h.read::<u8>(e + 5) != 0 {
+                continue;
+            }
+            let age = i32::from(h.read::<u8>(e + 8) & 7);
+            if age == 7 {
+                continue;
+            }
+            if age < lowest_age {
+                victim = e;
+                lowest_age = age;
+            }
+            if age == lowest_age && data < lowest_data {
+                victim = e;
+                lowest_data = data;
+            }
+        }
+        if victim == 0 {
+            return 1;
+        }
+        let message = h.rebase(OVERFLOW_MESSAGE);
+        h.call_sym(DBG_PRINTF, Conv::Cdecl, &[message]);
+        let kind = h.read::<i8>(victim + 4);
+        if let Ok(k @ 1..=4) = usize::try_from(kind) {
+            let tag = h.rebase(OVERFLOW_KIND_TAGS[k - 1]);
+            h.call_sym(DBG_PRINTF, Conv::Cdecl, &[tag]);
+        }
+        let id: u32 = h.read(victim);
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)] // sar, as pushed
+        let hi = ((id as i32) >> 16) as u32;
+        let name = h.call_sym(CH_CREATE_NAME, Conv::Cdecl, &[id]);
+        let disposed = h.rebase(OVERFLOW_DISPOSED);
+        h.call_sym(DBG_PRINTF, Conv::Cdecl, &[disposed, name, hi]);
+        h.call_sym(FREE_ENTRY, Conv::Cdecl, &[victim]);
+        0
+    }
 }

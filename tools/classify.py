@@ -345,6 +345,11 @@ REVIEWED = {
     0x00798950: ("platform", "Rng_ClockSeed: XORs the system time bytes; the harness hooks this address for its seed (battle round 30)"),
     0x00790430: ("platform", "PasswordTextRead's file loader: fiosOpen/sceLseek/sceRead/sceClose, TkMalloc/TkFree, memcpy only (battle round 30)"),
     0x0084ed10: ("debug", "DECI2 protocol handler: 0x84eee0 passes it only to sceDeci2Open 0x62f680 (xor eax,eax; ret), so it never runs (main round 16)"),
+    0x0064f970: ("platform", "ATL resource lookup (FindResourceExW over CAtlBaseModule) (PC2 render round 22)"),
+    0x00652600: ("platform", "ATL CSimpleStringT<wchar_t> preallocate/reallocate (PC2 render round 22)"),
+    0x00643b80: ("dead", "no callers; inverts the camera matrix and calls 0x4f93f0 on an unread result (PC2 render round 22)"),
+    0x00a73c20: ("glue", "createGT3MeshBreakRenderDataBuffer: PC renderer data-buffer creator (sprintf texture name, graphicVFXCreate/CreateDataBuffer), like 0x715a40/0x716050 (PC2 vfx-hi round 5)"),
+    0x00814a00: ("debug", "opu_file: dumps textures/CLUTs to host0:/home/yonishi/... via sceOpen/sceWrite with dbgPrintf (effects round 37)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
