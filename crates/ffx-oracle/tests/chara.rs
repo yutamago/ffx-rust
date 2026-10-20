@@ -134,15 +134,12 @@ impl Twin {
             Res::Int(v) => assert_eq!(ra.eax, v, "{what}: result"),
             Res::Float(v) => {
                 let st0 = ra.st0.unwrap_or_else(|| panic!("{what}: no float result"));
-                if v.is_nan() {
-                    assert!(st0.is_nan(), "{what}: {st0} for NaN");
-                } else {
-                    assert_eq!(
-                        st0.to_bits(),
-                        f64::from(v).to_bits(),
-                        "{what}: {st0} vs {v}"
-                    );
-                }
+                // bit for bit, NaN payloads too
+                assert_eq!(
+                    st0.to_bits(),
+                    f64::from(v).to_bits(),
+                    "{what}: {st0} vs {v}"
+                );
             }
         }
         assert_eq!(self.a.diff(&mut self.b).unwrap(), [], "{what}: memory");
