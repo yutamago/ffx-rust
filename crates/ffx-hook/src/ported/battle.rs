@@ -1970,6 +1970,135 @@ ported! {
     PasswordText_GetEntry_007902a0 @ 0x0079_02a0 => extern "C" fn password_text_get_entry(i: u32) -> u32 {
         minor::password_text_get_entry(&mem(), i)
     }
+    /// `MsGetChrEffectVariable(i)`.
+    MsGetChrEffectVariable @ 0x0079_4e80 => extern "C" fn ms_get_chr_effect_variable(i: u32) -> u32 {
+        minor::ms_get_chr_effect_variable(&mem(), i)
+    }
+    /// `MsGetChrSbyte508_00794240(i)`.
+    MsGetChrSbyte508_00794240 @ 0x0079_4240 => extern "C" fn ms_get_chr_sbyte508(i: u32) -> u32 {
+        minor::ms_get_chr_sbyte508(&mem(), i)
+    }
+    /// `MsGetChrSbyte4fc_00794280(i)`.
+    MsGetChrSbyte4fc_00794280 @ 0x0079_4280 => extern "C" fn ms_get_chr_sbyte4fc(i: u32) -> u32 {
+        minor::ms_get_chr_sbyte4fc(&mem(), i)
+    }
+    /// `MsGetChrByte41f_00794d70(i)`.
+    MsGetChrByte41f_00794d70 @ 0x0079_4d70 => extern "C" fn ms_get_chr_byte41f(i: u32) -> u32 {
+        minor::ms_get_chr_byte41f(&mem(), i)
+    }
+    /// `MsGetChrFly(i)`.
+    MsGetChrFly @ 0x0079_4f70 => extern "C" fn ms_get_chr_fly(i: u32) -> u32 {
+        minor::ms_get_chr_fly(&mem(), i)
+    }
+    /// `MsGetChrByte3f4_00795a60(i)`.
+    MsGetChrByte3f4_00795a60 @ 0x0079_5a60 => extern "C" fn ms_get_chr_byte3f4(i: u32) -> u32 {
+        minor::ms_get_chr_byte3f4(&mem(), i)
+    }
+    /// `MsSetChrDirLeave(i)`.
+    MsSetChrDirLeave @ 0x0079_5e70 => extern "C" fn ms_set_chr_dir_leave(i: u32) {
+        minor::ms_set_chr_dir_leave(&mut mem(), i);
+    }
+    /// `MsGetChrHeadPos(i, out)`.
+    MsGetChrHeadPos @ 0x0079_50b0 => extern "C" fn ms_get_chr_head_pos(i: u32, out: u32) {
+        minor::ms_get_chr_head_pos(&mut mem(), i, out);
+    }
+    /// `MsSetMonsVisible_00796880(v)`.
+    MsSetMonsVisible_00796880 @ 0x0079_6880 => extern "C" fn ms_set_mons_visible(v: u32) -> u32 {
+        minor::ms_set_mons_visible(&mut mem(), &mut call_ptr, v)
+    }
+    /// `MsSetPlayersVisible_007968b0(v)`.
+    MsSetPlayersVisible_007968b0 @ 0x0079_68b0 => extern "C" fn ms_set_players_visible(v: u32) -> u32 {
+        minor::ms_set_players_visible(&mut mem(), &mut call_ptr, v)
+    }
+    /// `MsSetAllBodyHit_00795da0(on)`.
+    MsSetAllBodyHit_00795da0 @ 0x0079_5da0 => extern "C" fn ms_set_all_body_hit(on: u32) {
+        minor::ms_set_all_body_hit(&mut mem(), on);
+    }
+    /// `MsClearBodyHitBits_00793dc0(bits)`.
+    MsClearBodyHitBits_00793dc0 @ 0x0079_3dc0 => extern "C" fn ms_clear_body_hit_bits(bits: u32) {
+        minor::ms_clear_body_hit_bits(&mut mem(), bits);
+    }
+    /// `MsBattleStatusMenuless_007a8c20()`.
+    MsBattleStatusMenuless_007a8c20 @ 0x007a_8c20 => extern "C" fn ms_battle_status_menuless() -> u32 {
+        minor::ms_battle_status_menuless(&mem())
+    }
+    /// `MsBattleStartReady_00781650()`.
+    MsBattleStartReady_00781650 @ 0x0078_1650 => extern "C" fn ms_battle_start_ready() -> u32 {
+        minor::ms_battle_start_ready(&mem())
+    }
+    /// `MsSaveAddHP(chr, n)`.
+    MsSaveAddHP @ 0x0078_59d0 => extern "C" fn ms_save_add_hp(chr: u32, n: u32) {
+        minor::ms_save_add_hp(&mut mem(), chr, n);
+    }
+    /// `MsSaveAddMP_00785ae0(chr, n)`.
+    MsSaveAddMP_00785ae0 @ 0x0078_5ae0 => extern "C" fn ms_save_add_mp(chr: u32, n: u32) {
+        minor::ms_save_add_mp(&mut mem(), chr, n);
+    }
+    /// `MsSetWeaponName(gear)`.
+    MsSetWeaponName @ 0x0079_93b0 => extern "C" fn ms_set_weapon_name(gear: u32) -> u32 {
+        minor::ms_set_weapon_name(&mut mem(), gear)
+    }
+    /// `MsWaitMotionPick_007a8c50(chr, actor, v)`.
+    MsWaitMotionPick_007a8c50 @ 0x007a_8c50 => extern "C" fn ms_wait_motion_pick(chr: u32, actor: u32, v: u32) -> u32 {
+        minor::ms_wait_motion_pick(&mem(), chr, actor, v)
+    }
+    /// `MsEquipmentHasUnmarked_007ad6e0()`.
+    MsEquipmentHasUnmarked_007ad6e0 @ 0x007a_d6e0 => extern "C" fn ms_equipment_has_unmarked() -> u32 {
+        minor::ms_equipment_has_unmarked(&mem())
+    }
+    /// `MsEquipmentMarkFirst_007ad710(on)`.
+    MsEquipmentMarkFirst_007ad710 @ 0x007a_d710 => extern "C" fn ms_equipment_mark_first(on: u32) -> u32 {
+        minor::ms_equipment_mark_first(&mut mem(), on)
+    }
+    /// `MsWeaponSetTransparent_007ad5b0(i, n, frames)`.
+    MsWeaponSetTransparent_007ad5b0 @ 0x007a_d5b0 => extern "C" fn ms_weapon_set_transparent(i: u32, n: u32, frames: u32) {
+        minor::ms_weapon_set_transparent(&mut mem(), i, n, frames);
+    }
+    /// `MsGetSaveChrArmorModel(chr)`.
+    MsGetSaveChrArmorModel @ 0x007a_bb70 => extern "C" fn ms_get_save_chr_armor_model(chr: u32) -> u32 {
+        minor::ms_get_save_chr_armor_model(&mut mem(), chr)
+    }
+    /// `MsGetSaveChrWeaponModel(chr)`.
+    MsGetSaveChrWeaponModel @ 0x007a_bba0 => extern "C" fn ms_get_save_chr_weapon_model(chr: u32) -> u32 {
+        minor::ms_get_save_chr_weapon_model(&mut mem(), chr)
+    }
+    /// `MsExchangeSaveWeapon()`.
+    MsExchangeSaveWeapon @ 0x008b_e0a0 => extern "C" fn ms_exchange_save_weapon() -> u32 {
+        minor::ms_exchange_save_weapon(&mut mem())
+    }
+    /// `TkCdSizeKBCached_008741d0()`: `TkCdSize` through the game.
+    TkCdSizeKBCached_008741d0 @ 0x0087_41d0 => extern "C" fn tk_cd_size_kb_cached() -> u32 {
+        minor::tk_cd_size_kb_cached(&mut mem(), &mut call_ptr)
+    }
+    /// `MsCountSlotsOf_007b1e40(p, v)`.
+    MsCountSlotsOf_007b1e40 @ 0x007b_1e40 => extern "C" fn ms_count_slots_of(p: u32, v: u32) -> u32 {
+        minor::ms_count_slots_of(&mem(), p, v)
+    }
+    /// `MsEffectCameraGet(owner, k, kind)`.
+    MsEffectCameraGet @ 0x0078_77d0 => extern "C" fn ms_effect_camera_get(owner: u32, k: u32, kind: u32) -> u32 {
+        minor::ms_effect_camera_get(&mut mem(), owner, k, kind)
+    }
+    /// `MsImportantReset_007907a0(id)`.
+    MsImportantReset_007907a0 @ 0x0079_07a0 => extern "C" fn ms_important_reset(id: u32) {
+        minor::ms_important_reset(&mut mem(), id);
+    }
+    /// `MsResetWeaponEffectAttribute(_, actor)`: `op_et_eff_off_signal`
+    /// through the game.
+    MsResetWeaponEffectAttribute @ 0x0079_ea90 => extern "C" fn ms_reset_weapon_effect_attribute(_i: u32, actor: u32) -> u32 {
+        minor::ms_reset_weapon_effect_attribute(&mut mem(), &mut call_ptr, actor)
+    }
+    /// `MsCueMoveSpeed_007a88e0(cue)`: on the x87 stack.
+    MsCueMoveSpeed_007a88e0 @ 0x007a_88e0 => extern "C" fn ms_cue_move_speed(cue: u32) -> f32 {
+        f32::from_bits(minor::ms_cue_move_speed(&mem(), cue))
+    }
+    /// `readBtlMonsterName()`: the text files through the game.
+    readBtlMonsterName @ 0x0078_44c0 => extern "C" fn read_btl_monster_name() {
+        minor::read_btl_monster_name(&mut mem(), &mut call_ptr);
+    }
+    /// `MsEffectReadStatInit()`.
+    MsEffectReadStatInit @ 0x0078_81c0 => extern "C" fn ms_effect_read_stat_init() {
+        minor::ms_effect_read_stat_init(&mut mem());
+    }
     /// `MsMenuHalfElement(i)`.
     MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
         minor::ms_menu_half_element(&mem(), i)

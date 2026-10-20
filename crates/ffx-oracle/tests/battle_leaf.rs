@@ -317,3 +317,391 @@ fn leaf_accessors_match_the_original_on_a_snapshot() {
     };
     check(&mut a, &mut b, &mut Xorshift(0x2929_0b02), false);
 }
+
+/// A float for the x87 checks: specials (no signalling NaNs: the emulator
+/// keeps them), quiet randoms, plain values.
+fn float(rng: &mut Xorshift) -> u32 {
+    match rng.below(6) {
+        0 => [0, 0x8000_0000, 0x7f80_0000, 0xff80_0000, 0x7fc0_0000, 1][rng.below(6) as usize],
+        1 => battle_common::world::quiet(rng.next()),
+        _ => (f32::from(i16::try_from(rng.range(-30000, 30000)).unwrap()) / 37.0).to_bits(),
+    }
+}
+
+/// Group C: more accessors, the loops over the actors, the equipment, the
+/// results screen's exchange, cached and once-only loads.
+fn helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x80);
+    // TkCdSize, TKMallocAndReadEventMessage, op_et_eff_off_signal
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip([
+            (g::TK_CD_SIZE, 2u8),
+            (g::TK_READ_EVENT_MESSAGE, 1),
+            (g::OP_ET_EFF_OFF_SIGNAL, 1),
+        ]) {
+            recording_stub(o, f, STUBS + 0x100 + 0x40 * k, rec + 0x20 * k, n, 0);
+        }
+    }
+    // the weapon name table where there is none
+    if synthetic || !readable(a, ffx_battle::menu::bridge::WEAPON_NAMES.get(b), 0x20) {
+        let t = fake_records(a, b, rng, 0x40, 0x60);
+        set(a, b, ffx_battle::menu::bridge::WEAPON_NAMES, t);
+    }
+    let area = scratch(a, b, 0x200);
+    let spoils = scratch(a, b, 0x40);
+    set(a, b, g::SPOIL_WEAPONS, spoils);
+    let ply = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr;
+    let equipment = g::EQUIPMENT.ptr(b).addr;
+    for round in 0..300 {
+        if w.synthetic || round % 2 == 0 {
+            dress(a, b, rng, w.actors);
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                for (at, len) in [
+                    (0x3f4, 1),
+                    (0x3fb, 1),
+                    (0x41f, 1),
+                    (0x42b, 4),
+                    (0x434, 1),
+                    (0x4fc, 1),
+                    (0x505, 4),
+                    (0xe0c, 1),
+                    (0xe90, 0x10),
+                ] {
+                    fill(a, b, rng, p + at, len);
+                }
+            }
+        }
+        if w.synthetic {
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                poke(a, b, p, &[0; 4]);
+                poke(a, b, p + 0x13, &[0xff]);
+                poke(a, b, p + 0x440, &[0]);
+            }
+        }
+        let i = if rng.below(6) == 0 {
+            rng.next()
+        } else {
+            rng.below(0x22)
+        };
+        for (name, sym, rust) in [
+            (
+                "MsGetChrEffectVariable",
+                0x0079_4e80,
+                g::ms_get_chr_effect_variable as fn(&Oracle, u32) -> u32,
+            ),
+            ("MsGetChrSbyte508", 0x0079_4240, g::ms_get_chr_sbyte508),
+            ("MsGetChrSbyte4fc", 0x0079_4280, g::ms_get_chr_sbyte4fc),
+            ("MsGetChrByte41f", 0x0079_4d70, g::ms_get_chr_byte41f),
+            ("MsGetChrFly", 0x0079_4f70, g::ms_get_chr_fly),
+            ("MsGetChrByte3f4", 0x0079_5a60, g::ms_get_chr_byte3f4),
+        ] {
+            twin(name, a, b, sym, &[i], ALL, |m| rust(m, i));
+        }
+        twin("MsSetChrDirLeave", a, b, 0x0079_5e70, &[i], 0, |m| {
+            g::ms_set_chr_dir_leave(m, i);
+            0
+        });
+        let out = area + 0x100;
+        fill(a, b, rng, out, 0x10);
+        poke(a, b, out + 4, &float(rng).to_le_bytes());
+        twin("MsGetChrHeadPos", a, b, 0x0079_50b0, &[i, out], 0, |m| {
+            g::ms_get_chr_head_pos(m, i, out);
+            0
+        });
+        let v = rng.below(3);
+        if round % 4 == 0 {
+            twin("MsSetMonsVisible", a, b, 0x0079_6880, &[v], ALL, |m| {
+                g::ms_set_mons_visible(m, &mut call_original, v)
+            });
+            twin("MsSetPlayersVisible", a, b, 0x0079_68b0, &[v], ALL, |m| {
+                g::ms_set_players_visible(m, &mut call_original, v)
+            });
+            twin("MsSetAllBodyHit", a, b, 0x0079_5da0, &[v], 0, |m| {
+                g::ms_set_all_body_hit(m, v);
+                0
+            });
+            let bits =
+                [rng.next(), 0x8000_0000 | rng.next(), 1 << rng.below(31)][rng.below(3) as usize];
+            twin("MsClearBodyHitBits", a, b, 0x0079_3dc0, &[bits], 0, |m| {
+                g::ms_clear_body_hit_bits(m, bits);
+                0
+            });
+        }
+        // the statuses and encounter types
+        let status = [1i8, 2, 0x18, 0x1b, 0x1e, 0x15, 0x16, 0, -1, 3][rng.below(10) as usize];
+        set(a, b, ffx_battle::state::bridge::STATUS, status);
+        set(
+            a,
+            b,
+            ffx_battle::process::bridge::ENCOUNT_TYPE2,
+            [0u8, 1, 2, 3, 4, 0xff][rng.below(6) as usize],
+        );
+        set(a, b, g::START_READY, u8::from(rng.below(2) == 0));
+        twin("MsBattleStatusMenuless", a, b, 0x007a_8c20, &[], ALL, |m| {
+            g::ms_battle_status_menuless(m)
+        });
+        twin("MsBattleStartReady", a, b, 0x0078_1650, &[], ALL, |m| {
+            g::ms_battle_start_ready(m)
+        });
+        // HP and MP: a character, its values and maxima
+        let chr = rng.below(0x12);
+        let p = ply + chr * 0x94;
+        for o in [0x1c, 0x20, 0x24, 0x28] {
+            poke(
+                a,
+                b,
+                p + o,
+                &[rng.range(-50, 9999), rng.next().cast_signed()][rng.below(5).min(1) as usize]
+                    .to_le_bytes(),
+            );
+        }
+        let n = [rng.range(-3000, 3000).cast_unsigned(), rng.next()][rng.below(4).min(1) as usize];
+        twin("MsSaveAddHP", a, b, 0x0078_59d0, &[chr, n], 0, |m| {
+            g::ms_save_add_hp(m, chr, n);
+            0
+        });
+        twin("MsSaveAddMP", a, b, 0x0078_5ae0, &[chr, n], 0, |m| {
+            g::ms_save_add_mp(m, chr, n);
+            0
+        });
+        // a gear record: weapon or armour, its name
+        let gear = area;
+        fill(a, b, rng, gear, 0x20);
+        poke(a, b, gear + 5, &[u8::from(rng.below(2) == 0)]);
+        poke(a, b, gear + 4, &[u8::try_from(rng.below(8)).unwrap()]);
+        twin("MsSetWeaponName", a, b, 0x0079_93b0, &[gear], ALL, |m| {
+            g::ms_set_weapon_name(m, gear)
+        });
+        // a character that waits or not (its motion state), an actor
+        let actor = ffx_battle::actor::bridge::ms_get_chr(b, i);
+        let chr_handle: u32 = u32::from_le_bytes(b.read(actor, 4).unwrap().try_into().unwrap());
+        let v = rng.next();
+        if chr_handle != 0 {
+            twin(
+                "MsWaitMotionPick",
+                a,
+                b,
+                0x007a_8c50,
+                &[chr_handle, actor, v],
+                ALL,
+                |m| g::ms_wait_motion_pick(m, chr_handle, actor, v),
+            );
+        }
+        // the equipment slots: in use or not, flags 8 and 2 at random,
+        // sometimes none held
+        // (none held, or every held one marked, or only the last held)
+        let mode = rng.below(6);
+        let none = mode == 0;
+        for k in 0..200 {
+            let at = equipment + 22 * k + 2;
+            let used = u8::from(rng.below(3) != 0);
+            let mut f = [0, 8, 0xa, 2, 0xff][rng.below(5) as usize];
+            if none || (mode == 2 && k < 199) {
+                f &= !8;
+            }
+            if mode == 1 || (mode == 2 && rng.below(2) == 0) {
+                f |= 2;
+            }
+            poke(a, b, at, &[used, f]);
+        }
+        twin("MsEquipmentHasUnmarked", a, b, 0x007a_d6e0, &[], ALL, |m| {
+            g::ms_equipment_has_unmarked(m)
+        });
+        let on = rng.below(2) * rng.next();
+        twin("MsEquipmentMarkFirst", a, b, 0x007a_d710, &[on], ALL, |m| {
+            g::ms_equipment_mark_first(m, on)
+        });
+        let (wn, frames) = (rng.below(3), rng.below(40));
+        // (an actor's weapon: the original reads through a null one)
+        if ffx_battle::actor::bridge::ms_get_weapon(b, i & 0xff, wn.cast_signed()) != 0 {
+            twin(
+                "MsWeaponSetTransparent",
+                a,
+                b,
+                0x007a_d5b0,
+                &[i & 0xff, wn, frames],
+                0,
+                |m| {
+                    g::ms_weapon_set_transparent(m, i & 0xff, wn, frames);
+                    0
+                },
+            );
+        }
+        let c = rng.below(0x12);
+        for (name, sym, rust) in [
+            (
+                "MsGetSaveChrArmorModel",
+                0x007a_bb70,
+                g::ms_get_save_chr_armor_model as fn(&mut Oracle, u32) -> u32,
+            ),
+            (
+                "MsGetSaveChrWeaponModel",
+                0x007a_bba0,
+                g::ms_get_save_chr_weapon_model,
+            ),
+        ] {
+            twin(name, a, b, sym, &[c], ALL, |m| rust(m, c));
+        }
+        // the results screen's exchange: inventory slots
+        let list: Vec<u8> = (0..0x10)
+            .flat_map(|_| u16::try_from(rng.below(200)).unwrap().to_le_bytes())
+            .collect();
+        poke(a, b, spoils, &list);
+        set(a, b, g::SPOIL_WEAPON_TOP, rng.below(6));
+        set(a, b, g::SPOIL_WEAPON_CURSOR, rng.below(6));
+        let slot = rng.below(8);
+        set(a, b, g::SPOIL_WEAPON_SLOT, slot);
+        poke(
+            a,
+            b,
+            g::SPOIL_WEAPON_SLOTS.ptr(b).addr + 2 * slot,
+            &u16::try_from([rng.below(200), 0xff][rng.below(5).min(1) as usize])
+                .unwrap()
+                .to_le_bytes(),
+        );
+        if round % 3 == 0 {
+            twin("MsExchangeSaveWeapon", a, b, 0x008b_e0a0, &[], ALL, |m| {
+                g::ms_exchange_save_weapon(m)
+            });
+        }
+        // the cached size: unset (negative) or kept, the stub's size
+        set(
+            a,
+            b,
+            g::CD_SIZE_2A,
+            [-1, 0x1234, i32::MIN, 0][rng.below(4) as usize],
+        );
+        poke(
+            a,
+            b,
+            rec + 0xc,
+            &[rng.range(-0x800, 0x80000), rng.next().cast_signed()][rng.below(3).min(1) as usize]
+                .to_le_bytes(),
+        );
+        twin("TkCdSizeKBCached", a, b, 0x0087_41d0, &[], ALL, |m| {
+            g::tk_cd_size_kb_cached(m, &mut call_original)
+        });
+        let v = [0, 0xff, rng.below(4), 0x100 | rng.below(4)][rng.below(4) as usize];
+        poke(
+            a,
+            b,
+            area + 0x40,
+            &[0, 1, 2].map(|_| [0u8, 1, 0xff][rng.below(3) as usize]),
+        );
+        twin(
+            "MsCountSlotsOf",
+            a,
+            b,
+            0x007b_1e40,
+            &[area + 0x40, v],
+            ALL,
+            |m| g::ms_count_slots_of(m, area + 0x40, v),
+        );
+        // effect cameras: kept or not
+        for k in 0..8 {
+            let v = [0, rng.next()][rng.below(2) as usize];
+            poke(
+                a,
+                b,
+                ffx_battle::minor::bridge::EFFECT_CAMERA_BUF.ptr(b).addr + 4 * k,
+                &v.to_le_bytes(),
+            );
+        }
+        let (owner, k, kind) = (
+            rng.below(4),
+            rng.range(-1, 10).cast_unsigned(),
+            rng.below(4),
+        );
+        twin(
+            "MsEffectCameraGet",
+            a,
+            b,
+            0x0078_77d0,
+            &[owner, k, kind],
+            ALL,
+            |m| g::ms_effect_camera_get(m, owner, k, kind),
+        );
+        let id = [
+            rng.below(0x80),
+            rng.below(0x1000),
+            rng.next(),
+            rng.next() & !0xf80,
+        ][rng.below(4) as usize];
+        twin("MsImportantReset", a, b, 0x0079_07a0, &[id], 0, |m| {
+            g::ms_important_reset(m, id);
+            0
+        });
+        let actor2 = area + 0x80 - 0xe90;
+        for k in 0..4 {
+            let e = [0, rng.next()][rng.below(2) as usize];
+            poke(a, b, actor2 + 0xe90 + 4 * k, &e.to_le_bytes());
+        }
+        let any = rng.next();
+        twin(
+            "MsResetWeaponEffectAttribute",
+            a,
+            b,
+            0x0079_ea90,
+            &[any, actor2],
+            ALL,
+            |m| g::ms_reset_weapon_effect_attribute(m, &mut call_original, actor2),
+        );
+        // a cue: kind 0x1d or not, its actor
+        let cue = area + 0x120 - 0x4d4;
+        poke(a, b, cue + 0xc, &[[0x1d, 0x1c, 0][rng.below(3) as usize]]);
+        poke(a, b, cue + 0x14, &[u8::try_from(rng.below(0x22)).unwrap()]);
+        poke(a, b, cue + 0x4d4, &float(rng).to_le_bytes());
+        ftwin("MsCueMoveSpeed", a, b, 0x007a_88e0, &[cue], |m| {
+            g::ms_cue_move_speed(m, cue)
+        });
+        // the monster texts: loaded or not
+        let texts = a.rebase(ffx_battle::read::bridge::MONSTER_TEXTS[0]);
+        poke(
+            a,
+            b,
+            texts,
+            &[0, rng.next()][rng.below(2) as usize].to_le_bytes(),
+        );
+        poke(a, b, rec + 0x20 + 8, &rng.next().to_le_bytes());
+        twin("readBtlMonsterName", a, b, 0x0078_44c0, &[], 0, |m| {
+            g::read_btl_monster_name(m, &mut call_original);
+            0
+        });
+        set(
+            a,
+            b,
+            ffx_battle::parse::bridge::EFFECT_READ_CLEAR,
+            [0, 1, u32::MAX][rng.below(3) as usize],
+        );
+        set(
+            a,
+            b,
+            ffx_battle::parse::bridge::EFFECT_READ_CHR,
+            rng.below(0x22),
+        );
+        twin("MsEffectReadStatInit", a, b, 0x0078_81c0, &[], 0, |m| {
+            g::ms_effect_read_stat_init(m);
+            0
+        });
+        same("helpers", a, b);
+    }
+}
+
+#[test]
+fn leaf_helpers_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    helpers(&mut a, &mut b, &mut Xorshift(0x2929_0c01), true);
+}
+
+#[test]
+fn leaf_helpers_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    helpers(&mut a, &mut b, &mut Xorshift(0x2929_0c02), false);
+}

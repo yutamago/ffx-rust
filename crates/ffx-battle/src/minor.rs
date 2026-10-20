@@ -1023,4 +1023,428 @@ pub mod bridge {
         let off: u32 = mem.read(file.wrapping_add(i.wrapping_mul(8)));
         file.wrapping_add(off)
     }
+
+    // Round 29 C: more accessors, loops over the actors, the equipment.
+
+    /// `TkCdSize(file, _)` (menu), called through the game.
+    pub const TK_CD_SIZE: u32 = 0x0088_d390;
+    /// `TKMallocAndReadEventMessage(name)` (menu), called through the game.
+    pub const TK_READ_EVENT_MESSAGE: u32 = 0x0088_cac0;
+    /// `op_et_eff_off_signal(id)` (vfx), called through the game.
+    pub const OP_ET_EFF_OFF_SIGNAL: u32 = 0x007f_c450;
+    /// "monster1", "monster2", "monster3": the files `readBtlMonsterName`
+    /// reads into [`crate::read::bridge::MONSTER_TEXTS`].
+    pub const MONSTER_TEXT_NAMES: [u32; 3] = [0x00b5_48fc, 0x00b5_4908, 0x00b5_4914];
+    /// The size of file 0x2a in KB (rounded up) plus 0x20, cached by
+    /// `TkCdSizeKBCached_008741d0` (negative until then).
+    pub const CD_SIZE_2A: Global<i32> = Global::new(0x00c5_2760);
+    /// The weapon spoils' list position (`MsExchangeSaveWeapon`: the list
+    /// `[g_BtlEndSpoilWeapons]` at `+0x0186a190` + `+0x0186a1a0`) and the
+    /// equipped slot's index into the `u16`s at `0x02310f8e`.
+    pub const SPOIL_WEAPON_TOP: Global<u32> = Global::new(0x0186_a190);
+    pub const SPOIL_WEAPON_CURSOR: Global<u32> = Global::new(0x0186_a1a0);
+    pub const SPOIL_WEAPON_SLOT: Global<u32> = Global::new(0x0186_a1a4);
+    pub const SPOIL_WEAPON_SLOTS: Global<u16> = Global::new(0x0231_0f8e);
+    pub const SPOIL_WEAPONS: Global<u32> = Global::new(0x025c_c580);
+    /// 200 equipment slots of 22 bytes (`g_Equipment`): `+2` in use, `+3`
+    /// flags (8 held, 2 the one `0x007ad710` marks).
+    pub const EQUIPMENT: Global<u8> = Global::new(0x0113_0f2c);
+
+    /// `MsBtlChrNumCheck`'s actors only: `get` of actor `i & 0xff`, 0 for
+    /// the others.
+    fn actor_only(mem: &impl Mem, i: u32, get: impl FnOnce(u32) -> u32) -> u32 {
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        get(actor_of(mem, i))
+    }
+
+    /// A signed byte of an actor, sign-extended.
+    fn sbyte(mem: &impl Mem, a: u32, o: u32) -> u32 {
+        i32::from(byte(mem, a, o).cast_signed()).cast_unsigned()
+    }
+
+    /// `MsGetChrEffectVariable(i)` (`0x00794e80`): byte `+0xe0c` of an actor
+    /// in AL over its address; 0 for the others.
+    pub fn ms_get_chr_effect_variable(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| (a & !0xff) | u32::from(byte(mem, a, 0xe0c)))
+    }
+
+    /// `MsGetChrSbyte508_00794240(i)` (`0x00794240`): the signed byte
+    /// `+0x508` of an actor; 0 for the others.
+    pub fn ms_get_chr_sbyte508(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| sbyte(mem, a, 0x508))
+    }
+
+    /// `MsGetChrSbyte4fc_00794280(i)` (`0x00794280`): the signed byte
+    /// `+0x4fc` of an actor; 0 for the others.
+    pub fn ms_get_chr_sbyte4fc(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| sbyte(mem, a, 0x4fc))
+    }
+
+    /// `MsGetChrByte41f_00794d70(i)` (`0x00794d70`): byte `+0x41f` of an
+    /// actor; 0 for the others.
+    pub fn ms_get_chr_byte41f(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| u32::from(byte(mem, a, 0x41f)))
+    }
+
+    /// `MsGetChrFly(i)` (`0x00794f70`): the signed fly byte `+0x505` of an
+    /// actor; 0 for the others.
+    pub fn ms_get_chr_fly(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| sbyte(mem, a, 0x505))
+    }
+
+    /// `MsGetChrByte3f4_00795a60(i)` (`0x00795a60`): byte `+0x3f4` of an
+    /// actor; 0 for the others.
+    pub fn ms_get_chr_byte3f4(mem: &impl Mem, i: u32) -> u32 {
+        actor_only(mem, i, |a| u32::from(byte(mem, a, 0x3f4)))
+    }
+
+    /// `MsSetChrDirLeave(i)` (`0x00795e70`): an actor with `+0x42e` set
+    /// gets 0xc in `+0x42b`.
+    pub fn ms_set_chr_dir_leave(mem: &mut impl Mem, i: u32) {
+        let a = actor_only(mem, i, |a| a);
+        if a != 0 && byte(mem, a, 0x42e) != 0 {
+            mem.write(a.wrapping_add(0x42b), 0xcu8);
+        }
+    }
+
+    /// `MsGetChrHeadPos(i, out)` (`0x007950b0`): with a character
+    /// (`MsGetChrHandle`), its point 1 (`Ch_OptposGet`) into `out`, `y`
+    /// lowered by 2.0 (`g_Two`, an `f64`, rounded to `f32`).
+    pub fn ms_get_chr_head_pos(mem: &mut impl Mem, i: u32, out: u32) {
+        use ffx_bridge::x87::{load, store, sub};
+        let h = crate::actor::bridge::ms_get_chr_handle(mem, i);
+        if h == 0 {
+            return;
+        }
+        ffx_chara::attach::bridge::ch_optpos_get(mem, h, 1, out);
+        let y: u32 = mem.read(out.wrapping_add(4));
+        let two = crate::screen::bridge::TWO.get(mem);
+        mem.write(out.wrapping_add(4), store(sub(load(y), two)));
+    }
+
+    /// `MsSetMonsVisible_00796880(v)` (`0x00796880`): `MsSetChrVisible(i,
+    /// v)` for the monsters 0x14..0x1c; 8.
+    pub fn ms_set_mons_visible<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        v: u32,
+    ) -> u32 {
+        for i in 0x14..0x1c {
+            crate::visible::bridge::ms_set_chr_visible(mem, call, i, v);
+        }
+        8
+    }
+
+    /// `MsSetPlayersVisible_007968b0(v)` (`0x007968b0`): `MsSetChrVisible(i,
+    /// v)` for the players 0..0x12; 0x12.
+    pub fn ms_set_players_visible<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        v: u32,
+    ) -> u32 {
+        for i in 0..0x12 {
+            crate::visible::bridge::ms_set_chr_visible(mem, call, i, v);
+        }
+        0x12
+    }
+
+    /// `MsSetAllBodyHit_00795da0(on)` (`0x00795da0`): `msSetChrBodyHit(actor,
+    /// 2, on)` for the 31 actors.
+    pub fn ms_set_all_body_hit(mem: &mut impl Mem, on: u32) {
+        for i in 0..0x1f {
+            let a = actor_of(mem, i);
+            crate::body::bridge::ms_set_chr_body_hit(mem, a, 2, on.cast_signed());
+        }
+    }
+
+    /// `MsClearBodyHitBits_00793dc0(bits)` (`0x00793dc0`): `msSetChrBodyHit(
+    /// actor, 2, 0)` for the actors (below 31) whose bit is set in `bits`.
+    pub fn ms_clear_body_hit_bits(mem: &mut impl Mem, bits: u32) {
+        for i in 0..0x1f {
+            if bits >> i & 1 != 0 {
+                let a = actor_of(mem, i);
+                crate::body::bridge::ms_set_chr_body_hit(mem, a, 2, 0);
+            }
+        }
+    }
+
+    /// `MsBattleStatusMenuless_007a8c20()` (`0x007a8c20`): 1 for the battle
+    /// statuses 1, 2, 0x18, 0x1b and 0x1e, else 0.
+    pub fn ms_battle_status_menuless(mem: &impl Mem) -> u32 {
+        let st = crate::state::bridge::STATUS.get(mem);
+        u32::from(matches!(st, 1 | 2 | 0x18 | 0x1b | 0x1e))
+    }
+
+    /// `MsBattleStartReady_00781650()` (`0x00781650`): for the encounter
+    /// types 1-3 ([`crate::process::bridge::ENCOUNT_TYPE2`]) 1 when the
+    /// status is 0x15, 0x16 or 1; for the others 1 while
+    /// `g_BtlStartReady` is set; else 0.
+    pub fn ms_battle_start_ready(mem: &impl Mem) -> u32 {
+        let kind = crate::process::bridge::ENCOUNT_TYPE2.get(mem);
+        if kind.wrapping_sub(1) <= 2 {
+            let st = crate::state::bridge::STATUS.get(mem).cast_unsigned();
+            u32::from(matches!(st, 0x15 | 0x16 | 1))
+        } else {
+            u32::from(START_READY.get(mem) != 0)
+        }
+    }
+
+    /// `g_BtlStartReady` (`MsBattleStartReady_00781650`).
+    pub const START_READY: Global<u8> = Global::new(0x0112_c9cc);
+
+    /// `MsSaveAddHP(chr, n)` (`0x007859d0`): the character's HP (`+0x1c`)
+    /// plus `n` (wrapping), kept within 0..=max HP (`+0x24`,
+    /// `MsCheckRange`).
+    pub fn ms_save_add_hp(mem: &mut impl Mem, chr: u32, n: u32) {
+        save_add(mem, chr, n, 0x1c);
+    }
+
+    /// `MsSaveAddMP_00785ae0(chr, n)` (`0x00785ae0`): [`ms_save_add_hp`] for
+    /// the MP (`+0x20`, max `+0x28`).
+    pub fn ms_save_add_mp(mem: &mut impl Mem, chr: u32, n: u32) {
+        save_add(mem, chr, n, 0x20);
+    }
+
+    fn save_add(mem: &mut impl Mem, chr: u32, n: u32, at: u32) {
+        let p = crate::save::bridge::ms_get_save_player_ptr(mem, chr);
+        let v = mem.read::<u32>(p.wrapping_add(at)).wrapping_add(n);
+        mem.write(p.wrapping_add(at), v);
+        let max: i32 = mem.read(p.wrapping_add(at + 8));
+        let v = ffx_kernel::bridge::ms_check_range(v.cast_signed(), 0, max);
+        mem.write(p.wrapping_add(at), v);
+    }
+
+    /// `MsSetWeaponName(gear)` (`0x007993b0`): the gear record's name number
+    /// (`MsWeaponNameNum`) into its `u16` `+0`, then its name
+    /// (`MsWeaponName(number, +4, 0, gear + 0xc)`); that call's result.
+    pub fn ms_set_weapon_name(mem: &mut impl Mem, gear: u32) -> u32 {
+        let n = crate::gear::bridge::ms_weapon_name_num(mem, gear);
+        let n = n & 0xffff;
+        #[allow(clippy::cast_possible_truncation)] // the original's `mov word`
+        mem.write(gear, n as u16);
+        let kind = u32::from(byte(mem, gear, 4));
+        crate::menu::bridge::ms_weapon_name(mem, n, kind, 0, gear.wrapping_add(0xc))
+    }
+
+    /// `MsWaitMotionPick_007a8c50(chr, actor, v)` (`0x007a8c50`): `v`,
+    /// unless the character waits (`Ch_GetWaitMotion`) and the actor's
+    /// `+0x434` is 0, then 0.
+    pub fn ms_wait_motion_pick(mem: &impl Mem, chr: u32, actor: u32, v: u32) -> u32 {
+        if ffx_chara::parts::bridge::ch_get_wait_motion(mem, chr) != 0
+            && byte(mem, actor, 0x434) == 0
+        {
+            0
+        } else {
+            v
+        }
+    }
+
+    /// The equipment slots in use (`+2`) whose flags (`+3`) pass `pick`:
+    /// the first one's flags byte, or `None`.
+    fn equipment_find(mem: &impl Mem, pick: impl Fn(u8) -> bool) -> Option<u32> {
+        let base = EQUIPMENT.ptr(mem).addr;
+        (0..200)
+            .map(|k| base + 22 * k + 3)
+            .find(|&f| mem.read::<u8>(f - 1) != 0 && pick(byte(mem, f, 0)))
+    }
+
+    /// `MsEquipmentHasUnmarked_007ad6e0()` (`0x007ad6e0`): 1 when a held
+    /// piece of equipment (in use, flag 8) lacks flag 2, else 0.
+    pub fn ms_equipment_has_unmarked(mem: &impl Mem) -> u32 {
+        u32::from(equipment_find(mem, |f| f & 8 != 0 && f & 2 == 0).is_some())
+    }
+
+    /// `MsEquipmentMarkFirst_007ad710(on)` (`0x007ad710`): the first held
+    /// piece of equipment loses flag 2 with `on`, gets it without; 1, or 0
+    /// with none held.
+    pub fn ms_equipment_mark_first(mem: &mut impl Mem, on: u32) -> u32 {
+        let Some(f) = equipment_find(mem, |f| f & 8 != 0) else {
+            return 0;
+        };
+        let v = byte(mem, f, 0);
+        mem.write(f, if on != 0 { v & !2 } else { v | 2 });
+        1
+    }
+
+    /// `MsWeaponSetTransparent_007ad5b0(i, n, frames)` (`0x007ad5b0`): actor
+    /// `i`'s weapon `n` (`MsGetWeapon`) with a character fades to alpha 0.0
+    /// over `frames` (`Ch_SetTransparent`).
+    pub fn ms_weapon_set_transparent(mem: &mut impl Mem, i: u32, n: u32, frames: u32) {
+        let w = crate::actor::bridge::ms_get_weapon(mem, i, n.cast_signed());
+        let chr: u32 = mem.read(w);
+        if chr != 0 {
+            use ffx_chara::{chr::bridge::ch_set_fade, layout::FADE_ALPHA};
+            ch_set_fade(mem, chr, FADE_ALPHA, 0.0, frames.cast_signed());
+        }
+    }
+
+    /// `MsGetSaveChrArmorModel(chr)` (`0x007abb70`): the model (`+0xc`) of
+    /// the character's armor (`ply_save` `+0x2e`, `MsGetSaveWeapon`), 0
+    /// without one.
+    pub fn ms_get_save_chr_armor_model(mem: &mut impl Mem, chr: u32) -> u32 {
+        save_chr_gear_model(mem, chr, 0x2e)
+    }
+
+    /// `MsGetSaveChrWeaponModel(chr)` (`0x007abba0`): as
+    /// [`ms_get_save_chr_armor_model`] for the weapon (`+0x2d`).
+    pub fn ms_get_save_chr_weapon_model(mem: &mut impl Mem, chr: u32) -> u32 {
+        save_chr_gear_model(mem, chr, 0x2d)
+    }
+
+    fn save_chr_gear_model(mem: &mut impl Mem, chr: u32, slot: u32) -> u32 {
+        let ply = crate::save::bridge::PLY_SAVE.ptr(mem).addr;
+        let id = u32::from(byte(mem, ply.wrapping_add(chr.wrapping_mul(0x94)), slot));
+        let w = crate::save::bridge::ms_get_save_weapon(mem, id, 0);
+        if w == 0 {
+            0
+        } else {
+            u32::from(mem.read::<u16>(w.wrapping_add(0xc)))
+        }
+    }
+
+    /// `MsExchangeSaveWeapon()` (`0x008be0a0`): the results screen's
+    /// exchange: `SwapSaveGear(spoil, equipped)`, the spoil the `u16` of
+    /// [`SPOIL_WEAPONS`] at the list's top plus cursor, the equipped one
+    /// [`SPOIL_WEAPON_SLOTS`]`[SPOIL_WEAPON_SLOT]`; its result.
+    pub fn ms_exchange_save_weapon(mem: &mut impl Mem) -> u32 {
+        let slot = SPOIL_WEAPON_SLOT.get(mem);
+        let equipped = SPOIL_WEAPON_SLOTS
+            .ptr(mem)
+            .addr
+            .wrapping_add(slot.wrapping_mul(2));
+        let equipped = u32::from(mem.read::<u16>(equipped));
+        let k = SPOIL_WEAPON_TOP
+            .get(mem)
+            .wrapping_add(SPOIL_WEAPON_CURSOR.get(mem));
+        let list = SPOIL_WEAPONS.get(mem);
+        let spoil = u32::from(mem.read::<u16>(list.wrapping_add(k.wrapping_mul(2))));
+        crate::save::bridge::swap_save_gear(mem, spoil, equipped).cast_unsigned()
+    }
+
+    /// `TkCdSizeKBCached_008741d0()` (`0x008741d0`): while [`CD_SIZE_2A`] is
+    /// negative, it becomes file 0x2a's size (`TkCdSize(0x2a, 0)`, through
+    /// `call`) in KB rounded up (signed) plus 0x20. `EAX` ends as the
+    /// cached value, or as it was read.
+    pub fn tk_cd_size_kb_cached<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+    ) -> u32 {
+        let v = CD_SIZE_2A.get(mem);
+        if v >= 0 {
+            return v.cast_unsigned();
+        }
+        let size = game(mem, call, TK_CD_SIZE, &[0x2a, 0]).cast_signed();
+        let kb = size.wrapping_add(0x3ff) / 0x400;
+        let v = kb.wrapping_add(0x20);
+        CD_SIZE_2A.set(mem, v);
+        v.cast_unsigned()
+    }
+
+    /// `MsCountSlotsOf_007b1e40(p, v)` (`0x007b1e40`): how many of the three
+    /// bytes at `p` are `v`.
+    pub fn ms_count_slots_of(mem: &impl Mem, p: u32, v: u32) -> u32 {
+        (0..3)
+            .map(|k| u32::from(u32::from(byte(mem, p, k)) == v))
+            .sum()
+    }
+
+    /// `MsEffectCameraGet(owner, k, kind)` (`0x007877d0`): effect camera `k`
+    /// (0-7, unsigned) of [`EFFECT_CAMERA_BUF`]: kept, or got now
+    /// (`MsCameraGet(owner, k, kind)`) and kept; 0 past 7.
+    pub fn ms_effect_camera_get(mem: &mut impl Mem, owner: u32, k: u32, kind: u32) -> u32 {
+        if k > 7 {
+            return 0;
+        }
+        let at = EFFECT_CAMERA_BUF.ptr(mem).addr + 4 * k;
+        let v: u32 = mem.read(at);
+        if v != 0 {
+            return v;
+        }
+        let v = crate::camera::bridge::ms_camera_get(mem, owner, k, kind);
+        mem.write(at, v);
+        v
+    }
+
+    /// `MsImportantReset_007907a0(id)` (`0x007907a0`): key item `id & 0xfff`
+    /// (below 0x80) no longer held (its bit in `g_SaveImportant` cleared).
+    pub fn ms_important_reset(mem: &mut impl Mem, id: u32) {
+        let id = id & 0xfff;
+        if id < 0x80 {
+            let at = crate::save::bridge::IMPORTANT.ptr(mem).addr + 2 * (id >> 4);
+            let w: u16 = mem.read(at);
+            mem.write(at, w & !(1 << (id & 0xf)));
+        }
+    }
+
+    /// `MsResetWeaponEffectAttribute(_, actor)` (`0x0079ea90`): each of the
+    /// actor's four weapon effects (`+0xe90`) set is turned off
+    /// (`op_et_eff_off_signal`, through `call`) and cleared; how many.
+    pub fn ms_reset_weapon_effect_attribute<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        actor: u32,
+    ) -> u32 {
+        let mut n = 0;
+        for k in 0..4 {
+            let at = actor.wrapping_add(0xe90 + 4 * k);
+            let e: u32 = mem.read(at);
+            if e != 0 {
+                n += 1;
+                game(mem, call, OP_ET_EFF_OFF_SIGNAL, &[e]);
+                mem.write(at, 0u32);
+            }
+        }
+        n
+    }
+
+    /// `MsCueMoveSpeed_007a88e0(cue)` (`0x007a88e0`): the cue's `f32`
+    /// `+0x4d4` (through a local), doubled for kind 0x1d (`+0xc`) when its
+    /// actor (`+0x14`) has `+0x3fb` set; the `f32` left in ST0, as bits.
+    pub fn ms_cue_move_speed(mem: &impl Mem, cue: u32) -> u32 {
+        use ffx_bridge::x87::{add, load, store};
+        let f = store(load(mem.read(cue.wrapping_add(0x4d4))));
+        if byte(mem, cue, 0xc) == 0x1d {
+            let a = actor_of(mem, u32::from(byte(mem, cue, 0x14)));
+            if byte(mem, a, 0x3fb) != 0 {
+                return store(add(load(f), load(f)));
+            }
+        }
+        f
+    }
+
+    /// `readBtlMonsterName()` (`0x007844c0`): once (while the first is
+    /// null), the three monster text files ([`MONSTER_TEXT_NAMES`]) read
+    /// (`TKMallocAndReadEventMessage`, through `call`) into
+    /// [`crate::read::bridge::MONSTER_TEXTS`].
+    pub fn read_btl_monster_name<M: Mem>(mem: &mut M, call: crate::exec::bridge::Call<'_, M>) {
+        use crate::read::bridge::MONSTER_TEXTS;
+        if mem.read::<u32>(mem.rebase(MONSTER_TEXTS[0])) != 0 {
+            return;
+        }
+        for (to, name) in MONSTER_TEXTS.into_iter().zip(MONSTER_TEXT_NAMES) {
+            let name = mem.rebase(name);
+            let p = game(mem, call, TK_READ_EVENT_MESSAGE, &[name]);
+            let to = mem.rebase(to);
+            mem.write(to, p);
+        }
+    }
+
+    /// `MsEffectReadStatInit()` (`0x007881c0`): with
+    /// `g_BtlEffectReadClear` not negative, the loading actor's
+    /// (`g_BtlEffectReadChr`) `+0xdfd` and `+0xf8c` cleared and that actor
+    /// 0; else `g_BtlEventEffectStat` 0.
+    pub fn ms_effect_read_stat_init(mem: &mut impl Mem) {
+        use crate::parse::bridge::{EFFECT_READ_CHR, EFFECT_READ_CLEAR};
+        if EFFECT_READ_CLEAR.get(mem).cast_signed() >= 0 {
+            let a = actor_of(mem, EFFECT_READ_CHR.get(mem));
+            mem.write(a.wrapping_add(0xdfd), 0u8);
+            mem.write(a.wrapping_add(0xf8c), 0u32);
+            EFFECT_READ_CHR.set(mem, 0);
+        } else {
+            crate::state::bridge::EVENT_EFFECT_STAT.set(mem, 0);
+        }
+    }
 }

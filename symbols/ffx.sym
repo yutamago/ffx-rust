@@ -4868,6 +4868,7 @@
 0x00781550 function MsBattleExeSetIndex       # (mode, index): reads PS2 file index of category 0xe (battle/btl/<field>_<nn>/<field>_<nn>.bin), index from Enc_FormationIndex; was Battle_RequestFile; ported (battle round 20)
 0x00781590 function MsBattleFree              # fh v3:exact 0x00781660; ported (battle round 19)
 0x00781630 function MsBattleGetChrDisposeFlag # fh v3:bsim1.00 0x00781700
+0x00781650 function MsBattleStartReady_00781650 # ours: () -> encounter type 2 (0x0112a9d5) in 1..=3 ? g_BtlStatus in {0x15, 0x16, 1} : g_BtlStartReady != 0; ported (ffx_battle::minor, battle round 29)
 0x00781680 function MsBattleGetFontAddress    # fh v3:exact 0x00781750
 0x007816a0 function MsBattleGetMapCircleOn    # fh v3:bsim1.00 0x00781770
 0x007816b0 function MsBattleGetNum            # fh v3:exact 0x00781780
@@ -4924,7 +4925,7 @@
 0x00784260 function Mon_GetName               # kernel monster record string 0
 0x007842f0 function MsMonShuffleVariants_007842f0 # ours: (): each shown monster (0x14-0x1b, +0x10 and +0x11) whose model (+0x14) later monsters share draws n = 1 + those variants (brnd(MsGetRndChr(k, 0)) & 3) + 8 m, then every monster from it on that it owns takes one at random (brnd(its MsGetRndChr) % n) into +0x424, the pick leaving the list; only caller Mon_LoadAll; ported (ffx_battle::read, battle round 26)
 0x00784420 function MsPlaceMonsters_00784420  # () -> count: each monster (actors 0x14-0x1b) with a model shown to the event (Ch_SetHideEvent(chr, 0)), placed at its battle position (MsGetChrBtlPos, Ch_SetPos3), made visible unless +0x407 (MsSetChrVisibleAppear(i, 0)); MsBtlReadManage's callee; name ours; ported (battle round 20)
-0x007844c0 function readBtlMonsterName        # fh v3:exact 0x00784570
+0x007844c0 function readBtlMonsterName        # name from Fahrenheit (fh v3:exact 0x00784570); (): while g_KernelMonster1 is 0, the three TKMallocAndReadEventMessage("monster1".."monster3") into 0x0112ca6c/70/74; ported (ffx_battle::minor, battle round 29)
 0x00784500 function MsBtlReadAsyncTask_00784500 # graphicRegistAsyncTask(it, 0) from MsBtlReadManage's file step; name ours
 0x007845e0 function MsAddLoveParam            # fh v3:exact 0x00784690
 0x007846e0 function MsCheatPlayerPowerfulOff  # fh v3:cg2 0x784790
@@ -4977,8 +4978,9 @@
 0x00785960 function MsInitParamData           # fh v3:bsim1.00 0x00785a20
 0x00785990 function MsMuteBattleSubTitle      # fh v3:bsim1.00 0x00785a50
 0x007859a0 function MsPayGIL                  # fh v3:exact+call.cs 0x00785a60 cdecl
-0x007859d0 function MsSaveAddHP                  # layout: alphabetical run between MsPayGIL and MsSaveAddInfoData (1 unnamed in the gap); Switch 0x7100375c20 MsSaveAddHP is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007859d0 function MsSaveAddHP                  # layout: alphabetical run between MsPayGIL and MsSaveAddInfoData (1 unnamed in the gap); Switch 0x7100375c20 MsSaveAddHP is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (chr, n): ply_save HP +0x1c += n, then MsCheckRange(it, 0, +0x24); ported (ffx_battle::minor, battle round 29)
 0x00785a00 function MsSaveAddInfoData         # fh v3:exact 0x00785ac0
+0x00785ae0 function MsSaveAddMP_00785ae0 # ours: (chr, n): MsSaveAddHP's twin for the MP: +0x20 += n, MsCheckRange(it, 0, +0x28); caller MsWalkAbilityProcess; ported (ffx_battle::minor, battle round 29)
 0x00785b10 function MsSaveEncountCheck        # fh v3:exact 0x00785bd0
 0x00785b60 function MsGetChrAbilityMap        # fh v3:exact+call.cs 0x00785c20 cdecl
 0x00785c20 function MsSetGIL                  # (n): g_SaveGil = n clamped to 0..999999999; callers MsPayGIL, 0x0085f140; ported. cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008b7bc8 MsSetGIL, 2 votes, round 3
@@ -5022,7 +5024,7 @@
 0x007876e0 function MsEffectCameraBufInit     # fh v3:bsim1.00 0x007877a0
 0x00787740 function MsEffectCameraCall        # fh v3:exact 0x00787800
 0x00787760 function MsEffectCameraEnd         # fh v3:exact 0x00787820; ours: (keep): the 8 effect cameras freed; unless keep, in battle, a started command camera gives way to camera 0x1c; ported (battle round 12)
-0x007877d0 function MsEffectCameraGet         # fh v3:exact 0x00787890
+0x007877d0 function MsEffectCameraGet         # name from Fahrenheit (fh v3:exact 0x00787890); (owner, k, kind) -> k <= 7: 0x0112c22c[k] kept or = MsCameraGet(owner, k, kind); else 0; ported (ffx_battle::minor, battle round 29)
 0x00787810 function MsEffectCheck             # fh v3:bsim1.00 0x007878d0
 0x00787840 function MsEffectCheckMotion       # fh v3:exact 0x00787900
 0x007878a0 function MsEffectCheckMotion2         # layout: alphabetical run between MsEffectCheckMotion and MsEffectCheckTarget (1 unnamed in the gap); Switch 0x7100351240 MsEffectCheckMotion2 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -5043,7 +5045,7 @@
 0x00787f20 function MsEffectRead              # fh v3:exact 0x00787fe0
 0x00788110 function MsEffectReadComplete      # fh switch:bsim1.00 0x710034f5e0
 0x007881b0 function MsEffectReadError            # layout: alphabetical run between MsEffectReadComplete and MsEffectReady (2 unnamed in the gap); Switch 0x710034f690 MsEffectReadError is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x007881c0 function MsEffectReadStatInit         # layout: alphabetical run between MsEffectReadComplete and MsEffectReady (2 unnamed in the gap); Switch 0x7100351b20 MsEffectReadStatInit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007881c0 function MsEffectReadStatInit         # layout: alphabetical run between MsEffectReadComplete and MsEffectReady (2 unnamed in the gap); Switch 0x7100351b20 MsEffectReadStatInit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (): g_BtlEffectReadClear >= 0: MsGetChr(g_BtlEffectReadChr) +0xdfd = 0, +0xf8c = 0, the chr 0; else g_BtlEventEffectStat = 0; ported (ffx_battle::minor, battle round 29)
 0x00788200 function MsEffectReady             # fh v3:exact 0x007882c0
 0x00788270 function MsEffectResetMotionDisable # fh v3:exact 0x00788330
 0x007882b0 function MsEffectSepClearAll       # fh v3:bsim1.00 0x00788370; ours: op_oef2_sep_free_all(0xffff), its eax; ported (battle round 14)
@@ -5215,6 +5217,7 @@
 0x00790670 function MsSetItemCheck            # fh v3:bsim1.00 0x007906c0
 0x007906a0 function MsSetItemWindow           # sorts items by command flags bit 0x2 / 0x400; was Item_BuildLists
 0x00790790 function MsSetUseItem              # fh v3:bsim1.00 0x007907e0
+0x007907a0 function MsImportantReset_007907a0 # ours: (id): id & 0xfff < 0x80: its bit cleared in g_SaveImportant (MsImportantSet's flags); ported (ffx_battle::minor, battle round 29)
 0x00790800 function MsImportantGet            # fh v3:exact 0x00790850
 0x00790840 function MsSetGlobals_00790840        # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x011334bc] = 0x0; u32[&0x011334c0] = 0x0; callers: MsBattleInit; name ours
 0x00790860 function MsImportantName           # fh v3:exact+call.cs 0x007908b0 cdecl
@@ -5283,11 +5286,14 @@
 0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0; ported (battle round 20)
 0x00793cf0 function MsChangeMonsterDir        # fh v3:exact 0x00793d00
 0x00793d90 function MsChrCreatePacket         # fh v3:exact 0x00793da0; ported (battle round 18)
+0x00793dc0 function MsClearBodyHitBits_00793dc0 # ours: (bits): msSetChrBodyHit(MsGetChr(i), 2, 0) for i < 31 with (bits sar i) & 1; caller FUN_007b75c0; ported (ffx_battle::minor, battle round 29)
 0x00793e00 function MsCommandReturnChrStatusAll # fh v3:exact 0x00793e10; ours: (all): 0x5d records +0x30 = 1, +0x28 = 0xff; with all each actor reset (head target, MsEffectEndMotion 0, normals, matrix, specular, visible); ran-away petrified out of place: MsStoneMove; ported (battle round 12)
 0x00793ef0 function MsCommandStartChrStatusAll # fh v3:exact 0x00793f00
 0x00793f10 function MsDetachWeapon            # layout: alphabetical run between MsCommandStartChrStatusAll and MsGetChr (1 unnamed in the gap); Switch 0x71003472c0 MsDetachWeapon is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i, k) -> 1/0 in eax (Ghidra: void): special weapon k takes the actor's +0x49c; weapon k with a character and actor +0x4b5: +0x4b6[k] = 1, MsHideArm(i, 0), unbound (Ch_BindToElem(w, 0, 0)) and placed at Ch_OptposGet(actor's character, weapon +0xd) turned by Ch_GetRot/Ch_SetDirF; ported (ffx_battle::status, battle round 27)
 0x00794020 function MsGetChr                  # index -> actor: < 0x1f at *0x011334d4 + i*0xf90, < 0x5d at *0x0113446c + (i-0x1f)*0x390; was Battle_Actor
 0x00794060 function MsGetChrInfoOne           # (i, kind, k, dir, out) -> 1/0: one actor's property kind 1-13 (position, direction, height, width, battle/bottom/camera position, move position 0x007a93e0, optional position k...) added to out; MsGetChrInfo's step; named here; ported
+0x00794240 function MsGetChrSbyte508_00794240 # ours: (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x508 : 0; ported (ffx_battle::minor, battle round 29)
+0x00794280 function MsGetChrSbyte4fc_00794280 # ours: (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x4fc : 0; ported (ffx_battle::minor, battle round 29)
 0x007942c0 function MsGetChrBetweenDist          # layout+callees: sorts between MsGetChr and MsGetChrBit, and its named callees match the Switch 0x710034cdb0 MsGetChrBetweenDist's (similarity 0.67: MsGetChrPos, MsPointLen2D); symbols from Fahrenheit's server export
 0x00794330 function MsGetChrBit               # (self, selector, ...) -> bitmask of the 31 actors; selector 0x1xxx = actors with that id (+0xe), negative values = special sets (-26 self target +0xdc4, -25 ... ); was Battle_SelectActors
 0x007947f0 function Battle_FirstSelectedActor    # (self, selector, a, b) -> lowest actor index in Battle_SelectActors' mask, -1 if none
@@ -5301,17 +5307,18 @@
 0x00794c20 function MsGetChrCenterPos         # fh v3:exact 0x00794c30; ours: msGetChrPos, y - height/2 unless +0x505 or underwater; ported (battle round 13)
 0x00794ca0 function MsGetChrCursorFlag        # fh v3:cg5 0x794cb0
 0x00794d20 function MsGetChrDir               # fh v3:exact 0x00794d30
+0x00794d70 function MsGetChrByte41f_00794d70 # ours: (i) -> MsBtlChrNumCheck ? (u8) MsGetChr((u8)i) + 0x41f : 0; ported (ffx_battle::minor, battle round 29)
 0x00794e00 function MsGetChrDist              # fh v3:cg8 0x794e10
 0x00794e40 function MsGetChrEffectLevel          # layout: alphabetical run between MsGetChrDist and MsGetChrEscapePos (2 unnamed in the gap); Switch 0x7100347a00 MsGetChrEffectLevel is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00794e80 function MsGetChrEffectVariable       # layout: alphabetical run between MsGetChrDist and MsGetChrEscapePos (2 unnamed in the gap); Switch 0x7100347a40 MsGetChrEffectVariable is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00794e80 function MsGetChrEffectVariable       # layout: alphabetical run between MsGetChrDist and MsGetChrEscapePos (2 unnamed in the gap); Switch 0x7100347a40 MsGetChrEffectVariable is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i) -> MsBtlChrNumCheck(i) ? AL = MsGetChr((u8)i) + 0xe0c over the actor's address : 0; ported (ffx_battle::minor, battle round 29)
 0x00794ec0 function MsGetChrEscapePos         # fh v3:exact 0x00794ed0
 0x00794f20 function MsGetChrEventFlag         # fh v3:exact 0x00794f30
-0x00794f70 function MsGetChrFly                  # layout: alphabetical run between MsGetChrEventFlag and MsGetChrGround (1 unnamed in the gap); Switch 0x71003475c0 MsGetChrFly is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00794f70 function MsGetChrFly                  # layout: alphabetical run between MsGetChrEventFlag and MsGetChrGround (1 unnamed in the gap); Switch 0x71003475c0 MsGetChrFly is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i) -> MsBtlChrNumCheck ? (i8) MsGetChr((u8)i) + 0x505 : 0; ported (ffx_battle::minor, battle round 29)
 0x00794fb0 function MsGetChrGround            # fh v3:exact 0x00794fc0
 0x00794ff0 function MsGetChrGroundPos         # fh v3:cg6 0x795000
 0x00795040 function MsGetChrGroup             # fh v3:exact 0x00795050
 0x00795080 function MsGetChrHandle            # fh v3:exact 0x00795090
-0x007950b0 function MsGetChrHeadPos           # fh v3:exact 0x007950c0
+0x007950b0 function MsGetChrHeadPos           # name from Fahrenheit (fh v3:exact 0x007950c0); (i, out): h = MsGetChrHandle(i); h: Ch_OptposGet(h, 1, out), out.y = f32(out.y - 2.0 (g_Two f64 0x00b92270)); ported (ffx_battle::minor, battle round 29)
 0x007950f0 function MsGetChrHeight            # fh v3:cg11 0x795100
 0x00795130 function MsGetChrInBattle             # layout: alphabetical run between MsGetChrHeight and MsGetChrInfo (1 unnamed in the gap); Switch 0x7100347470 MsGetChrInBattle is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00795170 function MsGetChrInfo              # fh v3:exact 0x00795180
@@ -5335,6 +5342,7 @@
 0x00795970 function MsGetChrTop               # fh v3:bsim1.00 0x00795980
 0x00795980 function MsGetChrTopPos            # fh v3:exact 0x00795990; ours: msGetChrPos, y - height (half with +0x505 or underwater); ported (battle round 13)
 0x00795a20 function MsGetChrWidth             # fh v3:exact 0x00795a30
+0x00795a60 function MsGetChrByte3f4_00795a60 # ours: (i) -> MsBtlChrNumCheck ? (u8) MsGetChr((u8)i) + 0x3f4 : 0; ported (ffx_battle::minor, battle round 29)
 0x00795aa0 function MsGetMon                  # fh v3:exact+call.cs 0x00795ab0 cdecl
 0x00795ac0 function MsGetTransChrPos             # (actor, vec): MsGetChrBtlPos when the actor rides on nothing (+0x43f == -1), else Ch_OptposGet of the carrier's model at point +0x441; Switch MsGetTransChrPos (0x7100349660) calls exactly Ch_OptposGet and MsGetChrBtlPos and sorts between MsGetMon and MsGetWeapon, as here; the battle porter's msGetChrPosNoChr
 0x00795b10 function MsGetWeapon               # fh v3:exact 0x00795b20
@@ -5343,8 +5351,9 @@
 0x00795c00 function MsHideArm                 # fh v3:exact 0x00795c10
 0x00795c40 function MsResetNormalCalc         # fh v3:exact 0x00795c50
 0x00795c70 function MsReturnCameraVisible     # fh v3:exact 0x00795c80
+0x00795da0 function MsSetAllBodyHit_00795da0 # ours: (on): msSetChrBodyHit(MsGetChr(i), 2, on) for the 31 actors; ported (ffx_battle::minor, battle round 29)
 0x00795e20 function MsSetChrDirF              # fh v3:cg7 0x795e30; ours: (i, dir f32): Ch_SetDirF on actor i's character, -1; 0 without one; ported (battle round 12)
-0x00795e70 function MsSetChrDirLeave             # layout: alphabetical run between MsSetChrDirF and MsSetChrDirTarget (1 unnamed in the gap); Switch 0x710034a650 MsSetChrDirLeave is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x00795e70 function MsSetChrDirLeave             # layout: alphabetical run between MsSetChrDirF and MsSetChrDirTarget (1 unnamed in the gap); Switch 0x710034a650 MsSetChrDirLeave is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i): an actor (MsBtlChrNumCheck) with +0x42e set gets +0x42b = 0xc; ported (ffx_battle::minor, battle round 29)
 0x00795eb0 function MsSetChrDirTarget         # fh v3:exact 0x00795ec0
 0x007960d0 function MsSetChrMotionLevel       # fh v3:cg2 0x7960e0
 0x00796110 function MsSetChrMoveFlag          # fh v3:cg4 0x796120
@@ -5362,6 +5371,8 @@
 0x007967c0 function MsSetChrVisibleCameraAll  # fh v3:exact 0x007967d0
 0x007967f0 function MsSetChrVisibleEvent      # fh v3:exact 0x00796800; ported (battle round 20)
 0x00796860 function MsSetChrVisibleMain       # name from Fahrenheit (fh switch:bsim1.00 0x7100347040); (i, v) -> msSetChrVisibleReq(i, 0, v); ported (ffx_battle::minor, battle round 29)
+0x00796880 function MsSetMonsVisible_00796880 # ours: (v) -> 8: MsSetChrVisible(i, v) for i 0x14..0x1c; ported (ffx_battle::minor, battle round 29)
+0x007968b0 function MsSetPlayersVisible_007968b0 # ours: (v) -> 0x12: MsSetChrVisible(i, v) for i 0..0x12; ported (ffx_battle::minor, battle round 29)
 0x007968e0 function MsSetChrWeight            # fh v3:exact 0x007968f0
 0x00796940 function MsSetDirThetaMode         # fh v3:exact 0x00796950
 0x007969c0 function Ch_SetCalcNorm2           # (holder) on = holder +0x3c or +0x3d byte set; Ch_SetCalcNorm2_00835780(holder[0], on) when holder[0]; returns on. fh: switch:cg3 0x71008ad4c8
@@ -5427,7 +5438,7 @@
 0x00798ff0 function MsFieldItemGetMes         # name from Fahrenheit (fh v3:exact 0x00799000); (i) -> 0x02310ce0 after MsBtlGetClear_007993e0(it, 0xb) and msFieldItemGet(i, it); ported (ffx_battle::minor, battle round 29)
 0x00799020 function MsFieldItemRead           # fh v3:exact 0x00799030; ported (battle round 21): directory 0xd files 0x19, 0x1a (sizes 0x01135ff0, 0x01135ff8) into g_BtlFieldItem, g_BtlFieldItem2 (aligned user_malloc, MsMemCheckRegist, CD +0)
 0x007990d0 function MsGetItem                 # gil, AP, two drop slots, overkill drops, bribe (spoils section 4); was Battle_GiveRewards; (chr, actor, rewards, overkill, flags); ported (battle round 22, ffx_battle::reward)
-0x007993b0 function MsSetWeaponName           # fh call.cs cdecl
+0x007993b0 function MsSetWeaponName           # name from Fahrenheit (fh call.cs cdecl); (gear) -> MsWeaponName(n, +4, 0, gear + 0xc) after u16 +0 = n = MsWeaponNameNum(gear); ported (ffx_battle::minor, battle round 29)
 0x007993e0 function MsBtlGetClear_007993e0    # (p, kind) -> 8: MsStructClear(p, 0x1b0), halfwords +0xee.. = kind << 12 | i for i < 8; MsBtlGetInit's callee; name ours; ported (battle round 21)
 0x00799420 function msFieldItemGet            # (takara index, rewards): kind 0 gil x100, 2 item, 5 equipment from buki_get, 10 key item; was Treasure_Give; any kind but 2/5/10 is gil (+0xcc); language 0xb writes item 0x2065 back as 0x2060; equipment slots = max(record byte 7, abilities held); ported (battle round 22, ffx_battle::reward)
 0x007995c0 function MsCheckSameSide           # (i, bits): MsGetRamChrMonster(i) == that of the first actor in bits, 1 when none; MsSetChrMimic; name ours
@@ -5542,7 +5553,7 @@
 0x0079e890 function MsMagicEffectSet          # fh v3:exact 0x0079e8b0
 0x0079e8c0 function MsMagicEffectStart           # layout+callees: sorts between MsMagicEffectSet and MsSetStealEffect, and its named callees match the Switch 0x7100353440 MsMagicEffectStart's (similarity 1.00: MsGetChr, MsGetEffID, MsRegSEplay, op_et_eff); symbols from Fahrenheit's server export
 0x0079ea40 function MsPauseChrEffect             # layout+callees: sorts between MsMagicEffectStart and MsResetWeaponEffectAttribute, and its named callees match the Switch 0x7100352f60 MsPauseChrEffect's (similarity 1.00: MsGetChr, op_et_bindeff_draw_off, op_et_bindeff_draw_on); symbols from Fahrenheit's server export
-0x0079ea90 function MsResetWeaponEffectAttribute # layout+callees: sorts between MsMagicEffectSet and MsSetStealEffect, and its named callees match the Switch 0x71003537e0 MsResetWeaponEffectAttribute's (similarity 1.00: op_et_eff_off_signal); symbols from Fahrenheit's server export
+0x0079ea90 function MsResetWeaponEffectAttribute # layout+callees: sorts between MsMagicEffectSet and MsSetStealEffect, and its named callees match the Switch 0x71003537e0 MsResetWeaponEffectAttribute's (similarity 1.00: op_et_eff_off_signal); symbols from Fahrenheit's server export; (_, actor) -> how many of the 4 words at +0xe90 were set: each op_et_eff_off_signal(w) then 0; ported (ffx_battle::minor, battle round 29)
 0x0079eb10 function MsSetChrEffect_0079eb10      # structure: (chr, ...): unless chr is 0xff, starts an effect for it (MsGetEffID, op_et_eff); callers Native_7017 and two battle effect functions; name ours
 0x0079ebe0 function MsSetChrEffectNext_0079ebe0  # structure: (chr, a, b): effect id from the chr's effect counter (+0xe2a, then incremented) with MsGetEffID(.., 0xe, chr), started with op_et_eff; callers MsSetStealEffect, MsSetStealGillEffect, MsStatusDefenseEffect; name ours; increments g_BtlCommandHold2 (0x0112c8f8) when op_et_eff starts (positive); ported (battle round 13)
 0x0079ed00 function MsSetStealEffect          # fh v3:bsim1.00+call.cs 0x0079ed20 cdecl; ours: MsSetChrEffectNext(i, 0, 9 or 10); ported (battle round 13)
@@ -5929,9 +5940,12 @@
 0x007a8700 function GetFieldPtr0_007a8700        # auto-port shape (return address of a field's target, cdecl): t0 = u32[a0]; return (((t0 == 0x0) * 0x4) + 0x1); callers: Native_703c_Poll, Native_7097_Poll, Native_BtlRunEvent_Poll and 4 more; name ours
 0x007a8720 function MsGetBasicDivide          # callees: its named callees match the Switch 0x7100382290 MsGetBasicDivide's (similarity 1.00: MsGetChr, MsGetChrDir, MsNearRag); symbols from Fahrenheit's server export; (i, n, mode) -> eax: the turn d = f32(MsNearRag(facing, +0x514[i8 +0x511]) - facing) (facing MsNearRag(0, MsGetChrDir)), deg = d*180/g_PiF64 + 360 times f32(n): mode ? trunc(/360) % n : (1 - trunc(/-180)) % 2n / 2; caller Native_708f; ported (ffx_battle::body, battle round 28)
 0x007a87f0 function MsGetDirDivide            # callees: its named callees match the Switch 0x7100382180 MsGetDirDivide's (similarity 1.00: MsGetChrDir, MsNearRag, MsPointLen, MsVectorRect2Polar); symbols from Fahrenheit's server export; (from, to, i, n, mode) -> eax: MsGetBasicDivide's sectors of the turn from actor i's facing to the yaw from -> to (MsVectorRect2Polar, MsNearRag), 0 turn when MsPointLen is 0.0; callers Native_702c, Native_700d; ported (ffx_battle::body, battle round 28)
+0x007a88e0 function MsCueMoveSpeed_007a88e0 # ours: (cue) -> ST0 f = f32 +0x4d4, doubled when +0xc == 0x1d and MsGetChr(+0x14) + 0x3fb set; ported (ffx_battle::minor, battle round 29)
 0x007a8920 function addMonDieSe                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Please increase ZanmatoSep Size\\n'; Switch 0x7100382390 addMonDieSe (symbols from Fahrenheit's server export)
 0x007a8970 function MsGetGlobal0112c8d8_007a8970 # auto-port shape (return global u32, cdecl): t0 = u32[&0x0112c8d8]; return t0; callers: MsSetChrStatInfo; name ours
 0x007a89c0 function MsSetChrVisibleBtl2Event  # fh switch:cg2 0x7100348680
+0x007a8c20 function MsBattleStatusMenuless_007a8c20 # ours: () -> g_BtlStatus in {1, 2, 0x18, 0x1b, 0x1e}; ported (ffx_battle::minor, battle round 29)
+0x007a8c50 function MsWaitMotionPick_007a8c50 # ours: (chr, actor, v) -> Ch_GetWaitMotion(chr) && !(i8) actor+0x434 ? 0 : v; ported (ffx_battle::minor, battle round 29)
 0x007a8c80 function ms_motion_trans           # fh v3:exact 0x007a8ca0
 0x007a8f20 function resetZanmatoSepList       # fh v3:exact 0x007a8f40
 0x007a8fc0 function Battle_ScriptPlayMotion      # (ctx, ..., motion, flag): plays a motion on the script's actor (0x00837d00), returns the length in frames << 8 / speed; core of 0x7007; ported (battle round 23; args (worker, args unused, stack, flag byte)): AtelPopStackInteger motion (bit 0x8000 no blend), AtelGetBattleIdAdrs2 index byte (0xff: 1), actor +0x434 = 1; model +0 and +0x38, ms_motion_trans >= 0, +0x3f3 clear: Ch_ResetMotion, Ch_SetSysMotion(chr, (i8)+0x20, m), hokan 0/0 or (unless +0x4ac bit 7) next 0 and MsMotBinFrame(i, actor, m, old +0x3f0); +0x405 -> msMoveReset; +0x3f0 = m, +0x40a = flag, MsCalcMotionSpeed; Ch_GetSeqFrame > 0: frames<<8 / speed (+0x402 with +0x404 1, else +0x3fc * +0x406 / 8 signed; 0: frames), +0x434 = 0; else 1
@@ -5979,8 +5993,8 @@
 0x007ab8f0 function MsGetExcelDataNum         # fh v3:exact 0x007ab910
 0x007ab970 function MsEquipSaveWeapon         # fh v3:exact 0x007ab990
 0x007ab9f0 function SwapSaveGear              # fh call.cs cdecl; ported (battle round 23): (first, second) -1 when either is 0xff; MsGetSaveWeapon slots trade 0x16 bytes; every ply_save +0x2d/+0x2e equal to an ID (12 bits; a 0x7000 ID whole) moves to the other and the slot it lies in gets the character as owner (+6); with a 0x7000 ID among the two both become 0xff; 0
-0x007abb70 function MsGetSaveChrArmorModel    # fh v3:cg2 0x7abb90
-0x007abba0 function MsGetSaveChrWeaponModel   # fh v3:cg2 0x7abbc0
+0x007abb70 function MsGetSaveChrArmorModel    # name from Fahrenheit (fh v3:cg2 0x7abb90); (chr) -> u16 +0xc of MsGetSaveWeapon(ply_save[chr] +0x2e, 0), 0 without; ported (ffx_battle::minor, battle round 29)
+0x007abba0 function MsGetSaveChrWeaponModel   # name from Fahrenheit (fh v3:cg2 0x7abbc0); (chr) -> u16 +0xc of MsGetSaveWeapon(ply_save[chr] +0x2d, 0), 0 without; ported (ffx_battle::minor, battle round 29)
 0x007abbd0 function MsGetSaveWeapon           # (id): 0xb000 + i -> battle spoils slot (0x02310dde), else inventory slot i (< 200) at 0x01130f2c; was Equip_Get
 0x007abc60 function MsGetSaveWeaponAmount     # counts in-use slots without flag 0x02; out: free slots; was Equip_CountOwned
 0x007abca0 function Equip_RebuildWearers       # equipment +6 = wearer, from ply_save +0x2d/+0x2e
@@ -6010,8 +6024,11 @@
 0x007ad470 function MsBtlReadCueRegistWeapon  # fh v3:exact 0x007ad480
 0x007ad550 function MsBtlReadStatusComplete   # fh switch:bsim1.00 0x710036fad0
 0x007ad570 function MsWeaponFadeIn_007ad570   # structure: (i, k, frames) MsGetWeapon(i, k)'s model: Ch_SetTransparent(chr, 0.0, 0) then (chr, 1.0, frames); caller MsWeaponRead (8 frames); name ours; ported (battle round 15)
+0x007ad5b0 function MsWeaponSetTransparent_007ad5b0 # ours: (i, n, frames): MsGetWeapon(i, n)'s character (faults on a null weapon) Ch_SetTransparent(chr, 0.0, frames); ported (ffx_battle::minor, battle round 29)
 0x007ad5e0 function MsChangeWeaponInvisible   # fh v3:exact+call.cs 0x007ad5f0 cdecl
 0x007ad640 function MsChangeWeaponWakka          # layout+callees: sorts between MsChangeWeaponInvisible and MsWeaponDispose, and its named callees match the Switch 0x710037e150 MsChangeWeaponWakka's (similarity 1.00: MsFieldItemGetMes); symbols from Fahrenheit's server export
+0x007ad6e0 function MsEquipmentHasUnmarked_007ad6e0 # ours: () -> 1 when a g_Equipment slot in use (+2) has flag 8 and not flag 2 (+3), else 0; ported (ffx_battle::minor, battle round 29)
+0x007ad710 function MsEquipmentMarkFirst_007ad710 # ours: (on) -> the first slot in use with flag 8 loses flag 2 (on) or gets it (!on), 1; 0 without one; ported (ffx_battle::minor, battle round 29)
 0x007ad750 function MsWeaponDispose           # fh v3:exact 0x007ad760; ours: (i, k, flags, weapon) the weapon record's model/motion group/data by flags, handed to the special weapon actor; ported (battle round 13)
 0x007ad820 function MsWeaponRead              # fh v3:exact 0x007ad830
 0x007ad940 function MsWeaponReadSet           # fh v3:exact 0x007ad950
@@ -6090,6 +6107,7 @@
 0x007b1a70 function MsRestartMagicCamera      # fh switch:bsim1.00 0x710035cc00
 0x007b1aa0 function MsSetLimitParty           # fh v3:exact 0x007b1ab0
 0x007b1b50 function MsSetReelResult           # fh v3:exact 0x007b1b60
+0x007b1e40 function MsCountSlotsOf_007b1e40 # ours: (p, v) -> how many of the bytes p[0..3] equal v; caller FUN_007b1710; ported (ffx_battle::minor, battle round 29)
 0x007b1e80 function MsSetHeadTarget           # fh v3:exact 0x007b1e90
 0x007b1f10 function msResetHeadTarget         # fh v3:exact 0x007b1f20
 0x007b1fd0 function MsCheckInputCueExe        # fh v3:exact 0x007b1fe0
@@ -9335,6 +9353,7 @@
 0x00873e80 function AtelSetMenuOtakaraFlag    # fh v3:bsim1.00 0x00873e20
 0x00873e90 function AtelSetOnMemoryMovie      # fh v3:bsim1.00 0x00873e30
 0x00873f70 function AtelSetOnMemoryMovieFileWait # fh switch:bsim1.00 0x710044eb50
+0x008741d0 function TkCdSizeKBCached_008741d0 # ours: () -> 0x00c52760 while not negative; else it becomes (TkCdSize(0x2a, 0) + 0x3ff) / 1024 (signed) + 0x20; ported (ffx_battle::minor, battle round 29)
 0x00874200 function MsSetSaveCommandWithPrefix # name from Fahrenheit (fh v3:exact+call.cs 0x00874190 cdecl); (chr, id, on) -> MsSetSaveCommand(chr, 0x3000 | id & 0xfff, on) (a jump); ported (ffx_battle::minor, battle round 29)
 0x008742b0 function AtelClearShape            # fh v3:exact 0x00874240
 0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0
@@ -10522,7 +10541,7 @@
 0x008bdfe0 function TOSetPair_008bdfe0 # cdecl(prev, cur): 0x025cc584 = prev (or the stored 0x025cc588 for 0), 0x025cc588 = cur, u16 0x0186a178 = 0x1000 when equal else 0 (returned); callers 0x008ba660, 0x008bdb70; name ours
 0x008be020 function TOBtlEndSetFlagMark       # cdecl(i, k): BtlEnd_SetFlag(i), byte 0x01869f2a + 14k = 0xf; name ours
 0x008be050 function SetEntries_01869f20 # cdecl(v): for the byte 0x01869f18 14-byte entries from 0x01869f22, +2 = v and (v == 3) +0 = 2 * entries after it; caller TkBtlEndCtrl; name ours
-0x008be0a0 function MsExchangeSaveWeapon         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008bb6f8 MsExchangeSaveWeapon, 2 votes, round 1
+0x008be0a0 function MsExchangeSaveWeapon         # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008bb6f8 MsExchangeSaveWeapon, 2 votes, round 1; () -> SwapSaveGear([g_BtlEndSpoilWeapons][+0x0186a190 + +0x0186a1a0], u16 0x02310f8e[+0x0186a1a4]); ported (ffx_battle::minor, battle round 29)
 0x008be0d0 function BtlEnd_DrawWeaponPlate_008be0d0 # ours: (n, x, y, fixed): weapon spoil n (< 0x0186a188) of the u16 list [0x025cc580]; y += remapY2(66) * f32([0x0186a18c]) / 4096 unless fixed (ftol); MsGetSaveWeapon(id, &local) with +2: TODrawMenuPlateXYWHType(x, y, remapX2(740), remapY2(60), 5), DrawCrossMenuIconWeaponName(id, x, y, +6 != 0xff); caller 0x008bd280 (TkBtlEnd draw); ported (ffx_battle::battle_end, battle round 28)
 0x008be320 function GetU32_00c5a084 # () -> u32 at 0x00c5a084; name ours
 0x008be330 function TOInitMenuGraph           # fh switch:bsim1.00 0x71004b1c00; 0x0186a20c = Sg_GetDBuffDC(0x0186a210)
@@ -15639,6 +15658,7 @@
 0x00c52704 label    g_AtelConstants              # u32 table opcode 75 pushes (Script_Run)
 0x00c5273c label    g_AtelForceBattleMapId       # written by AtelSetForceBattleMapId (0x00870130)
 0x00c52740 label    g_ScriptRunMutex             # Mutex_Create's object, -1 until Script_Run's first call; held for each Script_Run
+0x00c52760 label g_CdSize2aKB # i32: file 0x2a's size in KB + 0x20, -1 until TkCdSizeKBCached_008741d0 fills it
 0x00c52ad8 label    g_TkVibrateCurves         # 4 default vibration curves of 16 bytes (u16 entries), by kind (TkGetVibrateCurve)
 0x00c54db0 label    g_SndDefaultWaves         # i16[16] wave ids, -1 unused (0, 1, 0x7d5 in the image); SndSetWaveData/SndSortCommonWave default
 0x00c54dd0 label    g_SndLastFadeOutMusic     # u32, -1 in the image: SndMusicVolumeFadeOut's music; SndMusicCrossStart starts it at volume 0 when nothing plays
@@ -16623,6 +16643,9 @@
 0x01869fbc label    g_TkBtlEndFlag            # BtlEnd_SetFlag
 0x0186a188 label g_BtlEndSpoilWeaponCount  # i32: weapon spoils on the results screen (BtlEnd_DrawWeaponPlate_008be0d0 0x008be0d9)
 0x0186a18c label g_BtlEndSpoilWeaponRows   # i32: the weapon list's offset in 1/4096 rows (BtlEnd_DrawWeaponPlate_008be0d0 0x008be10c)
+0x0186a190 label g_BtlEndSpoilWeaponTop # u32: the weapon spoil list's first shown row (MsExchangeSaveWeapon)
+0x0186a1a0 label g_BtlEndSpoilWeaponCursor # u32: the cursor row (MsExchangeSaveWeapon adds it to g_BtlEndSpoilWeaponTop)
+0x0186a1a4 label g_BtlEndEquipSlot # u32: index into the u16 slots at 0x02310f8e (MsExchangeSaveWeapon)
 0x0186a228 label    g_MenuHelpExtMode         # first argument of TOMenuHelpSetExtMode
 0x0186a238 label    g_TkMn2DrawY              # MenuMn2_StepDrawY adds 16
 0x0186a23c label    g_TkMenuSummonGrowMax     # SetSummonGrowMax, once: summon growth records (8 bytes) before the first with byte +7 set
