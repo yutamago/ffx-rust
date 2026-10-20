@@ -5077,8 +5077,9 @@
 0x00781c90 function MsBattleLabelExe          # fh v3:exact+call.cs 0x00781d60 cdecl
 0x00781d00 function MsBattleMemInit           # fh v3:exact 0x00781dd0
 0x00781d40 function Kernel_LoadTables         # loads command, ply_rom, a_ability, item, monmagic1/2, ... into globals; cdecl(kind) -> -1 (0 for kind > 5): user_malloc(0x25800) buffer, getExcelBinSize(name, buf) (size kept as u16 at 0x0112a968/96a/970/96e for command/ply_rom/a_ability/item, whole for monmagic1/2), table allocated once (Sg_MemSetAlign(0x40), user_malloc, MsMemCheckRegist), memcpy, user_free_thunk; ply_rom of size 0 read from the CD ((*GetCD())(8, table, 0, 0)); ported (system r38, files::bridge::kernel_load_tables)
-0x00782050 function MsBattleReadData          # fh v3:exact 0x00782110
-0x00782090 function MsBattleReadDataNB        # fh v3:exact 0x00782150
+0x00782050 function MsBattleReadData          # fh v3:exact 0x00782110; ported (ffx_battle::read, battle round 33): NB(0), then CD +8 (wait) and NB(1), NB(2), ... until 0; eax 0 when the first did nothing, else -1
+0x00782090 function MsBattleReadDataNB        # fh v3:exact 0x00782150; ported (ffx_battle::read, battle round 33): (more) one step of the language data reread when MsGetCheckEnglish and the config switch (always 0) differs from g_BtlConfigEnglish; jump table 0x007821c0 (7 steps: MsBattleExe(-1,0,0,1), MsBtlReadSetScene+0x782670, Kernel_LoadTables parts, 0x782b70 parts, MsImportantRead, MsWeaponNameRead, eiAbmSetLang); more 0 restarts, step > 6 keeps the switch, 0; else -1
+0x007821c0 label MsBattleReadDataNB_jumptable # jump table of MsBattleReadDataNB (7 entries 0x7820eb..0x78219d, indexed by g_BtlReadDataStep)
 0x007821e0 function MsBattleWater             # returns 0x0112c9ce, formation byte 3 (set only in underwater fields: cdsp00, bjyt02, genk09, bsil03, mtgz07, stbv00 ...); was Battle_IsUnderwater
 0x007821f0 function MsBtlBridgeBtl2Event      # fh v3:exact 0x007822b0; ported (battle round 19)
 0x007824e0 function MsBtlBridgeEvent2Btl      # fh v3:exact 0x007825a0
@@ -5111,17 +5112,19 @@
 0x00783000 function MsBtlReadInit             # fh v3:exact 0x007830b0
 0x00783020 function MsBtlReadManage           # fh v3:exact+call.cs 0x007830d0 cdecl; ported (battle round 21): the read's state machine over g_BtlStatus 4-0x22 (jump table 0x0078361c, index bytes 0x00783660), then MsBtlReadCueManage (docs/formats/battle.md)
 0x00783680 function MsBtlReadMonster          # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data; was Mon_LoadText; ported (battle round 21): status 0xd, from 0x0112a92a each monster slot with an ID and a file (directory 0x10, MsGetChrID): data shared with an earlier same ID (+0x48; +0x11 0, +0x14 j + 0x14), readBtlMonsterName, kernel texts +0x50/+0x90/+0x190 (0x3f/0xff/0x1ff bytes; tables by ID < 0x65, 0x65-0xb4, else), IDs 0xfe/0x11c/0x11f with g_BtlFileKind set: default name of kind 8/9/0xc; shared: Mon_AttachData; else Sg_MallocA "mon_data", async read (0x00783990, request +0xc slot), -1; none left: Mon_LoadAll, status 0xe, 0
-0x00783990 function MsBtlReadMonsterDone_00783990 # the monster file read's completion (MsBtlReadMonster's CD +0 callback; request +0xc the slot); name ours
+0x00783990 function MsBtlReadMonsterDone_00783990 # the monster file read's completion (MsBtlReadMonster's CD +0 callback; request +0xc the slot); name ours; ported (ffx_battle::read, battle round 33): Mon_AttachData(request+0xc), then jmp MsBtlReadMonster
 0x007839b0 function MsBtlReadMonsterProcess   # fh v3:exact 0x00783a60
-0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84
+0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84; eax = g_BtlRead after the increment; MsRegistSEdata(mon, file+section 6) when +0x11 and count > 6; ported (ffx_battle::read, battle round 33)
 0x00783b90 function MsBtlReadPlayerModelProcess # fh v3:exact 0x00783c40
 0x00783bc0 function MsBtlReadPlayerProcess    # fh v3:exact 0x00783c70
 0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData; ported (battle round 20)
 0x00783e00 function MsBtlReadSceneFree        # fh v3:exact 0x00783eb0; ours: g_BtlRead3 freed (Sg_FreeA(p, 5)) and cleared; ported (battle round 14)
 0x00783e20 function MsBtlReadSetScene         # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); was Battle_InitSections; the file's text/font, "system_01" check; with g_BtlExeMode status 0 and 0, else the set-up and status 10 (event jump map = battle map) or 8; ported (battle round 22, ffx_battle::read)
-0x00783f60 function MsBtlReadWeapon              # layout+callees: sorts between MsBtlReadSetScene and MsCDreadWeapon, and its named callees match the Switch 0x710036eda0 MsBtlReadWeapon's (similarity 1.00: MsCDreadWeapon, MsGetChr); symbols from Fahrenheit's server export
+0x00783f60 function MsBtlReadWeapon              # layout+callees: sorts between MsBtlReadSetScene and MsCDreadWeapon, and its named callees match the Switch 0x710036eda0 MsBtlReadWeapon's (similarity 1.00: MsCDreadWeapon, MsGetChr); symbols from Fahrenheit's server export; ported (ffx_battle::read, battle round 33): status 0x12; from (i8)g_BtlRead2 the first of 18 actors with +0xdc8 whose MsCDreadWeapon(i, actor, 0) starts a read (0) notes i+1, -1; none: status 0x13, 0
+0x00783fc0 function MsCDreadWeaponDone_00783fc0 # ours: (done) the weapon file read's CD callback (MsCDreadWeapon passes it): MsAttachWeaponData_00784000(done+0xc, 1), then done+0x10: 0 jmp MsBtlReadWeapon, 2 jmp MsBtlReadStatusComplete, else ret; ported (ffx_battle::read, battle round 33)
+0x00784000 function MsAttachWeaponData_00784000 # ours: (i) MsGetChr(i): when +0x11, file +0x48 section 2 -> +0x4c and MsEffectWeaponInit (count > 2, once), section 1 -> MsRegistSEdata (count > 1); parallel to Mon_AttachData; callers MsCDreadWeapon, 0x783fc0; ported (ffx_battle::read, battle round 33)
 0x00784070 function Mon_LoadAll               # sprintf m%03d for each of 8 enemy slots
-0x00784120 function MsCDreadWeapon            # fh v3:exact 0x007841d0
+0x00784120 function MsCDreadWeapon            # fh v3:exact 0x007841d0; (i, actor, then) -> 0 read started / -1 attached (+0x48 set): dir 0x28 file m-2(m/10)-1 of MsGetSaveWeapon(+0x592,0)+0xc low byte for i < 7, else dir 0x2b file i-7; Sg_MallocA(n,0x10,5,"wep_data",i) -> +0x48; CD +0 with 0x783fc0 and a frame request (+0xc i, +0x10 then); ported (ffx_battle::read, battle round 33)
 0x00784220 function MsGetRamChrCTBbasic          # layout+callees: sorts between MsCDreadWeapon and readBtlMonsterName, and its named callees match the Switch 0x710036b910 MsGetRamChrCTBbasic's (similarity 1.00: MsGetChr); symbols from Fahrenheit's server export; ported (battle round 20)
 0x00784260 function Mon_GetName               # kernel monster record string 0; ported (ffx_battle::minor, battle round 32): cdecl (dst, id): readBtlMonsterName, table g_KernelMonster1 (id < 0x65 signed) / 2 (id - 0x65 <= 0x4f) / 3; 0 without it; else memset(dst, 0, 0x40), memcpy of the name (strings + record u16, strlen, unbounded); 1
 0x007842f0 function MsMonShuffleVariants_007842f0 # ours: (): each shown monster (0x14-0x1b, +0x10 and +0x11) whose model (+0x14) later monsters share draws n = 1 + those variants (brnd(MsGetRndChr(k, 0)) & 3) + 8 m, then every monster from it on that it owns takes one at random (brnd(its MsGetRndChr) % n) into +0x424, the pick leaving the list; only caller Mon_LoadAll; ported (ffx_battle::read, battle round 26)
@@ -15549,6 +15552,7 @@
 0x00b501c0 label    g_AlphaScaleNormal        # .rdata f32 256.0: useExtendedAlpha(0) copies it to g_AlphaScale
 0x00b548dc label g_BtlGroundInit           # f32 -14.0, MsBattleInit's g_BtlGround
 0x00b54920 label g_BtlMonDataName          # "mon_data", MsBtlReadMonster's Sg_MallocA tag
+0x00b54934 label s_wep_data                 # "wep_data" (MsCDreadWeapon's Sg_MallocA name)
 0x00b549f8 label s_BtlEffectReadError      # MsEffectRead's MsBattleError message (reading while an event effect plays or the actor reads already)
 0x00b54a00 label s_BtlEffectNotReady       # "effect does not ready call", MsEffectTerminate's MsBattleError message (kind 2 without +0xdfb 5); name ours
 0x00b54b58 label g_BtlDebugBattleMessage   # "## BATTLE %x %x\n" (MsBattleProcess's debug combination)
@@ -16514,6 +16518,8 @@
 0x0112ca30 label g_BtlMemWord              # u32 zeroed by MsBattleMemInit
 0x0112ca32 label g_BtlMemWordHigh          # u16 g_BtlMemWord's high half (MsBattleInit's debug MsDebugSetScene)
 0x0112ca34 label g_BtlConfigEnglish        # u32 MsGetSaveConfigEnglish() kept by MsBattleInit
+0x0112ca58 label g_BtlReadDataStep          # ours: u32 MsBattleReadDataNB's step 0-7
+0x0112ca5c label g_BtlReadDataPart          # ours: u32 MsBattleReadDataNB's part (Kernel_LoadTables / 0x782b70 argument)
 0x0112ca60 label g_BtlRead3                # u32; with the one before it (same function, ffx_battle::misc)
 0x0112ca64 label g_BtlReadHold             # i32 frames: MsBtlReadManage counts it down each call and starts the battle (status 0x16) only at 0; set to 0x5a near 0x007f9280
 0x0112ca68 label g_BtlMapRead                 # u32; Reset by FinishReadPhyreBattleMap.

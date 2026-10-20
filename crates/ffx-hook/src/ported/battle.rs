@@ -5242,4 +5242,45 @@ ported! {
     MsRegMotionRead @ 0x0079_ccf0 => extern "C" fn ms_reg_motion_read() -> i32 {
         read::ms_reg_motion_read(&mut mem(), &mut call_ptr)
     }
+    /// `MsBattleReadDataNB(more)`.
+    MsBattleReadDataNB @ 0x0078_2090 => extern "C" fn ms_battle_read_data_nb(more: u32) -> u32 {
+        read::ms_battle_read_data_nb(&mut mem(), &mut call_ptr, more)
+    }
+    /// `MsBattleReadData()`.
+    MsBattleReadData @ 0x0078_2050 => extern "C" fn ms_battle_read_data() -> u32 {
+        read::ms_battle_read_data(&mut mem(), &mut call_ptr)
+    }
+    /// `Mon_AttachData(i)`.
+    Mon_AttachData @ 0x0078_3b00 => extern "C" fn mon_attach_data(i: u32) -> u32 {
+        read::mon_attach_data(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsBtlReadMonsterDone_00783990(request)`: the CD object's callback.
+    MsBtlReadMonsterDone_00783990 @ 0x0078_3990 => extern "C" fn ms_btl_read_monster_done(request: u32) -> u32 {
+        read::ms_btl_read_monster_done(&mut mem(), &mut call_ptr, request)
+    }
+    /// `MsAttachWeaponData_00784000(i)` (its callers pass a second word it
+    /// does not read).
+    MsAttachWeaponData_00784000 @ 0x0078_4000 => extern "C" fn ms_attach_weapon_data(i: u32) -> u32 {
+        read::ms_attach_weapon_data(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsCDreadWeapon(i, actor, then)`: the read's request block in the
+    /// port's frame (the CD object copies it, as from the original's).
+    MsCDreadWeapon @ 0x0078_4120 => extern "C" fn ms_cd_read_weapon(i: u32, actor: u32, then: u32) -> u32 {
+        let mut request = super::StackFrame::<{ (read::WEAPON_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        read::ms_cd_read_weapon(&mut mem(), &mut call_ptr, [i, actor, then], at)
+    }
+    /// `MsBtlReadWeapon()`: the read's request block in the port's frame.
+    MsBtlReadWeapon @ 0x0078_3f60 => extern "C" fn ms_btl_read_weapon() -> u32 {
+        let mut request = super::StackFrame::<{ (read::WEAPON_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        read::ms_btl_read_weapon(&mut mem(), &mut call_ptr, at)
+    }
+    /// `MsCDreadWeaponDone_00783fc0(done)`: the CD object's callback; the
+    /// next read's request block in the port's frame.
+    MsCDreadWeaponDone_00783fc0 @ 0x0078_3fc0 => extern "C" fn ms_cd_read_weapon_done(done: u32) -> u32 {
+        let mut request = super::StackFrame::<{ (read::WEAPON_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        read::ms_cd_read_weapon_done(&mut mem(), &mut call_ptr, done, at)
+    }
 }

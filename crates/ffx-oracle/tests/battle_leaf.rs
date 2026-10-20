@@ -3830,3 +3830,406 @@ fn leaf_sounds_match_the_original_on_a_snapshot() {
     };
     sounds(&mut a, &mut b, &mut Xorshift(0x3232_0102), false);
 }
+
+/// The battle's reads of round 33 (`ffx_battle::read`): the language
+/// data's reread (`MsBattleReadDataNB`, `MsBattleReadData`), the monster
+/// and weapon files' attaches and the weapon reads with their
+/// completions. Every callee of other modules and the CD object's methods
+/// are logging or recording stubs (the CD's read `+0` keeps the request
+/// block's `+0xc` and `+0x10` at `seen`, since the original's block is in
+/// its frame and the port's at `request`); the sound files are registered
+/// for real (`MsRegistSEdata`, its own callees stubs).
+fn reads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use ffx_battle::battle_end::bridge as be;
+    use ffx_battle::read::bridge as rd;
+    use ffx_battle::sound::bridge as so;
+    macro_rules! pick {
+        ($rng:expr, [$($v:expr),+ $(,)?] $(,)?) => {{
+            let v = [$($v),+];
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let w = world(a, b, rng, synthetic);
+    if w.synthetic {
+        set(a, b, ffx_battle::actor::bridge::MON_TOP, w.actor(0x14));
+    }
+    // (function, arguments): logging stubs, results at `slot(k) + 4`
+    let logged: [(u32, u8); 18] = [
+        (ffx_battle::getmem::bridge::GET_CD, 0),
+        (g::OP_ET_WEAPON_INIT, 2),
+        (rd::MS_BTL_READ_MONSTER, 0),
+        (rd::MS_GET_CHECK_ENGLISH, 0),
+        (rd::MS_BATTLE_EXE, 4),
+        (rd::MS_BTL_READ_SET_SCENE, 0),
+        (rd::KERNEL_LOAD_TABLES, 1),
+        (rd::MS_MENU_READ_START_TEXT, 1),
+        (rd::MS_IMPORTANT_READ, 0),
+        (rd::MS_WEAPON_NAME_READ, 0),
+        (rd::EI_ABM_SET_LANG, 0),
+        (so::SND_GET_SEP_NUMBER, 1),
+        (so::SND_IS_READ_SHOUT_VOICE_STATUS, 0),
+        (so::SND_START_SHOUT_STREAM, 3),
+        (be::SND_SEP_TRANS_SEP_ONLY, 2),
+        (be::SND_STANDBY_BATTLE_WAVE, 2),
+        (be::SND_SYNC_WAVE_TRANS, 1),
+        (be::SND_STANDBY_SEP_WAVE, 0),
+    ];
+    let rec = scratch(a, b, 0x110 * 24 + 0x40);
+    let slot = |k: u32| rec + 0x110 * k;
+    // the CD object's methods +0 (3 words logged), +8, +0x10, +0x14
+    let cd_slot = |k: u32| slot(18 + k);
+    let malloc_rec = slot(22);
+    let seen = slot(23);
+    let obj = scratch(a, b, 0x20);
+    let stub_at = |k: u32| {
+        if k < 21 {
+            STUBS_D + 0x40 * k
+        } else {
+            STUBS_E + 0x40 * (k - 21)
+        }
+    };
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(logged) {
+            logging_stub(o, f, stub_at(k), slot(k), n, 0);
+        }
+        recording_stub(o, rd::SG_MALLOC_A, stub_at(18), malloc_rec, 5, 0);
+        for (k, (m, n)) in (0u32..).zip([(0u32, 3u8), (8, 1), (0x10, 1), (0x14, 1)]) {
+            logging_stub(o, 0, stub_at(19 + k), cd_slot(k), n, 0);
+            let f = o.rebase(stub_at(19 + k));
+            o.write(obj + m, &f.to_le_bytes()).unwrap();
+        }
+        // the read: the request's +0xc and +0x10 to `seen`, then the log
+        let at = o.rebase(stub_at(23));
+        let log = o.rebase(stub_at(19));
+        let mut code = vec![0x8b, 0x44, 0x24, 0x10, 0x85, 0xc0, 0x74, 0x12];
+        code.extend([0x8b, 0x48, 0x0c, 0x89, 0x0d]);
+        code.extend(seen.to_le_bytes());
+        code.extend([0x8b, 0x48, 0x10, 0x89, 0x0d]);
+        code.extend((seen + 4).to_le_bytes());
+        code.push(0xe9);
+        code.extend(
+            log.wrapping_sub(at + u32::try_from(code.len()).unwrap() + 4)
+                .to_le_bytes(),
+        );
+        o.write(at, &code).unwrap();
+        o.write(obj, &at.to_le_bytes()).unwrap();
+    }
+    poke(a, b, slot(0) + 4, &obj.to_le_bytes());
+    let request = scratch(a, b, rd::WEAPON_REQUEST as usize);
+    let done = scratch(a, b, 0x20);
+    // files: a count, then section offsets into the 0x400 bytes; a sound
+    // file at +0x200 (one section of one block) the sections may point at
+    let files: Vec<u32> = (0..4).map(|_| scratch(a, b, 0x400)).collect();
+    let make_file = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, f: u32| {
+        let mut bytes = vec![0u8; 0x400];
+        for x in &mut bytes[0x40..0x200] {
+            *x = rng.byte();
+        }
+        let n = pick!(rng, [0u32, 1, 2, 3, 6, 7, 8, rng.below(10), u32::MAX]);
+        bytes[..4].copy_from_slice(&n.to_le_bytes());
+        for k in 1..8usize {
+            // (sections 1 and 6 are the weapons' and monsters' sounds)
+            let o = if k == 1 || k == 6 {
+                pick!(rng, [0u32, 0x200, 0x200])
+            } else {
+                pick!(rng, [0u32, 0x200, 0x40 + rng.below(0x1c0)])
+            };
+            bytes[4 * k..4 * k + 4].copy_from_slice(&o.to_le_bytes());
+        }
+        for (k, v) in [1u32, 0x10, 0, 0, 1, 0x40, 0x80].into_iter().enumerate() {
+            let at = 0x200 + 4 * k;
+            bytes[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        poke(a, b, f, &bytes);
+    };
+    let actor_index =
+        |rng: &mut Xorshift| pick!(rng, [rng.below(0x12), rng.below(0x12), 6, 7, 0x11]);
+    for round in 0..300 {
+        for &f in &files {
+            make_file(a, b, rng, f);
+        }
+        // (a read leaves its block, a made-up address, in +0x48)
+        for k in 0..ACTORS {
+            let f = pick!(rng, [0, files[0], files[1]]);
+            poke(a, b, w.actor(k) + 0x48, &f.to_le_bytes());
+        }
+        // the sound queue empty, its state at the start
+        set(a, b, ffx_battle::state::bridge::SEP_TRANS, 0);
+        poke(a, b, g::SEP_TRANS_STATE.ptr(b).addr, &[0; 4]);
+        for k in 0..18u32 {
+            poke(
+                a,
+                b,
+                slot(k) + 4,
+                &pick!(rng, [0u32, 0, 1, u32::MAX, rng.next()]).to_le_bytes(),
+            );
+        }
+        poke(a, b, slot(0) + 4, &obj.to_le_bytes());
+        for k in 0..4 {
+            poke(a, b, cd_slot(k) + 4, &rng.next().to_le_bytes());
+        }
+        let block = rng.next() | 0x10;
+        poke(a, b, malloc_rec + 4 + 4 * 5, &block.to_le_bytes());
+        poke(a, b, seen, &[0; 8]);
+        poke(a, b, request, &[0; rd::WEAPON_REQUEST as usize]);
+        set(a, b, ffx_battle::misc::bridge::BTL_READ, rng.word());
+        let op = round % 7;
+        // an actor with one of the files or none, shown or not
+        let i = actor_index(rng);
+        let actor_i = i;
+        let actor = ffx_battle::actor::bridge::ms_get_chr(b, i);
+        let file = files[rng.below(4) as usize];
+        for at in [0x11u32, 0xdc8] {
+            poke(a, b, actor + at, &[pick!(rng, [0u8, 1, rng.byte()])]);
+        }
+        // (the attaches read the file: one there for them)
+        let p48 = if op == 0 || op == 5 {
+            file
+        } else {
+            pick!(rng, [0, file, file])
+        };
+        poke(a, b, actor + 0x48, &p48.to_le_bytes());
+        poke(
+            a,
+            b,
+            actor + 0x4c,
+            &pick!(rng, [0u32, 0, rng.next()]).to_le_bytes(),
+        );
+        for o in [0xc, 0xf2d, 0xf2e] {
+            poke(a, b, actor + o, &[rng.byte()]);
+        }
+        match op {
+            0 => {
+                let i = pick!(rng, [i, i, rng.below(ACTORS), ACTORS + rng.below(ACTORS)]);
+                if i != actor_i {
+                    let p = ffx_battle::actor::bridge::ms_get_chr(b, i);
+                    poke(a, b, p + 0x11, &[rng.byte()]);
+                    poke(a, b, p + 0x48, &file.to_le_bytes());
+                    poke(
+                        a,
+                        b,
+                        p + 0x4c,
+                        &pick!(rng, [0u32, rng.next()]).to_le_bytes(),
+                    );
+                }
+                let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+                twin(
+                    "MsAttachWeaponData_00784000",
+                    a,
+                    b,
+                    0x0078_4000,
+                    &[i, rng.word()],
+                    ALL,
+                    |m| rd::ms_attach_weapon_data(m, &mut call, i),
+                );
+                same(&format!("MsAttachWeaponData_00784000 {i:#x}"), a, b);
+            }
+            1 | 2 => {
+                let k = pick!(rng, [rng.below(8), rng.below(8), 0x107]);
+                let m = ffx_battle::actor::bridge::ms_get_mon(b, k);
+                poke(a, b, m + 0x48, &file.to_le_bytes());
+                poke(a, b, m + 0x11, &[pick!(rng, [0u8, 1, rng.byte()])]);
+                for o in [0xc, 0xf2d, 0xf2e] {
+                    poke(a, b, m + o, &[rng.byte()]);
+                }
+                let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+                if op == 1 {
+                    twin("Mon_AttachData", a, b, 0x0078_3b00, &[k], ALL, |m| {
+                        rd::mon_attach_data(m, &mut call, k)
+                    });
+                } else {
+                    poke(a, b, done + 0xc, &k.to_le_bytes());
+                    twin(
+                        "MsBtlReadMonsterDone_00783990",
+                        a,
+                        b,
+                        0x0078_3990,
+                        &[done],
+                        ALL,
+                        |m| rd::ms_btl_read_monster_done(m, &mut call, done),
+                    );
+                }
+                same(&format!("Mon_AttachData {op} {k:#x}"), a, b);
+            }
+            3..=5 => {
+                // the weapon's save slot: any model
+                let id = pick!(
+                    rng,
+                    [
+                        rng.below(0xff),
+                        rng.below(8) | 0x7000,
+                        rng.below(8) | 0xb000
+                    ]
+                );
+                poke(a, b, actor + 0x592, &[id.to_le_bytes()[0]]);
+                let s = ffx_battle::save::bridge::ms_get_save_weapon(
+                    b,
+                    u32::from(id.to_le_bytes()[0]),
+                    0,
+                );
+                poke(
+                    a,
+                    b,
+                    s + 0xc,
+                    &u16::try_from(rng.below(0x1_0000)).unwrap().to_le_bytes(),
+                );
+                let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+                match op {
+                    3 => {
+                        let i = pick!(rng, [i, i, 0xffff_fff9, 0x8000_0000]);
+                        // (an attach is of MsGetChr(i)'s file)
+                        let p = ffx_battle::actor::bridge::ms_get_chr(b, i);
+                        if p != actor {
+                            poke(a, b, p + 0x48, &file.to_le_bytes());
+                        }
+                        let then = rng.word();
+                        twin(
+                            "MsCDreadWeapon",
+                            a,
+                            b,
+                            0x0078_4120,
+                            &[i, actor, then],
+                            ALL,
+                            |m| rd::ms_cd_read_weapon(m, &mut call, [i, actor, then], request),
+                        );
+                    }
+                    4 => {
+                        // every actor's weapon flag and file at random
+                        for k in 0..0x12 {
+                            let p = w.actor(k);
+                            poke(a, b, p + 0xdc8, &[pick!(rng, [0u8, 0, 0, 1])]);
+                            poke(a, b, p + 0x48, &pick!(rng, [0, 0, file]).to_le_bytes());
+                            poke(a, b, p + 0x592, &[rng.below(0xff).to_le_bytes()[0]]);
+                        }
+                        let next = ffx_battle::misc::bridge::BTL_READ2.ptr(b).addr;
+                        poke(
+                            a,
+                            b,
+                            next,
+                            &[pick!(
+                                rng,
+                                [
+                                    0u8,
+                                    rng.below(0x13).to_le_bytes()[0],
+                                    0x12,
+                                    0xfe,
+                                    rng.byte()
+                                ]
+                            )],
+                        );
+                        twin("MsBtlReadWeapon", a, b, 0x0078_3f60, &[], ALL, |m| {
+                            rd::ms_btl_read_weapon(m, &mut call, request)
+                        });
+                    }
+                    _ => {
+                        for k in 0..0x12 {
+                            let p = w.actor(k);
+                            poke(a, b, p + 0xdc8, &[pick!(rng, [0u8, 0, 1])]);
+                            poke(a, b, p + 0x592, &[rng.below(0xff).to_le_bytes()[0]]);
+                        }
+                        let then = pick!(rng, [0u32, 0, 1, 2, 2, 3, rng.next()]);
+                        poke(a, b, done + 0xc, &i.to_le_bytes());
+                        poke(a, b, done + 0x10, &then.to_le_bytes());
+                        set(
+                            a,
+                            b,
+                            ffx_battle::misc::bridge::BTL_READ2,
+                            u16::from(rng.byte()),
+                        );
+                        set(
+                            a,
+                            b,
+                            ffx_battle::state::bridge::READ_CUE_LEVEL,
+                            pick!(rng, [0u8, 1, 0x80]),
+                        );
+                        set(
+                            a,
+                            b,
+                            ffx_battle::misc::bridge::READ_CUE_INDEX,
+                            u8::try_from(rng.below(32)).unwrap(),
+                        );
+                        let mask = if then == 2 { 0 } else { ALL };
+                        twin(
+                            "MsCDreadWeaponDone_00783fc0",
+                            a,
+                            b,
+                            0x0078_3fc0,
+                            &[done],
+                            mask,
+                            |m| rd::ms_cd_read_weapon_done(m, &mut call, done, request),
+                        );
+                    }
+                }
+                // the request is the port's own block (the original's frame)
+                let r = b.read(request, rd::WEAPON_REQUEST as usize).unwrap();
+                a.write(request, &r).unwrap();
+                same(&format!("weapon read {op} {i:#x}"), a, b);
+            }
+            _ => {
+                set(
+                    a,
+                    b,
+                    ffx_battle::init::bridge::CONFIG_ENGLISH,
+                    pick!(rng, [0u32, 1, 1, rng.next()]),
+                );
+                set(
+                    a,
+                    b,
+                    rd::READ_DATA_STEP,
+                    pick!(rng, [rng.below(8), rng.below(8), 7, 8, u32::MAX]),
+                );
+                set(a, b, rd::READ_DATA_PART, rng.word());
+                poke(
+                    a,
+                    b,
+                    slot(3) + 4,
+                    &pick!(rng, [0u32, u32::MAX, u32::MAX, 1]).to_le_bytes(),
+                );
+                // the two script records the shift moves
+                let r = ffx_battle::getmem::bridge::SCRIPT_RECORD1.ptr(b).addr;
+                let bytes: Vec<u8> = (0..0x40).map(|_| rng.byte()).collect();
+                poke(a, b, r - 0x20, &bytes);
+                let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+                if rng.below(3) == 0 {
+                    // to the end: the loads finish at once
+                    poke(a, b, slot(6) + 4, &[0; 4]);
+                    poke(a, b, slot(7) + 4, &[0; 4]);
+                    twin("MsBattleReadData", a, b, 0x0078_2050, &[], ALL, |m| {
+                        rd::ms_battle_read_data(m, &mut call)
+                    });
+                } else {
+                    // a run of steps, the loads' parts not the last at
+                    // times (part words left over)
+                    for _ in 0..8 {
+                        for k in [6u32, 7] {
+                            let r = pick!(rng, [0u32, 0, 1, rng.next()]);
+                            poke(a, b, slot(k) + 4, &r.to_le_bytes());
+                        }
+                        let more = pick!(rng, [0u32, 1, 1, 1, 5]);
+                        twin("MsBattleReadDataNB", a, b, 0x0078_2090, &[more], ALL, |m| {
+                            rd::ms_battle_read_data_nb(m, &mut call, more)
+                        });
+                        same(&format!("MsBattleReadDataNB {more}"), a, b);
+                    }
+                }
+                same("MsBattleReadData", a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn leaf_reads_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    reads(&mut a, &mut b, &mut Xorshift(0x3333_0101), true);
+}
+
+#[test]
+fn leaf_reads_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    reads(&mut a, &mut b, &mut Xorshift(0x3333_0102), false);
+}
