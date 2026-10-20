@@ -16,6 +16,9 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import progress  # noqa: E402
+import timing_log  # noqa: E402
+
+timing_log.install()
 
 rows = {a: (n, size) for a, n, size in progress.functions()}
 names = progress.symbols()

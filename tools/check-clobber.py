@@ -35,6 +35,9 @@ from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import progress  # noqa: E402
+import timing_log  # noqa: E402
+
+timing_log.install()
 
 WORK = pathlib.Path(os.environ.get("FFX_WORK", pathlib.Path.home() / "ffx-work"))
 EXE = pathlib.Path(os.environ["FFX_GAME_DIR"]).expanduser() / "FFX.exe"

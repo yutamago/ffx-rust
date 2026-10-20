@@ -58,6 +58,11 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import timing_log  # noqa: E402
+
+timing_log.install()
+
 TOOLS = pathlib.Path(__file__).resolve().parent
 HOME = pathlib.Path.home()
 SNAPSHOTS = HOME / "ffx-work" / "snapshots"
@@ -539,6 +544,7 @@ def main():
         with LIVE_LOCK:
             for p in LIVE:
                 p.kill()
+        timing_log.finish(128 + signum)
         os._exit(128 + signum)
 
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):

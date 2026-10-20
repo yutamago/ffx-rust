@@ -94,6 +94,50 @@ entries for one address (two branches porting the same function, now
 merged), or a `ported!` entry for an address hooked by hand in
 `crates/ffx-hook/src`. Keep one port and drop the other.
 
+## Build and test timing
+
+Builds and tests log their wall time, so a round can show how much of an
+agent's time went to waiting on the machine. Each run appends one line to
+`~/ffx-work/timing/<worktree>.tsv` (tab-separated): start time (ISO), wall
+seconds, exit code, tool, the command line, the 1-minute load average at
+start and at end, the worktree, and the parent tool (`-` for a top-level
+run, else e.g. `mutants.py`).
+
+What logs:
+
+- `cargo build/check/test/clippy/run/bench/doc/rustc` and `cargo xwin ...`,
+  through the shim `~/.local/bin/cargo` (`tools/timing/cargo-shim.c`;
+  `~/.local/bin` comes before `~/.cargo/bin` in PATH). It logs only inside an
+  ffx-decomp checkout or worktree (the cwd, `-C` or `--manifest-path` has
+  `symbols/ffx.sym` and `tools/mutants.py` above it) and only those
+  subcommands. Everything else, and anything outside ffx-decomp, is `exec`ed
+  straight to `~/.cargo/bin/cargo`. Inside, it runs cargo as a child with the
+  same stdio, forwards SIGINT/SIGTERM/SIGHUP/SIGQUIT, returns its exit code
+  (or dies of its signal), and costs under a millisecond. When it can't log,
+  the command still runs. The cargo inside `cargo xwin` isn't logged twice.
+- `tools/mutants.py`, `check-clobber.py`, `check-ported.py` and
+  `verify-batch.py`, through `tools/timing_log.py` (one line at exit, nothing
+  printed); `tools/replays/run-all.sh`, through `tools/timing/timing.sh`.
+  Their cargo runs carry them as parent, and mutants.py's builds in
+  `~/ffx-work/mutants/<wt>/tree` log under the worktree.
+
+```bash
+tools/timing-report.py all --since 6h      # per worktree and kind: total, count, mean, max,
+tools/timing-report.py agent-a94...        # time at load > nproc vs not, the 10 slowest
+```
+
+The last line, `waiting on builds/tests: N min`, counts top-level runs only
+(a nested cargo is inside its parent's time); the coordinator appends it to
+`~/ffx-work/agents/metrics.tsv` each round.
+
+Switch off: `FFX_TIMING=0` (per command or exported) makes the shim exec
+cargo at once and the tools skip the log. Uninstall the shim with
+`tools/timing/install.sh --remove` (removes `~/.local/bin/cargo`); install
+or rebuild it with `tools/timing/install.sh`, which runs
+`tools/timing/test-shim.sh` (pass-through tests against a fake cargo) first.
+`FFX_TIMING_DIR` moves the log, `FFX_TIMING_REAL_CARGO` points the shim at
+another cargo. sccache stays the `rustc-wrapper`; there is no per-crate log.
+
 ## Claims and work packets
 
 Agents pick work from one global list and claim each function first, so two
