@@ -3057,6 +3057,80 @@ pub mod bridge {
         who
     }
 
+    /// `MesSetChrTargetPosToLimitSparePosy(i)` (`0x007932b0`): for actor
+    /// `i & 0xff` with a character, its ground (`MsGetChrGround`) less the
+    /// y of its optional position `(i8) +0xdf9` (`Ch_OptposGet` into
+    /// `local`, 16 bytes, the original's frame), `f32`, into its
+    /// [`CHR_EXTRA`] slot's `+8` ([`ms_set_chr_extra_slot`]). `eax`: 0
+    /// for no actor, the actor without a character, else the
+    /// [`CHR_EXTRA`] pointer.
+    pub fn mes_set_chr_target_pos_to_limit_spare_posy(
+        mem: &mut impl Mem,
+        i: u32,
+        local: u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store, sub};
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let actor = crate::actor::bridge::ms_get_chr(mem, i);
+        let chr: u32 = mem.read(actor);
+        if chr == 0 {
+            return actor;
+        }
+        let opt = i32::from(mem.read::<i8>(actor.wrapping_add(0xdf9)));
+        ffx_chara::attach::bridge::ch_optpos_get(mem, chr, opt.cast_unsigned(), local);
+        let ground = crate::body::bridge::ms_get_chr_ground(mem, i);
+        let y: u32 = mem.read(local.wrapping_add(4));
+        let spare = store(sub(load(ground.to_bits()), load(y)));
+        let slot = ms_set_chr_extra_slot(mem, i);
+        let extra = CHR_EXTRA.get(mem);
+        mem.write(
+            extra.wrapping_add(slot.wrapping_mul(0xc)).wrapping_add(8),
+            spare,
+        );
+        extra
+    }
+
+    /// `Mon_GetName(dst, id)` (`0x00784260`): monster `id`'s name from
+    /// the kernel monster texts (read first, [`read_btl_monster_name`]):
+    /// table 1 below 0x65, 2 up to 0xb4, else 3 (`ffx_kernel`'s
+    /// `excel_data`: the record's first `u16` an offset into its
+    /// strings), into `dst` cleared for 0x40 bytes (`memset`, then
+    /// `memcpy` of its `strlen`, unbounded). 1, or 0 without the table.
+    pub fn mon_get_name<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        dst: u32,
+        id: u32,
+    ) -> u32 {
+        use crate::read::bridge::MONSTER_TEXTS;
+        read_btl_monster_name(mem, call);
+        let table = if id.cast_signed() < 0x65 {
+            MONSTER_TEXTS[0]
+        } else if id.wrapping_sub(0x65) <= 0x4f {
+            MONSTER_TEXTS[1]
+        } else {
+            MONSTER_TEXTS[2]
+        };
+        let table: u32 = mem.read(mem.rebase(table));
+        if table == 0 {
+            return 0;
+        }
+        let (record, strings) = ffx_kernel::bridge::excel_data(mem, id.cast_signed(), table);
+        let name = strings.wrapping_add(u32::from(mem.read::<u16>(record)));
+        mem.write_bytes(dst, &[0; 0x40]);
+        let mut n = 0u32;
+        while mem.read::<u8>(name.wrapping_add(n)) != 0 {
+            n += 1;
+        }
+        let mut bytes = vec![0; n as usize];
+        mem.read_bytes(name, &mut bytes);
+        mem.write_bytes(dst, &bytes);
+        1
+    }
+
     /// `MsSetChrExtraSlot_00796bb0(i)` (`0x00796bb0`, name ours): actor
     /// (u8)`i`'s character's slot in [`CHR_EXTRA`] (3 entries of 0xc
     /// bytes: in use, character): the one holding it, else the first free

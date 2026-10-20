@@ -6481,6 +6481,7 @@ part!(part_read_monster, "read_monster", 40);
 part!(part_target_dist, "target_dist", 150);
 part!(part_et_effects, "et_effects", 200);
 part!(part_effect_signals, "effect_signals", 200);
+part!(part_cd_reads, "cd_reads", 100);
 part!(part_teardown, "teardown", 100);
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, sel: &Sel) {
@@ -6721,6 +6722,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
     let mut sig_rng = Xorshift(0x32e5_0001 ^ u32::from(synthetic));
     let sig_local = scratch(a, b, 0x10);
     let sig_rec = scratch(a, b, 0x100);
+    // the effect and motion reads (round 32): stub records, the CD
+    // object and its methods' records, the effect file's block
+    let mut cd_rng = Xorshift(0x32e5_0101 ^ u32::from(synthetic));
+    let cd_rec = scratch(a, b, 0x400);
+    let cd_block = scratch(a, b, 0x5_1000);
     for o in [&mut *a, &mut *b] {
         logging_stub(
             o,
@@ -6889,6 +6895,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
             for _ in 0..4 {
                 et_effects(a, b, &mut et_rng, rec);
             }
+        }
+        if sel.on("cd_reads") {
+            cd_reads(a, b, &mut cd_rng, [sig_rec, cd_rec, cd_block]);
         }
         if sel.on("effect_signals") {
             for _ in 0..4 {
@@ -7981,6 +7990,82 @@ fn effect_signals(
     let v = a.read(local, 0x10).unwrap();
     b.write(local, &v).unwrap();
     same(&format!("effect signal {i:#x}"), a, b);
+}
+
+/// `MsEtEffectRead` and `MsRegMotionRead` (round 32,
+/// `ffx_battle::read`): `GetCD` (its object at `cd + 0x200`, the methods
+/// `+0`, `+8`, `+0x10`, `+0x14` logging stubs from `cd`), `Sg_MallocA`
+/// (the block `block`), `MsBattleError`, `op_et_battle_init` and chara's
+/// motion callees are recording stubs during the calls; the file size,
+/// what is loaded and the stubs' results at random.
+fn cd_reads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, [rec, cd, block]: [u32; 3]) {
+    use ffx_battle::read::bridge as rd;
+    let obj = cd + 0x200;
+    for o in [&mut *a, &mut *b] {
+        for (k, (slot, n)) in (0u32..).zip([(0u32, 4u8), (8, 1), (0x10, 1), (0x14, 1)]) {
+            let at = SIGNAL_STUBS + 0x400 + 0x40 * k;
+            logging_stub(o, 0, at, cd + 0x80 * k, n, 0);
+            let f = o.rebase(at);
+            o.write(obj + slot, &f.to_le_bytes()).unwrap();
+        }
+    }
+    let size = {
+        let r = rng.below(0x6_0000);
+        [
+            r,
+            rd::ET_EFFECT_SIZE,
+            rd::ET_EFFECT_SIZE + 1,
+            0x100,
+            0x8000_0000 | r,
+        ][rng.below(5) as usize]
+    };
+    // the block holds old data (the read clears it)
+    for _ in 0..4 {
+        let at = block + [rng.below(0x5_0ff0) & !3, 0x5_0fec][rng.below(2) as usize];
+        poke(a, b, at, &rng.next().to_le_bytes());
+    }
+    poke(a, b, cd + 0x80 * 3 + 4, &size.to_le_bytes());
+    for k in 0..3 {
+        poke(a, b, cd + 0x80 * k + 4, &rng.next().to_le_bytes());
+    }
+    let mut call = game_call;
+    let stubs = [
+        (ffx_battle::getmem::bridge::GET_CD, 0),
+        (rd::SG_MALLOC_A, 5),
+        (rd::MS_BATTLE_ERROR, 1),
+        (rd::OP_ET_BATTLE_INIT, 1),
+        (rd::CHN_SYSTEM_MGRP_LOADED, 0),
+        (rd::CH_REG_MOTION_GET_EXIST_MEM, 0),
+        (rd::CH_REG_MOTION_ENTRY_CACHE, 1),
+    ];
+    let ret = |k: u32, n: u32| rec + 0x20 * k + 4 + 4 * n;
+    let loaded = [0u32, 0, 1][rng.below(3) as usize];
+    let exist = [0u32, 0, 1][rng.below(3) as usize];
+    let init = rng.next();
+    let flag = rng.byte();
+    set(a, b, ffx_battle::misc::bridge::REG_MOTION_FLAG, flag);
+    let effects = rng.below(2) == 0;
+    with_stubs(a, b, &stubs, rec, |a, b| {
+        for (k, n, v) in [
+            (0, 0, obj),
+            (1, 5, block),
+            (3, 1, init),
+            (4, 0, loaded),
+            (5, 0, exist),
+        ] {
+            poke(a, b, ret(k, n), &v.to_le_bytes());
+        }
+        if effects {
+            twin("MsEtEffectRead", a, b, 0x0079_e6a0, &[], ALL, |m| {
+                dm(m, |m| rd::ms_et_effect_read(m, &mut call))
+            });
+        } else {
+            twin("MsRegMotionRead", a, b, 0x0079_ccf0, &[], ALL, |m| {
+                dm(m, |m| rd::ms_reg_motion_read(m, &mut call)).cast_unsigned()
+            });
+        }
+    });
+    same(&format!("cd reads {size:#x} {loaded} {exist}"), a, b);
 }
 
 /// `FUN_007ca580` (dead, 0x10a9 bytes): room for [`with_stubs`]' code.

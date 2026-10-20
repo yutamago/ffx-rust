@@ -382,6 +382,45 @@ fn helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
     let area = scratch(a, b, 0x200);
     let spoils = scratch(a, b, 0x40);
     set(a, b, g::SPOIL_WEAPONS, spoils);
+    // Mon_GetName (round 32): three kernel monster text tables (one
+    // segment each: IDs 0-0x64, 0x65-0xb4, 0xb5-0x150; records of 8 bytes,
+    // the first word a name's offset), its names now and then longer
+    // than 0x40 bytes; and its destination with room after
+    let mut mon_texts = Vec::new();
+    for (first, last) in [(0u16, 0x64u16), (0x65, 0xb4), (0xb5, 0x150)] {
+        let mut t = vec![0u8; 0x2000];
+        t[0..2].copy_from_slice(&1u16.to_le_bytes());
+        let n = usize::from(last - first) + 1;
+        let strings = 8 * n;
+        for (o, v) in [
+            (8, first),
+            (10, last),
+            (12, 8),
+            (14, u16::try_from(strings).unwrap()),
+        ] {
+            t[o..o + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        t[16..20].copy_from_slice(&0x20u32.to_le_bytes());
+        let base = 0x20 + strings;
+        let mut at = 0;
+        for k in 0..n {
+            t[0x20 + 8 * k..0x22 + 8 * k]
+                .copy_from_slice(&u16::try_from(at).unwrap().to_le_bytes());
+            let len =
+                [rng.below(0x3f), rng.below(8), 0x40, 0x50][rng.below(8).min(3) as usize] as usize;
+            if base + at + len + 1 >= t.len() {
+                break;
+            }
+            for c in 0..len {
+                t[base + at + c] = 0x41 + u8::try_from(rng.below(26)).unwrap();
+            }
+            at += len + 1;
+        }
+        let p = scratch(a, b, 0x2000);
+        poke(a, b, p, &t);
+        mon_texts.push(p);
+    }
+    let name = scratch(a, b, 0x100);
     let ply = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr;
     let equipment = g::EQUIPMENT.ptr(b).addr;
     for round in 0..300 {
@@ -730,6 +769,36 @@ fn helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
         twin("readBtlMonsterName", a, b, 0x0078_44c0, &[], 0, |m| {
             g::read_btl_monster_name(m, &mut call_original);
             0
+        });
+        // a monster's name from the made-up tables (the first set: no
+        // read; the others now and then missing)
+        // (none loaded now and then: the texts are read, the reader's
+        // stub giving none)
+        let unread = rng.below(6) == 0;
+        for (k, &t) in mon_texts.iter().enumerate() {
+            let at = a.rebase(ffx_battle::read::bridge::MONSTER_TEXTS[k]);
+            let v: u32 = if (k > 0 && rng.below(5) == 0) || (k == 0 && unread) {
+                0
+            } else {
+                t
+            };
+            poke(a, b, at, &v.to_le_bytes());
+        }
+        if unread {
+            poke(a, b, rec + 0x20 + 8, &[0; 4]);
+        }
+        poke(a, b, name, &[0xcc; 0x100]);
+        let id = [
+            rng.below(0x151),
+            rng.below(0x151),
+            0x64,
+            0x65,
+            0xb4,
+            0xb5,
+            rng.next(),
+        ][rng.below(7) as usize];
+        twin("Mon_GetName", a, b, 0x0078_4260, &[name, id], ALL, |m| {
+            g::mon_get_name(m, &mut call_original, name, id)
         });
         set(
             a,
@@ -2149,6 +2218,10 @@ fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let rec = scratch(a, b, 0x60);
     let extra = scratch(a, b, 0x24);
     let objs = scratch(a, b, 0x20);
+    // MesSetChrTargetPosToLimitSparePosy's frame words (round 32)
+    let pos_local = scratch(a, b, 0x10);
+    // round 32's own stream (the later checks keep theirs)
+    let mut r32 = Xorshift(0x3232_0201 ^ u32::from(synthetic));
     for o in [&mut *a, &mut *b] {
         recording_stub(o, g::MS_GET_SAVE_PLY_LEFT, STUBS_D, rec, 1, 0);
         // yiSetRotTransDObj (field)
@@ -2461,6 +2534,65 @@ fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             g::ms_set_chr_extra_slot(m, j)
         });
         same("extra slots", a, b);
+        // MesSetChrTargetPosToLimitSparePosy (round 32): the optional
+        // position in the frame local (seeded alike), characters only
+        // where they are real (a battle snapshot's; put back after)
+        let j = [r32.below(ACTORS), r32.next()][r32.below(5).min(1) as usize];
+        let p = ffx_battle::actor::bridge::ms_get_chr(b, j & 0xff);
+        let chr: u32 = ffx_bridge::Mem::read(b, p);
+        let real = !synthetic && readable(a, chr, 0x1000);
+        if !real {
+            poke(a, b, p, &[0; 4]);
+        }
+        let opt = a.read(p + 0xdf9, 1).unwrap();
+        poke(
+            a,
+            b,
+            p + 0xdf9,
+            &[[0, 1, 2, 0xff, r32.byte()][r32.below(5) as usize]],
+        );
+        // on a real character, set entries where (i8) and (u8) of the byte
+        // point (put back after)
+        let byte = a.read(p + 0xdf9, 1).unwrap()[0];
+        let mut entries: Vec<(u32, Vec<u8>)> = Vec::new();
+        if real {
+            for k in [i32::from(byte.cast_signed()), i32::from(byte)] {
+                let at = chr
+                    .wrapping_add(ffx_chara::attach::bridge::OPTPOS)
+                    .wrapping_add((16 * k).cast_unsigned());
+                if readable(a, at, 16) {
+                    entries.push((at, a.read(at, 16).unwrap()));
+                }
+            }
+        }
+        for (at, _) in &entries {
+            let v: Vec<u8> = (0..4).flat_map(|_| float(&mut r32).to_le_bytes()).collect();
+            poke(a, b, *at, &v);
+        }
+        let frame = a.stack_range().end - 0x100 - 0x20;
+        let seed: Vec<u8> = (0..4).flat_map(|_| float(&mut r32).to_le_bytes()).collect();
+        // (the stack put back after: later originals read what is there)
+        let stack = a.read(frame, 0x10).unwrap();
+        a.write(frame, &seed).unwrap();
+        poke(a, b, pos_local, &seed);
+        twin(
+            "MesSetChrTargetPosToLimitSparePosy",
+            a,
+            b,
+            0x0079_32b0,
+            &[j],
+            ALL,
+            |m| g::mes_set_chr_target_pos_to_limit_spare_posy(m, j, pos_local),
+        );
+        let v = a.read(pos_local, 0x10).unwrap();
+        b.write(pos_local, &v).unwrap();
+        same(&format!("MesSetChrTargetPosToLimitSparePosy {j:#x}"), a, b);
+        poke(a, b, p, &chr.to_le_bytes());
+        poke(a, b, p + 0xdf9, &opt);
+        for (at, v) in entries.iter().rev() {
+            poke(a, b, *at, v);
+        }
+        a.write(frame, &stack).unwrap();
         // the scene objects (yiSetRotTransDObj a recording stub: its
         // vectors are frame ones, compared by what they hold)
         twin("MsResetSceneObjects", a, b, 0x0079_e2a0, &[], 0, |m| {

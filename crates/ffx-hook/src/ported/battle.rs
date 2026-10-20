@@ -5223,4 +5223,23 @@ ported! {
         let at = local.at();
         minor::ms_get_target_link_list(&mut mem(), i, out, at)
     }
+    /// `MesSetChrTargetPosToLimitSparePosy(i)`: the optional position in
+    /// this call's frame.
+    MesSetChrTargetPosToLimitSparePosy @ 0x0079_32b0 => extern "C" fn mes_set_chr_target_pos_to_limit_spare_posy(i: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        minor::mes_set_chr_target_pos_to_limit_spare_posy(&mut mem(), i, at)
+    }
+    /// `Mon_GetName(dst, id)`.
+    Mon_GetName @ 0x0078_4260 => extern "C" fn mon_get_name(dst: u32, id: u32) -> u32 {
+        minor::mon_get_name(&mut mem(), &mut call_ptr, dst, id)
+    }
+    /// `MsEtEffectRead()`.
+    MsEtEffectRead @ 0x0079_e6a0 => extern "C" fn ms_et_effect_read() -> u32 {
+        read::ms_et_effect_read(&mut mem(), &mut call_ptr)
+    }
+    /// `MsRegMotionRead()`.
+    MsRegMotionRead @ 0x0079_ccf0 => extern "C" fn ms_reg_motion_read() -> i32 {
+        read::ms_reg_motion_read(&mut mem(), &mut call_ptr)
+    }
 }
