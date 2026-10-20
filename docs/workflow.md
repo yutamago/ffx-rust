@@ -139,16 +139,33 @@ MUT_TEST=battle_cue MUT_FILTER=cues MUT_SNAPS=battle,field \
 It never edits the worktree: it syncs it into a private copy
 (`~/ffx-work/mutants/<worktree name>`, or `MUT_WORK`) and rewrites every
 mutation site there into a schema,
-`if ffx_core::mutant(k) { new } else { old }`, around the smallest
+`if ffx_core::mutant(k) { new } else { old }` (in parentheses for an
+expression, in braces for a match arm's body), around the smallest
 expression or statement run holding the change (`tools/mutants-rs` finds
-those with `syn`; a `let` change keeps the rest of its block inside the
-schema). The `ffx-oracle` test binary is built once with
-`--features ffx-core/mutants`, and each mutant runs that binary with
-`FFX_MUTANT=k` on the image and each snapshot, `MUT_JOBS` (default cores / 2)
-at a time. A schema the compiler rejects moves to a larger node; one that
-still fails falls back to a rebuild for that mutant alone, so none is lost.
-Without the feature `ffx_core::mutant` is a constant `false`; release builds
-never enable it.
+those with `syn`, and keeps only nodes whose function still parses with the
+schema in place and that are not in a const context; a `let` change keeps
+the rest of its block inside the schema). The `ffx-oracle` test binary is
+built once with `--features ffx-core/mutants`, and each mutant runs that
+binary with `FFX_MUTANT=k` on the image and each snapshot, `MUT_JOBS`
+(default cores / 2) at a time. A schema with a compiler error inside it
+moves to a larger node; one that still fails falls back to a rebuild for
+that mutant alone, so none is lost. Errors whose spans point into no schema
+(a type that leaks out of one, say) are traced by building halves of the
+schema set, and only the schemata behind them are dropped to the rebuild
+path; the rest still build as one. A mutant that does not build on its own
+is an ERROR, never a kill. Without the feature `ffx_core::mutant` is a
+constant `false`; release builds never enable it.
+`python3 tools/mutants.py --self-test` checks the rewrite with rustc alone
+(match arms with and without braces, overlapping deletions, a tail
+insertion, a const): one build, and every schema behaves as its mutant
+rebuilt. Run it after changing `tools/mutants.py` or `tools/mutants-rs`.
+
+The schema wraps the smallest node, so an operator mutant keeps the
+original grouping: `a & b` -> `a | b` inside `a & b & c` runs as
+`(a | b) & c`, while the same text rebuilt would read `a | (b & c)`. The
+grouped one can be equivalent only because of the grouping. Add the
+top-level variant by hand, with explicit parentheses so the change spans
+the whole expression: old `a & b & c`, new `a | (b & c)`.
 
 Verdicts are `KILLED`, `SURVIVED`, `ERROR` or `NOMATCH`, a tab and the name,
 in list order. A failing test or a timeout (`MUT_TIMEOUT`, default 20x the
@@ -160,7 +177,10 @@ prints the schema diff; `MUT_SCHEMA=0` rebuilds every mutant (the old way).
 Validation (2026-10-20): on battle r27 g6, effects r31 a and system r38 a
 (102 mutants) it gave exactly the old `mut22.py` verdicts, in 146 s instead
 of 2417 s (4-29x per group); 1 mutant needed a rebuild. Most of what's left
-is the one build.
+is the one build. After the match-arm and bisection fixes (2026-10-20) the
+same sets give the same verdicts in 161 s, and menu round 24 group 1, whose
+one unbuildable schema used to send all 46 mutants to rebuilds (483 s), runs
+in 37 s with none rebuilt.
 
 ## Progress and ownership
 
