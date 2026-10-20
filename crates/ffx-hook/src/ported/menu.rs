@@ -1601,6 +1601,22 @@ ported! {
     BtlEnd_CountApStep_008ba4e0 @ 0x008b_a4e0 => extern "C" fn btl_end_count_ap_step(chr: u32, mark: u32) -> u32 {
         tk::btl_end_count_ap_step(&mut mem(), chr, mark, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_OpenGearWindow()`: the registration's `eax`.
+    MenuItem_OpenGearWindow @ 0x008c_9330 => extern "C" fn menu_item_open_gear_window() -> u32 {
+        tk::menu_item_open_gear_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_PackGear()`: `TkMn2RefreshWeaponShopSell2`'s `eax`.
+    MenuItem_PackGear @ 0x008c_a120 => extern "C" fn menu_item_pack_gear() -> u32 {
+        tk::menu_item_pack_gear(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawKeyCursor(_, x, y)`: the cursor call's `eax`, or 1.
+    MenuItem_DrawKeyCursor @ 0x008c_4b60 => extern "C" fn menu_item_draw_key_cursor(_a: u32, x: i32, y: i32) -> u32 {
+        tk::menu_item_draw_key_cursor(&mut mem(), [x, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_CountApSteps()`: 1 while any AP are left.
+    BtlEnd_CountApSteps @ 0x008b_a550 => extern "C" fn btl_end_count_ap_steps() -> u32 {
+        tk::btl_end_count_ap_steps(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

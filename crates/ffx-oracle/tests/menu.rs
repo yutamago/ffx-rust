@@ -14733,3 +14733,124 @@ fn menu_round29_list_windows_and_ap_step_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round29_gear_window_pack_key_cursor_and_ap_steps_match_the_original() {
+    let Some(mut t) = setup_any(0x0029_0005) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let refresh = seq_stub(&mut t, 0x008d_9560, log, 0, &[]);
+    seq_stub(&mut t, 0x007a_b9f0, log, 2, &[]);
+    // Menu_FindFlagged(list, from, to) logged, then searched as the original
+    let mut code = log_head(log, 0x008c_9b90, &[1, 2]);
+    #[rustfmt::skip]
+    code.extend([
+        &[0x89, 0x0d][..], &log.to_le_bytes(),          // mov [log], ecx
+        &[0x8b, 0x54, 0x24, 0x04, 0x8b, 0x44, 0x24, 0x08], // edx = list, eax = from
+        &[0x3b, 0x44, 0x24, 0x0c, 0x7d, 0x0a],          // next: cmp eax, to; jge none
+        &[0x80, 0x7c, 0x82, 0x02, 0x00, 0x75, 0x06],    // cmp byte [edx + 4 eax + 2], 0; jne found
+        &[0x40, 0xeb, 0xf0],                            // inc eax; jmp next
+        &[0x83, 0xc8, 0xff, 0xc3],                      // none: or eax, -1; found: ret
+    ]
+    .concat());
+    jump_stub(&mut t, 0x008c_9b90, &code);
+    let key_rows = seq_stub(&mut t, 0x008c_5180, log, 0, &[]);
+    let cursor = seq_stub(&mut t, 0x008c_0580, log, 3, &[]);
+    let steps = t.alloc(&[0; 0x400]);
+    word_table_stub(&mut t, 0x008b_a4e0, log, &[0, 1], 0, steps);
+    let base = t.sym(tk::MENU_WINDOWS.sym);
+    let list = t.sym(tk::MENU_ITEM_LIST.sym);
+    let (cell, off) = (t.sym(tk::MENU_ITEM_CELL.sym), t.sym(0x0186_a270));
+    let btl = t.sym(tk::BTL_END_LIST.sym);
+    for round in 0..800u32 {
+        t.put(log, start);
+        reroll(&mut t, &[refresh, cursor]);
+        let n = t.rng.pick(&[-1i32, 0, 1, 2, 5, 12, 30, 60]);
+        t.put(t.sym(tk::MN2_NAME_MODE_MAX.sym), n);
+        match round % 4 {
+            0 => {
+                if round % 40 == 0 {
+                    t.scramble(tk::MENU_WINDOWS.sym, 0x98 * 32);
+                }
+                let free = t.rng.below(32);
+                for j in 0..32 {
+                    t.put(base + j * 0x98 + 0x40, u8::from(j != free));
+                }
+                t.put(t.sym(tk::MENU_ITEM_GEAR_MODE.sym), 1u8);
+                t.twin("MenuItem_OpenGearWindow", 0x008c_9330, &[], U32, |o| {
+                    w(tk::menu_item_open_gear_window(o, &mut callback))
+                });
+            }
+            1 => {
+                t.scramble_at(list, 0x100);
+                for k in 0..0x40u32 {
+                    let v = t.rng.pick(&[0u8, 0, 1, 2, 0xff]);
+                    t.put(list + 4 * k + 2, v);
+                }
+                t.twin("MenuItem_PackGear", 0x008c_a120, &[], U32, |o| {
+                    w(tk::menu_item_pack_gear(o, &mut callback))
+                });
+            }
+            2 => {
+                let c = if round < 200 {
+                    (round / 4) % 50
+                } else {
+                    t.rng.pick(&[
+                        0u32,
+                        4,
+                        5,
+                        14,
+                        15,
+                        29,
+                        44,
+                        45,
+                        0xffff_ffff,
+                        0xffff_fff0,
+                        0x8000_0000,
+                    ])
+                };
+                t.put(cell, c);
+                let o = t.rng.pick(&[0u32, 0, 0, 1, 0x100]);
+                t.put(off, o);
+                let r = t
+                    .rng
+                    .pick(&[0u32, 1, 6, 7, 9, 0xffff_ffff, 0x7fff_ffff, 0x0100_0001]);
+                t.put(key_rows, r);
+                let (x, y) = (
+                    t.rng.pick(&[0i32, 100, -50, 1000]),
+                    t.rng.pick(&[0i32, 300, -1, 700]),
+                );
+                let a0 = t.rng.next();
+                t.twin(
+                    "MenuItem_DrawKeyCursor",
+                    0x008c_4b60,
+                    &[a0, x.cast_unsigned(), y.cast_unsigned()],
+                    U32,
+                    |o| {
+                        w(tk::menu_item_draw_key_cursor(
+                            o,
+                            [x, y],
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+            _ => {
+                t.scramble_at(btl, 0x40);
+                let n = t.rng.pick(&[0u8, 1, 2, 3, 4]);
+                t.put(btl, n);
+                for k in 0..0x100u32 {
+                    let v = t.rng.pick(&[0u32, 0, 0, 1, 2]);
+                    t.put(steps + 4 * k, v);
+                }
+                t.twin("BtlEnd_CountApSteps", 0x008b_a550, &[], U32, |o| {
+                    w(tk::btl_end_count_ap_steps(o, &mut callback))
+                });
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -4664,6 +4664,144 @@ pub mod bridge {
         more
     }
 
+    /// `MenuItem_OpenGearWindow()` (`0x008c9330`): the item menu's gear
+    /// list ([`ITEM_WINDOW4`]) over `TkMn2RefreshWeaponShopSell2()`, gear
+    /// mode ([`MENU_ITEM_GEAR_MODE`]) off: callbacks `+0xc` `0x008c7630`,
+    /// `+0x10` `0x008c87e0`, `+0x14` `0x008c9400`; `+0x3e` 1, `+0x42` 2,
+    /// rows from `TkMn2GetNameModeMax`, 9 visible, `+0x45` `0xff`.
+    /// Returns the registration's `eax`.
+    pub fn menu_item_open_gear_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        let f = mem.rebase(0x008d_9560);
+        call(mem, f, &[]);
+        MENU_ITEM_GEAR_MODE.set(mem, 0);
+        put_code(mem, w + 0xc, 0x008c_7630);
+        put_code(mem, w + 0x10, 0x008c_87e0);
+        put_code(mem, w + 0x14, 0x008c_9400);
+        mem.write(w + 0x3e, 1u8);
+        mem.write(w + 0x48, 0u16);
+        mem.write(w + 0x32, 0u32);
+        mem.write(w + 0x42, 2u8);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = tk_mn2_get_name_mode_max(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x3a, 9u16);
+        mem.write(w + 0x45, 0xffu8);
+        ITEM_WINDOW4.set(mem, w);
+        tk_menu_main_regist_window(mem, w, call)
+    }
+
+    /// `MenuItem_PackGear()` (`0x008ca120`): over the shown entries
+    /// (`TkMn2GetNameModeMax`) of [`MENU_ITEM_LIST`], each empty one
+    /// (kind byte `+2` zero) takes the next filled one after it
+    /// (`Menu_FindFlagged(list, from, n)`; the search goes on from there):
+    /// `SwapSaveGear(id, its id)` and the kind bytes swapped; stops when
+    /// none is left. Then `TkMn2RefreshWeaponShopSell2()` and its `eax`.
+    pub fn menu_item_pack_gear<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let list = MENU_ITEM_LIST.ptr(mem).addr;
+        let shown = tk_mn2_get_name_mode_max(mem).cast_signed();
+        let mut from = 0i32;
+        let mut k = 0i32;
+        while k < shown {
+            let entry = list.wrapping_add(k.cast_unsigned().wrapping_mul(4));
+            if mem.read::<u8>(entry.wrapping_add(2)) == 0 {
+                from = from.max(k + 1);
+                let f = mem.rebase(0x008c_9b90);
+                from = call(mem, f, &[list, from.cast_unsigned(), shown.cast_unsigned()])
+                    .cast_signed();
+                if from < 0 {
+                    break;
+                }
+                let other = list.wrapping_add(from.cast_unsigned().wrapping_mul(4));
+                let (id, other_id) = (mem.read::<u16>(entry), mem.read::<u16>(other));
+                let f = mem.rebase(0x007a_b9f0);
+                call(mem, f, &[u32::from(id), u32::from(other_id)]);
+                let (kind, other_kind) = (
+                    mem.read::<u8>(entry.wrapping_add(2)),
+                    mem.read::<u8>(other.wrapping_add(2)),
+                );
+                mem.write(entry.wrapping_add(2), other_kind);
+                mem.write(other.wrapping_add(2), kind);
+            }
+            k += 1;
+        }
+        let f = mem.rebase(0x008d_9560);
+        call(mem, f, &[])
+    }
+
+    /// `MenuItem_DrawKeyCursor(_, x, y)` (`0x008c4b60`, caller
+    /// `0x008c3d00`): unless `0x0186a270` is set (then 1), the command
+    /// cursor `TkMn2DrawCrossCmdCursor(cx, cy, 0)` on the key cell
+    /// [`MENU_ITEM_CELL`] (`15 row + col`, five keys a group): `cx =
+    /// f32(remapX2(53) * f32(col % 5) + f32(x))`, `cy = f32(f32(row) *
+    /// step + f32(y))` with `step = f32(remapY2(471) /
+    /// f32(max(MenuItem_KeyRowCount(), 6)))`; groups 0..2 add
+    /// `remapX2(684/1041/1398)` and `remapY2(423)`. Its `eax`.
+    pub fn menu_item_draw_key_cursor<M: Mem>(
+        mem: &mut M,
+        [x, y]: [i32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store};
+        let int = f64::from;
+        let (xf, yf) = (store(int(x)), store(int(y)));
+        let key_cell = MENU_ITEM_CELL.get(mem).cast_signed();
+        let (row, col) = (key_cell / 15, key_cell % 15);
+        let count = mem.rebase(0x008c_5180);
+        let rows = if call(mem, count, &[]).cast_signed() > 6 {
+            call(mem, count, &[]).cast_signed()
+        } else {
+            6
+        };
+        let ry = remap(mem, true, 471.0);
+        let step = store(div(ry, load(store(int(rows)))));
+        let (group, key) = (col / 5, col % 5);
+        let rx = remap(mem, false, 53.0);
+        let mut cx = store(add(mul(rx, load(store(int(key)))), load(xf)));
+        let mut cy = store(add(mul(load(store(int(row))), load(step)), load(yf)));
+        let left = match group {
+            0 => Some(684.0),
+            1 => Some(1041.0),
+            2 => Some(1398.0),
+            _ => None,
+        };
+        if let Some(left) = left {
+            cx = store(add(remap(mem, false, left), load(cx)));
+            cy = store(add(remap(mem, true, 423.0), load(cy)));
+        }
+        if mem.read::<u32>(mem.rebase(0x0186_a270)) != 0 {
+            return 1;
+        }
+        let f = mem.rebase(0x008c_0580);
+        call(mem, f, &[cx, cy, 0])
+    }
+
+    /// `BtlEnd_CountApSteps()` (`0x008ba550`): `BtlEnd_CountApStep_008ba4e0`
+    /// for each entry `k` of [`BTL_END_LIST`] (its `i16` character at entry
+    /// `+6`, `mark` = `k`); 1 while any had AP left.
+    pub fn btl_end_count_ap_steps<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let first = BTL_END_LIST.ptr(mem).addr.wrapping_add(0xe);
+        let mut any = 0;
+        let mut k = 0u32;
+        while k < u32::from(BTL_END_LIST.get(mem)) {
+            let chr = i32::from(mem.read::<i16>(first.wrapping_add(14 * k)));
+            let f = mem.rebase(0x008b_a4e0);
+            any |= call(mem, f, &[chr.cast_unsigned(), k]);
+            k += 1;
+        }
+        any
+    }
+
     /// The sub-command window openers (`0x008e33d0`
     /// `TkMenuOpenSubCmdWindowMain`, `0x008e3470`, `0x008e3510`,
     /// `0x008e35b0`): kept in `0x023cc120`; 2 rows of 2, cursor 1, `+0x37`

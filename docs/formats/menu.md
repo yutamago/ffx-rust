@@ -155,6 +155,13 @@ a 4-byte text at `0x0186a280` (an empty one ends the names), centred by
 first empty one, or the last when all are filled) blinks: drawn
 `0x80e1f8ff` while the fraction of `graphicGetTime()` is above 0.5, the
 others `0x8000c6ff`.
+`MenuItem_DrawKeyCursor(_, x, y)` (`0x008c4b60`) puts the command cursor
+on the key cell `0x0186a268` (`15 row + col`; keys in groups of five)
+unless `0x0186a270` is set: `cx = f32(remapX2(53) * f32(col % 5) +
+f32(x))`, `cy = f32(f32(row) * step + f32(y))`, `step =
+f32(remapY2(471) / f32(rows))` with `rows` `MenuItem_KeyRowCount()`, at
+least 6; groups 0, 1, 2 add `remapX2(684)`, `remapX2(1041)`,
+`remapX2(1398)` and `remapY2(423)`.
 `TkMn2DrawStatusPlate` (`0x008c1490`) draws one stat: a caption and the
 byte at an offset into the character's save record
 (`MsGetSavePlayerPtr`). The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten
@@ -252,6 +259,12 @@ the same way (`TkMenuMainAllocWindow`, list, callbacks, rows,
 The overdrive mode window restores its scroll (`+0x32`, `+0x34`) and
 cursor (`+0x48`) from `chr`'s `u16` in the 4-byte entries at
 `0x0186a7a0` and `0x0186a7e0`.
+`MenuItem_OpenGearWindow` (`0x008c9330`) opens the item menu's gear list
+over `TkMn2RefreshWeaponShopSell2` (kept at `0x0186a37c`, gear mode off,
+rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
+(`0x008ca120`) closes the gaps in that list: each empty entry takes the
+next filled one after it (`Menu_FindFlagged`), swapping the save's gear
+(`SwapSaveGear`) and the kind bytes, then the list is built again.
 
 ## Config menu
 
@@ -425,4 +438,7 @@ It then hands `(chr, ap)` to `0x008ba390`.
 the AP count-up: from sphere level 99 the rest (`0x02310f20[chr]`) is
 dropped (0 returned); otherwise `BtlEnd_ApStep(chr)` AP, at most the
 rest (signed), go to `BtlEnd_AddAP_008bdaf0` and the rest shrinks by
-them; it returns 1 while AP were left over.
+them; it returns 1 while AP were left over. `BtlEnd_CountApSteps`
+(`0x008ba550`) runs it for every entry `k` of the battle-end list
+(`0x01869f18`, `i16` character at entry `+6`, `mark` = `k`) and returns
+1 while any had AP left.
