@@ -5480,4 +5480,35 @@ ported! {
     opu_init @ 0x007f_da80 => extern "C" fn opu_init(no: u32, data: u32, owner: u32, obj: u32, n: u32, _unused: u32, show: u32) -> u32 {
         opus::bridge::opu_init(&mut mem(), no, data, owner, obj, n, show, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 37 a ----
+    /// `opus_unit_on(host, cmd)`.
+    opus_unit_on @ 0x0080_af70 => extern "C" fn opus_unit_on(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opus_unit_on(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_en(host, cmd)`.
+    opu_v_en @ 0x0081_8ed0 => extern "C" fn opu_v_en(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_en(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_trail_point(host, cmd)` (`0x008171a0`).
+    opu_trail_point @ 0x0081_71a0 => extern "C" fn opu_trail_point(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_trail_point(&mut mem(), host, cmd)
+    }
+    /// `opu_et_init()`.
+    opu_et_init @ 0x007f_d760 => extern "C" fn opu_et_init() -> u32 {
+        opus::bridge::opu_et_init(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeHitChkPxB(obj, key, ctrl)`.
+    pppKeHitChkPxB @ 0x0075_99b0 => extern "C" fn ppp_ke_hit_chk_px_b(obj: u32, key: u32, ctrl: u32) {
+        // the original's locals: the ball query and the scaled vector
+        let mut frame = super::StackFrame::<19>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_hit_chk_px_b(&mut mem(), obj, key, ctrl, at);
+    }
+    /// `opus_0706_noise_draw(obj)`.
+    opus_0706_noise_draw @ 0x007f_73d0 => extern "C" fn opus_0706_noise_draw(obj: u32) -> u32 {
+        // the original's locals, below its ebp
+        let mut frame = super::StackFrame::<0x1a>::new();
+        let ebp = frame.at() + 0x68;
+        wave::bridge::opus_0706_noise_draw(&mut mem(), obj, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
 }
