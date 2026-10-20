@@ -92,7 +92,10 @@ the result (`eax`, and `edx` for 64 bits). FFX.exe was built with
 whole-program optimisation: a caller may keep a scratch register live
 across a call to a function the compiler knew leaves it alone
 (`op_spline_xyz_table` returns the `eax` it had before calling
-`op_spr_free`). `tools/check-clobber.py` lists those call sites; with the
+`op_spr_free`). `tools/check-clobber.py` lists those call sites (it
+caches the disassembly per FFX.exe hash in `~/ffx-work/cache` and
+disassembles what is missing in parallel, `--jobs N`; `--no-cache` skips
+the cache; same output either way); with the
 thunk they need nothing more, but a shim returning `u8`, `u16` or `bool`
 must still match what the original leaves in the rest of `eax` when a
 caller reads all of it.
