@@ -11104,6 +11104,7 @@
 0x008cba20 function MenuParty_CursorNext      # (): i8 0x0186a444 on (wrapping to 0) to the next slot whose +0xc is 1; name ours
 0x008cba60 function MenuParty_CursorPrev      # (): i8 0x0186a444 back (wrapping to count 0x0186a448 - 1) to the previous slot (0x0186a44c) whose +0xc is 1; name ours
 0x008cbaa0 function GetDerefU32_008cbaa0         # auto-port shape (return deref u32 (pointer chain), cdecl): t0 = u32[&0x0186a44c]; t1 = u32[(t0 + (a0 * 0x4))]; return t1; callers: ; name ours
+0x008cbae0 function MenuConfig_DrawOptionRow # (_, _, row): one config menu row: record GetDerefU32_008cbaa0(row) (count +4, choice +8, enabled +0xc, title u16 +0x18, option texts u16 every 4 bytes from +0x1c), rows share 740 PS2 px (g_TkMenuConfigRows); frame 0x008cb530, title, backing shape, cross cursor, options (measured at 0.68, drawn at 0.78), brush on the choice, help on the cursor row; the PC row (g_TkMenuConfigLocRow) uses SaveDataGetLoc 0x1cd / 0x1d0-2k / 0x1d1-2k; caller 0x008cbab0; ported in menu round 28; name ours
 0x008cc150 function SndSetBgmTypeSave         # (on) -> eax of iMusicRefreshBgmType (tail call): MsGetSaveEventAddress() +0x5ec = (on != 0), then iMusicRefreshBgmType queues it; callers Native_0264 and Native_0267_Poll's choices; name ours (snd::bridge::snd_set_bgm_type_save)
 0x008cc170 function iMusicRefreshBgmType      # fh v3:exact 0x008cc140
 0x008cc330 function TkMenuCtrlSummon          # fh v3:exact+call.cs 0x008cc300 cdecl
@@ -11146,7 +11147,7 @@
 0x008d0cb0 function TkMenuLimitCloseWindow2   # (): close request for 0x0186a718 (TkMenuCtrlLimit's), forget it
 0x008d0d50 function MenuLimit_OpenWindow      # (arg) window 0x0186a714: MenuLimit_WindowIdle, 0x008d0e90, 0x008d16f0, 0x008d1bb0; rows TkMn2GetListMax, 7 visible; own name
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
-0x008d0eb0 function TkMn2CtrlSelItemsWindow      # layout+callees: sorts between TkMn2ArmsRefreshArms and TkMn2DrawSelItemsHelp, and its named callees match the Switch 0x71004d3a50 TkMn2CtrlSelItemsWindow's (similarity 0.71: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg, TkMn2DrawSelItemsHelp); symbols from Fahrenheit's server export
+0x008d0eb0 function TkMn2CtrlSelItemsWindow  # layout+callees: sorts between TkMn2ArmsRefreshArms and TkMn2DrawSelItemsHelp, and its named callees match the Switch 0x71004d3a50 TkMn2CtrlSelItemsWindow's (similarity 0.71: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg, TkMn2DrawSelItemsHelp); symbols from Fahrenheit's server export; (w): two-column selection window state machine (+0x28, jump table 0x008d13b4): cursor i16 +0x48 (bit 0 = column), confirm via +0x1c, page scroll 0x111, row scroll 0x333; ported in menu round 28
 0x008d15a0 function MenuSelList_DrawCursor   # (window): TkMn2DrawCrossCursor(f32(MenuSelList_CursorX(window)), f32(remapY2(493) + remapY2(77) * f32((i16 +0x48 >> 1) - i16 +0x32)), 0) (eax); caller 0x008d1400; ported in menu round 25; name ours
 0x008d1620 function MenuSelList_DrawRows     # (window, fixed, first, _, y int): nine row pairs from row first*2-2 at y0 = f32(remapY2(403) + y), step remapY2(77); columns remapX2(210)/remapX2(970), each MenuSelList_DrawRow(window, x, y, row, fixed); caller 0x008d1400; ported in menu round 27; name ours
 0x008d1820 function MenuSelList_DrawRow      # (window, x, y, row, fixed): y -= i16 +0x46 * 32 / 4096 unless fixed; for row in 0..u16 +0x30 a type-0xe plate, then by the list entry's kind (byte +2, when byte +3 is set): 1 TODrawCrossMenuIconCommandName, 2 AtelGetSummonNameforFinalBattleSelector, 3 TkMenuMenu1Mes(id + 0x1033), centred over remapX2(740); caller 0x008d1620; ported in menu round 26; name ours
@@ -17056,6 +17057,10 @@
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
 0x0186a428 label    g_TkMenuDummyAnalog       # 8 bytes; TOMenuGetDummyAnalogControler(axis) returns +4, +6, +0, +2 for axes 0-3, else 0x80
 0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
+0x0186a438 label g_TkMenuConfigLocRow     # i32: the config row drawn with the PC texts (SaveDataGetLoc) instead of TkMenuConfigMes (MenuConfig_DrawOptionRow); name ours
+0x0186a444 label g_TkMenuConfigCursor     # i8: the config menu cursor row (cross cursor and help in MenuConfig_DrawOptionRow); name ours
+0x0186a448 label g_TkMenuConfigRows       # i32: config rows on the page, 740 / rows PS2 px each (MenuConfig_DrawOptionRow); name ours
+0x0186a4a0 label g_TkMenuConfigHelpText   # the PC row's help text (SaveDataGetLoc(0x1d1 - 2k)), handed to TkMenuSetHelpMessage; name ours
 0x0186a5a4 label    g_TkMenuSummonStatusWindow# MenuSummon_CloseStatusWindow
 0x0186a5fc label    g_TkMenuSummonRestartCount# <= 1: MenuSummon_RestartWindow sets state 0, else 2
 0x0186a600 label    g_TkMenuSummonGrowMask    # aeon stats that grow and can be paid for (MenuSummon_RefreshGrowMasks)

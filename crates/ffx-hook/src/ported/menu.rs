@@ -4208,6 +4208,17 @@ ported! {
         let local = frame.at();
         tk::tk_mt_calc_spline_segment(&mut mem(), out, index, t, points, position, local, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuConfig_DrawOptionRow(_, _, row)` (the first two words are unused).
+    MenuConfig_DrawOptionRow @ 0x008c_bae0 => extern "C" fn menu_config_draw_option_row(_a: u32, _b: u32, row: u32) {
+        // the original's two 256-byte text buffers and its width word
+        let mut frame = super::StackFrame::<0x81>::new();
+        let title = frame.at();
+        tk::menu_config_draw_option_row(&mut mem(), row, [title, title.wrapping_add(0x100), title.wrapping_add(0x200)], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMn2CtrlSelItemsWindow(w)`.
+    TkMn2CtrlSelItemsWindow @ 0x008d_0eb0 => extern "C" fn tk_mn2_ctrl_sel_items_window(w: u32) {
+        tk::tk_mn2_ctrl_sel_items_window(&mut mem(), w, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `MenuItem_DrawListRow(window, x, y, row, mode)`.
     MenuItem_DrawListRow @ 0x008c_7c30 => extern "C" fn menu_item_draw_list_row(window: u32, x: f32, y: f32, row: u32, mode: u32) {
         // the digit width (the original's argument slot) and the command out word

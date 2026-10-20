@@ -210,6 +210,31 @@ not the row. In gear mode (`0x0186a393`) `MenuItem_DrawGearInfo`
 and the piece it wears of the selected row's kind (byte `+5`: armour,
 else weapon) above the selected piece.
 
+## Config menu
+
+`MenuConfig_DrawOptionRow` (`0x008cbae0`) draws row `row` of the config
+menu from the record `GetDerefU32_008cbaa0(row)`: option count `+4`,
+current choice `+8`, enabled `+0xc` (0 dims the options and hides the
+brush), title `u16 +0x18`, option text ids every 4 bytes from `+0x1c`
+(`TkMenuConfigMes`; help `TkMenuConfigHelp`). The `i32 0x0186a448` rows
+share 740 PS2 pixels: row `r` sits at `f32(r) * f32(740 / rows)` (kept at
+53 bits) below 220. Options are measured at scale 0.68 but drawn at 0.78,
+centred on `remapX2(750) + k * remapX2(420) + remapX2(210)`. One row
+(`0x0186a438`) is the PC's own (the HD remaster's settings): its title
+and options come from `SaveDataGetLoc` (`0x1cd`, options `0x1d0`,
+`0x1ce`, .., help `0x1d1`, `0x1cf`, .. into `0x0186a4a0`). The cursor row
+is `i8 0x0186a444`.
+
+`TkMn2CtrlSelItemsWindow` (`0x008d0eb0`) runs a two-column selection
+window: the cursor `i16 +0x48` counts entries, two per row (bit 0 the
+column; left/right `0x8000`/`0x2000` flip it, the last odd entry steps
+back one), `u16 +0x30` entries, `i16 +0x32` the top row, `u16 +0x3a`
+visible rows. Up/down move two entries and scroll a row past the view
+(timer `+0x46` from `0x1000`/`0xf000` by `0x333`, cut short while the
+direction is held); page up/down (repeat bits 1/2 with the pad on 1/2)
+scroll by a page (by `0x111`). Confirm (`0x20`) asks the `+0x1c` callback
+`(w, cursor, picks)` first (negative: wait, 0: buzzer `0x80000003`).
+
 ## Characters and aeons
 
 `g_TkMenuPlayers` (`0x01841c14`) and `g_TkMenuSummons` (`0x01841c38`) are
