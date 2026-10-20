@@ -1687,6 +1687,70 @@ ported! {
     opu_fin_type @ 0x0081_67b0 => extern "C" fn opu_fin_type(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_fin_type(&mut mem(), host, cmd, &mut |_, y, x| crt_atan2(y, x))
     }
+    // ---- round 33 d ----
+    /// `VfxGeometry_Register_006a52f0(this, kind)`.
+    VfxGeometry_Register_006a52f0 @ 0x006a_52f0 => extern "thiscall" fn vfx_geometry_register(this: u32, kind: u32) -> u32 {
+        small::bridge::vfx_geometry_register(&mut mem(), this, kind, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: the engine's thiscall functions of one or two stack
+            // words (the bridge asks for no other count).
+            unsafe {
+                match *a {
+                    [x] => {
+                        let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                        g(this, x)
+                    }
+                    [x, y] => {
+                        let g: unsafe extern "thiscall" fn(u32, u32, u32) -> u32 = std::mem::transmute(f as usize);
+                        g(this, x, y)
+                    }
+                    _ => 0,
+                }
+            }
+        })
+    }
+    /// `pppKaGra001Draw_00711830(hi, a, rec)`.
+    pppKaGra001Draw_00711830 @ 0x0071_1830 => extern "C" fn ppp_ka_gra001_draw(hi: u32, a: u32, rec: u32) {
+        small::bridge::ppp_ka_gra001_draw(&mut mem(), hi, a, rec, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `weaponShadowDrawInit(lo, hi, _, mode)`.
+    weaponShadowDrawInit @ 0x0081_4070 => extern "C" fn weapon_shadow_draw_init(lo: u32, hi: u32, unused: u32, mode: u32) -> u32 {
+        let _ = unused;
+        // the original's locals: three words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x43>::new();
+        let at = frame.at();
+        small::bridge::weapon_shadow_draw_init(&mut mem(), lo, hi, mode, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_flag_etc_008176f0(host, cmd)`.
+    opu_flag_etc_008176f0 @ 0x0081_76f0 => extern "C" fn opu_flag_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_flag_etc(&mut mem(), opus::bridge::FlagWord::Host, host, cmd)
+    }
+    /// `opu_v_get(host, cmd)`.
+    opu_v_get @ 0x0081_9940 => extern "C" fn opu_v_get(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_get(&mut mem(), host, cmd)
+    }
+    /// `createZBufClearRenderData_00716110(lo, hi)`.
+    createZBufClearRenderData_00716110 @ 0x0071_6110 => extern "C" fn create_zbuf_clear_render_data(lo: u32, hi: u32) -> u32 {
+        // the original's locals: ten words and a 0x100-byte name
+        let mut frame = super::StackFrame::<0x4a>::new();
+        let at = frame.at();
+        small::bridge::create_zbuf_clear_render_data(&mut mem(), lo, hi, at, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_mem(host, cmd)`.
+    opu_mem @ 0x0081_70c0 => extern "C" fn opu_mem(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_mem(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_signal_etc_008177f0(host, cmd)`.
+    opu_signal_etc_008177f0 @ 0x0081_77f0 => extern "C" fn opu_signal_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_flag_etc(&mut mem(), opus::bridge::FlagWord::Unit, host, cmd)
+    }
+    /// `opu_r_etc(host, cmd)`.
+    opu_r_etc @ 0x0081_8110 => extern "C" fn opu_r_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_r_etc(&mut mem(), host, cmd)
+    }
+    /// `opu_r_u(host, cmd)`.
+    opu_r_u @ 0x0081_8200 => extern "C" fn opu_r_u(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_r_u(&mut mem(), host, cmd, &mut |_, y, x| crt_atan2(y, x))
+    }
     /// `opu_end(obj, cmd)`.
     opu_end @ 0x0080_c3f0 => extern "C" fn opu_end(obj: u32, cmd: u32) -> u32 {
         opus::bridge::opu_end(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

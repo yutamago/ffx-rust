@@ -1192,4 +1192,186 @@ pub mod bridge {
         }
         last
     }
+
+    /// The renderer instance `(g_pppCurrentProgram, hi)` (the program
+    /// sign-extended to 64 bits plus `hi` in the high word), read again
+    /// each time.
+    fn program_instance(mem: &impl Mem, hi: u32) -> [u32; 2] {
+        let lo: u32 = mem.read(sym(mem, 0x0230_fd20));
+        [
+            lo,
+            (lo.cast_signed() >> 31).cast_unsigned().wrapping_add(hi),
+        ]
+    }
+
+    /// `0x00711830` (`pppKaGra001Draw`, ours; `(hi, a, rec)`): for the
+    /// current program's renderer instance ([`program_instance`]) with
+    /// render data `updateVFXRenderData_KaGra001(inst, a, rec)` and
+    /// `graphicVFXUpdate(inst)`; without, it is made first
+    /// (`FUN_00715dc0(inst, a, rec, f)`, `f` =
+    /// `calculateVFXSP_AlphaFunction(byte rec +8)` | 1 when `rec +0x44` is
+    /// set | 0x40 with bit 3 of byte `rec +0`, then `graphicVFXSetup`;
+    /// either failing ends in `graphicVFXDestroy`). All through `call`.
+    pub fn ppp_ka_gra001_draw<M: Mem>(
+        mem: &mut M,
+        hi: u32,
+        a: u32,
+        rec: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let i = program_instance(mem, hi);
+        if call(mem, sym(mem, 0x0064_53d0), &i) != 0 {
+            let i = program_instance(mem, hi);
+            call(mem, sym(mem, 0x0071_d520), &[i[0], i[1], a, rec]);
+            let i = program_instance(mem, hi);
+            call(mem, sym(mem, 0x0064_58a0), &i);
+            return;
+        }
+        let mut f = crate::op::bridge::calculate_vfx_sp_alpha_function(u32::from(
+            mem.read::<u8>(rec.wrapping_add(8)),
+        ));
+        f |= u32::from(mem.read::<u32>(rec.wrapping_add(0x44)) != 0);
+        if mem.read::<u8>(rec) & 8 != 0 {
+            f |= 0x40;
+        }
+        let i = program_instance(mem, hi);
+        if call(mem, sym(mem, 0x0071_5dc0), &[i[0], i[1], a, rec, f]) == 0
+            || call(mem, sym(mem, 0x0064_5780), &i) == 0
+        {
+            call(mem, sym(mem, 0x0064_5280), &i);
+            return;
+        }
+        call(mem, sym(mem, 0x0071_d520), &[i[0], i[1], a, rec]);
+        call(mem, sym(mem, 0x0064_58a0), &i);
+    }
+
+    /// `weaponShadowDrawInit(lo, hi, _, mode)` (`0x00814070`): the
+    /// original's locals at `frame` as in
+    /// [`create_0706_noise_render_data_buffer`] (format 0, height 0x300,
+    /// width 0x102, the name `g_StrNoTexture`'s ten bytes);
+    /// `graphicVFXCreate(lo, hi, f)` (`f` 0x10 for mode byte 0x42, 2 for
+    /// 0x48, else 0), `graphicVFXCreateDataBuffer(lo, hi, 1, &width,
+    /// &height, name, &format)`, `graphicVFXSetup`, `graphicVFXSetVisible(lo,
+    /// hi, 1)`, whose eax it returns (all through `call`).
+    pub fn weapon_shadow_draw_init<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        mode: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (format, height, width, name) = (frame, frame + 4, frame + 8, frame + 0xc);
+        mem.write(width, 0u32);
+        mem.write(height, 0u32);
+        mem.write(format, 0u32);
+        let f = match mode & 0xff {
+            0x42 => 0x10,
+            0x48 => 2,
+            _ => 0,
+        };
+        call(mem, sym(mem, 0x0064_4de0), &[lo, hi, f]);
+        let text: [u8; 10] = mem.read(sym(mem, 0x00b4_1b50));
+        mem.write(name, text);
+        mem.write(width, 0x102u32);
+        mem.write(height, 0x300u32);
+        call(
+            mem,
+            sym(mem, 0x0064_5040),
+            &[lo, hi, 1, width, height, name, format],
+        );
+        call(mem, sym(mem, 0x0064_5780), &[lo, hi]);
+        call(mem, sym(mem, 0x0064_5710), &[lo, hi, 1])
+    }
+
+    /// `0x006a52f0` (`VfxGeometry_Register`, ours; thiscall `(this, kind)`,
+    /// `ret 4`): `r` = 0 for a `kind` with bit 30 (cleared), else the
+    /// object's virtual `+0x28(kind)` (`v_call(f, this, args)`); bit 31
+    /// becomes the draw entry's flag (the low byte of the original argument
+    /// word), then cleared. With `[0x00ccca58]` = 1 any kind but 2 is 4, as
+    /// is any with bit 8 of `this +0x3c`. With `this +0x24` set and `r` 0,
+    /// the scene (`g_PhyreScene`) gets by kind: 0 `FUN_006565e0([this
+    /// +0xc])` when byte `this +0x50` is set, else
+    /// `PhyreScene_AddDrawEntry(this, flag)`; 1 `FUN_006a0d40`, 2
+    /// `FUN_00656990`, 4 `FUN_006567e0` of `[this +0xc]` (thiscalls through
+    /// `this_call`). Returns `r`.
+    pub fn vfx_geometry_register<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        kind: u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut k = kind;
+        let mut r = 0;
+        if k & 0x4000_0000 != 0 {
+            k &= !0x4000_0000;
+        } else {
+            let vt: u32 = mem.read(this);
+            let f: u32 = mem.read(vt.wrapping_add(0x28));
+            r = this_call(mem, f, this, &[k]);
+        }
+        let flag = kind & 0xffff_ff00 | u32::from(k & 0x8000_0000 != 0);
+        k &= 0x7fff_ffff;
+        let one = mem.read::<u32>(sym(mem, 0x00cc_ca58)) == 1;
+        if (one && k != 2) || mem.read::<u32>(this.wrapping_add(0x3c)) & 0x100 != 0 {
+            k = 4;
+        }
+        if mem.read::<u32>(this.wrapping_add(0x24)) == 0 || r != 0 || k > 4 {
+            return r;
+        }
+        let scene: u32 = mem.read(sym(mem, 0x00cc_b9d8));
+        let item: u32 = mem.read(this.wrapping_add(0xc));
+        match k {
+            0 if mem.read::<u8>(this.wrapping_add(0x50)) != 0 => {
+                this_call(mem, sym(mem, 0x0065_65e0), scene, &[item]);
+            }
+            0 => {
+                this_call(mem, sym(mem, 0x0065_6c10), scene, &[this, flag]);
+            }
+            1 => {
+                this_call(mem, sym(mem, 0x006a_0d40), scene, &[item]);
+            }
+            2 => {
+                this_call(mem, sym(mem, 0x0065_6990), scene, &[item]);
+            }
+            4 => {
+                this_call(mem, sym(mem, 0x0065_67e0), scene, &[item]);
+            }
+            _ => {}
+        }
+        r
+    }
+
+    /// `0x00716110` (`createZBufClearRenderData`, ours; `(lo, hi)`): the
+    /// original's locals at `frame` (`+0` height 6, `+4` width 4, `+8`
+    /// format 0, seven zero words from `+0xc`, the name at `+0x28`:
+    /// `sprintf(name, g_StrNoTexture)` through the import slot
+    /// `0x00b0c3dc`); `graphicVFXCreate(lo, hi, 0x40000000)`,
+    /// `graphicVFXCreateDataBuffer(lo, hi, 1, &width, &height, name,
+    /// &format)` (through `call`). Returns 1 when the instance has render
+    /// data then (`graphicVFXGetRenderDataByInstance`), else 0.
+    pub fn create_zbuf_clear_render_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (height, width, format, name) = (frame, frame + 4, frame + 8, frame + 0x28);
+        mem.write(frame + 0xc, [0u32; 7]);
+        mem.write(width, 0u32);
+        mem.write(height, 0u32);
+        mem.write(format, 0u32);
+        let sprintf: u32 = mem.read(sym(mem, 0x00b0_c3dc));
+        call(mem, sprintf, &[name, sym(mem, 0x00b4_1b50)]);
+        mem.write(width, 4u32);
+        mem.write(height, 6u32);
+        call(mem, sym(mem, 0x0064_4de0), &[lo, hi, 0x4000_0000]);
+        call(
+            mem,
+            sym(mem, 0x0064_5040),
+            &[lo, hi, 1, width, height, name, format],
+        );
+        u32::from(call(mem, sym(mem, 0x0064_53d0), &[lo, hi]) != 0)
+    }
 }
