@@ -346,3 +346,12 @@ harvest_test!(
         ffx_sg::seq::bridge::update_motion(&mut OracleHost(m), s.arg(0), s.arg(1));
     }
 );
+// battle round 30
+harvest_test!(
+    ms_walk_ability_process,
+    0x0078_2d60,
+    args = 1,
+    |m: &mut Oracle, s| {
+        ffx_battle::minor::bridge::ms_walk_ability_process(m, s.arg(0));
+    }
+);

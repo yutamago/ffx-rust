@@ -11708,3 +11708,1703 @@ fn menu_round25_scan_row_loops_and_cursor_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// [`seq_code`] for a callee taking a pointer: `id` and the `n` words at
+/// `[esp + 4]` logged (the pointer itself is a frame address).
+fn seq_code_deref(log: u32, id: u32, n: u8, cell: u32) -> Vec<u8> {
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+    code.extend([&[0xc7, 0x01][..], &id.to_le_bytes()].concat()); // mov dword [ecx], id
+    code.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp + 4]
+    let mut at = 4u8;
+    for k in 0..n {
+        code.extend([0x8b, 0x42, 4 * k, 0x89, 0x41, at]); // mov eax, [edx + 4k]; mov [ecx + at], eax
+        at += 4;
+    }
+    code.extend([&[0x83, 0x05][..], &l, &[at]].concat()); // add dword [log], 4 + 4n
+    code.extend([&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()); // mov eax, [cell]; ret
+    code
+}
+
+/// `ToGetBtlEasyFontWidth(text, out, 0, s0, s1)` logged without `out` (a
+/// frame address), writing the word in the returned cell to `[out]`.
+fn width_stub(t: &mut Twins, log: u32) -> u32 {
+    let width = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let extra: Vec<u8> = [
+        &[0x8b, 0x54, 0x24, 0x08][..],              // mov edx, [esp + 8]
+        &[0xa1], &width.to_le_bytes(),              // mov eax, [width]
+        &[0x89, 0x02],                              // mov [edx], eax
+    ]
+    .concat();
+    let cell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0090_5290, &[0, 2, 3, 4], cell, &extra);
+    jump_stub(t, 0x0090_5290, &code);
+    width
+}
+
+/// An `i32` argument: small, near the edges or anything.
+fn status_int(t: &mut Twins) -> i32 {
+    let v = match t.rng.below(6) {
+        0 => t.rng.next(),
+        1 => t.rng.pick(&[
+            0u32,
+            0x7fff_ffff,
+            0x8000_0000,
+            0xffff_ffff,
+            0x7fff,
+            0xffff_8000,
+        ]),
+        _ => t.rng.below(1200).wrapping_sub(200),
+    };
+    v.cast_signed()
+}
+
+#[test]
+fn menu_round26_status_pages_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0026_4ee0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // the callees of the five drawers, logged
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008f_5f70u32, 5u8),
+        (0x0090_3ee0, 11),
+        (0x008a_9950, 1),
+        (0x008d_3690, 6),
+        (0x008c_1bd0, 1),
+        (0x008d_dfc0, 1),
+        (0x0090_5ab0, 6),
+        (0x008b_ee70, 1),
+        (0x008a_9c70, 1),
+        (0x008e_67f0, 4),
+        (0x008c_1280, 6),
+        (0x008c_1a20, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let limit = seq_stub(&mut t, 0x008a_9930, log, 1, &[]);
+    let armour = seq_stub(&mut t, 0x008a_9820, log, 1, &[]);
+    let yes_no = seq_stub(&mut t, 0x008a_9b60, log, 0, &[]);
+    // TOMenuDrawChrLayoutPlate: the result mixes in the draw cursor global
+    let layout = t.alloc(&[0; 4]);
+    let mut code = seq_code(log, 0x008f_0a70, 4, layout, &[]);
+    code.truncate(code.len() - 6);
+    let draw_y = t.sym(0x0186_a238).to_le_bytes();
+    #[rustfmt::skip]
+    code.extend([
+        &[0xa1][..], &draw_y,                       // mov eax, [g_TkMn2DrawY]
+        &[0x33, 0x05], &layout.to_le_bytes(),       // xor eax, [layout]
+        &[0xc3],                                    // ret
+    ].concat());
+    jump_stub(&mut t, 0x008f_0a70, &code);
+    let plate_cell = t.alloc(&[0; 4]);
+    let code = seq_code_deref(log, 0x008b_f9b0, 6, plate_cell);
+    jump_stub(&mut t, 0x008b_f9b0, &code);
+    let width = width_stub(&mut t, log);
+    cells.extend([limit, layout, plate_cell]);
+
+    // TkMn2DrawOverDrive: both branches, MenuStatus_OffsetRect the original
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble(0x0186_a888, 0x28);
+        let (x, y) = (status_int(&mut t), status_int(&mut t));
+        let chr = t
+            .rng
+            .pick(&[
+                0u32,
+                1,
+                7,
+                8,
+                9,
+                0x12,
+                0x7fff_ffff,
+                0x8000_0000,
+                0xffff_ffff,
+            ])
+            .cast_signed();
+        let args = [x, y, chr].map(i32::cast_unsigned);
+        t.twin("TkMn2DrawOverDrive", 0x008d_3d70, &args, U32, |o| {
+            w(tk::tk_mn2_draw_over_drive(
+                o,
+                [x, y],
+                chr,
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuStatus_DrawEquipPlate: armour 0xff or not (the whole word)
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let a = t.rng.pick(&[0xffu32, 0xff, 0, 0x1ff, 0xffff_ffff, 7]);
+        t.put(armour, a);
+        let wv = quiet_float(&mut t);
+        t.put(width, wv);
+        let chr = t.rng.next();
+        let x = status_int(&mut t);
+        t.twin(
+            "MenuStatus_DrawEquipPlate",
+            0x008d_4540,
+            &[chr, x.cast_unsigned()],
+            U32,
+            |o| {
+                w(tk::menu_status_draw_equip_plate(
+                    o,
+                    chr,
+                    x,
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+
+    // MenuSummon_DrawCommandRow: the caption by the first count, the id
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let wv = quiet_float(&mut t);
+        t.put(width, wv);
+        t.scramble(0x0186_a9f4, 0x40);
+        let first = t.rng.pick(&[0u16, 1, 3, 8, 0x7fff, 0x8000, 0xffff]);
+        t.put(t.sym(0x0186_aa24), first);
+        let (x, y) = (status_int(&mut t), status_int(&mut t));
+        let i = t
+            .rng
+            .pick(&[0u32, 1, 2, 3, 7, 8, 9, 15, 16, 0xffff_ffff, 0xffff_fffc])
+            .cast_signed();
+        let args = [x, y, i].map(i32::cast_unsigned);
+        t.twin("MenuSummon_DrawCommandRow", 0x008d_4350, &args, U32, |o| {
+            w(tk::menu_summon_draw_command_row(
+                o,
+                [x, y],
+                i,
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuSummon_DrawCommandRows: the row calls logged
+    seq_stub(&mut t, 0x008d_4350, log, 3, &[]);
+    for _ in 0..400 {
+        t.put(log, start);
+        let a = t.rng.pick(&[0u16, 0, 1, 2, 3, 5, 9, 200]);
+        let b = t.rng.pick(&[0u16, 0, 1, 2, 4, 7, 100]);
+        t.put(t.sym(0x0186_aa24), a);
+        t.put(t.sym(0x0186_aa28), b);
+        let x = status_int(&mut t);
+        let args = [t.rng.next(), x.cast_unsigned()];
+        t.twin(
+            "MenuSummon_DrawCommandRows",
+            0x008d_4280,
+            &args,
+            VOID,
+            |o| {
+                tk::menu_summon_draw_command_rows(o, x, &mut ui_remap, &mut callback);
+                0
+            },
+        );
+    }
+
+    // MenuStatus_DrawLayoutRow: the rect by the yes/no mask bit
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let m = t.rng.pick(&[0u32, 0xffff_ffff, 1, 0x8000_0000]) ^ (t.rng.next() & t.rng.next());
+        t.put(yes_no, m);
+        t.scramble(0x023c_c13c, 0x10);
+        t.scramble(0x0186_a238, 4);
+        let (x, y) = (status_int(&mut t), status_int(&mut t));
+        let chr = t.rng.pick(&[0u32, 1, 7, 8, 31, 32, 33, 0xffff_ffff]);
+        let args = [x.cast_unsigned(), y.cast_unsigned(), chr];
+        t.twin("MenuStatus_DrawLayoutRow", 0x008c_11e0, &args, U32, |o| {
+            w(tk::menu_status_draw_layout_row(
+                o,
+                [x, y],
+                chr,
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuStatus_DrawPage: every page's calls logged
+    let ease = seq_stub(&mut t, 0x008d_30c0, log, 2, &[]);
+    let mut page_cells = vec![ease];
+    for (f, n) in [
+        (0x008a_99f0u32, 1u8),
+        (0x008a_9860, 0),
+        (0x008a_9880, 0),
+        (0x008c_2ce0, 1),
+        (0x008d_32b0, 7),
+        (0x008d_34a0, 7),
+        (0x008d_4540, 2),
+        (0x008d_3d70, 3),
+        (0x008f_f490, 3),
+        (0x008d_4280, 2),
+        (0x008c_11e0, 3),
+        (0x008c_0c40, 0),
+    ] {
+        page_cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    for _ in 0..1000 {
+        t.put(log, start);
+        reroll(&mut t, &page_cells);
+        let e = t
+            .rng
+            .pick(&[0u32, 1, 0x1000, 0xfff, 0x8000_0000, 0xffff_ffff])
+            ^ (t.rng.next() & t.rng.next());
+        t.put(ease, e);
+        t.scramble(0x0186_a83c, 4);
+        t.scramble(0x0186_a888, 4);
+        t.scramble(0x0186_a8a0, 4);
+        let faces = [t.alloc_random(4), t.alloc_random(4), t.alloc_random(4)];
+        let (x, y) = (status_int(&mut t), status_int(&mut t));
+        let chr = t.rng.next();
+        let page = t
+            .rng
+            .pick(&[0u32, 0, 1, 1, 2, 2, 3, 3, 4, 0x8000_0000, 0xffff_ffff]);
+        let tt = status_int(&mut t);
+        #[rustfmt::skip]
+        let args = [x.cast_unsigned(), y.cast_unsigned(), chr, page, faces[0], faces[1], faces[2], t.rng.next(), tt.cast_unsigned()];
+        t.twin("MenuStatus_DrawPage", 0x008d_4ee0, &args, U32, |o| {
+            w(tk::menu_status_draw_page(
+                o,
+                [x, y],
+                chr,
+                page,
+                faces,
+                tt,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// `f` logged with the argument indices `args`, writing the word in the
+/// returned cell to `[esp + 4 + 4 * out]` (a frame address, not logged).
+fn out_stub(t: &mut Twins, log: u32, f: u32, args: &[u8], out: u8) -> u32 {
+    let value = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let extra: Vec<u8> = [
+        &[0x8b, 0x54, 0x24, 4 + 4 * out][..],       // mov edx, [esp + 4 + 4 out]
+        &[0xa1], &value.to_le_bytes(),              // mov eax, [value]
+        &[0x89, 0x02],                              // mov [edx], eax
+    ]
+    .concat();
+    let cell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, f, args, cell, &extra);
+    jump_stub(t, f, &code);
+    value
+}
+
+#[test]
+fn menu_round26_list_rows_status_plate_and_option_rows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0026_1820) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008f_5f70u32, 5u8),
+        (0x008f_5000, 4),
+        (0x0087_3b50, 1),
+        (0x008d_dfc0, 1),
+        (0x0090_5ab0, 6),
+        (0x0090_3bb0, 9),
+        (0x008b_ee70, 1),
+        (0x0090_5820, 6),
+        (0x0090_3ee0, 11),
+        (0x008e_2270, 1),
+        (0x008d_df80, 1),
+        (0x0090_5970, 7),
+        (0x008c_0670, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let player = seq_stub(&mut t, 0x0078_5330, log, 1, &[]);
+    let enabled = seq_stub(&mut t, 0x008e_2290, log, 1, &[]);
+    let width = out_stub(&mut t, log, 0x0090_5290, &[0, 2, 3, 4], 1);
+    let digit_width = out_stub(&mut t, log, 0x0090_5230, &[0, 2, 3], 1);
+    let list = t.sym(tk::MENU_ITEM_LIST.sym);
+
+    // MenuSelList_DrawRow: rows in and out of range, every kind
+    for _ in 0..1000 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let wv = quiet_float(&mut t);
+        t.put(width, wv);
+        let window = t.alloc_random(0x50);
+        let rows = t.rng.pick(&[0u16, 1, 4, 9, 0x8000, 0xffff]);
+        t.put(window + 0x30, rows);
+        let scroll = t
+            .rng
+            .pick(&[0u16, 0x7f, 0x80, 0x1000, 0x7fff, 0x8000, 0xff81, 0xffff])
+            ^ u16::try_from(t.rng.next() & t.rng.next() & 0xffff).unwrap_or(0);
+        t.put(window + 0x46, scroll);
+        let row = t
+            .rng
+            .pick(&[0u32, 1, 3, 8, 9, 10, 0x7fff, 0xffff_ffff, 0x8000_0000])
+            .cast_signed();
+        if (0..0x200).contains(&row) {
+            let at = list + 4 * row.cast_unsigned();
+            let id = u16::try_from(t.rng.next() & 0xffff).unwrap_or(0);
+            let kind = t.rng.pick(&[0u8, 1, 2, 3, 3, 2, 1, 4, 0xff]);
+            let on = t.rng.pick(&[0u8, 1, 1, 1, 0x80]);
+            t.put(at, id);
+            t.put(at + 2, kind);
+            t.put(at + 3, on);
+        }
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let fixed = t.rng.pick(&[0u32, 0, 1, 0x100]);
+        let args = [window, x, y, row.cast_unsigned(), fixed];
+        t.twin("MenuSelList_DrawRow", 0x008d_1820, &args, VOID, |o| {
+            #[rustfmt::skip]
+            tk::menu_sel_list_draw_row(o, window, [f32::from_bits(x), f32::from_bits(y)], row, fixed != 0, local, &mut ui_remap, &mut callback);
+            0
+        });
+    }
+
+    // TkMn2DrawStatusPlate: the stat byte from the player record
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let (wv, dv) = (quiet_float(&mut t), quiet_float(&mut t));
+        t.put(width, wv);
+        t.put(digit_width, dv);
+        let p = t.alloc_random(0x100);
+        t.put(player, p);
+        let (x, y) = (status_int(&mut t), status_int(&mut t));
+        let (chr, mes) = (t.rng.next(), t.rng.next());
+        let field = t.rng.below(0x100);
+        #[rustfmt::skip]
+        let args = [x.cast_unsigned(), y.cast_unsigned(), t.rng.next(), t.rng.next(), chr, mes, field];
+        t.twin("TkMn2DrawStatusPlate", 0x008c_1490, &args, U32, |o| {
+            w(tk::tk_mn2_draw_status_plate(
+                o,
+                [x, y],
+                chr,
+                mes,
+                field,
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuMain_DrawOptionRow: the fade, the chosen option's cursor
+    for _ in 0..1000 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let wv = quiet_float(&mut t);
+        t.put(width, wv);
+        let e = t.rng.pick(&[0u32, 0, 1, 2, 0xffff_ffff]);
+        t.put(enabled, e);
+        let index = t
+            .rng
+            .pick(&[
+                0u32,
+                1,
+                2,
+                5,
+                7,
+                0xffff_ffff,
+                0x8000_0000,
+                0x7fff_ffff,
+                0x0100_0001,
+            ])
+            .cast_signed();
+        let chosen = if t.rng.below(2) == 0 {
+            index.cast_unsigned()
+        } else {
+            t.rng.next()
+        };
+        t.put(t.sym(0x0187_1548), chosen);
+        let fade = t
+            .rng
+            .pick(&[
+                0x1000u32,
+                0x1000,
+                0,
+                0x800,
+                0xfff,
+                0x1001,
+                0xffff_ffe1,
+                0x8000_0000,
+                0x7fff_ffff,
+                0x0100_0001,
+            ])
+            .cast_signed();
+        let x = quiet_float(&mut t);
+        #[rustfmt::skip]
+        let args = [index.cast_unsigned(), x, t.rng.next(), t.rng.next(), fade.cast_unsigned()];
+        t.twin("MenuMain_DrawOptionRow", 0x008e_22a0, &args, U32, |o| {
+            w(tk::menu_main_draw_option_row(
+                o,
+                index,
+                f32::from_bits(x),
+                fade,
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// Code logging `id`, the `n` words at `[esp + 4]` (a frame buffer; each
+/// `& mask`) and then the word arguments `args` (indices), returning
+/// `[cell]`.
+fn seq_code_deref_args(log: u32, id: u32, n: u8, mask: u32, args: &[u8], cell: u32) -> Vec<u8> {
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+    code.extend([&[0xc7, 0x01][..], &id.to_le_bytes()].concat()); // mov dword [ecx], id
+    code.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp + 4]
+    let mut at = 4u8;
+    for k in 0..n {
+        code.extend([0x8b, 0x42, 4 * k]); // mov eax, [edx + 4k]
+        code.extend([&[0x25][..], &mask.to_le_bytes()].concat()); // and eax, mask
+        code.extend([0x89, 0x41, at]); // mov [ecx + at], eax
+        at += 4;
+    }
+    for &k in args {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, at]); // mov eax, [esp + 4 + 4k]; mov [ecx + at], eax
+        at += 4;
+    }
+    code.extend([&[0x83, 0x05][..], &l, &[at]].concat()); // add dword [log], at
+    code.extend([&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()); // mov eax, [cell]; ret
+    code
+}
+
+#[test]
+fn menu_round26_pad_analog_and_save_slot_rows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0026_9570) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // Pad_UpdateAnalog: the stick floats from a stub, the rest original
+    let stick = seq_stub(&mut t, 0x0063_0c90, log, 0, &[]);
+    // Compute_008889e0 (the pressure of a button): kind and byte logged
+    let pressure = seq_stub(&mut t, 0x0088_89e0, log, 2, &[]);
+    for _ in 0..2000 {
+        t.put(log, start);
+        reroll(&mut t, &[pressure]);
+        let axes = t.alloc(&[0; 16]);
+        for k in 0..4u32 {
+            let v = match t.rng.below(4) {
+                0 => quiet_float(&mut t),
+                _ => t.rng.float(-1.2, 1.2).to_bits(),
+            };
+            t.put(axes + 4 * k, v);
+        }
+        t.put(stick, axes);
+        let raw = t.alloc_random(0x20);
+        let nibble =
+            t.rng.pick(&[0u8, 1, 2, 3, 4, 7, 0xf]) | (t.rng.next().to_le_bytes()[0] & 0xf0);
+        t.put(raw + 1, nibble);
+        let work = t.alloc_random(0xa0);
+        let edge = t.rng.pick(&[0u32, 0xffff_ffff, 0xffff_0fff]);
+        let buttons = (t.rng.next() & 0xf000) | (t.rng.next() & !0xf000 & edge);
+        t.twin(
+            "Pad_UpdateAnalog",
+            0x0088_9570,
+            &[work, raw, buttons],
+            VOID,
+            |o| {
+                tk::pad_update_analog(o, work, raw, buttons, &mut callback);
+                0
+            },
+        );
+    }
+
+    // MenuSaveLoad_DrawSlotRow: every callee logged, sprintf the CRT's
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008f_9b60u32, 6u8),
+        (0x0090_3a10, 3),
+        (0x008f_3db0, 6),
+        (0x008b_5560, 2),
+        (0x0090_1d10, 5),
+        (0x0090_1cb0, 4),
+        (0x0086_c430, 2),
+        (0x0078_51d0, 0),
+        (0x008e_19f0, 4),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let info = seq_stub(&mut t, 0x008b_4e40, log, 1, &[]);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let number_cell = t.alloc(&[0; 4]);
+    // the digits' first three bytes: "%02d" of row + 1 <= 999 (the bytes
+    // past the terminator are each frame's own)
+    let code = seq_code_deref_args(log, 0x0090_1f80, 1, 0x00ff_ffff, &[1, 2, 3], number_cell);
+    jump_stub(&mut t, 0x0090_1f80, &code);
+    cells.push(number_cell);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let block = t.alloc_random(0x40);
+        t.put(info, block);
+        let l = t.rng.pick(&[0u32, 0, 1, 5]);
+        t.put(lang, l);
+        let choice = t.rng.pick(&[0u8, 1, 1, 2]);
+        t.put(t.sym(0x0186_628a), choice);
+        for k in 0..100u32 {
+            let s = t.rng.pick(&[0u8, 1, 1, 2, 3, 4, 5, 0xff]);
+            t.put(t.sym(0x0186_6290) + k, s);
+        }
+        let window = t.alloc_random(0x50);
+        let rows = t.rng.pick(&[0u16, 1, 10, 99, 99, 0x8000]);
+        t.put(window + 0x30, rows);
+        for o in [0x32u32, 0x34] {
+            let v = t.rng.pick(&[0u16, 1, 5, 90, 0xffff, 0xfff0, 0x8000]);
+            t.put(window + o, v);
+        }
+        let scroll = t
+            .rng
+            .pick(&[0u16, 0x55, 0x56, 0x1000, 0x7fff, 0x8000, 0xffab, 0xffff]);
+        t.put(window + 0x46, scroll);
+        let row = t
+            .rng
+            .pick(&[0u32, 1, 9, 10, 50, 98, 99, 0xffff_ffff, 0x8000_0000])
+            .cast_signed();
+        let mode = t.rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff]);
+        let (x, y) = (status_int(&mut t), status_int(&mut t));
+        let args = [
+            window,
+            x.cast_unsigned(),
+            y.cast_unsigned(),
+            row.cast_unsigned(),
+            mode,
+        ];
+        t.twin("MenuSaveLoad_DrawSlotRow", 0x008b_4b70, &args, VOID, |o| {
+            tk::menu_save_load_draw_slot_row(o, window, [x, y], row, mode, local, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// Code logging `id`, the string at `[esp + 4]` with its terminator (a
+/// frame buffer) and the word arguments `args` (indices), returning
+/// `[cell]`.
+fn seq_code_str_args(log: u32, id: u32, args: &[u8], cell: u32) -> Vec<u8> {
+    seq_code_str_at(log, id, 0, args, cell)
+}
+
+/// [`seq_code_str_args`] with the string in argument `k`.
+fn seq_code_str_at(log: u32, id: u32, k: u8, args: &[u8], cell: u32) -> Vec<u8> {
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+    code.extend([&[0xc7, 0x01][..], &id.to_le_bytes()].concat()); // mov dword [ecx], id
+    #[rustfmt::skip]
+    code.extend([
+        0x83, 0xc1, 0x04,       // add ecx, 4
+        0x8b, 0x54, 0x24, 4 + 4 * k, // mov edx, [esp + 4 + 4k]
+        0x8a, 0x02,             // copy: mov al, [edx]
+        0x88, 0x01,             // mov [ecx], al
+        0x41, 0x42,             // inc ecx; inc edx
+        0x84, 0xc0,             // test al, al
+        0x75, 0xf6,             // jnz copy
+    ]);
+    for &k in args {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x01, 0x83, 0xc1, 0x04]); // mov eax, [esp + 4 + 4k]; mov [ecx], eax; add ecx, 4
+    }
+    code.extend([&[0x89, 0x0d][..], &l].concat()); // mov [log], ecx
+    code.extend([&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()); // mov eax, [cell]; ret
+    code
+}
+
+#[test]
+fn menu_round26_summon_plate_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0026_6e10) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008a_c850u32, 1u8),
+        (0x0090_5930, 6),
+        (0x0090_3bb0, 9),
+        (0x008a_98c0, 1),
+        (0x008a_9990, 1),
+        (0x008a_9970, 1),
+        (0x008a_99b0, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let text_cell = t.alloc(&[0; 4]);
+    let code = seq_code_str_args(log, 0x0090_1660, &[1, 2, 3, 4, 5], text_cell);
+    jump_stub(&mut t, 0x0090_1660, &code);
+    cells.push(text_cell);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let l = t.rng.pick(&[0u32, 1, 11, 11, 12, 0xb00]);
+        t.put(lang, l);
+        // HP/MP values: small, wide or negative (the format is %5d/%4d)
+        for &c in &cells[3..7] {
+            let v = t
+                .rng
+                .pick(&[0u32, 1, 999, 9999, 99_999, 0xffff_ffff, 0x8000_0000]);
+            let v = if t.rng.below(2) == 0 {
+                v
+            } else {
+                t.rng.below(100_000)
+            };
+            t.put(c, v);
+        }
+        let (x, y) = (quiet_float(&mut t), quiet_float(&mut t));
+        let (chr, alpha) = (t.rng.next(), t.rng.next());
+        t.twin(
+            "DrawCrossMenuSummonPlateClut",
+            0x008e_6e10,
+            &[chr, x, y, alpha],
+            U32,
+            |o| {
+                w(tk::draw_cross_menu_summon_plate_clut(
+                    o,
+                    chr,
+                    [f32::from_bits(x), f32::from_bits(y)],
+                    alpha,
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round27_summon_plate_check_pad_rows_and_btl_end_text_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_eb00) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008a_99f0u32, 1u8),
+        (0x008e_6e10, 4),
+        (0x008e_7110, 4),
+        (0x008c_d720, 3),
+        (0x0088_98a0, 4),
+        (0x0088_9570, 3),
+        (0x0063_0e20, 3),
+        (0x008d_1820, 5),
+        (0x0078_51f0, 0),
+        (0x0078_fb60, 2),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let hp = seq_stub(&mut t, 0x008a_98c0, log, 1, &[]);
+    let sub_cmd = t.sym(0x023c_c128);
+    let marks = t.sym(0x0186_a5b0);
+    let window = t.alloc(&[0; 0x98]);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let v = t
+            .rng
+            .pick(&[0u32, 1, 0xffff_ffff, 0x8000_0000, 0x7fff_ffff, 5]);
+        t.put(hp, v);
+        // the sub-command window: none, or a row marked 0, 1 or 2
+        let open = t.rng.below(4) != 0;
+        t.put(sub_cmd, if open { window } else { 0 });
+        let row = t.rng.below(24).cast_signed() - 4;
+        t.put(window + 0x48, i16::try_from(row).unwrap_or(0));
+        for k in -4..20 {
+            let m = t.rng.pick(&[0u8, 1, 1, 2]);
+            t.put(marks.wrapping_add_signed(k), m);
+        }
+        let chr = t
+            .rng
+            .pick_or_any(&[0, 7, 8, 13, 14, 15, 0xffff_ffff, 0x8000_0000]);
+        let (x, y) = (t.rng.int(), t.rng.int());
+        t.twin(
+            "TkMn2DrawSummonPlateCheckHP",
+            0x008c_eb00,
+            &[x, y, chr],
+            U32,
+            |o| {
+                w(tk::tk_mn2_draw_summon_plate_check_hp(
+                    o,
+                    [i(x), i(y)],
+                    i(chr),
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+
+        // a pad's frame: work records 0..7, vibration on or off
+        let (port, slot) = (t.rng.below(4), t.rng.below(4));
+        let work = tk::tk_get_controler_work(&t.b, i(port), i(slot));
+        for off in [0x98u32, 0x99, 0x9d, 0xfe, 0xff] {
+            let b = t.rng.pick(&[0u8, 1, 0x80, 0xff]);
+            t.put(work + off, b);
+        }
+        let pad = t.rng.next();
+        t.twin(
+            "Pad_ReadAndUpdate",
+            0x0088_8f90,
+            &[port, slot, pad],
+            VOID,
+            |o| {
+                tk::pad_read_and_update(o, port, slot, pad, &mut callback);
+                0
+            },
+        );
+
+        let (list, fixed, first, y) = (
+            t.rng.next(),
+            t.rng.pick_or_any(&[0, 1]),
+            t.rng.int(),
+            t.rng.int(),
+        );
+        let unused = t.rng.next();
+        t.twin(
+            "MenuSelList_DrawRows",
+            0x008d_1620,
+            &[list, fixed, first, unused, y],
+            VOID,
+            |o| {
+                tk::menu_sel_list_draw_rows(
+                    o,
+                    list,
+                    fixed,
+                    i(first),
+                    i(y),
+                    &mut ui_remap,
+                    &mut callback,
+                );
+                0
+            },
+        );
+
+        let id = t.rng.int();
+        t.twin("TkBtlEndGetText", 0x008b_da60, &[id], U32, |o| {
+            w(tk::tk_btl_end_get_text(o, id, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// [`callback`] for a callee returning in `ST0`: the value with a NaN's
+/// sign and payload kept (`Ret::st0` makes every NaN the same).
+fn fcallback(o: &mut Oracle, f: u32, args: &[u32]) -> f64 {
+    let r = o.call(f, Conv::Cdecl, args).unwrap();
+    let raw = r.st0_raw.expect("a float result");
+    let v = r.st0.expect("a float result");
+    if !v.is_nan() {
+        return v;
+    }
+    let mut m = [0; 8];
+    m.copy_from_slice(&raw[..8]);
+    let sign = u64::from(raw[9] >> 7) << 63;
+    f64::from_bits(
+        sign | 0x7ff0_0000_0000_0000 | ((u64::from_le_bytes(m) >> 11) & 0x000f_ffff_ffff_ffff),
+    )
+}
+
+#[test]
+fn menu_round27_sps2_load_and_help_text_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_ce80) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // TKMallocAndReadSPS2: sprintf_s runs as it is; fiosUnifyFilename
+    // logs its size and copies the name with every byte's bit 0 flipped
+    let lang = seq_stub(&mut t, 0x0064_10e0, log, 0, &[]);
+    let l = log.to_le_bytes();
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &l].concat(); // mov ecx, [log]
+    code.extend([&[0xc7, 0x01][..], &0x0067_9820u32.to_le_bytes()].concat()); // mov dword [ecx], id
+    #[rustfmt::skip]
+    code.extend([
+        0x8b, 0x44, 0x24, 0x0c, // mov eax, [esp + 12]
+        0x89, 0x41, 0x04,       // mov [ecx + 4], eax
+        0x83, 0x05, l[0], l[1], l[2], l[3], 0x08, // add dword [log], 8
+        0x8b, 0x54, 0x24, 0x04, // mov edx, [esp + 4]
+        0x8b, 0x4c, 0x24, 0x08, // mov ecx, [esp + 8]
+        0x8a, 0x02,             // copy: mov al, [edx]
+        0x84, 0xc0,             // test al, al
+        0x74, 0x02,             // jz store
+        0x34, 0x01,             // xor al, 1
+        0x88, 0x01,             // store: mov [ecx], al
+        0x41, 0x42,             // inc ecx; inc edx
+        0x84, 0xc0,             // test al, al
+        0x75, 0xf0,             // jnz copy
+        0xc3,
+    ]);
+    jump_stub(&mut t, 0x0067_9820, &code);
+    let exists = t.alloc(&[0; 4]);
+    let code = seq_code_str_args(log, 0x0067_96f0, &[], exists);
+    jump_stub(&mut t, 0x0067_96f0, &code);
+    let file = t.alloc(&[0; 4]);
+    let code = seq_code_str_args(log, 0x0067_9730, &[1], file);
+    jump_stub(&mut t, 0x0067_9730, &code);
+    let none = t.alloc(&[0; 4]);
+    let code = seq_code_str_at(log, 0x0062_f500, 1, &[0], none);
+    jump_stub(&mut t, 0x0062_f500, &code);
+    let size = seq_stub(&mut t, 0x0067_9570, log, 1, &[]);
+    let malloc = seq_stub(&mut t, 0x0068_7020, log, 1, &[]);
+    let mut cells = vec![file];
+    for (f, n) in [(0x0083_c4a0u32, 1u8), (0x0067_9800, 3), (0x0067_9510, 1)] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let heap = t.alloc(&[0; 16]);
+    // names that make the path 254 and 255 characters long: sprintf_s's
+    // 0xff limit takes the first and rejects the second
+    let long_names: Vec<u32> = [226usize, 227]
+        .map(|n| {
+            let mut name = vec![b'a'; n];
+            name.push(0);
+            t.alloc(&name)
+        })
+        .to_vec();
+    for _ in 0..400 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let l = t.rng.pick_or_any(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        t.put(lang, l);
+        let e = t.rng.pick_or_any(&[0, 1]);
+        t.put(exists, e);
+        let n = t.rng.pick_or_any(&[
+            0,
+            1,
+            0x10,
+            0x7f1,
+            0x7f0,
+            0x7ff,
+            0x800,
+            0x8000_0000,
+            0x7fff_f7f0,
+            0xffff_fff0,
+        ]);
+        t.put(size, n);
+        t.put(malloc, heap);
+        let junk = t.rng.next();
+        t.put(heap, junk);
+        let (index, page) = (t.rng.below(5), t.rng.pick_or_any(&[0, 1]));
+        let entry = t.sym(if page == 0 { 0x00c5_8e44 } else { 0x00c5_8e58 }) + 4 * index;
+        let name = Mem::read::<u32>(&t.a, entry);
+        if t.rng.below(4) == 0 {
+            let to = t.rng.pick(&long_names);
+            t.put(entry, to);
+        }
+        t.twin(
+            "TKMallocAndReadSPS2",
+            0x0088_ce80,
+            &[index, page],
+            U32,
+            |o| {
+                w(tk::tk_malloc_and_read_sps2(
+                    o,
+                    index,
+                    page,
+                    [local, local + 0x100],
+                    &mut callback,
+                ))
+            },
+        );
+        t.put(entry, name);
+    }
+
+    // DrawMesFontLClutTypeRGBA_ForHelp: TOGetGroup and TOSkipCode run as
+    // they are; the float callees return their cell in ST0
+    let mut cells = Vec::new();
+    let screen = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0064_0db0, &[], screen, &[]);
+    jump_stub(&mut t, 0x0064_0db0, &code);
+    // TOAddFontWidthSpace moves the pen's x (to any value, -0.0 too)
+    let pen_x = t.sym(0x025d_09a4);
+    let moved = t.alloc(&[0; 4]);
+    let mut extra = [&[0xa1][..], &moved.to_le_bytes()].concat(); // mov eax, [moved]
+    extra.extend([&[0xa3][..], &pen_x.to_le_bytes()].concat()); // mov [pen_x], eax
+    cells.push(seq_stub(&mut t, 0x008e_8ed0, log, 3, &extra));
+    for (f, n) in [
+        (0x008b_7240u32, 2u8),
+        (0x0064_3af0, 1),
+        (0x0064_0dd0, 1),
+        (0x008f_bae0, 3),
+        (0x008f_b940, 3),
+        (0x008b_1350, 2),
+        (0x008f_8ee0, 8),
+        (0x008b_1330, 0),
+        (0x008e_9ca0, 6),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let mut floats = Vec::new();
+    for (f, n) in [(0x008e_5280u32, 5u8), (0x008f_a800, 2), (0x008f_a570, 1)] {
+        let cell = t.alloc(&[0; 4]);
+        let mut code = seq_code(log, f, n, cell, &[]);
+        code.truncate(code.len() - 6);
+        code.extend([&[0xd9, 0x05][..], &cell.to_le_bytes(), &[0xc3]].concat()); // fld dword [cell]; ret
+        jump_stub(&mut t, f, &code);
+        floats.push(cell);
+    }
+    let text = t.alloc(&[0; 64]);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        for &c in &floats {
+            let v = quiet_float(&mut t);
+            t.put(c, v);
+        }
+        let v = if t.rng.below(4) == 0 {
+            (-0.0f32).to_bits()
+        } else {
+            quiet_float(&mut t)
+        };
+        t.put(moved, v);
+        let mut bytes = Vec::new();
+        for _ in 0..t.rng.below(9) {
+            let r = t.rng.next().to_le_bytes();
+            let token: Vec<u8> = match t.rng.below(10) {
+                0 => vec![t.rng.pick(&[1u8, 2, 3])],
+                1 => vec![7, t.rng.pick(&[0xe0, 0xe1, 0xe8, 0xef, 0xf0, r[0] | 1])],
+                2 => vec![0xa, r[0]],
+                3 => vec![0xb, t.rng.pick(&[0x33, 0x34, 0x37, 0x38, r[0] | 1])],
+                4 => vec![t.rng.pick(&[8u8, 9, 0xd, 0xe, 0x10]), r[0] | 1],
+                5 => vec![0x12 + t.rng.below(0x12).to_le_bytes()[0], r[0] | 1],
+                6 => vec![t.rng.pick(&[4u8, 5, 6, 0xc, 0xf, 0x11]), r[0] | 1],
+                7 => vec![0x47, 0x47],
+                _ => vec![0x30 | r[1]],
+            };
+            bytes.extend(token);
+        }
+        bytes.truncate(56);
+        bytes.resize(64, 0);
+        t.put_bytes(text, &bytes);
+        t.scramble(0x025d_09a0, 0x20);
+        t.scramble(0x0184_1d50, 0x40);
+        let key = t.rng.pick_or_any(&[0xffff_ffff, 0, 1]);
+        let (x, y) = (t.rng.int(), t.rng.int());
+        let flags = t.rng.next();
+        let rgba = [t.rng.next(), t.rng.next(), t.rng.next(), t.rng.next()];
+        t.twin(
+            "DrawMesFontLClutTypeRGBA_ForHelp",
+            0x008e_75c0,
+            &[key, text, x, y, flags, rgba[0], rgba[1], rgba[2], rgba[3]],
+            VOID,
+            |o| {
+                tk::draw_mes_font_lclut_type_rgba_for_help(
+                    o,
+                    key,
+                    text,
+                    [i(x), i(y)],
+                    flags,
+                    rgba,
+                    local,
+                    &mut callback,
+                    &mut fcallback,
+                );
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// `f` replaced by a logging stub returning `[cell]` in `ST0` (`fld`);
+/// returns the cell.
+fn float_stub(t: &mut Twins, f: u32, log: u32, n: u8) -> u32 {
+    let cell = t.alloc(&[0; 4]);
+    let mut code = seq_code(log, f, n, cell, &[]);
+    code.truncate(code.len() - 6);
+    code.extend([&[0xd9, 0x05][..], &cell.to_le_bytes(), &[0xc3]].concat()); // fld dword [cell]; ret
+    jump_stub(t, f, &code);
+    cell
+}
+
+#[test]
+fn menu_round27_key_use_cells_and_status_stats_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_4770) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // MenuItem_DrawKeyUseCells
+    let table = seq_stub(&mut t, 0x008c_4f80, log, 0, &[]);
+    let record = t.alloc(&[0; 8]);
+    let mut cells = Vec::new();
+    for (f, n) in [(0x008f_5f70u32, 5u8), (0x0090_5ab0, 6), (0x008c_0930, 6)] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let width = out_stub(&mut t, log, 0x0090_5290, &[0, 2, 3, 4], 1);
+    let time = float_stub(&mut t, 0x0064_1410, log, 0);
+    let names = t.sym(0x0186_a27c);
+    let scale = t.sym(0x0186_a31c);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.put(table, record);
+        let n = t.rng.pick_or_any(&[0, 1, 2, 4, 7, 8, 9]) & 0xf;
+        t.put(record + 2, u16::try_from(n).unwrap_or(0));
+        for k in 0..13 {
+            let b = if t.rng.below(3) == 0 { 0 } else { t.rng.next() };
+            t.put(names + 4 * k, b);
+        }
+        let s = t.rng.pick_or_any(&[0, 1, 2, 3, 0x7fff_ffff, 0x8000_0000]);
+        t.put(scale, s);
+        let text_w = quiet_float(&mut t);
+        t.put(width, text_w);
+        let v = t.rng.pick(&[
+            3.25f32,
+            3.5,
+            3.75,
+            0.5,
+            0.75,
+            -2.75,
+            -0.25,
+            3.0e9,
+            -3.0e9,
+            1.0e20,
+            8_388_608.5,
+        ]);
+        let v = if t.rng.below(4) == 0 {
+            quiet_float(&mut t)
+        } else {
+            v.to_bits()
+        };
+        t.put(time, v);
+        t.twin("MenuItem_DrawKeyUseCells", 0x008c_4770, &[], VOID, |o| {
+            tk::menu_item_draw_key_use_cells(
+                o,
+                local,
+                &mut ui_remap,
+                &mut callback,
+                &mut fcallback,
+            );
+            0
+        });
+    }
+
+    // TkMn2MainStatusPlayerStatus
+    let ease = seq_stub(&mut t, 0x008d_30c0, log, 2, &[]);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x0078_5330u32, 1u8),
+        (0x008b_f120, 2),
+        (0x008c_1490, 7),
+        (0x008c_0cd0, 0),
+        (0x008b_ee70, 1),
+        (0x0090_3bb0, 9),
+        (0x0090_16b0, 7),
+        (0x008c_0cc0, 0),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let width = out_stub(&mut t, log, 0x0090_5320, &[0, 1, 3, 4], 2);
+    let stats = t.sym(0x00c5_a790);
+    let shift = t.sym(0x023c_c420);
+    // text widths around the plate's limit: remapX2(80) + w against
+    // remapX2(660)
+    let limit = ui_remap(&mut t.b, false, 660.0);
+    let pad = ui_remap(&mut t.b, false, 80.0);
+    #[allow(clippy::cast_possible_truncation)]
+    let edge = ((limit - pad) as f32).to_bits();
+    t.b.clear_dirty();
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let e = t
+            .rng
+            .pick_or_any(&[0, 1, 0x1000, 0xfff, 0xffff_f000, 0x7fff_ffff, 0x8000_0000]);
+        t.put(ease, e);
+        let text_w = if t.rng.below(3) == 0 {
+            quiet_float(&mut t)
+        } else if t.rng.below(2) == 0 {
+            edge.wrapping_add(t.rng.below(9)).wrapping_sub(4)
+        } else {
+            (150.0 + f32::from(u16::try_from(t.rng.below(40)).unwrap_or(0))).to_bits()
+        };
+        t.put(width, text_w);
+        let v = t.rng.next();
+        t.put(shift, v);
+        // the stat table, cut short now and then
+        let cut = t.rng.below(12);
+        let saved = Mem::read::<i32>(&t.a, stats + 8 * cut);
+        if cut < 9 {
+            let end = t.rng.pick(&[-1, -2, 0, i32::MIN]);
+            t.put(stats + 8 * cut, end);
+        }
+        let (y, chr, time) = (
+            t.rng.int(),
+            t.rng.pick_or_any(&[0, 7, 13, 14, 15, 17, 18, 0xffff_ffff]),
+            t.rng.next(),
+        );
+        let unused = t.rng.next();
+        t.twin(
+            "TkMn2MainStatusPlayerStatus",
+            0x008d_5180,
+            &[unused, y, chr, time],
+            U32,
+            |o| {
+                w(tk::tk_mn2_main_status_player_status(
+                    o,
+                    i(y),
+                    i(chr),
+                    time,
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+        t.put(stats + 8 * cut, saved);
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// `f` replaced by a stub logging `args` and returning `base + (low byte
+/// of argument 0) * stride` (a record per id).
+fn record_stub(
+    t: &mut Twins,
+    f: u32,
+    log: u32,
+    args: &[u8],
+    base: u32,
+    stride: u8,
+    out: Option<u8>,
+) {
+    let unused = t.alloc(&[0; 4]);
+    // an out word: [argument out] = esp
+    let extra: Vec<u8> = out.map_or(Vec::new(), |k| {
+        vec![0x8b, 0x54, 0x24, 4 + 4 * k, 0x89, 0x22] // mov edx, [esp + 4 + 4k]; mov [edx], esp
+    });
+    let mut code = seq_code_of(log, f, args, unused, &extra);
+    code.truncate(code.len() - 6);
+    let scale = match stride {
+        2 => 0x45,
+        4 => 0x85,
+        _ => 0xc5,
+    };
+    #[rustfmt::skip]
+    code.extend([
+        &[0x8b, 0x44, 0x24, 0x04][..], // mov eax, [esp + 4]
+        &[0x0f, 0xb6, 0xc0],           // movzx eax, al
+        &[0x8d, 0x04, scale], &base.to_le_bytes(), // lea eax, [eax * stride + base]
+        &[0xc3],
+    ].concat());
+    jump_stub(t, f, &code);
+}
+
+#[test]
+fn menu_round27_pad_init_event_movie_wshop_list_and_key_rows_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_9360) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // Pad_InitWork and AtelEvent_FreeMovie
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x0088_8ee0u32, 1u8),
+        (0x0088_88e0, 1),
+        (0x0088_8910, 1),
+        (0x0088_89f0, 2),
+        (0x0088_94f0, 4),
+        (0x0076_f090, 0),
+        (0x0088_d520, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let event = seq_stub(&mut t, 0x0088_c830, log, 0, &[]);
+    let save = t.alloc(&[0; 0x100]);
+    let buffers = t.sym(0x0132_7110);
+    for _ in 0..600 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let (port, slot) = (t.rng.below(4), t.rng.below(4));
+        let work = tk::tk_get_controler_work(&t.b, i(port), i(slot));
+        t.scramble(work + 0x80, 0x24);
+        t.twin("Pad_InitWork", 0x0088_9360, &[port, slot], VOID, |o| {
+            tk::pad_init_work(o, port, slot, &mut callback);
+            0
+        });
+
+        t.put(event, save);
+        let kind = t.rng.pick_or_any(&[0, 1, 2, 3, 4, 5, 6, 0xffff_ffff]);
+        t.put(save + 0xe0, kind);
+        for k in 0..3 {
+            let p = if t.rng.below(2) == 0 { 0 } else { t.rng.next() };
+            t.put(buffers + 4 * k, p);
+        }
+        t.twin("AtelEvent_FreeMovie", 0x0087_4130, &[], U32, |o| {
+            w(tk::atel_event_free_movie(o, &mut callback))
+        });
+    }
+
+    // MenuWShop_InitList
+    let excel = seq_stub(&mut t, 0x008c_1af0, log, 2, &[]);
+    let list = t.alloc(&[0; 0x40]);
+    let owned_cell = t.alloc(&[0; 4]);
+    let count = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let extra: Vec<u8> = [
+        &[0x8b, 0x54, 0x24, 0x10][..], // mov edx, [esp + 16]
+        &[0xa1], &count.to_le_bytes(), // mov eax, [count]
+        &[0x89, 0x02],                 // mov [edx], eax
+    ].concat();
+    let code = seq_code_of(log, 0x007a_bd10, &[0, 1, 2], owned_cell, &extra);
+    jump_stub(&mut t, 0x007a_bd10, &code);
+    let owned = t.alloc(&[0; 0x40]);
+    let weapons = t.alloc(&[0; 0x400]);
+    record_stub(&mut t, 0x007a_bbd0, log, &[0], weapons, 4, Some(1));
+    let records = t.alloc(&[0; 0x800]);
+    record_stub(&mut t, 0x008d_9170, log, &[0], records, 8, None);
+    let named = seq_stub(&mut t, 0x0079_93b0, log, 1, &[]);
+    for _ in 0..600 {
+        t.put(log, start);
+        let v = t.rng.next();
+        t.put(named, v);
+        t.put(excel, list);
+        t.put(owned_cell, owned);
+        let n = t.rng.pick_or_any(&[0, 1, 5, 16, 0xffff_ffff]) & 0x8000_001f;
+        t.put(count, n);
+        for k in 0..20 {
+            let id = if t.rng.below(8) == 0 {
+                0
+            } else {
+                t.rng.below(0x100)
+            };
+            t.put(list + 2 * k, u16::try_from(id).unwrap_or(0));
+            let id = t.rng.below(0x100);
+            t.put(owned + 2 * k, u16::try_from(id).unwrap_or(0));
+        }
+        for k in 0..0x100 {
+            let b = u8::from(t.rng.below(16) != 0);
+            t.put(weapons + 4 * k + 2, b);
+        }
+        t.scramble(0x0186_ab10, 8);
+        t.scramble(0x0186_ab1c, 4);
+        t.scramble(0x0186_aba8, 4);
+        t.twin("MenuWShop_InitList", 0x008d_94a0, &[], U32, |o| {
+            w(tk::menu_wshop_init_list(
+                o,
+                [local, local + 4],
+                &mut callback,
+            ))
+        });
+    }
+
+    // MenuItem_KeyRowCount: PasswordGetTotalIndex counts up per call
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let english = seq_stub(&mut t, 0x0078_51d0, log, 0, &[]);
+    let total = t.alloc(&[0; 4]);
+    let mut code = seq_code_of(log, 0x0079_02d0, &[], total, &[]);
+    code.pop();
+    code.extend([&[0xff, 0x05][..], &total.to_le_bytes(), &[0xc3]].concat()); // inc dword [total]; ret
+    jump_stub(&mut t, 0x0079_02d0, &code);
+    for _ in 0..600 {
+        t.put(log, start);
+        let l = t.rng.pick_or_any(&[0, 0, 1, 2, 9, 10, 11, 12]);
+        t.put(lang, l);
+        let e = t.rng.pick_or_any(&[0, 1]);
+        t.put(english, e);
+        let v = t
+            .rng
+            .pick_or_any(&[0, 1, 2, 3, 0xffff_fffe, 0x7fff_ffff, 0x8000_0000]);
+        t.put(total, v);
+        let mode = t.rng.below(3);
+        t.put(t.sym(0x0186_a25c), mode);
+        let target = t.rng.pick_or_any(&[0, 1, 0xffff_ffff, 0x8000_0000]);
+        t.put(t.sym(0x0186_a258), target);
+        t.twin("MenuItem_KeyRowCount", 0x008c_5180, &[], U32, |o| {
+            s(tk::menu_item_key_row_count(o, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// `f` replaced by a stub logging `args` and returning the byte of the
+/// table at `base` indexed by the low byte of argument `k`.
+fn byte_table_stub(t: &mut Twins, f: u32, log: u32, args: &[u8], k: u8, base: u32) {
+    let unused = t.alloc(&[0; 4]);
+    let mut code = seq_code_of(log, f, args, unused, &[]);
+    code.truncate(code.len() - 6);
+    #[rustfmt::skip]
+    code.extend([
+        &[0x0f, 0xb6, 0x44, 0x24, 4 + 4 * k][..], // movzx eax, byte [esp + 4 + 4k]
+        &[0x0f, 0xb6, 0x80], &base.to_le_bytes(), // movzx eax, byte [eax + base]
+        &[0xc3],
+    ].concat());
+    jump_stub(t, f, &code);
+}
+
+/// Text for the key tests: characters, two- and three-byte codes, an
+/// early end now and then.
+fn key_text(t: &mut Twins) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for _ in 0..t.rng.below(10) {
+        let r = t.rng.next().to_le_bytes();
+        match t.rng.below(6) {
+            0 => bytes.extend([6 + r[0] % 0x2a, r[1] | 1]),
+            1 => bytes.extend([4, (r[0] % 0x30) | 1, r[1] | 1]),
+            2 => bytes.extend([4, 0x30 | r[0]]),
+            3 if t.rng.below(4) == 0 => bytes.push(0),
+            _ => bytes.push(0x30 | r[0]),
+        }
+    }
+    bytes.resize(40, 0);
+    bytes
+}
+
+#[test]
+fn menu_round27_type_key_and_disp_command_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_4c90) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // MenuItem_TypeKey
+    let table = seq_stub(&mut t, 0x008c_4f80, log, 0, &[]);
+    let record = t.alloc(&[0; 0x40]);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let english = seq_stub(&mut t, 0x0078_51d0, log, 0, &[]);
+    let total = seq_stub(&mut t, 0x0079_02d0, log, 0, &[]);
+    let entry = seq_stub(&mut t, 0x0079_02a0, log, 1, &[]);
+    let name = seq_stub(&mut t, 0x008b_edd0, log, 1, &[]);
+    let (text_a, text_b) = (t.alloc(&[0; 40]), t.alloc(&[0; 40]));
+    let keys = t.sym(0x0186_a27c);
+    for _ in 0..1500 {
+        t.put(log, start);
+        t.put(table, record);
+        t.put(entry, text_a);
+        t.put(name, text_b);
+        let n = t.rng.pick(&[0u16, 1, 2, 5, 8, 9]);
+        t.put(record + 2, n);
+        for k in 0..8 {
+            let id = u16::try_from(t.rng.below(0x200)).unwrap_or(0);
+            t.put(record + 2 * k, id);
+        }
+        t.put(record + 2, n);
+        let l = t.rng.pick_or_any(&[0, 0, 1, 2, 9, 10, 11, 12]);
+        t.put(lang, l);
+        let e = t.rng.pick_or_any(&[0, 1]);
+        t.put(english, e);
+        let v = t.rng.pick(&[0u32, 1, 3, 8, 0xffff_ffff]);
+        t.put(total, v);
+        for text in [text_a, text_b] {
+            let bytes = key_text(&mut t);
+            t.put_bytes(text, &bytes);
+        }
+        let cursor = t.rng.below(60).cast_signed() - 15;
+        t.put(t.sym(0x0186_a268), cursor);
+        let mode = t.rng.below(3);
+        t.put(t.sym(0x0186_a25c), mode);
+        let target = t.rng.pick_or_any(&[0, 1, 0xffff_ffff, 0x8000_0000]);
+        t.put(t.sym(0x0186_a258), target);
+        for k in 0..12 {
+            let v = if t.rng.below(3) == 0 { 0 } else { t.rng.next() };
+            t.put(keys + 4 * k, v);
+        }
+        t.twin("MenuItem_TypeKey", 0x008c_4c90, &[], VOID, |o| {
+            tk::menu_item_type_key(o, &mut callback);
+            0
+        });
+    }
+
+    // TkMenuGetDispCommand: membership and commands by id from byte tables
+    let flags = t.alloc(&[0; 0x100]);
+    let panels = t.alloc(&[0; 0x100]);
+    let list = t.alloc(&[0; 0x60]);
+    let list_cell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0079_0200, &[0], list_cell, &[]);
+    jump_stub(&mut t, 0x0079_0200, &code);
+    let max = seq_stub(&mut t, 0x008d_2d80, log, 4, &[]);
+    let offset = seq_stub(&mut t, 0x008d_2dc0, log, 4, &[]);
+    byte_table_stub(&mut t, 0x0078_5380, log, &[0], 0, flags);
+    byte_table_stub(&mut t, 0x0078_5020, log, &[0, 1], 1, flags);
+    byte_table_stub(&mut t, 0x0078_50b0, log, &[0], 0, panels);
+    let weapon = seq_stub(&mut t, 0x008a_9c70, log, 1, &[]);
+    let armour = seq_stub(&mut t, 0x008a_9820, log, 1, &[]);
+    let gear = t.alloc(&[0; 0x900]);
+    record_stub(&mut t, 0x007a_bbd0, log, &[0], gear, 8, Some(1));
+    let mut cells = Vec::new();
+    for (f, n) in [(0x0078_5330u32, 1u8), (0x008a_8e20, 0)] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let out = t.alloc(&[0; 0x80]);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.put(list_cell, list);
+        for k in 0..0x18 {
+            let id = if t.rng.below(6) == 0 {
+                100
+            } else {
+                t.rng.below(0x100)
+            };
+            let low = t.rng.next() & 0xffff;
+            t.put(list + 4 * k, low | id << 16);
+        }
+        // half the ids missing, half without a panel
+        for table in [flags, panels] {
+            let bytes: Vec<u8> = (0..0x100).map(|_| t.rng.pick(&[0u8, 0, 1, 0x80])).collect();
+            t.put_bytes(table, &bytes);
+        }
+        for k in 0..0x120 {
+            let v = t.rng.pick(&[0u16, 0xff, 1, 0x1234, 0x100]);
+            t.put(gear + 8 * (k / 4) + 0xe + 2 * (k % 4), v);
+        }
+        let m = t.rng.pick_or_any(&[0, 1, 4, 8, 0xffff_ffff]) & 0x8000_000f;
+        t.put(max, m);
+        let o = t.rng.below(4);
+        t.put(offset, o);
+        let w0 = t.rng.pick_or_any(&[0xff, 0, 1, 0x80]) & 0xff;
+        t.put(weapon, w0);
+        let a0 = t.rng.pick_or_any(&[0xff, 0, 2, 0x81]) & 0xff;
+        t.put(armour, a0);
+        t.scramble_at(out, 0x80);
+        let kind = t.rng.pick_or_any(&[0, 0, 1, 2]);
+        let sub = t.rng.pick_or_any(&[1, 1, 0x40, 0x47, 0x48, 0x3f, 0]);
+        let chr = t.rng.pick_or_any(&[0, 7, 8, 9, 0xffff_ffff]);
+        let a = t.rng.next();
+        t.twin(
+            "TkMenuGetDispCommand",
+            0x008d_2e10,
+            &[kind, sub, a, chr, out],
+            U32,
+            |o| {
+                s(tk::tk_menu_get_disp_command(
+                    o,
+                    kind,
+                    sub,
+                    a,
+                    i(chr),
+                    out,
+                    [local, local + 4],
+                    &mut callback,
+                ))
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round27_font1612_texts_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_4af0) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    // TOAddFontWidthSpace moves the pen's x; the face pass the packet cursor
+    let pen_x = t.sym(0x025d_09a4);
+    let moved = t.alloc(&[0; 4]);
+    let mut extra = [&[0xa1][..], &moved.to_le_bytes()].concat(); // mov eax, [moved]
+    extra.extend([&[0xa3][..], &pen_x.to_le_bytes()].concat()); // mov [pen_x], eax
+    let mut cells = vec![seq_stub(&mut t, 0x008e_8ed0, log, 3, &extra)];
+    let cursor = t.sym(0x0187_16cc);
+    // the face pass also logs the pen's x
+    let l = log.to_le_bytes();
+    let mut bump = [&[0x83, 0x05][..], &cursor.to_le_bytes(), &[0x10]].concat(); // add dword [cursor], 0x10
+    #[rustfmt::skip]
+    bump.extend([
+        &[0xa1][..], &pen_x.to_le_bytes(), // mov eax, [pen_x]
+        &[0x8b, 0x0d], &l,                 // mov ecx, [log]
+        &[0x89, 0x01],                     // mov [ecx], eax
+        &[0x83, 0x05], &l, &[0x04],        // add dword [log], 4
+    ].concat());
+    cells.push(seq_stub(&mut t, 0x0090_6270, log, 2, &bump));
+    for (f, n) in [
+        (0x0090_6260u32, 2u8),
+        (0x0090_6290, 2),
+        (0x0064_3af0, 1),
+        (0x0064_0dd0, 1),
+        (0x008b_7240, 2),
+        (0x008b_1350, 2),
+        (0x008f_8ee0, 8),
+        (0x008b_1330, 0),
+        (0x008e_9b80, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let floats = [
+        float_stub(&mut t, 0x008e_5280, log, 5),
+        float_stub(&mut t, 0x008f_a800, log, 2),
+    ];
+    let text = t.alloc(&[0; 64]);
+    for round in 0..3000 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        for c in floats {
+            let v = quiet_float(&mut t);
+            t.put(c, v);
+        }
+        let v = if t.rng.below(4) == 0 {
+            (-0.0f32).to_bits()
+        } else {
+            quiet_float(&mut t)
+        };
+        t.put(moved, v);
+        // every eighth round the English x 200 case: (0xd6, 0xbb) and "h"
+        let english_h = round % 8 == 0;
+        let l = if english_h {
+            1
+        } else {
+            t.rng.pick_or_any(&[0, 0, 1, 1, 2, 9])
+        };
+        t.put(lang, l);
+        let mut bytes = Vec::new();
+        match if english_h { 2 } else { t.rng.below(6) } {
+            0 => bytes.extend([0x48, 0x73, 0x78, 0x82, 0x7f]),
+            1 => bytes.extend([0x48, 0x73, 0x78, 0x82, 0x7e]),
+            2 => bytes.push(b'h'),
+            _ => {}
+        }
+        for _ in 0..t.rng.below(9) {
+            let r = t.rng.next().to_le_bytes();
+            let token: Vec<u8> = match t.rng.below(10) {
+                0 => vec![t.rng.pick(&[1u8, 2, 3])],
+                1 => vec![7, t.rng.pick(&[0xe0, 0xe1, 0xe8, 0xef, 0xf0, r[0] | 1])],
+                2 => vec![0xa, r[0]],
+                3 => vec![
+                    0xb,
+                    t.rng.pick(&[
+                        0x20,
+                        0x22,
+                        0x23,
+                        0x30,
+                        0x33,
+                        0x34,
+                        0x37,
+                        0x38,
+                        0x42,
+                        0x48,
+                        r[0] | 1,
+                    ]),
+                ],
+                4 => vec![t.rng.pick(&[8u8, 9, 0xd, 0xe, 0x10]), r[0] | 1],
+                5 => vec![0x12 + t.rng.below(0x12).to_le_bytes()[0], r[0] | 1],
+                6 => vec![t.rng.pick(&[4u8, 5, 6, 0xc, 0xf, 0x11]), r[0] | 1],
+                7 => vec![0x47, 0x47],
+                _ => vec![0x30 | r[1]],
+            };
+            bytes.extend(token);
+        }
+        bytes.truncate(56);
+        bytes.resize(64, 0);
+        t.put_bytes(text, &bytes);
+        t.scramble(0x025d_09a0, 0x20);
+        t.scramble(0x0184_1d50, 0x40);
+        let key = t.rng.pick_or_any(&[0xffff_ffff, 0, 1]);
+        let x = if english_h {
+            0xd6
+        } else {
+            t.rng.pick_or_any(&[0xd6, 0, 100])
+        };
+        let y = if english_h {
+            0xbb
+        } else {
+            t.rng.pick_or_any(&[0x163, 0xbb, 340, 350, 360])
+        };
+        let (packet, flags, edge) = (
+            t.rng.next(),
+            t.rng.next(),
+            t.rng.pick_or_any(&[1, 0, 0x101]),
+        );
+        let rgba = [t.rng.next(), t.rng.next(), t.rng.next(), t.rng.next()];
+        let args = [
+            key, text, x, y, flags, edge, rgba[0], rgba[1], rgba[2], rgba[3],
+        ];
+        if round % 2 == 0 {
+            t.twin(
+                "MenuMes_AddPktFont1612",
+                0x008e_4af0,
+                &[&[packet][..], &args].concat(),
+                U32,
+                |o| {
+                    w(tk::menu_mes_add_pkt_font1612(
+                        o,
+                        packet,
+                        key,
+                        text,
+                        [i(x), i(y)],
+                        [flags, edge],
+                        rgba,
+                        &mut callback,
+                        &mut fcallback,
+                    ))
+                },
+            );
+        } else {
+            t.twin(
+                "MenuMes_AddPktFont1612Icons",
+                0x008e_4e60,
+                &[&[packet][..], &args].concat(),
+                U32,
+                |o| {
+                    w(tk::menu_mes_add_pkt_font1612_icons(
+                        o,
+                        packet,
+                        key,
+                        text,
+                        [i(x), i(y)],
+                        [flags, edge],
+                        rgba,
+                        &mut callback,
+                        &mut fcallback,
+                    ))
+                },
+            );
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+impl Twins {
+    /// Random bytes over `len` bytes at `at` (test memory), in both.
+    fn scramble_at(&mut self, at: u32, len: usize) {
+        let v = self.rng.bytes(len);
+        self.put_bytes(at, &v);
+    }
+}

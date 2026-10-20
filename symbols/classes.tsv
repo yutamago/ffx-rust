@@ -5167,7 +5167,7 @@
 0x00729700	logic	default (no rule: ported to be safe)
 0x007297a0	dead	unreachable from the entry point and every pointer table
 0x00729810	logic	default (no rule: ported to be safe)
-0x00729850	logic	default (no rule: ported to be safe)
+0x00729850	debug	reviewed: pppFpInfPrint: CAM:/PLY:/DIS: text via sprintf drawn with op_num (effects round 35)
 0x007299e0	logic	default (no rule: ported to be safe)
 0x00729a10	logic	default (no rule: ported to be safe)
 0x00729ab0	logic	default (no rule: ported to be safe)
@@ -5914,9 +5914,9 @@
 0x00760f30	glue	reviewed: pppPacketStart_00760f30: ppp packet reset and the crosshair's GS depth readback through stubbed sceGsExecStoreImage (effects round 30)
 0x007610a0	dead	unreachable from the entry point and every pointer table
 0x007610e0	dead	unreachable from the entry point and every pointer table
-0x00761170	logic	default (no rule: ported to be safe)
+0x00761170	debug	only called from debug code (pppLinePoints_00761350)
 0x00761250	logic	default (no rule: ported to be safe)
-0x00761350	logic	default (no rule: ported to be safe)
+0x00761350	debug	only called from debug code (pppDrawDebugAxes_007625a0)
 0x00761480	dead	unreachable from the entry point and every pointer table
 0x007614a0	logic	default (no rule: ported to be safe)
 0x00761c00	debug	unreachable from the entry point and every pointer table; debug name or strings
@@ -5928,7 +5928,7 @@
 0x00762460	dead	unreachable from the entry point and every pointer table
 0x00762530	dead	unreachable from the entry point and every pointer table
 0x00762550	logic	default (no rule: ported to be safe)
-0x007625a0	logic	default (no rule: ported to be safe)
+0x007625a0	debug	debug name: pppDrawDebugAxes_007625a0
 0x007626b0	dead	unreachable from the entry point and every pointer table
 0x007626d0	logic	default (no rule: ported to be safe)
 0x00762760	dead	unreachable from the entry point and every pointer table
@@ -6643,7 +6643,7 @@
 0x0077a000	platform	thin wrapper: only forwards to platform code (task_create_in_group)
 0x0077a020	platform	thin wrapper: only forwards to platform code (task_create_in_group)
 0x0077a040	platform	thin wrapper: only forwards to platform code (task_create_in_group)
-0x0077a060	logic	default (no rule: ported to be safe)
+0x0077a060	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): task_create_group7
 0x0077a180	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_task_buff_size_get
 0x0077a1a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_task_init
 0x0077a1d0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_task_init2
@@ -6651,8 +6651,8 @@
 0x0077a320	platform	only called from platform code (hdd_ReadModuleFiles_00777f00)
 0x0077a330	dead	unreachable from the entry point and every pointer table
 0x0077a390	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): task_create_in_group
-0x0077a3f0	logic	default (no rule: ported to be safe)
-0x0077a420	logic	default (no rule: ported to be safe)
+0x0077a3f0	dead	reviewed: no call or absolute reference in the image (main round 15)
+0x0077a420	dead	reviewed: no call or absolute reference in the image (main round 15)
 0x0077a480	dead	unreachable from the entry point and every pointer table
 0x0077a490	dead	unreachable from the entry point and every pointer table
 0x0077a4a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_printf_set
@@ -7192,7 +7192,7 @@
 0x007902f0	logic	default (no rule: ported to be safe)
 0x00790340	logic	default (no rule: ported to be safe)
 0x00790420	dead	unreachable from the entry point and every pointer table
-0x00790430	logic	default (no rule: ported to be safe)
+0x00790430	platform	reviewed: PasswordTextRead's file loader: fiosOpen/sceLseek/sceRead/sceClose, TkMalloc/TkFree, memcpy only (battle round 30)
 0x007904a0	logic	default (no rule: ported to be safe)
 0x007904b0	logic	default (no rule: ported to be safe)
 0x00790500	logic	default (no rule: ported to be safe)
@@ -7428,7 +7428,7 @@
 0x00798890	logic	default (no rule: ported to be safe)
 0x007988f0	logic	default (no rule: ported to be safe)
 0x00798930	logic	default (no rule: ported to be safe)
-0x00798950	logic	default (no rule: ported to be safe)
+0x00798950	platform	reviewed: Rng_ClockSeed: XORs the system time bytes; the harness hooks this address for its seed (battle round 30)
 0x007989a0	logic	default (no rule: ported to be safe)
 0x00798a00	logic	default (no rule: ported to be safe)
 0x00798a90	logic	default (no rule: ported to be safe)
@@ -13519,7 +13519,7 @@
 0x008b9f30	logic	default (no rule: ported to be safe)
 0x008ba2a0	dead	unreachable from the entry point and every pointer table
 0x008ba370	logic	default (no rule: ported to be safe)
-0x008ba390	logic	default (no rule: ported to be safe)
+0x008ba390	glue	reviewed: 9-byte frame then jmp MsSaveAddAP_00784610 (menu round 27)
 0x008ba3a0	logic	default (no rule: ported to be safe)
 0x008ba3c0	logic	default (no rule: ported to be safe)
 0x008ba400	logic	default (no rule: ported to be safe)
@@ -16924,11 +16924,11 @@
 0x00a43220	logic	default (no rule: ported to be safe)
 0x00a432a0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_HddExFileRead_00a432a0
 0x00a43740	platform	only called from platform code (Cd_QueueRead)
-0x00a43bc0	logic	default (no rule: ported to be safe)
+0x00a43bc0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_meth01dec
 0x00a43ca0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_meth01dec2_ex
 0x00a43cb0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_meth01dec_ex
-0x00a43cc0	logic	default (no rule: ported to be safe)
-0x00a43da0	logic	default (no rule: ported to be safe)
+0x00a43cc0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_meth02dec
+0x00a43da0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_meth00dec
 0x00a43de0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_decode
 0x00a43e10	dead	unreachable from the entry point and every pointer table
 0x00a43e60	dead	unreachable from the entry point and every pointer table
@@ -17049,7 +17049,7 @@
 0x00a4fe40	logic	default (no rule: ported to be safe)
 0x00a50290	logic	default (no rule: ported to be safe)
 0x00a505e0	logic	default (no rule: ported to be safe)
-0x00a50ed0	logic	default (no rule: ported to be safe)
+0x00a50ed0	dead	reviewed: no call or absolute reference in the image (main round 15)
 0x00a51340	logic	default (no rule: ported to be safe)
 0x00a51560	logic	default (no rule: ported to be safe)
 0x00a51720	glue	GS/DMA packet writer (graphicDrawUIAbmapElement; writes no game state): replaced by ffx-render
@@ -17059,7 +17059,7 @@
 0x00a54560	logic	default (no rule: ported to be safe)
 0x00a545a0	logic	default (no rule: ported to be safe)
 0x00a54660	logic	default (no rule: ported to be safe)
-0x00a54720	logic	default (no rule: ported to be safe)
+0x00a54720	dead	reviewed: eiAbmExit: no call or absolute reference in the image (main round 15)
 0x00a54750	logic	default (no rule: ported to be safe)
 0x00a547e0	logic	default (no rule: ported to be safe)
 0x00a54810	logic	default (no rule: ported to be safe)

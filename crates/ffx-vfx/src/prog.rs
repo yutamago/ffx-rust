@@ -692,6 +692,63 @@ pub mod bridge {
         mem.write(w1 + 8, stub::ptr32(w0));
     }
 
+    /// `pppKeGrvEff(obj, key, ctrl)` (`0x00759650`): pulls work area 1
+    /// toward a [`ppp_ke_grv_tgt`] record. With its key, area 2 takes
+    /// `set_ptr32` of the target (key `+4` the part object, -1 for
+    /// `g_pppRandTarget`; `+8` the field), and an object whose frame `+0xc`
+    /// is 0 stops there. Then, unless stopped or the record is
+    /// `g_pppRandTarget`: `v = *record[2] - area 0` (`FFXVu0SubVector`),
+    /// `len = |v|` (`KeVu0VecLen`, rounded to `f32`), `v` normalised; when
+    /// the record's radius `[0]` is above `len` (ordered), `v` scaled by
+    /// `(1 - len / radius) x record[1]` (rounded to `f32`) is added to
+    /// area 1's `x, y, z`. `v` lives in the original's locals at `frame`
+    /// (its `ebp`, `-0x14`). Callees through `call`, `KeVu0VecLen`'s `ST0`
+    /// through `fcall`.
+    pub fn ppp_ke_grv_eff<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{div, load, mul, store, sub};
+        let slot = area(mem, obj, ctrl, 2).wrapping_add(0xa0);
+        if applies(mem, obj, key) {
+            let t = part_target(mem, mem.read(key + 4), mem.read(key + 8));
+            mem.write(slot, stub::ptr32(t));
+            if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+                return;
+            }
+        }
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let rec = stub::ptr32(mem.read(slot));
+        if rec == crate::rand::bridge::TARGET.ptr(mem).addr {
+            return;
+        }
+        let a1 = area(mem, obj, ctrl, 1).wrapping_add(0xa0);
+        let a0 = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let v = frame.wrapping_sub(0x14);
+        let to = stub::ptr32(mem.read(rec.wrapping_add(8)));
+        call(mem, sym(mem, 0x006e_d940), &[v, to, a0]);
+        let len = load(store(fcall(mem, sym(mem, 0x0075_fda0), &[v])));
+        call(mem, sym(mem, 0x006e_d6f0), &[v, v]);
+        let radius = load(mem.read(rec));
+        // fcomp: equal, below and unordered all skip
+        if radius.partial_cmp(&len) != Some(std::cmp::Ordering::Greater) {
+            return;
+        }
+        let k = mul(
+            sub(1.0, div(len, radius)),
+            load(mem.read(rec.wrapping_add(4))),
+        );
+        call(mem, sym(mem, 0x006e_d8f0), &[v, v, store(k)]);
+        call(mem, sym(mem, 0x0075_eca0), &[a1, a1, v]);
+    }
+
     /// A set-up that takes a CRT `rand()` between its stores: `before`,
     /// then the low half of `rand()` at `rand_at`, then `after`.
     #[allow(clippy::too_many_arguments)]
@@ -1908,5 +1965,154 @@ pub mod bridge {
                 mem.write(at(0x1c + 4 * k), v);
             }
         }
+    }
+
+    // ---- round 35 b ----
+
+    /// `pppKeBornRnd6_Born(obj, def, shape, out)` (`0x007592a0`): the
+    /// child as in [`ppp_ke_born_rnd4`] from the record `def +0xc` (a null
+    /// record leaves `*out` null and goes on with it); the shape's three
+    /// `i16` (as `f32`, and 1.0) copied into the child's area `def +0x10`;
+    /// then into the `i32` area `a = child + 0xa0 + def +0x18`: the yaw
+    /// `pppKeAngleXY((-y, x))` at `a +8` and the pitch
+    /// `pppKeAngleXY((KeVu0Sqrt(y y + x x), -z))` at `a +0`, each as
+    /// `ftol(angle x [0x00b51588] / [0x00b51548])` when it gives one, and 0
+    /// at `a +4`. The vector at `frame - 0x14` and the angle at `- 0x20` in
+    /// the original's locals (`frame` its `ebp`). Callees through `call`,
+    /// `KeVu0Sqrt`'s `ST0` through `fcall`.
+    #[allow(clippy::many_single_char_names, clippy::too_many_arguments)]
+    pub fn ppp_ke_born_rnd6_born<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        shape: u32,
+        out: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store};
+        let part = CURRENT_PART.get(mem);
+        let records: u32 = mem.read(part.wrapping_add(0x3c));
+        let rec = mem
+            .read::<u32>(def.wrapping_add(0xc))
+            .wrapping_shl(4)
+            .wrapping_add(records);
+        if rec == 0 {
+            mem.write(out, 0u32);
+        } else {
+            let child = call(mem, sym(mem, 0x0071_6770), &[part, rec]);
+            mem.write(out, child);
+            if child == 0 {
+                return;
+            }
+            mem.write(child.wrapping_add(4), stub::ptr32(obj));
+        }
+        let (v, angle) = (frame.wrapping_sub(0x14), frame.wrapping_sub(0x20));
+        let s: [i16; 3] = mem.read(shape);
+        let [x, y, z] = s.map(f32::from);
+        mem.write(v, [x, y, z, 1.0]);
+        let child: u32 = mem.read(out);
+        let pos = child
+            .wrapping_add(0xa0)
+            .wrapping_add(mem.read(def.wrapping_add(0x10)));
+        call(mem, sym(mem, 0x0075_ede0), &[pos, v]);
+        let a = mem
+            .read::<u32>(def.wrapping_add(0x18))
+            .wrapping_add(mem.read::<u32>(out))
+            .wrapping_add(0xa0);
+        let (x, y, z) = (f64::from(x), f64::from(y), f64::from(z));
+        let (k1, k2): (f64, f64) = (
+            mem.read(sym(mem, 0x00b5_1588)),
+            mem.read(sym(mem, 0x00b5_1548)),
+        );
+        let angle_xy = sym(mem, 0x0075_90e0);
+        mem.write(v, store(-y));
+        mem.write(v.wrapping_add(4), store(x));
+        if call(mem, angle_xy, &[v, angle]) != 0 {
+            let t = load(mem.read(angle));
+            let n = ftol(mem, div(mul(k1, t), k2));
+            mem.write(a.wrapping_add(8), n);
+        }
+        let sum = store(add(mul(y, y), mul(x, x)));
+        let r = fcall(mem, sym(mem, 0x0075_fbf0), &[sum]);
+        mem.write(v, store(r));
+        mem.write(v.wrapping_add(4), store(-z));
+        if call(mem, angle_xy, &[v, angle]) != 0 {
+            let t = load(mem.read(angle));
+            let n = ftol(mem, div(mul(t, k1), k2));
+            mem.write(a, n);
+        }
+        mem.write(a.wrapping_add(4), 0u32);
+    }
+
+    /// `pppKeHmgEff(obj, key, ctrl)` (`0x00759bf0`): homes work area 1 (a
+    /// velocity) toward a target. With its key, area 2 takes the key's
+    /// `f32 +4` (the turn rate) at `+0` and the target at `+4` (key `+8`
+    /// the part object, -1 for `g_pppRandTarget`; `+0xc` the field), a raw
+    /// pointer; an object whose frame `+0xc` is 0 stops there. Then, unless
+    /// stopped or aimed at `g_pppRandTarget`: `d = target - area 0`
+    /// normalised, `v = area 1` (`FFXVu0CopyVector`), `len = |v|`
+    /// (`KeVu0VecLen`), `v` normalised; when `v + d` is all zero words, `d[i]
+    /// += [0x00b412e8]` (0.05) for `i = KeVu0RndI() % 3` (signed: -1 and -2
+    /// land on `v`'s top words); `d` = `FFXVu0InterVector(d, v, rate)`
+    /// normalised and scaled by `len`, then copied into area 1's `x, y, z`.
+    /// `d`, `v` and the sum are the original's locals at `frame - 0x14`,
+    /// `- 0x24` and `- 0x34` (`frame` its `ebp`). Callees through `call`,
+    /// `KeVu0VecLen`'s `ST0` through `fcall`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ke_hmg_eff<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, load, store};
+        let w2 = area(mem, obj, ctrl, 2).wrapping_add(0xa0);
+        if applies(mem, obj, key) {
+            let rate = store(load(mem.read(key + 4)));
+            mem.write(w2, rate);
+            let t = part_target(mem, mem.read(key + 8), mem.read(key + 0xc));
+            mem.write(w2 + 4, t);
+            if mem.read::<u32>(obj.wrapping_add(0xc)) == 0 {
+                return;
+            }
+        }
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let target: u32 = mem.read(w2 + 4);
+        if target == crate::rand::bridge::TARGET.ptr(mem).addr {
+            return;
+        }
+        let a1 = area(mem, obj, ctrl, 1).wrapping_add(0xa0);
+        let a0 = area(mem, obj, ctrl, 0).wrapping_add(0xa0);
+        let (d, v, sum) = (
+            frame.wrapping_sub(0x14),
+            frame.wrapping_sub(0x24),
+            frame.wrapping_sub(0x34),
+        );
+        let normalize = sym(mem, 0x006e_d6f0);
+        call(mem, sym(mem, 0x006e_d940), &[d, target, a0]);
+        call(mem, normalize, &[d, d]);
+        call(mem, sym(mem, 0x006e_d370), &[v, a1]);
+        let len = store(fcall(mem, sym(mem, 0x0075_fda0), &[v]));
+        call(mem, normalize, &[v, v]);
+        call(mem, sym(mem, 0x006e_d290), &[sum, v, d]);
+        if mem.read::<[u32; 4]>(sum) == [0; 4] {
+            let r = call(mem, sym(mem, 0x0075_f920), &[]).cast_signed();
+            let at = d.wrapping_add((4 * (r % 3)).cast_unsigned());
+            let k: f64 = mem.read(sym(mem, 0x00b4_12e8));
+            let x = store(add(load(mem.read(at)), k));
+            mem.write(at, x);
+        }
+        let rate = store(load(mem.read(w2)));
+        call(mem, sym(mem, 0x0062_fd10), &[d, d, v, rate]);
+        call(mem, normalize, &[d, d]);
+        call(mem, sym(mem, 0x006e_d8f0), &[d, d, len]);
+        call(mem, sym(mem, 0x0075_ede0), &[a1, d]);
     }
 }

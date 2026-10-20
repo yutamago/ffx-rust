@@ -70,6 +70,21 @@ RANGES = [("vpx", 0x00A7C920, 0x00A8D87A)]
 KIND = {m: k for m, k, _ in MODULES}
 
 
+class WorkTree:
+    """The files the counts come from, read from the checkout. tools/status.py
+    passes a git commit's tree instead."""
+
+    def read(self, rel):
+        path = REPO / rel
+        return path.read_text(encoding="utf-8") if path.exists() else None
+
+    def ls(self, rel, suffix):
+        return sorted(f"{rel}/{f.name}" for f in (REPO / rel).glob("*" + suffix))
+
+
+WORKTREE = WorkTree()
+
+
 def module_of(name):
     for m, _, rx in RULES:
         if rx.search(name):
@@ -77,47 +92,47 @@ def module_of(name):
     return None
 
 
-def symbols():
+def symbols(tree=WORKTREE):
     out = {}
-    for line in (REPO / "symbols/ffx.sym").read_text(encoding="utf-8").splitlines():
+    for line in tree.read("symbols/ffx.sym").splitlines():
         p = line.split("#", 1)[0].split()
         if len(p) == 3 and p[1] == "function":
             out[int(p[0], 16)] = p[2]
     return out
 
 
-def hooks():
+def hooks(tree=WORKTREE):
     """address -> 'replaced' | 'wrapped': the hook table (crates/ffx-hook/src/lib.rs)
     and the ported replacements (crates/ffx-hook/src/ported/*.rs)."""
-    text = (REPO / "crates/ffx-hook/src/lib.rs").read_text(encoding="utf-8")
+    text = tree.read("crates/ffx-hook/src/lib.rs")
     out = {}
     for block in re.findall(r"Hook \{(.*?)\n\s*\},", text, re.S):
         addr = re.search(r"address:\s*0x([0-9a-f_]+)", block)
         if addr:
             wrapped = re.search(r"original:\s*Some", block)
             out[int(addr[1].replace("_", ""), 16)] = "wrapped" if wrapped else "replaced"
-    for a in ported():
+    for a in ported(tree):
         out[a] = "replaced"
     return out
 
 
-def classes():
+def classes(tree=WORKTREE):
     """address -> category from symbols/classes.tsv (empty when missing)."""
-    path = REPO / "symbols/classes.tsv"
+    text = tree.read("symbols/classes.tsv")
     out = {}
-    if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
+    if text:
+        for line in text.splitlines():
             if line and not line.startswith("#"):
                 a, c = line.split("\t")[:2]
                 out[int(a, 16)] = c
     return out
 
 
-def ported():
+def ported(tree=WORKTREE):
     """name by address of every `ported!` entry."""
     out = {}
-    for f in sorted((REPO / "crates/ffx-hook/src/ported").glob("*.rs")):
-        for name, addr in re.findall(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>", f.read_text(encoding="utf-8"), re.M):
+    for f in tree.ls("crates/ffx-hook/src/ported", ".rs"):
+        for name, addr in re.findall(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>", tree.read(f), re.M):
             out[int(addr.replace("_", ""), 16)] = name
     return out
 
@@ -182,29 +197,12 @@ def placement(rows, names):
     return {a: m or guess(a) for a, m in placed.items()}
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--json", action="store_true")
-    ap.add_argument("--unknown", action="store_true")
-    args = ap.parse_args()
-
-    names = symbols()
-    hooked = hooks()
-    rows = functions()
-
-    if args.unknown:
-        for a, n in sorted(names.items()):
-            if not module_of(n):
-                print(f"0x{a:08x} {n}")
-        return
-    module = placement(rows, names)
-    category = classes()
-
+def count(rows, module, names, hooked, category):
+    """module -> counters (the columns of the table) for the dump's rows."""
     stats = defaultdict(lambda: defaultdict(int))
     for a, _, size in rows:
         name = names.get(a)
-        m = module[a]
-        s = stats[m]
+        s = stats[module[a]]
         s["functions"] += 1
         s["bytes"] += size
         if name:
@@ -220,16 +218,35 @@ def main():
             if state != "replaced":
                 s["to_port"] += 1
                 s["to_port_bytes"] += size
+    return stats
 
-    def total(kind):
-        t = defaultdict(int)
-        for m, s in stats.items():
-            if KIND[m] == kind:
-                for k, v in s.items():
-                    t[k] += v
-        return t
 
-    game, lib = total("game"), total("library")
+def total(stats, kind):
+    t = defaultdict(int)
+    for m, s in stats.items():
+        if KIND[m] == kind:
+            for k, v in s.items():
+                t[k] += v
+    return t
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--unknown", action="store_true")
+    args = ap.parse_args()
+
+    names = symbols()
+    hooked = hooks()
+    rows = functions()
+
+    if args.unknown:
+        for a, n in sorted(names.items()):
+            if not module_of(n):
+                print(f"0x{a:08x} {n}")
+        return
+    stats = count(rows, placement(rows, names), names, hooked, classes())
+    game, lib = total(stats, "game"), total(stats, "library")
     if args.json:
         print(json.dumps({"modules": stats, "game": game, "library": lib}, indent=1))
         return

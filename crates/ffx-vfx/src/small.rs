@@ -1634,4 +1634,104 @@ pub mod bridge {
         mem.write(sym(mem, 0x00ce_c194), 0u32);
         1
     }
+
+    // ---- round 35 c ----
+
+    /// `0x00c48c10`: the 64-bit instance [`op_zbuf_clear`] draws its z
+    /// clear as, cycling through 1..=5.
+    pub const ZBUF_CLEAR_INSTANCE: Global<u64> = Global::new(0x00c4_8c10);
+
+    /// `op_zbuf_clear(z)` (`0x007ec7e0`): the clear depth `d` is 1.0 for
+    /// `z` 0, else `(f32 z - [0x00b41d78]) / [0x00b41da8]` (`(z -
+    /// 16770000) / -16769999`, `f32`); magic 0x9a first syncs the path
+    /// (`graphicVFXSyncPath`). The render data of instance
+    /// [`ZBUF_CLEAR_INSTANCE`] is set up (`InitVFXZBufClearRenderData`)
+    /// when `graphicVFXGetRenderDataByInstance` has none, else updated
+    /// (`updateVFXZBufClearRenderData(.., d)`, `graphicVFXPath3Update`);
+    /// then the instance steps on, back to 1 past 5. Returns the stepped
+    /// low word (left in eax). Callees through `call`.
+    pub fn op_zbuf_clear<M: Mem>(
+        mem: &mut M,
+        z: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{div, load, store, sub};
+        let id = ZBUF_CLEAR_INSTANCE.get(mem);
+        #[allow(clippy::cast_possible_truncation)] // the two halves
+        let (lo, hi) = (id as u32, (id >> 32) as u32);
+        let mut depth = 1f32.to_bits();
+        if z != 0 {
+            let (a, b): (f64, f64) = (
+                mem.read(sym(mem, 0x00b4_1d78)),
+                mem.read(sym(mem, 0x00b4_1da8)),
+            );
+            let f = load(store(f64::from(z.cast_signed())));
+            depth = store(div(sub(f, a), b));
+        }
+        if call(mem, sym(mem, 0x009d_a3b0), &[]) == 0x9a {
+            call(mem, sym(mem, 0x0064_5840), &[]);
+        }
+        if call(mem, sym(mem, 0x0064_53d0), &[lo, hi]) == 0 {
+            call(mem, sym(mem, 0x0071_1680), &[lo, hi]);
+        } else {
+            call(mem, sym(mem, 0x0071_e330), &[lo, hi, depth]);
+            call(mem, sym(mem, 0x0064_5600), &[lo, hi]);
+        }
+        let next = ZBUF_CLEAR_INSTANCE.get(mem).wrapping_add(1);
+        ZBUF_CLEAR_INSTANCE.set(mem, next);
+        if next > 5 {
+            ZBUF_CLEAR_INSTANCE.set(mem, 1);
+        }
+        #[allow(clippy::cast_possible_truncation)] // the low word
+        let low = next as u32;
+        low
+    }
+
+    /// `pppInitPartRender()` (`0x00761d60`): registers the part protocol
+    /// (`pppInitProtocolDriver(0x00e524a8, 0xe012, pppPmcomDataInit,
+    /// pppPmcomDataQueue, 0x00760020)`, `scePrintf` of the failure when it
+    /// is negative), clears the `u16` `0x00d4e370`, sets `g_OpDebugMode`,
+    /// prints the debug memory address (`dbgPrintf(0x00b51748,
+    /// 0x02322780)`), `op_init_draw()`, clears the bytes `0x010d4cf8`,
+    /// `0x00d5249f`, `0x00d5249e`, sets `0x0230fd38` = 1 and
+    /// `g_pppStopStatus` = 0, `pppInitEnv(0x010d4cfc, 0, 0x00fd24f0,
+    /// 0x100000)`, points `0x010d4d1c`..`d24` at `0x00d4ca40`, `0x00d4db40`,
+    /// `0x00d4dd40`, and returns `pppOtFunc_InitEnv(g_pppOtList)`. Callees
+    /// through `call`.
+    pub fn ppp_init_part_render<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let args = [
+            sym(mem, 0x00e5_24a8),
+            0xe012,
+            sym(mem, 0x0076_0080),
+            sym(mem, 0x0075_ff00),
+            sym(mem, 0x0076_0020),
+        ];
+        if call(mem, sym(mem, 0x0076_b2d0), &args).cast_signed() < 0 {
+            call(mem, sym(mem, 0x0062_fbf0), &[sym(mem, 0x00b5_19ec)]);
+        }
+        mem.write(sym(mem, 0x00d4_e370), 0u16);
+        crate::op::bridge::DEBUG_MODE.set(mem, 1);
+        let text = [sym(mem, 0x00b5_1748), sym(mem, 0x0232_2780)];
+        call(mem, sym(mem, 0x0062_f500), &text);
+        call(mem, sym(mem, 0x007e_c410), &[]);
+        for at in [0x010d_4cf8, 0x00d5_249f, 0x00d5_249e] {
+            mem.write(sym(mem, at), 0u8);
+        }
+        mem.write(sym(mem, 0x0230_fd38), 1u32);
+        crate::ppp::bridge::STOP.set(mem, 0);
+        let env = [sym(mem, 0x010d_4cfc), 0, sym(mem, 0x00fd_24f0), 0x10_0000];
+        call(mem, sym(mem, 0x0071_69d0), &env);
+        for (at, to) in [
+            (0x010d_4d1c, 0x00d4_ca40),
+            (0x010d_4d20, 0x00d4_db40),
+            (0x010d_4d24, 0x00d4_dd40),
+        ] {
+            let v = sym(mem, to);
+            mem.write(sym(mem, at), v);
+        }
+        call(mem, sym(mem, 0x0071_6b70), &[sym(mem, 0x0230_fff0)])
+    }
 }

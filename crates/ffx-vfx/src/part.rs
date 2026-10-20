@@ -1609,4 +1609,104 @@ pub mod bridge {
             mem.write(prev, record);
         }
     }
+
+    // ---- round 35 c ----
+
+    /// `0x007625a0` (`pppDrawDebugAxes`, ours; `()`, called by
+    /// `pppPartDraw` and `pppPartLoop`): three lines of
+    /// [`ppp_line_points`] through `m = g_pppScreenMatrix x
+    /// g_pppCameraMatrix` (`FFXVu0MulMatrix`), each 200 long and centred on
+    /// the point `(x, y, z)` at `0x00d4b4d8`: along x (colour 0xff8080ff),
+    /// along y (0xff80ff80) and along z (0xff80ffff), scale 1.0; the ends
+    /// are `x -/+ [0x00b922e0]` (100, `f32`) and so on. The matrix and the
+    /// six ends (three words each) live in the original's locals at
+    /// `frame` (its `ebp`): `m` at `-0x44`, the ends at `-0xa4`/`-0x94`,
+    /// `-0x54`/`-0x74` and `-0x84`/`-0x64`. Callees through `call`.
+    pub fn ppp_draw_debug_axes<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, store, sub};
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let at = |off: u32| frame.wrapping_sub(off);
+        let centre = g(mem, 0x00d4_b4d8);
+        let [x, y, z] = [0, 4, 8].map(|k| load(mem.read(centre + k)));
+        let d: f64 = mem.read(g(mem, 0x00b9_22e0));
+        let (cx, cy, cz) = (store(x), store(y), store(z));
+        // (start, end) of each axis, the moving coordinate first
+        for (start, end, k, v) in [(0xa4, 0x94, 0, x), (0x54, 0x74, 1, y), (0x84, 0x64, 2, z)] {
+            for (off, w) in [(start, sub(v, d)), (end, add(v, d))] {
+                let mut p = [cx, cy, cz];
+                p[k] = store(w);
+                mem.write(at(off), p);
+            }
+        }
+        let m = at(0x44);
+        let (screen, camera) = (g(mem, 0x0230_fe60), g(mem, 0x0230_ff60));
+        call(mem, g(mem, 0x006e_d5c0), &[m, screen, camera]);
+        let line = g(mem, 0x0076_1350);
+        for (a, b, colour) in [
+            (0xa4, 0x94, 0xff80_80ff),
+            (0x54, 0x74, 0xff80_ff80),
+            (0x84, 0x64, 0xff80_ffff),
+        ] {
+            call(mem, line, &[m, at(a), at(b), colour, 0x3f80_0000]);
+        }
+    }
+
+    /// `0x007372d0` (`pppPObjPosRot`, ours; `(pos, rot, target)`, called
+    /// by `pppNeiChrPointLightDraw`): for a target `(n, field)` (`n` -1 for
+    /// none: `pos` `x`, `y` = 0 and `w` = 1.0, `rot` `x`, `y` = 0, the
+    /// rest untouched), `t = part object n + field`: `pos` = the three
+    /// floats at `get_ptr32_func(t +0xac)` with 1.0 through
+    /// `g_pppWorldMatrix` (`FFXVu0ApplyMatrix`; the vector in the
+    /// original's locals at `frame - 0x14`, `frame` its `ebp`), then `pos
+    /// +0xc` = the current part's `f32 +0x60 x t +0xa8`; `rot` = the four
+    /// `i16` at `get_ptr32_func(t +0xb0)` times `[0x00b51550]` (1/16384),
+    /// each `f32`. Callees through `call`.
+    pub fn ppp_pobj_pos_rot<M: Mem>(
+        mem: &mut M,
+        pos: u32,
+        rot: u32,
+        target: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{load, mul, store};
+        use ffx_system::stub::ptr32;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let n: u32 = mem.read(target);
+        if n == u32::MAX {
+            mem.write(pos, 0u32);
+            mem.write(pos.wrapping_add(0xc), 1f32);
+            mem.write(pos.wrapping_add(4), 0u32);
+            mem.write(rot, [0u32; 2]);
+            return;
+        }
+        let part = mem.read::<u32>(g(mem, 0x0230_ffe4));
+        let records: u32 = mem.read(part.wrapping_add(0x3c));
+        let o = ptr32(mem.read(records.wrapping_add(4).wrapping_add(n.wrapping_mul(16))));
+        let t = mem.read::<u32>(target.wrapping_add(4)).wrapping_add(o);
+        let src = ptr32(mem.read(t.wrapping_add(0xac)));
+        let angles = ptr32(mem.read(t.wrapping_add(0xb0)));
+        let v = frame.wrapping_sub(0x14);
+        for k in 0..3 {
+            let x = store(load(mem.read(src.wrapping_add(4 * k))));
+            mem.write(v + 4 * k, x);
+        }
+        mem.write(v + 0xc, 1f32);
+        let part = mem.read::<u32>(g(mem, 0x0230_ffe4));
+        call(mem, g(mem, 0x006e_d2e0), &[pos, g(mem, 0x0230_ffa0), v]);
+        let s = mul(
+            load(mem.read(part.wrapping_add(0x60))),
+            load(mem.read(t.wrapping_add(0xa8))),
+        );
+        mem.write(pos.wrapping_add(0xc), store(s));
+        let k: f64 = mem.read(g(mem, 0x00b5_1550));
+        for i in 0..4 {
+            let a = f64::from(mem.read::<i16>(angles.wrapping_add(2 * i)));
+            mem.write(rot.wrapping_add(4 * i), store(mul(a, k)));
+        }
+    }
 }
