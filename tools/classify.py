@@ -352,6 +352,7 @@ REVIEWED = {
     0x00814a00: ("debug", "opu_file: dumps textures/CLUTs to host0:/home/yonishi/... via sceOpen/sceWrite with dbgPrintf (effects round 37)"),
     0x0087ee10: ("debug", "prints worker +0xb04/+0xb08 with TkPutDebugFontStringP; only callers 0x87b3e0/0x87b400 have no callers or data refs (PC2 script round 22)"),
     0x00670960: ("platform", "fastcall teardown of the scene cluster map (+0x11dc): ClusterManager_releasePCluster, operator delete, std::map walk (PC2 render round 23)"),
+    0x00728ab0: ("debug", "a single ret (no-op stub) the spline segments call between MsDivSqrt and vfx_vec3_scale (menu round 28)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

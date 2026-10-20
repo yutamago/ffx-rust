@@ -1186,10 +1186,10 @@
 0x00643e20	glue	only called from glue code (ClassDynamicGeometry_setupMaterial and 1 more)
 0x00643e70	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicSwitchGPUMode
 0x00643e80	glue	thin wrapper: only forwards to glue code (0x6ce0c0, PhyFMVPlayerManager_GetInstance, ShadowManager_getInstance)
-0x00643eb0	logic	default (no rule: ported to be safe)
+0x00643eb0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0
 0x006440e0	glue	thin wrapper: only forwards to glue code (TextureAnimationManager_GetInstance, TextureAnimationManager_setAnimatedMaterialsChar)
 0x00644120	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicTextureAnimationSetMaterialVisiability
-0x00644150	logic	default (no rule: ported to be safe)
+0x00644150	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicTextureAnimationSetMaterialUV_00644150
 0x00644280	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicTextureVideoPlay
 0x006442c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): graphicTextureVideoUpdate
 0x006442d0	glue	thin wrapper: only forwards to glue code (ChrResourceCache_DelayReleaseStep_0069c010, ClusterManager_GetInstance)
@@ -2036,7 +2036,7 @@
 0x006788e0	platform	reviewed: placement constructor under SEH (PC2 render/pc-ui round 1)
 0x00678940	glue	calls PhyreEngine Phyre_PCluster_allocateInstanceList
 0x006789c0	glue	reviewed: scalar-deleting destructor through the vtable (PC2 render/pc-ui round 1)
-0x006789f0	logic	default (no rule: ported to be safe)
+0x006789f0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ShadowDynamicMesh_updateBuffers_006789f0
 0x00678b10	glue	reviewed: virtual call + store (PC2 render/pc-ui round 1)
 0x00678b40	logic	default (no rule: ported to be safe)
 0x00678b50	logic	default (no rule: ported to be safe)
@@ -3131,7 +3131,7 @@
 0x006b2ed0	dead	unreachable from the entry point and every pointer table
 0x006b2f50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_sceenTextureAnimationClear
 0x006b3060	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_setAnimatedMaterialsChar
-0x006b33c0	logic	default (no rule: ported to be safe)
+0x006b33c0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_setMaterialUV_006b33c0
 0x006b3600	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimationManager_SetPaused
 0x006b3650	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): TextureAnimation_SetByte1c
 0x006b3660	glue	only called from glue code (TextureAnimationManager_setAnimatedMaterialsChar)
@@ -5138,7 +5138,7 @@
 0x00728a40	dead	unreachable from the entry point and every pointer table
 0x00728a60	logic	default (no rule: ported to be safe)
 0x00728a90	dead	unreachable from the entry point and every pointer table
-0x00728ab0	logic	default (no rule: ported to be safe)
+0x00728ab0	debug	reviewed: a single ret (no-op stub) the spline segments call between MsDivSqrt and vfx_vec3_scale (menu round 28)
 0x00728ac0	logic	default (no rule: ported to be safe)
 0x00728d70	dead	unreachable from the entry point and every pointer table
 0x00728dd0	logic	default (no rule: ported to be safe)
@@ -6137,7 +6137,7 @@
 0x0076f470	logic	default (no rule: ported to be safe)
 0x0076f850	logic	default (no rule: ported to be safe)
 0x00770320	logic	default (no rule: ported to be safe)
-0x00770430	logic	default (no rule: ported to be safe)
+0x00770430	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_menu_start
 0x00770920	logic	default (no rule: ported to be safe)
 0x00770950	logic	default (no rule: ported to be safe)
 0x00770970	logic	default (no rule: ported to be safe)
