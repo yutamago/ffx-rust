@@ -10168,7 +10168,9 @@
 0x0088a3a0 function Math_PolarToVector       # (out, r, yaw, pitch): pitch Math_WrapAngle'd, beyond +-pi/2 turned back (pi - p or p + pi) with yaw + pi; yaw wrapped; out = (cos(yaw) h, sin(p) r, sin(yaw) h, 1) with h = cos(p) r (CIsin/CIcos, each a float); name ours
 0x0088a4a0 function TkMtCalcSpline            # fh v3:bsim1.00 0x0088a410
 0x0088a4d0 function TkMtCalcSpline3           # fh v3:bsim1.00 0x0088a440
+0x0088a500 function TkMtCalcSpline3Segment_0088a500 # (out, index, t, points, position): uniform cubic B-spline segment of the 4 points at points + 16*index through the emulated VU0 (coefficients 0x00c8f7e0, MulX/MaddaY/MaddaZ/MaddW into 0x00c8f7f0); position != 0 the point, 0 the normalised derivative (Vec4Scale4, AddY/Z, MsDivSqrt, vec3_scale into 0x00c8f800); caller 0x0088aa40 (TkMtCalcSpline3 core, n > 3); ported in menu round 28; name ours
 0x0088aba0 function TkMtCalcSpline3Tangent_0088aba0 # ours: (out, points, n, t): FUN_0088aa40(out, points, n, t, 0), TkMtCalcSpline3's tangent as MsCameraSplineMove_007bcb80 pairs it with TkMtCalcSpline3 (as TkMtCalcSplineTangent with TkMtCalcSpline); menu module
+0x0088abd0 function TkMtCalcSplineSegment_0088abd0 # (out, index, t, points, position): uniform quadratic B-spline segment of 3 points (weights (1-t)^2/2, t(1-t)+1/2, t^2/2; tangent t-1, 1-2t, t, normalised) through the VU0 (coefficients 0x00c8f7d0, MulX/MaddaY/Vu0MaddaScalar4 into 0x00c8f7e0, unit 0x00c8f7f0); its 16-byte coefficient copy carries a never-written frame word; caller 0x0088afd0; ported in menu round 28; name ours
 0x0088b3b0 function TkMtCalcSplineTangent     # fh v3:bsim1.00 0x0088b320
 0x0088b3e0 function CIcos                     # fh v3:bsim1.00 0x0088b350 +_CIcos
 0x0088b400 function Math_MinAbs               # (a, b) -> float: |a| when b is greater, else b
@@ -11069,6 +11071,7 @@
 0x008c7650 function MenuItem_RefreshHelp_008c7650 # the item list window's help line: by window kind (+0x43: 0 item -> TkMenuGetItemHelp, 1 key item -> TkMenuGetImportantHelp, else command -> TkMenuGetCommandHelp) of the entry under the cursor, TkMenuSetHelpMessage; callers TkMenuCtrlAbility and MenuItem_ListWindowCtrl; own name; ported in menu round 22
 0x008c7750 function MenuItem_ListWindowDraw_008c7750 # the item list window's draw (+0x10 of MenuItem_OpenListWindow's window): scissored menu window, scroll parts (DrawCrossMenuScrollParts), the rows and the cursor (0x008c7af0); own name
 0x008c7af0 function MenuItem_DrawListCursor_008c7af0 # (window, x, y) the list cursor at row +0x48 - top +0x32 (TkMn2DrawCrossCmdCursor), blinking with TkMenuGetTimer in mode 2; caller MenuItem_ListWindowDraw; own name
+0x008c7c30 function MenuItem_DrawListRow     # (window, x, y, row, mode): one item list row by list kind +0x43 (0 items: kind-4 plate, count, DrawCrossMenuIconItemName; 1 key items from g_TkMenuImportantList when TkMsImportantGet; 2 commands: text kind 1 plate 0xe, icon shape 200, name, MP cost byte +0x25 of MsGetRomPlyCommand; text kind 2 MenuMn2_EmitPacket(ftol x, ftol y, 2)); modes 0/2 add 2*i16 +0x32, mode 1 2*i16 +0x34; then TkMn2DrawStatiCursor when +0x42 == 2, i8 +0x45 > 0, +0x58 + 2*i16 +0x2c == row (the key id for kind 1) and bit 1 of TkMenuGetTimer; caller MenuItem_ListWindowDraw_008c7750; ported in menu round 28; name ours
 0x008c8a00 function MenuItem_GetRows          # 0x0186a38c; own name
 0x008c8a10 function TkMenuGetImportantCounter # fh v3:bsim1.00 0x008c89e0
 0x008c8a20 function TkMenuImportantListMax    # fh v3:bsim1.00 0x008c89f0
@@ -11089,12 +11092,13 @@
 0x008c9410 function MenuItem_CompareEntries   # (list, a, b) 32-byte entries as 8 unsigned words: 1/-1/0; own name
 0x008c9460 function MenuItem_SwapEntries      # (list, a, b) swap 32-byte entries; own name
 0x008c94e0 function MenuItem_CountGearByOwner # (): u16 counts [7][2] at 0x0186a3e4 cleared; per i < TkMn2GetNameModeMax() (signed) MsGetSaveWeapon(u16 g_TkMenuItemList[i], &local): owner byte +4 < 7 -> counts[owner*2 + (byte +5 != 0)]++; eax: count, the last index or slot; caller 0x008c5480 (case 0x8c57bb); own name
+0x008c9570 function MenuItem_DrawGearInfo    # (window): the item menu gear pane: MenuItem_DrawChrSmallPlate(X210, Y231, owner or -1); in gear mode (g_TkMenuItemGearMode) the owner's worn piece (TkMenuGetArmor/TkMenuGetWeapon by record byte +5) with 0x008d8aa0 stats or status text 0x17, then the selected one; ends with TkMn2DrawKickSyncPacket2 (its eax); caller 0x008c87e0; ported in menu round 28; name ours
 0x008c99f0 function MenuItem_DrawRows         # (window, _, first, f32 x, f32 y): x' = f32(graphicUiRemapX2(210) + x); nine MenuItem_DrawRow(window, x', y', first + i), y' += graphicUiRemapY2(77) (f32); caller the item list draw; own name
 0x008c9a70 function MenuItem_DrawRow          # (window, x, y, index): index in 0..u16 window+0x30: TODrawMenuPlateXYWHType(x, y, rx2(740), ry2(60), 5); window+0x45 > 0 and index == i16 +0x2c: TkMn2DrawCrossCmdCursor(x + rx2(160), y + ry2(4), 1); g_TkMenuItemList[index] byte +2 set: DrawCrossMenuIconWeaponName2(MsGetSaveWeapon(id, &local), x, y, 0); caller 0x008c99f0; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b60 function MenuItem_GetLinePos       # (): TkMn2SeqGetPos("p_linmline", 0x0186a400), ("p_rinmline", 0x0186a404); no direct callers; name ours; ported in ffx-pcui item (pc-ui round 6)
 0x008c9b90 function Menu_FindFlagged          # (entries, from, to): first index in from..to whose 4-byte entry has byte +2 set, else -1; name ours
 0x008c9bc0 function Menu_FindByte             # (bytes, v, from, to): first index in from..to whose byte is v, else -1; name ours
-0x008c9c40 function MenuItem_SortGear_008c9c40   # (list, n, mode): sorts the equipment list (MsGetSaveWeapon, MenuItem_CompareEntries, MenuItem_SwapEntries, SwapSaveGear), debug prints "TK:ID:0x%x/POS:%d", "TK:ABL ID:0x%x"; own name
+0x008c9c40 function MenuItem_SortGear_008c9c40 # (list, start, n): per entry a 32-byte ability bit set (MsGetSaveWeapon abilities +0xe, count +0xb, 0xff skipped; bit 31-(a&31) of word (a&0xff)>>5), then a selection sort: MenuItem_CompareEntries, ties to more abilities then the first larger u16 ability; swaps SwapSaveGear + MenuItem_SwapEntries; dbgPrintf "TK:ID:0x%x/POS:%d", "TK:ABL ID:0x%x", "TK:SRC = %d / DST = %d", "TK:EXCHANGE:%d <> %d"; caller 0x008c9bf0 (per owner, weapons then armour from g_TkMenuItemGearCounts); ported in menu round 28; own name
 0x008c9fb0 function MenuItem_SortGearByOwner # (): n = TkMn2GetNameModeMax(); owners[i] = byte +4 of MsGetSaveWeapon(id_i, &out) for the first n g_TkMenuItemList entries (0x400-byte frame buffer); per owner 0..7 the group of u16 weapon+armour counts at 0x0186a3e4 (after the previous groups): a foreign entry swaps (SwapSaveGear(id_k, id_j), owner bytes) with j = Menu_FindByte(owners, owner, from, n), from = the group end, then j + 1; returns 1, or 0 when a search fails (TkMenuCtrlItem reads it); caller TkMenuCtrlItem; ported in menu round 25; name ours
 0x008ca320 function TOMenuGetDummyAnalogControler # fh v3:exact 0x008ca2f0
 0x008ca370 function SetByte_0186a429_008ca370 # cdecl(i, v): byte 0x0186a42d, 0x0186a42f, 0x0186a429 or 0x0186a42b (i = 0..3, a jump table) = v; caller 0x0085f2e0; name ours
@@ -11132,6 +11136,7 @@
 0x008cba20 function MenuParty_CursorNext      # (): i8 0x0186a444 on (wrapping to 0) to the next slot whose +0xc is 1; name ours
 0x008cba60 function MenuParty_CursorPrev      # (): i8 0x0186a444 back (wrapping to count 0x0186a448 - 1) to the previous slot (0x0186a44c) whose +0xc is 1; name ours
 0x008cbaa0 function GetDerefU32_008cbaa0         # auto-port shape (return deref u32 (pointer chain), cdecl): t0 = u32[&0x0186a44c]; t1 = u32[(t0 + (a0 * 0x4))]; return t1; callers: ; name ours
+0x008cbae0 function MenuConfig_DrawOptionRow # (_, _, row): one config menu row: record GetDerefU32_008cbaa0(row) (count +4, choice +8, enabled +0xc, title u16 +0x18, option texts u16 every 4 bytes from +0x1c), rows share 740 PS2 px (g_TkMenuConfigRows); frame 0x008cb530, title, backing shape, cross cursor, options (measured at 0.68, drawn at 0.78), brush on the choice, help on the cursor row; the PC row (g_TkMenuConfigLocRow) uses SaveDataGetLoc 0x1cd / 0x1d0-2k / 0x1d1-2k; caller 0x008cbab0; ported in menu round 28; name ours
 0x008cc150 function SndSetBgmTypeSave         # (on) -> eax of iMusicRefreshBgmType (tail call): MsGetSaveEventAddress() +0x5ec = (on != 0), then iMusicRefreshBgmType queues it; callers Native_0264 and Native_0267_Poll's choices; name ours (snd::bridge::snd_set_bgm_type_save)
 0x008cc170 function iMusicRefreshBgmType      # fh v3:exact 0x008cc140
 0x008cc330 function TkMenuCtrlSummon          # fh v3:exact+call.cs 0x008cc300 cdecl
@@ -11174,7 +11179,7 @@
 0x008d0cb0 function TkMenuLimitCloseWindow2   # (): close request for 0x0186a718 (TkMenuCtrlLimit's), forget it
 0x008d0d50 function MenuLimit_OpenWindow      # (arg) window 0x0186a714: MenuLimit_WindowIdle, 0x008d0e90, 0x008d16f0, 0x008d1bb0; rows TkMn2GetListMax, 7 visible; own name
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
-0x008d0eb0 function TkMn2CtrlSelItemsWindow      # layout+callees: sorts between TkMn2ArmsRefreshArms and TkMn2DrawSelItemsHelp, and its named callees match the Switch 0x71004d3a50 TkMn2CtrlSelItemsWindow's (similarity 0.71: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg, TkMn2DrawSelItemsHelp); symbols from Fahrenheit's server export
+0x008d0eb0 function TkMn2CtrlSelItemsWindow  # layout+callees: sorts between TkMn2ArmsRefreshArms and TkMn2DrawSelItemsHelp, and its named callees match the Switch 0x71004d3a50 TkMn2CtrlSelItemsWindow's (similarity 0.71: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg, TkMn2DrawSelItemsHelp); symbols from Fahrenheit's server export; (w): two-column selection window state machine (+0x28, jump table 0x008d13b4): cursor i16 +0x48 (bit 0 = column), confirm via +0x1c, page scroll 0x111, row scroll 0x333; ported in menu round 28
 0x008d15a0 function MenuSelList_DrawCursor   # (window): TkMn2DrawCrossCursor(f32(MenuSelList_CursorX(window)), f32(remapY2(493) + remapY2(77) * f32((i16 +0x48 >> 1) - i16 +0x32)), 0) (eax); caller 0x008d1400; ported in menu round 25; name ours
 0x008d1620 function MenuSelList_DrawRows     # (window, fixed, first, _, y int): nine row pairs from row first*2-2 at y0 = f32(remapY2(403) + y), step remapY2(77); columns remapX2(210)/remapX2(970), each MenuSelList_DrawRow(window, x, y, row, fixed); caller 0x008d1400; ported in menu round 27; name ours
 0x008d1820 function MenuSelList_DrawRow      # (window, x, y, row, fixed): y -= i16 +0x46 * 32 / 4096 unless fixed; for row in 0..u16 +0x30 a type-0xe plate, then by the list entry's kind (byte +2, when byte +3 is set): 1 TODrawCrossMenuIconCommandName, 2 AtelGetSummonNameforFinalBattleSelector, 3 TkMenuMenu1Mes(id + 0x1033), centred over remapX2(740); caller 0x008d1620; ported in menu round 26; name ours
@@ -11441,7 +11446,7 @@
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl
 0x008e19f0 function TOMenuDrawTimer              # callees: its named callees match the Switch 0x71004d6a90 TOMenuDrawTimer's (similarity 1.00: TOGetFFXLang, TOGetFontSpaceInPiexl, ToGetBtlEasyDigitWidth2, ToGetBtlEasyFontWidth, ToMakeBtlEasyEdgeDigit2); symbols from Fahrenheit's server export; cdecl(frames, x, y, alpha, kind): play time hours J minutes right-aligned at x in the battle edge font (scale 0.63/1.5), J only for kind 0x25; ported (system round 28)
 0x008e1c50 function graphicGetCurrentFrame_008e1c50 # duplicate Switch name (0x006410d0 has it); fh switch:bsim1.00 0x71001d9db0: TkMenuGetPlayerFromIndex2_008a9b00(TkMenuGetCurrentPlayerPos())
-0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl
+0x008e1c60 function TkMenuAppearMainCmdWindow # fh call.cs cdecl; (slide, mode): modes 0xc-0x10/0x18 one option, else the option mask from AtelGetScenarioFlag (0 = after everything) placed by g_TkMenuMainOptionOrder; window 0x008e2040/0x008e20f0, layer 7; returns TkMenuMainRegistWindow eax; ported in menu round 28
 0x008e2250 function GetGlobal01871558_008e2250   # auto-port shape (return global u32, cdecl): t0 = u32[&0x01871558]; return t0; callers: no direct caller; name ours
 0x008e2260 function MenuMain_OptionY          # (i) i16 0x0187156e + 8i; own name
 0x008e2270 function TkMenuMainGetOptionMenu   # fh v3:bsim1.00 0x008e2270 +TkMenuMainGetOptionMenu
@@ -16067,6 +16072,7 @@
 0x00c5a088 label    g_MenuHelpExtArg          # second argument of TOMenuHelpSetExtMode
 0x00c5a604 label    g_NkzAeonStats               # 0x1c bytes a stat (row 0 none, then HP, MP, str, def, mag, mdef, agi, luck, eva, acc): +0 gain function, +0x18 maximum (99999, 9999, 255); TkMenuCtrlSummon
 0x00c5a790 label g_TkMenuStatusStats      # (i32 mes, u32 field) pairs: the status page stats 7..14 at save offsets 47..54, ended by mes -1 (TkMn2MainStatusPlayerStatus)
+0x00c5b2d4 label g_TkMenuMainOptionOrder  # u8[32]: the slot of main-menu option bit i (TkMenuAppearMainCmdWindow); 01 02 04 00 05 06 07 08 09 0a ...; name ours
 0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
 0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height
 0x00c5d780 label    g_TOAddPkt                # TOInitAddPkt sets 1, TOSetAddPkt 0
@@ -17087,6 +17093,7 @@
 0x0186a388 label    g_TkMenuImportantListMax  # TkMenuImportantListMax
 0x0186a38c label    g_TkMenuItemRows          # MenuItem_GetRows
 0x0186a391 label    g_TkMenuAbilitySingle     # u8 1 when the ability menu's command has one target (+0x1a bits 2-3 neither 1 nor 2; set by 0x008c6bc0); MenuAbility_ApplyHeal
+0x0186a393 label g_TkMenuItemGearMode     # u8 1 while the item menu lists gear (set by TkMenuCtrlItem after the gear sort 0x008c9bf0, cleared by the other lists); MenuItem_DrawGearInfo; name ours
 0x0186a394 label    g_TkMenuItemWindow        # the item menu's window (TkMenuCtrlItem, TkMenuItemCloseWindow, TkMenuItemClearWindow)
 0x0186a3a8 label    g_TkMenuAbilityCommand    # u16 the ability menu's command id (set by 0x008c6bc0; Cmd_HealAmount, MsGetRomPlyCommand in MenuAbility_ApplyHeal)
 0x0186a3b0 label    g_TkMenuItemFirstUsable   # i16 inventory slot of the first usable item, -1 for none (TkMenuItemRefresh)
@@ -17097,6 +17104,10 @@
 0x0186a420 label    g_TkMenuDummyControler    # +0 buttons, +4 pending buttons, +8..+0xf current/pending stick byte pairs (TkMenuFlushDummyControler: pending -> current, pending -> released, 0x80)
 0x0186a428 label    g_TkMenuDummyAnalog       # 8 bytes; TOMenuGetDummyAnalogControler(axis) returns +4, +6, +0, +2 for axes 0-3, else 0x80
 0x0186a430 label    g_TkMenuDummyControlerFlag # u8 (TkMenuGetDummyControlerFlag / TkMenuSetDummyControlerFlag)
+0x0186a438 label g_TkMenuConfigLocRow     # i32: the config row drawn with the PC texts (SaveDataGetLoc) instead of TkMenuConfigMes (MenuConfig_DrawOptionRow); name ours
+0x0186a444 label g_TkMenuConfigCursor     # i8: the config menu cursor row (cross cursor and help in MenuConfig_DrawOptionRow); name ours
+0x0186a448 label g_TkMenuConfigRows       # i32: config rows on the page, 740 / rows PS2 px each (MenuConfig_DrawOptionRow); name ours
+0x0186a4a0 label g_TkMenuConfigHelpText   # the PC row's help text (SaveDataGetLoc(0x1d1 - 2k)), handed to TkMenuSetHelpMessage; name ours
 0x0186a5a4 label    g_TkMenuSummonStatusWindow# MenuSummon_CloseStatusWindow
 0x0186a5fc label    g_TkMenuSummonRestartCount# <= 1: MenuSummon_RestartWindow sets state 0, else 2
 0x0186a600 label    g_TkMenuSummonGrowMask    # aeon stats that grow and can be paid for (MenuSummon_RefreshGrowMasks)
@@ -17118,9 +17129,15 @@
 0x01871524 label    g_TkMenuTutoSaveCopy      # pointer to the tutorial's g_SaveData copy (0x0186ac60, TkMenuCtrlTuto); MenuTuto_RestoreNames
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on
+0x01871540 label g_TkMenuMainCmdWindow    # the main command window (TkMenuAppearMainCmdWindow); name ours
 0x01871548 label g_TkMenuMainOptionCursor # the main menu's highlighted option: MenuMain_DrawOptionRow draws the cross cursor on that row once its fade is 0x1000; name ours
 0x0187154c label    g_TkMenuMainChoice        # reset to -1 by TkMenuMainOpenOption
+0x01871550 label g_TkMenuMainCmdWidth     # i32 widest option text, TkMenuDraw1612Width(TkMenuMainMes(menu)) (TkMenuAppearMainCmdWindow); name ours
+0x01871554 label g_TkMenuMainCmdDone      # cleared by the single-option openings of TkMenuAppearMainCmdWindow; the main menu control (states 0x1a, 0x1d, 0x21) waits for it before TkMenuMainFreeWindowGroup; name ours
+0x01871558 label g_TkMenuMainCmdSlide     # 0x3000 when TkMenuAppearMainCmdWindow(slide != 0), else 0; 0x008e20f0 draws the backing at slide*805/4096; read by 0x008e2250; name ours
 0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
+0x01871668 label g_TkMenuMainRowDelay     # u16[8] = 4*row (TkMenuAppearMainCmdWindow), counted down by 0x008e2040; name ours
+0x01871678 label g_TkMenuMainRowSlide     # u16[8] cleared by TkMenuAppearMainCmdWindow; 0x008e22a0 reads it as the row offset; name ours
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
 0x01871698 label    g_TkMenuWorldMapWindow    # MenuWorldMap_CloseWindow
 0x018716a8 label    g_TkMenuScissorScales     # 2 x f32 a, b: in XYUV mode BeginScissor_XYUV scales x1 from x0 by b / a, clips, scales back by a / b

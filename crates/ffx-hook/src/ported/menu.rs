@@ -4187,6 +4187,56 @@ ported! {
         let owners = frame.at();
         tk::menu_item_sort_gear_by_owner(&mut mem(), owners, owners.wrapping_add(0x400), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_SortGear_008c9c40(list, start, n)`.
+    MenuItem_SortGear_008c9c40 @ 0x008c_9c40 => extern "C" fn menu_item_sort_gear(list: u32, start: u32, n: i32) {
+        // the original's 0x1900-byte ability table and MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<0x641>::new();
+        let table = frame.at();
+        tk::menu_item_sort_gear(&mut mem(), list, start, n, table, table.wrapping_add(0x1900), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3Segment_0088a500(out, index, t, points, position)`.
+    TkMtCalcSpline3Segment_0088a500 @ 0x0088_a500 => extern "C" fn tk_mt_calc_spline3_segment(out: u32, index: u32, t: f32, points: u32, position: u32) {
+        // the coefficients' frame copy
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline3_segment(&mut mem(), out, index, t, points, position, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSplineSegment_0088abd0(out, index, t, points, position)`.
+    TkMtCalcSplineSegment_0088abd0 @ 0x0088_abd0 => extern "C" fn tk_mt_calc_spline_segment(out: u32, index: u32, t: f32, points: u32, position: u32) {
+        // the coefficients' frame copy (its fourth word is never written)
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline_segment(&mut mem(), out, index, t, points, position, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuConfig_DrawOptionRow(_, _, row)` (the first two words are unused).
+    MenuConfig_DrawOptionRow @ 0x008c_bae0 => extern "C" fn menu_config_draw_option_row(_a: u32, _b: u32, row: u32) {
+        // the original's two 256-byte text buffers and its width word
+        let mut frame = super::StackFrame::<0x81>::new();
+        let title = frame.at();
+        tk::menu_config_draw_option_row(&mut mem(), row, [title, title.wrapping_add(0x100), title.wrapping_add(0x200)], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMn2CtrlSelItemsWindow(w)`.
+    TkMn2CtrlSelItemsWindow @ 0x008d_0eb0 => extern "C" fn tk_mn2_ctrl_sel_items_window(w: u32) {
+        tk::tk_mn2_ctrl_sel_items_window(&mut mem(), w, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuItem_DrawListRow(window, x, y, row, mode)`.
+    MenuItem_DrawListRow @ 0x008c_7c30 => extern "C" fn menu_item_draw_list_row(window: u32, x: f32, y: f32, row: u32, mode: u32) {
+        // the digit width (the original's argument slot) and the command out word
+        let mut frame = super::StackFrame::<2>::new();
+        let width = frame.at();
+        tk::menu_item_draw_list_row(&mut mem(), window, [x, y], row, mode, [width, width.wrapping_add(4)], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuItem_DrawGearInfo(window)`: `TkMn2DrawKickSyncPacket2`'s `eax`.
+    MenuItem_DrawGearInfo @ 0x008c_9570 => extern "C" fn menu_item_draw_gear_info(window: u32) -> u32 {
+        // MsGetSaveWeapon's out word and the text width
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_item_draw_gear_info(&mut mem(), window, [local, local.wrapping_add(4)], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuAppearMainCmdWindow(slide, mode)`: `TkMenuMainRegistWindow`'s `eax`.
+    TkMenuAppearMainCmdWindow @ 0x008e_1c60 => extern "C" fn tk_menu_appear_main_cmd_window(slide: u32, mode: u32) -> u32 {
+        tk::tk_menu_appear_main_cmd_window(&mut mem(), slide, mode, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuShop_DrawRow(window, x, y, row, ids)`: the name call's `eax`.
     MenuShop_DrawRow @ 0x008d_ac70 => extern "C" fn menu_shop_draw_row(window: u32, x: f32, y: f32, row: i32, ids: u32) -> u32 {
         tk::menu_shop_draw_row(&mut mem(), window, [x, y], row, ids, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
