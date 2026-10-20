@@ -5428,4 +5428,51 @@ ported! {
     op_trail_add_007e6110 @ 0x007e_6110 => extern "C" fn op_trail_add(ring: u32, point: u32, fill: u32, life: u32) -> u32 {
         small::bridge::op_trail_add(&mut mem(), ring, point, fill, life)
     }
+    // ---- round 36 b ----
+    /// `opu_r_en(host, cmd)`.
+    opu_r_en @ 0x0081_7f50 => extern "C" fn opu_r_en(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_r_en(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `pppFpPointLightModel(obj, key, ctrl)`.
+    pppFpPointLightModel @ 0x0075_d930 => extern "C" fn ppp_fp_point_light_model(obj: u32, key: u32, ctrl: u32) -> u32 {
+        fp::bridge::ppp_fp_point_light_model(&mut mem(), obj, key, ctrl, false, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpPointLightModelScl(obj, key, ctrl)`.
+    pppFpPointLightModelScl @ 0x0075_dd70 => extern "C" fn ppp_fp_point_light_model_scl(obj: u32, key: u32, ctrl: u32) -> u32 {
+        fp::bridge::ppp_fp_point_light_model(&mut mem(), obj, key, ctrl, true, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldStep_00742980(base, def, w)`.
+    pppDrawShapeFieldStep_00742980 @ 0x0074_2980 => extern "C" fn ppp_draw_shape_field_step(base: u32, def: u32, w: u32) {
+        draw::bridge::ppp_draw_shape_field_step(&mut mem(), base, def, w, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldSpdEmit_00744d80(obj, def, ctrl)`.
+    pppDrawShapeFieldSpdEmit_00744d80 @ 0x0074_4d80 => extern "C" fn ppp_draw_shape_field_spd_emit(obj: u32, def: u32, ctrl: u32) -> u32 {
+        draw::bridge::ppp_draw_shape_field_spd_emit(&mut mem(), obj, def, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
+    // ---- round 36 c ----
+    /// `pppFpPointLightVsf(obj, key, ctrl)`.
+    pppFpPointLightVsf @ 0x0075_db30 => extern "C" fn ppp_fp_point_light_vsf(obj: u32, key: u32, ctrl: u32) -> u32 {
+        fp::bridge::ppp_fp_point_light_vsf(&mut mem(), obj, key, ctrl, false, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppFpPointLightVsfScl(obj, key, ctrl)`.
+    pppFpPointLightVsfScl @ 0x0075_df90 => extern "C" fn ppp_fp_point_light_vsf_scl(obj: u32, key: u32, ctrl: u32) -> u32 {
+        fp::bridge::ppp_fp_point_light_vsf(&mut mem(), obj, key, ctrl, true, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldEmit_00742750(obj, def, ctrl)`.
+    pppDrawShapeFieldEmit_00742750 @ 0x0074_2750 => extern "C" fn ppp_draw_shape_field_emit(obj: u32, def: u32, ctrl: u32) -> u32 {
+        draw::bridge::ppp_draw_shape_field_emit(&mut mem(), obj, def, ctrl, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldRevEmit_00743b60(obj, def, ctrl)`.
+    pppDrawShapeFieldRevEmit_00743b60 @ 0x0074_3b60 => extern "C" fn ppp_draw_shape_field_rev_emit(obj: u32, def: u32, ctrl: u32) -> u32 {
+        draw::bridge::ppp_draw_shape_field_rev_emit(&mut mem(), obj, def, ctrl, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `pppDrawRainAlloc_00756320(def, work)`: the three words
+    /// `rcuiScaleVector_copy_00756600` reads past its arguments (the
+    /// caller's saved registers) go in as 0, as for `opu_sloop`.
+    pppDrawRainAlloc_00756320 @ 0x0075_6320 => extern "C" fn ppp_draw_rain_alloc(def: u32, work: u32) -> u32 {
+        // the original's locals: the inverse camera matrix, below its ebp
+        let mut frame = super::StackFrame::<17>::new();
+        let ebp = frame.at() + 0x44;
+        draw::bridge::ppp_draw_rain_alloc(&mut mem(), def, work, ebp, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
 }

@@ -5259,4 +5259,102 @@ pub mod bridge {
         }
         cmd.wrapping_add(4)
     }
+
+    /// `opu_r_en(host, cmd)` (`0x00817f50`) -> the next command: first the
+    /// host's `f32 +0` = `Ch_GetRot(g_EtChrHandles[u8 u +0x18])` when that
+    /// handle is set, and `r = (0x400 - ftol(f32 (host +0 x 2048 /
+    /// 3.141592...))) & 0xfff` as an `f32`. By the flag nibble: 0 `u +0x30`,
+    /// `+0x34`, `+0x38` = 0, `r`, 0; 0x1000 `u +0x48` = `r`; 0x2000 `u
+    /// +0x34` = `r`; 0x3000 `MsSetChrDirTarget(byte g_EtEff[u16 u +0x14]
+    /// +0x18, 2, 0, u8 u +0x18, 0, 0)`; all `cmd + 2`. 0x4000:
+    /// `op_et_eff_target_center(&g_EtEff[u16 u +0x14], host, 0)`, then
+    /// `u[u8 cmd +2]` = `op_deg_get(u +0x90, u +0x98, host +0, host +8, host
+    /// +0x10)` and with flag 0x800 `u[u8 cmd +3]` = `host +0x10`; 0x6000
+    /// `r = opus_ffxdeg_to_normaldeg(MsGetChrBtlDir(u8 u +0x18))` and on as
+    /// 0x5000: `u[u16 cmd +2]` = `r`; these `cmd + 4`. Others `cmd`.
+    /// Callees through `call`, the floats through `fcall`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_r_en<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{div, ftol, load, mul, store};
+        let u = unit(mem, host);
+        let first = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(first).get(mem);
+        if h != 0 {
+            let rot = fcall(mem, g(mem, 0x0082_ace0), &[h]);
+            mem.write(host, store(rot));
+        }
+        let k: f64 = mem.read(g(mem, 0x00b5_1bc0));
+        let pi: f64 = mem.read(g(mem, 0x00b5_82f0));
+        let a = load(store(div(mul(load(mem.read(host)), k), pi)));
+        let turn = 0x400u32.wrapping_sub(ftol(mem, a)) & 0xfff;
+        #[allow(clippy::cast_precision_loss)] // 12 bits: exact
+        let mut r = store(f64::from(turn));
+        let field =
+            |mem: &M, at: u32| u.wrapping_add(u32::from(mem.read::<u8>(cmd.wrapping_add(at))));
+        let eff = |mem: &M| {
+            let i = u32::from(mem.read::<u16>(u.wrapping_add(0x14)));
+            crate::et::bridge::EFF.ptr(mem).addr.wrapping_add(i << 5)
+        };
+        let chr = |mem: &M| u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        match nibble(mem, host) {
+            0 => {
+                mem.write(u.wrapping_add(0x30), 0u32);
+                mem.write(u.wrapping_add(0x34), r);
+                mem.write(u.wrapping_add(0x38), 0u32);
+                cmd.wrapping_add(2)
+            }
+            0x1000 => {
+                mem.write(u.wrapping_add(0x48), r);
+                cmd.wrapping_add(2)
+            }
+            0x2000 => {
+                mem.write(u.wrapping_add(0x34), r);
+                cmd.wrapping_add(2)
+            }
+            0x3000 => {
+                let id = u32::from(mem.read::<u8>(eff(mem).wrapping_add(0x18)));
+                let c = chr(mem);
+                call(mem, g(mem, 0x0079_5eb0), &[id, 2, 0, c, 0, 0]);
+                cmd.wrapping_add(2)
+            }
+            0x4000 => {
+                let e = eff(mem);
+                call(mem, g(mem, 0x0081_b3e0), &[e, host, 0]);
+                let f = |mem: &M, at: u32| mem.read::<u32>(at);
+                let args = [
+                    f(mem, u.wrapping_add(0x90)),
+                    f(mem, u.wrapping_add(0x98)),
+                    f(mem, host),
+                    f(mem, host.wrapping_add(8)),
+                    host.wrapping_add(0x10),
+                ];
+                let d = store(fcall(mem, g(mem, 0x007e_7ed0), &args));
+                let to = field(mem, 2);
+                let len_to = field(mem, 3);
+                mem.write(to, d);
+                if mem.read::<u16>(host.wrapping_add(0x21a)) & 0x800 != 0 {
+                    let len: u32 = mem.read(host.wrapping_add(0x10));
+                    mem.write(len_to, len);
+                }
+                cmd.wrapping_add(4)
+            }
+            n @ (0x5000 | 0x6000) => {
+                if n == 0x6000 {
+                    let c = chr(mem);
+                    let dir = store(fcall(mem, g(mem, 0x0079_48a0), &[c]));
+                    r = store(fcall(mem, g(mem, 0x0081_b170), &[dir]));
+                }
+                let at = u.wrapping_add(u32::from(mem.read::<u16>(cmd.wrapping_add(2))));
+                mem.write(at, r);
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        }
+    }
 }

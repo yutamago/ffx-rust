@@ -20859,3 +20859,409 @@ fn round36a_trails_point_lights_and_commands_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round36b_rotation_point_light_models_and_shape_fields_match_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_7f50);
+        let cells = p.alloc(0x20);
+        let (rot, dir, deg, hash) = (cells, cells + 4, cells + 8, cells + 0xc);
+        float_recorder(&mut p, 0x0082_ace0, 1, rot);
+        float_recorder(&mut p, 0x0079_48a0, 1, dir);
+        float_recorder(&mut p, 0x007e_7ed0, 5, deg);
+        far_recorder(&mut p, 0x0079_5eb0, &[0; 6], None);
+        far_recorder(&mut p, 0x0081_b3e0, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x0083_19b0, &[0; 9], None);
+        far_recorder(&mut p, 0x0083_1bf0, &[0, 0], None);
+        far_recorder(&mut p, 0x0064_1da0, &[], Some(hash));
+        far_recorder(&mut p, 0x0064_5280, &[0, 0], None);
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let slot = p.sym(heap::bridge::ENV_SLOT.sym);
+        let (env_cell, env, models, table, anim) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x100),
+            p.alloc(0x20),
+            p.alloc(0x100),
+        );
+        p.set(slot, env_cell);
+        p.set(env_cell, env);
+        p.set(env + 0x20, models);
+        p.set(env + 0x24, table);
+        let (light_a, cap, light_b, program) = (
+            p.sym(fp::bridge::POINT_LIGHT_A.sym),
+            p.sym(0x00ce_c1f8),
+            p.sym(fp::bridge::POINT_LIGHT_B.sym),
+            p.sym(0x0230_fd20),
+        );
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x10));
+        let (obj, key, ctrl, model) = (p.alloc(0x200), p.alloc(0x40), p.alloc(0x10), p.alloc(0x80));
+        let (def, w, parts) = (p.alloc(0x100), p.alloc(0x80), p.alloc(0xa0 * 8));
+        let offs = p.alloc(0x10);
+        for round in 0..1500u32 {
+            let what = |s: &str| format!("{s} round {round}");
+
+            // opu_r_en: every nibble, the handle set or not
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            let nib = rng.below(8) << 12;
+            p.set(host + 0x21a, (nib | rng.below(0x1000)) as u16);
+            let chr = rng.below(240);
+            p.set(unit + 0x18, chr as u8);
+            p.set(unit + 0x14, rng.below(512) as u16);
+            let h = rng.next();
+            p.set(handles + 4 * chr, if rng.chance(30) { 0 } else { h });
+            for c in [rot, dir, deg] {
+                let v = if rng.chance(80) {
+                    ranged(&mut rng, -7.0, 7.0)
+                } else {
+                    rng.float()
+                };
+                p.set(c, v);
+            }
+            let v = ranged(&mut rng, -7.0, 7.0);
+            p.set(host, v);
+            p.set(cmd + 2, rng.below(0x40) as u8 * 4);
+            p.set(cmd + 3, rng.below(0x40) as u8 * 4);
+            p.check(&what("r_en"), 0x0081_7f50, &[host, cmd], |m| {
+                Some(o::opu_r_en(
+                    m,
+                    host,
+                    cmd,
+                    &mut call_original,
+                    &mut call_original_f_nan,
+                ))
+            });
+
+            // pppFpPointLightModel(Scl): a model of a few points
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(model, 0x80, &mut rng);
+            for k in 1..4 {
+                p.set(offs + 4 * k, 0x10 * rng.below(8));
+            }
+            p.set(ctrl + 0xc, offs);
+            let n = rng.below(8);
+            p.set(key + 0x10, if rng.chance(10) { 0xffff } else { n });
+            p.set(models + 0x20 * n + 0x1c, model);
+            p.set(model + 8, 0x20u32);
+            p.set(model + 0x12, rng.pick(&[0i16, 1, 3, 6, -1]));
+            for k in 0..0x20 {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -50.0, 50.0)
+                } else {
+                    rng.float()
+                };
+                p.set(obj + 0xa0 + 4 * k, v);
+            }
+            let r = rng.next();
+            p.set(key + 0xc, rng.pick(&[0u32, 0x8000_0000, 0x7fc0_0000, r]));
+            let lights = rng.below(8);
+            p.set(light_a, lights.wrapping_sub(2));
+            p.set(cap, rng.pick(&[0u32, 3, 8, lights]));
+            p.set(light_b, rng.next());
+            let scaled = rng.chance(50);
+            let at = if scaled { 0x0075_dd70 } else { 0x0075_d930 };
+            p.check(&what("point_light_model"), at, &[obj, key, ctrl], |m| {
+                Some(fp::bridge::ppp_fp_point_light_model(
+                    m,
+                    obj,
+                    key,
+                    ctrl,
+                    scaled,
+                    &mut call_original,
+                ))
+            });
+
+            // pppDrawShapeFieldStep
+            p.fill(anim, 0x100, &mut rng);
+            p.set(anim + 6, rng.below(6) as i16);
+            for f in 0..8 {
+                p.set(
+                    anim + 8 * f + 0x12,
+                    rng.pick(&[0u16, 1, 3, 8, 0x8000, 0xffff]),
+                );
+                p.set(anim + 8 * f + 0x14, rng.pick(&[0u8, 0x80, 0x7f, 0xff]));
+            }
+            let i = rng.below(8);
+            p.set(def + 4, i);
+            p.set(table + 4 * i, anim);
+            p.set(def + 8, rng.pick(&[0u32, 1, 3, 8, u32::MAX]));
+            p.set(def + 0xc, rng.pick(&[0u16, 1, 2, 5, 0xffff]));
+            for k in 0..0x20 {
+                let v = rng.float();
+                p.set(def + 0x60 + 4 * k, v);
+            }
+            p.set(w + 0x40, parts);
+            p.set(w + 0x54, rng.below(6));
+            p.set(
+                hash,
+                rng.pick(&[
+                    0x76fu32, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139, 0, 0x770,
+                ]),
+            );
+            let r = rng.next();
+            p.set(program, rng.pick(&[0, 3, r]));
+            for k in 0..8 {
+                let at = parts + 0xa0 * k;
+                for j in 0..0x28 {
+                    let v = rng.float();
+                    p.set(at + 4 * j, v);
+                }
+                p.set(at, rng.next() | u32::from(rng.chance(70)));
+                p.set(at + 4, rng.pick(&[0u16, 2, 7, 0x7ffe, 0xfffe]));
+                p.set(at + 6, rng.below(6) as u16);
+                p.set(at + 8, rng.below(6));
+            }
+            let base = rng.next();
+            p.check(
+                &what("shape_field_step"),
+                0x0074_2980,
+                &[base, def, w],
+                |m| {
+                    draw::bridge::ppp_draw_shape_field_step(m, base, def, w, &mut call_original);
+                    None
+                },
+            );
+
+            // pppDrawShapeFieldSpdEmit: the countdown and the births
+            let off = 0x10 * rng.below(4);
+            p.set(ctrl + 0xc, ctrl);
+            p.set(ctrl, off);
+            p.fill(def, 0x100, &mut rng);
+            for k in 0x10..0x2c {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -360.0, 360.0)
+                } else {
+                    rng.float()
+                };
+                p.set(def + 4 * k, v);
+            }
+            p.set(def + 0xb0, rng.below(4) as u8);
+            p.set(def + 8, rng.below(5));
+            p.set(obj + off + 0xe8, rng.pick(&[0u32, 0, 1, 5]));
+            p.set(obj + off + 0xe0, parts);
+            p.set(obj + off + 0xec, rng.below(6));
+            p.check(&what("spd_emit"), 0x0074_4d80, &[obj, def, ctrl], |m| {
+                Some(draw::bridge::ppp_draw_shape_field_spd_emit(
+                    m,
+                    obj,
+                    def,
+                    ctrl,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}
+
+/// A stand-in for `op_random(x)` at `sym` (through a jump): `x` times the
+/// `f32` at `cell`, in `ST0`.
+fn scaled_random(p: &mut Pair, sym: u32, cell: u32) {
+    let mut c = vec![0xd9, 0x44, 0x24, 0x04]; // fld dword [esp + 4]
+    c.extend([0xd8, 0x0d]); // fmul dword [cell]
+    c.extend(cell.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round36c_vertex_point_lights_and_shape_field_emits_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_db30);
+        far_recorder(&mut p, 0x0083_19b0, &[0; 9], None);
+        far_recorder(&mut p, 0x0083_1bf0, &[0, 0], None);
+        let slot = p.sym(heap::bridge::ENV_SLOT.sym);
+        let (env_cell, env, models, sel_block) =
+            (p.alloc(4), p.alloc(0x40), p.alloc(0x100), p.alloc(0x840));
+        // the selection table, with room for negative entries before it
+        let sels = sel_block + 0x20;
+        let random = p.alloc(4);
+        scaled_random(&mut p, 0x007e_6700, random);
+        p.set(slot, env_cell);
+        p.set(env_cell, env);
+        p.set(env + 0x20, models);
+        p.set(env + 0x28, sels);
+        let (light_a, cap, light_b) = (
+            p.sym(fp::bridge::POINT_LIGHT_A.sym),
+            p.sym(0x00ce_c1f8),
+            p.sym(fp::bridge::POINT_LIGHT_B.sym),
+        );
+        let (obj, key, ctrl, offs) = (p.alloc(0x200), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (verts, verts2, list) = (p.alloc(0x60), p.alloc(0x60), p.alloc(0x20));
+        let (def, parts) = (p.alloc(0x100), p.alloc(0xa0 * 8));
+        let (drops, work, alloc, scratch) =
+            (p.alloc(0x30 * 6), p.alloc(8), p.alloc(4), p.alloc(0x60));
+        far_recorder(&mut p, 0x0071_6a30, &[0, 0, 0], Some(alloc));
+        for round in 0..3000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+
+            // pppFpPointLightVsf(Scl): a selection of up to 6 vertices
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(sel_block, 0x40, &mut rng);
+            p.set(env + 0x28, sels);
+            p.fill(verts, 0x60, &mut rng);
+            p.fill(verts2, 0x60, &mut rng);
+            for k in 1..4 {
+                p.set(offs + 4 * k, 0x10 * rng.below(8));
+            }
+            p.set(ctrl + 0xc, offs);
+            // the entry: 0..3, -4..-1 (i16) or 0x100 (beyond a byte)
+            let n = rng.pick(&[0u32, 1, 2, 3, 0xfffc, 0xfffd, 0xffff, 0x100]);
+            p.set(key + 0x10, n as u16);
+            let e = sels.wrapping_add((i32::from((n as u16).cast_signed()) * 8).cast_unsigned());
+            let m = rng.below(8);
+            p.set(e, m as u16);
+            p.set(e + 2, rng.pick(&[0i16, 1, 3, 6, -1]));
+            p.set(e + 4, list);
+            if rng.chance(5) {
+                // an entry at address 0
+                p.set(key + 0x10, 0xffffu16);
+                p.set(env + 0x28, 8u32);
+            }
+            for k in 0..8 {
+                p.set(list + 2 * k, rng.below(16) as u16);
+            }
+            for k in 0..8 {
+                p.set(models + 0x20 * k + 0x14, verts);
+            }
+            p.set(models + 0x20 * m + 0x14, verts2);
+            p.set(obj + 0x90, if rng.chance(50) { 0 } else { verts });
+            for k in 0..0x20 {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -50.0, 50.0)
+                } else {
+                    rng.float()
+                };
+                p.set(obj + 0xa0 + 4 * k, v);
+            }
+            let r = rng.next();
+            p.set(key + 0xc, rng.pick(&[0u32, 0x8000_0000, 0x7fc0_0000, r]));
+            let lights = rng.below(8);
+            p.set(light_a, lights.wrapping_sub(2));
+            p.set(cap, rng.pick(&[0u32, 3, 8, lights]));
+            p.set(light_b, rng.next());
+            let scaled = rng.chance(50);
+            let at = if scaled { 0x0075_df90 } else { 0x0075_db30 };
+            p.check(&what("point_light_vsf"), at, &[obj, key, ctrl], |m| {
+                Some(fp::bridge::ppp_fp_point_light_vsf(
+                    m,
+                    obj,
+                    key,
+                    ctrl,
+                    scaled,
+                    &mut call_original,
+                ))
+            });
+
+            // pppDrawShapeFieldEmit / RevEmit: angles around 0..360
+            let off = 0x10 * rng.below(4);
+            p.set(ctrl + 0xc, ctrl);
+            p.set(ctrl, off);
+            p.fill(def, 0x100, &mut rng);
+            for k in 0x10..0x30 {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -400.0, 760.0)
+                } else {
+                    rng.float()
+                };
+                p.set(def + 4 * k, v);
+            }
+            // the spin range: a fixed angle, or none
+            if rng.chance(50) {
+                for k in 0..4 {
+                    p.set(def + 0xb0 + 4 * k, 0u32);
+                }
+            }
+            p.set(def + 0xc0, rng.below(4) as u8);
+            p.set(def + 8, rng.below(5));
+            p.set(obj + off + 0xe8, rng.pick(&[0u32, 0, 1, 5]));
+            p.set(obj + off + 0xe0, parts);
+            p.set(obj + off + 0xec, rng.below(6));
+            p.fill(parts, 0xa0 * 8, &mut rng);
+            let vf00 = p.sym(prog::bridge::VF00.sym);
+            let r = ranged(&mut rng, -400.0, 760.0);
+            let z = rng.pick(&[0u32, r, 0x43b4_0000, 0xc3b4_0000, 0x7fc0_0000, 0x8000_0000]);
+            p.set(vf00 + 8, z);
+            let r = ranged(&mut rng, -1.0, 1.0);
+            p.set(
+                random,
+                rng.pick(&[0u32, 0x8000_0000, 0x7fc0_0000, r, r, r, r, r]),
+            );
+            if rng.chance(50) {
+                p.check(&what("emit"), 0x0074_2750, &[obj, def, ctrl], |m| {
+                    Some(draw::bridge::ppp_draw_shape_field_emit(
+                        m,
+                        obj,
+                        def,
+                        ctrl,
+                        &mut call_original,
+                    ))
+                });
+            } else {
+                p.check(&what("rev_emit"), 0x0074_3b60, &[obj, def, ctrl], |m| {
+                    Some(draw::bridge::ppp_draw_shape_field_rev_emit(
+                        m,
+                        obj,
+                        def,
+                        ctrl,
+                        &mut call_original,
+                        &mut call_original_f_nan,
+                    ))
+                });
+            }
+            p.set(vf00 + 8, 0u32);
+
+            // pppDrawRainAlloc: up to 5 drops, or no memory
+            p.fill(def, 0x100, &mut rng);
+            for k in 1..0x10 {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -50.0, 50.0)
+                } else {
+                    rng.float()
+                };
+                p.set(def + 4 * k, v);
+            }
+            p.set(def + 8, rng.below(6));
+            p.set(alloc, if rng.chance(10) { 0 } else { drops });
+            p.fill(drops, 0x30 * 6, &mut rng);
+            p.fill(work, 8, &mut rng);
+            p.check(&what("rain_alloc"), 0x0075_6320, &[def, work], |m| {
+                let keep = m.read(scratch, 0x60).unwrap();
+                // the oracle's edi, esi and ebx at the call
+                let junk = [0x3333_3333, 0x2222_2222, 0x1111_1111];
+                let r = draw::bridge::ppp_draw_rain_alloc(
+                    m,
+                    def,
+                    work,
+                    scratch + 0x50,
+                    junk,
+                    &mut call_original,
+                    &mut call_original_f_nan,
+                );
+                m.write(scratch, &keep).unwrap();
+                Some(r)
+            });
+        }
+    }
+}
