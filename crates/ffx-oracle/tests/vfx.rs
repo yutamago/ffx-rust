@@ -17138,3 +17138,74 @@ fn round32e_shape_step_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss
+)]
+fn round32f_shape_camera_emit_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_7090);
+        // FFXVu0InversMatrix: the camera matrix copied into its first
+        // argument (as in the op_vec3 test)
+        stub_code(
+            &mut p,
+            0x006e_d450,
+            &[
+                0x56, 0x57, 0x8b, 0x7c, 0x24, 0x0c, 0x8b, 0x74, 0x24, 0x10, 0xb9, 0x10, 0, 0, 0,
+                0xf3, 0xa5, 0x5f, 0x5e, 0xc3,
+            ],
+        );
+        let (obj, ctrl, offsets) = (p.alloc(0x200), p.alloc(0x10), p.alloc(0x10));
+        // (two calls of up to 5 births from number 7: 17 particles)
+        let (key, parts, frame) = (p.alloc(0xc0), p.alloc(0xa0 * 24), p.alloc(0x40));
+        p.set(ctrl + 0xc, offsets);
+        let camera = p.sym(0x0230_ff60);
+        let small = |rng: &mut Xorshift| (rng.below(2000) as f32 - 1000.0) / 64.0;
+        for round in 0..2000 {
+            let off = rng.pick(&[0u32, 0x10, 0x40]);
+            p.set(offsets, off);
+            let w = obj + off;
+            p.fill(obj, 0x200, &mut rng);
+            p.set(w + 0xe4, rng.pick(&[0u32, 0, 0, 1, 5]));
+            p.set(w + 0xe0, parts);
+            p.set(w + 0xe8, rng.below(8));
+            p.fill(parts, 0xa0 * 24, &mut rng);
+            for i in 0..0x30u32 {
+                let x = if rng.chance(90) {
+                    small(&mut rng)
+                } else {
+                    f32::from_bits(rng.pick(&[0x7fc0_0001u32, 0, 0x8000_0000]))
+                };
+                p.set(key + 4 * i, x);
+            }
+            p.set(key + 8, rng.pick(&[1u32, 3, 8, 0x100, 0xffff_fff0]));
+            // a wide spin range: angles past 2^23, where every bit counts
+            if rng.chance(20) {
+                p.set(key + 0xa8, 3.0e7f32);
+            }
+            p.set(key + 0x20, rng.pick(&[0u8, 1, 0x80, 0xff]));
+            p.set(key + 0xb0, rng.pick(&[0u8, 1, 3, 5]));
+            p.set(key + 0xb1, rng.pick(&[0u8, 1, 4]));
+            for i in 0..16u32 {
+                p.set(camera + 4 * i, small(&mut rng));
+            }
+            for at in [0x0074_7090u32, 0x0074_82e0] {
+                p.check(
+                    &format!("shape camera emit {at:#x} round {round}"),
+                    at,
+                    &[obj, key, ctrl],
+                    |m| {
+                        let keep = m.read(frame, 0x40).unwrap();
+                        d::ppp_shape_camera_emit(m, obj, key, ctrl, frame, &mut call_original);
+                        m.write(frame, &keep).unwrap();
+                        None
+                    },
+                );
+            }
+        }
+    }
+}

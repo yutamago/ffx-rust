@@ -125,6 +125,25 @@ harvest_test!(
     }
 );
 
+// effects: pppDrawShapeCameraDraw's emitter (its local matrix in the
+// stack's scratch, which the diff leaves out)
+harvest_test!(
+    ppp_shape_camera_emit,
+    0x0074_7090,
+    args = 3,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        ffx_vfx::draw::bridge::ppp_shape_camera_emit(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            frame,
+            &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        );
+    }
+);
+
 /// The store's format round-trips, and a state of the first target applies
 /// to a fresh oracle (layout check).
 #[test]

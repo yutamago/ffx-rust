@@ -4237,6 +4237,20 @@ ported! {
     pppShapeFieldRevStep_00743da0 @ 0x0074_3da0 => extern "C" fn ppp_shape_step_00743da0(obj: u32, key: u32) {
         draw::bridge::ppp_shape_step(&mut mem(), draw::bridge::ShapeStep::FieldRev, obj, key);
     }
+    /// `pppShapeCameraEmit_00747090(obj, key, ctrl)`.
+    pppShapeCameraEmit_00747090 @ 0x0074_7090 => extern "C" fn ppp_shape_camera_emit_00747090(obj: u32, key: u32, ctrl: u32) {
+        // the original's local: the inverse camera matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        draw::bridge::ppp_shape_camera_emit(&mut mem(), obj, key, ctrl, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppShapeCameraDisPosEmit_007482e0(obj, key, ctrl)`.
+    pppShapeCameraDisPosEmit_007482e0 @ 0x0074_82e0 => extern "C" fn ppp_shape_camera_emit_007482e0(obj: u32, key: u32, ctrl: u32) {
+        // the original's local: the inverse camera matrix
+        let mut frame = super::StackFrame::<16>::new();
+        let at = frame.at();
+        draw::bridge::ppp_shape_camera_emit(&mut mem(), obj, key, ctrl, at, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `hashU(s)`.
     hashU @ 0x0071_6570 => extern "C" fn hash_u(s: u32) -> u32 {
         small::bridge::hash_u_at(&mem(), s)
