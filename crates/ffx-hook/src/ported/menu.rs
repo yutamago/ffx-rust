@@ -1699,6 +1699,30 @@ ported! {
     MenuConfig_GetHdd @ 0x008c_b020 => extern "C" fn menu_config_get_hdd(opt: u32) -> u32 {
         tk::menu_config_option2(&mut mem(), 4, opt, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuStatus_Start_008d1d80(w, a)`: `TkMn2InitStatusBG`'s `eax`.
+    MenuStatus_Start_008d1d80 @ 0x008d_1d80 => extern "C" fn menu_status_start(w: u32, a: u32) -> u32 {
+        tk::menu_status_start(&mut mem(), w, a, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_WindowCtrl_008cd6d0(w)`.
+    MenuSummon_WindowCtrl_008cd6d0 @ 0x008c_d6d0 => extern "C" fn menu_summon_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawBuyPanel(w)`.
+    MenuWShop_DrawBuyPanel @ 0x008d_7a40 => extern "C" fn menu_wshop_draw_buy_panel(w: u32) -> u32 {
+        tk::menu_shop_draw_panel(&mut mem(), 0, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawSellPanel(w)`.
+    MenuWShop_DrawSellPanel @ 0x008d_7cc0 => extern "C" fn menu_wshop_draw_sell_panel(w: u32) -> u32 {
+        tk::menu_shop_draw_panel(&mut mem(), 1, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_DrawBuySellPanel(w)`.
+    MenuShop_DrawBuySellPanel @ 0x008d_9fe0 => extern "C" fn menu_shop_draw_buy_sell_panel(w: u32) -> u32 {
+        tk::menu_shop_draw_panel(&mut mem(), 2, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_StockWindowCtrl(w)`.
+    MenuWShop_StockWindowCtrl @ 0x008d_77f0 => extern "C" fn menu_wshop_stock_window_ctrl(w: u32) -> u32 {
+        tk::menu_wshop_stock_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

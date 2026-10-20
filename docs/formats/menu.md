@@ -167,7 +167,17 @@ byte at an offset into the character's save record
 (`MsGetSavePlayerPtr`). The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten
 rows; `MenuWShop_DrawBuyRows` `0x008d8c30` and `MenuWShop_DrawSellRows`
 `0x008d8ee0`, nine) and `MenuSummon_DrawGrowRows` (`0x008ce520`, eleven)
-draw a fixed number of rows from a first index. `MenuWShop_InitList` (`0x008d94a0`) fills the
+draw a fixed number of rows from a first index. The buy/sell panels are drawn
+between the packet kicks (`TkMenuDrawKick` twice, `0x008c1790`,
+`TkMn2DrawInitPacket` before, `TkMn2DrawKickSyncPacket(w)` after):
+`MenuWShop_DrawBuyPanel` (`0x008d7a40`) calls
+`TkMn2WeaponBuySellWindow(remapX2(680), remapY2(594), +0x5c, +0x60,
++0x68)`, `MenuWShop_DrawSellPanel` (`0x008d7cc0`) the same at
+`remapX2(656)` with `-(+0x60)`, and `MenuShop_DrawBuySellPanel`
+(`0x008d9fe0`) `TkMn2BuySellWindow(remapX2(680), remapY2(435), +0x5c,
+row, +0x64 + row, +0x60, +0x68)`. `MenuWShop_StockWindowCtrl`
+(`0x008d77f0`) keeps byte `+4` of the stock record under the cursor in
+`0x0186aba0` (-1 for none). `MenuWShop_InitList` (`0x008d94a0`) fills the
 weapon shop's stock from `TkMn2GetExcelData(0x0186ab1c, 0x0186aba8)`: up
 to 16 u16 ids from `+2`, each record (`MenuWShop_GetRecord`) getting byte
 `+6` = `0xff` and its name; the count goes to `0x0186ab10`, and

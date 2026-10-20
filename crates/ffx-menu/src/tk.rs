@@ -5132,6 +5132,167 @@ pub mod bridge {
         }
     }
 
+    /// `MenuStatus_Start_008d1d80(w, a)` (`0x008d1d80`): the status
+    /// screen's cursors `0x023cc3c4`, `0x023cc3c0` and `0x023cc3bc` each
+    /// `TkMenuGetCurrentPlayerPos()` (`0x023cc3c8` = 0), `w+0x1c` = 0,
+    /// `w+0x20` = `a`, the main window (`MenuStatus_OpenMainWindow()`) at
+    /// `0x0186a838`, then `TkMn2InitStatusBG()` and its `eax`.
+    pub fn menu_status_start<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        a: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(mem.rebase(0x023c_c3c8), 0u32);
+        for at in [0x023c_c3c4, 0x023c_c3c0, 0x023c_c3bc] {
+            let f = mem.rebase(0x008a_9870);
+            let pos = call(mem, f, &[]);
+            mem.write(mem.rebase(at), pos);
+        }
+        mem.write(w.wrapping_add(0x1c), 0u32);
+        mem.write(w.wrapping_add(0x20), a);
+        let f = mem.rebase(0x008d_3100);
+        let main = call(mem, f, &[]);
+        mem.write(mem.rebase(0x0186_a838), main);
+        let f = mem.rebase(0x008d_4ed0);
+        call(mem, f, &[w, a])
+    }
+
+    /// `MenuSummon_WindowCtrl_008cd6d0(w)` (`0x008cd6d0`):
+    /// `TkMn2StepStatusBG()`, `TkMenuListWindowCtrl_008b44b0(w)`, then on a
+    /// row below the count (`i16 +0x48` < `u16 +0x30`) with no sub-window
+    /// (`+0x45` 0) the stat's help (`TOMenuGetSummonHelp(word +8 of
+    /// g_NkzAeonStats row`) to `TkMenuSetHelpMessage` (its `eax`);
+    /// otherwise `eax` = the count.
+    pub fn menu_summon_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008d_3280);
+        call(mem, f, &[]);
+        let f = mem.rebase(0x008b_44b0);
+        call(mem, f, &[w]);
+        let row = i32::from(mem.read::<i16>(w.wrapping_add(0x48)));
+        let count = u32::from(mem.read::<u16>(w.wrapping_add(0x30)));
+        if row >= count.cast_signed() || mem.read::<u8>(w.wrapping_add(0x45)) != 0 {
+            return count;
+        }
+        let stat = mem
+            .rebase(0x00c5_a60c)
+            .wrapping_add(row.cast_unsigned().wrapping_mul(28));
+        let id: u32 = mem.read(stat);
+        let f = mem.rebase(0x008b_ee90);
+        let help = call(mem, f, &[id]);
+        let f = mem.rebase(0x008a_aeb0);
+        call(mem, f, &[help])
+    }
+
+    /// The weapon shop's buy/sell panel draws: the packet kicks
+    /// (`TkMenuDrawKick` twice, `0x008c1790`, `TkMn2DrawInitPacket`), the
+    /// panel, then `TkMn2DrawKickSyncPacket(w)` and its `eax`:
+    /// - 0 `MenuWShop_DrawBuyPanel(w)` (`0x008d7a40`):
+    ///   `TkMn2WeaponBuySellWindow(remapX2(680), remapY2(594), +0x5c,
+    ///   +0x60, +0x68)`;
+    /// - 1 `MenuWShop_DrawSellPanel(w)` (`0x008d7cc0`): the same at
+    ///   `remapX2(656)` with `-(+0x60)`;
+    /// - 2 `MenuShop_DrawBuySellPanel(w)` (`0x008d9fe0`):
+    ///   `TkMn2BuySellWindow(remapX2(680), remapY2(435), +0x5c, row,
+    ///   +0x64 + row, +0x60, +0x68)`, `row` the `i16 +0x48`.
+    ///
+    /// The `remapY2` call comes first.
+    pub fn menu_shop_draw_panel<M: Mem>(
+        mem: &mut M,
+        which: u32,
+        w: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::store;
+        for f in [0x008d_ce50, 0x008d_ce50, 0x008c_1790, 0x008c_0be0] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+        let field = |mem: &M, o: u32| mem.read::<u32>(w.wrapping_add(o));
+        let (yv, xv) = match which {
+            0 => (594.0, 680.0),
+            1 => (594.0, 656.0),
+            _ => (435.0, 680.0),
+        };
+        let y = store(remap(mem, true, yv));
+        let x = store(remap(mem, false, xv));
+        if which == 2 {
+            let row = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+            let args = [
+                x,
+                y,
+                field(mem, 0x5c),
+                row,
+                field(mem, 0x64).wrapping_add(row),
+                field(mem, 0x60),
+                field(mem, 0x68),
+            ];
+            let f = mem.rebase(0x008b_f170);
+            call(mem, f, &args);
+        } else {
+            let mut count = field(mem, 0x60);
+            if which == 1 {
+                count = count.wrapping_neg();
+            }
+            let args = [x, y, field(mem, 0x5c), count, field(mem, 0x68)];
+            let f = mem.rebase(0x008c_2d00);
+            call(mem, f, &args);
+        }
+        let f = mem.rebase(0x008c_0cc0);
+        call(mem, f, &[w])
+    }
+
+    /// The weapon shop's chosen stock record byte (`MenuWShop_StockWindowCtrl`).
+    pub const WSHOP_STOCK_BYTE: Global<u32> = Global::new(0x0186_aba0);
+
+    /// `MenuWShop_StockWindowCtrl(w)` (`0x008d77f0`):
+    /// [`WSHOP_STOCK_BYTE`] = -1; while the open sub-command window
+    /// (`0x023cc128`) has `i8 +0x45` above 0 and `u16 +0x48` not 2,
+    /// `TkMenuListWindowCtrl_008b44b0(w)` and, on a row (`i16 +0x48` not
+    /// negative), the byte `+4` of the stock record
+    /// (`MenuWShop_GetRecord(u16 [TkMn2GetExcelData([0x0186ab1c],
+    /// [0x0186aba8]) + 2 + 2 row])`) into it (returned); otherwise the last
+    /// value in `eax` (the sub-window, or the controller's result).
+    pub fn menu_wshop_stock_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        WSHOP_STOCK_BYTE.set(mem, u32::MAX);
+        let sub: u32 = mem.read(mem.rebase(0x023c_c128));
+        if mem.read::<i8>(sub.wrapping_add(0x45)) <= 0
+            || mem.read::<u16>(sub.wrapping_add(0x48)) == 2
+        {
+            return sub;
+        }
+        let f = mem.rebase(0x008b_44b0);
+        let ctrl = call(mem, f, &[w]);
+        let row = mem.read::<i16>(w.wrapping_add(0x48));
+        if row < 0 {
+            return ctrl;
+        }
+        let (table, field) = (
+            mem.read::<u32>(mem.rebase(0x0186_ab1c)),
+            mem.read::<u32>(mem.rebase(0x0186_aba8)),
+        );
+        let f = mem.rebase(0x008c_1af0);
+        let data = call(mem, f, &[table, field]);
+        let at = data
+            .wrapping_add(i32::from(row).cast_unsigned().wrapping_mul(2))
+            .wrapping_add(2);
+        let id = u32::from(mem.read::<u16>(at));
+        let f = mem.rebase(0x008d_9170);
+        let rec = call(mem, f, &[id]);
+        let v = u32::from(mem.read::<u8>(rec.wrapping_add(4)));
+        WSHOP_STOCK_BYTE.set(mem, v);
+        v
+    }
+
     /// The sub-command window openers (`0x008e33d0`
     /// `TkMenuOpenSubCmdWindowMain`, `0x008e3470`, `0x008e3510`,
     /// `0x008e35b0`): kept in `0x023cc120`; 2 rows of 2, cursor 1, `+0x37`

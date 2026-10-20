@@ -15080,3 +15080,103 @@ fn menu_round29_config_draw_options_messages_and_buy_window_match_the_original()
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round29_status_start_summon_ctrl_shop_panels_match_the_original() {
+    let Some(mut t) = setup_any(0x0029_0008) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    // TkMenuGetCurrentPlayerPos counts up: three different results
+    let pos = t.alloc(&[0; 4]);
+    let bump: Vec<u8> = [&[0xff, 0x05][..], &pos.to_le_bytes()].concat();
+    let code = seq_code(log, 0x008a_9870, 0, pos, &bump);
+    jump_stub(&mut t, 0x008a_9870, &code);
+    let mut cells = vec![pos];
+    for (f, n) in [
+        (0x008d_3100u32, 0u8),
+        (0x008d_4ed0, 2),
+        (0x008d_3280, 0),
+        (0x008b_44b0, 1),
+        (0x008b_ee90, 1),
+        (0x008a_aeb0, 1),
+        (0x008d_ce50, 0),
+        (0x008c_1790, 0),
+        (0x008c_0be0, 0),
+        (0x008c_2d00, 5),
+        (0x008b_f170, 7),
+        (0x008c_0cc0, 1),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let excel = seq_stub(&mut t, 0x008c_1af0, log, 2, &[]);
+    let record = seq_stub(&mut t, 0x008d_9170, log, 1, &[]);
+    let (data, rec, w0) = (
+        t.alloc(&[0; 0x400]),
+        t.alloc(&[0; 0x10]),
+        t.alloc(&[0; 0x100]),
+    );
+    t.put(excel, data);
+    t.put(record, rec);
+    let sub = t.alloc(&[0; 0x100]);
+    t.put(t.sym(0x023c_c128), sub);
+    for round in 0..600u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(w0, 0x100);
+        t.scramble_at(data, 0x400);
+        t.scramble_at(rec, 0x10);
+        t.scramble(0x0186_ab1c, 4);
+        t.scramble(0x0186_aba0, 0xc);
+        t.scramble(0x023c_c3bc, 0x10);
+        let row = t.rng.pick(&[0u16, 1, 5, 9, 10, 0xffff, 0x8000, 0x1ff]);
+        t.put(w0 + 0x48, row);
+        let count = t.rng.pick(&[0u16, 1, 5, 10, 11, 0xffff]);
+        t.put(w0 + 0x30, count);
+        let b = t.rng.pick(&[0u8, 0, 1, 0xff]);
+        t.put(w0 + 0x45, b);
+        let b = t.rng.pick(&[0u8, 1, 2, 0x80, 0xff]);
+        t.put(sub + 0x45, b);
+        let r = t.rng.pick(&[0u16, 1, 2, 2, 3]);
+        t.put(sub + 0x48, r);
+        let a = t.rng.next();
+        match round % 6 {
+            0 => t.twin(
+                "MenuStatus_Start_008d1d80",
+                0x008d_1d80,
+                &[w0, a],
+                U32,
+                |o| w(tk::menu_status_start(o, w0, a, &mut callback)),
+            ),
+            1 => t.twin(
+                "MenuSummon_WindowCtrl_008cd6d0",
+                0x008c_d6d0,
+                &[w0],
+                U32,
+                |o| w(tk::menu_summon_window_ctrl(o, w0, &mut callback)),
+            ),
+            5 => t.twin("MenuWShop_StockWindowCtrl", 0x008d_77f0, &[w0], U32, |o| {
+                w(tk::menu_wshop_stock_window_ctrl(o, w0, &mut callback))
+            }),
+            k => {
+                let which = k - 2;
+                let (name, f) = [
+                    ("MenuWShop_DrawBuyPanel", 0x008d_7a40),
+                    ("MenuWShop_DrawSellPanel", 0x008d_7cc0),
+                    ("MenuShop_DrawBuySellPanel", 0x008d_9fe0),
+                ][which as usize];
+                t.twin(name, f, &[w0], U32, |o| {
+                    w(tk::menu_shop_draw_panel(
+                        o,
+                        which,
+                        w0,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                });
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
