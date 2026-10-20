@@ -173,6 +173,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
                     |m| cam::ms_camera_reset(m, id, side),
                 );
             }
+            _ if rng.below(8) == 0 => splines(a, b, rng, c),
             _ if rng.below(3) == 0 => {
                 for _ in 0..3 {
                     moves(a, b, rng, slots, c, base);
@@ -310,6 +311,31 @@ fn moves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, slots: u32, c: u32,
     let lanes = a.rebase(0x00c8_f814);
     let words = a.read(lanes, 12).unwrap();
     b.write(lanes, &words).unwrap();
+}
+
+/// `MsSplineRegist` (round 32, `ffx_battle::camera_native`) on camera
+/// `c`: its current ID (which `MsCameraGetID` gives back), its index or
+/// another ID; the eye or focus spline's count any (0x20 full, -1 makes
+/// the first point index 0).
+fn splines(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, c: u32) {
+    let id = match rng.below(4) {
+        0 => c,
+        1 => c | rng.below(6) << 8 | rng.below(3) << 16,
+        _ => cam::ms_camera_get_id(b, c),
+    };
+    let which = [0, 1, rng.next()][rng.below(3) as usize];
+    let counts = a.rebase(ffx_battle::camera_native::bridge::SPLINE_COUNTS);
+    poke(
+        a,
+        b,
+        counts + 4 * (which & 1),
+        &rng.range(-1, 0x22).to_le_bytes(),
+    );
+    twin("MsSplineRegist", a, b, 0x007b_aac0, &[id, which], 0, |m| {
+        ffx_battle::camera_native::bridge::ms_spline_regist(m, id, which);
+        0
+    });
+    same(&format!("MsSplineRegist {id:#x} {which:#x}"), a, b);
 }
 
 /// `MsCameraAddLineFilter_007bf0b0` and `MsCameraSetDepthMaskMode_007bcf50`

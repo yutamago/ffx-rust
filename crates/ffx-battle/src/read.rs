@@ -60,6 +60,101 @@ pub mod bridge {
         cd(mem, call, 0, &[file, p, done, 0])
     }
 
+    /// The battle effects' file (`MsEtEffectRead`): its block's size and
+    /// name, `MsBattleError`'s message for a bigger file, and
+    /// `op_et_battle_init(block)` (vfx).
+    pub const ET_EFFECT_SIZE: u32 = 0x50ff0;
+    pub const ET_EFFECT_NAME: u32 = 0x00b5_4d38;
+    pub const ET_EFFECT_TOO_BIG: u32 = 0x00b5_4d28;
+    pub const MS_BATTLE_ERROR: u32 = 0x0079_f210;
+    pub const OP_ET_BATTLE_INIT: u32 = 0x007f_b250;
+
+    /// `MsEtEffectRead()` (`0x0079e6a0`): file 7 of directory 0xd (CD
+    /// methods `+0x10`, `+0x14`; a size above [`ET_EFFECT_SIZE`] is a
+    /// `MsBattleError`) into a new block of [`ET_EFFECT_SIZE`] bytes
+    /// (`Sg_MallocA(size, 0x10, 5, name, -1)`, [`crate::misc::bridge`]'s
+    /// `ET_EFFECT_READ`), cleared, read (method `+0`, no callback) and
+    /// waited on (method `+8`), then handed to `op_et_battle_init`. Its
+    /// `eax`: that call's.
+    pub fn ms_et_effect_read<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
+        let cd = |mem: &mut M, call: Call<'_, M>, slot: u32, args: &[u32]| {
+            let obj = game(mem, &mut *call, crate::getmem::bridge::GET_CD, &[]);
+            let f: u32 = mem.read(obj.wrapping_add(slot));
+            call(mem, f, args)
+        };
+        cd(mem, &mut *call, 0x10, &[0xd]);
+        let n = cd(mem, &mut *call, 0x14, &[7]);
+        if n.cast_signed() > ET_EFFECT_SIZE.cast_signed() {
+            let msg = code(mem, ET_EFFECT_TOO_BIG);
+            game(mem, &mut *call, MS_BATTLE_ERROR, &[msg]);
+        }
+        let name = code(mem, ET_EFFECT_NAME);
+        let p = game(
+            mem,
+            &mut *call,
+            SG_MALLOC_A,
+            &[ET_EFFECT_SIZE, 0x10, 5, name, u32::MAX],
+        );
+        crate::misc::bridge::ET_EFFECT_READ.set(mem, p);
+        mem.write_bytes(p, &vec![0; ET_EFFECT_SIZE as usize]);
+        let block = crate::misc::bridge::ET_EFFECT_READ.get(mem);
+        cd(mem, &mut *call, 0, &[7, block, 0, 0]);
+        cd(mem, &mut *call, 8, &[0]);
+        let block = crate::misc::bridge::ET_EFFECT_READ.get(mem);
+        game(mem, call, OP_ET_BATTLE_INIT, &[block])
+    }
+
+    /// The battle's registered motions (`MsRegMotionRead`): chara's
+    /// `ChN_SystemMgrpLoaded`, `Ch_RegMotionGetExistMem` and
+    /// `Ch_RegMotionEntryCache(p)`, the block's name and the read's
+    /// completion callback (`0x0079cc80`, the CD object calls it).
+    pub const CHN_SYSTEM_MGRP_LOADED: u32 = 0x0083_7710;
+    pub const CH_REG_MOTION_GET_EXIST_MEM: u32 = 0x0083_7730;
+    pub const CH_REG_MOTION_ENTRY_CACHE: u32 = 0x0083_76b0;
+    pub const REG_MOTION_NAME: u32 = 0x00b5_4c9c;
+    pub const REG_MOTION_READ_DONE: u32 = 0x0079_cc80;
+
+    /// `MsRegMotionRead()` (`0x0079ccf0`, native 0x70a2): with the
+    /// system motions loaded ([`CHN_SYSTEM_MGRP_LOADED`]) the flag
+    /// (`crate::misc::bridge::REG_MOTION_FLAG`) set and 1; else unless
+    /// one is in memory ([`CH_REG_MOTION_GET_EXIST_MEM`]) the flag
+    /// cleared and file 0 of directory 0x2e (CD `+0x10`, `+0x14`) read
+    /// (method `+0`, with [`REG_MOTION_READ_DONE`]) into a new block
+    /// (`Sg_MallocA(((n + 0x8f) & !0x7f) - 0x10, 0x10, 5, name, -1)`,
+    /// `REG_MOTION`) chara caches ([`CH_REG_MOTION_ENTRY_CACHE`]). The
+    /// flag (signed).
+    pub fn ms_reg_motion_read<M: Mem>(mem: &mut M, call: Call<'_, M>) -> i32 {
+        use crate::misc::bridge::{REG_MOTION, REG_MOTION_FLAG};
+        let cd = |mem: &mut M, call: Call<'_, M>, slot: u32, args: &[u32]| {
+            let obj = game(mem, &mut *call, crate::getmem::bridge::GET_CD, &[]);
+            let f: u32 = mem.read(obj.wrapping_add(slot));
+            call(mem, f, args)
+        };
+        if game(mem, &mut *call, CHN_SYSTEM_MGRP_LOADED, &[]) != 0 {
+            REG_MOTION_FLAG.set(mem, 1);
+            return 1;
+        }
+        if game(mem, &mut *call, CH_REG_MOTION_GET_EXIST_MEM, &[]) == 0 {
+            REG_MOTION_FLAG.set(mem, 0);
+            cd(mem, &mut *call, 0x10, &[0x2e]);
+            let n = cd(mem, &mut *call, 0x14, &[0]);
+            let size = (n.wrapping_add(0x8f) & !0x7f).wrapping_sub(0x10);
+            let name = code(mem, REG_MOTION_NAME);
+            let p = game(
+                mem,
+                &mut *call,
+                SG_MALLOC_A,
+                &[size, 0x10, 5, name, u32::MAX],
+            );
+            REG_MOTION.set(mem, p);
+            game(mem, &mut *call, CH_REG_MOTION_ENTRY_CACHE, &[p]);
+            let done = code(mem, REG_MOTION_READ_DONE);
+            let block = REG_MOTION.get(mem);
+            cd(mem, call, 0, &[0, block, done, 0]);
+        }
+        i32::from(REG_MOTION_FLAG.get(mem).cast_signed())
+    }
+
     /// `Sg_FreeA(p, pool)` and `ply_data`'s block name.
     pub const SG_FREE_A: u32 = 0x0083_f090;
     pub const PLY_DATA_NAME: u32 = 0x00b5_49ec;

@@ -382,6 +382,45 @@ fn helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
     let area = scratch(a, b, 0x200);
     let spoils = scratch(a, b, 0x40);
     set(a, b, g::SPOIL_WEAPONS, spoils);
+    // Mon_GetName (round 32): three kernel monster text tables (one
+    // segment each: IDs 0-0x64, 0x65-0xb4, 0xb5-0x150; records of 8 bytes,
+    // the first word a name's offset), its names now and then longer
+    // than 0x40 bytes; and its destination with room after
+    let mut mon_texts = Vec::new();
+    for (first, last) in [(0u16, 0x64u16), (0x65, 0xb4), (0xb5, 0x150)] {
+        let mut t = vec![0u8; 0x2000];
+        t[0..2].copy_from_slice(&1u16.to_le_bytes());
+        let n = usize::from(last - first) + 1;
+        let strings = 8 * n;
+        for (o, v) in [
+            (8, first),
+            (10, last),
+            (12, 8),
+            (14, u16::try_from(strings).unwrap()),
+        ] {
+            t[o..o + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        t[16..20].copy_from_slice(&0x20u32.to_le_bytes());
+        let base = 0x20 + strings;
+        let mut at = 0;
+        for k in 0..n {
+            t[0x20 + 8 * k..0x22 + 8 * k]
+                .copy_from_slice(&u16::try_from(at).unwrap().to_le_bytes());
+            let len =
+                [rng.below(0x3f), rng.below(8), 0x40, 0x50][rng.below(8).min(3) as usize] as usize;
+            if base + at + len + 1 >= t.len() {
+                break;
+            }
+            for c in 0..len {
+                t[base + at + c] = 0x41 + u8::try_from(rng.below(26)).unwrap();
+            }
+            at += len + 1;
+        }
+        let p = scratch(a, b, 0x2000);
+        poke(a, b, p, &t);
+        mon_texts.push(p);
+    }
+    let name = scratch(a, b, 0x100);
     let ply = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr;
     let equipment = g::EQUIPMENT.ptr(b).addr;
     for round in 0..300 {
@@ -731,6 +770,36 @@ fn helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
             g::read_btl_monster_name(m, &mut call_original);
             0
         });
+        // a monster's name from the made-up tables (the first set: no
+        // read; the others now and then missing)
+        // (none loaded now and then: the texts are read, the reader's
+        // stub giving none)
+        let unread = rng.below(6) == 0;
+        for (k, &t) in mon_texts.iter().enumerate() {
+            let at = a.rebase(ffx_battle::read::bridge::MONSTER_TEXTS[k]);
+            let v: u32 = if (k > 0 && rng.below(5) == 0) || (k == 0 && unread) {
+                0
+            } else {
+                t
+            };
+            poke(a, b, at, &v.to_le_bytes());
+        }
+        if unread {
+            poke(a, b, rec + 0x20 + 8, &[0; 4]);
+        }
+        poke(a, b, name, &[0xcc; 0x100]);
+        let id = [
+            rng.below(0x151),
+            rng.below(0x151),
+            0x64,
+            0x65,
+            0xb4,
+            0xb5,
+            rng.next(),
+        ][rng.below(7) as usize];
+        twin("Mon_GetName", a, b, 0x0078_4260, &[name, id], ALL, |m| {
+            g::mon_get_name(m, &mut call_original, name, id)
+        });
         set(
             a,
             b,
@@ -765,6 +834,15 @@ fn leaf_helpers_match_the_original_on_a_snapshot() {
         return;
     };
     helpers(&mut a, &mut b, &mut Xorshift(0x2929_0c02), false);
+}
+
+/// Points the function at `f` (ffx.sym address) at the code at `at`
+/// (ffx.sym address) with a `jmp`.
+fn redirect(o: &mut Oracle, f: u32, at: u32) {
+    let entry = o.rebase(f);
+    let rel = o.rebase(at).wrapping_sub(entry + 5);
+    o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+        .unwrap();
 }
 
 /// `MsBtlPosPrintBin` (`0x007c9f10`, 0x57f bytes, unreachable): room for
@@ -2140,6 +2218,10 @@ fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let rec = scratch(a, b, 0x60);
     let extra = scratch(a, b, 0x24);
     let objs = scratch(a, b, 0x20);
+    // MesSetChrTargetPosToLimitSparePosy's frame words (round 32)
+    let pos_local = scratch(a, b, 0x10);
+    // round 32's own stream (the later checks keep theirs)
+    let mut r32 = Xorshift(0x3232_0201 ^ u32::from(synthetic));
     for o in [&mut *a, &mut *b] {
         recording_stub(o, g::MS_GET_SAVE_PLY_LEFT, STUBS_D, rec, 1, 0);
         // yiSetRotTransDObj (field)
@@ -2452,6 +2534,65 @@ fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             g::ms_set_chr_extra_slot(m, j)
         });
         same("extra slots", a, b);
+        // MesSetChrTargetPosToLimitSparePosy (round 32): the optional
+        // position in the frame local (seeded alike), characters only
+        // where they are real (a battle snapshot's; put back after)
+        let j = [r32.below(ACTORS), r32.next()][r32.below(5).min(1) as usize];
+        let p = ffx_battle::actor::bridge::ms_get_chr(b, j & 0xff);
+        let chr: u32 = ffx_bridge::Mem::read(b, p);
+        let real = !synthetic && readable(a, chr, 0x1000);
+        if !real {
+            poke(a, b, p, &[0; 4]);
+        }
+        let opt = a.read(p + 0xdf9, 1).unwrap();
+        poke(
+            a,
+            b,
+            p + 0xdf9,
+            &[[0, 1, 2, 0xff, r32.byte()][r32.below(5) as usize]],
+        );
+        // on a real character, set entries where (i8) and (u8) of the byte
+        // point (put back after)
+        let byte = a.read(p + 0xdf9, 1).unwrap()[0];
+        let mut entries: Vec<(u32, Vec<u8>)> = Vec::new();
+        if real {
+            for k in [i32::from(byte.cast_signed()), i32::from(byte)] {
+                let at = chr
+                    .wrapping_add(ffx_chara::attach::bridge::OPTPOS)
+                    .wrapping_add((16 * k).cast_unsigned());
+                if readable(a, at, 16) {
+                    entries.push((at, a.read(at, 16).unwrap()));
+                }
+            }
+        }
+        for (at, _) in &entries {
+            let v: Vec<u8> = (0..4).flat_map(|_| float(&mut r32).to_le_bytes()).collect();
+            poke(a, b, *at, &v);
+        }
+        let frame = a.stack_range().end - 0x100 - 0x20;
+        let seed: Vec<u8> = (0..4).flat_map(|_| float(&mut r32).to_le_bytes()).collect();
+        // (the stack put back after: later originals read what is there)
+        let stack = a.read(frame, 0x10).unwrap();
+        a.write(frame, &seed).unwrap();
+        poke(a, b, pos_local, &seed);
+        twin(
+            "MesSetChrTargetPosToLimitSparePosy",
+            a,
+            b,
+            0x0079_32b0,
+            &[j],
+            ALL,
+            |m| g::mes_set_chr_target_pos_to_limit_spare_posy(m, j, pos_local),
+        );
+        let v = a.read(pos_local, 0x10).unwrap();
+        b.write(pos_local, &v).unwrap();
+        same(&format!("MesSetChrTargetPosToLimitSparePosy {j:#x}"), a, b);
+        poke(a, b, p, &chr.to_le_bytes());
+        poke(a, b, p + 0xdf9, &opt);
+        for (at, v) in entries.iter().rev() {
+            poke(a, b, *at, v);
+        }
+        a.write(frame, &stack).unwrap();
         // the scene objects (yiSetRotTransDObj a recording stub: its
         // vectors are frame ones, compared by what they hold)
         twin("MsResetSceneObjects", a, b, 0x0079_e2a0, &[], 0, |m| {
@@ -3139,6 +3280,38 @@ fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         // MsGetChrInfo for the ball's offset
         recording_stub(o, 0x0079_5170, STUBS_D + 0x200, rec + 0x1c0, 4, 0);
     }
+    // op_et_eff (vfx) for the weapon effect of MsEffectChrMotionIn (round
+    // 32): a recording stub, its result at `et_rec + 0x14`
+    let et_rec = scratch(a, b, 0x40);
+    // MsSetMotion for MsEffectMagicMotion (round 32): keeps its 7
+    // arguments at `motion_rec + 8` and the byte `MsGetChr(i) + 0x41b` at
+    // `motion_rec`, and returns the word after that (`mov eax,[esp+4k];
+    // mov [rec+8+4k],eax` for each, then `push [esp+4]; call MsGetChr;
+    // add esp,4; mov al,[eax+0x41b]; mov [rec],al; mov eax,[rec+4]; ret`)
+    let motion_rec = scratch(a, b, 0x24);
+    for o in [&mut *a, &mut *b] {
+        recording_stub(o, 0x007f_c2e0, STUBS_D + 0x280, et_rec, 4, 0);
+        let at = o.rebase(STUBS_D + 0x300);
+        let mut args = Vec::new();
+        for k in 0..7u8 {
+            args.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0xa3]);
+            args.extend((motion_rec + 8 + 4 * u32::from(k)).to_le_bytes());
+        }
+        let n = u32::try_from(args.len()).unwrap();
+        let get_chr = o.rebase(0x0079_4020).wrapping_sub(at + n + 9);
+        let code = [
+            &args[..],
+            &[0xff, 0x74, 0x24, 0x04, 0xe8][..],
+            &get_chr.to_le_bytes(),
+            &[0x83, 0xc4, 0x04, 0x8a, 0x80, 0x1b, 0x04, 0x00, 0x00, 0xa2],
+            &motion_rec.to_le_bytes(),
+            &[0xa1],
+            &(motion_rec + 4).to_le_bytes(),
+            &[0xc3],
+        ]
+        .concat();
+        o.write(at, &code).unwrap();
+    }
     let pos = scratch(a, b, 0x10);
     if w.synthetic {
         // a position file (as battle_pos.rs's): floats, small counts and
@@ -3259,6 +3432,66 @@ fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         });
         same("MsEffectChrMotionOut", a, b);
         poke(a, b, p + 0x4fd, &kind);
+        // MsEffectChrMotionIn (round 32): the same actor coming back in,
+        // its escape position in the frame local (as MsSetBtlPosReset's)
+        poke(a, b, p + 0x4fd, &[rng.byte()]);
+        poke(a, b, p + 0xdff, &[u8::from(rng.below(3) != 0)]);
+        for o in [0x50a, 0x3f0, 0x41c, 0x412, 0x5d9] {
+            poke(a, b, p + o, &[rng.byte()]);
+        }
+        poke(a, b, p + 0xdcd, &[u8::from(rng.below(3) == 0)]);
+        poke(
+            a,
+            b,
+            et_rec + 0x14,
+            &[1u32, 0, 0x8000_0000][rng.below(3) as usize].to_le_bytes(),
+        );
+        let seed: Vec<u8> = (0..4).flat_map(|_| float(rng).to_le_bytes()).collect();
+        a.write(frame, &seed).unwrap();
+        poke(a, b, local, &seed);
+        twin("MsEffectChrMotionIn", a, b, 0x007b_7d70, &[i], ALL, |m| {
+            ffx_battle::effect_signal::bridge::ms_effect_chr_motion_in(
+                m,
+                &mut |m: &mut Oracle, f, args: &[u32]| call_original(m, f, args),
+                i,
+                local,
+            )
+        });
+        let v = a.read(frame, 0x10).unwrap();
+        a.write(local, &v).unwrap();
+        let at = ffx_battle::vector::bridge::VF_B.ptr(a).addr + 4;
+        let r = a.read(at, 12).unwrap();
+        b.write(at, &r).unwrap();
+        same(&format!("MsEffectChrMotionIn {i:#x}"), a, b);
+        poke(a, b, p + 0x4fd, &kind);
+        // MsEffectMagicMotion (round 32): kind 2 most of the time
+        let motion = [0xff, 0x32, rng.byte()][rng.below(3) as usize];
+        poke(a, b, p + 0xe01, &[motion]);
+        for o in [0x405, 0x41b, 0x3f2, 0x3f3, 0xf5e, 0xdf2] {
+            poke(a, b, p + o, &[rng.byte()]);
+        }
+        poke(a, b, p + 0x3f3, &[u8::from(rng.below(2) == 0)]);
+        let kind8 = [2, 2, 2, 0, 1, 3, rng.below(0x100)][rng.below(7) as usize];
+        let w8 = (i & 0xff) | kind8 << 8 | rng.next() & 0xffff_0000;
+        // MsSetMotion keeps its actor's +0x41b at the call (what the
+        // original sets for it) and returns a word of `motion_rec`
+        poke(a, b, motion_rec, &[0; 4]);
+        poke(a, b, motion_rec + 4, &rng.next().to_le_bytes());
+        poke(a, b, motion_rec + 8, &[0; 0x1c]);
+        for o in [&mut *a, &mut *b] {
+            redirect(o, 0x007a_b360, STUBS_D + 0x300);
+        }
+        twin("MsEffectMagicMotion", a, b, 0x0078_7c30, &[w8], ALL, |m| {
+            ffx_battle::effect_signal::bridge::ms_effect_magic_motion(
+                m,
+                &mut |m: &mut Oracle, f, args: &[u32]| call_original(m, f, args),
+                w8,
+            )
+        });
+        for o in [&mut *a, &mut *b] {
+            redirect(o, 0x007a_b360, STUBS_D);
+        }
+        same(&format!("MsEffectMagicMotion {w8:#x}"), a, b);
         // a command cue running (or not), the turn word, the head
         set(
             a,
@@ -3386,4 +3619,214 @@ fn leaf_resets_match_the_original_on_a_snapshot() {
         return;
     };
     resets(&mut a, &mut b, &mut Xorshift(0x3030_0102), false);
+}
+
+/// Group J (round 32, `ffx_battle::sound`): the SEP transfers queued from
+/// a sound file (`MsRegistSEdata`, `MsSEPtransRegist`), a voice line
+/// (`MsSetVoice`) and a shout stream (`MsSoundStreamPlay`). The sound
+/// callees are stubs: `SndGetSepNumber` logs its blocks (a result that
+/// changes each call), the shout callees log theirs, `MsAtelRequestExe`
+/// keeps its last call, and the transfer callees of a full queue's
+/// `MsSEPtransProcess` end at once (`SndSyncWaveTrans` 0).
+fn sounds(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use ffx_battle::battle_end::bridge as be;
+    use ffx_battle::sound::bridge as so;
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x110 * 8);
+    let callees: [(u32, u8); 8] = [
+        (so::SND_GET_SEP_NUMBER, 1),
+        (so::SND_IS_READ_SHOUT_VOICE_STATUS, 0),
+        (so::SND_START_SHOUT_STREAM, 3),
+        (so::MS_ATEL_REQUEST_EXE, 6),
+        (be::SND_SEP_TRANS_SEP_ONLY, 2),
+        (be::SND_STANDBY_BATTLE_WAVE, 2),
+        (be::SND_SYNC_WAVE_TRANS, 1),
+        (be::SND_STANDBY_SEP_WAVE, 0),
+    ];
+    let slot = |k: u32| rec + 0x110 * k;
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(callees) {
+            if n > 4 {
+                recording_stub(o, f, STUBS_D + 0x60 * k, slot(k), n, 0);
+            } else {
+                logging_stub(o, f, STUBS_D + 0x60 * k, slot(k), n, 0);
+            }
+        }
+    }
+    let file = scratch(a, b, 0x1000);
+    // one of the values (all drawn first)
+    macro_rules! pick {
+        ($rng:expr, [$($v:expr),+ $(,)?] $(,)?) => {{
+            let v = [$($v),+];
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+    let queue = be::SEP_TRANS_QUEUE.ptr(b).addr;
+    let count = ffx_battle::state::bridge::SEP_TRANS;
+    let state = g::SEP_TRANS_STATE;
+    for _ in 0..400 {
+        // the queue: records of actors (the scene's would free its
+        // buffer), any state and kind; a count that is full now and then
+        for k in 0..16 {
+            let r = queue + 12 * k;
+            // (the transfer reads its data's first byte)
+            poke(a, b, r, &(file + rng.below(0x1000)).to_le_bytes());
+            poke(a, b, r + 4, &rng.next().to_le_bytes());
+            let kind = u8::try_from(pick!(rng, [0, 1, 1, 2])).unwrap();
+            let who = u8::try_from(rng.below(ACTORS)).unwrap();
+            let st = u8::try_from(rng.below(3)).unwrap();
+            poke(a, b, r + 8, &[kind, who, st]);
+        }
+        let n = {
+            let r = rng.below(16);
+            pick!(rng, [r, r, 0, 15, 16, 17])
+        };
+        set(a, b, count, n);
+        // (a negative first index only while the queue is not full: a
+        // full one would end a record outside the queue)
+        let first = {
+            let r = rng.below(16);
+            if n < 16 && rng.below(8) == 0 {
+                0xffff_fff3
+            } else {
+                pick!(rng, [r, r, 0, 15])
+            }
+        };
+        // (word 0 of the state; the count is its word 1)
+        poke(a, b, state.ptr(b).addr, &first.to_le_bytes());
+        set(a, b, be::SEP_TRANS_SCENE, rng.byte());
+        poke(a, b, slot(0) + 4, &rng.next().to_le_bytes());
+        let actor = w.actor(rng.below(ACTORS));
+        for o in [0xc, 0xf2d, 0xf2e] {
+            poke(a, b, actor + o, &[rng.byte()]);
+        }
+        let op = rng.below(4);
+        if op == 1 {
+            // a file of up to 4 transfers fills no queue
+            set(a, b, count, rng.below(12));
+        }
+        match op {
+            0 => {
+                let args = [
+                    pick!(rng, [0xff, rng.below(ACTORS), rng.next()]),
+                    file + rng.below(0x1000),
+                    rng.next(),
+                    pick!(rng, [0, 1, 2, rng.next()]),
+                ];
+                twin("MsSEPtransRegist", a, b, 0x007a_06b0, &args, ALL, |m| {
+                    so::ms_sep_trans_regist(m, &mut call, args[0], args[1], args[2], args[3])
+                });
+                same(&format!("MsSEPtransRegist {args:x?}"), a, b);
+            }
+            1 => {
+                // a sound file: sections of blocks (0 none) and an end
+                let mut f = vec![0u8; 0x1000];
+                let put = |f: &mut Vec<u8>, at: usize, v: u32| {
+                    f[at..at + 4].copy_from_slice(&v.to_le_bytes());
+                };
+                let sections = pick!(rng, [1, 2, 3, 4, 4, 0, u32::MAX]);
+                put(&mut f, 0, sections);
+                let mut at = 0x20usize;
+                for s in 0..4usize {
+                    let none = rng.below(6) == 0;
+                    put(
+                        &mut f,
+                        4 + 4 * s,
+                        if none { 0 } else { u32::try_from(at).unwrap() },
+                    );
+                    let blocks = {
+                        let r = rng.below(0x24);
+                        pick!(rng, [r, r, r, 0, u32::MAX, 0x21, 0x88])
+                    };
+                    put(&mut f, at, blocks);
+                    let words = usize::try_from(blocks.cast_signed().max(0))
+                        .unwrap()
+                        .min(0x88)
+                        + 1;
+                    for k in 0..words {
+                        let o = if rng.below(3) == 0 {
+                            0
+                        } else {
+                            0x800 + rng.below(0x700)
+                        };
+                        put(&mut f, at + 4 + 4 * k, o);
+                    }
+                    at += 4 * (words + 1);
+                }
+                poke(a, b, file, &f);
+                let who = pick!(rng, [actor, actor, 0]);
+                let sep = if rng.below(10) == 0 { 0 } else { file };
+                // the table the scene's numbers go to, and the actor's
+                let t = g::SEP_TRANS_TABLE.ptr(b).addr;
+                poke(a, b, t, &vec![0xee; 0x200]);
+                poke(a, b, actor + 0xeac, &[0xdd; 0x80]);
+                twin("MsRegistSEdata", a, b, 0x007a_01b0, &[who, sep], ALL, |m| {
+                    so::ms_regist_se_data(m, &mut call, who, sep).cast_unsigned()
+                });
+                same(&format!("MsRegistSEdata {who:#x}"), a, b);
+            }
+            2 => {
+                let i = pick!(rng, [rng.below(ACTORS), rng.below(ACTORS), rng.next()]);
+                let line = pick!(rng, [rng.below(0x40), u32::MAX, 0x8000_0000, 0x1_2345]);
+                let r = pick!(rng, [0, 1, u32::MAX, 0x8000_0000, 0x7fff_ffff]);
+                poke(a, b, slot(3) + 4 + 4 * 6, &r.to_le_bytes());
+                set(
+                    a,
+                    b,
+                    ffx_battle::state::bridge::ATEL_COUNT,
+                    pick!(rng, [0i32, 3, 15, 16]),
+                );
+                let more = [rng.next(), rng.next(), rng.next()];
+                let args = [i, line, more[0], more[1], more[2]];
+                twin("MsSetVoice", a, b, 0x007a_0720, &args, ALL, |m| {
+                    so::ms_set_voice(m, &mut call, i, line, more)
+                });
+                same(&format!("MsSetVoice {args:x?}"), a, b);
+            }
+            _ => {
+                poke(
+                    a,
+                    b,
+                    slot(1) + 4,
+                    &pick!(rng, [0u32, 0, 0, 1]).to_le_bytes(),
+                );
+                set(a, b, so::DEBUG_SHOUT_TRACE, u8::from(rng.below(2) == 0));
+                let speaker = pick!(
+                    rng,
+                    [rng.below(8), rng.below(8), u32::MAX, 0xffff_fffb, 8, 100],
+                );
+                let line = pick!(rng, [rng.below(8), rng.below(8), 8, u32::MAX, rng.next()]);
+                twin(
+                    "MsSoundStreamPlay",
+                    a,
+                    b,
+                    0x007a_0820,
+                    &[speaker, line],
+                    ALL,
+                    |m| {
+                        so::ms_sound_stream_play(m, &mut call, speaker.cast_signed(), line)
+                            .cast_unsigned()
+                    },
+                );
+                same(&format!("MsSoundStreamPlay {speaker:#x} {line:#x}"), a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn leaf_sounds_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    sounds(&mut a, &mut b, &mut Xorshift(0x3232_0101), true);
+}
+
+#[test]
+fn leaf_sounds_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    sounds(&mut a, &mut b, &mut Xorshift(0x3232_0102), false);
 }
