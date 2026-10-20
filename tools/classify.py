@@ -308,6 +308,12 @@ REVIEWED = {
     0x00773c60: ("platform", "HDD-mode struct 0xc41744 (system round 37)"),
     0x0076cf80: ("platform", "HDD-mode struct 0xc41744 (system round 37)"),
     0x006db2f0: ("platform", "LocalizationManager_readLocalizationKit: loads the PC localization-kit .BIN via fios/sprintf/new (system round 38)"),
+    0x009daca0: ("platform", "MagicFile_clearAllPreloadedPrx: via 0x9dacc0 to PhyreFIOS_UnloadMagicfilePrx (system round 40)"),
+    0x007786f0: ("platform", "hd_file_read_th_main: sceOpen/sceLseek/sceRead file I/O (system round 40)"),
+    0x0076bf70: ("platform", "cd_ModuleFileRead: libmscd.c read queue (system round 40)"),
+    0x006e4470: ("platform", "DepthBiasHooks_onSceneLoaded: PC-port hook, Sg_SetMapAlphaFast(0) by scene name (system round 40)"),
+    0x006f0510: ("debug", "SaveDataManager_debugSave_Internal: raw save dump via _wfopen, from 0x6f1c40 (system round 40)"),
+    0x006882a0: ("debug", "StackWalker call-stack line formatting for crash traces (system round 40)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

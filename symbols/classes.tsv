@@ -2332,7 +2332,7 @@
 0x00687e90	dead	unreachable from the entry point and every pointer table
 0x00688220	dead	unreachable from the entry point and every pointer table
 0x00688250	dead	unreachable from the entry point and every pointer table
-0x006882a0	logic	default (no rule: ported to be safe)
+0x006882a0	debug	reviewed: StackWalker call-stack line formatting for crash traces (system round 40)
 0x00688470	logic	default (no rule: ported to be safe)
 0x006884e0	logic	default (no rule: ported to be safe)
 0x006885e0	logic	default (no rule: ported to be safe)
@@ -3898,7 +3898,7 @@
 0x006e4020	logic	default (no rule: ported to be safe)
 0x006e40b0	logic	default (no rule: ported to be safe)
 0x006e4100	glue	reviewed: DepthBiasHooks_onCharacterInstantiated: only the renderer visibility job 0x9f4000 reads g_DepthBias (system round 37)
-0x006e4470	logic	default (no rule: ported to be safe)
+0x006e4470	platform	reviewed: DepthBiasHooks_onSceneLoaded: PC-port hook, Sg_SetMapAlphaFast(0) by scene name (system round 40)
 0x006e45c0	dead	unreachable from the entry point and every pointer table
 0x006e45d0	dead	unreachable from the entry point and every pointer table
 0x006e45e0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): LoadingScreen_LoadingScreen
@@ -4078,7 +4078,7 @@
 0x006f0290	platform	only called from platform code (0x6ef630)
 0x006f0330	platform	platform name (PC port: input, saves, loaders, app lifecycle): SetUpDefaultSaveFolder
 0x006f04c0	platform	only called from platform code (SaveDataMachine_Update)
-0x006f0510	logic	debug-sounding name, but used by logic: 0x6f1c40
+0x006f0510	debug	reviewed: SaveDataManager_debugSave_Internal: raw save dump via _wfopen, from 0x6f1c40 (system round 40)
 0x006f05b0	platform	only called from platform code (SaveDataMachine_Update)
 0x006f0630	platform	only called from platform code (SaveDataMachine_Update)
 0x006f0670	platform	imports GetTickCount
@@ -6033,7 +6033,7 @@
 0x0076b8d0	logic	debug-sounding name, but used by logic: pppDataRcv
 0x0076b970	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): Cd_QueueRead
 0x0076bdd0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): CDfileReadSector_CD
-0x0076bf70	logic	default (no rule: ported to be safe)
+0x0076bf70	platform	reviewed: cd_ModuleFileRead: libmscd.c read queue (system round 40)
 0x0076c250	logic	default (no rule: ported to be safe)
 0x0076c270	logic	default (no rule: ported to be safe)
 0x0076c290	dead	unreachable from the entry point and every pointer table
@@ -6605,7 +6605,7 @@
 0x00778550	platform	reviewed: hd_file_read_ex_th_main: PC loader-thread request handshake (system round 35)
 0x007785e0	dead	unreachable from the entry point and every pointer table
 0x00778610	platform	reviewed: hd_file_read_th: PC loader-thread request handshake (system round 35)
-0x007786f0	logic	default (no rule: ported to be safe)
+0x007786f0	platform	reviewed: hd_file_read_th_main: sceOpen/sceLseek/sceRead file I/O (system round 40)
 0x007787b0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): get_hdd_word_518
 0x007787c0	platform	only called from platform code (hdd_install_check)
 0x00778960	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): hdd_head_sectors
@@ -16408,7 +16408,7 @@
 0x009da880	logic	default (no rule: ported to be safe)
 0x009da960	logic	default (no rule: ported to be safe)
 0x009dac60	logic	default (no rule: ported to be safe)
-0x009daca0	logic	default (no rule: ported to be safe)
+0x009daca0	platform	reviewed: MagicFile_clearAllPreloadedPrx: via 0x9dacc0 to PhyreFIOS_UnloadMagicfilePrx (system round 40)
 0x009dacc0	platform	reviewed: unloads preloaded magic-file modules (system round 37)
 0x009dad70	logic	default (no rule: ported to be safe)
 0x009dadc0	logic	default (no rule: ported to be safe)
