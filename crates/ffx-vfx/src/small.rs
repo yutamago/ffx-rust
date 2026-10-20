@@ -1044,4 +1044,81 @@ pub mod bridge {
         ];
         call(mem, sym(mem, 0x0093_d960), &args)
     }
+
+    /// `graphicVFXAddScreenFadeEvent(r, g, b, a, alpha)` (`0x00644d40`): a
+    /// screen fade draw event in `event` (the original's local: `+0` = 2,
+    /// `+4` left as it is, `+8` the four colour bytes, `+0xc`
+    /// `calculateVFXSP_AlphaFunction(alpha)`) handed to
+    /// `PhyreScene_addVFXDrawEvent` (thiscall on `g_PhyreScene`, through
+    /// `this_call`) unless `g_GraphicSkipFrame` is set. Returns that call's
+    /// `eax`, or on a skipped frame the alpha function.
+    pub fn graphic_vfx_add_screen_fade_event<M: Mem>(
+        mem: &mut M,
+        rgba: [u32; 4],
+        alpha: u32,
+        event: u32,
+        this_call: &mut impl FnMut(&mut M, u32, u32, &[u32]) -> u32,
+    ) -> u32 {
+        #[allow(clippy::cast_possible_truncation)] // the argument bytes
+        let bytes = rgba.map(|c| c as u8);
+        mem.write(event.wrapping_add(8), bytes);
+        mem.write(event, 2u32);
+        let f = crate::op::bridge::calculate_vfx_sp_alpha_function(alpha & 0xff);
+        mem.write(event.wrapping_add(0xc), f);
+        if mem.read::<u32>(sym(mem, 0x012f_b7d0)) != 0 {
+            return f;
+        }
+        let scene: u32 = mem.read(sym(mem, 0x00cc_b9d8));
+        this_call(mem, sym(mem, 0x0065_6940), scene, &[event])
+    }
+
+    /// `0x00711750` (`pppAkazaScrFltDraw`, ours): `graphicVFXAddCopyBufferEvent(0,
+    /// 1)`; the instance `(lo, hi)` gets its render data when it has none
+    /// (`pppCreateFrameBufferData_00715a40`, then `graphicVFXSetup`; either
+    /// failing ends in `graphicVFXDestroy(lo, hi)`), then
+    /// `updateVFXRenderData_AkazaScrFlt(lo, hi, a, b)` and
+    /// `graphicVFXUpdateType4(lo, hi)`. All through `call`.
+    pub fn ppp_akaza_scr_flt_draw<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        call(mem, sym(mem, 0x0064_4be0), &[0, 1]);
+        if call(mem, sym(mem, 0x0064_53d0), &[lo, hi]) == 0
+            && (call(mem, sym(mem, 0x0071_5a40), &[lo, hi]) == 0
+                || call(mem, sym(mem, 0x0064_5780), &[lo, hi]) == 0)
+        {
+            call(mem, sym(mem, 0x0064_5280), &[lo, hi]);
+            return;
+        }
+        call(mem, sym(mem, 0x0071_ce20), &[lo, hi, a, b]);
+        call(mem, sym(mem, 0x0064_4db0), &[lo, hi]);
+    }
+
+    /// `0x007116d0` (`pppNoiseBlurDraw`, ours; `(a0..a6)`): `0x00cec19c` =
+    /// 0; renderer instance `(6, 0)` gets its render data when it has none
+    /// (`pppCreateD3D11FrameBufferData_00716050(6, 0, a2)`, then
+    /// `graphicVFXSetup(6, 0)`; either failing ends in
+    /// `graphicVFXDestroy(6, 0)`), then `updateVFXRenderData_NoiseBlur(6,
+    /// 0, a0..a6)` and `graphicVFXUpdate(6, 0)`. All through `call`.
+    pub fn ppp_noise_blur_draw<M: Mem>(
+        mem: &mut M,
+        a: [u32; 7],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        mem.write(sym(mem, 0x00ce_c19c), 0u32);
+        if call(mem, sym(mem, 0x0064_53d0), &[6, 0]) == 0
+            && (call(mem, sym(mem, 0x0071_6050), &[6, 0, a[2]]) == 0
+                || call(mem, sym(mem, 0x0064_5780), &[6, 0]) == 0)
+        {
+            call(mem, sym(mem, 0x0064_5280), &[6, 0]);
+            return;
+        }
+        let args = [6, 0, a[0], a[1], a[2], a[3], a[4], a[5], a[6]];
+        call(mem, sym(mem, 0x0071_dbd0), &args);
+        call(mem, sym(mem, 0x0064_58a0), &[6, 0]);
+    }
 }

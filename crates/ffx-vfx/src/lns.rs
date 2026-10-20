@@ -337,4 +337,31 @@ pub mod bridge {
         mem.write(d, v);
         call(mem, g(mem, LP_UPDATE), &[d])
     }
+
+    /// `pppKeLnsClmTOtDraw(area)` (`0x0075a610`): the `g_pppOtList` draw
+    /// `pppKeLnsClmTCon` registers: a descriptor at `frame - 0x30`
+    /// (`set_ptr32` of the area, of the area again at `+4`, the colour word
+    /// `+0x58` at `+8`, `g_pppScreenMatrix` at `+0xc`, the floats `+0x54`
+    /// and `+0x50` at `+0x10`, `+0x14`, the position `area +0x30` at
+    /// `+0x18`) to `KeLnsClm_Draw(desc, 4)`. Returns its eax.
+    pub fn ppp_ke_lns_clm_t_ot_draw<M: Mem>(
+        mem: &mut M,
+        area: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let d = frame.wrapping_sub(0x30);
+        let v = set_ptr32(mem, area, call);
+        mem.write(at(d, 0x14), copy(mem, at(area, 0x50)));
+        mem.write(d, v);
+        mem.write(at(d, 8), mem.read::<u32>(at(area, 0x58)));
+        mem.write(at(d, 0x10), copy(mem, at(area, 0x54)));
+        let v = set_ptr32(mem, g(mem, SCREEN_MATRIX), call);
+        mem.write(at(d, 0xc), v);
+        let v = set_ptr32(mem, area, call);
+        mem.write(at(d, 4), v);
+        let v = set_ptr32(mem, at(area, 0x30), call);
+        mem.write(at(d, 0x18), v);
+        call(mem, g(mem, 0x0076_96c0), &[d, 4])
+    }
 }

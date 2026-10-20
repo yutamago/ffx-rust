@@ -752,4 +752,26 @@ pub mod bridge {
         mem.write(at, v);
         cmd.wrapping_add(4)
     }
+
+    /// `0x00811050` (`opp_anmm_weapon_count`, ours): the counter byte of
+    /// the weapon of the sprite's part (`g_OpusWeaponCounter[w]`, `w` =
+    /// `opus_get_weapon_index_by_no(byte part +0x18)`, -1 for none takes the
+    /// byte before) up by one to at most 0x7f, or with flag bit 0x1000 down
+    /// by one to at least 0 (both from the signed byte). Returns `cmd + 2`.
+    pub fn weapon_count(mem: &mut impl Mem, host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        let no = u32::from(mem.read::<u16>(work.wrapping_add(0x4c)));
+        let part = (no << 8).wrapping_add(mem.read(set.wrapping_add(0x20)));
+        let chr = u32::from(mem.read::<u8>(part.wrapping_add(0x18)));
+        let w = crate::opus::bridge::opus_get_weapon_index_by_no(mem, chr);
+        let at = word(mem, 0x0119_fefc).wrapping_add(w.cast_unsigned());
+        let c = i32::from(mem.read::<i8>(at));
+        let c = if flags(mem, host) & 0x1000 == 0 {
+            (c + 1).min(0x7f)
+        } else {
+            (c - 1).max(0)
+        };
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // 0..=0x7f
+        mem.write(at, c as u8);
+        cmd.wrapping_add(2)
+    }
 }

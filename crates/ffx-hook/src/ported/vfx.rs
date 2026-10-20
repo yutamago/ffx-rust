@@ -1534,6 +1534,101 @@ ported! {
     opu_signal @ 0x0081_72b0 => extern "C" fn opu_signal(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_signal(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 33 b ----
+    /// `graphicVFXAddScreenFadeEvent(r, g, b, a, alpha)`.
+    graphicVFXAddScreenFadeEvent @ 0x0064_4d40 => extern "C" fn graphic_vfx_add_screen_fade_event(r: u32, g: u32, b: u32, a: u32, alpha: u32) -> u32 {
+        // the original's event local
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
+        small::bridge::graphic_vfx_add_screen_fade_event(&mut mem(), [r, g, b, a], alpha, at, &mut |_, f, this, a: &[u32]| {
+            // SAFETY: the engine's thiscall function of one stack word (`ret 4`).
+            unsafe {
+                let g: unsafe extern "thiscall" fn(u32, u32) -> u32 = std::mem::transmute(f as usize);
+                g(this, a.first().copied().unwrap_or(0))
+            }
+        })
+    }
+    /// `pppNoiseBlurDraw_007116d0(a0..a6)`.
+    pppNoiseBlurDraw_007116d0 @ 0x0071_16d0 => extern "C" fn ppp_noise_blur_draw(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32) {
+        small::bridge::ppp_noise_blur_draw(&mut mem(), [a0, a1, a2, a3, a4, a5, a6], &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppAkazaScrFltDraw_00711750(lo, hi, a, b)`.
+    pppAkazaScrFltDraw_00711750 @ 0x0071_1750 => extern "C" fn ppp_akaza_scr_flt_draw(lo: u32, hi: u32, a: u32, b: u32) {
+        small::bridge::ppp_akaza_scr_flt_draw(&mut mem(), lo, hi, a, b, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeParMatR(obj)`.
+    pppKeParMatR @ 0x0073_4880 => extern "C" fn ppp_ke_par_mat_r(obj: u32) {
+        // the original's local matrix and vector
+        let mut frame = super::StackFrame::<20>::new();
+        let at = frame.at();
+        mat::bridge::ppp_ke_par_mat_r(&mut mem(), obj, at, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeLnsClmTOtDraw(area)`: its stack locals in a buffer on this shim's
+    /// stack (the frame pointer at its end).
+    pppKeLnsClmTOtDraw @ 0x0075_a610 => extern "C" fn ppp_ke_lns_clm_t_ot_draw(area: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        lns::bridge::ppp_ke_lns_clm_t_ot_draw(&mut mem(), area, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_part_fp_init(part)`.
+    op_part_fp_init @ 0x0080_0700 => extern "C" fn op_part_fp_init(part: u32) -> u32 {
+        opus::bridge::op_part_fp_init(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_part_free(part)`.
+    op_part_free @ 0x0080_09c0 => extern "C" fn op_part_free(part: u32) -> u32 {
+        opus::bridge::op_part_free(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_motion_etc(host, cmd)`.
+    opu_motion_etc @ 0x0080_47b0 => extern "C" fn opu_motion_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_motion_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_blur_00807f90(host, cmd)`.
+    opu_blur_00807f90 @ 0x0080_7f90 => extern "C" fn opu_blur(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_blur(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_battle_0080aca0(host, cmd)`.
+    opu_et_battle_0080aca0 @ 0x0080_aca0 => extern "C" fn opu_et_battle(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_et_battle(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_eff_end_0080c490(host, cmd)`.
+    opu_eff_end_0080c490 @ 0x0080_c490 => extern "C" fn opu_eff_end(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_eff_end(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_anmm_weapon_count_00811050(host, set, cmd, work)`.
+    opp_anmm_weapon_count_00811050 @ 0x0081_1050 => extern "C" fn opp_anmm_weapon_count(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
+        anmm::bridge::weapon_count(&mut mem(), host, set, cmd, work)
+    }
+    /// `opp_flash(host)`.
+    opp_flash @ 0x0081_2fa0 => extern "C" fn opp_flash(host: u32) -> u32 {
+        opus::bridge::opp_flash(&mut mem(), host, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_et_ovl(host, cmd)`.
+    opu_et_ovl @ 0x0081_4790 => extern "C" fn opu_et_ovl(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_et_ovl(&mut mem(), host, cmd)
+    }
+    /// `opu_damage(host, cmd)`.
+    opu_damage @ 0x0081_5d90 => extern "C" fn opu_damage(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_damage(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_damage_motion(host, cmd)`.
+    opu_damage_motion @ 0x0081_5e10 => extern "C" fn opu_damage_motion(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_damage_motion(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_ground_branch_00817e60(host, cmd)`.
+    opu_ground_branch_00817e60 @ 0x0081_7e60 => extern "C" fn opu_ground_branch(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_ground_branch(&mut mem(), host, cmd, &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `opu_length_00817ee0(host, cmd)`.
+    opu_length_00817ee0 @ 0x0081_7ee0 => extern "C" fn opu_length(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_length(&mut mem(), host, cmd)
+    }
+    /// `opu_kind2_0081c460(host, cmd)`.
+    opu_kind2_0081c460 @ 0x0081_c460 => extern "C" fn opu_kind2(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_kind2(&mut mem(), host, cmd)
+    }
     /// `opu_end(obj, cmd)`.
     opu_end @ 0x0080_c3f0 => extern "C" fn opu_end(obj: u32, cmd: u32) -> u32 {
         opus::bridge::opu_end(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))

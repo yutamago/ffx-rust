@@ -949,4 +949,38 @@ pub mod bridge {
         VF_PAR.set(mem, out.map(f32::to_bits));
         out
     }
+
+    /// `pppKeParMatR(obj)` (`0x00734880`): the object's matrix `+0x10`
+    /// times its parent's rotation: the parent's (`get_ptr32(obj +4) +
+    /// 0x10`) rows 0..2 normalised (`FFXVu0Normalize`) into a local matrix
+    /// at `frame` (row 3 zero), `obj +0x40` moved by the parent's matrix
+    /// (`FFXVu0ApplyMatrix` into `frame + 0x40`, copied back), and `obj
+    /// +0x10 = FFXVu0MulMatrix(obj +0x10, local)` (through `call`).
+    pub fn ppp_ke_par_mat_r<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_ps2::vu0::bridge as vu0;
+        let m = ffx_system::stub::ptr32(mem.read(obj.wrapping_add(4))).wrapping_add(0x10);
+        for row in 0..3 {
+            vu0::normalize(
+                mem,
+                frame.wrapping_add(0x10 * row),
+                m.wrapping_add(0x10 * row),
+            );
+        }
+        mem.write(frame.wrapping_add(0x30), [0f32; 4]);
+        let pos = obj.wrapping_add(0x40);
+        let out = frame.wrapping_add(0x40);
+        vu0::apply_matrix(mem, out, m, pos);
+        let mine = obj.wrapping_add(0x10);
+        call(
+            mem,
+            Global::<u32>::new(0x006e_d5c0).ptr(mem).addr,
+            &[mine, frame, mine],
+        );
+        vu0::copy_vector(mem, pos, out);
+    }
 }
