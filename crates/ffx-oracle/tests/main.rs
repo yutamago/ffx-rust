@@ -6406,3 +6406,111 @@ fn light_color_snapshot() {
     let mut rng = Xorshift(0x5eed_0f15);
     light_color_cases(&mut a, &mut b, &mut rng, 60);
 }
+
+/// The pad entry draw callbacks over recorders (the 12-word font call
+/// through a logging stand-in), the entry's locked byte and kind random.
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn pad_entry_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::abmap::bridge as g;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 117, g::ADD_COMMAND_ICON_NAME, 5, 0);
+    recorder(a, b, 118, g::HELP_LINE_DRAW, 3, 0);
+    recorder(a, b, 119, g::SAVE_PLAYER_PTR, 1, 0);
+    recorder(a, b, 120, g::DIGIT_RIGHT, 6, 0);
+    let font_log = alloc(a, b, 4 + 0x30 * 8);
+    let (stub, _) = deref_logger(font_log, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], 0, 0, &[]);
+    redirect_to(a, b, g::ADD_MES_FONT, &stub);
+    let ab = alloc(a, b, 0x1_2000);
+    set(a, b, g::ABMAP, ab);
+    let player = block(a, b, rng, 0x40);
+    let entry = alloc(a, b, 0x10);
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, font_log, 0u32);
+        for k in [117, 118, 120] {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        let at = ret(a, 119);
+        put(a, b, at, player);
+        put(a, b, ab + 0x115b9, rng.next() as u8);
+        put(a, b, ab + 0x115bc, rng.next() as u8);
+        set(a, b, g::PACKET_POS, rng.next());
+        set(a, b, g::STAT_LAYOUT, rng.below(2) * rng.next());
+        put(a, b, entry, rng.next());
+        put(
+            a,
+            b,
+            entry + 4,
+            if rng.below(2) == 0 {
+                0u8
+            } else {
+                rng.next() as u8 | 1
+            },
+        );
+        put(
+            a,
+            b,
+            entry + 8,
+            if rng.below(4) == 0 {
+                rng.next()
+            } else {
+                rng.below(11)
+            },
+        );
+        let (x, y) = (rng.below(0x400), rng.below(0x400));
+        let args = [rng.next(), entry, rng.next(), x, y];
+        let locked = Mem::read::<u8>(a, entry + 4) != 0;
+        match n % 6 {
+            0 | 1 => {
+                let sym = if n % 6 == 0 { 0x00a4_f250 } else { 0x00a4_f9a0 };
+                if locked {
+                    // the caller's eax stays: nothing to compare
+                    twin("AbmapPadEntryDrawIcon", a, b, sym, &args, |m| {
+                        assert!(g::abmap_pad_entry_draw_icon(m, entry, x, y, call).is_none());
+                    });
+                } else {
+                    twin("AbmapPadEntryDrawIcon", a, b, sym, &args, |m| {
+                        g::abmap_pad_entry_draw_icon(m, entry, x, y, call).unwrap()
+                    });
+                }
+            }
+            2 => twin("AbmapPadEntryDrawText", a, b, 0x00a4_f9e0, &args, |m| {
+                g::abmap_pad_entry_draw_text(m, entry, x, y, call)
+            }),
+            3 => twin("AbmapPadEntryDrawHelp_e", a, b, 0x00a4_f930, &args, |m| {
+                g::abmap_pad_entry_draw_help(m, entry, x, y, 0xe, call)
+            }),
+            4 => twin("AbmapPadEntryDrawHelp_5", a, b, 0x00a4_fb70, &args, |m| {
+                g::abmap_pad_entry_draw_help(m, entry, x, y, 5, call)
+            }),
+            _ => twin("AbmapPadEntryDrawStat", a, b, 0x00a4_fa30, &args, |m| {
+                g::abmap_pad_entry_draw_stat(m, entry, x, y, call)
+            }),
+        }
+    }
+}
+
+#[test]
+fn pad_entry_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f16);
+    pad_entry_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn pad_entry_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f17);
+    pad_entry_cases(&mut a, &mut b, &mut rng, 120);
+}

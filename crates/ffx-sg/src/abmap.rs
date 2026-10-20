@@ -643,4 +643,175 @@ pub mod bridge {
             }
         }
     }
+
+    /// `g_PppPacketPos`: the packet write position the menu text goes to.
+    pub const PACKET_POS: Global<u32> = Global::new(0x0230_fd2c);
+    /// `TOAddPktCommandIconName_008f0590(pkt, command, x, y, colour)`.
+    pub const ADD_COMMAND_ICON_NAME: u32 = 0x008f_0590;
+    /// `TOAddPktBaseMesFontLAbmap(pkt, kind, text, x, y, ...)` (12 words).
+    pub const ADD_MES_FONT: u32 = 0x008e_8fb0;
+    /// `AbmapHelpLineDraw(text, x, y)`.
+    pub const HELP_LINE_DRAW: u32 = 0x00a5_94c0;
+    /// `MsGetSavePlayerPtr(chr)`.
+    pub const SAVE_PLAYER_PTR: u32 = 0x0078_5330;
+    /// `ToMakeBtlEasyDigitRightAbmap(n, x, y, d, sx, sy)`.
+    pub const DIGIT_RIGHT: u32 = 0x0090_5660;
+    /// The stat bytes of kinds 2..=9 in a save player record.
+    const STAT_BYTES: [u32; 8] = [0x2f, 0x33, 0x30, 0x34, 0x31, 0x35, 0x32, 0x36];
+    /// Non-zero for the wider stat column (`0x01a85f74`).
+    pub const STAT_LAYOUT: Global<u32> = Global::new(0x01a8_5f74);
+    /// `.rdata` `f32`: 0.8 and 0.5, the digits' scale.
+    const DIGIT_SCALE: [u32; 2] = [0x00b3_4254, 0x00b9_2194];
+
+    /// The menu text alpha (`g_Abmap[+0x115b9]`).
+    fn text_alpha(mem: &impl Mem) -> u32 {
+        u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115b9)))
+    }
+
+    /// `TOAddPktBaseMesFontLAbmap` at the packet position (+0x10), the
+    /// new position stored.
+    fn mes_font<M, C>(
+        mem: &mut M,
+        call: &mut C,
+        kind: u32,
+        text: u32,
+        x: u32,
+        y: u32,
+        a: u32,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let alpha = text_alpha(mem);
+        let pkt = PACKET_POS.get(mem).wrapping_add(0x10);
+        let f = mem.rebase(ADD_MES_FONT);
+        let end = call(
+            mem,
+            f,
+            &[pkt, kind, text, x, y, a, 0, 0x80, 0x80, 0x80, alpha, 0],
+        );
+        PACKET_POS.set(mem, end);
+        end
+    }
+
+    /// The pad entry draw callbacks (`panel +0x38`, called by
+    /// `AbmapPadCtrl`'s list as `f(panel, entry, index, x, y)`; no caller
+    /// reads their `eax`): `entry` holds the text (`+0`), a locked byte
+    /// (`+4`) and a kind (`+8`).
+    ///
+    /// `AbmapPadEntryDrawIcon(_, entry, _, x, y)` (`0x00a4f250`, and the
+    /// same code at `0x00a4f9a0`; names ours): unless locked, the
+    /// command's icon and name (`TOAddPktCommandIconName_008f0590(pos +
+    /// 0x10, [entry], x - 0x1c, y - 1, 0)`) at the packet position.
+    pub fn abmap_pad_entry_draw_icon<M, C>(
+        mem: &mut M,
+        entry: u32,
+        x: u32,
+        y: u32,
+        call: &mut C,
+    ) -> Option<u32>
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        if mem.read::<u8>(entry.wrapping_add(4)) != 0 {
+            return None;
+        }
+        let pkt = PACKET_POS.get(mem).wrapping_add(0x10);
+        let text: u32 = mem.read(entry);
+        let f = mem.rebase(ADD_COMMAND_ICON_NAME);
+        let end = call(
+            mem,
+            f,
+            &[pkt, text, x.wrapping_sub(0x1c), y.wrapping_sub(1), 0],
+        );
+        PACKET_POS.set(mem, end);
+        Some(end)
+    }
+
+    /// `AbmapPadEntryDrawText(_, entry, _, x, y)` (`0x00a4f9e0`, name
+    /// ours): the entry's text in font kind 7 at `(x + 10, y)`.
+    pub fn abmap_pad_entry_draw_text<M, C>(
+        mem: &mut M,
+        entry: u32,
+        x: u32,
+        y: u32,
+        call: &mut C,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let text: u32 = mem.read(entry);
+        mes_font(mem, call, 7, text, x.wrapping_add(0xa), y, 0)
+    }
+
+    /// `AbmapPadEntryDrawHelp(_, entry, _, x, y)` (`0x00a4f930` with
+    /// `dx` 14, `0x00a4fb70` with 5; names ours): a locked entry's text in
+    /// kind -1 at `(x + dx, y)`, else `AbmapHelpLineDraw(text, x + dx, y)`.
+    pub fn abmap_pad_entry_draw_help<M, C>(
+        mem: &mut M,
+        entry: u32,
+        x: u32,
+        y: u32,
+        dx: u32,
+        call: &mut C,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let x = x.wrapping_add(dx);
+        let text: u32 = mem.read(entry);
+        if mem.read::<u8>(entry.wrapping_add(4)) != 0 {
+            mes_font(mem, call, u32::MAX, text, x, y, 1)
+        } else {
+            let f = mem.rebase(HELP_LINE_DRAW);
+            call(mem, f, &[text, x, y])
+        }
+    }
+
+    /// `AbmapPadEntryDrawStat(_, entry, _, x, y)` (`0x00a4fa30`, name
+    /// ours): the entry's name (`AbmapHelpLineDraw(text, x - 15, y)`) and
+    /// the current character's (`g_Abmap[+0x115bc]`, `MsGetSavePlayerPtr`)
+    /// stat by the entry's kind (`+8`): 0, 1 the words `+0x24`, `+0x28`;
+    /// 2..=9 the bytes `+0x2f, +0x33, +0x30, +0x34, +0x31, +0x35, +0x32,
+    /// +0x36`; another kind shows `x` itself. Its digits at `(f32(x + 0x30
+    /// or 0x50 with 0x01a85f74 clear), f32(y - 1))`, scale 0.8, 0.5.
+    pub fn abmap_pad_entry_draw_stat<M, C>(
+        mem: &mut M,
+        entry: u32,
+        x: u32,
+        y: u32,
+        call: &mut C,
+    ) -> u32
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let chr = u32::from(mem.read::<u8>(ABMAP.get(mem).wrapping_add(0x115bc)));
+        let f = mem.rebase(SAVE_PLAYER_PTR);
+        let player = call(mem, f, &[chr]);
+        let text: u32 = mem.read(entry);
+        let f = mem.rebase(HELP_LINE_DRAW);
+        call(mem, f, &[text, x.wrapping_sub(0xf), y]);
+        let kind: u32 = mem.read(entry.wrapping_add(8));
+        let value = match kind {
+            0 => mem.read(player.wrapping_add(0x24)),
+            1 => mem.read(player.wrapping_add(0x28)),
+            2..=9 => u32::from(mem.read::<u8>(player.wrapping_add(STAT_BYTES[kind as usize - 2]))),
+            _ => x,
+        };
+        let [sx, sy] = DIGIT_SCALE.map(|a| x87::store(x87::load(mem.read(mem.rebase(a)))));
+        let fy = x87::store(f64::from(y.wrapping_sub(1).cast_signed()));
+        let dx = if STAT_LAYOUT.get(mem) != 0 {
+            0x30
+        } else {
+            0x50
+        };
+        let fx = x87::store(f64::from(x.wrapping_add(dx).cast_signed()));
+        let f = mem.rebase(DIGIT_RIGHT);
+        call(mem, f, &[value, fx, fy, 0, sx, sy])
+    }
 }

@@ -1718,6 +1718,31 @@ ported! {
     Sg_LightSetColor @ 0x0083_6310 => extern "C" fn sg_light_set_color(kind: u32, rgba: u32) -> u32 {
         light::bridge::sg_light_set_color(&mut mem(), kind, rgba)
     }
+    // Round 15: the sphere grid pad entry draw callbacks (no caller reads eax).
+    /// `AbmapPadEntryDrawIcon(panel, entry, index, x, y)`.
+    AbmapPadEntryDrawIcon @ 0x00a4_f250 => extern "C" fn abmap_pad_entry_draw_icon(_p: u32, entry: u32, _i: u32, x: u32, y: u32) -> u32 {
+        abmap::bridge::abmap_pad_entry_draw_icon(&mut mem(), entry, x, y, &mut |_, f, a| super::call_cdecl(f, a)).unwrap_or(0)
+    }
+    /// `AbmapPadEntryDrawIcon_copy_00a4f9a0(panel, entry, index, x, y)`.
+    AbmapPadEntryDrawIcon_copy_00a4f9a0 @ 0x00a4_f9a0 => extern "C" fn abmap_pad_entry_draw_icon_copy(_p: u32, entry: u32, _i: u32, x: u32, y: u32) -> u32 {
+        abmap::bridge::abmap_pad_entry_draw_icon(&mut mem(), entry, x, y, &mut |_, f, a| super::call_cdecl(f, a)).unwrap_or(0)
+    }
+    /// `AbmapPadEntryDrawText(panel, entry, index, x, y)`.
+    AbmapPadEntryDrawText @ 0x00a4_f9e0 => extern "C" fn abmap_pad_entry_draw_text(_p: u32, entry: u32, _i: u32, x: u32, y: u32) -> u32 {
+        abmap::bridge::abmap_pad_entry_draw_text(&mut mem(), entry, x, y, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `AbmapPadEntryDrawHelp_e(panel, entry, index, x, y)`.
+    AbmapPadEntryDrawHelp_e @ 0x00a4_f930 => extern "C" fn abmap_pad_entry_draw_help_e(_p: u32, entry: u32, _i: u32, x: u32, y: u32) -> u32 {
+        abmap::bridge::abmap_pad_entry_draw_help(&mut mem(), entry, x, y, 0xe, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `AbmapPadEntryDrawHelp_5(panel, entry, index, x, y)`.
+    AbmapPadEntryDrawHelp_5 @ 0x00a4_fb70 => extern "C" fn abmap_pad_entry_draw_help_5(_p: u32, entry: u32, _i: u32, x: u32, y: u32) -> u32 {
+        abmap::bridge::abmap_pad_entry_draw_help(&mut mem(), entry, x, y, 5, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `AbmapPadEntryDrawStat(panel, entry, index, x, y)`.
+    AbmapPadEntryDrawStat @ 0x00a4_fa30 => extern "C" fn abmap_pad_entry_draw_stat(_p: u32, entry: u32, _i: u32, x: u32, y: u32) -> u32 {
+        abmap::bridge::abmap_pad_entry_draw_stat(&mut mem(), entry, x, y, &mut |_, f, a| super::call_cdecl(f, a))
+    }
     /// `sa_meth01dec(src, dst, size)`.
     sa_meth01dec @ 0x00a4_3bc0 => extern "C" fn sa_meth01dec(src: u32, dst: u32, size: u32) -> u32 {
         decode::bridge::sa_meth01dec(&mut mem(), src, dst, size)
