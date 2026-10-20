@@ -4464,6 +4464,206 @@ pub mod bridge {
         r
     }
 
+    /// `TkMn2RefreshWeaponShopSell()` (`0x008d9550`, `kind` `0x13`) and
+    /// `TkMn2RefreshWeaponShopSell2()` (`0x008d9560`, `0x15`):
+    /// `TkMn2RefreshList(kind)`.
+    pub fn tk_mn2_refresh_weapon_shop_sell<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = mem.rebase(0x008c_2360);
+        call(mem, f, &[kind]);
+    }
+
+    /// `MenuWShop_OpenSellWindow()` (`0x008da950`): the weapon shop's
+    /// inventory window, kept in the second [`TUTO_WINDOWS`] slot
+    /// (`0x0186ac38`): the list `TkMn2RefreshList(7)`, callbacks `+0xc`
+    /// `0x008d9df0`, `+0x10` `0x008da470`, `+0x14` `0x008dab00`, `+0x1c`
+    /// `MenuWShop_UsableByte`; `+0x3e` 3, `+0x36` 3, rows from
+    /// `TkMn2GetListMax`, 10 visible; registered. Returns the window.
+    pub fn menu_wshop_open_sell_window<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        let f = mem.rebase(0x008c_2360);
+        call(mem, f, &[7]);
+        put_code(mem, w + 0xc, 0x008d_9df0);
+        put_code(mem, w + 0x10, 0x008d_a470);
+        put_code(mem, w + 0x14, 0x008d_ab00);
+        put_code(mem, w + 0x1c, 0x008d_9b00);
+        mem.write(w + 0x3e, 3u8);
+        mem.write(w + 0x36, 3u8);
+        mem.write(w + 0x48, 0u16);
+        mem.write(w + 0x32, 0u32);
+        mem.write(w + 0x42, 1u8);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = tk_mn2_get_list_max(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x3a, 10u16);
+        mem.write(w + 0x45, 0u8);
+        mem.write(w + 0x37, 0u8);
+        TUTO_WINDOWS[1].set(mem, w);
+        tk_menu_main_regist_window(mem, w, call);
+        w
+    }
+
+    /// `MenuKaizou_OpenListWindow(k)` (`0x008d6ce0`): the customise menu's
+    /// second window ([`KAIZOU_WINDOW2`]) over `MenuKaizou_BuildList(k)`:
+    /// callbacks `MenuKaizou_WindowIdle`, `0x008d5810`,
+    /// `DrawGearCustomizationMenu`, `0x008d6e20`, `+0x1c`
+    /// `MenuKaizou_ItemUsable`; `+0x3e` `0x203`, `+0x58` = `k`, rows from
+    /// `TkMn2GetNameModeMax` (the missing ones not shown), `+0x36` 3, 9
+    /// visible. Returns the registration's `eax`.
+    pub fn menu_kaizou_open_list_window<M: Mem>(
+        mem: &mut M,
+        k: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        let f = mem.rebase(0x008d_6dd0);
+        call(mem, f, &[k]);
+        put_code(mem, w + 8, 0x008d_56d0);
+        put_code(mem, w + 0xc, 0x008d_5810);
+        put_code(mem, w + 0x10, 0x008d_5f60);
+        put_code(mem, w + 0x14, 0x008d_6e20);
+        put_code(mem, w + 0x1c, 0x008d_5730);
+        mem.write(w + 0x3e, 0x203u16);
+        mem.write(w + 0x48, 0u16);
+        mem.write(w + 0x32, 0u32);
+        mem.write(w + 0x42, 1u8);
+        mem.write(w + 0x58, k);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = tk_mn2_get_name_mode_max(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x36, 3u16);
+        mem.write(w + 0x3a, 9u16);
+        let r = tk_menu_main_regist_window(mem, w, call);
+        KAIZOU_WINDOW2.set(mem, w);
+        r
+    }
+
+    /// `MenuEquip_OpenWeaponWindow(a, kind)` (`0x008cfc90`): the equipment
+    /// menu's list ([`EQUIP_WINDOW`]) over `MenuWeapon_BuildKindList(a,
+    /// kind)`: rows the `u16` of `g_TkMenuWeaponKindCount`, 5 visible;
+    /// callbacks `MenuEquip_WindowIdle`, `TkMenuListWindowCtrl_008b44b0`,
+    /// `0x008cf9f0`, `0x008cfd60`, `+0x1c` `0x008cf960`; `+0x3e` `0x201`,
+    /// `+0x4a` `0x1d`, `+0x36` 3, `+0x4c` 50. Returns the registration's
+    /// `eax`.
+    pub fn menu_equip_open_weapon_window<M: Mem>(
+        mem: &mut M,
+        a: u32,
+        kind: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        let f = mem.rebase(0x008c_fd20);
+        call(mem, f, &[a, kind]);
+        mem.write(w + 0x32, 0u32);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = MENU_WEAPON_KIND_COUNT.get(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x3a, 5u16);
+        put_code(mem, w + 0xc, 0x008b_44b0);
+        put_code(mem, w + 0x10, 0x008c_f9f0);
+        put_code(mem, w + 0x14, 0x008c_fd60);
+        put_code(mem, w + 0x1c, 0x008c_f960);
+        mem.write(w + 0x3e, 0x201u16);
+        mem.write(w + 0x48, 0x001d_0000u32);
+        mem.write(w + 0x42, 1u8);
+        put_code(mem, w + 8, 0x008c_f950);
+        mem.write(w + 0x36, 3u16);
+        mem.write(w + 0x4c, 0x32u16);
+        let r = tk_menu_main_regist_window(mem, w, call);
+        EQUIP_WINDOW.set(mem, w);
+        r
+    }
+
+    /// The overdrive menu's saved scroll and cursor per character (`u16`
+    /// in 4-byte entries, `MenuLimit_OpenModeWindow`).
+    pub const LIMIT_SCROLLS: Global<u32> = Global::new(0x0186_a7a0);
+    /// See [`LIMIT_SCROLLS`].
+    pub const LIMIT_CURSORS: Global<u32> = Global::new(0x0186_a7e0);
+
+    /// `MenuLimit_OpenModeWindow(chr)` (`0x008d0dd0`): the overdrive
+    /// menu's mode list ([`LIMIT_WINDOW2`]) over `TkMn2RefreshList(1)`:
+    /// callbacks `MenuLimit_WindowIdle`, `0x008d0e90`, `0x008d16f0`,
+    /// `0x008d1bb0`, no `+0x1c`; `+0x3e` `0x201`, `+0x58` = `chr`, `+0x45`
+    /// `0xff`, rows from `TkMn2GetListMax`, `+0x36` 3, 7 visible; scroll
+    /// `+0x32`/`+0x34` and cursor `+0x48` from `chr`'s [`LIMIT_SCROLLS`]
+    /// and [`LIMIT_CURSORS`] entries. Returns the registration's `eax`.
+    pub fn menu_limit_open_mode_window<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = open_window(mem);
+        let f = mem.rebase(0x008c_2360);
+        call(mem, f, &[1]);
+        put_code(mem, w + 0xc, 0x008d_0e90);
+        put_code(mem, w + 0x10, 0x008d_16f0);
+        put_code(mem, w + 0x14, 0x008d_1bb0);
+        mem.write(w + 0x1c, 0u32);
+        mem.write(w + 0x3e, 0x201u16);
+        mem.write(w + 0x48, 0u16);
+        mem.write(w + 0x32, 0u32);
+        mem.write(w + 0x42, 1u8);
+        mem.write(w + 0x58, chr);
+        mem.write(w + 0x45, 0xffu8);
+        mem.write(w + 0x5c, 0u32);
+        put_code(mem, w + 8, 0x008d_0e80);
+        #[allow(clippy::cast_possible_truncation)]
+        let rows = tk_mn2_get_list_max(mem) as u16;
+        mem.write(w + 0x30, rows);
+        mem.write(w + 0x36, 3u16);
+        mem.write(w + 0x3a, 7u16);
+        let at = chr.wrapping_mul(4);
+        let scroll: u16 = mem.read(LIMIT_SCROLLS.ptr(mem).addr.wrapping_add(at));
+        mem.write(w + 0x32, scroll);
+        mem.write(w + 0x34, scroll);
+        let cursor: u16 = mem.read(LIMIT_CURSORS.ptr(mem).addr.wrapping_add(at));
+        mem.write(w + 0x48, cursor);
+        let r = tk_menu_main_regist_window(mem, w, call);
+        LIMIT_WINDOW2.set(mem, w);
+        r
+    }
+
+    /// `BtlEnd_CountApStep_008ba4e0(chr, mark)` (`0x008ba4e0`): one step
+    /// of the battle-end AP count-up: at sphere level 99 or more
+    /// (`BtlEnd_GetSP`) the rest (`SetTable_02310f20(chr, 0)`) is dropped
+    /// and 0 returned; otherwise `BtlEnd_ApStep(chr)` AP (at most the rest,
+    /// `BtlEnd_GetResult(chr)`) go to `BtlEnd_AddAP_008bdaf0(chr, step,
+    /// mark)` and the rest shrinks. Returns 1 while AP were left over.
+    pub fn btl_end_count_ap_step<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mark: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let f = fun(mem, 0x008b_a3c0);
+        let mut step = call(mem, f, &[chr]);
+        let f = fun(mem, 0x008b_da10);
+        let rest = call(mem, f, &[chr]);
+        let f = fun(mem, 0x008b_da50);
+        let level = call(mem, f, &[chr]).cast_signed();
+        let set = fun(mem, 0x008b_dfc0);
+        if level >= 0x63 {
+            call(mem, set, &[chr, 0]);
+            return 0;
+        }
+        let mut more = 1;
+        if step.cast_signed() >= rest.cast_signed() {
+            step = rest;
+            more = 0;
+        }
+        let f = fun(mem, 0x008b_daf0);
+        call(mem, f, &[chr, step, mark]);
+        call(mem, set, &[chr, rest.wrapping_sub(step)]);
+        more
+    }
+
     /// The sub-command window openers (`0x008e33d0`
     /// `TkMenuOpenSubCmdWindowMain`, `0x008e3470`, `0x008e3510`,
     /// `0x008e35b0`): kept in `0x023cc120`; 2 rows of 2, cursor 1, `+0x37`

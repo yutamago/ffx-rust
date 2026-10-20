@@ -14637,3 +14637,99 @@ fn menu_round29_list_wrappers_config_rows_and_btl_end_match_the_original() {
     assert!(k > 100, "{k} kicks");
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round29_list_windows_and_ap_step_match_the_original() {
+    let Some(mut t) = setup_any(0x0029_0004) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    seq_stub(&mut t, 0x008c_2360, log, 1, &[]);
+    seq_stub(&mut t, 0x008d_6dd0, log, 1, &[]);
+    seq_stub(&mut t, 0x008c_fd20, log, 2, &[]);
+    let step = seq_stub(&mut t, 0x008b_a3c0, log, 1, &[]);
+    let rest = seq_stub(&mut t, 0x008b_da10, log, 1, &[]);
+    let level = seq_stub(&mut t, 0x008b_da50, log, 1, &[]);
+    seq_stub(&mut t, 0x008b_dfc0, log, 2, &[]);
+    seq_stub(&mut t, 0x008b_daf0, log, 3, &[]);
+    let base = t.sym(tk::MENU_WINDOWS.sym);
+    for round in 0..300u32 {
+        t.put(log, start);
+        if round % 10 == 0 {
+            t.scramble(tk::MENU_WINDOWS.sym, 0x98 * 32);
+            t.scramble(tk::LIMIT_SCROLLS.sym, 0x80);
+        }
+        let free = t.rng.below(32);
+        for j in 0..32 {
+            t.put(base + j * 0x98 + 0x40, u8::from(j != free));
+        }
+        for g in [
+            tk::MN2_LIST_MAX.sym,
+            tk::MN2_NAME_MODE_MAX.sym,
+            tk::MENU_WEAPON_KIND_COUNT.sym,
+        ] {
+            let v = t.rng.next();
+            t.put(t.sym(g), v);
+        }
+        let arg = t.rng.pick(&[0u32, 1, 3, 7, 15, 0x100, 0xffff_ffff]);
+        let kind = t.rng.next();
+        match round % 7 {
+            0 => t.twin("TkMn2RefreshWeaponShopSell", 0x008d_9550, &[], VOID, |o| {
+                tk::tk_mn2_refresh_weapon_shop_sell(o, 0x13, &mut callback);
+                0
+            }),
+            1 => t.twin("TkMn2RefreshWeaponShopSell2", 0x008d_9560, &[], VOID, |o| {
+                tk::tk_mn2_refresh_weapon_shop_sell(o, 0x15, &mut callback);
+                0
+            }),
+            2 => t.twin("MenuWShop_OpenSellWindow", 0x008d_a950, &[], U32, |o| {
+                w(tk::menu_wshop_open_sell_window(o, &mut callback))
+            }),
+            3 => t.twin("MenuKaizou_OpenListWindow", 0x008d_6ce0, &[arg], U32, |o| {
+                w(tk::menu_kaizou_open_list_window(o, arg, &mut callback))
+            }),
+            4 => t.twin(
+                "MenuEquip_OpenWeaponWindow",
+                0x008c_fc90,
+                &[kind, arg],
+                U32,
+                |o| {
+                    w(tk::menu_equip_open_weapon_window(
+                        o,
+                        kind,
+                        arg,
+                        &mut callback,
+                    ))
+                },
+            ),
+            5 => t.twin("MenuLimit_OpenModeWindow", 0x008d_0dd0, &[arg], U32, |o| {
+                w(tk::menu_limit_open_mode_window(o, arg, &mut callback))
+            }),
+            _ => {
+                let s = t
+                    .rng
+                    .pick(&[0u32, 1, 5, 100, 0x7fff_ffff, 0xffff_ffff, 0x8000_0000]);
+                let r = t
+                    .rng
+                    .pick(&[0u32, 1, 5, 100, 0x7fff_ffff, 0xffff_ffff, 0x8000_0000]);
+                let r = if t.rng.below(3) == 0 { s } else { r };
+                t.put(step, s);
+                t.put(rest, r);
+                let l = t
+                    .rng
+                    .pick(&[0x62u32, 0x63, 0x64, 0, 0xffff_ffff, 0x8000_0000]);
+                t.put(level, l);
+                let (chr, mark) = (t.rng.below(8), t.rng.next());
+                t.twin(
+                    "BtlEnd_CountApStep_008ba4e0",
+                    0x008b_a4e0,
+                    &[chr, mark],
+                    U32,
+                    |o| w(tk::btl_end_count_ap_step(o, chr, mark, &mut callback)),
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

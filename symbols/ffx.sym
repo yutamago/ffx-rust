@@ -10851,6 +10851,7 @@
 0x008ba3a0 function BtlEnd_AddGil             # (gil): jmp MsPayGIL(-gil); caller 0x008ba590 (battle results gil); name ours
 0x008ba3c0 function BtlEnd_ApStep             # (chr) the same step for MsGetNextAP; own name
 0x008ba400 function BtlEnd_CompactList        # entries (14 bytes from 0x01869f20, count u8 0x01869f18) with +9 set swapped to the front, +2 stays; at most 3; own name
+0x008ba4e0 function BtlEnd_CountApStep_008ba4e0 # (chr, mark), eax = 1 while AP are left: sphere level (BtlEnd_GetSP) >= 99: SetTable_02310f20(chr, 0), 0; else step = BtlEnd_ApStep(chr) capped at the rest BtlEnd_GetResult(chr) (signed; capped: 0), BtlEnd_AddAP_008bdaf0(chr, step, mark), SetTable_02310f20(chr, rest - step); caller 0x008ba550; ported in menu round 29; name ours
 0x008ba590 function BtlEnd_StepGil            # (): step [0x01869f10] (or the whole rest [0x01869f14] when not below it, unsigned) off the rest, paid with BtlEnd_AddGil (MsPayGIL(-x)): so g_TkBtlEndGil counts gil; returns 1 while some remains; name ours
 0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420; (), eax = count: the six weapon spoil slots (u16 0x02310f8e) whose MsGetSaveWeapon record is in use (+2) with flags +3 & 0xd; exactly one: its name (MsGetSaveWeaponName) as macro 7's value (TOMacroSetType/Value(7, 0, ..), TOResetMessageVars(7)) and TkBtlEndGetText(0x401b), else 0x401c, into g_BtlEndLegendText; ported in menu round 29
 0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620
@@ -11179,6 +11180,7 @@
 0x008cf950 function MenuEquip_WindowIdle      # (window) +0x28 = 0 (window +8 callback); own name
 0x008cf970 function TkMenuEquipCloseWindow    # (): close request for 0x0186a61c (TkMenuCtrlEquip's), forget it
 0x008cfc30 function MenuEquip_IsAltMode       # 0x0186a624 != 0; own name
+0x008cfc90 function MenuEquip_OpenWeaponWindow # (a, kind): window (TkMenuMainAllocWindow) over MenuWeapon_BuildKindList(a, kind): rows u16 g_TkMenuWeaponKindCount, 5 visible, callbacks MenuEquip_WindowIdle/TkMenuListWindowCtrl_008b44b0/0x008cf9f0/0x008cfd60, +0x1c 0x008cf960, +0x3e 0x201, +0x48 0x1d0000, +0x36 3, +0x4c 50; registered, kept at 0x0186a61c; eax = registration's; caller TkMenuCtrlEquip; ported in menu round 29; name ours
 0x008cfd20 function MenuWeapon_BuildKindList # (_, kind): TkMn2BuildItemList_008c2390(0x14, kind) via the thunk 0x008c2380 (the current character's weapons of kind), g_TkMenuWeaponKindCount = TkMn2GetListMax(), returned; ported in menu round 29; name ours
 0x008cfd40 function TkMenuEquipClearWindow    # (): 0x0186a61c +0x45 = 0, +0x28 = 0
 0x008cfd70 function TkMn2ArmsRefreshArms         # callees: its named callees match the Switch 0x71004b69a0 TkMn2ArmsRefreshArms's (similarity 1.00: AtelChangeCurrentCtrl, AtelGetBasicWork, AtelGetBindPC, AtelGetTotalActorNumber2, AtelSetCurrentCtrl); symbols from Fahrenheit's server export
@@ -11189,6 +11191,7 @@
 0x008d0c90 function TkMenuLimitCloseWindow    # (): close request for 0x0186a714 (TkMenuCtrlLimit's), forget it
 0x008d0cb0 function TkMenuLimitCloseWindow2   # (): close request for 0x0186a718 (TkMenuCtrlLimit's), forget it
 0x008d0d50 function MenuLimit_OpenWindow      # (arg) window 0x0186a714: MenuLimit_WindowIdle, 0x008d0e90, 0x008d16f0, 0x008d1bb0; rows TkMn2GetListMax, 7 visible; own name
+0x008d0dd0 function MenuLimit_OpenModeWindow # (chr): window over TkMn2RefreshList(1) (overdrive modes): callbacks MenuLimit_WindowIdle/0x008d0e90/0x008d16f0/0x008d1bb0, +0x3e 0x201, +0x58 chr, +0x45 0xff, rows TkMn2GetListMax, +0x36 3, 7 visible, scroll +0x32/+0x34 = u16 [0x0186a7a0 + 4 chr], cursor +0x48 = u16 [0x0186a7e0 + 4 chr]; registered, kept at 0x0186a718; caller TkMenuCtrlLimit; ported in menu round 29; name ours
 0x008d0e80 function MenuLimit_WindowIdle      # (window) +0x28 = 0; own name
 0x008d0eb0 function TkMn2CtrlSelItemsWindow  # layout+callees: sorts between TkMn2ArmsRefreshArms and TkMn2DrawSelItemsHelp, and its named callees match the Switch 0x71004d3a50 TkMn2CtrlSelItemsWindow's (similarity 0.71: SndSepPlaySimple, TOMenuGetControlPad, TOMenuGetControlPadRep, TOMenuGetControlPadTrg, TkMn2DrawSelItemsHelp); symbols from Fahrenheit's server export; (w): two-column selection window state machine (+0x28, jump table 0x008d13b4): cursor i16 +0x48 (bit 0 = column), confirm via +0x1c, page scroll 0x111, row scroll 0x333; ported in menu round 28
 0x008d15a0 function MenuSelList_DrawCursor   # (window): TkMn2DrawCrossCursor(f32(MenuSelList_CursorX(window)), f32(remapY2(493) + remapY2(77) * f32((i16 +0x48 >> 1) - i16 +0x32)), 0) (eax); caller 0x008d1400; ported in menu round 25; name ours
@@ -11247,6 +11250,7 @@
 0x008d6560 function MenuKaizou_DrawRows      # (window, fixed, first, _, y): MenuKaizou_DrawRow for rows first-1..first+10 at f32 remapX2(209), y = f32(remapY2(244) + f32 y) then += remapY2(75); caller 0x008d5d50; ported in menu round 24; name ours
 0x008d6660 function MenuKaizou_DrawWeaponTitle # (x, y, i): TODrawMenuPlateXYWHType(f32 x, f32 y, remapX2(740), remapY2(60), 5); name of MsGetSaveWeapon(u16 [0x0186aa38][i]) centred: ToGetBtlEasyFontWidth(name, &w, 0, 0.78, 1), ToMakeBtlEasyFont(name, f32(remapX2(370) + x - w/2), f32(remapY2(8) + y), 0, 0.78, 1); caller DrawGearCustomizationMenu; ported in menu round 24; name ours
 0x008d6760 function MenuKaizou_DrawRow       # (window, x, y, row, fixed): MenuWeapon_DrawRow for the customise list u16 [0x0186aa38] (scroll line remapY2(75)); name only when the MsGetSaveWeapon record has +2 and not +3 bit 1, colour = !MenuEquip_IsSelectable(id, 0); caller 0x008d6560; ported in menu round 24; name ours
+0x008d6ce0 function MenuKaizou_OpenListWindow # (k): window over MenuKaizou_BuildList(k): callbacks MenuKaizou_WindowIdle/0x008d5810/DrawGearCustomizationMenu/0x008d6e20, +0x1c MenuKaizou_ItemUsable, +0x3e 0x203, +0x58 k, rows TkMn2GetNameModeMax, +0x36 3, 9 visible; registered, kept at 0x0186aa34; caller UpdateGearCustomizationMenuState; ported in menu round 29; name ours
 0x008d6d60 function MenuKaizou_OpenWindow     # (): TkMenuMainAllocWindow: +8 0x008d56e0, +0xc UpdateGearCustomizationMenuState, +0x10 0x008d6860, +0x14 0x008d6e30, +0x1c 0x008d57a0, +0x48/+0x32 0, +0x30 u16 0x0186aa3c, +0x3e u16 0x101, +0x42 1, +0x36 u16 3, +0x3a 9; registered, then kept in 0x0186aa30; returns the registration's result; caller 0x008d5540; name ours
 0x008d6dd0 function MenuKaizou_BuildList     # (k): TkMn2BuildItemList_008c2390(5, MsGetSaveWeapon(u16 [0x0186aa38][k], &local)) via the thunk 0x008c2380: the customisations for the customise list's weapon k; ported in menu round 29; name ours
 0x008d6e00 function MenuKaizou_RestartWindow2 # TkMenuRestartSelFileWindow(0x0186aa34); own name
@@ -11279,6 +11283,8 @@
 0x008d9370 function MenuShop_WeaponPrice      # (entry): AbmapScaledLevelValue(sum of the abilities' TkMn2GetExcelData(id, [0x0186aba4]) first words, slots, empty slots) * shop ratio (0x01326b6c) / 100, at least 1; name ours
 0x008d9410 function MenuShop_WeaponSellPrice  # (entry): AbmapQuarterOrOne([0x0186ab1c], the MenuShop_WeaponPrice base value); 0 with flags +3 & 0xd; name ours
 0x008d94a0 function MenuWShop_InitList       # (): 0x0186ab14 = 1 when an owned weapon (MsGetSaveWeaponList(-1, -1, 0, &n)) has byte +2 zero (MsGetSaveWeapon); then for the u16 ids from +2 of TkMn2GetExcelData(0x0186ab1c, 0x0186aba8) up to 0 or 16: MenuWShop_GetRecord(id) byte +6 = 0xff, MsSetWeaponName; count -> 0x0186ab10; caller 0x008d6e40; ported in menu round 27; name ours
+0x008d9550 function TkMn2RefreshWeaponShopSell # fh switch:bsim1.00 0x71004e9600 (name in the Ghidra dump); (): TkMn2RefreshList(0x13); ported in menu round 29
+0x008d9560 function TkMn2RefreshWeaponShopSell2 # fh switch:bsim1.00 0x71004e9610 (name in the Ghidra dump); (): TkMn2RefreshList(0x15); ported in menu round 29
 0x008d9580 function MenuWShop_InitCursor      # (window) cursor +0x48 on the first usable item, scroll +0x32/+0x34 centred and clamped; own name
 0x008d9600 function TkMenuCtrlWShop           # fh v3:exact 0x008d95d0
 0x008d9ad0 function Set_g_TkMenuWShopList_008d9ad0 # auto-port shape (store argument to global, cdecl): u32[&0x0186ac20] = a1; return a1; callers: no direct caller; name ours
@@ -11293,6 +11299,7 @@
 0x008da7a0 function MenuWShop_Start           # (): MenuWShop_OpenWindow3(), the command window as MenuWShop_OpenCommandWindow, tutorial windows 0x0186ac34/38 = 0; returns TkMenuOpenSubCmdWindowRect s result; caller TkMenuCtrlWShop; ported in menu round 23; name ours
 0x008da860 function MenuShop_OpenBuyWindow    # (parent): item shop buy-amount window into 0x0186ac3c (TkMenuWShopCloseWindow): +0xc 0x008d9bd0, +0x10 0x008d9fe0, +0x14 0x008daae0, +0x3e 4, +0x36 3, +0x58 parent, +0x5c id = u16 TkMn2GetExcelData(g_TkMenuWShopList, [0x0186ac2c]) [+2 + 2*i16 parent+0x48], +0x60 MenuShop_Price(id), +0x64 MsGetSaveItemNum(id), +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
 0x008da8f0 function MenuWShop_OpenSelWindow   # (): TkMenuMainAllocWindow into 0x0186ac34: +0xc 0x008d9da0, +0x10 0x008da050, +0x14 0x008daaf0, +0x48/+0x32 = 0, +0x30 = u16 0x0186ac24, +0x3e 3, +0x34 0x30000, +0x42 1, +0x3a 10, +0x45 -1; registered, returned; caller TkMenuCtrlWShop; name ours
+0x008da950 function MenuWShop_OpenSellWindow # (): window over TkMn2RefreshList(7) (the inventory): callbacks +0xc 0x008d9df0, +0x10 0x008da470, +0x14 0x008dab00, +0x1c MenuWShop_UsableByte, +0x3e 3, +0x36 3, rows TkMn2GetListMax, 10 visible; kept at 0x0186ac38 (g_TkMenuTutoWindows+4), registered; returns it; caller TkMenuCtrlWShop; ported in menu round 29; name ours
 0x008da9c0 function MenuWShop_OpenWindow3     # (): TkMenuMainAllocWindow into 0x0186ac30 (TkMenuWShopCloseWindow3's): +0xc 0x008d9e10, +0x10 0x008da6b0, +0x14 0x008dab10, +0x3e = 2, +0x36 = 3; registered, returned; caller 0x008da7a0; name ours
 0x008daa00 function MenuShop_OpenSellWindow   # (parent): item shop sell window into 0x0186ac40 (TkMenuWShopCloseWindow2): +0xc 0x008d9e20, +0x10 0x008da730, +0x14 0x008dab20, +0x3e 4, +0x36 3, +0x58 parent, +0x5c id = u16 g_TkMenuItemList[i16 parent+0x48], +0x60 MenuShop_SellPrice(id), +0x64 MsGetSaveItemNum(id), +0x68 MsGetGIL(), u16 +0x48 1; registered, returned; own name
 0x008daaa0 function MenuTuto_RestartWindow    # TkMenuRestartSelFileWindow(0x0186ac34); own name
@@ -17135,6 +17142,8 @@
 0x0186a620 label g_TkMenuWeaponKindCount  # u32: entries of the weapon kind list (MenuWeapon_BuildKindList); name ours
 0x0186a624 label    g_TkMenuEquipAltMode      # toggled in TkMenuCtrlEquip (MenuEquip_IsAltMode)
 0x0186a630 label    g_TkMenuEquipItem         # MenuEquip_PickItem
+0x0186a7a0 label g_TkMenuLimitScrolls     # u16 in 4-byte entries per character: the overdrive mode list's scroll (MenuLimit_OpenModeWindow); name ours
+0x0186a7e0 label g_TkMenuLimitCursors     # u16 in 4-byte entries per character: the overdrive mode list's cursor (MenuLimit_OpenModeWindow); name ours
 0x0186a820 label    g_TkMenuStatusWindows     # status menu windows by index (MenuStatus_CloseWindow)
 0x0186a86c label    g_TkMenuStatusOrigin      # u16 x, y
 0x0186a888 label g_TkMenuStatusOverDriveRect # 24-byte status rect (i16 x, y at +0, +2): TkMn2DrawOverDrive subtracts x, y; MenuStatus_DrawPage page 0 draws the panel at its x + ease; 0x0186a8a0 is the next rect (page 3); name ours

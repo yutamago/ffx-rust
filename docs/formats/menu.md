@@ -237,6 +237,21 @@ weapon (MsGetSaveWeapon `+2`), for 5 without the missing rows.
 `MenuKaizou_BuildList(k)` (`0x008d6dd0`) builds kind 5 for the record of
 weapon `k` of the customise list (`u16` ids at `[0x0186aa38]`). Both go
 through the thunk `0x008c2380` (a `jmp`).
+`TkMn2RefreshWeaponShopSell`/`Sell2` (`0x008d9550`/`0x008d9560`) refresh
+kinds `0x13`/`0x15`. The list windows over these lists are all opened
+the same way (`TkMenuMainAllocWindow`, list, callbacks, rows,
+`TkMenuMainRegistWindow`):
+
+| opener | list | rows, visible | kept at |
+|---|---|---|---|
+| `MenuWShop_OpenSellWindow` `0x008da950` | kind 7 | `TkMn2GetListMax`, 10 | `0x0186ac38` |
+| `MenuKaizou_OpenListWindow(k)` `0x008d6ce0` | `MenuKaizou_BuildList(k)` | `TkMn2GetNameModeMax`, 9 | `0x0186aa34` |
+| `MenuEquip_OpenWeaponWindow(a, kind)` `0x008cfc90` | `MenuWeapon_BuildKindList` | `u16 0x0186a620`, 5 | `0x0186a61c` |
+| `MenuLimit_OpenModeWindow(chr)` `0x008d0dd0` | kind 1 | `TkMn2GetListMax`, 7 | `0x0186a718` |
+
+The overdrive mode window restores its scroll (`+0x32`, `+0x34`) and
+cursor (`+0x48`) from `chr`'s `u16` in the 4-byte entries at
+`0x0186a7a0` and `0x0186a7e0`.
 
 ## Config menu
 
@@ -406,3 +421,8 @@ slots (`u16` at `0x02310f8e`) whose `MsGetSaveWeapon` record is in use
 (`BtlEnd_GetSaveNextAP`) plus `ap` reaches `BtlEnd_GetNextAP` (signed);
 at sphere level 98 (`BtlEnd_GetSP`) `ap` is cut to the AP still missing.
 It then hands `(chr, ap)` to `0x008ba390`.
+`BtlEnd_CountApStep_008ba4e0(chr, mark)` (`0x008ba4e0`) is one step of
+the AP count-up: from sphere level 99 the rest (`0x02310f20[chr]`) is
+dropped (0 returned); otherwise `BtlEnd_ApStep(chr)` AP, at most the
+rest (signed), go to `BtlEnd_AddAP_008bdaf0` and the rest shrinks by
+them; it returns 1 while AP were left over.

@@ -1573,6 +1573,34 @@ ported! {
         let local = frame.at();
         tk::tk_btl_end_check_legend_weapon(&mut mem(), local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMn2RefreshWeaponShopSell()`.
+    TkMn2RefreshWeaponShopSell @ 0x008d_9550 => extern "C" fn tk_mn2_refresh_weapon_shop_sell() {
+        tk::tk_mn2_refresh_weapon_shop_sell(&mut mem(), 0x13, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMn2RefreshWeaponShopSell2()`.
+    TkMn2RefreshWeaponShopSell2 @ 0x008d_9560 => extern "C" fn tk_mn2_refresh_weapon_shop_sell2() {
+        tk::tk_mn2_refresh_weapon_shop_sell(&mut mem(), 0x15, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuWShop_OpenSellWindow()`: the window.
+    MenuWShop_OpenSellWindow @ 0x008d_a950 => extern "C" fn menu_wshop_open_sell_window() -> u32 {
+        tk::menu_wshop_open_sell_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_OpenListWindow(k)`: the registration's `eax`.
+    MenuKaizou_OpenListWindow @ 0x008d_6ce0 => extern "C" fn menu_kaizou_open_list_window(k: u32) -> u32 {
+        tk::menu_kaizou_open_list_window(&mut mem(), k, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuEquip_OpenWeaponWindow(a, kind)`: the registration's `eax`.
+    MenuEquip_OpenWeaponWindow @ 0x008c_fc90 => extern "C" fn menu_equip_open_weapon_window(a: u32, kind: u32) -> u32 {
+        tk::menu_equip_open_weapon_window(&mut mem(), a, kind, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuLimit_OpenModeWindow(chr)`: the registration's `eax`.
+    MenuLimit_OpenModeWindow @ 0x008d_0dd0 => extern "C" fn menu_limit_open_mode_window(chr: u32) -> u32 {
+        tk::menu_limit_open_mode_window(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_CountApStep_008ba4e0(chr, mark)`: 1 while AP are left.
+    BtlEnd_CountApStep_008ba4e0 @ 0x008b_a4e0 => extern "C" fn btl_end_count_ap_step(chr: u32, mark: u32) -> u32 {
+        tk::btl_end_count_ap_step(&mut mem(), chr, mark, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)
