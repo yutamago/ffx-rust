@@ -59,6 +59,68 @@ pub mod bridge {
 
     const NOT_STARTED: u32 = 0xffff_f000;
 
+    /// `pppFpPointLight(obj, key, prog)` (`0x0075d7f0`): while
+    /// `g_FpPointLightA` (`i`) is below `g_FpPointLightCap`, defines light
+    /// `i`: `Sg_PLightDefine(i, x, y, z, radius, r, g, b, light)` with the
+    /// position work area 2 (`obj + 0xa0 + [[prog + 0xc] + 8]`) plus
+    /// `g_pppWorldMatrix`'s translation, the radius `f32 key +4`, the
+    /// colour work area 1's `i16 +0..+4` times its `i16 +6 >> 7`, `>> 14`
+    /// each, and the light `byte key +8`; then
+    /// `Sg_PLightSetAttenuation(i, a)` with `f32 key +0xc`, or
+    /// `[0x00b92268]` (2.0) when that is 0. In any case `g_FpPointLightB`
+    /// gets bit `light & 31` and `g_FpPointLightA` counts up (from the
+    /// value read last). Callees through `call`. Returns the bit.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_fp_point_light<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::x87::{ADD, Reg, load};
+        let sym = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let offs: u32 = mem.read(prog.wrapping_add(0xc));
+        let area = |mem: &M, k: u32| {
+            obj.wrapping_add(0xa0)
+                .wrapping_add(mem.read(offs.wrapping_add(4 * k)))
+        };
+        let (colour, pos) = (area(mem, 1), area(mem, 2));
+        let mut i = POINT_LIGHT_A.get(mem);
+        if i.cast_signed() < POINT_LIGHT_CAP.get(mem) {
+            let half = |mem: &M, o: u32| i32::from(mem.read::<i16>(colour.wrapping_add(o)));
+            let s = half(mem, 6) >> 7;
+            let [r, g, b] = [0, 2, 4].map(|o| (half(mem, o).wrapping_mul(s) >> 14).cast_unsigned());
+            let world = crate::mat::bridge::WORLD.ptr(mem).addr;
+            let [x, y, z] = [0u32, 4, 8].map(|o| {
+                let w: f32 = mem.read(world.wrapping_add(0x30 + o));
+                Reg::load(mem.read(pos.wrapping_add(o)))
+                    .mem(ADD, w)
+                    .store()
+                    .to_bits()
+            });
+            let radius = load(mem.read(key.wrapping_add(4)));
+            let light = u32::from(mem.read::<u8>(key.wrapping_add(8)));
+            call(
+                mem,
+                sym(mem, 0x0083_19b0),
+                &[i, x, y, z, radius, r, g, b, light],
+            );
+            let mut a = load(mem.read(key.wrapping_add(0xc)));
+            if Reg::load(a).value() == 0.0 {
+                a = load(mem.read(sym(mem, 0x00b9_2268)));
+            }
+            let n = POINT_LIGHT_A.get(mem);
+            call(mem, sym(mem, 0x0083_1bf0), &[n, a]);
+            i = POINT_LIGHT_A.get(mem);
+        }
+        let bit = 1u32 << (mem.read::<u8>(key.wrapping_add(8)) & 31);
+        let b = POINT_LIGHT_B.get(mem);
+        POINT_LIGHT_B.set(mem, b | bit);
+        POINT_LIGHT_A.set(mem, i.wrapping_add(1));
+        bit
+    }
+
     /// The table's entry count and the address of entry 0's ID.
     fn table(mem: &impl Mem) -> Option<(u32, u32)> {
         let t = DATA.get(mem);

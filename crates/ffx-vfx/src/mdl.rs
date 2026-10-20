@@ -1448,4 +1448,55 @@ pub mod bridge {
             }
         }
     }
+
+    /// `0x0073dfe0(rec, m)` (`pppDrawMdlCameraTex`, ours; for
+    /// `pppDrawMdlCameraDraw`): nothing for a texture `rec +4` of 0xffff
+    /// or one the environment's table (`[env +0x20] + 32 n + 0x1c`,
+    /// `get_ptr32`) has no data for (`p`). Otherwise `m` becomes the unit
+    /// matrix, three `vf00` copies at `+0x40`, `+0x50`, `+0x60`, six 0.0
+    /// from `+0x70`, `+0x88` = `set_ptr32(rec)`, byte `+0x8c` = `rec
+    /// +0x21`, `u16 +0x8d` = 0; when `Yn_FpTrxTexGet(byte rec +0x20)` gives
+    /// a texture `t`, `Yn_FpTrxTexSetAddr(t, [p + [p +4] + 8], [.. + 0xc])`
+    /// and bytes `+0x8d`, `+0x8e` = `Yn_EmbeddedTrxGetCnt(t)`; byte `+0x8f`
+    /// = 0. The `Yn_*` callees through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_draw_mdl_camera_tex<M: Mem>(
+        mem: &mut M,
+        rec: u32,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_ps2::vu0::bridge as vu0;
+        let n: u32 = mem.read(rec.wrapping_add(4));
+        if n == 0xffff {
+            return;
+        }
+        let env: u32 = mem.read(mem.read::<u32>(g(mem, ENV_SLOT)));
+        let table: u32 = mem.read(env.wrapping_add(0x20));
+        let p = ffx_system::stub::ptr32(mem.read(table.wrapping_add(n << 5).wrapping_add(0x1c)));
+        if p == 0 {
+            return;
+        }
+        vu0::matrix_identity(mem, m);
+        let vf00: [u32; 4] = mem.read(g(mem, 0x00c0_a004));
+        for k in 0..3 {
+            mem.write(m.wrapping_add(0x40 + 0x10 * k), vf00);
+        }
+        mem.write(m.wrapping_add(0x70), [0f32; 6]);
+        mem.write(m.wrapping_add(0x88), ffx_system::stub::ptr32(rec));
+        mem.write(m.wrapping_add(0x8c), mem.read::<u8>(rec.wrapping_add(0x21)));
+        mem.write(m.wrapping_add(0x8d), 0u16);
+        let no = u32::from(mem.read::<u8>(rec.wrapping_add(0x20)));
+        let t = call(mem, g(mem, 0x0091_9ba0), &[no]);
+        if t != 0 {
+            let q = p.wrapping_add(mem.read(p.wrapping_add(4)));
+            let (image, clut) = (mem.read(q.wrapping_add(8)), mem.read(q.wrapping_add(0xc)));
+            call(mem, g(mem, 0x0091_9be0), &[t, image, clut]);
+            #[allow(clippy::cast_possible_truncation)] // mov byte, al
+            let count = call(mem, g(mem, 0x0091_9bc0), &[t]) as u8;
+            mem.write(m.wrapping_add(0x8d), count);
+            mem.write(m.wrapping_add(0x8e), count);
+        }
+        mem.write(m.wrapping_add(0x8f), 0u8);
+    }
 }
