@@ -263,27 +263,10 @@ fn spline_via_stack(m: &mut target::Dm<'_>, f: u32, out: u32, points: u32, n: u3
     m.write(out, w);
 }
 
-/// An original of this build (cdecl, up to four word arguments, already
-/// rebased) that returns an `f32` on the x87 stack: its bits. Missing
-/// arguments are passed as 0, which a cdecl callee never reads (the caller
-/// pops them).
+/// An original of this build (cdecl, already rebased) that returns an
+/// `f32` on the x87 stack: its bits ([`super::call_cdecl_f32`]).
 fn call_f32<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
-    // No panic here: a panic in a function the game calls ends the process.
-    if args.len() > 4 {
-        crate::log::log(&format!(
-            "call_f32: {} arguments, only 4 passed",
-            args.len()
-        ));
-    }
-    let mut words = [0u32; 4];
-    let count = args.len().min(4);
-    words[..count].copy_from_slice(&args[..count]);
-    // SAFETY: `f` is a cdecl function of this build taking at most four
-    // words and returning an f32 in ST0.
-    unsafe {
-        let g: unsafe extern "C" fn(u32, u32, u32, u32) -> f32 = std::mem::transmute(f as usize);
-        g(words[0], words[1], words[2], words[3]).to_bits()
-    }
+    super::call_cdecl_f32(f, args).to_bits()
 }
 
 /// `MsScreenProcess(camera)` (`0x007bc110`) in Rust, for the

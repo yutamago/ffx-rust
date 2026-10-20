@@ -71,6 +71,36 @@ pub mod bridge {
         }
     }
 
+    /// The EE register (`g_Ee_GprMove`, four words) the PS2 code moved
+    /// vectors through; the PC keeps the stores.
+    pub const EE_GPR_MOVE: u32 = 0x00c8_f588;
+    /// A screen's vector (four `f32`) [`set_screen_vector`] sets, and the
+    /// copy it keeps at `+0x40`; its word at `+0xc4`.
+    pub const SCREEN_VECTOR: u32 = 0x80;
+    pub const SCREEN_VECTOR_COPY: u32 = 0x40;
+    pub const SCREEN_VECTOR_WORD: u32 = 0xc4;
+
+    /// `Cam_SetScreenVector(screen, x, y, z, w, v)` (`0x007bc890`, name
+    /// ours; `Native_604e` calls it): for screens 0..=2 (unsigned), the
+    /// four `i32`s as `f32` (`fild`, `fstp dword`) into the screen's
+    /// `+0x80`, copied through [`EE_GPR_MOVE`] and into `+0x40`, and `v`
+    /// into `+0xc4`. `eax` is `v` then; for another screen the original
+    /// leaves the caller's `eax` (0 here; no caller reads it).
+    pub fn set_screen_vector(mem: &mut impl Mem, screen: u32, xyzw: [i32; 4], v: u32) -> u32 {
+        if screen > 2 {
+            return 0;
+        }
+        let at = mem.rebase(SCREENS) + SCREEN_SIZE * screen;
+        let vector = xyzw.map(|c| x87::store(f64::from(c)));
+        mem.write(at + SCREEN_VECTOR, vector);
+        let vector: [u32; 4] = mem.read(at + SCREEN_VECTOR);
+        let ee = mem.rebase(EE_GPR_MOVE);
+        mem.write(ee, vector);
+        mem.write(at + SCREEN_VECTOR_COPY, vector);
+        mem.write(at + SCREEN_VECTOR_WORD, v);
+        v
+    }
+
     fn bits(x: f32) -> u32 {
         x87::round_trip(x).to_bits()
     }
