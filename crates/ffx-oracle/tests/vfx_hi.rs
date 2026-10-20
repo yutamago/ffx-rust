@@ -1619,3 +1619,119 @@ fn opp_map_draw_init_matches_the_original() {
         }
     }
 }
+
+// ---- round 6: model draw paths -------------------------------------------
+
+#[test]
+fn md_persp_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_bae0);
+        let (obj, init, spr) = (p.alloc(0x400), p.alloc(0x60), p.alloc(0x1a00));
+        let (view, src) = (p.alloc(0x40), p.alloc(0x40));
+        let ends = [8i8, 9, 0x20, -1, -0x80, 0x7f];
+        for round in 0..2000 {
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(init, 0x60, &mut rng);
+            p.fill(spr, 0x400, &mut rng);
+            p.fill(src, 0x40, &mut rng);
+            matrix(&mut p, &mut rng, view);
+            for sym in [0x011a_0740u32, 0x011a_07f0] {
+                let at = p.sym(sym);
+                p.fill(at, 0x10, &mut rng);
+            }
+            spr_top(&mut p, &mut rng, spr);
+            p.set(obj + 4, 0x40u32);
+            p.set(obj + 0x12, i16::try_from(rng.below(6)).unwrap() - 2);
+            p.set(init + 0x20, src);
+            p.set(init + 0x30, view);
+            for at in [0x38u32, 0x3c] {
+                if rng.chance(50) {
+                    p.set(init + at, 0u32);
+                }
+            }
+            if rng.chance(40) {
+                p.set(init + 8, 0u16);
+            } else if rng.chance(20) {
+                p.set(init + 8, 0x100u16);
+            }
+            let (n, end) = (rng.below(10), rng.pick(&ends));
+            md_tags(
+                &mut p,
+                &mut rng,
+                obj + 0x40,
+                &[0, 1, 2, 3, 4, 5, 6, 7],
+                n,
+                end,
+            );
+            if round % 7 == 0 {
+                p.set(obj + 0x41, rng.pick(&ends));
+            }
+            p.check("op_md_persp_00a6bae0", 0x00a6_bae0, &[obj, init], |o| {
+                Some(hi_draw::bridge::op_md_persp(
+                    o,
+                    obj,
+                    init,
+                    &mut call_original,
+                ))
+            });
+        }
+    }
+}
+
+#[test]
+fn md_flag80_fog_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_c3d0);
+        let (obj, init, spr) = (p.alloc(0x400), p.alloc(0x60), p.alloc(0x2c00));
+        // op_md_packet_size_check is always 0; a stand-in that logs its
+        // arguments and returns the cell `skip` covers the other way out
+        let skip = p.alloc(4);
+        let log = deref_recorder_with(&mut p, 0x00a6_98b0, &[0, 0, 0], Some(skip));
+        let ends = [1i8, 3, 5, 7, 8, 0x20, -1, -0x80, 0x7f];
+        let mut skipped = 0;
+        for round in 0..2000 {
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(init, 0x60, &mut rng);
+            p.fill(spr, 0x400, &mut rng);
+            for sym in [0x011a_0740u32, 0x011a_0820] {
+                let at = p.sym(sym);
+                p.fill(at, 0x10, &mut rng);
+            }
+            spr_top(&mut p, &mut rng, spr);
+            let s = if rng.chance(10) { rng.next() | 1 } else { 0 };
+            p.set(skip, s);
+            skipped += u32::from(s != 0);
+            p.set(obj + 4, 0x40u32);
+            p.set(obj + 0x12, i16::try_from(rng.below(6)).unwrap() - 2);
+            for at in [0x38u32, 0x3c] {
+                if rng.chance(50) {
+                    p.set(init + at, 0u32);
+                }
+            }
+            if rng.chance(40) {
+                p.set(init + 8, 0u16);
+            } else if rng.chance(20) {
+                p.set(init + 8, 0x100u16);
+            }
+            let (n, end) = (rng.below(8), rng.pick(&ends));
+            md_tags(&mut p, &mut rng, obj + 0x40, &[0, 2, 4, 6], n, end);
+            if round % 7 == 0 {
+                p.set(obj + 0x41, rng.pick(&ends));
+            }
+            p.check(
+                "op_md_flag80_fog_00a6c3d0",
+                0x00a6_c3d0,
+                &[obj, init],
+                |o| {
+                    Some(hi_draw::bridge::op_md_flag80_fog(
+                        o,
+                        obj,
+                        init,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(skipped > 0 && p.get::<u32>(log) > 0, "{}", p.name);
+    }
+}

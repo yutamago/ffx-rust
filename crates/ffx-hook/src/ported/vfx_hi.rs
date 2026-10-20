@@ -131,6 +131,14 @@ ported! {
     op_md_x64_fog_00a6bfe0 @ 0x00a6_bfe0 => extern "C" fn op_md_x64_fog(obj: u32, init: u32) -> u32 {
         hi_draw::bridge::op_md_x64_fog(&mut mem(), obj, init)
     }
+    /// `op_md_persp_00a6bae0(obj, init)`.
+    op_md_persp_00a6bae0 @ 0x00a6_bae0 => extern "C" fn op_md_persp(obj: u32, init: u32) -> u32 {
+        hi_draw::bridge::op_md_persp(&mut mem(), obj, init, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_flag80_fog_00a6c3d0(obj, init)`.
+    op_md_flag80_fog_00a6c3d0 @ 0x00a6_c3d0 => extern "C" fn op_md_flag80_fog(obj: u32, init: u32) -> u32 {
+        hi_draw::bridge::op_md_flag80_fog(&mut mem(), obj, init, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_refrection_st_float(obj, model, _, out, scale, du, dv)`: its
     /// locals in a buffer on this shim's stack.
     op_refrection_st_float @ 0x00a6_cfb0 => extern "C" fn op_refrection_st_float(obj: u32, model: u32, _unused: u32, out: u32, scale: u32, du: u32, dv: u32) -> u32 {

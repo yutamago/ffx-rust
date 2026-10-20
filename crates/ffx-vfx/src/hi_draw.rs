@@ -1,8 +1,9 @@
-//! The op layer's model draw set-ups at `0x00a6a3a0..0x00a6c3d0`
-//! (`op_md_chara_path3` and the two `op1_md_draw` paths for packets with
-//! flag 4; `docs/formats/vfx.md`, "High range"). Each takes `0x1800` bytes
-//! of the op scratch stack as its work area `w`, fills the PS2 packet
-//! words there and pops it again.
+//! The op layer's model draw set-ups at `0x00a6a3a0..0x00a6c8b0`
+//! (`op_md_chara_path3` and four `op1_md_draw` paths: flag 4 with and
+//! without `0x300`, flag `0x2000`, flag `0x80` with `0x300`;
+//! `docs/formats/vfx.md`, "High range"). Each takes `0x1800` (or
+//! `0x2800`) bytes of the op scratch stack as its work area `w`, fills the
+//! PS2 packet words there and pops it again.
 
 #![allow(clippy::many_single_char_names)]
 
@@ -45,11 +46,31 @@ pub mod bridge {
     const OP_MD_LIGHT_00A6CD40: u32 = 0x00a6_cd40;
     const OPC: u32 = 0x00a6_d370;
     const OPC2: u32 = 0x007e_6b20;
+    const OP_UNIT_M: u32 = 0x007e_a6d0;
+    const OP_MUL_M: u32 = 0x007e_83b0;
+    /// `op_md_packet_size_check_00a698b0` (a bare `xor eax, eax; ret`).
+    const OP_MD_PACKET_SIZE_CHECK: u32 = 0x00a6_98b0;
+    /// `f32` 1.00003052 (`0x3f800100`, `0x00b7c424`): the projection's
+    /// `z` scale.
+    const PERSP_Z: u32 = 0x00b7_c424;
+    /// `f32` -2.00003052 (`0xc0000080`, `0x00b7c428`): its `z` offset.
+    const PERSP_W: u32 = 0x00b7_c428;
+    /// `g_OpMdGsWordsC_011a0820`: 16 bytes `0x00a6c3d0` copies to `w
+    /// +0x140` (written by `0x007eb760`).
+    const MD_GS_WORDS_C: u32 = 0x011a_0820;
+    /// `g_OpMdPath3Block_012a8da8`: the address `0x00a6c3d0` leaves at `w
+    /// +0x180`.
+    const MD_PATH3_BLOCK: u32 = 0x012a_8da8;
 
-    /// Pushes `0x1800` bytes on the op scratch stack: `w` is the old top's
-    /// mark, the next mark `w + 0x1800`. `top_first` stores the top byte
-    /// before the mark (as `op_md_chara_path3` and `0x00a6bfe0` do).
+    /// Pushes `0x1800` bytes on the op scratch stack ([`spr_push_n`]).
     fn spr_push(mem: &mut impl Mem, top_first: bool) -> u32 {
+        spr_push_n(mem, top_first, 0x1800)
+    }
+
+    /// Pushes `size` bytes on the op scratch stack: `w` is the old top's
+    /// mark, the next mark `w + size`. `top_first` stores the top byte
+    /// before the mark (as `op_md_chara_path3` and `0x00a6bfe0` do).
+    fn spr_push_n(mem: &mut impl Mem, top_first: bool, size: u32) -> u32 {
         // the index is the sign-extended top plus one, unwrapped
         let i = i32::from(SPR_TOP.get(mem)) + 1;
         let stack = SPR_STACK.ptr(mem).addr;
@@ -60,7 +81,7 @@ pub mod bridge {
             SPR_TOP.set(mem, top);
         }
         let w: u32 = mem.read(mark(i - 1));
-        mem.write(mark(i), w.wrapping_add(0x1800));
+        mem.write(mark(i), w.wrapping_add(size));
         if !top_first {
             SPR_TOP.set(mem, top);
         }
@@ -398,5 +419,209 @@ pub mod bridge {
         gs_wait(mem);
         spr_pop(mem);
         mem.read(w.wrapping_add(0x334))
+    }
+
+    /// The bytes `w +0x130`/`+0x134`: `w +0x308`/`+0x309`, or `obj
+    /// +0x16`/`+0x17` when `u16 w +0x308` is 0.
+    fn fog_bytes(mem: &mut impl Mem, obj: u32, w: u32) {
+        let from = if mem.read::<u16>(w.wrapping_add(0x308)) == 0 {
+            obj.wrapping_add(0x16)
+        } else {
+            w.wrapping_add(0x308)
+        };
+        let a = u32::from(mem.read::<u8>(from));
+        mem.write(w.wrapping_add(0x130), a);
+        let b = u32::from(mem.read::<u8>(from.wrapping_add(1)));
+        mem.write(w.wrapping_add(0x134), b);
+    }
+
+    /// 16 bytes from the table at `sym` to `w + at`.
+    fn copy_words(mem: &mut impl Mem, sym: u32, w: u32, at: u32) {
+        let words = mem.rebase(sym);
+        for k in 0..4u32 {
+            let x: u32 = mem.read(words.wrapping_add(4 * k));
+            mem.write(w.wrapping_add(at + 4 * k), x);
+        }
+    }
+
+    /// 5 without flag 4 in the packet's first byte, else 0.
+    fn alpha_test(mem: &impl Mem, obj: u32) -> u32 {
+        if mem.read::<u8>(obj) & 4 == 0 { 5 } else { 0 }
+    }
+
+    /// `op_md_persp_00a6bae0(obj, init)` (`0x00a6bae0`; `op1_md_draw`'s
+    /// path for packets with flag `0x2000`): pushes the work area `w`,
+    /// copies the init block ([`copy_init`]), defaults `w +0x338`/`+0x33c`
+    /// (`+0x33c` stored first), the colour `w +0x370..` from the signed
+    /// bytes `w +0x31c..`. The matrix `w +0x200`: `op_unit_m`, then `[0][0]`
+    /// and `[1][1]` 1, `[2][2]` 1.00003052 and `[3][2]` -2.00003052 (both
+    /// from `.rdata`), `[2][3]` 1, `[3][3]` 0 (a projection), times `[w
+    /// +0x330]` (`op_mul_m(m, m, [w +0x330])`). `w +0x390` = `[w +0x304]`,
+    /// `+0x394` = `(i16 obj +0x12 << 4) + [w +0x304]`, `+0x398` the same `<<
+    /// 5`; the 64 bytes at `[w +0x320]` to `w +0x240`. The GS words as
+    /// [`op_md_x64_fog`] writes them. Tags from `obj + [obj +4]` (type `i8
+    /// +1`, step 0x10; jumps `0x00a6bfb0`): 0, 1, 4, 5 set `w +0x1f0` and
+    /// `+0x280` 0x8000, `+0x1f8` and `+0x288` 0x41; 2, 3, 6, 7 the same with
+    /// 0x412 and the texture words; anything else ends. Waits for the GS,
+    /// pops `w`; returns `[w +0x334]`. Callees through `call`.
+    pub fn op_md_persp<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = spr_push(mem, true);
+        copy_init(mem, init, w);
+        default_bases(mem, obj, w, false);
+        colour_from_bytes(mem, w.wrapping_add(0x31c), w);
+        let m = w.wrapping_add(0x200);
+        go(mem, OP_UNIT_M, &[m], call);
+        let one = 1.0f32.to_bits();
+        let z = x87::round_trip(f32::from_bits(mem.read(mem.rebase(PERSP_Z))));
+        let zw = x87::round_trip(f32::from_bits(mem.read(mem.rebase(PERSP_W))));
+        for (at, v) in [
+            (0x00u32, one),
+            (0x14, one),
+            (0x28, z.to_bits()),
+            (0x38, zw.to_bits()),
+            (0x2c, one),
+            (0x3c, 0),
+        ] {
+            mem.write(m.wrapping_add(at), v);
+        }
+        let view: u32 = mem.read(w.wrapping_add(0x330));
+        go(mem, OP_MUL_M, &[m, m, view], call);
+        let base: u32 = mem.read(w.wrapping_add(0x304));
+        mem.write(w.wrapping_add(0x390), base);
+        let n = i32::from(mem.read::<i16>(obj.wrapping_add(0x12))).cast_unsigned();
+        let base: u32 = mem.read(w.wrapping_add(0x304));
+        mem.write(w.wrapping_add(0x394), (n << 4).wrapping_add(base));
+        let n = i32::from(mem.read::<i16>(obj.wrapping_add(0x12))).cast_unsigned();
+        let base: u32 = mem.read(w.wrapping_add(0x304));
+        mem.write(w.wrapping_add(0x398), (n << 5).wrapping_add(base));
+        let src: u32 = mem.read(w.wrapping_add(0x320));
+        for k in 0..16u32 {
+            let x: u32 = mem.read(src.wrapping_add(4 * k));
+            mem.write(w.wrapping_add(0x240 + 4 * k), x);
+        }
+        let tags = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+        for (at, v) in [
+            (0x100u32, 0x7000_0005u32),
+            (0x108, 0),
+            (0x110, 0x8001),
+            (0x118, 0xeeee),
+            (0x128, 6),
+        ] {
+            mem.write(w.wrapping_add(at), v);
+        }
+        fog_bytes(mem, obj, w);
+        mem.write(w.wrapping_add(0x138), 0x42u32);
+        let words = if mem.read::<u8>(w.wrapping_add(0x300)) & 8 == 0 {
+            MD_GS_WORDS_A
+        } else {
+            MD_GS_WORDS_B
+        };
+        copy_words(mem, words, w, 0x140);
+        let alpha = alpha_test(mem, obj);
+        mem.write(w.wrapping_add(0x150), alpha);
+        mem.write(w.wrapping_add(0x158), 8u32);
+        let init = w.wrapping_add(0x300);
+        let mut tag = tags;
+        loop {
+            let mode = match mem.read::<i8>(tag.wrapping_add(1)) {
+                0 | 1 | 4 | 5 => 0x41u32,
+                2 | 3 | 6 | 7 => 0x412,
+                _ => break,
+            };
+            for at in [0x1f0u32, 0x280] {
+                mem.write(w.wrapping_add(at), 0x8000u32);
+                mem.write(w.wrapping_add(at + 8), mode);
+            }
+            if mode == 0x412 {
+                tex_words(mem, w, init, tag);
+            }
+            tag = tag.wrapping_add(0x10);
+        }
+        gs_wait(mem);
+        spr_pop(mem);
+        mem.read(w.wrapping_add(0x334))
+    }
+
+    /// `op_md_flag80_fog_00a6c3d0(obj, init)` (`0x00a6c3d0`; `op1_md_draw`'s
+    /// path for packets with flag `0x80` and one of `0x300`): when
+    /// `op_md_packet_size_check(obj, [init +0x34], 1)` (always 0) is
+    /// nonzero, returns `[init +0x34]`. Else pushes `0x2800` bytes as the
+    /// work area `w`, copies the init block ([`copy_init`]), rounds `w
+    /// +0x334` up to 64 (`& 0x0fffffc0`), defaults `w +0x338`/`+0x33c`
+    /// (`+0x33c` stored first), the colour `w +0x370..` from the signed
+    /// bytes `w +0x31c..`; `w +0x394` = `[w +0x304]`, `+0x39c` = `(i16 obj
+    /// +0x12 << 4) + [w +0x304]`. The GS words: `+0x110` 0x8001, `+0x118`
+    /// 0xeeeee, `+0x128` 6, `+0x130`/`+0x134` ([`fog_bytes`]), `+0x138` 0x42,
+    /// `+0x140..` 16 bytes from `0x011a0820`, `+0x150..` 16 bytes from
+    /// `0x011a0740`, `+0x160` 0 with `[obj]` flag 4 else 5, `+0x168` 8,
+    /// `+0x180` the address `0x012a8da8`. Waits for the GS; the tags from
+    /// `obj + [obj +4]` (type `i8 +1`, step 0x10; jumps `0x00a6c88c`): 0
+    /// and 4 set `w +0x100` 0x20000009 / 0x2000000b, `+0x1f0` 0x8001,
+    /// `+0x1f8` 0x414141ee; 2 and 6 `+0x100` 0x2000000d / 0x20000010,
+    /// `+0x1f8` 0x12412eee, the texture words and `+0x128` 6; each waits for
+    /// the GS. 1, 3, 5 and anything else end. Pops `w`; returns
+    /// `[w +0x334] + 0x40`. Callees through `call`.
+    pub fn op_md_flag80_fog<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let size: u32 = mem.read(init.wrapping_add(0x34));
+        if go(mem, OP_MD_PACKET_SIZE_CHECK, &[obj, size, 1], call) != 0 {
+            return mem.read(init.wrapping_add(0x34));
+        }
+        let w = spr_push_n(mem, true, 0x2800);
+        copy_init(mem, init, w);
+        let end: u32 = mem.read(w.wrapping_add(0x334));
+        mem.write(w.wrapping_add(0x334), end.wrapping_add(0x3f) & 0x0fff_ffc0);
+        default_bases(mem, obj, w, false);
+        colour_from_bytes(mem, w.wrapping_add(0x31c), w);
+        let base: u32 = mem.read(w.wrapping_add(0x304));
+        mem.write(w.wrapping_add(0x394), base);
+        let n = i32::from(mem.read::<i16>(obj.wrapping_add(0x12))).cast_unsigned();
+        let base: u32 = mem.read(w.wrapping_add(0x304));
+        mem.write(w.wrapping_add(0x39c), (n << 4).wrapping_add(base));
+        let tags = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+        mem.write(w.wrapping_add(0x110), 0x8001u32);
+        mem.write(w.wrapping_add(0x118), 0x000e_eeeeu32);
+        mem.write(w.wrapping_add(0x128), 6u32);
+        fog_bytes(mem, obj, w);
+        mem.write(w.wrapping_add(0x138), 0x42u32);
+        copy_words(mem, MD_GS_WORDS_C, w, 0x140);
+        copy_words(mem, MD_GS_WORDS_A, w, 0x150);
+        let alpha = alpha_test(mem, obj);
+        mem.write(w.wrapping_add(0x160), alpha);
+        mem.write(w.wrapping_add(0x168), 8u32);
+        let block = mem.rebase(MD_PATH3_BLOCK);
+        mem.write(w.wrapping_add(0x180), block);
+        gs_wait(mem);
+        let init = w.wrapping_add(0x300);
+        let mut tag = tags;
+        loop {
+            let (gif, mode, textured) = match mem.read::<i8>(tag.wrapping_add(1)) {
+                0 => (0x2000_0009u32, 0x4141_41eeu32, false),
+                2 => (0x2000_000d, 0x1241_2eee, true),
+                4 => (0x2000_000b, 0x4141_41ee, false),
+                6 => (0x2000_0010, 0x1241_2eee, true),
+                _ => break,
+            };
+            mem.write(w.wrapping_add(0x100), gif);
+            tag_mode(mem, w, mode);
+            if textured {
+                tex_words(mem, w, init, tag);
+                mem.write(w.wrapping_add(0x128), 6u32);
+            }
+            gs_wait(mem);
+            tag = tag.wrapping_add(0x10);
+        }
+        spr_pop(mem);
+        let end: u32 = mem.read(w.wrapping_add(0x334));
+        end.wrapping_add(0x40)
     }
 }

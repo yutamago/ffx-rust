@@ -530,8 +530,8 @@ matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
 
 ## High range (`0x00a30000..0x00a80000`)
 
-Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs`, `hi_draw.rs` and
-`hi_opus.rs`; the shims are
+Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs`, `hi_draw.rs`,
+and `hi_opus.rs`; the shims are
 `crates/ffx-hook/src/ported/vfx_hi.rs`, the oracle tests
 `crates/ffx-oracle/tests/vfx_hi.rs`.
 
@@ -708,6 +708,30 @@ Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
   `g_OpMdGsWordsB_011a07f0` with init flag 8, else
   `g_OpMdGsWordsA_011a0740`. Tags (jumps `0x00a6c3b0`): 0, 2, 4, 6 as
   above, step 0x10; 1, 3, 5 and anything else end.
+- `op_md_persp_00a6bae0(obj, init)` (`0x00a6bae0`, flag `0x2000`):
+  as `0x00a6bfe0` (the same GS words) plus a projection at `w +0x200`:
+  `op_unit_m`, then `[2][2]` = 1.00003052 and `[3][2]` = -2.00003052
+  (`f32` at `0x00b7c424`), `[2][3]` 1 and `[3][3]` 0, times `[w +0x330]`
+  (`op_mul_m(m, m, [w +0x330])`); the 64 bytes at `[w +0x320]` go to `w
+  +0x240`; `w +0x390` = `[w +0x304]`, `+0x394`/`+0x398` = `(i16 obj
+  +0x12 << 4 / 5) + [w +0x304]`. Tags (jumps `0x00a6bfb0`): 0, 1, 4, 5
+  set `w +0x1f0`/`+0x280` 0x8000 and `+0x1f8`/`+0x288` 0x41; 2, 3, 6, 7
+  the same with 0x412 and the texture words; type 8 and up (or negative)
+  ends.
+- `op_md_flag80_fog_00a6c3d0(obj, init)` (`0x00a6c3d0`, flag `0x80` with
+  any of `0x300`): returns `[init +0x34]` at once when
+  `op_md_packet_size_check(obj, [init +0x34], 1)` (`0x00a698b0`, `xor
+  eax, eax; ret`) is nonzero, which it never is. Pushes `0x2800` bytes,
+  rounds `w +0x334` up to 64 (`& 0x0fffffc0`), the colour and `w
+  +0x394`/`+0x39c` as `0x00a6bfe0`; GS words `+0x110` 0x8001, `+0x118`
+  0xeeeee, `+0x128` 6, `+0x130`/`+0x134` as above, `+0x138` 0x42,
+  `+0x140` 16 bytes from `g_OpMdGsWordsC_011a0820`, `+0x150` 16 from
+  `g_OpMdGsWordsA_011a0740`, `+0x160` 0/5 by `[obj]` flag 4, `+0x168` 8,
+  `+0x180` the address `0x012a8da8`. Tags (jumps `0x00a6c88c`): 0 and 4
+  set `w +0x100` 0x20000009/0x2000000b and `+0x1f8` 0x414141ee; 2 and 6
+  0x2000000d/0x20000010, 0x12412eee and the texture words; each sets `w
+  +0x1f0` 0x8001 and spins on the GS; 1, 3, 5 and anything else end.
+  Returns `[w +0x334] + 0x40`.
 
 ### `opus_0437` dots
 
