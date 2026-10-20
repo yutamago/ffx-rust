@@ -39,7 +39,8 @@ In summary:
 | `33`, `34` | call another worker's first entry (3 deep), return |
 | `35`, `58` | call a native function (`58` then pops the result into the float accumulator) |
 | `36`–`38`, `45`–`53` | requests to other workers (three families of six) |
-| `3c`–`3f`, `40`, `54` | end the entry (four variants), wait, halt |
+| `3c`–`3f`, `54` | end the entry (four variants), halt |
+| `40` | a debugger breakpoint: runs the instruction it replaced, or stops here (`0x0086442e`) |
 | `59`–`74` | integer and float register pop/push |
 | `75` | push global constant (table `0x00c52704`) |
 | `1b`, `41`–`44`, `7b`–`7f` | invalid: stop with an error; never used |
@@ -62,23 +63,26 @@ Floats use the same opcodes.
 (`0x0086d6d0`). Each 16-byte entry holds four handlers: start (called once),
 poll (called until done, so a call can span frames), float result and
 integer result. The shipped scripts call 948 distinct native functions,
-2.3 million times. `ffx script disasm` annotates each call with its handler's
+2.3 million times (event and monster scripts). The battle scripts
+(`battle/btl`) add 111 natives and 0.8 million calls. `ffx script disasm`
+annotates each call with its handler's
 address (and name, when `symbols/ffx.sym` has one); for example
 `0x70ab` → `0x007a5360`, which sets a battle actor property
 (`0x007b4b70`).
 
-`ffx script natives` lists every native the shipped scripts call (event
-scripts, monster AI and battle scripts), with its call count, the number
-of scripts calling it, its four handler slots and its name. The 226 most
-used natives, by calls and by scripts, are named in `symbols/ffx.sym`
-(`Native_*`, with arguments in push order and the evidence), which covers
-97 % of the 3.1 million calls. By group:
+`ffx script natives` lists every native the event, monster and battle scripts call, with its
+call count, the number of scripts calling it, its four handler slots and
+its name. 1056 of the 1059 are named in `symbols/ffx.sym` (by their result
+handler, else their start, else their poll); 1029 of the names are
+`Native_*`, with arguments in push order and the evidence. The names
+cover 99.96 % of the 3.1 million calls; the three without a name are
+`0x70a9`, `0x7043` and `0x706d` (1139 calls). By group:
 
 | Group | Area | Examples |
 |---|---|---|
-| 0 | workers, movement, triggers, messages, sound, party | `Native_MsgSetText` (`0x0064`: window, message), `Native_MsgOpen` (`0x006a`), `Native_MsgWait` (`0x007c`), `Native_MoveStart` (`0x0018`), `CT_0013_setPosition`, `Native_MapJump` (`0x010b`: map, entrance), `Native_WaitFrames_0000`, `Native_SpriteShow` (`0x011b`) |
+| 0 | workers, movement, triggers, messages, sound, party | `Native_MsgSetText` (`0x0064`: window, message), `Native_MsgOpen` (`0x006a`), `Native_MsgWait_End` (`0x007c`), `Native_MoveStart` (`0x0018`), `CT_0013_setPosition`, `Native_MapJump` (`0x010b`: map, entrance), `Native_WaitFrames_0000`, `Native_SpriteShow` (`0x011b`) |
 | 1 | maths | `AtelCall_Math_Sqrt_RF` (`0x1006`) |
-| 4 | screen | `Native_FadeIn` (`0x4004`), `Native_FadeOut` (`0x4005`), `Native_LightSet` (`0x4013`), `CT_401D_init` (`0x401d`) |
+| 4 | screen | `Native_FadeIn` (`0x4004`), `Native_FadeOut` (`0x4005`), `Native_LightSet` (`0x4013`), `Native_MenuOpen` (`0x401d`) |
 | 5 | field characters | `Native_ChrPlayMotion` (`0x501a`), `Native_ChrWaitMotion_501e`, `Native_ChrHide` (`0x5008`), `Native_ChrSetMotionBlend` (`0x5034`) |
 | 6 | camera | `Native_CamSetPos` (`0x6002`), `Native_CamMove` (`0x6010`), `Native_CamSetScreenDepth` (`0x603b`) |
 | 7 | battle | `Native_BtlUseCommand` (`0x700b`: targets, command), `Native_GetActorProperty` (`0x700f`), `Native_SetActorsProperty` (`0x7018`), `Native_ActorPlayMotion` (`0x7007`) |
@@ -335,7 +339,7 @@ into the game, so the hooked Rust version where another module has one):
 the run lock (`Mutex_*`), `MsBattleCheck`, the ctrl work's callbacks
 (`+0x28` end, `+0x58`/`+0x5c` around a run, `+0x60` the `REQ` gate), the
 debug hook `0x0067a9b0` that `REQ` calls first, and the natives not yet
-ported (below).
+ported, whose rows below say which slots remain in the original.
 
 ### Signals
 
@@ -396,18 +400,21 @@ field programs `Fp_*`, ...). `native::find` maps a handler address to its
 Rust version; `OriginalNatives`' dispatch uses it before calling the
 original, so `Script_Run` in Rust runs them in Rust. Nine of them are
 under the five bytes a hook jump needs (`Native_WaitForever` is `xor eax,
-eax; ret`) and run in Rust only that way; the rest are in the hook table. The choice is by
+eax; ret`) and run in Rust only that way. Of the 1586 handler addresses, 1370 are in the
+hook table (the `ported!` entries in `crates/ffx-hook/src/ported/`); the
+other 216 run in Rust only through the dispatch. The choice is by
 static use in the shipped scripts (`cargo run -p ffx-script --example
-native_counts` lists every native with its call count and handlers) and
+native_counts` lists every native the event and monster scripts call, with
+its call count and handlers) and
 by whether every callee is ported. Float handlers return `ST0` as `f64`.
 Where a Ghidra signature says `void`, the `EAX` the handler leaves is what
 `Script_FinishNative` pushes (`Native_EnableTrigger` returns the kind it
 popped, `Native_TurnSetFrames` the elapsed value).
 
-`ffx_script::vm::bridge::native_map` has group 8 (`0x8000`-`0x806b`, 65
-handlers: map parts, the field programs, the map's sprite objects, fog and
+`ffx_script::vm::bridge::native_map` has 59 of the group-8 natives (`0x8000`-`0x806b`,
+62 handler addresses: map parts, the field programs, the map's sprite objects, fog and
 back colours and parameters) and the field natives `0x01a5`, `0x01e4`,
-`0x01e6`. Most pop their arguments, call the map module and return 1.
+`0x01e6` (3 handler addresses; 65 in all). Most pop their arguments, call the map module and return 1.
 The colour and fog ones hand the map module the address of a stack
 buffer (`yiGetFogColor(&rgba)`); the Rust ones use `NativeHost::scratch`,
 a 64-byte buffer of the game thread (in the oracle, the bottom of the
@@ -421,7 +428,7 @@ and `0x699`. `Native_FpBindPos` truncates its fp id from `ST0` as
 start in the Ghidra dump the hook checks use and run in Rust only through
 the dispatch.
 
-`ffx_script::vm::bridge::native_cam` has 62 camera handlers of group 6.
+`ffx_script::vm::bridge::native_cam` has 70 camera natives of group 6 (71 handler addresses).
 Most hand `(worker, args, stack)` to a camera helper (`0x007bb6a0`,
 `0x007badb0`, ...) with one or two constants: the half (0 the focus or
 "ref" point, 1 the eye) and a mode; the helper pops the arguments. The
@@ -461,7 +468,7 @@ countdown (`0x01325ae0`/`0x01325ae8`) decides, else `SndGetStreamState`;
 when done, debug mode prints the count. The dump gives both one byte, so
 they run in Rust only through the dispatch.
 
-`ffx_script::vm::bridge::native_move` has 42 handlers of the move and
+`ffx_script::vm::bridge::native_move` has 389 natives (411 handler addresses) of the move and
 turn blocks, workers, character motion, map jumps and fades. The starts
 reproduce the x87 sequences exactly: `Native_MoveStart` mode 9 sets the
 jump arc's `+0x34`/`+0x18` from the height to go (`d = +0x2c - +0x20`,
@@ -478,7 +485,7 @@ speed). `native_msg` now also has `Native_MsgOpen`, the message waits
 arguments and re-pushes them for `MsgSetPos`, `MsgSetText`, `MsgOpen` and
 `MsgSelect` in turn.
 
-`ffx_script::vm::bridge::native_btl` has 38 battle natives (group 7):
+`ffx_script::vm::bridge::native_btl` has 138 battle natives (group 7; 144 handler addresses):
 actor properties through `MsGetChrStatInfo`/`MsSetChrStatInfo`, commands,
 targets, motions and counts on the worker's battle actor (its index in the
 battle id byte, `0xff` for none). Where the original passes the address of
@@ -588,12 +595,12 @@ the script debugger's hook `0x0067a9b0` (a forward to the debugger object
 `*0x00ce9014`) and the ctrl works' own callbacks (`+0x28`, `+0x58`,
 `+0x5c`, `+0x60`), which belong to their callers' modules.
 Round 18 took the natives no shipped script calls, which the modders' API
-can offer: `ffx_script::vm::bridge::native_btl2` has 78 more battle
-natives of group 7 (weapon and item slots of the actor's `g_BtlItemMem2`
+can offer: `ffx_script::vm::bridge::native_btl2` has 73 more battle
+natives of group 7 (78 handler addresses; weapon and item slots of the actor's `g_BtlItemMem2`
 record, the angle and distance between two selected actors, model flags
 through `0x00795080`, command records through `0x0078ce50`, the starts
 and polls that keep the selected actor in the argument word), and
-`native_sys` (99 handlers) has group 12's footstep sounds (`SndKickFoot` with its kind
+`native_sys` (96 natives, 99 handler addresses) has group 12's footstep sounds (`SndKickFoot` with its kind
 per native), voice and shout streams, the effect flags, the CD
 interface's methods (`GetCD`, `0x0076d0d0`, called through its function
 table) and the peeks and pokes on the buffer `0x0088c830()`, group 8's
@@ -804,9 +811,11 @@ Every native with a Rust handler, by ID: the arguments in push order
 reference), the result (`EAX` for an integer handler, `ST0` for a float
 one; a start/poll pair's poll returns 5, or for some 1, when done and 0 to
 be called again next frame) and what a poll waits for. The modders' Lua
-API is generated from this table. `-`: none. A result starting with
+API is to be generated from this table (`docs/rewrite-plan.md`). `-`: none. A result starting with
 "debug (mod-tool candidate)" marks a debug native that is not ported
-("not ported" in the handler column); the line says what it does.
+("not ported" in the handler column); the line says what it does. A slot
+marked "not ported" runs in the original, and so does the handler of
+`0x7076`.
 
 | ID | Name | Arguments (push order) | Result | Waits | Handlers (module) |
 |---|---|---|---|---|---|
@@ -1951,7 +1960,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x6089` | `Native_6089` | p8, p7, p6, p5, p4 f, p3, p2 f, p1 | int: MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0 | - | int `0x007b9630` (native_mods) |
 | `0x7000` | `Native_7000` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
 | `0x7001` | `Native_BtlSetFlagBded` | v | int: the byte 0x0112bded = v & 1; 0 | - | int `0x007a39d0` (native_mods) |
-| `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530`, poll `0x007a35c0` (native_btl) |
+| `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530` (native_btl), poll `0x007a35c0` (not ported) |
 | `0x7003` | `Native_7003` | a int, b int | 0 (0x00795eb0(actor, 2, 0, -1, b, a)) | - | int `0x007a3d90` (native_btl) |
 | `0x7004` | `Native_7004` | v f | 0; the f32 0x0112bde4 = v | - | int `0x007a3aa0` (native_btl2) |
 | `0x7005` | `Native_BtlIsUnderwater` | - | int: the i8 at 0x0112c9ce | - | int `0x007a4550` (native_mods) |
@@ -2016,7 +2025,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7040` | `Native_7040` | v int | int: 0x0079e8c0(actor, v); 0 without an actor | - | int `0x007a5610` (native_btl) |
 | `0x7041` | `Native_7041` | - | 0 | - | int `0x007a56d0` (native_btl) |
 | `0x7042` | `Native_7042` | win, k, x, y, anchor | int: 0x0112c250 = k; TODrawAMES(win clamped 0..6, text k, x, y, anchor) (0x0089b140) from the table at *0x0112a9b8 when there is one; 0 | - | int `0x007a6060` (native_mods) |
-| `0x7043` | `Native_7043_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | poll `0x007a6a40` (native_btl2) |
+| `0x7043` | `Native_7043_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | start `0x007a6a10` (not ported), poll `0x007a6a40` (native_btl2) |
 | `0x7044` | `Native_7044` | win | int: TOCloseMessageWindow(win clamped 0..6) (0x008ab8f0); 0 | - | int `0x007a6e10` (native_mods) |
 | `0x7045` | `Native_7045` | sel | int: MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated | - | int `0x007a4da0` (native_mods) |
 | `0x7046` | `Native_7046` | v int | 0: MsMoveSplineSet(v) (0x007ab140) | - | int `0x007a5220` (native_btl) |
@@ -2025,7 +2034,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x7049` | `Native_7049` | d int, c int, f f, a int | 0: 0x007ab010(d, actor, c, f, a) | - | int `0x007a55a0` (native_btl) |
 | `0x704a` | `Native_704a` | selector int | int: picked actors with +0x415 set | - | int `0x007a58d0` (native_btl) |
 | `0x704b` | `Native_704b` | selector int, motion int, b int | the args word: 1 when MsSetMotion(i, motion, b, 0, 1, worker, &out) (0x007ab360) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7640`, poll `0x007a7850` (native_btl) |
-| `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2) |
+| `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2), poll `0x007a7cf0` (not ported) |
 | `0x704d` | `Native_704d` | - | int: 0 (xor eax, eax; ret) | - | int `0x007a74e0` (native_mods) |
 | `0x704e` | `Native_704e` | v int | 0; the actor's bytes +0x3f5 and +0x3f6 = v | - | int `0x007a7530` (native_btl2) |
 | `0x704f` | `Native_704f` | selector int, v int | 0; every actor below 31 in MsGetChrBit(actor, selector, 0, 1) gets the byte +0xddd = v | - | int `0x007a70c0` (native_btl2) |
@@ -2058,7 +2067,7 @@ API is generated from this table. `-`: none. A result starting with
 | `0x706a` | `Native_706a` | selector int | int: 0 when the selected actor's +0xdc0 is 1 << its index, else -1 | - | int `0x007a7580` (native_btl2) |
 | `0x706b` | `Native_706b` | selector int, a int, b int | 0 | - | int `0x007a84c0` (native_btl) |
 | `0x706c` | `Native_706c` | sel, k | int: for the first actor x of sel, the record of its +0x14 actor: with +0xf2c set and k at most 0x1f, sound k (+0xeac + 4 k) plays (MsSEP3Dregist(3, x, se, 0, 0), 0x007a0a30) unless it is 0 or the last one (0x0112c8e0, then updated); 0 | - | int `0x007a6bc0` (native_mods) |
-| `0x706d` | `Native_706d` | b int, a int | b; the argument words = a, b | - | start `0x007a6d00` (native_btl2) |
+| `0x706d` | `Native_706d` | b int, a int | b; the argument words = a, b | - | start `0x007a6d00` (native_btl2), poll `0x007a6db0` and int `0x007a6ea0` (not ported) |
 | `0x706e` | `Native_706e` | selector int, voice int | the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7020`, poll `0x007a71f0` (native_btl) |
 | `0x706f` | `Native_706f` | as 0x007a8fc0(worker, args, stack, 1) | its result | - | int `0x007a36c0` (native_btl) |
 | `0x7070` | `Native_7070` | - | int: SetByte_00c58ef4(1) (0x0089bc60); 0 | - | int `0x007a7010` (native_mods) |
@@ -2111,14 +2120,14 @@ API is generated from this table. `-`: none. A result starting with
 | `0x709f` | `Native_709f` | selector int | float: the selected actor's target direction (MsGetChrTargetDir 0x007958c0) minus its direction (MsGetChrDir 0x00794d20), in degrees | - | float `0x007a3460` (native_btl2) |
 | `0x70a0` | `Native_70a0` | v int | int: the old signed byte 0x0112c9fc; it becomes v & 1 | - | int `0x007a73d0` (native_btl2) |
 | `0x70a1` | `Native_ActorGetSlotRef` | selector int | int: the picked actor's +0xc, -6 - slot, or 0xff | - | int `0x007a6b40` (native_btl) |
-| `0x70a2` | `Native_70a2` | v int | the start's result (poll not ported) | its own poll | start `0x007a7440`, poll `0x007a7500` (native_btl) |
+| `0x70a2` | `Native_70a2` | v int | the start's result (poll not ported) | its own poll | start `0x007a7440` (native_btl), poll `0x007a7500` (not ported) |
 | `0x70a3` | `Native_70a3` | - | int: Battle_ScriptPlayMotion(worker, args, stack, 0) (0x007a8fc0) with the actor's +0x38 byte set to 1 for the call and put back; +0x3f3 = 1 when +0x434 is set; the old byte (sign-extended) | - | int `0x007a3730` (native_mods) |
 | `0x70a4` | `Native_70a4` | - | 0: 0x0079cca0() | - | int `0x007a7630` (native_btl) |
 | `0x70a5` | `Native_70a5` | x f, y f, z f | 0 | - | int `0x007a76f0` (native_btl) |
 | `0x70a6` | `Native_70a6` | v int | int: v; the byte 0x0112c9ff = v | - | int `0x007a77a0` (native_btl2) |
 | `0x70a7` | `Native_70a7` | sel, a | float: 0x007b2c90(first of sel, a)'s ST0 | - | float `0x007a54f0` (native_mods) |
 | `0x70a8` | `Native_70a8` | selector int, property int, value f | 0 | - | int `0x007a57e0` (native_btl) |
-| `0x70a9` | `Native_70a9_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is 1, or 0x008864b0() is 0 with state 3 (then 0x008ab8f0(handle)) | poll `0x007a6cb0` (native_btl2) |
+| `0x70a9` | `Native_70a9_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is 1, or 0x008864b0() is 0 with state 3 (then 0x008ab8f0(handle)) | start `0x007a6c50` (not ported), poll `0x007a6cb0` (native_btl2) |
 | `0x70aa` | `Native_GetSelfProperty` | property int | int: the actor's own property | - | int `0x007a4ea0` (native_btl) |
 | `0x70ab` | `Native_SetActorProperty` | property int, value int | int: 0x007b4b70(actor, property, -13, value) | - | int `0x007a5360` (native_move) |
 | `0x70ac` | `Native_70ac` | i int | float: actor float property i | - | float `0x007a5650` (native_btl) |
@@ -2529,15 +2538,17 @@ workers the init bit in both runs and compares the rest.
 1. Done: the accessors, the dispatch loop, every opcode, native dispatch,
    the signals (request families, `AtelExecReturn`, the waits, opcodes
    `79`/`7a`): `Script_Run` calls no original script code but natives.
-2. Done: every native the shipped scripts call (rounds 1-13; the
-   group-0 table at `0x00c50050` has 180 more entries no shipped script
-   calls) but the debug ones, which are marked. Now: the VM's other
-   helpers, by blocker count (`tools/worklist.py --module script`).
+2. Done for 1037 of the 1059 natives that `ffx script natives` lists. Not
+   ported: 15 debug natives (marked in the table) and `0x7076`, which waits
+   on `MsSetBallSpline`'s port. Six more run one or two slots in the original
+   (their rows say which). The group-0 table at `0x00c50050` has 180 more
+   entries that no script calls (179 with a Rust handler). Now: the VM's
+   other helpers, by blocker count (`tools/worklist.py --module script`).
 3. Then a `Natives` implementation with no original code behind it, so
    the interpreter runs outside the game.
 
 ## Open questions
 
-- The meaning of most native functions.
-- Opcode `40` and what the `+0x2e4` table of opcode `7a` drives.
+- What calls `Script_LineActorSide` (`0x008632b0`), the reader of the
+  `+0x2e4` table that opcode `7a` writes.
 - The block header words `0x04`–`0x2c` and the tables they point to.

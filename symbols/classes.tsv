@@ -22,11 +22,11 @@
 0x004013b0	glue	reviewed: STL error_category::message (system round 34)
 0x00401430	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x00401480	logic	default (no rule: ported to be safe)
-0x00401490	logic	default (no rule: ported to be safe)
+0x00401490	platform	reviewed: MSVC std error_category vtable method (_Winerror_map etc.) (system round 41)
 0x004014e0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x00401530	logic	default (no rule: ported to be safe)
-0x00401540	logic	default (no rule: ported to be safe)
-0x004015c0	logic	default (no rule: ported to be safe)
+0x00401540	platform	reviewed: MSVC std error_category vtable method (iostream stream error) (system round 41)
+0x004015c0	platform	reviewed: MSVC std error_category vtable method (_Syserror_map etc.) (system round 41)
 0x00401600	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_delete)
 0x00401660	platform	only exception unwinding reaches it (a release or destructor)
 0x00401680	dead	unreachable from the entry point and every pointer table
@@ -304,7 +304,7 @@
 0x0061a690	platform	only called from platform code (0x5d6cc0)
 0x0061a730	logic	default (no rule: ported to be safe)
 0x0061a740	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (Phyre_PhyreFree)
-0x0061a770	logic	default (no rule: ported to be safe)
+0x0061a770	platform	reviewed: Phyre_PWorldMatrixFlyController vtable slot (system round 41)
 0x0061a7f0	logic	default (no rule: ported to be safe)
 0x0061a810	logic	default (no rule: ported to be safe)
 0x0061a850	logic	default (no rule: ported to be safe)
@@ -2333,10 +2333,10 @@
 0x00688220	dead	unreachable from the entry point and every pointer table
 0x00688250	dead	unreachable from the entry point and every pointer table
 0x006882a0	debug	reviewed: StackWalker call-stack line formatting for crash traces (system round 40)
-0x00688470	logic	default (no rule: ported to be safe)
-0x006884e0	logic	default (no rule: ported to be safe)
+0x00688470	debug	reviewed: StackWalker error logger (system round 41)
+0x006884e0	debug	reviewed: StackWalker module-load logger (system round 41)
 0x006885e0	logic	default (no rule: ported to be safe)
-0x006885f0	logic	default (no rule: ported to be safe)
+0x006885f0	debug	reviewed: StackWalker symbol-init logger (system round 41)
 0x006886d0	dead	unreachable from the entry point and every pointer table
 0x00688ed0	dead	unreachable from the entry point and every pointer table
 0x00689370	dead	unreachable from the entry point and every pointer table
@@ -4126,7 +4126,7 @@
 0x006f1b00	dead	unreachable from the entry point and every pointer table
 0x006f1bc0	dead	unreachable from the entry point and every pointer table
 0x006f1c10	platform	only called from platform code (0x647fe0)
-0x006f1c40	logic	default (no rule: ported to be safe)
+0x006f1c40	debug	reviewed: only calls SaveDataManager_debugSave_Internal (system round 41)
 0x006f1ce0	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataManager_doLoad
 0x006f1d10	platform	only called from platform code (SaveDataToLoadAllAlBhed)
 0x006f1d70	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataManager_doSave
@@ -16416,7 +16416,7 @@
 0x009dae90	logic	default (no rule: ported to be safe)
 0x009dafd0	logic	default (no rule: ported to be safe)
 0x009dafe0	logic	default (no rule: ported to be safe)
-0x009db110	logic	default (no rule: ported to be safe)
+0x009db110	platform	reviewed: onMagicDLLLoaded: GetProcAddress of the magic DLL entry points (system round 41)
 0x009db190	logic	default (no rule: ported to be safe)
 0x009db230	logic	default (no rule: ported to be safe)
 0x009db250	logic	default (no rule: ported to be safe)
@@ -16894,7 +16894,7 @@
 0x00a425a0	dead	unreachable from the entry point and every pointer table
 0x00a425e0	dead	unreachable from the entry point and every pointer table
 0x00a42690	dead	unreachable from the entry point and every pointer table
-0x00a42700	logic	default (no rule: ported to be safe)
+0x00a42700	platform	reviewed: Lua push-pointer-or-nil template (Phyre copies 0xa2d940/0xa322d0/0xa345f0) (system round 41)
 0x00a42740	glue	reviewed: PhyreEngine class-descriptor entry (system round 37)
 0x00a42760	glue	reviewed: PhyreEngine class-descriptor entry (system round 37)
 0x00a42780	dead	unreachable from the entry point and every pointer table
@@ -16960,8 +16960,8 @@
 0x00a44810	platform	unnamed, in the PS2 SDK stub file between sceCdStandby and sceCdSync
 0x00a44820	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sceCdSync
 0x00a44840	logic	debug-sounding name, but used by logic: Sg_MainLoop
-0x00a44890	logic	default (no rule: ported to be safe)
-0x00a44960	logic	default (no rule: ported to be safe)
+0x00a44890	platform	reviewed: CWindowEventHandler focus lost: pauses sound/FMV (system round 41)
+0x00a44960	platform	reviewed: CWindowEventHandler focus gained: resumes sound/FMV (system round 41)
 0x00a44a30	platform	reviewed: resets a CWindowEventHandler (system round 27)
 0x00a44a50	platform	imports ReleaseSemaphore, WaitForSingleObject
 0x00a44b30	platform	thin wrapper: only forwards to platform code (JobSchedule_JobScheduler_waitForComplete)

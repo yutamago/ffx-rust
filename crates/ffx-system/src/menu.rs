@@ -429,6 +429,165 @@ pub mod bridge {
         1
     }
 
+    /// The previous magic (`0x00c64ca8`; -1 for none).
+    pub const MAGIC_PREVIOUS: Global<u32> = Global::new(0x00c6_4ca8);
+    /// The previous magic's module (`0x00c64cb0`, the handle
+    /// `PhyreFIOS_UnloadMagicfilePrx` takes; -1 for none).
+    pub const MAGIC_PREVIOUS_PRX: Global<u32> = Global::new(0x00c6_4cb0);
+    /// `g_MagicFile_IsNexData` (`0x0193fdac`).
+    pub const MAGIC_IS_NEX_DATA: Global<u32> = Global::new(0x0193_fdac);
+    /// The character magic 0x1b5 and 0x1b6 hide effects on (`0x022fb3dc`).
+    pub const MAGIC_HIDDEN_CHR: Global<u32> = Global::new(0x022f_b3dc);
+    /// Two tables of five aligned allocations magic 0x1b5 and 0x1b6 make
+    /// (`0x022fb3e0`, `0x022fb3c8`).
+    pub const MAGIC_BUFFERS: [u32; 2] = [0x022f_b3e0, 0x022f_b3c8];
+    /// A counter magic 0x2c6 keeps (`0x022fb3f8`).
+    pub const MAGIC_COUNTER: Global<u32> = Global::new(0x022f_b3f8);
+    /// `g_OpPairTable` (`0x022fb400`): a count, then (key low, key high)
+    /// pairs from entry 1.
+    pub const OP_PAIR_TABLE: u32 = 0x022f_b400;
+    /// The number of VFX instance runs (`0x012f411c`).
+    pub const VFX_RUN_COUNT: Global<i32> = Global::new(0x012f_411c);
+    /// The VFX instance runs (`0x02332ec0`, 16 bytes each): a 64-bit first
+    /// instance key and a count.
+    pub const VFX_RUNS: u32 = 0x0233_2ec0;
+
+    /// `graphicVFXDestroy(key low, key high)` (`0x00645280`).
+    const VFX_DESTROY: u32 = 0x0064_5280;
+    /// `graphicSetMagicFileAsyncLoadEnable(mode)` (`0x006435e0`).
+    const ASYNC_LOAD_ENABLE: u32 = 0x0064_35e0;
+
+    /// `MagicFile_Unload()` (`0x009da960`): `g_MagicFile_IsNexData`
+    /// cleared; without a previous magic ([`MAGIC_PREVIOUS`] or
+    /// [`MAGIC_PREVIOUS_PRX`] -1) a message, async loading back on
+    /// (`graphicSetMagicFileAsyncLoadEnable(1)`) and 0. Else
+    /// `graphicVFXDestroyAllExceptFieldAndEternal()`; magic 0x1b5/0x1b6
+    /// shows its hidden character's effects again (`Ch_SetHideEffect(chr,
+    /// 1)`), frees its ten buffers (`0x00686fe0`) and destroys its VFX
+    /// kinds 0..2, 1000..1002 and 100..102 under key high 0x1b5; magic
+    /// 0x246 destroys every pair of [`OP_PAIR_TABLE`] and clears it. Then
+    /// [`MAGIC_COUNTER`] cleared, the magic's texture and shader table
+    /// unloaded, its preload dropped
+    /// (`MagicFile_ClearPreloadedPrx(graphicLevelGetNameHash(), magic)`),
+    /// its module unloaded (`PhyreFIOS_UnloadMagicfilePrx(prx, 0)`), every
+    /// instance of every [`VFX_RUNS`] run destroyed, the runs cleared, a
+    /// message, `movie_disp2(0, 0, 0, 0, 0)`, the previous magic and its
+    /// module -1, `graphicMagicSetToBeDeletePath("")`, async loading on;
+    /// 1. Calls go through `call`, the CRT's `printf` through `printf`.
+    ///
+    /// The original also scans the preload table (`0x0193fd40`) between
+    /// the shader table and the preload drop; the scan only reads and its
+    /// result is never used, so it is left out.
+    pub fn magic_file_unload<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut printf: impl FnMut(&mut M, u32, Option<u32>),
+    ) -> u32 {
+        MAGIC_IS_NEX_DATA.set(mem, 0);
+        if MAGIC_PREVIOUS_PRX.get(mem) == u32::MAX || MAGIC_PREVIOUS.get(mem) == u32::MAX {
+            let fmt = mem.rebase(0x00b7_05bc);
+            printf(mem, fmt, None);
+            call(mem, ASYNC_LOAD_ENABLE, &[1]);
+            return 0;
+        }
+        call(mem, 0x0064_5320, &[]);
+        let mut magic = MAGIC_PREVIOUS.get(mem);
+        if magic == 0x1b6 || magic == 0x1b5 {
+            let chr = MAGIC_HIDDEN_CHR.get(mem);
+            if chr != 0 {
+                call(mem, 0x0082_b2a0, &[chr, 1]);
+            }
+            MAGIC_HIDDEN_CHR.set(mem, 0);
+            for k in 0..5u32 {
+                for table in MAGIC_BUFFERS {
+                    let at = mem.rebase(table).wrapping_add(4 * k);
+                    let p: u32 = mem.read(at);
+                    if p != 0 {
+                        call(mem, 0x0068_6fe0, &[p]);
+                    }
+                    mem.write(at, 0u32);
+                }
+            }
+            for kind in [0, 1, 2, 1000, 1001, 1002, 100, 101, 102] {
+                call(mem, VFX_DESTROY, &[kind, 0x1b5]);
+            }
+            magic = MAGIC_PREVIOUS.get(mem);
+        }
+        if magic == 0x246 {
+            let table = mem.rebase(OP_PAIR_TABLE);
+            let mut i = 1i32;
+            while i <= mem.read::<i32>(table) {
+                let entry = table.wrapping_add(8 * i.cast_unsigned());
+                let key: [u32; 2] = mem.read(entry);
+                call(mem, VFX_DESTROY, &key);
+                mem.write(entry, [0u32; 2]);
+                i += 1;
+            }
+            mem.write(table, [0u32; 2]);
+            magic = MAGIC_PREVIOUS.get(mem);
+        }
+        MAGIC_COUNTER.set(mem, 0);
+        call(mem, 0x0064_20f0, &[magic]);
+        call(mem, 0x0064_20e0, &[]);
+        let magic = MAGIC_PREVIOUS.get(mem);
+        let hash = call(mem, 0x0064_1da0, &[magic]);
+        call(mem, 0x009d_acc0, &[hash, magic]);
+        let prx = MAGIC_PREVIOUS_PRX.get(mem);
+        call(mem, 0x0067_94f0, &[prx, 0]);
+        let runs = mem.rebase(VFX_RUNS);
+        let mut k = 0i32;
+        while k < VFX_RUN_COUNT.get(mem) {
+            let run = runs.wrapping_add(16 * k.cast_unsigned());
+            let mut i = 0i32;
+            while i < mem.read::<i32>(run.wrapping_add(8)) {
+                let first: u64 = mem.read(run);
+                let key = first.wrapping_add(i64::from(i).cast_unsigned());
+                #[allow(clippy::cast_possible_truncation)] // the two words
+                call(mem, VFX_DESTROY, &[key as u32, (key >> 32) as u32]);
+                i += 1;
+            }
+            k += 1;
+        }
+        VFX_RUN_COUNT.set(mem, 0);
+        let magic = MAGIC_PREVIOUS.get(mem);
+        let fmt = mem.rebase(0x00b7_05f0);
+        printf(mem, fmt, Some(magic));
+        call(mem, 0x0064_2fe0, &[0, 0, 0, 0, 0]);
+        MAGIC_PREVIOUS.set(mem, u32::MAX);
+        MAGIC_PREVIOUS_PRX.set(mem, u32::MAX);
+        let empty = mem.rebase(0x00b8_fbeb);
+        call(mem, 0x0064_2070, &[empty]);
+        call(mem, ASYNC_LOAD_ENABLE, &[1]);
+        1
+    }
+
+    /// The battle character magic 0x94/0x253 hid in battle scene
+    /// `0x01050032` (`0x00c64cdc`, set by `0x008161f0`; -1 for none).
+    pub const MAGIC_HIDDEN_BTL_CHR: Global<u32> = Global::new(0x00c6_4cdc);
+
+    /// `MagicFile_Update()` (`0x009dac60`, once a frame from
+    /// `Sg_MainLoop`): with a previous magic and its module (neither -1),
+    /// [`magic_file_unload`] (`MagicFile_Unload`, through `call`); a
+    /// character in [`MAGIC_HIDDEN_BTL_CHR`] shown again
+    /// (`MsSetChrVisible(chr, 1)`) and the word -1. Returns what the
+    /// original leaves in `eax`: `MsSetChrVisible`'s result, or -1 without
+    /// a hidden character.
+    pub fn magic_file_update<M: Mem>(
+        mem: &mut M,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if MAGIC_PREVIOUS_PRX.get(mem) != u32::MAX && MAGIC_PREVIOUS.get(mem) != u32::MAX {
+            call(mem, 0x009d_a960, &[]);
+        }
+        let chr = MAGIC_HIDDEN_BTL_CHR.get(mem);
+        if chr == u32::MAX {
+            return chr;
+        }
+        let r = call(mem, 0x0079_6660, &[chr, 1]);
+        MAGIC_HIDDEN_BTL_CHR.set(mem, u32::MAX);
+        r
+    }
+
     /// `0x009dafe0()`: `graphicSetMagicFileAsyncLoadEnable(mode)` by the
     /// magic id: 1 for 0x26e..=0x274, 0x15c, 0x277 and 0x27b, 3 for 0x15e,
     /// else 2 (through `call`).

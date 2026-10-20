@@ -315,6 +315,18 @@ REVIEWED = {
     0x006f0510: ("debug", "SaveDataManager_debugSave_Internal: raw save dump via _wfopen, from 0x6f1c40 (system round 40)"),
     0x006882a0: ("debug", "StackWalker call-stack line formatting for crash traces (system round 40)"),
     0x0075e990: ("dead", "third byte-identical copy of pppKeAngleXY 0x7590e0, no callers (effects round 32)"),
+    0x004015c0: ("platform", "MSVC std error_category vtable method (_Syserror_map etc.) (system round 41)"),
+    0x00401490: ("platform", "MSVC std error_category vtable method (_Winerror_map etc.) (system round 41)"),
+    0x00401540: ("platform", "MSVC std error_category vtable method (iostream stream error) (system round 41)"),
+    0x0061a770: ("platform", "Phyre_PWorldMatrixFlyController vtable slot (system round 41)"),
+    0x00a42700: ("platform", "Lua push-pointer-or-nil template (Phyre copies 0xa2d940/0xa322d0/0xa345f0) (system round 41)"),
+    0x00a44890: ("platform", "CWindowEventHandler focus lost: pauses sound/FMV (system round 41)"),
+    0x00a44960: ("platform", "CWindowEventHandler focus gained: resumes sound/FMV (system round 41)"),
+    0x009db110: ("platform", "onMagicDLLLoaded: GetProcAddress of the magic DLL entry points (system round 41)"),
+    0x00688470: ("debug", "StackWalker error logger (system round 41)"),
+    0x006884e0: ("debug", "StackWalker module-load logger (system round 41)"),
+    0x006885f0: ("debug", "StackWalker symbol-init logger (system round 41)"),
+    0x006f1c40: ("debug", "only calls SaveDataManager_debugSave_Internal (system round 41)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

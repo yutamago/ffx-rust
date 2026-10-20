@@ -12544,6 +12544,86 @@ pub mod bridge {
         mem.write(w.wrapping_add(0xb0), fraction % per_line);
         more.cast_unsigned()
     }
+
+    /// `TOGetFFXVideoMode()` (`0x008ac3a0`).
+    const VIDEO_MODE: u32 = 0x008a_c3a0;
+    /// [`text_scroll_tick`]'s original (`0x008df570`).
+    const TEXT_SCROLL_TICK: u32 = 0x008d_f570;
+    /// The draw function [`text_scroll_init`] installs (`0x008de8c0`).
+    pub const TEXT_SCROLL_DRAW: u32 = 0x008d_e8c0;
+    /// The function [`text_scroll_step`] installs at `+0x114` once every
+    /// line is out (`0x008e02c0`).
+    pub const TEXT_SCROLL_DONE: u32 = 0x008e_02c0;
+    /// [`text_scroll_step`]'s original (`0x008ded60`), which it installs
+    /// at `+0x11c`.
+    pub const TEXT_SCROLL_STEP: u32 = 0x008d_ed60;
+
+    /// `TOTextScrollInit_008ded00(w)`: a scrolling text window's clock
+    /// reset: the line count `+0xa0`, the fraction `+0xb0` and the
+    /// countdown `+0xb4` zeroed, the step `+0xac` 30 (25 in the 50 Hz
+    /// video mode, `TOGetFFXVideoMode` non-zero), the draw function
+    /// `+0x118` [`TEXT_SCROLL_DRAW`], the mode `+0x2e` (`u16`) 1 and the
+    /// colour `+0x58` grey (`0x80808080`). Returns 0.
+    pub fn text_scroll_init<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        mem.write(w.wrapping_add(0xa0), 0u32);
+        mem.write(w.wrapping_add(0xb0), 0u32);
+        mem.write(w.wrapping_add(0xb4), 0u32);
+        let step: u32 = if call(mem, VIDEO_MODE, &[]) == 0 {
+            30
+        } else {
+            25
+        };
+        mem.write(w.wrapping_add(0xac), step);
+        let draw = mem.rebase(TEXT_SCROLL_DRAW);
+        mem.write(w.wrapping_add(0x118), draw);
+        mem.write(w.wrapping_add(0x2e), 1u16);
+        mem.write(w.wrapping_add(0x58), 0x8080_8080u32);
+        0
+    }
+
+    /// The line count `+0xa0` clamped to `0..=+0xa8` (above the last line
+    /// it becomes the last line, even a negative one); returns it.
+    fn clamp_scroll_line(mem: &mut impl Mem, w: u32) -> i32 {
+        let line: i32 = mem.read(w.wrapping_add(0xa0));
+        let last: i32 = mem.read(w.wrapping_add(0xa8));
+        let line = if line > last { last } else { line.max(0) };
+        mem.write(w.wrapping_add(0xa0), line);
+        line
+    }
+
+    /// `TOTextScrollStep_008ded60(w)`: the line count `+0xa0` clamped to
+    /// the last line `+0xa8`; once it reaches it with the countdown
+    /// `+0xb4` at 0, the state `+0x2c` becomes `0x20002` (mode `+0x2e` 3
+    /// when the text `[+0x98]` is empty), `+0x114` [`TEXT_SCROLL_DONE`]
+    /// and `+0x11c` this function. Then one [`text_scroll_tick`] and the
+    /// clamp again. Returns 0.
+    pub fn text_scroll_step<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let line = clamp_scroll_line(mem, w);
+        let last: i32 = mem.read(w.wrapping_add(0xa8));
+        if line >= last && mem.read::<u32>(w.wrapping_add(0xb4)) == 0 {
+            mem.write(w.wrapping_add(0x2c), 0x0002_0002u32);
+            let text: u32 = mem.read(w.wrapping_add(0x98));
+            if mem.read::<u8>(text) == 0 {
+                mem.write(w.wrapping_add(0x2e), 3u16);
+            }
+            let done = mem.rebase(TEXT_SCROLL_DONE);
+            mem.write(w.wrapping_add(0x114), done);
+            let step = mem.rebase(TEXT_SCROLL_STEP);
+            mem.write(w.wrapping_add(0x11c), step);
+        }
+        call(mem, TEXT_SCROLL_TICK, &[w]);
+        clamp_scroll_line(mem, w);
+        0
+    }
+
     /// `TOMkpShapeXYC2(id, x, y, c0, c1)` (`0x00903a50`).
     pub const SHAPE_XY_C2: u32 = 0x0090_3a50;
 

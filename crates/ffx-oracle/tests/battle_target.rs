@@ -126,6 +126,9 @@ fn host() -> t::Host<'static> {
 thread_local! {
     /// 16 bytes in both oracles for the callbacks' outputs (cleared after).
     static SCRATCH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// The round 28 sector checks' own stream (the later checks keep
+    /// theirs).
+    static DIVIDE_RNG: std::cell::Cell<u32> = const { std::cell::Cell::new(0x28d1_0001) };
     /// 0x20 bytes in both oracles for a script signal block (cleared after).
     static BLOCK: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// The battle snapshot's character pointers, before the actors are
@@ -366,6 +369,19 @@ fn local_words(a: &mut Oracle, b: &mut Oracle) {
     }
 }
 
+/// The sector checks' facing local without a model: 5.0 (beyond pi,
+/// so `MsNearRag` turns it) in the original's whole stack and the Rust's
+/// two words at `local`.
+fn facing_stack(a: &mut Oracle, b: &mut Oracle, local: u32) {
+    let r = a.stack_range();
+    let five: Vec<u8> = (r.start..r.end)
+        .step_by(4)
+        .flat_map(|_| 5.0f32.to_le_bytes())
+        .collect();
+    a.write(r.start, &five).unwrap();
+    b.write(local, &five[..8]).unwrap();
+}
+
 fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, script: bool) {
     let h = host();
     let i = rng.below(ACTORS);
@@ -391,6 +407,71 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
         |m| t::ms_get_chr_camera_pos(m, &stand_in, i, out + 0x10).cast_unsigned(),
     );
     same("positions", a, b);
+    // the turn's sectors (round 28): the facing's local 5.0 in both
+    // ([`facing_stack`]: an actor without a model leaves it as it was),
+    // sector counts of either sign (never 0: the original's divide
+    // faults), points apart, together or a hair apart, a battle direction
+    // of the slots around +0x514
+    let mut dr = Xorshift(DIVIDE_RNG.with(std::cell::Cell::get));
+    let slot = a.read(actor + 0x511, 1).unwrap();
+    let local = a.stack_range().end - 0x200;
+    facing_stack(a, b, local);
+    // (and one an f32 cannot hold)
+    let n = [
+        1,
+        2,
+        4,
+        8,
+        0x10,
+        1 + dr.below(100),
+        (-3i32).cast_unsigned(),
+        0x0100_0003,
+    ][dr.below(8) as usize];
+    let mode = [0, 1, dr.next()][dr.below(3) as usize];
+    poke(
+        a,
+        b,
+        actor + 0x511,
+        &[[0u8, 1, 2, 3, 0xff][dr.below(5) as usize]],
+    );
+    twin(
+        "MsGetBasicDivide",
+        a,
+        b,
+        0x007a_8720,
+        &[i, n, mode],
+        ALL,
+        |m| ffx_battle::body::bridge::ms_get_basic_divide(m, i, n, mode, local),
+    );
+    same("MsGetBasicDivide", a, b);
+    let (from, to) = (out + 0x20, out + 0x30);
+    match dr.below(6) {
+        0 => {
+            let p = a.read(from, 16).unwrap();
+            poke(a, b, to, &p);
+        }
+        // a tiny but nonzero distance
+        1 => {
+            let mut p = a.read(from, 16).unwrap();
+            let x = f32::from_le_bytes(p[..4].try_into().unwrap());
+            p[..4].copy_from_slice(&(x + 1e-4 * x.abs().max(1.0)).to_le_bytes());
+            poke(a, b, to, &p);
+        }
+        _ => {}
+    }
+    facing_stack(a, b, local);
+    twin(
+        "MsGetDirDivide",
+        a,
+        b,
+        0x007a_87f0,
+        &[from, to, i, n, mode],
+        ALL,
+        |m| ffx_battle::body::bridge::ms_get_dir_divide(m, &stand_in, from, to, i, n, mode, local),
+    );
+    same("MsGetDirDivide", a, b);
+    poke(a, b, actor + 0x511, &slot);
+    DIVIDE_RNG.with(|c| c.set(dr.0));
     let d = float(rng);
     let ra = call(a, 0x0079_58c0, &[i, d]);
     let rb = t::ms_get_chr_target_dir(b, i, d).to_bits();
@@ -819,6 +900,44 @@ fn status(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u3
         local_words(a, b);
         same("MsDetachWeapon", a, b);
         poke(a, b, pj, &fake);
+    }
+    // actor 6's arm shown again (+4 7): no snapshot gives it a weapon
+    // character, so it lends one of the party's weapon models and, when it
+    // has no live character, a party member's
+    let donor = (0..ACTORS * 2).find_map(|n| {
+        let wpn = ffx_battle::actor::bridge::ms_get_weapon(b, n / 2, (n % 2).cast_signed());
+        let c = b.read(wpn, 4).unwrap();
+        (c != [0; 4] && n / 2 != 6).then_some(c)
+    });
+    let lives: Vec<u32> =
+        LIVE_CHRS.with(|c| c.borrow().iter().copied().filter(|&c| c != 0).collect());
+    if let (Some(wchr), Some(&any)) = (donor, lives.first()) {
+        // its own draw: the stream the later steps get stays as it was
+        let k = Xorshift(i ^ 0x28d6).below(2);
+        let six = w.actor(6);
+        let wpn = ffx_battle::actor::bridge::ms_get_weapon(b, 6, k.cast_signed());
+        let (fake, kept) = (b.read(six, 8).unwrap(), b.read(wpn, 4).unwrap());
+        let flags = b.read(six + 0x4b5, 3).unwrap();
+        // the lent model's place, turn and binding are put back after (its
+        // owner still holds it)
+        let lent = u32::from_le_bytes(wchr.clone().try_into().unwrap());
+        let model = b.read(lent, 0x200).unwrap();
+        let own = LIVE_CHRS
+            .with(|c| c.borrow().get(6).copied())
+            .filter(|&c| c != 0);
+        poke(a, b, six, &own.unwrap_or(any).to_le_bytes());
+        poke(a, b, six + 4, &7u32.to_le_bytes());
+        poke(a, b, six + 0x4b5, &[1, 0, 0]);
+        poke(a, b, wpn, &wchr);
+        twin("MsDetachWeapon", a, b, 0x0079_3f10, &[6, k], ALL, |m| {
+            dm(m, |m| st::ms_detach_weapon(m, &mut call, 6, k))
+        });
+        local_words(a, b);
+        same("MsDetachWeapon", a, b);
+        poke(a, b, six, &fake);
+        poke(a, b, six + 0x4b5, &flags);
+        poke(a, b, lent, &model);
+        poke(a, b, wpn, &kept);
     }
     twin("MsResetChrPos", a, b, 0x0078_d680, &[i, actor], ALL, |m| {
         st::ms_reset_chr_pos(m, &stand_in, i, actor)
@@ -5515,7 +5634,13 @@ const FRAME2_CALLEES: [(u32, u8); 10] = {
 /// (`MsMessageCueProcess`) and the script cameras' move reset
 /// (`MsAtelResetMoveCameraID` down to `MsSetCheckChange`), on random
 /// queues and cameras. Its own random stream.
-fn messages_and_cameras(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32) {
+fn messages_and_cameras(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rec: u32,
+    script: bool,
+) {
     use ffx_battle::battle_end::bridge as be;
     use ffx_battle::camera::bridge as cam;
     let mut saved = Vec::new();
@@ -5709,7 +5834,168 @@ fn messages_and_cameras(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec:
         |m| cam::ms_atel_reset_move_camera_id(m, &mut game_call_o, kind),
     );
     same("MsAtelResetMoveCameraID", a, b);
+    // the script's IDs (round 28): kept, or got from a free slot (some
+    // cleared), every kind and camera and beyond
+    for k in 0..12 {
+        if rng.below(3) == 0 {
+            let at = ffx_battle::minor::bridge::ATEL_CAMERA.ptr(b).addr + 4 * k;
+            poke(a, b, at, &[0; 4]);
+        }
+    }
+    for _ in 0..3 {
+        let owner = rng.below(0x100);
+        let kind = [0, 1, 2, 3, 4, rng.next()][rng.below(6) as usize];
+        let c = [0, 1, 2, 3, rng.next()][rng.below(5) as usize];
+        twin(
+            "MsAtelGetCameraID",
+            a,
+            b,
+            0x007b_a780,
+            &[owner, kind, c],
+            ALL,
+            |m| cam::ms_atel_get_camera_id(m, owner, kind, c),
+        );
+        same("MsAtelGetCameraID", a, b);
+    }
+    camera_setters(a, b, rng, &pick, script);
     unstub(a, b, &saved);
+}
+
+/// The camera request setters (round 28) on [`messages_and_cameras`]'
+/// cameras: requests the slots name (current or not) and others, both
+/// sides and beyond, script actors only on a snapshot, the vector from a
+/// camera, the aims' floats (random, zero divisors at times).
+fn camera_setters(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    pick: &dyn Fn(&mut Xorshift) -> u32,
+    script: bool,
+) {
+    use ffx_battle::camera::bridge as cam;
+    let h = host();
+    let mut call = game_call;
+    let cams = cam::CAMERAS.ptr(b).addr;
+    let actor = |rng: &mut Xorshift| -> u32 {
+        if script && rng.below(4) != 0 {
+            rng.below(4)
+        } else {
+            [0xffff, rng.next()][rng.below(2) as usize] | 0xffff
+        }
+    };
+    let id = pick(rng);
+    let side = rng.below(4);
+    let (x, y) = (actor(rng), actor(rng));
+    let p = cams + rng.below(3) * cam::CAMERA_SIZE + 0x80;
+    twin(
+        "MsCameraSetAtelFocus_007beeb0",
+        a,
+        b,
+        0x007b_eeb0,
+        &[id, side, x, y, p],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                cam::ms_camera_set_atel_focus(m, &h, &mut call, id, side, x, y, p)
+            })
+        },
+    );
+    same("MsCameraSetAtelFocus_007beeb0", a, b);
+    // the aims' bases (`+0x8c`): none, or the other side's position
+    for c in 0..3 {
+        for k in 0..2 {
+            let s = cams + c * cam::CAMERA_SIZE + 0x30 + 0x61c * k;
+            let base = [
+                0,
+                cams + c * cam::CAMERA_SIZE + 0x30 + 0x61c * (1 - k) + 0x50,
+            ][rng.below(2) as usize];
+            poke(a, b, s + 0x8c, &base.to_le_bytes());
+        }
+    }
+    // the other side's channel's actors for the yaw's track
+    for c in 0..3 {
+        for n in 0..6 {
+            for k in 0..2 {
+                let at = cams + c * cam::CAMERA_SIZE + 0x70c + 0x130 * n + 0xc;
+                let at = if k == 0 { at } else { at - 0x61c };
+                let v: Vec<u8> = (0..2)
+                    .flat_map(|_| u16::try_from(actor(rng) & 0xffff).unwrap().to_le_bytes())
+                    .collect();
+                poke(a, b, at, &v);
+            }
+        }
+    }
+    let id = pick(rng);
+    let side = rng.below(4);
+    let v = [float(rng), float(rng), float(rng)];
+    twin(
+        "MsCameraSetAtelYaw_007befc0",
+        a,
+        b,
+        0x007b_efc0,
+        &[id, side, v[0], v[1], v[2]],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                cam::ms_camera_set_atel_yaw(m, &h, &mut call, id, side, v[0], v[1], v[2])
+            })
+        },
+    );
+    same("MsCameraSetAtelYaw_007befc0", a, b);
+    let mut six = || {
+        let mut v = [0u32; 6];
+        for w in &mut v {
+            *w = float(rng);
+        }
+        // zero divisors at times (the aims skip the division)
+        for k in [3, 5] {
+            if rng.below(3) == 0 {
+                v[k] = 0;
+            }
+        }
+        v
+    };
+    let v = six();
+    let w = six();
+    let id = pick(rng);
+    let side = rng.below(4);
+    zero_stack(a);
+    let scratch = a.stack_range().end - 0x200;
+    twin(
+        "MsCameraSetAimPolar_007bf330",
+        a,
+        b,
+        0x007b_f330,
+        &[id, side, v[0], v[1], v[2], v[3], v[4], v[5]],
+        ALL,
+        |m| cam::ms_camera_set_aim_polar(m, &stand_in, &mut game_call_o, id, side, v, scratch),
+    );
+    same("MsCameraSetAimPolar_007bf330", a, b);
+    let id = pick(rng);
+    let side = rng.below(4);
+    let short = [0, 1, rng.next()][rng.below(3) as usize];
+    zero_stack(a);
+    twin(
+        "MsCameraSetAimPolar2_007bf420",
+        a,
+        b,
+        0x007b_f420,
+        &[id, side, short, w[0], w[1], w[2], w[3], w[4], w[5]],
+        ALL,
+        |m| {
+            cam::ms_camera_set_aim_polar2(
+                m,
+                &stand_in,
+                &mut game_call_o,
+                id,
+                side,
+                short,
+                w,
+                scratch,
+            )
+        },
+    );
+    same("MsCameraSetAimPolar2_007bf420", a, b);
 }
 
 /// Party members and aeons coming and going (`ffx_battle::exchange`).
@@ -6252,6 +6538,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let rmrec = scratch(a, b, (EXCHANGE_REC * READ_MANAGE_RECS) as usize);
     let rmdata = scratch(a, b, 0x100);
     let mut r21 = Xorshift(0x21e5_0001 ^ u32::from(synthetic));
+    // MsDebugFullCommand's ply_data block (round 28)
+    let dfc = scratch(a, b, 0x200);
+    let mut r28 = Xorshift(0x28df_0001 ^ u32::from(synthetic));
     let iheap = scratch(a, b, 0x1000);
     let idata = scratch(a, b, 0x300);
     let sblock = scratch(a, b, 0x1000);
@@ -6313,7 +6602,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         battle_frame(a, b, rng, &w, out, grec);
         effect_start(a, b, &mut r15, &w, out, effrec, [prec, srec, erec], cam);
         save_params(a, b, &mut r15, &w, out, effrec, xrec);
-        messages_and_cameras(a, b, &mut r15, mrec);
+        messages_and_cameras(a, b, &mut r15, mrec, !synthetic);
         moves(a, b, &mut r16, &w, out);
         let whole = r17.below(2) == 0;
         move_steps(a, b, &mut r17, &w, &f, whole);
@@ -6337,6 +6626,14 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         }
         if r21.below(2) == 0 {
             read_manage(a, b, &mut r21, &w, rmrec, effrec, rmdata, out);
+        }
+        if r28.below(4) == 0 {
+            debug_full_command(a, b, &mut r28, rmrec, dfc, synthetic);
+        }
+        // snapshots only: the weapon's name reads kernel tables the image
+        // lacks
+        if !synthetic && r28.below(3) == 0 {
+            weapon_plate(a, b, &mut r28, rmrec, dfc);
         }
         if init_rng.below(3) == 0 {
             init_leaves(a, b, &mut init_rng, rmrec, iheap, idata);
@@ -8191,6 +8488,194 @@ const READ_MANAGE_CALLEES: [(u32, u8); 19] = {
 };
 const READ_MANAGE_STUBS: u32 = BRIDGE_STUBS + 0x20 * 8 + 0x40 * 48;
 const READ_MANAGE_RECS: u32 = 23;
+
+/// `BtlEnd_DrawWeaponPlate_008be0d0` (round 28): the plate and name draws
+/// as logging stubs (in [`READ_MANAGE_STUBS`]' slots, records from `rec`),
+/// the remaps as stand-ins (x kept, y doubled), up to four spoils (IDs of the
+/// spoils' and other equipment at `block`, never 0xff: the original reads
+/// through the null slot), held or not, equippable or not; spoils in and
+/// out of range, the rows' offset or a fixed y; the spoils' slots and
+/// globals put back after.
+fn weapon_plate(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32, block: u32) {
+    use ffx_battle::battle_end::bridge::{self as be, Remap};
+    let mut call = game_call_o;
+    let stub = |k: u32| rec + EXCHANGE_REC * k;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, f) in (0u32..).zip([
+            be::TO_DRAW_MENU_PLATE_XYWH_TYPE,
+            be::DRAW_CROSS_MENU_ICON_WEAPON_NAME,
+        ]) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, READ_MANAGE_STUBS + 0x40 * k, stub(k), 4, 0);
+        }
+        // the remaps (their device globals are unset on the image): x as
+        // it is, y doubled
+        for (k, (f, code)) in (2u32..).zip([
+            (0x0064_47e0u32, &[0xd9u8, 0x44, 0x24, 0x04, 0xc3][..]),
+            (0x0064_4820, &[0xd9, 0x44, 0x24, 0x04, 0xd8, 0xc0, 0xc3][..]),
+        ]) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            let body = o.rebase(READ_MANAGE_STUBS + 0x40 * k);
+            o.write(body, code).unwrap();
+            let rel = body.wrapping_sub(at + 5);
+            o.write(at, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+                .unwrap();
+        }
+        saved.push(mine);
+    }
+    let spoils = ffx_battle::save::bridge::SPOILS_EQUIPMENT.ptr(b).addr;
+    let kept = (
+        b.read(spoils, 0x16 * 8).unwrap(),
+        be::SPOIL_WEAPONS.get(b),
+        be::SPOIL_WEAPON_COUNT.get(b),
+        be::SPOIL_WEAPON_ROWS.get(b),
+    );
+    let count = rng.below(5);
+    let ids: Vec<u8> = (0..4)
+        .flat_map(|_| {
+            let id = [
+                0xb000 | rng.below(10),
+                0x7000 | rng.below(8),
+                rng.below(0xfe),
+            ][rng.below(3) as usize];
+            u16::try_from(id).unwrap().to_le_bytes()
+        })
+        .collect();
+    poke(a, b, block, &ids);
+    set(a, b, be::SPOIL_WEAPONS, block);
+    set(a, b, be::SPOIL_WEAPON_COUNT, count.cast_signed());
+    // (at times more rows than an f32 holds exactly: 0x100001f rounds up
+    // to 0x1000020, which moves the plate a pixel)
+    let rows = [rng.range(-0x3000, 0x8000), 0x0100_001f][rng.below(2) as usize];
+    set(a, b, be::SPOIL_WEAPON_ROWS, rows);
+    for k in 0..8 {
+        let slot = ffx_battle::save::bridge::SPOILS_EQUIPMENT.ptr(b).addr + 0x16 * k;
+        poke(a, b, slot + 2, &[u8::from(rng.below(4) != 0)]);
+        poke(a, b, slot + 6, &[[0u8, 3, 0xff][rng.below(3) as usize]]);
+    }
+    let n = [0, 1, 2, 3, count, (-1i32).cast_unsigned()][rng.below(6) as usize];
+    let x = rng.range(-50, 700).cast_unsigned();
+    let y = rng.range(-50, 500).cast_unsigned();
+    let fixed = [0, 1, rng.next()][rng.below(3) as usize];
+    let remap = |r: Remap, v: f32| match r {
+        Remap::X2 => v,
+        Remap::Y2 => v * 2.0,
+    };
+    let local = a.stack_range().end - 0x200;
+    twin(
+        "BtlEnd_DrawWeaponPlate_008be0d0",
+        a,
+        b,
+        0x008b_e0d0,
+        &[n, x, y, fixed],
+        0,
+        |m| {
+            be::btl_end_draw_weapon_plate(m, &remap, &mut call, n, x, y, fixed, local);
+            0
+        },
+    );
+    same("BtlEnd_DrawWeaponPlate_008be0d0", a, b);
+    poke(a, b, spoils, &kept.0);
+    set(a, b, be::SPOIL_WEAPONS, kept.1);
+    set(a, b, be::SPOIL_WEAPON_COUNT, kept.2);
+    set(a, b, be::SPOIL_WEAPON_ROWS, kept.3);
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+}
+
+/// `MsDebugFullCommand` (round 28): `GetCD`'s object, `Sg_MallocA` and
+/// `Sg_FreeA` as logging stubs (in [`READ_MANAGE_STUBS`]' slots, records
+/// from `rec`), the read block `block` a `ply_data` of up to two segments
+/// (records 0x12, 0x13 in one, both, or neither: the first record then),
+/// in a battle or not (`MsBattleCheck`'s bytes, put back after); not on
+/// a snapshot without live characters (field.snap's made-up actors,
+/// rebuilt as a battle's, loop the original's list sort).
+fn debug_full_command(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rec: u32,
+    block: u32,
+    synthetic: bool,
+) {
+    use ffx_battle::read::bridge as rd;
+    let mut call = game_call;
+    let stub = |k: u32| rec + EXCHANGE_REC * k;
+    let cdobj = block + 0x1c0;
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let mut mine = Vec::new();
+        for (k, (f, n)) in (0u32..).zip([
+            (ffx_battle::getmem::bridge::GET_CD, 0u8),
+            (rd::SG_MALLOC_A, 4),
+            (rd::SG_FREE_A, 2),
+        ]) {
+            let at = o.rebase(f);
+            mine.push((f, o.read(at, 5).unwrap()));
+            logging_stub(o, f, READ_MANAGE_STUBS + 0x40 * k, stub(k), n, 0);
+        }
+        for (k, (slot, n)) in (3u32..).zip([(0u32, 4u8), (8, 1), (0x10, 1), (0x14, 1)]) {
+            logging_stub(o, 0, READ_MANAGE_STUBS + 0x40 * k, stub(k), n, 0);
+            let f = o.rebase(READ_MANAGE_STUBS + 0x40 * k);
+            o.write(cdobj + slot, &f.to_le_bytes()).unwrap();
+        }
+        saved.push(mine);
+    }
+    poke(a, b, stub(0) + 4, &cdobj.to_le_bytes());
+    poke(a, b, stub(1) + 4, &block.to_le_bytes());
+    poke(a, b, stub(6) + 4, &rng.below(0x10000).to_le_bytes());
+    // the table: segments (first, last, stride, strings, data) after the
+    // count, records from 0x20
+    fill(a, b, rng, block, 0x1c0);
+    let count = rng.below(3);
+    let first = 0x12 - rng.below(2);
+    let last = [0x12, 0x13, 0x20][rng.below(3) as usize];
+    let mut head = [0u8; 0x20];
+    head[..2].copy_from_slice(&u16::try_from(count).unwrap().to_le_bytes());
+    for (n, (lo, hi)) in [(first, last), (0x13, 0x13)].into_iter().enumerate() {
+        let seg = 8 + 12 * n;
+        let fields = [lo, hi, 0x4a, 0x10];
+        for (k, f) in fields.into_iter().enumerate() {
+            head[seg + 2 * k..seg + 2 * k + 2]
+                .copy_from_slice(&u16::try_from(f).unwrap().to_le_bytes());
+        }
+        let data = 0x20 + 0x4a * u32::try_from(n).unwrap();
+        head[seg + 8..seg + 12].copy_from_slice(&data.to_le_bytes());
+    }
+    poke(a, b, block, &head);
+    let flags = [
+        ffx_battle::state::bridge::STATUS,
+        ffx_battle::state::bridge::EXE,
+    ];
+    let kept = flags.map(|g| g.get(b));
+    let live = LIVE_CHRS.with(|c| c.borrow().iter().any(|&c| c != 0));
+    let battle = i8::from(rng.below(2) == 0 && (synthetic || live));
+    for g in flags {
+        set(a, b, g, battle);
+    }
+    twin("MsDebugFullCommand", a, b, 0x0078_48b0, &[], 0, |m| {
+        dm(m, |m| rd::ms_debug_full_command(m, &mut call));
+        0
+    });
+    same("MsDebugFullCommand", a, b);
+    for (g, v) in flags.into_iter().zip(kept) {
+        set(a, b, g, v);
+    }
+    for (o, mine) in [&mut *a, &mut *b].into_iter().zip(saved) {
+        for (f, v) in mine {
+            let at = o.rebase(f);
+            o.write(at, &v).unwrap();
+        }
+    }
+}
 
 /// `MsBtlReadManage` (round 21): the read's state machine from each status
 /// a few calls on, its callees as [`READ_MANAGE_CALLEES`]' logging stubs
@@ -10766,6 +11251,67 @@ fn camera_steps(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: b
     dressed_check(a, b, rng, synthetic, (150, 4), |a, b, rng, _, _| {
         camera_spline_move(a, b, rng, buf, !synthetic);
     });
+    dressed_check(a, b, rng, synthetic, (60, 4), |a, b, rng, _, _| {
+        camera_set_splines(a, b, rng, !synthetic);
+    });
+}
+
+/// `MsCameraSetSpline` and `MsCameraSetSpline2` (round 28) for a request
+/// of the dressed cameras ([`camera_requests`]: current or not) or
+/// another, both sides and beyond, a dressed move spline or none, the
+/// place and speed as [`camera_spline_move`]'s.
+fn camera_set_splines(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bool) {
+    use ffx_battle::camera::bridge as cam;
+    let h = host();
+    let mut call = game_call;
+    let id = camera_requests(a, b, rng, script);
+    let id = [id, id, id ^ 0x100, rng.next() & 0x3_0502][rng.below(4) as usize];
+    let side = [0, 1, rng.next()][rng.below(3) as usize];
+    let sp = if rng.below(6) == 0 {
+        0
+    } else {
+        t::MOVE_SPLINES.ptr(b).addr + 0x210 * rng.below(4)
+    };
+    let flags = rng.next();
+    zero_stack(a);
+    if rng.below(2) == 0 {
+        let nan_t = rng.below(2) == 0;
+        let t = spline_time(rng, nan_t);
+        let speed = match rng.below(5) {
+            0 => 0,
+            1 => (-0.0f32).to_bits(),
+            _ => (f32::from(i16::try_from(rng.range(-100, 100)).unwrap()) / 1000.0).to_bits(),
+        };
+        twin(
+            "MsCameraSetSpline",
+            a,
+            b,
+            0x007b_fca0,
+            &[id, side, sp, t, speed, flags],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    cam::ms_camera_set_spline(m, &h, &mut call, id, side, sp, t, speed, flags)
+                })
+            },
+        );
+    } else {
+        twin(
+            "MsCameraSetSpline2",
+            a,
+            b,
+            0x007b_fd90,
+            &[id, side, sp, flags],
+            ALL,
+            |m| {
+                dm(m, |m| {
+                    cam::ms_camera_set_spline2(m, &h, &mut call, id, side, sp, flags)
+                })
+            },
+        );
+    }
+    local_words(a, b);
+    same("MsCameraSetSpline", a, b);
 }
 
 #[test]
@@ -10928,6 +11474,10 @@ fn process_channel(
 fn camera_process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bool, work: u32) {
     use ffx_battle::camera::bridge as cam;
     let h = host();
+    // at times one screen alone, its trailing sides' lag at the limit or
+    // beyond it, no camera matrices and no special stage: the beyond case's
+    // MsMulVector then writes VF_B last
+    let lag = (rng.below(4) == 0).then(|| [5.0f32, 1.0][rng.below(2) as usize]);
     camera_requests(a, b, rng, script);
     let cams = cam::CAMERAS.ptr(b).addr;
     for c in 0..3 {
@@ -10985,11 +11535,35 @@ fn camera_process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bo
                 );
                 process_channel(a, b, rng, s + 0xc0 + 0x130 * n, id, script);
             }
+            // trailing sides whose lag (no step toward the position: scale
+            // 0) is exactly the limit (|(3, 4, 0)| is 5) or beyond it
+            if let Some(limit) = lag {
+                poke(a, b, s + 3, &[1]);
+                poke(a, b, s + 8, &limit.to_bits().to_le_bytes());
+                poke(a, b, s + 0xc, &[0; 4]);
+                let lag: Vec<u8> = [3.0f32, 4.0, 0.0]
+                    .iter()
+                    .flat_map(|v| v.to_bits().to_le_bytes())
+                    .collect();
+                poke(a, b, s + 0x40, &lag);
+                // a request on every channel (the side only moves with one)
+                for n in 0..4 {
+                    let at = s + 0xc0 + 0x130 * n + 2;
+                    if a.read(at, 1).unwrap()[0] == 0 {
+                        poke(a, b, at, &[1]);
+                    }
+                }
+            }
         }
     }
     let screens = cam::SCREENS.ptr(b).addr;
+    let alone = rng.below(3);
     for k in 0..3 {
-        let on = u8::from(rng.below(4) != 0);
+        let on = if lag.is_some() {
+            u8::from(k == alone)
+        } else {
+            u8::from(rng.below(4) != 0)
+        };
         poke(
             a,
             b,
@@ -10997,14 +11571,19 @@ fn camera_process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bo
             &[on, u8::try_from(rng.below(3)).unwrap()],
         );
     }
-    set(a, b, cam::MATRIX_ON, u32::from(rng.below(6) == 0));
+    set(
+        a,
+        b,
+        cam::MATRIX_ON,
+        u32::from(rng.below(6) == 0 && lag.is_none()),
+    );
     set(a, b, cam::OVERRIDE_ON, u32::from(rng.below(6) == 0));
     poke(a, b, cam::MATRIX_LOOK_AT.ptr(b).addr, &floats(rng, 8));
     set(a, b, cam::OVERRIDE_DEPTH, float(rng));
     set(a, b, cam::MATRIX_ROLL, float(rng));
     set(a, b, cam::EE_R0, [0; 4]);
     // the special stage's camera at times (as [`sp_camera`])
-    let special = rng.below(5) == 0;
+    let special = rng.below(5) == 0 && lag.is_none();
     let kind = [0i8, 1, 1, 2, 3, 4, -1][rng.below(7) as usize];
     if special {
         poke(a, b, work, &floats(rng, 0x870 / 4));
@@ -11057,9 +11636,33 @@ fn camera_process(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, script: bo
         }
     }
     // the VU words holding a local's address ([`local_words`]) but VF2.z
-    // and VF4.z: MsCameraProcess's own vectors' words are known registers
+    // and VF4.z: MsCameraProcess's own vectors' words are known registers.
+    // VF_B.y and .z are compared when a trailing side's limit MsMulVector
+    // wrote them last (the caller's edi, esi): the lone camera's lag was
+    // cut to the limit (it is no longer (3, 4, 0) and finite; a NaN step
+    // toward the position skips the cut); else the move step, an original
+    // run from the harness in `b`, or MsGetChrInfo's local left them
     let vb = ffx_battle::vector::bridge::VF_B.ptr(a).addr;
+    let cut = lag.is_some_and(|l| l < 5.0) && {
+        let c = a
+            .read(screens + alone * cam::SCREEN_SIZE + 0xc1, 1)
+            .unwrap()[0];
+        let base = cams + u32::from(c) * cam::CAMERA_SIZE;
+        (0..2).any(|side| {
+            let v: Vec<u32> = a
+                .read(base + 0x30 + side * 0x61c + 0x40, 12)
+                .unwrap()
+                .chunks(4)
+                .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+                .collect();
+            v.iter().all(|&x| f32::from_bits(x).is_finite())
+                && v[..2] != [3.0f32.to_bits(), 4.0f32.to_bits()]
+        })
+    };
     for at in [vb + 4, vb + 8, vb - 4, vm + 0xc, vm + 0x2c] {
+        if (at == vb + 4 || at == vb + 8) && cut {
+            continue;
+        }
         let w = a.read(at, 4).unwrap();
         b.write(at, &w).unwrap();
     }
