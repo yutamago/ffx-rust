@@ -4603,6 +4603,24 @@ ported! {
         native!(c);
         camnat::ms_atel_camera_yaw(&mut mem(), &mut c, w, s, side)
     }
+    /// `MsAtelCameraSetBtlPc_007badb0(worker, args, stack, side, mode)`.
+    MsAtelCameraSetBtlPc_007badb0 @ 0x007b_adb0 => extern "C" fn ms_atel_camera_set_btl_pc(w: u32, _args: u32, s: u32, side: u32, mode: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_set_btl_pc(&mut mem(), &mut c, w, s, side, mode)
+    }
+    /// `MsAtelCameraDirVector_007bb210(worker, args, stack, side)`: the
+    /// original's frame pointer (a VU register 2 word only) has no
+    /// counterpart here: 0.
+    MsAtelCameraDirVector_007bb210 @ 0x007b_b210 => extern "C" fn ms_atel_camera_dir_vector(w: u32, _args: u32, s: u32, side: u32) {
+        native!(c);
+        camnat::ms_atel_camera_dir_vector(&mut mem(), &mut c, w, s, side, 0);
+    }
+    /// `MsCameraSetDirVector_007bce80(id, side, scale, p, q)`: its only
+    /// caller is `MsAtelCameraDirVector_007bb210` (ported, it calls the
+    /// Rust); the scale's stray words (VU register 2 only) as 0.
+    MsCameraSetDirVector_007bce80 @ 0x007b_ce80 => extern "C" fn ms_camera_set_dir_vector(id: u32, side: u32, scale: u32, p: u32, q: u32) {
+        ffx_battle::camera::bridge::ms_camera_set_dir_vector(&mut mem(), id, side, scale, p, q, [0; 3]);
+    }
     /// `MsAtelCameraSpline_007bb970(worker, args, stack, side)`.
     MsAtelCameraSpline_007bb970 @ 0x007b_b970 => extern "C" fn ms_atel_camera_spline(w: u32, _args: u32, s: u32, side: u32) -> u32 {
         native!(c);
