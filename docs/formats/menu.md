@@ -172,3 +172,24 @@ centred) from `inputGetCurrDeviceStickInfo`'s floats 2, 3, 0, 1,
 `Pad_ReadAndUpdate` (`0x00888f90`) is one pad's frame: `Pad_ReadCurrDevice`,
 `Pad_UpdateAnalog` with the buttons at u16 `+0x98`, and, when byte
 `+0x9d` is set, `inputSetVibration(port, +0xff, +0xfe)` (bytes).
+
+## Help files
+
+`TKMallocAndReadSPS2(index, page)` (`0x0088ce80`) loads a help `.sps2`
+whole into a `user_malloc` buffer (64-byte alignment, size rounded up to
+0x800, first word cleared) or returns 0 when the file is missing. The
+path is `/ffx_ps2/ffx/master/new_XXpc` for the language (jump table
+`0x0088d0f0` on `TOGetFFXLang()`: 0 jp, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10
+ch, anything else us) plus entry `index` of `0x00c58e44` (page 0:
+`/help/<name>/<name>.sps2` for test_proj, now_help, mon_boku, s_monitor,
+dvdcopy) or `0x00c58e58` (the `_page.sps2` files).
+
+`DrawMesFontLClutTypeRGBA_ForHelp(key, text, x, y, flags, r, g, b, a)`
+(`0x008e75c0`) draws help text through the pen at `0x025d09a0` (bytes
+r, g, b, a; f32 x `+4`, y `+8`; flags byte `+0x1b`). Codes by
+`TOGetGroup` (jump table `0x008e788c`): group 1 is a line break (x back,
+y + 16), group 2 a control code (`07 e1..ef` moves x by `p - 0xe0`, `0a
+p` sets the flag nibbles to `(p & 0xf) - 1` and `(p & 0xf0) - 0x40`, `0b
+p` draws button icon `p` at 0.65, 1 lower for icons `0x34..0x37`), group
+3 a macro (`TOAddPktChangeMacro_help`, unless `key` is -1), group 4 a
+glyph (shadow then face, 0.78).

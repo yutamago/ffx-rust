@@ -9977,7 +9977,7 @@
 0x0088c860 function TKMallocAndReadEventFTC   # fh v3:exact 0x0088c7d0
 0x0088cac0 function TKMallocAndReadEventMessage # (name): new_<lang>pc/event/obj_ps3/<xx>/<name>.bin, battle/btl/<name>/<name>.bin (name with _), battle/kernel (monster*), menu/*.dcp (macro*); was Msg_LoadFile
 0x0088ccf0 function TKMallocAndReadMenuMessage   # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100491220 TKMallocAndReadMenuMessage, 6 votes, round 1
-0x0088ce80 function TKMallocAndReadSPS2          # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100491390 TKMallocAndReadSPS2, 6 votes, round 1
+0x0088ce80 function TKMallocAndReadSPS2      # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100491390 TKMallocAndReadSPS2, 6 votes, round 1; (index, page) -> buffer or 0: path = /ffx_ps2/ffx/master/new_XXpc by TOGetFFXLang (jump table 0x0088d0f0: 0 jp, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch, else us) + entry index of 0x00c58e44 (page 0, .sps2) or 0x00c58e58 (page tables); fiosUnifyFilename(path, tmp, 0x100), sprintf_s(path, 0xff, "%s", tmp); missing: dbgPrintf, 0; else size rounded to 16, Sg_MemSetAlign(0x40), user_malloc(size rounded up to 0x800, signed), word 0 = 0, fiosRead, fiosClose; ported in menu round 27
 0x0088d120 function Math_RoundUp              # (n, step) -> n rounded up to a multiple of step (unsigned)
 0x0088d140 function TkCdRead                  # fh switch:bsim1.00 0x710048ff90
 0x0088d190 function TkCdReadNB                # fh v3:exact 0x0088d100
@@ -11276,7 +11276,7 @@
 0x008e6cc0 function DrawCrossMenuScrollParts  # fh v3:exact+call.cs 0x008e6cc0 cdecl
 0x008e6e10 function DrawCrossMenuSummonPlateClut # layout+callees: sorts between DrawCrossMenuScrollParts and DrawScaleButtonIconRGBA, and its named callees match the Switch 0x7100524e90 DrawCrossMenuSummonPlateClut's (similarity 0.69: TOGetFFXLang, TOGetSaveChrName, TOMkpShapeXYWHUV, TkMenuGetHP, TkMenuGetMP); symbols from Fahrenheit's server export; (chr, x, y, alpha): name (TOGetSaveChrName, ToMakeBtlEasyEdgeFont 0.82), HP/MP label shapes 0x21/0x22 and sprintf "%5d/%5d" / "%4d/%4d" (0x00b6684c/0x00b66854) through TOMkpCrossEasyStrFontSClut; language 11 widens the labels (22, 1, shift 11); ported in menu round 26
 0x008e7110 function DrawCrossMenuSummonPlateNoHPMPClut # layout+callees: sorts between DrawCrossMenuScrollParts and DrawScaleButtonIconRGBA, and its named callees match the Switch 0x7100525170 DrawCrossMenuSummonPlateNoHPMPClut's (similarity 0.60: TOGetSaveChrName, graphicUiRemapX2, graphicUiRemapY2); symbols from Fahrenheit's server export
-0x008e75c0 function DrawMesFontLClutTypeRGBA_ForHelp # callees: its named callees match the Switch 0x710050fcc0 DrawMesFontLClutTypeRGBA_ForHelp's (similarity 0.82: TOAddFontWidthSpace, TOAddPktChangeMacro_help, TODrawScaleButtonIconRGBA, TOGetFontInfo, TOGetGroup); symbols from Fahrenheit's server export
+0x008e75c0 function DrawMesFontLClutTypeRGBA_ForHelp # callees: its named callees match the Switch 0x710050fcc0 DrawMesFontLClutTypeRGBA_ForHelp's (similarity 0.82: TOAddFontWidthSpace, TOAddPktChangeMacro_help, TODrawScaleButtonIconRGBA, TOGetFontInfo, TOGetGroup); symbols from Fahrenheit's server export; (key, text, x, y, flags, r, g, b, a): pen 0x025d09a0 = rgba bytes, f32 x/y, flags byte +0x1b; glyph record 0x01841d50 cleared; per code (TOGetGroup, jump table 0x008e788c): 1 newline (y += 16), 2 control (07 e1..ef x step, 0a flag nibbles, 0b icon at y+3+AdjustButtonIconY scale 0.65, then resetButtonData except 07), 3 TOAddPktChangeMacro_help unless key -1, 4 glyph (shadow pass, plain pass, TOAddFontWidthSpace) at 0.78; caller 0x0076f850 ignores eax; ported in menu round 27
 0x008e7a90 function DrawScaleButtonIconRGBA   # fh v3:exact 0x008e7a90
 0x008e7d30 function DrawWaterWaveShapeC2      # fh v3:exact+call.cs 0x008e7d30 cdecl; (x, y, w, h, u, v, uw, vh, su, sv, c0, c1) -> eax of graphicDrawUIElement: shape 0x3e81 quad, u/v = frac((graphicGetTime()*speed + start) / sheet size) as f32, u1/v1 add uw/w, vh/h; colours c0/c1 bytes; record +0x90/+0x94 zeroed; ported (system round 28)
 0x008e7ed0 function GetLocationText           # fh switch:bsim1.00 0x710050f050
@@ -15792,6 +15792,8 @@
 0x00c54dd0 label    g_SndLastFadeOutMusic     # u32, -1 in the image: SndMusicVolumeFadeOut's music; SndMusicCrossStart starts it at volume 0 when nothing plays
 0x00c54e28 label    g_PadButtonCodes          # bytes, the button codes TkFindPadButton looks up in g_PadButtonMap
 0x00c54e40 label    g_SinQuarter              # 0x2000 x u16, the first quarter of a sine wave (Math_SinTable)
+0x00c58e44 label g_HelpSps2Files          # five help .sps2 names (/help/test_proj, now_help, mon_boku, s_monitor, dvdcopy), read by TKMallocAndReadSPS2 page 0
+0x00c58e58 label g_HelpSps2PageFiles      # the five help page .sps2 names (/help/.../GNM/..._page.sps2), TKMallocAndReadSPS2 page != 0
 0x00c58ef8 label    g_BtlWindowControlEnable  # TOGetBtlWindowControlEnable
 0x00c58f00 label g_TOFontGlyphs # 4 bytes per glyph (x, y, flags, width), read by TOFontGlyphSprite 0x0089e360; name ours
 0x00c59554 label    g_SystemConfirmButtonAssign # TOGetSystemConfirmButtonAssign returns it with -1 replaced by 0 (and stores that back)
@@ -16758,6 +16760,7 @@
 0x01841c64 label    g_TkMn2MainFrameRatioDiff # TkMn2SetMainFrameRatioDiff
 0x01841c68 label    g_TkMn2MainFrameRatio     # TkMn2GetMainFrameRatio
 0x01841d43 label    g_DebugPadPrintFlag       # u8, 4 modes: TODebugAddPadPrintFlag steps it ((v + 1) signed % 4)
+0x01841d50 label g_TOFontGlyphInfo        # 0x40-byte glyph record TOGetFontInfo fills for DrawMesFontLClutTypeRGBA_ForHelp (cleared first)
 0x01841da4 label    g_FontWidthTbls           # font width table pointers in 16-byte font records: TOGetFontWidthTblAdrs(font)
 0x018659bc label    g_MessageWindowMode       # TOGetMessageWindowMode
 0x01865b3c label    g_TOMessageWindowSlots    # 8 pointers to message-window objects (+4 u16 TOSetMessageWindowValue, +6 u16 active flag)
@@ -17043,6 +17046,7 @@
 0x023cc458 label    g_TkMn2FontShade          # 4 words 8 bytes apart, stored downwards: TkMn2SetFontShade(s0..s3) puts s0 at 0x023cc470, s3 here
 0x025cc580 label g_BtlEndSpoilWeapons      # u16 *: the weapon spoils' IDs (BtlEnd_DrawWeaponPlate_008be0d0 0x008be0f1)
 0x025d06a0 label g_BtlSpecialTexture       # char[] the special texture's path (graphicMenuLoadSpecialTexture(8, it, 0) from MsBtlReadManage unless TkGetLang)
+0x025d09a0 label g_TOFontPen              # the text pen (0x20 bytes): u8 r, g, b, a, f32 x +4, f32 y +8, byte +0x1b flags (colour nibbles); DrawMesFontLClutTypeRGBA_ForHelp sets it, TOAddPktBaseMesFontLClutTypeRGBA/TOAddPktMesFont1612 use it
 0x025d09c0 label    g_TOPadGetCtrl            # u8: SetTOPadGetCtrl
 0x025d09d2 label    g_TOMenuPad               # 3 u16 (held, trg, rep): TOMenuGetControlPad/Trg/Rep return these when the dummy controller is on or held & 0xf000, else g_TOMenuPadAlt
 0x025d09d8 label    g_TOMenuPad2              # u16: TOMenuGetControlPad2

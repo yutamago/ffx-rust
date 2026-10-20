@@ -13680,6 +13680,218 @@ pub mod bridge {
         let text = mem.rebase(0x0078_fb60);
         call(mem, text, &[id, hiragana])
     }
+
+    /// `TKMallocAndReadSPS2(index, page)` (`0x0088ce80`, Fahrenheit's
+    /// name): loads a help `.sps2` file whole. The path is the language's
+    /// master directory (`TOGetFFXLang()`: 0 `new_jppc`, 2 `new_frpc`, 3
+    /// `new_sppc`, 4 `new_depc`, 5 `new_itpc`, 9 `new_krpc`, 10 `new_chpc`,
+    /// anything else `new_uspc`, under `/ffx_ps2/ffx/master/`) followed by
+    /// entry `index` of the file table at `0x00c58e44` (page 0) or the page
+    /// table at `0x00c58e58`; `fiosUnifyFilename(path, unified, 0x100)` and
+    /// `sprintf_s(path, 0xff, "%s", unified)` normalise it. A missing file
+    /// is reported (`dbgPrintf`, a `ret` on PC) and gives 0. Otherwise the
+    /// size is rounded up to 16, `Sg_MemSetAlign(0x40)`, and the buffer
+    /// (`user_malloc` of the size rounded up to 0x800, signed) gets a zero
+    /// first word, then `fiosRead` and `fiosClose`; returns the buffer.
+    /// `path` and `unified` are the original's two 256-byte frame buffers.
+    pub fn tk_malloc_and_read_sps2<M: Mem>(
+        mem: &mut M,
+        index: u32,
+        page: u32,
+        [path, unified]: [u32; 2],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let lang = call(mem, at(mem, 0x0064_10e0), &[]);
+        let master = match lang {
+            0 => 0x00b5_df10,
+            2 => 0x00b5_e310,
+            3 => 0x00b5_e210,
+            4 => 0x00b5_e110,
+            5 => 0x00b5_e410,
+            9 => 0x00b5_e510,
+            10 => 0x00b5_e610,
+            _ => 0x00b5_e010,
+        };
+        let table = if page == 0 { 0x00c5_8e44 } else { 0x00c5_8e58 };
+        let name = mem.read::<u32>(at(mem, table).wrapping_add(index.wrapping_mul(4)));
+        // strcpy, then strcat
+        let mut to = path;
+        for from in [at(mem, master), name] {
+            let mut from = from;
+            loop {
+                let c = mem.read::<u8>(from);
+                mem.write(to, c);
+                if c == 0 {
+                    break;
+                }
+                from = from.wrapping_add(1);
+                to = to.wrapping_add(1);
+            }
+        }
+        call(mem, at(mem, 0x0067_9820), &[path, unified, 0x100]);
+        let sprintf_s = mem.read::<u32>(at(mem, 0x00b0_c394));
+        call(mem, sprintf_s, &[path, 0xff, at(mem, 0x00b0_e160), unified]);
+        if call(mem, at(mem, 0x0067_96f0), &[path]) == 0 {
+            call(mem, at(mem, 0x0062_f500), &[at(mem, 0x00b5_ec00), path]);
+            return 0;
+        }
+        let file = call(mem, at(mem, 0x0067_9730), &[path, 1]);
+        let size = call(mem, at(mem, 0x0067_9570), &[file]).wrapping_add(0xf) & !0xf;
+        call(mem, at(mem, 0x0083_c4a0), &[0x40]);
+        let padded = size.wrapping_add(0x7ff).cast_signed();
+        let bias = if padded < 0 { 0x7ff } else { 0 };
+        let alloc = padded.wrapping_add(bias).cast_unsigned() & !0x7ff;
+        let buf = call(mem, at(mem, 0x0068_7020), &[alloc]);
+        mem.write(buf, 0u32);
+        call(mem, at(mem, 0x0067_9800), &[file, buf, size]);
+        call(mem, at(mem, 0x0067_9510), &[file]);
+        buf
+    }
+
+    /// `DrawMesFontLClutTypeRGBA_ForHelp(key, text, x, y, flags, r, g, b,
+    /// a)` (`0x008e75c0`, Fahrenheit's name): draws a help text through the
+    /// pen at `0x025d09a0`.
+    ///
+    /// The pen: bytes `+0..+3` = `r, g, b, a` (low bytes), f32 `+4` x and
+    /// `+8` y (from the ints), `+0xc..+0x17` zero, byte `+0x1b` `flags`, the
+    /// rest of `+0x18` zero. The glyph record at `0x01841d50` (0x40 bytes)
+    /// is cleared. `graphicFontGetScreenWH` fills two frame words nobody
+    /// reads (`screen`). Then per code (`TOGetGroup`, jump table
+    /// `0x008e788c`), stepping with `TOSkipCode`:
+    ///
+    /// - 1 (line break): x back to the start, `y += 16.0`.
+    /// - 2 (control): `07 e1..ef` moves x by `byte - 0xe0`; `0a` sets the
+    ///   flags' low nibble to `(p & 0xf) - 1` when that is nonzero and the
+    ///   high nibble to `(p & 0xf0) - 0x40` when that is `>= 0x40`; `0b`
+    ///   draws button icon `p`: `setButtonData(p, -1)`,
+    ///   `TODrawScaleButtonIconRGBA(p, x, f32(y' + 3.0 +
+    ///   AdjustButtonIconY(0.65, r, g, b, a)), 0.65, r, g, b, a)` with `y'` =
+    ///   `y + 1` for icons `0x34..=0x37`, then `x += font space(0) + icon
+    ///   width(p, 0.65)`. Every control code but `07` ends with
+    ///   `resetButtonData()`.
+    /// - 3 (macro): `TOAddPktChangeMacro_help(key, text, pen, 0.78, 1.0, 1)`
+    ///   unless `key` is -1.
+    /// - 4 (a character): `TOGetFontInfo`, then a shadow pass (draw type 1,
+    ///   shadow type 0) and a plain pass (shadow type 1) of the 0.78 font,
+    ///   draw type 0, and `TOAddFontWidthSpace` advances the pen.
+    ///
+    /// Its only caller (`0x0076f850`) ignores `eax`.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn draw_mes_font_lclut_type_rgba_for_help<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        text: u32,
+        [left, top]: [i32; 2],
+        flags: u32,
+        rgba: [u32; 4],
+        screen: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, load, store};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ICON_SCALE: u32 = 0x3f26_6666; // 0.65
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let (pen, glyph) = (at(mem, 0x025d_09a0), at(mem, 0x0184_1d50));
+        let (pen_x, pen_y, pen_flags) = (pen + 4, pen + 8, pen + 0x1b);
+        call(mem, at(mem, 0x0064_0db0), &[screen, screen + 4]);
+        for k in 0..16 {
+            mem.write(glyph + 4 * k, 0u32);
+        }
+        let colour = u32::from_le_bytes(rgba.map(|c| c.to_le_bytes()[0]));
+        let start = store(f64::from(left));
+        mem.write(pen, colour);
+        mem.write(pen_x, start);
+        mem.write(pen_y, store(f64::from(top)));
+        for off in [0xc, 0x10, 0x14] {
+            mem.write(pen + off, 0u32);
+        }
+        mem.write(pen + 0x18, (flags & 0xff) << 24);
+        let group = at(mem, 0x008d_f610);
+        let skip = at(mem, 0x008d_fd80);
+        let mut p = text;
+        loop {
+            let code = mem.read::<u8>(p);
+            if code == 0 {
+                break;
+            }
+            match call(mem, group, &[u32::from(code)]) {
+                1 => {
+                    mem.write(pen_x, store(load(start)));
+                    let down = add(load(mem.read(pen_y)), 16.0);
+                    mem.write(pen_y, store(down));
+                }
+                2 if code == 7 => {
+                    let step = mem.read::<u8>(p + 1);
+                    if step > 0xe0 && step < 0xf0 {
+                        let step = store(f64::from(step - 0xe0));
+                        let moved = add(load(step), load(mem.read(pen_x)));
+                        mem.write(pen_x, store(moved));
+                    }
+                }
+                2 => {
+                    if code == 0xa {
+                        let arg = mem.read::<u8>(p + 1);
+                        let mut f = mem.read::<u8>(pen_flags);
+                        if arg & 0xf != 0 {
+                            f = f & 0xf0 | ((arg & 0xf) - 1);
+                            mem.write(pen_flags, f);
+                        }
+                        if arg & 0xf0 >= 0x40 {
+                            f = f & 0xf | ((arg & 0xf0) - 0x40);
+                            mem.write(pen_flags, f);
+                        }
+                    }
+                    if code == 0xb {
+                        let icon = u32::from(mem.read::<u8>(p + 1));
+                        let mut top = store(load(mem.read(pen_y)));
+                        if (0x34..=0x37).contains(&icon) {
+                            top = store(add(load(top), 1.0));
+                        }
+                        call(mem, at(mem, 0x008b_1350), &[icon, u32::MAX]);
+                        let raise = fcall(
+                            mem,
+                            at(mem, 0x008e_5280),
+                            &[ICON_SCALE, rgba[0], rgba[1], rgba[2], rgba[3]],
+                        );
+                        let top = store(add(raise, add(load(top), 3.0)));
+                        let x = store(load(mem.read(pen_x)));
+                        let draw = at(mem, 0x008f_8ee0);
+                        call(
+                            mem,
+                            draw,
+                            &[icon, x, top, ICON_SCALE, rgba[0], rgba[1], rgba[2], rgba[3]],
+                        );
+                        let width = fcall(mem, at(mem, 0x008f_a800), &[icon, ICON_SCALE]);
+                        let space = fcall(mem, at(mem, 0x008f_a570), &[0]);
+                        let moved = add(add(space, width), load(mem.read(pen_x)));
+                        mem.write(pen_x, store(moved));
+                    }
+                    call(mem, at(mem, 0x008b_1330), &[]);
+                }
+                3 => {
+                    if key != u32::MAX {
+                        let macro_help = at(mem, 0x008e_9ca0);
+                        call(mem, macro_help, &[key, p, pen, SCALE, 1.0f32.to_bits(), 1]);
+                    }
+                }
+                4 => {
+                    let (draw_type, shadow) = (at(mem, 0x0064_3af0), at(mem, 0x0064_0dd0));
+                    call(mem, at(mem, 0x008b_7240), &[p, glyph]);
+                    call(mem, draw_type, &[1]);
+                    call(mem, shadow, &[0]);
+                    call(mem, at(mem, 0x008f_bae0), &[pen, glyph, SCALE]);
+                    call(mem, shadow, &[1]);
+                    call(mem, at(mem, 0x008f_b940), &[pen, glyph, SCALE]);
+                    call(mem, draw_type, &[0]);
+                    call(mem, at(mem, 0x008e_8ed0), &[pen, glyph, SCALE]);
+                }
+                _ => {}
+            }
+            p = call(mem, skip, &[p]);
+        }
+    }
 }
 
 #[cfg(test)]

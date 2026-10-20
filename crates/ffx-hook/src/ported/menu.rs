@@ -106,6 +106,21 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
 
+/// Calls a game function returning its result in `ST0` (cdecl, 0 to 8
+/// word arguments), read back as a double.
+#[allow(clippy::many_single_char_names)] // the arguments, in order
+fn fcall_ptr(f: u32, a: &[u32]) -> f64 {
+    type F8 = unsafe extern "C" fn(u32, u32, u32, u32, u32, u32, u32, u32) -> f64;
+    let mut w = [0u32; 8];
+    let n = a.len().min(8);
+    w[..n].copy_from_slice(&a[..n]);
+    // SAFETY: a cdecl function of at most 8 word arguments returning in
+    // ST0; the extra zero words it doesn't read sit on the caller's side.
+    unsafe {
+        std::mem::transmute::<usize, F8>(f as usize)(w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7])
+    }
+}
+
 /// `graphicUiRemapX2`/`graphicUiRemapY2(v)` (`0x006447e0`/`0x00644820`)
 /// through the game's entries: the result in `ST0`, read back as a double.
 fn ui_remap(y: bool, v: f32) -> f64 {
@@ -4301,6 +4316,21 @@ ported! {
     TkBtlEndGetText @ 0x008b_da60 => extern "C" fn tk_btl_end_get_text(id: u32) -> u32 {
         tk::tk_btl_end_get_text(&mut mem(), id, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TKMallocAndReadSPS2(index, page)`: the buffer, or 0.
+    TKMallocAndReadSPS2 @ 0x0088_ce80 => extern "C" fn tk_malloc_and_read_sps2(index: u32, page: u32) -> u32 {
+        // the original's two 256-byte path buffers
+        let mut frame = super::StackFrame::<128>::new();
+        let path = frame.at();
+        tk::tk_malloc_and_read_sps2(&mut mem(), index, page, [path, path + 0x100], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawMesFontLClutTypeRGBA_ForHelp(key, text, x, y, flags, r, g, b, a)`: its only caller ignores `eax`.
+    DrawMesFontLClutTypeRGBA_ForHelp @ 0x008e_75c0 => extern "C" fn draw_mes_font_lclut_type_rgba_for_help(key: u32, text: u32, x: i32, y: i32, flags: u32, r: u32, g: u32, b: u32, a: u32) {
+        // graphicFontGetScreenWH's two unread outputs
+        let mut frame = super::StackFrame::<2>::new();
+        let screen = frame.at();
+        tk::draw_mes_font_lclut_type_rgba_for_help(&mut mem(), key, text, [x, y], flags, [r, g, b, a], screen, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a));
+    }
+
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry
