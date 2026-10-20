@@ -162,14 +162,56 @@ tools/replay-compare.py /mnt/c/…/orig.trace /mnt/c/…/rust.trace
 ```
 
 The field replay's screenshots are compared coarsely (`shot-compare.py
---coarse field-walk`): the deck's sway and light run on timers the replay
-does not pin down, so runs of the original differ by 110,000 to 200,000
-pixels (a sub-pixel shift) and by a light level that steps over the whole
-picture. Blocks of 20x20 pixels are compared after removing the median
-difference over all blocks (the light step); the searchlight beams (top
-240 rows, and the beam's end at x 1000-1120, y 240) are left out. A
-character model painted over moves its blocks by about 50, noise by under
-3; the limit is 25. Battle and menu screenshots stay exact.
+--coarse field-walk`, `compare_coarse`). The deck's sway, light and
+searchlight beams are not pinned down by the replay: the asset loader
+takes a varying number of frames ("Determinism" in `docs/rewrite-plan.md`),
+so the map's animations are at another phase when the shot is taken. The
+sway is not a sub-pixel shift: over 47 runs (2026-10-17 to 2026-10-20) the
+scene sat 0 pixels across and -9 to +6 down from the recording, in a few
+discrete steps, with the near railing moving further (parallax, roll).
+Runs that swayed 4-5 pixels scored 25-26 on the old median-shifted block
+check (limit 25; effects rounds 32 and 36) although the geometry was the
+same. The comparison therefore:
+
+1. finds the one shift (up to 4 across, 16 down) that best lines up the
+   scene below the top 240 rows, on gradients (light does not move them);
+   a shift at the edge of that range fails as a wrong camera. The scene's
+   four quarters are then lined up on their own (8 pixels around that):
+   the right half sitting lower than the left (roll) or wider apart
+   (zoom) by more than 4.5 pixels fails. The sway reached 3 (roll) and 2.5
+   (zoom); a camera rotated by 1 degree gives 6.5 to 12.5, zoomed by 2 %
+   6.5 to 11, both with the minimap left in place (0.5 degree, 4 to 5,
+   mostly passes);
+2. compares 20x20 blocks' mean colour per channel, after the median
+   difference (the light step), each block allowed to match within 3
+   across and 6 down of that shift;
+3. gives each block the limit 13 + 1.4 x its mean gradient in the original
+   (levels per pixel): edges turn a leftover shift into a difference,
+   flat deck does not, so a missing model on the deck shows against a low
+   limit. A block's limit is at least twice what the two original runs
+   differ by there;
+4. leaves out the searchlight beams: the top 240 rows, the sky behind the
+   crane (field-walk-1 x 880-1280, y 240-400), the beam's end
+   (field-walk-2 x 600-700, y 240-320 and x 1000-1120, y 240-280) and the
+   save sphere's glow (field-walk-1);
+5. compares the minimap (x 100-320, y 60-220) unshifted, limit 6: it does
+   not sway, so a picture shifted as a whole (2 pixels: 6.9, 4: 14) or a
+   missing UI layer (90) fails there.
+
+On the field-walk shots of 47 past runs (94 shots, `~/ffx-work/fwcheck`)
+every run since the 2026-10-17 recording passes, the worst at 0.73 of its
+block limit (17.2 of 23.5: the round 36 and round 32 runs, 26.0 and 25.7
+on the old check), roll and zoom at most 1.0, the minimap at most 1.0;
+the 16 runs from before that recording, which all failed the old check
+(31-58), pass too (0.92 of the limit, roll 3, minimap 5.4). A real run with
+Tidus not drawn fails (48.7, limit 29.2). Synthetic breakage made from
+real shots with pillow fails: a character removed (Tidus 43, limit 29;
+Rikku 29, limit 26), garbled geometry and dark spikes on the deck (16-24
+against 14-17), the camera zoomed or rotated or shifted with the minimap
+kept, the minimap removed, the whole picture shifted by 2 pixels or more.
+Not caught: a 0.5 degree camera rotation, and a camera shift within the
+sway range (20 down on a run already swayed 5 up). Battle and menu screenshots stay
+exact.
 
 `tools/replays/menu-browse.txt` opens the main menu and takes screenshots
 at fixed frames. Some of the screen animates by the wall clock (the
