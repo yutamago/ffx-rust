@@ -2244,6 +2244,24 @@ ported! {
     MsAddEquipment_007ab910 @ 0x007a_b910 => extern "C" fn ms_add_equipment(rec: u32) -> u32 {
         minor::ms_add_equipment(&mut mem(), rec)
     }
+    /// `MsGetChrID(rec)`: `AtelGetAlbhedRikku` through the game.
+    MsGetChrID @ 0x0079_a440 => extern "C" fn ms_get_chr_id(rec: u32) -> u32 {
+        turn::ms_get_chr_id(&mut mem(), &mut call_ptr, rec)
+    }
+    /// `MsSetCommandUse(chr, id, on)`.
+    MsSetCommandUse @ 0x0079_b470 => extern "C" fn ms_set_command_use(chr: u32, id: u32, on: u32) {
+        turn::ms_set_command_use(&mut mem(), chr, id, on);
+    }
+    /// `MsGetCommandUse(chr, id)`.
+    MsGetCommandUse @ 0x0079_a5b0 => extern "C" fn ms_get_command_use(chr: u32, id: u32) -> u32 {
+        turn::ms_get_command_use(&mut mem(), chr, id)
+    }
+    /// `MsGetCTBlist(&n)`: the CTBs and counters in this call's frame.
+    MsGetCTBlist @ 0x0079_a200 => extern "C" fn ms_get_ctb_list(out: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ turn::CTB_FRAME as usize / 4 }>::new();
+        let at = frame.at();
+        turn::ms_get_ctb_list(&mut mem(), out, at)
+    }
     /// `MsMenuHalfElement(i)`.
     MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
         minor::ms_menu_half_element(&mem(), i)

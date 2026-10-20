@@ -373,4 +373,217 @@ pub mod bridge {
         }
         v
     }
+
+    // Round 29 F: character IDs, command use, the CTB list.
+
+    /// The player characters' model IDs by character (`MsGetChrID`).
+    pub const PLAYER_MODELS: Global<u32> = Global::new(0x00c4_23a0);
+    /// `AtelGetAlbhedRikku()` (script), called through the game.
+    pub const ATEL_GET_ALBHED_RIKKU: u32 = 0x0086_a7e0;
+    /// The CTB list (`MsGetCTBlist`): 32 entries of 4 bytes, the actor at
+    /// `+0` (0xff past the end) and its CTB (`u16`) at `+2`.
+    pub const CTB_LIST: Global<u8> = Global::new(0x0112_aa00);
+    /// `MsGetCTBlist`'s frame: the CTBs (31 `i32`s), the haste and slow
+    /// counters (31 bytes each, as the original lays them out after the
+    /// CTBs) and the count `MsOrderCalc` gives.
+    pub const CTB_FRAME: u32 = 0xc8;
+
+    /// `MsGetChrID(rec)` (`0x0079a440`): the character record's ID (`u16`
+    /// `+0xe`) split: kind 0 a player (model [`PLAYER_MODELS`] by the low 12
+    /// bits; Rikku (6) in Al Bhed dress (`AtelGetAlbhedRikku`, through
+    /// `call`) only `+8` the model, `+0x1d` 0 and `+4` 0x29), kind 1 a
+    /// monster (model `0x1000 +` its number), others none (0). The model
+    /// goes to `+8` and `+4`; returns the number (0 for other kinds).
+    pub fn ms_get_chr_id<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        rec: u32,
+    ) -> u32 {
+        let id = u32::from(mem.read::<u16>(rec.wrapping_add(0xe)));
+        let (kind, n) = (id >> 12, id & 0xfff);
+        let (model, number) = match kind {
+            0 => {
+                let model: u32 = mem.read(PLAYER_MODELS.ptr(mem).addr + 4 * n);
+                if n == 6 {
+                    let f = mem.rebase(ATEL_GET_ALBHED_RIKKU);
+                    if call(mem, f, &[]) != 0 {
+                        mem.write(rec.wrapping_add(8), model);
+                        mem.write(rec.wrapping_add(0x1d), 0u8);
+                        mem.write(rec.wrapping_add(4), 0x29u32);
+                        return 6;
+                    }
+                }
+                (model, n)
+            }
+            1 => (n + 0x1000, n),
+            _ => (0, 0),
+        };
+        mem.write(rec.wrapping_add(8), model);
+        mem.write(rec.wrapping_add(4), model);
+        number
+    }
+
+    /// The bit of command `id` (`0x3xxx`) in an actor's command words
+    /// (`u16`s from `+0x690`): its address and mask.
+    fn command_bit(a: u32, id: u32) -> (u32, u16) {
+        let k = id & 0xfff;
+        (a.wrapping_add(0x690 + 2 * (k >> 4)), 1 << (k & 0xf))
+    }
+
+    /// `MsSetCommandUse(chr, id, on)` (`0x0079b470`): kind 0 (`id >> 12`,
+    /// signed) sets actor `id & 0xfff`'s in-battle byte (`+0xdd4`) to the
+    /// low byte of `on`; kind 3 sets or clears command `id`'s bit of actor
+    /// `chr`; other kinds nothing.
+    pub fn ms_set_command_use(mem: &mut impl Mem, chr: u32, id: u32, on: u32) {
+        match id.cast_signed() >> 12 {
+            0 => {
+                let a = ms_get_chr(mem, id & 0xfff);
+                mem.write(a.wrapping_add(0xdd4), on.to_le_bytes()[0]);
+            }
+            3 => {
+                let (at, bit) = command_bit(ms_get_chr(mem, chr), id);
+                let w: u16 = mem.read(at);
+                mem.write(at, if on != 0 { w | bit } else { w & !bit });
+            }
+            _ => {}
+        }
+    }
+
+    /// `MsGetCommandUse(chr, id)` (`0x0079a5b0`): whether command `id` can
+    /// be used: kind 0 (`id >> 12`, signed) when actor `id & 0xfff` cannot
+    /// act (`MsChrUnableToAct_0079a080`); kind 2 for the item in use
+    /// (`g_BtlUseItem`) with none left (`MsGetSaveItemNum`); kind 3 by
+    /// actor `chr`'s command bit, and for 0x30ff also when one of actors
+    /// 0xf-0x11 cannot act; else 0.
+    pub fn ms_get_command_use(mem: &mut impl Mem, chr: u32, id: u32) -> u32 {
+        use crate::minor::bridge::ms_chr_unable_to_act;
+        match id.cast_signed() >> 12 {
+            0 => u32::from(ms_chr_unable_to_act(mem, id & 0xfff) != 0),
+            2 => {
+                if id != u32::from(crate::save::bridge::USE_ITEM.get(mem)) {
+                    return 0;
+                }
+                let n = crate::save::bridge::ms_get_save_item_num(mem, id);
+                u32::from(n.cast_signed() <= 0)
+            }
+            3 => {
+                let (at, bit) = command_bit(ms_get_chr(mem, chr), id);
+                let set = mem.read::<u16>(at) & bit != 0;
+                if id == 0x30ff && (0xf..=0x11).any(|i| ms_chr_unable_to_act(mem, i) != 0) {
+                    return 1;
+                }
+                u32::from(set)
+            }
+            _ => 0,
+        }
+    }
+
+    /// `MsGetCTBlist(&n)` (`0x0079a200`): the next 32 turns into
+    /// [`CTB_LIST`] (`frame` the original's [`CTB_FRAME`] bytes of
+    /// locals). Each actor's CTB (`+0x65c`; -1 out of the order: not in
+    /// battle `+0xdc8`/`+0xdd7`, dead `+0xdcc` or `+0x606` bit 4) and its
+    /// haste and slow counters (`+0x613`, `+0x614`); a menu command set
+    /// takes the first turn (its actor, cost `MsCalcCostCTB`, the command's
+    /// CTB effects `MsCalcDamageCTB`); then repeatedly the actors with the
+    /// lowest CTB in order (`MsOrderRegist`, `MsOrderCalc`), each turn
+    /// written (the actor, its CTB) and its next CTB added
+    /// (`MsAddNextCtb_0079a020`, rank 3, the menu command's own rank its
+    /// cost); the list's rest, when none is left, 0xff. `n` (unless null)
+    /// 0x20; returns the list.
+    pub fn ms_get_ctb_list<M: Mem>(mem: &mut M, out: u32, frame: u32) -> u32 {
+        use crate::minor::bridge::ms_add_next_ctb;
+        use crate::misc::bridge::{MENU_COMMAND, MENU_COMMAND_SET};
+        let (ctb, haste, slow, count) = (frame, frame + 0x7c, frame + 0x9c, frame + 0xc0);
+        let list = CTB_LIST.ptr(mem).addr;
+        let menu = MENU_COMMAND.ptr(mem).addr;
+        // the menu command's actor and cost (the original's -1 and 3
+        // without one, the 3 never used)
+        let first = if MENU_COMMAND_SET.get(mem) != 0 {
+            let actor = u32::from(mem.read::<u8>(menu));
+            Some((actor, crate::command::bridge::ms_calc_cost_ctb(mem, menu)))
+        } else {
+            None
+        };
+        for i in 0..0x1f {
+            let a = ms_get_chr(mem, i);
+            let h: u8 = mem.read(a.wrapping_add(0x613));
+            mem.write(haste + i, h);
+            let sl: u8 = mem.read(a.wrapping_add(0x614));
+            mem.write(slow + i, sl);
+            let b = |o: u32| mem.read::<u8>(a.wrapping_add(o));
+            let ordered = b(0xdc8) != 0 && b(0xdd7) != 0 && b(0xdcc) == 0 && b(0x606) & 4 == 0;
+            let v = if ordered {
+                u32::from(b(0x65c))
+            } else {
+                u32::MAX
+            };
+            mem.write(ctb + 4 * i, v);
+        }
+        // `MsSeveralStoresCopyIntoTable_0079b170(k, actor, ctb)`: turn `k`
+        let set = |mem: &mut M, k: u32, actor: u32| {
+            let c: u16 = mem.read(ctb.wrapping_add(4 * actor));
+            mem.write(list + 4 * k, actor.to_le_bytes()[0]);
+            mem.write(list + 4 * k + 2, c);
+        };
+        let mut k = 0u32;
+        let mut left = 0i32;
+        if let Some((first, cost)) = first
+            && mem.read::<i32>(ctb.wrapping_add(4 * first)) >= 0
+        {
+            set(mem, 0, first);
+            crate::command::bridge::ms_calc_damage_ctb(
+                mem,
+                menu,
+                ctb,
+                cost.cast_signed(),
+                haste,
+                slow,
+            );
+            ms_add_next_ctb(mem, first, cost, ctb, haste, slow);
+            k = 1;
+        }
+        let mut order = 0;
+        let mut at = 0;
+        loop {
+            if left <= 0 {
+                crate::state::bridge::ms_order_init(mem);
+                let mut low = -2i32;
+                for i in 0..0x1f {
+                    let c: i32 = mem.read(ctb + 4 * i);
+                    if c >= 0 && (c < low || low < 0) {
+                        low = c;
+                    }
+                }
+                for i in 0..0x1f {
+                    if mem.read::<i32>(ctb + 4 * i) == low {
+                        crate::state::bridge::ms_order_regist(mem, i.to_le_bytes()[0]);
+                    }
+                }
+                order = crate::process::bridge::ms_order_calc(mem, count);
+                left = mem.read(count);
+                if left <= 0 {
+                    for j in k..0x20 {
+                        mem.write(list + 4 * j, 0xffu8);
+                        mem.write(list + 4 * j + 2, 0u16);
+                    }
+                    break;
+                }
+                at = 0;
+            }
+            let actor = u32::from(mem.read::<u8>(order.wrapping_add(at)));
+            set(mem, k, actor);
+            ms_add_next_ctb(mem, actor, 3, ctb, haste, slow);
+            left -= 1;
+            mem.write(count, left);
+            k += 1;
+            at += 1;
+            if k >= 0x20 {
+                break;
+            }
+        }
+        if out != 0 {
+            mem.write(out, 0x20u32);
+        }
+        list
+    }
 }

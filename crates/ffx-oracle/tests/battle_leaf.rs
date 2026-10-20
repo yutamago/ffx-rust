@@ -1615,3 +1615,180 @@ fn leaf_natives_camera_setters_match_the_original_on_a_snapshot() {
     }
     camera_setters(&mut a, &mut b, &mut Xorshift(0x2929_0f02));
 }
+
+/// Group F: character IDs, command use, the CTB list.
+fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use ffx_battle::turn::bridge as t;
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x20);
+    for o in [&mut *a, &mut *b] {
+        recording_stub(o, t::ATEL_GET_ALBHED_RIKKU, STUBS_D, rec, 0, 0);
+    }
+    let chr_rec = scratch(a, b, 0x20);
+    let out = scratch(a, b, 4);
+    let frame = scratch(a, b, t::CTB_FRAME as usize);
+    let menu = ffx_battle::misc::bridge::MENU_COMMAND.ptr(b).addr;
+    for round in 0..300 {
+        if w.synthetic || round % 2 == 0 {
+            dress(a, b, rng, w.actors);
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                for (at, len) in [
+                    (0x613, 2),
+                    (0x606, 1),
+                    (0x65c, 1),
+                    (0x690, 0x10),
+                    (0xdc8, 1),
+                    (0xdcc, 2),
+                    (0xdd4, 4),
+                ] {
+                    fill(a, b, rng, p + at, len);
+                }
+                // mostly in the order, the CTB small
+                for o in [0xdc8u32, 0xdd7] {
+                    poke(a, b, p + o, &[u8::from(rng.below(5) != 0)]);
+                }
+                poke(a, b, p + 0xdcc, &[u8::from(rng.below(6) == 0)]);
+                poke(a, b, p + 0x65c, &[u8::try_from(rng.below(40)).unwrap()]);
+            }
+        }
+        if w.synthetic {
+            for k in 0..ACTORS {
+                poke(a, b, w.actor(k), &[0; 4]);
+            }
+        }
+        // a character record
+        let id = [
+            rng.below(0x14),
+            6,
+            0x1000 | rng.below(0x200),
+            0x2000 | rng.below(8),
+            rng.next() & 0xffff,
+        ][rng.below(5) as usize];
+        fill(a, b, rng, chr_rec, 0x20);
+        poke(
+            a,
+            b,
+            chr_rec + 0xe,
+            &u16::try_from(id & 0xffff).unwrap().to_le_bytes(),
+        );
+        poke(a, b, rec + 4, &rng.below(2).to_le_bytes());
+        let mut c = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+        twin("MsGetChrID", a, b, 0x0079_a440, &[chr_rec], ALL, |m| {
+            t::ms_get_chr_id(m, &mut c, chr_rec)
+        });
+        // command IDs of every kind
+        let kind = [0, 2, 3, 3, 1, rng.below(16)][rng.below(6) as usize];
+        let cid = kind << 12 | [rng.below(0x22), rng.below(0x100), 0xff][rng.below(3) as usize];
+        let cid = if rng.below(8) == 0 { rng.next() } else { cid };
+        let (chr, on) = (rng.below(0x22), rng.below(2) * rng.next());
+        twin(
+            "MsSetCommandUse",
+            a,
+            b,
+            0x0079_b470,
+            &[chr, cid, on],
+            0,
+            |m| {
+                t::ms_set_command_use(m, chr, cid, on);
+                0
+            },
+        );
+        set(
+            a,
+            b,
+            ffx_battle::save::bridge::USE_ITEM,
+            [u16::try_from(cid & 0xffff).unwrap(), 0x2001][rng.below(2) as usize],
+        );
+        // Kimahri's limit (0x30ff): actors 0xf-0x11 able or not, one at a time
+        if cid == 0x30ff {
+            let pick = rng.below(4);
+            for (k, i) in (0u32..).zip(0xf..0x12u32) {
+                let p = ffx_battle::actor::bridge::ms_get_chr(b, i);
+                let unable = pick == k;
+                poke(
+                    a,
+                    b,
+                    p + 0x5d0,
+                    &(if unable { 0i32 } else { 100 }).to_le_bytes(),
+                );
+                poke(a, b, p + 0xdd4, &[1]);
+                poke(a, b, p + 0xdcd, &[0]);
+                poke(a, b, p + 0x6d8, &[0]);
+            }
+        }
+        twin(
+            "MsGetCommandUse",
+            a,
+            b,
+            0x0079_a5b0,
+            &[chr, cid],
+            ALL,
+            |m| t::ms_get_command_use(m, chr, cid),
+        );
+        if round % 2 == 0 {
+            // a menu command now and then: its actor, flags, commands
+            let on = [0u8, 0, 1, 2, 0x80][rng.below(5) as usize];
+            set(a, b, ffx_battle::misc::bridge::MENU_COMMAND_SET, on);
+            fill(a, b, rng, menu, 0x48);
+            let n = u8::try_from(rng.below(4)).unwrap();
+            poke(
+                a,
+                b,
+                menu,
+                &[
+                    u8::try_from(rng.below(ACTORS)).unwrap(),
+                    0,
+                    u8::from(rng.below(2) == 0),
+                    n,
+                ],
+            );
+            for k in 0..3 {
+                let ids = [0x3000 | rng.below(0x40), 0x3000 | rng.below(0x40)];
+                poke(
+                    a,
+                    b,
+                    menu + 8 + 16 * k,
+                    &[
+                        u16::try_from(ids[0]).unwrap().to_le_bytes(),
+                        u16::try_from(ids[1]).unwrap().to_le_bytes(),
+                    ]
+                    .concat(),
+                );
+            }
+            fill(a, b, rng, frame, t::CTB_FRAME);
+            // sometimes nobody in the order (the list runs out)
+            if rng.below(6) == 0 {
+                for k in 0..ACTORS {
+                    if rng.below(8) != 0 {
+                        poke(a, b, w.actor(k) + 0xdc8, &[0]);
+                    }
+                }
+            }
+            let p = [out, 0][rng.below(4).min(1) as usize];
+            twin("MsGetCTBlist", a, b, 0x0079_a200, &[p], ALL, |m| {
+                t::ms_get_ctb_list(m, p, frame)
+            });
+            // (the original's locals are in its frame)
+            let f = b.read(frame, t::CTB_FRAME as usize).unwrap();
+            a.write(frame, &f).unwrap();
+        }
+        same("turns", a, b);
+    }
+}
+
+#[test]
+fn leaf_turns_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    turns(&mut a, &mut b, &mut Xorshift(0x2929_1001), true);
+}
+
+#[test]
+fn leaf_turns_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    turns(&mut a, &mut b, &mut Xorshift(0x2929_1002), false);
+}

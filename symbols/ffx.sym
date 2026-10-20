@@ -5479,10 +5479,10 @@
 0x0079a0e0 function MsCheckStatus             # fh v3:exact 0x0079a0f0
 0x0079a170 function MsSetFields_0079a170         # auto-port shape (several stores: set field (constants, arguments, addresses), cdecl): u8[(a0 + 0x776)] = 0xff; u8[(a0 + 0xa4e)] = 0xff; return a0; callers: MsSetRamChrData; name ours
 0x0079a190 function MsClearStatus             # fh v3:exact 0x0079a1a0
-0x0079a200 function MsGetCTBlist              # fh v3:exact 0x0079a210
-0x0079a440 function MsGetChrID                # fh v3:exact 0x0079a450
+0x0079a200 function MsGetCTBlist              # name from Fahrenheit (fh v3:exact 0x0079a210); (&n) -> 0x0112aa00: the CTB list of 32 turns (actor byte, u16 CTB): CTBs +0x65c (-1 out of the order), haste/slow +0x613/+0x614 in a 0xd0-byte frame; a menu command set (0x0112c9e6) takes turn 0 (MsCalcCostCTB, MsCalcDamageCTB, MsAddNextCtb_0079a020 with its cost); then the lowest CTBs in MsOrderRegist/MsOrderCalc order, each MsAddNextCtb rank 3; the rest 0xff; n = 0x20; stack cookie; ported (ffx_battle::turn, battle round 29)
+0x0079a440 function MsGetChrID                # name from Fahrenheit (fh v3:exact 0x0079a450); (rec) -> u16 +0xe split: kind 0 model 0x00c423a0[n] (Rikku 6 in Al Bhed dress, AtelGetAlbhedRikku: +8 model, +0x1d 0, +4 0x29, 6), kind 1 model 0x1000 + n, else 0; model to +8 and +4, returns n (0 for other kinds); ported (ffx_battle::turn, battle round 29)
 0x0079a4b0 function MsGetComData              # fh v3:exact+call.cs 0x0079a4c0 cdecl
-0x0079a5b0 function MsGetCommandUse           # fh v3:exact 0x0079a5c0
+0x0079a5b0 function MsGetCommandUse           # name from Fahrenheit (fh v3:exact 0x0079a5c0); (chr, id) -> kind 0: MsChrUnableToAct_0079a080(id & 0xfff); 2: id == g_BtlUseItem && MsGetSaveItemNum(id) <= 0; 3: the command bit of MsGetChr(chr), 0x30ff also when one of actors 0xf..0x11 cannot act; else 0; ported (ffx_battle::turn, battle round 29)
 0x0079a680 function MsGetDamageInfo           # fh v3:exact 0x0079a690
 0x0079a760 function MsGetDamageInfoNext       # layout: alphabetical run between MsGetDamageInfo and MsGetDamageResult (3 unnamed in the gap); Switch 0x710036bf00 MsGetDamageInfoNext is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (chr, target, &a, &b, &c) -> eax: over target's two damage buffers (+0x774, +0xa4c) for chr's running command, words +0x38/+0x3c/+0x40 of the next result (index +0) summed into the outputs (null skipped), returns the sum of count - next; no static callers; ported (ffx_battle::cue, battle round 27)
 0x0079a860 function MsGetDamageLimit             # layout: alphabetical run between MsGetDamageInfo and MsGetDamageResult (3 unnamed in the gap); Switch 0x710036c5f0 MsGetDamageLimit is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (i, j) -> actor (u8)i: byte +0x13 of the first of MsGetChr(j)'s two 0x2d8-byte records at +0x776 with +0 == i and +1 == MsGetChrCommand(i) byte +2; else 0; ported (ffx_battle::minor, battle round 29)
@@ -5512,7 +5512,7 @@
 0x0079b170 function MsSeveralStoresCopyIntoTable_0079b170 # auto-port shape (several stores: copy into table, cdecl): u8[((a0 * 0x4) + &0x0112aa00)] = (a1 & 0xff); t0 = u16[(a2 + (a1 * 0x4))]; u16[((a0 * 0x4) + &0x0112aa02)] = t0; return ((a2 & 0xffff0000) | t0); callers: MsGetCTBlist; name ours
 0x0079b1a0 function MsResetAutoStatus         # fh v3:exact 0x0079b1b0
 0x0079b290 function MsSetAutoStatus           # fh v3:exact 0x0079b2a0
-0x0079b470 function MsSetCommandUse              # layout: alphabetical run between MsSetAutoStatus and MsSetRamChr (1 unnamed in the gap); Switch 0x7100369710 MsSetCommandUse is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0079b470 function MsSetCommandUse              # layout: alphabetical run between MsSetAutoStatus and MsSetRamChr (1 unnamed in the gap); Switch 0x7100369710 MsSetCommandUse is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (chr, id, on): kind (id >> 12, signed) 0: MsGetChr(id & 0xfff) + 0xdd4 = (u8)on; 3: MsGetChr(chr) command bit (u16s from +0x690) set/cleared; ported (ffx_battle::turn, battle round 29)
 0x0079b4f0 function MsSetRamChr               # copies the stat record (section 2) into the battle actor; was Mon_InitActor
 0x0079bb50 function MsSetRamChrAbility        # equipment checks per character (weapon/armor in inventory, flag 0x02 skipped); was Battle_CheckEquipment
 0x0079c070 function MsSetRamChrCommand           # (chr, id, on): sets/clears bit id & 0xf of u16 word (id & 0xfff) >> 4 of the chr's command bitset +0x664 (MsGetChr); Switch MsSetRamChrCommand (0x71003694e0, 88 bytes, calls MsGetChr) sorts between MsSetRamChrAbility and MsSetRamChrData, as here; the battle porter's MsSetChrCommandFlag
@@ -15646,6 +15646,7 @@
 0x00c421ec label g_BtlKeepAlive            # u32: in battle 0x159/0 actor 0x14's HP loss sets it, 0x17's clears it; meanwhile actor 0x15 keeps 1 HP (MsSubHP)
 0x00c421f0 label g_BtlAccuracyTable           # 9 x i8, DmgCalc_CheckHit's chance by clamp(accuracy*2/5 - evasion + 10, 0, 8)
 0x00c421fc label g_BtlLeaderAlive          # u32: 1 while actor 0's +0x5d0 (HP) is above 0 in a battle, else 1 (MsBattleProcess each frame)
+0x00c423a0 label g_PlayerModels # u32 by character: model IDs 1-8, 0x3001.. (MsGetChrID)
 0x00c423e8 label g_StatusTable               # 4 bytes per status; MsCheckStat (0x0079e310) returns byte 3 of entry i
 0x00c42420 label g_StatusTable2              # entry 14 of g_StatusTable on; MsCheckStat2 (0x0079e320) returns byte 3 of entry i
 0x00c42464 label g_BtlStatCountTable          # 13 x 4 bytes, the counter statuses (MsCheckStatCount; MsCheckWrongStatus reads byte 3 bit 7: harmful)
@@ -15966,6 +15967,7 @@
 0x0112a9e0 label g_BtlEncountRates         # 2 x f32, 1.0 after ResetEncountExe
 0x0112a9f0 label g_BtlSceneField             # pointer to the battle field's i16 ID; MsGetBattleScene returns it << 16 + *g_BtlSceneGroup
 0x0112a9fc label g_BtlSceneGroup             # pointer to the encounter group's u8 ID (MsGetBattleScene)
+0x0112aa00 label g_BtlCtbList # 32 x (u8 actor (0xff past the end), u8, u16 CTB): the next turns (MsGetCTBlist)
 0x0112aa80 label g_BtlInputCue               # 0x48-byte entries, g_BtlInputCueCount of them (MsGetInputCue 0x007b22e0: null when empty)
 0x0112ac70 label g_BtlCommandCue             # 0x48-byte entries: +0 actor, +1 command, +7 high nibble kind (MsCheckCommandCue 0x007b0720, MsCheckCommandCue2, MsGetCommandCue)
 0x0112bde0 label g_BtlInputCueCount          # i8 entries in g_BtlInputCue
