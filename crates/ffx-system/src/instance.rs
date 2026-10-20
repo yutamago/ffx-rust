@@ -303,6 +303,67 @@ pub mod bridge {
         LOCALIZATION_MANAGER.get(mem)
     }
 
+    /// The original's line buffer (a 1024-byte frame local).
+    pub const LOC_LINE_BYTES: usize = 0x400;
+
+    /// `LocalizationManager_getText(this, index, out, _)` (`0x006db1f0`,
+    /// thiscall, `ret 0xc`; the third word is never read): line `index`
+    /// of the localisation kit (text `[this+0x14]`, length `[this+0x18]`,
+    /// read first by `LocalizationManager_readLocalizationKit(this)`,
+    /// passed in as `read_kit`, while the length is 0) copied to `out`
+    /// with its NUL. Lines end at `\n`, `\r` is dropped, and the scan
+    /// covers bytes `0..=length` (a negative length gives the empty
+    /// string); past the last line `out` gets the last one. Returns `out`
+    /// (`memcpy`'s result).
+    ///
+    /// A line of 1024 bytes or more overruns the original's buffer into
+    /// its frame (the stack cookie check then ends the game); the port
+    /// keeps the first 1023 bytes instead.
+    pub fn localization_get_text<M: Mem>(
+        mem: &mut M,
+        this: u32,
+        index: u32,
+        out: u32,
+        read_kit: impl FnOnce(&mut M, u32),
+    ) -> u32 {
+        if mem.read::<u32>(this.wrapping_add(0x18)) == 0 {
+            read_kit(mem, this);
+        }
+        let mut line = [0u8; LOC_LINE_BYTES];
+        let mut col = 0usize;
+        let mut seen = 0u32;
+        let length: i32 = mem.read(this.wrapping_add(0x18));
+        // the text pointer is read only for a length of 0 or more
+        let text: u32 = if length < 0 {
+            0
+        } else {
+            mem.read(this.wrapping_add(0x14))
+        };
+        for i in 0..=length {
+            let c: u8 = mem.read(text.wrapping_add(i.cast_unsigned()));
+            match c {
+                b'\n' => {
+                    if index == seen {
+                        break;
+                    }
+                    seen = seen.wrapping_add(1);
+                    col = 0;
+                    line = [0; LOC_LINE_BYTES];
+                }
+                b'\r' => {}
+                _ => {
+                    if col < LOC_LINE_BYTES - 1 {
+                        line[col] = c;
+                    }
+                    col += 1;
+                }
+            }
+        }
+        let len = line.iter().position(|&c| c == 0).unwrap_or(0);
+        mem.write_bytes(out, &line[..=len]);
+        out
+    }
+
     /// `TOGetFFXLang()` (`0x006410e0`): the language (`+4` of the language
     /// manager: 0 jp, 1 us, 2 fr, 3 sp, 4 de, 5 it, 9 kr, 10 ch), 0 while
     /// there is no manager; the manager is asked twice, as the original

@@ -24288,3 +24288,110 @@ fn round41_text_scroll_matches_the_original_on_the_snapshot() {
     };
     round41_text_scroll(&mut a, &mut b, &mut Xorshift(0x4041_0012));
 }
+
+/// Round 41 group B: `LocalizationManager_getText` over random kits
+/// (lines of letters, `\r`, high bytes and now and then a NUL; lengths
+/// short of, at and past the text, negative and 0). The kit reader is a
+/// stand-in that counts its calls and installs the next text and length.
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::many_single_char_names
+)]
+fn round41_get_text(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use instance::bridge as i;
+    let cells = alloc(a, b, 0x10);
+    // mov eax, [cells]; mov [ecx+0x18], eax; mov eax, [cells+4];
+    // mov [ecx+0x14], eax; inc dword [cells+8]; ret
+    let mut kit = vec![0xa1];
+    kit.extend_from_slice(&cells.to_le_bytes());
+    kit.extend_from_slice(&[0x89, 0x41, 0x18, 0xa1]);
+    kit.extend_from_slice(&(cells + 4).to_le_bytes());
+    kit.extend_from_slice(&[0x89, 0x41, 0x14, 0xff, 0x05]);
+    kit.extend_from_slice(&(cells + 8).to_le_bytes());
+    kit.push(0xc3);
+    let s = stand_in8(a, b, 0, &kit);
+    redirect(a, b, 0x006d_b2f0, s);
+    let this = alloc(a, b, 0x20);
+    let texts = [alloc(a, b, 0x1000), alloc(a, b, 0x1000)];
+    let out = alloc(a, b, 0x800);
+    let read_kit = |m: &mut Oracle, this: u32| {
+        call(m, 0x006d_b2f0, Conv::Thiscall(this), &[]);
+    };
+    for k in 0..3000u32 {
+        let mut lens = [0i32; 2];
+        for (t, len) in texts.iter().zip(&mut lens) {
+            let mut v = Vec::new();
+            let lines = rng.next() % 8;
+            for _ in 0..lines {
+                let n = if rng.next().is_multiple_of(16) {
+                    rng.next() % 1000
+                } else {
+                    rng.next() % 40
+                };
+                for _ in 0..n {
+                    let r = rng.next();
+                    v.push(match r % 23 {
+                        0 => b'\r',
+                        1 => 0,
+                        2 => 0x80 | (r >> 8) as u8,
+                        _ => b'a' + (r >> 8) as u8 % 26,
+                    });
+                }
+                v.push(b'\n');
+            }
+            for _ in 0..rng.next() % 5 {
+                v.push(b'a' + (rng.next() % 26) as u8);
+            }
+            *len = v.len() as i32;
+            v.extend((0..16).map(|_| rng.next() as u8));
+            v.resize(0x1000, 0);
+            a.write(*t, &v).unwrap();
+            b.write(*t, &v).unwrap();
+        }
+        // whole multiples of 0x100 (a zero low byte) count as lengths too
+        let pick = |rng: &mut Xorshift, len: i32| match rng.next() % 7 {
+            0 => len - 1 - (rng.next() % 3) as i32,
+            1 => len + (rng.next() % 4) as i32,
+            2 => -1 - (rng.next() % 2) as i32,
+            3 => 0,
+            4 => 0x100 * (1 + (rng.next() % 3) as i32),
+            _ => len,
+        };
+        let first_len = pick(rng, lens[0]);
+        put(a, b, this + 0x18, first_len);
+        put(a, b, this + 0x14, texts[0]);
+        let kit_len = pick(rng, lens[1]).max(1);
+        put(a, b, cells, kit_len);
+        put(a, b, cells + 4, texts[1]);
+        let index = match rng.next() % 5 {
+            0 => rng.next(),
+            1 => u32::MAX,
+            _ => rng.next() % 9,
+        };
+        let junk = rng.next();
+        for j in 0..0x200 {
+            put(a, b, out + 4 * j, rng.next());
+        }
+        let want = call(a, 0x006d_b1f0, Conv::Thiscall(this), &[index, out, junk]).eax;
+        let got = i::localization_get_text(b, this, index, out, read_kit);
+        assert_eq!(want, got, "get text {k}");
+        same_memory(&format!("get text {k}"), a, b);
+    }
+}
+
+#[test]
+fn round41_get_text_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round41_get_text(&mut a, &mut b, &mut Xorshift(0x4041_0021));
+}
+
+#[test]
+fn round41_get_text_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round41_get_text(&mut a, &mut b, &mut Xorshift(0x4041_0022));
+}

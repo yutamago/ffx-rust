@@ -2304,6 +2304,18 @@ ported! {
     LocalizationManager_GetInstance @ 0x006d_b070 => extern "C" fn localization_manager_get_instance() -> u32 {
         instance::bridge::localization_manager(&mem(), &mut phyre_printf)
     }
+    /// `LocalizationManager_getText(this, index, out, _)` (`ret 0xc`).
+    LocalizationManager_getText @ 0x006d_b1f0 => extern "thiscall" fn localization_get_text(this: u32, index: u32, out: u32, _unused: u32) -> u32 {
+        instance::bridge::localization_get_text(&mut mem(), this, index, out, |_, this| {
+            // SAFETY: LocalizationManager_readLocalizationKit (thiscall,
+            // no stack arguments), the platform's file read, not ported.
+            unsafe {
+                let f: unsafe extern "thiscall" fn(u32) -> u32 =
+                    std::mem::transmute(crate::rebase(0x006d_b2f0));
+                f(this);
+            }
+        })
+    }
     /// `TOGetFFXLang()`.
     TOGetFFXLang @ 0x0064_10e0 => extern "C" fn to_get_ffx_lang() -> u32 {
         instance::bridge::ffx_lang(&mem(), &mut phyre_printf)

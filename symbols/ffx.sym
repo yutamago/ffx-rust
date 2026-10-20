@@ -2907,7 +2907,7 @@
 0x006dae00 function PhyFMVPlayerManager_updateVideoCallback # fh v3:exact 0x006daf30 PhyFMVPlayerManager::updateVideoCallback
 0x006db070 function LocalizationManager_GetInstance # () -> g_LocalizationManager; while null Phyre_PhyrePrintf(1, "sLanguageManager singleton is not created yet.") first; was LangManager_Get
 0x006db090 function LocalizationManager_Initialize # settings language index -> game language id; was LangManager_FromSettings; thiscall(this) -> 0: *g_Settings 1..5 -> (1, 1 us/2 fr/4 de/5 it/3 es, 1), 6 -> (3, 9, 0), 7 -> (3, 10, 0), else (0, 0, 0) into +0, +4, +8; ported (system round 32)
-0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText
+0x006db1f0 function LocalizationManager_getText # fh v3:exact 0x006db320 LocalizationManager::getText; thiscall(this, index, out, unused) ret 0xc -> eax = out (memcpy's): readLocalizationKit while [this+0x18] == 0, then line `index` of the kit text [this+0x14] (bytes 0..=[this+0x18], lines end at \n, \r dropped, past the last line the last one) into a 1024-byte frame buffer, copied to out with its NUL; a line of 1024+ bytes overruns the frame
 0x006db2f0 function LocalizationManager_readLocalizationKit # fh v3:exact 0x006db420 LocalizationManager::readLocalizationKit
 0x006db6e0 function Worker_CloseSemaphore # thiscall: CloseHandle(this+0x2c); name ours
 0x006db7a0 function Worker_ResetCounters # thiscall: wait on the semaphore at +0x2c, +0x28/+0x24/+0x20 = 0, release it; name ours
