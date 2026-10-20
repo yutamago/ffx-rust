@@ -13892,6 +13892,222 @@ pub mod bridge {
             p = call(mem, skip, &[p]);
         }
     }
+
+    /// `MenuItem_DrawKeyUseCells()` (`0x008c4770`, name ours): the key-use
+    /// cells under the item menu. `MenuItem_CellTable()` gives the record
+    /// whose u16 `+2` is the cell count `n`.
+    ///
+    /// - The plate: `TODrawMenuPlateXYWHType(remapX2(790), remapY2(280),
+    ///   remapX2(740), remapY2(60), 2)` (remapped h, w, y, x); its x, y are
+    ///   also kept as `i16` (`ftol`). The original also remaps 740 and 60
+    ///   once more and drops the results (pure; left out).
+    /// - The row is centred: `shift = (8 - n) * i32 0x0186a31c / 2` (toward
+    ///   zero), first cell at `x = f32(remapX2(167) + x16 + f32(shift))`.
+    /// - Names: from `y = f32(remapY2(12) + y16)`, the 4-byte texts at
+    ///   `0x0186a280` until an empty one, each centred in its cell,
+    ///   `f32((remapX2(42) - width) * 0.5 + x)` (`ToGetBtlEasyFontWidth` at
+    ///   0.78), by `ToMakeBtlEasyFont`,
+    ///   `x += remapX2(52)`.
+    /// - Frames: `y = f32(remapY2(48) + y16)` (and `remapY2(50)`, dropped),
+    ///   cell `i` gets `TkMn2DrawCrossRect(x, y, remapX2(42), remapY2(2), c,
+    ///   c)`: colour `0x8000c6ff`, except for the cell to fill (empty and the
+    ///   first or after a filled one, or the last when filled), which blinks
+    ///   `0x80e1f8ff` while the fraction of `f32(graphicGetTime())` is above
+    ///   0.5.
+    ///
+    /// `width` is the original's frame word for the text width. Its only
+    /// caller (`0x008c3d00`) ignores `eax`.
+    pub fn menu_item_draw_key_use_cells<M: Mem>(
+        mem: &mut M,
+        width: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ONE: u32 = 0x3f80_0000;
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let table = call(mem, at(mem, 0x008c_4f80), &[]);
+        let count = |mem: &M| i32::from(mem.read::<u16>(table.wrapping_add(2)));
+        // `mov si, ax`: the low half of the truncation, sign-extended later
+        let low_half = |v: u32| {
+            let [a, b, ..] = v.to_le_bytes();
+            f64::from(i16::from_le_bytes([a, b]))
+        };
+        let base_x = remap(mem, false, 790.0);
+        let x16 = low_half(ftol(mem, base_x));
+        let base_y = remap(mem, true, 280.0);
+        let y16 = low_half(ftol(mem, base_y));
+        let plate_h = store(remap(mem, true, 60.0));
+        let plate_w = store(remap(mem, false, 740.0));
+        let plate = [store(base_x), store(base_y), plate_w, plate_h, 2];
+        call(mem, at(mem, 0x008f_5f70), &plate);
+        let scale = mem.read::<i32>(at(mem, 0x0186_a31c));
+        let empty = 8i32.wrapping_sub(count(mem));
+        let shift = load(store(f64::from(empty.wrapping_mul(scale) / 2)));
+        let mut left = store(add(add(remap(mem, false, 167.0), x16), shift));
+        let top = store(add(remap(mem, true, 12.0), y16));
+        let names = at(mem, 0x0186_a280);
+        let mut slot = 0;
+        while slot < count(mem) {
+            let text = names.wrapping_add(4 * slot.cast_unsigned());
+            if mem.read::<u8>(text) == 0 {
+                break;
+            }
+            call(mem, at(mem, 0x0090_5290), &[text, width, 0, SCALE, ONE]);
+            let centred = mul(sub(remap(mem, false, 42.0), load(mem.read(width))), 0.5);
+            let tx = store(add(centred, load(left)));
+            call(mem, at(mem, 0x0090_5ab0), &[text, tx, top, 0, SCALE, ONE]);
+            left = store(add(remap(mem, false, 52.0), load(left)));
+            slot += 1;
+        }
+        left = store(add(add(remap(mem, false, 167.0), x16), shift));
+        let top = store(add(remap(mem, true, 48.0), y16));
+        let mut slot = 0;
+        while slot < count(mem) {
+            let text = names.wrapping_add(4 * slot.cast_unsigned());
+            let filled = mem.read::<u8>(text) != 0;
+            let next = if filled {
+                slot == count(mem) - 1
+            } else {
+                slot == 0 || mem.read::<u8>(text - 4) != 0
+            };
+            let colour = if next {
+                let time = store(fcall(mem, at(mem, 0x0064_1410), &[]));
+                let whole = store(f64::from(ftol(mem, load(time)).cast_signed()));
+                let fraction = load(store(sub(load(time), load(whole))));
+                (fraction > 0.5).then_some(0x80e1_f8ff)
+            } else {
+                Some(0x8000_c6ff)
+            };
+            if let Some(colour) = colour {
+                let rect_h = store(remap(mem, true, 2.0));
+                let rect_w = store(remap(mem, false, 42.0));
+                let rect = [left, top, rect_w, rect_h, colour, colour];
+                call(mem, at(mem, 0x008c_0930), &rect);
+            }
+            left = store(add(remap(mem, false, 52.0), load(left)));
+            slot += 1;
+        }
+    }
+
+    /// `TkMn2MainStatusPlayerStatus(_, y, chr, t)` (`0x008d5180`,
+    /// Fahrenheit's name): the stat plates of the status page and, for
+    /// anyone but ids 14..=17, the plate under them.
+    ///
+    /// - `slide = MenuMn2_Ease(t, 1) * 0xd0 / 4096` (toward zero).
+    /// - The stats `(mes, field)` at `0x00c5a790` (8-byte pairs, up to a
+    ///   negative `mes`): from `x = ftol(remapX2(210))`, `y0 =
+    ///   ftol(remapY2(552))`, the fifth starting a second column at
+    ///   `remapX2(970)`, `remapY2(552)`. Each:
+    ///   `TkMn2DrawStatusPlate(x, MenuHelp_Ratio(slide, i % 4) + y0 + y,
+    ///   i16 0x023cc420, i16 0x023cc422, chr, mes, field)`, then `y0 =
+    ///   ftol(remapY2(81) + f32(y0))` and `TkMn2DrawKickSyncPacket2()`.
+    ///   `MsGetSavePlayerPtr(chr)` is asked before each entry and its
+    ///   result dropped.
+    /// - The plate: `w = f32(remapX2(80) + width)` of
+    ///   `TOMenuGetStatusMes(0x1a)` at 0.78 (`ToGetCrossExtMesFontWidth`);
+    ///   `right = remapX2(740)` unless `remapX2(660) < w`, then
+    ///   `f32(remapX2(80) + w)`; `left = f32(remapX2(1806) - right)`;
+    ///   `TODrawMenuPlateXYWHType(left, remapY2(925), right, remapY2(48),
+    ///   2)`, shape `0xf3` at `(tx, remapY2(920))` sized `remapX2(64)` by
+    ///   `remapY2(64)` with texels `(949, 234, 1023, 309) / 1024`, where
+    ///   `tx = f32((right - w) * 0.5 + left)`, and the text at
+    ///   `f32(remapX2(80) + tx)`, `remapY2(928)` (0.78).
+    ///
+    /// Returns `TkMn2DrawKickSyncPacket()`'s `eax`. `width` is the
+    /// original's frame word for the text width.
+    #[allow(clippy::too_many_lines)]
+    pub fn tk_mn2_main_status_player_status<M: Mem>(
+        mem: &mut M,
+        y: i32,
+        chr: i32,
+        t: u32,
+        width: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ONE: u32 = 0x3f80_0000;
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let id = chr.cast_unsigned();
+        let eased = call(mem, at(mem, 0x008d_30c0), &[t, 1]).cast_signed();
+        let slide = eased.wrapping_mul(0xd0) / 4096;
+        let column = |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64, x: f32| {
+            let left = remap(mem, false, x);
+            let left = ftol(mem, left);
+            let top = remap(mem, true, 552.0);
+            (left, ftol(mem, top).cast_signed())
+        };
+        let (mut left, mut top) = column(mem, remap, 210.0);
+        let player = at(mem, 0x0078_5330);
+        call(mem, player, &[id]);
+        let stats = at(mem, 0x00c5_a790);
+        let mut i = 0u32;
+        loop {
+            let mes = mem.read::<i32>(stats.wrapping_add(8 * i));
+            if mes < 0 {
+                break;
+            }
+            let field = mem.read::<u32>(stats.wrapping_add(8 * i + 4));
+            if i == 4 {
+                (left, top) = column(mem, remap, 970.0);
+            }
+            let ratio = call(mem, at(mem, 0x008b_f120), &[slide.cast_unsigned(), i & 3]);
+            let row_y = ratio
+                .wrapping_add(top.cast_unsigned())
+                .wrapping_add(y.cast_unsigned());
+            let sx = i32::from(mem.read::<i16>(at(mem, 0x023c_c420))).cast_unsigned();
+            let sy = i32::from(mem.read::<i16>(at(mem, 0x023c_c422))).cast_unsigned();
+            let plate = at(mem, 0x008c_1490);
+            call(
+                mem,
+                plate,
+                &[left, row_y, sx, sy, id, mes.cast_unsigned(), field],
+            );
+            let step = remap(mem, true, 81.0);
+            top = ftol(mem, add(step, load(store(f64::from(top))))).cast_signed();
+            i += 1;
+            call(mem, at(mem, 0x008c_0cd0), &[]);
+            call(mem, player, &[id]);
+        }
+        if !(14..=17).contains(&chr) {
+            let get_mes = at(mem, 0x008b_ee70);
+            let text = call(mem, get_mes, &[0x1a]);
+            call(mem, at(mem, 0x0090_5320), &[0, text, width, SCALE, ONE]);
+            let wide = store(add(remap(mem, false, 80.0), load(mem.read(width))));
+            let limit = remap(mem, false, 660.0);
+            // `fcomp; test ah, 5; jp`: 740 unless the limit is below (ordered)
+            let right = if limit < load(wide) {
+                store(add(remap(mem, false, 80.0), load(wide)))
+            } else {
+                store(remap(mem, false, 740.0))
+            };
+            let screen = remap(mem, false, 1806.0);
+            let plate_x = store(sub(screen, load(right)));
+            let text_x = store(add(mul(sub(load(right), load(wide)), 0.5), load(plate_x)));
+            let h = store(remap(mem, true, 48.0));
+            let plate_y = store(remap(mem, true, 925.0));
+            call(mem, at(mem, 0x008f_5f70), &[plate_x, plate_y, right, h, 2]);
+            let sh = store(remap(mem, true, 64.0));
+            let sw = store(remap(mem, false, 64.0));
+            let sy = store(remap(mem, true, 920.0));
+            let uv = [949.0f32, 234.0, 1023.0, 309.0].map(|v| (v / 1024.0).to_bits());
+            let shape = at(mem, 0x0090_3bb0);
+            call(
+                mem,
+                shape,
+                &[0xf3, text_x, sy, sw, sh, uv[0], uv[1], uv[2], uv[3]],
+            );
+            let ty = store(remap(mem, true, 928.0));
+            let tx = store(add(remap(mem, false, 80.0), load(text_x)));
+            let text = call(mem, get_mes, &[0x1a]);
+            call(mem, at(mem, 0x0090_16b0), &[0, text, tx, ty, 0, SCALE, ONE]);
+        }
+        call(mem, at(mem, 0x008c_0cc0), &[])
+    }
 }
 
 #[cfg(test)]

@@ -4330,7 +4330,20 @@ ported! {
         let screen = frame.at();
         tk::draw_mes_font_lclut_type_rgba_for_help(&mut mem(), key, text, [x, y], flags, [r, g, b, a], screen, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a));
     }
-
+    /// `MenuItem_DrawKeyUseCells()`: its only caller ignores `eax`.
+    MenuItem_DrawKeyUseCells @ 0x008c_4770 => extern "C" fn menu_item_draw_key_use_cells() {
+        // the original's frame word for the text width
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::menu_item_draw_key_use_cells(&mut mem(), width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a));
+    }
+    /// `TkMn2MainStatusPlayerStatus(_, y, chr, t)`: the kick's `eax`.
+    TkMn2MainStatusPlayerStatus @ 0x008d_5180 => extern "C" fn tk_mn2_main_status_player_status(_a: u32, y: i32, chr: i32, t: u32) -> u32 {
+        // the original's frame word for the text width
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        tk::tk_mn2_main_status_player_status(&mut mem(), y, chr, t, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry

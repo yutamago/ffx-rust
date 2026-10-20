@@ -85,6 +85,15 @@ jump table at `0x008d5134`:
 
 The page slides in by `MenuMn2_Ease(t, 1) * 0x155 / 4096` pixels.
 
+`TkMn2MainStatusPlayerStatus` (`0x008d5180`) draws the stats of the
+character page from the table at `0x00c5a790`: `(i32 mes, u32 field)`
+pairs (messages 7..14 over save-record offsets 47..54), ended by a
+negative `mes`. Four go in a column from `remapX2(210)`, the rest from
+`remapX2(970)`, `remapY2(81)` apart from `remapY2(552)`; each row slides
+in by `MenuHelp_Ratio(ease * 0xd0 / 4096, row % 4)`. For ids outside
+14..17 a plate at `remapY2(925)` against the right edge (`remapX2(1806)`)
+holds shape `0xf3` and `TOMenuGetStatusMes(0x1a)`.
+
 Status rectangles are 24 bytes (i16 x, y, then sizes);
 `MenuStatus_OffsetRect` (`0x008d3220`) copies one, moves it and can take
 the size `g_TkMenuStatusRectSize` (`0x0186a8a4`, the w, h of the
@@ -121,6 +130,13 @@ The menu list at `0x01597770` has `0x200` 4-byte entries, count in
 row (`MenuSelList_DrawRow` `0x008d1820`) draws by that kind: 1 a command
 icon and name, 2 an aeon name, 3 `TkMenuMenu1Mes(id + 0x1033)`; the
 window's i16 `+0x46` scrolls it by `+0x46 * 32 / 4096` pixels.
+`MenuItem_DrawKeyUseCells` (`0x008c4770`) draws the key-use row of the
+item menu: `MenuItem_CellTable()`'s u16 `+2` cells (at most 8 fit), each
+a 4-byte text at `0x0186a280` (an empty one ends the names), centred by
+`(8 - n) * i32 0x0186a31c / 2`. The frame of the cell to fill next (the
+first empty one, or the last when all are filled) blinks: drawn
+`0x80e1f8ff` while the fraction of `graphicGetTime()` is above 0.5, the
+others `0x8000c6ff`.
 `TkMn2DrawStatusPlate` (`0x008c1490`) draws one stat: a caption and the
 byte at an offset into the character's save record
 (`MsGetSavePlayerPtr`). The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten

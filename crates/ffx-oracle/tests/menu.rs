@@ -12740,3 +12740,157 @@ fn menu_round27_sps2_load_and_help_text_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// `f` replaced by a logging stub returning `[cell]` in `ST0` (`fld`);
+/// returns the cell.
+fn float_stub(t: &mut Twins, f: u32, log: u32, n: u8) -> u32 {
+    let cell = t.alloc(&[0; 4]);
+    let mut code = seq_code(log, f, n, cell, &[]);
+    code.truncate(code.len() - 6);
+    code.extend([&[0xd9, 0x05][..], &cell.to_le_bytes(), &[0xc3]].concat()); // fld dword [cell]; ret
+    jump_stub(t, f, &code);
+    cell
+}
+
+#[test]
+fn menu_round27_key_use_cells_and_status_stats_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0027_4770) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x100;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+
+    // MenuItem_DrawKeyUseCells
+    let table = seq_stub(&mut t, 0x008c_4f80, log, 0, &[]);
+    let record = t.alloc(&[0; 8]);
+    let mut cells = Vec::new();
+    for (f, n) in [(0x008f_5f70u32, 5u8), (0x0090_5ab0, 6), (0x008c_0930, 6)] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let width = out_stub(&mut t, log, 0x0090_5290, &[0, 2, 3, 4], 1);
+    let time = float_stub(&mut t, 0x0064_1410, log, 0);
+    let names = t.sym(0x0186_a27c);
+    let scale = t.sym(0x0186_a31c);
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.put(table, record);
+        let n = t.rng.pick_or_any(&[0, 1, 2, 4, 7, 8, 9]) & 0xf;
+        t.put(record + 2, u16::try_from(n).unwrap_or(0));
+        for k in 0..13 {
+            let b = if t.rng.below(3) == 0 { 0 } else { t.rng.next() };
+            t.put(names + 4 * k, b);
+        }
+        let s = t.rng.pick_or_any(&[0, 1, 2, 3, 0x7fff_ffff, 0x8000_0000]);
+        t.put(scale, s);
+        let text_w = quiet_float(&mut t);
+        t.put(width, text_w);
+        let v = t.rng.pick(&[
+            3.25f32,
+            3.5,
+            3.75,
+            0.5,
+            0.75,
+            -2.75,
+            -0.25,
+            3.0e9,
+            -3.0e9,
+            1.0e20,
+            8_388_608.5,
+        ]);
+        let v = if t.rng.below(4) == 0 {
+            quiet_float(&mut t)
+        } else {
+            v.to_bits()
+        };
+        t.put(time, v);
+        t.twin("MenuItem_DrawKeyUseCells", 0x008c_4770, &[], VOID, |o| {
+            tk::menu_item_draw_key_use_cells(
+                o,
+                local,
+                &mut ui_remap,
+                &mut callback,
+                &mut fcallback,
+            );
+            0
+        });
+    }
+
+    // TkMn2MainStatusPlayerStatus
+    let ease = seq_stub(&mut t, 0x008d_30c0, log, 2, &[]);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x0078_5330u32, 1u8),
+        (0x008b_f120, 2),
+        (0x008c_1490, 7),
+        (0x008c_0cd0, 0),
+        (0x008b_ee70, 1),
+        (0x0090_3bb0, 9),
+        (0x0090_16b0, 7),
+        (0x008c_0cc0, 0),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let width = out_stub(&mut t, log, 0x0090_5320, &[0, 1, 3, 4], 2);
+    let stats = t.sym(0x00c5_a790);
+    let shift = t.sym(0x023c_c420);
+    // text widths around the plate's limit: remapX2(80) + w against
+    // remapX2(660)
+    let limit = ui_remap(&mut t.b, false, 660.0);
+    let pad = ui_remap(&mut t.b, false, 80.0);
+    #[allow(clippy::cast_possible_truncation)]
+    let edge = ((limit - pad) as f32).to_bits();
+    t.b.clear_dirty();
+    for _ in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let e = t
+            .rng
+            .pick_or_any(&[0, 1, 0x1000, 0xfff, 0xffff_f000, 0x7fff_ffff, 0x8000_0000]);
+        t.put(ease, e);
+        let text_w = if t.rng.below(3) == 0 {
+            quiet_float(&mut t)
+        } else if t.rng.below(2) == 0 {
+            edge.wrapping_add(t.rng.below(9)).wrapping_sub(4)
+        } else {
+            (150.0 + f32::from(u16::try_from(t.rng.below(40)).unwrap_or(0))).to_bits()
+        };
+        t.put(width, text_w);
+        let v = t.rng.next();
+        t.put(shift, v);
+        // the stat table, cut short now and then
+        let cut = t.rng.below(12);
+        let saved = Mem::read::<i32>(&t.a, stats + 8 * cut);
+        if cut < 9 {
+            let end = t.rng.pick(&[-1, -2, 0, i32::MIN]);
+            t.put(stats + 8 * cut, end);
+        }
+        let (y, chr, time) = (
+            t.rng.int(),
+            t.rng.pick_or_any(&[0, 7, 13, 14, 15, 17, 18, 0xffff_ffff]),
+            t.rng.next(),
+        );
+        let unused = t.rng.next();
+        t.twin(
+            "TkMn2MainStatusPlayerStatus",
+            0x008d_5180,
+            &[unused, y, chr, time],
+            U32,
+            |o| {
+                w(tk::tk_mn2_main_status_player_status(
+                    o,
+                    i(y),
+                    i(chr),
+                    time,
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            },
+        );
+        t.put(stats + 8 * cut, saved);
+    }
+    eprintln!("{} calls", t.calls);
+}
