@@ -2423,4 +2423,239 @@ pub mod bridge {
             }
         }
     }
+
+    // Round 29 I: damage motions, AP, the system camera request, effect
+    // motions, the move's frames left.
+
+    /// `MsDamageSetMotion(i, motion, flags)`, `MsGetMoveTargetPos(i, actor,
+    /// kind, out, done)` (an `f32` in ST0) and `MsAtelRequestExe(kind, i,
+    /// n, flags, actor, &same)`, called through the game.
+    pub const MS_DAMAGE_SET_MOTION: u32 = 0x0078_ca20;
+    pub const MS_GET_MOVE_TARGET_POS: u32 = 0x007a_9ac0;
+    pub const MS_ATEL_REQUEST_EXE: u32 = 0x0079_7d50;
+    /// `MsMotBinFrame(i, actor, motion, frame)`, called through the game.
+    pub const MS_MOT_BIN_FRAME: u32 = 0x0079_cb40;
+    /// `g_BtlCameraOnce`: 1 while a script camera request runs
+    /// (`MsAtelRequestSystem` sets it for the voice requests).
+    pub const CAMERA_ONCE: Global<u8> = Global::new(0x0112_a8e5);
+
+    /// `MsSetDamageMotion(i, selector, motion)` (`0x0078db70`): for an
+    /// actor `i & 0xff`, each other living actor (`+0xdcc` 0) of
+    /// `MsGetChrBit(i, selector, 1, 1)` with a damage record (of its two at
+    /// `+0x776`, 0x2d8 bytes) from `i` for `i`'s command (byte `+2` of
+    /// `MsGetChrCommand`) plays `motion` (`MsDamageSetMotion(j, motion, 1)`,
+    /// through `call`) once per such record.
+    pub fn ms_set_damage_motion<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+        selector: u32,
+        motion: u32,
+    ) {
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) == 0 {
+            return;
+        }
+        let cmd = u32::from(byte(
+            mem,
+            crate::actor::bridge::ms_get_chr_command(mem, i),
+            2,
+        ));
+        let bits = crate::actor::bridge::ms_get_chr_bit(mem, i, selector, 1, 1);
+        for j in 0..0x1f {
+            if bits >> j & 1 == 0 || j == i {
+                continue;
+            }
+            let b = actor_of(mem, j);
+            if byte(mem, b, 0xdcc) != 0 {
+                continue;
+            }
+            for k in 0..2 {
+                let e = b.wrapping_add(0x776 + 0x2d8 * k);
+                if u32::from(byte(mem, e, 0)) == i && u32::from(byte(mem, e, 1)) == cmd {
+                    game(mem, call, MS_DAMAGE_SET_MOTION, &[j, motion, 1]);
+                }
+            }
+        }
+    }
+
+    /// `MsSaveAddAP_00784610(chr, n)` (`0x00784610`): `n` (within
+    /// 0..=999,999,999) added to character `chr & 0xff`'s total and current
+    /// AP (`ply_save` `+0x14`, `+0x18`, each kept in that range); while the
+    /// current AP reaches the next level's (`MsGetNextAP`, above 0) and the
+    /// S-level (`+0x3b`) is below 99, it is paid and the level goes up.
+    pub fn ms_save_add_ap(mem: &mut impl Mem, chr: u32, n: u32) {
+        use ffx_kernel::bridge::ms_check_range;
+        const MAX: i32 = 999_999_999;
+        let chr = chr & 0xff;
+        let p = crate::save::bridge::PLY_SAVE.ptr(mem).addr + 0x94 * chr;
+        let n = ms_check_range(n.cast_signed(), 0, MAX);
+        for o in [0x14, 0x18] {
+            let v: i32 = mem.read(p + o);
+            mem.write(p + o, ms_check_range(v.wrapping_add(n), 0, MAX));
+        }
+        let mut next = crate::menu::bridge::ms_get_next_ap(mem, chr.cast_signed());
+        while mem.read::<u32>(p + 0x18) >= next.cast_unsigned() {
+            let level = byte(mem, p, 0x3b);
+            if next <= 0 || level >= 0x63 {
+                return;
+            }
+            let ap: u32 = mem.read(p + 0x18);
+            mem.write(p + 0x18, ap.wrapping_sub(next.cast_unsigned()));
+            let level = ms_check_range(i32::from(level) + 1, 0, 99);
+            mem.write(p + 0x3b, level.to_le_bytes()[0]);
+            next = crate::menu::bridge::ms_get_next_ap(mem, chr.cast_signed());
+        }
+    }
+
+    /// `MsAtelRequestSystem(k, flags, actor, out)` (`0x007981e0`): the
+    /// battle's system scripts: for `k` below 8 [`CAMERA_ONCE`] 0 and the
+    /// request (2, 1, 0x3e, `k`); for 8-0x17 it 1 and (2, 1, 0x3f, `k`), with
+    /// the voice event (`MsGetVoiceEventFlag`) also (2, 0, 0x3f, `k`) run
+    /// instead; queued fresh (`MsAtelRequestInit`, `MsAtelRequestAdd`) and
+    /// run (`MsAtelRequestExe(2, i, n, flags, actor, out)`, through `call`),
+    /// whose result it returns; -1 for other `k`.
+    pub fn ms_atel_request_system<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        k: u32,
+        flags: u32,
+        actor: u32,
+        out: u32,
+    ) -> u32 {
+        use crate::state::bridge::{
+            ms_atel_request_add, ms_atel_request_init, ms_get_voice_event_flag,
+        };
+        #[allow(clippy::cast_possible_truncation)] // the original stores 16 bits
+        let k16 = k as u16;
+        let (n, i) = if k < 8 {
+            CAMERA_ONCE.set(mem, 0);
+            ms_atel_request_init(mem);
+            ms_atel_request_add(mem, [2, 1, 0x3e, k16]);
+            (0x3e, 1)
+        } else if k.wrapping_sub(8) < 0x10 {
+            CAMERA_ONCE.set(mem, 1);
+            let voice = ms_get_voice_event_flag(mem) != 0;
+            ms_atel_request_init(mem);
+            ms_atel_request_add(mem, [2, 1, 0x3f, k16]);
+            if voice {
+                ms_atel_request_add(mem, [2, 0, 0x3f, k16]);
+                (0x3f, 0)
+            } else {
+                (0x3f, 1)
+            }
+        } else {
+            return u32::MAX;
+        };
+        game(
+            mem,
+            call,
+            MS_ATEL_REQUEST_EXE,
+            &[2, i, n, flags, actor, out],
+        )
+    }
+
+    /// `MsEffectSetMotion(i, motion)` (`0x007882c0`): actor `i & 0xff` with
+    /// a character, a motion table (`+0x38`) and not held (`+0xdce`) starts
+    /// `motion` (bit 0x8000: without blending): its motion flags reset, its
+    /// effect speed set (`MsEffectSetSpeed` from `+0x3fc`) unless one is
+    /// (`+0x404`), the character's motion reset and set (`Ch_ResetMotion`,
+    /// `Ch_SetSysMotion(chr, (i8) +0x20, motion)`), the blend frames from
+    /// the motion table (`MsMotBinFrame`) or 0, `+0x3f0` the motion; the
+    /// sequence's frames (`Ch_GetSeqFrame`) returned, `+0x434` set when
+    /// none. The character's functions through `call`; 0 for the others.
+    pub fn ms_effect_set_motion<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+        motion: u32,
+    ) -> u32 {
+        use crate::motion::bridge::{
+            CH_GET_SEQ_FRAME, CH_MOTION_SET_HOKAN, CH_MOTION_SET_NEXT_HOKAN, CH_RESET_MOTION,
+            CH_SET_SYS_MOTION,
+        };
+        let i = i & 0xff;
+        let a = actor_of(mem, i);
+        let ch = read_u32(mem, a);
+        if ch == 0 || byte(mem, a, 0x38) == 0 || byte(mem, a, 0xdce) != 0 {
+            return 0;
+        }
+        let plain = motion & 0x8000 != 0;
+        let m = motion & 0xffff_7fff;
+        let speed_set = byte(mem, a, 0x404) != 0;
+        for (o, v) in [
+            (0x44f, 0u8),
+            (0x3f3, 1),
+            (0x50d, 0),
+            (0x432, 1),
+            (0x40a, 0),
+            (0x448, 0),
+            (0x429, 0),
+        ] {
+            mem.write(a.wrapping_add(o), v);
+        }
+        if !speed_set {
+            let speed = u32::from(mem.read::<u16>(a.wrapping_add(0x3fc)));
+            ms_effect_set_speed(mem, i, speed);
+        }
+        game(mem, call, CH_RESET_MOTION, &[ch]);
+        game(mem, call, CH_SET_SYS_MOTION, &[ch, sbyte(mem, a, 0x20), m]);
+        if plain {
+            game(mem, call, CH_MOTION_SET_NEXT_HOKAN, &[ch, 0]);
+            game(mem, call, CH_MOTION_SET_HOKAN, &[ch, 0]);
+        } else {
+            if byte(mem, a, 0x4ac) & 0x80 == 0 {
+                game(mem, call, CH_MOTION_SET_NEXT_HOKAN, &[ch, 0]);
+            }
+            let old = u32::from(byte(mem, a, 0x3f0));
+            let frames = game(mem, call, MS_MOT_BIN_FRAME, &[i, a, m, old]);
+            game(mem, call, CH_MOTION_SET_HOKAN, &[ch, frames]);
+        }
+        mem.write(a.wrapping_add(0x3f0), m.to_le_bytes()[0]);
+        let n = game(mem, call, CH_GET_SEQ_FRAME, &[ch]);
+        mem.write(a.wrapping_add(0x434), u8::from(n.cast_signed() <= 0));
+        n
+    }
+
+    /// `MsGetChrMoveFrameRest(i, local)` (`0x007a9320`): the frames left of
+    /// actor `i`'s move (`+0x415`, the original's two vectors at `local`,
+    /// 32 bytes): none (0) without one; for a timed move (7, or one not
+    /// moving by speed, bit 7 clear) its frames `u16` `+0x45a` less
+    /// `+0x452`; for one by speed the distance to its target
+    /// (`MsGetChrPos`, `MsGetMoveTargetPos` through `fcall`, `MsPointLen`)
+    /// over its speed (`f32` `+0x464`), truncated. An actor without a
+    /// position leaves the first vector as `local` holds it (the original's
+    /// frame: stack contents; the shim's frame is zeroed).
+    pub fn ms_get_chr_move_frame_rest<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        fcall: crate::exec::bridge::Call<'_, M>,
+        i: u32,
+        local: u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{div, ftol, load, store};
+        let a = actor_of(mem, i);
+        let (pos, target) = (local, local + 0x10);
+        crate::pos::bridge::ms_get_chr_pos(mem, trig, i, pos);
+        let state = byte(mem, a, 0x415);
+        let rest = |mem: &M| {
+            let to = u32::from(mem.read::<u16>(a.wrapping_add(0x45a)));
+            to.wrapping_sub(u32::from(mem.read::<u16>(a.wrapping_add(0x452))))
+        };
+        match state & 0x7f {
+            7 => rest(mem),
+            0 => 0,
+            _ => {
+                let pos_fn = mem.rebase(MS_GET_MOVE_TARGET_POS);
+                fcall(mem, pos_fn, &[i, a, u32::from(state), target, 0]);
+                if byte(mem, a, 0x415) & 0x80 == 0 {
+                    return rest(mem);
+                }
+                let d = crate::vector::bridge::ms_point_len(mem, pos, target).to_bits();
+                let d = store(load(d));
+                let speed: u32 = mem.read(a.wrapping_add(0x464));
+                ftol(mem, div(load(d), load(speed)))
+            }
+        }
+    }
 }

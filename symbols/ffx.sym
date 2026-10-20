@@ -4929,6 +4929,7 @@
 0x007844c0 function readBtlMonsterName        # name from Fahrenheit (fh v3:exact 0x00784570); (): while g_KernelMonster1 is 0, the three TKMallocAndReadEventMessage("monster1".."monster3") into 0x0112ca6c/70/74; ported (ffx_battle::minor, battle round 29)
 0x00784500 function MsBtlReadAsyncTask_00784500 # graphicRegistAsyncTask(it, 0) from MsBtlReadManage's file step; name ours
 0x007845e0 function MsAddLoveParam            # fh v3:exact 0x00784690
+0x00784610 function MsSaveAddAP_00784610 # ours: (chr, n): n (0..999999999) added to ply_save +0x14 and +0x18 (each ranged); while +0x18 >= MsGetNextAP(chr) > 0 and S-level +0x3b < 99: pay it, level + 1; caller 0x008ba390; ported (ffx_battle::minor, battle round 29)
 0x007846e0 function MsCheatPlayerPowerfulOff  # fh v3:cg2 0x784790
 0x00784720 function MsCheatPlayerPowerup      # fh v3:exact 0x007847d0; ours: (i) with the cheat: a party member (+0x591 0x11) healed full (numbers 0x81), gauge full, pose, standing motion; ported (battle round 12)
 0x00784830 function MsDebugAddGill            # fh switch:bsim1.00 0x7100371450
@@ -5050,7 +5051,7 @@
 0x00788200 function MsEffectReady             # fh v3:exact 0x007882c0
 0x00788270 function MsEffectResetMotionDisable # fh v3:exact 0x00788330
 0x007882b0 function MsEffectSepClearAll       # fh v3:bsim1.00 0x00788370; ours: op_oef2_sep_free_all(0xffff), its eax; ported (battle round 14)
-0x007882c0 function MsEffectSetMotion         # fh v3:exact 0x00788380
+0x007882c0 function MsEffectSetMotion         # name from Fahrenheit (fh v3:exact 0x00788380); (i, motion) -> Ch_GetSeqFrame: actor (u8)i with a character, +0x38 and not +0xdce: motion flags reset, MsEffectSetSpeed(i, +0x3fc) unless +0x404, Ch_ResetMotion, Ch_SetSysMotion(chr, (i8)+0x20, motion & ~0x8000), blend 0 for 0x8000 else (Ch_MotionSetNextHokan(0) unless +0x4ac bit 7) MsMotBinFrame, +0x3f0 = motion, +0x434 = frames <= 0; else 0; ported (ffx_battle::minor, battle round 29)
 0x007883f0 function MsEffectSetMotionFlag     # fh switch:bsim1.00 0x71003514a0
 0x00788430 function MsEffectSetSpeed          # name from Fahrenheit (fh v3:exact+call.cs 0x007884f0 cdecl); (i, speed) -> MsCalcMotionSpeed(a) after (speed < 0 ? +0x404 = 0 : u16 +0x402 = speed, +0x404 = 1), a = MsGetChr((u8)i); ported (ffx_battle::minor, battle round 29)
 0x00788480 function MsEffectStart             # fh v3:exact+call.cs 0x00788540 cdecl
@@ -5151,7 +5152,7 @@
 0x0078d8d0 function MsAutoRelifeProcess       # fh v3:exact+call.cs 0x0078d990 cdecl; ours: (i, actor, by, helper): helper free to act: +0x6dd = (+0x446 == 1), by's command helper+0x6c6 on i inserted after i's (prio 0), 1; helper +0x6dc cleared; ported (battle round 13)
 0x0078d980 function MsSetDamage               # fh v3:exact 0x0078da40; ours: (i, sel, flags) -> how many targets still have hit entries: AfterDamageProcess on the actors MsGetChrBit(i, sel, 1, 1) picks, MsCheckHitPending on the rest; on the last hit of a command with an input entry (+0xde9, +0xde4) sound 0x3a on who warded a status, the self-destruct (+0x6ca), a 6-frame pause and MsDeleteInputCue; ported (battle round 13)
 0x0078dae0 function SetUpDamageInfo           # fh v3:exact 0x0078dba0 +SetUpDamageInfo
-0x0078db70 function MsSetDamageMotion         # fh v3:exact 0x0078dc30
+0x0078db70 function MsSetDamageMotion         # name from Fahrenheit (fh v3:exact 0x0078dc30); (i, selector, motion): actor (u8)i: each other living actor of MsGetChrBit(i, selector, 1, 1) whose damage records (+0x776, 2 x 0x2d8) name i and its command's byte +2 gets MsDamageSetMotion(j, motion, 1) per record; ported (ffx_battle::minor, battle round 29)
 0x0078dc30 function MsSetDeath                # fh v3:exact 0x0078dcf0
 0x0078ddc0 function MsSetDeathProcess            # layout: alphabetical run between MsSetDeath and MsSetEscapeFlag (1 unnamed in the gap); Switch 0x71003443d0 MsSetDeathProcess is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0078de40 function MsSetEscapeFlag           # fh v3:exact 0x0078df00; ours: (i, actor, away): +0xdcd/+0xdc8; back: MsSetChrVisibleAppear(i, 1); ported (battle round 12)
@@ -5418,7 +5419,7 @@
 0x00797d50 function MsAtelRequestExe          # fh v3:exact 0x00797d60
 0x00797ff0 function MsAtelRequestInit         # fh v3:bsim1.00 0x00798000
 0x00798000 function MsAtelRequestMagicCamera  # fh v3:exact 0x00798010
-0x007981e0 function MsAtelRequestSystem          # layout: alphabetical run between MsAtelRequestMagicCamera and MsAtelRequestSystemCheckExe (1 unnamed in the gap); Switch 0x710033cb00 MsAtelRequestSystem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x007981e0 function MsAtelRequestSystem          # layout: alphabetical run between MsAtelRequestMagicCamera and MsAtelRequestSystemCheckExe (1 unnamed in the gap); Switch 0x710033cb00 MsAtelRequestSystem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (k, flags, actor, out) -> k < 8: g_BtlCameraOnce 0, requests (2,1,0x3e,k); k 8-0x17: it 1, (2,1,0x3f,k) (+ (2,0,0x3f,k) with MsGetVoiceEventFlag); MsAtelRequestInit/Add then MsAtelRequestExe(2, i, n, flags, actor, out); else -1; ported (ffx_battle::minor, battle round 29)
 0x007982a0 function MsAtelRequestSystemCheckExe # fh v3:exact 0x007982b0; ours: (v, flags, actor, out) system handler 0x6c of owner 1 then 0x89 (owners 1 and 0 with MsGetVoiceEventFlag), each run and its tags parsed; returns the second; ported (battle round 14)
 0x00798390 function MsAtelSetUp               # fh v3:exact 0x007983a0
 0x007984c0 function MsAtelChrInfoOne          # (i, kind, acc): adds script actor i's position (1, 8, 9; 0x0086b1e0), direction (2, +pi 7; 0x0086a6e0) or 18.0/10.0 (3, 10 / 4, 11) to acc; other kinds add stack garbage; named here; ported
@@ -5970,7 +5971,7 @@
 0x007a8fc0 function Battle_ScriptPlayMotion      # (ctx, ..., motion, flag): plays a motion on the script's actor (0x00837d00), returns the length in frames << 8 / speed; core of 0x7007; ported (battle round 23; args (worker, args unused, stack, flag byte)): AtelPopStackInteger motion (bit 0x8000 no blend), AtelGetBattleIdAdrs2 index byte (0xff: 1), actor +0x434 = 1; model +0 and +0x38, ms_motion_trans >= 0, +0x3f3 clear: Ch_ResetMotion, Ch_SetSysMotion(chr, (i8)+0x20, m), hokan 0/0 or (unless +0x4ac bit 7) next 0 and MsMotBinFrame(i, actor, m, old +0x3f0); +0x405 -> msMoveReset; +0x3f0 = m, +0x40a = flag, MsCalcMotionSpeed; Ch_GetSeqFrame > 0: frames<<8 / speed (+0x402 with +0x404 1, else +0x3fc * +0x406 / 8 signed; 0: frames), +0x434 = 0; else 1
 0x007a9230 function MsCheckBtlPos             # fh v3:exact 0x007a9250
 0x007a92c0 function MsCheckStartEffect        # fh v3:exact 0x007a92e0
-0x007a9320 function MsGetChrMoveFrameRest        # layout+callees: sorts between MsCheckStartEffect and MsGetDirMode, and its named callees match the Switch 0x7100361920 MsGetChrMoveFrameRest's (similarity 1.00: MsGetChr, MsGetChrPos, MsGetMoveTargetPos, MsPointLen); symbols from Fahrenheit's server export
+0x007a9320 function MsGetChrMoveFrameRest        # layout+callees: sorts between MsCheckStartEffect and MsGetDirMode, and its named callees match the Switch 0x7100361920 MsGetChrMoveFrameRest's (similarity 1.00: MsGetChr, MsGetChrPos, MsGetMoveTargetPos, MsPointLen); symbols from Fahrenheit's server export; (i) -> frames left of the move +0x415: 0 none; 7 or not by speed (bit 7): u16 +0x45a - +0x452; by speed: ftol(f32 MsPointLen(pos, target) / f32 +0x464) (MsGetChrPos, MsGetMoveTargetPos into frame vectors; stack cookie); ported (ffx_battle::minor, battle round 29)
 0x007a93e0 function MsGetChrMovePos           # (i, out): where actor i is on its move: +0x425 fixed point +0x3c0, kind +0x415 7 a spline, else a step towards MsGetMoveTargetPos's point (bit 0x80 growing speed, else MsGetChrMoveAccelPos); named here; ported
 0x007a9650 function MsDirTurn                 # (actor, dir) -> f32 in ST0: MsNearRag(+0x490, dir), or the turn the other way round (+-2pi) when +0x494 and the turn pass 2pi/3; MsGetDirMode with +0x42c; name ours
 0x007a9710 function MsGetDirMode              # (i, actor, vec, follow, &mode, &plain) -> f32 in ST0 (fld at ret; Ghidra types it void, MsSetChrDirTarget reads (float10)); direction for mode +0x42b 1-13; fh v3:exact 0x007a9730

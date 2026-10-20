@@ -2319,6 +2319,33 @@ ported! {
     MsSetChrStatInfo @ 0x007b_4b70 => extern "C" fn ms_set_chr_stat_info(chr: u32, kind: u32, selector: u32, v: u32) -> u32 {
         ffx_battle::stat_set::bridge::ms_set_chr_stat_info(&mut mem(), &mut call_ptr, chr, kind, selector, v)
     }
+    /// `MsSetDamageMotion(i, selector, motion)`: `MsDamageSetMotion`
+    /// through the game.
+    MsSetDamageMotion @ 0x0078_db70 => extern "C" fn ms_set_damage_motion(i: u32, selector: u32, motion: u32) {
+        minor::ms_set_damage_motion(&mut mem(), &mut call_ptr, i, selector, motion);
+    }
+    /// `MsSaveAddAP_00784610(chr, n)`.
+    MsSaveAddAP_00784610 @ 0x0078_4610 => extern "C" fn ms_save_add_ap(chr: u32, n: u32) {
+        minor::ms_save_add_ap(&mut mem(), chr, n);
+    }
+    /// `MsAtelRequestSystem(k, flags, actor, out)`: `MsAtelRequestExe`
+    /// through the game.
+    MsAtelRequestSystem @ 0x0079_81e0 => extern "C" fn ms_atel_request_system(k: u32, flags: u32, actor: u32, out: u32) -> u32 {
+        minor::ms_atel_request_system(&mut mem(), &mut call_ptr, k, flags, actor, out)
+    }
+    /// `MsEffectSetMotion(i, motion)`: the character's functions through the
+    /// game.
+    MsEffectSetMotion @ 0x0078_82c0 => extern "C" fn ms_effect_set_motion(i: u32, motion: u32) -> u32 {
+        minor::ms_effect_set_motion(&mut mem(), &mut call_ptr, i, motion)
+    }
+    /// `MsGetChrMoveFrameRest(i)`: the two vectors in this call's frame,
+    /// `MsGetMoveTargetPos` (an `f32` in ST0, popped) through the game.
+    MsGetChrMoveFrameRest @ 0x007a_9320 => extern "C" fn ms_get_chr_move_frame_rest(i: u32) -> u32 {
+        let mut local = super::StackFrame::<8>::new();
+        let at = local.at();
+        let mut fcall = call_f32;
+        minor::ms_get_chr_move_frame_rest(&mut mem(), &crt_trig, &mut fcall, i, at)
+    }
     /// `MsMenuHalfElement(i)`.
     MsMenuHalfElement @ 0x0078_fe40 => extern "C" fn ms_menu_half_element(i: u32) -> u32 {
         minor::ms_menu_half_element(&mem(), i)

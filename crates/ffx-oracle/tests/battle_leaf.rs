@@ -2176,3 +2176,265 @@ fn leaf_lists_match_the_original_on_a_snapshot() {
     };
     lists(&mut a, &mut b, &mut Xorshift(0x2929_1102), false);
 }
+
+/// Group I: damage motions, AP, the system camera request, effect
+/// motions, the move's frames left.
+fn motions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use battle_common::crt::{patch, stand_in};
+    use ffx_battle::motion::bridge as mo;
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x110 * 10);
+    let callees: [(u32, u8); 10] = [
+        (g::MS_DAMAGE_SET_MOTION, 3),
+        (g::MS_ATEL_REQUEST_EXE, 6),
+        (g::MS_MOT_BIN_FRAME, 4),
+        (mo::CH_RESET_MOTION, 1),
+        (mo::CH_SET_SYS_MOTION, 3),
+        (mo::CH_MOTION_SET_NEXT_HOKAN, 2),
+        (mo::CH_MOTION_SET_HOKAN, 2),
+        (mo::CH_GET_SEQ_FRAME, 1),
+        (g::MS_GET_MOVE_TARGET_POS, 5),
+        (ffx_battle::atel::bridge::ATEL_GET_ACTOR_ID, 1),
+    ];
+    for o in [&mut *a, &mut *b] {
+        patch(o);
+        for (k, (f, n)) in (0u32..).zip(callees) {
+            if f == g::MS_GET_MOVE_TARGET_POS {
+                continue;
+            }
+            if n > 4 {
+                // (too long for a logging stub: the last call kept)
+                recording_stub(o, f, STUBS_D + 0x60 * k, rec + 0x110 * k, n, 0);
+            } else {
+                logging_stub(o, f, STUBS_D + 0x60 * k, rec + 0x110 * k, n, 0);
+            }
+        }
+        // MsGetMoveTargetPos: the target 1.5 away on x, 2.0 in ST0
+        let target = rec + 0x110 * 8;
+        let code = code_with(&[
+            (&[0x8b, 0x44, 0x24, 0x10], None), // mov eax, [esp + 0x10] (out)
+            (&[0xd9, 0x05], Some(target)),     // fld dword [target]
+            (&[0xd9, 0x18], None),             // fstp dword [eax]
+            (&[0xd9, 0x05], Some(target + 4)),
+            (&[0xd9, 0x58, 0x04], None),
+            (&[0xd9, 0x05], Some(target + 8)),
+            (&[0xd9, 0x58, 0x08], None),
+            (&[0xd9, 0x05], Some(target + 0xc)), // the ST0 result
+            (&[0xc3], None),
+        ]);
+        hook_to(o, g::MS_GET_MOVE_TARGET_POS, STUBS_E, &code);
+    }
+    let local = scratch(a, b, 0x20);
+    // characters to point at (the character functions are stubs; the
+    // position reads come from here)
+    let chars = scratch(a, b, 0x1000);
+    // the player table MsGetNextAP reads, where there is none
+    if synthetic || !readable(a, ffx_battle::menu::bridge::PLY_ROM.get(b), 0x20) {
+        let t = fake_records(a, b, rng, 0x14, 0x40);
+        set(a, b, ffx_battle::menu::bridge::PLY_ROM, t);
+    }
+    let ply = ffx_battle::save::bridge::PLY_SAVE.ptr(b).addr;
+    for round in 0..300 {
+        if w.synthetic || round % 2 == 0 {
+            dress(a, b, rng, w.actors);
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                for (at, len) in [
+                    (0x20, 1),
+                    (0x38, 1),
+                    (0x3f0, 1),
+                    (0x3fc, 2),
+                    (0x404, 1),
+                    (0x415, 1),
+                    (0x452, 2),
+                    (0x45a, 2),
+                    (0x4ac, 1),
+                    (0x776, 0x5b0),
+                    (0xdcc, 3),
+                ] {
+                    fill(a, b, rng, p + at, len);
+                }
+                poke(a, b, p + 0x464, &float(rng).to_le_bytes());
+                poke(
+                    a,
+                    b,
+                    p + 0x415,
+                    &[[0u8, 7, 3, 0x83, 0x87, 0x80][rng.below(6) as usize]],
+                );
+            }
+        }
+        if w.synthetic {
+            for k in 0..ACTORS {
+                let p = w.actor(k);
+                poke(
+                    a,
+                    b,
+                    p,
+                    &[0, chars + 0x100 * (k % 8)][rng.below(3).min(1) as usize].to_le_bytes(),
+                );
+                poke(a, b, p + 0x13, &[0xff]);
+                poke(a, b, p + 0x440, &[0]);
+            }
+        }
+        for k in 0..4 {
+            poke(a, b, rec + 0x110 * 8 + 4 * k, &float(rng).to_le_bytes());
+        }
+        for k in 0..10u32 {
+            poke(a, b, rec + 0x110 * k + 4, &rng.below(40).to_le_bytes());
+        }
+        // Ch_GetSeqFrame: often none left
+        poke(
+            a,
+            b,
+            rec + 0x110 * 7 + 4,
+            &[0u32, 1, 5][rng.below(3) as usize].to_le_bytes(),
+        );
+        // MsAtelRequestExe's result (a recording stub: after its 6 words)
+        poke(
+            a,
+            b,
+            rec + 0x110 + 4 + 4 * 6,
+            &rng.range(-1, 3).to_le_bytes(),
+        );
+        let i = [rng.below(ACTORS), rng.next()][rng.below(5).min(1) as usize];
+        let mut c = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+        // damage records from actor i for its command, now and then
+        let i8 = i & 0xff;
+        if ffx_battle::actor::bridge::ms_btl_chr_num_check(i8) != 0 {
+            let cmd = ffx_battle::actor::bridge::ms_get_chr_command(b, i8);
+            let cb = b.read(cmd + 2, 1).unwrap()[0];
+            for j in 0..ACTORS {
+                let e = ffx_battle::actor::bridge::ms_get_chr(b, j) + 0x776 + 0x2d8 * rng.below(2);
+                if rng.below(2) == 0 {
+                    poke(a, b, e, &[u8::try_from(i8).unwrap(), cb]);
+                }
+            }
+        }
+        let (sel, motion) = (
+            [rng.below(0x22), rng.range(-24, 0).cast_unsigned()][rng.below(2) as usize],
+            rng.next(),
+        );
+        twin(
+            "MsSetDamageMotion",
+            a,
+            b,
+            0x0078_db70,
+            &[i, sel, motion],
+            0,
+            |m| {
+                g::ms_set_damage_motion(m, &mut c, i, sel, motion);
+                0
+            },
+        );
+        same("MsSetDamageMotion", a, b);
+        let chr = rng.below(0x12);
+        let p = ply + chr * 0x94;
+        poke(
+            a,
+            b,
+            p + 0x14,
+            &[rng.below(1000), 999_999_990, rng.next()][rng.below(3) as usize].to_le_bytes(),
+        );
+        poke(
+            a,
+            b,
+            p + 0x18,
+            &[rng.below(1000), 999_999_990, rng.next()][rng.below(3) as usize].to_le_bytes(),
+        );
+        poke(
+            a,
+            b,
+            p + 0x3b,
+            &[[0u8, 98, 99, 0xff, 50][rng.below(5) as usize]],
+        );
+        let mut n = [rng.below(2000), rng.next(), 0][rng.below(3) as usize];
+        // sometimes exactly the next level's AP after the add
+        if rng.below(3) == 0 {
+            n = n.min(1000);
+            let next = ffx_battle::menu::bridge::ms_get_next_ap(b, chr.cast_signed());
+            poke(
+                a,
+                b,
+                p + 0x18,
+                &next.cast_unsigned().wrapping_sub(n).to_le_bytes(),
+            );
+        }
+        twin("MsSaveAddAP", a, b, 0x0078_4610, &[chr, n], 0, |m| {
+            g::ms_save_add_ap(m, chr, n);
+            0
+        });
+        same("MsSaveAddAP", a, b);
+        set(a, b, ffx_battle::state::bridge::VOICE_EVENT, chars + 0xffc);
+        poke(a, b, chars + 0xffc, &[u8::from(rng.below(2) == 0)]);
+        let k = [
+            rng.below(8),
+            8 + rng.below(0x10),
+            rng.below(0x30),
+            rng.next(),
+        ][rng.below(4) as usize];
+        let (flags, actor, out) = (rng.below(8), rng.next(), rng.next());
+        twin(
+            "MsAtelRequestSystem",
+            a,
+            b,
+            0x0079_81e0,
+            &[k, flags, actor, out],
+            ALL,
+            |m| g::ms_atel_request_system(m, &mut c, k, flags, actor, out),
+        );
+        same("MsAtelRequestSystem", a, b);
+        let motion = [rng.below(0x40), 0x8000 | rng.below(0x40), rng.next()][rng.below(3) as usize];
+        twin(
+            "MsEffectSetMotion",
+            a,
+            b,
+            0x0078_82c0,
+            &[i, motion],
+            ALL,
+            |m| g::ms_effect_set_motion(m, &mut c, i, motion),
+        );
+        same("MsEffectSetMotion", a, b);
+        let j = rng.below(ACTORS);
+        // a move by speed (bit 7) reads the actor's position, which our own
+        // actors (no position: MsGetChrPos writes nothing) leave as the
+        // original's frame holds it: those only on the live ones
+        if w.synthetic {
+            let p = w.actor(j);
+            let st = b.read(p + 0x415, 1).unwrap()[0];
+            if st & 0x80 != 0 && st & 0x7f != 7 && st & 0x7f != 0 {
+                poke(a, b, p + 0x415, &[st & 0x7f]);
+            }
+        }
+        let mut fc = |m: &mut Oracle, f: u32, args: &[u32]| {
+            let r = m.call(f, Conv::Cdecl, args).unwrap();
+            battle_common::crt::f80_to_f32(r.st0_raw.unwrap())
+        };
+        twin("MsGetChrMoveFrameRest", a, b, 0x007a_9320, &[j], ALL, |m| {
+            g::ms_get_chr_move_frame_rest(m, &stand_in, &mut fc, j, local)
+        });
+        let v = b.read(local, 0x20).unwrap();
+        a.write(local, &v).unwrap();
+        // MsPointLen leaves the target's w in VU vf2.w: the original's
+        // target is its frame's, whose w nobody wrote (stack contents)
+        let vf2w = a.rebase(0x00c8_f7fc);
+        let w = a.read(vf2w, 4).unwrap();
+        b.write(vf2w, &w).unwrap();
+        same("MsGetChrMoveFrameRest", a, b);
+    }
+}
+
+#[test]
+fn leaf_motions_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    motions(&mut a, &mut b, &mut Xorshift(0x2929_1301), true);
+}
+
+#[test]
+fn leaf_motions_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    motions(&mut a, &mut b, &mut Xorshift(0x2929_1302), false);
+}
