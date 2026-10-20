@@ -850,6 +850,13 @@ ported! {
     pppDrawMdlPSimDes @ 0x0073_d010 => extern "C" fn ppp_draw_mdl_psim_des(obj: u32, ctrl: u32) {
         prog::bridge::ppp_draw_mdl_psim_des(&mut mem(), obj, ctrl, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppKeBornRnd(obj, key, ctrl)`.
+    pppKeBornRnd @ 0x0075_84d0 => extern "C" fn ppp_ke_born_rnd(obj: u32, key: u32, ctrl: u32) {
+        // the original's local matrix and vector
+        let mut frame = super::StackFrame::<20>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_rnd_shape(&mut mem(), obj, key, ctrl, at, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppKeBornRnd2(obj, key, ctrl)`.
     pppKeBornRnd2 @ 0x0075_87b0 => extern "C" fn ppp_ke_born_rnd2(obj: u32, key: u32, ctrl: u32) {
         let kind = prog::bridge::BornRnd::Rnd2;
@@ -1724,6 +1731,10 @@ ported! {
     /// `op_part_free(part)`.
     op_part_free @ 0x0080_09c0 => extern "C" fn op_part_free(part: u32) -> u32 {
         opus::bridge::op_part_free(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_motion(host, cmd)`.
+    opu_motion @ 0x0080_44e0 => extern "C" fn opu_motion(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_motion(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opu_motion_etc(host, cmd)`.
     opu_motion_etc @ 0x0080_47b0 => extern "C" fn opu_motion_etc(host: u32, cmd: u32) -> u32 {

@@ -4198,6 +4198,111 @@ pub mod bridge {
         }
     }
 
+    /// `opu_motion(host, cmd)` (`0x008044e0`): the motion of the unit's
+    /// character `c` (byte `+0x18`, `h` = `g_EtChrHandles[c]`), by the
+    /// host's flag nibble. 0 and 1: `m` = `u16 cmd +4` / `+2`; in battle
+    /// (`MsBattleChrStart()`) `MsEffectSetMotion(c, m)` for `c` < 0x20,
+    /// else when `h` is set `Ch_ResetMotion(h)`, `Ch_SetSysMotion(h, 1,
+    /// m)`, `Ch_GetSeqFrame(h)` (`cmd + 6` / `+ 4`). 3: the same with `m`
+    /// = `u16 cmd +2`, storing the result (or `m` without `h`, 0 outside
+    /// battle) as `f32` at unit `+ i16 cmd +4` (`cmd + 6`). 2: waits while
+    /// the motion runs: `MsEffectCheckMotion2(c)` when host byte `+0x21e`
+    /// is set and `c` < 0x20, else `Ch_GetWaitMotion(h)` != 0 sets host
+    /// byte `+0x210` = 1 and returns `cmd`; done is `cmd + 2`. 4: outside
+    /// battle with `h`, `Ch_ResetMotion`, `Ch_SetSequence(h, u32 cmd +2)`,
+    /// `Ch_GetSeqFrame` (`cmd + 6`). 5: `Ch_MotionSetNextHokan(h, 0)`,
+    /// `Ch_ClothReset2(h)` (`cmd + 2`). Others `cmd`. Through `call`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn opu_motion<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let u = unit(mem, host);
+        let c = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(c).get(mem);
+        let half = |mem: &M, k: u32| u32::from(mem.read::<u16>(cmd.wrapping_add(k)));
+        match nibble(mem, host) {
+            n @ (0 | 0x1000) => {
+                let (m, next) = if n == 0 {
+                    (half(mem, 4), 6)
+                } else {
+                    (half(mem, 2), 4)
+                };
+                if go(mem, 0x0078_0cb0, &[]) != 0 {
+                    set_motion(mem, &mut go, c, h, m);
+                }
+                cmd.wrapping_add(next)
+            }
+            0x3000 => {
+                let to = i32::from(mem.read::<i16>(cmd.wrapping_add(4))).cast_unsigned();
+                let m = half(mem, 2);
+                let v = if go(mem, 0x0078_0cb0, &[]) != 0 {
+                    set_motion(mem, &mut go, c, h, m).map_or(m.cast_signed(), u32::cast_signed)
+                } else {
+                    0
+                };
+                #[allow(clippy::cast_precision_loss)] // fild, one rounding at the fstp
+                mem.write(to.wrapping_add(u), v as f32);
+                cmd.wrapping_add(6)
+            }
+            0x2000 => {
+                let busy = if mem.read::<u8>(host.wrapping_add(0x21e)) != 0 && c < 0x20 {
+                    go(mem, 0x0078_78a0, &[c]) == 0
+                } else {
+                    go(mem, 0x0083_92c0, &[h]) != 0
+                };
+                if !busy {
+                    return cmd.wrapping_add(2);
+                }
+                mem.write(host.wrapping_add(0x210), 1u8);
+                cmd
+            }
+            0x4000 => {
+                let seq = half(mem, 4).wrapping_shl(16).wrapping_add(half(mem, 2));
+                if go(mem, 0x0078_0cb0, &[]) == 0 && h != 0 {
+                    go(mem, 0x0082_b080, &[h]);
+                    go(mem, 0x0083_7ac0, &[h, seq]);
+                    go(mem, 0x0083_6af0, &[h]);
+                }
+                cmd.wrapping_add(6)
+            }
+            0x5000 => {
+                go(mem, 0x0082_b010, &[h, 0]);
+                go(mem, 0x0082_4670, &[h]);
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opu_motion`'s motion change: `MsEffectSetMotion(c, m)` for `c` <
+    /// 0x20, else with a handle `Ch_ResetMotion(h)`, `Ch_SetSysMotion(h, 1,
+    /// m)` and `Ch_GetSeqFrame(h)`; the frame count either returns (None:
+    /// neither ran).
+    fn set_motion<M: Mem>(
+        mem: &mut M,
+        go: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        c: u32,
+        h: u32,
+        m: u32,
+    ) -> Option<u32> {
+        if c < 0x20 {
+            Some(go(mem, 0x0078_82c0, &[c, m]))
+        } else if h != 0 {
+            go(mem, 0x0082_b080, &[h]);
+            go(mem, 0x0083_7d00, &[h, 1, m]);
+            Some(go(mem, 0x0083_6af0, &[h]))
+        } else {
+            None
+        }
+    }
+
     /// `0x0081c460` (`opu_kind2`, ours): the unit's draw kind `+0xbb` = 2,
     /// `+0xe0` = table `u16 cmd +2` of kind 4 of its oef (`op_oef2_a_get`,
     /// `set_ptr32`), `+0xc0` = 0x00480080 (two halves, 0x80 and 0x48: not relocated), byte `+0xa8`

@@ -23210,3 +23210,187 @@ fn round38d_encounter_grid_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round39a_ke_born_rnd_matches_the_original() {
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_84d0);
+        let seeds = record_srand(&mut p);
+        let child_ret = p.alloc(4);
+        let log = far_recorder(&mut p, 0x0071_6770, &[0, 0], Some(child_ret)); // pppCreatePObject
+        let (obj, key, ctrl, offsets) = (p.alloc(0x400), p.alloc(0x40), p.alloc(0x10), p.alloc(4));
+        let (part, records, child, spare) =
+            (p.alloc(0x40), p.alloc(0x100), p.alloc(0x400), p.alloc(0x40));
+        let (env_slot, env, shapes, models) =
+            (p.alloc(4), p.alloc(0x40), p.alloc(0x40), p.alloc(0x100));
+        let (lists, verts, frame) = (p.alloc(0x400), p.alloc(0x200), p.alloc(0x50));
+        p.set(ctrl + 0xc, offsets);
+        p.put(heap::bridge::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        // shape and model indices are signed: tables with room below 0
+        p.set(env + 0x20, models + 0x40);
+        p.set(env + 0x28, shapes + 0x20);
+        let stop = p.sym(ppp::bridge::STOP.sym);
+        let small = |rng: &mut Xorshift| (rng.below(0x2000) as i16) - 0x1000;
+        for round in 0..3000 {
+            // both recorders' counts (KeVu0RndI seeds through srand)
+            p.set(log, 0u32);
+            p.set(seeds, 0u32);
+            p.set(stop, u32::from(rng.chance(5)));
+            p.set(p.sym(0x00c8_f728), u32::from(rng.chance(90)));
+            p.set(p.sym(0x00c0_a000), rng.next());
+            p.set(p.sym(0x00c8_f508), rng.next());
+            p.put(pb::CURRENT_PART, part);
+            p.fill(child, 0x400, &mut rng);
+            p.fill(spare, 0x40, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.set(key + 9, rng.pick(&[0u8, 0, 0, 0xff, 1, 0x80]));
+            p.set(key + 0xa, u8::from(rng.chance(50)));
+            p.set(key + 8, rng.pick(&[0u8, 1, 2, 3, 5, 9]));
+            p.set(key + 4, rng.below(8) as i16 - 4);
+            p.set(key + 6, rng.below(8) as i16 - 4);
+            for at in [0xc, 0x14] {
+                if rng.chance(5) {
+                    p.set(key + at, u32::MAX);
+                }
+            }
+            // no record (address 0): the child is at 0, its areas absolute
+            let none = rng.chance(10);
+            p.set(part + 0x3c, if none { 0 } else { records });
+            if !rng.chance(5) || none {
+                p.set(key + 0xc, if none { 0 } else { rng.below(16) });
+            }
+            for k in [0x10u32, 0x18] {
+                let area = if none {
+                    spare + 0x10 * rng.below(3) - 0xa0
+                } else {
+                    0x10 * rng.below(0x30)
+                };
+                p.set(key + k, area);
+            }
+            p.set(child_ret, if rng.chance(8) { 0 } else { child });
+            // eight shapes (-4..4) of 1..12 vertices on four models (-2..2)
+            let count = 1 + rng.below(12) as i16;
+            for s in 0..8u32 {
+                let c = if rng.chance(10) {
+                    1 + rng.below(12) as i16
+                } else {
+                    count
+                };
+                p.set(shapes + 8 * s, rng.below(4) as i16 - 2);
+                p.set(shapes + 8 * s + 2, c);
+                p.set(shapes + 8 * s + 4, lists + 0x80 * s + 0x40);
+            }
+            for i in 0..0x200u32 {
+                p.set(lists + 2 * i, rng.below(16) as u16);
+            }
+            for m in 0..4u32 {
+                p.set(models + 0x20 * m + 0x14, verts + 0x80 * m);
+            }
+            for i in 0..0x100u32 {
+                p.set(verts + 2 * i, small(&mut rng));
+            }
+            p.set(obj + 0x90, if rng.chance(30) { verts + 0x60 } else { 0 });
+            let off = 4 * rng.below(0x40);
+            p.set(offsets, off);
+            let start = if rng.chance(10) {
+                rng.below(0x40)
+            } else {
+                rng.below(u32::from(count.cast_unsigned()))
+            };
+            p.set(obj + off + 0xa0, start as u16);
+            for i in 0..16u32 {
+                let d = if i % 5 == 0 { 1.0f32 } else { 0.0 };
+                p.set(
+                    obj + 0x10 + 4 * i,
+                    d + f32::from_bits(ranged(&mut rng, -0.5, 0.5)),
+                );
+            }
+            for i in 0..4u32 {
+                p.set(obj + 0x40 + 4 * i, ranged(&mut rng, -100.0, 100.0));
+            }
+            if rng.chance(10) {
+                // the child's areas on obj's matrix: the copy matters
+                p.set(child_ret, obj);
+                p.set(key + 0x10, 0x10u32.wrapping_sub(0xa0));
+                p.set(key + 0x18, 0x10 * rng.below(0x30));
+                p.set(key + 0xc, 1u32);
+                p.set(part + 0x3c, records);
+            }
+            p.check(
+                &format!("pppKeBornRnd round {round}"),
+                0x0075_84d0,
+                &[obj, key, ctrl],
+                |m| {
+                    let keep = m.read(frame, 0x50).unwrap();
+                    pb::ppp_ke_born_rnd_shape(m, obj, key, ctrl, frame, &mut call_original);
+                    m.write(frame, &keep).unwrap();
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn round39a_opu_motion_matches_the_original() {
+    use opus::bridge as o;
+    // the callees (recorded, each answering from its own cell): address
+    // and argument words
+    const CALLEES: [(u32, usize); 10] = [
+        (0x0078_0cb0, 0), // MsBattleChrStart
+        (0x0078_82c0, 2), // MsEffectSetMotion
+        (0x0082_b080, 1), // Ch_ResetMotion
+        (0x0083_7d00, 3), // Ch_SetSysMotion
+        (0x0083_6af0, 1), // Ch_GetSeqFrame
+        (0x0078_78a0, 1), // MsEffectCheckMotion2
+        (0x0083_92c0, 1), // Ch_GetWaitMotion
+        (0x0083_7ac0, 2), // Ch_SetSequence
+        (0x0082_b010, 2), // Ch_MotionSetNextHokan
+        (0x0082_4670, 1), // Ch_ClothReset2
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_44e0);
+        let rets = p.alloc(4 * CALLEES.len());
+        let logs: Vec<u32> = (0u32..)
+            .zip(CALLEES)
+            .map(|(k, (f, n))| far_recorder(&mut p, f, &vec![0; n], Some(rets + 4 * k)))
+            .collect();
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x200), p.alloc(0x10));
+        let handles = p.sym(0x012a_8100);
+        for round in 0..4000 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            for k in 0..CALLEES.len() as u32 {
+                let any = rng.next();
+                let v = rng.pick(&[0u32, 0, 1, 0x7f, 0xffff_ffff, 0x0100_0001, any]);
+                p.set(rets + 4 * k, v);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x200, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            let nib = rng.below(8) as u16;
+            let low = rng.next() as u16 & 0x0fff;
+            p.set(host + 0x21a, nib << 12 | low);
+            p.set(host + 0x21e, rng.pick(&[0u8, 0, 1, 0x80]));
+            let c = rng.pick(&[0u8, 5, 0x1f, 0x20, 0x21, 0xef, 0xff]);
+            p.set(unit + 0x18, c);
+            let any = rng.next();
+            let h = rng.pick(&[0u32, 0x1234_5678, any]);
+            p.set(handles + 4 * u32::from(c), h);
+            // the f32 slot inside the unit (or anywhere, outside battle)
+            p.set(cmd + 4, (4 * rng.below(0x80)) as i16 - 0x80);
+            p.check(
+                &format!("opu_motion round {round} nibble {nib}"),
+                0x0080_44e0,
+                &[host, cmd],
+                |m| Some(o::opu_motion(m, host, cmd, &mut call_original)),
+            );
+        }
+    }
+}

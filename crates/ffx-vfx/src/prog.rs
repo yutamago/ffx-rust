@@ -1541,6 +1541,126 @@ pub mod bridge {
         ke_vu0_copy_vec_xyz(mem, vel, frame);
     }
 
+    /// `pppKeBornRnd(obj, key, ctrl)` (`0x007584d0`): children on the
+    /// vertices of a shape. Unless stopped, the mask byte `key +9` is 0xff
+    /// or shares a bit with bits 8.. of `KeVu0RndI()` (through `call`), or
+    /// the records `key +0xc` / areas `key +0x14` are -1, it does nothing.
+    /// The environment's shapes (`env +0x28`, 8 bytes: `i16` model, `i16`
+    /// count, vertex index list) `a` = `i16 key +4` and `b` = `i16 key +6`
+    /// must have the same count; their models (`env +0x20`, 0x20 bytes,
+    /// `i16 xyz` vertices at `+0x14`) give the points, `a`'s replaced by
+    /// `obj +0x90` when set. The index starts at area 0's `u16 +0xa0`, or
+    /// at the random value modulo the count when `key +0xa` is set. For
+    /// `u8 key +8` children: the current part's record `key +0xc` gets a
+    /// new object (`pppCreatePObject`; none: stop, leaving the index; a
+    /// record address 0 makes child 0) with `+4` = `obj`; `a`'s vertex
+    /// times `obj`'s matrix is its area `key +0x10` position, and `b`'s
+    /// vertex times a copy of that matrix, minus `obj +0x40`, its area
+    /// `key +0x18` (`KeVu0SubVecXYZ`). The index steps by one (wrapping at
+    /// the count) or draws a new random one. The vector's `w` starts at
+    /// 1.0 and keeps what each product leaves. `frame` is the original's
+    /// local matrix and vector (0x50 bytes).
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_ke_born_rnd_shape<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_field::vu0::bridge::ke_vu0_sub_vec_xyz;
+        use ffx_ps2::vu0::bridge as vu0;
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let rnd = Global::<u32>::new(KE_VU0_RND_I).ptr(mem).addr;
+        let r = call(mem, rnd, &[]).cast_signed();
+        let mask: u8 = mem.read(key.wrapping_add(9));
+        if mask == 0xff
+            || mask & (r >> 8).to_le_bytes()[0] != 0
+            || mem.read::<u32>(key.wrapping_add(0xc)) == u32::MAX
+            || mem.read::<u32>(key.wrapping_add(0x14)) == u32::MAX
+        {
+            return;
+        }
+        let a = i32::from(mem.read::<i16>(key.wrapping_add(4))).cast_unsigned();
+        let b = i32::from(mem.read::<i16>(key.wrapping_add(6))).cast_unsigned();
+        let area0: u32 = mem.read(mem.read::<u32>(ctrl.wrapping_add(0xc)));
+        let index_at = area0.wrapping_add(0xa0).wrapping_add(obj);
+        let env: u32 = mem.read(crate::heap::bridge::ENV_SLOT.get(mem));
+        let shapes: u32 = mem.read(env.wrapping_add(0x28));
+        let models: u32 = mem.read(env.wrapping_add(0x20));
+        let shape = |s: u32| shapes.wrapping_add(s.wrapping_mul(8));
+        let verts = |mem: &M, s: u32| {
+            let model = i32::from(mem.read::<i16>(shape(s))).cast_unsigned();
+            let at = model.wrapping_shl(5).wrapping_add(0x14);
+            stub::ptr32(mem.read(at.wrapping_add(models)))
+        };
+        let count_of = |mem: &M| i32::from(mem.read::<i16>(shape(a).wrapping_add(2)));
+        let mut va = stub::ptr32(mem.read(obj.wrapping_add(0x90)));
+        let vb = verts(mem, b);
+        if count_of(mem) != i32::from(mem.read::<i16>(shape(b).wrapping_add(2))) {
+            return;
+        }
+        if va == 0 {
+            va = verts(mem, a);
+        }
+        let random = mem.read::<u8>(key.wrapping_add(0xa)) != 0;
+        let (m, v) = (frame, frame.wrapping_add(0x40));
+        mem.write(v.wrapping_add(0xc), 1.0f32);
+        let matrix = obj.wrapping_add(0x10);
+        vu0::matrix_copy(mem, m, matrix);
+        // idiv: a count of 0 faults in the original (never in the data)
+        let modulo = |x: i32, n: i32| x.checked_rem(n).unwrap_or(0);
+        let mut index: i32 = if random {
+            modulo(r, count_of(mem))
+        } else {
+            i32::from(mem.read::<u16>(index_at))
+        };
+        let point = |mem: &mut M, verts: u32, i: u32| {
+            let p: [i16; 3] = mem.read(i.wrapping_mul(6).wrapping_add(verts));
+            mem.write(v, p.map(f32::from));
+        };
+        for _ in 0..mem.read::<u8>(key.wrapping_add(8)) {
+            let list = stub::ptr32(mem.read(shape(a).wrapping_add(4)));
+            let at = index.cast_unsigned().wrapping_mul(2).wrapping_add(list);
+            let vi = u32::from(mem.read::<u16>(at));
+            let part = CURRENT_PART.get(mem);
+            let rec = mem
+                .read::<u32>(key.wrapping_add(0xc))
+                .wrapping_shl(4)
+                .wrapping_add(mem.read(part.wrapping_add(0x3c)));
+            let child = if rec == 0 {
+                0
+            } else {
+                let create = Global::<u32>::new(0x0071_6770).ptr(mem).addr;
+                let child = call(mem, create, &[part, rec]);
+                if child == 0 {
+                    return;
+                }
+                mem.write(child.wrapping_add(4), stub::ptr32(obj));
+                child
+            };
+            let base = child.wrapping_add(0xa0);
+            let vel = base.wrapping_add(mem.read(key.wrapping_add(0x18)));
+            point(mem, va, vi);
+            let pos = base.wrapping_add(mem.read(key.wrapping_add(0x10)));
+            vu0::apply_matrix(mem, pos, matrix, v);
+            point(mem, vb, vi);
+            vu0::apply_matrix(mem, v, m, v);
+            ke_vu0_sub_vec_xyz(mem, vel, v, obj.wrapping_add(0x40));
+            index = if random {
+                modulo(call(mem, rnd, &[]).cast_signed(), count_of(mem))
+            } else {
+                let next = index.wrapping_add(1);
+                if next >= count_of(mem) { 0 } else { next }
+            };
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // the low half it keeps
+        mem.write(index_at, index as u16);
+    }
+
     /// `g_pppChrScale` (`0x0230fd50`): the character's scale (`x`, `y`,
     /// `z`) the `pppChr*Scl*Matrix` steps scale by.
     pub const CHR_SCALE: Global<[f32; 3]> = Global::new(0x0230_fd50);
