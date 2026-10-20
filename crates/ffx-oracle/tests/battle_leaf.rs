@@ -467,6 +467,36 @@ fn helpers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
             g::ms_save_add_mp(m, chr, n);
             0
         });
+        // the walk abilities: joined or not, their bits, the timer
+        for k in 0..0x12 {
+            let p = ply + k * 0x94;
+            poke(a, b, p + 0x2c, &[rng.byte()]);
+            poke(
+                a,
+                b,
+                p + 0x4c,
+                &u16::try_from(rng.below(0x1_0000)).unwrap().to_le_bytes(),
+            );
+            poke(a, b, p + 0x4e, &[rng.byte()]);
+        }
+        let secs = |rng: &mut Xorshift, d: f32| {
+            [
+                (f32::from(u16::try_from(rng.below(400)).unwrap()) / d).to_bits(),
+                float(rng),
+            ][rng.below(5).min(1) as usize]
+        };
+        set(a, b, g::WALK_TIMER, secs(rng, 100.0));
+        set(
+            a,
+            b,
+            g::WALK_PERIOD,
+            [0x4040_0000, secs(rng, 100.0)][rng.below(4).min(1) as usize],
+        );
+        let dt = secs(rng, 60.0);
+        twin("MsWalkAbilityProcess", a, b, 0x0078_2d60, &[dt], 0, |m| {
+            g::ms_walk_ability_process(m, dt);
+            0
+        });
         // a gear record: weapon or armour, its name
         let gear = area;
         fill(a, b, rng, gear, 0x20);
@@ -993,6 +1023,15 @@ fn setters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
         twin("MsPauseChrEffect", a, b, 0x0079_ea40, &[i, on], ALL, |m| {
             g::ms_pause_chr_effect(m, &mut call_original, i, on)
         });
+        // the last actor too, with an effect and a character
+        let last = w.actor(0x1e);
+        poke(a, b, last + 0x4c, &[u8::from(rng.below(3) != 0), 0, 0, 0]);
+        if b.read(last, 4).unwrap() == [0; 4] {
+            poke(a, b, last, &w.out.to_le_bytes());
+        }
+        twin("MsPauseChrEffectAll", a, b, 0x0079_eae0, &[on], ALL, |m| {
+            g::ms_pause_chr_effect_all(m, &mut call_original, on)
+        });
         poke(a, b, result(8), &rng.below(2).to_le_bytes());
         poke(
             a,
@@ -1066,6 +1105,22 @@ fn setters(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
         twin("MsResetAvoidFlag", a, b, 0x0078_d620, &[i, sel], ALL, |m| {
             g::ms_reset_avoid_flag(m, i, sel)
         });
+        let actor = w.actor(rng.below(ACTORS));
+        poke(
+            a,
+            b,
+            actor + 0x446,
+            &[[1, 4, rng.byte()][rng.below(3) as usize]],
+        );
+        twin(
+            "MsEffectSignalAvoid",
+            a,
+            b,
+            0x007b_7650,
+            &[i, actor],
+            ALL,
+            |m| g::ms_effect_signal_avoid(m, i, actor),
+        );
         // the damage limit records name actor i and its command's byte +2
         let i8 = i & 0xff;
         if ffx_battle::actor::bridge::ms_btl_chr_num_check(i8) != 0 {
@@ -1967,6 +2022,24 @@ fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         let n = b.read(local, 4).unwrap();
         a.write(local, &n).unwrap();
         same("MsSetSavePlyJoin", a, b);
+        if rng.below(4) == 0 {
+            twin("MsDebugFullSummon", a, b, 0x0078_4b60, &[], ALL, |m| {
+                g::ms_debug_full_summon(m, &mut c, local)
+            });
+            let n = b.read(local, 4).unwrap();
+            a.write(local, &n).unwrap();
+            same("MsDebugFullSummon", a, b);
+        }
+        // the Zanmato list: a small count (negative, full, past full)
+        let list = g::ZANMATO_SEP.ptr(b).addr;
+        let ids: Vec<u8> = (0..9).flat_map(|_| rng.below(6).to_le_bytes()).collect();
+        poke(a, b, list + 4, &ids);
+        poke(a, b, list, &rng.range(-2, 11).to_le_bytes());
+        let id = [rng.below(6), rng.next()][rng.below(5).min(1) as usize];
+        twin("addMonDieSe", a, b, 0x007a_8920, &[id], ALL, |m| {
+            g::add_mon_die_se(m, &mut c, id)
+        });
+        same("addMonDieSe", a, b);
         // encounter groups: two of up to five formations
         let groups = 1 + rng.below(2);
         let mut table = vec![0u8, u8::try_from(groups).unwrap()];
@@ -1993,6 +2066,48 @@ fn lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
             },
         );
         same("Enc_ResetWeights", a, b);
+        // its wrappers (a scene of the table's group now and then)
+        // (with the state they reset set: the event effect, the encounter
+        // type)
+        for at in [
+            ffx_battle::state::bridge::EVENT_EFFECT_STAT.ptr(b).addr,
+            ffx_battle::state::bridge::EVENT_EFFECT_A.ptr(b).addr,
+            ffx_battle::state::bridge::EVENT_EFFECT_B.ptr(b).addr,
+            g::ENCOUNT_TYPE.ptr(b).addr,
+        ] {
+            fill(a, b, rng, at, 1);
+        }
+        match rng.below(3) {
+            0 => twin("Enc_ResetAll", a, b, 0x0078_0c70, &[map], 0, |m| {
+                g::enc_reset_all(m, map);
+                0
+            }),
+            1 => twin("MsBattleInitAtEvent", a, b, 0x0078_1c50, &[map], 0, |m| {
+                g::ms_battle_init_at_event(m, map);
+                0
+            }),
+            _ => {
+                let f = if table[2] > 0 && rng.below(3) != 0 {
+                    u32::from(table[7])
+                } else {
+                    rng.below(0x40)
+                };
+                let scene = [map << 16 | f, rng.next()][rng.below(5).min(1) as usize];
+                twin(
+                    "Enc_ResetSceneWeights",
+                    a,
+                    b,
+                    0x0078_2b40,
+                    &[scene],
+                    0,
+                    |m| {
+                        g::enc_reset_scene_weights(m, scene);
+                        0
+                    },
+                );
+            }
+        }
+        same("encounter wrappers", a, b);
         fill(a, b, rng, g::MENU_PANEL.ptr(b).addr, 0x20);
         let id = [
             0x3000 | rng.below(0x60),
@@ -2421,6 +2536,16 @@ fn motions(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
             |m| g::ms_effect_set_motion(m, &mut c, i, motion),
         );
         same("MsEffectSetMotion", a, b);
+        twin(
+            "MsEffectSetMotion_00790290",
+            a,
+            b,
+            0x0079_0290,
+            &[i, motion],
+            ALL,
+            |m| g::ms_effect_set_motion(m, &mut c, i, motion),
+        );
+        same("MsEffectSetMotion_00790290", a, b);
         let j = rng.below(ACTORS);
         // a move by speed (bit 7) reads the actor's position, which our own
         // actors (no position: MsGetChrPos writes nothing) leave as the
@@ -2481,6 +2606,22 @@ fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     }
     let local = scratch(a, b, 0x10);
     let frame = a.stack_range().end - 0x100 - 0x20;
+    // MsSetMotion, MsAtelRequestCamera, MsSetTargetDir and
+    // MsAtelRequestMagicCamera as recording stubs in both: the wrappers'
+    // own logic and the arguments they pass
+    let rec = scratch(a, b, 0x200);
+    let stubbed: [(u32, u8); 4] = [
+        (0x007a_b360, 7),
+        (0x0079_7bc0, 8),
+        (0x0079_69f0, 2),
+        (0x0079_8000, 9),
+    ];
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(stubbed) {
+            recording_stub(o, f, STUBS_D + 0x80 * k, rec + 0x80 * k, n, 0);
+        }
+    }
+    let pos = scratch(a, b, 0x10);
     if w.synthetic {
         // a position file (as battle_pos.rs's): floats, small counts and
         // tables inside it
@@ -2568,6 +2709,104 @@ fn resets(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
         let r = a.read(at, 12).unwrap();
         b.write(at, &r).unwrap();
         same(&format!("MsSetBtlPosReset {i:#x}"), a, b);
+        // the same actor's other wrappers
+        let v: Vec<u8> = (0..4).flat_map(|_| float(rng).to_le_bytes()).collect();
+        poke(a, b, pos, &v);
+        twin("MsSetChrPos2D", a, b, 0x0079_61d0, &[i, pos], ALL, |m| {
+            ffx_battle::minor::bridge::ms_set_chr_pos_2d(m, i, pos).cast_unsigned()
+        });
+        same("MsSetChrPos2D", a, b);
+        let ret = |k: u32, n: u32| rec + 0x80 * k + 4 + 4 * n;
+        for k in 0..4 {
+            let r = rng.next();
+            poke(
+                a,
+                b,
+                ret(k, u32::from(stubbed[k as usize].1)),
+                &r.to_le_bytes(),
+            );
+        }
+        poke(a, b, p + 0xdff, &[u8::from(rng.below(3) == 0)]);
+        // (the place kind put back after: a summoner's kind, 12-14, makes
+        // the next position read recurse for ever)
+        let kind = b.read(p + 0x4fd, 1).unwrap();
+        poke(a, b, p + 0x4fd, &[rng.byte()]);
+        twin("MsEffectChrMotionOut", a, b, 0x007b_7e20, &[i], ALL, |m| {
+            let f = m.rebase(0x007a_b360);
+            ffx_battle::minor::bridge::ms_effect_chr_motion_out(
+                m,
+                &mut |m, args| call_original(m, f, &args),
+                i,
+            )
+        });
+        same("MsEffectChrMotionOut", a, b);
+        poke(a, b, p + 0x4fd, &kind);
+        // a command cue running (or not), the turn word, the head
+        set(
+            a,
+            b,
+            ffx_battle::state::bridge::COMMAND_CUE_COUNT,
+            [0, 1, -1][rng.below(3) as usize],
+        );
+        set(
+            a,
+            b,
+            ffx_battle::damage_end::bridge::CUE_FLAG_C9DE,
+            u8::from(rng.below(2) == 0),
+        );
+        set(
+            a,
+            b,
+            ffx_battle::flow::bridge::NO_HEAD_TARGET,
+            u8::from(rng.below(4) == 0),
+        );
+        poke(a, b, p + 0x437, &[u8::from(rng.below(3) != 0)]);
+        let targets = [
+            1 << rng.below(ACTORS),
+            1 << rng.below(ACTORS),
+            rng.next(),
+            0,
+        ][rng.below(4) as usize];
+        set(
+            a,
+            b,
+            ffx_battle::input::bridge::TURN_WORD,
+            [targets, rng.next()][rng.below(3).min(1) as usize],
+        );
+        set(a, b, ffx_battle::actor::bridge::CHR_SET, rng.next());
+        let camera = |m: &mut Oracle, args: [u32; 8]| {
+            let f = m.rebase(0x0079_7bc0);
+            call_original(m, f, &args)
+        };
+        match rng.below(3) {
+            0 => twin("MsResetBtlTarget", a, b, 0x0079_2a40, &[i], 0, |m| {
+                ffx_battle::minor::bridge::ms_reset_btl_target(m, &mut { camera }, i);
+                0
+            }),
+            1 => twin("MsSetBtlTarget", a, b, 0x0079_2de0, &[i, targets], 0, |m| {
+                let mut dir = |m: &mut Oracle, i: u32, t: u32| {
+                    let f = m.rebase(0x0079_69f0);
+                    call_original(m, f, &[i, t]);
+                };
+                ffx_battle::minor::bridge::ms_set_btl_target(
+                    m,
+                    &mut dir,
+                    &mut { camera },
+                    i,
+                    targets,
+                );
+                0
+            }),
+            _ => twin("MsRestartMagicCamera", a, b, 0x007b_1a70, &[i], ALL, |m| {
+                let f = m.rebase(0x0079_8000);
+                ffx_battle::minor::bridge::ms_restart_magic_camera(
+                    m,
+                    &mut |m, args| call_original(m, f, &args),
+                    i,
+                )
+            }),
+        }
+        same("battle targets", a, b);
     }
 }
 

@@ -3934,6 +3934,95 @@ ported! {
         let at = local.at();
         chrdmg::ms_set_btl_pos_reset(&mut mem(), &crt_trig, i, at)
     }
+    /// `MsEffectSetMotion_00790290(i, motion)`: a jump to `MsEffectSetMotion`.
+    MsEffectSetMotion_00790290 @ 0x0079_0290 => extern "C" fn ms_effect_set_motion_00790290(i: u32, motion: u32) -> u32 {
+        minor::ms_effect_set_motion(&mut mem(), &mut call_ptr, i, motion)
+    }
+    /// `Enc_ResetAll_00780c70(map)`.
+    Enc_ResetAll_00780c70 @ 0x0078_0c70 => extern "C" fn enc_reset_all(map: u32) {
+        minor::enc_reset_all(&mut mem(), map);
+    }
+    /// `MsBattleInitAtEvent(map)`.
+    MsBattleInitAtEvent @ 0x0078_1c50 => extern "C" fn ms_battle_init_at_event(map: u32) {
+        minor::ms_battle_init_at_event(&mut mem(), map);
+    }
+    /// `Enc_ResetSceneWeights_00782b40(scene)`.
+    Enc_ResetSceneWeights_00782b40 @ 0x0078_2b40 => extern "C" fn enc_reset_scene_weights(scene: u32) {
+        minor::enc_reset_scene_weights(&mut mem(), scene);
+    }
+    /// `MsWalkAbilityProcess(dt)` (`dt` an `f32`, as bits).
+    MsWalkAbilityProcess @ 0x0078_2d60 => extern "C" fn ms_walk_ability_process(dt: u32) {
+        minor::ms_walk_ability_process(&mut mem(), dt);
+    }
+    /// `MsDebugFullSummon()`: `MsSetSavePlyJoin`'s frame word here.
+    MsDebugFullSummon @ 0x0078_4b60 => extern "C" fn ms_debug_full_summon() -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        minor::ms_debug_full_summon(&mut mem(), &mut call_ptr, at)
+    }
+    /// `MsPauseChrEffectAll_0079eae0(on)`.
+    MsPauseChrEffectAll_0079eae0 @ 0x0079_eae0 => extern "C" fn ms_pause_chr_effect_all(on: u32) -> u32 {
+        minor::ms_pause_chr_effect_all(&mut mem(), &mut call_ptr, on)
+    }
+    /// `MsEffectSignalAvoid_007b7650(i, actor)`.
+    MsEffectSignalAvoid_007b7650 @ 0x007b_7650 => extern "C" fn ms_effect_signal_avoid(i: u32, actor: u32) -> u32 {
+        minor::ms_effect_signal_avoid(&mut mem(), i, actor)
+    }
+    /// `addMonDieSe(id)`: `dbgPrintf` through the game.
+    addMonDieSe @ 0x007a_8920 => extern "C" fn add_mon_die_se(id: u32) -> u32 {
+        minor::add_mon_die_se(&mut mem(), &mut call_ptr, id)
+    }
+    /// `MsSetChrPos2D(i, pos)`.
+    MsSetChrPos2D @ 0x0079_61d0 => extern "C" fn ms_set_chr_pos_2d(i: u32, pos: u32) -> i32 {
+        minor::ms_set_chr_pos_2d(&mut mem(), i, pos)
+    }
+    /// `MsEffectChrMotionOut(i)`.
+    MsEffectChrMotionOut @ 0x007b_7e20 => extern "C" fn ms_effect_chr_motion_out(i: u32) -> u32 {
+        let mut motion = |m: &mut _, a: [u32; 7]| {
+            script!(s);
+            atel::ms_set_motion(m, &mut s, a[0], a[1].cast_signed(), a[2], a[3].to_le_bytes()[0], a[4], a[5], a[6])
+        };
+        minor::ms_effect_chr_motion_out(&mut mem(), &mut motion, i)
+    }
+    /// `MsResetBtlTarget(i)`.
+    MsResetBtlTarget @ 0x0079_2a40 => extern "C" fn ms_reset_btl_target(i: u32) {
+        let mut camera = |m: &mut _, a: [u32; 8]| {
+            script!(s);
+            atel::ms_atel_request_camera(m, &mut s, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]).cast_unsigned()
+        };
+        minor::ms_reset_btl_target(&mut mem(), &mut camera, i);
+    }
+    /// `MsSetBtlTarget(i, targets)`.
+    MsSetBtlTarget @ 0x0079_2de0 => extern "C" fn ms_set_btl_target(i: u32, targets: u32) {
+        let mut dir = |m: &mut _, i: u32, t: u32| {
+            target::ms_set_target_dir(&mut target::Dm::new(m), &host(), i, t);
+        };
+        let mut camera = |m: &mut _, a: [u32; 8]| {
+            script!(s);
+            atel::ms_atel_request_camera(m, &mut s, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7]).cast_unsigned()
+        };
+        minor::ms_set_btl_target(&mut mem(), &mut dir, &mut camera, i, targets);
+    }
+    /// `MsRestartMagicCamera(i)`.
+    MsRestartMagicCamera @ 0x007b_1a70 => extern "C" fn ms_restart_magic_camera(i: u32) -> u32 {
+        let mut camera = |m: &mut _, a: [u32; 9]| {
+            script!(s);
+            atel::ms_atel_request_magic_camera(m, &mut s, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]).cast_unsigned()
+        };
+        minor::ms_restart_magic_camera(&mut mem(), &mut camera, i)
+    }
+    /// `MsAtelBindCamera_00798720(_, kind, i, n)`: the handler's base in
+    /// this call's frame, `AtelGetBasicWork` through the game.
+    MsAtelBindCamera_00798720 @ 0x0079_8720 => extern "C" fn ms_atel_bind_camera(_x: u32, kind: u32, i: u32, n: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        native!(c);
+        minor::ms_atel_bind_camera(&mut mem(), &mut c, kind, i, n, at)
+    }
+    /// `MsRegSEplay3(i, se)`.
+    MsRegSEplay3 @ 0x007a_0170 => extern "C" fn ms_reg_se_play3(i: u32, se: u32) -> u32 {
+        afterdmg::ms_reg_se_play3(&mut mem(), &crt_trig, &mut call_ptr, i, se)
+    }
     /// `MsStoneMove(i)`.
     MsStoneMove @ 0x007a_2750 => extern "C" fn ms_stone_move(i: u32) {
         script!(s);

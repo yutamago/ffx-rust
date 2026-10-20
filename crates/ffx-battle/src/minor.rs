@@ -2658,4 +2658,271 @@ pub mod bridge {
             }
         }
     }
+
+    /// `0x0112a9e8`, `0x0112a9ec`: the walk abilities' timer (seconds,
+    /// `f32`) and its period (3.0 from `MsBattleInitAtEvent`).
+    pub const WALK_TIMER: Global<u32> = Global::new(0x0112_a9e8);
+    pub const WALK_PERIOD: Global<u32> = Global::new(0x0112_a9ec);
+
+    /// `MsBattleInitAtEvent(map)` (`0x00781c50`): the walk timer 0.0, its
+    /// period 3.0 (`0x00b3eb94`), `MsEventEffectInit`,
+    /// `ResetEncountExe(1)` and `Enc_ResetWeights(map, 0)`.
+    pub fn ms_battle_init_at_event(mem: &mut impl Mem, map: u32) {
+        WALK_TIMER.set(mem, 0);
+        let three: u32 = mem.read(mem.rebase(0x00b3_eb94));
+        WALK_PERIOD.set(mem, three);
+        crate::state::bridge::ms_event_effect_init(mem);
+        reset_encount_exe(mem, 1);
+        enc_reset_weights(mem, map, 0);
+    }
+
+    /// `Enc_ResetAll_00780c70(map)` (`0x00780c70`, name ours):
+    /// `ResetEncountExe(0)`, `Enc_ResetWeights(map, 0)`.
+    pub fn enc_reset_all(mem: &mut impl Mem, map: u32) {
+        reset_encount_exe(mem, 0);
+        enc_reset_weights(mem, map, 0);
+    }
+
+    /// `Enc_ResetSceneWeights_00782b40(scene)` (`0x00782b40`, name ours):
+    /// `Enc_ResetWeights(scene >> 16, 0)` (arithmetic) for a scene
+    /// `MsFldGetScene(scene, 0, 0, 0)` finds. (`eax`: 0 without one, else
+    /// `Enc_ResetWeights`' garbage; no caller reads it.)
+    pub fn enc_reset_scene_weights(mem: &mut impl Mem, scene: u32) {
+        if crate::process::bridge::ms_fld_get_scene(mem, scene, 0, 0, 0) != 0 {
+            enc_reset_weights(mem, (scene.cast_signed() >> 16).cast_unsigned(), 0);
+        }
+    }
+
+    /// `MsWalkAbilityProcess(dt)` (`0x00782d60`): the walk timer advanced
+    /// by `dt` (x87 sum, stored `f32`); past its period (not for a NaN) it
+    /// restarts at 0.0 and every party member who joined
+    /// (`MsGetSavePlyJoin`, 18) gains 1 HP with the save's `+0x4c` bit
+    /// 0x8000 (`MsSaveAddHP`) and 1 MP with `+0x4e` bit 1
+    /// (`MsSaveAddMP_00785ae0`).
+    pub fn ms_walk_ability_process(mem: &mut impl Mem, dt: u32) {
+        use crate::save::bridge::{ms_get_save_player_ptr, ms_get_save_ply_join};
+        use ffx_bridge::x87::{add, load, store};
+        let t = store(add(load(WALK_TIMER.get(mem)), load(dt)));
+        WALK_TIMER.set(mem, t);
+        if load(WALK_PERIOD.get(mem)).partial_cmp(&load(t)) != Some(core::cmp::Ordering::Less) {
+            return;
+        }
+        WALK_TIMER.set(mem, 0);
+        for chr in 0..0x12 {
+            if ms_get_save_ply_join(mem, chr) == 0 {
+                continue;
+            }
+            let p = ms_get_save_player_ptr(mem, chr);
+            if mem.read::<u16>(p.wrapping_add(0x4c)) & 0x8000 != 0 {
+                ms_save_add_hp(mem, chr, 1);
+            }
+            if mem.read::<u8>(p.wrapping_add(0x4e)) & 1 != 0 {
+                ms_save_add_mp(mem, chr, 1);
+            }
+        }
+    }
+
+    /// `MsDebugFullSummon()` (`0x00784b60`): the aeons (8-17) joined,
+    /// `MsSetSavePlyJoin(chr, 1)` (`local` its frame word); `eax` the
+    /// last one's.
+    pub fn ms_debug_full_summon<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        local: u32,
+    ) -> u32 {
+        let mut r = 0;
+        for chr in 8..0x12 {
+            r = ms_set_save_ply_join(mem, &mut *call, chr, 1, local);
+        }
+        r
+    }
+
+    /// `MsPauseChrEffectAll_0079eae0(on)` (`0x0079eae0`, name ours):
+    /// `MsPauseChrEffect(i, on)` for the 31 actors; the sum of their
+    /// results.
+    pub fn ms_pause_chr_effect_all<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        on: u32,
+    ) -> u32 {
+        (0..0x1f).fold(0u32, |n, i| {
+            n.wrapping_add(ms_pause_chr_effect(mem, &mut *call, i, on))
+        })
+    }
+
+    /// `MsEffectSignalAvoid_007b7650(i, actor)` (`0x007b7650`, name
+    /// ours; the effect signal 2 of `0x007b74d0`): for an actor whose
+    /// `+0x446` is 1 or 4, `MsResetAvoidFlag(i, -5)` (a tail jump: its
+    /// `eax`); else `eax` is that byte minus 4.
+    pub fn ms_effect_signal_avoid(mem: &mut impl Mem, i: u32, actor: u32) -> u32 {
+        let k: u8 = mem.read(actor.wrapping_add(0x446));
+        if k == 1 || k == 4 {
+            return ms_reset_avoid_flag(mem, i, (-5i32).cast_unsigned());
+        }
+        u32::from(k).wrapping_sub(4)
+    }
+
+    /// `addMonDieSe(id)` (`0x007a8920`): `id` added to the Zanmato list
+    /// ([`ZANMATO_SEP`]: a count, then up to 9 IDs), 1; 0 when it is there
+    /// already, or (`dbgPrintf` "Please increase `ZanmatoSep` Size") when
+    /// the count is 9 or more. Signed counts: below 1 the ID goes to slot
+    /// 1 and the count goes up by one.
+    pub fn add_mon_die_se<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        id: u32,
+    ) -> u32 {
+        let list = ZANMATO_SEP.ptr(mem).addr;
+        let n: i32 = mem.read(list);
+        let mut k = 1i32;
+        while k <= n {
+            if mem.read::<u32>(list.wrapping_add(k.wrapping_mul(4).cast_unsigned())) == id {
+                return 0;
+            }
+            k += 1;
+        }
+        if n >= 9 {
+            let f = mem.rebase(0x0062_f500);
+            let msg = mem.rebase(0x00b5_4efc);
+            call(mem, f, &[msg]);
+            return 0;
+        }
+        mem.write(list.wrapping_add(k.wrapping_mul(4).cast_unsigned()), id);
+        mem.write(list, n.wrapping_add(1));
+        1
+    }
+
+    /// `MsSetChrPos2D(i, pos)` (`0x007961d0`): actor `i`'s character put
+    /// at `pos`' x and z (`Ch_SetPos`, through `fld`/`fstp`), -1; 0 for a
+    /// non-actor or one without a character.
+    pub fn ms_set_chr_pos_2d(mem: &mut impl Mem, i: u32, pos: u32) -> i32 {
+        use ffx_bridge::x87::{load, store};
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let chr: u32 = mem.read(crate::actor::bridge::ms_get_chr(mem, i));
+        if chr == 0 {
+            return 0;
+        }
+        let z = store(load(mem.read(pos.wrapping_add(8))));
+        let x = store(load(mem.read(pos)));
+        ffx_chara::chr::bridge::ch_set_pos(mem, chr, f32::from_bits(x), f32::from_bits(z));
+        -1
+    }
+
+    /// `MsEffectChrMotionOut(i)` (`0x007b7e20`): an actor not out yet
+    /// (`+0xdff`) leaves: the summon flag ([`SUMMON_ENTERING`], 1), its
+    /// place kind `+0x4fd` plus 3 (copied to `+0x50a`), `+0xdff` = 1,
+    /// `+0x436` = 0, and motion 0x12 (`MsSetMotion(i, 0x12, 1, 0, 1, 0,
+    /// 0)`, `motion`). `eax` is `MsGetChr`'s without (else `MsSetMotion`'s).
+    ///
+    /// [`SUMMON_ENTERING`]: crate::damage_end::bridge::SUMMON_ENTERING
+    pub fn ms_effect_chr_motion_out<M: Mem>(
+        mem: &mut M,
+        motion: &mut dyn FnMut(&mut M, [u32; 7]) -> u32,
+        i: u32,
+    ) -> u32 {
+        let i = i & 0xff;
+        let a = crate::actor::bridge::ms_get_chr(mem, i);
+        if byte(mem, a, 0xdff) != 0 {
+            return a;
+        }
+        crate::damage_end::bridge::SUMMON_ENTERING.set(mem, 1);
+        let k = byte(mem, a, 0x4fd).wrapping_add(3);
+        mem.write(a.wrapping_add(0x4fd), k);
+        mem.write(a.wrapping_add(0xdff), 1u8);
+        mem.write(a.wrapping_add(0x50a), k);
+        mem.write(a.wrapping_add(0x436), 0u8);
+        motion(mem, [i, 0x12, 1, 0, 1, 0, 0])
+    }
+
+    /// `MsResetBtlTarget(i)` (`0x00792a40`): with no command cue
+    /// (`g_BtlCommandCueCount` 0), the head target off
+    /// (`MsSetHeadTarget(i, 0)`) and camera request 0x84
+    /// (`MsAtelRequestCamera(0, i, 0x84, 0xffff, 0, 1, 0, 0)`, `camera`);
+    /// the turn word ([`TURN_WORD`]) -1 either way.
+    ///
+    /// [`TURN_WORD`]: crate::input::bridge::TURN_WORD
+    pub fn ms_reset_btl_target<M: Mem>(
+        mem: &mut M,
+        camera: &mut dyn FnMut(&mut M, [u32; 8]) -> u32,
+        i: u32,
+    ) {
+        if crate::state::bridge::COMMAND_CUE_COUNT.get(mem) == 0 {
+            crate::flow::bridge::ms_set_head_target(mem, i, 0);
+            camera(mem, [0, i, 0x84, 0xffff, 0, 1, 0, 0]);
+        }
+        crate::input::bridge::TURN_WORD.set(mem, u32::MAX);
+    }
+
+    /// `MsSetBtlTarget(i, targets)` (`0x00792de0`): `targets` into
+    /// `g_BtlChrSet`; when they differ from the turn word ([`TURN_WORD`])
+    /// and there is no command cue (or flag `0x0112c9de` is set): the
+    /// actor turned to them (`MsSetTargetDir`, `dir`), its head target
+    /// (`MsSetHeadTarget(i, targets)`), camera request 0x19
+    /// (`MsAtelRequestCamera(0, i, 0x19, 0xffff, 1, 1, 0, 0)`, `camera`),
+    /// and the turn word = `g_BtlChrSet` (read again).
+    ///
+    /// [`TURN_WORD`]: crate::input::bridge::TURN_WORD
+    pub fn ms_set_btl_target<M: Mem>(
+        mem: &mut M,
+        dir: &mut dyn FnMut(&mut M, u32, u32),
+        camera: &mut dyn FnMut(&mut M, [u32; 8]) -> u32,
+        i: u32,
+        targets: u32,
+    ) {
+        use crate::actor::bridge::CHR_SET;
+        use crate::input::bridge::TURN_WORD;
+        CHR_SET.set(mem, targets);
+        if TURN_WORD.get(mem) == targets {
+            return;
+        }
+        if crate::state::bridge::COMMAND_CUE_COUNT.get(mem) != 0
+            && crate::damage_end::bridge::CUE_FLAG_C9DE.get(mem) == 0
+        {
+            return;
+        }
+        dir(mem, i, targets);
+        crate::flow::bridge::ms_set_head_target(mem, i, targets);
+        camera(mem, [0, i, 0x19, 0xffff, 1, 1, 0, 0]);
+        let set = CHR_SET.get(mem);
+        TURN_WORD.set(mem, set);
+    }
+
+    /// `MsRestartMagicCamera(i)` (`0x007b1a70`): magic camera request 0x88
+    /// for actor `i` (a byte): `MsAtelRequestMagicCamera(0, i, 0, 0x88,
+    /// 0xffff, 0, 1, 0, 0)` (`camera`), its `eax`.
+    pub fn ms_restart_magic_camera<M: Mem>(
+        mem: &mut M,
+        camera: &mut dyn FnMut(&mut M, [u32; 9]) -> u32,
+        i: u32,
+    ) -> u32 {
+        camera(mem, [0, i & 0xff, 0, 0x88, 0xffff, 0, 1, 0, 0])
+    }
+
+    /// `MsAtelBindCamera_00798720(_, kind, i, n)` (`0x00798720`, name
+    /// ours): the script handler `MsAtelGetHandler(kind, i, n, &base)`
+    /// finds, if any, binds its worker (`AtelGetBasicWork(*handler +
+    /// base)`, through the game) as camera 2 (`MsBindCamera(w, 2, 0)`);
+    /// `eax` that, or 0. `local` is the original's frame word for `base`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ms_atel_bind_camera<M: Mem>(
+        mem: &mut M,
+        calls: &mut crate::camera_native::bridge::Calls<'_, M>,
+        kind: u32,
+        i: u32,
+        n: u32,
+        local: u32,
+    ) -> u32 {
+        let h = crate::atel::bridge::ms_atel_get_handler(mem, kind, i, n.cast_signed(), local);
+        if h == 0 {
+            return 0;
+        }
+        let base: u32 = mem.read(local);
+        let k = u32::from(mem.read::<u8>(h)).wrapping_add(base);
+        let f = mem.rebase(crate::atel::bridge::ATEL_GET_BASIC_WORK);
+        let w = (calls.call)(mem, f, &[k]);
+        crate::camera_native::bridge::ms_bind_camera(mem, calls, w, 2, 0)
+    }
 }

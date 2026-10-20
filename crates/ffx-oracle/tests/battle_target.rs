@@ -3183,10 +3183,19 @@ fn turns(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32
                         ad::ms_sep_3d_regist(m, &stand_in, &mut c, kind, i, se, once, pos)
                     });
                 }
-                1 => twin("MsRegSEplay", a, b, 0x007a_0100, &[i, se], ALL, |m| {
-                    let mut c = game_call_o;
-                    ad::ms_reg_se_play(m, &stand_in, &mut c, i, se)
-                }),
+                1 => {
+                    twin("MsRegSEplay", a, b, 0x007a_0100, &[i, se], ALL, |m| {
+                        let mut c = game_call_o;
+                        ad::ms_reg_se_play(m, &stand_in, &mut c, i, se)
+                    });
+                    // MsRegSEplay3: the same unless hasted
+                    let p = ffx_battle::actor::bridge::ms_get_chr(b, i & 0xff);
+                    poke(a, b, p + 0x613, &[u8::from(rng.below(2) == 0)]);
+                    twin("MsRegSEplay3", a, b, 0x007a_0170, &[i, se], ALL, |m| {
+                        let mut c = game_call_o;
+                        ad::ms_reg_se_play3(m, &stand_in, &mut c, i, se)
+                    });
+                }
                 2 => twin("MsRegSEplay2", a, b, 0x007a_0140, &[i, se], ALL, |m| {
                     let mut c = game_call_o;
                     ad::ms_reg_se_play2(m, &stand_in, &mut c, i, se)
