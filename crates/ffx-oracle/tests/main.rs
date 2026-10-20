@@ -6264,3 +6264,102 @@ fn glue15_snapshot() {
     let mut rng = Xorshift(0x5eed_0f11);
     glue15_cases(&mut a, &mut b, &mut rng, 20);
 }
+
+/// The polar camera requests over recorders for the battle camera
+/// callees (random answers; the slot table set so the request runs on
+/// some calls).
+#[allow(clippy::cast_possible_truncation)] // bytes of random words
+fn cam_polar_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    recorder(a, b, 110, c::ID_CHECK, 1, 0);
+    recorder(a, b, 111, c::GET_NUM, 1, 0);
+    recorder(a, b, 112, c::SET_CHECK_CHANGE, 4, 0);
+    recorder(a, b, 113, c::RECT_TO_POLAR, 5, 0);
+    recorder(a, b, 114, c::FOCUS_WEIGHTS, 2, 0);
+    let target = block(a, b, rng, 0x10);
+    for n in 0..rounds {
+        put(a, b, log, 0u32);
+        // camera and request bytes past 0x7f now and then (the masks)
+        let (cam, sub) = if n % 16 == 15 {
+            (0x80 + rng.below(0x80), 0x80 + rng.below(0x80))
+        } else {
+            (rng.below(4), rng.below(5))
+        };
+        let id = cam
+            | sub << 8
+            | if rng.below(4) == 0 {
+                rng.next() & !0xffff
+            } else {
+                0
+            };
+        let side = rng.next() % 4;
+        put(
+            a,
+            b,
+            ret(a, 110),
+            if n % 5 == 0 { 0 } else { 1 + rng.below(3) },
+        );
+        let num = rng.below(4);
+        put(a, b, ret(a, 111), num);
+        for k in [112, 113, 114] {
+            put(a, b, ret(a, k), rng.next());
+        }
+        // the running slot: this id (mostly), another, or flagged off/done
+        let slot = a.rebase(c::CAMERA_SLOTS) + 8 * (cam * 0x1b4 + num);
+        let running = if rng.below(3) == 0 { rng.next() } else { id };
+        put(a, b, slot, running);
+        put(a, b, slot + 4, u8::from(rng.below(4) == 0));
+        put(a, b, slot + 5, u8::from(rng.below(4) == 0));
+        // the request's set byte for Cam_AddPolar
+        let rec =
+            a.rebase(c::CAMERA_SIDES) + (side & 1) * 0x61c + cam * 0xda0 + (id >> 8 & 0xff) * 0x130;
+        put(a, b, rec + 0xc0, (rng.below(2) as u8) * 3);
+        put(a, b, rec + 0xc7, rng.next() as u8 | 1);
+        let polar = [rng.float(), rng.float(), rng.float()];
+        match n % 3 {
+            0 => twin(
+                "Cam_SetPolar",
+                a,
+                b,
+                0x007b_f700,
+                &[id, side, polar[0], polar[1], polar[2]],
+                |m| c::cam_set_polar(&mut H(m), id, side, polar),
+            ),
+            1 => twin(
+                "Cam_AddPolar",
+                a,
+                b,
+                0x007b_f7f0,
+                &[id, side, polar[0], polar[1], polar[2]],
+                |m| c::cam_add_polar(&mut H(m), id, side, polar),
+            ),
+            _ => {
+                let flags = rng.next();
+                let args = [id, side, flags, target, polar[0], polar[1], polar[2]];
+                twin("MsCameraSetTargetPolar", a, b, 0x007b_f600, &args, |m| {
+                    c::cam_set_target_polar(&mut H(m), id, side, flags, target, polar)
+                });
+            }
+        }
+    }
+}
+
+#[test]
+fn cam_polar_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f12);
+    cam_polar_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn cam_polar_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_0f13);
+    cam_polar_cases(&mut a, &mut b, &mut rng, 100);
+}

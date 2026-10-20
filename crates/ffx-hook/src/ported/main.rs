@@ -1702,6 +1702,18 @@ ported! {
     task_create_group7 @ 0x0077_a060 => extern "C" fn task_create_group7(entry: u32, stack: u32, prio: u32) -> u32 {
         cache::bridge::task_create_group7(&mut mem(), entry, stack, prio)
     }
+    /// `Cam_SetPolar(id, side, theta, phi, len)`.
+    Cam_SetPolar @ 0x007b_f700 => extern "C" fn cam_set_polar(id: u32, side: u32, a: u32, b: u32, c: u32) -> u32 {
+        camera::bridge::cam_set_polar(&mut mem(), id, side, [a, b, c])
+    }
+    /// `Cam_AddPolar(id, side, dtheta, dphi, dlen)`.
+    Cam_AddPolar @ 0x007b_f7f0 => extern "C" fn cam_add_polar(id: u32, side: u32, a: u32, b: u32, c: u32) -> u32 {
+        camera::bridge::cam_add_polar(&mut mem(), id, side, [a, b, c])
+    }
+    /// `MsCameraSetTargetPolar_007bf600(id, side, flags, target, d, a, b)`.
+    MsCameraSetTargetPolar_007bf600 @ 0x007b_f600 => extern "C" fn cam_set_target_polar(id: u32, side: u32, flags: u32, target: u32, d: u32, a: u32, b: u32) -> u32 {
+        camera::bridge::cam_set_target_polar(&mut mem(), id, side, flags, target, [d, a, b])
+    }
     /// `sa_meth01dec(src, dst, size)`.
     sa_meth01dec @ 0x00a4_3bc0 => extern "C" fn sa_meth01dec(src: u32, dst: u32, size: u32) -> u32 {
         decode::bridge::sa_meth01dec(&mut mem(), src, dst, size)

@@ -278,4 +278,191 @@ pub mod bridge {
         let at = h.rebase(0x00c4_dec0);
         h.call(f, &[cam, 1, at])
     }
+
+    /// `MsCameraIDcheck(id)`.
+    pub const ID_CHECK: u32 = 0x007b_d560;
+    /// `MsCameraGetNum(cam)`.
+    pub const GET_NUM: u32 = 0x007b_d340;
+    /// `MsSetCheckChange(id, side, step, mode)`.
+    pub const SET_CHECK_CHANGE: u32 = 0x007c_0790;
+    /// `MsVectorRect2Polar(v, centre, yaw, pitch, len)`.
+    pub const RECT_TO_POLAR: u32 = 0x007c_4990;
+    /// `MsCameraFocusWeights_007c0ae0(side, request)`.
+    pub const FOCUS_WEIGHTS: u32 = 0x007c_0ae0;
+    /// The cameras' sides (`g_Cameras + 0x30`): 0xda0 bytes a camera,
+    /// 0x61c a side; requests of 0x130 bytes from `+0xc0` of a side.
+    pub const CAMERA_SIDES: u32 = 0x0113_7570;
+    /// `g_CameraSlots`: 8-byte request slots, 0x1b4 a camera.
+    pub const CAMERA_SLOTS: u32 = 0x0113_81a8;
+
+    /// A request id's camera (`id & 0xff`), its side record and the
+    /// request's 0x130-byte block (`(id >> 8) & 0xff` from the side).
+    fn request(h: &impl Host, id: u32, side: u32) -> (u32, u32, u32) {
+        let cam = id & 0xff;
+        let base = h
+            .rebase(CAMERA_SIDES)
+            .wrapping_add(side.wrapping_mul(0x61c))
+            .wrapping_add(cam.wrapping_mul(0xda0));
+        let rec = base.wrapping_add(((id >> 8) & 0xff).wrapping_mul(0x130));
+        (cam, base, rec)
+    }
+
+    /// The camera's running request: the id in its slot `MsCameraGetNum`
+    /// unless the slot's off or done byte (`+4`, `+5`) is set; else 0.
+    fn running(h: &mut impl Host, cam: u32) -> u32 {
+        let f = h.rebase(GET_NUM);
+        let n = h.call(f, &[cam]);
+        let slot = h
+            .rebase(CAMERA_SLOTS)
+            .wrapping_add(cam.wrapping_mul(0x1b4).wrapping_add(n).wrapping_mul(8));
+        if h.read::<u8>(slot.wrapping_add(4)) == 0 && h.read::<u8>(slot.wrapping_add(5)) == 0 {
+            h.read(slot)
+        } else {
+            0
+        }
+    }
+
+    /// `fld m32`, `fstp m32`.
+    fn copy(v: u32) -> u32 {
+        x87::store(x87::load(v))
+    }
+
+    /// Applies polar `(a, b, c)` to the side now (`+0x60..+0x6c`, the
+    /// last 0) and `MsSetCheckChange(id, side, 1, 0)`.
+    fn apply_polar(h: &mut impl Host, id: u32, side: u32, base: u32, [a, b, c]: [u32; 3]) -> u32 {
+        h.write(base.wrapping_add(0x6c), 0u32);
+        h.write(base.wrapping_add(0x60), copy(a));
+        h.write(base.wrapping_add(0x64), copy(b));
+        h.write(base.wrapping_add(0x68), copy(c));
+        let f = h.rebase(SET_CHECK_CHANGE);
+        h.call(f, &[id, side, 1, 0])
+    }
+
+    /// `Cam_SetPolar(id, side, theta, phi, len)` (`0x007bf700`): request
+    /// `id` of camera side `side & 1` becomes mode 2 (`+0xc0` 1, `+0xc2`
+    /// 2, `+0xc7` 0) with the polar position at `+0x100..+0x108`; when it
+    /// is the camera's running request, also the side's now and
+    /// `MsSetCheckChange`'s `eax` returned, else the running id. 0 for an
+    /// id `MsCameraIDcheck` rejects.
+    pub fn cam_set_polar(h: &mut impl Host, id: u32, side: u32, polar: [u32; 3]) -> u32 {
+        let f = h.rebase(ID_CHECK);
+        if h.call(f, &[id]) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let (cam, base, rec) = request(h, id, side);
+        h.write(rec.wrapping_add(0xc7), 0u8);
+        h.write(rec.wrapping_add(0xc0), 1u8);
+        h.write(rec.wrapping_add(0x100), copy(polar[0]));
+        h.write(rec.wrapping_add(0xc2), 2u8);
+        h.write(rec.wrapping_add(0x104), copy(polar[1]));
+        h.write(rec.wrapping_add(0x108), copy(polar[2]));
+        let now = running(h, cam);
+        if now != id {
+            return now;
+        }
+        apply_polar(h, id, side, base, polar)
+    }
+
+    /// `Cam_AddPolar(id, side, dtheta, dphi, dlen)` (`0x007bf7f0`): as
+    /// [`cam_set_polar`] in mode 7 with the polar position moved by the
+    /// deltas; a request not yet set (`+0xc0` 0) starts from the side's
+    /// position (`+0x50`) about its centre (`[+0x8c]`) through
+    /// `MsVectorRect2Polar`. Returns the id itself when it is not the
+    /// running request.
+    pub fn cam_add_polar(h: &mut impl Host, id: u32, side: u32, delta: [u32; 3]) -> u32 {
+        let f = h.rebase(ID_CHECK);
+        if h.call(f, &[id]) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let (cam, base, rec) = request(h, id, side);
+        let set = h.read::<u8>(rec.wrapping_add(0xc0));
+        h.write(rec.wrapping_add(0xc7), 0u8);
+        let polar = [0x100u32, 0x104, 0x108].map(|o| rec.wrapping_add(o));
+        if set == 0 {
+            let f = h.rebase(RECT_TO_POLAR);
+            let centre: u32 = h.read(base.wrapping_add(0x8c));
+            h.call(
+                f,
+                &[
+                    base.wrapping_add(0x50),
+                    centre,
+                    polar[0],
+                    polar[1],
+                    polar[2],
+                ],
+            );
+        }
+        for (at, d) in polar.into_iter().zip(delta) {
+            let v = x87::add(x87::load(d), x87::load(h.read(at)));
+            h.write(at, x87::store(v));
+            if at == polar[0] {
+                h.write(rec.wrapping_add(0xc0), 1u8);
+                h.write(rec.wrapping_add(0xc2), 7u8);
+            }
+        }
+        let now = running(h, cam);
+        if now != id {
+            return id;
+        }
+        let now = polar.map(|at| h.read(at));
+        apply_polar(h, id, side, base, now)
+    }
+
+    /// `MsCameraSetTargetPolar_007bf600(id, side, flags, target, d, a,
+    /// b)` (name ours; from `Native_Cam_601d`/`601f`): request `id`
+    /// becomes mode 9 (`+0xc0` 1, `+0xc2` 9, `+0xc7` 0) following `target`
+    /// (`+0xc8`, its byte `+4` OR the low byte of `flags` at `+0xc3`), `a`,
+    /// `b` at `+0xf0`, `+0xf8` and `d` at `+0x110`. When it is the running
+    /// request: `MsVectorRect2Polar(+0xf0, [side +0x8c], +0x100, 0, 0)`,
+    /// `+0x100 += d`, `MsCameraFocusWeights(side, request +0xc0)` and
+    /// `MsSetCheckChange(id, side, 1, 0)`'s `eax`; else the running id; 0
+    /// for an id `MsCameraIDcheck` rejects.
+    #[allow(clippy::many_single_char_names)] // h, d, a, b, f: as documented
+    pub fn cam_set_target_polar(
+        h: &mut impl Host,
+        id: u32,
+        side: u32,
+        flags: u32,
+        target: u32,
+        [d, a, b]: [u32; 3],
+    ) -> u32 {
+        let f = h.rebase(ID_CHECK);
+        if h.call(f, &[id]) == 0 {
+            return 0;
+        }
+        let side = side & 1;
+        let (cam, base, rec) = request(h, id, side);
+        let rec = rec.wrapping_add(0xc0);
+        h.write(rec.wrapping_add(7), 0u8);
+        h.write(rec, 1u8);
+        h.write(rec.wrapping_add(2), 9u8);
+        let mode = h.read::<u8>(target.wrapping_add(4)) | crate::lo8(flags);
+        h.write(rec.wrapping_add(8), target);
+        h.write(rec.wrapping_add(3), mode);
+        h.write(rec.wrapping_add(0x30), copy(a));
+        h.write(rec.wrapping_add(0x38), copy(b));
+        h.write(rec.wrapping_add(0x50), copy(d));
+        let now = running(h, cam);
+        if now != id {
+            return now;
+        }
+        let f = h.rebase(RECT_TO_POLAR);
+        let centre: u32 = h.read(base.wrapping_add(0x8c));
+        h.call(
+            f,
+            &[rec.wrapping_add(0x30), centre, rec.wrapping_add(0x40), 0, 0],
+        );
+        let yaw = rec.wrapping_add(0x40);
+        let v = x87::add(
+            x87::load(h.read(rec.wrapping_add(0x50))),
+            x87::load(h.read(yaw)),
+        );
+        h.write(yaw, x87::store(v));
+        let f = h.rebase(FOCUS_WEIGHTS);
+        h.call(f, &[base, rec]);
+        let f = h.rebase(SET_CHECK_CHANGE);
+        h.call(f, &[id, side, 1, 0])
+    }
 }
