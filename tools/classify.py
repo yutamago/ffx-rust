@@ -353,6 +353,7 @@ REVIEWED = {
     0x0087ee10: ("debug", "prints worker +0xb04/+0xb08 with TkPutDebugFontStringP; only callers 0x87b3e0/0x87b400 have no callers or data refs (PC2 script round 22)"),
     0x00670960: ("platform", "fastcall teardown of the scene cluster map (+0x11dc): ClusterManager_releasePCluster, operator delete, std::map walk (PC2 render round 23)"),
     0x00728ab0: ("debug", "a single ret (no-op stub) the spline segments call between MsDivSqrt and vfx_vec3_scale (menu round 28)"),
+    0x006a4240: ("platform", "ClassDynamicGeometry subclass setupMaterial (vtable slot 0xb47e58): PhyreEngine scene materials and VfxShaderManager GL/ shader parameters, no PS2 counterpart (effects round 38)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

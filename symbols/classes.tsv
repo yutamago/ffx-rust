@@ -2974,7 +2974,7 @@
 0x006a3b30	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_setupDynMesh
 0x006a3b40	logic	default (no rule: ported to be safe)
 0x006a3b50	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): ClassDynamicGeometry_setupMaterial
-0x006a4240	logic	default (no rule: ported to be safe)
+0x006a4240	platform	reviewed: ClassDynamicGeometry subclass setupMaterial (vtable slot 0xb47e58): PhyreEngine scene materials and VfxShaderManager GL/ shader parameters, no PS2 counterpart (effects round 38)
 0x006a44d0	logic	default (no rule: ported to be safe)
 0x006a46c0	logic	default (no rule: ported to be safe)
 0x006a46e0	logic	default (no rule: ported to be safe)
