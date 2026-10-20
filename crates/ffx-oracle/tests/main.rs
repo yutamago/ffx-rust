@@ -8641,9 +8641,9 @@ fn abm_data_init_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, round
         // the activation lists: the game's, or lists of our own whose
         // nodes overlap (the bits add up), and start nodes of our own
         if rng.below(2) == 0 {
-            for (g, &table) in ab::ACTIVE_LISTS.iter().enumerate() {
+            for (g, &table) in (0u32..).zip(ab::ACTIVE_LISTS.iter()) {
                 for k in 0..7u32 {
-                    let list = lists + 0x40 * (7 * g as u32 + k);
+                    let list = lists + 0x40 * (7 * g + k);
                     let len = rng.below(0x1f);
                     for j in 0..len {
                         let node = if rng.below(2) == 0 {
@@ -8703,6 +8703,210 @@ fn abm_data_init_snapshot() {
     };
     let mut rng = Xorshift(0x5eed_1804);
     abm_data_init_cases(&mut a, &mut b, &mut rng, 30);
+}
+
+/// `sa_menu_start` (`0x00770430`) over recorders: `dbgPrintf` logs its
+/// value only for the formats that have one, `HelpMem_Get` hands out
+/// blocks of an arena, the CD library's sizes come from a list, the task
+/// points `+8` at a recorder; every kind, both tails, an event FTC or
+/// not, English or not.
+#[allow(clippy::too_many_lines)] // the stand-ins, then the cases
+fn sa_menu_start_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let (prints, gets, sizes) = (
+        alloc(a, b, 4 + 8 * 16),
+        alloc(a, b, 4 + 8 * 16),
+        alloc(a, b, 4 * 8),
+    );
+    let (cursor, size_at) = (alloc(a, b, 4), alloc(a, b, 4));
+    let size_log = alloc(a, b, 4 + 4 * 16);
+    let arena = alloc(a, b, 12 * 0x4800);
+    // dbgPrintf: the format, and the value unless the format has none
+    let mut c = vec![0xa1];
+    c.extend(prints.to_le_bytes()); // mov eax, [prints]
+    c.extend([0xc1, 0xe0, 0x03, 0x05]); // shl eax, 3; add eax, prints + 4
+    c.extend((prints + 4).to_le_bytes());
+    c.extend([0x8b, 0x4c, 0x24, 0x04, 0x89, 0x08, 0x31, 0xd2]); // mov ecx, [esp+4]; mov [eax], ecx; xor edx, edx
+    for (k, s) in [st::STR_MENU_START, st::STR_DASHES, st::STR_CNF]
+        .into_iter()
+        .enumerate()
+    {
+        c.extend([0x81, 0xf9]); // cmp ecx, s
+        c.extend(a.rebase(s).to_le_bytes());
+        c.extend([0x74, [20u8, 12, 4][k]]); // je skip
+    }
+    c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp+8]
+    c.extend([0x89, 0x50, 0x04, 0xff, 0x05]); // skip: mov [eax+4], edx; inc dword [prints]
+    c.extend(prints.to_le_bytes());
+    c.push(0xc3);
+    redirect_to(a, b, st::SA_DBG_PRINTF, &c);
+    // HelpMem_Get: the cursor, moved on by 0x4800
+    let mut tail = vec![0xa1];
+    tail.extend(cursor.to_le_bytes()); // mov eax, [cursor]
+    tail.extend([0x81, 0x05]); // add dword [cursor], 0x4800
+    tail.extend(cursor.to_le_bytes());
+    tail.extend(0x4800u32.to_le_bytes());
+    tail.push(0xc3);
+    redirect_to(
+        a,
+        b,
+        st::HELP_MEM_GET,
+        &arg_logger(gets, &[(0, 0), (1, 0)], &tail),
+    );
+    for (k, sym, n) in [
+        (1, st::CLEAR_PAD_BUFF, 0),
+        (2, st::GET_SAVE_CONFIG_ENGLISH, 0),
+        (3, st::SBIN_PARSE, 1),
+        (4, st::HELP_MEM_FREE, 1),
+        (5, st::USER_FREE_THUNK, 1),
+        (6, st::READ_EVENT_FTC, 1),
+        (7, st::FTC_TRANSFER, 1),
+        (8, st::SA_TASK_BUFF_SIZE_GET, 1),
+        (9, st::SA_TASK_INIT2, 3),
+        (10, st::READ_SPS2, 2),
+        (11, st::SET_FILE_TABLES, 0),
+        (12, st::DISK_OPEN_CHECK_SET, 1),
+        (13, st::HDD_OPEN_PARTITION, 0),
+        (14, st::PATCH_MENU_RECORDS, 0),
+        (15, st::FIND_RECORD_AT, 0),
+        (16, st::FIND_RECORD_FLAGGED, 0),
+        // the task's +8 and the CD library's calls, by pointer
+        (17, 0x0270_8000, 3),
+        (18, 0x0270_8100, 4),
+        (19, 0x0270_8200, 1),
+        (20, 0x0270_8300, 1),
+    ] {
+        recorder(a, b, k, sym, n, 0);
+    }
+    // g_CdLib + 0x14: the next size of the list
+    let mut tail = vec![0xa1];
+    tail.extend(size_at.to_le_bytes()); // mov eax, [size_at]
+    tail.extend([0x8b, 0x00, 0x83, 0x05]); // mov eax, [eax]; add dword [size_at], 4
+    tail.extend(size_at.to_le_bytes());
+    tail.extend([4, 0xc3]);
+    let size_fn = code_in_both(a, b, &arg_logger(size_log, &[(0, 0)], &tail));
+    let task = alloc(a, b, 0x10);
+    put(a, b, task + 8, a.rebase(0x0270_8000));
+    let ret9 = ret(a, 9);
+    put(a, b, ret9, task);
+    for (g, sym) in [
+        (st::CDLIB_READ, 0x0270_8100u32),
+        (st::CDLIB_SYNC, 0x0270_8200),
+        (st::CDLIB_TABLE, 0x0270_8300),
+    ] {
+        let at = a.rebase(sym);
+        set(a, b, g, at);
+    }
+    set(a, b, st::CDLIB_SIZE, size_fn);
+    let words: Vec<u32> = [
+        0x00c4_16bc,
+        0x00c4_16c0,
+        0x00c4_16c4,
+        0x00c4_16cc,
+        0x00c4_16d0,
+        0x00c4_16d4,
+        0x00c4_16d8,
+        0x00c4_16dc,
+        0x0112_a010,
+        0x0112_a014,
+        0x0112_a018,
+        0x0112_a02c,
+        0x0112_a030,
+        0x0112_a034,
+        0x0112_a038,
+        0x0112_a03c,
+        0x0112_a040,
+        0x0112_a044,
+        0x0112_a048,
+        0x0112_a04c,
+        0x0112_a050,
+        0x0112_a054,
+        0x0112_a064,
+        0x0112_a068,
+        0x0112_a07c,
+        0x0112_a08c,
+        0x0112_a090,
+        0x0112_a094,
+        0x0112_a0a4,
+        0x0112_a4a8,
+        0x0231_0c14,
+        0x0231_0c18,
+        0x0231_0c1c,
+        0x0231_0c20,
+    ]
+    .into_iter()
+    .collect();
+    let kinds = [0u32, 1, 2, 3, 4, 5, 0xff, 0x8000, 0x8001, 0x8004, 0x104];
+    let n_kinds = u32::try_from(kinds.len()).unwrap();
+    for round in 0..rounds {
+        put(a, b, log, 0u32);
+        put(a, b, prints, 0u32);
+        put(a, b, gets, 0u32);
+        put(a, b, size_log, 0u32);
+        for k in 1..17 {
+            if k != 9 {
+                let at = ret(a, k);
+                put(a, b, at, rng.next());
+            }
+        }
+        let at = ret(a, 2);
+        put(a, b, at, [0, 1, rng.next()][rng.below(3) as usize]);
+        let at = ret(a, 6);
+        put(a, b, at, if rng.below(2) == 0 { 0 } else { rng.next() });
+        for &w in &words {
+            put(a, b, a.rebase(w), rng.next());
+        }
+        if rng.below(2) == 0 {
+            put(a, b, a.rebase(0x0112_a010), 0u32);
+        }
+        set(a, b, st::CD_READ_MODE, rng.next());
+        set(
+            a,
+            b,
+            st::FFX_HDD_MODE,
+            rng.next().to_le_bytes()[0].cast_signed(),
+        );
+        put(a, b, cursor, arena);
+        let fill: Vec<u8> = (0..12 * 0x4800)
+            .map(|_| rng.next().to_le_bytes()[0])
+            .collect();
+        a.write(arena, &fill).unwrap();
+        b.write(arena, &fill).unwrap();
+        put(a, b, size_at, sizes);
+        for k in 0..8 {
+            put(a, b, sizes + 4 * k, rng.below(0x1000));
+        }
+        let kind = if round < n_kinds {
+            kinds[round as usize]
+        } else if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            kinds[rng.below(n_kinds) as usize] | (rng.next() & 0x7f00)
+        };
+        twin("sa_menu_start", a, b, 0x0077_0430, &[kind], |m| {
+            st::sa_menu_start(&mut H(m), kind)
+        });
+    }
+}
+
+#[test]
+fn sa_menu_start_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1805);
+    sa_menu_start_cases(&mut a, &mut b, &mut rng, 300);
+}
+
+#[test]
+fn sa_menu_start_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1806);
+    sa_menu_start_cases(&mut a, &mut b, &mut rng, 100);
 }
 
 /// `AbmapDrawChrPanel` over stand-ins: the message size writes its

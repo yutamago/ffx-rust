@@ -33,6 +33,10 @@ ported! {
     cd_read_q_clear @ 0x0076_e130 => extern "C" fn cd_read_q_clear(id: i32) {
         cdread::bridge::cd_read_q_clear(&mut mem(), id);
     }
+    /// `sa_menu_start(kind)` (`0x00770430`).
+    sa_menu_start @ 0x0077_0430 => extern "C" fn sa_menu_start(kind: u32) -> u32 {
+        state::bridge::sa_menu_start(&mut mem(), kind)
+    }
     /// `menu_list_step()` (`0x0076f470`): the jump word and the step's
     /// answer in this frame.
     menu_list_step @ 0x0076_f470 => extern "C" fn menu_list_step() -> u32 {
