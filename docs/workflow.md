@@ -191,9 +191,21 @@ tools/ownership.py summary    # globals per module: its own, and shared with who
 tools/ownership.py shared 40  # the globals the most modules touch
 tools/ownership.py function MsCalcDamageCommand
 tools/ownership.py global 0x00c8f508
+tools/status.sh               # the status page, regenerated in the background
 ```
 
-Both read the dump below (`functions.tsv`, `data_refs.tsv`). Modules come
+The status page (`$FFX_WORK/status/index.html`) shows the progress.py
+numbers for `main`, read through git, so every worktree writes the same page:
+the binary as a Hilbert-curve map (each function in address order, coloured
+replaced / logic to port / the rest), the modules, the ports per module per
+time bucket, the share replaced at every commit, the logic left to port and
+the latest ports. `tools/status.sh` returns at once and runs
+`tools/status.py` behind a lock; calls during a run fold into one more run.
+`tools/verify-batch.py` calls it when a batch passes. The first run replays
+the whole history (about a minute); later ones reuse `history.json` and take
+under a second. The open page reloads `data.js` every 30 s.
+
+Both progress.py and ownership.py read the dump below (`functions.tsv`, `data_refs.tsv`). Modules come
 from name prefixes (the original PS2 ones the Switch symbols carry, listed in
 `tools/progress.py`); unnamed functions take their named neighbours' module,
 so module sizes are estimates until most of the code is named. Ownership only

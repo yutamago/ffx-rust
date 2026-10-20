@@ -141,6 +141,8 @@ def main():
         if "--no-replays" not in sys.argv:
             run(["tools/replays/run-all.sh"], env, dry)
     print("batch verified")
+    if not dry:  # the status page, in the background (tools/status.sh)
+        subprocess.run([str(REPO / "tools/status.sh")], check=False)
 
 
 if __name__ == "__main__":
