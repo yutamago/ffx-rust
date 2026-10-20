@@ -1657,6 +1657,48 @@ ported! {
     MenuConfig_GetSoundMode @ 0x008c_b430 => extern "C" fn menu_config_get_sound_mode(opt: u32) -> u32 {
         tk::menu_config_option(&mut mem(), 2, opt, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuSummon_GrowWindowInit(w)`: the rows.
+    MenuSummon_GrowWindowInit @ 0x008c_d2e0 => extern "C" fn menu_summon_grow_window_init(w: u32) -> u32 {
+        tk::menu_summon_grow_window_init(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_Draw(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
+    MenuConfig_Draw @ 0x008c_b320 => extern "C" fn menu_config_draw(w: u32) -> u32 {
+        tk::menu_config_draw(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMessageCb_008e02c0(m)`: 0.
+    TkMenuMessageCb_008e02c0 @ 0x008e_02c0 => extern "C" fn tk_menu_message_cb(m: u32) -> u32 {
+        tk::tk_menu_message_cb(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMessageWidth_008de210(m)`: 0.
+    TkMenuMessageWidth_008de210 @ 0x008d_e210 => extern "C" fn tk_menu_message_width(m: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_menu_message_width(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_BuyWindowCtrl(w)`.
+    MenuWShop_BuyWindowCtrl @ 0x008d_9da0 => extern "C" fn menu_wshop_buy_window_ctrl(w: u32) -> u32 {
+        tk::menu_wshop_buy_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetHdd(opt)`.
+    MenuConfig_SetHdd @ 0x008c_b060 => extern "C" fn menu_config_set_hdd(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 0, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetSoundMode(opt)`.
+    MenuConfig_SetSoundMode @ 0x008c_b460 => extern "C" fn menu_config_set_sound_mode(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 1, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_GetVibration(opt)`.
+    MenuConfig_GetVibration @ 0x008c_af60 => extern "C" fn menu_config_get_vibration(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 2, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetOption1(opt)`: row 1's record.
+    MenuConfig_SetOption1 @ 0x008c_b4c0 => extern "C" fn menu_config_set_option1(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 3, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_GetHdd(opt)`.
+    MenuConfig_GetHdd @ 0x008c_b020 => extern "C" fn menu_config_get_hdd(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 4, opt, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

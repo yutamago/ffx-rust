@@ -4936,6 +4936,202 @@ pub mod bridge {
         call(mem, f, &[opt])
     }
 
+    /// `MenuSummon_GrowWindowInit(w)` (`0x008cd2e0`, the aeon growth
+    /// window's `+8`): `TkMn2RefreshList(3)`, `0x0186a610` = 0, rows `+0x30`
+    /// = `TkMn2GetNameModeMax()`, which it returns.
+    pub fn menu_summon_grow_window_init<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008c_2360);
+        call(mem, f, &[3]);
+        mem.write(mem.rebase(0x0186_a610), 0u32);
+        let rows = tk_mn2_get_name_mode_max(mem);
+        #[allow(clippy::cast_possible_truncation)] // the u16 store
+        mem.write(w.wrapping_add(0x30), rows as u16);
+        rows
+    }
+
+    /// `MenuConfig_Draw(w)` (`0x008cb320`): `TkMenuDrawKick()` twice,
+    /// `0x008c1790()`, `TkMn2DrawInitPacket()`, `MenuConfig_DrawRows()`,
+    /// then `TkMn2DrawKickSyncPacket(w)` and its `eax`.
+    pub fn menu_config_draw<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for f in [0x008d_ce50, 0x008d_ce50, 0x008c_1790, 0x008c_0be0] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+        let f = mem.rebase(0x008c_bab0);
+        call(mem, f, &[w]);
+        let f = mem.rebase(0x008c_0cc0);
+        call(mem, f, &[w])
+    }
+
+    /// `TkMenuMessageCb_008e02c0(m)` (`0x008e02c0`): sets itself as the
+    /// message's `+0x120` callback; when `u16 +0x12` is 1,
+    /// `TOMessageCallF8_008b8ca0(i16 +4)`. Returns 0.
+    pub fn tk_menu_message_cb<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        put_code(mem, m.wrapping_add(0x120), 0x008e_02c0);
+        if mem.read::<u16>(m.wrapping_add(0x12)) == 1 {
+            let i = i32::from(mem.read::<i16>(m.wrapping_add(4)));
+            let f = mem.rebase(0x008b_8ca0);
+            call(mem, f, &[i.cast_unsigned()]);
+        }
+        0
+    }
+
+    /// `TkMenuMessageWidth_008de210(m)` (`0x008de210`): the message's
+    /// width `TOGetMessageWH(i16 +4, +0x90, &w, m + 0x42, i16 +0x1a,
+    /// 0x100)` as `ftol` into `u16 +0x40`; returns 0. `local` is the width
+    /// word.
+    pub fn tk_menu_message_width<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = i32::from(mem.read::<i16>(m.wrapping_add(4))).cast_unsigned();
+        let text: u32 = mem.read(m.wrapping_add(0x90));
+        let line = i32::from(mem.read::<i16>(m.wrapping_add(0x1a))).cast_unsigned();
+        // the original passes its argument slot, which still holds `m`
+        mem.write(local, m);
+        let f = mem.rebase(0x008b_9650);
+        call(
+            mem,
+            f,
+            &[id, text, local, m.wrapping_add(0x42), line, 0x100],
+        );
+        let width = f64::from(mem.read::<f32>(local));
+        #[allow(clippy::cast_possible_truncation)] // the u16 store of AX
+        mem.write(
+            m.wrapping_add(0x40),
+            ffx_bridge::x87::ftol(mem, width) as u16,
+        );
+        0
+    }
+
+    /// `MenuWShop_BuyWindowCtrl(w)` (`0x008d9da0`): while the open
+    /// sub-command window's (`0x023cc128`) `i8 +0x45` is above 0,
+    /// `TkMenuListWindowCtrl_008b44b0(w)` and the help of the item under
+    /// the cursor (`u16` `2 + 2 i16 w+0x48` into
+    /// `TkMn2GetExcelData([0x0186ac20], [0x0186ac2c])`,
+    /// `TkMn2GetItemHelp`) to `TkMenuSetHelpMessage` (its `eax`);
+    /// otherwise `eax` = that window.
+    pub fn menu_wshop_buy_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let sub: u32 = mem.read(mem.rebase(0x023c_c128));
+        if mem.read::<i8>(sub.wrapping_add(0x45)) <= 0 {
+            return sub;
+        }
+        let f = mem.rebase(0x008b_44b0);
+        call(mem, f, &[w]);
+        let (a, b) = (
+            mem.read::<u32>(mem.rebase(0x0186_ac20)),
+            mem.read::<u32>(mem.rebase(0x0186_ac2c)),
+        );
+        let f = mem.rebase(0x008c_1af0);
+        let data = call(mem, f, &[a, b]);
+        let row = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+        let at = data.wrapping_add(row.wrapping_mul(2)).wrapping_add(2);
+        let id = u32::from(mem.read::<u16>(at));
+        let f = mem.rebase(0x008c_1b30);
+        let help = call(mem, f, &[id]);
+        let f = mem.rebase(0x008a_aeb0);
+        call(mem, f, &[help])
+    }
+
+    /// More config option callbacks (see [`menu_config_option`]), over
+    /// the menu settings word (`MsGetSaveMenu()`):
+    /// - 0 `MenuConfig_SetHdd(opt)` (`0x008cb060`): bit 13 set for value
+    ///   0, cleared otherwise (after `TkGetFFXCofingAdrs()`), then
+    ///   `TkRefreshHdd(opt)`;
+    /// - 1 `MenuConfig_SetSoundMode(opt)` (`0x008cb460`): value 1 clears
+    ///   bits 0 and 7, anything else clears bit 7 and sets bit 0, then
+    ///   `TkRefreshSoundMode(opt)`;
+    /// - 2 `MenuConfig_GetVibration(opt)` (`0x008caf60`): value = bit 4
+    ///   clear, `TkRefreshActuator()`, `+0xc` = whether
+    ///   `TkGetControlerActuatorNumber(0, 0)` is non-zero (returned);
+    /// - 3 `MenuConfig_SetOption1(opt)` (`0x008cb4c0`): bit 8 set and row
+    ///   1's record (`GetDerefU32_008cbaa0(1)`) `+0xc` = 1 for value 0,
+    ///   else both cleared; returns the record;
+    /// - 4 `MenuConfig_GetHdd(opt)` (`0x008cb020`): value = bit 13 clear;
+    ///   `+0xc` = 1 when `get_hdd_word_518()` is not 3 and
+    ///   `get_hdd_status()` is 1, else 0; returns the last call's `eax`.
+    pub fn menu_config_option2<M: Mem>(
+        mem: &mut M,
+        which: u32,
+        opt: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let value = opt.wrapping_add(8);
+        let f = mem.rebase(0x0078_5290);
+        let menu = call(mem, f, &[]);
+        let flags: u32 = mem.read(menu);
+        match which {
+            0 => {
+                let f = mem.rebase(0x0088_d5e0);
+                call(mem, f, &[]);
+                let flags: u32 = mem.read(menu);
+                let bit = u32::from(mem.read::<u32>(value) == 0) << 13;
+                mem.write(menu, (flags & !0x2000) | bit);
+                let f = mem.rebase(0x0087_24a0);
+                call(mem, f, &[opt])
+            }
+            1 => {
+                let flags = if mem.read::<u32>(value) == 1 {
+                    flags & !0x81
+                } else {
+                    (flags & !0x80) | 1
+                };
+                mem.write(menu, flags);
+                let f = mem.rebase(0x0087_24f0);
+                call(mem, f, &[opt])
+            }
+            2 => {
+                mem.write(value, u32::from(mem.read::<u8>(menu) & 0x10 == 0));
+                let f = mem.rebase(0x0087_2480);
+                call(mem, f, &[]);
+                let f = mem.rebase(0x0088_8bc0);
+                let any = u32::from(call(mem, f, &[0, 0]) != 0);
+                mem.write(opt.wrapping_add(0xc), any);
+                any
+            }
+            3 => {
+                let f = mem.rebase(0x008c_baa0);
+                let rec = call(mem, f, &[1]);
+                let on = mem.read::<u32>(value) == 0;
+                let flags: u32 = mem.read(menu);
+                mem.write(menu, if on { flags | 0x100 } else { flags & !0x100 });
+                mem.write(rec.wrapping_add(0xc), u32::from(on));
+                rec
+            }
+            _ => {
+                mem.write(value, !(flags >> 13) & 1);
+                let f = mem.rebase(0x0077_87b0);
+                let word = call(mem, f, &[]);
+                if word == 3 {
+                    mem.write(opt.wrapping_add(0xc), 0u32);
+                    return word;
+                }
+                let f = mem.rebase(0x0077_7e90);
+                let status = call(mem, f, &[]);
+                mem.write(opt.wrapping_add(0xc), u32::from(status == 1));
+                status
+            }
+        }
+    }
+
     /// The sub-command window openers (`0x008e33d0`
     /// `TkMenuOpenSubCmdWindowMain`, `0x008e3470`, `0x008e3510`,
     /// `0x008e35b0`): kept in `0x023cc120`; 2 rows of 2, cursor 1, `+0x37`

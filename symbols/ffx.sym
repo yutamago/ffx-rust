@@ -11142,14 +11142,20 @@
 0x008caef0 function MenuConfig_SetBit11       # (option) bit 11 set when +8 is 0; own name
 0x008caf20 function MenuConfig_GetBit6        # (option) +8 = !bit 6; own name
 0x008caf40 function MenuConfig_SetBit6        # (option) bit 6 set when +8 is 0; own name
+0x008caf60 function MenuConfig_GetVibration  # (opt): opt+8 = MsGetSaveMenu() bit 4 clear; TkRefreshActuator(); opt+0xc = eax = TkGetControlerActuatorNumber(0, 0) != 0; ported in menu round 29; name ours
 0x008cafa0 function MenuConfig_SetVibration  # (opt): MsGetSaveMenu() bit 4 set when opt+8 is 0, cleared otherwise; tail TkRefreshActuator(opt); ported in menu round 29; name ours
 0x008cafd0 function MenuConfig_GetEnglish     # (option) +8 = MsGetSaveConfigEnglish() != 1 (that stub returns 0 on PC); own name
 0x008caff0 function MenuConfig_SetEnglish     # (option) tail call MsSetSaveConfigEnglish(+8 == 0); own name
+0x008cb020 function MenuConfig_GetHdd        # (opt): opt+8 = MsGetSaveMenu() bit 13 clear; opt+0xc = 1 when get_hdd_word_518() != 3 and get_hdd_status() == 1, else 0; eax the last call's; ported in menu round 29; name ours
+0x008cb060 function MenuConfig_SetHdd        # (opt): TkGetFFXCofingAdrs(), then MsGetSaveMenu() bit 13 = (opt+8 == 0) (read after the call); tail TkRefreshHdd(opt); ported in menu round 29; name ours
 0x008cb090 function MenuConfig_GetSaveFlag    # (option) +8 = save byte +0x5ec bit 0; own name
 0x008cb0b0 function MenuConfig_SetBgmType    # (opt): MsGetSaveEventAddress() byte +0x5ec = (opt+8 != 0); tail iMusicRefreshBgmType(opt); ported in menu round 29; name ours
 0x008cb0e0 function TkMenuCtrlConfig          # fh v3:exact 0x008cb0b0
+0x008cb320 function MenuConfig_Draw          # (w): TkMenuDrawKick x2, 0x008c1790 (jmp 0x0088ec60), TkMn2DrawInitPacket, MenuConfig_DrawRows, tail TkMn2DrawKickSyncPacket(w); ported in menu round 29; name ours
 0x008cb430 function MenuConfig_GetSoundMode  # (opt): opt+0xc = 1, opt+8 = 1 when MsGetSaveMenu()'s bit 0 is clear; tail TkRefreshSoundMode(opt); ported in menu round 29; name ours
+0x008cb460 function MenuConfig_SetSoundMode  # (opt): MsGetSaveMenu() bits: value 1 clears 0 and 7, else clears 7 and sets 0; tail TkRefreshSoundMode(opt); ported in menu round 29; name ours
 0x008cb490 function MenuConfig_GetBit8        # (option) +0xc = 1, +8 = !bit 8 (voice); own name
+0x008cb4c0 function MenuConfig_SetOption1    # (opt): value (opt+8) 0: MsGetSaveMenu() bit 8 set and row 1's record (GetDerefU32_008cbaa0(1)) +0xc = 1, else both cleared; eax = the record; ported in menu round 29; name ours
 0x008cb500 function MenuConfig_GetBit9        # (option) +0xc = bit 8, +8 = !bit 9; own name
 0x008cba20 function MenuParty_CursorNext      # (): i8 0x0186a444 on (wrapping to 0) to the next slot whose +0xc is 1; name ours
 0x008cba60 function MenuParty_CursorPrev      # (): i8 0x0186a444 back (wrapping to count 0x0186a448 - 1) to the previous slot (0x0186a44c) whose +0xc is 1; name ours
@@ -11166,6 +11172,7 @@
 0x008cd1b0 function MenuSummon_OpenWindow     # (): TkMenuMainAllocWindow into 0x0186a5a0 (TkMenuSummonCloseWindow's): +8 0x008ccac0, +0xc 0x008cced0, +0x10 0x008cebe0, +0x14 0x008cd230, +0x1c 0x008ccad0, +0x54 = 0x155; returns TkMenuMainRegistWindow's result; TkMenuCtrlSummon state 9; name ours
 0x008cd1f0 function MenuSummon_RestartWindow  # aeon window: +0x45 = 0, +0x28 = 0 or 2 by 0x0186a5fc, then TkMn2InitStatusBG; own name
 0x008cd240 function MenuSummon_GrowStat       # (slot, chr): slot < 10 (signed): desc 0x00c5a608 + 0x1c slot, entry MenuSummon_GrowEntry(slot); used = Math_Clamp1To99((desc+0x18)(chr, MenuSummon_GetStat(p, desc, 1))), MsSaveItemUse(u16 entry+4, -used), MenuSummon_SetStat(p, desc, 0, min(GetStat(p, desc, 0) + u8 entry+6, desc+0x14 unsigned)); returns TkMsSetSaveParam(chr); relies on GetStat leaving ecx (desc) alone; caller TkMenuCtrlSummon; ported in menu round 23; name ours
+0x008cd2e0 function MenuSummon_GrowWindowInit # (w): the aeon growth window's +8: TkMn2RefreshList(3), 0x0186a610 = 0, w+0x30 = eax = TkMn2GetNameModeMax(); ported in menu round 29; name ours
 0x008cd320 function MenuSummon_GrowInfo      # (stat, chr, *cost, *gain): *cost = -1, *gain = 0; for stat < 10 *cost = u16 +4 of MenuSummon_GrowEntry(stat) and, while MenuSummon_GetStat(chr's record, desc 0x00c5a608 + 0x1c stat, max) < desc +0x14, *gain = Math_Clamp1To99(desc +0x18 (chr, max)) and 1; else 0; relies on MenuSummon_GetStat leaving edx (the descriptor); name ours
 0x008cd3b0 function MenuSummon_RefreshGrowMasks # (chr): masks 0x0186a600/0x0186a604 cleared; per stat 0..10 MenuSummon_GrowInfo(stat, chr, &item, &count): count <= MsGetSaveItemNum(item) (signed) sets the afford bit, and the grow bit when GrowInfo != 0; returns the last item count; callers TkMenuCtrlSummon; name ours
 0x008cd430 function TkMn2CloseSummonGrowWindow # (): close request for 0x0186a5a8 (opened by TkMn2OpenSummonGrowWindow), kept
@@ -11306,6 +11313,7 @@
 0x008d9b90 function TkMenuWShopCloseWindow3   # (): the same for 0x0186ac30 (weapon shop code)
 0x008d9bb0 function TkMenuWShopCloseWindow2   # (): the same for 0x0186ac40 (TkMenuCtrlWShop's)
 0x008d9bd0 function MenuShop_BuyWindowCtrl # (window): the item shop buy window's control (+0xc callback of MenuShop_OpenBuyWindow): as MenuShop_SellWindowCtrl with the limit MsGetGIL() / +0x60 (at most 99 - owned +0x64) and MsSaveItemUse(+0x5c, +n), MsPayGIL(+n * +0x60); ported in menu round 22; name ours
+0x008d9da0 function MenuWShop_BuyWindowCtrl  # (w): while i8 +0x45 of g_TkMenuSubCmdWindow > 0: TkMenuListWindowCtrl_008b44b0(w), tail TkMenuSetHelpMessage(TkMn2GetItemHelp(u16 [TkMn2GetExcelData([0x0186ac20], [0x0186ac2c]) + 2 + 2 i16 w+0x48])); else eax = that window; ported in menu round 29; name ours
 0x008d9df0 function MenuWShop_SellWindowCtrl # (w): the weapon shop sell window's +0xc: TkMn2CtrlSelItemsWindow(w) (tail call) while i8 +0x45 of the open sub-command window g_TkMenuSubCmdWindow is above 0, else eax = that window; ported in menu round 29; name ours
 0x008d9e20 function MenuShop_SellWindowCtrl # (window): the item shop sell window's control (+0xc callback set by MenuShop_OpenSellWindow, its only reference): state +0x28 (8-way switch), the amount u16 +0x48 stepped ±1 (left/right) and ±10 (up/down) within 1..+0x64 (SndSepPlaySimple 0x80000001), on confirm +0x45 = 1, MsSaveItemUse(+0x5c, -amount), MsPayGIL(-(amount * +0x60)) (the sale), state 5; cancel +0x45 = 0xff, state 7; ported in menu round 22; renamed menu round 22 (was TkMenuCtrlSelFileWindow, a 0.67 Switch callee-similarity match from Fahrenheit's server export: no file selection here); name ours
 0x008da7a0 function MenuWShop_Start           # (): MenuWShop_OpenWindow3(), the command window as MenuWShop_OpenCommandWindow, tutorial windows 0x0186ac34/38 = 0; returns TkMenuOpenSubCmdWindowRect s result; caller TkMenuCtrlWShop; ported in menu round 23; name ours
@@ -11449,6 +11457,7 @@
 0x008de1b0 function Gs_Pack4                  # (a, b, c, d) u64 a | b<<32 | c<<16 | d<<48; own name
 0x008de1d0 function Gs_Pack5                  # (a, b, c, d, e) Gs_Pack4 with e & 0x0ffffff0 folded in at <<12; own name
 0x008de200 function MenuStatus_Second         # (a, b) b; no caller; own name
+0x008de210 function TkMenuMessageWidth_008de210 # (m): u16 m+0x40 = ftol(f32 w) with TOGetMessageWH(i16 m+4, m+0x90, &w (its own argument slot), m+0x42, i16 m+0x1a, 0x100); eax 0; ported in menu round 29; name ours
 0x008dea00 function SetFields_008dea00           # auto-port shape (several stores: set field (constants, arguments, addresses), cdecl): u16[(a0 + 0x2c)] = 0x4; u32[(a0 + 0x124)] = &0x008dea00; return 0x0; callers: no direct caller; name ours
 0x008dea20 function MenuStatus_ResetEntry     # (entry) u16 +0 and +0x2c cleared, returns 0; own name
 0x008ded00 function TOTextScrollInit_008ded00 # cdecl(w) -> 0: +0xa0/+0xb0/+0xb4 zeroed, +0xac = 30 (25 when TOGetFFXVideoMode != 0, neg/sbb/and -5/add 0x1e), +0x118 = 0x008de8c0, +0x2e (u16) = 1, +0x58 = 0x80808080; listed with TOTextScrollStep_008ded60 in the .data callback tables 0x00c5b1f8 and 0x00c5b21c; own name (the clock TOTextScrollTick_008df570 reads)
@@ -11473,6 +11482,7 @@
 0x008e0200 function MenuWin_StateSlide        # (w) +0x2c = 1, float +0x4c -= 12, +0x114 = +0x104; returns 0; own name
 0x008e0240 function MenuWin_StateOpen         # (w) +0x2c = 2, +0xa0 = +0xa8, handlers 0x008e0230 (+0x114), 0x008de970 (+0x11c); returns 0; own name
 0x008e0280 function MenuWin_StateWaitText     # (w) +0x2e = 2, or 3 when the text at +0x98 is empty; +0x120 = itself; returns 0; own name
+0x008e02c0 function TkMenuMessageCb_008e02c0 # (m): m+0x120 = itself; when u16 m+0x12 is 1 TOMessageCallF8_008b8ca0(i16 m+4); eax 0; ported in menu round 29; name ours
 0x008e02f0 function hardCodeToFixTheWrongData    # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'azit0600'; Switch 0x71005002b0 hardCodeToFixTheWrongData (symbols from Fahrenheit's server export)
 0x008e0350 function TkMenuCtrlMain            # fh v3:exact 0x008e0340
 0x008e0ba0 function TkMenuDrawMain            # fh call.cs cdecl

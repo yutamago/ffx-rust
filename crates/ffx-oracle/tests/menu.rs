@@ -14956,3 +14956,127 @@ fn menu_round29_window_callbacks_and_config_options_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round29_config_draw_options_messages_and_buy_window_match_the_original() {
+    let Some(mut t) = setup_any(0x0029_0007) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x200;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let flags = t.alloc(&[0; 4]);
+    let menu = seq_stub(&mut t, 0x0078_5290, log, 0, &[]);
+    t.put(menu, flags);
+    // TkGetFFXCofingAdrs flips bits 0 and 13: the port must read the
+    // settings again after it
+    let flip: Vec<u8> = [
+        &[0x81, 0x35][..],
+        &flags.to_le_bytes(),
+        &0x2001u32.to_le_bytes(),
+    ]
+    .concat();
+    seq_stub(&mut t, 0x0088_d5e0, log, 0, &flip);
+    let mut cells = Vec::new();
+    for (f, n) in [
+        (0x008c_2360u32, 1u8),
+        (0x008d_ce50, 0),
+        (0x008c_1790, 0),
+        (0x008c_0be0, 0),
+        (0x008c_bab0, 1),
+        (0x008c_0cc0, 1),
+        (0x008b_8ca0, 1),
+        (0x008b_44b0, 1),
+        (0x008c_1b30, 1),
+        (0x008a_aeb0, 1),
+        (0x0087_24a0, 1),
+        (0x0087_24f0, 1),
+        (0x0087_2480, 0),
+        (0x0088_8bc0, 2),
+        (0x0077_87b0, 0),
+        (0x0077_7e90, 0),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let (word518, status, actuators) = (cells[14], cells[15], cells[13]);
+    let excel = seq_stub(&mut t, 0x008c_1af0, log, 2, &[]);
+    let rec = seq_stub(&mut t, 0x008c_baa0, log, 1, &[]);
+    let width = out_stub(&mut t, log, 0x008b_9650, &[0, 1, 3, 4, 5], 2);
+    let (data, rec_mem, m) = (
+        t.alloc(&[0; 0x400]),
+        t.alloc(&[0; 0x40]),
+        t.alloc(&[0; 0x200]),
+    );
+    t.put(excel, data);
+    t.put(rec, rec_mem);
+    let sub = t.alloc(&[0; 0x100]);
+    t.put(t.sym(0x023c_c128), sub);
+    for round in 0..900u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let v = t.rng.pick(&[0u32, 1, 2, 3, 0x8000_0000]);
+        t.put(word518, v);
+        let v = t.rng.pick(&[0u32, 1, 2, 0x101]);
+        t.put(status, v);
+        let v = t.rng.pick(&[0u32, 0, 1, 2]);
+        t.put(actuators, v);
+        t.scramble_at(m, 0x200);
+        t.scramble_at(data, 0x400);
+        t.scramble_at(rec_mem, 0x40);
+        t.scramble_at(flags, 4);
+        t.scramble(0x0186_a610, 8);
+        t.scramble(0x0186_ac20, 0x10);
+        let v = t.rng.next();
+        t.put(t.sym(tk::MN2_NAME_MODE_MAX.sym), v);
+        let v = t.rng.pick(&[0u32, 0, 1, 2, 0x100]);
+        t.put(m + 8, v);
+        let v = t.rng.pick(&[0u16, 1, 1, 2, 0x101]);
+        t.put(m + 0x12, v);
+        let row = t.rng.pick(&[0u8, 1, 2, 0x80, 0xff]);
+        t.put(sub + 0x45, row);
+        let cursor = t.rng.pick(&[0u16, 1, 5, 0x1ff, 0xffff]);
+        t.put(m + 0x48, cursor);
+        let wv = t.rng.pick(&[
+            0f32,
+            1.5,
+            -2.7,
+            300.9,
+            65535.9,
+            1e10,
+            -1e10,
+            f32::from_bits(0x7fc0_0000),
+        ]);
+        t.put(width, wv.to_bits());
+        match round % 9 {
+            0 => t.twin("MenuSummon_GrowWindowInit", 0x008c_d2e0, &[m], U32, |o| {
+                w(tk::menu_summon_grow_window_init(o, m, &mut callback))
+            }),
+            1 => t.twin("MenuConfig_Draw", 0x008c_b320, &[m], U32, |o| {
+                w(tk::menu_config_draw(o, m, &mut callback))
+            }),
+            2 => t.twin("TkMenuMessageCb_008e02c0", 0x008e_02c0, &[m], U32, |o| {
+                w(tk::tk_menu_message_cb(o, m, &mut callback))
+            }),
+            3 => t.twin("TkMenuMessageWidth_008de210", 0x008d_e210, &[m], U32, |o| {
+                w(tk::tk_menu_message_width(o, m, local, &mut callback))
+            }),
+            4 => t.twin("MenuWShop_BuyWindowCtrl", 0x008d_9da0, &[m], U32, |o| {
+                w(tk::menu_wshop_buy_window_ctrl(o, m, &mut callback))
+            }),
+            k => {
+                let which = (k - 5 + round / 9) % 5;
+                let (name, f) = [
+                    ("MenuConfig_SetHdd", 0x008c_b060),
+                    ("MenuConfig_SetSoundMode", 0x008c_b460),
+                    ("MenuConfig_GetVibration", 0x008c_af60),
+                    ("MenuConfig_SetOption1", 0x008c_b4c0),
+                    ("MenuConfig_GetHdd", 0x008c_b020),
+                ][which as usize];
+                t.twin(name, f, &[m], U32, |o| {
+                    w(tk::menu_config_option2(o, which, m, &mut callback))
+                });
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

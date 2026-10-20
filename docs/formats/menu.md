@@ -310,6 +310,18 @@ event block's byte `+0x5ec` and calls `iMusicRefreshBgmType`;
 `TkRefreshActuator`; `MenuConfig_GetSoundMode` (`0x008cb430`) sets
 `+0xc` to 1 and the value to 1 when the settings' bit 0 is clear, then
 calls `TkRefreshSoundMode`.
+`MenuConfig_SetSoundMode` (`0x008cb460`): value 1 clears bits 0 and 7,
+anything else clears 7 and sets 0. `MenuConfig_GetVibration`
+(`0x008caf60`) sets the value from bit 4 (clear: 1) and `+0xc` to
+whether `TkGetControlerActuatorNumber(0, 0)` is non-zero.
+`MenuConfig_SetHdd` (`0x008cb060`) sets bit 13 for value 0 and
+`MenuConfig_GetHdd` (`0x008cb020`) reads it back (clear: 1), `+0xc` = 1
+when `get_hdd_word_518()` is not 3 and `get_hdd_status()` is 1.
+`MenuConfig_SetOption1` (`0x008cb4c0`) sets bit 8 and enables row 1
+(`GetDerefU32_008cbaa0(1)` `+0xc`) for value 0, clears both otherwise.
+The page draw `MenuConfig_Draw(w)` (`0x008cb320`) kicks the packets
+(`TkMenuDrawKick` twice, `0x008c1790`, `TkMn2DrawInitPacket`), draws
+the rows and ends with `TkMn2DrawKickSyncPacket(w)`.
 ## Characters and aeons
 
 `g_TkMenuPlayers` (`0x01841c14`) and `g_TkMenuSummons` (`0x01841c38`) are
