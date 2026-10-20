@@ -88,6 +88,43 @@ and the replays. Every fourth run, or with `--full`, the oracle tests of every
 dependent crate run too. The game-data tests that read the whole archive run
 separately, now and then.
 
+## Mutation testing
+
+`tools/mutants.py` is the mutation runner. It takes the usual mutant list
+(a Python or JSON list of `(name, old, new)`, or `[old, new]` pairs named
+`#1`, `#2`, ...) and the files the mutants live in:
+
+```bash
+MUT_TEST=battle_cue MUT_FILTER=cues MUT_SNAPS=battle,field \
+  python3 tools/mutants.py <worktree> muts.py crates/ffx-battle/src/cue.rs
+```
+
+It never edits the worktree: it syncs it into a private copy
+(`~/ffx-work/mutants/<worktree name>`, or `MUT_WORK`) and rewrites every
+mutation site there into a schema,
+`if ffx_core::mutant(k) { new } else { old }`, around the smallest
+expression or statement run holding the change (`tools/mutants-rs` finds
+those with `syn`; a `let` change keeps the rest of its block inside the
+schema). The `ffx-oracle` test binary is built once with
+`--features ffx-core/mutants`, and each mutant runs that binary with
+`FFX_MUTANT=k` on the image and each snapshot, `MUT_JOBS` (default cores / 2)
+at a time. A schema the compiler rejects moves to a larger node; one that
+still fails falls back to a rebuild for that mutant alone, so none is lost.
+Without the feature `ffx_core::mutant` is a constant `false`; release builds
+never enable it.
+
+Verdicts are `KILLED`, `SURVIVED`, `ERROR` or `NOMATCH`, a tab and the name,
+in list order. A failing test or a timeout (`MUT_TIMEOUT`, default 20x the
+unmutated run, at least 120 s) kills; a run without "test result" or with
+fewer passes than `MUT_PASSED` (default: what the unmutated run passes) is an
+ERROR, and an unmutated run that fails stops everything. `old` must match
+once in one file, exactly or with any whitespace between tokens. `--dry-run`
+prints the schema diff; `MUT_SCHEMA=0` rebuilds every mutant (the old way).
+Validation (2026-10-20): on battle r27 g6, effects r31 a and system r38 a
+(102 mutants) it gave exactly the old `mut22.py` verdicts, in 146 s instead
+of 2417 s (4-29x per group); 1 mutant needed a rebuild. Most of what's left
+is the one build.
+
 ## Progress and ownership
 
 ```bash
