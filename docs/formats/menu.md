@@ -285,6 +285,31 @@ place name (`AtelGetSaveDicName`) and play time (`TOMenuDrawTimer`). A
 slot is drawn dimmed by its state (when byte `0x0186628a` is 1 anything
 but 0..2 and 4, else anything but 1).
 
+
+`TkMenuPreSave()` (`0x008b50b0`) packs and describes the save of slot
+`g_TkMenuSaveSlot` (`0x0186628c`), which it sets to 1. Two callers hand
+it an already packed save instead: they set `g_TkMenuPreSavePacked`
+(`0x01866244`) and the location `g_TkMenuPreSaveDic` (`0x0186624c`),
+call it and clear the flag. Unpacked, it runs
+`MenuSave_PackSave(g_SaveFileBuffer, TkGetSaveEventAddress(slot), slot)`
+(the result, header `+0x10`, is the play time in seconds) with the
+location `AtelGetSaveDic()`; packed, the time is the buffer's `+0x10`.
+Then `MenuSave_BuildIconSys(slot, time, dic)`,
+`g_SaveData_LoadResult` = 1, and the PC description
+`SaveDataSetSaveDataInfo(title, subtitle, detail)`:
+
+- title: `SaveDataGetLoc(0x4f)`, `strncpy` 64 bytes;
+- subtitle: `SaveDataGetLoc(0x50)` through `SaveDataLocRemoveNumTag` and
+  `ConvertGameCodeToUTF8`, 128 bytes;
+- detail: `"%s %s\n%s %s"` of `SaveDataGetLoc(0x51)` in UTF-8, the
+  location name (`AtelGetSaveDicName(id, 0)` in UTF-8; `id` is the
+  location, or for a save packed here the buffer's `u16 +0x18`),
+  `SaveDataGetLoc(0x52)` in UTF-8 and the play time
+  `"%003d:%02d:%02d"` (from 1000 hours on `999:59:59`).
+
+It returns `SaveDataUpdateIcon(dic)`. The frame is `0x16cc` bytes of
+`0x200`/`0x400`-byte text buffers; the port keeps the original's layout,
+so a text that fills its buffer runs on into the same neighbour.
 ## Pad work records
 
 The Tk pad layer keeps a work record per pad (`Pad_UpdateFrame`

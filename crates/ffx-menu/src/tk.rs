@@ -9380,6 +9380,174 @@ pub mod bridge {
     /// Bytes of save data behind a packed save's `0x40`-byte header.
     pub const SAVE_DATA_SIZE: u32 = 0x68c0;
 
+    /// The save file buffer (`0x40`-byte header, then the save data).
+    pub const SAVE_FILE_BUFFER: Global<u32> = Global::new(0x0159_7f70);
+    /// The save slot `TkMenuPreSave` packs and describes (set to 1 there).
+    pub const MENU_SAVE_SLOT: Global<u32> = Global::new(0x0186_628c);
+    /// Non-zero while a caller hands `TkMenuPreSave` an already packed
+    /// save in [`SAVE_FILE_BUFFER`] and its location in [`MENU_PRE_SAVE_DIC`].
+    pub const MENU_PRE_SAVE_PACKED: Global<u32> = Global::new(0x0186_6244);
+    /// The save location (`AtelGetSaveDic`) a caller hands `TkMenuPreSave`.
+    pub const MENU_PRE_SAVE_DIC: Global<u32> = Global::new(0x0186_624c);
+    /// `g_SaveData_LoadResult` (`u8`), which `TkMenuPreSave` sets to 1.
+    pub const SAVE_DATA_LOAD_RESULT: Global<u8> = Global::new(0x0159_7f74);
+
+    /// The `TkMenuPreSave` frame (`local`, `0x16cc` bytes) laid out as the
+    /// original's: each buffer's offset below the frame's end.
+    mod pre_save {
+        pub const LEN: u32 = 0x16cc;
+        pub const TITLE: u32 = 0x44;
+        pub const SUBTITLE: u32 = 0xc4;
+        pub const TEXT_A: u32 = 0x4c4;
+        pub const TEXT_B: u32 = 0x8c4;
+        pub const TEXT_C: u32 = 0xec4;
+        pub const LABEL: u32 = 0xcc4;
+        pub const PLACE: u32 = 0xac4;
+        pub const TIME: u32 = 0x10c4;
+        pub const DETAIL: u32 = 0x12c4;
+        pub const PLACE_UTF8: u32 = 0x14c4;
+        pub const TIME_LABEL: u32 = 0x16c4;
+    }
+
+    /// `memset(at, 0, n)`.
+    fn zero_bytes(mem: &mut impl Mem, at: u32, n: usize) {
+        mem.write_bytes(at, &vec![0u8; n]);
+    }
+
+    /// The C string at `at` (without its zero).
+    fn c_string(mem: &impl Mem, at: u32) -> Vec<u8> {
+        let mut s = Vec::new();
+        loop {
+            let c: u8 = mem.read(at.wrapping_add(u32::try_from(s.len()).unwrap_or(u32::MAX)));
+            if c == 0 {
+                return s;
+            }
+            s.push(c);
+        }
+    }
+
+    /// `strncpy(to, from, n)`: at most `n` bytes of the string, the rest of
+    /// the `n` zero (no terminator when the string is `n` long or more).
+    fn strncpy(mem: &mut impl Mem, to: u32, from: u32, n: u32) {
+        let mut done = false;
+        for k in 0..n {
+            let c: u8 = if done {
+                0
+            } else {
+                mem.read(from.wrapping_add(k))
+            };
+            done |= c == 0;
+            mem.write(to.wrapping_add(k), c);
+        }
+    }
+
+    /// The play time text, `sprintf("%003d:%02d:%02d")` of `seconds` as
+    /// hours, minutes and seconds; from 1000 hours on `999:59:59`.
+    #[must_use]
+    pub fn pre_save_time(seconds: u32) -> String {
+        let (mut h, mut m, mut s) = (seconds / 60 / 60, seconds / 60 % 60, seconds % 60);
+        if h > 999 {
+            (h, m, s) = (999, 59, 59);
+        }
+        format!("{h:03}:{m:02}:{s:02}")
+    }
+
+    /// `TkMenuPreSave()` (`0x008b50b0`): packs the save of slot
+    /// [`MENU_SAVE_SLOT`] = 1 into [`SAVE_FILE_BUFFER`]
+    /// (`MenuSave_PackSave(buffer, TkGetSaveEventAddress(slot), slot)`,
+    /// play time = its result, location `AtelGetSaveDic()`) unless
+    /// [`MENU_PRE_SAVE_PACKED`] (then the buffer's `+0x10` and
+    /// [`MENU_PRE_SAVE_DIC`]); `MenuSave_BuildIconSys(slot, time, dic)`;
+    /// [`SAVE_DATA_LOAD_RESULT`] = 1; then the PC save description:
+    /// `SaveDataSetSaveDataInfo(title, subtitle, detail)` with title
+    /// `SaveDataGetLoc(0x4f)` (64 bytes), subtitle `SaveDataGetLoc(0x50)`
+    /// without its number tag, in UTF-8 (128), and detail `"%s %s\n%s %s"`
+    /// of `SaveDataGetLoc(0x51)`, the location name
+    /// (`AtelGetSaveDicName(dic or the buffer's u16 +0x18, 0)`),
+    /// `SaveDataGetLoc(0x52)` and [`pre_save_time`]; returns
+    /// `SaveDataUpdateIcon(dic)`. `local` is the `0x16cc`-byte frame.
+    pub fn tk_menu_pre_save<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use pre_save as p;
+        let fun = |mem: &M, a: u32| mem.rebase(a);
+        let at = |k: u32| local.wrapping_add(p::LEN).wrapping_sub(k);
+        zero_bytes(mem, at(p::TITLE), 0x40);
+        zero_bytes(mem, at(p::SUBTITLE), 0x80);
+        zero_bytes(mem, at(p::DETAIL), 0x200);
+        MENU_SAVE_SLOT.set(mem, 1);
+        let buffer = SAVE_FILE_BUFFER.ptr(mem).addr;
+        let (slot, time, dic) = if MENU_PRE_SAVE_PACKED.get(mem) == 0 {
+            let f = fun(mem, 0x0086_c410);
+            let dic = call(mem, f, &[]);
+            let slot = MENU_SAVE_SLOT.get(mem);
+            let f = fun(mem, 0x0088_c830);
+            let event = call(mem, f, &[slot]);
+            let f = fun(mem, 0x008b_3e60);
+            let time = call(mem, f, &[buffer, event, slot]);
+            (MENU_SAVE_SLOT.get(mem), time, dic)
+        } else {
+            let time = mem.read(buffer.wrapping_add(0x10));
+            (1, time, MENU_PRE_SAVE_DIC.get(mem))
+        };
+        let f = fun(mem, 0x008b_42e0);
+        call(mem, f, &[slot, time, dic]);
+        SAVE_DATA_LOAD_RESULT.set(mem, 1);
+        let get_loc = fun(mem, 0x0064_7f30);
+        let to_utf8 = fun(mem, 0x0064_5f30);
+        let (a, b, c) = (at(p::TEXT_A), at(p::TEXT_B), at(p::TEXT_C));
+        zero_bytes(mem, a, 0x400);
+        call(mem, get_loc, &[0x4f, a]);
+        strncpy(mem, at(p::TITLE), a, 0x40);
+        for t in [a, b, c] {
+            zero_bytes(mem, t, 0x400);
+        }
+        call(mem, get_loc, &[0x50, a]);
+        let f = fun(mem, 0x0064_8150);
+        call(mem, f, &[a, b]);
+        call(mem, to_utf8, &[b, c]);
+        strncpy(mem, at(p::SUBTITLE), c, 0x80);
+        let time_text = pre_save_time(time);
+        zero_bytes(mem, b, 0x400);
+        zero_bytes(mem, a, 0x400);
+        for k in [p::LABEL, p::PLACE, p::PLACE_UTF8, p::TIME_LABEL, p::TIME] {
+            zero_bytes(mem, at(k), 0x200);
+        }
+        call(mem, get_loc, &[0x51, b]);
+        call(mem, to_utf8, &[b, a]);
+        strncpy(mem, at(p::LABEL), a, 0x200);
+        let id = if MENU_PRE_SAVE_PACKED.get(mem) == 0 {
+            u32::from(mem.read::<u16>(buffer.wrapping_add(0x18)))
+        } else {
+            dic
+        };
+        let f = fun(mem, 0x0086_c430);
+        let name = call(mem, f, &[id, 0]);
+        strncpy(mem, at(p::PLACE), name, 0x200);
+        call(mem, to_utf8, &[at(p::PLACE), at(p::PLACE_UTF8)]);
+        call(mem, get_loc, &[0x52, b]);
+        call(mem, to_utf8, &[b, a]);
+        strncpy(mem, at(p::TIME_LABEL), a, 0x200);
+        let mut time_bytes = time_text.into_bytes();
+        time_bytes.push(0);
+        mem.write_bytes(at(p::TIME), &time_bytes);
+        let mut detail = c_string(mem, at(p::LABEL));
+        detail.push(b' ');
+        detail.extend(c_string(mem, at(p::PLACE_UTF8)));
+        detail.push(b'\n');
+        detail.extend(c_string(mem, at(p::TIME_LABEL)));
+        detail.push(b' ');
+        detail.extend(c_string(mem, at(p::TIME)));
+        detail.push(0);
+        mem.write_bytes(at(p::DETAIL), &detail);
+        let f = fun(mem, 0x0064_86c0);
+        call(mem, f, &[at(p::TITLE), at(p::SUBTITLE), at(p::DETAIL)]);
+        let f = fun(mem, 0x0064_8920);
+        call(mem, f, &[dic])
+    }
+
     /// `MenuSave_PackSave(out, save, slot)` (`0x008b3e60`, own name; caller
     /// `TkMenuCtrlSaveLoad`): a save file at `out`, a `0x40`-byte header
     /// then [`SAVE_DATA_SIZE`] bytes copied from `save`

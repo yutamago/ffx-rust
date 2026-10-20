@@ -10750,7 +10750,7 @@
 0x008b4ec0 function TkMenuJumpToLoadedScene   # fh v3:cg14 0x8b4e70
 0x008b4fb0 function MenuSave_OpenWindow2      # (arg) window 0x01866258: +0x10 0x008b4920, mode 4, +0x58 arg; registered; own name
 0x008b5000 function MenuSaveLoad_OpenWindow   # (mode): TkMenuMainAllocWindow into g_TkMenuSaveLoadWindow; help TkMenuSaveMes(byte 0x0186628a ? 0x2004 : 0x201f); u16 +0x48 0, u16 +0x3a 5, +8 0x008b3d10, +0xc 0x008b44b0, +0x10 0x008b4a50, +0x14 0x008b55d0, +0x1c 0x008b3730, +0x30 99, +0x42 1, +0x3e 1, +0x58 mode; registered; TOSeqStartScene(1, 0x00b62fcc/d4/dc); returns the window; caller TkMenuCtrlSaveLoad; ported in menu round 23; name ours
-0x008b50b0 function TkMenuPreSave             # fh v3:exact 0x008b5060
+0x008b50b0 function TkMenuPreSave            # fh v3:exact 0x008b5060; cdecl(), eax = SaveDataUpdateIcon's: g_TkMenuSaveSlot = 1; unless g_TkMenuPreSavePacked packs the save (MenuSave_PackSave(g_SaveFileBuffer, TkGetSaveEventAddress(slot), slot), time = its result, dic = AtelGetSaveDic()), else time = buffer +0x10, dic = g_TkMenuPreSaveDic; MenuSave_BuildIconSys(slot, time, dic); g_SaveData_LoadResult = 1; SaveDataSetSaveDataInfo(title SaveDataGetLoc(0x4f) 64 B, subtitle UTF-8 SaveDataGetLoc(0x50) without number tag 128 B, '%s %s\n%s %s' of UTF-8 SaveDataGetLoc(0x51), AtelGetSaveDicName(dic or buffer u16 +0x18), SaveDataGetLoc(0x52), '%003d:%02d:%02d' play time capped 999:59:59); SaveDataUpdateIcon(dic); ported in menu round 29 (frame laid out as the original's)
 0x008b54a0 function TkMenuCopyLoadedSave # (dst, buffer): memcpy(dst, buffer + 0x40, 0x68c0), setDefaultPlayerName; TkMenuJumpToLoadedScene passes g_SaveData and 0x01597f70 (docs/formats/save.md); name ours
 0x008b54c0 function MenuSaveLoad_MarkSlots    # (free, need) 99 slot states at 0x01866290: marks (3) while free < need, used flag 0x01866278; own name
 0x008b5530 function TkMenuRestartSelFileWindow # fh switch:bsim1.00 0x71004db0a0
@@ -17069,6 +17069,8 @@
 0x01865cdc label    g_FFXLangSwapFlag         # TOGetFFXLangSwapFlag
 0x01865f00 label    g_FFXVideoMode            # TOGetFFXVideoMode
 0x01865f20 label g_TOSeqSlots # 0x100 per scene: 8 slots of 0x20 (+0 u16 state: 0 free, 1..3 running, 4 stopped; +4 u16 draw-continue; +8 name; +0x1c handle): TOSeqStartScene/StopScene/InitAllScene/CheckTermScene; name ours
+0x01866244 label g_TkMenuPreSavePacked    # u32: 1 while a caller hands TkMenuPreSave an already packed save in g_SaveFileBuffer (two save callers set it, call TkMenuPreSave, clear it); name ours
+0x0186624c label g_TkMenuPreSaveDic       # u32: the save location (AtelGetSaveDic) handed to TkMenuPreSave with g_TkMenuPreSavePacked; name ours
 0x01866254 label    g_TkMenuSaveLoadWindow    # the save/load menu's window (TkMenuCtrlSaveLoad, TkMenuSaveLoadCloseWindow)
 0x01866264 label g_TkMenuSaveChoiceRow # u32 the save choice window's cursor row (TkMenuDrawSaveChoice_008b3860 draws the cursor there); name ours
 0x01866268 label g_TkMenuSaveChoiceEnabled # u8[2] the save choice window's choices; 0 draws one greyed (TkMenuDrawSaveChoice_008b3860); name ours
@@ -17076,6 +17078,7 @@
 0x01866278 label    g_TkSaveSlotsUsed         # MenuSaveLoad_MarkSlots
 0x0186627c label g_MenuSaveCounter # u32: MenuSave_PackSave adds 1 per save and stores it capped at 0x80000000 in the header's +0; name ours
 0x01866288 label g_TkMenuSaveChoiceWidth # u16 the widest save choice text (TkMenuInitSaveChoice_008b3680); name ours
+0x0186628c label g_TkMenuSaveSlot         # u32: the save slot packed (TkMenuPreSave sets 1; the save/load menu sets the cursor row i16 +0x2c of g_TkMenuSaveLoadWindow); name ours
 0x01866290 label    g_TkSaveSlots             # 99 x u8 slot states (0 free, 1 used, 3 marked)
 0x018663c4 label    g_TkMenuSaveLoadActive    # cleared by TkMenuSaveLoadActive
 0x018676f0 label    g_MsgWindows              # message window pointers: +0 in use (i16), +0x2c state, +0x2e status (TOGetMessageStatus), +0x100 handler per state, +0x114 current handler (TOCloseMessage, TOSetMessageFunc, TOControlMessage)

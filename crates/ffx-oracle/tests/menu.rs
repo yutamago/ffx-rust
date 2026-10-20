@@ -14354,3 +14354,188 @@ fn menu_round29_build_item_list_matches_the_original() {
     t.put_bytes(order, &game_order);
     eprintln!("{} calls", t.calls);
 }
+
+/// `copy: mov cl, [eax]; mov [edx], cl; inc eax; inc edx; test cl, cl;
+/// jnz copy`, then `ret`: the string at `eax` copied to `edx`.
+const COPY_RET: [u8; 11] = [
+    0x8a, 0x08, 0x88, 0x0a, 0x40, 0x42, 0x84, 0xc9, 0x75, 0xf6, 0xc3,
+];
+
+/// With the log's write pointer in `ecx`: `n` raw bytes from argument `k`
+/// appended (esi and edi kept).
+fn raw_log(k: u8, n: u32) -> Vec<u8> {
+    #[rustfmt::skip]
+    let code = [
+        &[0x56, 0x57][..],                          // push esi; push edi
+        &[0x8b, 0x74, 0x24, 12 + 4 * k],            // mov esi, [esp + 12 + 4k]
+        &[0x89, 0xcf, 0xb9], &n.to_le_bytes(),      // mov edi, ecx; mov ecx, n
+        &[0xf3, 0xa4, 0x89, 0xf9, 0x5f, 0x5e],      // rep movsb; mov ecx, edi; pop edi; pop esi
+    ]
+    .concat();
+    code
+}
+
+/// `mov ecx, [log]; [ecx] = id; ecx += 4`, then the words of `args`.
+fn log_head(log: u32, id: u32, args: &[u8]) -> Vec<u8> {
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &log.to_le_bytes()].concat();
+    code.extend([&[0xc7, 0x01][..], &id.to_le_bytes(), &[0x83, 0xc1, 0x04]].concat());
+    for &k in args {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+    }
+    code
+}
+
+/// `f(id, out)` logging `id` and `out`'s first `0x400` bytes, then copying
+/// the text `base + (id & 3) * 0x100` to `out`.
+fn loc_stub(t: &mut Twins, f: u32, log: u32, base: u32) {
+    let mut code = log_head(log, f, &[0]);
+    code.extend(raw_log(1, 0x400));
+    #[rustfmt::skip]
+    code.extend([
+        &[0x89, 0x0d][..], &log.to_le_bytes(),      // mov [log], ecx
+        &[0x8b, 0x44, 0x24, 0x04, 0x83, 0xe0, 0x03, 0xc1, 0xe0, 0x08], // eax = (id & 3) << 8
+        &[0x05], &base.to_le_bytes(),               // add eax, base
+        &[0x8b, 0x54, 0x24, 0x08],                  // mov edx, [esp + 8]
+        &COPY_RET,
+    ].concat());
+    jump_stub(t, f, &code);
+}
+
+/// `f(in, out)` logging the first `0x400` bytes of `in` and `out`,
+/// then copying `in` without its first character (when it has one) to
+/// `out`.
+fn convert_stub(t: &mut Twins, f: u32, log: u32) {
+    let mut code = log_head(log, f, &[]);
+    code.extend(raw_log(0, 0x400));
+    code.extend(raw_log(1, 0x400));
+    #[rustfmt::skip]
+    code.extend([
+        &[0x89, 0x0d][..], &log.to_le_bytes(),      // mov [log], ecx
+        &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08], // eax = in, edx = out
+        &[0x80, 0x38, 0x00, 0x74, 0x01, 0x40],      // cmp byte [eax], 0; je +1; inc eax
+        &COPY_RET,
+    ].concat());
+    jump_stub(t, f, &code);
+}
+
+/// `f` logging the raw bytes of its arguments, `lens[k]` from argument
+/// `k`; returns the result cell.
+fn raw_stub(t: &mut Twins, f: u32, log: u32, lens: &[u32]) -> u32 {
+    let cell = t.alloc(&[0; 4]);
+    let mut code = log_head(log, f, &[]);
+    for (k, &n) in (0u8..).zip(lens) {
+        code.extend(raw_log(k, n));
+    }
+    code.extend([&[0x89, 0x0d][..], &log.to_le_bytes()].concat()); // mov [log], ecx
+    code.extend([&[0xa1][..], &cell.to_le_bytes(), &[0xc3]].concat()); // mov eax, [cell]; ret
+    jump_stub(t, f, &code);
+    cell
+}
+
+/// A text of `n` non-zero bytes and its zero.
+fn text_of(t: &mut Twins, n: u32) -> Vec<u8> {
+    let mut v: Vec<u8> = (0..n)
+        .map(|_| u8::try_from(t.rng.below(255) + 1).unwrap_or(1))
+        .collect();
+    v.push(0);
+    v
+}
+
+#[test]
+fn menu_round29_pre_save_matches_the_original() {
+    let Some(mut t) = setup_any(0x0029_50b0) else {
+        return;
+    };
+    let local = t.b.stack_range().start + 0x200;
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    // AtelGetSaveDic and MenuSave_PackSave bump the slot: the port must
+    // read it again after each
+    let slot = t.sym(tk::MENU_SAVE_SLOT.sym);
+    let bump: Vec<u8> = [&[0xff, 0x05][..], &slot.to_le_bytes()].concat(); // inc dword [slot]
+    let dic = seq_stub(&mut t, 0x0086_c410, log, 0, &bump);
+    let event = seq_stub(&mut t, 0x0088_c830, log, 1, &[]);
+    let time = seq_stub(&mut t, 0x008b_3e60, log, 3, &bump);
+    seq_stub(&mut t, 0x008b_42e0, log, 3, &[]);
+    let texts = t.alloc(&[0; 0x400]);
+    loc_stub(&mut t, 0x0064_7f30, log, texts);
+    convert_stub(&mut t, 0x0064_8150, log);
+    convert_stub(&mut t, 0x0064_5f30, log);
+    let name = seq_stub(&mut t, 0x0086_c430, log, 2, &[]);
+    raw_stub(&mut t, 0x0064_86c0, log, &[0x40, 0x80, 0x200]);
+    let icon = seq_stub(&mut t, 0x0064_8920, log, 1, &[]);
+    let names = t.alloc(&[0; 0x100]);
+    let buffer = t.sym(tk::SAVE_FILE_BUFFER.sym);
+    let times = [
+        0u32,
+        59,
+        60,
+        61,
+        3599,
+        3600,
+        3601,
+        359_999,
+        3_599_999,
+        3_600_000,
+        3_600_059,
+        0xffff_ffff,
+        0x8000_0000,
+    ];
+    for round in 0..600u32 {
+        t.put(log, start);
+        // texts 0x4f (index 3) under 64 bytes, the others under 128
+        for (k, max) in [(0u32, 0x100), (1, 0x80), (2, 0x80), (3, 0x40)] {
+            let n = match t.rng.below(4) {
+                0 => 0,
+                1 => max - 1,
+                _ => t.rng.below(max),
+            };
+            let v = text_of(&mut t, n);
+            t.put_bytes(texts + k * 0x100, &v);
+        }
+        let n = t.rng.pick(&[0u32, 1, 2, 0x20, 0x7f]);
+        let v = text_of(&mut t, n);
+        t.put_bytes(names, &v);
+        t.put(name, names);
+        let packed = t.rng.pick(&[0u32, 0, 1, 0x100]);
+        t.put(t.sym(tk::MENU_PRE_SAVE_PACKED.sym), packed);
+        for g in [tk::MENU_PRE_SAVE_DIC.sym, tk::MENU_SAVE_SLOT.sym] {
+            let v = t.rng.next();
+            t.put(t.sym(g), v);
+        }
+        t.put(t.sym(tk::SAVE_DATA_LOAD_RESULT.sym), 0u8);
+        let s = if round < 26 {
+            times[round as usize % times.len()]
+        } else if round % 2 == 0 {
+            t.rng.pick(&times)
+        } else {
+            t.rng.next()
+        };
+        let s2 = t.rng.pick(&times) ^ (t.rng.next() & 0xffff);
+        let (packed_time, own_time) = if t.rng.below(2) == 0 {
+            (s, s2)
+        } else {
+            (s2, s)
+        };
+        t.put(buffer + 0x10, packed_time);
+        t.put(time, own_time);
+        let id = t.rng.next();
+        t.put(buffer + 0x18, id);
+        reroll(&mut t, &[dic, event, icon]);
+        // garbage in the port's frame: what it leaves unwritten shows
+        let v = t.rng.bytes(0x16cc);
+        Mem::write_bytes(&mut t.b, local, &v);
+        t.twin("TkMenuPreSave", 0x008b_50b0, &[], U32, |o| {
+            w(tk::tk_menu_pre_save(o, local, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round29_pre_save_time() {
+    assert_eq!(tk::pre_save_time(0), "000:00:00");
+    assert_eq!(tk::pre_save_time(3_599_999), "999:59:59");
+    assert_eq!(tk::pre_save_time(3_600_000), "999:59:59");
+    assert_eq!(tk::pre_save_time(3723), "001:02:03");
+}

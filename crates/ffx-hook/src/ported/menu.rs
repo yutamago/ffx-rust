@@ -1541,6 +1541,13 @@ ported! {
     TkMn2GetListMax @ 0x008c_1bb0 => extern "C" fn tk_mn2_get_list_max() -> u32 {
         tk::tk_mn2_get_list_max(&mem())
     }
+    /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
+    TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
+        // the original's 0x16cc-byte frame (the save screen's thread)
+        let mut frame = super::StackFrame::<0x5b3>::new();
+        let local = frame.at();
+        tk::tk_menu_pre_save(&mut mem(), local, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMn2BuildItemList_008c2390(kind, arg)`.
     TkMn2BuildItemList_008c2390 @ 0x008c_2390 => extern "C" fn tk_mn2_build_item_list(kind: u32, arg: u32) {
         let mut frame = super::StackFrame::<3>::new();
