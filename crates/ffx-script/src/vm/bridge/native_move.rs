@@ -255,7 +255,8 @@ pub fn native_set_yaw<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 
             call(h, 0x0082_b520, &[c, r]);
         }
     } else if k.wrapping_sub(4) <= 1 {
-        call(h, 0x0086_f4c0, &[w]);
+        let f = h.scratch();
+        super::helpers::atel_set_bind_object(h, w, f);
     }
     x87::load(y)
 }
@@ -620,7 +621,8 @@ pub fn native_set_model<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32
     let pos: Vec<u32> = (0..3)
         .map(|i| x87::store(x87::load(h.read(p + i * 4))))
         .collect();
-    call(h, 0x0087_0b20, &[w, pos[0], pos[1], pos[2], 0]);
+    let f = h.scratch();
+    super::helpers::atel_set_pos_3d(h, w, [pos[0], pos[1], pos[2]], 0, f);
     if h.read::<u16>(c + 0x1a) == 0 {
         if h.read::<u8>(w + 0xaa) == 1 {
             let ch = h.read::<u32>(w + worker::CHAR_HANDLE);
@@ -1099,7 +1101,8 @@ pub fn native_set_pos_0126<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) ->
             MUSIC_IS_25.set(h, 1);
         }
     }
-    call(h, 0x0087_0b20, &[w, cp(x), cp(y), cp(z), 1]);
+    let f = h.scratch();
+    super::helpers::atel_set_pos_3d(h, w, [cp(x), cp(y), cp(z)], 1, f);
     0
 }
 
@@ -1304,7 +1307,8 @@ pub fn worker_detach<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     match h.read::<u8>(w + 0xaa) {
         4 | 5 => {
-            call(h, 0x0086_f4c0, &[w]);
+            let f = h.scratch();
+            super::helpers::atel_set_bind_object(h, w, f);
         }
         1 => {
             if h.read::<u32>(w + 0x9c) != 0 {
@@ -1375,7 +1379,8 @@ pub fn native_set_pitch<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f6
     h.write(p + 0x24, y);
     h.write(p + 0x30, y);
     if h.read::<u8>(w + 0xaa).wrapping_sub(4) <= 1 {
-        call(h, 0x0086_f4c0, &[w]);
+        let f = h.scratch();
+        super::helpers::atel_set_bind_object(h, w, f);
     }
     x87::load(y)
 }

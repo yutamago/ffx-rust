@@ -9486,7 +9486,7 @@
 0x0086f3c0 function AtelSetBattleSceneGroup   # fh v3:bsim1.00 0x0086f350
 0x0086f3d0 function Atel_SetCtrlFlag1325db0    # (on): bit 0 of 0x01325db0 = on != 0 -> old ^ new; name ours; ported in helpers (script round 14)
 0x0086f460 function Atel_SetBindMask           # (n < 0x200): bind-mask bit n set, union 0x01326b94 recomputed; name ours; ported in helpers (script round 16)
-0x0086f4c0 function AtelSetBindObject         # fh v3:exact 0x0086f450
+0x0086f4c0 function AtelSetBindObject         # fh v3:exact 0x0086f450; (worker): +0xaa 4 yiSetRotTransGroup / 5 yiSetRotTransDObj(+0xa8, &(pos block +0x30..+0x38, 0), &(+0..+8, 1)); else eax = block | +0xaa low byte; type 4 reads through 0; ported in helpers (script round 23)
 0x0086f580 function AtelSetCtrlChar              # layout+callees: sorts between AtelSetBindObject and AtelSetCurrentCtrl, and its named callees match the Switch 0x710046fe70 AtelSetCtrlChar's (similarity 0.75: AtelGetBasicWork, AtelUcOff, AtelUcOn); symbols from Fahrenheit's server export
 0x0086f6a0 function Event_SetPlayer              # (worker id): ctx+0x0a = id; copies its position to ctx+0x218 and +0x228
 0x0086f730 function AtelSetCurrentCtrl        # fh v3:bsim1.00 0x0086f6c0
@@ -9526,7 +9526,7 @@
 0x008708e0 function AtelSetNowEventJumpMapNo  # fh switch:bsim1.00 0x7100461a10
 0x00870900 function AtelSetOverlayStatus      # fh v3:bsim1.00 0x008708a0
 0x00870910 function AtelSetPC                    # layout+callees: sorts between AtelSetOverlayStatus and AtelSetPos3d, and its named callees match the Switch 0x71004689c0 AtelSetPC's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
-0x00870b20 function AtelSetPos3d              # (worker, x, y, z, snap): position + model/?camera; player worker updates ctx+0x218/0x228; was Worker_SetPos
+0x00870b20 function AtelSetPos3d              # (worker, x, y, z, snap) -> snap: pos block +0..+8; +0xaa 1 Ch_SetPos3 + Ch_ClothReset(+0x9c), 2 MsCameraSetRect(+0x3c, 1, &(x, y, z, 1)); player worker: ctx +0x218 -> +0x228, +0x218 = pos (w 1), save event +0x10 = Ch_IdGetEncount, AtelSetSaveDicIndex(Ch_IdGetDictionary) (0 without chr); without +0x34 bit 4 or with snap: +0x228 and block +0x10 follow; ctx +2 |= 0x10; was Worker_SetPos; ported in helpers (script round 23)
 0x00870d10 function Atel_SetLevelF74           # (worker, i, v f): +(i + 0x14) * 0x4c = v; name ours; ported in helpers (script round 14)
 0x00870d30 function Script_Op79               # (worker, var, index, value): opcode 79, the worker's vibration curve (+0x44) in an 8 x u16 variable
 0x00870ef0 function AtelSetSaveDicIndex       # fh v3:exact 0x00870e90; ported in helpers (script round 19)

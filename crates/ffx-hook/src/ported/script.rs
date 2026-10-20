@@ -6648,4 +6648,16 @@ ported! {
     Atel_ShareTurnBlock @ 0x0087_1090 => extern "C" fn h_871090(w: u32, level: u32, mask: u32, mode: u32) -> u32 {
         hp::atel_share_turn_block(&mut mem(), w, level, mask, mode)
     }
+    /// `AtelSetBindObject(worker)`: the rotation and translation are the
+    /// original's locals.
+    AtelSetBindObject @ 0x0086_f4c0 => extern "C" fn h_86f4c0(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_set_bind_object(&mut mem(), w, frame.at())
+    }
+    /// `AtelSetPos3d(worker, x, y, z, snap)`: the camera rectangle is the
+    /// original's local.
+    AtelSetPos3d @ 0x0087_0b20 => extern "C" fn h_870b20(w: u32, x: u32, y: u32, z: u32, snap: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_set_pos_3d(&mut mem(), w, [x, y, z], snap, frame.at())
+    }
 }

@@ -5576,3 +5576,174 @@ fn round23_helpers_match_the_original() {
     eprintln!("{compared} round-23 cases compared ({real} real workers)");
     assert!(real > 0, "no worker with move blocks");
 }
+
+/// `AtelSetBindObject` and `AtelSetPos3d` on worker `w` as it is, with
+/// random floats in its position block and random arguments.
+fn r23_pos(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: u32, round: u32, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let kind = Mem::read::<u8>(b, Mem::read::<u32>(b, w));
+    if kind != 4 {
+        let p = w + if kind.wrapping_sub(5) < 2 {
+            0x284
+        } else {
+            0x558
+        };
+        for k in 0..0x10 {
+            if rng.below(3) == 0 {
+                poke(a, b, p + 4 * k, stored_value(rng));
+            }
+        }
+        let frame = run::NativeHost::scratch(&mut Run(b));
+        // yiSetRotTransGroup's EAX is a pointer into its own frame (the
+        // matrix work): equal unless both are stack addresses
+        let what = format!("AtelSetBindObject {what}");
+        clear_stacks(a, b);
+        let ra = orig(a, 0x0086_f4c0, &[w]);
+        let rb = hp::atel_set_bind_object(&mut Run(b), w, frame);
+        let stack = a.stack_range();
+        assert!(
+            ra == rb || stack.contains(&ra) && stack.contains(&rb),
+            "{what}: EAX {ra:#x} vs {rb:#x}"
+        );
+        native_no_diff(a, b, &what);
+    }
+    let pos = [stored_value(rng), stored_value(rng), stored_value(rng)];
+    let snap = [0, 1, 0, u32::MAX][(round % 4) as usize];
+    let frame = run::NativeHost::scratch(&mut Run(b));
+    r22_case(
+        a,
+        b,
+        0x0087_0b20,
+        &[w, pos[0], pos[1], pos[2], snap],
+        true,
+        &format!("AtelSetPos3d {what} pos {pos:x?} snap {snap}"),
+        |r| hp::atel_set_pos_3d(r, w, pos, snap, frame),
+    );
+}
+
+/// A ctrl work for the image: `g_ScriptContext` pointed at a zeroed one
+/// whose player worker id (`+0xa`) is `player`.
+fn r23_ctx(a: &mut Oracle, b: &mut Oracle, player: u16) {
+    let c = alloc_both(a, b, 0x300);
+    poke(a, b, c + 0xa, player);
+    let at = a.rebase(0x0132_6b28);
+    poke(a, b, at, c);
+}
+
+/// Round 23 b: `AtelSetBindObject` and `AtelSetPos3d` on synthetic
+/// workers of every binding (the image), then on every actor of every ctrl
+/// work in use, with `+0x34` bit 4 both ways (`FFX_SNAPSHOT`).
+#[test]
+#[allow(clippy::too_many_lines)] // the image part, then the snapshot part
+fn round23b_helpers_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_023b);
+    let mut compared = 0;
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r23_ctx(&mut a, &mut b, 3);
+        for round in 0..96_u32 {
+            let kind = [0, 1, 5, 6, 4, 7][(round % 6) as usize];
+            let w = r23_worker(&mut a, &mut b, &mut rng, kind);
+            // +0xaa: none, the character (none set), the camera, the map
+            // objects (none loaded on the image)
+            let bind = [0u8, 1, 2, 3, 4, 5][(round / 6 % 6) as usize];
+            poke(&mut a, &mut b, w + 0xaa, bind);
+            poke(
+                &mut a,
+                &mut b,
+                w + 0xa8,
+                u16::try_from(rng.below(4)).unwrap(),
+            );
+            poke(&mut a, &mut b, w + 0x9c, 0u32);
+            poke(&mut a, &mut b, w + 0x3c, rng.below(2));
+            // the player, one only its low byte matches, another
+            let player = [3u16, 0x103, 7][(round % 3) as usize];
+            poke(&mut a, &mut b, w + 0x2e, player);
+            poke(
+                &mut a,
+                &mut b,
+                w + 0x34,
+                u8::try_from(rng.below(256)).unwrap(),
+            );
+            let ctx = Mem::read::<u32>(&b, b.rebase(0x0132_6b28));
+            for k in 0..8 {
+                poke(&mut a, &mut b, ctx + 0x218 + 4 * k, stored_value(&mut rng));
+            }
+            r23_pos(
+                &mut a,
+                &mut b,
+                &mut rng,
+                w,
+                round,
+                &format!("image type {kind} bind {bind} round {round}"),
+            );
+            compared += 2;
+        }
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let mut binds = [0u32; 8];
+    let mut players = 0;
+    for c in ctrls {
+        let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        let ws = actors(&mut a, &mut b);
+        for (i, &w) in ws.iter().enumerate().take(24) {
+            let bind = Mem::read::<u8>(&b, w + 0xaa);
+            binds[usize::from(bind.min(7))] += 1;
+            let ctx = Mem::read::<u32>(&b, b.rebase(0x0132_6b28));
+            let chr = Mem::read::<u32>(&b, w + 0x9c);
+            let player = Mem::read::<u16>(&b, w + 0x2e) == Mem::read::<u16>(&b, ctx + 0xa);
+            for round in 0..4_u32 {
+                if player && chr != 0 {
+                    // the character's encounter (bits 7-8) and dictionary
+                    // (bits 11-12) ids, different from each other
+                    players += 1;
+                    let pid = Mem::read::<u32>(&b, chr + 0x828) & !0x1980;
+                    let pid = pid | (round & 3) << 7 | ((round + 1) & 3) << 11;
+                    poke(&mut a, &mut b, chr + 0x828, pid);
+                }
+                if round == 3 && bind.wrapping_sub(4) < 2 {
+                    // an object id only its low byte matches
+                    let id = Mem::read::<u16>(&b, w + 0xa8);
+                    poke(&mut a, &mut b, w + 0xa8, id | 0x100);
+                }
+                let f = Mem::read::<u8>(&b, w + 0x34);
+                poke(
+                    &mut a,
+                    &mut b,
+                    w + 0x34,
+                    if round < 2 { f | 0x10 } else { f & !0x10 },
+                );
+                r23_pos(
+                    &mut a,
+                    &mut b,
+                    &mut rng,
+                    w,
+                    round,
+                    &format!("ctrl {c:#x} worker {i} bind {bind} round {round}"),
+                );
+                compared += 2;
+                if player && chr != 0 && round == 2 {
+                    // the player without a character: dictionary index 0
+                    poke(&mut a, &mut b, w + 0x9c, 0u32);
+                    let what = format!("ctrl {c:#x} worker {i} without its character");
+                    r23_pos(&mut a, &mut b, &mut rng, w, round, &what);
+                    poke(&mut a, &mut b, w + 0x9c, chr);
+                    compared += 2;
+                }
+            }
+        }
+    }
+    eprintln!("{compared} round-23b cases compared (bindings {binds:?}, {players} on the player)");
+    assert!(players > 0, "no player worker with a character");
+}

@@ -2534,6 +2534,28 @@ queues the pending ones with a fade of 0xf0 frames (0x78 with flag
 checks them on synthetic workers of every type and on the snapshots' real
 workers (those whose level blocks point at their own blocks).
 
+`AtelSetBindObject` (`0x0086f4c0`) moves the map object a worker is bound
+to (`+0xaa` 4: the group `+0xa8`, `yiSetRotTransGroup`; 5: the object
+`+0xa8`, `yiSetRotTransDObj`) to its position block (`+0x284` for types 5
+and 6, `+0x558` otherwise): rotation `+0x30`..`+0x38` with w 0, translation
+`+0`..`+8` with w 1, both built in the original's frame. Its `EAX` is that
+call's (a pointer into `yiSetRotTransGroup`'s own frame), else the block
+pointer with `+0xaa` in the low byte; type 4 workers have no block and the
+original reads through 0. `AtelSetPos3d` (`0x00870b20`, `(worker, x, y, z,
+snap)`, returns `snap`) writes the block's position, then by `+0xaa`: 1 the
+character (`+0x9c`) `Ch_SetPos3` and `Ch_ClothReset`, 2 the camera
+`MsCameraSetRect(+0x3c, 1, &(x, y, z, 1))`. For the player worker (`+0x2e`
+= the ctrl work's `+0xa`) the ctrl work's position `+0x218` (w `+0x224`)
+moves to `+0x228` and becomes the block's (w 1), and the save event's
+encounter byte (`+0x10`) and `AtelSetSaveDicIndex` take the character's
+PID fields (`Ch_IdGetEncount`, `Ch_IdGetDictionary`; 0 without one).
+Without the worker's `+0x34` bit 4, or with `snap`, the previous position
+(`+0x228`, w 1) and the block's `+0x10`..`+0x18` follow the new one. The
+ctrl work's `+2` bit 4 is set. The natives that called both through the
+original call the Rust ones, with the native scratch as the frame.
+`round23b_helpers_match_the_original` covers them (character, map-group
+and camera bindings come from the snapshots).
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

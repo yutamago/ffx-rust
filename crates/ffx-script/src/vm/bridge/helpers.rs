@@ -1923,3 +1923,143 @@ pub fn atel_add_sep_load(m: &mut impl Mem, id: u32, flags: u32) -> u32 {
     m.write(count, n + 1);
     0
 }
+
+/// The worker's position block: `+0x284` for types 5 and 6, `+0x558`
+/// otherwise (`AtelGetPosWorkAdrs`), and 0 for type 4.
+fn pos_block(m: &impl Mem, w: u32) -> u32 {
+    match kind(m, w) {
+        4 => 0,
+        5 | 6 => w.wrapping_add(0x284),
+        _ => w.wrapping_add(0x558),
+    }
+}
+
+const YI_SET_ROT_TRANS_GROUP: u32 = 0x0090_a830;
+const YI_SET_ROT_TRANS_DOBJ: u32 = 0x0090_a750;
+
+/// `AtelSetBindObject(worker)` (`0x0086f4c0`): the map object the worker
+/// is bound to (`+0xa8`, `u16`; `+0xaa` 4 a group, 5 one object) gets the
+/// position block's rotation (`+0x30`..`+0x38`, w 0) and translation
+/// (`+0`..`+8`, w 1) through `yiSetRotTransGroup`/`yiSetRotTransDObj`,
+/// built in `frame` (32 bytes: the original's locals). Returns that
+/// call's `EAX`, else the block pointer with `+0xaa` in its low byte.
+/// Type 4 workers have no block (the original reads through 0).
+pub fn atel_set_bind_object(h: &mut impl ffx_bridge::Host, w: u32, frame: u32) -> u32 {
+    let p = pos_block(h, w);
+    let (rot, trans) = (frame, frame + 0x10);
+    for k in 0..3 {
+        copy_f32(h, p.wrapping_add(0x30 + 4 * k), rot + 4 * k);
+    }
+    h.write(rot + 0xc, 0_u32);
+    for k in 0..3 {
+        copy_f32(h, p.wrapping_add(4 * k), trans + 4 * k);
+    }
+    h.write(trans + 0xc, x87::store(1.0));
+    let bind = h.read::<u8>(w + 0xaa);
+    let f = match bind {
+        4 => YI_SET_ROT_TRANS_GROUP,
+        5 => YI_SET_ROT_TRANS_DOBJ,
+        _ => return p & !0xff | u32::from(bind),
+    };
+    let id = u32::from(h.read::<u16>(w + 0xa8));
+    host_call(h, f, &[id, rot, trans])
+}
+
+const MS_CAMERA_SET_RECT: u32 = 0x007b_f940;
+const CH_SET_POS3: u32 = 0x0082_b480;
+const CH_CLOTH_RESET: u32 = 0x0082_4650;
+const CH_ID_GET_ENCOUNT: u32 = 0x0083_d820;
+const CH_ID_GET_DICTIONARY: u32 = 0x0083_d7a0;
+const TK_GET_SAVE_EVENT_ADDRESS: u32 = 0x0088_c830;
+
+/// `AtelSetPos3d(worker, x, y, z, snap)` (`0x00870b20`): the position
+/// block's `+0`..`+8` = (x, y, z) (`f32`), then by `+0xaa`: 1 the
+/// character (`+0x9c`, when set) `Ch_SetPos3` and `Ch_ClothReset`, 2 the
+/// camera `MsCameraSetRect(+0x3c, 1, &(x, y, z, 1))` (in `frame`, 16
+/// bytes). For the player worker (`+0x2e` = the ctrl work's `+0xa`) the
+/// ctrl work's position (`+0x218`, w `+0x224`) moves to the previous one
+/// (`+0x228`) and becomes the block's, w 1; without `+0x34` bit 4, or with
+/// `snap`, the previous one too; the save event's encounter byte (`+0x10`)
+/// and dictionary index come from the character (0 without one). Without
+/// bit 4, or with `snap`, the block's `+0x10`..`+0x18` = the position too.
+/// The ctrl work's `+2` bit 4 is set. Returns `snap` (the header's
+/// pointer with its type in the low byte for type 4, which is left alone).
+pub fn atel_set_pos_3d(
+    h: &mut impl ffx_bridge::Host,
+    w: u32,
+    pos: [u32; 3],
+    snap: u32,
+    frame: u32,
+) -> u32 {
+    let hdr = h.read::<u32>(w);
+    let t = h.read::<u8>(hdr);
+    if t == 4 {
+        return hdr & !0xff | u32::from(t);
+    }
+    let p = pos_block(h, w);
+    if p == 0 {
+        return hdr & !0xff | u32::from(t.wrapping_sub(5));
+    }
+    let [x, y, z] = pos.map(|v| x87::store(x87::load(v)));
+    h.write(p, x);
+    h.write(p + 4, y);
+    h.write(p + 8, z);
+    let one = x87::store(1.0);
+    match h.read::<u8>(w + 0xaa) {
+        1 => {
+            let c = h.read::<u32>(w + 0x9c);
+            if c != 0 {
+                host_call(h, CH_SET_POS3, &[c, x, y, z]);
+                let c = h.read::<u32>(w + 0x9c);
+                host_call(h, CH_CLOTH_RESET, &[c]);
+            }
+        }
+        2 => {
+            h.write(frame, [x, y, z, one]);
+            let cam = h.read::<u32>(w + 0x3c);
+            host_call(h, MS_CAMERA_SET_RECT, &[cam, 1, frame]);
+        }
+        _ => {}
+    }
+    // the original tests +0x34 twice, around the save-event calls
+    let keep = |h: &mut _| ffx_bridge::Mem::read::<u8>(h, w + 0x34) & 0x10 != 0 && snap == 0;
+    let mut ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u16>(w + 0x2e) == h.read::<u16>(ctx + 0xa) {
+        for k in 0..4 {
+            copy_f32(h, ctx + 0x218 + 4 * k, ctx + 0x228 + 4 * k);
+        }
+        for k in 0..3 {
+            copy_f32(h, p + 4 * k, ctx + 0x218 + 4 * k);
+        }
+        h.write(ctx + 0x224, one);
+        if !keep(h) {
+            for k in 0..3 {
+                copy_f32(h, ctx + 0x218 + 4 * k, ctx + 0x228 + 4 * k);
+            }
+            h.write(ctx + 0x234, one);
+        }
+        let c = h.read::<u32>(w + 0x9c);
+        let dic = if c == 0 {
+            let e = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            h.write(e + 0x10, 0_u8);
+            0
+        } else {
+            #[allow(clippy::cast_possible_truncation)] // the original stores BL
+            let enc = host_call(h, CH_ID_GET_ENCOUNT, &[c]) as u8;
+            let e = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            h.write(e + 0x10, enc);
+            let c = h.read::<u32>(w + 0x9c);
+            host_call(h, CH_ID_GET_DICTIONARY, &[c])
+        };
+        atel_set_save_dic_index(h, dic);
+        ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    }
+    if !keep(h) {
+        for k in 0..3 {
+            copy_f32(h, p + 4 * k, p + 0x10 + 4 * k);
+        }
+    }
+    let f = h.read::<u8>(ctx + 2);
+    h.write(ctx + 2, f | 0x10);
+    snap
+}
