@@ -6611,3 +6611,215 @@ fn cam_apply_snapshot() {
     let mut rng = Xorshift(0x5eed_0f19);
     cam_apply_cases(&mut a, &mut b, &mut rng, 100);
 }
+
+/// A stand-in for a function returning a float in `ST0`: `fld dword
+/// [slot]; ret`.
+fn st0_stub(a: &mut Oracle, b: &mut Oracle, sym: u32, slot: u32) {
+    let mut c = vec![0xd9, 0x05];
+    c.extend(slot.to_le_bytes());
+    c.push(0xc3);
+    redirect_to(a, b, sym, &c);
+}
+
+/// `Sg_PlayerSetControlAngle` with `Sg_CameraGetYaw` through `fcall` (its
+/// `ST0`): a stand-in loading a random yaw, or (`real`) the original on
+/// the snapshot's camera.
+fn control_angle_cases(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rounds: u32,
+    real: bool,
+) {
+    use ffx_sg::player::bridge as p;
+    let slot = alloc(a, b, 4);
+    if !real {
+        st0_stub(a, b, p::SG_CAMERA_GET_YAW, slot);
+    }
+    let fcall = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        let r = m
+            .call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"));
+        let st0 = r.st0_f64().unwrap_or_else(|| panic!("{f:#x}: no ST0"));
+        let pop = m.rebase(POP_STUB);
+        m.call(pop, Conv::Cdecl, &[]).unwrap();
+        st0
+    };
+    for _ in 0..rounds {
+        let deg = loop {
+            let d = if rng.below(3) == 0 {
+                rng.float()
+            } else {
+                float_within(rng, 2000.0)
+            };
+            // Angle_Wrap steps by 2 pi: no infinity, nothing huge
+            if f32::from_bits(d).is_nan() || f32::from_bits(d).abs() < 1.0e6 {
+                break d;
+            }
+        };
+        put(a, b, slot, rng.float());
+        set(a, b, p::STICK_DIR, f32::from_bits(rng.float()));
+        set(a, b, p::DIR_OFFSET, f32::from_bits(rng.float()));
+        set(a, b, p::CAMERA_YAW, f32::from_bits(rng.float()));
+        twin("Sg_PlayerSetControlAngle", a, b, 0x0082_d950, &[deg], |m| {
+            p::set_control_angle(m, f32::from_bits(deg), fcall);
+        });
+    }
+}
+
+#[test]
+fn control_angle_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1001);
+    control_angle_cases(&mut a, &mut b, &mut rng, 400, false);
+}
+
+#[test]
+fn control_angle_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1002);
+    control_angle_cases(&mut a, &mut b, &mut rng, 40, true);
+    control_angle_cases(&mut a, &mut b, &mut rng, 200, false);
+}
+
+/// A recording stand-in for a thiscall original without stack
+/// arguments (slot `k`): logs `sym` and `ecx` like [`recorder`], returns
+/// slot `k`'s answer.
+fn this_recorder(a: &mut Oracle, b: &mut Oracle, k: u32, sym: u32, ret: u32) {
+    for o in [a, b] {
+        let log = o.rebase(REC_LOG);
+        let mut c = vec![0xa1];
+        c.extend(log.to_le_bytes()); // mov eax, [log]
+        c.extend([0xc1, 0xe0, 0x05]); // shl eax, 5
+        c.push(0x05);
+        c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+        c.extend([0xc7, 0x00]);
+        c.extend(sym.to_le_bytes()); // mov [eax], sym
+        c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        let slot = o.rebase(REC_RETS) + 4 * k;
+        o.write(slot, &ret.to_le_bytes()).unwrap();
+        c.push(0xa1);
+        c.extend(slot.to_le_bytes()); // mov eax, [slot]
+        c.push(0xc3);
+        let code = o.rebase(REC_CODE) + 0x60 * k;
+        o.write(code, &c).unwrap();
+        let at = o.rebase(sym);
+        let mut j = vec![0xe9];
+        j.extend(code.wrapping_sub(at + 5).to_le_bytes());
+        o.write(at, &j).unwrap();
+    }
+}
+
+/// `FFXApplication::resize` (thiscall) over recorders: the scene's
+/// resize (cdecl), then the base class's with `this` in `ecx`, whose
+/// `eax` comes back.
+fn app_resize_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::app::bridge as app;
+    recorder(a, b, 127, app::SCENE_RESIZE, 0, 0);
+    this_recorder(a, b, 128, app::APPLICATION_RESIZE, 0);
+    let log = a.rebase(REC_LOG);
+    let call = &mut |m: &mut Oracle, f: u32, args: &[u32]| {
+        m.call(f, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    let thiscall = &mut |m: &mut Oracle, f: u32, this: u32, args: &[u32]| {
+        m.call(f, Conv::Thiscall(this), args)
+            .unwrap_or_else(|e| panic!("{f:#x}: {e}"))
+            .eax
+    };
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        let ret = [0, 1, rng.next()][rng.below(3) as usize];
+        let slot = a.rebase(REC_RETS) + 4 * 128;
+        put(a, b, slot, ret);
+        let this = rng.next();
+        let at = a.rebase(0x0042_f9a0);
+        let r = a
+            .call(at, Conv::Thiscall(this), &[])
+            .unwrap_or_else(|e| panic!("FFXApplication_resize: {e}"));
+        let eax = app::resize(b, this, call, thiscall);
+        assert_eq!(r.eax, eax, "FFXApplication_resize: eax");
+        assert_eq!(Mem::read::<u32>(&*a, log), 2, "two calls");
+        assert_eq!(a.diff(b).unwrap(), [], "FFXApplication_resize: memory");
+    }
+}
+
+#[test]
+fn app_resize_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1003);
+    app_resize_cases(&mut a, &mut b, &mut rng, 50);
+}
+
+#[test]
+fn app_resize_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1004);
+    app_resize_cases(&mut a, &mut b, &mut rng, 50);
+}
+
+/// `Cam_SetScreenVector` on screens 0..=2 and others, ints of every size.
+fn screen_vector_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::camera::bridge as c;
+    for _ in 0..rounds {
+        let screen = match rng.below(6) {
+            0 => 3,
+            1 => rng.next(),
+            k => k - 2,
+        };
+        let xyzw: [i32; 4] = std::array::from_fn(|_| {
+            if rng.below(3) == 0 {
+                rng.next().cast_signed()
+            } else {
+                rng.int()
+            }
+        });
+        let v = rng.next();
+        let args = [
+            screen,
+            xyzw[0].cast_unsigned(),
+            xyzw[1].cast_unsigned(),
+            xyzw[2].cast_unsigned(),
+            xyzw[3].cast_unsigned(),
+            v,
+        ];
+        let at = a.rebase(0x007b_c890);
+        let r = a
+            .call(at, Conv::Cdecl, &args)
+            .unwrap_or_else(|e| panic!("Cam_SetScreenVector: {e}"));
+        let got = c::set_screen_vector(b, screen, xyzw, v);
+        if screen <= 2 {
+            assert_eq!(r.eax, got, "Cam_SetScreenVector: eax");
+        }
+        assert_eq!(a.diff(b).unwrap(), [], "Cam_SetScreenVector: memory");
+    }
+}
+
+#[test]
+fn screen_vector_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1005);
+    screen_vector_cases(&mut a, &mut b, &mut rng, 400);
+}
+
+#[test]
+fn screen_vector_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x5eed_1006);
+    screen_vector_cases(&mut a, &mut b, &mut rng, 200);
+}

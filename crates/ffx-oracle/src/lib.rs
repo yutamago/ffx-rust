@@ -132,6 +132,24 @@ pub struct Ret {
     pub st0_raw: Option<[u8; 10]>,
 }
 
+impl Ret {
+    /// `ST0` as `fstp qword` stores it, NaN payloads kept (quieted): what
+    /// a game-side `f64` call (`call_cdecl_f64` in `ffx-hook`) returns, for
+    /// a bridge's float-call callback in a test.
+    #[must_use]
+    pub fn st0_f64(&self) -> Option<f64> {
+        let raw = self.st0_raw?;
+        let mant = u64::from_le_bytes(raw[..8].try_into().ok()?);
+        let se = u16::from_le_bytes([raw[8], raw[9]]);
+        if se & 0x7fff == 0x7fff && mant << 1 != 0 {
+            let sign = u64::from(se >> 15) << 63;
+            let frac = (mant >> 11) & ((1 << 52) - 1);
+            return Some(f64::from_bits(sign | 0x7ff8 << 48 | frac));
+        }
+        Some(f80_to_f64(&raw))
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Stub {
     Malloc,

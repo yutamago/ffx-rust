@@ -2148,6 +2148,23 @@ ported! {
     Sg_ControlPlayer @ 0x0082_d180 => extern "C" fn sg_control_player() {
         player::bridge::control_player(&mut mem(), &crt_vector_trig, &crt_atan2);
     }
+    /// `Sg_PlayerSetControlAngle(deg)`: `Sg_CameraGetYaw`'s `ST0` through the game.
+    Sg_PlayerSetControlAngle @ 0x0082_d950 => extern "C" fn sg_player_set_control_angle(deg: f32) {
+        player::bridge::set_control_angle(&mut mem(), deg, &mut |_, f, a| super::call_cdecl_f64(f, a));
+    }
+    /// `FFXApplication::resize(this)`: the base class's through the game.
+    FFXApplication_resize @ 0x0042_f9a0 => extern "thiscall" fn ffx_application_resize(this: u32) -> u32 {
+        ffx_sg::app::bridge::resize(
+            &mut mem(),
+            this,
+            &mut |_, f, a| super::call_cdecl(f, a),
+            &mut |_, f, t, a| super::call_thiscall(f, t, a),
+        )
+    }
+    /// `Cam_SetScreenVector(screen, x, y, z, w, v)`.
+    Cam_SetScreenVector @ 0x007b_c890 => extern "C" fn cam_set_screen_vector(screen: u32, x: i32, y: i32, z: i32, w: i32, v: u32) -> u32 {
+        camera::bridge::set_screen_vector(&mut mem(), screen, [x, y, z, w], v)
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

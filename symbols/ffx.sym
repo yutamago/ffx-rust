@@ -73,6 +73,7 @@
 0x0042f8e0 function FFXApplication_initScene  # fh v3:bsim1.00 0x0042f9c0 FFXApplication::initScene
 0x0042f8f0 function FFXApplication_prePhyreInit # fh switch:bsim1.00 0x7100000fa0 FFXApplication::prePhyreInit
 0x0042f930 function FFXApplication_render        # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100000ba0 FFXApplication::render, 2 votes, round 1
+0x0042f9a0 function FFXApplication_resize      # ours: slot 9 of FFXApplication_vftable (0x00b0d9bc), right after FFXApplication_render as the class's methods sort; thiscall(this): 0x00642cd0 (PhyreScene_resize on the scene 0x00ccb9d8), then a tail jump to the base class's resize 0x0062c260 (fastcall this: viewport, render targets), whose eax it returns; ported (ffx_sg::app, main round 16)
 0x0042fa70 function PostReset                 # fh v3:exact 0x0042fb50
 0x0042fb20 function Phyre_PhyreFree           # fh v3:exact 0x0042fc00 Phyre::PhyreFree
 0x0042fb40 function Phyre_PhyreMalloc         # fh v3:exact 0x0042fc20 Phyre::PhyreMalloc
@@ -6522,6 +6523,7 @@
 0x007bc720 function MsScreenResetOffset       # fh v3:exact 0x007bc6a0
 0x007bc7f0 function MsSetScreen               # fh v3:exact 0x007bc770
 0x007bc870 function Cam_SetScreenCameraNo_007bc870 # ours: (screen, camera): screen <= 2 (unsigned): byte +0xc1 (the camera Cam_SetScreenCamera sets) of screen 0x01137000 + screen*0x1c0 = (u8)camera; masked copy of Cam_SetScreenCameraOn (+0xc0); caller Native_6075; ported (ffx_battle::camera, battle round 29)
+0x007bc890 function Cam_SetScreenVector        # ours: cdecl(screen, x, y, z, w, v): screen <= 2 (unsigned): f32 of the four i32s (fild) into g_Screens[screen] +0x80..+0x8c, copied through g_Ee_GprMove (0x00c8f588) into +0x40..+0x4c, v into +0xc4, eax v; else nothing (eax the caller's); caller Native_604e; ported (ffx_sg::camera, main round 16)
 0x007bc930 function Cam_SetScreenCameraOn     # (screen, on): byte +0xc0 of g_Screens[screen] for screens 0..2 (MsScreen's per-frame code takes g_Camera from the screen's camera +0xc1 when it is set); caller Native_604e; name ours; ported (ffx_sg::camera)
 0x007bc950 function Cam_SetScreenCamera       # (screen, on, camera): bytes +0xc0 and +0xc1 (the camera, g_DebugCamera for screen 0) of g_Screens[screen] for screens 0..2; caller Native_604f; name ours; ported (ffx_sg::camera)
 0x007bc980 function Cam_Apply                    # cdecl(camera): field of view from the camera's screen depth (448 / (2 d), atan) into the renderer, then Render_SetView(0x02311440); Cam_Update calls it only for channel cameras, not the override; exactly: screen 0x01137010 + 0x1c0 cam: h = f32(512 / (2 +0)), w = f32(448 / (2 +4)), fov = f32(2 f32(atan(w / f32 +0xc))) (atan(0.75 w / c) when 0x01136fc0 is 2), aspect f32(h / w) to graphicCameraSetFOVy/AspectRatio by pointer; magic 0x98/0x259 on camera 1 with byte 0x01137280 = 1: graphicCameraSetWorldMatrixSub(g_CameraMatrix, 1); +0x78 == 256: SplitScreenStart(0), camera 1 SplitScreenSetCamera(m); else 0x00638d20(); then graphicCameraSetWorldMatrix(m); no caller reads eax; ported in ffx_sg::camera (main round 15)
@@ -7704,6 +7706,7 @@
 0x0082d880 function Sg_GetPlayerPos           # fh v3:exact 0x0082d900
 0x0082d8d0 function Sg_PlayerInitDefault      # (): Sg_PlayerInitAll, then Sg_PlayerSetSpeed(1, 16), (2, 38), (0x12, 20) from .rdata; caller Sg_EventjumpInit; name ours; ported (ffx_sg::state)
 0x0082d910 function Sg_PlayerInitAll          # fh v3:bsim1.00 0x0082d990
+0x0082d950 function Sg_PlayerSetControlAngle   # ours (sorts between Sg_PlayerInitAll and Sg_PlayerSetDirFix as the Switch player file's names): cdecl(f32 deg): g_PlayerCameraYaw = f32 Sg_CameraGetYaw() (ST0), g_PlayerDirOffset = f32(Angle_Wrap(f32(deg * 3.141592 / 180)) + g_PlayerStickDir); caller Native_SetControlAngle; ported (ffx_sg::player, main round 16)
 0x0082d990 function Sg_PlayerSetDirFix        # (on, degrees): byte 0x013007c4, f32 0x013007c8 = Angle_Wrap(deg * pi / 180), read by Sg_ControlPlayer; Switch name by position (Player functions) and arguments
 0x0082d9d0 function Sg_PlayerSetDiving           # layout: the two unnamed functions after Sg_PlayerSetDirFix take the Switch player file's names sorting there: Sg_PlayerSetDiving (12 bytes; ours 13, stores byte 0x013007c5) and Sg_PlayerSetSpeed (72; ours 70)
 0x0082d9e0 function Sg_PlayerSetSpeed            # layout: second of the two (see Sg_PlayerSetDiving)
