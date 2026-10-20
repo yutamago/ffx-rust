@@ -13257,6 +13257,215 @@ pub mod bridge {
         }
         eax
     }
+    /// `Pad_UpdateAnalog(work, raw, buttons)` (`0x00889570`, own name;
+    /// caller `0x00888f90`): a pad work record's analog state from a raw
+    /// PS2 pad packet. `n = (raw[1] & 0xf) * 2 - 2` (0 counts as -1) words
+    /// of analog data follow at `raw + 4`; after `Pad_ResetAnalog(work)` up
+    /// to four of those bytes are copied to `+0x84` (and skipped), then
+    /// `+0x84..+0x87` become `Pad_StickToByte` of
+    /// `inputGetCurrDeviceStickInfo()`'s `f32`s 2, 3, 0, 1. The pressure
+    /// bytes `+0x90`/`+0x91`: with data left, `Compute_008889e0(8..11,
+    /// byte)` halved (truncated) for the buttons `0x2000` (`+ 0x80`),
+    /// `0x8000` (`0x7f -`), `0x1000` (`0x7f -`), `0x4000` (`+ 0x80`), the
+    /// next four bytes in that order; without, the fixed `0xbf`, `0x40`,
+    /// `0x40`, `0xbf`. Finally the stick bits of `u16 +0x9a`: `+0x86 <
+    /// 0x10` sets `0x8000` (clearing `0x2000`), `> 0xf0` sets `0x2000`
+    /// (clearing `0xa000`); `+0x87 > 0xf0` sets `0x4000` (clearing
+    /// `0x1000`), `< 0x10` sets `0x1000` (clearing `0x4000`).
+    pub fn pad_update_analog<M: Mem>(
+        mem: &mut M,
+        work: u32,
+        raw: u32,
+        buttons: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let stick_info = mem.rebase(0x0063_0c90);
+        let stick = call(mem, stick_info, &[]);
+        let mut data = raw.wrapping_add(4);
+        let mut left = i32::from(mem.read::<u8>(raw.wrapping_add(1)) & 0xf) * 2 - 2;
+        if left == 0 {
+            left = -1;
+        }
+        let reset = mem.rebase(0x0088_9000);
+        call(mem, reset, &[work]);
+        if left > 0 {
+            for i in 0..4 {
+                let b = mem.read::<u8>(data);
+                mem.write(work.wrapping_add(0x84 + i), b);
+                left -= 1;
+                data = data.wrapping_add(1);
+                if left <= 0 {
+                    break;
+                }
+            }
+        }
+        let to_byte = mem.rebase(0x0088_9aa0);
+        for (k, axis) in (0u32..).zip([2u32, 3, 0, 1]) {
+            // fld/fstp: the axis passed as loaded
+            let v = mem.read::<u32>(stick.wrapping_add(axis * 4));
+            let v = ffx_bridge::x87::round_trip(f32::from_bits(v)).to_bits();
+            let b = call(mem, to_byte, &[v]).to_le_bytes()[0];
+            mem.write(work.wrapping_add(0x84 + k), b);
+        }
+        let pressure = mem.rebase(0x0088_89e0);
+        // (button, byte offset, kind, flipped): flipped bytes are 0x7f - p/2
+        let keys = [
+            (0x2000, 0x90, 8, false),
+            (0x8000, 0x90, 9, true),
+            (0x1000, 0x91, 10, true),
+            (0x4000, 0x91, 11, false),
+        ];
+        for (k, (bit, at, kind, flipped)) in (0u32..).zip(keys) {
+            if buttons & bit == 0 {
+                continue;
+            }
+            let v = if left > 0 {
+                let p = u32::from(mem.read::<u8>(data.wrapping_add(k)));
+                let half = call(mem, pressure, &[kind, p]).cast_signed() / 2;
+                let half = half.to_le_bytes()[0];
+                if flipped {
+                    0x7fu8.wrapping_sub(half)
+                } else {
+                    half.wrapping_add(0x80)
+                }
+            } else if flipped {
+                0x40
+            } else {
+                0xbf
+            };
+            mem.write(work.wrapping_add(at), v);
+        }
+        let flags = work.wrapping_add(0x9a);
+        let x = mem.read::<u8>(work.wrapping_add(0x86));
+        if x < 0x10 {
+            let f = mem.read::<u16>(flags) & 0xdfff | 0x8000;
+            mem.write(flags, f);
+        } else if x > 0xf0 {
+            let f = mem.read::<u16>(flags) & 0x5fff | 0x2000;
+            mem.write(flags, f);
+        }
+        let y = mem.read::<u8>(work.wrapping_add(0x87));
+        if y > 0xf0 {
+            let f = mem.read::<u16>(flags) & 0xefff | 0x4000;
+            mem.write(flags, f);
+        } else if y < 0x10 {
+            let f = mem.read::<u16>(flags) & 0xbfff | 0x1000;
+            mem.write(flags, f);
+        }
+    }
+
+    /// `MenuSaveLoad_DrawSlotRow(window, x, y, row, mode)` (`0x008b4b70`,
+    /// own name; caller `0x008b4a50`, the save/load window's draw): one of
+    /// the 99 save slots. `row` moves by the window's i16 `+0x32` (modes 0
+    /// and 2) or `+0x34` (mode 1); mode 0 also moves `y` by `i16 +0x46 *
+    /// -48 / 4096` (truncated). For `row` in `0..u16 +0x30` (signed), with
+    /// `state = g_TkSaveSlots[row]` and `dim` (`state` not 0..2 or 4 when
+    /// byte `0x0186628a` is 1, else `state != 1`): the frame
+    /// `0x008f9b60(x, y, 0x7a, 0x27, 0x80372d22, 0x80524641)`, shapes
+    /// `0x10f` at `(x, y)` and `0x10c` at `(x + 0x1bd, y)` around
+    /// `TODrawBoxXYWHC2(x + 0x7a, y, 0x143, 0x27, 0x8048211d, 0x805c393c)`,
+    /// the slot number `sprintf(digits, "%02d", row + 1)` through
+    /// `0x00901f80(digits, x + 0x5a, y + 2, 0x25)`, and the kind text
+    /// `MenuSave_KindText(state, TkMenuGetSaveFileInfo(row))`: in Japanese
+    /// (`TOGetFFXLangJmp() == 0`) at `x + 0x92` (`0x00901d10(.., dim,
+    /// state)` for a used slot, else `0x00901cb0(.., dim)`), otherwise at
+    /// `x + 0x88` through `0x00901cb0`. A used slot (`state == 1`) adds
+    /// its place name at `y + 0x11` (`AtelGetSaveDicName(u16 info+0x18,
+    /// u8 info+0x1f)` through `0x00901d10(.., dim, u8 info+0x1f)` in
+    /// Japanese, else with `MsGetSaveConfigEnglish()` as the second word
+    /// through `0x00901cb0`) and its play time `TOMenuDrawTimer(info+0x10,
+    /// f32(x + 0x1b3), f32(y + 5), 0)`. `digits` is the original's 8-byte
+    /// frame buffer.
+    pub fn menu_save_load_draw_slot_row<M: Mem>(
+        mem: &mut M,
+        window: u32,
+        [x, y]: [i32; 2],
+        row: i32,
+        mode: u32,
+        digits: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let half = |mem: &M, o: u32| i32::from(mem.read::<i16>(window.wrapping_add(o)));
+        let (mut row, mut y) = (row, y);
+        match mode {
+            0 => {
+                row = row.wrapping_add(half(mem, 0x32));
+                y = y.wrapping_add(half(mem, 0x46) * -48 / 4096);
+            }
+            1 => row = row.wrapping_add(half(mem, 0x34)),
+            2 => row = row.wrapping_add(half(mem, 0x32)),
+            _ => {}
+        }
+        if row < 0 || row >= i32::from(mem.read::<u16>(window.wrapping_add(0x30))) {
+            return;
+        }
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let row_word = row.cast_unsigned();
+        let state = mem.read::<u8>(at(mem, 0x0186_6290).wrapping_add(row_word));
+        let dim = if mem.read::<u8>(at(mem, 0x0186_628a)) == 1 {
+            !(state <= 2 || state == 4)
+        } else {
+            state != 1
+        };
+        let dim = u32::from(dim);
+        let state = u32::from(state);
+        let (xw, yw) = (x.cast_unsigned(), y.cast_unsigned());
+        let frame = at(mem, 0x008f_9b60);
+        call(mem, frame, &[xw, yw, 0x7a, 0x27, 0x8037_2d22, 0x8052_4641]);
+        let shape = at(mem, 0x0090_3a10);
+        call(mem, shape, &[0x10f, xw, yw]);
+        let draw_box = at(mem, 0x008f_3db0);
+        #[rustfmt::skip]
+        call(mem, draw_box, &[xw.wrapping_add(0x7a), yw, 0x143, 0x27, 0x8048_211d, 0x805c_393c]);
+        call(mem, shape, &[0x10c, xw.wrapping_add(0x1bd), yw]);
+        let sprintf = mem.read::<u32>(at(mem, 0x00b0_c3dc));
+        let format = at(mem, 0x00b4_1ec0);
+        call(mem, sprintf, &[digits, format, row_word.wrapping_add(1)]);
+        let number = at(mem, 0x0090_1f80);
+        call(
+            mem,
+            number,
+            &[digits, xw.wrapping_add(0x5a), yw.wrapping_add(2), 0x25],
+        );
+        let file_info = at(mem, 0x008b_4e40);
+        let info = call(mem, file_info, &[row_word]);
+        let kind_text = at(mem, 0x008b_5560);
+        let text = call(mem, kind_text, &[state, info]);
+        let lang = at(mem, 0x008a_c2f0);
+        let (text_jp, text_en) = (at(mem, 0x0090_1d10), at(mem, 0x0090_1cb0));
+        let (jp_x, en_x) = (xw.wrapping_add(0x92), xw.wrapping_add(0x88));
+        if call(mem, lang, &[]) == 0 {
+            if state == 1 {
+                call(mem, text_jp, &[text, jp_x, yw, dim, state]);
+            } else {
+                call(mem, text_en, &[text, jp_x, yw, dim]);
+            }
+        } else {
+            call(mem, text_en, &[text, en_x, yw, dim]);
+        }
+        if state != 1 {
+            return;
+        }
+        let place = at(mem, 0x0086_c430);
+        let line = yw.wrapping_add(0x11);
+        if call(mem, lang, &[]) == 0 {
+            let place_id = u32::from(mem.read::<u16>(info.wrapping_add(0x18)));
+            let style = u32::from(mem.read::<u8>(info.wrapping_add(0x1f)));
+            let name = call(mem, place, &[place_id, style]);
+            call(mem, text_jp, &[name, jp_x, line, dim, style]);
+        } else {
+            let english = at(mem, 0x0078_51d0);
+            let english = call(mem, english, &[]);
+            let place_id = u32::from(mem.read::<u16>(info.wrapping_add(0x18)));
+            let name = call(mem, place, &[place_id, english]);
+            call(mem, text_en, &[name, en_x, line, dim]);
+        }
+        let to_f32 = |v: i32| ffx_bridge::x87::store(f64::from(v));
+        let timer = at(mem, 0x008e_19f0);
+        let frames = mem.read::<u32>(info.wrapping_add(0x10));
+        let (tx, ty) = (to_f32(x.wrapping_add(0x1b3)), to_f32(y.wrapping_add(5)));
+        call(mem, timer, &[frames, tx, ty, 0]);
+    }
 }
 
 #[cfg(test)]

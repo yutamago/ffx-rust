@@ -25,8 +25,7 @@ flag bytes and calls `+8(menu, mode)` with `g_TkMn2MenuMode`
 `g_TkMenuMainActiveMask` (`0x018408ec`) has a bit per active slot
 (`TkMenuMainActiveMenu` `0x008aa100` sets it, `TkMenuMainSleepMenu`
 clears it); the next word, `g_TkMenuDrawSkipMask` (`0x018408f0`), skips
-slots in both `TkMenuDrawAll` and `TkMenuCloseAll`. `MenuMain_Reset`
-(`0x008aa570`) clears the 28 words `0x01840888..0x018408f4`.
+slots in both `TkMenuDrawAll` and `TkMenuCloseAll`.
 
 ## Windows (`g_TkMenuWindows`, `0x01840900`)
 
@@ -43,10 +42,8 @@ the first with `+0x40` zero, reset by `MenuMain_ResetWindow`
 | `+0x14` | fn | "faded out" test (`TkMenuWindowFadedOut` `0x008d3200`: `+0x52` == 0) |
 | `+0x1c` | fn | usability test (name entry, item windows) |
 | `+0x28` | u32 | state (0 = idle) |
-| `+0x2c`, `+0x2e` | u16 | ids, reset to -1 |
 | `+0x30` | u16 | row count (`MenuSelList_CursorX` `0x008d1bc0`) |
 | `+0x32` | i16 | first row shown (`MenuSelList_DrawCursor` `0x008d15a0`) |
-| `+0x34` | u32 | reset to `0x01000000` |
 | `+0x3e` | u8 | draw layer 0..8 (reset 1); `+0x3f` reset 1 |
 | `+0x40` | u8 | in use |
 | `+0x48` | i16 | cursor (row = `+0x48 >> 1` in two-column lists) |
@@ -59,11 +56,10 @@ runs layer 0, each slot's draw, the main task, then layers 1..8.
 
 ## Draw cursor and packets
 
-Menu drawing writes GS packets at a cursor. `g_TkMn2DrawY` (`0x0186a238`)
-is the plate writer's cursor: each plate steps it by 16 and the writer's
-return value becomes the new cursor (`MenuMn2_EmitPacket` `0x008c11b0`,
-`TkMn2DrawCommonPlateL` `0x008bf9b0`, `MenuStatus_DrawLayoutRow`
-`0x008c11e0`). `TkMn2DrawKickPacket` (`0x008c0c40`) sends what was
+`g_TkMn2DrawY` (`0x0186a238`) is the plate packet writer's cursor: each
+plate steps it by 16 and the writer's return value becomes the new
+cursor (`MenuMn2_EmitPacket` `0x008c11b0`, `TkMn2DrawCommonPlateL`
+`0x008bf9b0`, `MenuStatus_DrawLayoutRow` `0x008c11e0`). `TkMn2DrawKickPacket` (`0x008c0c40`) sends what was
 written; the status page draw ends with it.
 
 Coordinates are given for a 1920x1080 screen and mapped to the PS2's
@@ -111,9 +107,9 @@ background's step and value (`TkMn2StepStatusBG` `0x008d3280`).
 `+4` i16 enabled; `TkMenuMainGetOptionMenu` `0x008e2270`,
 `TkMenuMainGetOptionEnabled` `0x008e2290`). `MenuMain_DrawOptionRow`
 (`0x008e22a0`) draws option `i` as a bar from the texture rows
-`74.7 i .. 74.7 i + 67`, sliding from `y = 3` (PS2 pixels) to its place as the
-fade goes 0..0x1000 and with alpha `fade / 32`; a disabled option's name
-is drawn dimmed. The highlighted option (`0x01871548`) gets the cross
+`74.7 i .. 74.7 i + 67`, sliding from `y = 3` (PS2 pixels) to its place
+as the fade goes 0..0x1000, with alpha `fade / 32`; a disabled option's
+name is drawn dimmed. The highlighted option (`0x01871548`) gets the cross
 cursor once fully shown.
 
 ## Item, shop and aeon lists
@@ -127,9 +123,7 @@ icon and name, 2 an aeon name, 3 `TkMenuMenu1Mes(id + 0x1033)`; the
 window's i16 `+0x46` scrolls it by `+0x46 * 32 / 4096` pixels.
 `TkMn2DrawStatusPlate` (`0x008c1490`) draws one stat: a caption and the
 byte at an offset into the character's save record
-(`MsGetSavePlayerPtr`). `MenuItem_SortGearByOwner` (`0x008c9fb0`) groups
-gear by owner using the u16 [weapon, armour] counts per owner at
-`0x0186a3e4`. The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten
+(`MsGetSavePlayerPtr`). The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten
 rows; `MenuWShop_DrawBuyRows` `0x008d8c30` and `MenuWShop_DrawSellRows`
 `0x008d8ee0`, nine) and `MenuSummon_DrawGrowRows` (`0x008ce520`, eleven)
 draw a fixed number of rows from a first index.
@@ -142,3 +136,25 @@ the u8 ids the menu cycles through, indexed by `g_TkMenuCurrentPlayerPos`
 (`TkMenuGetCurrentPlayer` `0x008a9860`, `TkMenuGetCurrentSummon`
 `0x008a9880`). Character ids below 8 are party members; 8 and up are
 aeons (`TkMn2DrawOverDrive` draws the Overdrive mode only below 8).
+
+## Save/load slots
+
+`g_TkSaveSlots` (`0x01866290`) holds a state byte for each of the 99
+slots (0 free, 1 used, 3 marked); `TkMenuGetSaveFileInfo` (`0x008b4e40`)
+returns slot `i`'s 0x40-byte record at `0x0159ec70 + i * 0x40` (u32
+`+0x10` play time in frames, u16 `+0x18` place id, u8 `+0x1f`).
+`MenuSaveLoad_DrawSlotRow` (`0x008b4b70`) draws one row: the slot number
+(`"%02d"`), `MenuSave_KindText` (`0x008b5560`) and, for a used slot, the
+place name (`AtelGetSaveDicName`) and play time (`TOMenuDrawTimer`). A
+slot is drawn dimmed by its state (when byte `0x0186628a` is 1 anything
+but 0..2 and 4, else anything but 1).
+
+## Pad work records
+
+The Tk pad layer keeps a work record per pad (`Pad_UpdateFrame`
+`0x00889790`). `Pad_UpdateAnalog` (`0x00889570`) fills its analog part
+from a PS2-style packet: `+0x84..+0x87` the stick bytes (`0x80`
+centred) from `inputGetCurrDeviceStickInfo`'s floats 2, 3, 0, 1,
+`+0x90`/`+0x91` the d-pad pressure bytes, and direction bits of u16
+`+0x9a` from bytes `+0x86` (`0x8000`/`0x2000`) and `+0x87`
+(`0x4000`/`0x1000`) past `0x10`/`0xf0`.

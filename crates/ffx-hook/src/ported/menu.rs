@@ -4267,6 +4267,17 @@ ported! {
         let width = frame.at();
         tk::menu_main_draw_option_row(&mut mem(), index, x, fade, width, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `Pad_UpdateAnalog(work, raw, buttons)`: its only caller ignores `eax`.
+    Pad_UpdateAnalog @ 0x0088_9570 => extern "C" fn pad_update_analog(work: u32, raw: u32, buttons: u32) {
+        tk::pad_update_analog(&mut mem(), work, raw, buttons, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSaveLoad_DrawSlotRow(window, x, y, row, mode)`: its only caller ignores `eax`.
+    MenuSaveLoad_DrawSlotRow @ 0x008b_4b70 => extern "C" fn menu_save_load_draw_slot_row(window: u32, x: i32, y: i32, row: i32, mode: u32) {
+        // the original's 8-byte sprintf buffer
+        let mut frame = super::StackFrame::<2>::new();
+        let digits = frame.at();
+        tk::menu_save_load_draw_slot_row(&mut mem(), window, [x, y], row, mode, digits, &mut |_, f, a| call_ptr(f, a));
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry
