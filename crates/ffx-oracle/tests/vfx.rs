@@ -21700,3 +21700,277 @@ fn round37a_hit_check_matches_the_original() {
         }
     }
 }
+
+/// A stand-in for `graphicVFXGetRenderDataByInstance(lo, hi)` at `sym`
+/// (through a jump) that returns the word at `cells + 4 lo` (`lo` 0 or 1).
+fn render_data_by_lo(p: &mut Pair, sym: u32, cells: u32) {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04]; // mov eax, [esp + 4]
+    c.extend([0x83, 0xe0, 0x01]); // and eax, 1
+    c.extend([0x8b, 0x04, 0x85]); // mov eax, [eax*4 + cells]
+    c.extend(cells.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round37b_opus_commands_match_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_8380);
+        let cells = p.alloc(0x20);
+        let (a_cell, gs_cell, wpn_cell, hide_cell, status_cell) =
+            (cells, cells + 4, cells + 8, cells + 0xc, cells + 0x10);
+        far_recorder(&mut p, 0x007e_3810, &[0, 0, 0], Some(a_cell));
+        far_recorder(&mut p, 0x007e_5390, &[0; 10], Some(gs_cell));
+        far_recorder(&mut p, 0x0080_8a60, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x007e_adc0, &[0, 0], None);
+        far_recorder(&mut p, 0x007e_c7e0, &[0], None);
+        far_recorder(&mut p, 0x0080_abe0, &[], None);
+        far_recorder(&mut p, 0x007e_4420, &[0, 0], None);
+        far_recorder(&mut p, 0x007e_4540, &[0, 0], None);
+        far_recorder(&mut p, 0x007e_b410, &[0, 0, 0, 0], None);
+        far_recorder(&mut p, 0x007f_ca80, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x007f_bef0, &[0, 0], None);
+        for f in [
+            0x007f_bab0u32,
+            0x007f_ba40,
+            0x007f_bb90,
+            0x007f_b290,
+            0x007f_c190,
+            0x007f_c130,
+        ] {
+            far_recorder(&mut p, f, &[0], None);
+        }
+        far_recorder(&mut p, 0x0080_1030, &[0], Some(wpn_cell));
+        far_recorder(&mut p, 0x0082_abd0, &[0], Some(hide_cell));
+        far_recorder(&mut p, 0x007f_e970, &[0, 0, 0], Some(status_cell));
+        let handles = p.sym(et::bridge::CHR_HANDLES.sym);
+        let weapons = p.sym(o::WEAPONS.sym);
+        let (counters, cam, chrs, bind) = (
+            p.sym(0x0119_fefc),
+            p.sym(0x011a_006e),
+            p.sym(0x012a_22c0),
+            p.sym(0x011a_0080),
+        );
+        let r0 = p.sym(ppp::bridge::R0.sym);
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x40));
+        for round in 0..3000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x40, &mut rng);
+            p.set(host + 0x220, unit);
+            for at in [0x40u32, 0x44, 0x48, 0x60, 0x80] {
+                let v = if rng.chance(80) {
+                    ranged(&mut rng, -5000.0, 5000.0)
+                } else {
+                    rng.float()
+                };
+                p.set(unit + at, v);
+            }
+
+            // opu_gs_etc: every nibble
+            p.set(
+                host + 0x21a,
+                (rng.below(9) << 12 | rng.below(0x1000)) as u16,
+            );
+            p.set(cmd + 4, rng.next() as u16);
+            p.set(cmd + 6, rng.below(0x3c) as u16);
+            p.set(
+                cmd + 2,
+                rng.pick(&[0x40u16, 0x44, 0x48, 0x60, 0x80, 0xfffe]),
+            );
+            if rng.chance(20) {
+                p.set(cmd + 2, rng.next() as u16);
+            }
+            p.set(unit + 0x1e, rng.below(8) as u8);
+            let r = rng.next();
+            p.set(a_cell, r);
+            let r = rng.next();
+            p.set(gs_cell, r);
+            p.check(&what("gs_etc"), 0x0080_8380, &[host, cmd], |m| {
+                Some(o::opu_gs_etc(m, host, cmd, &mut call_original))
+            });
+
+            // opu_bind_etc: every case and its branches
+            p.fill(cmd, 0x40, &mut rng);
+            let k = rng.below(0x17) as i16 - 1;
+            p.set(cmd + 2, if rng.chance(3) { rng.next() as i16 } else { k });
+            let chr = rng.below(240);
+            p.set(unit + 0x18, chr as u8);
+            let h = rng.next();
+            p.set(handles + 4 * chr, h);
+            p.set(
+                host + 0x33a,
+                rng.pick(&[0u8, 1, 9, 10, 11, 0xf9, 0xfa, 0xff]),
+            );
+            for r in 0..4 {
+                let v = rng.next();
+                p.set(r0 + 4 * r, v);
+            }
+            let w = rng.pick(&[0u32, 1, 2, 3, u32::MAX]);
+            p.set(wpn_cell, w);
+            for i in 0..4u32 {
+                let v = if rng.chance(30) { 0 } else { rng.next() };
+                p.set(weapons + 4 * i, v);
+                p.set(counters + i, rng.pick(&[0u8, 0x20, 0x21, 0x7f, 0x80]));
+            }
+            p.set(weapons - 4, rng.next());
+            p.set(counters - 1, rng.pick(&[0x20u8, 0x21]));
+            p.set(cam, rng.below(4) as u8);
+            p.set(hide_cell, rng.pick(&[0u32, 0, 0, 1]));
+            let s = rng.below(240);
+            p.set(status_cell, if rng.chance(15) { u32::MAX } else { s });
+            p.set(
+                chrs + 32 * s + 0xc,
+                rng.pick(&[0u16, 0x20, 0x100, 0x200, 0x800, 0x1000, 0x2000, 0x4000]),
+            );
+            p.set(bind, rng.pick(&[0u16, 0, 0x100, 0x4000]));
+            p.check(&what("bind_etc"), 0x0081_4520, &[host, cmd], |m| {
+                Some(o::opu_bind_etc(m, host, cmd, &mut call_original))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round37b_render_data_and_clut_uploads_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_2690);
+        let cells = p.alloc(0x10);
+        let buf_cell = cells + 8;
+        render_data_by_lo(&mut p, 0x0064_53d0, cells);
+        far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(buf_cell));
+        for (f, n) in [(0x0064_5710u32, 3usize), (0x0064_5780, 2), (0x0064_58a0, 2)] {
+            far_recorder(&mut p, f, &[0, 0, 0][..n], None);
+        }
+        let (d0, d1, bufs0, bufs1) = (p.alloc(0x100), p.alloc(0x100), p.alloc(0x20), p.alloc(0x20));
+        let tris = p.alloc(0x140);
+        let count = p.sym(0x00ce_c194);
+        let n_max = 8u32;
+        let mut arrays = Vec::new();
+        for _ in 0..8 {
+            arrays.push(p.alloc(0x7000));
+        }
+        for round in 0..400u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            // setPolyTris0434
+            for (d, bufs) in [(d0, bufs0), (d1, bufs1)] {
+                p.fill(d, 0x100, &mut rng);
+                p.set(d + 0x94, bufs);
+            }
+            for (i, &b) in [bufs0, bufs1].iter().enumerate() {
+                for (k, at) in [0xcu32, 0x14, 0x18, 0x1c].into_iter().enumerate() {
+                    p.set(b + at, arrays[4 * i + k]);
+                }
+            }
+            p.set(cells, if rng.chance(10) { 0 } else { d0 });
+            p.set(cells + 4, if rng.chance(10) { 0 } else { d1 });
+            p.fill(tris, 0x140, &mut rng);
+            let n = rng.below(n_max);
+            p.set(count, n);
+            let t = if rng.chance(70) { tris } else { 0 };
+            let setup = rng.pick(&[0u32, 1, 0x100]);
+            let id = rng.next();
+            p.check(&what("poly_tris"), 0x0071_2690, &[id, t, setup], |m| {
+                Some(small::bridge::set_poly_tris_0434(
+                    m,
+                    id,
+                    t,
+                    setup,
+                    &mut call_original,
+                ))
+            });
+        }
+        // update0706NoiseRenderData: a few full fills
+        let flag = p.sym(0x012e_9640);
+        for round in 0..12u32 {
+            p.fill(d0, 0x100, &mut rng);
+            p.set(d0 + 0x94, bufs0);
+            p.fill(bufs0, 0x20, &mut rng);
+            for (k, at) in [0xcu32, 0x14, 0x18, 0x1c].into_iter().enumerate() {
+                p.set(bufs0 + at, arrays[k]);
+            }
+            p.set(cells, if round % 4 == 3 { 0 } else { d0 });
+            p.set(buf_cell, u32::from(round % 5 != 4));
+            let r = rng.next();
+            p.set(flag, r);
+            let x = if round % 3 == 0 {
+                rng.float()
+            } else {
+                ranged(&mut rng, -100.0, 100.0)
+            };
+            p.check(
+                &format!("noise_data round {round}"),
+                0x007f_a890,
+                &[0, 0x2c2, x],
+                |m| {
+                    Some(small::bridge::update_0706_noise_render_data(
+                        m,
+                        0,
+                        0x2c2,
+                        x,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+
+        // op_oef2_tex_clut_cue_trans: textures small and large
+        far_recorder(&mut p, 0x0062_f820, &[SKIP, 0, 0, 0, 0, 0, 0, 0], None);
+        far_recorder(&mut p, 0x0062_f4c0, &[0], None);
+        far_recorder(&mut p, 0x0062_f880, &[0, 0], None);
+        far_recorder(&mut p, 0x0062_f7a0, &[SKIP, 0], None);
+        far_recorder(&mut p, 0x007e_c790, &[], None);
+        let slots = p.sym(0x011a_01a0);
+        let head = p.sym(0x011a_04a0);
+        let (recs, img) = (p.alloc(0x100), p.alloc(0x60));
+        for round in 0..400u32 {
+            p.fill(recs, 0x100, &mut rng);
+            for i in 0..8u32 {
+                let t = recs + 0x20 * i;
+                let (w, h) = if rng.chance(40) {
+                    (
+                        rng.pick(&[0x400u16, 0x800, 0x1000]),
+                        rng.pick(&[0x100u16, 0x180, 0x200, 0x250, 0x301]),
+                    )
+                } else {
+                    (rng.below(0x200) as u16, rng.below(0x200) as u16)
+                };
+                p.set(t + 0xc, w);
+                p.set(t + 0xe, h);
+            }
+            for k in 0..0xc0u32 {
+                let v = if k < 0x40 && rng.chance(15) {
+                    recs + 0x20 * rng.below(8)
+                } else if k < 0x40 {
+                    0
+                } else {
+                    rng.next()
+                };
+                p.set(slots + 4 * k, v);
+            }
+            let v = rng.next();
+            p.set(head, v);
+            p.check(&format!("cue_trans round {round}"), 0x007e_4c30, &[], |m| {
+                let keep = m.read(img, 0x60).unwrap();
+                let r = op::bridge::op_oef2_tex_clut_cue_trans(m, img, &mut call_original);
+                m.write(img, &keep).unwrap();
+                Some(r)
+            });
+        }
+    }
+}

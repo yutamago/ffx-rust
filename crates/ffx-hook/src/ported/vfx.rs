@@ -5511,4 +5511,28 @@ ported! {
         let ebp = frame.at() + 0x68;
         wave::bridge::opus_0706_noise_draw(&mut mem(), obj, ebp, &mut |_, f, a| call_ptr(f, a))
     }
+    // ---- round 37 b ----
+    /// `opu_gs_etc(host, cmd)` (`0x00808380`).
+    opu_gs_etc @ 0x0080_8380 => extern "C" fn opu_gs_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_gs_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_bind_etc(host, cmd)` (`0x00814520`).
+    opu_bind_etc @ 0x0081_4520 => extern "C" fn opu_bind_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_bind_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `setPolyTris0434(id, tris, setup)` (`0x00712690`).
+    setPolyTris0434 @ 0x0071_2690 => extern "C" fn set_poly_tris_0434(id: u32, tris: u32, setup: u32) -> u32 {
+        small::bridge::set_poly_tris_0434(&mut mem(), id, tris, setup, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `update0706NoiseRenderData(lo, hi, x)` (`0x007fa890`).
+    update0706NoiseRenderData @ 0x007f_a890 => extern "C" fn update_0706_noise_render_data(lo: u32, hi: u32, x: u32) -> u32 {
+        small::bridge::update_0706_noise_render_data(&mut mem(), lo, hi, x, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `op_oef2_tex_clut_cue_trans()`.
+    op_oef2_tex_clut_cue_trans @ 0x007e_4c30 => extern "C" fn op_oef2_tex_clut_cue_trans() -> u32 {
+        // the original's load image record, below its ebp
+        let mut frame = super::StackFrame::<0x18>::new();
+        let img = frame.at();
+        op::bridge::op_oef2_tex_clut_cue_trans(&mut mem(), img, &mut |_, f, a| call_ptr(f, a))
+    }
 }
