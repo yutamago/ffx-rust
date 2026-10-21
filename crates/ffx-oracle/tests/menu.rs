@@ -16725,3 +16725,233 @@ fn menu_round31_save_work_sel_list_pad_scan_exchange_page_and_layout2_match_the_
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round31_ishop_layout_summon_status_caption_kaizou_and_item_list_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0031_0002) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008c_2b90u32, 2u8),
+        (0x008c_2b50, 2),
+        (0x008c_2ad0, 1),
+        (0x008c_1a60, 6),
+        (0x008b_f750, 5),
+        (0x008d_3280, 0),
+        (0x008d_2660, 1),
+        (0x0088_6e80, 1),
+        (0x008a_afe0, 0),
+        (0x008a_af70, 0),
+        (0x008d_2b40, 1),
+        (0x008d_3140, 4),
+        (0x008d_2680, 1),
+        (0x008f_dee0, 4),
+        (0x008f_5f70, 5),
+        (0x008f_5c10, 0),
+        (0x008e_71d0, 1),
+        (0x008a_9860, 0),
+        (0x008c_1390, 4),
+        (0x008d_6560, 5),
+        (0x008c_0f70, 4),
+        (0x008c_1370, 0),
+        (0x008d_65f0, 3),
+        (0x008e_6cc0, 7),
+        (0x008f_8bb0, 5),
+        (0x008d_4910, 0),
+        (0x008d_6340, 1),
+        (0x008d_63f0, 1),
+        (0x008d_56f0, 1),
+        (0x008f_f490, 3),
+        (0x008c_7c30, 5),
+        (0x008c_7af0, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let pads = [0x008b_e410u32, 0x008b_e470, 0x008b_e4b0].map(|f| seq_stub(&mut t, f, log, 0, &[]));
+    let summon = seq_stub(&mut t, 0x008a_9880, log, 0, &[]);
+    let max = seq_stub(&mut t, 0x008a_9bf0, log, 0, &[]);
+    let ratio = seq_stub(&mut t, 0x008a_b220, log, 0, &[]);
+    // ToGetCrossExtMesFontWidth(_, text, &w, scale, extra): the first call
+    // writes [c1], the second [c2]
+    let (c1, c2, dummy) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x15]; // mov eax, [esp+12]; mov edx, [c1]
+    extra.extend(c1.to_le_bytes());
+    extra.extend([0x89, 0x10, 0xa1]); // mov [eax], edx; mov eax, [c2]
+    extra.extend(c2.to_le_bytes());
+    extra.push(0xa3); // mov [c1], eax
+    extra.extend(c1.to_le_bytes());
+    extra.extend([0x89, 0x15]); // mov [c2], edx
+    extra.extend(c2.to_le_bytes());
+    let code = seq_code_of(log, 0x0090_5320, &[0, 1, 3, 4], dummy, &extra);
+    jump_stub(&mut t, 0x0090_5320, &code);
+    // TOMkpCrossExtMesFontLClut(_, text, ..): logs 16 bytes of the text
+    let cell = t.alloc(&[0; 4]);
+    cells.push(cell);
+    let code = seq_code_deref_at(log, 0x0090_16b0, 1, 4, &[0, 2, 3, 4, 5, 6], cell);
+    jump_stub(&mut t, 0x0090_16b0, &code);
+    // TOGetGroup(code): (code >> 4) & 3
+    let group = t.alloc(&[0; 4]);
+    let mut extra = vec![
+        0x8b, 0x44, 0x24, 0x04, 0xc1, 0xe8, 0x04, 0x83, 0xe0, 0x03, 0xa3,
+    ];
+    extra.extend(group.to_le_bytes());
+    let code = seq_code(log, 0x008d_f610, 1, group, &extra);
+    jump_stub(&mut t, 0x008d_f610, &code);
+    // TOSkipCode(p): p + 1
+    let next = t.alloc(&[0; 4]);
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x04, 0x40, 0xa3]; // mov eax, [esp+4]; inc eax; mov [next], eax
+    extra.extend(next.to_le_bytes());
+    let code = seq_code(log, 0x008d_fd80, 1, next, &extra);
+    jump_stub(&mut t, 0x008d_fd80, &code);
+    let (w0, text) = (t.alloc(&[0; 0x100]), t.alloc(&[0; 0x10]));
+    // remapX2(660) itself (when it is an f32), for the caption's width test
+    #[allow(clippy::cast_possible_truncation)]
+    let narrow = ui_remap(&mut t.a, false, 660.0) as f32;
+    ui_remap(&mut t.b, false, 660.0);
+    // scrolls where the kaizou rows' f32 rounding moves ftol
+    let step = ui_remap(&mut t.a, true, 675.0);
+    ui_remap(&mut t.b, true, 675.0);
+    t.a.clear_dirty();
+    t.b.clear_dirty();
+    let mut rounding = vec![0x1000u16];
+    for v in i16::MIN..=i16::MAX {
+        use ffx_bridge::x87::{load, mul, store};
+        let y = mul(mul(step, f64::from(v)), -0.000_244_140_625);
+        #[allow(clippy::cast_possible_truncation)]
+        if y.trunc() as i32 != load(store(y)).trunc() as i32 {
+            rounding.push(v.cast_unsigned());
+        }
+    }
+    eprintln!("{} rounding scrolls", rounding.len() - 1);
+    let floats = [
+        0f32,
+        -0.0,
+        1.5,
+        100.0,
+        299.5,
+        650.2,
+        900.0,
+        1e10,
+        f32::from_bits(0x7fc0_0000),
+        narrow,
+    ];
+    for round in 0..5000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(w0, 0x100);
+        match round % 5 {
+            0 => t.twin("TkMn2GetIShopPos", 0x008d_b080, &[], U32, |o| {
+                w(tk::tk_mn2_get_ishop_pos(o, &mut callback))
+            }),
+            1 => {
+                let state = t.rng.pick(&[
+                    0u32, 1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 5, 6, 7, 8, 8, 9, 10, 10, 11, 12, 12,
+                    13, 14, 14, 15, 16, 17,
+                ]);
+                t.put(w0 + 0x28, state);
+                let v = t.rng.pick(&[0u32, 4, 8, 0xc, 0x1_0004]);
+                t.put(pads[0], v);
+                let v = t.rng.pick(&[0u32, 4, 8, 0xc]);
+                t.put(pads[1], v);
+                let v = t.rng.pick(&[0u32, 0x20, 0x40, 0x60, 0, 0, 0, 0x1_0020]);
+                t.put(pads[2], v);
+                let v = t.rng.pick(&[0u32, 1, 0xd, 0xe, 0x11, 0x12, 0xffff_ffff]);
+                t.put(summon, v);
+                let v = t.rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff]);
+                t.put(max, v);
+                let v = t.rng.pick(&[0u32, 1, 1]);
+                t.put(ratio, v);
+                t.twin(
+                    "MenuSummon_StatusWindowCtrl_008ccb60",
+                    0x008c_cb60,
+                    &[w0],
+                    U32,
+                    |o| w(tk::menu_summon_status_window_ctrl(o, w0, &mut callback)),
+                );
+            }
+            2 => {
+                let v = t.rng.pick(&[0u16, 0, 1, 0x100]);
+                t.put(t.sym(0x0186_a168), v);
+                for g in [0x025c_c594, 0x025c_c58c] {
+                    let v = t.rng.pick(&[0, text, text]);
+                    t.put(t.sym(g), v);
+                }
+                t.scramble_at(text, 0x10);
+                for k in 0..0x10 {
+                    let v = t.rng.pick(&[0x10u8, 0x20, 0x30, 0x41, 0x52]);
+                    t.put(text + k, v);
+                }
+                let n = t.rng.below(8);
+                t.put(text + n, 0u8);
+                t.put(text + 0xf, 0u8);
+                for c in [c1, c2] {
+                    let v = t.rng.pick(&floats);
+                    t.put(c, v.to_bits());
+                }
+                t.twin("BtlEnd_DrawCaption_008b9f30", 0x008b_9f30, &[], U32, |o| {
+                    w(tk::btl_end_draw_caption(
+                        o,
+                        local,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                });
+            }
+            3 => {
+                let a = t.rng.pick(&[0u16, 1, 5, 0x8000]);
+                t.put(w0 + 0x32, a);
+                let b = t.rng.pick(&[a, a, 2, 0xffff, a ^ 0x100]);
+                t.put(w0 + 0x34, b);
+                let v = t.rng.pick(&[0u16, 1, 0x1000, 0x7fff, 0x8000, 0xfff0]);
+                let v = if t.rng.below(3) == 0 {
+                    t.rng.pick(&rounding)
+                } else {
+                    v
+                };
+                t.put(w0 + 0x46, v);
+                t.twin("MenuKaizou_Draw_008d6860", 0x008d_6860, &[w0], U32, |o| {
+                    w(tk::menu_kaizou_draw(o, w0, &mut ui_remap, &mut callback))
+                });
+            }
+            _ => {
+                let a = t.rng.pick(&[0u16, 1, 5, 0x8000]);
+                t.put(w0 + 0x32, a);
+                let b = t.rng.pick(&[a, a, 2, 0xffff, a ^ 0x100]);
+                t.put(w0 + 0x34, b);
+                let v = t.rng.pick(&[0u16, 1, 0x1000, 0x7fff, 0x8000, 0xfff0]);
+                t.put(w0 + 0x46, v);
+                // the rows loop runs u16 +0x3a times (kept small: every row
+                // logs into the call log)
+                let v = t.rng.pick(&[0u16, 1, 3, 9, 0x41]);
+                t.put(w0 + 0x3a, v);
+                let v = t.rng.pick(&[0u8, 1, 2, 2, 3]);
+                t.put(w0 + 0x43, v);
+                let v = t.rng.pick(&[0u32, 0, 1, 0x100]);
+                t.put(w0 + 0x94, v);
+                let v = t.rng.pick(&[0u32, 1, 1, 2]);
+                t.put(t.sym(0x0186_a408), v);
+                t.twin(
+                    "MenuItem_ListWindowDraw_008c7750",
+                    0x008c_7750,
+                    &[w0],
+                    U32,
+                    |o| {
+                        w(tk::menu_item_list_window_draw(
+                            o,
+                            w0,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

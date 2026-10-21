@@ -297,6 +297,14 @@ it is 0, `MenuWShop_SellWindowCtrl` (`0x008d9df0`) the same while the
 open sub-command window's (`0x023cc128`) is above 0;
 `MenuKaizou_ListWindowCtrl` (`0x008d5810`) runs the list controller,
 then `TkMn2DrawSelItemsHelp`.
+The customise window draws with `MenuKaizou_Draw_008d6860`: the menu
+background, the rows (`MenuKaizou_DrawRows`) between y 315 and 680
+(`TkMn2DrawScissorRect` at rest, `TkMn2DrawMenuWindowScissor` parts 1/2
+while scrolling, the new rows shifted by `remapY2(675) * +0x46 / 4096`
+rounded to `f32`), `0x008d65f0(w, 389, 327)`, the scroll bar `(955, 319,
+8, 675)` over `u16 +0x30` rows, the plates `(209, 252)` and `(970, 659)`
+(`740 x 60`) with sheet cells 6 at `(364, 264)` and 7 at `(1125, 671)`,
+and the character plate at `(210, 165)` for `MenuKaizou_WeaponByte4(w)`.
 `MenuItem_OpenGearWindow` (`0x008c9330`) opens the item menu's gear list
 over `TkMn2RefreshWeaponShopSell2` (kept at `0x0186a37c`, gear mode off,
 rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
@@ -327,11 +335,23 @@ y 240, 77 high, ten a page, scissor `(10 + 770, 235)`, and the scroll bar
 `(955, 240, 10, 760)` counts `(u16 +0x30 + 1) / 2` rows. Its cursor shows
 while the sub-command window is open and not on its third entry (`u16
 +0x48` 2).
+`MenuItem_ListWindowDraw_008c7750` (`0x008c7750`) is the item menu's
+list: row pairs at x 210/978 from y 284 (list kind 2, `u8 +0x43`) or 240,
+77 apart, `u16 +0x3a` pairs; the scroll bar `(955, 240, 10, 760)` with
+`0x0186a408` 1, else `(955, 284, 10, 687)`. While it scrolls it draws two
+passes in the scissor from `y0 - 5` to `10 + 77 * pairs`: part 1 with row
+mode 2 from `y0`, part 2 with mode 1 from `y0 - (413 - (y0 - 2)) * +0x46 /
+4096`. The cursor (`0x008c7af0(w, 210, y0)`) shows while `+0x94` is set.
 
 `TkMn2GetWShopPos` (`0x008d9190`) loads the weapon shop's layout from the
 menu sequence (7 rectangles, 12 positions, 5 colours, 3 common plates)
 and then grows the `u16` at `0x023cc2fa` (the third rectangle's) by
 `0x30`.
+`TkMn2GetIShopPos` (`0x008db080`) does the same for the item shop in one
+interleaved run: 10 rectangles, 21 positions and 11 colours (the colour
+words at `0x0186abec..0x0186ac14`), then five common plates
+(`0x023cc240`, `0x023cc220`, `0x023cc1e0`, `0x023cc1c0`, `0x023cc1a0`; the
+second and fifth with the extra pair `0xda`/`0xdb`), with no size fix-up.
 
 The weapon shop's first sub-window (`MenuWShop_OpenSubWindow1`) steps
 with `MenuWShop_SubWindow1Ctrl` (`0x008d79c0`): like
@@ -377,6 +397,15 @@ wraps over `TkMenuGetPlayerListMax`/`TkMenuGetSummonListMax`.
 menu's window: circle asks the window's `+0x1c` callback, and the
 repeat bits `0x1000`/`0x4000` (or the d-pad's `4`/`8` held alone) switch
 to the previous/next aeon.
+`MenuSummon_StatusWindowCtrl_008ccb60` (jump table `0x008cce84`) is the
+aeon status window (four pages): state 4 waits for input (circle opens
+page 1 unless the aeon is `0xe..=0x11`, the magus sisters' range; cross
+leaves through 15/16; the d-pad flips aeons as above), then 7/9/11/13
+open the pages (`MenuStatus_OpenWindow(1, page, 0x42/0x43/0x47/0x46, 0)`)
+and 8/10/12/14 wait on each: circle closes it and opens the next (page 4
+back to 3), cross closes it and returns to 3. Entering (0..2) skips
+straight to 4; 3 fades the background out (`TMn2SetStatusBGDiff(-0x155)`)
+and 7 back in (`0x155`).
 
 The equip menu opens with `MenuEquip_Open_008cf830` (`0x008cf830`): it
 saves every character's (0..=6) armour, weapon, HP and MP in the word
@@ -753,3 +782,11 @@ and, in Asia mode (`FFXGetAsiaMode_007826a0` through the jump
 `0x0086a7f0`), `MsSetSaveConfigEnglish(1)`. `TkMenuCopyLoadedSave(dst,
 buffer)` (`0x008b54a0`) copies the `0x68c0` bytes after a save file's
 `0x40`-byte header and runs `setDefaultPlayerName`.
+
+`BtlEnd_DrawCaption_008b9f30` (`0x008b9f30`) draws the battle-end
+caption at the bottom right: with `u16 0x0186a168` 0 the text
+`0x025cc594` (`TkBtlEndGetText(0x4004)`) on one plate at y 925, else
+`0x025cc58c` (`0x400a`) split at its first line code (the byte is 0 while
+it draws, 1 after) into two lines on plates at y 870 and 925. A plate is
+`remapX2(80)` wider than the widest line (scale 0.78), at least
+`remapX2(740)`, right-aligned at `remapX2(1806)`, the text centred in it.

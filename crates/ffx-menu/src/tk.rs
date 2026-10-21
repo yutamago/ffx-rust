@@ -7558,6 +7558,559 @@ pub mod bridge {
         call(mem, f, &[])
     }
 
+    /// A remap callback (`graphicUiRemapX2`/`Y2`) handed to a helper closure.
+    type RemapDyn<'a, M> = &'a mut dyn FnMut(&mut M, bool, f32) -> f64;
+    /// A call callback handed to a helper closure.
+    type CallDyn<'a, M> = &'a mut dyn FnMut(&mut M, u32, &[u32]) -> u32;
+
+    /// The kinds of [`tk_mn2_get_ishop_pos`]'s sequence lookups.
+    #[derive(Clone, Copy)]
+    enum Seq {
+        /// `TkMn2SeqGetRect(name, to)`.
+        Rect,
+        /// `TkMn2SeqGetPos(name, to)`.
+        Pos,
+        /// `*to = TkMn2SeqGetColor(name)`.
+        Colour,
+    }
+
+    /// `TkMn2GetIShopPos()` (`0x008db080`): the item shop's layout from
+    /// the menu sequence, as `TkMn2GetWShopPos` but in one interleaved run
+    /// of 42 lookups (`TkMn2SeqGetRect`/`TkMn2SeqGetPos` into the address
+    /// given, `TkMn2SeqGetColor` stored; each name a string of the image)
+    /// and then five `TkMn2GetCommonPlate(plate, rect, c1, c2, a, b)` (the
+    /// second and fifth with `0xda`/`0xdb`). The last plate's `eax` is
+    /// returned.
+    pub fn tk_mn2_get_ishop_pos<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let (rect, pos, colour) = (
+            r(mem, 0x008c_2b90),
+            r(mem, 0x008c_2b50),
+            r(mem, 0x008c_2ad0),
+        );
+        for (kind, name, to) in [
+            (Seq::Rect, 0x00b6_6508, 0x023c_c150),
+            (Seq::Rect, 0x00b6_6514, 0x023c_c268),
+            (Seq::Rect, 0x00b6_6524, 0x0186_abc0),
+            (Seq::Rect, 0x00b6_6530, 0x0186_abc8),
+            (Seq::Rect, 0x00b6_653c, 0x023c_c178),
+            (Seq::Rect, 0x00b6_6548, 0x023c_c258),
+            (Seq::Rect, 0x00b6_6558, 0x023c_c200),
+            (Seq::Rect, 0x00b6_6564, 0x0186_abd0),
+            (Seq::Rect, 0x00b6_6570, 0x0186_abd8),
+            (Seq::Pos, 0x00b6_657c, 0x023c_c208),
+            (Seq::Pos, 0x00b6_6588, 0x023c_c20c),
+            (Seq::Pos, 0x00b6_6594, 0x023c_c180),
+            (Seq::Pos, 0x00b6_65a0, 0x023c_c1f8),
+            (Seq::Pos, 0x00b6_65ac, 0x023c_c214),
+            (Seq::Pos, 0x00b6_65b8, 0x023c_c260),
+            (Seq::Pos, 0x00b6_65c4, 0x0186_abe0),
+            (Seq::Pos, 0x00b6_65d0, 0x023c_c174),
+            (Seq::Pos, 0x00b6_65e0, 0x023c_c170),
+            (Seq::Pos, 0x00b6_65f0, 0x023c_c164),
+            (Seq::Pos, 0x00b6_65fc, 0x023c_c160),
+            (Seq::Pos, 0x00b6_6608, 0x0186_abe4),
+            (Seq::Pos, 0x00b6_6614, 0x0186_abe8),
+            (Seq::Pos, 0x00b6_6624, 0x023c_c210),
+            (Seq::Pos, 0x00b6_6630, 0x023c_c184),
+            (Seq::Pos, 0x00b6_6640, 0x023c_c16c),
+            (Seq::Pos, 0x00b6_664c, 0x023c_c168),
+            (Seq::Colour, 0x00b6_6658, 0x0186_abec),
+            (Seq::Colour, 0x00b6_6664, 0x0186_abf0),
+            (Seq::Colour, 0x00b6_6670, 0x0186_abf4),
+            (Seq::Colour, 0x00b6_667c, 0x0186_abf8),
+            (Seq::Colour, 0x00b6_6688, 0x0186_abfc),
+            (Seq::Colour, 0x00b6_6698, 0x0186_ac00),
+            (Seq::Colour, 0x00b6_66a8, 0x0186_ac04),
+            (Seq::Colour, 0x00b6_66b4, 0x0186_ac08),
+            (Seq::Colour, 0x00b6_66c4, 0x0186_ac0c),
+            (Seq::Pos, 0x00b6_66d4, 0x0186_ac44),
+            (Seq::Pos, 0x00b6_66e0, 0x0186_ac48),
+            (Seq::Rect, 0x00b6_5a7c, 0x0186_ac4c),
+            (Seq::Colour, 0x00b6_27e0, 0x0186_ac10),
+            (Seq::Colour, 0x00b6_27f0, 0x0186_ac14),
+            (Seq::Pos, 0x00b6_66ec, 0x023c_c15c),
+            (Seq::Pos, 0x00b6_66f8, 0x023c_c158),
+        ] {
+            let (name, to) = (r(mem, name), r(mem, to));
+            match kind {
+                Seq::Rect => {
+                    call(mem, rect, &[name, to]);
+                }
+                Seq::Pos => {
+                    call(mem, pos, &[name, to]);
+                }
+                Seq::Colour => {
+                    let v = call(mem, colour, &[name]);
+                    mem.write(to, v);
+                }
+            }
+        }
+        let plate = r(mem, 0x008c_1a60);
+        let mut eax = 0;
+        for (to, rect, c1, c2, a, b) in [
+            (0x023c_c240, 0x00b6_6524, 0x00b6_6658, 0x00b6_6664, 0x0, 0x0),
+            (
+                0x023c_c220,
+                0x00b6_6558,
+                0x00b6_6670,
+                0x00b6_667c,
+                0xda,
+                0xdb,
+            ),
+            (0x023c_c1e0, 0x00b6_6564, 0x00b6_27e0, 0x00b6_27f0, 0x0, 0x0),
+            (0x023c_c1c0, 0x00b6_6570, 0x00b6_66a8, 0x00b6_66a8, 0x0, 0x0),
+            (
+                0x023c_c1a0,
+                0x00b6_6530,
+                0x00b6_6688,
+                0x00b6_6698,
+                0xda,
+                0xdb,
+            ),
+        ] {
+            let args = [r(mem, to), r(mem, rect), r(mem, c1), r(mem, c2), a, b];
+            eax = call(mem, plate, &args);
+        }
+        eax
+    }
+
+    /// `MenuSummon_StatusWindowCtrl_008ccb60(w)` (`0x008ccb60`, own name;
+    /// jump table `0x008cce84` on state `+0x28`): the aeon status window's
+    /// control. The pads are read (`u16`), `Menu_CursorEase(1, &0x023cc3c8,
+    /// &0x023cc3c4, &0x023cc3c0, &0x023cc3bc)`, `TkMn2StepStatusBG()` and
+    /// `TkMenuGetCurrentSummon()` run (the last is `eax` unless a step
+    /// calls more). 0..2: state 4; 3: `TMn2SetStatusBGDiff(-0x155)`, 4; 4
+    /// takes the input: circle (trigger `0x20`) for an aeon outside
+    /// `0xe..=0x11` (sound `0x80000001`, state 7), else cross (`0x40`,
+    /// sound `0x80000004`, state 15) and, with more than one aeon
+    /// (`TkMenuGetSummonListMax`) and `TkMenuGetHelpRatio2()`, the d-pad
+    /// alone (repeat `4`/`8` with the pad at exactly that) flips to the
+    /// previous/next aeon (sound `0x80000004`, `TkMenuSetPrevSummon` /
+    /// `TkMenuSetNextSummon`, `MenuSummon_BuildCommandList(current)`). 5:
+    /// 6; 7: `TMn2SetStatusBGDiff(0x155)`, `MenuStatus_OpenWindow(1, 1,
+    /// 0x42, 0)`, 8; 9, 11, 13 open the pages 2, 3, 4 (`0x43`, `0x47`,
+    /// `0x46`) and go on (10, 12, 14); 8, 10, 12 close their page
+    /// (`MenuStatus_CloseWindow(page)`) on circle (sound `0x80000001`, the
+    /// next opening state) or cross (`0x80000004`, back to 3); 14 closes
+    /// page 4 on either (back to 3); 15: `+0x45` `0xff`, 16.
+    #[allow(clippy::too_many_lines)] // one state machine
+    pub fn menu_summon_status_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |o: u32| w.wrapping_add(o);
+        let mut pads = [0u32; 3];
+        for (p, f) in pads.iter_mut().zip([0x008b_e410, 0x008b_e470, 0x008b_e4b0]) {
+            let f = mem.rebase(f);
+            *p = call(mem, f, &[]) & 0xffff;
+        }
+        let [pad, rep, trg] = pads;
+        let cells = [0x023c_c3c8, 0x023c_c3c4, 0x023c_c3c0, 0x023c_c3bc].map(|g| mem.rebase(g));
+        let f = mem.rebase(0x008b_f750);
+        call(mem, f, &[1, cells[0], cells[1], cells[2], cells[3]]);
+        let f = mem.rebase(0x008d_3280);
+        call(mem, f, &[]);
+        let current = mem.rebase(0x008a_9880);
+        let summon = call(mem, current, &[]);
+        let snd = mem.rebase(0x0088_6e80);
+        let open = mem.rebase(0x008d_3140);
+        let close = mem.rebase(0x008d_2680);
+        let set = |mem: &mut M, state: u32| mem.write(at(0x28), state);
+        let state: u32 = mem.read(at(0x28));
+        match state {
+            0..=2 => {
+                set(mem, 4);
+                summon
+            }
+            3 => {
+                let f = mem.rebase(0x008d_2660);
+                let eax = call(mem, f, &[0xffff_feab]);
+                set(mem, 4);
+                eax
+            }
+            4 => {
+                let summon = summon.cast_signed();
+                if !(0xe..=0x11).contains(&summon) && trg & 0x20 != 0 {
+                    let eax = call(mem, snd, &[0x8000_0001]);
+                    set(mem, 7);
+                    return eax;
+                }
+                if trg & 0x40 != 0 {
+                    call(mem, snd, &[0x8000_0004]);
+                    set(mem, 0xf);
+                }
+                let f = mem.rebase(0x008a_9bf0);
+                let n = call(mem, f, &[]);
+                if n.cast_signed() <= 1 {
+                    return n;
+                }
+                let f = mem.rebase(0x008a_b220);
+                if call(mem, f, &[]) == 0 {
+                    return 0;
+                }
+                let flip = if rep & 4 != 0 && pad == 4 {
+                    0x008a_afe0
+                } else if rep & 8 != 0 && pad == 8 {
+                    0x008a_af70
+                } else {
+                    return rep;
+                };
+                call(mem, snd, &[0x8000_0004]);
+                let f = mem.rebase(flip);
+                call(mem, f, &[]);
+                let summon = call(mem, current, &[]);
+                let f = mem.rebase(0x008d_2b40);
+                call(mem, f, &[summon])
+            }
+            5 => {
+                set(mem, 6);
+                summon
+            }
+            7 | 9 | 11 | 13 => {
+                if state == 7 {
+                    let f = mem.rebase(0x008d_2660);
+                    call(mem, f, &[0x155]);
+                }
+                let (page, kind) = match state {
+                    7 => (1, 0x42),
+                    9 => (2, 0x43),
+                    11 => (3, 0x47),
+                    _ => (4, 0x46),
+                };
+                let eax = call(mem, open, &[1, page, kind, 0]);
+                set(mem, state + 1);
+                eax
+            }
+            8 | 10 | 12 | 14 => {
+                let page = (state - 6) / 2;
+                let (sound, next) = if trg & 0x20 != 0 {
+                    (0x8000_0001, if state == 14 { 3 } else { state + 1 })
+                } else if trg & 0x40 != 0 {
+                    (0x8000_0004, 3)
+                } else {
+                    return summon;
+                };
+                call(mem, snd, &[sound]);
+                let eax = call(mem, close, &[page]);
+                set(mem, next);
+                eax
+            }
+            15 => {
+                mem.write(at(0x45), 0xffu8);
+                set(mem, 0x10);
+                summon
+            }
+            _ => summon,
+        }
+    }
+
+    /// `BtlEnd_DrawCaption_008b9f30()` (`0x008b9f30`, own name): the
+    /// battle-end caption plate, inside `TOMakePktScissor(0, 0, 0x200,
+    /// 0x1a0)` (set again at the end, its `eax`). With `u16 0x0186a168` 0
+    /// the text `[0x025cc594]` (`TkBtlEndGetText(0x4004)`), when set, on
+    /// one plate: its width `w` (`ToGetCrossExtMesFontWidth(0, text, &w,
+    /// 0.78, 1.0)`), the plate `width` = `remapX2(80) + w` when that is
+    /// wider than `remapX2(660)`, else `remapX2(740)`, `left` =
+    /// `remapX2(1806) - width`, `TODrawMenuPlateXYWHType(left,
+    /// remapY2(925), width, remapY2(48), 2)` and the text centred
+    /// (`TOMkpCrossExtMesFontLClut(0, text, left + (width - w) / 2,
+    /// remapY2(927), 0, 0.78, 1.0)`). Otherwise the text `[0x025cc58c]`
+    /// (`0x400a`), when set, is cut at its first line code (`TOGetGroup`
+    /// 1, walked with `TOSkipCode`; the byte is 0 while it draws and 1
+    /// after) and its two lines share two plates (y 870 and 925, the
+    /// wider line's width) and the lines (y 872 and 927).
+    pub fn btl_end_draw_caption<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ONE: u32 = 0x3f80_0000;
+        let scissor = mem.rebase(0x008f_dee0);
+        call(mem, scissor, &[0, 0, 0x200, 0x1a0]);
+        let width_of = mem.rebase(0x0090_5320);
+        let plate = mem.rebase(0x008f_5f70);
+        let print = mem.rebase(0x0090_16b0);
+        // the plate's width, left edge and the centred text's x for a
+        // line `w` wide
+        let layout = |mem: &mut M, w: u32, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64| {
+            let narrow = remap(mem, false, 660.0);
+            let width = if narrow < load(w) {
+                store(add(remap(mem, false, 80.0), load(w)))
+            } else {
+                store(remap(mem, false, 740.0))
+            };
+            let right = remap(mem, false, 1806.0);
+            let left = store(sub(right, load(width)));
+            let x = store(add(mul(sub(load(width), load(w)), 0.5), load(left)));
+            (width, left, x)
+        };
+        let draw_plate = |mem: &mut M,
+                          y: f32,
+                          (width, left): (u32, u32),
+                          remap: RemapDyn<M>,
+                          call: CallDyn<M>| {
+            let height = store(remap(mem, true, 48.0));
+            let top = store(remap(mem, true, y));
+            call(mem, plate, &[left, top, width, height, 2]);
+        };
+        if mem.read::<u16>(mem.rebase(0x0186_a168)) == 0 {
+            let text_at = mem.rebase(0x025c_c594);
+            let text: u32 = mem.read(text_at);
+            if text != 0 {
+                call(mem, width_of, &[0, text, local, SCALE, ONE]);
+                let w: u32 = mem.read(local);
+                let (width, left, x) = layout(mem, w, remap);
+                draw_plate(mem, 925.0, (width, left), remap, call);
+                let y = store(remap(mem, true, 927.0));
+                let text: u32 = mem.read(text_at);
+                call(mem, print, &[0, text, x, y, 0, SCALE, ONE]);
+            }
+        } else {
+            let text_at = mem.rebase(0x025c_c58c);
+            let mut cut: u32 = mem.read(text_at);
+            if cut != 0 {
+                let (group, skip) = (mem.rebase(0x008d_f610), mem.rebase(0x008d_fd80));
+                while mem.read::<u8>(cut) != 0 {
+                    let code = u32::from(mem.read::<u8>(cut));
+                    if call(mem, group, &[code]) == 1 {
+                        break;
+                    }
+                    cut = call(mem, skip, &[cut]);
+                }
+                mem.write(cut, 0u8);
+                let (first_w, second_w) = (local, local.wrapping_add(4));
+                let text: u32 = mem.read(text_at);
+                call(mem, width_of, &[0, text, first_w, SCALE, ONE]);
+                let second = cut.wrapping_add(1);
+                call(mem, width_of, &[0, second, second_w, SCALE, ONE]);
+                let (wide1, wide2): (u32, u32) = (mem.read(first_w), mem.read(second_w));
+                let w = if load(wide2) < load(wide1) {
+                    wide1
+                } else {
+                    wide2
+                };
+                let (width, left, x) = layout(mem, w, remap);
+                draw_plate(mem, 870.0, (width, left), remap, call);
+                draw_plate(mem, 925.0, (width, left), remap, call);
+                let y = store(remap(mem, true, 872.0));
+                let text: u32 = mem.read(text_at);
+                call(mem, print, &[0, text, x, y, 0, SCALE, ONE]);
+                let y = store(remap(mem, true, 927.0));
+                call(mem, print, &[0, second, x, y, 0, SCALE, ONE]);
+                mem.write(cut, 1u8);
+            }
+        }
+        call(mem, scissor, &[0, 0, 0x200, 0x1a0])
+    }
+
+    /// `MenuKaizou_Draw_008d6860(w)` (`0x008d6860`, own name; the `+0x10`
+    /// draw step of `MenuKaizou_OpenWindow`'s window): the customise
+    /// menu. `TODrawMenuBG()`, `0x008e71d0(3)`, `TkMenuGetCurrentPlayer()`;
+    /// the rows (`MenuKaizou_DrawRows`): at rest (`u16 +0x32` == `+0x34`)
+    /// inside `TkMn2DrawScissorRect(0, ftol(remapY2(315)), 0x200,
+    /// ftol(remapY2(680)))`, part 0 from `i16 +0x32`; while it scrolls in
+    /// `TkMn2DrawMenuWindowScissor(ftol(remapY2(315)), ftol(remapY2(680)),
+    /// part, i16 +0x46)` part 1 from `+0x32` and part 2 from `i16 +0x34` at
+    /// `y = ftol(f32(remapY2(675) * +0x46 * -1/4096))`; then
+    /// `TkMn2DrawScissorClear()`, `0x008d65f0(w, ftol(remapX2(389)),
+    /// ftol(remapY2(327)))`, the scroll bar `DrawCrossMenuScrollParts(
+    /// remapX2(955), remapY2(319), remapX2(8), remapY2(675), i16 +0x32, u16
+    /// +0x3a, u16 +0x30)`, the plates `(209, 252)` and `(970, 659)` (`740 x
+    /// 60`, type 2) with the sheet cells 6 at `(364, 264)` and 7 at `(1125,
+    /// 671)` (`430 x 36`), `0x008d6340(TkMn2GetStatusBG())`,
+    /// `0x008d63f0(i16 +0x48)` and the character plate
+    /// `TOMenuDrawChrStatusPlate_008ff490(MenuKaizou_WeaponByte4(w),
+    /// remapX2(210), remapY2(165))` (its `eax`). Floats are remapped last
+    /// argument first.
+    #[allow(clippy::too_many_lines)] // one straight sequence of draws
+    pub fn menu_kaizou_draw<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, store};
+        let at = |o: u32| w.wrapping_add(o);
+        let word = |mem: &M, o: u32| i32::from(mem.read::<i16>(at(o))).cast_unsigned();
+        for (f, args) in [
+            (0x008f_5c10, &[][..]),
+            (0x008e_71d0, &[3][..]),
+            (0x008a_9860, &[][..]),
+        ] {
+            let f = mem.rebase(f);
+            call(mem, f, args);
+        }
+        let rows = mem.rebase(0x008d_6560);
+        let span = |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64| {
+            let bottom = remap(mem, true, 680.0);
+            let bottom = ftol(mem, bottom);
+            let top = remap(mem, true, 315.0);
+            (ftol(mem, top), bottom)
+        };
+        if mem.read::<u16>(at(0x32)) == mem.read::<u16>(at(0x34)) {
+            let (top, bottom) = span(mem, remap);
+            let f = mem.rebase(0x008c_1390);
+            call(mem, f, &[0, top, 0x200, bottom]);
+            let first = word(mem, 0x32);
+            call(mem, rows, &[w, 0, first, 0, 0]);
+        } else {
+            let scissor = mem.rebase(0x008c_0f70);
+            let scroll = word(mem, 0x46);
+            let (top, bottom) = span(mem, remap);
+            call(mem, scissor, &[top, bottom, 1, scroll]);
+            let first = word(mem, 0x32);
+            call(mem, rows, &[w, 1, first, 0, 0]);
+            let scroll = word(mem, 0x46);
+            let (top, bottom) = span(mem, remap);
+            call(mem, scissor, &[top, bottom, 2, scroll]);
+            let step = remap(mem, true, 675.0);
+            let scroll = f64::from(mem.read::<i16>(at(0x46)));
+            let y = store(mul(mul(step, scroll), -0.000_244_140_625));
+            let y = ftol(mem, load(y));
+            let first = word(mem, 0x34);
+            call(mem, rows, &[w, 2, first, 0, y]);
+        }
+        let f = mem.rebase(0x008c_1370);
+        call(mem, f, &[]);
+        let y = remap(mem, true, 327.0);
+        let y = ftol(mem, y);
+        let x = remap(mem, false, 389.0);
+        let x = ftol(mem, x);
+        let f = mem.rebase(0x008d_65f0);
+        call(mem, f, &[w, x, y]);
+        {
+            let count = u32::from(mem.read::<u16>(at(0x30)));
+            let shown = u32::from(mem.read::<u16>(at(0x3a)));
+            let top = word(mem, 0x32);
+            let height = store(remap(mem, true, 675.0));
+            let width = store(remap(mem, false, 8.0));
+            let y = store(remap(mem, true, 319.0));
+            let x = store(remap(mem, false, 955.0));
+            let f = mem.rebase(0x008e_6cc0);
+            call(mem, f, &[x, y, width, height, top, shown, count]);
+        }
+        let plate = mem.rebase(0x008f_5f70);
+        let sheet = mem.rebase(0x008f_8bb0);
+        for (px, py, kind, cx, cy) in [
+            (209.0, 252.0, 6, 364.0, 264.0),
+            (970.0, 659.0, 7, 1125.0, 671.0),
+        ] {
+            let height = store(remap(mem, true, 60.0));
+            let width = store(remap(mem, false, 740.0));
+            let top = store(remap(mem, true, py));
+            let left = store(remap(mem, false, px));
+            call(mem, plate, &[left, top, width, height, 2]);
+            let height = store(remap(mem, true, 36.0));
+            let width = store(remap(mem, false, 430.0));
+            let top = store(remap(mem, true, cy));
+            let left = store(remap(mem, false, cx));
+            call(mem, sheet, &[kind, left, top, width, height]);
+        }
+        let f = mem.rebase(0x008d_4910);
+        let bg = call(mem, f, &[]);
+        let f = mem.rebase(0x008d_6340);
+        call(mem, f, &[bg]);
+        let row = word(mem, 0x48);
+        let f = mem.rebase(0x008d_63f0);
+        call(mem, f, &[row]);
+        let f = mem.rebase(0x008d_56f0);
+        let chr = call(mem, f, &[w]);
+        let y = store(remap(mem, true, 165.0));
+        let x = store(remap(mem, false, 210.0));
+        let f = mem.rebase(0x008f_f490);
+        call(mem, f, &[chr, x, y])
+    }
+
+    /// `MenuItem_ListWindowDraw_008c7750(w)` (`0x008c7750`): the item list
+    /// window's draw. `0x008e71d0(4)` for list kind 2 (`u8 +0x43`), else
+    /// `(2)`; the scroll bar (`DrawCrossMenuScrollParts(remapX2(955), y,
+    /// remapX2(10), height, i16 +0x32, u16 +0x3a, u16 +0x30)`, y and height
+    /// 240 and 760 with `0x0186a408` 1, else 284 and 687); the columns
+    /// `left` = `remapX2(210)`, `right` = `remapX2(978)` and the first
+    /// row's `y0` = `remapY2(284)` (kind 2) or `remapY2(240)`. Each of the
+    /// `u16 +0x3a` row pairs `k` draws `MenuItem_DrawListRow(w, left, y,
+    /// 2k, mode)` and `(w, right, y, 2k + 1, mode)`, then `y +=
+    /// remapY2(77)` (`f32`). At rest (`u16 +0x32` == `+0x34`) one pass,
+    /// mode 0, from `y0`; while it scrolls two, each inside
+    /// `TkMn2DrawMenuWindowScissor(ftol(y0 - remapY2(5)),
+    /// ftol(remapY2(10) + remapY2(77) * rows), part, i16 +0x46)`: part 1
+    /// with mode 2 from `y0`, part 2 with mode 1 from `y0 - (413 - (y0 -
+    /// 2)) * i16 +0x46 / 4096`. Then `TkMn2DrawScissorClear()` and, while
+    /// `+0x94` is set, `MenuItem_DrawListCursor_008c7af0(w, left, y0)`; the
+    /// last call's `eax`.
+    pub fn menu_item_list_window_draw<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        let at = |o: u32| w.wrapping_add(o);
+        let kind2 = mem.read::<u8>(at(0x43)) == 2;
+        let f = mem.rebase(0x008e_71d0);
+        call(mem, f, &[if kind2 { 4 } else { 2 }]);
+        let bar = if mem.read::<u32>(mem.rebase(0x0186_a408)) == 1 {
+            [240.0, 760.0]
+        } else {
+            [284.0, 687.0]
+        };
+        let count = u32::from(mem.read::<u16>(at(0x30)));
+        scroll_list_bar(mem, w, bar, count, remap, call);
+        let kind2 = mem.read::<u8>(at(0x43)) == 2;
+        let left = store(remap(mem, false, 210.0));
+        let y0 = store(remap(mem, true, if kind2 { 284.0 } else { 240.0 }));
+        let right = store(remap(mem, false, 978.0));
+        let row = mem.rebase(0x008c_7c30);
+        let pass = |mem: &mut M, mut y: u32, mode: u32, remap: RemapDyn<M>, call: CallDyn<M>| {
+            let mut k = 0u32;
+            while k.cast_signed() < i32::from(mem.read::<u16>(at(0x3a))) {
+                call(mem, row, &[w, left, y, 2 * k, mode]);
+                call(mem, row, &[w, right, y, 2 * k + 1, mode]);
+                k += 1;
+                y = store(add(remap(mem, true, 77.0), load(y)));
+            }
+        };
+        if mem.read::<u16>(at(0x32)) == mem.read::<u16>(at(0x34)) {
+            pass(mem, y0, 0, remap, call);
+        } else {
+            let scissor = mem.rebase(0x008c_0f70);
+            let clip =
+                |mem: &mut M, part: u32, scroll: u32, remap: RemapDyn<M>, call: CallDyn<M>| {
+                    let rows = f64::from(mem.read::<u16>(at(0x3a)));
+                    let span = mul(remap(mem, true, 77.0), rows);
+                    let bottom = add(remap(mem, true, 10.0), span);
+                    let bottom = ftol(mem, bottom);
+                    let top = sub(load(y0), remap(mem, true, 5.0));
+                    let top = ftol(mem, top);
+                    call(mem, scissor, &[top, bottom, part, scroll]);
+                };
+            let scroll = i32::from(mem.read::<i16>(at(0x46))).cast_unsigned();
+            clip(mem, 1, scroll, remap, call);
+            pass(mem, y0, 2, remap, call);
+            let scroll = mem.read::<i16>(at(0x46));
+            let back = sub(413.0, sub(load(y0), 2.0));
+            let shift = mul(mul(back, f64::from(scroll)), 0.000_244_140_625);
+            let y = store(sub(load(y0), shift));
+            clip(mem, 2, i32::from(scroll).cast_unsigned(), remap, call);
+            pass(mem, y, 1, remap, call);
+        }
+        let f = mem.rebase(0x008c_1370);
+        let eax = call(mem, f, &[]);
+        if mem.read::<u32>(at(0x94)) == 0 {
+            return eax;
+        }
+        let f = mem.rebase(0x008c_7af0);
+        call(mem, f, &[w, left, y0])
+    }
+
     /// `TkInitSaveWork()` (`0x0088df40`): a new game's save event record
     /// (`MsGetSaveEventAddress()`): words `+0x0`, `+0xc`, `+0x14`, `+0x18`,
     /// `+0x1c`, `+0x24`, `+0x2c..=+0x98`, `+0xb4`, `+0xb8`, `+0xe4`, `+0xe8`

@@ -1923,6 +1923,29 @@ ported! {
         let local = frame.at();
         tk::tk_menu_message_layout2(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
     }
+    /// `TkMn2GetIShopPos()`: the last plate's `eax`.
+    TkMn2GetIShopPos @ 0x008d_b080 => extern "C" fn tk_mn2_get_ishop_pos() -> u32 {
+        tk::tk_mn2_get_ishop_pos(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_StatusWindowCtrl_008ccb60(w)`.
+    MenuSummon_StatusWindowCtrl_008ccb60 @ 0x008c_cb60 => extern "C" fn menu_summon_status_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_status_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawCaption_008b9f30()`: the last scissor's `eax`.
+    BtlEnd_DrawCaption_008b9f30 @ 0x008b_9f30 => extern "C" fn btl_end_draw_caption() -> u32 {
+        // the two text width words
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::btl_end_draw_caption(&mut mem(), local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_Draw_008d6860(w)`: the character plate's `eax`.
+    MenuKaizou_Draw_008d6860 @ 0x008d_6860 => extern "C" fn menu_kaizou_draw(w: u32) -> u32 {
+        tk::menu_kaizou_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_ListWindowDraw_008c7750(w)`: the last call's `eax`.
+    MenuItem_ListWindowDraw_008c7750 @ 0x008c_7750 => extern "C" fn menu_item_list_window_draw(w: u32) -> u32 {
+        tk::menu_item_list_window_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)
