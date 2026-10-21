@@ -7,6 +7,7 @@ use ffx_battle::atel::bridge as atel;
 use ffx_battle::battle_end::bridge as bend;
 use ffx_battle::camera_native::bridge as camnat;
 use ffx_battle::chr_damage::bridge as chrdmg;
+use ffx_battle::cursor::bridge as cursor;
 use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
 use ffx_battle::effect::bridge as effect;
@@ -26,6 +27,7 @@ use ffx_battle::parse::bridge as parse;
 use ffx_battle::predict::bridge as predict;
 use ffx_battle::process::bridge as process;
 use ffx_battle::read::bridge as read;
+use ffx_battle::reel::bridge as reel;
 use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::screen::bridge as screen;
@@ -5241,5 +5243,145 @@ ported! {
     /// `MsRegMotionRead()`.
     MsRegMotionRead @ 0x0079_ccf0 => extern "C" fn ms_reg_motion_read() -> i32 {
         read::ms_reg_motion_read(&mut mem(), &mut call_ptr)
+    }
+    /// `MsBattleReadDataNB(more)`.
+    MsBattleReadDataNB @ 0x0078_2090 => extern "C" fn ms_battle_read_data_nb(more: u32) -> u32 {
+        read::ms_battle_read_data_nb(&mut mem(), &mut call_ptr, more)
+    }
+    /// `MsBattleReadData()`.
+    MsBattleReadData @ 0x0078_2050 => extern "C" fn ms_battle_read_data() -> u32 {
+        read::ms_battle_read_data(&mut mem(), &mut call_ptr)
+    }
+    /// `Mon_AttachData(i)`.
+    Mon_AttachData @ 0x0078_3b00 => extern "C" fn mon_attach_data(i: u32) -> u32 {
+        read::mon_attach_data(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsBtlReadMonsterDone_00783990(request)`: the CD object's callback.
+    MsBtlReadMonsterDone_00783990 @ 0x0078_3990 => extern "C" fn ms_btl_read_monster_done(request: u32) -> u32 {
+        read::ms_btl_read_monster_done(&mut mem(), &mut call_ptr, request)
+    }
+    /// `MsAttachWeaponData_00784000(i)` (its callers pass a second word it
+    /// does not read).
+    MsAttachWeaponData_00784000 @ 0x0078_4000 => extern "C" fn ms_attach_weapon_data(i: u32) -> u32 {
+        read::ms_attach_weapon_data(&mut mem(), &mut call_ptr, i)
+    }
+    /// `MsCDreadWeapon(i, actor, then)`: the read's request block in the
+    /// port's frame (the CD object copies it, as from the original's).
+    MsCDreadWeapon @ 0x0078_4120 => extern "C" fn ms_cd_read_weapon(i: u32, actor: u32, then: u32) -> u32 {
+        let mut request = super::StackFrame::<{ (read::WEAPON_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        read::ms_cd_read_weapon(&mut mem(), &mut call_ptr, [i, actor, then], at)
+    }
+    /// `MsBtlReadWeapon()`: the read's request block in the port's frame.
+    MsBtlReadWeapon @ 0x0078_3f60 => extern "C" fn ms_btl_read_weapon() -> u32 {
+        let mut request = super::StackFrame::<{ (read::WEAPON_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        read::ms_btl_read_weapon(&mut mem(), &mut call_ptr, at)
+    }
+    /// `Cam_SetScreenVector2_007bc750(screen, x, y, z, w)`.
+    Cam_SetScreenVector2_007bc750 @ 0x007b_c750 => extern "C" fn cam_set_screen_vector2(screen: u32, x: i32, y: i32, z: i32, w: i32) -> u32 {
+        camera::cam_set_screen_vector2(&mut mem(), screen, [x, y, z, w])
+    }
+    /// `MsCameraSetFocusList_007bf520(id, side, flags, focus, weight)`.
+    MsCameraSetFocusList_007bf520 @ 0x007b_f520 => extern "C" fn ms_camera_set_focus_list(id: u32, side: u32, flags: u32, focus: u32, weight: u32) -> u32 {
+        camera::ms_camera_set_focus_list(&mut mem(), &mut call_ptr, [id, side, flags, focus, weight])
+    }
+    /// `MsAtelCameraPolar_007bb5d0(worker, args, stack, side, add)`.
+    MsAtelCameraPolar_007bb5d0 @ 0x007b_b5d0 => extern "C" fn ms_atel_camera_polar(w: u32, _args: u32, s: u32, side: u32, add: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_polar(&mut mem(), &mut c, [w, s, side, add])
+    }
+    /// `MsBindChrToChr_00795c90(i, other, elem)`: the optional position in
+    /// the port's frame.
+    MsBindChrToChr_00795c90 @ 0x0079_5c90 => extern "C" fn ms_bind_chr_to_chr(i: u32, other: u32, elem: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        body::ms_bind_chr_to_chr(&mut mem(), [i, other, elem], at)
+    }
+    /// `PasswordTextRead()`: the unified name in the port's frame.
+    PasswordTextRead @ 0x0079_0340 => extern "C" fn password_text_read() -> u32 {
+        let mut local = super::StackFrame::<{ (minor::PASSWORD_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        minor::password_text_read(&mut mem(), &mut call_ptr, at)
+    }
+    /// `Battle_QueueCommand(i, command, targets, request, step)`.
+    Battle_QueueCommand @ 0x007a_c9c0 => extern "C" fn battle_queue_command(i: u32, command: u32, targets: u32, request: u32, step: u32) -> u32 {
+        action::battle_queue_command(&mut mem(), &mut call_ptr, [i, command, targets, request, step])
+    }
+    /// `setCameraMatrixToPhyreScene(worker, args, stack, side)`: the
+    /// position in the port's frame.
+    setCameraMatrixToPhyreScene @ 0x007b_b6a0 => extern "C" fn set_camera_matrix_to_phyre_scene(w: u32, _args: u32, s: u32, side: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        native!(c);
+        camnat::set_camera_matrix_to_phyre_scene(&mut mem(), &mut c, [w, s, side], at)
+    }
+    /// `MsAtelChrInit(kind)`: the handler base in the port's frame.
+    MsAtelChrInit @ 0x0079_76a0 => extern "C" fn ms_atel_chr_init(kind: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        atel::ms_atel_chr_init(&mut mem(), &mut call_ptr, kind, at)
+    }
+    /// `setDefaultPlayerName()`: the converted name in the port's frame.
+    setDefaultPlayerName @ 0x0078_7470 => extern "C" fn set_default_player_name() {
+        let mut local = super::StackFrame::<{ (save::NAME_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        save::set_default_player_name(&mut mem(), &mut call_ptr, at);
+    }
+    /// `resetDefaultPlayerNameStatus()`: as [`set_default_player_name`].
+    resetDefaultPlayerNameStatus @ 0x0078_73a0 => extern "C" fn reset_default_player_name_status() {
+        let mut local = super::StackFrame::<{ (save::NAME_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        save::reset_default_player_name_status(&mut mem(), &mut call_ptr, at);
+    }
+    /// `MsGetReelResultKind_007b1710(symbols, hits)`.
+    MsGetReelResultKind_007b1710 @ 0x007b_1710 => extern "C" fn ms_get_reel_result_kind(symbols: u32, hits: u32) -> u32 {
+        reel::ms_get_reel_result_kind(&mut mem(), symbols, hits)
+    }
+    /// `MsSetReelResult(i, symbols, time, start)`: the original's frame
+    /// locals in the port's frame; `eax` the actor.
+    MsSetReelResult @ 0x007b_1b50 => extern "C" fn ms_set_reel_result(i: u32, symbols: u32, time: u32, start: u32) -> u32 {
+        let mut local = super::StackFrame::<{ (reel::REEL_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        reel::ms_set_reel_result(&mut mem(), &mut call_ptr, [i, symbols, time, start], at)
+    }
+    /// `MsGetReelTargets_007b1910(i, hits, spin, kind)`.
+    MsGetReelTargets_007b1910 @ 0x007b_1910 => extern "C" fn ms_get_reel_targets(i: u32, hits: u32, spin: u32, kind: u32) -> u32 {
+        reel::ms_get_reel_targets(&mut mem(), [i, hits, spin, kind])
+    }
+    /// `getSparedLmtPos(i, x, y)`: the original's frame locals in the
+    /// port's frame; `eax` the y.
+    getSparedLmtPos @ 0x0079_6c30 => extern "C" fn get_spared_lmt_pos(i: u32, x: u32, y: u32) -> u32 {
+        let mut local = super::StackFrame::<8>::new();
+        let at = local.at();
+        let (mut call, mut fcall) = (call_ptr, call_f32);
+        cursor::get_spared_lmt_pos(&mut mem(), &crt_trig, [&mut call, &mut fcall], [i, x, y], at)
+    }
+    /// `MsGetChrLimitBarFlag(i)`: the original's frame locals in the
+    /// port's frame; the result in `eax` (Ghidra: void).
+    MsGetChrLimitBarFlag @ 0x0079_5250 => extern "C" fn ms_get_chr_limit_bar_flag(i: u32) -> u32 {
+        let mut local = super::StackFrame::<{ (cursor::LIMIT_BAR_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        cursor::ms_get_chr_limit_bar_flag(&mut mem(), &crt_trig, &mut call_ptr, &mut call_f32, i, at)
+    }
+    /// `MsCalcCursorPos()`: the original's frame locals in the port's
+    /// frame.
+    MsCalcCursorPos @ 0x0079_f380 => extern "C" fn ms_calc_cursor_pos() {
+        let mut local = super::StackFrame::<{ (cursor::CURSOR_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        cursor::ms_calc_cursor_pos(&mut mem(), &crt_trig, &mut call_ptr, &mut call_f32, at);
+    }
+    /// `MsBattleCursorCalc()`: as [`ms_calc_cursor_pos`].
+    MsBattleCursorCalc @ 0x0078_0cc0 => extern "C" fn ms_battle_cursor_calc() {
+        let mut local = super::StackFrame::<{ (cursor::CURSOR_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        cursor::ms_battle_cursor_calc(&mut mem(), &crt_trig, &mut call_ptr, &mut call_f32, at);
+    }
+    /// `MsCDreadWeaponDone_00783fc0(done)`: the CD object's callback; the
+    /// next read's request block in the port's frame.
+    MsCDreadWeaponDone_00783fc0 @ 0x0078_3fc0 => extern "C" fn ms_cd_read_weapon_done(done: u32) -> u32 {
+        let mut request = super::StackFrame::<{ (read::WEAPON_REQUEST / 4) as usize }>::new();
+        let at = request.at();
+        read::ms_cd_read_weapon_done(&mut mem(), &mut call_ptr, done, at)
     }
 }

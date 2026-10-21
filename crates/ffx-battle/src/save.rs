@@ -1040,6 +1040,116 @@ pub mod bridge {
         }
         0
     }
+
+    /// What [`set_default_player_name`] calls through the game:
+    /// `TOGetFFXLangJmp()`, `MsMenuGetText(i, id, second)`,
+    /// `debugSetRikkuName()` and `MenuNameEntry_CommitDefault0b()` (menu),
+    /// `Atel_NameToLang1(src, dst)` and `Atel_NameFromLang1(src, dst)`
+    /// (script).
+    pub const TO_GET_FFX_LANG_JMP: u32 = 0x008a_c2f0;
+    pub const MS_MENU_GET_TEXT: u32 = 0x0078_fcf0;
+    pub const DEBUG_SET_RIKKU_NAME: u32 = 0x0086_0a60;
+    pub const NAME_ENTRY_COMMIT_DEFAULT_0B: u32 = 0x008c_5370;
+    pub const ATEL_NAME_TO_LANG1: u32 = 0x0087_5220;
+    pub const ATEL_NAME_FROM_LANG1: u32 = 0x0087_5370;
+    /// Bytes of [`set_default_player_name`]'s `local` (a converted name).
+    pub const NAME_LOCAL: u32 = 0x14;
+    /// Bytes per name ([`SAVE_NAMES_AT`], [`DEFAULT_NAMES`]): the text, then
+    /// `+0x12` its language and `+0x13` set while it is the default.
+    pub const NAME_SIZE: u32 = 0x14;
+    /// The saved names (`g_SaveChrNames`, 18 of them).
+    pub const SAVE_NAMES_AT: Global<u8> = Global::new(0x0113_2ddc);
+
+    /// `strlen(from) + 1` bytes from `from` to `to` (the original's
+    /// `strlen` and `memcpy`).
+    fn copy_text(mem: &mut impl Mem, to: u32, from: u32) {
+        let mut n = 0u32;
+        while mem.read::<u8>(from.wrapping_add(n)) != 0 {
+            n += 1;
+        }
+        let mut bytes = vec![0u8; n as usize + 1];
+        mem.read_bytes(from, &mut bytes);
+        mem.write_bytes(to, &bytes);
+    }
+
+    /// `setDefaultPlayerName()` (`0x00787470`): two default names come in
+    /// with the story (`g_SaveScenario` 0x5a for character 6's, 0x604 for
+    /// character 0xb's, while it is still a placeholder "O..."): the menu
+    /// text (`MsMenuGetText(3, 0x202c, 0)`, `(10, 0x2011, 0)`) copied over,
+    /// then in language 0xb `debugSetRikkuName` or
+    /// `MenuNameEntry_CommitDefault0b`. Each of the 18 saved names: one
+    /// still the default (`+0x13`) is the default name again (`+0x13` set),
+    /// else one of another script is converted (language 1 with a name of
+    /// 9 or 10: `Atel_NameToLang1`; languages 9 and 10 with one of 1:
+    /// `Atel_NameFromLang1`; into `local`, the original's frame, then
+    /// copied back); its language (`+0x12`) becomes the current one
+    /// (`TOGetFFXLangJmp`).
+    pub fn set_default_player_name<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        local: u32,
+    ) {
+        let mut game = |mem: &mut M, sym: u32, args: &[u32]| {
+            let f = mem.rebase(sym);
+            call(mem, f, args)
+        };
+        let lang = game(mem, TO_GET_FFX_LANG_JMP, &[]);
+        let scenario = u32::from(SCENARIO.get(mem));
+        let defaults = DEFAULT_NAMES.ptr(mem).addr;
+        for (from, chr, text, id, then) in [
+            (0x5a, 6, 3, 0x202c, DEBUG_SET_RIKKU_NAME),
+            (0x604, 0xb, 10, 0x2011, NAME_ENTRY_COMMIT_DEFAULT_0B),
+        ] {
+            let name = defaults + NAME_SIZE * chr;
+            if scenario >= from && mem.read::<u8>(name) == b'O' {
+                let t = game(mem, MS_MENU_GET_TEXT, &[text, id, 0]);
+                copy_text(mem, name, t);
+                if game(mem, TO_GET_FFX_LANG_JMP, &[]) == 0xb {
+                    game(mem, then, &[]);
+                }
+            }
+        }
+        let saves = SAVE_NAMES_AT.ptr(mem).addr;
+        for k in 0..18 {
+            let name = saves + NAME_SIZE * k;
+            let kind = mem.read::<u8>(name + 0x12);
+            if mem.read::<u8>(name + 0x13) != 0 {
+                copy_text(mem, name, defaults + NAME_SIZE * k);
+                mem.write(name + 0x13, 1u8);
+            } else {
+                let convert = match lang {
+                    1 if kind == 10 || kind == 9 => Some(ATEL_NAME_TO_LANG1),
+                    9 | 10 if kind == 1 => Some(ATEL_NAME_FROM_LANG1),
+                    _ => None,
+                };
+                if let Some(f) = convert {
+                    game(mem, f, &[name, local]);
+                    copy_text(mem, name, local);
+                }
+            }
+            mem.write(name + 0x12, lang.to_le_bytes()[0]);
+        }
+    }
+
+    /// `resetDefaultPlayerNameStatus()` (`0x007873a0`): every saved name
+    /// marked the default (`+0x13` 1) in the current language (`+0x12`,
+    /// `TOGetFFXLangJmp`), then [`set_default_player_name`] (the original
+    /// jumps to it).
+    pub fn reset_default_player_name_status<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        local: u32,
+    ) {
+        let f = mem.rebase(TO_GET_FFX_LANG_JMP);
+        let lang = call(mem, f, &[]).to_le_bytes()[0];
+        let saves = SAVE_NAMES_AT.ptr(mem).addr;
+        for k in 0..18 {
+            let name = saves + NAME_SIZE * k;
+            mem.write(name + 0x13, 1u8);
+            mem.write(name + 0x12, lang);
+        }
+        set_default_player_name(mem, call, local);
+    }
 }
 
 #[cfg(test)]

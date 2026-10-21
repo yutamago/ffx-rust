@@ -472,4 +472,83 @@ pub mod bridge {
         );
         v
     }
+
+    /// `dbgPrintf` and [`battle_queue_command`]'s message (no target).
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const TARGET_ERROR_TEXT: u32 = 0x00b5_4f94;
+    /// The action request's entries: 16 bytes each from `0x01136a80` (the
+    /// command and a 0 `u16` after it, `+8` the targets).
+    pub const REQUEST_LIST: u32 = 0x0113_6a80;
+
+    /// `Battle_QueueCommand(i, command, targets, request, step)`
+    /// (`0x007ac9c0`, natives `0x700b`, `0x705a`, `0x7117`): while an
+    /// action runs ([`crate::misc::bridge::ACTION`] not -1) for actor `i`
+    /// (the request block's byte 0) with fewer than 4 entries
+    /// ([`REQUEST_ENTRIES`]), the next entry gets `command` (and a 0
+    /// after it) and, when it is a command (`MsGetCommand(i, 0, -1, entry,
+    /// 0)`), its targets: those of the 31 actors in the mask `targets`
+    /// that can be: alive (`+0xdcc` 0) and there (`+0xdc8`), or dead with a
+    /// command for the dead (`+0x1a` bit 6). With some, the actor's script
+    /// targets (`MsSetChrScriptTargets_00796430`), the entries counted up,
+    /// the request word `request` and 0; a non-negative `step` goes to the
+    /// request's second word first. Without, -1 (printed when some actor
+    /// of the mask could not be: the mask of those and the last).
+    pub fn battle_queue_command<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        [i, command, targets, request, step]: [u32; 5],
+    ) -> u32 {
+        use crate::exec::bridge::{ACTION_REQUEST, ACTION_REQUEST_BLOCK, ACTION_REQUEST_STEP};
+        if crate::misc::bridge::ACTION.get(mem) == -1
+            || i != u32::from(ACTION_REQUEST_BLOCK.get(mem))
+            || REQUEST_ENTRIES.get(mem) >= 4
+        {
+            return u32::MAX;
+        }
+        let n = u32::from(REQUEST_ENTRIES.get(mem));
+        let entry = mem.rebase(REQUEST_LIST) + 0x10 * n;
+        #[allow(clippy::cast_possible_truncation)] // the entry's u16
+        mem.write(entry, command as u16);
+        mem.write(entry + 2, 0u16);
+        let c = crate::command::bridge::ms_get_command(mem, u32::MAX, entry, 0);
+        if c == 0 {
+            return u32::MAX;
+        }
+        if step.cast_signed() >= 0 {
+            ACTION_REQUEST_STEP.set(mem, step);
+        }
+        let for_dead = mem.read::<u16>(c + 0x1a) >> 6 & 1 != 0;
+        let (mut ok, mut bad, mut last) = (0u32, 0u32, 0xffu32);
+        for k in 0..0x1f {
+            let a = crate::actor::bridge::ms_get_chr(mem, k);
+            if (targets.cast_signed() >> k) & 1 == 0 {
+                continue;
+            }
+            let dead = mem.read::<u8>(a + 0xdcc) != 0;
+            let can = if dead {
+                for_dead
+            } else {
+                mem.read::<u8>(a + 0xdc8) != 0
+            };
+            if can {
+                ok |= 1 << k;
+            } else {
+                bad |= 1 << k;
+                last = k;
+            }
+        }
+        mem.write(entry + 8, ok);
+        if ok != 0 {
+            crate::minor::bridge::ms_set_chr_script_targets(mem, i, ok);
+            REQUEST_ENTRIES.set(mem, REQUEST_ENTRIES.get(mem).wrapping_add(1));
+            ACTION_REQUEST.set(mem, request);
+            return 0;
+        }
+        if bad != 0 {
+            let f = mem.rebase(DBG_PRINTF);
+            let fmt = mem.rebase(TARGET_ERROR_TEXT);
+            call(mem, f, &[fmt, i, bad, last]);
+        }
+        u32::MAX
+    }
 }

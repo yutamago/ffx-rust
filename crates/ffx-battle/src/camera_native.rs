@@ -668,4 +668,98 @@ pub mod bridge {
         let near = crate::vector::bridge::ms_near_rag(mem, 0, round_trip(angle).to_bits());
         mem.write(point.wrapping_add(0xc), near);
     }
+
+    /// `Cam_SetPolar(id, side, a, b, c)` and `Cam_AddPolar` (the camera's
+    /// polar aim, set or added).
+    pub const CAM_SET_POLAR: u32 = 0x007b_f700;
+    pub const CAM_ADD_POLAR: u32 = 0x007b_f7f0;
+
+    /// `MsAtelCameraPolar_007bb5d0(worker, _, stack, side, add)`
+    /// (`0x007bb5d0`, name ours; callers `Native_CamSetPolar`,
+    /// `Native_Cam_6005`, `Native_6022`, `Native_6023`): three floats
+    /// popped (`r`, then the degrees `b` and `a`) to the worker's camera's
+    /// polar aim on `side`: `Cam_SetPolar(camera, side, rad(a), rad(b), r)`,
+    /// or with `add` `Cam_AddPolar`, whose `eax` it returns.
+    pub fn ms_atel_camera_polar<M: Mem>(
+        mem: &mut M,
+        c: &mut Calls<'_, M>,
+        [w, s, side, add]: [u32; 4],
+    ) -> u32 {
+        let id = camera(mem, c, w);
+        let [r, b, a] = c.floats::<3>(mem, w, s);
+        let b = radians(mem, b);
+        let a = radians(mem, a);
+        let f = if add == 0 {
+            CAM_SET_POLAR
+        } else {
+            CAM_ADD_POLAR
+        };
+        c.game(mem, f, &[id, side, a, b, r])
+    }
+
+    /// `g_GraphicMapId` (graphics) and the special cases of
+    /// [`set_camera_matrix_to_phyre_scene`]: two battle scenes
+    /// (`MsGetBattleScene`), their levels (`graphicLevelGetNameHash`), the
+    /// story step (`g_SaveScenario`) and the magic file's ID.
+    pub const GRAPHIC_MAP_ID: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x0133_0844);
+    pub const SCENE_D4: u32 = 0x00d4_0000;
+    pub const SCENE_139: u32 = 0x0139_0000;
+    /// The three positions the special cases look for, `(x, y, z)` as
+    /// `f32` bits (the first's z the `f64` 480.0 at `0x00b55138`), and the
+    /// x the last one gets.
+    pub const RESET_POS: [u32; 3] = [0xc3c3_0000, 0xc2a4_0000, 0x43f0_0000];
+    pub const HIDE_POS: [u32; 3] = [0x4324_afc0, 0xc214_28f6, 0x4242_ad72];
+    pub const FIXED_X: u32 = 0xc288_1cb3;
+    /// `MsResetSceneObjects_0079e2a0()` (its shim makes its frame) and
+    /// `MsCameraSetRect(id, side, p)`.
+    pub const MS_RESET_SCENE_OBJECTS: u32 = 0x0079_e2a0;
+    pub const MS_CAMERA_SET_RECT: u32 = 0x007b_f940;
+
+    /// `setCameraMatrixToPhyreScene(worker, _, stack, side)` (`0x007bb6a0`,
+    /// natives `Native_CamSetPos`, `Native_CamRefSetPos`): the worker's
+    /// camera's side `side` placed (`MsCameraSetRect`) at the three floats
+    /// popped (`z`, `y`, `x`; into `local`, the original's frame, whose
+    /// fourth word it leaves as it is). Three fixes: at (-390, -82, 480) in
+    /// level 0x6e1 at story step 0x104 the scene objects are reset
+    /// (`MsResetSceneObjects_0079e2a0`, through the game); at [`HIDE_POS`] in battle scene
+    /// [`SCENE_D4`], level 0x200f, magic file 0xfa the hide mask is set
+    /// ([`crate::visible::bridge::HIDE_MASK`] 1); side 1 on map 0xf8 in
+    /// scene [`SCENE_139`] with `ftol(x * 1000)` -71056 moves to x
+    /// [`FIXED_X`]. `eax` `MsCameraSetRect`'s (the battle scene, the level,
+    /// the magic file and `MsCameraSetRect` through the game).
+    pub fn set_camera_matrix_to_phyre_scene<M: Mem>(
+        mem: &mut M,
+        c: &mut Calls<'_, M>,
+        [w, s, side]: [u32; 3],
+        local: u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul};
+        let id = camera(mem, c, w);
+        let [z, y, x] = c.floats::<3>(mem, w, s);
+        mem.write(local, [x, y, z]);
+        // exactly, as the original's fucompp
+        #[allow(clippy::float_cmp)]
+        let at = |v: [u32; 3]| [x, y, z].iter().zip(v).all(|(&a, b)| load(a) == load(b));
+        if at(RESET_POS)
+            && c.game(mem, GRAPHIC_LEVEL_GET_NAME_HASH, &[]) == 0x6e1
+            && crate::save::bridge::SCENARIO.get(mem) == 0x104
+        {
+            c.game(mem, MS_RESET_SCENE_OBJECTS, &[]);
+        }
+        if c.game(mem, MS_GET_BATTLE_SCENE, &[]) == SCENE_D4
+            && c.game(mem, GRAPHIC_LEVEL_GET_NAME_HASH, &[]) == 0x200f
+            && c.game(mem, MAGIC_FILE_GET_MAGIC_ID, &[]) == 0xfa
+            && at(HIDE_POS)
+        {
+            crate::visible::bridge::HIDE_MASK.set(mem, 1);
+        }
+        if side == 1
+            && GRAPHIC_MAP_ID.get(mem) == 0xf8
+            && c.game(mem, MS_GET_BATTLE_SCENE, &[]) == SCENE_139
+            && ftol(mem, mul(load(x), 1000.0)) == 0xfffe_ea70
+        {
+            mem.write(local, FIXED_X);
+        }
+        c.game(mem, MS_CAMERA_SET_RECT, &[id, side, local])
+    }
 }

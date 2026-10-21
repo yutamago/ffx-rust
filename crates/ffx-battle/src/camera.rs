@@ -2924,6 +2924,76 @@ pub mod bridge {
         }
         mem.write(at(0x6c), 0.0f32.to_bits());
     }
+
+    /// `Cam_SetScreenVector2_007bc750(screen, x, y, z, w)` (`0x007bc750`,
+    /// name ours; `Native_6050` calls it; a near copy of
+    /// `Cam_SetScreenVector`): for screens 0..=2 (unsigned), the four
+    /// `i32`s as `f32` (`fild`, `fstp dword`) into the screen's `+0x90`,
+    /// copied through the EE register move words
+    /// ([`crate::after_damage::bridge::EE_GPR_MOVE`]) and into `+0x50`.
+    /// `eax` the last word then; for another screen the original leaves
+    /// the caller's (0 here).
+    pub fn cam_set_screen_vector2(mem: &mut impl Mem, screen: u32, xyzw: [i32; 4]) -> u32 {
+        if screen > 2 {
+            return 0;
+        }
+        let at = SCREENS.ptr(mem).addr + SCREEN_SIZE * screen;
+        let v = xyzw.map(|c| ffx_bridge::x87::store(f64::from(c)));
+        mem.write(at + 0x90, v);
+        crate::after_damage::bridge::EE_GPR_MOVE.set(mem, v);
+        mem.write(at + 0x50, v);
+        v[3]
+    }
+
+    /// `MsCameraSetFocusList_007bf520(id, side, flags, focus, weight)`
+    /// (`0x007bf520`, name ours; callers `Native_Cam_601c`, `Native_601e`
+    /// and two of the debug menu): for a request `id` the camera knows
+    /// ([`ms_camera_id_check`]), its focus record on side `side & 1` of
+    /// camera `id & 0xff` (request `id >> 8 & 0xff` of 0x130 bytes from
+    /// `+0xc0` of the side's 0x61c bytes at [`CAMERAS`]` + 0x30`): `+0` 1,
+    /// `+2` 8, `+7` 0, `+3` the focus list's `+4` OR `flags`, `+8` the list
+    /// `focus`, `+0x40` the `f32` `weight`. When `id` is the camera's
+    /// current request (a live slot, [`ms_camera_get_num`]) the side's
+    /// focus is weighed ([`ms_camera_focus_weights`]) and the change
+    /// checked (`MsSetCheckChange(id, side, 1, 0)`, its `eax`). Else `eax`
+    /// the current request (0 for a slot off or done), 0 for an unknown
+    /// `id`.
+    pub fn ms_camera_set_focus_list<M: Mem>(
+        mem: &mut M,
+        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+        [id, side, flags, focus, weight]: [u32; 5],
+    ) -> u32 {
+        if ms_camera_id_check(mem, id) == 0 {
+            return 0;
+        }
+        let cam = id & 0xff;
+        let side = side & 1;
+        let base = CAMERAS
+            .ptr(mem)
+            .addr
+            .wrapping_add(0x30 + cam * CAMERA_SIZE + side * 0x61c);
+        let rec =
+            base.wrapping_add(((id.cast_signed() >> 8).cast_unsigned() & 0xff) * 0x130 + 0xc0);
+        mem.write(rec.wrapping_add(7), 0u8);
+        mem.write(rec, 1u8);
+        mem.write(rec.wrapping_add(2), 8u8);
+        let bits = mem.read::<u8>(focus.wrapping_add(4)) | flags.to_le_bytes()[0];
+        mem.write(
+            rec.wrapping_add(0x40),
+            ffx_bridge::x87::store(ffx_bridge::x87::load(weight)),
+        );
+        mem.write(rec.wrapping_add(3), bits);
+        mem.write(rec.wrapping_add(8), focus);
+        let n = ms_camera_get_num(mem, cam);
+        let slot = SLOTS_AT.ptr(mem).addr + cam * CAMERA_SIZE + 8 * n;
+        let off = mem.read::<u8>(slot + 4) != 0 || mem.read::<u8>(slot + 5) != 0;
+        let current = if off { 0 } else { mem.read::<u32>(slot) };
+        if current != id {
+            return current;
+        }
+        ms_camera_focus_weights(mem, base, rec);
+        ms_set_check_change(mem, call, id, side, 1, 0)
+    }
 }
 
 #[cfg(test)]

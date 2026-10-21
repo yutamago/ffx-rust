@@ -327,4 +327,35 @@ pub mod bridge {
             f
         }
     }
+
+    /// `MsBindChrToChr_00795c90(i, other, elem)` (`0x00795c90`, name ours;
+    /// entry of the callback table `0x00c657e0`): actor `i & 0xff`'s
+    /// character (`MsGetChrHandle`) bound to element `elem` of actor
+    /// `other & 0xff`'s (`Ch_BindToElem`), then put at that element's
+    /// optional position (`Ch_OptposGet` into `local`, 16 bytes, the
+    /// original's frame; `MsSetChrPos`, its `eax`); unbound for a negative
+    /// `other` (`Ch_BindToElem(chr, 0, elem)`, its `eax`). 0 for a
+    /// non-actor or one (or an `other`) without a character.
+    pub fn ms_bind_chr_to_chr(mem: &mut impl Mem, [i, other, elem]: [u32; 3], local: u32) -> u32 {
+        use crate::actor::bridge::{ms_btl_chr_num_check, ms_get_chr_handle};
+        use ffx_chara::attach::bridge::{ch_bind_to_elem, ch_optpos_get};
+        let i = i & 0xff;
+        if ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let chr = ms_get_chr_handle(mem, i);
+        if chr == 0 {
+            return 0;
+        }
+        if other.cast_signed() < 0 {
+            return ch_bind_to_elem(mem, chr, 0, elem);
+        }
+        let parent = ms_get_chr_handle(mem, other & 0xff);
+        if parent == 0 {
+            return 0;
+        }
+        ch_bind_to_elem(mem, chr, parent, elem);
+        ch_optpos_get(mem, parent, elem, local);
+        ms_set_chr_pos(mem, i, local).cast_unsigned()
+    }
 }

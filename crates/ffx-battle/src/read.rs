@@ -1061,4 +1061,306 @@ pub mod bridge {
             }
         }
     }
+
+    /// What [`ms_battle_read_data_nb`] calls through the game:
+    /// `MsGetCheckEnglish()` (its shim asks the menu for the language),
+    /// `MsBattleExe(mode, field, group, slot)`, `MsBtlReadSetScene()`
+    /// ([`MS_BTL_READ_SET_SCENE`]), `Kernel_LoadTables(part)` (system),
+    /// `MsMenuReadStartText_00782b70(part)`, `MsImportantRead()`,
+    /// `MsWeaponNameRead()` and `eiAbmSetLang()` (sphere grid).
+    pub const MS_GET_CHECK_ENGLISH: u32 = 0x0078_4e60;
+    pub const MS_BATTLE_EXE: u32 = 0x0078_1020;
+    pub const KERNEL_LOAD_TABLES: u32 = 0x0078_1d40;
+    pub const MS_MENU_READ_START_TEXT: u32 = 0x0078_2b70;
+    pub const MS_IMPORTANT_READ: u32 = 0x0079_08c0;
+    pub const MS_WEAPON_NAME_READ: u32 = 0x007a_2600;
+    pub const EI_ABM_SET_LANG: u32 = 0x00a5_4ab0;
+    /// [`ms_battle_read_data_nb`]'s step (0-7) and the part of a step's
+    /// file (`g_BtlReadDataStep`, `g_BtlReadDataPart`, names ours).
+    pub const READ_DATA_STEP: Global<u32> = Global::new(0x0112_ca58);
+    pub const READ_DATA_PART: Global<u32> = Global::new(0x0112_ca5c);
+
+    /// `MsBattleReadDataNB(more)` (`0x00782090`): the battle's language
+    /// data read again, one step per call, after the language changed.
+    /// Nothing (0) unless English is checked (`MsGetCheckEnglish`) and the
+    /// configuration's English switch (`MsGetSaveConfigEnglish`, always 0
+    /// on the PC) differs from the one kept
+    /// ([`crate::init::bridge::CONFIG_ENGLISH`]). A first call (`more` 0)
+    /// starts at step 0 (part 0); a later one past step 6 keeps the switch
+    /// and ends (0). The steps (jump table `0x007821c0`), each -1: 0
+    /// `MsBattleExe(-1, 0, 0, 1)`; 1 `MsBtlReadSetScene` and the script
+    /// records' shift; 2 the kernel tables, one part per call until
+    /// `Kernel_LoadTables(part)` is 0; 3 the same with
+    /// `MsMenuReadStartText_00782b70(part)`; 4 `MsImportantRead`; 5
+    /// `MsWeaponNameRead`; 6 `eiAbmSetLang`; each step then the next.
+    pub fn ms_battle_read_data_nb<M: Mem>(mem: &mut M, call: Call<'_, M>, more: u32) -> u32 {
+        use crate::init::bridge::CONFIG_ENGLISH;
+        if game(mem, &mut *call, MS_GET_CHECK_ENGLISH, &[]) == 0 {
+            return 0;
+        }
+        let english = crate::getmem::bridge::ms_get_save_config_english();
+        if english == CONFIG_ENGLISH.get(mem) {
+            return 0;
+        }
+        let (step, part) = if more == 0 {
+            READ_DATA_STEP.set(mem, 0);
+            READ_DATA_PART.set(mem, 0);
+            (0, 0)
+        } else {
+            let step = READ_DATA_STEP.get(mem);
+            if step > 6 {
+                CONFIG_ENGLISH.set(mem, english);
+                return 0;
+            }
+            (step, READ_DATA_PART.get(mem))
+        };
+        // a step whose part is not the last: the next part
+        let next_part = |mem: &mut M| {
+            READ_DATA_PART.set(mem, READ_DATA_PART.get(mem).wrapping_add(1));
+            u32::MAX
+        };
+        let next = match step {
+            0 => {
+                game(mem, call, MS_BATTLE_EXE, &[u32::MAX, 0, 0, 1]);
+                1
+            }
+            1 => {
+                game(mem, call, MS_BTL_READ_SET_SCENE, &[]);
+                crate::getmem::bridge::ms_btl_script_record_shift(mem);
+                2
+            }
+            2 => {
+                if game(mem, call, KERNEL_LOAD_TABLES, &[part]) != 0 {
+                    return next_part(mem);
+                }
+                READ_DATA_PART.set(mem, 0);
+                3
+            }
+            3 => {
+                if game(mem, call, MS_MENU_READ_START_TEXT, &[part]) != 0 {
+                    return next_part(mem);
+                }
+                READ_DATA_PART.set(mem, 0);
+                4
+            }
+            4 => {
+                game(mem, call, MS_IMPORTANT_READ, &[]);
+                5
+            }
+            5 => {
+                game(mem, call, MS_WEAPON_NAME_READ, &[]);
+                6
+            }
+            _ => {
+                game(mem, call, EI_ABM_SET_LANG, &[]);
+                7
+            }
+        };
+        READ_DATA_STEP.set(mem, next);
+        u32::MAX
+    }
+
+    /// `MsBattleReadData()` (`0x00782050`): [`ms_battle_read_data_nb`] to
+    /// the end, waiting on the CD (method `+8`) between the steps
+    /// (`more` 0, then 1, 2, ...). 0 when there was nothing to read, else
+    /// -1.
+    pub fn ms_battle_read_data<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
+        let mut k = 0u32;
+        if ms_battle_read_data_nb(mem, &mut *call, k) == 0 {
+            return 0;
+        }
+        loop {
+            let obj = game(mem, &mut *call, crate::getmem::bridge::GET_CD, &[]);
+            let f: u32 = mem.read(obj.wrapping_add(8));
+            call(mem, f, &[0]);
+            k = k.wrapping_add(1);
+            if ms_battle_read_data_nb(mem, &mut *call, k) == 0 {
+                return u32::MAX;
+            }
+        }
+    }
+
+    /// `Mon_AttachData(i)` (`0x00783b00`): monster `i`'s file (`+0x48`: a
+    /// count, then section offsets from it) into its pointers: section 1
+    /// the script (`+0xf78`), 2 (`+0xf7c`), 3 the stats (`+0xf80`), 7
+    /// (`+0xf84`); a shown one (`+0x11`) with a section 6 (more than 6,
+    /// not 0) has its sounds registered ([`ms_regist_se_data`]). Then
+    /// `+0xdf6` the first byte of section 2, `+0xdf5` the read counter
+    /// ([`crate::misc::bridge::BTL_READ`]), counted up. The counter after.
+    ///
+    /// [`ms_regist_se_data`]: crate::sound::bridge::ms_regist_se_data
+    pub fn mon_attach_data<M: Mem>(mem: &mut M, call: Call<'_, M>, i: u32) -> u32 {
+        use crate::misc::bridge::BTL_READ;
+        let m = crate::actor::bridge::ms_get_mon(mem, i);
+        let file: u32 = mem.read(m.wrapping_add(0x48));
+        let n: i32 = mem.read(file);
+        let section = |mem: &M, k: u32| mem.read::<u32>(file.wrapping_add(4 * k));
+        for (k, at) in [(1, 0xf78), (2, 0xf7c), (3, 0xf80), (7, 0xf84)] {
+            let p = section(mem, k).wrapping_add(file);
+            mem.write(m.wrapping_add(at), p);
+        }
+        if mem.read::<u8>(m.wrapping_add(0x11)) != 0 && n > 6 && section(mem, 6) != 0 {
+            let sep = section(mem, 6).wrapping_add(file);
+            crate::sound::bridge::ms_regist_se_data(mem, call, m, sep);
+        }
+        let stats: u32 = mem.read(m.wrapping_add(0xf7c));
+        let first: u8 = mem.read(stats);
+        mem.write(m.wrapping_add(0xdf6), first);
+        let k = BTL_READ.get(mem);
+        mem.write(m.wrapping_add(0xdf5), k.to_le_bytes()[0]);
+        let k = k.wrapping_add(1);
+        BTL_READ.set(mem, k);
+        k
+    }
+
+    /// `MsBtlReadMonsterDone_00783990(request)` (`0x00783990`): the
+    /// monster file read's completion: the slot (`request + 0xc`) attached
+    /// ([`mon_attach_data`]), then the next monster's read
+    /// (`MsBtlReadMonster`, through the game: its shim makes the request
+    /// block; the original jumps to it), whose result it returns.
+    pub fn ms_btl_read_monster_done<M: Mem>(mem: &mut M, call: Call<'_, M>, request: u32) -> u32 {
+        let slot: u32 = mem.read(request.wrapping_add(0xc));
+        mon_attach_data(mem, &mut *call, slot);
+        game(mem, call, MS_BTL_READ_MONSTER, &[])
+    }
+
+    /// `MsAttachWeaponData_00784000(i)` (`0x00784000`, name ours; callers
+    /// `MsCDreadWeapon` and its completion): actor `i`'s weapon file
+    /// (`+0x48`: a count, then section offsets from it) into place when
+    /// it is shown (`+0x11`): without an effect file yet (`+0x4c` 0) the
+    /// file's section 2 (more than 2, not 0; else `+0x4c` 0) becomes it
+    /// and starts (`MsEffectWeaponInit(effect, i)`); section 1 (more than
+    /// 1, not 0) has its sounds registered (`MsRegistSEdata`). Its `eax`:
+    /// the actor when not shown, else that call's result or the section 1
+    /// offset.
+    pub fn ms_attach_weapon_data<M: Mem>(mem: &mut M, call: Call<'_, M>, i: u32) -> u32 {
+        let actor = ms_get_chr(mem, i);
+        let file: u32 = mem.read(actor.wrapping_add(0x48));
+        let n: i32 = mem.read(file);
+        if mem.read::<u8>(actor.wrapping_add(0x11)) == 0 {
+            return actor;
+        }
+        if mem.read::<u32>(actor.wrapping_add(0x4c)) == 0 {
+            let effect: u32 = mem.read(file.wrapping_add(8));
+            if n > 2 && effect != 0 {
+                let effect = effect.wrapping_add(file);
+                mem.write(actor.wrapping_add(0x4c), effect);
+                crate::minor::bridge::ms_effect_weapon_init(mem, &mut *call, effect, i);
+            } else {
+                mem.write(actor.wrapping_add(0x4c), 0u32);
+            }
+        }
+        let sep: u32 = mem.read(file.wrapping_add(4));
+        if n > 1 && sep != 0 {
+            let sep = sep.wrapping_add(file);
+            return crate::sound::bridge::ms_regist_se_data(mem, call, actor, sep).cast_unsigned();
+        }
+        sep
+    }
+
+    /// The weapon file's block name (`"wep_data"`) and the read's
+    /// completion ([`ms_cd_read_weapon_done`], the CD object calls it).
+    pub const WEP_DATA_NAME: u32 = 0x00b5_4934;
+    pub const WEAPON_READ_DONE: u32 = 0x0078_3fc0;
+    /// The request block the weapon file's read gets: `+0xc` the actor,
+    /// `+0x10` what follows (0 the next weapon, 2 the read cue's entry
+    /// done, else nothing); the original's frame block is 0x1c bytes.
+    pub const WEAPON_REQUEST: u32 = 0x1c;
+
+    /// `MsCDreadWeapon(i, actor, then)` (`0x00784120`): an actor whose
+    /// weapon file is in (`+0x48`) is attached
+    /// ([`ms_attach_weapon_data`]), -1. Else the file: for a character
+    /// (`i` below 7) of directory 0x28 (CD `+0x10`), the one of its weapon
+    /// (`MsGetSaveWeapon(+0x592, 0)`'s model `+0xc`, low byte `m`: file
+    /// `m - 2 (m / 10) - 1`), for the others file `i - 7` of directory 0x2b;
+    /// a new block (`Sg_MallocA(size, 0x10, 5, "wep_data", i)`, CD `+0x14`
+    /// for the size) into `+0x48`, read (CD `+0`) with
+    /// [`WEAPON_READ_DONE`] and `request` (`+0xc` `i`, `+0x10` `then`). 0.
+    pub fn ms_cd_read_weapon<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        [i, actor, then]: [u32; 3],
+        request: u32,
+    ) -> u32 {
+        let cd = |mem: &mut M, call: Call<'_, M>, slot: u32, args: &[u32]| {
+            let obj = game(mem, &mut *call, crate::getmem::bridge::GET_CD, &[]);
+            let f: u32 = mem.read(obj.wrapping_add(slot));
+            call(mem, f, args)
+        };
+        if mem.read::<u32>(actor.wrapping_add(0x48)) != 0 {
+            ms_attach_weapon_data(mem, call, i);
+            return u32::MAX;
+        }
+        let file = if i.cast_signed() < 7 {
+            cd(mem, &mut *call, 0x10, &[0x28]);
+            let id = u32::from(mem.read::<u8>(actor.wrapping_add(0x592)));
+            let w = crate::save::bridge::ms_get_save_weapon(mem, id, 0);
+            let m = u32::from(mem.read::<u16>(w.wrapping_add(0xc)) & 0xff);
+            m.wrapping_sub(2 * (m / 10)).wrapping_sub(1)
+        } else {
+            cd(mem, &mut *call, 0x10, &[0x2b]);
+            i.wrapping_sub(7)
+        };
+        let size = cd(mem, &mut *call, 0x14, &[file]);
+        let name = code(mem, WEP_DATA_NAME);
+        let block = game(mem, &mut *call, SG_MALLOC_A, &[size, 0x10, 5, name, i]);
+        mem.write(request.wrapping_add(0xc), i);
+        mem.write(actor.wrapping_add(0x48), block);
+        mem.write(request.wrapping_add(0x10), then);
+        let done = code(mem, WEAPON_READ_DONE);
+        cd(mem, call, 0, &[file, block, done, request]);
+        0
+    }
+
+    /// `MsBtlReadWeapon(request)` (`0x00783f60`): status 0x12; from actor
+    /// [`crate::misc::bridge::BTL_READ2`] (its low byte, signed) on, the
+    /// first of the 18 with a weapon (`+0xdc8`) whose file is not in has
+    /// it read ([`ms_cd_read_weapon`], `then` 0: the completion reads the
+    /// next), the next actor noted, -1. With none left, status 0x13, 0.
+    /// `request` is for [`ms_cd_read_weapon`] (the original's is in that
+    /// function's frame).
+    pub fn ms_btl_read_weapon<M: Mem>(mem: &mut M, call: Call<'_, M>, request: u32) -> u32 {
+        let next = crate::misc::bridge::BTL_READ2.ptr(mem).addr;
+        STATUS.set(mem, 0x12);
+        let mut i = i32::from(mem.read::<i8>(next));
+        while i < 0x12 {
+            let actor = ms_get_chr(mem, i.cast_unsigned());
+            if mem.read::<u8>(actor.wrapping_add(0xdc8)) != 0
+                && ms_cd_read_weapon(mem, &mut *call, [i.cast_unsigned(), actor, 0], request) == 0
+            {
+                mem.write(next, i.to_le_bytes()[0].wrapping_add(1));
+                return u32::MAX;
+            }
+            i += 1;
+        }
+        STATUS.set(mem, 0x13);
+        0
+    }
+
+    /// `MsCDreadWeaponDone_00783fc0(done)` (`0x00783fc0`, name ours): the
+    /// weapon file read's completion (the CD object's callback): the actor
+    /// (`done + 0xc`) attached ([`ms_attach_weapon_data`]); then by `done +
+    /// 0x10`: 0 the next weapon's read ([`ms_btl_read_weapon`], its
+    /// result), 2 the read cue's entry done
+    /// ([`crate::misc::bridge::ms_btl_read_status_complete`]; the
+    /// original's `eax` is that function's garbage, 0 here), else the
+    /// attach's result. `request` as for [`ms_btl_read_weapon`].
+    pub fn ms_cd_read_weapon_done<M: Mem>(
+        mem: &mut M,
+        call: Call<'_, M>,
+        done: u32,
+        request: u32,
+    ) -> u32 {
+        let then: u32 = mem.read(done.wrapping_add(0x10));
+        let i: u32 = mem.read(done.wrapping_add(0xc));
+        let r = ms_attach_weapon_data(mem, &mut *call, i);
+        match then {
+            0 => ms_btl_read_weapon(mem, call, request),
+            2 => {
+                crate::misc::bridge::ms_btl_read_status_complete(mem);
+                0
+            }
+            _ => r,
+        }
+    }
 }
