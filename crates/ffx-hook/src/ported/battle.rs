@@ -3070,6 +3070,18 @@ ported! {
     MsMonShuffleVariants_007842f0 @ 0x0078_42f0 => extern "C" fn ms_mon_shuffle_variants() {
         read::ms_mon_shuffle_variants(&mut mem());
     }
+    /// `Mon_LoadAll()`: the monsters set up and their scripts queued.
+    Mon_LoadAll @ 0x0078_4070 => extern "C" fn mon_load_all() {
+        let mut m = mem();
+        read::mon_load_all(&mut target::Dm::new(&mut m), &mut call_ptr);
+    }
+    /// `MsSetChrVisibleBtl2Event(actor, mask, reset)`: actors back in the
+    /// battle after an event.
+    MsSetChrVisibleBtl2Event @ 0x007a_89c0 => extern "C" fn ms_set_chr_visible_btl2_event(actor: u32, mask: u32, reset: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_set_chr_visible_btl2_event(&mut target::Dm::new(&mut m), &mut s, actor, mask, reset)
+    }
     /// `MsSetRamChrAbility(chr, actor)`.
     MsSetRamChrAbility @ 0x0079_bb50 => extern "C" fn ms_set_ram_chr_ability(chr: u32, actor: u32) {
         ffx_battle::ability::bridge::ms_set_ram_chr_ability(&mut mem(), chr, actor);
