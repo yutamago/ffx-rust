@@ -121,6 +121,17 @@ as the fade goes 0..0x1000, with alpha `fade / 32`; a disabled option's
 name is drawn dimmed. The highlighted option (`0x01871548`) gets the cross
 cursor once fully shown.
 
+`MenuMain_DrawCmdWindow` (`0x008e20f0`) is the option window's draw: it
+does nothing while the active-menu mask has a bit of `0x80800`; otherwise
+it draws the backing (`TOMkpShapeXYWHUVC2` shape -1, UV `1879, 542` to
+`1881, 662`, colour `0x80808080`) from `(1280, s * 194 / 4096)` with width
+2 and height `s * 805 / 4096`, `s` the slide `0x01871558` as an `f32`,
+and, while the slide is non-zero, every option row
+(`MenuMain_DrawOptionRow(i, 0, 0, -20, slide)`) with the highlighted one
+last. The original keeps the slide in `ecx` across
+`TkMenuMainGetMaxOptions` (a bare `mov eax, [0x01871688]`), so that call
+must leave `ecx` alone.
+
 `TkMenuAppearMainCmdWindow` (`0x008e1c60`, `(slide, mode)`) fills that
 table. Modes `0xc`-`0x10` and `0x18` open a single option (menus `0xd`,
 `0xc`, `0xe`, `0xa`, `0xb`, `0x37`) and clear `0x01871554` (the main
@@ -295,6 +306,24 @@ shop's sell window draws with `MenuShop_DrawSellPanel` (`0x008da730`):
 -price, gil)`, the buy panel's call with the row taken off the owned count
 and the price negated.
 
+The item menu opens with `MenuItem_Open_008c5f20` (`0x008c5f20`): the
+lists are rebuilt (`TkMenuItemRefresh(0)`, the key-item list), the list
+window goes to `g_TkMenuItemWindow`, and a four-row sub-command window
+(`TkMenuItemMes`/`TkMenuItemHelp` of 0, 1, 9, 2, usability
+`MenuItem_IsUsable`) opens at `remapX2(210)`, `remapY2(155)`, size
+`remapX2(1500)` x `remapY2(54)`. Its target face is drawn by
+`MenuItem_DrawTargetFace` (`0x008c3ec0`): for `g_TkMenuItemTarget` below 8
+the character face slide, from 8 the aeon's, at `(315, 263)` size
+`200 x 200` (1920x1080 units), eased by `Menu_EaseCounter` over the words
+`0x023cc3c8..0x023cc3bc`.
+
+The equip menu opens with `MenuEquip_Open_008cf830` (`0x008cf830`): it
+saves every character's (0..=6) armour, weapon, HP and MP in the word
+tables `0x0186a674`, `0x0186a654`, `0x0186a694` and `0x0186a6b4`, seeds the
+face words `0x023cc3c4..0x023cc3bc` with `TkMenuGetCurrentPlayerPos()`,
+builds the weapon kind list and starts scenes `scene0`, `scene11` and
+`scene20`.
+
 `TkMenuCtrlKaizou` (`0x008d5540`, jump table `0x008d55ac` on the menu's
 state `+0x1c`) opens the customise window (state 0 -> 1), waits for its
 `+0x45` to go negative (-> 2), then sleeps menu 9 and wakes the main menu
@@ -417,6 +446,14 @@ centred) from `inputGetCurrDeviceStickInfo`'s floats 2, 3, 0, 1,
 resets a record: u16 `+0x9d` = `0x100`, byte `+0x9f` = 1, `+0x94` =
 `0x5000c`, bytes `+0x9c`/`+0x83` = 0, and the identity button map.
 
+`MenuSaveLoad_DrawSlotList` (`0x008b4a50`) draws the save/load list
+inside the scissor `(0, 0x5a)`..`(0x200, 0x146)` (PS2 pixels): with the
+list at rest (`u16 +0x32` == `+0x34`) the rows -1..=5 from y `0x2a`, 0x30
+apart (mode 0); while it scrolls, rows 0..5 from `0x5a` (mode 2) and
+again `+0x46 * 0xec / 4096` higher (mode 1). Then the cursor at
+`0x5a + 0x30 (+0x48 - +0x32)` and the scroll bar `0x00902700(0x1e3,
+0x52, 0xa, 0xfc, top, shown, count)`.
+
 ## Help files
 
 `TKMallocAndReadSPS2(index, page)` (`0x0088ce80`) loads a help `.sps2`
@@ -467,6 +504,20 @@ installs at `+0x118`) sets the scroll speed `+0xac` from
 `0x008de944`: languages 0, 1 and 16..18 get 30, 2..6 get 25, the rest keep
 theirs) and `+0xa8` = `TOCountMessageWords_008b80b0(i16 +4, +0x94)`;
 `TOTextScrollStepLang_008de970` is the step without the `+0xb4` test.
+
+`TkMenuMessageSize_008de250` (`0x008de250`) measures a message line by
+line with `TOGetMessageWH`: `u16 +0x40` takes the widest line (with the
+lead measured first, grown by `TOGetChangeMacroWidth` when `u16 +0x22` is
+1) and `u16 +0x42` the tallest.
+
+`TkMenuCtrlWorldMap` (`0x008e2960`, jump table `0x008e2a84`) runs the
+world map through states 0..10 at `+0x1c`: read the map image (CD file
+`0x12`/`0x17` into `0x023cc480`), wait for the read (`0x008abb00()` 0),
+upload it (`TOTransImageHL(.., 0x3800, 0x13, 0, 0, 0x200, 0x1a0)`), open
+the window, wait for its `+0x64` to reach `0x80`, wait for the cancel
+button (trigger bit `0x40`, sound `0x80000004`), stop scene `scene30` and
+set `+0x68` to -6, wait for `+0x64` to return to 0, then close and sleep
+menu `0x17`.
 
 `TkCdReadWithMalloc2(file, size_of, min)` (`0x0088d240`) reads a CD file
 through the `GetCD()` object's methods (`+0x10` open, `+0x14` size, `+0`

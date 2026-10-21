@@ -1765,6 +1765,40 @@ ported! {
     TkSqsLoadInfo_0088e440 @ 0x0088_e440 => extern "C" fn tk_sqs_load_info_e440(load: u32) {
         tk::tk_sqs_load_info(&mut mem(), true, load, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuEquip_Open_008cf830(m)`.
+    MenuEquip_Open_008cf830 @ 0x008c_f830 => extern "C" fn menu_equip_open(m: u32) -> u32 {
+        tk::menu_equip_open(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMessageSize_008de250(m)`: 0.
+    TkMenuMessageSize_008de250 @ 0x008d_e250 => extern "C" fn tk_menu_message_size(m: u32) -> u32 {
+        // the original's w (f32) and h words
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::tk_menu_message_size(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
+    /// `MenuSaveLoad_DrawSlotList(w)`.
+    MenuSaveLoad_DrawSlotList @ 0x008b_4a50 => extern "C" fn menu_save_load_draw_slot_list(w: u32) -> u32 {
+        tk::menu_save_load_draw_slot_list(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlWorldMap(m)`.
+    TkMenuCtrlWorldMap @ 0x008e_2960 => extern "C" fn tk_menu_ctrl_world_map(m: u32) -> u32 {
+        tk::tk_menu_ctrl_world_map(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_Open_008c5f20(m)`.
+    MenuItem_Open_008c5f20 @ 0x008c_5f20 => extern "C" fn menu_item_open(m: u32) -> u32 {
+        // the original's eight text and help words
+        let mut frame = super::StackFrame::<8>::new();
+        let local = frame.at();
+        tk::menu_item_open(&mut mem(), m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_DrawCmdWindow(w)`.
+    MenuMain_DrawCmdWindow @ 0x008e_20f0 => extern "C" fn menu_main_draw_cmd_window(_w: u32) -> u32 {
+        tk::menu_main_draw_cmd_window(&mut mem(), &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawTargetFace(w)`.
+    MenuItem_DrawTargetFace @ 0x008c_3ec0 => extern "C" fn menu_item_draw_target_face(_w: u32) -> u32 {
+        tk::menu_item_draw_target_face(&mut mem(), &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)
