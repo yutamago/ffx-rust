@@ -567,6 +567,223 @@ pub mod bridge {
     /// `pppDrawShapeX`'s draw (`0x00740f60`).
     pub const DRAW_SHAPE_X0: u32 = 0x0074_0f60;
 
+    /// `pppDrawShape0(obj, key, entry)` (`0x00740a70`), the shape draw of
+    /// `pppDrawShape`: unless the key's shape (`+4`) is `0xffff`, a render
+    /// request on the stack (`frame - 0x60`, `frame` the original's
+    /// aligned `ebp`): flags `+2` = 0x80, the colour at `+4` (through
+    /// `g_pppColorConShift`; the object's colour from its second work area
+    /// `[[entry+0xc]+4]`, [`crate::mdl::bridge::ee_colour_at`]), `+8` = 0,
+    /// the object's matrix `obj+0x50` at `+0x10` and `+0x1c`,
+    /// `g_PppPacketPos` at `+0x14`, byte `+0x18` = 0 (`+0` and `+0xc`
+    /// left as they were). The shape set (`get_ptr32(env[+0x24][shape])`)
+    /// gives the frame record `8 (frame + 2)` (frame = `u16` 1 of the
+    /// first work area's `+0xa0` pair) and its data (`+ i16 rec[0]`).
+    /// Unless the renderer skips the frame, the instance's render data is
+    /// updated (`updateVFXRenderDataShp(inst, slot, req, frame)`, then
+    /// `graphicVFXUpdate`) or created (`InitVFXRenderDataShp(inst, slot,
+    /// req, frame, calculateVFXSP_AlphaFunction(byte data+[data+4]+4))`,
+    /// that byte forced to 0x48 in magic file 499); the path-3 variants
+    /// follow request flag 4, which 0x80 never has. Then (unless stopped)
+    /// the pair's time (`u16` 0) advances by `i16 key+8`; at the record's
+    /// `i16 +2` it moves to the next frame, and past the set's last
+    /// (`i16 +6`) loops (record byte `+4` bit 7: both 0) or holds the last.
+    pub fn ppp_draw_shape0<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        entry: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let offs: u32 = rd(mem, entry.wrapping_add(0xc));
+        let pair = rd(mem, offs).wrapping_add(0xa0).wrapping_add(obj);
+        let area = rd(mem, offs.wrapping_add(4)).wrapping_add(obj);
+        let shape = rd(mem, key.wrapping_add(4));
+        if shape == 0xffff {
+            return;
+        }
+        let env = rd(mem, ENV_SLOT.get(mem));
+        let slot = rd(mem, env.wrapping_add(0x24)).wrapping_add(shape.wrapping_mul(4));
+        let req = frame.wrapping_sub(0x60);
+        let r = |k: u32| req.wrapping_add(k);
+        mem.write(r(8), 0u32);
+        mem.write(r(0x1c), obj.wrapping_add(0x50));
+        mem.write(r(0x10), obj.wrapping_add(0x50));
+        mem.write(r(2), 0x80u16);
+        mem.write(r(0x18), 0u8);
+        let colour = crate::mdl::bridge::ee_colour_at(mem, area, false, call);
+        let shift = g(mem, 0x00c8_b500);
+        let sh: u32 = mem.read(shift);
+        mem.write(r(4).wrapping_add(sh), colour);
+        mem.write(shift, 0u32);
+        let set = ptr32(rd(mem, slot));
+        let rec = set.wrapping_add((u32::from(mem.read::<u16>(pair.wrapping_add(2))) + 2) * 8);
+        let data = set.wrapping_add(i32::from(mem.read::<i16>(rec)).cast_unsigned());
+        let packet = rd(mem, g(mem, 0x0230_fd2c));
+        mem.write(r(0x14), packet);
+        let inst = |mem: &M| crate::draw::bridge::instance(mem, obj);
+        let path3 = |mem: &M| mem.read::<u16>(r(2)) & 4 != 0;
+        if rd(mem, g(mem, 0x012f_b7d0)) == 0 {
+            let [lo, hi] = inst(mem);
+            let n = u32::from(mem.read::<u16>(pair.wrapping_add(2)));
+            if call(mem, g(mem, 0x0064_53d0), &[lo, hi]) == 0 {
+                let d = data.wrapping_add(rd(mem, data.wrapping_add(4)));
+                if call(mem, g(mem, 0x009d_a3b0), &[]) == 499 {
+                    mem.write(d.wrapping_add(4), 0x48u8);
+                }
+                let blend = u32::from(mem.read::<u8>(d.wrapping_add(4)));
+                let alpha = call(mem, g(mem, 0x0071_2c30), &[blend]);
+                let [lo, hi] = inst(mem);
+                let create = if path3(mem) { 0x0071_1030 } else { 0x0071_1460 };
+                call(mem, g(mem, create), &[lo, hi, slot, req, n, alpha]);
+            } else {
+                let [lo, hi] = inst(mem);
+                call(mem, g(mem, 0x0071_b8a0), &[lo, hi, slot, req, n]);
+                let [lo, hi] = inst(mem);
+                let update = if path3(mem) { 0x0064_5600 } else { 0x0064_58a0 };
+                call(mem, g(mem, update), &[lo, hi]);
+            }
+        }
+        advance_shape(mem, pair, key, set, rec);
+    }
+
+    /// The end of [`ppp_draw_shape0`] and [`ppp_draw_shape_x0`]: unless
+    /// stopped, the time/frame pair at `pair` moves on by `i16 key+8`
+    /// through the shape set's frame records.
+    fn advance_shape(mem: &mut impl Mem, pair: u32, key: u32, set: u32, rec: u32) {
+        if STOP.get(mem) != 0 {
+            return;
+        }
+        let t = mem
+            .read::<u16>(pair)
+            .wrapping_add(mem.read::<u16>(key.wrapping_add(8)));
+        mem.write(pair, t);
+        let span = mem.read::<u16>(rec.wrapping_add(2));
+        if i32::from(t) < i32::from(span.cast_signed()) {
+            return;
+        }
+        let f = mem.read::<u16>(pair.wrapping_add(2)).wrapping_add(1);
+        mem.write(pair.wrapping_add(2), f);
+        mem.write(pair, t.wrapping_sub(span));
+        let f = mem.read::<u16>(pair.wrapping_add(2));
+        if i32::from(f) < i32::from(mem.read::<i16>(set.wrapping_add(6))) {
+            return;
+        }
+        if mem.read::<u8>(rec.wrapping_add(4)) & 0x80 != 0 {
+            mem.write(pair, 0u32);
+        } else {
+            mem.write(pair, 0u16);
+            mem.write(pair.wrapping_add(2), f.wrapping_sub(1));
+        }
+    }
+
+    /// `pppDrawShapeX0(obj, key, entry)` (`0x00740f60`), `pppDrawShapeX`'s
+    /// draw: [`ppp_draw_shape0`] with the key's options and a few spells'
+    /// exceptions. `MagicFile_GetMagicId` first (even for shape
+    /// `0xffff`); the request's flags 0x80, 0x880 with key byte `+0xc`,
+    /// `| 0x400` with `+0xd`; `+0x1c` = the third work area's `+0xa0`
+    /// with `+0xe`, else 0; `+0xc` = 0; the colour from the second work
+    /// area. Unless the renderer skips the frame: `+0x1c` = 0 for spell
+    /// 0x241 program 9, 0x251/0x267 program 13, and 0x1e6/0x1dd; then the
+    /// render data is updated (`graphicVFXUpdate`, no path 3) or created
+    /// with the blend byte 0x44 turned 0x48 in spell 0x1a8, not at all on
+    /// map 0x6c in field effect 0x4d program 8, and alpha `| 0x800` on map
+    /// 0x137 in spell 0x13c or for spell 0x241 program 9.
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_draw_shape_x0<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        entry: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let offs: u32 = rd(mem, entry.wrapping_add(0xc));
+        let pair = rd(mem, offs).wrapping_add(0xa0).wrapping_add(obj);
+        let area = rd(mem, offs.wrapping_add(4)).wrapping_add(obj);
+        let magic = call(mem, g(mem, 0x009d_a3b0), &[]);
+        let shape = rd(mem, key.wrapping_add(4));
+        if shape == 0xffff {
+            return;
+        }
+        let env = rd(mem, ENV_SLOT.get(mem));
+        let slot = rd(mem, env.wrapping_add(0x24)).wrapping_add(shape.wrapping_mul(4));
+        let req = frame.wrapping_sub(0x60);
+        let r = |k: u32| req.wrapping_add(k);
+        let opt = |mem: &M, k: u32| mem.read::<u8>(key.wrapping_add(k)) != 0;
+        let mut flags: u16 = if opt(mem, 0xc) { 0x880 } else { 0x80 };
+        if opt(mem, 0xd) {
+            flags |= 0x400;
+        }
+        mem.write(r(2), flags);
+        let third = if opt(mem, 0xe) {
+            let offs: u32 = rd(mem, entry.wrapping_add(0xc));
+            rd(mem, offs.wrapping_add(0xc))
+                .wrapping_add(0xa0)
+                .wrapping_add(obj)
+        } else {
+            0
+        };
+        mem.write(r(0x1c), third);
+        mem.write(r(0x10), obj.wrapping_add(0x50));
+        mem.write(r(8), 0u32);
+        mem.write(r(0xc), 0u32);
+        mem.write(r(0x18), 0u8);
+        let colour = crate::mdl::bridge::ee_colour_at(mem, area, false, call);
+        let shift = g(mem, 0x00c8_b500);
+        let sh: u32 = mem.read(shift);
+        mem.write(r(4).wrapping_add(sh), colour);
+        mem.write(shift, 0u32);
+        let set = ptr32(rd(mem, slot));
+        let rec = set.wrapping_add((u32::from(mem.read::<u16>(pair.wrapping_add(2))) + 2) * 8);
+        let data = set.wrapping_add(i32::from(mem.read::<i16>(rec)).cast_unsigned());
+        let packet = rd(mem, g(mem, 0x0230_fd2c));
+        mem.write(r(0x14), packet);
+        if rd(mem, g(mem, 0x012f_b7d0)) == 0 {
+            let prog = rd(mem, g(mem, 0x0230_fd20));
+            let unlinked = if magic == 0x241 {
+                prog == 9
+            } else {
+                ((magic == 0x251 || magic == 0x267) && prog == 0xd)
+                    || magic == 0x1e6
+                    || magic == 0x1dd
+            };
+            if unlinked {
+                mem.write(r(0x1c), 0u32);
+            }
+            let inst = |mem: &M| crate::draw::bridge::instance(mem, obj);
+            let [lo, hi] = inst(mem);
+            if call(mem, g(mem, 0x0064_53d0), &[lo, hi]) == 0 {
+                let d = data.wrapping_add(rd(mem, data.wrapping_add(4)));
+                if magic == 0x1a8 && mem.read::<u8>(d.wrapping_add(4)) == 0x44 {
+                    mem.write(d.wrapping_add(4), 0x48u8);
+                }
+                let blend = u32::from(mem.read::<u8>(d.wrapping_add(4)));
+                let mut alpha = call(mem, g(mem, 0x0071_2c30), &[blend]);
+                let map = rd(mem, g(mem, 0x012f_bc40));
+                let prog = rd(mem, g(mem, 0x0230_fd20));
+                let skip = map == 0x6c && rd(mem, g(mem, 0x00c3_a500)) == 0x4d && prog == 8;
+                if !skip {
+                    if (map == 0x137 && magic == 0x13c) || (magic == 0x241 && prog == 9) {
+                        alpha |= 0x800;
+                    }
+                    let [lo, hi] = inst(mem);
+                    let n = u32::from(mem.read::<u16>(pair.wrapping_add(2)));
+                    call(mem, g(mem, 0x0071_1460), &[lo, hi, slot, req, n, alpha]);
+                }
+            } else {
+                let n = u32::from(mem.read::<u16>(pair.wrapping_add(2)));
+                let [lo, hi] = inst(mem);
+                call(mem, g(mem, 0x0071_b8a0), &[lo, hi, slot, req, n]);
+                let [lo, hi] = inst(mem);
+                call(mem, g(mem, 0x0064_58a0), &[lo, hi]);
+            }
+        }
+        advance_shape(mem, pair, key, set, rec);
+    }
+
     /// `pppDrawShape` (`0x007409e0`, with [`DRAW_SHAPE0`]) and
     /// `pppDrawShapeX` (`0x00740ed0`, with [`DRAW_SHAPE_X0`]) `(def, prog,
     /// entry, c)`, the programs' runners: unless the program list's `+0xc`

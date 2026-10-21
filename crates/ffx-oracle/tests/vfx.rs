@@ -24600,3 +24600,144 @@ fn round40b_opus_encount4_init_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round40c_ppp_draw_shape0_and_x0_match_the_original() {
+    use part::bridge as pt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_0a70);
+        let cells = p.alloc(0x10);
+        let (rd_cell, magic_cell, alpha_cell) = (cells, cells + 4, cells + 8);
+        let logs = [
+            far_recorder(&mut p, 0x009d_a3b0, &[], Some(magic_cell)),
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd_cell)),
+            far_recorder(&mut p, 0x0071_b8a0, &[0, 0, 0, 8, 0], None),
+            far_recorder(&mut p, 0x0071_1460, &[0, 0, 0, 8, 0, 0], None),
+            far_recorder(&mut p, 0x0071_1030, &[0, 0, 0, 8, 0, 0], None),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_5600, &[0, 0], None),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(alpha_cell)),
+        ];
+        let (obj, key, entry, offs) = (p.alloc(0x300), p.alloc(0x20), p.alloc(0x20), p.alloc(0x10));
+        let (env, env2, slots, set, part) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x200),
+            p.alloc(0x80),
+        );
+        let env_slot = p.sym(draw::bridge::ENV_SLOT);
+        let (cur, cpart, shift, stop, skip) = (
+            p.sym(0x0230_fd20),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+            p.sym(0x0230_fd34),
+            p.sym(0x012f_b7d0),
+        );
+        let (map, fp, packet, r0) = (
+            p.sym(0x012f_bc40),
+            p.sym(0x00c3_a500),
+            p.sym(0x0230_fd2c),
+            p.sym(0x00c8_f508),
+        );
+        for round in 0..3000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(obj, 0x300, &mut rng);
+            p.fill(key, 0x20, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(entry + 0xc, offs);
+            p.set(offs, 0x40 * rng.below(3));
+            p.set(offs + 4, 0x40 * rng.below(3));
+            p.set(offs + 0xc, 0x40 * rng.below(3));
+            for k in [0xcu32, 0xd, 0xe] {
+                p.set(key + k, rng.pick(&[0u8, 0, 1, 0x80]));
+            }
+            p.set(key + 4, if rng.chance(5) { 0xffff } else { rng.below(8) });
+            let rate = rng.pick(&[0u16, 1, 0x10, 0x100, 0x8000]);
+            p.set(key + 8, rate);
+            p.set(env_slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x24, slots);
+            for i in 0..8u32 {
+                p.set(slots + 4 * i, set);
+            }
+            // the shape set: frame count +6, frame records from +0x10
+            // (8 bytes: i16 data offset, i16 span, byte flags), data at
+            // +0x100 with its +4 offset to a blend byte
+            p.fill(set, 0x200, &mut rng);
+            let frames = rng.below(7) as i16 - 1;
+            p.set(set + 6, frames);
+            for f in 0..8u32 {
+                let rec = set + 0x10 + 8 * f;
+                p.set(rec, (0x100 + 0x10 * rng.below(4)) as i16);
+                p.set(rec + 2, rng.pick(&[0i16, 1, 0x20, 0x100, -1]));
+            }
+            for d in 0..4u32 {
+                let data = set + 0x100 + 0x10 * d;
+                p.set(data + 4, 0x40 + 8 * rng.below(4));
+                for b in 0..4u32 {
+                    let blend = rng.pick(&[0x44u8, 0x48, 0, 0x30]);
+                    p.set(data + 0x40 + 8 * b + 4, blend);
+                }
+            }
+            // the time/frame pair in the first work area
+            for k in [0u32, 0x40, 0x80] {
+                let t = rng.pick(&[0u16, 0x1f, 0xff, 0x7fff, 0xfff0]);
+                p.set(obj + k + 0xa0, t);
+                p.set(obj + k + 0xa2, rng.below(6) as u16);
+            }
+            p.set(cpart, part);
+            p.set(shift, if rng.chance(15) { 4 * rng.below(2) } else { 0 });
+            p.set(stop, u32::from(rng.chance(15)));
+            p.set(skip, rng.pick(&[0u32, 0, 0, 0, 0, 0, 0, 0, 1, 2]));
+            let any = rng.below(0x10);
+            p.set(cur, rng.pick(&[0u32, 8, 9, 0xd, 0x8000_0001, any]));
+            p.set(rd_cell, if rng.chance(50) { 0 } else { rng.next() });
+            let magics = [
+                499u32, 0x241, 0x251, 0x267, 0x1e6, 0x1dd, 0x1a8, 0x13c, 0x10,
+            ];
+            p.set(magic_cell, rng.pick(&magics));
+            p.set(alpha_cell, rng.next() & !0x800);
+            p.set(map, rng.pick(&[0x6cu32, 0x137, 0x10]));
+            p.set(fp, rng.pick(&[0x4du32, 0x4e]));
+            let v = rng.next();
+            p.set(packet, v);
+            let x0 = rng.chance(50);
+            let (name, sym) = if x0 {
+                ("pppDrawShapeX0", 0x0074_0f60)
+            } else {
+                ("pppDrawShape0", 0x0074_0a70)
+            };
+            // the request's words neither writes: alike in both oracles
+            let words = 3;
+            let frame = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            let (s1, s2) = (rng.next(), rng.next());
+            p.set(at - 0x60, s1);
+            p.set(at - 0x54, s2);
+            check_deep_n(
+                &mut p,
+                &format!("{name} round {round}"),
+                sym,
+                &[obj, key, entry],
+                |o, frame| {
+                    assert_eq!((frame - 8) & !0xf, at);
+                    if x0 {
+                        pt::ppp_draw_shape_x0(o, obj, key, entry, at, &mut call_original);
+                    } else {
+                        pt::ppp_draw_shape0(o, obj, key, entry, at, &mut call_original);
+                    }
+                    None
+                },
+            );
+        }
+    }
+}

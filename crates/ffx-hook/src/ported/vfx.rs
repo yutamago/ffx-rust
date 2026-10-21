@@ -3152,6 +3152,27 @@ ported! {
     pppDrawRainDes @ 0x0075_6270 => extern "C" fn ppp_draw_rain_des(obj: u32, prog: u32) -> u32 {
         draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::RAIN_DES, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `pppDrawShape0(obj, key, entry)`: its render request in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppDrawShape0 @ 0x0074_0a70 => extern "C" fn ppp_draw_shape0(obj: u32, key: u32, entry: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        part::bridge::ppp_draw_shape0(&mut mem(), obj, key, entry, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
+    /// `pppDrawShapeX0(obj, key, entry)`: as `pppDrawShape0`.
+    pppDrawShapeX0 @ 0x0074_0f60 => extern "C" fn ppp_draw_shape_x0(obj: u32, key: u32, entry: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        part::bridge::ppp_draw_shape_x0(&mut mem(), obj, key, entry, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `pppDrawMdlDraw(obj, key, prog)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppDrawMdlDraw @ 0x0073_7770 => extern "C" fn ppp_draw_mdl_draw(obj: u32, key: u32, prog: u32) -> u32 {
