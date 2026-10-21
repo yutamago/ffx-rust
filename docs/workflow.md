@@ -141,6 +141,35 @@ or rebuild it with `tools/timing/install.sh`, which runs
 `FFX_TIMING_DIR` moves the log, `FFX_TIMING_REAL_CARGO` points the shim at
 another cargo. sccache stays the `rustc-wrapper`; there is no per-crate log.
 
+## Oracle test speed
+
+Per-test times: `RUSTC_BOOTSTRAP=1 <test binary> -Z unstable-options
+--report-time` (the binary from `cargo test --release -p ffx-oracle --test
+<file> --no-run`). Two kinds of waste made the slowest tests slow
+(2026-10-21):
+
+- Diffs re-reading old pages. `Oracle::diff` compares every page either
+  side wrote since `clear_dirty`, so a long test whose helper never clears
+  rereads every page each earlier case wrote, at every case
+  (`main::control_synthetic` 198 s, now 3 s). Once a diff passed, clear both
+  sides' dirty pages (`settle` in main.rs, script.rs, system.rs;
+  `battle_common::same`; the helpers of vfx.rs and menu.rs did so already):
+  a page neither side writes again stays equal, and a write marks it again.
+  Write new compare helpers the same way.
+- Originals that spin. A call that waits on a thread the emulator does not
+  run (a file read, a semaphore) loops until the instruction budget runs
+  out: 200M instructions, 5-20 s per case. `Oracle::set_max_instructions`
+  lowers it per oracle; script.rs's `run_pair` uses 20M (`RUN_BUDGET`). Only
+  lower it where the whole file still stops exactly the same cases.
+
+script.rs's tests that loop over the ctrl works in use run in three shards
+(`natives_match_the_original::<group>::shard0..2`,
+`round19_natives_match_the_original::shard0..2`, `CTRL_SHARDS`): shard `k`
+takes ctrl works `k`, `k + 3`, .. and skips the others' random draws, so
+every case gets the same arguments and state as in one run. The battle
+snapshot has three ctrl works, the field snapshot one (shards 1 and 2 pass
+at once there). The old names still select all shards as filters.
+
 ## Claims and work packets
 
 Agents pick work from one global list and claim each function first, so two

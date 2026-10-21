@@ -526,7 +526,10 @@ impl Oracle {
         }
         run?;
         if !self.uc.get_data().returned {
-            return Err(Error::Runaway(self.uc.reg_read(RegisterX86::EIP)?));
+            return Err(Error::Runaway(
+                self.uc.reg_read(RegisterX86::EIP)?,
+                crate::MAX_INSTRUCTIONS,
+            ));
         }
         for (reg, name, v) in [
             (RegisterX86::EBX, "EBX", r.ebx),

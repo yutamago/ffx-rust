@@ -158,6 +158,13 @@ pub fn ftwin(
 /// Both wrote the same.
 pub fn same(what: &str, a: &mut Oracle, b: &mut Oracle) {
     assert_eq!(a.diff(b).unwrap(), [], "{what}: memory");
+    // Every page either side wrote is equal now and stays so until a side
+    // writes it again, which marks it once more: later diffs need only
+    // those. Without this each diff re-read every page any earlier case
+    // wrote (battle_target's whole-file tests spent most of their time
+    // there).
+    a.clear_dirty();
+    b.clear_dirty();
 }
 
 /// Whether `len` bytes at `addr` can be read (a pointer in a snapshot).
