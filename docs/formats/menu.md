@@ -295,6 +295,19 @@ rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
 next filled one after it (`Menu_FindFlagged`), swapping the save's gear
 (`SwapSaveGear`) and the kind bytes, then the list is built again.
 
+Scrolling list windows share one draw pattern (`MenuWShop_DrawBuyList`
+`0x008d7aa0`, `MenuWShop_DrawSellList` `0x008d7d20`,
+`MenuItem_DrawGearList` `0x008c87e0`): at rest (`u16 +0x32` == `+0x34`)
+the rows are drawn once from row `+0x32` at `y = 317`; while the list
+scrolls the old rows (part 1) and the new ones (part 2, from row `+0x34`,
+`y = 317 - 77 * 9 * i16 +0x46 / 4096`, so `+0x46` is the scroll offset
+in 1/4096 of nine rows) are drawn inside `TkMn2DrawMenuWindowScissor(
+ftol(312), ftol(10 + 77 * 9), part, +0x46)`, then the scissor is cleared.
+The scroll bar is `DrawCrossMenuScrollParts(955, 317, 10, 683, first row,
+rows shown, row count)` (1920x1080 units). The weapon shop lists pass
+`TkMn2GetExcelData([0x0186ab1c], [0x0186aba8])` to their row draws and
+draw their cursor while the sub-command window is open.
+
 `TkMn2GetWShopPos` (`0x008d9190`) loads the weapon shop's layout from the
 menu sequence (7 rectangles, 12 positions, 5 colours, 3 common plates)
 and then grows the `u16` at `0x023cc2fa` (the third rectangle's) by
@@ -604,5 +617,8 @@ plate (`(210, 700)` size `740 x 60`, sheet cell 12) and two
 party's gil (`MsGetGIL`) at y 838; `BtlEnd_DrawWeaponPage_008bbed0`
 (`0x008bbed0`) draws, from `(970 + dx, 270)`, a plate and sheet cell 6
 above, then one plate and `DrawCrossMenuIconWeaponName` row per gear
-spoil in use (the six `u16` at `0x02310f8e`), `remapY2(84)` apart. All
+spoil in use (the six `u16` at `0x02310f8e`), `remapY2(84)` apart;
+`BtlEnd_DrawItemPage_008bbca0` (`0x008bbca0`) does the same for the items
+won: `i8 0x02310f70` rows of `u16` item `0x02310f74[i]` and `u8` count
+`0x02310f84[i]` (drawn right-aligned at x 637, scale 0.68). All
 coordinates are 1920x1080 units through `graphicUiRemapX2/Y2`.

@@ -15874,3 +15874,122 @@ fn menu_round30_gear_sort_btl_end_pages_ctrls_and_wshop_layout_match_the_origina
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round30_scrolling_lists_and_btl_end_items_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0030_0004) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008c_1af0u32, 2u8),
+        (0x008e_71d0, 1),
+        (0x008c_0f70, 4),
+        (0x008d_8c30, 6),
+        (0x008d_8ee0, 6),
+        (0x008c_1370, 0),
+        (0x008d_8bb0, 3),
+        (0x008d_8e60, 3),
+        (0x008e_6cc0, 7),
+        (0x008d_ce50, 0),
+        (0x008c_1790, 0),
+        (0x008c_0be0, 0),
+        (0x008c_9570, 1),
+        (0x008c_99f0, 5),
+        (0x008c_9940, 3),
+        (0x008c_0cc0, 0),
+        (0x008f_9230, 4),
+        (0x008f_5f70, 5),
+        (0x008f_8bb0, 5),
+        (0x008e_6700, 4),
+        (0x0090_5820, 6),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // ToGetBtlEasyDigitWidth2(n, &width, scale, x): the width from a cell
+    let (wcell, dummy) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]; // mov eax, [esp+8]; mov edx, [wcell]
+    extra.extend(wcell.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let code = seq_code_of(log, 0x0090_5230, &[0, 2, 3], dummy, &extra);
+    jump_stub(&mut t, 0x0090_5230, &code);
+    let (w0, sub) = (t.alloc(&[0; 0x100]), t.alloc(&[0; 0x100]));
+    t.put(t.sym(0x023c_c128), sub);
+    let floats = [
+        0f32,
+        -0.0,
+        1.5,
+        -2.7,
+        300.9,
+        65535.9,
+        1e10,
+        f32::from_bits(0x7fc0_0000),
+    ];
+    for round in 0..1600u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(w0, 0x100);
+        t.scramble(0x0186_ab1c, 4);
+        t.scramble(0x0186_aba8, 4);
+        t.scramble(0x0186_a37c, 4);
+        t.scramble(0x0231_0f70, 0x20);
+        let v = t.rng.pick(&[0i8, 1, 3, 6, 16, -1]);
+        t.put(t.sym(0x0231_0f70), v);
+        let a = t.rng.pick(&[0u16, 1, 5, 0x8000]);
+        t.put(w0 + 0x32, a);
+        let b = t.rng.pick(&[a, a, 2, 0xffff]);
+        t.put(w0 + 0x34, b);
+        let v = t.rng.pick(&[0u16, 1, 0x1000, 0x7fff, 0x8000, 0xfff0]);
+        t.put(w0 + 0x46, v);
+        let v = t.rng.pick(&[0u8, 1, 0x7f, 0x80, 0xff]);
+        t.put(w0 + 0x45, v);
+        let v = t.rng.pick(&[0u8, 1, 0x7f, 0x80, 0xff]);
+        t.put(sub + 0x45, v);
+        let v = t.rng.pick(&floats);
+        t.put(wcell, v.to_bits());
+        let dx = t.rng.pick(&[0i32, 1, -1, 100, -300, 0x0300_0001, i32::MIN]);
+        match round % 4 {
+            0 | 1 => {
+                let sell = round % 4 == 1;
+                let (name, f) = if sell {
+                    ("MenuWShop_DrawSellList", 0x008d_7d20)
+                } else {
+                    ("MenuWShop_DrawBuyList", 0x008d_7aa0)
+                };
+                t.twin(name, f, &[w0], U32, |o| {
+                    w(tk::menu_wshop_draw_list(
+                        o,
+                        sell,
+                        w0,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                });
+            }
+            2 => t.twin("MenuItem_DrawGearList", 0x008c_87e0, &[w0], U32, |o| {
+                w(tk::menu_item_draw_gear_list(
+                    o,
+                    w0,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            }),
+            _ => t.twin(
+                "BtlEnd_DrawItemPage_008bbca0",
+                0x008b_bca0,
+                &[dx.cast_unsigned()],
+                VOID,
+                |o| {
+                    tk::btl_end_draw_item_page(o, dx, local, &mut ui_remap, &mut callback);
+                    0
+                },
+            ),
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

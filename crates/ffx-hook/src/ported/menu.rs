@@ -1829,6 +1829,25 @@ ported! {
     TkMn2GetWShopPos @ 0x008d_9190 => extern "C" fn tk_mn2_get_wshop_pos() -> u32 {
         tk::tk_mn2_get_wshop_pos(&mut mem(), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuWShop_DrawBuyList(w)`.
+    MenuWShop_DrawBuyList @ 0x008d_7aa0 => extern "C" fn menu_wshop_draw_buy_list(w: u32) -> u32 {
+        tk::menu_wshop_draw_list(&mut mem(), false, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawSellList(w)`.
+    MenuWShop_DrawSellList @ 0x008d_7d20 => extern "C" fn menu_wshop_draw_sell_list(w: u32) -> u32 {
+        tk::menu_wshop_draw_list(&mut mem(), true, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawGearList(w)`.
+    MenuItem_DrawGearList @ 0x008c_87e0 => extern "C" fn menu_item_draw_gear_list(w: u32) -> u32 {
+        tk::menu_item_draw_gear_list(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawItemPage_008bbca0(dx)`.
+    BtlEnd_DrawItemPage_008bbca0 @ 0x008b_bca0 => extern "C" fn btl_end_draw_item_page(dx: i32) {
+        // the digit width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::btl_end_draw_item_page(&mut mem(), dx, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)
