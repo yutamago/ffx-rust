@@ -1480,6 +1480,11 @@ ported! {
     initVFXRenderDataBuffer_FakeEnvModel @ 0x0071_6620 => extern "C" fn init_vfx_render_data_buffer_fake_env_model(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
         small::bridge::init_vfx_render_data_buffer_fake_env_model(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_wave_light_setup_0080e2f0(unit, _, list, src, nos)`: returns
+    /// the original's `eax`.
+    opus_wave_light_setup_0080e2f0 @ 0x0080_e2f0 => extern "C" fn opus_wave_light_setup(unit: u32, _a: u32, list: u32, src: u32, nos: u32) -> u32 {
+        opus::bridge::opus_wave_light_setup(&mut mem(), unit, list, src, nos, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opus_wave_light_007f60b0(_, shape, unit)`.
     opus_wave_light_007f60b0 @ 0x007f_60b0 => extern "C" fn opus_wave_light(_a: u32, shape: u32, unit: u32) {
         opus::bridge::opus_wave_light(&mut mem(), shape, unit);
@@ -5565,6 +5570,61 @@ ported! {
     /// `pppDrawShapeFieldRevEmit_00743b60(obj, def, ctrl)`.
     pppDrawShapeFieldRevEmit_00743b60 @ 0x0074_3b60 => extern "C" fn ppp_draw_shape_field_rev_emit(obj: u32, def: u32, ctrl: u32) -> u32 {
         draw::bridge::ppp_draw_shape_field_rev_emit(&mut mem(), obj, def, ctrl, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `pppDrawShapeFieldRevRender_00743280(obj, key, prog, area)`: its render request and matrices in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    pppDrawShapeFieldRevRender_00743280 @ 0x0074_3280 => extern "C" fn ppp_draw_shape_field_rev_render(obj: u32, key: u32, prog: u32, area: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x280]);
+        let mut locals = Locals([0; 0x280]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_REV_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
+    /// `pppDrawShapeFieldSpdRender_007444a0(obj, key, prog, area)`: its render request and matrices in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    pppDrawShapeFieldSpdRender_007444a0 @ 0x0074_44a0 => extern "C" fn ppp_draw_shape_field_spd_render(obj: u32, key: u32, prog: u32, area: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x280]);
+        let mut locals = Locals([0; 0x280]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_SPD_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
+    /// `pppDrawShapeCameraRender_00745740(obj, key, prog, area)`: its render request and matrices in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    pppDrawShapeCameraRender_00745740 @ 0x0074_5740 => extern "C" fn ppp_draw_shape_camera_render(obj: u32, key: u32, prog: u32, area: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x240]);
+        let mut locals = Locals([0; 0x240]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x240;
+        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
+    /// `pppDrawShapeFieldGlobalRender_007467b0(obj, key, prog, area)`: its render request and matrices in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    pppDrawShapeFieldGlobalRender_007467b0 @ 0x0074_67b0 => extern "C" fn ppp_draw_shape_field_global_render(obj: u32, key: u32, prog: u32, area: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x280]);
+        let mut locals = Locals([0; 0x280]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_GLOBAL_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
+    /// `pppDrawShapeCameraDisPosRender_007479d0(obj, key, prog, area)`: its render request and matrices in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    pppDrawShapeCameraDisPosRender_007479d0 @ 0x0074_79d0 => extern "C" fn ppp_draw_shape_camera_dis_pos_render(obj: u32, key: u32, prog: u32, area: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x280]);
+        let mut locals = Locals([0; 0x280]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_DIS_POS_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
     }
     /// `pppDrawRainAlloc_00756320(def, work)`: the three words
     /// `rcuiScaleVector_copy_00756600` reads past its arguments (the

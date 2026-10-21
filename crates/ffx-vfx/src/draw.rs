@@ -1822,4 +1822,363 @@ pub mod bridge {
         mem.write(work, ptr32(def));
         1
     }
+
+    /// Where a shape render keeps its locals: offsets below the
+    /// original's aligned frame pointer (`ebp`).
+    #[derive(Debug, Clone, Copy)]
+    pub struct RenderFrame {
+        /// The render request (0x20 bytes; `+0` and `+0xc` never written).
+        pub req: u32,
+        /// The inverse camera (times the inverse normalised world).
+        pub c: u32,
+        /// The scale and translation matrix (the normalised world before).
+        pub s: u32,
+        /// The particle's translation.
+        pub u: u32,
+        /// The camera times the world (the camera copy without the world).
+        pub v2: u32,
+        /// The camera copy.
+        pub v: u32,
+        /// The particle's scaled rotation.
+        pub p: u32,
+        /// The request's matrix (`+0x10`).
+        pub r: u32,
+        /// The request's second matrix (`+0x1c`, with the key's flag).
+        pub q: u32,
+    }
+
+    /// A shape render's differences: its key layout, colour table,
+    /// particle records and frame.
+    #[derive(Debug, Clone, Copy)]
+    pub struct ShapeRender {
+        /// The key's options: flag bytes `+2..+5`, translation `+0x10`,
+        /// scale `+0x20`, mode byte `+0x30`.
+        pub key: u32,
+        /// The work-area word holding the colour pair table.
+        pub colours: u32,
+        /// The particle record size.
+        pub stride: u32,
+        /// The record's scale vector (its rotation matrix `+0x30` after).
+        pub scale: u32,
+        /// Whether the inverse camera takes the inverse world in.
+        pub world: bool,
+        /// Whether `graphicUseOptimizedVFXShaderByVFXInstance` ends it.
+        pub shader: bool,
+        /// Whether the particles sit relative to the world position (the
+        /// third work area's `+0xa0` less it, once) instead of at the
+        /// area's `+0xa0`.
+        pub dis_pos: bool,
+        /// The locals.
+        pub frame: RenderFrame,
+    }
+
+    const FIELD_FRAME: RenderFrame = RenderFrame {
+        req: 0x280,
+        c: 0xc8,
+        s: 0x48,
+        u: 0x108,
+        v2: 0x1c8,
+        v: 0x208,
+        p: 0x148,
+        r: 0x188,
+        q: 0x88,
+    };
+
+    /// `0x00743280`, `pppDrawShapeFieldRevDraw`'s render.
+    pub const FIELD_REV_RENDER: ShapeRender = ShapeRender {
+        key: 0xc0,
+        colours: 0x50,
+        stride: 0xa0,
+        scale: 0x30,
+        world: true,
+        shader: true,
+        dis_pos: false,
+        frame: FIELD_FRAME,
+    };
+    /// `0x007444a0`, `pppDrawShapeFieldSpdDraw`'s render.
+    pub const FIELD_SPD_RENDER: ShapeRender = ShapeRender {
+        key: 0xb0,
+        ..FIELD_REV_RENDER
+    };
+    /// `0x007467b0`, `pppDrawShapeFieldGlobalDraw`'s render (its particles
+    /// are 0xb0 bytes, yet it steps by 0xa0 like the field draws).
+    pub const FIELD_GLOBAL_RENDER: ShapeRender = ShapeRender {
+        key: 0xb0,
+        colours: 0x4c,
+        ..FIELD_REV_RENDER
+    };
+    /// `0x00745740`, `pppDrawShapeCameraDraw`'s render.
+    pub const CAMERA_RENDER: ShapeRender = ShapeRender {
+        key: 0xc0,
+        colours: 0x4c,
+        stride: 0xb0,
+        scale: 0x40,
+        world: false,
+        shader: false,
+        dis_pos: false,
+        frame: RenderFrame {
+            req: 0x240,
+            c: 0x108,
+            s: 0x88,
+            u: 0x148,
+            v2: 0x1c8,
+            v: 0x1c8,
+            p: 0xc8,
+            r: 0x188,
+            q: 0x48,
+        },
+    };
+    /// `0x007479d0`, `pppDrawShapeCameraDisPosDraw`'s render.
+    pub const CAMERA_DIS_POS_RENDER: ShapeRender = ShapeRender {
+        key: 0xb0,
+        colours: 0x4c,
+        dis_pos: true,
+        ..FIELD_REV_RENDER
+    };
+
+    const COPY_MATRIX: u32 = 0x006e_d360;
+    const INVERSE_MATRIX: u32 = 0x006e_d450;
+    const NORMALIZE: u32 = 0x006e_d6f0;
+    const MUL_MATRIX: u32 = 0x006e_d5c0;
+    const CLEAR_SHP: u32 = 0x0071_3290;
+    const SHAPE_FIELD_SIZE: u32 = 0x0071_2bd0;
+    const DYN_GEO_BUFFER: u32 = 0x0063_fdb0;
+    const UPDATE_SHAPE_FIELD: u32 = 0x0071_a4e0;
+    const VFX_UPDATE: u32 = 0x0064_58a0;
+    const USE_OPTIMIZED_SHADER: u32 = 0x0064_4b10;
+    const WORLD_MATRIX: u32 = 0x0230_ffa0;
+    const PACKET_POS: u32 = 0x0230_fd2c;
+    const COLOR_SHIFT: u32 = 0x00c8_b500;
+
+    /// `f(args)` at the image address `f`, through `call`.
+    fn fun<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        f: u32,
+        args: &[u32],
+    ) -> u32 {
+        call(mem, g(mem, f), args)
+    }
+
+    /// The shape renders of the shape field and camera draws (`0x00743280`,
+    /// `0x007444a0`, `0x00745740`, `0x007467b0`, `0x007479d0`; cdecl
+    /// `(obj, key, prog, area)`, `frame` the original's aligned `ebp`):
+    /// unless the key's shape (`+4`) is `0xffff`, a render request on the
+    /// stack (flags `+2`: 0x800 with key byte `+2`, `| 0x400` with `+3`;
+    /// `+8` = 0; `+0x10` the particle matrix `R`; byte `+0x18` = 0; `+0x1c`
+    /// the second matrix `Q` with key byte `+4`, else 0) and the view
+    /// matrices: `C` = the inverse camera without translation, times
+    /// (`world`) the inverse of the world with normalised rows and no
+    /// translation; `S` = the key's scale (1, 1, 1 when all three are 0)
+    /// and translation. With render data, it is cleared, sized for every
+    /// live particle (record bit 0;
+    /// `caculateVFXRenderDataShapeFieldBufferSize` with its frame `u16
+    /// +6`), and the call ends when no dynamic-geometry buffer comes back.
+    /// Then each live particle: its colour (pair `[+8]` of the colour table,
+    /// through the EE: [`crate::mdl::bridge::ee_colour_at`]) at `+4`,
+    /// `R = C x P x U x V2` (`P` = the record's scale on the diagonal
+    /// times its rotation, `U` = a translation by its position `+0x10`
+    /// plus the third work area's `+0xa0`), `Q` by the key's mode byte,
+    /// `g_PppPacketPos` at `+0x14`, and `updateVFXRenderDataShapeField`
+    /// with the frame's data. Last `graphicVFXUpdate` with render data and
+    /// (`shader`) the optimised shader.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::many_single_char_names
+    )]
+    pub fn ppp_draw_shape_render<M: Mem>(
+        mem: &mut M,
+        v: &ShapeRender,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        area: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, round_trip, store, sub};
+        use ffx_system::stub::ptr32;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let kb = |k: u32| key.wrapping_add(v.key + k);
+        let shape = rd(mem, key.wrapping_add(4));
+        if shape == 0xffff {
+            return;
+        }
+        let f = v.frame;
+        let at = |o: u32| frame.wrapping_sub(o);
+        let (req, c, s, u, v2, cam, p, r, q) = (
+            at(f.req),
+            at(f.c),
+            at(f.s),
+            at(f.u),
+            at(f.v2),
+            at(f.v),
+            at(f.p),
+            at(f.r),
+            at(f.q),
+        );
+        let env = rd(mem, rd(mem, g(mem, ENV_SLOT)));
+        let slot = rd(mem, env.wrapping_add(0x24)).wrapping_add(shape.wrapping_mul(4));
+        let mut flags = 0u16;
+        if mem.read::<u8>(kb(2)) != 0 {
+            flags = 0x800;
+        }
+        if mem.read::<u8>(kb(3)) != 0 {
+            flags |= 0x400;
+        }
+        let second = mem.read::<u8>(kb(4)) != 0;
+        mem.write(req.wrapping_add(2), flags);
+        mem.write(req.wrapping_add(0x1c), if second { q } else { 0 });
+        mem.write(req.wrapping_add(8), 0u32);
+        mem.write(req.wrapping_add(0x18), 0u8);
+        mem.write(req.wrapping_add(0x10), r);
+        let set = ptr32(rd(mem, slot));
+        let (camera, world) = (g(mem, CAMERA_MATRIX), g(mem, WORLD_MATRIX));
+        let zero_translation = |mem: &mut M, m: u32| {
+            for k in 0..3 {
+                mem.write(m.wrapping_add(0x30 + 4 * k), 0u32);
+            }
+        };
+        fun(mem, call, COPY_MATRIX, &[c, camera]);
+        zero_translation(mem, c);
+        fun(mem, call, INVERSE_MATRIX, &[c, c]);
+        if v.world {
+            // the inverse world in the scale matrix's place
+            fun(mem, call, COPY_MATRIX, &[s, world]);
+            for row in [s, s.wrapping_add(0x10), s.wrapping_add(0x20)] {
+                fun(mem, call, NORMALIZE, &[row, row]);
+            }
+            zero_translation(mem, s);
+            fun(mem, call, INVERSE_MATRIX, &[s, s]);
+            fun(mem, call, MUL_MATRIX, &[c, s, c]);
+        }
+        fun(mem, call, UNIT_MATRIX, &[s]);
+        let scale = [0x20u32, 0x24, 0x28].map(|o| f32::from_bits(rd(mem, kb(o))));
+        let unit = scale.iter().all(|&x| x == 0.0);
+        for (k, x) in (0u32..).zip(scale) {
+            mem.write(
+                s.wrapping_add(0x14 * k),
+                if unit { 1.0 } else { round_trip(x) },
+            );
+        }
+        for k in 0..3 {
+            let t = round_trip(f32::from_bits(rd(mem, kb(0x10 + 4 * k))));
+            mem.write(s.wrapping_add(0x30 + 4 * k), t);
+        }
+        fun(mem, call, UNIT_MATRIX, &[u]);
+        fun(mem, call, COPY_MATRIX, &[cam, camera]);
+        if v.world {
+            fun(mem, call, MUL_MATRIX, &[v2, cam, world]);
+        }
+        let third = rd(mem, rd(mem, prog.wrapping_add(0xc)).wrapping_add(8));
+        let base = obj.wrapping_add(third).wrapping_add(0xa0);
+        let count = rd(mem, key.wrapping_add(8));
+        let mut rec = ptr32(rd(mem, area.wrapping_add(0x40)));
+        // the camera-relative draw: the base less the world position, once
+        let offset = v.dis_pos.then(|| {
+            [0u32, 4, 8].map(|k| {
+                let w = load(rd(mem, world.wrapping_add(0x30 + k)));
+                store(sub(load(rd(mem, base.wrapping_add(k))), w))
+            })
+        });
+        let render_data = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let [lo, hi] = instance(mem, obj);
+            call(mem, g(mem, GET_RENDER_DATA), &[lo, hi])
+        };
+        let positive = count.cast_signed() > 0;
+        if render_data(mem, call) != 0 {
+            let [lo, hi] = instance(mem, obj);
+            fun(mem, call, CLEAR_SHP, &[lo, hi]);
+            if positive {
+                for _ in 0..count {
+                    if mem.read::<u8>(rec) & 1 != 0 && render_data(mem, call) != 0 {
+                        let n = u32::from(mem.read::<u16>(rec.wrapping_add(6)));
+                        let [lo, hi] = instance(mem, obj);
+                        fun(mem, call, SHAPE_FIELD_SIZE, &[lo, hi, slot, n]);
+                    }
+                    rec = rec.wrapping_add(v.stride);
+                }
+            }
+            let data = render_data(mem, call);
+            let parts = rd(mem, data.wrapping_add(0x94));
+            let (vertices, indices) = (
+                rd(mem, parts.wrapping_add(4)),
+                rd(mem, parts.wrapping_add(8)),
+            );
+            if fun(mem, call, DYN_GEO_BUFFER, &[data, 0, vertices, indices]) == 0 {
+                return;
+            }
+            rec = ptr32(rd(mem, area.wrapping_add(0x40)));
+            let [lo, hi] = instance(mem, obj);
+            fun(mem, call, CLEAR_SHP, &[lo, hi]);
+        }
+        if positive {
+            for _ in 0..count {
+                if mem.read::<u8>(rec) & 1 != 0 {
+                    let frame_no = u32::from(mem.read::<u16>(rec.wrapping_add(6)));
+                    let entry = set.wrapping_add(0x10 + 8 * frame_no);
+                    let data = set.wrapping_add(i32::from(mem.read::<i16>(entry)).cast_unsigned());
+                    let table = ptr32(rd(mem, area.wrapping_add(v.colours)));
+                    let pair = table.wrapping_add(rd(mem, rec.wrapping_add(8)).wrapping_mul(8));
+                    let colour =
+                        crate::mdl::bridge::ee_colour_at(mem, pair.wrapping_sub(0xa0), false, call);
+                    let shift = g(mem, COLOR_SHIFT);
+                    let sh = rd(mem, shift);
+                    mem.write(req.wrapping_add(4).wrapping_add(sh), colour);
+                    mem.write(shift, 0u32);
+                    fun(mem, call, UNIT_MATRIX, &[p]);
+                    for k in 0..3 {
+                        let x =
+                            round_trip(f32::from_bits(rd(mem, rec.wrapping_add(v.scale + 4 * k))));
+                        mem.write(p.wrapping_add(0x14 * k), x);
+                    }
+                    fun(
+                        mem,
+                        call,
+                        MUL_MATRIX,
+                        &[p, rec.wrapping_add(v.scale + 0x30), p],
+                    );
+                    for k in 0..3 {
+                        let pos = load(rd(mem, rec.wrapping_add(0x10 + 4 * k)));
+                        let at = match offset {
+                            Some(o) => o[k as usize],
+                            None => rd(mem, base.wrapping_add(4 * k)),
+                        };
+                        mem.write(u.wrapping_add(0x30 + 4 * k), store(add(pos, load(at))));
+                    }
+                    fun(mem, call, MUL_MATRIX, &[r, c, p]);
+                    fun(mem, call, MUL_MATRIX, &[r, u, r]);
+                    fun(mem, call, MUL_MATRIX, &[r, v2, r]);
+                    if second {
+                        fun(mem, call, MUL_MATRIX, &[q, c, p]);
+                        let steps: &[u32] = match mem.read::<u8>(kb(0x30)) {
+                            0 => &[s, u, v2],
+                            1 => &[u, world, camera, s],
+                            2 => &[u, world, s, cam],
+                            _ => &[],
+                        };
+                        for &m in steps {
+                            fun(mem, call, MUL_MATRIX, &[q, m, q]);
+                        }
+                    }
+                    let packet = rd(mem, g(mem, PACKET_POS));
+                    mem.write(req.wrapping_add(0x14), packet);
+                    if render_data(mem, call) != 0 {
+                        let [lo, hi] = instance(mem, obj);
+                        fun(mem, call, UPDATE_SHAPE_FIELD, &[lo, hi, data, req]);
+                    }
+                }
+                rec = rec.wrapping_add(v.stride);
+            }
+        }
+        if render_data(mem, call) != 0 {
+            let [lo, hi] = instance(mem, obj);
+            fun(mem, call, VFX_UPDATE, &[lo, hi]);
+        }
+        if v.shader {
+            let [lo, hi] = instance(mem, obj);
+            fun(mem, call, USE_OPTIMIZED_SHADER, &[lo, hi]);
+        }
+    }
 }

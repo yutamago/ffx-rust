@@ -25612,3 +25612,340 @@ fn r41e_wave_light_matches_the_original() {
         }
     }
 }
+
+/// An `updateVFXRenderDataShapeField(lo, hi, data, req)` stand-in at
+/// `sym` that logs (0x100 bytes per call, after the count) its four
+/// arguments, the request's eight words and the two matrices it points at
+/// (`+0x10` and, when not null, `+0x1c`: they live in the caller's frame).
+fn shape_field_update_recorder(p: &mut Pair, sym: u32) -> u32 {
+    let log = p.alloc(4 + 0x100 * 0x100);
+    let slot = log + 4;
+    let mut c = vec![0x56]; // push esi
+    c.extend([0x8b, 0x0d]); // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0xc1, 0xe1, 0x08]); // shl ecx, 8
+    for k in 0..4u8 {
+        c.extend([0x8b, 0x44, 0x24, 8 + 4 * k]); // mov eax, [esp + 8 + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + slot + 4k], eax
+        c.extend((slot + 4 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0x8b, 0x74, 0x24, 0x14]); // mov esi, [esp + 0x14] (req)
+    for k in 0..8u8 {
+        c.extend([0x8b, 0x46, 4 * k]); // mov eax, [esi + 4k]
+        c.extend([0x89, 0x81]); // mov [ecx + slot + 0x10 + 4k], eax
+        c.extend((slot + 0x10 + 4 * u32::from(k)).to_le_bytes());
+    }
+    for (m, off) in [(0x10u8, 0x30u32), (0x1c, 0x70)] {
+        c.extend([0x8b, 0x56, m]); // mov edx, [esi + m]
+        c.extend([0x85, 0xd2]); // test edx, edx
+        c.extend([0x0f, 0x84]); // jz past the copy
+        c.extend((16u32 * 9).to_le_bytes());
+        for k in 0..16u8 {
+            c.extend([0x8b, 0x42, 4 * k]); // mov eax, [edx + 4k]
+            c.extend([0x89, 0x81]); // mov [ecx + slot + off + 4k], eax
+            c.extend((slot + off + 4 * u32::from(k)).to_le_bytes());
+        }
+    }
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.push(0x5e); // pop esi
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r42a_shape_renders_match_the_original() {
+    use draw::bridge as d;
+    let renders = [
+        (
+            "pppDrawShapeFieldRevRender",
+            0x0074_3280u32,
+            d::FIELD_REV_RENDER,
+        ),
+        (
+            "pppDrawShapeFieldSpdRender",
+            0x0074_44a0,
+            d::FIELD_SPD_RENDER,
+        ),
+        ("pppDrawShapeCameraRender", 0x0074_5740, d::CAMERA_RENDER),
+        (
+            "pppDrawShapeFieldGlobalRender",
+            0x0074_67b0,
+            d::FIELD_GLOBAL_RENDER,
+        ),
+        (
+            "pppDrawShapeCameraDisPosRender",
+            0x0074_79d0,
+            d::CAMERA_DIS_POS_RENDER,
+        ),
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_3280);
+        let cells = p.alloc(0x10);
+        let (rd_cell, dyn_cell) = (cells, cells + 4);
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd_cell)),
+            far_recorder(&mut p, 0x0071_3290, &[0, 0], None),
+            far_recorder(&mut p, 0x0071_2bd0, &[0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(dyn_cell)),
+            shape_field_update_recorder(&mut p, 0x0071_a4e0),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_4b10, &[0, 0], None),
+        ];
+        let (obj, key, prog, offs, area) = (
+            p.alloc(0x200),
+            p.alloc(0x100),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x60),
+        );
+        let (env, env2, slots, set, part, colours, recs, rdata, parts) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x900),
+            p.alloc(0x80),
+            p.alloc(0x40),
+            p.alloc(0xb0 * 6),
+            p.alloc(0xa0),
+            p.alloc(0x10),
+        );
+        let env_slot = p.sym(d::ENV_SLOT);
+        let (cur, cpart, shift, packet, r0, camera, world) = (
+            p.sym(0x0230_fd20),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+            p.sym(0x0230_fd2c),
+            p.sym(0x00c8_f508),
+            p.sym(0x0230_ff60),
+            p.sym(0x0230_ffa0),
+        );
+        for round in 0..1500u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            let (name, sym, v) = renders[(round % 5) as usize];
+            let float = |rng: &mut Xorshift| {
+                if rng.chance(3) {
+                    rng.float()
+                } else {
+                    ranged(rng, -50.0, 50.0)
+                }
+            };
+            p.fill(obj, 0x200, &mut rng);
+            for k in (0..0x100).step_by(4) {
+                let f = float(&mut rng);
+                p.set(obj + k, f);
+            }
+            p.fill(key, 0x100, &mut rng);
+            for k in (0x10..0x30).step_by(4) {
+                let f = float(&mut rng);
+                p.set(key + v.key + k, f);
+            }
+            if rng.chance(30) {
+                for k in 0..3 {
+                    let z = rng.pick(&[0u32, 0, 0x8000_0000]);
+                    p.set(key + v.key + 0x20 + 4 * k, z);
+                }
+            }
+            for k in [2u32, 3, 4] {
+                p.set(key + v.key + k, rng.pick(&[0u8, 0, 1, 0x80]));
+            }
+            p.set(key + v.key + 0x30, rng.pick(&[0u8, 1, 2, 3, 0xff]));
+            p.set(key + 4, if rng.chance(5) { 0xffff } else { rng.below(8) });
+            p.set(key + 8, rng.pick(&[0u32, 1, 2, 3, 6, 0xffff_ffff]));
+            p.set(prog + 0xc, offs);
+            for k in 0..3 {
+                p.set(offs + 4 * k, 0x40 * rng.below(3));
+            }
+            p.set(area + 0x40, recs);
+            p.set(area + 0x4c, colours);
+            p.set(area + 0x50, colours + 0x20);
+            p.fill(colours, 0x40, &mut rng);
+            for i in 0..6u32 {
+                let rec = recs + v.stride * i;
+                for k in (0..v.stride).step_by(4) {
+                    let f = float(&mut rng);
+                    p.set(rec + k, f);
+                }
+                p.set(rec, rng.pick(&[0u32, 1, 3, 0xfe]));
+                let hi = if rng.chance(10) { 0x100 } else { 0 };
+                p.set(rec + 6, hi | rng.below(8) as u16);
+                p.set(rec + 8, rng.below(4));
+            }
+            p.set(env_slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x24, slots);
+            for i in 0..8u32 {
+                p.set(slots + 4 * i, set);
+            }
+            p.fill(set, 0x900, &mut rng);
+            for f in (0..8u32).chain(0x100..0x108) {
+                p.set(set + 0x10 + 8 * f, (0x10 * rng.below(0x10)) as i16 - 0x40);
+            }
+            for k in (0..0x40).step_by(4) {
+                let (a, b) = (float(&mut rng), float(&mut rng));
+                p.set(camera + k, a);
+                p.set(world + k, b);
+            }
+            p.fill(part, 0x80, &mut rng);
+            p.set(cpart, part);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(shift, if rng.chance(15) { 4 * rng.below(2) } else { 0 });
+            let any = rng.below(0x10);
+            p.set(cur, rng.pick(&[0u32, 8, 0x8000_0001, any]));
+            p.set(rd_cell, if rng.chance(30) { 0 } else { rdata });
+            p.set(rdata + 0x94, parts);
+            p.fill(parts, 0x10, &mut rng);
+            p.set(dyn_cell, u32::from(rng.chance(80)));
+            let pk = rng.next();
+            p.set(packet, pk);
+            // the request's words neither writes: alike in both oracles
+            let words = 4;
+            let entry = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4;
+            let frame = (entry - 12) & !0xf;
+            let req = frame - v.frame.req;
+            // (and the three bytes after +0x18)
+            let (s1, s2, s3) = (rng.next(), rng.next(), rng.next());
+            p.set(req, s1);
+            p.set(req + 0xc, s2);
+            p.set(req + 0x18, s3);
+            check_deep_aligned(
+                &mut p,
+                &format!("{name} round {round}"),
+                sym,
+                &[obj, key, prog, area],
+                |o, frame| {
+                    d::ppp_draw_shape_render(
+                        o,
+                        &v,
+                        obj,
+                        key,
+                        prog,
+                        area,
+                        frame,
+                        &mut call_original,
+                    );
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r42b_wave_light_setup_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_e2f0);
+        let (host, parts, lists) = (p.alloc(0x400), p.alloc(0x2000), p.alloc(0x60));
+        let (unit, blocks, nos) = (p.alloc(0x60), p.alloc(0x80), p.alloc(0x10));
+        let (r0, shift, ee, vf) = (
+            p.sym(0x00c8_f508),
+            p.sym(0x00c8_b500),
+            p.sym(0x00c8_f528),
+            p.sym(0x00c8_f920),
+        );
+        let sse2 = p.sym(ffx_bridge::x87::SSE2_AVAILABLE.sym);
+        let vf00 = p.sym(0x00c0_a004);
+        for round in 0..3000u32 {
+            opus_host(&mut p, &mut rng, host, parts, lists);
+            for i in 0..0x20u32 {
+                let at = parts + 0x100 * i;
+                for k in (0x90..0xa0).step_by(4) {
+                    let v = if rng.chance(3) {
+                        rng.float()
+                    } else {
+                        ranged(&mut rng, -300.0, 300.0)
+                    };
+                    p.set(at + k, v);
+                }
+                let v = if rng.chance(5) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, -4.0, 600.0)
+                };
+                p.set(at + 0x30, v);
+                let v = if rng.chance(5) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, -4.0, 600.0)
+                };
+                p.set(at + 0x4c, v);
+                let v = ranged(&mut rng, 0.0, 4.0);
+                p.set(at + 0x3c, v);
+            }
+            p.fill(unit, 0x60, &mut rng);
+            p.set(unit + 0x24, blocks);
+            p.set(unit + 0x28, blocks + 0x40);
+            p.fill(blocks, 0x80, &mut rng);
+            p.fill(nos, 0x10, &mut rng);
+            for k in 0..4u32 {
+                let n = if rng.chance(25) { 0 } else { opus_no(&mut rng) };
+                p.set(nos + 2 + 2 * k, n);
+            }
+            // r0 mostly zero, as on the EE; t1 equal to it in its first
+            // words now and then, the tag (+0x4c) as well
+            let r: [u32; 4] = if rng.chance(70) {
+                [0; 4]
+            } else {
+                [rng.next(), rng.next(), rng.next(), rng.next()]
+            };
+            for (k, w) in (0u32..).zip(r) {
+                p.set(r0 + 4 * k, w);
+            }
+            p.fill(ee, 0x10, &mut rng);
+            if rng.chance(50) {
+                p.set(ee + 4, r[1]);
+            }
+            for i in 0..0x20u32 {
+                if rng.chance(50) {
+                    p.set(parts + 0x100 * i + 0x4c, r[0]);
+                }
+            }
+            for k in (0..0x70).step_by(4) {
+                let v = if rng.chance(10) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, -10.0, 10.0)
+                };
+                p.set(vf + k, v);
+            }
+            // vf00, which restoreVf00Register sets
+            p.fill(vf00, 0x10, &mut rng);
+            // a vf05.x whose 1/256 falls below the normal floats
+            if rng.chance(20) {
+                let tiny = 0x0300_0000 | rng.below(0x80_0000);
+                p.set(vf + 0x30, tiny);
+            }
+            p.set(shift, if rng.chance(15) { 4 * rng.below(2) } else { 0 });
+            p.set(sse2, u32::from(rng.chance(50)));
+            let src = parts + 0x100 * rng.below(0x20);
+            let list = host + 0x300;
+            let junk = rng.next();
+            p.check(
+                &format!("opus_wave_light_setup round {round}"),
+                0x0080_e2f0,
+                &[unit, junk, list, src, nos],
+                |m| {
+                    Some(opus::bridge::opus_wave_light_setup(
+                        m,
+                        unit,
+                        list,
+                        src,
+                        nos,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}

@@ -57,6 +57,140 @@ pub mod bridge {
     /// for (0x4400 bytes of them; more overrun the original's frame).
     pub const WAVE_LIGHT_MAX: usize = 0x440;
 
+    /// `opus_wave_light_setup_0080e2f0(unit, _, list, src, nos)`
+    /// (`0x0080e2f0`, name ours; called by `0x0080df10`): the four lights
+    /// [`opus_wave_light`] reads. The colour (`unit +0x24`) and position
+    /// (`unit +0x28`) blocks, 4 x 16 bytes each, start as `r0` (the
+    /// emulated EE's zero register). For each `u16` of `nos +2..+0xa` that
+    /// is not 0, the unit `L` it names ([`opus_no_get`] from `src`):
+    /// position = `L +0x90` less `src +0x90` (`f32`, through the VU0
+    /// registers), then `restoreVf00Register`; its intensity (the
+    /// position's `w`) = `vf05.x / 256 x L +0x3c`, `vf05` reset to `(1, 0,
+    /// t1.zw)` when `L +0x4c` (through `g_pppColorConShift`) and `t1.y`
+    /// equal `r0.xy`'s words; the colour = the bytes of `L +0xc8`
+    /// widened to words by `pextlb` and `pextlh` with `r0` (`t1`'s other
+    /// words in the upper half) as `f32` / 64. Last the unit's base and
+    /// gain bytes `+0x4c` / `+0x4d`: `ftol(src +0x30)`, then `src +0x4c`,
+    /// halved toward zero and held in `0..=0x80`. Returns what the
+    /// original leaves in `eax` (the last `ftol` when held at 0x80, else
+    /// the byte).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opus_wave_light_setup<M: Mem>(
+        mem: &mut M,
+        unit: u32,
+        list: u32,
+        src: u32,
+        nos: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, store, sub};
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let (r0, t1, shift) = (
+            g(mem, 0x00c8_f508),
+            g(mem, 0x00c8_f528),
+            g(mem, 0x00c8_b500),
+        );
+        // the VU0 registers: vf02 vf03 vf05 vf06 vf07, and the move register
+        let (vf02, vf03, vf05, vf06, vf07, mv) = (
+            g(mem, 0x00c8_f920),
+            g(mem, 0x00c8_f930),
+            g(mem, 0x00c8_f950),
+            g(mem, 0x00c8_f960),
+            g(mem, 0x00c8_f970),
+            g(mem, 0x00c8_f980),
+        );
+        let restore = g(mem, 0x0042_ef00);
+        let r: [u32; 4] = mem.read(r0);
+        let (mut colour, mut pos) = (
+            rd(mem, unit.wrapping_add(0x24)),
+            rd(mem, unit.wrapping_add(0x28)),
+        );
+        for k in 0..4 {
+            mem.write(colour.wrapping_add(16 * k), r);
+            mem.write(pos.wrapping_add(16 * k), r);
+        }
+        for k in 0..4u32 {
+            let no = u32::from(mem.read::<u16>(nos.wrapping_add(2 + 2 * k)));
+            if no != 0 {
+                let l = opus_no_get(mem, list, src, no);
+                let from: [u32; 4] = mem.read(src.wrapping_add(0x90));
+                mem.write(mv, from);
+                let to: [u32; 4] = mem.read(l.wrapping_add(0x90));
+                mem.write(vf07, to);
+                let d = [0usize, 1, 2, 3].map(|j| store(sub(load(to[j]), load(from[j]))));
+                mem.write(vf06, d);
+                call(mem, restore, &[]);
+                let d: [u32; 4] = mem.read(vf06);
+                mem.write(pos, d);
+                let sh = rd(mem, shift);
+                let tag = rd(mem, sh.wrapping_add(l).wrapping_add(0x4c));
+                mem.write(shift, 0u32);
+                let t: [u32; 4] = mem.read(t1);
+                if tag == r[0] && t[1] == r[1] {
+                    mem.write(vf05, [1f32.to_bits(), 0, t[2], t[3]]);
+                }
+                let v5: [u32; 4] = mem.read(vf05);
+                let third = 0x3b80_0000u32; // 1/256
+                mem.write(vf03, [third, 0, t[2], t[3]]);
+                let scaled = store(mul(load(third), load(v5[0])));
+                let size = rd(mem, l.wrapping_add(0x3c));
+                mem.write(vf02, [size, 0, t[2], t[3]]);
+                let w = store(mul(load(scaled), load(size)));
+                mem.write(vf05, w);
+                mem.write(pos.wrapping_add(0xc), w);
+                // pextlb t1, r0, t1 on (L +0xc8, vf05.y), then pextlh t1, r0,
+                // t1: only the low half of the bytes' result (from L +0xc8 and
+                // r0.x) reaches the words
+                let c = rd(mem, l.wrapping_add(0xc8));
+                let bytes = |w: u32, z: u32, half: u32| {
+                    let b = |x: u32, i: u32| (x >> (8 * i)) & 0xff;
+                    let (i, j) = (2 * half, 2 * half + 1);
+                    b(w, i) | b(z, i) << 8 | b(w, j) << 16 | b(z, j) << 24
+                };
+                let wide = [bytes(c, r[0], 0), bytes(c, r[0], 1)];
+                let halves = |w: u32, z: u32, half: u32| {
+                    let h = |x: u32| (x >> (16 * half)) & 0xffff;
+                    h(w) | h(z) << 16
+                };
+                let words = [
+                    halves(wide[0], r[0], 0),
+                    halves(wide[0], r[0], 1),
+                    halves(wide[1], r[1], 0),
+                    halves(wide[1], r[1], 1),
+                ];
+                let sixty_fourth = 0x3c80_0000u32;
+                mem.write(t1, [sixty_fourth, 0, words[2], words[3]]);
+                mem.write(vf07, [sixty_fourth, 0, words[2], words[3]]);
+                let x = load(sixty_fourth);
+                let out = words.map(|v| {
+                    let f = store(f64::from(v.cast_signed()));
+                    store(mul(x, load(f)))
+                });
+                mem.write(mv, out);
+                mem.write(colour, out);
+            }
+            pos = pos.wrapping_add(0x10);
+            colour = colour.wrapping_add(0x10);
+        }
+        let mut eax = 0;
+        for (from, to) in [(0x30u32, 0x4cu32), (0x4c, 0x4d)] {
+            let v = ftol(mem, load(rd(mem, src.wrapping_add(from)))).cast_signed();
+            let q = v / 2;
+            let b = if q >= 0x80 {
+                eax = v.cast_unsigned();
+                0x80
+            } else {
+                let b = q.max(0).cast_unsigned();
+                eax = b;
+                b
+            };
+            #[allow(clippy::cast_possible_truncation)] // at most 0x80
+            mem.write(unit.wrapping_add(to), b as u8);
+        }
+        eax
+    }
+
     /// `opus_wave_light_007f60b0(_, shape, unit)` (`0x007f60b0`, name ours;
     /// `opus_0154_wave_draw`'s): vertex colours from four point lights.
     /// The model matrix (`unit +0x2c`) with its first three rows scaled to
