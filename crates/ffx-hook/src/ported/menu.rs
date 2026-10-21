@@ -1859,6 +1859,28 @@ ported! {
         let local = frame.at();
         tk::menu_item_draw_target_names(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuWShop_DrawSellWindow_008da470(w)`.
+    MenuWShop_DrawSellWindow_008da470 @ 0x008d_a470 => extern "C" fn menu_wshop_draw_sell_window(w: u32) -> u32 {
+        tk::menu_wshop_draw_sell_window(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_GrowWindowCtrl_008cd460(w)`.
+    MenuSummon_GrowWindowCtrl_008cd460 @ 0x008c_d460 => extern "C" fn menu_summon_grow_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_grow_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuLimit_Open_008d0a20(m, a)`.
+    MenuLimit_Open_008d0a20 @ 0x008d_0a20 => extern "C" fn menu_limit_open(m: u32, a: u32) -> u32 {
+        // the original's two help and two text words
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::menu_limit_open(&mut mem(), m, a, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMessageLayout_008de370(m)`: 0.
+    TkMenuMessageLayout_008de370 @ 0x008d_e370 => extern "C" fn tk_menu_message_layout(m: u32) -> u32 {
+        // the width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_menu_message_layout(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

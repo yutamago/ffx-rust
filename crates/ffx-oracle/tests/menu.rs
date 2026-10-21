@@ -16114,3 +16114,201 @@ fn menu_round30_weapon_list_and_item_target_names_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round30_sell_window_grow_ctrl_limit_open_and_layout_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0030_0006) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008d_ce50u32, 0u8),
+        (0x008c_1790, 0),
+        (0x008c_0be0, 0),
+        (0x008e_71d0, 1),
+        (0x008c_1af0, 2),
+        (0x008c_0f70, 4),
+        (0x008d_aea0, 5),
+        (0x008c_1370, 0),
+        (0x008e_6cc0, 7),
+        (0x008d_ae00, 3),
+        (0x008c_0cc0, 0),
+        (0x008d_3280, 0),
+        (0x008d_2660, 1),
+        (0x008b_44b0, 1),
+        (0x0088_6e80, 1),
+        (0x008a_aeb0, 1),
+        (0x008d_1a20, 1),
+        (0x008d_3140, 4),
+        (0x008d_2680, 1),
+        (0x008a_9870, 0),
+        (0x008a_ae80, 1),
+        (0x008c_2360, 1),
+        (0x008b_ee70, 1),
+        (0x008b_ee50, 1),
+        (0x008e_4ab0, 0),
+        (0x008a_9860, 0),
+        (0x008d_0d50, 1),
+        (0x008e_3b80, 1),
+        (0x008b_7f40, 1),
+        (0x008b_80b0, 2),
+        (0x008b_8cd0, 5),
+        (0x008b_8d10, 6),
+        (0x008b_9a60, 2),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let pads = [0x008b_e410u32, 0x008b_e470, 0x008b_e4b0].map(|f| seq_stub(&mut t, f, log, 0, &[]));
+    let members = seq_stub(&mut t, 0x008a_9b50, log, 0, &[]);
+    let mode = seq_stub(&mut t, 0x008c_1bd0, log, 1, &[]);
+    let rows = seq_stub(&mut t, 0x008c_1bb0, log, 0, &[]);
+    let window_mode = seq_stub(&mut t, 0x008a_c7b0, log, 0, &[]);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    // TkMenuGetPlayerFromIndex2 counts up from a picked character
+    let chr = t.alloc(&[0; 4]);
+    let bump: Vec<u8> = [&[0xff, 0x05][..], &chr.to_le_bytes()].concat();
+    let code = seq_code(log, 0x008a_9b00, 1, chr, &bump);
+    jump_stub(&mut t, 0x008a_9b00, &code);
+    // TkMenuOpenSubCmdWindowRect: the helps and texts (four words from
+    // argument 2), then the rest
+    let cell = t.alloc(&[0; 4]);
+    cells.push(cell);
+    let code = seq_code_deref_at(log, 0x008e_4930, 2, 4, &[0, 3, 4, 5, 6, 7, 8], cell);
+    jump_stub(&mut t, 0x008e_4930, &code);
+    // TOGetMessageWH(id, text, &w, &h, line, flags): w from a cell
+    let (wcell, dummy) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x15]; // mov eax, [esp+12]; mov edx, [wcell]
+    extra.extend(wcell.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let code = seq_code_of(log, 0x008b_9650, &[0, 1, 3, 4, 5], dummy, &extra);
+    jump_stub(&mut t, 0x008b_9650, &code);
+    let (w0, sub, text) = (
+        t.alloc(&[0; 0x140]),
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x10]),
+    );
+    t.put(t.sym(0x023c_c128), sub);
+    let floats = [
+        0f32,
+        -0.0,
+        1.5,
+        299.5,
+        300.0,
+        650.2,
+        -2.7,
+        1e10,
+        f32::from_bits(0x7fc0_0000),
+    ];
+    for round in 0..2000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(w0, 0x140);
+        t.scramble_at(text, 0x10);
+        t.scramble(0x0186_a720, 0x100);
+        t.scramble(0x0159_7770, 0x40);
+        t.scramble(0x025d_0b20, 0x40);
+        let v = t.rng.pick(&[0u8, 0, 1]);
+        t.put(text, v);
+        let a = t.rng.pick(&[0u16, 1, 5, 0x8000]);
+        t.put(w0 + 0x32, a);
+        let b = t.rng.pick(&[a, a, 2, 0xffff]);
+        t.put(w0 + 0x34, b);
+        let v = t.rng.pick(&[0u8, 1, 0x7f, 0x80, 0xff]);
+        t.put(sub + 0x45, v);
+        let v = t.rng.pick(&[0u16, 1, 2, 3]);
+        t.put(sub + 0x48, v);
+        for &p in &pads {
+            let v = t.rng.pick(&[0u32, 0x10, 0x10, 0x40, 0x50, 0x1_0010]);
+            t.put(p, v);
+        }
+        let v = t.rng.pick(&[0u32, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        t.put(t.sym(0x0186_a610), v);
+        let v = t.rng.pick(&[0u8, 0, 1]);
+        t.put(w0 + 0x45, v);
+        let v = t.rng.pick(&[0u16, 1, 5, 0xffff]);
+        t.put(w0 + 0x48, v);
+        let v = t.rng.pick(&[0u16, 1, 6]);
+        t.put(w0 + 0x30, v);
+        let v = t.rng.pick(&[0u32, 1, 3, 0xffff_ffff]);
+        t.put(members, v);
+        let v = t.rng.pick(&[0u32, 1, 2, 5]);
+        t.put(chr, v);
+        let v = t.rng.pick(&[0u32, 1, 6, 9, 20, 21, 21, 0xffff_ffff]);
+        t.put(rows, v);
+        let m = t.rng.pick(&[0u16, 3, 7]);
+        t.put(mode, u32::from(m));
+        let k = t.rng.pick(&[0u32, 3, 7, 8, 13, 15, 15, 19]);
+        t.put(t.sym(0x0159_7770) + 4 * k, m);
+        // the message
+        for (o, e) in [(0x94u32, 0x98u32), (0x60, 0x64), (0x78, 0x7c)] {
+            t.put(w0 + o, text);
+            let v = t.rng.pick(&[0, text]);
+            t.put(w0 + e, v);
+        }
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(w0 + 0xac, v);
+        let v = t.rng.pick(&[0i16, 1, 3, 7]);
+        t.put(w0 + 4, v);
+        let v = t.rng.pick(&[0u32, 1, 1, 2]);
+        t.put(window_mode, v);
+        let v = t.rng.pick(&[0u32, 3, 1]);
+        t.put(lang, v);
+        let v = t.rng.pick(&floats);
+        t.put(wcell, v.to_bits());
+        let v = t.rng.pick(&[0x17u32, 0x17, 0x18]);
+        t.put(t.sym(0x012f_bc40), v);
+        let v = t.rng.pick(&[0x1c7u16, 0x1c7, 0]);
+        t.put(w0 + 0x14, v);
+        let v = t.rng.pick(&[0xc7u16, 0xc7, 0]);
+        t.put(w0 + 0x16, v);
+        let v = t.rng.pick(&[0u16, 1, 1, 2]);
+        t.put(w0 + 0x1e, v);
+        let a = t.rng.next();
+        match round % 4 {
+            0 => t.twin(
+                "MenuWShop_DrawSellWindow_008da470",
+                0x008d_a470,
+                &[w0],
+                U32,
+                |o| {
+                    w(tk::menu_wshop_draw_sell_window(
+                        o,
+                        w0,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                },
+            ),
+            1 => t.twin(
+                "MenuSummon_GrowWindowCtrl_008cd460",
+                0x008c_d460,
+                &[w0],
+                U32,
+                |o| w(tk::menu_summon_grow_window_ctrl(o, w0, &mut callback)),
+            ),
+            2 => t.twin("MenuLimit_Open_008d0a20", 0x008d_0a20, &[w0, a], U32, |o| {
+                w(tk::menu_limit_open(
+                    o,
+                    w0,
+                    a,
+                    local,
+                    &mut ui_remap,
+                    &mut callback,
+                ))
+            }),
+            _ => t.twin(
+                "TkMenuMessageLayout_008de370",
+                0x008d_e370,
+                &[w0],
+                U32,
+                |o| w(tk::tk_menu_message_layout(o, w0, local, &mut callback)),
+            ),
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

@@ -6532,9 +6532,9 @@ pub mod bridge {
         eax
     }
 
-    /// The scissor geometry of the shop and item lists (see
-    /// [`scroll_list_scissor`]).
-    const SHOP_LIST: [f32; 4] = [77.0, 9.0, 10.0, 312.0];
+    /// The row geometry of the shop and item lists (see
+    /// [`scroll_list_rows`]).
+    const SHOP_LIST: [f32; 5] = [317.0, 77.0, 9.0, 10.0, 312.0];
 
     /// The scissor of a scrolling list: `TkMn2DrawMenuWindowScissor(
     /// ftol(remapY2(height)), ftol(remapY2(top) + remapY2(row) * rows),
@@ -6561,19 +6561,22 @@ pub mod bridge {
     }
 
     /// The rows of a scrolling list window `w` through `rows(w, part,
-    /// first, 0.0, y[, data])`: at rest (`u16 +0x32` == `u16 +0x34`) one
-    /// call, part 0, from row `i16 +0x32` at `y = remapY2(317)`; while it
-    /// scrolls the old rows (part 1, from `+0x32`, `y = remapY2(317)`)
-    /// and the new ones (part 2, from `i16 +0x34`, `y = remapY2(317) -
-    /// remapY2(77) * 9 * i16 +0x46 / 4096`) each inside its scissor
-    /// ([`scroll_list_scissor`]); then `TkMn2DrawScissorClear()`. Shared
-    /// by `MenuWShop_DrawBuyList`, `MenuWShop_DrawSellList` and
-    /// `MenuItem_DrawGearList`.
+    /// first, 0.0, y[, data])`, with `[y0, row, ...]` the first row's y,
+    /// the row height and then the scissor geometry
+    /// ([`scroll_list_scissor`]): at rest (`u16 +0x32` == `u16 +0x34`) one
+    /// call, part 0, from row `i16 +0x32` at `y = remapY2(y0)`; while it
+    /// scrolls the old rows (part 1, from `+0x32`, `y = remapY2(y0)`) and
+    /// the new ones (part 2, from `i16 +0x34`, `y = remapY2(y0) -
+    /// remapY2(row) * rows * i16 +0x46 / 4096`) each inside its scissor;
+    /// then `TkMn2DrawScissorClear()`. Shared by `MenuWShop_DrawBuyList`,
+    /// `MenuWShop_DrawSellList`, `MenuItem_DrawGearList` (`[317, 77, 9, 10,
+    /// 312]`) and `MenuShop_DrawSellList` (`[240, 77, 10, 10, 235]`).
     fn scroll_list_rows<M: Mem>(
         mem: &mut M,
         w: u32,
         rows: u32,
         data: Option<u32>,
+        [y0, row, per_page, top, height]: [f32; 5],
         remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
@@ -6589,18 +6592,19 @@ pub mod bridge {
             args.extend(data);
             call(mem, rows, &args);
         };
+        let geom = [row, per_page, top, height];
         if mem.read::<u16>(w.wrapping_add(0x32)) == mem.read::<u16>(w.wrapping_add(0x34)) {
-            let y = store(remap(mem, true, 317.0));
+            let y = store(remap(mem, true, y0));
             let from = first(mem, 0x32);
             draw(mem, 0, from, y, call);
         } else {
-            scroll_list_scissor(mem, w, 1, SHOP_LIST, remap, call);
-            let y = store(remap(mem, true, 317.0));
+            scroll_list_scissor(mem, w, 1, geom, remap, call);
+            let y = store(remap(mem, true, y0));
             let from = first(mem, 0x32);
             draw(mem, 1, from, y, call);
-            scroll_list_scissor(mem, w, 2, SHOP_LIST, remap, call);
-            let base = remap(mem, true, 317.0);
-            let step = mul(remap(mem, true, 77.0), 9.0);
+            scroll_list_scissor(mem, w, 2, geom, remap, call);
+            let base = remap(mem, true, y0);
+            let step = mul(remap(mem, true, row), f64::from(per_page));
             let scroll = f64::from(mem.read::<i16>(w.wrapping_add(0x46)));
             let y = store(sub(base, mul(mul(step, scroll), 0.000_244_140_625)));
             let from = first(mem, 0x34);
@@ -6611,22 +6615,24 @@ pub mod bridge {
     }
 
     /// The scroll bar of a scrolling list: `DrawCrossMenuScrollParts(
-    /// remapX2(955), remapY2(317), remapX2(10), remapY2(683), i16 +0x32,
-    /// u16 +0x3a, u16 +0x30)` (remapped last to first); its `eax`.
+    /// remapX2(955), remapY2(y), remapX2(10), remapY2(height), i16 +0x32,
+    /// u16 +0x3a, count)` (remapped last to first; `y`, `height` 317, 683
+    /// with `count` the `u16 +0x30` for the shop and item lists); its `eax`.
     fn scroll_list_bar<M: Mem>(
         mem: &mut M,
         w: u32,
+        [y, height]: [f32; 2],
+        count: u32,
         remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
         use ffx_bridge::x87::store;
         let at = |o: u32| w.wrapping_add(o);
-        let count = u32::from(mem.read::<u16>(at(0x30)));
         let shown = u32::from(mem.read::<u16>(at(0x3a)));
         let top = i32::from(mem.read::<i16>(at(0x32))).cast_unsigned();
-        let height = store(remap(mem, true, 683.0));
+        let height = store(remap(mem, true, height));
         let width = store(remap(mem, false, 10.0));
-        let y = store(remap(mem, true, 317.0));
+        let y = store(remap(mem, true, y));
         let x = store(remap(mem, false, 955.0));
         let f = mem.rebase(0x008e_6cc0);
         call(mem, f, &[x, y, width, height, top, shown, count])
@@ -6663,13 +6669,16 @@ pub mod bridge {
         } else {
             (0x008d_8c30, 0x008d_8bb0)
         };
-        scroll_list_rows(mem, w, rows, Some(data), remap, call);
+        scroll_list_rows(mem, w, rows, Some(data), SHOP_LIST, remap, call);
         let sub: u32 = mem.read(mem.rebase(0x023c_c128));
         if mem.read::<i8>(sub.wrapping_add(0x45)) > 0 {
             let f = mem.rebase(cursor);
             call(mem, f, &[w, 0, 0]);
         }
-        scroll_list_bar(mem, w, remap, call)
+        {
+            let count = u32::from(mem.read::<u16>(w.wrapping_add(0x30)));
+            scroll_list_bar(mem, w, [317.0, 683.0], count, remap, call)
+        }
     }
 
     /// `MenuItem_DrawGearList(w)` (`0x008c87e0`, own name): the item menu's
@@ -6695,12 +6704,15 @@ pub mod bridge {
         let gear: u32 = mem.read(mem.rebase(0x0186_a37c));
         let f = mem.rebase(0x008c_9570);
         call(mem, f, &[gear]);
-        scroll_list_rows(mem, w, 0x008c_99f0, None, remap, call);
+        scroll_list_rows(mem, w, 0x008c_99f0, None, SHOP_LIST, remap, call);
         if mem.read::<i8>(w.wrapping_add(0x45)) >= 0 {
             let f = mem.rebase(0x008c_9940);
             call(mem, f, &[w, 0, 0]);
         }
-        scroll_list_bar(mem, w, remap, call);
+        {
+            let count = u32::from(mem.read::<u16>(w.wrapping_add(0x30)));
+            scroll_list_bar(mem, w, [317.0, 683.0], count, remap, call)
+        };
         let f = mem.rebase(0x008c_0cc0);
         call(mem, f, &[])
     }
@@ -6902,6 +6914,358 @@ pub mod bridge {
         call(mem, f, &[w, 0, 0]);
         let f = mem.rebase(0x008c_0cc0);
         call(mem, f, &[])
+    }
+
+    /// `MenuWShop_DrawSellWindow_008da470(w)` (`0x008da470`, own name; the
+    /// draw `MenuWShop_OpenSellWindow` installs): packet kicks,
+    /// `0x008e71d0(2)`, `TkMn2GetExcelData([0x0186ac20], [0x0186ac2c])`
+    /// (result unused), the two-column rows ([`scroll_list_rows`] through
+    /// `MenuItem_DrawRowPairs` with `[240, 77, 10, 10, 235]`), the scroll
+    /// bar ([`scroll_list_bar`] at `[240, 760]` over `(u16 +0x30 + 1) / 2`
+    /// rows), the cursor `0x008dae00(w, 0.0, 0.0)` while the open
+    /// sub-command window (`0x023cc128`) has `i8 +0x45` above 0 and `u16
+    /// +0x48` not 2, and `TkMn2DrawKickSyncPacket()` (its `eax`).
+    pub fn menu_wshop_draw_sell_window<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        for f in [0x008d_ce50, 0x008d_ce50, 0x008c_1790, 0x008c_0be0] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+        let f = mem.rebase(0x008e_71d0);
+        call(mem, f, &[2]);
+        let (table, field) = (
+            mem.read::<u32>(mem.rebase(0x0186_ac20)),
+            mem.read::<u32>(mem.rebase(0x0186_ac2c)),
+        );
+        let f = mem.rebase(0x008c_1af0);
+        call(mem, f, &[table, field]);
+        let geom = [240.0, 77.0, 10.0, 10.0, 235.0];
+        scroll_list_rows(mem, w, 0x008d_aea0, None, geom, remap, call);
+        let pairs = (u32::from(mem.read::<u16>(w.wrapping_add(0x30))) + 1) >> 1;
+        scroll_list_bar(mem, w, [240.0, 760.0], pairs, remap, call);
+        let sub: u32 = mem.read(mem.rebase(0x023c_c128));
+        if mem.read::<i8>(sub.wrapping_add(0x45)) > 0
+            && mem.read::<u16>(sub.wrapping_add(0x48)) != 2
+        {
+            let f = mem.rebase(0x008d_ae00);
+            call(mem, f, &[w, 0, 0]);
+        }
+        let f = mem.rebase(0x008c_0cc0);
+        call(mem, f, &[])
+    }
+
+    /// `MenuSummon_GrowWindowCtrl_008cd460(w)` (`0x008cd460`, jump table
+    /// `0x008cd6a0` on the state `0x0186a610`, 0..10): the aeon growth
+    /// window. The pad (`u16`) and trigger are read, the repeat dropped;
+    /// `TkMn2StepStatusBG()`. 0 goes on as 2; 1 slides the status
+    /// background back (`TMn2SetStatusBGDiff(-0x155)`) and goes on as 2; 2
+    /// runs `TkMenuListWindowCtrl_008b44b0(w)`: with no row chosen (`+0x45`
+    /// 0) and the start button alone (trigger `0x10`, pad `0x10`), sound
+    /// `0x80000001`, `TkMenuSetHelpMessage(0)`, 3; otherwise, on a row
+    /// below the count and none chosen, `TkMn2DrawSelItemsHelp(w)`; 3
+    /// slides in (`0x155`) and opens status window 1 (`MenuStatus_OpenWindow(1,
+    /// 1, 0x42, 0)`), 4; 5, 7, 9 open windows 2, 3, 4 (pages `0x43`,
+    /// `0x47`, `0x46`) and go to 6, 8, 10; 4, 6, 8 close their window on
+    /// start (sound `0x80000001`, next) or cancel (`0x40`, sound
+    /// `0x80000004`, back to 1); 10 closes window 4 on either and goes back
+    /// to 1. `eax` is the original's.
+    pub fn menu_summon_grow_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut pads = [0u32; 3];
+        for (p, f) in pads.iter_mut().zip([0x008b_e410, 0x008b_e470, 0x008b_e4b0]) {
+            let f = mem.rebase(f);
+            *p = call(mem, f, &[]) & 0xffff;
+        }
+        let [pad, _, trg] = pads;
+        let f = mem.rebase(0x008d_3280);
+        call(mem, f, &[]);
+        let state_at = mem.rebase(0x0186_a610);
+        let snd = mem.rebase(0x0088_6e80);
+        let (open, close) = (mem.rebase(0x008d_3140), mem.rebase(0x008d_2680));
+        let set_diff = mem.rebase(0x008d_2660);
+        let state: u32 = mem.read(state_at);
+        match state {
+            0..=2 => {
+                if state != 2 {
+                    if state == 1 {
+                        call(mem, set_diff, &[(-0x155i32).cast_unsigned()]);
+                    }
+                    mem.write(state_at, 2u32);
+                }
+                let f = mem.rebase(0x008b_44b0);
+                call(mem, f, &[w]);
+                let chosen = mem.read::<u8>(w.wrapping_add(0x45));
+                if chosen == 0 && trg & 0x10 != 0 && pad == 0x10 {
+                    call(mem, snd, &[0x8000_0001]);
+                    let f = mem.rebase(0x008a_aeb0);
+                    let eax = call(mem, f, &[0]);
+                    mem.write(state_at, 3u32);
+                    return eax;
+                }
+                let row = i32::from(mem.read::<i16>(w.wrapping_add(0x48)));
+                let count = u32::from(mem.read::<u16>(w.wrapping_add(0x30)));
+                if row >= count.cast_signed() || chosen != 0 {
+                    return count;
+                }
+                let f = mem.rebase(0x008d_1a20);
+                call(mem, f, &[w])
+            }
+            3 | 5 | 7 | 9 => {
+                if state == 3 {
+                    call(mem, set_diff, &[0x155]);
+                }
+                let (window, page) =
+                    [(1, 0x42), (2, 0x43), (3, 0x47), (4, 0x46)][(state as usize - 3) / 2];
+                let eax = call(mem, open, &[1, window, page, 0]);
+                mem.write(state_at, state + 1);
+                eax
+            }
+            4 | 6 | 8 | 10 => {
+                let window = (state - 2) / 2;
+                let (sound, next) = if trg & 0x10 != 0 {
+                    (0x8000_0001, if state == 10 { 1 } else { state + 1 })
+                } else if trg & 0x40 != 0 {
+                    (0x8000_0004, 1)
+                } else {
+                    return state;
+                };
+                call(mem, snd, &[sound]);
+                let eax = call(mem, close, &[window]);
+                mem.write(state_at, next);
+                eax
+            }
+            _ => state,
+        }
+    }
+
+    /// `MenuLimit_Open_008d0a20(m, a)` (`0x008d0a20`, own name): the
+    /// overdrive menu's open step. `m+0x20` = `a`, `m+0x1c` = 0, the words
+    /// `0x0186a760..0x0186a7a0` and `0x0186a720..0x0186a760` cleared; for
+    /// each party member `i` below `TkMenuGetPlayerListMax2()` (made the
+    /// current one, `TkMenuSetCurrentPlayerPos(i)`) the overdrive list
+    /// (`TkMn2RefreshList(1)`, `TkMn2GetListMax()` rows) is searched for
+    /// the member's mode (`TkMn2GetOverDriveId` of
+    /// `TkMenuGetPlayerFromIndex2(i)`): its row goes to
+    /// `g_TkMenuLimitCursors[chr]` (0 when absent) and the scroll
+    /// `g_TkMenuLimitScrolls[chr]` to `row / 2 - 3`, at most `(rows + 1) /
+    /// 2 - 7`, at least 0 (0 below row 7). Then the current member and list
+    /// 0 come back and the sub-command window opens over
+    /// `TOMenuGetStatusMes`/`TOMenuGetStatusHelp` 2 and 3
+    /// (`TkMenuOpenSubCmdWindowRect(0, texts, helps, 2, 0, remapX2(210),
+    /// remapY2(155), remapX2(1500), remapY2(54))`, `MenuSubCmd_CenterOpen`),
+    /// with `MenuLimit_OpenWindow(TkMenuGetCurrentPlayer())` and
+    /// `TkMenuSetSubCmdWindowCursor(0)` (its `eax`). `local` holds the
+    /// helps then the texts (four words, the original's frame).
+    pub fn menu_limit_open<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        a: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::store;
+        mem.write(m.wrapping_add(0x20), a);
+        mem.write(m.wrapping_add(0x1c), 0u32);
+        mem.write(mem.rebase(0x0186_a760), [0u32; 16]);
+        mem.write(mem.rebase(0x0186_a720), [0u32; 16]);
+        let f = mem.rebase(0x008a_9870);
+        let pos = call(mem, f, &[]);
+        let f = mem.rebase(0x008a_9b50);
+        let members = call(mem, f, &[]).cast_signed();
+        let set_pos = mem.rebase(0x008a_ae80);
+        let refresh = mem.rebase(0x008c_2360);
+        let list = mem.rebase(0x0159_7770);
+        for i in 0..members.max(0).cast_unsigned() {
+            call(mem, set_pos, &[i]);
+            let f = mem.rebase(0x008a_9b00);
+            let chr = call(mem, f, &[i]);
+            let f = mem.rebase(0x008c_1bd0);
+            let mode = call(mem, f, &[chr]);
+            call(mem, refresh, &[1]);
+            let f = mem.rebase(0x008c_1bb0);
+            let rows = call(mem, f, &[]).cast_signed();
+            let cursor_at = mem.rebase(0x0186_a7e0).wrapping_add(chr.wrapping_mul(4));
+            let scroll_at = mem.rebase(0x0186_a7a0).wrapping_add(chr.wrapping_mul(4));
+            mem.write(cursor_at, 0u32);
+            for k in 0..rows.max(0).cast_unsigned() {
+                if u32::from(mem.read::<u16>(list.wrapping_add(k * 4))) == mode {
+                    mem.write(cursor_at, k);
+                    break;
+                }
+            }
+            let row = mem.read::<i32>(cursor_at);
+            let mut scroll = 0;
+            if row >= 7 {
+                let wanted = row / 2 - 3;
+                let page_end = rows.wrapping_add(1) / 2;
+                scroll = if wanted + 7 < page_end {
+                    wanted
+                } else {
+                    (page_end - 7).max(0)
+                };
+            }
+            mem.write(scroll_at, scroll);
+        }
+        call(mem, set_pos, &[pos]);
+        call(mem, refresh, &[0]);
+        let (mes, help) = (mem.rebase(0x008b_ee70), mem.rebase(0x008b_ee50));
+        let texts = [call(mem, mes, &[2]), call(mem, mes, &[3])];
+        let helps = [call(mem, help, &[2]), call(mem, help, &[3])];
+        mem.write(local, [helps[0], helps[1], texts[0], texts[1]]);
+        let height = store(remap(mem, true, 54.0));
+        let width = store(remap(mem, false, 1500.0));
+        let top = store(remap(mem, true, 155.0));
+        let left = store(remap(mem, false, 210.0));
+        let f = mem.rebase(0x008e_4930);
+        #[rustfmt::skip]
+        call(mem, f, &[0, local.wrapping_add(8), local, 2, 0, left, top, width, height]);
+        let f = mem.rebase(0x008e_4ab0);
+        call(mem, f, &[]);
+        let f = mem.rebase(0x008a_9860);
+        let chr = call(mem, f, &[]);
+        let f = mem.rebase(0x008d_0d50);
+        call(mem, f, &[chr]);
+        let f = mem.rebase(0x008e_3b80);
+        call(mem, f, &[0])
+    }
+
+    /// `TkMenuMessageLayout_008de370(m)` (`0x008de370`, own name): lays a
+    /// menu message out. The three text pointers move past a previous
+    /// line (`+0x94`/`+0x60`/`+0x78` = their end `+1` when the end
+    /// `+0x98`/`+0x64`/`+0x7c` is set) and get new ends
+    /// (`TOSkipCodesAbove2`); `+0xa0`/`+0xa4` cleared, `+0xa8` =
+    /// `TOCountMessageWords_008b80b0(i16 +4, +0x94)`, `+0xa0` = 1 when
+    /// `+0xac` is 0 and the text is not empty; the size from
+    /// `TOGetMessageWH(i16 +4, +0x94, &w, m + 0x46, i16 +0x1a, 1)`: `u16
+    /// +0x44` = `ftol(w)`, or for a window whose word `0x025d0b20[i16 +4]`
+    /// is set 300 with `+0x46` multiplied by `ftol(w) / 300 + 1` (`i16`);
+    /// the position centred in `(i16 +0x40, i16 +0x42)` from `(f32 +0x30,
+    /// f32 +0x34)` (each half `ftol(f32(int) + f)`; window mode 1
+    /// (`TOGetMessageWindowMode`) keeps y 1); then the rectangle `m +
+    /// 0x48`: on map `0x17` for the message `(0x1c7, 0xc7)` at `+0x14`
+    /// `TOSetRectDirect(m + 0x48, 0x154 (language 3) or 0x160, y - 1, w,
+    /// h)`, else `TOWideWindowRect_008b8d10(i16 +4, m + 0x48, x, y, w, h)`;
+    /// `TOLayoutMessageChoices_008b9a60(m, 1)` when `u16 +0x1e` is 1;
+    /// `+0x2c` = `0x10001`, `+0x114` = `+0x11c`, and the seven words at
+    /// `+0xd4` copied to `+0xb8`. Returns 0. `local` is the width word.
+    #[allow(clippy::too_many_lines)] // one straight sequence of steps
+    pub fn tk_menu_message_layout<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, store};
+        let at = |o: u32| m.wrapping_add(o);
+        mem.write(local, 0u32);
+        let skip = mem.rebase(0x008b_7f40);
+        for (text, end) in [(0x94, 0x98), (0x60, 0x64), (0x78, 0x7c)] {
+            let prev: u32 = mem.read(at(end));
+            if prev != 0 {
+                mem.write(at(text), prev.wrapping_add(1));
+            }
+            let from: u32 = mem.read(at(text));
+            let stop = call(mem, skip, &[from]);
+            mem.write(at(end), stop);
+        }
+        mem.write(at(0xa0), [0u32; 2]);
+        let id_of = |mem: &M| i32::from(mem.read::<i16>(at(4))).cast_unsigned();
+        let id = id_of(mem);
+        let text: u32 = mem.read(at(0x94));
+        let f = mem.rebase(0x008b_80b0);
+        let words = call(mem, f, &[id, text]);
+        mem.write(at(0xa8), words);
+        if mem.read::<u32>(at(0xac)) == 0 {
+            let text: u32 = mem.read(at(0x94));
+            if mem.read::<u8>(text) != 0 {
+                let value = mem.read::<u32>(at(0xa0)).wrapping_add(1);
+                mem.write(at(0xa0), value);
+            }
+        }
+        let line = i32::from(mem.read::<i16>(at(0x1a))).cast_unsigned();
+        let text: u32 = mem.read(at(0x94));
+        let id = id_of(mem);
+        let f = mem.rebase(0x008b_9650);
+        call(mem, f, &[id, text, local, at(0x46), line, 1]);
+        #[allow(clippy::cast_possible_truncation)] // the u16 of AX
+        let width = ftol(mem, load(mem.read(local))) as u16;
+        mem.write(at(0x44), width);
+        let wide = mem
+            .rebase(0x025d_0b20)
+            .wrapping_add(id_of(mem).wrapping_mul(4));
+        if mem.read::<u32>(wide) != 0 {
+            let lines = width.cast_signed() / 300 + 1;
+            mem.write(at(0x44), 300u16);
+            let height = mem.read::<i16>(at(0x46)).wrapping_mul(lines);
+            mem.write(at(0x46), height);
+        }
+        let f = mem.rebase(0x008a_c7b0);
+        let mode = call(mem, f, &[]);
+        let width_now = i32::from(mem.read::<i16>(at(0x44)));
+        // the u16 of AX after ftol, used as an i16
+        #[allow(clippy::cast_possible_truncation)]
+        let half = |mem: &mut M, size: u32, used: i32, base: u32| -> i16 {
+            let gap = (i32::from(mem.read::<i16>(at(size))) - used) / 2;
+            let value = add(load(store(f64::from(gap))), load(mem.read(at(base))));
+            ftol(mem, value) as i16
+        };
+        let (left, top) = if mode == 1 {
+            (half(mem, 0x40, width_now, 0x30), 1)
+        } else {
+            let left = half(mem, 0x40, width_now, 0x30);
+            let height = i32::from(mem.read::<i16>(at(0x46)));
+            (left, half(mem, 0x42, height, 0x34))
+        };
+        let signed = |value: i16| i32::from(value).cast_unsigned();
+        let height = i32::from(mem.read::<i16>(at(0x46))).cast_unsigned();
+        let special = mem.read::<u32>(mem.rebase(0x012f_bc40)) == 0x17
+            && mem.read::<u16>(at(0x14)) == 0x1c7
+            && mem.read::<u16>(at(0x16)) == 0xc7;
+        if special {
+            let f = mem.rebase(0x008a_c2f0);
+            let lang = call(mem, f, &[]);
+            let left = if lang == 3 { 0x154 } else { 0x160 };
+            let f = mem.rebase(0x008b_8cd0);
+            let width = i32::from(mem.read::<i16>(at(0x44))).cast_unsigned();
+            call(
+                mem,
+                f,
+                &[at(0x48), left, signed(top).wrapping_sub(1), width, height],
+            );
+        } else {
+            let f = mem.rebase(0x008b_8d10);
+            let id = id_of(mem);
+            call(
+                mem,
+                f,
+                &[
+                    id,
+                    at(0x48),
+                    signed(left),
+                    signed(top),
+                    width_now.cast_unsigned(),
+                    height,
+                ],
+            );
+        }
+        if mem.read::<u16>(at(0x1e)) == 1 {
+            let f = mem.rebase(0x008b_9a60);
+            call(mem, f, &[m, 1]);
+        }
+        mem.write(at(0x2c), 0x0001_0001u32);
+        let next: u32 = mem.read(at(0x11c));
+        mem.write(at(0x114), next);
+        let words: [u32; 7] = mem.read(at(0xd4));
+        mem.write(at(0xb8), words);
+        0
     }
 
     /// The sub-command window openers (`0x008e33d0`

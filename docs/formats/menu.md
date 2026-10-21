@@ -312,6 +312,13 @@ bar is `(956, 599, 8, 395)`. The weapon shop lists pass
 `TkMn2GetExcelData([0x0186ab1c], [0x0186aba8])` to their row draws and
 draw their cursor while the sub-command window is open.
 
+The weapon shop's sell window (`MenuWShop_DrawSellWindow_008da470`,
+`0x008da470`) is a two-column list (`MenuItem_DrawRowPairs`): rows start at
+y 240, 77 high, ten a page, scissor `(10 + 770, 235)`, and the scroll bar
+`(955, 240, 10, 760)` counts `(u16 +0x30 + 1) / 2` rows. Its cursor shows
+while the sub-command window is open and not on its third entry (`u16
++0x48` 2).
+
 `TkMn2GetWShopPos` (`0x008d9190`) loads the weapon shop's layout from the
 menu sequence (7 rectangles, 12 positions, 5 colours, 3 common plates)
 and then grows the `u16` at `0x023cc2fa` (the third rectangle's) by
@@ -368,6 +375,21 @@ tables `0x0186a674`, `0x0186a654`, `0x0186a694` and `0x0186a6b4`, seeds the
 face words `0x023cc3c4..0x023cc3bc` with `TkMenuGetCurrentPlayerPos()`,
 builds the weapon kind list and starts scenes `scene0`, `scene11` and
 `scene20`.
+
+The overdrive menu opens with `MenuLimit_Open_008d0a20` (`0x008d0a20`):
+for every party member it finds the member's current mode in the
+overdrive list (`TkMn2RefreshList(1)`) and remembers its row in
+`g_TkMenuLimitCursors` and a scroll in `g_TkMenuLimitScrolls`
+(`row / 2 - 3`, clamped to `0..=(rows + 1) / 2 - 7`, 0 below row 7: the
+list has two columns and shows seven lines), then opens a two-entry
+sub-command window (status messages 2 and 3) and the mode window.
+
+The aeon growth window (`MenuSummon_GrowWindowCtrl_008cd460`, jump table
+`0x008cd6a0`, state `0x0186a610`) pages through four status windows with
+the start button: each start opens the next (`MenuStatus_OpenWindow(1, k,
+page, 0)` with pages `0x42`, `0x43`, `0x47`, `0x46`), cancel closes the
+open one and returns to the list (state 1, which slides the status
+background back by `-0x155`).
 
 `TkMenuCtrlKaizou` (`0x008d5540`, jump table `0x008d55ac` on the menu's
 state `+0x1c`) opens the customise window (state 0 -> 1), waits for its
@@ -554,6 +576,18 @@ theirs) and `+0xa8` = `TOCountMessageWords_008b80b0(i16 +4, +0x94)`;
 line with `TOGetMessageWH`: `u16 +0x40` takes the widest line (with the
 lead measured first, grown by `TOGetChangeMacroWidth` when `u16 +0x22` is
 1) and `u16 +0x42` the tallest.
+
+`TkMenuMessageLayout_008de370` (`0x008de370`) lays a menu message out:
+the text pointers `+0x94`, `+0x60`, `+0x78` move past the previous line's
+ends `+0x98`, `+0x64`, `+0x7c` (`TOSkipCodesAbove2` finds the new ones),
+the size comes from `TOGetMessageWH` into `u16 +0x44` (width) and `+0x46`
+(height; windows flagged in `0x025d0b20[id]` wrap at width 300, the height
+multiplied by the line count), the window is centred in `(+0x40, +0x42)`
+from `(f32 +0x30, f32 +0x34)` (window mode 1 keeps y 1), and the
+rectangle `+0x48` comes from `TOWideWindowRect_008b8d10`, except on map
+`0x17` for message `(0x1c7, 0xc7)`, which is pinned at x `0x154` (language
+3) or `0x160`. It ends with `+0x2c` = `0x10001`, `+0x114` = `+0x11c` and
+the seven words at `+0xd4` copied to `+0xb8`.
 
 `TkMenuCtrlWorldMap` (`0x008e2960`, jump table `0x008e2a84`) runs the
 world map through states 0..10 at `+0x1c`: read the map image (CD file
