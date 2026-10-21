@@ -5278,6 +5278,32 @@ ported! {
         let at = request.at();
         read::ms_btl_read_weapon(&mut mem(), &mut call_ptr, at)
     }
+    /// `Cam_SetScreenVector2_007bc750(screen, x, y, z, w)`.
+    Cam_SetScreenVector2_007bc750 @ 0x007b_c750 => extern "C" fn cam_set_screen_vector2(screen: u32, x: i32, y: i32, z: i32, w: i32) -> u32 {
+        camera::cam_set_screen_vector2(&mut mem(), screen, [x, y, z, w])
+    }
+    /// `MsCameraSetFocusList_007bf520(id, side, flags, focus, weight)`.
+    MsCameraSetFocusList_007bf520 @ 0x007b_f520 => extern "C" fn ms_camera_set_focus_list(id: u32, side: u32, flags: u32, focus: u32, weight: u32) -> u32 {
+        camera::ms_camera_set_focus_list(&mut mem(), &mut call_ptr, [id, side, flags, focus, weight])
+    }
+    /// `MsAtelCameraPolar_007bb5d0(worker, args, stack, side, add)`.
+    MsAtelCameraPolar_007bb5d0 @ 0x007b_b5d0 => extern "C" fn ms_atel_camera_polar(w: u32, _args: u32, s: u32, side: u32, add: u32) -> u32 {
+        native!(c);
+        camnat::ms_atel_camera_polar(&mut mem(), &mut c, [w, s, side, add])
+    }
+    /// `MsBindChrToChr_00795c90(i, other, elem)`: the optional position in
+    /// the port's frame.
+    MsBindChrToChr_00795c90 @ 0x0079_5c90 => extern "C" fn ms_bind_chr_to_chr(i: u32, other: u32, elem: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        body::ms_bind_chr_to_chr(&mut mem(), [i, other, elem], at)
+    }
+    /// `PasswordTextRead()`: the unified name in the port's frame.
+    PasswordTextRead @ 0x0079_0340 => extern "C" fn password_text_read() -> u32 {
+        let mut local = super::StackFrame::<{ (minor::PASSWORD_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        minor::password_text_read(&mut mem(), &mut call_ptr, at)
+    }
     /// `MsGetReelResultKind_007b1710(symbols, hits)`.
     MsGetReelResultKind_007b1710 @ 0x007b_1710 => extern "C" fn ms_get_reel_result_kind(symbols: u32, hits: u32) -> u32 {
         reel::ms_get_reel_result_kind(&mut mem(), symbols, hits)

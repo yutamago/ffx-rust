@@ -1452,7 +1452,9 @@ fn natives(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
             rec + 0x540,
             1,
             0,
-        );
+        ); // round 33: Cam_SetPolar and Cam_AddPolar
+        recording_stub(o, n::CAM_SET_POLAR, STUBS_E + 0x390, rec + 0x560, 5, 0x41);
+        recording_stub(o, n::CAM_ADD_POLAR, STUBS_E + 0x3d0, rec + 0x5a0, 5, 0x42);
     }
     let worker = scratch(a, b, 0x100);
     let stack = scratch(a, b, 0x10);
@@ -1662,6 +1664,19 @@ fn natives(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) 
             _ => {}
         }
         same(&format!("natives {}", round % 12), a, b);
+        // round 33: the polar aim native (its own generator: the others'
+        // draws stay as they were)
+        poke(a, b, cursor, &words_at.to_le_bytes());
+        let mut r33 = Xorshift(0x3333_0400 ^ round);
+        let add = [0, 1, r33.next()][r33.below(3) as usize];
+        let side33 = r33.below(3);
+        nat!(
+            "MsAtelCameraPolar_007bb5d0",
+            0x007b_b5d0,
+            &[worker, 0, stack, side33, add],
+            |m, cc| { n::ms_atel_camera_polar(m, &mut cc, [worker, stack, side33, add]) }
+        );
+        same("MsAtelCameraPolar_007bb5d0", a, b);
         // round 31: the direction vector native and its setter, on a camera
         // whose current request is the worker's camera or not
         poke(a, b, cursor, &words_at.to_le_bytes());
@@ -4588,4 +4603,213 @@ fn leaf_cursors_match_the_original_on_a_snapshot() {
         return;
     };
     cursors(&mut a, &mut b, &mut Xorshift(0x3333_0202), false);
+}
+
+/// Round 33's camera and character leaves: `Cam_SetScreenVector2_007bc750`,
+/// `MsCameraSetFocusList_007bf520` (a camera's slot 0 the request or not,
+/// a focus list of floats; `MsCameraFocusWeights` and `MsSetCheckChange`
+/// as the originals and the ports), `MsBindChrToChr_00795c90` (the
+/// unbinding on a made-up character; the binding on the live actors'
+/// characters of a snapshot) and `PasswordTextRead` (its callees stubs:
+/// the heap, the language, the name, the load, the 32-bit pointer table
+/// and the free; the name's frame buffer is not logged).
+fn misc_leaves(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use ffx_battle::camera::bridge as cam;
+    use ffx_battle::minor::bridge as mi;
+    macro_rules! pick {
+        ($rng:expr, [$($v:expr),+ $(,)?] $(,)?) => {{
+            let v = [$($v),+];
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x400);
+    let slot = |k: u32| rec + 0x40 * k;
+    // PasswordTextRead's callees: logging stubs (results at slot + 4),
+    // the name and the load custom (their frame argument left out)
+    let logged: [(u32, u8); 6] = [
+        (mi::USER_MALLOC, 1),
+        (mi::TO_GET_FFX_LANG_JMP, 0),
+        (mi::IS_PTR32_NULL, 1),
+        (mi::SET_PTR32, 1),
+        (mi::GET_PTR32_FUNC, 1),
+        (mi::FREE_00687010, 1),
+    ];
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(logged) {
+            logging_stub(o, f, STUBS_D + 0x40 * k, slot(k), n, 0);
+        }
+        // fiosUnifyFilename(src, out, size): src and size kept
+        let r = slot(6);
+        let name = code_with(&[
+            (&[0xff, 0x05], Some(r)),
+            (&[0x8b, 0x44, 0x24, 0x04, 0xa3], Some(r + 4)),
+            (&[0x8b, 0x44, 0x24, 0x0c, 0xa3], Some(r + 8)),
+            (&[0x31, 0xc0, 0xc3], None),
+        ]);
+        hook_to(o, mi::FIOS_UNIFY_FILENAME, STUBS_D + 0x40 * 6, &name);
+        // the load(name, buffer): the buffer kept, the size returned
+        let r = slot(7);
+        let load = code_with(&[
+            (&[0xff, 0x05], Some(r)),
+            (&[0x8b, 0x44, 0x24, 0x08, 0xa3], Some(r + 4)),
+            (&[0xa1], Some(r + 0xc)),
+            (&[0xc3], None),
+        ]);
+        hook_to(o, mi::PASSWORD_FILE_LOAD, STUBS_D + 0x40 * 7, &load);
+        // MsSetCheckChange's side step (tested with the camera's process)
+        recording_stub(o, cam::CAMERA_MOVE_STEP, STUBS_D + 0x40 * 8, slot(8), 4, 0);
+    }
+    let buffer = scratch(a, b, 0x200);
+    let dest = scratch(a, b, 0x200);
+    let local = scratch(a, b, 0x110);
+    let list = scratch(a, b, 0x60);
+    let fake = scratch(a, b, 0x1000);
+    let orig_chr: Vec<u32> = (0..ACTORS)
+        .map(|k| ffx_bridge::Mem::read::<u32>(&*b, w.actor(k)))
+        .collect();
+    let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+    for round in 0..300 {
+        match round % 4 {
+            0 => {
+                let screen = pick!(rng, [0u32, 1, 2, 2, 3, 0x100]);
+                let v = [
+                    rng.word(),
+                    rng.range(-500, 500).cast_unsigned(),
+                    rng.next(),
+                    0,
+                ];
+                let mask = if screen > 2 { 0 } else { ALL };
+                twin(
+                    "Cam_SetScreenVector2_007bc750",
+                    a,
+                    b,
+                    0x007b_c750,
+                    &[screen, v[0], v[1], v[2], v[3]],
+                    mask,
+                    |m| cam::cam_set_screen_vector2(m, screen, v.map(u32::cast_signed)),
+                );
+                same(&format!("Cam_SetScreenVector2_007bc750 {screen}"), a, b);
+            }
+            1 => {
+                let c = rng.below(3);
+                // (a request past 0x7f now and then: the shift is signed)
+                let req = pick!(rng, [0u32, 1, 2, 3, 0x80, 0x81]);
+                let level = 1 + rng.below(5);
+                let x = c | (req << 8) | (level << 16);
+                let slots = cam::SLOTS_AT.ptr(b).addr + c * cam::CAMERA_SIZE;
+                let mut bytes = vec![0u8; 0x20];
+                bytes[..4].copy_from_slice(&x.to_le_bytes());
+                bytes[4] = u8::from(rng.below(6) == 0);
+                bytes[5] = u8::from(rng.below(6) == 0);
+                // another slot with a level now and then
+                if rng.below(3) == 0 {
+                    let y = c | (rng.below(4) << 8) | (rng.below(8) << 16);
+                    bytes[8..12].copy_from_slice(&y.to_le_bytes());
+                    bytes[14] = rng.byte();
+                }
+                poke(a, b, slots, &bytes);
+                let id = pick!(rng, [x, x, x, x ^ 0x100, x & 0xff00_ffff, c | 0x30000]);
+                let side = pick!(rng, [0u32, 1, 2, 3]);
+                // the camera's side (its position at +0x30) and the list
+                let base =
+                    cam::CAMERAS.ptr(b).addr + 0x30 + c * cam::CAMERA_SIZE + (side & 1) * 0x61c;
+                let floats: Vec<u8> = (0..0x40).flat_map(|_| float(rng).to_le_bytes()).collect();
+                poke(a, b, base, &floats);
+                let words: Vec<u8> = (0..0x18).flat_map(|_| float(rng).to_le_bytes()).collect();
+                poke(a, b, list, &words);
+                poke(a, b, list, &rng.range(-1, 5).to_le_bytes());
+                poke(a, b, list + 4, &[rng.byte()]);
+                let flags = pick!(rng, [0u32, 1, 0x80, rng.next()]);
+                let weight = float(rng);
+                let args = [id, side, flags, list, weight];
+                twin(
+                    "MsCameraSetFocusList_007bf520",
+                    a,
+                    b,
+                    0x007b_f520,
+                    &args,
+                    ALL,
+                    |m| cam::ms_camera_set_focus_list(m, &mut call, args),
+                );
+                same(&format!("MsCameraSetFocusList_007bf520 {args:x?}"), a, b);
+            }
+            2 => {
+                let i = pick!(
+                    rng,
+                    [0u32, 1, 2, 0x14, rng.below(ACTORS), ACTORS + 1, 0x100]
+                );
+                let j = pick!(rng, [0u32, 1, 2, 0x14, rng.below(ACTORS)]);
+                // (never itself: a character bound to itself faults in the
+                // original)
+                let j = if j == i & 0xff { (j + 1) % ACTORS } else { j };
+                let other = pick!(
+                    rng,
+                    [u32::MAX, 0x8000_0000, 0x7fff_ffff, j, j | 0x100, j | 0x80]
+                );
+                let elem = rng.below(8);
+                let me = w.actor((i & 0xff) % ACTORS);
+                // the actors' own characters (a snapshot's live ones) stay;
+                // one without may get a made-up one, which is never a
+                // parent (it has no elements)
+                if orig_chr[((i & 0xff) % ACTORS) as usize] == 0 {
+                    poke(a, b, me, &pick!(rng, [0, fake, fake]).to_le_bytes());
+                }
+                if orig_chr[j as usize] == 0 {
+                    poke(a, b, w.actor(j), &[0; 4]);
+                }
+                let args = [i, other, elem];
+                let mask = if other.cast_signed() < 0 { 0 } else { ALL };
+                twin(
+                    "MsBindChrToChr_00795c90",
+                    a,
+                    b,
+                    0x0079_5c90,
+                    &args,
+                    mask,
+                    |m| ffx_battle::body::bridge::ms_bind_chr_to_chr(m, args, local),
+                );
+                let keep = b.read(local, 0x10).unwrap();
+                a.write(local, &keep).unwrap();
+                same(&format!("MsBindChrToChr_00795c90 {args:x?}"), a, b);
+            }
+            _ => {
+                poke(a, b, slot(0) + 4, &buffer.to_le_bytes());
+                poke(
+                    a,
+                    b,
+                    slot(1) + 4,
+                    &pick!(rng, [9u32, 10, 10, 1, 0]).to_le_bytes(),
+                );
+                poke(a, b, slot(2) + 4, &pick!(rng, [0u32, 1]).to_le_bytes());
+                poke(a, b, slot(3) + 4, &rng.next().to_le_bytes());
+                poke(a, b, slot(4) + 4, &dest.to_le_bytes());
+                poke(a, b, slot(7) + 0xc, &rng.below(0x200).to_le_bytes());
+                set(a, b, mi::PASSWORD_TEXT_ON, rng.below(0x200));
+                set(a, b, mi::PASSWORD_TEXT, rng.word());
+                set(a, b, mi::PASSWORD_TEXT_BYTE, rng.byte());
+                fill(a, b, rng, buffer, 0x200);
+                twin("PasswordTextRead", a, b, 0x0079_0340, &[], ALL, |m| {
+                    mi::password_text_read(m, &mut call, local)
+                });
+                same("PasswordTextRead", a, b);
+            }
+        }
+    }
+}
+
+#[test]
+fn leaf_misc_leaves_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    misc_leaves(&mut a, &mut b, &mut Xorshift(0x3333_0501), true);
+}
+
+#[test]
+fn leaf_misc_leaves_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    misc_leaves(&mut a, &mut b, &mut Xorshift(0x3333_0502), false);
 }

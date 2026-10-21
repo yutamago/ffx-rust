@@ -3563,4 +3563,73 @@ pub mod bridge {
         }
         u32::from(v)
     }
+
+    /// What `PasswordTextRead` calls through the game: `user_malloc(n)`,
+    /// `TOGetFFXLangJmp()`, `fiosUnifyFilename(src, out, size)`, the file
+    /// load `0x00790430(name, buffer)` (its size), `is_ptr32_null`,
+    /// `set_ptr32`, `get_ptr32_func` and `user_free_thunk`; the two Al
+    /// Bhed text paths (Korean 9, Chinese 10).
+    /// ([`TO_GET_FFX_LANG_JMP`], [`IS_PTR32_NULL`] and [`FREE_00687010`]
+    /// above.)
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    pub const FIOS_UNIFY_FILENAME: u32 = 0x0067_9820;
+    pub const PASSWORD_FILE_LOAD: u32 = 0x0079_0430;
+    pub const SET_PTR32: u32 = 0x00a4_4700;
+    pub const GET_PTR32_FUNC: u32 = 0x00a4_4650;
+    pub const ALBHED_KR: u32 = 0x00b5_4a50;
+    pub const ALBHED_CN: u32 = 0x00b5_4a88;
+    /// The byte before [`PASSWORD_TEXT_ON`] `PasswordTextRead` clears.
+    pub const PASSWORD_TEXT_BYTE: Global<u8> = Global::new(0x0231_1080);
+    /// Bytes of [`password_text_read`]'s `local` (the unified name).
+    pub const PASSWORD_LOCAL: u32 = 0x104;
+
+    /// `PasswordTextRead()` (`0x00790340`, the name entry's Al Bhed text):
+    /// a 0x25800-byte buffer (`user_malloc`); in Korean (9) or Chinese (10)
+    /// the language's `albhed.bin` (its unified name in `local`, 0x104
+    /// bytes, the original's frame) loaded into it, its size kept
+    /// ([`PASSWORD_TEXT_ON`]); the text's block (made, `user_malloc` of
+    /// the size, when its handle [`PASSWORD_TEXT`] is null) gets the size's
+    /// bytes of the buffer; [`PASSWORD_TEXT_BYTE`] cleared, the buffer
+    /// freed. 0. ([`PASSWORD_TEXT_ON`] is the text's size: not 0 when it
+    /// is loaded.)
+    pub fn password_text_read<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        local: u32,
+    ) -> u32 {
+        let mut game = |mem: &mut M, sym: u32, args: &[u32]| {
+            let f = mem.rebase(sym);
+            call(mem, f, args)
+        };
+        let buffer = game(mem, USER_MALLOC, &[0x25800]);
+        let name = match game(mem, TO_GET_FFX_LANG_JMP, &[]) {
+            9 => Some(ALBHED_KR),
+            _ if game(mem, TO_GET_FFX_LANG_JMP, &[]) == 10 => Some(ALBHED_CN),
+            _ => None,
+        };
+        if let Some(name) = name {
+            let src = mem.rebase(name);
+            game(mem, FIOS_UNIFY_FILENAME, &[src, local, PASSWORD_LOCAL]);
+            let size = game(mem, PASSWORD_FILE_LOAD, &[local, buffer]);
+            PASSWORD_TEXT_ON.set(mem, size);
+        }
+        let handle = PASSWORD_TEXT.get(mem);
+        let handle = if game(mem, IS_PTR32_NULL, &[handle]) != 0 {
+            let size = PASSWORD_TEXT_ON.get(mem);
+            let p = game(mem, USER_MALLOC, &[size]);
+            let h = game(mem, SET_PTR32, &[p]);
+            PASSWORD_TEXT.set(mem, h);
+            h
+        } else {
+            handle
+        };
+        let size = PASSWORD_TEXT_ON.get(mem);
+        let to = game(mem, GET_PTR32_FUNC, &[handle]);
+        let mut bytes = vec![0u8; size as usize];
+        mem.read_bytes(buffer, &mut bytes);
+        mem.write_bytes(to, &bytes);
+        PASSWORD_TEXT_BYTE.set(mem, 0);
+        game(mem, FREE_00687010, &[buffer]);
+        0
+    }
 }

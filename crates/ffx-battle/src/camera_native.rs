@@ -668,4 +668,32 @@ pub mod bridge {
         let near = crate::vector::bridge::ms_near_rag(mem, 0, round_trip(angle).to_bits());
         mem.write(point.wrapping_add(0xc), near);
     }
+
+    /// `Cam_SetPolar(id, side, a, b, c)` and `Cam_AddPolar` (the camera's
+    /// polar aim, set or added).
+    pub const CAM_SET_POLAR: u32 = 0x007b_f700;
+    pub const CAM_ADD_POLAR: u32 = 0x007b_f7f0;
+
+    /// `MsAtelCameraPolar_007bb5d0(worker, _, stack, side, add)`
+    /// (`0x007bb5d0`, name ours; callers `Native_CamSetPolar`,
+    /// `Native_Cam_6005`, `Native_6022`, `Native_6023`): three floats
+    /// popped (`r`, then the degrees `b` and `a`) to the worker's camera's
+    /// polar aim on `side`: `Cam_SetPolar(camera, side, rad(a), rad(b), r)`,
+    /// or with `add` `Cam_AddPolar`, whose `eax` it returns.
+    pub fn ms_atel_camera_polar<M: Mem>(
+        mem: &mut M,
+        c: &mut Calls<'_, M>,
+        [w, s, side, add]: [u32; 4],
+    ) -> u32 {
+        let id = camera(mem, c, w);
+        let [r, b, a] = c.floats::<3>(mem, w, s);
+        let b = radians(mem, b);
+        let a = radians(mem, a);
+        let f = if add == 0 {
+            CAM_SET_POLAR
+        } else {
+            CAM_ADD_POLAR
+        };
+        c.game(mem, f, &[id, side, a, b, r])
+    }
 }
