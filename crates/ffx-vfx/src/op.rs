@@ -5654,4 +5654,36 @@ pub mod bridge {
         mem.write(d.wrapping_add(0x98), bounds.map(|b| store(load(b))));
         call(mem, g(mem, 0x0064_58a0), &[lo, hi]);
     }
+
+    /// `weaponShadowDraw_008138d0(sh, t, ret, from, to, mode)` (ours,
+    /// `0x008138d0`), the weapon trail's draw: with points (`u16 sh+8`),
+    /// the instance `(sh, sh >> 31)` gets its render data made when it
+    /// has none (`weaponShadowDrawInit(.., sh, 0x42 when mode's low byte
+    /// is 0x42, else 0x48)`, only that byte of the pushed word set) and
+    /// filled (`updateWeaponShadowDrawData(inst, sh, t, from, to)`; the
+    /// original pushes `mode` as a seventh word). Returns `ret`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn weapon_shadow_draw<M: Mem>(
+        mem: &mut M,
+        sh: u32,
+        t: u32,
+        ret: u32,
+        from: u32,
+        to: u32,
+        mode: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        if mem.read::<u16>(sh.wrapping_add(8)) == 0 {
+            return ret;
+        }
+        let blend = if mode & 0xff == 0x42 { 0x42 } else { 0x48 };
+        let inst = [sh, (sh.cast_signed() >> 31).cast_unsigned()];
+        if call(mem, g(mem, 0x0064_53d0), &inst) == 0 {
+            call(mem, g(mem, 0x0081_4070), &[inst[0], inst[1], sh, blend]);
+        }
+        let args = [inst[0], inst[1], sh, t, from, to, mode];
+        call(mem, g(mem, 0x0081_3c20), &args);
+        ret
+    }
 }

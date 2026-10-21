@@ -2291,6 +2291,35 @@ pub mod bridge {
         1
     }
 
+    /// `0x007fa800` (`opus_0706_acc_update`, ours) `(eff)`: the 0706
+    /// accumulation strip's renderer instance `(2, 0x2c2)`: without render
+    /// data it is made (`create0706AccRenderDataBuffer(2, 0x2c2, the
+    /// 64-bit texture at eff)`, then `graphicVFXSetup`; either failing
+    /// gives `graphicVFXDestroy`, whose eax is returned); then
+    /// `update0706AccRenderData(2, 0x2c2)` and `graphicVFXDttUpdate(2,
+    /// 0x2c2)`, whose eax is returned. All callees through `call`.
+    pub fn opus_0706_acc_update<M: Mem>(
+        mem: &mut M,
+        eff: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const ID: [u32; 2] = [2, 0x2c2];
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = sym(mem, at);
+            call(mem, f, args)
+        };
+        if go(mem, 0x0064_53d0, &ID) == 0 {
+            let tex: [u32; 2] = mem.read(eff);
+            if go(mem, 0x007f_a5c0, &[ID[0], ID[1], tex[0], tex[1]]) == 0
+                || go(mem, 0x0064_5780, &ID) == 0
+            {
+                return go(mem, 0x0064_5280, &ID);
+            }
+        }
+        go(mem, 0x007f_aad0, &ID);
+        go(mem, 0x0064_5330, &ID)
+    }
+
     /// `0x007fa750` (`opus_0706_noise_update`, ours) `(eff)`: the 0706
     /// noise's renderer instance `(1, 0x2c2)`. With render data, the
     /// update scale is `eff`'s `f32 +0x40` / 4096 / 16 x 12; without, the

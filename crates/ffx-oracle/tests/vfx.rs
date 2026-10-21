@@ -3700,6 +3700,12 @@ fn parts_and_objects_match_the_original() {
         }
         let nodes = p.alloc(0x40);
         let recs = p.alloc(0x80);
+        // pppRunPartFp's program list: a record whose +0x14 and +0x18
+        // functions are one recorder
+        let (fp_list, fp_rec) = (p.alloc(4), p.alloc(0x28));
+        let (code, fp_log) = deref_recorder_code(&mut p, &[0], None);
+        let fp_fn = p.a.alloc_code(&code).unwrap();
+        assert_eq!(p.b.alloc_code(&code).unwrap(), fp_fn);
         let set = p.sym(0x0071_7610); // setVfxShapeEnlargeBufferFactor
         p.put(heap::bridge::ENV_SLOT, env_slot);
         p.set(env_slot, env);
@@ -3886,8 +3892,28 @@ fn parts_and_objects_match_the_original() {
                 p.put(ppp::bridge::STOP, u32::from(rng.chance(10)));
             }
             p.put(prog::bridge::CURRENT_PART, part);
-            let pick = rng.below(3);
-            if pick == 2 {
+            let pick = rng.below(4);
+            if pick == 3 {
+                // one program whose +0x14/+0x18 functions log their calls
+                let keep: [u32; 2] = [p.get(part + 0x14), p.get(part + 0x34)];
+                p.set(part + 0x14, 1u32);
+                p.set(part + 0x34, fp_list);
+                p.set(fp_list, fp_rec);
+                p.set(fp_rec + 0x14, fp_fn);
+                p.set(fp_rec + 0x18, fp_fn);
+                p.set(fp_log, 0u32);
+                p.put(prog::bridge::CURRENT_PART, rng.next());
+                let flags = rng.pick(&[0u32, 0x10, 0x20, 0x30]);
+                p.check(
+                    &format!("pppRunPartFp round {round}"),
+                    0x0071_22f0,
+                    &[part, flags],
+                    |m| Some(pt::ppp_run_part_fp(m, part, flags, &mut call_original)),
+                );
+                p.set(part + 0x14, keep[0]);
+                p.set(part + 0x34, keep[1]);
+                p.put(prog::bridge::CURRENT_PART, part);
+            } else if pick == 2 {
                 // pppRunPartFp's object frame: a null birth list or a
                 // failed allocation now and then
                 if rng.chance(10) {
@@ -24908,6 +24934,98 @@ fn round40d_update_weapon_shadow_draw_data_matches_the_original() {
                         &mut call_original,
                     );
                     None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round40e_acc_update_and_weapon_shadow_draw_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_a800);
+        let cells = p.alloc(0x20);
+        let (rd, made, setup, destroy, dtt) = (cells, cells + 4, cells + 8, cells + 12, cells + 16);
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd)),
+            far_recorder(&mut p, 0x007f_a5c0, &[0, 0, 0, 0], Some(made)),
+            far_recorder(&mut p, 0x0064_5780, &[0, 0], Some(setup)),
+            far_recorder(&mut p, 0x0064_5280, &[0, 0], Some(destroy)),
+            far_recorder(&mut p, 0x007f_aad0, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_5330, &[0, 0], Some(dtt)),
+            far_recorder(&mut p, 0x0081_3c20, &[0; 7], None),
+        ];
+        // weaponShadowDrawInit(lo, hi, sh, mode): three words and the mode's
+        // low byte (the original pushes a word with only that byte set)
+        let ilog = p.alloc(0x14);
+        let mut c = Vec::new();
+        for k in 0..3u8 {
+            c.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0xa3]); // mov eax, [esp+4+4k]; mov [log], eax
+            c.extend((ilog + 4 * u32::from(k)).to_le_bytes());
+        }
+        c.extend([0x0f, 0xb6, 0x44, 0x24, 0x10, 0xa3]); // movzx eax, byte [esp+0x10]
+        c.extend((ilog + 0xc).to_le_bytes());
+        c.extend([0xff, 0x05]); // inc dword [log + 0x10]
+        c.extend((ilog + 0x10).to_le_bytes());
+        c.push(0xc3);
+        let to = p.a.alloc_code(&c).unwrap();
+        assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+        let at = p.sym(0x0081_4070);
+        let mut j = vec![0xe9];
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        p.a.write(at, &j).unwrap();
+        p.b.write(at, &j).unwrap();
+        let (eff, sh) = (p.alloc(8), p.alloc(0x20));
+        for round in 0..600u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.set(ilog, [0u32; 5]);
+            p.fill(cells, 0x20, &mut rng);
+            for c in [rd, made, setup] {
+                if rng.chance(30) {
+                    p.set(c, 0u32);
+                }
+            }
+            p.fill(eff, 8, &mut rng);
+            p.check(
+                &format!("opus_0706_acc_update round {round}"),
+                0x007f_a800,
+                &[eff],
+                |m| {
+                    Some(small::bridge::opus_0706_acc_update(
+                        m,
+                        eff,
+                        &mut call_original,
+                    ))
+                },
+            );
+            p.fill(sh, 0x20, &mut rng);
+            if rng.chance(20) {
+                p.set(sh + 8, 0u16);
+            }
+            let (t, ret, from, to) = (rng.next(), rng.next(), rng.next(), rng.next());
+            let blend = if rng.chance(50) {
+                rng.next() & !0xff | 0x42
+            } else {
+                rng.next()
+            };
+            p.check(
+                &format!("weaponShadowDraw round {round}"),
+                0x0081_38d0,
+                &[sh, t, ret, from, to, blend],
+                |m| {
+                    Some(op::bridge::weapon_shadow_draw(
+                        m,
+                        sh,
+                        t,
+                        ret,
+                        from,
+                        to,
+                        blend,
+                        &mut call_original,
+                    ))
                 },
             );
         }

@@ -992,6 +992,42 @@ pub mod bridge {
         if flags & 0x20 != 0 {
             ppp_part_call(mem, part, 0x18, call);
         }
+        advance_part(mem, part)
+    }
+
+    /// `pppRunPartFp(part, flags)` (`0x007122f0`), [`ppp_run_part`] for the
+    /// field effects: the births (with `g_pppMemAllocFailed` cleared
+    /// first) and [`ppp_run_part_fp_objects`]; when either fails an
+    /// allocation, only the `+0x18` functions (flag 0x20) and 1.
+    /// Otherwise as [`ppp_run_part`].
+    pub fn ppp_run_part_fp<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        flags: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        CURRENT_PART.set(mem, part);
+        if flags & 0x10 != 0 {
+            ppp_part_call(mem, part, 0x14, call);
+        }
+        MEM_ALLOC_FAILED.set(mem, 0);
+        ppp_born_pobjects(mem, part, call);
+        if MEM_ALLOC_FAILED.get(mem) == 0 {
+            ppp_run_part_fp_objects(mem, part, call);
+        }
+        let failed = MEM_ALLOC_FAILED.get(mem) != 0;
+        if flags & 0x20 != 0 {
+            ppp_part_call(mem, part, 0x18, call);
+        }
+        if failed {
+            return 1;
+        }
+        advance_part(mem, part)
+    }
+
+    /// The end of [`ppp_run_part`] and [`ppp_run_part_fp`]: unless stopped,
+    /// the part's frame advances; 1 when it has ended.
+    fn advance_part(mem: &mut impl Mem, part: u32) -> u32 {
         if STOP.get(mem) != 0 {
             return 0;
         }

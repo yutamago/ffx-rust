@@ -3156,6 +3156,19 @@ ported! {
     updateWeaponShadowDrawData @ 0x0081_3c20 => extern "C" fn update_weapon_shadow_draw_data(lo: u32, hi: u32, sh: u32, t: u32, from: u32, to: u32) {
         op::bridge::update_weapon_shadow_draw_data(&mut mem(), lo, hi, sh, t, from, to, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `weaponShadowDraw_008138d0(sh, t, ret, from, to, mode)` -> `ret`.
+    weaponShadowDraw_008138d0 @ 0x0081_38d0 => extern "C" fn weapon_shadow_draw(sh: u32, t: u32, ret: u32, from: u32, to: u32, mode: u32) -> u32 {
+        op::bridge::weapon_shadow_draw(&mut mem(), sh, t, ret, from, to, mode, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_0706_acc_update(eff)` (`0x007fa800`).
+    opus_0706_acc_update @ 0x007f_a800 => extern "C" fn opus_0706_acc_update(eff: u32) -> u32 {
+        small::bridge::opus_0706_acc_update(&mut mem(), eff, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppRunPartFp(part, flags)`: 1 when the part has ended or failed an
+    /// allocation.
+    pppRunPartFp @ 0x0071_22f0 => extern "C" fn ppp_run_part_fp(p: u32, flags: u32) -> u32 {
+        part::bridge::ppp_run_part_fp(&mut mem(), p, flags & 0xff, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_2point_shadow(sh, a, b)` (`0x00813480`).
     op_2point_shadow @ 0x0081_3480 => extern "C" fn op_2point_shadow(sh: u32, a: u32, b: u32) {
         op::bridge::op_2point_shadow(&mut mem(), sh, a, b, &mut |_, f, a| call_ptr(f, a));
