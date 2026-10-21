@@ -5198,7 +5198,11 @@ pub mod bridge {
     ///   `remapX2(656)` with `-(+0x60)`;
     /// - 2 `MenuShop_DrawBuySellPanel(w)` (`0x008d9fe0`):
     ///   `TkMn2BuySellWindow(remapX2(680), remapY2(435), +0x5c, row,
-    ///   +0x64 + row, +0x60, +0x68)`, `row` the `i16 +0x48`.
+    ///   +0x64 + row, +0x60, +0x68)`, `row` the `i16 +0x48`;
+    /// - 3 `MenuShop_DrawSellPanel(w)` (`0x008da730`, own name; the draw
+    ///   `MenuShop_OpenSellWindow` installs): `TkMn2BuySellWindow(
+    ///   remapX2(656), remapY2(436), +0x5c, row, +0x64 - row, -(+0x60),
+    ///   +0x68)`.
     ///
     /// The `remapY2` call comes first.
     pub fn menu_shop_draw_panel<M: Mem>(
@@ -5217,21 +5221,22 @@ pub mod bridge {
         let (yv, xv) = match which {
             0 => (594.0, 680.0),
             1 => (594.0, 656.0),
-            _ => (435.0, 680.0),
+            2 => (435.0, 680.0),
+            _ => (436.0, 656.0),
         };
         let y = store(remap(mem, true, yv));
         let x = store(remap(mem, false, xv));
-        if which == 2 {
+        if which >= 2 {
             let row = i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
-            let args = [
-                x,
-                y,
-                field(mem, 0x5c),
-                row,
-                field(mem, 0x64).wrapping_add(row),
-                field(mem, 0x60),
-                field(mem, 0x68),
-            ];
+            let (owned, price) = if which == 2 {
+                (field(mem, 0x64).wrapping_add(row), field(mem, 0x60))
+            } else {
+                (
+                    field(mem, 0x64).wrapping_sub(row),
+                    field(mem, 0x60).wrapping_neg(),
+                )
+            };
+            let args = [x, y, field(mem, 0x5c), row, owned, price, field(mem, 0x68)];
             let f = mem.rebase(0x008b_f170);
             call(mem, f, &args);
         } else {
@@ -5291,6 +5296,344 @@ pub mod bridge {
         let v = u32::from(mem.read::<u8>(rec.wrapping_add(4)));
         WSHOP_STOCK_BYTE.set(mem, v);
         v
+    }
+
+    /// `MenuWShop_SubWindow1Ctrl(w)` (`0x008d79c0`, own name; the control
+    /// step `MenuWShop_OpenSubWindow1` installs): [`WSHOP_STOCK_BYTE`] =
+    /// -1; when the open sub-command window (`0x023cc128`) has `i8 +0x45`
+    /// above 0 and `u16 +0x48` not 2, `TkMenuListWindowCtrl_008b44b0(w)`
+    /// and, on a row (`i16 +0x48` not negative) whose menu list entry
+    /// (`u16 g_TkMenuItemList[2 row]`) is set, the weapon record
+    /// `MsGetSaveWeapon(id, &local)`: when its byte `+2` is set, its byte
+    /// `+4` into the stock byte. `eax` is the last value the original had
+    /// there (the sub-window, the row zero-extended, the entry, the record
+    /// or the byte); `local` is the original's 4-byte local.
+    pub fn menu_wshop_sub_window1_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let sub: u32 = mem.read(mem.rebase(0x023c_c128));
+        WSHOP_STOCK_BYTE.set(mem, u32::MAX);
+        if mem.read::<i8>(sub.wrapping_add(0x45)) <= 0
+            || mem.read::<u16>(sub.wrapping_add(0x48)) == 2
+        {
+            return sub;
+        }
+        let f = mem.rebase(0x008b_44b0);
+        call(mem, f, &[w]);
+        let row = mem.read::<u16>(w.wrapping_add(0x48));
+        if row.cast_signed() < 0 {
+            return u32::from(row);
+        }
+        let entry = mem
+            .rebase(0x0159_7770)
+            .wrapping_add(i32::from(row.cast_signed()).cast_unsigned().wrapping_mul(4));
+        let id = u32::from(mem.read::<u16>(entry));
+        if id == 0 {
+            return 0;
+        }
+        let f = mem.rebase(0x007a_bbd0);
+        let rec = call(mem, f, &[id, local]);
+        if mem.read::<u8>(rec.wrapping_add(2)) == 0 {
+            return rec;
+        }
+        let v = u32::from(mem.read::<u8>(rec.wrapping_add(4)));
+        WSHOP_STOCK_BYTE.set(mem, v);
+        v
+    }
+
+    /// `TkMenuCtrlKaizou(m)` (`0x008d5540`, jump table `0x008d55ac`): the
+    /// pad reads are dropped; by state `m+0x1c`: 0 opens the window
+    /// (`MenuKaizou_OpenWindow`), stores 1 and goes on as 1; 1 waits for
+    /// the window (`0x0186aa30`) to close (`i8 +0x45` negative), then
+    /// stores 2; 2 stores 3, 3 stores 4, and 2..4 sleep menu 9 and wake
+    /// the main menu (`TkMenuMainActiveMenu(1, 0)`). The menu loop never
+    /// reads `eax`.
+    pub fn tk_menu_ctrl_kaizou<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        wshop_pads(mem, call);
+        let state_at = m.wrapping_add(0x1c);
+        match mem.read::<u32>(state_at) {
+            s @ 0..=1 => {
+                if s == 0 {
+                    let f = mem.rebase(0x008d_6d60);
+                    call(mem, f, &[]);
+                    mem.write(state_at, 1u32);
+                }
+                let win: u32 = mem.read(mem.rebase(0x0186_aa30));
+                if mem.read::<i8>(win.wrapping_add(0x45)) < 0 {
+                    mem.write(state_at, 2u32);
+                }
+            }
+            s @ 2..=4 => {
+                if s < 4 {
+                    mem.write(state_at, 4u32);
+                }
+                let f = mem.rebase(0x008a_ad70);
+                call(mem, f, &[9]);
+                let f = mem.rebase(0x008a_a100);
+                call(mem, f, &[1, 0]);
+            }
+            _ => {}
+        }
+    }
+
+    /// `MenuStatus_DrawMainWindow(w)` (`0x008d2710`, own name; the draw
+    /// `MenuStatus_OpenMainWindow` installs): the packet kicks
+    /// (`TkMenuDrawKick` twice, `0x008c1790`, `TkMn2DrawInitPacket`),
+    /// `TODrawMenuBG()`, `0x008e71d0(4)`, then with `chr` =
+    /// `TkMenuGetCurrentPlayer()` (read first) and `t` = `i16 w+0x52`:
+    /// `MenuStatus_DrawPage(0, 0, chr, 0, &0x023cc3c8, &0x023cc3c4,
+    /// &0x023cc3c0, &0x023cc3bc, t)`, `TkMn2MainStatusPlayerStatus(0, 0,
+    /// chr, t)`, `TkMn2DrawStatusBG(TkMn2GetStatusBG(), 0)`; ends with
+    /// `TkMn2DrawKickSyncPacket(w)` (its `eax`).
+    pub fn menu_status_draw_main_window<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x008a_9860);
+        let chr = call(mem, f, &[]);
+        for f in [
+            0x008d_ce50,
+            0x008d_ce50,
+            0x008c_1790,
+            0x008c_0be0,
+            0x008f_5c10,
+        ] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+        let f = mem.rebase(0x008e_71d0);
+        call(mem, f, &[4]);
+        let t = i32::from(mem.read::<i16>(w.wrapping_add(0x52))).cast_unsigned();
+        let rects = [0x023c_c3c8, 0x023c_c3c4, 0x023c_c3c0, 0x023c_c3bc].map(|g| mem.rebase(g));
+        let f = mem.rebase(0x008d_4ee0);
+        let mut args = [0, 0, chr, 0, 0, 0, 0, 0, t];
+        args[4..8].copy_from_slice(&rects);
+        call(mem, f, &args);
+        let f = mem.rebase(0x008d_5180);
+        call(mem, f, &[0, 0, chr, t]);
+        let f = mem.rebase(0x008d_4910);
+        let bg = call(mem, f, &[]);
+        let f = mem.rebase(0x008d_4170);
+        call(mem, f, &[bg, 0]);
+        let f = mem.rebase(0x008c_0cc0);
+        call(mem, f, &[w])
+    }
+
+    /// `TOTextScrollInitLang_008de8c0(w)` (`0x008de8c0`, own name; a
+    /// sibling of the system module's `TOTextScrollInit_008ded00`):
+    /// `+0xa0` and `+0xb4` zeroed; `+0xac` by `TOGetFFXLangJmp()` through
+    /// the byte table `0x008de950` (languages 0, 1 and 16..18: 30; 2..6:
+    /// 25; 7..15 and above 18: unchanged); `+0xa8` =
+    /// `TOCountMessageWords_008b80b0(i16 +4, +0x94)`; `+0x118` = itself,
+    /// `u16 +0x2e` = 1, `+0x58` = `0x80808080`. Returns 0.
+    pub fn to_text_scroll_init_lang<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |o: u32| w.wrapping_add(o);
+        mem.write(at(0xa0), 0u32);
+        mem.write(at(0xb4), 0u32);
+        let f = mem.rebase(0x008a_c2f0);
+        let lang = call(mem, f, &[]);
+        match lang {
+            0..=1 | 16..=18 => mem.write(at(0xac), 30u32),
+            2..=6 => mem.write(at(0xac), 25u32),
+            _ => {}
+        }
+        let id = i32::from(mem.read::<i16>(at(4))).cast_unsigned();
+        let text: u32 = mem.read(at(0x94));
+        let f = mem.rebase(0x008b_80b0);
+        let n = call(mem, f, &[id, text]);
+        mem.write(at(0xa8), n);
+        put_code(mem, at(0x118), 0x008d_e8c0);
+        mem.write(at(0x2e), 1u16);
+        mem.write(at(0x58), 0x8080_8080u32);
+        0
+    }
+
+    /// `TOTextScrollStepLang_008de970(w)` (`0x008de970`, own name; the
+    /// system module's `TOTextScrollStep_008ded60` without its `+0xb4`
+    /// test): `+0xa0` clamped to `0..=+0xa8` (signed; above `+0xa8` it
+    /// becomes `+0xa8`); at or past `+0xa8`: `+0x2c` = `0x20002`, `u16
+    /// +0x2e` = 3 when the text `[+0x98]` is empty, `+0x114` =
+    /// `0x008e02c0`, `+0x11c` = itself; then `TOTextScrollTick_008df570(w)`
+    /// and the clamp again. Returns 0.
+    pub fn to_text_scroll_step_lang<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |o: u32| w.wrapping_add(o);
+        let clamp = |mem: &mut M| {
+            let (pos, end) = (mem.read::<i32>(at(0xa0)), mem.read::<i32>(at(0xa8)));
+            let v = if pos > end { end } else { pos.max(0) };
+            mem.write(at(0xa0), v);
+            (v, end)
+        };
+        let (pos, end) = clamp(mem);
+        if pos >= end {
+            mem.write(at(0x2c), 0x0002_0002u32);
+            let text: u32 = mem.read(at(0x98));
+            if mem.read::<u8>(text) == 0 {
+                mem.write(at(0x2e), 3u16);
+            }
+            put_code(mem, at(0x114), 0x008e_02c0);
+            put_code(mem, at(0x11c), 0x008d_e970);
+        }
+        let f = mem.rebase(0x008d_f570);
+        call(mem, f, &[w]);
+        clamp(mem);
+        0
+    }
+
+    /// `TkMenuCtrlHelp(m)` (`0x008bef50`, jump table `0x008befdc`): the
+    /// pad reads are dropped; by state `m+0x1c`: 0 stores 1 and goes on as
+    /// 1; 1 waits for `TOMenuGetFirstReadEndFlag()`, then calls the help
+    /// menu's start (the pointer at `0x00c416b8`) with the requested mode
+    /// `0x0186a234` (1 when it is 0), copies the mode's low half to `u16
+    /// 0x0186a22c` (0 when it was 0) and stores 2; 2 stores 3 and goes on
+    /// as 3; 3 jumps to the help menu's step (the pointer at `0x00c416ac`)
+    /// with `m`. `eax` is the original's: 0 while waiting or after a 0
+    /// mode, the start's result with the mode in its low half, the step's
+    /// result, or the state when above 3.
+    pub fn tk_menu_ctrl_help<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        wshop_pads(mem, call);
+        let state_at = m.wrapping_add(0x1c);
+        let state: u32 = mem.read(state_at);
+        match state {
+            0 | 1 => {
+                if state == 0 {
+                    mem.write(state_at, 1u32);
+                }
+                let f = mem.rebase(0x008a_8e50);
+                if call(mem, f, &[]) == 0 {
+                    return 0;
+                }
+                let mode: u32 = mem.read(mem.rebase(0x0186_a234));
+                let start: u32 = mem.read(mem.rebase(0x00c4_16b8));
+                if mode == 0 {
+                    call(mem, start, &[1]);
+                    mem.write(state_at, 2u32);
+                    mem.write(mem.rebase(0x0186_a22c), 0u16);
+                    return 0;
+                }
+                let r = call(mem, start, &[mode]);
+                let low: u16 = mem.read(mem.rebase(0x0186_a234));
+                mem.write(mem.rebase(0x0186_a22c), low);
+                mem.write(state_at, 2u32);
+                (r & 0xffff_0000) | u32::from(low)
+            }
+            2 | 3 => {
+                if state == 2 {
+                    mem.write(state_at, 3u32);
+                }
+                let step: u32 = mem.read(mem.rebase(0x00c4_16ac));
+                call(mem, step, &[m])
+            }
+            _ => state,
+        }
+    }
+
+    /// `TkCdReadWithMalloc2(file, size_of, min)` (`0x0088d240`): with the
+    /// CD object `GetCD()` (`cd`): `cd+0x10(file)`, `n` = `cd+0x14(size_of)`
+    /// raised to `min` (signed), `Sg_MemSetAlign(0x40)`, `buf` =
+    /// `user_malloc(n + 0x7ff` rounded down to `0x800`, toward zero),
+    /// `[buf]` = 0, `FlushCache(0)`, `cd+0(size_of, buf, 0, 0)`, `cd+8(0)`,
+    /// `FlushCache(0)`. Returns `buf`.
+    pub fn tk_cd_read_with_malloc2<M: Mem>(
+        mem: &mut M,
+        file: u32,
+        size_of: u32,
+        min: i32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = mem.rebase(0x0076_d0d0);
+        let cd = call(mem, f, &[]);
+        let method: u32 = mem.read(cd.wrapping_add(0x10));
+        call(mem, method, &[file]);
+        let method: u32 = mem.read(cd.wrapping_add(0x14));
+        let n = call(mem, method, &[size_of]).cast_signed().max(min);
+        let f = mem.rebase(0x0083_c4a0);
+        call(mem, f, &[0x40]);
+        let size = n.wrapping_add(0x7ff) / 0x800 * 0x800;
+        let f = mem.rebase(0x0068_7020);
+        let buf = call(mem, f, &[size.cast_unsigned()]);
+        mem.write(buf, 0u32);
+        let flush = mem.rebase(0x0062_f4c0);
+        call(mem, flush, &[0]);
+        let method: u32 = mem.read(cd);
+        call(mem, method, &[size_of, buf, 0, 0]);
+        let method: u32 = mem.read(cd.wrapping_add(8));
+        call(mem, method, &[0]);
+        call(mem, flush, &[0]);
+        buf
+    }
+
+    /// `TkSqsLoadInfo_0088e3a0(load)` / `TkSqsLoadInfo_0088e440(load)`
+    /// (own names; `wave` picks the second): CD file `file` = `0x2d` /
+    /// `0x2c` and `init` = `0x0081d340` / `SqsInitWaveInfo` (`0x0081d3f0`).
+    /// Only when the byte `g_GsDefDrawEnv2` (`0x00b5ec4f`, 1 in the image,
+    /// so neither runs in the game) is 0: with `load` set, `buf` =
+    /// `TkCdReadWithMalloc(file, 1)` and `size` = the CD object's
+    /// (`GetCD()`) `+0x10(file)`, `+0x14(1)` (else both 0); then
+    /// `+0x10(file)` again and `init(buf, size, +4(0))`; a `buf` is freed
+    /// (`user_free_thunk`) and the heap checked (`Sg_MemCheck(0 / 1,
+    /// "..\\ps2lib\\common\\tklib.c", 0x1e0 / 0x1e1)`). No direct
+    /// caller (`eax` left as is).
+    pub fn tk_sqs_load_info<M: Mem>(
+        mem: &mut M,
+        wave: bool,
+        load: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if mem.read::<u8>(mem.rebase(0x00b5_ec4f)) != 0 {
+            return;
+        }
+        let (file, init) = if wave {
+            (0x2c, 0x0081_d3f0)
+        } else {
+            (0x2d, 0x0081_d340)
+        };
+        let get_cd = mem.rebase(0x0076_d0d0);
+        let (mut buf, mut size) = (0, 0);
+        if load != 0 {
+            let f = mem.rebase(0x0088_d1d0);
+            buf = call(mem, f, &[file, 1]);
+            let cd = call(mem, get_cd, &[]);
+            let method: u32 = mem.read(cd.wrapping_add(0x10));
+            call(mem, method, &[file]);
+            let method: u32 = mem.read(cd.wrapping_add(0x14));
+            size = call(mem, method, &[1]);
+        }
+        let cd = call(mem, get_cd, &[]);
+        let method: u32 = mem.read(cd.wrapping_add(0x10));
+        call(mem, method, &[file]);
+        let method: u32 = mem.read(cd.wrapping_add(4));
+        let info = call(mem, method, &[0]);
+        let f = mem.rebase(init);
+        call(mem, f, &[buf, size, info]);
+        if buf == 0 {
+            return;
+        }
+        let f = mem.rebase(0x0068_7010);
+        call(mem, f, &[buf]);
+        let path = mem.rebase(0x00b5_e968);
+        let f = mem.rebase(0x0083_b7b0);
+        call(mem, f, &[0, path, 0x1e0]);
+        call(mem, f, &[1, path, 0x1e1]);
     }
 
     /// The sub-command window openers (`0x008e33d0`

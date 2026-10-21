@@ -1723,6 +1723,48 @@ ported! {
     MenuWShop_StockWindowCtrl @ 0x008d_77f0 => extern "C" fn menu_wshop_stock_window_ctrl(w: u32) -> u32 {
         tk::menu_wshop_stock_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuShop_DrawSellPanel(w)`.
+    MenuShop_DrawSellPanel @ 0x008d_a730 => extern "C" fn menu_shop_draw_sell_panel(w: u32) -> u32 {
+        tk::menu_shop_draw_panel(&mut mem(), 3, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_SubWindow1Ctrl(w)`.
+    MenuWShop_SubWindow1Ctrl @ 0x008d_79c0 => extern "C" fn menu_wshop_sub_window1_ctrl(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_wshop_sub_window1_ctrl(&mut mem(), w, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlKaizou(m)`.
+    TkMenuCtrlKaizou @ 0x008d_5540 => extern "C" fn tk_menu_ctrl_kaizou(m: u32) {
+        tk::tk_menu_ctrl_kaizou(&mut mem(), m, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuStatus_DrawMainWindow(w)`.
+    MenuStatus_DrawMainWindow @ 0x008d_2710 => extern "C" fn menu_status_draw_main_window(w: u32) -> u32 {
+        tk::menu_status_draw_main_window(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOTextScrollInitLang_008de8c0(w)`: 0.
+    TOTextScrollInitLang_008de8c0 @ 0x008d_e8c0 => extern "C" fn to_text_scroll_init_lang(w: u32) -> u32 {
+        tk::to_text_scroll_init_lang(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOTextScrollStepLang_008de970(w)`: 0.
+    TOTextScrollStepLang_008de970 @ 0x008d_e970 => extern "C" fn to_text_scroll_step_lang(w: u32) -> u32 {
+        tk::to_text_scroll_step_lang(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlHelp(m)`.
+    TkMenuCtrlHelp @ 0x008b_ef50 => extern "C" fn tk_menu_ctrl_help(m: u32) -> u32 {
+        tk::tk_menu_ctrl_help(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkCdReadWithMalloc2(file, size_of, min)`: the buffer.
+    TkCdReadWithMalloc2 @ 0x0088_d240 => extern "C" fn tk_cd_read_with_malloc2(file: u32, size_of: u32, min: i32) -> u32 {
+        tk::tk_cd_read_with_malloc2(&mut mem(), file, size_of, min, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSqsLoadInfo_0088e3a0(load)`.
+    TkSqsLoadInfo_0088e3a0 @ 0x0088_e3a0 => extern "C" fn tk_sqs_load_info_e3a0(load: u32) {
+        tk::tk_sqs_load_info(&mut mem(), false, load, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkSqsLoadInfo_0088e440(load)`.
+    TkSqsLoadInfo_0088e440 @ 0x0088_e440 => extern "C" fn tk_sqs_load_info_e440(load: u32) {
+        tk::tk_sqs_load_info(&mut mem(), true, load, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

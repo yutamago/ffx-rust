@@ -284,6 +284,22 @@ rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
 next filled one after it (`Menu_FindFlagged`), swapping the save's gear
 (`SwapSaveGear`) and the kind bytes, then the list is built again.
 
+The weapon shop's first sub-window (`MenuWShop_OpenSubWindow1`) steps
+with `MenuWShop_SubWindow1Ctrl` (`0x008d79c0`): like
+`MenuWShop_StockWindowCtrl` it clears the stock byte `0x0186aba0` to -1
+and, while the sub-command window allows it, runs the list controller;
+the byte is then `+4` of the weapon record `MsGetSaveWeapon(u16
+g_TkMenuItemList[2 row])` when that record's byte `+2` is set. The item
+shop's sell window draws with `MenuShop_DrawSellPanel` (`0x008da730`):
+`TkMn2BuySellWindow(remapX2(656), remapY2(436), id, row, owned - row,
+-price, gil)`, the buy panel's call with the row taken off the owned count
+and the price negated.
+
+`TkMenuCtrlKaizou` (`0x008d5540`, jump table `0x008d55ac` on the menu's
+state `+0x1c`) opens the customise window (state 0 -> 1), waits for its
+`+0x45` to go negative (-> 2), then sleeps menu 9 and wakes the main menu
+(states 2..4, stored as 4).
+
 ## Config menu
 
 `MenuConfig_DrawOptionRow` (`0x008cbae0`) draws row `row` of the config
@@ -434,6 +450,31 @@ AdjustButtonIconY` in Japanese and at `y + 5.0` otherwise, 2.5 higher for
 the icons `0x20..0x22`, `0x34..0x37`, `0x42`, and `0x30`/`0x48` while
 y is below 350. At y `0x163` both lift glyphs while drawing them (1 in Japanese,
 else 2 or 3).
+
+`TkMenuCtrlHelp` (`0x008bef50`, jump table `0x008befdc` on `+0x1c`)
+drives the help menu through two `.data` pointers: once
+`TOMenuGetFirstReadEndFlag()` is set it calls the start at `0x00c416b8`
+(`sa_menu_start` `0x00770430` in the image) with the mode in `0x0186a234`
+(1 when 0), copies the mode's low half to `u16 0x0186a22c` and moves to
+state 2; states 2 and 3 tail-jump to the step at `0x00c416ac`
+(`0x0076f470`).
+
+Message scrolling has a language-driven pair beside the system module's
+`TOTextScrollInit_008ded00`/`TOTextScrollStep_008ded60`:
+`TOTextScrollInitLang_008de8c0` (which `TOTextScrollInit_008ded00`
+installs at `+0x118`) sets the scroll speed `+0xac` from
+`TOGetFFXLangJmp()` through the byte table `0x008de950` (jump table
+`0x008de944`: languages 0, 1 and 16..18 get 30, 2..6 get 25, the rest keep
+theirs) and `+0xa8` = `TOCountMessageWords_008b80b0(i16 +4, +0x94)`;
+`TOTextScrollStepLang_008de970` is the step without the `+0xb4` test.
+
+`TkCdReadWithMalloc2(file, size_of, min)` (`0x0088d240`) reads a CD file
+through the `GetCD()` object's methods (`+0x10` open, `+0x14` size, `+0`
+read, `+8` wait) into a `user_malloc` buffer (64-byte alignment, at least
+`min` bytes, rounded up to 0x800, first word cleared). The two Sqs info
+loaders `0x0088e3a0`/`0x0088e440` (CD files `0x2d`/`0x2c`, into
+`0x0081d340`/`SqsInitWaveInfo`) run only when the `.rdata` byte
+`g_GsDefDrawEnv2` (`0x00b5ec4f`) is 0; it is 1, so they never run.
 
 ## Splines (`TkMtCalcSpline*`)
 
