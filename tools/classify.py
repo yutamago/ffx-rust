@@ -394,6 +394,7 @@ REVIEWED = {
     0x007e2a60: ("debug", "in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
     0x008c6d32: ("dead", "not a function: the jne target inside MenuAbility_ApplyHeal_008c6d00, which is ported whole (menu round 30)"),
     0x007133e0: ("platform", "createGuildMapRenderDataBuffer: PC renderer setup only (sprintf NoTexture names, graphicGuildmapCreate + graphicVFXCreateDataBuffer, 8 KB alloca frame) (effects round 40)"),
+    0x00830370: ("debug", "Ch_EngineSetFast: a single ret (no-op stub) (battle round 34)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

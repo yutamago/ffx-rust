@@ -9953,7 +9953,7 @@
 0x00830240	logic	default (no rule: ported to be safe)
 0x00830320	logic	default (no rule: ported to be safe)
 0x00830330	logic	default (no rule: ported to be safe)
-0x00830370	logic	default (no rule: ported to be safe)
+0x00830370	debug	reviewed: Ch_EngineSetFast: a single ret (no-op stub) (battle round 34)
 0x008303a0	logic	default (no rule: ported to be safe)
 0x008303f0	logic	default (no rule: ported to be safe)
 0x00830410	logic	default (no rule: ported to be safe)
