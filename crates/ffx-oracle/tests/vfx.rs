@@ -25263,3 +25263,78 @@ fn r41a_sea_draw_setup_matches_the_original() {
         }
     }
 }
+
+#[test]
+fn r41b_set_pmcom2_texture_matches_the_original() {
+    use small::bridge as sb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0076_29e0);
+        // the sceGs stubs, FlushCache, scePrintf and the CLUT8 upload:
+        // recorders of their arguments (the requests' frame addresses too)
+        let logs: Vec<u32> = [
+            (0x0062_f820u32, 8),
+            (0x0062_f7a0, 2),
+            (0x0062_f880, 2),
+            (0x0062_f4c0, 1),
+            (0x0062_fbf0, 1),
+            (0x0076_2810, 2),
+        ]
+        .iter()
+        .map(|&(f, n)| far_recorder(&mut p, f, &[0; 8][..n], None))
+        .collect();
+        let t = p.alloc(0x100);
+        let sizes = [
+            1u16, 2, 3, 5, 7, 0x10, 0x40, 0x81, 0x100, 0x200, 0x400, 0x3000, 0x7fff, 0xffff, 0x8000,
+        ];
+        let heights = [
+            1u16, 2, 3, 5, 7, 0x10, 0x40, 0x81, 0x100, 0x200, 0x400, 0x801, 0xffff, 0x8000,
+        ];
+        for round in 0..2000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(t, 0x100, &mut rng);
+            let depth = rng.pick(&[4u16, 8, 0x10, 0x20, 4, 8, 0x10, 0x20, 0, 5, 0x18, 0xfffc]);
+            p.set(t + 2, depth);
+            // random heights stay small: each strip is four calls
+            let w = if rng.chance(30) {
+                u16::try_from(1 + rng.below(0x7fff)).unwrap()
+            } else {
+                rng.pick(&sizes)
+            };
+            let h = if rng.chance(30) {
+                u16::try_from(1 + rng.below(0x100)).unwrap()
+            } else {
+                rng.pick(&heights)
+            };
+            p.set(t + 4, w);
+            // a height of 0 divides by zero in the original
+            p.set(t + 6, h);
+            p.set(t + 8, rng.pick(&[0u16, 0, 1, 0x8000]));
+            p.set(
+                t + 0xc,
+                rng.pick(&[0u16, 1, 2, 0x40, 0x41, 0x100, 0x400, 0xffff]),
+            );
+            p.set(
+                t + 0xe,
+                rng.pick(&[0u16, 1, 3, 0x80, 0x100, 0x5000, 0x8000, 0x8001]),
+            );
+            p.put(sb::PMCOM_TEX_COUNT, rng.below(0x40));
+            p.put(sb::PMCOM_TEX_FIRST, rng.pick(&[u32::MAX, 3, 0]));
+            let words = 1;
+            let frame = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            check_deep_n(
+                &mut p,
+                &format!("pppSetPmcom2Texture round {round}"),
+                0x0076_29e0,
+                &[t],
+                |o, frame| {
+                    assert_eq!((frame - 8) & !0xf, at);
+                    sb::ppp_set_pmcom2_texture(o, t, at, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}

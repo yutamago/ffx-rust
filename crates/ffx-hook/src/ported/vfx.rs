@@ -4895,6 +4895,17 @@ ported! {
     pppDataSetTex_007628c0 @ 0x0076_28c0 => extern "C" fn ppp_data_set_tex(data: u32, base: u32, a: u32, b: u32) -> u32 {
         small::bridge::ppp_data_set_tex(&mut mem(), data, base, a, b)
     }
+    /// `pppSetPmcom2Texture_007629e0(tex)`: the sceGs uploads through
+    /// `call_cdecl`, their requests in a frame like the original's.
+    pppSetPmcom2Texture_007629e0 @ 0x0076_29e0 => extern "C" fn ppp_set_pmcom2_texture(tex: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xc0]);
+        let mut locals = Locals([0; 0xc0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xc0;
+        small::bridge::ppp_set_pmcom2_texture(&mut mem(), tex, frame, &mut |_, f, a| super::call_cdecl(f, a));
+        std::hint::black_box(&mut locals);
+    }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
     pppVu0MaddaY @ 0x0072_c590 => extern "C" fn ppp_vu0_madda_y(a: u32, v: u32, b: u32, s: f32) -> u32 {
