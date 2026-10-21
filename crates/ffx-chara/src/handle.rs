@@ -525,6 +525,276 @@ pub mod bridge {
         call(mem, mem.rebase(MEMCPY_THUNK), &[to, from, n]);
         blk
     }
+
+    // ---- battle round 35: Ch_Allocate
+
+    /// `Sg_MemSetCheck(on)` (main, `0x0083c4d0`).
+    pub const MEM_SET_CHECK: u32 = 0x0083_c4d0;
+    /// `Ch_BlkGetHandle(key)` (`0x00825a40`; not ported: its PC-file path).
+    pub const BLK_GET_HANDLE: u32 = 0x0082_5a40;
+    /// `dbgPrintf(fmt, ..)` (`0x0062f500`).
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    /// `"SG:Ch_Allocate %s:%s\n"`.
+    pub const ALLOCATE_FORMAT: u32 = 0x00b5_94f4;
+    /// `Ch_SetShadeID(chr, v, frames)` (`0x0082b720`; not ported).
+    pub const SET_SHADE_ID: u32 = 0x0082_b720;
+    /// `Ch_CalcElement(chr)` (`0x00832760`; through the game: its scratch
+    /// and float callbacks are the shim's).
+    pub const CALC_ELEMENT: u32 = 0x0083_2760;
+    /// `Ch_NeckInit(chr)` (`0x00834e60`; through the game, as
+    /// [`CALC_ELEMENT`]).
+    pub const NECK_INIT: u32 = 0x0083_4e60;
+    /// `Cache_SetLock(kind, key, on)` (render, `0x00840ac0`).
+    pub const CACHE_SET_LOCK: u32 = 0x0084_0ac0;
+    /// `Cache_Exist_RenderData(kind, key)` (render, `0x00840890`).
+    pub const CACHE_EXIST_RENDER_DATA: u32 = 0x0084_0890;
+    /// `Cache_Exist_ShadowMeshData(kind, key)` (render, `0x008408d0`).
+    pub const CACHE_EXIST_SHADOW_MESH_DATA: u32 = 0x0084_08d0;
+    /// `SG_InitBones(chr)` (main, `0x008277f0`).
+    pub const SG_INIT_BONES: u32 = 0x0082_77f0;
+    /// `op_et_monster_init(chr, key)` (vfx, `0x007fc780`).
+    pub const OP_ET_MONSTER_INIT: u32 = 0x007f_c780;
+    /// `graphicCharacterRegistToInstantiate(slot, data, chr, done)`
+    /// (render, `0x0063d370`).
+    pub const REGIST_TO_INSTANTIATE: u32 = 0x0063_d370;
+    /// `Ch_OnCharacterInstanceLoaded` (`0x00827d10`), the render
+    /// instance's callback.
+    pub const ON_INSTANCE_LOADED: u32 = 0x0082_7d10;
+    /// `MagicFile_GetMagicId()` (system, `0x009da3b0`).
+    pub const MAGIC_GET_ID: u32 = 0x009d_a3b0;
+    /// `g_FFXIsDebug`.
+    pub const IS_DEBUG: Global<u8> = Global::new(0x0133_c910);
+    /// The new character's clip distance (`f32` 50).
+    pub const ALLOCATE_CLIP_Z: Global<u32> = Global::new(0x00b1_f2c8);
+    /// -1.0 (`f32`): the heights, thicknesses and run change left unset.
+    pub const MINUS_ONE: Global<u32> = Global::new(0x00b9_2340);
+    /// The new character's shadow height (`f32` 0.2).
+    pub const ALLOCATE_SHADOW_HEIGHT: Global<u32> = Global::new(0x00b4_12c4);
+    /// The ids that get flag 2 (`i16` pairs, 0xc4 bytes).
+    pub const FLAG2_IDS: Global<u8> = Global::new(0x00c4_94d8);
+    /// The ids' two floats at `+0x814`/`+0x818`: 13 entries of 12 bytes
+    /// (id, two floats); the first's floats are the default, its id unused.
+    pub const ID_FLOATS: Global<u8> = Global::new(0x00c4_95b0);
+
+    /// The magic file whose Rikku (`0x3004`) gets `+0x87c` set.
+    const MAGIC_RIKKU_ID: u32 = 0x113;
+
+    /// Whether `id` gets flag `0x200` at [`l::FLAGS2`]: `0x10a6`,
+    /// `0x10b2`-`0x10b4`, `0x111e`, `0x1121`-`0x1123`, `0x3004`,
+    /// `0x3009`-`0x300b` (the original's two-level switch).
+    fn allocate_flag_200(id: u32) -> bool {
+        matches!(
+            id,
+            0x10a6 | 0x10b2..=0x10b4 | 0x111e | 0x1121..=0x1123 | 0x3004 | 0x3009..=0x300b
+        )
+    }
+
+    /// `Ch_Allocate(key)` (`0x00824f90`): a new character in the first free
+    /// slot (`+2` clear; none gives a null one, which the original writes
+    /// through as well) for model block `Ch_BlkGetHandle(key)`. A missing
+    /// block returns 0 when [`ALLOCATE_ERR`] was set (clearing it), else
+    /// takes block 1 (`+0xf8` set). With `g_FFXIsDebug` clear it logs
+    /// `"SG:Ch_Allocate %s:%s"` (the block's `+0x91`, `+0x71`). The slot is
+    /// cleared, made active, given the block (`Ch_CbMapping`) and its
+    /// defaults (the `Ch_Set*` series with the original's arguments:
+    /// scale the block's `+0x34`, clip 50, heights -1, shadow height 0.2,
+    /// moves 0-2 and 0x10-0x13 unset), set up between `Cache_SetLock(1,
+    /// key, 1)` and `(.., 0)` with [`l::FLAGS2`] bit `0x400` held
+    /// (`SG_InitBones`, textures, `op_et_monster_init`, effect level 1).
+    /// The shadow mode follows `id >> 12` (0-3: 1, 4-6: 0, 15: 3 and flag
+    /// `0x40`), then mouth, elements, option positions, neck and cloth;
+    /// the id tables give flag 2 ([`FLAG2_IDS`]) and the two floats
+    /// ([`ID_FLOATS`], the last match), ids `0x1088`, `0x1089`, `0x108c`
+    /// flag `0x80`, [`allocate_flag_200`] flag `0x200`; a character with
+    /// flag `0x200000` takes its rest pose (`+0x83c` 1, else 0); the render
+    /// and shadow instances are registered (`+0x830` with
+    /// [`ON_INSTANCE_LOADED`], `+0x838` when a shadow mesh exists), and
+    /// `+0x87c` is set for Rikku in magic file `0x113`. Returns the
+    /// character. Unported and other modules' callees go through `call`.
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_allocate<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::chr::bridge as c;
+        use crate::parts::bridge as p;
+        use ffx_bridge::x87::round_trip;
+        let game = |mem: &M, f: u32| mem.rebase(f);
+        let copy = |bits: u32| round_trip(f32::from_bits(bits));
+        call(mem, game(mem, MEM_SET_CHECK), &[0]);
+        let mut chr = 0;
+        let mut i = 0;
+        while i < CHR_COUNT.get(mem) {
+            let at = slot(mem, i);
+            if !active(mem, at) {
+                chr = at;
+                break;
+            }
+            i += 1;
+        }
+        let mut blk = call(mem, game(mem, BLK_GET_HANDLE), &[key]);
+        if blk == 0 {
+            if ALLOCATE_ERR.get(mem) != 0 {
+                ALLOCATE_ERR.set(mem, 0);
+                return 0;
+            }
+            blk = call(mem, game(mem, BLK_GET_HANDLE), &[1]);
+            mem.write(blk.wrapping_add(0xf8), 1u8);
+        }
+        ALLOCATE_ERR.set(mem, 0);
+        if IS_DEBUG.get(mem) == 0 {
+            let f = game(mem, ALLOCATE_FORMAT);
+            let names = [blk.wrapping_add(0x91), blk.wrapping_add(0x71)];
+            call(mem, game(mem, DBG_PRINTF), &[f, names[0], names[1]]);
+        }
+        mem.write_bytes(chr, &[0; l::SIZE as usize]);
+        mem.write(chr.wrapping_add(l::ACTIVE), 1u8);
+        mem.write(chr.wrapping_add(l::BLK), blk);
+        crate::mapping::bridge::ch_cb_mapping(mem, chr, blk);
+        for o in [0x7e4, l::BIND_SELF, l::BIND_PARENT_ID] {
+            mem.write(chr.wrapping_add(o), u32::MAX);
+        }
+        c::ch_set_pos3(mem, chr, 0.0, 0.0, 0.0);
+        c::ch_set_u8(mem, chr, l::GRAV_MODE, 1);
+        c::ch_set_fade(mem, chr, l::FADE_SHADE, 1.0, 0);
+        c::ch_set_shade_col(mem, chr, [1.0; 3], 0, call);
+        c::ch_set_shade_col_effect(mem, chr, 1.0, 1.0, 1.0);
+        call(mem, game(mem, SET_SHADE_ID), &[chr, 1.0f32.to_bits(), 0]);
+        c::ch_set_fade(mem, chr, l::FADE_ALPHA, 1.0, 0);
+        c::ch_set_fade(mem, chr, l::FADE_SPECULAR, 1.0, 0);
+        c::ch_set_motion_speed(mem, chr, 0x100);
+        let z = copy(ALLOCATE_CLIP_Z.get(mem));
+        c::ch_set_clip_z(mem, chr, z, call);
+        c::ch_set_weight(mem, chr, 1.0);
+        let scale = copy(mem.read(blk.wrapping_add(0x34)));
+        c::ch_set_scale_all(mem, chr, scale);
+        let unset = |mem: &M| copy(MINUS_ONE.get(mem));
+        let v = unset(mem);
+        c::ch_set_cam_height(mem, chr, v);
+        let v = unset(mem);
+        c::ch_set_fix_height(mem, chr, v);
+        let v = unset(mem);
+        c::ch_set_thickness(mem, chr, v);
+        let v = unset(mem);
+        c::ch_set_thickness_btl_cam(mem, chr, v);
+        let v = copy(ALLOCATE_SHADOW_HEIGHT.get(mem));
+        p::ch_shadow_set_height(mem, chr, v);
+        p::ch_set_keep_fps(mem, chr, 1);
+        let unset_move = u32::MAX;
+        let moves = [0, 1, 2].map(|k| (k, k));
+        let unset_moves = [0x10, 0x11, 0x12, 0x13].map(|k| (k, unset_move));
+        for (slot, motion) in moves.into_iter().chain(unset_moves) {
+            c::ch_motion_set_moves(mem, chr, slot, motion);
+        }
+        c::ch_motion_set_next_hokan(mem, chr, 1);
+        c::ch_en_clip(mem, chr, 1);
+        let v = unset(mem);
+        c::ch_move_set_chg_run(mem, chr, v);
+        c::ch_en_rot_hokan(mem, chr, 1);
+        c::ch_id_enable_shade(mem, chr, 1);
+        crate::id::bridge::ch_id_set_def_pid(mem, chr);
+        p::ch_draw_set_cull(mem, chr, 1);
+        p::ch_bind_set_scale(mem, chr, 1.0);
+        c::ch_set_overlap_hit(mem, chr, 1);
+        p::ch_cloth_set_enable(mem, chr, 1);
+        p::ch_cloth_enable_grav(mem, chr, 1);
+        c::ch_vu1_set_clipmode(mem, chr, 0);
+        p::ch_neck_set_speed(mem, chr, 0.0);
+        crate::texture::bridge::ch_texture_anim_set_enable(mem, chr, 1);
+        c::ch_set_f32(mem, chr, l::ORG_MATRIX_SCALE, 1.0);
+        call(mem, game(mem, CACHE_SET_LOCK), &[1, key, 1]);
+        let flags2 = chr.wrapping_add(l::FLAGS2);
+        let v: u32 = mem.read(flags2);
+        mem.write(flags2, v | 0x400);
+        call(mem, game(mem, SG_INIT_BONES), &[chr]);
+        crate::texture::bridge::ch_texture_setup(mem, chr, call);
+        crate::texanim::bridge::ch_texture_set_clut_base(mem, chr, u32::MAX, u32::MAX);
+        crate::texanim::bridge::ch_texture_set_image_base(mem, chr, u32::MAX, u32::MAX);
+        call(mem, game(mem, OP_ET_MONSTER_INIT), &[chr, key]);
+        c::ch_effect_set_effect_level(mem, chr, 1);
+        call(mem, game(mem, CACHE_SET_LOCK), &[1, key, 0]);
+        let v: u32 = mem.read(flags2);
+        mem.write(flags2, v & !0x400);
+        let flags = chr.wrapping_add(l::FLAGS);
+        let set = |mem: &mut M, at: u32, bit: u32| {
+            let v: u32 = mem.read(at);
+            mem.write(at, v | bit);
+        };
+        match u32::from(mem.read::<u16>(chr)) >> 12 {
+            0..=3 => {
+                c::ch_set_shadow_mode(mem, chr, 1);
+            }
+            4..=6 => {
+                c::ch_set_shadow_mode(mem, chr, 0);
+            }
+            0xf => {
+                c::ch_set_shadow_mode(mem, chr, 3);
+                set(mem, flags, 0x40);
+            }
+            _ => {}
+        }
+        p::ch_mouth_init(mem, chr);
+        call(mem, game(mem, CALC_ELEMENT), &[chr]);
+        crate::attach::bridge::ch_optpos_calc(mem, chr);
+        call(mem, game(mem, NECK_INIT), &[chr]);
+        crate::cloth::bridge::ch_cloth_reset(mem, chr);
+        p::ch_cloth_mesh_mapping_offset(mem, chr);
+        p::ch_cloth_set_fast(mem, chr);
+        let id = u32::from(mem.read::<u16>(chr));
+        let ids = FLAG2_IDS.ptr(mem).addr;
+        for k in 0..0xc4 / 2 {
+            let v: i16 = mem.read(ids.wrapping_add(2 * k));
+            if id == i32::from(v).cast_unsigned() {
+                set(mem, flags, 2);
+            }
+        }
+        let table = ID_FLOATS.ptr(mem).addr;
+        let floats = |mem: &mut M, e: u32| {
+            for k in 0..2 {
+                let v = copy(mem.read(table.wrapping_add(e * 12 + 4 + 4 * k)));
+                mem.write(chr.wrapping_add(0x814 + 4 * k), v.to_bits());
+            }
+        };
+        floats(mem, 0);
+        for e in 1..=12 {
+            if id == mem.read::<u32>(table.wrapping_add(e * 12)) {
+                floats(mem, e);
+            }
+        }
+        if matches!(id, 0x1088 | 0x1089 | 0x108c) {
+            set(mem, flags2, 0x80);
+        }
+        if allocate_flag_200(id) {
+            set(mem, flags2, 0x200);
+        }
+        let rest = if mem.read::<u32>(flags) & 0x20_0000 == 0 {
+            0u32
+        } else {
+            crate::cloth::bridge::ch_get_rest_pose_matrices(mem, chr, call);
+            1
+        };
+        mem.write(chr.wrapping_add(0x83c), rest);
+        let shadow_slot = chr.wrapping_add(0x838);
+        mem.write(chr.wrapping_add(0x870), 1u16);
+        mem.write(shadow_slot, 0u32);
+        let render = call(mem, game(mem, CACHE_EXIST_RENDER_DATA), &[1, key]);
+        let shadow = call(mem, game(mem, CACHE_EXIST_SHADOW_MESH_DATA), &[1, key]);
+        let regist = game(mem, REGIST_TO_INSTANTIATE);
+        let done = game(mem, ON_INSTANCE_LOADED);
+        call(
+            mem,
+            regist,
+            &[chr.wrapping_add(l::RENDER_INSTANCE), render, chr, done],
+        );
+        if shadow != 0 {
+            call(mem, regist, &[shadow_slot, shadow, chr, 0]);
+        }
+        let magic = call(mem, game(mem, MAGIC_GET_ID), &[]);
+        let rikku = magic == MAGIC_RIKKU_ID && mem.read::<u16>(chr) == 0x3004;
+        mem.write(chr.wrapping_add(0x87c), u8::from(rikku));
+        chr
+    }
 }
 
 #[cfg(test)]

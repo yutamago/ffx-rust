@@ -7578,7 +7578,7 @@
 0x00824e30 function Sg_GlobalSetWind          # fh switch:bsim1.00 0x710041ed90
 0x00824e60 function Sg_MatrixApplyVec3        # (out, m, v): out[j] = m[j] v.x + m[4+j] v.y + m[8+j] v.z for four columns (stack cookie); the cloth helpers' matrix product, next to Sg_VecAdd
 0x00824f00 function ChN_DataDispose           # fh v3:exact 0x00824f90
-0x00824f90 function Ch_Allocate               # fh v3:bsim0.91 0x00825010
+0x00824f90 function Ch_Allocate               # fh v3:bsim0.91 0x00825010; (key) -> chr: first free slot (+2 clear; none gives 0, written through), block Ch_BlkGetHandle(key) (missing: 0 when g_ChrAllocateErr set, clearing it, else block 1 with +0xf8 = 1), dbgPrintf with g_FFXIsDebug clear, cleared and set up (Ch_CbMapping, the Ch_Set* defaults, Cache_SetLock(1, key, 1/0) around SG_InitBones, textures, op_et_monster_init with FLAGS2 0x400 held), shadow mode by id>>12 (0-3: 1, 4-6: 0, 15: 3 + flag 0x40), g_ChrFlag2Ids flag 2, g_ChrIdFloats +0x814/+0x818, ids 0x1088/0x1089/0x108c flag2 0x80, 0x10a6/0x10b2-4/0x111e/0x1121-3/0x3004/0x3009-b flag2 0x200 (jump table 0x008255c0), rest pose with flag 0x200000 (+0x83c), render/shadow instances (graphicCharacterRegistToInstantiate, Ch_OnCharacterInstanceLoaded), +0x87c Rikku in magic file 0x113; ported (ffx_chara::handle, battle round 35)
 0x00825650 function Ch_Allocate2              # fh v3:exact 0x008256d0
 0x00825670 function Ch_Allocate_InitAll          # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[CHR WORK]'; Switch 0x710040ef70 Ch_Allocate_InitAll (symbols from Fahrenheit's server export)
 0x008256f0 function Ch_ArcMapping             # fh v3:exact 0x00825770
@@ -16176,6 +16176,8 @@
 0x00c49470 label    g_SqsAdpcmCoefs              # PS-ADPCM filters, two i32 each (Sqs_DecodeAdpcm)
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
+0x00c494d8 label g_ChrFlag2Ids              # name ours; i16 pairs (0xc4 bytes): Ch_Allocate sets FLAGS bit 2 for these character ids
+0x00c495b0 label g_ChrIdFloats              # name ours; 13 entries (id u32, two f32): Ch_Allocate's +0x814/+0x818; the first entry's floats are the default (1.0, 0.5), the others by id (last match)
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to g_CdLib_10 for each kind
 0x00c4967f label    g_ChrKindTableStride      # i8: Chr_TableIndex's index step per table entry
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)

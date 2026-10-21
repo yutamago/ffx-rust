@@ -8717,3 +8717,197 @@ fn round14b_on(t: &mut Twin) {
         );
     }
 }
+
+impl Fakes {
+    /// [`Fakes::fake`] whose result word takes the word at `next` after
+    /// each call (a first call's result, then another's): `(result, next)`.
+    fn fake_seq(&self, t: &mut Twin, sym: u32, id: u32, n: u8) -> (u32, u32) {
+        let (code, ret) = self.fake_code(t, id, n);
+        let next = t.alloc(4);
+        // the stand-in again, ending `mov ecx, [next]; mov [ret], ecx; ret`
+        let len = 25 + 7 * usize::from(n);
+        let old = Oracle::read(&mut t.a, code, len).unwrap();
+        let mut c = old[..len - 1].to_vec();
+        c.extend([0x8b, 0x0d]);
+        c.extend(next.to_le_bytes());
+        c.extend([0x89, 0x0d]);
+        c.extend(ret.to_le_bytes());
+        c.push(0xc3);
+        let at = t.a.alloc_code(&c).unwrap();
+        assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+        let f = t.a.rebase(sym);
+        let mut jmp = vec![0xe9];
+        jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+        t.put(f, &jmp);
+        (ret, next)
+    }
+}
+
+#[test]
+fn round35_allocate_matches_the_original() {
+    for mut t in twins() {
+        round35_allocate_on(&mut t);
+    }
+}
+
+/// `Ch_Allocate` (battle round 35). `Ch_BlkGetHandle` (its PC-file path),
+/// `dbgPrintf`, the render registration and `MagicFile_GetMagicId` are
+/// stand-ins; the rest runs as the originals (the chara ones the port calls
+/// as its Rust). On the image alone only the missing-block paths run; on
+/// a snapshot a new character is made from the live characters' blocks in
+/// the first free slot (one is freed when there is none), with the block's
+/// id at times one of the ids the function looks for.
+#[allow(clippy::too_many_lines)]
+fn round35_allocate_on(t: &mut Twin) {
+    const IDS: [u16; 30] = [
+        0x1088, 0x1089, 0x108a, 0x108c, 0x10a6, 0x10b3, 0x111e, 0x1122, 0x1124, 0x3004, 0x3009,
+        0x300b, 0x300c, 0x1003, 0x1010, 0x1133, 0x0002, 0x0006, 0x006b, 0x4001, 0x7001, 0xf001,
+        0xf002, 0x5010, 0x6123, 0x10b4, 0x1123, 0x301c, 0x3004, 0x10b2,
+    ];
+
+    let mut rng = Xorshift(0x0035_4f90);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let (blk_ret, blk_next) = fk.fake_seq(t, 0x0082_5a40, 1, 1);
+    allocate_print_stub(t, &fk);
+    let _ = fk.fake(t, 0x0063_d370, 3, 4);
+    let magic = fk.fake(t, 0x009d_a3b0, 4, 0);
+    let err = t.a.rebase(0x012f_bd98);
+    let debug = t.a.rebase(0x0133_c910);
+    if t.name == "synthetic" {
+        for round in 0..4u32 {
+            fk.reset(t);
+            t.put_u32(blk_ret, 0);
+            t.put_u32(blk_next, 0);
+            t.put_u32(err, 1 + round);
+            let key = rng.next() & 0xffff;
+            t.check(
+                &format!("Ch_Allocate missing {round}"),
+                0x0082_4f90,
+                &[key],
+                |m| Res::Int(h::ch_allocate(m, key, &mut |m, f, a| call(m, f, a))),
+            );
+        }
+        return;
+    }
+    let _ = (blk_ret, blk_next, magic, err, debug, fk);
+    let (mut ran, mut skipped) = (0u32, 0u32);
+    let mut reach = [0u32; 3];
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    for round in 0..45u32 {
+        // a fresh copy each round: the game's heap has room for few new
+        // characters' bones, and more needs VirtualAlloc (no oracle stub)
+        let mut s = Twin {
+            name: t.name,
+            a: Oracle::from_snapshot(&exe, &pages).unwrap(),
+            b: Oracle::from_snapshot(&exe, &pages).unwrap(),
+        };
+        let fk = Fakes::new(&mut s);
+        let (blk_ret, blk_next) = fk.fake_seq(&mut s, 0x0082_5a40, 1, 1);
+        allocate_print_stub(&mut s, &fk);
+        let _ = fk.fake(&mut s, 0x0063_d370, 3, 4);
+        let magic = fk.fake(&mut s, 0x009d_a3b0, 4, 0);
+        let _ = fk.fake(&mut s, 0x0083_c4d0, 5, 1);
+        let _ = fk.fake(&mut s, 0x0084_0ac0, 6, 3);
+        let render = fk.fake(&mut s, 0x0084_0890, 7, 2);
+        let shadow = fk.fake(&mut s, 0x0084_08d0, 8, 2);
+        s.put_u32(render, rng.next());
+        s.put_u32(shadow, if round % 2 == 0 { 0 } else { rng.next() | 1 });
+        // the snapshot's own live characters (not the made-up last one)
+        let chrs = live_characters(&mut s, &mut rng);
+        let blks: Vec<u32> = chrs[..chrs.len() - 1]
+            .iter()
+            .map(|&c| rd::<u32>(&s.b, c + l::BLK))
+            .filter(|&b| b != 0 && b != 0xcdcd_cdcd)
+            .collect();
+        assert!(!blks.is_empty(), "no live character blocks");
+        let arr: u32 = rd(&s.b, s.a.rebase(0x023c_44e4));
+        let count: i32 = rd(&s.b, s.a.rebase(0x023c_44e0));
+        // a free slot: the first one, or one freed
+        let free = (0..count).find(|&i| rd::<u8>(&s.b, arr + 0x880 * i.cast_unsigned() + 2) == 0);
+        if free.is_none() || round % 5 == 4 {
+            let i = rng.next() % count.cast_unsigned();
+            s.put(arr + 0x880 * i + 2, &[0]);
+        }
+        let blk = blks[rng.next() as usize % blks.len()];
+        // every listed id in turn; at times the block's own
+        let id = if round % 5 == 3 {
+            rd::<u16>(&s.b, blk)
+        } else {
+            IDS[round as usize % IDS.len()]
+        };
+        s.put(blk, &id.to_le_bytes());
+        // the missing block taking block 1, or the block itself
+        let fallback = round % 4 == 1;
+        s.put_u32(blk_ret, if fallback { 0 } else { blk });
+        s.put_u32(blk_next, blk);
+        s.put_u32(s.a.rebase(0x012f_bd98), 0);
+        s.put(s.a.rebase(0x0133_c910), &[u8::from(round % 3 == 0)]);
+        // Rikku in and out of magic file 0x113
+        let rikku_file = rng.next().is_multiple_of(2);
+        s.put_u32(
+            magic,
+            if rikku_file {
+                0x113
+            } else {
+                [0, 0x112][rng.next() as usize % 2]
+            },
+        );
+        let key = rng.next() & 0xffff;
+        let what = format!("{}: Ch_Allocate {round} id {id:#x}", s.name);
+        let ra = match s.a.call(s.a.rebase(0x0082_4f90), Conv::Cdecl, &[key]) {
+            Ok(r) => r,
+            Err(ffx_oracle::Error::UnstubbedImport(_) | ffx_oracle::Error::RuntimeAbort(_)) => {
+                skipped += 1;
+                continue;
+            }
+            Err(e) => panic!("{what}: {e}"),
+        };
+        let rb = h::ch_allocate(&mut s.b, key, &mut |m, f, a| call(m, f, a));
+        assert_eq!(ra.eax, rb, "{what}: result");
+        assert_eq!(s.a.diff(&mut s.b).unwrap(), [], "{what}: memory");
+        ran += 1;
+        reach[usize::from(fallback)] += 1;
+        reach[2] += u32::from(id >> 12 == 0xf);
+    }
+    eprintln!(
+        "{}: Ch_Allocate {ran} ran, {skipped} skipped (the heap), {reach:?}",
+        t.name
+    );
+    assert!(ran >= 10, "{}: too few Ch_Allocate rounds ran", t.name);
+}
+
+/// `dbgPrintf` as a stand-in logging id 2 and its format, and both names
+/// after `Ch_Allocate`'s own format (other callers pass fewer words).
+fn allocate_print_stub(t: &mut Twin, fk: &Fakes) {
+    let fmt = t.a.rebase(0x00b5_94f4);
+    let log = fk.log;
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(log.to_le_bytes()); // mov ecx, [log]
+    c.extend([0xc7, 0x01, 2, 0, 0, 0]); // mov dword [ecx], 2
+    c.extend([0x8b, 0x44, 0x24, 0x04, 0x89, 0x41, 0x04]); // [ecx + 4] = fmt
+    c.push(0x3d);
+    c.extend(fmt.to_le_bytes()); // cmp eax, fmt
+    c.extend([0x75, 0x16]); // jne short (past the 22 bytes below)
+    c.extend([0x8b, 0x44, 0x24, 0x08, 0x89, 0x41, 0x08]); // [ecx + 8] = name 1
+    c.extend([0x8b, 0x44, 0x24, 0x0c, 0x89, 0x41, 0x0c]); // [ecx + 12] = name 2
+    c.extend([0x83, 0x05]);
+    c.extend(log.to_le_bytes());
+    c.extend([0x10, 0xc3]); // add dword [log], 16; ret
+    c.extend([0x83, 0x05]);
+    c.extend(log.to_le_bytes());
+    c.extend([0x08, 0xc3]); // add dword [log], 8; ret
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    let f = t.a.rebase(0x0062_f500);
+    let mut jmp = vec![0xe9];
+    jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+    t.put(f, &jmp);
+}
