@@ -6686,4 +6686,276 @@ ported! {
     Atel_QueueSepLoads @ 0x0086_38c0 => extern "C" fn h_8638c0(b: u32) -> u32 {
         hp::atel_queue_sep_loads(&mut mem(), b)
     }
+    /// `AtelGetEventActorLinkWork(i)`.
+    AtelGetEventActorLinkWork @ 0x0086_b1b0 => extern "C" fn h_86b1b0(i: u32) -> u32 {
+        hp::atel_get_event_actor_link_work(&mut mem(), i)
+    }
+    /// `AtelSetEventActorLinkWork(i, v)`.
+    AtelSetEventActorLinkWork @ 0x0086_fc40 => extern "C" fn h_86fc40(i: u32, v: u32) -> u32 {
+        hp::atel_set_event_actor_link_work(&mut mem(), i, v)
+    }
+    /// `AtelGetEventBindIdFromID(i)`.
+    AtelGetEventBindIdFromID @ 0x0086_b370 => extern "C" fn h_86b370(i: u32) -> u32 {
+        hp::atel_get_event_bind_id_from_id(&mut mem(), i)
+    }
+    /// `AtelGetEventCharIDFromID(i)`.
+    AtelGetEventCharIDFromID @ 0x0086_b3d0 => extern "C" fn h_86b3d0(i: u32) -> u32 {
+        hp::atel_get_event_char_id_from_id(&mut mem(), i)
+    }
+    /// `AtelGetEventElemCharIDFromID(i, k)`.
+    AtelGetEventElemCharIDFromID @ 0x0086_b400 => extern "C" fn h_86b400(i: u32, k: u32) -> u32 {
+        hp::atel_get_event_elem_char_id_from_id(&mut mem(), i, k)
+    }
+    /// `AtelGetEventElemHandleFromID(i, k)`.
+    AtelGetEventElemHandleFromID @ 0x0086_b440 => extern "C" fn h_86b440(i: u32, k: u32) -> u32 {
+        hp::atel_get_event_elem_handle_from_id(&mut mem(), i, k)
+    }
+    /// `AtelGetEventElemPosFromID(i, k)`.
+    AtelGetEventElemPosFromID @ 0x0086_b480 => extern "C" fn h_86b480(i: u32, k: u32) -> u32 {
+        hp::atel_get_event_elem_pos_from_id(&mut mem(), i, k)
+    }
+    /// `AtelSetEventElemHandleFromID(i, k, v)`.
+    AtelSetEventElemHandleFromID @ 0x0086_fde0 => extern "C" fn h_86fde0(i: u32, k: u32, v: u32) -> u32 {
+        hp::atel_set_event_elem_handle_from_id(&mut mem(), i, k, v)
+    }
+    /// `AtelSetEventElemPosFromID(i, k, v)`.
+    AtelSetEventElemPosFromID @ 0x0086_fe20 => extern "C" fn h_86fe20(i: u32, k: u32, v: u32) -> u32 {
+        hp::atel_set_event_elem_pos_from_id(&mut mem(), i, k, v)
+    }
+    /// `AtelSetEventElemCharIDFromID(i, k, v)`.
+    AtelSetEventElemCharIDFromID @ 0x0086_fda0 => extern "C" fn h_86fda0(i: u32, k: u32, v: u32) -> u32 {
+        hp::atel_set_event_elem_char_id_from_id(&mut mem(), i, k, v)
+    }
+    /// `AtelSetEventCharHandleFromID(i, model)`.
+    AtelSetEventCharHandleFromID @ 0x0086_fd60 => extern "C" fn h_86fd60(i: u32, model: u32) -> u32 {
+        hp::atel_set_event_char_handle_from_id(&mut mem(), i, model)
+    }
+    /// `AtelGetEventElemStatus(i, k)`.
+    AtelGetEventElemStatus @ 0x0086_b4c0 => extern "C" fn h_86b4c0(i: u32, k: u32) -> u32 {
+        hp::atel_get_event_elem_status(&mut mem(), i, k)
+    }
+    /// `AtelSetEventElemStatus(i, k, on)`.
+    AtelSetEventElemStatus @ 0x0086_fe60 => extern "C" fn h_86fe60(i: u32, k: u32, on: u32) -> u32 {
+        hp::atel_set_event_elem_status(&mut mem(), i, k, on)
+    }
+    /// `AtelGetEventActorType(i)`.
+    AtelGetEventActorType @ 0x0086_b320 => extern "C" fn h_86b320(i: u32) -> u32 {
+        hp::atel_get_event_actor_type(&mut mem(), i)
+    }
+    /// `AtelGetHideStatusFromID(i)`.
+    AtelGetHideStatusFromID @ 0x0086_ba40 => extern "C" fn h_86ba40(i: u32) -> u32 {
+        hp::atel_get_hide_status_from_id(&mut mem(), i)
+    }
+    /// `AtelGetKeepBattlePartyFromID(i)`.
+    AtelGetKeepBattlePartyFromID @ 0x0086_bbf0 => extern "C" fn h_86bbf0(i: u32) -> u32 {
+        hp::atel_get_keep_battle_party_from_id(&mut mem(), i)
+    }
+    /// `AtelGetRequestLevel(i)`.
+    AtelGetRequestLevel @ 0x0086_c3f0 => extern "C" fn h_86c3f0(i: u32) -> u32 {
+        hp::atel_get_request_level(&mut mem(), i)
+    }
+    /// `AtelGetMyWorkSize(i)`.
+    AtelGetMyWorkSize @ 0x0086_c160 => extern "C" fn h_86c160(i: u32) -> u32 {
+        hp::atel_get_my_work_size(&mut mem(), i)
+    }
+    /// `AtelSetMyWorkAdrs(i, at)`.
+    AtelSetMyWorkAdrs @ 0x0087_0870 => extern "C" fn h_870870(i: u32, at: u32) -> u32 {
+        hp::atel_set_my_work_adrs(&mut mem(), i, at)
+    }
+    /// `AtelGetElemId(chr, kind)`.
+    AtelGetElemId @ 0x0086_b150 => extern "C" fn h_86b150(chr: u32, kind: u32) -> u32 {
+        hp::atel_get_elem_id(&mut mem(), chr, kind)
+    }
+    /// `AtelSetWaterBattleEffect(on)`.
+    AtelSetWaterBattleEffect @ 0x0087_15f0 => extern "C" fn h_8715f0(on: u32) -> u32 {
+        hp::atel_set_water_battle_effect(&mut mem(), on)
+    }
+    /// `Atel_SetSaveEventD1(on)`.
+    Atel_SetSaveEventD1 @ 0x0086_f060 => extern "C" fn h_86f060(on: u32) -> u32 {
+        hp::atel_set_save_event_d1(&mut mem(), on)
+    }
+    /// `Atel_SetSaveEvent13Bit1(on)`.
+    Atel_SetSaveEvent13Bit1 @ 0x0086_f430 => extern "C" fn h_86f430(on: u32) -> u32 {
+        hp::atel_set_save_event_13_bit1(&mut mem(), on)
+    }
+    /// `AtelSetForcePlaceId(id)`.
+    AtelSetForcePlaceId @ 0x0087_0140 => extern "C" fn h_870140(id: u32) -> u32 {
+        hp::atel_set_force_place_id(&mut mem(), id)
+    }
+    /// `Atel_SetSaveDicIndexValue(v)`.
+    Atel_SetSaveDicIndexValue @ 0x0087_0ed0 => extern "C" fn h_870ed0(v: u32) -> u32 {
+        hp::atel_set_save_event_word(&mut mem(), 0xe, v)
+    }
+    /// `Atel_SetSaveEventE8(v)`.
+    Atel_SetSaveEventE8 @ 0x0087_3dd0 => extern "C" fn h_873dd0(v: u32) -> u32 {
+        hp::atel_set_save_event_word(&mut mem(), 0xe8, v)
+    }
+    /// `Atel_SetSaveEventEA(v)`.
+    Atel_SetSaveEventEA @ 0x0087_0fa0 => extern "C" fn h_870fa0(v: u32) -> u32 {
+        hp::atel_set_save_event_word(&mut mem(), 0xea, v)
+    }
+    /// `Atel_SetSaveEventE4(v)`.
+    Atel_SetSaveEventE4 @ 0x0087_4030 => extern "C" fn h_874030(v: u32) -> u32 {
+        hp::atel_set_save_event_e4(&mut mem(), v)
+    }
+    /// `AtelSetHelpEventFlag(i, on)`.
+    AtelSetHelpEventFlag @ 0x0087_01f0 => extern "C" fn h_8701f0(i: u32, on: u32) -> u32 {
+        hp::atel_set_help_event_flag(&mut mem(), i, on)
+    }
+    /// `AtelInitSaveWork()`.
+    AtelInitSaveWork @ 0x0086_d4e0 => extern "C" fn h_86d4e0() -> u32 {
+        hp::atel_init_save_work(&mut mem())
+    }
+    /// `AtelMapLoadNoCache(map)`: `AtelMapLoad`'s code.
+    AtelMapLoadNoCache @ 0x0086_dd30 => extern "C" fn h_86dd30(map: u32) -> u32 {
+        hp::atel_map_load(&mut mem(), map)
+    }
+    /// `AtelMapLoadBtl(map)`.
+    AtelMapLoadBtl @ 0x0086_dcd0 => extern "C" fn h_86dcd0(map: u32) -> u32 {
+        hp::atel_map_load_btl(&mut mem(), map)
+    }
+    /// `Atel_JumpToEntrance(e)`.
+    Atel_JumpToEntrance @ 0x0087_4000 => extern "C" fn h_874000(e: u32) -> u32 {
+        hp::atel_jump_to_entrance(&mut mem(), e)
+    }
+    /// `AtelSetDolby(on)`.
+    AtelSetDolby @ 0x0086_f9e0 => extern "C" fn h_86f9e0(on: u32) -> u32 {
+        hp::atel_set_dolby(&mut mem(), on)
+    }
+    /// `AtelGetActorStartPos(i, x, y, z)`.
+    AtelGetActorStartPos @ 0x0086_a720 => extern "C" fn h_86a720(i: u32, x: u32, y: u32, z: u32) -> u32 {
+        hp::atel_get_actor_start_pos(&mut mem(), i, x, y, z)
+    }
+    /// `AtelGetActorEndPos(i, x, y, z)`.
+    AtelGetActorEndPos @ 0x0086_a390 => extern "C" fn h_86a390(i: u32, x: u32, y: u32, z: u32) -> u32 {
+        hp::atel_get_actor_end_pos(&mut mem(), i, x, y, z)
+    }
+    /// `Script_GetWorkerPos(i, x, y, z)`.
+    Script_GetWorkerPos @ 0x0086_a2f0 => extern "C" fn h_86a2f0(i: u32, x: u32, y: u32, z: u32) -> u32 {
+        hp::script_get_worker_pos(&mut mem(), i, x, y, z)
+    }
+    /// `Event_SetPlayer(id)`.
+    Event_SetPlayer @ 0x0086_f6a0 => extern "C" fn h_86f6a0(id: u32) -> u32 {
+        hp::event_set_player(&mut mem(), id)
+    }
+    /// `AtelIsBind(i)`.
+    AtelIsBind @ 0x0086_d950 => extern "C" fn h_86d950(i: u32) -> u32 {
+        hp::atel_is_bind(&mut mem(), i)
+    }
+    /// `AtelGetCharHandleFromBindPC2(chr)`: `AtelGetCharHandleFromBindPC`'s code.
+    AtelGetCharHandleFromBindPC2 @ 0x0086_aee0 => extern "C" fn h_86aee0(chr: u32) -> u32 {
+        hp::atel_get_char_handle_from_bind_pc(&mut mem(), chr)
+    }
+    /// `Atel_HasSignalFromLevel(i, level)`.
+    Atel_HasSignalFromLevel @ 0x0086_3520 => extern "C" fn h_863520(i: u32, level: u32) -> u32 {
+        hp::atel_has_signal_from_level(&mut mem(), i, level)
+    }
+    /// `Atel_EffectStartPoll(arg)`.
+    Atel_EffectStartPoll @ 0x0086_33e0 => extern "C" fn h_8633e0(arg: u32) -> u32 {
+        hp::atel_effect_start_poll(&mut mem(), arg)
+    }
+    /// `Atel_EffectIdlePoll()`.
+    Atel_EffectIdlePoll @ 0x0086_33a0 => extern "C" fn h_8633a0() -> u32 {
+        hp::atel_effect_idle_poll(&mut mem())
+    }
+    /// `Atel_EffectEndPoll()`.
+    Atel_EffectEndPoll @ 0x0086_3350 => extern "C" fn h_863350() -> u32 {
+        hp::atel_effect_end_poll(&mut mem())
+    }
+    /// `Atel_SetLevelVectorsXZ(worker, a, c)`.
+    Atel_SetLevelVectorsXZ @ 0x0086_f750 => extern "C" fn h_86f750(w: u32, a: u32, c: u32) -> u32 {
+        hp::atel_set_level_vectors_xz(&mut mem(), w, a, c)
+    }
+    /// `Atel_GetWorkerBits10_12(i)`.
+    Atel_GetWorkerBits10_12 @ 0x0086_a440 => extern "C" fn h_86a440(i: u32) -> u32 {
+        hp::atel_get_worker_bits10_12(&mut mem(), i)
+    }
+    /// `AtelRecoverPreBgPage()`.
+    AtelRecoverPreBgPage @ 0x0087_3cc0 => extern "C" fn h_873cc0() {
+        hp::atel_recover_pre_bg_page(&mut mem());
+    }
+    /// `AtelExecReturn2(i, level, reset)`.
+    AtelExecReturn2 @ 0x0086_9350 => extern "C" fn h_869350(i: u32, level: u32, reset: u32) {
+        hp::atel_exec_return2(&mut mem(), i, level, reset);
+    }
+    /// `AtelInitSourceCodeDebugWork(i, src)`.
+    AtelInitSourceCodeDebugWork @ 0x0086_d670 => extern "C" fn h_86d670(i: u32, src: u32) {
+        hp::atel_init_source_code_debug_work(&mut mem(), i, src);
+    }
+    /// `AtelEventRemoveGuideMap()`.
+    AtelEventRemoveGuideMap @ 0x0086_61a0 => extern "C" fn h_8661a0() {
+        hp::atel_event_remove_guide_map(&mut mem());
+    }
+    /// `AtelEventSetupGuideMap()`.
+    AtelEventSetupGuideMap @ 0x0086_6490 => extern "C" fn h_866490() -> u32 {
+        hp::atel_event_setup_guide_map(&mut mem())
+    }
+    /// `AtelEventSetUpFoot3d(hdr)`.
+    AtelEventSetUpFoot3d @ 0x0086_6210 => extern "C" fn h_866210(hdr: u32) -> u32 {
+        hp::atel_event_set_up_foot_3d(&mut mem(), hdr)
+    }
+    /// `AtelEventLoadMusic(hdr)`.
+    AtelEventLoadMusic @ 0x0086_5a60 => extern "C" fn h_865a60(hdr: u32) -> u32 {
+        hp::atel_event_load_music(&mut mem(), hdr)
+    }
+    /// `AtelInitCalcSound()`.
+    AtelInitCalcSound @ 0x0087_7420 => extern "C" fn h_877420() -> u32 {
+        hp::atel_init_calc_sound(&mut mem())
+    }
+    /// `AtelGetGuideMapAngEx(i)`: `ST0`.
+    AtelGetGuideMapAngEx @ 0x0086_b9a0 => extern "C" fn h_86b9a0(i: u32) -> f32 {
+        hp::atel_get_guide_map_ang_ex(&mem(), i)
+    }
+    /// `AtelInitInternalActorWork(i)`.
+    AtelInitInternalActorWork @ 0x0086_d260 => extern "C" fn h_86d260(i: u32) -> u32 {
+        hp::atel_init_internal_actor_work(&mut mem(), i)
+    }
+    /// `AtelSetOnMemoryMovieFileWait(movie, flags)`.
+    AtelSetOnMemoryMovieFileWait @ 0x0087_3f70 => extern "C" fn h_873f70(movie: u32, flags: u32) -> u32 {
+        hp::atel_set_on_memory_movie_file_wait(&mut mem(), movie, flags)
+    }
+    /// `AtelRecoverFromMenuCallback()`.
+    AtelRecoverFromMenuCallback @ 0x0086_e700 => extern "C" fn h_86e700() -> u32 {
+        hp::atel_recover_from_menu_callback(&mut mem())
+    }
+    /// `AtelBindFp(worker, fp, bone)`.
+    AtelBindFp @ 0x0086_2800 => extern "C" fn h_862800(w: u32, fp: u32, bone: u32) {
+        hp::atel_bind_fp(&mut mem(), w, fp, bone);
+    }
+    /// `AtelBindFpOff(worker, fp)`.
+    AtelBindFpOff @ 0x0086_28a0 => extern "C" fn h_8628a0(w: u32, fp: u32) {
+        hp::atel_bind_fp_off(&mut mem(), w, fp);
+    }
+    /// `AtelBindFpPos(worker, fp, x, y, z)`: the vector is the original's
+    /// local.
+    AtelBindFpPos @ 0x0086_2920 => extern "C" fn h_862920(w: u32, fp: u32, x: u32, y: u32, z: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_bind_fp_pos(&mut mem(), w, fp, [x, y, z], frame.at());
+    }
+    /// `AtelRecoverFPFromBattle(worker)`: the vector is the original's
+    /// local.
+    AtelRecoverFPFromBattle @ 0x0086_e4c0 => extern "C" fn h_86e4c0(w: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_recover_fp_from_battle(&mut mem(), w, frame.at());
+    }
+    /// `Atel_InRadiusXZ(r, worker, x, y, z)`.
+    Atel_InRadiusXZ @ 0x0086_34b0 => extern "C" fn h_8634b0(r: u32, w: u32, x: u32, _y: u32, z: u32) -> u32 {
+        hp::atel_in_radius_xz(&mut mem(), r, w, x, z)
+    }
+    /// `Atel_InRadiusXYZ(r, worker, x, y, z)`.
+    Atel_InRadiusXYZ @ 0x0086_3440 => extern "C" fn h_863440(r: u32, w: u32, x: u32, y: u32, z: u32) -> u32 {
+        hp::atel_in_radius_xyz(&mut mem(), r, w, [x, y, z])
+    }
+    /// `AtelGetMapIndex(hdr, i)`.
+    AtelGetMapIndex @ 0x0086_bd90 => extern "C" fn h_86bd90(hdr: u32, i: u32) -> u32 {
+        hp::atel_get_map_index(&mut mem(), hdr, i)
+    }
+    /// `AtelEventPlayMusic(hdr)`.
+    AtelEventPlayMusic @ 0x0086_5ac0 => extern "C" fn h_865ac0(hdr: u32) -> u32 {
+        hp::atel_event_play_music(&mut mem(), hdr)
+    }
+    /// `AtelRequestMapCamera(set)`.
+    AtelRequestMapCamera @ 0x0086_ed80 => extern "C" fn h_86ed80(set: u32) -> u32 {
+        hp::atel_request_map_camera(&mut mem(), set)
+    }
 }

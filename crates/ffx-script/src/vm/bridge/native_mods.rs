@@ -1001,7 +1001,7 @@ pub fn native_00f7<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
 /// `0x00863520(worker, n)` is 0; else 0.
 pub fn native_00f7_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
     let (c, n) = (h.read::<u32>(a), h.read::<u32>(a + 4));
-    if c.cast_signed() < 0 || call(h, 0x0086_3520, &[c, n]) == 0 {
+    if c.cast_signed() < 0 || super::helpers::atel_has_signal_from_level(h, c, n) == 0 {
         5
     } else {
         0
@@ -1576,7 +1576,7 @@ pub fn native_00d4<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
 /// (`0x008701f0`); `i`.
 pub fn native_0211<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let i = pop(h, s);
-    call(h, 0x0087_01f0, &[i, 0]);
+    super::helpers::atel_set_help_event_flag(h, i, 0);
     i
 }
 
@@ -2201,7 +2201,7 @@ pub fn native_0233<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// `0x0014` (`0x00860120`): `(b f, a f)`: `0x0086f750(worker, b, a)`; 0.
 pub fn native_0014<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let [a, b] = popfs::<2>(h, s);
-    call(h, 0x0086_f750, &[w, b, a]);
+    super::helpers::atel_set_level_vectors_xz(h, w, b, a);
     0
 }
 

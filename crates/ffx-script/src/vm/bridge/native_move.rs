@@ -393,7 +393,7 @@ pub fn native_chr_load_alias<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -
 /// `0x008701f0(bit, 1)`; the bit.
 pub fn native_bit_flag_set<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0087_01f0, &[v, 1]);
+    super::helpers::atel_set_help_event_flag(h, v, 1);
     v
 }
 
@@ -461,7 +461,7 @@ pub fn native_get_worker_pos<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) 
     let x = atel_get_real_var_adrs(h, w, vx);
     let y = atel_get_real_var_adrs(h, w, vy);
     let z = atel_get_real_var_adrs(h, w, vz);
-    call(h, 0x0086_a2f0, &[o, x, y, z]);
+    super::helpers::script_get_worker_pos(h, o, x, y, z);
     0
 }
 
@@ -822,11 +822,11 @@ pub fn native_015e<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 }
 
 /// `Native_0119` (`0x0085bd70`, `0x0119`): `(on)` clamped to 0..=1 ->
-/// `0x0086b150(the worker's bound character, on)`.
+/// `AtelGetElemId(the worker's bound character, on)`.
 pub fn native_0119<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s).cast_signed().clamp(0, 1).cast_unsigned();
     let pc = h.read::<u32>(w + worker::BIND_PC);
-    call(h, 0x0086_b150, &[pc, v])
+    super::helpers::atel_get_elem_id(h, pc, v)
 }
 
 /// `Native_SetTriggerMode` (`0x0085c320`, `0x007f`): `(mode)`: for trigger
@@ -848,7 +848,7 @@ pub fn native_set_trigger_mode<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32
 /// the id.
 pub fn native_set_player<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = u32::from(h.read::<u16>(w + worker::ID));
-    call(h, 0x0086_f6a0, &[id]);
+    super::helpers::event_set_player(h, id);
     id
 }
 
@@ -1399,7 +1399,7 @@ pub fn native_00d1<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
 }
 
 /// `Native_01ba` (`0x0085beb0`, `0x01ba`): `(worker, on)`: the worker's
-/// bound character (0..=7) gets `0x0086b150(chr, on)` (`on` clamped to
+/// bound character (0..=7) gets `AtelGetElemId(chr, on)` (`on` clamped to
 /// 0..=1); else 0.
 pub fn native_01ba<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s).cast_signed().clamp(0, 1).cast_unsigned();
@@ -1409,7 +1409,7 @@ pub fn native_01ba<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     if pc > 7 {
         return 0;
     }
-    call(h, 0x0086_b150, &[pc, v])
+    super::helpers::atel_get_elem_id(h, pc, v)
 }
 
 /// `Native_015b_Result` (`0x0085b4c0`): the current ctrl work's
@@ -1514,7 +1514,7 @@ pub fn native_00f6<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
 pub fn native_00f6_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
     let i = h.read::<u32>(a);
     let n = h.read::<u32>(a + 4);
-    if i.cast_signed() < 0 || call(h, 0x0086_3520, &[i, n]) == 0 {
+    if i.cast_signed() < 0 || super::helpers::atel_has_signal_from_level(h, i, n) == 0 {
         5
     } else {
         0
@@ -2235,10 +2235,10 @@ pub fn native_009a<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     v
 }
 
-/// `Native_00de_Poll` (`0x0085f280`): `0x00863350(worker id)`.
-pub fn native_00de_poll<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
-    let id = u32::from(h.read::<u16>(w + worker::ID));
-    call(h, 0x0086_3350, &[id])
+/// `Native_00de_Poll` (`0x0085f280`): `Atel_EffectEndPoll(worker id)`
+/// (`0x00863350`, which reads no argument).
+pub fn native_00de_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    super::helpers::atel_effect_end_poll(h)
 }
 
 /// `Native_0094` (`0x0085f0b0`, `0x0094`, float): `0x0086f040(worker, v)`;
@@ -2291,12 +2291,12 @@ pub fn native_019f<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 }
 
 /// `Native_0196` (`0x0085fce0`, `0x0196`): `(v)`: attached workers (`+0xaa`
-/// 4, 5) get `0x00862800(worker, v, +0xa8)`; 1.
+/// 4, 5) get `AtelBindFp(worker, v, +0xa8)`; 1.
 pub fn native_0196<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
     if h.read::<u8>(w + 0xaa).wrapping_sub(4) <= 1 {
         let m = u32::from(h.read::<u16>(w + 0xa8));
-        call(h, 0x0086_2800, &[w, v, m]);
+        super::helpers::atel_bind_fp(h, w, v, m);
     }
     1
 }
@@ -2373,10 +2373,11 @@ pub fn native_00dc<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 
     0
 }
 
-/// `Native_00dc_Poll` (`0x0085ee70`): `0x008633e0(worker id)` (bit 0: done).
+/// `Native_00dc_Poll` (`0x0085ee70`): `Atel_EffectStartPoll(worker id)`
+/// (`0x008633e0`; bit 0: done).
 pub fn native_00dc_poll<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u32 {
     let id = u32::from(h.read::<u16>(w + worker::ID));
-    let r = call(h, 0x0086_33e0, &[id]);
+    let r = super::helpers::atel_effect_start_poll(h, id);
     if r & 1 != 0 {
         super::atel_get_cur_ctrl_work(h);
     }
@@ -2591,7 +2592,7 @@ pub fn native_01e3<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
 /// `Native_01bd` (`0x00859ff0`, `0x01bd`): `0x008715f0(v)`; 1.
 pub fn native_01bd<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0087_15f0, &[v]);
+    super::helpers::atel_set_water_battle_effect(h, v);
     1
 }
 
@@ -3008,7 +3009,7 @@ pub fn native_010d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// `Native_0194` (`0x0085f8b0`, `0x0194`): `0x0086f060(v)`; `v`.
 pub fn native_0194<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0086_f060, &[v]);
+    super::helpers::atel_set_save_event_d1(h, v);
     v
 }
 
@@ -3265,7 +3266,7 @@ pub fn native_0192<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
 /// `Native_01c4` (`0x0085a840`, `0x01c4`): `0x00873dd0(on != 0)`; that.
 pub fn native_01c4<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = u32::from(pop(h, s) != 0);
-    call(h, 0x0087_3dd0, &[v]);
+    super::helpers::atel_set_save_event_word(h, 0xe8, v);
     v
 }
 
@@ -3304,7 +3305,7 @@ pub fn native_0092<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> f64 {
 /// `Native_023a` (`0x00856250`, `0x023a`): `0x0086f9e0(v)`; 1.
 pub fn native_023a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0086_f9e0, &[v]);
+    super::helpers::atel_set_dolby(h, v);
     1
 }
 
@@ -3491,7 +3492,7 @@ pub fn native_00ee<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// `Native_020d` (`0x0085bf70`, `0x020d`): `0x00870fa0(v)`; `v`.
 pub fn native_020d<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0087_0fa0, &[v]);
+    super::helpers::atel_set_save_event_word(h, 0xea, v);
     v
 }
 
@@ -3595,7 +3596,7 @@ pub fn native_0204<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
 /// `Native_01c3` (`0x0085a750`, `0x01c3`): `0x00874030(v)`; `v`.
 pub fn native_01c3<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0087_4030, &[v]);
+    super::helpers::atel_set_save_event_e4(h, v);
     v
 }
 
@@ -3662,7 +3663,7 @@ pub fn native_010a<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// `Native_00e2` (`0x00857dd0`, `0x00e2`): `0x0086f430(v)`; `v`.
 pub fn native_00e2<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0086_f430, &[v]);
+    super::helpers::atel_set_save_event_13_bit1(h, v);
     v
 }
 
@@ -4003,7 +4004,7 @@ pub fn native_01d2<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// `Native_01bc` (`0x00859ec0`, `0x01bc`): `0x00870140(v)`; 1.
 pub fn native_01bc<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0087_0140, &[v]);
+    super::helpers::atel_set_force_place_id(h, v);
     1
 }
 
@@ -4612,7 +4613,7 @@ pub fn native_00da<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
 /// `Native_00ac` (`0x00858050`, `0x00ac`): `0x00870ed0(v)`; `v`.
 pub fn native_00ac<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0087_0ed0, &[v]);
+    super::helpers::atel_set_save_event_word(h, 0xe, v);
     v
 }
 

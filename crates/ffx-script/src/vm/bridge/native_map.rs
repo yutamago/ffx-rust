@@ -188,7 +188,7 @@ pub fn native_8006<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
         let at = h.rebase(0x0193_bf68);
         h.write(at, 1u32);
     }
-    call(h, 0x0087_4000, &[n])
+    super::helpers::atel_jump_to_entrance(h, n)
 }
 
 /// `Native_8006_Poll` (`0x0091b040`): done at once.
@@ -222,12 +222,12 @@ call_ones! {
 pub fn native_fp_bind<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let bone = pop(h, s);
     let fp = pop(h, s);
-    call(h, 0x0086_2800, &[w, fp, bone]);
+    super::helpers::atel_bind_fp(h, w, fp, bone);
     1
 }
 
 /// `Native_FpBindPos` (`0x0091b0a0`, `0x800a`): `(fp, x, y, z)`: the fp id
-/// truncated from the bottom value, `0x00862920(worker, fp, x, y, z)` (the
+/// truncated from the bottom value, `AtelBindFpPos(worker, fp, x, y, z)` (the
 /// `dbgPrintf` before it is an empty function); 1.
 pub fn native_fp_bind_pos<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let z = popf(h, s);
@@ -235,16 +235,17 @@ pub fn native_fp_bind_pos<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> 
     let x = popf(h, s);
     let v = pop_st0(h, s);
     let fp = x87::ftol(h, v);
-    call(h, 0x0086_2920, &[w, fp, x, y, z]);
+    let f = h.scratch();
+    super::helpers::atel_bind_fp_pos(h, w, fp, [x, y, z], f);
     1
 }
 
 /// `Native_FpUnbind` (`0x0091b130`, `0x800b`): `(fp)` (negative as 0) ->
-/// `0x008628a0(worker, fp)`; 1.
+/// `AtelBindFpOff(worker, fp)`; 1.
 pub fn native_fp_unbind<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let fp = pop(h, s);
     let fp = if fp.cast_signed() < 0 { 0 } else { fp };
-    call(h, 0x0086_28a0, &[w, fp]);
+    super::helpers::atel_bind_fp_off(h, w, fp);
     1
 }
 
