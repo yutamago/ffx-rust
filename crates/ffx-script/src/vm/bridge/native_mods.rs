@@ -200,7 +200,8 @@ pub fn native_1018<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> f64 {
 /// `0x101d` (`0x00878110`): `0x00878140(worker, args, stack)`'s record
 /// `+4` = 1; 0 (`0x101c` sets 0).
 pub fn native_101d<H: NativeHost>(h: &mut H, w: u32, a: u32, s: u32) -> u32 {
-    let r = call(h, 0x0087_8140, &[w, a, s]);
+    let _ = a;
+    let r = super::helpers::atel_set_var_slot(h, w, s);
     h.write(r.wrapping_add(4), 1_u32);
     0
 }

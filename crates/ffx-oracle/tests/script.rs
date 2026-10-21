@@ -7833,3 +7833,369 @@ fn round24b_signals_windows_seps_match_the_original() {
     eprintln!("round 24b: {} snapshot workers", real.len());
     r24b_cases(&mut a, &mut b, &mut rng, &real, "snapshot");
 }
+
+/// `f` replaced in both oracles by a stand-in returning a countdown: the
+/// cell's value, decremented while not 0 (n, n-1, ..., 1, then 0 for good).
+/// Returns the cell.
+fn r24_countdown_stub(a: &mut Oracle, b: &mut Oracle, f: u32) -> u32 {
+    let cell = alloc_both(a, b, 4);
+    #[rustfmt::skip]
+    let code = [
+        &[0xa1][..], &cell.to_le_bytes(),        // mov eax, [cell]
+        &[0x85, 0xc0, 0x74, 0x06],               // test eax, eax; jz ret
+        &[0xff, 0x0d], &cell.to_le_bytes(),      // dec dword [cell]
+        &[0xc3],                                 // ret
+    ]
+    .concat();
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    cell
+}
+
+/// Round 24 c, the movie, menu and sound helpers on one pair (their callees
+/// stubbed alike on both sides).
+#[allow(clippy::too_many_lines)] // one block per helper
+fn r24c_stubbed(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let pic = a.rebase(0x0112_a00c);
+    // destroyMoviePicture and 0x0076ed10
+    r24_log_stubs(a, b, &[(0x0063_df30, 0)]);
+    for on in [0u32, 1, 0x100] {
+        poke(a, b, pic, on);
+        poke(a, b, a.rebase(0x0112_a008), 7u32);
+        r22_case(
+            a,
+            b,
+            0x0076_ece0,
+            &[],
+            on != 0,
+            &format!("destroyMoviePicture {what} {on:#x}"),
+            |r| hp::destroy_movie_picture(r),
+        );
+    }
+    for k in 0..32u32 {
+        for (bit, f) in [0x0064_1cf0u32, 0x0064_1ce0, 0x0076_f0c0]
+            .into_iter()
+            .enumerate()
+        {
+            let v = if k >> bit & 1 != 0 {
+                [1, 0x100, u32::MAX][(k % 3) as usize]
+            } else {
+                0
+            };
+            for o in [&mut *a, &mut *b] {
+                let at = o.rebase(f);
+                o.stub_return(at, v).unwrap();
+            }
+        }
+        poke(a, b, pic, (k >> 3 & 3) * 0x80);
+        r22_case(
+            a,
+            b,
+            0x0076_ed10,
+            &[],
+            true,
+            &format!("Movie_IsBusy {what} {k}"),
+            |r| hp::movie_is_busy(r),
+        );
+    }
+    // the save screen's card poll: every step, TkMcGetInfo 0 and not
+    let step = a.rebase(0x0186_626b);
+    let info = a.rebase(0x0186_626c);
+    let toggles = a.rebase(0x0186_626a);
+    for k in 0..48u32 {
+        for o in [&mut *a, &mut *b] {
+            let at = o.rebase(0x0088_82c0);
+            o.stub_return(at, [0, 1, 0x55][(k % 3) as usize]).unwrap();
+        }
+        poke(
+            a,
+            b,
+            step,
+            u8::try_from([0, 1, 2, 3, 0xff, 2][(k / 3 % 6) as usize]).unwrap(),
+        );
+        poke(a, b, info, [2u32, 3, 0, 0x102][(k / 18 % 4) as usize]);
+        poke(a, b, toggles, u8::try_from(k % 2 * (1 + k % 5)).unwrap());
+        poke(a, b, a.rebase(0x0186_6268), 0x77u8);
+        r22_case(
+            a,
+            b,
+            0x008b_3d20,
+            &[],
+            true,
+            &format!("TkMenuSaveLoad_PollCard {what} {k}"),
+            |r| hp::tk_menu_save_load_poll_card(r),
+        );
+    }
+    // and its arguments, through a logging stand-in (a non-zero result)
+    r24_log_stubs(a, b, &[(0x0088_82c0, 4)]);
+    for st in [0u8, 1] {
+        poke(a, b, step, st);
+        r22_case(
+            a,
+            b,
+            0x008b_3d20,
+            &[],
+            true,
+            &format!("TkMenuSaveLoad_PollCard {what} logged {st}"),
+            |r| hp::tk_menu_save_load_poll_card(r),
+        );
+    }
+    // 0x00871780: the transfer wait, the queue, the group offsets
+    let sync = r24_countdown_stub(a, b, 0x0088_7910);
+    r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0088_7f00, 1),
+            (0x0088_7b80, 0),
+            (0x0086_38c0, 1),
+            (0x0088_6f30, 2),
+            (0x0088_6f00, 2),
+        ],
+    );
+    let mask = a.rebase(0x0132_6bdc);
+    for round in 0..160u32 {
+        poke(a, b, sync, rng.below(4));
+        poke(a, b, mask, u8::try_from(rng.below(256)).unwrap());
+        let data = alloc_both(a, b, 0x80);
+        let head = match round % 6 {
+            0 => 0x4000_0000 | rng.below(0x100),
+            1 => 0xc000_0000 | rng.below(0x100),
+            2 => rng.below(0x100),
+            3 => 0x8000_0000 | rng.below(0x100),
+            _ => 0x4000_0000 | rng.next() & 0x3fff_ffff,
+        };
+        poke(a, b, data, head);
+        for k in 1..12u32 {
+            let size = if rng.below(5) == 0 {
+                0
+            } else {
+                rng.below(0x1000)
+            };
+            poke(a, b, data + 4 * k, size);
+        }
+        let d = if round % 23 == 22 { 0 } else { data };
+        let group = match round % 4 {
+            0 => u32::MAX - rng.below(3),
+            1 => rng.below(3),
+            2 => rng.below(10),
+            _ => 0x8000_0000 | rng.below(4),
+        };
+        let (hdr, sep_only, flag) = (rng.next(), rng.below(2) * rng.next(), rng.below(2));
+        r22_case(
+            a,
+            b,
+            0x0087_1780,
+            &[hdr, d, sep_only, group, flag],
+            true,
+            &format!("Atel_TransSepGroup {what} round {round} group {group:#x} head {head:#x}"),
+            |r| hp::atel_trans_sep_group(r, hdr, d, sep_only, group, flag),
+        );
+    }
+}
+
+/// Round 24 c on one pair with ctrl work 0 as it stands (the image's made
+/// up by the caller): `0x00878140` over variable words of every storage
+/// and slots in and past 0..=7, `0x0086b270` with every out-pointer
+/// combination, `AtelGetGuideMapActorInfo` over the marker table and past
+/// it (`synthetic`: a table of the test's own).
+#[allow(clippy::too_many_lines)] // one block per helper
+fn r24c_workers(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    synthetic: bool,
+    what: &str,
+) -> u32 {
+    use ffx_script::vm::bridge::helpers as hp;
+    let works = a.rebase(0x0132_5ba0);
+    let context = a.rebase(0x0132_6b28);
+    poke(a, b, context, works);
+    let n = u32::from(Mem::read::<u16>(b, works + ctrl::WORKERS));
+    let ws: Vec<u32> = (0..n)
+        .map(|i| {
+            orig(a, ATEL_GET_BASIC_WORK, &[i]);
+            v::atel_get_basic_work(b, i.cast_signed())
+        })
+        .collect();
+    let kind = |o: &Oracle, w: u32| Mem::read::<u8>(o, Mem::read::<u32>(o, w));
+    let mut calls = 0;
+    // 0x00878140
+    let stk = alloc_both(a, b, 0x400);
+    for round in 0..64u32 {
+        let w = ws[(round % n) as usize];
+        if kind(b, w) == 4 {
+            continue;
+        }
+        let storage = round % 8;
+        // storage 3 through the ctrl work's callback only on the snapshot
+        if storage == 3 && synthetic {
+            continue;
+        }
+        let word = if round % 9 == 8 {
+            0
+        } else {
+            (rng.below(7) << 28) | (storage << 25) | rng.below(0x100)
+        };
+        let slot = [0u32, 3, 7, 8, u32::MAX, 0x8000_0000][(round % 6) as usize];
+        poke(a, b, stk + stack::DEPTH, 0i32);
+        push_both(a, b, stk, stack::INT, slot);
+        push_both(a, b, stk, stack::INT, word);
+        let args = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0087_8140,
+            &[w, args, stk],
+            true,
+            &format!("Atel_SetVarSlot {what} round {round} word {word:#x} slot {slot:#x}"),
+            |r| hp::atel_set_var_slot(r, w, stk),
+        );
+        calls += 1;
+    }
+    // 0x0086b270
+    let out = alloc_both(a, b, 0x20);
+    let player = a.rebase(0x0132_6b2c);
+    for i in [0u32, 1, 2, 3, 5, n, u32::MAX] {
+        let target = if i < n { i } else { 0 };
+        poke(a, b, player, 0u32);
+        if kind(b, ws[target as usize]) == 4 {
+            continue;
+        }
+        for (x, y, z) in [
+            (out, out + 4, out + 8),
+            (0, out, 0),
+            (out + 8, 0, out),
+            (0, 0, 0),
+        ] {
+            poke(a, b, context, works + 0x238);
+            r22_case(
+                a,
+                b,
+                0x0086_b270,
+                &[i, x, y, z],
+                true,
+                &format!("Atel_GetEventActorRot {what} {i:#x}"),
+                |r| hp::atel_get_event_actor_rot(r, i, x, y, z),
+            );
+            calls += 1;
+        }
+    }
+    // AtelGetGuideMapActorInfo
+    let block_at = works + 0x48;
+    if synthetic {
+        let blk = alloc_both(a, b, 0x400);
+        fill_both(a, b, rng, blk, 0x400);
+        poke(a, b, blk + 0x2c, 0x40u32);
+        poke(a, b, blk + 0x40 + 0x18, 0x100u32);
+        poke(a, b, blk + 0x100, 6i32);
+        for e in 0..6u32 {
+            let id = [0u16, 1, 2, 3, 5, 6][e as usize];
+            let marker = if e == 2 { 0x8000_1234 } else { rng.next() };
+            poke(a, b, blk + 0x104 + e * 8, marker);
+            poke(a, b, blk + 0x108 + e * 8, id);
+        }
+        poke(a, b, block_at, blk);
+        for (i, &w) in (0u32..).zip(&ws) {
+            // the position worker is the next one (not the table's)
+            poke(a, b, w + 0x2e, u16::try_from((i + 1) % n).unwrap());
+            if i == 3 {
+                poke(a, b, w + 0xbc, 0x8000_0042u32);
+            }
+        }
+    }
+    let info = alloc_both(a, b, 0x40);
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    for round in 0..24u32 {
+        let flags = Mem::read::<u8>(b, works);
+        poke(
+            a,
+            b,
+            works,
+            if round % 8 == 7 {
+                flags & !1
+            } else {
+                flags | 1
+            },
+        );
+        let f2 = Mem::read::<u8>(b, works + 2);
+        poke(
+            a,
+            b,
+            works + 2,
+            if round % 2 == 0 { f2 | 0x80 } else { f2 & 0x7f },
+        );
+        let i = [0u32, 1, 2, 3, 4, 5, 6, 40, u32::MAX][(round % 9) as usize];
+        let o = if round % 11 == 10 { 0 } else { info };
+        // the table's worker must have a position block
+        poke(a, b, context, works);
+        let blk = Mem::read::<u32>(b, block_at);
+        if blk != 0 && o != 0 {
+            let id = hp::atel_get_bin_hdr_table18_b(&Run(b), blk, i);
+            let w = v::atel_get_basic_work(b, id.cast_signed());
+            orig(a, ATEL_GET_BASIC_WORK, &[id]);
+            let k = u32::from(Mem::read::<u16>(b, w + 0x2e));
+            let kw = v::atel_get_basic_work(b, k.cast_signed());
+            orig(a, ATEL_GET_BASIC_WORK, &[k]);
+            if kind(b, w) == 4 || kind(b, kw) == 4 {
+                continue;
+            }
+        }
+        fill_both(a, b, rng, info, 0x40);
+        poke(a, b, context, works + 0x238);
+        r22_case(
+            a,
+            b,
+            0x0086_b740,
+            &[i, o],
+            true,
+            &format!("AtelGetGuideMapActorInfo {what} round {round} i {i:#x}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_get_guide_map_actor_info(r, i, o, f)
+            },
+        );
+        calls += 1;
+    }
+    calls
+}
+
+/// Round 24 c (this machine): destroyMoviePicture, `0x0076ed10`,
+/// `0x008b3d20`, `0x00871780`, `0x00878140`, `0x0086b270` and
+/// `AtelGetGuideMapActorInfo` on the image (a synthetic ctrl work 0) and
+/// on the snapshot (its own ctrl work 0).
+#[test]
+fn round24c_movie_menu_seps_markers_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0246);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r24c_stubbed(&mut a, &mut b, &mut rng, "image");
+        let works = a.rebase(0x0132_5ba0);
+        r23d_ctrl(&mut a, &mut b, &mut rng, works, 8);
+        let n = r24c_workers(&mut a, &mut b, &mut rng, true, "image");
+        assert!(n > 0);
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r24c_stubbed(&mut a, &mut b, &mut rng, "snapshot");
+    let n = r24c_workers(&mut a, &mut b, &mut rng, false, "snapshot");
+    eprintln!("round 24c: {n} snapshot worker calls");
+}

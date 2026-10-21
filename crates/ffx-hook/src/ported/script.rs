@@ -6989,4 +6989,34 @@ ported! {
     Atel_LoadEventSeps_00866520 @ 0x0086_6520 => extern "C" fn h_866520(_p0: u32, mode: u32, group: u32) -> u32 {
         hp::atel_load_event_seps(&mut mem(), mode, group)
     }
+    /// `destroyMoviePicture()`.
+    destroyMoviePicture @ 0x0076_ece0 => extern "C" fn h_76ece0() -> u32 {
+        hp::destroy_movie_picture(&mut mem())
+    }
+    /// `Movie_IsBusy_0076ed10()`.
+    Movie_IsBusy_0076ed10 @ 0x0076_ed10 => extern "C" fn h_76ed10() -> u32 {
+        hp::movie_is_busy(&mut mem())
+    }
+    /// `TkMenuSaveLoad_PollCard_008b3d20()`.
+    TkMenuSaveLoad_PollCard_008b3d20 @ 0x008b_3d20 => extern "C" fn h_8b3d20() -> u32 {
+        hp::tk_menu_save_load_poll_card(&mut mem())
+    }
+    /// `Atel_SetVarSlot_00878140(worker, args, stack)`: `args` is not read.
+    Atel_SetVarSlot_00878140 @ 0x0087_8140 => extern "C" fn h_878140(w: u32, _a: u32, s: u32) -> u32 {
+        hp::atel_set_var_slot(&mut mem(), w, s)
+    }
+    /// `Atel_GetEventActorRot_0086b270(i, x, y, z)`.
+    Atel_GetEventActorRot_0086b270 @ 0x0086_b270 => extern "C" fn h_86b270(i: u32, x: u32, y: u32, z: u32) -> u32 {
+        hp::atel_get_event_actor_rot(&mut mem(), i, x, y, z)
+    }
+    /// `Atel_TransSepGroup_00871780(hdr, data, sep_only, group, flag)`.
+    Atel_TransSepGroup_00871780 @ 0x0087_1780 => extern "C" fn h_871780(hdr: u32, data: u32, sep_only: u32, group: u32, flag: u32) -> u32 {
+        hp::atel_trans_sep_group(&mut mem(), hdr, data, sep_only, group, flag)
+    }
+    /// `AtelGetGuideMapActorInfo(i, out)`: the start and end y go to the
+    /// original's argument slot, here a frame word.
+    AtelGetGuideMapActorInfo @ 0x0086_b740 => extern "C" fn h_86b740(i: u32, out: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        hp::atel_get_guide_map_actor_info(&mut mem(), i, out, frame.at())
+    }
 }

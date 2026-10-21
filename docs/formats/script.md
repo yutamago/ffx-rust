@@ -2793,6 +2793,33 @@ kept ids stay loaded (`SqsSeSeparateMaskClear` through its thunk
 `round24b_signals_windows_seps_match_the_original` covers them (the two
 sound calls logged).
 
+Round 24 c: `destroyMoviePicture` (`0x0076ece0`) clears a movie picture
+(`g_MoviePictureOn`, `0x0112a00c`; the time-counted frame wait off,
+`0x00c40e2c` = 1) and tail-jumps to `graphicDestroyFmv`.
+`Movie_IsBusy_0076ed10` gives 0 only while a video plays
+(`graphicIsVideoPlaying` or `0x00641ce0`) without `movie_with3DScene` or
+a movie picture. `TkMenuSaveLoad_PollCard_008b3d20` steps the save
+screen's card poll (`0x0186626b`: 0 to 1, 1 asks `TkMcGetInfo`, 2 ends)
+and, when done, sets the save choice, resets the step and flips
+`g_TkMenuSaveLoadToggles`. `Atel_SetVarSlot_00878140`, the core of
+`Native_101c`/`101d` (which now call it in Rust), pops a variable word
+and a slot (0-7) and points the current ctrl work's `+0x1a4 + slot*8` at
+the variable. `Atel_GetEventActorRot_0086b270` is
+`AtelGetEventActorPos`'s twin for the rotation (`+0x30`..`+0x38`;
+x, z, then y after the ctrl work goes back). `Atel_TransSepGroup_00871780`
+waits for `SndSyncTrans`, queues the pending separates for a negative
+group, and sends group `group` of a separates block (a head word with
+bit 30 set and bit 31 clear: the sizes, then the groups from `+0x20`;
+the earlier sizes are summed in pairs) with `SndSepTransSepOnly` or
+`SndSepTransNonblock`, then selects the group in `g_AtelSepGroupMask`.
+`AtelGetGuideMapActorInfo` (`0x0086b740`) fills a guide-map record for
+marker `i` of ctrl work 0's script block (jump table `0x0086b8fc` on the
+worker type for the direction and the two-point flag); the y of the
+start and end positions go to its own argument slot (a frame word in
+Rust). `round24c_movie_menu_seps_markers_match_the_original` covers them,
+the callees as stand-ins (`r24_log_stubs`, `r24_countdown_stub` for the
+transfer wait).
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

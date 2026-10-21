@@ -4418,7 +4418,8 @@
 0x0076ecb0 function Native_b00d                # 0xb00d: no args -> the movie done flag = 0; 0; ported in native_chr (script round 12)
 0x0076ecc0 function Native_b00e # 0xb00e: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll ke; ported in native_mods (script round 21); name ours
 0x0076ecd0 function Native_b00f # 0xb00f: a "Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impelemented yet!" line naming the PS2 callback through the empty dbgPrintf; 0 (the poll ke; ported in native_mods (script round 21); name ours
-0x0076ece0 function destroyMoviePicture       # fh v3:exact 0x0076edf0
+0x0076ece0 function destroyMoviePicture # cdecl (): with g_MoviePictureOn (0x0112a00c) set: g_WaitFramesByTime = 0, 0x00c40e2c = 1, the flag cleared, tail jump graphicDestroyFmv (its EAX); ported (ffx_script helpers, script round 24 c); fh v3:exact 0x0076edf0
+0x0076ed10 function Movie_IsBusy_0076ed10 # name ours; cdecl (): 0 when graphicIsVideoPlaying or 0x00641ce0 says a video plays and neither movie_with3DScene nor g_MoviePictureOn, else 1 (all three asked first); callers Sg_MainCheckMenu, 0x00873620; ported (ffx_script helpers, script round 24 c)
 0x0076ed70 function make_yi_font16               # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'Virtuos Warning: Movie on Windows, PS3 & PS Vita is not impe'; Switch 0x7100322120 make_yi_font16 (symbols from Fahrenheit's server export)
 0x0076efa0 function movie_err                 # fh v3:bsim1.00 0x0076f0b0
 0x0076efb0 function movie_frame_prog          # fh v3:bsim1.00 0x0076f0c0
@@ -9399,6 +9400,7 @@
 0x0086b170 function Msg_Text1                 # (i): entry i's text (+0) in the script context's second table (+0x38, .ebp section 5); offset 0 falls back to the .ebp's section 1 (0x023cbd60); = Msg_Get(i, 0, 1)
 0x0086b1b0 function AtelGetEventActorLinkWork # (i) -> the event worker i's link byte +0x33 (ctrl work 0 current meanwhile; mov al, EAX keeps the worker's upper bytes); ported in helpers (script round 23 d); fh v3:exact 0x0086b140
 0x0086b1e0 function AtelGetEventActorPos      # layout: alphabetical run between AtelGetEventActorLinkWork (0x0086b1b0) and AtelGetEventBindIdFromID (0x0086b370); (i, &x, &y, &z) the position of the event ctrl work's worker i (0x01326b2c's for an index outside it); name ours; ported in helpers (script round 19)
+0x0086b270 function Atel_GetEventActorRot_0086b270 # name ours; cdecl (i, x, y, z): AtelGetEventActorPos's twin (near-copy 0.978) for the position block's rotation +0x30/+0x34/+0x38: x, z, g_ScriptContext back, then y; EAX the block; callers Snd3dFootRequest, AtelDebugCtrl; ported (ffx_script helpers, script round 24 c)
 0x0086b300 function AtelGetEventActorTotal    # fh v3:exact 0x0086b290
 0x0086b320 function AtelGetEventActorType # (i) -> the event worker i's type, 7 outside 0..ctrl work 0's actor count; ported in helpers (script round 23 d); layout: alphabetical run between AtelGetEventActorTotal and AtelGetEventBindIdFromID (1 unnamed in the gap); Switch 0x7100472470 AtelGetEventActorType is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0086b370 function AtelGetEventBindIdFromID # (i) -> the event worker i's binding +0xaa; ported in helpers (script round 23 d); fh v3:exact 0x0086b300
@@ -9413,7 +9415,7 @@
 0x0086b6c0 function Get_g_AtelForceBattleMapId_0086b6c0 # auto-port shape (return global u32, cdecl): t0 = u32[&0x00c5273c]; return t0; callers: ; name ours
 0x0086b700 function AtelGetGideMapActorInfo   # fh v3:cg7 0x86b690
 0x0086b710 function AtelGetGideMapActorNumber # () -> count of field minimap markers Minimap_GetWorkerMarker reads; Guide_Update loops over them; was Minimap_MarkerCount
-0x0086b740 function AtelGetGuideMapActorInfo  # (index, &out): worker marker from the script's tag table (+0x2c -> +0x18) or worker +0xbc override; flags 0x800, 0x2000, icon >> 4; used by 0x0091da80 and the debug list 0x00881be0; was Minimap_GetWorkerMarker
+0x0086b740 function AtelGetGuideMapActorInfo # (i, out): ported (ffx_script helpers, script round 24 c): jump table 0x0086b8fc on type 2..6 (2/5: direction 0 and +0x2c = 1; 3/6: direction 0; else Atel_GetWorkerRotY); start/end y go to the argument slot; EAX worker +0x36 bit 11; (index, &out): worker marker from the script's tag table (+0x2c -> +0x18) or worker +0xbc override; flags 0x800, 0x2000, icon >> 4; used by 0x0091da80 and the debug list 0x00881be0; was Minimap_GetWorkerMarker
 0x0086b910 function AtelGetGuideMapActorNumber   # layout: alphabetical run between AtelGetGuideMapActorInfo and AtelGetGuideMapAngEx (2 unnamed in the gap); Switch 0x7100472d00 AtelGetGuideMapActorNumber is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0086b940 function AtelGetGuideMapAng           # layout: alphabetical run between AtelGetGuideMapActorInfo and AtelGetGuideMapAngEx (2 unnamed in the gap); Switch 0x7100472c40 AtelGetGuideMapAng is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0086b9a0 function AtelGetGuideMapAngEx # (i) -> f32 in ST0: with ctrl work 0 in use (bit 0) and its event block (+0x48), Atel_GetBinHdrFloat(block, i), else 0; ported in helpers (script round 23 g); fh v3:exact 0x0086b930
@@ -9618,6 +9620,7 @@
 0x00871650 function AtelSignalReply           # (worker, node): the reply a REQSW sender waits for once its request starts
 0x00871730 function AtelSkipReqLevel2         # fh v3:bsim1.00 0x008716d0; ported in helpers (script round 19)
 0x00871750 function AtelSndTransSepSPKDataGroup # fh switch:bsim1.00 0x71004728a0
+0x00871780 function Atel_TransSepGroup_00871780 # name ours; cdecl (hdr, data, sep_only, group, flag): waits while SndSyncTrans(0) (TkSyncV(0) + TkSndUpdate2); group < 0: Atel_QueueSepLoads(hdr), else flag = 1; data 0: 0; data word bit 30 set, bit 31 clear: group sizes (first in its low 30 bits, then the next words), groups from data + 0x20; group's size != 0: SndSepTransSepOnly (flag and sep_only) or SndSepTransNonblock(at, size), 1; group >= 0 sets its g_AtelSepGroupMask bit; callers 0x00862220, AtelEventSetUpSep, AtelSndTransSepSPKDataGroup; ported (ffx_script helpers, script round 24 c)
 0x00871890 function AtelStopSoundAll # cdecl (): SndSepStop(n | 0x80000000) for 1..=0x77 (TkSyncV(0) + TkSndUpdate every 16), SndMusicStop/SndMusicClear(-1), iMusicStopAll/iMusicClearAll, 32 more sync pairs, the music again, SqsAllVoiceTerminate (thunk 0x008872e0); EAX = the last TkSndUpdate (tail jump); ported (ffx_script helpers, script round 24 a); fh v3:exact 0x00871830
 0x00871950 function AtelStrcat                # fh v3:exact 0x008718f0
 0x00871980 function AtelStrcpy                # fh v3:exact 0x00871920
@@ -9807,6 +9810,7 @@
 0x00878060 function Native_101b                # 0x101b (float): args (x1 f, y1 f, z1 f, x2 f, y2 f, z2 f) -> float: the 3D distance, as 0x101a; ported in native_chr (script round 12)
 0x008780f0 function Native_101c                # 0x101c: no args -> 0x00878140(worker, args, stack)'s record +4 = 0; 0; ported in native_chr (script round 12)
 0x00878110 function Native_101d # 0x101d: 0x00878140's record +4 = 1; 0; ported in native_mods (script round 19); name ours
+0x00878140 function Atel_SetVarSlot_00878140 # name ours; cdecl (worker, args, stack): pops a variable word and a slot (clamped 0..7); current ctrl work +0x1a4 + slot*8 = AtelGetRealVarAdrs(worker, word) (0 for word 0); EAX the record; core of Native_101c/Native_101d (which call the Rust one); ported (ffx_script helpers, script round 24 c)
 0x008781b0 function Native_c054                # 0xc054: args (n) -> TkMalloc(n) (0x0088e650); ported in native_chr (script round 12)
 0x008781d0 function Native_c055                # 0xc055: args (p) -> TkFree(p) (0x0088d520); 1; ported in native_chr (script round 12)
 0x008781f0 function Native_c057                # 0xc057: no args -> debug (mod-tool candidate): copies 0x68c0 bytes from the address + 0x40 into g_SaveData and TkFlushSyncH ('copy to saveram'); 1; debug, not ported (mod-tool candidate)
@@ -10769,6 +10773,7 @@
 0x008b3a40 function TOMenuMakeSaveFileName       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BASLUS-20312'; Switch 0x71004dde30 TOMenuMakeSaveFileName (symbols from Fahrenheit's server export); (): 0x023cc0a0 = product code by TOGetFFXLang (0/16 BISLPS-25088, 1 BASLUS-20312, 2 BESCES-50491, 3 -50494, 4 -50492, 5 -50493, 9 BKSLPM-67513, 17 BISLPM-65115, 18 BESCES-50490, others unchanged) + 'FF0906%02d'; 0x01866240 = 0
 0x008b3cf0 function AtelAllClearCallbackQue   # fh switch:bsim1.00 0x710044df20
 0x008b3d10 function SetFieldConst28_008b3d10     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x28)] = 0x0; return a0; callers: no direct caller; name ours
+0x008b3d20 function TkMenuSaveLoad_PollCard_008b3d20 # name ours; cdecl (): save screen card poll by step 0x0186626b: 0 -> 1; 1: TkMcGetInfo(0, &0x0186626c, 0, 0), 0x0186626c = 2, done on 0; 2: done (choice = 0x0186626c == 2); done: g_TkMenuSaveChoiceEnabled = 1 (step 2: the test), step 0, g_TkMenuSaveLoadToggles = (== 0); EAX TkMcGetInfo's when not 0, step - 2 past 2, else 0; callers TkMenuCtrlSaveLoad, TkMenuCloseSaveLoadScreen; ported (ffx_script helpers, script round 24 c)
 0x008b3d90 function TkMenuSaveLoadCloseWindow2 # (): close request (+0x41 = 1) for 0x01866258 and forget it; save/load menu (TkMenuCtrlSaveLoad area)
 0x008b3db0 function TkMenuCloseSaveLoadScreen # fh v3:exact 0x008b3d60
 0x008b3e40 function TkMenuSaveLoadCloseWindow # (): close request for g_TkMenuSaveLoadWindow (TkMenuCtrlSaveLoad reads it) and forget it
@@ -16325,6 +16330,7 @@
 0x01128acc label    g_CdDirectRead               # 4 words: sector, size, buffer, [mode] of the last CdReadDirect_0076d140; name ours
 0x01128ae4 label    g_Cd_HddInstall           # HDD-install table, 0x34-byte entries: archive (u8) +0, PS2 file number +8, size +0x10 (check_ex_file_size)
 0x0112a008 label    g_WaitFramesByTime         # with it set Native_WaitFrames_Poll_0000 (0x0085c6b0) counts down by 0x00645d90() while 0x0076efc0() holds
+0x0112a00c label g_MoviePictureOn # u32: a movie picture to destroy; destroyMoviePicture clears it, Movie_IsBusy_0076ed10 reads it
 0x0112a060 label g_BtlFieldModeB           # u32: 1 while 0x00c416c0 is 0xb and 0x0112a058 is 1 (0x00776110), else 0; MsBtlReadManage: 0 sets g_BtlStartReady after the party's models, 1 after the second models
 0x0112a07c label    g_EmptyName               # u8 0 (.bss): what Kernel_GetItemName and 0x00774720 (ability names) return for ID 0
 0x0112a09c label    g_HelpMemUsed             # i32 help screen memory in use (HelpMem_Get adds, HelpMem_Free subtracts)
