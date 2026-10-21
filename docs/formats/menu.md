@@ -899,3 +899,31 @@ rows from `(606 + dx, 246)`, 77.8 apart, each a name strip
 and `TkMn2DrawSummonPlateCheckHP`. The current aeon's row gets the cross
 cursor at `(120, 10)` when `cursor` is 0 or more (style 0) or -1 (style
 1). Its second argument is never read.
+
+`TkMenuCtrlStatus` (`0x008d1e00`, jump table `0x008d2214`) steps the
+status menu through `+0x1c`: 0..4 bring the background in (3 slides it
+by -341), 4 waits for circle (pages), cross (leave, 0x11..0x13) or a
+member flip (left/right repeat with the pad held on exactly that
+direction, more than one member, `TkMenuGetHelpRatio2` set). The five
+pages open at 5, 7, 9, 11, 13 (`MenuStatus_OpenWindow(0, k, 0x40/0x41/
+0x45/0x44, 0)`) and wait at the even states after them: circle goes on
+to the next page, cross goes back to 3. After the last page, 15 returns
+to 3. 19 puts menu 6 to sleep and, unless `+0x20` is set, wakes menu 1.
+
+`TkMenuCtrlWShop` (`0x008d9600`, jump table `0x008d9a10`) loads parts 1
+and 3 of file 0x2f in states 0..4 into two buffers from `0x008c1b10`.
+The second part goes after the first, at its size rounded up to 64.
+Some states run the next one in the same call without storing it (5 ->
+7, a picked buy entry -> 11 or 13, the sell list -> 22, the confirm
+windows -> 17/18 and 28/29). The buy check reads the item as `u16` at
+`+2 + 2 * row` of `TkMn2GetExcelData([0x0186ac20], [0x0186ac2c])`; with
+99 or more held the yes/no window asks with `TkMenuMainMes(0x19)`, else
+`0x1a`.
+
+`MenuSubCmd_DrawItems_008e4140` lays a window's items out in one row
+across the open sub-command window. The row starts left of the window's
+right edge by `remapX2(160)` plus `(x - remapX2(320)) * (k - 1) / k`
+scaled by the fade (`0x1000 - i16 +0x46` over 4096). Each item gets an
+equal step of the width. Its text is centred in the step and clipped to
+the row; the busy cursor uses brush entry `+0x90 + 15` and the idle one
+the cross cursor.

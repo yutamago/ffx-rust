@@ -4918,6 +4918,21 @@ ported! {
     MenuSummon_DrawList_008ce130 @ 0x008c_e130 => extern "C" fn menu_summon_draw_list(dx: i32, _unused: u32, cursor: i32) -> u32 {
         tk::menu_summon_draw_list(&mut mem(), dx, cursor, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCtrlStatus(m)`: the original's `eax`.
+    TkMenuCtrlStatus @ 0x008d_1e00 => extern "C" fn tk_menu_ctrl_status(m: u32) -> u32 {
+        tk::tk_menu_ctrl_status(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlWShop(m)`: the original's `eax`.
+    TkMenuCtrlWShop @ 0x008d_9600 => extern "C" fn tk_menu_ctrl_w_shop(m: u32) -> u32 {
+        tk::tk_menu_ctrl_w_shop(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_DrawItems_008e4140(m)`: the original's `eax`.
+    MenuSubCmd_DrawItems_008e4140 @ 0x008e_4140 => extern "C" fn menu_sub_cmd_draw_items(m: u32) -> u32 {
+        // the text width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_sub_cmd_draw_items(&mut mem(), m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuLimit_WindowDraw_008d16f0(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
     MenuLimit_WindowDraw_008d16f0 @ 0x008d_16f0 => extern "C" fn menu_limit_window_draw(w: u32) -> u32 {
         // MsMenuStatusNum's out word and the text width (the original's argument slot)
