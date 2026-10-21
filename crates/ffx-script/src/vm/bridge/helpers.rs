@@ -3223,3 +3223,247 @@ pub fn atel_request_map_camera(h: &mut impl ffx_bridge::Host, set: u32) -> u32 {
     super::signal::atel_regist_signal_main(h, r);
     1
 }
+
+// ---- round 24 ----
+
+/// The bytes of the C string at `p` (without its NUL).
+fn c_string(m: &impl Mem, p: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut at = p;
+    loop {
+        let c = m.read::<u8>(at);
+        if c == 0 {
+            return out;
+        }
+        out.push(c);
+        at = at.wrapping_add(1);
+    }
+}
+
+/// `strstr`'s offset of `needle` in `hay` (an empty needle is at 0).
+fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() {
+        return Some(0);
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+/// Writes `text` and a NUL at `at`.
+fn write_c_string(m: &mut impl Mem, at: u32, text: &[u8]) {
+    m.write_bytes(at, text);
+    let end = u32::try_from(text.len()).unwrap_or(u32::MAX);
+    m.write(at.wrapping_add(end), 0u8);
+}
+
+/// `g_EventName` (`0x023cbc60`): the current event's directory name.
+const EVENT_NAME: u32 = 0x023c_bc60;
+/// The event directories' language prefixes (`0x00c52768`, a word per
+/// language: `""` but `fr/`, `sp/`, `de/`, `it/`).
+const EVENT_LANG_DIRS: u32 = 0x00c5_2768;
+/// `g_CurrentMapNo` (`0x012fbc40`).
+const CURRENT_MAP_NO: u32 = 0x012f_bc40;
+/// The battle-tutorial events whose texture lists are per language
+/// (`bltz0000`, `bltz0005`, `bltz0006`, `bltz0200`, `bltz0201`).
+const BLTZ_NAMES: [u32; 5] = [
+    0x00b5_bf78,
+    0x00b5_bf84,
+    0x00b5_bf90,
+    0x00b5_bf9c,
+    0x00b5_bfa8,
+];
+/// The language directories the `bltz` paths get by language 0..=10
+/// (the original's jump table at `0x00874f84`): `""`, `us/`, `fr/`,
+/// `sp/`, `de/`, `it/`, `us/` (6-8), `kr/`, `ch/`; `us/` past 10.
+const BLTZ_LANG_DIRS: [u32; 11] = [
+    0x00b8_fbeb,
+    0x00b5_bfc8,
+    0x00b5_bf34,
+    0x00b5_bf38,
+    0x00b5_bf3c,
+    0x00b5_bf40,
+    0x00b5_bfc8,
+    0x00b5_bfc8,
+    0x00b5_bfc8,
+    0x00b5_bfcc,
+    0x00b5_bfd0,
+];
+
+/// `getEventLocTexListPath(out)` (`0x00874c50`): the current event's
+/// texture list path into `out`.
+///
+/// The event directory is `obj/<event>` (`g_EventName`), behind the
+/// language prefix (`0x00c52768[lang]`, `""` for the event names holding
+/// `sins05`; no directory at all past language 10) unless the name holds
+/// `bltz`. The path is
+/// `/FFX_Data/GameData/PS3Data/event/<dir>/tex/TexList.txt`; for the
+/// `bltz` events whose name is one of [`BLTZ_NAMES`] the language
+/// directory ([`BLTZ_LANG_DIRS`]) goes in seven bytes before that name
+/// (`strncpy` + `sprintf("%s%s%s")`). Then `fiosUnifyFilename(out, frame,
+/// 0x100)` (`frame` holds the original's 256-byte local) and the result
+/// copied back (`sprintf_s`), whose length is the `EAX` returned.
+///
+/// Language 11 on map `0x79` first points the prefix of language 11 at
+/// `cn/` (a word past the ten the path reads).
+pub fn get_event_loc_tex_list_path(h: &mut impl ffx_bridge::Host, out: u32, frame: u32) -> u32 {
+    let lang = host_call(h, 0x0064_10e0, &[]);
+    if host_call(h, 0x008a_c2f0, &[]) == 0xb && h.read::<u32>(h.rebase(CURRENT_MAP_NO)) == 0x79 {
+        let at = h.rebase(EVENT_LANG_DIRS).wrapping_add(lang.wrapping_mul(4));
+        let cn = h.rebase(0x00b5_bfb4);
+        h.write(at, cn);
+    }
+    let name = c_string(h, h.rebase(EVENT_NAME));
+    let obj = c_string(h, h.rebase(0x00b5_bfc0));
+    let event_dir = |prefix: Vec<u8>| -> Vec<u8> {
+        let mut dir = prefix;
+        dir.extend_from_slice(&obj);
+        dir.extend_from_slice(&name);
+        dir
+    };
+    let fmt = |dir: &[u8]| -> Vec<u8> {
+        let mut p = b"/FFX_Data/GameData/PS3Data/event/".to_vec();
+        p.extend_from_slice(dir);
+        p.extend_from_slice(b"/tex/TexList.txt");
+        p
+    };
+    if find(&name, b"bltz").is_none() {
+        let dir = if lang < 0xb {
+            let k = if find(&name, b"sins05").is_some() {
+                0
+            } else {
+                lang
+            };
+            let table = h.rebase(EVENT_LANG_DIRS);
+            let p = h.read::<u32>(table + k * 4);
+            let prefix = c_string(h, p);
+            event_dir(prefix)
+        } else {
+            Vec::new()
+        };
+        write_c_string(h, out, &fmt(&dir));
+    } else {
+        let dir = event_dir(Vec::new());
+        let path = fmt(&dir);
+        write_c_string(h, out, &path);
+        for n in BLTZ_NAMES {
+            let needle = c_string(h, h.rebase(n));
+            let Some(at) = find(&path, &needle) else {
+                continue;
+            };
+            let cut = at.saturating_sub(7);
+            let ld = *BLTZ_LANG_DIRS.get(lang as usize).unwrap_or(&0x00b5_bfc8);
+            let mut text = path[..cut].to_vec();
+            text.extend_from_slice(&c_string(h, h.rebase(ld)));
+            text.extend_from_slice(&path[cut..]);
+            write_c_string(h, out, &text);
+            break;
+        }
+    }
+    host_call(h, 0x0067_9820, &[out, frame, 0x100]);
+    let unified = c_string(h, frame);
+    write_c_string(h, out, &unified);
+    u32::try_from(unified.len()).unwrap_or(u32::MAX)
+}
+
+/// `AtelStopSoundAll()` (`0x00871890`): every sound separate 1..=0x77
+/// stopped (`SndSepStop(n | 0x80000000)`, a `TkSyncV(0)` + `TkSndUpdate`
+/// every 16), the music stopped and cleared (`SndMusicStop(-1)`,
+/// `SndMusicClear(-1)`), FMOD's music too (`iMusicStopAll`,
+/// `iMusicClearAll`), 32 more sync-and-update pairs, the music once more,
+/// then `SqsAllVoiceTerminate` (`0x008872e0`). Its `EAX` is the last
+/// `TkSndUpdate`'s (a tail jump).
+pub fn atel_stop_sound_all(h: &mut impl ffx_bridge::Host) -> u32 {
+    const SND_SEP_STOP: u32 = 0x0088_6eb0;
+    const TK_SYNC_V: u32 = 0x0088_7f00;
+    const TK_SND_UPDATE: u32 = 0x0088_7b60;
+    const SND_MUSIC_STOP: u32 = 0x0088_6a60;
+    const SND_MUSIC_CLEAR: u32 = 0x0088_6800;
+    let sync = |h: &mut _| {
+        host_call(h, TK_SYNC_V, &[0]);
+        host_call(h, TK_SND_UPDATE, &[])
+    };
+    let music = |h: &mut _| {
+        host_call(h, SND_MUSIC_STOP, &[u32::MAX]);
+        host_call(h, SND_MUSIC_CLEAR, &[u32::MAX]);
+        sync(h);
+    };
+    for n in 1..0x78u32 {
+        host_call(h, SND_SEP_STOP, &[n | 0x8000_0000]);
+        if n.trailing_zeros() >= 4 {
+            sync(h);
+        }
+    }
+    music(h);
+    host_call(h, 0x0067_a230, &[]);
+    host_call(h, 0x0067_a030, &[]);
+    for n in 0..0x100u32 {
+        if n.trailing_zeros() >= 3 {
+            sync(h);
+        }
+    }
+    sync(h);
+    music(h);
+    host_call(h, 0x0088_72e0, &[]);
+    sync(h)
+}
+
+/// `AtelGetHyoukaMenuEnable()` (`0x0086bae0`): whether the evaluation
+/// menu may open (ctrl work 0's `+1` bit 4), with the current ctrl work
+/// switched to ctrl work 0 meanwhile: not while `TkGetTGS`, in battle,
+/// in an Eternal Calm scene (`isEternalCalmScene(save map)`), unless
+/// ctrl work 0 has `+0` bits 0 and 1 and none of `+1` bit 2, `+3` bits
+/// `0x87`, `+2` bit 5; not while a sound reads (`SndIsReadStatus`) or a
+/// movie runs (`movie_run_check`). 0 too with `g_AtelOverlayStatus` 1.
+pub fn atel_get_hyouka_menu_enable(h: &mut impl ffx_bridge::Host) -> u32 {
+    let context = h.rebase(SCRIPT_CONTEXT);
+    let saved = h.read::<u32>(context);
+    let works = h.rebase(CTRL_WORKS);
+    let bit = u32::from(h.read::<u8>(works + 1) >> 4) & 1;
+    h.write(context, works);
+    let mut on = if host_call(h, 0x0088_d6d0, &[]) == 0 {
+        bit
+    } else {
+        0
+    };
+    let blocked = host_call(h, 0x0078_0c90, &[]) != 0 || {
+        let map = u32::from(h.read::<u16>(h.rebase(0x0112_ca90)));
+        host_call(h, 0x0067_ab50, &[map]) != 0 || {
+            let c = h.read::<u32>(context);
+            let f = h.read::<u8>(c);
+            f & 1 == 0
+                || f & 2 == 0
+                || h.read::<u8>(c + 1) & 4 != 0
+                || h.read::<u8>(c + 3) & 0x87 != 0
+                || h.read::<u8>(c + 2) & 0x20 != 0
+        }
+    };
+    if blocked {
+        on = 0;
+    }
+    if host_call(h, 0x0088_6650, &[]) != 0 || host_call(h, 0x0076_f060, &[]) != 0 {
+        on = 0;
+    }
+    let overlay = h.read::<u8>(h.rebase(0x0132_6b80));
+    h.write(context, saved);
+    if overlay == 1 { 0 } else { on }
+}
+
+/// `Atel_SetRunInBattle_008630c0()` (name ours; called by
+/// `AtelBattleEndCallback`): with ctrl work 0's `+0` bit 0, every one of
+/// its actors (`+0xc`) gets `+0x34` bit 2 (runs while in battle), looked
+/// up as `AtelGetBasicWork` does (its cache, inlined). Returns the last
+/// worker (the `EAX` the loop leaves), 0 without actors or the bit (the
+/// original leaves its caller's `EAX` then).
+pub fn atel_set_run_in_battle(m: &mut impl Mem) -> u32 {
+    let c = m.rebase(CTRL_WORKS);
+    if m.read::<u8>(c) & 1 == 0 {
+        return 0;
+    }
+    let n = m.read::<u16>(c + super::super::ctrl::ACTORS);
+    let mut w = 0;
+    for i in 0..i32::from(n) {
+        w = super::atel_get_basic_work_in(m, c, i);
+        let f = m.read::<u16>(w + 0x34);
+        m.write(w + 0x34, f | 4);
+    }
+    w
+}

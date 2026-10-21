@@ -2739,6 +2739,40 @@ there is no table. `round23i_radius_music_camera_match_the_original`
 covers them; the music calls run only on the snapshots, because the image
 has no sound context.
 
+### Helpers (script round 24)
+
+`getEventLocTexListPath(out)` (`0x00874c50`) builds the event's texture
+list path: `/FFX_Data/GameData/PS3Data/event/<dir>/tex/TexList.txt`, with
+`<dir>` the language prefix (`g_EventLangDirs`, `0x00c52768`: `""` but
+`fr/`, `sp/`, `de/`, `it/`; `""` for names holding `sins05`) + `obj/` +
+the event name (`g_EventName`, `0x023cbc60`), or empty past language 10.
+Names holding `bltz` skip the prefix; for the five tutorial events
+`bltz0000`, `bltz0005`, `bltz0006`, `bltz0200`, `bltz0201` the language
+directory of the jump table at `0x00874f84` (0 `""`, 1 and 6-8 `us/`, 2
+`fr/`, 3 `sp/`, 4 `de/`, 5 `it/`, 9 `kr/`, 10 `ch/`) goes in seven bytes
+before the name. `fiosUnifyFilename` turns it into the PC path through a
+256-byte local, copied back with `sprintf_s`; `EAX` is its length.
+Language 11 on map `0x79` points `g_EventLangDirs[11]` at `cn/` first. A
+path longer than 256 bytes ends the game (`sprintf_s`), so the tests stay
+below that.
+
+`AtelStopSoundAll` (`0x00871890`) stops sound separates 1-0x77, the music
+(twice) and FMOD's music, with `TkSyncV(0)` + `TkSndUpdate` pairs between,
+and ends in `SqsAllVoiceTerminate` (`0x008872e0`); `EAX` is the last
+`TkSndUpdate`'s. `AtelGetHyoukaMenuEnable` (`0x0086bae0`) is ctrl work 0's
+`+1` bit 4, cleared by `TkGetTGS`, battle, an Eternal Calm scene, ctrl
+work 0's state bits (`+0` bits 0-1 needed; `+1` bit 2, `+3` `0x87`, `+2`
+bit 5 block), a sound read, a movie or `g_AtelOverlayStatus` 1; it makes
+ctrl work 0 current while it asks. `Atel_SetRunInBattle_008630c0` (name
+ours, from `AtelBattleEndCallback`) sets `+0x34` bit 2 on every actor of
+ctrl work 0 when its `+0` bit 0 is set, through `AtelGetBasicWork`'s
+lookup inlined on ctrl work 0 (`atel_get_basic_work_in`).
+`round24a_tex_list_path_matches_the_original` and
+`round24a_sound_menu_battle_match_the_original` cover them; the sound
+calls are checked against logging stand-ins (`r24_log_stubs`: every
+call, its arguments and order land in a buffer the memory comparison
+sees), the menu check's callees against fixed results.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

@@ -6958,4 +6958,22 @@ ported! {
     AtelRequestMapCamera @ 0x0086_ed80 => extern "C" fn h_86ed80(set: u32) -> u32 {
         hp::atel_request_map_camera(&mut mem(), set)
     }
+    /// `getEventLocTexListPath(out)`: `fiosUnifyFilename`'s output is the
+    /// original's 256-byte local.
+    getEventLocTexListPath @ 0x0087_4c50 => extern "C" fn h_874c50(out: u32) -> u32 {
+        let mut frame = super::StackFrame::<64>::new();
+        hp::get_event_loc_tex_list_path(&mut mem(), out, frame.at())
+    }
+    /// `AtelStopSoundAll()`.
+    AtelStopSoundAll @ 0x0087_1890 => extern "C" fn h_871890() -> u32 {
+        hp::atel_stop_sound_all(&mut mem())
+    }
+    /// `AtelGetHyoukaMenuEnable()`.
+    AtelGetHyoukaMenuEnable @ 0x0086_bae0 => extern "C" fn h_86bae0() -> u32 {
+        hp::atel_get_hyouka_menu_enable(&mut mem())
+    }
+    /// `Atel_SetRunInBattle_008630c0()`.
+    Atel_SetRunInBattle_008630c0 @ 0x0086_30c0 => extern "C" fn h_8630c0() -> u32 {
+        hp::atel_set_run_in_battle(&mut mem())
+    }
 }

@@ -7335,3 +7335,348 @@ fn round23i_radius_music_camera_match_the_original() {
     eprintln!("round 23i: {compared} snapshot workers, {music_calls} music calls, {stops} stopped");
     assert!(compared > 0);
 }
+
+/// Replaces each `(f, n)` in both oracles with a stub that logs `f` and
+/// its first `n` stack words into a shared buffer and returns the log's
+/// new end (so a dropped or reordered call, a changed argument or a
+/// result the caller ignores shows in the memory comparison). Returns the
+/// log's cursor cell.
+fn r24_log_stubs(a: &mut Oracle, b: &mut Oracle, fs: &[(u32, u8)]) -> u32 {
+    let log = alloc_both(a, b, 0x8000);
+    let cell = alloc_both(a, b, 4);
+    poke(a, b, cell, log);
+    for &(f, n) in fs {
+        let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &cell.to_le_bytes()].concat(); // mov ecx, [cell]
+        code.extend([&[0xc7, 0x01][..], &f.to_le_bytes()].concat()); // mov [ecx], f
+        for k in 0..n {
+            code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 + 4 * k]); // [ecx+4+4k] = arg k
+        }
+        code.extend([0x83, 0xc1, 4 + 4 * n]); // add ecx, 4 + 4n
+        code.extend([&[0x89, 0x0d][..], &cell.to_le_bytes()].concat()); // mov [cell], ecx
+        code.extend([0x89, 0xc8, 0xc3]); // mov eax, ecx; ret
+        let at = a.alloc_code(&code).unwrap();
+        assert_eq!(b.alloc_code(&code).unwrap(), at);
+        for o in [&mut *a, &mut *b] {
+            let entry = o.rebase(f);
+            let rel = at.wrapping_sub(entry + 5);
+            o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+                .unwrap();
+        }
+    }
+    cell
+}
+
+/// `TOGetFFXLang`'s manager (`0x00cded58`): a fresh one on the image, the
+/// snapshot's own otherwise; returns where its language word is.
+fn r24_lang_word(a: &mut Oracle, b: &mut Oracle) -> u32 {
+    let at = a.rebase(0x00cd_ed58);
+    let mut m = Mem::read::<u32>(b, at);
+    if m == 0 {
+        m = alloc_both(a, b, 0x40);
+        poke(a, b, at, m);
+    }
+    m + 4
+}
+
+/// Round 24 a on one pair: `getEventLocTexListPath` for event names with
+/// and without `bltz`/`sins05`/the five tutorial names, every language
+/// 0..=12 and map `0x79` or not.
+fn r24a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) -> u32 {
+    use ffx_script::vm::bridge::helpers as hp;
+    let lang = r24_lang_word(a, b);
+    // fiosUnifyFilename's stream prefix (none on the image) and its
+    // overflow message (Phyre_PhyrePrintf)
+    let prefix = a.rebase(0x00cc_9698);
+    if Mem::read::<u32>(b, prefix) == 0 {
+        let s = alloc_both(a, b, 0x10);
+        for (k, &c) in (0u32..).zip(b"data/\0") {
+            poke(a, b, s + k, c);
+        }
+        poke(a, b, prefix, s);
+    }
+    for o in [&mut *a, &mut *b] {
+        let at = o.rebase(0x0043_52f0);
+        o.stub_return(at, 0).unwrap();
+    }
+    let name_at = a.rebase(0x023c_bc60);
+    let map = a.rebase(0x012f_bc40);
+    let table = a.rebase(0x00c5_2768);
+    let saved: Vec<u32> = (0..12)
+        .map(|k| Mem::read::<u32>(b, table + 4 * k))
+        .collect();
+    let mut real = vec![];
+    for k in 0..0x40 {
+        let c = Mem::read::<u8>(b, name_at + k);
+        if c == 0 {
+            break;
+        }
+        real.push(c);
+    }
+    // long, but short enough for the 256-byte locals (the game ends on
+    // a longer one: fiosUnifyFilename's sprintf_s)
+    let long_name = "ab".repeat(75);
+    let mut names: Vec<Vec<u8>> = [
+        "",
+        "bltz0000",
+        "bl/bltz0005",
+        "bl/bltz0006",
+        "bl/bltz0200",
+        "zz/bltz0201",
+        "bltz0201",
+        "bl/bltz0100",
+        "bltz",
+        "ss/sins0500",
+        "sins05",
+        "ss/sins0400",
+        "bj/bjyt0000",
+        "x/bltz0000/bltz0005",
+        long_name.as_str(),
+    ]
+    .iter()
+    .map(|s| s.as_bytes().to_vec())
+    .collect();
+    names.push(real);
+    let mut n = 0;
+    for (i, name) in names.iter().enumerate() {
+        let mut z = name.clone();
+        z.push(0);
+        Mem::write_bytes(a, name_at, &z);
+        Mem::write_bytes(b, name_at, &z);
+        for l in 0..=12u32 {
+            for m79 in [false, true] {
+                // the prefix table back as it was (language 11 on map 0x79
+                // moves its word 11)
+                for (k, &w) in (0u32..).zip(&saved) {
+                    poke(a, b, table + 4 * k, w);
+                }
+                if l % 2 == 1 {
+                    // a prefix of its own for every language (the image's
+                    // share "" between 0, 1 and 6..)
+                    for k in 0..12u32 {
+                        let p = alloc_both(a, b, 8);
+                        for (j, &c) in (0u32..).zip(format!("L{k}/\0").as_bytes()) {
+                            poke(a, b, p + j, c);
+                        }
+                        poke(a, b, table + 4 * k, p);
+                    }
+                }
+                poke(a, b, lang, l);
+                poke(a, b, map, if m79 { 0x79u32 } else { 0x41 + rng.below(4) });
+                let out = alloc_both(a, b, 0x300);
+                fill_both(a, b, rng, out, 0x40);
+                let what = format!("getEventLocTexListPath {what} name {i} lang {l} map79 {m79}");
+                r22_case(a, b, 0x0087_4c50, &[out], true, &what, |r| {
+                    let frame = r.0.stack_range().start + 0x100;
+                    hp::get_event_loc_tex_list_path(r, out, frame)
+                });
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// Round 24 a (this machine): `getEventLocTexListPath` on the image, then
+/// on the snapshot (`FFX_SNAPSHOT`), with its own event name among the
+/// names.
+#[test]
+fn round24a_tex_list_path_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0243);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        let n = r24a_cases(&mut a, &mut b, &mut rng, "image");
+        assert!(n > 0);
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let n = r24a_cases(&mut a, &mut b, &mut rng, "snapshot");
+    eprintln!("round 24a: {n} snapshot calls");
+}
+
+/// Round 24 a on one pair: `AtelStopSoundAll` as it stands,
+/// `AtelGetHyoukaMenuEnable` over ctrl work 0's flag bytes, the overlay
+/// status and every callee result (stubbed alike on both sides), and
+/// `0x008630c0` with ctrl work 0's run bit on and off and the worker
+/// cache cold, warm and pointing elsewhere.
+#[allow(clippy::too_many_lines)] // one block per helper
+fn r24a_more(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str, synthetic: bool) {
+    use ffx_script::vm::bridge::helpers as hp;
+    // the image has no sound system (SndSepStop reads through 0)
+    if !synthetic {
+        r22_case(
+            a,
+            b,
+            0x0087_1890,
+            &[],
+            true,
+            &format!("AtelStopSoundAll {what}"),
+            |r| hp::atel_stop_sound_all(r),
+        );
+    }
+    // then logging stand-ins for every callee, on both
+    r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0088_6eb0, 1),
+            (0x0088_7f00, 1),
+            (0x0088_7b60, 0),
+            (0x0088_6a60, 1),
+            (0x0088_6800, 1),
+            (0x0067_a230, 0),
+            (0x0067_a030, 0),
+            (0x0088_72e0, 0),
+        ],
+    );
+    r22_case(
+        a,
+        b,
+        0x0087_1890,
+        &[],
+        true,
+        &format!("AtelStopSoundAll {what} logged"),
+        |r| hp::atel_stop_sound_all(r),
+    );
+    let works = a.rebase(0x0132_5ba0);
+    let context = a.rebase(0x0132_6b28);
+    let overlay = a.rebase(0x0132_6b80);
+    let saved: Vec<u8> = (0..4).map(|k| Mem::read::<u8>(b, works + k)).collect();
+    let callees = [
+        0x0088_d6d0u32,
+        0x0078_0c90,
+        0x0067_ab50,
+        0x0088_6650,
+        0x0076_f060,
+    ];
+    for round in 0..160u32 {
+        // flags: mostly the enabling pattern with one bit flipped
+        let mut f = [0x13u8, 0x10, 0x00, 0x00];
+        match round % 4 {
+            0 => {}
+            1 => {
+                let bit = rng.below(32);
+                f[(bit / 8) as usize] ^= 1 << (bit % 8);
+            }
+            _ => {
+                for x in &mut f {
+                    *x = u8::try_from(rng.below(256)).unwrap();
+                }
+            }
+        }
+        for (k, &x) in (0u32..).zip(&f) {
+            poke(a, b, works + k, x);
+        }
+        poke(
+            a,
+            b,
+            overlay,
+            u8::try_from([0, 1, 2, 0][(round / 4 % 4) as usize]).unwrap(),
+        );
+        let other = if round % 3 == 0 { works } else { works + 0x238 };
+        poke(a, b, context, other);
+        // one callee says yes in a third of the rounds (each in turn)
+        let yes = if round % 3 == 2 {
+            Some(callees[(round / 3 % 5) as usize])
+        } else {
+            None
+        };
+        for f in callees {
+            let v = u32::from(yes == Some(f)) * [1, 0x100, 0xffff_ffff][(round % 3) as usize];
+            for o in [&mut *a, &mut *b] {
+                let at = o.rebase(f);
+                o.stub_return(at, v).unwrap();
+            }
+        }
+        r22_case(
+            a,
+            b,
+            0x0086_bae0,
+            &[],
+            true,
+            &format!("AtelGetHyoukaMenuEnable {what} round {round}"),
+            |r| hp::atel_get_hyouka_menu_enable(r),
+        );
+    }
+    for (k, &x) in (0u32..).zip(&saved) {
+        poke(a, b, works + k, x);
+    }
+    let cache = a.rebase(0x0132_70e4);
+    let cache_ctrl = a.rebase(0x0132_70dc);
+    let cache_index = a.rebase(0x0132_70e0);
+    for round in 0..8u32 {
+        if synthetic {
+            let n = [0u16, 1, 5, 9][(round % 4) as usize];
+            r23d_ctrl(a, b, rng, works, n);
+            if round == 6 {
+                // fewer workers than actors: the rest wrap to worker 0
+                poke(a, b, works + ctrl::WORKERS, 2u16);
+            }
+        }
+        let bit = u8::from(round % 4 != 3);
+        let f = Mem::read::<u8>(b, works);
+        poke(a, b, works, f & !1 | bit);
+        let id = Mem::read::<u16>(b, works + ctrl::ID);
+        match round % 3 {
+            0 => poke(a, b, cache, 0u32),
+            1 => {
+                // warm for index 0 of this ctrl work: a stand-in worker
+                let fake = alloc_both(a, b, 0x40);
+                poke(a, b, cache, fake);
+                poke(a, b, cache_ctrl, id);
+                poke(a, b, cache_index, 0u16);
+            }
+            _ => {
+                poke(a, b, cache_ctrl, id.wrapping_add(1));
+                poke(a, b, cache_index, 1u16);
+            }
+        }
+        r22_case(
+            a,
+            b,
+            0x0086_30c0,
+            &[],
+            bit == 1,
+            &format!("Atel_SetRunInBattle {what} round {round}"),
+            |r| hp::atel_set_run_in_battle(r),
+        );
+    }
+}
+
+/// Round 24 a (this machine), the rest: `AtelStopSoundAll`,
+/// `AtelGetHyoukaMenuEnable`, `0x008630c0` on the image (a synthetic ctrl
+/// work 0) and on the snapshot (its own).
+#[test]
+fn round24a_sound_menu_battle_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0244);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r24a_more(&mut a, &mut b, &mut rng, "image", true);
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let n = Mem::read::<u16>(&b, b.rebase(0x0132_5ba0) + ctrl::ACTORS);
+    eprintln!("round 24a: snapshot ctrl work 0 has {n} actors");
+    r24a_more(&mut a, &mut b, &mut rng, "snapshot", false);
+}

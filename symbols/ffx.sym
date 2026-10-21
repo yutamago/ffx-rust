@@ -9272,6 +9272,7 @@
 0x00862cc0 function AtelChangeBinaryHeader    # fh v3:exact 0x00862c60
 0x00862d30 function AtelChangeCurrentCtrl     # fh v3:exact 0x00862cd0
 0x00862d50 function Atel_GetBattleMapId        # (map) -> g_AtelForceBattleMapId when positive, else map; name ours; ported in helpers (script round 14)
+0x008630c0 function Atel_SetRunInBattle_008630c0 # name ours; cdecl (): with ctrl work 0 +0 bit 0, every actor (+0xc) of ctrl work 0 gets +0x34 bit 2 (Script_Run runs it in battle), AtelGetBasicWork inlined on ctrl work 0 (same cache); EAX the last worker; caller AtelBattleEndCallback; ported (ffx_script helpers, script round 24 a)
 0x008632b0 function Script_LineActorSide         # (worker, key): types 5/6 only; status byte of the worker[0xb9] entry matching the actor id; 3 or not found -> -1; ported in helpers (script round 16)
 0x00863350 function Atel_EffectEndPoll # () -> for MsEventEffectGetStat() 0 or 6, g_AtelOverlayStatus = 4 and 5 (done), else 0 (jump table 0x0086337c); callers Native_00de_Poll; ported in helpers (script round 23 f); name ours
 0x008633a0 function Atel_EffectIdlePoll # () -> 5 (done) when MsEventEffectGetStat() is 0, else 0 (jump table 0x008633c4); callers 0x00873620; ported in helpers (script round 23 f); name ours
@@ -9418,7 +9419,7 @@
 0x0086ba40 function AtelGetHideStatusFromID # (i) -> +0xa0 of the current ctrl work's worker i; ported in helpers (script round 23 d); fh v3:bsim1.00 0x0086b9d0
 0x0086ba60 function Msg_TableTextAlt          # (table, i): entry i's alternate text (+4) in table; offset 0 falls back to entry i's text in the .ebp's section 1; no callers
 0x0086ba90 function Msg_TextAlt                # (i): entry i's alternate text (+4) in the event's message table (script context +0x34); offset 0 falls back to the .ebp's own table (0x023cbd60)
-0x0086bae0 function AtelGetHyoukaMenuEnable      # callees: its named callees match the Switch 0x71004728f0 AtelGetHyoukaMenuEnable's (similarity 1.00: MsBattleCheck, SndIsReadStatus, TkGetTGS, isEternalCalmScene, movie_run_check); symbols from Fahrenheit's server export
+0x0086bae0 function AtelGetHyoukaMenuEnable # cdecl (): ctrl work 0 +1 bit 4, with g_ScriptContext = ctrl work 0 meanwhile; 0 when TkGetTGS, MsBattleCheck, isEternalCalmScene(save map), ctrl work 0 lacks +0 bits 0/1 or has +1 bit 2/+3 0x87/+2 bit 5, SndIsReadStatus, movie_run_check, or g_AtelOverlayStatus 1; ported (ffx_script helpers, script round 24 a); callees: its named callees match the Switch 0x71004728f0 AtelGetHyoukaMenuEnable's (similarity 1.00: MsBattleCheck, SndIsReadStatus, TkGetTGS, isEternalCalmScene, movie_run_check); symbols from Fahrenheit's server export
 0x0086bb80 function AtelGetIndexWork          # fh v3:exact 0x0086bb10
 0x0086bbf0 function AtelGetKeepBattlePartyFromID # (i) -> bit 8 of the current ctrl work's worker i's +0x38 (u16); ported in helpers (script round 23 d); fh v3:exact 0x0086bb80
 0x0086bc10 function AtelIsKeepPlayStatusClear12# !(g_AtelBattleEndStatus +4 bit 12); TkBtlEndCtrl
@@ -9614,7 +9615,7 @@
 0x00871650 function AtelSignalReply           # (worker, node): the reply a REQSW sender waits for once its request starts
 0x00871730 function AtelSkipReqLevel2         # fh v3:bsim1.00 0x008716d0; ported in helpers (script round 19)
 0x00871750 function AtelSndTransSepSPKDataGroup # fh switch:bsim1.00 0x71004728a0
-0x00871890 function AtelStopSoundAll          # fh v3:exact 0x00871830
+0x00871890 function AtelStopSoundAll # cdecl (): SndSepStop(n | 0x80000000) for 1..=0x77 (TkSyncV(0) + TkSndUpdate every 16), SndMusicStop/SndMusicClear(-1), iMusicStopAll/iMusicClearAll, 32 more sync pairs, the music again, SqsAllVoiceTerminate 0x008872e0; EAX = the last TkSndUpdate (tail jump); ported (ffx_script helpers, script round 24 a); fh v3:exact 0x00871830
 0x00871950 function AtelStrcat                # fh v3:exact 0x008718f0
 0x00871980 function AtelStrcpy                # fh v3:exact 0x00871920
 0x008719c0 function Atel_Strlen                # (s) -> strlen; name ours; ported in helpers (script round 14)
@@ -9710,7 +9711,7 @@
 0x008749f0 function Atel_SetSpriteColor        # (i, r, g, b): g_EventSprites[i clamped 0..0x7f] +0x10/+0x11/+0x12 = r, g, b clamped 0..0xff; eax i*7; called by Native_SpriteSetColor; name ours; ported in helpers (script round 22)
 0x00874ad0 function Atel_SetSpriteAlpha        # (i, alpha): g_EventSprites[i clamped 0..0x7f] +1 = alpha clamped 0..0xff; eax i*7; called by Native_011e; name ours; ported in helpers (script round 22)
 0x00874b30 function Atel_SetSpritePos          # (i, x, y): sprite i +4, +6 (u16); name ours; ported in helpers (script round 14)
-0x00874c50 function getEventLocTexListPath    # fh v3:exact 0x00874be0
+0x00874c50 function getEventLocTexListPath # cdecl (out): the event texture list path into out: /FFX_Data/GameData/PS3Data/event/<lang dir>obj/<g_EventName>/tex/TexList.txt (lang dir 0x00c52768[lang], "" with sins05, none past lang 10; bltz events: lang dir from the jump table 0x00874f84 inserted 7 bytes before bltz0000/0005/0006/0200/0201), then fiosUnifyFilename into a 256-byte local and sprintf_s back; EAX its length; lang 11 on map 0x79 sets 0x00c52768[11] = "cn/"; ported (ffx_script helpers, script round 24 a); fh v3:exact 0x00874be0
 0x00874fb0 function Atel_ClearRecords1327f50   # (): 32 records at 0x01327f50 (16 bytes): +0, +4, byte +8 cleared; name ours; ported in helpers (script round 14)
 0x00875000 function AtelCheckCallbackQue      # fh v3:cg2 0x874f80
 0x008750a0 function EmptyStub_008750a0        # (): an empty function, from 0x00861160 (name ours); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
@@ -16140,6 +16141,7 @@
 0x00c5273c label    g_AtelForceBattleMapId       # written by AtelSetForceBattleMapId (0x00870130)
 0x00c52740 label    g_ScriptRunMutex             # Mutex_Create's object, -1 until Script_Run's first call; held for each Script_Run
 0x00c52760 label g_CdSize2aKB # i32: file 0x2a's size in KB + 0x20, -1 until TkCdSizeKBCached_008741d0 fills it
+0x00c52768 label g_EventLangDirs # char*[12] by language: "" but fr/ sp/ de/ it/ (2..5); getEventLocTexListPath reads it and points word 11 at "cn/" (language 11, map 0x79)
 0x00c52ad8 label    g_TkVibrateCurves         # 4 default vibration curves of 16 bytes (u16 entries), by kind (TkGetVibrateCurve)
 0x00c54db0 label    g_SndDefaultWaves         # i16[16] wave ids, -1 unused (0, 1, 0x7d5 in the image); SndSetWaveData/SndSortCommonWave default
 0x00c54dd0 label    g_SndLastFadeOutMusic     # u32, -1 in the image: SndMusicVolumeFadeOut's music; SndMusicCrossStart starts it at volume 0 when nothing plays
@@ -17435,6 +17437,7 @@
 0x023cbbe0 label    g_GuScreenSize            # i32 height, width: Gu_SetXyzf2 centres in 4096 by them
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2
 0x023cbbf8 label    g_ChrTexAnimDmaChannel    # the DMA channel Ch_TextureLoadAnim 0x00831110 sends its packet on (sceDmaSend)
+0x023cbc60 label g_EventName # char[]: the current event directory name ("bl/bltz0000"); getEventLocTexListPath, Yn_PreBgLayerDispOn (strstr te/test20)
 0x023cbd60 label    g_EventEbpMessages        # the .ebp's own message table (section 1), set by AtelEventSetUp; the Msg_ lookups fall back to it for offset 0
 0x023cbebc label gNeedAutoSave                # fh v4:user_defined
 0x023cbec4 label    g_SndStreamTable          # voice stream position table: u16 groups, u16 offsets; group: u16 count, u16 offsets; entry list: u16 count, u16 sectors (0xffff gaps) (SndStreamDVDPos)
