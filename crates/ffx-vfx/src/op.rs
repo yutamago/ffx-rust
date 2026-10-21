@@ -103,6 +103,96 @@ pub mod bridge {
         SPR_TOP.set(mem, top.wrapping_sub(1));
     }
 
+    /// `op_flash_path3(rgba, flags, alpha)` (`0x007eaad0`): a screen flash.
+    /// The three argument words as the stack holds them (bytes 0..12):
+    /// with flag bit 0x20, byte 3 (the colour's `a`) = `alpha` and the
+    /// flags lose that bit. For magic file 0x182 (`MagicFile_GetMagicId`)
+    /// bytes 0..2 are scaled by `a / 128` (`f32`, truncated, low byte
+    /// kept). Then `graphicVFXAddScreenFadeEvent` on the overlapping words
+    /// at bytes 0, 1, 2, 3 and 4. A 0x100-byte scratch packet
+    /// (`op_spr_alloc`): the GIF tag words (`0x70000007`, `0x8001`,
+    /// `0x00e441ee`, not relocated), `r0` at `+0x20` with byte `+0x20` = the flags
+    /// and `+0x24` = `alpha`, `+0x28` = 0x42, `+0x30` = 0x3000d, `+0x38` =
+    /// 0x47; at `+0x40` the PS2's `pextlh(pextlb(rgba, r0), r0)` on the
+    /// colour word as passed (word `k` = colour byte `k`, `r0` byte `k`,
+    /// `r0` half `k`), and the four words at `0x011a0770` at `+0x70`. It
+    /// goes out by `sceDmaSend(*0x023328e0, packet | 0x80000000)` between
+    /// two `sceGsSyncPath(0, 0)`, then `op_spr_free`. The calls go through
+    /// `call` (but the scratch ones).
+    pub fn op_flash_path3<M: Mem>(
+        mem: &mut M,
+        rgba: u32,
+        flags: u32,
+        alpha: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{load, store};
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let mut args = [0u8; 12];
+        args[..4].copy_from_slice(&rgba.to_le_bytes());
+        args[4..8].copy_from_slice(&flags.to_le_bytes());
+        args[8..].copy_from_slice(&alpha.to_le_bytes());
+        if args[4] & 0x20 != 0 {
+            args[3] = args[8];
+            args[4] &= 0xdf;
+        }
+        if call(mem, g(mem, 0x009d_a3b0), &[]) == 0x182 {
+            let scale = load(store(f64::from(args[3]) * 0.007_812_5));
+            for b in &mut args[..3] {
+                // fistp under truncation: 0..508, its low byte kept
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let v = (f64::from(*b) * scale) as i32 as u8;
+                *b = v;
+            }
+        }
+        let word = |k: usize| u32::from_le_bytes([args[k], args[k + 1], args[k + 2], args[k + 3]]);
+        let fade = [word(0), word(1), word(2), word(3), word(4)];
+        call(mem, g(mem, 0x0064_4d40), &fade);
+        let p = op_spr_alloc(mem, 0x100);
+        mem.write(p, 0x7000_0007u32);
+        mem.write(p.wrapping_add(0x10), 0x8001u32);
+        // not relocated: a constant that only looks like an address
+        mem.write(p.wrapping_add(0x18), 0x00e4_41eeu32);
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        mem.write(p.wrapping_add(0x20), r0);
+        mem.write(p.wrapping_add(0x24), args[8]);
+        mem.write(p.wrapping_add(0x20), args[4]);
+        mem.write(p.wrapping_add(0x28), 0x42u32);
+        mem.write(p.wrapping_add(0x30), 0x0003_000du32);
+        mem.write(p.wrapping_add(0x38), 0x47u32);
+        let (c, r) = (rgba.to_le_bytes(), r0[0].to_le_bytes());
+        let r_half = |k: usize| {
+            let w = r0[k / 2].to_le_bytes();
+            u32::from(u16::from_le_bytes([w[k % 2 * 2], w[k % 2 * 2 + 1]]))
+        };
+        let packed: [u32; 4] =
+            std::array::from_fn(|k| u32::from(c[k]) | u32::from(r[k]) << 8 | r_half(k) << 16);
+        mem.write(p.wrapping_add(0x40), packed);
+        let tail: [u32; 4] = mem.read(g(mem, 0x011a_0770));
+        mem.write(p.wrapping_add(0x70), tail);
+        let sync = g(mem, 0x0062_f880);
+        call(mem, sync, &[0, 0]);
+        let chan: u32 = mem.read(g(mem, 0x0233_28e0));
+        call(mem, g(mem, 0x0062_f710), &[chan, p | 0x8000_0000]);
+        call(mem, sync, &[0, 0]);
+        op_spr_free(mem);
+    }
+
+    /// `QuickRecoverMenuReserve(rgba, flags, alpha)` (`0x007eadb0`,
+    /// Fahrenheit's name): `op_gs1_transfer()` (through `call`), then a
+    /// tail jump to `op_flash_path3` with its caller's three words.
+    pub fn quick_recover_menu_reserve<M: Mem>(
+        mem: &mut M,
+        rgba: u32,
+        flags: u32,
+        alpha: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let f = Global::<u32>::new(0x007e_b580).ptr(mem).addr;
+        call(mem, f, &[]);
+        op_flash_path3(mem, rgba, flags, alpha, call);
+    }
+
     /// `op_spline_xyz_table(x, pts, n)` (`0x007ea2d0`): spline tables for
     /// `n` points (16 bytes each, `x, y, z`): `x[0..n]` = the chord-length
     /// parameters (`x[0]` = 0, each step `sqrt(dx² + dy² + dz²)` added,

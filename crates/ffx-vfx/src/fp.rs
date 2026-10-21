@@ -737,6 +737,48 @@ pub mod bridge {
     /// `g_pppViewMatrixCopy`.
     const VIEW_MATRIX_COPY: u32 = 0x0230_fe20;
 
+    /// `g_pppFillMatrix2` (`0x0230fc20`): the view-projection matrix
+    /// `UpdatePhyreViewProjectionMatrix` makes.
+    pub const FILL_MATRIX2: Global<[f32; 16]> = Global::new(0x0230_fc20);
+    /// `g_pppFillMatrix3` (`0x0230fbe0`): its inverse.
+    pub const FILL_MATRIX3: Global<[f32; 16]> = Global::new(0x0230_fbe0);
+
+    /// `UpdatePhyreViewProjectionMatrix()` (`0x00711910`): the battle
+    /// camera's matrix (`MsCopyCameraMatrix`), inverted
+    /// (`sceVu0InversMatrix4x4`), its x and y columns negated (`fchs`) and
+    /// its w column (0, 0, 0, 1); then `g_pppFillMatrix2` = the renderer's
+    /// view-projection (`graphicCameraGetViewProjectionMatrix`) times it
+    /// (`FFXVu0MulMatrix(fill2, vp, m)`), and `g_pppFillMatrix3` its
+    /// inverse. Callees through `call`; `local` is the original's two
+    /// matrices (`vp`, then `m`; 0x80 bytes).
+    pub fn update_phyre_view_projection_matrix<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{load, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = Global::<u32>::new(at).ptr(mem).addr;
+            call(mem, f, args)
+        };
+        let (vp, m) = (local, local.wrapping_add(0x40));
+        go(mem, 0x007c_0070, &[m]);
+        go(mem, 0x006e_d460, &[m, m]);
+        for row in 0..4u32 {
+            let at = m.wrapping_add(0x10 * row);
+            for k in 0..2u32 {
+                let x: u32 = mem.read(at.wrapping_add(4 * k));
+                mem.write(at.wrapping_add(4 * k), store(-load(x)));
+            }
+            let w = if row == 3 { 1.0f32 } else { 0.0 };
+            mem.write(at.wrapping_add(0xc), w);
+        }
+        go(mem, 0x0063_9590, &[vp]);
+        let (fill2, fill3) = (FILL_MATRIX2.ptr(mem).addr, FILL_MATRIX3.ptr(mem).addr);
+        go(mem, 0x006e_d5c0, &[fill2, vp, m]);
+        go(mem, 0x006e_d460, &[fill3, fill2]);
+    }
+
     /// `0x00728ac0` (`pppFpLoopMatrix`, ours; from `pppFpLoop`) `(part,
     /// set, def)`: `g_pppWorldMatrix` for a looped field effect. First
     /// `pppFpSetRotMatrix(part, def +0x4b)`. With none of `set`'s flag bits

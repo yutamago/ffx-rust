@@ -850,6 +850,13 @@ ported! {
     pppDrawMdlPSimDes @ 0x0073_d010 => extern "C" fn ppp_draw_mdl_psim_des(obj: u32, ctrl: u32) {
         prog::bridge::ppp_draw_mdl_psim_des(&mut mem(), obj, ctrl, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppKeBornRnd(obj, key, ctrl)`.
+    pppKeBornRnd @ 0x0075_84d0 => extern "C" fn ppp_ke_born_rnd(obj: u32, key: u32, ctrl: u32) {
+        // the original's local matrix and vector
+        let mut frame = super::StackFrame::<20>::new();
+        let at = frame.at();
+        prog::bridge::ppp_ke_born_rnd_shape(&mut mem(), obj, key, ctrl, at, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppKeBornRnd2(obj, key, ctrl)`.
     pppKeBornRnd2 @ 0x0075_87b0 => extern "C" fn ppp_ke_born_rnd2(obj: u32, key: u32, ctrl: u32) {
         let kind = prog::bridge::BornRnd::Rnd2;
@@ -1542,12 +1549,12 @@ ported! {
     pppFpPointLight @ 0x0075_d7f0 => extern "C" fn ppp_fp_point_light(obj: u32, key: u32, prog: u32) -> u32 {
         fp::bridge::ppp_fp_point_light(&mut mem(), obj, key, prog, &mut |_, f, a| call_ptr(f, a))
     }
-    /// `pppKeBornRnd4(obj, def, shape, out)`.
-    pppKeBornRnd4 @ 0x0075_8df0 => extern "C" fn ppp_ke_born_rnd4(obj: u32, def: u32, shape: u32, out: u32) {
+    /// `pppKeBornRnd4_Born(obj, def, shape, out)`.
+    pppKeBornRnd4_Born @ 0x0075_8df0 => extern "C" fn ppp_ke_born_rnd4_born(obj: u32, def: u32, shape: u32, out: u32) {
         // the original's local vector
         let mut frame = super::StackFrame::<4>::new();
         let at = frame.at();
-        prog::bridge::ppp_ke_born_rnd4(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
+        prog::bridge::ppp_ke_born_rnd4_born(&mut mem(), obj, def, shape, out, at, &mut |_, f, a| call_ptr(f, a));
     }
     /// `pppDrawMdlCameraTex_0073dfe0(rec, m)`.
     pppDrawMdlCameraTex_0073dfe0 @ 0x0073_dfe0 => extern "C" fn ppp_draw_mdl_camera_tex(rec: u32, m: u32) {
@@ -1724,6 +1731,10 @@ ported! {
     /// `op_part_free(part)`.
     op_part_free @ 0x0080_09c0 => extern "C" fn op_part_free(part: u32) -> u32 {
         opus::bridge::op_part_free(&mut mem(), part, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_motion(host, cmd)`.
+    opu_motion @ 0x0080_44e0 => extern "C" fn opu_motion(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_motion(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opu_motion_etc(host, cmd)`.
     opu_motion_etc @ 0x0080_47b0 => extern "C" fn opu_motion_etc(host: u32, cmd: u32) -> u32 {
@@ -5599,6 +5610,76 @@ ported! {
             &mut |_, f, a| call_ptr(f, a),
             &mut |_, f, this, a| super::call_thiscall(f, this, a),
         )
+    }
+    /// `opusTree_EraseRange(this, out, first, last)` (`0x00807510`, `ret
+    /// 0xc`): the word `opusTree_Erase` writes in this shim's frame.
+    opusTree_EraseRange @ 0x0080_7510 => extern "thiscall" fn opus_tree_erase_range(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tree::bridge::opus_tree_erase_range(
+            &mut mem(),
+            this,
+            out,
+            first,
+            last,
+            local,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, this, a| super::call_thiscall(f, this, a),
+        )
+    }
+    /// `UpdatePhyreViewProjectionMatrix()` (`0x00711910`): the two local
+    /// matrices in this shim's frame.
+    UpdatePhyreViewProjectionMatrix @ 0x0071_1910 => extern "C" fn update_phyre_view_projection_matrix() {
+        let mut frame = super::StackFrame::<32>::new();
+        let local = frame.at();
+        fp::bridge::update_phyre_view_projection_matrix(&mut mem(), local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_flash_path3(rgba, flags, alpha)` (`0x007eaad0`): the argument
+    /// words whole (the fade event's overlap their upper bytes).
+    op_flash_path3 @ 0x007e_aad0 => extern "C" fn op_flash_path3(rgba: u32, flags: u32, alpha: u32) {
+        op::bridge::op_flash_path3(&mut mem(), rgba, flags, alpha, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawMdlPSimInit(obj, def, sim)` (`0x0073d4d0`): the two local
+    /// vectors in this shim's frame.
+    pppDrawMdlPSimInit @ 0x0073_d4d0 => extern "C" fn ppp_draw_mdl_psim_init(obj: u32, def: u32, sim: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        let local = frame.at();
+        prog::bridge::ppp_draw_mdl_psim_init(&mut mem(), obj, def, sim, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `QuickRecoverMenuReserve(rgba, flags, alpha)` (`0x007eadb0`): the
+    /// three words it passes on to `op_flash_path3`.
+    QuickRecoverMenuReserve @ 0x007e_adb0 => extern "C" fn quick_recover_menu_reserve(rgba: u32, flags: u32, alpha: u32) {
+        op::bridge::quick_recover_menu_reserve(&mut mem(), rgba, flags, alpha, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opp_mdc(host, set)` (`0x0080e030`).
+    opp_mdc @ 0x0080_e030 => extern "C" fn opp_mdc(host: u32, set: u32) -> u32 {
+        opus::bridge::opp_mdc(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeBornRnd4(obj, key, ctrl)` (`0x00758ae0`): the local vector in
+    /// this shim's frame.
+    pppKeBornRnd4 @ 0x0075_8ae0 => extern "C" fn ppp_ke_born_rnd4(obj: u32, key: u32, ctrl: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let v = frame.at();
+        prog::bridge::ppp_ke_born_rnd4(&mut mem(), obj, key, ctrl, v, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opu_matrix_chara(host, cmd)` (`0x00804840`): the local vector in
+    /// this shim's frame; `Ch_GetDataScale`'s float popped by the float
+    /// call.
+    opu_matrix_chara @ 0x0080_4840 => extern "C" fn opu_matrix_chara(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        opus::bridge::opu_matrix_chara(
+            &mut mem(),
+            host,
+            cmd,
+            local,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| super::call_cdecl_f64(f, a),
+        )
+    }
+    /// `opu_tc_load(host, cmd)` (`0x008085a0`).
+    opu_tc_load @ 0x0080_85a0 => extern "C" fn opu_tc_load(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_tc_load(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
     // ---- round 38 c ----
     /// `setPolyQuad0434(id, quad, setup)` (`0x007128d0`).
