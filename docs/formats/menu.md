@@ -85,6 +85,19 @@ jump table at `0x008d5134`:
 
 The page slides in by `MenuMn2_Ease(t, 1) * 0x155 / 4096` pixels.
 
+The sub-windows draw with `MenuStatus_WindowDraw_008d2790` (`+0x10`): a
+command page (`TkMenuGetDispCommand(+0x60, +0x58, +0x5c, who, list)`,
+at most 22 commands) for the current member (`+0x64` 0) or aeon,
+sliding in by `MenuMn2_Ease(+0x52, +0x54)`: down by `ease * 416 / 2 /
+4096` while `i16 +0x54` is positive, else across by `ease * 512 / 2 /
+4096`. Command `k` is in row `k >> 1`, column `k & 1` (x `210 -
+Menu_Scale32(dx, row)` or `970 + ..`, y from 316 (aeons 375) in steps of
+63 (58) plus `MenuHelp_Ratio(dy, row)`); only plates within y 416 and x
+-512..512 (remapped units) are drawn, each a type-0xe plate with the
+command's name (`+0x58` 1: `MenuDrawChrNameOrCommand`, else the
+ability (`+0x60` 0) or command icon name). The title goes through
+`0x008f9280(+0x68, ..)` in the font shade `i16 +0x52 >> 5`.
+
 `TkMn2MainStatusPlayerStatus` (`0x008d5180`) draws the stats of the
 character page from the table at `0x00c5a790`: `(i32 mes, u32 field)`
 pairs (messages 7..14 over save-record offsets 47..54), ended by a
@@ -406,6 +419,25 @@ and 8/10/12/14 wait on each: circle closes it and opens the next (page 4
 back to 3), cross closes it and returns to 3. Entering (0..2) skips
 straight to 4; 3 fades the background out (`TMn2SetStatusBGDiff(-0x155)`)
 and 7 back in (`0x155`).
+The growth window's draw (`MenuSummon_Window2Draw_008ce750`, the
+`+0x10` of `MenuSummon_OpenWindow2`) asks `MenuSummon_GrowInfo(+0x48,
+aeon, &cost, &gain)`; a cost (not negative) shows the required-items
+window `TkMn2ItemRequireWindow(970, 380, cost, gain, 0)` and the right
+plate (sheet cell 0x10); the rows (`MenuSummon_DrawGrowRows`) sit in
+the scissor from y 365, `remapY2(70) * 9` high, the scroll bar at `(955,
+370, 8, 630)`.
+
+`TkMenuCtrlAbility` (`0x008c60b0`, jump table `0x008c6454`, states
+`0..=0x12` at `+0x1c`) runs the ability menu: the list window
+(`g_TkMenuItemWindow`) and the target window (`0x0186a39c`) answer
+through `i8 +0x45` (positive picked, negative cancelled). A cast (state
+12) pays `MsGetRomPlyCommand([0x0186a3a8]) +0x25` MP, heals the target
+(`MenuAbility_ApplyHeal_008c6d00`, sound `0x80000062`) for target kinds
+0 and 2 (`u8 0x0186a392`) and goes back to the target window while the
+MP still covers the cost, else closes it. Flipping members with the
+d-pad keeps each member's row, column and top row in `u16 0x0186a3b4`,
+`0x0186a3c4`, `0x0186a3d4` (indexed by character) and restores the new
+member's unless its row is negative.
 
 The equip menu opens with `MenuEquip_Open_008cf830` (`0x008cf830`): it
 saves every character's (0..=6) armour, weapon, HP and MP in the word

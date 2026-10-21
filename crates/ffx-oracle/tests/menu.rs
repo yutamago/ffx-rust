@@ -16955,3 +16955,232 @@ fn menu_round31_ishop_layout_summon_status_caption_kaizou_and_item_list_match_th
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round31_ctrl_ability_summon_window2_and_status_window_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0031_0003) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008e_2830u32, 5u8),
+        (0x008a_aef0, 2),
+        (0x008a_9ad0, 1),
+        (0x008a_9bc0, 1),
+        (0x0088_6e80, 1),
+        (0x008c_6d00, 2),
+        (0x008c_6800, 1),
+        (0x008c_6bc0, 1),
+        (0x008c_93a0, 0),
+        (0x008c_6b60, 0),
+        (0x008c_7650, 1),
+        (0x008a_a410, 1),
+        (0x008c_9240, 3),
+        (0x008c_93c0, 0),
+        (0x008c_6b80, 0),
+        (0x008a_ad70, 1),
+        (0x008a_a100, 2),
+        (0x008a_f4f0, 2),
+        (0x008c_1790, 0),
+        (0x008c_1c90, 5),
+        (0x008f_f490, 3),
+        (0x008f_5f70, 5),
+        (0x008f_8bb0, 5),
+        (0x008c_0f70, 4),
+        (0x008c_e520, 5),
+        (0x008c_1370, 0),
+        (0x008c_da20, 3),
+        (0x008e_6cc0, 7),
+        (0x008d_4910, 0),
+        (0x008d_4170, 2),
+        (0x008c_0cc0, 0),
+        (0x008d_ce50, 0),
+        (0x008c_0be0, 0),
+        (0x008c_2330, 0),
+        (0x008c_2c30, 4),
+        (0x008f_9280, 4),
+        (0x008c_2300, 0),
+        (0x008c_0ec0, 4),
+        (0x008f_4f10, 4),
+        (0x008f_5000, 4),
+        (0x008c_0cd0, 0),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let pads = [0x008b_e410u32, 0x008b_e470, 0x008b_e4b0].map(|f| seq_stub(&mut t, f, log, 0, &[]));
+    let player = seq_stub(&mut t, 0x008a_9860, log, 0, &[]);
+    // TkMenuSetPrevPlayer / TkMenuSetNextPlayer move the current member
+    for f in [0x008a_afa0, 0x008a_af10] {
+        let bump: Vec<u8> = [&[0xff, 0x05][..], &player.to_le_bytes()].concat();
+        cells.push(seq_stub(&mut t, f, log, 0, &bump));
+    }
+    cells.push(seq_stub(&mut t, 0x008a_9880, log, 0, &[]));
+    let mp = seq_stub(&mut t, 0x008a_9970, log, 1, &[]);
+    // MsGetRomPlyCommand(id, &out): the out word is the caller's frame
+    let rom = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0079_0a90, &[0], rom, &[]);
+    jump_stub(&mut t, 0x0079_0a90, &code);
+    let max = seq_stub(&mut t, 0x008a_9b30, log, 0, &[]);
+    let ratio = seq_stub(&mut t, 0x008a_b220, log, 0, &[]);
+    let ease = seq_stub(&mut t, 0x008d_30c0, log, 2, &[]);
+    let help_ratio = seq_stub(&mut t, 0x008b_f120, log, 2, &[]);
+    let scale = seq_stub(&mut t, 0x008b_f100, log, 2, &[]);
+    // MenuSummon_GrowInfo(stat, chr, &cost, &gain): both from cells
+    let (cost, gain, dummy) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x15]; // mov eax, [esp+12]; mov edx, [cost]
+    extra.extend(cost.to_le_bytes());
+    extra.extend([0x89, 0x10, 0x8b, 0x44, 0x24, 0x10, 0x8b, 0x15]); // mov [eax], edx; mov eax, [esp+16]; mov edx, [gain]
+    extra.extend(gain.to_le_bytes());
+    extra.extend([0x89, 0x10]);
+    let code = seq_code(log, 0x008c_d320, 2, dummy, &extra);
+    jump_stub(&mut t, 0x008c_d320, &code);
+    // TkMenuGetDispCommand(.., list): 22 words copied into the list
+    let (commands, count) = (t.alloc(&[0; 0x58]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x56, 0x57, 0xbe]; // push esi; push edi; mov esi, commands
+    extra.extend(commands.to_le_bytes());
+    // mov edi, [esp+0x1c]; mov ecx, 22; rep movsd; pop edi; pop esi
+    extra.extend([
+        0x8b, 0x7c, 0x24, 0x1c, 0xb9, 0x16, 0, 0, 0, 0xf3, 0xa5, 0x5f, 0x5e,
+    ]);
+    let code = seq_code(log, 0x008d_2e10, 4, count, &extra);
+    jump_stub(&mut t, 0x008d_2e10, &code);
+    let (m0, w1, w2, rec) = (
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x40]),
+    );
+    t.put(t.sym(0x0186_a394), w1);
+    t.put(t.sym(0x0186_a39c), w2);
+    for round in 0..4000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(m0, 0x100);
+        match round % 3 {
+            0 => {
+                t.scramble_at(w1, 0x100);
+                t.scramble_at(w2, 0x100);
+                t.scramble_at(rec, 0x40);
+                t.put(rom, rec);
+                t.scramble(0x0186_a3b4, 0x30);
+                t.scramble(0x0159_7770, 0x80);
+                t.scramble(0x0186_a38c, 4);
+                t.scramble(0x0186_a3a8, 2);
+                // state 4 half the time (the member flip)
+                let state = if t.rng.below(2) == 0 {
+                    4
+                } else {
+                    t.rng.below(0x15)
+                };
+                t.put(m0 + 0x1c, state);
+                let v = t.rng.pick(&[0u32, 4, 8, 0xc, 0x1_0004]);
+                t.put(pads[0], v);
+                let v = t.rng.pick(&[0u32, 4, 8, 0xc]);
+                t.put(pads[1], v);
+                for w in [w1, w2] {
+                    let v = t.rng.pick(&[0u8, 0, 0, 0, 1, 0x7f, 0x80, 0xff]);
+                    t.put(w + 0x45, v);
+                    let v = t.rng.pick(&[0i16, 1, 3, -1]);
+                    t.put(w + 0x48, v);
+                    let v = t.rng.pick(&[0u32, 0, 1, 0x1_0000]);
+                    t.put(w + 0x58, v);
+                }
+                let v = t.rng.pick(&[0u32, 1, 5, 7]);
+                t.put(player, v);
+                for k in 0..8 {
+                    let v = t.rng.pick(&[0i16, 1, 4, -1, -0x8000]);
+                    t.put(t.sym(0x0186_a3b4) + 2 * k, v);
+                }
+                let v = t.rng.pick(&[0u32, 3, 10, 100, 0xffff_fff0]);
+                t.put(mp, v);
+                let v = t.rng.pick(&[0u8, 3, 10, 50, 0xff]);
+                t.put(rec + 0x25, v);
+                let v = t.rng.pick(&[0u8, 1, 2, 3]);
+                t.put(t.sym(0x0186_a392), v);
+                let v = t.rng.pick(&[0u32, 1, 2, 3, 3, 0xffff_ffff]);
+                t.put(max, v);
+                let v = t.rng.pick(&[0u32, 1, 1]);
+                t.put(ratio, v);
+                let v = t.rng.pick(&[0i32, 1, 2, 5, -1, -2, -5]);
+                t.put(t.sym(0x0186_a38c), v);
+                t.twin("TkMenuCtrlAbility", 0x008c_60b0, &[m0], U32, |o| {
+                    w(tk::tk_menu_ctrl_ability(o, m0, local, &mut callback))
+                });
+            }
+            1 => {
+                let v = t.rng.pick(&[0xffff_ffffu32, 0, 5, 0x8000_0000]);
+                t.put(cost, v);
+                let a = t.rng.pick(&[0u16, 1, 5, 0x8000]);
+                t.put(m0 + 0x32, a);
+                let b = t.rng.pick(&[a, a, 2, 0xffff, a ^ 0x100]);
+                t.put(m0 + 0x34, b);
+                let v = t.rng.pick(&[0u16, 1, 0x1000, 0x7fff, 0x8000, 0xfff0]);
+                t.put(m0 + 0x46, v);
+                t.scramble(0x0186_a5e4, 4);
+                t.twin(
+                    "MenuSummon_Window2Draw_008ce750",
+                    0x008c_e750,
+                    &[m0],
+                    U32,
+                    |o| {
+                        w(tk::menu_summon_window2_draw(
+                            o,
+                            m0,
+                            local,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+            _ => {
+                t.scramble_at(commands, 0x58);
+                for k in 0..22 {
+                    let v = t.rng.pick(&[0u32, 0x3000, 0x3001, 0x3002]);
+                    t.put(commands + 4 * k, v);
+                }
+                let v = t.rng.pick(&[0u32, 1, 3, 8, 22, 0xffff_ffff]);
+                t.put(count, v);
+                let v = t.rng.pick(&[0u32, 0, 1]);
+                t.put(m0 + 0x64, v);
+                let v = t.rng.pick(&[0u32, 1, 1, 2]);
+                t.put(m0 + 0x58, v);
+                let v = t.rng.pick(&[0u32, 0, 1]);
+                t.put(m0 + 0x60, v);
+                let v = t.rng.pick(&[0i16, 0, 1, 0x40, -1, 0x1000]);
+                t.put(m0 + 0x54, v);
+                t.scramble(0x0186_a9da, 2);
+                let v = t.rng.pick(&[0u32, 0x1000, 0x800, 0xffff_f000, 0x7fff_ffff]);
+                t.put(ease, v);
+                for c in [help_ratio, scale] {
+                    // -456 and 568 put x on the +-512 edges (remapX2(210) = 56)
+                    let v = t
+                        .rng
+                        .pick(&[0i32, 10, -100, 300, 1000, -1000, 0x0100_0001, -456, 568]);
+                    t.put(c, v);
+                }
+                t.twin(
+                    "MenuStatus_WindowDraw_008d2790",
+                    0x008d_2790,
+                    &[m0],
+                    U32,
+                    |o| {
+                        w(tk::menu_status_window_draw(
+                            o,
+                            m0,
+                            local,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

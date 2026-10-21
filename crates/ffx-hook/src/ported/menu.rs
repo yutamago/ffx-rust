@@ -1946,6 +1946,27 @@ ported! {
     MenuItem_ListWindowDraw_008c7750 @ 0x008c_7750 => extern "C" fn menu_item_list_window_draw(w: u32) -> u32 {
         tk::menu_item_list_window_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCtrlAbility(m)`.
+    TkMenuCtrlAbility @ 0x008c_60b0 => extern "C" fn tk_menu_ctrl_ability(m: u32) -> u32 {
+        // MsGetRomPlyCommand's out word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_menu_ctrl_ability(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_Window2Draw_008ce750(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
+    MenuSummon_Window2Draw_008ce750 @ 0x008c_e750 => extern "C" fn menu_summon_window2_draw(w: u32) -> u32 {
+        // the cost and gain words
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_summon_window2_draw(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_WindowDraw_008d2790(w)`: `TkMn2DrawKickSyncPacket2`'s `eax`.
+    MenuStatus_WindowDraw_008d2790 @ 0x008d_2790 => extern "C" fn menu_status_window_draw(w: u32) -> u32 {
+        // the original's 22-word command list
+        let mut frame = super::StackFrame::<22>::new();
+        let list = frame.at();
+        tk::menu_status_window_draw(&mut mem(), w, list, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)
