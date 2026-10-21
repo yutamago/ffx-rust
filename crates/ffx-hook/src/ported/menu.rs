@@ -1723,6 +1723,175 @@ ported! {
     MenuWShop_StockWindowCtrl @ 0x008d_77f0 => extern "C" fn menu_wshop_stock_window_ctrl(w: u32) -> u32 {
         tk::menu_wshop_stock_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuShop_DrawSellPanel(w)`.
+    MenuShop_DrawSellPanel @ 0x008d_a730 => extern "C" fn menu_shop_draw_sell_panel(w: u32) -> u32 {
+        tk::menu_shop_draw_panel(&mut mem(), 3, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_SubWindow1Ctrl(w)`.
+    MenuWShop_SubWindow1Ctrl @ 0x008d_79c0 => extern "C" fn menu_wshop_sub_window1_ctrl(w: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_wshop_sub_window1_ctrl(&mut mem(), w, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlKaizou(m)`.
+    TkMenuCtrlKaizou @ 0x008d_5540 => extern "C" fn tk_menu_ctrl_kaizou(m: u32) {
+        tk::tk_menu_ctrl_kaizou(&mut mem(), m, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuStatus_DrawMainWindow(w)`.
+    MenuStatus_DrawMainWindow @ 0x008d_2710 => extern "C" fn menu_status_draw_main_window(w: u32) -> u32 {
+        tk::menu_status_draw_main_window(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOTextScrollInitLang_008de8c0(w)`: 0.
+    TOTextScrollInitLang_008de8c0 @ 0x008d_e8c0 => extern "C" fn to_text_scroll_init_lang(w: u32) -> u32 {
+        tk::to_text_scroll_init_lang(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TOTextScrollStepLang_008de970(w)`: 0.
+    TOTextScrollStepLang_008de970 @ 0x008d_e970 => extern "C" fn to_text_scroll_step_lang(w: u32) -> u32 {
+        tk::to_text_scroll_step_lang(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlHelp(m)`.
+    TkMenuCtrlHelp @ 0x008b_ef50 => extern "C" fn tk_menu_ctrl_help(m: u32) -> u32 {
+        tk::tk_menu_ctrl_help(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkCdReadWithMalloc2(file, size_of, min)`: the buffer.
+    TkCdReadWithMalloc2 @ 0x0088_d240 => extern "C" fn tk_cd_read_with_malloc2(file: u32, size_of: u32, min: i32) -> u32 {
+        tk::tk_cd_read_with_malloc2(&mut mem(), file, size_of, min, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkSqsLoadInfo_0088e3a0(load)`.
+    TkSqsLoadInfo_0088e3a0 @ 0x0088_e3a0 => extern "C" fn tk_sqs_load_info_e3a0(load: u32) {
+        tk::tk_sqs_load_info(&mut mem(), false, load, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkSqsLoadInfo_0088e440(load)`.
+    TkSqsLoadInfo_0088e440 @ 0x0088_e440 => extern "C" fn tk_sqs_load_info_e440(load: u32) {
+        tk::tk_sqs_load_info(&mut mem(), true, load, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuEquip_Open_008cf830(m)`.
+    MenuEquip_Open_008cf830 @ 0x008c_f830 => extern "C" fn menu_equip_open(m: u32) -> u32 {
+        tk::menu_equip_open(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMessageSize_008de250(m)`: 0.
+    TkMenuMessageSize_008de250 @ 0x008d_e250 => extern "C" fn tk_menu_message_size(m: u32) -> u32 {
+        // the original's w (f32) and h words
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::tk_menu_message_size(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
+    /// `MenuSaveLoad_DrawSlotList(w)`.
+    MenuSaveLoad_DrawSlotList @ 0x008b_4a50 => extern "C" fn menu_save_load_draw_slot_list(w: u32) -> u32 {
+        tk::menu_save_load_draw_slot_list(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlWorldMap(m)`.
+    TkMenuCtrlWorldMap @ 0x008e_2960 => extern "C" fn tk_menu_ctrl_world_map(m: u32) -> u32 {
+        tk::tk_menu_ctrl_world_map(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_Open_008c5f20(m)`.
+    MenuItem_Open_008c5f20 @ 0x008c_5f20 => extern "C" fn menu_item_open(m: u32) -> u32 {
+        // the original's eight text and help words
+        let mut frame = super::StackFrame::<8>::new();
+        let local = frame.at();
+        tk::menu_item_open(&mut mem(), m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuMain_DrawCmdWindow(w)`.
+    MenuMain_DrawCmdWindow @ 0x008e_20f0 => extern "C" fn menu_main_draw_cmd_window(_w: u32) -> u32 {
+        tk::menu_main_draw_cmd_window(&mut mem(), &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawTargetFace(w)`.
+    MenuItem_DrawTargetFace @ 0x008c_3ec0 => extern "C" fn menu_item_draw_target_face(_w: u32) -> u32 {
+        tk::menu_item_draw_target_face(&mut mem(), &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_SortGearByKind_008ca1b0()`: 1, or 0 when a search fails.
+    MenuItem_SortGearByKind_008ca1b0 @ 0x008c_a1b0 => extern "C" fn menu_item_sort_gear_by_kind() -> u32 {
+        // the original's 0x400-byte flag buffer and MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<257>::new();
+        let flags = frame.at();
+        tk::menu_item_sort_gear_by_kind(&mut mem(), flags, flags.wrapping_add(0x400), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawGilPage_008bbb10(dx)`.
+    BtlEnd_DrawGilPage_008bbb10 @ 0x008b_bb10 => extern "C" fn btl_end_draw_gil_page(dx: i32) -> u32 {
+        tk::btl_end_draw_gil_page(&mut mem(), dx, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawWeaponPage_008bbed0(dx)`.
+    BtlEnd_DrawWeaponPage_008bbed0 @ 0x008b_bed0 => extern "C" fn btl_end_draw_weapon_page(dx: i32) {
+        // MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::btl_end_draw_weapon_page(&mut mem(), dx, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSummon_CmdWindowCtrl_008cced0(w)`.
+    MenuSummon_CmdWindowCtrl_008cced0 @ 0x008c_ced0 => extern "C" fn menu_summon_cmd_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_cmd_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_TargetWindowCtrl_008c7430(w)`.
+    MenuItem_TargetWindowCtrl_008c7430 @ 0x008c_7430 => extern "C" fn menu_item_target_window_ctrl(w: u32) -> u32 {
+        tk::menu_item_target_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2GetWShopPos()`.
+    TkMn2GetWShopPos @ 0x008d_9190 => extern "C" fn tk_mn2_get_wshop_pos() -> u32 {
+        tk::tk_mn2_get_wshop_pos(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawBuyList(w)`.
+    MenuWShop_DrawBuyList @ 0x008d_7aa0 => extern "C" fn menu_wshop_draw_buy_list(w: u32) -> u32 {
+        tk::menu_wshop_draw_list(&mut mem(), false, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawSellList(w)`.
+    MenuWShop_DrawSellList @ 0x008d_7d20 => extern "C" fn menu_wshop_draw_sell_list(w: u32) -> u32 {
+        tk::menu_wshop_draw_list(&mut mem(), true, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawGearList(w)`.
+    MenuItem_DrawGearList @ 0x008c_87e0 => extern "C" fn menu_item_draw_gear_list(w: u32) -> u32 {
+        tk::menu_item_draw_gear_list(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawItemPage_008bbca0(dx)`.
+    BtlEnd_DrawItemPage_008bbca0 @ 0x008b_bca0 => extern "C" fn btl_end_draw_item_page(dx: i32) {
+        // the digit width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::btl_end_draw_item_page(&mut mem(), dx, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuWeapon_DrawList_008cf9f0(w)`.
+    MenuWeapon_DrawList_008cf9f0 @ 0x008c_f9f0 => extern "C" fn menu_weapon_draw_list(w: u32) -> u32 {
+        tk::menu_weapon_draw_list(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawTargetNames_008c4030(w)`.
+    MenuItem_DrawTargetNames_008c4030 @ 0x008c_4030 => extern "C" fn menu_item_draw_target_names(w: u32) -> u32 {
+        // the name width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_draw_target_names(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawSellWindow_008da470(w)`.
+    MenuWShop_DrawSellWindow_008da470 @ 0x008d_a470 => extern "C" fn menu_wshop_draw_sell_window(w: u32) -> u32 {
+        tk::menu_wshop_draw_sell_window(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_GrowWindowCtrl_008cd460(w)`.
+    MenuSummon_GrowWindowCtrl_008cd460 @ 0x008c_d460 => extern "C" fn menu_summon_grow_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_grow_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuLimit_Open_008d0a20(m, a)`.
+    MenuLimit_Open_008d0a20 @ 0x008d_0a20 => extern "C" fn menu_limit_open(m: u32, a: u32) -> u32 {
+        // the original's two help and two text words
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::menu_limit_open(&mut mem(), m, a, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMessageLayout_008de370(m)`: 0.
+    TkMenuMessageLayout_008de370 @ 0x008d_e370 => extern "C" fn tk_menu_message_layout(m: u32) -> u32 {
+        // the width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_menu_message_layout(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkBtlEndInit(_, kind)`.
+    TkBtlEndInit @ 0x008b_db70 => extern "C" fn tk_btl_end_init(_a: u32, kind: u32) -> u32 {
+        // the original's record out word and amount word
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::tk_btl_end_init(&mut mem(), kind, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_FlipWindowCtrl_008e3880(w)`.
+    MenuSubCmd_FlipWindowCtrl_008e3880 @ 0x008e_3880 => extern "C" fn menu_sub_cmd_flip_window_ctrl(w: u32) -> u32 {
+        tk::menu_sub_cmd_flip_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)
