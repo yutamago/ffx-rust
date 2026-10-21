@@ -6636,6 +6636,7 @@ part!(
     60
 );
 part!(part_revive, "revive", 60);
+part!(part_bridge_to_battle, "bridge_to_battle", 60);
 part!(part_models_freed, "models_freed", 60);
 part!(part_battle_end, ["process", "battle_end"], 60);
 part!(part_battle_frame, "battle_frame", 60);
@@ -6875,6 +6876,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
     let locals = scratch(a, b, ffx_battle::special::bridge::SPECIAL_LOCALS as usize);
     // MsBtlBridgeBtl2Event's tables and records (round 19)
     let btables = scratch(a, b, 0x40 * 8);
+    let belems = scratch(a, b, 0x40 * 3);
     let brec = scratch(a, b, (EXCHANGE_REC * 15) as usize);
     // the setup leaves' stub records and heap block (round 19)
     let grec2 = scratch(a, b, (EXCHANGE_REC * 2) as usize);
@@ -7027,6 +7029,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
         }
         if sel.on("special_stage") {
             special_stage(a, b, &mut r19, &w, work, locals);
+        }
+        if sel.pick(r34.below(4) == 0, "bridge_to_battle") {
+            bridge_to_battle(a, b, &mut r34, &w, &f, btables, brec, belems);
         }
         if sel.pick(r19.below(6) == 0, "bridge_to_event") {
             bridge_to_event(a, b, &mut r19, &w, &f, btables, brec);
@@ -8858,6 +8863,115 @@ fn bridge_stubs(a: &mut Oracle, b: &mut Oracle, tables: u32, rec: u32) {
 /// `MsBtlBridgeBtl2Event` (round 19) on event actors made up in the
 /// stubs' tables: bound or not, their bind PCs the actor they name, an
 /// actor of their character ID, or none.
+/// `MsBtlBridgeEvent2Btl`'s element getters (round 34): pair
+/// [`table_stub`]s after [`REVIVE_STUBS`]', installed around the call.
+const BRIDGE_ELEM_GETTERS: [u32; 3] = {
+    use ffx_battle::atel::bridge as at;
+    [
+        at::ATEL_GET_EVENT_ELEM_CHAR_ID,
+        at::ATEL_GET_EVENT_ELEM_HANDLE,
+        at::ATEL_GET_EVENT_ELEM_POS,
+    ]
+};
+const BRIDGE_ELEM_STUBS: u32 = REVIVE_STUBS + 0x100;
+
+/// The event's characters handed to the battle (`MsBtlBridgeEvent2Btl`,
+/// round 34) over [`bridge_stubs`]' tables: up to four event actors,
+/// bound or not, with a character or not, of an actor's ID (in the
+/// battle, without a character yet, at times) or not, its bound PC that
+/// actor, another, none or out of range; their two elements with IDs,
+/// handles and positions or zeros, onto weapon records free or taken.
+/// What it changes is put back after.
+#[allow(clippy::too_many_arguments)]
+fn bridge_to_battle(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    f: &Fakes,
+    tables: u32,
+    rec: u32,
+    elems: u32,
+) {
+    let n = rng.below(BRIDGE_ACTORS + 1);
+    poke(a, b, rec + EXCHANGE_REC * 6 + 4, &n.to_le_bytes());
+    let first = ffx_battle::actor::bridge::ms_get_chr(b, ACTORS);
+    let regions: Vec<(u32, usize)> = vec![
+        (first, (0x5d - ACTORS as usize) * 0x390),
+        (w.actor(0), (ACTORS * ACTOR) as usize),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    for e in 0..BRIDGE_ACTORS {
+        let k = [rng.below(0x1f), 0x1b, 0x1c][rng.below(3) as usize];
+        let p = w.actor(k);
+        // the actor that takes it, at times (or one out of the battle)
+        if rng.below(2) == 0 {
+            poke(a, b, p, &[0; 4]);
+            poke(a, b, p + 0x10, &[u8::from(rng.below(4) != 0)]);
+        }
+        let id = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            u32::from_le_bytes(b.read(p + 4, 4).unwrap().try_into().unwrap())
+        };
+        // an earlier actor that would take it too (the bound PC first)
+        if k > 0 && rng.below(3) == 0 {
+            let q = w.actor(rng.below(k));
+            poke(a, b, q, &[0; 4]);
+            poke(a, b, q + 4, &id.to_le_bytes());
+            poke(a, b, q + 0x10, &[1]);
+        }
+        let pc = [u32::MAX, k, k, rng.below(0x1f), 0x1b, 0x1c, 0x30][rng.below(7) as usize];
+        // the link work's upper bytes are the worker's (AtelGetEventActorLinkWork)
+        let values = [
+            [1, 1, 1, 0, 2][rng.below(5) as usize],
+            id,
+            [0, f.chars, f.chars + 0x1000][rng.below(3) as usize],
+            rng.next(),
+            pc,
+        ];
+        for (g, v) in (0u32..).zip(values) {
+            poke(a, b, tables + 0x40 * g + 4 * e, &v.to_le_bytes());
+        }
+        for m in 0..2 {
+            let at = 4 * (2 * e + m);
+            let v = [
+                [0, rng.below(0x10000), 0x1000 + rng.below(8)][rng.below(3) as usize],
+                [0, f.chars + 0x2000, rng.next()][rng.below(3) as usize],
+                rng.next(),
+            ];
+            for (g, v) in (0u32..).zip(v) {
+                poke(a, b, elems + 0x40 * g + at, &v.to_le_bytes());
+            }
+            // the weapon record free or taken
+            let wr = ffx_battle::actor::bridge::ms_get_weapon(b, k, m.cast_signed());
+            let taken = [0, f.chars + 0x1000][rng.below(2) as usize];
+            poke(a, b, wr, &taken.to_le_bytes());
+        }
+    }
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        for (k, g) in (0u32..).zip(BRIDGE_ELEM_GETTERS) {
+            let at = o.rebase(g);
+            saved.push((g, o.read(at, 5).unwrap()));
+            table_stub(o, g, BRIDGE_ELEM_STUBS + 0x20 * k, elems + 0x40 * k, true);
+        }
+    }
+    saved.truncate(saved.len() / 2);
+    twin("MsBtlBridgeEvent2Btl", a, b, 0x0078_24e0, &[], 0, |m| {
+        ffx_battle::atel::bridge::ms_btl_bridge_event2_btl(m, &mut game_call_o);
+        0
+    });
+    unstub(a, b, &saved);
+    same("MsBtlBridgeEvent2Btl", a, b);
+    for (&(at, _), bytes) in regions.iter().zip(&kept) {
+        poke(a, b, at, bytes);
+    }
+}
+
 fn bridge_to_event(
     a: &mut Oracle,
     b: &mut Oracle,

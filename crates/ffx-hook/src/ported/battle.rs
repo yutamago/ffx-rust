@@ -3455,6 +3455,11 @@ ported! {
     msSetChrShadowReq @ 0x0079_7020 => extern "C" fn ms_set_chr_shadow_req(p: u32, k: i32, v: u32) -> u32 {
         visible::ms_set_chr_shadow_req(&mut mem(), p, k, v.to_le_bytes()[0])
     }
+    /// `MsSetChrEngine_00796f70(chr, p)`: a character set up from its
+    /// record.
+    MsSetChrEngine_00796f70 @ 0x0079_6f70 => extern "C" fn ms_set_chr_engine(chr: u32, p: u32) -> u32 {
+        visible::ms_set_chr_engine(&mut mem(), &mut call_ptr, chr, p)
+    }
     /// `msSetChrVisibleReq(i, k, v)`: `op_et_bindeff` (vfx) through the game.
     msSetChrVisibleReq @ 0x0079_7080 => extern "C" fn ms_set_chr_visible_req(i: u32, k: u32, v: u32) -> u32 {
         visible::ms_set_chr_visible_req(&mut mem(), &mut call_ptr, i, k, v)
@@ -4865,6 +4870,11 @@ ported! {
     MsBtlBridgeBtl2Event @ 0x0078_21f0 => extern "C" fn ms_btl_bridge_btl2_event() {
         script!(s);
         free::ms_btl_bridge_btl2_event(&mut mem(), &mut s);
+    }
+    /// `MsBtlBridgeEvent2Btl()`: the event's characters handed to the
+    /// battle (the script accessors through the game).
+    MsBtlBridgeEvent2Btl @ 0x0078_24e0 => extern "C" fn ms_btl_bridge_event2_btl() {
+        atel::ms_btl_bridge_event2_btl(&mut mem(), &mut call_ptr);
     }
     /// `MsBattleFree()`: the other modules' callees through the game.
     MsBattleFree @ 0x0078_1590 => extern "C" fn ms_battle_free() -> u32 {
