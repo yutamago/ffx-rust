@@ -118,3 +118,16 @@ harvest_test!(
         )
     }
 );
+// effects (round 39)
+harvest_test!(
+    update_phyre_view_projection_matrix,
+    0x0071_1910,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        // the two local matrices in stack scratch
+        let local = m.stack_range().start + 0x100;
+        ffx_vfx::fp::bridge::update_phyre_view_projection_matrix(m, local, &mut |m, f, a| {
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        });
+    }
+);
