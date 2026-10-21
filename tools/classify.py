@@ -392,6 +392,7 @@ REVIEWED = {
     0x007e2270: ("debug", "in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
     0x007e2770: ("debug", "in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
     0x007e2a60: ("debug", "in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
+    0x008c6d32: ("dead", "not a function: the jne target inside MenuAbility_ApplyHeal_008c6d00, which is ported whole (menu round 30)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

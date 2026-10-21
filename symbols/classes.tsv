@@ -13773,7 +13773,7 @@
 0x008c6ba0	logic	default (no rule: ported to be safe)
 0x008c6bc0	logic	default (no rule: ported to be safe)
 0x008c6d00	logic	default (no rule: ported to be safe)
-0x008c6d32	logic	default (no rule: ported to be safe)
+0x008c6d32	dead	reviewed: not a function: the jne target inside MenuAbility_ApplyHeal_008c6d00, which is ported whole (menu round 30)
 0x008c6dd0	logic	default (no rule: ported to be safe)
 0x008c7430	logic	default (no rule: ported to be safe)
 0x008c7630	logic	default (no rule: ported to be safe)
