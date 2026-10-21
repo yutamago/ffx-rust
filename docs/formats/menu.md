@@ -85,6 +85,27 @@ jump table at `0x008d5134`:
 
 The page slides in by `MenuMn2_Ease(t, 1) * 0x155 / 4096` pixels.
 
+`DrawLimitPageOverDrive(chr)` (`0x008d2270`) draws the overdrive page: a
+type-0xd plate, two gauge frames and three coloured pieces cut from the
+menu sheet (`TOMkpShapeXYWHUV` / `TOMkpShapeXYWHUVC2`, the uv words given
+as floats: texel coordinates for some pieces, fractions for others), the
+gauge (`TkMn2DrawCrossLimitParam(602, 371, 450, 8, TkMenuGetLimit(chr),
+TkMenuGetLimitMax(chr))`) and, for party members (below 8), the mode's
+name `TkMenuMenu1Mes(TkMn2GetOverDriveId(chr) + 0x1033)` centred on x 1550.
+
+The sub-windows draw with `MenuStatus_WindowDraw_008d2790` (`+0x10`): a
+command page (`TkMenuGetDispCommand(+0x60, +0x58, +0x5c, who, list)`,
+at most 22 commands) for the current member (`+0x64` 0) or aeon,
+sliding in by `MenuMn2_Ease(+0x52, +0x54)`: down by `ease * 416 / 2 /
+4096` while `i16 +0x54` is positive, else across by `ease * 512 / 2 /
+4096`. Command `k` is in row `k >> 1`, column `k & 1` (x `210 -
+Menu_Scale32(dx, row)` or `970 + ..`, y from 316 (aeons 375) in steps of
+63 (58) plus `MenuHelp_Ratio(dy, row)`); only plates within y 416 and x
+-512..512 (remapped units) are drawn, each a type-0xe plate with the
+command's name (`+0x58` 1: `MenuDrawChrNameOrCommand`, else the
+ability (`+0x60` 0) or command icon name). The title goes through
+`0x008f9280(+0x68, ..)` in the font shade `i16 +0x52 >> 5`.
+
 `TkMn2MainStatusPlayerStatus` (`0x008d5180`) draws the stats of the
 character page from the table at `0x00c5a790`: `(i32 mes, u32 field)`
 pairs (messages 7..14 over save-record offsets 47..54), ended by a
@@ -212,6 +233,15 @@ weapon's and armour's abilities for kind 0.
 `MenuSelList_DrawRows` (`0x008d1620`) draws a two-column selection list:
 nine row pairs from row `first * 2 - 2`, left column at `remapX2(210)`,
 right at `remapX2(970)`, from `y + remapY2(403)` down by `remapY2(77)`.
+`MenuSelList_DrawList_008d1400` (`0x008d1400`, the overdrive window's
+list draw through `0x008d16f0`) puts those rows in the scissor
+`TkMn2DrawMenuWindowScissor(ftol(remapY2(475)), ftol(remapY2(545)), part,
+i16 +0x46)`: one pass (part 0) at rest, the old rows (part 1) and the
+new ones (part 2, `y = ftol(remapY2(545) * +0x46 * -1/4096)`) while the
+list scrolls. The scroll bar is `DrawCrossMenuScrollParts(remapX2(955),
+remapY2(480), remapX2(10), remapY2(530), +0x32, +0x3a, (+0x30 + 1) >> 1)`
+(row pairs), the cursor `MenuSelList_DrawCursor(w, 0xc, 1)` while `i8
++0x45` is not negative.
 
 Gear sorting: `0x008c9bf0` calls `MenuItem_SortGear_008c9c40(list,
 start, n)` for each owner's weapons, then armour
@@ -288,6 +318,21 @@ it is 0, `MenuWShop_SellWindowCtrl` (`0x008d9df0`) the same while the
 open sub-command window's (`0x023cc128`) is above 0;
 `MenuKaizou_ListWindowCtrl` (`0x008d5810`) runs the list controller,
 then `TkMn2DrawSelItemsHelp`.
+The customise window draws with `MenuKaizou_Draw_008d6860`: the menu
+background, the rows (`MenuKaizou_DrawRows`) between y 315 and 680
+(`TkMn2DrawScissorRect` at rest, `TkMn2DrawMenuWindowScissor` parts 1/2
+while scrolling, the new rows shifted by `remapY2(675) * +0x46 / 4096`
+rounded to `f32`), `0x008d65f0(w, 389, 327)`, the scroll bar `(955, 319,
+8, 675)` over `u16 +0x30` rows, the plates `(209, 252)` and `(970, 659)`
+(`740 x 60`) with sheet cells 6 at `(364, 264)` and 7 at `(1125, 671)`,
+and the character plate at `(210, 165)` for `MenuKaizou_WeaponByte4(w)`.
+The list window draws with `DrawGearCustomizationMenu` (`0x008d5f60`):
+the same rows (`0x008d5d50` instead of `MenuKaizou_DrawRows`), and for a
+row whose `g_TkMenuItemList` entry names a customisation (byte `+3` not
+`0xff`) the required item from `TkMn2GetKaizou()` (8-byte entries: `u16
++4` item, `u8 +6` count) in `TkMn2ItemRequireWindow(970, 319, item,
+count, 0)`. The weapon title comes from the other window's (`0x0186aa30`)
+row.
 `MenuItem_OpenGearWindow` (`0x008c9330`) opens the item menu's gear list
 over `TkMn2RefreshWeaponShopSell2` (kept at `0x0186a37c`, gear mode off,
 rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
@@ -318,11 +363,23 @@ y 240, 77 high, ten a page, scissor `(10 + 770, 235)`, and the scroll bar
 `(955, 240, 10, 760)` counts `(u16 +0x30 + 1) / 2` rows. Its cursor shows
 while the sub-command window is open and not on its third entry (`u16
 +0x48` 2).
+`MenuItem_ListWindowDraw_008c7750` (`0x008c7750`) is the item menu's
+list: row pairs at x 210/978 from y 284 (list kind 2, `u8 +0x43`) or 240,
+77 apart, `u16 +0x3a` pairs; the scroll bar `(955, 240, 10, 760)` with
+`0x0186a408` 1, else `(955, 284, 10, 687)`. While it scrolls it draws two
+passes in the scissor from `y0 - 5` to `10 + 77 * pairs`: part 1 with row
+mode 2 from `y0`, part 2 with mode 1 from `y0 - (413 - (y0 - 2)) * +0x46 /
+4096`. The cursor (`0x008c7af0(w, 210, y0)`) shows while `+0x94` is set.
 
 `TkMn2GetWShopPos` (`0x008d9190`) loads the weapon shop's layout from the
 menu sequence (7 rectangles, 12 positions, 5 colours, 3 common plates)
 and then grows the `u16` at `0x023cc2fa` (the third rectangle's) by
 `0x30`.
+`TkMn2GetIShopPos` (`0x008db080`) does the same for the item shop in one
+interleaved run: 10 rectangles, 21 positions and 11 colours (the colour
+words at `0x0186abec..0x0186ac14`), then five common plates
+(`0x023cc240`, `0x023cc220`, `0x023cc1e0`, `0x023cc1c0`, `0x023cc1a0`; the
+second and fifth with the extra pair `0xda`/`0xdb`), with no size fix-up.
 
 The weapon shop's first sub-window (`MenuWShop_OpenSubWindow1`) steps
 with `MenuWShop_SubWindow1Ctrl` (`0x008d79c0`): like
@@ -368,6 +425,34 @@ wraps over `TkMenuGetPlayerListMax`/`TkMenuGetSummonListMax`.
 menu's window: circle asks the window's `+0x1c` callback, and the
 repeat bits `0x1000`/`0x4000` (or the d-pad's `4`/`8` held alone) switch
 to the previous/next aeon.
+`MenuSummon_StatusWindowCtrl_008ccb60` (jump table `0x008cce84`) is the
+aeon status window (four pages): state 4 waits for input (circle opens
+page 1 unless the aeon is `0xe..=0x11`, the magus sisters' range; cross
+leaves through 15/16; the d-pad flips aeons as above), then 7/9/11/13
+open the pages (`MenuStatus_OpenWindow(1, page, 0x42/0x43/0x47/0x46, 0)`)
+and 8/10/12/14 wait on each: circle closes it and opens the next (page 4
+back to 3), cross closes it and returns to 3. Entering (0..2) skips
+straight to 4; 3 fades the background out (`TMn2SetStatusBGDiff(-0x155)`)
+and 7 back in (`0x155`).
+The growth window's draw (`MenuSummon_Window2Draw_008ce750`, the
+`+0x10` of `MenuSummon_OpenWindow2`) asks `MenuSummon_GrowInfo(+0x48,
+aeon, &cost, &gain)`; a cost (not negative) shows the required-items
+window `TkMn2ItemRequireWindow(970, 380, cost, gain, 0)` and the right
+plate (sheet cell 0x10); the rows (`MenuSummon_DrawGrowRows`) sit in
+the scissor from y 365, `remapY2(70) * 9` high, the scroll bar at `(955,
+370, 8, 630)`.
+
+`TkMenuCtrlAbility` (`0x008c60b0`, jump table `0x008c6454`, states
+`0..=0x12` at `+0x1c`) runs the ability menu: the list window
+(`g_TkMenuItemWindow`) and the target window (`0x0186a39c`) answer
+through `i8 +0x45` (positive picked, negative cancelled). A cast (state
+12) pays `MsGetRomPlyCommand([0x0186a3a8]) +0x25` MP, heals the target
+(`MenuAbility_ApplyHeal_008c6d00`, sound `0x80000062`) for target kinds
+0 and 2 (`u8 0x0186a392`) and goes back to the target window while the
+MP still covers the cost, else closes it. Flipping members with the
+d-pad keeps each member's row, column and top row in `u16 0x0186a3b4`,
+`0x0186a3c4`, `0x0186a3d4` (indexed by character) and restores the new
+member's unless its row is negative.
 
 The equip menu opens with `MenuEquip_Open_008cf830` (`0x008cf830`): it
 saves every character's (0..=6) armour, weapon, HP and MP in the word
@@ -522,6 +607,24 @@ centred) from `inputGetCurrDeviceStickInfo`'s floats 2, 3, 0, 1,
 resets a record: u16 `+0x9d` = `0x100`, byte `+0x9f` = 1, `+0x94` =
 `0x5000c`, bytes `+0x9c`/`+0x83` = 0, and the identity button map.
 
+`Pad_ScanPort_00889050(port, slot, pad)` (`0x00889050`, from
+`TkUpdateScanControler`) walks a record's connection phase (byte
+`+0x9f`). It switches first on `scePadGetState` (jump table
+`0x008892fc`; the PC stub always returns 6): 0 resets the record (phase
+1), 2 and 6 read the pad (`Pad_ReadAndUpdate`) and poll `0x0062fb20` in
+phases 6 and 7, 7 reports a lost pad. Then on the phase (jump table
+`0x0088931c`): 1 waits one frame (byte `+0x83`) and probes the pad kind
+(`scePadInfoMode(.., 2, 0)`, else `(.., 1, 0)`: 4 goes to phase 2, 7 to
+6); 2 sets the main mode (phase 6, or 1 on failure); 3 aligns the
+actuators (`Pad_ActuatorIds`, `Pad_SetActuatorPair`, bytes `+0xf7`/`+0xf6`
+= 8 - `0x00888a40(..)`, `scePadSetActAlign(.., +0xf0)`, phase 4); 4
+becomes 5; 5 is the steady state: `Pad_CheckPressMode(.., 5, pad)`, the
+actuators (`TkUpdateControlerActuator`, `scePadSetActDirect(.., +0xf8)`)
+and a report. Byte `+0x82` marks the press-mode check. The report sets
+byte `+0x80` to the pad's mode nibble (`pad[1] >> 4`) and `+0x81` to 1;
+without one `u16 +0x80` = `0x1ff`. The original passes `ecx` (the port)
+to `scePadGetState`, relying on `TkGetControlerWork` keeping it.
+
 `MenuSaveLoad_DrawSlotList` (`0x008b4a50`) draws the save/load list
 inside the scissor `(0, 0x5a)`..`(0x200, 0x146)` (PS2 pixels): with the
 list at rest (`u16 +0x32` == `+0x34`) the rows -1..=5 from y `0x2a`, 0x30
@@ -597,6 +700,27 @@ rectangle `+0x48` comes from `TOWideWindowRect_008b8d10`, except on map
 `0x17` for message `(0x1c7, 0xc7)`, which is pinned at x `0x154` (language
 3) or `0x160`. It ends with `+0x2c` = `0x10001`, `+0x114` = `+0x11c` and
 the seven words at `+0xd4` copied to `+0xb8`.
+
+Menu messages come in two kinds, each with a table of method words (two
+copies each): `0x00c5b1b0`/`0x00c5b1d4` holds
+`TkMenuMessageWidth_008de210` and `TkMenuMessageLayout_008de370`,
+`0x00c5b200`/`0x00c5b224` holds `TkMenuMessageSize_008de250`,
+`TkMenuMessageLayout2_008de5d0` and `TOTextScrollInit_008ded00`.
+`TkMenuMessageLayout2_008de5d0` (`0x008de5d0`) counts the words above
+the text (`TOCountMessageWordsAbove_008b8140(id, text, 3)` into `u16
++0x24` and `+0x28`, which also counts the pen `0x025d09bc`'s), measures
+the lead (`TOGetMessageWH(.., flags | 3)`, width in `u16 +0x2a`, grown by
+`TOGetChangeMacroWidth` for `u16 +0x22` 1) and then the rest from the
+text it returned (`.., flags | 1`, height into `+0x46`); `u16 +0x44` is
+the rest's width plus the lead's (`+0x22` 1) or the rest's alone. `+0xa8`
+counts the words (plus the pen macro's, `TOGetChangeMacroAddress(0,
+pen)`), and `u16 +2` is set when all of them are above (`+0xa8` equal to
+`+0x28`, or to `+0x24` for the other lead kind), except in Eternal Calm
+scenes (`isEternalCalmScene(g_GraphicMapId)`). The window is centred as
+in the first kind (no wide or map `0x17` cases) through
+`TOWideWindowRect_008b8d10`; `u16 +0xe` = 0 when words are above, and
+the choices are laid out (`TOLayoutMessageChoices_008b9a60(m, 1)`) when
+`u16 +0x1e` is 1 and `i16 +0x1c` positive.
 
 `TkMenuCtrlWorldMap` (`0x008e2960`, jump table `0x008e2a84`) runs the
 world map through states 0..10 at `+0x1c`: read the map image (CD file
@@ -685,3 +809,43 @@ spoil in use (the six `u16` at `0x02310f8e`), `remapY2(84)` apart;
 won: `i8 0x02310f70` rows of `u16` item `0x02310f74[i]` and `u8` count
 `0x02310f84[i]` (drawn right-aligned at x 637, scale 0.68). All
 coordinates are 1920x1080 units through `graphicUiRemapX2/Y2`.
+
+`BtlEnd_DrawExchangePage_008bd670` (`0x008bd670`, called with the
+slide by `0x008bd940` between `0x008bd280` and `0x008bd020`) is the
+weapon page's twin for exchanging gear: y from 250, the title plate 66
+and sheet cell 0xe 54 above, rows 66 apart, the name lit when the
+record's byte `+3` & 0xd is set, a second full scissor after the title.
+Its cursor (`TOMakePktShapeCursor(0, ftol(remapX2(180) + left),
+ftol(remapY2(66) * row + y0 + 3))`) follows `0x0186a19c`: in mode 1 the
+row `[0x0186a1a0 + 4 * mode]` (the cursor), or with a pick
+(`0x0186a1a8`) the picked slot `0x0186a1a4`, blinking on odd
+`TkMenuGetTimer() / 2`; other modes show it only with a pick.
+
+`TkInitSaveWork` (`0x0088df40`) resets the save event record
+(`MsGetSaveEventAddress`) for a new game (`+4` = -1, `+0x20` =
+`0xffffff00`, byte `+0x13` = bit 0 kept | 2, byte `+0xd0` = 2, the eight
+bytes `+0xac` = 0..7, the rest of `+0..+0xec` and the 56 words at
+`+0x10c` cleared), then runs `AtelInitSaveWork`, `TkRefreshSoundMode`
+and, in Asia mode (`FFXGetAsiaMode_007826a0` through the jump
+`0x0086a7f0`), `MsSetSaveConfigEnglish(1)`. `TkMenuCopyLoadedSave(dst,
+buffer)` (`0x008b54a0`) copies the `0x68c0` bytes after a save file's
+`0x40`-byte header and runs `setDefaultPlayerName`.
+
+`BtlEnd_DrawSpoilListPage_008bd280` is the third page `0x008bd940`
+slides (at `-dx`): the gear held, from x `210 + dx`, y 250, rows 66
+apart drawn by `BtlEnd_DrawWeaponPlate_008be0d0` inside the scissor
+`(left - 5, y0, 750, 66 * 6 + 6)`. At rest (`0x0186a190` ==
+`0x0186a194`) it draws rows `top - 1 ..= top + 6`; while scrolling six
+from the old top (fixed 2) and six from the new one shifted by `66 * 6 *
+[0x0186a18c] / 4096` (fixed 1). In mode 0 (`0x0186a19c`) the cursor marks
+row `[0x0186a1a0]` and blinks while a pick is held; in other modes it
+shows only with a pick. With no slide it adds the scroll bar `(955, 250,
+10, 396)` over `[0x0186a188]` rows, 6 shown.
+
+`BtlEnd_DrawCaption_008b9f30` (`0x008b9f30`) draws the battle-end
+caption at the bottom right: with `u16 0x0186a168` 0 the text
+`0x025cc594` (`TkBtlEndGetText(0x4004)`) on one plate at y 925, else
+`0x025cc58c` (`0x400a`) split at its first line code (the byte is 0 while
+it draws, 1 after) into two lines on plates at y 870 and 925. A plate is
+`remapX2(80)` wider than the widest line (scale 0.78), at least
+`remapX2(740)`, right-aligned at `remapX2(1806)`, the text centred in it.
