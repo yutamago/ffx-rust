@@ -4813,3 +4813,118 @@ fn leaf_misc_leaves_match_the_original_on_a_snapshot() {
     };
     misc_leaves(&mut a, &mut b, &mut Xorshift(0x3333_0502), false);
 }
+
+/// Round 33's default names (`ffx_battle::save`): `setDefaultPlayerName`
+/// and `resetDefaultPlayerNameStatus` on the saved names drawn (default
+/// or not, any of the languages 0, 1, 9, 10, 0xb), the two story names a
+/// placeholder or not, the story at and around its two steps; the
+/// language, `MsMenuGetText` (its text a scratch string),
+/// `debugSetRikkuName` and `MenuNameEntry_CommitDefault0b` logging stubs,
+/// the name converters the originals.
+fn names(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use ffx_battle::save::bridge as sv;
+    macro_rules! pick {
+        ($rng:expr, [$($v:expr),+ $(,)?] $(,)?) => {{
+            let v = [$($v),+];
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let rec = scratch(a, b, 0x200);
+    let slot = |k: u32| rec + 0x80 * k;
+    let logged: [(u32, u8); 4] = [
+        (sv::TO_GET_FFX_LANG_JMP, 0),
+        (sv::MS_MENU_GET_TEXT, 3),
+        (sv::DEBUG_SET_RIKKU_NAME, 0),
+        (sv::NAME_ENTRY_COMMIT_DEFAULT_0B, 0),
+    ];
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(logged) {
+            logging_stub(o, f, STUBS_D + 0x40 * k, slot(k), n, 0);
+        }
+    }
+    let text = scratch(a, b, 0x20);
+    let local = scratch(a, b, 0x20);
+    let saves = sv::SAVE_NAMES_AT.ptr(b).addr;
+    let defaults = sv::DEFAULT_NAMES.ptr(b).addr;
+    let name = |rng: &mut Xorshift| -> Vec<u8> {
+        // letters (some of the scripts' ranges), a NUL within 0x12 bytes
+        let n = rng.below(0x12) as usize;
+        let mut v: Vec<u8> = (0..n)
+            .map(|_| {
+                pick!(
+                    rng,
+                    [
+                        0x41 + rng.below(26),
+                        0x61 + rng.below(26),
+                        0x80 + rng.below(0x60),
+                        0x20
+                    ]
+                )
+                .to_le_bytes()[0]
+            })
+            .collect();
+        v.resize(0x12, 0);
+        v
+    };
+    for round in 0..300 {
+        let lang = pick!(rng, [0u32, 1, 1, 9, 10, 0xb, 2]);
+        poke(a, b, slot(0) + 4, &lang.to_le_bytes());
+        for k in 0..18u32 {
+            let mut v = name(rng);
+            v.push(u8::try_from(pick!(rng, [0u32, 1, 9, 10, 0xb, 1])).unwrap());
+            v.push(pick!(rng, [0u8, 0, 1, 2]));
+            poke(a, b, saves + 0x14 * k, &v);
+            let mut d = name(rng);
+            d.extend([0, 0]);
+            if (k == 6 || k == 0xb) && rng.below(2) == 0 {
+                d[0] = b'O';
+            }
+            poke(a, b, defaults + 0x14 * k, &d);
+        }
+        let mut t = name(rng);
+        t.resize(0x20, 0);
+        poke(a, b, text, &t);
+        poke(a, b, slot(1) + 4, &text.to_le_bytes());
+        let story = pick!(rng, [0u16, 0x59, 0x5a, 0x5b, 0x603, 0x604, 0x605, 0xffff]);
+        set(a, b, sv::SCENARIO, story);
+        let mut call = |m: &mut Oracle, f: u32, args: &[u32]| call_original(m, f, args);
+        if round % 3 == 0 {
+            twin(
+                "resetDefaultPlayerNameStatus",
+                a,
+                b,
+                0x0078_73a0,
+                &[],
+                0,
+                |m| {
+                    sv::reset_default_player_name_status(m, &mut call, local);
+                    0
+                },
+            );
+        } else {
+            twin("setDefaultPlayerName", a, b, 0x0078_7470, &[], 0, |m| {
+                sv::set_default_player_name(m, &mut call, local);
+                0
+            });
+        }
+        let keep = b.read(local, 0x14).unwrap();
+        a.write(local, &keep).unwrap();
+        same(&format!("names {round} {lang:#x} {story:#x}"), a, b);
+    }
+}
+
+#[test]
+fn leaf_names_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    names(&mut a, &mut b, &mut Xorshift(0x3333_0601));
+}
+
+#[test]
+fn leaf_names_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    names(&mut a, &mut b, &mut Xorshift(0x3333_0602));
+}

@@ -5304,6 +5304,18 @@ ported! {
         let at = local.at();
         minor::password_text_read(&mut mem(), &mut call_ptr, at)
     }
+    /// `setDefaultPlayerName()`: the converted name in the port's frame.
+    setDefaultPlayerName @ 0x0078_7470 => extern "C" fn set_default_player_name() {
+        let mut local = super::StackFrame::<{ (save::NAME_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        save::set_default_player_name(&mut mem(), &mut call_ptr, at);
+    }
+    /// `resetDefaultPlayerNameStatus()`: as [`set_default_player_name`].
+    resetDefaultPlayerNameStatus @ 0x0078_73a0 => extern "C" fn reset_default_player_name_status() {
+        let mut local = super::StackFrame::<{ (save::NAME_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        save::reset_default_player_name_status(&mut mem(), &mut call_ptr, at);
+    }
     /// `MsGetReelResultKind_007b1710(symbols, hits)`.
     MsGetReelResultKind_007b1710 @ 0x007b_1710 => extern "C" fn ms_get_reel_result_kind(symbols: u32, hits: u32) -> u32 {
         reel::ms_get_reel_result_kind(&mut mem(), symbols, hits)
