@@ -841,4 +841,236 @@ pub mod bridge {
             put(mem, actor, 0xdcc, 2u8);
         }
     }
+
+    /// `MsSetRamMonData` (`0x0079cb10`): [`ms_set_ram_chr`] for each of the
+    /// eight monster slots in use (`MsGetMon(i) + 0x10`).
+    pub fn ms_set_ram_mon_data(mem: &mut impl Mem) {
+        for i in 0..8 {
+            let mon = crate::actor::bridge::ms_get_mon(mem, i);
+            if byte(mem, mon, 0x10) != 0 {
+                ms_set_ram_chr(mem, i + 0x14);
+            }
+        }
+    }
+
+    /// The records `MsSetRamChrData` gives defaults: the 0x1f actors and
+    /// their 0x3e weapon records (`MsGetChr` 0..0x5d).
+    pub const CHR_RECORDS: u32 = 0x5d;
+
+    /// `MsSetRamChrData`'s defaults for every record (actors and weapons).
+    fn record_defaults(mem: &mut impl Mem) {
+        let water = crate::state::bridge::UNDERWATER.get(mem) != 0;
+        for i in 0..CHR_RECORDS {
+            let p = ms_get_chr(mem, i);
+            let n = i.to_le_bytes()[0];
+            put(mem, p, 0xc, n);
+            put(mem, p, 0x13, 0xffu8);
+            put(mem, p, 0x14, n);
+            for o in [0x11, 0x24, 0x37] {
+                put(mem, p, o, 1u8);
+            }
+            // under water the party floats (3)
+            let mode: u8 = if water && i < 0x12 { 3 } else { 1 };
+            put(mem, p, 0x20, mode);
+            put(mem, p, 0x21, 0x101u16);
+            put(mem, p, 0x25, u8::from(!water));
+            put(mem, p, 0x26, u8::from(!water));
+            put(mem, p, 0x27, 0xffffu16);
+            put(mem, p, 0x2a, 0x100u16);
+            put(mem, p, 0x2c, 3u8);
+        }
+    }
+
+    /// `MsSetRamChrData`'s defaults for actor `i`, then its two weapon
+    /// records' IDs (`0x5000 + i`, kind 0xe; `0x5100 + i`, kind 0xf).
+    fn actor_defaults(mem: &mut impl Mem, i: u32) {
+        let a = ms_get_chr(mem, i);
+        // MsSetFields_0079a170
+        put(mem, a, 0x776, 0xffu8);
+        put(mem, a, 0xa4e, 0xffu8);
+        put(mem, a, 0x40, 1.0f32);
+        put(mem, a, 0x44, 1.0f32);
+        put(mem, a, 0xdd2, 0x101u16);
+        put(mem, a, 0xdd4, 1u8);
+        put(mem, a, 0xdde, 0xffu16);
+        put(mem, a, 0x15, 1u8);
+        put(mem, a, 0x1b, 1u16);
+        put(mem, a, 0x1d, 1u8);
+        put(mem, a, 0x16, 0x0101_0101u32);
+        put(mem, a, 0x2d, 1u8);
+        put(mem, a, 0x2e, 0x0101_0101u32);
+        put(mem, a, 0x23, 1u8);
+        put(mem, a, 0x422, i.to_le_bytes()[0]);
+        put(mem, a, 0xdf9, 1u8);
+        put(mem, a, 0xde4, 0xffffu16);
+        put(mem, a, 0x3f1, 0x10u8);
+        put(mem, a, 0xe0e, 0x108u16);
+        put(mem, a, 0xe2c, 1u32);
+        put(mem, a, 0xe15, 1u8);
+        crate::flow::bridge::ms_magic_effect_set(mem, i, a);
+        put(mem, a, 0x43b, 1u8);
+        put(mem, a, 0x3fc, 0x100u16);
+        put(mem, a, 0x400, 0x100u16);
+        put(mem, a, 0x406, 8u8);
+        put(mem, a, 0x41d, 1u8);
+        for o in [0x43f, 0x442, 0x3f2] {
+            put(mem, a, o, 0xffu8);
+        }
+        put(mem, a, 0x44f, 0u8);
+        put(mem, a, 0x408, 0u16);
+        put(mem, a, 0x40f, 1u8);
+        put(mem, a, 0x438, 0xffu8);
+        put(mem, a, 0xf74, 0xffffu16);
+        for o in [0x3a0, 0x3a4, 0x3a8] {
+            put(mem, a, o, 1.0f32);
+        }
+        put(mem, a, 0x3f0, 0xffu8);
+        put(mem, a, 0x3ac, 1.0f32);
+        put(mem, a, 0x4b0, 0x0006_0006u32);
+        put(mem, a, 0x4b8, 0x2004u16);
+        put(mem, a, 0x4bc, 40.0f32);
+        put(mem, a, 0x4ba, 0x20u8);
+        put(mem, a, 0x32, 1u8);
+        put(mem, a, 0x4c0, 0.0f32);
+        put(mem, a, 0x50c, 1u8);
+        put(mem, a, 0x4c4, 0.0f32);
+        put(mem, a, 0x6d4, 0xffu8);
+        put(mem, a, 0x4d4, 3.0f32);
+        put(mem, a, 0x4d8, 3.0f32);
+        put(mem, a, 0x4d0, 0.4f32);
+        put(mem, a, 0x4dc, 50.0f32);
+        put(mem, a, 0x4f0, 0.2f32);
+        put(mem, a, 0x534, 0.0f32);
+        let dry = crate::state::bridge::UNDERWATER.get(mem) == 0;
+        put(mem, a, 0x34, u8::from(dry));
+        let id = i & 0xffff;
+        for (second, base, kind) in [(0, 0x5000, 0xeu8), (1, 0x5100, 0xf)] {
+            let w = crate::actor::bridge::ms_get_weapon(mem, i, second);
+            put(mem, w, 0xe, u16::try_from(id + base).unwrap_or_default());
+            put(mem, w, 0xd, kind);
+        }
+    }
+
+    /// `MsSetRamChrData`'s party: the battle party from the save's
+    /// (`g_SaveInParty`, 3 slots; each member present (`+0x10`), able
+    /// (`+0xdc8`), in its slot (`+0x4fe`), the middle one `+0x3f8`), slots
+    /// 3-6 empty and the 17 reserve members copied; then the characters
+    /// who joined (`MsGetSavePlyJoin`) or are present marked present.
+    fn party_defaults(mem: &mut impl Mem) {
+        let party = crate::ability::bridge::PARTY.ptr(mem).addr;
+        let save_in = crate::save::bridge::IN_PARTY.ptr(mem).addr;
+        for k in 0..3u8 {
+            let c = byte(mem, save_in, k.into());
+            if c != 0xff {
+                let a = ms_get_chr(mem, c.into());
+                put(mem, a, 0x10, 1u8);
+                put(mem, a, 0xdc8, 1u8);
+                put(mem, a, 0x4fe, k);
+                if k == 1 {
+                    put(mem, a, 0x3f8, 1u8);
+                }
+            }
+            mem.write(party.wrapping_add(k.into()), c);
+        }
+        mem.write(party.wrapping_add(3), u32::MAX);
+        let out: [u8; 17] = mem.read(crate::save::bridge::OUT_PARTY.ptr(mem).addr);
+        crate::ability::bridge::PARTY_EXTRA.set(mem, out);
+        for i in 0..0x12 {
+            let a = ms_get_chr(mem, i);
+            if crate::save::bridge::ms_get_save_ply_join(mem, i) == 1 || byte(mem, a, 0x10) != 0 {
+                present(mem, a);
+            }
+        }
+    }
+
+    /// An actor in the battle: `+0x10`, `+0xdd6`-`+0xdda` set.
+    fn present(mem: &mut impl Mem, a: u32) {
+        put(mem, a, 0x10, 1u8);
+        put(mem, a, 0xdd6, 0x101u16);
+        put(mem, a, 0xdd9, 0x101u16);
+        put(mem, a, 0xdd8, 1u8);
+    }
+
+    /// `MsSetRamChrData` (`0x0079c110`, was `Battle_SetUpActors`): every
+    /// actor and weapon record to its defaults (`g_BtlNoCommand` cleared
+    /// too), the party from the save, the 18 characters' actors
+    /// ([`ms_set_ram_chr`], their weapons' models from the gear they
+    /// wear), each actor's kind (party 3, aeon 4 in slot `i - 8`, the
+    /// third aeon (0x10) `+0x3f8`; monster 5) and the formation's eight
+    /// monsters (`g_BtlVoiceEvent + 0xc`, `u16` IDs, 0xffff an empty
+    /// slot): each one met (`MsSetMonsterCheck`), numbered in order,
+    /// present and able.
+    pub fn ms_set_ram_chr_data<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        use crate::turn::bridge::ms_get_chr_id;
+        crate::util::bridge::ms_struct_clear(
+            mem,
+            crate::stat::bridge::NO_COMMAND.ptr(mem).addr,
+            0x60,
+        );
+        record_defaults(mem);
+        for i in 0..crate::actor::ACTORS {
+            actor_defaults(mem, i);
+        }
+        party_defaults(mem);
+        for i in 0..0x12 {
+            let a = ms_get_chr(mem, i);
+            put(mem, a, 0xdd5, 1u8);
+            put(mem, a, 0xe, u16::try_from(i).unwrap_or_default());
+            ms_get_chr_id(mem, &mut *call, a);
+            ms_set_ram_chr(mem, i);
+            for k in 0..2u32 {
+                let w = crate::actor::bridge::ms_get_weapon(mem, i, k.cast_signed());
+                let id = byte(mem, a, 0x592 + k);
+                let model = crate::exchange::bridge::ms_get_save_weapon_model(mem, id.into());
+                put(mem, w, 4, model);
+            }
+        }
+        for i in 0..crate::actor::ACTORS {
+            let a = ms_get_chr(mem, i);
+            if crate::actor::bridge::ms_get_ram_chr_monster(i) != 0 {
+                put(mem, a, 0x3f5, 0x303u16);
+                put(mem, a, 0x43d, 3u8);
+                put(mem, a, 0x4fd, 5u8);
+                continue;
+            }
+            put(mem, a, 0x3f5, 0u16);
+            let summon = crate::damage::bridge::ms_get_ram_chr_summon(mem, i) != 0;
+            put(mem, a, 0x43d, 8u8);
+            if summon {
+                put(mem, a, 0x4fd, 4u8);
+                put(mem, a, 0x4fe, i.wrapping_sub(8).to_le_bytes()[0]);
+                put(mem, a, 0x1e, 1u8);
+                put(mem, a, 0x3f9, 1u8);
+                put(mem, a, 0xe15, 0u8);
+                if i == 0x10 {
+                    put(mem, a, 0x3f8, 1u8);
+                }
+            } else {
+                put(mem, a, 0x4fd, 3u8);
+                put(mem, a, 0x437, 1u8);
+            }
+        }
+        let mut n = 0u8;
+        for i in 0..8 {
+            let m = crate::actor::bridge::ms_get_mon(mem, i);
+            let formation = crate::state::bridge::VOICE_EVENT.get(mem);
+            let id: u16 = mem.read(formation.wrapping_add(0xc + 2 * i));
+            put(mem, m, 0xe, id);
+            ms_get_chr_id(mem, &mut *call, m);
+            let id: u16 = mem.read(m.wrapping_add(0xe));
+            if id == 0xffff {
+                continue;
+            }
+            let meet = crate::save::bridge::ms_get_save_monster_meet(mem);
+            crate::save::bridge::ms_set_monster_check(mem, id.into(), meet);
+            put(mem, m, 0x4fe, n);
+            n = n.wrapping_add(1);
+            put(mem, m, 0xdf3, 1u8);
+            put(mem, m, 0x10, 1u8);
+            put(mem, m, 0x39, 1u8);
+            present(mem, m);
+            put(mem, m, 0xdc8, 1u8);
+            put(mem, m, 0x447, 3u8);
+        }
+    }
 }
