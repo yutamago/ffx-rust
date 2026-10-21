@@ -9265,6 +9265,7 @@
 0x00860fd0 function AtelAllClearEffectFlag    # fh v3:bsim1.00 0x00860f70
 0x00861000 function AtelBGSepFade             # fh v3:bsim1.00 0x00860fa0
 0x00861160 function AtelBattleEndCallback     # fh v3:exact 0x00861100; (mode, v, map, end type): 0xc024 pushes 3; its 4th word is the 0 left from TkGetNowEventJumpMapNo(0), the end type (save +0xd0, != 6, == 1 game over), so the bridge passes 0
+0x00861550 function Atel_QueueBattleEndEffect_00861550 # name ours; cdecl (kind, v): 0x01326b40 = kind, 0x01326b44 = v, AtelRegistCallbackQue2(0, 0x00861f90, "EFF" 0x00b59944); kind != 0x121: g_AtelEffectState = 1; EAX the queue's; caller AtelBattleEndCallback; ported (ffx_script helpers, script round 24 e)
 0x00862680 function AtelBindEff2OffSome_00862680 # structure: (worker, which): switches off the worker's bound effects (+0x9c) by kind: walk, water, breath, draw or all (op_et_bindeff2_*_off) and clears its flag bit; callers three bind natives; next to AtelBindEff2On; name ours; ported in helpers (script round 19)
 0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0; (worker, kind): op_et_bindeff2 + _draw_on on +0x9c, then kind 0 _walk_on (+0x38 |= 0x20), 1 _breath_on (0x40), 2 _water_on (0x80); eax the last call's / 0x80 / kind - 2; ported in helpers (script round 23)
 0x00862780 function AtelBindElemOff           # fh v3:exact 0x00862720
@@ -9329,7 +9330,9 @@
 0x00867570 function Script_OpReqSw            # (op, worker, level, stack) -> 0: opcodes 37, 4a-4e (REQSW, kind 1); the level waits (+0x1f = 1)
 0x00867740 function AtelExecCtrlEvent         # fh v3:exact 0x008676e0
 0x008677a0 function AtelExecCtrlEventInit_008677a0 # (ctrl): the event start of AtelExecCtrlEvent: debug strings "EVENT INIT cnt %5d", "INI id %3d/cnt %5d", "DECODE SIGNAL", "EVENT START"; Script_Run of the init, AtelDecodeSignal, op_event_effect_init, MsBattleExeClear, AtelClearPauseFlag; own name
+0x008682a0 function Atel_ShowWaterFps_008682a0 # name ours; cdecl (on): the four ids of g_AtelMCFPInWater (negative skipped): on: Fp_Restart + pppFpIDdispOn, else pppFpIDdispOff; EAX the last call's; caller 0x00865740; ported (ffx_script helpers, script round 24 e)
 0x008683e0 function Atel_CtrlStart             # (ctrl): the default start callback (+0x50, AtelRequireCtrlWork): Script_Run(worker, ctrl +8, 1) on each worker until its +0x34 bit 4, then AtelDecodeSignal(i, -1) for each, ctrl bit 3 set -> ctrl (0 without workers); name ours; ported in helpers (script round 17)
+0x00868460 function Atel_FadeOutQueuedSeps_00868460 # name ours; cdecl (): SndSepVolumeFadeOut(id, fade) for the g_AtelSepQueueCount queued separates (ids 0x01327080, fades 0x013270a0, from index 0), then the count 0; EAX the last fade's; caller AtelEventKickBGSep; ported (ffx_script helpers, script round 24 e)
 0x008690a0 function AtelStartSignal           # (worker, node): starts a queued request at its level and entry
 0x008691d0 function AtelExecReturn            # fh v3:bsim1.00 0x00869170
 0x00869350 function AtelExecReturn2 # (i, level, reset): AtelExecReturn(i, level, reset) (a tail jump with the caller's three words; MsAtelRequestCancel/Exe pass i, 0, 0) when worker i's request level +0x32 is set; dupes.py exact family with AtelExecReturnForce2 (0x008694f0, dead); ported in helpers (script round 23 f); fh v3:bsim1.00 0x008692f0
@@ -9574,6 +9577,7 @@
 0x0086ff40 function AtelSetEventJump2         # (map, entrance, flag): drops control, 0x0088ea60, ctx byte 0 &= 0x7f, ctx+0x210 |= 2, fade (FUN_0088eb50); was Event_ChangeMap; ported in helpers (script round 19)
 0x008700c0 function AtelSetMapFadeType        # g_SaveData +0x11 (u8); Native_SetMapFadeType
 0x008700d0 function AtelSetMapFadeFrames      # g_SaveData +0x12 (u8); Native_SetMapFadeFrames
+0x008700e0 function Atel_SetSaveEventBit_008700e0 # name ours; cdecl (n): n / 32 >= 2 (C division): 0; else TkGetSaveEventAddress() +0x18 + (n/32)*4 |= 1 << (n % 32), 1; caller Native_00fc; ported (ffx_script helpers, script round 24 e)
 0x00870130 function AtelSetForceBattleMapId   # fh v3:bsim1.00 0x008700d0
 0x00870140 function AtelSetForcePlaceId # (id): the save event record's +0xd4 (u16) = id, +0xd6 = 1; EAX the record; ported in helpers (script round 23 e); fh switch:bsim1.00 0x7100472300
 0x00870160 function AtelSetGuideMapDrawBlizFlag  # layout: alphabetical run between AtelSetForcePlaceId and AtelSetHelpEventFlag (3 unnamed in the gap); Switch 0x7100473200 AtelSetGuideMapDrawBlizFlag is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported in helpers (script round 14)
@@ -9692,6 +9696,7 @@
 0x00873b50 function AtelGetSummonNameforFinalBattleSelector # layout+callees: sorts between AtelGetMusicNumber and AtelGetVoicePan, and its named callees match the Switch 0x710044ff00 AtelGetSummonNameforFinalBattleSelector's (similarity 1.00: MsGetSaveChrName, TkMn2GetCommandName); symbols from Fahrenheit's server export; ported in helpers (script round 19)
 0x00873b80 function AtelGetVoicePan           # g_AtelVoicePan (u8)
 0x00873b90 function AtelGetVagStreamVolume    # g_AtelVagStreamVolume (u8)
+0x00873c00 function Atel_InitMovieState_00873c00 # name ours; cdecl (): TkGetSaveEventAddress() +0xe0 = 0, g_AtelMovieBuffers (3 words) = 0; EAX the save event; caller AtelInitTotal; ported (ffx_script helpers, script round 24 e)
 0x00873c70 function AtelPs2DebugString        # fh v3:bsim1.00+call.cs 0x00873c10
 0x00873c80 function AtelPs2DebugString2       # fh call.cs
 0x00873cc0 function AtelRecoverPreBgPage # (): yiSetPreBgPage(g_AtelMapIdPage +1) and yiSetIDPage(+2), each when not negative (signed bytes); ported in helpers (script round 23 f); fh v3:exact 0x00873c60
@@ -9764,6 +9769,7 @@
 0x00876390 function TkGetVibrateDefaultCurve  # (kind) -> the default curve TkGetVibrateCurve uses: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x008763e0 function TkGetVibrateCurve         # (kind, i, curve) -> u16 curve[i]; without a curve the default for kind: 2/3 0x00c52ae8, 5 0x00c52af8, 6 0x00c52b08, else 0x00c52ad8
 0x00876440 function Atel_FindWorkerByOwner    # (owner) first active (+0xaa 1) worker of the current control with +0x9c == owner: u16 +0x2e, else -1; own name
+0x008764a0 function Atel_RequestOwnerTrigger_008764a0 # name ours; cdecl (owner, kind): ctrl work 0 current; Atel_FindWorkerByOwner(owner) >= 0: AtelRequestTrigger_008764f0(0xffff, worker, kind); context back; EAX the request's or 0; caller 0x0083d3b0; ported (ffx_script helpers, script round 24 e)
 0x008764f0 function AtelRequestTrigger_008764f0 # (from, to, kind) with ctrl work 0 current: AtelRegistSignalWithoutSameLevel(from, to, 0, AtelSoundTableGet_00876860(type, kind), TkGetVibrateCurve(type, kind, worker +0x44)) when the worker's +0xab has trigger bit kind; callers the trigger checks (from 0xffff); name ours; ported in helpers (script round 19)
 0x00876860 function AtelSoundTableGet_00876860   # structure: (kind, i) -> byte i of one of three tables (kind 1 at 0x00c52ac0, 2-3 at 0x00c52ac8, 5-6 at 0x00c52ad0), 0xff otherwise; callers the sound helpers before AtelCalcSound; name ours; ported in helpers (script round 13)
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
@@ -10776,6 +10782,9 @@
 0x008b3790 function TOCloseHelpWindow_008b3790 # (): window 0x0186625c: +0x41 = 1, pointer cleared; name ours
 0x008b3860 function TkMenuDrawSaveChoice_008b3860 # (): the +0x10 draw function of the same window: TkVU1SyncPath, TOMenuOpenPktBuffTmp; question 0x2000 measured (h + 10, ftol(w)), widest of choices 0x2001/0x2002 (second kept when its f32 width > first as i16); box 0x008f9a40(x, y, w + 0x3e, h + 0x45) centred on 0x200 x 0x1a0, TOMkpShapeXY(0x2b, x+8, y+8), question 0x00901cb0(text, x+0x2e, y+0xd, 0), choices at ((0x200 - widest)/2, h + 0xd + y) 0x14 apart, greyed when byte 0x01866268[i] is 0, cursor TOMakePktShapeCursor(0, x, y) on row u32 0x01866264; TOMenuDrawKickTmp, TkVU1SyncPath (its eax returned); ported (system r40, menu::bridge::draw_save_choice); name ours
 0x008b3a40 function TOMenuMakeSaveFileName       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'BASLUS-20312'; Switch 0x71004dde30 TOMenuMakeSaveFileName (symbols from Fahrenheit's server export); (): 0x023cc0a0 = product code by TOGetFFXLang (0/16 BISLPS-25088, 1 BASLUS-20312, 2 BESCES-50491, 3 -50494, 4 -50492, 5 -50493, 9 BKSLPM-67513, 17 BISLPM-65115, 18 BESCES-50490, others unchanged) + 'FF0906%02d'; 0x01866240 = 0
+0x008b3c20 function TkMenuSaveLoad_OpenWindow_008b3c20 # name ours; cdecl (): TkMenuMainAllocWindow into 0x01866260, +8/+0xc 0, +0x10 = 0x008b37c0, +0x14/+0x1c 0, mode +0x3e 4, TkMenuMainRegistWindow; EAX the window; near-copy of MenuNameEntry_RegistWindow; caller TkMenuCtrlSaveLoad; ported (ffx_script helpers, script round 24 e)
+0x008b3c70 function TkMenuSaveLoad_OpenChoice_008b3c70 # name ours; cdecl (arg): the save choice window: +8 TkMenuInitSaveChoice_008b3680, +0xc 0x008b37b0, +0x10 TkMenuDrawSaveChoice_008b3860, +0x14 0x008b3cc0, mode 1, 0x0186625c = it, +0x58 = arg, registered; EAX the window; near-copy of MenuSave_OpenWindow2; caller TkMenuCtrlSaveLoad; ported (ffx_script helpers, script round 24 e)
+0x008b3cd0 function TkMenuSaveLoad_ClearLoadPos_008b3cd0 # name ours; cdecl (slot): TkMcSetLoadFilePos(slot, -1), its EAX; caller AtelAllClearCallbackQue; ported (ffx_script helpers, script round 24 e)
 0x008b3cf0 function AtelAllClearCallbackQue   # fh switch:bsim1.00 0x710044df20
 0x008b3d10 function SetFieldConst28_008b3d10     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x28)] = 0x0; return a0; callers: no direct caller; name ours
 0x008b3d20 function TkMenuSaveLoad_PollCard_008b3d20 # name ours; cdecl (): save screen card poll by step 0x0186626b: 0 -> 1; 1: TkMcGetInfo(0, &0x0186626c, 0, 0), 0x0186626c = 2, done on 0; 2: done (choice = 0x0186626c == 2); done: g_TkMenuSaveChoiceEnabled = 1 (step 2: the test), step 0, g_TkMenuSaveLoadToggles = (== 0); EAX TkMcGetInfo's when not 0, step - 2 past 2, else 0; callers TkMenuCtrlSaveLoad, TkMenuCloseSaveLoadScreen; ported (ffx_script helpers, script round 24 c)

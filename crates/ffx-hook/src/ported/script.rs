@@ -7062,4 +7062,40 @@ ported! {
     Vibrate_UpdateVolume_00875b40 @ 0x0087_5b40 => extern "C" fn h_875b40() -> u32 {
         hp::vibrate_update_volume(&mut mem())
     }
+    /// `Atel_RequestOwnerTrigger_008764a0(owner, kind)`.
+    Atel_RequestOwnerTrigger_008764a0 @ 0x0087_64a0 => extern "C" fn h_8764a0(owner: u32, kind: u32) -> u32 {
+        hp::atel_request_owner_trigger(&mut mem(), owner, kind)
+    }
+    /// `TkMenuSaveLoad_ClearLoadPos_008b3cd0(slot)`.
+    TkMenuSaveLoad_ClearLoadPos_008b3cd0 @ 0x008b_3cd0 => extern "C" fn h_8b3cd0(slot: u32) -> u32 {
+        hp::tk_menu_save_load_clear_load_pos(&mut mem(), slot)
+    }
+    /// `Atel_InitMovieState_00873c00()`.
+    Atel_InitMovieState_00873c00 @ 0x0087_3c00 => extern "C" fn h_873c00() -> u32 {
+        hp::atel_init_movie_state(&mut mem())
+    }
+    /// `Atel_QueueBattleEndEffect_00861550(kind, v)`.
+    Atel_QueueBattleEndEffect_00861550 @ 0x0086_1550 => extern "C" fn h_861550(kind: u32, v: u32) -> u32 {
+        hp::atel_queue_battle_end_effect(&mut mem(), kind, v)
+    }
+    /// `Atel_FadeOutQueuedSeps_00868460()`.
+    Atel_FadeOutQueuedSeps_00868460 @ 0x0086_8460 => extern "C" fn h_868460() -> u32 {
+        hp::atel_fade_out_queued_seps(&mut mem())
+    }
+    /// `TkMenuSaveLoad_OpenWindow_008b3c20()`.
+    TkMenuSaveLoad_OpenWindow_008b3c20 @ 0x008b_3c20 => extern "C" fn h_8b3c20() -> u32 {
+        hp::tk_menu_save_load_open_window(&mut mem())
+    }
+    /// `TkMenuSaveLoad_OpenChoice_008b3c70(arg)`.
+    TkMenuSaveLoad_OpenChoice_008b3c70 @ 0x008b_3c70 => extern "C" fn h_8b3c70(arg: u32) -> u32 {
+        hp::tk_menu_save_load_open_choice(&mut mem(), arg)
+    }
+    /// `Atel_ShowWaterFps_008682a0(on)`.
+    Atel_ShowWaterFps_008682a0 @ 0x0086_82a0 => extern "C" fn h_8682a0(on: u32) -> u32 {
+        hp::atel_show_water_fps(&mut mem(), on)
+    }
+    /// `Atel_SetSaveEventBit_008700e0(n)`.
+    Atel_SetSaveEventBit_008700e0 @ 0x0087_00e0 => extern "C" fn h_8700e0(n: u32) -> u32 {
+        hp::atel_set_save_event_bit(&mut mem(), n)
+    }
 }

@@ -4102,3 +4102,172 @@ pub fn vibrate_update_volume(h: &mut impl ffx_bridge::Host) -> u32 {
     h.write(vol + 1, hi.to_le_bytes()[0]);
     eax
 }
+
+/// `Atel_RequestOwnerTrigger_008764a0(owner, kind)` (name ours; caller
+/// `0x0083d3b0`): with ctrl work 0 current, the worker bound to `owner`
+/// (`Atel_FindWorkerByOwner`) gets the trigger request
+/// ([`atel_request_trigger`]`(0xffff, worker, kind)`); the current ctrl
+/// work back. Returns the request's result, 0 without a worker.
+pub fn atel_request_owner_trigger(h: &mut impl ffx_bridge::Host, owner: u32, kind: u32) -> u32 {
+    let old = super::atel_change_current_ctrl(h, 0);
+    let i = host_call(h, 0x0087_6440, &[owner]);
+    let r = if i.cast_signed() < 0 {
+        0
+    } else {
+        atel_request_trigger(h, 0xffff, i, kind)
+    };
+    super::atel_set_current_ctrl(h, old);
+    r
+}
+
+/// `TkMenuSaveLoad_ClearLoadPos_008b3cd0(slot)` (name ours; caller
+/// `AtelAllClearCallbackQue`): `TkMcSetLoadFilePos(slot, -1)`, its `EAX`.
+pub fn tk_menu_save_load_clear_load_pos(h: &mut impl ffx_bridge::Host, slot: u32) -> u32 {
+    host_call(h, 0x0088_8480, &[slot, u32::MAX])
+}
+
+/// `Atel_InitMovieState_00873c00()` (name ours; caller `AtelInitTotal`):
+/// the save event's `+0xe0` and the three movie buffer pointers
+/// (`g_AtelMovieBuffers`) cleared. Returns the save event's address.
+pub fn atel_init_movie_state(h: &mut impl ffx_bridge::Host) -> u32 {
+    let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+    h.write(save.wrapping_add(0xe0), 0_u32);
+    let bufs = h.rebase(0x0132_7110);
+    for k in 0..3 {
+        h.write(bufs + k * 4, 0_u32);
+    }
+    save
+}
+
+/// `Atel_QueueBattleEndEffect_00861550(kind, v)` (name ours; caller
+/// `AtelBattleEndCallback`): `0x01326b40` = kind, `0x01326b44` = v, the
+/// callback `0x00861f90` queued as `"EFF"` (`AtelRegistCallbackQue2(0, f,
+/// name)`); unless kind is `0x121`, `g_AtelEffectState` = 1. Returns the
+/// queue's `EAX`.
+pub fn atel_queue_battle_end_effect(m: &mut impl Mem, kind: u32, v: u32) -> u32 {
+    m.write(m.rebase(0x0132_6b40), kind);
+    m.write(m.rebase(0x0132_6b44), v);
+    let f = m.rebase(0x0086_1f90);
+    let name = m.rebase(0x00b5_9944);
+    let r = atel_regist_callback_que2(m, 0, f, name);
+    if kind != 0x121 {
+        m.write(m.rebase(0x0132_6b58), 1_u32);
+    }
+    r
+}
+
+/// `Atel_FadeOutQueuedSeps_00868460()` (name ours; caller
+/// `AtelEventKickBGSep`): every queued separate (`g_AtelSepQueueCount`,
+/// ids and fades from index 0 here) fades out
+/// (`SndSepVolumeFadeOut(id, fade)`), and the queue empties. Returns the
+/// last fade's `EAX` (the caller's with nothing queued; 0 here).
+pub fn atel_fade_out_queued_seps(h: &mut impl ffx_bridge::Host) -> u32 {
+    let count = h.rebase(SEP_QUEUE_COUNT);
+    let ids = h.rebase(0x0132_7080);
+    let fades = h.rebase(SEP_QUEUE_FADES + 4);
+    let mut r = 0;
+    let mut i = 0u32;
+    while i.cast_signed() < h.read::<i32>(count) {
+        let id = h.read::<u32>(ids + i * 4);
+        let fade = h.read::<u32>(fades + i * 4);
+        r = host_call(h, 0x0088_6f90, &[id, fade]);
+        i += 1;
+    }
+    h.write(count, 0_u32);
+    r
+}
+
+/// A menu window (`TkMenuMainAllocWindow`) with its callbacks (`+8`,
+/// `+0xc`, `+0x10`, `+0x14`; code addresses, 0 for none) and mode
+/// (`+0x3e`), kept in `slot`, then registered (`TkMenuMainRegistWindow`).
+fn menu_window(
+    h: &mut impl ffx_bridge::Host,
+    slot: u32,
+    calls: [u32; 4],
+    mode: u8,
+    arg: Option<u32>,
+) -> u32 {
+    let w = host_call(h, 0x008a_a1a0, &[]);
+    if arg.is_none() {
+        h.write(h.rebase(slot), w);
+    }
+    for (k, f) in (0u32..).zip(calls) {
+        let v = if f == 0 { 0 } else { h.rebase(f) };
+        h.write(w + 8 + k * 4, v);
+    }
+    if arg.is_none() {
+        h.write(w + 0x1c, 0_u32);
+    }
+    h.write(w + 0x3e, mode);
+    if let Some(a) = arg {
+        h.write(h.rebase(slot), w);
+        h.write(w + 0x58, a);
+    }
+    host_call(h, 0x008a_ab00, &[w]);
+    w
+}
+
+/// `TkMenuSaveLoad_OpenWindow_008b3c20()` (name ours; caller
+/// `TkMenuCtrlSaveLoad`; a near-copy of `MenuNameEntry_RegistWindow`): the
+/// save screen's window (`0x01866260`): draw `0x008b37c0`, `+0x1c` 0,
+/// mode 4. Returns it.
+pub fn tk_menu_save_load_open_window(h: &mut impl ffx_bridge::Host) -> u32 {
+    menu_window(h, 0x0186_6260, [0, 0, 0x008b_37c0, 0], 4, None)
+}
+
+/// `TkMenuSaveLoad_OpenChoice_008b3c70(arg)` (name ours; caller
+/// `TkMenuCtrlSaveLoad`; a near-copy of `MenuSave_OpenWindow2`): the save
+/// choice window (`0x0186625c`): `TkMenuInitSaveChoice_008b3680`,
+/// `0x008b37b0`, `TkMenuDrawSaveChoice_008b3860`, `0x008b3cc0`, mode 1,
+/// `+0x58` = arg. Returns it.
+pub fn tk_menu_save_load_open_choice(h: &mut impl ffx_bridge::Host, arg: u32) -> u32 {
+    menu_window(
+        h,
+        0x0186_625c,
+        [0x008b_3680, 0x008b_37b0, 0x008b_3860, 0x008b_3cc0],
+        1,
+        Some(arg),
+    )
+}
+
+/// `Atel_ShowWaterFps_008682a0(on)` (name ours; caller `0x00865740`): the
+/// four effect ids of `g_AtelMCFPInWater` (`0x01326cf0`; negative = none)
+/// restart and show (`Fp_Restart`, `pppFpIDdispOn`) or hide
+/// (`pppFpIDdispOff`). Returns the last call's `EAX` (0 without one).
+pub fn atel_show_water_fps(h: &mut impl ffx_bridge::Host, on: u32) -> u32 {
+    let ids = h.rebase(0x0132_6cf0);
+    let mut r = 0;
+    for k in 0..4 {
+        let id = h.read::<u32>(ids + k * 4);
+        if id.cast_signed() < 0 {
+            continue;
+        }
+        r = if on == 0 {
+            host_call(h, 0x0072_9570, &[id])
+        } else {
+            host_call(h, 0x0072_9700, &[id]);
+            host_call(h, 0x0072_95b0, &[id])
+        };
+    }
+    r
+}
+
+/// `Atel_SetSaveEventBit_008700e0(n)` (name ours; caller `Native_00fc`):
+/// bit `n` of the save event's two flag words (`+0x18`, `TkGetSaveEventAddress`;
+/// C division and remainder, so a negative `n` reaches below them); 1, or 0
+/// for an `n` from 64 on.
+pub fn atel_set_save_event_bit(h: &mut impl ffx_bridge::Host, n: u32) -> u32 {
+    let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+    let n = n.cast_signed();
+    let q = n / 32;
+    if q >= 2 {
+        return 0;
+    }
+    let bit = 1u32 << ((n % 32).cast_unsigned() & 0x1f);
+    let at = save
+        .wrapping_add(0x18)
+        .wrapping_add(q.cast_unsigned().wrapping_mul(4));
+    let v = h.read::<u32>(at) | bit;
+    h.write(at, v);
+    1
+}

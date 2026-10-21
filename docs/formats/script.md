@@ -2846,6 +2846,23 @@ channel maxima in `g_TkVibrateVolume`. `round24d_seps_menu_vibrate_cam_match_the
 covers them; `0x0086e8d0` runs in the script runs' set-up
 (`fresh_run_pair`), where signals have free nodes.
 
+Round 24 e: `Atel_RequestOwnerTrigger_008764a0(owner, kind)` finds the
+worker bound to `owner` in ctrl work 0 (`Atel_FindWorkerByOwner`) and
+requests its trigger. Two save-screen windows,
+`TkMenuSaveLoad_OpenWindow_008b3c20` and `TkMenuSaveLoad_OpenChoice_008b3c70`,
+are near-copies of the menu's `MenuNameEntry_RegistWindow` and
+`MenuSave_OpenWindow2` with the save screen's callbacks;
+`TkMenuSaveLoad_ClearLoadPos_008b3cd0` resets a card slot's load position.
+`Atel_InitMovieState_00873c00` clears the save event's `+0xe0` and the
+movie buffer pointers; `Atel_QueueBattleEndEffect_00861550(kind, v)`
+queues the battle end's `"EFF"` callback (`0x00861f90`) with `kind` and
+`v` in `0x01326b40`/`0x01326b44`; `Atel_FadeOutQueuedSeps_00868460`
+fades the queued separates out and empties the queue;
+`Atel_ShowWaterFps_008682a0(on)` shows or hides the four water effects;
+`Atel_SetSaveEventBit_008700e0(n)` sets bit `n` (below 64) of the save
+event's flag words at `+0x18`. `round24e_save_movie_effects_match_the_original`
+covers them.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

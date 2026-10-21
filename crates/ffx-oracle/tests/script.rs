@@ -8585,3 +8585,234 @@ fn round24d_seps_menu_vibrate_cam_match_the_original() {
     r24d_level_target(&mut a, &mut b, &ws, "snapshot");
     r24d_stubbed(&mut a, &mut b, &mut rng, &ws, "snapshot");
 }
+
+/// Round 24 e on one pair: the save-load helpers, the movie state, the
+/// battle-end effect queue, the separate fade-out, the water effects and
+/// the save event bits (their sound, menu and effect callees logged).
+#[allow(clippy::too_many_lines)] // one block per helper
+fn r24e_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let wins: Vec<u32> = (0..8)
+        .map(|_| {
+            let w = alloc_both(a, b, 0x80);
+            fill_both(a, b, rng, w, 0x80);
+            w
+        })
+        .collect();
+    r24_seq_stub(a, b, 0x008a_a1a0, 0, &wins);
+    r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0088_8480, 2),
+            (0x008a_ab00, 1),
+            (0x0088_6f90, 2),
+            (0x0072_9570, 1),
+            (0x0072_9700, 1),
+            (0x0072_95b0, 1),
+        ],
+    );
+    for slot in [0u32, 1, 3] {
+        r22_case(
+            a,
+            b,
+            0x008b_3cd0,
+            &[slot],
+            true,
+            &format!("TkMenuSaveLoad_ClearLoadPos {what} {slot}"),
+            |r| hp::tk_menu_save_load_clear_load_pos(r, slot),
+        );
+    }
+    for k in 0..3u32 {
+        r22_case(
+            a,
+            b,
+            0x008b_3c20,
+            &[],
+            true,
+            &format!("TkMenuSaveLoad_OpenWindow {what} {k}"),
+            |r| hp::tk_menu_save_load_open_window(r),
+        );
+        let arg = rng.next();
+        r22_case(
+            a,
+            b,
+            0x008b_3c70,
+            &[arg],
+            true,
+            &format!("TkMenuSaveLoad_OpenChoice {what} {k}"),
+            |r| hp::tk_menu_save_load_open_choice(r, arg),
+        );
+    }
+    let bufs = a.rebase(0x0132_7110);
+    fill_both(a, b, rng, bufs, 12);
+    let save = orig(a, 0x0088_c830, &[]);
+    orig(b, 0x0088_c830, &[]);
+    fill_both(a, b, rng, save + 0xdc, 12);
+    r22_case(
+        a,
+        b,
+        0x0087_3c00,
+        &[],
+        true,
+        &format!("Atel_InitMovieState {what}"),
+        |r| hp::atel_init_movie_state(r),
+    );
+    for (k, kind) in [0x121u32, 0x120, 0, 0x8000_0121, 0x121, 7]
+        .into_iter()
+        .enumerate()
+    {
+        poke(a, b, a.rebase(0x0132_6b58), 0u32);
+        let v = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0086_1550,
+            &[kind, v],
+            true,
+            &format!("Atel_QueueBattleEndEffect {what} {k}"),
+            |r| hp::atel_queue_battle_end_effect(r, kind, v),
+        );
+    }
+    let count = a.rebase(0x0132_707c);
+    for n in [-1i32, 0, 1, 3, 7] {
+        fill_both(a, b, rng, count + 4, 0x40);
+        poke(a, b, count, n);
+        r22_case(
+            a,
+            b,
+            0x0086_8460,
+            &[],
+            n > 0,
+            &format!("Atel_FadeOutQueuedSeps {what} {n}"),
+            |r| hp::atel_fade_out_queued_seps(r),
+        );
+    }
+    let ids = a.rebase(0x0132_6cf0);
+    for round in 0..12u32 {
+        let mut any = false;
+        for k in 0..4u32 {
+            let id = if rng.below(3) == 0 {
+                u32::MAX - rng.below(3)
+            } else {
+                rng.below(0x40)
+            };
+            any |= id.cast_signed() >= 0;
+            poke(a, b, ids + k * 4, id);
+        }
+        let on = [0u32, 1, 0x100][(round % 3) as usize];
+        r22_case(
+            a,
+            b,
+            0x0086_82a0,
+            &[on],
+            any,
+            &format!("Atel_ShowWaterFps {what} {round}"),
+            |r| hp::atel_show_water_fps(r, on),
+        );
+    }
+    for n in [-40i32, -33, -32, -1, 0, 5, 31, 32, 63, 64, 100] {
+        let n = n.cast_unsigned();
+        r22_case(
+            a,
+            b,
+            0x0087_00e0,
+            &[n],
+            true,
+            &format!("Atel_SetSaveEventBit {what} {n:#x}"),
+            |r| hp::atel_set_save_event_bit(r, n),
+        );
+    }
+}
+
+/// Round 24 e (this machine): the helpers of [`r24e_cases`] on the image
+/// and the snapshot, then `0x008764a0` on every ctrl work in use (the
+/// script runs' set-up, the owner lookup stubbed).
+#[test]
+fn round24e_save_movie_effects_match_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0248);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r24e_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    {
+        let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+        let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+        r24e_cases(&mut a, &mut b, &mut rng, "snapshot");
+    }
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let mut calls = 0;
+    for &c in &ctrls {
+        let mut p = fresh_run_pair(&pages, &exe, c);
+        // the real owner lookup (it scans ctrl work 0): a bound worker's
+        // owner, and one nobody has
+        let works = p.0.rebase(0x0132_5ba0);
+        let n0 = u32::from(Mem::read::<u16>(&p.1, works + 0xc));
+        let mut owners = vec![0x1234_5678u32];
+        let context = p.0.rebase(0x0132_6b28);
+        let here = Mem::read::<u32>(&p.1, context);
+        poke(&mut p.0, &mut p.1, context, works);
+        for i in 0..n0 {
+            let w = v::atel_get_basic_work(&mut p.1, i.cast_signed());
+            orig(&mut p.0, ATEL_GET_BASIC_WORK, &[i]);
+            if Mem::read::<u8>(&p.1, w + 0xaa) == 1 {
+                owners.push(Mem::read::<u32>(&p.1, w + 0x9c));
+            }
+        }
+        poke(&mut p.0, &mut p.1, context, here);
+        for &owner in owners.iter().take(4) {
+            let what = format!("Atel_RequestOwnerTrigger ctrl {c:#x} owner {owner:#x}");
+            if r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0087_64a0,
+                &[owner, 1],
+                true,
+                &what,
+                |r| hp::atel_request_owner_trigger(r, owner, 1),
+            ) {
+                calls += 1;
+            }
+        }
+        for found in [u32::MAX, 0, 1, 2, 3] {
+            for o in [&mut p.0, &mut p.1] {
+                let at = o.rebase(0x0087_6440);
+                o.stub_return(at, found).unwrap();
+            }
+            for kind in [0u32, 1, 2] {
+                let owner = rng.next();
+                let what =
+                    format!("Atel_RequestOwnerTrigger ctrl {c:#x} found {found:#x} kind {kind}");
+                if r19_case(
+                    &pages,
+                    &exe,
+                    c,
+                    &mut p,
+                    0x0087_64a0,
+                    &[owner, kind],
+                    true,
+                    &what,
+                    |r| hp::atel_request_owner_trigger(r, owner, kind),
+                ) {
+                    calls += 1;
+                }
+            }
+        }
+    }
+    eprintln!("round 24e: {calls} owner trigger calls");
+    assert!(calls > 0);
+}
