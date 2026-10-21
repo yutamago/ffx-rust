@@ -5059,7 +5059,7 @@
 0x00713160	logic	default (no rule: ported to be safe)
 0x00713290	logic	default (no rule: ported to be safe)
 0x00713320	logic	default (no rule: ported to be safe)
-0x007133e0	logic	default (no rule: ported to be safe)
+0x007133e0	platform	reviewed: createGuildMapRenderDataBuffer: PC renderer setup only (sprintf NoTexture names, graphicGuildmapCreate + graphicVFXCreateDataBuffer, 8 KB alloca frame) (effects round 40)
 0x007135b0	dead	unreachable from the entry point and every pointer table
 0x00713790	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): createVFXRenderDataBuffer
 0x007147b0	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): createVFXRenderDataBufferAtelShp
