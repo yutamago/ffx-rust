@@ -385,6 +385,7 @@ REVIEWED = {
     0x0087af50: ("debug", "worker-state debug print: sprintf + TkPutDebugFontString(P) 0x88f140/0x88f4c0, getters only, writes only the debug font state 0x1328a74 (menu round 29)"),
     0x0087b040: ("debug", "worker-state debug print: sprintf + TkPutDebugFontString(P) 0x88f140/0x88f4c0, getters only, writes only the debug font state 0x1328a74 (menu round 29)"),
     0x0087b0c0: ("debug", "worker-state debug print: sprintf + TkPutDebugFontString(P) 0x88f140/0x88f4c0, getters only, writes only the debug font state 0x1328a74 (menu round 29)"),
+    0x00715af0: ("platform", "Virtuos renderer setup: .dds.phyre texture names, graphicVFXIsTextureLoaded, \"Virtuos Error\", graphicVFXCreate/CreateDataBuffer (effects round 39)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

@@ -5069,7 +5069,7 @@
 0x00715170	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): createVFXRenderDataBufferShp
 0x00715810	glue	glue name (PC port code driving PhyreEngine/D3D11 or Iggy): createVFXRenderDataBufferShp_OShapeVu1
 0x00715a40	glue	reviewed: PC renderer frame-buffer data creator (graphicVFXCreate) (effects round 28)
-0x00715af0	logic	default (no rule: ported to be safe)
+0x00715af0	platform	reviewed: Virtuos renderer setup: .dds.phyre texture names, graphicVFXIsTextureLoaded, "Virtuos Error", graphicVFXCreate/CreateDataBuffer (effects round 39)
 0x00715dc0	glue	reviewed: graphicVFXCreate (effects round 29)
 0x00716050	glue	reviewed: PC renderer frame-buffer data creator (graphicVFXCreate) (effects round 28)
 0x00716110	logic	default (no rule: ported to be safe)
