@@ -395,6 +395,8 @@ REVIEWED = {
     0x008c6d32: ("dead", "not a function: the jne target inside MenuAbility_ApplyHeal_008c6d00, which is ported whole (menu round 30)"),
     0x007133e0: ("platform", "createGuildMapRenderDataBuffer: PC renderer setup only (sprintf NoTexture names, graphicGuildmapCreate + graphicVFXCreateDataBuffer, 8 KB alloca frame) (effects round 40)"),
     0x00830370: ("debug", "Ch_EngineSetFast: a single ret (no-op stub) (battle round 34)"),
+    0x006f2d30: ("platform", "stores an argument at the thread record +0x14 then ResumeThread; callers AsyncLoadManager/FmodManager/AsyncControllerTaskManager createThread (script round 24)"),
+    0x006f2d50: ("platform", "WaitForSingleObject(handle, 1) loop while WAIT_FAILED; returns whether the result is 0 (script round 24)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
