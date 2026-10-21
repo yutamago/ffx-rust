@@ -5686,4 +5686,53 @@ pub mod bridge {
         call(mem, g(mem, 0x0081_3c20), &args);
         ret
     }
+
+    /// `op_mul_m33(dst, b, c)` (`0x007e8b00`), the 3x3 part of a matrix
+    /// product on the emulated VU0: after the debug trace (`dbgPrintf`,
+    /// line 0x674) and the EE call parameters (`AsmEmuSetFuncParam0..3`:
+    /// `dst`, `b`, `c`, 0), `b`'s first three rows go to the registers at
+    /// `0x00c8f950` and all of `c` to `0x00c8f910`; each of `c`'s first
+    /// three rows `(x, y, z)` becomes `x b0 + y b1 + z b2` lane by lane
+    /// through the accumulator `g_Vu0Acc` (`vmulax`, `vmadday`, `vmaddz`:
+    /// each step rounded to `f32`), row 3 is kept, and the registers are
+    /// copied to `dst` (so `dst` may be `b` or `c`).
+    pub fn op_mul_m33<M: Mem>(
+        mem: &mut M,
+        dst: u32,
+        b: u32,
+        c: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let g = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        let format = g(mem, 0x00b5_825c);
+        call(mem, g(mem, 0x0062_f500), &[format, 0x674]);
+        for (k, v) in (0u32..).zip([dst, b, c, 0]) {
+            call(mem, g(mem, 0x0042_eec0 + 0x10 * k), &[v]);
+        }
+        let (rb, rc, acc) = (
+            g(mem, 0x00c8_f950),
+            g(mem, 0x00c8_f910),
+            g(mem, 0x00c8_f790),
+        );
+        let bm: [u32; 12] = mem.read(b);
+        mem.write(rb, bm);
+        let cm: [u32; 16] = mem.read(c);
+        mem.write(rc, cm);
+        let lane = |row: usize, l: usize| load(bm[4 * row + l]);
+        for r in 0..3u32 {
+            let row = rc.wrapping_add(16 * r);
+            let [x, y, z]: [u32; 3] = mem.read(row);
+            let a0: [u32; 4] = std::array::from_fn(|l| store(mul(load(x), lane(0, l))));
+            mem.write(acc, a0);
+            let a1: [u32; 4] =
+                std::array::from_fn(|l| store(add(mul(load(y), lane(1, l)), load(a0[l]))));
+            mem.write(acc, a1);
+            let out: [u32; 4] =
+                std::array::from_fn(|l| store(add(mul(load(z), lane(2, l)), load(a1[l]))));
+            mem.write(row, out);
+        }
+        let regs: [u32; 16] = mem.read(rc);
+        mem.write(dst, regs);
+    }
 }

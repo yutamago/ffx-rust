@@ -25031,3 +25031,148 @@ fn round40e_acc_update_and_weapon_shadow_draw_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn round40f_op_mul_m33_matches_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_8b00);
+        let dbg = far_recorder(&mut p, 0x0062_f500, &[0, 0], None);
+        let mats = p.alloc(0xc0);
+        // full mantissas (2^-6..2^9), so every rounding shows
+        let full = |rng: &mut Xorshift| rng.next() & 0x807f_ffff | (0x79 + rng.below(15)) << 23;
+        for round in 0..3000u32 {
+            p.set(dbg, 0u32);
+            for at in (0..0xc0).step_by(4) {
+                let v = if rng.chance(3) {
+                    0x7fc0_0000 | rng.below(0x40_0000)
+                } else if rng.chance(50) {
+                    full(&mut rng)
+                } else {
+                    ranged(&mut rng, -4.0, 4.0)
+                };
+                p.set(mats + at, v);
+            }
+            let pick = |rng: &mut Xorshift| mats + 0x40 * rng.below(3);
+            let (dst, b, c) = (pick(&mut rng), pick(&mut rng), pick(&mut rng));
+            p.check(
+                &format!("op_mul_m33 round {round}"),
+                0x007e_8b00,
+                &[dst, b, c],
+                |m| {
+                    o::op_mul_m33(m, dst, b, c, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round40f_opus_mdc_break_draw_matches_the_original() {
+    use op::bridge as ob;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_5510);
+        let cells = p.alloc(0x10);
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(cells)),
+            far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(cells + 4)),
+            far_recorder(&mut p, 0x0062_f880, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_5710, &[0, 0, 0], None),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+        ];
+        let (rd, geo, brk, id) = (
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x30 + 0xc0 * 8),
+            p.alloc(0x100),
+        );
+        let (col, pos, uv, idx) = (
+            p.alloc(0x30 * 8),
+            p.alloc(36 * 8),
+            p.alloc(24 * 8),
+            p.alloc(6 * 8),
+        );
+        let (flags, local, scratch) = (p.alloc(4), p.alloc(0x30), p.alloc(0x1800));
+        let (r0, stack) = (p.sym(0x00c8_f508), p.sym(ob::SPR_STACK.sym));
+        let skip = p.sym(0x012f_b7d0);
+        for round in 0..1500u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.set(cells, rd);
+            p.set(cells + 4, 1u32);
+            p.fill(rd, 0x100, &mut rng);
+            p.set(rd + 0x94, geo);
+            for (k, b) in [(0xcu32, pos), (0x14, col), (0x18, uv), (0x1c, idx)] {
+                p.set(geo + k, b);
+            }
+            for (b, n) in [(col, 0x30 * 8), (pos, 36 * 8), (uv, 24 * 8), (idx, 6 * 8)] {
+                p.fill(b, n, &mut rng);
+            }
+            p.fill(local, 0x30, &mut rng);
+            let n = rng.below(7);
+            p.fill(brk, 0x30, &mut rng);
+            p.set(brk + 4, n);
+            p.set(brk + 0xc, flags);
+            p.set(flags, rng.next() as u16);
+            for k in [0x10u32, 0x14, 0x18, 0x20] {
+                let v = ranged(&mut rng, -50.0, 50.0);
+                p.set(brk + k, v);
+            }
+            let all_one = rng.chance(10);
+            let on_floor = rng.chance(10);
+            if on_floor {
+                let y: u32 = p.get(brk + 0x14);
+                p.set(brk + 0x20, y);
+            }
+            for i in 0..n {
+                let pc = brk + 0x30 + 0xc0 * i;
+                for at in (0..0xc0).step_by(4) {
+                    let v = ranged(&mut rng, -50.0, 50.0);
+                    p.set(pc + at, v);
+                }
+                let life = if all_one {
+                    1
+                } else {
+                    rng.pick(&[0u16, 1, 2, 5, 16, 17, 300, 0x8000, 0xffff])
+                };
+                p.set(pc + 0x48, life);
+                if on_floor && rng.chance(50) {
+                    // y lands exactly on the floor
+                    p.set(pc + 0x74, 0u32);
+                    p.set(pc + 0xb4, 0u32);
+                }
+                for k in 0x58..0x5b {
+                    p.set(pc + k, rng.next() as u8);
+                }
+                p.set(pc + 0x5b, if rng.chance(25) { 0 } else { rng.next() as u8 });
+                for k in [0x90u32, 0x94, 0x98] {
+                    let v = ranged(&mut rng, -9000.0, 9000.0);
+                    p.set(pc + k, v);
+                }
+            }
+            p.fill(id, 0x100, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(r0 + 4, 0u32);
+            p.put(ob::SPR_TOP, 0);
+            p.set(stack, scratch);
+            p.set(skip, rng.pick(&[0u32, 0, 0, 0, 0, 0, 0, 0, 1, 2]));
+            let still = rng.pick(&[0u32, 0, 0, 1, 2]);
+            let (a, b) = (rng.next(), rng.next());
+            p.check(
+                &format!("opus_mdc_break_draw round {round} n {n} still {still}"),
+                0x0080_5510,
+                &[brk, id, a, b, still],
+                |m| {
+                    let keep = m.read(local, 0x30).unwrap();
+                    opus::bridge::opus_mdc_break_draw(m, brk, id, still, local, &mut call_original);
+                    m.write(local, &keep).unwrap();
+                    None
+                },
+            );
+        }
+    }
+}

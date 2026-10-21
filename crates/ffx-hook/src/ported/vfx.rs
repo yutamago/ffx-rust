@@ -3169,6 +3169,10 @@ ported! {
     pppRunPartFp @ 0x0071_22f0 => extern "C" fn ppp_run_part_fp(p: u32, flags: u32) -> u32 {
         part::bridge::ppp_run_part_fp(&mut mem(), p, flags & 0xff, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_mul_m33(dst, b, c)` (`0x007e8b00`).
+    op_mul_m33 @ 0x007e_8b00 => extern "C" fn op_mul_m33(dst: u32, b: u32, c: u32) {
+        op::bridge::op_mul_m33(&mut mem(), dst, b, c, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `op_2point_shadow(sh, a, b)` (`0x00813480`).
     op_2point_shadow @ 0x0081_3480 => extern "C" fn op_2point_shadow(sh: u32, a: u32, b: u32) {
         op::bridge::op_2point_shadow(&mut mem(), sh, a, b, &mut |_, f, a| call_ptr(f, a));
@@ -5726,6 +5730,13 @@ ported! {
             &mut |_, f, a| call_ptr(f, a),
             &mut |_, f, a| super::call_cdecl_f64(f, a),
         )
+    }
+    /// `opus_mdc_break_draw(brk, id, _, _, still)` (`0x00805510`): the
+    /// original's three vectors in this shim's frame.
+    opus_mdc_break_draw @ 0x0080_5510 => extern "C" fn opus_mdc_break_draw(brk: u32, id: u32, _a: u32, _b: u32, still: u32) {
+        let mut frame = super::StackFrame::<12>::new();
+        let local = frame.at();
+        opus::bridge::opus_mdc_break_draw(&mut mem(), brk, id, still, local, &mut |_, f, a| call_ptr(f, a));
     }
     /// `opus_encount4_init(enc, oef, a, b, conf)` (`0x007f8930`): the
     /// original's `u`, `v` and size words in this shim's frame.
