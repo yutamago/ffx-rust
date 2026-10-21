@@ -6015,6 +6015,199 @@ fn camera_setters(
 }
 
 /// Party members and aeons coming and going (`ffx_battle::exchange`).
+/// What `MsSetRamChr` reads for every actor (round 34): the kernel's
+/// character records, the item memories and, for each monster, a record
+/// (`+0xf80`) and data (`+0x48`, null at times) of our own where the
+/// snapshot has none; `rec` holds 8 records of 0x80 bytes and 8 data
+/// blocks of 0x200.
+fn ram_chr_world(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32) {
+    use ffx_battle::misc::bridge::{ITEM_MEM, ITEM_MEM2};
+    use ffx_battle::save_param::bridge as sp;
+    // only where there are none: other sections use the same tables
+    // (MsSetSaveParam divides by a ply_rom byte +0x1c)
+    let rom = ffx_battle::save::bridge::KERNEL_PLY_ROM;
+    if !readable(a, rom.get(b), 0x20) {
+        let t = battle_common::world::fake_records(a, b, rng, 0x14, 0x30);
+        for k in 0..0x14 {
+            poke(a, b, t + 0x20 + 0x30 * k + 0x1c, &[1 + rng.byte() % 0x7f]);
+        }
+        set(a, b, rom, t);
+    }
+    // the item memories of all 0x1f actors (MsSetRamChr writes the
+    // monsters' too): ours in `rec` but on a snapshot that has them
+    for (g, n, at) in [
+        (ITEM_MEM, sp::ITEM_MEM_SIZE, rec + 0x3600),
+        (ITEM_MEM2, sp::ITEM_MEM2_SIZE, rec + 0x5800),
+    ] {
+        if w.synthetic || !readable(a, g.get(b), (ACTORS * n) as usize) {
+            set(a, b, g, at);
+        }
+    }
+    let aab = ffx_kernel::bridge::A_ABILITY;
+    if !readable(a, aab.get(b), 0x20) {
+        let t = battle_common::world::fake_records(a, b, rng, 0x100, 0x80);
+        set(a, b, aab, t);
+    }
+    let mon_top = ffx_battle::actor::bridge::MON_TOP;
+    if !readable(a, mon_top.get(b), 0x10) {
+        set(a, b, mon_top, w.actor(0x14));
+    }
+    for k in 0..8 {
+        let p = w.actor(0x14 + k);
+        let (record, data) = (rec + 0x80 * k, rec + 0x400 + 0x200 * k);
+        let real = u32::from_le_bytes(b.read(p + 0xf80, 4).unwrap().try_into().unwrap());
+        if w.synthetic || !readable(a, real, 0x80) {
+            fill(a, b, rng, record, 0x80);
+            poke(a, b, p + 0xf80, &record.to_le_bytes());
+        }
+        // real data with its 0x46 item words (+0x14 their offset), or ours
+        let real = u32::from_le_bytes(b.read(p + 0x48, 4).unwrap().try_into().unwrap());
+        let usable = real == 0
+            || (readable(a, real, 0x18) && {
+                let o = u32::from_le_bytes(b.read(real + 0x14, 4).unwrap().try_into().unwrap());
+                readable(a, real.wrapping_add(o), 0x118)
+            });
+        if w.synthetic || !usable {
+            fill(a, b, rng, data, 0x200);
+            poke(
+                a,
+                b,
+                data + 0x14,
+                &(0x20 + 4 * rng.below(0x20)).to_le_bytes(),
+            );
+            let v = if rng.below(3) == 0 { 0 } else { data };
+            poke(a, b, p + 0x48, &v.to_le_bytes());
+        }
+    }
+}
+
+/// `MsSetChrVisibleBtl2Event`'s chara and vfx callees that the fake
+/// characters can't take (`Ch_SetTransparent` and `Ch_SetHideEffect` run:
+/// the visibility code under `MsRelife` calls them in Rust): logging stubs in
+/// `MsDebugEnvSave` (`0x007cd800`, debug only) after [`END_STUBS`]'s,
+/// installed around the call (the test's characters are fakes).
+const REVIVE_CALLEES: [(u32, u8); 2] = {
+    use ffx_battle::exchange::bridge as x;
+    [
+        (x::CH_SET_SHADE_COL, 5),
+        (x::OP_CHR_STATUS_RESET_EXCEPTION_WRAP, 1),
+    ]
+};
+const REVIVE_STUBS: u32 = END_STUBS + 0x40 * 16;
+
+/// Actors brought back after an event (`MsSetChrVisibleBtl2Event`, round
+/// 34): a few at random (at times none, or a monster), `actor` one of
+/// them or not, the status reset or not; then `Mon_LoadAll`.
+fn revive(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, rec: u32) {
+    use ffx_battle::atel::bridge::Script;
+    use ffx_battle::exchange::bridge as x;
+    let mut call = game_call;
+    let mut signal = game_signal;
+    let mut off = eff_off;
+    macro_rules! s {
+        ($s:ident) => {
+            let mut $s = Script {
+                call: &mut call,
+                signal: &mut signal,
+                off: &mut off,
+            };
+        };
+    }
+    ram_chr_world(a, b, rng, w, rec);
+    let mut mask = 0u32;
+    for _ in 0..rng.below(4) {
+        mask |= 1 << rng.below(ACTORS);
+    }
+    if rng.below(8) == 0 {
+        mask |= 0x8000_0000;
+    }
+    for k in 0..ACTORS {
+        let p = w.actor(k);
+        for o in [0x508, 0x608, 0x432, 0xdcc, 0x3b, 0x414] {
+            poke(a, b, p + o, &[u8::from(rng.below(3) == 0)]);
+        }
+        poke(a, b, p + 0x43f, &[0xff]);
+        poke(a, b, p + 0x13, &[0xff]);
+        poke(a, b, p + 0xf7c, &[0; 4]);
+        // a character at times (the fakes are only logged: REVIVE_CALLEES)
+        if rng.below(4) == 0 {
+            poke(a, b, p, &[0; 4]);
+        }
+    }
+    let actor = match rng.below(3) {
+        0 => 0,
+        1 => w.actor(rng.below(ACTORS)),
+        _ => {
+            let k = (0..ACTORS).find(|&k| mask >> k & 1 != 0).unwrap_or(0);
+            w.actor(k)
+        }
+    };
+    let reset = u32::from(rng.below(2) == 0);
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        for (k, (f, n)) in (0u32..).zip(REVIVE_CALLEES) {
+            let at = o.rebase(f);
+            saved.push((f, o.read(at, 5).unwrap()));
+            logging_stub(
+                o,
+                f,
+                REVIVE_STUBS + 0x80 * k,
+                rec + 0x2000 + 0x200 * k,
+                n,
+                0,
+            );
+        }
+    }
+    saved.truncate(saved.len() / 2);
+    twin(
+        "MsSetChrVisibleBtl2Event",
+        a,
+        b,
+        0x007a_89c0,
+        &[actor, mask, reset],
+        ALL,
+        |m| {
+            dm(m, |m| {
+                s!(s);
+                x::ms_set_chr_visible_btl2_event(m, &mut s, actor, mask, reset)
+            })
+        },
+    );
+    unstub(a, b, &saved);
+    same("MsSetChrVisibleBtl2Event", a, b);
+    // the monsters' scripts queued in manager 1 (full at times) and the
+    // managers set up: the script module's and the allocator's calls
+    // MsEffectStart's logging stubs
+    let managers = ffx_battle::minor::bridge::ATEL_MANAGERS.ptr(b).addr;
+    let count = [0u32, 1, 5, 7, 8][rng.below(5) as usize];
+    poke(a, b, managers + 0x54, &count.to_le_bytes());
+    let none = rng.below(4) == 0;
+    for k in 0..8 {
+        let p = w.actor(0x14 + k);
+        poke(a, b, p + 0x10, &[u8::from(rng.below(3) != 0)]);
+        poke(a, b, p + 0xf78, &rng.next().to_le_bytes());
+        // at times no monster with data (no scripts)
+        if none {
+            poke(a, b, p + 0x48, &[0; 4]);
+        }
+        poke(
+            a,
+            b,
+            p + 0xe,
+            &u16::try_from(rng.below(0x10000)).unwrap().to_le_bytes(),
+        );
+    }
+    let saved = start_stubs(a, b, rec + 0x2800);
+    twin("Mon_LoadAll", a, b, 0x0078_4070, &[], 0, |m| {
+        dm(m, |m| {
+            ffx_battle::read::bridge::mon_load_all(m, &mut game_call);
+            0
+        })
+    });
+    unstub(a, b, &saved);
+    same("Mon_LoadAll", a, b);
+}
+
 fn exchange(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, out: u32, rec: u32) {
     use ffx_battle::atel::bridge::Script;
     use ffx_battle::exchange::bridge as x;
@@ -6442,6 +6635,8 @@ part!(
     ],
     60
 );
+part!(part_revive, "revive", 60);
+part!(part_bridge_to_battle, "bridge_to_battle", 60);
 part!(part_models_freed, "models_freed", 60);
 part!(part_battle_end, ["process", "battle_end"], 60);
 part!(part_battle_frame, "battle_frame", 60);
@@ -6563,6 +6758,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
             .collect()
     };
     LIVE_CHRS.with(|c| *c.borrow_mut() = live);
+    let vrec = scratch(a, b, 0xe300);
     let xrec = scratch(a, b, (EXCHANGE_REC * 12) as usize);
     for o in [&mut *a, &mut *b] {
         for (k, (f, n)) in (0u32..).zip(EXCHANGE_CALLEES) {
@@ -6666,6 +6862,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
     let mut r17 = Xorshift(0x17e5_0001 ^ u32::from(synthetic));
     let mut r18m = Xorshift(0x18e5_0101 ^ u32::from(synthetic));
     let mut r19 = Xorshift(0x19e5_0001 ^ u32::from(synthetic));
+    let mut r34 = Xorshift(0x34e5_0001 ^ u32::from(synthetic));
     let mut r20 = Xorshift(0x20e5_0001 ^ u32::from(synthetic));
     // a special stage's work (round 18): matrices, the sea's, angles
     let work = scratch(a, b, 0x870);
@@ -6679,6 +6876,7 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
     let locals = scratch(a, b, ffx_battle::special::bridge::SPECIAL_LOCALS as usize);
     // MsBtlBridgeBtl2Event's tables and records (round 19)
     let btables = scratch(a, b, 0x40 * 8);
+    let belems = scratch(a, b, 0x40 * 3);
     let brec = scratch(a, b, (EXCHANGE_REC * 15) as usize);
     // the setup leaves' stub records and heap block (round 19)
     let grec2 = scratch(a, b, (EXCHANGE_REC * 2) as usize);
@@ -6790,6 +6988,11 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
         if sel.on("damage_end") {
             damage_end(a, b, rng, &w, out);
         }
+        // revive sets every actor up again and fakes the monster tables:
+        // only its own part test runs it
+        if !sel.only.is_empty() && sel.on("revive") {
+            revive(a, b, &mut r34, &w, vrec);
+        }
         if sel.on("models_freed") {
             models_freed(a, b, &mut r18m, &w, crec);
         }
@@ -6826,6 +7029,9 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
         }
         if sel.on("special_stage") {
             special_stage(a, b, &mut r19, &w, work, locals);
+        }
+        if sel.pick(r34.below(4) == 0, "bridge_to_battle") {
+            bridge_to_battle(a, b, &mut r34, &w, &f, btables, brec, belems);
         }
         if sel.pick(r19.below(6) == 0, "bridge_to_event") {
             bridge_to_event(a, b, &mut r19, &w, &f, btables, brec);
@@ -8657,6 +8863,115 @@ fn bridge_stubs(a: &mut Oracle, b: &mut Oracle, tables: u32, rec: u32) {
 /// `MsBtlBridgeBtl2Event` (round 19) on event actors made up in the
 /// stubs' tables: bound or not, their bind PCs the actor they name, an
 /// actor of their character ID, or none.
+/// `MsBtlBridgeEvent2Btl`'s element getters (round 34): pair
+/// [`table_stub`]s after [`REVIVE_STUBS`]', installed around the call.
+const BRIDGE_ELEM_GETTERS: [u32; 3] = {
+    use ffx_battle::atel::bridge as at;
+    [
+        at::ATEL_GET_EVENT_ELEM_CHAR_ID,
+        at::ATEL_GET_EVENT_ELEM_HANDLE,
+        at::ATEL_GET_EVENT_ELEM_POS,
+    ]
+};
+const BRIDGE_ELEM_STUBS: u32 = REVIVE_STUBS + 0x100;
+
+/// The event's characters handed to the battle (`MsBtlBridgeEvent2Btl`,
+/// round 34) over [`bridge_stubs`]' tables: up to four event actors,
+/// bound or not, with a character or not, of an actor's ID (in the
+/// battle, without a character yet, at times) or not, its bound PC that
+/// actor, another, none or out of range; their two elements with IDs,
+/// handles and positions or zeros, onto weapon records free or taken.
+/// What it changes is put back after.
+#[allow(clippy::too_many_arguments)]
+fn bridge_to_battle(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    w: &World,
+    f: &Fakes,
+    tables: u32,
+    rec: u32,
+    elems: u32,
+) {
+    let n = rng.below(BRIDGE_ACTORS + 1);
+    poke(a, b, rec + EXCHANGE_REC * 6 + 4, &n.to_le_bytes());
+    let first = ffx_battle::actor::bridge::ms_get_chr(b, ACTORS);
+    let regions: Vec<(u32, usize)> = vec![
+        (first, (0x5d - ACTORS as usize) * 0x390),
+        (w.actor(0), (ACTORS * ACTOR) as usize),
+    ];
+    let kept: Vec<Vec<u8>> = regions
+        .iter()
+        .map(|&(at, n)| b.read(at, n).unwrap())
+        .collect();
+    for e in 0..BRIDGE_ACTORS {
+        let k = [rng.below(0x1f), 0x1b, 0x1c][rng.below(3) as usize];
+        let p = w.actor(k);
+        // the actor that takes it, at times (or one out of the battle)
+        if rng.below(2) == 0 {
+            poke(a, b, p, &[0; 4]);
+            poke(a, b, p + 0x10, &[u8::from(rng.below(4) != 0)]);
+        }
+        let id = if rng.below(4) == 0 {
+            rng.next()
+        } else {
+            u32::from_le_bytes(b.read(p + 4, 4).unwrap().try_into().unwrap())
+        };
+        // an earlier actor that would take it too (the bound PC first)
+        if k > 0 && rng.below(3) == 0 {
+            let q = w.actor(rng.below(k));
+            poke(a, b, q, &[0; 4]);
+            poke(a, b, q + 4, &id.to_le_bytes());
+            poke(a, b, q + 0x10, &[1]);
+        }
+        let pc = [u32::MAX, k, k, rng.below(0x1f), 0x1b, 0x1c, 0x30][rng.below(7) as usize];
+        // the link work's upper bytes are the worker's (AtelGetEventActorLinkWork)
+        let values = [
+            [1, 1, 1, 0, 2][rng.below(5) as usize],
+            id,
+            [0, f.chars, f.chars + 0x1000][rng.below(3) as usize],
+            rng.next(),
+            pc,
+        ];
+        for (g, v) in (0u32..).zip(values) {
+            poke(a, b, tables + 0x40 * g + 4 * e, &v.to_le_bytes());
+        }
+        for m in 0..2 {
+            let at = 4 * (2 * e + m);
+            let v = [
+                [0, rng.below(0x10000), 0x1000 + rng.below(8)][rng.below(3) as usize],
+                [0, f.chars + 0x2000, rng.next()][rng.below(3) as usize],
+                rng.next(),
+            ];
+            for (g, v) in (0u32..).zip(v) {
+                poke(a, b, elems + 0x40 * g + at, &v.to_le_bytes());
+            }
+            // the weapon record free or taken
+            let wr = ffx_battle::actor::bridge::ms_get_weapon(b, k, m.cast_signed());
+            let taken = [0, f.chars + 0x1000][rng.below(2) as usize];
+            poke(a, b, wr, &taken.to_le_bytes());
+        }
+    }
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        for (k, g) in (0u32..).zip(BRIDGE_ELEM_GETTERS) {
+            let at = o.rebase(g);
+            saved.push((g, o.read(at, 5).unwrap()));
+            table_stub(o, g, BRIDGE_ELEM_STUBS + 0x20 * k, elems + 0x40 * k, true);
+        }
+    }
+    saved.truncate(saved.len() / 2);
+    twin("MsBtlBridgeEvent2Btl", a, b, 0x0078_24e0, &[], 0, |m| {
+        ffx_battle::atel::bridge::ms_btl_bridge_event2_btl(m, &mut game_call_o);
+        0
+    });
+    unstub(a, b, &saved);
+    same("MsBtlBridgeEvent2Btl", a, b);
+    for (&(at, _), bytes) in regions.iter().zip(&kept) {
+        poke(a, b, at, bytes);
+    }
+}
+
 fn bridge_to_event(
     a: &mut Oracle,
     b: &mut Oracle,

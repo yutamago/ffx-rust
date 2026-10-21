@@ -4189,8 +4189,8 @@
 0x006f2ce0	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): SignalSema
 0x006f2d10	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): SleepThread
 0x006f2d20	logic	default (no rule: ported to be safe)
-0x006f2d30	logic	default (no rule: ported to be safe)
-0x006f2d50	logic	default (no rule: ported to be safe)
+0x006f2d30	platform	reviewed: stores an argument at the thread record +0x14 then ResumeThread; callers AsyncLoadManager/FmodManager/AsyncControllerTaskManager createThread (script round 24)
+0x006f2d50	platform	reviewed: WaitForSingleObject(handle, 1) loop while WAIT_FAILED; returns whether the result is 0 (script round 24)
 0x006f2d80	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): WaitSema
 0x006f2da0	dead	unreachable from the entry point and every pointer table
 0x006f2de0	platform	std::/PhyreEngine container code: only allocator, tree, vector or platform calls (operator_new)
@@ -6099,7 +6099,7 @@
 0x0076eb80	logic	default (no rule: ported to be safe)
 0x0076ec40	logic	default (no rule: ported to be safe)
 0x0076ece0	logic	default (no rule: ported to be safe)
-0x0076ed10	logic	default (no rule: ported to be safe)
+0x0076ed10	glue	glue name (FMOD or the movie player): Movie_IsBusy_0076ed10
 0x0076ed70	dead	unreachable from the entry point and every pointer table
 0x0076edc0	logic	default (no rule: ported to be safe)
 0x0076ef80	logic	default (no rule: ported to be safe)
@@ -9953,7 +9953,7 @@
 0x00830240	logic	default (no rule: ported to be safe)
 0x00830320	logic	default (no rule: ported to be safe)
 0x00830330	logic	default (no rule: ported to be safe)
-0x00830370	logic	default (no rule: ported to be safe)
+0x00830370	debug	reviewed: Ch_EngineSetFast: a single ret (no-op stub) (battle round 34)
 0x008303a0	logic	default (no rule: ported to be safe)
 0x008303f0	logic	default (no rule: ported to be safe)
 0x00830410	logic	default (no rule: ported to be safe)

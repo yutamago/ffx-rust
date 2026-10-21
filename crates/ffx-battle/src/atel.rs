@@ -921,4 +921,79 @@ pub mod bridge {
         game(mem, call, ATEL_SET_CURRENT_CTRL, &[cur]);
         total
     }
+
+    /// `AtelGetEventElemCharIDFromID(e, k)`, `AtelGetEventElemHandleFromID`
+    /// and `AtelGetEventElemPosFromID` (script): event actor `e`'s element
+    /// `k` (the other accessors are [`crate::free::bridge`]'s).
+    pub const ATEL_GET_EVENT_ELEM_CHAR_ID: u32 = 0x0086_b400;
+    pub const ATEL_GET_EVENT_ELEM_HANDLE: u32 = 0x0086_b440;
+    pub const ATEL_GET_EVENT_ELEM_POS: u32 = 0x0086_b480;
+
+    /// An actor an event character can become: in the battle (`+0x10`),
+    /// without a character yet and of that character ID (`+4`).
+    fn takes(mem: &impl Mem, a: u32, id: u32) -> bool {
+        byte(mem, a, 0x10) != 0
+            && mem.read::<u32>(a) == 0
+            && mem.read::<u32>(a.wrapping_add(4)) == id
+    }
+
+    /// `MsBtlBridgeEvent2Btl` (`0x007824e0`): the event's characters handed
+    /// to the battle. Each event actor bound to the battle (bind ID 1) with
+    /// a character gets link bit 2 and goes to the battle actor that takes
+    /// it ([`takes`]: its bound PC when below 0x1c, else the first of
+    /// 0..0x1f; none: bits 0x31 too). That actor's two weapon records get
+    /// the event's element characters (both IDs and handles set; handle,
+    /// ID and the position byte `+0xd`) where they have none (else bit
+    /// 0x10, or 0x20 for the second), and the actor the character. The
+    /// link work written back for every event actor.
+    pub fn ms_btl_bridge_event2_btl<M: Mem>(mem: &mut M, call: Call<'_, M>) {
+        use crate::free::bridge as fr;
+        let mut game = |mem: &mut M, sym: u32, args: &[u32]| {
+            let f = code(mem, sym);
+            call(mem, f, args)
+        };
+        let total = game(mem, fr::ATEL_GET_EVENT_ACTOR_TOTAL, &[]).cast_signed();
+        for e in 0..total.max(0).cast_unsigned() {
+            let bind = game(mem, fr::ATEL_GET_EVENT_BIND_ID, &[e]);
+            let id = game(mem, fr::ATEL_GET_EVENT_CHAR_ID, &[e]);
+            let handle = game(mem, fr::ATEL_GET_EVENT_CHAR_HANDLE, &[e]);
+            let mut link = game(mem, fr::ATEL_GET_EVENT_ACTOR_LINK_WORK, &[e]) & 0xff;
+            let pc = game(mem, fr::ATEL_GET_BIND_PC, &[e]);
+            if bind == 1 && handle != 0 {
+                link |= 2;
+                let bound = (pc <= 0x1b)
+                    .then(|| (pc, ms_get_chr(mem, pc)))
+                    .filter(|&(_, a)| takes(mem, a, id));
+                let found = bound.or_else(|| {
+                    (0..0x1f)
+                        .map(|j| (j, ms_get_chr(mem, j)))
+                        .find(|&(_, a)| takes(mem, a, id))
+                });
+                match found {
+                    None => link |= 0x31,
+                    Some((j, a)) => {
+                        for k in 0..2 {
+                            let w = crate::actor::bridge::ms_get_weapon(mem, j, k);
+                            let k = k.cast_unsigned();
+                            let elem = game(mem, ATEL_GET_EVENT_ELEM_CHAR_ID, &[e, k]);
+                            let elem_handle = game(mem, ATEL_GET_EVENT_ELEM_HANDLE, &[e, k]);
+                            if elem == 0 || elem_handle == 0 {
+                                continue;
+                            }
+                            let pos = game(mem, ATEL_GET_EVENT_ELEM_POS, &[e, k]);
+                            if mem.read::<u32>(w) == 0 {
+                                mem.write(w, elem_handle);
+                                mem.write(w.wrapping_add(4), elem);
+                                mem.write(w.wrapping_add(0xd), pos.to_le_bytes()[0]);
+                            } else {
+                                link |= if k == 0 { 0x10 } else { 0x20 };
+                            }
+                        }
+                        mem.write(a, handle);
+                    }
+                }
+            }
+            game(mem, fr::ATEL_SET_EVENT_ACTOR_LINK_WORK, &[e, link]);
+        }
+    }
 }

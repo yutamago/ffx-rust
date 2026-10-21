@@ -68,6 +68,13 @@ fn worker_type(mem: &impl Mem, w: u32) -> u8 {
 #[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // 16-bit cache keys
 pub fn atel_get_basic_work(mem: &mut impl Mem, index: i32) -> u32 {
     let c = ctx(mem);
+    atel_get_basic_work_in(mem, c, index)
+}
+
+/// [`atel_get_basic_work`] on ctrl work `c` instead of the current one
+/// (the copy inlined into `0x008630c0`), with the same cache.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)] // 16-bit cache keys
+pub fn atel_get_basic_work_in(mem: &mut impl Mem, c: u32, index: i32) -> u32 {
     let id = mem.read::<u16>(c + ctrl::ID);
     let cached = CACHE_WORK.get(mem);
     if cached != 0

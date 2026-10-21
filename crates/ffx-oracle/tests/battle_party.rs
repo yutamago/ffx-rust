@@ -2,8 +2,9 @@
 //! `MsSetRamChrParam`) and party swaps (`ffx_battle::save`:
 //! `MsExchangeSaveParty` and its `MsGetSavePlyFix` bridge; round 23:
 //! `SwapSaveGear`, with the characters wearing the two pieces or near
-//! them) against the original, as in
-//! `battle.rs`: the shared battle world, random save records, equipment
+//! them; round 34: `MsSetRamChr`, party and monster actors,
+//! `MsSetRamMonData`, `MsSetRamChrData`) against the
+//! original, as in `battle.rs`: the shared battle world, random save records, equipment
 //! (pieces with no, empty and real auto-abilities) and party slots, on the
 //! image alone and on both snapshots.
 
@@ -149,12 +150,211 @@ fn swap(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     same("SwapSaveGear", a, b);
 }
 
+/// Where `MsSetRamChr`'s monster reads go: a monster record (0x80 bytes)
+/// and monster data whose `+0x14` points at its 0x46 words of item memory.
+struct MonsterData {
+    record: u32,
+    data: u32,
+}
+
+fn monster_data(a: &mut Oracle, b: &mut Oracle) -> MonsterData {
+    MonsterData {
+        record: scratch(a, b, 0x80),
+        data: scratch(a, b, 0x200),
+    }
+}
+
+/// `MsSetRamChr(_, chr)`: a party character (its save record dressed) or
+/// a monster (its record random, its data there or null, its 16 commands
+/// often zero), under water or not, the steal rule and the two debug HP
+/// toggles at random.
+fn ram_chr(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, m: &MonsterData) {
+    let monster = rng.below(2) == 0;
+    let chr = if monster {
+        0x14 + rng.below(8)
+    } else {
+        rng.below(0x12)
+    };
+    let actor = w.actor(chr);
+    if monster {
+        let real: u32 = ffx_bridge::Mem::read(b, actor + 0xf80);
+        if w.synthetic || !readable(a, real, 0x80) || rng.below(3) != 0 {
+            fill(a, b, rng, m.record, 0x80);
+            for k in 0..16 {
+                if rng.below(3) == 0 {
+                    poke(a, b, m.record + 0x50 + 2 * k, &[0, 0]);
+                }
+            }
+            poke(a, b, actor + 0xf80, &m.record.to_le_bytes());
+        }
+        let data = match rng.below(3) {
+            0 => 0,
+            _ => {
+                fill(a, b, rng, m.data, 0x200);
+                let at = 0x20 + 4 * rng.below(0x20);
+                poke(a, b, m.data + 0x14, &at.to_le_bytes());
+                m.data
+            }
+        };
+        let real: u32 = ffx_bridge::Mem::read(b, actor + 0x48);
+        let usable = real == 0 || readable(a, real, 0x18);
+        if w.synthetic || !usable || rng.below(2) == 0 {
+            poke(a, b, actor + 0x48, &data.to_le_bytes());
+        }
+        for (o, n) in [(0x50, 0x28), (0x641, 0x19)] {
+            fill(a, b, rng, actor + o, n);
+        }
+    } else {
+        dress(a, b, rng, w, chr);
+    }
+    let flag = |rng: &mut Xorshift| -> u8 {
+        match rng.below(4) {
+            0 => 1,
+            1 => rng.byte(),
+            _ => 0,
+        }
+    };
+    let v = [flag(rng), flag(rng)];
+    poke(a, b, sp::DEBUG_PARTY_HP1.ptr(b).addr, &v);
+    let v = [flag(rng)];
+    poke(a, b, ffx_battle::state::bridge::UNDERWATER.ptr(b).addr, &v);
+    let v = [[0, 1, 2, 2][rng.below(4) as usize]];
+    poke(a, b, ffx_battle::save::bridge::STEAL_RULE.ptr(b).addr, &v);
+    for o in [0x3b, 0x606, 0x607] {
+        let v = [flag(rng)];
+        poke(a, b, actor + o, &v);
+    }
+    // the cleared bytes and the one after (+0x72c)
+    if rng.below(4) == 0 {
+        fill(a, b, rng, actor + 0x540, 0x1ed);
+    }
+    let junk = rng.next();
+    twin("MsSetRamChr", a, b, 0x0079_b4f0, &[junk, chr], 0, |m| {
+        sp::ms_set_ram_chr(m, chr);
+        0
+    });
+    same("MsSetRamChr", a, b);
+}
+
+fn call_original(m: &mut Oracle, f: u32, args: &[u32]) -> u32 {
+    m.call(f, ffx_oracle::Conv::Cdecl, args).unwrap().eax
+}
+
+/// `MsSetRamMonData`: the eight monster slots in use or not, each with
+/// its record and data as [`ram_chr`] gives them.
+fn ram_mon_data(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, m: &MonsterData) {
+    for i in 0..8 {
+        let actor = w.actor(0x14 + i);
+        let mon = ffx_battle::actor::bridge::ms_get_mon(b, i);
+        poke(
+            a,
+            b,
+            mon + 0x10,
+            &[[0, 0, 1, rng.byte()][rng.below(4) as usize]],
+        );
+        fill(a, b, rng, m.record, 0x80);
+        let data = if rng.below(3) == 0 { 0 } else { m.data };
+        for (o, v) in [(0xf80, m.record), (0x48, data)] {
+            poke(a, b, actor + o, &v.to_le_bytes());
+        }
+        fill(a, b, rng, actor + 0x641, 0x19);
+    }
+    fill(a, b, rng, m.data, 0x200);
+    poke(a, b, m.data + 0x14, &0x40u32.to_le_bytes());
+    twin("MsSetRamMonData", a, b, 0x0079_cb10, &[], 0, |m| {
+        sp::ms_set_ram_mon_data(m);
+        0
+    });
+    same("MsSetRamMonData", a, b);
+}
+
+/// `MsSetRamChrData`: every party character dressed, the save's party
+/// (members, empty slots, the same one twice), under water or not, and
+/// a formation of eight monster IDs (0xffff empty slots).
+fn ram_chr_data(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, formation: u32) {
+    use ffx_battle::save::bridge as sv;
+    for chr in 0..0x12 {
+        dress(a, b, rng, w, chr);
+    }
+    // fields only the defaults write, left from the last time
+    for k in 0..0x1f {
+        let p = w.actor(k);
+        for (o, n) in [(0x3f5, 2), (0x408, 2), (0x44f, 2), (0x4c4, 5), (0x534, 5)] {
+            fill(a, b, rng, p + o, n);
+        }
+    }
+    let slot = |rng: &mut Xorshift| -> u8 {
+        if rng.below(4) == 0 {
+            0xff
+        } else {
+            u8::try_from(rng.below(0x12)).unwrap()
+        }
+    };
+    let party = [slot(rng), slot(rng), slot(rng)];
+    poke(a, b, sv::IN_PARTY.ptr(b).addr, &party);
+    let v = [[0, 0, 1][rng.below(3) as usize]];
+    poke(a, b, ffx_battle::state::bridge::UNDERWATER.ptr(b).addr, &v);
+    let voice = ffx_battle::state::bridge::VOICE_EVENT;
+    if w.synthetic || !readable(a, voice.get(b), 0x1c) || rng.below(2) == 0 {
+        for k in 0..8 {
+            let id: u16 = match rng.below(4) {
+                0 => 0xffff,
+                1 => u16::try_from(rng.below(0x10000)).unwrap(),
+                _ => u16::try_from(0x1000 + rng.below(0x168)).unwrap(),
+            };
+            poke(a, b, formation + 0xc + 2 * k, &id.to_le_bytes());
+        }
+        set(a, b, voice, formation);
+    }
+    twin("MsSetRamChrData", a, b, 0x0079_c110, &[], 0, |m| {
+        sp::ms_set_ram_chr_data(m, &mut call_original);
+        0
+    });
+    same("MsSetRamChrData", a, b);
+}
+
+/// The tables `MsSetRamChr` reads: the characters' kernel records and the
+/// item memories, fake where there are none.
+fn ram_chr_tables(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World) {
+    use ffx_battle::misc::bridge::{ITEM_MEM, ITEM_MEM2};
+    let rom = ffx_battle::save::bridge::KERNEL_PLY_ROM;
+    if w.synthetic || !readable(a, rom.get(b), 0x20) {
+        let t = battle_common::world::fake_records(a, b, rng, 0x14, 0x30);
+        set(a, b, rom, t);
+    }
+    let n = 0x1f;
+    if w.synthetic || !readable(a, ITEM_MEM.get(b), (n * sp::ITEM_MEM_SIZE) as usize) {
+        let t = scratch(a, b, (n * sp::ITEM_MEM_SIZE) as usize);
+        set(a, b, ITEM_MEM, t);
+    }
+    if w.synthetic || !readable(a, ITEM_MEM2.get(b), (n * sp::ITEM_MEM2_SIZE) as usize) {
+        let t = scratch(a, b, (n * sp::ITEM_MEM2_SIZE) as usize);
+        set(a, b, ITEM_MEM2, t);
+    }
+}
+
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let w = world(a, b, rng, synthetic);
     let aab = ffx_kernel::bridge::A_ABILITY;
     if w.synthetic || !readable(a, aab.get(b), 0x20) {
         let t = battle_common::world::fake_records(a, b, rng, 0x100, 0x80);
         set(a, b, aab, t);
+    }
+    ram_chr_tables(a, b, rng, &w);
+    let m = monster_data(a, b);
+    for _ in 0..1500 {
+        ram_chr(a, b, rng, &w, &m);
+    }
+    let mon_top = ffx_battle::actor::bridge::MON_TOP;
+    if w.synthetic || !readable(a, mon_top.get(b), 0x10) {
+        set(a, b, mon_top, w.actor(0x14));
+    }
+    for _ in 0..200 {
+        ram_mon_data(a, b, rng, &w, &m);
+    }
+    let formation = scratch(a, b, 0x20);
+    for _ in 0..60 {
+        ram_chr_data(a, b, rng, &w, formation);
     }
     for _ in 0..3000 {
         let chr = rng.below(0x12);

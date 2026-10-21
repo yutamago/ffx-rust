@@ -6958,4 +6958,144 @@ ported! {
     AtelRequestMapCamera @ 0x0086_ed80 => extern "C" fn h_86ed80(set: u32) -> u32 {
         hp::atel_request_map_camera(&mut mem(), set)
     }
+    /// `getEventLocTexListPath(out)`: `fiosUnifyFilename`'s output is the
+    /// original's 256-byte local.
+    getEventLocTexListPath @ 0x0087_4c50 => extern "C" fn h_874c50(out: u32) -> u32 {
+        let mut frame = super::StackFrame::<64>::new();
+        hp::get_event_loc_tex_list_path(&mut mem(), out, frame.at())
+    }
+    /// `AtelStopSoundAll()`.
+    AtelStopSoundAll @ 0x0087_1890 => extern "C" fn h_871890() -> u32 {
+        hp::atel_stop_sound_all(&mut mem())
+    }
+    /// `AtelGetHyoukaMenuEnable()`.
+    AtelGetHyoukaMenuEnable @ 0x0086_bae0 => extern "C" fn h_86bae0() -> u32 {
+        hp::atel_get_hyouka_menu_enable(&mut mem())
+    }
+    /// `Atel_SetRunInBattle_008630c0()`.
+    Atel_SetRunInBattle_008630c0 @ 0x0086_30c0 => extern "C" fn h_8630c0() -> u32 {
+        hp::atel_set_run_in_battle(&mut mem())
+    }
+    /// `Atel_InitFreeSignals_0086d510(worker)`.
+    Atel_InitFreeSignals_0086d510 @ 0x0086_d510 => extern "C" fn h_86d510(w: u32) -> u32 {
+        hp::atel_init_free_signals(&mut mem(), w)
+    }
+    /// `Atel_ResetMsgWindowBank_00863c90(bank)`.
+    Atel_ResetMsgWindowBank_00863c90 @ 0x0086_3c90 => extern "C" fn h_863c90(bank: u32) -> u32 {
+        hp::atel_reset_msg_window_bank(&mut mem(), bank)
+    }
+    /// `Atel_LoadEventSeps_00866520(_, mode, group)`: the first word is
+    /// never read.
+    Atel_LoadEventSeps_00866520 @ 0x0086_6520 => extern "C" fn h_866520(_p0: u32, mode: u32, group: u32) -> u32 {
+        hp::atel_load_event_seps(&mut mem(), mode, group)
+    }
+    /// `destroyMoviePicture()`.
+    destroyMoviePicture @ 0x0076_ece0 => extern "C" fn h_76ece0() -> u32 {
+        hp::destroy_movie_picture(&mut mem())
+    }
+    /// `Movie_IsBusy_0076ed10()`.
+    Movie_IsBusy_0076ed10 @ 0x0076_ed10 => extern "C" fn h_76ed10() -> u32 {
+        hp::movie_is_busy(&mut mem())
+    }
+    /// `TkMenuSaveLoad_PollCard_008b3d20()`.
+    TkMenuSaveLoad_PollCard_008b3d20 @ 0x008b_3d20 => extern "C" fn h_8b3d20() -> u32 {
+        hp::tk_menu_save_load_poll_card(&mut mem())
+    }
+    /// `Atel_SetVarSlot_00878140(worker, args, stack)`: `args` is not read.
+    Atel_SetVarSlot_00878140 @ 0x0087_8140 => extern "C" fn h_878140(w: u32, _a: u32, s: u32) -> u32 {
+        hp::atel_set_var_slot(&mut mem(), w, s)
+    }
+    /// `Atel_GetEventActorRot_0086b270(i, x, y, z)`.
+    Atel_GetEventActorRot_0086b270 @ 0x0086_b270 => extern "C" fn h_86b270(i: u32, x: u32, y: u32, z: u32) -> u32 {
+        hp::atel_get_event_actor_rot(&mut mem(), i, x, y, z)
+    }
+    /// `Atel_TransSepGroup_00871780(hdr, data, sep_only, group, flag)`.
+    Atel_TransSepGroup_00871780 @ 0x0087_1780 => extern "C" fn h_871780(hdr: u32, data: u32, sep_only: u32, group: u32, flag: u32) -> u32 {
+        hp::atel_trans_sep_group(&mut mem(), hdr, data, sep_only, group, flag)
+    }
+    /// `AtelGetGuideMapActorInfo(i, out)`: the start and end y go to the
+    /// original's argument slot, here a frame word.
+    AtelGetGuideMapActorInfo @ 0x0086_b740 => extern "C" fn h_86b740(i: u32, out: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        hp::atel_get_guide_map_actor_info(&mut mem(), i, out, frame.at())
+    }
+    /// `AtelGetGideMapActorInfo(i, out)`: a jump to
+    /// `AtelGetGuideMapActorInfo` behind an empty frame.
+    AtelGetGideMapActorInfo @ 0x0086_b700 => extern "C" fn h_86b700(i: u32, out: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        hp::atel_get_guide_map_actor_info(&mut mem(), i, out, frame.at())
+    }
+    /// `AtelSndTransSepSPKDataGroup(hdr, data, group)`.
+    AtelSndTransSepSPKDataGroup @ 0x0087_1750 => extern "C" fn h_871750(hdr: u32, data: u32, group: u32) -> u32 {
+        hp::atel_snd_trans_sep_spk_data_group(&mut mem(), hdr, data, group)
+    }
+    /// `AtelEventRemoveSep(mode)`.
+    AtelEventRemoveSep @ 0x0086_61d0 => extern "C" fn h_8661d0(mode: u32) -> u32 {
+        hp::atel_event_remove_sep(&mut mem(), mode)
+    }
+    /// `AtelEnterMenuCallback()`.
+    AtelEnterMenuCallback @ 0x0086_55e0 => extern "C" fn h_8655e0() -> u32 {
+        hp::atel_enter_menu_callback(&mut mem())
+    }
+    /// `AtelEventSetUpSep(hdr, data, sep_only)`.
+    AtelEventSetUpSep @ 0x0086_6430 => extern "C" fn h_866430(hdr: u32, data: u32, sep_only: u32) -> u32 {
+        hp::atel_event_set_up_sep(&mut mem(), hdr, data, sep_only)
+    }
+    /// `Atel_RequestBattleEndEntries_0086e8d0(tag)`.
+    Atel_RequestBattleEndEntries_0086e8d0 @ 0x0086_e8d0 => extern "C" fn h_86e8d0(tag: u32) -> u32 {
+        hp::atel_request_battle_end_entries(&mut mem(), tag)
+    }
+    /// `Atel_SetLevelTarget_0086f940(worker, i)`.
+    Atel_SetLevelTarget_0086f940 @ 0x0086_f940 => extern "C" fn h_86f940(w: u32, i: u32) -> u32 {
+        hp::atel_set_level_target(&mut mem(), w, i)
+    }
+    /// `Atel_CamGetVars_007ba3c0(worker, args, stack, side)`: `Cam_GetPos`.
+    Atel_CamGetVars_007ba3c0 @ 0x007b_a3c0 => extern "C" fn h_7ba3c0(w: u32, _a: u32, s: u32, side: u32) -> u32 {
+        hp::atel_cam_get_vars(&mut mem(), 0x007b_d420, w, s, side)
+    }
+    /// `Atel_CamGetRefVars_007ba460(worker, args, stack, side)`:
+    /// `Cam_GetRefPos_007bd4b0`.
+    Atel_CamGetRefVars_007ba460 @ 0x007b_a460 => extern "C" fn h_7ba460(w: u32, _a: u32, s: u32, side: u32) -> u32 {
+        hp::atel_cam_get_vars(&mut mem(), 0x007b_d4b0, w, s, side)
+    }
+    /// `Vibrate_UpdateVolume_00875b40()`.
+    Vibrate_UpdateVolume_00875b40 @ 0x0087_5b40 => extern "C" fn h_875b40() -> u32 {
+        hp::vibrate_update_volume(&mut mem())
+    }
+    /// `Atel_RequestOwnerTrigger_008764a0(owner, kind)`.
+    Atel_RequestOwnerTrigger_008764a0 @ 0x0087_64a0 => extern "C" fn h_8764a0(owner: u32, kind: u32) -> u32 {
+        hp::atel_request_owner_trigger(&mut mem(), owner, kind)
+    }
+    /// `TkMenuSaveLoad_ClearLoadPos_008b3cd0(slot)`.
+    TkMenuSaveLoad_ClearLoadPos_008b3cd0 @ 0x008b_3cd0 => extern "C" fn h_8b3cd0(slot: u32) -> u32 {
+        hp::tk_menu_save_load_clear_load_pos(&mut mem(), slot)
+    }
+    /// `Atel_InitMovieState_00873c00()`.
+    Atel_InitMovieState_00873c00 @ 0x0087_3c00 => extern "C" fn h_873c00() -> u32 {
+        hp::atel_init_movie_state(&mut mem())
+    }
+    /// `Atel_QueueBattleEndEffect_00861550(kind, v)`.
+    Atel_QueueBattleEndEffect_00861550 @ 0x0086_1550 => extern "C" fn h_861550(kind: u32, v: u32) -> u32 {
+        hp::atel_queue_battle_end_effect(&mut mem(), kind, v)
+    }
+    /// `Atel_FadeOutQueuedSeps_00868460()`.
+    Atel_FadeOutQueuedSeps_00868460 @ 0x0086_8460 => extern "C" fn h_868460() -> u32 {
+        hp::atel_fade_out_queued_seps(&mut mem())
+    }
+    /// `TkMenuSaveLoad_OpenWindow_008b3c20()`.
+    TkMenuSaveLoad_OpenWindow_008b3c20 @ 0x008b_3c20 => extern "C" fn h_8b3c20() -> u32 {
+        hp::tk_menu_save_load_open_window(&mut mem())
+    }
+    /// `TkMenuSaveLoad_OpenChoice_008b3c70(arg)`.
+    TkMenuSaveLoad_OpenChoice_008b3c70 @ 0x008b_3c70 => extern "C" fn h_8b3c70(arg: u32) -> u32 {
+        hp::tk_menu_save_load_open_choice(&mut mem(), arg)
+    }
+    /// `Atel_ShowWaterFps_008682a0(on)`.
+    Atel_ShowWaterFps_008682a0 @ 0x0086_82a0 => extern "C" fn h_8682a0(on: u32) -> u32 {
+        hp::atel_show_water_fps(&mut mem(), on)
+    }
+    /// `Atel_SetSaveEventBit_008700e0(n)`.
+    Atel_SetSaveEventBit_008700e0 @ 0x0087_00e0 => extern "C" fn h_8700e0(n: u32) -> u32 {
+        hp::atel_set_save_event_bit(&mut mem(), n)
+    }
 }

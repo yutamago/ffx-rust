@@ -3070,6 +3070,18 @@ ported! {
     MsMonShuffleVariants_007842f0 @ 0x0078_42f0 => extern "C" fn ms_mon_shuffle_variants() {
         read::ms_mon_shuffle_variants(&mut mem());
     }
+    /// `Mon_LoadAll()`: the monsters set up and their scripts queued.
+    Mon_LoadAll @ 0x0078_4070 => extern "C" fn mon_load_all() {
+        let mut m = mem();
+        read::mon_load_all(&mut target::Dm::new(&mut m), &mut call_ptr);
+    }
+    /// `MsSetChrVisibleBtl2Event(actor, mask, reset)`: actors back in the
+    /// battle after an event.
+    MsSetChrVisibleBtl2Event @ 0x007a_89c0 => extern "C" fn ms_set_chr_visible_btl2_event(actor: u32, mask: u32, reset: u32) -> u32 {
+        let mut m = mem();
+        script!(s);
+        exchange::ms_set_chr_visible_btl2_event(&mut target::Dm::new(&mut m), &mut s, actor, mask, reset)
+    }
     /// `MsSetRamChrAbility(chr, actor)`.
     MsSetRamChrAbility @ 0x0079_bb50 => extern "C" fn ms_set_ram_chr_ability(chr: u32, actor: u32) {
         ffx_battle::ability::bridge::ms_set_ram_chr_ability(&mut mem(), chr, actor);
@@ -3442,6 +3454,11 @@ ported! {
     /// `msSetChrShadowReq(p, k, v)`.
     msSetChrShadowReq @ 0x0079_7020 => extern "C" fn ms_set_chr_shadow_req(p: u32, k: i32, v: u32) -> u32 {
         visible::ms_set_chr_shadow_req(&mut mem(), p, k, v.to_le_bytes()[0])
+    }
+    /// `MsSetChrEngine_00796f70(chr, p)`: a character set up from its
+    /// record.
+    MsSetChrEngine_00796f70 @ 0x0079_6f70 => extern "C" fn ms_set_chr_engine(chr: u32, p: u32) -> u32 {
+        visible::ms_set_chr_engine(&mut mem(), &mut call_ptr, chr, p)
     }
     /// `msSetChrVisibleReq(i, k, v)`: `op_et_bindeff` (vfx) through the game.
     msSetChrVisibleReq @ 0x0079_7080 => extern "C" fn ms_set_chr_visible_req(i: u32, k: u32, v: u32) -> u32 {
@@ -4854,6 +4871,11 @@ ported! {
         script!(s);
         free::ms_btl_bridge_btl2_event(&mut mem(), &mut s);
     }
+    /// `MsBtlBridgeEvent2Btl()`: the event's characters handed to the
+    /// battle (the script accessors through the game).
+    MsBtlBridgeEvent2Btl @ 0x0078_24e0 => extern "C" fn ms_btl_bridge_event2_btl() {
+        atel::ms_btl_bridge_event2_btl(&mut mem(), &mut call_ptr);
+    }
     /// `MsBattleFree()`: the other modules' callees through the game.
     MsBattleFree @ 0x0078_1590 => extern "C" fn ms_battle_free() -> u32 {
         let mut m = mem();
@@ -5082,6 +5104,19 @@ ported! {
     /// `MsSetRamChrParam(chr)`: a party actor from the save.
     MsSetRamChrParam @ 0x0079_c5f0 => extern "C" fn ms_set_ram_chr_param(chr: u32) -> i32 {
         sparam::ms_set_ram_chr_param(&mut mem(), chr)
+    }
+    /// `MsSetRamChr(_, chr)`: actor `chr` set up for the battle.
+    MsSetRamChr @ 0x0079_b4f0 => extern "C" fn ms_set_ram_chr(_unused: u32, chr: u32) {
+        sparam::ms_set_ram_chr(&mut mem(), chr);
+    }
+    /// `MsSetRamMonData()`: the monsters in use set up.
+    MsSetRamMonData @ 0x0079_cb10 => extern "C" fn ms_set_ram_mon_data() {
+        sparam::ms_set_ram_mon_data(&mut mem());
+    }
+    /// `MsSetRamChrData()`: every actor's defaults, the party and the
+    /// formation's monsters.
+    MsSetRamChrData @ 0x0079_c110 => extern "C" fn ms_set_ram_chr_data() {
+        sparam::ms_set_ram_chr_data(&mut mem(), &mut call_ptr);
     }
     /// `MsGetTargetRandomList(chr, &n, shuffle)`: `MsBattleError`
     /// through the game.

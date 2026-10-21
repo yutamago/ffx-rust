@@ -1363,4 +1363,42 @@ pub mod bridge {
             _ => r,
         }
     }
+
+    /// `Mon_LoadAll` (`0x00784070`): the monsters set up
+    /// (`MsSetRamMonData`); each one with monster data (`+0x48`) has its
+    /// script (`+0xf78`) queued in manager 1 (`MsAtelRegist`; the name
+    /// `m%03d` of its number, `+0xe & 0x3ff`, goes to a frame buffer the
+    /// call ignores); with any, the battle has character scripts
+    /// (`g_BtlChrScripts`) and manager 1 is set up (`MsAtelSetUp(1)`).
+    /// Then the variants shuffled, the first turns (`MsSetFirstCTB` with
+    /// [`FIRST_ATTACK`]) and the statuses checked.
+    pub fn mon_load_all<'d>(mem: &mut Dm<'d>, call: Call<'_, Dm<'d>>) {
+        use crate::minor::bridge::ms_atel_regist;
+        crate::save_param::bridge::ms_set_ram_mon_data(mem);
+        let n = mem.locals(0xc, |mem, name| {
+            let mut n = 0;
+            for i in 0..8 {
+                let mon = crate::actor::bridge::ms_get_mon(mem, i);
+                if mem.read::<u32>(mon.wrapping_add(0x48)) == 0 {
+                    continue;
+                }
+                let id = mem.read::<u16>(mon.wrapping_add(0xe)) & 0x3ff;
+                let mut text = format!("m{id:03}").into_bytes();
+                text.push(0);
+                mem.write_bytes(name, &text);
+                let script: u32 = mem.read(mon.wrapping_add(0xf78));
+                ms_atel_regist(mem, 1, script);
+                n += 1;
+            }
+            n
+        });
+        if n > 0 {
+            crate::atel::bridge::CHR_SCRIPTS.set(mem, 1);
+            crate::effect::bridge::ms_atel_set_up(mem, &mut *call, 1);
+        }
+        ms_mon_shuffle_variants(mem);
+        let first = FIRST_ATTACK.get(mem);
+        crate::turn::bridge::ms_set_first_ctb(mem, first.into());
+        crate::turn::bridge::ms_check_status(mem);
+    }
 }

@@ -697,4 +697,73 @@ pub mod bridge {
         ms_change_monster_dir(mem, host, s);
         crate::action::bridge::ms_insert_chr_command(mem, summon, inn, 0);
     }
+
+    /// `Ch_SetShadeCol(chr, r, g, b, frames)`, `Ch_SetTransparent(chr,
+    /// alpha, frames)`, `Ch_SetHideEffect(chr, on)` (chara) and
+    /// `op_chr_status_reset_exception_wrap_007fae90(chr)` (vfx).
+    pub const CH_SET_SHADE_COL: u32 = 0x0082_b5d0;
+    pub const CH_SET_TRANSPARENT: u32 = 0x0082_b900;
+    pub const CH_SET_HIDE_EFFECT: u32 = 0x0082_b2a0;
+    pub const OP_CHR_STATUS_RESET_EXCEPTION_WRAP: u32 = 0x007f_ae90;
+
+    /// `MsSetChrVisibleBtl2Event(actor, mask, reset)` (`0x007a89c0`): each
+    /// actor `i` below 0x1f whose bit is set in `mask` set up again for the
+    /// battle (`MsSetRamChr`, keeping its slot bytes `+0x5c2`, `+0x5c3`),
+    /// revived in full (`MsRelife(i, a, 1)`), `+0x43e` cleared, its wait
+    /// (`+0x65c`, `+0x65d`) three times its agility's CTB count; its
+    /// character shown at full colour and alpha, without its hide effect
+    /// (and its status effects reset when `reset` is set), its status
+    /// effects checked and motion 0x27 requested for `actor`
+    /// (`MsSetMotion(i, 0x27, 0, 0, 1, actor, &same)`). 1 when one of
+    /// those requests ran for `actor` itself. `same` is one frame word the
+    /// original never clears: a request that does not run leaves the last
+    /// one's (here 0 at first).
+    pub fn ms_set_chr_visible_btl2_event<'d>(
+        mem: &mut Dm<'d>,
+        s: &mut Script<'_, Dm<'d>>,
+        actor: u32,
+        mask: u32,
+        reset: u32,
+    ) -> u32 {
+        let one = 1.0f32.to_bits();
+        mem.locals(4, |mem, same| {
+            let mut any = 0;
+            for i in 0..0x1f {
+                if mask >> i & 1 == 0 {
+                    continue;
+                }
+                let a = ms_get_chr(mem, i);
+                let slot = [byte(mem, a, 0x5c2), byte(mem, a, 0x5c3)];
+                crate::save_param::bridge::ms_set_ram_chr(mem, i);
+                mem.write(a.wrapping_add(0x5c2), slot);
+                crate::chr_damage::bridge::ms_relife(mem, &mut *s.call, i, a, 1);
+                mem.write(a.wrapping_add(0x43e), 0u8);
+                let agility = i32::from(byte(mem, a, 0x5ac));
+                let wait = ffx_kernel::bridge::ms_get_rom_ctb_count(mem, agility).wrapping_mul(3);
+                mem.write(a.wrapping_add(0x65d), wait);
+                mem.write(a.wrapping_add(0x65c), wait);
+                let chr: u32 = mem.read(a);
+                if chr != 0 {
+                    for (sym, args) in [
+                        (CH_SET_SHADE_COL, &[chr, one, one, one, 0][..]),
+                        (CH_SET_TRANSPARENT, &[chr, one, 0][..]),
+                        (CH_SET_HIDE_EFFECT, &[chr, 0][..]),
+                    ] {
+                        let f = code(mem, sym);
+                        (s.call)(mem, f, args);
+                    }
+                    if reset != 0 {
+                        let f = code(mem, OP_CHR_STATUS_RESET_EXCEPTION_WRAP);
+                        (s.call)(mem, f, &[chr]);
+                    }
+                }
+                crate::status::bridge::ms_status_effect_check(mem, &mut *s.call, &mut *s.off, i);
+                ms_set_motion(mem, s, i, 0x27, 0, 0, 1, actor, same);
+                if mem.read::<u32>(same) != 0 {
+                    any = 1;
+                }
+            }
+            any
+        })
+    }
 }

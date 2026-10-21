@@ -247,7 +247,9 @@ pub fn logging_stub(o: &mut Oracle, f: u32, at: u32, rec: u32, n: u8, ret: u32) 
     code.push(0xa1);
     code.extend((rec + 4).to_le_bytes());
     code.push(0xc3);
-    assert!(code.len() <= 0x40);
+    // 0x40 bytes of code for up to 4 arguments, 0x80 for 5 (place those
+    // 0x80 apart)
+    assert!(code.len() <= if n > 4 { 0x80 } else { 0x40 });
     o.write(rec, &[0; 4]).unwrap();
     o.write(rec + 4, &ret.to_le_bytes()).unwrap();
     o.write(at, &code).unwrap();

@@ -1892,6 +1892,96 @@ ported! {
     MenuSubCmd_FlipWindowCtrl_008e3880 @ 0x008e_3880 => extern "C" fn menu_sub_cmd_flip_window_ctrl(w: u32) -> u32 {
         tk::menu_sub_cmd_flip_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCopyLoadedSave(dst, buffer)`: `setDefaultPlayerName`'s `eax`.
+    TkMenuCopyLoadedSave @ 0x008b_54a0 => extern "C" fn tk_menu_copy_loaded_save(dst: u32, buffer: u32) -> u32 {
+        tk::tk_menu_copy_loaded_save(&mut mem(), dst, buffer, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkInitSaveWork()`: the last call's `eax` (0 without Asia mode).
+    TkInitSaveWork @ 0x0088_df40 => extern "C" fn tk_init_save_work() -> u32 {
+        tk::tk_init_save_work(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSelList_DrawList_008d1400(w)`: the last call's `eax`.
+    MenuSelList_DrawList_008d1400 @ 0x008d_1400 => extern "C" fn menu_sel_list_draw_list(w: u32) -> u32 {
+        tk::menu_sel_list_draw_list(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ScanPort_00889050(port, slot, pad)`: `pad` (low byte the
+    /// mode nibble on a fresh read).
+    Pad_ScanPort_00889050 @ 0x0088_9050 => extern "C" fn pad_scan_port(port: u32, slot: u32, pad: u32) -> u32 {
+        tk::pad_scan_port(&mut mem(), port, slot, pad, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawExchangePage_008bd670(dx)`.
+    BtlEnd_DrawExchangePage_008bd670 @ 0x008b_d670 => extern "C" fn btl_end_draw_exchange_page(dx: i32) {
+        // MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::btl_end_draw_exchange_page(&mut mem(), dx, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuMessageLayout2_008de5d0(m)`: 0.
+    TkMenuMessageLayout2_008de5d0 @ 0x008d_e5d0 => extern "C" fn tk_menu_message_layout2(m: u32) -> u32 {
+        // the original's lead, width and w words
+        let mut frame = super::StackFrame::<3>::new();
+        let local = frame.at();
+        tk::tk_menu_message_layout2(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
+    /// `TkMn2GetIShopPos()`: the last plate's `eax`.
+    TkMn2GetIShopPos @ 0x008d_b080 => extern "C" fn tk_mn2_get_ishop_pos() -> u32 {
+        tk::tk_mn2_get_ishop_pos(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_StatusWindowCtrl_008ccb60(w)`.
+    MenuSummon_StatusWindowCtrl_008ccb60 @ 0x008c_cb60 => extern "C" fn menu_summon_status_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_status_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawCaption_008b9f30()`: the last scissor's `eax`.
+    BtlEnd_DrawCaption_008b9f30 @ 0x008b_9f30 => extern "C" fn btl_end_draw_caption() -> u32 {
+        // the two text width words
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::btl_end_draw_caption(&mut mem(), local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_Draw_008d6860(w)`: the character plate's `eax`.
+    MenuKaizou_Draw_008d6860 @ 0x008d_6860 => extern "C" fn menu_kaizou_draw(w: u32) -> u32 {
+        tk::menu_kaizou_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_ListWindowDraw_008c7750(w)`: the last call's `eax`.
+    MenuItem_ListWindowDraw_008c7750 @ 0x008c_7750 => extern "C" fn menu_item_list_window_draw(w: u32) -> u32 {
+        tk::menu_item_list_window_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlAbility(m)`.
+    TkMenuCtrlAbility @ 0x008c_60b0 => extern "C" fn tk_menu_ctrl_ability(m: u32) -> u32 {
+        // MsGetRomPlyCommand's out word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_menu_ctrl_ability(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_Window2Draw_008ce750(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
+    MenuSummon_Window2Draw_008ce750 @ 0x008c_e750 => extern "C" fn menu_summon_window2_draw(w: u32) -> u32 {
+        // the cost and gain words
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_summon_window2_draw(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_WindowDraw_008d2790(w)`: `TkMn2DrawKickSyncPacket2`'s `eax`.
+    MenuStatus_WindowDraw_008d2790 @ 0x008d_2790 => extern "C" fn menu_status_window_draw(w: u32) -> u32 {
+        // the original's 22-word command list
+        let mut frame = super::StackFrame::<22>::new();
+        let list = frame.at();
+        tk::menu_status_window_draw(&mut mem(), w, list, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawGearCustomizationMenu(w)`: `MenuKaizou_DrawWeaponTitle`'s `eax`.
+    DrawGearCustomizationMenu @ 0x008d_5f60 => extern "C" fn draw_gear_customization_menu(w: u32) -> u32 {
+        tk::draw_gear_customization_menu(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawLimitPageOverDrive(chr)`: the last call's `eax`.
+    DrawLimitPageOverDrive @ 0x008d_2270 => extern "C" fn draw_limit_page_over_drive(chr: u32) -> u32 {
+        // the text width word (the original uses its argument's slot)
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::draw_limit_page_over_drive(&mut mem(), chr, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawSpoilListPage_008bd280(dx)`.
+    BtlEnd_DrawSpoilListPage_008bd280 @ 0x008b_d280 => extern "C" fn btl_end_draw_spoil_list_page(dx: i32) {
+        tk::btl_end_draw_spoil_list_page(&mut mem(), dx, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

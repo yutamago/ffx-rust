@@ -214,4 +214,37 @@ pub mod bridge {
         CAMERA_HIDES.set(mem, 0);
         Some(ms_set_chr_visible_camera_all(mem, call, 1))
     }
+
+    /// The clip distance [`ms_set_chr_engine`] gives (`0x00b3eba0`).
+    pub const CLIP_Z: f32 = 5000.0;
+
+    /// `0x00796f70(chr, p)` (`MsSetChrEngine_00796f70`, name ours; callers
+    /// `MsBtlChrRegist`, `MsBtlWeaponRegist`): character `chr` set up from
+    /// actor or weapon record `p`: no offset, its hide-calc (`+0x37`),
+    /// motion type and field mode (`+0x20`), map ID (`+0x32`), ground mode
+    /// (`+0x34`), normals (`+0x33`), clipping off at [`CLIP_Z`]; the
+    /// record's body hit 2 on and shadow request 2 to -1. The bytes are
+    /// signed. `Ch_EngineSetFast(chr, +0x23)` (`0x00830370`) is a bare
+    /// `ret`: left out. Returns the record's character (the shadow
+    /// request's).
+    pub fn ms_set_chr_engine<M: Mem>(mem: &mut M, call: Call<'_, M>, chr: u32, p: u32) -> u32 {
+        ch::ch_set_offset(mem, chr, 0.0, 0.0, 0.0);
+        let field = |mem: &M, o: u32| sbyte(mem, p, o);
+        let v = field(mem, 0x37);
+        ch::ch_set_u8(mem, chr, ffx_chara::layout::HIDE_CALC, v);
+        let v = field(mem, 0x20);
+        ch::ch_set_u8(mem, chr, ffx_chara::layout::MOTION_TYPE, v);
+        let v = field(mem, 0x20);
+        ch::ch_set_u8(mem, chr, ffx_chara::layout::FIELD_MODE, v);
+        let v = field(mem, 0x32);
+        ch::ch_en_map_id(mem, chr, v);
+        let v = field(mem, 0x34);
+        ch::ch_set_u8(mem, chr, ffx_chara::layout::GRAV_MODE, v);
+        let v = field(mem, 0x33);
+        ffx_chara::parts::bridge::ch_set_calc_norm(mem, chr, v);
+        ch::ch_en_clip(mem, chr, 0);
+        ch::ch_set_clip_z(mem, chr, CLIP_Z, &mut |m, f, a| call(m, f, a));
+        crate::body::bridge::ms_set_chr_body_hit(mem, p, 2, 1);
+        ms_set_chr_shadow_req(mem, p, 2, 0xff)
+    }
 }
