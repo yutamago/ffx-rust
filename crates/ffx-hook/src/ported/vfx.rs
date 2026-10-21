@@ -1480,6 +1480,10 @@ ported! {
     initVFXRenderDataBuffer_FakeEnvModel @ 0x0071_6620 => extern "C" fn init_vfx_render_data_buffer_fake_env_model(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
         small::bridge::init_vfx_render_data_buffer_fake_env_model(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8], &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_wave_light_007f60b0(_, shape, unit)`.
+    opus_wave_light_007f60b0 @ 0x007f_60b0 => extern "C" fn opus_wave_light(_a: u32, shape: u32, unit: u32) {
+        opus::bridge::opus_wave_light(&mut mem(), shape, unit);
+    }
     /// `InitGuildMapRenderData(lo, hi, a, b)`.
     InitGuildMapRenderData @ 0x0071_0ed0 => extern "C" fn init_guild_map_render_data(lo: u32, hi: u32, a: u32, b: u32) -> u32 {
         small::bridge::init_guild_map_render_data(&mut mem(), [lo, hi, a, b], &mut |_, f, a| call_ptr(f, a))

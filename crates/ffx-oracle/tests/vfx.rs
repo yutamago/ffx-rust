@@ -25543,3 +25543,72 @@ fn r41d_inf_draw_setup_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r41e_wave_light_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_60b0);
+        // _CIsqrt through its import slot
+        x87_crt_stand_ins(&mut p);
+        let (shape, unit) = (p.alloc(0x40), p.alloc(0x80));
+        let (model, colour, lights) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let (verts, normals, strips) = (p.alloc(0x400), p.alloc(0x400), p.alloc(0x10 + 0x28 * 8));
+        p.set(shape + 4, strips - shape);
+        p.set(shape + 8, verts - shape);
+        p.set(shape + 0xc, normals - shape);
+        p.set(unit + 0x24, colour);
+        p.set(unit + 0x28, lights);
+        p.set(unit + 0x2c, model);
+        for round in 0..1500u32 {
+            let span = rng.pick(&[1.0f32, 10.0, 1000.0]);
+            for k in 0..16 {
+                let v = if rng.chance(5) {
+                    0
+                } else {
+                    ranged(&mut rng, -2.0, 2.0)
+                };
+                p.set(model + 4 * k, v);
+                p.set(colour + 4 * k, ranged(&mut rng, -1.5, 1.5));
+            }
+            for k in 0..4 {
+                for c in 0..3 {
+                    p.set(lights + 16 * k + 4 * c, ranged(&mut rng, -span, span));
+                }
+                p.set(lights + 16 * k + 12, ranged(&mut rng, -2.0, 50.0));
+            }
+            for k in 0..0x100 {
+                p.set(verts + 4 * k, ranged(&mut rng, -span, span));
+                p.set(normals + 4 * k, ranged(&mut rng, -1.0, 1.0));
+            }
+            let count = rng.pick(&[0i16, 1, 2, 5, 16, -1]);
+            p.set(shape + 0x12, count);
+            p.set(unit + 0x4c, u8::try_from(rng.below(0x100)).unwrap());
+            p.set(unit + 0x4d, u8::try_from(rng.below(0x100)).unwrap());
+            p.fill(strips, 0x10 + 0x28 * 8, &mut rng);
+            let n = if count > 0 {
+                rng.pick(&[0i16, 1, 3, 8])
+            } else {
+                0
+            };
+            p.set(strips + 2, n);
+            let made = u32::try_from(count.max(1)).unwrap();
+            for s in 0..8u32 {
+                for j in 0..4u32 {
+                    let idx = u16::try_from(rng.below(made)).unwrap();
+                    p.set(strips + 0x10 + 0x28 * s + 0x10 + 2 * j, idx);
+                }
+            }
+            let a = rng.next();
+            p.check(
+                &format!("opus_wave_light round {round}"),
+                0x007f_60b0,
+                &[a, shape, unit],
+                |m| {
+                    opus::bridge::opus_wave_light(m, shape, unit);
+                    None
+                },
+            );
+        }
+    }
+}
