@@ -9364,6 +9364,7 @@
 0x0086a720 function AtelGetActorStartPos # (i, x, y, z): the position block's first point (+0x284 types 5/6, 0 type 4, else +0x558) into x, y, z; types 2 and 5 read y, z before storing x; EAX z; ported in helpers (script round 23 f); fh v3:exact 0x0086a6b0
 0x0086a7b0 function AtelGetActorType          # (index) -> type byte of the worker header, or 7 if the index is out of range; was Script_GetWorkerType
 0x0086a7e0 function AtelGetAlbhedRikku        # fh v3:bsim1.00+call.cs 0x0086a770 cdecl
+0x0086a7f0 function FFXGetAsiaMode_Jmp_0086a7f0 # 5-byte jmp FFXGetAsiaMode_007826a0 thunk (not a function in the dump); callers TkInitSaveWork 0x0088e055 and Native_025a 0x008590e0; name ours
 0x0086a830 function AtelGetBasicWork          # worker index -> worker object (0xb58/0x558/0x5b8 sizes); was Script_GetWorker
 0x0086a970 function AtelGetBattleIdAdrs       # fh v3:bsim1.00 0x0086a900; ported in helpers (script round 19)
 0x0086a990 function AtelGetBattleIdAdrs2      # fh switch:cg2 0x71008af3c8
@@ -16212,6 +16213,8 @@
 0x00c5a088 label    g_MenuHelpExtArg          # second argument of TOMenuHelpSetExtMode
 0x00c5a604 label    g_NkzAeonStats               # 0x1c bytes a stat (row 0 none, then HP, MP, str, def, mag, mdef, agi, luck, eva, acc): +0 gain function, +0x18 maximum (99999, 9999, 255); TkMenuCtrlSummon
 0x00c5a790 label g_TkMenuStatusStats      # (i32 mes, u32 field) pairs: the status page stats 7..14 at save offsets 47..54, ended by mes -1 (TkMn2MainStatusPlayerStatus)
+0x00c5b1b0 label    g_TkMenuMessageKind1Methods # menu message method words (a second copy at 0x00c5b1d4): 0x008de8c0, 0, 0x008de970, 0x008dea00, 0x008dea20, 0x008dea40, TkMenuMessageWidth_008de210, TkMenuMessageLayout_008de370, 0; name ours
+0x00c5b200 label    g_TkMenuMessageKind2Methods # the second kind's words (a second copy at 0x00c5b224): 0x008ded60, 0x008df4c0, 0x008dea20, 0x008dee00, TkMenuMessageSize_008de250, TkMenuMessageLayout2_008de5d0, 0, TOTextScrollInit_008ded00 (also after the first kind's second copy, 0x00c5b1f8); name ours
 0x00c5b2d4 label g_TkMenuMainOptionOrder  # u8[32]: the slot of main-menu option bit i (TkMenuAppearMainCmdWindow); 01 02 04 00 05 06 07 08 09 0a ...; name ours
 0x00c5d770 label    g_TOScreenW               # TOGetScreenWH reads its low half as the width
 0x00c5d774 label    g_TOScreenH               # TOGetScreenWH reads its low half as the height

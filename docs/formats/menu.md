@@ -701,10 +701,11 @@ rectangle `+0x48` comes from `TOWideWindowRect_008b8d10`, except on map
 3) or `0x160`. It ends with `+0x2c` = `0x10001`, `+0x114` = `+0x11c` and
 the seven words at `+0xd4` copied to `+0xb8`.
 
-Menu messages have two kinds, with method tables `0x00c5b1b0`/`0x00c5b1d4`
-(`TkMenuMessageWidth_008de210`, `TkMenuMessageLayout_008de370`) and
-`0x00c5b200`/`0x00c5b224` (`TkMenuMessageSize_008de250`,
-`TkMenuMessageLayout2_008de5d0`), both ending in `TOTextScrollInit_008ded00`.
+Menu messages come in two kinds, each with a table of method words (two
+copies each): `0x00c5b1b0`/`0x00c5b1d4` holds
+`TkMenuMessageWidth_008de210` and `TkMenuMessageLayout_008de370`,
+`0x00c5b200`/`0x00c5b224` holds `TkMenuMessageSize_008de250`,
+`TkMenuMessageLayout2_008de5d0` and `TOTextScrollInit_008ded00`.
 `TkMenuMessageLayout2_008de5d0` (`0x008de5d0`) counts the words above
 the text (`TOCountMessageWordsAbove_008b8140(id, text, 3)` into `u16
 +0x24` and `+0x28`, which also counts the pen `0x025d09bc`'s), measures
