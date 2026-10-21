@@ -212,6 +212,15 @@ weapon's and armour's abilities for kind 0.
 `MenuSelList_DrawRows` (`0x008d1620`) draws a two-column selection list:
 nine row pairs from row `first * 2 - 2`, left column at `remapX2(210)`,
 right at `remapX2(970)`, from `y + remapY2(403)` down by `remapY2(77)`.
+`MenuSelList_DrawList_008d1400` (`0x008d1400`, the overdrive window's
+list draw through `0x008d16f0`) puts those rows in the scissor
+`TkMn2DrawMenuWindowScissor(ftol(remapY2(475)), ftol(remapY2(545)), part,
+i16 +0x46)`: one pass (part 0) at rest, the old rows (part 1) and the
+new ones (part 2, `y = ftol(remapY2(545) * +0x46 * -1/4096)`) while the
+list scrolls. The scroll bar is `DrawCrossMenuScrollParts(remapX2(955),
+remapY2(480), remapX2(10), remapY2(530), +0x32, +0x3a, (+0x30 + 1) >> 1)`
+(row pairs), the cursor `MenuSelList_DrawCursor(w, 0xc, 1)` while `i8
++0x45` is not negative.
 
 Gear sorting: `0x008c9bf0` calls `MenuItem_SortGear_008c9c40(list,
 start, n)` for each owner's weapons, then armour
@@ -522,6 +531,24 @@ centred) from `inputGetCurrDeviceStickInfo`'s floats 2, 3, 0, 1,
 resets a record: u16 `+0x9d` = `0x100`, byte `+0x9f` = 1, `+0x94` =
 `0x5000c`, bytes `+0x9c`/`+0x83` = 0, and the identity button map.
 
+`Pad_ScanPort_00889050(port, slot, pad)` (`0x00889050`, from
+`TkUpdateScanControler`) walks a record's connection phase (byte
+`+0x9f`). It switches first on `scePadGetState` (jump table
+`0x008892fc`; the PC stub always returns 6): 0 resets the record (phase
+1), 2 and 6 read the pad (`Pad_ReadAndUpdate`) and poll `0x0062fb20` in
+phases 6 and 7, 7 reports a lost pad. Then on the phase (jump table
+`0x0088931c`): 1 waits one frame (byte `+0x83`) and probes the pad kind
+(`scePadInfoMode(.., 2, 0)`, else `(.., 1, 0)`: 4 goes to phase 2, 7 to
+6); 2 sets the main mode (phase 6, or 1 on failure); 3 aligns the
+actuators (`Pad_ActuatorIds`, `Pad_SetActuatorPair`, bytes `+0xf7`/`+0xf6`
+= 8 - `0x00888a40(..)`, `scePadSetActAlign(.., +0xf0)`, phase 4); 4
+becomes 5; 5 is the steady state: `Pad_CheckPressMode(.., 5, pad)`, the
+actuators (`TkUpdateControlerActuator`, `scePadSetActDirect(.., +0xf8)`)
+and a report. Byte `+0x82` marks the press-mode check. The report sets
+byte `+0x80` to the pad's mode nibble (`pad[1] >> 4`) and `+0x81` to 1;
+without one `u16 +0x80` = `0x1ff`. The original passes `ecx` (the port)
+to `scePadGetState`, relying on `TkGetControlerWork` keeping it.
+
 `MenuSaveLoad_DrawSlotList` (`0x008b4a50`) draws the save/load list
 inside the scissor `(0, 0x5a)`..`(0x200, 0x146)` (PS2 pixels): with the
 list at rest (`u16 +0x32` == `+0x34`) the rows -1..=5 from y `0x2a`, 0x30
@@ -597,6 +624,26 @@ rectangle `+0x48` comes from `TOWideWindowRect_008b8d10`, except on map
 `0x17` for message `(0x1c7, 0xc7)`, which is pinned at x `0x154` (language
 3) or `0x160`. It ends with `+0x2c` = `0x10001`, `+0x114` = `+0x11c` and
 the seven words at `+0xd4` copied to `+0xb8`.
+
+Menu messages have two kinds, with method tables `0x00c5b1b0`/`0x00c5b1d4`
+(`TkMenuMessageWidth_008de210`, `TkMenuMessageLayout_008de370`) and
+`0x00c5b200`/`0x00c5b224` (`TkMenuMessageSize_008de250`,
+`TkMenuMessageLayout2_008de5d0`), both ending in `TOTextScrollInit_008ded00`.
+`TkMenuMessageLayout2_008de5d0` (`0x008de5d0`) counts the words above
+the text (`TOCountMessageWordsAbove_008b8140(id, text, 3)` into `u16
++0x24` and `+0x28`, which also counts the pen `0x025d09bc`'s), measures
+the lead (`TOGetMessageWH(.., flags | 3)`, width in `u16 +0x2a`, grown by
+`TOGetChangeMacroWidth` for `u16 +0x22` 1) and then the rest from the
+text it returned (`.., flags | 1`, height into `+0x46`); `u16 +0x44` is
+the rest's width plus the lead's (`+0x22` 1) or the rest's alone. `+0xa8`
+counts the words (plus the pen macro's, `TOGetChangeMacroAddress(0,
+pen)`), and `u16 +2` is set when all of them are above (`+0xa8` equal to
+`+0x28`, or to `+0x24` for the other lead kind), except in Eternal Calm
+scenes (`isEternalCalmScene(g_GraphicMapId)`). The window is centred as
+in the first kind (no wide or map `0x17` cases) through
+`TOWideWindowRect_008b8d10`; `u16 +0xe` = 0 when words are above, and
+the choices are laid out (`TOLayoutMessageChoices_008b9a60(m, 1)`) when
+`u16 +0x1e` is 1 and `i16 +0x1c` positive.
 
 `TkMenuCtrlWorldMap` (`0x008e2960`, jump table `0x008e2a84`) runs the
 world map through states 0..10 at `+0x1c`: read the map image (CD file
@@ -685,3 +732,24 @@ spoil in use (the six `u16` at `0x02310f8e`), `remapY2(84)` apart;
 won: `i8 0x02310f70` rows of `u16` item `0x02310f74[i]` and `u8` count
 `0x02310f84[i]` (drawn right-aligned at x 637, scale 0.68). All
 coordinates are 1920x1080 units through `graphicUiRemapX2/Y2`.
+
+`BtlEnd_DrawExchangePage_008bd670` (`0x008bd670`, called with the
+slide by `0x008bd940` between `0x008bd280` and `0x008bd020`) is the
+weapon page's twin for exchanging gear: y from 250, the title plate 66
+and sheet cell 0xe 54 above, rows 66 apart, the name lit when the
+record's byte `+3` & 0xd is set, a second full scissor after the title.
+Its cursor (`TOMakePktShapeCursor(0, ftol(remapX2(180) + left),
+ftol(remapY2(66) * row + y0 + 3))`) follows `0x0186a19c`: in mode 1 the
+row `[0x0186a1a0 + 4 * mode]` (the cursor), or with a pick
+(`0x0186a1a8`) the picked slot `0x0186a1a4`, blinking on odd
+`TkMenuGetTimer() / 2`; other modes show it only with a pick.
+
+`TkInitSaveWork` (`0x0088df40`) resets the save event record
+(`MsGetSaveEventAddress`) for a new game (`+4` = -1, `+0x20` =
+`0xffffff00`, byte `+0x13` = bit 0 kept | 2, byte `+0xd0` = 2, the eight
+bytes `+0xac` = 0..7, the rest of `+0..+0xec` and the 56 words at
+`+0x10c` cleared), then runs `AtelInitSaveWork`, `TkRefreshSoundMode`
+and, in Asia mode (`FFXGetAsiaMode_007826a0` through the jump
+`0x0086a7f0`), `MsSetSaveConfigEnglish(1)`. `TkMenuCopyLoadedSave(dst,
+buffer)` (`0x008b54a0`) copies the `0x68c0` bytes after a save file's
+`0x40`-byte header and runs `setDefaultPlayerName`.

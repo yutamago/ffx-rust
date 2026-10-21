@@ -1892,6 +1892,37 @@ ported! {
     MenuSubCmd_FlipWindowCtrl_008e3880 @ 0x008e_3880 => extern "C" fn menu_sub_cmd_flip_window_ctrl(w: u32) -> u32 {
         tk::menu_sub_cmd_flip_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCopyLoadedSave(dst, buffer)`: `setDefaultPlayerName`'s `eax`.
+    TkMenuCopyLoadedSave @ 0x008b_54a0 => extern "C" fn tk_menu_copy_loaded_save(dst: u32, buffer: u32) -> u32 {
+        tk::tk_menu_copy_loaded_save(&mut mem(), dst, buffer, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkInitSaveWork()`: the last call's `eax` (0 without Asia mode).
+    TkInitSaveWork @ 0x0088_df40 => extern "C" fn tk_init_save_work() -> u32 {
+        tk::tk_init_save_work(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSelList_DrawList_008d1400(w)`: the last call's `eax`.
+    MenuSelList_DrawList_008d1400 @ 0x008d_1400 => extern "C" fn menu_sel_list_draw_list(w: u32) -> u32 {
+        tk::menu_sel_list_draw_list(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ScanPort_00889050(port, slot, pad)`: `pad` (low byte the
+    /// mode nibble on a fresh read).
+    Pad_ScanPort_00889050 @ 0x0088_9050 => extern "C" fn pad_scan_port(port: u32, slot: u32, pad: u32) -> u32 {
+        tk::pad_scan_port(&mut mem(), port, slot, pad, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawExchangePage_008bd670(dx)`.
+    BtlEnd_DrawExchangePage_008bd670 @ 0x008b_d670 => extern "C" fn btl_end_draw_exchange_page(dx: i32) {
+        // MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::btl_end_draw_exchange_page(&mut mem(), dx, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuMessageLayout2_008de5d0(m)`: 0.
+    TkMenuMessageLayout2_008de5d0 @ 0x008d_e5d0 => extern "C" fn tk_menu_message_layout2(m: u32) -> u32 {
+        // the original's lead, width and w words
+        let mut frame = super::StackFrame::<3>::new();
+        let local = frame.at();
+        tk::tk_menu_message_layout2(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)
