@@ -3513,7 +3513,7 @@
 0x00710e30 function VFX_Copy16From            # (dst, src): four words copied, the last left in eax (callers: sg_calcenvelope_normW)
 0x00710e70 function VFX_Copy16To              # (src, dst): four words copied, the last left in eax
 0x00710ea0 function VFX_ScaleVec3             # (dst, v, float s): x, y, z of v times s (x87, z with v's element as the memory operand), returns dst
-0x00710ed0 function InitGuildMapRenderData    # fh v3:exact 0x00710fb0
+0x00710ed0 function InitGuildMapRenderData    # fh v3:exact 0x00710fb0; cdecl (lo, hi, a, b) -> eax: render data +0x94 entries (0x6c bytes, count +0x90) get +8 divided by 3; ported ffx_vfx::small::bridge::init_guild_map_render_data (r41)
 0x00710f80 function InitMapRenderData            # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71002dada0 InitMapRenderData, 2 votes, round 1
 0x00710fd0 function InitVFXPath3RenderData    # fh v3:cg5 0x7110b0
 0x00711030 function InitVFXPath3RenderDataShp # fh v3:bsim1.00 0x00711110
@@ -3569,7 +3569,7 @@
 0x00716110 function createZBufClearRenderData_00716110 # (lo, hi) -> render data present: sprintf(name, g_StrNoTexture), graphicVFXCreate(lo, hi, 0x40000000), graphicVFXCreateDataBuffer(lo, hi, 1, &4, &6, name, &0); caller InitVFXZBufClearRenderData; name ours; ported (round 33, small::bridge::create_zbuf_clear_render_data)
 0x00716550 function getAlphaForShpIgnoreAnFormatBaseOnSh # fh v3:exact 0x00716630; ours: (shp) -> byte +0x1c when byte +0xf is 3, else the byte at shp + shp[1] + 4 (small::bridge::shp_alpha)
 0x00716570 function hashU                     # fh v3:exact 0x00716650
-0x00716620 function initVFXRenderDataBuffer_FakeEnvModel # layout+callees: sorts between hashU and pppCallUsrFunc, and its named callees match the Switch 0x71002e5280 initVFXRenderDataBuffer_FakeEnvModel's (similarity 0.60: graphicVFXDestroy, graphicVFXSetup, graphicVFXUpdate); symbols from Fahrenheit's server export
+0x00716620 function initVFXRenderDataBuffer_FakeEnvModel # layout+callees: sorts between hashU and pppCallUsrFunc, and its named callees match the Switch 0x71002e5280 initVFXRenderDataBuffer_FakeEnvModel's (similarity 0.60: graphicVFXDestroy, graphicVFXSetup, graphicVFXUpdate); symbols from Fahrenheit's server export; cdecl 9 words -> eax: instance lo = a8, hi = a0 + (a8 >> 31); ported ffx_vfx::small::bridge::init_vfx_render_data_buffer_fake_env_model (r41)
 0x00716710 function pppCallUsrFunc            # fh v3:exact 0x007167f0
 0x00716770 function pppCreatePObject          # fh v3:exact 0x00716850
 0x007168f0 function pppDeletePObject          # fh v3:exact 0x007169d0
@@ -3852,10 +3852,12 @@
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
 0x0073ab70 function pppDrawMdlSeaDes          # ppp program table record "pppDrawMdlSea" +0x24 destructor
 0x0073abe0 function pppDrawMdlSeaDraw         # ppp program table record "pppDrawMdlSea" draw; not a function start in the Ghidra dump
+0x0073b5c0 function pppDrawMdlSeaDrawSetup    # name ours: the sea draw set-up its one caller pppDrawMdlSeaDraw runs; cdecl (rec, state) -> 0/1; ported ffx_vfx::prog::bridge::ppp_draw_mdl_sea_draw_setup
 0x0073b7b0 function pppDrawMdlInfCon          # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x1c set-up; "pppDrawMdlInf" (0x00c3c970) +0x1c set-up
 0x0073b800 function pppDrawMdlInfCon2         # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x20 second set-up; "pppDrawMdlInf" (0x00c3c970) +0x20 second set-up
 0x0073b830 function pppDrawMdlInfDes          # ppp program table record "pppDrawMdlInf" +0x24 destructor
 0x0073b9b0 function pppDrawMdlInfDraw         # ppp program table record "pppDrawMdlInf" draw; not a function start in the Ghidra dump
+0x0073c8e0 function pppDrawMdlInfDrawSetup    # name ours: the inf draw set-up its one caller pppDrawMdlInfDraw runs; cdecl (rec, state) -> 0/1; bounds of the shape vertices, a copy and per-vertex u16 span positions (the z one overwrites the x one in the +0xd4 block; +0xd8 allocated, never written); ported ffx_vfx::prog::bridge::ppp_draw_mdl_inf_draw_setup (r41)
 0x0073ce30 function pppVu0MoveVia             # (dst, src) src through the emulated VU0 register 0x00c8f980 into dst (pppDrawMdlInfDraw)
 0x0073ce80 function pppVu0LoadVf00            # (dst) dst = g_Vu0_Vf00 (pppDrawMdlInfDraw)
 0x0073ceb0 function pppVu0Length              # (v) -> f32: emulated VU0 length: v into 0x00c8f830, squares, sums at 0x00c8f820, g_Vu0_Q = sqrt|x²+y²+z²| (_CIsqrt), vf00.x + Q returned and in 0x00c8f830 (pppDrawMdlInfDraw)
@@ -4270,7 +4272,7 @@
 0x007625a0 function pppDrawDebugAxes_007625a0 # ours: (): three 200-long pppLinePoints axes (colours 0xff8080ff/0xff80ff80/0xff80ffff) centred on the f32 point 0x00d4b4d8 through g_pppScreenMatrix x g_pppCameraMatrix; called by pppPartDraw and pppPartLoop; ported r35 (vfx, part::bridge::ppp_draw_debug_axes)
 0x007626d0 function ppp_screen_to_world_007626d0 # ours: (out, p): s = scr[3][2] / (p.z - scr[2][2]) with g_pppScreenMatrix, view (p.x/scr[0][0]*s, p.y/scr[1][1]*s, s, 1), FFXVu0InversMatrix of g_pppCameraMatrix, FFXVu0ApplyMatrix into out; only caller 0x00760f30 (part::bridge::ppp_screen_to_world)
 0x007628c0 function pppDataSetTex_007628c0    # ours: (data, base, a, b) -> b: the records as pppDataLastPair_00761250 walks them; kinds 2, 3, 6, 7 get words 0 and 1 of 12-byte record u8 +4 + base of 0x00d4be38 at +8/+0xc, the last pair into a and b; caller pppDataRcv
-0x007629e0 function pppSetPmcom2Texture_007629e0 # (prog): uploads the pmcom texture with sceGsSetDefLoadImage / sceGsExecLoadImage after FlushCache; its own messages say "setPmcom2Texture depth error!!!" (and "... 2 !!!"); caller pppDataRcv; own name from the message
+0x007629e0 function pppSetPmcom2Texture_007629e0 # (prog): uploads the pmcom texture with sceGsSetDefLoadImage / sceGsExecLoadImage after FlushCache; its own messages say "setPmcom2Texture depth error!!!" (and "... 2 !!!"); caller pppDataRcv; own name from the message; cdecl (tex), void; strips of 0x40000 bytes, CLUT (4 bits 8x2, 8 bits 0x00762810), word 0 = TEX0 low word (TBP | TBW<<14 | PSM<<20 | TW<<26 | TH<<30); jump tables 0x00762e9c/0x00762eb0 (depth) and 0x00762ed0/0x00762ee4 (PSM); ported ffx_vfx::small::bridge::ppp_set_pmcom2_texture (r41)
 0x00762f50 function KePmcomAlloc                 # (bytes) -> block: bytes + 15 rounded down to 8 from the pmcom arena 0x00e524f0..0x00f524f0 (next 0x00d524a4); past the end restarts at the base (spins forever when it still does not fit); 0x00760080 ("pmcom_data_init")
 0x00762fa0 function KePmcomQueuePush             # (kind, p): (kind, set_ptr32(p)) into the 256-entry ring at 0x010d4d28, index 0x010d552c back to 0 past 255; 0x0075ff00
 0x00763030 function KeThBP_Init               # (args): object args[0], segment count byte args[1] at +0x37; self +0x10, links cleared, +0x4c 1.0, +0x20 3n+2, +0x28 0x40000b0, GIF tag at +0x40 + 0x30n; returns 6n. Switch KeThBP_Init calls set_ptr32 7 times as this does (cg_switch), sorts before KeThBP_MkGifPk 0x00763100; callers KeThBP_Update, KeThCp_AddBp
@@ -6782,6 +6784,8 @@
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
 0x007e2660 function op_line_length_007e2660      # ours: (src, lines) -> length of the op script reader's next line (bytes before LF, >= 0x80 with the next) or -1 at 0/0xff/the end (position back one); *lines (if any) and g_OpLineCount += 1; callers 0x007e1d50, 0x007e2270
+0x007e2720 function op_list_values_007e2720   # name ours: (node) -> the +4 words of the list linked through +0x20 in a block from 0x007cf970(4 n), 0 for none; caller 0x007e2a60; ported ffx_vfx::op::bridge::op_list_values (r41)
+0x007e2e30 function op_strdup_007e2e30        # name ours: (s) -> a copy of s with its terminator from 0x007cf970(len + 1), 0 for no string; callers 0x007e2770, 0x007e2a60; ported ffx_vfx::op::bridge::op_strdup (r41)
 0x007e2ed0 function op_file_read                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003cb510 op_file_read, 2 votes, round 1
 0x007e2fb0 function op_file_puts_007e2fb0       # ours: (file, s): the C string into the op file write buffer (+0 bytes, +8 handle, +0xc position, +0x10 size), sceWrite of each full buffer; only caller 0x007e2270 (op::bridge::op_file_puts)
 0x007e3040 function op_and64                  # (dst, a, b) 64-bit dst = *a & *b
@@ -6943,6 +6947,7 @@
 0x007f49e0 function op_shape_draw_eamap          # layout and code: follows op_shape_draw, where the Switch's op_shape file has op_shape_draw_eamap (3904 bytes; ours 4850) next; draws a shape over the area map: graphicAbmapGetVertexInfo (0x00638fd0), graphicFontGetScreenWH; callers the area-map effects 0x00a4fe40, 0x00a51340, 0x00a51560
 0x007f5ed0 function op_spr_cmd_size           # (cmd) -> ((i16) cmd[+2] * (14 if cmd[0] bit 3 else 7) + 7) * 16
 0x007f5f70 function opus_wave_cmd_7f5f70        # ours (g_MagicImports slot used by every overlay): (obj, cmd) opp command; kind 0x1000 opus_no_get, 0x007e5260 into a local, op_unit_m_scale(obj, 0.0625), then opus_0154_wave_draw unless 0x012fb7d0; kind 0x2000 branches on MsGetAnimaChainOff; ported in crates/ffx-vfx slots
+0x007f60b0 function opus_wave_light_007f60b0  # name ours: (_, shape, unit) opus_0154_wave_draw's vertex colours from four point lights (unit +0x28; +0x2c model matrix, +0x24 colour matrix, +0x4c/+0x4d base and gain bytes) into the strips' r g b bytes; 0x4520-byte frame holds 0x440 colours; ported ffx_vfx::opus::bridge::opus_wave_light (r41)
 0x007f65d0 function opus_0154_wave_draw          # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x71003e1f80 opus_0154_wave_draw, 3 votes, round 1
 0x007f67c0 function opus_0154_wave_omd_make   # fh switch:cg2 0x71003e2830; ours: (obj, wave, uv, omd, view, proj) -> end of normals: the 33x33 vertex disc OMD of effect 0154 (1024 quads at +0x30, verts +0xc040, normals +0x10450), constant 0x80808080 colours (first via g_pppColorConShift), heights (A_end - A) sin(ang_end - ang), slope-tilted normals, UVs from the outer radius projected through proj*view over z tan(fovy/2) (_CItan) (wave::bridge::opus_0154_wave_omd_make)
 0x007f7360 function opus_0706_acc_draw           # layout: alphabetical run between opus_0154_wave_omd_make and opus_0706_noise_draw (1 unnamed in the gap); Switch 0x71003e3920 opus_0706_acc_draw is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -16384,12 +16389,14 @@
 0x00d2c25c label    g_pppFpWood               # pppSetFpPdt sets it when an effect has kind byte +0x6a 2; pppFpLoop then calls pppFpSetWoodMatrix; name ours
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
-0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it
+0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it; set to the state by pppDrawMdlInfDrawSetup 0x0073c8e0
 0x00d4b46c label    g_KeLnsLpTCount           # pppKeLnsLpTCon (0x0075b090) stores it at area +0x8c and increments it (byte)
 0x00d4b4e8 label    g_PppCrosshair               # i32 x, y of pppDrawCrosshair's point (x 0x7fff: none); read by 0x007606f0 and 0x00760f30, no writer in the dump
-0x00d4be38 label    g_pppPmcomTexRecs         # 12-byte texture records pppSetPmcom2Texture_007629e0 fills (count at 0x00d4be34; u16s at +4, +6, +8); pppDataSetTex_007628c0 copies words 0 and 1 into the data records
+0x00d4be34 label    g_pppPmcomTexCount        # the records pppSetPmcom2Texture_007629e0 has filled (it increments it; the old value is the record index)
+0x00d4be38 label    g_pppPmcomTexRecs         # 12-byte texture records pppSetPmcom2Texture_007629e0 fills (count at 0x00d4be34; u16s at +4, +6, +8); pppDataSetTex_007628c0 copies words 0 and 1 into the data records; word 0 the TEX0 low word, u16 +4 width, +6 height, +8/+0xa their powers of two (pppSetPmcom2Texture_007629e0, r41)
 0x00d52398 label    g_pppRandTarget          # the float the ppp rand programs (pppRandFloat ...) add to when the key's target offset is -1
 0x00d524a4 label    g_KePmcomNext                # next free address of the pmcom arena 0x00e524f0..0x00f524f0 (KePmcomAlloc)
+0x010d4cf4 label    g_pppPmcomTexFirst        # the first texture record of the current data or -1; pppSetPmcom2Texture_007629e0 sets it from g_pppPmcomTexCount when -1
 0x010d4d28 label    g_KePmcomQueue               # 256 entries of (kind, pointer) (KePmcomQueuePush)
 0x010d552c label    g_KePmcomQueueIndex          # its write index, back to 0 past 255
 0x010d5600 label    g_KeMdlTkClut                # three words KeMdl_MkTkClut stores (the third a float)

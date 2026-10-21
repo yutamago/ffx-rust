@@ -25176,3 +25176,439 @@ fn round40f_opus_mdc_break_draw_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r41a_sea_draw_setup_matches_the_original() {
+    use ffx_field::guide::YN_MAP_SYSTEM;
+    use heap::bridge as h;
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_b5c0);
+        let (slot, env, arena) = (p.alloc(4), p.alloc(0x40), p.alloc(0x4000));
+        let (rec, state) = (p.alloc(0x60), p.alloc(0x80));
+        let (blocks, shape) = (p.alloc(0x100), p.alloc(0x400));
+        // a field scene with two field-program textures (kind 0x20006)
+        let (sys, map, scene, list) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x20), p.alloc(0x10));
+        let texs = [p.alloc(0x100), p.alloc(0x100), p.alloc(0x100)];
+        let real_system: u32 = p.get(p.sym(YN_MAP_SYSTEM.sym));
+        p.put(h::ENV_SLOT, slot);
+        p.set(slot, env);
+        p.set(env + 0x20, blocks);
+        p.set(sys, map);
+        p.set(map, 0u32);
+        p.set(map + 8, scene);
+        p.set(scene + 0xc, 3u32);
+        p.set(scene + 0x10, list);
+        for (at, t) in (list..).step_by(4).zip(texs) {
+            p.set(at, t);
+        }
+        let floats = [0u32, 0x8000_0000, 0x3f80_0000, 0x7fc0_0000, 0xbf00_0000];
+        for round in 0..1500u32 {
+            if round % 16 == 0 {
+                for (heap, base) in [(env, arena), (env + 0x10, arena + 0x2000)] {
+                    p.check("pppCreateHeap", 0x0072_c480, &[heap, base, 0x2000], |m| {
+                        h::ppp_create_heap(m, heap, base, 0x2000);
+                        None
+                    });
+                }
+                // fillers: the spare heap nearly full, the main one with
+                // room for some vertex blocks but not always their flags
+                let fill = [
+                    (env + 0x10, 0x1f00 + rng.below(0x100)),
+                    (env, 0x1600 + rng.below(0x200)),
+                ];
+                for (heap, n) in fill {
+                    p.check("pppMemAlloc", 0x0071_6a30, &[heap, heap, n], |m| {
+                        Some(h::ppp_mem_alloc(m, heap, heap, n))
+                    });
+                }
+            }
+            let system = match rng.below(4) {
+                0 => 0,
+                1 if p.snapshot() => real_system,
+                _ => sys,
+            };
+            p.put(YN_MAP_SYSTEM, system);
+            p.set(map + 8, if rng.chance(10) { 0 } else { scene });
+            for t in texs {
+                p.fill(t, 0x100, &mut rng);
+            }
+            p.set(texs[0], 0x0002_0006u32);
+            p.set(texs[1], rng.pick(&[0x0002_0006u32, 0x0002_0005]));
+            p.set(texs[2], 0x0002_0006u32);
+            p.fill(rec, 0x60, &mut rng);
+            p.fill(state, 0x80, &mut rng);
+            p.fill(shape, 0x40, &mut rng);
+            let index = rng.below(8);
+            p.set(rec + 4, index);
+            p.set(blocks + 0x20 * index + 0x1c, shape);
+            p.set(rec + 0x50, rng.pick(&[0u8, 1, 2, 3]));
+            for off in [0x20u32, 0x24, 0x28] {
+                let f = if rng.chance(60) { 0 } else { rng.pick(&floats) };
+                p.set(rec + off, f);
+            }
+            p.set(shape + 4, rng.pick(&[0x20u32, 0x30]));
+            p.set(shape + 8, 0x40u32);
+            // negative counts make the allocations wrap and memset run off: left out
+            let count = rng.pick(&[0u16, 1, 2, 7, 0x40, 0x60, 0x80, 0xa0, 0x200, 0x700]);
+            p.set(shape + 0x12, count);
+            p.fill(shape + 0x40, 0x300, &mut rng);
+            p.check(
+                &format!("pppDrawMdlSeaDrawSetup round {round}"),
+                0x0073_b5c0,
+                &[rec, state],
+                |m| Some(pb::ppp_draw_mdl_sea_draw_setup(m, rec, state)),
+            );
+        }
+    }
+}
+
+#[test]
+fn r41b_set_pmcom2_texture_matches_the_original() {
+    use small::bridge as sb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0076_29e0);
+        // the sceGs stubs, FlushCache, scePrintf and the CLUT8 upload:
+        // recorders of their arguments (the requests' frame addresses too)
+        let logs: Vec<u32> = [
+            (0x0062_f820u32, 8),
+            (0x0062_f7a0, 2),
+            (0x0062_f880, 2),
+            (0x0062_f4c0, 1),
+            (0x0062_fbf0, 1),
+            (0x0076_2810, 2),
+        ]
+        .iter()
+        .map(|&(f, n)| far_recorder(&mut p, f, &[0; 8][..n], None))
+        .collect();
+        let t = p.alloc(0x100);
+        let sizes = [
+            1u16, 2, 3, 5, 7, 0x10, 0x40, 0x81, 0x100, 0x200, 0x400, 0x3000, 0x7fff, 0xffff, 0x8000,
+        ];
+        let heights = [
+            1u16, 2, 3, 5, 7, 0x10, 0x40, 0x81, 0x100, 0x200, 0x400, 0x801, 0xffff, 0x8000,
+        ];
+        for round in 0..2000u32 {
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            p.fill(t, 0x100, &mut rng);
+            let depth = rng.pick(&[4u16, 8, 0x10, 0x20, 4, 8, 0x10, 0x20, 0, 5, 0x18, 0xfffc]);
+            p.set(t + 2, depth);
+            // random heights stay small: each strip is four calls
+            let w = if rng.chance(30) {
+                u16::try_from(1 + rng.below(0x7fff)).unwrap()
+            } else {
+                rng.pick(&sizes)
+            };
+            let h = if rng.chance(30) {
+                u16::try_from(1 + rng.below(0x100)).unwrap()
+            } else {
+                rng.pick(&heights)
+            };
+            p.set(t + 4, w);
+            // a height of 0 divides by zero in the original
+            p.set(t + 6, h);
+            p.set(t + 8, rng.pick(&[0u16, 0, 1, 0x8000]));
+            p.set(
+                t + 0xc,
+                rng.pick(&[0u16, 1, 2, 0x40, 0x41, 0x100, 0x400, 0xffff]),
+            );
+            p.set(
+                t + 0xe,
+                rng.pick(&[0u16, 1, 3, 0x80, 0x100, 0x5000, 0x8000, 0x8001]),
+            );
+            p.put(sb::PMCOM_TEX_COUNT, rng.below(0x40));
+            p.put(sb::PMCOM_TEX_FIRST, rng.pick(&[u32::MAX, 3, 0]));
+            let words = 1;
+            let frame = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4 - 4;
+            let at = (frame - 8) & !0xf;
+            check_deep_n(
+                &mut p,
+                &format!("pppSetPmcom2Texture round {round}"),
+                0x0076_29e0,
+                &[t],
+                |o, frame| {
+                    assert_eq!((frame - 8) & !0xf, at);
+                    sb::ppp_set_pmcom2_texture(o, t, at, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r41c_render_data_inits_and_op_lists_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_6620);
+        let cells = p.alloc(0x40);
+        let rets: Vec<(u32, &[u8], u32)> = vec![
+            // 0x00715af0, graphicVFXSetup, updateVFXRenderData_FakeEnvModel,
+            // graphicVFXUpdate, graphicVFXDestroy
+            (0x0071_5af0, &[0; 9], cells),
+            (0x0064_5780, &[0; 2], cells + 4),
+            (0x0071_cf90, &[0; 9], cells + 8),
+            (0x0064_58a0, &[0; 2], cells + 12),
+            (0x0064_5280, &[0; 2], cells + 16),
+            // createGuildMapRenderDataBuffer, graphicGuidemapSetup,
+            // graphicVFXGetRenderDataByInstance, updateGuildMapRenderData
+            (0x0071_33e0, &[0; 4], cells + 20),
+            (0x0064_1490, &[0; 2], cells + 24),
+            (0x0064_53d0, &[0; 2], cells + 28),
+            (0x0071_7620, &[0; 4], cells + 32),
+            // the op scripts' allocator
+            (0x007c_f970, &[0], cells + 36),
+        ];
+        let logs: Vec<u32> = rets
+            .iter()
+            .map(|&(f, words, ret)| far_recorder(&mut p, f, words, Some(ret)))
+            .collect();
+        let (data, entries) = (p.alloc(0x100), p.alloc(0x6c * 8));
+        let (text, out, nodes) = (p.alloc(0x40), p.alloc(0x80), p.alloc(0x24 * 8));
+        for round in 0..2000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            for k in 0..9 {
+                let v = rng.next();
+                p.set(cells + 4 * k, rng.pick(&[0u32, 1, 0x8000_0000, v]));
+            }
+            p.set(cells + 28, if rng.chance(20) { 0 } else { data });
+            p.set(cells + 36, out);
+            p.fill(data, 0x100, &mut rng);
+            p.fill(entries, 0x6c * 8, &mut rng);
+            p.fill(out, 0x80, &mut rng);
+            p.set(data + 0x90, rng.pick(&[0i32, 1, 2, 5, 8, -1]));
+            p.set(data + 0x94, entries);
+            let args: [u32; 9] = std::array::from_fn(|_| rng.next());
+            let mut args = args;
+            args[8] = rng.pick(&[0u32, 5, 0x8000_0000, 0xffff_ffff, args[8]]);
+            p.check(&what("fake_env_model"), 0x0071_6620, &args, |m| {
+                Some(small::bridge::init_vfx_render_data_buffer_fake_env_model(
+                    m,
+                    args,
+                    &mut call_original,
+                ))
+            });
+            let four = [args[0], args[1], args[2], args[3]];
+            p.check(&what("guild_map"), 0x0071_0ed0, &four, |m| {
+                Some(small::bridge::init_guild_map_render_data(
+                    m,
+                    four,
+                    &mut call_original,
+                ))
+            });
+            // a string of 0..0x3f bytes
+            let len = rng.below(0x40);
+            for k in 0..0x40 {
+                let c = if k < len { 1 + rng.below(0xff) } else { 0 };
+                p.set(text + k, u8::try_from(c).unwrap());
+            }
+            let s = if rng.chance(10) { 0 } else { text };
+            p.check(&what("op_strdup"), 0x007e_2e30, &[s], |m| {
+                Some(op::bridge::op_strdup(m, s, &mut call_original))
+            });
+            // a list of 1..8 nodes in a random order
+            p.fill(nodes, 0x24 * 8, &mut rng);
+            let n = 1 + rng.below(8);
+            let mut order: Vec<u32> = (0..8).collect();
+            for k in (1..8).rev() {
+                let j = rng.below(k + 1) as usize;
+                order.swap(k as usize, j);
+            }
+            for k in 0..n as usize {
+                let next = if k + 1 < n as usize {
+                    nodes + 0x24 * order[k + 1]
+                } else {
+                    0
+                };
+                p.set(nodes + 0x24 * order[k] + 0x20, next);
+            }
+            let head = if rng.chance(10) {
+                0
+            } else {
+                nodes + 0x24 * order[0]
+            };
+            p.check(&what("op_list_values"), 0x007e_2720, &[head], |m| {
+                Some(op::bridge::op_list_values(m, head, &mut call_original))
+            });
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r41d_inf_draw_setup_matches_the_original() {
+    use ffx_field::guide::YN_MAP_SYSTEM;
+    use heap::bridge as h;
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_c8e0);
+        let (slot, env, arena) = (p.alloc(4), p.alloc(0x40), p.alloc(0x4000));
+        let (rec, state) = (p.alloc(0x90), p.alloc(0x100));
+        let (blocks, shape, alias) = (p.alloc(0x100), p.alloc(0x400), p.alloc(4));
+        // a field scene with two field-program textures (kind 0x20006)
+        let (sys, map, scene, list) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x20), p.alloc(0x10));
+        let texs = [p.alloc(0x100), p.alloc(0x100), p.alloc(0x100)];
+        let real_system: u32 = p.get(p.sym(YN_MAP_SYSTEM.sym));
+        p.put(h::ENV_SLOT, slot);
+        p.set(slot, env);
+        p.set(env + 0x20, blocks);
+        p.set(sys, map);
+        p.set(map, 0u32);
+        p.set(map + 8, scene);
+        p.set(scene + 0xc, 3u32);
+        p.set(scene + 0x10, list);
+        for (at, t) in (list..).step_by(4).zip(texs) {
+            p.set(at, t);
+        }
+        let floats = [0u32, 0x8000_0000, 0x3f80_0000, 0x7fc0_0000, 0xbf00_0000];
+        for round in 0..1500u32 {
+            if round % 16 == 0 {
+                for (heap, base) in [(env, arena), (env + 0x10, arena + 0x2000)] {
+                    p.check("pppCreateHeap", 0x0072_c480, &[heap, base, 0x2000], |m| {
+                        h::ppp_create_heap(m, heap, base, 0x2000);
+                        None
+                    });
+                }
+                // fillers: the spare heap nearly full, the main one with
+                // room for some vertex blocks but not always their flags
+                let fill = [
+                    (env + 0x10, 0x1f00 + rng.below(0x100)),
+                    (env, 0x1600 + rng.below(0x200)),
+                ];
+                for (heap, n) in fill {
+                    p.check("pppMemAlloc", 0x0071_6a30, &[heap, heap, n], |m| {
+                        Some(h::ppp_mem_alloc(m, heap, heap, n))
+                    });
+                }
+            }
+            let system = match rng.below(4) {
+                0 => 0,
+                1 if p.snapshot() => real_system,
+                _ => sys,
+            };
+            p.put(YN_MAP_SYSTEM, system);
+            p.set(map + 8, if rng.chance(10) { 0 } else { scene });
+            for t in texs {
+                p.fill(t, 0x100, &mut rng);
+            }
+            p.set(texs[0], 0x0002_0006u32);
+            p.set(texs[1], rng.pick(&[0x0002_0006u32, 0x0002_0005]));
+            p.set(texs[2], 0x0002_0006u32);
+            p.fill(rec, 0x90, &mut rng);
+            p.fill(state, 0x100, &mut rng);
+            p.fill(shape, 0x40, &mut rng);
+            let index = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(rec + 4, index);
+            if index == 0xffff {
+                // a shape where index 0xffff would find one: the original
+                // must stop before
+                let far = alias - (0xffff << 5) - 0x1c;
+                p.set(env + 0x20, far);
+                p.set(alias, shape);
+            } else {
+                p.set(env + 0x20, blocks);
+                let s = if rng.chance(5) { 0 } else { shape };
+                p.set(blocks + 0x20 * index + 0x1c, s);
+            }
+            p.set(rec + 0x80, rng.pick(&[0u8, 1, 2, 3]));
+            for off in [0x20u32, 0x24, 0x28, 0x50, 0x54, 0x58] {
+                let f = if rng.chance(60) { 0 } else { rng.pick(&floats) };
+                p.set(rec + off, f);
+            }
+            p.set(shape + 4, rng.pick(&[0x20u32, 0x30]));
+            p.set(shape + 8, 0x40u32);
+            // negative counts make the allocations wrap and memset run off: left out
+            let count = rng.pick(&[
+                0u16, 1, 2, 3, 7, 0x40, 0x60, 0x80, 0xa0, 0x200, 0x700, 0xffff,
+            ]);
+            p.set(shape + 0x12, count);
+            // vertices in a small box, so spans of 0 and repeats come up
+            let span = rng.pick(&[1u32, 2, 0x10, 0x8000, 0x10000]);
+            for k in 0..0x180u32 {
+                let v = rng.below(span).wrapping_sub(span / 2);
+                p.set(shape + 0x40 + 2 * k, v as u16);
+            }
+            p.check(
+                &format!("pppDrawMdlInfDrawSetup round {round}"),
+                0x0073_c8e0,
+                &[rec, state],
+                |m| Some(pb::ppp_draw_mdl_inf_draw_setup(m, rec, state)),
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r41e_wave_light_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_60b0);
+        // _CIsqrt through its import slot
+        x87_crt_stand_ins(&mut p);
+        let (shape, unit) = (p.alloc(0x40), p.alloc(0x80));
+        let (model, colour, lights) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let (verts, normals, strips) = (p.alloc(0x400), p.alloc(0x400), p.alloc(0x10 + 0x28 * 8));
+        p.set(shape + 4, strips - shape);
+        p.set(shape + 8, verts - shape);
+        p.set(shape + 0xc, normals - shape);
+        p.set(unit + 0x24, colour);
+        p.set(unit + 0x28, lights);
+        p.set(unit + 0x2c, model);
+        for round in 0..1500u32 {
+            let span = rng.pick(&[1.0f32, 10.0, 1000.0]);
+            for k in 0..16 {
+                let v = if rng.chance(5) {
+                    0
+                } else {
+                    ranged(&mut rng, -2.0, 2.0)
+                };
+                p.set(model + 4 * k, v);
+                p.set(colour + 4 * k, ranged(&mut rng, -1.5, 1.5));
+            }
+            for k in 0..4 {
+                for c in 0..3 {
+                    p.set(lights + 16 * k + 4 * c, ranged(&mut rng, -span, span));
+                }
+                p.set(lights + 16 * k + 12, ranged(&mut rng, -2.0, 50.0));
+            }
+            for k in 0..0x100 {
+                p.set(verts + 4 * k, ranged(&mut rng, -span, span));
+                p.set(normals + 4 * k, ranged(&mut rng, -1.0, 1.0));
+            }
+            let count = rng.pick(&[0i16, 1, 2, 5, 16, -1]);
+            p.set(shape + 0x12, count);
+            p.set(unit + 0x4c, u8::try_from(rng.below(0x100)).unwrap());
+            p.set(unit + 0x4d, u8::try_from(rng.below(0x100)).unwrap());
+            p.fill(strips, 0x10 + 0x28 * 8, &mut rng);
+            let n = if count > 0 {
+                rng.pick(&[0i16, 1, 3, 8])
+            } else {
+                0
+            };
+            p.set(strips + 2, n);
+            let made = u32::try_from(count.max(1)).unwrap();
+            for s in 0..8u32 {
+                for j in 0..4u32 {
+                    let idx = u16::try_from(rng.below(made)).unwrap();
+                    p.set(strips + 0x10 + 0x28 * s + 0x10 + 2 * j, idx);
+                }
+            }
+            let a = rng.next();
+            p.check(
+                &format!("opus_wave_light round {round}"),
+                0x007f_60b0,
+                &[a, shape, unit],
+                |m| {
+                    opus::bridge::opus_wave_light(m, shape, unit);
+                    None
+                },
+            );
+        }
+    }
+}
