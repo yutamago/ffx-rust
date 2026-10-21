@@ -24316,3 +24316,287 @@ fn round40a_ppp_run_part_fp_objects_matches_the_original() {
         p.put(ppp::bridge::STOP, 0);
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round40b_opus_encount4_calc_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_8570);
+        let logs = [
+            far_recorder(&mut p, 0x0063_94a0, &[], None), // StartKeepFrame
+            far_recorder(&mut p, 0x0063_9390, &[], None),
+            far_recorder(&mut p, 0x0063_94e0, &[0], None), // UpdateOpacity
+            far_recorder(&mut p, 0x0063_9360, &[], None),
+            far_recorder(&mut p, 0x0082_bee0, &[0], None), // Sg_Blur
+        ];
+        let (enc, host, eff, scale) = (
+            p.alloc(0x4000),
+            p.alloc(0x300),
+            p.alloc(0x100),
+            p.alloc(0x50),
+        );
+        let blur_once = p.sym(0x012e_9630);
+        // full mantissas (2^-6..2^7), so the f32 roundings show
+        let full = |rng: &mut Xorshift| rng.next() & 0x807f_ffff | (0x79 + rng.below(13)) << 23;
+        for round in 0..1500u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            let exact = rng.chance(10);
+            let n = if exact {
+                rng.pick(&[60u32, 61, 100, 101])
+            } else if rng.chance(30) {
+                rng.below(130)
+            } else {
+                rng.below(12)
+            };
+            p.fill(enc, 0x110, &mut rng);
+            p.set(enc, rng.pick(&[0u32, 1, 2, 3, 4, 0x8000_0000]));
+            p.set(enc + 6, n as u16);
+            for k in [0xe0u32, 0xf0] {
+                let v = if rng.chance(50) {
+                    full(&mut rng)
+                } else {
+                    ranged(&mut rng, -100.0, 100.0)
+                };
+                p.set(enc + k, v);
+            }
+            if rng.chance(20) {
+                // a tiny lower edge: f32(b - a) rounds
+                let v = rng.next() & 0x807f_ffff | (0x60 + rng.below(8)) << 23;
+                p.set(enc + 0xf0, v);
+            }
+            // the band's edges as the original computes them, for blocks
+            // right on them
+            let k12: f64 = p.get(p.sym(0x00b4_8340));
+            let edge = |k: u32, p: &Pair| {
+                use ffx_bridge::x87::{load, mul, store};
+                store(mul(load(p.get(enc + k)), k12))
+            };
+            let (edge_a, edge_b) = (edge(0xf0, &p), edge(0xe0, &p));
+            let alive_odds = if exact { 100 } else { rng.below(100) };
+            for i in 0..n {
+                let r = enc + 0x110 + 0x70 * i;
+                p.fill(r, 0x70, &mut rng);
+                let alive = if rng.below(100) < alive_odds {
+                    rng.pick(&[1u8, 1, 2, 0x80])
+                } else {
+                    0
+                };
+                p.set(r, alive);
+                p.set(r + 1, rng.pick(&[0u8, 0, 1, 2, 3]));
+                p.set(r + 0x10, ranged(&mut rng, -150.0, 150.0));
+                for k in (0x20u32..0x4c).step_by(4) {
+                    let v = if rng.chance(50) {
+                        full(&mut rng)
+                    } else {
+                        ranged(&mut rng, -100.0, 100.0)
+                    };
+                    p.set(r + k, v);
+                }
+                if rng.chance(10) && !exact {
+                    p.set(r + 0x20, ranged(&mut rng, -40000.0, 40000.0));
+                }
+                if rng.chance(5) {
+                    // no radius: +0x10 lands on +0x20, right on the edge
+                    p.set(r + 0x60, 0u32);
+                    p.set(r + 0x20, rng.pick(&[20000.0f32, -20000.0]).to_bits());
+                    continue;
+                }
+                p.set(r + 0x60, full(&mut rng));
+                p.set(r + 0x64, ranged(&mut rng, -70000.0, 70000.0));
+                p.set(r + 0x68, full(&mut rng));
+                if rng.chance(3) {
+                    p.set(r + 0x10, 0x7fc0_0000u32);
+                } else if rng.chance(15) {
+                    p.set(r + 0x10, rng.pick(&[edge_a, edge_b]));
+                }
+            }
+            p.set(eff + 0xb0, rng.pick(&[0u8, 1, 1, 3]));
+            p.set(host + 0x212, rng.pick(&[0i16, 0, 0, 1]));
+            p.set(scale + 0x3c, full(&mut rng));
+            let c = if rng.chance(30) {
+                rng.pick(&[256.0f32, 512.0, 128.0, 384.0]).to_bits()
+            } else {
+                full(&mut rng)
+            };
+            p.set(scale + 0x40, c);
+            p.set(blur_once, rng.pick(&[0i32, 1, -1, 5]));
+            p.check(
+                &format!("opus_encount4_calc round {round} n {n}"),
+                0x007f_8570,
+                &[enc, host, rng.next(), eff, scale],
+                |m| {
+                    Some(opus::bridge::opus_encount4_calc(
+                        m,
+                        enc,
+                        host,
+                        eff,
+                        scale,
+                        &mut call_original,
+                        &mut |m, f, a| m.call_f64(f, a).unwrap(),
+                    ))
+                },
+            );
+        }
+    }
+}
+
+/// Code that returns the dword at `cell`, in both oracles; with `sym`, the
+/// function there jumps to it.
+fn cell_stand_in(p: &mut Pair, sym: Option<u32>, cell: u32) -> u32 {
+    let mut c = vec![0xa1];
+    c.extend(cell.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    if let Some(sym) = sym {
+        let at = p.sym(sym);
+        let mut j = vec![0xe9];
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        p.a.write(at, &j).unwrap();
+        p.b.write(at, &j).unwrap();
+    }
+    to
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round40b_opus_encount4_init_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_8930);
+        let cells = p.alloc(0x20);
+        let (made, blocks0, blocks1, size, iob) =
+            (cells, cells + 4, cells + 8, cells + 12, cells + 16);
+        let (sized, seen) = (cells + 20, cells + 24);
+        let buffer = p.sym(0x012e_962c);
+        // opus_0706_acc_draw(enc, oef, &size): the size from `size` while
+        // `sized`; the buffer word it finds logged in `seen`
+        let mut c = vec![0xa1]; // mov eax, [buffer]
+        c.extend(buffer.to_le_bytes());
+        c.push(0xa3); // mov [seen], eax
+        c.extend(seen.to_le_bytes());
+        c.push(0xa1); // mov eax, [sized]
+        c.extend(sized.to_le_bytes());
+        c.extend([0x85, 0xc0, 0x74, 0x0d]); // test eax, eax; jz +13
+        c.extend([0x8b, 0x44, 0x24, 0x0c]); // mov eax, [esp + 0xc]
+        c.extend([0x8b, 0x0d]); // mov ecx, [size]
+        c.extend(size.to_le_bytes());
+        c.extend([0x89, 0x08, 0x90]); // mov [eax], ecx; nop
+        c.push(0xa1); // mov eax, [made]
+        c.extend(made.to_le_bytes());
+        c.push(0xc3);
+        let to = p.a.alloc_code(&c).unwrap();
+        assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+        let at = p.sym(0x007f_7360);
+        let mut j = vec![0xe9];
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        p.a.write(at, &j).unwrap();
+        p.b.write(at, &j).unwrap();
+        // op_oef2_a_get(oef, kind, n): records + 0x400 (n & 3)
+        let recs = p.alloc(0x1000);
+        let mut c = vec![
+            0x8b, 0x44, 0x24, 0x0c, 0x83, 0xe0, 0x03, 0xc1, 0xe0, 0x0a, 0x05,
+        ];
+        c.extend(recs.to_le_bytes());
+        c.push(0xc3);
+        let get = p.a.alloc_code(&c).unwrap();
+        assert_eq!(p.b.alloc_code(&c).unwrap(), get);
+        let at = p.sym(0x007e_3810);
+        let mut j = vec![0xe9];
+        j.extend(get.wrapping_sub(at + 5).to_le_bytes());
+        p.a.write(at, &j).unwrap();
+        p.b.write(at, &j).unwrap();
+        let logs = [
+            far_recorder(&mut p, 0x0068_7010, &[0], None), // user_free_thunk
+            far_recorder(&mut p, 0x0063_9450, &[0, 0], Some(blocks0)),
+            far_recorder(&mut p, 0x0063_9470, &[0, 0, 0], Some(blocks1)),
+            far_recorder(
+                &mut p,
+                0x0063_9500,
+                &[0, 0, 0, SKIP, SKIP, SKIP, SKIP, SKIP, SKIP, 1, 1],
+                None,
+            ),
+            far_recorder(&mut p, 0x0063_9370, &[], None),
+        ];
+        // the CRT imports: __iob_func returns `iob`; fprintf logs
+        let iob_f = cell_stand_in(&mut p, None, iob);
+        let (c, flog) = deref_recorder_code(&mut p, &[0, 0, 0], None);
+        let fprintf = p.a.alloc_code(&c).unwrap();
+        assert_eq!(p.b.alloc_code(&c).unwrap(), fprintf);
+        let (s1, s2) = (p.sym(0x00b0_c350), p.sym(0x00b0_c38c));
+        p.set(s1, iob_f);
+        p.set(s2, fprintf);
+        let (enc, conf, local) = (
+            p.alloc(0x110 + 0x70 * 6 + 0x10 * 0x200),
+            p.alloc(0x10),
+            p.alloc(12),
+        );
+        let gpr = p.sym(0x00c8_f508);
+        for round in 0..1500u32 {
+            for log in logs.into_iter().chain([flog]) {
+                p.set(log, 0u32);
+            }
+            // four records: vertices at +0x20, normals at +0x200
+            p.fill(recs, 0x1000, &mut rng);
+            for r in 0..4u32 {
+                let rec = recs + 0x400 * r;
+                p.set(rec + 8, 0x20u32);
+                p.set(rec + 0xc, 0x200u32);
+                let nv = if rng.chance(5) {
+                    0
+                } else {
+                    rng.below(40) as i16 - 2
+                };
+                p.set(rec + 0x12, nv);
+                p.set(rec + 0x14, rng.below(40) as i16 - 2);
+            }
+            p.fill(enc, 0x110 + 0x70 * 6 + 0x10 * 0x200, &mut rng);
+            p.fill(conf, 0x10, &mut rng);
+            p.fill(local, 12, &mut rng);
+            p.set(conf + 6, rng.below(7) as u16);
+            p.fill(gpr, 0x10, &mut rng);
+            p.set(buffer, if rng.chance(50) { 0 } else { rng.next() });
+            let m = rng.below(0x1000);
+            p.set(made, m);
+            let s = rng.below(0x1000);
+            p.set(size, s);
+            p.set(sized, u32::from(rng.chance(80)));
+            if rng.chance(20) {
+                // right at the end of the buffer
+                p.set(blocks0, m.wrapping_add(s));
+                p.set(blocks1, m.wrapping_add(s));
+            } else {
+                p.set(blocks0, rng.below(0x2000));
+                p.set(blocks1, rng.below(0x2000));
+            }
+            p.set(iob, rng.next());
+            let (oef, a, b) = (rng.next(), rng.next(), rng.next());
+            p.check(
+                &format!("opus_encount4_init round {round}"),
+                0x007f_8930,
+                &[enc, oef, a, b, conf],
+                |m| {
+                    let keep = m.read(local, 12).unwrap();
+                    let r = opus::bridge::opus_encount4_init(
+                        m,
+                        enc,
+                        oef,
+                        a,
+                        b,
+                        conf,
+                        local,
+                        &mut call_original,
+                        &mut |m, f, a| m.call_f64(f, a).unwrap(),
+                    );
+                    m.write(local, &keep).unwrap();
+                    Some(r)
+                },
+            );
+        }
+    }
+}

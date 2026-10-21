@@ -5685,6 +5685,35 @@ ported! {
             &mut |_, f, a| super::call_cdecl_f64(f, a),
         )
     }
+    /// `opus_encount4_init(enc, oef, a, b, conf)` (`0x007f8930`): the
+    /// original's `u`, `v` and size words in this shim's frame.
+    opus_encount4_init @ 0x007f_8930 => extern "C" fn opus_encount4_init(enc: u32, oef: u32, a: u32, b: u32, conf: u32) -> u32 {
+        let mut frame = super::StackFrame::<3>::new();
+        let local = frame.at();
+        opus::bridge::opus_encount4_init(
+            &mut mem(),
+            enc,
+            oef,
+            a,
+            b,
+            conf,
+            local,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| call_ptr_f64(f, a),
+        )
+    }
+    /// `opus_encount4_calc(enc, host, _, eff, scale)` (`0x007f8570`).
+    opus_encount4_calc @ 0x007f_8570 => extern "C" fn opus_encount4_calc(enc: u32, host: u32, _unused: u32, eff: u32, scale: u32) -> u32 {
+        opus::bridge::opus_encount4_calc(
+            &mut mem(),
+            enc,
+            host,
+            eff,
+            scale,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| call_ptr_f64(f, a),
+        )
+    }
     /// `opus_camera_limit(host)` (`0x00817590`): the original's vectors
     /// in this shim's frame.
     opus_camera_limit @ 0x0081_7590 => extern "C" fn opus_camera_limit(host: u32) {
