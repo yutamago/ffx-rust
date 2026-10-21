@@ -3886,7 +3886,27 @@ fn parts_and_objects_match_the_original() {
                 p.put(ppp::bridge::STOP, u32::from(rng.chance(10)));
             }
             p.put(prog::bridge::CURRENT_PART, part);
-            if rng.chance(50) {
+            let pick = rng.below(3);
+            if pick == 2 {
+                // pppRunPartFp's object frame: a null birth list or a
+                // failed allocation now and then
+                if rng.chance(10) {
+                    p.set(part + 0x3c, 0u32);
+                }
+                let failed = u32::from(rng.chance(15));
+                p.put(heap::bridge::MEM_ALLOC_FAILED, failed);
+                p.check(
+                    &format!("pppRunPartFpObjects round {round} failed {failed}"),
+                    0x0071_7010,
+                    &[part],
+                    |m| {
+                        pt::ppp_run_part_fp_objects(m, part, &mut call_original);
+                        None
+                    },
+                );
+                p.put(heap::bridge::MEM_ALLOC_FAILED, 0);
+                p.set(part + 0x3c, defs);
+            } else if pick == 1 {
                 p.check(
                     &format!("pppRunPartStd round {round}"),
                     0x0071_6c40,
@@ -23985,5 +24005,314 @@ fn round39d_opu_tc_load_matches_the_original() {
                 |m| Some(o::opu_tc_load(m, host, cmd, &mut call_original)),
             );
         }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round40a_update_0706_acc_render_data_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_aad0);
+        let cells = p.alloc(0x10);
+        let buf_cell = cells + 8;
+        render_data_by_lo(&mut p, 0x0064_53d0, cells);
+        far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(buf_cell));
+        let vis = far_recorder(&mut p, 0x0064_5710, &[0, 0, 0], None);
+        let (d, bufs) = (p.alloc(0x100), p.alloc(0x20));
+        let arrays = [
+            p.alloc(0xa800),
+            p.alloc(0xe000),
+            p.alloc(0x7000),
+            p.alloc(0x2a00),
+        ];
+        for round in 0..10u32 {
+            p.set(vis, 0u32);
+            p.fill(d, 0x100, &mut rng);
+            p.set(d + 0x94, bufs);
+            p.fill(bufs, 0x20, &mut rng);
+            for (k, at) in [0xcu32, 0x14, 0x18, 0x1c].into_iter().enumerate() {
+                p.set(bufs + at, arrays[k]);
+            }
+            let lo = rng.below(2);
+            p.set(cells, if round % 4 == 3 { 0 } else { d });
+            p.set(cells + 4, if round % 5 == 2 { 0 } else { d });
+            p.set(buf_cell, u32::from(round % 6 != 4));
+            let hi = rng.next();
+            p.check(
+                &format!("update0706AccRenderData round {round} lo {lo}"),
+                0x007f_aad0,
+                &[lo, hi],
+                |m| {
+                    Some(small::bridge::update_0706_acc_render_data(
+                        m,
+                        lo,
+                        hi,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round40a_opus_camera_limit_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_7590);
+        let (centre, poses, cross, depth, rets) = (
+            p.alloc(0x10),
+            p.alloc(0x20),
+            p.alloc(0x10),
+            p.alloc(4),
+            p.alloc(4),
+        );
+        // MsGetMapCenter(out): the centre
+        out_stand_in(&mut p, 0x0078_2ae0, 0, centre, 4, rets, 0, rets);
+        // MsCameraGetPosNow(side, out): poses + 16 (side & 1)
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x4c, 0x24, 0x04];
+        c.extend([0x83, 0xe1, 0x01, 0xc1, 0xe1, 0x04, 0x81, 0xc1]);
+        c.extend(poses.to_le_bytes());
+        for i in 0..4u8 {
+            c.extend([0x8b, 0x51, 4 * i, 0x89, 0x50, 4 * i]);
+        }
+        c.push(0xc3);
+        let to = p.a.alloc_code(&c).unwrap();
+        assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+        let at = p.sym(0x007b_d470);
+        let mut j = vec![0xe9];
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        p.a.write(at, &j).unwrap();
+        p.b.write(at, &j).unwrap();
+        // MsCameraGetScrDpt: fld dword [depth]
+        let mut c = vec![0xd9, 0x05];
+        c.extend(depth.to_le_bytes());
+        c.push(0xc3);
+        let to = p.a.alloc_code(&c).unwrap();
+        assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+        let at = p.sym(0x007b_d510);
+        let mut j = vec![0xe9];
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        p.a.write(at, &j).unwrap();
+        p.b.write(at, &j).unwrap();
+        // op_segment_circle_cross: the crossing into its out, the seven
+        // floats logged, the result from `rets`
+        let xlog = p.alloc(0x20);
+        out_stand_in(&mut p, 0x007e_8fd0, 7, cross, 4, xlog, 7, rets);
+        let logs = [
+            far_recorder(&mut p, 0x007b_f940, &[0, 0, 4], None), // MsCameraSetRect
+            far_recorder(&mut p, 0x007b_fbd0, &[0, 0], None),    // MsCameraSetScrDpt
+            far_recorder(&mut p, 0x007e_adb0, &[0, 0, 0], None), // QuickRecoverMenuReserve
+        ];
+        let (host, local) = (p.alloc(0x80), p.alloc(0x50));
+        let (limit, debug, pad) = (p.sym(0x011a_006c), p.sym(0x0232_2790), p.sym(0x0232_154b));
+        // full mantissas (2^-6..2^9), so the f32 roundings show
+        let full = |rng: &mut Xorshift| rng.next() & 0x807f_ffff | (0x79 + rng.below(15)) << 23;
+        for round in 0..3000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.set(xlog, [0u32; 8]);
+            for at in (0..0x10).step_by(4) {
+                let v = full(&mut rng);
+                p.set(centre + at, v);
+                let v = full(&mut rng);
+                p.set(cross + at, v);
+            }
+            for at in (0..0x20).step_by(4) {
+                let v = if rng.chance(50) {
+                    full(&mut rng)
+                } else {
+                    ranged(&mut rng, -200.0, 200.0)
+                };
+                p.set(poses + at, v);
+            }
+            let v = full(&mut rng);
+            p.set(depth, v);
+            p.set(rets, rng.pick(&[0u32, 1, 1, 2]));
+            p.fill(host, 0x80, &mut rng);
+            let l = if rng.chance(10) {
+                0
+            } else if rng.chance(20) {
+                rng.next() as i16
+            } else {
+                0x1000 + rng.below(0x1000) as i16
+            };
+            p.set(limit, l);
+            p.set(debug, u8::from(rng.chance(50)));
+            p.set(pad, rng.pick(&[0u8, 1, 0x80]));
+            p.check(
+                &format!("opus_camera_limit round {round} limit {l:#x}"),
+                0x0081_7590,
+                &[host],
+                |m| {
+                    let keep = m.read(local, 0x50).unwrap();
+                    o_camera_limit(m, host, local);
+                    m.write(local, &keep).unwrap();
+                    None
+                },
+            );
+        }
+    }
+}
+
+fn o_camera_limit(m: &mut Oracle, host: u32, local: u32) {
+    opus::bridge::opus_camera_limit(m, host, local, &mut call_original, &mut |m, f, a| {
+        m.call_f64(f, a).unwrap()
+    });
+}
+
+/// Code at a fresh address in both oracles: `pre` (which must keep the
+/// stack as it found it), then a jump to `to`.
+fn code_then_jump(p: &mut Pair, pre: &[u8], to: u32) -> u32 {
+    let mut c = pre.to_vec();
+    c.push(0xe9);
+    let at = p.a.alloc_code(&[0xcc; 64]).unwrap();
+    assert_eq!(p.b.alloc_code(&[0xcc; 64]).unwrap(), at);
+    let rel = to.wrapping_sub(at + u32::try_from(c.len()).unwrap() + 4);
+    c.extend(rel.to_le_bytes());
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    at
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round40a_ppp_run_part_fp_objects_matches_the_original() {
+    use part::bridge as pt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_7010);
+        let failed = p.sym(0x0230_fd3c);
+        let cells = p.alloc(0x10);
+        let (relink, step_fail, draw_fail) = (cells, cells + 4, cells + 8);
+        let (runner_log, step_log, draw_log, con_log) = {
+            let (c, l0) = deref_recorder_code(&mut p, &[0, 0, 0, 0], None);
+            let runner = p.a.alloc_code(&c).unwrap();
+            assert_eq!(p.b.alloc_code(&c).unwrap(), runner);
+            let (c, l1) = deref_recorder_code(&mut p, &[0, 0, 0], None);
+            let step_rec = p.a.alloc_code(&c).unwrap();
+            assert_eq!(p.b.alloc_code(&c).unwrap(), step_rec);
+            let (c, l2) = deref_recorder_code(&mut p, &[0, 0, 0], None);
+            let draw_rec = p.a.alloc_code(&c).unwrap();
+            assert_eq!(p.b.alloc_code(&c).unwrap(), draw_rec);
+            let (c, l3) = deref_recorder_code(&mut p, &[0, 0], None);
+            let con = p.a.alloc_code(&c).unwrap();
+            assert_eq!(p.b.alloc_code(&c).unwrap(), con);
+            ((runner, l0), (step_rec, l1), (draw_rec, l2), (con, l3))
+        };
+        // the step: [obj] = [relink] when set, g_pppMemAllocFailed =
+        // [step_fail], then the recorder
+        let mut pre = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d]; // mov eax, [esp+4]; mov ecx, [relink]
+        pre.extend(relink.to_le_bytes());
+        pre.extend([0x85, 0xc9, 0x74, 0x02, 0x89, 0x08]); // test ecx, ecx; jz +2; mov [eax], ecx
+        pre.extend([0x8b, 0x0d]);
+        pre.extend(step_fail.to_le_bytes());
+        pre.extend([0x89, 0x0d]);
+        pre.extend(failed.to_le_bytes());
+        let step = code_then_jump(&mut p, &pre, step_log.0);
+        let mut pre = vec![0x8b, 0x0d];
+        pre.extend(draw_fail.to_le_bytes());
+        pre.extend([0x89, 0x0d]);
+        pre.extend(failed.to_le_bytes());
+        let draw = code_then_jump(&mut p, &pre, draw_log.0);
+        let recs = p.alloc(3 * 0x28);
+        let (part, births, lists, pool, keys) = (
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x200),
+            p.alloc(9 * 0x80),
+            p.alloc(0x400),
+        );
+        let obj = |i: u32| pool + 0x80 * i;
+        for round in 0..3000u32 {
+            for log in [runner_log.1, step_log.1, draw_log.1, con_log.1] {
+                p.set(log, 0u32);
+            }
+            for r in 0..3u32 {
+                let rec = recs + 0x28 * r;
+                p.fill(rec, 0x28, &mut rng);
+                p.set(rec + 4, if rng.chance(20) { runner_log.0 } else { 0 });
+                p.set(rec + 8, if rng.chance(60) { step } else { 0 });
+                p.set(rec + 0xc, if rng.chance(60) { draw } else { 0 });
+                p.set(rec + 0x20, if rng.chance(50) { con_log.0 } else { 0 });
+            }
+            p.fill(keys, 0x400, &mut rng);
+            for k in 0..0x40u32 {
+                p.set(keys + 0x10 * k, rng.below(4) * 0x1000);
+            }
+            // the objects: frames, key slots, their definitions
+            let nb = rng.below(5);
+            for i in 0..9u32 {
+                let o = obj(i);
+                p.fill(o, 0x80, &mut rng);
+                p.set(o + 0xc, rng.below(4) * 0x1000);
+                p.set(o + 8, births + 0x10 * rng.below(3));
+                for c in 0..4u32 {
+                    p.set(o + 0x40 + 4 * c, keys + 0x10 * rng.below(0x30));
+                }
+            }
+            p.set(cells, 0u32);
+            // two object chains: 0, 1, 2 and 3, 4, 5 (steps relink to 0 or
+            // 3, so three objects always follow a chain's start); the part's
+            // list: 6, 7, 8
+            for i in 0..9u32 {
+                let next = if i % 3 == 2 { 0 } else { obj(i + 1) };
+                p.set(obj(i), next);
+            }
+            for b in 0..3u32 {
+                let def = births + 0x10 * b;
+                let list = lists + 0x80 * b;
+                p.set(def, list);
+                p.set(def + 4, obj(3 * (b % 2)));
+                p.set(def + 0xc, rng.pick(&[0u16, 1, 2, 3, 3]));
+                p.fill(list, 0x80, &mut rng);
+                p.set(list + 0xc, u8::from(rng.chance(30)));
+                p.set(list + 0x14, 0x7fff_ffffu32);
+                p.set(list + 0x18, rng.below(3) * 0x1000);
+                p.set(list + 0x1c, rng.pick(&[0x7fff_ffffu32, 0x2000, 0]));
+                p.set(list + 0x20, 0x40u32);
+                let n = rng.below(4) as i16;
+                p.set(list + 0x26, n);
+                for e in 0..4u32 {
+                    let ent = list + 0x28 + 0x10 * e;
+                    let r = if rng.chance(10) {
+                        0
+                    } else {
+                        recs + 0x28 * rng.below(3)
+                    };
+                    p.set(ent, r);
+                    p.set(ent + 4, 0x10u16);
+                    p.set(ent + 8, rng.below(0x10) * 4);
+                }
+            }
+            // a fourth birth record without a program list
+            p.set(births + 0x30, 0u32);
+            // the part's object list: the pool in order, or empty
+            p.fill(part, 0x40, &mut rng);
+            p.set(part + 0x18, nb);
+            p.set(part + 0x3c, if rng.chance(10) { 0 } else { births });
+            p.set(part + 0x30, if rng.chance(20) { 0 } else { obj(6) });
+            p.set(part + 0x1d, u8::from(rng.chance(30)));
+            if rng.chance(30) {
+                // a step that relinks its object to another one
+                p.set(relink, obj(3 * rng.below(2)));
+            }
+            p.set(step_fail, u32::from(rng.chance(10)));
+            p.set(draw_fail, u32::from(rng.chance(10)));
+            p.put(ppp::bridge::STOP, u32::from(rng.chance(15)));
+            p.set(failed, 0u32);
+            p.check(
+                &format!("pppRunPartFpObjects round {round}"),
+                0x0071_7010,
+                &[part],
+                |m| {
+                    pt::ppp_run_part_fp_objects(m, part, &mut call_original);
+                    None
+                },
+            );
+        }
+        p.set(failed, 0u32);
+        p.put(ppp::bridge::STOP, 0);
     }
 }

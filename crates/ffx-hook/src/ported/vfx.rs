@@ -5124,6 +5124,10 @@ ported! {
     pppRunPartStd @ 0x0071_6c40 => extern "C" fn ppp_run_part_std(p: u32) {
         part::bridge::ppp_run_part_std(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppRunPartFpObjects_00717010(part)`.
+    pppRunPartFpObjects_00717010 @ 0x0071_7010 => extern "C" fn ppp_run_part_fp_objects(p: u32) {
+        part::bridge::ppp_run_part_fp_objects(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppRunPart(part, flags)`: 1 when the part has ended.
     pppRunPart @ 0x0071_2250 => extern "C" fn ppp_run_part(p: u32, flags: u32) -> u32 {
         part::bridge::ppp_run_part(&mut mem(), p, flags & 0xff, &mut |_, f, a| call_ptr(f, a))
@@ -5539,6 +5543,10 @@ ported! {
     update0706NoiseRenderData @ 0x007f_a890 => extern "C" fn update_0706_noise_render_data(lo: u32, hi: u32, x: u32) -> u32 {
         small::bridge::update_0706_noise_render_data(&mut mem(), lo, hi, x, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `update0706AccRenderData_007faad0(lo, hi)` (`0x007faad0`).
+    update0706AccRenderData_007faad0 @ 0x007f_aad0 => extern "C" fn update_0706_acc_render_data(lo: u32, hi: u32) -> u32 {
+        small::bridge::update_0706_acc_render_data(&mut mem(), lo, hi, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `op_oef2_tex_clut_cue_trans()`.
     op_oef2_tex_clut_cue_trans @ 0x007e_4c30 => extern "C" fn op_oef2_tex_clut_cue_trans() -> u32 {
         // the original's load image record, below its ebp
@@ -5676,6 +5684,19 @@ ported! {
             &mut |_, f, a| call_ptr(f, a),
             &mut |_, f, a| super::call_cdecl_f64(f, a),
         )
+    }
+    /// `opus_camera_limit(host)` (`0x00817590`): the original's vectors
+    /// in this shim's frame.
+    opus_camera_limit @ 0x0081_7590 => extern "C" fn opus_camera_limit(host: u32) {
+        let mut frame = super::StackFrame::<0x14>::new();
+        let local = frame.at();
+        opus::bridge::opus_camera_limit(
+            &mut mem(),
+            host,
+            local,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| call_ptr_f64(f, a),
+        );
     }
     /// `opu_tc_load(host, cmd)` (`0x008085a0`).
     opu_tc_load @ 0x0080_85a0 => extern "C" fn opu_tc_load(host: u32, cmd: u32) -> u32 {

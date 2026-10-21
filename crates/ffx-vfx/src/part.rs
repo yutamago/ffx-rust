@@ -503,7 +503,11 @@ pub mod bridge {
     /// The step or draw of one program over a definition's objects: each
     /// object's key pointer (its slot at `obj + [prog+0x20] + 4 c`) moves on
     /// by the entry's key size (`u16` at `+4`) when the next key's frame is
-    /// the object's (`+0xc`), then `f(obj, key, entry)`.
+    /// the object's (`+0xc`), then `f(obj, key, entry)`. With a step
+    /// (`fs[0]`) the draw (`fs[1]`, when set) follows it while the program
+    /// list's `+0xc` bit 0 is clear (read for each object). With `checked`
+    /// the loop stops after any call that leaves `g_pppMemAllocFailed` set,
+    /// and returns true.
     #[allow(clippy::too_many_arguments)]
     fn run_program<M: Mem>(
         mem: &mut M,
@@ -513,9 +517,10 @@ pub mod bridge {
         first: u32,
         count: u32,
         fs: [u32; 2],
-        draw_too: bool,
+        checked: bool,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
-    ) {
+    ) -> bool {
+        let failed = |mem: &M| checked && MEM_ALLOC_FAILED.get(mem) != 0;
         let mut o = first;
         let mut n = count;
         loop {
@@ -528,21 +533,31 @@ pub mod bridge {
                 mem.write(slot, ptr32(next_key));
                 key = next_key;
             }
-            let next = ptr32(rd(mem, o));
             if fs[0] != 0 {
+                let next = ptr32(rd(mem, o));
                 call(mem, fs[0], &[o, key, e]);
-                if draw_too {
-                    call(mem, fs[1], &[o, key, e]);
+                if failed(mem) {
+                    return true;
                 }
+                if fs[1] != 0 && mem.read::<u8>(prog.wrapping_add(0xc)) & 1 == 0 {
+                    call(mem, fs[1], &[o, key, e]);
+                    if failed(mem) {
+                        return true;
+                    }
+                }
+                o = next;
             } else {
                 call(mem, fs[1], &[o, key, e]);
+                if failed(mem) {
+                    return true;
+                }
+                // the draw-only loop moves on after its call (the same
+                // unless the draw relinks the object)
+                o = ptr32(rd(mem, o));
             }
-            // the draw-only loop moves on after its call (the same unless
-            // the draw relinks the object)
-            o = if fs[0] != 0 { next } else { ptr32(rd(mem, o)) };
             n = n.wrapping_sub(1);
             if n == 0 {
-                break;
+                return false;
             }
         }
     }
@@ -589,7 +604,6 @@ pub mod bridge {
     /// set-ups, or (when the part is ending, `+0x1d`) is deleted past its
     /// `+0x14`; an ending part whose objects all end at 0x70000000 deletes
     /// them all.
-    #[allow(clippy::too_many_lines)]
     pub fn ppp_run_part_std<M: Mem>(
         mem: &mut M,
         part: u32,
@@ -600,11 +614,42 @@ pub mod bridge {
         {
             SPECIAL_PART.set(mem, 1);
         }
+        run_births(mem, part, false, call);
+        end_objects(mem, part, call);
+    }
+
+    /// `pppRunPartFpObjects_00717010(part)` (`0x00717010`), the objects'
+    /// frame of `pppRunPartFp`: [`ppp_run_part_std`] without the special
+    /// part flag, skipping a null birth list, and returning at once (the
+    /// current program left set) when a program's step or draw leaves
+    /// `g_pppMemAllocFailed` set. (Its "ERROR!!!! prog=NULL" `dbgPrintf`
+    /// for a missing program record is a bare `ret` on PC and left out,
+    /// as in `pppRunPartStd`.)
+    pub fn ppp_run_part_fp_objects<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if !run_births(mem, part, true, call) {
+            end_objects(mem, part, call);
+        }
+    }
+
+    /// The births of [`ppp_run_part_std`] (`checked`: of
+    /// [`ppp_run_part_fp_objects`], which also skips a null birth list and
+    /// returns true when a call failed an allocation).
+    fn run_births<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        checked: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> bool {
         let mut b = 0i32;
         while b < rd(mem, part.wrapping_add(0x18)).cast_signed() {
-            let def = rd(mem, part.wrapping_add(0x3c)).wrapping_add(0x10 * b.cast_unsigned());
+            let list = rd(mem, part.wrapping_add(0x3c));
+            let def = list.wrapping_add(0x10 * b.cast_unsigned());
             b += 1;
-            if def == 0 {
+            if def == 0 || (checked && list == 0) {
                 continue;
             }
             let prog = ptr32(rd(mem, def));
@@ -631,13 +676,11 @@ pub mod bridge {
                         let hidden = mem.read::<u8>(prog.wrapping_add(0xc)) & 1 != 0;
                         let n = u32::from(mem.read::<u16>(def.wrapping_add(0xc)));
                         let cc = c.cast_unsigned();
-                        if step == 0 {
-                            if draw != 0 && !hidden {
-                                run_program(mem, prog, cc, e, first, n, [0, draw], false, call);
-                            }
-                        } else {
-                            let draw_too = draw != 0 && !hidden;
-                            run_program(mem, prog, cc, e, first, n, [step, draw], draw_too, call);
+                        let fs = [step, draw];
+                        if (step != 0 || (draw != 0 && !hidden))
+                            && run_program(mem, prog, cc, e, first, n, fs, checked, call)
+                        {
+                            return true;
                         }
                     } else {
                         call(mem, runner, &[def, prog, e, c.cast_unsigned()]);
@@ -659,6 +702,17 @@ pub mod bridge {
                 }
             }
         }
+        false
+    }
+
+    /// The end of [`ppp_run_part_std`]'s frame: (unless stopped) the
+    /// restarts and deletions of the part's objects; the current program
+    /// back to 0.
+    fn end_objects<M: Mem>(
+        mem: &mut M,
+        part: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
         if STOP.get(mem) == 0 {
             let ending = mem.read::<u8>(part.wrapping_add(0x1d)) != 0;
             let mut ends = 0u32;

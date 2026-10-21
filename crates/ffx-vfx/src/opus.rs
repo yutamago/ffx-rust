@@ -4480,6 +4480,80 @@ pub mod bridge {
         cmd.wrapping_add(2)
     }
 
+    /// `opus_camera_limit(host)` (`0x00817590`), from `opu_camera`: while
+    /// `g_OpusCameraLimit` (`i16 0x011a006c`) is set, the battle camera's
+    /// segment from its position (`MsCameraGetPosNow(1)`) to its target
+    /// (`(0)`) is cut by the circle of radius 120 around the map centre
+    /// (`MsGetMapCenter`, x/z; `op_segment_circle_cross`); on a crossing
+    /// the camera position moves to the crossing (at the old height,
+    /// `MsCameraSetRect(host +0x5c, 1, ..)`) and the screen depth
+    /// (`MsCameraGetScrDpt`, through `fcall`) shrinks by `(limit - 0x1000)
+    /// x |crossing - position| / 256` (`MsCameraSetScrDpt`). In op debug
+    /// mode with pad byte `0x0232154b` set, `QuickRecoverMenuReserve(
+    /// 0x80800000, 0x48, 0)`. `local` is the original's 0x50-byte frame:
+    /// `+0` the second crossing, `+0x10` the centre, `+0x20` the target,
+    /// `+0x30` the crossing, `+0x40` the position.
+    pub fn opus_camera_limit<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        let limit = |mem: &M| mem.read::<i16>(g(mem, 0x011a_006c));
+        if limit(mem) == 0 {
+            return;
+        }
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let (cross2, centre, target, cross, pos) = (
+            local,
+            local.wrapping_add(0x10),
+            local.wrapping_add(0x20),
+            local.wrapping_add(0x30),
+            local.wrapping_add(0x40),
+        );
+        go(mem, 0x0078_2ae0, &[centre]);
+        go(mem, 0x007b_d470, &[1, pos]);
+        go(mem, 0x007b_d470, &[0, target]);
+        let get_depth = g(mem, 0x007b_d510);
+        let depth = store(fcall(mem, get_depth, &[]));
+        // fld/fstp of each float argument
+        let word = |mem: &M, a: u32| store(load(mem.read(a)));
+        let radius = word(mem, g(mem, 0x00b5_8cd8));
+        let args = [
+            word(mem, centre),
+            word(mem, centre.wrapping_add(8)),
+            radius,
+            word(mem, pos),
+            word(mem, pos.wrapping_add(8)),
+            word(mem, target),
+            word(mem, target.wrapping_add(4)),
+            cross,
+            cross2,
+        ];
+        if go(mem, 0x007e_8fd0, &args) == 0 {
+            return;
+        }
+        let y = word(mem, pos.wrapping_add(4));
+        mem.write(cross.wrapping_add(4), y);
+        let id: u32 = mem.read(host.wrapping_add(0x5c));
+        let length = g(mem, 0x007e_7fc0);
+        let len = store(fcall(mem, length, &[pos, cross]));
+        let k256: f64 = mem.read(g(mem, 0x00b5_0198));
+        let n = store(f64::from(i32::from(limit(mem)) - 0x1000));
+        let cut = store(mul(mul(load(n), load(len)), k256));
+        go(mem, 0x007b_f940, &[id, 1, cross]);
+        let d = store(sub(load(depth), load(cut)));
+        go(mem, 0x007b_fbd0, &[id, d]);
+        if mem.read::<u8>(g(mem, 0x0232_2790)) != 0 && mem.read::<u8>(g(mem, 0x0232_154b)) != 0 {
+            go(mem, 0x007e_adb0, &[0x8080_0000, 0x48, 0]);
+        }
+    }
+
     /// `opu_tc_load(host, cmd)` (`0x008085a0`) -> the next command: the
     /// texture/CLUT cues of the unit's oef (`host +0x360 + 4 u8 unit
     /// +0x1e`), `n` = `u16 cmd +2`, the cue mask 8 with flag 0x800 (else
