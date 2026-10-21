@@ -7835,13 +7835,14 @@ fn round24b_signals_windows_seps_match_the_original() {
 }
 
 /// `f` replaced in both oracles by a stand-in returning a countdown: the
-/// cell's value, decremented while not 0 (n, n-1, ..., 1, then 0 for good).
-/// Returns the cell.
+/// cell's value, decremented while not 0 (n, n-1, ..., 1, then 0 for good);
+/// the word after the cell counts the calls. Returns the cell.
 fn r24_countdown_stub(a: &mut Oracle, b: &mut Oracle, f: u32) -> u32 {
-    let cell = alloc_both(a, b, 4);
+    let cell = alloc_both(a, b, 8);
     #[rustfmt::skip]
     let code = [
-        &[0xa1][..], &cell.to_le_bytes(),        // mov eax, [cell]
+        &[0xff, 0x05][..], &(cell + 4).to_le_bytes(), // inc dword [cell + 4]
+        &[0xa1], &cell.to_le_bytes(),            // mov eax, [cell]
         &[0x85, 0xc0, 0x74, 0x06],               // test eax, eax; jz ret
         &[0xff, 0x0d], &cell.to_le_bytes(),      // dec dword [cell]
         &[0xc3],                                 // ret
@@ -8198,4 +8199,389 @@ fn round24c_movie_menu_seps_markers_match_the_original() {
     r24c_stubbed(&mut a, &mut b, &mut rng, "snapshot");
     let n = r24c_workers(&mut a, &mut b, &mut rng, false, "snapshot");
     eprintln!("round 24c: {n} snapshot worker calls");
+}
+
+/// `f` replaced in both oracles by a stand-in that logs `f` and its first
+/// `n` stack words (as [`r24_log_stubs`]) and returns `values` in turn
+/// (then whatever follows them: zeros).
+fn r24_seq_stub(a: &mut Oracle, b: &mut Oracle, f: u32, n: u8, values: &[u32]) {
+    let log = alloc_both(a, b, 0x8000);
+    let cell = alloc_both(a, b, 4);
+    poke(a, b, cell, log);
+    let seq = alloc_both(a, b, 4 * values.len() + 0x100);
+    for (k, &v) in (0u32..).zip(values) {
+        poke(a, b, seq + 4 * k, v);
+    }
+    let vcell = alloc_both(a, b, 4);
+    poke(a, b, vcell, seq);
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &cell.to_le_bytes()].concat();
+    code.extend([&[0xc7, 0x01][..], &f.to_le_bytes()].concat());
+    for k in 0..n {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 + 4 * k]);
+    }
+    code.extend([0x83, 0xc1, 4 + 4 * n]);
+    code.extend([&[0x89, 0x0d][..], &cell.to_le_bytes()].concat());
+    code.extend([&[0x8b, 0x15][..], &vcell.to_le_bytes()].concat()); // mov edx, [vcell]
+    code.extend([0x8b, 0x02, 0x83, 0xc2, 0x04]); // mov eax, [edx]; add edx, 4
+    code.extend([&[0x89, 0x15][..], &vcell.to_le_bytes(), &[0xc3]].concat()); // mov [vcell], edx; ret
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+}
+
+/// A separates block for `0x00866520`'s callers: a script block whose
+/// `+0x2c` -> `+0xc` table lists `n` random `(id, flags)` pairs.
+fn r24_sep_block(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, n: i32) -> u32 {
+    let blk = alloc_both(a, b, 0x200);
+    fill_both(a, b, rng, blk, 0x40);
+    poke(a, b, blk + 0x2c, 0x40u32);
+    poke(a, b, blk + 0x40 + 0xc, 0x80u32);
+    poke(a, b, blk + 0x80, n);
+    for i in 0..12u32 {
+        poke(a, b, blk + 0x84 + i * 8, rng.below(12));
+        poke(a, b, blk + 0x88 + i * 8, rng.next() & 0x7f_000f);
+    }
+    blk
+}
+
+/// Round 24 d on one pair, the stand-in part: the separate wrappers, the
+/// menu entry, the vibration volume, the camera variable getters (their
+/// callees logged); `ws` are workers of the current ctrl work.
+#[allow(clippy::too_many_lines)] // one block per helper
+fn r24d_stubbed(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, ws: &[u32], what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let works = a.rebase(0x0132_5ba0);
+    let context = a.rebase(0x0132_6b28);
+    let sync = r24_countdown_stub(a, b, 0x0088_7910);
+    r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0088_7f00, 1),
+            (0x0088_7b80, 0),
+            (0x0086_38c0, 1),
+            (0x0088_6f30, 2),
+            (0x0088_6f00, 2),
+            (0x0088_7780, 0),
+            (0x0088_6dc0, 8),
+            (0x0088_6db0, 0),
+            (0x0091_9d70, 1),
+            (0x0087_5f60, 2),
+            (0x0078_8b90, 0),
+            (0x008c_a540, 0),
+            (0x0087_7460, 1),
+            (0x0087_7450, 1),
+            (0x007b_a780, 3),
+            (0x007b_d420, 5),
+            (0x007b_d4b0, 5),
+        ],
+    );
+    let data = alloc_both(a, b, 0x80);
+    for round in 0..24u32 {
+        poke(a, b, sync, rng.below(3));
+        poke(a, b, data, 0x4000_0000 | rng.below(0x100));
+        for k in 1..12u32 {
+            poke(a, b, data + 4 * k, rng.below(0x800));
+        }
+        let d = if round % 7 == 6 { 0 } else { data };
+        let group = [u32::MAX, 0, 1, 2, 5, 0x8000_0001][(round % 6) as usize];
+        let hdr = rng.next();
+        poke(a, b, context, works + 0x238 * (round % 3));
+        r22_case(
+            a,
+            b,
+            0x0087_1750,
+            &[hdr, d, group],
+            true,
+            &format!("AtelSndTransSepSPKDataGroup {what} {round}"),
+            |r| hp::atel_snd_trans_sep_spk_data_group(r, hdr, d, group),
+        );
+        let sep_only = [0u32, 1, 2][(round % 3) as usize];
+        poke(a, b, works + 0x204, rng.next());
+        r22_case(
+            a,
+            b,
+            0x0086_6430,
+            &[hdr, d, sep_only],
+            true,
+            &format!("AtelEventSetUpSep {what} {round}"),
+            |r| hp::atel_event_set_up_sep(r, hdr, d, sep_only),
+        );
+        // AtelEventRemoveSep: a block or none
+        let blk = if round % 5 == 4 {
+            0
+        } else {
+            r24_sep_block(a, b, rng, [0, 3, 12][(round % 3) as usize])
+        };
+        poke(a, b, works + 0x48, blk);
+        poke(a, b, context, works + 0x238);
+        let mode = round % 2;
+        r22_case(
+            a,
+            b,
+            0x0086_61d0,
+            &[mode],
+            true,
+            &format!("AtelEventRemoveSep {what} {round}"),
+            |r| hp::atel_event_remove_sep(r, mode),
+        );
+    }
+    r22_case(
+        a,
+        b,
+        0x0086_55e0,
+        &[],
+        true,
+        &format!("AtelEnterMenuCallback {what}"),
+        |r| hp::atel_enter_menu_callback(r),
+    );
+    // the vibration volume: pad states and channel lengths near the ends
+    let levels: Vec<u32> = (0..0x400).map(|_| rng.below(0x300)).collect();
+    r24_seq_stub(a, b, 0x0087_5c20, 2, &levels);
+    let pads = a.rebase(0x0132_8150);
+    for round in 0..40u32 {
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_8272),
+            [0u8, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2][(round % 20) as usize],
+        );
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_8274),
+            u16::try_from(rng.below(0x200)).unwrap(),
+        );
+        for p in 0..8u32 {
+            let rec = pads + p * 0x24;
+            poke(a, b, rec + 0x22, u8::try_from(rng.below(4)).unwrap());
+            for ch in [6u32, 0x16] {
+                let len = [0x200u16, 0xfffe, 0x1ff, 0][rng.below(4) as usize];
+                poke(a, b, rec + ch, len);
+            }
+        }
+        r22_case(
+            a,
+            b,
+            0x0087_5b40,
+            &[],
+            // off: the original leaves its caller's EAX
+            round % 10 != 9,
+            &format!("Vibrate_UpdateVolume {what} {round}"),
+            |r| hp::vibrate_update_volume(r),
+        );
+    }
+    // the camera variable getters
+    let stk = alloc_both(a, b, 0x400);
+    // the event map camera: ctrl work 0's block +0x18 (the first worker's
+    // id in half the rounds)
+    let blk = alloc_both(a, b, 0x40);
+    poke(a, b, works + 0x48, blk);
+    for (round, &w) in (0u32..).cycle().zip(ws.iter().cycle()).take(24) {
+        if Mem::read::<u8>(b, Mem::read::<u32>(b, w)) == 4 {
+            continue;
+        }
+        poke(a, b, context, works);
+        poke(a, b, stk + stack::DEPTH, 0i32);
+        for _ in 0..3 {
+            let word = ([0u32, 1, 5][rng.below(3) as usize] << 25) | rng.below(0x40);
+            push_both(a, b, stk, stack::INT, word);
+        }
+        // the camera word: set, or 0 to look the camera up
+        let cam = w + worker::CAMERA;
+        poke(a, b, cam, if round % 2 == 0 { 0 } else { rng.next() });
+        let id = Mem::read::<u16>(b, w + worker::ID);
+        poke(a, b, blk + 0x18, if round % 4 < 2 { id } else { id ^ 1 });
+        let side = round % 3;
+        for (sym, get) in [(0x007b_a3c0u32, 0x007b_d420u32), (0x007b_a460, 0x007b_d4b0)] {
+            poke(a, b, stk + stack::DEPTH, 3i32);
+            let args = rng.next();
+            r22_case(
+                a,
+                b,
+                sym,
+                &[w, args, stk, side],
+                true,
+                &format!("cam vars {sym:#x} {what} {round} id {id}"),
+                |r| hp::atel_cam_get_vars(r, get, w, stk, side),
+            );
+        }
+    }
+}
+
+/// Round 24 d on one pair: `0x0086f940` from every worker of the current
+/// ctrl work to a few others (`ws`).
+fn r24d_level_target(a: &mut Oracle, b: &mut Oracle, ws: &[u32], what: &str) -> u32 {
+    use ffx_script::vm::bridge::helpers as hp;
+    let n = u32::try_from(ws.len()).unwrap();
+    let mut calls = 0;
+    for (k, &w) in (0u32..).zip(ws) {
+        // a type 4 worker has no position block (Atel_SetLevelVectors
+        // reads through 0)
+        if Mem::read::<u8>(b, Mem::read::<u32>(b, w)) == 4 {
+            continue;
+        }
+        // a snapshot's unused workers hold the heap's fill in their level
+        // blocks
+        let t = Mem::read::<u8>(b, Mem::read::<u32>(b, w));
+        let l = u32::from(Mem::read::<u8>(b, w + 0x32)).min(if t == 5 || t == 6 { 1 } else { 8 });
+        if Mem::read::<u32>(b, w + 0x170 + l * 0x4c) == 0xcdcd_cdcd {
+            continue;
+        }
+        for i in [0, k, (k + 1) % n, n, u32::MAX] {
+            let target = ws[if i < n { i as usize } else { 0 }];
+            if Mem::read::<u8>(b, Mem::read::<u32>(b, target)) == 4 {
+                continue;
+            }
+            r22_case(
+                a,
+                b,
+                0x0086_f940,
+                &[w, i],
+                true,
+                &format!("Atel_SetLevelTarget {what} worker {k} -> {i:#x}"),
+                |r| hp::atel_set_level_target(r, w, i),
+            );
+            calls += 1;
+        }
+    }
+    calls
+}
+
+/// Round 24 d (this machine): the separate wrappers, the menu entry, the
+/// vibration volume, the camera variable getters and `0x0086f940` on the
+/// image (a synthetic ctrl work 0) and the snapshot (ctrl work 0 as it
+/// stands); `0x0086e8d0` on every ctrl work in use of the snapshot (the
+/// script runs' set-up: signals need the snapshot's free nodes), with
+/// battle-end tables of the test's own.
+#[test]
+#[allow(clippy::too_many_lines)] // one block per part
+fn round24d_seps_menu_vibrate_cam_match_the_original() {
+    use ffx_script::vm::bridge::helpers as hp;
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0247);
+    let workers = |a: &mut Oracle, b: &mut Oracle| -> Vec<u32> {
+        let works = a.rebase(0x0132_5ba0);
+        let context = a.rebase(0x0132_6b28);
+        poke(a, b, context, works);
+        let n = u32::from(Mem::read::<u16>(b, works + ctrl::WORKERS));
+        (0..n)
+            .map(|i| {
+                orig(a, ATEL_GET_BASIC_WORK, &[i]);
+                v::atel_get_basic_work(b, i.cast_signed())
+            })
+            .collect()
+    };
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        let works = a.rebase(0x0132_5ba0);
+        r23d_ctrl(&mut a, &mut b, &mut rng, works, 8);
+        let ws = workers(&mut a, &mut b);
+        // turn blocks of their own for the level helper
+        for &w in &ws {
+            for l in 0..9u32 {
+                let blk = alloc_both(&mut a, &mut b, 0x40);
+                poke(&mut a, &mut b, w + 0x170 + l * 0x4c, blk);
+            }
+        }
+        assert!(r24d_level_target(&mut a, &mut b, &ws, "image") > 0);
+        r24d_stubbed(&mut a, &mut b, &mut rng, &ws, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
+    let mut signalled = 0;
+    for &c in &ctrls {
+        let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+        let n = u32::from(Mem::read::<u16>(&b, c + ctrl::WORKERS)).min(12);
+        let blk = Mem::read::<u32>(&b, c + 0x48);
+        if blk == 0 {
+            continue;
+        }
+        let save = Mem::read::<u32>(&b, blk + 0x24);
+        // the table: 6 entries of tags 1..3, workers inside, one 0xffff
+        let tab = alloc_both(&mut a, &mut b, 0x80);
+        poke(&mut a, &mut b, tab, 6u32);
+        for e in 0..6u32 {
+            let worker = if e == 4 {
+                0xffff
+            } else {
+                u16::try_from(e % n.max(1)).unwrap()
+            };
+            poke(&mut a, &mut b, tab + 4 + e * 16, 1 + e % 3);
+            poke(&mut a, &mut b, tab + 8 + e * 16, worker);
+            poke(
+                &mut a,
+                &mut b,
+                tab + 10 + e * 16,
+                u16::try_from(1 + e % 2).unwrap(),
+            );
+        }
+        // AtelGetBattleEndTagAlways: g_SaveData +0xe8
+        let always = a.rebase(0x0112_ca90 + 0xe8);
+        let was = Mem::read::<u16>(&b, always);
+        for (k, tag) in [1u32, 2, 3, 9, 1, 9].into_iter().enumerate() {
+            // the table (relative to the block), none, the snapshot's own;
+            // the last with every entry (the save's "always")
+            let t = match k {
+                3 => 0,
+                4 => save,
+                _ => tab.wrapping_sub(blk),
+            };
+            poke(&mut a, &mut b, blk + 0x24, t);
+            poke(&mut a, &mut b, always, u16::from(k == 5));
+            let what = format!("Atel_RequestBattleEndEntries ctrl {c:#x} tag {tag} table {t:#x}");
+            let mut p = (a, b);
+            if r19_case(
+                &pages,
+                &exe,
+                c,
+                &mut p,
+                0x0086_e8d0,
+                &[tag],
+                true,
+                &what,
+                |r| hp::atel_request_battle_end_entries(r, tag),
+            ) {
+                signalled += 1;
+            }
+            (a, b) = p;
+        }
+        poke(&mut a, &mut b, blk + 0x24, save);
+        poke(&mut a, &mut b, always, was);
+        // no script block
+        poke(&mut a, &mut b, c + 0x48, 0u32);
+        let mut p = (a, b);
+        r19_case(
+            &pages,
+            &exe,
+            c,
+            &mut p,
+            0x0086_e8d0,
+            &[1],
+            true,
+            "Atel_RequestBattleEndEntries no block",
+            |r| hp::atel_request_battle_end_entries(r, 1),
+        );
+    }
+    eprintln!("round 24d: {signalled} battle-end calls");
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let ws = workers(&mut a, &mut b);
+    eprintln!("round 24d: {} snapshot workers", ws.len());
+    r24d_level_target(&mut a, &mut b, &ws, "snapshot");
+    r24d_stubbed(&mut a, &mut b, &mut rng, &ws, "snapshot");
 }

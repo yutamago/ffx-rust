@@ -2820,6 +2820,32 @@ Rust). `round24c_movie_menu_seps_markers_match_the_original` covers them,
 the callees as stand-ins (`r24_log_stubs`, `r24_countdown_stub` for the
 transfer wait).
 
+Round 24 d: the separate wrappers `AtelSndTransSepSPKDataGroup`
+(`0x00871750`: `Atel_TransSepGroup_00871780(hdr, data, 1, group, 0)`,
+then `SndSyncTrans(1)`), `AtelEventSetUpSep` (`0x00866430`: group -1,
+`data` kept in ctrl work 0's `+0x204` when `sep_only` is 1, then the 3D
+sound ratios 0 and 1/60) and `AtelEventRemoveSep` (`0x008661d0`:
+`SndStopStream`, then `Atel_LoadEventSeps_00866520(block, mode, -1)` with
+ctrl work 0 current; without a script block ctrl work 0 stays current);
+`AtelEnterMenuCallback` (`0x008655e0`: guide map off, vibration off for
+pads 1-7, `MsEventEffectFree`, message bank 1 reset,
+`TkMenuClearDummyControler`, overlay status 3) and its jump twin
+`AtelGetGideMapActorInfo` (`0x0086b700`).
+`Atel_RequestBattleEndEntries_0086e8d0(tag)` walks the script block's
+battle-end table (`+0x24`: a count, then 16-byte entries from `+4`: tag,
+worker, entry) and signals each entry of `tag` (every entry while the
+save's `+0xe8` says always) to its worker at level 8.
+`Atel_SetLevelTarget_0086f940(worker, i)` writes `i` into the level's
+turn block and the target's position into the level vectors.
+`Atel_CamGetVars_007ba3c0` and its copy `Atel_CamGetRefVars_007ba460`
+store a camera's side point (`Cam_GetPos`, `Cam_GetRefPos_007bd4b0`) into
+three popped script variables, looking the worker's camera up first
+(`MsAtelGetCameraID(5, is the event map camera, 0)`).
+`Vibrate_UpdateVolume_00875b40` ends finished pads and keeps the
+channel maxima in `g_TkVibrateVolume`. `round24d_seps_menu_vibrate_cam_match_the_original`
+covers them; `0x0086e8d0` runs in the script runs' set-up
+(`fresh_run_pair`), where signals have free nodes.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

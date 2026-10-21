@@ -6546,6 +6546,8 @@
 0x007ba2d0 function Native_CamRefAddCircleArea   # 0x602b: args (x, z, r) -> 0; adds a circle constraint (type 3) to the ref's list (0x007bf1f0); ?keeps the ref inside/around the circle
 0x007ba2f0 function Native_CamRefClearAreas      # 0x602d: no args -> camera handle; clears the ref's constraint count (byte 0x01137634 + side/channel, 0x007bed10)
 0x007ba350 function Native_602c # 0x602c: (on): 0x007bf1a0(cam, 0, on & 1); the camera handle; ported in native_mods (script round 19); name ours
+0x007ba3c0 function Atel_CamGetVars_007ba3c0 # name ours; cdecl (worker, args, stack, side): three popped variable words (z, y, x) as addresses; the worker's camera +0x3c (MsAtelGetCameraID(5, worker is the event map camera, 0) when 0); Cam_GetPos(camera, side, &x, &y, &z), its EAX; callers Native_CamGetPos, Native_Cam_6021; ported (ffx_script helpers, script round 24 d)
+0x007ba460 function Atel_CamGetRefVars_007ba460 # name ours; cdecl: 0x007ba3c0's copy with Cam_GetRefPos_007bd4b0; callers Native_6085, Native_6086; ported (ffx_script helpers, script round 24 d)
 0x007ba5b0 function MsAtelCameraMoveAcc_007ba5b0 # ours: camera native (worker, _, stack, side, mode): camera as MsAtelGetCamera_007baa50(w, 0, 0); ints a, b, c, d popped -> MsCameraMoveAcc(cam, side, mode, d, c, b, a), its eax; ported (ffx_battle::camera_native, battle round 29)
 0x007ba650 function MsAtelCameraInit          # fh v3:exact 0x007ba5d0
 0x007ba6d0 function MsAtelFreeCameraID           # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x7100391fa0 MsAtelFreeCameraID, 2 votes, round 1
@@ -9307,7 +9309,7 @@
 0x008653f0 function AtelDecodeSignal          # fh v3:exact 0x00865390
 0x008654c0 function AtelFreeSignal            # (worker index, node): back to the free list
 0x00865580 function AtelDisposeFPForBattle       # layout+callees: sorts between AtelDecodeSignal and AtelEnterMenuCallback, and its named callees match the Switch 0x71004707e0 AtelDisposeFPForBattle's (similarity 1.00: pppFpResetStick); symbols from Fahrenheit's server export
-0x008655e0 function AtelEnterMenuCallback     # fh v3:exact 0x00865580
+0x008655e0 function AtelEnterMenuCallback # cdecl (): Yn_GuideMapSetDispProg(0), TkSetVibrateMask(1..7, 0), MsEventEffectFree, g_AtelMenuExecStatus = 1 and Atel_ResetMsgWindowBank_00863c90(1), TkMenuClearDummyControler, g_AtelOverlayStatus = 3; ported (ffx_script helpers, script round 24 d); fh v3:exact 0x00865580
 0x00865890 function AtelEventGetMotionIndex   # fh switch:bsim1.00 0x7100473870
 0x008658b0 function AtelEventGetNowCtrlTopId  # fh switch:bsim1.00 0x710046fdd0
 0x008658d0 function AtelEventKickBGSep        # fh v3:exact 0x00865870
@@ -9316,10 +9318,10 @@
 0x00865b80 function AtelEventRegistFootInfo   # fh v3:exact 0x00865b20
 0x00865dc0 function AtelEventRemoveForBattle  # fh v3:cg25 0x865d60
 0x008661a0 function AtelEventRemoveGuideMap # (): ctrl work 0 current meanwhile; clears its guide map flag (+1 bit 7) when set (Yn_GuideMapEnd is an empty function); ported in helpers (script round 23 g); fh v3:exact 0x00866140
-0x008661d0 function AtelEventRemoveSep        # fh v3:exact 0x00866170
+0x008661d0 function AtelEventRemoveSep # cdecl (mode): SndStopStream; ctrl work 0 current; with its script block Atel_LoadEventSeps_00866520(block, mode, -1) and the current ctrl work back (without one ctrl work 0 stays current, EAX 0); ported (ffx_script helpers, script round 24 d); fh v3:exact 0x00866170
 0x00866210 function AtelEventSetUpFoot3d # (hdr): SndEventSetFoot3dCtrlp (a tail jump) with hdr + the sound table's (+0x2c) +0x2c offset, or 0; ported in helpers (script round 23 g); fh v3:exact 0x008661b0
 0x00866240 function AtelEventSetUpForBattleMusic # fh v3:exact 0x008661e0
-0x00866430 function AtelEventSetUpSep            # layout+callees: sorts between AtelEventSetUpForBattleMusic and AtelEventSetupGuideMap, and its named callees match the Switch 0x7100460ab0 AtelEventSetUpSep's (similarity 1.00: AtelSetSnd3dVolumeDiffRatio, AtelSetSnd3dVolumeTotalRatio, SndSyncTrans); symbols from Fahrenheit's server export
+0x00866430 function AtelEventSetUpSep # cdecl (hdr, data, sep_only): ctrl work 0 current; sep_only 1 keeps data in ctrl work 0 +0x204; Atel_TransSepGroup_00871780(hdr, data, sep_only, -1, 0), SndSyncTrans(1), context back, AtelSetSnd3dVolumeTotalRatio(0.0), AtelSetSnd3dVolumeDiffRatio(1/60 0x00b304f4); ported (ffx_script helpers, script round 24 d); layout+callees: sorts between AtelEventSetUpForBattleMusic and AtelEventSetupGuideMap, and its named callees match the Switch 0x7100460ab0 AtelEventSetUpSep's (similarity 1.00: AtelSetSnd3dVolumeDiffRatio, AtelSetSnd3dVolumeTotalRatio, SndSyncTrans); symbols from Fahrenheit's server export
 0x00866490 function AtelEventSetupGuideMap # (): sets ctrl work 0's guide map flag (+1 bit 7) when clear (Yn_GuideMapInit is empty), then Yn_GuideMapSetMode(0) with the context back; ported in helpers (script round 23 g); fh v3:exact 0x00866430
 0x00866520 function Atel_LoadEventSeps_00866520 # name ours; cdecl (_, mode, group): g_AtelSepLoadCount = 0, then the separates table of ctrl work 0's script block (0x01325be8 +0x2c -> +0xc): mode 0 adds flags bit 1 without bit 2 or bit 3 without bit 1; mode set and group selected ((mask|1) bit) keeps entries with none of the rotated group bits; else adds flags bit 0 (Atel_AddSepLoad); kept: added and not refused (1), first 16 ids >= 0; group bit cleared from g_AtelSepGroupMask, SndSepClearAll with none kept else SqsSeSeparateMaskClear(first 8), mask = 0; EAX that call's; callers 0x00862470, AtelEventRemoveSep, 0x00866500; ported (ffx_script helpers, script round 24 b)
 0x00867230 function Script_OpReq              # (op, level, worker, stack): opcodes 36, 45-49 (REQ): pops entry, worker, level; 47-49 gated by the ctrl work's +0x60 callback; calls 0x0067a9b0 first
@@ -9413,7 +9415,7 @@
 0x0086b510 function AtelGetEventLinePos          # layout+callees: sorts between AtelGetEventElemStatus and AtelGetEventMapCameraId, and its named callees match the Switch 0x710046b320 AtelGetEventLinePos's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
 0x0086b5d0 function AtelGetEventMapCameraId   # fh v3:exact 0x0086b560
 0x0086b6c0 function Get_g_AtelForceBattleMapId_0086b6c0 # auto-port shape (return global u32, cdecl): t0 = u32[&0x00c5273c]; return t0; callers: ; name ours
-0x0086b700 function AtelGetGideMapActorInfo   # fh v3:cg7 0x86b690
+0x0086b700 function AtelGetGideMapActorInfo # cdecl (i, out): an empty frame and a jump to AtelGetGuideMapActorInfo; ported (ffx_script helpers, script round 24 d); fh v3:cg7 0x86b690
 0x0086b710 function AtelGetGideMapActorNumber # () -> count of field minimap markers Minimap_GetWorkerMarker reads; Guide_Update loops over them; was Minimap_MarkerCount
 0x0086b740 function AtelGetGuideMapActorInfo # (i, out): ported (ffx_script helpers, script round 24 c): jump table 0x0086b8fc on type 2..6 (2/5: direction 0 and +0x2c = 1; 3/6: direction 0; else Atel_GetWorkerRotY); start/end y go to the argument slot; EAX worker +0x36 bit 11; (index, &out): worker marker from the script's tag table (+0x2c -> +0x18) or worker +0xbc override; flags 0x800, 0x2000, icon >> 4; used by 0x0091da80 and the debug list 0x00881be0; was Minimap_GetWorkerMarker
 0x0086b910 function AtelGetGuideMapActorNumber   # layout: alphabetical run between AtelGetGuideMapActorInfo and AtelGetGuideMapAngEx (2 unnamed in the gap); Switch 0x7100472d00 AtelGetGuideMapActorNumber is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -9520,6 +9522,7 @@
 0x0086e820 function AtelRegistAlbhedDic       # fh v3:bsim1.00 0x0086e7b0
 0x0086e840 function AtelRegistBattleEndMovieFadeout # fh v3:bsim1.00 0x0086e7d0
 0x0086e860 function AtelRegistBreakPointer       # layout+callees: sorts between AtelRegistBattleEndMovieFadeout and AtelRegistSignal, and its named callees match the Switch 0x710046b6b0 AtelRegistBreakPointer's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
+0x0086e8d0 function Atel_RequestBattleEndEntries_0086e8d0 # name ours; cdecl (tag): the current ctrl work's script block +0x24 battle-end table (count, then 16-byte entries from +4: tag, worker u16, entry u16): entries of tag (all with AtelGetBattleEndTagAlways) signal their worker (0xffff, worker, 0, 8, entry; not worker 0xffff) and AtelDecodeSignal(worker, -1); EAX the table (the block without one, 0 without a block); callers AtelBattleEndCallback, 0x008617d0; ported (ffx_script helpers, script round 24 d)
 0x0086e970 function SetGlobals_0086e970          # auto-port shape (several stores: set global (constants, arguments, addresses), cdecl): u32[&0x01327070] = a0; u32[&0x01327074] = a1; return a1; callers: ; name ours
 0x0086e990 function AtelRegistSignal          # (from, to, kind, level, entry) -> AtelRegistSignalMain
 0x0086e9e0 function AtelRegistSignal2         # fh v3:exact 0x0086e970
@@ -9554,6 +9557,7 @@
 0x0086f730 function AtelSetCurrentCtrl        # fh v3:bsim1.00 0x0086f6c0
 0x0086f750 function Atel_SetLevelVectorsXZ # (worker, a f, c f): Atel_SetLevelVectors(worker, a, 0.0, c); callers Native_0014; ported in helpers (script round 23 f); name ours
 0x0086f780 function Atel_SetLevelVectors       # (worker, a f, b f, c f): the current level's +0x5e0..+0x5e8 = a, b, c, +0x5d4..+0x5dc = the position (+0x284 types 5/6, +0x558 else; type 4 reads 0); EAX level*0x4c; name ours; ported in helpers (script round 13)
+0x0086f940 function Atel_SetLevelTarget_0086f940 # name ours; cdecl (worker, i): the level's turn block (+0x170 + level*0x4c, level clamped) +0 = i (u16), Atel_SetLevelVectors(worker, worker i's position); callers Native_003b (calls the Rust one), 0x00868990; ported (ffx_script helpers, script round 24 d)
 0x0086f9e0 function AtelSetDolby # (on): bit 7 (Dolby) of MsGetSaveMenu()'s word = on, SndSetSoundMode(Dolby 0, bit 0 1, else 2), TkSetControlerActuatorMode(0, 0, bit 4); the last EAX; callers Native_023a, Gui_MovieDebugProc; ported in helpers (script round 23 e); layout+callees: sorts between AtelSetCurrentCtrl and AtelSetEffectFlag, and its named callees match the Switch 0x7100474730 AtelSetDolby's (similarity 1.00: MsGetSaveMenu, SndSetSoundMode, TkSetControlerActuatorMode); symbols from Fahrenheit's server export
 0x0086fa40 function AtelSetEffectFlag         # fh v3:bsim1.00 0x0086f9d0
 0x0086fa60 function AtelSetEffectParam        # g_AtelEffectParams[i] = v, no bound; native 0x0085a250
@@ -9619,7 +9623,7 @@
 0x00871630 function Atel_SetCurLevel5c0        # (worker, v f): the current level's +0x5c0; name ours; ported in helpers (script round 14)
 0x00871650 function AtelSignalReply           # (worker, node): the reply a REQSW sender waits for once its request starts
 0x00871730 function AtelSkipReqLevel2         # fh v3:bsim1.00 0x008716d0; ported in helpers (script round 19)
-0x00871750 function AtelSndTransSepSPKDataGroup # fh switch:bsim1.00 0x71004728a0
+0x00871750 function AtelSndTransSepSPKDataGroup # cdecl (hdr, data, group): Atel_TransSepGroup_00871780(hdr, data, 1, group, 0), then SndSyncTrans(1); EAX the first's; caller Native_013d_Poll (calls the Rust one); ported (ffx_script helpers, script round 24 d); fh switch:bsim1.00 0x71004728a0
 0x00871780 function Atel_TransSepGroup_00871780 # name ours; cdecl (hdr, data, sep_only, group, flag): waits while SndSyncTrans(0) (TkSyncV(0) + TkSndUpdate2); group < 0: Atel_QueueSepLoads(hdr), else flag = 1; data 0: 0; data word bit 30 set, bit 31 clear: group sizes (first in its low 30 bits, then the next words), groups from data + 0x20; group's size != 0: SndSepTransSepOnly (flag and sep_only) or SndSepTransNonblock(at, size), 1; group >= 0 sets its g_AtelSepGroupMask bit; callers 0x00862220, AtelEventSetUpSep, AtelSndTransSepSPKDataGroup; ported (ffx_script helpers, script round 24 c)
 0x00871890 function AtelStopSoundAll # cdecl (): SndSepStop(n | 0x80000000) for 1..=0x77 (TkSyncV(0) + TkSndUpdate every 16), SndMusicStop/SndMusicClear(-1), iMusicStopAll/iMusicClearAll, 32 more sync pairs, the music again, SqsAllVoiceTerminate (thunk 0x008872e0); EAX = the last TkSndUpdate (tail jump); ported (ffx_script helpers, script round 24 a); fh v3:exact 0x00871830
 0x00871950 function AtelStrcat                # fh v3:exact 0x008718f0
@@ -9735,6 +9739,7 @@
 0x00875950 function AtelCharSetUp                # layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f2d0 AtelCharSetUp's (similarity 1.00: AtelGetBinHdrExpandAddChr, AtelGetCtrlWork, AtelPs2DebugString, Sg_EventjumpInit); symbols from Fahrenheit's server export
 0x008759b0 function AtelCommonSetUp              # layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f0b0 AtelCommonSetUp's (similarity 1.00: AtelChangeCurrentCtrl, AtelGetActorNumber, AtelGetIndexWork, AtelGetNamespaceNumber, AtelInitActor); symbols from Fahrenheit's server export
 0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
+0x00875b40 function Vibrate_UpdateVolume_00875b40 # name ours; cdecl (): unless g_TkVibrateOff, for each pad allowed by g_TkVibrateMask: state 1 with both channels 0x200 or state 2 with both 0xfffe ends (+0x22 = 0); Vibrate_EntryLevel(pad, 0/1) maxima into g_TkVibrateVolume; EAX the last allowed pad's second level or the mask (caller's EAX when off); callers 0x00872bd0, AtelExecVibrate; ported (ffx_script helpers, script round 24 d)
 0x00875c20 function Vibrate_EntryLevel        # (rec, e) entry e level for this frame into +0xa: 0 outside modes 1/2, start level for negative length, 0 for curve parts >= 0x200, else Vibrate_StepLevel; own name
 0x00875c90 function Vibrate_StepLevel         # (rec, entry, len) step +4 += 1; at len: mode 1 -> Vibrate_StartStream(entry, data), mode 2 -> level = target, +6 = 0xfffe; returns ((n - s) * from + to * s) / n or from; own name
 0x00875d30 function Vibrate_CheckDone         # (pad) state 1/2 ends when both streams +6 are 0x200/0xfffe; own name

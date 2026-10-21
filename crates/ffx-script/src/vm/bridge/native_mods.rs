@@ -2217,7 +2217,7 @@ pub fn native_00ff<H: NativeHost>(h: &mut H, _w: u32, _a: u32, s: u32) -> u32 {
 /// `0x003b` (`0x008604a0`): `(v)`: `0x0086f940(worker, v)`; 0.
 pub fn native_003b<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -> u32 {
     let v = pop(h, s);
-    call(h, 0x0086_f940, &[w, v]);
+    super::helpers::atel_set_level_target(h, w, v);
     0
 }
 

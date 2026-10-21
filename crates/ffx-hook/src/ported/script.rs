@@ -7019,4 +7019,47 @@ ported! {
         let mut frame = super::StackFrame::<1>::new();
         hp::atel_get_guide_map_actor_info(&mut mem(), i, out, frame.at())
     }
+    /// `AtelGetGideMapActorInfo(i, out)`: a jump to
+    /// `AtelGetGuideMapActorInfo` behind an empty frame.
+    AtelGetGideMapActorInfo @ 0x0086_b700 => extern "C" fn h_86b700(i: u32, out: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        hp::atel_get_guide_map_actor_info(&mut mem(), i, out, frame.at())
+    }
+    /// `AtelSndTransSepSPKDataGroup(hdr, data, group)`.
+    AtelSndTransSepSPKDataGroup @ 0x0087_1750 => extern "C" fn h_871750(hdr: u32, data: u32, group: u32) -> u32 {
+        hp::atel_snd_trans_sep_spk_data_group(&mut mem(), hdr, data, group)
+    }
+    /// `AtelEventRemoveSep(mode)`.
+    AtelEventRemoveSep @ 0x0086_61d0 => extern "C" fn h_8661d0(mode: u32) -> u32 {
+        hp::atel_event_remove_sep(&mut mem(), mode)
+    }
+    /// `AtelEnterMenuCallback()`.
+    AtelEnterMenuCallback @ 0x0086_55e0 => extern "C" fn h_8655e0() -> u32 {
+        hp::atel_enter_menu_callback(&mut mem())
+    }
+    /// `AtelEventSetUpSep(hdr, data, sep_only)`.
+    AtelEventSetUpSep @ 0x0086_6430 => extern "C" fn h_866430(hdr: u32, data: u32, sep_only: u32) -> u32 {
+        hp::atel_event_set_up_sep(&mut mem(), hdr, data, sep_only)
+    }
+    /// `Atel_RequestBattleEndEntries_0086e8d0(tag)`.
+    Atel_RequestBattleEndEntries_0086e8d0 @ 0x0086_e8d0 => extern "C" fn h_86e8d0(tag: u32) -> u32 {
+        hp::atel_request_battle_end_entries(&mut mem(), tag)
+    }
+    /// `Atel_SetLevelTarget_0086f940(worker, i)`.
+    Atel_SetLevelTarget_0086f940 @ 0x0086_f940 => extern "C" fn h_86f940(w: u32, i: u32) -> u32 {
+        hp::atel_set_level_target(&mut mem(), w, i)
+    }
+    /// `Atel_CamGetVars_007ba3c0(worker, args, stack, side)`: `Cam_GetPos`.
+    Atel_CamGetVars_007ba3c0 @ 0x007b_a3c0 => extern "C" fn h_7ba3c0(w: u32, _a: u32, s: u32, side: u32) -> u32 {
+        hp::atel_cam_get_vars(&mut mem(), 0x007b_d420, w, s, side)
+    }
+    /// `Atel_CamGetRefVars_007ba460(worker, args, stack, side)`:
+    /// `Cam_GetRefPos_007bd4b0`.
+    Atel_CamGetRefVars_007ba460 @ 0x007b_a460 => extern "C" fn h_7ba460(w: u32, _a: u32, s: u32, side: u32) -> u32 {
+        hp::atel_cam_get_vars(&mut mem(), 0x007b_d4b0, w, s, side)
+    }
+    /// `Vibrate_UpdateVolume_00875b40()`.
+    Vibrate_UpdateVolume_00875b40 @ 0x0087_5b40 => extern "C" fn h_875b40() -> u32 {
+        hp::vibrate_update_volume(&mut mem())
+    }
 }

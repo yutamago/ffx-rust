@@ -3894,3 +3894,211 @@ pub fn atel_get_guide_map_actor_info(m: &mut impl Mem, i: u32, out: u32, frame: 
     m.write(ctx, old);
     ret
 }
+
+/// `AtelSndTransSepSPKDataGroup(hdr, data, group)` (`0x00871750`):
+/// [`atel_trans_sep_group`]`(hdr, data, 1, group, 0)`, then
+/// `SndSyncTrans(1)`; returns the first's result.
+pub fn atel_snd_trans_sep_spk_data_group(
+    h: &mut impl ffx_bridge::Host,
+    hdr: u32,
+    data: u32,
+    group: u32,
+) -> u32 {
+    let r = atel_trans_sep_group(h, hdr, data, 1, group, 0);
+    host_call(h, 0x0088_7910, &[1]);
+    r
+}
+
+/// `AtelEventRemoveSep(mode)` (`0x008661d0`): `SndStopStream`, then with
+/// ctrl work 0's script block ([`CTRL_WORKS`] `+0x48`) and ctrl work 0
+/// current [`atel_load_event_seps`]`(block, mode, -1)` and the current
+/// ctrl work back. Without a block ctrl work 0 stays current (as in the
+/// original) and 0 is returned; else the reload's `EAX`.
+pub fn atel_event_remove_sep<H: super::run::NativeHost>(h: &mut H, mode: u32) -> u32 {
+    host_call(h, 0x0088_7780, &[]);
+    let works = h.rebase(CTRL_WORKS);
+    let b = h.read::<u32>(works + 0x48);
+    let context = h.rebase(SCRIPT_CONTEXT);
+    let saved = h.read::<u32>(context);
+    h.write(context, works);
+    if b == 0 {
+        return 0;
+    }
+    let r = atel_load_event_seps(h, mode, u32::MAX);
+    h.write(context, saved);
+    r
+}
+
+/// `AtelEnterMenuCallback()` (`0x008655e0`): the guide map hidden
+/// (`Yn_GuideMapSetDispProg(0)`), vibration off for pads 1..=7
+/// (`TkSetVibrateMask(pad, 0)`), `MsEventEffectFree`, message bank 1
+/// (`g_AtelMenuExecStatus` = 1, [`atel_reset_msg_window_bank`]`(1)`),
+/// `TkMenuClearDummyControler`, `g_AtelOverlayStatus` = 3. Returns the
+/// last call's `EAX`.
+pub fn atel_enter_menu_callback(h: &mut impl ffx_bridge::Host) -> u32 {
+    host_call(h, 0x0091_9d70, &[0]);
+    for pad in 1..8 {
+        host_call(h, 0x0087_5f60, &[pad, 0]);
+    }
+    host_call(h, 0x0078_8b90, &[]);
+    h.write(h.rebase(MENU_EXEC_STATUS), 1_u8);
+    atel_reset_msg_window_bank(h, 1);
+    let r = host_call(h, 0x008c_a540, &[]);
+    h.write(h.rebase(0x0132_6b80), 3_u8);
+    r
+}
+
+/// `AtelEventSetUpSep(hdr, data, sep_only)` (`0x00866430`): with ctrl work
+/// 0 current, `sep_only` 1 keeps `data` in ctrl work 0's `+0x204`;
+/// [`atel_trans_sep_group`]`(hdr, data, sep_only, -1, 0)`,
+/// `SndSyncTrans(1)`, the current ctrl work back, then the 3D sound
+/// ratios: total 0, difference 1/60 (`0x3c888889`). Returns the last
+/// call's `EAX`.
+pub fn atel_event_set_up_sep(
+    h: &mut impl ffx_bridge::Host,
+    hdr: u32,
+    data: u32,
+    sep_only: u32,
+) -> u32 {
+    let context = h.rebase(SCRIPT_CONTEXT);
+    let saved = h.read::<u32>(context);
+    let works = h.rebase(CTRL_WORKS);
+    h.write(context, works);
+    if sep_only == 1 {
+        h.write(works + 0x204, data);
+    }
+    atel_trans_sep_group(h, hdr, data, sep_only, u32::MAX, 0);
+    host_call(h, 0x0088_7910, &[1]);
+    h.write(context, saved);
+    host_call(h, 0x0087_7460, &[0]);
+    let sixtieth = h.read::<u32>(h.rebase(0x00b3_04f4));
+    host_call(h, 0x0087_7450, &[x87::store(x87::load(sixtieth))])
+}
+
+/// `Atel_RequestBattleEndEntries_0086e8d0(tag)` (name ours; callers
+/// `AtelBattleEndCallback`, `0x008617d0`): the current ctrl work's script
+/// block's battle-end table (`+0x24`, relative to the block: a count, then
+/// 16-byte entries from `+4`: tag, worker `u16`, entry `u16`): every
+/// entry of `tag` (every entry with `AtelGetBattleEndTagAlways`) has its
+/// worker signalled to run the entry (`(0xffff, worker, 0, 8, entry)`,
+/// not for worker `0xffff`) and its signals decoded
+/// (`AtelDecodeSignal(worker, -1)`). Returns the `EAX` it leaves: the
+/// table, the block without a table, 0 without a block.
+pub fn atel_request_battle_end_entries(h: &mut impl ffx_bridge::Host, tag: u32) -> u32 {
+    let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let b = h.read::<u32>(c + 0x48);
+    if b == 0 {
+        return 0;
+    }
+    let t = h.read::<u32>(b + 0x24);
+    if t == 0 {
+        return b;
+    }
+    let tab = b.wrapping_add(t);
+    let mut i = 0u32;
+    while i < h.read::<u32>(tab) {
+        let e = tab + 4 + i * 0x10;
+        if h.read::<u32>(e) == tag || super::globals::atel_get_battle_end_tag_always(h) != 0 {
+            let worker = u32::from(h.read::<u16>(e + 4));
+            let entry = u32::from(h.read::<u16>(e + 6));
+            if worker != 0xffff {
+                let r = super::signal::Request::new(0xffff, worker, 0, 8, entry);
+                super::signal::atel_regist_signal_main(h, r);
+            }
+            super::signal::atel_decode_signal(h, worker, -1);
+        }
+        i += 1;
+    }
+    tab
+}
+
+/// `Atel_SetLevelTarget_0086f940(worker, i)` (name ours; callers
+/// `Native_003b`, `0x00868990`): the current level's turn block (`+0x170 +
+/// level*0x4c`, the level clamped as the turn helpers do) gets `i` (`u16`
+/// at `+0`), and [`atel_set_level_vectors`] the position of worker `i`
+/// (`AtelGetBasicWork`; type 4 reads through 0). Returns that call's
+/// `EAX`.
+pub fn atel_set_level_target(m: &mut impl Mem, w: u32, i: u32) -> u32 {
+    let level = clamp_level(m, w, u32::from(m.read::<u8>(w + 0x32)));
+    let target = super::atel_get_basic_work(m, i.cast_signed());
+    let p = pos_block(m, target);
+    let block = m.read::<u32>(w + 0x170 + level * 0x4c);
+    m.write(
+        block,
+        u16::from_le_bytes([i.to_le_bytes()[0], i.to_le_bytes()[1]]),
+    );
+    let [x, y, z] = [0, 4, 8].map(|k| through(m, p.wrapping_add(k)));
+    atel_set_level_vectors(m, w, x, y, z)
+}
+
+/// `0x007ba3c0` and `0x007ba460` (worker, args, stack, side): pop three
+/// variable words (z, y, x: the first popped is the last output), give the
+/// worker's camera (`AtelGetCameraWorkAdrs`, `+0` taken from
+/// `MsAtelGetCameraID(5, worker is the event map camera, 0)` when 0) to
+/// `get(camera, side, &x, &y, &z)`: `Cam_GetPos` (`0x007bd420`) for the
+/// first, `Cam_GetRefPos_007bd4b0` for the second. Returns its `EAX`.
+pub fn atel_cam_get_vars(
+    h: &mut impl ffx_bridge::Host,
+    get: u32,
+    w: u32,
+    s: u32,
+    side: u32,
+) -> u32 {
+    let mut vars = [0u32; 3];
+    for v in &mut vars {
+        let word = super::atel_pop_stack_integer(h, s);
+        *v = super::atel_get_real_var_adrs(h, w, word);
+    }
+    let cam = super::atel_get_camera_work_adrs(w);
+    let mut id = h.read::<u32>(cam);
+    if id == 0 {
+        let actor = super::atel_get_actor_id(h, w);
+        let is_map = u32::from(super::atel_get_event_map_camera_id(h) == actor);
+        id = host_call(h, 0x007b_a780, &[5, is_map, 0]);
+        h.write(cam, id);
+    }
+    host_call(h, get, &[id, side, vars[2], vars[1], vars[0]])
+}
+
+/// `Vibrate_UpdateVolume_00875b40()` (name ours; callers `0x00872bd0`,
+/// `AtelExecVibrate`): unless vibration is off (`g_TkVibrateOff`), the
+/// two channel levels of every pad allowed by `g_TkVibrateMask`
+/// (`Vibrate_EntryLevel(pad, 0)` and `(pad, 1)`, 0x24-byte pads from
+/// `g_TkVibratePads`) after ending pads whose state (`+0x22`) is 1 with
+/// both channels at `0x200` or 2 with both at `0xfffe` (`+6`, `+0x16`):
+/// their maxima become `g_TkVibrateVolume`. Returns the `EAX` the loop
+/// leaves (the last allowed pad's second level, or the mask), 0 when off.
+pub fn vibrate_update_volume(h: &mut impl ffx_bridge::Host) -> u32 {
+    if h.read::<u8>(h.rebase(0x0132_8272)) != 0 {
+        return 0;
+    }
+    let pads = h.rebase(0x0132_8150);
+    let (mut lo, mut hi) = (0u32, 0u32);
+    let mut eax = 0;
+    for pad in 0..8u32 {
+        let mask = u32::from(h.read::<u16>(h.rebase(0x0132_8274)));
+        if mask & (1 << pad) == 0 {
+            eax = mask;
+            continue;
+        }
+        let p = pads + pad * 0x24;
+        let state = h.read::<u8>(p + 0x22);
+        let end = match state {
+            1 => 0x200,
+            2 => 0xfffe,
+            _ => 0,
+        };
+        if end != 0 && h.read::<u16>(p + 6) == end && h.read::<u16>(p + 0x16) == end {
+            h.write(p + 0x22, 0_u8);
+        }
+        let a = host_call(h, 0x0087_5c20, &[p, 0]);
+        let b = host_call(h, 0x0087_5c20, &[p, 1]);
+        lo = lo.max(a);
+        hi = hi.max(b);
+        eax = b;
+    }
+    let vol = h.rebase(0x0132_8270);
+    h.write(vol, lo.to_le_bytes()[0]);
+    h.write(vol + 1, hi.to_le_bytes()[0]);
+    eax
+}
