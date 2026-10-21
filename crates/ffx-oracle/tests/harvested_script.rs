@@ -39,3 +39,35 @@ harvest_test!(
     args = 0,
     |m: &mut Oracle, _s| { hp::atel_effect_idle_poll(&mut OracleHost(m)) }
 );
+
+// script round 24 (this machine): the movie check, the guide map records
+// (the start/end y go to the original's own argument slot), the vibration
+// volume
+harvest_test!(
+    movie_is_busy,
+    0x0076_ed10,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::movie_is_busy(&mut OracleHost(m)) }
+);
+harvest_test!(
+    atel_get_guide_map_actor_info,
+    0x0086_b740,
+    args = 2,
+    |m: &mut Oracle, s| {
+        hp::atel_get_guide_map_actor_info(m, s.arg(0), s.arg(1), s.regs.esp + 8)
+    }
+);
+harvest_test!(
+    atel_get_gide_map_actor_info,
+    0x0086_b700,
+    args = 2,
+    |m: &mut Oracle, s| {
+        hp::atel_get_guide_map_actor_info(m, s.arg(0), s.arg(1), s.regs.esp + 8)
+    }
+);
+harvest_test!(
+    vibrate_update_volume,
+    0x0087_5b40,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::vibrate_update_volume(&mut OracleHost(m)) }
+);
