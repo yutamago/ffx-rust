@@ -2196,6 +2196,130 @@ pub mod bridge {
         1
     }
 
+    /// `0x007faad0` (`update0706AccRenderData_007faad0`, ours; from
+    /// `0x007fa800`) `(lo, hi)`: [`update_0706_noise_render_data`]'s twin
+    /// for the 0706 accumulation strip. With the instance's render data `d`
+    /// and its segment-0 buffer (0 without either), fills 448 strips of
+    /// two quads (0x60 bytes of positions each): strip `i` spans `c` to
+    /// `c'` (`c` from 0, `c'` = `f32(c + 0.00223214...)` through an `f64`):
+    /// corners `x` -1, 0 and 1, `y` `f32((c - 0.5) x 2)` and `f32((c' -
+    /// 0.5) x 2)` (from the unrounded sum), `z` -0.9999; texture `u` = `r`
+    /// and `f32(r + 1)` for each quad with its own `r` = `op_random(1)`
+    /// (through `fcall`), `v` = `c` and `f32(c + 1/256)`; colours (0.375,
+    /// 0.375, 0.375, 0.5); indices `8i + (0, 1, 2, 1, 2, 3, 4, 5, 6, 5, 6,
+    /// 7)`. Then the unit matrix (`FFXVu0UnitMatrix(d)`), `d +0x80` = 0, a
+    /// ±9999999 box at `+0x98..+0xac` and `graphicVFXSetVisible(lo, hi,
+    /// 1)`. Returns 1.
+    #[allow(clippy::many_single_char_names)]
+    pub fn update_0706_acc_render_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let d = call(mem, sym(mem, 0x0064_53d0), &[lo, hi]);
+        if d == 0 {
+            return 0;
+        }
+        let bufs: u32 = mem.read(d.wrapping_add(0x94));
+        let (nv, ni) = (
+            mem.read(bufs.wrapping_add(4)),
+            mem.read(bufs.wrapping_add(8)),
+        );
+        if call(mem, sym(mem, 0x0063_fdb0), &[d, 0, nv, ni]) == 0 {
+            return 0;
+        }
+        let half: f64 = mem.read(sym(mem, 0x00b9_2220));
+        let two: f64 = mem.read(sym(mem, 0x00b9_2270));
+        let step: f64 = mem.read(sym(mem, 0x00b5_83f8));
+        let k256: f64 = mem.read(sym(mem, 0x00b5_0198));
+        let flip: u32 = mem.read(sym(mem, 0x00b9_2340));
+        let near: u32 = mem.read(sym(mem, 0x00b4_7ca0));
+        let grey: u32 = mem.read(sym(mem, 0x00b4_936c));
+        let alpha: u32 = mem.read(sym(mem, 0x00b9_2194));
+        let (one, zero) = (1.0f32.to_bits(), 0u32);
+        let rnd = sym(mem, 0x007e_6700);
+        let mut c = 0u32;
+        for i in 0..448u32 {
+            let bufs: u32 = mem.read(d.wrapping_add(0x94));
+            let buf = |mem: &M, at: u32| mem.read::<u32>(bufs.wrapping_add(at));
+            let (pos, uv, col, idx) = (
+                buf(mem, 0xc).wrapping_add(0x60 * i),
+                buf(mem, 0x18).wrapping_add(0x40 * i),
+                buf(mem, 0x14).wrapping_add(0x80 * i),
+                buf(mem, 0x1c).wrapping_add(0x18 * i),
+            );
+            let cf = load(c);
+            let y0 = store(mul(sub(cf, half), two));
+            let n = add(cf, step);
+            let y1 = store(mul(sub(n, half), two));
+            // (x, y, z) of the eight corners
+            let corners = [
+                [flip, y0, near],
+                [zero, y0, near],
+                [flip, y1, near],
+                [zero, y1, near],
+                [zero, y0, near],
+                [one, y0, near],
+                [zero, y1, near],
+                [one, y1, near],
+            ];
+            mem.write(pos, corners);
+            let v1 = store(add(cf, k256));
+            for q in [0u32, 0x20] {
+                let r = store(fcall(mem, rnd, &[one]));
+                let r1 = store(add(load(r), 1.0));
+                mem.write(uv.wrapping_add(q), [r, c, r1, c, r, v1, r1, v1]);
+            }
+            mem.write(col, [[grey, grey, grey, alpha]; 8]);
+            #[allow(clippy::cast_possible_truncation)] // 16-bit indices
+            let b = (i * 8) as u16;
+            let quads = [0u16, 1, 2, 1, 2, 3, 4, 5, 6, 5, 6, 7].map(|k| b.wrapping_add(k));
+            mem.write(idx, quads);
+            // the next edge through the f64 slot
+            c = store(n);
+        }
+        call(mem, sym(mem, 0x006e_d9a0), &[d]);
+        mem.write(d.wrapping_add(0x80), 0u32);
+        let lo_box: u32 = mem.read(sym(mem, 0x00b5_1660));
+        let hi_box: u32 = mem.read(sym(mem, 0x00b5_1658));
+        mem.write(d.wrapping_add(0x98), [lo_box; 3]);
+        mem.write(d.wrapping_add(0xa4), [hi_box; 3]);
+        call(mem, sym(mem, 0x0064_5710), &[lo, hi, 1]);
+        1
+    }
+
+    /// `0x007fa800` (`opus_0706_acc_update`, ours) `(eff)`: the 0706
+    /// accumulation strip's renderer instance `(2, 0x2c2)`: without render
+    /// data it is made (`create0706AccRenderDataBuffer(2, 0x2c2, the
+    /// 64-bit texture at eff)`, then `graphicVFXSetup`; either failing
+    /// gives `graphicVFXDestroy`, whose eax is returned); then
+    /// `update0706AccRenderData(2, 0x2c2)` and `graphicVFXDttUpdate(2,
+    /// 0x2c2)`, whose eax is returned. All callees through `call`.
+    pub fn opus_0706_acc_update<M: Mem>(
+        mem: &mut M,
+        eff: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        const ID: [u32; 2] = [2, 0x2c2];
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = sym(mem, at);
+            call(mem, f, args)
+        };
+        if go(mem, 0x0064_53d0, &ID) == 0 {
+            let tex: [u32; 2] = mem.read(eff);
+            if go(mem, 0x007f_a5c0, &[ID[0], ID[1], tex[0], tex[1]]) == 0
+                || go(mem, 0x0064_5780, &ID) == 0
+            {
+                return go(mem, 0x0064_5280, &ID);
+            }
+        }
+        go(mem, 0x007f_aad0, &ID);
+        go(mem, 0x0064_5330, &ID)
+    }
+
     /// `0x007fa750` (`opus_0706_noise_update`, ours) `(eff)`: the 0706
     /// noise's renderer instance `(1, 0x2c2)`. With render data, the
     /// update scale is `eff`'s `f32 +0x40` / 4096 / 16 x 12; without, the

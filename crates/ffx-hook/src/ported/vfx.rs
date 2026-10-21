@@ -3152,6 +3152,52 @@ ported! {
     pppDrawRainDes @ 0x0075_6270 => extern "C" fn ppp_draw_rain_des(obj: u32, prog: u32) -> u32 {
         draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::RAIN_DES, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `updateWeaponShadowDrawData(lo, hi, sh, t, from, to)` (`0x00813c20`).
+    updateWeaponShadowDrawData @ 0x0081_3c20 => extern "C" fn update_weapon_shadow_draw_data(lo: u32, hi: u32, sh: u32, t: u32, from: u32, to: u32) {
+        op::bridge::update_weapon_shadow_draw_data(&mut mem(), lo, hi, sh, t, from, to, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `weaponShadowDraw_008138d0(sh, t, ret, from, to, mode)` -> `ret`.
+    weaponShadowDraw_008138d0 @ 0x0081_38d0 => extern "C" fn weapon_shadow_draw(sh: u32, t: u32, ret: u32, from: u32, to: u32, mode: u32) -> u32 {
+        op::bridge::weapon_shadow_draw(&mut mem(), sh, t, ret, from, to, mode, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_0706_acc_update(eff)` (`0x007fa800`).
+    opus_0706_acc_update @ 0x007f_a800 => extern "C" fn opus_0706_acc_update(eff: u32) -> u32 {
+        small::bridge::opus_0706_acc_update(&mut mem(), eff, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppRunPartFp(part, flags)`: 1 when the part has ended or failed an
+    /// allocation.
+    pppRunPartFp @ 0x0071_22f0 => extern "C" fn ppp_run_part_fp(p: u32, flags: u32) -> u32 {
+        part::bridge::ppp_run_part_fp(&mut mem(), p, flags & 0xff, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_mul_m33(dst, b, c)` (`0x007e8b00`).
+    op_mul_m33 @ 0x007e_8b00 => extern "C" fn op_mul_m33(dst: u32, b: u32, c: u32) {
+        op::bridge::op_mul_m33(&mut mem(), dst, b, c, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_2point_shadow(sh, a, b)` (`0x00813480`).
+    op_2point_shadow @ 0x0081_3480 => extern "C" fn op_2point_shadow(sh: u32, a: u32, b: u32) {
+        op::bridge::op_2point_shadow(&mut mem(), sh, a, b, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShape0(obj, key, entry)`: its render request in a buffer on
+    /// this shim's stack (the frame pointer at its end).
+    pppDrawShape0 @ 0x0074_0a70 => extern "C" fn ppp_draw_shape0(obj: u32, key: u32, entry: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        part::bridge::ppp_draw_shape0(&mut mem(), obj, key, entry, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
+    /// `pppDrawShapeX0(obj, key, entry)`: as `pppDrawShape0`.
+    pppDrawShapeX0 @ 0x0074_0f60 => extern "C" fn ppp_draw_shape_x0(obj: u32, key: u32, entry: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        part::bridge::ppp_draw_shape_x0(&mut mem(), obj, key, entry, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `pppDrawMdlDraw(obj, key, prog)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppDrawMdlDraw @ 0x0073_7770 => extern "C" fn ppp_draw_mdl_draw(obj: u32, key: u32, prog: u32) -> u32 {
@@ -5124,6 +5170,10 @@ ported! {
     pppRunPartStd @ 0x0071_6c40 => extern "C" fn ppp_run_part_std(p: u32) {
         part::bridge::ppp_run_part_std(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `pppRunPartFpObjects_00717010(part)`.
+    pppRunPartFpObjects_00717010 @ 0x0071_7010 => extern "C" fn ppp_run_part_fp_objects(p: u32) {
+        part::bridge::ppp_run_part_fp_objects(&mut mem(), p, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppRunPart(part, flags)`: 1 when the part has ended.
     pppRunPart @ 0x0071_2250 => extern "C" fn ppp_run_part(p: u32, flags: u32) -> u32 {
         part::bridge::ppp_run_part(&mut mem(), p, flags & 0xff, &mut |_, f, a| call_ptr(f, a))
@@ -5539,6 +5589,10 @@ ported! {
     update0706NoiseRenderData @ 0x007f_a890 => extern "C" fn update_0706_noise_render_data(lo: u32, hi: u32, x: u32) -> u32 {
         small::bridge::update_0706_noise_render_data(&mut mem(), lo, hi, x, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `update0706AccRenderData_007faad0(lo, hi)` (`0x007faad0`).
+    update0706AccRenderData_007faad0 @ 0x007f_aad0 => extern "C" fn update_0706_acc_render_data(lo: u32, hi: u32) -> u32 {
+        small::bridge::update_0706_acc_render_data(&mut mem(), lo, hi, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `op_oef2_tex_clut_cue_trans()`.
     op_oef2_tex_clut_cue_trans @ 0x007e_4c30 => extern "C" fn op_oef2_tex_clut_cue_trans() -> u32 {
         // the original's load image record, below its ebp
@@ -5676,6 +5730,55 @@ ported! {
             &mut |_, f, a| call_ptr(f, a),
             &mut |_, f, a| super::call_cdecl_f64(f, a),
         )
+    }
+    /// `opus_mdc_break_draw(brk, id, _, _, still)` (`0x00805510`): the
+    /// original's three vectors in this shim's frame.
+    opus_mdc_break_draw @ 0x0080_5510 => extern "C" fn opus_mdc_break_draw(brk: u32, id: u32, _a: u32, _b: u32, still: u32) {
+        let mut frame = super::StackFrame::<12>::new();
+        let local = frame.at();
+        opus::bridge::opus_mdc_break_draw(&mut mem(), brk, id, still, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `opus_encount4_init(enc, oef, a, b, conf)` (`0x007f8930`): the
+    /// original's `u`, `v` and size words in this shim's frame.
+    opus_encount4_init @ 0x007f_8930 => extern "C" fn opus_encount4_init(enc: u32, oef: u32, a: u32, b: u32, conf: u32) -> u32 {
+        let mut frame = super::StackFrame::<3>::new();
+        let local = frame.at();
+        opus::bridge::opus_encount4_init(
+            &mut mem(),
+            enc,
+            oef,
+            a,
+            b,
+            conf,
+            local,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| call_ptr_f64(f, a),
+        )
+    }
+    /// `opus_encount4_calc(enc, host, _, eff, scale)` (`0x007f8570`).
+    opus_encount4_calc @ 0x007f_8570 => extern "C" fn opus_encount4_calc(enc: u32, host: u32, _unused: u32, eff: u32, scale: u32) -> u32 {
+        opus::bridge::opus_encount4_calc(
+            &mut mem(),
+            enc,
+            host,
+            eff,
+            scale,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| call_ptr_f64(f, a),
+        )
+    }
+    /// `opus_camera_limit(host)` (`0x00817590`): the original's vectors
+    /// in this shim's frame.
+    opus_camera_limit @ 0x0081_7590 => extern "C" fn opus_camera_limit(host: u32) {
+        let mut frame = super::StackFrame::<0x14>::new();
+        let local = frame.at();
+        opus::bridge::opus_camera_limit(
+            &mut mem(),
+            host,
+            local,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| call_ptr_f64(f, a),
+        );
     }
     /// `opu_tc_load(host, cmd)` (`0x008085a0`).
     opu_tc_load @ 0x0080_85a0 => extern "C" fn opu_tc_load(host: u32, cmd: u32) -> u32 {

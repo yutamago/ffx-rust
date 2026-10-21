@@ -4480,6 +4480,440 @@ pub mod bridge {
         cmd.wrapping_add(2)
     }
 
+    /// `opus_encount4_init(enc, oef, a, b, conf)` (`0x007f8930`), from
+    /// `opu_encount`: sets up the broken-screen encounter. `enc+0` = `i16
+    /// conf+8` (the mode), `u16 +4`/`+6` (first record, block count) from
+    /// `conf+4`/`+6`, the bounds `+0xe0..+0xe8` = -65536 and `+0xf0..+0xf8`
+    /// = 65536, `+0x100` = 0, `+0x10`/`+0x14` = `a`/`b`. The old buffer
+    /// `0x012e962c` is freed (`user_free_thunk`), `0x012e9634..+0x3c` = 0,
+    /// and `opus_0706_acc_draw(enc, oef, &size)` gives the new one; the
+    /// renderer's block buffer size starts at `0x00639450(count, buffer)`.
+    /// Each block (0x70 bytes from `+0x110`; dword `+0` = 1) takes record
+    /// `op_oef2_a_get(oef, 4, first + i)` (`+4`): its `i16 +0x12` vertices
+    /// (i16 triples at `+[+8]`) give the centre (`+0x10..+0x18`, `y` also
+    /// at `+0x68`; the bounds track it, the maxima all compared with
+    /// `+0xe0` as in the original), `op_deg_get(0, 0, x, z, +0x60)` the
+    /// angle (`+0x64`; `+0x100` the largest `+0x60`), the vertices less
+    /// the centre (`w` 1, at the shared cursor from the block area's end,
+    /// `+8`), each with `graphicBrokenScreenUpdatePolygonData(i, 1, j, 0
+    /// x6, &u, &v)` (`u`/`v` = x/z / 14000 / 2 + 0.5); its `i16 +0x14`
+    /// normals (`+[+0xc]`, / 4096, `+0xc`); three copies of the emulated
+    /// GPR `r0` (`+0x20..+0x4c`) and three `op_spline_draw_path3(16, 0.5)`
+    /// (`+0x50..+0x58`, through `fcall`). When the block size ends past
+    /// the buffer plus `size`, `fprintf(stderr, "Not Enough buffer size
+    /// ...", size)` through the CRT imports. Then `0x00639370` and
+    /// `0x012e9630` = 1; returns 0. `local` is the original's `u`, `v`,
+    /// `size` (3 words).
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::similar_names
+    )]
+    pub fn opus_encount4_init<M: Mem>(
+        mem: &mut M,
+        enc: u32,
+        oef: u32,
+        a: u32,
+        b: u32,
+        conf: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let word = |mem: &M, at: u32| mem.read::<u32>(g(mem, at));
+        let konst = |mem: &M, at: u32| mem.read::<f64>(g(mem, at));
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let e = |k: u32| enc.wrapping_add(k);
+        let (u, v, size_out) = (local, local.wrapping_add(4), local.wrapping_add(8));
+        mem.write(size_out, 0u32);
+        let mode = i32::from(mem.read::<i16>(conf.wrapping_add(8)));
+        mem.write(enc, mode);
+        let first = mem.read::<u16>(conf.wrapping_add(4));
+        mem.write(e(4), first);
+        let count = mem.read::<u16>(conf.wrapping_add(6));
+        mem.write(e(6), count);
+        let low = word(mem, 0x00b5_83f0);
+        mem.write(e(0xe0), [low; 3]);
+        let high = word(mem, 0x00b4_3ddc);
+        mem.write(e(0xf0), [high; 3]);
+        mem.write(e(0x100), 0u32);
+        mem.write(e(0x10), a);
+        mem.write(e(0x14), b);
+        let count = u32::from(mem.read::<u16>(e(6)));
+        let mut out = e(0x110 + 0x70 * count);
+        let buffer = g(mem, 0x012e_962c);
+        let old: u32 = mem.read(buffer);
+        if old != 0 {
+            go(mem, 0x0068_7010, &[old]);
+            mem.write(buffer, 0u32);
+        }
+        mem.write(g(mem, 0x012e_9634), [0u32; 3]);
+        let made = go(mem, 0x007f_7360, &[enc, oef, size_out]);
+        mem.write(buffer, made);
+        let n = u32::from(mem.read::<u16>(e(6)));
+        let mut blocks = go(mem, 0x0063_9450, &[n, made]);
+        let mut idx = u32::from(mem.read::<u16>(e(4)));
+        let k14000 = konst(mem, 0x00b5_83d0);
+        let half = konst(mem, 0x00b9_2220);
+        let k4096 = konst(mem, 0x00b5_0190);
+        let mut i = 0u32;
+        while i < u32::from(mem.read::<u16>(e(6))) {
+            let blk = e(0x110 + 0x70 * i);
+            let at = |k: u32| blk.wrapping_add(k);
+            mem.write(blk, 1u32);
+            let rec = go(mem, 0x007e_3810, &[oef, 4, idx]);
+            mem.write(at(4), rec);
+            let nv16 = mem.read::<i16>(rec.wrapping_add(0x12));
+            let verts = rec.wrapping_add(mem.read(rec.wrapping_add(8)));
+            let nv = i32::from(nv16);
+            blocks = go(mem, 0x0063_9470, &[i, nv.cast_unsigned(), blocks]);
+            let (mut sx, mut sy, mut sz) = (0u32, 0u32, 0u32);
+            let short = |mem: &M, at: u32| f64::from(mem.read::<i16>(at));
+            for j in 0..nv.max(0).cast_unsigned() {
+                let p = verts.wrapping_add(6 * j);
+                sx = store(add(short(mem, p), load(sx)));
+                sy = store(add(short(mem, p.wrapping_add(2)), load(sy)));
+                sz = store(add(load(sz), short(mem, p.wrapping_add(4))));
+            }
+            let nf = f64::from(nv);
+            let cx = store(div(load(sx), nf));
+            let cy = store(div(load(sy), nf));
+            let cz = store(div(load(sz), nf));
+            mem.write(at(0x10), cx);
+            mem.write(at(0x68), cy);
+            mem.write(at(0x14), cy);
+            mem.write(at(0x18), cz);
+            let bound = |mem: &M, k: u32| load(mem.read(e(k)));
+            for (k, c) in [(0xe0u32, cx), (0xe4, cy), (0xe8, cz)] {
+                if bound(mem, 0xe0) < load(c) {
+                    mem.write(e(k), c);
+                }
+            }
+            for (k, c) in [(0xf0u32, cx), (0xf4, cy), (0xf8, cz)] {
+                if bound(mem, 0xf0) > load(c) {
+                    mem.write(e(k), c);
+                }
+            }
+            let f = g(mem, 0x007e_7ed0);
+            let deg = fcall(mem, f, &[0, 0, cx, cz, at(0x60)]);
+            mem.write(at(0x64), store(deg));
+            let len = load(mem.read(at(0x60)));
+            if bound(mem, 0x100) < len {
+                mem.write(e(0x100), store(len));
+            }
+            let verts = rec.wrapping_add(mem.read(rec.wrapping_add(8)));
+            mem.write(at(8), out);
+            let mut j = 0i32;
+            while j < i32::from(mem.read::<i16>(rec.wrapping_add(0x12))) {
+                let p = verts.wrapping_add(6 * j.cast_unsigned());
+                let (x, y, z) = (
+                    short(mem, p),
+                    short(mem, p.wrapping_add(2)),
+                    short(mem, p.wrapping_add(4)),
+                );
+                mem.write(out, store(sub(x, load(cx))));
+                mem.write(out.wrapping_add(4), store(sub(y, load(cy))));
+                mem.write(out.wrapping_add(8), store(sub(z, load(cz))));
+                mem.write(out.wrapping_add(0xc), 1.0f32.to_bits());
+                mem.write(u, store(add(mul(div(x, k14000), half), half)));
+                mem.write(v, store(add(half, mul(div(z, k14000), half))));
+                let args = [i, 1, j.cast_unsigned(), 0, 0, 0, 0, 0, 0, u, v];
+                go(mem, 0x0063_9500, &args);
+                out = out.wrapping_add(0x10);
+                j += 1;
+            }
+            let normals = rec.wrapping_add(mem.read(rec.wrapping_add(0xc)));
+            mem.write(at(0xc), out);
+            let mut j = 0i32;
+            while j < i32::from(mem.read::<i16>(rec.wrapping_add(0x14))) {
+                let p = normals.wrapping_add(6 * j.cast_unsigned());
+                for k in 0..3u32 {
+                    let n = short(mem, p.wrapping_add(2 * k));
+                    mem.write(out.wrapping_add(4 * k), store(mul(n, k4096)));
+                }
+                mem.write(out.wrapping_add(0xc), 1.0f32.to_bits());
+                out = out.wrapping_add(0x10);
+                j += 1;
+            }
+            let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+            mem.write(at(0x20), [r0; 3]);
+            let spline = g(mem, 0x007e_67f0);
+            let args = [word(mem, 0x00b9_231c), word(mem, 0x00b9_2194)];
+            for k in 0..3u32 {
+                let r = fcall(mem, spline, &args);
+                mem.write(at(0x50 + 4 * k), store(r));
+            }
+            i += 1;
+            idx = idx.wrapping_add(1);
+        }
+        let size: u32 = mem.read(size_out);
+        if blocks > mem.read::<u32>(buffer).wrapping_add(size) {
+            let iob = word(mem, 0x00b0_c350);
+            let stderr = call(mem, iob, &[]).wrapping_add(0x40);
+            let fprintf = word(mem, 0x00b0_c38c);
+            let format = g(mem, 0x00b5_8358);
+            call(mem, fprintf, &[stderr, format, size]);
+        }
+        let f = g(mem, 0x0063_9370);
+        call(mem, f, &[]);
+        mem.write(g(mem, 0x012e_9630), 1u32);
+        0
+    }
+
+    /// `opus_encount4_calc(enc, host, _, eff, scale)` (`0x007f8570`), from
+    /// `opu_encount`: one frame of the "broken screen" encounter blocks
+    /// (`u16 enc+6` of them, 0x70-byte records from `enc+0x110`; byte `+0`
+    /// alive, bit 0 of `+1` falling). Unless `eff`'s byte `+0xb0` bit 0 is
+    /// clear or `host`'s `i16 +0x212` is set, the band between `a` =
+    /// `f32(enc+0xf0 x 1.2)` and `b` = `f32(enc+0xe0 x 1.2)` is narrowed
+    /// by `scale+0x40 x f32(b - a) / 256` (mode `enc+0` 0/1 moves `b` up
+    /// from `a`, 2/3 moves `a` down from `b`), and each alive, resting
+    /// block whose `+0x10` lies in `[a, b]` starts falling: its velocity
+    /// `+0x40` = (∓48 for modes 0/2 and 1/3) + `op_random(16)`, `+0x34` =
+    /// -512 + `op_random(128)`, `+0x38` = `op_random(64)` (through
+    /// `fcall`). Each falling block counts `u16 +2` up, its velocity
+    /// `+0x30..+0x38` gains `+0x40..+0x48` and its offset `+0x20..+0x28`
+    /// the new velocity. Then every block's position: `+0x10`/`+0x18` =
+    /// the sine table at `ftol(+0x64)` (cosine and sine) x `+0x60` x
+    /// `scale+0x3c` / 4096 plus `+0x20`/`+0x28`, `+0x14` = `+0x68 +
+    /// +0x24`; a block whose `+0x10` leaves ±20000 dies. Over 100 alive
+    /// blocks `graphicBrokenScreenStartKeepFrame`, else `0x00639390`; then
+    /// `graphicBrokenScreenUpdateOpacity((n - 60) / 46)` over 60 (else 0)
+    /// and, after a fall this frame, `Sg_Blur` (1 once when `0x012e9630` is
+    /// positive, clearing it; else `n`, or `max(2n - 60, 0)` for 60 or
+    /// fewer). Returns the alive bytes or-ed together: `0x00639360` when
+    /// nonzero, else `Sg_Blur(0)`.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        clippy::many_single_char_names
+    )]
+    pub fn opus_encount4_calc<M: Mem>(
+        mem: &mut M,
+        enc: u32,
+        host: u32,
+        eff: u32,
+        scale: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store, sub};
+        let konst = |mem: &M, a: u32| mem.read::<f64>(g(mem, a));
+        let word = |mem: &M, a: u32| mem.read::<u32>(g(mem, a));
+        let count = |mem: &M| u32::from(mem.read::<u16>(enc.wrapping_add(6)));
+        let block = |i: u32| enc.wrapping_add(0x110 + 0x70 * i);
+        let rnd = g(mem, 0x007e_6700);
+        let mut fell = false;
+        if mem.read::<u8>(eff.wrapping_add(0xb0)) & 1 != 0
+            && mem.read::<i16>(host.wrapping_add(0x212)) == 0
+        {
+            let k12 = konst(mem, 0x00b4_8340);
+            let k256 = konst(mem, 0x00b5_0198);
+            let mut a = store(mul(load(mem.read(enc.wrapping_add(0xf0))), k12));
+            let mut b = store(mul(k12, load(mem.read(enc.wrapping_add(0xe0)))));
+            let diff = load(store(sub(load(b), load(a))));
+            let mode: u32 = mem.read(enc);
+            let c = |mem: &M| load(mem.read(scale.wrapping_add(0x40)));
+            if mode < 2 {
+                b = store(add(mul(mul(c(mem), diff), k256), load(a)));
+            }
+            if mode == 2 || mode == 3 {
+                a = store(sub(load(b), mul(k256, mul(diff, c(mem)))));
+            }
+            let (lo, hi) = (load(a), load(b));
+            let mut i = 0u32;
+            while i < count(mem) {
+                let r = block(i);
+                let at = |k: u32| r.wrapping_add(k);
+                if mem.read::<u8>(r) != 0 {
+                    let flags = mem.read::<u8>(at(1));
+                    let v = load(mem.read(at(0x10)));
+                    if flags & 1 == 0 && lo <= v && v <= hi {
+                        let mode: u32 = mem.read(enc);
+                        if mode <= 3 {
+                            let side = if mode & 1 == 0 {
+                                0x00b5_83e4
+                            } else {
+                                0x00b5_83d8
+                            };
+                            mem.write(at(0x40), word(mem, side));
+                            mem.write(at(1), flags | 1);
+                            let x = fcall(mem, rnd, &[word(mem, 0x00b9_231c)]);
+                            let vx = store(add(x, load(mem.read(at(0x40)))));
+                            mem.write(at(0x40), vx);
+                            mem.write(at(0x34), word(mem, 0x00b5_83e8));
+                            let y = fcall(mem, rnd, &[word(mem, 0x00b5_01bc)]);
+                            let vy = store(add(y, load(mem.read(at(0x34)))));
+                            mem.write(at(0x34), vy);
+                            let z = fcall(mem, rnd, &[word(mem, 0x00b5_83dc)]);
+                            mem.write(at(0x38), store(z));
+                        }
+                    }
+                    if mem.read::<u8>(at(1)) & 1 != 0 {
+                        let n = mem.read::<u16>(at(2)).wrapping_add(1);
+                        mem.write(at(2), n);
+                        fell = true;
+                        for k in 0..3u32 {
+                            let acc = load(mem.read(at(0x40 + 4 * k)));
+                            let vel = store(add(acc, load(mem.read(at(0x30 + 4 * k)))));
+                            mem.write(at(0x30 + 4 * k), vel);
+                            let off = store(add(load(vel), load(mem.read(at(0x20 + 4 * k)))));
+                            mem.write(at(0x20 + 4 * k), off);
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
+        let k4096 = konst(mem, 0x00b5_0190);
+        let (far, near) = (load(word(mem, 0x00b4_80d8)), load(word(mem, 0x00b5_83ec)));
+        let (cos_at, sin_at) = (g(mem, 0x00c4_3bf0), g(mem, 0x00c4_4bf0));
+        let mut i = 0u32;
+        while i < count(mem) {
+            let r = block(i);
+            let at = |k: u32| r.wrapping_add(k);
+            let t = (ftol(mem, load(mem.read(at(0x64)))) & 0x3fff) + 0x400;
+            let q = load(mem.read(scale.wrapping_add(0x3c)));
+            let radius = |mem: &M| load(mem.read(at(0x60)));
+            let c = store(mul(load(mem.read(cos_at.wrapping_add(4 * t))), radius(mem)));
+            mem.write(at(0x10), store(mul(mul(load(c), q), k4096)));
+            let s = load(mem.read(sin_at.wrapping_add(4 * (t & 0xfff))));
+            let s = store(mul(s, radius(mem)));
+            let q = load(mem.read(scale.wrapping_add(0x3c)));
+            mem.write(at(0x18), store(mul(mul(load(s), q), k4096)));
+            let x = store(add(load(mem.read(at(0x20))), load(mem.read(at(0x10)))));
+            mem.write(at(0x10), x);
+            let y = store(add(load(mem.read(at(0x68))), load(mem.read(at(0x24)))));
+            mem.write(at(0x14), y);
+            let z = store(add(load(mem.read(at(0x28))), load(mem.read(at(0x18)))));
+            mem.write(at(0x18), z);
+            let x = load(x);
+            if x > far || x < near {
+                mem.write(r, 0u8);
+            }
+            i += 1;
+        }
+        let mut alive = 0u32;
+        let mut n = 0u32;
+        for i in 0..count(mem) {
+            let b = mem.read::<u8>(block(i));
+            alive |= u32::from(b);
+            if b != 0 {
+                n += 1;
+            }
+        }
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        go(mem, if n > 100 { 0x0063_94a0 } else { 0x0063_9390 }, &[]);
+        let blur_once = g(mem, 0x012e_9630);
+        if n > 60 {
+            let k60 = konst(mem, 0x00b4_a180);
+            let k46 = konst(mem, 0x00b5_83b0);
+            let nf = load(store(f64::from(n)));
+            let o = store(div(sub(nf, k60), k46));
+            go(mem, 0x0063_94e0, &[o]);
+        } else {
+            go(mem, 0x0063_94e0, &[0]);
+        }
+        if fell {
+            if n <= 60 {
+                go(mem, 0x0082_bee0, &[(2 * n).saturating_sub(60)]);
+            } else if mem.read::<i32>(blur_once) > 0 {
+                go(mem, 0x0082_bee0, &[1]);
+                mem.write(blur_once, 0u32);
+            } else {
+                go(mem, 0x0082_bee0, &[n]);
+            }
+        }
+        if alive == 0 {
+            go(mem, 0x0082_bee0, &[0]);
+        } else {
+            go(mem, 0x0063_9360, &[]);
+        }
+        alive
+    }
+
+    /// `opus_camera_limit(host)` (`0x00817590`), from `opu_camera`: while
+    /// `g_OpusCameraLimit` (`i16 0x011a006c`) is set, the battle camera's
+    /// segment from its position (`MsCameraGetPosNow(1)`) to its target
+    /// (`(0)`) is cut by the circle of radius 120 around the map centre
+    /// (`MsGetMapCenter`, x/z; `op_segment_circle_cross`); on a crossing
+    /// the camera position moves to the crossing (at the old height,
+    /// `MsCameraSetRect(host +0x5c, 1, ..)`) and the screen depth
+    /// (`MsCameraGetScrDpt`, through `fcall`) shrinks by `(limit - 0x1000)
+    /// x |crossing - position| / 256` (`MsCameraSetScrDpt`). In op debug
+    /// mode with pad byte `0x0232154b` set, `QuickRecoverMenuReserve(
+    /// 0x80800000, 0x48, 0)`. `local` is the original's 0x50-byte frame:
+    /// `+0` the second crossing, `+0x10` the centre, `+0x20` the target,
+    /// `+0x30` the crossing, `+0x40` the position.
+    pub fn opus_camera_limit<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        let limit = |mem: &M| mem.read::<i16>(g(mem, 0x011a_006c));
+        if limit(mem) == 0 {
+            return;
+        }
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let (cross2, centre, target, cross, pos) = (
+            local,
+            local.wrapping_add(0x10),
+            local.wrapping_add(0x20),
+            local.wrapping_add(0x30),
+            local.wrapping_add(0x40),
+        );
+        go(mem, 0x0078_2ae0, &[centre]);
+        go(mem, 0x007b_d470, &[1, pos]);
+        go(mem, 0x007b_d470, &[0, target]);
+        let get_depth = g(mem, 0x007b_d510);
+        let depth = store(fcall(mem, get_depth, &[]));
+        // fld/fstp of each float argument
+        let word = |mem: &M, a: u32| store(load(mem.read(a)));
+        let radius = word(mem, g(mem, 0x00b5_8cd8));
+        let args = [
+            word(mem, centre),
+            word(mem, centre.wrapping_add(8)),
+            radius,
+            word(mem, pos),
+            word(mem, pos.wrapping_add(8)),
+            word(mem, target),
+            word(mem, target.wrapping_add(4)),
+            cross,
+            cross2,
+        ];
+        if go(mem, 0x007e_8fd0, &args) == 0 {
+            return;
+        }
+        let y = word(mem, pos.wrapping_add(4));
+        mem.write(cross.wrapping_add(4), y);
+        let id: u32 = mem.read(host.wrapping_add(0x5c));
+        let length = g(mem, 0x007e_7fc0);
+        let len = store(fcall(mem, length, &[pos, cross]));
+        let k256: f64 = mem.read(g(mem, 0x00b5_0198));
+        let n = store(f64::from(i32::from(limit(mem)) - 0x1000));
+        let cut = store(mul(mul(load(n), load(len)), k256));
+        go(mem, 0x007b_f940, &[id, 1, cross]);
+        let d = store(sub(load(depth), load(cut)));
+        go(mem, 0x007b_fbd0, &[id, d]);
+        if mem.read::<u8>(g(mem, 0x0232_2790)) != 0 && mem.read::<u8>(g(mem, 0x0232_154b)) != 0 {
+            go(mem, 0x007e_adb0, &[0x8080_0000, 0x48, 0]);
+        }
+    }
+
     /// `opu_tc_load(host, cmd)` (`0x008085a0`) -> the next command: the
     /// texture/CLUT cues of the unit's oef (`host +0x360 + 4 u8 unit
     /// +0x1e`), `n` = `u16 cmd +2`, the cue mask 8 with flag 0x800 (else
@@ -5563,6 +5997,200 @@ pub mod bridge {
     }
 
     // ---- round 35 a ----
+
+    /// `opus_mdc_break_draw(brk, id, _, _, still)` (`0x00805510`), the
+    /// shattered model's pieces (`i32 brk+4` of them, 0xc0 bytes from
+    /// `brk+0x30`) into instance `(0, id)`'s segment-0 buffer (`3n`
+    /// vertices and indices; the original assumes both exist). Scratch
+    /// from `op_spr_alloc(0x1800)`: the matrix at `+0x1440`, two counters
+    /// at `+0x1600`/`+0x1604` started from the emulated `r0` (the second
+    /// counts drawn pieces). Unless `still`, each piece moves (`+0x80` +=
+    /// `+0x84`, then the distance `+0x7c` += `+0x80`; `+0xb8` += `+0xbc`,
+    /// then the drop `+0xb4` += `+0xb8`; the spin `+0x90..+0x98` +=
+    /// `+0xa0..+0xa8`; its life `u16 +0x48` down to 0 with alpha byte
+    /// `+0x5b` = `min(8 life, 0x80)`); the number still
+    /// alive (with `still`: `id`) decides: none sets the break flags `u16
+    /// [brk+0xc]` into `id+0xb0` and skips the pieces. Each piece's
+    /// position `+0x60..+0x68` = direction `+0x70..+0x78` x distance
+    /// `+0x7c` plus the centre `brk+0x10..+0x18` (`y` also `+ +0xb4`); a
+    /// piece at or below the floor `brk+0x20` turns its `+0xb8` around.
+    /// Unless the renderer skips the frame (when the piece pointer does
+    /// not move on, as in the original), `opus_mdc_break_matrix` and,
+    /// with a non-zero alpha, the colour (`rgba +0x58..+0x5b` / 256 on
+    /// three vertices), the triangle `+0..+0x2c` (3 vectors in `local`,
+    /// `w` 1.0, `FFXVu0ApplyMatrix`), its texture coordinates (`+0x30`,
+    /// `+0x34`, `+0x40`, `+0x44`, `+0x50`, `+0x54`) and the indices
+    /// `3k..3k+2` at those same slots. Then `sceGsSyncPath(0, 0)`, the
+    /// unused indices zeroed, the unit matrix, `+0x80` = 0, the
+    /// ±9999999 box, `graphicVFXSetVisible(0, id, 1)`, `graphicVFXUpdate`
+    /// and `op_spr_free`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    pub fn opus_mdc_break_draw<M: Mem>(
+        mem: &mut M,
+        brk: u32,
+        id: u32,
+        still: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let count = |mem: &M| mem.read::<u32>(brk.wrapping_add(4)).cast_signed();
+        let n = mem.read::<u32>(brk.wrapping_add(4));
+        let mut rd = go(mem, 0x0064_53d0, &[0, id]);
+        if rd != 0 && go(mem, 0x0063_fdb0, &[rd, 0, 3 * n, 3 * n]) == 0 {
+            rd = 0;
+        }
+        let spr = go(mem, 0x007e_6a00, &[0x1800]);
+        let base = spr.wrapping_add(0x1400);
+        let r0: [u32; 4] = mem.read(g(mem, 0x00c8_f508));
+        mem.write(base.wrapping_add(0x200), r0);
+        let drawn = base.wrapping_add(0x204);
+        let w = |mem: &M, at: u32| load(mem.read(at));
+        let moving = if still == 0 {
+            let mut alive = 0u32;
+            let mut i = 0i32;
+            while i < count(mem) {
+                let p = brk.wrapping_add(0xb0 + 0xc0 * i.cast_unsigned());
+                let at = |k: i32| p.wrapping_add_signed(k);
+                let life = i32::from(mem.read::<u16>(at(-0x38))) - 1;
+                let v = store(add(w(mem, at(4)), w(mem, at(0))));
+                mem.write(at(0), v);
+                mem.write(at(-4), store(add(load(v), w(mem, at(-4)))));
+                let v = store(add(w(mem, at(0x3c)), w(mem, at(0x38))));
+                mem.write(at(0x38), v);
+                mem.write(at(0x34), store(add(load(v), w(mem, at(0x34)))));
+                for k in [0x10, 0x14, 0x18] {
+                    mem.write(at(k), store(add(w(mem, at(k + 0x10)), w(mem, at(k)))));
+                }
+                let life = if life > 0 {
+                    alive += 1;
+                    life
+                } else {
+                    0
+                };
+                mem.write(at(-0x38), life as u16);
+                mem.write(at(-0x25), (life * 8).min(0x80) as u8);
+                i += 1;
+            }
+            alive
+        } else {
+            id
+        };
+        if moving == 0 {
+            let flags = mem.read::<u16>(mem.read(brk.wrapping_add(0xc)));
+            let at = id.wrapping_add(0xb0);
+            mem.write(at, mem.read::<u16>(at) | flags);
+        } else {
+            let k256: f64 = mem.read(g(mem, 0x00b5_0198));
+            let mat = base.wrapping_add(0x40);
+            let mut piece = brk.wrapping_add(0x30);
+            let mut i = 0i32;
+            while i < count(mem) {
+                let at = |k: u32| piece.wrapping_add(k);
+                let b = |k: u32| brk.wrapping_add(k);
+                let dist = w(mem, at(0x7c));
+                mem.write(
+                    at(0x60),
+                    store(add(mul(w(mem, at(0x70)), dist), w(mem, b(0x10)))),
+                );
+                let y = add(
+                    add(mul(w(mem, at(0x74)), dist), w(mem, b(0x14))),
+                    w(mem, at(0xb4)),
+                );
+                mem.write(at(0x64), store(y));
+                mem.write(
+                    at(0x68),
+                    store(add(mul(w(mem, at(0x78)), dist), w(mem, b(0x18)))),
+                );
+                if w(mem, b(0x20)) <= w(mem, at(0x64)) {
+                    let flip = store(load(mem.read(at(0xb8)))) ^ 0x8000_0000;
+                    mem.write(at(0xb8), flip);
+                }
+                if mem.read::<u32>(g(mem, 0x012f_b7d0)) == 0 {
+                    go(mem, 0x0080_2e20, &[mat, piece]);
+                    let alpha = mem.read::<u8>(at(0x5b));
+                    if alpha != 0 {
+                        let rgba = [0x58u32, 0x59, 0x5a]
+                            .map(|k| store(mul(f64::from(mem.read::<u8>(at(k))), k256)));
+                        let a = store(mul(k256, f64::from(alpha)));
+                        let geo: u32 = mem.read(rd.wrapping_add(0x94));
+                        for j in 0..3u32 {
+                            let k = mem.read::<u32>(drawn);
+                            let col = mem
+                                .read::<u32>(geo.wrapping_add(0x14))
+                                .wrapping_add(16 * (j + 3 * k));
+                            mem.write(col, [rgba[0], rgba[1], rgba[2], a]);
+                        }
+                        for v in 0..3u32 {
+                            go(mem, 0x006e_d370, &[local.wrapping_add(16 * v), at(16 * v)]);
+                        }
+                        for v in 0..3u32 {
+                            let vec = local.wrapping_add(16 * v);
+                            mem.write(vec.wrapping_add(0xc), 1.0f32.to_bits());
+                            go(mem, 0x006e_d2e0, &[vec, mat, vec]);
+                        }
+                        let k = mem.read::<u32>(drawn);
+                        let geo: u32 = mem.read(rd.wrapping_add(0x94));
+                        let pos = mem.read::<u32>(geo.wrapping_add(0xc)).wrapping_add(36 * k);
+                        for v in 0..3u32 {
+                            for c in 0..3u32 {
+                                let x = store(w(mem, local.wrapping_add(16 * v + 4 * c)));
+                                mem.write(pos.wrapping_add(12 * v + 4 * c), x);
+                            }
+                        }
+                        let uv = mem.read::<u32>(geo.wrapping_add(0x18)).wrapping_add(24 * k);
+                        for (j, o) in [0x30u32, 0x34, 0x40, 0x44, 0x50, 0x54]
+                            .into_iter()
+                            .enumerate()
+                        {
+                            let x = store(w(mem, at(o)));
+                            mem.write(uv.wrapping_add(4 * j as u32), x);
+                        }
+                        let idx: u32 = mem.read(geo.wrapping_add(0x1c));
+                        for j in 0..3u16 {
+                            let v = (k as u16).wrapping_mul(3).wrapping_add(j);
+                            mem.write(idx.wrapping_add(2 * u32::from(v)), v);
+                        }
+                        mem.write(drawn, k.wrapping_add(1));
+                    }
+                    let c = mem.read::<u32>(base.wrapping_add(0x200));
+                    mem.write(base.wrapping_add(0x200), c.wrapping_add(1));
+                    piece = piece.wrapping_add(0xc0);
+                }
+                i += 1;
+            }
+        }
+        go(mem, 0x0062_f880, &[0, 0]);
+        let k = mem.read::<u32>(drawn);
+        let geo: u32 = mem.read(rd.wrapping_add(0x94));
+        let idx: u32 = mem.read(geo.wrapping_add(0x1c));
+        let left = mem
+            .read::<u32>(brk.wrapping_add(4))
+            .wrapping_sub(k)
+            .cast_signed();
+        let start = idx.wrapping_add(k.wrapping_mul(6));
+        for b in 0..(6 * left.max(0)).cast_unsigned() {
+            mem.write(start.wrapping_add(b), 0u8);
+        }
+        go(mem, 0x006e_d9a0, &[rd]);
+        mem.write(rd.wrapping_add(0x80), 0u32);
+        let lo_box: u32 = mem.read(g(mem, 0x00b5_1660));
+        let hi_box: u32 = mem.read(g(mem, 0x00b5_1658));
+        mem.write(rd.wrapping_add(0x98), [lo_box; 3]);
+        mem.write(rd.wrapping_add(0xa4), [hi_box; 3]);
+        go(mem, 0x0064_5710, &[0, id, 1]);
+        go(mem, 0x0064_58a0, &[0, id]);
+        go(mem, 0x007e_6a60, &[0x1800]);
+    }
 
     /// `0x00802e20` (`opus_mdc_break_matrix`, ours; `(out, src)`, the
     /// matrix `opus_mdc_break_draw` draws a piece with): the angles `f32

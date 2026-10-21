@@ -100,13 +100,25 @@ pub mod bridge {
         pextlh: bool,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) -> u32 {
+        let base = at(offset(mem, prog, 0), obj);
+        ee_colour_at(mem, base, pextlh, call)
+    }
+
+    /// [`ee_colour`] of the work area at `base` (its `+0xa0` words, read
+    /// through `g_pppColorConShift`).
+    pub(crate) fn ee_colour_at<M: Mem>(
+        mem: &mut M,
+        base: u32,
+        pextlh: bool,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
         let (r0, a, b, shift) = (
             g(mem, EE_R0),
             g(mem, EE_A),
             g(mem, EE_B),
             g(mem, COLOR_SHIFT),
         );
-        let area = at(offset(mem, prog, 0), obj).wrapping_add(mem.read::<u32>(shift));
+        let area = base.wrapping_add(mem.read::<u32>(shift));
         let lo: u32 = mem.read(at(area, 0xa0));
         mem.write(a, lo);
         let hi: u32 = mem.read(at(area, 0xa4));

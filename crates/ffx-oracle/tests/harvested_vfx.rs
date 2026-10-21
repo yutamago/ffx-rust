@@ -131,3 +131,42 @@ harvest_test!(
         });
     }
 );
+// effects (round 40)
+harvest_test!(
+    ppp_run_part_fp_objects,
+    0x0071_7010,
+    args = 1,
+    |m: &mut Oracle, s| {
+        ffx_vfx::part::bridge::ppp_run_part_fp_objects(m, s.arg(0), &mut |m, f, a| {
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        });
+    }
+);
+harvest_test!(
+    ppp_run_part_fp,
+    0x0071_22f0,
+    args = 2,
+    |m: &mut Oracle, s| {
+        ffx_vfx::part::bridge::ppp_run_part_fp(m, s.arg(0), s.arg(1) & 0xff, &mut |m, f, a| {
+            m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+        })
+    }
+);
+harvest_test!(
+    ppp_draw_shape_x0,
+    0x0074_0f60,
+    args = 3,
+    |m: &mut Oracle, s| {
+        // the render request in stack scratch (its +0 and +0xc words are
+        // the original's stale stack)
+        let frame = (m.stack_range().start + 0x200) & !0xf;
+        ffx_vfx::part::bridge::ppp_draw_shape_x0(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            frame,
+            &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        );
+    }
+);
