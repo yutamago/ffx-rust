@@ -22,9 +22,14 @@ capacity; a wrapper around a closure field gets the callee-side checks only.
 CRT intrinsics take their operands on the x87 stack: an St0 shape for
 a two-operand intrinsic (or the reverse) is a mismatch too.
 """
+import bisect
 import re
 import subprocess
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import disasm_cache  # noqa: E402
 
 # helper name -> (most words it passes, file, regex its source must still match)
 HELPERS = {
@@ -58,6 +63,13 @@ TRIG_SLOTS = {
 # Reported to the coordinator (chara round 14) for the owning module.
 INHERITED = {
 }
+
+
+class Deferred:
+    """A word call whose callee-side checks wait for the disassembly."""
+
+    def __init__(self, where, label, conv, count, a):
+        self.where, self.label, self.conv, self.count, self.a = where, label, conv, count, a
 
 
 def balanced(code, start):
@@ -102,6 +114,8 @@ class Exe:
 
     def __init__(self, exe, sizes):
         self.exe, self.sizes, self.cache = exe, sizes, {}
+        self.dis = disasm_cache.for_exe(exe)
+        self.dis.load()
         self.imports = self._imports()
 
     def _imports(self):
@@ -128,10 +142,12 @@ class Exe:
         return names
 
     def lines(self, a, n):
-        out = subprocess.run(["objdump", "-d", "--no-show-raw-insn", "-M", "intel",
-                              f"--start-address={a:#x}", f"--stop-address={a + n:#x}", str(self.exe)],
-                             capture_output=True, text=True).stdout
-        return [l.split(":", 1)[1].strip() for l in out.splitlines() if re.match(r"^\s+[0-9a-f]+:", l)]
+        """Instruction texts of `n` bytes from `a` (tools/disasm_cache.py)."""
+        return list(self.dis.get(a, n).values())
+
+    def prefetch(self, addrs, jobs=None):
+        """Disassembles the functions at `addrs` in parallel (missing ones)."""
+        self.dis.prefetch(((a, self.sizes[a]) for a in addrs if self.sizes.get(a)), jobs)
 
     def intrinsic(self, a):
         """The CRT intrinsic an import thunk at `a` jumps to, or None."""
@@ -216,10 +232,17 @@ def check(repo, exe_path, sizes):
         for m in re.finditer(r"const (\w+): u32 = (0x[0-9a-fA-F_]+);", f.read_text(encoding="utf-8", errors="replace")):
             consts.setdefault(m.group(1), set()).add(int(m.group(2).replace("_", ""), 16))
 
+    fn_starts = {}
+
     def scope(code, at):
         """The enclosing function's text before `at`."""
-        starts = [m.start() for m in re.finditer(r"\bfn \w+", code[:at])]
-        return code[starts[-1]:at] if starts else code[:at]
+        # the last `fn name` match that fits wholly before `at` (matching
+        # in code[:at], recomputed per call, took most of the run)
+        starts = fn_starts.get(code)
+        if starts is None:
+            starts = fn_starts[code] = [m.start() for m in re.finditer(r"\bfn \w+", code)]
+        i = bisect.bisect_right(starts, at - 4)
+        return code[starts[i - 1]:at] if i else code[:at]
 
     def resolve(expr, code, at):
         expr = expr.strip()
@@ -301,15 +324,22 @@ def check(repo, exe_path, sizes):
             problems.append(f"{where}: {label} passes {count} words; system.rs fcall takes {sorted(arm_sets['system_fcall'])}")
         if cap is not None and count > cap:
             problems.append(f"{where}: {label} passes {count} words; its helper passes at most {cap}")
-        reads, pops, forwards = exe.facts(a)
-        stack = count - (2 if conv == "fastcall" else 0)
-        if conv != "cdecl" and pops is not None and pops != 4 * max(stack, 0):
-            problems.append(f"{where}: {label} passes {stack} stack words ({conv}) to 0x{a:08x}, whose ret pops {pops // 4}")
-        elif conv == "cdecl" and pops and pops != 0:
-            problems.append(f"{where}: {label} calls 0x{a:08x} as cdecl, but it pops {pops // 4} words itself")
-        elif conv == "cdecl" and reads is not None and not forwards and stack < reads and a not in INHERITED:
-            problems.append(f"{where}: {label} passes {stack} words to 0x{a:08x}, which reads {reads}")
+        # the callee side needs its machine code: decided at the end, once
+        # every callee is disassembled (in parallel), in this order
+        problems.append(Deferred(where, label, conv, count, a))
         return 1
+
+    def callee_side(d):
+        reads, pops, forwards = exe.facts(d.a)
+        where, label, conv, a = d.where, d.label, d.conv, d.a
+        stack = d.count - (2 if conv == "fastcall" else 0)
+        if conv != "cdecl" and pops is not None and pops != 4 * max(stack, 0):
+            return f"{where}: {label} passes {stack} stack words ({conv}) to 0x{a:08x}, whose ret pops {pops // 4}"
+        if conv == "cdecl" and pops and pops != 0:
+            return f"{where}: {label} calls 0x{a:08x} as cdecl, but it pops {pops // 4} words itself"
+        if conv == "cdecl" and reads is not None and not forwards and stack < reads and a not in INHERITED:
+            return f"{where}: {label} passes {stack} words to 0x{a:08x}, which reads {reads}"
+        return None
 
     def slice_index(parts, slice_params=()):
         return next((i for i, p in enumerate(parts)
@@ -490,4 +520,11 @@ def check(repo, exe_path, sizes):
                 where = f"{f.relative_to(repo)}:{code[:m.start()].count(chr(10)) + 1}"
                 checked += word_call(where, wname, conv, cap, arms_of, count, a)
                 wrapped_sites.append(where)
-    return problems, checked
+    exe.prefetch({d.a for d in problems if isinstance(d, Deferred)})
+    out = []
+    for d in problems:
+        if isinstance(d, Deferred):
+            d = callee_side(d)
+        if d is not None:
+            out.append(d)
+    return out, checked

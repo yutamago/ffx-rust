@@ -84,8 +84,11 @@ every crate depending on them; the `ffx-oracle` tests of the changed crates,
 of the changed test files and of the modules whose hook shims changed, on the
 image alone and on both snapshots side by side (all of them when
 `ffx-oracle/src` or `ffx-bridge` changed); the port checks, the hook build
-and the replays (check-clobber takes about 6 s with its disassembly cache,
-30 s when FFX.exe or objdump changed). Every fourth run, or with `--full`, the oracle tests of every
+and the replays. check-clobber and check-ported share one disassembly cache
+(`tools/disasm_cache.py`, `~/ffx-work/cache/clobber-<key>.pickle`, keyed on
+FFX.exe's hash and the objdump version): check-clobber takes about 6 s warm
+and 30 s when FFX.exe or objdump changed, check-ported about 4 s warm and
+15 s cold (it took 2-3 min with one objdump per shim). Every fourth run, or with `--full`, the oracle tests of every
 dependent crate run too. The game-data tests that read the whole archive run
 separately, now and then.
 
