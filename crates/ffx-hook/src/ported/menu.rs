@@ -1967,6 +1967,21 @@ ported! {
         let list = frame.at();
         tk::menu_status_window_draw(&mut mem(), w, list, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `DrawGearCustomizationMenu(w)`: `MenuKaizou_DrawWeaponTitle`'s `eax`.
+    DrawGearCustomizationMenu @ 0x008d_5f60 => extern "C" fn draw_gear_customization_menu(w: u32) -> u32 {
+        tk::draw_gear_customization_menu(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawLimitPageOverDrive(chr)`: the last call's `eax`.
+    DrawLimitPageOverDrive @ 0x008d_2270 => extern "C" fn draw_limit_page_over_drive(chr: u32) -> u32 {
+        // the text width word (the original uses its argument's slot)
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::draw_limit_page_over_drive(&mut mem(), chr, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawSpoilListPage_008bd280(dx)`.
+    BtlEnd_DrawSpoilListPage_008bd280 @ 0x008b_d280 => extern "C" fn btl_end_draw_spoil_list_page(dx: i32) {
+        tk::btl_end_draw_spoil_list_page(&mut mem(), dx, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

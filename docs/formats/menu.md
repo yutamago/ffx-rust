@@ -85,6 +85,14 @@ jump table at `0x008d5134`:
 
 The page slides in by `MenuMn2_Ease(t, 1) * 0x155 / 4096` pixels.
 
+`DrawLimitPageOverDrive(chr)` (`0x008d2270`) draws the overdrive page: a
+type-0xd plate, two gauge frames and three coloured pieces cut from the
+menu sheet (`TOMkpShapeXYWHUV` / `TOMkpShapeXYWHUVC2`, the uv words given
+as floats: texel coordinates for some pieces, fractions for others), the
+gauge (`TkMn2DrawCrossLimitParam(602, 371, 450, 8, TkMenuGetLimit(chr),
+TkMenuGetLimitMax(chr))`) and, for party members (below 8), the mode's
+name `TkMenuMenu1Mes(TkMn2GetOverDriveId(chr) + 0x1033)` centred on x 1550.
+
 The sub-windows draw with `MenuStatus_WindowDraw_008d2790` (`+0x10`): a
 command page (`TkMenuGetDispCommand(+0x60, +0x58, +0x5c, who, list)`,
 at most 22 commands) for the current member (`+0x64` 0) or aeon,
@@ -318,6 +326,13 @@ rounded to `f32`), `0x008d65f0(w, 389, 327)`, the scroll bar `(955, 319,
 8, 675)` over `u16 +0x30` rows, the plates `(209, 252)` and `(970, 659)`
 (`740 x 60`) with sheet cells 6 at `(364, 264)` and 7 at `(1125, 671)`,
 and the character plate at `(210, 165)` for `MenuKaizou_WeaponByte4(w)`.
+The list window draws with `DrawGearCustomizationMenu` (`0x008d5f60`):
+the same rows (`0x008d5d50` instead of `MenuKaizou_DrawRows`), and for a
+row whose `g_TkMenuItemList` entry names a customisation (byte `+3` not
+`0xff`) the required item from `TkMn2GetKaizou()` (8-byte entries: `u16
++4` item, `u8 +6` count) in `TkMn2ItemRequireWindow(970, 319, item,
+count, 0)`. The weapon title comes from the other window's (`0x0186aa30`)
+row.
 `MenuItem_OpenGearWindow` (`0x008c9330`) opens the item menu's gear list
 over `TkMn2RefreshWeaponShopSell2` (kept at `0x0186a37c`, gear mode off,
 rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
@@ -814,6 +829,17 @@ and, in Asia mode (`FFXGetAsiaMode_007826a0` through the jump
 `0x0086a7f0`), `MsSetSaveConfigEnglish(1)`. `TkMenuCopyLoadedSave(dst,
 buffer)` (`0x008b54a0`) copies the `0x68c0` bytes after a save file's
 `0x40`-byte header and runs `setDefaultPlayerName`.
+
+`BtlEnd_DrawSpoilListPage_008bd280` is the third page `0x008bd940`
+slides (at `-dx`): the gear held, from x `210 + dx`, y 250, rows 66
+apart drawn by `BtlEnd_DrawWeaponPlate_008be0d0` inside the scissor
+`(left - 5, y0, 750, 66 * 6 + 6)`. At rest (`0x0186a190` ==
+`0x0186a194`) it draws rows `top - 1 ..= top + 6`; while scrolling six
+from the old top (fixed 2) and six from the new one shifted by `66 * 6 *
+[0x0186a18c] / 4096` (fixed 1). In mode 0 (`0x0186a19c`) the cursor marks
+row `[0x0186a1a0]` and blinks while a pick is held; in other modes it
+shows only with a pick. With no slide it adds the scroll bar `(955, 250,
+10, 396)` over `[0x0186a188]` rows, 6 shown.
 
 `BtlEnd_DrawCaption_008b9f30` (`0x008b9f30`) draws the battle-end
 caption at the bottom right: with `u16 0x0186a168` 0 the text

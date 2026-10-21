@@ -17184,3 +17184,157 @@ fn menu_round31_ctrl_ability_summon_window2_and_status_window_match_the_original
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round31_gear_customize_limit_page_and_spoil_list_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0031_0004) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008c_1c90u32, 5u8),
+        (0x008f_5f70, 5),
+        (0x008f_8bb0, 5),
+        (0x008a_9860, 0),
+        (0x008c_1390, 4),
+        (0x008d_5d50, 5),
+        (0x008c_0f70, 4),
+        (0x008c_1370, 0),
+        (0x008d_5df0, 3),
+        (0x008e_6cc0, 7),
+        (0x008d_6660, 3),
+        (0x0090_3bb0, 9),
+        (0x0090_3ee0, 11),
+        (0x008a_9950, 1),
+        (0x008a_9930, 1),
+        (0x008d_3690, 6),
+        (0x008c_1bd0, 1),
+        (0x008d_dfc0, 1),
+        (0x0090_5ab0, 6),
+        (0x008f_9230, 4),
+        (0x008b_e0d0, 4),
+        (0x008f_eb00, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let kaizou = seq_stub(&mut t, 0x008c_1b70, log, 0, &[]);
+    let timer = seq_stub(&mut t, 0x008a_9c60, log, 0, &[]);
+    // ToGetBtlEasyFontWidth(text, &w, ..): w from a cell, unless [skip]
+    let (wcell, skip, dummy) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x83, 0x3d]; // cmp dword [skip], 0
+    extra.extend(skip.to_le_bytes());
+    extra.extend([0x00, 0x75, 0x0c]); // jnz over the store
+    extra.extend([0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]); // mov eax, [esp+8]; mov edx, [wcell]
+    extra.extend(wcell.to_le_bytes());
+    extra.extend([0x89, 0x10]);
+    let code = seq_code_of(log, 0x0090_5290, &[0, 2, 3, 4], dummy, &extra);
+    jump_stub(&mut t, 0x0090_5290, &code);
+    let (w0, table, other) = (
+        t.alloc(&[0; 0x100]),
+        t.alloc(&[0; 0x800]),
+        t.alloc(&[0; 0x100]),
+    );
+    t.put(kaizou, table);
+    t.put(t.sym(0x0186_aa30), other);
+    let floats = [
+        0f32,
+        -0.0,
+        1.5,
+        100.0,
+        299.5,
+        1e10,
+        f32::from_bits(0x7fc0_0000),
+    ];
+    for round in 0..3000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        match round % 3 {
+            0 => {
+                t.scramble_at(w0, 0x100);
+                t.scramble_at(table, 0x800);
+                t.scramble_at(other, 0x100);
+                t.scramble(0x0159_7770, 0x100);
+                let row = t.rng.pick(&[0i16, 1, 5, 0x3f, -1]);
+                t.put(w0 + 0x48, row);
+                let v = t.rng.pick(&[0xffu8, 0, 3, 0x80]);
+                #[allow(clippy::cast_sign_loss)]
+                let at = t.sym(0x0159_7773).wrapping_add((i32::from(row) * 4) as u32);
+                t.put(at, v);
+                let a = t.rng.pick(&[0u16, 1, 5, 0x8000]);
+                t.put(w0 + 0x32, a);
+                let b = t.rng.pick(&[a, a, 2, 0xffff, a ^ 0x100]);
+                t.put(w0 + 0x34, b);
+                let v = t.rng.pick(&[0u16, 1, 0x1000, 0x7fff, 0x8000, 0xfff0]);
+                t.put(w0 + 0x46, v);
+                t.twin("DrawGearCustomizationMenu", 0x008d_5f60, &[w0], U32, |o| {
+                    w(tk::draw_gear_customization_menu(
+                        o,
+                        w0,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                });
+            }
+            1 => {
+                let v = t.rng.pick(&floats);
+                t.put(wcell, v.to_bits());
+                let v = t.rng.pick(&[0u32, 0, 1]);
+                t.put(skip, v);
+                let chr = t.rng.pick(&[0u32, 1, 7, 8, 9, 0xffff_ffff, 0x8000_0000]);
+                t.twin("DrawLimitPageOverDrive", 0x008d_2270, &[chr], U32, |o| {
+                    w(tk::draw_limit_page_over_drive(
+                        o,
+                        chr,
+                        local,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                });
+            }
+            _ => {
+                t.scramble(0x0186_a188, 0x24);
+                let a = t.rng.pick(&[0u32, 1, 5, 0x7fff_ffff]);
+                t.put(t.sym(0x0186_a190), a);
+                let b = t.rng.pick(&[a, a, 2, 0xffff_ffff, a ^ 0x100]);
+                t.put(t.sym(0x0186_a194), b);
+                let v = t.rng.pick(&[0u32, 0, 1, 2, 0x100]);
+                t.put(t.sym(0x0186_a19c), v);
+                let v = t.rng.pick(&[0u32, 0, 1, 0x100]);
+                t.put(t.sym(0x0186_a1a8), v);
+                let v = t.rng.pick(&[0i32, 1, 5, -1, 0x0100_0001]);
+                t.put(t.sym(0x0186_a1a0), v);
+                let v = t.rng.pick(&[
+                    0i32,
+                    1,
+                    0x1000,
+                    -0x800,
+                    0x7fff_ffff,
+                    0x0100_0001,
+                    0x0123_4567,
+                ]);
+                t.put(t.sym(0x0186_a18c), v);
+                let v = t.rng.pick(&[0i32, 1, 2, 3, -1, -2, -3]);
+                t.put(timer, v);
+                let dx = t
+                    .rng
+                    .pick(&[0i32, 0, 1, -1, 100, -300, 0x0300_0001, i32::MIN]);
+                t.twin(
+                    "BtlEnd_DrawSpoilListPage_008bd280",
+                    0x008b_d280,
+                    &[dx.cast_unsigned()],
+                    VOID,
+                    |o| {
+                        tk::btl_end_draw_spoil_list_page(o, dx, &mut ui_remap, &mut callback);
+                        0
+                    },
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
