@@ -18,6 +18,7 @@
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
+. tools/timing/timing.sh && timing_start run-all.sh "$@"  # ~/ffx-work/timing (docs/workflow.md)
 export FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
 temp_win="$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -d '\r')"
 temp_win="${temp_win%\\}"

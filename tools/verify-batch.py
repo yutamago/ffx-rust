@@ -27,6 +27,9 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import progress  # noqa: E402
+import timing_log  # noqa: E402
+
+timing_log.install()
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 GAME = pathlib.Path(os.environ.get("FFX_GAME_DIR", pathlib.Path.home() / "steam-games/FFX-X2-HD"))

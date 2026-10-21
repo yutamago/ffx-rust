@@ -3057,6 +3057,80 @@ pub mod bridge {
         who
     }
 
+    /// `MesSetChrTargetPosToLimitSparePosy(i)` (`0x007932b0`): for actor
+    /// `i & 0xff` with a character, its ground (`MsGetChrGround`) less the
+    /// y of its optional position `(i8) +0xdf9` (`Ch_OptposGet` into
+    /// `local`, 16 bytes, the original's frame), `f32`, into its
+    /// [`CHR_EXTRA`] slot's `+8` ([`ms_set_chr_extra_slot`]). `eax`: 0
+    /// for no actor, the actor without a character, else the
+    /// [`CHR_EXTRA`] pointer.
+    pub fn mes_set_chr_target_pos_to_limit_spare_posy(
+        mem: &mut impl Mem,
+        i: u32,
+        local: u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, store, sub};
+        let i = i & 0xff;
+        if crate::actor::bridge::ms_btl_chr_num_check(i) == 0 {
+            return 0;
+        }
+        let actor = crate::actor::bridge::ms_get_chr(mem, i);
+        let chr: u32 = mem.read(actor);
+        if chr == 0 {
+            return actor;
+        }
+        let opt = i32::from(mem.read::<i8>(actor.wrapping_add(0xdf9)));
+        ffx_chara::attach::bridge::ch_optpos_get(mem, chr, opt.cast_unsigned(), local);
+        let ground = crate::body::bridge::ms_get_chr_ground(mem, i);
+        let y: u32 = mem.read(local.wrapping_add(4));
+        let spare = store(sub(load(ground.to_bits()), load(y)));
+        let slot = ms_set_chr_extra_slot(mem, i);
+        let extra = CHR_EXTRA.get(mem);
+        mem.write(
+            extra.wrapping_add(slot.wrapping_mul(0xc)).wrapping_add(8),
+            spare,
+        );
+        extra
+    }
+
+    /// `Mon_GetName(dst, id)` (`0x00784260`): monster `id`'s name from
+    /// the kernel monster texts (read first, [`read_btl_monster_name`]):
+    /// table 1 below 0x65, 2 up to 0xb4, else 3 (`ffx_kernel`'s
+    /// `excel_data`: the record's first `u16` an offset into its
+    /// strings), into `dst` cleared for 0x40 bytes (`memset`, then
+    /// `memcpy` of its `strlen`, unbounded). 1, or 0 without the table.
+    pub fn mon_get_name<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        dst: u32,
+        id: u32,
+    ) -> u32 {
+        use crate::read::bridge::MONSTER_TEXTS;
+        read_btl_monster_name(mem, call);
+        let table = if id.cast_signed() < 0x65 {
+            MONSTER_TEXTS[0]
+        } else if id.wrapping_sub(0x65) <= 0x4f {
+            MONSTER_TEXTS[1]
+        } else {
+            MONSTER_TEXTS[2]
+        };
+        let table: u32 = mem.read(mem.rebase(table));
+        if table == 0 {
+            return 0;
+        }
+        let (record, strings) = ffx_kernel::bridge::excel_data(mem, id.cast_signed(), table);
+        let name = strings.wrapping_add(u32::from(mem.read::<u16>(record)));
+        mem.write_bytes(dst, &[0; 0x40]);
+        let mut n = 0u32;
+        while mem.read::<u8>(name.wrapping_add(n)) != 0 {
+            n += 1;
+        }
+        let mut bytes = vec![0; n as usize];
+        mem.read_bytes(name, &mut bytes);
+        mem.write_bytes(dst, &bytes);
+        1
+    }
+
     /// `MsSetChrExtraSlot_00796bb0(i)` (`0x00796bb0`, name ours): actor
     /// (u8)`i`'s character's slot in [`CHR_EXTRA`] (3 entries of 0xc
     /// bytes: in use, character): the one holding it, else the first free
@@ -3119,6 +3193,154 @@ pub mod bridge {
             mem.write(local.wrapping_add(0x10), v);
             call(mem, f, &[k + 0x1c, local, local.wrapping_add(0x10)]);
         }
+    }
+
+    /// [`ms_get_target_sort_list`]'s frame (the original's `ebp - 0x38`
+    /// on): the target count, the target's position, the party's and the
+    /// monsters' middles (`MsGetChrInfo` kind 1), 16 bytes each.
+    pub const SORT_FRAME: u32 = 0x34;
+
+    /// `MsGetTargetSortList(i, &n, flip)` (`0x007b72c0`): actor `i`'s
+    /// (low byte; null and `n` 0 without one) target list
+    /// ([`crate::cue::bridge::ms_get_target_list`], its count in `local`)
+    /// with each target's side of the line from the party's middle to the
+    /// monsters' ([`ms_line_side_dist`]`(flip, monsters, party,
+    /// position)`, `MsGetChr(t) + 0xf68`), then sorted by it (selection:
+    /// the smallest first, the first of equals; a NaN never moves, `fld`/
+    /// `fstp`). `n` (when not null) gets the count. The middles come from
+    /// `info` (`MsGetChrInfo(1, MsGetChrBit(i, -14 or -15, 0, 1), 0,
+    /// out)`); the vectors live in `local` ([`SORT_FRAME`] bytes, the
+    /// original's frame: what the callees leave unwritten is read).
+    pub fn ms_get_target_sort_list<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        info: &mut dyn FnMut(&mut M, [u32; 4]) -> u32,
+        [i, out, flip]: [u32; 3],
+        local: u32,
+    ) -> u32 {
+        use crate::actor::bridge::{ms_btl_chr_num_check, ms_get_chr, ms_get_chr_bit};
+        let i = i & 0xff;
+        let (pos, party, monsters) = (local + 4, local + 0x14, local + 0x24);
+        let mut list = 0;
+        let mut count = 0u32;
+        if ms_btl_chr_num_check(i) != 0 {
+            list = crate::cue::bridge::ms_get_target_list(mem, i, local);
+            for (selector, at) in [(-14i32, party), (-15, monsters)] {
+                let bits = ms_get_chr_bit(mem, i, selector.cast_unsigned(), 0, 1);
+                info(mem, [1, bits, 0, at]);
+            }
+            let mut at = 0;
+            while at < mem.read::<i32>(local) {
+                let t = u32::from(mem.read::<u8>(list.wrapping_add(at.cast_unsigned())));
+                let actor = ms_get_chr(mem, t);
+                crate::pos::bridge::ms_get_chr_pos(mem, trig, t, pos);
+                let side = ms_line_side_dist(mem, flip, monsters, party, pos);
+                mem.write(actor.wrapping_add(0xf68), side);
+                at += 1;
+            }
+            count = mem.read(local);
+            sort_by_side(mem, list, local);
+        }
+        if out != 0 {
+            mem.write(out, count);
+        }
+        list
+    }
+
+    /// [`ms_get_target_sort_list`]'s sort of the `count` (at `local`)
+    /// targets of `list` by `+0xf68`.
+    fn sort_by_side(mem: &mut impl Mem, list: u32, local: u32) {
+        fn side(mem: &impl Mem, list: u32, at: i32) -> f32 {
+            let t = u32::from(mem.read::<u8>(list.wrapping_add(at.cast_unsigned())));
+            let actor = crate::actor::bridge::ms_get_chr(mem, t);
+            mem.read(actor.wrapping_add(0xf68))
+        }
+        let end = mem.read::<i32>(local).wrapping_sub(1);
+        let mut first = 0;
+        while first < end {
+            let (mut best_at, mut best) = (-1i32, 0f32);
+            let mut at = first;
+            while at < mem.read::<i32>(local) {
+                let v = side(mem, list, at);
+                if best_at < 0 || f64::from(best) > f64::from(v) {
+                    best = ffx_bridge::x87::round_trip(v);
+                    best_at = at;
+                }
+                at += 1;
+            }
+            if first != best_at {
+                let here = list.wrapping_add(first.cast_unsigned());
+                let there = list.wrapping_add(best_at.cast_unsigned());
+                let (u, v): (u8, u8) = (mem.read(here), mem.read(there));
+                mem.write(there, u);
+                mem.write(here, v);
+            }
+            first += 1;
+        }
+    }
+
+    /// `MsGetChrLinkSet_007b7440(i, set)` (`0x007b7440`, name ours): `set`
+    /// with actor `i` (bit `i & 31`) and, unless it was in already, every
+    /// actor linked to it: the one it stands on (`+0x43f`, 0xff none) and,
+    /// when it carries some (`+0x440`), those of actors 0-30 standing on
+    /// it, each with theirs (recursive).
+    pub fn ms_get_chr_link_set(mem: &impl Mem, i: u32, set: u32) -> u32 {
+        let bit = 1u32 << (i & 31);
+        if set & bit != 0 {
+            return set;
+        }
+        let a = crate::actor::bridge::ms_get_chr(mem, i);
+        let mut set = set | bit;
+        let under: u8 = mem.read(a.wrapping_add(0x43f));
+        if under != 0xff {
+            set = ms_get_chr_link_set(mem, u32::from(under), set);
+        }
+        if mem.read::<u8>(a.wrapping_add(0x440)) != 0 {
+            for j in 0..0x1f {
+                let b = crate::actor::bridge::ms_get_chr(mem, j);
+                if u32::from(mem.read::<u8>(b.wrapping_add(0x43f))) == i {
+                    set = ms_get_chr_link_set(mem, j, set);
+                }
+            }
+        }
+        set
+    }
+
+    /// `MsGetTargetLinkList(i, &n)` (`0x007b6fb0`): actor `i`'s (low
+    /// byte) target list ([`crate::cue::bridge::ms_get_target_list`],
+    /// its count in `local`, the original's frame word) copied byte by
+    /// byte to `+0xd60` (31 bytes), then the actors linked to the targets
+    /// ([`ms_get_chr_link_set`]) that are no targets appended after the
+    /// count, by index. `n` (when not null) gets the new count; returns
+    /// the list (null, `n` 0, without the actor).
+    pub fn ms_get_target_link_list(mem: &mut impl Mem, i: u32, out: u32, local: u32) -> u32 {
+        let i = i & 0xff;
+        let (mut dst, mut n) = (0u32, 0u32);
+        mem.write(local, 0u32);
+        if crate::actor::bridge::ms_btl_chr_num_check(i) != 0 {
+            let src = crate::cue::bridge::ms_get_target_list(mem, i, local);
+            dst = crate::actor::bridge::ms_get_chr(mem, i).wrapping_add(0xd60);
+            let (mut targets, mut linked) = (0u32, 0u32);
+            for k in 0..0x1f {
+                let t: u8 = mem.read(src.wrapping_add(k));
+                if t != 0xff {
+                    targets |= 1 << (t & 31);
+                    linked = ms_get_chr_link_set(mem, u32::from(t), linked);
+                }
+                mem.write(dst.wrapping_add(k), t);
+            }
+            n = mem.read(local);
+            for c in 0..0x1f {
+                if targets >> c & 1 == 0 && linked >> c & 1 != 0 {
+                    mem.write(dst.wrapping_add(n), u8::try_from(c).unwrap_or(0));
+                    n = n.wrapping_add(1);
+                }
+            }
+        }
+        if out != 0 {
+            mem.write(out, n);
+        }
+        dst
     }
 
     /// `MsLineSideDist_007b6f10(flip, a, b, c)` (`0x007b6f10`, name ours;
@@ -3204,6 +3426,48 @@ pub mod bridge {
             }
         }
         out
+    }
+
+    /// `MsSearchScriptTarget_007a8f60(i, id, selector, kind, _, mode)`
+    /// (`0x007a8f60`, name ours; the battle script natives 0x70f9 and
+    /// 0x70fb): actor `i`'s script targets (`+0xdc0`,
+    /// [`ms_set_chr_script_targets`]) become command `id`'s choice
+    /// ([`ms_get_same_target`]) between `selector`'s actors
+    /// (`MsGetChrBit(i, selector, 0, 1)`) and those of them with property
+    /// `kind` by `mode` (`MsActTargetSearch(i, selector, kind, _, 4, mode,
+    /// 0, &pick)`; the fifth word is never used). The one it picked
+    /// (`pick`, at `local`, the original's frame word; 0xff for none).
+    pub fn ms_search_script_target<M: Mem>(
+        mem: &mut M,
+        trig: &dyn Fn(crate::pos::bridge::Trig, u32) -> u32,
+        [i, id, selector, kind, mode]: [u32; 5],
+        local: u32,
+    ) -> u32 {
+        let set = crate::actor::bridge::ms_get_chr_bit(mem, i, selector, 0, 1);
+        let found = crate::stat::bridge::ms_act_target_search(
+            mem, trig, i, selector, kind, 4, mode, 0, local,
+        );
+        let targets = ms_get_same_target(mem, i, set, found, id);
+        ms_set_chr_script_targets(mem, i, targets);
+        mem.read(local)
+    }
+
+    /// `MsSetCommandScriptTarget_007a8b40(i, id, flags)` (`0x007a8b40`,
+    /// name ours; the battle script natives 0x70f4 and 0x70fb): actor
+    /// `i`'s script targets (`+0xdc0`) become command `id`'s
+    /// ([`ms_get_command_target2`]); they are returned while `i` can use
+    /// the command (`MsCheckUseCommand(i, MsGetComData(id, 0), 0)` not
+    /// negative), else 0.
+    pub fn ms_set_command_script_target(mem: &mut impl Mem, i: u32, id: u32, flags: u32) -> u32 {
+        let a = crate::actor::bridge::ms_get_chr(mem, i);
+        let targets = ms_get_command_target2(mem, i, id, flags);
+        mem.write(a.wrapping_add(0xdc0), targets);
+        let c = crate::stat::bridge::ms_get_com_data(mem, id, 0);
+        if crate::command::bridge::ms_check_use_command(mem, i, c, 0) < 0 {
+            0
+        } else {
+            targets
+        }
     }
 
     /// `MsActReCommand(i)` (`0x007acc90`): with an action running

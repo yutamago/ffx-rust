@@ -10,6 +10,7 @@ use ffx_battle::chr_damage::bridge as chrdmg;
 use ffx_battle::damage_end::bridge as dmgend;
 use ffx_battle::death::bridge as death;
 use ffx_battle::effect::bridge as effect;
+use ffx_battle::effect_signal::bridge as esig;
 use ffx_battle::et_effect::bridge as eteff;
 use ffx_battle::exchange::bridge as exchange;
 use ffx_battle::exe::bridge as exe;
@@ -29,6 +30,7 @@ use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::screen::bridge as screen;
 use ffx_battle::shake::bridge as shake;
+use ffx_battle::sound::bridge as sound;
 use ffx_battle::special::bridge as special;
 use ffx_battle::status::bridge as status;
 use ffx_battle::view::bridge as view;
@@ -5144,5 +5146,100 @@ ported! {
     MsMenuLimitSet_007b0470 @ 0x007b_0470 => extern "C" fn ms_menu_limit_start(chr: u32, count: u32, x: u32, y: u32) -> u32 {
         let mut frame = super::StackFrame::<{ limit::LIMIT_SCRATCH_WORDS as usize }>::new();
         limit::ms_menu_limit_start(&mut mem(), &mut call_ptr, chr, count, x, y, frame.at())
+    }
+    /// `MsEffectSignal_007b74d0(i, signal, _)`.
+    MsEffectSignal_007b74d0 @ 0x007b_74d0 => extern "C" fn ms_effect_signal(i: u32, signal: u32) -> u32 {
+        esig::ms_effect_signal(&mut mem(), &mut call_ptr, i, signal)
+    }
+    /// `MsEffectSignalDamage_007b7680(i, actor, signal)`: the damage
+    /// result's three words in this call's frame.
+    MsEffectSignalDamage_007b7680 @ 0x007b_7680 => extern "C" fn ms_effect_signal_damage(i: u32, actor: u32, signal: u32) {
+        let mut local = super::StackFrame::<3>::new();
+        let at = local.at();
+        esig::ms_effect_signal_damage(&mut mem(), &mut call_ptr, i, actor, signal, at);
+    }
+    /// `MsEffectChrMotionIn(i)`: the escape position in this call's frame.
+    MsEffectChrMotionIn @ 0x007b_7d70 => extern "C" fn ms_effect_chr_motion_in(i: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        esig::ms_effect_chr_motion_in(&mut mem(), &mut call_ptr, i, at)
+    }
+    /// `MsEffectMagicMotion(w)`.
+    MsEffectMagicMotion @ 0x0078_7c30 => extern "C" fn ms_effect_magic_motion(w: u32) -> u32 {
+        esig::ms_effect_magic_motion(&mut mem(), &mut call_ptr, w)
+    }
+    /// `MsSEPtransRegist(actor, data, size, kind)`.
+    MsSEPtransRegist @ 0x007a_06b0 => extern "C" fn ms_sep_trans_regist(actor: u32, data: u32, size: u32, kind: u32) -> u32 {
+        sound::ms_sep_trans_regist(&mut mem(), &mut call_ptr, actor, data, size, kind)
+    }
+    /// `MsRegistSEdata(actor, sep)`.
+    MsRegistSEdata @ 0x007a_01b0 => extern "C" fn ms_regist_se_data(actor: u32, sep: u32) -> i32 {
+        sound::ms_regist_se_data(&mut mem(), &mut call_ptr, actor, sep)
+    }
+    /// `MsSetVoice(i, line, flags, actor, out)`.
+    MsSetVoice @ 0x007a_0720 => extern "C" fn ms_set_voice(i: u32, line: u32, flags: u32, actor: u32, out: u32) -> u32 {
+        sound::ms_set_voice(&mut mem(), &mut call_ptr, i, line, [flags, actor, out])
+    }
+    /// `MsSoundStreamPlay(speaker, line)`.
+    MsSoundStreamPlay @ 0x007a_0820 => extern "C" fn ms_sound_stream_play(speaker: i32, line: u32) -> i32 {
+        sound::ms_sound_stream_play(&mut mem(), &mut call_ptr, speaker, line)
+    }
+    /// `MsMoveSpline(spline, i, frames, speed, byte)`.
+    MsMoveSpline @ 0x007a_b010 => extern "C" fn ms_move_spline(spline: u32, i: u32, frames: u32, speed: u32, byte: u32) {
+        predict::ms_move_spline(&mut mem(), spline, i, frames, speed, byte);
+    }
+    /// `MsSplineRegist(cam, which)`.
+    MsSplineRegist @ 0x007b_aac0 => extern "C" fn ms_spline_regist(cam: u32, which: u32) {
+        camnat::ms_spline_regist(&mut mem(), cam, which);
+    }
+    /// `MsSearchScriptTarget_007a8f60(i, id, selector, kind, _, mode)`: the
+    /// pick in this call's frame.
+    MsSearchScriptTarget_007a8f60 @ 0x007a_8f60 => extern "C" fn ms_search_script_target(i: u32, id: u32, selector: u32, kind: u32, _unused: u32, mode: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        minor::ms_search_script_target(&mut mem(), &crt_trig, [i, id, selector, kind, mode], at)
+    }
+    /// `MsSetCommandScriptTarget_007a8b40(i, id, flags)`.
+    MsSetCommandScriptTarget_007a8b40 @ 0x007a_8b40 => extern "C" fn ms_set_command_script_target(i: u32, id: u32, flags: u32) -> u32 {
+        minor::ms_set_command_script_target(&mut mem(), i, id, flags)
+    }
+    /// `MsGetTargetSortList(i, &n, flip)`: the count and vectors in this
+    /// call's frame.
+    MsGetTargetSortList @ 0x007b_72c0 => extern "C" fn ms_get_target_sort_list(i: u32, out: u32, flip: u32) -> u32 {
+        let mut local = super::StackFrame::<{ (minor::SORT_FRAME / 4) as usize }>::new();
+        let at = local.at();
+        let mut info = |m: &mut _, a: [u32; 4]| {
+            target::ms_get_chr_info(&mut target::Dm::new(m), &host(), a[0], a[1], a[2], a[3], None)
+        };
+        minor::ms_get_target_sort_list(&mut mem(), &crt_trig, &mut info, [i, out, flip], at)
+    }
+    /// `MsGetChrLinkSet_007b7440(i, set)`.
+    MsGetChrLinkSet_007b7440 @ 0x007b_7440 => extern "C" fn ms_get_chr_link_set(i: u32, set: u32) -> u32 {
+        minor::ms_get_chr_link_set(&mem(), i, set)
+    }
+    /// `MsGetTargetLinkList(i, &n)`: the count in this call's frame.
+    MsGetTargetLinkList @ 0x007b_6fb0 => extern "C" fn ms_get_target_link_list(i: u32, out: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        minor::ms_get_target_link_list(&mut mem(), i, out, at)
+    }
+    /// `MesSetChrTargetPosToLimitSparePosy(i)`: the optional position in
+    /// this call's frame.
+    MesSetChrTargetPosToLimitSparePosy @ 0x0079_32b0 => extern "C" fn mes_set_chr_target_pos_to_limit_spare_posy(i: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        minor::mes_set_chr_target_pos_to_limit_spare_posy(&mut mem(), i, at)
+    }
+    /// `Mon_GetName(dst, id)`.
+    Mon_GetName @ 0x0078_4260 => extern "C" fn mon_get_name(dst: u32, id: u32) -> u32 {
+        minor::mon_get_name(&mut mem(), &mut call_ptr, dst, id)
+    }
+    /// `MsEtEffectRead()`.
+    MsEtEffectRead @ 0x0079_e6a0 => extern "C" fn ms_et_effect_read() -> u32 {
+        read::ms_et_effect_read(&mut mem(), &mut call_ptr)
+    }
+    /// `MsRegMotionRead()`.
+    MsRegMotionRead @ 0x0079_ccf0 => extern "C" fn ms_reg_motion_read() -> i32 {
+        read::ms_reg_motion_read(&mut mem(), &mut call_ptr)
     }
 }

@@ -131,6 +131,9 @@ thread_local! {
     static DIVIDE_RNG: std::cell::Cell<u32> = const { std::cell::Cell::new(0x28d1_0001) };
     /// 0x20 bytes in both oracles for a script signal block (cleared after).
     static BLOCK: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    /// 0x80 bytes in both oracles for the target lists' frame words and
+    /// count (round 32).
+    static LISTS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     /// The battle snapshot's character pointers, before the actors are
     /// randomized (`MsAttachWeapon` binds to their real models).
     static LIVE_CHRS: std::cell::RefCell<Vec<u32>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -6477,6 +6480,8 @@ part!(part_read_set_scene, "read_set_scene", 40);
 part!(part_read_monster, "read_monster", 40);
 part!(part_target_dist, "target_dist", 150);
 part!(part_et_effects, "et_effects", 200);
+part!(part_effect_signals, "effect_signals", 200);
+part!(part_cd_reads, "cd_reads", 100);
 part!(part_teardown, "teardown", 100);
 
 fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, sel: &Sel) {
@@ -6515,6 +6520,8 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
     SCRATCH.with(|c| c.set(s));
     let block = scratch(a, b, 0x20);
     BLOCK.with(|c| c.set(block));
+    let lists = scratch(a, b, 0x80);
+    LISTS.with(|c| c.set(lists));
     let rec = scratch(a, b, 0x80);
     for o in [&mut *a, &mut *b] {
         script_stubs(o, rec);
@@ -6711,6 +6718,15 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
     let mut r31 = Xorshift(0x31e5_0001 ^ u32::from(synthetic));
     // the op_et_eff wrappers (round 31)
     let mut et_rng = Xorshift(0x31e5_0101 ^ u32::from(synthetic));
+    // the effect signals and motions (round 32): their frame words
+    let mut sig_rng = Xorshift(0x32e5_0001 ^ u32::from(synthetic));
+    let sig_local = scratch(a, b, 0x10);
+    let sig_rec = scratch(a, b, 0x100);
+    // the effect and motion reads (round 32): stub records, the CD
+    // object and its methods' records, the effect file's block
+    let mut cd_rng = Xorshift(0x32e5_0101 ^ u32::from(synthetic));
+    let cd_rec = scratch(a, b, 0x400);
+    let cd_block = scratch(a, b, 0x5_1000);
     for o in [&mut *a, &mut *b] {
         logging_stub(
             o,
@@ -6878,6 +6894,14 @@ fn check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool, se
         if sel.on("et_effects") {
             for _ in 0..4 {
                 et_effects(a, b, &mut et_rng, rec);
+            }
+        }
+        if sel.on("cd_reads") {
+            cd_reads(a, b, &mut cd_rng, [sig_rec, cd_rec, cd_block]);
+        }
+        if sel.on("effect_signals") {
+            for _ in 0..4 {
+                effect_signals(a, b, &mut sig_rng, rec, [sig_local, sig_rec]);
             }
         }
     }
@@ -7283,6 +7307,23 @@ fn ball_splines(
         });
         local_words(a, b);
         same(&format!("MsMoveSplineRegist {args:x?}"), a, b);
+        // MsMoveSpline (round 32) on the same spline and actor: speeds now
+        // and then held (+0x41b); the actor's move (`+0x400..+0x4a0`) and
+        // the spline's first word put back after (a spline move, kind 7,
+        // with any frame count is no state the later steps take)
+        let p = w.actor(i);
+        let moved = a.read(p + 0x400, 0xa0).unwrap();
+        let data = ffx_battle::target::bridge::MOVE_SPLINES.ptr(b).addr + 0x210 * k;
+        let first = a.read(data, 4).unwrap();
+        poke(a, b, p + 0x41b, &[u8::from(rng.below(3) == 0)]);
+        let args = [k, i, rng.next(), float(rng), rng.next()];
+        twin("MsMoveSpline", a, b, 0x007a_b010, &args, 0, |m| {
+            pr::ms_move_spline(m, k, i, args[2], args[3], args[4]);
+            0
+        });
+        same(&format!("MsMoveSpline {args:x?}"), a, b);
+        poke(a, b, p + 0x400, &moved);
+        poke(a, b, data, &first);
     }
     // MsSetBallSpline: thrower i, catcher +0x14, the ball state +0x420
     let i = rng.below(ACTORS);
@@ -7494,6 +7535,116 @@ fn target_dist(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, f:
     });
     local_words(a, b);
     same(&format!("MsSetMove {args:x?}"), a, b);
+    target_lists(a, b, rng, w, i);
+}
+
+/// The target lists (round 32): who stands on whom (`+0x43f`, mostly
+/// nobody; `+0x440` carries some) for `MsGetChrLinkSet_007b7440` and
+/// `MsGetTargetLinkList`, then `MsGetTargetSortList` (its `MsGetChrInfo`
+/// the Rust with the original's `edi` and `ebx`); the links put back
+/// after. The ports' frame words (`local`) start as the original's stack
+/// (zeroed) and are dropped after.
+fn target_lists(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, i: u32) {
+    use ffx_battle::minor::bridge as mi;
+    let h = host();
+    let kept: Vec<Vec<u8>> = (0..ACTORS)
+        .map(|k| a.read(w.actor(k) + 0x43f, 2).unwrap())
+        .collect();
+    for k in 0..ACTORS {
+        // (now and then a record index past the actors, for the links'
+        // whole-byte compare)
+        let under = match rng.below(6) {
+            0 | 1 => u8::try_from(rng.below(ACTORS + 2)).unwrap(),
+            2 => u8::try_from(0x20 + rng.below(0x20)).unwrap(),
+            _ => 0xff,
+        };
+        poke(
+            a,
+            b,
+            w.actor(k) + 0x43f,
+            &[under, u8::from(rng.below(2) == 0)],
+        );
+    }
+    // actor i's targets (`+0xdc0`, the list without a running command)
+    let bits = rng.next() & ((1u32 << ACTORS) - 1);
+    poke(a, b, w.actor(i % ACTORS) + 0xdc0, &bits.to_le_bytes());
+    if rng.below(4) != 0 {
+        // (no running command: its cue entry's targets would win)
+        poke(a, b, w.actor(i % ACTORS) + 0xde5, &[0xff]);
+    }
+    let local = LISTS.with(std::cell::Cell::get);
+    let out = local + 0x40;
+    let pick = [0, out][rng.below(4).min(1) as usize];
+    let set = [0, rng.next(), 1 << rng.below(32)][rng.below(3) as usize];
+    let j = [i, rng.below(ACTORS), 0x20 + rng.below(0x20)][rng.below(3) as usize];
+    // a record past the actors carries some (put back after)
+    let carry = ffx_battle::actor::bridge::ms_get_chr(b, j) + 0x440;
+    let carried = a.read(carry, 1).unwrap();
+    if j >= ACTORS {
+        poke(a, b, carry, &[1]);
+    }
+    twin(
+        "MsGetChrLinkSet_007b7440",
+        a,
+        b,
+        0x007b_7440,
+        &[j, set],
+        ALL,
+        |m| mi::ms_get_chr_link_set(m, j, set),
+    );
+    poke(a, b, carry, &carried);
+    poke(a, b, local, &[0; 0x34]);
+    zero_stack(a);
+    twin(
+        "MsGetTargetLinkList",
+        a,
+        b,
+        0x007b_6fb0,
+        &[i, pick],
+        ALL,
+        |m| mi::ms_get_target_link_list(m, i, pick, local),
+    );
+    let v = a.read(local, 0x34).unwrap();
+    b.write(local, &v).unwrap();
+    same(&format!("MsGetTargetLinkList {i:#x}"), a, b);
+    let flip = [0, 1, rng.next()][rng.below(3) as usize];
+    let args = [i, pick, flip];
+    // now and then an actor's model at x NaN (one payload: the NaNs that
+    // meet are the same), for the sort's unordered compares
+    let nan_at = {
+        // (one of i's targets, else any actor)
+        let k = (0..ACTORS)
+            .cycle()
+            .skip(rng.below(ACTORS) as usize)
+            .take(ACTORS as usize)
+            .find(|&k| bits >> k & 1 != 0)
+            .unwrap_or(0);
+        let chr = u32::from_le_bytes(a.read(w.actor(k), 4).unwrap().try_into().unwrap());
+        let at = chr.wrapping_add(ffx_chara::layout::POS);
+        (rng.below(3) == 0 && readable(a, at, 4)).then(|| (at, a.read(at, 4).unwrap()))
+    };
+    if let Some((at, _)) = &nan_at {
+        poke(a, b, *at, &0x7fc0_0000u32.to_le_bytes());
+    }
+    zero_stack(a);
+    twin("MsGetTargetSortList", a, b, 0x007b_72c0, &args, ALL, |m| {
+        dm(m, |m| {
+            let mut info = |m: &mut t::Dm<'_>, x: [u32; 4]| {
+                t::ms_get_chr_info(m, &h, x[0], x[1], x[2], x[3], Some([i & 0xff, HARNESS.ebx]))
+            };
+            mi::ms_get_target_sort_list(m, &stand_in, &mut info, args, local)
+        })
+    });
+    let v = a.read(local, 0x34).unwrap();
+    b.write(local, &v).unwrap();
+    local_words(a, b);
+    same(&format!("MsGetTargetSortList {args:x?}"), a, b);
+    if let Some((at, v)) = nan_at {
+        poke(a, b, at, &v);
+    }
+    for (k, v) in (0..ACTORS).zip(&kept) {
+        poke(a, b, w.actor(k) + 0x43f, v);
+    }
 }
 
 /// The `op_et_eff` wrappers (round 31, `ffx_battle::et_effect`) on the
@@ -7689,6 +7840,281 @@ fn et_effects(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rec: u32) {
         }
     }
     same(&format!("et effect {i:#x}"), a, b);
+}
+
+/// The effect signals (round 32, `ffx_battle::effect_signal`; the effect
+/// motions are in `battle_leaf`'s resets) on the dressed actors: the callees the
+/// ports run through the game run as the originals, `op_et_eff` is the
+/// recording stub (its result at `rec + 0x34`). The damage buffers of the
+/// first target hold records of actor `i`'s command now and then, with
+/// the results and flags the signals test. `local` stands for the
+/// original's frame words: zeroed in both before a call (the original's
+/// stack too), and the Rust's copy dropped after it. The callees the
+/// ports call through the game are recording stubs during the calls
+/// ([`with_stubs`]): the dispatcher's four steps, and the sound and
+/// `MsSetDamage` of the damage step (whose originals want a real battle).
+fn effect_signals(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    rec: u32,
+    [local, stub_rec]: [u32; 2],
+) {
+    use ffx_battle::actor::bridge as ac;
+    use ffx_battle::effect_signal::bridge as es;
+    let pick =
+        |rng: &mut Xorshift, v: &[u32]| v[rng.below(u32::try_from(v.len()).unwrap()) as usize];
+    // indices MsBtlChrNumCheck refuses now and then (as `et_effects`)
+    let i = if rng.below(6) == 0 {
+        [
+            0xff,
+            0x1ff,
+            ACTORS + rng.below(0x3e),
+            0x100 + rng.below(ACTORS),
+        ][rng.below(4) as usize]
+    } else {
+        rng.below(ACTORS)
+    };
+    let i8 = i & 0xff;
+    let p = ac::ms_get_chr(b, i8);
+    let result = pick(rng, &[1, 0x4000_0123, 0, 0x8000_0000, u32::MAX]);
+    poke(a, b, rec + 0x34, &result.to_le_bytes());
+    // an actor's fields (not the records past them, whose offsets these
+    // reach: the weapons' models); its part and owner bytes put back after
+    let inside = i8 < ACTORS;
+    let part_bytes = a.read(p + 0x12, 3).unwrap();
+    if inside {
+        let state = u8::try_from({
+            let r = rng.below(0x100);
+            pick(rng, &[1, 1, 4, 4, 0, 2, r])
+        })
+        .unwrap();
+        poke(a, b, p + 0x446, &[state]);
+        // a part (+0x12) points at its owner (+0x14)
+        let part = u8::from(rng.below(5) == 0);
+        poke(a, b, p + 0x12, &[part]);
+        poke(a, b, p + 0x14, &[u8::try_from(rng.below(ACTORS)).unwrap()]);
+        for o in [0x39c, 0xe1e, 0xe22] {
+            poke(a, b, p + o, &rng.next().to_le_bytes());
+        }
+        for o in [0x429, 0x4c] {
+            poke(a, b, p + o, &[u8::try_from(rng.below(0x100)).unwrap()]);
+        }
+        for (o, n) in [(0xe19, 3), (0xe16, 3)] {
+            poke(a, b, p + o, &[u8::from(rng.below(n) != 0)]);
+        }
+        let own = u16::try_from({
+            let r = rng.below(0x40);
+            pick(rng, &[0xffff, 0x8000, 0, 2, 0xff, 0x7fff, r])
+        })
+        .unwrap();
+        poke(a, b, p + 0xe1a, &own.to_le_bytes());
+        let effect = u8::try_from({
+            let r = rng.below(0x100);
+            pick(rng, &[0, 0x1e, 0x36, r])
+        })
+        .unwrap();
+        poke(a, b, p + 0xe0e, &[effect]);
+    }
+    // the first target's damage buffers for i's command, now and then
+    let first = ffx_battle::body::bridge::battle_first_selected_actor(b, i, 0xffff_fff0, 0, 1);
+    if ac::ms_btl_chr_num_check(i8) != 0 && first >= 0 && rng.below(4) != 0 {
+        let cmd = ac::ms_get_chr_command(b, i8);
+        let id = b.read(cmd + 2, 1).unwrap()[0];
+        let t = ac::ms_get_chr(b, first.cast_unsigned());
+        let next = u8::try_from(pick(rng, &[0, 0, 1])).unwrap();
+        let count = u8::try_from(pick(rng, &[1, 2])).unwrap();
+        for o in [0x774u32, 0xa4c] {
+            poke(a, b, t + o, &[next, count, u8::try_from(i8).unwrap(), id]);
+            for k in 0..2 {
+                let e = t + o + 0x2c * k;
+                let r = u8::try_from(pick(
+                    rng,
+                    &[0, 1, 0x11, 4, 6, 2, 3, 5, 0x10, 0x12, 0xff, 0x80],
+                ))
+                .unwrap();
+                poke(a, b, e + 0x18, &[r]);
+                let flags = u16::try_from({
+                    let r = rng.below(0x1_0000);
+                    pick(rng, &[0, 1, 4, 8, 0x100, 0x101, 0x107, 0x108, r])
+                })
+                .unwrap();
+                poke(a, b, e + 0x32, &flags.to_le_bytes());
+                poke(a, b, e + 0x1a, &[rng.byte()]);
+            }
+        }
+    }
+    poke(a, b, local, &[0; 0x10]);
+    zero_stack(a);
+    let signal = if rng.below(8) == 0 {
+        pick(rng, &[10, 31, 32, 33, u32::MAX, 0x8000_0001])
+    } else {
+        rng.below(10)
+    };
+    let args = [i, signal, rng.next()];
+    let steps = [
+        (es::MS_EFFECT_SIGNAL_HIT, 2),
+        (es::MS_EFFECT_SIGNAL_AVOID, 2),
+        (es::MS_EFFECT_SIGNAL_DAMAGE, 3),
+        (es::MS_EFFECT_SIGNAL_MOTION, 3),
+    ];
+    // the actors not set up, now and then (put back after)
+    let top = ffx_battle::actor::bridge::CHR_TOP;
+    let kept = top.get(b);
+    if rng.below(10) == 0 {
+        set(a, b, top, 0);
+    }
+    with_stubs(a, b, &steps, stub_rec, |a, b| {
+        twin(
+            "MsEffectSignal_007b74d0",
+            a,
+            b,
+            0x007b_74d0,
+            &args,
+            ALL,
+            |m| dm(m, |m| es::ms_effect_signal(m, &mut game_call, i, signal)),
+        );
+    });
+    same(&format!("MsEffectSignal {args:x?}"), a, b);
+    set(a, b, top, kept);
+    // and the damage step alone, on an actor in range
+    let signal = pick(rng, &[0, 0, 9, 9, 1, 5]);
+    let args = [i, p, signal];
+    poke(a, b, local, &[0; 0x10]);
+    zero_stack(a);
+    let callees = [(es::MS_CHR_SE_PLAY, 2), (es::MS_SET_DAMAGE, 3)];
+    with_stubs(a, b, &callees, stub_rec, |a, b| {
+        twin(
+            "MsEffectSignalDamage_007b7680",
+            a,
+            b,
+            0x007b_7680,
+            &args,
+            0,
+            |m| {
+                dm(m, |m| {
+                    es::ms_effect_signal_damage(m, &mut game_call, i, p, signal, local);
+                });
+                0
+            },
+        );
+    });
+    // (the frame words: the original's stack, the Rust's `local`)
+    let v = a.read(local, 0x10).unwrap();
+    b.write(local, &v).unwrap();
+    same(&format!("effect signal {i:#x}"), a, b);
+    poke(a, b, p + 0x12, &part_bytes);
+}
+
+/// `MsEtEffectRead` and `MsRegMotionRead` (round 32,
+/// `ffx_battle::read`): `GetCD` (its object at `cd + 0x200`, the methods
+/// `+0`, `+8`, `+0x10`, `+0x14` logging stubs from `cd`), `Sg_MallocA`
+/// (the block `block`), `MsBattleError`, `op_et_battle_init` and chara's
+/// motion callees are recording stubs during the calls; the file size,
+/// what is loaded and the stubs' results at random.
+fn cd_reads(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, [rec, cd, block]: [u32; 3]) {
+    use ffx_battle::read::bridge as rd;
+    let obj = cd + 0x200;
+    for o in [&mut *a, &mut *b] {
+        for (k, (slot, n)) in (0u32..).zip([(0u32, 4u8), (8, 1), (0x10, 1), (0x14, 1)]) {
+            let at = SIGNAL_STUBS + 0x400 + 0x40 * k;
+            logging_stub(o, 0, at, cd + 0x80 * k, n, 0);
+            let f = o.rebase(at);
+            o.write(obj + slot, &f.to_le_bytes()).unwrap();
+        }
+    }
+    let size = {
+        let r = rng.below(0x6_0000);
+        [
+            r,
+            rd::ET_EFFECT_SIZE,
+            rd::ET_EFFECT_SIZE + 1,
+            0x100,
+            0x8000_0000 | r,
+        ][rng.below(5) as usize]
+    };
+    // the block holds old data (the read clears it)
+    for _ in 0..4 {
+        let at = block + [rng.below(0x5_0ff0) & !3, 0x5_0fec][rng.below(2) as usize];
+        poke(a, b, at, &rng.next().to_le_bytes());
+    }
+    poke(a, b, cd + 0x80 * 3 + 4, &size.to_le_bytes());
+    for k in 0..3 {
+        poke(a, b, cd + 0x80 * k + 4, &rng.next().to_le_bytes());
+    }
+    let mut call = game_call;
+    let stubs = [
+        (ffx_battle::getmem::bridge::GET_CD, 0),
+        (rd::SG_MALLOC_A, 5),
+        (rd::MS_BATTLE_ERROR, 1),
+        (rd::OP_ET_BATTLE_INIT, 1),
+        (rd::CHN_SYSTEM_MGRP_LOADED, 0),
+        (rd::CH_REG_MOTION_GET_EXIST_MEM, 0),
+        (rd::CH_REG_MOTION_ENTRY_CACHE, 1),
+    ];
+    let ret = |k: u32, n: u32| rec + 0x20 * k + 4 + 4 * n;
+    let loaded = [0u32, 0, 1][rng.below(3) as usize];
+    let exist = [0u32, 0, 1][rng.below(3) as usize];
+    let init = rng.next();
+    let flag = rng.byte();
+    set(a, b, ffx_battle::misc::bridge::REG_MOTION_FLAG, flag);
+    let effects = rng.below(2) == 0;
+    with_stubs(a, b, &stubs, rec, |a, b| {
+        for (k, n, v) in [
+            (0, 0, obj),
+            (1, 5, block),
+            (3, 1, init),
+            (4, 0, loaded),
+            (5, 0, exist),
+        ] {
+            poke(a, b, ret(k, n), &v.to_le_bytes());
+        }
+        if effects {
+            twin("MsEtEffectRead", a, b, 0x0079_e6a0, &[], ALL, |m| {
+                dm(m, |m| rd::ms_et_effect_read(m, &mut call))
+            });
+        } else {
+            twin("MsRegMotionRead", a, b, 0x0079_ccf0, &[], ALL, |m| {
+                dm(m, |m| rd::ms_reg_motion_read(m, &mut call)).cast_unsigned()
+            });
+        }
+    });
+    same(&format!("cd reads {size:#x} {loaded} {exist}"), a, b);
+}
+
+/// `FUN_007ca580` (dead, 0x10a9 bytes): room for [`with_stubs`]' code.
+const SIGNAL_STUBS: u32 = 0x007c_a580;
+
+/// Runs `f` with the functions `stubs` (ffx.sym address, argument count)
+/// replaced by [`recording_stub`]s in both oracles (code at
+/// [`SIGNAL_STUBS`], records at `rec`, 0x20 bytes each, results 0), and
+/// puts their first bytes back after.
+fn with_stubs(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    stubs: &[(u32, u8)],
+    rec: u32,
+    f: impl FnOnce(&mut Oracle, &mut Oracle),
+) {
+    let saved: Vec<Vec<u8>> = stubs
+        .iter()
+        .map(|&(s, _)| {
+            let at = a.rebase(s);
+            a.read(at, 5).unwrap()
+        })
+        .collect();
+    for o in [&mut *a, &mut *b] {
+        for (k, &(s, n)) in (0u32..).zip(stubs) {
+            recording_stub(o, s, SIGNAL_STUBS + 0x40 * k, rec + 0x20 * k, n, 0);
+        }
+    }
+    f(a, b);
+    for o in [&mut *a, &mut *b] {
+        for (&(s, _), v) in stubs.iter().zip(&saved) {
+            let at = o.rebase(s);
+            o.write(at, v).unwrap();
+        }
+    }
 }
 
 #[test]

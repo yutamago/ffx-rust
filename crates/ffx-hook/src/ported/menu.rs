@@ -1541,6 +1541,201 @@ ported! {
     TkMn2GetListMax @ 0x008c_1bb0 => extern "C" fn tk_mn2_get_list_max() -> u32 {
         tk::tk_mn2_get_list_max(&mem())
     }
+    /// `TkMn2RefreshList(kind)`.
+    TkMn2RefreshList @ 0x008c_2360 => extern "C" fn tk_mn2_refresh_list(kind: u32) {
+        tk::tk_mn2_refresh_list(&mut mem(), kind, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuWeapon_BuildKindList(_, kind)`: the count.
+    MenuWeapon_BuildKindList @ 0x008c_fd20 => extern "C" fn menu_weapon_build_kind_list(_unused: u32, kind: u32) -> u32 {
+        tk::menu_weapon_build_kind_list(&mut mem(), kind, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_BuildList(k)`.
+    MenuKaizou_BuildList @ 0x008d_6dd0 => extern "C" fn menu_kaizou_build_list(k: u32) {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_kaizou_build_list(&mut mem(), k, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `Pad_InitWorks()`.
+    Pad_InitWorks @ 0x0088_9340 => extern "C" fn pad_init_works() {
+        tk::pad_init_works(&mut mem(), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuConfig_DrawRows()`: the last call's `eax`.
+    MenuConfig_DrawRows @ 0x008c_bab0 => extern "C" fn menu_config_draw_rows() -> u32 {
+        tk::menu_config_draw_rows(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_AddAP_008bdaf0(chr, ap, mark)`: `0x008ba390`'s `eax`.
+    BtlEnd_AddAP_008bdaf0 @ 0x008b_daf0 => extern "C" fn btl_end_add_ap(chr: u32, ap: u32, mark: u32) -> u32 {
+        tk::btl_end_add_ap(&mut mem(), chr, ap, mark, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkBtlEndCheckLegendWeapon()`: the count.
+    TkBtlEndCheckLegendWeapon @ 0x008b_a5c0 => extern "C" fn tk_btl_end_check_legend_weapon() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_btl_end_check_legend_weapon(&mut mem(), local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2RefreshWeaponShopSell()`.
+    TkMn2RefreshWeaponShopSell @ 0x008d_9550 => extern "C" fn tk_mn2_refresh_weapon_shop_sell() {
+        tk::tk_mn2_refresh_weapon_shop_sell(&mut mem(), 0x13, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMn2RefreshWeaponShopSell2()`.
+    TkMn2RefreshWeaponShopSell2 @ 0x008d_9560 => extern "C" fn tk_mn2_refresh_weapon_shop_sell2() {
+        tk::tk_mn2_refresh_weapon_shop_sell(&mut mem(), 0x15, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuWShop_OpenSellWindow()`: the window.
+    MenuWShop_OpenSellWindow @ 0x008d_a950 => extern "C" fn menu_wshop_open_sell_window() -> u32 {
+        tk::menu_wshop_open_sell_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_OpenListWindow(k)`: the registration's `eax`.
+    MenuKaizou_OpenListWindow @ 0x008d_6ce0 => extern "C" fn menu_kaizou_open_list_window(k: u32) -> u32 {
+        tk::menu_kaizou_open_list_window(&mut mem(), k, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuEquip_OpenWeaponWindow(a, kind)`: the registration's `eax`.
+    MenuEquip_OpenWeaponWindow @ 0x008c_fc90 => extern "C" fn menu_equip_open_weapon_window(a: u32, kind: u32) -> u32 {
+        tk::menu_equip_open_weapon_window(&mut mem(), a, kind, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuLimit_OpenModeWindow(chr)`: the registration's `eax`.
+    MenuLimit_OpenModeWindow @ 0x008d_0dd0 => extern "C" fn menu_limit_open_mode_window(chr: u32) -> u32 {
+        tk::menu_limit_open_mode_window(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_CountApStep_008ba4e0(chr, mark)`: 1 while AP are left.
+    BtlEnd_CountApStep_008ba4e0 @ 0x008b_a4e0 => extern "C" fn btl_end_count_ap_step(chr: u32, mark: u32) -> u32 {
+        tk::btl_end_count_ap_step(&mut mem(), chr, mark, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_OpenGearWindow()`: the registration's `eax`.
+    MenuItem_OpenGearWindow @ 0x008c_9330 => extern "C" fn menu_item_open_gear_window() -> u32 {
+        tk::menu_item_open_gear_window(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_PackGear()`: `TkMn2RefreshWeaponShopSell2`'s `eax`.
+    MenuItem_PackGear @ 0x008c_a120 => extern "C" fn menu_item_pack_gear() -> u32 {
+        tk::menu_item_pack_gear(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawKeyCursor(_, x, y)`: the cursor call's `eax`, or 1.
+    MenuItem_DrawKeyCursor @ 0x008c_4b60 => extern "C" fn menu_item_draw_key_cursor(_a: u32, x: i32, y: i32) -> u32 {
+        tk::menu_item_draw_key_cursor(&mut mem(), [x, y], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_CountApSteps()`: 1 while any AP are left.
+    BtlEnd_CountApSteps @ 0x008b_a550 => extern "C" fn btl_end_count_ap_steps() -> u32 {
+        tk::btl_end_count_ap_steps(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuTuto_ChoiceIs5()`.
+    MenuTuto_ChoiceIs5 @ 0x008d_b860 => extern "C" fn menu_tuto_choice_is5() -> u32 {
+        tk::menu_tuto_choice_is5(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_ListWindowCtrl(w)`: the help draw's `eax`.
+    MenuKaizou_ListWindowCtrl @ 0x008d_5810 => extern "C" fn menu_kaizou_list_window_ctrl(w: u32) -> u32 {
+        tk::menu_kaizou_list_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_SellWindowCtrl(w)`.
+    MenuWShop_SellWindowCtrl @ 0x008d_9df0 => extern "C" fn menu_wshop_sell_window_ctrl(w: u32) -> u32 {
+        tk::menu_list_window_ctrl_by_row(&mut mem(), 0, w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_GearWindowCtrl(w)`.
+    MenuItem_GearWindowCtrl @ 0x008c_7630 => extern "C" fn menu_item_gear_window_ctrl(w: u32) -> u32 {
+        tk::menu_list_window_ctrl_by_row(&mut mem(), 1, w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuLimit_ModeWindowCtrl(w)`.
+    MenuLimit_ModeWindowCtrl @ 0x008d_0e90 => extern "C" fn menu_limit_mode_window_ctrl(w: u32) -> u32 {
+        tk::menu_list_window_ctrl_by_row(&mut mem(), 2, w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_SetBrush_008e4a60(w)`: 1.
+    MenuSubCmd_SetBrush_008e4a60 @ 0x008e_4a60 => extern "C" fn menu_sub_cmd_set_brush(w: u32) -> u32 {
+        tk::menu_sub_cmd_set_brush(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_IsSelectable(_, k)`.
+    MenuKaizou_IsSelectable @ 0x008d_57a0 => extern "C" fn menu_kaizou_is_selectable(_a: u32, k: u32) -> u32 {
+        tk::menu_kaizou_is_selectable(&mut mem(), k, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetBgmType(opt)`.
+    MenuConfig_SetBgmType @ 0x008c_b0b0 => extern "C" fn menu_config_set_bgm_type(opt: u32) -> u32 {
+        tk::menu_config_option(&mut mem(), 0, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetVibration(opt)`.
+    MenuConfig_SetVibration @ 0x008c_afa0 => extern "C" fn menu_config_set_vibration(opt: u32) -> u32 {
+        tk::menu_config_option(&mut mem(), 1, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_GetSoundMode(opt)`.
+    MenuConfig_GetSoundMode @ 0x008c_b430 => extern "C" fn menu_config_get_sound_mode(opt: u32) -> u32 {
+        tk::menu_config_option(&mut mem(), 2, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_GrowWindowInit(w)`: the rows.
+    MenuSummon_GrowWindowInit @ 0x008c_d2e0 => extern "C" fn menu_summon_grow_window_init(w: u32) -> u32 {
+        tk::menu_summon_grow_window_init(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_Draw(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
+    MenuConfig_Draw @ 0x008c_b320 => extern "C" fn menu_config_draw(w: u32) -> u32 {
+        tk::menu_config_draw(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMessageCb_008e02c0(m)`: 0.
+    TkMenuMessageCb_008e02c0 @ 0x008e_02c0 => extern "C" fn tk_menu_message_cb(m: u32) -> u32 {
+        tk::tk_menu_message_cb(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMessageWidth_008de210(m)`: 0.
+    TkMenuMessageWidth_008de210 @ 0x008d_e210 => extern "C" fn tk_menu_message_width(m: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_menu_message_width(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_BuyWindowCtrl(w)`.
+    MenuWShop_BuyWindowCtrl @ 0x008d_9da0 => extern "C" fn menu_wshop_buy_window_ctrl(w: u32) -> u32 {
+        tk::menu_wshop_buy_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetHdd(opt)`.
+    MenuConfig_SetHdd @ 0x008c_b060 => extern "C" fn menu_config_set_hdd(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 0, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetSoundMode(opt)`.
+    MenuConfig_SetSoundMode @ 0x008c_b460 => extern "C" fn menu_config_set_sound_mode(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 1, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_GetVibration(opt)`.
+    MenuConfig_GetVibration @ 0x008c_af60 => extern "C" fn menu_config_get_vibration(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 2, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_SetOption1(opt)`: row 1's record.
+    MenuConfig_SetOption1 @ 0x008c_b4c0 => extern "C" fn menu_config_set_option1(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 3, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_GetHdd(opt)`.
+    MenuConfig_GetHdd @ 0x008c_b020 => extern "C" fn menu_config_get_hdd(opt: u32) -> u32 {
+        tk::menu_config_option2(&mut mem(), 4, opt, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_Start_008d1d80(w, a)`: `TkMn2InitStatusBG`'s `eax`.
+    MenuStatus_Start_008d1d80 @ 0x008d_1d80 => extern "C" fn menu_status_start(w: u32, a: u32) -> u32 {
+        tk::menu_status_start(&mut mem(), w, a, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_WindowCtrl_008cd6d0(w)`.
+    MenuSummon_WindowCtrl_008cd6d0 @ 0x008c_d6d0 => extern "C" fn menu_summon_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawBuyPanel(w)`.
+    MenuWShop_DrawBuyPanel @ 0x008d_7a40 => extern "C" fn menu_wshop_draw_buy_panel(w: u32) -> u32 {
+        tk::menu_shop_draw_panel(&mut mem(), 0, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawSellPanel(w)`.
+    MenuWShop_DrawSellPanel @ 0x008d_7cc0 => extern "C" fn menu_wshop_draw_sell_panel(w: u32) -> u32 {
+        tk::menu_shop_draw_panel(&mut mem(), 1, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuShop_DrawBuySellPanel(w)`.
+    MenuShop_DrawBuySellPanel @ 0x008d_9fe0 => extern "C" fn menu_shop_draw_buy_sell_panel(w: u32) -> u32 {
+        tk::menu_shop_draw_panel(&mut mem(), 2, w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_StockWindowCtrl(w)`.
+    MenuWShop_StockWindowCtrl @ 0x008d_77f0 => extern "C" fn menu_wshop_stock_window_ctrl(w: u32) -> u32 {
+        tk::menu_wshop_stock_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
+    TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
+        // the original's 0x16cc-byte frame (the save screen's thread)
+        let mut frame = super::StackFrame::<0x5b3>::new();
+        let local = frame.at();
+        tk::tk_menu_pre_save(&mut mem(), local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2BuildItemList_008c2390(kind, arg)`.
+    TkMn2BuildItemList_008c2390 @ 0x008c_2390 => extern "C" fn tk_mn2_build_item_list(kind: u32, arg: u32) {
+        let mut frame = super::StackFrame::<3>::new();
+        let local = frame.at();
+        tk::tk_mn2_build_item_list(&mut mem(), kind, arg, local, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `TkMn2GetNameModeMax()`.
     TkMn2GetNameModeMax @ 0x008c_1bc0 => extern "C" fn tk_mn2_get_name_mode_max() -> u32 {
         tk::tk_mn2_get_name_mode_max(&mem())

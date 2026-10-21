@@ -155,12 +155,29 @@ a 4-byte text at `0x0186a280` (an empty one ends the names), centred by
 first empty one, or the last when all are filled) blinks: drawn
 `0x80e1f8ff` while the fraction of `graphicGetTime()` is above 0.5, the
 others `0x8000c6ff`.
+`MenuItem_DrawKeyCursor(_, x, y)` (`0x008c4b60`) puts the command cursor
+on the key cell `0x0186a268` (`15 row + col`; keys in groups of five)
+unless `0x0186a270` is set: `cx = f32(remapX2(53) * f32(col % 5) +
+f32(x))`, `cy = f32(f32(row) * step + f32(y))`, `step =
+f32(remapY2(471) / f32(rows))` with `rows` `MenuItem_KeyRowCount()`, at
+least 6; groups 0, 1, 2 add `remapX2(684)`, `remapX2(1041)`,
+`remapX2(1398)` and `remapY2(423)`.
 `TkMn2DrawStatusPlate` (`0x008c1490`) draws one stat: a caption and the
 byte at an offset into the character's save record
 (`MsGetSavePlayerPtr`). The shop row drawers (`MenuShop_DrawRows` `0x008dabf0`, ten
 rows; `MenuWShop_DrawBuyRows` `0x008d8c30` and `MenuWShop_DrawSellRows`
 `0x008d8ee0`, nine) and `MenuSummon_DrawGrowRows` (`0x008ce520`, eleven)
-draw a fixed number of rows from a first index. `MenuWShop_InitList` (`0x008d94a0`) fills the
+draw a fixed number of rows from a first index. The buy/sell panels are drawn
+between the packet kicks (`TkMenuDrawKick` twice, `0x008c1790`,
+`TkMn2DrawInitPacket` before, `TkMn2DrawKickSyncPacket(w)` after):
+`MenuWShop_DrawBuyPanel` (`0x008d7a40`) calls
+`TkMn2WeaponBuySellWindow(remapX2(680), remapY2(594), +0x5c, +0x60,
++0x68)`, `MenuWShop_DrawSellPanel` (`0x008d7cc0`) the same at
+`remapX2(656)` with `-(+0x60)`, and `MenuShop_DrawBuySellPanel`
+(`0x008d9fe0`) `TkMn2BuySellWindow(remapX2(680), remapY2(435), +0x5c,
+row, +0x64 + row, +0x60, +0x68)`. `MenuWShop_StockWindowCtrl`
+(`0x008d77f0`) keeps byte `+4` of the stock record under the cursor in
+`0x0186aba0` (-1 for none). `MenuWShop_InitList` (`0x008d94a0`) fills the
 weapon shop's stock from `TkMn2GetExcelData(0x0186ab1c, 0x0186aba8)`: up
 to 16 u16 ids from `+2`, each record (`MenuWShop_GetRecord`) getting byte
 `+6` = `0xff` and its name; the count goes to `0x0186ab10`, and
@@ -210,6 +227,63 @@ not the row. In gear mode (`0x0186a393`) `MenuItem_DrawGearInfo`
 and the piece it wears of the selected row's kind (byte `+5`: armour,
 else weapon) above the selected piece.
 
+`TkMn2BuildItemList_008c2390(kind, arg)` (`0x008c2390`, callers
+`TkMn2RefreshList` and two menu screens) clears the item list and its
+counts and fills `{u16 id, u8 kind, u8 value}` entries by `kind` (byte
+table `0x008c2aa4` into the jump table `0x008c2a7c`; 4, 8..0x12 and
+anything above `0x15` list nothing):
+
+| kind | entries |
+|---|---|
+| 0 | the current character's commands: `TkMenuGetCommandMax/Offset(MsMenuStatusNum(0), 5, chr, 0)`, owned ones (`MsGetSaveCommand`) `0x101`; a missing one with a menu panel (`MsGetSaveCommandMenuPanel`) leaves an empty entry, except for characters 0, 2 and 4. Character 1 instead lists the aeons of `TkMenuSummonEnableMask` (ids 8..15, `0x102`); jump table `0x008c2abc` on the character |
+| 1 | the overdrive modes: each byte of `g_TkMn2OverDriveOrder` (`0x00c8765c`, 20) whose bit is set in `TkMn2GetOverDriveType(chr)`, `0x103` |
+| 2 | kind 0 for the current aeon (`TkMenuGetCurrentSummon`), never with gaps |
+| 3 | the aeon's grow list (`TkMn2GetSummonGrow`, `TkMn2GetSummonGrowMax` 8-byte records: mask byte, `u16` command, `u16` item, needed count byte): kind 5 learnt, 7 fewer items than needed, 4 when the mask has bit `aeon - 8` or key item `0xa022` is owned, else 6; value = record index. No items, no entry, but its `+3` keeps the `0xff` written before the test |
+| 5 | weapon customisations (`TkMn2GetKaizou`/`Max`, same record shape; mask bit 2 when `arg + 5` is set, else 1) against the piece at `arg`: its four `u16` abilities at `+0xe` (0 and `0xff` skipped) give `MsGetRomAbility` bytes `+0x69` group, `+0x6a` level, `+0x6b` kind. A row starts at `0xb`; a same-group ability with a higher level makes `0xf`, the same level `0xc` (same kind) or `0xf`; with an ability of kind `0xff` every row of kind `0xfe` is `0xf`; `0xb` with fewer items than needed is `0xe`; no empty slot (`MenuList_IsEmptySlot(arg)`) makes `0x10`. Rows without items follow as `0xff11_0000`, counted in the list but not shown |
+| 6, 7 | the inventory (`MsSaveItemTypeBuffer`/`NumBuffer`), slot by slot (empty slots stay zero): usable items (as in `TkMenuItemRefresh`; all for 7) get kind `0x12`, value 1 |
+| `0x13`, `0x15` | every weapon (`MsGetSaveWeaponList(-1, -1, 0)`): owned ones without flag 2 kind 1, value 1 when flags `+3 & 0xd` are 0 and `+6` is `0xff`; the others zero (`0x13`) or id and 0 (`0x15`) |
+| `0x14` | the current character's weapons of kind `arg` that are owned, `0x101`; for `arg` 1 then an empty `0x0100_0000` entry |
+
+`g_TkMn2ListMax` gets the entries written and `g_TkMn2NameModeMax` the
+entries shown, at least 1: for `0x13`/`0x15` up to the last owned
+weapon (MsGetSaveWeapon `+2`), for 5 without the missing rows.
+
+`TkMn2RefreshList(kind)` (`0x008c2360`) is `TkMn2BuildItemList(kind,
+0)`; `MenuWeapon_BuildKindList(_, kind)` (`0x008cfd20`) builds kind
+`0x14` for weapon kind `kind` and keeps the count in `0x0186a620`;
+`MenuKaizou_BuildList(k)` (`0x008d6dd0`) builds kind 5 for the record of
+weapon `k` of the customise list (`u16` ids at `[0x0186aa38]`). Both go
+through the thunk `0x008c2380` (a `jmp`).
+`TkMn2RefreshWeaponShopSell`/`Sell2` (`0x008d9550`/`0x008d9560`) refresh
+kinds `0x13`/`0x15`. The list windows over these lists are all opened
+the same way (`TkMenuMainAllocWindow`, list, callbacks, rows,
+`TkMenuMainRegistWindow`):
+
+| opener | list | rows, visible | kept at |
+|---|---|---|---|
+| `MenuWShop_OpenSellWindow` `0x008da950` | kind 7 | `TkMn2GetListMax`, 10 | `0x0186ac38` |
+| `MenuKaizou_OpenListWindow(k)` `0x008d6ce0` | `MenuKaizou_BuildList(k)` | `TkMn2GetNameModeMax`, 9 | `0x0186aa34` |
+| `MenuEquip_OpenWeaponWindow(a, kind)` `0x008cfc90` | `MenuWeapon_BuildKindList` | `u16 0x0186a620`, 5 | `0x0186a61c` |
+| `MenuLimit_OpenModeWindow(chr)` `0x008d0dd0` | kind 1 | `TkMn2GetListMax`, 7 | `0x0186a718` |
+
+The overdrive mode window restores its scroll (`+0x32`, `+0x34`) and
+cursor (`+0x48`) from `chr`'s `u16` in the 4-byte entries at
+`0x0186a7a0` and `0x0186a7e0`.
+The list windows' `+0xc` controllers pass on to the generic ones by a
+row byte `+0x45`: `MenuItem_GearWindowCtrl` (`0x008c7630`) runs
+`TkMenuListWindowCtrl_008b44b0` while the window's is not negative,
+`MenuLimit_ModeWindowCtrl` (`0x008d0e90`) `TkMn2CtrlSelItemsWindow` while
+it is 0, `MenuWShop_SellWindowCtrl` (`0x008d9df0`) the same while the
+open sub-command window's (`0x023cc128`) is above 0;
+`MenuKaizou_ListWindowCtrl` (`0x008d5810`) runs the list controller,
+then `TkMn2DrawSelItemsHelp`.
+`MenuItem_OpenGearWindow` (`0x008c9330`) opens the item menu's gear list
+over `TkMn2RefreshWeaponShopSell2` (kept at `0x0186a37c`, gear mode off,
+rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
+(`0x008ca120`) closes the gaps in that list: each empty entry takes the
+next filled one after it (`Menu_FindFlagged`), swapping the save's gear
+(`SwapSaveGear`) and the kind bytes, then the list is built again.
+
 ## Config menu
 
 `MenuConfig_DrawOptionRow` (`0x008cbae0`) draws row `row` of the config
@@ -235,6 +309,29 @@ direction is held); page up/down (repeat bits 1/2 with the pad on 1/2)
 scroll by a page (by `0x111`). Confirm (`0x20`) asks the `+0x1c` callback
 `(w, cursor, picks)` first (negative: wait, 0: buzzer `0x80000003`).
 
+`MenuConfig_DrawRows()` (`0x008cbab0`) draws the page: `TODrawMenuBG`,
+then `MenuConfig_DrawOptionRow(0, 0, row)` and
+`TkMn2DrawKickSyncPacket2()` for each of `g_TkMenuConfigRows`.
+Option callbacks get the option record, whose `+8` is the value:
+`MenuConfig_SetBgmType` (`0x008cb0b0`) stores `value != 0` in the save
+event block's byte `+0x5ec` and calls `iMusicRefreshBgmType`;
+`MenuConfig_SetVibration` (`0x008cafa0`) sets the menu settings' bit 4
+(`MsGetSaveMenu()`) for value 0, clears it otherwise, and calls
+`TkRefreshActuator`; `MenuConfig_GetSoundMode` (`0x008cb430`) sets
+`+0xc` to 1 and the value to 1 when the settings' bit 0 is clear, then
+calls `TkRefreshSoundMode`.
+`MenuConfig_SetSoundMode` (`0x008cb460`): value 1 clears bits 0 and 7,
+anything else clears 7 and sets 0. `MenuConfig_GetVibration`
+(`0x008caf60`) sets the value from bit 4 (clear: 1) and `+0xc` to
+whether `TkGetControlerActuatorNumber(0, 0)` is non-zero.
+`MenuConfig_SetHdd` (`0x008cb060`) sets bit 13 for value 0 and
+`MenuConfig_GetHdd` (`0x008cb020`) reads it back (clear: 1), `+0xc` = 1
+when `get_hdd_word_518()` is not 3 and `get_hdd_status()` is 1.
+`MenuConfig_SetOption1` (`0x008cb4c0`) sets bit 8 and enables row 1
+(`GetDerefU32_008cbaa0(1)` `+0xc`) for value 0, clears both otherwise.
+The page draw `MenuConfig_Draw(w)` (`0x008cb320`) kicks the packets
+(`TkMenuDrawKick` twice, `0x008c1790`, `TkMn2DrawInitPacket`), draws
+the rows and ends with `TkMn2DrawKickSyncPacket(w)`.
 ## Characters and aeons
 
 `g_TkMenuPlayers` (`0x01841c14`) and `g_TkMenuSummons` (`0x01841c38`) are
@@ -264,6 +361,31 @@ place name (`AtelGetSaveDicName`) and play time (`TOMenuDrawTimer`). A
 slot is drawn dimmed by its state (when byte `0x0186628a` is 1 anything
 but 0..2 and 4, else anything but 1).
 
+
+`TkMenuPreSave()` (`0x008b50b0`) packs and describes the save of slot
+`g_TkMenuSaveSlot` (`0x0186628c`), which it sets to 1. Two callers hand
+it an already packed save instead: they set `g_TkMenuPreSavePacked`
+(`0x01866244`) and the location `g_TkMenuPreSaveDic` (`0x0186624c`),
+call it and clear the flag. Unpacked, it runs
+`MenuSave_PackSave(g_SaveFileBuffer, TkGetSaveEventAddress(slot), slot)`
+(the result, header `+0x10`, is the play time in seconds) with the
+location `AtelGetSaveDic()`; packed, the time is the buffer's `+0x10`.
+Then `MenuSave_BuildIconSys(slot, time, dic)`,
+`g_SaveData_LoadResult` = 1, and the PC description
+`SaveDataSetSaveDataInfo(title, subtitle, detail)`:
+
+- title: `SaveDataGetLoc(0x4f)`, `strncpy` 64 bytes;
+- subtitle: `SaveDataGetLoc(0x50)` through `SaveDataLocRemoveNumTag` and
+  `ConvertGameCodeToUTF8`, 128 bytes;
+- detail: `"%s %s\n%s %s"` of `SaveDataGetLoc(0x51)` in UTF-8, the
+  location name (`AtelGetSaveDicName(id, 0)` in UTF-8; `id` is the
+  location, or for a save packed here the buffer's `u16 +0x18`),
+  `SaveDataGetLoc(0x52)` in UTF-8 and the play time
+  `"%003d:%02d:%02d"` (from 1000 hours on `999:59:59`).
+
+It returns `SaveDataUpdateIcon(dic)`. The frame is `0x16cc` bytes of
+`0x200`/`0x400`-byte text buffers; the port keeps the original's layout,
+so a text that fills its buffer runs on into the same neighbour.
 ## Pad work records
 
 The Tk pad layer keeps a work record per pad (`Pad_UpdateFrame`
@@ -336,3 +458,25 @@ the tangent normalised (`x^2 + y^2 + z^2`, `MsDivSqrt` into `g_Vu0_Q`,
 `w` from `vf00.w`). The quadratic writes three weights into a 16-byte
 frame buffer and copies all 16 bytes, so `0x00c8f7dc` gets a frame word
 nobody wrote (no helper reads it).
+
+## Battle end
+
+`TkBtlEndCheckLegendWeapon()` (`0x008ba5c0`) counts the six weapon spoil
+slots (`u16` at `0x02310f8e`) whose `MsGetSaveWeapon` record is in use
+(`+2`) with any of flags `+3 & 0xd`. For exactly one, its name
+(`MsGetSaveWeaponName`) becomes macro 7's value and the message is
+`TkBtlEndGetText(0x401b)`, otherwise `0x401c`; the message goes to
+`0x025cc590` and the count is returned.
+`BtlEnd_AddAP_008bdaf0(chr, ap, mark)` (`0x008bdaf0`) marks a level-up
+(`TOBtlEndSetFlagMark(chr, mark)`) when the AP saved
+(`BtlEnd_GetSaveNextAP`) plus `ap` reaches `BtlEnd_GetNextAP` (signed);
+at sphere level 98 (`BtlEnd_GetSP`) `ap` is cut to the AP still missing.
+It then hands `(chr, ap)` to `0x008ba390`.
+`BtlEnd_CountApStep_008ba4e0(chr, mark)` (`0x008ba4e0`) is one step of
+the AP count-up: from sphere level 99 the rest (`0x02310f20[chr]`) is
+dropped (0 returned); otherwise `BtlEnd_ApStep(chr)` AP, at most the
+rest (signed), go to `BtlEnd_AddAP_008bdaf0` and the rest shrinks by
+them; it returns 1 while AP were left over. `BtlEnd_CountApSteps`
+(`0x008ba550`) runs it for every entry `k` of the battle-end list
+(`0x01869f18`, `i16` character at entry `+6`, `mark` = `k`) and returns
+1 while any had AP left.

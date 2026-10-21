@@ -121,6 +121,51 @@ fn calls(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, w: &World, cue: u32
         s::ms_act_target_search(m, &stand_in, chr, sel, kind, which, mode, resolved, pick)
     });
     same("MsActTargetSearch", a, b);
+    // the script natives' target helpers (round 32): a property search
+    // that sets the script targets (its pick in the original's frame
+    // word, `out + 0x84` in the port), and a command's targets
+    // (selector -5 counts the absent actors for MsGetChrBit's `all`)
+    let i = rng.below(0x24);
+    let cid = u32::from(id(rng));
+    for _ in 0..3 {
+        let sel = [sel, (-5i32).cast_unsigned(), selector(rng)][rng.below(3) as usize];
+        let args = [i, cid, sel, kind, rng.next(), mode];
+        twin(
+            "MsSearchScriptTarget_007a8f60",
+            a,
+            b,
+            0x007a_8f60,
+            &args,
+            ALL,
+            |m| {
+                ffx_battle::minor::bridge::ms_search_script_target(
+                    m,
+                    &stand_in,
+                    [i, cid, sel, kind, mode],
+                    out + 0x84,
+                )
+            },
+        );
+        let v = a.read(out + 0x84, 4).unwrap();
+        b.write(out + 0x84, &v).unwrap();
+        same("MsSearchScriptTarget_007a8f60", a, b);
+    }
+    let flags = [
+        rng.below(0x400),
+        0x200 | rng.below(0x100),
+        0x100 | rng.below(2),
+        rng.next() | 0x8000_0000,
+    ][rng.below(4) as usize];
+    twin(
+        "MsSetCommandScriptTarget_007a8b40",
+        a,
+        b,
+        0x007a_8b40,
+        &[i, cid, flags],
+        ALL,
+        |m| ffx_battle::minor::bridge::ms_set_command_script_target(m, i, cid, flags),
+    );
+    same("MsSetCommandScriptTarget_007a8b40", a, b);
     // command data, equipment names, default targets
     if w.synthetic {
         // equipment of names the fake table has
