@@ -8600,8 +8600,8 @@
 0x007cf780	dead	unreachable from the entry point and every pointer table
 0x007cf820	dead	unreachable from the entry point and every pointer table
 0x007cf860	logic	default (no rule: ported to be safe)
-0x007cf8f0	logic	default (no rule: ported to be safe)
-0x007cf970	logic	default (no rule: ported to be safe)
+0x007cf8f0	debug	reviewed: ms_free: callers are debug, dead, or the 0x7e15f0/0x7e2270 cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)
+0x007cf970	debug	reviewed: ms_free's malloc twin: same callers and debug-menu cycle (battle round 33)
 0x007cf9f0	dead	unreachable from the entry point and every pointer table
 0x007cfaa0	debug	only called from debug code (Ms_Gui_InfoProc)
 0x007cfb20	debug	debug name: MsDebugGetCameraMode
@@ -8692,7 +8692,7 @@
 0x007e13e0	dead	unreachable from the entry point and every pointer table
 0x007e1410	dead	unreachable from the entry point and every pointer table
 0x007e1450	logic	default (no rule: ported to be safe)
-0x007e15f0	logic	default (no rule: ported to be safe)
+0x007e15f0	debug	reviewed: in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)
 0x007e1b50	logic	default (no rule: ported to be safe)
 0x007e1b70	debug	only called from debug code (0x7e1010)
 0x007e1bc0	dead	unreachable from the entry point and every pointer table
@@ -8704,13 +8704,13 @@
 0x007e1f80	logic	default (no rule: ported to be safe)
 0x007e2140	logic	default (no rule: ported to be safe)
 0x007e2250	logic	default (no rule: ported to be safe)
-0x007e2270	logic	default (no rule: ported to be safe)
+0x007e2270	debug	reviewed: in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)
 0x007e2600	logic	default (no rule: ported to be safe)
 0x007e2660	logic	default (no rule: ported to be safe)
 0x007e26f0	dead	unreachable from the entry point and every pointer table
 0x007e2720	logic	default (no rule: ported to be safe)
-0x007e2770	logic	default (no rule: ported to be safe)
-0x007e2a60	logic	default (no rule: ported to be safe)
+0x007e2770	debug	reviewed: in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)
+0x007e2a60	debug	reviewed: in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)
 0x007e2d90	debug	only called from debug code (0x7e1010)
 0x007e2e30	logic	default (no rule: ported to be safe)
 0x007e2e80	dead	unreachable from the entry point and every pointer table

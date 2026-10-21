@@ -386,6 +386,12 @@ REVIEWED = {
     0x0087b040: ("debug", "worker-state debug print: sprintf + TkPutDebugFontString(P) 0x88f140/0x88f4c0, getters only, writes only the debug font state 0x1328a74 (menu round 29)"),
     0x0087b0c0: ("debug", "worker-state debug print: sprintf + TkPutDebugFontString(P) 0x88f140/0x88f4c0, getters only, writes only the debug font state 0x1328a74 (menu round 29)"),
     0x00715af0: ("platform", "Virtuos renderer setup: .dds.phyre texture names, graphicVFXIsTextureLoaded, \"Virtuos Error\", graphicVFXCreate/CreateDataBuffer (effects round 39)"),
+    0x007cf8f0: ("debug", "ms_free: callers are debug, dead, or the 0x7e15f0/0x7e2270 cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
+    0x007cf970: ("debug", "ms_free's malloc twin: same callers and debug-menu cycle (battle round 33)"),
+    0x007e15f0: ("debug", "in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
+    0x007e2270: ("debug", "in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
+    0x007e2770: ("debug", "in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
+    0x007e2a60: ("debug", "in the cycle reached only from Ms_Gui_BattleProc's debug menu 0x7e1010 (battle round 33)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
