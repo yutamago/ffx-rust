@@ -27,6 +27,28 @@ flag bytes and calls `+8(menu, mode)` with `g_TkMn2MenuMode`
 clears it); the next word, `g_TkMenuDrawSkipMask` (`0x018408f0`), skips
 slots in both `TkMenuDrawAll` and `TkMenuCloseAll`.
 
+`TkMenuMainOpenMode_008aa780(mode, arg)` (caller `0x008a9ca0`) sets up
+the slots for a menu mode. Every mode except 0x10000, 0x20000, 0x40000
+and 0x80000 first registers the main set (slots 0x13, 6, 0, 0xf, 0x10,
+3, 7, 2, 0xa, 0x17, 0xb, 0x15, 0x14, 4, 9; menu records `0x00c59500` to
+`0x00c5b33c`) and opens the main window (`TOMenuMainWindowOpen_008a8e70`).
+Then:
+
+| mode | slot activated (`TkMenuMainActiveMenu(slot, arg)`) |
+|---|---|
+| 0x10000 (battle end) | 0x11 (`0x00c59524`), arg 0 |
+| 0x20000 (shop) | 0xd (`0x00c5a844`), command window 0xd |
+| 0x40000 | 0xc (`0x00c5a820`), command window 0xc |
+| 0x80000 | 0xe (`0x00c5a0b0`, with slot 0), command window 0xe (`arg` below 0x20) or 0x18 |
+| 0x100000 / 0x200000 | 0x10 / 0xf, arg 0, command window the same |
+| 0x400000 | 0xb, after `TkMn2SetMainFrameRatioDiff(-16)` |
+| 0x800000 | 0x16 (`0x00c5a8d8`) |
+| other | 1 (`0x00c5b2b0`), arg 0, command window 1 |
+
+Mode 0x80000 unlocks achievements in language 0xb (`arg` 0x11: 0xf and
+0x1a; 0xd, 0xe: `arg`). In that language, off map 0x17e, it runs
+`resetDefaultPlayerNameStatus()` instead of activating slot 0xe.
+
 ## Windows (`g_TkMenuWindows`, `0x01840900`)
 
 32 records of `0x98` bytes. `TkMenuMainAllocWindow` (`0x008aa1a0`) returns
@@ -741,13 +763,23 @@ loaders `0x0088e3a0`/`0x0088e440` (CD files `0x2d`/`0x2c`, into
 
 ## Splines (`TkMtCalcSpline*`)
 
-`0x0088aa40` (the body of `TkMtCalcSpline3` and its tangent
-`0x0088aba0`) clamps `t` to 0..1 and, for more than 3 points, picks the
-segment index with an `ftol` (per Ghidra; not ported yet), moves it until
-the local `t = (t - index / (n - 3)) * (n - 3)` is in 0..1, keeps it in
-`0..n - 4` and calls `TkMtCalcSpline3Segment_0088a500(out, index,
-t, points, position)`; up to 3 points go to `0x0088afd0`, which uses
-`TkMtCalcSplineSegment_0088abd0`. Points are 16 bytes. Both are uniform
+`TkMtCalcSpline`/`TkMtCalcSplineTangent` (`0x0088a4a0`/`0x0088b3b0`)
+call `TkMtCalcSplineAt_0088afd0(out, points, n, t, 1/0)`, and
+`TkMtCalcSpline3`/`0x0088aba0` call `TkMtCalcSpline3At_0088aa40` the same
+way. Both clamp `t` (below 0 is 0, above 1 is 1, NaN kept). `0x0088aa40`
+sends up to 3 points to `0x0088afd0`. With `m` segments (`n - 3`
+cubic, `n - 2` quadratic) both pick the segment the same way: `step =
+f32(1 / f32(m))`, `k = ftol(t / step)`, `frac = f32((t - f32(k) * step)
+* f32(m))`, then whole steps bring `frac` into 0..1 (moving `k`), `k <
+0` gives `(0, 0)` and `k >= m` gives `(m - 1, 1)`. In the tests the
+steps ran only when `f32(k)` rounds (past 2^24 segments), and a search
+over small `m` never landed `frac` on exactly 1.0. Then `TkMtCalcSpline3Segment_0088a500` or
+`TkMtCalcSplineSegment_0088abd0(out, k, frac, points, position)`.
+`0x0088afd0`'s small cases: 0 or 1 points give the tangent `(1, 0, 0,
+1)` and leave the point alone; 2 points give the tangent `p1 - p0`
+normalised (`w` 0 for `TkNormalFVector`, then 1) and, for `t` other
+than 0 and 1, the point `(1 - t) * p0 + t + p1` per word: the original
+adds `t`, not `t * p1`. Points are 16 bytes. Both segments are uniform
 B-splines evaluated on the emulated VU0 (`g_Vu0Acc` `0x00c8f790` and the
 registers after it):
 
@@ -849,3 +881,21 @@ caption at the bottom right: with `u16 0x0186a168` 0 the text
 it draws, 1 after) into two lines on plates at y 870 and 925. A plate is
 `remapX2(80)` wider than the widest line (scale 0.78), at least
 `remapX2(740)`, right-aligned at `remapX2(1806)`, the text centred in it.
+
+`MenuLimit_WindowDraw_008d16f0` (the `+0x10` step of the overdrive-mode
+window, `MenuLimit_OpenWindow`) titles the list with the name of command
+`u16 list[k] + 2` (`MsMenuStatusNum(0)`, `TkMenuGetCommandOffset(list,
+5, player, 0x48)`), centred on x 405, y 336 at scale 0.78, when `+0x5c`
+is set. Otherwise it calls `0x008f9280(0, i16 [0x0186a70c], i16
+[0x0186a70e], 0x80)`. Its width word is the argument's stack slot, so a
+callee that writes nothing leaves the window pointer there as the
+width.
+
+`MenuSummon_DrawList_008ce130(dx, _, cursor)` draws the aeon list:
+rows from `(606 + dx, 246)`, 77.8 apart, each a name strip
+(`TOMkpShapeXYWHUV(-6, ..)` 1105 x 71 at sheet v `i * 77.88`), four
+`DrawWaterWaveShapeC2` pieces 250 x 64 (u 0/250/300/550, v `(i + 1) *
+64`, wave `(50, -20)` for the first two, `(-80, -10)` for the last two)
+and `TkMn2DrawSummonPlateCheckHP`. The current aeon's row gets the cross
+cursor at `(120, 10)` when `cursor` is 0 or more (style 0) or -1 (style
+1). Its second argument is never read.

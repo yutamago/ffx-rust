@@ -21830,6 +21830,129 @@ pub mod bridge {
         eax
     }
 
+    /// The spline parameter as `0x0088afd0` and `0x0088aa40` take it:
+    /// below 0 is 0, above 1 is 1, anything else (NaN too) kept.
+    fn spline_clamp(t: f32) -> f32 {
+        if t < 0.0 {
+            0.0
+        } else if t > 1.0 {
+            1.0
+        } else {
+            ffx_bridge::x87::round_trip(t)
+        }
+    }
+
+    /// The segment and its parameter for `t` over `m` segments (`m = n -
+    /// 2` quadratic, `n - 3` cubic): `step = f32(1 / f32(m))`, `k =
+    /// ftol(t / step)`, `frac = f32((t - f32(k) * step) * f32(m))`,
+    /// brought into `0..=1` by whole steps (moving `k`); `k < 0` gives
+    /// `(0, 0)`, `k >= m` gives `(m - 1, 1)`. `frac` as `f32` bits.
+    fn spline_index(mem: &impl Mem, t: f32, m: i32) -> (i32, u32) {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, store, sub};
+        let tl = f64::from(t);
+        let mf = load(store(f64::from(m)));
+        let step = load(store(div(1.0, mf)));
+        let mut k = ftol(mem, div(tl, step)).cast_signed();
+        let kf = load(store(f64::from(k)));
+        let mut frac = store(mul(sub(tl, mul(kf, step)), mf));
+        while load(frac) < 0.0 {
+            frac = store(add(load(frac), 1.0));
+            k = k.wrapping_sub(1);
+        }
+        while load(frac) > 1.0 {
+            frac = store(sub(load(frac), 1.0));
+            k = k.wrapping_add(1);
+        }
+        if k < 0 {
+            k = 0;
+            frac = 0;
+        }
+        if k >= m {
+            k = m.wrapping_sub(1);
+            frac = 0x3f80_0000;
+        }
+        (k, frac)
+    }
+
+    /// `TkMtCalcSpline(out, points, n, t)` (`0x0088a4a0`, Fahrenheit's
+    /// name): [`tk_mt_calc_spline_at`]`(out, points, n, t, 1)`, the point.
+    pub fn tk_mt_calc_spline<M: Mem>(
+        mem: &mut M,
+        [out, points]: [u32; 2],
+        n: i32,
+        t: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        tk_mt_calc_spline_at(mem, [out, points], n, t, 1, call);
+    }
+
+    /// `TkMtCalcSplineTangent(out, points, n, t)` (`0x0088b3b0`,
+    /// Fahrenheit's name): [`tk_mt_calc_spline_at`]`(out, points, n, t,
+    /// 0)`, the tangent.
+    pub fn tk_mt_calc_spline_tangent<M: Mem>(
+        mem: &mut M,
+        [out, points]: [u32; 2],
+        n: i32,
+        t: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        tk_mt_calc_spline_at(mem, [out, points], n, t, 0, call);
+    }
+
+    /// `TkMtCalcSpline3At_0088aa40(out, points, n, t, position)`
+    /// (`0x0088aa40`, own name; callers `TkMtCalcSpline3`,
+    /// `TkMtCalcSpline3Tangent_0088aba0`): the cubic B-spline. `t` is
+    /// clamped as in [`tk_mt_calc_spline_at`]; `n` 0..=3 goes to
+    /// `TkMtCalcSplineAt_0088afd0(out, points, n, t, position)`, any
+    /// other to `TkMtCalcSpline3Segment_0088a500(out, k, frac, points,
+    /// position)` over `n - 3` segments.
+    pub fn tk_mt_calc_spline3_at<M: Mem>(
+        mem: &mut M,
+        [out, points]: [u32; 2],
+        n: i32,
+        t: f32,
+        position: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let t = spline_clamp(t);
+        if (0..=3).contains(&n) {
+            let f = mem.rebase(0x0088_afd0);
+            call(
+                mem,
+                f,
+                &[out, points, n.cast_unsigned(), t.to_bits(), position],
+            );
+            return;
+        }
+        let (k, frac) = spline_index(mem, t, n.wrapping_sub(3));
+        let f = mem.rebase(0x0088_a500);
+        call(mem, f, &[out, k.cast_unsigned(), frac, points, position]);
+    }
+
+    /// `TkMtCalcSpline3(out, points, n, t)` (`0x0088a4d0`, Fahrenheit's
+    /// name): [`tk_mt_calc_spline3_at`]`(out, points, n, t, 1)`.
+    pub fn tk_mt_calc_spline3<M: Mem>(
+        mem: &mut M,
+        [out, points]: [u32; 2],
+        n: i32,
+        t: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        tk_mt_calc_spline3_at(mem, [out, points], n, t, 1, call);
+    }
+
+    /// `TkMtCalcSpline3Tangent_0088aba0(out, points, n, t)`
+    /// (`0x0088aba0`): [`tk_mt_calc_spline3_at`]`(out, points, n, t, 0)`.
+    pub fn tk_mt_calc_spline3_tangent<M: Mem>(
+        mem: &mut M,
+        [out, points]: [u32; 2],
+        n: i32,
+        t: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        tk_mt_calc_spline3_at(mem, [out, points], n, t, 0, call);
+    }
+
     /// `TkMtCalcSplineAt_0088afd0(out, points, n, t, position)`
     /// (`0x0088afd0`, own name; callers `TkMtCalcSpline`,
     /// `TkMtCalcSplineTangent`, `0x0088aa40`): the quadratic B-spline of
@@ -21853,15 +21976,9 @@ pub mod bridge {
         position: u32,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
-        use ffx_bridge::x87::{add, div, ftol, load, mul, round_trip, store, sub};
+        use ffx_bridge::x87::{add, load, mul, store, sub};
         const ONE: u32 = 0x3f80_0000;
-        let t = if t < 0.0 {
-            0.0
-        } else if t > 1.0 {
-            1.0
-        } else {
-            round_trip(t)
-        };
+        let t = spline_clamp(t);
         let tl = f64::from(t);
         let word = |p: u32, k: u32| p.wrapping_add(4 * k);
         let p1 = points.wrapping_add(0x10);
@@ -21894,30 +22011,94 @@ pub mod bridge {
             mem.write(word(out, 3), ONE);
             return;
         }
-        let m = n.wrapping_sub(2);
-        let mf = load(store(f64::from(m)));
-        let step = load(store(div(1.0, mf)));
-        let mut k = ftol(mem, div(tl, step)).cast_signed();
-        let kf = load(store(f64::from(k)));
-        let mut frac = store(mul(sub(tl, mul(kf, step)), mf));
-        while load(frac) < 0.0 {
-            frac = store(add(load(frac), 1.0));
-            k = k.wrapping_sub(1);
-        }
-        while load(frac) > 1.0 {
-            frac = store(sub(load(frac), 1.0));
-            k = k.wrapping_add(1);
-        }
-        if k < 0 {
-            k = 0;
-            frac = 0;
-        }
-        if k >= m {
-            k = m.wrapping_sub(1);
-            frac = ONE;
-        }
+        let (k, frac) = spline_index(mem, t, n.wrapping_sub(2));
         let f = mem.rebase(0x0088_abd0);
         call(mem, f, &[out, k.cast_unsigned(), frac, points, position]);
+    }
+
+    /// `MenuSummon_DrawList_008ce130(dx, _, cursor)` (`0x008ce130`, own
+    /// name; caller `0x008cebe0`): the aeon list of the summon menu. `X =
+    /// ftol(remapX2(606) + f32(dx))`, `Xf = f32(X)`; `Y =
+    /// ftol(remapY2(246))` (the second argument is never read). For each
+    /// of `TkMenuGetSummonListMax()` rows `i` (`Yf = f32(Y)`, `v =
+    /// f32(f32(i + 1) * 64)`): the name strip
+    /// `TOMkpShapeXYWHUV(-6, Xf, Yf, remapX2(1105), remapY2(71), 0,
+    /// f32(i * 77.88), 1023, f32(i * 77.88 + 71))` of aeon
+    /// `TkMenuGetSummonFromIndex(i)`; four water-wave pieces
+    /// `DrawWaterWaveShapeC2(x, Yf, remapX2(250), remapY2(64), u, v, 250,
+    /// 64, su, sv, c0, c1)`: `(Xf, 0, 50, -20, 0xc56870, 0x1ac56870)`,
+    /// `(f32(remapX2(250) + Xf), 250, 50, -20, 0x1ac56870, 0xc56870)`,
+    /// `(Xf, 300, -80, -10, 0xc56870, 0x33c56870)`, `(f32(remapX2(250) +
+    /// Xf), 550, -80, -10, 0x33c56870, 0xc56870)` (the colour words are
+    /// plain numbers); `TkMn2DrawSummonPlateCheckHP(X, Y, aeon)`; on the
+    /// row `TkMenuGetCurrentSummonPos()` with `cursor` 0 and up (or -1)
+    /// `TkMn2DrawCrossCmdCursor(f32(remapX2(120) + Xf), f32(remapY2(10) +
+    /// Yf), 0)` (1 for -1); then `Y = ftol(remapY2(77.8) + Yf)`. Each
+    /// pair is remapped `y` first. Returns the last `Y`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one straight sequence of draws
+    pub fn menu_summon_draw_list<M: Mem>(
+        mem: &mut M,
+        dx: i32,
+        cursor: i32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store};
+        let r = |mem: &M, f: u32| mem.rebase(f);
+        let f = r(mem, 0x008a_9bf0);
+        let count = call(mem, f, &[]).cast_signed();
+        let left = remap(mem, false, 606.0);
+        let x = ftol(mem, add(left, load(store(f64::from(dx)))));
+        let top = remap(mem, true, 246.0);
+        let mut y = ftol(mem, top);
+        let xf = load(store(f64::from(x.cast_signed())));
+        let xf_bits = store(xf);
+        let (index, strip) = (r(mem, 0x008a_9bc0), r(mem, 0x0090_3bb0));
+        let (wave, plate) = (r(mem, 0x008e_7d30), r(mem, 0x008c_eb00));
+        let (pos, cross) = (r(mem, 0x008a_9890), r(mem, 0x008c_0580));
+        let mut i = 0i32;
+        while i < count {
+            let aeon = call(mem, index, &[i.cast_unsigned()]);
+            let fi = load(store(f64::from(i)));
+            let row = mul(fi, f64::from(77.88f32));
+            let yf = store(f64::from(y.cast_signed()));
+            let v1 = store(add(row, 71.0));
+            let v0 = store(row);
+            let height = store(remap(mem, true, 71.0));
+            let width = store(remap(mem, false, 1105.0));
+            #[rustfmt::skip]
+            call(mem, strip, &[0xffff_fffa, xf_bits, yf, width, height, 0, v0, 1023f32.to_bits(), v1]);
+            let next = i.wrapping_add(1);
+            let v = store(mul(load(store(f64::from(next))), 64.0));
+            for (shift, u, su, sv, colours) in [
+                (false, 0.0f32, 50.0f32, -20.0f32, [0x00c5_6870, 0x1ac5_6870]),
+                (true, 250.0, 50.0, -20.0, [0x1ac5_6870, 0x00c5_6870]),
+                (false, 300.0, -80.0, -10.0, [0x00c5_6870, 0x33c5_6870]),
+                (true, 550.0, -80.0, -10.0, [0x33c5_6870, 0x00c5_6870]),
+            ] {
+                let height = store(remap(mem, true, 64.0));
+                let width = store(remap(mem, false, 250.0));
+                let px = if shift {
+                    store(add(remap(mem, false, 250.0), xf))
+                } else {
+                    xf_bits
+                };
+                let [u, su, sv] = [u, su, sv].map(f32::to_bits);
+                let (uw, vh) = (250f32.to_bits(), 64f32.to_bits());
+                #[rustfmt::skip]
+                call(mem, wave, &[px, yf, width, height, u, v, uw, vh, su, sv, colours[0], colours[1]]);
+            }
+            call(mem, plate, &[x, y, aeon]);
+            if i.cast_unsigned() == call(mem, pos, &[]) && cursor >= -1 {
+                let cy = store(add(remap(mem, true, 10.0), load(yf)));
+                let cx = store(add(remap(mem, false, 120.0), xf));
+                call(mem, cross, &[cx, cy, u32::from(cursor < 0)]);
+            }
+            let next_y = add(remap(mem, true, 77.8), load(yf));
+            y = ftol(mem, next_y);
+            i = next;
+        }
+        y
     }
 
     /// `MenuLimit_WindowDraw_008d16f0(w)` (`0x008d16f0`, own name; the

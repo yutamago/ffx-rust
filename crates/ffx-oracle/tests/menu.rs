@@ -17412,6 +17412,7 @@ fn menu_round32_scan_spline_limit_draw_and_open_mode_match_the_original() {
         1.0,
         1.5,
         -2.0,
+        -0.25,
         1e-8,
         f32::from_bits(0x7fc0_0000),
     ];
@@ -17549,6 +17550,154 @@ fn menu_round32_scan_spline_limit_draw_and_open_mode_match_the_original() {
                     |o| w(tk::tk_menu_main_open_mode(o, mode, arg, &mut callback)),
                 );
             }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round32_spline_wrappers_and_summon_list_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    type Wrapper = fn(&mut Oracle, [u32; 2], i32, f32);
+    let Some(mut t) = setup_any(0x0032_0002) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = vec![];
+    for (f, n) in [
+        // both segments (their coefficient copies carry a frame word)
+        (0x0088_abd0u32, 5u8),
+        (0x0088_a500, 5),
+        (0x008a_9bc0, 1),
+        (0x0090_3bb0, 9),
+        (0x008e_7d30, 12),
+        (0x008c_eb00, 3),
+        (0x008c_0580, 3),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let count = seq_stub(&mut t, 0x008a_9bf0, log, 0, &[]);
+    let pos = seq_stub(&mut t, 0x008a_9890, log, 0, &[]);
+    let (area, out) = (t.alloc(&[0; 0x300]), t.alloc(&[0; 0x10]));
+    let points = area + 0x100;
+    let floats = [
+        0f32,
+        -0.0,
+        0.25,
+        0.5,
+        0.999,
+        1.0,
+        1.5,
+        -2.0,
+        -0.25,
+        1e-8,
+        f32::from_bits(0x7fc0_0000),
+    ];
+    let wrappers: [(&str, u32, Wrapper); 4] = [
+        ("TkMtCalcSpline", 0x0088_a4a0, |o, p, n, v| {
+            tk::tk_mt_calc_spline(o, p, n, v, &mut callback);
+        }),
+        ("TkMtCalcSplineTangent", 0x0088_b3b0, |o, p, n, v| {
+            tk::tk_mt_calc_spline_tangent(o, p, n, v, &mut callback);
+        }),
+        ("TkMtCalcSpline3", 0x0088_a4d0, |o, p, n, v| {
+            tk::tk_mt_calc_spline3(o, p, n, v, &mut callback);
+        }),
+        (
+            "TkMtCalcSpline3Tangent_0088aba0",
+            0x0088_aba0,
+            |o, p, n, v| {
+                tk::tk_mt_calc_spline3_tangent(o, p, n, v, &mut callback);
+            },
+        ),
+    ];
+    for round in 0..4000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        if round % 3 == 2 {
+            let v = t.rng.pick(&[0u32, 1, 2, 3, 5, 0xffff_ffff]);
+            t.put(count, v);
+            let v = t.rng.pick(&[0u32, 1, 2, 4, 0xffff_ffff]);
+            t.put(pos, v);
+            let dx = t.rng.pick(&[0i32, 0, 1, -100, 300, 0x0123_4567, i32::MIN]);
+            let cursor = t.rng.pick(&[0i32, 0, 1, -1, -1, -2, 5, i32::MIN]);
+            let args = [dx.cast_unsigned(), t.rng.next(), cursor.cast_unsigned()];
+            t.twin(
+                "MenuSummon_DrawList_008ce130",
+                0x008c_e130,
+                &args,
+                U32,
+                |o| {
+                    w(tk::menu_summon_draw_list(
+                        o,
+                        dx,
+                        cursor,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                },
+            );
+            continue;
+        }
+        for k in 0..0xc0 {
+            let v = t.rng.below(2001).cast_signed() - 1000;
+            #[allow(clippy::cast_precision_loss)]
+            let v = v as f32 / 10.0;
+            t.put(area + 4 * k, v.to_bits());
+        }
+        t.scramble_at(out, 0x10);
+        let n = t.rng.pick(&[
+            -5i32,
+            -1,
+            0,
+            1,
+            2,
+            3,
+            3,
+            4,
+            4,
+            5,
+            8,
+            12,
+            0x0180_0004,
+            0x0180_0004,
+            0x0123_4567,
+        ]);
+        #[allow(clippy::cast_precision_loss)]
+        let tv = match t.rng.below(4) {
+            0 => t.rng.below(0x1_0001) as f32 / 65536.0,
+            1 if n > 3 => {
+                let m = (n - 3) as f32;
+                let step = 1.0 / m;
+                let j = t.rng.below(n.cast_unsigned() - 2) as f32;
+                let bits = (j * step).to_bits();
+                let nudge = t.rng.pick(&[0u32, 1, 0xffff_ffff]);
+                f32::from_bits(bits.wrapping_add(nudge)).clamp(0.0, 1.0)
+            }
+            _ => t.rng.pick(&floats),
+        };
+        if round % 3 == 0 {
+            let (what, f, port) = t.rng.pick(&wrappers);
+            let args = [out, points, n.cast_unsigned(), tv.to_bits()];
+            t.twin(what, f, &args, VOID, |o| {
+                port(o, [out, points], n, tv);
+                0
+            });
+        } else {
+            let position = t.rng.pick(&[0u32, 0, 1, 7]);
+            let args = [out, points, n.cast_unsigned(), tv.to_bits(), position];
+            t.twin(
+                "TkMtCalcSpline3At_0088aa40",
+                0x0088_aa40,
+                &args,
+                VOID,
+                |o| {
+                    tk::tk_mt_calc_spline3_at(o, [out, points], n, tv, position, &mut callback);
+                    0
+                },
+            );
         }
     }
     eprintln!("{} calls", t.calls);

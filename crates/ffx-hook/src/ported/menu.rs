@@ -4894,6 +4894,30 @@ ported! {
     TkMtCalcSplineAt_0088afd0 @ 0x0088_afd0 => extern "C" fn tk_mt_calc_spline_at(out: u32, points: u32, n: i32, t: f32, position: u32) {
         tk::tk_mt_calc_spline_at(&mut mem(), [out, points], n, t, position, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `TkMtCalcSpline(out, points, n, t)`.
+    TkMtCalcSpline @ 0x0088_a4a0 => extern "C" fn tk_mt_calc_spline(out: u32, points: u32, n: i32, t: f32) {
+        tk::tk_mt_calc_spline(&mut mem(), [out, points], n, t, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSplineTangent(out, points, n, t)`.
+    TkMtCalcSplineTangent @ 0x0088_b3b0 => extern "C" fn tk_mt_calc_spline_tangent(out: u32, points: u32, n: i32, t: f32) {
+        tk::tk_mt_calc_spline_tangent(&mut mem(), [out, points], n, t, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3At_0088aa40(out, points, n, t, position)`.
+    TkMtCalcSpline3At_0088aa40 @ 0x0088_aa40 => extern "C" fn tk_mt_calc_spline3_at(out: u32, points: u32, n: i32, t: f32, position: u32) {
+        tk::tk_mt_calc_spline3_at(&mut mem(), [out, points], n, t, position, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3(out, points, n, t)`.
+    TkMtCalcSpline3 @ 0x0088_a4d0 => extern "C" fn tk_mt_calc_spline3(out: u32, points: u32, n: i32, t: f32) {
+        tk::tk_mt_calc_spline3(&mut mem(), [out, points], n, t, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3Tangent_0088aba0(out, points, n, t)`.
+    TkMtCalcSpline3Tangent_0088aba0 @ 0x0088_aba0 => extern "C" fn tk_mt_calc_spline3_tangent(out: u32, points: u32, n: i32, t: f32) {
+        tk::tk_mt_calc_spline3_tangent(&mut mem(), [out, points], n, t, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSummon_DrawList_008ce130(dx, _, cursor)`: the last row's `Y`.
+    MenuSummon_DrawList_008ce130 @ 0x008c_e130 => extern "C" fn menu_summon_draw_list(dx: i32, _unused: u32, cursor: i32) -> u32 {
+        tk::menu_summon_draw_list(&mut mem(), dx, cursor, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `MenuLimit_WindowDraw_008d16f0(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
     MenuLimit_WindowDraw_008d16f0 @ 0x008d_16f0 => extern "C" fn menu_limit_window_draw(w: u32) -> u32 {
         // MsMenuStatusNum's out word and the text width (the original's argument slot)
