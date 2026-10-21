@@ -3857,6 +3857,7 @@
 0x0073b800 function pppDrawMdlInfCon2         # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x20 second set-up; "pppDrawMdlInf" (0x00c3c970) +0x20 second set-up
 0x0073b830 function pppDrawMdlInfDes          # ppp program table record "pppDrawMdlInf" +0x24 destructor
 0x0073b9b0 function pppDrawMdlInfDraw         # ppp program table record "pppDrawMdlInf" draw; not a function start in the Ghidra dump
+0x0073c8e0 function pppDrawMdlInfDrawSetup    # name ours: the inf draw set-up its one caller pppDrawMdlInfDraw runs; cdecl (rec, state) -> 0/1; bounds of the shape vertices, a copy and per-vertex u16 span positions (the z one overwrites the x one in the +0xd4 block; +0xd8 allocated, never written); ported ffx_vfx::prog::bridge::ppp_draw_mdl_inf_draw_setup (r41)
 0x0073ce30 function pppVu0MoveVia             # (dst, src) src through the emulated VU0 register 0x00c8f980 into dst (pppDrawMdlInfDraw)
 0x0073ce80 function pppVu0LoadVf00            # (dst) dst = g_Vu0_Vf00 (pppDrawMdlInfDraw)
 0x0073ceb0 function pppVu0Length              # (v) -> f32: emulated VU0 length: v into 0x00c8f830, squares, sums at 0x00c8f820, g_Vu0_Q = sqrt|x²+y²+z²| (_CIsqrt), vf00.x + Q returned and in 0x00c8f830 (pppDrawMdlInfDraw)
@@ -16348,7 +16349,7 @@
 0x00d2c25c label    g_pppFpWood               # pppSetFpPdt sets it when an effect has kind byte +0x6a 2; pppFpLoop then calls pppFpSetWoodMatrix; name ours
 0x00d2c260 label    g_FpRun                      # FP run records, 0x80 per g_FpData entry: +0 frame counter (-0x1000 not started), +0x1d status (0 run, 1 end: Fp_End, 2: Fp_RestartMode2)
 0x00d30260 label    g_FpDisp                     # FP display records, 0x4c per entry: +0 flags (0x10 hidden: pppFpIDdispOff, 2 stuck to map: pppFpSetStickMap, 8 to a display object), +4 stick target
-0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it
+0x00d4b464 label    g_pppDrawMdlInfActive     # pppDrawMdlInfDes clears it; set to the state by pppDrawMdlInfDrawSetup 0x0073c8e0
 0x00d4b46c label    g_KeLnsLpTCount           # pppKeLnsLpTCon (0x0075b090) stores it at area +0x8c and increments it (byte)
 0x00d4b4e8 label    g_PppCrosshair               # i32 x, y of pppDrawCrosshair's point (x 0x7fff: none); read by 0x007606f0 and 0x00760f30, no writer in the dump
 0x00d4be34 label    g_pppPmcomTexCount        # the records pppSetPmcom2Texture_007629e0 has filled (it increments it; the old value is the record index)

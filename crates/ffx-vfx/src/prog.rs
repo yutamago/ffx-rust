@@ -1404,6 +1404,178 @@ pub mod bridge {
         1
     }
 
+    /// `pppDrawMdlInfDrawSetup(rec, state)` (`0x0073c8e0`, name ours; its
+    /// one caller is `pppDrawMdlInfDraw`): notes `state` in
+    /// [`MDL_INF_ACTIVE`]; 0 for no shape (the record's `+4` 0xffff, or an
+    /// empty block: the shape found as in [`ppp_draw_mdl_sea_draw_setup`]).
+    /// Else the identity at `state`, `vf00` in rows `+0x40..+0x70`, zeros
+    /// at `+0x70..+0x7c` and `+0x80..+0x8c`. With vertices (the shape's
+    /// `i16 +0x12` of 6-byte `i16 x, y, z`, at the shape plus its `+8`) the
+    /// bounds from them: `+0x90` min x, `+0x94` and `+0xa4` the first `y`,
+    /// `+0x98` min z, `+0xa0` max x, `+0xa8` max z, `+0xb0` and `+0xb4` the
+    /// x and z spans (a vertex below the min x leaves min z alone, one above
+    /// the max x leaves max z alone). Zeros at `+0xb8..+0xd0`, no copy at
+    /// `+0xd0`, the record at `+0xdc`, its `+0x81` byte at `+0xe0`, the
+    /// texture counts at `+0xe1`/`+0xe2` (the record's `+0x80` texture as
+    /// in the sea's set-up), `+0xe3` bit 0 a non-zero `+0x20..+0x28` and bit
+    /// 1 a non-zero `+0x50..+0x58` (NaN counts), `u16 +0xe4` 0. With a flag
+    /// and vertices: a copy of the vertices at `+0xd0`, two `u16` blocks of
+    /// one per vertex at `+0xd4` and `+0xd8`, and `+0xd4` gets each
+    /// vertex's x and then z position in its span scaled to 0x10000
+    /// (truncated, low 16 bits; the z one lands on the same slot, so `+0xd8`
+    /// stays unwritten). 0 when an allocation fails, else 1.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_draw_mdl_inf_draw_setup<M: Mem>(mem: &mut M, rec: u32, state: u32) -> u32 {
+        use ffx_bridge::x87::{cvttsd2si, div, load, mul, sub};
+        MDL_INF_ACTIVE.set(mem, state);
+        let index: u32 = mem.read(rec.wrapping_add(4));
+        if index == 0xffff {
+            return 0;
+        }
+        let (env, _) = env_heaps(mem);
+        let blocks: u32 = mem.read(env.wrapping_add(0x20));
+        let shape = stub::ptr32(mem.read(blocks.wrapping_add(index << 5).wrapping_add(0x1c)));
+        if shape == 0 {
+            return 0;
+        }
+        ffx_ps2::vu0::bridge::matrix_identity(mem, state);
+        for row in [0x40u32, 0x50, 0x60] {
+            let vf00 = VF00.get(mem);
+            mem.write(state.wrapping_add(row), vf00);
+        }
+        for off in [0x78u32, 0x74, 0x70, 0x88, 0x84, 0x80] {
+            mem.write(state.wrapping_add(off), 0u32);
+        }
+        let count = |mem: &M| i32::from(mem.read::<i16>(shape.wrapping_add(0x12)));
+        let mut verts = 0u32;
+        let n = count(mem);
+        if n > 0 {
+            verts = shape.wrapping_add(mem.read(shape.wrapping_add(8)));
+            let at = |mem: &M, k: u32| mem.read::<i16>(verts.wrapping_add(k));
+            let y = at(mem, 2);
+            let (mut min_x, mut max_x) = (at(mem, 0), at(mem, 0));
+            let (mut min_z, mut max_z) = (at(mem, 4), at(mem, 4));
+            let mut v = verts;
+            for _ in 1..n {
+                v = v.wrapping_add(6);
+                let x: i16 = mem.read(v);
+                if x < min_x {
+                    min_x = x;
+                } else {
+                    let z: i16 = mem.read(v.wrapping_add(4));
+                    min_z = min_z.min(z);
+                }
+                if x > max_x {
+                    max_x = x;
+                } else {
+                    let z: i16 = mem.read(v.wrapping_add(4));
+                    max_z = max_z.max(z);
+                }
+            }
+            let f = |v: i16| f32::from(v);
+            mem.write(state.wrapping_add(0x90), f(min_x));
+            mem.write(state.wrapping_add(0x94), f(y));
+            mem.write(state.wrapping_add(0x98), f(min_z));
+            mem.write(state.wrapping_add(0xa0), f(max_x));
+            mem.write(state.wrapping_add(0xa4), f(y));
+            mem.write(state.wrapping_add(0xa8), f(max_z));
+            // the spans of two i16s are exact in f32
+            mem.write(state.wrapping_add(0xb0), f(max_x) - f(min_x));
+            mem.write(state.wrapping_add(0xb4), f(max_z) - f(min_z));
+        }
+        for off in [0xccu32, 0xc8, 0xc4, 0xc0, 0xbc, 0xb8] {
+            mem.write(state.wrapping_add(off), 0u32);
+        }
+        mem.write(state.wrapping_add(0xd0), stub::ptr32(0));
+        mem.write(state.wrapping_add(0xdc), stub::ptr32(rec));
+        let mode: u8 = mem.read(rec.wrapping_add(0x81));
+        mem.write(state.wrapping_add(0xe0), mode);
+        mem.write(state.wrapping_add(0xe1), 0u16);
+        let nth: u8 = mem.read(rec.wrapping_add(0x80));
+        let tex = ffx_field::guide::bridge::yn_fp_trx_tex_get(mem, u32::from(nth));
+        if tex != 0 {
+            let at = shape.wrapping_add(mem.read(shape.wrapping_add(4)));
+            let image: u32 = mem.read(at.wrapping_add(8));
+            let clut: u32 = mem.read(at.wrapping_add(0xc));
+            ffx_field::guide::bridge::yn_fp_trx_tex_set_addr(mem, tex, image, clut);
+            // the count comes back in al
+            #[allow(clippy::cast_possible_truncation)]
+            let count = ffx_field::model::bridge::rcbg_embedded_trx_get_cnt(mem, tex) as u8;
+            mem.write(state.wrapping_add(0xe1), count);
+            mem.write(state.wrapping_add(0xe2), count);
+        }
+        let any = |mem: &M, from: u32| {
+            [0u32, 4, 8]
+                .iter()
+                .any(|&k| mem.read::<f32>(rec.wrapping_add(from + k)) != 0.0)
+        };
+        mem.write(state.wrapping_add(0xe3), 0u8);
+        if any(mem, 0x20) {
+            mem.write(state.wrapping_add(0xe3), 1u8);
+        }
+        if any(mem, 0x50) {
+            let flags: u8 = mem.read(state.wrapping_add(0xe3));
+            mem.write(state.wrapping_add(0xe3), flags | 2);
+        }
+        let flags: u8 = mem.read(state.wrapping_add(0xe3));
+        mem.write(state.wrapping_add(0xe4), 0u16);
+        if flags == 0 || verts == 0 {
+            return 1;
+        }
+        let alloc = |mem: &mut M, field: u32, size: u32| {
+            let (env, spare) = env_heaps(mem);
+            let block = stub::ptr32(crate::heap::bridge::ppp_mem_alloc(mem, env, spare, size));
+            mem.write(state.wrapping_add(field), block);
+            stub::is_ptr32_null(block) == 0
+        };
+        if !alloc(mem, 0xd0, count(mem).cast_unsigned().wrapping_mul(6)) {
+            return 0;
+        }
+        let mut i = 0i32;
+        let mut off = 0u32;
+        while i < count(mem) {
+            for half in [0u32, 2, 4] {
+                let dst = stub::ptr32(mem.read(state.wrapping_add(0xd0)));
+                let at = off.wrapping_add(half);
+                let v: u16 = mem.read(verts.wrapping_add(at));
+                mem.write(dst.wrapping_add(at), v);
+            }
+            i += 1;
+            off = off.wrapping_add(6);
+        }
+        for field in [0xd4u32, 0xd8] {
+            if !alloc(mem, field, count(mem).cast_unsigned().wrapping_mul(2)) {
+                return 0;
+            }
+        }
+        // (v - min) * 65536 / span, truncated (fistp under a chop control
+        // word: NaN and overflow give 0x80000000)
+        let scaled = |mem: &M, v: i16, min: u32, span: u32| {
+            let min = load(mem.read(state.wrapping_add(min)));
+            let span = load(mem.read(state.wrapping_add(span)));
+            let t = div(mul(65536.0, sub(f64::from(v), min)), span);
+            #[allow(clippy::cast_possible_truncation)] // the low half
+            let low = cvttsd2si(t) as u16;
+            low
+        };
+        let mut i = 0i32;
+        let mut v = verts;
+        while i < count(mem) {
+            let slot = i.cast_unsigned().wrapping_mul(2);
+            let x: i16 = mem.read(v);
+            let u = scaled(mem, x, 0x90, 0xb0);
+            let dst = stub::ptr32(mem.read(state.wrapping_add(0xd4)));
+            mem.write(dst.wrapping_add(slot), u);
+            let z: i16 = mem.read(v.wrapping_add(4));
+            let w = scaled(mem, z, 0x98, 0xb4);
+            let dst = stub::ptr32(mem.read(state.wrapping_add(0xd4)));
+            mem.write(dst.wrapping_add(slot), w);
+            i += 1;
+            v = v.wrapping_add(6);
+        }
+        1
+    }
+
     /// `g_pppDrawMdlInfActive` (`0x00d4b464`): `pppDrawMdlInfDes` clears it.
     pub const MDL_INF_ACTIVE: Global<u32> = Global::new(0x00d4_b464);
 

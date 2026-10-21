@@ -25439,3 +25439,107 @@ fn r41c_render_data_inits_and_op_lists_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r41d_inf_draw_setup_matches_the_original() {
+    use ffx_field::guide::YN_MAP_SYSTEM;
+    use heap::bridge as h;
+    use prog::bridge as pb;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_c8e0);
+        let (slot, env, arena) = (p.alloc(4), p.alloc(0x40), p.alloc(0x4000));
+        let (rec, state) = (p.alloc(0x90), p.alloc(0x100));
+        let (blocks, shape, alias) = (p.alloc(0x100), p.alloc(0x400), p.alloc(4));
+        // a field scene with two field-program textures (kind 0x20006)
+        let (sys, map, scene, list) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x20), p.alloc(0x10));
+        let texs = [p.alloc(0x100), p.alloc(0x100), p.alloc(0x100)];
+        let real_system: u32 = p.get(p.sym(YN_MAP_SYSTEM.sym));
+        p.put(h::ENV_SLOT, slot);
+        p.set(slot, env);
+        p.set(env + 0x20, blocks);
+        p.set(sys, map);
+        p.set(map, 0u32);
+        p.set(map + 8, scene);
+        p.set(scene + 0xc, 3u32);
+        p.set(scene + 0x10, list);
+        for (at, t) in (list..).step_by(4).zip(texs) {
+            p.set(at, t);
+        }
+        let floats = [0u32, 0x8000_0000, 0x3f80_0000, 0x7fc0_0000, 0xbf00_0000];
+        for round in 0..1500u32 {
+            if round % 16 == 0 {
+                for (heap, base) in [(env, arena), (env + 0x10, arena + 0x2000)] {
+                    p.check("pppCreateHeap", 0x0072_c480, &[heap, base, 0x2000], |m| {
+                        h::ppp_create_heap(m, heap, base, 0x2000);
+                        None
+                    });
+                }
+                // fillers: the spare heap nearly full, the main one with
+                // room for some vertex blocks but not always their flags
+                let fill = [
+                    (env + 0x10, 0x1f00 + rng.below(0x100)),
+                    (env, 0x1600 + rng.below(0x200)),
+                ];
+                for (heap, n) in fill {
+                    p.check("pppMemAlloc", 0x0071_6a30, &[heap, heap, n], |m| {
+                        Some(h::ppp_mem_alloc(m, heap, heap, n))
+                    });
+                }
+            }
+            let system = match rng.below(4) {
+                0 => 0,
+                1 if p.snapshot() => real_system,
+                _ => sys,
+            };
+            p.put(YN_MAP_SYSTEM, system);
+            p.set(map + 8, if rng.chance(10) { 0 } else { scene });
+            for t in texs {
+                p.fill(t, 0x100, &mut rng);
+            }
+            p.set(texs[0], 0x0002_0006u32);
+            p.set(texs[1], rng.pick(&[0x0002_0006u32, 0x0002_0005]));
+            p.set(texs[2], 0x0002_0006u32);
+            p.fill(rec, 0x90, &mut rng);
+            p.fill(state, 0x100, &mut rng);
+            p.fill(shape, 0x40, &mut rng);
+            let index = if rng.chance(5) { 0xffff } else { rng.below(8) };
+            p.set(rec + 4, index);
+            if index == 0xffff {
+                // a shape where index 0xffff would find one: the original
+                // must stop before
+                let far = alias - (0xffff << 5) - 0x1c;
+                p.set(env + 0x20, far);
+                p.set(alias, shape);
+            } else {
+                p.set(env + 0x20, blocks);
+                let s = if rng.chance(5) { 0 } else { shape };
+                p.set(blocks + 0x20 * index + 0x1c, s);
+            }
+            p.set(rec + 0x80, rng.pick(&[0u8, 1, 2, 3]));
+            for off in [0x20u32, 0x24, 0x28, 0x50, 0x54, 0x58] {
+                let f = if rng.chance(60) { 0 } else { rng.pick(&floats) };
+                p.set(rec + off, f);
+            }
+            p.set(shape + 4, rng.pick(&[0x20u32, 0x30]));
+            p.set(shape + 8, 0x40u32);
+            // negative counts make the allocations wrap and memset run off: left out
+            let count = rng.pick(&[
+                0u16, 1, 2, 3, 7, 0x40, 0x60, 0x80, 0xa0, 0x200, 0x700, 0xffff,
+            ]);
+            p.set(shape + 0x12, count);
+            // vertices in a small box, so spans of 0 and repeats come up
+            let span = rng.pick(&[1u32, 2, 0x10, 0x8000, 0x10000]);
+            for k in 0..0x180u32 {
+                let v = rng.below(span).wrapping_sub(span / 2);
+                p.set(shape + 0x40 + 2 * k, v as u16);
+            }
+            p.check(
+                &format!("pppDrawMdlInfDrawSetup round {round}"),
+                0x0073_c8e0,
+                &[rec, state],
+                |m| Some(pb::ppp_draw_mdl_inf_draw_setup(m, rec, state)),
+            );
+        }
+    }
+}
