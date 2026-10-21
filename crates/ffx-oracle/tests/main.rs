@@ -9735,3 +9735,141 @@ fn frame_sync_snapshot() {
     let mut rng = Xorshift(0x5eed_1114);
     frame_sync_cases(&mut a, &mut b, &mut rng, 1000);
 }
+
+/// Battle round 35: `spline_get_near_point` (`0x00a44120`) over splines
+/// of 0 to 0x10 points, start parameters in and out of 0..1, sample
+/// counts (0 and NaN too), both evaluators. `TkMtCalcSpline`/`3` run as
+/// the originals on both sides; the three frame points start zeroed on
+/// both, as the outputs do in the block.
+fn near_point_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::spline::bridge as sp;
+    let spline = alloc(a, b, 0x200);
+    let outs = alloc(a, b, 0x10);
+    let locals = b.stack_range().start + 0x400;
+    let top = a.stack_range().end;
+    let btop = b.stack_range().end;
+    let mut reach = [0u32; 6];
+    for round in 0..rounds {
+        let count = [0u32, 1, 2, 2, 3, 3, 4, 4, 5, 6, 8, 0x10][rng.below(12) as usize];
+        if round % 3 == 0 {
+            for k in 0..0x7cu32 {
+                let v = if rng.below(12) == 0 {
+                    rng.float()
+                } else if rng.below(3) == 0 {
+                    // full mantissas: the squared distances' sums round
+                    #[allow(clippy::cast_precision_loss)]
+                    let v = (rng.next() as f32 / u32::MAX as f32 - 0.5) * 300.0;
+                    v.to_bits()
+                } else {
+                    #[allow(clippy::cast_precision_loss)]
+                    let v = (rng.below(2000) as f32 - 1000.0) / 8.0;
+                    v.to_bits()
+                };
+                put(a, b, spline + 0x10 + 4 * k, v);
+            }
+        }
+        put(a, b, spline, count);
+        let t = match rng.below(8) {
+            0 => [0u32, 0x3f80_0000, 0xbe00_0000, 0x3fa0_0000, 0x7fc0_0000][rng.below(5) as usize],
+            #[allow(clippy::cast_precision_loss)]
+            _ => (rng.below(1001) as f32 / 1000.0).to_bits(),
+        };
+        let samples = match rng.below(8) {
+            0 => rng.float(),
+            1 => 0,
+            #[allow(clippy::cast_precision_loss)]
+            _ => ((count * 10).max(1) as f32 * [1.0f32, 0.5, 2.0, 4.0][rng.below(4) as usize])
+                .to_bits(),
+        };
+        set(a, b, sp::NEAR_SAMPLES, samples);
+        // at times t is the first step: a step back lands on 0 exactly
+        #[allow(clippy::cast_possible_truncation)]
+        let first = (10.0 / f64::from(f32::from_bits(samples))) as f32;
+        let t = if rng.below(6) == 0 {
+            first.to_bits()
+        } else {
+            t
+        };
+        set(a, b, sp::NEAR_T, t);
+        let pos: [u32; 3] = std::array::from_fn(|_| {
+            if rng.below(16) == 0 {
+                rng.float()
+            } else if rng.below(3) == 0 {
+                #[allow(clippy::cast_precision_loss)]
+                let v = (rng.next() as f32 / u32::MAX as f32 - 0.5) * 300.0;
+                v.to_bits()
+            } else {
+                #[allow(clippy::cast_precision_loss)]
+                let v = (rng.below(2400) as f32 - 1200.0) / 8.0;
+                v.to_bits()
+            }
+        });
+        let cubic = [0u32, 1, 0x100][rng.below(3) as usize];
+        for k in 0..4 {
+            put(a, b, outs + 4 * k, rng.next() & 0xbfff_ffff);
+        }
+        // the evaluators read a never-written frame word: zero both stacks
+        a.write(top - 0x2000, &[0; 0x2000]).unwrap();
+        b.write(btop - 0x2000, &[0; 0x2000]).unwrap();
+        b.write(locals, &[0; 0x30]).unwrap();
+        let args = [
+            spline,
+            pos[0],
+            pos[1],
+            pos[2],
+            outs,
+            outs + 4,
+            outs + 8,
+            cubic,
+        ];
+        let r = a.call(a.rebase(0x00a4_4120), Conv::Cdecl, &args).unwrap();
+        a.call(a.rebase(POP_STUB), Conv::Cdecl, &[]).unwrap();
+        let got = sp::spline_get_near_point(b, args, locals, &mut |o, cubic, w| {
+            let f = if cubic { 0x0088_a4d0 } else { 0x0088_a4a0 };
+            let at = o.rebase(f);
+            o.call(at, Conv::Cdecl, &w).unwrap();
+        });
+        let want = r.st0_f32().expect("ST0");
+        assert_eq!(
+            want.to_bits(),
+            got.to_bits(),
+            "near point {args:x?} t {t:#x} s {samples:#x}: ST0"
+        );
+        assert_eq!(
+            a.diff(b).unwrap(),
+            [],
+            "near point {args:x?} t {t:#x}: memory"
+        );
+        let moved = sp::NEAR_T.get(b);
+        let kind = if moved == t {
+            0
+        } else if f32::from_bits(moved) < 0.0 {
+            1
+        } else if f32::from_bits(moved) > 1.0 {
+            2
+        } else {
+            3
+        };
+        reach[kind] += 1;
+        reach[4 + usize::from(cubic != 0)] += 1;
+    }
+    eprintln!("near point: {reach:?}");
+}
+
+#[test]
+fn near_point_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x35a4_4120);
+    near_point_cases(&mut a, &mut b, &mut rng, 1500);
+}
+
+#[test]
+fn near_point_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x35a4_4121);
+    near_point_cases(&mut a, &mut b, &mut rng, 800);
+}

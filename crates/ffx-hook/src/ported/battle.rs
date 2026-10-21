@@ -2930,6 +2930,14 @@ ported! {
     MsCameraMoveStep_007bcab0 @ 0x007b_cab0 => extern "C" fn ms_camera_move_step(side: u32, other: u32, chan: u32, step: u32) -> u32 {
         camera::ms_camera_move_step(&mut mem(), &crt_trig, &mut call_ptr, side, other, chan, step, None)
     }
+    /// `MsCameraLimits_007c0120(side, chan)`: the near-point search through
+    /// the game; the caller's registers (the scale's other words) are not
+    /// known here.
+    MsCameraLimits_007c0120 @ 0x007c_0120 => extern "C" fn ms_camera_limits(side: u32, chan: u32) -> u32 {
+        let mut m = mem();
+        let atan = |x: f64| crt_trig_f64(pos::Trig::Atan, x);
+        camera::ms_camera_limits(&mut target::Dm::new(&mut m), &host(), &atan, side, chan, None)
+    }
     /// `MsCameraNearPoints_007c0d40(_, side, chan)`: the near-point search
     /// through the game; the caller's registers are not known here.
     MsCameraNearPoints_007c0d40 @ 0x007c_0d40 => extern "C" fn ms_camera_near_points(_unused: u32, side: u32, chan: u32) -> u32 {

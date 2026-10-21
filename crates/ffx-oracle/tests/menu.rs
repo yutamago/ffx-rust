@@ -16452,3 +16452,104 @@ fn menu_round30_btl_end_init_and_flip_window_ctrl_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+/// Battle round 35: the spline cores `0x0088afd0` (quadratic) and
+/// `0x0088aa40` (cubic) and their four wrappers, over point counts from
+/// -2 to 0x20 (the negative ones read before the points: the buffer has
+/// room there), `t` in and out of 0..1 and NaN, and both positions. The
+/// segments and the VU0 helpers under them run as the originals' Rust
+/// ports and originals (round 28's test).
+#[test]
+fn battle_round35_spline_cores_match_the_original() {
+    let Some(mut t) = setup_any(0x0035_afd0) else {
+        return;
+    };
+    let stack = t.b.stack_range().start;
+    let local = stack + 0x200;
+    let top = t.a.stack_range().end;
+    let buf = t.alloc(&[0; 0x500]);
+    let points = buf + 0x100;
+    let out = t.alloc(&[0; 0x10]);
+    let mut reach = [0u32; 6];
+    for round in 0..1500u32 {
+        if round % 4 == 0 {
+            for k in 0..0x140u32 {
+                let v = match t.rng.below(16) {
+                    0 => 0.0f32,
+                    1 => f32::from_bits(t.rng.next() & 0xbfff_ffff),
+                    _ => t.rng.float(-500.0, 500.0),
+                };
+                t.put(buf + 4 * k, v.to_bits());
+            }
+        }
+        let vregs = t.sym(0x00c8_f788);
+        t.scramble_at(vregs, 0x90);
+        let vf00 = t.sym(0x00c0_a004);
+        let wv = t.rng.pick(&[1.0f32, 1.0, 2.0, 0.5, -1.0]);
+        t.put(vf00 + 0xc, wv.to_bits());
+        let outw: [u32; 4] = std::array::from_fn(|_| t.rng.next() & 0xbfff_ffff);
+        for (k, w) in (0u32..).zip(outw) {
+            t.put(out + 4 * k, w);
+        }
+        let tv = match t.rng.below(12) {
+            0 => t
+                .rng
+                .pick(&[0.0f32, 1.0, -0.0, 0.5, f32::from_bits(0x7fc0_0000), 0.25]),
+            1 => t.rng.pick(&[
+                f32::INFINITY,
+                f32::NEG_INFINITY,
+                f32::from_bits(0xffc0_1234),
+            ]),
+            2 | 3 => t.rng.float(-2.0, 3.0),
+            _ => t.rng.float(0.0, 1.0),
+        };
+        let count = t
+            .rng
+            .pick(&[-2i32, -1, 0, 1, 2, 2, 3, 3, 4, 4, 5, 6, 7, 9, 0x10, 0x20])
+            .cast_unsigned();
+        let position = t.rng.pick(&[0u32, 1, 0x8000_0000]);
+        let zero = vec![0u8; 0x4000];
+        t.a.write_bytes(top - 0x4000, &zero);
+        t.put(local + 12, 0u32);
+        let which = round % 6;
+        reach[which as usize] += 1;
+        let (name, f) = [
+            ("TkMtCalcSplineCore_0088afd0", 0x0088_afd0),
+            ("TkMtCalcSpline3Core_0088aa40", 0x0088_aa40),
+            ("TkMtCalcSpline", 0x0088_a4a0),
+            ("TkMtCalcSplineTangent", 0x0088_b3b0),
+            ("TkMtCalcSpline3", 0x0088_a4d0),
+            ("TkMtCalcSpline3Tangent_0088aba0", 0x0088_aba0),
+        ][which as usize];
+        let args = [out, points, count, tv.to_bits(), position];
+        let n = if which < 2 { 5 } else { 4 };
+        // the quadratic segment's never-written coefficient word is what
+        // the original's earlier calls (ftol2_sse) left in its frame: the
+        // Rust's local gets the word the original copied to 0x00c8f7dc
+        t.drain_x87();
+        let ra = t.a.call(t.a.rebase(f), Conv::Cdecl, &args[..n]).unwrap();
+        assert!(ra.st0.is_none(), "{name}: ST0");
+        let coef_w: u32 = Mem::read(&t.a, t.sym(0x00c8_f7dc));
+        Mem::write(&mut t.b, local + 12, coef_w);
+        let w = [out, points, count, tv.to_bits()];
+        let (o, c) = (&mut t.b, &mut callback);
+        match which {
+            0 => tk::tk_mt_calc_spline_core(o, out, points, count, w[3], position, local, c),
+            1 => tk::tk_mt_calc_spline3_core(o, out, points, count, w[3], position, local, c),
+            2 => tk::tk_mt_calc_spline(o, w, local, c),
+            3 => tk::tk_mt_calc_spline_tangent(o, w, local, c),
+            4 => tk::tk_mt_calc_spline3(o, w, local, c),
+            _ => tk::tk_mt_calc_spline3_tangent(o, w, local, c),
+        }
+        assert_eq!(
+            t.a.diff(&mut t.b).unwrap(),
+            [],
+            "{name} {:x?}: memory",
+            &args[..n]
+        );
+        t.a.clear_dirty();
+        t.b.clear_dirty();
+        t.calls += 1;
+    }
+    eprintln!("{} calls {reach:?}", t.calls);
+}

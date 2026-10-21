@@ -4572,6 +4572,44 @@ ported! {
         let local = frame.at();
         tk::tk_mt_calc_spline_segment(&mut mem(), out, index, t, points, position, local, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `TkMtCalcSplineCore_0088afd0(out, points, count, t, position)`.
+    TkMtCalcSplineCore_0088afd0 @ 0x0088_afd0 => extern "C" fn tk_mt_calc_spline_core(out: u32, points: u32, count: u32, t: f32, position: u32) {
+        // the segment's coefficient copy (its fourth word is never written)
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline_core(&mut mem(), out, points, count, t.to_bits(), position, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3Core_0088aa40(out, points, count, t, position)`.
+    TkMtCalcSpline3Core_0088aa40 @ 0x0088_aa40 => extern "C" fn tk_mt_calc_spline3_core(out: u32, points: u32, count: u32, t: f32, position: u32) {
+        // the segment's coefficient copy
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline3_core(&mut mem(), out, points, count, t.to_bits(), position, local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline(out, points, count, t)`.
+    TkMtCalcSpline @ 0x0088_a4a0 => extern "C" fn tk_mt_calc_spline(out: u32, points: u32, count: u32, t: f32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline(&mut mem(), [out, points, count, t.to_bits()], local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSplineTangent(out, points, count, t)`.
+    TkMtCalcSplineTangent @ 0x0088_b3b0 => extern "C" fn tk_mt_calc_spline_tangent(out: u32, points: u32, count: u32, t: f32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline_tangent(&mut mem(), [out, points, count, t.to_bits()], local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3(out, points, count, t)`.
+    TkMtCalcSpline3 @ 0x0088_a4d0 => extern "C" fn tk_mt_calc_spline3(out: u32, points: u32, count: u32, t: f32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline3(&mut mem(), [out, points, count, t.to_bits()], local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3Tangent_0088aba0(out, points, count, t)`.
+    TkMtCalcSpline3Tangent_0088aba0 @ 0x0088_aba0 => extern "C" fn tk_mt_calc_spline3_tangent(out: u32, points: u32, count: u32, t: f32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        tk::tk_mt_calc_spline3_tangent(&mut mem(), [out, points, count, t.to_bits()], local, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `MenuConfig_DrawOptionRow(_, _, row)` (the first two words are unused).
     MenuConfig_DrawOptionRow @ 0x008c_bae0 => extern "C" fn menu_config_draw_option_row(_a: u32, _b: u32, row: u32) {
         // the original's two 256-byte text buffers and its width word

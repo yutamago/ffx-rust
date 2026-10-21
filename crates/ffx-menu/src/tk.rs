@@ -16579,6 +16579,224 @@ pub mod bridge {
         spline_unit(mem, out, [0x00c8_f7f0, 0x00c8_f7e0], call);
     }
 
+    /// The spline cores' `t`: below 0 gives 0, above 1 gives 1, anything
+    /// else (a NaN too) itself, as `fstp dword` stores it.
+    fn spline_clamp(t: u32) -> f32 {
+        use ffx_bridge::x87::Reg;
+        let v = Reg::load(f32::from_bits(t));
+        if v.value() < 0.0 {
+            0.0
+        } else if v.value() > 1.0 {
+            1.0
+        } else {
+            v.store()
+        }
+    }
+
+    /// The segment `t` falls in among `n` and the parameter in it, as the
+    /// spline cores find them: `step = f32(1 / f32(n))`, `index =
+    /// ftol(t / step)`, `frac = f32((t - f32(index) * step) * f32(n))`,
+    /// then `frac` brought into 0..1 a whole step at a time (moving
+    /// `index`; a NaN stays), `index` below 0 giving `(0, 0)` and `n` or
+    /// more `(n - 1, 1)`. For `t` in 0..1 the two loops never run (the
+    /// 53-bit quotient and difference agree: searched over counts up to
+    /// 2^31 at the segment ends), and with a negative `n` the clamps undo
+    /// them; they stay as the original has them.
+    fn spline_segment_of(mem: &impl Mem, t: f32, n: i32) -> (i32, f32) {
+        use ffx_bridge::x87::{Reg, ftol};
+        // fild, then fstp dword
+        let int = |v: i32| Reg::constant(f64::from(v)).store();
+        let count = int(n);
+        let step = (Reg::ONE / Reg::load(count)).store();
+        let mut index = ftol(mem, Reg::load(t).div_m32(step).value()).cast_signed();
+        let mut frac = Reg::load(int(index))
+            .mul_m32(step)
+            .subr_m32(t)
+            .mul_m32(int(n))
+            .store();
+        let one = Reg::constant(1.0);
+        while Reg::load(frac).value() < 0.0 {
+            frac = (Reg::load(frac) + one).store();
+            index = index.wrapping_sub(1);
+        }
+        while Reg::load(frac).value() > 1.0 {
+            frac = (Reg::load(frac) - one).store();
+            index = index.wrapping_add(1);
+        }
+        if index < 0 {
+            index = 0;
+            frac = 0.0;
+        }
+        if index >= n {
+            index = n.wrapping_sub(1);
+            frac = 1.0;
+        }
+        (index, frac)
+    }
+
+    /// `TkMtCalcSplineCore_0088afd0(out, points, count, t, position)`
+    /// (`0x0088afd0`, name ours; callers [`tk_mt_calc_spline`],
+    /// [`tk_mt_calc_spline_tangent`], [`tk_mt_calc_spline3_core`]): the
+    /// quadratic B-spline through `count` 16-byte points at `t` (clamped
+    /// to 0..1, [`spline_clamp`]). A nonzero `position` asks for the point:
+    /// fewer than 2 points write nothing, and 2 points nothing at `t` 0
+    /// or 1, else `(1 - t) * p0 + t + p1` per word (the original's sum,
+    /// `t` not `t * p1`). 0 asks for the tangent: `(1, 0, 0, 1)` for fewer
+    /// than 2 points, `p1 - p0` normalised (`TkNormalFVector`, w 0 then 1)
+    /// for 2. Other counts (negative too) take segment
+    /// [`spline_segment_of`] of `count - 2`
+    /// ([`tk_mt_calc_spline_segment`], with `local`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn tk_mt_calc_spline_core<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        points: u32,
+        count: u32,
+        t: u32,
+        position: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::Reg;
+        let t = spline_clamp(t);
+        let count = count.cast_signed();
+        let word = |mem: &M, at: u32, k: u32| f32::from_bits(mem.read(at.wrapping_add(4 * k)));
+        if count == 0 || count == 1 {
+            if position == 0 {
+                for (k, v) in (0u32..).zip([1.0f32, 0.0, 0.0, 1.0]) {
+                    mem.write(out.wrapping_add(4 * k), v.to_bits());
+                }
+            }
+            return;
+        }
+        if count == 2 {
+            let p1 = points.wrapping_add(0x10);
+            if position == 0 {
+                for k in 0..3 {
+                    let d = Reg::load(word(mem, p1, k)).sub_m32(word(mem, points, k));
+                    mem.write(out.wrapping_add(4 * k), d.store().to_bits());
+                }
+                mem.write(out.wrapping_add(12), 0u32);
+                tk_normal_f_vector(mem, out);
+                mem.write(out.wrapping_add(12), 1.0f32.to_bits());
+                return;
+            }
+            let tv = Reg::load(t).value();
+            #[allow(clippy::float_cmp)] // `fucompp`'s equality
+            let at_end = tv == 0.0 || tv == 1.0;
+            if at_end {
+                return;
+            }
+            let rest = (Reg::ONE - Reg::load(t)).store();
+            for k in 0..4 {
+                let v = Reg::load(rest)
+                    .mul_m32(word(mem, points, k))
+                    .add_m32(t)
+                    .add_m32(word(mem, p1, k));
+                mem.write(out.wrapping_add(4 * k), v.store().to_bits());
+            }
+            return;
+        }
+        let (index, frac) = spline_segment_of(mem, t, count.wrapping_sub(2));
+        tk_mt_calc_spline_segment(
+            mem,
+            out,
+            index.cast_unsigned(),
+            frac,
+            points,
+            position,
+            local,
+            call,
+        );
+    }
+
+    /// `TkMtCalcSpline3Core_0088aa40(out, points, count, t, position)`
+    /// (`0x0088aa40`, name ours; callers [`tk_mt_calc_spline3`],
+    /// [`tk_mt_calc_spline3_tangent`]): the cubic B-spline through `count`
+    /// points at `t` (clamped, [`spline_clamp`]): 0 to 3 points go to the
+    /// quadratic [`tk_mt_calc_spline_core`], other counts take segment
+    /// [`spline_segment_of`] of `count - 3`
+    /// ([`tk_mt_calc_spline3_segment`], with `local`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn tk_mt_calc_spline3_core<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        points: u32,
+        count: u32,
+        t: u32,
+        position: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let t = spline_clamp(t);
+        if count <= 3 {
+            let t = t.to_bits();
+            tk_mt_calc_spline_core(mem, out, points, count, t, position, local, call);
+            return;
+        }
+        let (index, frac) = spline_segment_of(mem, t, count.cast_signed().wrapping_sub(3));
+        tk_mt_calc_spline3_segment(
+            mem,
+            out,
+            index.cast_unsigned(),
+            frac,
+            points,
+            position,
+            local,
+            call,
+        );
+    }
+
+    /// `TkMtCalcSpline(out, points, count, t)` (`0x0088a4a0`): the
+    /// quadratic spline's point ([`tk_mt_calc_spline_core`], position 1;
+    /// `t` copied through the x87).
+    pub fn tk_mt_calc_spline<M: Mem>(
+        mem: &mut M,
+        [out, points, count, t]: [u32; 4],
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let t = ffx_bridge::x87::round_trip(f32::from_bits(t)).to_bits();
+        tk_mt_calc_spline_core(mem, out, points, count, t, 1, local, call);
+    }
+
+    /// `TkMtCalcSplineTangent(out, points, count, t)` (`0x0088b3b0`): its
+    /// tangent ([`tk_mt_calc_spline_core`], position 0).
+    pub fn tk_mt_calc_spline_tangent<M: Mem>(
+        mem: &mut M,
+        [out, points, count, t]: [u32; 4],
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let t = ffx_bridge::x87::round_trip(f32::from_bits(t)).to_bits();
+        tk_mt_calc_spline_core(mem, out, points, count, t, 0, local, call);
+    }
+
+    /// `TkMtCalcSpline3(out, points, count, t)` (`0x0088a4d0`): the cubic
+    /// spline's point ([`tk_mt_calc_spline3_core`], position 1).
+    pub fn tk_mt_calc_spline3<M: Mem>(
+        mem: &mut M,
+        [out, points, count, t]: [u32; 4],
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let t = ffx_bridge::x87::round_trip(f32::from_bits(t)).to_bits();
+        tk_mt_calc_spline3_core(mem, out, points, count, t, 1, local, call);
+    }
+
+    /// `TkMtCalcSpline3Tangent_0088aba0(out, points, count, t)`
+    /// (`0x0088aba0`): its tangent ([`tk_mt_calc_spline3_core`], position
+    /// 0).
+    pub fn tk_mt_calc_spline3_tangent<M: Mem>(
+        mem: &mut M,
+        [out, points, count, t]: [u32; 4],
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let t = ffx_bridge::x87::round_trip(f32::from_bits(t)).to_bits();
+        tk_mt_calc_spline3_core(mem, out, points, count, t, 0, local, call);
+    }
+
     /// The config menu row that shows the PC's own texts
     /// (`SaveDataGetLoc`) instead of `TkMenuConfigMes` ones.
     pub const MENU_CONFIG_LOC_ROW: Global<i32> = Global::new(0x0186_a438);

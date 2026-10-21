@@ -17,6 +17,26 @@ fn call_sym<M>(_mem: &mut M, sym: u32, args: &[u32]) -> u32 {
 }
 
 ported! {
+    /// `spline_get_near_point(spline, x, y, z, &ox, &oy, &oz, cubic)`: the
+    /// spline through menu's ports (`TkMtCalcSpline`/`3`), each with its
+    /// segment's coefficient copy.
+    spline_get_near_point @ 0x00a4_4120 => extern "C" fn spline_get_near_point(spline: u32, x: f32, y: f32, z: f32, ox: u32, oy: u32, oz: u32, cubic: u32) -> f32 {
+        // the original's three points
+        let mut frame = super::StackFrame::<12>::new();
+        let locals = frame.at();
+        let args = [spline, x.to_bits(), y.to_bits(), z.to_bits(), ox, oy, oz, cubic];
+        ffx_sg::spline::bridge::spline_get_near_point(&mut mem(), args, locals, &mut |m, cubic, w| {
+            use ffx_menu::tk::bridge as tk;
+            let mut seg = super::StackFrame::<4>::new();
+            let local = seg.at();
+            let call = &mut |_: &mut _, f: u32, a: &[u32]| super::call_cdecl(f, a);
+            if cubic {
+                tk::tk_mt_calc_spline3(m, w, local, call);
+            } else {
+                tk::tk_mt_calc_spline(m, w, local, call);
+            }
+        })
+    }
     /// `crossAssertIsValidFloat(x)`.
     crossAssertIsValidFloat @ 0x006e_f2d0 => extern "C" fn cross_assert_is_valid_float(x: f32) -> u32 {
         ffx_sg::assert::is_valid_float(x)
