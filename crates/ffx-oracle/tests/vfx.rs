@@ -24741,3 +24741,175 @@ fn round40c_ppp_draw_shape0_and_x0_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round40d_op_2point_shadow_matches_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_3480);
+        let (sh, other, out, pts, scratch) = (
+            p.alloc(0x20 + 0x20 * 10),
+            p.alloc(0x20 * 10),
+            p.alloc(0x20 * 8 * 6),
+            p.alloc(0x20),
+            p.alloc(0x400),
+        );
+        let ee = p.sym(0x00c8_f528);
+        let stack = p.sym(o::SPR_STACK.sym);
+        for round in 0..2000u32 {
+            p.fill(sh, 0x20 + 0x20 * 10, &mut rng);
+            p.fill(other, 0x20 * 10, &mut rng);
+            p.fill(out, 0x20 * 8 * 6, &mut rng);
+            for at in (0..0x20 * 11).step_by(4) {
+                let v = ranged(&mut rng, -500.0, 500.0);
+                p.set(sh + at, v);
+                if at < 0x20 * 10 {
+                    let v = ranged(&mut rng, -500.0, 500.0);
+                    p.set(other + at, v);
+                }
+            }
+            for at in (0..0x20).step_by(4) {
+                let v = ranged(&mut rng, -500.0, 500.0);
+                p.set(pts + at, v);
+            }
+            p.fill(ee, 0x10, &mut rng);
+            let len = 1 + rng.below(9) as i16;
+            let per = 1 + rng.below(5) as i16;
+            let segs = rng.pick(&[0i16, 1, 2, 3, 6, -1]);
+            let n = if rng.chance(10) {
+                0x0ffd + rng.below(4) as i16
+            } else if rng.chance(20) {
+                0
+            } else {
+                rng.below(24) as i16
+            };
+            p.set(sh, n);
+            p.set(sh + 2, len);
+            p.set(sh + 4, segs);
+            p.set(sh + 6, per);
+            p.set(sh + 0x18, if rng.chance(50) { sh + 0x20 } else { other });
+            p.set(sh + 0x1c, out);
+            p.put(o::SPR_TOP, 0);
+            p.set(stack, scratch);
+            let hist = p.get::<u32>(sh + 0x18);
+            if rng.chance(30) && n > 0 && len > 1 && hist == sh + 0x20 {
+                // the newest point repeats the one before: a last span of
+                // length 0
+                let prev = hist + 0x20 * u32::from(((n - 1) % len).cast_unsigned());
+                let both: [u32; 8] = p.get(prev);
+                p.set(pts, both);
+            }
+            let (a, b) = (pts, pts + 0x10);
+            p.check(
+                &format!("op_2point_shadow round {round} n {n} len {len} per {per} segs {segs}"),
+                0x0081_3480,
+                &[sh, a, b],
+                |m| {
+                    o::op_2point_shadow(m, sh, a, b, &mut call_original);
+                    None
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round40d_update_weapon_shadow_draw_data_matches_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_3c20);
+        let cells = p.alloc(0x10);
+        let (rd_cell, buf_cell, id_cell) = (cells, cells + 4, cells + 8);
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd_cell)),
+            far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(buf_cell)),
+            far_recorder(&mut p, 0x0063_ff50, &[], Some(id_cell)),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+        ];
+        // a negative start reads up to four blocks before the output: a
+        // pad of plain floats (the emulator keeps signalling NaNs)
+        let (d, geo, sh, pad, out) = (
+            p.alloc(0x100),
+            p.alloc(0x100),
+            p.alloc(0x20),
+            p.alloc(0x100),
+            p.alloc(0x20 * 40),
+        );
+        let (pos, col, idx) = (
+            p.alloc(0x18 * 40 + 0x20),
+            p.alloc(0x20 * 40),
+            p.alloc(0xc * 40),
+        );
+        for round in 0..3000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(d, 0x100, &mut rng);
+            p.fill(geo, 0x100, &mut rng);
+            p.set(d + 0x94, geo);
+            p.set(geo + 0xc, pos);
+            p.set(geo + 0x14, col);
+            p.set(geo + 0x1c, idx);
+            p.fill(pos, 0x18 * 40 + 0x20, &mut rng);
+            p.fill(col, 0x20 * 40, &mut rng);
+            for at in (0..0x100).step_by(4) {
+                let v = ranged(&mut rng, -300.0, 300.0);
+                p.set(pad + at, v);
+            }
+            for at in (0..0x20 * 40).step_by(4) {
+                let v = if rng.chance(2) {
+                    0x7fc0_0000
+                } else {
+                    ranged(&mut rng, -300.0, 300.0)
+                };
+                p.set(out + at, v);
+            }
+            for at in (0..0x18 * 40 + 0x20).step_by(4) {
+                let v = ranged(&mut rng, -300.0, 300.0);
+                p.set(pos + at, v);
+            }
+            p.fill(sh, 0x20, &mut rng);
+            let (s, per) = (1 + rng.below(6) as i16, 1 + rng.below(6) as i16);
+            p.set(sh + 4, s);
+            p.set(sh + 6, per);
+            let count = if rng.chance(5) {
+                0
+            } else {
+                rng.below(30) as u16
+            };
+            p.set(sh + 8, count);
+            p.set(sh + 0xa, rng.below(40) as i16 - 4);
+            p.set(sh + 0x1c, out);
+            p.set(rd_cell, if rng.chance(5) { 0 } else { d });
+            p.set(buf_cell, u32::from(rng.chance(90)));
+            p.set(id_cell, rng.below(3));
+            let t = if rng.chance(30) {
+                0
+            } else {
+                (rng.below(0x400).cast_signed() - 0x200).cast_unsigned()
+            };
+            let (from, to) = (rng.next(), rng.next());
+            let (lo, hi) = (rng.next(), rng.next());
+            p.check(
+                &format!("updateWeaponShadowDrawData round {round} count {count} t {t:#x}"),
+                0x0081_3c20,
+                &[lo, hi, sh, t, from, to],
+                |m| {
+                    o::update_weapon_shadow_draw_data(
+                        m,
+                        lo,
+                        hi,
+                        sh,
+                        t,
+                        from,
+                        to,
+                        &mut call_original,
+                    );
+                    None
+                },
+            );
+        }
+    }
+}

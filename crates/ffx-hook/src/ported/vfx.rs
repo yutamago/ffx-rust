@@ -3152,6 +3152,14 @@ ported! {
     pppDrawRainDes @ 0x0075_6270 => extern "C" fn ppp_draw_rain_des(obj: u32, prog: u32) -> u32 {
         draw::bridge::ppp_des(&mut mem(), obj, prog, draw::bridge::RAIN_DES, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `updateWeaponShadowDrawData(lo, hi, sh, t, from, to)` (`0x00813c20`).
+    updateWeaponShadowDrawData @ 0x0081_3c20 => extern "C" fn update_weapon_shadow_draw_data(lo: u32, hi: u32, sh: u32, t: u32, from: u32, to: u32) {
+        op::bridge::update_weapon_shadow_draw_data(&mut mem(), lo, hi, sh, t, from, to, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `op_2point_shadow(sh, a, b)` (`0x00813480`).
+    op_2point_shadow @ 0x0081_3480 => extern "C" fn op_2point_shadow(sh: u32, a: u32, b: u32) {
+        op::bridge::op_2point_shadow(&mut mem(), sh, a, b, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppDrawShape0(obj, key, entry)`: its render request in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppDrawShape0 @ 0x0074_0a70 => extern "C" fn ppp_draw_shape0(obj: u32, key: u32, entry: u32) {

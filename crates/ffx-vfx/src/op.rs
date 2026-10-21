@@ -5370,4 +5370,288 @@ pub mod bridge {
         crate::rand::bridge::COLOR_CON_SHIFT.set(mem, 0);
         call(mem, g(mem, 0x007e_a760), &[dst, a, v])
     }
+
+    /// `op_2point_shadow(sh, a, b)` (`0x00813480`), the two-point weapon
+    /// trail: `sh` holds `i16` +0 the frame count `n`, +2 the history
+    /// length `L`, +4 the segments per point `S`, +6 the output period
+    /// `P`, +8/+0xa output counts, +0x18 the history (`ptr32`, 32-byte
+    /// pairs) and +0x1c the output (`ptr32`). Both points go into history
+    /// slot `n % L + 1` (word 7 of each half 1.0; through the emulated EE
+    /// register at `0x00c8f528`, which keeps `b`). `+8` = 0; from the
+    /// second frame on, each half of the last `min(n + 1, L)` history
+    /// entries (oldest first, from `max(n - L + 1, 0)` mod `L`) is copied
+    /// to an `op_spr_alloc` scratch (`32 L` bytes, `L` vectors then the
+    /// spline's table), `op_spline_xyz_table`, and `S` points of the
+    /// spline after the table's second-to-last knot `t0` (step
+    /// `f32(f32(1 - t0) / S)`, a zero span stepping 1e-11) written with
+    /// `op_spline_xyz` to the output block `n % P` (`w` 1.0); `+0xa` =
+    /// `S (n % P + 1)` (`S` before `n` reaches `P`), `+8` = `S min(n,
+    /// P)`; `op_spr_free`. Then `n` counts up, wrapping to `n % L + L` at
+    /// 0x1000. (The original's `eax` is left over from `op_spr_free`.)
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_possible_wrap
+    )] // the original's 16-bit counters
+    pub fn op_2point_shadow<M: Mem>(
+        mem: &mut M,
+        sh: u32,
+        a: u32,
+        b: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, div, load, store, sub};
+        let g = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        let h = |mem: &M, k: u32| i32::from(mem.read::<i16>(sh.wrapping_add(k)));
+        let ee = g(mem, 0x00c8_f528);
+        let one = 1.0f32.to_bits();
+        let slot = sh.wrapping_add(((h(mem, 0) % h(mem, 2)) + 1).cast_unsigned() << 5);
+        let pa: [u32; 4] = mem.read(a);
+        mem.write(ee, pa);
+        mem.write(slot, pa);
+        let pb: [u32; 4] = mem.read(b);
+        mem.write(ee, pb);
+        mem.write(slot.wrapping_add(0x10), [pb[0], pb[1], pb[2], one]);
+        mem.write(slot.wrapping_add(0xc), one);
+        mem.write(sh.wrapping_add(8), 0u16);
+        if mem.read::<u16>(sh) != 0 {
+            let len = h(mem, 2);
+            let bytes = (len << 5).cast_unsigned();
+            let buf = call(mem, g(mem, 0x007e_6a00), &[bytes]);
+            let table = buf.wrapping_add((len << 4).cast_unsigned());
+            let n = h(mem, 0);
+            let count = if n < len { n + 1 } else { len };
+            let k = if n < h(mem, 6) { 1 } else { n % h(mem, 6) + 1 };
+            let segs = mem.read::<u16>(sh.wrapping_add(4)).wrapping_mul(k as u16);
+            mem.write(sh.wrapping_add(0xa), segs);
+            let k_tiny: u32 = mem.read(g(mem, 0x00b5_8b28));
+            for half in [0u32, 0x10] {
+                // the history, oldest first
+                let n16 = mem.read::<u16>(sh);
+                let len16 = mem.read::<u16>(sh.wrapping_add(2));
+                let first = n16.wrapping_sub(len16).wrapping_add(1).cast_signed().max(0);
+                // a 32-bit counter whose low half is the index
+                let mut k = u32::from(first.cast_unsigned());
+                let mut j = 0i32;
+                let mut dst = buf;
+                while j < h(mem, 2) {
+                    let idx = i32::from(k as u16 as i16) % h(mem, 2);
+                    let at = mem.read(sh.wrapping_add(0x18));
+                    let hist = call(mem, g(mem, 0x00a4_4650), &[at]);
+                    let src = hist
+                        .wrapping_add((idx << 5).cast_unsigned())
+                        .wrapping_add(half);
+                    let v: [u32; 4] = mem.read(src);
+                    mem.write(ee, v);
+                    mem.write(dst, v);
+                    dst = dst.wrapping_add(0x10);
+                    j += 1;
+                    k = (idx.cast_unsigned() & 0xffff) + 1;
+                }
+                call(
+                    mem,
+                    g(mem, 0x007e_a2d0),
+                    &[table, buf, count.cast_unsigned()],
+                );
+                let block = h(mem, 0) % h(mem, 6);
+                let s = h(mem, 4);
+                let at = mem.read(sh.wrapping_add(0x1c));
+                let out = call(mem, g(mem, 0x00a4_4650), &[at]);
+                let mut out = out
+                    .wrapping_add(((s * block) << 5).cast_unsigned())
+                    .wrapping_add(half);
+                let knot = mem.read(table.wrapping_add((4 * count - 8).cast_unsigned()));
+                let t0 = load(store(load(knot)));
+                let mut w = store(sub(1.0, t0));
+                if load(w) == 0.0 {
+                    w = store(load(k_tiny));
+                }
+                let d = store(div(load(w), f64::from(s)));
+                let mut t = store(add(t0, load(d)));
+                let mut i = 1i32;
+                while s >= 1 && i <= h(mem, 4) {
+                    call(
+                        mem,
+                        g(mem, 0x007e_a120),
+                        &[out, t, buf, table, count.cast_unsigned()],
+                    );
+                    mem.write(out.wrapping_add(0xc), one);
+                    t = store(add(load(d), load(t)));
+                    out = out.wrapping_add(0x20);
+                    i += 1;
+                }
+            }
+            let n = h(mem, 0);
+            let p = h(mem, 6);
+            let m = if n < p { n } else { p };
+            let total = mem.read::<u16>(sh.wrapping_add(4)).wrapping_mul(m as u16);
+            mem.write(sh.wrapping_add(8), total);
+            call(mem, g(mem, 0x007e_6a60), &[bytes]);
+        }
+        let n = mem.read::<u16>(sh).wrapping_add(1);
+        mem.write(sh, n);
+        if n.cast_signed() >= 0x1000 {
+            let len = mem.read::<u16>(sh.wrapping_add(2));
+            let r = i32::from(n.cast_signed()) % i32::from(len.cast_signed());
+            mem.write(sh, (r as u16).wrapping_add(len));
+        }
+    }
+
+    /// `updateWeaponShadowDrawData(lo, hi, sh, t, from, to)`
+    /// (`0x00813c20`): fills the weapon trail's render data from
+    /// [`op_2point_shadow`]'s output (`sh` +0x1c, `u16` +8 points, `i16`
+    /// +0xa first, `S x P` = `i16 +4 x i16 +6` blocks of 32 bytes). The
+    /// trail is shifted by `S P t / 256` (toward zero; nothing past ±`S
+    /// P`) and keeps `m` points (`count - |shift|`, at least 2, from
+    /// `first - shift` for a negative shift). Its segment-0 buffer
+    /// (`2m` vertices, `6m - 6` indices) gets, per point `i`, the two
+    /// vertices of output block `(start + i) % (S P)` (words 0..2 and
+    /// 4..6), colours from `to` toward `from` (bytes 0..3 as 16.16
+    /// fixed point, stepped by the difference / `S P`; each channel /
+    /// 255 in words 4..7, words 0..3 zero) and
+    /// two triangles back to point `i - 1`. The bounds track the
+    /// vertices as the original does: the second vertex's `z` against
+    /// the `y` bounds, the `z` bounds also against the word after the
+    /// pair (the next point's `x`, still the old one), a NaN always
+    /// taken. Then the counts (`+4`, `+8` and the current buffer's
+    /// copies), the matrix cleared to identity (`+0xb0` = 0), the box at
+    /// `+0x98..+0xac` and `graphicVFXUpdate`.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::many_single_char_names,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::neg_cmp_op_on_partial_ord // a NaN is taken: fcom's unordered
+    )]
+    pub fn update_weapon_shadow_draw_data<M: Mem>(
+        mem: &mut M,
+        lo: u32,
+        hi: u32,
+        sh: u32,
+        t: u32,
+        from: u32,
+        to: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{div, load, store};
+        let g = |mem: &M, at: u32| Global::<u32>::new(at).ptr(mem).addr;
+        let h = |mem: &M, k: u32| i32::from(mem.read::<i16>(sh.wrapping_add(k)));
+        let top: u32 = mem.read(g(mem, 0x00b1_7504));
+        let bottom: u32 = mem.read(g(mem, 0x00b1_f2d0));
+        // min x, y, z, max x, y, z
+        let mut bounds = [top, top, top, bottom, bottom, bottom];
+        let d = call(mem, g(mem, 0x0064_53d0), &[lo, hi]);
+        if d == 0 {
+            return;
+        }
+        let count = mem.read::<u16>(sh.wrapping_add(8));
+        if count == 0 {
+            return;
+        }
+        let channel = |c: u32, k: u32| -> i32 {
+            match k {
+                0 => ((c & 0xff) << 16).cast_signed(),
+                1 => ((c & 0xff00) << 8).cast_signed(),
+                2 => (c & 0xff_0000).cast_signed(),
+                _ => ((c >> 8) & 0xff_0000).cast_signed(),
+            }
+        };
+        let n = h(mem, 6).wrapping_mul(h(mem, 4));
+        if n == 0 {
+            return; // the original divides by zero
+        }
+        let mut rgba = [0, 1, 2, 3].map(|k| channel(to, k));
+        let step = [0, 1, 2, 3].map(|k| {
+            rgba[k as usize]
+                .wrapping_sub(channel(from, k))
+                .wrapping_div(n)
+        });
+        let shift = n.wrapping_mul(t.cast_signed()).wrapping_div(256);
+        if shift <= n.wrapping_neg() || shift >= n {
+            return;
+        }
+        let points = i32::from(count.cast_signed());
+        let (m, mut start) = if shift < 0 {
+            (points + shift, h(mem, 0xa).wrapping_sub(shift))
+        } else {
+            (points - shift, h(mem, 0xa))
+        };
+        if m <= 1 {
+            return;
+        }
+        let (verts, inds) = ((2 * m).cast_unsigned(), (6 * m - 6).cast_unsigned());
+        if call(mem, g(mem, 0x0063_fdb0), &[d, 0, verts, inds]) == 0 {
+            return;
+        }
+        let geo: u32 = mem.read(d.wrapping_add(0x94));
+        let mut col: u32 = mem.read(geo.wrapping_add(0x14));
+        let mut pos: u32 = mem.read(geo.wrapping_add(0xc));
+        let mut idx: u32 = mem.read(geo.wrapping_add(0x1c));
+        let blocks = h(mem, 6).wrapping_mul(h(mem, 4));
+        let k255: f64 = mem.read(g(mem, 0x00b1_70c0));
+        let word = |mem: &M, at: u32| store(load(mem.read(at)));
+        for i in 0..m {
+            let at = mem.read(sh.wrapping_add(0x1c));
+            let out = call(mem, g(mem, 0x00a4_4650), &[at]);
+            let src = out.wrapping_add((start.wrapping_rem(blocks) << 5).cast_unsigned());
+            let [r, gr, b, a] = rgba.map(|c| load(store(f64::from(c >> 16))));
+            mem.write(col, [0u32; 4]);
+            let shade = [r, gr, b, a].map(|c| store(div(c, k255)));
+            mem.write(col.wrapping_add(0x10), shade);
+            for k in 0..4 {
+                rgba[k] = rgba[k].wrapping_sub(step[k]);
+            }
+            col = col.wrapping_add(0x20);
+            for (k, o) in [0u32, 4, 8, 0x10, 0x14, 0x18].into_iter().enumerate() {
+                let v = word(mem, src.wrapping_add(o));
+                mem.write(pos.wrapping_add(4 * k as u32), v);
+            }
+            let f = |mem: &M, at: u32| load(mem.read(pos.wrapping_add(at)));
+            let mut track = |v: f64, bits: u32, axis: usize| {
+                if !(v > load(bounds[axis])) {
+                    bounds[axis] = bits;
+                }
+                if !(v < load(bounds[axis + 3])) {
+                    bounds[axis + 3] = bits;
+                }
+            };
+            for (o, axis) in [
+                (0u32, 0usize),
+                (4, 1),
+                (8, 2),
+                (0x10, 0),
+                (0x14, 1),
+                (0x18, 2),
+            ] {
+                track(f(mem, o), mem.read(pos.wrapping_add(o)), axis);
+            }
+            pos = pos.wrapping_add(0x18);
+            if i > 0 {
+                let c = (i as u16).wrapping_mul(2);
+                let (prev, next) = (c.wrapping_sub(2), c.wrapping_add(1));
+                let quad = [prev, c.wrapping_sub(1), next, prev, next, c];
+                mem.write(idx, quad);
+                idx = idx.wrapping_add(0xc);
+            }
+            start = start.wrapping_add(1);
+        }
+        mem.write(geo.wrapping_add(4), (2 * m).cast_unsigned());
+        mem.write(geo.wrapping_add(8), ((3 * m - 3) * 2).cast_unsigned());
+        let id = call(mem, g(mem, 0x0063_ff50), &[]);
+        let copy = geo.wrapping_add(id.wrapping_mul(0x1c));
+        let n8: u32 = mem.read(geo.wrapping_add(8));
+        mem.write(copy.wrapping_add(0x30), n8);
+        let n4: u32 = mem.read(geo.wrapping_add(4));
+        mem.write(copy.wrapping_add(0x2c), n4);
+        mem.write(d.wrapping_add(0xb0), 0u32);
+        mem.write(d, [0u32; 16]);
+        let one = 1.0f32.to_bits();
+        for k in [0u32, 0x14, 0x28, 0x3c] {
+            mem.write(d.wrapping_add(k), one);
+        }
+        mem.write(d.wrapping_add(0x98), bounds.map(|b| store(load(b))));
+        call(mem, g(mem, 0x0064_58a0), &[lo, hi]);
+    }
 }
