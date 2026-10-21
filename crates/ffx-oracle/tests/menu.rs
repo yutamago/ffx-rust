@@ -15993,3 +15993,124 @@ fn menu_round30_scrolling_lists_and_btl_end_items_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round30_weapon_list_and_item_target_names_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0030_0005) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008c_0f70u32, 4u8),
+        (0x008d_0250, 5),
+        (0x008c_1370, 0),
+        (0x008d_0100, 3),
+        (0x008e_6cc0, 7),
+        (0x008d_ce50, 0),
+        (0x008c_1790, 0),
+        (0x008c_0be0, 0),
+        (0x008f_5f70, 5),
+        (0x008b_edd0, 1),
+        (0x0090_5ab0, 6),
+        (0x0090_3bb0, 9),
+        (0x008c_4a90, 3),
+        (0x008c_0cc0, 0),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let table_cell = seq_stub(&mut t, 0x008c_4ff0, log, 0, &[]);
+    let count = seq_stub(&mut t, 0x008c_5030, log, 0, &[]);
+    // ToGetBtlEasyFontWidth(text, &width, ...): the width from a cell
+    let (wcell, dummy) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]; // mov eax, [esp+8]; mov edx, [wcell]
+    extra.extend(wcell.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let code = seq_code_of(log, 0x0090_5290, &[0, 2, 3, 4], dummy, &extra);
+    jump_stub(&mut t, 0x0090_5290, &code);
+    let (w0, table) = (t.alloc(&[0; 0x100]), t.alloc(&[0; 0x40]));
+    t.put(table_cell, table);
+    let floats = [
+        0f32,
+        -0.0,
+        1.5,
+        -2.7,
+        300.9,
+        65535.9,
+        1e10,
+        f32::from_bits(0x7fc0_0000),
+    ];
+    // scroll offsets whose row offset rounds across an integer as an f32
+    // (the original stores it as one before ftol; with the game's remap
+    // scale no i16 offset does, so the list keeps only the defaults)
+    let span = ui_remap(&mut t.b, true, 79.0) * 5.0;
+    let mut scrolls = vec![0u16, 1, 0x1000, 0x7fff, 0x8000, 0xfff0];
+    for k in i16::MIN..=i16::MAX {
+        let exact = span * f64::from(k) * -0.000_244_140_625;
+        #[allow(clippy::cast_possible_truncation)] // the f32 store
+        let rounded = f64::from(exact as f32);
+        if rounded.trunc().to_bits() != exact.trunc().to_bits() && scrolls.len() < 10 {
+            scrolls.push(k.cast_unsigned());
+        }
+    }
+    for round in 0..1200u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(w0, 0x100);
+        t.scramble_at(table, 0x40);
+        let rows = t.rng.pick(&[0u32, 1, 3, 7]);
+        t.put(table + 4 * rows, 0u16);
+        let slot = t.rng.pick(&[0u16, 1, 2]);
+        t.put(table + 2, slot);
+        t.put(table + 6, 2u16);
+        let v = t.rng.pick(&[0u32, 1, 2, 0x1_0002]);
+        t.put(t.sym(0x0186_a260), v);
+        let v = t.rng.pick(&[0i32, 1, 3, 7, -2, 0x0100_0001]);
+        t.put(count, v);
+        let a = t.rng.pick(&[0u16, 1, 5, 0x8000]);
+        t.put(w0 + 0x32, a);
+        let b = t.rng.pick(&[a, a, 2, 0xffff]);
+        t.put(w0 + 0x34, b);
+        let v = t.rng.pick(&scrolls);
+        t.put(w0 + 0x46, v);
+        let v = t.rng.pick(&floats);
+        t.put(wcell, v.to_bits());
+        if round % 2 == 0 {
+            t.twin(
+                "MenuWeapon_DrawList_008cf9f0",
+                0x008c_f9f0,
+                &[w0],
+                U32,
+                |o| {
+                    w(tk::menu_weapon_draw_list(
+                        o,
+                        w0,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                },
+            );
+        } else {
+            t.twin(
+                "MenuItem_DrawTargetNames_008c4030",
+                0x008c_4030,
+                &[w0],
+                U32,
+                |o| {
+                    w(tk::menu_item_draw_target_names(
+                        o,
+                        w0,
+                        local,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                },
+            );
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

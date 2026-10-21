@@ -6532,21 +6532,28 @@ pub mod bridge {
         eax
     }
 
-    /// The scissor of a scrolling list (`TkMn2DrawMenuWindowScissor(
-    /// ftol(remapY2(312)), ftol(remapY2(10) + remapY2(77) * 9), part, i16
-    /// w+0x46)`; remapped in the order 77, 10, 312, the sum in `f64`).
+    /// The scissor geometry of the shop and item lists (see
+    /// [`scroll_list_scissor`]).
+    const SHOP_LIST: [f32; 4] = [77.0, 9.0, 10.0, 312.0];
+
+    /// The scissor of a scrolling list: `TkMn2DrawMenuWindowScissor(
+    /// ftol(remapY2(height)), ftol(remapY2(top) + remapY2(row) * rows),
+    /// part, i16 w+0x46)`, remapped in the order row, top, height, the sum
+    /// in `f64`. `geom` is `[row, rows, top, height]`: `[77, 9, 10, 312]`
+    /// for the shop and item lists, `[79, 5, 8, 595]` for the weapon list.
     fn scroll_list_scissor<M: Mem>(
         mem: &mut M,
         w: u32,
         part: u32,
+        [row, rows, top, height]: [f32; 4],
         remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
         call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
     ) {
         use ffx_bridge::x87::{add, ftol, mul};
-        let rows = mul(remap(mem, true, 77.0), 9.0);
-        let top = add(remap(mem, true, 10.0), rows);
+        let span = mul(remap(mem, true, row), f64::from(rows));
+        let top = add(remap(mem, true, top), span);
         let top = ftol(mem, top);
-        let height = remap(mem, true, 312.0);
+        let height = remap(mem, true, height);
         let height = ftol(mem, height);
         let scroll = i32::from(mem.read::<i16>(w.wrapping_add(0x46))).cast_unsigned();
         let f = mem.rebase(0x008c_0f70);
@@ -6587,11 +6594,11 @@ pub mod bridge {
             let from = first(mem, 0x32);
             draw(mem, 0, from, y, call);
         } else {
-            scroll_list_scissor(mem, w, 1, remap, call);
+            scroll_list_scissor(mem, w, 1, SHOP_LIST, remap, call);
             let y = store(remap(mem, true, 317.0));
             let from = first(mem, 0x32);
             draw(mem, 1, from, y, call);
-            scroll_list_scissor(mem, w, 2, remap, call);
+            scroll_list_scissor(mem, w, 2, SHOP_LIST, remap, call);
             let base = remap(mem, true, 317.0);
             let step = mul(remap(mem, true, 77.0), 9.0);
             let scroll = f64::from(mem.read::<i16>(w.wrapping_add(0x46)));
@@ -6764,6 +6771,137 @@ pub mod bridge {
             y = store(add(remap(mem, true, 84.0), load(y)));
             i += 1;
         }
+    }
+
+    /// `MenuWeapon_DrawList_008cf9f0(w)` (`0x008cf9f0`, own name; the equip
+    /// menu's weapon list draw): the rows `MenuWeapon_DrawRows(w, part,
+    /// first, 0, y)` with integer offsets inside the scissor of
+    /// [`scroll_list_scissor`] with `[79, 5, 8, 595]`: at rest (`u16 +0x32`
+    /// equal to `u16 +0x34`) part 0 from row `i16 +0x32`; while scrolling
+    /// part 1 from `+0x32` and part 2 from `i16 +0x34` at `y =
+    /// ftol(f32(remapY2(79) × 5 × i16 +0x46 × -1/4096))`;
+    /// `TkMn2DrawScissorClear()`; the cursor `0x008d0100(w,
+    /// ftol(remapX2(390)), ftol(remapY2(605)))` (y remapped first); the
+    /// scroll bar `DrawCrossMenuScrollParts(remapX2(956), remapY2(599),
+    /// remapX2(8), remapY2(395), i16 +0x32, u16 +0x3a, u16 +0x30)`
+    /// (remapped last to first), its `eax`.
+    pub fn menu_weapon_draw_list<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, store};
+        const WEAPON_LIST: [f32; 4] = [79.0, 5.0, 8.0, 595.0];
+        let at = |o: u32| w.wrapping_add(o);
+        let first = |mem: &M, o: u32| i32::from(mem.read::<i16>(at(o))).cast_unsigned();
+        let rows = mem.rebase(0x008d_0250);
+        if mem.read::<u16>(at(0x32)) == mem.read::<u16>(at(0x34)) {
+            scroll_list_scissor(mem, w, 0, WEAPON_LIST, remap, call);
+            let from = first(mem, 0x32);
+            call(mem, rows, &[w, 0, from, 0, 0]);
+        } else {
+            scroll_list_scissor(mem, w, 1, WEAPON_LIST, remap, call);
+            let from = first(mem, 0x32);
+            call(mem, rows, &[w, 1, from, 0, 0]);
+            scroll_list_scissor(mem, w, 2, WEAPON_LIST, remap, call);
+            let span = mul(remap(mem, true, 79.0), 5.0);
+            let scroll = f64::from(mem.read::<i16>(at(0x46)));
+            let y = load(store(mul(mul(span, scroll), -0.000_244_140_625)));
+            let y = ftol(mem, y);
+            let from = first(mem, 0x34);
+            call(mem, rows, &[w, 2, from, 0, y]);
+        }
+        let f = mem.rebase(0x008c_1370);
+        call(mem, f, &[]);
+        let cy = remap(mem, true, 605.0);
+        let cy = ftol(mem, cy);
+        let cx = remap(mem, false, 390.0);
+        let cx = ftol(mem, cx);
+        let f = mem.rebase(0x008d_0100);
+        call(mem, f, &[w, cx, cy]);
+        let count = u32::from(mem.read::<u16>(at(0x30)));
+        let shown = u32::from(mem.read::<u16>(at(0x3a)));
+        let top = first(mem, 0x32);
+        let height = store(remap(mem, true, 395.0));
+        let width = store(remap(mem, false, 8.0));
+        let y = store(remap(mem, true, 599.0));
+        let x = store(remap(mem, false, 956.0));
+        let f = mem.rebase(0x008e_6cc0);
+        call(mem, f, &[x, y, width, height, top, shown, count])
+    }
+
+    /// `MenuItem_DrawTargetNames_008c4030(w)` (`0x008c4030`, own name):
+    /// the item menu's target list. Packet kicks; `x` = `remapX2(165)`,
+    /// `y` = `remapY2(496)`, the row step `f32(remapY2(420) /
+    /// f32(MenuItem_CursorCount()))`; for each `u16` pair `(name, slot)` of
+    /// `MenuItem_CursorTable()` up to a 0 name: the plate `(x, y,
+    /// remapX2(500), remapY2(60), 2)`, the name `TOMenuGetNameMes(name)`
+    /// centred (`ToGetBtlEasyFontWidth(text, &width, 0, 0.78, 1.0)`,
+    /// `ToMakeBtlEasyFont(text, f32((remapX2(500) - width) / 2 + x),
+    /// f32(remapY2(9) + y), 0, 0.78, 1.0)`) and, for the slot in
+    /// `0x0186a260`, the marker shape `TOMkpShapeXYWHUV(0xc8, remapX2(100)
+    /// plus x, remapY2(50) plus y, remapX2(300), remapY2(8), UV 0,
+    /// 0.4228515625, 0.291015625, 0.4306640625)`; `y` moves by the step.
+    /// Then `MenuItem_DrawCellCursor(w, 0, 0)` and
+    /// `TkMn2DrawKickSyncPacket()` (its `eax`). `local` is the width word.
+    pub fn menu_item_draw_target_names<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        for f in [0x008d_ce50, 0x008d_ce50, 0x008c_1790, 0x008c_0be0] {
+            let f = mem.rebase(f);
+            call(mem, f, &[]);
+        }
+        let left = store(remap(mem, false, 165.0));
+        let mut top = store(remap(mem, true, 496.0));
+        let f = mem.rebase(0x008c_4ff0);
+        let mut entry = call(mem, f, &[]);
+        let span = remap(mem, true, 420.0);
+        let f = mem.rebase(0x008c_5030);
+        let count = call(mem, f, &[]).cast_signed();
+        let step = store(div(span, load(store(f64::from(count)))));
+        let plate = mem.rebase(0x008f_5f70);
+        let (mes, width_of, font) = (
+            mem.rebase(0x008b_edd0),
+            mem.rebase(0x0090_5290),
+            mem.rebase(0x0090_5ab0),
+        );
+        let (scale, one) = (0.78f32.to_bits(), 1f32.to_bits());
+        while mem.read::<u16>(entry) != 0 {
+            let height = store(remap(mem, true, 60.0));
+            let width = store(remap(mem, false, 500.0));
+            call(mem, plate, &[left, top, width, height, 2]);
+            let name = u32::from(mem.read::<u16>(entry));
+            let text = call(mem, mes, &[name]);
+            call(mem, width_of, &[text, local, 0, scale, one]);
+            let free = sub(remap(mem, false, 500.0), load(mem.read(local)));
+            let tx = store(add(mul(free, 0.5), load(left)));
+            let ty = store(add(remap(mem, true, 9.0), load(top)));
+            call(mem, font, &[text, tx, ty, 0, scale, one]);
+            let slot = u32::from(mem.read::<u16>(entry.wrapping_add(2)));
+            if slot == mem.read::<u32>(mem.rebase(0x0186_a260)) {
+                let mx = store(add(remap(mem, false, 100.0), load(left)));
+                let my = store(add(remap(mem, true, 50.0), load(top)));
+                let mh = store(remap(mem, true, 8.0));
+                let mw = store(remap(mem, false, 300.0));
+                // 0, 0.4228515625, 0.291015625, 0.4306640625
+                let uv = [0u32, 0x3ed8_8000, 0x3e95_0000, 0x3edc_8000];
+                let f = mem.rebase(0x0090_3bb0);
+                #[rustfmt::skip]
+                call(mem, f, &[0xc8, mx, my, mw, mh, uv[0], uv[1], uv[2], uv[3]]);
+            }
+            entry = entry.wrapping_add(4);
+            top = store(add(load(top), load(step)));
+        }
+        let f = mem.rebase(0x008c_4a90);
+        call(mem, f, &[w, 0, 0]);
+        let f = mem.rebase(0x008c_0cc0);
+        call(mem, f, &[])
     }
 
     /// The sub-command window openers (`0x008e33d0`

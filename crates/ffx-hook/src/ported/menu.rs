@@ -1848,6 +1848,17 @@ ported! {
         let local = frame.at();
         tk::btl_end_draw_item_page(&mut mem(), dx, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
     }
+    /// `MenuWeapon_DrawList_008cf9f0(w)`.
+    MenuWeapon_DrawList_008cf9f0 @ 0x008c_f9f0 => extern "C" fn menu_weapon_draw_list(w: u32) -> u32 {
+        tk::menu_weapon_draw_list(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_DrawTargetNames_008c4030(w)`.
+    MenuItem_DrawTargetNames_008c4030 @ 0x008c_4030 => extern "C" fn menu_item_draw_target_names(w: u32) -> u32 {
+        // the name width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_item_draw_target_names(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

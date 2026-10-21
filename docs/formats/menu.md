@@ -304,7 +304,11 @@ scrolls the old rows (part 1) and the new ones (part 2, from row `+0x34`,
 in 1/4096 of nine rows) are drawn inside `TkMn2DrawMenuWindowScissor(
 ftol(312), ftol(10 + 77 * 9), part, +0x46)`, then the scissor is cleared.
 The scroll bar is `DrawCrossMenuScrollParts(955, 317, 10, 683, first row,
-rows shown, row count)` (1920x1080 units). The weapon shop lists pass
+rows shown, row count)` (1920x1080 units). The equip menu's weapon list
+(`MenuWeapon_DrawList_008cf9f0` `0x008cf9f0`) uses the same pattern with
+rows `79` high, five a page, the scissor `(8 + 79 * 5, 595)`, part 0 at
+rest, and integer row offsets (`ftol(f32(-79 * 5 * +0x46 / 4096))`); its
+bar is `(956, 599, 8, 395)`. The weapon shop lists pass
 `TkMn2GetExcelData([0x0186ab1c], [0x0186aba8])` to their row draws and
 draw their cursor while the sub-command window is open.
 
@@ -329,7 +333,11 @@ lists are rebuilt (`TkMenuItemRefresh(0)`, the key-item list), the list
 window goes to `g_TkMenuItemWindow`, and a four-row sub-command window
 (`TkMenuItemMes`/`TkMenuItemHelp` of 0, 1, 9, 2, usability
 `MenuItem_IsUsable`) opens at `remapX2(210)`, `remapY2(155)`, size
-`remapX2(1500)` x `remapY2(54)`. Its target face is drawn by
+`remapX2(1500)` x `remapY2(54)`. `MenuItem_DrawTargetNames_008c4030` (`0x008c4030`) draws the target
+list: from `(165, 496)`, `420 / MenuItem_CursorCount()` apart, a plate
+`500 x 60` per `(name, slot)` pair of `MenuItem_CursorTable()` with the
+name (`TOMenuGetNameMes`) centred at scale 0.78, and a marker bar under
+the slot in `0x0186a260`. Its target face is drawn by
 `MenuItem_DrawTargetFace` (`0x008c3ec0`): for `g_TkMenuItemTarget` below 8
 the character face slide, from 8 the aeon's, at `(315, 263)` size
 `200 x 200` (1920x1080 units), eased by `Menu_EaseCounter` over the words
