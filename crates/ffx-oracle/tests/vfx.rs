@@ -25338,3 +25338,104 @@ fn r41b_set_pmcom2_texture_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn r41c_render_data_inits_and_op_lists_match_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_6620);
+        let cells = p.alloc(0x40);
+        let rets: Vec<(u32, &[u8], u32)> = vec![
+            // 0x00715af0, graphicVFXSetup, updateVFXRenderData_FakeEnvModel,
+            // graphicVFXUpdate, graphicVFXDestroy
+            (0x0071_5af0, &[0; 9], cells),
+            (0x0064_5780, &[0; 2], cells + 4),
+            (0x0071_cf90, &[0; 9], cells + 8),
+            (0x0064_58a0, &[0; 2], cells + 12),
+            (0x0064_5280, &[0; 2], cells + 16),
+            // createGuildMapRenderDataBuffer, graphicGuidemapSetup,
+            // graphicVFXGetRenderDataByInstance, updateGuildMapRenderData
+            (0x0071_33e0, &[0; 4], cells + 20),
+            (0x0064_1490, &[0; 2], cells + 24),
+            (0x0064_53d0, &[0; 2], cells + 28),
+            (0x0071_7620, &[0; 4], cells + 32),
+            // the op scripts' allocator
+            (0x007c_f970, &[0], cells + 36),
+        ];
+        let logs: Vec<u32> = rets
+            .iter()
+            .map(|&(f, words, ret)| far_recorder(&mut p, f, words, Some(ret)))
+            .collect();
+        let (data, entries) = (p.alloc(0x100), p.alloc(0x6c * 8));
+        let (text, out, nodes) = (p.alloc(0x40), p.alloc(0x80), p.alloc(0x24 * 8));
+        for round in 0..2000u32 {
+            let what = |s: &str| format!("{s} round {round}");
+            for &log in &logs {
+                p.set(log, 0u32);
+            }
+            for k in 0..9 {
+                let v = rng.next();
+                p.set(cells + 4 * k, rng.pick(&[0u32, 1, 0x8000_0000, v]));
+            }
+            p.set(cells + 28, if rng.chance(20) { 0 } else { data });
+            p.set(cells + 36, out);
+            p.fill(data, 0x100, &mut rng);
+            p.fill(entries, 0x6c * 8, &mut rng);
+            p.fill(out, 0x80, &mut rng);
+            p.set(data + 0x90, rng.pick(&[0i32, 1, 2, 5, 8, -1]));
+            p.set(data + 0x94, entries);
+            let args: [u32; 9] = std::array::from_fn(|_| rng.next());
+            let mut args = args;
+            args[8] = rng.pick(&[0u32, 5, 0x8000_0000, 0xffff_ffff, args[8]]);
+            p.check(&what("fake_env_model"), 0x0071_6620, &args, |m| {
+                Some(small::bridge::init_vfx_render_data_buffer_fake_env_model(
+                    m,
+                    args,
+                    &mut call_original,
+                ))
+            });
+            let four = [args[0], args[1], args[2], args[3]];
+            p.check(&what("guild_map"), 0x0071_0ed0, &four, |m| {
+                Some(small::bridge::init_guild_map_render_data(
+                    m,
+                    four,
+                    &mut call_original,
+                ))
+            });
+            // a string of 0..0x3f bytes
+            let len = rng.below(0x40);
+            for k in 0..0x40 {
+                let c = if k < len { 1 + rng.below(0xff) } else { 0 };
+                p.set(text + k, u8::try_from(c).unwrap());
+            }
+            let s = if rng.chance(10) { 0 } else { text };
+            p.check(&what("op_strdup"), 0x007e_2e30, &[s], |m| {
+                Some(op::bridge::op_strdup(m, s, &mut call_original))
+            });
+            // a list of 1..8 nodes in a random order
+            p.fill(nodes, 0x24 * 8, &mut rng);
+            let n = 1 + rng.below(8);
+            let mut order: Vec<u32> = (0..8).collect();
+            for k in (1..8).rev() {
+                let j = rng.below(k + 1) as usize;
+                order.swap(k as usize, j);
+            }
+            for k in 0..n as usize {
+                let next = if k + 1 < n as usize {
+                    nodes + 0x24 * order[k + 1]
+                } else {
+                    0
+                };
+                p.set(nodes + 0x24 * order[k] + 0x20, next);
+            }
+            let head = if rng.chance(10) {
+                0
+            } else {
+                nodes + 0x24 * order[0]
+            };
+            p.check(&what("op_list_values"), 0x007e_2720, &[head], |m| {
+                Some(op::bridge::op_list_values(m, head, &mut call_original))
+            });
+        }
+    }
+}

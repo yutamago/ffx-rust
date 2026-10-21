@@ -3513,7 +3513,7 @@
 0x00710e30 function VFX_Copy16From            # (dst, src): four words copied, the last left in eax (callers: sg_calcenvelope_normW)
 0x00710e70 function VFX_Copy16To              # (src, dst): four words copied, the last left in eax
 0x00710ea0 function VFX_ScaleVec3             # (dst, v, float s): x, y, z of v times s (x87, z with v's element as the memory operand), returns dst
-0x00710ed0 function InitGuildMapRenderData    # fh v3:exact 0x00710fb0
+0x00710ed0 function InitGuildMapRenderData    # fh v3:exact 0x00710fb0; cdecl (lo, hi, a, b) -> eax: render data +0x94 entries (0x6c bytes, count +0x90) get +8 divided by 3; ported ffx_vfx::small::bridge::init_guild_map_render_data (r41)
 0x00710f80 function InitMapRenderData            # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71002dada0 InitMapRenderData, 2 votes, round 1
 0x00710fd0 function InitVFXPath3RenderData    # fh v3:cg5 0x7110b0
 0x00711030 function InitVFXPath3RenderDataShp # fh v3:bsim1.00 0x00711110
@@ -3569,7 +3569,7 @@
 0x00716110 function createZBufClearRenderData_00716110 # (lo, hi) -> render data present: sprintf(name, g_StrNoTexture), graphicVFXCreate(lo, hi, 0x40000000), graphicVFXCreateDataBuffer(lo, hi, 1, &4, &6, name, &0); caller InitVFXZBufClearRenderData; name ours; ported (round 33, small::bridge::create_zbuf_clear_render_data)
 0x00716550 function getAlphaForShpIgnoreAnFormatBaseOnSh # fh v3:exact 0x00716630; ours: (shp) -> byte +0x1c when byte +0xf is 3, else the byte at shp + shp[1] + 4 (small::bridge::shp_alpha)
 0x00716570 function hashU                     # fh v3:exact 0x00716650
-0x00716620 function initVFXRenderDataBuffer_FakeEnvModel # layout+callees: sorts between hashU and pppCallUsrFunc, and its named callees match the Switch 0x71002e5280 initVFXRenderDataBuffer_FakeEnvModel's (similarity 0.60: graphicVFXDestroy, graphicVFXSetup, graphicVFXUpdate); symbols from Fahrenheit's server export
+0x00716620 function initVFXRenderDataBuffer_FakeEnvModel # layout+callees: sorts between hashU and pppCallUsrFunc, and its named callees match the Switch 0x71002e5280 initVFXRenderDataBuffer_FakeEnvModel's (similarity 0.60: graphicVFXDestroy, graphicVFXSetup, graphicVFXUpdate); symbols from Fahrenheit's server export; cdecl 9 words -> eax: instance lo = a8, hi = a0 + (a8 >> 31); ported ffx_vfx::small::bridge::init_vfx_render_data_buffer_fake_env_model (r41)
 0x00716710 function pppCallUsrFunc            # fh v3:exact 0x007167f0
 0x00716770 function pppCreatePObject          # fh v3:exact 0x00716850
 0x007168f0 function pppDeletePObject          # fh v3:exact 0x007169d0
@@ -6779,6 +6779,8 @@
 0x007e2250 function op_strlen                 # (s) -> length of the C string, 0 for null (op layer string helpers 0x007e1d50..)
 0x007e2600 function op_str_equal_007e2600      # ours: (a, b, nocase) -> -1 when the strings are equal (A-Z folded with nocase), else 0; 0 for a null string; called by 0x007e11a0
 0x007e2660 function op_line_length_007e2660      # ours: (src, lines) -> length of the op script reader's next line (bytes before LF, >= 0x80 with the next) or -1 at 0/0xff/the end (position back one); *lines (if any) and g_OpLineCount += 1; callers 0x007e1d50, 0x007e2270
+0x007e2720 function op_list_values_007e2720   # name ours: (node) -> the +4 words of the list linked through +0x20 in a block from 0x007cf970(4 n), 0 for none; caller 0x007e2a60; ported ffx_vfx::op::bridge::op_list_values (r41)
+0x007e2e30 function op_strdup_007e2e30        # name ours: (s) -> a copy of s with its terminator from 0x007cf970(len + 1), 0 for no string; callers 0x007e2770, 0x007e2a60; ported ffx_vfx::op::bridge::op_strdup (r41)
 0x007e2ed0 function op_file_read                 # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71003cb510 op_file_read, 2 votes, round 1
 0x007e2fb0 function op_file_puts_007e2fb0       # ours: (file, s): the C string into the op file write buffer (+0 bytes, +8 handle, +0xc position, +0x10 size), sceWrite of each full buffer; only caller 0x007e2270 (op::bridge::op_file_puts)
 0x007e3040 function op_and64                  # (dst, a, b) 64-bit dst = *a & *b

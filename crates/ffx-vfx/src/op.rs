@@ -4303,6 +4303,73 @@ pub mod bridge {
         }
     }
 
+    /// The op scripts' allocator (`0x007cf970(size)`), called through `call`.
+    const OP_ALLOC: u32 = 0x007c_f970;
+
+    /// `op_strdup_007e2e30(s)` (`0x007e2e30`, name ours): 0 for no string;
+    /// else a copy of `s` with its terminator in a block from
+    /// `0x007cf970(length + 1)` (through `call`), returned.
+    pub fn op_strdup<M: Mem>(
+        mem: &mut M,
+        s: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if s == 0 {
+            return 0;
+        }
+        let mut n = 0u32;
+        loop {
+            let c: u8 = mem.read(s.wrapping_add(n));
+            n = n.wrapping_add(1);
+            if c == 0 {
+                break;
+            }
+        }
+        let out = call(mem, Global::<u32>::new(OP_ALLOC).ptr(mem).addr, &[n]);
+        if n.cast_signed() > 0 {
+            for k in 0..n {
+                let c: u8 = mem.read(s.wrapping_add(k));
+                mem.write(out.wrapping_add(k), c);
+            }
+        }
+        out
+    }
+
+    /// `op_list_values_007e2720(node)` (`0x007e2720`, name ours): the
+    /// `+4` words of a list linked through `+0x20`, in order, in a block
+    /// from `0x007cf970(4 n)` (through `call`), returned; 0 for no list.
+    pub fn op_list_values<M: Mem>(
+        mem: &mut M,
+        node: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if node == 0 {
+            return 0;
+        }
+        let mut n = 0u32;
+        let mut p = node;
+        while p != 0 {
+            p = mem.read(p.wrapping_add(0x20));
+            n = n.wrapping_add(1);
+        }
+        if n == 0 {
+            return 0;
+        }
+        let out = call(
+            mem,
+            Global::<u32>::new(OP_ALLOC).ptr(mem).addr,
+            &[n.wrapping_mul(4)],
+        );
+        let (mut p, mut at) = (node, out);
+        while p != 0 {
+            let v: u32 = mem.read(p.wrapping_add(4));
+            mem.write(at, v);
+            p = mem.read(p.wrapping_add(0x20));
+            at = at.wrapping_add(4);
+        }
+        out
+    }
+
     /// `op_token_007e1f80(src, out, pos, max, eol)` (`0x007e1f80`): the
     /// next token of an op script from `src + *pos` into `out` (at most
     /// `max - 1` bytes, then a terminator), by the class of its first byte:

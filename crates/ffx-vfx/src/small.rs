@@ -1611,6 +1611,69 @@ pub mod bridge {
         call(mem, sym(mem, 0x0064_5280), &[lo, hi])
     }
 
+    /// `initVFXRenderDataBuffer_FakeEnvModel(a0, .., a8)` (`0x00716620`,
+    /// Fahrenheit's name): the instance is `a8` with `a0` added to its
+    /// sign-extended high word (`lo = a8`, `hi = a0 + (a8 >> 31)`).
+    /// `0x00715af0(a0..a8)`, then `graphicVFXSetup(lo, hi)`; when both give
+    /// nonzero, `updateVFXRenderData_FakeEnvModel(a0..a8)` and
+    /// `graphicVFXUpdate(lo, hi)`, whose eax is returned; otherwise
+    /// `graphicVFXDestroy(lo, hi)` and its eax. All through `call`.
+    pub fn init_vfx_render_data_buffer_fake_env_model<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let lo = args[8];
+        let hi = args[0].wrapping_add((lo.cast_signed() >> 31).cast_unsigned());
+        if call(mem, sym(mem, 0x0071_5af0), &args) != 0
+            && call(mem, sym(mem, 0x0064_5780), &[lo, hi]) != 0
+        {
+            call(mem, sym(mem, 0x0071_cf90), &args);
+            return call(mem, sym(mem, 0x0064_58a0), &[lo, hi]);
+        }
+        call(mem, sym(mem, 0x0064_5280), &[lo, hi])
+    }
+
+    /// `InitGuildMapRenderData(lo, hi, a, b)` (`0x00710ed0`, Fahrenheit's
+    /// name): `createGuildMapRenderDataBuffer(lo, hi, a, b)`; when that
+    /// gives nonzero, `graphicGuidemapSetup(lo, hi)`, and the render data
+    /// of the instance (`graphicVFXGetRenderDataByInstance`) has the word
+    /// at `+8` of each of its `i32 +0x90` 0x6c-byte entries (at `+0x94`)
+    /// divided by 3. With the set-up's nonzero result,
+    /// `updateGuildMapRenderData(lo, hi, a, b)`, whose nonzero eax is
+    /// returned. Otherwise `graphicVFXDestroy(lo, hi)` and its eax. All
+    /// through `call`.
+    pub fn init_guild_map_render_data<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [lo, hi, ..] = args;
+        if call(mem, sym(mem, 0x0071_33e0), &args) != 0 {
+            let ready = call(mem, sym(mem, 0x0064_1490), &[lo, hi]);
+            let data = call(mem, sym(mem, 0x0064_53d0), &[lo, hi]);
+            if data != 0 {
+                let mut i = 0i32;
+                while i < mem.read::<i32>(data.wrapping_add(0x90)) {
+                    let entries: u32 = mem.read(data.wrapping_add(0x94));
+                    let at = entries
+                        .wrapping_add(i.cast_unsigned().wrapping_mul(0x6c))
+                        .wrapping_add(8);
+                    let v: u32 = mem.read(at);
+                    mem.write(at, v / 3);
+                    i += 1;
+                }
+            }
+            if ready != 0 {
+                let r = call(mem, sym(mem, 0x0071_7620), &args);
+                if r != 0 {
+                    return r;
+                }
+            }
+        }
+        call(mem, sym(mem, 0x0064_5280), &[lo, hi])
+    }
+
     /// `create0706AccRenderDataBuffer(lo, hi, tex_lo, tex_hi)`
     /// (`0x007fa5c0`): the texture word `t = tex_hi:tex_lo` (a GS `TEX0`)
     /// names the texture: `graphicVFXIsTextureWithBpLoaded(t & 0x3fff, t >>

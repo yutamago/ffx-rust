@@ -1472,6 +1472,22 @@ ported! {
     InitVFXZBufClearRenderData @ 0x0071_1680 => extern "C" fn init_vfx_zbuf_clear_render_data(lo: u32, hi: u32) -> u32 {
         small::bridge::init_vfx_zbuf_clear_render_data(&mut mem(), lo, hi, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `initVFXRenderDataBuffer_FakeEnvModel(a0, .., a8)`.
+    initVFXRenderDataBuffer_FakeEnvModel @ 0x0071_6620 => extern "C" fn init_vfx_render_data_buffer_fake_env_model(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
+        small::bridge::init_vfx_render_data_buffer_fake_env_model(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `InitGuildMapRenderData(lo, hi, a, b)`.
+    InitGuildMapRenderData @ 0x0071_0ed0 => extern "C" fn init_guild_map_render_data(lo: u32, hi: u32, a: u32, b: u32) -> u32 {
+        small::bridge::init_guild_map_render_data(&mut mem(), [lo, hi, a, b], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_strdup_007e2e30(s)`.
+    op_strdup_007e2e30 @ 0x007e_2e30 => extern "C" fn op_strdup(s: u32) -> u32 {
+        op::bridge::op_strdup(&mut mem(), s, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_list_values_007e2720(node)`.
+    op_list_values_007e2720 @ 0x007e_2720 => extern "C" fn op_list_values(node: u32) -> u32 {
+        op::bridge::op_list_values(&mut mem(), node, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `create0706AccRenderDataBuffer(lo, hi, tex_lo, tex_hi)`.
     create0706AccRenderDataBuffer @ 0x007f_a5c0 => extern "C" fn create_0706_acc_render_data_buffer(lo: u32, hi: u32, tex_lo: u32, tex_hi: u32) -> u32 {
         // the original's locals: three words and a 0x100-byte name
