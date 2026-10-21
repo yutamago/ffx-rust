@@ -5722,7 +5722,7 @@
 0x0079b1a0 function MsResetAutoStatus         # fh v3:exact 0x0079b1b0
 0x0079b290 function MsSetAutoStatus           # fh v3:exact 0x0079b2a0
 0x0079b470 function MsSetCommandUse              # layout: alphabetical run between MsSetAutoStatus and MsSetRamChr (1 unnamed in the gap); Switch 0x7100369710 MsSetCommandUse is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); (chr, id, on): kind (id >> 12, signed) 0: MsGetChr(id & 0xfff) + 0xdd4 = (u8)on; 3: MsGetChr(chr) command bit (u16s from +0x690) set/cleared; ported (ffx_battle::turn, battle round 29)
-0x0079b4f0 function MsSetRamChr               # copies the stat record (section 2) into the battle actor; was Mon_InitActor
+0x0079b4f0 function MsSetRamChr               # copies the stat record (section 2) into the battle actor; was Mon_InitActor; (_, chr): first argument unused; +0x540 (0x1ec) cleared; party: ply_rom record, save record, name, MsSetRamChrParam, +0xf88 = g_BtlItemMem + 0x118 chr, abilities, gear list, command 0x3002 off under water or steal rule 2; monster: +0x48 data (null skips the fields; +0x14 the offset of 0x46 item words), record +0xf80, g_BtlItemMem2 + 0x478 chr = 0x3001 then the record's non-zero u16 commands +0x50 (16), 0xff to 0x14; HP 1 under 0x0112a91d/0x0112a91e; down (+0x606 bit 0, +0xdcc 2) at HP < 1; ported (ffx_battle::save_param, battle round 34)
 0x0079bb50 function MsSetRamChrAbility        # equipment checks per character (weapon/armor in inventory, flag 0x02 skipped); was Battle_CheckEquipment
 0x0079c070 function MsSetRamChrCommand           # (chr, id, on): sets/clears bit id & 0xf of u16 word (id & 0xfff) >> 4 of the chr's command bitset +0x664 (MsGetChr); Switch MsSetRamChrCommand (0x71003694e0, 88 bytes, calls MsGetChr) sorts between MsSetRamChrAbility and MsSetRamChrData, as here; the battle porter's MsSetChrCommandFlag
 0x0079c0c0 function MsSetRamChrCommandUse        # layout: alphabetical run between MsSetRamChrAbility and MsSetRamChrData (2 unnamed in the gap); Switch 0x7100369540 MsSetRamChrCommandUse is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -16396,6 +16396,8 @@
 0x0112a91a label g_BtlNoSave               # u8: MsBattleProcess skips MsSetSaveData at a battle's end
 0x0112a91b label g_BtlMapCircleOn            # i8 (MsBattleGetMapCircleOn 0x007816a0)
 0x0112a91c label g_BtlDebugEffectHold      # u8: the debug env menu's toggle (0x007c6e20, 0x007ce450); MsEffectStart's state 3 waits while set
+0x0112a91d label g_BtlDebugPartyHp1         # u8, debug env item 0x24 (0x007c6e20 toggles it, 0x007ce450 shows it): 0x00784c80 sets party actors 0-0x11 to HP 1 (0: their maximum); MsSetRamChr gives a new party actor HP 1 while set
+0x0112a91e label g_BtlDebugMonsterHp1       # u8, debug env item 0x25: 0x00784bc0 sets monster actors 0x14-0x1b to HP 1 (0: their maximum); MsSetRamChr likewise for a new monster
 0x0112a91f label g_BtlDebugAllMiss            # u8, debug env flag: DmgCalc_CheckHit always misses, no status lands, MsCalcEscape fails
 0x0112a920 label g_BtlAllWeapons           # u8: MsSetSaveStartGame takes every wep_data record, not only the first 0x23
 0x0112a922 label g_BtlMenuSkipAll          # u8 set: MsMenuGetChrSkipCommand gives 0xff

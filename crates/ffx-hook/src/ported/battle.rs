@@ -5083,6 +5083,10 @@ ported! {
     MsSetRamChrParam @ 0x0079_c5f0 => extern "C" fn ms_set_ram_chr_param(chr: u32) -> i32 {
         sparam::ms_set_ram_chr_param(&mut mem(), chr)
     }
+    /// `MsSetRamChr(_, chr)`: actor `chr` set up for the battle.
+    MsSetRamChr @ 0x0079_b4f0 => extern "C" fn ms_set_ram_chr(_unused: u32, chr: u32) {
+        sparam::ms_set_ram_chr(&mut mem(), chr);
+    }
     /// `MsGetTargetRandomList(chr, &n, shuffle)`: `MsBattleError`
     /// through the game.
     MsGetTargetRandomList @ 0x007b_7170 => extern "C" fn ms_get_target_random_list(chr: u32, n: u32, shuffle: u32) -> u32 {
