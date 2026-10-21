@@ -543,6 +543,47 @@ fn visible(
         |m| vi::ms_set_chr_shadow_req(m, p, k, v.to_le_bytes()[0]),
     );
     same("msSetChrShadowReq", a, b);
+    // a character set up from its record (round 34): an actor's or a
+    // weapon's, the record's bytes signed or not
+    let p = if rng.below(3) == 0 {
+        let top = ffx_battle::actor::bridge::WEAPON_TOP.get(b);
+        top + rng.below(2 * ACTORS) * ffx_battle::actor::WEAPON_SIZE
+    } else {
+        w.actor(rng.below(ACTORS))
+    };
+    let chr = u32::from_le_bytes(b.read(p, 4).unwrap().try_into().unwrap());
+    let chr = if w.synthetic || !readable(a, chr, 0x1000) {
+        chars + 0x1000 * rng.below(3)
+    } else {
+        chr
+    };
+    for o in [0x20, 0x23, 0x32, 0x33, 0x34, 0x37] {
+        let v = [0, 1, 2, 0xff, rng.byte()][rng.below(5) as usize];
+        poke(a, b, p + o, &[v]);
+    }
+    // Ch_SetClipZ's graphicLevelGetNameHash: no level loaded here, a stub
+    // returning a hash
+    let hash = [0, rng.next()][rng.below(2) as usize];
+    let mut saved = Vec::new();
+    for o in [&mut *a, &mut *b] {
+        let at = o.rebase(ffx_chara::chr::bridge::LEVEL_NAME_HASH);
+        saved.push(o.read(at, 8).unwrap());
+        o.stub_return(at, hash).unwrap();
+    }
+    twin(
+        "MsSetChrEngine_00796f70",
+        a,
+        b,
+        0x0079_6f70,
+        &[chr, p],
+        ALL,
+        |m| vi::ms_set_chr_engine(m, &mut call, chr, p),
+    );
+    for (o, bytes) in [&mut *a, &mut *b].into_iter().zip(&saved) {
+        let at = o.rebase(ffx_chara::chr::bridge::LEVEL_NAME_HASH);
+        o.write(at, bytes).unwrap();
+    }
+    same("MsSetChrEngine_00796f70", a, b);
     let v = u32::from(rng.below(2) == 0);
     if rng.below(4) == 0 {
         twin(
