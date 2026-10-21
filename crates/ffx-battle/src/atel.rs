@@ -814,4 +814,111 @@ pub mod bridge {
             crate::actor::bridge::ms_push_btl_pos(mem, a);
         }
     }
+
+    /// What [`ms_atel_chr_init`] calls through the game besides the
+    /// script's current-control pair: `AtelGetCurrentActorTotal()`,
+    /// `MsAtelBindCamera_00798720(_, kind, i, n)` and
+    /// `MsAtelSetHandlerByte_007987b0(kind, owner, n, value)` (their shims
+    /// make their frames), and [`MS_ATEL_GET_HANDLER`].
+    pub const ATEL_GET_CURRENT_ACTOR_TOTAL: u32 = 0x0086_b000;
+    pub const MS_ATEL_BIND_CAMERA: u32 = 0x0079_8720;
+    pub const MS_ATEL_SET_HANDLER_BYTE: u32 = 0x0079_87b0;
+    /// `MsAtelGetHandler(kind, i, n, &base)` (through the game too).
+    pub const MS_ATEL_GET_HANDLER: u32 = 0x0079_8590;
+
+    /// `MsAtelChrInit(kind)` (`0x007976a0`, from `AtelBattleSetUp`): with
+    /// script manager `kind` current (`AtelChangeCurrentCtrl`, put back
+    /// after), every worker's battle ID byte (`AtelGetBattleIdAdrs`) 0xff,
+    /// then the workers that handle the actors' events get their actor's
+    /// index: for the battle's scripts (2) after resetting the camera
+    /// matrix (`MsSetCameraMatrix(0, 0, 0, 0, 0, 0.0)`) and binding its
+    /// cameras (`MsAtelBindCamera_00798720(0, 2, 1, 0x3e)`, `(0, 2, 0,
+    /// 0)`), the handlers of signals 0x29-0x37 of owner 1 and 5-0x20,
+    /// 0x4f-0x6a, 0x6d-0x88 of owner 0 (`MsAtelGetHandler(2, owner, n,
+    /// &base)`: worker `base + handler[0]` gets `n` less the range's first),
+    /// then seven handler bytes (`MsAtelSetHandlerByte_007987b0(2, 0, n,
+    /// v)`); for the monsters' (3) signals 0x3d, 4 and 0x40 of the monsters
+    /// 0x14-0x1b each (their index). `local` the handler base (the
+    /// original's own argument word). The worker count.
+    pub fn ms_atel_chr_init<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        kind: u32,
+        local: u32,
+    ) -> u32 {
+        fn game<M: Mem>(
+            mem: &mut M,
+            call: crate::exec::bridge::Call<'_, M>,
+            sym: u32,
+            args: &[u32],
+        ) -> u32 {
+            let f = mem.rebase(sym);
+            call(mem, f, args)
+        }
+        // worker `base + handler[0]` of signal `n` gets `id`
+        fn mark<M: Mem>(
+            mem: &mut M,
+            call: crate::exec::bridge::Call<'_, M>,
+            [kind, owner, n, id]: [u32; 4],
+            local: u32,
+        ) {
+            let h = game(
+                mem,
+                &mut *call,
+                MS_ATEL_GET_HANDLER,
+                &[kind, owner, n, local],
+            );
+            if h != 0 {
+                let base: u32 = mem.read(local);
+                let w = u32::from(mem.read::<u8>(h)).wrapping_add(base);
+                let p = game(mem, call, ATEL_GET_BATTLE_ID_ADRS, &[w]);
+                mem.write(p, id.to_le_bytes()[0]);
+            }
+        }
+        let cur = game(mem, &mut *call, ATEL_CHANGE_CURRENT_CTRL, &[kind]);
+        let total = game(mem, &mut *call, ATEL_GET_CURRENT_ACTOR_TOTAL, &[]);
+        for w in 0..total.cast_signed().max(0).cast_unsigned() {
+            let p = game(mem, &mut *call, ATEL_GET_BATTLE_ID_ADRS, &[w]);
+            mem.write(p, 0xffu8);
+        }
+        match kind {
+            2 => {
+                crate::camera::bridge::ms_set_camera_matrix(mem, 0, 0, 0, 0, 0, 0);
+                for (i, n) in [(1, 0x3e), (0, 0)] {
+                    game(mem, &mut *call, MS_ATEL_BIND_CAMERA, &[0, 2, i, n]);
+                }
+                for (owner, from, to) in [
+                    (1, 0x29, 0x38),
+                    (0, 5, 0x21),
+                    (0, 0x4f, 0x6b),
+                    (0, 0x6d, 0x89),
+                ] {
+                    for n in from..to {
+                        mark(mem, &mut *call, [2, owner, n, n - from], local);
+                    }
+                }
+                for (n, v) in [
+                    (0x21, 0x1c),
+                    (0x22, 0x1d),
+                    (0x23, 0x1e),
+                    (0x25, 0xe),
+                    (0x26, 0xf),
+                    (0x27, 0x10),
+                    (0x28, 0x11),
+                ] {
+                    game(mem, &mut *call, MS_ATEL_SET_HANDLER_BYTE, &[2, 0, n, v]);
+                }
+            }
+            3 => {
+                for n in [0x3d, 4, 0x40] {
+                    for k in 0..8 {
+                        mark(mem, &mut *call, [3, k + 0x14, n, k + 0x14], local);
+                    }
+                }
+            }
+            _ => {}
+        }
+        game(mem, call, ATEL_SET_CURRENT_CTRL, &[cur]);
+        total
+    }
 }

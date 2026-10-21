@@ -5304,6 +5304,24 @@ ported! {
         let at = local.at();
         minor::password_text_read(&mut mem(), &mut call_ptr, at)
     }
+    /// `Battle_QueueCommand(i, command, targets, request, step)`.
+    Battle_QueueCommand @ 0x007a_c9c0 => extern "C" fn battle_queue_command(i: u32, command: u32, targets: u32, request: u32, step: u32) -> u32 {
+        action::battle_queue_command(&mut mem(), &mut call_ptr, [i, command, targets, request, step])
+    }
+    /// `setCameraMatrixToPhyreScene(worker, args, stack, side)`: the
+    /// position in the port's frame.
+    setCameraMatrixToPhyreScene @ 0x007b_b6a0 => extern "C" fn set_camera_matrix_to_phyre_scene(w: u32, _args: u32, s: u32, side: u32) -> u32 {
+        let mut local = super::StackFrame::<4>::new();
+        let at = local.at();
+        native!(c);
+        camnat::set_camera_matrix_to_phyre_scene(&mut mem(), &mut c, [w, s, side], at)
+    }
+    /// `MsAtelChrInit(kind)`: the handler base in the port's frame.
+    MsAtelChrInit @ 0x0079_76a0 => extern "C" fn ms_atel_chr_init(kind: u32) -> u32 {
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
+        atel::ms_atel_chr_init(&mut mem(), &mut call_ptr, kind, at)
+    }
     /// `setDefaultPlayerName()`: the converted name in the port's frame.
     setDefaultPlayerName @ 0x0078_7470 => extern "C" fn set_default_player_name() {
         let mut local = super::StackFrame::<{ (save::NAME_LOCAL / 4) as usize }>::new();
