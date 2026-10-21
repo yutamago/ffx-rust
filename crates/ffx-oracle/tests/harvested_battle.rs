@@ -90,3 +90,63 @@ harvest_test!(
         ffx_battle::minor::bridge::ms_walk_ability_process(m, s.arg(0));
     }
 );
+
+// battle round 33: the cursors and the overdrive bars (the frame locals in
+// stack scratch; the projection and graphicUiRemapY2 return in ST0, as
+// fcall's f32 bits; the live actors' positions take no sine or cosine)
+fn r33_call(m: &mut Oracle, f: u32, a: &[u32]) -> u32 {
+    m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+}
+fn r33_fcall(m: &mut Oracle, f: u32, a: &[u32]) -> u32 {
+    let r = m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap();
+    r.st0_f32().unwrap().to_bits()
+}
+fn r33_trig(_: ffx_battle::pos::bridge::Trig, _: u32) -> u32 {
+    panic!("a harvested battle position took a sine or cosine")
+}
+harvest_test!(
+    ms_get_chr_limit_bar_flag,
+    0x0079_5250,
+    args = 1,
+    |m: &mut Oracle, s| {
+        let local = m.stack_range().start + 0x100;
+        ffx_battle::cursor::bridge::ms_get_chr_limit_bar_flag(
+            m,
+            &r33_trig,
+            &mut r33_call,
+            &mut r33_fcall,
+            s.arg(0),
+            local,
+        )
+    }
+);
+harvest_test!(
+    ms_calc_cursor_pos,
+    0x0079_f380,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        let local = m.stack_range().start + 0x100;
+        ffx_battle::cursor::bridge::ms_calc_cursor_pos(
+            m,
+            &r33_trig,
+            &mut r33_call,
+            &mut r33_fcall,
+            local,
+        );
+    }
+);
+harvest_test!(
+    ms_battle_cursor_calc,
+    0x0078_0cc0,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        let local = m.stack_range().start + 0x100;
+        ffx_battle::cursor::bridge::ms_battle_cursor_calc(
+            m,
+            &r33_trig,
+            &mut r33_call,
+            &mut r33_fcall,
+            local,
+        );
+    }
+);
