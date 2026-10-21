@@ -2534,6 +2534,211 @@ queues the pending ones with a fade of 0xf0 frames (0x78 with flag
 checks them on synthetic workers of every type and on the snapshots' real
 workers (those whose level blocks point at their own blocks).
 
+`AtelSetBindObject` (`0x0086f4c0`) moves the map object a worker is bound
+to (`+0xaa` 4: the group `+0xa8`, `yiSetRotTransGroup`; 5: the object
+`+0xa8`, `yiSetRotTransDObj`) to its position block (`+0x284` for types 5
+and 6, `+0x558` otherwise): rotation `+0x30`..`+0x38` with w 0, translation
+`+0`..`+8` with w 1, both built in the original's frame. Its `EAX` is that
+call's (a pointer into `yiSetRotTransGroup`'s own frame), else the block
+pointer with `+0xaa` in the low byte; type 4 workers have no block and the
+original reads through 0. `AtelSetPos3d` (`0x00870b20`, `(worker, x, y, z,
+snap)`, returns `snap`) writes the block's position, then by `+0xaa`: 1 the
+character (`+0x9c`) `Ch_SetPos3` and `Ch_ClothReset`, 2 the camera
+`MsCameraSetRect(+0x3c, 1, &(x, y, z, 1))`. For the player worker (`+0x2e`
+= the ctrl work's `+0xa`) the ctrl work's position `+0x218` (w `+0x224`)
+moves to `+0x228` and becomes the block's (w 1), and the save event's
+encounter byte (`+0x10`) and `AtelSetSaveDicIndex` take the character's
+PID fields (`Ch_IdGetEncount`, `Ch_IdGetDictionary`; 0 without one).
+Without the worker's `+0x34` bit 4, or with `snap`, the previous position
+(`+0x228`, w 1) and the block's `+0x10`..`+0x18` follow the new one. The
+ctrl work's `+2` bit 4 is set. The natives that called both through the
+original call the Rust ones, with the native scratch as the frame.
+`round23b_helpers_match_the_original` covers them (character, map-group
+and camera bindings come from the snapshots).
+
+The rest of round 23: `Atel_UcResume` (`0x0086a130`) runs `AtelUcOff`,
+then `AtelUcOn` when the ctrl work had given the player control (`+0`
+bits `0x22`, read first) and its `+1` bit 2 and `+3` bits `0x84` are clear;
+`Atel_UcRestore` (`0x0086a0e0`) does the same and then puts `+0` bit 1
+back as it was. `Atel_GetWorkerRotY` (`0x0086a6e0`) returns the position
+block's `+0x34` of a worker index in `ST0`; `Atel_SyncChrDir`
+(`0x00869df0`) stores `Ch_GetDir` of the worker's character into the
+block's `+0x20` when bound to it (`+0xaa` 1). `AtelBindEff2On`
+(`0x00862700`) switches the character's bind effect 2 on (`op_et_bindeff2`,
+`_draw_on`) and one of its parts (kind 0 walk, 1 breath, 2 water), marking
+it in the worker's `+0x38` (bits 5, 6, 7). `Atel_QueueSepLoads`
+(`0x008638c0`) turns the pending entries of `g_AtelSepLoadList` that the
+event header's table does not list into the separates queue
+(`g_AtelSepQueueCount`, `0x0132707c`, entries from 1: ids at
+`0x01327080`, fades at `0x013270a0`). `round23c_helpers_match_the_original`
+covers them; `op_et_bindeff2_draw_on` finds no bind-effect slot on either
+snapshot's characters, so its call is not observed there.
+
+### Helpers (script round 23, second machine's round 23 d)
+
+The battle bridges (`MsBtlBridgeBtl2Event`, `MsBtlBridgeEvent2Btl`) carry
+the event's workers through a battle with a set of `...FromID` accessors.
+Each makes ctrl work 0 current for the `AtelGetBasicWork` call and puts the
+old one back. Worker fields they use: `+0x33` the link byte
+(`AtelGetEventActorLinkWork` `0x0086b1b0` / `AtelSetEventActorLinkWork`
+`0x0086fc40`; the getter's `mov al` leaves the worker's upper bytes in
+`EAX`), `+0xaa` the binding (`AtelGetEventBindIdFromID` `0x0086b370`),
+`+0xa8` the character id (`AtelGetEventCharIDFromID` `0x0086b3d0`), and
+for the two weapon elements k: `+0xaf4 + 4k` the model
+(`AtelGetEventElemHandleFromID` `0x0086b440` /
+`AtelSetEventElemHandleFromID` `0x0086fde0`), `+0xafc + 4k` the weapon
+record's `+0xd` byte (`AtelGetEventElemPosFromID` `0x0086b480` /
+`AtelSetEventElemPosFromID` `0x0086fe20`), `+0xb04 + 2k` the element's
+character id (`0x0086b400` / `0x0086fda0`), and `+0xb14` a 16-bit mask of
+the elements in use (`AtelGetEventElemStatus` `0x0086b4c0`, bit k mod 32;
+`AtelSetEventElemStatus` `0x0086fe60`, a 16-bit `shl`, so k mod 32 from 16
+up is no bit). Fahrenheit names `0x0086b480` the handle getter (a BSim
+match). The getter at `0x0086b440` is the one that reads what the handle
+setter stores, and `MsBtlBridgeEvent2Btl` puts its result into the weapon
+record's model word, so the names here follow the stores.
+`AtelSetEventCharHandleFromID` (`0x0086fd60`) stores the model `+0x9c`
+only for a character binding (`+0xaa` 1). `AtelGetEventActorType`
+(`0x0086b320`) is the type byte, or 7 outside ctrl work 0's actor count
+(`+0xc`, not the worker count).
+
+Without the context switch: `AtelGetHideStatusFromID` (`0x0086ba40`,
+`+0xa0`), `AtelGetKeepBattlePartyFromID` (`0x0086bbf0`, bit 8 of `+0x38`),
+`AtelGetRequestLevel` (`0x0086c3f0`, `+0x32`), `AtelGetMyWorkSize`
+(`0x0086c160`: the header's `+0x10` rounded up to 16 with `cdq`, so
+towards zero below -15) and `AtelSetMyWorkAdrs` (`0x00870870`: `+0xb8` =
+the address, then the unrounded size in bytes cleared at it, or, without
+one, at the binary `+4` plus the header's `+0x2c` when that offset is set;
+`EAX` 0 after a clear, else the worker). `AtelGetElemId` (`0x0086b150`) is
+`MsGetSaveChrArmorModel` for kind 1, else `MsGetSaveChrWeaponModel`;
+`Native_0119` and `Native_01ba` call the Rust version.
+`round23d_event_accessors_match_the_original` covers them: synthetic ctrl
+works on the image (indices past the end, fewer actors than workers,
+negative sizes, a binary plus offset that wraps to 0), then the event's
+workers from every ctrl work in use on the snapshots.
+
+The save event record setters behind the natives (round 23 e) each fetch
+the record (`TkGetSaveEventAddress`) and leave it in `EAX`:
+`AtelSetWaterBattleEffect` (`0x008715f0`, `+0xd7` = on != 0),
+`Atel_SetSaveEventD1` (`0x0086f060`, `+0xd1`), `Atel_SetSaveEvent13Bit1`
+(`0x0086f430`, bit 1 of `+0x13`), `AtelSetForcePlaceId` (`0x00870140`,
+`+0xd4` the place and `+0xd6` = 1), the `u16` stores
+`Atel_SetSaveDicIndexValue` (`0x00870ed0`, `+0xe`, the field
+`AtelSetSaveDicIndex` computes), `Atel_SetSaveEventE8` (`0x00873dd0`) and
+`Atel_SetSaveEventEA` (`0x00870fa0`), and `Atel_SetSaveEventE4`
+(`0x00874030`). `AtelSetHelpEventFlag` (`0x008701f0`) sets or clears the
+bit `AtelGetHelpEventFlag` reads. `AtelInitSaveWork` (`0x0086d4e0`) clears
+the record's script variables (`+0x1ec`, 0x1000 bytes) and the separates
+load list (`g_AtelSepLoadCount`, `g_AtelSepGroupMask`), then tail-jumps to
+`NkzVersion`, so `EAX` is the build date string. `AtelSetDolby`
+(`0x0086f9e0`) stores bit 7 of the save menu word, then sets the sound
+mode (0 Dolby, 1 when bit 0, else 2) and the pad vibration (bit 4).
+`Atel_JumpToEntrance` (`0x00874000`, behind `0x8006`) marks
+`g_AtelMapIdPage` (1, the entrance, `0xff`) and jumps to that entrance of
+the current map. `AtelMapLoadNoCache` (`0x0086dd30`) is `AtelMapLoad`'s
+code and runs its port; `AtelMapLoadBtl` (`0x0086dcd0`) reads a battle
+map instead. The natives that called these call the Rust versions now.
+`round23e_save_setters_match_the_original` covers them. Its map loads
+compare only maps 0 and -1, because a positive map makes the original
+read the map file, which the oracle cannot do.
+
+Positions and polls (round 23 f). `AtelGetActorStartPos` (`0x0086a720`),
+`AtelGetActorEndPos` (`0x0086a390`) and `Script_GetWorkerPos`
+(`0x0086a2f0`) copy a worker's position block (`+0x284` for types 5 and
+6, address 0 for type 4, else `+0x558`) through the x87 into three out
+words. Two-point workers (types 2 and 5) have a second point at the
+block's `+0x30`: the start getter reads the first point, the end getter
+the second, and `Script_GetWorkerPos` gives `(b + a) * 0.5` per axis
+(the constant at `0x00b92220`). These three read y and z before they
+store x, so outs that overlap the block show the order. `Event_SetPlayer`
+(`0x0086f6a0`) stores the player id (`+0xa`) and, unless the 32-bit id is
+`0xffff`, copies that worker's position into the ctrl work's `+0x218`
+and `+0x228`. `AtelIsBind` (`0x0086d950`) is a character binding
+(`+0xaa` 1) with a model. `Atel_HasSignalFromLevel` (`0x00863520`, behind
+the `0x00f6`/`0x00f7` polls) looks for a queued signal entry (`+0x80`
+list) of a kind other than 3 at or above a level. The effect polls switch
+on `MsEventEffectGetStat` through jump tables. `Atel_EffectStartPoll`
+(`0x008633e0`, `0x00dc`) starts the effect in state 3, and in state 5
+clears `g_AtelEffectState` and reports done. `Atel_EffectIdlePoll`
+(`0x008633a0`) is done in state 0. `Atel_EffectEndPoll` (`0x00863350`,
+`0x00de`) is done in states 0 and 6, where it also sets
+`g_AtelOverlayStatus` to 4. `Atel_SetLevelVectorsXZ` (`0x0086f750`,
+`0x0014`) calls `Atel_SetLevelVectors` with a middle 0.
+`Atel_GetWorkerBits10_12` (`0x0086a440`) reads `+0x34` bits 10..12, at
+most 5. `AtelRecoverPreBgPage` (`0x00873cc0`) puts `g_AtelMapIdPage`'s
+saved BG and ID pages back. `AtelExecReturn2` (`0x00869350`) tail-jumps
+to `AtelExecReturn` with the caller's three words when the worker has a
+request level. `AtelGetCharHandleFromBindPC2` (`0x0086aee0`) is
+`AtelGetCharHandleFromBindPC`'s code and runs its port.
+`round23f_positions_and_polls_match_the_original` covers them. In it the
+effect's handler table points at a stand-in that only returns.
+
+Event set-up helpers (round 23 g). `AtelInitSourceCodeDebugWork`
+(`0x0086d670`) copies up to eight words of a source record (count at
+`+0`, entries every 12 bytes from `+4`) into the worker's `+0xc`.
+`AtelEventSetupGuideMap` (`0x00866490`) and `AtelEventRemoveGuideMap`
+(`0x008661a0`) set and clear ctrl work 0's guide map flag (`+1` bit 7).
+On PC `Yn_GuideMapInit` and `Yn_GuideMapEnd` are empty, so only the flag
+and `Yn_GuideMapSetMode(0)` remain. The event header's sound table (its
+`+0x2c` offset) gives `AtelEventSetUpFoot3d` (`0x00866210`) the foot
+table for `SndEventSetFoot3dCtrlp`, and gives `AtelEventLoadMusic`
+(`0x00865a60`) a music word (`+0x38`). Only a negative music word is
+read (`SndMusicRead` of its low half). The `SndSyncMusicStandby(1)` after
+the read returns 0 on PC without looking at its argument, and the
+`AtelPs2DebugString` calls around it are a bare `ret`.
+`AtelInitCalcSound` (`0x00877420`) clears the 3D sound work and copies
+16 bytes from `0x00c0a004` to `0x01328278`. `AtelGetGuideMapAngEx`
+(`0x0086b9a0`) returns ctrl work 0's `Atel_GetBinHdrFloat` in `ST0`, or 0
+when that work is unused or has no event block.
+`AtelInitInternalActorWork` (`0x0086d260`) zeroes a worker's
+`+0x48..+0x7f`. `AtelSetOnMemoryMovieFileWait` (`0x00873f70`) sets the
+texture video info and records the movie in the save event record
+(`+0xd8` movie, `+0xdc` flags, `+0xe0` = 1). `AtelRecoverFromMenuCallback`
+(`0x0086e700`) resets the menu bank, the guide map display, the forced
+place and the seven vibration masks, and sets the overlay status to 6.
+`round23g_setup_helpers_match_the_original` covers them. On the image it
+needs a Phyre scene (`0x00ccb9d8`) and an event block with an expansion
+float record.
+
+FP bindings (round 23 h). A type-1 worker keeps four FP (effect point)
+slots at `+0xb18`, 0x10 bytes each: `+0` holds the FP id in its low 15
+bits and sets bit 15 once a position is set, `+2` holds the bone (or the
+map group or object), and `+4..+0xc` hold the position. `AtelBindFp`
+(`0x00862800`, behind `0x8009` and `0x0196`) takes the first free slot
+and sticks the FP to whatever the worker is bound to: the character
+model (`pppFpSetStickChr`, binding 1 with a model), the map group (4) or
+the map object (5). `AtelBindFpOff` (`0x008628a0`, `0x800b`) frees the
+slots holding an id, or every used slot for id 0 (each through
+`pppFpResetStick(0)`). `AtelBindFpPos` (`0x00862920`, `0x800a`) stores
+the position and bit 15 and passes `(x, y, z, 1.0)` in a stack local to
+`pppFpSetStickPos`, which reads only x, y and z. After a battle,
+`AtelRecoverFPFromBattle` (`0x0086e4c0`) sticks every used slot again
+and puts its position back. With any other binding it returns at the
+first used slot. `round23h_fp_bindings_match_the_original` covers them
+on synthetic workers (types 0, 1, 2, every binding) and on the
+snapshots' type-1 workers. The ports get a scratch frame for the vector.
+`pppFpSetStickChr` does nothing for model 0, because `Ch_CheckHandle(0)`
+is -1.
+
+Radius tests, map index, music and the map camera (round 23 i).
+`Atel_InRadiusXZ` (`0x008634b0`) and `Atel_InRadiusXYZ` (`0x00863440`)
+call `Math_InRadius` with the point's offset from the worker's position
+block; the XZ form passes 0 for y. Both write the differences back into
+their own argument slots. `AtelGetMapIndex` (`0x0086bd90`) returns -1
+without an entrance table. With a language table in the sound table's
+map record it returns that table's word for the current language
+(`TkGetLang`, 0 outside 0..16; `MsGetSaveConfigEnglish` is 0 on PC).
+Otherwise it returns entrance i's map. `AtelEventPlayMusic`
+(`0x00865ac0`) works only on a negative music word: a number from
+`0x100` up fades the playing music out, a smaller one starts or
+cross-fades unless it is already playing, and either way the number is
+registered (-1 for the fade). `AtelRequestMapCamera` (`0x0086ed80`)
+sends the camera worker signal (`0xffff`, worker, 0, level 1, the
+current entrance's camera). Its entrance table falls back to its first
+record when the index runs past the end, and to `0x01325b50` when
+there is no table. `round23i_radius_music_camera_match_the_original`
+covers them; the music calls run only on the snapshots, because the image
+has no sound context.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

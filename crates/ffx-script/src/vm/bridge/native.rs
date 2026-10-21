@@ -808,7 +808,8 @@ pub fn ct_0013_set_position<H: NativeHost>(h: &mut H, w: u32, _a: u32, s: u32) -
     let z = popf(h, s);
     let y = popf(h, s);
     let x = popf(h, s);
-    call(h, 0x0087_0b20, &[w, x, y, z, 0]);
+    let f = h.scratch();
+    super::helpers::atel_set_pos_3d(h, w, [x, y, z], 0, f);
     0
 }
 
