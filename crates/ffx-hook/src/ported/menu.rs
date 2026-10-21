@@ -1799,6 +1799,36 @@ ported! {
     MenuItem_DrawTargetFace @ 0x008c_3ec0 => extern "C" fn menu_item_draw_target_face(_w: u32) -> u32 {
         tk::menu_item_draw_target_face(&mut mem(), &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_SortGearByKind_008ca1b0()`: 1, or 0 when a search fails.
+    MenuItem_SortGearByKind_008ca1b0 @ 0x008c_a1b0 => extern "C" fn menu_item_sort_gear_by_kind() -> u32 {
+        // the original's 0x400-byte flag buffer and MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<257>::new();
+        let flags = frame.at();
+        tk::menu_item_sort_gear_by_kind(&mut mem(), flags, flags.wrapping_add(0x400), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawGilPage_008bbb10(dx)`.
+    BtlEnd_DrawGilPage_008bbb10 @ 0x008b_bb10 => extern "C" fn btl_end_draw_gil_page(dx: i32) -> u32 {
+        tk::btl_end_draw_gil_page(&mut mem(), dx, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawWeaponPage_008bbed0(dx)`.
+    BtlEnd_DrawWeaponPage_008bbed0 @ 0x008b_bed0 => extern "C" fn btl_end_draw_weapon_page(dx: i32) {
+        // MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::btl_end_draw_weapon_page(&mut mem(), dx, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSummon_CmdWindowCtrl_008cced0(w)`.
+    MenuSummon_CmdWindowCtrl_008cced0 @ 0x008c_ced0 => extern "C" fn menu_summon_cmd_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_cmd_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_TargetWindowCtrl_008c7430(w)`.
+    MenuItem_TargetWindowCtrl_008c7430 @ 0x008c_7430 => extern "C" fn menu_item_target_window_ctrl(w: u32) -> u32 {
+        tk::menu_item_target_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMn2GetWShopPos()`.
+    TkMn2GetWShopPos @ 0x008d_9190 => extern "C" fn tk_mn2_get_wshop_pos() -> u32 {
+        tk::tk_mn2_get_wshop_pos(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

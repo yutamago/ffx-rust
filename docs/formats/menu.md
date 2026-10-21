@@ -295,6 +295,11 @@ rows `TkMn2GetNameModeMax`, 9 visible). `MenuItem_PackGear`
 next filled one after it (`Menu_FindFlagged`), swapping the save's gear
 (`SwapSaveGear`) and the kind bytes, then the list is built again.
 
+`TkMn2GetWShopPos` (`0x008d9190`) loads the weapon shop's layout from the
+menu sequence (7 rectangles, 12 positions, 5 colours, 3 common plates)
+and then grows the `u16` at `0x023cc2fa` (the third rectangle's) by
+`0x30`.
+
 The weapon shop's first sub-window (`MenuWShop_OpenSubWindow1`) steps
 with `MenuWShop_SubWindow1Ctrl` (`0x008d79c0`): like
 `MenuWShop_StockWindowCtrl` it clears the stock byte `0x0186aba0` to -1
@@ -316,6 +321,25 @@ window goes to `g_TkMenuItemWindow`, and a four-row sub-command window
 the character face slide, from 8 the aeon's, at `(315, 263)` size
 `200 x 200` (1920x1080 units), eased by `Menu_EaseCounter` over the words
 `0x023cc3c8..0x023cc3bc`.
+
+`MenuItem_SortGearByKind_008ca1b0` (`0x008ca1b0`) runs after
+`MenuItem_SortGearByOwner`: inside each owner's group it moves armour
+(`MsGetSaveWeapon` byte `+5` set) out of the first `weapons` entries,
+swapping each with the next weapon after the weapon part
+(`Menu_FindByte(flags, 0, from, n)` over a 0x400-byte frame buffer of
+armour flags), so a group is its weapons, then its armour. It returns 0
+when no weapon is left to swap with.
+
+`MenuItem_TargetWindowCtrl_008c7430` (jump table `0x008c75fc`, states
+0..12 at `+0x28`) confirms a target with circle: a command for all
+(`g_TkMenuAbilitySingle` 0) needs a non-zero mask `u16 0x0186a3a4`, a
+single-target one the mask's bit for the cursor; the chosen cursor byte
+goes to `0x0186a3ac[+0x58]` (`+0x58` 0 party, else aeons). The cursor
+wraps over `TkMenuGetPlayerListMax`/`TkMenuGetSummonListMax`.
+`MenuSummon_CmdWindowCtrl_008cced0` (jump table `0x008cd05c`) is the aeon
+menu's window: circle asks the window's `+0x1c` callback, and the
+repeat bits `0x1000`/`0x4000` (or the d-pad's `4`/`8` held alone) switch
+to the previous/next aeon.
 
 The equip menu opens with `MenuEquip_Open_008cf830` (`0x008cf830`): it
 saves every character's (0..=6) armour, weapon, HP and MP in the word
@@ -572,3 +596,13 @@ them; it returns 1 while AP were left over. `BtlEnd_CountApSteps`
 (`0x008ba550`) runs it for every entry `k` of the battle-end list
 (`0x01869f18`, `i16` character at entry `+6`, `mark` = `k`) and returns
 1 while any had AP left.
+
+Two battle-end pages slide in by an integer `dx` (as `f32`, added to the
+remapped x): `BtlEnd_DrawGilPage_008bbb10` (`0x008bbb10`) draws the gil
+plate (`(210, 700)` size `740 x 60`, sheet cell 12) and two
+`TkMn2DrawGillPlate` rows, the gil won (`0x01869f14`) at y 786 and the
+party's gil (`MsGetGIL`) at y 838; `BtlEnd_DrawWeaponPage_008bbed0`
+(`0x008bbed0`) draws, from `(970 + dx, 270)`, a plate and sheet cell 6
+above, then one plate and `DrawCrossMenuIconWeaponName` row per gear
+spoil in use (the six `u16` at `0x02310f8e`), `remapY2(84)` apart. All
+coordinates are 1920x1080 units through `graphicUiRemapX2/Y2`.

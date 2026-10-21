@@ -15663,3 +15663,214 @@ fn menu_round30_opens_ctrl_world_map_and_draws_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round30_gear_sort_btl_end_pages_ctrls_and_wshop_layout_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0030_0003) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x007a_b9f0u32, 2u8),
+        (0x008f_5f70, 5),
+        (0x008f_8bb0, 5),
+        (0x008c_0a20, 5),
+        (0x008b_da30, 0),
+        (0x008f_9230, 4),
+        (0x008e_67f0, 4),
+        (0x008a_b1f0, 1),
+        (0x008b_f750, 5),
+        (0x008e_49b0, 0),
+        (0x008a_8e50, 0),
+        (0x0088_6e80, 1),
+        (0x008a_af70, 0),
+        (0x008a_afe0, 0),
+        (0x008c_2b90, 2),
+        (0x008c_2b50, 2),
+        (0x008c_2ad0, 1),
+        (0x008c_1a60, 6),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let name_max = seq_stub(&mut t, 0x008c_1bc0, log, 0, &[]);
+    let pads = [0x008b_e410u32, 0x008b_e470, 0x008b_e4b0].map(|f| seq_stub(&mut t, f, log, 0, &[]));
+    let players = seq_stub(&mut t, 0x008a_9b30, log, 0, &[]);
+    let summons = seq_stub(&mut t, 0x008a_9bf0, log, 0, &[]);
+    // MsGetSaveWeapon(id, &out): the record of id & 0xff in a table (the
+    // out word's address differs, so only the id is logged)
+    let records = t.alloc(&[0; 0x800]);
+    let weapon = t.alloc(&[0; 4]);
+    let mut extra = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x25, 0xff, 0, 0, 0, 0x8d, 0x04, 0xc5,
+    ]; // mov eax, [esp+4]; and eax, 0xff; lea eax, [eax*8 + records]
+    extra.extend(records.to_le_bytes());
+    extra.push(0xa3); // mov [weapon], eax
+    extra.extend(weapon.to_le_bytes());
+    let code = seq_code_of(log, 0x007a_bbd0, &[0], weapon, &extra);
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+    // the window's +0x1c callback (w, row, selected)
+    let accept = t.alloc(&[0; 4]);
+    let code = seq_code(log, 0xcb00_001c, 3, accept, &[]);
+    let callback_at = test_code(&mut t, &code);
+    let w0 = t.alloc(&[0; 0x100]);
+    for round in 0..4000u32 {
+        let kind = round % 6;
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(w0, 0x100);
+        t.scramble_at(records, 0x800);
+        // armour (byte +5) in half the records, or nearly all (searches
+        // that fail)
+        let dense = t.rng.pick(&[false, false, true]);
+        for k in 0..0x100 {
+            let v = if dense {
+                t.rng.pick(&[0u8, 1, 1, 1, 1, 1, 1, 0x80])
+            } else {
+                t.rng.pick(&[0u8, 0, 1, 0x80])
+            };
+            t.put(records + 8 * k + 5, v);
+        }
+        t.scramble(0x0159_7770, 0x800);
+        t.scramble(0x0186_9f14, 4);
+        t.scramble(0x0231_0f8e, 0xc);
+        t.scramble(0x0186_a3ac, 0x10);
+        t.scramble(0x023c_c2fa, 2);
+        for k in 0..14 {
+            let v = t.rng.pick(&[0u16, 1, 2, 3, 5]);
+            t.put(t.sym(0x0186_a3e4) + 2 * k, v);
+        }
+        // past the groups' 70 entries: the flags the groups read are all
+        // written (the rest of the frame buffer differs between the twins)
+        let v = t.rng.pick(&[0x46u32, 0x50, 0x80]);
+        t.put(name_max, v);
+        for &p in &pads {
+            let v = t
+                .rng
+                .pick(&[0u32, 4, 8, 0x20, 0x40, 0x1000, 0x4000, 0x1_0004, 0xffff]);
+            t.put(p, v);
+        }
+        if kind == 3 || kind == 4 {
+            // the input states: no trigger most of the time, pads alone
+            let v = t.rng.pick(&[0u32, 0, 0, 0x20, 0x20, 0x40, 0x1_0020]);
+            t.put(pads[2], v);
+            let v = t
+                .rng
+                .pick(&[0u32, 4, 8, 0x1000, 0x1000, 0x4000, 0xc, 0x1_4000]);
+            t.put(pads[1], v);
+            let v = t.rng.pick(&[0u32, 4, 8, 0xc]);
+            t.put(pads[0], v);
+        }
+        // one count for both lists, the cursor often at its end
+        let count = t.rng.pick(&[0u16, 1, 2, 3, 7]);
+        t.put(players, u32::from(count));
+        t.put(summons, u32::from(count));
+        let v = t.rng.pick(&[0u32, 0, 1, 5]);
+        t.put(accept, v);
+        let state = if t.rng.pick(&[false, true]) {
+            t.rng.pick(&[3u32, 5])
+        } else {
+            t.rng
+                .pick(&[0u32, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+        };
+        t.put(w0 + 0x28, state);
+        let v = t.rng.pick(&[0u16, 0xfff, 0x1000, 0x1001, 0x8000]);
+        t.put(w0 + 0x52, v);
+        let v = t.rng.pick(&[
+            0u16,
+            1,
+            1,
+            count.wrapping_sub(1),
+            count.wrapping_sub(1),
+            count,
+            0x1f,
+            0x20,
+            0xffff,
+            0x7fff,
+        ]);
+        t.put(w0 + 0x48, v);
+        let v = t.rng.pick(&[0u32, 1, 2, 3]);
+        t.put(w0 + 0x58, v);
+        let v = t.rng.pick(&[0, callback_at]);
+        t.put(w0 + 0x1c, v);
+        let v = t.rng.pick(&[0u8, 1, 1, 2]);
+        t.put(t.sym(0x0186_a391), v);
+        let v = t.rng.pick(&[0u16, 1, 2, 5, 0x8000, 0xffff]);
+        t.put(t.sym(0x0186_a3a4), v);
+        if kind == 4 && t.rng.pick(&[false, true]) {
+            // the target cursor's moves and wraps
+            t.put(w0 + 0x28, 5u32);
+            t.put(pads[2], 0u32);
+            let v = t.rng.pick(&[0x1000u32, 0x4000]);
+            t.put(pads[1], v);
+            t.put(t.sym(0x0186_a391), 1u8);
+            let v = t.rng.pick(&[0u16, 0, 1, count.wrapping_sub(1), count]);
+            t.put(w0 + 0x48, v);
+        }
+        let dx = t
+            .rng
+            .pick(&[0i32, 1, -1, 100, -300, 0x0100_0001, 0x0300_0001, i32::MIN]);
+        match kind {
+            0 => t.twin(
+                "MenuItem_SortGearByKind_008ca1b0",
+                0x008c_a1b0,
+                &[],
+                U32,
+                |o| {
+                    w(tk::menu_item_sort_gear_by_kind(
+                        o,
+                        local,
+                        local + 0x400,
+                        &mut callback,
+                    ))
+                },
+            ),
+            1 => t.twin(
+                "BtlEnd_DrawGilPage_008bbb10",
+                0x008b_bb10,
+                &[dx.cast_unsigned()],
+                U32,
+                |o| {
+                    w(tk::btl_end_draw_gil_page(
+                        o,
+                        dx,
+                        &mut ui_remap,
+                        &mut callback,
+                    ))
+                },
+            ),
+            2 => t.twin(
+                "BtlEnd_DrawWeaponPage_008bbed0",
+                0x008b_bed0,
+                &[dx.cast_unsigned()],
+                VOID,
+                |o| {
+                    tk::btl_end_draw_weapon_page(o, dx, local, &mut ui_remap, &mut callback);
+                    0
+                },
+            ),
+            3 => t.twin(
+                "MenuSummon_CmdWindowCtrl_008cced0",
+                0x008c_ced0,
+                &[w0],
+                U32,
+                |o| w(tk::menu_summon_cmd_window_ctrl(o, w0, &mut callback)),
+            ),
+            4 => t.twin(
+                "MenuItem_TargetWindowCtrl_008c7430",
+                0x008c_7430,
+                &[w0],
+                U32,
+                |o| w(tk::menu_item_target_window_ctrl(o, w0, &mut callback)),
+            ),
+            _ => t.twin("TkMn2GetWShopPos", 0x008d_9190, &[], U32, |o| {
+                w(tk::tk_mn2_get_wshop_pos(o, &mut callback))
+            }),
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
