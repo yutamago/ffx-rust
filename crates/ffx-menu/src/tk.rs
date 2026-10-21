@@ -21811,6 +21811,303 @@ pub mod bridge {
         }
         mem.read(packet)
     }
+
+    /// `TkUpdateScanControler()` (`0x00889a80`, Fahrenheit's name; callers
+    /// `Sg_MainLoop`, `TOControlBtlWindow`): for pads 0 and 1
+    /// `Pad_ScanPort_00889050(pad, 0, TkGetControlerWork2(pad, 0))`, as
+    /// [`tk_scan_controler`] without its `SaveDataIsBusy`. Returns the last
+    /// scan's `eax`.
+    pub fn tk_update_scan_controler<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (work2, scan) = (mem.rebase(0x0088_8e10), mem.rebase(0x0088_9050));
+        let mut eax = 0;
+        for pad in 0..2 {
+            let w = call(mem, work2, &[pad, 0]);
+            eax = call(mem, scan, &[pad, 0, w]);
+        }
+        eax
+    }
+
+    /// `TkMtCalcSplineAt_0088afd0(out, points, n, t, position)`
+    /// (`0x0088afd0`, own name; callers `TkMtCalcSpline`,
+    /// `TkMtCalcSplineTangent`, `0x0088aa40`): the quadratic B-spline of
+    /// `n` points (16 bytes each) at `t`, clamped to `0..=1` (NaN kept).
+    /// `n` 0 or 1: the tangent (`position` 0) is `(1, 0, 0, 1)`, the point
+    /// is left alone. `n` 2: the tangent is `points[1] - points[0]`
+    /// normalised (`TkNormalFVector`, `w` 0 then 1); the point, for `t`
+    /// other than 0 and 1, `(1 - t) * p0 + t + p1` per word (the
+    /// original adds `t` itself, not `t * p1`). Otherwise, with `m = n -
+    /// 2` and `step = f32(1 / f32(m))`: `k = ftol(t / step)`, `frac =
+    /// f32((t - f32(k) * step) * f32(m))`, brought into `0..=1` by
+    /// whole steps (moving `k`), `k < 0` gives `(0, 0)`, `k >= m` gives
+    /// `(m - 1, 1)`; then `TkMtCalcSplineSegment_0088abd0(out, k, frac,
+    /// points, position)`.
+    #[allow(clippy::many_single_char_names, clippy::float_cmp)] // the original's exact compares
+    pub fn tk_mt_calc_spline_at<M: Mem>(
+        mem: &mut M,
+        [out, points]: [u32; 2],
+        n: i32,
+        t: f32,
+        position: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, div, ftol, load, mul, round_trip, store, sub};
+        const ONE: u32 = 0x3f80_0000;
+        let t = if t < 0.0 {
+            0.0
+        } else if t > 1.0 {
+            1.0
+        } else {
+            round_trip(t)
+        };
+        let tl = f64::from(t);
+        let word = |p: u32, k: u32| p.wrapping_add(4 * k);
+        let p1 = points.wrapping_add(0x10);
+        if position != 0 && (0..=2).contains(&n) {
+            if n < 2 || t == 0.0 || t == 1.0 {
+                return;
+            }
+            let a = load(store(sub(1.0, tl)));
+            for k in 0..4 {
+                let v = mul(a, load(mem.read(word(points, k))));
+                let v = add(add(v, tl), load(mem.read(word(p1, k))));
+                mem.write(word(out, k), store(v));
+            }
+            return;
+        }
+        if position == 0 && (0..=1).contains(&n) {
+            for (k, v) in (0..).zip([ONE, 0, 0, ONE]) {
+                mem.write(word(out, k), v);
+            }
+            return;
+        }
+        if position == 0 && n == 2 {
+            for k in 0..3 {
+                let v = sub(load(mem.read(word(p1, k))), load(mem.read(word(points, k))));
+                mem.write(word(out, k), store(v));
+            }
+            mem.write(word(out, 3), 0u32);
+            let f = mem.rebase(0x0088_c5a0);
+            call(mem, f, &[out]);
+            mem.write(word(out, 3), ONE);
+            return;
+        }
+        let m = n.wrapping_sub(2);
+        let mf = load(store(f64::from(m)));
+        let step = load(store(div(1.0, mf)));
+        let mut k = ftol(mem, div(tl, step)).cast_signed();
+        let kf = load(store(f64::from(k)));
+        let mut frac = store(mul(sub(tl, mul(kf, step)), mf));
+        while load(frac) < 0.0 {
+            frac = store(add(load(frac), 1.0));
+            k = k.wrapping_sub(1);
+        }
+        while load(frac) > 1.0 {
+            frac = store(sub(load(frac), 1.0));
+            k = k.wrapping_add(1);
+        }
+        if k < 0 {
+            k = 0;
+            frac = 0;
+        }
+        if k >= m {
+            k = m.wrapping_sub(1);
+            frac = ONE;
+        }
+        let f = mem.rebase(0x0088_abd0);
+        call(mem, f, &[out, k.cast_unsigned(), frac, points, position]);
+    }
+
+    /// `MenuLimit_WindowDraw_008d16f0(w)` (`0x008d16f0`, own name; the
+    /// `+0x10` draw step of `MenuLimit_OpenWindow`'s and `0x008d0dd0`'s
+    /// windows): `who = TkMenuGetCurrentPlayer()`, `list =
+    /// MsMenuStatusNum(0, &n)`, `k = TkMenuGetCommandOffset(list, 5, who,
+    /// 0x48)`; `TkMenuDrawKick()` twice, `0x008c1790()`,
+    /// `TkMn2DrawInitPacket()`. With `+0x5c` set the title is command
+    /// `u16 list[k] +2`'s name (`TkMn2GetCommandName`) centred on x 405:
+    /// `ToGetBtlEasyFontWidth(text, &w, 0, 0.78, 1.0)`, then
+    /// `ToMakeBtlEasyFont(text, f32(remapX2(405) - w * 0.5),
+    /// remapY2(336), 0, 0.78, 1.0)`; without, `0x008f9280(0,
+    /// f32(i16 [0x0186a70c]), f32(i16 [0x0186a70e]), 0x80)`. Then
+    /// `MenuSelList_DrawList_008d1400(w, who)` and
+    /// `TkMn2DrawKickSyncPacket()` (its `eax`). `local` holds two words:
+    /// `n` and the width (the original uses its argument's slot, so the
+    /// width word starts out as `w`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn menu_limit_window_draw<M: Mem>(
+        mem: &mut M,
+        win: u32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        const SCALE: u32 = 0x3f47_ae14; // 0.78
+        const ONE: u32 = 0x3f80_0000;
+        let r = |mem: &M, f: u32| mem.rebase(f);
+        let f = r(mem, 0x008a_9860);
+        let who = call(mem, f, &[]);
+        let f = r(mem, 0x0079_0200);
+        let list = call(mem, f, &[0, local]);
+        let f = r(mem, 0x008d_2dc0);
+        let k = call(mem, f, &[list, 5, who, 0x48]);
+        for kick in [0x008d_ce50, 0x008d_ce50, 0x008c_1790, 0x008c_0be0] {
+            let kick = r(mem, kick);
+            call(mem, kick, &[]);
+        }
+        if mem.read::<u32>(win.wrapping_add(0x5c)) == 0 {
+            let y = i32::from(mem.read::<i16>(r(mem, 0x0186_a70e)));
+            let x = i32::from(mem.read::<i16>(r(mem, 0x0186_a70c)));
+            let (x, y) = (store(f64::from(x)), store(f64::from(y)));
+            let f = r(mem, 0x008f_9280);
+            call(mem, f, &[0, x, y, 0x80]);
+        } else {
+            let at = list.wrapping_add(k.wrapping_mul(4)).wrapping_add(2);
+            let id = u32::from(mem.read::<u16>(at));
+            let f = r(mem, 0x008c_1a20);
+            let text = call(mem, f, &[id]);
+            // the original's width word is its argument's slot: it
+            // holds `w` until the callee writes it
+            let width = local.wrapping_add(4);
+            mem.write(width, win);
+            let f = r(mem, 0x0090_5290);
+            call(mem, f, &[text, width, 0, SCALE, ONE]);
+            let y = store(remap(mem, true, 336.0));
+            let centre = remap(mem, false, 405.0);
+            let x = store(sub(centre, mul(load(mem.read(width)), 0.5)));
+            let f = r(mem, 0x0090_5ab0);
+            call(mem, f, &[text, x, y, 0, SCALE, ONE]);
+        }
+        let f = r(mem, 0x008d_1400);
+        call(mem, f, &[win, who]);
+        let f = r(mem, 0x008c_0cc0);
+        call(mem, f, &[])
+    }
+
+    /// `TkMenuMainOpenMode_008aa780(mode, arg)` (`0x008aa780`, own name;
+    /// caller `0x008a9ca0`): registers the menus for menu mode `mode`
+    /// (`TkMenuMainRegistMenu(slot, window)`, windows in `.data`) and
+    /// activates one. Every mode but 0x10000, 0x20000, 0x40000 and
+    /// 0x80000 first registers the main set (0x13, 6, 0, 0xf, 0x10, 3, 7,
+    /// 2, 0xa, 0x17, 0xb, 0x15, 0x14, 4, 9) and runs
+    /// `TOMenuMainWindowOpen_008a8e70()`. Then by mode (unsigned):
+    /// 0x10000 battle end (slot 0x11, active `(0x11, 0)`); 0x20000 shop
+    /// (0xd), 0x40000 (0xc): registered, active `(slot, arg)`,
+    /// `TkMenuAppearMainCmdWindow(0, slot)`, window open; 0x80000 (slots
+    /// 0 and 0xe): in language 0xb the achievements (`arg` 0x11: 0xf and
+    /// 0x1a; 0xd or 0xe: `arg`), then `resetDefaultPlayerNameStatus()`
+    /// when the language is 0xb and the map is not 0x17e, else active
+    /// `(0xe, arg)` unless the language is 0xb (asked again each time);
+    /// command window 0xe (`arg` below 0x20) or 0x18, window open;
+    /// 0x100000 active `(0x10, 0)`, 0x200000 active `(0xf, 0)`, each with
+    /// its command window and window open; 0x400000
+    /// `TkMn2SetMainFrameRatioDiff(-16)`, active `(0xb, arg)`; 0x800000
+    /// slot 0x16 registered, active `(0x16, arg)`; any other: slot 1,
+    /// command window 1, active `(1, 0)`. Returns the last call's `eax`.
+    #[allow(clippy::too_many_lines)] // one dispatch
+    pub fn tk_menu_main_open_mode<M: Mem>(
+        mem: &mut M,
+        mode: u32,
+        arg: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, f: u32| mem.rebase(f);
+        let regist = r(mem, 0x008a_aab0);
+        let active = r(mem, 0x008a_a100);
+        let appear = r(mem, 0x008e_1c60);
+        let open = r(mem, 0x008a_8e70);
+        let lang = r(mem, 0x008a_c2f0);
+        let achieve = r(mem, 0x0082_2380);
+        let reg = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, slot, window| {
+            let window = mem.rebase(window);
+            call(mem, regist, &[slot, window]);
+        };
+        if ![0x1_0000, 0x8_0000, 0x2_0000, 0x4_0000].contains(&mode) {
+            for (slot, window) in [
+                (0x13, 0x00c5_b2f4),
+                (6, 0x00c5_a7d8),
+                (0, 0x00c5_9500),
+                (0xf, 0x00c5_9ff0),
+                (0x10, 0x00c5_a014),
+                (3, 0x00c5_a2fc),
+                (7, 0x00c5_a720),
+                (2, 0x00c5_a320),
+                (0xa, 0x00c5_a5e4),
+                (0x17, 0x00c5_b33c),
+                (0xb, 0x00c5_a08c),
+                (0x15, 0x00c5_a768),
+                (0x14, 0x00c5_b318),
+                (4, 0x00c5_a744),
+                (9, 0x00c5_a7fc),
+            ] {
+                reg(mem, call, slot, window);
+            }
+            call(mem, open, &[]);
+        }
+        match mode {
+            0x1_0000 => {
+                reg(mem, call, 0x11, 0x00c5_9524);
+                call(mem, active, &[0x11, 0])
+            }
+            0x2_0000 | 0x4_0000 => {
+                let (slot, window) = if mode == 0x2_0000 {
+                    (0xd, 0x00c5_a844)
+                } else {
+                    (0xc, 0x00c5_a820)
+                };
+                reg(mem, call, slot, window);
+                call(mem, active, &[slot, arg]);
+                call(mem, appear, &[0, slot]);
+                call(mem, open, &[])
+            }
+            0x8_0000 => {
+                reg(mem, call, 0, 0x00c5_9500);
+                reg(mem, call, 0xe, 0x00c5_a0b0);
+                if call(mem, lang, &[]) == 0xb {
+                    if arg == 0x11 {
+                        call(mem, achieve, &[0xf]);
+                        call(mem, achieve, &[0x1a]);
+                    } else if arg == 0xd || arg == 0xe {
+                        call(mem, achieve, &[arg]);
+                    }
+                }
+                let map = r(mem, 0x0133_0844);
+                if call(mem, lang, &[]) == 0xb && mem.read::<u32>(map) != 0x17e {
+                    let f = r(mem, 0x0078_73a0);
+                    call(mem, f, &[]);
+                } else if (call(mem, lang, &[]) == 0xb && mem.read::<u32>(map) == 0x17e)
+                    || call(mem, lang, &[]) != 0xb
+                {
+                    call(mem, active, &[0xe, arg]);
+                }
+                let cmd = if arg < 0x20 { 0xe } else { 0x18 };
+                call(mem, appear, &[0, cmd]);
+                call(mem, open, &[])
+            }
+            0x10_0000 | 0x20_0000 => {
+                let slot = if mode == 0x10_0000 { 0x10 } else { 0xf };
+                call(mem, active, &[slot, 0]);
+                call(mem, appear, &[0, slot]);
+                call(mem, open, &[])
+            }
+            0x40_0000 => {
+                let f = r(mem, 0x008a_b260);
+                call(mem, f, &[0xffff_fff0]);
+                call(mem, active, &[0xb, arg])
+            }
+            0x80_0000 => {
+                reg(mem, call, 0x16, 0x00c5_a8d8);
+                call(mem, active, &[0x16, arg])
+            }
+            _ => {
+                reg(mem, call, 1, 0x00c5_b2b0);
+                call(mem, appear, &[0, 1]);
+                call(mem, active, &[1, 0])
+            }
+        }
+    }
 }
 
 #[cfg(test)]

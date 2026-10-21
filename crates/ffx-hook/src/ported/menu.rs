@@ -4886,6 +4886,25 @@ ported! {
     MenuMes_AddPktFont1612Icons @ 0x008e_4e60 => extern "C" fn menu_mes_add_pkt_font1612_icons(cursor: u32, key: u32, text: u32, x: i32, y: i32, flags: u32, edge: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
         tk::menu_mes_add_pkt_font1612_icons(&mut mem(), cursor, key, text, [x, y], [flags, edge], [r, g, b, a], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
     }
+    /// `TkUpdateScanControler()`: the last `Pad_ScanPort_00889050`'s `eax`.
+    TkUpdateScanControler @ 0x0088_9a80 => extern "C" fn tk_update_scan_controler() -> u32 {
+        tk::tk_update_scan_controler(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMtCalcSplineAt_0088afd0(out, points, n, t, position)`.
+    TkMtCalcSplineAt_0088afd0 @ 0x0088_afd0 => extern "C" fn tk_mt_calc_spline_at(out: u32, points: u32, n: i32, t: f32, position: u32) {
+        tk::tk_mt_calc_spline_at(&mut mem(), [out, points], n, t, position, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuLimit_WindowDraw_008d16f0(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
+    MenuLimit_WindowDraw_008d16f0 @ 0x008d_16f0 => extern "C" fn menu_limit_window_draw(w: u32) -> u32 {
+        // MsMenuStatusNum's out word and the text width (the original's argument slot)
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_limit_window_draw(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMainOpenMode_008aa780(mode, arg)`: the last call's `eax`.
+    TkMenuMainOpenMode_008aa780 @ 0x008a_a780 => extern "C" fn tk_menu_main_open_mode(mode: u32, arg: u32) -> u32 {
+        tk::tk_menu_main_open_mode(&mut mem(), mode, arg, &mut |_, f, a| call_ptr(f, a))
+    }
 }
 
 /// `MenuSelList_CursorX(window)` (`0x008d1bc0`) through the game's entry

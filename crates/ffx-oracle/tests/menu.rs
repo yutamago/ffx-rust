@@ -17338,3 +17338,218 @@ fn menu_round31_gear_customize_limit_page_and_spoil_list_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round32_scan_spline_limit_draw_and_open_mode_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0032_0001) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x0088_8e10u32, 2u8),
+        (0x0088_9050, 3),
+        (0x008d_ce50, 0),
+        (0x008c_1790, 0),
+        (0x008c_0be0, 0),
+        (0x008c_1a20, 1),
+        (0x0090_5ab0, 6),
+        (0x008f_9280, 4),
+        (0x008d_1400, 2),
+        (0x008c_0cc0, 0),
+        (0x008a_aab0, 2),
+        (0x008a_a100, 2),
+        (0x008e_1c60, 2),
+        (0x008a_8e70, 0),
+        (0x0082_2380, 1),
+        (0x0078_73a0, 0),
+        (0x008a_b260, 1),
+        // the segment (its coefficient copy carries a frame word)
+        (0x0088_abd0, 5),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let player = seq_stub(&mut t, 0x008a_9860, log, 0, &[]);
+    let offset = seq_stub(&mut t, 0x008d_2dc0, log, 4, &[]);
+    // MsMenuStatusNum(0, &n): the list; the out word is a frame address
+    let (list, list_cell, dummy) = (t.alloc(&[0; 0x100]), t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    t.put(list_cell, list);
+    let code = seq_code_of(log, 0x0079_0200, &[0], list_cell, &[]);
+    jump_stub(&mut t, 0x0079_0200, &code);
+    // ToGetBtlEasyFontWidth(text, &w, ..): w from a cell, unless [skip]
+    let (wcell, skip) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x83, 0x3d]; // cmp dword [skip], 0
+    extra.extend(skip.to_le_bytes());
+    extra.extend([0x00, 0x75, 0x0c]); // jnz over the store
+    extra.extend([0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]); // mov eax, [esp+8]; mov edx, [wcell]
+    extra.extend(wcell.to_le_bytes());
+    extra.extend([0x89, 0x10]);
+    let code = seq_code_of(log, 0x0090_5290, &[0, 2, 3, 4], dummy, &extra);
+    jump_stub(&mut t, 0x0090_5290, &code);
+    // TOGetFFXLangJmp: [lang] ^= [toggle] on each call, then returns it
+    let (lang, toggle) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0xa1]; // mov eax, [lang]
+    extra.extend(lang.to_le_bytes());
+    extra.extend([0x33, 0x05]); // xor eax, [toggle]
+    extra.extend(toggle.to_le_bytes());
+    extra.push(0xa3); // mov [lang], eax
+    extra.extend(lang.to_le_bytes());
+    let code = seq_code(log, 0x008a_c2f0, 0, lang, &extra);
+    jump_stub(&mut t, 0x008a_c2f0, &code);
+    // spline points with room on both sides (n below 2 reads before them)
+    let (area, out) = (t.alloc(&[0; 0x300]), t.alloc(&[0; 0x10]));
+    let points = area + 0x100;
+    let floats = [
+        0f32,
+        -0.0,
+        0.25,
+        0.5,
+        0.999,
+        1.0,
+        1.5,
+        -2.0,
+        1e-8,
+        f32::from_bits(0x7fc0_0000),
+    ];
+    for round in 0..4000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        match round % 4 {
+            0 => {
+                t.twin("TkUpdateScanControler", 0x0088_9a80, &[], U32, |o| {
+                    w(tk::tk_update_scan_controler(o, &mut callback))
+                });
+            }
+            1 => {
+                for k in 0..0xc0 {
+                    let v = t.rng.below(2001).cast_signed() - 1000;
+                    #[allow(clippy::cast_precision_loss)]
+                    let v = v as f32 / 10.0;
+                    t.put(area + 4 * k, v.to_bits());
+                }
+                if t.rng.below(4) == 0 {
+                    // p1 = p0: a zero tangent
+                    for k in 0..4 {
+                        let v: u32 = Mem::read(&t.a, points + 4 * k);
+                        t.put(points + 0x10 + 4 * k, v);
+                    }
+                }
+                t.scramble_at(out, 0x10);
+                // m and k beyond f32's 24 bits (the segment is a stub): f32(k)
+                // rounds, and frac leaves 0..=1 for the loops to repair
+                let n = t.rng.pick(&[
+                    -5i32,
+                    -1,
+                    0,
+                    1,
+                    2,
+                    2,
+                    3,
+                    3,
+                    4,
+                    5,
+                    8,
+                    12,
+                    0x0200_0003,
+                    0x0180_0003,
+                    0x0180_0003,
+                    0x0123_4567,
+                ]);
+                #[allow(clippy::cast_precision_loss)]
+                let tv = match t.rng.below(4) {
+                    0 => t.rng.below(0x1_0001) as f32 / 65536.0,
+                    1 if n > 2 => {
+                        // j steps of f32(1 / f32(n - 2)), give or take an ulp:
+                        // the rounding the frac loops repair
+                        let m = (n - 2) as f32;
+                        let step = 1.0 / m;
+                        let j = t.rng.below(n.cast_unsigned() - 1) as f32;
+                        let bits = (j * step).to_bits();
+                        let nudge = t.rng.pick(&[0u32, 1, 0xffff_ffff]);
+                        f32::from_bits(bits.wrapping_add(nudge)).clamp(0.0, 1.0)
+                    }
+                    _ => t.rng.pick(&floats),
+                };
+                let position = t.rng.pick(&[0u32, 0, 1, 7]);
+                let args = [out, points, n.cast_unsigned(), tv.to_bits(), position];
+                t.twin("TkMtCalcSplineAt_0088afd0", 0x0088_afd0, &args, VOID, |o| {
+                    tk::tk_mt_calc_spline_at(o, [out, points], n, tv, position, &mut callback);
+                    0
+                });
+            }
+            2 => {
+                t.scramble_at(list, 0x100);
+                let w0 = t.alloc_random(0x80);
+                let v = t.rng.pick(&[0u32, 0, 1, 0x100]);
+                t.put(w0 + 0x5c, v);
+                let v = t.rng.pick(&[0u32, 1, 5, 0x3f]);
+                t.put(offset, v);
+                let v = t.rng.pick(&floats);
+                t.put(wcell, v.to_bits());
+                let v = t.rng.pick(&[0u32, 0, 1]);
+                t.put(skip, v);
+                t.scramble(0x0186_a70c, 4);
+                let v = t.rng.pick(&[0i16, 1, -1, 0x7fff, -0x8000]);
+                t.put(t.sym(0x0186_a70e), v);
+                let v = t.rng.below(8);
+                t.put(player, v);
+                t.twin(
+                    "MenuLimit_WindowDraw_008d16f0",
+                    0x008d_16f0,
+                    &[w0],
+                    U32,
+                    |o| {
+                        w(tk::menu_limit_window_draw(
+                            o,
+                            w0,
+                            local,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+            _ => {
+                let mode = t.rng.pick(&[
+                    0x1_0000u32,
+                    0x2_0000,
+                    0x4_0000,
+                    0x8_0000,
+                    0x8_0000,
+                    0x8_0000,
+                    0x10_0000,
+                    0x20_0000,
+                    0x40_0000,
+                    0x80_0000,
+                    0,
+                    1,
+                    0x3_0000,
+                    0x8_0001,
+                    0x100_0000,
+                    0xffff_ffff,
+                ]);
+                let arg = t
+                    .rng
+                    .pick(&[0u32, 5, 0xd, 0xe, 0x11, 0x1f, 0x20, 0x21, 0xffff_ffff]);
+                let v = t.rng.pick(&[0xbu32, 0xb, 0, 1, 0xa]);
+                t.put(lang, v);
+                let v = t.rng.pick(&[0u32, 0, 0xb, 0xb ^ 1]);
+                t.put(toggle, v);
+                let v = t.rng.pick(&[0x17eu32, 0x17e, 0, 0x17f, 0x1_017e]);
+                t.put(t.sym(0x0133_0844), v);
+                t.twin(
+                    "TkMenuMainOpenMode_008aa780",
+                    0x008a_a780,
+                    &[mode, arg],
+                    U32,
+                    |o| w(tk::tk_menu_main_open_mode(o, mode, arg, &mut callback)),
+                );
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
