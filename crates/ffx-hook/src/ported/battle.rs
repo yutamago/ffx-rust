@@ -27,6 +27,7 @@ use ffx_battle::parse::bridge as parse;
 use ffx_battle::predict::bridge as predict;
 use ffx_battle::process::bridge as process;
 use ffx_battle::read::bridge as read;
+use ffx_battle::reel::bridge as reel;
 use ffx_battle::reward::bridge as reward;
 use ffx_battle::save_param::bridge as sparam;
 use ffx_battle::screen::bridge as screen;
@@ -5276,6 +5277,21 @@ ported! {
         let mut request = super::StackFrame::<{ (read::WEAPON_REQUEST / 4) as usize }>::new();
         let at = request.at();
         read::ms_btl_read_weapon(&mut mem(), &mut call_ptr, at)
+    }
+    /// `MsGetReelResultKind_007b1710(symbols, hits)`.
+    MsGetReelResultKind_007b1710 @ 0x007b_1710 => extern "C" fn ms_get_reel_result_kind(symbols: u32, hits: u32) -> u32 {
+        reel::ms_get_reel_result_kind(&mut mem(), symbols, hits)
+    }
+    /// `MsSetReelResult(i, symbols, time, start)`: the original's frame
+    /// locals in the port's frame; `eax` the actor.
+    MsSetReelResult @ 0x007b_1b50 => extern "C" fn ms_set_reel_result(i: u32, symbols: u32, time: u32, start: u32) -> u32 {
+        let mut local = super::StackFrame::<{ (reel::REEL_LOCAL / 4) as usize }>::new();
+        let at = local.at();
+        reel::ms_set_reel_result(&mut mem(), &mut call_ptr, [i, symbols, time, start], at)
+    }
+    /// `MsGetReelTargets_007b1910(i, hits, spin, kind)`.
+    MsGetReelTargets_007b1910 @ 0x007b_1910 => extern "C" fn ms_get_reel_targets(i: u32, hits: u32, spin: u32, kind: u32) -> u32 {
+        reel::ms_get_reel_targets(&mut mem(), [i, hits, spin, kind])
     }
     /// `getSparedLmtPos(i, x, y)`: the original's frame locals in the
     /// port's frame; `eax` the y.

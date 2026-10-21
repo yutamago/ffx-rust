@@ -212,3 +212,213 @@ fn limits_match_the_original_on_a_snapshot() {
     };
     check(&mut a, &mut b, &mut Xorshift(0x24a1_0002), false);
 }
+
+/// `dbgPrintf` as a stub in one oracle (at `at`, ffx.sym address): its
+/// count at `rec`; the reel times' print (format `time`, five words) at
+/// `rec + 4`, each spin's (eight words) at `rec + 0x20 + 0x20 e` by its
+/// spin `e` (its second word, & 3). Only the words each print passes are
+/// read (past them is the caller's stack).
+fn printf_stub(o: &mut Oracle, at: u32, rec: u32, time: u32) {
+    let mut code = vec![0xff, 0x05];
+    code.extend(rec.to_le_bytes());
+    // cmp dword [esp+4], time; jne the spins
+    code.extend([0x81, 0x7c, 0x24, 0x04]);
+    code.extend(time.to_le_bytes());
+    code.extend([0x75, 46]);
+    for k in 0..5u8 {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0xa3]);
+        code.extend((rec + 4 + 4 * u32::from(k)).to_le_bytes());
+    }
+    code.push(0xc3);
+    // mov ecx,[esp+8]; and ecx,3; shl ecx,5; add ecx,rec+0x20
+    code.extend([
+        0x8b, 0x4c, 0x24, 0x08, 0x83, 0xe1, 0x03, 0xc1, 0xe1, 0x05, 0x81, 0xc1,
+    ]);
+    code.extend((rec + 0x20).to_le_bytes());
+    for k in 0..8u8 {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    code.push(0xc3);
+    let entry = o.rebase(ffx_battle::reel::bridge::DBG_PRINTF);
+    let at = o.rebase(at);
+    o.write(at, &code).unwrap();
+    let rel = at.wrapping_sub(entry + 5);
+    o.write(entry, &[[0xe9].as_slice(), &rel.to_le_bytes()].concat())
+        .unwrap();
+}
+
+/// Wakka's reels (round 33, `ffx_battle::reel`): `MsSetReelResult` with
+/// the shared world's actors' results blocks often the user's (its index
+/// and its cue entry's command number), the reel kinds' commands made our
+/// own (their target kinds drawn), the spins' symbols drawn among the
+/// matching ones; `MsCalcDamage` and `brnd` as the originals and the
+/// ports, `dbgPrintf` a stub ([`printf_stub`]), the others as in
+/// [`check`]. `MsGetReelResultKind_007b1710` on its own, and
+/// `MsGetReelTargets_007b1910` on the entries left.
+fn reels(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    use ffx_battle::reel::bridge as rl;
+    macro_rules! pick {
+        ($rng:expr, [$($v:expr),+ $(,)?] $(,)?) => {{
+            let v = [$($v),+];
+            v[$rng.below(u32::try_from(v.len()).unwrap()) as usize]
+        }};
+    }
+    let w = world(a, b, rng, synthetic);
+    let rec = scratch(a, b, 0x100);
+    for o in [&mut *a, &mut *b] {
+        let at = o.rebase(ACHIEVEMENT);
+        o.stub_return(at, 0).unwrap();
+        let at = o.rebase(TO_GET_FFX_LANG);
+        o.stub_return(at, 1).unwrap();
+        let time = o.rebase(rl::REEL_TIME_TEXT);
+        printf_stub(o, GUI_STUBS, rec, time);
+    }
+    let local = scratch(a, b, rl::REEL_LOCAL as usize);
+    let symbols = scratch(a, b, 12);
+    let outs = scratch(a, b, 8);
+    let entries = ffx_battle::misc::bridge::REEL_ENTRIES.ptr(b).addr;
+    let table = b.rebase(rl::REEL_COMMANDS);
+    for round in 0..300 {
+        w.shuffle(a, b, rng, round);
+        let i = pick!(rng, [4u32, 4, rng.below(8), rng.below(ACTORS), 0x104]);
+        let user = w.actor(i & 0xff);
+        // its cue entry (its own, +0x72c) and command number
+        poke(a, b, user + 0xde5, &[0xff]);
+        let number = u8::try_from(rng.below(4)).unwrap();
+        poke(a, b, user + 0x72c + 2, &[number]);
+        // the kinds' commands: ours, their target kinds drawn
+        for k in 1..0x12u32 {
+            let id = 0x3000 + rng.below(0x40);
+            poke(
+                a,
+                b,
+                table + 2 * k,
+                &u16::try_from(id).unwrap().to_le_bytes(),
+            );
+            let (c, _) = ffx_battle::command::bridge::get_command(b, u32::MAX, 0, id);
+            let v: u16 = ffx_bridge::Mem::read(&*b, c + 0x1a);
+            let t = u16::try_from(rng.below(4)).unwrap();
+            poke(a, b, c + 0x1a, &((v & !0xc) | (t << 2)).to_le_bytes());
+        }
+        for p in 0..ACTORS {
+            let actor = w.actor(p);
+            // DmgCalc_Bribe divides by the target's max HP (a fault on 0)
+            for at in [0x594, 0x598] {
+                let v: u32 = ffx_bridge::Mem::read(&*b, actor + at);
+                if v == 0 {
+                    poke(a, b, actor + at, &1u32.to_le_bytes());
+                }
+            }
+            for k in 0..2 {
+                let s = actor + l::RESULTS + k * l::RESULTS_SIZE;
+                fill(a, b, rng, s, 0x18);
+                // (every eighth round no block of the user's: no targets)
+                let mine = round % 8 != 0 && rng.below(3) != 0;
+                let who = if mine { i & 0xff } else { rng.below(ACTORS) };
+                let num = if mine && rng.below(4) != 0 {
+                    number
+                } else {
+                    rng.byte() & 3
+                };
+                // few results so far (16 at most per block)
+                let done = u8::try_from(rng.below(3)).unwrap();
+                poke(a, b, s, &[done, done + 4, u8::try_from(who).unwrap(), num]);
+            }
+        }
+        // the spins: symbols that match now and then
+        let sym: Vec<u8> = (0..12)
+            .map(|_| {
+                u8::try_from(pick!(
+                    rng,
+                    [0u32, 1, 2, 3, 5, 6, 7, 8, 9, 10, 4, 0xff, rng.below(12)]
+                ))
+                .unwrap()
+            })
+            .collect();
+        let mut sym = sym;
+        if rng.below(2) == 0 {
+            // a spin of one symbol thrice
+            let s = rng.below(4) as usize * 3;
+            let v = sym[s];
+            sym[s + 1] = v;
+            sym[s + 2] = v;
+        }
+        poke(a, b, symbols, &sym);
+        fill(a, b, rng, entries, 0x10);
+        let (time, start) = (
+            pick!(rng, [1.5f32, 0.0, -3.25, f32::NAN]).to_bits(),
+            pick!(rng, [2.0f32, 10.0, 0.125]).to_bits(),
+        );
+        let mut call = game_call;
+        let args = [i, symbols, time, start];
+        twin("MsSetReelResult", a, b, 0x007b_1b50, &args, ALL, |m| {
+            rl::ms_set_reel_result(m, &mut call, args, local)
+        });
+        b.write(local, &[0; rl::REEL_LOCAL as usize]).unwrap();
+        same(&format!("MsSetReelResult {args:x?}"), a, b);
+        // a spin's kind on its own
+        let s = symbols + 3 * rng.below(4);
+        twin(
+            "MsGetReelResultKind_007b1710",
+            a,
+            b,
+            0x007b_1710,
+            &[s, outs],
+            ALL,
+            |m| rl::ms_get_reel_result_kind(m, s, outs),
+        );
+        same("MsGetReelResultKind_007b1710", a, b);
+        // the targets of a spin (the entries as left, or small counts)
+        if rng.below(2) == 0 {
+            let counts: Vec<u8> = (0..4)
+                .flat_map(|_| {
+                    let n = pick!(rng, [0x1eu32, 0x1f, 0x20, 1, 0, rng.below(0x22)]);
+                    [rng.byte(), u8::try_from(n).unwrap()]
+                })
+                .collect();
+            for (k, c) in counts.chunks(2).enumerate() {
+                poke(a, b, entries + 4 * u32::try_from(k).unwrap(), c);
+            }
+        }
+        let t = pick!(
+            rng,
+            [
+                i,
+                rng.below(ACTORS),
+                ACTORS + rng.below(8),
+                0x100 | rng.below(8)
+            ]
+        );
+        fill(a, b, rng, w.actor((t & 0xff) % ACTORS) + 0xd80, 0x40);
+        let spin = pick!(rng, [0u32, 1, 2, 3, u32::MAX]);
+        let hits = pick!(rng, [0, outs]);
+        let kind = pick!(rng, [0, outs + 4]);
+        let args = [t, hits, spin, kind];
+        twin(
+            "MsGetReelTargets_007b1910",
+            a,
+            b,
+            0x007b_1910,
+            &args,
+            ALL,
+            |m| rl::ms_get_reel_targets(m, args),
+        );
+        same(&format!("MsGetReelTargets_007b1910 {args:x?}"), a, b);
+    }
+}
+
+#[test]
+fn reels_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    reels(&mut a, &mut b, &mut Xorshift(0x3333_0301), true);
+}
+
+#[test]
+fn reels_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    reels(&mut a, &mut b, &mut Xorshift(0x3333_0302), false);
+}
