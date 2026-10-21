@@ -16312,3 +16312,143 @@ fn menu_round30_sell_window_grow_ctrl_limit_open_and_layout_match_the_original()
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round30_btl_end_init_and_flip_window_ctrl_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0030_0007) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    // TkBtlEndGetText counts up: different texts
+    let texts = t.alloc(&[0; 4]);
+    let bump: Vec<u8> = [&[0xff, 0x05][..], &texts.to_le_bytes()].concat();
+    let code = seq_code(log, 0x008b_da60, 1, texts, &bump);
+    jump_stub(&mut t, 0x008b_da60, &code);
+    cells.push(texts);
+    for (f, n) in [
+        (0x008b_deb0u32, 1u8),
+        (0x008b_df10, 0),
+        (0x007a_b910, 1),
+        (0x008b_dfe0, 2),
+        (0x008c_ac70, 3),
+        (0x008a_aeb0, 1),
+        (0x0088_6e80, 1),
+        (0x008a_afa0, 0),
+        (0x008a_af10, 0),
+        (0x008a_afe0, 0),
+        (0x008a_af70, 0),
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let pads = [0x008b_e410u32, 0x008b_e470, 0x008b_e4b0].map(|f| seq_stub(&mut t, f, log, 0, &[]));
+    let players = seq_stub(&mut t, 0x008a_9b30, log, 0, &[]);
+    let summons = seq_stub(&mut t, 0x008a_9bf0, log, 0, &[]);
+    let ratio = seq_stub(&mut t, 0x008a_b220, log, 0, &[]);
+    // MsGetSaveWeaponList(a, b, c, &count): the count from a cell
+    let (list_cell, ccell) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x10, 0x8b, 0x15]; // mov eax, [esp+16]; mov edx, [ccell]
+    extra.extend(ccell.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let code = seq_code(log, 0x007a_bd10, 4, list_cell, &extra);
+    jump_stub(&mut t, 0x007a_bd10, &code);
+    // MsGetSaveWeapon(id, &out): the record of id & 0xff
+    let records = t.alloc(&[0; 0x800]);
+    let weapon = t.alloc(&[0; 4]);
+    let mut extra = vec![
+        0x8b, 0x44, 0x24, 0x04, 0x25, 0xff, 0, 0, 0, 0x8d, 0x04, 0xc5,
+    ];
+    extra.extend(records.to_le_bytes());
+    extra.push(0xa3);
+    extra.extend(weapon.to_le_bytes());
+    // and the gear count shrinks (the list's count is read again)
+    extra.extend([0xff, 0x0d]);
+    extra.extend(t.sym(0x0186_a188).to_le_bytes());
+    let code = seq_code_of(log, 0x007a_bbd0, &[0], weapon, &extra);
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+    // MsGetSaveWeaponAmount(&out): the amount from a cell
+    let (acell, dummy) = (t.alloc(&[0; 4]), t.alloc(&[0; 4]));
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x15]; // mov eax, [esp+4]; mov edx, [acell]
+    extra.extend(acell.to_le_bytes());
+    extra.extend([0x89, 0x10]);
+    let code = seq_code_of(log, 0x007a_bc60, &[], dummy, &extra);
+    jump_stub(&mut t, 0x007a_bc60, &code);
+    // the window's +0x1c callback
+    let accept = t.alloc(&[0; 4]);
+    let code = seq_code(log, 0xcb00_001c, 3, accept, &[]);
+    let callback_at = test_code(&mut t, &code);
+    let (list, w0) = (t.alloc(&[0; 0x80]), t.alloc(&[0; 0x100]));
+    t.put(list_cell, list);
+    for round in 0..3000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(list, 0x80);
+        t.scramble_at(records, 0x800);
+        for k in 0..0x100 {
+            let v = t.rng.pick(&[0u8, 1, 1, 1]);
+            t.put(records + 8 * k + 2, v);
+        }
+        t.scramble(0x0231_0f8e, 0xc);
+        t.scramble(0x0186_a0b0, 0x120);
+        let v = t.rng.pick(&[0i32, 1, 5, 9, 20, -1]);
+        t.put(ccell, v);
+        let v = t.rng.pick(&[0i8, 1, 3, 6, 7, -1, -2]);
+        t.put(t.sym(0x0231_0f72), v);
+        let v = t.rng.pick(&[0i32, 1, 3, 6, -1]);
+        t.put(acell, v);
+        // the flip window
+        t.scramble_at(w0, 0x100);
+        let state = if t.rng.pick(&[false, true]) {
+            5
+        } else {
+            t.rng
+                .pick(&[0u32, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 14, 15, 16, 17])
+        };
+        t.put(w0 + 0x28, state);
+        let v = t.rng.pick(&[0x1000u16, 0x1000, 0xff0, 0xfff, 0, 0x8000]);
+        t.put(w0 + 0x46, v);
+        let v = t.rng.pick(&[0u16, 0, 0x10, 0x8000, 0xfff0]);
+        t.put(w0 + 0x38, v);
+        let rows = t.rng.pick(&[0u16, 1, 2, 5]);
+        t.put(w0 + 0x30, rows);
+        let v = t.rng.pick(&[0u16, 1, rows.wrapping_sub(1), 0xffff]);
+        t.put(w0 + 0x48, v);
+        let v = t.rng.pick(&[0u8, 0, 1, 1, 2]);
+        t.put(w0 + 0x44, v);
+        let v = t.rng.pick(&[0, callback_at]);
+        t.put(w0 + 0x1c, v);
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(accept, v);
+        let v = t.rng.pick(&[0u32, 0x20, 0x40, 0, 0, 0x1_0020]);
+        t.put(pads[2], v);
+        let v = t.rng.pick(&[0u32, 4, 8, 0x8000, 0x2000, 0xc, 0x1_2000]);
+        t.put(pads[1], v);
+        let v = t.rng.pick(&[0u32, 4, 8, 0xc]);
+        t.put(pads[0], v);
+        let v = t.rng.pick(&[0u32, 1, 2, 3]);
+        t.put(players, v);
+        let v = t.rng.pick(&[0u32, 1, 2, 3]);
+        t.put(summons, v);
+        let v = t.rng.pick(&[0u32, 1, 1]);
+        t.put(ratio, v);
+        let kind = t.rng.next();
+        if round % 2 == 0 {
+            t.twin("TkBtlEndInit", 0x008b_db70, &[0, kind], U32, |o| {
+                w(tk::tk_btl_end_init(o, kind, local, &mut callback))
+            });
+        } else {
+            t.twin(
+                "MenuSubCmd_FlipWindowCtrl_008e3880",
+                0x008e_3880,
+                &[w0],
+                U32,
+                |o| w(tk::menu_sub_cmd_flip_window_ctrl(o, w0, &mut callback)),
+            );
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}

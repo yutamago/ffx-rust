@@ -7268,6 +7268,277 @@ pub mod bridge {
         0
     }
 
+    /// `TkBtlEndInit(_, kind)` (`0x008bdb70`): the battle-end screen's
+    /// setup. Texts `0x025cc594`/`0x025cc590`/`0x025cc58c` =
+    /// `TkBtlEndGetText(0x4004 / 0x4013 / 0x400a)`; `0x0186a180` = `0xd0`,
+    /// the words `0x0186a19c..0x0186a1a8`, `0x0186a1ac..0x0186a1c8`
+    /// cleared; `BtlEnd_InitState_008bdeb0(kind)`,
+    /// `BtlEnd_InitGilStep()`; `u16 0x0186a0b4` 0, `u16 0x0186a114`
+    /// `0x80`, the `u16`s at `0x0186a160..0x0186a178` (every 4 bytes) 0,
+    /// `0x0186a18c` and `0x0186a1a8` 0. The gear list
+    /// `MsGetSaveWeaponList(-1, -1, 0, &count)` goes to `0x025cc580`; the
+    /// first free entry (record byte `+2` 0) becomes the cursor, the list's
+    /// top 3 rows above it (at most `count - 7`, at least 0), the cursor
+    /// relative to the top clamped to `0..=5` (both in `0x0186a190`,
+    /// `0x0186a194`, `0x0186a1a0`). With `MsGetSaveWeaponAmount(&free)`:
+    /// the spoil slots from `i8 0x02310f72` up to 6 are cleared (record byte
+    /// `+2` 0); when the spoils (`i8 0x02310f72`) don't fit `0x0186a184` =
+    /// 1, else 0 and each spoil is added (`MsAddEquipment_007ab910`).
+    /// Then `TOSetPair_008bdfe0` with two `TkBtlEndGetText(0x4000)` and the
+    /// four `Math_SemicircleTable`s (`0x01869f90` 0x15, `0x01869fc0` 0x79,
+    /// `0x0186a0b8` 0x2c, `0x0186a118` 0x22, radius 12; the last one's
+    /// `eax`). `local` is two words (the record out word, then the amount).
+    pub fn tk_btl_end_init<M: Mem>(
+        mem: &mut M,
+        kind: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let r = |mem: &M, a: u32| mem.rebase(a);
+        let text = r(mem, 0x008b_da60);
+        for (id, to) in [
+            (0x4004, 0x025c_c594),
+            (0x4013, 0x025c_c590),
+            (0x400a, 0x025c_c58c),
+        ] {
+            let v = call(mem, text, &[id]);
+            mem.write(r(mem, to), v);
+        }
+        mem.write(r(mem, 0x0186_a180), 0xd0u32);
+        mem.write(r(mem, 0x0186_a19c), [0u32; 3]);
+        mem.write(r(mem, 0x0186_a1ac), [0u32; 7]);
+        let f = r(mem, 0x008b_deb0);
+        call(mem, f, &[kind]);
+        let f = r(mem, 0x008b_df10);
+        call(mem, f, &[]);
+        mem.write(r(mem, 0x0186_a0b4), 0u16);
+        mem.write(r(mem, 0x0186_a114), 0x80u16);
+        for k in 0..6 {
+            mem.write(r(mem, 0x0186_a160) + k * 4, 0u16);
+        }
+        mem.write(r(mem, 0x0186_a18c), 0u32);
+        mem.write(r(mem, 0x0186_a1a8), 0u32);
+        let count_at = r(mem, 0x0186_a188);
+        let f = r(mem, 0x007a_bd10);
+        let list = call(mem, f, &[u32::MAX, u32::MAX, 0, count_at]);
+        let list_at = r(mem, 0x025c_c580);
+        mem.write(list_at, list);
+        let weapon = r(mem, 0x007a_bbd0);
+        let (mut top, mut cursor) = (0i32, 0i32);
+        let mut count = mem.read::<i32>(count_at);
+        let mut i = 0;
+        while i < count {
+            let list: u32 = mem.read(list_at);
+            let id = u32::from(mem.read::<u16>(list.wrapping_add(i.cast_unsigned() * 2)));
+            let rec = call(mem, weapon, &[id, local]);
+            count = mem.read::<i32>(count_at);
+            if mem.read::<u8>(rec.wrapping_add(2)) == 0 {
+                cursor = i;
+                top = i - 3;
+                break;
+            }
+            i += 1;
+        }
+        if top + 6 >= count {
+            top = count.wrapping_sub(7);
+        }
+        let top = top.max(0);
+        let rel = cursor - top;
+        mem.write(r(mem, 0x0186_a190), [top, top]);
+        mem.write(r(mem, 0x0186_a1a0), rel.clamp(0, 5));
+        let amount_at = local.wrapping_add(4);
+        let f = r(mem, 0x007a_bc60);
+        call(mem, f, &[amount_at]);
+        let spoils = r(mem, 0x0231_0f8e);
+        let spoil_count = |mem: &M| i32::from(mem.read::<i8>(r(mem, 0x0231_0f72)));
+        let mut slot = spoil_count(mem);
+        while slot < 6 {
+            let at = spoils.wrapping_add(slot.cast_unsigned().wrapping_mul(2));
+            let id = u32::from(mem.read::<u16>(at));
+            let rec = call(mem, weapon, &[id, local]);
+            mem.write(rec.wrapping_add(2), 0u8);
+            slot += 1;
+        }
+        if mem.read::<i32>(amount_at) < spoil_count(mem) {
+            mem.write(r(mem, 0x0186_a184), 1u32);
+        } else {
+            mem.write(r(mem, 0x0186_a184), 0u32);
+            let add = r(mem, 0x007a_b910);
+            let mut slot = 0;
+            while slot < spoil_count(mem) {
+                let at = spoils.wrapping_add(slot.cast_unsigned().wrapping_mul(2));
+                let id = u32::from(mem.read::<u16>(at));
+                let rec = call(mem, weapon, &[id, local]);
+                call(mem, add, &[rec]);
+                slot += 1;
+            }
+        }
+        let first = call(mem, text, &[0x4000]);
+        let second = call(mem, text, &[0x4000]);
+        let f = r(mem, 0x008b_dfe0);
+        call(mem, f, &[second, first]);
+        let table = r(mem, 0x008c_ac70);
+        let mut eax = 0;
+        for (out, n) in [
+            (0x0186_9f90, 0x15),
+            (0x0186_9fc0, 0x79),
+            (0x0186_a0b8, 0x2c),
+            (0x0186_a118, 0x22),
+        ] {
+            let out = r(mem, out);
+            eax = call(mem, table, &[out, n, 0xc]);
+        }
+        eax
+    }
+
+    /// `MenuSubCmd_FlipWindowCtrl_008e3880(w)` (`0x008e3880`, own name;
+    /// jump table `0x008e3b34` on state `+0x28`, 0..16): a sub-command
+    /// window that also flips through party members or aeons. The pads are
+    /// read (`u16`); the fade `i16 +0x46` grows by `+0x38`, clamped to
+    /// `0..=0x1000`. 0, 1: the row's help (`TkMenuSetHelpMessage(+0x5c +
+    /// 12 row)`), 2; 2: 3; 3, 4: 5; 5, once faded in: circle asks the
+    /// `+0x1c` callback `(w, i16 +0x48, i8 +0x45)` (refused: sound
+    /// `0x80000003` through a tail call over the caller's argument slot;
+    /// else sound `0x80000001` and 6), cross sound `0x80000004` and 8; with
+    /// more than one row the cursor `+0x48` moves up (repeat `0x8000`,
+    /// wrapping to the last) or down (`0x2000`, wrapping to 0) with the help
+    /// shown; else for `+0x44` 0 (party, `TkMenuGetPlayerListMax`) or 1
+    /// (aeons) with more than one and `TkMenuGetHelpRatio2()` set, the d-pad
+    /// alone (`4`/`8` repeated and held) flips to the previous/next
+    /// (sound `0x80000004`, tail call); 6: `+0x45` 1, `u16 +0x2c` = the
+    /// cursor, 7; 8: `+0x45` `0xff`, then as 10; 9, 10: 11; 14: 15; 15: 16;
+    /// 16: 4. `eax` is the original's.
+    pub fn menu_sub_cmd_flip_window_ctrl<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |o: u32| w.wrapping_add(o);
+        let mut pads = [0u32; 3];
+        for (p, f) in pads.iter_mut().zip([0x008b_e410, 0x008b_e470, 0x008b_e4b0]) {
+            let f = mem.rebase(f);
+            *p = call(mem, f, &[]) & 0xffff;
+        }
+        let [pad, rep, trg] = pads;
+        let fade = mem
+            .read::<i16>(at(0x46))
+            .wrapping_add(mem.read::<i16>(at(0x38)))
+            .clamp(0, 0x1000);
+        mem.write(at(0x46), fade);
+        let help = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let row = i32::from(mem.read::<i16>(at(0x48))).cast_unsigned();
+            let id: u32 = mem.read(at(0x5c).wrapping_add(row.wrapping_mul(12)));
+            let f = mem.rebase(0x008a_aeb0);
+            call(mem, f, &[id])
+        };
+        let state: u32 = mem.read(at(0x28));
+        let (eax, next) = match state {
+            0 | 1 => (help(mem, call), 2),
+            2 => (2, 3),
+            3 | 4 => (state, 5),
+            5 => return menu_sub_cmd_flip_input(mem, w, [pad, rep, trg], call),
+            6 => {
+                let cursor = mem.read::<u16>(at(0x48));
+                mem.write(at(0x45), 1u8);
+                mem.write(at(0x2c), cursor);
+                (u32::from(cursor), 7)
+            }
+            8..=10 => {
+                if state == 8 {
+                    mem.write(at(0x45), 0xffu8);
+                }
+                (10, 0xb)
+            }
+            14 | 15 => (state, state + 1),
+            16 => (16, 4),
+            _ => return state,
+        };
+        mem.write(at(0x28), next);
+        eax
+    }
+
+    /// The input state (5) of [`menu_sub_cmd_flip_window_ctrl`].
+    fn menu_sub_cmd_flip_input<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        [pad, rep, trg]: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |o: u32| w.wrapping_add(o);
+        let snd = mem.rebase(0x0088_6e80);
+        if mem.read::<u16>(at(0x46)) != 0x1000 {
+            return 5;
+        }
+        if trg & 0x20 != 0 {
+            let cb: u32 = mem.read(at(0x1c));
+            if cb != 0 {
+                let row = i32::from(mem.read::<i16>(at(0x48))).cast_unsigned();
+                let sel = i32::from(mem.read::<i8>(at(0x45))).cast_unsigned();
+                if call(mem, cb, &[w, row, sel]) == 0 {
+                    return call(mem, snd, &[0x8000_0003]);
+                }
+            }
+            let eax = call(mem, snd, &[0x8000_0001]);
+            mem.write(at(0x28), 6u32);
+            return eax;
+        }
+        if trg & 0x40 != 0 {
+            let eax = call(mem, snd, &[0x8000_0004]);
+            mem.write(at(0x28), 8u32);
+            return eax;
+        }
+        let rows = mem.read::<u16>(at(0x30));
+        if rows > 1 && rep & 0xa000 != 0 {
+            call(mem, snd, &[0x8000_0001]);
+            let cursor = if rep & 0x8000 != 0 {
+                let c = mem.read::<i16>(at(0x48)).wrapping_sub(1);
+                if c < 0 {
+                    rows.wrapping_sub(1).cast_signed()
+                } else {
+                    c
+                }
+            } else {
+                let c = mem.read::<i16>(at(0x48)).wrapping_add(1);
+                if i32::from(c) >= i32::from(rows) {
+                    0
+                } else {
+                    c
+                }
+            };
+            mem.write(at(0x48), cursor);
+            let id: u32 =
+                mem.read(at(0x5c).wrapping_add(i32::from(cursor).cast_unsigned().wrapping_mul(12)));
+            let f = mem.rebase(0x008a_aeb0);
+            return call(mem, f, &[id]);
+        }
+        let who = mem.read::<u8>(at(0x44));
+        let (max, prev, next) = match who {
+            0 => (0x008a_9b30, 0x008a_afa0, 0x008a_af10),
+            1 => (0x008a_9bf0, 0x008a_afe0, 0x008a_af70),
+            _ => return u32::from(who),
+        };
+        let f = mem.rebase(max);
+        let n = call(mem, f, &[]);
+        if n.cast_signed() <= 1 {
+            return n;
+        }
+        let f = mem.rebase(0x008a_b220);
+        let ratio = call(mem, f, &[]);
+        if ratio == 0 {
+            return 0;
+        }
+        let flip = if rep & 4 != 0 && pad == 4 {
+            prev
+        } else if rep & 8 != 0 && pad == 8 {
+            next
+        } else {
+            return ratio;
+        };
+        call(mem, snd, &[0x8000_0004]);
+        let f = mem.rebase(flip);
+        call(mem, f, &[])
+    }
+
     /// The sub-command window openers (`0x008e33d0`
     /// `TkMenuOpenSubCmdWindowMain`, `0x008e3470`, `0x008e3510`,
     /// `0x008e35b0`): kept in `0x023cc120`; 2 rows of 2, cursor 1, `+0x37`

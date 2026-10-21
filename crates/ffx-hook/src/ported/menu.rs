@@ -1881,6 +1881,17 @@ ported! {
         let local = frame.at();
         tk::tk_menu_message_layout(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkBtlEndInit(_, kind)`.
+    TkBtlEndInit @ 0x008b_db70 => extern "C" fn tk_btl_end_init(_a: u32, kind: u32) -> u32 {
+        // the original's record out word and amount word
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::tk_btl_end_init(&mut mem(), kind, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_FlipWindowCtrl_008e3880(w)`.
+    MenuSubCmd_FlipWindowCtrl_008e3880 @ 0x008e_3880 => extern "C" fn menu_sub_cmd_flip_window_ctrl(w: u32) -> u32 {
+        tk::menu_sub_cmd_flip_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)

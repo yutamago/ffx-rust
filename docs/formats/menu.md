@@ -391,6 +391,15 @@ page, 0)` with pages `0x42`, `0x43`, `0x47`, `0x46`), cancel closes the
 open one and returns to the list (state 1, which slides the status
 background back by `-0x155`).
 
+`MenuSubCmd_FlipWindowCtrl_008e3880` (`0x008e3880`, jump table
+`0x008e3b34`, states 0..16 at `+0x28`) is a sub-command window that also
+flips the shown party member (`+0x44` 0) or aeon (1): its fade `+0x46`
+grows by `+0x38` up to `0x1000`, its rows carry their help ids in 12-byte
+entries from `+0x5c`, the cursor wraps with the repeat bits `0x8000`
+(up) and `0x2000` (down), and with one row (or none) the d-pad's `4`/`8`
+held alone flip to the previous/next member while
+`TkMenuGetHelpRatio2()` is set.
+
 `TkMenuCtrlKaizou` (`0x008d5540`, jump table `0x008d55ac` on the menu's
 state `+0x1c`) opens the customise window (state 0 -> 1), waits for its
 `+0x45` to go negative (-> 2), then sleeps menu 9 and wakes the main menu
@@ -651,6 +660,18 @@ them; it returns 1 while AP were left over. `BtlEnd_CountApSteps`
 (`0x008ba550`) runs it for every entry `k` of the battle-end list
 (`0x01869f18`, `i16` character at entry `+6`, `mark` = `k`) and returns
 1 while any had AP left.
+
+`TkBtlEndInit(_, kind)` (`0x008bdb70`) sets the battle-end screen up:
+texts `0x4004`, `0x4013`, `0x400a` into `0x025cc594`, `0x025cc590`,
+`0x025cc58c`, the gear list (`MsGetSaveWeaponList(-1, -1, 0,
+&0x0186a188)`, kept in `0x025cc580`) with its cursor on the first free
+entry (record byte `+2` 0) shown three rows below the top (top in
+`0x0186a190`/`0x0186a194`, at most `count - 7`; cursor `0x0186a1a0`,
+0..5 from the top). The spoil slots past `i8 0x02310f72` are freed; when
+the spoils don't fit (`MsGetSaveWeaponAmount`) `0x0186a184` is set,
+otherwise each spoil is added (`MsAddEquipment_007ab910`). It ends with
+four `Math_SemicircleTable`s of radius 12 (`0x01869f90` 0x15 entries,
+`0x01869fc0` 0x79, `0x0186a0b8` 0x2c, `0x0186a118` 0x22).
 
 Two battle-end pages slide in by an integer `dx` (as `f32`, added to the
 remapped x): `BtlEnd_DrawGilPage_008bbb10` (`0x008bbb10`) draws the gil
