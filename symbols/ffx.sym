@@ -9294,6 +9294,7 @@
 0x00863ae0 function AtelClearLoveParamDisable # fh v3:cg2 0x863a80
 0x00863af0 function Atel_ClearEffectFlag2      # (n): bit n of 0x01326b74 cleared -> the mask; name ours; ported in helpers (script round 14)
 0x00863b10 function AtelClearMesWinWork       # fh v3:exact 0x00863ab0; ported in helpers (script round 16)
+0x00863c90 function Atel_ResetMsgWindowBank_00863c90 # name ours; cdecl (bank i8): the 8 message windows of the bank reset as AtelClearMesWinWork does (+4 = 0x01a00200 unrelocated, +0x10 = 0x50000080, +8 = g_MsgNone, +0/+0x14/+0x1c/+0x28 = 0); g_AtelMenuExecStatus stored back unchanged; EAX 0; caller AtelEnterMenuCallback; ported (ffx_script helpers, script round 24 b)
 0x00863e10 function Script_StopMove              # (worker, level or -1 = current): levels sharing that level's move block get their own block at ctx+0x5b8+i*0x4c with flags +2 = 0, keeping its fields; also stops turning if flag 0x4000; ported in helpers (script round 19)
 0x00863f90 function AtelClearNotAuronPatchFlag # fh v3:bsim1.00 0x00863f30
 0x00863fe0 function Script_StopTurn              # (worker, level): the same for the turn block (ctx+0x864+i*0x44, pointer at level block +0x48); ported in helpers (script round 13)
@@ -9319,6 +9320,7 @@
 0x00866240 function AtelEventSetUpForBattleMusic # fh v3:exact 0x008661e0
 0x00866430 function AtelEventSetUpSep            # layout+callees: sorts between AtelEventSetUpForBattleMusic and AtelEventSetupGuideMap, and its named callees match the Switch 0x7100460ab0 AtelEventSetUpSep's (similarity 1.00: AtelSetSnd3dVolumeDiffRatio, AtelSetSnd3dVolumeTotalRatio, SndSyncTrans); symbols from Fahrenheit's server export
 0x00866490 function AtelEventSetupGuideMap # (): sets ctrl work 0's guide map flag (+1 bit 7) when clear (Yn_GuideMapInit is empty), then Yn_GuideMapSetMode(0) with the context back; ported in helpers (script round 23 g); fh v3:exact 0x00866430
+0x00866520 function Atel_LoadEventSeps_00866520 # name ours; cdecl (_, mode, group): g_AtelSepLoadCount = 0, then the separates table of ctrl work 0's script block (0x01325be8 +0x2c -> +0xc): mode 0 adds flags bit 1 without bit 2 or bit 3 without bit 1; mode set and group selected ((mask|1) bit) keeps entries with none of the rotated group bits; else adds flags bit 0 (Atel_AddSepLoad); kept: added and not refused (1), first 16 ids >= 0; group bit cleared from g_AtelSepGroupMask, SndSepClearAll with none kept else SqsSeSeparateMaskClear(first 8), mask = 0; EAX that call's; callers 0x00862470, AtelEventRemoveSep, 0x00866500; ported (ffx_script helpers, script round 24 b)
 0x00867230 function Script_OpReq              # (op, level, worker, stack): opcodes 36, 45-49 (REQ): pops entry, worker, level; 47-49 gated by the ctrl work's +0x60 callback; calls 0x0067a9b0 first
 0x008673d0 function Script_OpReqEw            # (op, worker, level, stack) -> 0: opcodes 38, 4f-53 (REQEW, kind 2)
 0x00867570 function Script_OpReqSw            # (op, worker, level, stack) -> 0: opcodes 37, 4a-4e (REQSW, kind 1); the level waits (+0x1f = 1)
@@ -9484,6 +9486,7 @@
 0x0086d260 function AtelInitInternalActorWork # (i): worker i's +0x48..+0x7f zeroed; EAX the worker; ported in helpers (script round 23 g); fh v3:exact 0x0086d1f0
 0x0086d4c0 function AtelInitMotionRequest     # fh v3:bsim1.00 0x0086d450
 0x0086d4e0 function AtelInitSaveWork # (): the save event record's +0x1ec (0x1000 bytes) cleared, g_AtelSepLoadCount and g_AtelSepGroupMask 0; tail jump to NkzVersion (EAX its string 0x00b7b7dc); ported in helpers (script round 23 e); fh v3:exact 0x0086d470
+0x0086d510 function Atel_InitFreeSignals_0086d510 # name ours; cdecl (worker): the worker's own 24-byte signal nodes pushed onto its free list +0x88 (old first.prev = node, head = node, node.prev = head, node.next = old first): types 5/6 clear +0x2e4 and push the 8 from +0x1c4, others the 16 from +0x3d8; EAX head address (5/6) or the last node; caller AtelInitBasicWork (which zeroes +0x88 first); ported (ffx_script helpers, script round 24 b)
 0x0086d670 function AtelInitSourceCodeDebugWork # (i, src): with a source record, worker i's +0xc + 4k = src +4 + 12k for k from clamp([src] - 1, 0, 7) down to 0; ported in helpers (script round 23 g); fh v3:exact 0x0086d600
 0x0086d6d0 function AtelInitTotal             # registers the native function tables per group; was Script_InitNatives
 0x0086d950 function AtelIsBind # (i) -> 1 when worker i is bound to a character (+0xaa 1) with a model (+0x9c), else 0; ported in helpers (script round 23 f); fh v3:exact 0x0086d8e0
@@ -9615,7 +9618,7 @@
 0x00871650 function AtelSignalReply           # (worker, node): the reply a REQSW sender waits for once its request starts
 0x00871730 function AtelSkipReqLevel2         # fh v3:bsim1.00 0x008716d0; ported in helpers (script round 19)
 0x00871750 function AtelSndTransSepSPKDataGroup # fh switch:bsim1.00 0x71004728a0
-0x00871890 function AtelStopSoundAll # cdecl (): SndSepStop(n | 0x80000000) for 1..=0x77 (TkSyncV(0) + TkSndUpdate every 16), SndMusicStop/SndMusicClear(-1), iMusicStopAll/iMusicClearAll, 32 more sync pairs, the music again, SqsAllVoiceTerminate 0x008872e0; EAX = the last TkSndUpdate (tail jump); ported (ffx_script helpers, script round 24 a); fh v3:exact 0x00871830
+0x00871890 function AtelStopSoundAll # cdecl (): SndSepStop(n | 0x80000000) for 1..=0x77 (TkSyncV(0) + TkSndUpdate every 16), SndMusicStop/SndMusicClear(-1), iMusicStopAll/iMusicClearAll, 32 more sync pairs, the music again, SqsAllVoiceTerminate (thunk 0x008872e0); EAX = the last TkSndUpdate (tail jump); ported (ffx_script helpers, script round 24 a); fh v3:exact 0x00871830
 0x00871950 function AtelStrcat                # fh v3:exact 0x008718f0
 0x00871980 function AtelStrcpy                # fh v3:exact 0x00871920
 0x008719c0 function Atel_Strlen                # (s) -> strlen; name ours; ported in helpers (script round 14)
@@ -10025,6 +10028,7 @@
 0x00886d50 function SndSePitchTranslate       # (id, a, pitch, b): SqsSePitchTranslate; Switch name by alphabetical slot
 0x00886d80 function SndSepClear               # fh v3:exact 0x00886ce0
 0x00886db0 function SndSepClearAll            # fh v3:bsim1.00 0x00886d10
+0x00886dc0 function SqsSeSeparateMaskClear_thunk_00886dc0 # name ours; jmp SqsSeSeparateMaskClear 0x0081e750 (8 separate ids; Atel_LoadEventSeps_00866520 calls it)
 0x00886dd0 function SndSepLock                # fh v3:bsim1.00 0x00886d30
 0x00886df0 function SndSepPanDirect           # fh v3:cg2 0x886d50
 0x00886e20 function SndSepPanTranslate # (id, pan, frames): SqsSePanTranslate; Switch name by alphabetical slot; layout: alphabetical run between SndSepPanDirect and SndSepPlay (1 unnamed in the gap); Switch 0x710048dc80 SndSepPanTranslate is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
@@ -10053,6 +10057,7 @@
 0x00887280 function SndSortCommonWave         # (list or the default): jmp SqsSortCommonWave; Switch name by alphabetical slot
 0x008872a0 function SndSortCommonWaveWithSet # (list): SndSortCommonWave, SndSetWaveData; Switch name by alphabetical slot; cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71008ba668 SndSortCommonWaveWithSet, 2 votes, round 1
 0x008872c0 function SndSpuMemorySortSwitch    # (x): u8 0x01330096 = x; jmp SqsSetStraightStreamAreaSize; Switch name by alphabetical slot
+0x008872e0 function SqsAllVoiceTerminate_thunk_008872e0 # name ours; jmp SqsAllVoiceTerminate 0x0081ce70 (AtelStopSoundAll calls it)
 0x00887310 function SndSqsIopFrame            # (): SndSeqIopCommandSendMain, then this frame's status/shout/VAG words to the previous ones; name ours (slot SndSqsEeSoundSystemStatus..SndSqsIopSoundErrorStatus)
 0x00887360 function SndSqsIopSoundErrorStatus # fh v3:exact 0x008872d0
 0x008873c0 function SndSqsReportIopSoundStatus # (i) -> g_SndIopStatus[i]; Switch name by alphabetical slot

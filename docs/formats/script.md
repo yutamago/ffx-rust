@@ -2758,7 +2758,7 @@ below that.
 
 `AtelStopSoundAll` (`0x00871890`) stops sound separates 1-0x77, the music
 (twice) and FMOD's music, with `TkSyncV(0)` + `TkSndUpdate` pairs between,
-and ends in `SqsAllVoiceTerminate` (`0x008872e0`); `EAX` is the last
+and ends in `SqsAllVoiceTerminate` (through its thunk `0x008872e0`); `EAX` is the last
 `TkSndUpdate`'s. `AtelGetHyoukaMenuEnable` (`0x0086bae0`) is ctrl work 0's
 `+1` bit 4, cleared by `TkGetTGS`, battle, an Eternal Calm scene, ctrl
 work 0's state bits (`+0` bits 0-1 needed; `+1` bit 2, `+3` `0x87`, `+2`
@@ -2772,6 +2772,26 @@ lookup inlined on ctrl work 0 (`atel_get_basic_work_in`).
 calls are checked against logging stand-ins (`r24_log_stubs`: every
 call, its arguments and order land in a buffer the memory comparison
 sees), the menu check's callees against fixed results.
+
+`Atel_InitFreeSignals_0086d510` (name ours, from `AtelInitBasicWork`,
+which empties `+0x88` first) pushes the worker's own signal nodes onto
+its free list: types 5 and 6 clear the line table word `+0x2e4` and push
+the eight nodes from `+0x1c4`, the others the 16 from `+0x3d8`.
+`Atel_ResetMsgWindowBank_00863c90` (from `AtelEnterMenuCallback`) resets
+one bank's eight message windows as `AtelClearMesWinWork` resets all 16.
+`Atel_LoadEventSeps_00866520(_, mode, group)` (from `0x00862470`,
+`AtelEventRemoveSep`, `0x00866500`) empties `g_AtelSepLoadList` and
+refills it from the separates table of ctrl work 0's script block: with
+`mode` 0, entries with flags bit 1 and not bit 2, or bit 3 and not bit 1;
+with `mode` set and `group` selected (`(g_AtelSepGroupMask | 1)`, bit
+`group`), none, but the entries with none of the group's bits (bit
+`16 + group`) are kept; otherwise entries with bit 0. Entries added and
+not refused (1: full or unselected) are kept too, and the first eight
+kept ids stay loaded (`SqsSeSeparateMaskClear` through its thunk
+`0x00886dc0`) or, with none, every separate is cleared
+(`SndSepClearAll`); the group mask ends 0.
+`round24b_signals_windows_seps_match_the_original` covers them (the two
+sound calls logged).
 
 ### Verification
 

@@ -6976,4 +6976,17 @@ ported! {
     Atel_SetRunInBattle_008630c0 @ 0x0086_30c0 => extern "C" fn h_8630c0() -> u32 {
         hp::atel_set_run_in_battle(&mut mem())
     }
+    /// `Atel_InitFreeSignals_0086d510(worker)`.
+    Atel_InitFreeSignals_0086d510 @ 0x0086_d510 => extern "C" fn h_86d510(w: u32) -> u32 {
+        hp::atel_init_free_signals(&mut mem(), w)
+    }
+    /// `Atel_ResetMsgWindowBank_00863c90(bank)`.
+    Atel_ResetMsgWindowBank_00863c90 @ 0x0086_3c90 => extern "C" fn h_863c90(bank: u32) -> u32 {
+        hp::atel_reset_msg_window_bank(&mut mem(), bank)
+    }
+    /// `Atel_LoadEventSeps_00866520(_, mode, group)`: the first word is
+    /// never read.
+    Atel_LoadEventSeps_00866520 @ 0x0086_6520 => extern "C" fn h_866520(_p0: u32, mode: u32, group: u32) -> u32 {
+        hp::atel_load_event_seps(&mut mem(), mode, group)
+    }
 }

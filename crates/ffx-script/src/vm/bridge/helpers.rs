@@ -3467,3 +3467,154 @@ pub fn atel_set_run_in_battle(m: &mut impl Mem) -> u32 {
     }
     w
 }
+
+/// Pushes the 24-byte signal node `node` onto the list headed at `head`
+/// (a worker's free nodes, `+0x88`): the old first node's `prev` (`+4`)
+/// is `node`, the head `node`, `node`'s `prev` the head and its `next`
+/// the old first node (stored in that order).
+fn push_signal_node(m: &mut impl Mem, head: u32, node: u32) {
+    let first = m.read::<u32>(head);
+    if first != 0 {
+        m.write(first + 4, node);
+    }
+    m.write(head, node);
+    m.write(node + 4, head);
+    m.write(node, first);
+}
+
+/// `Atel_InitFreeSignals_0086d510(worker)` (name ours; called by
+/// `AtelInitBasicWork`): the worker's own signal nodes go onto its free
+/// list (`+0x88`): for types 5 and 6 the line table (`+0x2e4`) is cleared
+/// and the eight nodes from `+0x1c4` are pushed, else the 16 from
+/// `+0x3d8` (24 bytes each). Returns the `EAX` it leaves: the list head's
+/// address for types 5 and 6, else the last node.
+pub fn atel_init_free_signals(m: &mut impl Mem, w: u32) -> u32 {
+    let head = w + 0x88;
+    if kind(m, w).wrapping_sub(5) < 2 {
+        m.write(w + 0x2e4, 0_u32);
+        for k in 0..8 {
+            push_signal_node(m, head, w + 0x1c4 + k * 0x18);
+        }
+        head
+    } else {
+        let mut node = 0;
+        for k in 0..16 {
+            node = w + 0x3d8 + k * 0x18;
+            push_signal_node(m, head, node);
+        }
+        node
+    }
+}
+
+/// `Atel_ResetMsgWindowBank_00863c90(bank)` (name ours; called by
+/// `AtelEnterMenuCallback`): the eight message windows of bank `bank`
+/// (`i8`, eight windows of 0x2c bytes from `g_AtelMsgWindows`) reset as
+/// [`atel_clear_mes_win_work`] does; `g_AtelMenuExecStatus` is stored back
+/// as it was read. Returns 0.
+pub fn atel_reset_msg_window_bank(m: &mut impl Mem, bank: u32) -> u32 {
+    let bank = i32::from(bank.to_le_bytes()[0].cast_signed());
+    let base = m
+        .rebase(0x0132_6d70)
+        .wrapping_add((bank * 8 * 0x2c).cast_unsigned());
+    let status = m.rebase(MENU_EXEC_STATUS);
+    let s = m.read::<u8>(status);
+    // 0x01a00200 is a constant the image has no relocation for
+    let (buf, none) = (0x01a0_0200, m.rebase(0x0132_5b74));
+    for k in 0..8 {
+        let w = base.wrapping_add(k * 0x2c);
+        for (off, v) in [
+            (4, buf),
+            (0x10, 0x5000_0080),
+            (8, none),
+            (0, 0),
+            (0x28, 0),
+            (0x14, 0),
+            (0x1c, 0),
+        ] {
+            m.write(w.wrapping_add(off), v);
+        }
+    }
+    m.write(status, s);
+    0
+}
+
+/// `SqsSeSeparateMaskClear` (`0x00886dc0`, eight ids).
+const SQS_SE_SEPARATE_MASK_CLEAR: u32 = 0x0088_6dc0;
+/// `SndSepClearAll` (`0x00886db0`).
+const SND_SEP_CLEAR_ALL: u32 = 0x0088_6db0;
+
+/// `Atel_LoadEventSeps_00866520(_, mode, group)` (name ours; callers
+/// `0x00862470`, `AtelEventRemoveSep`, `0x00866500`): rebuilds
+/// `g_AtelSepLoadList` (emptied first) from the separates table
+/// ([`sep_table`]) of the first ctrl work's script block (`+0x48`,
+/// `0x01325be8`). An entry
+/// `(id, flags)` is added (`Atel_AddSepLoad`) when, with `mode` 0, flags
+/// bit 1 is set without bit 2, or bit 3 without bit 1; with `mode` set
+/// and `group` (`>= 0`) one of the selected groups (`mask | 1`), never
+/// (the entry is kept when its flags have none of the group's bits: the
+/// group bit rotated into the top half); otherwise when flags bit 0 is
+/// set. Added ones not refused as full or unselected (1) are kept too:
+/// the first 16 non-negative ids kept (the 16th slot takes the later
+/// ones). The group's bit then leaves `g_AtelSepGroupMask`. With nothing
+/// kept every separate is cleared (`SndSepClearAll`), else the first
+/// eight kept ones stay (`SqsSeSeparateMaskClear`); the group mask ends
+/// 0. Returns that call's `EAX`.
+pub fn atel_load_event_seps<H: super::run::NativeHost>(h: &mut H, mode: u32, group: u32) -> u32 {
+    let hdr = h.read::<u32>(h.rebase(0x0132_5be8));
+    let mut keep = [u32::MAX; 16];
+    let mut kept = 0usize;
+    let table = sep_table(h, hdr);
+    let n = if table == 0 { 0 } else { h.read::<i32>(table) };
+    let rot = 1u32.rotate_left(group & 0x1f);
+    let group_bits = rot.rotate_left(16);
+    let mask_at = h.rebase(SEP_GROUP_MASK);
+    h.write(h.rebase(SEP_LOAD_COUNT), 0_u32);
+    for i in 0..n.max(0).cast_unsigned() {
+        let t = sep_table(h, hdr);
+        let (id, flags) = if t == 0 {
+            (0, 0)
+        } else {
+            (
+                h.read::<u32>(t.wrapping_add(i * 8 + 4)),
+                h.read::<u32>(t.wrapping_add(i * 8 + 8)),
+            )
+        };
+        let selected = || {
+            let bit = (1u32 << (group & 0x1f)).to_le_bytes()[0];
+            group.cast_signed() >= 0 && bit & (h.read::<u8>(mask_at) | 1) != 0
+        };
+        // (add it, keep it without adding)
+        let (add, keep_only) = if mode == 0 {
+            if flags & 2 != 0 {
+                (flags & 4 == 0, false)
+            } else {
+                (flags & 8 != 0, false)
+            }
+        } else if selected() {
+            (false, flags & group_bits == 0)
+        } else {
+            (flags & 1 != 0, false)
+        };
+        let keep_it = keep_only || (add && atel_add_sep_load(h, id, flags) != 1);
+        if keep_it && id.cast_signed() >= 0 {
+            keep[kept] = id;
+            if kept < 15 {
+                kept += 1;
+            }
+        }
+    }
+    if group.cast_signed() >= 0 {
+        let bit = (1u32 << (group & 0x1f)).to_le_bytes()[0];
+        let v = h.read::<u8>(mask_at) & !bit;
+        h.write(mask_at, v);
+    }
+    let r = if keep[0] == u32::MAX {
+        let f = h.rebase(SND_SEP_CLEAR_ALL);
+        h.call(f, &[])
+    } else {
+        let f = h.rebase(SQS_SE_SEPARATE_MASK_CLEAR);
+        h.call_n(f, &keep[..8])
+    };
+    h.write(mask_at, 0_u8);
+    r
+}
