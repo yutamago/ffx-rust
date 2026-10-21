@@ -3852,6 +3852,7 @@
 0x0073ab40 function pppDrawMdlSeaCon2         # ppp program table record "pppDrawMdlSea" (0x00c3ad00) +0x20 second set-up; "pppDrawMdlSea" (0x00c3c3a8) +0x20 second set-up
 0x0073ab70 function pppDrawMdlSeaDes          # ppp program table record "pppDrawMdlSea" +0x24 destructor
 0x0073abe0 function pppDrawMdlSeaDraw         # ppp program table record "pppDrawMdlSea" draw; not a function start in the Ghidra dump
+0x0073b5c0 function pppDrawMdlSeaDrawSetup    # name ours: the sea draw set-up its one caller pppDrawMdlSeaDraw runs; cdecl (rec, state) -> 0/1; ported ffx_vfx::prog::bridge::ppp_draw_mdl_sea_draw_setup
 0x0073b7b0 function pppDrawMdlInfCon          # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x1c set-up; "pppDrawMdlInf" (0x00c3c970) +0x1c set-up
 0x0073b800 function pppDrawMdlInfCon2         # ppp program table record "pppDrawMdlInf" (0x00c3b2c8) +0x20 second set-up; "pppDrawMdlInf" (0x00c3c970) +0x20 second set-up
 0x0073b830 function pppDrawMdlInfDes          # ppp program table record "pppDrawMdlInf" +0x24 destructor

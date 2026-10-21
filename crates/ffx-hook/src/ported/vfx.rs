@@ -842,6 +842,10 @@ ported! {
     pppDrawMdlSeaDes @ 0x0073_ab70 => extern "C" fn ppp_draw_mdl_sea_des(obj: u32, ctrl: u32) {
         prog::bridge::ppp_draw_mdl_sea_des(&mut mem(), obj, ctrl);
     }
+    /// `pppDrawMdlSeaDrawSetup(rec, state)`.
+    pppDrawMdlSeaDrawSetup @ 0x0073_b5c0 => extern "C" fn ppp_draw_mdl_sea_draw_setup(rec: u32, state: u32) -> u32 {
+        prog::bridge::ppp_draw_mdl_sea_draw_setup(&mut mem(), rec, state)
+    }
     /// `pppDrawMdlInfDes(obj, ctrl)`.
     pppDrawMdlInfDes @ 0x0073_b830 => extern "C" fn ppp_draw_mdl_inf_des(obj: u32, ctrl: u32) {
         prog::bridge::ppp_draw_mdl_inf_des(&mut mem(), obj, ctrl);

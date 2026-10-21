@@ -1317,6 +1317,93 @@ pub mod bridge {
         free_field(mem, w.wrapping_add(0x10c));
     }
 
+    /// `pppDrawMdlSeaDrawSetup(rec, state)` (`0x0073b5c0`, name ours; its
+    /// one caller is `pppDrawMdlSeaDraw`): readies the sea's draw state.
+    /// The shape is the record's `+4` index into the environment's shape
+    /// blocks (`+0x1c` of 0x20-byte entries at env `+0x20`). Clears the
+    /// floats at `+0x40..+0x48` and `+0x50..+0x64`, the vertex and flag
+    /// blocks (`+0x68`, `+0x6c`), keeps the record at `+0x70`, its `+0x51`
+    /// byte at `+0x74` and zeroes the two counts at `+0x75`/`+0x76`. With
+    /// a field-program texture (the record's `+0x50` byte), points it at
+    /// the shape's image and CLUT words (shape + shape `+4`, then `+8` and
+    /// `+0xc`) and takes its entry count into both counts. `+0x77` says
+    /// whether the record's scroll (`+0x20..+0x28`) is non-zero (NaN
+    /// counts as non-zero); then the shape's `i16` vertex count (`+0x12`)
+    /// of 6-byte vertices (shape + shape `+8`) is copied into a new block
+    /// at `+0x68`, with a block of as many 1 bytes at `+0x6c`. Ends with
+    /// the identity at `state` and returns 1; 0 (no identity) when an
+    /// allocation fails.
+    pub fn ppp_draw_mdl_sea_draw_setup<M: Mem>(mem: &mut M, rec: u32, state: u32) -> u32 {
+        let (env, _) = env_heaps(mem);
+        let blocks: u32 = mem.read(env.wrapping_add(0x20));
+        let index: u32 = mem.read(rec.wrapping_add(4));
+        let shape = stub::ptr32(mem.read(blocks.wrapping_add(index << 5).wrapping_add(0x1c)));
+        for off in [0x48u32, 0x44, 0x40, 0x64, 0x60, 0x5c, 0x58, 0x54, 0x50] {
+            mem.write(state.wrapping_add(off), 0u32);
+        }
+        mem.write(state.wrapping_add(0x68), stub::ptr32(0));
+        mem.write(state.wrapping_add(0x6c), stub::ptr32(0));
+        mem.write(state.wrapping_add(0x70), stub::ptr32(rec));
+        let mode: u8 = mem.read(rec.wrapping_add(0x51));
+        mem.write(state.wrapping_add(0x74), mode);
+        mem.write(state.wrapping_add(0x75), 0u16);
+        let nth: u8 = mem.read(rec.wrapping_add(0x50));
+        let tex = ffx_field::guide::bridge::yn_fp_trx_tex_get(mem, u32::from(nth));
+        if tex != 0 {
+            let at = shape.wrapping_add(mem.read(shape.wrapping_add(4)));
+            let image: u32 = mem.read(at.wrapping_add(8));
+            let clut: u32 = mem.read(at.wrapping_add(0xc));
+            ffx_field::guide::bridge::yn_fp_trx_tex_set_addr(mem, tex, image, clut);
+            // the count comes back in al
+            #[allow(clippy::cast_possible_truncation)]
+            let count = ffx_field::model::bridge::rcbg_embedded_trx_get_cnt(mem, tex) as u8;
+            mem.write(state.wrapping_add(0x75), count);
+            mem.write(state.wrapping_add(0x76), count);
+        }
+        let scrolls = [0x20u32, 0x24, 0x28]
+            .iter()
+            .any(|&off| mem.read::<f32>(rec.wrapping_add(off)) != 0.0);
+        mem.write(state.wrapping_add(0x77), u8::from(scrolls));
+        if mem.read::<u8>(state.wrapping_add(0x77)) != 0 {
+            let vertex_count = |mem: &M| i32::from(mem.read::<i16>(shape.wrapping_add(0x12)));
+            let (env, spare) = env_heaps(mem);
+            let size = vertex_count(mem).cast_unsigned().wrapping_mul(6);
+            let verts = stub::ptr32(crate::heap::bridge::ppp_mem_alloc(mem, env, spare, size));
+            mem.write(state.wrapping_add(0x68), verts);
+            if stub::ptr32(verts) == 0 {
+                return 0;
+            }
+            let (env, spare) = env_heaps(mem);
+            let size = vertex_count(mem).cast_unsigned();
+            let flags = stub::ptr32(crate::heap::bridge::ppp_mem_alloc(mem, env, spare, size));
+            mem.write(state.wrapping_add(0x6c), flags);
+            if stub::ptr32(flags) == 0 {
+                return 0;
+            }
+            // memset(flags, 1, count)
+            let size = vertex_count(mem).cast_unsigned();
+            let dst = stub::ptr32(mem.read(state.wrapping_add(0x6c)));
+            for k in 0..size {
+                mem.write(dst.wrapping_add(k), 1u8);
+            }
+            let src = shape.wrapping_add(mem.read(shape.wrapping_add(8)));
+            let mut i = 0i32;
+            let mut off = 0u32;
+            while i < vertex_count(mem) {
+                for half in [0u32, 2, 4] {
+                    let dst = stub::ptr32(mem.read(state.wrapping_add(0x68)));
+                    let at = off.wrapping_add(half);
+                    let v: u16 = mem.read(src.wrapping_add(at));
+                    mem.write(dst.wrapping_add(at), v);
+                }
+                i += 1;
+                off = off.wrapping_add(6);
+            }
+        }
+        ffx_ps2::vu0::bridge::matrix_identity(mem, state);
+        1
+    }
+
     /// `g_pppDrawMdlInfActive` (`0x00d4b464`): `pppDrawMdlInfDes` clears it.
     pub const MDL_INF_ACTIVE: Global<u32> = Global::new(0x00d4_b464);
 
