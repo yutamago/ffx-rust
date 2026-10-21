@@ -4338,6 +4338,294 @@ pub mod bridge {
         r
     }
 
+    /// `0x00804840` (`opu_matrix_chara`, ours; opus table `0x00c48f30`),
+    /// `(host, cmd)` -> `cmd + 2` (`cmd` for nibbles 3 and 8..): the host
+    /// matrix from the unit's character `h` (`g_EtChrHandles[unit +0x18]`,
+    /// whose `Ch_GetDataScale` is read and dropped). `p` = the parent
+    /// (`opus_parent_get`) with flag 0x800, else the unit. Nibbles 2 and 5
+    /// take the parent and set the flags to 0x800 / 0x4800; with 0 and 4
+    /// they build `opus_rt_m_chara(host, c, f32 unit +0x3c, 0, 0, i8 host
+    /// +0x21e)` turned by unit `+0x30` (`op_rot_m` with flag 0x4000, else
+    /// `op_rt_m` moved by `+0x90`); 7 scales by `unit +0x3c/+0x4c / 256 /
+    /// 1000` (x and z alike, `op_unit_m_scale2`) and `op_rt_m`s. Those
+    /// end with unit `+0xc0` = `p x host` (flag 0x800) or a copy, and
+    /// `Ch_SetOrgMatrix(h, unit +0xc0)`, `Ch_EnClip(h, 0)`. Nibble 1:
+    /// `Ch_SetOrgMatrix(h, 0)`, `Ch_EnClip(h, 1)`. Nibble 6: the rotation
+    /// at host `+0x100` turned into host (`op_rt_m`, times `p` with 0x800),
+    /// host `+0x80` = the base matrix of `h`'s element 1
+    /// (`Ch_OptposGetElement`, `Ch_ElemGetBaseMatrix`), host `+0xb0` =
+    /// that point (`op_apply_m_w1`); unless `opus_chara_center_check(c,
+    /// host +0xb0)` (the second word is the stack's leftover), host `+0x50`
+    /// / `+0x40` = that point through host `+0x100` / host, and host `+0x30`
+    /// pulled half way back from `+0x40` (x and z; y plus half of `+0x54`);
+    /// unit `+0xc0` = host, and `h` set up as above. Without `h` the
+    /// character calls are skipped. Callees through `call`
+    /// (`Ch_GetDataScale` through `fcall`); `local` is the original's
+    /// 16-byte vector.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_matrix_chara<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        // the image's f64s: 1/256, 0.001 (as an f32) and 0.5
+        let konst = |mem: &M, a: u32| mem.read::<f64>(g(mem, a));
+        let (k256, k1000, half) = (
+            konst(mem, 0x00b5_0198),
+            konst(mem, 0x00b4_7c68),
+            konst(mem, 0x00b9_2220),
+        );
+        let u = unit(mem, host);
+        let c = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let h = crate::et::bridge::CHR_HANDLES.ptr(mem).at(c).get(mem);
+        let at = |k: u32| host.wrapping_add(k);
+        let ua = |k: u32| u.wrapping_add(k);
+        let f = g(mem, 0x0082_ab60);
+        fcall(mem, f, &[h]);
+        let flags = |mem: &M| mem.read::<u16>(at(0x21a));
+        let mut parent = if flags(mem) & 0x800 != 0 {
+            go(mem, 0x0080_1f00, &[host, u])
+        } else {
+            u
+        };
+        // opus_rt_m_chara on `m` from the unit's scale word
+        let chara = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, m: u32| {
+            let battle = i32::from(mem.read::<i8>(at(0x21e))).cast_unsigned();
+            let k = store(load(mem.read(ua(0x3c))));
+            go(mem, 0x0080_62c0, &[m, c, k, 0, 0, battle]);
+        };
+        let set_up = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, m: u32| {
+            if h != 0 {
+                go(mem, 0x0082_b3e0, &[h, m]);
+                go(mem, 0x0082_aa30, &[h, 0]);
+            }
+        };
+        let rt_m = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, src: u32| {
+            go(mem, 0x007e_9850, &[host, src, ua(0x30), ua(0x90)]);
+        };
+        match flags(mem) & 0xf000 {
+            0x1000 => {
+                if h != 0 {
+                    go(mem, 0x0082_b3e0, &[h, 0]);
+                    go(mem, 0x0082_aa30, &[h, 1]);
+                }
+                return cmd.wrapping_add(2);
+            }
+            n @ (0 | 0x4000 | 0x2000 | 0x5000) => {
+                if n == 0x2000 || n == 0x5000 {
+                    parent = go(mem, 0x0080_1f00, &[host, u]);
+                    let to: u16 = if n == 0x2000 { 0x800 } else { 0x4800 };
+                    mem.write(at(0x21a), to);
+                }
+                chara(mem, &mut go, host);
+                if flags(mem) & 0x4000 != 0 {
+                    go(mem, 0x007e_9530, &[host, host, ua(0x30)]);
+                } else {
+                    rt_m(mem, &mut go, host);
+                }
+            }
+            0x7000 => {
+                let k = mul(mul(load(mem.read(ua(0x3c))), k256), k1000);
+                let xz = store(k);
+                mem.write(at(0x48), xz);
+                mem.write(at(0x40), xz);
+                let y = mul(k1000, mul(k256, load(mem.read(ua(0x4c)))));
+                mem.write(at(0x44), store(y));
+                go(mem, 0x007e_a730, &[host, at(0x40)]);
+                rt_m(mem, &mut go, host);
+            }
+            0x6000 => {
+                chara(mem, &mut go, at(0x100));
+                rt_m(mem, &mut go, at(0x100));
+                if flags(mem) & 0x800 != 0 {
+                    go(mem, 0x007e_83b0, &[host, parent, host]);
+                }
+                let e = go(mem, 0x0083_5660, &[h, 1, local]);
+                go(mem, 0x0083_3b80, &[h, e, at(0x80)]);
+                go(mem, 0x007e_79a0, &[at(0xb0), at(0x80), local]);
+                if go(mem, 0x0080_0b40, &[c, at(0xb0)]) == 0 {
+                    go(mem, 0x007e_79a0, &[at(0x50), at(0x100), at(0xb0)]);
+                    go(mem, 0x007e_79a0, &[at(0x40), host, at(0xb0)]);
+                    let r = |mem: &M, k: u32| load(mem.read(at(k)));
+                    // each pulled back by half its distance to the point
+                    let back = |a: f64, b: f64| sub(a, mul(sub(b, a), half));
+                    let x = back(r(mem, 0x30), r(mem, 0x40));
+                    mem.write(at(0x30), store(x));
+                    let z = back(r(mem, 0x38), r(mem, 0x48));
+                    mem.write(at(0x38), store(z));
+                    let y = load(store(back(r(mem, 0x34), r(mem, 0x44))));
+                    let y = add(mul(half, r(mem, 0x54)), y);
+                    mem.write(at(0x34), store(y));
+                }
+                go(mem, 0x007e_8010, &[ua(0xc0), host]);
+                set_up(mem, &mut go, ua(0xc0));
+                return cmd.wrapping_add(2);
+            }
+            _ => return cmd,
+        }
+        if flags(mem) & 0x800 != 0 {
+            go(mem, 0x007e_83b0, &[ua(0xc0), parent, host]);
+        } else {
+            go(mem, 0x007e_8010, &[ua(0xc0), host]);
+        }
+        set_up(mem, &mut go, ua(0xc0));
+        cmd.wrapping_add(2)
+    }
+
+    /// `opu_tc_load(host, cmd)` (`0x008085a0`) -> the next command: the
+    /// texture/CLUT cues of the unit's oef (`host +0x360 + 4 u8 unit
+    /// +0x1e`), `n` = `u16 cmd +2`, the cue mask 8 with flag 0x800 (else
+    /// 0x80000000). Nibble 0: `op_oef2_tex_clut_cue_multi(oef, n, n,
+    /// mask)` (`+4`); 4: with `u16 cmd +4` as the last (`+6`); 5:
+    /// `op_oef2_texture_load` / `op_oef2_clut_load` (with 1) of its kind 2
+    /// / 3 record `i16 n` (`+4`); 6: `op_oef2_tex_clut_ovl_clear(mask)`
+    /// (`+2`); 3: `op_oef2_tex_clut_cue_check(mask)` set: host byte
+    /// `+0x210` = 1 and `cmd`, else `+2`. 1: the oef's monster slot
+    /// (`opus_get_monster_index`) with no flags takes the first of the
+    /// byte `0x00c48e60[i16 n]` and twice it that no slot uses
+    /// (`g_OpusMonsterFlags`, 8 bytes), its two record pairs at
+    /// `0x0119ff10`/`0x0119ff50` cleared; flags already set leave it
+    /// (`+4`). 2: a slot without bit 7 whose texture and CLUT positions
+    /// (`opus_monster_tex_pos`/`_clut_pos`, `u16`) are set: unless byte
+    /// `+0x1f` of the kind 2 record `t`, `op_oef2_tex_clut_reset2(oef,
+    /// *t & 0x3fff, *c, op_oef2_tex_pos_set(t, tex),
+    /// op_oef2_clut_change_monster(c, clut))` (`c` the kind 3 record);
+    /// `t`/`c` go into its first free pair (`+4`); bit 7 set: `+4`.
+    /// Without a slot (or a free bit, or positions) it is
+    /// `dbgPrintf` and `+4` in debug mode (`g_OpDebugMode`), else
+    /// `dbgPrintf`, `debug_exit_trace(1)` and on as nibble 3. Others
+    /// `cmd`. Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_tc_load<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let n = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let wide = i32::from(mem.read::<i16>(cmd.wrapping_add(2))).cast_unsigned();
+        let k = u32::from(mem.read::<u8>(unit(mem, host).wrapping_add(0x1e)));
+        let oef: u32 = mem.read(host.wrapping_add(0x360).wrapping_add(4 * k));
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let mask = if flags & 0x800 != 0 { 8 } else { 0x8000_0000 };
+        let monster_flags = g(mem, 0x0119_fef0);
+        let pairs = |mem: &M, slot: u32| {
+            let at = |a: u32| g(mem, a).wrapping_add(slot.wrapping_mul(8));
+            (at(0x0119_ff10), at(0x0119_ff50))
+        };
+        let found = match flags & 0xf000 {
+            0 => {
+                go(mem, 0x007e_4830, &[oef, n, n, mask]);
+                return cmd.wrapping_add(4);
+            }
+            0x1000 => 'slot: {
+                let slot = go(mem, 0x0080_0e80, &[oef]);
+                if slot.cast_signed() < 0 {
+                    break 'slot false;
+                }
+                let own = monster_flags.wrapping_add(slot);
+                if mem.read::<u8>(own) != 0 {
+                    return cmd.wrapping_add(4);
+                }
+                let used = (0..8).fold(0u8, |a, i| a | mem.read::<u8>(monster_flags + i));
+                let mut bit: u8 = mem.read(g(mem, 0x00c4_8e60).wrapping_add(wide));
+                for _ in 0..2 {
+                    if used & bit == 0 {
+                        mem.write(own, bit);
+                        let (a, b) = pairs(mem, slot);
+                        mem.write(a, [0u32; 2]);
+                        mem.write(b, [0u32; 2]);
+                        return cmd.wrapping_add(4);
+                    }
+                    bit = bit.wrapping_add(bit);
+                }
+                false
+            }
+            0x2000 => 'slot: {
+                let slot = go(mem, 0x0080_0e80, &[oef]);
+                if slot.cast_signed() < 0 {
+                    break 'slot false;
+                }
+                if mem.read::<u8>(monster_flags.wrapping_add(slot)) & 0x80 != 0 {
+                    return cmd.wrapping_add(4);
+                }
+                let tex = go(mem, 0x0080_0e50, &[slot]) & 0xffff;
+                if tex == 0 {
+                    break 'slot false;
+                }
+                let clut = go(mem, 0x0080_0e20, &[slot]) & 0xffff;
+                if clut == 0 {
+                    break 'slot false;
+                }
+                let t = go(mem, 0x007e_3810, &[oef, 2, wide]);
+                let c = go(mem, 0x007e_3810, &[oef, 3, wide]);
+                if mem.read::<u8>(t.wrapping_add(0x1f)) == 0 {
+                    let pos = u32::from(mem.read::<u16>(t) & 0x3fff);
+                    let new_tex = go(mem, 0x007e_4ff0, &[t, tex]) & 0xffff;
+                    let first = u32::from(mem.read::<u16>(c));
+                    let new_clut = go(mem, 0x007e_45e0, &[c, clut]) & 0xffff;
+                    go(mem, 0x007e_3e70, &[oef, pos, first, new_tex, new_clut]);
+                }
+                let (a, b) = pairs(mem, slot);
+                for i in 0..2u32 {
+                    if mem.read::<u32>(a.wrapping_add(4 * i)) == 0 {
+                        mem.write(a.wrapping_add(4 * i), t);
+                        mem.write(b.wrapping_add(4 * i), c);
+                        break;
+                    }
+                }
+                return cmd.wrapping_add(4);
+            }
+            0x3000 => true,
+            0x4000 => {
+                let last = u32::from(mem.read::<u16>(cmd.wrapping_add(4)));
+                go(mem, 0x007e_4830, &[oef, n, last, mask]);
+                return cmd.wrapping_add(6);
+            }
+            0x5000 => {
+                let t = go(mem, 0x007e_3810, &[oef, 2, wide]);
+                go(mem, 0x007e_5030, &[t, 1]);
+                let c = go(mem, 0x007e_3810, &[oef, 3, wide]);
+                go(mem, 0x007e_46b0, &[c, 1]);
+                return cmd.wrapping_add(4);
+            }
+            0x6000 => {
+                go(mem, 0x007e_4e40, &[mask]);
+                return cmd.wrapping_add(2);
+            }
+            _ => return cmd,
+        };
+        if !found {
+            // no monster slot: a debug print, and in a release game the
+            // debug exit (which returns here)
+            if mem.read::<u8>(g(mem, 0x0232_2790)) != 0 {
+                let text = g(mem, 0x00b5_88fc);
+                go(mem, 0x0062_f500, &[text]);
+                return cmd.wrapping_add(4);
+            }
+            let text = g(mem, 0x00b5_892c);
+            go(mem, 0x0062_f500, &[text]);
+            go(mem, 0x0062_f510, &[1]);
+        }
+        if go(mem, 0x007e_46d0, &[mask]) != 0 {
+            mem.write(host.wrapping_add(0x210), 1u8);
+            return cmd;
+        }
+        cmd.wrapping_add(2)
+    }
+
     /// `opu_motion`'s motion change: `MsEffectSetMotion(c, m)` for `c` <
     /// 0x20, else with a handle `Ch_ResetMotion(h)`, `Ch_SetSysMotion(h, 1,
     /// m)` and `Ch_GetSeqFrame(h)`; the frame count either returns (None:

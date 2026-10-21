@@ -5662,6 +5662,25 @@ ported! {
         let v = frame.at();
         prog::bridge::ppp_ke_born_rnd4(&mut mem(), obj, key, ctrl, v, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `opu_matrix_chara(host, cmd)` (`0x00804840`): the local vector in
+    /// this shim's frame; `Ch_GetDataScale`'s float popped by the float
+    /// call.
+    opu_matrix_chara @ 0x0080_4840 => extern "C" fn opu_matrix_chara(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        let local = frame.at();
+        opus::bridge::opu_matrix_chara(
+            &mut mem(),
+            host,
+            cmd,
+            local,
+            &mut |_, f, a| call_ptr(f, a),
+            &mut |_, f, a| super::call_cdecl_f64(f, a),
+        )
+    }
+    /// `opu_tc_load(host, cmd)` (`0x008085a0`).
+    opu_tc_load @ 0x0080_85a0 => extern "C" fn opu_tc_load(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_tc_load(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     // ---- round 38 c ----
     /// `setPolyQuad0434(id, quad, setup)` (`0x007128d0`).
     setPolyQuad0434 @ 0x0071_28d0 => extern "C" fn set_poly_quad_0434(id: u32, quad: u32, setup: u32) -> u32 {
