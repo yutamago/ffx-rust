@@ -8887,7 +8887,13 @@ fn round35_allocate_on(t: &mut Twin) {
 /// `dbgPrintf` as a stand-in logging id 2 and its format, and both names
 /// after `Ch_Allocate`'s own format (other callers pass fewer words).
 fn allocate_print_stub(t: &mut Twin, fk: &Fakes) {
-    let fmt = t.a.rebase(0x00b5_94f4);
+    print_stub(t, fk, 0x00b5_94f4, 2);
+}
+
+/// `dbgPrintf` as a stand-in logging id 2 and its format, and two more
+/// words after the format `fmt` only (other callers pass fewer words).
+fn print_stub(t: &mut Twin, fk: &Fakes, fmt: u32, extra: u8) {
+    let fmt = t.a.rebase(fmt);
     let log = fk.log;
     let mut c = vec![0x8b, 0x0d];
     c.extend(log.to_le_bytes()); // mov ecx, [log]
@@ -8895,12 +8901,16 @@ fn allocate_print_stub(t: &mut Twin, fk: &Fakes) {
     c.extend([0x8b, 0x44, 0x24, 0x04, 0x89, 0x41, 0x04]); // [ecx + 4] = fmt
     c.push(0x3d);
     c.extend(fmt.to_le_bytes()); // cmp eax, fmt
-    c.extend([0x75, 0x16]); // jne short (past the 22 bytes below)
-    c.extend([0x8b, 0x44, 0x24, 0x08, 0x89, 0x41, 0x08]); // [ecx + 8] = name 1
-    c.extend([0x8b, 0x44, 0x24, 0x0c, 0x89, 0x41, 0x0c]); // [ecx + 12] = name 2
-    c.extend([0x83, 0x05]);
-    c.extend(log.to_le_bytes());
-    c.extend([0x10, 0xc3]); // add dword [log], 16; ret
+    let mut matched = Vec::new();
+    for k in 0..extra {
+        // [ecx + 8 + 4k] = [esp + 8 + 4k]
+        matched.extend([0x8b, 0x44, 0x24, 8 + 4 * k, 0x89, 0x41, 8 + 4 * k]);
+    }
+    matched.extend([0x83, 0x05]);
+    matched.extend(log.to_le_bytes());
+    matched.extend([8 + 4 * extra, 0xc3]); // add dword [log], n; ret
+    c.extend([0x75, u8::try_from(matched.len()).unwrap()]); // jne past it
+    c.extend(matched);
     c.extend([0x83, 0x05]);
     c.extend(log.to_le_bytes());
     c.extend([0x08, 0xc3]); // add dword [log], 8; ret
@@ -8910,4 +8920,177 @@ fn allocate_print_stub(t: &mut Twin, fk: &Fakes) {
     let mut jmp = vec![0xe9];
     jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
     t.put(f, &jmp);
+}
+
+#[test]
+fn round35_dispose_matches_the_original() {
+    for mut t in twins() {
+        round35_dispose_on(&mut t);
+    }
+}
+
+/// `ChN_DataDispose` and `Ch_Dispose` (battle round 35). `dbgPrintf`,
+/// `yiAssert`, `Sg_CacheDisposeChr`, the magic file, the cloth job wait
+/// and the render instances are stand-ins; the rest runs as the originals
+/// (the chara ones the ports call as their Rust). On the image alone:
+/// keys of no block and of the made-up characters, an inactive character.
+/// On a snapshot each round starts from a fresh copy: a live character's
+/// key (in use), another block's, none; then a live character disposed.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // t, s, c, m, f, a
+fn round35_dispose_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0035_66f0);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let stubs = |s: &mut Twin, fk: &Fakes, fmt: u32, rng: &mut Xorshift| {
+        print_stub(s, fk, fmt, 1);
+        let _ = fk.fake(s, 0x0090_ae50, 3, 4);
+        let _ = fk.fake(s, 0x0084_0e60, 4, 1);
+        let handle = fk.fake(s, 0x009d_a390, 5, 0);
+        let magic = fk.fake(s, 0x009d_a3b0, 6, 0);
+        let _ = fk.fake(s, 0x00a4_4b30, 7, 0);
+        let _ = fk.fake(s, 0x0063_a030, 8, 2);
+        let cloth = fk.fake(s, 0x0063_a160, 9, 1);
+        let _ = fk.fake(s, 0x0063_c390, 10, 2);
+        s.put_u32(handle, [u32::MAX, 0, 3][rng.next() as usize % 3]);
+        s.put_u32(magic, [0x113, 0x112][rng.next() as usize % 2]);
+        s.put_u32(cloth, rng.next());
+    };
+    if t.name == "synthetic" {
+        let fk = Fakes::new(t);
+        stubs(t, &fk, 0x00b5_93fc, &mut rng);
+        let chrs = characters(t, &mut rng);
+        for round in 0..12u32 {
+            fk.reset(t);
+            let key = if round % 2 == 0 {
+                u32::from(rd::<u16>(&t.b, chrs[round as usize % chrs.len()]))
+            } else {
+                rng.next() | 0x8000_0000
+            };
+            let check = round % 3;
+            t.check(
+                &format!("ChN_DataDispose {round}"),
+                0x0082_4f00,
+                &[key, check],
+                |m| {
+                    Res::Int(h::ch_n_data_dispose(m, key, check, &mut |m, f, a| {
+                        call(m, f, a)
+                    }))
+                },
+            );
+        }
+        // an inactive character: Ch_CheckHandle's -1
+        let c = *chrs.last().unwrap();
+        t.put(c + l::ACTIVE, &[0]);
+        t.check("Ch_Dispose inactive", 0x0082_66f0, &[c], |m| {
+            Res::Int(h::ch_dispose(m, c, &mut |m, f, a| call(m, f, a)))
+        });
+        return;
+    }
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let blks = t.a.rebase(0x023c_8d00);
+    let mut reach = [0u32; 4];
+    let mut skipped = 0u32;
+    for round in 0..24u32 {
+        let mut s = Twin {
+            name: t.name,
+            a: Oracle::from_snapshot(&exe, &pages).unwrap(),
+            b: Oracle::from_snapshot(&exe, &pages).unwrap(),
+        };
+        let fk = Fakes::new(&mut s);
+        let dispose = round % 2 == 1;
+        let fmt = if dispose { 0x00b5_950c } else { 0x00b5_93fc };
+        stubs(&mut s, &fk, fmt, &mut rng);
+        let chrs = live_characters(&mut s, &mut rng);
+        let live = &chrs[..chrs.len() - 1];
+        if dispose {
+            let c = live[(round as usize / 2) % live.len()];
+            if round % 6 == 5 {
+                // a block of its own with +0x70 bit 1: no monster effects
+                let blk: u32 = rd(&s.b, c + l::BLK);
+                let f: u8 = rd(&s.b, blk + 0x70);
+                s.put(blk + 0x70, &[f ^ 2]);
+            }
+            // the trigger clear, the player at times this one, a shadow
+            // instance, and at times a +0x874 table of heap blocks
+            s.put(s.a.rebase(0x012f_bda0), &[0]);
+            let player = s.a.rebase(0x0130_0788);
+            s.put_u32(player, if round % 4 == 1 { c } else { rng.next() | 1 });
+            s.put_u32(c + 0x838, if round % 3 == 0 { 0 } else { rng.next() | 1 });
+            let header: u32 = rd(&s.b, c + 0x1c0);
+            let n = u32::from(rd::<u16>(&s.b, header + 8));
+            if round % 4 == 3 && n <= 64 {
+                let malloc = |s: &mut Twin, len: u32| {
+                    let at = s.a.rebase(0x0068_7020);
+                    let x = s.a.call_cdecl(at, &[len]).unwrap();
+                    assert_eq!(s.b.call_cdecl(at, &[len]).unwrap(), x);
+                    x
+                };
+                let table = malloc(&mut s, 4 * n.max(1));
+                for k in 0..n {
+                    let p = if k % 3 == 1 { 0 } else { malloc(&mut s, 0x20) };
+                    s.put_u32(table + 4 * k, p);
+                }
+                s.put_u32(c + 0x874, table);
+                reach[1] += 1;
+            }
+            let what = format!("{}: Ch_Dispose {round} chr {c:#x}", s.name);
+            // the original may fault on a character the snapshot caught
+            // half set up (stale pointers): such rounds are counted, not run
+            let ra = match s.a.call(s.a.rebase(0x0082_66f0), Conv::Cdecl, &[c]) {
+                Ok(r) => r,
+                Err(ffx_oracle::Error::BadAccess(at)) => {
+                    eprintln!("{what}: the original faults at {at:#x}: skipped");
+                    skipped += 1;
+                    continue;
+                }
+                Err(e) => panic!("{what}: {e}"),
+            };
+            let rb = h::ch_dispose(&mut s.b, c, &mut |m, f, a| call(m, f, a));
+            assert_eq!(ra.eax, rb, "{what}: result");
+            assert_eq!(s.a.diff(&mut s.b).unwrap(), [], "{what}: memory");
+            reach[3] += 1;
+            continue;
+        }
+        let in_use: Vec<u32> = live
+            .iter()
+            .map(|&c| u32::from(rd::<u16>(&s.b, c)))
+            .collect();
+        let free_blk = (0..40u32)
+            .map(|k| rd::<u32>(&s.b, blks + 0x12c * k))
+            .find(|id| *id != u32::MAX && !in_use.contains(id));
+        let (key, kind) = match (round / 2) % 3 {
+            0 => (in_use[rng.next() as usize % in_use.len()], 0),
+            1 => {
+                // a block no character uses: one of its own, or a live
+                // character's with every character of that id made inactive
+                let key = free_blk.unwrap_or_else(|| {
+                    let key = in_use[rng.next() as usize % in_use.len()];
+                    for &c in live {
+                        if u32::from(rd::<u16>(&s.b, c)) == key {
+                            s.put(c + l::ACTIVE, &[0]);
+                        }
+                    }
+                    key
+                });
+                (key, 1)
+            }
+            _ => (0x7ff0 | (rng.next() & 0xf), 2),
+        };
+        reach[kind] += 1;
+        let check = rng.next() % 2;
+        let what = format!("{}: ChN_DataDispose {round} key {key:#x}", s.name);
+        s.check(&what, 0x0082_4f00, &[key, check], |m| {
+            Res::Int(h::ch_n_data_dispose(m, key, check, &mut |m, f, a| {
+                call(m, f, a)
+            }))
+        });
+    }
+    eprintln!("{}: dispose reach {reach:?}, {skipped} skipped", t.name);
+    assert!(reach[3] >= 6, "{}: too few Ch_Dispose rounds ran", t.name);
 }

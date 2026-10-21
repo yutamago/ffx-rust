@@ -795,6 +795,172 @@ pub mod bridge {
         mem.write(chr.wrapping_add(0x87c), u8::from(rikku));
         chr
     }
+
+    /// `"SG:Ch_DataDispose:%s -result= "`, `"-1\n"` (dbgPrintf) and the
+    /// in-use assertion's place and text (`yiAssert`).
+    pub const DATA_DISPOSE_FORMATS: [u32; 4] = [0x00b5_93fc, 0x00b5_941c, 0x00b5_9450, 0x00b5_9420];
+    /// `yiAssert(cond, place, fmt, ..)` (`0x0090ae50`).
+    pub const YI_ASSERT: u32 = 0x0090_ae50;
+    /// `Sg_CacheDisposeChr(id)` (main, `0x00840e60`).
+    pub const CACHE_DISPOSE_CHR: u32 = 0x0084_0e60;
+    /// `Ch_BlkDispose(blk)` (`0x008258d0`).
+    pub const BLK_DISPOSE: u32 = 0x0082_58d0;
+
+    /// `ChN_DataDispose(key, check)` (`0x00824f00`): logs the key's name
+    /// (`ch_create_chrname`); a character of that id still in use
+    /// (`Ch_HandleFromId`) gives -1 (logged, and with `check` set an
+    /// assertion naming it); else the model block (`Ch_BlkGetHandleFast`),
+    /// when there is one, is disposed (`Ch_BlkDispose`) and its id's cache
+    /// entry too (`Sg_CacheDisposeChr`); 0.
+    pub fn ch_n_data_dispose<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        check: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let game = |mem: &M, f: u32| mem.rebase(f);
+        let [result, minus, place, text] = DATA_DISPOSE_FORMATS;
+        let name = crate::texanim::bridge::ch_create_chrname(mem, key);
+        call(mem, game(mem, DBG_PRINTF), &[game(mem, result), name]);
+        if ch_handle_from_id(mem, key) != 0 {
+            call(mem, game(mem, DBG_PRINTF), &[game(mem, minus)]);
+            if check != 0 {
+                let name = crate::texanim::bridge::ch_create_chrname(mem, key);
+                let args = [0, game(mem, place), game(mem, text), name];
+                call(mem, game(mem, YI_ASSERT), &args);
+            }
+            return u32::MAX;
+        }
+        let blk = ch_blk_get_handle_fast(mem, key);
+        if blk != 0 {
+            let id: u32 = mem.read(blk);
+            crate::chr::bridge::ch_blk_dispose(mem, blk, call);
+            call(mem, game(mem, CACHE_DISPOSE_CHR), &[id]);
+        }
+        0
+    }
+
+    /// `"SG:Ch_Dispose:%s\n"`.
+    pub const DISPOSE_FORMAT: u32 = 0x00b5_950c;
+    /// `MagicFile_GetHandle()` (system, `0x009da390`).
+    pub const MAGIC_GET_HANDLE: u32 = 0x009d_a390;
+    /// `JobScheduleWait_Ch_Cloth_PerCharacter()` (`0x00a44b30`).
+    pub const CLOTH_JOBS_WAIT: u32 = 0x00a4_4b30;
+    /// `op_et_monster_free(chr)` (vfx, `0x007fc650`).
+    pub const OP_ET_MONSTER_FREE: u32 = 0x007f_c650;
+    /// `graphicCharacterInstanceSetVisible(instance, on)` (render,
+    /// `0x0063c390`).
+    pub const INSTANCE_SET_VISIBLE: u32 = 0x0063_c390;
+    /// `Sg_GetPlayer()` (main, `0x0082d860`).
+    pub const SG_GET_PLAYER: u32 = 0x0082_d860;
+    /// `Sg_SetPlayer(chr)` (main, `0x0082dad0`).
+    pub const SG_SET_PLAYER: u32 = 0x0082_dad0;
+    /// `user_free_thunk(p)` (`0x00687010`).
+    pub const USER_FREE: u32 = 0x0068_7010;
+    /// `graphicCharacterInstanceDestroy(instance, chr)` (render,
+    /// `0x0063a030`).
+    pub const INSTANCE_DESTROY: u32 = 0x0063_a030;
+    /// `graphicCharacterInstanceDestroyClothVertexBuffers(buffers)`
+    /// (render, `0x0063a160`).
+    pub const INSTANCE_DESTROY_CLOTH_BUFFERS: u32 = 0x0063_a160;
+
+    /// `Ch_Dispose(chr)` (`0x008266f0`): an active character (else
+    /// `Ch_CheckHandle`'s -1 back) is logged, unbinds its children, waits
+    /// for the cloth jobs in magic file `0x113`, gives back its CLUTs, its
+    /// monster effects (unless its block's `+0x70` bit 1), goes inactive
+    /// and invisible, stops being the player and Tidus, destroys its cloth
+    /// meshes, frees each model's three buffers (`+0x1bc`, 0x38 bytes
+    /// each, the header's `+6` count, re-read) and the `+0x874` table
+    /// (each non-null of the header's `+8` entries, then itself), its
+    /// texture animation (`+0x6fc` set: `+0x700`), `+0x328`, `+0x1bc`,
+    /// `+0x748`, `+0x6dc`, `+0x32c`, sets the memory-move trigger, destroys
+    /// its render and shadow instances (`+0x830`, `+0x838`, cleared) and
+    /// cloth vertex buffers (`+0x834`, cleared after). Returns the last
+    /// call's EAX.
+    pub fn ch_dispose<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let game = |mem: &M, f: u32| mem.rebase(f);
+        let at = |o: u32| chr.wrapping_add(o);
+        let check = ch_check_handle(mem, chr);
+        if check != 0 {
+            return check.cast_unsigned();
+        }
+        let name: u32 = mem.read(at(4));
+        call(
+            mem,
+            game(mem, DBG_PRINTF),
+            &[game(mem, DISPOSE_FORMAT), name],
+        );
+        ch_unbind_children(mem, chr);
+        if call(mem, game(mem, MAGIC_GET_HANDLE), &[]) != u32::MAX
+            && call(mem, game(mem, MAGIC_GET_ID), &[]) == MAGIC_RIKKU_ID
+        {
+            call(mem, game(mem, CLOTH_JOBS_WAIT), &[]);
+        }
+        crate::texture::bridge::ch_clut_dispose(mem, chr, call);
+        let blk: u32 = mem.read(at(l::BLK));
+        if mem.read::<u8>(blk.wrapping_add(0x70)) & 2 == 0 {
+            call(mem, game(mem, OP_ET_MONSTER_FREE), &[chr]);
+        }
+        mem.write(at(l::ACTIVE), 0u8);
+        let instance: u32 = mem.read(at(l::RENDER_INSTANCE));
+        call(mem, game(mem, INSTANCE_SET_VISIBLE), &[instance, 0]);
+        let tidus = crate::mapping::bridge::TIDUS;
+        if call(mem, game(mem, SG_GET_PLAYER), &[]) == chr || tidus.get(mem) == chr {
+            call(mem, game(mem, SG_SET_PLAYER), &[0]);
+            tidus.set(mem, 0);
+        }
+        let header: u32 = mem.read(at(l::MODEL_HEADER));
+        crate::cloth::bridge::ch_cloth_mesh_destroy(mem, chr, call);
+        let free = game(mem, USER_FREE);
+        let count = |mem: &M, o: u32| u32::from(mem.read::<u16>(header.wrapping_add(o)));
+        let mut i = 0;
+        while i < count(mem, 6) {
+            let model = mem
+                .read::<u32>(at(l::MODELS))
+                .wrapping_add(i * l::MODEL_SIZE);
+            for o in [4, 8, 0xc] {
+                let p: u32 = mem.read(model.wrapping_add(o));
+                call(mem, free, &[p]);
+            }
+            i += 1;
+        }
+        let table: u32 = mem.read(at(0x874));
+        if table != 0 {
+            let mut i = 0;
+            while i < count(mem, 8) {
+                let p: u32 = mem.read(mem.read::<u32>(at(0x874)).wrapping_add(4 * i));
+                if p != 0 {
+                    call(mem, free, &[p]);
+                }
+                i += 1;
+            }
+            let table: u32 = mem.read(at(0x874));
+            call(mem, free, &[table]);
+        }
+        if mem.read::<u32>(at(0x6fc)) != 0 {
+            let id: u32 = mem.read(at(0x700));
+            crate::texanim::bridge::chr_texanim_del(mem, id.cast_signed(), call);
+        }
+        for o in [0x328, l::MODELS, 0x748, 0x6dc, 0x32c] {
+            let p: u32 = mem.read(at(o));
+            call(mem, free, &[p]);
+        }
+        crate::sys::bridge::ch_mem_move_set_trigger(mem);
+        for o in [l::RENDER_INSTANCE, 0x838] {
+            let instance: u32 = mem.read(at(o));
+            call(mem, game(mem, INSTANCE_DESTROY), &[instance, chr]);
+        }
+        let buffers: u32 = mem.read(at(0x834));
+        mem.write(at(l::RENDER_INSTANCE), 0u32);
+        mem.write(at(0x838), 0u32);
+        let r = call(mem, game(mem, INSTANCE_DESTROY_CLOTH_BUFFERS), &[buffers]);
+        mem.write(at(0x834), 0u32);
+        r
+    }
 }
 
 #[cfg(test)]
