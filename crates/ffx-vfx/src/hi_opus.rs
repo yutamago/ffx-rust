@@ -649,4 +649,153 @@ pub mod bridge {
         }
         eax
     }
+
+    /// `f64` 1/4096 (`0x00b50190`).
+    const K_4096TH: u32 = 0x00b5_0190;
+    /// `op_deg_get` (`0x007e7ed0`), which returns its angle in `ST0`.
+    const OP_DEG_GET: u32 = 0x007e_7ed0;
+
+    /// `opp_md_break_pieces_00a744e0(src, out, rec)` (`0x00a744e0`, name
+    /// ours; from `opp_md_break_init_a74410`): the pieces of a breaking
+    /// model. `out[1]` = `n = i16 src +0x10`, `out[0]` = `src[0]`,
+    /// `out[2..4]` = `src +0x28..`, `u16 out +0x10` = `u16 src +0x16`.
+    ///
+    /// Piece `k` (0x20 bytes from `src +0x30`, out 0x100 bytes from `out
+    /// +0x20`): its words `+0..+8` and `+0x14..+0x1c` copied to `+0` and
+    /// `+0x40`; the three vertices `i16 +0xc`, `+0xe`, `+0x10` (`i16`
+    /// triples, 6 bytes each, from `src + [src +8]`) as `f32`s `A`, `B`,
+    /// `C`; the centre `m = f32((B + A + C) / 3)` per axis at `+0x50`, each
+    /// vertex minus it (`f32`) at `+0x10`, `+0x20`, `+0x30`. Twelve random
+    /// values `f32(op_random(f32(i16 rec + r)) + f32(i16 rec + b))` at
+    /// `+0x60..+0x68`, `+0x70..+0x78` (`b` from `rec +6`, `r` from `rec
+    /// +0xc`, two bytes on each) and `+0x90..+0x98`, `+0xa0..+0xa8` (`b`
+    /// from `rec +0x1e`, `r` from `rec +0x24`); `+0x80..+0x88` 0; `+0xb0`
+    /// `i16 rec +0x36`; `+0xb4` `op_random_per(i16 rec +0x3a) + i16 rec
+    /// +0x38`, whose other three words are the last `op_random` result
+    /// (which it leaves in its argument's slot) and the caller's `edi` and
+    /// `esi` (`junk`). With `u16 out +0x12` 1:
+    /// `op_deg_get(0, 0, m.x, m.z, frame - 0x2c)` (through `fcall`) gives
+    /// `+0x58` and the length it stores, `+0x50`. Then with `s = f32(f32(i16
+    /// rec +4) / 4096)`: kind 0 scales `+0x60..+0x68` and `+0x70..+0x78`
+    /// by `s`, kind 1 `+0x60`, `+0x64`, `+0x70`, `+0x74`. Returns `eax` as
+    /// left: `i16 rec +4` after a piece, else `src + [src +8]`.
+    #[allow(clippy::too_many_lines)]
+    pub fn opp_md_break_pieces<M: Mem>(
+        mem: &mut M,
+        src: u32,
+        out: u32,
+        rec: u32,
+        junk: [u32; 2],
+        frame: u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let n = i32::from(mem.read::<i16>(src.wrapping_add(0x10)));
+        mem.write(out.wrapping_add(4), n);
+        mem.write(out, mem.read::<u32>(src));
+        mem.write(out.wrapping_add(8), mem.read::<u32>(src.wrapping_add(0x28)));
+        mem.write(
+            out.wrapping_add(0xc),
+            mem.read::<u32>(src.wrapping_add(0x2c)),
+        );
+        mem.write(
+            out.wrapping_add(0x10),
+            mem.read::<u16>(src.wrapping_add(0x16)),
+        );
+        let verts = src.wrapping_add(mem.read::<u32>(src.wrapping_add(8)));
+        let half = |mem: &M, at: u32| f64::from(mem.read::<i16>(at));
+        let k4096: f64 = mem.read(mem.rebase(K_4096TH));
+        let mut eax = verts;
+        let mut e = src.wrapping_add(0x30);
+        let mut o = out.wrapping_add(0x20);
+        for _ in 0..n.max(0) {
+            for w in [0x14u32, 0x18, 0x1c] {
+                mem.write(o.wrapping_add(w + 0x2c), mem.read::<u32>(e.wrapping_add(w)));
+            }
+            for w in [0u32, 4, 8] {
+                mem.write(o.wrapping_add(w), mem.read::<u32>(e.wrapping_add(w)));
+            }
+            // the vertices' i16s are exact as f32s
+            let vertex = |mem: &M, at: u32| {
+                let v = verts.wrapping_add(
+                    (i32::from(mem.read::<i16>(e.wrapping_add(at))) * 6).cast_unsigned(),
+                );
+                [
+                    half(mem, v),
+                    half(mem, v.wrapping_add(2)),
+                    half(mem, v.wrapping_add(4)),
+                ]
+            };
+            let (a, b, c) = (vertex(mem, 0xc), vertex(mem, 0xe), vertex(mem, 0x10));
+            let m: [u32; 3] = std::array::from_fn(|i| store(div(add(add(b[i], a[i]), c[i]), 3.0)));
+            for (i, &v) in (0u32..).zip(&m) {
+                mem.write(o.wrapping_add(0x50 + 4 * i), v);
+            }
+            for (base, p) in [(0x10u32, a), (0x20, b), (0x30, c)] {
+                for (i, &v) in (0u32..).zip(&m) {
+                    let d = store(sub(p[i as usize], load(v)));
+                    mem.write(o.wrapping_add(base + 4 * i), d);
+                }
+            }
+            let mut last = 0u32;
+            for (to, from) in [
+                (0x60u32, 6u32),
+                (0x64, 8),
+                (0x68, 0xa),
+                (0x70, 0x12),
+                (0x74, 0x14),
+                (0x78, 0x16),
+                (0x90, 0x1e),
+                (0x94, 0x20),
+                (0x98, 0x22),
+                (0xa0, 0x2a),
+                (0xa4, 0x2c),
+                (0xa8, 0x2e),
+            ] {
+                if to == 0x90 {
+                    for z in [0x88u32, 0x84, 0x80] {
+                        mem.write(o.wrapping_add(z), 0f32);
+                    }
+                }
+                let base = half(mem, rec.wrapping_add(from));
+                #[allow(clippy::cast_possible_truncation)] // exact: an i16
+                let range = half(mem, rec.wrapping_add(from + 6)) as f32;
+                // op_random leaves its result in its argument's slot
+                let r = crate::rand::bridge::op_random(mem, range);
+                last = r.to_bits();
+                let r = f64::from(r);
+                mem.write(o.wrapping_add(to), store(add(r, base)));
+            }
+            mem.write(
+                o.wrapping_add(0xb0),
+                i32::from(mem.read::<i16>(rec.wrapping_add(0x36))),
+            );
+            let per = i32::from(mem.read::<i16>(rec.wrapping_add(0x3a))).cast_unsigned();
+            let r = crate::rand::bridge::op_random_per(mem, [per, last, junk[0], junk[1]]);
+            let plus = i32::from(mem.read::<i16>(rec.wrapping_add(0x38))).cast_unsigned();
+            mem.write(o.wrapping_add(0xb4), r.wrapping_add(plus));
+            let kind = |mem: &M| mem.read::<u16>(out.wrapping_add(0x12));
+            if kind(mem) == 1 {
+                let len = frame.wrapping_sub(0x2c);
+                let f = mem.rebase(OP_DEG_GET);
+                let deg = fcall(mem, f, &[0, 0, m[0], m[2], len]);
+                mem.write(o.wrapping_add(0x50), mem.read::<u32>(len));
+                mem.write(o.wrapping_add(0x58), deg);
+            }
+            let s = store(mul(half(mem, rec.wrapping_add(4)), k4096));
+            let scaled: &[u32] = match kind(mem) {
+                0 => &[0x60, 0x64, 0x68, 0x70, 0x74, 0x78],
+                1 => &[0x60, 0x64, 0x70, 0x74],
+                _ => &[],
+            };
+            for &at in scaled {
+                let v = load(mem.read(o.wrapping_add(at)));
+                mem.write(o.wrapping_add(at), store(mul(v, load(s))));
+            }
+            eax = i32::from(mem.read::<i16>(rec.wrapping_add(4))).cast_unsigned();
+            e = e.wrapping_add(0x20);
+            o = o.wrapping_add(0x100);
+        }
+        eax
+    }
 }

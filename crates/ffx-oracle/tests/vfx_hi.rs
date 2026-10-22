@@ -2449,3 +2449,72 @@ fn op_md_x64_draw_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn opp_md_break_pieces_matches_the_original() {
+    use ffx_vfx::rand::bridge::{R, SEEDED};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_44e0);
+        let (src, out, rec) = (p.alloc(0x200), p.alloc(0x20 + 0x100 * 6), p.alloc(0x40));
+        let mut seen = [0u32; 3];
+        for round in 0..1000 {
+            p.fill(src, 0x200, &mut rng);
+            p.fill(out, 0x20 + 0x100 * 6, &mut rng);
+            let n = rng.pick(&[0i16, 1, 2, 3, 5, -1]);
+            p.set(src + 0x10, n);
+            // the vertex table in the middle of the block, so that a
+            // negative vertex number stays inside it
+            p.set(src + 8, 0x160u32);
+            for v in 0..0x30 {
+                let x = rng.pick(&[0i16, 1, -1, 7, 100, -3000, 0x7fff, -0x8000]);
+                let x = if rng.chance(50) {
+                    (rng.next() as i16) >> 4
+                } else {
+                    x
+                };
+                p.set(src + 0x130 + 2 * v, x);
+            }
+            for k in 0..n.max(0).cast_unsigned() {
+                let e = src + 0x30 + 0x20 * u32::from(k);
+                for at in [0xc, 0xe, 0x10] {
+                    p.set(e + at, rng.pick(&[0i16, 1, 2, 3, 4, 5, 6, -1, -8]));
+                }
+            }
+            for i in 0..0x20 {
+                let x = rng.pick(&[0i16, 1, 2, 16, 100, 0x1000, -50, -0x8000]);
+                let x = if rng.chance(30) {
+                    (rng.next() as i16) >> 3
+                } else {
+                    x
+                };
+                p.set(rec + 2 * i, x);
+            }
+            let kind = rng.pick(&[0u16, 0, 1, 1, 2]);
+            p.set(out + 0x12, kind);
+            p.put(R, 0x3f80_0000 | rng.below(0x80_0000));
+            p.put(SEEDED, u32::from(rng.chance(90)));
+            check_deep_n(
+                &mut p,
+                &format!("opp_md_break_pieces round {round}"),
+                0x00a7_44e0,
+                &[src, out, rec],
+                |o, frame| {
+                    Some(hi_opus::bridge::opp_md_break_pieces(
+                        o,
+                        src,
+                        out,
+                        rec,
+                        [STALE[0], STALE[1]],
+                        frame,
+                        &mut |o, f, a| o.call(f, Conv::Cdecl, a).unwrap().st0_f32().unwrap(),
+                    ))
+                },
+            );
+            if n > 0 {
+                seen[usize::from(kind)] += 1;
+            }
+        }
+        assert!(seen.iter().all(|&s| s > 50), "{}: {seen:?}", p.name);
+    }
+}

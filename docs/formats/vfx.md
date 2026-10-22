@@ -928,6 +928,32 @@ of the dot buffer `opus_0582_dot_draw` reads, from the part `rec`: radii
 an `f32`), spread `ftol(+0x38)` (0 when negative), life `ftol(+0x4c) +
 16`, colour `+0xc8`, fade-in 8. It returns the colour.
 
+### Breaking-model pieces
+
+`opp_md_break_pieces_00a744e0(src, out, rec)` (`0x00a744e0`, from
+`opp_md_break_init_a74410`): `out[1]` = `n = i16 src +0x10`, `out[0]` =
+`src[0]`, `out[2..4]` = `src +0x28..`, `u16 out +0x10` = `u16 src +0x16`.
+Piece `k` reads 0x20 bytes from `src +0x30` and fills 0x100 from `out +0x20`:
+words `+0..+8` and `+0x14..+0x1c` copied to `+0` and `+0x40`; the
+vertices `i16 +0xc`, `+0xe`, `+0x10` (`i16` triples from `src + [src +8]`)
+`A`, `B`, `C`; the centre `f32((B + A + C) / 3)` at `+0x50` and each vertex
+minus it at `+0x10`, `+0x20`, `+0x30`. Twelve spreads
+`f32(op_random(i16 rec + r) + i16 rec + b)` go to `+0x60..+0x68`,
+`+0x70..+0x78` (`b` from `rec +6`, `r` = `b + 6`) and `+0x90..+0x98`,
+`+0xa0..+0xa8` (`b` from `rec +0x1e`), with `+0x80..+0x88` 0; `+0xb0` =
+`i16 rec +0x36`, `+0xb4` = `op_random_per(i16 rec +0x3a) + i16 rec +0x38`.
+Kind `u16 out +0x12` 1 replaces `+0x50`/`+0x58` with the length and angle
+of `op_deg_get(0, 0, centre.x, centre.z)`; kind 0 scales the six spreads
+at `+0x60`/`+0x70` by `f32(i16 rec +4 / 4096)`, kind 1 only `+0x60`,
+`+0x64`, `+0x70`, `+0x74`.
+
+`op_random` (`0x007e6700`) stores its result into its own argument slot
+(`fstp [ebp+8]`) before returning it. This function relies on it: the
+slot is the second of the four words `op_random_per` reads, so it gets
+the last spread's draw. The hooked `op_random` cannot write the caller's
+slot (its thunk copies the arguments), so an original that reads the slot
+after a call to it sees the operand there.
+
 ### Map draw
 
 `opp_map_draw_init_00a753f0(b, pos)` (`0x00a753f0`, kind 0 of

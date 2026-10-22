@@ -144,6 +144,17 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x80;
         hi_draw::bridge::op_md_x64_draw(&mut mem(), obj, b, e, [0; 8], frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_md_break_pieces_00a744e0(src, out, rec)`: `op_deg_get`'s
+    /// length cell in a buffer on this shim's stack; `op_random_per`'s two
+    /// stale words (the caller's `edi`, `esi`) as 0.
+    opp_md_break_pieces_00a744e0 @ 0x00a7_44e0 => extern "C" fn opp_md_break_pieces(src: u32, out: u32, rec: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x30]);
+        let mut locals = Locals([0; 0x30]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        hi_opus::bridge::opp_md_break_pieces(&mut mem(), src, out, rec, [0; 2], frame, &mut |_, f, a| super::call_cdecl_f32(f, a))
+    }
     /// `op_vertex_normal_point44_ffx(obj, model, work, chr)`: its locals
     /// in a buffer on this shim's stack.
     op_vertex_normal_point44_ffx @ 0x00a6_d380 => extern "C" fn op_vertex_normal_point44_ffx(_obj: u32, model: u32, work: u32, chr: u32) -> u32 {
