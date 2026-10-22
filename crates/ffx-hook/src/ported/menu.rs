@@ -5029,6 +5029,10 @@ ported! {
     TkMenuCtrlConfig @ 0x008c_b0e0 => extern "C" fn tk_menu_ctrl_config(m: u32) {
         tk::tk_menu_ctrl_config(&mut mem(), m, &mut |_, f, a| call_ptr(f, a));
     }
+    /// `TkMenuCtrlTuto(m)` (a menu slot's control: `TkMenuCloseAll` drops its `eax`).
+    TkMenuCtrlTuto @ 0x008d_b4e0 => extern "C" fn tk_menu_ctrl_tuto(m: u32) {
+        tk::tk_menu_ctrl_tuto(&mut mem(), m, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `UpdateGearCustomizationMenuState(m)`: the original's `eax`.
     UpdateGearCustomizationMenuState @ 0x008d_5830 => extern "C" fn update_gear_customization_menu_state(m: u32) -> u32 {
         // MsGetSaveWeapon's name word

@@ -11508,7 +11508,7 @@
 0x008db3b0 function MenuShop_Price            # (id): TkMn2GetExcelData(id & 0xfff, [0x0186ac28]) first word * shop ratio (0x01326b6c) / 100, at least 1; name ours
 0x008db400 function MenuShop_SellPrice        # (id): AbmapQuarterOrOne(g_TkMenuWShopList, first word of TkMn2GetExcelData(id & 0xfff, [0x0186ac28])); name ours
 0x008db440 function MenuWShop_CountSlots      # 0x0186ac24 = ids before the first 0/0xff among 16 of the shop record; own name
-0x008db4e0 function TkMenuCtrlTuto            # fh v3:exact 0x008db4c0
+0x008db4e0 function TkMenuCtrlTuto            # fh v3:exact 0x008db4c0; (m) void (menu slot 0x16's control): jump table 0x008db748 on +0x1c (0..10); pad history drained (TkGetControlerTrigHist(0, 0, k), k from 1 - TkGetLastSyncVCounter() to 0); entry 0x00c5a868[g_TkMenuTutoChoice] 16 bytes (+0 slot, +4 TOMenuAtelReq arg, +8/+0xc TkCdReadNB file); 3 g_SaveData (0x68c0) saved into 0x0186ac60 and the tutorial save read into 0x008c1b10()'s buffer (0x01871520), 4 its body (+0x40) into g_SaveData, 5 runs slot +0, 6/7 wait for it to end, 9 -> 10 restores g_SaveData and TkMenuMainRemoveMenu(0x16) every call; ported in menu round 34
 0x008db790 function SetFieldConst1c_008db790     # auto-port shape (store constant to field, cdecl): u32[(a0 + 0x1c)] = 0x0; return a0; callers: no direct caller; name ours
 0x008db7a0 function MenuTuto_SetChoice        # (window, i) 0x025d16bc = 1, 0x01871528 = i; own name
 0x008db7e0 function MenuTuto_RestoreNames     # (): 18 names (MsGetSaveChrName 0..17) copied back from the same offsets in *0x01871524 (the tutorial's save copy), and save +0xd1 into MsGetSaveEventAddress(); caller TkMenuCtrlTuto; name ours
@@ -17438,6 +17438,7 @@
 0x0186abac label    g_TkMenuWShopTable        # MenuWShop_GetRecord
 0x0186ac20 label    g_TkMenuWShopList         # u32 id, slot count (+4), ?, table (+0xc) (MenuWShop_CountSlots)
 0x0186ac34 label    g_TkMenuTutoWindows       # 2 tutorial windows (MenuTuto_RestartWindow/2)
+0x01871520 label g_TkMenuTutoBuffer       # the tutorial save's read buffer (0x008c1b10(); TkMenuCtrlTuto states 3/4); name ours
 0x01871524 label    g_TkMenuTutoSaveCopy      # pointer to the tutorial's g_SaveData copy (0x0186ac60, TkMenuCtrlTuto); MenuTuto_RestoreNames
 0x01871528 label    g_TkMenuTutoChoice        # MenuTuto_GetChoice/SetChoice
 0x01871530 label    g_TkMenuPacket            # menu GS packet pointer; TkMenuDrawEnv writes 0x50 bytes at +0x10 and moves it 0x60 on

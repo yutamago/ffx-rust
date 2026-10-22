@@ -20156,3 +20156,83 @@ fn menu_round34_small_match_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+fn menu_round34_ctrl_tuto_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0006) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x0088_8e80u32, 3u8), // TkGetControlerTrigHist
+        (0x008c_a570, 1),      // TkMenuSetDummyControlerFlag
+        (0x0088_d190, 3),      // TkCdReadNB
+        (0x0078_5ed0, 1),      // MsSetSaveConfigEnglish
+        (0x008d_b7e0, 0),      // MenuTuto_RestoreNames
+        (0x008a_ae10, 0),      // TkMenuRefreshPartyList
+        (0x008a_97e0, 0),      // eiAbmParaGet's thunk
+        (0x008c_30d0, 0),      // TkMsSetSaveParamAll
+        (0x008b_e370, 3),      // TOMenuAtelReq
+        (0x008a_b260, 1),      // TkMn2SetMainFrameRatioDiff
+        (0x008a_a100, 2),      // TkMenuMainActiveMenu
+        (0x008a_9b30, 0),      // TkMenuGetPlayerListMax
+        (0x008a_9bf0, 0),      // TkMenuGetSummonListMax
+        (0x0088_6dd0, 1),      // SndSepLock
+        (0x008a_ab20, 1),      // TkMenuMainRemoveMenu
+        (0x0078_51d0, 0),      // MsGetSaveConfigEnglish
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let vcount = seq_stub(&mut t, 0x0088_7dc0, log, 0, &[]);
+    let first = seq_stub(&mut t, 0x008a_8e50, log, 0, &[]);
+    let sync = seq_stub(&mut t, 0x0088_d1c0, log, 1, &[]);
+    let mask = seq_stub(&mut t, 0x008a_a460, log, 0, &[]);
+    let buffer = t.alloc(&vec![0; 0x6a00]);
+    let buf_cell = seq_stub(&mut t, 0x008c_1b10, log, 0, &[]);
+    t.put(buf_cell, buffer);
+    let formats = [
+        (0x00b6_672cu32, 0u8),
+        (0x00b6_6744, 2),
+        (0x00b6_676c, 1),
+        (0x00b6_6780, 1),
+        (0x00b6_6798, 1),
+        (0x00b6_67b0, 0),
+        (0x00b6_67c4, 1),
+    ]
+    .map(|(f, n)| (t.sym(f), n));
+    printf_log_n(&mut t, log, &formats);
+    let m = t.alloc(&[0; 0x40]);
+    for round in 0..1200u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let s = if round % 30 == 29 {
+            t.rng.pick_or_any(&[0xb, 0xffff_ffff])
+        } else {
+            (round / 2) % 0xb
+        };
+        t.put(m + 0x1c, s);
+        let v = t.rng.pick(&[0u32, 1, 2, 4]);
+        t.put(vcount, v);
+        for c in [first, sync] {
+            let v = t.rng.pick(&[0u32, 1]);
+            t.put(c, v);
+        }
+        let v = t.rng.pick_or_any(&[0, 1, 2, 0x40_0000]);
+        t.put(mask, v);
+        let v = t.rng.pick(&[0u32, 1, 2]);
+        t.put(t.sym(0x0187_1528), v);
+        t.put(t.sym(0x0187_1520), buffer);
+        t.put(t.sym(0x0187_1524), buffer + 0x80);
+        if round % 4 == 0 {
+            t.scramble_at(buffer, 0x6a00);
+        }
+        t.twin("TkMenuCtrlTuto", 0x008d_b4e0, &[m], VOID, |o| {
+            tk::tk_menu_ctrl_tuto(o, m, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

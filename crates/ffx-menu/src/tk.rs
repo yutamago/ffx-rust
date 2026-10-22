@@ -28184,6 +28184,182 @@ pub mod bridge {
             _ => {}
         }
     }
+
+    /// `TkMenuCtrlTuto(m)` (`0x008db4e0`, Fahrenheit's name; jump table
+    /// `0x008db748` on `m+0x1c`, 0..=10; a menu slot's `+0` control, its
+    /// `eax` dropped): the tutorial menu, run on a tutorial save. Each
+    /// call first drains the pad history (`TkGetControlerTrigHist(0, 0,
+    /// k)` for `k` from `1 - TkGetLastSyncVCounter()` up to 0). The entry
+    /// of the tutorial [`TUTO_CHOICE`] is 16 bytes at `0x00c5a868` (`+0`
+    /// menu slot, `+4` script request, `+8`/`+0xc` file).
+    /// - 0 `TkMenuSetDummyControlerFlag(1)`, 1; 1 2; 2 waits on
+    ///   `TOMenuGetFirstReadEndFlag`, 3;
+    /// - 3 saves `g_SaveData` (0x68c0 bytes) into `0x0186ac60`
+    ///   ([`TUTO_SAVE_COPY`]) and reads the tutorial save
+    ///   (`TkCdReadNB(+8, +0xc, buffer)`, buffer `0x008c1b10()` kept in
+    ///   `0x01871520`), 4;
+    /// - 4 once `TkCdReadSync(1)` is 0 copies the buffer's body (`+0x40`)
+    ///   into `g_SaveData`, keeps the English option, restores the names,
+    ///   party and parameters, 5;
+    /// - 5 `TOMenuAtelReq(1, 0, +4)`, `TkMn2SetMainFrameRatioDiff(-16)`,
+    ///   `TkMenuMainActiveMenu(+0, 0)` (with `dbgPrintf` lines), 6;
+    /// - 6 and 7 wait for slot `+0` to leave the active mask, 8; 8
+    ///   `SndSepLock(0)`, `TkMn2SetMainFrameRatioDiff(16)`, 9;
+    /// - 9 stores 10 => 10 every call: `TkMenuSetDummyControlerFlag(0)`,
+    ///   the saved `g_SaveData` back, party and parameters, tail
+    ///   `TkMenuMainRemoveMenu(0x16)`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one state machine
+    pub fn tk_menu_ctrl_tuto<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let set = |mem: &mut M, a: u32, v: u32| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        // `memcpy(to, from, 0x68c0)` of g_SaveData's size
+        let copy = |mem: &mut M, to: u32, from: u32| {
+            let mut buf = vec![0u8; 0x68c0];
+            mem.read_bytes(from, &mut buf);
+            mem.write_bytes(to, &buf);
+        };
+        // word `o` of the tutorial's entry, the choice read each time
+        let entry = |mem: &M, o: u32| -> u32 {
+            let k = g(mem, 0x0187_1528);
+            mem.read(
+                at(mem, 0x00c5_a868)
+                    .wrapping_add(k.wrapping_shl(4))
+                    .wrapping_add(o),
+            )
+        };
+        let f = at(mem, 0x0088_7dc0);
+        let mut k = 1i32.wrapping_sub(call(mem, f, &[]).cast_signed());
+        let hist = at(mem, 0x0088_8e80);
+        while k <= 0 {
+            call(mem, hist, &[0, 0, k.cast_unsigned()]);
+            k += 1;
+        }
+        let state_at = m.wrapping_add(0x1c);
+        let put = |mem: &mut M, s: u32| mem.write(state_at, s);
+        let (save, dummy, dbg) = (
+            at(mem, 0x0112_ca90),
+            at(mem, 0x008c_a570),
+            at(mem, 0x0062_f500),
+        );
+        let (party, abm, save_all) = (
+            at(mem, 0x008a_ae10),
+            at(mem, 0x008a_97e0),
+            at(mem, 0x008c_30d0),
+        );
+        let (frame, mask) = (at(mem, 0x008a_b260), at(mem, 0x008a_a460));
+        let mut s = mem.read::<u32>(state_at);
+        loop {
+            match s {
+                0 => {
+                    call(mem, dummy, &[1]);
+                    put(mem, 1);
+                }
+                1 => put(mem, 2),
+                2 => {
+                    let f = at(mem, 0x008a_8e50);
+                    if call(mem, f, &[]) != 0 {
+                        put(mem, 3);
+                    }
+                }
+                3 => {
+                    let f = at(mem, 0x008c_1b10);
+                    let buffer = call(mem, f, &[]);
+                    set(mem, 0x0187_1520, buffer);
+                    let copy_at = at(mem, 0x0186_ac60);
+                    set(mem, 0x0187_1524, copy_at);
+                    copy(mem, copy_at, save);
+                    let (file, size) = (entry(mem, 8), entry(mem, 0xc));
+                    let f = at(mem, 0x0088_d190);
+                    call(mem, f, &[file, size, buffer]);
+                    put(mem, 4);
+                }
+                4 => {
+                    let f = at(mem, 0x0078_51d0);
+                    let english = call(mem, f, &[]);
+                    let f = at(mem, 0x0088_d1c0);
+                    if call(mem, f, &[1]) != 0 {
+                        return;
+                    }
+                    let line = at(mem, 0x00b6_672c);
+                    call(mem, dbg, &[line]);
+                    let body = g(mem, 0x0187_1520).wrapping_add(0x40);
+                    copy(mem, save, body);
+                    let f = at(mem, 0x0078_5ed0);
+                    call(mem, f, &[english]);
+                    let f = at(mem, 0x008d_b7e0);
+                    call(mem, f, &[]);
+                    for f in [party, abm, save_all] {
+                        call(mem, f, &[]);
+                    }
+                    put(mem, 5);
+                }
+                5 => {
+                    let req = entry(mem, 4);
+                    let f = at(mem, 0x008b_e370);
+                    call(mem, f, &[1, 0, req]);
+                    let (k, req) = (g(mem, 0x0187_1528), entry(mem, 4));
+                    let line = at(mem, 0x00b6_6744);
+                    call(mem, dbg, &[line, k, req]);
+                    call(mem, frame, &[0xffff_fff0]);
+                    let slot = entry(mem, 0);
+                    let f = at(mem, 0x008a_a100);
+                    call(mem, f, &[slot, 0]);
+                    let (line, slot) = (at(mem, 0x00b6_676c), entry(mem, 0));
+                    call(mem, dbg, &[line, slot]);
+                    for (f, line) in [(0x008a_9b30, 0x00b6_6780), (0x008a_9bf0, 0x00b6_6798)] {
+                        let f = at(mem, f);
+                        let n = call(mem, f, &[]);
+                        let line = at(mem, line);
+                        call(mem, dbg, &[line, n]);
+                    }
+                    put(mem, 6);
+                }
+                6 | 7 => {
+                    let active = call(mem, mask, &[]);
+                    let bit = 1u32.wrapping_shl(entry(mem, 0));
+                    if active & bit == 0 {
+                        put(mem, 8);
+                    }
+                }
+                8 => {
+                    let f = at(mem, 0x0088_6dd0);
+                    call(mem, f, &[0]);
+                    call(mem, frame, &[0x10]);
+                    let active = call(mem, mask, &[]);
+                    let line = at(mem, 0x00b6_67b0);
+                    call(mem, dbg, &[line]);
+                    let line = at(mem, 0x00b6_67c4);
+                    call(mem, dbg, &[line, active]);
+                    put(mem, 9);
+                }
+                9 => {
+                    put(mem, 10);
+                    s = 10;
+                    continue;
+                }
+                10 => {
+                    call(mem, dummy, &[0]);
+                    let from = g(mem, 0x0187_1524);
+                    copy(mem, save, from);
+                    for f in [party, abm, save_all] {
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x008a_ab20);
+                    call(mem, f, &[0x16]);
+                }
+                _ => {}
+            }
+            return;
+        }
+    }
 }
 
 #[cfg(test)]

@@ -712,6 +712,16 @@ again `+0x46 * 0xec / 4096` higher (mode 1). Then the cursor at
 `0x5a + 0x30 (+0x48 - +0x32)` and the scroll bar `0x00902700(0x1e3,
 0x52, 0xa, 0xfc, top, shown, count)`.
 
+`TkMenuCtrlTuto` (`0x008db4e0`, jump table `0x008db748`) is menu slot
+0x16's control: a tutorial run on a tutorial save. Its entry in
+`0x00c5a868` (16 bytes per `g_TkMenuTutoChoice`) gives the menu slot to
+run (`+0`), the script request (`+4`, `TOMenuAtelReq(1, 0, +4)`) and the
+file to read (`+8`, `+0xc`, `TkCdReadNB`). It saves `g_SaveData`
+(0x68c0 bytes) into `0x0186ac60`, copies the read save's body (from
+`+0x40`) into `g_SaveData`, runs the slot until it leaves the active
+mask, then copies the saved data back and removes itself
+(`TkMenuMainRemoveMenu(0x16)`). The English option survives the swap.
+
 ## Help files
 
 `TKMallocAndReadSPS2(index, page)` (`0x0088ce80`) loads a help `.sps2`
