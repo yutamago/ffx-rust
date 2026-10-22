@@ -678,6 +678,144 @@ pub mod bridge {
         }
     }
 
+    /// `pppDrawShapeRevDraw(obj, key, prog)` (`0x007415a0`, the
+    /// `pppDrawShapeRev` program's draw): [`ppp_draw_shape_x0`]'s request
+    /// without the spell exceptions. Unless the key's shape (`+4`) is
+    /// `0xffff`: the first work area `p = obj + 0xa0 + [[prog +0xc]]`
+    /// gets its random flips once (`pppShapeRandFlip(key, p)` while byte
+    /// `p` is 0), then `pppShapeRevMatrix_00741470(obj, key, prog)`. The
+    /// request at `frame - 0x60` (`frame` the original's aligned `ebp`):
+    /// flags 0x80 (0x880 with key byte `+0xc`, `| 0x400` with `+0xd`),
+    /// `+0x1c` = `obj + 0xa0 + [[prog +0xc] +0x10]` with `+0xe` else 0,
+    /// `+0x10` = `obj +0x50`, `+8` = 0, byte `+0x18` = 0, the colour of the
+    /// work area `[[prog +0xc] +0xc]` ([`crate::mdl::bridge::ee_colour_at`])
+    /// at `+4` (through `g_pppColorConShift`), `g_PppPacketPos` at `+0x14`.
+    /// The time/frame pair is `u16 p +2`/`+4`: render data updated
+    /// (`updateVFXRenderDataShp`, `graphicVFXUpdate`) or made
+    /// (`InitVFXRenderDataShp` with `calculateVFXSP_AlphaFunction` of the
+    /// frame data's blend byte), every frame; then [`advance_shape`].
+    /// Callees through `call`.
+    pub fn ppp_draw_shape_rev<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let offs: u32 = rd(mem, prog.wrapping_add(0xc));
+        let first = rd(mem, offs).wrapping_add(0xa0).wrapping_add(obj);
+        let colours = rd(mem, offs.wrapping_add(0xc)).wrapping_add(obj);
+        if rd(mem, key.wrapping_add(4)) == 0xffff {
+            return;
+        }
+        if mem.read::<u8>(first) == 0 {
+            call(mem, g(mem, 0x0074_19e0), &[key, first]);
+        }
+        call(mem, g(mem, 0x0074_1470), &[obj, key, prog]);
+        let env = rd(mem, ENV_SLOT.get(mem));
+        let shape = rd(mem, key.wrapping_add(4));
+        let slot = rd(mem, env.wrapping_add(0x24)).wrapping_add(shape.wrapping_mul(4));
+        let req = frame.wrapping_sub(0x60);
+        let r = |k: u32| req.wrapping_add(k);
+        let opt = |mem: &M, k: u32| mem.read::<u8>(key.wrapping_add(k)) != 0;
+        let mut flags: u16 = if opt(mem, 0xc) { 0x880 } else { 0x80 };
+        if opt(mem, 0xd) {
+            flags |= 0x400;
+        }
+        mem.write(r(2), flags);
+        let third = if opt(mem, 0xe) {
+            let offs: u32 = rd(mem, prog.wrapping_add(0xc));
+            rd(mem, offs.wrapping_add(0x10))
+                .wrapping_add(0xa0)
+                .wrapping_add(obj)
+        } else {
+            0
+        };
+        mem.write(r(0x1c), third);
+        mem.write(r(0x10), obj.wrapping_add(0x50));
+        mem.write(r(8), 0u32);
+        mem.write(r(0x18), 0u8);
+        let colour = crate::mdl::bridge::ee_colour_at(mem, colours, false, call);
+        let shift = g(mem, 0x00c8_b500);
+        let sh: u32 = mem.read(shift);
+        mem.write(r(4).wrapping_add(sh), colour);
+        mem.write(shift, 0u32);
+        let set = ptr32(rd(mem, slot));
+        let pair = first.wrapping_add(2);
+        let rec = set.wrapping_add((u32::from(mem.read::<u16>(pair.wrapping_add(2))) + 2) * 8);
+        let data = set.wrapping_add(i32::from(mem.read::<i16>(rec)).cast_unsigned());
+        let packet = rd(mem, g(mem, 0x0230_fd2c));
+        mem.write(r(0x14), packet);
+        let inst = |mem: &M| crate::draw::bridge::instance(mem, obj);
+        let [lo, hi] = inst(mem);
+        if call(mem, g(mem, 0x0064_53d0), &[lo, hi]) == 0 {
+            let d = data.wrapping_add(rd(mem, data.wrapping_add(4)));
+            let blend = u32::from(mem.read::<u8>(d.wrapping_add(4)));
+            let alpha = call(mem, g(mem, 0x0071_2c30), &[blend]);
+            let n = u32::from(mem.read::<u16>(pair.wrapping_add(2)));
+            let [lo, hi] = inst(mem);
+            call(mem, g(mem, 0x0071_1460), &[lo, hi, slot, req, n, alpha]);
+        } else {
+            let n = u32::from(mem.read::<u16>(pair.wrapping_add(2)));
+            let [lo, hi] = inst(mem);
+            call(mem, g(mem, 0x0071_b8a0), &[lo, hi, slot, req, n]);
+            let [lo, hi] = inst(mem);
+            call(mem, g(mem, 0x0064_58a0), &[lo, hi]);
+        }
+        advance_shape(mem, pair, key, set, rec);
+    }
+
+    /// `pppNeiDrawShapePointLightDraw(obj, key, prog)` (`0x0074b6a0`, the
+    /// `pppNeiDrawShapePointLight` program's draw; no render of its own):
+    /// unless the key's shape (`+4`) is `0xffff`, with a light (`i32 key
+    /// +0x2c` not -1) the two-word local at `frame - 0x68` (`frame` the
+    /// original's aligned `ebp`) is zeroed and gets the key's four lights
+    /// (`pppNeiPointLightAdd(obj, key + 0xc / +0x14 / +0x1c / +0x24,
+    /// local)`); without, the object's colour through the EE
+    /// ([`crate::mdl::bridge::ee_colour_at`] with `pextlh`, of the work area
+    /// `[[prog +0xc] +4]`), left in the EE registers. Then the shape set's
+    /// time/frame pair at `obj + 0xa0 + [[prog +0xc]]` moves on
+    /// ([`advance_shape`]). Callees through `call`.
+    pub fn ppp_nei_draw_shape_point_light<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let offs: u32 = rd(mem, prog.wrapping_add(0xc));
+        let pair = rd(mem, offs).wrapping_add(0xa0).wrapping_add(obj);
+        let area = rd(mem, offs.wrapping_add(4)).wrapping_add(obj);
+        if rd(mem, key.wrapping_add(4)) == 0xffff {
+            return;
+        }
+        if rd(mem, key.wrapping_add(0x2c)) == u32::MAX {
+            crate::mdl::bridge::ee_colour_at(mem, area, true, call);
+        } else {
+            let local = frame.wrapping_sub(0x68);
+            mem.write(local, [0u32; 2]);
+            for at in [0xcu32, 0x14, 0x1c, 0x24] {
+                call(
+                    mem,
+                    g(mem, 0x0074_b9c0),
+                    &[obj, key.wrapping_add(at), local],
+                );
+            }
+        }
+        let env = rd(mem, ENV_SLOT.get(mem));
+        let shape = rd(mem, key.wrapping_add(4));
+        let set = ptr32(rd(
+            mem,
+            rd(mem, env.wrapping_add(0x24)).wrapping_add(shape.wrapping_mul(4)),
+        ));
+        let rec = set.wrapping_add((u32::from(mem.read::<u16>(pair.wrapping_add(2))) + 2) * 8);
+        advance_shape(mem, pair, key, set, rec);
+    }
+
     /// `pppDrawShapeX0(obj, key, entry)` (`0x00740f60`), `pppDrawShapeX`'s
     /// draw: [`ppp_draw_shape0`] with the key's options and a few spells'
     /// exceptions. `MagicFile_GetMagicId` first (even for shape

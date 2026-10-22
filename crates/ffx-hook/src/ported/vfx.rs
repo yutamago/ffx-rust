@@ -3257,6 +3257,28 @@ ported! {
         part::bridge::ppp_draw_shape0(&mut mem(), obj, key, entry, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
+    /// `pppDrawShapeRevDraw(obj, key, prog)`: its render request in a
+    /// buffer on this shim's stack, as `pppDrawShapeX0`.
+    pppDrawShapeRevDraw @ 0x0074_15a0 => extern "C" fn ppp_draw_shape_rev_draw(obj: u32, key: u32, prog: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        part::bridge::ppp_draw_shape_rev(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
+    /// `pppNeiDrawShapePointLightDraw(obj, key, prog)`: its light local in
+    /// a buffer on this shim's stack.
+    pppNeiDrawShapePointLightDraw @ 0x0074_b6a0 => extern "C" fn ppp_nei_draw_shape_point_light_draw(obj: u32, key: u32, prog: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        part::bridge::ppp_nei_draw_shape_point_light(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `pppDrawShapeX0(obj, key, entry)`: as `pppDrawShape0`.
     pppDrawShapeX0 @ 0x0074_0f60 => extern "C" fn ppp_draw_shape_x0(obj: u32, key: u32, entry: u32) {
         #[repr(C, align(16))]
