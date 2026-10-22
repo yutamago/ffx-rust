@@ -71,3 +71,117 @@ harvest_test!(
     args = 0,
     |m: &mut Oracle, _s| { hp::vibrate_update_volume(&mut OracleHost(m)) }
 );
+
+/// A float call through the emulator: `ST0` of the original at `f`.
+fn fcall(m: &mut Oracle, f: u32, args: &[u32]) -> f64 {
+    let at = m.rebase(f);
+    m.call_f64(at, args).unwrap()
+}
+
+/// [`fcall`] for a port that takes an [`OracleHost`].
+fn fcall_host(h: &mut OracleHost, f: u32, args: &[u32]) -> f64 {
+    fcall(h.0, f, args)
+}
+
+// script round 25 (this machine): ports the drivers reach (frames for the
+// originals' locals well below the call's stack pointer)
+harvest_test!(
+    atel_exec_soft_ware_reset,
+    0x0087_38d0,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::atel_exec_soft_ware_reset(&mut OracleHost(m)) }
+);
+harvest_test!(
+    atel_exec_ctrl_event_init,
+    0x0086_77a0,
+    args = 2,
+    |m: &mut Oracle, s| { hp::atel_exec_ctrl_event_init(&mut OracleHost(m), s.arg(0), s.arg(1)) }
+);
+harvest_test!(
+    atel_apply_chr_dir,
+    0x0087_0360,
+    args = 1,
+    |m: &mut Oracle, s| { hp::atel_apply_chr_dir(&mut OracleHost(m), s.arg(0)) }
+);
+harvest_test!(
+    atel_sync_chr_rot,
+    0x0086_9f90,
+    args = 1,
+    |m: &mut Oracle, s| { hp::atel_sync_chr_rot(m, s.arg(0), fcall) }
+);
+harvest_test!(
+    atel_step_sprites,
+    0x0087_43e0,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::atel_step_sprites(&mut OracleHost(m)) }
+);
+// (no line for AtelDrawSemiTrans 0x00872ca0: its callee Yn_GuideMapProcEx
+// copies a stack word it never wrote into the emulated VU0 registers
+// (0x00c8f8xx-0x00c8f97x), and that leftover differs between the original's
+// frame and the port's call; round25c's test logs the callee instead)
+harvest_test!(
+    atel_set_snd_camera_pos,
+    0x0087_7470,
+    args = 0,
+    |m: &mut Oracle, s| { hp::atel_set_snd_camera_pos(&mut OracleHost(m), s.regs.esp - 0x800) }
+);
+harvest_test!(
+    atel_update_water_status,
+    0x0087_1e50,
+    args = 0,
+    |m: &mut Oracle, s| { hp::atel_update_water_status(&mut OracleHost(m), s.regs.esp - 0x800) }
+);
+harvest_test!(
+    atel_exec_internal_871d10,
+    0x0087_1d70,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::atel_exec_internal_871d10(&mut OracleHost(m)) }
+);
+harvest_test!(
+    atel_sync_turn_end,
+    0x0087_0dc0,
+    args = 2,
+    |m: &mut Oracle, s| { hp::atel_sync_turn_end(&mut OracleHost(m), s.arg(0), s.arg(1)) }
+);
+harvest_test!(
+    atel_apply_polar_move,
+    0x0086_29c0,
+    args = 1,
+    |m: &mut Oracle, s| {
+        hp::atel_apply_polar_move(&mut OracleHost(m), s.arg(0), s.regs.esp - 0x800)
+    }
+);
+harvest_test!(
+    atel_set_event_water_flag,
+    0x0086_5740,
+    args = 1,
+    |m: &mut Oracle, s| { hp::atel_set_event_water_flag(&mut OracleHost(m), s.arg(0)) }
+);
+harvest_test!(
+    atel_update_window_status,
+    0x0087_1f30,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::atel_update_window_status(&mut OracleHost(m)) }
+);
+harvest_test!(
+    atel_update_battle_status,
+    0x0087_1bc0,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::atel_update_battle_status(&mut OracleHost(m), fcall_host) }
+);
+harvest_test!(
+    atel_check_line_cross,
+    0x0086_80a0,
+    args = 4,
+    |m: &mut Oracle, s| {
+        let frame = s.regs.esp - 0x800;
+        hp::atel_check_line_cross(
+            &mut OracleHost(m),
+            s.arg(0),
+            s.arg(2),
+            s.arg(3),
+            frame,
+            fcall_host,
+        )
+    }
+);

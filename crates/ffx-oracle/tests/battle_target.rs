@@ -13093,3 +13093,111 @@ fn screen_process_matches_the_original_on_a_snapshot() {
     };
     screen_process_check(&mut a, &mut b, &mut Xorshift(0x27ca_0302), false);
 }
+
+/// `MsCameraLimits_007c0120` (round 35) on [`near_channel`]'s channels:
+/// the line limits (kinds 0, 2) with their `+8`/`+0xc` at times 0, the
+/// height limits (1, 3) with the position around their bounds, the spline
+/// ones (4, 5) through the original near-point search in both. The scale's
+/// other words are the harness's registers. `MsVectorGetSide`'s two `w`
+/// words are its own frame's garbage in `a`: copied from `a`.
+fn camera_limits(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    buf: u32,
+    reach: &mut [u32; 8],
+) {
+    use ffx_battle::camera::bridge as cam;
+    let h = host();
+    let (side, chan) = near_channel(a, b, rng, buf);
+    let n = 1 + rng.below(5);
+    poke(a, b, chan + 4, &[u8::try_from(n).unwrap()]);
+    for k in 0..n {
+        let e = chan + 0x90 + 0x20 * k;
+        let kind = if rng.below(10) == 0 {
+            rng.next()
+        } else {
+            rng.below(6)
+        };
+        poke(a, b, e, &kind.to_le_bytes());
+        reach[(kind as usize).min(7)] += 1;
+        if rng.below(4) == 0 {
+            poke(a, b, e + 8, &0u32.to_le_bytes());
+        }
+        if rng.below(4) == 0 {
+            poke(
+                a,
+                b,
+                e + 0xc,
+                &[0u32, 0x7fc0_0000][rng.below(2) as usize].to_le_bytes(),
+            );
+        }
+        // a height range around the side's y, sometimes the wrong way round
+        let y = f32::from_bits(ffx_bridge::Mem::read(a, side + 0x54));
+        if rng.below(8) == 0 {
+            let at = e + [0x18, 0x1c][rng.below(2) as usize];
+            poke(a, b, at, &0x8000_0000u32.to_le_bytes());
+        } else if rng.below(2) == 0 && y.is_finite() {
+            let r = f32::from(u8::try_from(rng.below(40)).unwrap()) / 4.0;
+            let (lo, hi) = if rng.below(4) == 0 {
+                (y + r, y - r)
+            } else {
+                (y - r, y + r)
+            };
+            poke(a, b, e + 0x18, &lo.to_bits().to_le_bytes());
+            poke(a, b, e + 0x1c, &hi.to_bits().to_le_bytes());
+        }
+    }
+    zero_stack(a);
+    // `_CIatan` as `x²` here (`fmul st, st`), which the argument's 53 bits
+    // reach (the shared stand-in, `-x`, rounds alike from 24)
+    for o in [&mut *a, &mut *b] {
+        let at = o.rebase(0x0094_9d5c);
+        o.write(at, &[0xd8, 0xc8, 0xc3]).unwrap();
+    }
+    let square = |x: f64| ffx_bridge::x87::store(ffx_bridge::x87::mul(x, x));
+    let args = [side, chan];
+    twin(
+        "MsCameraLimits_007c0120",
+        a,
+        b,
+        cam::CAMERA_LIMITS,
+        &args,
+        ALL,
+        |m| {
+            dm(m, |m| {
+                cam::ms_camera_limits(m, &h, &square, side, chan, Some(HARNESS))
+            })
+        },
+    );
+    let vm = ffx_battle::vector::bridge::VF_M.ptr(a).addr;
+    for at in [vm + 0xc, vm + 0x1c] {
+        let w = a.read(at, 4).unwrap();
+        b.write(at, &w).unwrap();
+    }
+    same("MsCameraLimits_007c0120", a, b);
+}
+
+fn camera_limits_check(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
+    let mut reach = [0u32; 8];
+    dressed_check(a, b, rng, synthetic, (60, 6), |a, b, rng, _, buf| {
+        camera_limits(a, b, rng, buf, &mut reach);
+    });
+    eprintln!("limit kinds: {reach:?}");
+}
+
+#[test]
+fn camera_limits_match_the_original() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    camera_limits_check(&mut a, &mut b, &mut Xorshift(0x35c0_0120), true);
+}
+
+#[test]
+fn camera_limits_match_the_original_on_a_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    camera_limits_check(&mut a, &mut b, &mut Xorshift(0x35c0_0121), false);
+}

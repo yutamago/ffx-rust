@@ -860,3 +860,15 @@ sets C0 for both "below" and unordered, and the code tests C0 for 0 < w).
 The packet is `[0x01a860f0]`; each segment is two `graphicDrawUIAbmapElement`
 quads (kinds 9 and 12) whose texture tile is the packet's bytes `+0x11`,
 `+0x10`.
+
+## The spline near-point search (battle round 35)
+
+`spline_get_near_point(spline, x, y, z, &ox, &oy, &oz, cubic)`
+(`0x00a44120`, `ffx_sg::spline`) moves `g_SplineNearT` (`0x01a85f30`)
+along the spline (count at `+0`, 16-byte points from `+0x10`) towards the
+point nearest to `(x, y, z)`: step `i` (up to 0x28) is `f32(f32(10 /
+g_SplineNearSamples) / f32(i*i + 1))` (`0x01a85f34`); the spline at
+`t - d`, `t + d` and `t` (`TkMtCalcSpline3` when `cubic`, else
+`TkMtCalcSpline`) gives three squared distances, each difference stored as
+an `f32`. Equal side distances end it at `t`; a `t` that leaves 0..1 ends
+it with `t` moved back as the result. The `f32` result is in `ST0`.

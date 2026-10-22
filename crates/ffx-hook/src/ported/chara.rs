@@ -101,6 +101,19 @@ fn st0_cdecl(f: u32, args: &[u32]) -> f64 {
 }
 
 ported! {
+    /// `ChN_DataDispose(key, check)`.
+    ChN_DataDispose @ 0x0082_4f00 => extern "C" fn ch_n_data_dispose(key: u32, check: u32) -> u32 {
+        h::ch_n_data_dispose(&mut mem(), key, check, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_Dispose(chr)`: other modules' callees through the game.
+    Ch_Dispose @ 0x0082_66f0 => extern "C" fn ch_dispose(chr: u32) -> u32 {
+        h::ch_dispose(&mut mem(), chr, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_Allocate(key)`: unported and other modules' callees through
+    /// the game.
+    Ch_Allocate @ 0x0082_4f90 => extern "C" fn ch_allocate(key: u32) -> u32 {
+        h::ch_allocate(&mut mem(), key, &mut |_, f, a| super::call_cdecl(f, a))
+    }
     // ---- finding characters
 
     /// `Ch_BlkGetHandleFast(key)`: the model block whose first word is `key`.

@@ -2863,6 +2863,158 @@ fades the queued separates out and empties the queue;
 event's flag words at `+0x18`. `round24e_save_movie_effects_match_the_original`
 covers them.
 
+### Helpers (script round 25)
+
+Round 25 a: `AtelExecSoftWareReset` (`0x008738d0`) checks, with ctrl work
+0 current, that a soft reset is allowed (`+0` bit 0 set, `+3` bits `0x83`
+and `+0x210` bit 2 clear, `+0x210` bit `0x40` set, no movie
+(`0x0086d940` 0), map not `0x15c` (`0x0086c1c0`), no voice on standby or
+loading) and runs `TkSoftWareReset` when `g_AtelResetRequest`
+(`0x01327108`) is 2, or when allowed and `TkCheckSoftWareReset` agrees.
+`AtelClearShape` (`0x008742b0`) resets the 128 event sprites and frees
+their six effect handles each (`graphicVFXDestroy(i + k*10000, sprite)`,
+the sprite's address as the id's high word), then unloads the event's
+texture list (`g_AtelEventTexListLoaded`, `0x01327140`) by its path
+(`getEventLocTexListPath`). `Atel_TranslateBGSeps_00861020(volume,
+frames, all)` and `AtelEventKickBGSep(header, fade)` (`0x008658d0`) walk
+the event header's separates table (`+0x2c` -> `+0xc`: a count and
+`(id, flags)` pairs): bit 2 marks a background separate, `0x8` one that
+the first also translates with `all`, `0x30` silent (volume 0), `0x80` one
+that starts later (kicked without `fade`, flag 4) and keeps its volume
+unless `0x40`, `0x300` never kicked, `0x1c00` a fade-in (`0x400` 0xf0,
+`0x800` 0x78, `0x1000` 0x168 frames) from 0; the save event's `+0x28`
+halves the volume (`0x3f` for `0x7f`). A separate pending in
+`g_AtelSepLoadList` under the same id is not kicked.
+`Atel_SetWorkerPosXZ_00870970(worker, x, z, keep)` (`Native_0012`,
+`Native_0125`) puts a worker at `(x, 0, z)` (kind 5/6 at `+0x284`, others
+at `+0x558`, kind 4 has none and the original writes through null); for
+the player worker the ctx's camera target `+0x218` takes it (the old one
+to `+0x228`) and the save event's encounter byte and dictionary index
+follow its character. `AtelExecCtrlEventInit_008677a0(ctrl, battle)` runs
+each worker's init (`Script_Run(w, 0, 1)`) until all have `+0x34` bit
+`0x10`, then decodes their signals; its debug strings go to
+`AtelPs2DebugString`, a bare `ret`. `AtelEventSetUpForBattleMusic`
+(`0x00866240`) prepares ctrl work 0 for a battle (field and gravity
+modes, swap works, FP effects of type-`0x5001` workers hidden, UC off and
+back on for the old ctrl work, guide map closed).
+`AtelEventRegistFootInfo` (`0x00865b80`) hands the header's four footstep
+tables (`+0x2c` sub-header `+0x1c`, `+0x20`, `+0x30`, `+0x34`; 16 `u16`
+offsets each) to `SndSetFootSep`. `round25a_reset_shapes_seps_setup_match_the_original`
+covers them (only the workers of the first, `0xb58`-byte class have FP
+slots, so the test fills those only there).
+
+Round 25 b: `AtelAllClearCallbackQue` (`0x008b3cf0`) resets both card
+slots' load positions; `AtelExecVibrate(update)` (`0x008739a0`) sends
+twice the two vibration volumes to pad 0's actuators;
+`Atel_SetChrAltParts_008720e0(chr, on)` swaps a character's model parts 1
+and 2; `Atel_ApplyChrDir_00870360` and `Atel_SyncChrRot_00869f90` move a
+direction between a bound worker's position block (`+0x20`, `+0x34`
+wrapped by `Math_WrapAngle`) and its character;
+`Atel_SetSpriteScale_00874a80(i, x, y)` stores an event sprite's scale
+times 256 (`ftol2_sse`, low 16 bits); `Atel_StepSpriteAnim_00874bf0`
+advances a sprite's frame timer by `0x100` (its animation, from
+`get_ptr32_func(+0x14)`: frame count at `+4`, 8-byte frames whose length
+is at `+0x12` and loop flag `0x80` at `+0x14`); `Atel_LoadEventTexList_00874b70`
+loads the event's texture list. `Atel_SaveLights_0086db20` /
+`Atel_RestoreLights_0086e770` keep the four light colours and three
+directions in `g_AtelSavedLights` (`0x01326d00`) across a battle;
+`Atel_ResetTextLanguage_0086ece0` sets the text language back to the
+build's (`FFXGetAsiaMode`) at a game over and swaps the international data
+when that changed it. `round25b_small_helpers_match_the_original` covers
+them (the light functions on the snapshots only: the image has no scene).
+`SignalSema_copy_006f3000` (an exact copy of the platform `SignalSema`)
+and `0x006db800` / `0x006db8a0` (an 8-slot ring buffer per channel,
+`0x1e8` bytes apart, guarded by Win32 semaphores: push and pop for the
+thread `0x00703a20` serves) are left as platform code.
+
+Round 25 c: `AtelBGSepFade(volume, frames)` (`0x00861000`) is
+`Atel_TranslateBGSeps_00861020` without `all`. `Atel_StepSprites_008743e0`
+steps every active event sprite while they are shown (`0x01327144`,
+`0x01327f4c`) and no movie plays. `AtelDrawSemiTrans` (`0x00872ca0`)
+draws the guide map (`Yn_GuideMapProcEx(show)`): show for ctrl work 0's
+`+3` bit `0x20` without `0x10`, or `0x40`, when the save menu's first
+byte has `0x40`, or for `+3` bit 8; never while `+0x1f4` (unsigned) is
+below 3. `Atel_SetPartyMask_008623b0` keeps the three party members' bits
+in `g_AtelPartyMask` (`0x01326b7c`). `Atel_RegistVibrateSignal_00876590`
+sends a worker's sound and vibration curve as a signal when its `+0xab`
+allows sound `k`. `Native_DrawBarSegment_00855a30` draws one bar segment
+from the cursor `0x013259f4` (width `table(kind) * 0x013259f0 /
+0x013259e8`; the original traps on a zero divisor, the port gives 0).
+`Atel_BattleEndMapStart_008615b0(map)` queues the `"MAPR"` callback when
+the battle ended on another map (`g_AtelBattleEndOtherMap`, `0x01325b88`),
+else restores the map's render, guide map and FP state and ends the
+battle (`Yn_BattleEnd`). `Atel_SetMovieTexture_00873eb0(id, flags)`
+drives the save event's movie state (`+0xe0`: 1 set up, 3 new flags; 2..5
+busy, another id waits through `AtelSetOnMemoryMovieFileWait`).
+`round25c_fade_sprites_guide_party_bar_movie_match_the_original` covers
+them. `AtelOutputEncountStart` (`0x00885a80`) writes a separator line to a
+host-PC log (`AtelPCOpen2`/`AtelPCWrite`): debug; `0x006f3130` creates the
+Iggy pause menu (`FFIggyPauseMenu`) once: PC UI.
+
+Round 25 d: `Atel_RegistVibrateSignalWith_008766d0` is the round 25 c
+vibration signal with a given curve (the worker's own for a negative
+one) and `AtelRegistSignal`. `AtelSetSndCameraPos` (`0x00877470`) makes
+the sound listener matrix `0x01328288`: the camera matrix with the
+player's position as translation (two `FFXVu0InversMatrix` through a
+local), or the camera matrix itself without a player.
+`Atel_TurnToPoint_0086f7f0` stores `Math_YawPitchTo`'s yaw and pitch
+from the worker to a point in its turn block (`+0x174` of its level,
+clamped to 1 for types 5/6, 8 else). `Atel_ShowSprite_008748a0` turns an
+event sprite on with a texture. `AtelUpdateWaterStatus` (`0x00871e50`)
+keeps `g_AtelInWater` (`0x01326b83`): the map's flag (save event `+0x29`
+from `yiGetMapStatus` outside battles), or the camera's y against ctrl
+work 0's water level `+0x208` (level <= y; NaN counts as above).
+`AtelExec_Internal_871d10` (`0x00871d70`) merges the pad history of the
+frames since the last sync into `g_AtelPadHeld` and the words after it.
+`Atel_SetEventPathLang_00879430` points `/ffx/proj/event/xx/` at the text
+language's directory (jump table `0x00879508` with the byte index table
+`0x00879524`: 1 us, 2 fr, 3 es, 4 de, 5 it, 18 uk, else jp).
+`Atel_AddLoveParam_00865650` adds an event's affection (ctx `+4` for
+women, `+6` for men) to a party member once per event jump id (bits from
+the save event's `+0x4c`). `Atel_FindVarSlot_0087bc90` resolves a
+variable reference to its table entry and element.
+`round25d_turn_sprite_water_pad_lang_love_vars_match_the_original` covers
+them. `0x00879b60` reads a host-PC file into a source buffer
+(`AtelPCOpen`, `sceRead`; caller `AtelLoadSourceData`): debug.
+
+Round 25 e: `Atel_TurnToWorker_0086f8a0(worker, target)` records the
+target in the current turn block and turns to it;
+`Atel_SyncTurnEnd_00870dc0(worker, level)` gives the character the
+worker's rotation and ends the level's turn (`+0x48`, mode `u16` at `+2`,
+low 5 bits; mode 5 never ends here) once its direction is the target
+(exact `f32` compares, NaN never equal) or, for modes 3/4, its `+0xc`
+fell below `+8`. `Atel_StreamSeek_00885bf0` points the CD (`GetCD`, its
+`+0x10` select and `+4` seek) at a sound stream's sectors.
+`AtelJumpGameOver` (`0x0086da10`) resets music, sound, filters and the text
+language and jumps to map `0x17`. `Atel_KickBGSepsOnFlag_00865780(header,
+on)` stops or plays the delayed background separates and fades the others
+(`0x3f` with `on`, `0x7f` without, 12 frames). `Native_GetChrOptPos_00a7a980`
+(`Native_5036`, mode 0) stores a character's attachment point into three
+script variables. `Atel_ApplyPolarMove_008629c0` adds a polar step
+(`Math_PolarToVector`) to a bound worker's position and moves its camera
+(type 2) or re-binds it (types 4 and 5).
+`round25e_turns_stream_game_over_seps_match_the_original` covers them (the
+variables there avoid storage 5, the worker itself, and the field
+snapshot's workers with the debug heap's `0xcdcdcdcd` as character handle
+get one of the test's own).
+
+Round 25 f: `Atel_SetEventWaterFlag_00865740(on)` updates the save
+event's water byte `+0x28` and, on a change, the delayed separates and
+water effects. `AtelUpdateWindowStatus` (`0x00871f30`) copies the window
+system's statuses into the message windows (4 reads as 0; the status word
+is the window's `+0x14`, the mode flags `+0x1d`), keeps the ctx's busy bit
+(`+1` bit 4), counts the window countdown `+0x1ea` down and turns the UC
+off and on again when either changes. `AtelUpdateBattleStatus`
+(`0x00871bc0`) leaves ctrl work 0 current, measures the camera target's
+step (`CIsqrt(Math_LengthSq3)`), feeds it to the walk abilities and, with
+encounters allowed, to `MsBattleEncountExe`. `Atel_InitWorkerLevels_0086d300`
+sets every level's three words and resets it; type-1 workers get move and
+turn blocks (speed `0x5a`, pi, pi/64). `Atel_CheckLineCross_008680a0`
+fires trigger 4 (or a vibration signal) when a target's step crosses the
+worker's line at a small enough height gap.
+`round25f_water_windows_battle_levels_lines_match_the_original` covers
+them.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

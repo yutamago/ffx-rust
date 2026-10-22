@@ -2930,6 +2930,44 @@ ported! {
     MsCameraMoveStep_007bcab0 @ 0x007b_cab0 => extern "C" fn ms_camera_move_step(side: u32, other: u32, chan: u32, step: u32) -> u32 {
         camera::ms_camera_move_step(&mut mem(), &crt_trig, &mut call_ptr, side, other, chan, step, None)
     }
+    /// `MsBtlChrRegist(i, key)`: the battle position's frame vector.
+    MsBtlChrRegist @ 0x0079_3670 => extern "C" fn ms_btl_chr_regist(i: u32, key: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        let v = frame.at();
+        ffx_battle::regist::bridge::ms_btl_chr_regist(&mut mem(), &crt_trig, &mut call_ptr, i, key, v)
+    }
+    /// `MsBtlReadPlayerModelProcess(i)`.
+    MsBtlReadPlayerModelProcess @ 0x0078_3b90 => extern "C" fn ms_btl_read_player_model_process(i: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let v = frame.at();
+        ffx_battle::regist::bridge::ms_btl_read_player_model_process(&mut mem(), &crt_trig, &mut call_ptr, i, v);
+    }
+    /// `MsBtlReadMonsterProcess(i)` (its second word is unused).
+    MsBtlReadMonsterProcess @ 0x0078_39b0 => extern "C" fn ms_btl_read_monster_process(i: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        let v = frame.at();
+        ffx_battle::regist::bridge::ms_btl_read_monster_process(&mut mem(), &crt_trig, &mut call_ptr, i, v)
+    }
+    /// `MsBtlReadPlayerProcess(i, mode)`: the positions' frame vector.
+    MsBtlReadPlayerProcess @ 0x0078_3bc0 => extern "C" fn ms_btl_read_player_process(i: u32, mode: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        let v = frame.at();
+        ffx_battle::regist::bridge::ms_btl_read_player_process(&mut mem(), &crt_trig, &mut call_ptr, i, mode, v);
+    }
+    /// `MsBtlWeaponRegist(i, mode, k)`: the weapon actor's position vector.
+    MsBtlWeaponRegist @ 0x0079_38e0 => extern "C" fn ms_btl_weapon_regist(i: u32, mode: u32, k: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        let v = frame.at();
+        ffx_battle::regist::bridge::ms_btl_weapon_regist(&mut mem(), &crt_trig, &mut call_ptr, [i, mode, k], v)
+    }
+    /// `MsCameraLimits_007c0120(side, chan)`: the near-point search through
+    /// the game; the caller's registers (the scale's other words) are not
+    /// known here.
+    MsCameraLimits_007c0120 @ 0x007c_0120 => extern "C" fn ms_camera_limits(side: u32, chan: u32) -> u32 {
+        let mut m = mem();
+        let atan = |x: f64| crt_trig_f64(pos::Trig::Atan, x);
+        camera::ms_camera_limits(&mut target::Dm::new(&mut m), &host(), &atan, side, chan, None)
+    }
     /// `MsCameraNearPoints_007c0d40(_, side, chan)`: the near-point search
     /// through the game; the caller's registers are not known here.
     MsCameraNearPoints_007c0d40 @ 0x007c_0d40 => extern "C" fn ms_camera_near_points(_unused: u32, side: u32, chan: u32) -> u32 {
