@@ -4977,6 +4977,13 @@ ported! {
     TkMenuCtrlMain @ 0x008e_0350 => extern "C" fn tk_menu_ctrl_main(m: u32) -> u32 {
         tk::tk_menu_ctrl_main(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkBtlEndDraw(i)`: `TOMenuDrawKickTmp`'s `eax` (the kind for kinds 0 and 5).
+    TkBtlEndDraw @ 0x008b_c340 => extern "C" fn tk_btl_end_draw(i: i32) -> u32 {
+        // ToGetBtlEasyDigitWidth2's width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_btl_end_draw(&mut mem(), i, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `UpdateGearCustomizationMenuState(m)`: the original's `eax`.
     UpdateGearCustomizationMenuState @ 0x008d_5830 => extern "C" fn update_gear_customization_menu_state(m: u32) -> u32 {
         // MsGetSaveWeapon's name word

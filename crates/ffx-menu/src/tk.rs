@@ -26631,6 +26631,308 @@ pub mod bridge {
             last
         }
     }
+
+    /// `TkBtlEndDraw(i)` (`0x008bc340`, jump table `0x008bd004` on the
+    /// entry's kind): the after-battle results row of [`BTL_END_LIST`]
+    /// entry `i` (14 bytes from `0x01869f20`: `i16 +2` timer, `+4` kind,
+    /// `+6` character, `i8 +0xa` level-up flash). Kinds 0 and 5 draw
+    /// nothing (`eax` the kind). Kind 1 slides the row in by
+    /// `(u16 Math_CosLookup(timer) * -512) / 4096` and kind 4 out by
+    /// `((u16 Math_SinLookup(0x1000 - timer) - 0x1000) << 9) / 4096`
+    /// (both truncated). Other kinds, 2 and 3 included, don't slide.
+    /// The row sits at `x = remapX2(210) + slide`, `y = remapY2(90 i +
+    /// 278)` between `TOMenuOpenPktBuffTmp` and `TOMenuDrawKickTmp`
+    /// (`eax`): its frame (shapes -3 and four `DrawWaterWaveShapeC2`
+    /// strips of the texture row `64 (i + 1)`), the name
+    /// (`ToMakeBtlEasyEdgeFont`, 0.82), the result
+    /// (`BtlEnd_GetResult(chr)`, `ToMakeBtlEasyDigitRight`), the sphere
+    /// level (`TkMenuGetSP`, centred by `ToGetBtlEasyDigitWidth2` into
+    /// `local`) and the AP to the next level (`MsGetNextAP -
+    /// MsGetSaveNextAP`, `"-----"` from sphere level 99). While the
+    /// flash byte is positive a plate `(remapX2(100) * (k + 1))` wide, `k
+    /// = clamp(15 - flash, 0, 2)`, marks the level-up (with its two
+    /// labels at `k = 2`), and the byte counts down. Japanese
+    /// (`TOGetFFXLang() == 0xb`) moves the result 20 left and swaps the
+    /// labels' UV and offsets.
+    ///
+    /// x87: f64 in the original's order, rounded to f32 at every stored
+    /// argument. The original also stores floats into its own argument
+    /// word; that is the caller's dead slot (cdecl), left alone here.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one draw; x, y as in the original
+    pub fn tk_btl_end_draw<M: Mem>(
+        mem: &mut M,
+        i: i32,
+        local: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let entry = at(mem, 0x0186_9f20).wrapping_add(i.cast_unsigned().wrapping_mul(14));
+        let chr = |mem: &M| i32::from(mem.read::<i16>(entry.wrapping_add(6))).cast_unsigned();
+        let rf = |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64, y: bool, v: f32| {
+            store(remap(mem, y, v))
+        };
+        let rel = |mem: &mut M,
+                   remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                   y: bool,
+                   v: f32,
+                   base: f32| { store(add(remap(mem, y, v), f64::from(base))) };
+        let kind = i32::from(mem.read::<i16>(entry.wrapping_add(4)));
+        let timer = i32::from(mem.read::<i16>(entry.wrapping_add(2)));
+        let slide = match kind {
+            0 | 5 => return kind.cast_unsigned(),
+            1 => {
+                let f = at(mem, 0x0088_e750);
+                let c = call(mem, f, &[timer.cast_unsigned()]) & 0xffff;
+                c.cast_signed().wrapping_mul(-0x200) / 0x1000
+            }
+            4 => {
+                let f = at(mem, 0x0088_e730);
+                let s = call(mem, f, &[0x1000i32.wrapping_sub(timer).cast_unsigned()]) & 0xffff;
+                (s.cast_signed() - 0x1000).wrapping_shl(9) / 0x1000
+            }
+            _ => 0,
+        };
+        let f = at(mem, 0x008b_ef30);
+        call(mem, f, &[]);
+        let left = remap(mem, false, 210.0);
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let x = f32::from_bits(store(add(left, f64::from(slide as f32))));
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let row = i.wrapping_mul(0x5a).wrapping_add(0x116) as f32;
+        let y = f32::from_bits(rf(mem, remap, true, row));
+        let shape = at(mem, 0x0090_3bb0);
+        // the frame: shape -3 over the texture row 86 i
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let fi = f64::from(i as f32);
+        let v1 = store(fi * 86.0 + 72.0);
+        let v0 = store(fi * 86.0 + 0.0);
+        let h = rf(mem, remap, true, 72.0);
+        let w = rf(mem, remap, false, 1110.0);
+        let u1 = 1110f32.to_bits();
+        call(
+            mem,
+            shape,
+            &[0xffff_fffd, x.to_bits(), y.to_bits(), w, h, 0, v0, u1, v1],
+        );
+        // four wave strips: (u, ripple, phase, colours, from the right edge)
+        #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+        let v = store(f64::from(i.wrapping_add(1) as f32) * 64.0);
+        let wave = at(mem, 0x008e_7d30);
+        let strips: [(f32, f32, f32, [u32; 2], bool); 4] = [
+            (0.0, 50.0, -20.0, [0x00c5_6870, 0x1ac5_6870], false),
+            (250.0, 50.0, -20.0, [0x1ac5_6870, 0x00c5_6870], true),
+            (300.0, -80.0, -10.0, [0x00c5_6870, 0x33c5_6870], false),
+            (550.0, -80.0, -10.0, [0x33c5_6870, 0x00c5_6870], true),
+        ];
+        for (u, ripple, phase, colours, right) in strips {
+            let h = rf(mem, remap, true, 64.0);
+            let w = rf(mem, remap, false, 250.0);
+            let sx = if right {
+                rel(mem, remap, false, 250.0, x)
+            } else {
+                x.to_bits()
+            };
+            let args = [
+                sx,
+                y.to_bits(),
+                w,
+                h,
+                u.to_bits(),
+                v,
+                250f32.to_bits(),
+                64f32.to_bits(),
+                ripple.to_bits(),
+                phase.to_bits(),
+                colours[0],
+                colours[1],
+            ];
+            call(mem, wave, &args);
+        }
+        let h = rf(mem, remap, true, 70.0);
+        let w = rf(mem, remap, false, 415.0);
+        let sx = rel(mem, remap, false, 1090.0, x);
+        let uv = [689f32, 618.0, 1104.0, 688.0].map(f32::to_bits);
+        call(
+            mem,
+            shape,
+            &[
+                0xffff_fffd,
+                sx,
+                y.to_bits(),
+                w,
+                h,
+                uv[0],
+                uv[1],
+                uv[2],
+                uv[3],
+            ],
+        );
+        // the name
+        let ny = rel(mem, remap, true, 9.0, y);
+        let nx = rel(mem, remap, false, 160.0, x);
+        let f = at(mem, 0x008a_c850);
+        let name = call(mem, f, &[chr(mem)]);
+        let f = at(mem, 0x0090_5930);
+        call(mem, f, &[name, nx, ny, 0, 0x3f51_eb85, 0x3f80_0000]);
+        let lang = at(mem, 0x008a_c2f0);
+        let mut dx = 0.0f32;
+        if call(mem, lang, &[]) == 0xb {
+            dx = -20.0;
+        }
+        // the labels' UV and offsets: (u, u', x, x'), Japanese
+        let (mut ua, mut ub, mut xa, mut xb) = (0.0f32, 0.0f32, 0.0f32, 0.0f32);
+        let japanese = |mem: &mut M,
+                        call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                        o: &mut (f32, f32, f32, f32)| {
+            if call(mem, lang, &[]) == 0xb {
+                *o = (-35.0, 20.0, -10.0, 25.0);
+            }
+        };
+        let mut o = (ua, ub, xa, xb);
+        japanese(mem, call, &mut o);
+        (ua, ub, xa, xb) = o;
+        let k = 0.000_976_562_5;
+        // a shape of the standard order: h, w, then y and x beside the row
+        let put = |mem: &mut M,
+                   remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                   call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                   kind: u32,
+                   hw: (f32, f32),
+                   yx: (f32, f32),
+                   uv: [u32; 4]| {
+            let h = rf(mem, remap, true, hw.0);
+            let w = rf(mem, remap, false, hw.1);
+            let sy = rel(mem, remap, true, yx.0, y);
+            let sx = rel(mem, remap, false, yx.1, x);
+            call(
+                mem,
+                shape,
+                &[kind, sx, sy, w, h, uv[0], uv[1], uv[2], uv[3]],
+            );
+        };
+        // the result's label
+        let label = |ub: f32| {
+            let u1 = store((f64::from(ub) + 434.0) * k);
+            let w = f32::from_bits(store(f64::from(ub) + 55.0));
+            (w, [0x3ebf_0000, 0x3d9a_0000, u1, 0x3dd2_0000])
+        };
+        let (lw, uv) = label(ub);
+        let lx = f32::from_bits(store(f64::from(dx) + 758.0));
+        put(mem, remap, call, 200, (28.0, lw), (33.0, lx), uv);
+        let ry = rel(mem, remap, true, 27.0, y);
+        let rx_at = f32::from_bits(store(f64::from(dx) + 748.0));
+        let rx = rel(mem, remap, false, rx_at, x);
+        let f = at(mem, 0x008b_da10);
+        let result = call(mem, f, &[chr(mem)]);
+        let right = at(mem, 0x0090_55c0);
+        call(mem, right, &[result, rx, ry, 0x25, 0x3f33_3333, 0]);
+        put(
+            mem,
+            remap,
+            call,
+            200,
+            (28.0, 384.0),
+            (2.0, 1096.0),
+            [0x3ebc_0000, 0x3dfe_0000, 0x3f3e_0000, 0x3e1c_0000],
+        );
+        put(
+            mem,
+            remap,
+            call,
+            0xffff_ffff,
+            (33.0, 208.0),
+            (29.0, 844.0),
+            [0, 603f32.to_bits(), 208f32.to_bits(), 636f32.to_bits()],
+        );
+        let h = rf(mem, remap, true, 75.0);
+        let w = rf(mem, remap, false, 75.0);
+        let up = remap(mem, true, 3.0);
+        let sy = store(sub(f64::from(y), up));
+        let sx = rel(mem, remap, false, 1038.0, x);
+        let uv = [0x3ef9_0000, 0x3f16_c000, 0x3f0f_4000, 0x3f29_8000];
+        call(
+            mem,
+            shape,
+            &[0x3d, sx, sy, w, h, uv[0], uv[1], uv[2], uv[3]],
+        );
+        let mut o = (ua, ub, xa, xb);
+        japanese(mem, call, &mut o);
+        (ua, ub, xa, xb) = o;
+        // the sphere level's label
+        let level = |ua: f32, ub: f32, xa: f32, xb: f32, x0: f32, u0: f64, u1: f64| {
+            let u1 = store((f64::from(ub) + u1) * k);
+            let u0 = store((f64::from(ua) + u0) * k);
+            let w = f32::from_bits(store(f64::from(xb) + 144.0));
+            let sx = f32::from_bits(store(f64::from(xa) + f64::from(x0)));
+            (w, sx, [u0, 0x3da8_0000, u1, 0x3de8_0000])
+        };
+        let (lw, lx, uv) = level(ua, ub, xa, xb, 935.0, 834.0, 978.0);
+        put(mem, remap, call, 0x3d, (32.0, lw), (32.0, lx), uv);
+        let sp = at(mem, 0x008a_9b80);
+        let n = call(mem, sp, &[chr(mem)]);
+        let f = at(mem, 0x0090_5230);
+        call(mem, f, &[n, local, 0x3f33_3333, 0]);
+        let sy = rel(mem, remap, true, 16.0, y);
+        let r = remap(mem, false, 1076.0);
+        let half = mul(load(mem.read::<u32>(local)), 0.5);
+        let sx = store(sub(add(r, f64::from(x)), half));
+        let n = call(mem, sp, &[chr(mem)]);
+        let f = at(mem, 0x0090_5550);
+        call(mem, f, &[n, sx, sy, 0, 0x3f33_3333, 0]);
+        let mut o = (ua, ub, xa, xb);
+        japanese(mem, call, &mut o);
+        (ua, ub, xa, xb) = o;
+        // the AP's label
+        let (lw, uv) = label(ub);
+        put(mem, remap, call, 200, (28.0, lw), (34.0, 1348.0), uv);
+        let f = at(mem, 0x008b_da50);
+        if call(mem, f, &[chr(mem)]).cast_signed() < 99 {
+            let ay = rel(mem, remap, true, 28.0, y);
+            let ax = rel(mem, remap, false, 1333.0, x);
+            let f = at(mem, 0x0078_4e90);
+            let next = call(mem, f, &[chr(mem)]);
+            let f = at(mem, 0x0078_52b0);
+            let saved = call(mem, f, &[chr(mem)]);
+            call(
+                mem,
+                right,
+                &[next.wrapping_sub(saved), ax, ay, 0x25, 0x3f33_3333, 0],
+            );
+        } else {
+            let ay = rel(mem, remap, true, 38.0, y);
+            let ax = rel(mem, remap, false, 1210.0, x);
+            let (f, dashes) = (at(mem, 0x0090_1660), at(mem, 0x00b5_029c));
+            call(mem, f, &[dashes, ax, ay, 0x25, 0x3f33_3333, 0]);
+        }
+        let flash_at = entry.wrapping_add(0xa);
+        let flash = mem.read::<i8>(flash_at);
+        if flash > 0 {
+            let k2 = (15 - i32::from(flash)).clamp(0, 2);
+            let h = rf(mem, remap, true, 54.0);
+            let wide = remap(mem, false, 100.0);
+            #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+            let w = store(mul(wide, f64::from((k2 + 1) as f32)));
+            let py = rel(mem, remap, true, 32.0, y);
+            let px = rel(mem, remap, false, 1110.0, x);
+            let f = at(mem, 0x008f_5f70);
+            call(mem, f, &[px, py, w, h, 0xa]);
+            if k2 == 2 {
+                let (lw, lx, uv) = level(ua, ub, xa, xb, 1152.0, 834.0, 978.0);
+                put(mem, remap, call, 0x3d, (32.0, lw), (43.0, lx), uv);
+                let u1 = store((f64::from(ub) + 680.0) * k);
+                let u0 = store((f64::from(ua) + 614.0) * k);
+                let w = f32::from_bits(store(f64::from(xb) + 66.0));
+                let lx = f32::from_bits(store(f64::from(xa) + 1265.0));
+                let uv = [u0, 0x3f1b_4000, u1, 0x3f23_8000];
+                put(mem, remap, call, 0x3d, (33.0, w), (43.0, lx), uv);
+            }
+            mem.write(flash_at, flash.wrapping_sub(1));
+        }
+        let f = at(mem, 0x008b_ea20);
+        call(mem, f, &[])
+    }
 }
 
 #[cfg(test)]

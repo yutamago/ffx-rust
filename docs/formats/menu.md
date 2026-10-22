@@ -854,6 +854,27 @@ otherwise each spoil is added (`MsAddEquipment_007ab910`). It ends with
 four `Math_SemicircleTable`s of radius 12 (`0x01869f90` 0x15 entries,
 `0x01869fc0` 0x79, `0x0186a0b8` 0x2c, `0x0186a118` 0x22).
 
+The battle-end list's entries are 14 bytes from `0x01869f20` (count
+byte at `0x01869f18`): `i16 +2` timer, `+4` kind, `+6` character and an
+`i8 +0xa` level-up flash counter. `TkBtlEndDraw(i)` (`0x008bc340`, jump
+table `0x008bd004`) draws entry `i`'s results row. Kinds 0 and 5 draw
+nothing. Kind 1 slides the row in from the left by `(u16
+Math_CosLookup(timer) * -512) / 4096` and kind 4 slides it out by
+`((u16 Math_SinLookup(0x1000 - timer) - 0x1000) << 9) / 4096`; any other
+kind stays put. The row sits at `x = remapX2(210) + slide`, `y =
+remapY2(90 i + 278)`. It is drawn between `TOMenuOpenPktBuffTmp` and
+`TOMenuDrawKickTmp`: a frame (shape -3 over texture rows `86 i .. 86 i +
+72`), four `DrawWaterWaveShapeC2` strips on texture row `64 (i + 1)`, a
+second frame, the name, the battle result (`BtlEnd_GetResult`), the
+sphere level centred on its `ToGetBtlEasyDigitWidth2` width, and the AP
+still needed (`MsGetNextAP - MsGetSaveNextAP`, or `"-----"` once
+`BtlEnd_GetSP` reaches 99). The strips' colour words (`0x00c56870`,
+`0x1ac56870`, `0x33c56870`) are plain numbers, not addresses. While the
+flash counter is positive, a plate `remapX2(100) * (k + 1)` wide marks
+the level-up (`k = clamp(15 - flash, 0, 2)`), gets its two labels at
+`k = 2`, and the counter drops by one each draw. In Japanese the result
+moves 20 left and the labels take other UVs and offsets.
+
 Two battle-end pages slide in by an integer `dx` (as `f32`, added to the
 remapped x): `BtlEnd_DrawGilPage_008bbb10` (`0x008bbb10`) draws the gil
 plate (`(210, 700)` size `740 x 60`, sheet cell 12) and two

@@ -19601,3 +19601,84 @@ fn menu_round34_ctrl_main_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_btl_end_draw_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0003) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x0088_e750u32, 1u8), // Math_CosLookup
+        (0x0088_e730, 1),      // Math_SinLookup
+        (0x008b_ef30, 0),      // TOMenuOpenPktBuffTmp
+        (0x0090_3bb0, 9),      // TOMkpShapeXYWHUV
+        (0x008e_7d30, 12),     // DrawWaterWaveShapeC2
+        (0x008a_c850, 1),      // TOGetSaveChrName
+        (0x0090_5930, 6),      // ToMakeBtlEasyEdgeFont
+        (0x008b_da10, 1),      // BtlEnd_GetResult
+        (0x0090_55c0, 6),      // ToMakeBtlEasyDigitRight
+        (0x008a_9b80, 1),      // TkMenuGetSP
+        (0x0090_5550, 6),      // ToMakeBtlEasyDigit2
+        (0x0090_1660, 6),      // TOMkpCrossEasyStrFontSClut
+        (0x0078_4e90, 1),      // MsGetNextAP
+        (0x0078_52b0, 1),      // MsGetSaveNextAP
+        (0x008f_5f70, 5),      // TODrawMenuPlateXYWHType
+        (0x008b_ea20, 0),      // TOMenuDrawKickTmp
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // ToGetBtlEasyDigitWidth2(value, &width, scale, extra): the width from
+    // a cell; the out pointer (a frame local) is not logged
+    let width = t.alloc(&[0; 4]);
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]; // mov eax, [esp+8]; mov edx, [width]
+    extra.extend(width.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let wcell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0090_5230, &[0, 2, 3], wcell, &extra);
+    jump_stub(&mut t, 0x0090_5230, &code);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let level = seq_stub(&mut t, 0x008b_da50, log, 1, &[]);
+    let list = t.sym(0x0186_9f20);
+    for round in 0..3000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let i = t.rng.pick(&[0u32, 1, 2, 3, 4, 5, 6, 7]);
+        let entry = list + 14 * i;
+        let b = t.rng.bytes(14);
+        t.put_bytes(entry, &b);
+        let kind = t.rng.pick(&[1u16, 1, 2, 3, 4, 4, 0, 5, 6, 0xffff, 0x8001]);
+        t.put(entry + 4, kind);
+        let flash = t.rng.pick(&[0u8, 1, 12, 13, 14, 15, 16, 0x7f, 0x80, 0xff]);
+        t.put(entry + 0xa, flash);
+        let cos = t.rng.pick_or_any(&[0, 0x1000, 0xffff, 0x8000, 0x1_0800]);
+        t.put(cells[0], cos);
+        let sin = t.rng.pick_or_any(&[0, 0x1000, 0xffff, 0x8000, 0x1_0800]);
+        t.put(cells[1], sin);
+        let v = t.rng.pick_or_any(&[0xb, 0xb, 0, 1]);
+        t.put(lang, v);
+        let v = t.rng.pick_or_any(&[98, 99, 100, 0, 0xffff_ffff]);
+        t.put(level, v);
+        let v = if round % 3 == 0 {
+            quiet_float(&mut t)
+        } else {
+            t.rng.pick(&[0f32, 24.0, 37.5, -8.0, 1e30]).to_bits()
+        };
+        t.put(width, v);
+        t.twin("TkBtlEndDraw", 0x008b_c340, &[i], U32, |o| {
+            w(tk::tk_btl_end_draw(
+                o,
+                i.cast_signed(),
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
