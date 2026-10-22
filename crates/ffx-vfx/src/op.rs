@@ -5793,6 +5793,35 @@ pub mod bridge {
         ret
     }
 
+    /// `opp_weapon_shadow_00813410(host, battle)` (`0x00813410`, ours;
+    /// `opp_main`'s handler 5, `0x00c48e8c`): for the host's part (`+0x220`)
+    /// `battle +0x54` = `weaponShadowDraw_008138d0(part +0xbc, ftol(f32
+    /// part +0x44), battle +0x54, part +0xc8, part +0xa8, u16 part +0xc2)`
+    /// (through `call`), which it also returns.
+    pub fn opp_weapon_shadow<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        battle: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let part = rd(mem, host.wrapping_add(0x220));
+        let t = f64::from(mem.read::<f32>(part.wrapping_add(0x44)));
+        let t = ffx_bridge::x87::ftol(mem, t);
+        let args = [
+            rd(mem, part.wrapping_add(0xbc)),
+            t,
+            rd(mem, battle.wrapping_add(0x54)),
+            rd(mem, part.wrapping_add(0xc8)),
+            rd(mem, part.wrapping_add(0xa8)),
+            u32::from(mem.read::<u16>(part.wrapping_add(0xc2))),
+        ];
+        let f = Global::<u32>::new(0x0081_38d0).ptr(mem).addr;
+        let r = call(mem, f, &args);
+        mem.write(battle.wrapping_add(0x54), r);
+        r
+    }
+
     /// `op_mul_m33(dst, b, c)` (`0x007e8b00`), the 3x3 part of a matrix
     /// product on the emulated VU0: after the debug trace (`dbgPrintf`,
     /// line 0x674) and the EE call parameters (`AsmEmuSetFuncParam0..3`:

@@ -1951,6 +1951,136 @@ pub mod bridge {
         }
     }
 
+    /// `0x00755430` (`pppDrawRainLines`, ours; `(obj, def, ctrl)`, called by
+    /// `pppDrawRainDraw`), `frame` the original's `ebp`: the drops of
+    /// [`ppp_draw_rain_alloc`] (`ptr32(obj + [[ctrl +0xc] +4] + 0xa4)`, `def
+    /// +8` of them) as line render data. The transform at `frame - 0x64` is
+    /// `ScreenProjection` times `g_pppCameraMatrix` (`FFXVu0MulMatrix`); the
+    /// line record at `frame - 0xbc` holds the lines (`user_malloc(n
+    /// 0x38)`), their count and an identity matrix. The colour: the current
+    /// part's `u16 +0x70..+0x76` times the work area's `i16 +0xa0..+0xa6`
+    /// (`[[ctrl +0xc]]`), `>> 19`. Each drop: its position (`frame - 0x24`;
+    /// also to `g_Vu0_VfMove`) and position + velocity (`+0x20`, lane by
+    /// lane through `g_Vu0_VfMove`, the velocity also to `0x00c8f970`; at
+    /// `frame - 0x14`) through `sceGsSwapDBuff(m, a, 2)` and
+    /// `Ch_SysGetScreenMatrixPtr` of each; when all three give 0 a line
+    /// (0x38 bytes): `a.xyz`, the colour `f32(ftol(c))` at `+0xc..+0x18`,
+    /// `b.xyz` at `+0x1c`, the colour's first three again at `+0x28` and 0.
+    /// Then `InitVFXRenderDataLine(inst, record, 0)` without render data,
+    /// else `updateVFXRenderDataLine(inst, record)` and `graphicVFXUpdate`;
+    /// last `user_free(cursor - n 0x38)` (the original's pointer: not the
+    /// allocation when drops were left out). Callees through `call`;
+    /// returns what `user_free` leaves in `eax`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_draw_rain_lines<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, round_trip, store};
+        use ffx_system::stub::ptr32;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let offs = rd(mem, ctrl.wrapping_add(0xc));
+        let area = rd(mem, offs);
+        let drops = ptr32(rd(
+            mem,
+            obj.wrapping_add(rd(mem, offs.wrapping_add(4)))
+                .wrapping_add(0xa4),
+        ));
+        let at = |o: u32| frame.wrapping_sub(o);
+        let ident = at(0x120);
+        let mut unit = [0f32; 16];
+        for k in 0..4 {
+            unit[5 * k] = 1.0;
+        }
+        mem.write(ident, unit);
+        let m = at(0x64);
+        call(mem, g(mem, 0x0076_6ae0), &[m]);
+        call(mem, g(mem, 0x006e_d5c0), &[m, m, g(mem, CAMERA_MATRIX)]);
+        let rec = at(0xbc);
+        mem.write(rec.wrapping_add(8), unit);
+        let n = rd(mem, def.wrapping_add(8));
+        let buf = call(mem, g(mem, 0x0068_7020), &[n.wrapping_mul(0x38)]);
+        mem.write(rec, buf);
+        mem.write(rec.wrapping_add(4), 0u32);
+        let part = rd(mem, g(mem, 0x0230_ffe4));
+        let colour: [u32; 4] = std::array::from_fn(|k| {
+            let k = u32::try_from(k).unwrap_or(0);
+            let p = u32::from(mem.read::<u16>(part.wrapping_add(0x70 + 2 * k)));
+            let w = i32::from(mem.read::<i16>(obj.wrapping_add(area).wrapping_add(0xa0 + 2 * k)));
+            let v = p.cast_signed().wrapping_mul(w) >> 19;
+            store(f64::from(v))
+        });
+        let vf_move = g(mem, 0x00c8_f980);
+        let vf_vel = g(mem, 0x00c8_f970);
+        let (a, b) = (at(0x24), at(0x14));
+        let copy4 = |mem: &mut M, to: u32, from: u32| {
+            for k in 0..4 {
+                let v: u32 = mem.read(from.wrapping_add(4 * k));
+                mem.write(to.wrapping_add(4 * k), v);
+            }
+        };
+        let mut cursor = buf;
+        let mut i = 0u32;
+        while i < rd(mem, def.wrapping_add(8)) {
+            let drop = drops.wrapping_add(0x30 * i);
+            copy4(mem, vf_move, drop);
+            copy4(mem, a, drop);
+            copy4(mem, vf_move, drop);
+            copy4(mem, vf_vel, drop.wrapping_add(0x20));
+            for k in 0..4 {
+                let v: u32 = mem.read(drop.wrapping_add(0x20 + 4 * k));
+                let p: u32 = mem.read(vf_move + 4 * k);
+                mem.write(vf_move + 4 * k, store(add(load(v), load(p))));
+            }
+            copy4(mem, b, vf_move);
+            let keep = call(mem, g(mem, 0x0076_6b80), &[m, a, 2]) == 0
+                && call(mem, g(mem, 0x0062_fc90), &[a]) == 0
+                && call(mem, g(mem, 0x0062_fc90), &[b]) == 0;
+            if keep {
+                let c = colour.map(|x| {
+                    let n = ftol(mem, f64::from(f32::from_bits(x)));
+                    store(f64::from(n.cast_signed()))
+                });
+                for k in 0..4u32 {
+                    mem.write(cursor.wrapping_add(0xc + 4 * k), c[k as usize]);
+                }
+                for k in 0..3u32 {
+                    let x: f32 = mem.read(a.wrapping_add(4 * k));
+                    mem.write(cursor.wrapping_add(4 * k), round_trip(x));
+                }
+                for k in 0..3u32 {
+                    mem.write(cursor.wrapping_add(0x28 + 4 * k), c[k as usize]);
+                }
+                mem.write(cursor.wrapping_add(0x34), 0u32);
+                for k in 0..3u32 {
+                    let x: f32 = mem.read(b.wrapping_add(4 * k));
+                    mem.write(cursor.wrapping_add(0x1c + 4 * k), round_trip(x));
+                }
+                let count = rd(mem, rec.wrapping_add(4));
+                mem.write(rec.wrapping_add(4), count.wrapping_add(1));
+                cursor = cursor.wrapping_add(0x38);
+            }
+            i += 1;
+        }
+        let [lo, hi] = instance(mem, obj);
+        if call(mem, g(mem, GET_RENDER_DATA), &[lo, hi]) == 0 {
+            call(mem, g(mem, 0x0071_12d0), &[lo, hi, rec, 0]);
+        } else {
+            call(mem, g(mem, 0x0071_a0c0), &[lo, hi, rec]);
+            call(mem, g(mem, VFX_UPDATE), &[lo, hi]);
+        }
+        let n = rd(mem, def.wrapping_add(8));
+        call(
+            mem,
+            g(mem, 0x0068_7010),
+            &[cursor.wrapping_sub(n.wrapping_mul(0x38))],
+        )
+    }
+
     /// Where a shape render keeps its locals: offsets below the
     /// original's aligned frame pointer (`ebp`).
     #[derive(Debug, Clone, Copy)]

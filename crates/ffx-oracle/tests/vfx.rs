@@ -9480,6 +9480,134 @@ fn op_shape_draw_eamap_matches_the_original() {
     }
 }
 
+#[test]
+fn opp_weapon_shadow_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_3410);
+        let ret = p.alloc(4);
+        let log = far_recorder(&mut p, 0x0081_38d0, &[0, 0, 0, 0, 0, 0], Some(ret));
+        let (host, part, battle) = (p.alloc(0x240), p.alloc(0x100), p.alloc(0x60));
+        let sse2 = p.sym(ffx_bridge::x87::SSE2_AVAILABLE.sym);
+        for round in 0..300u32 {
+            p.set(log, 0u32);
+            p.fill(host, 0x240, &mut rng);
+            p.set(host + 0x220, part);
+            p.fill(part, 0x100, &mut rng);
+            let t = match rng.below(6) {
+                0 => rng.float(),
+                1 => rng.pick(&[f32::NAN, 3e9, -3e9, -0.5, 2.5]).to_bits(),
+                _ => ranged(&mut rng, -100.0, 100.0),
+            };
+            p.set(part + 0x44, t);
+            p.fill(battle, 0x60, &mut rng);
+            let r = rng.next();
+            p.set(ret, r);
+            p.set(sse2, u32::from(rng.chance(50)));
+            p.check(
+                &format!("opp_weapon_shadow round {round}"),
+                0x0081_3410,
+                &[host, battle],
+                |o| {
+                    Some(op::bridge::opp_weapon_shadow(
+                        o,
+                        host,
+                        battle,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn ppp_draw_rain_lines_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_5430);
+        let cells = p.alloc(0x20);
+        let (buf_cell, rd_cell, swap_mask, check_mask) = (cells, cells + 4, cells + 8, cells + 0xc);
+        let logs = [
+            far_recorder(&mut p, 0x0068_7020, &[0], Some(buf_cell)),
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd_cell)),
+            far_recorder(&mut p, 0x0071_12d0, &[0, 0, 12, 0], None),
+            far_recorder(&mut p, 0x0071_a0c0, &[0, 0, 13], None),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0068_7010, &[0], None),
+        ];
+        // sceGsSwapDBuff(m, v, 2): [v +4] & mask; Ch_SysGetScreenMatrixPtr(v):
+        // [v] & mask (0 keeps the drop)
+        for (sym, arg, word, mask) in [
+            (0x0076_6b80u32, 8u8, 4u8, swap_mask),
+            (0x0062_fc90, 4, 0, check_mask),
+        ] {
+            // (the swap's test folds in the transform's word +0x34)
+            let mut c = vec![0x8b, 0x44, 0x24, arg, 0x8b, 0x40, word];
+            if sym == 0x0076_6b80 {
+                // mov ecx, [esp+4]; xor eax, [ecx+0x34]
+                c.extend([0x8b, 0x4c, 0x24, 0x04, 0x33, 0x41, 0x34]);
+            }
+            c.extend([0x23, 0x05]);
+            c.extend(mask.to_le_bytes());
+            c.push(0xc3);
+            let to = p.a.alloc_code(&c).unwrap();
+            assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+            let at = p.sym(sym);
+            let mut j = vec![0xe9];
+            j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+            p.a.write(at, &j).unwrap();
+            p.b.write(at, &j).unwrap();
+        }
+        let (obj, def, ctrl, offs) = (p.alloc(0x200), p.alloc(0x40), p.alloc(0x10), p.alloc(0x10));
+        let (drops, lines, part) = (p.alloc(0x30 * 8), p.alloc(0x38 * 8), p.alloc(0x80));
+        let (cur, cpart, sse2) = (
+            p.sym(0x0230_fd20),
+            p.sym(0x0230_ffe4),
+            p.sym(ffx_bridge::x87::SSE2_AVAILABLE.sym),
+        );
+        for round in 0..600u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(def, 0x40, &mut rng);
+            p.set(def + 8, rng.below(8));
+            p.set(ctrl + 0xc, offs);
+            let (a0, a1) = (0x10 * rng.below(4), 0x10 * rng.below(4));
+            p.set(offs, a0);
+            p.set(offs + 4, a1);
+            p.set(obj + a1 + 0xa4, drops);
+            for k in 0..0x60u32 {
+                let v = if rng.chance(5) {
+                    rng.float()
+                } else {
+                    ranged(&mut rng, -100.0, 100.0)
+                };
+                p.set(drops + 4 * k, v);
+            }
+            p.fill(lines, 0x38 * 8, &mut rng);
+            p.fill(part, 0x80, &mut rng);
+            p.set(cpart, part);
+            p.set(buf_cell, lines);
+            p.set(rd_cell, rng.pick(&[0u32, 1]));
+            p.set(swap_mask, rng.pick(&[0u32, 0, 1, 0x100]));
+            p.set(check_mask, rng.pick(&[0u32, 0, 1, 0x200]));
+            let any = rng.next();
+            p.set(cur, rng.pick(&[0u32, 8, 0x8000_0001, any]));
+            p.set(sse2, u32::from(rng.chance(50)));
+            check_deep3(
+                &mut p,
+                &format!("pppDrawRainLines round {round}"),
+                0x0075_5430,
+                [obj, def, ctrl],
+                |o, frame| {
+                    draw::bridge::ppp_draw_rain_lines(o, obj, def, ctrl, frame, &mut call_original)
+                },
+            );
+        }
+    }
+}
+
 /// A float in `[lo, hi)` with 16 fraction bits, as bits.
 fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
     #[allow(clippy::cast_precision_loss)]

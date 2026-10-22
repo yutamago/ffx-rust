@@ -3076,6 +3076,10 @@ ported! {
         let ebp = frame.at() + 0x174;
         op::bridge::op_shape_draw_eamap(&mut mem(), shape, key, slot, ebp, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_weapon_shadow_00813410(host, battle)`.
+    opp_weapon_shadow_00813410 @ 0x0081_3410 => extern "C" fn opp_weapon_shadow(host: u32, battle: u32) -> u32 {
+        op::bridge::opp_weapon_shadow(&mut mem(), host, battle, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opp_main(battle)`.
     opp_main @ 0x0080_bd50 => extern "C" fn opp_main(battle: u32) -> u32 {
         opus::bridge::opp_main(&mut mem(), battle, &mut |_, f, a| call_ptr(f, a))
@@ -5704,6 +5708,13 @@ ported! {
         let mut frame = super::StackFrame::<17>::new();
         let ebp = frame.at() + 0x44;
         draw::bridge::ppp_draw_rain_alloc(&mut mem(), def, work, ebp, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `pppDrawRainLines_00755430(obj, def, ctrl)`.
+    pppDrawRainLines_00755430 @ 0x0075_5430 => extern "C" fn ppp_draw_rain_lines(obj: u32, def: u32, ctrl: u32) -> u32 {
+        // the original's locals: 0x120 bytes below its ebp
+        let mut frame = super::StackFrame::<0x48>::new();
+        let ebp = frame.at() + 0x120;
+        draw::bridge::ppp_draw_rain_lines(&mut mem(), obj, def, ctrl, ebp, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawRainStep_00755a00(obj, def, ctrl)`: the words
     /// `rcuiScaleVector_copy_00756600` reads past its arguments (the
