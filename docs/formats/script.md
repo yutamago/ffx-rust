@@ -3015,6 +3015,88 @@ worker's line at a small enough height gap.
 `round25f_water_windows_battle_levels_lines_match_the_original` covers
 them.
 
+Round 26 a: `AtelBattleEndCallback` (`0x00861160`) brings the field back
+after a battle. End type 6 resets the renderer (`PostReset(1)`) and fades
+to opaque black; end type 1 without `g_AtelBattleEndStatus` bit 9 jumps
+to the game over; anything else queues the return callbacks (`CAMERA`
+unless status bit 14 in battle mode 1, then by the status's low byte,
+jump table `0x00861408`: 1 nothing, 2 `MOVIE` with `+8`/`+0xc` copied to
+`0x01326b38`, 3/4 the end effect `0x00861550`; then `SNDCLR`, `SNDREG`,
+the map start `0x008615b0`, `CHRREG`, `EFFDONE` for kind 3, `DONE`, and
+`DONE2` or, outside kinds 1..4 or mode 1, the menu reserve `0x40010002`
+with message area 2). The status is copied to `+4` first and reset to
+`0x10001` last; ctrl work 0 is current throughout and the caller's comes
+back. `Atel_RunCtrlWorkers_00867950(event, input, clear)` runs every
+worker of the current ctrl work once (`Script_Run(w, event +8, input)`;
+without input only workers with `+0x36` bits 7-8), handles the talk
+choice from the pad (`+0x1e4`, `+0x1e6`, `+0x1e8`; affection and trigger
+for a chosen worker), decodes the signals (moving pending levels `+0x36`
+bits 9-10 down to 7-8, or counting 7-8 down) and repeats while a result
+has a bit outside 14-15; bit 15 sets ctx `+8` = 3. `AtelUpdateFilePath`
+(`0x00879f00`) picks the event directory by `AtelGetEventMode` (jump
+table `0x0087a2b8`) and `TkGetLang` (byte tables `0x0087a2f0`.. into
+word tables `0x0087a2d0`..; the language order is jp, us, fr, es, de, it,
+`0x12` uk, while the strings sit jp, us, de, fr, it, es, uk).
+`round26a_battle_end_ctrl_pass_file_path_match_the_original` covers them
+with every callee a logged stand-in; some stand-ins switch the ctrl work
+or move the choice to show which reads the original repeats.
+
+Round 26 b: `Atel_CheckPause_00873620` (caller `0x00872bd0`) decides, with
+ctrl work 0 current, whether START opens the pause menu: the delay word
+after `g_AtelPauseFlag` counts down, START held and pressed (`0x800` in
+both pad words) with the delay at 0 sets the flag, and each blocker (ctx
+bits 0 and 3, a movie, `0x0086d940` or ctx `+3` bits 0-1, a busy effect,
+ctx `+3` bit 7 or `+1` bit 2, no actors, overlay status 1..3, `+0x210`
+bits 4, 3 and 1) clears the flag and restarts the delay at 12 (at 0 for no
+actors and `+0x210` bit 3). An HDD error with nothing blocking pauses and
+sets the error flag. With `Movie_IsBusy` and no TGS flag a set flag
+becomes `Sg_MenuSetReserve(0x41000000 | hdd)`, `+0x210` bit 2 and
+`0x013270f4` = 1. `AtelInitTotal` (`0x0086d6d0`) resets the script
+globals and registers the native tables (groups 1, 0, 12, 6, 9, 5, 4, 11,
+7, 8, 13 after clearing 0..15). `Atel_MoveStep_00870540` (caller
+`0x008666e0`) runs one frame of a level's move for the bound character:
+the speed (`Ch_SetSp`) after a vertical part (`Ch_SetVelY` from `_CIsin`
+/ `_CIcos` of the position block's `+0x24`; jump table `0x00870830` on
+the move kind minus 2 in field mode 0) or a position (`TkCh_SetPos`),
+then the move's end by kind (byte table `0x00870860` into `0x00870850`):
+time below length for kinds 5-6 and 7-9, the radius `+0x38` otherwise.
+Its `EAX` is a leftover (the x87 status word on some paths) that the
+caller does not read. `round26b_pause_init_total_move_step_match_the_original`
+covers them. `0x00882d50` and `0x00884d90` draw lines of the script
+debugger's pages (`TkPutDebugFontString*`); they are reached only from
+`AtelDebugDisplay_00883040`, which nothing calls, so they stay unported.
+
+Round 26 c: `AtelBindElemOff` (`0x00862780`) frees bound element `i`
+(`+0xaf4 + 4i`, `Ch_Dispose` when `Ch_CheckHandle` returns 0), shows the
+character's model part 1 again for element 0 of a binding-7 worker and
+clears bit `i` of `+0xb14` with a 16-bit shift (no bit from 16 up).
+`Atel_CalcSpline_00862b20` and `Atel_CalcSpline3_00862b70` clamp `t` to
+0..1 (NaN passes) and call `TkMtCalcSpline`/`TkMtCalcSpline3` on the
+curve's points (`+0x10`, count `+0`). `Atel_ExecCtrlWorks_008688f0(from,
+to)` (from `AtelExec` and `AtelMenuExec`) makes each ctrl work in turn
+current (index in `0x01326b30`), runs the `+0x4c` callback of works in
+state 0..2 with bit 0, counts `+0x1f4` for bit 3 and moves states 1 and 2
+to 3. `Atel_CheckLineCrosses_00868020` runs the line check for the
+worker's own target and its eight line records (`+0x2e4`).
+`AtelEventGetFilePath2` (`0x008795b0`) builds `<event dir><sub>/xy/<base>/
+<name><ext>` in `0x01328858` (`xy` the first two characters of the base,
+`alt` cut at its `.` or else the cut name), or just `<name><ext>`.
+`round26c_bind_splines_ctrl_works_lines_file_path_match_the_original`
+covers them.
+
+Round 26 d: `spline_get_near_point_init` (`0x00a44420`, Fahrenheit's
+name; from the camera's `MsCameraMoveStep_007bcab0`,
+`MsCameraNearPoints_007c0d40` and `0x0093f900`) walks the spline in steps
+of `f32(1 / f32(10 n))` while `t <= 1`, sums the chord lengths into
+`g_SplineNearSamples`, keeps the `t` of the sample nearest the point
+(squared distance, from 999999) in `g_SplineNearT`, and lets
+`spline_get_near_point` refine it. For two points the spline leaves its
+output unwritten at `t = 0`, so the original starts from whatever its
+stack held; the port's frame starts zeroed, and the test zeroes both.
+No caller reads its `EAX` (what `scePrintf` leaves).
+`round26d_spline_near_point_init_matches_the_original` covers it with the
+real spline functions.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

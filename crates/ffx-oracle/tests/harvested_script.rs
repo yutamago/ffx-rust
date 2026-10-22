@@ -185,3 +185,81 @@ harvest_test!(
         );
     }
 );
+
+// script round 26 (this machine): the ctrl work pass, the pause check, the
+// move step (the CRT's sin and cos on the host, as `common::crt_atan`), the
+// ctrl works' callbacks, the line crossings
+harvest_test!(
+    atel_run_ctrl_workers,
+    0x0086_7950,
+    args = 3,
+    |m: &mut Oracle, s| {
+        hp::atel_run_ctrl_workers(&mut OracleHost(m), s.arg(0), s.arg(1), s.arg(2))
+    }
+);
+harvest_test!(
+    atel_check_pause,
+    0x0087_3620,
+    args = 0,
+    |m: &mut Oracle, _s| { hp::atel_check_pause(&mut OracleHost(m)) }
+);
+harvest_test!(
+    atel_move_step,
+    0x0087_0540,
+    args = 2,
+    |m: &mut Oracle, s| {
+        hp::atel_move_step(&mut TrigHost(OracleHost(m)), s.arg(0), s.arg(1));
+    }
+);
+harvest_test!(
+    atel_exec_ctrl_works,
+    0x0086_88f0,
+    args = 2,
+    |m: &mut Oracle, s| { hp::atel_exec_ctrl_works(&mut OracleHost(m), s.arg(0), s.arg(1)) }
+);
+harvest_test!(
+    atel_check_line_crosses,
+    0x0086_8020,
+    args = 2,
+    |m: &mut Oracle, s| { hp::atel_check_line_crosses(&mut OracleHost(m), s.arg(0), s.arg(1)) }
+);
+
+/// [`OracleHost`] with the script VM's float calls: `_CIsin`/`_CIcos` on
+/// the host (the `f32`s the ports store agree on the harvested states),
+/// float originals on the oracle.
+struct TrigHost<'a>(OracleHost<'a>);
+
+impl ffx_bridge::Mem for TrigHost<'_> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        self.0.read_bytes(addr, out);
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        self.0.write_bytes(addr, data);
+    }
+    fn image_base(&self) -> u32 {
+        self.0.image_base()
+    }
+}
+
+impl ffx_bridge::Host for TrigHost<'_> {
+    fn call(&mut self, addr: u32, args: &[u32]) -> u32 {
+        self.0.call(addr, args)
+    }
+}
+
+impl ffx_script::vm::bridge::run::NativeHost for TrigHost<'_> {
+    fn call_float(&mut self, addr: u32, args: &[u32]) -> f64 {
+        self.0.0.call_f64(addr, args).unwrap()
+    }
+    fn scratch(&mut self) -> u32 {
+        self.0.0.stack_range().start + 0x100
+    }
+    fn call_intrinsic1(&mut self, addr: u32, a: f64) -> f64 {
+        use ffx_bridge::Mem;
+        if addr == self.rebase(0x0094_98c8) {
+            a.sin()
+        } else {
+            a.cos()
+        }
+    }
+}
