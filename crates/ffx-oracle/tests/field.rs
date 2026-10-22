@@ -23331,3 +23331,138 @@ fn cmm1_map_on_a_snapshot_matches_the_original() {
     t.set(ffx_field::abmap::ABMAP, g);
     cmm1_map_cases(&mut t, &mut rng, g, 150);
 }
+
+// ---- chara-main-map round 2
+
+/// Chara-main-map round 2 on `t`: the IOP effect commands
+/// `SqsCmdAnmmOefFrames_0081b9b0` (frame tables of 0..5 entries with
+/// negative and long lengths, trail points with and without the copy, every
+/// mode), `SqsCmdFlash_0081bef0` (every mode) and `SqsFlashFinal_0081c2a0`
+/// (colours inside, outside and past 0..255, NaNs and infinities; vf00
+/// and the EE zero register not as they should be at times). The effect
+/// data lookup, the id list, `op_malloc`, the trail push,
+/// `op_func_final_set` and `op_flash_path3` are logging stand-ins; the VU0
+/// helpers, `CopyFields` and `pppEePpacb` run as the originals.
+#[allow(clippy::too_many_lines)]
+fn cmm2_map_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::nkz::bridge as nb;
+    let (log, rv, datav, bufv) = (t.alloc(4 + 0x20 * 64), t.alloc(4), t.alloc(4), t.alloc(4));
+    t.cave_from(
+        0,
+        &[
+            (Some(nb::OP_OEF2_A_GET), log_stub(log, datav, 1, 3)),
+            (Some(nb::OPU_ID_LIST_ADD), log_stub(log, rv, 2, 2)),
+            (Some(nb::OP_MALLOC), log_stub(log, bufv, 3, 2)),
+            (Some(nb::OP_TRAIL_PUSH), log_stub(log, rv, 4, 3)),
+            (Some(nb::OP_FUNC_FINAL_SET), log_stub(log, rv, 5, 4)),
+            (Some(nb::OP_FLASH_PATH3), log_stub(log, rv, 6, 3)),
+        ],
+    );
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let (ctx, rec, cmd, data, buf) = (
+        t.alloc(0x400),
+        t.alloc(0x100),
+        t.alloc(0x10),
+        t.alloc(0x200),
+        t.alloc(0x4000),
+    );
+    let (vf00, gpr) = (t.b.rebase(nb::VU0_VF00), t.b.rebase(nb::EE_GPR));
+    let colour = |rng: &mut Xorshift| match rng.below(10) {
+        0 => [
+            0x7fc0_0000u32,
+            0xffc0_0000,
+            0x7f80_0000,
+            0xff80_0000,
+            0x8000_0000,
+        ][rng.below(5) as usize],
+        1 => float_in(rng, 250, 270),
+        2 => float_in(rng, -20, 2),
+        _ => float_in(rng, 0, 256),
+    };
+    for case in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.put(datav, data);
+        t.put(bufv, buf);
+        t.fill(ctx + 0x200, 0x200, rng);
+        t.put(ctx + 0x220, rec);
+        let mode =
+            [0u16, 0x1000, 0x1000, 0x2000, 0x3000, 0xf000, 0x8000, 0x9000][rng.below(8) as usize];
+        t.put(
+            ctx + 0x21a,
+            mode | u16::try_from(rng.below(0x1000)).unwrap(),
+        );
+        t.fill(rec, 0x100, rng);
+        t.put(rec + 0x1e, u8::try_from(rng.below(8)).unwrap());
+        for k in 0..4 {
+            t.put(rec + 0x40 + 4 * k, colour(rng));
+        }
+        t.fill(cmd, 0x10, rng);
+        t.put(cmd + 4, [0i16, 1, 3, 6, -1][rng.below(5) as usize]);
+        // the effect data: entries (offset, length)
+        t.fill(data, 0x200, rng);
+        let n = [0i16, 1, 2, 5, -1][rng.below(5) as usize];
+        t.put(data + 6, n);
+        for k in 0..5u32 {
+            let off = [0x20i16, 0x40, -0x10, 0x100][rng.below(4) as usize];
+            let len = [0i16, 1, 0x100, 0x101, 0x2ff, 0x500, -5, -0x300][rng.below(8) as usize];
+            t.put(data + 0x10 + 8 * k, off);
+            t.put(data + 0x12 + 8 * k, len);
+        }
+        t.fill(buf, 0x4000, rng);
+        // the EE words the flash sets, stale
+        t.put(gpr + 0x20, rng.next());
+        t.put(gpr + 0x24, rng.next());
+        // vf00 and the zero register: as AsmEmuInit leaves them, or not
+        if rng.below(4) == 0 {
+            for k in 0..4 {
+                t.put(vf00 + 4 * k, colour(rng));
+                t.put(gpr + 4 * k, rng.next());
+            }
+        } else {
+            for k in 0..4 {
+                t.put(vf00 + 4 * k, if k == 3 { 1f32.to_bits() } else { 0 });
+                t.put(gpr + 4 * k, 0u32);
+            }
+        }
+        match case % 3 {
+            0 => t.same(
+                "SqsCmdAnmmOefFrames",
+                |o| o.eax(0x0081_b9b0, &[ctx, cmd]),
+                |m| nb::sqs_cmd_anmm_oef_frames(m, ctx, cmd, call),
+            ),
+            1 => t.same(
+                "SqsCmdFlash",
+                |o| o.eax(0x0081_bef0, &[ctx, cmd]),
+                |m| {
+                    let w = m.stack_range().start + 0x400;
+                    nb::sqs_cmd_flash(m, ctx, cmd, w, call)
+                },
+            ),
+            _ => t.same(
+                "SqsFlashFinal",
+                |o| o.eax(0x0081_c2a0, &[rec, cmd]),
+                |m| {
+                    let w = m.stack_range().start + 0x400;
+                    nb::sqs_flash_final(m, rec, cmd, w, call)
+                },
+            ),
+        }
+    }
+}
+
+#[test]
+fn cmm2_map_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00c3_d201);
+    cmm2_map_cases(&mut t, &mut rng, 600);
+}
+
+#[test]
+fn cmm2_map_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c3_d202);
+    cmm2_map_cases(&mut t, &mut rng, 300);
+}

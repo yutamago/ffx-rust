@@ -4370,6 +4370,23 @@ ported! {
         nkz::bridge::sqs_cmd_anmm_oef(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    // ---- chara-main-map round 2
+    /// `SqsCmdAnmmOefFrames_0081b9b0(ctx, cmd)`: the next command.
+    SqsCmdAnmmOefFrames_0081b9b0 @ 0x0081_b9b0 => extern "C" fn shim_sqs_cmd_anmm_oef_frames(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_anmm_oef_frames(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsCmdFlash_0081bef0(ctx, cmd)`: `cmd + 4`; the packed colour in a
+    /// frame of its own.
+    SqsCmdFlash_0081bef0 @ 0x0081_bef0 => extern "C" fn shim_sqs_cmd_flash(ctx: u32, cmd: u32) -> u32 {
+        let mut w = super::StackFrame::<{ nkz::bridge::FLASH_SCRATCH as usize / 4 }>::new();
+        nkz::bridge::sqs_cmd_flash(&mut mem(), ctx, cmd, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsFlashFinal_0081c2a0(unit, cmd)`: `op_flash_path3`'s `eax`.
+    SqsFlashFinal_0081c2a0 @ 0x0081_c2a0 => extern "C" fn shim_sqs_flash_final(unit: u32, cmd: u32) -> u32 {
+        let mut w = super::StackFrame::<{ nkz::bridge::FLASH_SCRATCH as usize / 4 }>::new();
+        nkz::bridge::sqs_flash_final(&mut mem(), unit, cmd, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `SqsCmdAnmmParam(ctx, cmd)`.
     SqsCmdAnmmParam @ 0x0081_c160 => extern "C" fn shim_sqs_cmd_anmm_param(ctx: u32, cmd: u32) -> u32 {
         nkz::bridge::sqs_cmd_anmm_param(&mut mem(), ctx, cmd, &mut |_, f, a| call_float(f, a))

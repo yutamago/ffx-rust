@@ -1672,4 +1672,257 @@ pub mod bridge {
         mem.write(status, [0u32; 16]);
         reply[0]
     }
+    // ---- chara-main-map round 2
+
+    /// `CopyFields_007e5f30(p, a, b, n)` (`0x007e5f30`), `op_trail_push(ring,
+    /// point, life)` (`0x007e5f80`), `op_func_final_set(f, a, b, c)`
+    /// (`0x007eb410`), `restoreVf00Register` (`0x0042ef00`),
+    /// `vfx_vec4_min(dst, v, s)` (`0x00808c10`), `Vec4Max_00808b70(dst,
+    /// src, vec4)` (`0x00808b70`), `pppEePpacb(dst, a, b)` (`0x007375d0`),
+    /// `op_flash_path3(rgba, flags, alpha)` (`0x007eaad0`): through the
+    /// game.
+    pub const COPY_FIELDS: u32 = 0x007e_5f30;
+    pub const OP_TRAIL_PUSH: u32 = 0x007e_5f80;
+    pub const OP_FUNC_FINAL_SET: u32 = 0x007e_b410;
+    pub const RESTORE_VF00: u32 = 0x0042_ef00;
+    pub const VEC4_MIN: u32 = 0x0080_8c10;
+    pub const VEC4_MAX: u32 = 0x0080_8b70;
+    pub const EE_PPACB: u32 = 0x0073_75d0;
+    pub const OP_FLASH_PATH3: u32 = 0x007e_aad0;
+    /// `SqsFlashFinal_0081c2a0`, the final function [`sqs_cmd_flash`] sets.
+    pub const FLASH_FINAL: u32 = 0x0081_c2a0;
+    /// The emulated VU0's vf00 (`g_Vu0_Vf00`), the register the colour is
+    /// worked in (`g_Vu0_VfMove`), the zero vector built from vf00
+    /// (`0x00c8f970`), the register `0x00c8f78c` (Q's `+4`) and the EE
+    /// register words at `0x00c8f528` / `+0x2c`.
+    pub const VU0_VF00: u32 = 0x00c0_a004;
+    pub const VU0_VF_MOVE: u32 = 0x00c8_f980;
+    pub const VU0_ZERO: u32 = 0x00c8_f970;
+    pub const VU0_Q4: u32 = 0x00c8_f78c;
+
+    /// `SqsCmdAnmmOefFrames_0081b9b0(ctx, cmd)` (`0x0081b9b0`, name ours;
+    /// an IOP command of the table `0x00c48ff0`, like
+    /// [`sqs_cmd_anmm_oef`]): the context's record (`+0x220`) plays the
+    /// effect data `op_oef2_a_get(ctx +0x360[record +0x1e], 4, cmd +2)`
+    /// (`+0xd4`; the context's id joins its list), `+0xc0` `0x480080`,
+    /// `+0xc4` 0. The data's `i16` count `+6` of 8-byte entries at `+0x10`
+    /// (`i16` offset, length) give `frames` = the lengths' sum / 256
+    /// (`+0xe8`, `u16`). On the heap (`op_malloc(ctx +0x3a8)`, `+0xbc`)
+    /// go `cmd +4` 16-byte trail points plus one (`CopyFields(p, 0,
+    /// 0x8001, n)`), with bit 12 of `ctx +0x21a` another `n` (the trail's
+    /// copy), then the frames' pointers (`+0xe0`: each entry's data +
+    /// offset, once per 256 of its length), 16-aligned. By `ctx +0x21a`
+    /// bits 12..15: 0 is mode 10 (returns `cmd + 6`); `0x1000` mode 0x11,
+    /// the trail started at the record's position (`op_trail_push(+0xbc,
+    /// +0x90, 0)`) and its copy filled with it, `+0xa8`/`+0xaa` from `cmd
+    /// +6`/`+8` (returns `cmd + 10`); else nothing more (`cmd`). Counts
+    /// are read again each time.
+    pub fn sqs_cmd_anmm_oef_frames<M: Mem>(
+        mem: &mut M,
+        ctx: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        let at = |o: u32| ctx.wrapping_add(o);
+        let rec: u32 = mem.read(at(0x220));
+        let r = |o: u32| rec.wrapping_add(o);
+        let slot = u32::from(mem.read::<u8>(r(0x1e)));
+        let src: u32 = mem.read(at(0x360).wrapping_add(4 * slot));
+        let id = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+        let data = call(mem, g(mem, OP_OEF2_A_GET), &[src, 4, id]);
+        let me = u32::from(mem.read::<u16>(at(0x214)));
+        call(mem, g(mem, OPU_ID_LIST_ADD), &[at(0x300), me]);
+        mem.write(r(0xd4), data);
+        mem.write(r(0xc0), 0x0048_0080u32);
+        mem.write(r(0xc4), 0u32);
+        mem.write(r(0xe8), 0u16);
+        let entries = data.wrapping_add(0x10);
+        let entry = |k: u32| entries.wrapping_add(8 * k);
+        let mut total = 0i32;
+        for k in 0..i32::from(mem.read::<i16>(data.wrapping_add(6)))
+            .max(0)
+            .cast_unsigned()
+        {
+            total = total.wrapping_add(i32::from(mem.read::<i16>(entry(k).wrapping_add(2))));
+        }
+        let frames = total / 256;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // its low word
+        mem.write(r(0xe8), frames as u16);
+        let n = i32::from(mem.read::<i16>(cmd.wrapping_add(4)));
+        let points = n.cast_unsigned().wrapping_shl(4);
+        let head = points.wrapping_add(0x10);
+        let copy = if mem.read::<u16>(at(0x21a)) & 0x1000 != 0 {
+            points
+        } else {
+            0
+        };
+        let list = (frames.cast_unsigned().wrapping_mul(4).wrapping_add(0xf)) & 0x7fff_fff0;
+        let pool: u32 = mem.read(at(0x3a8));
+        let buf = call(
+            mem,
+            g(mem, OP_MALLOC),
+            &[pool, list.wrapping_add(copy).wrapping_add(head)],
+        );
+        mem.write(r(0xbc), buf);
+        call(
+            mem,
+            g(mem, COPY_FIELDS),
+            &[buf, 0, 0x8001, n.cast_unsigned()],
+        );
+        let mut p = head.wrapping_add(copy).wrapping_add(mem.read(r(0xbc)));
+        mem.write(r(0xe0), p);
+        let mut k = 0u32;
+        while k.cast_signed() < i32::from(mem.read::<i16>(data.wrapping_add(6))) {
+            let e = entry(k);
+            let frame = data.wrapping_add(i32::from(mem.read::<i16>(e)).cast_unsigned());
+            let mut j = 0i32;
+            while j < i32::from(mem.read::<i16>(e.wrapping_add(2))) {
+                mem.write(p, frame);
+                p = p.wrapping_add(4);
+                j += 0x100;
+            }
+            k += 1;
+        }
+        match mem.read::<u16>(at(0x21a)) & 0xf000 {
+            0 => {
+                mem.write(r(0xbb), 10u8);
+                cmd.wrapping_add(6)
+            }
+            0x1000 => {
+                mem.write(r(0xbb), 0x11u8);
+                let ring: u32 = mem.read(r(0xbc));
+                call(mem, g(mem, OP_TRAIL_PUSH), &[ring, r(0x90), 0]);
+                let mut dst = mem.read::<u32>(r(0xbc)).wrapping_add(head);
+                for _ in 0..n.max(0) {
+                    let v: [u32; 4] = mem.read(r(0x90));
+                    mem.write(dst, v);
+                    dst = dst.wrapping_add(0x10);
+                }
+                let b: u16 = mem.read(cmd.wrapping_add(8));
+                let a: u16 = mem.read(cmd.wrapping_add(6));
+                mem.write(r(0xa8), a);
+                mem.write(r(0xaa), b);
+                cmd.wrapping_add(10)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// Bytes of scratch [`flash_from_unit`] needs: the packed colour
+    /// (`[ebp-0x14]`).
+    pub const FLASH_SCRATCH: u32 = 0x10;
+
+    /// The flash both [`sqs_cmd_flash`] (mode `0x1000`) and
+    /// [`sqs_flash_final`] run, on the emulated VU0 as the PS2 did: the
+    /// unit's colour (`+0x40`, four `f32`) clamped to 0..=255
+    /// (`vfx_vec4_min` with 255 in `0x00c8f78c`, `Vec4Max` with vf00 -
+    /// vf00), each truncated (`_ftol2`), packed to bytes with the EE's zero
+    /// register (`pppEePpacb` on the eight low halves in `scratch`), and
+    /// handed to `op_flash_path3(rgba, cmd byte +2, byte +3)`, whose `eax`
+    /// it returns. The registers it worked in keep their values; the EE
+    /// words `0x00c8f528` / `+0x2c` get 255.0 and 0 on the way.
+    fn flash_from_unit<M: Mem>(
+        mem: &mut M,
+        unit: u32,
+        cmd: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        let (vf00, mv, zero) = (g(mem, VU0_VF00), g(mem, VU0_VF_MOVE), g(mem, VU0_ZERO));
+        for k in 0..4u32 {
+            let v: u32 = mem.read(unit.wrapping_add(0x40 + 4 * k));
+            mem.write(mv + 4 * k, v);
+            // fld vf00; fsub st, st: 0, or NaN for a NaN or infinity
+            let x = Reg::load(mem.read(vf00 + 4 * k));
+            #[allow(clippy::eq_op)] // fsub st, st: not always 0
+            mem.write(zero + 4 * k, (x - x).store());
+        }
+        let copy = g(mem, EE_COPY_REG);
+        mem.write(copy, 255f32);
+        mem.write(copy + 4, 0u32);
+        let q4 = g(mem, VU0_Q4);
+        mem.write(q4, 255f32);
+        call(mem, g(mem, RESTORE_VF00), &[]);
+        let s = Reg::load(mem.read(q4)).store().to_bits();
+        call(mem, g(mem, VEC4_MIN), &[mv, mv, s]);
+        let z: [u32; 4] = mem.read(zero);
+        call(mem, g(mem, VEC4_MAX), &[mv, mv, z[0], z[1], z[2], z[3]]);
+        let c: [f32; 4] = mem.read(mv);
+        for (k, x) in (0u32..).zip(c) {
+            let i = x87::ftol(mem, x87::load(x.to_bits()));
+            mem.write(mv + 4 * k, i);
+        }
+        let v: [u32; 4] = mem.read(mv);
+        let r: [u32; 4] = mem.read(g(mem, EE_GPR));
+        let half = |w: u32| w & 0xffff;
+        for (k, (lo, hi)) in [(v[0], v[1]), (v[2], v[3]), (r[0], r[1]), (r[2], r[3])]
+            .into_iter()
+            .enumerate()
+        {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            mem.write(scratch + 4 * k as u32, half(lo) | half(hi) << 16);
+        }
+        call(mem, g(mem, EE_PPACB), &[scratch, g(mem, EE_GPR), scratch]);
+        let rgba: u32 = mem.read(scratch);
+        let (flags, alpha) = (
+            u32::from(mem.read::<u8>(cmd.wrapping_add(2))),
+            u32::from(mem.read::<u8>(cmd.wrapping_add(3))),
+        );
+        call(mem, g(mem, OP_FLASH_PATH3), &[rgba, flags, alpha])
+    }
+
+    /// `SqsCmdFlash_0081bef0(ctx, cmd)` (`0x0081bef0`, name ours; an IOP
+    /// command of the table `0x00c48ff0`): `cmd +2` to the record's
+    /// (`ctx +0x220`) `+0xa8`, then by `ctx +0x21a` bits 12..15: 0 mode 4
+    /// and the context's id listed; `0x1000` the flash now
+    /// ([`flash_from_unit`] on the record); `0x2000` the flash as the
+    /// record's final function (`op_func_final_set(SqsFlashFinal, record,
+    /// cmd, 1)`). Returns `cmd + 4`.
+    pub fn sqs_cmd_flash<M: Mem>(
+        mem: &mut M,
+        ctx: u32,
+        cmd: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rec: u32 = mem.read(ctx.wrapping_add(0x220));
+        let v: u16 = mem.read(cmd.wrapping_add(2));
+        mem.write(rec.wrapping_add(0xa8), v);
+        match mem.read::<u16>(ctx.wrapping_add(0x21a)) & 0xf000 {
+            0 => {
+                mem.write(rec.wrapping_add(0xbb), 4u8);
+                let id = u32::from(mem.read::<u16>(ctx.wrapping_add(0x214)));
+                call(
+                    mem,
+                    mem.rebase(OPU_ID_LIST_ADD),
+                    &[ctx.wrapping_add(0x300), id],
+                );
+            }
+            0x1000 => {
+                flash_from_unit(mem, rec, cmd, scratch, call);
+            }
+            0x2000 => {
+                let f = mem.rebase(FLASH_FINAL);
+                call(mem, mem.rebase(OP_FUNC_FINAL_SET), &[f, rec, cmd, 1]);
+            }
+            _ => {}
+        }
+        cmd.wrapping_add(4)
+    }
+
+    /// `SqsFlashFinal_0081c2a0(unit, cmd)` (`0x0081c2a0`, name ours; the
+    /// final function [`sqs_cmd_flash`] sets): [`flash_from_unit`];
+    /// `op_flash_path3`'s `eax`.
+    pub fn sqs_flash_final<M: Mem>(
+        mem: &mut M,
+        unit: u32,
+        cmd: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        flash_from_unit(mem, unit, cmd, scratch, call)
+    }
 }
