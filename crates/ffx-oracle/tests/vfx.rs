@@ -11028,6 +11028,68 @@ fn dot_draw_matches_the_original() {
     }
 }
 
+/// The render-data cells of [`render_stubs`].
+struct RenderStubs {
+    /// The render data of the instance (0, b) (`graphicVFXGetRenderDataByInstance`).
+    cells: u32,
+    /// What `graphicVFXSetup` puts into `cells`.
+    pend: u32,
+    /// What `graphicVFXSetup` returns.
+    setup_ret: u32,
+    /// What `graphicDynGeoMemManagerGetBufferForSegment` returns.
+    seg_ret: u32,
+    /// What `graphicVFXCreate` puts into `cells`.
+    made: u32,
+}
+
+/// Stand-ins for the renderer calls of the `opus_0582` draws (one
+/// instance per call): render data from cells, recorders for the rest;
+/// `op_spr_alloc` returns `[cells + 0x18]`.
+fn render_stubs(p: &mut Pair) -> RenderStubs {
+    let cells = p.alloc(0x20);
+    let (pend, setup_ret, seg_ret) = (cells + 8, cells + 0x10, cells + 0x14);
+    let mut c = vec![0xa1]; // mov eax, [cells]
+    c.extend(cells.to_le_bytes());
+    c.push(0xc3);
+    stub_code(p, 0x0064_53d0, &c);
+    let mut c = vec![0xa1]; // mov eax, [pend]
+    c.extend(pend.to_le_bytes());
+    c.push(0xa3); // mov [cells], eax
+    c.extend(cells.to_le_bytes());
+    c.push(0xa1); // mov eax, [setup_ret]
+    c.extend(setup_ret.to_le_bytes());
+    c.push(0xc3);
+    stub_code(p, 0x0064_5780, &c);
+    // graphicVFXCreate: the cell from [made], then the recorder
+    let made = p.alloc(4);
+    let mut c = vec![0xa1]; // mov eax, [made]
+    c.extend(made.to_le_bytes());
+    c.push(0xa3); // mov [cells], eax
+    c.extend(cells.to_le_bytes());
+    stub_code(p, 0x0064_4de0, &c);
+    deref_recorder(p, 0x0064_4de0 + u32::try_from(c.len()).unwrap(), &[0, 0, 0]);
+    deref_recorder(p, 0x0064_5040, &[0, 0, 0, 1, 1, 3, 1]);
+    for (sym, words, ret) in [
+        (0x0064_5280u32, &[0u8, 0][..], None),
+        (0x0063_fdb0, &[0, 0, 0, 0], Some(seg_ret)),
+        (0x0094_964c, &[0, 0, 0], None),
+        (0x0064_5710, &[0, 0, 0], None),
+        (0x007e_6a00, &[0], Some(cells + 0x18)),
+        (0x007e_6a60, &[0], None),
+        (0x00a7_0ce0, &[0, 0], None),
+    ] {
+        deref_recorder_with(p, sym, words, ret);
+    }
+    far_recorder(p, 0x007e_b580, &[], None); // op_gs1_transfer
+    RenderStubs {
+        cells,
+        pend,
+        setup_ret,
+        seg_ret,
+        made,
+    }
+}
+
 /// Zeroes the emulated stack below the oracles' call area in both, so
 /// that words a callee reads from the original's frame before it writes
 /// them are the same on both sides.
@@ -11050,48 +11112,14 @@ fn opus_0582_break_draw_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x00a7_2380);
         let _ = x87_crt_stand_ins(&mut p);
-        // render data of the instance (0, b): [cells]; what
-        // graphicVFXSetup puts there: [pend], what it returns: [setup_ret]
-        let cells = p.alloc(0x20);
-        let (pend, setup_ret, seg_ret) = (cells + 8, cells + 0x10, cells + 0x14);
-        let mut c = vec![0xa1]; // mov eax, [cells]
-        c.extend(cells.to_le_bytes());
-        c.push(0xc3);
-        stub_code(&mut p, 0x0064_53d0, &c);
-        let mut c = vec![0xa1]; // mov eax, [pend]
-        c.extend(pend.to_le_bytes());
-        c.push(0xa3); // mov [cells], eax
-        c.extend(cells.to_le_bytes());
-        c.push(0xa1); // mov eax, [setup_ret]
-        c.extend(setup_ret.to_le_bytes());
-        c.push(0xc3);
-        stub_code(&mut p, 0x0064_5780, &c);
-        // graphicVFXCreate: the cell from [made], then the recorder
-        let made = p.alloc(4);
-        let mut c = vec![0xa1]; // mov eax, [made]
-        c.extend(made.to_le_bytes());
-        c.push(0xa3); // mov [cells], eax
-        c.extend(cells.to_le_bytes());
-        stub_code(&mut p, 0x0064_4de0, &c);
-        deref_recorder(
-            &mut p,
-            0x0064_4de0 + u32::try_from(c.len()).unwrap(),
-            &[0, 0, 0],
-        );
-        deref_recorder(&mut p, 0x0064_5040, &[0, 0, 0, 1, 1, 3, 1]);
-        for (sym, words, ret) in [
-            (0x0064_5280u32, &[0u8, 0][..], None),
-            (0x0063_fdb0, &[0, 0, 0, 0], Some(seg_ret)),
-            (0x0094_964c, &[0, 0, 0], None),
-            (0x0064_5710, &[0, 0, 0], None),
-            (0x0064_58a0, &[0, 0], None),
-            (0x007e_6a00, &[0], Some(cells + 0x18)),
-            (0x007e_6a60, &[0], None),
-            (0x00a7_0ce0, &[0, 0], None),
-        ] {
-            deref_recorder_with(&mut p, sym, words, ret);
-        }
-        far_recorder(&mut p, 0x007e_b580, &[], None); // op_gs1_transfer
+        let RenderStubs {
+            cells,
+            pend,
+            setup_ret,
+            seg_ret,
+            made,
+        } = render_stubs(&mut p);
+        deref_recorder_with(&mut p, 0x0064_58a0, &[0, 0], None);
         let sink = p.sym(0x0230_56e8);
         let spr = p.alloc(0x1300);
         p.set(cells + 0x18, spr);
@@ -11211,6 +11239,156 @@ fn opus_0582_break_draw_matches_the_original() {
         }
         assert!(seen.iter().all(|&s| s > 20), "{}: {seen:?}", p.name);
         assert!(spawned > 100, "{}: {spawned} rounds spawned", p.name);
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation
+)]
+fn opus_0582_draw_matches_the_original() {
+    use ffx_vfx::hi_opus::bridge as h;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_0d70);
+        let RenderStubs {
+            cells,
+            pend,
+            setup_ret,
+            seg_ret,
+            made,
+        } = render_stubs(&mut p);
+        deref_recorder_with(&mut p, 0x0064_5600, &[0, 0], None); // graphicVFXPath3Update
+        let (id, tex_ret) = (p.alloc(4), p.alloc(4));
+        far_recorder(&mut p, 0x0082_6b80, &[0], Some(id)); // Ch_GetId
+        far_recorder(&mut p, 0x0082_6b90, &[0], None); // Ch_GetName
+        far_recorder(&mut p, 0x0062_f500, &[0, 0], None); // dbgPrintf
+        far_recorder(&mut p, 0x0064_5450, &[0, 0, 0, 0, 0, 0, 0], Some(tex_ret));
+        let sink = p.sym(0x0230_56e8);
+        let handles = p.sym(0x012a_8100);
+        let spr = p.alloc(0x1300);
+        p.set(cells + 0x18, spr);
+        let (rd, geo) = (p.alloc(0x100), p.alloc(0x100));
+        let (pts, col, uv, idx) = (
+            p.alloc(0x400),
+            p.alloc(0x400),
+            p.alloc(0x200),
+            p.alloc(0x80),
+        );
+        let b = p.alloc(0x40 + 0x80 * 8);
+        let (rec, unit) = (p.alloc(0x100), p.alloc(0x100));
+        let (m4, m5, m6) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
+        let mut seen = [0u32; 3];
+        for round in 0..500 {
+            zero_stacks(&mut p);
+            p.set(sink, 0u32);
+            for (at, len) in [
+                (rd, 0x100),
+                (geo, 0x100),
+                (spr, 0x1300),
+                (rec, 0x100),
+                (unit, 0x100),
+            ] {
+                p.fill(at, len, &mut rng);
+            }
+            p.set(rd + 0x94, geo);
+            p.set(geo + 0xc, pts);
+            p.set(geo + 0x14, col);
+            p.set(geo + 0x18, uv);
+            p.set(geo + 0x1c, idx);
+            let pieces = rng.pick(&[0u16, 1, 2, 3, 8]);
+            p.set(geo + 4, u32::from(pieces) * 3 + rng.below(4));
+            p.set(geo + 8, u32::from(pieces) * 3 + rng.below(4));
+            for at in [m4, m5, m6] {
+                for k in 0..16 {
+                    let x = finite(&mut rng);
+                    p.set(at + 4 * k, x);
+                }
+            }
+            for o in [0x90u32, 0x94, 0x98, 0x9c] {
+                let x = ranged(&mut rng, -100.0, 100.0);
+                p.set(unit + o, x);
+            }
+            let (a, w) = (
+                ranged(&mut rng, -10.0, 150.0),
+                ranged(&mut rng, -10.0, 100.0),
+            );
+            p.set(unit + 0x30, a);
+            p.set(unit + 0x34, w);
+            if rng.chance(20) {
+                let w = rng.pick(&[0.1f32, 0.099_999_99, 0.0, -0.0, 128.0]);
+                p.set(unit + 0x34, w);
+            }
+            p.fill(b, 0x40 + 0x80 * 8, &mut rng);
+            p.set(b, pieces);
+            for j in 0..8 {
+                let e = b + 0x40 + 0x80 * j;
+                for o in [0x10u32, 0x14, 0x20, 0x24, 0x30, 0x34] {
+                    let x = finite(&mut rng);
+                    p.set(e + o, x);
+                }
+                for o in [0x40u32, 0x50, 0x60] {
+                    for c in 0..3 {
+                        let x = ranged(&mut rng, -150.0, 150.0);
+                        p.set(e + o + 4 * c, x);
+                    }
+                }
+            }
+            if rng.chance(15) {
+                // exact distances: at a, at d; and a w and r (found by
+                // search) where rounding a - r to f32 before the product
+                // changes the truncated alpha (113, not 112)
+                let w = rng.pick(&[128.0f32, 28.0, f32::from_bits(0x42bc_6f2c)]);
+                p.set(unit + 0x30, 100.0f32);
+                p.set(unit + 0x34, w);
+                p.set(unit + 0x94, 0.0f32);
+                p.set(unit + 0x98, 0.0f32);
+                for j in 0..8 {
+                    for o in [0x40u32, 0x50, 0x60] {
+                        let x = rng.pick(&[
+                            1.000_000_1f32,
+                            f32::from_bits(0x4186_976d),
+                            0.0,
+                            72.0,
+                            100.0,
+                            5.0,
+                        ]);
+                        p.set(b + 0x40 + 0x80 * j + o + 4, x);
+                        p.set(b + 0x40 + 0x80 * j + o + 8, 0.0f32);
+                    }
+                }
+            } else if rng.chance(5) {
+                p.set(unit + 0x30, -0.0f32);
+                p.set(unit + 0x34, 0.0f32);
+            }
+            let slot = rng.below(240);
+            p.set(rec + 0x18, slot as u8);
+            let chr = rng.next();
+            p.set(handles + 4 * slot, chr);
+            let kind = rng.pick(&[0x10b0u32, 0x10ad, 0x10ae, 0x1001]);
+            p.set(id, kind);
+            p.set(tex_ret, u32::from(rng.chance(50)));
+            let rd0 = |rng: &mut Xorshift| if rng.chance(20) { 0 } else { rd };
+            let (c0, q0) = (rd0(&mut rng), rd0(&mut rng));
+            p.set(cells, c0);
+            p.set(made, rd0(&mut rng));
+            p.set(pend, q0);
+            p.set(setup_ret, u32::from(rng.chance(70)));
+            p.set(seg_ret, u32::from(!rng.chance(10)));
+            let args = [b, rec, unit, m4, m5, m6];
+            check_deep_n(
+                &mut p,
+                &format!("opus_0582_draw round {round}"),
+                0x00a7_0d70,
+                &args,
+                |mm, frame| Some(h::opus_0582_draw(mm, args, frame, &mut call_original)),
+            );
+            // made or found, and with pieces
+            seen[usize::from(c0 == 0)] += 1;
+            seen[2] += u32::from(pieces > 0);
+        }
+        assert!(seen.iter().all(|&s| s > 20), "{}: {seen:?}", p.name);
     }
 }
 

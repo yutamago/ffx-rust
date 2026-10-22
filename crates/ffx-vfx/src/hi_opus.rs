@@ -1111,6 +1111,306 @@ pub mod bridge {
         go(mem, MEMSET, &[idx, 0, rest.wrapping_mul(2)], call);
         let fill = mem.rebase(FILL_MATRIX);
         go(mem, FFX_VU0_MUL_MATRIX, &[rd, fill, m6], call);
+        finish_render_data(mem, rd);
+        go(mem, VFX_SET_VISIBLE, &[0, b, 1], call);
+        go(mem, VFX_UPDATE, &[0, b], call);
+        let sink = mem.rebase(GS_REGISTER_SINK);
+        while mem.read::<u32>(sink) & 0x100 != 0 {}
+        go(mem, OP_GS1_TRANSFER, &[], call);
+        go(mem, OP_SPR_FREE, &[0x1300], call);
+        0
+    }
+
+    /// `f64` 0.1 (`0x00b921f0`, `f32` 0.1) and 128 (`0x00b4c170`).
+    const K_TENTH: u32 = 0x00b9_21f0;
+    const K_128_F64: u32 = 0x00b4_c170;
+    /// `f32` 128 (`0x00b501bc`): a vertex's full alpha.
+    const K_128: u32 = 0x00b5_01bc;
+    /// `g_EtChrHandles` (`0x012a8100`).
+    const ET_CHR_HANDLES: u32 = 0x012a_8100;
+    /// `"opus_0582_break_draw: need texture for %s\n"` (`0x00b7c49c`).
+    const NEED_TEXTURE: u32 = 0x00b7_c49c;
+    const CH_GET_ID: u32 = 0x0082_6b80;
+    const CH_GET_NAME: u32 = 0x0082_6b90;
+    const DBG_PRINTF: u32 = 0x0062_f500;
+    const IS_TEXTURE_WITH_BP_LOADED: u32 = 0x0064_5450;
+    const OP_MUL_M: u32 = 0x007e_83b0;
+    const FFX_VU0_APPLY_MATRIX: u32 = 0x006e_d2e0;
+    const VFX_PATH3_UPDATE: u32 = 0x0064_5600;
+    /// The emulated VU0 register `opus_0582_draw` loads the old fade
+    /// values into (`0x00c8f8d0`, 4 words).
+    const VU0_FADE: u32 = 0x00c8_f8d0;
+
+    /// `opus_0582_draw(b, rec, unit, m4, m5, m6)` (`0x00a70d70`,
+    /// Fahrenheit's name; from `opp_0582_cmd_a70910`'s 0x5000): the
+    /// `opus_0582` break pieces as triangles of the instance `(0, b)`. `b`
+    /// holds a `u16` count and 0x80-byte pieces from `b + 0x40`: three
+    /// vertices with `u`, `v` at `+0x10`, `+0x20`, `+0x30` (and their alpha
+    /// bytes at `+0x1c`, `+0x2c`, `+0x3c`), positions at `+0x40`, `+0x50`,
+    /// `+0x60`, a flag byte at `+9`.
+    ///
+    /// Without render data the instance is made (one segment of 3 points
+    /// and 3 indices per piece; the texture by the character
+    /// `g_EtChrHandles[rec +0x18]`'s id: 0x10b0 with 0x100 x 0x200, 0x10ad
+    /// and 0x10ae with 0x200 x 0x200, else none and a `dbgPrintf` with its
+    /// name; `graphicVFXIsTextureWithBpLoaded(id, 0x13, 0, 0, w, h, name)`
+    /// fills the name, else `"NoTexture"`; `calculateVFXSP_AlphaFunction(rec
+    /// +0xc2) | 0x48`, `graphicVFXSetup` or `graphicVFXDestroy`,
+    /// `op_pair_index`); with none after that it returns (the
+    /// `op_spr_alloc(0x1300)` scratch `s`, taken first, is not freed).
+    ///
+    /// `s` = `op_mul_m(m6, m5)`; the VU0 registers get `m4` (`0x00c8f850`),
+    /// `s` (`0x00c8f890`), the old `s +0x1200..` (`0x00c8f8d0`) and `unit
+    /// +0x90..` (`0x00c8f8e0`). Then `s +0x1200` = `a = unit +0x30`, `+0x1204`
+    /// = `d = f32(unit +0x30 - unit +0x34)` (0 below 0), `+0x1208` = `k =
+    /// f32(128 / unit +0x34)` (0 below 0.1), `+0x1210..` = `unit +0x90..`
+    /// (through the emulated `v0`), the `r0` and `+0x10` words at
+    /// `+0x1020..+0x1044` as in `opus_0582_break_draw`.
+    ///
+    /// With the segment (`graphicDynGeoMemManagerGetBufferForSegment` with
+    /// its counts, else return), per piece and vertex: the distance `r =
+    /// f32(sqrt((unit +0x94 - x)² + (unit +0x98 - y)²))` (also at `s
+    /// +0x1280`, `+0x1290`, `+0x12a0`); its alpha byte 0 for `r >= a`, 128
+    /// for `r <= d`, else `ftol(f32(f32(a - r) * k))` with the flag byte set
+    /// (cleared first). The points are the positions, `FFXVu0ApplyMatrix(v,
+    /// s, v)` runs on copies (`(x, y, z, 1)` in the frame; the results are
+    /// not used), the texture coordinates are copied, the colours are 0.5
+    /// with the alpha / 256, and the indices `3i`, `3i + 1`, `3i + 2`. Then
+    /// the tails are cleared (`memset` up to the segment's counts) and the
+    /// render data finished as in `opus_0582_break_draw`, with
+    /// `graphicVFXPath3Update` and `FFXVu0MulMatrix(rd, g_pppFillMatrix,
+    /// m5)`; the GS wait, `op_gs1_transfer`, `op_spr_free(0x1300)`. All
+    /// callees through `call`. Returns 0 (`eax`).
+    ///
+    /// The locals the callees take by address lie below `frame` (the
+    /// original's frame pointer, down to `frame - 0x17c`).
+    #[allow(clippy::too_many_lines)]
+    pub fn opus_0582_draw<M: Mem>(
+        mem: &mut M,
+        [b, rec, unit, m4, m5, m6]: [u32; 6],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        let local = |off: u32| frame.wrapping_sub(off);
+        let mut rd = go(mem, GET_RENDER_DATA, &[0, b], call);
+        let spr = go(mem, OP_SPR_ALLOC, &[0x1300], call);
+        if rd == 0 {
+            mem.write(local(0x17c), 1u32);
+            let n3 = u32::from(mem.read::<u16>(b)) * 3;
+            mem.write(local(0x174), n3);
+            mem.write(local(0x16c), n3);
+            let chr = |mem: &M| {
+                let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+                mem.read::<u32>(mem.rebase(ET_CHR_HANDLES).wrapping_add(4 * slot))
+            };
+            let mut tex = None;
+            for (id, w, h) in [
+                (0x10b0, 0x100, 0x200),
+                (0x10ad, 0x200, 0x200),
+                (0x10ae, 0x200, 0x200),
+            ] {
+                let c = chr(mem);
+                if go(mem, CH_GET_ID, &[c], call) == id {
+                    tex = Some((id, w, h));
+                    break;
+                }
+            }
+            let (id, w, h) = tex.unwrap_or_else(|| {
+                let c = chr(mem);
+                let name = go(mem, CH_GET_NAME, &[c], call);
+                let fmt = mem.rebase(NEED_TEXTURE);
+                go(mem, DBG_PRINTF, &[fmt, name], call);
+                (0, 1, 1)
+            });
+            let name = local(0x104);
+            if go(
+                mem,
+                IS_TEXTURE_WITH_BP_LOADED,
+                &[id, 0x13, 0, 0, w, h, name],
+                call,
+            ) == 0
+            {
+                let s = mem.rebase(NO_TEXTURE);
+                let (head, tail): (u64, u16) = (mem.read(s), mem.read(s.wrapping_add(8)));
+                mem.write(name, head);
+                mem.write(name.wrapping_add(8), tail);
+            }
+            let a = u32::from(mem.read::<u8>(rec.wrapping_add(0xc2)));
+            let alpha = go(mem, ALPHA_FUNCTION, &[a], call) | 0x48;
+            go(mem, VFX_CREATE, &[0, b, alpha], call);
+            let args = [0, b, 1, local(0x174), local(0x16c), name, local(0x17c)];
+            go(mem, VFX_CREATE_DATA_BUFFER, &args, call);
+            if go(mem, VFX_SETUP, &[0, b], call) == 0 {
+                go(mem, VFX_DESTROY, &[0, b], call);
+            }
+            rd = go(mem, GET_RENDER_DATA, &[0, b], call);
+            if rd == 0 {
+                return 0;
+            }
+            go(mem, OP_PAIR_INDEX, &[0, b], call);
+        }
+        go(mem, OP_MUL_M, &[spr, m6, m5], call);
+        let copy = |mem: &mut M, to: u32, from: u32, words: u32| {
+            for k in 0..words {
+                let v: u32 = mem.read(from.wrapping_add(4 * k));
+                let at = mem.rebase(to).wrapping_add(4 * k);
+                mem.write(at, v);
+            }
+        };
+        copy(mem, VU0_M5, m4, 16);
+        copy(mem, VU0_M6, spr, 16);
+        copy(mem, VU0_FADE, spr.wrapping_add(0x1200), 4);
+        copy(mem, VU0_POS, unit.wrapping_add(0x90), 4);
+        let f = |mem: &M, at: u32| load(mem.read::<u32>(at));
+        mem.write(
+            spr.wrapping_add(0x1200),
+            store(f(mem, unit.wrapping_add(0x30))),
+        );
+        let d = store(sub(
+            f(mem, unit.wrapping_add(0x30)),
+            f(mem, unit.wrapping_add(0x34)),
+        ));
+        let d = if load(d) < 0.0 { 0 } else { d };
+        mem.write(spr.wrapping_add(0x1204), d);
+        let tenth: f64 = mem.read(mem.rebase(K_TENTH));
+        let k = if f(mem, unit.wrapping_add(0x34)) >= tenth {
+            let k128: f64 = mem.read(mem.rebase(K_128_F64));
+            store(ffx_bridge::x87::div(k128, f(mem, unit.wrapping_add(0x34))))
+        } else {
+            0
+        };
+        mem.write(spr.wrapping_add(0x1208), k);
+        let v0 = mem.rebase(EE_COPY);
+        let p: [u32; 4] = mem.read(unit.wrapping_add(0x90));
+        mem.write(v0, p);
+        let p: [u32; 4] = mem.read(v0);
+        mem.write(spr.wrapping_add(0x1210), p);
+        let r0 = mem.rebase(EE_R0);
+        for at in [0x1020u32, 0x1030] {
+            let v: [u32; 4] = mem.read(r0);
+            mem.write(spr.wrapping_add(at), v);
+        }
+        mem.write(spr.wrapping_add(0x1040), spr.wrapping_add(0x10));
+        mem.write(spr.wrapping_add(0x1044), spr.wrapping_add(0x10));
+        let g: u32 = mem.read(rd.wrapping_add(0x94));
+        let counts: [u32; 2] = mem.read(g.wrapping_add(4));
+        if go(
+            mem,
+            GET_BUFFER_FOR_SEGMENT,
+            &[rd, 0, counts[0], counts[1]],
+            call,
+        ) == 0
+        {
+            return 0;
+        }
+        let g: u32 = mem.read(rd.wrapping_add(0x94));
+        let mut uv: u32 = mem.read(g.wrapping_add(0x18));
+        let mut pts: u32 = mem.read(g.wrapping_add(0xc));
+        let mut col: u32 = mem.read(g.wrapping_add(0x14));
+        let mut idx: u32 = mem.read(g.wrapping_add(0x1c));
+        let k256: f64 = mem.read(mem.rebase(K_256TH));
+        let mut n = 0u32;
+        let mut j = 0u32;
+        while j < u32::from(mem.read::<u16>(b)) {
+            let e = b.wrapping_add(0x40).wrapping_add(0x80 * j);
+            j += 1;
+            let mut r = [0u32; 3];
+            for (v, at) in r.iter_mut().zip([0x1280u32, 0x1290, 0x12a0]) {
+                let p = e.wrapping_add(0x40 + (at - 0x1280));
+                let y = sub(f(mem, unit.wrapping_add(0x98)), f(mem, p.wrapping_add(8)));
+                let x = sub(f(mem, unit.wrapping_add(0x94)), f(mem, p.wrapping_add(4)));
+                *v = store(ffx_bridge::x87::sqrt(add(mul(x, x), mul(y, y))));
+                mem.write(spr.wrapping_add(at), *v);
+            }
+            let a = f(mem, spr.wrapping_add(0x1200));
+            let d = f(mem, spr.wrapping_add(0x1204));
+            let k = f(mem, spr.wrapping_add(0x1208));
+            let full = store(load(mem.read(mem.rebase(K_128))));
+            mem.write(e.wrapping_add(9), 0u8);
+            for (v, at) in r.into_iter().zip([0x1cu32, 0x2c, 0x3c]) {
+                let r = load(v);
+                let alpha = if r >= a {
+                    0
+                } else if r <= d {
+                    full
+                } else {
+                    mem.write(e.wrapping_add(9), 1u8);
+                    store(mul(load(store(sub(a, r))), k))
+                };
+                #[allow(clippy::cast_possible_truncation)] // the low byte
+                let alpha = ftol(mem, load(alpha)) as u8;
+                mem.write(e.wrapping_add(at), alpha);
+            }
+            // (x, y, z, 1) per vertex, in the frame and to the points
+            let mut words = [0u32; 9];
+            for (i, at) in (0u32..).zip([0x134u32, 0x124, 0x114]) {
+                for c in 0..3 {
+                    let v = store(f(mem, e.wrapping_add(0x40 + 0x10 * i + 4 * c)));
+                    words[(3 * i + c) as usize] = v;
+                    mem.write(local(at - 4 * c), v);
+                }
+                mem.write(local(at - 0xc), 1.0f32);
+            }
+            mem.write(pts, words);
+            pts = pts.wrapping_add(0x24);
+            for at in [0x134u32, 0x124, 0x114] {
+                let v = local(at);
+                go(mem, FFX_VU0_APPLY_MATRIX, &[v, spr, v], call);
+            }
+            for (i, o) in (0u32..).zip([0x10u32, 0x14, 0x20, 0x24, 0x30, 0x34]) {
+                let v = store(f(mem, e.wrapping_add(o)));
+                mem.write(uv.wrapping_add(4 * i), v);
+            }
+            uv = uv.wrapping_add(0x18);
+            let half = store(load(mem.read(mem.rebase(K_HALF))));
+            for (i, at) in (0u32..).zip([0x1cu32, 0x2c, 0x3c]) {
+                let c = col.wrapping_add(0x10 * i);
+                for o in [8u32, 4, 0] {
+                    mem.write(c.wrapping_add(o), half);
+                }
+                let alpha = f64::from(mem.read::<u8>(e.wrapping_add(at)));
+                mem.write(c.wrapping_add(0xc), store(alpha * k256));
+            }
+            col = col.wrapping_add(0x30);
+            #[allow(clippy::cast_possible_truncation)] // u16 indices
+            let i = n as u16;
+            mem.write(idx, [i, i.wrapping_add(1), i.wrapping_add(2)]);
+            idx = idx.wrapping_add(6);
+            n = n.wrapping_add(3);
+        }
+        let g: u32 = mem.read(rd.wrapping_add(0x94));
+        let np: u32 = mem.read(g.wrapping_add(4));
+        go(
+            mem,
+            MEMSET,
+            &[pts, 0, np.wrapping_sub(n).wrapping_mul(0xc)],
+            call,
+        );
+        let g: u32 = mem.read(rd.wrapping_add(0x94));
+        let ni: u32 = mem.read(g.wrapping_add(8));
+        go(
+            mem,
+            MEMSET,
+            &[idx, 0, ni.wrapping_sub(n).wrapping_mul(2)],
+            call,
+        );
+        let fill = mem.rebase(FILL_MATRIX);
+        go(mem, FFX_VU0_MUL_MATRIX, &[rd, fill, m5], call);
+        finish_render_data(mem, rd);
+        go(mem, VFX_SET_VISIBLE, &[0, b, 1], call);
+        go(mem, VFX_PATH3_UPDATE, &[0, b], call);
+        let sink = mem.rebase(GS_REGISTER_SINK);
+        while mem.read::<u32>(sink) & 0x100 != 0 {}
+        go(mem, OP_GS1_TRANSFER, &[], call);
+        go(mem, OP_SPR_FREE, &[0x1300], call);
+        0
+    }
+
+    /// The render data's zero translation (`+0x2c`, `+0x1c`, `+0xc`),
+    /// `+0x3c` 1, `+0x80` 0 and its bounds -100000..100000 (`+0x98..`).
+    fn finish_render_data(mem: &mut impl Mem, rd: u32) {
+        use ffx_bridge::x87::{load, store};
         for at in [0x2c, 0x1c, 0xc] {
             mem.write(rd.wrapping_add(at), 0.0f32);
         }
@@ -1125,12 +1425,5 @@ pub mod bridge {
                 mem.write(rd.wrapping_add(at), v);
             }
         }
-        go(mem, VFX_SET_VISIBLE, &[0, b, 1], call);
-        go(mem, VFX_UPDATE, &[0, b], call);
-        let sink = mem.rebase(GS_REGISTER_SINK);
-        while mem.read::<u32>(sink) & 0x100 != 0 {}
-        go(mem, OP_GS1_TRANSFER, &[], call);
-        go(mem, OP_SPR_FREE, &[0x1300], call);
-        0
     }
 }
