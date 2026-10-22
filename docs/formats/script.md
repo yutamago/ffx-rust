@@ -3165,6 +3165,23 @@ real spline functions.
   `+0x1e8` is `0xffff`) and `Math_FacingWithin(player heading, +0x3c, ...)`
   make it the talk candidate (`+0x1e8` id, `+0x1ec` distance). Every float
   compare skips on NaN.
+- `AtelExecMenuCtrl` (`0x00873600`) runs `AtelMenuExec` and ctrl work 0's
+  callback queue. The two set-ups build each worker's
+  `AtelInitBasicWork` record in their frame:
+  `(active, index, ctrl work, block number, i, AtelGetIndexWork(block, i),
+  block, +8)`. `AtelCommonSetUp(ctrl, a, block, x34, x8, debug)`
+  (`0x008759b0`, the menu's ctrl work from `TOMenuAtelStart`) registers the
+  debug sources, takes ctrl work `ctrl` for one block (`+0x34` = `x34`),
+  and sets up its actors (active, variables cleared) and then its other
+  namespace entries (inactive), each with its source debug work.
+  `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`
+  (`0x008756d0`, from `MsAtelSetUp`) takes ctrl work `ctrl` for `n`
+  blocks: the actor, namespace and `+0x14`/`+0x16`/`+0x18` counts are the
+  sums over the blocks, `+0x1f8`/`+0x1fc` the block and `+8` arrays,
+  `+0x54` the field getter `0x008756b0`, `+0x4c` the callback. All blocks'
+  actors come first (numbered on across blocks, variables at `work`,
+  advanced by `AtelGetMyWorkSize`), then all blocks' other entries; then
+  `MsAtelChrInit(ctrl)`, `AtelInitActor` and ctrl work 0 current again.
 
 ### Verification
 

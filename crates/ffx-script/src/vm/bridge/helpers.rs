@@ -7687,3 +7687,154 @@ pub fn atel_check_touch_talk<H: ffx_bridge::Host>(
     h.write(ctx + 0x1e8, id);
     ret
 }
+
+/// `AtelExecMenuCtrl()` (`0x00873600`, Fahrenheit's name; caller
+/// `0x008a9ca0`): `AtelMenuExec`, then ctrl work 0's callback queue
+/// (`AtelExecCallbackQue(0)` when `AtelCheckCallbackQue(0)`); `EAX` the
+/// last call's.
+pub fn atel_exec_menu_ctrl(h: &mut impl ffx_bridge::Host) -> u32 {
+    host_call(h, 0x0086_dd60, &[]);
+    let queued = host_call(h, 0x0087_5000, &[0]);
+    if queued == 0 {
+        return queued;
+    }
+    host_call(h, 0x0087_50b0, &[0])
+}
+
+/// Writes an `AtelInitBasicWork` setup record (eight words) at `rec`.
+fn write_setup(h: &mut impl Mem, rec: u32, words: [u32; 8]) {
+    for (k, v) in (0_u32..).zip(words) {
+        h.write(rec + 4 * k, v);
+    }
+}
+
+/// `AtelCommonSetUp(ctrl, a, block, x34, x8, debug)` (`0x008759b0`,
+/// Fahrenheit's name; caller `TOMenuAtelStart`): registers the debug
+/// sources (`debug`: a count, then three words each, through
+/// `AtelSetUpSourceDebug`, flag `0x100000` for ctrl work 0 else
+/// `0x20000`), takes ctrl work `ctrl` for `block`
+/// (`AtelRequireCtrlWork(ctrl, block, a, -1)`, `+0x34` = `x34`), sets it up
+/// and makes it current, then sets up the block's workers
+/// (`AtelInitBasicWork` with clear, record `(active, i, ctrl, 0, i,
+/// AtelGetIndexWork(block, i), block, x8)`; the actors active, the other
+/// namespace entries not), each with its source debug work
+/// (`AtelInitSourceCodeDebugWork(i, debug)`), and `AtelInitActor`. `rec`
+/// is the record's frame (eight words); `EAX` `AtelInitActor`'s.
+pub fn atel_common_set_up(h: &mut impl ffx_bridge::Host, args: [u32; 6], rec: u32) -> u32 {
+    let [ctrl, a, block, x34, x8, debug] = args;
+    let actors = host_call(h, 0x0086_a650, &[block]).cast_signed();
+    let names = host_call(h, 0x0086_c190, &[block]).cast_signed();
+    if debug != 0 {
+        let mut j = 0_u32;
+        while j.cast_signed() < h.read::<i32>(debug) {
+            let e = debug + 4 + 12 * j;
+            let (e0, e1, e2) = (h.read::<u32>(e), h.read::<u32>(e + 4), h.read::<u32>(e + 8));
+            let flag = if ctrl == 0 { 0x0010_0000 } else { 0x0002_0000 };
+            host_call(h, 0x0088_5b00, &[e1, e2, x8, e0, flag]);
+            j += 1;
+        }
+    }
+    let c = host_call(h, 0x0086_ee10, &[ctrl, block, a, u32::MAX]);
+    h.write(c + 0x34, x34);
+    host_call(h, 0x0087_1190, &[ctrl]);
+    host_call(h, 0x0086_2d30, &[ctrl]);
+    let mut i = 0_i32;
+    for (active, end) in [(1, actors), (0, names)] {
+        while i < end {
+            let k = i.cast_unsigned();
+            let hdr = host_call(h, 0x0086_bb80, &[block, k]);
+            write_setup(h, rec, [active, k, ctrl, 0, k, hdr, block, x8]);
+            host_call(h, 0x0086_cb00, &[rec, 1]);
+            host_call(h, 0x0086_d670, &[k, debug]);
+            i += 1;
+        }
+    }
+    host_call(h, 0x0086_cae0, &[])
+}
+
+/// `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`
+/// (`0x008756d0`, Fahrenheit's name; caller `MsAtelSetUp`, which reads no
+/// `EAX`):
+/// takes ctrl work `ctrl` (`AtelRequireCtrlWork(ctrl, 0, a, -1)`; `+0x34`
+/// 0, `+0x54` the field getter `0x008756b0`) for the `n` script blocks in
+/// `blocks`, summing their actor counts into `+0x0c`, namespaces `+0x10`,
+/// `+0x14`/`+0x18`/`+0x16` from the block header getters; `+0x1f8` the
+/// blocks, `+0x1fc` `x8s`, `+0x30` `x30`, `+0x4c` `callback`. Set up and
+/// current, it gives every block's actors their basic work (record
+/// `(1, index, ctrl, block number, i, AtelGetIndexWork, block, x8s[k] or
+/// 0)`, no clear) and their variables (`AtelSetMyWorkAdrs` from `work`,
+/// advanced by `AtelGetMyWorkSize`), then the other namespace entries
+/// (active 0), then `MsAtelChrInit(ctrl)`, `AtelInitActor` and ctrl work 0
+/// current again (`EAX` that call's). `rec` is the record's frame.
+pub fn atel_battle_set_up(h: &mut impl ffx_bridge::Host, args: [u32; 8], rec: u32) -> u32 {
+    let [blocks, x8s, n, x30, work, a, ctrl, callback] = args;
+    let n = n.cast_signed();
+    let c = host_call(h, 0x0086_ee10, &[ctrl, 0, a, u32::MAX]);
+    h.write(c + 0x34, 0_u32);
+    h.write(c + 0x54, h.rebase(0x0087_56b0));
+    // actors, +0x14, +0x18, +0x16, namespaces
+    let mut sums = [0_u32; 5];
+    for k in 0..n.max(0).cast_unsigned() {
+        let b = h.read::<u32>(blocks.wrapping_add(4 * k));
+        for (s, f) in sums.iter_mut().zip([
+            0x0086_a650,
+            0x0086_bcb0,
+            0x0086_b020,
+            0x0086_a9e0,
+            0x0086_c190,
+        ]) {
+            *s = s.wrapping_add(host_call(h, f, &[b]));
+        }
+    }
+    let [actors, x14, x18, x16, names] = sums;
+    write_u16(h, c + 0x0c, actors);
+    write_u16(h, c + 0x10, names);
+    h.write(c + 0x4c, callback);
+    write_u16(h, c + 0x16, x16);
+    h.write(c + 0x1f8, blocks);
+    write_u16(h, c + 0x14, x14);
+    write_u16(h, c + 0x18, x18);
+    h.write(c + 0x1fc, x8s);
+    h.write(c + 0x30, x30);
+    host_call(h, 0x0087_1190, &[ctrl]);
+    host_call(h, 0x0086_2d30, &[ctrl]);
+    let block_of = |h: &mut _, k: u32| {
+        let b = Mem::read::<u32>(h, blocks.wrapping_add(4 * k));
+        let x8 = if x8s == 0 {
+            0
+        } else {
+            Mem::read::<u32>(h, x8s.wrapping_add(4 * k))
+        };
+        (b, x8)
+    };
+    let mut index = 0_u32;
+    let mut work = work;
+    for k in 0..n.max(0).cast_unsigned() {
+        let (b, x8) = block_of(h, k);
+        let actors = host_call(h, 0x0086_a650, &[b]).cast_signed();
+        host_call(h, 0x0086_c190, &[b]);
+        for i in 0..actors.max(0).cast_unsigned() {
+            let hdr = host_call(h, 0x0086_bb80, &[b, i]);
+            write_setup(h, rec, [1, index, ctrl, k, i, hdr, b, x8]);
+            host_call(h, 0x0086_cb00, &[rec, 0]);
+            host_call(h, 0x0087_0870, &[index, work]);
+            work = work.wrapping_add(host_call(h, 0x0086_c160, &[index]));
+            index += 1;
+        }
+    }
+    for k in 0..n.max(0).cast_unsigned() {
+        let (b, x8) = block_of(h, k);
+        let mut i = host_call(h, 0x0086_a650, &[b]).cast_signed();
+        let names = host_call(h, 0x0086_c190, &[b]).cast_signed();
+        while i < names {
+            let hdr = host_call(h, 0x0086_bb80, &[b, i.cast_unsigned()]);
+            write_setup(h, rec, [0, index, ctrl, k, i.cast_unsigned(), hdr, b, x8]);
+            host_call(h, 0x0086_cb00, &[rec, 0]);
+            i += 1;
+            index += 1;
+        }
+    }
+    host_call(h, 0x0079_76a0, &[ctrl]);
+    host_call(h, 0x0086_cae0, &[]);
+    host_call(h, 0x0086_2d30, &[0])
+}

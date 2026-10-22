@@ -13542,3 +13542,177 @@ fn round27b_remove_for_battle_touch_talk_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r27b_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Replaces `f` in both oracles with a stub that logs `f`, the `d` words
+/// its first argument points at and its next `n - 1` stack words into the
+/// shared log of [`r27_stubs`] (cell `cell`), and returns the log's end: a
+/// callee handed a frame record is compared by the record, not by where
+/// the frame is.
+fn r27_deref_stub(a: &mut Oracle, b: &mut Oracle, cell: u32, f: u32, d: u8, n: u8) {
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &cell.to_le_bytes()].concat(); // mov ecx, [cell]
+    code.extend([&[0xc7, 0x01][..], &f.to_le_bytes()].concat()); // mov [ecx], f
+    code.extend([0x56, 0x8b, 0x74, 0x24, 0x08]); // push esi; mov esi, [esp+8]
+    for j in 0..d {
+        code.extend([0x8b, 0x46, 4 * j, 0x89, 0x41, 4 + 4 * j]); // [ecx+4+4j] = [esi+4j]
+    }
+    code.push(0x5e); // pop esi
+    for k in 1..n {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * (d + k)]);
+    }
+    code.extend([0x83, 0xc1, 4 * (d + n)]); // add ecx, 4 (d + n)
+    code.extend([&[0x89, 0x0d][..], &cell.to_le_bytes()].concat()); // mov [cell], ecx
+    code.extend([0x89, 0xc8, 0xc3]); // mov eax, ecx; ret
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+}
+
+/// Round 27 c on one pair: `AtelExecMenuCtrl`, `AtelCommonSetUp` and
+/// `AtelBattleSetUp`, every callee logged (counts from sequences with
+/// negatives, `AtelInitBasicWork` by its record).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r27c_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    // sequences: 0 actors, 1 namespaces, 2-4 the header getters, 5 index
+    // work, 6 my work size, 7 the ctrl work, 8 the callback queue check
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0086_a650, 1, true),
+            (0x0086_c190, 1, true),
+            (0x0086_bcb0, 1, true),
+            (0x0086_b020, 1, true),
+            (0x0086_a9e0, 1, true),
+            (0x0086_bb80, 2, true),
+            (0x0086_c160, 1, true),
+            (0x0086_ee10, 4, true),
+            (0x0087_5000, 1, true),
+            (0x0086_dd60, 0, false),
+            (0x0087_50b0, 1, false),
+            (0x0088_5b00, 5, false),
+            (0x0087_1190, 1, false),
+            (0x0086_2d30, 1, false),
+            (0x0086_d670, 2, false),
+            (0x0086_cae0, 0, false),
+            (0x0087_0870, 2, false),
+            (0x0079_76a0, 1, false),
+        ],
+    );
+    r27_deref_stub(a, b, stubs.0, 0x0086_cb00, 8, 2);
+    let c = alloc_both(a, b, 0x240);
+    let reset = |a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift| {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 | 1 => [0u32, 1, 2, 3, 4, u32::MAX, 2][rng.below(7) as usize],
+            6 => rng.below(0x100),
+            7 => c,
+            8 => [0u32, 1, 0x100][rng.below(3) as usize],
+            _ => rng.next(),
+        });
+    };
+    for round in 0..12u32 {
+        reset(a, b, rng);
+        r22_case(
+            a,
+            b,
+            0x0087_3600,
+            &[],
+            true,
+            &format!("AtelExecMenuCtrl {what} {round}"),
+            |r| hp::atel_exec_menu_ctrl(r),
+        );
+    }
+    let debug = alloc_both(a, b, 4 + 12 * 4);
+    for round in 0..40u32 {
+        reset(a, b, rng);
+        fill_both(a, b, rng, debug + 4, 12 * 4);
+        poke(
+            a,
+            b,
+            debug,
+            [0u32, 1, 3, 4, u32::MAX][rng.below(5) as usize],
+        );
+        let args = [
+            [0u32, 1, 6][rng.below(3) as usize],
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            if round % 4 == 0 { 0 } else { debug },
+        ];
+        r22_case(
+            a,
+            b,
+            0x0087_59b0,
+            &args,
+            true,
+            &format!("AtelCommonSetUp {what} {round} {args:x?}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_common_set_up(r, args, f)
+            },
+        );
+    }
+    let blocks = alloc_both(a, b, 16);
+    let x8s = alloc_both(a, b, 16);
+    for round in 0..40u32 {
+        reset(a, b, rng);
+        fill_both(a, b, rng, blocks, 16);
+        fill_both(a, b, rng, x8s, 16);
+        let n = [0u32, 1, 2, 3, 4, u32::MAX][rng.below(6) as usize];
+        let args = [
+            blocks,
+            if round % 3 == 0 { 0 } else { x8s },
+            n,
+            rng.next(),
+            rng.next(),
+            rng.next(),
+            [0u32, 1, 6][rng.below(3) as usize],
+            rng.next(),
+        ];
+        r22_case(
+            a,
+            b,
+            0x0087_56d0,
+            &args,
+            true,
+            &format!("AtelBattleSetUp {what} {round} n {n:#x}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_battle_set_up(r, args, f)
+            },
+        );
+    }
+}
+
+#[test]
+fn round27c_menu_ctrl_and_set_ups_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_027c);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r27c_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r27c_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

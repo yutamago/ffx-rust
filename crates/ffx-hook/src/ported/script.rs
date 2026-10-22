@@ -7410,4 +7410,20 @@ ported! {
     Atel_CheckTouchTalk_00866980 @ 0x0086_6980 => extern "C" fn h_866980(w: u32, _unused: u32, player: u32) -> u32 {
         hp::atel_check_touch_talk(&mut mem(), w, player, |_, f, args| super::call_cdecl_f64(f, args))
     }
+    /// `AtelExecMenuCtrl()`.
+    AtelExecMenuCtrl @ 0x0087_3600 => extern "C" fn h_873600() -> u32 {
+        hp::atel_exec_menu_ctrl(&mut mem())
+    }
+    /// `AtelCommonSetUp(ctrl, a, block, x34, x8, debug)`: the setup record
+    /// in an eight-word frame.
+    AtelCommonSetUp @ 0x0087_59b0 => extern "C" fn h_8759b0(ctrl: u32, a: u32, block: u32, x34: u32, x8: u32, debug: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_common_set_up(&mut mem(), [ctrl, a, block, x34, x8, debug], frame.at())
+    }
+    /// `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`: the
+    /// setup record in an eight-word frame.
+    AtelBattleSetUp @ 0x0087_56d0 => extern "C" fn h_8756d0(blocks: u32, x8s: u32, n: u32, x30: u32, work: u32, a: u32, ctrl: u32, callback: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_battle_set_up(&mut mem(), [blocks, x8s, n, x30, work, a, ctrl, callback], frame.at())
+    }
 }
