@@ -2019,3 +2019,201 @@ fn md_path_op1_mdc_draw_matches_the_original() {
         );
     }
 }
+
+// ---- round 44 ------------------------------------------------------------
+
+/// The `ebp` of a function that aligns its frame (`push ebx; mov ebx, esp;
+/// sub esp, 8; and esp, -16; add esp, 4; push ebp ...`) when
+/// [`check_deep_n`] calls it with `frame` as a plain one's `ebp`.
+fn aligned_ebp(frame: u32) -> u32 {
+    (frame - 8) & !15
+}
+
+/// A float near `c` (within about 4), now and then any.
+fn near(rng: &mut Xorshift, c: f32) -> u32 {
+    if rng.chance(3) {
+        return rng.float();
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let d = (rng.below(0x2000) as f32 - 4096.0) / 1024.0;
+    (c + d).to_bits()
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn opus_0437_poly_check_matches_the_original() {
+    use ffx_vfx::rand::bridge::{R, SEEDED};
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_ed40);
+        let (list, packets, mats) = (p.alloc(0x100), p.alloc(0x400 * 4), p.alloc(0x40 * 4));
+        let (b, table, m) = (p.alloc(0x30 + 0x60 * 8), p.alloc(0x100), p.alloc(0x40));
+        let dots = p.alloc(0x10 + 0x20 * 8);
+        // user_malloc hands out `buf`, user_free_thunk is logged
+        let (cell, buf) = (p.alloc(4), p.alloc(0x1000));
+        p.set(cell, buf);
+        let sizes = deref_recorder_with(&mut p, 0x0068_7020, &[0], Some(cell));
+        let freed = deref_recorder(&mut p, 0x0068_7010, &[0]);
+        assert_eq!(p.a.stack_range(), p.b.stack_range());
+        let mut seen = [0u32; 4];
+        for round in 0..1500 {
+            p.fill(list, 0x100, &mut rng);
+            p.fill(packets, 0x400 * 4, &mut rng);
+            let n = rng.below(4);
+            p.set(list + 4, n as u16);
+            // a third of the rounds untransformed (unit matrices), with
+            // `limit` exactly some polygon's height
+            let unit = rng.chance(33);
+            let mut heights = Vec::new();
+            for k in 0..n {
+                let (pk, mk) = (packets + 0x400 * k, mats + 0x40 * k);
+                p.set(list + 0x10 + 0x10 * k, pk);
+                p.set(list + 0x14 + 0x10 * k, mk);
+                let verts = rng.below(10);
+                // a negative count transforms nothing
+                let count = if rng.chance(5) { -3 } else { verts as i16 };
+                p.set(pk + 0x12, count);
+                p.set(pk + 8, 0x300u32);
+                let first = rng.pick(&[0x20u32, 0x40]);
+                p.set(pk + 4, first);
+                p.set(pk + 0x21, 0u8);
+                for i in 0..verts {
+                    for c in 0..3 {
+                        // near 0, now and then far (sums that round)
+                        let x = if rng.chance(15) {
+                            // +-1.5 x 2^27 and 0.75: the order of a
+                            // three-term sum decides what is left
+                            rng.pick(&[0x4d40_0000u32, 0xcd40_0000, 0x3f40_0000])
+                        } else if rng.chance(30) {
+                            finite(&mut rng)
+                        } else {
+                            near(&mut rng, 0.0)
+                        };
+                        p.set(pk + 0x300 + 0x10 * i + 4 * c, x);
+                    }
+                    p.set(pk + 0x30c + 0x10 * i, 0x3f80_0000u32);
+                }
+                let y =
+                    |p: &Pair, v: u16| f64::from(p.get::<f32>(pk + 0x304 + 0x10 * u32::from(v)));
+                let mut t = pk + first;
+                for _ in 0..rng.below(3) {
+                    let c = rng.pick(&[-1i16, 0, 1, 2, 3, 4]);
+                    p.set(t + 1, 0x10u8);
+                    p.set(t + 2, c);
+                    for j in 0..c.max(0).cast_unsigned() {
+                        let at = t + 0x20 + 0x1c * u32::from(j);
+                        let mut abc = [0u16; 3];
+                        for (v, x) in (0u32..).zip(abc.iter_mut()) {
+                            *x = rng.below(verts.max(1)) as u16;
+                            p.set(at + 2 * v, *x);
+                        }
+                        // the original's height: f32 (b + a), + c, / 3
+                        let h = f64::from((y(&p, abc[1]) + y(&p, abc[0])) as f32);
+                        let h = f64::from((h + y(&p, abc[2])) as f32);
+                        heights.push(((h / 3.0) as f32).to_bits());
+                    }
+                    t = t.wrapping_add_signed(0x20 + 0x1c * i32::from(c.max(0)));
+                }
+                p.set(t + 1, rng.pick(&[0x11u8, 0xff, 0x00]));
+                // the matrix: mostly a scaled rotation-free one with a small
+                // translation, now and then anything finite
+                for i in 0..16 {
+                    let x = if unit {
+                        if i % 5 == 0 { 1.0f32.to_bits() } else { 0 }
+                    } else if rng.chance(70) {
+                        if i % 5 == 0 {
+                            1.0f32.to_bits()
+                        } else if i >= 12 {
+                            near(&mut rng, 0.0)
+                        } else {
+                            0
+                        }
+                    } else {
+                        finite(&mut rng)
+                    };
+                    p.set(mk + 4 * i, x);
+                }
+            }
+            for i in 0..16 {
+                let x = if i % 5 == 0 { 1.0f32.to_bits() } else { 0 };
+                let x = if !unit && rng.chance(20) {
+                    finite(&mut rng)
+                } else {
+                    x
+                };
+                p.set(m + 4 * i, x);
+            }
+            // the polygon buffer: 1..8 entries, the next slot, the table of
+            // polygon owners (mostly free)
+            let entries = 1 + rng.below(8);
+            p.fill(b, 0x30 + 0x60 * 8, &mut rng);
+            p.set(b, entries as u16);
+            p.set(b + 2, rng.below(entries) as u16);
+            p.set(b + 0xc, table);
+            for i in 0..0x80 {
+                let v = rng.pick(&[0xffffu16, 0xffff, 0xffff, 0, 3, 0xfffe, 0x8000]);
+                p.set(table + 2 * i, v);
+            }
+            for e in 0..8 {
+                let v = rng.pick(&[-1i16, 0, 2, 5, 9, -2]);
+                p.set(b + 0x30 + 0x60 * e + 0xc, v);
+            }
+            let d = if rng.chance(50) {
+                p.fill(dots, 0x10 + 0x20 * 8, &mut rng);
+                p.set(dots, 1 + rng.below(8));
+                let any = rng.next();
+                p.set(dots + 4, rng.pick(&[0u32, 3, 0xffff_fff0, any]));
+                dots
+            } else {
+                0
+            };
+            p.put(R, 0x3f80_0000 | rng.below(0x80_0000));
+            p.put(SEEDED, u32::from(rng.chance(90)));
+            let limit = if unit && !heights.is_empty() && rng.chance(80) {
+                let h = rng.pick(&heights);
+                // the height itself, or the float just above or below it
+                h.wrapping_add_signed(rng.pick(&[0, 0, 1, -1]))
+            } else {
+                near(&mut rng, 0.0)
+            };
+            // the emulated v0, which the dots overwrite word by word
+            let v0 = p.sym(0x00c8_f528);
+            p.fill(v0, 0x10, &mut rng);
+            // the original's two never-written frame words
+            let junk = [rng.next(), rng.next()];
+            let frame = p.b.stack_range().end - 0x100 - 20 - 4 - 0x200 - 20 - 4 - 4;
+            let ebp = aligned_ebp(frame);
+            p.a.write(ebp - 0x54, &junk[0].to_le_bytes()).unwrap();
+            p.a.write(ebp - 0xa4, &junk[1].to_le_bytes()).unwrap();
+            let before = (
+                p.get::<u32>(sizes),
+                p.get::<u16>(b + 2),
+                p.get::<u32>(dots + 4),
+            );
+            check_deep_n(
+                &mut p,
+                &format!("opus_0437_poly_check round {round}"),
+                0x00a6_ed40,
+                &[list, b, d, m, limit],
+                |o, frame| {
+                    Some(hi_opus::bridge::opus_0437_poly_check(
+                        o,
+                        list,
+                        b,
+                        d,
+                        m,
+                        f32::from_bits(limit),
+                        junk,
+                        aligned_ebp(frame),
+                        &mut call_original,
+                    ))
+                },
+            );
+            assert_eq!(p.get::<u32>(sizes), p.get::<u32>(freed));
+            seen[0] += u32::from(p.get::<u32>(sizes) != before.0);
+            seen[1] += u32::from(p.get::<u16>(b + 2) != before.1);
+            seen[2] += u32::from(d != 0 && p.get::<u32>(dots + 4) != before.2);
+            seen[3] += u32::from(n == 0);
+        }
+        assert!(seen.iter().all(|&s| s > 30), "{}: {seen:?}", p.name);
+    }
+}

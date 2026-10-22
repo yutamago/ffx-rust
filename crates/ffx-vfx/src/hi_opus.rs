@@ -326,6 +326,191 @@ pub mod bridge {
         )
     }
 
+    /// `f64` 1000 (`0x00b0dba0`).
+    const K_1000: f64 = 1000.0;
+    /// `f64` 3 (`0x00b2c5c8`).
+    const K_3: f64 = 3.0;
+    /// `f64` 0.333333 (`0x00b501f8`, an `f32` 0.333333 widened).
+    const K_THIRD: u32 = 0x00b5_01f8;
+
+    /// `opus_0437_poly_check(list, b, dots, m, limit)` (`0x00a6ed40`, from
+    /// `opp_0437_cmd_a6dbe0`): the polygons of a model list that sank to
+    /// `limit` become `opus_0437` polygon entries.
+    ///
+    /// For each of the `u16 list +4` packets (`ptr32 list +0x10 + 0x10 k`,
+    /// its matrix the `ptr32` after it): the matrix's translation times
+    /// 1000 (`f32`), `op_mul_m(frame - 0x48, m, matrix)`, divided back
+    /// (`f32`); `buf = user_malloc(i16 packet +0x12 << 4)` gets every
+    /// vertex (16 bytes from `packet + [packet +8]`) through
+    /// `FFXVu0ApplyMatrix`. Then each tag of type 0x10 (from `packet +
+    /// [packet +4]`, `i16 +2` polygons of 0x1c bytes from `tag +0x20`,
+    /// three `u16` vertex numbers `a, b, c` at `+0`), with `idx` the
+    /// polygon's number over the whole list: when `u16 [b +0xc][idx]` is
+    /// 0xffff and `y = f32(f32(f32(B.y + A.y) + C.y) / 3)` (`A` = vertex
+    /// `b`, `B` = `a`, `C` = `c`) is `<= limit` (never for a NaN), entry
+    /// `s = u16 b +2` (0x60 bytes from `b +0x30`) takes it.
+    ///
+    /// The entry: `[b +0xc][idx] = s`; the polygon it held (`i16 +0xc`,
+    /// when not negative) gets 0xfffe unless negative; `u16 b +2 = (s + 1)
+    /// % u16 b +0` (`idiv`, which faults on 0); the centre `f32((A + B + C)
+    /// x 0.333333)` per axis (one rounding) at `+0`, the emulated `r0` at
+    /// `+0x50`, `u16 +0x1c` 0, `u16 +0xc` `idx`, `u8 +0xe` 0, `u16 +0x5e`
+    /// 0x1000.
+    ///
+    /// With `dots`, eight dots more, each the next of `dots[1] % dots[0]`
+    /// (32 bytes from `dots + 0x10`; `dots[1]` up by one): `r =
+    /// op_random(4)`, `op_xyz_scale(dot, v, 1.0)` with `v = (x + r, r + y,
+    /// r + z)` at `frame - 0x60` (its `w` at `frame - 0x54` never written:
+    /// `junk[0]`), then `(0, f32((op_random(16) - 20) x 0.0625), 0,
+    /// junk[1])` into the emulated `v0` (`0x00c8f528`; written z, w, x, y)
+    /// and `dot +0x10`, whose `u16 +0x1c` is then 0. `junk[1]` is the
+    /// original's frame word `ebp - 0xa4`, never written either. Last
+    /// `user_free_thunk(buf)`.
+    ///
+    /// Callees through `call` but `op_random` (ours). Returns `eax` as
+    /// left: `u16 list +4`.
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+    pub fn opus_0437_poly_check<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        b: u32,
+        dots: u32,
+        m: u32,
+        limit: f32,
+        junk: [u32; 2],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        let ptr32 = ffx_system::stub::ptr32;
+        let (local, v) = (frame.wrapping_sub(0x48), frame.wrapping_sub(0x60));
+        mem.write(v.wrapping_add(0xc), junk[0]);
+        let r0 = mem.rebase(EE_R0);
+        let v0 = mem.rebase(EE_COPY);
+        let third: f64 = mem.read(mem.rebase(K_THIRD));
+        let rd = |mem: &M, at: u32| load(mem.read::<u32>(at));
+        let mut idx = 0u32;
+        let mut e = list.wrapping_add(0x10);
+        let mut k = 0u32;
+        while k < u32::from(mem.read::<u16>(list.wrapping_add(4))) {
+            let packet = ptr32(mem.read(e));
+            let verts = packet.wrapping_add(mem.read::<u32>(packet.wrapping_add(8)));
+            for o in [0x30u32, 0x34, 0x38] {
+                let t = ptr32(mem.read(e.wrapping_add(4))).wrapping_add(o);
+                mem.write(t, store(mul(rd(mem, t), K_1000)));
+            }
+            let tm = ptr32(mem.read(e.wrapping_add(4)));
+            go(mem, 0x007e_83b0, &[local, m, tm], call);
+            for o in [0x30u32, 0x34, 0x38] {
+                let t = ptr32(mem.read(e.wrapping_add(4))).wrapping_add(o);
+                mem.write(t, store(div(rd(mem, t), K_1000)));
+            }
+            let size = i32::from(mem.read::<i16>(packet.wrapping_add(0x12))) << 4;
+            let buf = go(mem, 0x0068_7020, &[size.cast_unsigned()], call);
+            let mut i = 0i32;
+            while i < i32::from(mem.read::<i16>(packet.wrapping_add(0x12))) {
+                let o = i.cast_unsigned() << 4;
+                let args = [buf.wrapping_add(o), local, verts.wrapping_add(o)];
+                go(mem, 0x006e_d2e0, &args, call);
+                i += 1;
+            }
+            let vertex = |mem: &M, at: u32| buf.wrapping_add(u32::from(mem.read::<u16>(at)) << 4);
+            let mut tag = packet.wrapping_add(mem.read::<u32>(packet.wrapping_add(4)));
+            while mem.read::<u8>(tag.wrapping_add(1)) == 0x10 {
+                let mut poly = tag.wrapping_add(0x20);
+                let mut j = 0i32;
+                while j < i32::from(mem.read::<i16>(tag.wrapping_add(2))) {
+                    let table: u32 = mem.read(b.wrapping_add(0xc));
+                    if mem.read::<u16>(table.wrapping_add(idx.wrapping_mul(2))) == 0xffff {
+                        let pa = vertex(mem, poly.wrapping_add(2));
+                        let pb = vertex(mem, poly);
+                        let pc = vertex(mem, poly.wrapping_add(4));
+                        let y = store(add(
+                            rd(mem, pa.wrapping_add(4)),
+                            rd(mem, pb.wrapping_add(4)),
+                        ));
+                        let y = store(add(load(y), rd(mem, pc.wrapping_add(4))));
+                        let y = f32::from_bits(store(div(load(y), K_3)));
+                        if y <= limit {
+                            let slot: u16 = mem.read(b.wrapping_add(2));
+                            mem.write(table.wrapping_add(idx.wrapping_mul(2)), slot);
+                            let ent = b.wrapping_add(0x30 + 0x60 * u32::from(slot));
+                            let prev = mem.read::<i16>(ent.wrapping_add(0xc));
+                            if prev >= 0 {
+                                let table: u32 = mem.read(b.wrapping_add(0xc));
+                                let at = table.wrapping_add(i32::from(prev).cast_unsigned() * 2);
+                                if mem.read::<i16>(at) >= 0 {
+                                    mem.write(at, 0xfffeu16);
+                                }
+                            }
+                            let n = i32::from(mem.read::<u16>(b.wrapping_add(2))) + 1;
+                            let d = i32::from(mem.read::<u16>(b));
+                            // dx; a 0 count faults in the original
+                            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                            mem.write(b.wrapping_add(2), n.checked_rem(d).unwrap_or(0) as u16);
+                            for c in 0..3u32 {
+                                let s = add(
+                                    add(
+                                        rd(mem, pa.wrapping_add(4 * c)),
+                                        rd(mem, pb.wrapping_add(4 * c)),
+                                    ),
+                                    rd(mem, pc.wrapping_add(4 * c)),
+                                );
+                                mem.write(ent.wrapping_add(4 * c), store(mul(s, third)));
+                            }
+                            let r: [u32; 4] = mem.read(r0);
+                            mem.write(ent.wrapping_add(0x50), r);
+                            mem.write(ent.wrapping_add(0x1c), 0u16);
+                            #[allow(clippy::cast_possible_truncation)] // the low half
+                            mem.write(ent.wrapping_add(0xc), idx as u16);
+                            mem.write(ent.wrapping_add(0xe), 0u8);
+                            mem.write(ent.wrapping_add(0x5e), 0x1000u16);
+                            if dots != 0 {
+                                for _ in 0..8 {
+                                    let r = crate::rand::bridge::op_random(mem, 4.0);
+                                    let r = f64::from(r);
+                                    mem.write(v, store(add(rd(mem, ent), r)));
+                                    mem.write(
+                                        v.wrapping_add(4),
+                                        store(add(r, rd(mem, ent.wrapping_add(4)))),
+                                    );
+                                    mem.write(
+                                        v.wrapping_add(8),
+                                        store(add(r, rd(mem, ent.wrapping_add(8)))),
+                                    );
+                                    let r2 = f64::from(crate::rand::bridge::op_random(mem, 16.0));
+                                    let w = store(mul(sub(r2, 20.0), 0.0625));
+                                    let n: u32 = mem.read(dots);
+                                    let at: u32 = mem.read(dots.wrapping_add(4));
+                                    // a 0 count faults in the original
+                                    let i = at.checked_rem(n).unwrap_or(0);
+                                    let dot = dots.wrapping_add(0x10).wrapping_add(i << 5);
+                                    go(mem, 0x007e_a850, &[dot, v, 0x3f80_0000], call);
+                                    mem.write(v0.wrapping_add(8), 0u32);
+                                    mem.write(v0.wrapping_add(0xc), junk[1]);
+                                    mem.write(v0, 0u32);
+                                    mem.write(v0.wrapping_add(4), w);
+                                    mem.write(dot.wrapping_add(0x10), [0, w, 0, junk[1]]);
+                                    mem.write(dot.wrapping_add(0x1c), 0u16);
+                                    let at = dots.wrapping_add(4);
+                                    mem.write(at, mem.read::<u32>(at).wrapping_add(1));
+                                }
+                            }
+                        }
+                    }
+                    idx = idx.wrapping_add(1);
+                    poly = poly.wrapping_add(0x1c);
+                    j += 1;
+                }
+                tag = poly;
+            }
+            go(mem, 0x0068_7010, &[buf], call);
+            e = e.wrapping_add(0x10);
+            k += 1;
+        }
+        u32::from(mem.read::<u16>(list.wrapping_add(4)))
+    }
+
     /// `f64` 2048 (`0x00b51bc0`).
     const K_2048: u32 = 0x00b5_1bc0;
     /// `f64` 256 (`0x00b922f0`).

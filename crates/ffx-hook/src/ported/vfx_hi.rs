@@ -83,6 +83,17 @@ ported! {
     opus_0437_poly_init_00a6e1b0 @ 0x00a6_e1b0 => extern "C" fn opus_0437_poly_init(b: u32, list: u32, m: u32, k: u32) -> u32 {
         hi_opus::bridge::opus_0437_poly_init(&mut mem(), b, list, m, k, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_0437_poly_check(list, b, dots, m, limit)`: its matrix and
+    /// vector in a buffer on this shim's stack; the two frame words the
+    /// original never writes as 0.
+    opus_0437_poly_check @ 0x00a6_ed40 => extern "C" fn opus_0437_poly_check(list: u32, b: u32, dots: u32, m: u32, limit: f32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x60]);
+        let mut locals = Locals([0; 0x60]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        hi_opus::bridge::opus_0437_poly_check(&mut mem(), list, b, dots, m, limit, [0; 2], frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_vertex_normal_point44_ffx(obj, model, work, chr)`: its locals
     /// in a buffer on this shim's stack.
     op_vertex_normal_point44_ffx @ 0x00a6_d380 => extern "C" fn op_vertex_normal_point44_ffx(_obj: u32, model: u32, work: u32, chr: u32) -> u32 {

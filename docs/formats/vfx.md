@@ -849,6 +849,22 @@ The dot buffer `b`: `b[0]` the entry count, `b[1]` the next entry
 `op_md_list_count10(list)` `u16`s are 0xffff; the box
 `op_md_list_bounds(list, m, b + 0x10, b + 0x20)` (its `eax` returned).
 
+`opus_0437_poly_check(list, b, dots, m, limit)` (`0x00a6ed40`, kind
+0x1000) fills it. Each packet's vertices go through `m` x its matrix
+(translation x1000 for the product, /1000 after, `f32` both times) into a
+`user_malloc` buffer. Polygon `idx` (counted over the list's type-0x10
+tags, `0x1c`-byte polygons from `tag +0x20`, vertex numbers `u16 +0..+4`)
+whose table word is 0xffff and whose height `f32(f32(f32(v1.y + v0.y) +
+v2.y) / 3)` is `<= limit` takes entry `s = u16 b +2`: table word `s`, the
+entry's old polygon (`i16 +0xc`) 0xfffe unless negative, `u16 b +2 = (s +
+1) % u16 b +0`, the centre `f32((v1 + v0 + v2) x 0.333333)` at `+0`, the
+EE's `r0` at `+0x50`, `+0xc` `idx`, `+0x5e` 0x1000. With a dot buffer,
+eight dots per polygon: `op_xyz_scale(dot, centre + op_random(4), 1.0)`
+and `dot +0x10` = `(0, (op_random(16) - 20) / 16, 0, w)` (also into the
+EE's `v0`) with `u16 +0x1c` 0, where the vector's `w` and the last word
+are frame words the original never writes (the hook passes 0). `eax` is
+`u16 list +4`.
+
 ### `opus_0582` dots
 
 `opus_0582_dot_set_00a73740(b, rec)` (`0x00a73740`,
