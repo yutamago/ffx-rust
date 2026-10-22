@@ -8893,7 +8893,7 @@ fn round35_allocate_on(t: &mut Twin) {
                 Poke::Set(l::MOVES + 4 * 0x10, 5),
                 Poke::Set(0x864, 0x3f80_0000),
             ];
-            poke_stub(&mut s, 0x0082_b720, &shade);
+            poke_stub(&mut s, 0x0082_b7a0, &shade);
             let monster = [
                 Poke::Log(l::FLAGS2, flags2_log),
                 Poke::Or(l::FLAGS2, 1),
@@ -9241,4 +9241,291 @@ fn round35_dispose_on(t: &mut Twin) {
     }
     eprintln!("{}: dispose reach {reach:?}, {skipped} skipped", t.name);
     assert!(reach[3] >= 6, "{}: too few Ch_Dispose rounds ran", t.name);
+}
+
+#[test]
+fn round36_shade_id_matches_the_original() {
+    for mut t in twins() {
+        round36_shade_id_on(&mut t);
+    }
+}
+
+/// `Ch_SetShadeID` (battle round 36): the renderer's lighting setters are
+/// logging stand-ins with random results; `Ch_SetShadeIDRelation` runs as
+/// the original on a snapshot's live characters (it walks the bound
+/// ones) and is a stand-in on the made-up ones. Targets and colour fades
+/// are any floats (quiet NaNs, infinities, denormals), frames 0 to 60 and
+/// negative.
+fn round36_shade_id_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0036_b720);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let coeff = fk.fake(t, 0x0063_cdd0, 1, 2);
+    let color = fk.fake(t, 0x0063_d050, 2, 4);
+    let synthetic = t.name == "synthetic";
+    if synthetic {
+        let _ = fk.fake(t, 0x0082_b7a0, 3, 3);
+    }
+    let chrs = if synthetic {
+        characters(t, &mut rng)
+    } else {
+        let live = live_characters(t, &mut rng);
+        live[..live.len() - 1].to_vec()
+    };
+    for round in 0..120u32 {
+        fk.reset(t);
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        t.put_u32(coeff, rng.next());
+        t.put_u32(color, rng.next());
+        for o in [0x330, 0x33c, 0x348, 0x36c, 0x370] {
+            t.put_u32(chr + o, any_float(&mut rng));
+        }
+        t.put_u32(chr + 0x374, rng.next() % 40);
+        let v = any_float(&mut rng);
+        let frames = [0, 1, rng.next() % 60, u32::MAX, 0x8000_0000][rng.next() as usize % 5];
+        t.check(
+            &format!("Ch_SetShadeID {round}"),
+            0x0082_b720,
+            &[chr, v, frames],
+            |m| {
+                Res::Int(c::ch_set_shade_id(m, chr, fl(v), frames, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+    }
+}
+
+/// A stand-in for the cdecl function at `sym` that appends the words of
+/// arguments `words` and then the C string its argument `string` points
+/// to at the cursor `log` (a word holding the next address), and returns
+/// the words at the cursor `table` in turn.
+fn string_stub(t: &mut Twin, sym: u32, string: u8, words: &[u8], log: u32, table: u32) {
+    let mut c = vec![0x56, 0x57, 0x8b, 0x3d]; // push esi; push edi; mov edi, [log]
+    c.extend(log.to_le_bytes());
+    for &k in words {
+        c.extend([0x8b, 0x44, 0x24, 12 + 4 * k, 0xab]); // mov eax, [arg k]; stosd
+    }
+    c.extend([0x8b, 0x74, 0x24, 12 + 4 * string]); // mov esi, [arg]
+    c.extend([0xac, 0xaa, 0x84, 0xc0, 0x75, 0xfa]); // copy through the NUL
+    c.extend([0x89, 0x3d]);
+    c.extend(log.to_le_bytes()); // mov [log], edi
+    c.push(0xa1);
+    c.extend(table.to_le_bytes()); // mov eax, [table]
+    c.extend([0x8b, 0x00, 0x83, 0x05]); // mov eax, [eax]; add dword [table], 4
+    c.extend(table.to_le_bytes());
+    c.extend([0x04, 0x5f, 0x5e, 0xc3]);
+    let at = t.a.alloc_code(&c).unwrap();
+    assert_eq!(t.b.alloc_code(&c).unwrap(), at);
+    let f = t.a.rebase(sym);
+    let mut jmp = vec![0xe9];
+    jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+    t.put(f, &jmp);
+}
+
+#[test]
+fn round36_blk_get_handle_matches_the_original() {
+    for mut t in twins() {
+        round36_blk_get_handle_on(&mut t);
+    }
+}
+
+/// `Ch_BlkGetHandle` (battle round 36). `Sg_PcRead` and `Sg_MemSetStr`
+/// log their strings and words (`Sg_PcRead` returning made-up files in
+/// turn), `Sg_MemSetAlign`, `Chb_AttachMotionTBL_OLD`, `Ch_DataRead`, the
+/// CD library's sync and `dbgPrintf` are logging stand-ins, and the render
+/// cache runs as the original or as stand-ins (the missing paths). The
+/// rest runs as the originals (the chara ones the port calls as its
+/// Rust). Rounds by kind: 0 a block in the table; 1 the cache's data
+/// (the block freed first); 2 the same with `g_FFXIsDebug` and a debug
+/// list entry; 3 no debug entry; 4 not in the cache (read, then there or
+/// not); 5 a viewer `.chr`, with or without its texture; 6 a viewer
+/// `.mdl`; 7 no viewer file. On the image alone kinds 3, 4 (still
+/// missing) and 7 run; on a snapshot each round starts from a fresh copy.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // t, s, c, f, e
+fn round36_blk_get_handle_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x0036_5a40);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let snapshot = match (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) {
+        (Some(dir), Some(snap)) if t.name != "synthetic" => Some((
+            PathBuf::from(dir).join("FFX.exe"),
+            Pages::read(PathBuf::from(snap)).unwrap(),
+        )),
+        _ => None,
+    };
+    if t.name != "synthetic" && snapshot.is_none() {
+        return;
+    }
+    let blks = t.a.rebase(0x023c_8d00);
+    let mut reach = [0u32; 9];
+    for round in 0..48u32 {
+        let kind = round % 8;
+        if snapshot.is_none() && ![3, 4, 7].contains(&kind) {
+            continue;
+        }
+        let mut fresh = snapshot.as_ref().map(|(exe, pages)| Twin {
+            name: t.name,
+            a: Oracle::from_snapshot(exe, pages).unwrap(),
+            b: Oracle::from_snapshot(exe, pages).unwrap(),
+        });
+        let s = fresh.as_mut().unwrap_or(t);
+        let fk = Fakes::new(s);
+        let strings = s.alloc(0x2000);
+        let log = s.alloc(4);
+        s.put_u32(log, strings);
+        let files = s.alloc(0x40);
+        let table = s.alloc(4);
+        s.put_u32(table, files);
+        let zeros = s.alloc(0x40);
+        let zeros_at = s.alloc(4);
+        s.put_u32(zeros_at, zeros);
+        string_stub(s, 0x0083_ae30, 0, &[], log, table);
+        string_stub(s, 0x0083_c580, 1, &[0, 2], log, zeros_at);
+        let _ = fk.fake(s, 0x0083_c4a0, 1, 1);
+        let _ = fk.fake(s, 0x0083_7fa0, 2, 1);
+        let _ = fk.fake(s, 0x0082_9ef0, 3, 1);
+        // dbgPrintf (empty in the game): only "chrdata %x is not exist"
+        // counts, with its key (Ch_BlkAllocate's port leaves its own out)
+        let printed = s.alloc(8);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x3d];
+        c.extend(s.a.rebase(0x00b5_93c4).to_le_bytes());
+        c.extend([0x75, 0x0f, 0x8b, 0x44, 0x24, 0x08, 0xa3]);
+        c.extend(printed.to_le_bytes());
+        c.extend([0xff, 0x05]);
+        c.extend((printed + 4).to_le_bytes());
+        c.push(0xc3);
+        let at = s.a.alloc_code(&c).unwrap();
+        assert_eq!(s.b.alloc_code(&c).unwrap(), at);
+        let f = s.a.rebase(0x0062_f500);
+        let mut jmp = vec![0xe9];
+        jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+        s.put(f, &jmp);
+        let (sync, _) = fk.fake_code(s, 4, 0);
+        s.put_u32(s.a.rebase(0x0231_0c48), sync);
+        let debug = s.a.rebase(0x0133_c910);
+        s.put(debug, &[u8::from(kind == 2 || kind == 3)]);
+        // the live blocks (id, address)
+        let live: Vec<(u32, u32)> = (0..40u32)
+            .map(|k| blks + 0x12c * k)
+            .map(|b| (rd::<u32>(&s.b, b), b))
+            .filter(|&(id, _)| id != u32::MAX && id != 0)
+            .collect();
+        let pick = |rng: &mut Xorshift| live[rng.next() as usize % live.len().max(1)];
+        // a live block's cache data (asked of the original on both)
+        let cached = |s: &mut Twin, id: u32| {
+            let at = s.a.rebase(0x0084_0790);
+            let x = s.a.call_cdecl(at, &[1, id]).unwrap();
+            assert_eq!(s.b.call_cdecl(at, &[1, id]).unwrap(), x);
+            x
+        };
+        let key = match kind {
+            0 => pick(&mut rng).0,
+            // the debug list missing a key above 0xff (one entry of its
+            // low byte)
+            3 if round % 16 == 11 => 0x3000 | 0x100 | (rng.next() & 0xff),
+            1..=4 => {
+                // the image: a key of no block, nothing cached
+                let (id, data) = if live.is_empty() {
+                    (0x2000 | (rng.next() & 0xfff), 0)
+                } else {
+                    let (id, b) = pick(&mut rng);
+                    let data = cached(s, id);
+                    s.put_u32(b, u32::MAX);
+                    (id, data)
+                };
+                if kind == 4 {
+                    let (first, next) = fk.fake_seq(s, 0x0084_0790, 5, 2);
+                    s.put_u32(first, 0);
+                    s.put_u32(next, if round % 16 == 4 { 0 } else { data });
+                    let yet = fk.fake(s, 0x0083_ffe0, 6, 2);
+                    s.put_u32(yet, [0, 1, 2][rng.next() as usize % 3]);
+                    let _ = fk.fake(s, 0x0084_0dd0, 7, 2);
+                }
+                id
+            }
+            _ => {
+                // entries past 0xff too
+                let e = rng.next() % 0x20 + if round % 16 >= 8 { 0x100 } else { 0 };
+                let name = s.alloc(0x20);
+                let dir = s.alloc(0x20);
+                let n = format!("v{:03}", rng.next() % 1000);
+                s.put(name, &[n.as_bytes(), &[0]].concat());
+                s.put(dir, b"prot_mon\0");
+                let entry = s.a.rebase(0x012f_bca8) + 12 * e;
+                s.put_u32(entry, name);
+                s.put_u32(entry + 8, dir);
+                // texture data the mapping takes (version 0x1029, its
+                // base 0, one clut starting with the colour key)
+                let tex = s.alloc(0x40);
+                s.put(tex + 0x10, &0x1029u16.to_le_bytes());
+                s.put(tex + 8, &1u16.to_le_bytes());
+                s.put_u32(tex + 0x18, 0x20);
+                s.put_u32(tex + 0x24, 0x30);
+                s.put(tex + 0x30, &[0, 0xff, 0, 0x7f]);
+                let (data, slot) = if live.is_empty() {
+                    (0, 0)
+                } else {
+                    let (id, b) = pick(&mut rng);
+                    (cached(s, id), b)
+                };
+                // a free block for the new one
+                if slot != 0 {
+                    s.put_u32(slot, u32::MAX);
+                }
+                let mdl = s.alloc(0x200);
+                let tex = if round % 16 < 8 { tex } else { 0 };
+                let seq: Vec<u32> = match kind {
+                    5 => vec![data, tex],
+                    6 => vec![0, mdl, tex],
+                    _ => vec![0, 0],
+                };
+                if kind == 6 {
+                    let _ = fk.fake(s, 0x0082_7590, 8, 1);
+                }
+                for (k, v) in (0u32..).zip(seq) {
+                    s.put_u32(files + 4 * k, v);
+                }
+                0xf000 | e
+            }
+        };
+        if kind == 2 || kind == 3 {
+            // the kind's debug list: entries of other numbers, and of the
+            // key's (twice: the last counts) for kind 2
+            let k = key >> 12;
+            let n = 1 + rng.next() % 4;
+            let list = s.alloc(0x80 * n as usize);
+            for j in 0..n {
+                let num = if kind == 2 && j >= n / 2 {
+                    key & 0xfff
+                } else if j == 0 {
+                    key & 0xff
+                } else {
+                    (key & 0xfff) ^ (1 + j)
+                };
+                s.put_u32(list + 0x80 * j, num);
+                s.put_u32(list + 0x80 * j + 0x30, rng.next());
+            }
+            s.put_u32(s.a.rebase(0x012f_bc64) + 4 * k, list);
+            let count = if kind == 3 && round % 16 == 3 { 0 } else { n };
+            s.put_u32(s.a.rebase(0x012f_bc84) + 4 * k, count);
+        }
+        let frame = s.b.stack_range().start + 0x400;
+        let what = format!("Ch_BlkGetHandle {round} key {key:#x}");
+        s.check(&what, 0x0082_5a40, &[key], |m| {
+            Res::Int(h::ch_blk_get_handle(m, key, frame, &mut |m, f, a| {
+                call(m, f, a)
+            }))
+        });
+        let got =
+            ffx_oracle::Oracle::call_cdecl(&mut s.b, s.a.rebase(0x0082_5ea0), &[key]).unwrap();
+        reach[kind as usize] += u32::from(got != 0);
+        reach[8] += 1;
+    }
+    eprintln!(
+        "{}: Ch_BlkGetHandle reach {reach:?} (a block after each kind, rounds)",
+        t.name
+    );
 }

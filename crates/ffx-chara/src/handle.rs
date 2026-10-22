@@ -530,14 +530,13 @@ pub mod bridge {
 
     /// `Sg_MemSetCheck(on)` (main, `0x0083c4d0`).
     pub const MEM_SET_CHECK: u32 = 0x0083_c4d0;
-    /// `Ch_BlkGetHandle(key)` (`0x00825a40`; not ported: its PC-file path).
+    /// `Ch_BlkGetHandle(key)` (`0x00825a40`; [`ch_blk_get_handle`], called
+    /// through the game: it needs the shim's frame).
     pub const BLK_GET_HANDLE: u32 = 0x0082_5a40;
     /// `dbgPrintf(fmt, ..)` (`0x0062f500`).
     pub const DBG_PRINTF: u32 = 0x0062_f500;
     /// `"SG:Ch_Allocate %s:%s\n"`.
     pub const ALLOCATE_FORMAT: u32 = 0x00b5_94f4;
-    /// `Ch_SetShadeID(chr, v, frames)` (`0x0082b720`; not ported).
-    pub const SET_SHADE_ID: u32 = 0x0082_b720;
     /// `Ch_CalcElement(chr)` (`0x00832760`; through the game: its scratch
     /// and float callbacks are the shim's).
     pub const CALC_ELEMENT: u32 = 0x0083_2760;
@@ -660,7 +659,7 @@ pub mod bridge {
         c::ch_set_fade(mem, chr, l::FADE_SHADE, 1.0, 0);
         c::ch_set_shade_col(mem, chr, [1.0; 3], 0, call);
         c::ch_set_shade_col_effect(mem, chr, 1.0, 1.0, 1.0);
-        call(mem, game(mem, SET_SHADE_ID), &[chr, 1.0f32.to_bits(), 0]);
+        c::ch_set_shade_id(mem, chr, 1.0, 0, call);
         c::ch_set_fade(mem, chr, l::FADE_ALPHA, 1.0, 0);
         c::ch_set_fade(mem, chr, l::FADE_SPECULAR, 1.0, 0);
         c::ch_set_motion_speed(mem, chr, 0x100);
@@ -794,6 +793,221 @@ pub mod bridge {
         let rikku = magic == MAGIC_RIKKU_ID && mem.read::<u16>(chr) == 0x3004;
         mem.write(chr.wrapping_add(0x87c), u8::from(rikku));
         chr
+    }
+
+    // ---- battle round 36: Ch_BlkGetHandle
+
+    /// `Sg_PcRead(path)` (main, `0x0083ae30`): a PC file's data, or 0.
+    pub const PC_READ: u32 = 0x0083_ae30;
+    /// `Sg_MemSetAlign(align)` (main, `0x0083c4a0`).
+    pub const MEM_SET_ALIGN: u32 = 0x0083_c4a0;
+    /// `Chb_AttachMotionTBL_OLD(blk)` (`0x00837fa0`; not ported).
+    pub const ATTACH_MOTION_TBL_OLD: u32 = 0x0083_7fa0;
+    /// `Ch_DataRead(id)` (`0x00829ef0`; through the game: its scratch is
+    /// the shim's).
+    pub const DATA_READ: u32 = 0x0082_9ef0;
+    /// `Cache_Exist3(kind, id)`, `Cache_CheckYet(kind, id)`,
+    /// `Cache_Use(kind, id)` (render).
+    pub const CACHE_EXIST3: u32 = 0x0084_0790;
+    pub const CACHE_CHECK_YET: u32 = 0x0083_ffe0;
+    pub const CACHE_USE: u32 = 0x0084_0dd0;
+    /// `"Viewer"`: a viewer block's tag (`+0xb4`).
+    pub const VIEWER_TAG: u32 = 0x00b5_9368;
+    /// `""`: a game block's tag without `g_FFXIsDebug`.
+    pub const EMPTY_TAG: u32 = 0x00b8_fbeb;
+    /// `"chrdata %x is not exist\n"`.
+    pub const NOT_EXIST_FORMAT: u32 = 0x00b5_93c4;
+    /// The viewer models (key `0xfnnn`): 12-byte entries, the name at
+    /// `+0`, the directory at `+8`.
+    pub const VIEWER_MODELS: Global<u32> = Global::new(0x012f_bca8);
+    /// The debug model lists by kind (`key >> 12`): their entries
+    /// (0x80 bytes, the number first, the tag at `+0x30`) and counts.
+    pub const DEBUG_MODELS: Global<u32> = Global::new(0x012f_bc64);
+    pub const DEBUG_MODEL_COUNTS: Global<u32> = Global::new(0x012f_bc84);
+    /// The bytes [`ch_blk_get_handle`] needs at `frame`: the path
+    /// (`0x100`) and the directory after it (`0x40`), as the original's
+    /// two frame buffers lie.
+    pub const BLK_GET_HANDLE_FRAME: u32 = 0x140;
+
+    /// `strcpy(dst, src)` as the original's byte loops.
+    fn copy_c_string(mem: &mut impl Mem, dst: u32, src: u32) {
+        let s = c_string(mem, src);
+        put_c_string(mem, dst, &s);
+    }
+
+    /// `Ch_BlkGetHandle(key)` (`0x00825a40`; caller `Ch_Allocate`): the
+    /// model block of `key` ([`ch_blk_get_handle_fast`]), else a new one:
+    ///
+    /// - A viewer key (`0xfnnn`, [`VIEWER_MODELS`] entry `nnn`) reads
+    ///   `/ffx/proj2/chr/prot/<dir>/<name>` from the PC (`Sg_PcRead`):
+    ///   `mdl/<name>.chr` gives an archive block
+    ///   ([`ch_blk_allocate`], `+0x70` bit 1), with `tex/<name>.tex`
+    ///   (aligned to 0x80, named, [`crate::mapping::bridge::ch_tex_data_mapping`]) at `+0x14`
+    ///   and bit 2 when it exists, the data named `"[dir:name]VIEWCHRDATA"`;
+    ///   else `mdl/<name>.mdl` and its texture make a block
+    ///   ([`ch_blk_new`], `Chb_AttachMotionTBL_OLD`, `"[dir:name]MDLDATA"`);
+    ///   neither: 0. Both take the tag `"Viewer"` (`+0xb4`), the path
+    ///   (`+0xb8`), name (`+0x71`) and directory (`+0x91`).
+    /// - Any other: with `g_FFXIsDebug` its tag is the debug list entry of
+    ///   number `key & 0xfff` for kind `key >> 12` ([`DEBUG_MODELS`], the
+    ///   last match, `+0x30`; none: `dbgPrintf("chrdata %x is not
+    ///   exist")` and 0), else `""`. The render cache's data
+    ///   (`Cache_Exist3(1, key)`; missing: `Ch_DataRead`, `Ch_ReadSync`,
+    ///   asked again, still missing: 0), waited for when
+    ///   `Cache_CheckYet` is 1, used (`Cache_Use`), makes an archive block
+    ///   with the tag, the path `/ffx/proj2/chr/data/<section>/<name>`
+    ///   (debug; else empty), `ch_create_name` and `ch_create_section`.
+    ///
+    /// Returns the block (EAX). The strings are written at `frame`
+    /// ([`BLK_GET_HANDLE_FRAME`] bytes), the original's frame buffers.
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_blk_get_handle<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::texanim::bridge::{ch_create_name, ch_create_section};
+        let blk = ch_blk_get_handle_fast(mem, key);
+        if blk != 0 {
+            return blk;
+        }
+        let (path, dir) = (frame, frame.wrapping_add(0x100));
+        let game = |mem: &M, f: u32| mem.rebase(f);
+        let set_str = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, p: u32| {
+            let f = game(mem, MEM_SET_STR);
+            call(mem, f, &[p, path, u32::MAX]);
+        };
+        let read = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let f = game(mem, PC_READ);
+            call(mem, f, &[path])
+        };
+        let align = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let f = game(mem, MEM_SET_ALIGN);
+            call(mem, f, &[0x80]);
+        };
+        let names = |mem: &mut M, blk: u32, name: u32, section: u32| {
+            copy_c_string(mem, blk.wrapping_add(0xb8), dir);
+            copy_c_string(mem, blk.wrapping_add(0x71), name);
+            copy_c_string(mem, blk.wrapping_add(0x91), section);
+        };
+        if key & 0xf000 == 0xf000 {
+            let entry = VIEWER_MODELS.ptr(mem).addr.wrapping_add((key & 0xfff) * 12);
+            let name: u32 = mem.read(entry);
+            let section: u32 = mem.read(entry.wrapping_add(8));
+            let (n, sec) = (c_string(mem, name), c_string(mem, section));
+            let d = [b"/ffx/proj2/chr/prot/".as_slice(), &sec, b"/", &n].concat();
+            put_c_string(mem, dir, &d);
+            let file =
+                |kind: &[u8], ext: &[u8]| [d.as_slice(), b"/", kind, b"/", &n, b".", ext].concat();
+            put_c_string(mem, path, &file(b"mdl", b"chr"));
+            let data = read(mem, call);
+            if data != 0 {
+                let blk = ch_blk_allocate(mem, key, data, call);
+                let f: u8 = mem.read(blk.wrapping_add(0x70));
+                mem.write(blk.wrapping_add(0x70), f | 2);
+                let tag = game(mem, VIEWER_TAG);
+                mem.write(blk.wrapping_add(0xb4), tag);
+                put_c_string(mem, path, &file(b"tex", b"tex"));
+                align(mem, call);
+                let tex = read(mem, call);
+                if tex != 0 {
+                    set_str(mem, call, tex);
+                    crate::mapping::bridge::ch_tex_data_mapping(mem, tex);
+                    let f: u8 = mem.read(blk.wrapping_add(0x70));
+                    mem.write(blk.wrapping_add(0x70), f | 4);
+                    mem.write(blk.wrapping_add(0x14), tex);
+                }
+                names(mem, blk, name, section);
+                let (sec, n) = (
+                    c_string(mem, blk.wrapping_add(0x91)),
+                    c_string(mem, blk.wrapping_add(0x71)),
+                );
+                let label = [b"[".as_slice(), &sec, b":", &n, b"]VIEWCHRDATA"].concat();
+                put_c_string(mem, path, &label);
+                set_str(mem, call, data);
+                return blk;
+            }
+            put_c_string(mem, path, &file(b"mdl", b"mdl"));
+            let data = read(mem, call);
+            if data == 0 {
+                return 0;
+            }
+            set_str(mem, call, data);
+            put_c_string(mem, path, &file(b"tex", b"tex"));
+            align(mem, call);
+            let tex = read(mem, call);
+            set_str(mem, call, tex);
+            crate::mapping::bridge::ch_tex_data_mapping(mem, tex);
+            let blk = ch_blk_new(mem, key, data, tex, call);
+            let tag = game(mem, VIEWER_TAG);
+            mem.write(blk.wrapping_add(0xb4), tag);
+            names(mem, blk, name, section);
+            let f = game(mem, ATTACH_MOTION_TBL_OLD);
+            call(mem, f, &[blk]);
+            let label = [b"[".as_slice(), &sec, b":", &n, b"]MDLDATA"].concat();
+            put_c_string(mem, path, &label);
+            set_str(mem, call, data);
+            return blk;
+        }
+        let debug = IS_DEBUG.get(mem) != 0;
+        let tag = if debug {
+            let kind = (key.cast_signed() >> 12).cast_unsigned();
+            let count = DEBUG_MODEL_COUNTS.ptr(mem).at(kind).get(mem).cast_signed();
+            let mut found = 0;
+            if count > 0 {
+                let mut e = DEBUG_MODELS.ptr(mem).at(kind).get(mem);
+                for _ in 0..count {
+                    if mem.read::<u32>(e) == key & 0xfff {
+                        found = e;
+                    }
+                    e = e.wrapping_add(0x80);
+                }
+            }
+            if found == 0 {
+                let f = game(mem, DBG_PRINTF);
+                let fmt = game(mem, NOT_EXIST_FORMAT);
+                call(mem, f, &[fmt, key]);
+                return 0;
+            }
+            found.wrapping_add(0x30)
+        } else {
+            game(mem, EMPTY_TAG)
+        };
+        let name = ch_create_name(mem, key);
+        let section = ch_create_section(mem, key);
+        let exist = game(mem, CACHE_EXIST3);
+        let mut data = call(mem, exist, &[1, key]);
+        if data == 0 {
+            let f = game(mem, DATA_READ);
+            call(mem, f, &[key]);
+            crate::sys::bridge::ch_read_sync(mem, call);
+            data = call(mem, exist, &[1, key]);
+            if data == 0 {
+                return 0;
+            }
+        }
+        let f = game(mem, CACHE_CHECK_YET);
+        if call(mem, f, &[1, key]) == 1 {
+            crate::sys::bridge::ch_read_sync(mem, call);
+        }
+        let f = game(mem, CACHE_USE);
+        call(mem, f, &[1, key]);
+        let blk = ch_blk_allocate(mem, key, data, call);
+        mem.write(blk.wrapping_add(0xb4), tag);
+        if debug {
+            let (sec, n) = (c_string(mem, section), c_string(mem, name));
+            let d = [b"/ffx/proj2/chr/data/".as_slice(), &sec, b"/", &n].concat();
+            put_c_string(mem, dir, &d);
+            copy_c_string(mem, blk.wrapping_add(0xb8), dir);
+        } else {
+            mem.write(blk.wrapping_add(0xb8), 0u8);
+        }
+        let name = ch_create_name(mem, key);
+        copy_c_string(mem, blk.wrapping_add(0x71), name);
+        let section = ch_create_section(mem, key);
+        copy_c_string(mem, blk.wrapping_add(0x91), section);
+        blk
     }
 
     /// `"SG:Ch_DataDispose:%s -result= "`, `"-1\n"` (dbgPrintf) and the

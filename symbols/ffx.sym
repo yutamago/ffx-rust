@@ -7602,7 +7602,7 @@
 0x008258d0 function Ch_BlkDispose             # fh v3:exact 0x00825950
 0x008259c0 function Ch_BlkDisposeAll          # fh v3:exact 0x00825a40
 0x008259f0 function Ch_BlkDisposeHandle       # fh v3:exact 0x00825a70
-0x00825a40 function Ch_BlkGetHandle           # fh v3:exact 0x00825ac0
+0x00825a40 function Ch_BlkGetHandle           # fh v3:exact 0x00825ac0; (key) -> eax block: Ch_BlkGetHandleFast, else viewer keys 0xfnnn from the PC (/ffx/proj2/chr/prot/<dir>/<name>/mdl/<name>.chr or .mdl, tex/<name>.tex), others from the render cache (Cache_Exist3/Ch_DataRead) with a debug-list tag under g_FFXIsDebug; ported (ffx_chara::handle, battle round 36)
 0x00825ea0 function Ch_BlkGetHandleFast       # fh v3:exact 0x00825f20
 0x00825ee0 function Ch_CbArcMapping           # fh v3:exact 0x00825f60
 0x00826070 function Ch_CbMapping             # Switch name (0x7100410130): (chr, blk) chr takes the block's id, name, model header, model entries; c001/c101 -> g_ChrTidus
@@ -7755,7 +7755,7 @@
 0x0082b5b0 function Ch_SetShade               # fh v3:bsim1.00 0x0082b630
 0x0082b5d0 function Ch_SetShadeCol            # fh v3:exact 0x0082b650
 0x0082b6e0 function Ch_SetShadeColEffect      # fh v3:exact 0x0082b760
-0x0082b720 function Ch_SetShadeID             # fh v3:exact 0x0082b7a0
+0x0082b720 function Ch_SetShadeID             # fh v3:exact 0x0082b7a0; (chr, v, frames) -> eax: Chr_FadeSet(+0x36c), Ch_SetShadeIDRelation, shade colour from +0x330/+0x33c/+0x348 and coefficient v on +0x830; ported (ffx_chara::chr, battle round 36)
 0x0082b7a0 function Ch_SetShadeIDRelation        # layout: alphabetical run between Ch_SetShadeID and Ch_SetShadowMode (1 unnamed in the gap); Switch 0x710041def0 Ch_SetShadeIDRelation is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0082b820 function Ch_SetShadowMode          # fh v3:exact 0x0082b8a0
 0x0082b840 function Ch_SetSp                  # fh v3:bsim1.00 0x0082b8c0
@@ -16939,6 +16939,9 @@
 0x012fbc58 label g_ChrClothY                 # float, Ch_ClothSetY
 0x012fbc5c label g_ChrClothXZ                # float, Ch_ClothSetXZ
 0x012fbc60 label g_ChrTidus                 # the character whose model block is c001/c101 (Ch_CbMapping)
+0x012fbc64 label g_ChrDebugModels          # u32[] by kind (key >> 12): debug model lists, 0x80-byte entries (number, tag at +0x30); Ch_BlkGetHandle 0x00825a40
+0x012fbc84 label g_ChrDebugModelCounts     # i32[] by kind: entries in g_ChrDebugModels; Ch_BlkGetHandle 0x00825a40
+0x012fbca8 label g_ChrViewerModels         # 12-byte entries by key & 0xfff for viewer keys 0xfnnn: name +0, directory +8; Ch_BlkGetHandle 0x00825a40
 0x012fbd98 label g_ChrAllocateErr           # u32, Ch_SetAllocateErr sets 1
 0x012fbd9c label g_ChrHandleCursor           # Ch_HandleGetNext's slot index into g_ChrArray; Ch_HandleRewind sets 0
 0x012fbda0 label g_ChrMemMoveTrigger         # u8, Ch_MemMoveSetTrigger sets 1
