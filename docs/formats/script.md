@@ -3182,6 +3182,23 @@ real spline functions.
   actors come first (numbered on across blocks, variables at `work`,
   advanced by `AtelGetMyWorkSize`), then all blocks' other entries; then
   `MsAtelChrInit(ctrl)`, `AtelInitActor` and ctrl work 0 current again.
+- `Atel_CheckBoxTouch_00867c10(w, _)` (`0x00867c10`, from the per-actor
+  dispatcher `0x008666e0`, which returns its `EAX`) is the box-shaped touch
+  trigger. Points A (ctrl work `+0x228..+0x230`) and B (the player,
+  `+0x218..+0x220`), or a target worker's move block `+0x10..` and
+  position when move `+0x28` is not `0xffff`, are taken relative to the
+  actor's move position and turned by `-(move +0x34)`
+  (`x' = c x - s z`, `z' = s x + c z`, each product and sum in 53 bits,
+  stored as f32). Outcodes: x against `±(+0x30)` (bits 1, 2), z against
+  `±(+0x38)` (4, 8), y against `±(+0x1c)` when it is positive (0x10,
+  0x20), every compare inclusive and false on NaN. B inside the box sets
+  `+0x34` bit 8 and touches; outside, bit 8 is cleared and B touches when
+  its height is within the band (or the band is not positive) and the
+  squared distance to its clamp onto the box (`Math_LengthSq3`, no y) is
+  at most `(+0x48)²`. `+0x34` bit 6 keeps the touch, and the vibrate
+  signals go to the actor itself: 5 on a new touch, 5 then 6 when A..B
+  crosses the box (no outcode bit in common) without an earlier touch, 6
+  when a touch ends. `EAX` the last signal's, else 0.
 
 ### Verification
 

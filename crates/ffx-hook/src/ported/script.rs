@@ -7426,4 +7426,9 @@ ported! {
         let mut frame = super::StackFrame::<8>::new();
         hp::atel_battle_set_up(&mut mem(), [blocks, x8s, n, x30, work, a, ctrl, callback], frame.at())
     }
+    /// `Atel_CheckBoxTouch_00867c10(worker, _)`: `Math_LengthSq3` through
+    /// the game.
+    Atel_CheckBoxTouch_00867c10 @ 0x0086_7c10 => extern "C" fn h_867c10(w: u32, _unused: u32) -> u32 {
+        hp::atel_check_box_touch(&mut mem(), w, |_, f, args| super::call_cdecl_f64(f, args))
+    }
 }

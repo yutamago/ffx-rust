@@ -13716,3 +13716,180 @@ fn round27c_menu_ctrl_and_set_ups_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r27c_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Round 27 d on one pair: `Atel_CheckBoxTouch_00867c10` on a ctrl work of
+/// its own with two workers (the actor, a target), the vibrate signal
+/// logged; random boxes, angles and points (NaNs mixed in), then exact
+/// face ties at angle 0.
+#[allow(clippy::too_many_lines)] // the random part, then the ties
+fn r27d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let at = a.rebase(TRAMPOLINE);
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+        Mem::write_bytes(o, at, &TRAMPOLINE_CODE);
+    }
+    let stubs = r27_stubs(a, b, &[(0x0087_6590, 3, true)]);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let here = Mem::read::<u32>(a, ctx_cell);
+    let c = alloc_both(a, b, 0x240);
+    let ws = alloc_both(a, b, 2 * 0xb58);
+    poke(a, b, c + 0x0c, 2u16);
+    poke(a, b, c + 0x10, 2u16);
+    poke(a, b, c + 0x1c, ws);
+    poke(a, b, ctx_cell, c);
+    let (w, o) = (ws, ws + 0xb58);
+    let cache = a.rebase(0x0132_70e4);
+    let nan = 0x7fc0_0000u32;
+    let f = |rng: &mut Xorshift, r: f32| {
+        if rng.below(32) == 0 {
+            nan
+        } else {
+            r26_f32(rng, r)
+        }
+    };
+    let mv_of = |a: &Oracle, x: u32| {
+        if matches!(Mem::read::<u8>(a, Mem::read::<u32>(a, x)), 5 | 6) {
+            x + 0x284
+        } else {
+            x + 0x558
+        }
+    };
+    for round in 0..400u32 {
+        r27_reset(a, b, &stubs, |_| rng.next());
+        poke(a, b, cache, 0u32);
+        for x in [w, o] {
+            let hdr = alloc_both(a, b, 4);
+            poke(a, b, hdr, [0u8, 1, 2, 3, 5, 6, 7][rng.below(7) as usize]);
+            fill_both(a, b, rng, x + 4, 0xb54);
+            poke(a, b, x, hdr);
+        }
+        let (mv, om) = (mv_of(a, w), mv_of(a, o));
+        for k in 0..3 {
+            poke(a, b, mv + 4 * k, f(rng, 3.0));
+            poke(a, b, om + 4 * k, f(rng, 6.0));
+            poke(a, b, om + 0x10 + 4 * k, f(rng, 6.0));
+            poke(a, b, c + 0x218 + 4 * k, f(rng, 6.0));
+            poke(a, b, c + 0x228 + 4 * k, f(rng, 6.0));
+        }
+        let half = |rng: &mut Xorshift| {
+            if rng.below(8) == 0 {
+                f(rng, 2.0)
+            } else {
+                (r26_f32(rng, 2.0) & 0x7fff_ffff).max(0x3f00_0000)
+            }
+        };
+        let (hx, hz) = (half(rng), half(rng));
+        poke(a, b, mv + 0x30, hx);
+        poke(a, b, mv + 0x38, hz);
+        poke(a, b, mv + 0x1c, f(rng, 4.0));
+        poke(a, b, mv + 0x34, f(rng, 4.0));
+        poke(a, b, mv + 0x48, f(rng, 4.0));
+        let target = [0xffffu16, 0xffff, 0, 1, 5][rng.below(5) as usize];
+        poke(a, b, mv + 0x28, target);
+        let junk = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0086_7c10,
+            &[w, junk],
+            true,
+            &format!("Atel_CheckBoxTouch {what} {round} target {target:#x}"),
+            |r| hp::atel_check_box_touch(r, w, |r, at, args| r.0.call_f64(at, args).unwrap()),
+        );
+    }
+    // the ties: angle 0, box 2 x (1) x 2, target the ctrl work's points
+    let one = alloc_both(a, b, 4);
+    poke(a, b, one, 1u8);
+    poke(a, b, w, one);
+    let mv = w + 0x558;
+    let fb = |v: f32| v.to_bits();
+    // (name, A, B, half height, radius, old +0x34 bit 6)
+    #[allow(clippy::type_complexity)]
+    let cases: [(&str, [f32; 3], [f32; 3], f32, f32, u16); 14] = [
+        ("inside", [0.0, 0.0, 0.0], [1.0, 0.0, 1.0], 1.0, 0.0, 0),
+        ("on +x", [9.0, 0.0, 0.0], [2.0, 0.0, 0.0], 1.0, 0.0, 0),
+        ("on -x", [9.0, 0.0, 0.0], [-2.0, 0.0, 0.0], 1.0, 0.0, 0x40),
+        ("on +z", [0.0, 0.0, -9.0], [0.0, 0.0, 2.0], 1.0, 0.0, 0),
+        ("on -z", [0.0, 0.0, 9.0], [0.0, 0.0, -2.0], 1.0, 0.0, 0x40),
+        ("on +y", [0.0, -9.0, 0.0], [0.0, 1.0, 0.0], 1.0, 0.0, 0),
+        ("on -y", [0.0, 9.0, 0.0], [0.0, -1.0, 0.0], 1.0, 0.0, 0x40),
+        ("no band", [0.0, 0.0, 0.0], [3.0, 7.0, 0.0], 0.0, 1.0, 0),
+        ("band tie", [0.0, 0.0, 0.0], [3.0, 1.0, 0.0], 1.0, 1.0, 0),
+        ("radius tie", [0.0, 0.0, 0.0], [3.0, 0.0, 0.0], 1.0, 1.0, 0),
+        (
+            "radius short",
+            [0.0, 0.0, 0.0],
+            [3.0, 0.0, 0.0],
+            1.0,
+            0.999_999_9,
+            0,
+        ),
+        ("cross", [9.0, 0.0, 0.0], [-9.0, 0.0, 0.0], 1.0, 1.0, 0),
+        (
+            "cross was",
+            [9.0, 0.0, 0.0],
+            [-9.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            0x40,
+        ),
+        ("same side", [9.0, 0.0, 0.0], [9.0, 0.0, 1.0], 1.0, 1.0, 0),
+    ];
+    for (name, pa, pb, hy, r, bit) in cases {
+        r27_reset(a, b, &stubs, |_| 0x1234);
+        for (k, v) in (0u32..).zip(pa) {
+            poke(a, b, c + 0x228 + 4 * k, fb(v));
+        }
+        for (k, v) in (0u32..).zip(pb) {
+            poke(a, b, c + 0x218 + 4 * k, fb(v));
+        }
+        for (at, v) in [
+            (mv, 0.0),
+            (mv + 4, 0.0),
+            (mv + 8, 0.0),
+            (mv + 0x30, 2.0),
+            (mv + 0x38, 2.0),
+            (mv + 0x34, 0.0),
+            (mv + 0x1c, hy),
+            (mv + 0x48, r),
+        ] {
+            poke(a, b, at, fb(v));
+        }
+        poke(a, b, mv + 0x28, 0xffffu16);
+        poke(a, b, w + 0x34, bit);
+        r22_case(
+            a,
+            b,
+            0x0086_7c10,
+            &[w, 0],
+            true,
+            &format!("Atel_CheckBoxTouch {what} {name}"),
+            |r| hp::atel_check_box_touch(r, w, |r, at, args| r.0.call_f64(at, args).unwrap()),
+        );
+    }
+    poke(a, b, ctx_cell, here);
+}
+
+#[test]
+fn round27d_box_touch_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_027d);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r27d_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r27d_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

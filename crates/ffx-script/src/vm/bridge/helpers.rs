@@ -7838,3 +7838,151 @@ pub fn atel_battle_set_up(h: &mut impl ffx_bridge::Host, args: [u32; 8], rec: u3
     host_call(h, 0x0086_cae0, &[]);
     host_call(h, 0x0086_2d30, &[0])
 }
+
+/// `Atel_CheckBoxTouch_00867c10(w, _)` (name ours; caller `0x008666e0`'s
+/// type-5 case): a box-shaped trigger. Two points relative to the actor's
+/// move block position: A (ctrl work `+0x228..+0x230`, or the target
+/// worker's move block `+0x10..+0x18` when move `+0x28` is not `0xffff`)
+/// and B, the player (`+0x218..+0x220`, or the target's position), turned
+/// by `-(move +0x34)` (`_CIsin`/`_CIcos`) into the box's frame. Each gets
+/// outcode bits against the box: x against `±(+0x30)` (1, 2), z against
+/// `±(+0x38)` (4, 8), y against `±(+0x1c)` when that is positive (0x10,
+/// 0x20). `+0x36` bit 0 is cleared. B inside sets `+0x34` bit 8 and counts
+/// as touching; outside, bit 8 is cleared and B touches when its height is
+/// within the band (or there is no band) and `LengthSq3` from B to its
+/// clamp onto the box is at most `(+0x48)²`. `+0x34` bit 6 keeps the
+/// touch; the actor's vibrate signals go to itself
+/// (`Atel_RegistVibrateSignal_00876590(0xffff, id, k)`): 5 on a new touch,
+/// 5 then 6 when the segment A..B crosses the box (no common outside bit)
+/// without a touch before, 6 when a touch ends. `EAX` the last signal's,
+/// else 0. `fcall` calls an original returning in `ST0`
+/// (`Math_LengthSq3`).
+#[allow(clippy::too_many_lines, clippy::similar_names)] // the original's two outcode passes
+pub fn atel_check_box_touch<H: super::run::NativeHost>(
+    h: &mut H,
+    w: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) -> u32 {
+    let copy = |v: u32| x87::store(x87::load(v));
+    let ld = x87::load;
+    let mv = move_block(h, w);
+    let [px, py, pz] = [0, 4, 8].map(|o| copy(h.read(mv + o)));
+    let hz = copy(h.read(mv + 0x38));
+    let hx = copy(h.read(mv + 0x30));
+    let angle = x87::store(x87::mul(ld(h.read(mv + 0x34)), -1.0));
+    let hy = copy(h.read(mv + 0x1c));
+    let target = h.read::<u16>(mv + 0x28);
+    let (a, b): ([u32; 3], [u32; 3]) = if target == 0xffff {
+        let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+        (
+            [0x228, 0x22c, 0x230].map(|o| copy(h.read(c + o))),
+            [0x218, 0x21c, 0x220].map(|o| copy(h.read(c + o))),
+        )
+    } else {
+        let o = super::atel_get_basic_work(h, i32::from(target));
+        let om = move_block(h, o);
+        (
+            [0x10, 0x14, 0x18].map(|k| copy(h.read(om + k))),
+            [0, 4, 8].map(|k| copy(h.read(om + k))),
+        )
+    };
+    let rel = |v: u32, p: u32| x87::store(x87::sub(ld(v), ld(p)));
+    let (ax, ay, az) = (rel(a[0], px), rel(a[1], py), rel(a[2], pz));
+    let (bx, by, bz) = (rel(b[0], px), rel(b[1], py), rel(b[2], pz));
+    let (sin, cos) = (h.rebase(0x0094_98c8), h.rebase(0x0094_98c2));
+    let s = x87::store(h.call_intrinsic1(sin, ld(angle)));
+    let c = x87::store(h.call_intrinsic1(cos, ld(angle)));
+    let ns = s ^ 0x8000_0000;
+    // into the box's frame: x' = c x - s z, z' = s x + c z
+    let az2 = x87::store(x87::add(x87::mul(ld(s), ld(ax)), x87::mul(ld(c), ld(az))));
+    let ax2 = x87::store(x87::add(x87::mul(ld(ax), ld(c)), x87::mul(ld(az), ld(ns))));
+    let bz2 = x87::store(x87::add(x87::mul(ld(s), ld(bx)), x87::mul(ld(c), ld(bz))));
+    let bx2 = x87::store(x87::add(x87::mul(ld(bz), ld(ns)), x87::mul(ld(c), ld(bx))));
+    write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) & 0xfffe);
+    // every compare is false when unordered
+    let (hx64, hz64, hy64) = (ld(hx), ld(hz), ld(hy));
+    let mut out_a = 0_u32;
+    if ld(ax2) >= hx64 {
+        out_a |= 1;
+    }
+    if -hx64 >= ld(ax2) {
+        out_a |= 2;
+    }
+    if ld(az2) >= hz64 {
+        out_a |= 4;
+    }
+    if -hz64 >= ld(az2) {
+        out_a |= 8;
+    }
+    if hy64 > 0.0 {
+        if ld(ay) >= hy64 {
+            out_a |= 0x10;
+        }
+        if -hy64 >= ld(ay) {
+            out_a |= 0x20;
+        }
+    }
+    let (mut cx, mut cz) = (bx2, bz2);
+    let mut out_b = 0_u32;
+    if ld(bx2) >= hx64 {
+        out_b |= 1;
+        cx = hx;
+    }
+    let nhx = x87::mul(hx64, -1.0);
+    if ld(bx2) <= nhx {
+        out_b |= 2;
+        cx = x87::store(nhx);
+    }
+    if ld(bz2) >= hz64 {
+        out_b |= 4;
+        cz = hz;
+    }
+    let nhz = x87::mul(hz64, -1.0);
+    if nhz >= ld(bz2) {
+        out_b |= 8;
+        cz = x87::store(nhz);
+    }
+    if hy64 > 0.0 {
+        if ld(by) >= hy64 {
+            out_b |= 0x10;
+        }
+        if ld(by) <= x87::mul(-1.0, hy64) {
+            out_b |= 0x20;
+        }
+    }
+    let crossing = out_a & out_b == 0 && out_a | out_b != 0;
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    let was = f34 >> 6 & 1;
+    let touched = if out_b == 0 {
+        write_u16(h, w + 0x34, f34 | 0x100);
+        true
+    } else {
+        write_u16(h, w + 0x34, f34 & 0xfeff);
+        let in_band = hy64 <= 0.0 || (hy64 >= ld(ay) && -hy64 <= ld(ay));
+        if in_band {
+            let dz = x87::store(x87::sub(ld(bz2), ld(cz)));
+            let dx = x87::store(x87::sub(ld(bx2), ld(cx)));
+            let l = x87::store(fcall(h, h.rebase(0x0088_c3c0), &[dx, 0, dz]));
+            let r = ld(h.read(mv + 0x48));
+            let r2 = x87::store(x87::mul(r, r));
+            ld(r2) >= ld(l)
+        } else {
+            false
+        }
+    };
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    write_u16(h, w + 0x34, f34 & !0x40 | u32::from(touched) << 6);
+    let signal = |h: &mut H, k: u32| {
+        let id = u32::from(Mem::read::<u16>(h, w + 0x2e));
+        host_call(h, 0x0087_6590, &[0xffff, id, k])
+    };
+    match (touched, was, crossing) {
+        (true, 0, _) => signal(h, 5),
+        (false, 0, true) => {
+            signal(h, 5);
+            signal(h, 6)
+        }
+        (false, 1, _) => signal(h, 6),
+        _ => 0,
+    }
+}
