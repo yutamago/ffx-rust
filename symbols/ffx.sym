@@ -7501,7 +7501,7 @@
 0x0081f880 function SqsStraightStreamingVolumeTranslate # SndSetStraightStreamVolumeTranslate's slot (0x00887200) jumps here; ported (field round 39): command (0x3f, frames, v & 0x7f); returns frames
 0x0081fcd0 function Sg_IsSceneLoading        # () -> 1 while the field map loads outside a battle map (graphicIsFieldMapLoading, graphicIsAnyBattleMap), characters load for a listed map outside a battle map (graphicIsCharacterLoadingOrInstanciating, graphicIsMapInList), or the scene assets are not all in with the fade colour locked (graphicIsAllSceneAssetsLoaded, graphicIsScreenFadeColorLocked); from Sg_MainLoop; name ours; ported (field round 48)
 0x0081fd30 function Sg_CanSpeedUp             # ours: () -> 1/0, asked by the world update 0x00821e80 before its time-rate step: every callee first (MagicFile_GetMagicId, graphicLevelGetNameHash, getScenerioFlag, MsBattleCheck, graphicIsVideoPlaying, movie_have_camera, getUCStatus, getInterValefor, Atel_WindowsBusy), 1 while SpdCtrl_IsSpeedingUp; 0 for a video without the movie camera, magic 0x14a/0x14c/0x17d on map 0xd0, magic 0x132/0xa9/0x1b5/0x1b6/0xcd, story points by map/level hash/flag, g_MovieFading, 8 level hashes under getUCStatus, words 0x012f20a4/a8/ac; ported (ffx_sg::state, main round 16)
-0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090
+0x0081ff80 function HandleSaveDataScreen      # fh v3:cg23 0x820090; ported in ffx_sg::state (chara-main-map round 2): screen states 1-4; debug save of all 200 slots via g_SaveDebugSlot
 0x008202d0 function Sg_ReturnConst1_008202d0     # auto-port shape (return constant, cdecl): return 0x1; callers: Sg_MainLoop; name ours
 0x008202e0 function ExportValidateInterface   # fh v3:cg2 0x8203f0
 0x00820310 function Sg_InitArgs               # (argc, argv): Sg_SetLRButtonMode(0), bytes 0x012fb8fa = 0xff, 0x012fb8f9 = 0x012fb8f8 = 0; with g_FFXIsDebug and argc > 1, Sg_SetUserName(argv[1]); callers 0x00820680, 0x00822490 (start-up); name ours; ported (ffx_sg::control)
@@ -8171,7 +8171,7 @@
 0x0083b110 function Sg_SetTkAntiXYB           # fh v3:bsim1.00 0x0083b190
 0x0083b1d0 function Sg_PcRead_0083b1d0        # fh v3:exact 0x0083b250 _Sg_PcRead
 0x0083b420 function Sg_EventjumpDispose       # fh v3:exact 0x0083b4a0; dbgPrintf, Sg_MemSetFast(0), Ch_DisposeAll, Ch_BlkDisposeAll, Ch_DisposeAllMGRP, Sg_PLightDispose, dbgPrintf; ported (ffx_sg::state, chara-main-map round 1)
-0x0083b460 function Sg_EventjumpInit          # fh v3:exact 0x0083b4e0
+0x0083b460 function Sg_EventjumpInit          # fh v3:exact 0x0083b4e0; ported in ffx_sg::state (chara-main-map round 2): graphicGetScreenFadeColor writes blue into its own argument slot (callers do not read it)
 0x0083b5f0 function Sg_InitAll                # fh v3:exact 0x0083b670; (): Sg_LoadVramResource, g_GsRegisterSink 0x83 twice, user_malloc(1 MB) into 0x00c498dc, Sg_InitFilter, Sg_DbInitAll, Sg_Dmy, 0x00839ca0(1), Ch_FunctionHistoryInit, Ch_TextureSpecInitAll, Ch_DrawSetShadowMode(0) (its eax); ported (ffx_sg::state, main round 17)
 0x0083b650 function Sg_PacketGetPtr           # fh v3:bsim1.00 0x0083b6d0
 0x0083b670 function Sg_EventjumpCacheChrs_0083b670 # (caller Sg_EventjumpInit) AtelGetBindpList(0) ids (u16 count, walked from the last): Cache_ClearCheck, Cache_ToTop(1/2, id), Ch_RegMotionToTop, Cache_DisposeCheck, 0x00840ab0, Ch_RegMotionUse, Ch_DataRead(id) + Ch_MgrpRead(id, 0), Ch_ReadSync(0); name ours; ported (ffx_sg::state, chara-main-map round 1)
@@ -8237,6 +8237,7 @@
 0x0083d250 function Ch_TextureSetRegs        # ours: (img, tex) sizes, power-of-two sizes and the GS TEX0 fields at +0x14..+0x1f from an image header (Ch_TextureReMapping)
 0x0083d370 function Sg_GsloadSetBase          # fh v3:exact 0x0083d370
 0x0083d3a0 function Sg_TextureGetSpecular     # () -> 0x01301a60; Fahrenheit Switch BSim 1.00 0x71004250a0
+0x0083d3b0 function Sg_ChrMovePushApart_0083d3b0 # (): Ch_CalcMain's moves and push-apart pass: clears +0x194 bit 14, up to two rounds (move by +0x4c step, Sg_IdChrMove unless bit 7; reach +0x4e8, height +0x520; g_SgPushChrs sorted by z, Sg_ChrPushApart for pairs within reach; pushers bit 9 mark bit 14), then Atel_RequestOwnerTrigger(c, 2) for newly pushed (bit 15 := bit 14); g_ChrCount/g_ChrArray re-read only after a character it takes; name ours; ported in ffx_sg::state (chara-main-map round 2)
 0x0083d7a0 function Ch_IdGetDictionary        # chr +0x828 bits 11-12; Switch name: the 13 functions 0x0083d7a0..0x0083d940 match the 13 Switch Ch_IdGet*/Ch_IdSetDefPid names of that file in name order
 0x0083d7c0 function Ch_IdGetEffect            # chr +0x828 bits 9-10; Switch name, in name order (Ch_IdGetEffectTable calls it)
 0x0083d7e0 function Ch_IdGetEffectTable       # motion type (chr +0x186) 2: 8 | !(+0x194 bit 29); else byte 0x01301af8[effect + 4 * (i8) 0x01301b00] (Sg_IdSetEffectTableIndex's); Switch name, in name order
@@ -16294,6 +16295,7 @@
 0x00c49470 label    g_SqsAdpcmCoefs              # PS-ADPCM filters, two i32 each (Sqs_DecodeAdpcm)
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
+0x00c494cc label    g_SaveDebugSlot            # i32: HandleSaveDataScreen's debug save-every-slot counter (-1 off; a pressed button on the save screen starts it at 0, up to 200); name ours
 0x00c494d8 label g_ChrFlag2Ids              # name ours; i16 pairs (0xc4 bytes): Ch_Allocate sets FLAGS bit 2 for these character ids
 0x00c495b0 label g_ChrIdFloats              # name ours; 13 entries (id u32, two f32): Ch_Allocate's +0x814/+0x818; the first entry's floats are the default (1.0, 0.5), the others by id (last match)
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to g_CdLib_10 for each kind
@@ -16985,6 +16987,7 @@
 0x012f4f88 label    g_SqsWaveInfoDst             # IOP address SqsInitWaveInfo sends 0x5000 bytes to
 0x012f4f90 label    g_SqsAdpcmState              # PS-ADPCM history: left s1, s2, right s1, s2 (i32; Sqs_DecodeAdpcm)
 0x012fb3c0 label    g_SqsSepWaves                # the wave ids SqsSeSeparateDataSend loads (256 u32)
+0x012fb7c8 label    g_SaveCloseAfterDelete     # u32: HandleSaveDataScreen: set, a finished delete closes the screen (state 3) instead of saving again; only cleared in FFX.exe; name ours
 0x012fb7cc label g_BtlCheatPowerup         # u32: the player powerup cheat (MsCheatPlayerPowerup on each turn, MsBattleProcess_InputCue)
 0x012fb7d0 label    g_GraphicSkipFrame        # set to 1 while the sound request count 0x012fb808 is above 1 (a skipped frame); graphicVFXUpdate and updateVFXRenderData do nothing then
 0x012fb7d8 label    g_ChrDrawDetached         # u32: when set, Ch_SysDrawSetSituation and Ch_DrawClothClear leave the renderer alone

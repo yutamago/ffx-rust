@@ -10177,3 +10177,523 @@ fn cmm1_main_snapshot() {
     let mut rng = Xorshift(0x00c3_a1a2);
     cmm1_main_cases(&mut a, &mut b, &mut rng, 30);
 }
+
+// ---- chara-main-map round 2
+
+/// Chara-main-map round 2: `Sg_ChrMovePushApart_0083d3b0` on made-up
+/// field characters (up to 8, bunched so they overlap; steps, climbing
+/// and pusher flags, floors, the originals of `Sg_ChrSortByZ`,
+/// `Sg_VectorGetLengthXZ` and `Sg_ChrPushApart`), `Sg_EventjumpInit`
+/// (counts below and above 10) and `HandleSaveDataScreen` (every screen
+/// state and answer). Callees outside these are recorders.
+#[allow(clippy::too_many_lines)]
+fn cmm2_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32, poke: bool) {
+    use ffx_sg::state::bridge as st;
+    use st::save_screen as ss;
+    let log = a.rebase(REC_LOG);
+    // one recorder per callee (most arguments any caller passes)
+    let mut syms: Vec<(u32, u32)> = vec![(st::ID_CHR_MOVE, 1), (st::REQUEST_OWNER_TRIGGER, 2)];
+    syms.extend(
+        st::EVENTJUMP_INIT_FIRST
+            .iter()
+            .map(|&(f, v)| (f, u32::from(v.is_some()))),
+    );
+    for (f, n) in [
+        // one word: the second dbgPrintf's format reads none, and the stack
+        // word after it is junk (the original's stale argument)
+        (st::SG_DBG_PRINTF, 1),
+        (st::SET_SCREEN_FADE_COLOR, 4),
+        (st::SET_SCREEN_FADE_LAST_REASON, 1),
+        (st::LOCK_SCREEN_FADE_COLOR, 0),
+        (st::PLAYER_SET_DIR_FIX, 2),
+        (st::CH_SYS_DRAW_SET_SITUATION, 1),
+        (st::SET_SUIMEN, 1),
+        (st::SET_WATER_LIMIT, 1),
+        (st::LIGHT_SET, 6),
+        (st::CH_ALLOCATE_INIT_ALL, 1),
+    ] {
+        syms.push((f, n));
+    }
+    syms.extend(
+        st::EVENTJUMP_INIT_LAST
+            .iter()
+            .map(|&(f, args)| (f, u32::try_from(args.len()).unwrap())),
+    );
+    for (f, n) in [
+        (ss::IS_SCREEN_CLOSED, 0),
+        (ss::GET_FADE_LAST_REASON, 0),
+        (ss::IS_LOADING_ALBHED, 0),
+        (ss::IS_FADE_COLOR_LOCKED, 0),
+        (ss::UNLOCK_FADE_COLOR, 0),
+        (ss::SET_FADE_ALPHA_MODE, 1),
+        (ss::IS_BUSY, 0),
+        (ss::INPUT_CLEAR, 0),
+        (ss::GET_SCREEN_STATE, 0),
+        (ss::TK_GET_CONTROLER_HIST, 3),
+        (ss::IS_SAVING_FINISHED, 0),
+        (ss::DEBUG_LOAD_ALL, 1),
+        (ss::UPDATE_ICON, 1),
+        (ss::TO_SAVE, 0),
+        (ss::SET_STATE, 1),
+        (ss::CLOSE_SAVE_LOAD_SCREEN, 0),
+        (ss::SET_SCREEN_STATE, 1),
+        (ss::IS_SAVE, 0),
+        (ss::PRE_SAVE, 0),
+        (ss::IS_SAVE_ENABLED, 0),
+        (ss::TO_LOAD, 0),
+        (ss::IS_LOADING_FINISHED, 0),
+        (ss::GET_DIALOG_STATE, 0),
+        (ss::IS_LOADING_SUCCESSFUL, 0),
+        (ss::IS_OPERATION_CANCELED, 0),
+        (ss::IS_ALBHED_LOADED, 0),
+        (ss::MARK_ALBHED_LOADED, 0),
+        (ss::IS_DELETING_FINISHED, 0),
+        (ss::RESET_TO_IDLE, 0),
+        (ss::CLEAR_FORCE_PLACE_ID, 0),
+        (ss::LOADED_CHOICE, 0),
+        (ss::JUMP_TO_LOADED_SCENE, 0),
+    ] {
+        syms.push((f, n));
+    }
+    if poke {
+        syms.push((st::CHR_PUSH_APART, 4));
+    }
+    let mut slot_of: std::collections::BTreeMap<u32, (u32, u32)> =
+        std::collections::BTreeMap::new();
+    for &(f, n) in &syms {
+        let e = slot_of.entry(f).or_insert((0u32, n));
+        e.1 = e.1.max(n);
+    }
+    for (k, (&f, e)) in (100u32..).zip(slot_of.iter_mut()) {
+        e.0 = k;
+        recorder(a, b, k, f, e.1, 0);
+    }
+    let cell = |a: &Oracle, f: u32| a.rebase(REC_RETS) + 4 * slot_of[&f].0;
+    // poking stand-ins (`poke`): after a countdown (`[ctl]`) they write the
+    // word `[ctl + 8]` to `[ctl + 4]`, once; `Sg_ChrPushApart` becomes one
+    // too, answering from its cell
+    let pokes = alloc(a, b, 16 * 4);
+    if poke {
+        for (k, f) in [
+            st::ID_CHR_MOVE,
+            st::REQUEST_OWNER_TRIGGER,
+            st::CHR_PUSH_APART,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let ctl = pokes + 16 * u32::try_from(k).unwrap();
+            let (slot, n) = slot_of[&f];
+            let rec = a.rebase(REC_CODE) + 0x60 * slot;
+            let mut c = vec![0x83, 0x3d];
+            c.extend(ctl.to_le_bytes());
+            c.extend([0x00, 0x74, 0x15]); // cmp dword [ctl], 0; je +0x15
+            c.extend([0xff, 0x0d]);
+            c.extend(ctl.to_le_bytes()); // dec dword [ctl]
+            c.extend([0x75, 0x0d]); // jnz +0xd
+            c.push(0xa1);
+            c.extend((ctl + 4).to_le_bytes()); // mov eax, [ctl + 4]
+            c.extend([0x8b, 0x0d]);
+            c.extend((ctl + 8).to_le_bytes()); // mov ecx, [ctl + 8]
+            c.extend([0x89, 0x08]); // mov [eax], ecx
+            c.push(0xe9); // jmp the recorder
+            let here = a.alloc_code(&[0; 64]).unwrap();
+            assert_eq!(b.alloc_code(&[0; 64]).unwrap(), here);
+            c.extend(
+                rec.wrapping_sub(here + u32::try_from(c.len()).unwrap() + 4)
+                    .to_le_bytes(),
+            );
+            for o in [&mut *a, &mut *b] {
+                o.write(here, &c).unwrap();
+                let at = o.rebase(f);
+                let mut j = vec![0xe9];
+                j.extend(here.wrapping_sub(at + 5).to_le_bytes());
+                o.write(at, &j).unwrap();
+            }
+            let _ = n;
+        }
+    }
+    // the fade colour: written from three cells
+    let rgb = alloc(a, b, 12);
+    let mut c = Vec::new();
+    for (k, d) in [0x04u8, 0x08, 0x0c].into_iter().enumerate() {
+        c.extend([0x8b, 0x44, 0x24, d]); // mov eax, [esp + d]
+        c.extend([0x8b, 0x0d]);
+        c.extend((rgb + 4 * u32::try_from(k).unwrap()).to_le_bytes()); // mov ecx, [cell]
+        c.extend([0x89, 0x08]); // mov [eax], ecx
+    }
+    c.push(0xc3);
+    cmm_stub(a, b, st::GET_SCREEN_FADE_COLOR, &c);
+    // dbgPrintf: the format, and the count after Sg_EventjumpInit's first
+    // (the other formats read no word)
+    let dlog = alloc(a, b, 4 + 8 * 64);
+    put(a, b, dlog, dlog + 4);
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(dlog.to_le_bytes()); // mov ecx, [dlog]
+    c.extend([0x8b, 0x44, 0x24, 0x04, 0x89, 0x01, 0x83, 0xc1, 0x04]); // log [esp+4]
+    c.push(0x3d);
+    c.extend(a.rebase(st::EVENTJUMP_INIT_LOGS[0]).to_le_bytes()); // cmp eax, fmt
+    c.extend([0x75, 0x09]); // jne +9
+    c.extend([0x8b, 0x44, 0x24, 0x08, 0x89, 0x01, 0x83, 0xc1, 0x04]); // log [esp+8]
+    c.extend([0x89, 0x0d]);
+    c.extend(dlog.to_le_bytes()); // mov [dlog], ecx
+    c.push(0xa1);
+    c.extend(cell(a, st::SG_DBG_PRINTF).to_le_bytes()); // mov eax, [answer]
+    c.push(0xc3);
+    cmm_stub(a, b, st::SG_DBG_PRINTF, &c);
+    // the debug save's info: title and name, the description's bytes
+    let info_log = alloc(a, b, 4 + 72 * 8);
+    cmm_stub(
+        a,
+        b,
+        ss::SET_SAVE_DATA_INFO,
+        &arg_logger(info_log, &[(0, 0), (1, 0), (2, 64)], &[0x33, 0xc0, 0xc3]),
+    );
+    let fcall = &mut |m: &mut H, f: u32, args: &[u32]| {
+        let r =
+            m.0.call(f, Conv::Cdecl, args)
+                .unwrap_or_else(|e| panic!("{f:#x}: {e}"));
+        let st0 = r.st0.unwrap_or_else(|| panic!("{f:#x}: no ST0"));
+        let pop = m.0.rebase(POP_STUB);
+        m.0.call(pop, Conv::Cdecl, &[]).unwrap();
+        st0
+    };
+    let (count_g, array_g) = (a.rebase(0x023c_44e0), a.rebase(0x023c_44e4));
+    let (keep_n, keep_a): (u32, u32) = (Mem::read(&*a, count_g), Mem::read(&*a, array_g));
+    let within = |rng: &mut Xorshift, lo: f32, hi: f32| {
+        #[allow(clippy::cast_precision_loss)]
+        let t = rng.below(1 << 16) as f32 / (1 << 16) as f32;
+        (lo + (hi - lo) * t).to_bits()
+    };
+    let mut reach = [0u32; 8];
+    for round in 0..rounds {
+        // ---- the push-apart pass: a quarter grid at times (exact ties),
+        // NaN positions and heights now and then, a few huge reaches, and
+        // an active character right past the array's end
+        put(a, b, log, 0u32);
+        for k in 0..4 {
+            put(a, b, pokes + 16 * k, 0u32);
+        }
+        let n = 2 + rng.below(7);
+        let chrs = alloc(a, b, 0x880 * (n as usize + 1));
+        let span = [0.5f32, 2.0, 6.0][rng.below(3) as usize];
+        let grid = rng.below(3) == 0;
+        let val = |rng: &mut Xorshift, lo: f32, hi: f32| {
+            if rng.below(24) == 0 {
+                [0x7fc0_0000u32, 0xffc0_0000, 0x7fc1_2345][rng.below(3) as usize]
+            } else if grid {
+                #[allow(
+                    clippy::cast_precision_loss,
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss
+                )]
+                let q = rng.below(((hi - lo) * 4.0) as u32 + 1) as f32 / 4.0;
+                (lo + q).to_bits()
+            } else {
+                within(rng, lo, hi)
+            }
+        };
+        for i in 0..=n {
+            let c = chrs + 0x880 * i;
+            for k in 0..0x880 / 4 {
+                let v = rng.next();
+                let v = if v & 0x7f80_0000 == 0x7f80_0000 {
+                    v & 0xbfff_ffff
+                } else {
+                    v
+                };
+                put(a, b, c + 4 * k, v);
+            }
+            put(a, b, c + 2, u8::from(i == n || rng.below(8) != 0));
+            put(a, b, c + 0x180, u8::from(rng.below(6) == 0));
+            put(a, b, c + 0x181, u8::from(rng.below(2) == 0));
+            let mut f = 0u32;
+            for (bit, p) in [
+                (7u32, 3u32),
+                (8, 6),
+                (9, 3),
+                (14, 3),
+                (15, 3),
+                (30, 2),
+                (5, 4),
+            ] {
+                if rng.below(p) == 0 {
+                    f |= 1 << bit;
+                }
+            }
+            put(a, b, c + 0x194, f);
+            for k in 0..3 {
+                let s = if k == 1 { 0.5 } else { span };
+                put(a, b, c + 0xc + 4 * k, val(rng, -s, s));
+                put(a, b, c + 0x1c + 4 * k, within(rng, -s, s));
+                put(a, b, c + 0x4c + 4 * k, within(rng, -0.25, 0.25));
+            }
+            let (r0, r1) = if rng.below(8) == 0 {
+                (5.0, 12.0)
+            } else {
+                (0.125, 1.5)
+            };
+            put(a, b, c + 0x5c, val(rng, r0, r1));
+            put(a, b, c + 0x64, val(rng, r0, r1));
+            put(
+                a,
+                b,
+                c + 0x4e4,
+                if grid {
+                    1f32.to_bits()
+                } else {
+                    within(rng, 0.5, 1.5)
+                },
+            );
+            put(
+                a,
+                b,
+                c + 0x51c,
+                [
+                    0u32,
+                    0x8000_0000,
+                    within(rng, -1.0, 1.0),
+                    val(rng, -1.0, 1.0),
+                ][rng.below(4) as usize],
+            );
+            put(a, b, c + 0x6a8, val(rng, 0.0, 3.0));
+            put(a, b, c + 0x698, val(rng, 0.0, 3.0));
+            put(
+                a,
+                b,
+                c + 0x154,
+                [0u32, 0x8000_0000, 1f32.to_bits(), 0x7fc0_0000][rng.below(4) as usize],
+            );
+            put(
+                a,
+                b,
+                c + 0x500,
+                [(-1f32).to_bits(), 0, 1f32.to_bits(), 2f32.to_bits()][rng.below(4) as usize],
+            );
+        }
+        put(a, b, count_g, n);
+        put(a, b, array_g, chrs);
+        if poke {
+            // one of the callees changes the counts or the array once
+            let push_count = a.rebase(st::PUSH_CHR_COUNT.sym);
+            // (stand-in: Sg_IdChrMove 0, the trigger 1, Sg_ChrPushApart 2;
+            // a walk in progress only ever grows by the guard character,
+            // or it would step past its end)
+            let (k, to, v) = [
+                (0u32, push_count, 0),
+                (0, push_count, 1),
+                (0, count_g, n + 1),
+                (0, array_g, chrs + 0x880),
+                (1, count_g, n + 1),
+                (1, array_g, chrs + 0x880),
+                (2, push_count, 0),
+                (2, push_count, 1),
+                (2, count_g, n.saturating_sub(1)),
+                (2, count_g, 0),
+                (2, array_g, chrs + 0x880),
+            ][[9, 5, rng.below(11) as usize, rng.below(11) as usize][rng.below(4) as usize]];
+            put(
+                a,
+                b,
+                pokes + 16 * k,
+                if k == 1 { 1 } else { 1 + rng.below(3) },
+            );
+            put(a, b, pokes + 16 * k + 4, to);
+            put(a, b, pokes + 16 * k + 8, v);
+            let at = cell(a, st::CHR_PUSH_APART);
+            put(a, b, at, [0u32, 0x20, 0x20][rng.below(3) as usize]);
+        }
+        twin(
+            &format!("Sg_ChrMovePushApart {round}"),
+            a,
+            b,
+            0x0083_d3b0,
+            &[],
+            |m| {
+                st::chr_move_push_apart(&mut H(m), fcall);
+            },
+        );
+        let logged: u32 = Mem::read(&*b, log);
+        reach[0] += u32::from(logged > n);
+        // ---- Sg_EventjumpInit
+        put(a, b, log, 0u32);
+        put(a, b, dlog, dlog + 4);
+        for k in 0..3 {
+            put(a, b, rgb + 4 * k, within(rng, 0.0, 1.0));
+        }
+        let at = cell(a, st::SG_DBG_PRINTF);
+        put(a, b, at, rng.next());
+        let n = [0u32, 5, 9, 10, 11, 0x24, u32::MAX, 0x8000_0000][rng.below(8) as usize];
+        twin(
+            &format!("Sg_EventjumpInit {n:#x}"),
+            a,
+            b,
+            0x0083_b460,
+            &[n],
+            |m| {
+                let w = m.stack_range().start + 0x400;
+                st::eventjump_init(&mut H(m), n, w)
+            },
+        );
+        // ---- HandleSaveDataScreen: random answers, every screen state,
+        // eight cases a round
+        for case in 0..8 {
+            put(a, b, log, 0u32);
+            put(a, b, info_log, 0u32);
+            for &f in slot_of.keys() {
+                let at = cell(a, f);
+                let v = [0u32, 0, 1, 1, 2, 3, 4, u32::MAX][rng.below(8) as usize];
+                put(a, b, at, v);
+            }
+            let at = cell(a, ss::GET_SCREEN_STATE);
+            put(
+                a,
+                b,
+                at,
+                [0u32, 1, 1, 2, 2, 3, 4, 4, 5][rng.below(9) as usize],
+            );
+            let at = cell(a, ss::TK_GET_CONTROLER_HIST);
+            put(
+                a,
+                b,
+                at,
+                [0u32, 0x80, 0x7f, 0xff00, 0xffff_ff80][rng.below(5) as usize],
+            );
+            let at = cell(a, ss::IS_ALBHED_LOADED);
+            put(a, b, at, [u32::MAX, 0, 1][rng.below(3) as usize]);
+            if rng.below(4) == 0 {
+                // a load that finished well
+                for (f, v) in [
+                    (ss::GET_SCREEN_STATE, 2),
+                    (ss::IS_LOADING_FINISHED, 1),
+                    (ss::GET_DIALOG_STATE, 0),
+                    (ss::IS_LOADING_SUCCESSFUL, 1),
+                    (ss::IS_OPERATION_CANCELED, 0),
+                ] {
+                    let at = cell(a, f);
+                    put(a, b, at, v);
+                }
+            }
+            let at = cell(a, ss::LOADED_CHOICE);
+            put(a, b, at, [0u32, 1, 2, 3][rng.below(4) as usize]);
+            set(
+                a,
+                b,
+                st::SAVE_DEBUG_SLOT,
+                [-1i32, -1, 0, 5, 198, 199][rng.below(6) as usize],
+            );
+            set(a, b, st::SAVE_CLOSE_AFTER_DELETE, rng.below(3));
+            set(a, b, st::SAVE_LOADED_PENDING, rng.below(3));
+            reach[1 + rng.below(1) as usize] += 1;
+            twin(
+                &format!("HandleSaveDataScreen {round}.{case}"),
+                a,
+                b,
+                0x0081_ff80,
+                &[],
+                |m| {
+                    // junk where the description goes: a short clear shows
+                    let w = m.stack_range().start + 0x400;
+                    m.write(w, &[0x55; 0x40]).unwrap();
+                    st::handle_save_data_screen(&mut H(m), w);
+                },
+            );
+        }
+    }
+    if !poke {
+        push_apart_crafted(a, b, fcall);
+    }
+    put(a, b, count_g, keep_n);
+    put(a, b, array_g, keep_a);
+    eprintln!("cmm2 main reach {reach:?}");
+}
+
+#[test]
+fn cmm2_main_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c3_a2a1);
+    cmm2_main_cases(&mut a, &mut b, &mut rng, 120, false);
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    cmm2_main_cases(&mut a, &mut b, &mut rng, 120, true);
+}
+
+#[test]
+fn cmm2_main_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c3_a2a2);
+    cmm2_main_cases(&mut a, &mut b, &mut rng, 60, false);
+}
+
+/// `Sg_ChrMovePushApart_0083d3b0`'s exact ties, three characters each (at
+/// rest, listed, on a quarter grid, x and y 0 unless given):
+/// - the z box's edge exactly (a 0.25 reach at 0, another at 1) does not
+///   end the walk: a third (z 1.5, reach 2) is still pushed;
+/// - a reach sum equal to the distance (0.5 + 0.75, 1.25 apart) is not;
+/// - a climber whose height equals the other's top (1.0) still is.
+fn push_apart_crafted(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    fcall: &mut impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    use ffx_sg::state::bridge as st;
+    // (x, z, reach, flags, height source +0x6a8, top +0x698)
+    type Chr = (f32, f32, f32, u32, f32, f32);
+    let cases: [[Chr; 3]; 3] = [
+        [
+            (0.0, 0.0, 0.25, 0, 0.0, 0.0),
+            (0.0, 1.0, 0.25, 0, 0.0, 0.0),
+            (0.0, 1.5, 2.0, 0, 0.0, 0.0),
+        ],
+        [
+            (0.0, 0.0, 0.5, 0, 0.0, 0.0),
+            (0.75, 1.0, 0.75, 0, 0.0, 0.0),
+            (9.0, 9.0, 0.125, 0, 0.0, 0.0),
+        ],
+        [
+            (0.0, 0.0, 0.5, 1 << 30, 0.5, 1.0),
+            (0.25, 0.5, 0.5, 1 << 30, 1.0, 2.0),
+            (9.0, 9.0, 0.125, 0, 0.0, 0.0),
+        ],
+    ];
+    let (count_g, array_g) = (a.rebase(0x023c_44e0), a.rebase(0x023c_44e4));
+    for (k, case) in cases.iter().enumerate() {
+        let chrs = alloc(a, b, 0x880 * 3);
+        for (i, &(x, z, r, f, h, top)) in (0u32..).zip(case) {
+            let c = chrs + 0x880 * i;
+            put(a, b, c + 2, 1u8);
+            put(a, b, c + 0x194, f | 1 << 7);
+            for (o, v) in [
+                (0xcu32, x),
+                (0x10, 0.0),
+                (0x14, z),
+                (0x5c, r),
+                (0x64, r),
+                (0x4e4, 1.0),
+                (0x51c, 0.0),
+                (0x6a8, h),
+                (0x698, top),
+                (0x500, 1.0),
+            ] {
+                put(a, b, c + o, v.to_bits());
+            }
+        }
+        put(a, b, count_g, 3u32);
+        put(a, b, array_g, chrs);
+        twin(
+            &format!("Sg_ChrMovePushApart crafted {k}"),
+            a,
+            b,
+            0x0083_d3b0,
+            &[],
+            |m| {
+                st::chr_move_push_apart(&mut H(m), fcall);
+            },
+        );
+    }
+}
