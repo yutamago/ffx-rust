@@ -60,8 +60,9 @@ const CRT_HEAP_SIZE: u64 = 0x100_0000;
 const KEPT_NATIVE: [&str; 7] = [
     "malloc", "calloc", "free", "memcpy", "memmove", "memset", "_wassert",
 ];
-/// Upper bound on instructions per call, against runaway loops.
-const MAX_INSTRUCTIONS: usize = 200_000_000;
+/// Upper bound on instructions per call, against runaway loops (the
+/// default; [`Oracle::set_max_instructions`] changes it per oracle).
+pub const MAX_INSTRUCTIONS: usize = 200_000_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -77,8 +78,8 @@ pub enum Error {
     BadAccess(u64),
     #[error("{0} not preserved across the call (the calling convention requires it)")]
     Clobbered(&'static str),
-    #[error("no return after {MAX_INSTRUCTIONS} instructions (a runaway loop?), at {0:#010x}")]
-    Runaway(u64),
+    #[error("no return after {1} instructions (a runaway loop?), at {0:#010x}")]
+    Runaway(u64, usize),
     #[error("the heap is exhausted")]
     OutOfMemory,
     #[error("no free range of {0:#x} bytes for the oracle's own memory")]
@@ -285,6 +286,8 @@ struct State {
     call_top: Option<u64>,
     /// Blocks run in the `FFX_ORACLE_COVER` ranges (`ffx.sym` addresses).
     cover: BTreeSet<u32>,
+    /// [`Oracle::call`]'s instruction budget.
+    max_instructions: usize,
 }
 
 /// An emulated `FFX.exe` process.
@@ -409,6 +412,7 @@ impl Oracle {
             Mode::MODE_32,
             State {
                 rand_seed: 1,
+                max_instructions: MAX_INSTRUCTIONS,
                 ..State::default()
             },
         )?;
@@ -856,6 +860,23 @@ impl Oracle {
         Ok(u32::from_le_bytes(old.try_into().expect("4 bytes")))
     }
 
+    /// Sets the instruction budget of each [`Oracle::call`] (default
+    /// [`MAX_INSTRUCTIONS`]): a call that has not returned by then fails
+    /// with [`Error::Runaway`]. A test whose original calls are all short
+    /// but some spin forever (waits on a thread the emulator does not run)
+    /// lowers it so each spin costs less; a call that runs out of it fails
+    /// as a spin would, so the budget must stay far above the longest call
+    /// that returns.
+    pub fn set_max_instructions(&mut self, n: usize) {
+        self.uc.get_data_mut().max_instructions = n;
+    }
+
+    /// The instruction budget of each [`Oracle::call`].
+    #[must_use]
+    pub fn max_instructions(&self) -> usize {
+        self.uc.get_data().max_instructions
+    }
+
     /// The oracle's own stack, which differs between runs by construction.
     #[must_use]
     pub fn stack_range(&self) -> std::ops::Range<u32> {
@@ -985,13 +1006,14 @@ impl Oracle {
         self.uc.get_data_mut().fault = None;
         self.uc.get_data_mut().returned = false;
 
-        let run = self.uc.emu_start(u64::from(addr), 0, 0, MAX_INSTRUCTIONS);
+        let budget = self.uc.get_data().max_instructions;
+        let run = self.uc.emu_start(u64::from(addr), 0, 0, budget);
         if let Some(fault) = self.uc.get_data_mut().fault.take() {
             return Err(fault);
         }
         run?;
         if !self.uc.get_data().returned {
-            return Err(Error::Runaway(self.uc.reg_read(RegisterX86::EIP)?));
+            return Err(Error::Runaway(self.uc.reg_read(RegisterX86::EIP)?, budget));
         }
         for (reg, name, value) in SAVED {
             if self.uc.reg_read(reg)? != value {

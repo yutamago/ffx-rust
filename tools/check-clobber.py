@@ -15,25 +15,23 @@ reported, and a bug: a shim returning nothing where the original sets eax
 and a caller reads it. Exits 1 when it finds one of those.
 
 Disassembly (objdump, one run per function) is cached in
-$FFX_WORK/cache/clobber-<key>.pickle, the key a hash of FFX.exe and the
-objdump version, and the missing functions are disassembled in parallel
-(--jobs, default every CPU). --no-cache neither reads nor writes the cache.
+$FFX_WORK/cache/clobber-<key>.pickle (tools/disasm_cache.py, shared with
+check-ported.py), the key a hash of FFX.exe and the objdump version, and
+the missing functions are disassembled in parallel (--jobs, default every
+CPU). --no-cache neither reads nor writes the cache.
 The output does not depend on either.
 """
 import argparse
 import bisect
-import hashlib
 import os
 import pathlib
-import pickle
 import re
 import subprocess
 import sys
-import tempfile
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import disasm_cache  # noqa: E402
 import progress  # noqa: E402
 import timing_log  # noqa: E402
 
@@ -49,85 +47,7 @@ SCRATCH = {
 WRITE_ONLY = {"mov", "movzx", "movsx", "lea", "pop", "movd", "cvttss2si", "cvtss2si",
               "cvttsd2si", "cvtsd2si", "fnstsw", "lahf"}
 READ_ONLY = {"cmp", "test", "push", "bt"}
-INSN = re.compile(r"^\s*([0-9a-f]+):\t(.*)$")
-
-
-def _objdump(a, size):
-    out = subprocess.run(["objdump", "-d", "--no-show-raw-insn", "-M", "intel", f"--start-address={a:#x}",
-                          f"--stop-address={a + size:#x}", str(EXE)], capture_output=True, text=True,
-                         check=True).stdout
-    code = {}
-    for line in out.splitlines():
-        m = INSN.match(line)
-        if m:
-            code[int(m.group(1), 16)] = m.group(2).split("#")[0].strip()
-    return code
-
-
-class _Cache:
-    """(address, size) -> disassembly, in memory and on disk per FFX.exe."""
-
-    def __init__(self):
-        self.code = {}
-        self.added = False
-        self.path = None
-        self.use_disk = True
-
-    def _file(self):
-        if self.path is None:
-            h = hashlib.sha256(EXE.read_bytes())
-            ver = subprocess.run(["objdump", "--version"], capture_output=True, text=True, check=True).stdout
-            h.update(ver.splitlines()[0].encode() if ver else b"")
-            h.update(INSN.pattern.encode())
-            self.path = WORK / "cache" / f"clobber-{h.hexdigest()[:16]}.pickle"
-        return self.path
-
-    def load(self):
-        if not self.use_disk:
-            return
-        try:
-            with open(self._file(), "rb") as f:
-                self.code.update(pickle.load(f))
-        except (OSError, EOFError, pickle.UnpicklingError):
-            pass
-
-    def save(self):
-        if not self.use_disk or not self.added:
-            return
-        path = self._file()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        merged = {}
-        try:  # keep what a concurrent run added
-            with open(path, "rb") as f:
-                merged = pickle.load(f)
-        except (OSError, EOFError, pickle.UnpicklingError):
-            pass
-        merged.update(self.code)
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".")
-        with os.fdopen(fd, "wb") as f:
-            pickle.dump(merged, f, protocol=pickle.HIGHEST_PROTOCOL)
-        os.replace(tmp, path)
-        self.added = False
-
-    def get(self, a, size):
-        key = (a, size)
-        code = self.code.get(key)
-        if code is None:
-            code = self.code[key] = _objdump(a, size)
-            self.added = True
-        return code
-
-    def prefetch(self, ranges, jobs):
-        todo = sorted({r for r in ranges if r not in self.code})
-        if not todo:
-            return
-        with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
-            for key, code in zip(todo, pool.map(lambda r: _objdump(*r), todo, chunksize=16)):
-                self.code[key] = code
-        self.added = True
-
-
-CACHE = _Cache()
+CACHE = disasm_cache.for_exe(EXE)  # shared with check-ported.py and callarity.py
 
 
 def disasm(a, size):
