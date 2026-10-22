@@ -192,6 +192,17 @@ fn twin<R: Res>(
     }
     rust(b).check(&r, what);
     assert_eq!(a.diff(b).unwrap(), [], "{what}: memory");
+    settle(a, b);
+}
+
+/// Forgets the pages both sides wrote so far, after a diff found them
+/// equal: a page neither side writes again stays equal, so later diffs need
+/// only the pages written after this. Without it every diff re-read every
+/// page any earlier case wrote, and the long tests spent most of their time
+/// there.
+fn settle(a: &mut Oracle, b: &mut Oracle) {
+    a.clear_dirty();
+    b.clear_dirty();
 }
 
 fn put<T: ffx_bridge::Value>(a: &mut Oracle, b: &mut Oracle, addr: u32, v: T) {

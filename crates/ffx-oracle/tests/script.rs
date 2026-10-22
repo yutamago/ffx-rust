@@ -213,6 +213,17 @@ fn no_diff(a: &mut Oracle, b: &mut Oracle, what: &str) {
         })
         .collect();
     assert_eq!(d, [], "{what}: memory");
+    settle(a, b);
+}
+
+/// Forgets the pages both sides wrote so far, once a diff passed: every
+/// page left is equal on both sides or differs only where the diff's filter
+/// (which looks at the page's own bytes) lets it, so it gives the same answer
+/// again until a side writes the page, which marks it once more. Without it
+/// each diff re-read every page any earlier case of the pair wrote.
+fn settle(a: &mut Oracle, b: &mut Oracle) {
+    a.clear_dirty();
+    b.clear_dirty();
 }
 
 /// Zeroes the top 64 KiB of both oracles' stacks, where the frames of the
@@ -253,6 +264,7 @@ fn native_no_diff(a: &mut Oracle, b: &mut Oracle, what: &str) {
         })
         .collect();
     assert_eq!(d, [], "{what}: memory");
+    settle(a, b);
 }
 
 /// Writes `value` at `addr` in both oracles.
@@ -1461,6 +1473,21 @@ fn atel_init_actor_matches_the_original() {
 
 const SCRIPT_RUN: u32 = 0x0086_41e0;
 
+/// The instruction budget of a [`run_pair`] call. Some natives and
+/// programs wait on a loading thread, a critical section or a semaphore
+/// that no thread of the emulator ever releases (`Native_0258_Poll` through
+/// `TOSwapInternationalEnvExec`'s file reads, `sa_read_callback`,
+/// `graphicProcessPs2DataLoadingCallback`, `task_create_in_group`): such a
+/// call spins until the budget runs out, then the case counts as stopped.
+/// At the oracle's default of 200M instructions each spin took 5-20 s,
+/// most of the natives tests' time. The calls that return need far less:
+/// with this budget the whole file stops exactly the cases it stopped with
+/// the default, on the image and both snapshots (2026-10-21; the natives
+/// of `native_mods` all return within 200k on the field snapshot). A call
+/// that ran out of it would stop its case as a spin does, so keep it far
+/// above the longest call that returns.
+const RUN_BUDGET: usize = 20_000_000;
+
 /// A pair of oracles on the snapshot with the run lock stubbed (the mutex
 /// is a Windows object the emulator does not have; both sides call the
 /// same stubs).
@@ -1469,6 +1496,8 @@ fn run_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path) -> (Oracle, Or
         Oracle::from_snapshot(exe, pages).unwrap(),
         Oracle::from_snapshot(exe, pages).unwrap(),
     );
+    pair.0.set_max_instructions(RUN_BUDGET);
+    pair.1.set_max_instructions(RUN_BUDGET);
     let image = std::fs::read(exe).unwrap();
     let pe = goblin::pe::PE::parse(&image).unwrap();
     let mut sizes: Vec<usize> = CRT.iter().map(|(_, c)| c.len()).collect();
@@ -3056,9 +3085,10 @@ const BARE_RET: [u32; 6] = [
 /// stack
 /// (the same on both sides): the result (`EAX`, or `ST0` for the float
 /// ones) and all memory. A call the original cannot finish in the emulator
-/// (an import with no stub) is skipped and counted.
+/// (an import with no stub) is skipped and counted. Shard `shard` takes its
+/// share of the ctrl works ([`CTRL_SHARDS`]).
 #[allow(clippy::too_many_lines)] // the loop over every native and its checks
-fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32) {
+fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32, shard: usize) {
     use ffx_script::vm::bridge::native::{self, Native};
     let (Some(dir), Some(snap)) = (
         std::env::var_os("FFX_GAME_DIR"),
@@ -3071,14 +3101,26 @@ fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32) {
     let pages = Pages::read(PathBuf::from(snap)).unwrap();
     let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
     let mut rng = Xorshift(rng_seed);
-    let (mut compared, mut stops) = (0, 0);
+    let (mut compared, mut stops, mut mine) = (0, 0, 0);
     let mut seen = std::collections::BTreeSet::new();
-    for c in ctrls {
+    let random = groups
+        .iter()
+        .flat_map(|l| l.iter())
+        .filter(|(s, _)| !R20_UNINIT.contains(s))
+        .count();
+    for (k, c) in ctrls.into_iter().enumerate() {
         let mut pair = None;
         let n = {
             let (a, b) = pair.get_or_insert_with(|| fresh_run_pair(&pages, &exe, c));
             actors(a, b).len().min(12)
         };
+        if k % CTRL_SHARDS != shard {
+            // another shard's ctrl work: only its random draws (6
+            // arguments of 2 draws per native and actor)
+            skip_draws(&mut rng, n * random * 6 * 2);
+            continue;
+        }
+        mine += 1;
         for i in 0..n {
             for &(sym, float) in groups.iter().flat_map(|l| l.iter()) {
                 // tested on chosen arguments in round19_natives_match_the_original
@@ -3163,53 +3205,75 @@ fn natives_match(groups: &[&[(u32, bool)]], rng_seed: u32) {
         .map(|(sym, _)| format!("{sym:#x}"))
         .collect();
     eprintln!(
-        "{compared} native calls compared ({stops} stopped in the original); never completed here: {}",
+        "shard {shard}: {compared} native calls compared ({stops} stopped in the original); never completed in this shard: {}",
         never.join(" ")
     );
-    assert!(compared > 0, "nothing ran");
+    assert!(mine == 0 || compared > 0, "nothing ran");
 }
 
-/// [`natives_match`] split by module so the test threads share the work.
+/// The tests that loop over the ctrl works in use run as this many shards
+/// (`<name>::shard0` ..): shard `k` takes ctrl works `k`, `k + CTRL_SHARDS`,
+/// .. (the battle snapshot has three, the field snapshot one), and skips
+/// the random draws of the others, so each case sees the same arguments
+/// and the same state as in one whole run, and the shards together run
+/// every case once.
+const CTRL_SHARDS: usize = 3;
+
+/// Advances `rng` by `n` draws (each `below`/`next` is one).
+fn skip_draws(rng: &mut Xorshift, n: usize) {
+    for _ in 0..n {
+        rng.next();
+    }
+}
+
+/// [`natives_match`] split by module so the test threads share the work,
+/// each module in [`CTRL_SHARDS`] shards (`natives_match_the_original::moves`
+/// still selects all of `moves`).
 mod natives_match_the_original {
     use ffx_script::vm::bridge as m;
 
-    #[test]
-    fn native() {
-        super::natives_match(&[&m::native::PORTED], 0x5eed_0005);
+    macro_rules! shards {
+        ($name:ident, $groups:expr, $seed:expr) => {
+            mod $name {
+                use super::m;
+                #[test]
+                fn shard0() {
+                    super::super::natives_match($groups, $seed, 0);
+                }
+                #[test]
+                fn shard1() {
+                    super::super::natives_match($groups, $seed, 1);
+                }
+                #[test]
+                fn shard2() {
+                    super::super::natives_match($groups, $seed, 2);
+                }
+            }
+        };
     }
-    #[test]
-    fn map_cam_msg() {
-        super::natives_match(
-            &[
-                &m::native_map::PORTED,
-                &m::native_cam::PORTED,
-                &m::native_msg::PORTED,
-            ],
-            0x5eed_0105,
-        );
-    }
-    #[test]
-    fn moves() {
-        super::natives_match(&[&m::native_move::PORTED], 0x5eed_0205);
-    }
-    #[test]
-    fn btl() {
-        super::natives_match(
-            &[&m::native_btl::PORTED, &m::native_btl2::PORTED],
-            0x5eed_0305,
-        );
-    }
-    #[test]
-    fn sys_chr() {
-        super::natives_match(
-            &[&m::native_sys::PORTED, &m::native_chr::PORTED],
-            0x5eed_0405,
-        );
-    }
-    #[test]
-    fn mods() {
-        super::natives_match(&[&m::native_mods::PORTED], 0x5eed_0505);
-    }
+
+    shards!(native, &[&m::native::PORTED], 0x5eed_0005);
+    shards!(
+        map_cam_msg,
+        &[
+            &m::native_map::PORTED,
+            &m::native_cam::PORTED,
+            &m::native_msg::PORTED,
+        ],
+        0x5eed_0105
+    );
+    shards!(moves, &[&m::native_move::PORTED], 0x5eed_0205);
+    shards!(
+        btl,
+        &[&m::native_btl::PORTED, &m::native_btl2::PORTED],
+        0x5eed_0305
+    );
+    shards!(
+        sys_chr,
+        &[&m::native_sys::PORTED, &m::native_chr::PORTED],
+        0x5eed_0405
+    );
+    shards!(mods, &[&m::native_mods::PORTED], 0x5eed_0505);
 }
 
 /// The non-native VM helpers of round 13 against the original, on every
@@ -4623,12 +4687,28 @@ fn r19_pair(pages: &std::sync::Arc<Pages>, exe: &std::path::Path, c: u32) -> (Or
 /// (the dispatch ignores it) and writes nothing.
 const R20_UNINIT: [u32; 4] = [0x0085_fd80, 0x0086_0000, 0x0085_8290, 0x0076_eb00];
 
+/// [`round19_natives`] in [`CTRL_SHARDS`] shards.
+mod round19_natives_match_the_original {
+    #[test]
+    fn shard0() {
+        super::round19_natives(0);
+    }
+    #[test]
+    fn shard1() {
+        super::round19_natives(1);
+    }
+    #[test]
+    fn shard2() {
+        super::round19_natives(2);
+    }
+}
+
 /// Round 19's natives (`native_mods`) on every actor of every ctrl work in
 /// use, each with several random argument stacks: integers small and
-/// large, floats in and out of the angle range; results and memory.
-#[test]
+/// large, floats in and out of the angle range; results and memory. Shard
+/// `shard` takes its share of the ctrl works ([`CTRL_SHARDS`]).
 #[allow(clippy::too_many_lines)] // the random loop and the targeted cases
-fn round19_natives_match_the_original() {
+fn round19_natives(shard: usize) {
     use ffx_script::vm::bridge::native::{self, Native};
     use ffx_script::vm::bridge::native_mods::PORTED;
     let (Some(dir), Some(snap)) = (
@@ -4642,13 +4722,25 @@ fn round19_natives_match_the_original() {
     let pages = Pages::read(PathBuf::from(snap)).unwrap();
     let ctrls = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap());
     let mut rng = Xorshift(0x5eed_0019);
-    let (mut compared, mut stops) = (0, 0);
-    for c in ctrls {
+    let (mut compared, mut stops, mut mine) = (0, 0, 0);
+    let random = PORTED
+        .iter()
+        .filter(|(s, _)| !R20_UNINIT.contains(s))
+        .count();
+    for (k, c) in ctrls.into_iter().enumerate() {
         let mut pair = Some(r19_pair(&pages, &exe, c));
         let n = {
             let (a, b) = pair.as_mut().unwrap();
             actors(a, b).len().min(8)
         };
+        if k % CTRL_SHARDS != shard {
+            // another shard's ctrl work: only its random draws (3 rounds of
+            // 8 arguments of 2 draws per native and actor), so the rest
+            // see the stream they see in one run
+            skip_draws(&mut rng, n * random * 3 * 8 * 2);
+            continue;
+        }
+        mine += 1;
         // 0x100c on integers past f32's 24 bits, with and without SSE2:
         // the product's rounding to f32 shows in the x87 truncation's low
         // word (SSE2's gives 0x80000000 for all of them)
@@ -4928,8 +5020,10 @@ fn round19_natives_match_the_original() {
             }
         }
     }
-    eprintln!("{compared} round-19 native calls compared ({stops} stopped in the original)");
-    assert!(compared > 0, "nothing ran");
+    eprintln!(
+        "shard {shard}: {compared} round-19 native calls compared ({stops} stopped in the original)"
+    );
+    assert!(mine == 0 || compared > 0, "nothing ran");
 }
 
 // ---- script round 22: the VM's helpers ----
