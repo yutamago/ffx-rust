@@ -263,3 +263,20 @@ impl ffx_script::vm::bridge::run::NativeHost for TrigHost<'_> {
         }
     }
 }
+
+// script round 27: AtelExec (the ctrl works' pass) and the per-actor
+// touch/talk check the field driver reaches
+harvest_test!(atel_exec, 0x0086_66d0, args = 0, |m: &mut Oracle, _s| {
+    hp::atel_exec(&mut OracleHost(m))
+});
+harvest_test!(
+    atel_check_touch_talk,
+    0x0086_6980,
+    args = 3,
+    |m: &mut Oracle, s| {
+        // the port hands `fcall` the rebased address
+        hp::atel_check_touch_talk(&mut OracleHost(m), s.arg(0), s.arg(2), |h, at, args| {
+            h.0.call_f64(at, args).unwrap()
+        })
+    }
+);
