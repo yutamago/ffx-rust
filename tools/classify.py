@@ -467,6 +467,10 @@ REVIEWED = {
     0x0087bb40: ("debug", "debug-page line printer (sprintf, then 0x88f4c0); no direct caller, every pointer inside the dead table chain 0xc53770..0xc5455c (script round 28)"),
     0x0087bb90: ("debug", "debug-page line printer (sprintf, then 0x88f4c0); no direct caller, every pointer inside the dead table chain 0xc53770..0xc5455c (script round 28)"),
     0x0087bc20: ("debug", "debug-page line printer (sprintf, then 0x88f4c0); no direct caller, every pointer inside the dead table chain 0xc53770..0xc5455c (script round 28)"),
+    0x00a5e880: ("debug", "opd_num's %d printer; opd_num is its only caller (effects round 47)"),
+    0x00a5ea30: ("debug", "opd_num's %f printer; opd_num is its only caller (effects round 47)"),
+    0x00a5eea0: ("debug", "opd_num's %x printer; opd_num is its only caller (effects round 47)"),
+    0x00a5f040: ("debug", "opd_num's plain-text printer; opd_num is its only caller (effects round 47)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
