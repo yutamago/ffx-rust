@@ -12268,3 +12268,248 @@ fn round26b_pause_init_total_move_step_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r26b_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// `pre` then a jump to `to`, as code in both oracles; returns its address.
+fn r26_code(a: &mut Oracle, b: &mut Oracle, pre: &[u8], to: u32) -> u32 {
+    let at = a.alloc_code(&[0xcc; 0x40]).unwrap();
+    assert_eq!(b.alloc_code(&[0xcc; 0x40]).unwrap(), at);
+    let mut code = pre.to_vec();
+    code.push(0xe9);
+    let from = at + u32::try_from(code.len()).unwrap() + 4;
+    code.extend(to.wrapping_sub(from).to_le_bytes());
+    for o in [&mut *a, &mut *b] {
+        o.write(at, &code).unwrap();
+    }
+    at
+}
+
+/// A NUL-terminated string in both oracles.
+fn r26_str(a: &mut Oracle, b: &mut Oracle, s: &[u8]) -> u32 {
+    let at = alloc_both(a, b, s.len() + 1);
+    for (k, &c) in (0u32..).zip(s.iter().chain(&[0])) {
+        poke(a, b, at + k, c);
+    }
+    at
+}
+
+/// Round 26 c on one pair: the bind element, the clamped splines, the
+/// ctrl work pass, the line crossings and the event file path.
+#[allow(clippy::too_many_lines)] // one block per function
+fn r26c_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let log_cell = r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0082_66f0, 1),
+            (0x0082_aea0, 3),
+            (0x0088_a4a0, 4),
+            (0x0088_a4d0, 4),
+            (0x0087_1d70, 0),
+            (0x0087_1f30, 0),
+        ],
+    );
+    let log = Mem::read::<u32>(a, log_cell);
+    let check = r26_cell_stub(a, b, 0x0082_61b0, 1);
+    let cross = r26_cell_stub(a, b, 0x0086_80a0, 4);
+    // AtelBindElemOff
+    let w = alloc_both(a, b, 0xc00);
+    for round in 0..96u32 {
+        poke(a, b, log_cell, log);
+        poke(a, b, check.0, check.1);
+        let i = [0u32, 0, 1, 2, 3, 7, 15, 16, 17, 31, 32][rng.below(11) as usize];
+        fill_both(a, b, rng, w + 0x9c, 4);
+        if rng.below(4) == 0 {
+            poke(a, b, w + 0x9c, 0u32);
+        }
+        poke(a, b, w + 0xa8, [7u16, 7, 6, 0x107][rng.below(4) as usize]);
+        fill_both(a, b, rng, w + 0xaf4 + 4 * i, 4);
+        if rng.below(4) == 0 {
+            poke(a, b, w + 0xaf4 + 4 * i, 0u32);
+        }
+        fill_both(a, b, rng, w + 0xb14, 2);
+        poke(a, b, check.2, [0u32, 0, u32::MAX, 1][rng.below(4) as usize]);
+        r22_case(
+            a,
+            b,
+            0x0086_2780,
+            &[w, i],
+            true,
+            &format!("AtelBindElemOff {what} {round} i {i}"),
+            |r| hp::atel_bind_elem_off(r, w, i),
+        );
+    }
+    // Atel_CalcSpline_00862b20, Atel_CalcSpline3_00862b70
+    let curve = alloc_both(a, b, 0x40);
+    for round in 0..40u32 {
+        poke(a, b, log_cell, log);
+        fill_both(a, b, rng, curve, 4);
+        let t = [
+            (-1.0f32).to_bits(),
+            0x8000_0000,
+            0,
+            0.25f32.to_bits(),
+            1.0f32.to_bits(),
+            1.5f32.to_bits(),
+            0x7fc0_0000,
+            0xffc0_1234,
+            f32::INFINITY.to_bits(),
+            f32::NEG_INFINITY.to_bits(),
+            r26_f32(rng, 2.0),
+        ][(round % 11) as usize];
+        let out = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0086_2b20,
+            &[out, curve, t],
+            true,
+            &format!("Atel_CalcSpline {what} {round} t {t:#x}"),
+            |r| hp::atel_calc_spline(r, out, curve, t),
+        );
+        r22_case(
+            a,
+            b,
+            0x0086_2b70,
+            &[out, curve, t],
+            true,
+            &format!("Atel_CalcSpline3 {what} {round} t {t:#x}"),
+            |r| hp::atel_calc_spline3(r, out, curve, t),
+        );
+    }
+    // Atel_ExecCtrlWorks_008688f0: each work's callback logs its work and
+    // may switch the current one
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let works = a.rebase(0x0132_5ba0);
+    let set = alloc_both(a, b, 4);
+    let tag = r25_log_fn(a, b, 0x4c, 1);
+    let pre = r26_set_ctx(a, set);
+    let callback = r26_code(a, b, &pre, tag);
+    let other = r26_ctrl(a, b, rng);
+    for round in 0..64u32 {
+        poke(a, b, log_cell, log);
+        for i in 0..7 {
+            let c = works + i * 0x238;
+            fill_both(a, b, rng, c, 1);
+            poke(a, b, c + 8, [0u8, 1, 2, 3, 4, 0x81][rng.below(6) as usize]);
+            fill_both(a, b, rng, c + 0x1f4, 4);
+            poke(a, b, c + 0x4c, callback);
+        }
+        fill_both(a, b, rng, other, 1);
+        poke(a, b, other + 8, [0u8, 1, 2, 3][rng.below(4) as usize]);
+        poke(a, b, set, if round % 3 == 0 { other } else { 0 });
+        let old = [0u32, works, rng.next()][rng.below(3) as usize];
+        poke(a, b, ctx_cell, old);
+        let (from, to) = [
+            (0u32, 7u32),
+            (0, 7),
+            (2, 5),
+            (5, 2),
+            (3, 3),
+            (6, 7),
+            (0, 1),
+            (3, 0xffff_fff0),
+        ][rng.below(8) as usize];
+        r22_case(
+            a,
+            b,
+            0x0086_88f0,
+            &[from, to],
+            true,
+            &format!("Atel_ExecCtrlWorks {what} {round} {from}..{to}"),
+            |r| hp::atel_exec_ctrl_works(r, from, to),
+        );
+    }
+    // Atel_CheckLineCrosses_00868020
+    let list = alloc_both(a, b, 0x40);
+    for round in 0..64u32 {
+        poke(a, b, log_cell, log);
+        poke(a, b, cross.0, cross.1);
+        poke(a, b, cross.2, rng.next());
+        let kind = [0u8, 1, 5, 6][rng.below(4) as usize];
+        let hdr = alloc_both(a, b, 4);
+        poke(a, b, hdr, kind);
+        poke(a, b, w, hdr);
+        let p = if kind == 5 || kind == 6 {
+            w + 0x284
+        } else {
+            w + 0x558
+        };
+        fill_both(a, b, rng, p + 0x28, 4);
+        fill_both(a, b, rng, list, 0x40);
+        for k in 0..8 {
+            match rng.below(4) {
+                0 => poke(a, b, list + 8 * k, 0xffffu16),
+                1 => poke(a, b, list + 8 * k + 2, 0u16),
+                _ => {}
+            }
+        }
+        poke(a, b, w + 0x2e4, if rng.below(4) == 0 { 0 } else { list });
+        let x = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0086_8020,
+            &[w, x],
+            true,
+            &format!("Atel_CheckLineCrosses {what} {round} kind {kind}"),
+            |r| hp::atel_check_line_crosses(r, w, x),
+        );
+    }
+    // AtelEventGetFilePath2: the real path, copy and concatenation
+    let names: Vec<u32> = [&b"bika0300.ebp"[..], b"x", b"", b"a.b.c", b"zz"]
+        .iter()
+        .map(|s| r26_str(a, b, s))
+        .collect();
+    let sub = r26_str(a, b, b"event/");
+    let ext = r26_str(a, b, b".ebp");
+    for round in 0..30u32 {
+        let name = names[rng.below(5) as usize];
+        let alt = if rng.below(3) == 0 {
+            0
+        } else {
+            names[rng.below(5) as usize]
+        };
+        let dirs = [0u32, 1, 2][rng.below(3) as usize];
+        let args = [dirs, sub, alt, name, ext];
+        r22_case(
+            a,
+            b,
+            0x0087_95b0,
+            &args,
+            true,
+            &format!("AtelEventGetFilePath2 {what} {round}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_event_get_file_path2(r, args, f)
+            },
+        );
+    }
+}
+
+#[test]
+fn round26c_bind_splines_ctrl_works_lines_file_path_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0264);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r26c_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r26c_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

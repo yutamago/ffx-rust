@@ -3066,6 +3066,24 @@ covers them. `0x00882d50` and `0x00884d90` draw lines of the script
 debugger's pages (`TkPutDebugFontString*`); they are reached only from
 `AtelDebugDisplay_00883040`, which nothing calls, so they stay unported.
 
+Round 26 c: `AtelBindElemOff` (`0x00862780`) frees bound element `i`
+(`+0xaf4 + 4i`, `Ch_Dispose` when `Ch_CheckHandle` returns 0), shows the
+character's model part 1 again for element 0 of a binding-7 worker and
+clears bit `i` of `+0xb14` with a 16-bit shift (no bit from 16 up).
+`Atel_CalcSpline_00862b20` and `Atel_CalcSpline3_00862b70` clamp `t` to
+0..1 (NaN passes) and call `TkMtCalcSpline`/`TkMtCalcSpline3` on the
+curve's points (`+0x10`, count `+0`). `Atel_ExecCtrlWorks_008688f0(from,
+to)` (from `AtelExec` and `AtelMenuExec`) makes each ctrl work in turn
+current (index in `0x01326b30`), runs the `+0x4c` callback of works in
+state 0..2 with bit 0, counts `+0x1f4` for bit 3 and moves states 1 and 2
+to 3. `Atel_CheckLineCrosses_00868020` runs the line check for the
+worker's own target and its eight line records (`+0x2e4`).
+`AtelEventGetFilePath2` (`0x008795b0`) builds `<event dir><sub>/xy/<base>/
+<name><ext>` in `0x01328858` (`xy` the first two characters of the base,
+`alt` cut at its `.` or else the cut name), or just `<name><ext>`.
+`round26c_bind_splines_ctrl_works_lines_file_path_match_the_original`
+covers them.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

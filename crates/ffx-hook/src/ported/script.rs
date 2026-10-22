@@ -7351,4 +7351,30 @@ ported! {
     Atel_MoveStep_00870540 @ 0x0087_0540 => extern "C" fn h_870540(w: u32, level: u32) {
         hp::atel_move_step(&mut mem(), w, level);
     }
+    /// `AtelBindElemOff(worker, i)`.
+    AtelBindElemOff @ 0x0086_2780 => extern "C" fn h_862780(w: u32, i: u32) -> u32 {
+        hp::atel_bind_elem_off(&mut mem(), w, i)
+    }
+    /// `Atel_CalcSpline_00862b20(out, curve, t)`.
+    Atel_CalcSpline_00862b20 @ 0x0086_2b20 => extern "C" fn h_862b20(out: u32, curve: u32, t: u32) -> u32 {
+        hp::atel_calc_spline(&mut mem(), out, curve, t)
+    }
+    /// `Atel_CalcSpline3_00862b70(out, curve, t)`.
+    Atel_CalcSpline3_00862b70 @ 0x0086_2b70 => extern "C" fn h_862b70(out: u32, curve: u32, t: u32) -> u32 {
+        hp::atel_calc_spline3(&mut mem(), out, curve, t)
+    }
+    /// `Atel_ExecCtrlWorks_008688f0(from, to)`.
+    Atel_ExecCtrlWorks_008688f0 @ 0x0086_88f0 => extern "C" fn h_8688f0(from: u32, to: u32) -> u32 {
+        hp::atel_exec_ctrl_works(&mut mem(), from, to)
+    }
+    /// `Atel_CheckLineCrosses_00868020(worker, x)`.
+    Atel_CheckLineCrosses_00868020 @ 0x0086_8020 => extern "C" fn h_868020(w: u32, x: u32) -> u32 {
+        hp::atel_check_line_crosses(&mut mem(), w, x)
+    }
+    /// `AtelEventGetFilePath2(dirs, sub, alt, name, ext)`: the three
+    /// 256-byte locals in a frame.
+    AtelEventGetFilePath2 @ 0x0087_95b0 => extern "C" fn h_8795b0(dirs: u32, sub: u32, alt: u32, name: u32, ext: u32) -> u32 {
+        let mut frame = super::StackFrame::<0xc0>::new();
+        hp::atel_event_get_file_path2(&mut mem(), [dirs, sub, alt, name, ext], frame.at())
+    }
 }

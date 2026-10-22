@@ -6941,3 +6941,175 @@ fn move_step_end(h: &mut impl ffx_bridge::Host, w: u32, mv: u32, p: u32) {
         }
     }
 }
+
+/// `AtelBindElemOff(worker, i)` (`0x00862780`): frees bound element `i`
+/// (`+0xaf4 + 4i`: `Ch_Dispose` when `Ch_CheckHandle` says it is valid,
+/// then 0); for element 0 of a binding-7 worker (`+0xa8`) the character's
+/// model part 1 shows again (`Ch_ModelSetHide(chr, 1, 0)`). Clears bit
+/// `i` of `+0xb14` (a 16-bit shift: from 16 up nothing). Returns the mask
+/// it applied with `and`.
+pub fn atel_bind_elem_off(h: &mut impl ffx_bridge::Host, w: u32, i: u32) -> u32 {
+    let slot = w.wrapping_add(i.wrapping_mul(4)).wrapping_add(0xaf4);
+    let e = h.read::<u32>(slot);
+    if e != 0 {
+        if host_call(h, 0x0082_61b0, &[e]) == 0 {
+            host_call(h, 0x0082_66f0, &[e]);
+        }
+        h.write(slot, 0_u32);
+    }
+    if i == 0 && h.read::<u16>(w + 0xa8) == 7 {
+        let chr = h.read::<u32>(w + 0x9c);
+        if chr != 0 {
+            host_call(h, 0x0082_aea0, &[chr, 1, 0]);
+        }
+    }
+    // `shl ax, cl`: the count taken mod 32, a 16-bit result
+    let bit = 1u16.checked_shl(i & 0x1f).unwrap_or(0);
+    let mask = !bit;
+    let f = h.read::<u16>(w + 0xb14);
+    h.write(w + 0xb14, f & mask);
+    u32::from(mask)
+}
+
+/// `t` clamped to `0..=1` as `0x00862b20` does (`fcom` against 0, then
+/// 1; NaN passes), as the `f32` bits it passes on.
+fn clamp_unit(t: u32) -> u32 {
+    let x = x87::load(t);
+    if x < 0.0 {
+        0
+    } else if 1.0 < x {
+        1.0_f32.to_bits()
+    } else {
+        x87::store(x)
+    }
+}
+
+/// `Atel_CalcSpline_00862b20(out, curve, t)` (name ours; callers
+/// `Native_0099`, `0x00868990`, `0x0087de30`):
+/// `TkMtCalcSpline(out, curve + 0x10, curve's count, t in 0..=1)`;
+/// returns its `EAX`.
+pub fn atel_calc_spline(h: &mut impl ffx_bridge::Host, out: u32, curve: u32, t: u32) -> u32 {
+    let n = h.read::<u32>(curve);
+    host_call(h, 0x0088_a4a0, &[out, curve + 0x10, n, clamp_unit(t)])
+}
+
+/// `Atel_CalcSpline3_00862b70(out, curve, t)` (name ours; callers
+/// `Native_009c`, `0x00868990`, `0x0087de30`): [`atel_calc_spline`] with
+/// `TkMtCalcSpline3`.
+pub fn atel_calc_spline3(h: &mut impl ffx_bridge::Host, out: u32, curve: u32, t: u32) -> u32 {
+    let n = h.read::<u32>(curve);
+    host_call(h, 0x0088_a4d0, &[out, curve + 0x10, n, clamp_unit(t)])
+}
+
+/// `Atel_ExecCtrlWorks_008688f0(from, to)` (name ours; callers `AtelExec`,
+/// `AtelMenuExec`): the pad and window update (`0x00871d70`), then ctrl
+/// works `from..to` in turn current (`g_ScriptContext`, `+8` of it the
+/// index): a work in state (`+8`) 0..2 runs its callback (`+0x4c`, when
+/// bit 0 is set; bit 3 of the then current work counts `+0x1f4` up), and
+/// states 1 and 2 become 3. The old ctrl work back, the window status
+/// update; returns its `EAX`.
+pub fn atel_exec_ctrl_works(h: &mut impl ffx_bridge::Host, from: u32, to: u32) -> u32 {
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let saved = h.read::<u32>(ctx);
+    host_call(h, 0x0087_1d70, &[]);
+    let works = h.rebase(CTRL_WORKS);
+    let mut i = from;
+    while i.cast_signed() < to.cast_signed() {
+        let c = works.wrapping_add(i.wrapping_mul(0x238));
+        h.write(ctx, c);
+        h.write(ctx + 8, i);
+        if h.read::<u8>(c + 8) <= 2 {
+            let mut e = c;
+            if h.read::<u8>(c) & 1 != 0 {
+                let f = h.read::<u32>(c + 0x4c);
+                h.call(f, &[c]);
+                e = h.read::<u32>(ctx);
+                if h.read::<u8>(e) & 8 != 0 {
+                    let n = h.read::<u32>(e + 0x1f4);
+                    h.write(e + 0x1f4, n.wrapping_add(1));
+                }
+            }
+            if matches!(h.read::<u8>(e + 8), 1 | 2) {
+                h.write(e + 8, 3_u8);
+            }
+        }
+        i = i.wrapping_add(1);
+    }
+    h.write(ctx, saved);
+    host_call(h, 0x0087_1f30, &[])
+}
+
+/// `Atel_CheckLineCrosses_00868020(worker, x)` (name ours; caller
+/// `0x008666e0`): `Atel_CheckLineCross_008680a0` for the worker's own
+/// target (the position block's `+0x28`, no record), then for each of the
+/// eight line records at `+0x2e4` (8 bytes: target, a non-zero `+2`) with
+/// a target. Returns the `EAX` the last step leaves.
+pub fn atel_check_line_crosses(h: &mut impl ffx_bridge::Host, w: u32, x: u32) -> u32 {
+    let p = pos_block(h, w);
+    let id = u32::from(h.read::<u16>(p.wrapping_add(0x28)));
+    let mut eax = host_call(h, 0x0086_80a0, &[w, x, id, 0]);
+    let list = h.read::<u32>(w + 0x2e4);
+    if list == 0 {
+        return eax;
+    }
+    for k in 0..8 {
+        let rec = list + 8 * k;
+        let id = u32::from(h.read::<u16>(rec));
+        eax = id;
+        if id != 0xffff && h.read::<u16>(rec + 2) != 0 {
+            eax = host_call(h, 0x0086_80a0, &[w, x, id, rec]);
+        }
+    }
+    eax
+}
+
+/// `AtelEventGetFilePath2(dirs, sub, alt, name, ext)` (`0x008795b0`):
+/// builds a path in `0x01328858` and returns it. `name` and `alt` are cut
+/// at their first `.`; the directory part comes from `alt`, or `name`
+/// without one. With `dirs` the path starts with `AtelUpdateFilePath()`,
+/// `sub` and `/xy/<base>/` (`xy` the base's first two characters); then
+/// the cut name and `ext`. `frame` holds the original's three 256-byte
+/// locals (the cut `alt`, the cut `name`, the directory part).
+pub fn atel_event_get_file_path2(h: &mut impl ffx_bridge::Host, args: [u32; 5], frame: u32) -> u32 {
+    let [dirs, sub, alt, name, ext] = args;
+    let out = h.rebase(0x0132_8858);
+    let (cut_alt, cut_name, dir) = (frame, frame + 0x100, frame + 0x200);
+    h.write(out, 0_u8);
+    let cut = |h: &mut _, from: u32, to: u32| {
+        let mut k = 0;
+        loop {
+            let c = ffx_bridge::Mem::read::<u8>(h, from + k);
+            if c == 0 || c == b'.' {
+                break;
+            }
+            ffx_bridge::Mem::write(h, to + k, c);
+            k += 1;
+        }
+        ffx_bridge::Mem::write(h, to + k, 0_u8);
+    };
+    cut(h, name, cut_name);
+    let base = if alt == 0 {
+        cut_name
+    } else {
+        cut(h, alt, cut_alt);
+        cut_alt
+    };
+    let path = host_call(h, 0x0087_9f00, &[]);
+    let slash = h.rebase(0x00b8_f88c);
+    if dirs != 0 {
+        host_call(h, 0x0087_1980, &[out, path]);
+        host_call(h, 0x0087_1950, &[out, sub]);
+        let (a, b) = (h.read::<u8>(base), h.read::<u8>(base + 1));
+        h.write(dir + 1, a);
+        h.write(dir + 2, b);
+        h.write(dir, b'/');
+        h.write(dir + 3, 0_u8);
+        host_call(h, 0x0087_1950, &[dir, slash]);
+        host_call(h, 0x0087_1950, &[dir, base]);
+        host_call(h, 0x0087_1950, &[dir, slash]);
+        host_call(h, 0x0087_1950, &[out, dir]);
+    }
+    host_call(h, 0x0087_1950, &[out, cut_name]);
+    host_call(h, 0x0087_1950, &[out, ext]);
+    out
+}
