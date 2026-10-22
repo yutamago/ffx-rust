@@ -3,9 +3,11 @@
 
 <mutants> is a Python or JSON list of (name, old, new) or [old, new] entries
 (the second form is named #1, #2, ...). Each `old` is looked up in the given
-files (paths relative to the worktree): the one file holding it exactly once
-wins, else the one holding it once when any whitespace may separate its tokens
-(survives cargo fmt reflows); otherwise the mutant is NOMATCH.
+files (paths relative to the worktree). It must occur exactly once across all
+of them, either verbatim or, failing that, with any whitespace between its
+tokens (survives cargo fmt reflows). If it occurs nowhere or in more than one
+place, the mutant is NOMATCH: an ambiguous text would mutate a look-alike
+instead of the intended site.
 
 The worktree is synced (rsync) into a private copy, MUT_WORK (default
 ~/ffx-work/mutants/<worktree name>), so the worktree itself is never edited.
@@ -101,17 +103,32 @@ def flex(a):
 
 
 def locate(a, texts):
-    """(file, start, end) of the one place `a` matches, or None."""
-    exact = [f for f, t in texts.items() if t.count(a) == 1]
-    if exact:  # as mut22.py: the first file holding it exactly once
-        f = exact[0]
-        s = texts[f].index(a)
+    """(file, start, end) of the one place `a` matches, or None.
+
+    The match must be unique across all the given files: an exact match
+    first, else one where any whitespace may separate the tokens. A text
+    that matches in more than one place is ambiguous and is not mutated (a
+    look-alike elsewhere would be tested instead of the intended site)."""
+    exact = [(f, s) for f, t in texts.items() for s in _all(t, a)]
+    if len(exact) == 1:
+        f, s = exact[0]
         return f, s, s + len(a)
+    if exact:
+        return None
     hits = [(f, m) for f, t in texts.items() for m in flex(a).finditer(t)]
     if len(hits) == 1:
         f, m = hits[0]
         return f, m.start(), m.end()
     return None
+
+
+def _all(text, a):
+    """Every start of `a` in `text`, overlapping ones included."""
+    out, s = [], text.find(a)
+    while s != -1:
+        out.append(s)
+        s = text.find(a, s + 1)
+    return out
 
 
 def site(text, s, e, b):
