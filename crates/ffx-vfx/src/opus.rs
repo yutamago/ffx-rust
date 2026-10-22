@@ -5436,6 +5436,258 @@ pub mod bridge {
         cmd.wrapping_add(2)
     }
 
+    /// The two `opu_v` setters' differences.
+    #[derive(Debug, Clone, Copy)]
+    pub struct VSet {
+        /// The scale table (four words a kind).
+        pub scales: u32,
+        /// `0x00818a30`: the kind is flag bits 9..11 (else the low nine
+        /// bits less 10 as an `i16`), and its last test compares the
+        /// emulated `t?` register `0x00c8f538` (never set here) with `r0`.
+        pub stale: bool,
+    }
+
+    /// `opu_v_set_00818410`.
+    pub const V_SET: VSet = VSet {
+        scales: 0x00c4_9398,
+        stale: false,
+    };
+    /// `opu_v_set_sel_00818a30`.
+    pub const V_SET_SEL: VSet = VSet {
+        scales: 0x00c4_93f8,
+        stale: true,
+    };
+
+    /// `opu_v_set_00818410(host, cmd)` / `opu_v_set_sel_00818a30(host, cmd)`
+    /// (names ours; opus commands recompiled from the EE, 64-bit register
+    /// compares included): for kind `k` (see [`VSet::stale`]) the unit's
+    /// vector at `unit + i16 0x00c49388[k]` takes the `i16`s from `cmd +2`
+    /// times the kind's scale words, each through `f32` / 4096 into
+    /// `g_Vu0_VfMove` (`0x00c8f980`; the products also into the emulated
+    /// `v0`..`v1` words `0x00c8f528..+0x34`). Each of flag bits 12..15 that
+    /// differs from `r0` (`g_Ee_Gpr`, as a 64-bit value) takes the next
+    /// lane: word `k` of the vector is the first lane, the four rotate, and
+    /// the command pointer (from `cmd + 2`) moves 2 (the first bit's
+    /// lane moves it in all cases but the fourth's comes only from bit
+    /// 15). `0x00c8f558..+0x64` = the lanes after bit 14; then
+    /// `0x00c8f528` = the pointer, `0x00c8f548` = host; with flag 0x200
+    /// (or, `stale`, `0x00c8f538/c`) equal to `r0` the pointer is returned,
+    /// else the unit's motion callback (`0x00c492c8[byte +0xba]`) runs on
+    /// `(host, pointer)` and its `eax` is returned. Callees through `call`.
+    #[allow(clippy::too_many_lines)]
+    pub fn opu_v_set<M: Mem>(
+        mem: &mut M,
+        v: &VSet,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{mul, store};
+        let u = unit(mem, host);
+        let flags = u32::from(mem.read::<u16>(host.wrapping_add(0x21a)));
+        let kind = if v.stale {
+            (flags >> 9) & 7
+        } else {
+            // `sub eax, 10; movzx eax, ax; movsx edx, ax`
+            #[allow(clippy::cast_possible_truncation)]
+            let k = ((flags & 0x1ff).wrapping_sub(10) as u16).cast_signed();
+            i32::from(k).cast_unsigned()
+        };
+        let scale: [u32; 4] = mem.read(g(mem, v.scales).wrapping_add(kind.wrapping_mul(16)));
+        let off = mem.read::<i16>(g(mem, 0x00c4_9388).wrapping_add(kind.wrapping_mul(2)));
+        let dst = u.wrapping_add(i32::from(off).cast_unsigned());
+        let src = cmd.wrapping_add(2);
+        let p: [u32; 4] = std::array::from_fn(|i| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            let n = i32::from(mem.read::<i16>(src.wrapping_add(2 * i as u32)));
+            scale[i].wrapping_mul(n.cast_unsigned())
+        });
+        let v0 = g(mem, 0x00c8_f528);
+        mem.write(v0, p[0]);
+        mem.write(v0.wrapping_add(4), p[1]);
+        mem.write(v0.wrapping_add(8), p[2]);
+        mem.write(v0.wrapping_add(0xc), p[3]);
+        // `fild`, `fstp dword`, times the `f64` 1/4096, `fstp dword`
+        #[allow(clippy::cast_precision_loss)]
+        let mut lanes = p.map(|w| store(mul(f64::from(w.cast_signed() as f32), 0.000_244_140_625)));
+        let mov = g(mem, 0x00c8_f980);
+        let r0: u64 = mem.read(g(mem, 0x00c8_f508));
+        let differs = |bit: u32| u64::from(flags & bit) != r0;
+        let mut ptr = if differs(0x1000) {
+            src.wrapping_add(2)
+        } else {
+            src
+        };
+        for (k, bit) in [(0u32, 0x1000u32), (4, 0x2000), (8, 0x4000)] {
+            if differs(bit) {
+                mem.write(dst.wrapping_add(k), lanes[0]);
+                lanes.rotate_left(1);
+                if bit != 0x1000 {
+                    ptr = ptr.wrapping_add(2);
+                }
+            }
+        }
+        mem.write(mov, lanes);
+        let tail = g(mem, 0x00c8_f558);
+        mem.write(tail, lanes);
+        if !v.stale {
+            mem.write(v0.wrapping_add(4), 0u32);
+        }
+        if differs(0x8000) {
+            ptr = ptr.wrapping_add(2);
+            mem.write(dst.wrapping_add(0xc), lanes[0]);
+        }
+        let low = flags & 0x200;
+        let done = if v.stale {
+            mem.write(v0, low);
+            mem.write(g(mem, 0x00c8_f548), host);
+            mem.write(v0.wrapping_add(4), 0u32);
+            mem.read::<u64>(v0.wrapping_add(0x10)) == r0
+        } else {
+            mem.write(v0, ptr);
+            mem.write(v0.wrapping_add(0x10), low);
+            mem.write(v0.wrapping_add(0x14), 0u32);
+            mem.write(g(mem, 0x00c8_f548), host);
+            u64::from(low) == r0
+        };
+        if done {
+            return ptr;
+        }
+        mem.write(tail, ptr);
+        let cb = u32::from(mem.read::<u8>(u.wrapping_add(0xba)));
+        let table = g(mem, 0x00c4_92c8);
+        // `shld; shl 2; add; adc`: the 64-bit entry address into `v0`
+        let at = u64::from(cb << 2) + u64::from(table);
+        #[allow(clippy::cast_possible_truncation)] // the halves
+        let (lo, hi) = (at as u32, (at >> 32) as u32);
+        let f: u32 = mem.read(lo);
+        mem.write(v0, f);
+        mem.write(v0.wrapping_add(4), hi);
+        call(mem, f, &[host, ptr])
+    }
+
+    /// `opu_v_en_move(host, cmd)` (`0x008190e0`; opus table): a battle
+    /// character's position, direction and moves by the flag nibble; `c` =
+    /// byte unit `+0x18`, `e` = the `g_EtEff` record `u16 unit +0x14`, `t`
+    /// = byte `e +0x18` (the target), `w` = byte `e +0x10`. 0:
+    /// `opus_set_chr_pos(c, unit +0x90)`; 2: `opus_set_chr_dirf(c,
+    /// opus_normaldeg_to_ffxdeg(f32 unit +0x34))`; 3/4:
+    /// `MsSetChrMoveFlag(t with flag 0x800 else c, 1/0)`; 5: host =
+    /// `MsGetChrBtlPos(c)`, `opus_set_chr_pos(c, host)`,
+    /// `opus_set_chr_dirf(c, MsGetChrBtlDir(c))`; 6/7:
+    /// `MsGetMoveTargetDist` with the speed `i16 cmd +4 / 16` and the
+    /// frame count `n` (`i16 cmd +2`, with 0x800 `ftol` of the unit's
+    /// `f32` at that offset): `(t, 2, w, 0.0, n, 0, 0, speed, 1.0, 0.0,
+    /// 0.0)` / `(t, 1, t, 0.0, n, ...)`, `cmd + 6`; 8/9:
+    /// `MsSetChrDirTarget(t, 2/1, 0, w, 0, n)` with `n` as for 6, except
+    /// that 9 with 0x800 takes `ftol` of the command pointer's own bits
+    /// read as an `f32` (as the original does), `cmd + 4`; 0xa:
+    /// `MsSetChrPos2D(c, unit +0x90)`; 0xb: `MsMotionSpeedResetChr([e])`.
+    /// `cmd + 2`, `cmd` for 1 and 0xc..0xf. Callees through `call`, the
+    /// two float ones through `fcall` (their `ST0`).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opu_v_en_move<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul, store};
+        let u = unit(mem, host);
+        let flags = mem.read::<u16>(host.wrapping_add(0x21a));
+        let flagged = flags & 0x800 != 0;
+        let e = EFF
+            .ptr(mem)
+            .at(u32::from(mem.read::<u16>(u.wrapping_add(0x14))))
+            .addr;
+        let byte = |mem: &M, at: u32| u32::from(mem.read::<u8>(at));
+        let c = |mem: &M| byte(mem, u.wrapping_add(0x18));
+        let half =
+            |mem: &M, at: u32| i32::from(mem.read::<i16>(cmd.wrapping_add(at))).cast_unsigned();
+        // the frame count: the command's `i16`, with flag 0x800 `ftol` of
+        // the unit's `f32` at that offset
+        let count = |mem: &M| {
+            let n = half(mem, 2);
+            if flagged {
+                ftol(mem, load(mem.read(u.wrapping_add(n))))
+            } else {
+                n
+            }
+        };
+        // `fild`, `fstp qword`, times the `f64` 1/16, `fstp dword`
+        let speed = |mem: &M| store(mul(f64::from(half(mem, 4).cast_signed()), 0.0625));
+        let (zero, one) = (0u32, 0x3f80_0000u32);
+        match flags & 0xf000 {
+            0 => {
+                let n = c(mem);
+                call(mem, g(mem, 0x0081_b2b0), &[n, u.wrapping_add(0x90)]);
+            }
+            0x2000 => {
+                let x = store(load(mem.read(u.wrapping_add(0x34))));
+                let d = store(fcall(mem, g(mem, 0x0081_b230), &[x]));
+                let n = c(mem);
+                call(mem, g(mem, 0x0081_b270), &[n, d]);
+            }
+            k @ (0x3000 | 0x4000) => {
+                let n = if flagged {
+                    byte(mem, e.wrapping_add(0x18))
+                } else {
+                    c(mem)
+                };
+                call(mem, g(mem, 0x0079_6110), &[n, u32::from(k == 0x3000)]);
+            }
+            0x5000 => {
+                let n = c(mem);
+                call(mem, g(mem, 0x0079_48e0), &[n, host]);
+                let n = c(mem);
+                call(mem, g(mem, 0x0081_b2b0), &[n, host]);
+                let n = c(mem);
+                let d = store(fcall(mem, g(mem, 0x0079_48a0), &[n]));
+                let n = c(mem);
+                call(mem, g(mem, 0x0081_b270), &[n, d]);
+            }
+            k @ (0x6000 | 0x7000) => {
+                let s = speed(mem);
+                let n = count(mem);
+                let t = byte(mem, e.wrapping_add(0x18));
+                let (kind, with) = if k == 0x6000 {
+                    (2, byte(mem, e.wrapping_add(0x10)))
+                } else {
+                    (1, t)
+                };
+                call(
+                    mem,
+                    g(mem, 0x007a_b540),
+                    &[t, kind, with, zero, n, 0, 0, s, one, zero, zero],
+                );
+                return cmd.wrapping_add(6);
+            }
+            k @ (0x8000 | 0x9000) => {
+                let n = if k == 0x9000 && flagged {
+                    ftol(mem, load(cmd))
+                } else {
+                    count(mem)
+                };
+                let w = byte(mem, e.wrapping_add(0x10));
+                let t = byte(mem, e.wrapping_add(0x18));
+                let kind = if k == 0x8000 { 2 } else { 1 };
+                call(mem, g(mem, 0x0079_5eb0), &[t, kind, 0, w, 0, n]);
+                return cmd.wrapping_add(4);
+            }
+            0xa000 => {
+                let n = c(mem);
+                call(mem, g(mem, 0x0079_61d0), &[n, u.wrapping_add(0x90)]);
+            }
+            0xb000 => {
+                let chr: u32 = mem.read(e);
+                call(mem, g(mem, 0x007a_aff0), &[chr]);
+            }
+            _ => return cmd,
+        }
+        cmd.wrapping_add(2)
+    }
+
     /// `opu_dvd(host, cmd)` (`0x008148c0`; opus table `0x00c492c0`):
     /// character data loads by `i16 cmd +2` (jump table `0x008149e8`),
     /// `a`/`b` the `i16`s at `cmd +4`/`+6`. 0: `Ch_DataRead(a)`, `cmd + 6`;

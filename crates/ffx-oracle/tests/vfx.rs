@@ -28892,3 +28892,137 @@ fn round46c_opus_commands_match_the_original() {
         assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
     }
 }
+
+/// A stand-in at `sym` that logs its first argument word (the count at
+/// `log`, the words after it) and returns the `f32` at `ret` in `ST0`.
+fn float_stand_in(p: &mut Pair, sym: u32, ret: u32) -> u32 {
+    let log = p.alloc(4 + 4 * 0x100);
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0x81, 0xe1, 0xff, 0, 0, 0]); // and ecx, 0xff
+    c.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp + 4]
+    c.extend([0x89, 0x04, 0x8d]); // mov [ecx*4 + log + 4], eax
+    c.extend((log + 4).to_le_bytes());
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(log.to_le_bytes());
+    c.extend([0xd9, 0x05]); // fld dword [ret]
+    c.extend(ret.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9];
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round46d_opu_v_commands_match_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_8410);
+        let rets = p.alloc(0x40);
+        let r = |k: u32| rets + 4 * k;
+        let mut logs = vec![
+            // the motion callbacks: each table entry through one recorder
+            far_recorder(&mut p, 0x0081_b2b0, &[0; 2], None), // opus_set_chr_pos
+            far_recorder(&mut p, 0x0081_b270, &[0; 2], None), // opus_set_chr_dirf
+            far_recorder(&mut p, 0x0079_6110, &[0; 2], None), // MsSetChrMoveFlag
+            far_recorder(&mut p, 0x0079_48e0, &[0; 2], None), // MsGetChrBtlPos
+            far_recorder(&mut p, 0x007a_b540, &[0; 11], None), // MsGetMoveTargetDist
+            far_recorder(&mut p, 0x0079_5eb0, &[0; 6], None), // MsSetChrDirTarget
+            far_recorder(&mut p, 0x0079_61d0, &[0; 2], None), // MsSetChrPos2D
+            far_recorder(&mut p, 0x007a_aff0, &[0], None),    // MsMotionSpeedResetChr
+            float_stand_in(&mut p, 0x0081_b230, r(0)),        // normaldeg_to_ffxdeg
+            float_stand_in(&mut p, 0x0079_48a0, r(1)),        // MsGetChrBtlDir
+        ];
+        // the motion callback table's twelve entries: one recorder for all
+        let cb = far_recorder(&mut p, 0x0081_5050, &[0; 2], Some(r(2)));
+        let table = p.sym(0x00c4_92c8);
+        let first: u32 = p.get(table);
+        for k in 0..12 {
+            p.set(table + 4 * k, first);
+        }
+        logs.push(cb);
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x200), p.alloc(0x10));
+        let (eff, r0, v0) = (p.sym(0x012a_4100), p.sym(0x00c8_f508), p.sym(0x00c8_f528));
+        let mut seen = [0u32; 3];
+        for round in 0..4000u32 {
+            p.fill(rets, 0x40, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x200, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(v0, 0x40, &mut rng);
+            for k in 0..2 {
+                p.set(r(k), finite(&mut rng));
+            }
+            p.set(host + 0x220, unit);
+            let flags = rng.next() & 0xffff;
+            p.set(host + 0x21a, u16::try_from(flags).unwrap());
+            // r0 zero mostly (the plain compares), else one of the flag bits
+            let lo = rng.pick(&[0u32, 0, 0, flags & 0x1000, flags & 0x200, 0x8000, 1]);
+            p.set(r0, lo);
+            p.set(r0 + 4, u32::from(rng.chance(10)));
+            p.set(unit + 0xba, u8::try_from(rng.below(12)).unwrap());
+            let e = rng.below(0x200);
+            p.set(unit + 0x14, u16::try_from(e).unwrap());
+            p.fill(eff + 0x20 * e, 0x20, &mut rng);
+            // offsets into the unit for the flagged frame counts, floats there
+            let off = 4 * rng.below(0x40);
+            p.set(cmd + 2, u16::try_from(off).unwrap());
+            let x = if rng.chance(50) {
+                (f32::from(u16::try_from(rng.below(0x100)).unwrap()) - 64.0).to_bits()
+            } else {
+                finite(&mut rng)
+            };
+            p.set(unit + off, x);
+            p.set(unit + 0xba, u8::try_from(rng.below(12)).unwrap());
+            // (no signalling NaN for the direction the FPU passes on)
+            let dir = rng.float();
+            p.set(unit + 0x34, dir);
+            if rng.chance(30) {
+                let any = rng.below(0x1_0000);
+                p.set(cmd + 2, u16::try_from(any).unwrap());
+            }
+            for (name, sym) in [
+                ("opu_v_set", 0x0081_8410u32),
+                ("opu_v_set_sel", 0x0081_8a30),
+                ("opu_v_en_move", 0x0081_90e0),
+            ] {
+                // the emulated registers afresh for each command (the
+                // setters' `t?` compare reads what the last one left)
+                p.fill(v0, 0x40, &mut rng);
+                if rng.chance(30) {
+                    let r: u64 = p.get(r0);
+                    p.set(v0 + 0x10, r);
+                }
+                // (kinds past the scale tables read beyond them: keep 0..6)
+                if sym == 0x0081_8410 {
+                    let k = 10 + rng.below(6);
+                    p.set(host + 0x21a, u16::try_from((flags & !0x1ff) | k).unwrap());
+                }
+                let got = p.check(&format!("{name} round {round}"), sym, &[host, cmd], |m| {
+                    let mut call = call_original;
+                    Some(match sym {
+                        0x0081_8410 => o::opu_v_set(m, &o::V_SET, host, cmd, &mut call),
+                        0x0081_8a30 => o::opu_v_set(m, &o::V_SET_SEL, host, cmd, &mut call),
+                        _ => o::opu_v_en_move(m, host, cmd, &mut call, &mut |m, f, a| {
+                            m.call_f64(f, a).unwrap()
+                        }),
+                    })
+                });
+                if sym == 0x0081_90e0 {
+                    seen[2] += 1;
+                } else {
+                    seen[usize::from(got == p.get::<u32>(r(2)))] += 1;
+                }
+            }
+        }
+        assert!(seen.iter().all(|&s| s > 0), "{}: {seen:?}", p.name);
+        logs.retain(|&log| p.get::<u32>(log) == 0);
+        assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
+    }
+}

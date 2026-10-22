@@ -5996,6 +5996,19 @@ ported! {
         let count = frame.at();
         opus::bridge::opu_clut_load(&mut mem(), host, cmd, count, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_v_set_00818410(host, cmd)`: the next command or the motion
+    /// callback's `eax`.
+    opu_v_set_00818410 @ 0x0081_8410 => extern "C" fn opu_v_set(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_set(&mut mem(), &opus::bridge::V_SET, host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_set_sel_00818a30(host, cmd)`: as `opu_v_set_00818410`.
+    opu_v_set_sel_00818a30 @ 0x0081_8a30 => extern "C" fn opu_v_set_sel(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_set(&mut mem(), &opus::bridge::V_SET_SEL, host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_v_en_move(host, cmd)`: the next command.
+    opu_v_en_move @ 0x0081_90e0 => extern "C" fn opu_v_en_move(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_v_en_move(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu_dvd(host, cmd)`: the next command.
     opu_dvd @ 0x0081_48c0 => extern "C" fn opu_dvd(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_dvd(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
