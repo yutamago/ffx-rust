@@ -14154,7 +14154,9 @@ fn r27e_ties(
         let g = gap(a, b, [pa, pb, ppx, pqx]);
         let swapped = gap(a, b, [pa, pb, pqx, ppx]);
         settle(a, b);
-        if !(g > 0.0) || !(swapped > 0.0) {
+        // a crossing (a positive gap, not NaN) both ways
+        let crossing = g > 0.0 && swapped > 0.0;
+        if !crossing {
             continue;
         }
         let k = usize::from(g.to_bits() != swapped.to_bits());
