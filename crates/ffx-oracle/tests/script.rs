@@ -12557,6 +12557,105 @@ fn r26d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             },
         );
     }
+    r26d_ties(a, b, spline, what);
+}
+
+/// The f32 rounding ties of the nearest-sample search, which random points
+/// never hit. `TkMtCalcSpline` (`0x0088a4a0`) becomes a stub that hands
+/// out the points of a table in call order, and `spline_get_near_point`
+/// (`0x00a44120`) a `fldz; ret`, so `g_SplineNearT` shows which sample won.
+/// With the target at the origin the squared distance of a sample is
+/// `(x² + y²) + z²` of its point, summed in 53 bits and stored as f32.
+/// - `1 + 2⁻²⁶` (point `(1, 2⁻¹³, 0)`) then exactly 1: both round to 1.0,
+///   so the second sample does not win (`best > dist` on the stored
+///   values, not on the 53-bit sums).
+/// - `1 + 2⁻¹¹ + 2⁻²³` exactly, then `(1 + 2⁻¹²)² + b² + b²` with
+///   `b = 1.25 · 2⁻²⁷`: the square is the f32 midpoint
+///   `1 + 2⁻¹¹ + 2⁻²⁴` and `b²` lies in `(2⁻⁵⁴, 2⁻⁵³)`, under half a 53-bit
+///   ulp. Added one at a time (the original's order) each `b²` is lost and
+///   the midpoint rounds to even (`1 + 2⁻¹¹`, below the first sample: it
+///   wins); `b² + b²` first would be over half an ulp and round up to the
+///   first sample's value (no win).
+fn r26d_ties(a: &mut Oracle, b: &mut Oracle, spline: u32, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let cnt = alloc_both(a, b, 4);
+    let tab = alloc_both(a, b, 12 * 32);
+    let mut stub = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d]; // mov eax,[esp+4]; mov ecx,[cnt]
+    stub.extend(cnt.to_le_bytes());
+    stub.extend([0xff, 0x05]); // inc dword [cnt]
+    stub.extend(cnt.to_le_bytes());
+    stub.extend([0x8d, 0x14, 0x49, 0x8d, 0x14, 0x95]); // lea edx,[ecx*3]; lea edx,[edx*4+tab]
+    stub.extend(tab.to_le_bytes());
+    stub.extend([
+        0x8b, 0x0a, 0x89, 0x08, 0x8b, 0x4a, 0x04, 0x89, 0x48, 0x04, 0x8b, 0x4a, 0x08, 0x89, 0x48,
+        0x08, 0xc3,
+    ]); // copy x, y, z; ret
+    let at = a.alloc_code(&[0xcc; 0x40]).unwrap();
+    assert_eq!(b.alloc_code(&[0xcc; 0x40]).unwrap(), at);
+    let calc = a.rebase(0x0088_a4a0);
+    let rel = at.wrapping_sub(calc + 5);
+    for o in [&mut *a, &mut *b] {
+        o.write(at, &stub).unwrap();
+        o.write(calc, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+        o.write(o.rebase(0x00a4_4120), &[0xd9, 0xee, 0xc3]).unwrap();
+    }
+    poke(a, b, spline, 1u32);
+    let b27 = 1.25 * 2f32.powi(-27);
+    let cases: [(&str, [[f32; 3]; 2], bool); 2] = [
+        (
+            "stored",
+            [[1.0, 2f32.powi(-13), 0.0], [1.0, 0.0, 0.0]],
+            false,
+        ),
+        (
+            "order",
+            [
+                [1.0 + 2f32.powi(-12), 2f32.powi(-12), 0.0],
+                [1.0 + 2f32.powi(-12), b27, b27],
+            ],
+            true,
+        ),
+    ];
+    let near_t = a.rebase(0x01a8_5f30);
+    for (name, pts, second_wins) in cases {
+        poke(a, b, cnt, 0u32);
+        // call 0 is the first previous point, calls 1 and 2 the samples at
+        // t = 0 and 0.1; every later sample is far
+        for k in 0..32u32 {
+            let v = match k {
+                1 | 2 => pts[k as usize - 1],
+                _ => [10.0, 0.0, 0.0],
+            };
+            for (o, c) in (0u32..).zip(v) {
+                poke(a, b, tab + 12 * k + 4 * o, c.to_bits());
+            }
+        }
+        let p = [0u32; 3];
+        let args = [spline, 0, 0, 0, 0];
+        r22_case(
+            a,
+            b,
+            0x00a4_4420,
+            &args,
+            false,
+            &format!("spline_get_near_point_init {what} tie {name}"),
+            |r| {
+                let f = r.0.stack_range().start + 0x100;
+                Mem::write_bytes(r.0, f, &[0; 0x30]);
+                hp::spline_get_near_point_init(r, spline, p, 0, f, |r, at, args| {
+                    r.0.call_f64(at, args).unwrap()
+                });
+                0
+            },
+        );
+        let won = f32::from_bits(Mem::read::<u32>(a, near_t));
+        let want = if second_wins { 0.1 } else { 0.0 };
+        assert!(
+            (won - want).abs() < 1e-6,
+            "{what} tie {name}: the original picked t = {won}"
+        );
+    }
 }
 
 #[test]
