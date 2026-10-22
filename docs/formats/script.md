@@ -2998,6 +2998,23 @@ variables there avoid storage 5, the worker itself, and the field
 snapshot's workers with the debug heap's `0xcdcdcdcd` as character handle
 get one of the test's own).
 
+Round 25 f: `Atel_SetEventWaterFlag_00865740(on)` updates the save
+event's water byte `+0x28` and, on a change, the delayed separates and
+water effects. `AtelUpdateWindowStatus` (`0x00871f30`) copies the window
+system's statuses into the message windows (4 reads as 0; the status word
+is the window's `+0x14`, the mode flags `+0x1d`), keeps the ctx's busy bit
+(`+1` bit 4), counts the window countdown `+0x1ea` down and turns the UC
+off and on again when either changes. `AtelUpdateBattleStatus`
+(`0x00871bc0`) leaves ctrl work 0 current, measures the camera target's
+step (`CIsqrt(Math_LengthSq3)`), feeds it to the walk abilities and, with
+encounters allowed, to `MsBattleEncountExe`. `Atel_InitWorkerLevels_0086d300`
+sets every level's three words and resets it; type-1 workers get move and
+turn blocks (speed `0x5a`, pi, pi/64). `Atel_CheckLineCross_008680a0`
+fires trigger 4 (or a vibration signal) when a target's step crosses the
+worker's line at a small enough height gap.
+`round25f_water_windows_battle_levels_lines_match_the_original` covers
+them.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

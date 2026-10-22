@@ -7297,4 +7297,31 @@ ported! {
         let mut frame = super::StackFrame::<8>::new();
         hp::atel_apply_polar_move(&mut mem(), w, frame.at());
     }
+    /// `Atel_SetEventWaterFlag_00865740(on)`.
+    Atel_SetEventWaterFlag_00865740 @ 0x0086_5740 => extern "C" fn h_865740(on: u32) {
+        hp::atel_set_event_water_flag(&mut mem(), on);
+    }
+    /// `AtelUpdateWindowStatus()`.
+    AtelUpdateWindowStatus @ 0x0087_1f30 => extern "C" fn h_871f30() -> u32 {
+        hp::atel_update_window_status(&mut mem())
+    }
+    /// `AtelUpdateBattleStatus()`: `Math_LengthSq3` and `CIsqrt` through
+    /// the game.
+    AtelUpdateBattleStatus @ 0x0087_1bc0 => extern "C" fn h_871bc0() {
+        hp::atel_update_battle_status(&mut mem(), |m, f, args| {
+            super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, f), args)
+        });
+    }
+    /// `Atel_InitWorkerLevels_0086d300(worker, a, b, c)`.
+    Atel_InitWorkerLevels_0086d300 @ 0x0086_d300 => extern "C" fn h_86d300(w: u32, a: u32, b: u32, c: u32) {
+        hp::atel_init_worker_levels(&mut mem(), w, a, b, c);
+    }
+    /// `Atel_CheckLineCross_008680a0(worker, _, target, rec)`: the four
+    /// points in a 16-word frame, `Math_CrossHeightGap` through the game.
+    Atel_CheckLineCross_008680a0 @ 0x0086_80a0 => extern "C" fn h_8680a0(w: u32, _unused: u32, target: u32, rec: u32) {
+        let mut frame = super::StackFrame::<16>::new();
+        hp::atel_check_line_cross(&mut mem(), w, target, rec, frame.at(), |m, f, args| {
+            super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, f), args)
+        });
+    }
 }

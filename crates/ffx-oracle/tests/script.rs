@@ -11135,3 +11135,411 @@ fn round25e_turns_stream_game_over_seps_match_the_original() {
     let (mut a, mut b) = pair();
     r25e_workers(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Code in both oracles returning a cell's word (its argument kept in the
+/// next word); returns `(code, cell)`.
+fn r25_cell_fn(a: &mut Oracle, b: &mut Oracle) -> (u32, u32) {
+    let cell = alloc_both(a, b, 8);
+    // mov eax,[esp+4]; mov [cell+4],eax (the argument kept); mov eax,[cell]; ret
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04, 0xa3][..],
+        &(cell + 4).to_le_bytes(),
+        &[0xa1],
+        &cell.to_le_bytes(),
+        &[0xc3],
+    ]
+    .concat();
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    (at, cell)
+}
+
+/// Round 25 f on one pair: the water flag, the window status, the
+/// battle status, the level set-up and the line crossing (callees
+/// logged or stubbed).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r25f_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let fcall = |r: &mut Run, f: u32, args: &[u32]| {
+        let at = r.0.rebase(f);
+        r.0.call_f64(at, args).unwrap()
+    };
+    r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0088_6eb0, 1),
+            (0x0088_6e50, 3),
+            (0x0088_6ff0, 3),
+            (0x0072_9570, 1),
+            (0x0072_9700, 1),
+            (0x0072_95b0, 1),
+            (0x008a_f7d0, 1),
+            (0x0082_dad0, 1),
+            (0x0078_1530, 0),
+            (0x0078_2d60, 1),
+            (0x0078_0d10, 3),
+            (0x0086_39e0, 2),
+            (0x0087_64f0, 3),
+            (0x0087_66d0, 4),
+            (0x0082_b840, 2),
+        ],
+    );
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let works = a.rebase(0x0132_5ba0);
+    // the image has no current ctrl work: ctrl work 0 then
+    let here = match Mem::read::<u32>(b, ctx_cell) {
+        0 => works,
+        c => c,
+    };
+    let save = orig(a, 0x0088_c830, &[]);
+    orig(b, 0x0088_c830, &[]);
+    // Atel_SetEventWaterFlag
+    for round in 0..12u32 {
+        let c = if round % 2 == 0 { here } else { works };
+        poke(a, b, ctx_cell, c);
+        let hdr = if round % 3 == 0 {
+            0
+        } else {
+            r25_sep_header(a, b, rng, 6)
+        };
+        poke(a, b, c + 0x48, hdr);
+        poke(a, b, save + 0x28, u8::from(rng.below(2) == 0));
+        for k in 0..4u32 {
+            poke(a, b, a.rebase(0x0132_6cf0) + k * 4, rng.below(0x40));
+        }
+        let on = [0u32, 1, 0x100][rng.below(3) as usize];
+        r22_case(
+            a,
+            b,
+            0x0086_5740,
+            &[on],
+            false,
+            &format!("Atel_SetEventWaterFlag {what} {round}"),
+            |r| {
+                hp::atel_set_event_water_flag(r, on);
+                0
+            },
+        );
+    }
+    poke(a, b, ctx_cell, here);
+    // AtelUpdateWindowStatus
+    let wins = a.rebase(0x0132_6d70);
+    for round in 0..32u32 {
+        let st: Vec<u32> = (0..8)
+            .map(|_| [0u32, 1, 2, 4, 3, 0x10004][rng.below(6) as usize])
+            .collect();
+        r24_seq_stub(a, b, 0x0090_6c20, 1, &st);
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_6b82),
+            u8::try_from(rng.below(2)).unwrap(),
+        );
+        for k in 0..16u32 {
+            poke(
+                a,
+                b,
+                wins + k * 0x2c + 0x1d,
+                [0u8, 2, 0x10, 0x32, 0x22][rng.below(5) as usize],
+            );
+        }
+        r25_ret(a, b, 0x0078_0c90, u32::from(rng.below(4) == 0));
+        r25_ret(a, b, 0x0087_2b50, u32::from(rng.below(4) == 0));
+        let c = if round % 3 == 0 { works + 0x238 } else { here };
+        poke(a, b, ctx_cell, c);
+        poke(a, b, c + 0x1a, u16::from(round % 8 == 7));
+        poke(a, b, c + 0x1ea, [0u8, 1, 2, 5][rng.below(4) as usize]);
+        fill_both(a, b, rng, c, 4);
+        r22_case(
+            a,
+            b,
+            0x0087_1f30,
+            &[],
+            true,
+            &format!("AtelUpdateWindowStatus {what} {round}"),
+            |r| hp::atel_update_window_status(r),
+        );
+    }
+    poke(a, b, ctx_cell, here);
+    // AtelUpdateBattleStatus
+    let cd = alloc_both(a, b, 0x20);
+    let (busy_fn, busy) = r25_cell_fn(a, b);
+    poke(a, b, cd + 8, busy_fn);
+    r25_ret(a, b, 0x0076_d0d0, cd);
+    let moves = [0u32, 0x3f80_0000, 0x4120_0000, 0xc000_0000, 0x3e80_0000];
+    for round in 0..64u32 {
+        // every condition met, then one of them broken (or all random)
+        let broken = round % 17;
+        let f0 = rng.next().to_le_bytes()[0];
+        let f1 = rng.next().to_le_bytes()[0];
+        let f3 = rng.next().to_le_bytes()[0];
+        let (f0, f1, f3) = if broken == 16 {
+            (f0, f1, f3)
+        } else {
+            (
+                ((f0 | 0xb) & !0x10)
+                    ^ match broken {
+                        2 => 2,
+                        5 => 0x10,
+                        7 => 8,
+                        _ => 0,
+                    },
+                (f1 & !5)
+                    | match broken {
+                        3 => 4,
+                        6 => 1,
+                        _ => 0,
+                    },
+                (f3 & !0x87)
+                    | match broken {
+                        4 => [4u8, 0x80][(round / 17 % 2) as usize],
+                        13 => [1u8, 2][(round / 17 % 2) as usize],
+                        _ => 0,
+                    },
+            )
+        };
+        poke(a, b, works, f0);
+        poke(a, b, works + 1, f1);
+        poke(a, b, works + 3, f3);
+        poke(a, b, works + 0xa, if broken == 1 { 0xffffu16 } else { 0 });
+        let frames = match broken {
+            8 => [6u32, 0x8000_0000][(round / 17 % 2) as usize],
+            _ => [7u32, 0x100][rng.below(2) as usize],
+        };
+        poke(a, b, works + 0x1f4, frames);
+        let fl = match broken {
+            9 => 0u32,
+            11 => 5,
+            _ => [1u32, 3][rng.below(2) as usize],
+        };
+        poke(a, b, works + 0x210, fl);
+        poke(
+            a,
+            b,
+            save + 0x13,
+            if broken == 10 {
+                0u8
+            } else {
+                [2u8, 4, 6][rng.below(3) as usize]
+            },
+        );
+        fill_both(a, b, rng, save + 0x10, 3);
+        for k in 0..6u32 {
+            poke(a, b, works + 0x218 + k * 4, moves[rng.below(5) as usize]);
+        }
+        poke(
+            a,
+            b,
+            a.rebase(0x00c5_273c),
+            [0i32, 5, -1][rng.below(3) as usize],
+        );
+        r25_ret(a, b, 0x0078_0c90, u32::from(broken == 12));
+        r25_ret(a, b, 0x0088_6630, u32::from(broken == 14));
+        r25_ret(a, b, 0x0088_d690, rng.below(0x100));
+        poke(a, b, busy, u32::from(broken == 15));
+        poke(a, b, ctx_cell, works + 0x238);
+        r22_case(
+            a,
+            b,
+            0x0087_1bc0,
+            &[],
+            false,
+            &format!("AtelUpdateBattleStatus {what} {round}"),
+            |r| {
+                hp::atel_update_battle_status(r, fcall);
+                0
+            },
+        );
+        poke(a, b, ctx_cell, here);
+    }
+    // Atel_InitWorkerLevels
+    for round in 0..8u32 {
+        let w = alloc_both(a, b, 0xb58);
+        fill_both(a, b, rng, w + 4, 0xb54);
+        let k = alloc_both(a, b, 4);
+        poke(a, b, k, [1u8, 5, 6, 0, 7, 1, 1, 2][round as usize]);
+        poke(a, b, w, k);
+        let (x, y, z) = (rng.next(), rng.next(), rng.next());
+        r22_case(
+            a,
+            b,
+            0x0086_d300,
+            &[w, x, y, z],
+            false,
+            &format!("Atel_InitWorkerLevels {what} {round}"),
+            |r| {
+                hp::atel_init_worker_levels(r, w, x, y, z);
+                0
+            },
+        );
+    }
+    // Atel_CheckLineCross against the camera target
+    let ctx = alloc_both(a, b, 0x240);
+    poke(a, b, ctx_cell, ctx);
+    let coords = [
+        0u32,
+        0x3f80_0000,
+        0xbf80_0000,
+        0x4000_0000,
+        0xc000_0000,
+        0x3f00_0000,
+    ];
+    for round in 0..64u32 {
+        let w = alloc_both(a, b, 0x600);
+        fill_both(a, b, rng, w + 4, 0x5fc);
+        let k = alloc_both(a, b, 4);
+        poke(a, b, k, [5u8, 7][(round % 2) as usize]);
+        poke(a, b, w, k);
+        let p = if round % 2 == 0 { w + 0x284 } else { w + 0x558 };
+        for off in [0u32, 4, 8, 0x30, 0x34, 0x38] {
+            poke(a, b, p + off, coords[rng.below(6) as usize]);
+        }
+        poke(
+            a,
+            b,
+            p + 0x1c,
+            [0u32, 0x3f80_0000, 0xbf80_0000, 0x4120_0000, 0x7fc0_0000][rng.below(5) as usize],
+        );
+        for off in [0x218u32, 0x21c, 0x220, 0x228, 0x22c, 0x230] {
+            poke(a, b, ctx + off, coords[rng.below(6) as usize]);
+        }
+        // no move at all, or along x only, or along z only
+        let still: &[u32] = match round % 5 {
+            0 => &[0, 8],
+            2 => &[8],
+            3 => &[0],
+            _ => &[],
+        };
+        for &k in still {
+            let v = Mem::read::<u32>(b, ctx + 0x228 + k);
+            poke(a, b, ctx + 0x218 + k, v);
+        }
+        if round % 4 == 1 {
+            // flat lines a height of 1 apart, the limit exactly 1
+            for k in [0x218u32, 0x228] {
+                poke(a, b, ctx + k + 4, 0x3f80_0000u32);
+            }
+            for k in [4u32, 0x34] {
+                poke(a, b, p + k, 0u32);
+            }
+            poke(a, b, p + 0x1c, 0x3f80_0000u32);
+        }
+        poke(a, b, w + 0x36, u16::try_from(rng.below(8)).unwrap());
+        let rec = if round % 3 == 0 {
+            let r = alloc_both(a, b, 8);
+            fill_both(a, b, rng, r, 8);
+            r
+        } else {
+            0
+        };
+        r22_case(
+            a,
+            b,
+            0x0086_80a0,
+            &[w, 0, 0xffff, rec],
+            false,
+            &format!("Atel_CheckLineCross {what} {round}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_check_line_cross(r, w, 0xffff, rec, f, fcall);
+                0
+            },
+        );
+    }
+    poke(a, b, ctx_cell, here);
+}
+
+/// Round 25 f: `Atel_CheckLineCross_008680a0` against the snapshot's
+/// workers.
+fn r25f_workers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let fcall = |r: &mut Run, f: u32, args: &[u32]| {
+        let at = r.0.rebase(f);
+        r.0.call_f64(at, args).unwrap()
+    };
+    r24_log_stubs(a, b, &[(0x0087_64f0, 3), (0x0087_66d0, 4)]);
+    let works = a.rebase(0x0132_5ba0);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    poke(a, b, ctx_cell, works);
+    let n = u32::from(Mem::read::<u16>(b, works + ctrl::WORKERS));
+    let ws: Vec<u32> = (0..n)
+        .map(|i| {
+            orig(a, ATEL_GET_BASIC_WORK, &[i]);
+            v::atel_get_basic_work(b, i.cast_signed())
+        })
+        .collect();
+    let kind = |o: &Oracle, w: u32| Mem::read::<u8>(o, Mem::read::<u32>(o, w));
+    let coords = [0u32, 0x3f80_0000, 0xbf80_0000, 0x4000_0000, 0xc000_0000];
+    for round in 0..32u32 {
+        let t = rng.below(n);
+        let tw = ws[t as usize];
+        if kind(b, tw) == 4 {
+            continue;
+        }
+        let q = if matches!(kind(b, tw), 5 | 6) {
+            tw + 0x284
+        } else {
+            tw + 0x558
+        };
+        for off in [0u32, 4, 8, 0x10, 0x14, 0x18] {
+            poke(a, b, q + off, coords[rng.below(5) as usize]);
+        }
+        let w = alloc_both(a, b, 0x600);
+        fill_both(a, b, rng, w + 4, 0x5fc);
+        let k = alloc_both(a, b, 4);
+        poke(a, b, k, 7u8);
+        poke(a, b, w, k);
+        for off in [0u32, 4, 8, 0x30, 0x34, 0x38] {
+            poke(a, b, w + 0x558 + off, coords[rng.below(5) as usize]);
+        }
+        poke(a, b, w + 0x558 + 0x1c, 0u32);
+        poke(a, b, w + 0x36, 1u16);
+        let rec = if round % 2 == 0 {
+            0
+        } else {
+            alloc_both(a, b, 8)
+        };
+        r22_case(
+            a,
+            b,
+            0x0086_80a0,
+            &[w, 0, t, rec],
+            false,
+            &format!("Atel_CheckLineCross {what} worker {t}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_check_line_cross(r, w, t, rec, f, fcall);
+                0
+            },
+        );
+    }
+}
+
+#[test]
+fn round25f_water_windows_battle_levels_lines_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0256);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r25f_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r25f_cases(&mut a, &mut b, &mut rng, "snapshot");
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r25f_workers(&mut a, &mut b, &mut rng, "snapshot");
+}
