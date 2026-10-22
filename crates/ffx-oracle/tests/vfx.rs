@@ -29548,3 +29548,330 @@ fn round47c_opu_vran_etc_matches_the_original() {
         assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
     }
 }
+
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn round47d_z_crct_draw_matches_the_original() {
+    use mat::bridge as mt;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0073_5160);
+        let (obj, key, ctrl, offs, part) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x100),
+        );
+        let part_at = p.sym(0x0230_ffe4);
+        let mats = [p.sym(0x0230_ff20), p.sym(0x0230_ffa0), p.sym(0x0230_ff60)];
+        let work = p.sym(0x00c8_f820);
+        let mut modes = [0u32; 4];
+        for round in 0..3000u32 {
+            p.set(ctrl + 0xc, offs);
+            p.set(offs, 4 * rng.below(0x10));
+            p.set(part_at, part);
+            for (at, n) in [
+                (obj, 0x80u32),
+                (key, 0x10),
+                (part, 0x40),
+                (mats[0], 0x10),
+                (mats[1], 0x10),
+                (mats[2], 0x10),
+                (work, 0x10),
+            ] {
+                for k in 0..n {
+                    let x = if rng.chance(3) {
+                        rng.float()
+                    } else {
+                        finite(&mut rng)
+                    };
+                    p.set(at + 4 * k, x);
+                }
+            }
+            let mode = rng.pick(&[0u8, 1, 2, 0, 1, 2, 3, 0xff]);
+            modes[usize::from(mode.min(3))] += 1;
+            p.set(key + 0x30, mode);
+            check_deep_n(
+                &mut p,
+                &format!("pppKeZCrctDraw {mode} round {round}"),
+                0x0073_5160,
+                &[obj, key, ctrl],
+                |m, frame| {
+                    Some(mt::ppp_ke_z_crct_draw(
+                        m,
+                        obj,
+                        key,
+                        ctrl,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(modes.iter().all(|&k| k > 0), "{}", p.name);
+    }
+}
+
+/// A stand-in at `sym` (through a jump) that copies the 0x64-byte record
+/// its argument points at to `log + 4` (all but the stale word `+0x2c`:
+/// words 0..11 and 12..25), counts the calls at `log` and returns 0.
+fn dtt_record_recorder(p: &mut Pair, sym: u32) -> u32 {
+    let log = p.alloc(4 + 24 * 4);
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0xbf]; // push esi; push edi; mov esi, [esp+0xc]; mov edi, log+4
+    c.extend((log + 4).to_le_bytes());
+    c.extend([0xb9, 11, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 11; rep movsd
+    c.extend([0x83, 0xc6, 0x04]); // add esi, 4
+    c.extend([0xb9, 13, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 13; rep movsd
+    c.extend([0xff, 0x05]); // inc dword [log]
+    c.extend(log.to_le_bytes());
+    c.extend([0x5f, 0x5e, 0x31, 0xc0, 0xc3]); // pop edi; pop esi; xor eax, eax; ret
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+#[test]
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)]
+fn round47d_shp_dtt_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_5040);
+        let pre = dtt_record_recorder(&mut p, 0x0076_8d30); // KeDttSpr_MkGifPk_Pre
+        let mk = dtt_record_recorder(&mut p, 0x0076_7790); // KeDttSpr_MkGifPk
+        let page = far_recorder(&mut p, 0x0063_fc10, &[0], None); // graphicDttPageFlag
+        // Sg_GetDBuffDC: [out] = the word at `cells`, returns the word at `cells + 4`
+        let cells = p.alloc(8);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d]; // mov eax, [esp+4]; mov ecx, [cells]
+        c.extend(cells.to_le_bytes());
+        c.extend([0x89, 0x08, 0xa1]); // mov [eax], ecx; mov eax, [cells + 4]
+        c.extend((cells + 4).to_le_bytes());
+        c.push(0xc3);
+        stub_code(&mut p, 0x0082_0530, &c);
+        let (obj, key, ctrl, offs, part, dc) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x100),
+            p.alloc(0x300),
+        );
+        let part_at = p.sym(0x0230_ffe4);
+        let (stop, skip, pos) = (p.sym(0x0230_fd34), p.sym(0x012f_b7d0), p.sym(0x0230_fd2c));
+        let mut seen = [0u32; 4];
+        for round in 0..3000u32 {
+            p.set(ctrl + 0xc, offs);
+            for k in 0..4 {
+                p.set(offs + 4 * k, 4 * rng.below(0x10));
+            }
+            p.set(part_at, part);
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(part, 0x100, &mut rng);
+            p.fill(dc, 0x300, &mut rng);
+            // floats where the draw reads them (no signalling NaNs)
+            for at in (0xa0..0x1a0).step_by(4) {
+                let x = if rng.chance(3) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(obj + at, x);
+            }
+            for at in [4u32, 8, 0xc, 0x10, 0x14] {
+                p.set(key + at, finite(&mut rng));
+            }
+            p.set(part + 0x60, finite(&mut rng));
+            p.set(part + 0x64, finite(&mut rng));
+            if rng.chance(50) {
+                let f: u32 = p.get(obj + 0xc);
+                p.set(key, f);
+            }
+            let stopped = rng.chance(20);
+            let skipped = rng.chance(15);
+            p.set(stop, u32::from(stopped));
+            p.set(skip, u32::from(skipped));
+            p.set(cells, rng.pick(&[0u32, 1, 2, 3]));
+            p.set(cells + 4, dc + 0x10 * rng.below(8));
+            p.set(pos, rng.next());
+            let at = 0x60 + 0x10 * rng.below(8);
+            let (w0, w1, w2) = (rng.next(), 0x8000_0000 | rng.next(), rng.below(0x1_0000));
+            let w = rng.pick(&[w0, w1, w2]);
+            p.set(dc + at, w);
+            seen[usize::from(stopped)] += 1;
+            seen[2 + usize::from(p.get::<u8>(key + 0x19) & 2 != 0)] += u32::from(!skipped);
+            check_deep_n(
+                &mut p,
+                &format!("pppKeShpDttDraw round {round}"),
+                0x0075_5040,
+                &[obj, key, ctrl],
+                |m, frame| {
+                    let ebp = frame.wrapping_sub(8) & !0xf;
+                    d::ppp_ke_shp_dtt_draw(m, obj, key, ctrl, ebp, &mut call_original);
+                    None
+                },
+            );
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+        for log in [pre, mk, page] {
+            assert!(p.get::<u32>(log) > 0, "{}", p.name);
+        }
+    }
+}
+
+/// A stand-in at `sym` (through a jump) that copies `words` words its
+/// argument points at to `log + 4`, counts the calls at `log` and returns
+/// 0; with `to` set it also stores `0x1234_5678` at `[arg + to]` (a callee
+/// that moves a field on).
+fn record_recorder(p: &mut Pair, sym: u32, words: u8, to: Option<u8>) -> u32 {
+    let log = p.alloc(4 + 4 * usize::from(words));
+    let mut c = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0xbf]; // push esi; push edi; mov esi, [esp+0xc]; mov edi, log+4
+    c.extend((log + 4).to_le_bytes());
+    c.extend([0xb9, words, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, words; rep movsd
+    if let Some(to) = to {
+        c.extend([0x8b, 0x44, 0x24, 0x0c, 0xc7, 0x40, to]); // mov eax, [esp+0xc]; mov dword [eax+to], imm
+        c.extend(0x1234_5678u32.to_le_bytes());
+    }
+    c.extend([0xff, 0x05]); // inc dword [log]
+    c.extend(log.to_le_bytes());
+    c.extend([0x5f, 0x5e, 0x31, 0xc0, 0xc3]); // pop edi; pop esi; xor eax, eax; ret
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+#[test]
+#[allow(clippy::many_single_char_names, clippy::too_many_lines)]
+fn round47d_mdl_dtt_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0072_e790);
+        // KeDttMdl_MkGifPk: the whole record up to the products (+0x8c),
+        // the packet position (+0x18) moved on
+        let mk = record_recorder(&mut p, 0x0072_ded0, 0x23, Some(0x18));
+        let page = far_recorder(&mut p, 0x0063_fc10, &[0], None); // graphicDttPageFlag
+        let rets = p.alloc(8);
+        let ptr = far_recorder(&mut p, 0x00a4_4650, &[0], Some(rets)); // get_ptr32_func
+        let cells = p.alloc(8);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d]; // mov eax, [esp+4]; mov ecx, [cells]
+        c.extend(cells.to_le_bytes());
+        c.extend([0x89, 0x08, 0xa1]); // mov [eax], ecx; mov eax, [cells + 4]
+        c.extend((cells + 4).to_le_bytes());
+        c.push(0xc3);
+        stub_code(&mut p, 0x0082_0530, &c); // Sg_GetDBuffDC
+        let (obj, key, ctrl, offs, part, dc) = (
+            p.alloc(0x200),
+            p.alloc(0x40),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x100),
+            p.alloc(0x300),
+        );
+        let (slot, env, effects, target) = (p.alloc(4), p.alloc(0x40), p.alloc(0x400), p.alloc(4));
+        let env_slot = p.sym(0x00c3_a4cc);
+        let part_at = p.sym(0x0230_ffe4);
+        let (stop, skip, pos, map) = (
+            p.sym(0x0230_fd34),
+            p.sym(0x012f_b7d0),
+            p.sym(0x0230_fd2c),
+            p.sym(0x012f_bc40),
+        );
+        let mut seen = [0u32; 6];
+        for round in 0..4000u32 {
+            p.set(ctrl + 0xc, offs);
+            for k in 0..4 {
+                p.set(offs + 4 * k, 4 * rng.below(0x10));
+            }
+            p.set(part_at, part);
+            p.set(env_slot, slot);
+            p.set(slot, env);
+            p.set(env + 0x20, effects);
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(key, 0x40, &mut rng);
+            p.fill(part, 0x100, &mut rng);
+            p.fill(dc, 0x300, &mut rng);
+            p.fill(effects, 0x400, &mut rng);
+            p.fill(rets, 8, &mut rng);
+            for at in (0xa0..0x1a0).step_by(4) {
+                let x = if rng.chance(3) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(obj + at, x);
+            }
+            for at in [8u32, 0xc, 0x10] {
+                p.set(key + at, finite(&mut rng));
+            }
+            p.set(part + 0x60, finite(&mut rng));
+            let kind = rng.pick(&[0u8, 1, 2, 3, 4, 5, 0xc, 0x8c]);
+            p.set(key + 0x14, kind);
+            let e = rng.below(0x20);
+            p.set(key + 4, if rng.chance(8) { 0xffff } else { e });
+            if kind >= 4 {
+                // a +8 a pointer: get_ptr32_func's answer decides z
+                let a_off: u32 = p.get(offs);
+                p.set(
+                    obj + 0xa0 + a_off + 8,
+                    if rng.chance(20) { 0 } else { target },
+                );
+                p.set(rets, rng.pick(&[0u32, 1]));
+            }
+            if rng.chance(50) {
+                let f: u32 = p.get(obj + 0xc);
+                p.set(key, f);
+            }
+            if rng.chance(8) {
+                // the product the draw stops on
+                let b_off: u32 = p.get(offs + 4);
+                p.set(obj + 0xa0 + b_off + 6, 0u16);
+            }
+            let stopped = rng.chance(20);
+            p.set(stop, u32::from(stopped));
+            p.set(skip, u32::from(rng.chance(10)));
+            p.set(
+                map,
+                if rng.chance(8) {
+                    0x13e
+                } else {
+                    rng.below(0x200)
+                },
+            );
+            p.set(cells, rng.pick(&[0u32, 1, 2, 3]));
+            p.set(cells + 4, dc + 0x10 * rng.below(8));
+            p.set(pos, rng.next());
+            p.set(target, rng.next());
+            let mk_before: u32 = p.get(mk);
+            check_deep_n(
+                &mut p,
+                &format!("pppKeMdlDttDraw round {round}"),
+                0x0072_e790,
+                &[obj, key, ctrl],
+                |m, frame| {
+                    let ebp = frame.wrapping_sub(8) & !0xf;
+                    d::ppp_ke_mdl_dtt_draw(m, obj, key, ctrl, ebp, &mut call_original);
+                    None
+                },
+            );
+            if p.get::<u32>(mk) != mk_before {
+                seen[usize::from(kind >= 4)] += 1;
+                seen[2 + usize::from(kind >= 2)] += 1;
+                seen[4] += u32::from(stopped);
+            }
+            seen[5] += 1;
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+        for log in [page, ptr] {
+            assert!(p.get::<u32>(log) > 0, "{}", p.name);
+        }
+    }
+}

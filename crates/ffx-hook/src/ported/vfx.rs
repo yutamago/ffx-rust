@@ -4713,6 +4713,35 @@ ported! {
     pppDrawMatrixWood @ 0x0073_4cf0 => extern "C" fn ppp_draw_matrix_wood(obj: u32) {
         mat::bridge::ppp_draw_matrix_wood(&mut mem(), obj);
     }
+    /// `pppKeZCrctDraw(obj, key, ctrl)`: its stack matrix in a frame on
+    /// this shim's stack; `FFXVu0CopyMatrix`'s `eax`.
+    pppKeZCrctDraw @ 0x0073_5160 => extern "C" fn ppp_ke_z_crct_draw(obj: u32, key: u32, ctrl: u32) -> u32 {
+        let mut frame = super::StackFrame::<0x14>::new();
+        let ebp = frame.at().wrapping_add(0x50);
+        mat::bridge::ppp_ke_z_crct_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppKeShpDttDraw(obj, key, ctrl)`: the sprite record and the draw
+    /// buffer index in a 16-aligned block on this shim's stack, as the
+    /// original aligns its frame.
+    pppKeShpDttDraw @ 0x0075_5040 => extern "C" fn ppp_ke_shp_dtt_draw(obj: u32, key: u32, ctrl: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let ebp = locals.0.as_mut_ptr() as u32 + 0xa0;
+        draw::bridge::ppp_ke_shp_dtt_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppKeMdlDttDraw(obj, key, ctrl)`: the model record (and the
+    /// original's spills inside it) in a 16-aligned block on this shim's
+    /// stack, as the original aligns its frame.
+    pppKeMdlDttDraw @ 0x0072_e790 => extern "C" fn ppp_ke_mdl_dtt_draw(obj: u32, key: u32, ctrl: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xa0]);
+        let mut locals = Locals([0; 0xa0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let ebp = locals.0.as_mut_ptr() as u32 + 0xa0;
+        draw::bridge::ppp_ke_mdl_dtt_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `pppKeZCrctShpDraw(obj, key, ctrl)`: its stack matrix in a buffer
     /// on this shim's stack (the frame pointer at its end; a mode the
     /// original does not know leaves row 3 zero here, stale stack there).

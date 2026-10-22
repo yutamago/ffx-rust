@@ -26,6 +26,317 @@ pub mod bridge {
         0x76f, 0x18e7, 0x5c8, 0x1f7, 0x4c4, 0x1b8a, 0x324, 0x1e8a, 0x1139,
     ];
 
+    /// `pppKeShpDttDraw(obj, key, ctrl)` (`0x00755040`): one distortion
+    /// sprite. Work areas `a` (0), `b` (1), `m` (2, a matrix), `c` (3) at
+    /// `obj +0xa0 + [[ctrl +0xc] + 4k]`. Unless `g_pppStopStatus`: `a +4` +=
+    /// `a +8`, then `a +0` += that (`f32` each), and on the key's frame
+    /// (`obj +0xc` = `[key]`) the key's `+4`, `+8`, `+0xc` added to `a +0`,
+    /// `+4`, `+8`. Unless `g_GraphicSkipFrame`, the sprite record at `ebp -
+    /// 0x80` (`ebp` the original's 16-aligned frame pointer) for
+    /// `KeDttSpr_MkGifPk_Pre` and `KeDttSpr_MkGifPk`: `+0` the colour (`m
+    /// +0x30`; with key byte `+0x19` bit 1 `c +0, +4`, 512, 1), `+0x10` the
+    /// four `u16` part `+0x70.. * i16 b +0..` products as `f32` times
+    /// 2^-19, `+0x20`/`+0x28` `set_ptr32(g_pppScreenMatrix)` (the second
+    /// call first), `+0x24` `set_ptr32(g_PppPacketPos + 0x10)`, `+0x30` =
+    /// `m` times `(0, -a +0, 0)` (`FFXVu0ApplyMatrix`) with `+0x3c` = key
+    /// byte `+0x19`, `+0x40` the frame buffer's 64-bit TEX0 word from the
+    /// draw buffer (`Sg_GetDBuffDC`, page `(key byte +0x18 + its index) &
+    /// 1`, after `graphicDttPageFlag`), `+0x48` its `+0x84` sign-extended,
+    /// `+0x50` its `+0x78`, `+0x7c`, `+0x58` the key's `+0x10`, `+0x14`
+    /// times the part's `+0x60`, `+0x64`, `+0x60` `set_ptr32(obj)`; `+0x2c`
+    /// is left as the stack has it. `Sg_GetDBuffDC`'s index word at `ebp -
+    /// 0x98`. Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_ke_shp_dtt_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        ebp: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let offs: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let area = |mem: &M, k: u32| -> u32 {
+            let o: u32 = mem.read(offs.wrapping_add(4 * k));
+            obj.wrapping_add(0xa0).wrapping_add(o)
+        };
+        let part: u32 = mem.read(g(mem, 0x0230_ffe4));
+        let a = area(mem, 0);
+        let m = area(mem, 2);
+        let rf = |mem: &M, at: u32| load(mem.read(at));
+        if crate::ppp::bridge::STOP.get(mem) == 0 {
+            let y = store(add(rf(mem, a.wrapping_add(8)), rf(mem, a.wrapping_add(4))));
+            mem.write(a.wrapping_add(4), y);
+            let x = store(add(rf(mem, a), load(y)));
+            mem.write(a, x);
+            if mem.read::<u32>(obj.wrapping_add(0xc)) == mem.read::<u32>(key) {
+                let x = store(add(load(x), rf(mem, key.wrapping_add(4))));
+                mem.write(a, x);
+                let y = store(add(load(y), rf(mem, key.wrapping_add(8))));
+                mem.write(a.wrapping_add(4), y);
+                let z = store(add(
+                    rf(mem, key.wrapping_add(0xc)),
+                    rf(mem, a.wrapping_add(8)),
+                ));
+                mem.write(a.wrapping_add(8), z);
+            }
+        }
+        if mem.read::<u32>(g(mem, 0x012f_b7d0)) != 0 {
+            return;
+        }
+        let rec = ebp.wrapping_sub(0x80);
+        let r = |k: u32| rec.wrapping_add(k);
+        let b = area(mem, 1);
+        let k: f64 = mem.read(g(mem, 0x00b5_1650));
+        for i in 0..4 {
+            let scale = u32::from(mem.read::<u16>(part.wrapping_add(0x70 + 2 * i)));
+            let n = i32::from(mem.read::<i16>(b.wrapping_add(2 * i))).cast_unsigned();
+            // `imul`, `fild`, stored as f32, then times 2^-19
+            let v = store(f64::from(scale.wrapping_mul(n).cast_signed()));
+            mem.write(r(0x10 + 4 * i), store(mul(load(v), k)));
+        }
+        if mem.read::<u8>(key.wrapping_add(0x19)) & 2 != 0 {
+            let c = area(mem, 3);
+            mem.write(r(0), store(rf(mem, c)));
+            mem.write(r(4), store(rf(mem, c.wrapping_add(4))));
+            let alpha: u32 = mem.read(g(mem, 0x00b4_1d9c));
+            mem.write(r(8), store(load(alpha)));
+            mem.write(r(0xc), 1.0f32);
+        } else {
+            let colour: [u32; 4] = mem.read(m.wrapping_add(0x30));
+            mem.write(rec, colour);
+        }
+        let screen = g(mem, 0x0230_fe60);
+        let s = go(mem, 0x00a4_4700, &[screen]);
+        mem.write(r(0x28), s);
+        let s = go(mem, 0x00a4_4700, &[screen]);
+        mem.write(r(0x20), s);
+        for (at, pk) in [(0x58, 0x60), (0x5c, 0x64)] {
+            let v = store(mul(
+                rf(mem, key.wrapping_add(at - 0x48)),
+                rf(mem, part.wrapping_add(pk)),
+            ));
+            mem.write(r(at), v);
+        }
+        let pos: u32 = mem.read(g(mem, 0x0230_fd2c));
+        let s = go(mem, 0x00a4_4700, &[pos.wrapping_add(0x10)]);
+        mem.write(r(0x24), s);
+        let index_at = ebp.wrapping_sub(0x98);
+        let dc = go(mem, 0x0082_0530, &[index_at]);
+        let page_byte = mem.read::<u8>(key.wrapping_add(0x18));
+        let index: u32 = mem.read(index_at);
+        let page = u32::from(page_byte).wrapping_add(index) & 1;
+        let off = page * 0x130;
+        // `mov cl, [key +0x18]` over the key pointer in ecx
+        go(
+            mem,
+            0x0063_fc10,
+            &[(key & 0xffff_ff00) | u32::from(page_byte)],
+        );
+        let buf = dc.wrapping_add(off);
+        let fb = mem.read::<u32>(buf.wrapping_add(0x60)).cast_signed();
+        let base = u64::from(((fb >> 24) & 0x3f).cast_unsigned() | 0x2a80);
+        let width = u64::from(((fb >> 16) & 0x3f).cast_unsigned());
+        let low = u64::from((fb.cast_unsigned() & 0x1ff) << 5);
+        mem.write(r(0x40), (((base << 6) | width) << 14) | low);
+        let h = mem.read::<u32>(buf.wrapping_add(0x84)).cast_signed();
+        mem.write(r(0x48), i64::from(h).cast_unsigned());
+        let w: [u32; 2] = mem.read(buf.wrapping_add(0x78));
+        mem.write(r(0x50), w);
+        let neg = -load(mem.read(a));
+        mem.write(r(0x38), 0.0f32);
+        mem.write(r(0x30), 0.0f32);
+        mem.write(r(0x3c), 0u32);
+        mem.write(r(0x34), store(neg));
+        go(mem, 0x006e_d2e0, &[r(0x30), m, r(0x30)]);
+        mem.write(r(0x3c), u32::from(mem.read::<u8>(key.wrapping_add(0x19))));
+        let s = go(mem, 0x00a4_4700, &[obj]);
+        mem.write(r(0x60), s);
+        go(mem, 0x0076_8d30, &[rec]);
+        go(mem, 0x0076_7790, &[rec]);
+    }
+
+    /// `pppKeMdlDttDraw(obj, key, ctrl)` (`0x0072e790`): one model
+    /// distortion; nothing on map 0x13e (`g_CurrentMapNo`). Work areas `a`
+    /// (0), `b` (1), `m` (2) at `obj +0xa0 + [[ctrl +0xc] + 4k]`; from key
+    /// byte `+0x14` 4 up `a +8` holds a pointer (`get_ptr32_func` non-zero:
+    /// the step's z is 0). Unless `g_pppStopStatus`: `a +4` += z, `a +0` +=
+    /// that, and on the key's frame (`obj +0xc` = `[key]`) the key's `+8`,
+    /// `+0xc` (and below 4 `+0x10` into `a +8`) added. Unless
+    /// `g_GraphicSkipFrame`, the key's effect `e` (`+4`) is 0xffff, or the
+    /// `u16` part `+0x76` times `i16 b +6` is 0: the record at `ebp - 0x90`
+    /// (`ebp` the original's 16-aligned frame pointer) for
+    /// `KeDttMdl_MkGifPk`: `+0`/`+4` the draw buffer's `+0x78`, `+0x7c`
+    /// (`Sg_GetDBuffDC`, page `(key byte +0x14 + its index) & 1`), `+8` the
+    /// 64-bit TEX0 word (below byte 2 the frame buffer's, else `(u16 +0x62
+    /// & 0x3f) << 14 | 0x2_a820_1a00`), `+0x10` `g_pppScreenMatrix`, `+0x14`
+    /// `m`, `+0x18` `g_PppPacketPos` (put back after the call), `+0x1c` the
+    /// effect's model (`get_ptr32_func` of the environment's `+0x20` record
+    /// `e`'s `+0x1c`), `+0x20` the part's `+0x60` times `a +0`, `+0x24` key
+    /// byte `+0x15`, `+0x28` the buffer's `+0x84` sign-extended, `+0x30` and
+    /// `+0x34` the address of `+0x7c`, `+0x38..+0x40` the pointed-at word,
+    /// bit 3 of the byte and 1 (else `+0x40` 0), `+0x44`
+    /// `get_ptr32_func([obj +0x90])`, `+0x48` `obj`, `+0x7c..+0x88` the four
+    /// `u16` part `+0x70.. * i16 b +0..` products as `f32` times 2^-26; the
+    /// original's spills in between (`+0x5c` the buffer index, `+0x60` obj,
+    /// `+0x64` the offset of `a`, `+0x68` the page byte over the key's
+    /// address, `+0x6c` the page offset, `+0x70` key, `+0x74` the draw
+    /// buffer, `+0x78` the last product's `f32`) are written as it leaves
+    /// them. After the call `[a +8]` gets `+0x38` back (from 4 up). Callees
+    /// through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_ke_mdl_dtt_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        ebp: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let offs: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let area_off = |mem: &M, k: u32| -> u32 { mem.read(offs.wrapping_add(4 * k)) };
+        let part: u32 = mem.read(g(mem, 0x0230_ffe4));
+        let m = obj.wrapping_add(0xa0).wrapping_add(area_off(mem, 2));
+        if mem.read::<u32>(g(mem, 0x012f_bc40)) == 0x13e {
+            return;
+        }
+        let a_off = area_off(mem, 0);
+        let a = obj.wrapping_add(0xa0).wrapping_add(a_off);
+        let rf = |mem: &M, at: u32| load(mem.read(at));
+        let kind = |mem: &M| mem.read::<u8>(key.wrapping_add(0x14));
+        let z = if kind(mem) >= 4 && go(mem, 0x00a4_4650, &[mem.read(a.wrapping_add(8))]) != 0 {
+            0.0f32.to_bits()
+        } else {
+            store(rf(mem, a.wrapping_add(8)))
+        };
+        if crate::ppp::bridge::STOP.get(mem) == 0 {
+            let y = store(add(load(z), rf(mem, a.wrapping_add(4))));
+            mem.write(a.wrapping_add(4), y);
+            let x = store(add(rf(mem, a), load(y)));
+            mem.write(a, x);
+            if mem.read::<u32>(obj.wrapping_add(0xc)) == mem.read::<u32>(key) {
+                mem.write(a, store(add(load(x), rf(mem, key.wrapping_add(8)))));
+                mem.write(
+                    a.wrapping_add(4),
+                    store(add(load(y), rf(mem, key.wrapping_add(0xc)))),
+                );
+                if kind(mem) < 4 {
+                    let v = store(add(
+                        rf(mem, key.wrapping_add(0x10)),
+                        rf(mem, a.wrapping_add(8)),
+                    ));
+                    mem.write(a.wrapping_add(8), v);
+                }
+            }
+        }
+        if mem.read::<u32>(g(mem, 0x012f_b7d0)) != 0 {
+            return;
+        }
+        let e: u32 = mem.read(key.wrapping_add(4));
+        if e == 0xffff {
+            return;
+        }
+        let b = obj.wrapping_add(0xa0).wrapping_add(area_off(mem, 1));
+        let product = |mem: &M, i: u32| {
+            let scale = u32::from(mem.read::<u16>(part.wrapping_add(0x70 + 2 * i)));
+            let n = i32::from(mem.read::<i16>(b.wrapping_add(2 * i))).cast_unsigned();
+            scale.wrapping_mul(n)
+        };
+        let n3 = product(mem, 3);
+        if n3 == 0 {
+            return;
+        }
+        let rec = ebp.wrapping_sub(0x90);
+        let r = |k: u32| rec.wrapping_add(k);
+        let k: f64 = mem.read(g(mem, 0x00b5_1530));
+        // `fild`, stored as f32, then times 2^-26
+        let int = |n: u32| store(f64::from(n.cast_signed()));
+        mem.write(r(0x88), store(mul(load(int(n3)), k)));
+        let mut last = 0;
+        for i in 0..3 {
+            last = int(product(mem, i));
+            mem.write(r(0x7c + 4 * i), store(mul(load(last), k)));
+        }
+        mem.write(r(0x78), last);
+        mem.write(r(0x14), m);
+        mem.write(r(0x30), r(0x7c));
+        mem.write(r(0x34), r(0x7c));
+        let pos: u32 = mem.read(g(mem, 0x0230_fd2c));
+        mem.write(r(0x18), pos);
+        mem.write(r(0x10), g(mem, 0x0230_fe60));
+        let slot: u32 = mem.read(g(mem, ENV_SLOT));
+        let env: u32 = mem.read(mem.read::<u32>(slot).wrapping_add(0x20));
+        let model: u32 = mem.read(env.wrapping_add(e << 5).wrapping_add(0x1c));
+        let p = go(mem, 0x00a4_4650, &[model]);
+        mem.write(r(0x1c), p);
+        let scaled = store(mul(rf(mem, part.wrapping_add(0x60)), rf(mem, a)));
+        mem.write(r(0x24), u32::from(mem.read::<u8>(key.wrapping_add(0x15))));
+        mem.write(r(0x20), scaled);
+        let w: u32 = mem.read(obj.wrapping_add(0x90));
+        let p = go(mem, 0x00a4_4650, &[w]);
+        mem.write(r(0x44), p);
+        let byte = kind(mem);
+        let target: u32 = mem.read(a.wrapping_add(8));
+        if byte >= 4 && target != 0 {
+            let v: u32 = mem.read(target);
+            mem.write(r(0x38), v);
+            mem.write(r(0x40), 1u32);
+            mem.write(r(0x3c), u32::from(byte & 8));
+        } else {
+            mem.write(r(0x40), 0u32);
+        }
+        let index_at = r(0x5c);
+        let dc = go(mem, 0x0082_0530, &[index_at]);
+        let page_byte = kind(mem);
+        let page = u32::from(page_byte).wrapping_add(mem.read(index_at)) & 1;
+        let off = page * 0x130;
+        let page_word = (key & 0xffff_ff00) | u32::from(page_byte);
+        mem.write(r(0x74), dc);
+        mem.write(r(0x68), page_word);
+        mem.write(r(0x6c), off);
+        let buf = dc.wrapping_add(off);
+        let tex0 = if page_byte < 2 {
+            let fb = mem.read::<u32>(buf.wrapping_add(0x60)).cast_signed();
+            let base = u64::from(((fb >> 24) & 0x3f).cast_unsigned() | 0x2a80);
+            let width = u64::from(((fb >> 16) & 0x3f).cast_unsigned());
+            let low = u64::from((fb.cast_unsigned() & 0x1ff) << 5);
+            (((base << 6) | width) << 14) | low
+        } else {
+            let v = u64::from(mem.read::<u16>(buf.wrapping_add(0x62)) & 0x3f);
+            (v << 14) | 0x2_a820_1a00
+        };
+        mem.write(r(8), tex0);
+        let h = mem.read::<u32>(buf.wrapping_add(0x84)).cast_signed();
+        mem.write(r(0x28), i64::from(h).cast_unsigned());
+        let src: [u32; 2] = mem.read(buf.wrapping_add(0x78));
+        mem.write(rec, src);
+        go(mem, 0x0063_fc10, &[page_word]);
+        mem.write(r(0x48), obj);
+        mem.write(r(0x60), obj);
+        mem.write(r(0x64), a_off);
+        mem.write(r(0x70), key);
+        go(mem, 0x0072_ded0, &[rec]);
+        let pos: u32 = mem.read(r(0x18));
+        mem.write(g(mem, 0x0230_fd2c), pos);
+        if kind(mem) >= 4 {
+            let target: u32 = mem.read(a.wrapping_add(8));
+            if target != 0 {
+                let v: u32 = mem.read(r(0x38));
+                mem.write(target, v);
+            }
+        }
+    }
+
     /// `pppShapeFieldRenderOn_00743030()` (`0x00743030`): 0 on the nine
     /// [`SHAPE_FIELD_PLAIN_LEVELS`], else 1 (`graphicLevelGetNameHash`
     /// through `call`).

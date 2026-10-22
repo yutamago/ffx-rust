@@ -822,6 +822,91 @@ pub mod bridge {
         vu0::matrix_copy(mem, WOOD.ptr(mem).addr, work)
     }
 
+    /// `pppKeZCrctDraw(obj, key, ctrl)` (`0x00735160`): the model's draw
+    /// matrix into work area 0. `0x00c8f820` = the key's `+0x20` (the
+    /// scale), `0x00c8f830..0x00c8f85c` = the object's rows (`+0x10`),
+    /// their `x, y, z` times the scale's (x for row 0, y row 1, z row 2;
+    /// `f32` products); the local matrix at `frame - 0x44` (the original's
+    /// frame pointer) gets those rows and row 3 = the object's `+0x40`
+    /// (`FFXVu0CopyVector`). By the key's mode (`u8 +0x30`): 0 row 3 plus
+    /// the key's `+0x10` (all four), then times `g_pppViewMatrix`
+    /// (`FFXVu0MulMatrix(m, view, m)`); 1 times the view first, then plus;
+    /// 2 times `g_pppWorldMatrix`, then `0x00c8f830` = the key's `+0x10`,
+    /// `0x00c8f840` and `0x00c8f850` = the running part's `+0x60` (its
+    /// scale), `0x00c8f830..38` = scale times key, `0x00c8f850..58` and row
+    /// 3 `x, y, z` = scale plus that (`w` the scale's), then times
+    /// `g_pppCameraMatrix`; others nothing more. Copied with
+    /// `FFXVu0CopyMatrix`, whose `eax` it returns. Callees through `call`.
+    pub fn ppp_ke_z_crct_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        key: u32,
+        ctrl: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = Global::<u32>::new(at).ptr(mem).addr;
+            call(mem, f, args)
+        };
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let dst = area(mem, obj, ctrl, 0);
+        let scale: [u32; 4] = mem.read(key.wrapping_add(0x20));
+        mem.write(g(mem, 0x00c8_f820), scale);
+        let work = g(mem, 0x00c8_f830);
+        let mut rows: [u32; 12] = mem.read(obj.wrapping_add(0x10));
+        mem.write(work, rows);
+        for (r, &sv) in scale.iter().enumerate().take(3) {
+            let s = load(sv);
+            for c in 0..3 {
+                let i = 4 * r + c;
+                rows[i] = store(mul(s, load(rows[i])));
+            }
+        }
+        mem.write(work, rows);
+        let part = CURRENT_PART.get(mem);
+        let m = frame.wrapping_sub(0x44);
+        let last_row = m.wrapping_add(0x30);
+        mem.write(m, rows);
+        go(mem, 0x006e_d370, &[last_row, obj.wrapping_add(0x40)]);
+        let mul_matrix = |mem: &mut M, go: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, by: u32| {
+            let by = g(mem, by);
+            go(mem, 0x006e_d5c0, &[m, by, m]);
+        };
+        let key10: [u32; 4] = mem.read(key.wrapping_add(0x10));
+        // row 3 plus the key's +0x10 (the x87's NaN choice is symmetric,
+        // so the original's operand orders don't matter)
+        let plus = |mem: &mut M| {
+            let v: [u32; 4] = mem.read(last_row);
+            let out: [u32; 4] = std::array::from_fn(|i| store(add(load(v[i]), load(key10[i]))));
+            mem.write(last_row, out);
+        };
+        match mem.read::<u8>(key.wrapping_add(0x30)) {
+            0 => {
+                plus(mem);
+                mul_matrix(mem, &mut go, 0x0230_ff20);
+            }
+            1 => {
+                mul_matrix(mem, &mut go, 0x0230_ff20);
+                plus(mem);
+            }
+            2 => {
+                mul_matrix(mem, &mut go, 0x0230_ffa0);
+                let s: [u32; 4] = mem.read(part.wrapping_add(0x60));
+                let p: [u32; 3] = std::array::from_fn(|c| store(mul(load(s[c]), load(key10[c]))));
+                let t: [u32; 3] = std::array::from_fn(|c| store(add(load(s[c]), load(p[c]))));
+                mem.write(work, [p[0], p[1], p[2], key10[3]]);
+                mem.write(work.wrapping_add(0x10), s);
+                mem.write(work.wrapping_add(0x20), [t[0], t[1], t[2], s[3]]);
+                mem.write(last_row, [t[0], t[1], t[2], s[3]]);
+                mul_matrix(mem, &mut go, 0x0230_ff60);
+            }
+            _ => {}
+        }
+        go(mem, 0x006e_d360, &[dst, m])
+    }
+
     /// `pppKeZCrctShpDraw(obj, key, ctrl)` (`0x007354c0`): the shape's
     /// draw matrix into work area 0, built on the emulated VU0 (whose
     /// registers keep the original's final values):
