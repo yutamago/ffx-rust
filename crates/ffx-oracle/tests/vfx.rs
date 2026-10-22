@@ -9241,6 +9241,104 @@ fn vu_mul_matrix_matches_the_original() {
     }
 }
 
+#[test]
+#[allow(clippy::cast_possible_truncation)]
+fn ppp_draw_rain_step_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_5a00);
+        let random = p.alloc(4);
+        scaled_random(&mut p, 0x007e_6700, random);
+        let (obj, def, ctrl, offs) = (p.alloc(0x200), p.alloc(0x100), p.alloc(0x10), p.alloc(0x10));
+        let (drops, scratch) = (p.alloc(0x30 * 6), p.alloc(0x60));
+        let camera = p.sym(0x0230_ff60);
+        for round in 0..1500u32 {
+            // the camera: a translation, so the inverse's row 3 is minus it
+            let mut m = [0f32; 16];
+            for k in 0..4 {
+                m[5 * k] = 1.0;
+            }
+            for k in 0..3 {
+                m[12 + k] = f32::from_bits(ranged(&mut rng, -60.0, 60.0));
+            }
+            p.set(camera, m);
+            let cam = [-m[12], -m[13], -m[14]];
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(def, 0x100, &mut rng);
+            let off = 0x10 * rng.below(4);
+            p.set(ctrl + 0xc, offs);
+            p.set(offs + 4, off);
+            p.set(obj + off + 0xa4, drops);
+            let half = f32::from_bits(ranged(&mut rng, 5.0, 30.0));
+            p.set(def + 4, if rng.chance(3) { f32::NAN } else { half });
+            p.set(def + 8, rng.below(6));
+            for k in 4..0x10 {
+                let v = if rng.chance(90) {
+                    ranged(&mut rng, -5.0, 5.0)
+                } else {
+                    rng.float()
+                };
+                p.set(def + 4 * k, v);
+            }
+            // drops around the box's faces, moving a little
+            for i in 0..6u32 {
+                let q = drops + 0x30 * i;
+                let mut bound = [false; 3];
+                for e in 0..3usize {
+                    let side = rng.pick(&[-1.0f32, 1.0, 0.0]);
+                    let x = cam[e] + side * half + f32::from_bits(ranged(&mut rng, -3.0, 3.0));
+                    // now and then exactly on a bound (exact: 16 fraction
+                    // bits)
+                    let pick = rng.below(20);
+                    let x = match pick {
+                        0 => f32::NAN,
+                        1 => cam[e] - half,
+                        2 => cam[e] + half,
+                        _ => x,
+                    };
+                    bound[e] = pick == 1 || pick == 2;
+                    p.set(q + 4 * e as u32, x);
+                }
+                for k in 3..12u32 {
+                    let v = if k == 3 || k == 7 || k == 11 {
+                        rng.float()
+                    } else {
+                        ranged(&mut rng, -2.0, 2.0)
+                    };
+                    p.set(q + 4 * k, v);
+                }
+                // a drop on a bound stays there (no step on that axis)
+                for (e, on) in (0u32..).zip(bound) {
+                    if on {
+                        p.set(q + 0x10 + 4 * e, 0u32);
+                    }
+                }
+            }
+            p.check(
+                &format!("rain_step round {round}"),
+                0x0075_5a00,
+                &[obj, def, ctrl],
+                |o| {
+                    let keep = o.read(scratch, 0x60).unwrap();
+                    // the oracle's ebx, edi and esi at the call
+                    let junk = [0x1111_1111, 0x3333_3333, 0x2222_2222];
+                    draw::bridge::ppp_draw_rain_step(
+                        o,
+                        obj,
+                        def,
+                        ctrl,
+                        scratch + 0x50,
+                        junk,
+                        &mut call_original,
+                        &mut call_original_f,
+                    );
+                    o.write(scratch, &keep).unwrap();
+                    None
+                },
+            );
+        }
+    }
+}
+
 /// A float in `[lo, hi)` with 16 fraction bits, as bits.
 fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
     #[allow(clippy::cast_precision_loss)]

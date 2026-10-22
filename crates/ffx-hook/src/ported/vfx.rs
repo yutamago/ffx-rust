@@ -5687,6 +5687,15 @@ ported! {
         let ebp = frame.at() + 0x44;
         draw::bridge::ppp_draw_rain_alloc(&mut mem(), def, work, ebp, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `pppDrawRainStep_00755a00(obj, def, ctrl)`: the words
+    /// `rcuiScaleVector_copy_00756600` reads past its arguments (the
+    /// caller's saved registers) go in as 0, as for `pppDrawRainAlloc`.
+    pppDrawRainStep_00755a00 @ 0x0075_5a00 => extern "C" fn ppp_draw_rain_step(obj: u32, def: u32, ctrl: u32) {
+        // the original's locals: the inverse camera matrix, below its ebp
+        let mut frame = super::StackFrame::<17>::new();
+        let ebp = frame.at() + 0x44;
+        draw::bridge::ppp_draw_rain_step(&mut mem(), obj, def, ctrl, ebp, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
+    }
     // ---- round 36 d ----
     /// `opu_init(no, data, owner, obj, n, _, show)`.
     opu_init @ 0x007f_da80 => extern "C" fn opu_init(no: u32, data: u32, owner: u32, obj: u32, n: u32, _unused: u32, show: u32) -> u32 {

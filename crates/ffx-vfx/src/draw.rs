@@ -1823,6 +1823,134 @@ pub mod bridge {
         1
     }
 
+    /// `0x00755a00` (`pppDrawRainStep`, ours; `(obj, def, ctrl)`, called by
+    /// `pppDrawRainDraw`): moves the drops of [`ppp_draw_rain_alloc`]
+    /// (`ptr32(obj + [[ctrl +0xc] +4] + 0xa4)`, `def +8` drops of 0x30
+    /// bytes) and re-spawns the ones leaving the box of half size `d = def
+    /// +4` around the camera (row 3 of `FFXVu0InversMatrix
+    /// (g_pppCameraMatrix)`, in the original's locals at `frame - 0x44`,
+    /// `frame` its `ebp`; also to `g_Vu0_VfMove`). Per drop: position
+    /// (`+0`) += direction (`+0x10`), all four lanes, through
+    /// `g_Vu0_VfMove` (`f32` each; the direction also to the register at
+    /// `0x00c8f970`); the look-ahead `n` = position + velocity (`+0x20`,
+    /// the same way, left in `g_Vu0_VfMove`). Then for x, y, z in turn: a
+    /// drop whose position and `n` are both below `cam - d` (strictly, so
+    /// not for NaNs) re-spawns on the far side (`d + cam`), one with both
+    /// above `cam + d` at `cam - d`: as in [`ppp_draw_rain_alloc`] the
+    /// position `op_random(d) + cam` (w 1) but that axis, the direction
+    /// `def +0x10..+0x18` (w 0) plus `KeVecAddRandom(def +0x20)` (also to
+    /// `g_Vu0_VfMove`), the velocity that normalised and scaled by minus
+    /// `op_random(def +0x34) + def +0x30` (`rcuiScaleVector_copy_00756600`,
+    /// `junk` the three words it reads past its arguments: the caller's
+    /// saved `ebx`, `edi`, `esi`). Later axes see the re-spawned position
+    /// but the old `n`. Callees through `call`, `op_random`'s `ST0` through
+    /// `fcall`.
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
+    pub fn ppp_draw_rain_step<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        frame: u32,
+        junk: [u32; 3],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, load, store, sub};
+        use ffx_system::stub::ptr32;
+        let c: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let off: u32 = mem.read(c.wrapping_add(4));
+        let drops = ptr32(mem.read(obj.wrapping_add(off).wrapping_add(0xa4)));
+        let inverse = frame.wrapping_sub(0x44);
+        call(mem, g(mem, 0x006e_d450), &[inverse, g(mem, 0x0230_ff60)]);
+        let vf_move = g(mem, 0x00c8_f980);
+        let vf_dir = g(mem, 0x00c8_f970);
+        let copy4 = |mem: &mut M, to: u32, from: u32| {
+            for k in 0..4 {
+                let v: u32 = mem.read(from.wrapping_add(4 * k));
+                mem.write(to.wrapping_add(4 * k), v);
+            }
+        };
+        let eye = inverse.wrapping_add(0x30);
+        copy4(mem, vf_move, eye);
+        let cam: [u32; 3] = mem.read(eye);
+        let half: u32 = mem.read(def.wrapping_add(4));
+        let lo = cam.map(|e| store(sub(load(e), load(half))));
+        let hi = cam.map(|e| store(add(load(half), load(e))));
+        // position += step (`g_Vu0_VfMove` = step + position, lane by lane)
+        let step = |mem: &mut M, pos: u32, by: u32| {
+            copy4(mem, vf_move, pos);
+            copy4(mem, vf_dir, by);
+            for k in 0..4 {
+                let b: u32 = mem.read(by.wrapping_add(4 * k));
+                let p: u32 = mem.read(vf_move + 4 * k);
+                mem.write(vf_move + 4 * k, store(add(load(b), load(p))));
+            }
+        };
+        let random = g(mem, 0x007e_6700);
+        let mut i = 0u32;
+        while i < mem.read::<u32>(def.wrapping_add(8)) {
+            let pos = drops.wrapping_add(0x30 * i);
+            let (dir, vel) = (pos.wrapping_add(0x10), pos.wrapping_add(0x20));
+            step(mem, pos, dir);
+            copy4(mem, pos, vf_move);
+            step(mem, pos, vel);
+            let n: [f32; 3] = mem.read(vf_move);
+            for (axis, far) in [
+                (0u32, false),
+                (1, false),
+                (2, false),
+                (0, true),
+                (1, true),
+                (2, true),
+            ] {
+                let k = axis as usize;
+                let at = pos.wrapping_add(4 * axis);
+                let p: f32 = mem.read(at);
+                let out = if far {
+                    let h = f32::from_bits(hi[k]);
+                    h < p && h < n[k]
+                } else {
+                    let l = f32::from_bits(lo[k]);
+                    p < l && n[k] < l
+                };
+                if !out {
+                    continue;
+                }
+                for e in 0..3u32 {
+                    let spread: u32 = mem.read(def.wrapping_add(4));
+                    let r = fcall(mem, random, &[store(load(spread))]);
+                    let ce: u32 = mem.read(eye.wrapping_add(4 * e));
+                    mem.write(pos.wrapping_add(4 * e), store(add(r, load(ce))));
+                }
+                mem.write(pos.wrapping_add(0xc), 1f32);
+                let spread: u32 = mem.read(def.wrapping_add(4));
+                let ce: u32 = mem.read(eye.wrapping_add(4 * axis));
+                let v = if far {
+                    store(sub(load(ce), load(spread)))
+                } else {
+                    store(add(load(spread), load(ce)))
+                };
+                mem.write(at, v);
+                for e in 0..3 {
+                    let v = store(load(mem.read(def.wrapping_add(0x10 + 4 * e))));
+                    mem.write(dir.wrapping_add(4 * e), v);
+                }
+                mem.write(dir.wrapping_add(0xc), 0u32);
+                call(mem, g(mem, 0x0076_6f10), &[dir, def.wrapping_add(0x20), 0]);
+                copy4(mem, vf_move, dir);
+                copy4(mem, vel, dir);
+                call(mem, g(mem, 0x006e_d6f0), &[vel, vel]);
+                let spread: u32 = mem.read(def.wrapping_add(0x34));
+                let r = fcall(mem, random, &[store(load(spread))]);
+                let speed = store(-add(r, load(mem.read(def.wrapping_add(0x30)))));
+                let args = [vel, vel, store(load(speed)), junk[0], junk[1], junk[2]];
+                call(mem, g(mem, 0x0075_6600), &args);
+            }
+            i += 1;
+        }
+    }
+
     /// Where a shape render keeps its locals: offsets below the
     /// original's aligned frame pointer (`ebp`).
     #[derive(Debug, Clone, Copy)]

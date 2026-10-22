@@ -4045,6 +4045,7 @@
 0x00755000 function pppKeShpDtt               # ppp program table record "pppKeShpDtt" step; not a function start in the Ghidra dump
 0x00755010 function pppKeShpDttCon            # ppp program table record "pppKeShpDtt" (0x00c3ac10) +0x1c set-up; "pppKeShpDtt" (0x00c3ac10) +0x20 second set-up; "pppKeShpDtt" (0x00c3c2b8) +0x1c set-up and 1 more
 0x00755040 function pppKeShpDttDraw           # ppp program table record "pppKeShpDtt" draw; not a function start in the Ghidra dump
+0x00755a00 function pppDrawRainStep_00755a00  # ours: (obj, def, ctrl): pppDrawRainDraw's drop step: drops at ptr32(obj + [[ctrl+0xc]+4] + 0xa4), pos += dir, look-ahead pos + vel, re-spawn past the box +-def+4 around the inverse camera's row 3 (FFXVu0InversMatrix(g_pppCameraMatrix)) as pppDrawRainAlloc does (draw::bridge::ppp_draw_rain_step)
 0x00756240 function pppDrawRainCon            # ppp program table record "pppDrawRain" (0x00c3b430) +0x1c set-up; "pppDrawRain" (0x00c3cad8) +0x1c set-up
 0x00756270 function pppDrawRainDes            # ppp program table record "pppDrawRain" +0x24 destructor; ours: frees work +0xa4 of slot 1 (draw::bridge::ppp_des RAIN_DES)
 0x007562c0 function pppDrawRainDraw           # ppp program table record "pppDrawRain" draw
