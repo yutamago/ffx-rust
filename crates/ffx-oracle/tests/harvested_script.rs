@@ -280,3 +280,16 @@ harvest_test!(
         })
     }
 );
+
+// script round 28: the event sprites' draw (the render record and its
+// matrix in stack scratch, which the diff leaves out)
+harvest_test!(
+    atel_exec_draw_shape,
+    0x0087_4420,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        let frame = m.stack_range().start + 0x100;
+        // void: the original's EAX is the stack cookie check's leftover
+        hp::atel_exec_draw_shape(&mut OracleHost(m), frame);
+    }
+);

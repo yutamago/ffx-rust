@@ -9795,7 +9795,7 @@
 0x00874200 function MsSetSaveCommandWithPrefix # name from Fahrenheit (fh v3:exact+call.cs 0x00874190 cdecl); (chr, id, on) -> MsSetSaveCommand(chr, 0x3000 | id & 0xfff, on) (a jump); ported (ffx_battle::minor, battle round 29)
 0x008742b0 function AtelClearShape            # fh v3:exact 0x00874240
 0x008743e0 function Atel_StepSprites_008743e0 # (r25 c) with 0x01327144 and 0x01327f4c set and no movie (0x0086d940), every active event sprite steps (Atel_StepSpriteAnim_00874bf0); caller 0x00872bd0; own name
-0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0
+0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0; (script r28) draws the event sprites (g_EventSprites) as VFX type 8 when 0x01327144, 0x01327f4c and no movie: render record 0x700000/rgb*alpha/0x1030/matrix in its frame, id index + (sprite << 32), InitVFXRenderDataAtelShp or updateVFXRenderDataAtelShp + six graphicVFX2DUpdate; map 0x17e hides sprites 5/11/17/21; caller AtelDrawNoTrans
 0x008747b0 function Atel_GetSprite             # (i 0..127): sprite record i (0x01327148, 0x1c bytes); name ours; ported in helpers (script round 14)
 0x008747f0 function Atel_ClearSprite           # (i): sprite record i's first byte = 0; name ours; ported in helpers (script round 14)
 0x008748a0 function Atel_ShowSprite_008748a0 # (r25 d) event sprite i (0..0x7f) on with texture tex (op_anm_tex0_set, set_ptr32 at +0x14), +0 0xff01, +3 1, colour 0x80808080; loads the event texture list when 0x023cbc5c is set; caller Native_SpriteShow; own name
@@ -17172,7 +17172,9 @@
 0x01327135 label    g_AtelVoicePan            # u8: AtelSetVoicePan; 0x3f after an event set-up (0x00872ef0)
 0x01327138 label    g_AtelPauseFlag              # two words cleared by AtelClearPauseFlag (0x00872b70)
 0x01327140 label g_AtelEventTexListLoaded # (r25 a) u32: the event's texture list is loaded; AtelClearShape unloads it (graphicAtelUnloadTexture of getEventLocTexListPath) and clears it
-0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
+0x01327144 label    g_AtelEventSpritesOn      # (script r28) event sprites shown: Atel_LoadEventTexList_00874b70 stores its on argument; tested by Atel_StepSprites_008743e0 and AtelExecDrawShape; own name
+0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x13 drawn (0: skipped; the render record's +7), +0x14 data; drawn by 0x00874420
+0x01327f4c label    g_AtelEventSpritesSet     # (script r28) 1 once Atel_LoadEventTexList_00874b70 ran; tested by Atel_StepSprites_008743e0 and AtelExecDrawShape; own name
 0x01327f50 label    g_AtelCallbackQue            # entries of 0x100 bytes, first word non-zero = queued: AtelCheckCallbackQue(i) (0x00875000), AtelIsCallbackQue (entry 0)
 0x01328150 label    g_TkVibratePads           # 8 pads x 0x24: two 16-byte channels (+0 pointer, +4 u32, +8 u16, +0xa u8), +0x22 on; TkStopVibrate(All) zero all but the pointers
 0x01328270 label    g_TkVibrateVolume         # 2 x u8 (TkGetVibrateVolume reports them, 0 when g_TkVibrateOff)

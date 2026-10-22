@@ -5020,6 +5020,99 @@ pub fn atel_step_sprites(h: &mut impl ffx_bridge::Host) {
     }
 }
 
+/// `AtelExecDrawShape()` (`0x00874420`, Fahrenheit's name; caller
+/// `AtelDrawNoTrans`, which reads no `EAX`): with the event sprites shown
+/// (`0x01327144`, no movie `0x0086d940`, `0x01327f4c`) and the VFX type 8
+/// current (`graphicVFXSetCurrentVFXType`, 4 again after), each active
+/// sprite with data (`is_ptr32_null(+0x14)` 0; on map `0x17e` sprites 5,
+/// 11, 17 and 21 never) whose frame (`+0xc`) has parts (`i16` at the
+/// frame's offset `+2`) and whose `+0x13` is set is drawn under the id
+/// `index + (sprite << 32)`: created (`InitVFXRenderDataAtelShp`) unless
+/// `graphicVFXisAtelShpInstanced`, else updated
+/// (`updateVFXRenderDataAtelShp`) and its six instances (id + k * 10000)
+/// `graphicVFX2DUpdate`d. Both take `(id, data, render, frame)`; the
+/// render record is `frame`'s first 0x20 bytes: `0x700000`, the rgb
+/// (`+0x10..`) times the alpha (`+1`) / 255 and `+0x13`, 0, `0x1030`
+/// (written before the first draw), 0, the matrix (`frame + 0x20`: x/y
+/// scale `+8`/`+0xa` / 256, x/y `+4`/`+6`), byte 0 at `+0x18`, 0 at
+/// `+0x1c`. `+0x14` and `+0x19..` stay unwritten, as in the original.
+pub fn atel_exec_draw_shape(h: &mut impl ffx_bridge::Host, frame: u32) {
+    if h.read::<u32>(h.rebase(0x0132_7144)) == 0 || host_call(h, 0x0086_d940, &[]) != 0 {
+        return;
+    }
+    if h.read::<u32>(h.rebase(0x0132_7f4c)) == 0 {
+        return;
+    }
+    let (rec, matrix) = (frame, frame + 0x20);
+    h.write(rec + 0x10, matrix);
+    h.write(rec, 0x0070_0000_u32);
+    h.write(rec + 0x1c, 0_u32);
+    h.write(rec + 8, 0_u32);
+    h.write(rec + 0x18, 0_u8);
+    h.write(rec + 0xe, 0_u16);
+    host_call(h, 0x0064_5670, &[8]);
+    let base = h.rebase(EVENT_SPRITES);
+    let skip_map = h.read::<u32>(h.rebase(0x0133_0844)) == 0x17e;
+    for i in 0..0x80_u32 {
+        let s = base + i * 0x1c;
+        if skip_map && matches!(i, 5 | 11 | 17 | 21) {
+            continue;
+        }
+        if h.read::<u8>(s) == 0 || host_call(h, 0x00a4_46a0, &[h.read::<u32>(s + 0x14)]) != 0 {
+            continue;
+        }
+        // identity with the scales and the position (all exact in f32)
+        for k in 0..16 {
+            let one = k % 5 == 0;
+            h.write(matrix + 4 * k, if one { 1.0_f32 } else { 0.0 });
+        }
+        #[allow(clippy::cast_possible_truncation)] // the original's f32 store
+        let scale = |v: u16| (f64::from(v) * 0.003_906_25) as f32;
+        let sx = scale(h.read::<u16>(s + 8));
+        let sy = scale(h.read::<u16>(s + 0xa));
+        h.write(matrix, sx);
+        h.write(matrix + 0x14, sy);
+        h.write(matrix + 0x30, f32::from(h.read::<i16>(s + 4)));
+        h.write(matrix + 0x34, f32::from(h.read::<i16>(s + 6)));
+        let f = u32::from(h.read::<u16>(s + 0xc));
+        let data = host_call(h, 0x00a4_4650, &[h.read::<u32>(s + 0x14)]);
+        let part = data.wrapping_add(f * 8).wrapping_add(0x10);
+        let parts = data.wrapping_add_signed(i32::from(h.read::<i16>(part)));
+        let alpha = u32::from(h.read::<u8>(s + 1));
+        for c in 0..3 {
+            let v = u32::from(h.read::<u8>(s + 0x10 + c)) * alpha / 0xff;
+            h.write(rec + 4 + c, v.to_le_bytes()[0]);
+        }
+        let on = h.read::<u8>(s + 0x13);
+        h.write(rec + 7, on);
+        if h.read::<u16>(parts.wrapping_add(2)) == 0 || on == 0 {
+            continue;
+        }
+        h.write(rec + 0xc, 0x1030_u16);
+        let id = (u64::from(s) << 32).wrapping_add(u64::from(i));
+        let (lo, hi) = split64(id);
+        let shown = host_call(h, 0x0064_5d40, &[lo, hi]);
+        let frame_no = u32::from(h.read::<u16>(s + 0xc));
+        let data = host_call(h, 0x00a4_4650, &[h.read::<u32>(s + 0x14)]);
+        if shown == 0 {
+            host_call(h, 0x0071_11e0, &[lo, hi, data, rec, frame_no]);
+            continue;
+        }
+        host_call(h, 0x0071_96f0, &[lo, hi, data, rec, frame_no]);
+        for k in 0..6_u64 {
+            let (lo, hi) = split64(id.wrapping_add(k * 10_000));
+            host_call(h, 0x0064_4bc0, &[lo, hi]);
+        }
+    }
+    host_call(h, 0x0064_5670, &[4]);
+}
+
+/// The low and high words of `v`.
+#[allow(clippy::cast_possible_truncation)] // the halves
+const fn split64(v: u64) -> (u32, u32) {
+    (v as u32, (v >> 32) as u32)
+}
+
 /// `AtelDrawSemiTrans()` (`0x00872ca0`; caller `Sg_MainLoop`): with ctrl
 /// work 0 running (`+0` bit 0) and no movie (`0x0086d940` 0), the guide
 /// map is drawn (`Yn_GuideMapProcEx(show)`): show when the work's `+3`

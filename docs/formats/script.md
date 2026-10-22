@@ -3226,6 +3226,35 @@ real spline functions.
   raw x/z to the actor's position make it the candidate, with the
   radius² stored as its distance.
 
+### Helpers (script round 28)
+
+- `AtelExecDrawShape()` (`0x00874420`, Fahrenheit's name; caller
+  `AtelDrawNoTrans`, which reads no `EAX`) draws the event sprites
+  (`g_EventSprites`, `0x01327148`, 128 x `0x1c`) when
+  `g_AtelEventSpritesOn` (`0x01327144`) and `g_AtelEventSpritesSet`
+  (`0x01327f4c`, both written by `Atel_LoadEventTexList_00874b70`) are
+  set and no movie runs (`0x0086d940` 0). VFX type 8 is current for the
+  pass (`graphicVFXSetCurrentVFXType`, 4 after). A sprite is skipped
+  when it is off (`+0`), has no data (`is_ptr32_null(+0x14)`), is
+  sprite 5, 11, 17 or 21 on map `0x17e` (`g_GraphicMapId`), its frame
+  (`+0xc`; the frame's `i16` at data `+0x10 + 8 * frame` is the offset of
+  its part header) has no parts (`u16` at the header's `+2`), or `+0x13`
+  is 0. A drawn sprite's id is the 64-bit `index + (sprite address <<
+  32)`; `graphicVFXisAtelShpInstanced(id)` picks
+  `InitVFXRenderDataAtelShp(id, data, render, frame)` (create) or
+  `updateVFXRenderDataAtelShp` (same arguments) and then
+  `graphicVFX2DUpdate(id + k * 10000)` for k 0..5. The render record and
+  its matrix live in the caller's frame: `+0` `0x700000`, `+4..+6` the
+  rgb (`+0x10..+0x12`) times the alpha (`+1`) / 255, `+7` the sprite's
+  `+0x13`, `+8` 0, `+0xc` `0x1030`, `+0xe` 0, `+0x10` the matrix
+  (identity with x/y scale `+8`/`+0xa` / 256 and position `+4`/`+6`, all
+  exact in f32), `+0x18` byte 0, `+0x1c` 0. `+0x14` and `+0x19..+0x1b` stay
+  unwritten; `updateVFXRenderDataAtelShp` reads only `+4..+7`, `+0x10`
+  and `+0x1c`. The oracle test logs the two render-data calls by the
+  record's contents and the matrix behind `+0x10` (`r28_render_stub`),
+  not by the frame address, and fills the port's frame with junk so a
+  missing field write shows.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

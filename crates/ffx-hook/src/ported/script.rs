@@ -7190,6 +7190,11 @@ ported! {
     Atel_StepSprites_008743e0 @ 0x0087_43e0 => extern "C" fn h_8743e0() {
         hp::atel_step_sprites(&mut mem());
     }
+    /// `AtelExecDrawShape()`: the render record and matrix in a frame.
+    AtelExecDrawShape @ 0x0087_4420 => extern "C" fn h_874420() {
+        let mut frame = super::StackFrame::<24>::new();
+        hp::atel_exec_draw_shape(&mut mem(), frame.at());
+    }
     /// `AtelDrawSemiTrans()`.
     AtelDrawSemiTrans @ 0x0087_2ca0 => extern "C" fn h_872ca0() {
         hp::atel_draw_semi_trans(&mut mem());
