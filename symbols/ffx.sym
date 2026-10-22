@@ -7862,7 +7862,7 @@
 0x0082ec80 function Ch_DrawIcons                 # layout: alphabetical run between Ch_DrawGetShadowMode and Ch_DrawInitAll (2 unnamed in the gap); Switch 0x7100419a80 Ch_DrawIcons is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x0082ed30 function Ch_DrawInitAll            # fh v3:bsim1.00 0x0082edb0
 0x0082ed50 function Ch_DrawMain                  # layout: alphabetical run between Ch_DrawInitAll and Ch_DrawMainForSituation (1 unnamed in the gap); Switch 0x710041ae90 Ch_DrawMain is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x0082fe00 function Ch_DrawMainForSituation   # fh v3:exact 0x0082fe80
+0x0082fe00 function Ch_DrawMainForSituation   # fh v3:exact 0x0082fe80; world matrices of every shown character (active, +0x180 clear, +0x198 bit 5 clear, alpha +0x354 not 0): +0x1d0 x unit matrix scaled 1000; whole to +0x830/+0x838 when every model is skinned (or none), else per model by id (unskinned ones x their base element's +0x88); skeleton bounds when any skinned (not detached); Ch_UpdateClothMatrix; ported (ffx_chara::draw, chara-main-map round 1)
 0x008300b0 function Ch_DrawSetCull            # fh v3:cg2 0x830130
 0x008300d0 function Ch_DrawSetDisableSpec     # (v): g_ChrDrawDisableSpec = v; Switch name, in name order after Ch_DrawSetCull
 0x008300e0 function Ch_DrawSetFourceSpec      # (v): g_ChrDrawFourceSpec = v; Switch name, in name order
@@ -7941,7 +7941,7 @@
 0x00832050 function Ch_TextureSetBase        # ours: (tex, n, base, i) texture i (or all n with i = -1) gets base: u16 +0x38/+0x3a, Sg_GsloadSetBase; returns base + u16 +0x36 (base -1 stays)
 0x008320e0 function Ch_SysSet6e0             # ours: g_Chr6e0 = v (no reader found)
 0x008320f0 function Ch_CompareDrawOrder      # ours: qsort comparator (&a, &b) -> (*a)+0x6d4 - (*b)+0x6d4
-0x00832110 function Apply_Envelope            # fh v3:exact 0x00832190
+0x00832110 function Apply_Envelope            # fh v3:exact 0x00832190; (chr, all): normal-recompute requests (+0x194 bits 0/3/4, g_ChrGuiCalcNormal 0x013009e0, once counter 0x013009e4); magic 0x1b6/0x1b5 chars 0x1114/0x1063/0x1064 skin all with normals (none while detached); else kernel cache +0x874; per skin entry inv(base elem) x elem -> sg_calcenvelope(W)_asm(_opt); normals sg_normalize at the end; ported (ffx_chara::draw, chara-main-map round 1)
 0x00832540 function Ch_RequestCalcNormal      # () byte 0x013009e4 = 1 (the draw takes deferred normal recalculations off it); own name
 0x00832550 function Ch_AllReserveCalcNorm     # Chr_RequestBoneUpdate for every active chr in g_ChrArray; was Chr_RequestBoneUpdateAll
 0x008325b0 function Ch_AllSetCalcNorm        # Switch name (0x7100414520): Ch_SetCalcNorm(chr, on) on every active character
@@ -8381,7 +8381,7 @@
 0x00842350 function Sg_GsZBUF2                # (zmsk): the same for ZBUF_2 (0x4f)
 0x00842c40 function Ch_EffectSetColor        # ours: (r, g, b) f32 x 3 at 0x013033ac (through the x87); the effect packet code scales colours by it
 0x00842c60 function Ch_EffectSetAlpha        # ours: (a) 0x013033b8 = _ftol2_sse(a * 128.0)
-0x00842c80 function Ch_EffectPacketCreateMain # fh v3:exact 0x00842c80
+0x00842c80 function Ch_EffectPacketCreateMain # fh v3:exact 0x00842c80; (p = [data, norm, vtex]): sg_setvtex_and_normal, per group MAT/state/word/PRG changes, strips (Ch_EffectPacketStoreStrip) or triangles with back-referenced indices (Ch_EffectPacketStorePoly), StoreEND; ported (ffx_chara::sys, chara-main-map round 1)
 0x00843000 function Ch_PacketSetName          # (v): u32 0x013033a8, returned; the character draw passes the model header word +0x18; Switch name order (Ch_PacketSetName first)
 0x00843010 function Ch_PacketSetCull          # (v): byte 0x01303342 (flag bit 19 of the character), tested per polygon group by FUN_008423c0; Switch order Name, Cull
 0x00843020 function Ch_PacketSetFSpecular     # (v): byte 0x01303375 = g_ChrDrawFourceSpec; forces 0x01303372 on in FUN_008423c0; Switch name
@@ -17030,6 +17030,7 @@
 0x01300978 label    g_Vu0ClipScreen           # what FFXVu0ClipScreen returns; also read by the chara screen code (0x008360b0, 0x00836240, 0x00836250, 0x00836430); after g_ChrScreenMatrix
 0x013009b8 label g_ChrFuka                   # u32 by index, Ch_SetFuka / Ch_GetFuka
 0x013009e0 label g_ChrGuiCalcNormal          # 0 or 1, Ch_GuiSetCalcNormAll / Ch_GuiGetCalcNormal
+0x013009e4 label    g_ChrCalcNormalOnce       # u8: Apply_Envelope recomputes normals for a character with +0x194 bit 3 while it is not 0, and takes one off each time it clears that bit (may wrap); name ours
 0x013009e8 label g_ChrCalcNormCursor        # u32: Ch_DrawReserveCalcNorm 0x008336a0's round-robin cursor into g_ChrArray (0: start over); cleared by Ch_FunctionHistoryClear
 0x013009f4 label    g_ChrCreateChrname        # char buffer ch_create_chrname 0x00838060 prints "%s:%c%03d" into
 0x01300a00 label    g_ChCreateName            # char buffer ch_create_name 0x00838100 formats "%c%03d" (class letter c/m/n/s/w/f/k or '-', number) into

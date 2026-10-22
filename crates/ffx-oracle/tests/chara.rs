@@ -9633,25 +9633,59 @@ fn deref_stub(t: &mut Twin, fk: &Fakes, sym: u32, args: &[u8], (p, from): (u8, u
 }
 
 fn deref_code(fk: &Fakes, args: &[u8], (p, from): (u8, u8), words: u8) -> Vec<u8> {
+    multi_deref_code(fk, args, &[(p, from, words)], (0, 0))
+}
+
+/// Code that logs its arguments `args` (0-based), then for each `(arg,
+/// from, words)` that many words from `from` bytes into that pointer
+/// argument, and returns the word at `ret` (0: `0x1234`), which grows by
+/// `step`.
+fn multi_deref_code(
+    fk: &Fakes,
+    args: &[u8],
+    derefs: &[(u8, u8, u8)],
+    (ret, step): (u32, u32),
+) -> Vec<u8> {
     let mut c = vec![0x8b, 0x0d];
     c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
-    let n = u8::try_from(args.len()).unwrap();
-    for (k, &i) in (0u8..).zip(args) {
-        // mov eax, [esp + 4 + 4i]; mov [ecx + 4k], eax
-        c.extend([0x8b, 0x44, 0x24, 4 + 4 * i, 0x89, 0x41, 4 * k]);
+    for &i in args {
+        // mov eax, [esp + 4 + 4i]; mov [ecx], eax; add ecx, 4
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * i, 0x89, 0x01, 0x83, 0xc1, 0x04]);
     }
-    c.extend([0x8b, 0x44, 0x24, 4 + 4 * p]); // mov eax, [esp + 4 + 4p]
-    for k in 0..words {
-        // mov edx, [eax + from + 4k]; mov [ecx + 4n + 4k], edx
-        c.extend([0x8b, 0x50, from + 4 * k, 0x89, 0x51, 4 * (n + k)]);
+    for &(p, from, words) in derefs {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * p]); // mov eax, [esp + 4 + 4p]
+        for k in 0..words {
+            // mov edx, [eax + from + 4k]; mov [ecx], edx; add ecx, 4
+            c.extend([0x8b, 0x50, from + 4 * k, 0x89, 0x11, 0x83, 0xc1, 0x04]);
+        }
     }
-    c.extend([0x83, 0x05]);
-    c.extend(fk.log.to_le_bytes());
-    c.push(4 * (n + words)); // add dword [log], ...
-    c.push(0xb8);
-    c.extend(0x1234u32.to_le_bytes()); // mov eax, 0x1234
+    c.extend([0x89, 0x0d]);
+    c.extend(fk.log.to_le_bytes()); // mov [log], ecx
+    if ret == 0 {
+        c.push(0xb8);
+        c.extend(0x1234u32.to_le_bytes()); // mov eax, 0x1234
+    } else {
+        c.push(0xa1);
+        c.extend(ret.to_le_bytes()); // mov eax, [ret]
+        c.extend([0x81, 0x05]);
+        c.extend(ret.to_le_bytes());
+        c.extend(step.to_le_bytes()); // add dword [ret], step
+    }
     c.push(0xc3);
     c
+}
+
+/// [`multi_deref_code`] installed at `sym`.
+fn multi_deref_stub(
+    t: &mut Twin,
+    fk: &Fakes,
+    sym: u32,
+    args: &[u8],
+    derefs: &[(u8, u8, u8)],
+    ret: (u32, u32),
+) {
+    let code = multi_deref_code(fk, args, derefs, ret);
+    jump_to(t, sym, &code);
 }
 
 #[test]
@@ -9952,4 +9986,323 @@ fn cmm1_a_on(t: &mut Twin) {
         t.put_u32(array, keep_a);
     }
     eprintln!("{}: cmm1 a reach {reach:?}", t.name);
+}
+
+#[test]
+fn cmm1_b_matches_the_original() {
+    for mut t in twins() {
+        cmm1_b_on(&mut t);
+    }
+}
+
+/// A made-up model header for `chr`: `models` models (of the character's
+/// four), `n` skin entries and as many normal entries.
+fn skin_header(t: &mut Twin, rng: &mut Xorshift, models: u16, n: u32) -> u32 {
+    let hdr = random_block(t, rng, 0x30);
+    t.put(hdr + 6, &models.to_le_bytes());
+    t.put(hdr + 8, &u16::try_from(n).unwrap().to_le_bytes());
+    let list = random_block(t, rng, 12 * n.max(1));
+    let normals = random_block(t, rng, 12 * n.max(1));
+    let m = u32::from(models.max(1));
+    for e in 0..n {
+        let r = |rng: &mut Xorshift, k: u32| u16::try_from(rng.next() % k).unwrap();
+        let at = list + 12 * e;
+        let base = if e > 0 && rng.next().is_multiple_of(2) {
+            r(rng, 1)
+        } else {
+            r(rng, 4)
+        };
+        for (o, v) in [(0u32, r(rng, 4)), (2, r(rng, m)), (4, base), (6, r(rng, 2))] {
+            t.put(at + o, &v.to_le_bytes());
+        }
+        let at = normals + 12 * e;
+        t.put(at + 2, &r(rng, m).to_le_bytes());
+        t.put(at + 6, &r(rng, 2).to_le_bytes());
+        if rng.next().is_multiple_of(3) {
+            t.put_u32(at + 8, 0);
+        }
+    }
+    t.put_u32(hdr + 0x14, list);
+    t.put_u32(hdr + 0x24, normals);
+    hdr
+}
+
+/// Chara-main-map round 1, group b: `Apply_Envelope`,
+/// `Ch_DrawMainForSituation`, `Ch_EffectPacketCreateMain`. The matrix
+/// math runs as the originals; the skinning kernels, the renderer and the
+/// packet builders are logging stand-ins (matrices and vertices logged by
+/// their contents: the originals keep them on their stacks).
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // t, c, n, m, e, q
+fn cmm1_b_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x00c3_b002);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let frame = t.b.stack_range().start + 0x400;
+    let (count, array) = (t.a.rebase(h::CHR_COUNT.sym), t.a.rebase(h::CHR_ARRAY.sym));
+    let flag = t.alloc(4);
+    // Apply_Envelope's callees
+    let magic = t.alloc(4);
+    let (code, _) = (multi_deref_code(&fk, &[], &[], (magic, 0)), 0);
+    jump_to(t, 0x009d_a3b0, &code);
+    let malloc = fk.fake_alloc(t, 0x0068_7020, 1, 0x40);
+    // the skin cache (4 bytes per entry; a real header has 0xffff at most)
+    let heap = t.alloc(0x4_0000);
+    for (sym, args) in [
+        (0x006e_e570u32, &[0u8, 1, 2][..]),
+        (0x006e_d9e0, &[0, 1, 2]),
+        (0x006e_ee40, &[0, 1]),
+        (0x006e_e270, &[0, 1]),
+        (0x0084_5eb0, &[0, 1]),
+        (0x0084_5ec0, &[0, 1]),
+    ] {
+        let m = u8::try_from(args.len()).unwrap();
+        let ret = t.alloc(4);
+        t.put_u32(ret, 0x5000 + sym % 0x100);
+        multi_deref_stub(t, &fk, sym, args, &[(m, 0, 16)], (ret, 3));
+    }
+    let _ = fk.fake(t, 0x0084_6710, 2, 2); // sg_normalize
+    // Ch_DrawMainForSituation's
+    multi_deref_stub(t, &fk, 0x0063_c3e0, &[0], &[(1, 0, 16)], (0, 0));
+    multi_deref_stub(t, &fk, 0x0063_c430, &[0, 2], &[(1, 0, 16)], (0, 0));
+    let _ = fk.fake(t, 0x0063_c500, 3, 1);
+    // Ch_EffectPacketCreateMain's
+    let _ = fk.fake(t, 0x0084_5ca0, 4, 2);
+    for (k, sym) in [
+        0x0084_5800u32,
+        0x0084_5810,
+        0x0084_5c30,
+        0x0084_5c40,
+        0x0084_4370,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let _ = fk.fake(t, sym, 5 + u32::try_from(k).unwrap(), 1);
+    }
+    multi_deref_stub(
+        t,
+        &fk,
+        0x0084_5820,
+        &[],
+        &[(0, 0, 2), (1, 0, 2), (2, 0, 2)],
+        (0, 0),
+    );
+    let _ = fk.fake(t, 0x0084_57d0, 10, 0);
+    let detached = t.a.rebase(0x012f_b7d8);
+    let chrs = live_characters(t, &mut rng);
+    let mut reach = [0u32; 12];
+    for round in 0..48u32 {
+        fk.reset(t);
+        t.put_u32(malloc, heap);
+        // ---- Apply_Envelope
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        let synthetic = t.name == "synthetic" || rng.next().is_multiple_of(2);
+        let (old_hdr, old_cache): (u32, u32) = (rd(&t.b, chr + 0x1c0), rd(&t.b, chr + 0x874));
+        if synthetic {
+            // no more models than the character has
+            let real = u32::from(rd::<u16>(&t.b, old_hdr + 6));
+            let most = if t.name == "synthetic" {
+                4
+            } else {
+                real.min(4)
+            };
+            let models = u16::try_from(rng.next() % (most + 1)).unwrap();
+            let n = rng.next() % 6;
+            let hdr = skin_header(t, &mut rng, models, n);
+            t.put_u32(chr + 0x1c0, hdr);
+            let cache = if rng.next().is_multiple_of(3) {
+                0
+            } else {
+                let c = random_block(t, &mut rng, 4 * 8);
+                for k in 0..8 {
+                    if rng.next().is_multiple_of(2) {
+                        t.put_u32(c + 4 * k, 0);
+                    }
+                }
+                c
+            };
+            t.put_u32(chr + 0x874, cache);
+        }
+        let models: u32 = rd(&t.b, chr + 0x1bc);
+        let hdr: u32 = rd(&t.b, chr + 0x1c0);
+        let nm = u32::from(rd::<u16>(&t.b, hdr + 6));
+        if synthetic {
+            for k in 0..nm.min(4) {
+                let m = models + k * l::MODEL_SIZE;
+                t.put_u32(m + 0x2c, u32::from(!rng.next().is_multiple_of(3)));
+                t.put_u32(m + 0x34, rng.next() % 2);
+            }
+        }
+        let ids = [0x1114u16, 0x1063, 0x1064, 0x0001];
+        let old_id: u16 = rd(&t.b, chr);
+        t.put(chr, &ids[rng.next() as usize % 4].to_le_bytes());
+        let ms = [0x1b4u32, 0x1b5, 0x1b6][rng.next() as usize % 3];
+        let step = [0u32, 1, u32::MAX][rng.next() as usize % 3];
+        t.put_u32(magic, ms);
+        // the magic stand-in grows by `step` per call: rebuild it
+        let code = multi_deref_code(&fk, &[], &[], (magic, step));
+        jump_to(t, 0x009d_a3b0, &code);
+        t.put_u32(detached, [0, 0, 1][rng.next() as usize % 3]);
+        t.put_u32(
+            t.a.rebase(0x0130_09e0),
+            u32::from(rng.next().is_multiple_of(2)),
+        );
+        t.put(
+            t.a.rebase(0x0130_09e4),
+            &[[0u8, 0, 1, 2, 0xff][rng.next() as usize % 5]],
+        );
+        let fl: u32 = rd(&t.b, chr + l::FLAGS);
+        t.put_u32(chr + l::FLAGS, (fl & !0x19) | (rng.next() & 0x19));
+        let all = [0u32, 0, 1, 0x100][rng.next() as usize % 4];
+        reach[0] += u32::from(rd::<u32>(&t.b, chr + 0x874) == 0 && all == 0);
+        t.check(
+            &format!("Apply_Envelope {round}"),
+            0x0083_2110,
+            &[chr, all],
+            |m| {
+                ffx_chara::draw::bridge::apply_envelope(m, chr, all, frame, &mut |m, f, a| {
+                    call(m, f, a)
+                });
+                Res::Void
+            },
+        );
+        t.put(chr, &old_id.to_le_bytes());
+        t.put_u32(chr + 0x1c0, old_hdr);
+        t.put_u32(chr + 0x874, old_cache);
+        // ---- Ch_DrawMainForSituation over the whole array
+        let n0 = u32::try_from(h::CHR_COUNT.get(&t.b)).unwrap();
+        let a0 = h::CHR_ARRAY.get(&t.b);
+        let dec = round % 4 == 3;
+        let mut saved = Vec::new();
+        for i in 0..n0 {
+            let c = a0 + i * l::SIZE;
+            let blk: u32 = rd(&t.b, c + l::BLK);
+            let made = t.name == "synthetic" || blk == 0 || blk == 0xcdcd_cdcd;
+            let keep = Oracle::read(&mut t.b, c, l::SIZE as usize).unwrap();
+            saved.push((c, keep));
+            if !made && rng.next().is_multiple_of(2) {
+                continue; // a real character as it is
+            }
+            if made {
+                let mc = make_character(t, &mut rng, None);
+                let bytes = Oracle::read(&mut t.b, mc, l::SIZE as usize).unwrap();
+                t.put(c, &bytes);
+                let models = u16::try_from(rng.next() % 5).unwrap();
+                let n = rng.next() % 6;
+                let hdr = skin_header(t, &mut rng, models, n);
+                t.put_u32(c + 0x1c0, hdr);
+            }
+            t.put(
+                c + 2,
+                &[u8::from(
+                    !(rng.next().is_multiple_of(4) || (dec && i + 1 == n0)),
+                )],
+            );
+            t.put(c + 0x180, &[u8::from(rng.next().is_multiple_of(5))]);
+            let f2: u32 = rd(&t.b, c + 0x198);
+            t.put_u32(
+                c + 0x198,
+                (f2 & !0x20)
+                    | (rng.next() & 0x20 & u32::from(rng.next().is_multiple_of(4)).wrapping_neg()),
+            );
+            let alpha =
+                [0x3f80_0000u32, 0, 0x8000_0000, 0x7fc0_0000, 0xbf80_0000][rng.next() as usize % 5];
+            t.put_u32(c + 0x354, alpha);
+            if rng.next().is_multiple_of(4) {
+                t.put_u32(c + 0x830, 0);
+            }
+        }
+        log_dec_stub(t, &fk, 0x0083_14c0, 1, dec.then_some((count, flag)));
+        t.put_u32(flag, 1);
+        t.check(
+            &format!("Ch_DrawMainForSituation {round}"),
+            0x0082_fe00,
+            &[],
+            |m| {
+                ffx_chara::draw::bridge::ch_draw_main_for_situation(m, frame, &mut |m, f, a| {
+                    call(m, f, a)
+                });
+                Res::Void
+            },
+        );
+        for (c, keep) in saved {
+            t.put(c, &keep);
+        }
+        t.put_u32(count, n0);
+        t.put_u32(array, a0);
+        // ---- Ch_EffectPacketCreateMain on made-up model data
+        let p = t.alloc(12);
+        let hdr = random_block(t, &mut rng, 0x20);
+        let ng = rng.next() % 7;
+        t.put(hdr + 6, &u16::try_from(ng).unwrap().to_le_bytes());
+        let groups = random_block(t, &mut rng, 12 * ng.max(1));
+        for g in 0..ng {
+            let e = groups + 12 * g;
+            let word = [0u8, 1, 4, 5, 0xff, 0x13][rng.next() as usize % 6];
+            let pick = |rng: &mut Xorshift| [0u8, 1, 0xff][rng.next() as usize % 3];
+            let (mat, st) = (pick(&mut rng), pick(&mut rng));
+            t.put(e, &[word, mat, st]);
+            // a triangle count past a byte at times
+            let n = if word & 1 == 0 && rng.next().is_multiple_of(6) {
+                0x102
+            } else {
+                rng.next() % 10
+            };
+            t.put(e + 4, &u16::try_from(n).unwrap().to_le_bytes());
+            let data = if word & 1 != 0 {
+                // strip blocks of 1-2 x 16 bytes: point offset, strip count, lengths
+                let d = t.alloc(0x200);
+                let mut q = d;
+                for _ in 0..n {
+                    let size = 1 + rng.next() % 2;
+                    let strips = rng.next() % 4;
+                    t.put(
+                        q,
+                        &[
+                            u8::try_from(size).unwrap(),
+                            0x10,
+                            u8::try_from(strips).unwrap(),
+                            0,
+                        ],
+                    );
+                    for j in 0..4 {
+                        t.put(q + 4 + j, &[u8::try_from(rng.next() % 3).unwrap()]);
+                    }
+                    q += size * 16;
+                    reach[1] += strips;
+                }
+                d
+            } else {
+                // triangles behind 0x200 bytes the back references reach
+                let len = 0x18 * (n / 3).max(1);
+                let d = random_block(t, &mut rng, 0x200 + len) + 0x200;
+                for k in 0..len / 2 {
+                    let w = rng.next();
+                    let v = if w.is_multiple_of(3) {
+                        0x8000 | ((w >> 8) % 0x60)
+                    } else {
+                        w >> 16 & 0x7fff
+                    };
+                    t.put(d + 2 * k, &u16::try_from(v).unwrap().to_le_bytes());
+                }
+                reach[2] += n / 3;
+                d
+            };
+            t.put_u32(e + 8, data);
+        }
+        t.put_u32(hdr + 0x10, groups);
+        t.put_u32(p, hdr);
+        t.put_u32(p + 4, rng.next());
+        t.put_u32(p + 8, rng.next());
+        t.check(
+            &format!("Ch_EffectPacketCreateMain {round}"),
+            0x0084_2c80,
+            &[p],
+            |m| {
+                sy::ch_effect_packet_create_main(m, p, frame, &mut |m, f, a| call(m, f, a));
+                Res::Void
+            },
+        );
+    }
+    eprintln!("{}: cmm1 b reach {reach:?}", t.name);
 }

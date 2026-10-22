@@ -520,3 +520,24 @@ used sequence (`0x01300a08`, 100 x `0x14`) whose group `+0x10` is `old`
   relation: `[+4]` words from `+0x10`) by the difference.
 - `Ch_DisposeAll()` (`0x008268e0`) and `Ch_Allocate2(key, v)`
   (`0x00825650`, `v` into `+0x190`).
+- `Apply_Envelope(chr, all)` (`0x00832110`, `ffx_chara::draw`): skinning.
+  The header's skin entries (`u16` count `+8`, 12 bytes each from `+0x14`:
+  element, model, base element, kind, weight lists at `+8`) each run a
+  kernel with `inverse(base) x element` (element matrices at `+0x88`);
+  the weighted kernels for a non-zero kind. A model with `+0x34` set keeps
+  its kernel results in a cache (`+0x874`, a word per entry) and runs the
+  fast kernels after the first frame; models are skipped unless shown
+  (`+0x2c`) or `all`. In magic file `0x1b6` (characters `0x1114`,
+  `0x1064`) and `0x1b5` (`0x1063`) everything is skinned, the normals too
+  (entries from `+0x24`), and every model's normals are normalized.
+  Recompute requests: `g_ChrGuiCalcNormal` (`0x013009e0`), flag bits 0, 4,
+  and bit 3 while `g_ChrCalcNormalOnce` (`0x013009e4`) counts down.
+- `Ch_DrawMainForSituation()` (`0x0082fe00`): per shown character its
+  `+0x1d0` matrix scaled by 1000 is the world matrix; whole when every
+  model is skinned, else unskinned models get it times their base
+  element's matrix (model id by model id).
+- `Ch_EffectPacketCreateMain(p)` (`0x00842c80`): an effect packet from a
+  model's groups (12 bytes: word, MAT and state bytes, `u16` count, data
+  at `+8`): strips (bit 0 of the word byte) or triangles of 24 bytes whose
+  indices 0, 1 of each vertex pair may point back (bit 15: `(i & 0x7fff) *
+  4 / 3` halfwords before the pair).

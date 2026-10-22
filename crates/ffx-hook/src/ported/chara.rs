@@ -4,6 +4,7 @@
 use ffx_chara::attach::bridge as at;
 use ffx_chara::chr::bridge as c;
 use ffx_chara::cloth::bridge as cl;
+use ffx_chara::draw::bridge as dr;
 use ffx_chara::handle::bridge as h;
 use ffx_chara::id::bridge as id;
 use ffx_chara::layout as l;
@@ -1983,5 +1984,25 @@ ported! {
             &mut |_, f, a| super::call_cdecl(f, a),
             &mut |_, f, a| st0_cdecl(f, a),
         );
+    }
+    // ---- chara-main-map round 1, group b
+    /// `Apply_Envelope(chr, all)`: void (no caller reads `eax`). Also runs
+    /// on the cloth job threads: its frame is per call.
+    Apply_Envelope @ 0x0083_2110 => extern "C" fn apply_envelope(chr: u32, all: u32) {
+        let mut frame = super::StackFrame::<{ dr::APPLY_ENVELOPE_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        dr::apply_envelope(&mut mem(), chr, all, s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_DrawMainForSituation()`: void.
+    Ch_DrawMainForSituation @ 0x0082_fe00 => extern "C" fn ch_draw_main_for_situation() {
+        let mut frame = super::StackFrame::<{ dr::DRAW_SITUATION_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        dr::ch_draw_main_for_situation(&mut mem(), s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_EffectPacketCreateMain(p)`: void.
+    Ch_EffectPacketCreateMain @ 0x0084_2c80 => extern "C" fn ch_effect_packet_create_main(p: u32) {
+        let mut frame = super::StackFrame::<{ sy::PACKET_CREATE_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        sy::ch_effect_packet_create_main(&mut mem(), p, s, &mut |_, f, a| super::call_cdecl(f, a));
     }
 }

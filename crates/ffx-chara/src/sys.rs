@@ -428,6 +428,149 @@ pub mod bridge {
         buf
     }
 
+    /// The effect packet builders `Ch_EffectPacketCreateMain` calls, all
+    /// through the game: `sg_setvtex_and_normal(vtex, norm)`
+    /// (`0x00845ca0`), `Ch_EffectPacketStoreMAT`/`PRG` (`0x00845800`,
+    /// `0x00845810`), `Sg_SetChrPacketState`/`Word` (`0x00845c30`,
+    /// `0x00845c40`), `get_ptr32_func` (`0x00a44650`),
+    /// `Ch_EffectPacketStoreStrip` (`0x00844370`), `Ch_EffectPacketStorePoly`
+    /// (`0x00845820`) and `Ch_EffectPacketStoreEND` (`0x008457d0`).
+    pub const SET_VTEX_AND_NORMAL: u32 = 0x0084_5ca0;
+    pub const STORE_MAT: u32 = 0x0084_5800;
+    pub const STORE_PRG: u32 = 0x0084_5810;
+    pub const SET_PACKET_STATE: u32 = 0x0084_5c30;
+    pub const SET_PACKET_WORD: u32 = 0x0084_5c40;
+    pub const GET_PTR32: u32 = 0x00a4_4650;
+    pub const STORE_STRIP: u32 = 0x0084_4370;
+    pub const STORE_POLY: u32 = 0x0084_5820;
+    pub const STORE_END: u32 = 0x0084_57d0;
+    /// Bytes of scratch [`ch_effect_packet_create_main`] needs: one
+    /// triangle's three vertices of four `u16` (`[ebp-0x1c]`).
+    pub const PACKET_CREATE_SCRATCH: u32 = 0x18;
+
+    /// A polygon index: `w` itself, or with bit 15 a reference back from
+    /// `base` (`(w & 0x7fff) * 4 / 3` halfwords, and one more for `odd`).
+    fn poly_index(mem: &impl Mem, base: u32, w: u16, odd: bool) -> u16 {
+        if w & 0x8000 == 0 {
+            return w;
+        }
+        let back = (u32::from(w & 0x7fff) << 2) / 3 * 2;
+        mem.read(
+            base.wrapping_sub(back)
+                .wrapping_sub(if odd { 2 } else { 0 }),
+        )
+    }
+
+    /// `Ch_EffectPacketCreateMain(p)` (`0x00842c80`; callers
+    /// `Ch_ModelCalcSizeEffectPacket`, `Ch_ModelCreateEffectPacket`): the
+    /// effect packet of one model. `p` holds the model data (its groups:
+    /// count `u16` `+6`, 12-byte entries from `+0x10`), the normals and
+    /// the vertices (`sg_setvtex_and_normal(p[2], p[1])`). Per group:
+    /// - a new MAT byte (`+1`) or state byte (`+2`) is stored
+    ///   (`Ch_EffectPacketStoreMAT`, `Sg_SetChrPacketState`) and forgets
+    ///   the PRG; a new word byte (`+0`, `Sg_SetChrPacketWord`) makes its
+    ///   bit 2 the PRG, stored when it differs (all start as `0xff`, the
+    ///   PRG as -1 against 0);
+    /// - with bit 0 of the word byte, strips: `u16` `+4` blocks from
+    ///   `get_ptr32_func(+8)`, each with byte counts: a block of `[0]` 16
+    ///   bytes, `[2]` strips whose lengths are the bytes from `+4`, their
+    ///   8-byte points from `[1]` bytes in (`Ch_EffectPacketStoreStrip(0)`
+    ///   opens each strip);
+    /// - else `+4 / 3` triangles of 24 bytes: indices 0, 1, 4, 5, 8, 9
+    ///   through [`poly_index`] (from the triangle, its `+8`, its `+0x10`),
+    ///   2, 3, 6, 7, 10, 11 as they are; `Ch_EffectPacketStorePoly` gets
+    ///   the three vertices, built in `scratch`.
+    ///
+    /// Then the end tag (`Ch_EffectPacketStoreEND`). Counts are read again
+    /// at each step and compared signed. No caller reads `eax`.
+    #[allow(clippy::too_many_lines)]
+    pub fn ch_effect_packet_create_main<M: Mem>(
+        mem: &mut M,
+        p: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        let hdr: u32 = mem.read(p);
+        let groups: u32 = mem.read(hdr.wrapping_add(0x10));
+        let (norm, vtex): (u32, u32) = (mem.read(p.wrapping_add(4)), mem.read(p.wrapping_add(8)));
+        call(mem, g(mem, SET_VTEX_AND_NORMAL), &[vtex, norm]);
+        let (mut mat, mut state, mut word) = (0xffu8, 0xffu8, 0xffu8);
+        let mut prg = u32::MAX;
+        let mut prg_word = 0u32;
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<u16>(hdr.wrapping_add(6))) {
+            let e = groups.wrapping_add(i.cast_unsigned() * 0xc);
+            let b: u8 = mem.read(e.wrapping_add(1));
+            if b != mat {
+                mat = b;
+                call(mem, g(mem, STORE_MAT), &[u32::from(b)]);
+                prg = u32::MAX;
+            }
+            let b: u8 = mem.read(e.wrapping_add(2));
+            if b != state {
+                state = b;
+                call(mem, g(mem, SET_PACKET_STATE), &[u32::from(b)]);
+                prg = u32::MAX;
+            }
+            let b: u8 = mem.read(e);
+            if b != word {
+                word = b;
+                call(mem, g(mem, SET_PACKET_WORD), &[u32::from(b)]);
+                prg_word = u32::from(mem.read::<u8>(e) >> 2) & 1;
+            }
+            if prg != prg_word {
+                call(mem, g(mem, STORE_PRG), &[prg_word]);
+                prg = prg_word;
+            }
+            let strips = mem.read::<u8>(e) & 1 != 0;
+            let data: u32 = mem.read(e.wrapping_add(8));
+            let count = |mem: &M| i32::from(mem.read::<u16>(e.wrapping_add(4)));
+            let mut q = call(mem, g(mem, GET_PTR32), &[data]);
+            if strips {
+                let mut k = 0i32;
+                while k < count(mem) {
+                    let mut point = q.wrapping_add(u32::from(mem.read::<u8>(q.wrapping_add(1))));
+                    let lens = q.wrapping_add(4);
+                    let mut j = 0u32;
+                    while j < u32::from(mem.read::<u8>(q.wrapping_add(2))) {
+                        call(mem, g(mem, STORE_STRIP), &[0]);
+                        let mut s = 0u32;
+                        while s < u32::from(mem.read::<u8>(lens.wrapping_add(j))) {
+                            call(mem, g(mem, STORE_STRIP), &[point]);
+                            point = point.wrapping_add(8);
+                            s += 1;
+                        }
+                        j += 1;
+                    }
+                    q = q.wrapping_add(u32::from(mem.read::<u8>(q)) << 4);
+                    k += 1;
+                }
+            } else {
+                let mut t = 0i32;
+                while t < count(mem) / 3 {
+                    let w = |mem: &M, k: u32| mem.read::<u16>(q.wrapping_add(2 * k));
+                    let mut v = [0u16; 12];
+                    for (k, slot) in (0u32..).zip(v.iter_mut()) {
+                        let base = q.wrapping_add((k / 4) * 8);
+                        *slot = match k % 4 {
+                            0 => poly_index(mem, base, w(mem, k), false),
+                            1 => poly_index(mem, base, w(mem, k), true),
+                            _ => w(mem, k),
+                        };
+                    }
+                    mem.write(scratch, v);
+                    let store = g(mem, STORE_POLY);
+                    call(mem, store, &[scratch, scratch + 8, scratch + 0x10]);
+                    q = q.wrapping_add(0x18);
+                    t += 1;
+                }
+            }
+            i += 1;
+        }
+        call(mem, g(mem, STORE_END), &[]);
+    }
+
     /// `Ch_*Get*` of an `i8` setting, sign-extended.
     pub fn get_i8(mem: &impl Mem, g: Global<i8>) -> i32 {
         i32::from(g.get(mem))
