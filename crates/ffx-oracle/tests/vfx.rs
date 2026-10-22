@@ -29875,3 +29875,180 @@ fn round47d_mdl_dtt_draw_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round47e_opp_dtt_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_2b50);
+        let rets = p.alloc(0x10);
+        let logs = [
+            far_recorder(&mut p, 0x0080_1f00, &[0; 2], Some(rets)), // opus_parent_get
+            far_recorder(&mut p, 0x0076_8d30, &[0], None),          // KeDttSpr_MkGifPk_Pre
+            far_recorder(&mut p, 0x0076_7790, &[0], Some(rets + 4)), // KeDttSpr_MkGifPk
+            far_recorder(&mut p, 0x00a4_4650, &[0], Some(rets + 8)), // get_ptr32_func
+            far_recorder(&mut p, 0x007e_c420, &[0; 4], Some(rets + 0xc)), // op_ot_add
+        ];
+        let (host, unit, set, parent) =
+            (p.alloc(0x400), p.alloc(0x200), p.alloc(0x60), p.alloc(0x40));
+        let gpr = p.sym(0x00c8_f508);
+        let (flags, shift, gs) = (p.sym(0x012a_84c0), p.sym(0x00c8_b500), p.sym(0x011a_0730));
+        let mut seen = [0u32; 3];
+        for round in 0..3000u32 {
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x200, &mut rng);
+            p.fill(set, 0x60, &mut rng);
+            p.fill(gs, 0x40, &mut rng);
+            for at in (0..0x40).step_by(4) {
+                let v = finite(&mut rng);
+                p.set(parent + at, v);
+                p.set(gpr + at, if at < 0x10 { finite(&mut rng) } else { v });
+            }
+            for at in (0x30..0xa0).step_by(4) {
+                p.set(unit + at, finite(&mut rng));
+            }
+            p.set(host + 0x220, unit);
+            let chr = rng.below(0x100);
+            p.set(unit + 0x18, u8::try_from(chr).unwrap());
+            p.set(flags + chr, if rng.chance(15) { 0xffu8 } else { 0 });
+            p.set(shift, rng.pick(&[0u32, 0, 4, 0x10]));
+            if rng.chance(50) {
+                p.set(gs, rng.next() & !0x1ff);
+            }
+            p.set(rets, parent);
+            let (r1, r2) = (rng.next(), rng.next());
+            p.set(rets + 4, rng.pick(&[0u32, 1, r1]));
+            p.set(rets + 8, r2);
+            let r = p.check(
+                &format!("opp_dtt round {round}"),
+                0x0081_2b50,
+                &[host, set],
+                |m| Some(o::opp_dtt(m, host, set, &mut call_original)),
+            );
+            let drew = p.get::<u32>(logs[1]) != 0;
+            seen[0] += u32::from(!drew && r != 0);
+            seen[1] += u32::from(drew && p.get::<u32>(logs[4]) == 0);
+            seen[2] += u32::from(p.get::<u32>(logs[4]) != 0);
+            for log in logs {
+                p.set(log, 0u32);
+            }
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round47e_opp_anm_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_1120);
+        let rets = p.alloc(0x20);
+        let logs = [
+            far_recorder(&mut p, 0x007e_a700, &[0; 2], None), // op_unit_m_scale
+            far_recorder(&mut p, 0x007e_9530, &[0; 3], None), // op_rot_m
+            far_recorder(&mut p, 0x007e_9760, &[0; 3], None), // op_rot_m_z
+            far_recorder(&mut p, 0x0080_1f00, &[0; 2], Some(rets)), // opus_parent_get
+            far_recorder(&mut p, 0x007e_79a0, &[0; 3], None), // op_apply_m_w1
+            far_recorder(&mut p, 0x007e_8010, &[0; 2], None), // op_m_copy
+            far_recorder(&mut p, 0x0080_0d10, &[0; 2], None), // opus_draw_off
+            far_recorder(&mut p, 0x00a4_4700, &[0], Some(rets + 4)), // set_ptr32
+            far_recorder(&mut p, 0x0064_53d0, &[0; 2], Some(rets + 8)), // GetRenderDataByInstance
+            far_recorder(&mut p, 0x0071_b8a0, &[0, 0, 1, 0, 0], Some(rets + 0xc)), // updateVFXRenderDataShp
+            far_recorder(&mut p, 0x0064_58a0, &[0; 2], Some(rets + 0x10)), // graphicVFXUpdate
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(rets + 0x14)), // calculateVFXSP_AlphaFunction
+            far_recorder(&mut p, 0x0071_7610, &[0], None), // setVfxShapeEnlargeBufferFactor
+            far_recorder(&mut p, 0x0071_1460, &[0, 0, 1, 0, 0, 0], None), // InitVFXRenderDataShp
+            far_recorder(&mut p, 0x0071_7600, &[], Some(rets + 0x18)), // reset
+        ];
+        let (host, unit, set, anim) = (
+            p.alloc(0x400),
+            p.alloc(0x200),
+            p.alloc(0x60),
+            p.alloc(0x4_0000),
+        );
+        let flags = p.sym(0x012a_84c0);
+        let mut seen = [0u32; 6];
+        for round in 0..4000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x200, &mut rng);
+            p.fill(set, 0x60, &mut rng);
+            // small offsets everywhere: entries, e +4 and e +2 stay inside
+            // offsets (the low halves) small; the high halves 0..2 (e +2)
+            for k in (0..0x400).step_by(4) {
+                let hi = rng.pick(&[0u32, 0, 1, 2]);
+                p.set(anim + k, (hi << 16) | (4 * rng.below(0x10)));
+            }
+            // the animation in the middle (negative entries stay inside)
+            let d = anim + 0x200;
+            p.fill(rets, 0x20, &mut rng);
+            p.set(host + 0x220, unit);
+            for at in [0x30u32, 0x34, 0x38, 0x3c, 0x4c] {
+                let v = if rng.chance(70) {
+                    let k = f32::from(u16::try_from(rng.below(700)).unwrap()) - 200.0;
+                    k.to_bits()
+                } else {
+                    rng.float()
+                };
+                p.set(unit + at, v);
+            }
+            for at in [0xb0u32, 0xb4, 0xb8, 0x138] {
+                p.set(host + at, finite(&mut rng));
+            }
+            if rng.chance(10) {
+                // subnormal lifts: the product is not rounded to f32 first
+                for i in 0..3 {
+                    p.set(
+                        unit + 0x30 + 4 * i,
+                        rng.below(0x1000) | (rng.next() & 0x8000_0000),
+                    );
+                    p.set(host + 0xb0 + 4 * i, rng.below(0x100));
+                }
+            }
+            p.set(unit + 0xa8, rng.pick(&[0u8, 1, 2, 2, 3]));
+            p.set(unit + 0xa9, rng.pick(&[0u8, 1, 2, 2, 3]));
+            p.set(unit + 0xaa, u8::from(rng.chance(30)));
+            p.set(unit + 0xf4, rng.pick(&[0i16, 0, 0x400, -3]));
+            p.set(unit + 0xc6, rng.pick(&[0i16, 0, 0x10, -0x123]));
+            // the frame timer reaches 0 often
+            let step = u16::try_from(rng.below(4)).unwrap();
+            p.set(unit + 0xf0, step);
+            p.set(unit + 0xee, if rng.chance(60) { step } else { step + 1 });
+            p.set(unit + 0xe0, d);
+            let frames = rng.pick(&[1i16, 2, 5, 0x18]);
+            p.set(d + 4, frames);
+            let at = rng.pick(&[0u16, 1, 4, 0x17, 0x18]);
+            p.set(unit + 0xec, at);
+            for k in 0..0x1a {
+                let off = i16::try_from(4 * rng.below(0x80)).unwrap() - 0x100;
+                p.set(d + 0x10 + 8 * k, off);
+                // the loop bit of the entry's byte +4
+                let b: u8 = p.get(d + 0x14 + 8 * k);
+                p.set(d + 0x14 + 8 * k, if rng.chance(40) { b | 0x80 } else { b });
+            }
+            let chr = rng.below(0x100);
+            p.set(unit + 0x18, u8::try_from(chr).unwrap());
+            p.set(flags + chr, if rng.chance(10) { 0xffu8 } else { 0 });
+            p.set(rets + 8, u32::from(!rng.chance(40)));
+            p.set(unit + 0xe8, anim + 4 * rng.below(0x100));
+            check_deep_n(
+                &mut p,
+                &format!("opp_anm round {round}"),
+                0x0081_1120,
+                &[host, set],
+                |m, frame| Some(o::opp_anm(m, host, set, frame + 8, &mut call_original)),
+            );
+            seen[0] += u32::from(p.get::<u32>(logs[6]) != 0);
+            seen[1] += u32::from(p.get::<u32>(logs[13]) != 0);
+            seen[2] += u32::from(p.get::<u32>(logs[9]) != 0);
+            seen[3] += u32::from(p.get::<u32>(logs[1]) != 0);
+            seen[4] += u32::from(p.get::<u32>(logs[2]) != 0);
+            seen[5] += u32::from(p.get::<u32>(logs[5]) != 0);
+        }
+        assert!(seen.iter().all(|&k| k > 0), "{}: {seen:?}", p.name);
+    }
+}

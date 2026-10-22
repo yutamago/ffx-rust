@@ -6048,6 +6048,17 @@ ported! {
     opu_en_on @ 0x0081_61f0 => extern "C" fn opu_en_on(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_en_on(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_anm(host, set)`: the render-data word the original keeps in its
+    /// first argument slot lives in a frame word here.
+    opp_anm @ 0x0081_1120 => extern "C" fn opp_anm(host: u32, set: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let slot = frame.at();
+        opus::bridge::opp_anm(&mut mem(), host, set, slot, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_dtt(host, set)`: `op_ot_add`'s `eax`, 0, or the draw flags.
+    opp_dtt @ 0x0081_2b50 => extern "C" fn opp_dtt(host: u32, set: u32) -> u32 {
+        opus::bridge::opp_dtt(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opp_gline_00813020(host, set)`: `op_ot_add`'s `eax`.
     opp_gline_00813020 @ 0x0081_3020 => extern "C" fn opp_gline(host: u32, set: u32) -> u32 {
         opus::bridge::opp_gline(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))

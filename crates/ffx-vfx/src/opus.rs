@@ -5116,6 +5116,297 @@ pub mod bridge {
         cmd.wrapping_add(2)
     }
 
+    /// `opp_anm(host, set)` (`0x00811120`): an animated shape for the
+    /// unit `u` = `[host +0x220]`. Host `+4` = `u +0xc8`; the scale `s` =
+    /// `i16 u +0xf2`, by mode byte `u +0xa8` then `u +0xa9`: 1 `s` = `f32 u
+    /// +0x3c` / `+0x4c`, 2 host byte `+7` = that float clamped to 0..255
+    /// (above 255 the `f32` at `0x00b480d4`, below 0 zero, NaN kept) and
+    /// truncated (`fistp` under a round-toward-zero control word, NaN's
+    /// indefinite giving 0). `u16 host +2` = `u16 u +0xc0`, `host +8` = `u
+    /// +0xd0`, `host +0x80` = `op_unit_m_scale(s / 4096)`, turned by
+    /// `op_rot_m(u +0x30)` when byte `u +0xaa`, else by `op_rot_m_z(i16 u
+    /// +0xf4)` when that is non-zero; `host +0x40` = `u +0x90` (through
+    /// `g_Ee_Gpr +0x20`), `host +0xb0` = it through `opus_parent_get`
+    /// (`op_apply_m_w1`), plus `u +0x30.. / 16` with `u16 u +0xc0` bit
+    /// 0x100. `host +0x10` = `host +0x80`, `+0x14` = `[set +0x54]`, `+0x1c`
+    /// = 0 or (with `i16 u +0xc6`) `host +0x100`, a copy of `+0x80` with
+    /// `+0x138` raised by `i16 u +0xc6 / 16`; `u16 host +0xc` = `u16 u
+    /// +0xc4`. The frame timer `u16 u +0xee` -= `u16 u +0xf0`; at 0 the
+    /// frame `u16 u +0xec` steps through the animation `d` = `[u +0xe0]`
+    /// (`i16 d +4` frames, 8-byte entries from `d +0x10`): past the end
+    /// it loops when the last entry's byte `+4` has bit 7 or `u +0xc0` bit
+    /// 0x8000, else `opus_draw_off(set, u16 host +0x214)`, `u16 host
+    /// +0x218` - 1, `u16 u +0xb0` |= 0x8000 and done (`eax` 0x8000);
+    /// `u +0xe4` = the entry, `u +0xe8` = `d` + its `i16 +0`, `u16 u +0xee`
+    /// = its `+2`. Unless the unit's draw bits (`u8 +0xb3`) meet
+    /// `g_EtChrDrawFlags[byte u +0x18]` (`eax` that byte): `[slot]` =
+    /// `set_ptr32(d)` (`slot` the original's first argument slot) and the
+    /// render data of instance `(0, u)`: none, `InitVFXRenderDataShp(0, u,
+    /// slot, host, frame, calculateVFXSP_AlphaFunction(byte e +4 + [e
+    /// +4]))` (`e` = `[u +0xe8]`) between `setVfxShapeEnlargeBufferFactor(8)`
+    /// and its reset (whose `eax` it returns); with `i16 e +2` above 0
+    /// `updateVFXRenderDataShp(0, u, slot, host, frame)` and
+    /// `graphicVFXUpdate(0, u)` (its `eax`); else `e`. Callees through
+    /// `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opp_anm<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        set: u32,
+        slot: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, cvttsd2si, load, mul, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let u = unit(mem, host);
+        let h = |k: u32| host.wrapping_add(k);
+        let ua = |k: u32| u.wrapping_add(k);
+        let w: u32 = mem.read(ua(0xc8));
+        mem.write(h(4), w);
+        // `fild`, stored as f32 (exact for an i16)
+        let short = |mem: &M, at: u32| store(f64::from(mem.read::<i16>(at)));
+        let mut scale = short(mem, ua(0xf2));
+        let angle = short(mem, ua(0xf4));
+        let top: u32 = mem.read(g(mem, 0x00b4_80d4));
+        let k255: f64 = mem.read(g(mem, 0x00b1_70c0));
+        for (mode_at, value_at) in [(0xa8, 0x3c), (0xa9, 0x4c)] {
+            match mem.read::<u8>(ua(mode_at)) {
+                1 => scale = store(load(mem.read(ua(value_at)))),
+                2 => {
+                    let v = load(store(load(mem.read(ua(value_at)))));
+                    // above 255 (ordered) the constant, below 0 zero; a NaN
+                    // passes both compares
+                    let c = if v > k255 {
+                        load(store(load(top)))
+                    } else if v < 0.0 {
+                        0.0
+                    } else {
+                        v
+                    };
+                    mem.write(h(7), cvttsd2si(c).to_le_bytes()[0]);
+                }
+                _ => {}
+            }
+        }
+        let tag: u16 = mem.read(ua(0xc0));
+        mem.write(h(2), tag);
+        let d0: u32 = mem.read(ua(0xd0));
+        mem.write(h(8), d0);
+        let k4096: f64 = mem.read(g(mem, 0x00b5_0190));
+        let s = store(mul(load(scale), k4096));
+        let m = h(0x80);
+        go(mem, 0x007e_a700, &[m, s]);
+        if mem.read::<u8>(ua(0xaa)) != 0 {
+            go(mem, 0x007e_9530, &[m, m, ua(0x30)]);
+        } else if load(angle) != 0.0 {
+            go(mem, 0x007e_9760, &[m, m, angle]);
+        }
+        let pos: [u32; 4] = mem.read(ua(0x90));
+        mem.write(g(mem, 0x00c8_f528), pos);
+        mem.write(h(0x40), pos);
+        let parent = go(mem, 0x0080_1f00, &[host, u]);
+        go(mem, 0x007e_79a0, &[h(0xb0), parent, h(0x40)]);
+        let k16: f64 = mem.read(g(mem, 0x00b9_21e0));
+        if mem.read::<u16>(ua(0xc0)) & 0x100 != 0 {
+            for i in 0..3 {
+                let at = h(0xb0 + 4 * i);
+                let lift = mul(load(mem.read(ua(0x30 + 4 * i))), k16);
+                let v = store(add(lift, load(mem.read(at))));
+                mem.write(at, v);
+            }
+        }
+        mem.write(h(0x10), m);
+        let q: u32 = mem.read(set.wrapping_add(0x54));
+        mem.write(h(0x14), q);
+        if mem.read::<i16>(ua(0xc6)) == 0 {
+            mem.write(h(0x1c), 0u32);
+        } else {
+            mem.write(h(0x1c), h(0x100));
+            go(mem, 0x007e_8010, &[h(0x100), m]);
+            let lift = mul(load(short(mem, ua(0xc6))), k16);
+            let v = store(add(lift, load(mem.read(h(0x138)))));
+            mem.write(h(0x138), v);
+        }
+        let c4: u16 = mem.read(ua(0xc4));
+        mem.write(h(0xc), c4);
+        let timer = mem
+            .read::<u16>(ua(0xee))
+            .wrapping_sub(mem.read::<u16>(ua(0xf0)));
+        mem.write(ua(0xee), timer);
+        let d: u32 = mem.read(ua(0xe0));
+        if timer == 0 {
+            let frame = mem.read::<u16>(ua(0xec)).wrapping_add(1);
+            mem.write(ua(0xec), frame);
+            if i32::from(frame) >= i32::from(mem.read::<i16>(d.wrapping_add(4))) {
+                let last = u32::from(frame.wrapping_sub(1));
+                let looped = mem.read::<u8>(d.wrapping_add(0x14 + last * 8)) & 0x80 != 0;
+                if !looped && mem.read::<u16>(ua(0xc0)) & 0x8000 == 0 {
+                    let id = u32::from(mem.read::<u16>(h(0x214)));
+                    go(mem, 0x0080_0d10, &[set, id]);
+                    let n: u16 = mem.read(h(0x218));
+                    mem.write(h(0x218), n.wrapping_sub(1));
+                    let b0: u16 = mem.read(ua(0xb0));
+                    mem.write(ua(0xb0), b0 | 0x8000);
+                    return 0x8000;
+                }
+                mem.write(ua(0xec), 0u16);
+            }
+            let entry = d.wrapping_add((u32::from(mem.read::<u16>(ua(0xec))) + 2) * 8);
+            mem.write(ua(0xe4), entry);
+            let start = i32::from(mem.read::<i16>(entry))
+                .cast_unsigned()
+                .wrapping_add(d);
+            mem.write(ua(0xe8), start);
+            let t: u16 = mem.read(entry.wrapping_add(2));
+            mem.write(ua(0xee), t);
+        }
+        let chr = u32::from(mem.read::<u8>(ua(0x18)));
+        let flags: u8 = mem.read(g(mem, 0x012a_84c0).wrapping_add(chr));
+        if mem.read::<u8>(ua(0xb3)) & flags != 0 {
+            return u32::from(flags);
+        }
+        let p = go(mem, 0x00a4_4700, &[d]);
+        mem.write(slot, p);
+        let rd = go(mem, 0x0064_53d0, &[0, u]);
+        let e: u32 = mem.read(ua(0xe8));
+        if rd == 0 {
+            let at: u32 = mem.read(e.wrapping_add(4));
+            let kind = u32::from(mem.read::<u8>(e.wrapping_add(at).wrapping_add(4)));
+            let alpha = go(mem, 0x0071_2c30, &[kind]);
+            go(mem, 0x0071_7610, &[8]);
+            let n = u32::from(mem.read::<u16>(ua(0xec)));
+            go(mem, 0x0071_1460, &[0, u, slot, host, n, alpha]);
+            return go(mem, 0x0071_7600, &[]);
+        }
+        if mem.read::<i16>(e.wrapping_add(2)) > 0 {
+            let n = u32::from(mem.read::<u16>(ua(0xec)));
+            go(mem, 0x0071_b8a0, &[0, u, slot, host, n]);
+            return go(mem, 0x0064_58a0, &[0, u]);
+        }
+        e
+    }
+
+    /// `opp_dtt(host, set)` (`0x00812b50`): a distortion sprite for the
+    /// unit `u` = `[host +0x220]`, unless the unit's draw bits (`u8 +0xb3`)
+    /// meet `g_EtChrDrawFlags[byte u +0x18]` (then `eax` is that flags
+    /// byte). The sprite record is `host +0x100`: first `g_Ee_Gpr`'s xyz
+    /// with `w` 1; the colour `u +0xc8` (offset by `g_pppColorConShift`,
+    /// then cleared) through the EE's `pextlb`/`pextlh` with `r0` into
+    /// `g_Ee_Gpr +0x20`, its four words as `f32` into `g_Vu0_VfMove` and
+    /// `+0x110`; `host +0x80` = `op_unit_m_scale(1/16)`, `host +0x40` = `u
+    /// +0x90` (through `g_Ee_Gpr +0x20`), `host +0xb0` = it through
+    /// `opus_parent_get` (`op_apply_m_w1`), copied to `+0x100` (w 1);
+    /// host = `op_rot_m(unit, u +0x30)`, `host +0x40` = `g_Ee_Gpr`'s with
+    /// `z` = `u +0x4c / 16`, put through host, `host +0xb0` = `g_Ee_Gpr`'s,
+    /// host = `host +0x80` times `host +0x40`; `+0x120`/`+0x128`
+    /// `set_ptr32(host +0x2c0)`, `+0x130..` host's xyz (w 0), `+0x140` the
+    /// 64-bit word `0x2_2402_0d00` (`0x2_2402_0000` when `0x011a0730 &
+    /// 0x1ff`), `+0x148`/`+0x150` the words at `0x011a0760`/`0x011a0750`,
+    /// `+0x124` `set_ptr32(q + 0x10)` with `q` = `[set +0x54]`. Then
+    /// `KeDttSpr_MkGifPk_Pre`, `KeDttSpr_MkGifPk`; when that is non-zero
+    /// `[set +0x54]` = `get_ptr32_func([host +0x124])` = `n` and
+    /// `op_ot_add(q, (n - q) >> 4, i32 [host +0x12c] / 0x3000, 0)`, whose
+    /// `eax` is returned (else 0). Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opp_dtt<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        set: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{load, mul, store};
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let u = unit(mem, host);
+        let h = |k: u32| host.wrapping_add(k);
+        let chr = u32::from(mem.read::<u8>(u.wrapping_add(0x18)));
+        let flags: u8 = mem.read(g(mem, 0x012a_84c0).wrapping_add(chr));
+        if mem.read::<u8>(u.wrapping_add(0xb3)) & flags != 0 {
+            return u32::from(flags);
+        }
+        let gpr = g(mem, 0x00c8_f508);
+        let r: [u32; 3] = mem.read(gpr);
+        mem.write(h(0x100), r);
+        mem.write(h(0x10c), 1.0f32);
+        let shift = g(mem, 0x00c8_b500);
+        let off: u32 = mem.read(shift);
+        let colour: u32 = mem.read(off.wrapping_add(u).wrapping_add(0xc8));
+        let r0: [u8; 8] = mem.read(gpr);
+        let words = crate::hi_draw::bridge::expand_colour(colour, r0);
+        let wide = g(mem, 0x00c8_f528);
+        mem.write(wide, words);
+        mem.write(shift, 0u32);
+        // `fild` of each word, stored as f32
+        let floats = words.map(|w| store(f64::from(w.cast_signed())));
+        let vf_move = g(mem, 0x00c8_f980);
+        mem.write(vf_move, floats);
+        mem.write(h(0x110), floats);
+        go(mem, 0x007e_a700, &[h(0x80), 0.0625f32.to_bits()]);
+        let pos: [u32; 4] = mem.read(u.wrapping_add(0x90));
+        mem.write(wide, pos);
+        mem.write(h(0x40), pos);
+        let parent = go(mem, 0x0080_1f00, &[host, u]);
+        go(mem, 0x007e_79a0, &[h(0xb0), parent, h(0x40)]);
+        let at: [u32; 3] = mem.read(h(0xb0));
+        mem.write(h(0x100), at);
+        mem.write(h(0x10c), 1.0f32);
+        go(mem, 0x007e_a6d0, &[host]);
+        go(mem, 0x007e_9530, &[host, host, u.wrapping_add(0x30)]);
+        let r: [u32; 4] = mem.read(gpr);
+        mem.write(h(0x40), r);
+        let k: f64 = mem.read(g(mem, 0x00b9_21e0));
+        let z = store(mul(load(mem.read(u.wrapping_add(0x4c))), k));
+        mem.write(h(0x48), z);
+        go(mem, 0x007e_79a0, &[h(0x40), host, h(0x40)]);
+        let r: [u32; 4] = mem.read(gpr);
+        mem.write(h(0xb0), r);
+        go(mem, 0x007e_79a0, &[host, h(0x80), h(0x40)]);
+        let p = go(mem, 0x00a4_4700, &[h(0x2c0)]);
+        mem.write(h(0x120), p);
+        let p = go(mem, 0x00a4_4700, &[h(0x2c0)]);
+        mem.write(h(0x128), p);
+        // `fld; fstp` (a signalling NaN comes out quiet)
+        let copy = |mem: &M, at: u32| store(load(mem.read(at)));
+        let (x, y) = (copy(mem, host), copy(mem, h(4)));
+        mem.write(h(0x130), x);
+        mem.write(h(0x134), y);
+        mem.write(h(0x13c), 0u32);
+        let z = copy(mem, h(8));
+        mem.write(h(0x138), z);
+        let low = if mem.read::<u32>(g(mem, 0x011a_0730)) & 0x1ff != 0 {
+            0
+        } else {
+            0xd00
+        };
+        mem.write(h(0x140), 0x2_2402_0000u64 | low);
+        let a: [u32; 2] = mem.read(g(mem, 0x011a_0760));
+        mem.write(h(0x148), a);
+        let b: [u32; 2] = mem.read(g(mem, 0x011a_0750));
+        mem.write(h(0x150), b);
+        let q: u32 = mem.read(set.wrapping_add(0x54));
+        let p = go(mem, 0x00a4_4700, &[q.wrapping_add(0x10)]);
+        mem.write(h(0x124), p);
+        go(mem, 0x0076_8d30, &[h(0x100)]);
+        if go(mem, 0x0076_7790, &[h(0x100)]) == 0 {
+            return 0;
+        }
+        let w: u32 = mem.read(h(0x124));
+        let n = go(mem, 0x00a4_4650, &[w]);
+        mem.write(set.wrapping_add(0x54), n);
+        let depth = mem.read::<u32>(h(0x12c)).cast_signed() / 0x3000;
+        let count = n.wrapping_sub(q).cast_signed() >> 4;
+        go(
+            mem,
+            0x007e_c420,
+            &[q, count.cast_unsigned(), depth.cast_unsigned(), 0],
+        )
+    }
+
     /// A unit's colour `+0xc8` as the EE leaves it after `pextlb` then
     /// `pextlh` with `r0` (`g_Ee_Gpr`): 16 bytes from the colour's first
     /// word and `r0`'s low 8 bytes.
