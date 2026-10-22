@@ -99,6 +99,31 @@ Only functions whose callers can be satisfied through their signature are
 safe to replace this way. A function that the game expects to touch global
 state must touch the same state in Rust.
 
+### Calling originals from a shim
+
+A bridge calls a function that is still the game's through a callback;
+the shim hands it one of the helpers in `crates/ffx-hook/src/ported/mod.rs`
+and the oracle test `Oracle::call` / `call_cdecl` (any number of words):
+
+| Helper | Arguments | Result |
+|---|---|---|
+| `call_cdecl(f, &[u32])` | 0-12 stack words (the rest zero) | `eax` |
+| `call_cdecl_f64` / `_f32` / `_u64` | as `call_cdecl` | `ST0` / `edx:eax` |
+| `call_cdecl_words(f, &[u32])` | 0-32 stack words; more is logged and not called (0) | `eax` |
+| `call_thiscall(f, this, &[u32])` | `ecx` + exactly the callee's 0-8 words | `eax` |
+
+`call_cdecl_words` is for callees that take a struct by value: the slice
+is the stack as the original pushes it, lowest address first, so a struct
+argument is its words in memory order (rounded up to whole words) in its
+place among the others. `opu_unit_etc` (`0x0080b180`) passes
+`yonExtMapRegister(id, <0x4c-byte struct>)` as 20 words. Where the
+original's struct holds stack words it never wrote, the bridge takes them
+as an explicit `junk` argument (as for `op_irandom_p`'s three words past its
+argument), the shim passes 0 and the oracle test fills the original's frame
+with known values and hands the same to the port. Each helper is a plain
+`extern "C"` call (no asm), so the thunk rules hold: the shim's thunk saves
+the registers, and no `in(reg)` operand follows a `call`.
+
 ## Threads
 
 The game runs part of its frame off the main thread, so a port can run on

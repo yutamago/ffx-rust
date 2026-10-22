@@ -528,6 +528,23 @@ matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
 `a / 256`. `pk +0x4c` and `+0x4d` become `ftol(unit +0x30) / 2` and
 `ftol(unit +0x4c) / 2`, clamped to 0..0x80.
 
+## Unit commands (`opu_unit_etc`)
+
+`opu_unit_etc(host, cmd)` (`0x0080b180`) acts by the host's flag nibble
+(`u16 +0x21a & 0xf000`), `u` the host's unit (`+0x220`), the list `host +
+0x300`: 0 a conditional jump by `i16 cmd +4` on the unit `opus_no_get`
+names; 0x1000 restarts the host's own unit (its number in the `i16` list
+`[host +0x310]`: `opus_prog_off`, `opus_list_add(.., 1)`,
+`yonExtMapDeleteId`, `yonExtMapRegister`, then `u16 +0x218` down by one,
+`+0x216` 0, byte `+0x210` 1); 0x2000 copies `u16 host +0x214` into a
+unit; 0x3000 sets a program slot of part `i16 [u + i16 cmd +2]` (`set_ptr32`,
+keeping bit 31); 0x4000 registers the list's function `[[host +0x350]
++0x74]` in one of the four op function lists; 0x5000 `op_wot_triger`.
+`yonExtMapRegister` (a bare `ret` here) takes a 0x4c-byte struct by value:
+0, `u`, the list, the number, an unwritten word, 0, then a 0x34-byte
+`sprintf` buffer with `"LoadedByOPU_UNIT_ETC"` whose tail is never written.
+The hook passes it with `call_cdecl_words` (docs/hooking.md).
+
 ## High range (`0x00a30000..0x00a80000`)
 
 Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs`, `hi_draw.rs`,

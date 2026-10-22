@@ -231,6 +231,47 @@ fn cdecl12<R>(helper: &str, f: u32, a: &[u32]) -> R {
     }
 }
 
+/// The most stack words [`call_cdecl_words`] passes.
+pub(crate) const WIDE_WORDS: usize = 32;
+
+/// Calls an original cdecl function by absolute address with up to
+/// [`WIDE_WORDS`] stack words, returning `eax`: for callees that take a
+/// struct by value (`yonExtMapRegister(id, 0x4c-byte struct)` from
+/// `opu_unit_etc`, 20 words), which [`call_cdecl`]'s 12 can't hold. `a` is
+/// the stack as the original pushes it, lowest address first: a by-value
+/// struct is its words in memory order, rounded up to whole words. cdecl
+/// leaves the stack to the caller, so the zero words past `a` are only
+/// unread stack. More than [`WIDE_WORDS`] would cut a struct short: that is
+/// logged and the original is not called (0).
+pub(crate) fn call_cdecl_words(f: u32, a: &[u32]) -> u32 {
+    #[rustfmt::skip]
+    type Wide = unsafe extern "C" fn(
+        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
+        u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32, u32,
+    ) -> u32;
+    // No panic here: a panic in a function the game calls ends the process.
+    if a.len() > WIDE_WORDS {
+        crate::log::log(&format!(
+            "call_cdecl_words: {} words for {f:#010x}, at most {WIDE_WORDS}; not called",
+            a.len()
+        ));
+        return 0;
+    }
+    let mut w = [0u32; WIDE_WORDS];
+    w[..a.len()].copy_from_slice(a);
+    // SAFETY: a cdecl function of this build taking at most these stack
+    // words and returning in `eax`; the zero words it doesn't read sit on
+    // the caller's side of the stack, which the caller pops.
+    unsafe {
+        let g = std::mem::transmute::<usize, Wide>(f as usize);
+        g(
+            w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[9], w[10], w[11], w[12], w[13],
+            w[14], w[15], w[16], w[17], w[18], w[19], w[20], w[21], w[22], w[23], w[24], w[25],
+            w[26], w[27], w[28], w[29], w[30], w[31],
+        )
+    }
+}
+
 /// Calls an original thiscall (or fastcall taking only `ecx`) function by
 /// absolute address: `this` in `ecx`, 0 to 8 word arguments on the
 /// stack, returning `eax`. The callee pops its stack arguments, so `a`

@@ -5541,6 +5541,162 @@ pub mod bridge {
         cmd.wrapping_add(6)
     }
 
+    /// `yonExtMapDeleteId(id)` (`0x00807830`), a bare `ret` here.
+    pub const YON_EXT_MAP_DELETE_ID: u32 = 0x0080_7830;
+    /// `yonExtMapRegister(id, struct)` (`0x00807860`), a bare `ret` here;
+    /// the struct (`0x4c` bytes, 19 words) is passed by value.
+    pub const YON_EXT_MAP_REGISTER: u32 = 0x0080_7860;
+    /// The `sprintf` format `opu_unit_etc` copies into its struct
+    /// (`"LoadedByOPU_UNIT_ETC"`, no conversions).
+    const LOADED_BY: u32 = 0x00b5_8984;
+
+    /// `opu_unit_etc(host, cmd)` (`0x0080b180`), by the flag nibble, with
+    /// `u` the host's unit (`+0x220`), `list = host + 0x300`:
+    /// - 0: `o = opus_no_get(list, u, u16 cmd +2)`; jumps (`cmd + i16 cmd
+    ///   +4`) when `o` is not the first part (`[list +0x20]`) and not `u`,
+    ///   or is the first part, `u16 cmd +2` is 0, `o` is not `u` and its
+    ///   `u16 +0x1a` is 0; else `cmd + 6`.
+    /// - 0x1000: the `i16` list `[list +0x10]` (to a negative one) is
+    ///   searched for `n = u16((u - first part) >> 8)`; none: `cmd + 2`.
+    ///   Found: [`opus_prog_off`](crate::op::bridge::opus_prog_off)`(list,
+    ///   n)`, [`opus_list_add`]`(list, n, 1)`, `yonExtMapDeleteId(n)` and
+    ///   `yonExtMapRegister(n, s)` with `s` a 0x4c-byte struct passed by
+    ///   value: words 0 0, 1 `u`, 2 `list`, 3 `n`, 4 `junk[0]`, 5 0, then
+    ///   0x34 bytes of `sprintf` buffer holding `"LoadedByOPU_UNIT_ETC"`
+    ///   (21 bytes with the NUL); the rest of the buffer is never written:
+    ///   the three bytes after the NUL are `junk[1] >> 8`, the last seven
+    ///   words `junk[2..9]` (the original's uninitialised frame). Then the
+    ///   host's `u16 +0x218` down by one, `+0x216` 0, byte `+0x210` 1;
+    ///   `cmd + 2`.
+    /// - 0x2000: `u16 [opus_no_get(list, u, u16 cmd +2) + i16 cmd +4]` =
+    ///   `u16 host +0x214`; `cmd + 6`.
+    /// - 0x3000: `i = i16 [u + i16 cmd +2]`; nonzero: with `k = cmd +4 &
+    ///   3` and `e = (i << 8) + [host +0x320]`, `[e + 4k]` =
+    ///   `set_ptr32(cmd + i16 cmd +6 + ([e + 4k] & 0x80000000))` and byte
+    ///   `e + 0x10 + k` 1; `cmd + 8`.
+    /// - 0x4000: `op_func_before_ot_set` / `after_ot3d` / `before_wot` /
+    ///   `final` for `u16 cmd +2` 0..3 with `([[host +0x350] +0x74], 0, 0,
+    ///   1)`; `cmd + 4` (also for other values).
+    /// - 0x5000: `op_wot_triger(flags & 0x800)`; `cmd + 2`.
+    /// - Anything else: `cmd`.
+    ///
+    /// The yonExtMap calls go through `call`, `yonExtMapRegister` with 20
+    /// words (the hook passes them with `call_cdecl_words`).
+    #[allow(clippy::too_many_lines)]
+    pub fn opu_unit_etc<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        cmd: u32,
+        junk: [u32; 9],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let flags: u16 = mem.read(host.wrapping_add(0x21a));
+        let u = unit(mem, host);
+        let list = host.wrapping_add(0x300);
+        let first: u32 = mem.read(list.wrapping_add(0x20));
+        let half = |mem: &M, at: u32| i32::from(mem.read::<i16>(cmd.wrapping_add(at)));
+        match flags & 0xf000 {
+            0 => {
+                let no = mem.read::<u16>(cmd.wrapping_add(2));
+                let o = opus_no_get(mem, list, u, u32::from(no));
+                let jump = if o == first {
+                    no == 0 && u != o && mem.read::<u16>(o.wrapping_add(0x1a)) == 0
+                } else {
+                    u != o
+                };
+                if jump {
+                    cmd.wrapping_add(half(mem, 4).cast_unsigned())
+                } else {
+                    cmd.wrapping_add(6)
+                }
+            }
+            0x1000 => {
+                #[allow(clippy::cast_possible_truncation)] // the low half
+                let want = (u.wrapping_sub(first) >> 8) as u16;
+                let mut at: u32 = mem.read(list.wrapping_add(0x10));
+                let n = loop {
+                    let v: u16 = mem.read(at);
+                    if v & 0x8000 != 0 {
+                        return cmd.wrapping_add(2);
+                    }
+                    if v == want {
+                        break v;
+                    }
+                    at = at.wrapping_add(2);
+                };
+                crate::op::bridge::opus_prog_off(mem, list, u32::from(n), call);
+                opus_list_add(mem, list, n, 1);
+                let id = u32::from(n);
+                call(mem, g(mem, YON_EXT_MAP_DELETE_ID), &[id]);
+                let mut s = [0u32; 20];
+                s[0] = id;
+                s[1..7].copy_from_slice(&[0, u, list, id, junk[0], 0]);
+                // the sprintf buffer, words 6..18 of the struct
+                let mut buf = [0u8; 0x34];
+                buf[0x14..0x18].copy_from_slice(&junk[1].to_le_bytes());
+                for (k, w) in junk[2..].iter().enumerate() {
+                    buf[0x18 + 4 * k..0x1c + 4 * k].copy_from_slice(&w.to_le_bytes());
+                }
+                let fmt = g(mem, LOADED_BY);
+                for (k, b) in (0u32..).zip(buf.iter_mut()) {
+                    *b = mem.read(fmt.wrapping_add(k));
+                    if *b == 0 {
+                        break;
+                    }
+                }
+                for (k, w) in buf.as_chunks::<4>().0.iter().enumerate() {
+                    s[7 + k] = u32::from_le_bytes(*w);
+                }
+                call(mem, g(mem, YON_EXT_MAP_REGISTER), &s);
+                let left = host.wrapping_add(0x218);
+                mem.write(left, mem.read::<u16>(left).wrapping_sub(1));
+                mem.write(host.wrapping_add(0x216), 0u16);
+                mem.write(host.wrapping_add(0x210), 1u8);
+                cmd.wrapping_add(2)
+            }
+            0x2000 => {
+                let no = u32::from(mem.read::<u16>(cmd.wrapping_add(2)));
+                let o = opus_no_get(mem, list, u, no);
+                let id: u16 = mem.read(host.wrapping_add(0x214));
+                mem.write(o.wrapping_add(half(mem, 4).cast_unsigned()), id);
+                cmd.wrapping_add(6)
+            }
+            0x3000 => {
+                let i = mem.read::<i16>(u.wrapping_add(half(mem, 2).cast_unsigned()));
+                if i != 0 {
+                    let k = u32::from(mem.read::<u16>(cmd.wrapping_add(4)) & 3);
+                    let base: u32 = mem.read(host.wrapping_add(0x320));
+                    let e = (i32::from(i) << 8).cast_unsigned().wrapping_add(base);
+                    let slot = e.wrapping_add(4 * k);
+                    let to = (mem.read::<u32>(slot) & 0x8000_0000)
+                        .wrapping_add(cmd)
+                        .wrapping_add(half(mem, 6).cast_unsigned());
+                    mem.write(slot, ffx_system::stub::ptr32(to));
+                    mem.write(e.wrapping_add(0x10 + k), 1u8);
+                }
+                cmd.wrapping_add(8)
+            }
+            0x4000 => {
+                use crate::op::bridge as op;
+                let lists: u32 = mem.read(list.wrapping_add(0x50));
+                let func: u32 = mem.read(lists.wrapping_add(0x74));
+                match mem.read::<u16>(cmd.wrapping_add(2)) {
+                    0 => _ = op::op_func_before_ot_set(mem, func, 0, 0, 1),
+                    1 => _ = op::op_func_after_ot3d_set(mem, func, 0, 0, 1),
+                    2 => _ = op::op_func_before_wot_set(mem, func, 0, 0, 1),
+                    3 => _ = op::op_func_final_set(mem, func, 0, 0, 1),
+                    _ => {}
+                }
+                cmd.wrapping_add(4)
+            }
+            0x5000 => {
+                crate::op::bridge::op_wot_triger(mem, u32::from(flags & 0x800));
+                cmd.wrapping_add(2)
+            }
+            _ => cmd,
+        }
+    }
+
     /// `op_part_run(part)` (`0x008008b0`): the op environment's tables from
     /// the ppp part data (`[part +0xd0]`, as [`op_part_fp_init`]); for a
     /// loaded one `pppRunPart([part +0xbc], 0x30)` (through `call`): when

@@ -1841,6 +1841,12 @@ ported! {
     opu_osu_load_pos_0080b460 @ 0x0080_b460 => extern "C" fn opu_osu_load_pos(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_osu_load_pos(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_unit_etc(host, cmd)`: `yonExtMapRegister` takes a 0x4c-byte
+    /// struct by value (20 words with the id), hence `call_cdecl_words`;
+    /// the struct's words the original never writes go in as 0.
+    opu_unit_etc @ 0x0080_b180 => extern "C" fn opu_unit_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_unit_etc(&mut mem(), host, cmd, [0; 9], &mut |_, f, a| super::call_cdecl_words(f, a))
+    }
     /// `opp_anmm_fin_en_bone5(host, set, cmd, work)`.
     opp_anmm_fin_en_bone5 @ 0x0081_0e20 => extern "C" fn opp_anmm_fin_en_bone5(host: u32, set: u32, cmd: u32, work: u32) -> u32 {
         let _ = host;
