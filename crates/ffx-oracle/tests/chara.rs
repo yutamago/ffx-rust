@@ -11100,3 +11100,188 @@ fn inside_triangle_check(
     );
     got & 0xffff
 }
+
+#[test]
+fn cmm2_c_matches_the_original() {
+    for mut t in twins() {
+        cmm2_c_on(&mut t);
+    }
+}
+
+/// Chara-main-map round 2, group c: `chr_texanim_main_sub_new` on made-up
+/// new-format entries: tracks 1, 2, 0x15 and the entry's own (or none),
+/// flag bits 0 (later) and 1 (skipped), work records of every mode (blink
+/// states, stepping, scrolling with wraps both ways), empty frame lists,
+/// unused records, with and without drawing, Tidus (`c001`, leader alive
+/// or not), `s024`'s extra layers and `c043` on map 0xe2. `rand` is a
+/// stand-in in its import slot; `TexAnim_SetMaterialsChar` and
+/// `SetMaterialUV` are loggers; `strstr` is the C runtime's.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn cmm2_c_on(t: &mut Twin) {
+    use ffx_chara::texanim::bridge as ta;
+    let mut rng = Xorshift(0x00c3_c201);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let _ = fk.fake(t, 0x0077_fbf0, 1, 12); // TexAnim_SetMaterialsChar
+    let _ = fk.fake(t, 0x0064_4150, 2, 5); // SetMaterialUV
+    // rand: a Weyl sequence's top 15 bits
+    let rand_state = t.alloc(4);
+    let mut c = vec![0xa1];
+    c.extend(rand_state.to_le_bytes()); // mov eax, [rand_state]
+    c.extend([0x81, 0x05]);
+    c.extend(rand_state.to_le_bytes());
+    c.extend(0x9e37_79b9u32.to_le_bytes()); // add dword [rand_state], k
+    c.extend([0xc1, 0xe8, 0x11, 0xc3]); // shr eax, 17; ret
+    let rand = twin_code(t, &c);
+    let slot = t.a.rebase(0x00b0_c420);
+    t.put_u32(slot, rand);
+    let names = t.alloc(0x40);
+    t.put(
+        names,
+        b"c001\0\0\0\0s024\0\0\0\0pc043x\0\0m099\0\0\0\0c0010\0\0\0s0241\0\0\0",
+    );
+    let (map, leader) = (t.a.rebase(0x012f_bc40), t.a.rebase(0x00c4_21fc));
+    let table = t.a.rebase(ta::TEX_ANIMS.sym);
+    let small_f = |rng: &mut Xorshift, span: u32| {
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)]
+        let v = (rng.next() % (2 * span * 8 + 1)) as i32 - (span * 8) as i32;
+        #[allow(clippy::cast_precision_loss)]
+        (v as f32 / 8.0).to_bits()
+    };
+    let mut reach = [0u32; 12];
+    for round in 0..300u32 {
+        fk.reset(t);
+        t.put_u32(rand_state, rng.next());
+        let i = rng.next() % 4;
+        let e = table + 0x30 * i;
+        // the source: kind byte, rectangles at +0x20, records at +0x200
+        let n_rec = [0u32, 1, 2, 4, 6][rng.next() as usize % 5];
+        let src = t.alloc(0x200 + 0x110 * 8 + 0x400);
+        t.put(src, &random(&mut rng, 0x200));
+        t.put(src + 0x200, &vec![0; 0x110 * 8 + 0x400]);
+        let kind = [2u8, 2, 2, 2, 2, 1, 3][rng.next() as usize % 7];
+        t.put(src, &[kind]);
+        t.put_u32(src + 4, 0x20);
+        t.put_u32(src + 8, 0x200);
+        for r in 0..16u32 {
+            let at = src + 0x20 + 12 * r;
+            let w = [0u16, 1, 8, 16, 0xfff0, 32, 3, 24][rng.next() as usize % 8];
+            let h = [0u16, 1, 8, 16, 0xfff0, 32, 7, 24][rng.next() as usize % 8];
+            t.put_u32(at, rng.next());
+            t.put_u32(at + 4, u32::from(w) | u32::from(h) << 16);
+            t.put_u32(at + 8, rng.next() % 0x1000);
+        }
+        // frame lists: 4-byte frames (i16 time, rectangle, wait scale)
+        let frames = 0x100u32;
+        for f in 0..0x40u32 {
+            let time = [0i16, 1, 2, 5, -1, 3][rng.next() as usize % 6];
+            let at = src + frames + 4 * f;
+            if at + 4 > src + 0x200 {
+                break;
+            }
+            t.put(at, &time.to_le_bytes());
+            t.put(
+                at + 2,
+                &[
+                    u8::try_from(rng.next() % 16).unwrap(),
+                    u8::try_from(rng.next() & 0xff).unwrap(),
+                ],
+            );
+        }
+        let own = [3u32, 5, 0x1d, 1, 2, 0x15, 0xff, 0x103, 0x101, 0x115][rng.next() as usize % 10];
+        for k in 0..n_rec {
+            let s = src + 0x200 + 0x110 * k;
+            t.put(s + 8, &random(&mut rng, 8));
+            for track in [1u32, 2, 3, 5, 0x15, 0x1d] {
+                let cnt = [0i16, 1, 2, 3, 5, -2][rng.next() as usize % 6];
+                let start = frames + 4 * (rng.next() % 8);
+                t.put_u32(s + 0x10 + 8 * track, start);
+                t.put(s + 0x14 + 8 * track, &cnt.to_le_bytes());
+            }
+        }
+        // the work block: records from +8, unused bytes at +0xd08
+        let work = t.alloc(0xd08 + 0x40);
+        t.put(work, &random(&mut rng, 0xd08 + 0x40));
+        let count = if rng.next().is_multiple_of(6) {
+            0
+        } else {
+            n_rec
+        };
+        t.put_u32(work, count);
+        for k in 0..n_rec {
+            let r = work + 8 + 0x34 * k;
+            t.put_u32(
+                r + 4,
+                [0u32, 1, 2, 4, rng.next() % 3, 0, 1, 2][rng.next() as usize % 8],
+            );
+            let mode = [0i16, 1, 2, 3, 3, 4, 5, -1][rng.next() as usize % 8];
+            t.put(r + 0x1c, &mode.to_le_bytes());
+            t.put(
+                r + 0x1a,
+                &[0i16, 1, 2, 3][rng.next() as usize % 4].to_le_bytes(),
+            );
+            t.put(
+                r + 0x18,
+                &[0i16, 1, 2, 3, 100, -1][rng.next() as usize % 6].to_le_bytes(),
+            );
+            t.put(
+                r + 0x14,
+                &[0i16, 1, 4, 8, -3][rng.next() as usize % 5].to_le_bytes(),
+            );
+            t.put(
+                r + 0x16,
+                &[0i16, 1, 2, 7][rng.next() as usize % 4].to_le_bytes(),
+            );
+            for o in [0x24u32, 0x28, 0x2c, 0x30] {
+                t.put_u32(r + o, small_f(&mut rng, 24));
+            }
+            // scroll sums of exactly 0 (and -0) now and then
+            for (sp, p) in [(0x24u32, 0x2c), (0x28, 0x30)] {
+                match rng.next() % 6 {
+                    0 => {
+                        let v: u32 = rd(&t.b, r + sp);
+                        t.put_u32(r + p, v ^ 0x8000_0000);
+                    }
+                    1 => {
+                        t.put_u32(r + sp, 0x8000_0000);
+                        t.put_u32(r + p, 0x8000_0000);
+                    }
+                    _ => {}
+                }
+            }
+            t.put(
+                work + 0xd08 + k,
+                &[[0xffu8, 1, 0xfe, 0, 1][rng.next() as usize % 5]],
+            );
+            reach[usize::try_from(mode.clamp(0, 5)).unwrap()] += 1;
+        }
+        // the entry: source, work, own track, speed, flags by track
+        t.put_u32(e, if round % 17 == 16 { 0 } else { src });
+        t.put_u32(e + 4, work);
+        t.put_u32(e + 8, own);
+        let speed = [1i8, 2, 3, -1, 0, 5][rng.next() as usize % 6];
+        t.put(e + 0xe, &speed.to_le_bytes());
+        for track in [1u32, 2, 3, 5, 0x15, 0x1d] {
+            let fl = [0u8, 0, 0, 1, 2, 3][rng.next() as usize % 6];
+            t.put(e + 0xf + track, &[fl]);
+        }
+        let name = names + 8 * (rng.next() % 6);
+        let on_map = rng.next().is_multiple_of(3);
+        t.put_u32(map, if on_map { 0xe2 } else { 0x40 });
+        t.put_u32(leader, rng.next() % 2);
+        let draw = [0u32, 1, rng.next(), 0x100][rng.next() as usize % 4];
+        reach[6] += u32::from(draw != 0 && name == names);
+        reach[7] += u32::from(draw != 0 && name == names + 8);
+        reach[8] += u32::from(on_map && name == names + 16);
+        t.check(
+            &format!("chr_texanim_main_sub_new {round}"),
+            0x0077_f360,
+            &[i, name, draw],
+            |m| {
+                ta::chr_texanim_main_sub_new(m, i, name, draw, &mut |m, f, a| call(m, f, a));
+                Res::Void
+            },
+        );
+    }
+    eprintln!("{}: cmm2 c reach {reach:?}", t.name);
+}

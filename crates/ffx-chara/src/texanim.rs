@@ -1064,6 +1064,375 @@ pub mod bridge {
         buf
     }
 
+    /// `chr_texanim_main_sub_new`'s callees and constants: the `strstr`
+    /// import slot, `"c043"`, `"s024"`, `"c001"` (`g_ChrStrC001`),
+    /// `g_BtlLeaderAlive`, the current map, `TexAnim_SetMaterialsChar_0077fbf0`
+    /// (12 words) and `graphicTextureAnimationSetMaterialUV_00644150`.
+    pub const STRSTR_SLOT: u32 = 0x00b0_c378;
+    pub const STR_C043: u32 = 0x00b5_461c;
+    pub const STR_S024: u32 = 0x00b5_4624;
+    pub const STR_C001: u32 = 0x00b4_86bc;
+    pub const BTL_LEADER_ALIVE: Global<u32> = Global::new(0x00c4_21fc);
+    pub const CURRENT_MAP: Global<u32> = Global::new(0x012f_bc40);
+    pub const SET_MATERIALS_CHAR: u32 = 0x0077_fbf0;
+    pub const SET_MATERIAL_UV: u32 = 0x0064_4150;
+
+    /// A new-format work record (0x34 bytes from the work block's `+8`,
+    /// `+0xd08 + k` its byte "unused" when -1): the pixel pointer, frame,
+    /// placement (`u16` x, y), the rectangle (`u16` w, h, x, y), the step
+    /// counter and random wait (`i16`), the blink timer and state, the
+    /// mode, the done flag, the layer (`u16`), the scroll speed and
+    /// position (`f32` x, y).
+    mod rec {
+        pub const PIXELS: u32 = 0x00;
+        pub const FRAME: u32 = 0x04;
+        pub const X: u32 = 0x08;
+        pub const Y: u32 = 0x0a;
+        pub const W: u32 = 0x0c;
+        pub const H: u32 = 0x0e;
+        pub const RX: u32 = 0x10;
+        pub const RY: u32 = 0x12;
+        pub const COUNT: u32 = 0x14;
+        pub const WAIT: u32 = 0x16;
+        pub const TIMER: u32 = 0x18;
+        pub const STATE: u32 = 0x1a;
+        pub const MODE: u32 = 0x1c;
+        pub const DONE: u32 = 0x1e;
+        pub const LAYER: u32 = 0x20;
+        pub const SPEED_X: u32 = 0x24;
+        pub const SPEED_Y: u32 = 0x28;
+        pub const POS_X: u32 = 0x2c;
+        pub const POS_Y: u32 = 0x30;
+    }
+
+    /// Whether the C strings at `a` and `b` are equal (the original's
+    /// inlined `strcmp` two bytes a step; only `== 0` is used).
+    fn c_str_eq(mem: &impl Mem, a: u32, b: u32) -> bool {
+        let mut k = 0u32;
+        loop {
+            let (x, y) = (
+                mem.read::<u8>(a.wrapping_add(k)),
+                mem.read::<u8>(b.wrapping_add(k)),
+            );
+            if x != y {
+                return false;
+            }
+            if x == 0 {
+                return true;
+            }
+            k += 1;
+        }
+    }
+
+    /// `chr_texanim_main_sub_new(i, name, draw)` (`0x0077f360`; caller
+    /// `chr_texanim_main`): one step of new-format entry `i` of
+    /// [`TEX_ANIMS`] (source kind byte 2). On map `0xe2` a name containing
+    /// `"c043"` sets the entry's track (`+8`) to 3 first.
+    ///
+    /// Tracks are stepped in two passes: first 1, 2, 0x15 and the entry's
+    /// own track (unless one of those), skipping a track whose flag byte
+    /// (`+0xf + track`) has bit 1 and keeping one with bit 0 for the
+    /// second pass. For a track, each work record not marked unused takes
+    /// its frame list from the source's record (0x110 bytes at
+    /// `[src+8]`: frames offset at `+0x10 + 8 track`, `i16` count `+0x14`;
+    /// no frames: the done flag on the first track only). By mode (jump
+    /// table `0x0077f960`):
+    /// - 1, 4: frame 1 while the frame number is 0, else frame 0;
+    /// - 2: a blink (state 0: wait 60 + `rand() % 90`; 1: count down by
+    ///   the speed, then state 2 with 4; 2: count down, then the next
+    ///   frame, or back to state 0 after the last);
+    /// - 3 and others: the frame steps when the counter (plus the speed
+    ///   each time) passes the frame's `i16` time plus the random wait
+    ///   (`(rand() & 0xff) * frame byte 3 >> 8`, set then; mode 3 passes,
+    ///   the others reach), the old frame showing this time (frame 0 when
+    ///   it wraps); mode 3 also scrolls (`f32` through x87) wrapped into
+    ///   the rectangle.
+    ///
+    /// The frame's rectangle (12 bytes at `[src+4]` by frame byte 2:
+    /// words `a`, `b`, pixel offset) and the record's placement are stored.
+    /// With `draw`, `TexAnim_SetMaterialsChar` gets them (unless
+    /// `g_BtlLeaderAlive` is 0 for Tidus's (`"c001"`) record 0; the
+    /// rectangle words as the original's frame holds them, split across
+    /// words), twice more for `"s024"`'s layers 1 and 2, and mode 3 gives
+    /// its v offset (`1 - y / h`) to `SetMaterialUV`. Counts are read again
+    /// each time. No caller reads `eax`.
+    #[allow(clippy::too_many_lines)]
+    pub fn chr_texanim_main_sub_new<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        name: u32,
+        draw: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::Reg;
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        let e = TEX_ANIMS
+            .ptr(mem)
+            .addr
+            .wrapping_add(i.wrapping_mul(TEXANIM_SIZE));
+        let rd16 = |mem: &M, a: u32| i32::from(mem.read::<i16>(a));
+        let rand = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let f: u32 = mem.read(mem.rebase(RAND_SLOT));
+            call(mem, f, &[])
+        };
+        if CURRENT_MAP.get(mem) == 0xe2 {
+            let strstr: u32 = mem.read(g(mem, STRSTR_SLOT));
+            if call(mem, strstr, &[name, g(mem, STR_C043)]) != 0 {
+                mem.write(e.wrapping_add(8), 3u32);
+            }
+        }
+        let src: u32 = mem.read(e);
+        if src == 0 || mem.read::<i8>(src) != 2 {
+            return;
+        }
+        let speed: i8 = mem.read(e.wrapping_add(0xe));
+        #[allow(clippy::cast_sign_loss)] // the low word, as `sub word, ax`
+        let speed16 = i16::from(speed) as u16;
+        let own: u32 = mem.read(e.wrapping_add(8));
+        #[allow(clippy::cast_possible_truncation)] // its low byte
+        let own = if matches!(own, 1 | 2 | 0x15) {
+            0xff
+        } else {
+            own as u8
+        };
+        let order = [1u8, 2, 0x15, own, 0xff, 0xff];
+        let mut later = [0xffu8; 8];
+        let mut n_later = 0usize;
+        for pass in 0..2 {
+            let mut j = 0usize;
+            loop {
+                let track = if pass == 0 {
+                    let t = i32::from(order[j].cast_signed());
+                    if t == -1 {
+                        break;
+                    }
+                    let flags: u8 = mem.read(e.wrapping_add(0xf).wrapping_add(t.cast_unsigned()));
+                    if flags & 2 != 0 {
+                        j += 1;
+                        continue;
+                    }
+                    if flags & 1 != 0 {
+                        // (the list is all 0xff past its end, as the
+                        // original writes after each)
+                        later[n_later] = order[j];
+                        n_later += 1;
+                        j += 1;
+                        continue;
+                    }
+                    t
+                } else {
+                    let t = i32::from(later[j].cast_signed());
+                    if t == -1 {
+                        break;
+                    }
+                    t
+                };
+                let tu = track.cast_unsigned();
+                let rects = src.wrapping_add(mem.read::<u32>(src.wrapping_add(4)));
+                let work: u32 = mem.read(e.wrapping_add(4));
+                let mut k = 0u32;
+                while k.cast_signed() < mem.read::<i32>(work) {
+                    let r = work.wrapping_add(8 + 0x34 * k);
+                    let at = |o: u32| r.wrapping_add(o);
+                    let next = k + 1;
+                    if mem.read::<u8>(work.wrapping_add(0xd08 + k)) == 0xff {
+                        k = next;
+                        continue;
+                    }
+                    let layout = src
+                        .wrapping_add(mem.read::<u32>(src.wrapping_add(8)))
+                        .wrapping_add(0x110 * k);
+                    let list = layout.wrapping_add(tu.wrapping_mul(8));
+                    let cnt = rd16(mem, list.wrapping_add(0x14));
+                    if cnt == 0 {
+                        if j == 0 {
+                            mem.write(at(rec::DONE), 1u16);
+                        }
+                        k = next;
+                        continue;
+                    }
+                    let base = src.wrapping_add(mem.read::<u32>(list.wrapping_add(0x10)));
+                    let frame_at = |mem: &M| {
+                        base.wrapping_add(mem.read::<u32>(at(rec::FRAME)).wrapping_mul(4))
+                    };
+                    let mode = rd16(mem, at(rec::MODE));
+                    let fr = match mode {
+                        1 | 4 => {
+                            base.wrapping_add(4 * u32::from(mem.read::<u32>(at(rec::FRAME)) == 0))
+                        }
+                        2 => {
+                            match rd16(mem, at(rec::STATE)) {
+                                0 => {
+                                    let n = rand(mem, call).cast_signed();
+                                    mem.write(at(rec::STATE), 1u16);
+                                    mem.write(at(rec::FRAME), 0u32);
+                                    #[allow(
+                                        clippy::cast_possible_truncation,
+                                        clippy::cast_sign_loss
+                                    )]
+                                    mem.write(at(rec::TIMER), (n.wrapping_rem(0x5a) + 0x3c) as u16);
+                                }
+                                1 => {
+                                    let t = mem.read::<u16>(at(rec::TIMER)).wrapping_sub(speed16);
+                                    mem.write(at(rec::TIMER), t);
+                                    if t.cast_signed() < 0 {
+                                        mem.write(at(rec::TIMER), 0x0002_0004u32);
+                                    }
+                                }
+                                2 => {
+                                    let t = mem.read::<u16>(at(rec::TIMER)).wrapping_sub(speed16);
+                                    mem.write(at(rec::TIMER), t);
+                                    if t.cast_signed() < 0 {
+                                        let f = mem.read::<i32>(at(rec::FRAME)).wrapping_add(1);
+                                        mem.write(at(rec::FRAME), f);
+                                        if f < cnt {
+                                            mem.write(at(rec::TIMER), 1u16);
+                                        } else {
+                                            mem.write(at(rec::FRAME), f.wrapping_sub(1));
+                                            mem.write(at(rec::TIMER), 0u32);
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                            frame_at(mem)
+                        }
+                        _ => {
+                            let mut fr = frame_at(mem);
+                            let time = rd16(mem, fr);
+                            if time >= 0 {
+                                let c = mem.read::<u16>(at(rec::COUNT)).wrapping_add(speed16);
+                                mem.write(at(rec::COUNT), c);
+                                let due = rd16(mem, at(rec::WAIT)) + time;
+                                let c = rd16(mem, at(rec::COUNT));
+                                // mode 3 steps past the time, the others on it
+                                if (mode == 3 && due < c) || (mode != 3 && due <= c) {
+                                    mem.write(at(rec::COUNT), 0u16);
+                                    let n = rand(mem, call) & 0xff;
+                                    let f = mem.read::<i32>(at(rec::FRAME)).wrapping_add(1);
+                                    mem.write(at(rec::FRAME), f);
+                                    let w = n.wrapping_mul(u32::from(
+                                        mem.read::<u8>(fr.wrapping_add(3)),
+                                    )) >> 8;
+                                    #[allow(clippy::cast_possible_truncation)]
+                                    mem.write(at(rec::WAIT), w as u16);
+                                    if mem.read::<i32>(at(rec::FRAME)) >= cnt {
+                                        fr = base;
+                                        mem.write(at(rec::FRAME), 0u32);
+                                    }
+                                }
+                            }
+                            if mode == 3 {
+                                let x = Reg::load(mem.read(at(rec::SPEED_X)))
+                                    .add_m32(mem.read(at(rec::POS_X)))
+                                    .store();
+                                mem.write(at(rec::POS_X), x);
+                                let y = Reg::load(mem.read(at(rec::SPEED_Y)))
+                                    .add_m32(mem.read(at(rec::POS_Y)))
+                                    .store();
+                                mem.write(at(rec::POS_Y), y);
+                                let rect = rects.wrapping_add(
+                                    12 * u32::from(mem.read::<u8>(fr.wrapping_add(2))),
+                                );
+                                let size: u32 = mem.read(rect.wrapping_add(4));
+                                #[allow(clippy::cast_possible_truncation)] // the two halves
+                                let (w, h) = (
+                                    Reg::constant(f64::from(size as i16)),
+                                    Reg::constant(f64::from((size >> 16) as i16)),
+                                );
+                                if x < 0.0 {
+                                    mem.write(at(rec::POS_X), (Reg::load(x) + w).store());
+                                }
+                                if y < 0.0 {
+                                    mem.write(at(rec::POS_Y), (Reg::load(y) + h).store());
+                                }
+                                for (pos, d) in [(rec::POS_X, w), (rec::POS_Y, h)] {
+                                    let v = Reg::load(mem.read(at(pos)));
+                                    if v.value() >= d.value() {
+                                        mem.write(at(pos), (v - d).store());
+                                    }
+                                }
+                            }
+                            fr
+                        }
+                    };
+                    mem.write(at(rec::DONE), 0u16);
+                    let rect =
+                        rects.wrapping_add(12 * u32::from(mem.read::<u8>(fr.wrapping_add(2))));
+                    let b: u32 = mem.read(rect.wrapping_add(4));
+                    let a: u32 = mem.read(rect);
+                    let c: u32 = mem.read(rect.wrapping_add(8));
+                    for (to, from) in [(rec::X, 8u32), (rec::Y, 0xa), (rec::LAYER, 0xc)] {
+                        let v: u16 = mem.read(layout.wrapping_add(from));
+                        mem.write(at(to), v);
+                    }
+                    #[allow(clippy::cast_possible_truncation)] // the halves
+                    for (to, v) in [
+                        (rec::W, b as u16),
+                        (rec::H, (b >> 16) as u16),
+                        (rec::RX, a as u16),
+                        (rec::RY, (a >> 16) as u16),
+                    ] {
+                        mem.write(at(to), v);
+                    }
+                    mem.write(at(rec::PIXELS), c.wrapping_add(src));
+                    if draw == 0 {
+                        k = next;
+                        continue;
+                    }
+                    let frame: u32 = mem.read(at(rec::FRAME));
+                    let (x, y) = (
+                        u32::from(mem.read::<u16>(at(rec::X))),
+                        u32::from(mem.read::<u16>(at(rec::Y))),
+                    );
+                    if BTL_LEADER_ALIVE.get(mem) != 0
+                        || !c_str_eq(mem, g(mem, STR_C001), name)
+                        || k != 0
+                    {
+                        // the frame's dwords at ebp-0x38, -0x36, -0x3c, -0x3a
+                        let words = [b, (b >> 16) | (c << 16), a, (a >> 16) | (b << 16)];
+                        call(
+                            mem,
+                            g(mem, SET_MATERIALS_CHAR),
+                            &[
+                                k, tu, frame, x, y, words[0], words[1], words[2], words[3], name,
+                                draw, 0,
+                            ],
+                        );
+                    }
+                    if name != 0 && c_str_eq(mem, name, g(mem, STR_S024)) {
+                        for layer in [1u32, 2] {
+                            let h16 = |o: u32| u32::from(mem.read::<u16>(at(o)));
+                            let args = [
+                                layer,
+                                tu,
+                                mem.read(at(rec::FRAME)),
+                                h16(rec::X),
+                                h16(rec::Y),
+                                h16(rec::W),
+                                h16(rec::H),
+                                h16(rec::RX),
+                                h16(rec::RY),
+                                name,
+                                draw,
+                                0,
+                            ];
+                            call(mem, g(mem, SET_MATERIALS_CHAR), &args);
+                        }
+                    }
+                    if mem.read::<i16>(at(rec::MODE)) == 3 {
+                        let h = Reg::constant(f64::from(mem.read::<i16>(at(rec::H))));
+                        let q = Reg::load((Reg::load(mem.read(at(rec::POS_Y))) / h).store());
+                        let v = (Reg::ONE - q).store();
+                        call(mem, g(mem, SET_MATERIAL_UV), &[k, tu, 0, v.to_bits(), draw]);
+                    }
+                    k = next;
+                }
+                j += 1;
+            }
+        }
+    }
+
     /// `chr_texanim_set(def, handle)` (`0x0077c950`): the first free entry
     /// of [`TEX_ANIMS`] (none: `movie_err("i!=CHR_TEX_ANIM_MAX", ...,
     /// 0xb28)`, -1) takes `def`'s source (`+0x20`) and its kind (byte `+0`

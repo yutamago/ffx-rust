@@ -5052,7 +5052,7 @@
 0x0077f1f0 function asmClearBlock             # fh v3:bsim1.00 0x0077f2e0
 0x0077f200 function asmClearBlock0            # fh v3:cg2 0x77f2f0
 0x0077f210 function chr_texanim_draw_sub_new  # fh v3:exact 0x0077f300
-0x0077f360 function chr_texanim_main_sub_new     # the new-format texture-animation step of chr_texanim_main; the Switch chr_texanim_main_sub_new (1760 bytes) sorts between chr_texanim_draw_sub_new and chr_texanim_memory_move_new, as here
+0x0077f360 function chr_texanim_main_sub_new     # the new-format texture-animation step of chr_texanim_main; the Switch chr_texanim_main_sub_new (1760 bytes) sorts between chr_texanim_draw_sub_new and chr_texanim_memory_move_new, as here; ported in ffx_chara::texanim (chara-main-map round 2): tracks 1, 2, 0x15, own (flag bit 1 skips, bit 0 defers to a second pass); jump table 0x0077f960 by record mode (1/4, 2 blink, 3 scroll + step, others step); TexAnim_SetMaterialsChar gets 12 words, the rectangle words split across the frame's dwords (ebp-0x36/-0x3a: no junk)
 0x0077f970 function chr_texanim_memory_move_new # Switch name (0x7100330d60): in the new-format file (between chr_texanim_draw_sub_new and _set_new); entry source, record words into work +0xd28
 0x0077f9c0 function chr_texanim_set_new       # fh v3:exact 0x0077fa90
 0x0077fbf0 function TexAnim_SetMaterialsChar_0077fbf0 # cdecl(a, b, c, x, y, w, h, sw, sh, d, e): unless e is 0 (eax 0), graphicTextureAnimationSetAnimatedMaterialsChar_00643eb0 with the six signed 16-bit values made floats, returning its eax; callers chr_texanim_main_sub_new, tex_anim_no_set_new; between chr_texanim_set_new and TexAnim_StartNew; name ours; ported (render round 24)

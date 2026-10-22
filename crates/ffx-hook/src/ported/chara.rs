@@ -2064,4 +2064,10 @@ ported! {
         let out = cl::TriangleOut { u, v, w, dist };
         cl::inside_triangle(&mut mem(), chr, pos, model, code, out, s, &mut |_, f, a| super::call_cdecl(f, a))
     }
+    // ---- chara-main-map round 2, group c
+    /// `chr_texanim_main_sub_new(i, name, draw)`: void (no caller reads
+    /// `eax`); `TexAnim_SetMaterialsChar` takes 12 words.
+    chr_texanim_main_sub_new @ 0x0077_f360 => extern "C" fn chr_texanim_main_sub_new(i: u32, name: u32, draw: u32) {
+        ta::chr_texanim_main_sub_new(&mut mem(), i, name, draw, &mut |_, f, a| super::call_cdecl(f, a));
+    }
 }
