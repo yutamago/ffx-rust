@@ -982,3 +982,32 @@ switches the character while a list is up; it reads the list window
 even when it is gone. The original keeps both window globals in `ecx`
 and `edx` from its last loads; the callees it makes in between
 (`TkMenuLimitClear*`/`Close*`) keep them.
+
+`MenuSummon_GrowWindowDraw_008cdba0` draws the aeon growth window. The
+picked item (`g_TkMenuItemList[i16 +0x48]`) shows its requirement window
+when its byte `+2` is set; the requirement is the growth record
+`TkMn2GetSummonGrow() + 8 * byte +3` (item `u16 +4`, count `u8 +6`). The
+caption plate on the right starts at `remapX2(740)` or right after the
+caption text, whichever is further right. The two meet exactly at the
+boundary, so the comparison's tie goes either way. The remap scales are
+`.rdata` constants (x 512/1920, y 416/1080), so the `ftol`s of the
+requirement window's position are fixed numbers.
+
+`TkMenuCtrlEquip` (`0x008cf020`, jump table `0x008cf5f0`) fades the menu
+in through `0x0186a614` (step `0x0186a618`, clamped to 0..=0x1000). When
+an item is picked it tries it on first (state 20): it keeps the old gear
+in `0x0186a628` and compares HP and MP with the values kept per
+character at `0x0186a694`/`0x0186a6b4`. If either drops, it puts the old
+gear back and asks with `TkMn2ArmsMes(0xe)` (HP), `0xf` (MP) or `0x10`
+(both). Yes equips the item for good (state 23) and keeps the new HP/MP;
+no goes back to the list. `rep & 0x5000` toggles between weapons and
+armour (`g_TkMenuEquipAltMode`).
+
+`MenuItem_ListWindowCtrl_008c6dd0` (`0x008c6dd0`, jump table
+`0x008c73d4`) is the two-column variant of `TkMenuListWindowCtrl`: an
+item is `column + 2 * row`, with the column word of each pick level at
+`+0x58 + 4 * k` and the item count at `+0x94`. Pad bits 0x8000 and
+0x2000 switch columns. Going down clears the column when the item would
+be past the end, and so do the page-down scroll ends (states 15 and 16).
+Each pick level saves its top at `+0x58 + 4 * (u8 +0x42 + k)`. Its shim
+returns the original's `eax` (`TkMenuListWindowCtrl`'s is void).
