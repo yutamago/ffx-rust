@@ -913,4 +913,99 @@ pub mod bridge {
         go(mem, call, 0x0064_5330, &[0x15, part]);
         go(mem, call, 0x007e_6a60, &[0x400])
     }
+
+    /// `opus_0154_wave_draw(set, unit, a2, nos, lights, view, proj, a7)`
+    /// (`0x007f65d0`; `opus_wave_cmd_7f5f70`), `frame` the original's frame
+    /// pointer (the render data request at `frame - 0x28`; only its `+0x1c`,
+    /// the shape, is written): a scratch block (`op_spr_alloc(0x400)`) and
+    /// one of two 0x14860-byte shapes (`0x012e9618[0x012e9620]`, made with
+    /// `user_aligned_malloc` the first time; the index flips) that
+    /// `opus_0154_wave_omd_make(unit, a2, nos, shape, view, proj, a7)` fills.
+    /// The head at scratch `+0x100` as in [`opus_0706_noise_draw`] (word
+    /// 0x44c, `+4` = 0x01f80000, lights from `lights`, the base and gain
+    /// bytes `ftol(unit +0x3c / 2)`, `ftol(unit +0x4c / 2)`), `+0x38` the
+    /// shape's data, the shape's flags bit 4 (`[nos] & 0x3fff` below
+    /// 0x3400) or bit 2, matrices `+0x80` = `view`, `+0xc0` = `proj x view`,
+    /// `opus_wave_light_007f60b0(unit, shape, head)`; then instance
+    /// `(0x3400 <= [nos] & 0x3fff, 0x9a)` updated (`graphicVFXPath3Update`)
+    /// or made (`InitVFXPath3RenderData`, flags from the alpha, z and head
+    /// bit 3). Returns `op_spr_free`'s `eax`.
+    #[allow(clippy::too_many_arguments, clippy::many_single_char_names)]
+    pub fn opus_0154_wave_draw<M: Mem>(
+        mem: &mut M,
+        args: [u32; 8],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{ftol, load, mul};
+        let [set, unit, a2, nos, lights, view, proj, a7] = args;
+        let go = |mem: &mut M,
+                  call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                  at: u32,
+                  args: &[u32]| {
+            let f = g(mem, at);
+            call(mem, f, args)
+        };
+        let spr = go(mem, call, 0x007e_6a00, &[0x400]);
+        let (shapes, index) = (g(mem, 0x012e_9618), g(mem, 0x012e_9620));
+        let slot = shapes.wrapping_add(mem.read::<u32>(index).wrapping_mul(4));
+        if mem.read::<u32>(slot) == 0 {
+            let p = go(mem, call, 0x0068_6ff0, &[0x14860, 0x10]);
+            mem.write(slot, p);
+        }
+        let shape: u32 = mem.read(slot);
+        let flip = mem.read::<u32>(index) ^ 1;
+        mem.write(index, flip);
+        go(
+            mem,
+            call,
+            0x007f_67c0,
+            &[unit, a2, nos, shape, view, proj, a7],
+        );
+        let head = spr.wrapping_add(0x100);
+        go(mem, call, 0x0080_2450, &[head, spr, set, unit, u32::MAX]);
+        mem.write(head, 0x44cu32);
+        mem.write(head.wrapping_add(4), 0x01f8_0000u32);
+        mem.write(head.wrapping_add(0x1c), 0u32);
+        go(mem, call, 0x0080_2bd0, &[head, spr, set, unit, lights]);
+        let half = c64(mem, 0x00b9_2220);
+        for (to, from) in [(0x4c, 0x3c), (0x4d, 0x4c)] {
+            let v = mul(load(mem.read(unit.wrapping_add(from))), half);
+            #[allow(clippy::cast_possible_truncation)] // the low byte in al
+            mem.write(head.wrapping_add(to), ftol(mem, v) as u8);
+        }
+        mem.write(head.wrapping_add(0x50), 0x01ff_0001u32);
+        mem.write(head.wrapping_add(0x54), 0x019f_0001u32);
+        let data = mem.read::<u32>(shape.wrapping_add(8)).wrapping_add(shape);
+        mem.write(head.wrapping_add(0x38), data);
+        let high = mem.read::<u32>(nos) & 0x3fff >= 0x3400;
+        let flags: u32 = mem.read(shape);
+        let flags = if high {
+            flags & !0x10 | 4
+        } else {
+            flags & !4 | 0x10
+        };
+        mem.write(shape, flags);
+        let (m80, mc0) = (spr.wrapping_add(0x80), spr.wrapping_add(0xc0));
+        go(mem, call, 0x007e_8010, &[m80, view]);
+        go(mem, call, 0x007e_83b0, &[mc0, proj, m80]);
+        go(mem, call, 0x007f_60b0, &[unit, shape, head]);
+        let req = frame.wrapping_sub(0x28);
+        mem.write(req.wrapping_add(0x1c), shape);
+        let lo = u32::from(high);
+        if go(mem, call, 0x0064_53d0, &[lo, 0x9a]) == 0 {
+            let alpha = u32::from(mem.read::<u8>(head.wrapping_add(8)));
+            let a = go(mem, call, 0x0071_2c30, &[alpha]);
+            let z_in: u32 = mem.read(head.wrapping_add(0x44));
+            let mut f = a | go(mem, call, 0x0071_2d00, &[z_in]);
+            if mem.read::<u8>(head) & 8 != 0 {
+                f |= 0x40;
+            }
+            go(mem, call, 0x0071_0fd0, &[lo, 0x9a, req, head, f]);
+        } else {
+            go(mem, call, 0x0071_8610, &[lo, 0x9a, req, head]);
+            go(mem, call, 0x0064_5600, &[lo, 0x9a]);
+        }
+        go(mem, call, 0x007e_6a60, &[0x400])
+    }
 }

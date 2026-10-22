@@ -1822,4 +1822,677 @@ pub mod bridge {
         mem.write(work, ptr32(def));
         1
     }
+
+    /// Where a shape render keeps its locals: offsets below the
+    /// original's aligned frame pointer (`ebp`).
+    #[derive(Debug, Clone, Copy)]
+    pub struct RenderFrame {
+        /// The render request (0x20 bytes; `+0` and `+0xc` never written).
+        pub req: u32,
+        /// The inverse camera (times the inverse normalised world).
+        pub c: u32,
+        /// The scale and translation matrix (the normalised world before).
+        pub s: u32,
+        /// The particle's translation.
+        pub u: u32,
+        /// The camera times the world (the camera copy without the world).
+        pub v2: u32,
+        /// The camera copy.
+        pub v: u32,
+        /// The particle's scaled rotation.
+        pub p: u32,
+        /// The request's matrix (`+0x10`).
+        pub r: u32,
+        /// The request's second matrix (`+0x1c`, with the key's flag).
+        pub q: u32,
+    }
+
+    /// A shape render's differences: its key layout, colour table,
+    /// particle records and frame.
+    #[derive(Debug, Clone, Copy)]
+    pub struct ShapeRender {
+        /// The key's options: flag bytes `+2..+5`, translation `+0x10`,
+        /// scale `+0x20`, mode byte `+0x30`.
+        pub key: u32,
+        /// The work-area word holding the colour pair table.
+        pub colours: u32,
+        /// The particle record size.
+        pub stride: u32,
+        /// The record's scale vector (its rotation matrix `+0x30` after).
+        pub scale: u32,
+        /// Whether the inverse camera takes the inverse world in.
+        pub world: bool,
+        /// Whether `graphicUseOptimizedVFXShaderByVFXInstance` ends it.
+        pub shader: bool,
+        /// Whether the particles sit relative to the world position (the
+        /// third work area's `+0xa0` less it, once) instead of at the
+        /// area's `+0xa0`.
+        pub dis_pos: bool,
+        /// The locals.
+        pub frame: RenderFrame,
+    }
+
+    const FIELD_FRAME: RenderFrame = RenderFrame {
+        req: 0x280,
+        c: 0xc8,
+        s: 0x48,
+        u: 0x108,
+        v2: 0x1c8,
+        v: 0x208,
+        p: 0x148,
+        r: 0x188,
+        q: 0x88,
+    };
+
+    /// `0x00743280`, `pppDrawShapeFieldRevDraw`'s render.
+    pub const FIELD_REV_RENDER: ShapeRender = ShapeRender {
+        key: 0xc0,
+        colours: 0x50,
+        stride: 0xa0,
+        scale: 0x30,
+        world: true,
+        shader: true,
+        dis_pos: false,
+        frame: FIELD_FRAME,
+    };
+    /// `0x007444a0`, `pppDrawShapeFieldSpdDraw`'s render.
+    pub const FIELD_SPD_RENDER: ShapeRender = ShapeRender {
+        key: 0xb0,
+        ..FIELD_REV_RENDER
+    };
+    /// `0x007467b0`, `pppDrawShapeFieldGlobalDraw`'s render (its particles
+    /// are 0xb0 bytes, yet it steps by 0xa0 like the field draws).
+    pub const FIELD_GLOBAL_RENDER: ShapeRender = ShapeRender {
+        key: 0xb0,
+        colours: 0x4c,
+        ..FIELD_REV_RENDER
+    };
+    /// `0x00745740`, `pppDrawShapeCameraDraw`'s render.
+    pub const CAMERA_RENDER: ShapeRender = ShapeRender {
+        key: 0xc0,
+        colours: 0x4c,
+        stride: 0xb0,
+        scale: 0x40,
+        world: false,
+        shader: false,
+        dis_pos: false,
+        frame: RenderFrame {
+            req: 0x240,
+            c: 0x108,
+            s: 0x88,
+            u: 0x148,
+            v2: 0x1c8,
+            v: 0x1c8,
+            p: 0xc8,
+            r: 0x188,
+            q: 0x48,
+        },
+    };
+    /// `0x007479d0`, `pppDrawShapeCameraDisPosDraw`'s render.
+    pub const CAMERA_DIS_POS_RENDER: ShapeRender = ShapeRender {
+        key: 0xb0,
+        colours: 0x4c,
+        dis_pos: true,
+        ..FIELD_REV_RENDER
+    };
+
+    const COPY_MATRIX: u32 = 0x006e_d360;
+    const INVERSE_MATRIX: u32 = 0x006e_d450;
+    const NORMALIZE: u32 = 0x006e_d6f0;
+    const MUL_MATRIX: u32 = 0x006e_d5c0;
+    const CLEAR_SHP: u32 = 0x0071_3290;
+    const SHAPE_FIELD_SIZE: u32 = 0x0071_2bd0;
+    const DYN_GEO_BUFFER: u32 = 0x0063_fdb0;
+    const UPDATE_SHAPE_FIELD: u32 = 0x0071_a4e0;
+    const VFX_UPDATE: u32 = 0x0064_58a0;
+    const USE_OPTIMIZED_SHADER: u32 = 0x0064_4b10;
+    const WORLD_MATRIX: u32 = 0x0230_ffa0;
+    const PACKET_POS: u32 = 0x0230_fd2c;
+    const COLOR_SHIFT: u32 = 0x00c8_b500;
+
+    /// `f(args)` at the image address `f`, through `call`.
+    fn fun<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        f: u32,
+        args: &[u32],
+    ) -> u32 {
+        call(mem, g(mem, f), args)
+    }
+
+    /// The shape renders of the shape field and camera draws (`0x00743280`,
+    /// `0x007444a0`, `0x00745740`, `0x007467b0`, `0x007479d0`; cdecl
+    /// `(obj, key, prog, area)`, `frame` the original's aligned `ebp`):
+    /// unless the key's shape (`+4`) is `0xffff`, a render request on the
+    /// stack (flags `+2`: 0x800 with key byte `+2`, `| 0x400` with `+3`;
+    /// `+8` = 0; `+0x10` the particle matrix `R`; byte `+0x18` = 0; `+0x1c`
+    /// the second matrix `Q` with key byte `+4`, else 0) and the view
+    /// matrices: `C` = the inverse camera without translation, times
+    /// (`world`) the inverse of the world with normalised rows and no
+    /// translation; `S` = the key's scale (1, 1, 1 when all three are 0)
+    /// and translation. With render data, it is cleared, sized for every
+    /// live particle (record bit 0;
+    /// `caculateVFXRenderDataShapeFieldBufferSize` with its frame `u16
+    /// +6`), and the call ends when no dynamic-geometry buffer comes back.
+    /// Then each live particle: its colour (pair `[+8]` of the colour table,
+    /// through the EE: [`crate::mdl::bridge::ee_colour_at`]) at `+4`,
+    /// `R = C x P x U x V2` (`P` = the record's scale on the diagonal
+    /// times its rotation, `U` = a translation by its position `+0x10`
+    /// plus the third work area's `+0xa0`), `Q` by the key's mode byte,
+    /// `g_PppPacketPos` at `+0x14`, and `updateVFXRenderDataShapeField`
+    /// with the frame's data. Last `graphicVFXUpdate` with render data and
+    /// (`shader`) the optimised shader.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::too_many_arguments,
+        clippy::many_single_char_names
+    )]
+    pub fn ppp_draw_shape_render<M: Mem>(
+        mem: &mut M,
+        v: &ShapeRender,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        area: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, load, round_trip, store, sub};
+        use ffx_system::stub::ptr32;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let kb = |k: u32| key.wrapping_add(v.key + k);
+        let shape = rd(mem, key.wrapping_add(4));
+        if shape == 0xffff {
+            return;
+        }
+        let f = v.frame;
+        let at = |o: u32| frame.wrapping_sub(o);
+        let (req, c, s, u, v2, cam, p, r, q) = (
+            at(f.req),
+            at(f.c),
+            at(f.s),
+            at(f.u),
+            at(f.v2),
+            at(f.v),
+            at(f.p),
+            at(f.r),
+            at(f.q),
+        );
+        let env = rd(mem, rd(mem, g(mem, ENV_SLOT)));
+        let slot = rd(mem, env.wrapping_add(0x24)).wrapping_add(shape.wrapping_mul(4));
+        let mut flags = 0u16;
+        if mem.read::<u8>(kb(2)) != 0 {
+            flags = 0x800;
+        }
+        if mem.read::<u8>(kb(3)) != 0 {
+            flags |= 0x400;
+        }
+        let second = mem.read::<u8>(kb(4)) != 0;
+        mem.write(req.wrapping_add(2), flags);
+        mem.write(req.wrapping_add(0x1c), if second { q } else { 0 });
+        mem.write(req.wrapping_add(8), 0u32);
+        mem.write(req.wrapping_add(0x18), 0u8);
+        mem.write(req.wrapping_add(0x10), r);
+        let set = ptr32(rd(mem, slot));
+        let (camera, world) = (g(mem, CAMERA_MATRIX), g(mem, WORLD_MATRIX));
+        let zero_translation = |mem: &mut M, m: u32| {
+            for k in 0..3 {
+                mem.write(m.wrapping_add(0x30 + 4 * k), 0u32);
+            }
+        };
+        fun(mem, call, COPY_MATRIX, &[c, camera]);
+        zero_translation(mem, c);
+        fun(mem, call, INVERSE_MATRIX, &[c, c]);
+        if v.world {
+            // the inverse world in the scale matrix's place
+            fun(mem, call, COPY_MATRIX, &[s, world]);
+            for row in [s, s.wrapping_add(0x10), s.wrapping_add(0x20)] {
+                fun(mem, call, NORMALIZE, &[row, row]);
+            }
+            zero_translation(mem, s);
+            fun(mem, call, INVERSE_MATRIX, &[s, s]);
+            fun(mem, call, MUL_MATRIX, &[c, s, c]);
+        }
+        fun(mem, call, UNIT_MATRIX, &[s]);
+        let scale = [0x20u32, 0x24, 0x28].map(|o| f32::from_bits(rd(mem, kb(o))));
+        let unit = scale.iter().all(|&x| x == 0.0);
+        for (k, x) in (0u32..).zip(scale) {
+            mem.write(
+                s.wrapping_add(0x14 * k),
+                if unit { 1.0 } else { round_trip(x) },
+            );
+        }
+        for k in 0..3 {
+            let t = round_trip(f32::from_bits(rd(mem, kb(0x10 + 4 * k))));
+            mem.write(s.wrapping_add(0x30 + 4 * k), t);
+        }
+        fun(mem, call, UNIT_MATRIX, &[u]);
+        fun(mem, call, COPY_MATRIX, &[cam, camera]);
+        if v.world {
+            fun(mem, call, MUL_MATRIX, &[v2, cam, world]);
+        }
+        let third = rd(mem, rd(mem, prog.wrapping_add(0xc)).wrapping_add(8));
+        let base = obj.wrapping_add(third).wrapping_add(0xa0);
+        let count = rd(mem, key.wrapping_add(8));
+        let mut rec = ptr32(rd(mem, area.wrapping_add(0x40)));
+        // the camera-relative draw: the base less the world position, once
+        let offset = v.dis_pos.then(|| {
+            [0u32, 4, 8].map(|k| {
+                let w = load(rd(mem, world.wrapping_add(0x30 + k)));
+                store(sub(load(rd(mem, base.wrapping_add(k))), w))
+            })
+        });
+        let render_data = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let [lo, hi] = instance(mem, obj);
+            call(mem, g(mem, GET_RENDER_DATA), &[lo, hi])
+        };
+        let positive = count.cast_signed() > 0;
+        if render_data(mem, call) != 0 {
+            let [lo, hi] = instance(mem, obj);
+            fun(mem, call, CLEAR_SHP, &[lo, hi]);
+            if positive {
+                for _ in 0..count {
+                    if mem.read::<u8>(rec) & 1 != 0 && render_data(mem, call) != 0 {
+                        let n = u32::from(mem.read::<u16>(rec.wrapping_add(6)));
+                        let [lo, hi] = instance(mem, obj);
+                        fun(mem, call, SHAPE_FIELD_SIZE, &[lo, hi, slot, n]);
+                    }
+                    rec = rec.wrapping_add(v.stride);
+                }
+            }
+            let data = render_data(mem, call);
+            let parts = rd(mem, data.wrapping_add(0x94));
+            let (vertices, indices) = (
+                rd(mem, parts.wrapping_add(4)),
+                rd(mem, parts.wrapping_add(8)),
+            );
+            if fun(mem, call, DYN_GEO_BUFFER, &[data, 0, vertices, indices]) == 0 {
+                return;
+            }
+            rec = ptr32(rd(mem, area.wrapping_add(0x40)));
+            let [lo, hi] = instance(mem, obj);
+            fun(mem, call, CLEAR_SHP, &[lo, hi]);
+        }
+        if positive {
+            for _ in 0..count {
+                if mem.read::<u8>(rec) & 1 != 0 {
+                    let frame_no = u32::from(mem.read::<u16>(rec.wrapping_add(6)));
+                    let entry = set.wrapping_add(0x10 + 8 * frame_no);
+                    let data = set.wrapping_add(i32::from(mem.read::<i16>(entry)).cast_unsigned());
+                    let table = ptr32(rd(mem, area.wrapping_add(v.colours)));
+                    let pair = table.wrapping_add(rd(mem, rec.wrapping_add(8)).wrapping_mul(8));
+                    let colour =
+                        crate::mdl::bridge::ee_colour_at(mem, pair.wrapping_sub(0xa0), false, call);
+                    let shift = g(mem, COLOR_SHIFT);
+                    let sh = rd(mem, shift);
+                    mem.write(req.wrapping_add(4).wrapping_add(sh), colour);
+                    mem.write(shift, 0u32);
+                    fun(mem, call, UNIT_MATRIX, &[p]);
+                    for k in 0..3 {
+                        let x =
+                            round_trip(f32::from_bits(rd(mem, rec.wrapping_add(v.scale + 4 * k))));
+                        mem.write(p.wrapping_add(0x14 * k), x);
+                    }
+                    fun(
+                        mem,
+                        call,
+                        MUL_MATRIX,
+                        &[p, rec.wrapping_add(v.scale + 0x30), p],
+                    );
+                    for k in 0..3 {
+                        let pos = load(rd(mem, rec.wrapping_add(0x10 + 4 * k)));
+                        let at = match offset {
+                            Some(o) => o[k as usize],
+                            None => rd(mem, base.wrapping_add(4 * k)),
+                        };
+                        mem.write(u.wrapping_add(0x30 + 4 * k), store(add(pos, load(at))));
+                    }
+                    fun(mem, call, MUL_MATRIX, &[r, c, p]);
+                    fun(mem, call, MUL_MATRIX, &[r, u, r]);
+                    fun(mem, call, MUL_MATRIX, &[r, v2, r]);
+                    if second {
+                        fun(mem, call, MUL_MATRIX, &[q, c, p]);
+                        let steps: &[u32] = match mem.read::<u8>(kb(0x30)) {
+                            0 => &[s, u, v2],
+                            1 => &[u, world, camera, s],
+                            2 => &[u, world, s, cam],
+                            _ => &[],
+                        };
+                        for &m in steps {
+                            fun(mem, call, MUL_MATRIX, &[q, m, q]);
+                        }
+                    }
+                    let packet = rd(mem, g(mem, PACKET_POS));
+                    mem.write(req.wrapping_add(0x14), packet);
+                    if render_data(mem, call) != 0 {
+                        let [lo, hi] = instance(mem, obj);
+                        fun(mem, call, UPDATE_SHAPE_FIELD, &[lo, hi, data, req]);
+                    }
+                }
+                rec = rec.wrapping_add(v.stride);
+            }
+        }
+        if render_data(mem, call) != 0 {
+            let [lo, hi] = instance(mem, obj);
+            fun(mem, call, VFX_UPDATE, &[lo, hi]);
+        }
+        if v.shader {
+            let [lo, hi] = instance(mem, obj);
+            fun(mem, call, USE_OPTIMIZED_SHADER, &[lo, hi]);
+        }
+    }
+
+    /// `pppDrawFilterPacket_00756740(obj, tex, prog)` (`0x00756740`, name
+    /// ours; called by `pppDrawFilterDraw`), `frame` the original's `ebp`:
+    /// a full-screen textured sprite as a packet at `g_PppPacketPos` (the
+    /// packet record `{start, cursor, 0x7fffffff}` at `frame - 0x58`, the
+    /// texture's log2 sizes at `frame - 0x68`, `- 0x60`, `- 0x5c`): its
+    /// colour from the work area `[[prog+0xc]]` through the EE
+    /// ([`crate::mdl::bridge::ee_colour_at`]), `rcbgTexGetLog2Size(tex
+    /// +0xc, tex +0x10, ...)`, `TEX0` from `tex +4`/`+8` and those sizes,
+    /// the blend bytes `tex +0x24`/`+0x25`, the UVs from the second work
+    /// area's `i32 +0xa4`/`+0xa8` (/ 256) and `tex +0x14`/`+0x18` over the
+    /// size (`u32 +0xc`/`+0x10`), the instance, and corners -1/1 (-1.1/1.1
+    /// in x when `g_pppFpWide`). `prcPacketDataClose` ends it; the
+    /// position moves past it, and `op_func_final_set(0x00756d20, start,
+    /// 0, 1)`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_draw_filter_packet<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        tex: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, div, load, mul, store};
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let offs = rd(mem, prog.wrapping_add(0xc));
+        let (first, second) = (rd(mem, offs), rd(mem, offs.wrapping_add(4)));
+        let packet = g(mem, PACKET_POS);
+        let start = rd(mem, packet);
+        let rec = frame.wrapping_sub(0x58);
+        let q = start.wrapping_add(0x10);
+        mem.write(rec, [start, q, 0x7fff_ffff]);
+        let colour = crate::mdl::bridge::ee_colour_at(mem, obj.wrapping_add(first), false, call);
+        let shift = g(mem, COLOR_SHIFT);
+        mem.write(
+            frame.wrapping_sub(0x70).wrapping_add(rd(mem, shift)),
+            colour,
+        );
+        mem.write(shift, 0u32);
+        let logs = [0x68u32, 0x60, 0x5c].map(|o| frame.wrapping_sub(o));
+        let (w, h) = (
+            rd(mem, tex.wrapping_add(0xc)),
+            rd(mem, tex.wrapping_add(0x10)),
+        );
+        fun(mem, call, 0x0092_0050, &[w, h, logs[0], logs[1], logs[2]]);
+        let w4 = |mem: &mut M, at: u32, words: &[u32]| {
+            for (k, &v) in (0u32..).zip(words) {
+                mem.write(q.wrapping_add(at + 4 * k), v);
+            }
+        };
+        w4(mem, 0, &[6, 0x1000_0000, 0xe, 0]);
+        // TEX0: tbp, tbw, psm, tw, th, tcc, tfx, from the texture and its sizes
+        let sext = |mem: &M, a: u32| i64::from(rd(mem, a).cast_signed()).cast_unsigned();
+        let mut tex0 = u64::from(rd(mem, tex.wrapping_add(8)));
+        tex0 = tex0 << 7 | sext(mem, logs[1]);
+        tex0 = tex0 << 4 | sext(mem, logs[0]);
+        tex0 = tex0 << 12 | sext(mem, logs[2]);
+        tex0 = (tex0 | 0x8000_0010_04c0) << 14 | u64::from(rd(mem, tex.wrapping_add(4)));
+        mem.write(q.wrapping_add(0x10), tex0);
+        let blend = [0x24u32, 0x25].map(|o| u32::from(mem.read::<u8>(tex.wrapping_add(o))));
+        let colour = rd(mem, frame.wrapping_sub(0x70));
+        w4(mem, 0x18, &[6, 0, blend[0], blend[1], 0x42, 0, colour, 0]);
+        w4(
+            mem,
+            0x38,
+            &[
+                1,
+                0,
+                0,
+                0,
+                8,
+                0,
+                0x3_000f,
+                0,
+                0x47,
+                0,
+                0x3100_0108,
+                1,
+                0x4e,
+                0,
+                1,
+                0x40ab_4000,
+                0x5353,
+                0,
+            ],
+        );
+        let k = 0.003_906_25;
+        let int = |mem: &M, o: u32| {
+            let v = rd(mem, obj.wrapping_add(second).wrapping_add(o)).cast_signed();
+            load(store(f64::from(v)))
+        };
+        let size = |mem: &M, o: u32| load(store(f64::from(rd(mem, tex.wrapping_add(o)))));
+        let u0 = store(div(mul(int(mem, 0xa4), k), size(mem, 0xc)));
+        let v0 = store(div(mul(int(mem, 0xa8), k), size(mem, 0x10)));
+        let [lo, hi] = instance(mem, obj);
+        let wide = crate::fp::bridge::WIDE.get(mem) != 0;
+        let left = if wide { 0xbf8c_cccd } else { 0xbf80_0000 };
+        w4(mem, 0x80, &[u0, v0, lo, hi, left, 0xbf80_0000, 0, 0]);
+        let u1 = store(div(
+            add(mul(int(mem, 0xa4), k), size(mem, 0x14)),
+            size(mem, 0xc),
+        ));
+        let v1 = store(div(
+            add(mul(k, int(mem, 0xa8)), size(mem, 0x18)),
+            size(mem, 0x10),
+        ));
+        w4(mem, 0xa0, &[u1, v1]);
+        let right = if wide { 0x3f8c_cccd } else { 0x3f80_0000 };
+        w4(
+            mem,
+            0xb0,
+            &[
+                right,
+                0x3f80_0000,
+                0,
+                0,
+                1,
+                0x1000_0000,
+                0xe,
+                0,
+                0x3100_0108,
+                0,
+                0x4e,
+                0,
+            ],
+        );
+        mem.write(rec.wrapping_add(4), q.wrapping_add(0xe0));
+        fun(mem, call, 0x0076_6b90, &[rec]);
+        let end = rd(mem, rec.wrapping_add(4)).wrapping_add(0x10);
+        mem.write(rec.wrapping_add(4), end);
+        mem.write(packet, end);
+        let start = rd(mem, rec);
+        let draw = g(mem, 0x0075_6d20);
+        fun(mem, call, 0x007e_b410, &[draw, start, 0, 1]);
+    }
+
+    /// `pppKeMdlBmpDraw_Body_00748b00(obj)` (`0x00748b00`; `pppKeMdlBmpDraw`):
+    /// the model's triangles as GS packets in a 0x1a0-byte scratch block
+    /// (`op_spr_alloc`; fixed tags and registers, then per triangle the
+    /// three positions, their texture `st` from the second set, the colour
+    /// bytes as floats, `u16` texture words, three floats) each queued with
+    /// `op_ot_add([obj+8], 0x20, block[+0x118] / 0x3000, 0)`, `[obj+8]`
+    /// moving 0x200 a triangle. The model (`[obj+0xc]`) and texture
+    /// (`[obj+0x10]`) records come in pairs: kind 3 with kind 2 (else it
+    /// stops without saving the position), `i16 +2` triangles of 0x28 and
+    /// 0x20 bytes after a 0x10-byte head (`TEX0` from `+8`, sign-extended;
+    /// the block's `+0x110`/`+0x114` = `1 <<` its width and height bits),
+    /// until a model record of kind 0xff. Triangle `[obj+0x24]` (counted
+    /// down from the count) prints its corners unless it was printed last
+    /// time (`0x00d4b468`, then set).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_ke_mdl_bmp_draw_body<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::round_trip;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let model = rd(mem, obj.wrapping_add(0xc));
+        let mut a = rd(mem, model.wrapping_add(4)).wrapping_add(model);
+        let texs = rd(mem, obj.wrapping_add(0x10));
+        let mut b = rd(mem, texs.wrapping_add(4)).wrapping_add(texs);
+        let verts = rd(mem, model.wrapping_add(8)).wrapping_add(model);
+        let sts = rd(mem, model.wrapping_add(0xc)).wrapping_add(model);
+        let mut ot = rd(mem, obj.wrapping_add(8));
+        let q = fun(mem, call, 0x007e_6a00, &[0x1a0]);
+        let w = |mem: &mut M, o: u32, v: u32| mem.write(q.wrapping_add(o), v);
+        for (o, v) in [
+            (0u32, 1u32),
+            (4, 0xe02d_c000),
+            (8, 0x412e_eeee),
+            (0xc, 0x0041_2412),
+            (0x18, 6),
+            (0x1c, 0),
+            (0x20, 0x5_3001),
+            (0x24, 0),
+            (0x28, 0x47),
+            (0x2c, 0),
+            (0x30, 0x64),
+            (0x34, 0x80),
+            (0x38, 0x42),
+            (0x3c, 0),
+            (0x40, 0x61),
+            (0x44, 0),
+            (0x48, 0x14),
+            (0x4c, 0),
+            (0x50, 0),
+            (0x54, 0),
+            (0x58, 8),
+            (0x5c, 0),
+            (0x60, 0x68),
+            (0x64, 0x80),
+            (0x68, 0x42),
+            (0x6c, 0),
+            (0x78, 6),
+            (0x7c, 0),
+            (0x80, 1),
+            (0x84, 0xb029_c000),
+            (0x88, 0x4124_12ee),
+            (0x8c, 0x412),
+            (0x90, 0x8001),
+            (0x94, 0xb029_c000),
+            (0x98, 0x4124_12ee),
+            (0x9c, 0x412),
+            (0xa0, 0x62),
+            (0xa4, 0x80),
+            (0xa8, 0x42),
+            (0xac, 0),
+            (0x190, 0x8001),
+            (0x194, 0x4_c000),
+            (0x198, 0x4141_4141),
+            (0x19c, 0x4141_4141),
+        ] {
+            w(mem, o, v);
+        }
+        let printed = g(mem, 0x00d4_b468);
+        let wanted = |mem: &M| rd(mem, obj.wrapping_add(0x24));
+        loop {
+            let count = mem.read::<i16>(a.wrapping_add(2));
+            if mem.read::<u8>(a.wrapping_add(1)) != 3 || mem.read::<u8>(b.wrapping_add(1)) != 2 {
+                return fun(mem, call, 0x007e_6a60, &[0x1a0]);
+            }
+            let sext = |v: u32| v.cast_signed().wrapping_shr(31).cast_unsigned();
+            let t0 = rd(mem, a.wrapping_add(8));
+            w(mem, 0x70, t0);
+            w(mem, 0x74, sext(t0));
+            let t1 = rd(mem, b.wrapping_add(8));
+            w(mem, 0x10, t1);
+            w(mem, 0x14, sext(t1));
+            let n = i32::from(count);
+            let next_a = a
+                .wrapping_add(0x10)
+                .wrapping_add(n.cast_unsigned().wrapping_mul(0x28));
+            let next_b = b.wrapping_add(0x10).wrapping_add(n.cast_unsigned() << 5);
+            let tw = 1u32 << (rd(mem, q.wrapping_add(0x70)) >> 26 & 0xf);
+            w(mem, 0x110, tw);
+            let th = 1u32 << (rd(mem, q.wrapping_add(0x74)) & 0xf);
+            w(mem, 0x114, th);
+            let (mut tri, mut st, mut k, mut left) =
+                (a.wrapping_add(0x10), b.wrapping_add(0x10), n, count);
+            while left > 0 {
+                let idx = |mem: &M, o: u32| u32::from(mem.read::<u16>(tri.wrapping_add(o)));
+                let corner = |mem: &mut M, base: u32, i: u32, to: u32| {
+                    for c in 0..3u32 {
+                        let v = i32::from(mem.read::<i16>(base.wrapping_add(i * 6 + 2 * c)));
+                        mem.write(q.wrapping_add(to + 4 * c), v);
+                    }
+                };
+                for (o, to) in [(0xcu32, 0xb0u32), (0xe, 0xc0), (0x10, 0xd0)] {
+                    let i = idx(mem, o);
+                    corner(mem, verts, i, to);
+                }
+                let want = wanted(mem);
+                if k == want.cast_signed() && rd(mem, printed) != want {
+                    fun(mem, call, 0x0062_f500, &[g(mem, 0x00b5_15e0)]);
+                    for (fmt, at) in [
+                        (0x00b5_15e8u32, 0xb0u32),
+                        (0x00b5_15f8, 0xc0),
+                        (0x00b5_1608, 0xd0),
+                    ] {
+                        let p: [u32; 3] = mem.read(q.wrapping_add(at));
+                        fun(mem, call, 0x0062_f500, &[g(mem, fmt), p[0], p[1], p[2]]);
+                    }
+                }
+                for (o, to) in [(0x20u32, 0x160u32), (0x22, 0x170), (0x24, 0x180)] {
+                    let i = idx(mem, o);
+                    corner(mem, sts, i, to);
+                }
+                for c in 0..12u32 {
+                    let byte = mem.read::<u8>(tri.wrapping_add(c));
+                    mem.write(q.wrapping_add(0xe0 + 4 * c), f32::from(byte));
+                }
+                for (o, to) in [
+                    (0x14u32, 0x120u32),
+                    (0x16, 0x124),
+                    (0x18, 0x130),
+                    (0x1a, 0x134),
+                    (0x1c, 0x140),
+                    (0x1e, 0x144),
+                ] {
+                    let v = idx(mem, o);
+                    w(mem, to, v);
+                }
+                for c in 0..3u32 {
+                    let f = round_trip(mem.read::<f32>(st.wrapping_add(4 * c)));
+                    mem.write(q.wrapping_add(0x150 + 4 * c), f);
+                }
+                let depth = rd(mem, q.wrapping_add(0x118)).cast_signed() / 0x3000;
+                fun(
+                    mem,
+                    call,
+                    0x007e_c420,
+                    &[ot, 0x20, depth.cast_unsigned(), 0],
+                );
+                ot = ot.wrapping_add(0x200);
+                st = st.wrapping_add(0x20);
+                k = k.wrapping_sub(1);
+                left = left.wrapping_sub(1);
+                tri = tri.wrapping_add(0x28);
+            }
+            a = next_a;
+            b = next_b;
+            if mem.read::<u8>(a.wrapping_add(1)) == 0xff {
+                break;
+            }
+        }
+        let want = wanted(mem);
+        if rd(mem, printed) != want {
+            mem.write(printed, want);
+        }
+        mem.write(obj.wrapping_add(8), ot);
+        fun(mem, call, 0x007e_6a60, &[0x1a0])
+    }
 }
