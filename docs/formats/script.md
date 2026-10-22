@@ -1965,7 +1965,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x6089` | `Native_6089` | p8, p7, p6, p5, p4 f, p3, p2 f, p1 | int: MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0 | - | int `0x007b9630` (native_mods) |
 | `0x7000` | `Native_7000` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
 | `0x7001` | `Native_BtlSetFlagBded` | v | int: the byte 0x0112bded = v & 1; 0 | - | int `0x007a39d0` (native_mods) |
-| `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530` (native_btl), poll `0x007a35c0` (not ported) |
+| `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530` (native_btl), poll `0x007a35c0` (native_btl2) |
 | `0x7003` | `Native_7003` | a int, b int | 0 (0x00795eb0(actor, 2, 0, -1, b, a)) | - | int `0x007a3d90` (native_btl) |
 | `0x7004` | `Native_7004` | v f | 0; the f32 0x0112bde4 = v | - | int `0x007a3aa0` (native_btl2) |
 | `0x7005` | `Native_BtlIsUnderwater` | - | int: the i8 at 0x0112c9ce | - | int `0x007a4550` (native_mods) |
@@ -2030,7 +2030,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x7040` | `Native_7040` | v int | int: 0x0079e8c0(actor, v); 0 without an actor | - | int `0x007a5610` (native_btl) |
 | `0x7041` | `Native_7041` | - | 0 | - | int `0x007a56d0` (native_btl) |
 | `0x7042` | `Native_7042` | win, k, x, y, anchor | int: 0x0112c250 = k; TODrawAMES(win clamped 0..6, text k, x, y, anchor) (0x0089b140) from the table at *0x0112a9b8 when there is one; 0 | - | int `0x007a6060` (native_mods) |
-| `0x7043` | `Native_7043_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | start `0x007a6a10` (not ported), poll `0x007a6a40` (native_btl2) |
+| `0x7043` | `Native_7043_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | start `0x007a6a10`, poll `0x007a6a40` (native_btl2) |
 | `0x7044` | `Native_7044` | win | int: TOCloseMessageWindow(win clamped 0..6) (0x008ab8f0); 0 | - | int `0x007a6e10` (native_mods) |
 | `0x7045` | `Native_7045` | sel | int: MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated | - | int `0x007a4da0` (native_mods) |
 | `0x7046` | `Native_7046` | v int | 0: MsMoveSplineSet(v) (0x007ab140) | - | int `0x007a5220` (native_btl) |
@@ -2039,7 +2039,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x7049` | `Native_7049` | d int, c int, f f, a int | 0: 0x007ab010(d, actor, c, f, a) | - | int `0x007a55a0` (native_btl) |
 | `0x704a` | `Native_704a` | selector int | int: picked actors with +0x415 set | - | int `0x007a58d0` (native_btl) |
 | `0x704b` | `Native_704b` | selector int, motion int, b int | the args word: 1 when MsSetMotion(i, motion, b, 0, 1, worker, &out) (0x007ab360) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7640`, poll `0x007a7850` (native_btl) |
-| `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2), poll `0x007a7cf0` (not ported) |
+| `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2), poll `0x007a7cf0` (native_btl2) |
 | `0x704d` | `Native_704d` | - | int: 0 (xor eax, eax; ret) | - | int `0x007a74e0` (native_mods) |
 | `0x704e` | `Native_704e` | v int | 0; the actor's bytes +0x3f5 and +0x3f6 = v | - | int `0x007a7530` (native_btl2) |
 | `0x704f` | `Native_704f` | selector int, v int | 0; every actor below 31 in MsGetChrBit(actor, selector, 0, 1) gets the byte +0xddd = v | - | int `0x007a70c0` (native_btl2) |
@@ -2072,7 +2072,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x706a` | `Native_706a` | selector int | int: 0 when the selected actor's +0xdc0 is 1 << its index, else -1 | - | int `0x007a7580` (native_btl2) |
 | `0x706b` | `Native_706b` | selector int, a int, b int | 0 | - | int `0x007a84c0` (native_btl) |
 | `0x706c` | `Native_706c` | sel, k | int: for the first actor x of sel, the record of its +0x14 actor: with +0xf2c set and k at most 0x1f, sound k (+0xeac + 4 k) plays (MsSEP3Dregist(3, x, se, 0, 0), 0x007a0a30) unless it is 0 or the last one (0x0112c8e0, then updated); 0 | - | int `0x007a6bc0` (native_mods) |
-| `0x706d` | `Native_706d` | b int, a int | b; the argument words = a, b | - | start `0x007a6d00` (native_btl2), poll `0x007a6db0` and int `0x007a6ea0` (not ported) |
+| `0x706d` | `Native_706d` | b int, a int | b; the argument words = a, b | - | start `0x007a6d00` (native_btl2), poll `0x007a6db0` and int `0x007a6ea0` (native_btl2) |
 | `0x706e` | `Native_706e` | selector int, voice int | the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7020`, poll `0x007a71f0` (native_btl) |
 | `0x706f` | `Native_706f` | as 0x007a8fc0(worker, args, stack, 1) | its result | - | int `0x007a36c0` (native_btl) |
 | `0x7070` | `Native_7070` | - | int: SetByte_00c58ef4(1) (0x0089bc60); 0 | - | int `0x007a7010` (native_mods) |
@@ -2125,14 +2125,14 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x709f` | `Native_709f` | selector int | float: the selected actor's target direction (MsGetChrTargetDir 0x007958c0) minus its direction (MsGetChrDir 0x00794d20), in degrees | - | float `0x007a3460` (native_btl2) |
 | `0x70a0` | `Native_70a0` | v int | int: the old signed byte 0x0112c9fc; it becomes v & 1 | - | int `0x007a73d0` (native_btl2) |
 | `0x70a1` | `Native_ActorGetSlotRef` | selector int | int: the picked actor's +0xc, -6 - slot, or 0xff | - | int `0x007a6b40` (native_btl) |
-| `0x70a2` | `Native_70a2` | v int | the start's result (poll not ported) | its own poll | start `0x007a7440` (native_btl), poll `0x007a7500` (not ported) |
+| `0x70a2` | `Native_70a2` | v int | the start's result; the poll: 0 without `g_BtlRegMotionFlag`, else 5 once `g_Native70a2Flag` is 0 (cleared while set) | its own poll | start `0x007a7440` (native_btl), poll `0x007a7500` (native_btl2) |
 | `0x70a3` | `Native_70a3` | - | int: Battle_ScriptPlayMotion(worker, args, stack, 0) (0x007a8fc0) with the actor's +0x38 byte set to 1 for the call and put back; +0x3f3 = 1 when +0x434 is set; the old byte (sign-extended) | - | int `0x007a3730` (native_mods) |
 | `0x70a4` | `Native_70a4` | - | 0: 0x0079cca0() | - | int `0x007a7630` (native_btl) |
 | `0x70a5` | `Native_70a5` | x f, y f, z f | 0 | - | int `0x007a76f0` (native_btl) |
 | `0x70a6` | `Native_70a6` | v int | int: v; the byte 0x0112c9ff = v | - | int `0x007a77a0` (native_btl2) |
 | `0x70a7` | `Native_70a7` | sel, a | float: 0x007b2c90(first of sel, a)'s ST0 | - | float `0x007a54f0` (native_mods) |
 | `0x70a8` | `Native_70a8` | selector int, property int, value f | 0 | - | int `0x007a57e0` (native_btl) |
-| `0x70a9` | `Native_70a9_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is 1, or 0x008864b0() is 0 with state 3 (then 0x008ab8f0(handle)) | start `0x007a6c50` (not ported), poll `0x007a6cb0` (native_btl2) |
+| `0x70a9` | `Native_70a9_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is 1, or 0x008864b0() is 0 with state 3 (then 0x008ab8f0(handle)) | start `0x007a6c50`, poll `0x007a6cb0` (native_btl2) |
 | `0x70aa` | `Native_GetSelfProperty` | property int | int: the actor's own property | - | int `0x007a4ea0` (native_btl) |
 | `0x70ab` | `Native_SetActorProperty` | property int, value int | int: 0x007b4b70(actor, property, -13, value) | - | int `0x007a5360` (native_move) |
 | `0x70ac` | `Native_70ac` | i int | float: actor float property i | - | float `0x007a5650` (native_btl) |
@@ -3453,8 +3453,10 @@ workers the init bit in both runs and compares the rest.
    `79`/`7a`): `Script_Run` calls no original script code but natives.
 2. Done for 1037 of the 1059 natives that `ffx script natives` lists. Not
    ported: 15 debug natives (marked in the table) and `0x7076`, which waits
-   on `MsSetBallSpline`'s port. Six more run one or two slots in the original
-   (their rows say which). The group-0 table at `0x00c50050` has 180 more
+   on `MsSetBallSpline`'s port. The last original slots of six more
+   (`0x7002`, `0x7043`, `0x704c`, `0x706d`, `0x70a2`, `0x70a9`) are Rust
+   since script round 28; three of them (`0x007a35c0`, `0x007a6db0`,
+   `0x007a7500`) wait for a dump refresh before they get a hook. The group-0 table at `0x00c50050` has 180 more
    entries that no script calls (179 with a Rust handler). Now: the VM's
    other helpers, by blocker count (`tools/worklist.py --module script`).
 3. Then a `Natives` implementation with no original code behind it, so

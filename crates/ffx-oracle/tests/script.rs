@@ -15729,3 +15729,89 @@ fn round28e_event_remove_and_return_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r28e_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Round 28 f: the battle natives' last original slots (`0x7002` poll,
+/// `0x7043`/`0x70a9` starts, `0x704c` poll, `0x706d` poll and third slot,
+/// `0x70a2` poll) and `Native_Cam_6076` on a snapshot's actors, with the
+/// underwater, motion and `0x70a2` flags and the argument words set per
+/// case; callees with a result from sequences, the stream play and the
+/// camera reset logged, `Clamp0To6_007a86e0` real.
+#[test]
+fn round28f_native_slots_match_the_original() {
+    let (Some(dir), Some(snap)) = (
+        std::env::var_os("FFX_GAME_DIR"),
+        std::env::var_os("FFX_SNAPSHOT"),
+    ) else {
+        eprintln!("FFX_GAME_DIR or FFX_SNAPSHOT is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let c = in_use(&Oracle::from_snapshot(&exe, &pages).unwrap())[0];
+    let (mut a, mut b) = fresh_run_pair(&pages, &exe, c);
+    let (a, b) = (&mut a, &mut b);
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let mut rng = Xorshift(0x5eed_028f);
+    // sequences: 0 SndSyncMusicStandby, 1 MsBattleStatusMenuless,
+    // 2 MsAnyChrMotion, 3 Battle_FirstSelectedActor
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0088_7900, 1, true),
+            (0x007a_8c20, 0, true),
+            (0x007a_8be0, 1, true),
+            (0x0079_47f0, 4, true),
+            (0x007a_0820, 2, false),
+            (0x007b_a950, 0, false),
+        ],
+    );
+    let workers = actors(a, b);
+    let n = workers.len().min(4);
+    assert!(n > 0);
+    let (water, motion, flag) = (
+        a.rebase(0x0112_c9ce),
+        a.rebase(0x0112_c9cf),
+        a.rebase(0x0113_63e8),
+    );
+    for round in 0..96u32 {
+        let w = workers[(round as usize) % n];
+        r27_reset(a, b, &stubs, |s| match s {
+            3 => [0u32, 2, 7, u32::MAX][rng.below(4) as usize],
+            _ => [0u32, 1, 2][rng.below(3) as usize],
+        });
+        poke(a, b, water, [0u8, 1, 0x80][rng.below(3) as usize]);
+        poke(a, b, motion, [0u8, 1, 0x40][rng.below(3) as usize]);
+        poke(a, b, flag, [0u32, 1, 0x100][rng.below(3) as usize]);
+        let lvl = i32::from(Mem::read::<u8>(b, w + worker::LEVEL));
+        let args = v::script_worker_level(b, w, lvl) + 0x2c;
+        fill_both(a, b, &mut rng, args, 8);
+        let win = [0u32, 3, 6, 7, u32::MAX, 0x8000_0000][rng.below(6) as usize];
+        for sym in [
+            0x007a_35c0,
+            0x007a_6a10,
+            0x007a_6c50,
+            0x007a_6db0,
+            0x007a_6ea0,
+            0x007a_7500,
+            0x007a_7cf0,
+            0x007b_8fe0,
+        ] {
+            let push: &[(u8, u32)] = if matches!(sym, 0x007a_6a10 | 0x007a_6c50) {
+                &[(stack::INT, win)]
+            } else {
+                &[]
+            };
+            native_case(
+                a,
+                b,
+                w,
+                sym,
+                push,
+                &format!("native {sym:#x} round {round}"),
+            );
+        }
+    }
+}

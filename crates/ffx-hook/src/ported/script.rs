@@ -1762,6 +1762,10 @@ ported! {
     Native_Cam_605d @ 0x007b_8f10 => extern "C" fn n_7b8f10(w: u32, a: u32, s: u32) -> u32 {
         native_cam::native_cam_605d(&mut mem(), w, a, s)
     }
+    /// `Native_Cam_6076(worker, args, stack)`.
+    Native_Cam_6076 @ 0x007b_8fe0 => extern "C" fn n_7b8fe0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6076(&mut mem(), w, a, s)
+    }
     /// `Native_CamResume(worker, args, stack)`.
     Native_CamResume @ 0x007b_8f30 => extern "C" fn n_7b8f30(w: u32, a: u32, s: u32) -> u32 {
         native_cam::native_cam_resume(&mut mem(), w, a, s)
@@ -4959,6 +4963,22 @@ ported! {
     /// `Native_7043_Poll(worker, args, stack)`.
     Native_7043_Poll @ 0x007a_6a40 => extern "C" fn n_7a6a40(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_7043_poll(&mut mem(), w, a, s)
+    }
+    /// `Native_7043(worker, args, stack)`.
+    Native_7043 @ 0x007a_6a10 => extern "C" fn n_7a6a10(w: u32, a: u32, s: u32) -> u32 {
+        native_btl2::native_7043(&mut mem(), w, a, s)
+    }
+    /// `Native_70a9(worker, args, stack)`.
+    Native_70a9 @ 0x007a_6c50 => extern "C" fn n_7a6c50(w: u32, a: u32, s: u32) -> u32 {
+        native_btl2::native_70a9(&mut mem(), w, a, s)
+    }
+    /// `Native_706d_Int(worker, args, stack)`.
+    Native_706d_Int @ 0x007a_6ea0 => extern "C" fn n_7a6ea0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl2::native_706d_int(&mut mem(), w, a, s)
+    }
+    /// `Native_704c_Poll(worker, args, stack)`.
+    Native_704c_Poll @ 0x007a_7cf0 => extern "C" fn n_7a7cf0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl2::native_704c_poll(&mut mem(), w, a, s)
     }
     /// `Native_70bf(worker, args, stack)`.
     Native_70bf @ 0x007a_6ae0 => extern "C" fn n_7a6ae0(w: u32, a: u32, s: u32) -> u32 {

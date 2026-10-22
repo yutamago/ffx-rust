@@ -5919,7 +5919,7 @@
 0x007a3530 function Native_7002                # 0x7002 start: (a, b) -> 0x00781c90(a, 1, b); ported in native_btl/native_msg (script round 8)
 0x007a3560 function Native_70f7 # 0x70f7: args (v int) -> v; appended to the u16 list 0x011363f0 (count 0x011363ec, 16 at most); ported in native_btl2 (script round 18); name ours
 0x007a35a0 function Native_ActorPlayMotion       # 0x7007: args (motion; bit 0x8000 = no blend) -> length in frames << 8 / speed; plays a motion on the script's battle actor (0x007a8fc0, 0x00837d00)
-0x007a35c0 function Native_7002_Poll             # native 0x7002 poll handler (g_NativeTables group 7 entry 0x2, ffx-script native_counts); 493 calls in the shipped scripts; name by id
+0x007a35c0 function Native_7002_Poll             # native 0x7002 poll handler (g_NativeTables group 7 entry 0x2, ffx-script native_counts); 493 calls in the shipped scripts; name by id; (script r28) returns 1; ported in native_btl2
 0x007a35d0 function Native_7102 # 0x7102: args (a int, b int) -> index of a (0xff none); actor b's +0x438 = it, +0x439 = 1; ported in native_btl2 (script round 18); name ours
 0x007a3650 function Native_70c3                # 0x70c3 (float): args (selector int) -> float: MsGetChrTargetDir(picked, 0) (0x007958c0) in degrees, as 0x70be; ported in native_btl (script round 12)
 0x007a36c0 function Native_706f                # 0x706f: 0x007a8fc0(worker, args, stack, 1); ported in native_btl/native_msg (script round 8)
@@ -6087,6 +6087,7 @@
 0x007a6950 function Native_7065 # 0x7065: SndStartStream() (0x00887630); 0; ported in native_mods (script round 21); name ours
 0x007a6960 function Native_7066 # 0x7066: jumps to 0x007b2c00; ported in native_mods (script round 21); name ours
 0x007a6970 function Native_7028              # 0x7028: (x, y, z): actor +0x3a0..+0x3a8 and its model's 0x0082b560(model, 7, z, y, x); 0; ported in native_btl/native_move (script round 10)
+0x007a6a10 function Native_7043 # (script r28) 0x7043 start: (win): argument word = Clamp0To6_007a86e0(win); -> it (table 0x00c42a58); ported in native_btl2; name ours
 0x007a6a30 function Native_7067 # 0x7067: msVoiceIsStreaming() != 0 (0x007b2be0); ported in native_mods (script round 21); name ours
 0x007a6a40 function Native_7043_Poll # 0x7043: poll: handle in the argument word; 5 when 0x008b7ca0(h) == 0; 0 while 0x008b8530(h) == 0; then 0x008ab8f0(h), 5; ported in native_btl2 (script round 18); name ours
 0x007a6a80 function Native_ActorGetId            # 0x7021: args (selector) -> id (+0xe, the ushort that 0x1xxx selectors match) of the first selected actor, -1 if none
@@ -6094,15 +6095,18 @@
 0x007a6ae0 function Native_70bf # 0x70bf: args (v f) -> 0; actor +0x3ac = v, 0x00832610(model, v) with a model; ported in native_btl2 (script round 18); name ours
 0x007a6b40 function Native_ActorGetSlotRef       # 0x70a1: args (selector) -> monster: actor +0xc byte; party: -6 - position in party list 0x0112c895 (18 entries); 0xff if none; ?meaning
 0x007a6bc0 function Native_706c # 0x706c: (sel, k): for the first actor x of sel, the record of its +0x14 actor: with +0xf2c set and k at most 0x1f, sound k (+0xeac + 4 k) plays (MsSEP3Dregist; ported in native_mods (script round 21); name ours
+0x007a6c50 function Native_70a9 # (script r28) 0x70a9 start: (win): argument word = Clamp0To6_007a86e0(win); -> it (table 0x00c430b8); ported in native_btl2; name ours
 0x007a6c70 function Native_70c0 # 0x70c0: (sel) -> 0x00794990(first of sel)'s ST0; ported in native_mods (script round 21); name ours
 0x007a6cb0 function Native_70a9_Poll # 0x70a9: poll: handle in the argument word; 5 when state 0x008b7ca0(h) == 0; 0x008ab8f0(h) and 5 when 0x008b8530(h) == 1 or (!0x008864b0() and state 3); else 0; ported in native_btl2 (script round 18); name ours
 0x007a6d00 function Native_706d # 0x706d: args (b int, a int) start: argument words = a, b; -> b; ported in native_btl2 (script round 18); name ours
 0x007a6d30 function Native_7037                # 0x7037: (b, a) -> 0x007ac840(actor, a, b, 1); ported in native_btl/native_msg (script round 8)
 0x007a6d70 function Native_702e                # 0x702e (float): (v) -> MsGetTargetDist(actor, v, 0), 0.0 without an actor; ported in native_btl/native_msg (script round 8)
+0x007a6db0 function Native_706d_Poll # (script r28) 0x706d poll: 0 while SndSyncMusicStandby(0) and not g_BtlUnderwater, else 5; not a function start in the dump; ported in native_btl2; name ours
 0x007a6dd0 function Native_7038                # 0x7038: (b, a): 0x007acb40(actor, a, b); ported in native_btl/native_move (script round 9)
 0x007a6e10 function Native_7044 # 0x7044: (win): TOCloseMessageWindow(win clamped 0..6) (0x008ab8f0); 0; ported in native_mods (script round 21); name ours
 0x007a6e40 function Native_7059                # 0x7059 (float): MsGetTargetDist(actor, v, 1); ported in native_btl/native_move (script round 9)
 0x007a6e80 function Native_7056 # 0x7056: (v): MsBattleSpecialInit(v) (0x0079de60); 0; ported in native_mods (script round 21); name ours
+0x007a6ea0 function Native_706d_Int # (script r28) 0x706d third slot: outside the water with MsBattleStatusMenuless_007a8c20: MsSoundStreamPlay(Battle_FirstSelectedActor(actor, word 1, 0, 1), word 0), 0; else 1; ported in native_btl2; name ours
 0x007a6ef0 function CT_703B_ret_setCommandDisabled # fh v3:exact 0x007a6f10 +CT_703B_ret_setCommandDisabled
 0x007a6f70 function Native_7032              # 0x7032: (selector, degrees): radians into +0x514/+0x518 of every picked actor, +0x512 = 1; 0; ported in native_btl/native_move (script round 10)
 0x007a7010 function Native_7070 # 0x7070: SetByte_00c58ef4(1) (0x0089bc60); 0; ported in native_mods (script round 21); name ours
@@ -6123,7 +6127,7 @@
 0x007a7470 function Native_707b                # 0x707b: (selector, k): 0x0079fd40(picked, k) (k 9 only when 0x007a8920(picked)); ported in native_btl/native_msg (script round 8)
 0x007a74e0 function Native_704d # 0x704d: 0 (xor eax, eax; ret); ported in native_mods (script round 21); name ours
 0x007a74f0 function Native_7050_Poll           # 0x7050 (poll): args (selector int) -> the args word: MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector, 0, 1), -1) (0x007a89c0); ported in native_btl (script round 12)
-0x007a7500 function Native_70a2_Poll             # native 0x70a2 poll handler (g_NativeTables group 7 entry 0xa2, ffx-script native_counts); 193 calls in the shipped scripts; name by id
+0x007a7500 function Native_70a2_Poll             # native 0x70a2 poll handler (g_NativeTables group 7 entry 0xa2, ffx-script native_counts); 193 calls in the shipped scripts; name by id; (script r28) 0 without g_BtlRegMotionFlag, else 5 once g_Native70a2Flag is 0 (cleared while set, 0); ported in native_btl2
 0x007a7530 function Native_704e # 0x704e: args (v int) -> 0; actor +0x3f5 = +0x3f6 = v; ported in native_btl2 (script round 18); name ours
 0x007a7580 function Native_706a # 0x706a: args (selector int) -> 0 when +0xdc0 == 1 << index for the selected actor, else -1; ported in native_btl2 (script round 18); name ours
 0x007a75e0 function Native_70c8 # 0x70c8: (sel, a) -> 0x0079fda0(first of sel, a), 0 for none; ported in native_mods (script round 21); name ours
@@ -6155,6 +6159,7 @@
 0x007a7c20 function Native_70c5 # 0x70c5: 1 when the byte 0x0112c9f5 is set; ported in native_mods (script round 21); name ours
 0x007a7c40 function Native_7089 # 0x7089: (sel, se, frames) -> MsRegSEfade(first of sel, se, frames) (0x007a00d0), 0 for none; ported in native_mods (script round 21); name ours
 0x007a7cb0 function Native_70cc                # 0x70cc: (selector): actor +0xdc0 = the set; ported in native_btl/native_move (script round 9)
+0x007a7cf0 function Native_704c_Poll # (script r28) 0x704c poll: 5 once MsAnyChrMotion_007a8be0(argument word) is 0, else 0 (table 0x00c42aec); ported in native_btl2; name ours
 0x007a7d10 function Native_70eb # 0x70eb: brnd(0x11) (0x007988f0); ported in native_mods (script round 21); name ours
 0x007a7d20 function Native_7100 # 0x7100: (sel) -> 0x007a8be0(MsGetChrBit(actor, sel, 0, 1)) (0x00794330); ported in native_mods (script round 21); name ours
 0x007a7d60 function Native_70cd                # 0x70cd: (selector): actor +0xdc0 |= MsGetChrBit set; the set; ported in native_btl/native_move (script round 9)
