@@ -5683,6 +5683,29 @@ const SKIP: u8 = 0xff;
 /// [`deref_recorder_with`] with 32-word entries (31 logged words), for
 /// requests too large for the 16-word form.
 fn wide_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let (c, log) = wide_recorder_code(p, words, ret);
+    let at = p.sym(sym);
+    p.a.write(at, &c).unwrap();
+    p.b.write(at, &c).unwrap();
+    log
+}
+
+/// [`wide_recorder`] in the oracles' code area with a jump to it at `sym`
+/// (`yonExtMapRegister`'s 20 words don't fit before the next function).
+fn far_wide_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 {
+    let (c, log) = wide_recorder_code(p, words, ret);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+    log
+}
+
+/// The code of a [`wide_recorder`] and its log.
+fn wide_recorder_code(p: &mut Pair, words: &[u8], ret: Option<u32>) -> (Vec<u8>, u32) {
     let log = p.alloc(4 + 0x100 * 128);
     let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
     c.extend(log.to_le_bytes());
@@ -5710,10 +5733,7 @@ fn wide_recorder(p: &mut Pair, sym: u32, words: &[u8], ret: Option<u32>) -> u32 
     c.push(0xa1); // mov eax, [count] or [ret]
     c.extend(ret.unwrap_or(log).to_le_bytes());
     c.push(0xc3);
-    let at = p.sym(sym);
-    p.a.write(at, &c).unwrap();
-    p.b.write(at, &c).unwrap();
-    log
+    (c, log)
 }
 
 #[test]
@@ -27361,5 +27381,139 @@ fn r42g_ke_mdl_bmp_draw_body_matches_the_original() {
                 },
             );
         }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn round44a_opu_unit_etc_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_b180);
+        // opus_prog_off's callees, as in round10c
+        let cells = p.alloc(8);
+        for (sym, words, ret) in [
+            (0x0064_5280u32, &[0u8, 0][..], None),
+            (0x0064_53d0, &[0, 0], Some(cells)),
+            (0x007f_f1d0, &[0, 0], None),
+            (0x00a7_0910, &[0], None),
+        ] {
+            deref_recorder_with(&mut p, sym, words, ret);
+        }
+        // the two yonExtMap calls (bare `ret`s): the id, and the id with
+        // the 0x4c-byte struct by value
+        let deleted = far_recorder(&mut p, o::YON_EXT_MAP_DELETE_ID, &[0], None);
+        let registered = far_wide_recorder(&mut p, o::YON_EXT_MAP_REGISTER, &[0; 20], None);
+        let handler = p.sym(0x00a7_0910);
+        let battle = p.sym(0x012a_12fc);
+        let host = p.alloc(0x400);
+        let list = host + 0x300;
+        let other = p.alloc(0x400);
+        let units = p.alloc(0x1000);
+        let idx = p.alloc(0x80);
+        let (buf, shapes, vt) = (p.alloc(0x40), p.alloc(0x200), p.alloc(0x80));
+        let cmd = p.alloc(0x10);
+        // kind 0x3000's part table: negative part numbers reach below it
+        let table = p.alloc(0x20000) + 0x10000;
+        // the original's frame: ebp is 16 bytes below the oracle's call top
+        // (two arguments, the return address, the saved ebp)
+        let ebp = p.a.stack_range().end - 0x100 - 0x10;
+        let mut seen = [0u32; 9];
+        for round in 0..3000 {
+            p.fill(units, 0x1000, &mut rng);
+            p.fill(host, 0x300, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            for l in [list, other + 0x300] {
+                p.set(l + 0x20, units);
+                p.set(l + 0x50, vt);
+                p.set(l + 0x34, u16::try_from(rng.below(12)).unwrap());
+                p.set(l + 0x38, u16::try_from(rng.below(9)).unwrap());
+                p.set(l + 0xa8, 0x1234u32);
+                for (k, at) in [0x14u32, 0x10, 0x18].into_iter().enumerate() {
+                    let li = idx + 0x20 * u32::try_from(k).unwrap();
+                    p.set(l + at, li);
+                    let n = rng.below(8);
+                    for i in 0..n {
+                        p.set(li + 2 * i, u16::try_from(rng.below(16)).unwrap());
+                    }
+                    p.set(li + 2 * n, rng.pick(&[0xffffu16, 0x8000, 0xfff0]));
+                }
+            }
+            p.set(vt + 0x54, handler);
+            p.set(vt + 0x74, rng.next());
+            p.set(battle, if rng.chance(20) { other } else { 0 });
+            for i in 0..16 {
+                let u = units + 0x100 * i;
+                p.set(u + 0xbc, if rng.chance(20) { 0 } else { buf });
+                p.set(u + 0xbb, rng.pick(&[1u8, 2, 3, 5, 9, 0xa, 0x11, 4]));
+                p.set(u + 0x16, rng.pick(&[0x10u8, 0]));
+                p.set(u + 0x17, u8::try_from(rng.below(4)).unwrap());
+                p.set(u + 0xa8, shapes);
+                p.set(u + 0x1a, rng.pick(&[0u16, 1, 2, 3, 0x8001]));
+                p.set(u + 0x1c, u16::try_from(rng.below(16)).unwrap());
+                p.set(u + 0x1e, u8::try_from(rng.below(2)).unwrap());
+                if rng.chance(20) {
+                    p.set(u, 0u32);
+                }
+            }
+            p.set(buf + 4, u16::try_from(rng.below(4)).unwrap());
+            p.set(shapes, u16::try_from(rng.below(4)).unwrap());
+            p.set(cells, rng.pick(&[0u32, 1]));
+            // the host: its unit one of the parts (or off the grid)
+            let u = if rng.chance(15) {
+                units
+            } else {
+                units + 0x100 * rng.below(16) + rng.pick(&[0u32, 0, 0, 0, 0x80])
+            };
+            p.set(host + 0x220, u);
+            let nib = rng.pick(&[0u16, 0x1000, 0x2000, 0x3000, 0x4000, 0x5000, 0x6000, 0xf000]);
+            p.set(host + 0x21a, nib | (rng.next() as u16 & 0x0fff));
+            p.set(
+                cmd + 2,
+                rng.pick(&[0u16, 1, 2, 3, 4, 7, 0xff00, 0xffff, 0xfffe, 0x40, 0xfffc]),
+            );
+            p.set(cmd + 4, rng.pick(&[0u16, 1, 2, 3, 6, 0x22, 0xfff8, 0x8003]));
+            if nib == 0 && rng.chance(40) {
+                p.set(cmd + 2, 0u16);
+            }
+            if nib == 0x3000 {
+                // a small i16 offset into the unit, the part number there
+                // (0, small, past a byte, negative), its slots filled
+                let off = rng.below(0x80) & !1;
+                p.set(cmd + 2, off as u16);
+                let i = rng.pick(&[0u16, 1, 5, 0x100, 0x1ff, 0xffff, 0xff80]);
+                p.set(u + off, i);
+                let e = table.wrapping_add((i32::from(i.cast_signed()) << 8).cast_unsigned());
+                p.fill(e, 0x20, &mut rng);
+                // [host +0x320] is the list's first part (+0x20)
+                p.set(host + 0x320, table);
+            }
+            p.set(cmd + 6, rng.pick(&[0u16, 8, 0x7ffe, 0xfff0]));
+            // the frame words the original never writes, known values in
+            // the first oracle's stack; the same to the port
+            let junk: [u32; 9] = std::array::from_fn(|_| rng.next());
+            p.a.write(ebp - 0x40, &junk[0].to_le_bytes()).unwrap();
+            for (k, w) in junk[1..].iter().enumerate() {
+                p.a.write(ebp - 0x24 + 4 * k as u32, &w.to_le_bytes())
+                    .unwrap();
+            }
+            let before: u32 = p.get(registered);
+            let r = p.check(
+                &format!("opu_unit_etc round {round}"),
+                0x0080_b180,
+                &[host, cmd],
+                |m| Some(o::opu_unit_etc(m, host, cmd, junk, &mut call_original)),
+            );
+            // kinds 0..5, others, kind 0x1000 registering, kind 0 jumping
+            seen[usize::from(nib.min(0x6000) >> 12)] += 1;
+            if p.get::<u32>(registered) != before {
+                assert_eq!(p.get::<u32>(deleted), p.get::<u32>(registered));
+                seen[7] += 1;
+            }
+            if nib == 0 && r != cmd + 6 {
+                seen[8] += 1;
+            }
+        }
+        assert!(seen.iter().all(|&n| n > 20), "{}: {seen:?}", p.name);
     }
 }

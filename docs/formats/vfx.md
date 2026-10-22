@@ -528,6 +528,23 @@ matrix (`pk +0x24`) and position matrix (`pk +0x28`) start as rows of
 `a / 256`. `pk +0x4c` and `+0x4d` become `ftol(unit +0x30) / 2` and
 `ftol(unit +0x4c) / 2`, clamped to 0..0x80.
 
+## Unit commands (`opu_unit_etc`)
+
+`opu_unit_etc(host, cmd)` (`0x0080b180`) acts by the host's flag nibble
+(`u16 +0x21a & 0xf000`), `u` the host's unit (`+0x220`), the list `host +
+0x300`: 0 a conditional jump by `i16 cmd +4` on the unit `opus_no_get`
+names; 0x1000 restarts the host's own unit (its number in the `i16` list
+`[host +0x310]`: `opus_prog_off`, `opus_list_add(.., 1)`,
+`yonExtMapDeleteId`, `yonExtMapRegister`, then `u16 +0x218` down by one,
+`+0x216` 0, byte `+0x210` 1); 0x2000 copies `u16 host +0x214` into a
+unit; 0x3000 sets a program slot of part `i16 [u + i16 cmd +2]` (`set_ptr32`,
+keeping bit 31); 0x4000 registers the list's function `[[host +0x350]
++0x74]` in one of the four op function lists; 0x5000 `op_wot_triger`.
+`yonExtMapRegister` (a bare `ret` here) takes a 0x4c-byte struct by value:
+0, `u`, the list, the number, an unwritten word, 0, then a 0x34-byte
+`sprintf` buffer with `"LoadedByOPU_UNIT_ETC"` whose tail is never written.
+The hook passes it with `call_cdecl_words` (docs/hooking.md).
+
 ## High range (`0x00a30000..0x00a80000`)
 
 Ported in `crates/ffx-vfx/src/hi_md.rs`, `hi_light.rs`, `hi_draw.rs`,
@@ -767,6 +784,84 @@ Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
   `[init +0x20]` is restored, but `[init +0x2c]` gets the old `[init
   +0x34]`, which is also the `eax` left.
 
+### Refracting models (`op_md_ref_nolight`)
+
+`op_md_ref_nolight(obj, init, tex, scale, slot)` (`0x00a6a6a0`, from
+`op1_mdc_ref_nolight`) only acts for magic 0x1b6 or 0x1b5. It sets up the
+model as `opus_0279_draw` does (colour from the signed bytes `p +0x1c..`,
+`w +0x400`), fills `g_MagicBuffersB[slot]` (made on first use,
+`user_aligned_malloc(i16 obj +0x14 << 4, 16)`) through
+`op_refrection_st_float(.., ftol(scale), byte tex +0xa << 4, byte tex +0xb
+<< 4)`. A first tag of type 0x10 hands the model to the renderer as
+instance `(0x1b5, slot + 100)`, created on first use with
+`graphicVFXCreate(.., 0x800a)` and `graphicVFXCreateDataBuffer(.., 1, &3n,
+&3n, name, &1)` (`n = i16 obj +0x10`). The texture name is
+`"%d_%d_0_0_%d_%d.dds.phyre"` of the `TEX0` at `tex`: `TBP0`, `TBW`, `1 <<
+TW`, `1 << TH`, or the name `graphicVFXIsTextureLoaded` reports. The fill
+request is kind 6: `+0x10` the render data's `+0x94`, `+0x14` `obj`,
+`+0x18` `[p +0x38]`, `+0x1c` the coordinate buffer, `+0x20..+0x28` 256.0,
+`+0x2c` `byte tag +7`, `+0x30` the bytes `p +0x18..` / 255, `+0x40` `t x`
+the bytes `p +0x1c..` with `t = byte p +0x4d / 255`. Then
+`FFXVu0MulMatrix(r, g_pppFillMatrix, [p +0x20])`, `graphicVFXSetVisible`
+and `graphicVFXSetup` (new) or `graphicVFXPath3Update`. Other first tags
+only set the GS words (types 3, 7, 0x10). When
+`graphicDynGeoMemManagerGetBufferForSegment` gives no buffer, the
+original returns 0 at once, leaving its `op_spr_alloc` mark pushed; the
+port does the same.
+
+### Init blocks with unwritten words
+
+Two callers build `op1_md_draw`'s 0x50-byte init block on their
+16-aligned stack frame (`ebp - 0x80`) and leave words of it unwritten,
+which the callee copies on (`op_md_spr_init_x64`, `copy_init`). The ports
+take those words as an explicit `junk` argument; the hooks pass 0 and the
+oracle tests write known values into the original's frame.
+
+- `op_md_x64_draw_00a69300(obj, b, e)` (`0x00a69300`; from
+  `opp_draw_part_a74d30`, `0x00814800`, `0x00911fc0`): `op_md_x64(obj,
+  block)` with `+0` 0x41c, `+4` `e`, `u16 +8` 0x88, `+0xc..+0x14` 0,
+  `+0x18` 0x80808080, `+0x1c` 0, `+0x20` `b`, `+0x34`, `+0x38`, `+0x40`,
+  `+0x44` 0; unwritten: `u16 +0xa`, `+0x24..+0x30`, `+0x3c`, `+0x48`,
+  `+0x4c`. `eax` is `op_md_x64`'s.
+- `opu_md_etc_draw_00a693b0(obj, b, m, view, e)` (`0x00a693b0`; from
+  `opu_md_etc`): four points from four `f32` angles (`0x022fb180`,
+  `0x00c88c28`, `0x00c88c40`, `0x00c88c58`; `t = a x 3.141592 / 2048`,
+  `_CIsin`/`_CIcos` each an `f32`): `(40 sin, 0, 40 cos)` at `0x00c88c18`,
+  `(0, 40 sin, 40 cos)` at `0x00c88c2c`, `(0 sin, 40 sin, 40 cos)` at
+  `0x00c88c44`, `(50 sin, 80 cos, 80 cos)` at `0x00c88c5c`. The quad block
+  `0x022fb188` gets them times -1, `w` 1.0 (16-byte rows), `+0x50` 0x8004,
+  `+0x58` 0x441. `FFXVu0RotTransPers` turns each into a 0x30-byte screen
+  record at `0x022fb1f8` (`view`, keep 0), whose `x`, `y` then lose 0x100
+  and 0x80 and whose words 4..7 are `x + 0x100`, `y + 0x80` and words 2, 3
+  (the last record's words 0..3 also into the EE's `v0`).
+  `op_ot_add_after(0x022fb1c8, 0xe, 0, 0)`, `FFXVu0InversMatrix(m, m)`,
+  then `op_md_chara_path3(obj, block, 0)` with `+0` 0x41c, `+4` `e`, `u16
+  +8` 0x88, `+0xc` 0, `+0x18` 0x80808080, `+0x1c` 0x40404040, `+0x20`
+  `b`, `+0x24` `0x00c88b78`, `+0x28` the quad block, `+0x2c` `m`, `+0x34`
+  0x6c00000, `+0x38`, `+0x40` 0, `+0x44` `b`; unwritten: `u16 +0xa`,
+  `+0x10`, `+0x14`, `+0x30`, `+0x3c`, `+0x48`, `+0x4c`. `eax` is
+  `op_md_chara_path3`'s (0).
+
+### `opus_0279` draw
+
+`opus_0279_draw(obj, init, rec, _, tex)` (`0x00a70210`, from
+`opp_mdc_draw_a6f4d0`) draws a refracting character model:
+`op_spr_alloc(0x1800)` gives `w`, `[obj] |= 4`, `p =
+op_md_spr_init_x64(obj, init, w)`, the colour as in `op_md_chara_path3`
+but from `p +0x1c` and `p +0x4c`, `w +0x390`/`+0x394` as there, `w +0x400 =
+(i16 obj +0x14 << 4) + [w +0x390]`; `op_vertex_normal_point44_ffx_2(obj,
+p, w, g_EtChrHandles[byte rec +0x18])`, `op_refrection_st_float(obj, p, w,
+[w +0x400], ftol(rec +0x3c x 16), byte tex +0xa << 4, byte tex +0xb <<
+4)`. Each 0x20-byte tag of type 0x10 from `obj + [obj +4]` sets `w +0x1f0`
+0x8001, `+0x1f8` 0x12412412, `+0x120` `[tex]`, and expands its colour word
+`[tag +4 + g_pppColorConShift]` (the shift then 0) the PS2 way: the byte
+moves the original does are `pextlb` then `pextlh` with `r0`, so with `c`
+the colour's bytes and `r` `r0`'s, the EE's `v0` gets the words `(c0, r0,
+r0, r1)`, `(c1, r1, r2, r3)`, `(c2, r2, r4, r5)`, `(c3, r3, r6, r7)` (bytes,
+low first): with `r0` zero the colour's channels. Those words as `f32`s of
+signed integers go to `g_Vu0_VfMove` and `w +0x2e0`. After the GS wait
+and `op_spr_free`, `eax` is the last `g_GsRegisterSink` read.
+
 ### `opus_0283` draw
 
 `opus_0283_draw(obj, rec)` (`0x00a76770`, kind 0x1000 of
@@ -832,6 +927,22 @@ The dot buffer `b`: `b[0]` the entry count, `b[1]` the next entry
 `op_md_list_count10(list)` `u16`s are 0xffff; the box
 `op_md_list_bounds(list, m, b + 0x10, b + 0x20)` (its `eax` returned).
 
+`opus_0437_poly_check(list, b, dots, m, limit)` (`0x00a6ed40`, kind
+0x1000) fills it. Each packet's vertices go through `m` x its matrix
+(translation x1000 for the product, /1000 after, `f32` both times) into a
+`user_malloc` buffer. Polygon `idx` (counted over the list's type-0x10
+tags, `0x1c`-byte polygons from `tag +0x20`, vertex numbers `u16 +0..+4`)
+whose table word is 0xffff and whose height `f32(f32(f32(v1.y + v0.y) +
+v2.y) / 3)` is `<= limit` takes entry `s = u16 b +2`: table word `s`, the
+entry's old polygon (`i16 +0xc`) 0xfffe unless negative, `u16 b +2 = (s +
+1) % u16 b +0`, the centre `f32((v1 + v0 + v2) x 0.333333)` at `+0`, the
+EE's `r0` at `+0x50`, `+0xc` `idx`, `+0x5e` 0x1000. With a dot buffer,
+eight dots per polygon: `op_xyz_scale(dot, centre + op_random(4), 1.0)`
+and `dot +0x10` = `(0, (op_random(16) - 20) / 16, 0, w)` (also into the
+EE's `v0`) with `u16 +0x1c` 0, where the vector's `w` and the last word
+are frame words the original never writes (the hook passes 0). `eax` is
+`u16 list +4`.
+
 ### `opus_0582` dots
 
 `opus_0582_dot_set_00a73740(b, rec)` (`0x00a73740`,
@@ -841,6 +952,32 @@ of the dot buffer `opus_0582_dot_draw` reads, from the part `rec`: radii
 `ftol(+0x30)`, step `ftol(ftol(+0x34) / 256)` (the integer back through
 an `f32`), spread `ftol(+0x38)` (0 when negative), life `ftol(+0x4c) +
 16`, colour `+0xc8`, fade-in 8. It returns the colour.
+
+### Breaking-model pieces
+
+`opp_md_break_pieces_00a744e0(src, out, rec)` (`0x00a744e0`, from
+`opp_md_break_init_a74410`): `out[1]` = `n = i16 src +0x10`, `out[0]` =
+`src[0]`, `out[2..4]` = `src +0x28..`, `u16 out +0x10` = `u16 src +0x16`.
+Piece `k` reads 0x20 bytes from `src +0x30` and fills 0x100 from `out +0x20`:
+words `+0..+8` and `+0x14..+0x1c` copied to `+0` and `+0x40`; the
+vertices `i16 +0xc`, `+0xe`, `+0x10` (`i16` triples from `src + [src +8]`)
+`A`, `B`, `C`; the centre `f32((B + A + C) / 3)` at `+0x50` and each vertex
+minus it at `+0x10`, `+0x20`, `+0x30`. Twelve spreads
+`f32(op_random(i16 rec + r) + i16 rec + b)` go to `+0x60..+0x68`,
+`+0x70..+0x78` (`b` from `rec +6`, `r` = `b + 6`) and `+0x90..+0x98`,
+`+0xa0..+0xa8` (`b` from `rec +0x1e`), with `+0x80..+0x88` 0; `+0xb0` =
+`i16 rec +0x36`, `+0xb4` = `op_random_per(i16 rec +0x3a) + i16 rec +0x38`.
+Kind `u16 out +0x12` 1 replaces `+0x50`/`+0x58` with the length and angle
+of `op_deg_get(0, 0, centre.x, centre.z)`; kind 0 scales the six spreads
+at `+0x60`/`+0x70` by `f32(i16 rec +4 / 4096)`, kind 1 only `+0x60`,
+`+0x64`, `+0x70`, `+0x74`.
+
+`op_random` (`0x007e6700`) stores its result into its own argument slot
+(`fstp [ebp+8]`) before returning it. This function relies on it: the
+slot is the second of the four words `op_random_per` reads, so it gets
+the last spread's draw. The hooked `op_random` cannot write the caller's
+slot (its thunk copies the arguments), so an original that reads the slot
+after a call to it sees the operand there.
 
 ### Map draw
 
