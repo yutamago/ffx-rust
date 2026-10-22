@@ -29211,3 +29211,154 @@ fn round46e_ppp_nei_draw_shape_point_light_matches_the_original() {
         assert!(lit > 0 && p.get::<u32>(light) > 0, "{}", p.name);
     }
 }
+
+// ---- round 47 ---------------------------------------------------------
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round47a_mdc_make_and_size_match_the_original() {
+    use op::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_34b0);
+        let rets = p.alloc(0x20);
+        let (hide, size) = (p.alloc(0x20), p.alloc(0x20));
+        stub_code(&mut p, 0x0082_add0, &table_by_arg1(hide)); // Ch_ModelGetHide
+        stub_code(&mut p, 0x0083_0450, &table_by_arg1(size)); // CalcSizeEffectPacket
+        let logs = [
+            far_recorder(&mut p, 0x0083_2110, &[0, 0], None), // Apply_Envelope
+            far_recorder(&mut p, 0x0080_f630, &[0], Some(rets)), // opus_mimic_check
+            far_recorder(&mut p, 0x0080_f460, &[0, 0, 0], Some(rets + 4)), // make_mimic
+            far_recorder(&mut p, 0x0080_f580, &[0, 0], Some(rets + 8)), // size_get_mimic
+            far_recorder(&mut p, 0x0083_0410, &[0], Some(rets + 0xc)), // Ch_GetNbModel
+            far_recorder(&mut p, 0x00a4_4700, &[0], None),    // set_ptr32: the call count
+            far_recorder(&mut p, 0x0083_0500, &[0, 0, 0], Some(rets + 0x14)), // base matrix
+            far_recorder(&mut p, 0x0083_0490, &[0, 0, 0], None), // CreateEffectPacket
+            far_recorder(&mut p, 0x00a6_9f10, &[0, 0, 0], Some(rets + 0x18)), // op_md_vn_index
+        ];
+        // outs on both sides of 0x1f00000 (signed: 0x90000000 is below)
+        let fixed = [0x01ef_ff00u32, 0x01f0_0000, 0x7000_0000, 0x9000_0000];
+        for &at in &fixed {
+            p.a.map_zeroed(at, 0x100).unwrap();
+            p.b.map_zeroed(at, 0x100).unwrap();
+        }
+        let heap = p.alloc(0x100);
+        let cues = p.sym(o::MDC_TRANSFER_CUES.sym);
+        let mut seen = [0u32; 6];
+        for round in 0..2000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(rets, 0x20, &mut rng);
+            let chr = rng.next();
+            let any = rng.next();
+            p.set(rets, if rng.chance(25) { any } else { 0 });
+            let n = rng.pick(&[0u32, 1, 2, 3, 5, 8, 8, 0xffff_ffff]);
+            p.set(rets + 0xc, n);
+            for i in 0..8 {
+                let h = rng.pick(&[0u32, 0, 1, any]);
+                p.set(hide + 4 * i, h);
+                let s = rng.pick(&[0u32, 1, 0xf, 0x10, 0x11, 0x38, 0xfff_fff1, any]);
+                p.set(size + 4 * i, s);
+            }
+            // the cue table: chr's key, free slots, or all taken by others
+            let kind = rng.below(4);
+            for i in 0..9 {
+                let other = rng.next() | 1;
+                let key = match kind {
+                    0 => other,
+                    1 if rng.chance(30) => 0,
+                    2 if rng.chance(30) => chr,
+                    _ if rng.chance(15) => 0,
+                    _ => other,
+                };
+                p.set(cues + 0x10 * i, key);
+                p.set(cues + 0x10 * i + 4, rng.next());
+            }
+            let out = rng.pick(&[heap, heap, fixed[0], fixed[1], fixed[2], fixed[3]]);
+            p.fill(out, 0x100, &mut rng);
+            let mode = rng.pick(&[0u32, 1, 2, 2, any]);
+            let (visible, mimic) = (rng.pick(&[0u32, 1, any]), rng.pick(&[0u32, 1, any]));
+            let table = rng.next();
+            let what = |f: &str| format!("{f} round {round}");
+            let r = match rng.below(3) {
+                0 => p.check(
+                    &what("op_mdc_all_make"),
+                    0x0080_3220,
+                    &[out, chr, mode, table],
+                    |m| {
+                        Some(o::op_mdc_all_make_main(
+                            m,
+                            out,
+                            chr,
+                            mode,
+                            0,
+                            1,
+                            table,
+                            &mut call_original,
+                        ))
+                    },
+                ),
+                1 => p.check(
+                    &what("op_mdc_all_make_delhide"),
+                    0x0080_3360,
+                    &[out, chr, mode, table],
+                    |m| {
+                        Some(o::op_mdc_all_make_main(
+                            m,
+                            out,
+                            chr,
+                            mode,
+                            1,
+                            1,
+                            table,
+                            &mut call_original,
+                        ))
+                    },
+                ),
+                _ => p.check(
+                    &what("op_mdc_all_make_main"),
+                    0x0080_34b0,
+                    &[out, chr, mode, visible, mimic, table],
+                    |m| {
+                        Some(o::op_mdc_all_make_main(
+                            m,
+                            out,
+                            chr,
+                            mode,
+                            visible,
+                            mimic,
+                            table,
+                            &mut call_original,
+                        ))
+                    },
+                ),
+            };
+            if p.get::<u32>(logs[2]) != 0 {
+                seen[0] += 1; // the mimic
+            } else if r == 8 {
+                seen[1] += 1; // past the table
+            } else if p.get::<u32>(logs[8]) != 0 {
+                seen[2] += 1; // mode 2
+            }
+            seen[3] += u32::from(r != 0 && out == fixed[2]);
+            p.check(
+                &what("op_mdc_size_get_main"),
+                0x0080_3880,
+                &[chr, mode, visible, mimic],
+                |m| {
+                    Some(o::op_mdc_size_get_main(
+                        m,
+                        chr,
+                        mode,
+                        visible,
+                        mimic,
+                        &mut call_original,
+                    ))
+                },
+            );
+            seen[4] += u32::from(p.get::<u32>(logs[3]) != 0);
+            seen[5] += u32::from(p.get::<u32>(logs[5]) > 4);
+        }
+        assert!(seen.iter().all(|&c| c > 5), "{}: {seen:?}", p.name);
+    }
+}

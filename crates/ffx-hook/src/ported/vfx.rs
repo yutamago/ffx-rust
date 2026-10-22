@@ -994,6 +994,22 @@ ported! {
     op_chara_packet_size_get @ 0x0080_37c0 => extern "C" fn op_chara_packet_size_get(chr: u32, mode: u32, visible: u32) -> u32 {
         op::bridge::op_chara_packet_size_get(&mut mem(), chr, mode, visible, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op_mdc_size_get_main(chr, mode, visible, mimic)`.
+    op_mdc_size_get_main @ 0x0080_3880 => extern "C" fn op_mdc_size_get_main(chr: u32, mode: u32, visible: u32, mimic: u32) -> u32 {
+        op::bridge::op_mdc_size_get_main(&mut mem(), chr, mode, visible, mimic, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_mdc_all_make(out, chr, mode, table)`: the main maker, hidden models kept.
+    op_mdc_all_make @ 0x0080_3220 => extern "C" fn op_mdc_all_make(out: u32, chr: u32, mode: u32, table: u32) -> u32 {
+        op::bridge::op_mdc_all_make_main(&mut mem(), out, chr, mode, 0, 1, table, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_mdc_all_make_delhide_00803360(out, chr, mode, table)`: hidden models left out.
+    op_mdc_all_make_delhide_00803360 @ 0x0080_3360 => extern "C" fn op_mdc_all_make_delhide(out: u32, chr: u32, mode: u32, table: u32) -> u32 {
+        op::bridge::op_mdc_all_make_main(&mut mem(), out, chr, mode, 1, 1, table, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_mdc_all_make_main(out, chr, mode, visible, mimic, table)`.
+    op_mdc_all_make_main @ 0x0080_34b0 => extern "C" fn op_mdc_all_make_main(out: u32, chr: u32, mode: u32, visible: u32, mimic: u32, table: u32) -> u32 {
+        op::bridge::op_mdc_all_make_main(&mut mem(), out, chr, mode, visible, mimic, table, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `ppp_shape_center_0075c660(out, shape)`.
     ppp_shape_center_0075c660 @ 0x0075_c660 => extern "C" fn ppp_shape_center(out: u32, shape: u32) -> u32 {
         // the original's locals: 0x24 bytes below its ebp

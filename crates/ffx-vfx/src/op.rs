@@ -2144,6 +2144,35 @@ pub mod bridge {
         if ch(mem, 0x0080_f630, &[chr], call) != 0 {
             return ch(mem, 0x0080_f580, &[mode, visible], call);
         }
+        model_packet_sizes(mem, chr, mode, visible, call)
+    }
+
+    /// `op_mdc_size_get_main(chr, mode, visible, mimic)` (`0x00803880`):
+    /// [`op_chara_packet_size_get`] with the mimic test only when `mimic`
+    /// is non-zero (the Switch build's name; `opu_mimic` calls it).
+    pub fn op_mdc_size_get_main<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mode: u32,
+        visible: u32,
+        mimic: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        if mimic != 0 && ch(mem, 0x0080_f630, &[chr], call) != 0 {
+            return ch(mem, 0x0080_f580, &[mode, visible], call);
+        }
+        model_packet_sizes(mem, chr, mode, visible, call)
+    }
+
+    /// The non-mimic sum of [`op_chara_packet_size_get`] and
+    /// [`op_mdc_size_get_main`].
+    fn model_packet_sizes<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mode: u32,
+        visible: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
         let models = ch(mem, 0x0083_0410, &[chr], call);
         if models == 0 {
             return 0;
@@ -2168,6 +2197,93 @@ pub mod bridge {
             model += 1;
         }
         models.wrapping_add(1).wrapping_shl(4).wrapping_add(total)
+    }
+
+    /// `op_mdc_all_make_main(out, chr, mode, visible, mimic, table)`
+    /// (`0x008034b0`, the Switch build's name): `Apply_Envelope(chr, 1)`;
+    /// a mimic (`mimic` non-zero and `opus_mimic_check(chr)`) gets
+    /// `opus_mdc_make_mimic(out, mode, table)` and its result. Otherwise
+    /// `out +0` = `chr`, byte `out +6` = `mode`, and for each model
+    /// (`Ch_GetNbModel`) that is shown (`Ch_ModelGetHide` 0; with `visible`
+    /// 0 the hidden ones too) the next 16-byte head from `out +0x10`: word
+    /// `+8` gets bit 0 for a shown model, `+0` `set_ptr32(packet)`, `+4`
+    /// `set_ptr32(Ch_ModelGetBaseMatrix(chr, i, 0))`, `u16 +0xa` = `i`;
+    /// the packet (from `out + 0x10 (models + 1)`) is
+    /// `Ch_ModelCreateEffectPacket(chr, i, packet)` and the next one
+    /// `Ch_ModelCalcSizeEffectPacket(chr, i)` rounded up to 16 (28 bits)
+    /// further, for mode 2 `op_md_vn_index(packet, that, table)`. `u16 out
+    /// +4` = the heads made. Below 0x1f00000 (signed) `out` is also cued
+    /// in `g_OpMdcTransferCues`: the cue keyed `chr`, else the first free
+    /// one, else (after `debug_exit_trace(1)`, a bare `ret`) the slot past
+    /// the eight. Returns `eax` as left: the mimic's result, the heads
+    /// made when nothing is cued, else the cue's index (8 past the table).
+    /// Callees through `call`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn op_mdc_all_make_main<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        chr: u32,
+        mode: u32,
+        visible: u32,
+        mimic: u32,
+        table: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        ch(mem, 0x0083_2110, &[chr, 1], call);
+        if mimic != 0 && ch(mem, 0x0080_f630, &[chr], call) != 0 {
+            return ch(mem, 0x0080_f460, &[out, mode, table], call);
+        }
+        let models = ch(mem, 0x0083_0410, &[chr], call);
+        let mut packet = models.wrapping_add(1).wrapping_shl(4).wrapping_add(out);
+        mem.write(out.wrapping_add(6), mode.to_le_bytes()[0]);
+        mem.write(out, chr);
+        let mut head = out.wrapping_add(0x10);
+        let mut heads = 0u32;
+        let mut i = 0i32;
+        while i < models.cast_signed() {
+            let model = i.cast_unsigned();
+            let hidden = ch(mem, 0x0082_add0, &[chr, model], call);
+            if hidden == 0 || visible == 0 {
+                if hidden == 0 {
+                    let flags: u16 = mem.read(head.wrapping_add(8));
+                    mem.write(head.wrapping_add(8), flags | 1);
+                }
+                let p = ch(mem, 0x00a4_4700, &[packet], call);
+                mem.write(head, p);
+                let base = ch(mem, 0x0083_0500, &[chr, model, 0], call);
+                let p = ch(mem, 0x00a4_4700, &[base], call);
+                mem.write(head.wrapping_add(4), p);
+                #[allow(clippy::cast_possible_truncation)] // the original's 16-bit store
+                mem.write(head.wrapping_add(0xa), model as u16);
+                let size = ch(mem, 0x0083_0450, &[chr, model], call);
+                ch(mem, 0x0083_0490, &[chr, model, packet], call);
+                let mut next = (size.wrapping_add(0xf) & 0x0fff_fff0).wrapping_add(packet);
+                if mode == 2 {
+                    next = ch(mem, 0x00a6_9f10, &[packet, next, table], call);
+                }
+                packet = next;
+                head = head.wrapping_add(0x10);
+                heads = heads.wrapping_add(1);
+            }
+            i += 1;
+        }
+        #[allow(clippy::cast_possible_truncation)] // the original's 16-bit store
+        mem.write(out.wrapping_add(4), heads as u16);
+        if out.cast_signed() >= 0x01f0_0000 {
+            return heads;
+        }
+        let cues = MDC_TRANSFER_CUES.ptr(mem);
+        let slot = (0..8)
+            .find(|&k| mem.read::<u32>(cues.at(k).addr) == chr)
+            .or_else(|| (0..8).find(|&k| mem.read::<u32>(cues.at(k).addr) == 0))
+            .unwrap_or_else(|| {
+                ch(mem, 0x0062_f510, &[1], call);
+                8
+            });
+        let at = cues.at(slot).addr;
+        mem.write(at, chr);
+        mem.write(at.wrapping_add(4), out);
+        slot
     }
 
     /// The emulated VU0 registers `op_apply_m_w1` uses: the vector
