@@ -26423,3 +26423,84 @@ fn r42f_part_loop_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r42g_ke_mdl_bmp_draw_body_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_8b00);
+        let cells = p.alloc(0x10);
+        let (spr_cell, free_cell) = (cells, cells + 4);
+        let spr = p.alloc(0x1a0);
+        p.set(spr_cell, spr);
+        far_recorder(&mut p, 0x007e_6a00, &[0], Some(spr_cell));
+        far_recorder(&mut p, 0x007e_c420, &[0, 0, 0, 0], None);
+        // the corners it prints stay in the scratch block, compared anyway
+        far_recorder(&mut p, 0x0062_f500, &[0], None);
+        far_recorder(&mut p, 0x007e_6a60, &[0], Some(free_cell));
+        let (obj, model, texs) = (p.alloc(0x40), p.alloc(0x1000), p.alloc(0x800));
+        let printed = p.sym(0x00d4_b468);
+        for round in 0..1500u32 {
+            p.fill(spr, 0x1a0, &mut rng);
+            p.fill(obj, 0x40, &mut rng);
+            p.fill(model, 0x1000, &mut rng);
+            p.fill(texs, 0x800, &mut rng);
+            p.set(obj + 0xc, model);
+            p.set(obj + 0x10, texs);
+            // vertices and sts: 16 entries of 6 bytes at +0xe00 / +0xf00;
+            // the indices stay below 16
+            p.set(model + 8, 0xe00u32);
+            p.set(model + 0xc, 0xf00u32);
+            p.set(model + 4, 0x20u32);
+            p.set(texs + 4, 0x10u32);
+            let (mut a, mut b) = (model + 0x20, texs + 0x10);
+            let records = 1 + rng.below(3);
+            for r in 0..records {
+                let n = rng.pick(&[0i16, 1, 2, 3, -1]);
+                let bad = rng.chance(5);
+                p.set(a + 1, if bad && rng.chance(50) { 4u8 } else { 3 });
+                p.set(b + 1, if bad { 1u8 } else { 2 });
+                p.set(a + 2, n);
+                for t in 0..i32::from(n.max(0)) as u32 {
+                    let tri = a + 0x10 + 0x28 * t;
+                    for o in (0xcu32..0x12).step_by(2).chain((0x20..0x26).step_by(2)) {
+                        p.set(tri + o, rng.below(16) as u16);
+                    }
+                    let st = b + 0x10 + 0x20 * t;
+                    for c in 0..3u32 {
+                        let v = if rng.chance(3) {
+                            rng.float()
+                        } else {
+                            ranged(&mut rng, -2.0, 2.0)
+                        };
+                        p.set(st + 4 * c, v);
+                    }
+                }
+                a += 0x10 + 0x28 * i32::from(n).cast_unsigned();
+                b += 0x10 + 0x20 * i32::from(n).cast_unsigned();
+                if n < 0 {
+                    break;
+                }
+                let last = r + 1 == records;
+                p.set(a + 1, if last { 0xffu8 } else { 3 });
+            }
+            let want = rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff]);
+            p.set(obj + 0x24, want);
+            p.set(printed, rng.pick(&[want, want.wrapping_add(1)]));
+            let r = rng.next();
+            p.set(free_cell, r);
+            p.check(
+                &format!("pppKeMdlBmpDraw_Body round {round}"),
+                0x0074_8b00,
+                &[obj],
+                |m| {
+                    Some(draw::bridge::ppp_ke_mdl_bmp_draw_body(
+                        m,
+                        obj,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}

@@ -5655,6 +5655,10 @@ ported! {
         ppp::bridge::ppp_data_rcv(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
+    /// `pppKeMdlBmpDraw_Body_00748b00(obj)`: returns `op_spr_free`'s `eax`.
+    pppKeMdlBmpDraw_Body_00748b00 @ 0x0074_8b00 => extern "C" fn ppp_ke_mdl_bmp_draw_body(obj: u32) -> u32 {
+        draw::bridge::ppp_ke_mdl_bmp_draw_body(&mut mem(), obj, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppDrawRainAlloc_00756320(def, work)`: the three words
     /// `rcuiScaleVector_copy_00756600` reads past its arguments (the
     /// caller's saved registers) go in as 0, as for `opu_sloop`.

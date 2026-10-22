@@ -2317,4 +2317,182 @@ pub mod bridge {
         let draw = g(mem, 0x0075_6d20);
         fun(mem, call, 0x007e_b410, &[draw, start, 0, 1]);
     }
+
+    /// `pppKeMdlBmpDraw_Body_00748b00(obj)` (`0x00748b00`; `pppKeMdlBmpDraw`):
+    /// the model's triangles as GS packets in a 0x1a0-byte scratch block
+    /// (`op_spr_alloc`; fixed tags and registers, then per triangle the
+    /// three positions, their texture `st` from the second set, the colour
+    /// bytes as floats, `u16` texture words, three floats) each queued with
+    /// `op_ot_add([obj+8], 0x20, block[+0x118] / 0x3000, 0)`, `[obj+8]`
+    /// moving 0x200 a triangle. The model (`[obj+0xc]`) and texture
+    /// (`[obj+0x10]`) records come in pairs: kind 3 with kind 2 (else it
+    /// stops without saving the position), `i16 +2` triangles of 0x28 and
+    /// 0x20 bytes after a 0x10-byte head (`TEX0` from `+8`, sign-extended;
+    /// the block's `+0x110`/`+0x114` = `1 <<` its width and height bits),
+    /// until a model record of kind 0xff. Triangle `[obj+0x24]` (counted
+    /// down from the count) prints its corners unless it was printed last
+    /// time (`0x00d4b468`, then set).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_ke_mdl_bmp_draw_body<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::round_trip;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let model = rd(mem, obj.wrapping_add(0xc));
+        let mut a = rd(mem, model.wrapping_add(4)).wrapping_add(model);
+        let texs = rd(mem, obj.wrapping_add(0x10));
+        let mut b = rd(mem, texs.wrapping_add(4)).wrapping_add(texs);
+        let verts = rd(mem, model.wrapping_add(8)).wrapping_add(model);
+        let sts = rd(mem, model.wrapping_add(0xc)).wrapping_add(model);
+        let mut ot = rd(mem, obj.wrapping_add(8));
+        let q = fun(mem, call, 0x007e_6a00, &[0x1a0]);
+        let w = |mem: &mut M, o: u32, v: u32| mem.write(q.wrapping_add(o), v);
+        for (o, v) in [
+            (0u32, 1u32),
+            (4, 0xe02d_c000),
+            (8, 0x412e_eeee),
+            (0xc, 0x0041_2412),
+            (0x18, 6),
+            (0x1c, 0),
+            (0x20, 0x5_3001),
+            (0x24, 0),
+            (0x28, 0x47),
+            (0x2c, 0),
+            (0x30, 0x64),
+            (0x34, 0x80),
+            (0x38, 0x42),
+            (0x3c, 0),
+            (0x40, 0x61),
+            (0x44, 0),
+            (0x48, 0x14),
+            (0x4c, 0),
+            (0x50, 0),
+            (0x54, 0),
+            (0x58, 8),
+            (0x5c, 0),
+            (0x60, 0x68),
+            (0x64, 0x80),
+            (0x68, 0x42),
+            (0x6c, 0),
+            (0x78, 6),
+            (0x7c, 0),
+            (0x80, 1),
+            (0x84, 0xb029_c000),
+            (0x88, 0x4124_12ee),
+            (0x8c, 0x412),
+            (0x90, 0x8001),
+            (0x94, 0xb029_c000),
+            (0x98, 0x4124_12ee),
+            (0x9c, 0x412),
+            (0xa0, 0x62),
+            (0xa4, 0x80),
+            (0xa8, 0x42),
+            (0xac, 0),
+            (0x190, 0x8001),
+            (0x194, 0x4_c000),
+            (0x198, 0x4141_4141),
+            (0x19c, 0x4141_4141),
+        ] {
+            w(mem, o, v);
+        }
+        let printed = g(mem, 0x00d4_b468);
+        let wanted = |mem: &M| rd(mem, obj.wrapping_add(0x24));
+        loop {
+            let count = mem.read::<i16>(a.wrapping_add(2));
+            if mem.read::<u8>(a.wrapping_add(1)) != 3 || mem.read::<u8>(b.wrapping_add(1)) != 2 {
+                return fun(mem, call, 0x007e_6a60, &[0x1a0]);
+            }
+            let sext = |v: u32| v.cast_signed().wrapping_shr(31).cast_unsigned();
+            let t0 = rd(mem, a.wrapping_add(8));
+            w(mem, 0x70, t0);
+            w(mem, 0x74, sext(t0));
+            let t1 = rd(mem, b.wrapping_add(8));
+            w(mem, 0x10, t1);
+            w(mem, 0x14, sext(t1));
+            let n = i32::from(count);
+            let next_a = a
+                .wrapping_add(0x10)
+                .wrapping_add(n.cast_unsigned().wrapping_mul(0x28));
+            let next_b = b.wrapping_add(0x10).wrapping_add(n.cast_unsigned() << 5);
+            let tw = 1u32 << (rd(mem, q.wrapping_add(0x70)) >> 26 & 0xf);
+            w(mem, 0x110, tw);
+            let th = 1u32 << (rd(mem, q.wrapping_add(0x74)) & 0xf);
+            w(mem, 0x114, th);
+            let (mut tri, mut st, mut k, mut left) =
+                (a.wrapping_add(0x10), b.wrapping_add(0x10), n, count);
+            while left > 0 {
+                let idx = |mem: &M, o: u32| u32::from(mem.read::<u16>(tri.wrapping_add(o)));
+                let corner = |mem: &mut M, base: u32, i: u32, to: u32| {
+                    for c in 0..3u32 {
+                        let v = i32::from(mem.read::<i16>(base.wrapping_add(i * 6 + 2 * c)));
+                        mem.write(q.wrapping_add(to + 4 * c), v);
+                    }
+                };
+                for (o, to) in [(0xcu32, 0xb0u32), (0xe, 0xc0), (0x10, 0xd0)] {
+                    let i = idx(mem, o);
+                    corner(mem, verts, i, to);
+                }
+                let want = wanted(mem);
+                if k == want.cast_signed() && rd(mem, printed) != want {
+                    fun(mem, call, 0x0062_f500, &[g(mem, 0x00b5_15e0)]);
+                    for (fmt, at) in [
+                        (0x00b5_15e8u32, 0xb0u32),
+                        (0x00b5_15f8, 0xc0),
+                        (0x00b5_1608, 0xd0),
+                    ] {
+                        let p: [u32; 3] = mem.read(q.wrapping_add(at));
+                        fun(mem, call, 0x0062_f500, &[g(mem, fmt), p[0], p[1], p[2]]);
+                    }
+                }
+                for (o, to) in [(0x20u32, 0x160u32), (0x22, 0x170), (0x24, 0x180)] {
+                    let i = idx(mem, o);
+                    corner(mem, sts, i, to);
+                }
+                for c in 0..12u32 {
+                    let byte = mem.read::<u8>(tri.wrapping_add(c));
+                    mem.write(q.wrapping_add(0xe0 + 4 * c), f32::from(byte));
+                }
+                for (o, to) in [
+                    (0x14u32, 0x120u32),
+                    (0x16, 0x124),
+                    (0x18, 0x130),
+                    (0x1a, 0x134),
+                    (0x1c, 0x140),
+                    (0x1e, 0x144),
+                ] {
+                    let v = idx(mem, o);
+                    w(mem, to, v);
+                }
+                for c in 0..3u32 {
+                    let f = round_trip(mem.read::<f32>(st.wrapping_add(4 * c)));
+                    mem.write(q.wrapping_add(0x150 + 4 * c), f);
+                }
+                let depth = rd(mem, q.wrapping_add(0x118)).cast_signed() / 0x3000;
+                fun(
+                    mem,
+                    call,
+                    0x007e_c420,
+                    &[ot, 0x20, depth.cast_unsigned(), 0],
+                );
+                ot = ot.wrapping_add(0x200);
+                st = st.wrapping_add(0x20);
+                k = k.wrapping_sub(1);
+                left = left.wrapping_sub(1);
+                tri = tri.wrapping_add(0x28);
+            }
+            a = next_a;
+            b = next_b;
+            if mem.read::<u8>(a.wrapping_add(1)) == 0xff {
+                break;
+            }
+        }
+        let want = wanted(mem);
+        if rd(mem, printed) != want {
+            mem.write(printed, want);
+        }
+        mem.write(obj.wrapping_add(8), ot);
+        fun(mem, call, 0x007e_6a60, &[0x1a0])
+    }
 }
