@@ -26232,6 +26232,207 @@ fn r42a_shape_renders_match_the_original() {
 
 #[test]
 #[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn ppp_draw_shape_field_render_matches_the_original() {
+    use draw::bridge as d;
+    let v = d::FIELD_REV_RENDER;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_1b90);
+        let cells = p.alloc(0x20);
+        let (rd_cell, dyn_cell, level_cell, alpha_cell) =
+            (cells, cells + 4, cells + 8, cells + 0xc);
+        let logs = [
+            far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rd_cell)),
+            far_recorder(&mut p, 0x0071_3290, &[0, 0], None),
+            far_recorder(&mut p, 0x0071_2bd0, &[0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(dyn_cell)),
+            shape_field_update_recorder(&mut p, 0x0071_a4e0),
+            far_recorder(&mut p, 0x0064_58a0, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_4b10, &[0, 0], None),
+            far_recorder(&mut p, 0x0064_1da0, &[], Some(level_cell)),
+            far_recorder(&mut p, 0x009d_a3b0, &[], None),
+            far_recorder(&mut p, 0x0071_b8a0, &[0, 0, 0, 8, 0], None),
+            far_recorder(&mut p, 0x0071_1460, &[0, 0, 0, 8, 0, 0], None),
+            far_recorder(&mut p, 0x0071_2c30, &[0], Some(alpha_cell)),
+        ];
+        let (obj, key, prog, offs, area) = (
+            p.alloc(0x200),
+            p.alloc(0x100),
+            p.alloc(0x10),
+            p.alloc(0x10),
+            p.alloc(0x60),
+        );
+        let (env, env2, slots, set, part, colours, recs, rdata, parts) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x900),
+            p.alloc(0x80),
+            p.alloc(0x40),
+            p.alloc(0xb0 * 6),
+            p.alloc(0xa0),
+            p.alloc(0x10),
+        );
+        let env_slot = p.sym(d::ENV_SLOT);
+        let (cur, cpart, shift, packet, r0, camera, world, screen) = (
+            p.sym(0x0230_fd20),
+            p.sym(0x0230_ffe4),
+            p.sym(0x00c8_b500),
+            p.sym(0x0230_fd2c),
+            p.sym(0x00c8_f508),
+            p.sym(0x0230_ff60),
+            p.sym(0x0230_ffa0),
+            p.sym(0x0230_fe60),
+        );
+        let (map, yiq, skip) = (p.sym(0x012f_bc40), p.sym(0x00c3_a504), p.sym(0x012f_b7d0));
+        for round in 0..1500u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            let float = |rng: &mut Xorshift| {
+                if rng.chance(3) {
+                    rng.float()
+                } else {
+                    ranged(rng, -50.0, 50.0)
+                }
+            };
+            p.fill(obj, 0x200, &mut rng);
+            for k in (0..0x100).step_by(4) {
+                let f = float(&mut rng);
+                p.set(obj + k, f);
+            }
+            p.fill(key, 0x100, &mut rng);
+            for k in (0x10..0x30).step_by(4) {
+                let f = float(&mut rng);
+                p.set(key + v.key + k, f);
+            }
+            if rng.chance(30) {
+                for k in 0..3 {
+                    let z = rng.pick(&[0u32, 0, 0x8000_0000]);
+                    p.set(key + v.key + 0x20 + 4 * k, z);
+                }
+            }
+            for k in [2u32, 3, 4] {
+                p.set(key + v.key + k, rng.pick(&[0u8, 0, 1, 0x80]));
+            }
+            p.set(key + v.key + 0x30, rng.pick(&[0u8, 1, 2, 3, 0xff]));
+            p.set(key + 4, if rng.chance(5) { 0xffff } else { rng.below(8) });
+            p.set(key + 8, rng.pick(&[0u32, 1, 2, 3, 6, 0xffff_ffff]));
+            p.set(prog + 0xc, offs);
+            for k in 0..3 {
+                p.set(offs + 4 * k, 0x40 * rng.below(3));
+            }
+            p.set(area + 0x40, recs);
+            p.set(area + 0x4c, colours);
+            p.set(area + 0x50, colours + 0x20);
+            p.fill(colours, 0x40, &mut rng);
+            for i in 0..6u32 {
+                let rec = recs + v.stride * i;
+                for k in (0..v.stride).step_by(4) {
+                    let f = float(&mut rng);
+                    p.set(rec + k, f);
+                }
+                p.set(rec, rng.pick(&[0u32, 1, 3, 0xfe]));
+                let hi = if rng.chance(10) { 0x100 } else { 0 };
+                p.set(rec + 6, hi | rng.below(8) as u16);
+                p.set(rec + 8, rng.below(4));
+            }
+            p.set(env_slot, env);
+            p.set(env, env2);
+            p.set(env2 + 0x24, slots);
+            for i in 0..8u32 {
+                p.set(slots + 4 * i, set);
+            }
+            p.fill(set, 0x900, &mut rng);
+            // the frames' data inside the set, with a small offset at +4
+            // (the alpha byte's)
+            for f in (0..8u32).chain(0x100..0x108) {
+                p.set(set + 0x10 + 8 * f, (0x10 * rng.below(0x10)) as i16 + 0x100);
+            }
+            for d in (0x100..0x200u32).step_by(0x10) {
+                p.set(set + d + 4, rng.below(0x40));
+            }
+            // the level: the screen check, the +6 one, a per-particle one,
+            // or another
+            let level = rng.pick(&[0x1cau32, 0x1ca, 0xc04, 0xc04, 0x76f, 0x1139, 0x5c8, 7]);
+            p.set(level_cell, level);
+            p.set(map, rng.pick(&[0x77u32, 0x77, 0xdb, 0x16, 3]));
+            p.set(yiq, rng.pick(&[4u32, 5, 0x12, 2, 0xffff_ffff]));
+            p.set(skip, u32::from(rng.chance(20)));
+            p.set(alpha_cell, rng.next());
+            if level == 0x1ca && rng.chance(80) {
+                // the camera and the screen the identity, the world a
+                // translation in or near the screen window
+                let mut m = [0f32; 16];
+                for k in 0..4 {
+                    m[5 * k] = 1.0;
+                }
+                p.set(camera, m);
+                p.set(screen, m);
+                let lims = [(1604.7f32, 2491.3f32), (1756.8, 2339.2), (0.0, 4_194_304.0)];
+                for (k, (lo, hi)) in lims.into_iter().enumerate() {
+                    m[12 + k] = match rng.below(9) {
+                        0 => lo,
+                        1 => hi,
+                        2 => lo - 10.0,
+                        3 => f32::NAN,
+                        4 => hi - 0.125,
+                        _ => f32::from_bits(ranged(&mut rng, lo, hi.min(4000.0))),
+                    };
+                }
+                p.set(world, m);
+            } else {
+                for k in (0..0x40).step_by(4) {
+                    let (a, b, c) = (float(&mut rng), float(&mut rng), float(&mut rng));
+                    p.set(camera + k, a);
+                    p.set(world + k, b);
+                    p.set(screen + k, c);
+                }
+            }
+            p.fill(part, 0x80, &mut rng);
+            p.set(cpart, part);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(shift, if rng.chance(15) { 4 * rng.below(2) } else { 0 });
+            let any = rng.below(0x10);
+            p.set(cur, rng.pick(&[0u32, 8, 0x8000_0001, 0xffff_fff0, any]));
+            p.set(rd_cell, if rng.chance(30) { 0 } else { rdata });
+            p.fill(rdata, 0xa0, &mut rng);
+            p.set(rdata + 0x94, parts);
+            p.fill(parts, 0x10, &mut rng);
+            p.set(dyn_cell, u32::from(rng.chance(80)));
+            let pk = rng.next();
+            p.set(packet, pk);
+            // the request's words neither writes: alike in both oracles
+            let words = 4;
+            let entry = p.b.stack_range().end - 0x100 - 4 * words - 4 - 0x200 - 4 * words - 4;
+            let frame = (entry - 12) & !0xf;
+            let req = frame - 0x2c0;
+            let (s1, s2, s3) = (rng.next(), rng.next(), rng.next());
+            p.set(req, s1);
+            p.set(req + 0xc, s2);
+            p.set(req + 0x18, s3);
+            check_deep_aligned(
+                &mut p,
+                &format!("pppDrawShapeFieldRender round {round}"),
+                0x0074_1b90,
+                &[obj, key, prog, area],
+                |o, frame| {
+                    d::ppp_draw_shape_field_render(
+                        o,
+                        obj,
+                        key,
+                        prog,
+                        area,
+                        frame,
+                        &mut call_original,
+                    );
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
 fn r42b_wave_light_setup_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x0080_e2f0);

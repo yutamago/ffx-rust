@@ -5590,6 +5590,17 @@ ported! {
     pppDrawShapeFieldRevEmit_00743b60 @ 0x0074_3b60 => extern "C" fn ppp_draw_shape_field_rev_emit(obj: u32, def: u32, ctrl: u32) -> u32 {
         draw::bridge::ppp_draw_shape_field_rev_emit(&mut mem(), obj, def, ctrl, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `pppDrawShapeFieldRender_00741b90(obj, key, prog, area)`: its render request and matrices in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    pppDrawShapeFieldRender_00741b90 @ 0x0074_1b90 => extern "C" fn ppp_draw_shape_field_render(obj: u32, key: u32, prog: u32, area: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x2c0]);
+        let mut locals = Locals([0; 0x2c0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x2c0;
+        draw::bridge::ppp_draw_shape_field_render(&mut mem(), obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `pppDrawShapeFieldRevRender_00743280(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
     pppDrawShapeFieldRevRender_00743280 @ 0x0074_3280 => extern "C" fn ppp_draw_shape_field_rev_render(obj: u32, key: u32, prog: u32, area: u32) {
