@@ -129,6 +129,15 @@ fn same_memory(what: &str, a: &mut Oracle, b: &mut Oracle) {
     assert_eq!(a.diff(b).unwrap(), [], "{what}: memory");
 }
 
+/// Forgets the pages both sides wrote so far, after a diff found them
+/// equal: a page neither side writes again stays equal, so later diffs need
+/// only the pages written after this. Without it every diff of a long
+/// random run re-read every page an earlier round wrote.
+fn settle(a: &mut Oracle, b: &mut Oracle) {
+    a.clear_dirty();
+    b.clear_dirty();
+}
+
 /// A Rust getter.
 type Getter = fn(&Oracle) -> u32;
 
@@ -2826,6 +2835,7 @@ fn heap_rounds(
             d.len(),
             &d[..d.len().min(8)]
         );
+        settle(a, b);
     }
     let mgr = ffx_system::heap::PAGE_MANAGER.get(b);
     eprintln!(
@@ -3058,6 +3068,7 @@ fn the_page_manager_matches_the_original() {
             d.len(),
             &d[..d.len().min(8)]
         );
+        settle(a, b);
     }
     // one reservation of 256 MiB, released rather than kept
     let ra = call(a, PAGE_ALLOC, Conv::Thiscall(mgr), &[0x1000_0000, 0x1000]).eax;

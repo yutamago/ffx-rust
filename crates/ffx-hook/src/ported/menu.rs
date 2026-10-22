@@ -1892,6 +1892,96 @@ ported! {
     MenuSubCmd_FlipWindowCtrl_008e3880 @ 0x008e_3880 => extern "C" fn menu_sub_cmd_flip_window_ctrl(w: u32) -> u32 {
         tk::menu_sub_cmd_flip_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuCopyLoadedSave(dst, buffer)`: `setDefaultPlayerName`'s `eax`.
+    TkMenuCopyLoadedSave @ 0x008b_54a0 => extern "C" fn tk_menu_copy_loaded_save(dst: u32, buffer: u32) -> u32 {
+        tk::tk_menu_copy_loaded_save(&mut mem(), dst, buffer, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkInitSaveWork()`: the last call's `eax` (0 without Asia mode).
+    TkInitSaveWork @ 0x0088_df40 => extern "C" fn tk_init_save_work() -> u32 {
+        tk::tk_init_save_work(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSelList_DrawList_008d1400(w)`: the last call's `eax`.
+    MenuSelList_DrawList_008d1400 @ 0x008d_1400 => extern "C" fn menu_sel_list_draw_list(w: u32) -> u32 {
+        tk::menu_sel_list_draw_list(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `Pad_ScanPort_00889050(port, slot, pad)`: `pad` (low byte the
+    /// mode nibble on a fresh read).
+    Pad_ScanPort_00889050 @ 0x0088_9050 => extern "C" fn pad_scan_port(port: u32, slot: u32, pad: u32) -> u32 {
+        tk::pad_scan_port(&mut mem(), port, slot, pad, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawExchangePage_008bd670(dx)`.
+    BtlEnd_DrawExchangePage_008bd670 @ 0x008b_d670 => extern "C" fn btl_end_draw_exchange_page(dx: i32) {
+        // MsGetSaveWeapon's out word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::btl_end_draw_exchange_page(&mut mem(), dx, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuMessageLayout2_008de5d0(m)`: 0.
+    TkMenuMessageLayout2_008de5d0 @ 0x008d_e5d0 => extern "C" fn tk_menu_message_layout2(m: u32) -> u32 {
+        // the original's lead, width and w words
+        let mut frame = super::StackFrame::<3>::new();
+        let local = frame.at();
+        tk::tk_menu_message_layout2(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
+    /// `TkMn2GetIShopPos()`: the last plate's `eax`.
+    TkMn2GetIShopPos @ 0x008d_b080 => extern "C" fn tk_mn2_get_ishop_pos() -> u32 {
+        tk::tk_mn2_get_ishop_pos(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_StatusWindowCtrl_008ccb60(w)`.
+    MenuSummon_StatusWindowCtrl_008ccb60 @ 0x008c_cb60 => extern "C" fn menu_summon_status_window_ctrl(w: u32) -> u32 {
+        tk::menu_summon_status_window_ctrl(&mut mem(), w, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawCaption_008b9f30()`: the last scissor's `eax`.
+    BtlEnd_DrawCaption_008b9f30 @ 0x008b_9f30 => extern "C" fn btl_end_draw_caption() -> u32 {
+        // the two text width words
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::btl_end_draw_caption(&mut mem(), local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuKaizou_Draw_008d6860(w)`: the character plate's `eax`.
+    MenuKaizou_Draw_008d6860 @ 0x008d_6860 => extern "C" fn menu_kaizou_draw(w: u32) -> u32 {
+        tk::menu_kaizou_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuItem_ListWindowDraw_008c7750(w)`: the last call's `eax`.
+    MenuItem_ListWindowDraw_008c7750 @ 0x008c_7750 => extern "C" fn menu_item_list_window_draw(w: u32) -> u32 {
+        tk::menu_item_list_window_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlAbility(m)`.
+    TkMenuCtrlAbility @ 0x008c_60b0 => extern "C" fn tk_menu_ctrl_ability(m: u32) -> u32 {
+        // MsGetRomPlyCommand's out word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_menu_ctrl_ability(&mut mem(), m, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSummon_Window2Draw_008ce750(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
+    MenuSummon_Window2Draw_008ce750 @ 0x008c_e750 => extern "C" fn menu_summon_window2_draw(w: u32) -> u32 {
+        // the cost and gain words
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_summon_window2_draw(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuStatus_WindowDraw_008d2790(w)`: `TkMn2DrawKickSyncPacket2`'s `eax`.
+    MenuStatus_WindowDraw_008d2790 @ 0x008d_2790 => extern "C" fn menu_status_window_draw(w: u32) -> u32 {
+        // the original's 22-word command list
+        let mut frame = super::StackFrame::<22>::new();
+        let list = frame.at();
+        tk::menu_status_window_draw(&mut mem(), w, list, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawGearCustomizationMenu(w)`: `MenuKaizou_DrawWeaponTitle`'s `eax`.
+    DrawGearCustomizationMenu @ 0x008d_5f60 => extern "C" fn draw_gear_customization_menu(w: u32) -> u32 {
+        tk::draw_gear_customization_menu(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `DrawLimitPageOverDrive(chr)`: the last call's `eax`.
+    DrawLimitPageOverDrive @ 0x008d_2270 => extern "C" fn draw_limit_page_over_drive(chr: u32) -> u32 {
+        // the text width word (the original uses its argument's slot)
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::draw_limit_page_over_drive(&mut mem(), chr, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `BtlEnd_DrawSpoilListPage_008bd280(dx)`.
+    BtlEnd_DrawSpoilListPage_008bd280 @ 0x008b_d280 => extern "C" fn btl_end_draw_spoil_list_page(dx: i32) {
+        tk::btl_end_draw_spoil_list_page(&mut mem(), dx, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
     /// `TkMenuPreSave()`: `SaveDataUpdateIcon`'s `eax`.
     TkMenuPreSave @ 0x008b_50b0 => extern "C" fn tk_menu_pre_save() -> u32 {
         // the original's 0x16cc-byte frame (the save screen's thread)
@@ -4572,44 +4662,6 @@ ported! {
         let local = frame.at();
         tk::tk_mt_calc_spline_segment(&mut mem(), out, index, t, points, position, local, &mut |_, f, a| call_ptr(f, a));
     }
-    /// `TkMtCalcSplineCore_0088afd0(out, points, count, t, position)`.
-    TkMtCalcSplineCore_0088afd0 @ 0x0088_afd0 => extern "C" fn tk_mt_calc_spline_core(out: u32, points: u32, count: u32, t: f32, position: u32) {
-        // the segment's coefficient copy (its fourth word is never written)
-        let mut frame = super::StackFrame::<4>::new();
-        let local = frame.at();
-        tk::tk_mt_calc_spline_core(&mut mem(), out, points, count, t.to_bits(), position, local, &mut |_, f, a| call_ptr(f, a));
-    }
-    /// `TkMtCalcSpline3Core_0088aa40(out, points, count, t, position)`.
-    TkMtCalcSpline3Core_0088aa40 @ 0x0088_aa40 => extern "C" fn tk_mt_calc_spline3_core(out: u32, points: u32, count: u32, t: f32, position: u32) {
-        // the segment's coefficient copy
-        let mut frame = super::StackFrame::<4>::new();
-        let local = frame.at();
-        tk::tk_mt_calc_spline3_core(&mut mem(), out, points, count, t.to_bits(), position, local, &mut |_, f, a| call_ptr(f, a));
-    }
-    /// `TkMtCalcSpline(out, points, count, t)`.
-    TkMtCalcSpline @ 0x0088_a4a0 => extern "C" fn tk_mt_calc_spline(out: u32, points: u32, count: u32, t: f32) {
-        let mut frame = super::StackFrame::<4>::new();
-        let local = frame.at();
-        tk::tk_mt_calc_spline(&mut mem(), [out, points, count, t.to_bits()], local, &mut |_, f, a| call_ptr(f, a));
-    }
-    /// `TkMtCalcSplineTangent(out, points, count, t)`.
-    TkMtCalcSplineTangent @ 0x0088_b3b0 => extern "C" fn tk_mt_calc_spline_tangent(out: u32, points: u32, count: u32, t: f32) {
-        let mut frame = super::StackFrame::<4>::new();
-        let local = frame.at();
-        tk::tk_mt_calc_spline_tangent(&mut mem(), [out, points, count, t.to_bits()], local, &mut |_, f, a| call_ptr(f, a));
-    }
-    /// `TkMtCalcSpline3(out, points, count, t)`.
-    TkMtCalcSpline3 @ 0x0088_a4d0 => extern "C" fn tk_mt_calc_spline3(out: u32, points: u32, count: u32, t: f32) {
-        let mut frame = super::StackFrame::<4>::new();
-        let local = frame.at();
-        tk::tk_mt_calc_spline3(&mut mem(), [out, points, count, t.to_bits()], local, &mut |_, f, a| call_ptr(f, a));
-    }
-    /// `TkMtCalcSpline3Tangent_0088aba0(out, points, count, t)`.
-    TkMtCalcSpline3Tangent_0088aba0 @ 0x0088_aba0 => extern "C" fn tk_mt_calc_spline3_tangent(out: u32, points: u32, count: u32, t: f32) {
-        let mut frame = super::StackFrame::<4>::new();
-        let local = frame.at();
-        tk::tk_mt_calc_spline3_tangent(&mut mem(), [out, points, count, t.to_bits()], local, &mut |_, f, a| call_ptr(f, a));
-    }
     /// `MenuConfig_DrawOptionRow(_, _, row)` (the first two words are unused).
     MenuConfig_DrawOptionRow @ 0x008c_bae0 => extern "C" fn menu_config_draw_option_row(_a: u32, _b: u32, row: u32) {
         // the original's two 256-byte text buffers and its width word
@@ -4833,6 +4885,85 @@ ported! {
     /// `MenuMes_AddPktFont1612Icons(cursor, key, text, x, y, flags, edge, r, g, b, a)`: the packet cursor.
     MenuMes_AddPktFont1612Icons @ 0x008e_4e60 => extern "C" fn menu_mes_add_pkt_font1612_icons(cursor: u32, key: u32, text: u32, x: i32, y: i32, flags: u32, edge: u32, r: u32, g: u32, b: u32, a: u32) -> u32 {
         tk::menu_mes_add_pkt_font1612_icons(&mut mem(), cursor, key, text, [x, y], [flags, edge], [r, g, b, a], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| fcall_ptr(f, a))
+    }
+    /// `TkUpdateScanControler()`: the last `Pad_ScanPort_00889050`'s `eax`.
+    TkUpdateScanControler @ 0x0088_9a80 => extern "C" fn tk_update_scan_controler() -> u32 {
+        tk::tk_update_scan_controler(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMtCalcSplineAt_0088afd0(out, points, n, t, position)`.
+    TkMtCalcSplineAt_0088afd0 @ 0x0088_afd0 => extern "C" fn tk_mt_calc_spline_at(out: u32, points: u32, n: i32, t: f32, position: u32) {
+        tk::tk_mt_calc_spline_at(&mut mem(), [out, points], n, t, position, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline(out, points, n, t)`.
+    TkMtCalcSpline @ 0x0088_a4a0 => extern "C" fn tk_mt_calc_spline(out: u32, points: u32, n: i32, t: f32) {
+        tk::tk_mt_calc_spline(&mut mem(), [out, points], n, t, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSplineTangent(out, points, n, t)`.
+    TkMtCalcSplineTangent @ 0x0088_b3b0 => extern "C" fn tk_mt_calc_spline_tangent(out: u32, points: u32, n: i32, t: f32) {
+        tk::tk_mt_calc_spline_tangent(&mut mem(), [out, points], n, t, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3At_0088aa40(out, points, n, t, position)`.
+    TkMtCalcSpline3At_0088aa40 @ 0x0088_aa40 => extern "C" fn tk_mt_calc_spline3_at(out: u32, points: u32, n: i32, t: f32, position: u32) {
+        tk::tk_mt_calc_spline3_at(&mut mem(), [out, points], n, t, position, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3(out, points, n, t)`.
+    TkMtCalcSpline3 @ 0x0088_a4d0 => extern "C" fn tk_mt_calc_spline3(out: u32, points: u32, n: i32, t: f32) {
+        tk::tk_mt_calc_spline3(&mut mem(), [out, points], n, t, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMtCalcSpline3Tangent_0088aba0(out, points, n, t)`.
+    TkMtCalcSpline3Tangent_0088aba0 @ 0x0088_aba0 => extern "C" fn tk_mt_calc_spline3_tangent(out: u32, points: u32, n: i32, t: f32) {
+        tk::tk_mt_calc_spline3_tangent(&mut mem(), [out, points], n, t, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuSummon_DrawList_008ce130(dx, _, cursor)`: the last row's `Y`.
+    MenuSummon_DrawList_008ce130 @ 0x008c_e130 => extern "C" fn menu_summon_draw_list(dx: i32, _unused: u32, cursor: i32) -> u32 {
+        tk::menu_summon_draw_list(&mut mem(), dx, cursor, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlStatus(m)`: the original's `eax`.
+    TkMenuCtrlStatus @ 0x008d_1e00 => extern "C" fn tk_menu_ctrl_status(m: u32) -> u32 {
+        tk::tk_menu_ctrl_status(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlWShop(m)`: the original's `eax`.
+    TkMenuCtrlWShop @ 0x008d_9600 => extern "C" fn tk_menu_ctrl_w_shop(m: u32) -> u32 {
+        tk::tk_menu_ctrl_w_shop(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_DrawItems_008e4140(m)`: the original's `eax`.
+    MenuSubCmd_DrawItems_008e4140 @ 0x008e_4140 => extern "C" fn menu_sub_cmd_draw_items(m: u32) -> u32 {
+        // the text width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_sub_cmd_draw_items(&mut mem(), m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSubCmd_DrawRow_008e3cf0(m)`: the original's `eax`.
+    MenuSubCmd_DrawRow_008e3cf0 @ 0x008e_3cf0 => extern "C" fn menu_sub_cmd_draw_row(m: u32) -> u32 {
+        // the text width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_sub_cmd_draw_row(&mut mem(), m, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_BuyListDraw_008da050(w)`: `DrawCrossMenuScrollParts`'s `eax`.
+    MenuWShop_BuyListDraw_008da050 @ 0x008d_a050 => extern "C" fn menu_wshop_buy_list_draw(w: u32) -> u32 {
+        // the digit width word (the original's argument slot)
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_wshop_buy_list_draw(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuWShop_DrawCompare_008d8620(w, shop)` (its caller drops `eax`).
+    MenuWShop_DrawCompare_008d8620 @ 0x008d_8620 => extern "C" fn menu_wshop_draw_compare(w: u32, shop: u32) {
+        // MsGetSaveWeapon's two out words and the text width
+        let mut frame = super::StackFrame::<3>::new();
+        let local = frame.at();
+        tk::menu_wshop_draw_compare(&mut mem(), w, shop, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `MenuLimit_WindowDraw_008d16f0(w)`: `TkMn2DrawKickSyncPacket`'s `eax`.
+    MenuLimit_WindowDraw_008d16f0 @ 0x008d_16f0 => extern "C" fn menu_limit_window_draw(w: u32) -> u32 {
+        // MsMenuStatusNum's out word and the text width (the original's argument slot)
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_limit_window_draw(&mut mem(), w, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuMainOpenMode_008aa780(mode, arg)`: the last call's `eax`.
+    TkMenuMainOpenMode_008aa780 @ 0x008a_a780 => extern "C" fn tk_menu_main_open_mode(mode: u32, arg: u32) -> u32 {
+        tk::tk_menu_main_open_mode(&mut mem(), mode, arg, &mut |_, f, a| call_ptr(f, a))
     }
 }
 

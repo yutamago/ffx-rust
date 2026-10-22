@@ -44,6 +44,145 @@ pub mod bridge {
     /// `g_OpusMonsters`: the eight monster objects.
     pub const MONSTERS: Global<u32> = Global::new(0x0119_fed0);
 
+    /// `FFXVu0ApplyMatrix` on values: `v` times the row-major `m`.
+    fn apply_rows(m: &[[f32; 4]; 4], v: [f32; 4]) -> [f32; 4] {
+        std::array::from_fn(|i| {
+            let col = [m[0][i], m[1][i], m[2][i], m[3][i]];
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            ffx_system::math::mul4x4_component(i as u32, v, col)
+        })
+    }
+
+    /// The most vertices `opus_wave_light_007f60b0`'s frame holds colours
+    /// for (0x4400 bytes of them; more overrun the original's frame).
+    pub const WAVE_LIGHT_MAX: usize = 0x440;
+
+    /// `opus_wave_light_007f60b0(_, shape, unit)` (`0x007f60b0`, name ours;
+    /// `opus_0154_wave_draw`'s): vertex colours from four point lights.
+    /// The model matrix (`unit +0x2c`) with its first three rows scaled to
+    /// unit length (each `f32` sum of squares, x, y, z, and its root) is the normal
+    /// basis. For each of the shape's `i16 +0x12` vertices (16 bytes each
+    /// at shape + `+8`), the vertex through the model matrix, then for each
+    /// light (`unit +0x28`: 16 bytes, position and intensity) the
+    /// direction `d` to it (`f32` per component) and `|d|^2` (summed as
+    /// `f32`, x, y, then z): `d * intensity / |d|^2`; the normal (shape +
+    /// `+0xc`, 16 bytes each) through the basis-times-directions matrix
+    /// gives a term per light, negative ones 0, then through the colour
+    /// matrix (`unit +0x24`), and with `base` = byte `+0x4c` / 128, `gain`
+    /// = byte `+0x4d` / 128 (`f32` each) each of r, g, b becomes `128 (c
+    /// gain 2 + base)` (`128 base` below 0), at most 128. Then each of the
+    /// strips' records (shape + `+4`: `i16 +2` of 0x28 bytes from `+0x10`)
+    /// has four `u16` vertex indices at `+0x10` and gets their colours
+    /// (truncated, low bytes) as `r g b` at `+0`, `+4`, `+8`, `+0xc`.
+    /// Index past the colours made (stack garbage in the original) read
+    /// as 0, and colours past [`WAVE_LIGHT_MAX`] are kept (the original
+    /// overruns its frame).
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn opus_wave_light<M: Mem>(mem: &mut M, shape: u32, unit: u32) {
+        use ffx_bridge::x87::{add, cvttsd2si, div, load, mul, sqrt, store, sub};
+        let rows = |mem: &M, at: u32| -> [[f32; 4]; 4] {
+            std::array::from_fn(|r| {
+                #[allow(clippy::cast_possible_truncation)] // 0..4
+                let r = r as u32;
+                mem.read(at.wrapping_add(16 * r))
+            })
+        };
+        let f = |x: f32| load(x.to_bits());
+        let model_at: u32 = mem.read(unit.wrapping_add(0x2c));
+        let model = rows(mem, model_at);
+        // the normal basis: rows 0..2 scaled to unit length
+        let mut basis = model;
+        for row in basis.iter_mut().take(3) {
+            let [m0, m1, m2, _] = *row;
+            let s = store(add(
+                add(mul(f(m0), f(m0)), mul(f(m1), f(m1))),
+                mul(f(m2), f(m2)),
+            ));
+            let q = store(sqrt(load(s)));
+            for v in row.iter_mut().take(3) {
+                *v = f32::from_bits(store(div(f(*v), load(q))));
+            }
+        }
+        let normals = shape.wrapping_add(mem.read(shape.wrapping_add(0xc)));
+        let verts = shape.wrapping_add(mem.read(shape.wrapping_add(8)));
+        let strips = shape.wrapping_add(mem.read(shape.wrapping_add(4)));
+        let byte = |mem: &M, off: u32| f64::from(mem.read::<u8>(unit.wrapping_add(off)));
+        let base = store(mul(byte(mem, 0x4c), 0.007_812_5));
+        let gain = store(mul(0.007_812_5, byte(mem, 0x4d)));
+        let count = |mem: &M| i32::from(mem.read::<i16>(shape.wrapping_add(0x12)));
+        let mut colours: Vec<[f32; 4]> = Vec::new();
+        let mut i = 0i32;
+        while i < count(mem) {
+            let at = i.cast_unsigned().wrapping_mul(16);
+            let model = rows(mem, mem.read(unit.wrapping_add(0x2c)));
+            let v = apply_rows(&model, mem.read(verts.wrapping_add(at)));
+            let lights: u32 = mem.read(unit.wrapping_add(0x28));
+            let mut dirs = [[0f32; 4]; 4];
+            for (k, dir) in (0u32..).zip(dirs.iter_mut()) {
+                let light: [f32; 4] = mem.read(lights.wrapping_add(16 * k));
+                let d: [u32; 3] = std::array::from_fn(|c| store(sub(f(light[c]), f(v[c]))));
+                let sq = |x: u32| mul(load(x), load(x));
+                let t = store(add(sq(d[0]), 0.0));
+                let t = store(add(load(t), sq(d[1])));
+                let dist = store(add(load(t), sq(d[2])));
+                let s = f(light[3]);
+                for (c, out) in dir.iter_mut().take(3).enumerate() {
+                    let p = store(mul(load(d[c]), s));
+                    *out = f32::from_bits(store(div(load(p), load(dist))));
+                }
+            }
+            // row r, column k: basis row r dotted with direction k
+            let mut lit = [[0f32; 4]; 4];
+            for (row, b) in lit.iter_mut().zip(basis.iter()).take(3) {
+                for (out, d) in row.iter_mut().zip(dirs.iter()) {
+                    let x = add(
+                        add(mul(f(d[0]), f(b[0])), mul(f(d[1]), f(b[1]))),
+                        mul(f(d[2]), f(b[2])),
+                    );
+                    *out = f32::from_bits(store(x));
+                }
+            }
+            let mut c = apply_rows(&lit, mem.read(normals.wrapping_add(at)));
+            for x in &mut c {
+                if *x < 0.0 {
+                    *x = 0.0;
+                }
+            }
+            let colour_at: u32 = mem.read(unit.wrapping_add(0x24));
+            let mut c = apply_rows(&rows(mem, colour_at), c);
+            for x in c.iter_mut().take(3) {
+                let t = if 0.0 <= *x || x.is_nan() {
+                    add(mul(mul(f(*x), load(gain)), 2.0), load(base))
+                } else {
+                    load(base)
+                };
+                *x = f32::from_bits(store(mul(t, 128.0)));
+                if *x > 128.0 {
+                    *x = 128.0;
+                }
+            }
+            colours.push(c);
+            i = (i + 1) & 0xffff;
+        }
+        let strip_count = |mem: &M| i32::from(mem.read::<i16>(strips.wrapping_add(2)));
+        let mut s = 0i32;
+        while s < strip_count(mem) {
+            let rec = strips
+                .wrapping_add(0x10)
+                .wrapping_add(s.cast_unsigned().wrapping_mul(0x28));
+            for j in 0..4u32 {
+                let idx: u16 = mem.read(rec.wrapping_add(0x10 + 2 * j));
+                let c = colours.get(usize::from(idx)).copied().unwrap_or_default();
+                for (k, x) in (0u32..).zip(c.iter().take(3)) {
+                    #[allow(clippy::cast_possible_truncation)] // the low byte
+                    let b = cvttsd2si(f(*x)) as u8;
+                    mem.write(rec.wrapping_add(4 * j + k), b);
+                }
+            }
+            s += 1;
+        }
+    }
+
     /// `opus_encount0_init(obj)` (`0x007f8480`): `f32 +0x20` = 16, `+0x24`
     /// = 32, `+0x28` = 0, and the 0x20-byte particles from `+0x30` laid
     /// out by [`super::encount0_grid`] for the `u16` counts `+2` (x), `+4`

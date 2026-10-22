@@ -2739,6 +2739,130 @@ there is no table. `round23i_radius_music_camera_match_the_original`
 covers them; the music calls run only on the snapshots, because the image
 has no sound context.
 
+### Helpers (script round 24)
+
+`getEventLocTexListPath(out)` (`0x00874c50`) builds the event's texture
+list path: `/FFX_Data/GameData/PS3Data/event/<dir>/tex/TexList.txt`, with
+`<dir>` the language prefix (`g_EventLangDirs`, `0x00c52768`: `""` but
+`fr/`, `sp/`, `de/`, `it/`; `""` for names holding `sins05`) + `obj/` +
+the event name (`g_EventName`, `0x023cbc60`), or empty past language 10.
+Names holding `bltz` skip the prefix; for the five tutorial events
+`bltz0000`, `bltz0005`, `bltz0006`, `bltz0200`, `bltz0201` the language
+directory of the jump table at `0x00874f84` (0 `""`, 1 and 6-8 `us/`, 2
+`fr/`, 3 `sp/`, 4 `de/`, 5 `it/`, 9 `kr/`, 10 `ch/`) goes in seven bytes
+before the name. `fiosUnifyFilename` turns it into the PC path through a
+256-byte local, copied back with `sprintf_s`; `EAX` is its length.
+Language 11 on map `0x79` points `g_EventLangDirs[11]` at `cn/` first. A
+path longer than 256 bytes ends the game (`sprintf_s`), so the tests stay
+below that.
+
+`AtelStopSoundAll` (`0x00871890`) stops sound separates 1-0x77, the music
+(twice) and FMOD's music, with `TkSyncV(0)` + `TkSndUpdate` pairs between,
+and ends in `SqsAllVoiceTerminate` (through its thunk `0x008872e0`); `EAX` is the last
+`TkSndUpdate`'s. `AtelGetHyoukaMenuEnable` (`0x0086bae0`) is ctrl work 0's
+`+1` bit 4, cleared by `TkGetTGS`, battle, an Eternal Calm scene, ctrl
+work 0's state bits (`+0` bits 0-1 needed; `+1` bit 2, `+3` `0x87`, `+2`
+bit 5 block), a sound read, a movie or `g_AtelOverlayStatus` 1; it makes
+ctrl work 0 current while it asks. `Atel_SetRunInBattle_008630c0` (name
+ours, from `AtelBattleEndCallback`) sets `+0x34` bit 2 on every actor of
+ctrl work 0 when its `+0` bit 0 is set, through `AtelGetBasicWork`'s
+lookup inlined on ctrl work 0 (`atel_get_basic_work_in`).
+`round24a_tex_list_path_matches_the_original` and
+`round24a_sound_menu_battle_match_the_original` cover them; the sound
+calls are checked against logging stand-ins (`r24_log_stubs`: every
+call, its arguments and order land in a buffer the memory comparison
+sees), the menu check's callees against fixed results.
+
+`Atel_InitFreeSignals_0086d510` (name ours, from `AtelInitBasicWork`,
+which empties `+0x88` first) pushes the worker's own signal nodes onto
+its free list: types 5 and 6 clear the line table word `+0x2e4` and push
+the eight nodes from `+0x1c4`, the others the 16 from `+0x3d8`.
+`Atel_ResetMsgWindowBank_00863c90` (from `AtelEnterMenuCallback`) resets
+one bank's eight message windows as `AtelClearMesWinWork` resets all 16.
+`Atel_LoadEventSeps_00866520(_, mode, group)` (from `0x00862470`,
+`AtelEventRemoveSep`, `0x00866500`) empties `g_AtelSepLoadList` and
+refills it from the separates table of ctrl work 0's script block: with
+`mode` 0, entries with flags bit 1 and not bit 2, or bit 3 and not bit 1;
+with `mode` set and `group` selected (`(g_AtelSepGroupMask | 1)`, bit
+`group`), none, but the entries with none of the group's bits (bit
+`16 + group`) are kept; otherwise entries with bit 0. Entries added and
+not refused (1: full or unselected) are kept too, and the first eight
+kept ids stay loaded (`SqsSeSeparateMaskClear` through its thunk
+`0x00886dc0`) or, with none, every separate is cleared
+(`SndSepClearAll`); the group mask ends 0.
+`round24b_signals_windows_seps_match_the_original` covers them (the two
+sound calls logged).
+
+Round 24 c: `destroyMoviePicture` (`0x0076ece0`) clears a movie picture
+(`g_MoviePictureOn`, `0x0112a00c`; the time-counted frame wait off,
+`0x00c40e2c` = 1) and tail-jumps to `graphicDestroyFmv`.
+`Movie_IsBusy_0076ed10` gives 0 only while a video plays
+(`graphicIsVideoPlaying` or `0x00641ce0`) without `movie_with3DScene` or
+a movie picture. `TkMenuSaveLoad_PollCard_008b3d20` steps the save
+screen's card poll (`0x0186626b`: 0 to 1, 1 asks `TkMcGetInfo`, 2 ends)
+and, when done, sets the save choice, resets the step and flips
+`g_TkMenuSaveLoadToggles`. `Atel_SetVarSlot_00878140`, the core of
+`Native_101c`/`101d` (which now call it in Rust), pops a variable word
+and a slot (0-7) and points the current ctrl work's `+0x1a4 + slot*8` at
+the variable. `Atel_GetEventActorRot_0086b270` is
+`AtelGetEventActorPos`'s twin for the rotation (`+0x30`..`+0x38`;
+x, z, then y after the ctrl work goes back). `Atel_TransSepGroup_00871780`
+waits for `SndSyncTrans`, queues the pending separates for a negative
+group, and sends group `group` of a separates block (a head word with
+bit 30 set and bit 31 clear: the sizes, then the groups from `+0x20`;
+the earlier sizes are summed in pairs) with `SndSepTransSepOnly` or
+`SndSepTransNonblock`, then selects the group in `g_AtelSepGroupMask`.
+`AtelGetGuideMapActorInfo` (`0x0086b740`) fills a guide-map record for
+marker `i` of ctrl work 0's script block (jump table `0x0086b8fc` on the
+worker type for the direction and the two-point flag); the y of the
+start and end positions go to its own argument slot (a frame word in
+Rust). `round24c_movie_menu_seps_markers_match_the_original` covers them,
+the callees as stand-ins (`r24_log_stubs`, `r24_countdown_stub` for the
+transfer wait).
+
+Round 24 d: the separate wrappers `AtelSndTransSepSPKDataGroup`
+(`0x00871750`: `Atel_TransSepGroup_00871780(hdr, data, 1, group, 0)`,
+then `SndSyncTrans(1)`), `AtelEventSetUpSep` (`0x00866430`: group -1,
+`data` kept in ctrl work 0's `+0x204` when `sep_only` is 1, then the 3D
+sound ratios 0 and 1/60) and `AtelEventRemoveSep` (`0x008661d0`:
+`SndStopStream`, then `Atel_LoadEventSeps_00866520(block, mode, -1)` with
+ctrl work 0 current; without a script block ctrl work 0 stays current);
+`AtelEnterMenuCallback` (`0x008655e0`: guide map off, vibration off for
+pads 1-7, `MsEventEffectFree`, message bank 1 reset,
+`TkMenuClearDummyControler`, overlay status 3) and its jump twin
+`AtelGetGideMapActorInfo` (`0x0086b700`).
+`Atel_RequestBattleEndEntries_0086e8d0(tag)` walks the script block's
+battle-end table (`+0x24`: a count, then 16-byte entries from `+4`: tag,
+worker, entry) and signals each entry of `tag` (every entry while the
+save's `+0xe8` says always) to its worker at level 8.
+`Atel_SetLevelTarget_0086f940(worker, i)` writes `i` into the level's
+turn block and the target's position into the level vectors.
+`Atel_CamGetVars_007ba3c0` and its copy `Atel_CamGetRefVars_007ba460`
+store a camera's side point (`Cam_GetPos`, `Cam_GetRefPos_007bd4b0`) into
+three popped script variables, looking the worker's camera up first
+(`MsAtelGetCameraID(5, is the event map camera, 0)`).
+`Vibrate_UpdateVolume_00875b40` ends finished pads and keeps the
+channel maxima in `g_TkVibrateVolume`. `round24d_seps_menu_vibrate_cam_match_the_original`
+covers them; `0x0086e8d0` runs in the script runs' set-up
+(`fresh_run_pair`), where signals have free nodes.
+
+Round 24 e: `Atel_RequestOwnerTrigger_008764a0(owner, kind)` finds the
+worker bound to `owner` in ctrl work 0 (`Atel_FindWorkerByOwner`) and
+requests its trigger. Two save-screen windows,
+`TkMenuSaveLoad_OpenWindow_008b3c20` and `TkMenuSaveLoad_OpenChoice_008b3c70`,
+are near-copies of the menu's `MenuNameEntry_RegistWindow` and
+`MenuSave_OpenWindow2` with the save screen's callbacks;
+`TkMenuSaveLoad_ClearLoadPos_008b3cd0` resets a card slot's load position.
+`Atel_InitMovieState_00873c00` clears the save event's `+0xe0` and the
+movie buffer pointers; `Atel_QueueBattleEndEffect_00861550(kind, v)`
+queues the battle end's `"EFF"` callback (`0x00861f90`) with `kind` and
+`v` in `0x01326b40`/`0x01326b44`; `Atel_FadeOutQueuedSeps_00868460`
+fades the queued separates out and empties the queue;
+`Atel_ShowWaterFps_008682a0(on)` shows or hides the four water effects;
+`Atel_SetSaveEventBit_008700e0(n)` sets bit `n` (below 64) of the save
+event's flag words at `+0x18`. `round24e_save_movie_effects_match_the_original`
+covers them.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

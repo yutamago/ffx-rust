@@ -842,6 +842,14 @@ ported! {
     pppDrawMdlSeaDes @ 0x0073_ab70 => extern "C" fn ppp_draw_mdl_sea_des(obj: u32, ctrl: u32) {
         prog::bridge::ppp_draw_mdl_sea_des(&mut mem(), obj, ctrl);
     }
+    /// `pppDrawMdlSeaDrawSetup(rec, state)`.
+    pppDrawMdlSeaDrawSetup @ 0x0073_b5c0 => extern "C" fn ppp_draw_mdl_sea_draw_setup(rec: u32, state: u32) -> u32 {
+        prog::bridge::ppp_draw_mdl_sea_draw_setup(&mut mem(), rec, state)
+    }
+    /// `pppDrawMdlInfDrawSetup(rec, state)`.
+    pppDrawMdlInfDrawSetup @ 0x0073_c8e0 => extern "C" fn ppp_draw_mdl_inf_draw_setup(rec: u32, state: u32) -> u32 {
+        prog::bridge::ppp_draw_mdl_inf_draw_setup(&mut mem(), rec, state)
+    }
     /// `pppDrawMdlInfDes(obj, ctrl)`.
     pppDrawMdlInfDes @ 0x0073_b830 => extern "C" fn ppp_draw_mdl_inf_des(obj: u32, ctrl: u32) {
         prog::bridge::ppp_draw_mdl_inf_des(&mut mem(), obj, ctrl);
@@ -1467,6 +1475,26 @@ ported! {
     /// `InitVFXZBufClearRenderData(lo, hi)`.
     InitVFXZBufClearRenderData @ 0x0071_1680 => extern "C" fn init_vfx_zbuf_clear_render_data(lo: u32, hi: u32) -> u32 {
         small::bridge::init_vfx_zbuf_clear_render_data(&mut mem(), lo, hi, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `initVFXRenderDataBuffer_FakeEnvModel(a0, .., a8)`.
+    initVFXRenderDataBuffer_FakeEnvModel @ 0x0071_6620 => extern "C" fn init_vfx_render_data_buffer_fake_env_model(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
+        small::bridge::init_vfx_render_data_buffer_fake_env_model(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_wave_light_007f60b0(_, shape, unit)`.
+    opus_wave_light_007f60b0 @ 0x007f_60b0 => extern "C" fn opus_wave_light(_a: u32, shape: u32, unit: u32) {
+        opus::bridge::opus_wave_light(&mut mem(), shape, unit);
+    }
+    /// `InitGuildMapRenderData(lo, hi, a, b)`.
+    InitGuildMapRenderData @ 0x0071_0ed0 => extern "C" fn init_guild_map_render_data(lo: u32, hi: u32, a: u32, b: u32) -> u32 {
+        small::bridge::init_guild_map_render_data(&mut mem(), [lo, hi, a, b], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_strdup_007e2e30(s)`.
+    op_strdup_007e2e30 @ 0x007e_2e30 => extern "C" fn op_strdup(s: u32) -> u32 {
+        op::bridge::op_strdup(&mut mem(), s, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_list_values_007e2720(node)`.
+    op_list_values_007e2720 @ 0x007e_2720 => extern "C" fn op_list_values(node: u32) -> u32 {
+        op::bridge::op_list_values(&mut mem(), node, &mut |_, f, a| call_ptr(f, a))
     }
     /// `create0706AccRenderDataBuffer(lo, hi, tex_lo, tex_hi)`.
     create0706AccRenderDataBuffer @ 0x007f_a5c0 => extern "C" fn create_0706_acc_render_data_buffer(lo: u32, hi: u32, tex_lo: u32, tex_hi: u32) -> u32 {
@@ -4890,6 +4918,17 @@ ported! {
     /// `pppDataSetTex_007628c0(data, base, a, b)`.
     pppDataSetTex_007628c0 @ 0x0076_28c0 => extern "C" fn ppp_data_set_tex(data: u32, base: u32, a: u32, b: u32) -> u32 {
         small::bridge::ppp_data_set_tex(&mut mem(), data, base, a, b)
+    }
+    /// `pppSetPmcom2Texture_007629e0(tex)`: the sceGs uploads through
+    /// `call_cdecl`, their requests in a frame like the original's.
+    pppSetPmcom2Texture_007629e0 @ 0x0076_29e0 => extern "C" fn ppp_set_pmcom2_texture(tex: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xc0]);
+        let mut locals = Locals([0; 0xc0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xc0;
+        small::bridge::ppp_set_pmcom2_texture(&mut mem(), tex, frame, &mut |_, f, a| super::call_cdecl(f, a));
+        std::hint::black_box(&mut locals);
     }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.

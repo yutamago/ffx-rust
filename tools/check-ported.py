@@ -11,10 +11,10 @@ Exits 1 on problems."""
 import os
 import pathlib
 import re
-import subprocess
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import disasm_cache  # noqa: E402
 import progress  # noqa: E402
 import timing_log  # noqa: E402
 
@@ -37,12 +37,30 @@ def popped(abi, args):
     return sum(sizes[skip:])
 
 
+RET = re.compile(r"ret(?!f)(?:\s+0x([0-9a-f]+)\b)?")
+
+
 def rets(a, size):
-    """The byte counts the original's `ret` instructions pop."""
-    out = subprocess.run(["objdump", "-d", "--no-show-raw-insn", f"--start-address={a:#x}",
-                          f"--stop-address={a + size:#x}", str(exe)],
-                         capture_output=True, text=True, check=True).stdout
-    return {int(m.group(1) or "0", 16) for m in re.finditer(r"\tret\s*(?:\$0x([0-9a-f]+))?", out)}
+    """The byte counts the original's `ret` instructions pop (a near ret
+    without an operand pops 0)."""
+    found = set()
+    for insn in DIS.get(a, size).values():
+        m = RET.match(insn)
+        if m:
+            found.add(int(m.group(1) or "0", 16))
+    return found
+
+
+DIS = None
+if exe:
+    # Disassembly is cached per FFX.exe (tools/disasm_cache.py, shared with
+    # check-clobber.py); the missing originals are disassembled in parallel.
+    DIS = disasm_cache.for_exe(exe)
+    DIS.load()
+    DIS.prefetch({(a, rows[a][1])
+                  for f in (progress.REPO / "crates/ffx-hook/src/ported").glob("*.rs")
+                  for a in (int(addr.replace("_", ""), 16) for _, addr, _, _ in SHIM.findall(f.read_text(encoding="utf-8")))
+                  if a in rows})
 
 
 # ported twice, or ported and hooked by hand (wrappers, mods, the harness)
@@ -174,5 +192,6 @@ if exe:
         print(line)
     bad += len(found)
     print(f"{checked} calls checked for argument counts")
+    DIS.save()
 print(f"{len(seen)} ported, {bad} problems")
 sys.exit(1 if bad else 0)

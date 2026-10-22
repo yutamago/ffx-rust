@@ -1291,7 +1291,8 @@ natives! {
     /// `0x101c` (`0x008780f0`): `0x00878140(worker, args, stack)`'s record
     /// `+4` = 0; 0.
     native_101c(h, w, a, s) => {
-        let r = fwd(h, 0x0087_8140, w, a, s, &[]);
+        let _ = a;
+        let r = super::helpers::atel_set_var_slot(h, w, s);
         h.write(r.wrapping_add(4), 0_u32);
         0
     };

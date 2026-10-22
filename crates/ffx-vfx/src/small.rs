@@ -813,6 +813,181 @@ pub mod bridge {
         b
     }
 
+    /// `g_pppPmcomTexCount` (`0x00d4be34`): the texture records
+    /// [`ppp_set_pmcom2_texture`] has filled.
+    pub const PMCOM_TEX_COUNT: Global<u32> = Global::new(0x00d4_be34);
+    /// `g_pppPmcomTexFirst` (`0x010d4cf4`): the first record of the
+    /// current data, or -1 (set from the count on the next upload).
+    pub const PMCOM_TEX_FIRST: Global<u32> = Global::new(0x010d_4cf4);
+    /// `g_pppPmcomTexRecs` (`0x00d4be38`): 12-byte records, word 0 the
+    /// texture's TEX0 low word, then `u16` width, height and their powers
+    /// of two.
+    pub const PMCOM_TEX_RECS: u32 = 0x00d4_be38;
+
+    const SYNC_PATH: u32 = 0x0062_f880;
+    const SET_DEF_LOAD_IMAGE: u32 = 0x0062_f820;
+    const FLUSH_CACHE: u32 = 0x0062_f4c0;
+    const EXEC_LOAD_IMAGE: u32 = 0x0062_f7a0;
+    const SCE_PRINTF: u32 = 0x0062_fbf0;
+    /// `0x00762810(clut, cbp)`: the 8-bit texture's CLUT upload.
+    const LOAD_CLUT8: u32 = 0x0076_2810;
+    /// "setPmcom2Texture depth error!!!\n"
+    const DEPTH_ERROR: u32 = 0x00b5_1778;
+    /// "setPmcom2Texture depth error 2 !!!\n"
+    const DEPTH_ERROR2: u32 = 0x00b5_179c;
+
+    /// The `log2` of the power of two at or above `v` (0 for `v <= 1`),
+    /// as the original's doubling loops count it.
+    fn log2_up(v: i32) -> u32 {
+        let (mut p, mut n) = (1i32, 0u32);
+        while p < v {
+            p = p.wrapping_add(p);
+            n += 1;
+        }
+        n
+    }
+
+    /// `pppSetPmcom2Texture_007629e0(tex)` (`0x007629e0`, `pppDataRcv`'s):
+    /// a pmcom texture header (`i16 +2` depth, `i16 +4`/`+6` width and
+    /// height, `u16 +8` CLUT flag, `u16 +0xc`/`+0xe` buffer width and
+    /// texture height, `u16 +0x10`/`+0x12` position, `+0x18` TBP, `+0x1c`
+    /// CBP, pixels at `+0x20`) becomes the next record of
+    /// [`PMCOM_TEX_RECS`] (the first of the data noted in
+    /// [`PMCOM_TEX_FIRST`]): width, height and their powers of two. The
+    /// pixels go up in strips of 0x40000 bytes: rows of the width's power
+    /// of two (at least 0x80 for 4 and 8 bits) in the depth's units, at
+    /// most 0x800, and the whole height when that is above the height's
+    /// power of two; the CLUT follows the pixels (4 bits: an 8x2 upload;
+    /// 8 bits: `0x00762810`). Word 0 becomes the TEX0 low word (TBP, TBW,
+    /// PSM, TW, TH). The uploads (`sceGsSetDefLoadImage`, `FlushCache`,
+    /// `sceGsExecLoadImage`, `sceGsSyncPath`) go through `call`, with the
+    /// two load-image requests in the original's frame below `frame` (at
+    /// `-0x60` and `-0xb0`). Another depth prints the error and stops,
+    /// leaving word 0 as it was.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cast_possible_truncation, // the u16 stores
+        clippy::cast_sign_loss
+    )]
+    pub fn ppp_set_pmcom2_texture<M: Mem>(
+        mem: &mut M,
+        t: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let (image_req, clut_req) = (frame.wrapping_sub(0x60), frame.wrapping_sub(0xb0));
+        let index = PMCOM_TEX_COUNT.get(mem);
+        if PMCOM_TEX_FIRST.get(mem) == u32::MAX {
+            PMCOM_TEX_FIRST.set(mem, index);
+        }
+        PMCOM_TEX_COUNT.set(mem, index.wrapping_add(1));
+        let rec = sym(mem, PMCOM_TEX_RECS).wrapping_add(index.wrapping_mul(12));
+        let i16_at = |mem: &M, off: u32| i32::from(mem.read::<i16>(t.wrapping_add(off)));
+        let u16_at = |mem: &M, off: u32| u32::from(mem.read::<u16>(t.wrapping_add(off)));
+        let width = i16_at(mem, 4);
+        mem.write(rec.wrapping_add(4), width as u16);
+        let mut width_pow = 1i32 << log2_up(width);
+        mem.write(rec.wrapping_add(8), width_pow as u16);
+        let height = i16_at(mem, 6);
+        mem.write(rec.wrapping_add(6), height as u16);
+        let height_pow = 1i32 << log2_up(height);
+        mem.write(rec.wrapping_add(0xa), height_pow as u16);
+        // the row length in halfwords (kept as a u16, read back
+        // sign-extended; only the 4- and 8-bit CLUTs use it) and the PSM
+        let (line, psm) = match i16_at(mem, 2) {
+            4 => (width_pow >> 2, 0x14),
+            8 => (width_pow >> 1, 0x13),
+            0x10 => (width_pow, 2),
+            0x20 => (width_pow.wrapping_mul(2), 0),
+            _ => {
+                let msg = sym(mem, DEPTH_ERROR);
+                call(mem, sym(mem, SCE_PRINTF), &[msg]);
+                return;
+            }
+        };
+        let line = i32::from(line as i16);
+        // 4 and 8 bits: at least 0x80 pixels a row (no effect on the rows
+        // below: they reach the 0x800 cap either way)
+        if psm >= 0x13 && width_pow < 0x80 {
+            width_pow = 0x80;
+        }
+        call(mem, sym(mem, SYNC_PATH), &[0, 0]);
+        let tbp = u16_at(mem, 0x18) & 0x3fff;
+        let per = 0x40000 / width_pow;
+        let mut rows = match psm {
+            0x14 => per.wrapping_mul(2),
+            0x13 => per,
+            2 => per >> 1,
+            _ => per >> 2,
+        };
+        rows = rows.min(0x800);
+        if rows > height_pow {
+            rows = height;
+        }
+        // a height of 0 divides by zero in the original (an exception)
+        let Some(strips) = height.checked_div(rows) else {
+            return;
+        };
+        let mut upload = |mem: &mut M, offset: i32, rows: i32| {
+            let args = [
+                image_req,
+                (offset >> 8).cast_unsigned().wrapping_add(tbp),
+                u16_at(mem, 0xc) >> 6,
+                psm,
+                u16_at(mem, 0x10),
+                u16_at(mem, 0x12),
+                width.cast_unsigned(),
+                rows.cast_unsigned(),
+            ];
+            call(mem, sym(mem, SET_DEF_LOAD_IMAGE), &args);
+            call(mem, sym(mem, FLUSH_CACHE), &[0]);
+            let pixels = offset.cast_unsigned().wrapping_add(0x20).wrapping_add(t);
+            call(mem, sym(mem, EXEC_LOAD_IMAGE), &[image_req, pixels]);
+            call(mem, sym(mem, SYNC_PATH), &[0, 0]);
+        };
+        let mut done = 0i32;
+        if strips > 0 {
+            let mut offset = 0i32;
+            for _ in 0..strips {
+                upload(mem, offset, rows);
+                offset = offset.wrapping_add(0x40000);
+            }
+            done = strips;
+        }
+        if height > done.wrapping_mul(rows) {
+            let left = height.wrapping_sub(done.wrapping_mul(rows));
+            upload(mem, done.wrapping_shl(18), left);
+        }
+        if mem.read::<u16>(t.wrapping_add(8)) != 0 {
+            let size = line.wrapping_mul(height).wrapping_add(7) & !7;
+            let clut = t.wrapping_add(size.wrapping_add(0x10).wrapping_mul(2).cast_unsigned());
+            let cbp = mem.read::<u32>(t.wrapping_add(0x1c)) >> 5 & 0x3fff;
+            match i16_at(mem, 2) {
+                4 => {
+                    let args = [clut_req, cbp, 1, 0, 0, 0, 8, 2];
+                    call(mem, sym(mem, SET_DEF_LOAD_IMAGE), &args);
+                    call(mem, sym(mem, FLUSH_CACHE), &[0]);
+                    call(mem, sym(mem, EXEC_LOAD_IMAGE), &[clut_req, clut]);
+                    call(mem, sym(mem, SYNC_PATH), &[0, 0]);
+                }
+                8 => {
+                    call(mem, sym(mem, LOAD_CLUT8), &[clut, cbp]);
+                }
+                _ => {
+                    let msg = sym(mem, DEPTH_ERROR2);
+                    call(mem, sym(mem, SCE_PRINTF), &[msg]);
+                    return;
+                }
+            }
+        }
+        // the CBP the original shifts into the high word is dropped
+        let tbw = u16_at(mem, 0xc) >> 6;
+        let tw = log2_up(i32::from(mem.read::<u16>(t.wrapping_add(0xc))));
+        let th = log2_up(i32::from(mem.read::<u16>(t.wrapping_add(0xe))));
+        let tex0 = tbw << 14 | th.wrapping_shl(30) | tw.wrapping_shl(26) | psm << 20 | tbp;
+        mem.write(rec, tex0);
+    }
+
     /// `0x00807e90(out, src, n)`: `n` colours (`r g b a` bytes at `src`)
     /// to hue, saturation, value and alpha (`u16` each at `out`): a zero
     /// dword gives `h` = `s` = 0 (the first two only); else with `max`,
@@ -1431,6 +1606,69 @@ pub mod bridge {
             let r = call(mem, sym(mem, 0x0064_5780), &[lo, hi]);
             if r != 0 {
                 return r;
+            }
+        }
+        call(mem, sym(mem, 0x0064_5280), &[lo, hi])
+    }
+
+    /// `initVFXRenderDataBuffer_FakeEnvModel(a0, .., a8)` (`0x00716620`,
+    /// Fahrenheit's name): the instance is `a8` with `a0` added to its
+    /// sign-extended high word (`lo = a8`, `hi = a0 + (a8 >> 31)`).
+    /// `0x00715af0(a0..a8)`, then `graphicVFXSetup(lo, hi)`; when both give
+    /// nonzero, `updateVFXRenderData_FakeEnvModel(a0..a8)` and
+    /// `graphicVFXUpdate(lo, hi)`, whose eax is returned; otherwise
+    /// `graphicVFXDestroy(lo, hi)` and its eax. All through `call`.
+    pub fn init_vfx_render_data_buffer_fake_env_model<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let lo = args[8];
+        let hi = args[0].wrapping_add((lo.cast_signed() >> 31).cast_unsigned());
+        if call(mem, sym(mem, 0x0071_5af0), &args) != 0
+            && call(mem, sym(mem, 0x0064_5780), &[lo, hi]) != 0
+        {
+            call(mem, sym(mem, 0x0071_cf90), &args);
+            return call(mem, sym(mem, 0x0064_58a0), &[lo, hi]);
+        }
+        call(mem, sym(mem, 0x0064_5280), &[lo, hi])
+    }
+
+    /// `InitGuildMapRenderData(lo, hi, a, b)` (`0x00710ed0`, Fahrenheit's
+    /// name): `createGuildMapRenderDataBuffer(lo, hi, a, b)`; when that
+    /// gives nonzero, `graphicGuidemapSetup(lo, hi)`, and the render data
+    /// of the instance (`graphicVFXGetRenderDataByInstance`) has the word
+    /// at `+8` of each of its `i32 +0x90` 0x6c-byte entries (at `+0x94`)
+    /// divided by 3. With the set-up's nonzero result,
+    /// `updateGuildMapRenderData(lo, hi, a, b)`, whose nonzero eax is
+    /// returned. Otherwise `graphicVFXDestroy(lo, hi)` and its eax. All
+    /// through `call`.
+    pub fn init_guild_map_render_data<M: Mem>(
+        mem: &mut M,
+        args: [u32; 4],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let [lo, hi, ..] = args;
+        if call(mem, sym(mem, 0x0071_33e0), &args) != 0 {
+            let ready = call(mem, sym(mem, 0x0064_1490), &[lo, hi]);
+            let data = call(mem, sym(mem, 0x0064_53d0), &[lo, hi]);
+            if data != 0 {
+                let mut i = 0i32;
+                while i < mem.read::<i32>(data.wrapping_add(0x90)) {
+                    let entries: u32 = mem.read(data.wrapping_add(0x94));
+                    let at = entries
+                        .wrapping_add(i.cast_unsigned().wrapping_mul(0x6c))
+                        .wrapping_add(8);
+                    let v: u32 = mem.read(at);
+                    mem.write(at, v / 3);
+                    i += 1;
+                }
+            }
+            if ready != 0 {
+                let r = call(mem, sym(mem, 0x0071_7620), &args);
+                if r != 0 {
+                    return r;
+                }
             }
         }
         call(mem, sym(mem, 0x0064_5280), &[lo, hi])

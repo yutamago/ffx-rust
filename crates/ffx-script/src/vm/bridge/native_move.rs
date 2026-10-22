@@ -4302,7 +4302,7 @@ pub fn native_013d_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u
             }
             let x = h.read::<u32>(c + 0x48);
             let y = h.read::<u32>(c + 0x204);
-            call(h, 0x0087_1750, &[x, y, v]);
+            super::helpers::atel_snd_trans_sep_spk_data_group(h, x, y, v);
             h.write(a, 1_u32);
             0
         }
