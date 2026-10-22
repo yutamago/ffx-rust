@@ -3352,6 +3352,40 @@ real spline functions.
     give `wrap(base + delta)`. Otherwise it is
     `wrap(base + (1 - w)(delta + fix))`: the yaw is stored as f32 after
     the sum, the product and the add; pitch and roll only once.
+- `AtelEventRemove()` (`0x00872d20`, caller `TkInitScene`) tears the
+  event down when ctrl work 0 is in use. It calls 44 helpers in a fixed
+  order: shapes, pause flags, effects, the stream, battle requests, bind
+  masks, battle map, Albhed dictionary, end status, in-water FP, guide
+  map, vibration, menu status, music `0x8a`, `g_AtelExpandFTCAdrs`, the
+  save event's `+0xe4`/`+0xe8`, textures, fonts, motion requests, foot
+  sounds, `AtelActorRemove`, 3D sound and separate buffers, and lastly
+  ctrl work 0. Then, always: the event guide map, the message buffers
+  `0x023cbd78` and `0x023cbd70` (`TkFree` between two `FlushCache(0)`
+  calls), the standby voice, the movie, `yiReset`, and a tail jump to
+  `Sg_EventjumpDispose` through the thunk `0x00875940`.
+- `Atel_ReturnActorFromBattle_00862d70(w, check)` (`0x00862d70`, from
+  `0x00861850` with `check` 1 for each actor that still has its model and
+  `+0xb10` bit 0 clear) puts an actor back after a battle. `+0x38` loses
+  bits 2, 3 and 8. With `check`, the actor in `0x01326b54` is skipped
+  after a battle end of kind 3 or 4 (`0x01326b4c & 0xff`). Otherwise:
+  - with old bit 2, a character-bound actor first takes its model's
+    position and direction;
+  - `Atel_RestoreActorModel_0086e5b0(w, old bit 3, old bit 8)`;
+  - the model is set to the block's position (y 0.1 lower, except model
+    `0x20e5` on level hash `0x1cd6` at events `0x5be..=0x5cd`), cloth
+    reset, direction `+0x20`, rotation `+0x34`, foot sounds, and
+    `AtelRecoverFPFromBattle`;
+  - fixes by model id: 3 hides part 1 and shows part 2 (unless
+    `g_AtelNotAuronPatchFlag`); 7 sets part 1's hide from `+0xb14` bit 0;
+    `0x5001` shows its four effects. Outside event `0x8e8`, models
+    `0x107e`/`0x107f` loop motion `id << 16 | 0x1001`, and model 4 on
+    level `0x1ca` at events `0x8d9..=0x8f1` loops `0x41006`. Model
+    `0x20d9` before event `0x3f2` on level `0xfdd` plays `0x6004100a`
+    once.
+
+  Last, `+0xb10` and `+0x38` get bit 0. The save event's `+0xbec` is read
+  once at the start; the model pointer `+0x9c` is reread before every
+  call.
 
 ### Verification
 

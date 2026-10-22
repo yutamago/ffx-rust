@@ -8441,6 +8441,226 @@ pub fn atel_restore_actor_model(
     }
 }
 
+/// `AtelEventRemove()` (`0x00872d20`, Fahrenheit's name; caller
+/// `TkInitScene`): with ctrl work 0 in use (`AtelGetCtrlWorkStatus(0)`)
+/// the event is torn down in the original's order: shapes, pause flags
+/// (`0x01327138`/`0x0132713c`), event effects, the stream (`SndSepLock(1)`,
+/// `SndStopStream`, two `TkSyncV(0)` + `TkSndUpdate` rounds), battle
+/// requests, bind masks, the forced battle map (-1), the Albhed
+/// dictionary, the battle end status, the in-water FP (-1 x4), the guide
+/// map, vibration, menu status, music `0x8a`, `g_AtelExpandFTCAdrs`, the
+/// forced place, the save event's `+0xe4`/`+0xe8`, the special menu
+/// texture, event fonts and effects, motion requests, foot sounds, the
+/// actors ([`atel_actor_remove`]), the battle's event models, the 3D sound
+/// works and ratios (0.0), the separate buffers and waves, ctrl work 0.
+/// Always: the guide map's event part, the two message buffers
+/// (`0x023cbd78`, `0x023cbd70`: `TkFree` between `FlushCache(0)`s), the
+/// standby voice, the movie, `yiReset` and `Sg_EventjumpDispose` (through
+/// its thunk `0x00875940`, a tail jump: `EAX` that call's).
+pub fn atel_event_remove(h: &mut impl ffx_bridge::Host) -> u32 {
+    if host_call(h, 0x0086_afc0, &[0]) != 0 {
+        host_call(h, 0x0087_42b0, &[]);
+        h.write(h.rebase(0x0132_7138), 0_u32);
+        h.write(h.rebase(0x0132_713c), 0_u32);
+        for (f, args) in [
+            (0x007f_cbf0, &[][..]),
+            (0x0088_6dd0, &[1][..]),
+            (0x0088_7780, &[][..]),
+            (0x0088_7f00, &[0][..]),
+            (0x0088_7b60, &[][..]),
+            (0x0088_7f00, &[0][..]),
+            (0x0088_7b60, &[][..]),
+            (0x0078_1530, &[][..]),
+            (0x0086_0f50, &[][..]),
+            (0x0087_0130, &[u32::MAX][..]),
+            (0x0086_e820, &[0, 0][..]),
+            (0x0086_fc20, &[0, 0, 0][..]),
+            (0x0086_cff0, &[][..]),
+            (0x0087_0280, &[u32::MAX; 4][..]),
+            (0x0091_9d70, &[0][..]),
+            (0x0087_62f0, &[][..]),
+            (0x0087_15e0, &[0][..]),
+            (0x0087_02e0, &[0][..]),
+            (0x0088_6a60, &[0x8a][..]),
+            (0x0088_6800, &[0x8a][..]),
+        ] {
+            host_call(h, f, args);
+        }
+        h.write(h.rebase(0x0132_7120), 0_u32);
+        host_call(h, 0x0086_38b0, &[]);
+        let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+        h.write(save + 0xe4, 0_u32);
+        h.write(save + 0xe8, 0_u16);
+        for (f, args) in [
+            (0x0064_2390, &[0][..]),
+            (0x008a_b550, &[][..]),
+            (0x0078_8b90, &[][..]),
+            (0x0086_d4c0, &[][..]),
+            (0x0088_5f10, &[][..]),
+            (0x0087_5430, &[][..]),
+            (0x0078_0cf0, &[][..]),
+            (0x0087_7330, &[][..]),
+            (0x0087_7460, &[0][..]),
+            (0x0087_7450, &[0][..]),
+            (0x0088_6cb0, &[][..]),
+            (0x0088_5e50, &[][..]),
+            (0x0086_61d0, &[1][..]),
+            (0x0086_a1c0, &[0][..]),
+            (0x0088_5ec0, &[0xffff_fffe][..]),
+            (0x0086_ed40, &[0][..]),
+        ] {
+            host_call(h, f, args);
+        }
+    }
+    host_call(h, 0x0086_61a0, &[]);
+    // the second buffer is zeroed before its last flush
+    for (cell, zero_first) in [(0x023c_bd78, false), (0x023c_bd70, true)] {
+        let cell = h.rebase(cell);
+        let p = h.read::<u32>(cell);
+        if p != 0 {
+            host_call(h, 0x0062_f4c0, &[0]);
+            host_call(h, 0x0088_d520, &[p]);
+            if zero_first {
+                h.write(cell, 0_u32);
+            }
+            host_call(h, 0x0062_f4c0, &[0]);
+            h.write(cell, 0_u32);
+        }
+    }
+    host_call(h, 0x0088_7b50, &[0]);
+    host_call(h, 0x0087_4130, &[]);
+    host_call(h, 0x0090_9e60, &[]);
+    host_call(h, 0x0087_5940, &[])
+}
+
+/// `Atel_ReturnActorFromBattle_00862d70(w, check)` (name ours; caller
+/// `0x00861850` with `check` 1 for each actor with a model and
+/// `+0xb10` bit 0 clear, no `EAX` read): `+0x38` loses bits 2, 3 and 8
+/// (`& 0xfef3`). With `check`, an actor whose `+0x40` is the battle end
+/// status's (`0x01326b54`) after an end of kind 3 or 4 (`0x01326b4c`)
+/// stays as it is. Otherwise a character-bound actor with old bit 2 takes
+/// its model's position (`Ch_GetPos` into the move block) and direction
+/// (`Atel_SyncChrDir`, `+0x20` into `+0x34`); then
+/// [`atel_restore_actor_model`] (old bits 3 and 8), `+0x33` bit 7 cleared,
+/// the model put at the block's position (`Ch_SetPos3`, y 0.1 lower except
+/// model `0x20e5` on level hash `0x1cd6` (now or previous) at event
+/// `0x5be..=0x5cd`), `Ch_ClothReset`, `Ch_SetDirF(+0x20)`,
+/// `Ch_SetRot(+0x34)`, the foot sounds (`Ch_SoundSetId`,
+/// `SndEventSetPcToActorFoot` with `+0xaf`/`+0x2e`) and
+/// `AtelRecoverFPFromBattle`. Model fixes by id (`+0xa8`): 3 (unless
+/// `g_AtelNotAuronPatchFlag`) hides part 1 and shows part 2; 7 sets part
+/// 1's hide from `+0xb14` bit 0; `0x5001` shows its four effect ids
+/// (`+0xb18`, every 0x10, `& 0x7fff`, `pppFpIDdispOn`); outside event
+/// `0x8e8` the motions `0x107e1001`/`0x107f1001` for models `0x107e`/
+/// `0x107f` and `0x41006` for model 4 on level `0x1ca` at events
+/// `0x8d9..=0x8f1`; model `0x20d9` before event `0x3f2` on level `0xfdd`
+/// plays `0x6004100a` once. Last `+0xb10` bit 0 and `+0x38` bit 0 are
+/// set.
+#[allow(clippy::too_many_lines)] // the original's straight sequence
+pub fn atel_return_actor_from_battle(h: &mut impl ffx_bridge::Host, w: u32, check: u32) {
+    let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+    let event = u32::from(h.read::<u16>(save + 0xbec));
+    let old = u32::from(h.read::<u16>(w + 0x38));
+    write_u16(h, w + 0x38, old & 0xfef3);
+    let p = move_block(h, w);
+    if check != 0 {
+        let kind = h.read::<u32>(h.rebase(0x0132_6b4c)) & 0xff;
+        if matches!(kind, 3 | 4) && h.read::<u32>(w + 0x40) == h.read::<u32>(h.rebase(0x0132_6b54))
+        {
+            return;
+        }
+    }
+    let chr = |h: &mut _| ffx_bridge::Mem::read::<u32>(h, w + 0x9c);
+    if old & 4 != 0 && h.read::<u8>(w + 0xaa) == 1 {
+        let c = chr(h);
+        if c != 0 {
+            host_call(h, 0x0082_ac90, &[c, p, p + 4, p + 8]);
+            host_call(h, 0x0086_9df0, &[w]);
+            h.write(p + 0x34, x87::store(x87::load(h.read(p + 0x20))));
+        }
+    }
+    atel_restore_actor_model(h, w, old >> 3 & 1, old >> 8 & 1);
+    h.write(w + 0x33, h.read::<u8>(w + 0x33) & 0x7f);
+    let level_is = |h: &mut _, hash: u32| {
+        host_call(h, 0x0064_1da0, &[]) == hash || host_call(h, 0x0064_27e0, &[]) == hash
+    };
+    let copy = |v: u32| x87::store(x87::load(v));
+    let exact = h.read::<u16>(w + 0xa8) == 0x20e5
+        && level_is(h, 0x1cd6)
+        && event.wrapping_sub(0x5be) <= 0xf;
+    let z = copy(h.read(p + 8));
+    let y = if exact {
+        copy(h.read(p + 4))
+    } else {
+        x87::store(x87::sub(x87::load(h.read(p + 4)), 0.100_000_001_490_116_12))
+    };
+    let x = copy(h.read(p));
+    let c = chr(h);
+    host_call(h, 0x0082_b480, &[c, x, y, z]);
+    let c = chr(h);
+    host_call(h, 0x0082_4650, &[c]);
+    let dir = copy(h.read(p + 0x20));
+    let c = chr(h);
+    host_call(h, 0x0082_b1b0, &[c, dir]);
+    let rot = copy(h.read(p + 0x34));
+    let c = chr(h);
+    host_call(h, 0x0082_b520, &[c, rot]);
+    let foot = u32::from(h.read::<u8>(w + 0xaf));
+    let c = chr(h);
+    host_call(h, 0x0083_5b50, &[c, foot]);
+    let id = u32::from(h.read::<u16>(w + 0x2e));
+    let foot = u32::from(h.read::<u8>(w + 0xaf));
+    host_call(h, 0x0088_5fd0, &[foot, id]);
+    host_call(h, 0x0086_e4c0, &[w]);
+    let model = |h: &mut _| ffx_bridge::Mem::read::<u16>(h, w + 0xa8);
+    if model(h) == 3 && h.read::<u8>(h.rebase(0x0132_6b81)) == 0 {
+        let c = chr(h);
+        if c != 0 {
+            host_call(h, 0x0082_aea0, &[c, 1, 1]);
+            host_call(h, 0x0082_aea0, &[c, 2, 0]);
+        }
+    }
+    if model(h) == 7 {
+        let c = chr(h);
+        if c != 0 {
+            let hide = u32::from(h.read::<u8>(w + 0xb14) & 1);
+            host_call(h, 0x0082_aea0, &[c, 1, hide]);
+        }
+    }
+    if model(h) == 0x5001 {
+        for k in 0..4 {
+            let v = u32::from(h.read::<u16>(w + 0xb18 + 0x10 * k)) & 0x7fff;
+            if v != 0 {
+                host_call(h, 0x0072_95b0, &[v]);
+            }
+        }
+    }
+    if event != 0x8e8 {
+        let m = model(h);
+        let motion = match m {
+            0x107e => Some(0x107e_1001),
+            0x107f => Some(0x107f_1001),
+            4 if level_is(h, 0x1ca) => Some(0x0004_1006),
+            _ => None,
+        };
+        if let Some(motion) = motion {
+            let c = chr(h);
+            let in_range = m != 4 || event.wrapping_sub(0x8d9) <= 0x18;
+            if c != 0 && in_range {
+                host_call(h, 0x0083_73e0, &[c, motion, 0, 0, 0, u32::MAX]);
+            }
+        }
+    }
+    if model(h) == 0x20d9 && event < 0x3f2 && level_is(h, 0xfdd) {
+        let c = chr(h);
+        if c != 0 {
+            host_call(h, 0x0083_73e0, &[c, 0x6004_100a, 0, 0, 0, 1]);
+        }
+    }
+    h.write(w + 0xb10, h.read::<u32>(w + 0xb10) | 1);
+    write_u16(h, w + 0x38, u32::from(h.read::<u16>(w + 0x38)) | 1);
+}
+
 /// `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`
 /// (`0x008756d0`, Fahrenheit's name; caller `MsAtelSetUp`, which reads no
 /// `EAX`):

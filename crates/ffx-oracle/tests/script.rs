@@ -15495,3 +15495,237 @@ fn round28d_turn_update_matches_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r28d_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Round 28 e on one pair: `AtelEventRemove` (every callee logged, ctrl
+/// work 0 in use or not, both message buffers set or not; `EAX` the
+/// `Sg_EventjumpDispose` stub's through the thunk) and
+/// `Atel_ReturnActorFromBattle_00862d70` (every callee logged, the
+/// restore `0x0086e5b0` original against the Rust one over stubbed
+/// callees, the model ids, events and level hashes at their edges,
+/// `Atel_SyncChrDir` rewriting the model so the rereads show).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r28e_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: 0 AtelGetCtrlWorkStatus, 1 TkGetSaveEventAddress,
+    // 2 graphicLevelGetNameHash, 3 graphicPreviousLevelGetNameHash,
+    // 4 MagicFile_GetMagicId
+    let mut fs = vec![
+        (0x0086_afc0, 1, true),
+        (0x0088_c830, 0, true),
+        (0x0064_1da0, 0, true),
+        (0x0064_27e0, 0, true),
+        (0x009d_a3b0, 0, true),
+    ];
+    for (f, n) in [
+        (0x0087_42b0, 0),
+        (0x007f_cbf0, 0),
+        (0x0088_6dd0, 1),
+        (0x0088_7780, 0),
+        (0x0088_7f00, 1),
+        (0x0088_7b60, 0),
+        (0x0078_1530, 0),
+        (0x0086_0f50, 0),
+        (0x0087_0130, 1),
+        (0x0086_e820, 2),
+        (0x0086_fc20, 3),
+        (0x0086_cff0, 0),
+        (0x0087_0280, 4),
+        (0x0091_9d70, 1),
+        (0x0087_62f0, 0),
+        (0x0087_15e0, 1),
+        (0x0087_02e0, 1),
+        (0x0088_6a60, 1),
+        (0x0088_6800, 1),
+        (0x0086_38b0, 0),
+        (0x0064_2390, 1),
+        (0x008a_b550, 0),
+        (0x0078_8b90, 0),
+        (0x0086_d4c0, 0),
+        (0x0088_5f10, 0),
+        (0x0087_5430, 0),
+        (0x0078_0cf0, 0),
+        (0x0087_7330, 0),
+        (0x0087_7460, 1),
+        (0x0087_7450, 1),
+        (0x0088_6cb0, 0),
+        (0x0088_5e50, 0),
+        (0x0086_61d0, 1),
+        (0x0086_a1c0, 1),
+        (0x0088_5ec0, 1),
+        (0x0086_ed40, 1),
+        (0x0086_61a0, 0),
+        (0x0062_f4c0, 1),
+        (0x0088_d520, 1),
+        (0x0088_7b50, 1),
+        (0x0087_4130, 0),
+        (0x0090_9e60, 0),
+        (0x0083_b420, 0),
+        // the return from battle's callees (and the restore's)
+        (0x0082_ac90, 4),
+        (0x0082_b480, 4),
+        (0x0082_4650, 1),
+        (0x0082_b1b0, 2),
+        (0x0082_b520, 2),
+        (0x0083_5b50, 2),
+        (0x0088_5fd0, 2),
+        (0x0086_e4c0, 1),
+        (0x0082_aea0, 3),
+        (0x0072_95b0, 1),
+        (0x0083_73e0, 6),
+        (0x0083_6870, 2),
+        (0x0082_8620, 2),
+        (0x0082_b2c0, 2),
+        (0x0087_2380, 2),
+        (0x0062_f500, 2),
+        (0x0082_b080, 1),
+    ] {
+        fs.push((f, n, false));
+    }
+    fs.push((0x0086_9df0, 1, false));
+    let stubs = r27_stubs(a, b, &fs);
+    let save = alloc_both(a, b, 0xc00);
+    let w = alloc_both(a, b, 0xc00);
+    let hdr = alloc_both(a, b, 4);
+    // Atel_SyncChrDir also stores [chr_after] into w + 0x9c
+    let chr_after = alloc_both(a, b, 4);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(0x0086_9df0);
+        let mut rel = [0u8; 4];
+        rel.copy_from_slice(&o.read(entry + 1, 4).unwrap());
+        let log_stub = (entry + 5).wrapping_add(u32::from_le_bytes(rel));
+        let mut code = vec![0xa1]; // mov eax, [chr_after]
+        code.extend(chr_after.to_le_bytes());
+        code.push(0xa3); // mov [w + 0x9c], eax
+        code.extend((w + 0x9c).to_le_bytes());
+        let here = o.alloc_code(&[0; 16]).unwrap();
+        code.push(0xe9);
+        code.extend(
+            log_stub
+                .wrapping_sub(here + u32::try_from(code.len()).unwrap() + 4)
+                .to_le_bytes(),
+        );
+        o.write(here, &code).unwrap();
+        let rel = here.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    let bufs = [a.rebase(0x023c_bd78), a.rebase(0x023c_bd70)];
+    for round in 0..24u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            0 => [0u32, 1, 2][rng.below(3) as usize],
+            1 => save,
+            _ => rng.next(),
+        });
+        for (k, cell) in bufs.into_iter().enumerate() {
+            let v = if (round >> k) & 1 == 0 {
+                0
+            } else {
+                rng.next() | 1
+            };
+            poke(a, b, cell, v);
+        }
+        fill_both(a, b, rng, save + 0xe0, 0x10);
+        fill_both(a, b, rng, a.rebase(0x0132_7120), 4);
+        fill_both(a, b, rng, a.rebase(0x0132_7138), 8);
+        r22_case(
+            a,
+            b,
+            0x0087_2d20,
+            &[],
+            true,
+            &format!("AtelEventRemove {what} {round}"),
+            |r| hp::atel_event_remove(r),
+        );
+    }
+    let models = [
+        0x20e5u16, 3, 7, 0x5001, 0x107e, 0x107f, 4, 0x20d9, 0, 0x20e5, 4,
+    ];
+    let events = [
+        0x5be_u16, 0x5cd, 0x5ce, 0x5bd, 0x8e8, 0x8d9, 0x8f1, 0x8f2, 0x3f1, 0x3f2, 0, 0x8e0,
+    ];
+    let hashes = [0x1cd6u32, 0x1ca, 0xfdd, 0, 0x1cd6, 0x1ca, 0xfdd];
+    let floats = [0.0f32, 1.5, -2.0, 0.1, 100.0, f32::NAN, -0.0];
+    for round in 0..400u32 {
+        r27_reset(a, b, &stubs, |s| match s {
+            1 => save,
+            2 | 3 => hashes[rng.below(7) as usize],
+            4 => [0x26d_u32, 0x26e, 0x275, 0x276][rng.below(4) as usize],
+            _ => rng.next(),
+        });
+        poke(a, b, save + 0xbec, events[rng.below(12) as usize]);
+        fill_both(a, b, rng, w + 0x20, 0x20);
+        fill_both(a, b, rng, w + 0xa0, 0x20);
+        fill_both(a, b, rng, w + 0xb00, 0x60);
+        // effect ids that are 0 after & 0x7fff
+        for k in 0..4u32 {
+            if rng.below(3) == 0 {
+                poke(
+                    a,
+                    b,
+                    w + 0xb18 + 0x10 * k,
+                    [0u16, 0x8000][rng.below(2) as usize],
+                );
+            }
+        }
+        poke(a, b, w, hdr);
+        poke(a, b, hdr, [1u8, 1, 5, 2][rng.below(4) as usize]);
+        poke(a, b, w + 0xaa, [1u8, 1, 0, 2][rng.below(4) as usize]);
+        let chr = if rng.below(6) == 0 { 0 } else { rng.next() | 1 };
+        poke(a, b, w + 0x9c, chr);
+        poke(a, b, chr_after, if rng.below(4) == 0 { 0 } else { chr });
+        poke(a, b, w + 0xa8, models[rng.below(11) as usize]);
+        let kind = rng.next() & !0xff | [3u32, 4, 5, 0][rng.below(4) as usize];
+        poke(a, b, a.rebase(0x0132_6b4c), kind);
+        let slot = rng.below(4);
+        poke(a, b, w + 0x40, slot);
+        poke(a, b, a.rebase(0x0132_6b54), rng.below(4));
+        poke(a, b, a.rebase(0x0132_6b81), u8::from(rng.below(2) == 0));
+        let p = if Mem::read::<u8>(a, hdr) == 5 {
+            w + 0x284
+        } else {
+            w + 0x558
+        };
+        for o in (0..0x40u32).step_by(4) {
+            poke(a, b, p + o, floats[rng.below(7) as usize]);
+        }
+        let check = rng.below(2);
+        r22_case(
+            a,
+            b,
+            0x0086_2d70,
+            &[w, check],
+            false,
+            &format!("Atel_ReturnActorFromBattle {what} {round}"),
+            |r| {
+                hp::atel_return_actor_from_battle(r, w, check);
+                0
+            },
+        );
+    }
+}
+
+#[test]
+fn round28e_event_remove_and_return_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_028e);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r28e_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r28e_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

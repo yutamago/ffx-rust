@@ -7411,6 +7411,14 @@ ported! {
     AtelInitBasicWork @ 0x0086_cb00 => extern "C" fn h_86cb00(setup: u32, clear: u32) {
         hp::atel_init_basic_work(&mut mem(), setup, clear);
     }
+    /// `AtelEventRemove()`: `EAX` the tail-called `Sg_EventjumpDispose`'s.
+    AtelEventRemove @ 0x0087_2d20 => extern "C" fn h_872d20() -> u32 {
+        hp::atel_event_remove(&mut mem())
+    }
+    /// `Atel_ReturnActorFromBattle_00862d70(w, check)`.
+    Atel_ReturnActorFromBattle_00862d70 @ 0x0086_2d70 => extern "C" fn h_862d70(w: u32, check: u32) {
+        hp::atel_return_actor_from_battle(&mut mem(), w, check);
+    }
     /// `AtelActorRemove()`.
     AtelActorRemove @ 0x0087_5430 => extern "C" fn h_875430() -> u32 {
         hp::atel_actor_remove(&mut mem())
