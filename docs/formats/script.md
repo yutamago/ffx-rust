@@ -3199,6 +3199,22 @@ real spline functions.
   signals go to the actor itself: 5 on a new touch, 5 then 6 when A..B
   crosses the box (no outcode bit in common) without an earlier touch, 6
   when a touch ends. `EAX` the last signal's, else 0.
+- `Atel_CheckLineTouch_008684b0(w, _, player)` (`0x008684b0`, same
+  dispatcher) is the line-shaped trigger, from the actor's move position P
+  to move `+0x30` Q. It hands the menu math helpers pointers to four
+  vectors in its frame (A, Q, P, B, `w` zeroed). When the player's step
+  A..B (ctrl work `+0x228` to `+0x218`) moved in x or z, or `+0x36` bit 0
+  asks, a crossing (`Math_SegmentsCross`) within the band
+  (`Math_CrossHeightGap` at most move `+0x1c`, any when that is not
+  positive) records its side in `+0x36` bits 1/2 and sends trigger 4. The
+  touch test uses B's nearest point N on P..Q (`Math_SegmentNearestT`,
+  N = P + t (Q - P) in 53 bits): squared distance (no y) within `(+0x48)²`
+  and `|By - Ny|` within the band. A touch sends 3 (and 5 when new); no
+  touch sends 5 after a crossing and 6 after a crossing or an ended touch.
+  The talk candidate test mirrors `0x00866980`'s but uses N, compares the
+  current candidate's distance with the talk radius² rather than with the
+  distance, and stores that radius² as the candidate's distance. The
+  dispatcher's caller (`0x00865208`) ignores `EAX`.
 
 ### Verification
 

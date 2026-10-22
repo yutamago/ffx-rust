@@ -13940,3 +13940,120 @@ fn round27d_box_touch_matches_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r27d_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Round 27 e on one pair: `Atel_CheckLineTouch_008684b0` on a ctrl work
+/// of its own (the player's step), the trigger requests logged: random
+/// lines and steps with the real math helpers, then the same with
+/// `Math_FacingWithin` a stand-in returning 0, 1 or `0x100` (the talk
+/// candidate path).
+#[allow(clippy::too_many_lines)] // the two phases share the setup
+fn r27e_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let stubs = r27_stubs(a, b, &[(0x0087_64f0, 3, true)]);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let here = Mem::read::<u32>(a, ctx_cell);
+    let c = alloc_both(a, b, 0x240);
+    poke(a, b, ctx_cell, c);
+    let (w, p) = (alloc_both(a, b, 0xb58), alloc_both(a, b, 0xb58));
+    let nan = 0x7fc0_0000u32;
+    let f = |rng: &mut Xorshift, r: f32| {
+        if rng.below(40) == 0 {
+            nan
+        } else {
+            r26_f32(rng, r)
+        }
+    };
+    let mut face = None;
+    for round in 0..600u32 {
+        if round == 300 {
+            face = Some(r27_stubs(a, b, &[(0x0088_b780, 6, true)]));
+        }
+        r27_reset(a, b, &stubs, |_| rng.next());
+        if let Some(face) = &face {
+            r27_reset(a, b, face, |_| [0u32, 1, 1, 0x100][rng.below(4) as usize]);
+        }
+        for x in [w, p] {
+            let hdr = alloc_both(a, b, 4);
+            poke(a, b, hdr, [0u8, 1, 2, 3, 5, 6, 7][rng.below(7) as usize]);
+            fill_both(a, b, rng, x + 4, 0xb54);
+            poke(a, b, x, hdr);
+        }
+        let mvo = |a: &Oracle, x: u32| {
+            if matches!(Mem::read::<u8>(a, Mem::read::<u32>(a, x)), 5 | 6) {
+                x + 0x284
+            } else {
+                x + 0x558
+            }
+        };
+        let (mv, pmv) = (mvo(a, w), mvo(a, p));
+        for k in 0..3 {
+            poke(a, b, mv + 4 * k, f(rng, 3.0));
+            poke(a, b, mv + 0x30 + 4 * k, f(rng, 3.0));
+            poke(a, b, c + 0x228 + 4 * k, f(rng, 4.0));
+            poke(a, b, c + 0x218 + 4 * k, f(rng, 4.0));
+        }
+        if rng.below(5) == 0 {
+            // the player did not move in x and z
+            for k in [0, 2] {
+                let v = Mem::read::<u32>(a, c + 0x228 + 4 * k);
+                poke(a, b, c + 0x218 + 4 * k, v);
+            }
+        }
+        poke(a, b, mv + 0x1c, f(rng, 3.0));
+        poke(a, b, mv + 0x48, f(rng, 3.0));
+        poke(a, b, mv + 0x40, f(rng, 3.0));
+        poke(a, b, mv + 0x3c, f(rng, 3.0));
+        poke(a, b, pmv + 0x34, f(rng, 3.0));
+        poke(a, b, c + 0x1f0, f(rng, 3.0));
+        poke(a, b, c + 0x1ec, f(rng, 40.0));
+        poke(a, b, c + 0x1e4, [1u8, 1, 1, 0, 2][rng.below(5) as usize]);
+        poke(a, b, c + 0x1e8, [0xffffu16, 3][rng.below(2) as usize]);
+        if rng.below(4) != 0 {
+            poke(a, b, w + 0xab, Mem::read::<u8>(a, w + 0xab) | 1);
+        }
+        let junk = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0086_84b0,
+            &[w, junk, p],
+            false,
+            &format!("Atel_CheckLineTouch {what} {round}"),
+            |r| {
+                let fr = frame(r);
+                hp::atel_check_line_touch(r, w, p, fr, |r, at, args| {
+                    r.0.call_f64(at, args).unwrap()
+                });
+                0
+            },
+        );
+    }
+    poke(a, b, ctx_cell, here);
+}
+
+#[test]
+fn round27e_line_touch_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_027e);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r27e_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r27e_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

@@ -7986,3 +7986,142 @@ pub fn atel_check_box_touch<H: super::run::NativeHost>(
         _ => 0,
     }
 }
+
+/// `Atel_CheckLineTouch_008684b0(w, _, player)` (name ours; caller
+/// `0x008666e0`, the ctrl work's `+0x5c` callback, whose `EAX` its caller
+/// drops): a line-shaped trigger from the actor's move position P to move
+/// `+0x30` Q, against the player's step from A (ctrl work `+0x228`) to B
+/// (`+0x218`). When the player moved in x or z (or `+0x36` bit 0 asks), the
+/// step crossing the line (`Math_SegmentsCross(A, B, P, Q)`, its sign into
+/// `+0x36` bits 1/2) within the height band (`Math_CrossHeightGap` at most
+/// move `+0x1c`, any when that is not positive) sends trigger 4. Then B's
+/// nearest point N on P..Q (`Math_SegmentNearestT`): within `+0x48`
+/// (`Math_LengthSq3`, no y) and the band around N's height it touches
+/// (`+0x34` bit 6, trigger 3, trigger 5 on a new touch); else a crossing
+/// sends 5, and a crossing or an ended touch 6. Talk (`+0xab` bit 0, ctrl
+/// `+0x1e4` 1): within `(move +0x40 + ctrl +0x1f0)²` of N and the band, a
+/// candidate distance (`+0x1ec`, none when `+0x1e8` is `0xffff`) above
+/// that radius², and `Math_FacingWithin(player heading, +0x3c, B, N)`
+/// make it the candidate (`+0x1e8` id, `+0x1ec` the radius², as the
+/// original stores). `frame` holds the four vectors (16 words: A, Q, P, B,
+/// `w` 0) the math helpers get pointers to; `fcall` calls an original
+/// returning in `ST0` (rebased address).
+#[allow(clippy::too_many_lines, clippy::similar_names)] // the original's three steps
+pub fn atel_check_line_touch<H: ffx_bridge::Host>(
+    h: &mut H,
+    w: u32,
+    player: u32,
+    frame: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    let copy = |v: u32| x87::store(x87::load(v));
+    let ld = x87::load;
+    let mv = move_block(h, w);
+    let pmv = move_block(h, player);
+    let (va, vq, vp, vb) = (frame, frame + 0x10, frame + 0x20, frame + 0x30);
+    for k in 0..16 {
+        h.write(frame + 4 * k, 0_u32);
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let p = [0, 4, 8].map(|o| copy(h.read(mv + o)));
+    let q = [0x30, 0x34, 0x38].map(|o| copy(h.read(mv + o)));
+    let a = [0x228, 0x22c, 0x230].map(|o| copy(h.read(ctx + o)));
+    let b = [0x218, 0x21c, 0x220].map(|o| copy(h.read(ctx + o)));
+    for (base, v) in [(vp, p), (vq, q), (va, a), (vb, b)] {
+        for (k, x) in (0_u32..).zip(v) {
+            h.write(base + 4 * k, x);
+        }
+    }
+    let band = copy(h.read(mv + 0x1c));
+    let band64 = ld(band);
+    // `fucompp` with `test ah, 0x44`: unordered counts as moved
+    #[allow(clippy::float_cmp)] // the original's exact compare
+    let still = ld(a[0]) == ld(b[0]) && ld(a[2]) == ld(b[2]);
+    let mut crossed = false;
+    if !still || h.read::<u8>(w + 0x36) & 1 != 0 {
+        write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) & 0xfffe);
+        let side = host_call(h, 0x0088_9bb0, &[va, vb, vp, vq]).cast_signed();
+        if side != 0 {
+            let gap = x87::store(fcall(h, h.rebase(0x0088_9e90), &[va, vb, vp, vq]));
+            let within = band64 <= 0.0 || ld(gap) <= band64;
+            if within {
+                let f = u32::from(h.read::<u16>(w + 0x36));
+                let f = if side > 0 { f & 0xfffb | 2 } else { f & 0xfff9 };
+                write_u16(h, w + 0x36, f);
+                let id = u32::from(h.read::<u16>(w + 0x2e));
+                host_call(h, 0x0087_64f0, &[0xffff, id, 4]);
+                crossed = true;
+            }
+        }
+    }
+    let t = x87::store(fcall(h, h.rebase(0x0088_a040), &[vb, vp, vq]));
+    let t64 = ld(t);
+    let nx = x87::store(x87::add(
+        ld(p[0]),
+        x87::mul(x87::sub(ld(q[0]), ld(p[0])), t64),
+    ));
+    let ny = x87::store(x87::add(
+        x87::mul(x87::sub(ld(q[1]), ld(p[1])), t64),
+        ld(p[1]),
+    ));
+    let nz = x87::store(x87::add(
+        x87::mul(t64, x87::sub(ld(q[2]), ld(p[2]))),
+        ld(p[2]),
+    ));
+    let [bx, by, bz] = b;
+    let dz = x87::store(x87::sub(ld(nz), ld(bz)));
+    let dx = x87::store(x87::sub(ld(nx), ld(bx)));
+    let l = x87::store(fcall(h, h.rebase(0x0088_c3c0), &[dx, 0, dz]));
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    let r = ld(h.read(mv + 0x48));
+    let r2 = x87::store(x87::mul(r, r));
+    let was = f34 >> 6 & 1;
+    // B's height within the band around N's (any when the band is not
+    // positive); false on NaN
+    let in_band = |band64: f64| {
+        band64 <= 0.0 || (x87::add(ld(ny), band64) >= ld(by) && ld(by) >= x87::sub(ld(ny), band64))
+    };
+    let id = |h: &mut H| u32::from(Mem::read::<u16>(h, w + 0x2e));
+    if ld(r2) >= ld(l) && in_band(band64) {
+        write_u16(h, w + 0x34, f34 | 0x40);
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 3]);
+        if was == 0 {
+            let i = id(h);
+            host_call(h, 0x0087_64f0, &[0xffff, i, 5]);
+        }
+    } else {
+        write_u16(h, w + 0x34, f34 & 0xffbf);
+        if crossed {
+            let i = id(h);
+            host_call(h, 0x0087_64f0, &[0xffff, i, 5]);
+        }
+        if was == 1 || crossed {
+            let i = id(h);
+            host_call(h, 0x0087_64f0, &[0xffff, i, 6]);
+        }
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u8>(w + 0xab) & 1 == 0 || h.read::<u8>(ctx + 0x1e4) != 1 {
+        return;
+    }
+    let reach = x87::store(x87::add(ld(h.read(mv + 0x40)), ld(h.read(ctx + 0x1f0))));
+    let reach2 = x87::store(x87::mul(ld(reach), ld(reach)));
+    let near = ld(reach2) >= ld(l) && in_band(band64);
+    if !near {
+        return;
+    }
+    let free = h.read::<u16>(ctx + 0x1e8) == 0xffff || ld(h.read(ctx + 0x1ec)) > ld(reach2);
+    if !free {
+        return;
+    }
+    let heading = copy(h.read(pmv + 0x34));
+    let tol = copy(h.read(mv + 0x3c));
+    if host_call(h, 0x0088_b780, &[heading, tol, bx, bz, nx, nz]) == 0 {
+        return;
+    }
+    let i = h.read::<u16>(w + 0x2e);
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    h.write(ctx + 0x1ec, copy(reach2));
+    h.write(ctx + 0x1e8, i);
+}

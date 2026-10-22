@@ -7431,4 +7431,10 @@ ported! {
     Atel_CheckBoxTouch_00867c10 @ 0x0086_7c10 => extern "C" fn h_867c10(w: u32, _unused: u32) -> u32 {
         hp::atel_check_box_touch(&mut mem(), w, |_, f, args| super::call_cdecl_f64(f, args))
     }
+    /// `Atel_CheckLineTouch_008684b0(worker, _, player)`: the four vectors
+    /// in a 16-word frame, the math helpers through the game.
+    Atel_CheckLineTouch_008684b0 @ 0x0086_84b0 => extern "C" fn h_8684b0(w: u32, _unused: u32, player: u32) {
+        let mut frame = super::StackFrame::<16>::new();
+        hp::atel_check_line_touch(&mut mem(), w, player, frame.at(), |_, f, args| super::call_cdecl_f64(f, args));
+    }
 }
