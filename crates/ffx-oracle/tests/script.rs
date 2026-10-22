@@ -13785,7 +13785,7 @@ fn r27d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
         poke(a, b, mv + 0x1c, f(rng, 4.0));
         poke(a, b, mv + 0x34, f(rng, 4.0));
         poke(a, b, mv + 0x48, f(rng, 4.0));
-        let target = [0xffffu16, 0xffff, 0, 1, 5][rng.below(5) as usize];
+        let target = [0xffffu16, 0xffff, 0, 1, 5, 0xff, 0x8000][rng.below(7) as usize];
         poke(a, b, mv + 0x28, target);
         let junk = rng.next();
         r22_case(
@@ -13806,7 +13806,7 @@ fn r27d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
     let fb = |v: f32| v.to_bits();
     // (name, A, B, half height, radius, old +0x34 bit 6)
     #[allow(clippy::type_complexity)]
-    let cases: [(&str, [f32; 3], [f32; 3], f32, f32, u16); 14] = [
+    let cases: [(&str, [f32; 3], [f32; 3], f32, f32, u16); 24] = [
         ("inside", [0.0, 0.0, 0.0], [1.0, 0.0, 1.0], 1.0, 0.0, 0),
         ("on +x", [9.0, 0.0, 0.0], [2.0, 0.0, 0.0], 1.0, 0.0, 0),
         ("on -x", [9.0, 0.0, 0.0], [-2.0, 0.0, 0.0], 1.0, 0.0, 0x40),
@@ -13835,6 +13835,53 @@ fn r27d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             0x40,
         ),
         ("same side", [9.0, 0.0, 0.0], [9.0, 0.0, 1.0], 1.0, 1.0, 0),
+        // A on a face, B beyond it: no crossing (a strict compare would
+        // see one); NaN radius: no touch through the distance
+        ("A on +x", [2.0, 0.0, 0.0], [9.0, 0.0, 0.0], 1.0, 1.0, 0),
+        ("A on -x", [-2.0, 0.0, 0.0], [-9.0, 0.0, 0.0], 1.0, 1.0, 0),
+        ("A on +z", [0.0, 0.0, 2.0], [0.0, 0.0, 9.0], 1.0, 1.0, 0),
+        ("A on -z", [0.0, 0.0, -2.0], [0.0, 0.0, -9.0], 1.0, 1.0, 0),
+        (
+            "A on +y",
+            [0.0, 1.0, 0.0],
+            [0.0, 5.0, 0.0],
+            1.0,
+            f32::NAN,
+            0,
+        ),
+        (
+            "A on -y",
+            [0.0, -1.0, 0.0],
+            [0.0, -5.0, 0.0],
+            1.0,
+            f32::NAN,
+            0,
+        ),
+        (
+            "band 0, B y 0",
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            0.0,
+            1.0,
+            0,
+        ),
+        (
+            "band 0, A high",
+            [0.0, 5.0, 0.0],
+            [3.0, 0.0, 0.0],
+            0.0,
+            1.0,
+            0,
+        ),
+        ("band top", [0.0, 1.0, 0.0], [3.0, 0.0, 0.0], 1.0, 1.0, 0),
+        (
+            "band bottom",
+            [0.0, -1.0, 0.0],
+            [3.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            0,
+        ),
     ];
     for (name, pa, pb, hy, r, bit) in cases {
         r27_reset(a, b, &stubs, |_| 0x1234);
