@@ -3632,4 +3632,88 @@ pub mod bridge {
         game(mem, FREE_00687010, &[buffer]);
         0
     }
+
+    // ---- battle round 36: MsEffectProcess
+
+    /// The battle overlay's effect functions (a pointer to their table:
+    /// `+0xc` `op_effect_run_before`, `+0x10` `op_effect_run_after`).
+    pub const OVERLAY_FUNCS: Global<u32> = Global::new(0x00c4_8d88);
+    /// `g_VfxPass`: set while an effect of the magic file's own overlay
+    /// table runs.
+    pub const VFX_PASS: Global<u32> = Global::new(0x0113_335c);
+    /// `graphicVFXSetCurrentVFXType(kind)` (render, `0x00645670`).
+    pub const SET_CURRENT_VFX_TYPE: u32 = 0x0064_5670;
+
+    /// [`ms_effect_process`]'s step for one overlay table.
+    fn run_overlay_table<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        phase: u32,
+        table: u32,
+    ) {
+        game(mem, call, crate::read::bridge::FLUSH_CACHE, &[0]);
+        if table != 0 && game(mem, call, MAGIC_FILE_OVERLAY_TABLE, &[0]) == table {
+            VFX_PASS.set(mem, 1);
+        }
+        let slot = match phase {
+            0 => 0xc,
+            1 => 0x10,
+            _ => {
+                VFX_PASS.set(mem, 0);
+                return;
+            }
+        };
+        let f: u32 = mem.read(table.wrapping_add(slot));
+        call(mem, f, &[0]);
+        VFX_PASS.set(mem, 0);
+    }
+
+    /// `MsEffectProcess(phase)` (`0x00787e00`; caller `Sg_MainLoop`): the
+    /// effects' frame, phase 0 before (`+0xc` of a table) and 1 after
+    /// (`+0x10`, the battle overlay's under VFX type 2, then type 4). The
+    /// battle overlay's table ([`OVERLAY_FUNCS`]), then each of the 0x1f
+    /// actors (with [`crate::actor::bridge::CHR_TOP`]) whose `+0xdfb` is
+    /// 4 or 5 runs its overlay table (`+0xf8c`), and so does the event
+    /// effect ([`EVENT_EFFECT_TABLE`], with its state 4 or 5): each after
+    /// `FlushCache(0)`, with [`VFX_PASS`] set when the table is the magic
+    /// file's (`MagicFile_GetEffectOverlayTable(0)`; a null table is
+    /// not asked) and cleared after. Another phase runs no function but
+    /// still flushes and sets the pass. The functions are called as
+    /// `f(0)`; a null table's are read from address 0, as the original.
+    pub fn ms_effect_process<M: Mem>(
+        mem: &mut M,
+        call: crate::exec::bridge::Call<'_, M>,
+        phase: u32,
+    ) {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let funcs = OVERLAY_FUNCS.get(mem);
+        match phase {
+            0 => {
+                let f: u32 = mem.read(funcs.wrapping_add(0xc));
+                call(mem, f, &[0]);
+            }
+            1 => {
+                let kind = at(mem, SET_CURRENT_VFX_TYPE);
+                call(mem, kind, &[2]);
+                let f: u32 = mem.read(funcs.wrapping_add(0x10));
+                call(mem, f, &[0]);
+                call(mem, kind, &[4]);
+            }
+            _ => {}
+        }
+        if crate::actor::bridge::ms_get_chr_top(mem) != 0 {
+            for i in 0..0x1f {
+                let actor = crate::actor::bridge::ms_get_chr(mem, i);
+                if matches!(mem.read::<u8>(actor.wrapping_add(0xdfb)), 4 | 5) {
+                    let table: u32 = mem.read(actor.wrapping_add(0xf8c));
+                    run_overlay_table(mem, &mut *call, phase, table);
+                }
+            }
+        }
+        let stat = crate::state::bridge::EVENT_EFFECT_STAT.get(mem);
+        if matches!(stat, 4 | 5) {
+            let table = EVENT_EFFECT_TABLE.get(mem);
+            run_overlay_table(mem, call, phase, table);
+        }
+    }
 }

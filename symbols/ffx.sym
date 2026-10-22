@@ -5261,7 +5261,7 @@
 0x00787c30 function MsEffectMagicMotion          # layout: alphabetical run between MsEffectGetTargetFlag and MsEffectMotionLevel (1 unnamed in the gap); Switch 0x7100350b20 MsEffectMagicMotion is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (ffx_battle::effect_signal, battle round 32): (w) kind w>>8&0xff 2: +0x405 = 0, MsEffectResetMotionDisable, motion +0xe01 unless 0xff via MsSetMotion(i, motion, 1, 0, 1, 0, 0) with +0x41b 1 during the call; eax kind-2 / the last callee's; entry of the callback table 0x00c6552c
 0x00787ca0 function MsEffectMotionLevel       # fh v3:exact 0x00787d60
 0x00787d70 function MsEffectBackToIdle_00787d70 # structure: (i, actor) MsActionRequest(i, 0xff, 7, 0, 2), MsPopBtlPos, the title window, motion +0xe00, MsAtelRequestMagicCamera(+0xf5c, +0xe04, +0xe08); caller MsEffectStart; name ours; ported (battle round 15)
-0x00787e00 function MsEffectProcess           # fh v3:exact+call.cs 0x00787ec0 cdecl
+0x00787e00 function MsEffectProcess           # fh v3:exact+call.cs 0x00787ec0 cdecl; (phase): the effects' frame: the battle overlay table [0x00c48d88] +0xc (phase 0) or +0x10 (phase 1, op_effect_run_after, VFX type 2 then 4), then each actor with +0xdfb 4/5 its +0xf8c table and the event effect (0x01133364 4/5) its 0x01133360 table, each after FlushCache(0) with g_VfxPass set for the magic file's overlay table; ported (ffx_battle::minor, battle round 36)
 0x00787f20 function MsEffectRead              # fh v3:exact 0x00787fe0
 0x00788110 function MsEffectReadComplete      # fh switch:bsim1.00 0x710034f5e0
 0x007881b0 function MsEffectReadError            # layout: alphabetical run between MsEffectReadComplete and MsEffectReady (2 unnamed in the gap); Switch 0x710034f690 MsEffectReadError is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); () -> MsGetChr((u8) g_BtlEffectReadChr); ported (ffx_battle::minor, battle round 29)
@@ -16261,6 +16261,7 @@
 0x00c48c00 label    g_OpUpVectorAlt              # f32 x4: op_vector_m's up vector when the direction's x and z bits (and the emulated a0/a1 high words) are all zero
 0x00c48c10 label    g_OpZBufClearInstance     # u64: the render data instance op_zbuf_clear (0x007ec7e0) draws its z clear as, cycling 1..5; ours (vfx r35, small::bridge::ZBUF_CLEAR_INSTANCE)
 0x00c48d78 label    g_OpEtEffId               # the id op_et_eff (0x007fc2e0) last started a unit with: written after opu_et_unit, or before it on the debug paths; ours (vfx r35, et::bridge::ET_EFF_ID)
+0x00c48d88 label g_BtlOverlayFuncs          # u32 -> the battle overlay's effect function table 0x00c48d90 (op_effect_init, ..., +0xc op_effect_run_before, +0x10 op_effect_run_after); MsEffectProcess 0x00787e00
 0x00c48e44 label    g_OpuMdc2000AmbientIds        # opu_mdc_0x2000_ambient 0x008041c0: 7 magic ids whose ambient becomes 0x80
 0x00c49458 label    g_SqsRpcSend                 # pointer to the sound RPC send buffer (0x40 bytes; Sqs_CallRpc, SqsSeSeparateMaskClear writes the SE mask there)
 0x00c4945c label    g_SqsRpcSend2                # pointer to the second RPC client's send buffer (Sqs_CallRpc2)

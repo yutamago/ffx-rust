@@ -2224,6 +2224,10 @@ ported! {
     PasswordTextDispose @ 0x0079_02f0 => extern "C" fn password_text_dispose() {
         minor::password_text_dispose(&mut mem(), &mut call_ptr);
     }
+    /// `MsEffectProcess(phase)`: the effects' frame (`Sg_MainLoop` drops eax).
+    MsEffectProcess @ 0x0078_7e00 => extern "C" fn ms_effect_process(phase: u32) {
+        minor::ms_effect_process(&mut mem(), &mut call_ptr, phase);
+    }
     /// `MsGetChrReelKind_007b19f0(i)`.
     MsGetChrReelKind_007b19f0 @ 0x007b_19f0 => extern "C" fn ms_get_chr_reel_kind(i: u32) -> u32 {
         minor::ms_get_chr_reel_kind(&mem(), i)
