@@ -11,6 +11,31 @@ fn call_ptr(f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
 
+/// MSVCR110's `_CIcos` (`cos`) or `_CIsin` through the game's import slot
+/// (`0x00b0c3b4`, `0x00b0c3b8`) on a 53-bit operand: loaded as `fld
+/// qword`, the result stored as `fstp dword` through `edi`.
+fn crt_trig(cos: bool, x: f64) -> f32 {
+    let slot = crate::rebase(if cos { 0x00b0_c3b4 } else { 0x00b0_c3b8 }) as *const usize;
+    let mut out = 0f32;
+    // SAFETY: the slot holds the CRT's intrinsic, which takes its operand
+    // in ST0 and leaves the result there; the asm loads it, calls it and
+    // stores the result through edi (which the callee keeps), leaving the
+    // x87 stack empty.
+    unsafe {
+        let f = slot.read();
+        std::arch::asm!(
+            "fld qword ptr [{x}]",
+            "call {f}",
+            "fstp dword ptr [edi]",
+            x = in(reg) &raw const x,
+            f = in(reg) f,
+            in("edi") &raw mut out,
+            clobber_abi("C"),
+        );
+    }
+    out
+}
+
 ported! {
     /// `op_md_copy(src, dst)`.
     op_md_copy @ 0x00a6_9290 => extern "C" fn op_md_copy(src: u32, dst: u32) -> u32 {
@@ -98,6 +123,26 @@ ported! {
     /// `g_GsRegisterSink` read.
     opus_0279_draw @ 0x00a7_0210 => extern "C" fn opus_0279_draw(obj: u32, init: u32, rec: u32, _unused: u32, tex: u32) -> u32 {
         hi_draw::bridge::opus_0279_draw(&mut mem(), obj, init, rec, tex, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_md_etc_draw_00a693b0(obj, b, m, view, e)`: the init block in a
+    /// buffer on this shim's stack, its never-written words 0.
+    opu_md_etc_draw_00a693b0 @ 0x00a6_93b0 => extern "C" fn opu_md_etc_draw(obj: u32, b: u32, m: u32, view: u32, e: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        hi_draw::bridge::opu_md_etc_draw(&mut mem(), obj, b, m, view, e, [0; 7], frame, &mut |_, c, x| crt_trig(c, x), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op_md_x64_draw_00a69300(obj, b, e)`: the init block in a buffer on
+    /// this shim's stack, its never-written words 0.
+    op_md_x64_draw_00a69300 @ 0x00a6_9300 => extern "C" fn op_md_x64_draw(obj: u32, b: u32, e: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x80]);
+        let mut locals = Locals([0; 0x80]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        hi_draw::bridge::op_md_x64_draw(&mut mem(), obj, b, e, [0; 8], frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_vertex_normal_point44_ffx(obj, model, work, chr)`: its locals
     /// in a buffer on this shim's stack.

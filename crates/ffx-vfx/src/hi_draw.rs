@@ -1049,4 +1049,217 @@ pub mod bridge {
         go(mem, OP_SPR_FREE, &[], call);
         sink
     }
+
+    /// The four angles (`f32`) `opu_md_etc_draw_00a693b0` reads, and the
+    /// three-word points it writes from them (`x`, `y`, `z`; their `w`
+    /// words left alone).
+    const MD_ETC_ANGLES: [u32; 4] = [0x022f_b180, 0x00c8_8c28, 0x00c8_8c40, 0x00c8_8c58];
+    const MD_ETC_POINTS: [u32; 4] = [0x00c8_8c18, 0x00c8_8c2c, 0x00c8_8c44, 0x00c8_8c5c];
+    /// The quad block: four rows of 12 bytes from `0x022fb188` (the
+    /// points negated, `w` 1.0), its tag words at `+0x50` and `+0x58`, and
+    /// four 0x30-byte screen records from `0x022fb1f8`.
+    const MD_ETC_QUAD: u32 = 0x022f_b188;
+    const MD_ETC_SCREEN: u32 = 0x022f_b1f8;
+    /// `f64` 3.1415920257568359 (`0x00b582f0`) and 1/2048 (`0x00b58590`):
+    /// the angle scale.
+    const K_PI: u32 = 0x00b5_82f0;
+    const K_2048TH: u32 = 0x00b5_8590;
+    /// `f64` 40, 50, 80, -1 (`0x00b5af28`, `0x00b1f2c0`, `0x00b5f200`,
+    /// `0x00b92350`).
+    const K_40: u32 = 0x00b5_af28;
+    const K_50: u32 = 0x00b1_f2c0;
+    const K_80: u32 = 0x00b5_f200;
+    const K_MINUS_1: u32 = 0x00b9_2350;
+    const FFX_VU0_ROT_TRANS_PERS: u32 = 0x006e_d840;
+    const FFX_VU0_INVERS_MATRIX: u32 = 0x006e_d450;
+    const OP_OT_ADD_AFTER: u32 = 0x007e_c430;
+    /// `0x00c88b78`, the address the init block passes at `+0x24`.
+    const MD_ETC_TABLE: u32 = 0x00c8_8b78;
+
+    /// `opu_md_etc_draw_00a693b0(obj, b, m, view, e)` (`0x00a693b0`, name
+    /// ours; from `opu_md_etc`).
+    ///
+    /// Four points from four `f32` angles `a` (`0x022fb180`, `0x00c88c28`,
+    /// `0x00c88c40`, `0x00c88c58`): with `t = a x 3.141592 / 2048` (53
+    /// bits) and `sin t`, `cos t` from `trig` (the CRT's `_CIsin` and
+    /// `_CIcos`, each an `f32`), `(40 sin, 0, 40 cos)` at `0x00c88c18`,
+    /// `(0, 40 sin, 40 cos)` at `0x00c88c2c`, `(0 x sin, 40 sin, 40 cos)` at
+    /// `0x00c88c44` and `(50 sin, 80 cos, 80 cos)` at `0x00c88c5c` (each
+    /// product an `f32`; their `w` words left alone). The quad block at
+    /// `0x022fb188` gets them times -1 (`f32`), `w` 1.0, 16 bytes a row;
+    /// `+0x50` 0x8004 and `+0x58` 0x441.
+    ///
+    /// `FFXVu0RotTransPers(0x022fb1f8 + 0x30 k, view, point k, 0)` fills
+    /// four screen records. In each, words 0 and 1 (`x`, `y`) lose 0x100
+    /// and 0x80, and words 4..7 become `x + 0x100`, `y + 0x80` and words 2,
+    /// 3; the last record's first four words (as `RotTransPers` left them)
+    /// also go to the EE's `v0`. Then `op_ot_add_after(0x022fb1c8, 0xe, 0,
+    /// 0)` and `FFXVu0InversMatrix(m, m)`.
+    ///
+    /// Last `op_md_chara_path3(obj, block, 0)` with the 0x50-byte init
+    /// block at `frame - 0x80`: `+0` 0x41c, `+4` `e`, `u16 +8` 0x88, `+0xc`
+    /// 0, `+0x18` 0x80808080, `+0x1c` 0x40404040, `+0x20` `b`, `+0x24`
+    /// `0x00c88b78`, `+0x28` the quad block, `+0x2c` `m`, `+0x34` 0x6c00000,
+    /// `+0x38` 0, `+0x40` 0, `+0x44` `b`. The rest of it (`u16 +0xa`,
+    /// `+0x10`, `+0x14`, `+0x30`, `+0x3c`, `+0x48`, `+0x4c`) the original
+    /// never writes: `junk`, in that order (the first in its high half).
+    /// Returns `op_md_chara_path3`'s `eax`. Callees through `call`.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn opu_md_etc_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        b: u32,
+        m: u32,
+        view: u32,
+        e: u32,
+        junk: [u32; 7],
+        frame: u32,
+        trig: &mut impl FnMut(&mut M, bool, f64) -> f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use x87::{load, mul, store};
+        let k = |mem: &M, sym: u32| mem.read::<f64>(mem.rebase(sym));
+        let (pi, step) = (k(mem, K_PI), k(mem, K_2048TH));
+        let (k40, k50, k80, minus) = (k(mem, K_40), k(mem, K_50), k(mem, K_80), k(mem, K_MINUS_1));
+        let at = |mem: &M, sym: u32, o: u32| mem.rebase(sym).wrapping_add(o);
+        let mut sc = [(0f64, 0f64); 4];
+        for (i, &sym) in MD_ETC_ANGLES.iter().enumerate() {
+            let a = load(mem.read(mem.rebase(sym)));
+            let t = mul(mul(a, pi), step);
+            let s = f64::from(trig(mem, false, t));
+            let c = f64::from(trig(mem, true, t));
+            sc[i] = (s, c);
+        }
+        // the points: x, y, z of each (products rounded to f32 at the store)
+        let points = [
+            [(0, mul(sc[0].0, k40)), (4, 0.0), (8, mul(sc[0].1, k40))],
+            [(0, 0.0), (4, mul(sc[1].0, k40)), (8, mul(sc[1].1, k40))],
+            [
+                (0, mul(sc[2].0, 0.0)),
+                (4, mul(sc[2].0, k40)),
+                (8, mul(sc[2].1, k40)),
+            ],
+            [
+                (0, mul(sc[3].0, k50)),
+                (4, mul(sc[3].1, k80)),
+                (8, mul(sc[3].1, k80)),
+            ],
+        ];
+        for (&sym, row) in MD_ETC_POINTS.iter().zip(&points) {
+            for &(o, v) in row {
+                let to = at(mem, sym, o);
+                mem.write(to, store(v));
+            }
+        }
+        let quad = mem.rebase(MD_ETC_QUAD);
+        mem.write(quad.wrapping_add(0x50), 0x8004u32);
+        mem.write(quad.wrapping_add(0x58), 0x441u32);
+        // the points times -1 (the zeros become -0.0), `w` 1.0
+        for (r, &sym) in (0u32..).zip(&MD_ETC_POINTS) {
+            let row = quad.wrapping_add(0x10 * r);
+            for o in [0u32, 4, 8] {
+                let p = load(mem.read(at(mem, sym, o)));
+                mem.write(row.wrapping_add(o), store(mul(p, minus)));
+            }
+            mem.write(row.wrapping_add(0xc), 1.0f32);
+        }
+        let screen = mem.rebase(MD_ETC_SCREEN);
+        for (r, &sym) in (0u32..).zip(&MD_ETC_POINTS) {
+            let args = [screen.wrapping_add(0x30 * r), view, mem.rebase(sym), 0];
+            go(mem, FFX_VU0_ROT_TRANS_PERS, &args, call);
+        }
+        for r in 0..4u32 {
+            let rec = screen.wrapping_add(0x30 * r);
+            let p: [u32; 4] = mem.read(rec);
+            mem.write(rec, [p[0].wrapping_sub(0x100), p[1].wrapping_sub(0x80)]);
+            mem.write(
+                rec.wrapping_add(0x10),
+                [
+                    p[0].wrapping_add(0x100),
+                    p[1].wrapping_add(0x80),
+                    p[2],
+                    p[3],
+                ],
+            );
+            if r == 3 {
+                mem.write(mem.rebase(EE_V0), p);
+            }
+        }
+        let ot = quad.wrapping_add(0x40);
+        go(mem, OP_OT_ADD_AFTER, &[ot, 0xe, 0, 0], call);
+        go(mem, FFX_VU0_INVERS_MATRIX, &[m, m], call);
+        let block = frame.wrapping_sub(0x80);
+        let table = mem.rebase(MD_ETC_TABLE);
+        let words: [u32; 20] = [
+            0x41c,
+            e,
+            0x88 | junk[0] & 0xffff_0000,
+            0,
+            junk[1],
+            junk[2],
+            0x8080_8080,
+            0x4040_4040,
+            b,
+            table,
+            quad,
+            m,
+            junk[3],
+            0x06c0_0000,
+            0,
+            junk[4],
+            0,
+            b,
+            junk[5],
+            junk[6],
+        ];
+        mem.write(block, words);
+        go(mem, OP_MD_CHARA_PATH3, &[obj, block, 0], call)
+    }
+
+    const OP_MD_X64: u32 = 0x00a6_b710;
+
+    /// `op_md_x64_draw_00a69300(obj, b, e)` (`0x00a69300`, name ours; from
+    /// `opp_draw_part_a74d30`, `0x00814800` and the field's `0x00911fc0`):
+    /// `op_md_x64_00a6b710(obj, block)` with the 0x50-byte init block at
+    /// `frame - 0x80`: `+0` 0x41c, `+4` `e`, `u16 +8` 0x88, `+0xc..+0x14`
+    /// 0, `+0x18` 0x80808080, `+0x1c` 0, `+0x20` `b`, `+0x34`, `+0x38`,
+    /// `+0x40`, `+0x44` 0. The rest of it (`u16 +0xa`, `+0x24`, `+0x28`,
+    /// `+0x2c`, `+0x30`, `+0x3c`, `+0x48`, `+0x4c`) the original never
+    /// writes: `junk`, in that order (the first in its high half). Returns
+    /// `op_md_x64`'s `eax`. The callee through `call`.
+    pub fn op_md_x64_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        b: u32,
+        e: u32,
+        junk: [u32; 8],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let block = frame.wrapping_sub(0x80);
+        let words: [u32; 20] = [
+            0x41c,
+            e,
+            0x88 | junk[0] & 0xffff_0000,
+            0,
+            0,
+            0,
+            0x8080_8080,
+            0,
+            b,
+            junk[1],
+            junk[2],
+            junk[3],
+            junk[4],
+            0,
+            0,
+            junk[5],
+            0,
+            0,
+            junk[6],
+            junk[7],
+        ];
+        mem.write(block, words);
+        go(mem, OP_MD_X64, &[obj, block], call)
+    }
 }

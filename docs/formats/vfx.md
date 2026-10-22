@@ -784,6 +784,39 @@ Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
   `[init +0x20]` is restored, but `[init +0x2c]` gets the old `[init
   +0x34]`, which is also the `eax` left.
 
+### Init blocks with unwritten words
+
+Two callers build `op1_md_draw`'s 0x50-byte init block on their
+16-aligned stack frame (`ebp - 0x80`) and leave words of it unwritten,
+which the callee copies on (`op_md_spr_init_x64`, `copy_init`). The ports
+take those words as an explicit `junk` argument; the hooks pass 0 and the
+oracle tests write known values into the original's frame.
+
+- `op_md_x64_draw_00a69300(obj, b, e)` (`0x00a69300`; from
+  `opp_draw_part_a74d30`, `0x00814800`, `0x00911fc0`): `op_md_x64(obj,
+  block)` with `+0` 0x41c, `+4` `e`, `u16 +8` 0x88, `+0xc..+0x14` 0,
+  `+0x18` 0x80808080, `+0x1c` 0, `+0x20` `b`, `+0x34`, `+0x38`, `+0x40`,
+  `+0x44` 0; unwritten: `u16 +0xa`, `+0x24..+0x30`, `+0x3c`, `+0x48`,
+  `+0x4c`. `eax` is `op_md_x64`'s.
+- `opu_md_etc_draw_00a693b0(obj, b, m, view, e)` (`0x00a693b0`; from
+  `opu_md_etc`): four points from four `f32` angles (`0x022fb180`,
+  `0x00c88c28`, `0x00c88c40`, `0x00c88c58`; `t = a x 3.141592 / 2048`,
+  `_CIsin`/`_CIcos` each an `f32`): `(40 sin, 0, 40 cos)` at `0x00c88c18`,
+  `(0, 40 sin, 40 cos)` at `0x00c88c2c`, `(0 sin, 40 sin, 40 cos)` at
+  `0x00c88c44`, `(50 sin, 80 cos, 80 cos)` at `0x00c88c5c`. The quad block
+  `0x022fb188` gets them times -1, `w` 1.0 (16-byte rows), `+0x50` 0x8004,
+  `+0x58` 0x441. `FFXVu0RotTransPers` turns each into a 0x30-byte screen
+  record at `0x022fb1f8` (`view`, keep 0), whose `x`, `y` then lose 0x100
+  and 0x80 and whose words 4..7 are `x + 0x100`, `y + 0x80` and words 2, 3
+  (the last record's words 0..3 also into the EE's `v0`).
+  `op_ot_add_after(0x022fb1c8, 0xe, 0, 0)`, `FFXVu0InversMatrix(m, m)`,
+  then `op_md_chara_path3(obj, block, 0)` with `+0` 0x41c, `+4` `e`, `u16
+  +8` 0x88, `+0xc` 0, `+0x18` 0x80808080, `+0x1c` 0x40404040, `+0x20`
+  `b`, `+0x24` `0x00c88b78`, `+0x28` the quad block, `+0x2c` `m`, `+0x34`
+  0x6c00000, `+0x38`, `+0x40` 0, `+0x44` `b`; unwritten: `u16 +0xa`,
+  `+0x10`, `+0x14`, `+0x30`, `+0x3c`, `+0x48`, `+0x4c`. `eax` is
+  `op_md_chara_path3`'s (0).
+
 ### `opus_0279` draw
 
 `opus_0279_draw(obj, init, rec, _, tex)` (`0x00a70210`, from

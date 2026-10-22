@@ -2285,3 +2285,167 @@ fn opus_0279_draw_matches_the_original() {
         let _ = (inits, lights, refr);
     }
 }
+
+/// `fcos`/`fsin` stand-ins for the CRT's `_CIcos`/`_CIsin` (their import
+/// slots `0x00b0c3b4`, `0x00b0c3b8` pointed at `0x00b0bfc0`, `0x00b0bfc8`,
+/// which the originals reach through `jmp [slot]`), and thunks after
+/// [`THUNK`]'s code, `fld qword [esp + 4]; jmp [slot]`, for the bridge's
+/// side; returns the thunks for cos and sin.
+fn trig64_stand_ins(p: &mut Pair) -> (u32, u32) {
+    let mut thunks = [0u32; 2];
+    for (k, (slot, code, at)) in [
+        (0x00b0_c3b4u32, [0xd9u8, 0xff, 0xc3], 0x00b0_bfc0u32),
+        (0x00b0_c3b8, [0xd9, 0xfe, 0xc3], 0x00b0_bfc8),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let at = p.sym(at);
+        p.a.write(at, &code).unwrap();
+        p.b.write(at, &code).unwrap();
+        let s = p.sym(slot);
+        p.set(s, at);
+        let t = p.sym(THUNK) + 0x80 + 0x10 * u32::try_from(k).unwrap();
+        let mut c = vec![0xdd, 0x44, 0x24, 0x04, 0xff, 0x25]; // fld qword [esp+4]; jmp [slot]
+        c.extend(s.to_le_bytes());
+        p.a.write(t, &c).unwrap();
+        p.b.write(t, &c).unwrap();
+        thunks[k] = t;
+    }
+    (thunks[0], thunks[1])
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn opu_md_etc_draw_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_93b0);
+        let (cos, sin) = trig64_stand_ins(&mut p);
+        let ots = deref_recorder(&mut p, 0x007e_c430, &[0, 0, 0, 0]);
+        let ret = p.alloc(4);
+        // op_md_chara_path3: the object, the whole init block, the third word
+        let draws = wide_recorder(&mut p, 0x00a6_a3a0, &[0, 20, 0], ret);
+        let (obj, b, m, view, e) = (
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x40),
+        );
+        let angles = [0x022f_b180u32, 0x00c8_8c28, 0x00c8_8c40, 0x00c8_8c58].map(|s| p.sym(s));
+        let (points, quad) = (p.sym(0x00c8_8c18), p.sym(0x022f_b188));
+        for round in 0..1500 {
+            // the point words (their `w`s stay) around the angle cells
+            p.fill(points, 0x50, &mut rng);
+            for &a in &angles {
+                #[allow(clippy::cast_precision_loss)]
+                let small = (rng.below(0x4000) as f32 - 8192.0).to_bits();
+                let x = if rng.chance(5) { rng.float() } else { small };
+                p.set(a, x);
+            }
+            p.fill(quad, 0x130, &mut rng);
+            p.fill(p.sym(0x00c8_f528), 0x10, &mut rng);
+            matrix(&mut p, &mut rng, view);
+            if rng.chance(70) {
+                // a camera-like matrix: unit rotation, a translation
+                for i in 0..16 {
+                    let x = if i % 5 == 0 { 1.0f32.to_bits() } else { 0 };
+                    p.set(view + 4 * i, x);
+                }
+                p.set(view + 0x38, near(&mut rng, 600.0));
+            }
+            matrix(&mut p, &mut rng, m);
+            let r = rng.next();
+            p.set(ret, r);
+            let (ob, bb, eb) = (
+                obj + rng.below(0x10),
+                b + rng.below(0x10),
+                e + rng.below(0x10),
+            );
+            let junk: [u32; 7] = std::array::from_fn(|_| rng.next());
+            let frame = p.b.stack_range().end - 0x100 - 20 - 4 - 0x200 - 20 - 4 - 4;
+            let ebp = aligned_ebp(frame);
+            for (o, w) in [0x78u32, 0x70, 0x6c, 0x50, 0x44, 0x38, 0x34]
+                .into_iter()
+                .zip(junk)
+            {
+                p.a.write(ebp - o, &w.to_le_bytes()).unwrap();
+            }
+            let before = p.get::<u32>(draws);
+            check_deep_n(
+                &mut p,
+                &format!("opu_md_etc_draw round {round}"),
+                0x00a6_93b0,
+                &[ob, bb, m, view, eb],
+                |o, frame| {
+                    let mut trig = |o: &mut Oracle, c: bool, x: f64| {
+                        let bits = x.to_bits();
+                        #[allow(clippy::cast_possible_truncation)]
+                        let args = [bits as u32, (bits >> 32) as u32];
+                        o.call(if c { cos } else { sin }, Conv::Cdecl, &args)
+                            .unwrap()
+                            .st0_f32()
+                            .unwrap()
+                    };
+                    Some(hi_draw::bridge::opu_md_etc_draw(
+                        o,
+                        ob,
+                        bb,
+                        m,
+                        view,
+                        eb,
+                        junk,
+                        aligned_ebp(frame),
+                        &mut trig,
+                        &mut call_original,
+                    ))
+                },
+            );
+            assert_eq!(p.get::<u32>(draws), before + 1);
+        }
+        assert!(p.get::<u32>(ots) > 0);
+    }
+}
+
+#[test]
+fn op_md_x64_draw_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_9300);
+        let ret = p.alloc(4);
+        // op_md_x64_00a6b710: the object and the whole init block
+        let draws = wide_recorder(&mut p, 0x00a6_b710, &[0, 20], ret);
+        for round in 0..500 {
+            let (obj, b, e) = (rng.next(), rng.next(), rng.next());
+            let r = rng.next();
+            p.set(ret, r);
+            let junk: [u32; 8] = std::array::from_fn(|_| rng.next());
+            let frame = p.b.stack_range().end - 0x100 - 12 - 4 - 0x200 - 12 - 4 - 4;
+            let ebp = aligned_ebp(frame);
+            for (o, w) in [0x78u32, 0x5c, 0x58, 0x54, 0x50, 0x44, 0x38, 0x34]
+                .into_iter()
+                .zip(junk)
+            {
+                p.a.write(ebp - o, &w.to_le_bytes()).unwrap();
+            }
+            let before = p.get::<u32>(draws);
+            check_deep_n(
+                &mut p,
+                &format!("op_md_x64_draw round {round}"),
+                0x00a6_9300,
+                &[obj, b, e],
+                |o, frame| {
+                    Some(hi_draw::bridge::op_md_x64_draw(
+                        o,
+                        obj,
+                        b,
+                        e,
+                        junk,
+                        aligned_ebp(frame),
+                        &mut call_original,
+                    ))
+                },
+            );
+            assert_eq!(p.get::<u32>(draws), before + 1);
+        }
+    }
+}
