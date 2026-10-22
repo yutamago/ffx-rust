@@ -1846,3 +1846,26 @@ pushed as literals (no relocation entries), not addresses.
   and at the last frame, and key A at frame 0. In between, keys that
   match in their low 11 bits blend with `MenuScene_KeyEase`. Keys that
   don't match switch from A to B when the ease reaches 0.5.
+- `TOBtlSetLibraWindowParam(chr)` (`0x0089a160`) fills the Libra
+  window's line ids (u16 at `0x0133f6b2`, the count at `0x0133f6b0`).
+  First come `0x1006 + k` for each status byte at 0xff, then `0x1011`
+  when byte 11 is 0. Then `0x1012 + k` for each 0xff byte of the 13-byte
+  `MsGetChrLibraName_0078fae0` list, and `0x1020 + k` for each set bit of
+  `MsGetChrLibraWord_0078fac0` except bit 9.
+- `TOBtlCtrlHelpWin` (`0x008912e0`) chooses the battle help line from
+  the command window at the current level (0xf0 bytes from
+  `0x0133c952`). That window holds the kind at `+0`, the command at
+  `+0xa`, the list at `+0x1e` and the cursor at `+0x40`. Commands 0x3024,
+  0x302a and 0x3123 show text 0x3014. 0x3002, 0x3117 and 0x3118 show the
+  change help for the entry under the cursor, and other commands show
+  the command help. An entry of 0xff closes the window. Kind 1 shows the
+  target's help, or for 0x3056 with target bits 0x38000 the name of
+  command 0x30ff.
+- `TOBtlDrawActiveChrCursor(chr)` (`0x00892590`) projects three points
+  around the character's head. Each point is a radius and height pair at
+  `0x0133fa08`, placed at the angle `0x0133fa7c`. The three screen
+  points make the cursor triangle. A projection with ST0 at or below 0
+  stops the draw (NaN does not stop it).
+- `TOBtlSetCallback(w)` (`0x008a0de0`) sets a battle window's callbacks
+  (open, wait, a third one, draw and init) from its kind, through a
+  byte-indexed jump table.

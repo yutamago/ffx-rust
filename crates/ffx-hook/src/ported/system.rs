@@ -1353,6 +1353,28 @@ ported! {
     MenuScene_KeyPick_00a7b290 @ 0x00a7_b290 => extern "C" fn menu_scene_key_pick(keys: u32, track: u32, frame: u32, frames: u32, out: u32) -> u32 {
         scene::bridge::menu_scene_key_pick(&mut mem(), [keys, track, frame, frames, out], call_sym, fcall)
     }
+    /// `TOBtlSetLibraWindowParam(chr)` (callers drop `eax`).
+    TOBtlSetLibraWindowParam @ 0x0089_a160 => extern "C" fn to_btl_set_libra_window_param(chr: u32) {
+        btl::bridge::set_libra_window_param(&mut mem(), chr, call_sym);
+    }
+    /// `TOBtlCtrlHelpWin()` (callers drop `eax`).
+    TOBtlCtrlHelpWin @ 0x0089_12e0 => extern "C" fn to_btl_ctrl_help_win() {
+        // MsGetComData's string table word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        btl::bridge::ctrl_help_win(&mut mem(), local, call_sym);
+    }
+    /// `TOBtlDrawActiveChrCursor(chr)` (callers drop `eax`).
+    TOBtlDrawActiveChrCursor @ 0x0089_2590 => extern "C" fn to_btl_draw_active_chr_cursor(chr: u32) {
+        // the projection's screen point (2 words) and the world point (4)
+        let mut frame = super::StackFrame::<6>::new();
+        let at = frame.at();
+        btl::bridge::draw_active_chr_cursor(&mut mem(), chr, at, call_sym, fcall);
+    }
+    /// `TOBtlSetCallback(w)` (callers drop `eax`).
+    TOBtlSetCallback @ 0x008a_0de0 => extern "C" fn to_btl_set_callback(w: u32) {
+        btl::bridge::set_callback(&mut mem(), w, call_sym);
+    }
     /// `TOBtlDrawGetMoneyMessageWindow(gil)`.
     TOBtlDrawGetMoneyMessageWindow @ 0x0089_3660 => extern "C" fn to_btl_draw_get_money(gil: i32) -> u32 {
         tolib::bridge::btl_draw_get_money_message_window(&mut mem(), gil, call_sym)
