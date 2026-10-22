@@ -4557,6 +4557,16 @@ ported! {
         nkz::bridge::sqs_init_wave_info(&mut mem(), src, a, &mut |_, f, a| call_cdecl(f, a));
     }
 
+    /// `AbmapState_ChangingNode()`: void.
+    AbmapState_ChangingNode @ 0x00a4_7d50 => extern "C" fn shim_abmap_state_changing_node() {
+        abmap::bridge::abmap_state_changing_node(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapDrawLinks_00a4b4b0()`: void.
+    AbmapDrawLinks_00a4b4b0 @ 0x00a4_b4b0 => extern "C" fn shim_abmap_draw_links() {
+        abmap::bridge::abmap_draw_links(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
     /// `SqsInitMusicInfo(src, _, a)`: void like `SqsInitWaveInfo` (no
     /// caller reads `eax`).
     SqsInitMusicInfo @ 0x0081_d340 => extern "C" fn shim_sqs_init_music_info(src: u32, _b: u32, a: u32) {

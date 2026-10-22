@@ -23223,3 +23223,111 @@ fn r38c_cp_draw_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x0038_c002);
     r38_cp_draw_cases(&mut t, &mut rng, 150);
 }
+
+// ---- chara-main-map round 1: the sphere grid's node change and links
+
+/// `AbmapState_ChangingNode` through the change's frames (19 most often,
+/// the byte wrap), tags on and off the node, above, at and below 0 and
+/// NaN, held or not; `AbmapDrawLinks_00a4b4b0` over made-up links, lit or
+/// not, the selected one, every kind (and past 6). The callees are
+/// logging stand-ins (`user_malloc` answering a block).
+fn cmm1_map_cases(t: &mut Twin, rng: &mut Xorshift, g: u32, cases: u32) {
+    use ffx_field::abmap;
+    use ffx_field::abmap::bridge as ab;
+    let (log, rv, blkv) = (t.alloc(4 + 0x20 * 64), t.alloc(4), t.alloc(4));
+    t.cave_from(
+        0,
+        &[
+            (
+                Some(abmap::bridge::POSITION_PLY_TAG),
+                log_stub(log, rv, 1, 1),
+            ),
+            (Some(ab::STORE_SAVE), log_stub(log, rv, 2, 0)),
+            (Some(ab::EI_ABM_PARA_GET), log_stub(log, rv, 3, 0)),
+            (Some(ab::CALC_LINK_POINTS), log_stub(log, rv, 4, 0)),
+            (Some(ab::USER_MALLOC), log_stub(log, blkv, 5, 1)),
+            (Some(ab::USER_FREE), log_stub(log, rv, 6, 1)),
+            (Some(ab::DRAW_LINK_STRIP), log_stub(log, rv, 7, 3)),
+            (Some(ab::DRAW_LINK), log_stub(log, rv, 8, 3)),
+        ],
+    );
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let hold = t.b.rebase(ab::CHANGING_HOLD);
+    let blk = t.alloc(0x200);
+    for _ in 0..cases {
+        t.put(log, 0u32);
+        t.put(rv, rng.next());
+        t.fill(g + 0x11000, 0x700, rng);
+        let node = u16::try_from(rng.below(0x40)).unwrap();
+        t.put(g + 0x1164e, node);
+        for i in 0..8 {
+            let tag = g + 0x110c4 + 0x50 * i;
+            let v = match rng.below(6) {
+                0 => 0,
+                1 => 0x7fc0_0000,
+                2 => float_in(rng, -50, -1),
+                _ => float_in(rng, 1, 50),
+            };
+            t.put(tag, v);
+            let on = if rng.below(3) == 0 { node ^ 1 } else { node };
+            t.put(tag + 8, on);
+        }
+        let frame = match rng.below(4) {
+            0 => u8::try_from(rng.below(256)).unwrap(),
+            1 => 0xff,
+            _ => 0x13,
+        };
+        t.put(g + 0x11650, frame);
+        t.put(g + 0x1162c, float_in(rng, -100, 100));
+        t.put(g + 0x11628, float_in(rng, -100, 100));
+        t.put(hold, [0u16, 0, 1, 0x100][rng.below(4) as usize]);
+        t.same(
+            "AbmapState_ChangingNode",
+            |o| o.void(0x00a4_7d50, &[]),
+            |m| ab::abmap_state_changing_node(m, call),
+        );
+        // ---- the links
+        t.put(log, 0u32);
+        t.fill(blk, 0x200, rng);
+        t.put(blkv, blk);
+        let n = rng.below(9);
+        t.put(g + 4, i16::try_from(n).unwrap());
+        let kind = u8::try_from(rng.below(9)).unwrap();
+        t.put(g + 0x115bc, kind);
+        for i in 0..n {
+            let link = g + 0xa808 + 0x14 * i;
+            t.fill(link, 0x14, rng);
+        }
+        let sel = if rng.below(2) == 0 {
+            g + 0xa808 + 0x14 * rng.below(n.max(1))
+        } else {
+            rng.next()
+        };
+        t.put(g + 0x115f8, sel);
+        t.same(
+            "AbmapDrawLinks",
+            |o| o.void(0x00a4_b4b0, &[]),
+            |m| ab::abmap_draw_links(m, call),
+        );
+    }
+}
+
+#[test]
+fn cmm1_map_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00c3_d001);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    cmm1_map_cases(&mut t, &mut rng, g, 300);
+}
+
+#[test]
+fn cmm1_map_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c3_d002);
+    let g = t.alloc(0x1_4000);
+    t.set(ffx_field::abmap::ABMAP, g);
+    cmm1_map_cases(&mut t, &mut rng, g, 150);
+}
