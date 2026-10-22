@@ -407,6 +407,8 @@ REVIEWED = {
     0x00879b60: ("debug", "reads a host-PC file into a source buffer (AtelPCOpen, sceRead); caller AtelLoadSourceData (script round 25)"),
     0x008c1790: ("glue", "5-byte jmp 0x88ec60 (TkVU1SyncPath -> sceGsSyncPath, already glue) (menu round 33)"),
     0x008c30d0: ("glue", "jmp 0x786900, thunk to MsSetSaveParamAll (TkMsSetSaveParamAll) (menu round 33)"),
+    0x00882d50: ("debug", "script-debugger page line via TkPutDebugFontString*; reached only from AtelDebugDisplay_00883040, which has no callers (script round 26)"),
+    0x00884d90: ("debug", "script-debugger variables page line; reached only from AtelDebugDisplay_00883040, which has no callers (script round 26)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

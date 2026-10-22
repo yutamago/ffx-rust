@@ -12439,7 +12439,7 @@
 0x00882990	logic	default (no rule: ported to be safe)
 0x00882ac0	logic	default (no rule: ported to be safe)
 0x00882bb0	logic	default (no rule: ported to be safe)
-0x00882d50	logic	default (no rule: ported to be safe)
+0x00882d50	debug	reviewed: script-debugger page line via TkPutDebugFontString*; reached only from AtelDebugDisplay_00883040, which has no callers (script round 26)
 0x00882f40	debug	only called from debug code (AtelDebugPage_System_0087fca0)
 0x00883040	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00883340	debug	debug name: TkDebugHexDump_00883340
@@ -12456,7 +12456,7 @@
 0x008848a0	logic	default (no rule: ported to be safe)
 0x00884c90	dead	unreachable from the entry point and every pointer table
 0x00884cc0	logic	default (no rule: ported to be safe)
-0x00884d90	logic	default (no rule: ported to be safe)
+0x00884d90	debug	reviewed: script-debugger variables page line; reached only from AtelDebugDisplay_00883040, which has no callers (script round 26)
 0x00884fe0	logic	default (no rule: ported to be safe)
 0x00885040	logic	default (no rule: ported to be safe)
 0x008850c0	logic	default (no rule: ported to be safe)
