@@ -4810,6 +4810,45 @@ pub mod bridge {
         0
     }
 
+    /// `op_effect_run_after()` (`0x00800670`, `MsEffectProcess`'s effect
+    /// frame): `op_oef2_tex_clut_cue_loop`, `op_oef2_tex_clut_ovl_trans(-1)`,
+    /// `op_oef2_sound_cue_loop`; unless the battle opus object has a pinned
+    /// frame (`+0x58`), its frame `+0x54` = the latched frame (`0x02332e8c`)
+    /// and [`EFFECT_RUN_LIMIT`] = `0x02332e90` + 0xf0000 (a pinned frame
+    /// leaves both alone); the listener (`0x0113fcd0`) from
+    /// `MsCopyCameraMatrix` and the matrix at `0x0113fd10` from
+    /// `MsCopyScreenMatrix`; `opu_main_host(0, 1)` and `opp_main(0)`; then,
+    /// unpinned (re-read, through the object pointer re-read too), the frame
+    /// is latched back; the limit cleared. Callees through `call`. Returns
+    /// 0.
+    pub fn op_effect_run_after<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        call(mem, g(mem, 0x007e_4720), &[]);
+        call(mem, g(mem, 0x007e_4e80), &[u32::MAX]);
+        call(mem, g(mem, 0x0080_0170), &[]);
+        let obj = crate::et::bridge::OPUS_BATTLE.get(mem);
+        if mem.read::<u32>(obj.wrapping_add(0x58)) == 0 {
+            let latched: u32 = mem.read(g(mem, 0x0233_2e8c));
+            mem.write(obj.wrapping_add(0x54), latched);
+            let base: u32 = mem.read(g(mem, 0x0233_2e90));
+            EFFECT_RUN_LIMIT.set(mem, base.wrapping_add(0xf_0000));
+        }
+        call(mem, g(mem, 0x007c_0070), &[g(mem, 0x0113_fcd0)]);
+        call(mem, g(mem, 0x007b_ba50), &[g(mem, 0x0113_fd10)]);
+        call(mem, g(mem, 0x0080_cc00), &[0, 1]);
+        call(mem, g(mem, 0x0080_bd50), &[0]);
+        let obj = crate::et::bridge::OPUS_BATTLE.get(mem);
+        if mem.read::<u32>(obj.wrapping_add(0x58)) == 0 {
+            let f: u32 = mem.read(obj.wrapping_add(0x54));
+            mem.write(g(mem, 0x0233_2e8c), f);
+        }
+        EFFECT_RUN_LIMIT.set(mem, 0);
+        0
+    }
+
     /// `op_anm_tex0_set_007ecf50(_, a, b)` (`0x007ecf50`; `0x007ecfa0` is
     /// the same code): the emulated `r1` (`0x00c8f528`) = `a & 0x3fff` and
     /// `(b & 0x3fff) << 5`, `r2`'s high word (`0x00c8f538`, `0x00c8f53c`)

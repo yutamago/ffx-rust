@@ -2764,6 +2764,10 @@ ported! {
         let at = frame.at();
         et::bridge::opus_change_chrhd_battle_to_ffx(&mut mem(), at)
     }
+    /// `op_effect_run_after()`.
+    op_effect_run_after @ 0x0080_0670 => extern "C" fn op_effect_run_after() -> u32 {
+        op::bridge::op_effect_run_after(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_effect_run_before()`.
     op_effect_run_before @ 0x0080_0610 => extern "C" fn op_effect_run_before() -> u32 {
         op::bridge::op_effect_run_before(&mut mem(), &mut |_, f, a| call_ptr(f, a))

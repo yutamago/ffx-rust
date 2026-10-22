@@ -9070,6 +9070,55 @@ fn opp_main_matches_the_original() {
     }
 }
 
+#[test]
+fn op_effect_run_after_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_0670);
+        // the callees recorded (their arguments); opp_main's stand-in
+        // records the run limit and sets the pinned frame from a cell
+        let cells = p.alloc(0x10);
+        for (sym, words) in [
+            (0x007e_4720u32, &[][..]),
+            (0x007e_4e80, &[0][..]),
+            (0x0080_0170, &[][..]),
+            (0x007c_0070, &[0][..]),
+            (0x007b_ba50, &[0][..]),
+            (0x0080_cc00, &[0, 0][..]),
+        ] {
+            far_recorder(&mut p, sym, words, None);
+        }
+        let ob = p.sym(et::bridge::OPUS_BATTLE.sym);
+        let limit = p.sym(0x0233_2e88);
+        let mut c = vec![0x8b, 0x0d];
+        c.extend(ob.to_le_bytes());
+        c.push(0xa1);
+        c.extend((cells + 4).to_le_bytes());
+        c.extend([0x89, 0x41, 0x58, 0xa1]);
+        c.extend(limit.to_le_bytes());
+        c.push(0xa3);
+        c.extend((cells + 8).to_le_bytes());
+        c.push(0xc3);
+        let at = p.sym(0x0080_bd50);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        let obj = p.alloc(0x80);
+        for round in 0..64 {
+            p.fill(obj, 0x80, &mut rng);
+            let pinned = rng.pick(&[0u32, 0, 7]);
+            p.set(obj + 0x58, pinned);
+            p.set(cells + 4, rng.pick(&[pinned, pinned, 0, 9]));
+            p.put(et::bridge::OPUS_BATTLE, obj);
+            p.fill(limit, 0xc, &mut rng);
+            p.check(
+                &format!("op_effect_run_after round {round}"),
+                0x0080_0670,
+                &[],
+                |m| Some(op::bridge::op_effect_run_after(m, &mut call_original)),
+            );
+        }
+    }
+}
+
 /// A float in `[lo, hi)` with 16 fraction bits, as bits.
 fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
     #[allow(clippy::cast_precision_loss)]
