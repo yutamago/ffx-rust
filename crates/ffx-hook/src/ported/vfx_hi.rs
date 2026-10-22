@@ -155,6 +155,16 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x30;
         hi_opus::bridge::opp_md_break_pieces(&mut mem(), src, out, rec, [0; 2], frame, &mut |_, f, a| super::call_cdecl_f32(f, a))
     }
+    /// `op_md_ref_nolight(obj, init, tex, scale, slot)`: its locals (the
+    /// texture names, the counts) in a buffer on this shim's stack.
+    op_md_ref_nolight @ 0x00a6_a6a0 => extern "C" fn op_md_ref_nolight(obj: u32, init: u32, tex: u32, scale: f32, slot: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x280]);
+        let mut locals = Locals([0; 0x280]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        hi_draw::bridge::op_md_ref_nolight(&mut mem(), obj, init, tex, scale, slot, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_vertex_normal_point44_ffx(obj, model, work, chr)`: its locals
     /// in a buffer on this shim's stack.
     op_vertex_normal_point44_ffx @ 0x00a6_d380 => extern "C" fn op_vertex_normal_point44_ffx(_obj: u32, model: u32, work: u32, chr: u32) -> u32 {

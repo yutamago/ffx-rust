@@ -1262,4 +1262,241 @@ pub mod bridge {
         mem.write(block, words);
         go(mem, OP_MD_X64, &[obj, block], call)
     }
+
+    const MAGIC_FILE_GET_MAGIC_ID: u32 = 0x009d_a3b0;
+    const USER_ALIGNED_MALLOC: u32 = 0x0068_6ff0;
+    const GET_RENDER_DATA_BY_INSTANCE: u32 = 0x0064_53d0;
+    const IS_TEXTURE_LOADED: u32 = 0x0064_5400;
+    const VFX_CREATE: u32 = 0x0064_4de0;
+    const VFX_CREATE_DATA_BUFFER: u32 = 0x0064_5040;
+    const DYN_GEO_GET_BUFFER_FOR_SEGMENT: u32 = 0x0063_fdb0;
+    const DYN_GEO_FILL_BUFFER_IS_VALID: u32 = 0x0063_fd70;
+    const GET_FILL_BUFFER_REQUEST: u32 = 0x0072_8660;
+    const FFX_VU0_MUL_MATRIX: u32 = 0x006e_d5c0;
+    const VFX_SET_VISIBLE: u32 = 0x0064_5710;
+    const VFX_SETUP: u32 = 0x0064_5780;
+    const VFX_PATH3_UPDATE: u32 = 0x0064_5600;
+    /// `g_MagicBuffersB` (`0x022fb3c8`): the refraction coordinates per
+    /// slot.
+    const MAGIC_BUFFERS_B: u32 = 0x022f_b3c8;
+    /// `g_pppFillMatrix` (`0x0230fca0`).
+    const PPP_FILL_MATRIX: u32 = 0x0230_fca0;
+    /// `f64` 255 (`0x00b170c0`) and `f32` 256 (`g_AlphaScaleNormal`,
+    /// `0x00b501c0`).
+    const K_255: u32 = 0x00b1_70c0;
+    const K_256: u32 = 0x00b5_01c0;
+
+    /// The texture name `op_md_ref_nolight` asks the renderer for, from a
+    /// `TEX0` word pair: `"%d_%d_0_0_%d_%d.dds.phyre"` (`0x00b50114`) of
+    /// `TBP0` (bits 0..13), `TBW` (20..25), `1 << TW` (26..29) and `1 <<
+    /// TH` (30..33).
+    #[must_use]
+    pub fn ref_texture_name(lo: u32, hi: u32) -> String {
+        let t = u64::from(hi) << 32 | u64::from(lo);
+        format!(
+            "{}_{}_0_0_{}_{}.dds.phyre",
+            t & 0x3fff,
+            t >> 20 & 0x3f,
+            1u32 << (t >> 26 & 0xf),
+            1u32 << (t >> 30 & 0xf)
+        )
+    }
+
+    /// `op_md_ref_nolight(obj, init, tex, scale, slot)` (`0x00a6a6a0`, from
+    /// `op1_mdc_ref_nolight`): a refracting model, only for magic 0x1b6 or
+    /// 0x1b5 (`MagicFile_GetMagicId`, asked again when the first is not
+    /// 0x1b6; for any other it returns that id).
+    ///
+    /// `w = op_spr_alloc(0x1800)`, `[obj] |= 4`, `p =
+    /// op_md_spr_init_x64(obj, init, w)`; colour `w +0x370..` from the
+    /// signed bytes `p +0x1c..`; `w +0x400 = (i16 obj +0x14 << 4) + [w
+    /// +0x390]`; `g_MagicBuffersB[slot]` made on first use
+    /// (`user_aligned_malloc(i16 obj +0x14 << 4, 16)`);
+    /// `op_refrection_st_float(obj, p, w, that buffer, ftol(scale), byte tex
+    /// +0xa << 4, byte tex +0xb << 4)`.
+    ///
+    /// When the first tag (`obj + [obj +4]`) is not of type 0x10, the tags
+    /// of types 3 and 7 (0x10 bytes) and 0x10 (0x20 bytes) each set `w
+    /// +0x1f0` 0x8001, `+0x1f8` 0x12412412 and `+0x120` `[tex]`, up to
+    /// another type. Otherwise the model goes to the renderer as instance
+    /// `(0x1b5, slot + 100)` (the low word sign-extended into the high one),
+    /// with `t = f32(byte p +0x4d / 255)`, colours `f32(t x byte p +0x1c +
+    /// k)` and alphas `f32(byte p +0x18 + k / 255)`. Without render data
+    /// the instance is made: `graphicVFXCreate(id, 0x800a)`, then
+    /// `graphicVFXCreateDataBuffer(id, 1, &3n, &3n, name, &1)` with `n =
+    /// i16 obj +0x10`. The name is [`ref_texture_name`] of `[tex]`, `[tex
+    /// +4]` at `frame - 0x104`, or the one `graphicVFXIsTextureLoaded(name,
+    /// frame - 0x204, 0, 0, 0, 0)` finds.
+    ///
+    /// With the render data `r`: `[[r +0x94] +0x24] = 1`. When
+    /// `graphicDynGeoMemManagerGetBufferForSegment(r, 0, [[r +0x94] +4],
+    /// [[r +0x94] +8])` gives none it returns 0 at once, without the GS wait
+    /// or `op_spr_free` (the scratch mark stays pushed, as in the original).
+    /// With a valid fill buffer, `JobSchedule_pppPart_getFillBufferRequest(n)`
+    /// gets kind 6, `+0x10` `[r +0x94]`, `+0x14` `obj`, `+0x18` `[p +0x38]`,
+    /// `+0x1c` the buffer, `+0x20..+0x28` 256.0, `+0x2c` `f32(byte tag +7)`,
+    /// the alphas from `+0x30` and the colours from `+0x40`. Then
+    /// `FFXVu0MulMatrix(r, g_pppFillMatrix, [p +0x20])`,
+    /// `graphicVFXSetVisible(id, 1)`, and `graphicVFXSetup(id)` for a new
+    /// instance, else `graphicVFXPath3Update(id)`.
+    ///
+    /// Spins while the GS is busy, `op_spr_free()`. Returns `eax` as left:
+    /// the last `g_GsRegisterSink` read (or as above). Locals below `frame`:
+    /// the two counts at `- 0x22c` and `- 0x270`, the flag 1 at `- 0x278`.
+    /// Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+    pub fn op_md_ref_nolight<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        tex: u32,
+        scale: f32,
+        slot: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let id = go(mem, MAGIC_FILE_GET_MAGIC_ID, &[], call);
+        if id != 0x1b6 {
+            let id = go(mem, MAGIC_FILE_GET_MAGIC_ID, &[], call);
+            if id != 0x1b5 {
+                return id;
+            }
+        }
+        let w = go(mem, OP_SPR_ALLOC, &[0x1800], call);
+        mem.write(obj, mem.read::<u32>(obj) | 4);
+        let p = go(mem, OP_MD_SPR_INIT_X64, &[obj, init, w], call);
+        colour_from_bytes(mem, p.wrapping_add(0x1c), w);
+        let n14 = i32::from(mem.read::<i16>(obj.wrapping_add(0x14))).cast_unsigned();
+        let area: u32 = mem.read(w.wrapping_add(0x390));
+        mem.write(w.wrapping_add(0x400), (n14 << 4).wrapping_add(area));
+        let s = x87::ftol(mem, x87::load(scale.to_bits()));
+        let buffers = mem
+            .rebase(MAGIC_BUFFERS_B)
+            .wrapping_add(slot.wrapping_mul(4));
+        if mem.read::<u32>(buffers) == 0 {
+            let size = i32::from(mem.read::<i16>(obj.wrapping_add(0x14))).cast_unsigned() << 4;
+            let b = go(mem, USER_ALIGNED_MALLOC, &[size, 0x10], call);
+            mem.write(buffers, b);
+        }
+        let du = u32::from(mem.read::<u8>(tex.wrapping_add(0xa))) << 4;
+        let dv = u32::from(mem.read::<u8>(tex.wrapping_add(0xb))) << 4;
+        let buffer: u32 = mem.read(buffers);
+        go(
+            mem,
+            OP_REFRECTION_ST_FLOAT,
+            &[obj, p, w, buffer, s, du, dv],
+            call,
+        );
+        let tag = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+        if mem.read::<u8>(tag.wrapping_add(1)) != 0x10 {
+            let mut t = tag.wrapping_add(1);
+            loop {
+                let step = match mem.read::<u8>(t) {
+                    3 | 7 => 0x10,
+                    0x10 => 0x20,
+                    _ => break,
+                };
+                mem.write(w.wrapping_add(0x1f0), 0x8001u32);
+                mem.write(w.wrapping_add(0x1f8), 0x1241_2412u32);
+                mem.write(w.wrapping_add(0x120), mem.read::<u32>(tex));
+                t = t.wrapping_add(step);
+            }
+            return finish(mem, call);
+        }
+        let lo = slot.wrapping_add(100);
+        let hi = (lo.cast_signed() >> 31).cast_unsigned().wrapping_add(0x1b5);
+        let missing = go(mem, GET_RENDER_DATA_BY_INSTANCE, &[lo, hi], call) == 0;
+        let a38: u32 = mem.read(p.wrapping_add(0x38));
+        let buffer: u32 = mem.read(buffers);
+        let k255: f64 = mem.read(mem.rebase(K_255));
+        let byte = |mem: &M, o: u32| f64::from(mem.read::<u8>(p.wrapping_add(o)));
+        let t = x87::load(x87::store(byte(mem, 0x4d) / k255));
+        let n = i32::from(mem.read::<i16>(obj.wrapping_add(0x10)));
+        let colours: [u32; 4] = std::array::from_fn(|k| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            x87::store(byte(mem, 0x1c + k as u32) * t)
+        });
+        let alphas: [u32; 4] = std::array::from_fn(|k| {
+            #[allow(clippy::cast_possible_truncation)] // 0..4
+            x87::store(byte(mem, 0x18 + k as u32) / k255)
+        });
+        let k7 = x87::store(f64::from(mem.read::<u8>(tag.wrapping_add(7))));
+        let k256: u32 = mem.read(mem.rebase(K_256));
+        if missing {
+            let counts = [frame.wrapping_sub(0x22c), frame.wrapping_sub(0x270)];
+            for at in counts {
+                mem.write(at, n.wrapping_mul(3));
+            }
+            let flag = frame.wrapping_sub(0x278);
+            mem.write(flag, 1u32);
+            let (name, found) = (frame.wrapping_sub(0x104), frame.wrapping_sub(0x204));
+            let text = ref_texture_name(mem.read(tex), mem.read(tex.wrapping_add(4)));
+            let mut bytes = text.into_bytes();
+            bytes.push(0);
+            mem.write_bytes(name, &bytes);
+            if go(mem, IS_TEXTURE_LOADED, &[name, found, 0, 0, 0, 0], call) != 0 {
+                let mut i = 0u32;
+                loop {
+                    let b: u8 = mem.read(found.wrapping_add(i));
+                    mem.write(name.wrapping_add(i), b);
+                    i = i.wrapping_add(1);
+                    if b == 0 {
+                        break;
+                    }
+                }
+            }
+            go(mem, VFX_CREATE, &[lo, hi, 0x800a], call);
+            let args = [lo, hi, 1, counts[0], counts[1], name, flag];
+            go(mem, VFX_CREATE_DATA_BUFFER, &args, call);
+        }
+        let r = go(mem, GET_RENDER_DATA_BY_INSTANCE, &[lo, hi], call);
+        if r == 0 {
+            return finish(mem, call);
+        }
+        let data: u32 = mem.read(r.wrapping_add(0x94));
+        mem.write(data.wrapping_add(0x24), 1u32);
+        let data: u32 = mem.read(r.wrapping_add(0x94));
+        let args = [
+            r,
+            0,
+            mem.read(data.wrapping_add(4)),
+            mem.read(data.wrapping_add(8)),
+        ];
+        if go(mem, DYN_GEO_GET_BUFFER_FOR_SEGMENT, &args, call) == 0 {
+            return 0;
+        }
+        if go(mem, DYN_GEO_FILL_BUFFER_IS_VALID, &[], call) != 0 {
+            let req = go(mem, GET_FILL_BUFFER_REQUEST, &[n.cast_unsigned()], call);
+            mem.write(req.wrapping_add(0x20), [k256, k256, k256, k7]);
+            mem.write(req.wrapping_add(0x30), alphas);
+            mem.write(req.wrapping_add(0x40), colours);
+            mem.write(req, 6u8);
+            mem.write(req.wrapping_add(0x14), obj);
+            mem.write(
+                req.wrapping_add(0x10),
+                mem.read::<u32>(r.wrapping_add(0x94)),
+            );
+            mem.write(req.wrapping_add(0x18), a38);
+            mem.write(req.wrapping_add(0x1c), buffer);
+        }
+        let m: u32 = mem.read(p.wrapping_add(0x20));
+        let fill = mem.rebase(PPP_FILL_MATRIX);
+        go(mem, FFX_VU0_MUL_MATRIX, &[r, fill, m], call);
+        go(mem, VFX_SET_VISIBLE, &[lo, hi, 1], call);
+        if missing {
+            go(mem, VFX_SETUP, &[lo, hi], call);
+        } else {
+            go(mem, VFX_PATH3_UPDATE, &[lo, hi], call);
+        }
+        finish(mem, call)
+    }
+
+    /// The end of [`op_md_ref_nolight`]: the GS wait and `op_spr_free()`;
+    /// `eax` the last `g_GsRegisterSink` read.
+    fn finish<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) -> u32 {
+        gs_wait(mem);
+        let sink: u32 = mem.read(mem.rebase(GS_REGISTER_SINK));
+        go(mem, OP_SPR_FREE, &[], call);
+        sink
+    }
 }

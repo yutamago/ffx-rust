@@ -2518,3 +2518,173 @@ fn opp_md_break_pieces_matches_the_original() {
         assert!(seen.iter().all(|&s| s > 50), "{}: {seen:?}", p.name);
     }
 }
+
+/// A stand-in at `sym` that returns the words of `table` in turn (one a
+/// call, wrapping after `n`); returns the call count's cell.
+fn sequence(p: &mut Pair, sym: u32, table: u32, n: u32) -> u32 {
+    let count = p.alloc(4);
+    let mut c = vec![0xa1]; // mov eax, [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x31, 0xd2]); // xor edx, edx
+    c.push(0xb9); // mov ecx, n
+    c.extend(n.to_le_bytes());
+    c.extend([0xf7, 0xf1]); // div ecx
+    c.extend([0x8b, 0x04, 0x95]); // mov eax, [table + edx * 4]
+    c.extend(table.to_le_bytes());
+    c.push(0xc3);
+    jump_to(p, sym, &c);
+    count
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn md_ref_nolight_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_a6a0);
+        let cells = p.alloc(0x40);
+        let (_unused, model, w_cell, buf_cell, found_cell, seg_cell, valid_cell, req_cell) = (
+            cells,
+            cells + 4,
+            cells + 8,
+            cells + 0xc,
+            cells + 0x10,
+            cells + 0x14,
+            cells + 0x18,
+            cells + 0x1c,
+        );
+        let ids = p.alloc(8);
+        let rd_table = p.alloc(8);
+        let magic = sequence(&mut p, 0x009d_a3b0, ids, 2);
+        let rds = sequence(&mut p, 0x0064_53d0, rd_table, 2);
+        let alloc = deref_recorder_with(&mut p, 0x007e_6a00, &[0], Some(w_cell));
+        let inits = deref_recorder_with(&mut p, 0x00a6_9940, &[0, 0, 0], Some(model));
+        let mallocs = deref_recorder_with(&mut p, 0x0068_6ff0, &[0, 0], Some(buf_cell));
+        let refr = deref_recorder(&mut p, 0x00a6_cfb0, &[0, 0, 0, 0, 0, 0, 0]);
+        let loaded =
+            deref_recorder_with(&mut p, 0x0064_5400, &[10, 0, 0, 0, 0, 0], Some(found_cell));
+        let creates = deref_recorder(&mut p, 0x0064_4de0, &[0, 0, 0]);
+        let buffers = wide_recorder(&mut p, 0x0064_5040, &[0, 0, 0, 1, 1, 12, 1], cells);
+        let segs = deref_recorder_with(&mut p, 0x0063_fdb0, &[0, 0, 0, 0], Some(seg_cell));
+        let valid = deref_recorder_with(&mut p, 0x0063_fd70, &[], Some(valid_cell));
+        let reqs = deref_recorder_with(&mut p, 0x0072_8660, &[0], Some(req_cell));
+        let muls = deref_recorder(&mut p, 0x006e_d5c0, &[0, 0, 0]);
+        let vis = deref_recorder(&mut p, 0x0064_5710, &[0, 0, 0]);
+        let setups = deref_recorder(&mut p, 0x0064_5780, &[0, 0]);
+        let updates = deref_recorder(&mut p, 0x0064_5600, &[0, 0]);
+        let (obj, init, tex) = (p.alloc(0x200), p.alloc(0x60), p.alloc(0x10));
+        let (w, m, rd, data, req) = (
+            p.alloc(0x500),
+            p.alloc(0x60),
+            p.alloc(0x100),
+            p.alloc(0x40),
+            p.alloc(0x60),
+        );
+        p.set(model, m);
+        p.set(w_cell, w);
+        p.set(req_cell, req);
+        let buffers_b = p.sym(0x022f_b3c8);
+        let sink = p.sym(0x0230_56e8);
+        let mut seen = [0u32; 6];
+        for round in 0..1500 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(m, 0x60, &mut rng);
+            p.fill(w, 0x500, &mut rng);
+            p.fill(tex, 0x10, &mut rng);
+            p.fill(rd, 0x100, &mut rng);
+            p.fill(data, 0x40, &mut rng);
+            p.fill(req, 0x60, &mut rng);
+            p.set(rd + 0x94, data);
+            let first = rng.pick(&[0x1b6u32, 0x1b5, 0x1b5, 0x100]);
+            let second = rng.pick(&[0x1b5u32, 0x1b6, 0x1b5]);
+            p.set(ids, [first, second]);
+            p.set(magic, 0u32);
+            p.set(rds, 0u32);
+            let r1 = if rng.chance(50) { 0 } else { rd };
+            let r2 = if rng.chance(85) { rd } else { 0 };
+            p.set(rd_table, [r1, r2]);
+            // a slot whose instance number is negative too (-0x80: the
+            // buffer cell lands in other globals, alike in both)
+            let slot = if rng.chance(10) {
+                0xffff_ff80
+            } else {
+                rng.below(8)
+            };
+            let had = rng.chance(50);
+            let b = p.alloc(0x10);
+            p.set(
+                buffers_b.wrapping_add(slot.wrapping_mul(4)),
+                if had { b } else { 0 },
+            );
+            p.set(buf_cell, rng.next());
+            p.set(found_cell, rng.pick(&[0u32, 1, 2]));
+            p.set(seg_cell, rng.pick(&[0u32, 1, 1, 1]));
+            p.set(valid_cell, rng.pick(&[0u32, 1, 1]));
+            p.set(sink, rng.next() & !0x100);
+            // the tags: the first a 0x10 one (to the renderer) or a 3/7 chain
+            let to_renderer = rng.chance(70);
+            p.set(obj + 4, 0x40u32);
+            if to_renderer {
+                p.set(obj + 0x41, 0x10u8);
+            } else {
+                let mut t = obj + 0x41;
+                for _ in 0..rng.below(4) {
+                    let ty = rng.pick(&[3u8, 7, 0x10]);
+                    p.set(t, ty);
+                    t += if ty == 0x10 { 0x20 } else { 0x10 };
+                }
+                p.set(t, rng.pick(&[0u8, 1, 0x11, 0xff]));
+            }
+            p.set(obj + 0x14, rng.pick(&[0i16, 1, 7, -2, 0x100]));
+            // the frame's string buffers: junk, and a name to find
+            let frame = p.b.stack_range().end - 0x100 - 20 - 4 - 0x200 - 20 - 4 - 4;
+            for o in (0..0x200).step_by(4) {
+                let x = rng.next();
+                p.a.write(frame - 0x204 + o, &x.to_le_bytes()).unwrap();
+                p.b.write(frame - 0x204 + o, &x.to_le_bytes()).unwrap();
+            }
+            let alt = b"8000_10_0_0_64_32.dds.phyre\0";
+            p.a.write(frame - 0x204, alt).unwrap();
+            p.b.write(frame - 0x204, alt).unwrap();
+            let scale = if rng.chance(10) {
+                rng.float()
+            } else {
+                near(&mut rng, 0.0)
+            };
+            let before = (
+                p.get::<u32>(segs),
+                p.get::<u32>(reqs),
+                p.get::<u32>(buffers),
+            );
+            check_deep_n(
+                &mut p,
+                &format!("op_md_ref_nolight round {round}"),
+                0x00a6_a6a0,
+                &[obj, init, tex, scale, slot],
+                |o, frame| {
+                    Some(hi_draw::bridge::op_md_ref_nolight(
+                        o,
+                        obj,
+                        init,
+                        tex,
+                        f32::from_bits(scale),
+                        slot,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+            seen[0] += u32::from(p.get::<u32>(segs) != before.0);
+            seen[1] += u32::from(p.get::<u32>(reqs) != before.1);
+            seen[2] += u32::from(p.get::<u32>(buffers) != before.2);
+            seen[3] += u32::from(first == 0x100 && second == 0x1b6);
+            seen[4] += u32::from(!to_renderer);
+            seen[5] += u32::from(!had);
+        }
+        assert!(seen.iter().all(|&s| s > 30), "{}: {seen:?}", p.name);
+        let _ = (
+            alloc, inits, mallocs, refr, loaded, creates, valid, muls, vis, setups, updates,
+        );
+    }
+}

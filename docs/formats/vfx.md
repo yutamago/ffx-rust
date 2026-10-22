@@ -784,6 +784,31 @@ Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
   `[init +0x20]` is restored, but `[init +0x2c]` gets the old `[init
   +0x34]`, which is also the `eax` left.
 
+### Refracting models (`op_md_ref_nolight`)
+
+`op_md_ref_nolight(obj, init, tex, scale, slot)` (`0x00a6a6a0`, from
+`op1_mdc_ref_nolight`) only acts for magic 0x1b6 or 0x1b5. It sets up the
+model as `opus_0279_draw` does (colour from the signed bytes `p +0x1c..`,
+`w +0x400`), fills `g_MagicBuffersB[slot]` (made on first use,
+`user_aligned_malloc(i16 obj +0x14 << 4, 16)`) through
+`op_refrection_st_float(.., ftol(scale), byte tex +0xa << 4, byte tex +0xb
+<< 4)`. A first tag of type 0x10 hands the model to the renderer as
+instance `(0x1b5, slot + 100)`, created on first use with
+`graphicVFXCreate(.., 0x800a)` and `graphicVFXCreateDataBuffer(.., 1, &3n,
+&3n, name, &1)` (`n = i16 obj +0x10`). The texture name is
+`"%d_%d_0_0_%d_%d.dds.phyre"` of the `TEX0` at `tex`: `TBP0`, `TBW`, `1 <<
+TW`, `1 << TH`, or the name `graphicVFXIsTextureLoaded` reports. The fill
+request is kind 6: `+0x10` the render data's `+0x94`, `+0x14` `obj`,
+`+0x18` `[p +0x38]`, `+0x1c` the coordinate buffer, `+0x20..+0x28` 256.0,
+`+0x2c` `byte tag +7`, `+0x30` the bytes `p +0x18..` / 255, `+0x40` `t x`
+the bytes `p +0x1c..` with `t = byte p +0x4d / 255`. Then
+`FFXVu0MulMatrix(r, g_pppFillMatrix, [p +0x20])`, `graphicVFXSetVisible`
+and `graphicVFXSetup` (new) or `graphicVFXPath3Update`. Other first tags
+only set the GS words (types 3, 7, 0x10). When
+`graphicDynGeoMemManagerGetBufferForSegment` gives no buffer, the
+original returns 0 at once, leaving its `op_spr_alloc` mark pushed; the
+port does the same.
+
 ### Init blocks with unwritten words
 
 Two callers build `op1_md_draw`'s 0x50-byte init block on their
