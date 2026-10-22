@@ -585,6 +585,21 @@ when `get_hdd_word_518()` is not 3 and `get_hdd_status()` is 1.
 The page draw `MenuConfig_Draw(w)` (`0x008cb320`) kicks the packets
 (`TkMenuDrawKick` twice, `0x008c1790`, `TkMn2DrawInitPacket`), draws
 the rows and ends with `TkMn2DrawKickSyncPacket(w)`.
+`MenuConfig_Open_008cb3c0` starts the config menu. It keeps
+`MsGetSaveConfigEnglish()` in `0x0186a43c`, clears the state and the
+cursor `i8 0x0186a444`, and runs each row's `+0x10` callback. Rows
+(`0x0186a44c`, count `0x0186a448`) hold `+4` the number of values, `+8`
+the value, and `+0x10`/`+0x14` the draw and changed callbacks.
+`TkMenuCtrlConfig` (`0x008cb0e0`, jump table `0x008cb2e4`) is menu slot
+10's control. Repeat up and down move the cursor through
+`MenuParty_CursorPrev`/`Next`. Triggers 0x8000 and 0x2000 step the row's
+value down and up, wrapping, and call `+0x14`. Cancel compares the
+English option with the one kept at open. If it changed, the menu shows
+the swap notice (`MenuSubCmd_OpenC(TkMenuConfigMes(0x22), 0, 0)`) and
+runs the two international swap steps before closing. The close in
+state 0xb (`TkMenuMainSleepMenu(10)`, `TkMenuMainActiveMenu(1, 0)`,
+`TOMenuInitBrush`) repeats on every call.
+
 ## Characters and aeons
 
 `g_TkMenuPlayers` (`0x01841c14`) and `g_TkMenuSummons` (`0x01841c38`) are
@@ -639,6 +654,23 @@ Then `MenuSave_BuildIconSys(slot, time, dic)`,
 It returns `SaveDataUpdateIcon(dic)`. The frame is `0x16cc` bytes of
 `0x200`/`0x400`-byte text buffers; the port keeps the original's layout,
 so a text that fills its buffer runs on into the same neighbour.
+`TkMenuCloseSaveLoadScreen` (`0x008b3db0`) and `TkMenuJumpToLoadedScene`
+(`0x008b4ec0`) share one ending. When the menu mode has high bits it
+calls `TkMn2SetMainFrameRatioDiff(16)`. With the language swap flag and
+`0x01866240` both 1 it calls
+`TOSwapInternationalEnvInit(MsGetSaveConfigEnglish())`. `0x01866240` is
+cleared once `TOSwapInternationalEnvExecNonBlock()` returns 1. After a
+load the scene jump copies the save from `g_SaveFileBuffer`
+(`TkMenuCopyLoadedSave(TkGetSaveEventAddress(), ...)`), refreshes music,
+sound mode and HDD mode, stops the three save scenes and runs
+`eiAbmParaGet` through the 5-byte jump at `0x008a97e0`.
+`MenuSave_DrawMesBox_008b4920` draws a save window's message
+`TkMenuSaveMes(w+0x58 + 0x2001)`, sliding with the value from
+`GetGlobal01841c0c_008a98e0`. In Japanese config the box sits at
+`(0x200000 - 98 s) / 4096`. Otherwise it is centred on the text width
+from `TOGetMessageWH`: `((482 - width) s + ((0x1000 - s) << 9)) / 4096`,
+drawn with `TODrawMesBoxFit_008ff3e0`.
+
 ## Pad work records
 
 The Tk pad layer keeps a work record per pad (`Pad_UpdateFrame`
@@ -1123,6 +1155,21 @@ shoulder buttons. Confirming with no target ends at once (5); with
 typed keys it asks first (7). Its "yes" lands past the sound of that
 ending, so it is silent. After the windows close it either moves on
 to the next aeon name (`getMegasAdding`, targets 15..17) or ends.
+
+`TkMenuOpenNameEntryWindow(aeon, target)` (`0x008c4250`) opens that
+window. A target outside 0..0x11 becomes -1 with `aeon` 1, the password
+entry: its help is text 0x200c, and languages 9 and 10 read the
+password list (`PasswordTextRead`). The window's callbacks are `+8
+0x008c3520`, `+0xc MenuNameEntry_WindowCtrl_008c3580`, `+0x10 0x008c3d00`
+and `+0x14 0x008c4490`. For a character (`aeon` 0) it also opens the
+character window (`+0x60`) and starts in the side column, row 3 in
+language 0 and row 1 otherwise. `MenuNameEntry_DrawKeys_008c4550` draws
+the key rows three to a line: x `remapX2(684, 1041, 1398)`, y
+`remapY2(420) + (i / 3) remapY2(471) / max(6, MenuItem_KeyRowCount())`.
+The row texts come from `u16` text id tables chosen by language and
+config (`0x00c5a2f0[page]`, `0x00c5a2c8`, `0x00c5a260`, `0x00c5a288`),
+or from the password list. Characters are one byte, two bytes from
+6..0x2f, and after 4 two bytes (second byte from 0x30) or three.
 
 `MenuItem_TargetWindowDraw_008c80b0` (the `+0x10` draw of
 `MenuItem_OpenTargetWindow`'s window) draws one plate per party member
