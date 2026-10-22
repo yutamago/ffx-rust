@@ -3043,6 +3043,36 @@ pub mod bridge {
         fun(mem, call, 0x007e_6a60, &[0x1a0])
     }
 
+    /// `pppDrawRainDraw(obj, def, ctrl)` (`0x007562c0`, the `pppDrawRain`
+    /// program's draw): with its work area `w = obj + [[ctrl +0xc] +4] +
+    /// 0xa0` (which the original also leaves in its `ctrl` argument slot,
+    /// written to `slot` here) still null (`is_ptr32_null(w[0])`),
+    /// `pppDrawRainAlloc(def, w)`, returning 0 when that fails; then
+    /// `pppDrawRainStep(obj, def, ctrl)` and `pppDrawRainLines(obj, def,
+    /// ctrl)`, whose `eax` is returned. Callees through `call`.
+    pub fn ppp_draw_rain_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        def: u32,
+        ctrl: u32,
+        slot: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let k: u32 = mem.read(ctrl.wrapping_add(0xc));
+        let w = mem
+            .read::<u32>(k.wrapping_add(4))
+            .wrapping_add(0xa0)
+            .wrapping_add(obj);
+        mem.write(slot, w);
+        let head: u32 = mem.read(w);
+        if fun(mem, call, 0x00a4_46a0, &[head]) != 0 && fun(mem, call, 0x0075_6320, &[def, w]) == 0
+        {
+            return 0;
+        }
+        fun(mem, call, 0x0075_5a00, &[obj, def, ctrl]);
+        fun(mem, call, 0x0075_5430, &[obj, def, ctrl])
+    }
+
     /// `pppDrawFilterDraw(obj, rec, prog)` (`0x00757280`, the
     /// `pppDrawFilter` program's draw): its work area `w = obj + [[prog
     /// +0xc] +4] + 0xa0` gets `set_ptr32(rec)` and two zero scroll words

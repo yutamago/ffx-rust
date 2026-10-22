@@ -5677,6 +5677,19 @@ ported! {
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_DIS_POS_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
+    /// `pppDrawRainDraw(obj, def, ctrl)`: the work area also into the
+    /// caller's `ctrl` slot, as the original leaves it; the lines' `eax`.
+    pppDrawRainDraw @ 0x0075_62c0 => extern "C" fn ppp_draw_rain_draw(obj: u32, def: u32, ctrl: u32; slots: u32) -> u32 {
+        draw::bridge::ppp_draw_rain_draw(&mut mem(), obj, def, ctrl, slots.wrapping_add(8), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_0706_cmd_007fa6d0(obj, cmd)`: the next command.
+    opp_0706_cmd_007fa6d0 @ 0x007f_a6d0 => extern "C" fn opp_0706_cmd(obj: u32, cmd: u32) -> u32 {
+        small::bridge::opp_0706_cmd(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_fake_env_model_draw_007117c0(id, a1..a7, slot)`.
+    opu_fake_env_model_draw_007117c0 @ 0x0071_17c0 => extern "C" fn opu_fake_env_model_draw(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
+        small::bridge::opu_fake_env_model_draw(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8], &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppDrawFilterDraw(obj, rec, prog)`: the scrolls, then the packet;
     /// its `eax`.
     pppDrawFilterDraw @ 0x0075_7280 => extern "C" fn ppp_draw_filter_draw(obj: u32, rec: u32, prog: u32) -> u32 {

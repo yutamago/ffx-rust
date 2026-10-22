@@ -11704,6 +11704,106 @@ fn ppp_draw_filter_draw_matches_the_original() {
     }
 }
 
+/// `pppDrawRainDraw` through a caller that reads its `ctrl` argument slot
+/// after the call (the original leaves the work area there).
+#[test]
+fn ppp_draw_rain_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_62c0);
+        let rets = p.alloc(8);
+        far_recorder(&mut p, 0x00a4_46a0, &[0], Some(rets)); // is_ptr32_null
+        far_recorder(&mut p, 0x0075_6320, &[0, 0], Some(rets + 4)); // pppDrawRainAlloc
+        far_recorder(&mut p, 0x0075_5a00, &[0, 0, 0], None); // pppDrawRainStep
+        far_recorder(&mut p, 0x0075_5430, &[0, 0, 0], None); // pppDrawRainLines
+        let (obj, ctrl, k, out) = (p.alloc(0x200), p.alloc(0x20), p.alloc(0x10), p.alloc(4));
+        let caller = p.sym(THUNK);
+        let f = p.sym(0x0075_62c0);
+        let mut c = Vec::new();
+        for _ in 0..3 {
+            c.extend([0xff, 0x74, 0x24, 0x0c]); // push [esp + 0xc]
+        }
+        c.push(0xe8); // call f
+        let end = caller + u32::try_from(c.len()).unwrap() + 4;
+        c.extend(f.wrapping_sub(end).to_le_bytes());
+        c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp + 8]: the ctrl slot
+        c.extend([0x89, 0x0d]); // mov [out], ecx
+        c.extend(out.to_le_bytes());
+        c.extend([0x83, 0xc4, 0x0c, 0xc3]); // add esp, 0xc; ret
+        p.a.write(caller, &c).unwrap();
+        p.b.write(caller, &c).unwrap();
+        for round in 0..1000 {
+            p.fill(obj, 0x200, &mut rng);
+            p.set(ctrl + 0xc, k);
+            p.set(k + 4, rng.below(0x50) * 4);
+            p.set(rets, u32::from(rng.chance(40)));
+            p.set(rets + 4, u32::from(rng.chance(60)));
+            let def = rng.next();
+            let what = format!("pppDrawRainDraw round {round}");
+            let r = p.a.call(caller, Conv::Cdecl, &[obj, def, ctrl]).unwrap();
+            let mine = d::ppp_draw_rain_draw(&mut p.b, obj, def, ctrl, out, &mut call_original);
+            assert_eq!(r.eax, mine, "{}: {what}: result", p.name);
+            p.same(&what);
+        }
+    }
+}
+
+#[test]
+fn opp_0706_cmd_matches_the_original() {
+    use small::bridge as sm;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_a6d0);
+        let ret = p.alloc(4);
+        far_recorder(&mut p, 0x007e_3810, &[0, 0, 0], Some(ret)); // op_oef2_a_get
+        far_recorder(&mut p, 0x007f_a800, &[0, 0], None); // opus_0706_acc_update
+        far_recorder(&mut p, 0x007f_a750, &[0, 0], None); // opus_0706_noise_update
+        let (obj, rec, cmd) = (p.alloc(0x400), p.alloc(0x40), p.alloc(8));
+        for round in 0..1000 {
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(rec, 0x40, &mut rng);
+            p.fill(cmd, 8, &mut rng);
+            p.set(obj + 0x220, rec);
+            let kind = rng.pick(&[0x1000u16, 0x2000, 0x3000, 0, 0x9000, 0xa000])
+                | u16::try_from(rng.below(0x1000)).unwrap();
+            p.set(obj + 0x21a, kind);
+            p.set(ret, rng.next());
+            p.check(
+                &format!("opp_0706_cmd round {round}"),
+                0x007f_a6d0,
+                &[obj, cmd],
+                |m| Some(sm::opp_0706_cmd(m, obj, cmd, &mut call_original)),
+            );
+        }
+    }
+}
+
+#[test]
+fn opu_fake_env_model_draw_matches_the_original() {
+    use small::bridge as sm;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0071_17c0);
+        let rets = p.alloc(8);
+        far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rets)); // render data
+        far_recorder(&mut p, 0x0071_cf90, &[0; 9], None); // update..FakeEnvModel
+        far_recorder(&mut p, 0x0064_58a0, &[0, 0], None); // graphicVFXUpdate
+        far_recorder(&mut p, 0x0071_6620, &[0; 9], Some(rets + 4)); // init..FakeEnvModel
+        let skip = p.sym(0x012f_b7d0);
+        for round in 0..1000 {
+            let mut args: [u32; 9] = std::array::from_fn(|_| rng.next());
+            args[8] = rng.pick(&[0u32, 1, 2, 3, u32::MAX, 0x8000_0000]);
+            p.set(skip, u32::from(rng.chance(20)));
+            p.set(rets, if rng.chance(50) { 0 } else { rng.next() | 1 });
+            p.set(rets + 4, rng.next());
+            p.check(
+                &format!("opu_fake_env_model_draw round {round}"),
+                0x0071_17c0,
+                &args,
+                |m| Some(sm::opu_fake_env_model_draw(m, args, &mut call_original)),
+            );
+        }
+    }
+}
+
 #[test]
 #[allow(clippy::many_single_char_names)]
 fn z_crct_shp_draw_matches_the_original() {
