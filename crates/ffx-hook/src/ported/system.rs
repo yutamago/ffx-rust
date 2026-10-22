@@ -1292,6 +1292,116 @@ ported! {
     TOOpenBtlWinRight @ 0x008a_86d0 => extern "C" fn to_open_btl_win_right() -> u32 {
         tolib::bridge::open_btl_win_side(&mut mem(), true, call_sym)
     }
+    /// `TOOpenBtlWinMain(w)`.
+    TOOpenBtlWinMain @ 0x008a_8640 => extern "C" fn to_open_btl_win_main(w: u32) -> u32 {
+        tolib::bridge::open_btl_win_main(&mut mem(), w, call_sym)
+    }
+    /// `TOOpenBtlLimitBreak(w)`.
+    TOOpenBtlLimitBreak @ 0x008a_85a0 => extern "C" fn to_open_btl_limit_break(w: u32) -> u32 {
+        tolib::bridge::open_btl_limit_break(&mut mem(), w, call_sym)
+    }
+    /// `TOBtlDrawFirstStrikeEnemyMessageWindow()`.
+    TOBtlDrawFirstStrikeEnemyMessageWindow @ 0x0089_34d0 => extern "C" fn to_btl_draw_first_strike_enemy() -> u32 {
+        tolib::bridge::btl_draw_first_strike_message_window(&mut mem(), true, call_sym)
+    }
+    /// `TOBtlDrawFirstStrikePlayerMessageWindow()`.
+    TOBtlDrawFirstStrikePlayerMessageWindow @ 0x0089_34f0 => extern "C" fn to_btl_draw_first_strike_player() -> u32 {
+        tolib::bridge::btl_draw_first_strike_message_window(&mut mem(), false, call_sym)
+    }
+    /// `TOBtlDrawCaptureMonsterMessageWindow(chr, mes)`.
+    TOBtlDrawCaptureMonsterMessageWindow @ 0x0089_2870 => extern "C" fn to_btl_draw_capture_monster(chr: u32, mes: u32) -> u32 {
+        tolib::bridge::btl_draw_name_message_window(&mut mem(), true, chr, mes, call_sym)
+    }
+    /// `TOBtlDrawStdChrNameMessageWindow(chr, mes)`.
+    TOBtlDrawStdChrNameMessageWindow @ 0x0089_7200 => extern "C" fn to_btl_draw_std_chr_name(chr: u32, mes: u32) -> u32 {
+        tolib::bridge::btl_draw_name_message_window(&mut mem(), false, chr, mes, call_sym)
+    }
+    /// `TOBtlDrawGetItemMessageWindow(item, n)`.
+    TOBtlDrawGetItemMessageWindow @ 0x0089_3510 => extern "C" fn to_btl_draw_get_item(item: u32, n: i32) -> u32 {
+        tolib::bridge::btl_draw_get_item_message_window(&mut mem(), item, n, call_sym)
+    }
+    /// `TOBtlInitEnemyLimit()` (callers drop `eax`).
+    TOBtlInitEnemyLimit @ 0x0089_7af0 => extern "C" fn to_btl_init_enemy_limit() {
+        btl::bridge::init_enemy_limit(&mut mem(), call_sym);
+    }
+    /// `TOBtlCtrlEnemyLimit()` (callers drop `eax`).
+    TOBtlCtrlEnemyLimit @ 0x0089_1220 => extern "C" fn to_btl_ctrl_enemy_limit() {
+        btl::bridge::ctrl_enemy_limit(&mut mem(), call_sym);
+    }
+    /// `TOBtlInitCtbWindow()` (callers drop `eax`).
+    TOBtlInitCtbWindow @ 0x008a_0ce0 => extern "C" fn to_btl_init_ctb_window() {
+        // MsGetCTBlist's count word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        btl::bridge::init_ctb_window(&mut mem(), local, call_sym);
+    }
+    /// `TOBtlDrawWakkaLimitWindow()` (callers drop `eax`).
+    TOBtlDrawWakkaLimitWindow @ 0x0089_74a0 => extern "C" fn to_btl_draw_wakka_limit_window() {
+        // ToGetBtlEasyFontWidth's width word
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        btl::bridge::draw_wakka_limit_window(&mut mem(), width, call_sym);
+    }
+    /// `TOBtlDrawAuronLimitWindow()` (callers drop `eax`).
+    TOBtlDrawAuronLimitWindow @ 0x0089_2740 => extern "C" fn to_btl_draw_auron_limit_window() {
+        // ToGetBtlEasyFontWidth's width word
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        btl::bridge::draw_auron_limit_window(&mut mem(), width, call_sym, fcall);
+    }
+    /// `MenuScene_KeyPick_00a7b290(keys, track, frame, frames, out)`: `0x00a7bbc0`'s `eax`.
+    MenuScene_KeyPick_00a7b290 @ 0x00a7_b290 => extern "C" fn menu_scene_key_pick(keys: u32, track: u32, frame: u32, frames: u32, out: u32) -> u32 {
+        scene::bridge::menu_scene_key_pick(&mut mem(), [keys, track, frame, frames, out], call_sym, fcall)
+    }
+    /// `TOBtlSetLibraWindowParam(chr)` (callers drop `eax`).
+    TOBtlSetLibraWindowParam @ 0x0089_a160 => extern "C" fn to_btl_set_libra_window_param(chr: u32) {
+        btl::bridge::set_libra_window_param(&mut mem(), chr, call_sym);
+    }
+    /// `TOBtlCtrlHelpWin()` (callers drop `eax`).
+    TOBtlCtrlHelpWin @ 0x0089_12e0 => extern "C" fn to_btl_ctrl_help_win() {
+        // MsGetComData's string table word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        btl::bridge::ctrl_help_win(&mut mem(), local, call_sym);
+    }
+    /// `TOBtlDrawActiveChrCursor(chr)` (callers drop `eax`).
+    TOBtlDrawActiveChrCursor @ 0x0089_2590 => extern "C" fn to_btl_draw_active_chr_cursor(chr: u32) {
+        // the projection's screen point (2 words) and the world point (4)
+        let mut frame = super::StackFrame::<6>::new();
+        let at = frame.at();
+        btl::bridge::draw_active_chr_cursor(&mut mem(), chr, at, call_sym, fcall);
+    }
+    /// `TOBtlSetCallback(w)` (callers drop `eax`).
+    TOBtlSetCallback @ 0x008a_0de0 => extern "C" fn to_btl_set_callback(w: u32) {
+        btl::bridge::set_callback(&mut mem(), w, call_sym);
+    }
+    /// `TOBtlGetTargetPad(w)` (its caller returns 0 itself).
+    TOBtlGetTargetPad @ 0x0089_d390 => extern "C" fn to_btl_get_target_pad(w: u32) {
+        btl::bridge::get_target_pad(&mut mem(), w, call_sym);
+    }
+    /// `TOBtlDrawGetMoneyMessageWindow(gil)`.
+    TOBtlDrawGetMoneyMessageWindow @ 0x0089_3660 => extern "C" fn to_btl_draw_get_money(gil: i32) -> u32 {
+        tolib::bridge::btl_draw_get_money_message_window(&mut mem(), gil, call_sym)
+    }
+    /// `TOBtlDrawGetLimitTypeMessageWindow(chr, kind)`.
+    TOBtlDrawGetLimitTypeMessageWindow @ 0x0089_35f0 => extern "C" fn to_btl_draw_get_limit_type(chr: u32, kind: u32) -> u32 {
+        tolib::bridge::btl_draw_get_limit_type_message_window(&mut mem(), chr, kind, call_sym)
+    }
+    /// `TOBtlDrawLearningMessageWindow(chr, com)`.
+    TOBtlDrawLearningMessageWindow @ 0x0089_5320 => extern "C" fn to_btl_draw_learning(chr: u32, com: u32) -> u32 {
+        // MsGetComData's string table word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tolib::bridge::btl_draw_learning_message_window(&mut mem(), chr, com, local, call_sym)
+    }
+    /// `TOBtlElementLampFlags_00897650(chr, element)`: the original's `eax`.
+    TOBtlElementLampFlags_00897650 @ 0x0089_7650 => extern "C" fn to_btl_element_lamp_flags(chr: u32, element: u32) -> u32 {
+        tolib::bridge::btl_element_lamp_flags(&mut mem(), chr, element, call_sym)
+    }
+    /// `KernelSlotMonsterName_198_00773780(i)`: the record's name pointer.
+    KernelSlotMonsterName_198_00773780 @ 0x0077_3780 => extern "C" fn kernel_slot_monster_name(i: u32) -> u32 {
+        tolib::bridge::kernel_slot_monster_name(&mut mem(), i, call_sym)
+    }
     /// `TOFuncPadMessageNormal(w)`.
     TOFuncPadMessageNormal @ 0x008b_64a0 => extern "C" fn to_func_pad_message_normal(w: u32) -> u32 {
         tolib::bridge::func_pad_message_normal(&mut mem(), w, call_sym)

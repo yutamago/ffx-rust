@@ -2620,4 +2620,662 @@ pub mod bridge {
             self.full_scissor()
         }
     }
+
+    /// The enemy limit bars: `i32 0x0133f0ec` battle characters, their
+    /// `u16` ids at `0x0133f0f0` (0xff: none), and a 16-byte record each
+    /// from `0x0133f988` (`+0` the target width, `+4` the shown one).
+    const LIMIT_COUNT: u32 = 0x0133_f0ec;
+    const LIMIT_IDS: u32 = 0x0133_f0f0;
+    const LIMIT_BARS: u32 = 0x0133_f988;
+    /// `i16` full width of a limit bar.
+    const LIMIT_BAR_WIDTH: u32 = 0x025d_0aa4;
+
+    /// `gauge * width / max` of battle character `id` (signed; the
+    /// original's `idiv` faults on 0 and `i32::MIN / -1`, here 0 and
+    /// `i32::MIN`). `max` is asked after `gauge`, as the original does.
+    fn limit_width<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+    ) -> i32 {
+        let gauge = call(mem, 0x0079_5550, &[id]).cast_signed();
+        let width = i32::from(mem.read::<i16>(mem.rebase(LIMIT_BAR_WIDTH)));
+        let max = call(mem, 0x0079_5590, &[id]).cast_signed();
+        gauge
+            .wrapping_mul(width)
+            .checked_div(max)
+            .unwrap_or(if max == 0 { 0 } else { i32::MIN })
+    }
+
+    /// Battle character `k`'s id when it has a limit bar
+    /// (`MsGetChrLimitBarFlag(id) == 1`), read again for each callee.
+    fn limit_id<M: Mem>(mem: &M, k: u32) -> u32 {
+        u32::from(mem.read::<u16>(mem.rebase(LIMIT_IDS).wrapping_add(2 * k)))
+    }
+
+    /// `TOBtlInitEnemyLimit()` (`0x00897af0`): the 0x80 bytes of bars
+    /// cleared, then for each character with a bar both widths set to
+    /// `MsGetChrLimitGauge(id) * i16 0x025d0aa4 / MsGetChrLimitGaugeMax(id)`.
+    pub fn init_enemy_limit<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let bars = mem.rebase(LIMIT_BARS);
+        mem.write_bytes(bars, &[0; 0x80]);
+        let mut k = 0u32;
+        while k.cast_signed() < mem.read::<i32>(mem.rebase(LIMIT_COUNT)) {
+            let id = limit_id(mem, k);
+            if id != 0xff && call(mem, 0x0079_5250, &[id]) == 1 {
+                let id = limit_id(mem, k);
+                let w = limit_width(mem, &mut call, id);
+                let rec = bars.wrapping_add(16 * k);
+                mem.write(rec, w);
+                mem.write(rec.wrapping_add(4), w);
+            }
+            k += 1;
+        }
+    }
+
+    /// `TOBtlCtrlEnemyLimit()` (`0x00891220`, Fahrenheit's name): each
+    /// character with a bar gets the target width (0 while
+    /// `MsGetChrLimitGaugeMax(id) <= 0`, else as [`init_enemy_limit`]),
+    /// and the shown width rises 6 towards it, never past it (signed).
+    pub fn ctrl_enemy_limit<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let bars = mem.rebase(LIMIT_BARS);
+        let mut k = 0u32;
+        while k.cast_signed() < mem.read::<i32>(mem.rebase(LIMIT_COUNT)) {
+            let id = limit_id(mem, k);
+            if id != 0xff && call(mem, 0x0079_5250, &[id]) == 1 {
+                let rec = bars.wrapping_add(16 * k);
+                let id = limit_id(mem, k);
+                let target = if call(mem, 0x0079_5590, &[id]).cast_signed() < 1 {
+                    0
+                } else {
+                    let id = limit_id(mem, k);
+                    limit_width(mem, &mut call, id)
+                };
+                mem.write(rec, target);
+                let shown_at = rec.wrapping_add(4);
+                let shown = mem.read::<i32>(shown_at);
+                if shown < target {
+                    mem.write(shown_at, shown.wrapping_add(6));
+                }
+                if mem.read::<i32>(shown_at) > target {
+                    mem.write(shown_at, target);
+                }
+            }
+            k += 1;
+        }
+    }
+
+    /// `TOBtlInitCtbWindow()` (`0x008a0ce0`, Fahrenheit's name): the CTB
+    /// window's state cleared (u8 `0x01340446`, u16 `0x0134044c`,
+    /// `0x01340450`, `0x01340444`, `0x01340448`, u32 `0x01340470`), its 16
+    /// 0x18-byte rows at `0x013404f8` and the 0x80-byte row pointer table
+    /// `0x01340478` zeroed, then row `k` from `MsGetCTBlist(local)`'s entry
+    /// `k` (4 bytes: `u8 +0` id, `u16 +2` ticks): `+0` 1, `+1` the id, `+4`
+    /// and `+8` the ticks (u32), `+0xc`/`+0xd` `k`, `+0xe` 0, u16 `+0x10` 0,
+    /// u16 `+0x12` `0x16 k`, `+0x14` 0; the table points at the rows.
+    pub fn init_ctb_window<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let a = at(mem, 0x0134_0446);
+        mem.write(a, 0u8);
+        for g in [0x0134_044c, 0x0134_0450, 0x0134_0444, 0x0134_0448] {
+            let a = at(mem, g);
+            mem.write(a, 0u16);
+        }
+        let a = at(mem, 0x0134_0470);
+        mem.write(a, 0u32);
+        let rows = at(mem, 0x0134_04f8);
+        mem.write_bytes(rows, &[0; 0x300]);
+        let table = at(mem, 0x0134_0478);
+        mem.write_bytes(table, &[0; 0x80]);
+        let list = call(mem, 0x0079_a200, &[local]);
+        for k in 0..16u32 {
+            let e = list.wrapping_add(4 * k);
+            let row = rows.wrapping_add(0x18 * k);
+            let id = mem.read::<u8>(e);
+            let ticks = u32::from(mem.read::<u16>(e.wrapping_add(2)));
+            #[allow(clippy::cast_possible_truncation)] // k < 16
+            let kb = k as u8;
+            mem.write(row, 1u8);
+            mem.write(row.wrapping_add(1), id);
+            mem.write(row.wrapping_add(4), ticks);
+            let ticks = u32::from(mem.read::<u16>(e.wrapping_add(2)));
+            mem.write(row.wrapping_add(8), ticks);
+            mem.write(row.wrapping_add(0x10), 0u16);
+            mem.write(row.wrapping_add(0xc), kb);
+            mem.write(row.wrapping_add(0xd), kb);
+            mem.write(row.wrapping_add(0xe), 0u8);
+            #[allow(clippy::cast_possible_truncation)] // k < 16
+            mem.write(row.wrapping_add(0x12), (k * 0x16) as u16);
+            mem.write(row.wrapping_add(0x14), 0u32);
+        }
+        for k in 0..16u32 {
+            mem.write(table.wrapping_add(4 * k), rows.wrapping_add(0x18 * k));
+        }
+    }
+
+    /// A limit window's caption centred on 512: `MsGetRomBtlText(mes, 0)`
+    /// measured by `ToGetBtlEasyFontWidth(text, width, 0, 0.78, 1)` into
+    /// the frame word `width`, then `TOMkpCrossExtMesFontLClut(0, text,
+    /// f32((512 - width) / 2), y, 0, 0.78, 1)`; `y` is asked between the
+    /// two (its remap runs there).
+    fn limit_caption<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mes: u32,
+        width: u32,
+        y: &mut dyn FnMut(&mut M) -> u32,
+    ) {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        let scale = [0.78f32, 1.0].map(f32::to_bits);
+        let text = call(mem, 0x0078_f8f0, &[mes, 0]);
+        call(mem, 0x0090_5290, &[text, width, 0, scale[0], scale[1]]);
+        let y = y(mem);
+        let x = store(mul(sub(512.0, load(mem.read::<u32>(width))), 0.5));
+        call(mem, 0x0090_16b0, &[0, text, x, y, 0, scale[0], scale[1]]);
+    }
+
+    /// `TOBtlDrawWakkaLimitWindow()` (`0x008974a0`): while u8
+    /// `0x0133c93f` is set, `TOTransTexture()`,
+    /// `TOTransImageHL(TOGetBtlMenuTexAdrs(), 0x3f00, 0x13, 0, 0, 0x100,
+    /// 0x100)` (the six words pushed before the address call),
+    /// `TOSetPktBuffAdrs(0x1f00000, 0x100000, 0xf0000)` (plain numbers),
+    /// `TOOpenPktbuff()`, `0x008a1e50()`, `TOSeqDraw(2, 4, 1)`; while
+    /// `TOSeqGetSceneState_008ae530(2, "bwakk")` is 3 the caption 0x3013 at
+    /// y 71; `TOClosePktbuff()`, `TODrawKick()`.
+    pub fn draw_wakka_limit_window<M: Mem>(
+        mem: &mut M,
+        width: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if mem.read::<u8>(mem.rebase(0x0133_c93f)) == 0 {
+            return;
+        }
+        call(mem, 0x008b_1020, &[]);
+        let tex = call(mem, 0x008a_c2c0, &[]);
+        call(mem, 0x008b_0b10, &[tex, 0x3f00, 0x13, 0, 0, 0x100, 0x100]);
+        call(mem, 0x0090_47c0, &[0x01f0_0000, 0x0010_0000, 0x000f_0000]);
+        call(mem, 0x0090_4600, &[]);
+        call(mem, 0x008a_1e50, &[]);
+        call(mem, 0x008a_e2f0, &[2, 4, 1]);
+        let name = mem.rebase(0x00b5_ed2c);
+        if call(mem, 0x008a_e530, &[2, name]) == 3 {
+            limit_caption(mem, &mut call, 0x3013, width, &mut |_| 71f32.to_bits());
+        }
+        call(mem, 0x008f_3930, &[]);
+        call(mem, 0x008f_5bc0, &[]);
+    }
+
+    /// `TOBtlDrawAuronLimitWindow()` (`0x00892740`, Fahrenheit's name):
+    /// in Auron's states 3 and 4 (`i16 0x0133d6f4`), the combination's
+    /// buttons from `i16 0x0133d6fc` (signed) below `i32 0x0133d700`: button
+    /// `b = u16 [0x0133d704][i]` drawn by `setButtonData(-1, b)`,
+    /// `graphicSetButtonIconScale(1.5, 1.5)`, `TOMkpPadButtonData(b, i16
+    /// 0x0133d6f6 - 46 + 30 i, ftol(remapY2(514) - 3))`,
+    /// `graphicResetButtonIconScale()`, `resetButtonData()`; then the
+    /// caption 0x3011 at `remapY2(186)`. `fcall` calls an original that
+    /// returns in ST0 (the remap).
+    #[allow(clippy::many_single_char_names)] // i, b, x, y as in the original
+    pub fn draw_auron_limit_window<M: Mem>(
+        mem: &mut M,
+        width: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{ftol, store, sub};
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let state = i32::from(mem.read::<i16>(at(mem, AURON_STATE)));
+        if state.wrapping_sub(3).cast_unsigned() > 1 {
+            return;
+        }
+        let mut i = i32::from(mem.read::<i16>(at(mem, 0x0133_d6fc)));
+        while i < mem.read::<i32>(at(mem, 0x0133_d700)) {
+            let button = |mem: &M| {
+                let list = mem.read::<u32>(at(mem, 0x0133_d704));
+                u32::from(mem.read::<u16>(list.wrapping_add(2 * i.cast_unsigned())))
+            };
+            let b = button(mem);
+            call(mem, 0x008b_1350, &[u32::MAX, b]);
+            let scale = 1.5f32.to_bits();
+            call(mem, 0x0064_2ec0, &[scale, scale]);
+            let r = fcall(mem, 0x0064_4820, &[514f32.to_bits()]);
+            let y = ftol(mem, sub(r, 3.0));
+            let x = i32::from(mem.read::<i16>(at(mem, 0x0133_d6f6)))
+                .wrapping_sub(0x2e)
+                .wrapping_add(i.wrapping_mul(30));
+            let b = button(mem);
+            call(mem, 0x0090_29b0, &[b, x.cast_unsigned(), y]);
+            call(mem, 0x0064_2c60, &[]);
+            call(mem, 0x008b_1330, &[]);
+            i = i.wrapping_add(1);
+        }
+        limit_caption(mem, &mut call, 0x3011, width, &mut |mem| {
+            store(fcall(mem, 0x0064_4820, &[186f32.to_bits()]))
+        });
+    }
+
+    /// `TOBtlSetLibraWindowParam(chr)` (`0x0089a160`, Fahrenheit's name):
+    /// the Libra window's lines. u32 `0x0133f6ae` = 0 (its u16 line count
+    /// `0x0133f6b0` with it), u16 `0x0133f6aa` = `chr`, `0x0133f6ac` = 0x14,
+    /// `0x0133f6fe`/`0x0133f700` the HP and max HP (`MsGetRamChrHP`,
+    /// `MsGetRamChrHPmax`, u16). Lines (u16 at `0x0133f6b2[i16 count]`,
+    /// each bumping the count): `0x1006 + k` for the
+    /// `MsMenuDefCountStatus(chr)` bytes `k < 11` that are 0xff, `0x1011`
+    /// when byte 11 is 0, `0x1012 + k` for the
+    /// `MsGetChrLibraName_0078fae0(chr)` bytes `k < 13` that are 0xff, and
+    /// `0x1020 + k` for the bits `k < 15` (not 9) of the u16
+    /// `MsGetChrLibraWord_0078fac0(chr)`.
+    pub fn set_libra_window_param<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let count = at(mem, 0x0133_f6b0);
+        let lines = at(mem, 0x0133_f6b2);
+        let a = at(mem, 0x0133_f6ae);
+        mem.write(a, 0u32);
+        let a = at(mem, 0x0133_f6aa);
+        #[allow(clippy::cast_possible_truncation)] // the low half, as the original stores it
+        mem.write(a, chr as u16);
+        let a = at(mem, 0x0133_f6ac);
+        mem.write(a, 0x14u16);
+        for (f, g) in [(0x0079_add0, 0x0133_f6fe), (0x0079_adf0, 0x0133_f700)] {
+            #[allow(clippy::cast_possible_truncation)] // a u16 store
+            let v = call(mem, f, &[chr]) as u16;
+            let g = at(mem, g);
+            mem.write(g, v);
+        }
+        let line = |mem: &mut M, v: u32| {
+            let n = mem.read::<i16>(count);
+            let slot = lines.wrapping_add((i32::from(n) * 2).cast_unsigned());
+            #[allow(clippy::cast_possible_truncation)] // a u16 store
+            mem.write(slot, v as u16);
+            mem.write(count, n.wrapping_add(1));
+        };
+        let status = call(mem, 0x0078_faa0, &[chr]);
+        for k in 0..12u32 {
+            let b = mem.read::<u8>(status.wrapping_add(k));
+            if k == 11 {
+                if b == 0 {
+                    line(mem, 0x1011);
+                }
+            } else if b == 0xff {
+                line(mem, 0x1006 + k);
+            }
+        }
+        let names = call(mem, 0x0078_fae0, &[chr]);
+        for k in 0..13u32 {
+            if mem.read::<u8>(names.wrapping_add(k)) == 0xff {
+                line(mem, 0x1012 + k);
+            }
+        }
+        let word = call(mem, 0x0078_fac0, &[chr]) & 0xffff;
+        for k in (0..15u32).filter(|&k| k != 9) {
+            if word >> k & 1 != 0 {
+                line(mem, 0x1020 + k);
+            }
+        }
+    }
+
+    /// `TOBtlCtrlHelpWin()` (`0x008912e0`, Fahrenheit's name): the battle
+    /// help line for the open command window. Closed (`g_BtlHelpWinOpen`
+    /// 0) while `u16 g_BtlWindowChr` is 0xff. Pad bit 0x100 (`0x025d09d4`)
+    /// toggles bit 0x400 of `*MsGetSaveMenu()`. The window of level
+    /// `i8 g_BtlActionDepth` (0xf0 bytes from `0x0133c952`: `u8 +0` kind,
+    /// `u16 +0xa` command, `+0x1e` list, `i16 +0x40` cursor) shows, for
+    /// kind 0, `MsGetRomBtlText(0x3014, 0)` (commands 0x3024, 0x302a,
+    /// 0x3123), `TOBtlSetChangeHelpMes(i16 entry)` (0x3002, 0x3117, 0x3118)
+    /// or `TOBtlSetCommandHelpMes(u16 entry)` (others) of the list's entry
+    /// at the cursor (0xff: closed); for kind 1 the target's
+    /// (`TOBtlSetTargetHelpMes(u16 g_BtlTargetChr)`), or for command 0x3056
+    /// with target bits 0x38000 the text of `MsGetComData(0x30ff, &table)`
+    /// (`table` the frame word `local`); command not 0x3056 with
+    /// `0x0133d0e0` not 0 or 3 closes it, as other kinds do. Open: 1.
+    pub fn ctrl_help_win<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let open = at(mem, 0x0133_c93c);
+        if mem.read::<u16>(at(mem, 0x023c_c088)) == 0xff {
+            mem.write(open, 0u8);
+            return;
+        }
+        if mem.read::<u32>(at(mem, 0x025d_09d4)) & 0x100 != 0 {
+            let menu = call(mem, 0x0078_5290, &[]);
+            let v = if mem.read::<u32>(menu) & 0x400 == 0 {
+                let menu = call(mem, 0x0078_5290, &[]);
+                mem.read::<u32>(menu) | 0x400
+            } else {
+                let menu = call(mem, 0x0078_5290, &[]);
+                mem.read::<u32>(menu) & !0x400
+            };
+            let menu = call(mem, 0x0078_5290, &[]);
+            mem.write(menu, v);
+        }
+        let depth = i32::from(mem.read::<i8>(at(mem, 0x023c_c092))).wrapping_mul(0xf0);
+        let win = at(mem, 0x0133_c952).wrapping_add(depth.cast_unsigned());
+        let command = u32::from(mem.read::<u16>(win.wrapping_add(0xa)));
+        let entry = |mem: &M| {
+            let list = mem.read::<u32>(win.wrapping_add(0x1e));
+            let cursor = i32::from(mem.read::<i16>(win.wrapping_add(0x40)));
+            mem.read::<u16>(list.wrapping_add((cursor * 2).cast_unsigned()))
+        };
+        let shown = match mem.read::<u8>(win) {
+            0 => match command {
+                0x3024 | 0x302a | 0x3123 => {
+                    let text = call(mem, 0x0078_f8f0, &[0x3014, 0]);
+                    call(mem, 0x0089_9ec0, &[text]);
+                    true
+                }
+                0x3002 | 0x3117 | 0x3118 => {
+                    let e = entry(mem);
+                    if e == 0xff {
+                        false
+                    } else {
+                        call(
+                            mem,
+                            0x0089_97c0,
+                            &[i32::from(e.cast_signed()).cast_unsigned()],
+                        );
+                        true
+                    }
+                }
+                _ => {
+                    let e = entry(mem);
+                    if e == 0xff {
+                        false
+                    } else {
+                        call(mem, 0x0089_9970, &[u32::from(e)]);
+                        true
+                    }
+                }
+            },
+            1 => {
+                let target = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+                    let chr = u32::from(mem.read::<u16>(mem.rebase(0x0133_d1f4)));
+                    call(mem, 0x0089_a8b0, &[chr]);
+                    true
+                };
+                if command == 0x3056 {
+                    if mem.read::<u32>(at(mem, 0x0133_d178)) & 0x3_8000 != 0 {
+                        let rec = call(mem, 0x0079_a4b0, &[0x30ff, local]);
+                        let text =
+                            u32::from(mem.read::<u16>(rec)).wrapping_add(mem.read::<u32>(local));
+                        call(mem, 0x0089_9ec0, &[text]);
+                        true
+                    } else {
+                        target(mem, &mut call)
+                    }
+                } else {
+                    let list = mem.read::<u32>(at(mem, 0x0133_d0e0));
+                    if list == 0 || list == 3 {
+                        target(mem, &mut call)
+                    } else {
+                        false
+                    }
+                }
+            }
+            _ => false,
+        };
+        mem.write(open, u8::from(shown));
+    }
+
+    /// `TOBtlDrawActiveChrCursor(chr)` (`0x00892590`, Fahrenheit's name):
+    /// `MsGetChrHeadPos(chr, 0x0133fa68)` (the head, f32 x, y, z), then
+    /// three points `j` (f32 radius `+0` and height `+4` of 16 bytes from
+    /// `0x0133fa08`) around it at the angle `f32 0x0133fa7c`: `(f32(sinf(a)
+    /// r + x), f32(h + y), f32(cosf(a) r + z), 1)` projected by
+    /// `graphicProject3DPointOntoScreenConsider2DScene(screen, point)`
+    /// (`point` the frame words at `frame + 8`, `screen` at `frame`). A
+    /// projection whose ST0 is not above 0 (NaN is) ends it; with all three
+    /// `TOMkpActiveChrCursor(x1, y1, x2, y2, x3, y3, [0x0133f7d4],
+    /// [0x0133fa88])`. `fcall` calls an original that returns in ST0.
+    #[allow(clippy::many_single_char_names)] // s, c, x, y, z, r as in the original
+    pub fn draw_active_chr_cursor<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        frame: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let head = at(mem, 0x0133_fa68);
+        call(mem, 0x0079_50b0, &[chr, head]);
+        let f = |mem: &M, a: u32| load(mem.read::<u32>(a));
+        let point = frame.wrapping_add(8);
+        let mut screen = [0u32; 6];
+        for j in 0..3u32 {
+            let params = at(mem, 0x0133_fa08).wrapping_add(16 * j);
+            let angle = mem.read::<u32>(at(mem, 0x0133_fa7c));
+            let s = fcall(mem, 0x004c_eae0, &[angle]);
+            let x = store(add(mul(s, f(mem, params)), f(mem, head)));
+            mem.write(point, x);
+            let y = store(add(
+                f(mem, params.wrapping_add(4)),
+                f(mem, head.wrapping_add(4)),
+            ));
+            mem.write(point.wrapping_add(4), y);
+            let angle = mem.read::<u32>(at(mem, 0x0133_fa7c));
+            let c = fcall(mem, 0x004c_eac0, &[angle]);
+            let z = store(add(mul(c, f(mem, params)), f(mem, head.wrapping_add(8))));
+            mem.write(point.wrapping_add(8), z);
+            mem.write(point.wrapping_add(12), 1f32.to_bits());
+            let r = fcall(mem, 0x0064_28f0, &[frame, point]);
+            if r <= 0.0 {
+                return;
+            }
+            screen[2 * j as usize] = mem.read::<u32>(frame);
+            screen[2 * j as usize + 1] = mem.read::<u32>(frame.wrapping_add(4));
+        }
+        let style = mem.read::<u32>(at(mem, 0x0133_f7d4));
+        let colour = mem.read::<u32>(at(mem, 0x0133_fa88));
+        let [x1, y1, x2, y2, x3, y3] = screen;
+        call(mem, 0x0090_1190, &[x1, y1, x2, y2, x3, y3, style, colour]);
+    }
+
+    /// `TOBtlSetCallback(w)` (`0x008a0de0`, Fahrenheit's name; jump tables
+    /// `0x008a1068` (bytes) and `0x008a1040` on `i16 w+6`, 0..=0x16): the
+    /// battle window's callbacks for its kind: `+0x98` open, `+0x9c` wait,
+    /// `+0xa0` the third, `+0x90` draw, `+0x94` init (0 but for the change
+    /// window), `+0xe4` = 1 for the sub, weapon and prepare windows. The
+    /// main window (kind 0) opens with `TOOpenBtlLimitBreak` while
+    /// `MsCheckLeftWindow(i16 w+8) > 0` and `g_BtlInitAnm` is 1, else
+    /// `TOOpenBtlWinMain`; the gil windows (0x15, 0x16) first
+    /// `TOInitGilInput(i16 w+0xc == 0x3024 ? 100000 : -1)`. Other kinds
+    /// change nothing.
+    pub fn set_callback<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        // (open, wait, third, draw); the change window also inits
+        const SUB: [u32; 4] = [0x008a_86f0, 0x008a_8b20, 0x008a_2a90, 0x008a_7520];
+        const SUMMON: [u32; 4] = [0x008a_8710, 0x008a_8b50, 0x008a_2aa0, 0x008a_75f0];
+        const WEAPON: [u32; 4] = [0x008a_8730, 0x008a_8b90, 0x008a_2ab0, 0x008a_7dc0];
+        const CHANGE: [u32; 4] = [0x008a_8600, 0x008a_87a0, 0x008a_2a30, 0x008a_2da0];
+        const LEFT: [u32; 4] = [0x008a_8620, 0x008a_8a40, 0x008a_2a50, 0x008a_3680];
+        const RIGHT: [u32; 4] = [0x008a_86d0, 0x008a_8af0, 0x008a_2a80, 0x008a_6a60];
+        const PREPARE: [u32; 4] = [0x008a_86b0, 0x008a_8ac0, 0x008a_2a70, 0x008a_6870];
+        const GIL: [u32; 4] = [0x008a_8610, 0x008a_87d0, 0x008a_2a40, 0x008a_32b0];
+        let kind = mem.read::<i16>(w.wrapping_add(6));
+        let (set, flag) = match kind {
+            0 => {
+                let chr = i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+                let limit = call(mem, 0x0078_f700, &[chr]).cast_signed() > 0
+                    && mem.read::<u8>(mem.rebase(0x0134_0452)) == 1;
+                let open = if limit { 0x008a_85a0 } else { 0x008a_8640 };
+                ([open, 0x008a_8a70, 0x008a_2a60, 0x008a_49b0], false)
+            }
+            1..=4 | 6 | 0xe | 0x11 => (SUB, true),
+            5 => (SUMMON, false),
+            7 | 0xf => (WEAPON, true),
+            0xa => (CHANGE, false),
+            0xc => (LEFT, false),
+            0xd => (RIGHT, false),
+            0x14 => (PREPARE, true),
+            0x15 | 0x16 => {
+                let max = if mem.read::<u16>(w.wrapping_add(0xc)) == 0x3024 {
+                    100_000
+                } else {
+                    u32::MAX
+                };
+                call(mem, 0x008a_2030, &[max]);
+                (GIL, false)
+            }
+            _ => return,
+        };
+        let [open, wait, third, draw] = set.map(|f| mem.rebase(f));
+        if flag {
+            mem.write(w.wrapping_add(0xe4), 1u32);
+        }
+        if kind == 0xa {
+            let init = mem.rebase(0x008a_84d0);
+            mem.write(w.wrapping_add(0x94), init);
+        }
+        mem.write(w.wrapping_add(0x98), open);
+        mem.write(w.wrapping_add(0x9c), wait);
+        mem.write(w.wrapping_add(0xa0), third);
+        mem.write(w.wrapping_add(0x90), draw);
+        if kind != 0xa {
+            mem.write(w.wrapping_add(0x94), 0u32);
+        }
+    }
+
+    /// `TOBtlGetTargetPad(w)` (`0x0089d390`, Fahrenheit's name): one frame of
+    /// the target cursor. Its direction masks come from
+    /// `MsBattleCursorType()` (u8, 0..=3; the original's frame table, `dec,
+    /// inc, switch, switch`: 0 `0x1000, 0x4000, 0x8000, 0x2000`, 1 `0x4000,
+    /// 0x1000, 0x8000, 0x2000`, 2 `0x2000, 0x8000, 0x1000, 0x4000`, 3
+    /// `0x8000, 0x2000, 0x1000, 0x4000`; higher types read past it into the
+    /// frame, here no masks). The repeat pad (`u16 0x025d09d6`) moves the
+    /// index `i16 0x0133d1fc` and wraps it over `u16 0x0133d1f6` entries;
+    /// the trigger pad (`u16 0x025d09d4`) on a switch mask while `u16
+    /// 0x0133d1fe` is 1 swaps the side `u16 0x0133d200` (0 to the list at
+    /// `0x0133d1d4` of `i16 0x0133d1d0`, else to `0x0133d180` of `i16
+    /// 0x0133d17c`, when it has entries): `0x0133d202` the old index, the
+    /// list pointer `0x0133d1f8`, the index `TOBtlSearchRevNearTarget()`. A
+    /// moved index or side clicks (`SndPlayClick(1)`). The target bits are
+    /// the list's word at the index (`g_BtlTargetSelMask`), the target
+    /// `g_BtlTargetChr` their highest bit below 28 (0xff unless
+    /// `0x0133d0e0` is 0 or 3), the window of level `g_BtlActionDepth`
+    /// keeps index, side and bits (`+0x40`, `+0xd2`, `+0xd6`), and
+    /// `MsSetBtlTarget(u16 g_BtlActionList, bits)`. With `0x0133d6e0` 1 the
+    /// trigger becomes 0x20; then 0x40 cancels (`MsResetBtlTarget(i16
+    /// w+8)`, `TOBtlSetPrevAction()`, click 4) and 0x20 confirms
+    /// (`TOBtlSetNextAction(i16 w+8, 0x3115)`, click 1, or 3 when it is
+    /// negative).
+    #[allow(clippy::too_many_lines)]
+    pub fn get_target_pad<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const MASKS: [[u16; 4]; 4] = [
+            [0x1000, 0x4000, 0x8000, 0x2000],
+            [0x4000, 0x1000, 0x8000, 0x2000],
+            [0x2000, 0x8000, 0x1000, 0x4000],
+            [0x8000, 0x2000, 0x1000, 0x4000],
+        ];
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let index_at = at(mem, 0x0133_d1fc);
+        let side_at = at(mem, 0x0133_d200);
+        let count_at = at(mem, 0x0133_d1f6);
+        let list_at = at(mem, 0x0133_d1f8);
+        let pad = at(mem, 0x025d_09d4);
+        let kind = call(mem, 0x0078_0ce0, &[]) & 0xff;
+        let masks = MASKS.get(kind as usize).copied().unwrap_or([0; 4]);
+        let mut side = mem.read::<u16>(side_at);
+        let mut index = mem.read::<u16>(index_at);
+        let (old_index, old_side) = (index, side);
+        let repeat = mem.read::<u16>(at(mem, 0x025d_09d6));
+        if masks[0] & repeat != 0 {
+            index = index.wrapping_sub(1);
+            mem.write(index_at, index);
+        }
+        if masks[1] & repeat != 0 {
+            index = index.wrapping_add(1);
+            mem.write(index_at, index);
+        }
+        let count = mem.read::<u16>(count_at);
+        if index.cast_signed() < 0 {
+            index = count.wrapping_sub(1);
+            mem.write(index_at, index);
+        }
+        if index.cast_signed() >= count.cast_signed() {
+            index = 0;
+            mem.write(index_at, index);
+        }
+        let trigger = mem.read::<u16>(pad);
+        if (masks[2] & trigger != 0 || masks[3] & trigger != 0)
+            && mem.read::<u16>(at(mem, 0x0133_d1fe)) == 1
+        {
+            let (n_at, list, to) = if side == 0 {
+                (0x0133_d1d0, 0x0133_d1d4, 1)
+            } else {
+                (0x0133_d17c, 0x0133_d180, 0)
+            };
+            let n = mem.read::<i16>(at(mem, n_at));
+            if n > 0 {
+                mem.write(count_at, n);
+                let list = at(mem, list);
+                mem.write(list_at, list);
+                #[allow(clippy::cast_possible_truncation)] // ax
+                let found = call(mem, 0x0089_90f0, &[]) as u16;
+                mem.write(at(mem, 0x0133_d202), index);
+                side = to;
+                mem.write(side_at, side);
+                index = found;
+                mem.write(index_at, index);
+            }
+        }
+        if index != old_index || side != old_side {
+            call(mem, 0x0088_6ba0, &[1]);
+            side = mem.read::<u16>(side_at);
+            index = mem.read::<u16>(index_at);
+        }
+        let list = mem.read::<u32>(list_at);
+        let slot = i32::from(index.cast_signed())
+            .wrapping_mul(4)
+            .cast_unsigned();
+        let bits = mem.read::<u32>(list.wrapping_add(slot));
+        mem.write(at(mem, 0x0133_d178), bits);
+        let target_at = at(mem, 0x0133_d1f4);
+        let action = mem.read::<u32>(at(mem, 0x0133_d0e0));
+        if action != 0 && action != 3 {
+            mem.write(target_at, 0xffu16);
+        } else {
+            for c in 0..28u16 {
+                if bits & 1 << c != 0 {
+                    mem.write(target_at, c);
+                }
+            }
+        }
+        let depth = i32::from(mem.read::<i8>(at(mem, 0x023c_c092))).wrapping_mul(0xf0);
+        let win = at(mem, 0x0133_c952).wrapping_add(depth.cast_unsigned());
+        mem.write(win.wrapping_add(0x40), index);
+        let action_chr = u32::from(mem.read::<u16>(at(mem, 0x0133_d0d0)));
+        mem.write(win.wrapping_add(0xd6), bits);
+        mem.write(win.wrapping_add(0xd2), side);
+        call(mem, 0x0079_2de0, &[action_chr, bits]);
+        if mem.read::<u32>(at(mem, 0x0133_d6e0)) == 1 {
+            mem.write(pad, 0x20u16);
+        }
+        let trigger = mem.read::<u8>(pad);
+        let chr = i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        if trigger & 0x40 != 0 {
+            call(mem, 0x0079_2a40, &[chr]);
+            call(mem, 0x0089_a630, &[]);
+            call(mem, 0x0088_6ba0, &[4]);
+        } else if trigger & 0x20 != 0 {
+            let r = call(mem, 0x0089_a330, &[chr, 0x3115]);
+            call(mem, 0x0088_6ba0, &[if r.cast_signed() < 0 { 3 } else { 1 }]);
+        }
+    }
 }

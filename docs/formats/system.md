@@ -1786,3 +1786,98 @@ pushed as literals (no relocation entries), not addresses.
   the CD instead. `MagicSqrt_009dbe10(src, dst)` (`0x009dbe10`,
   `g_MagicImports` slot 300) stores `sqrt(*src)` as `f32` and returns
   `dst`.
+
+## Round 42
+
+- The battle message windows return 7 and end in
+  `TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(mes, 0))`. Before that they
+  fill macro window 7 with `TOBtlSetMacroCommandType(7, slot, type)` and
+  `TOBtlSetMacroCommandValue(7, slot, v)`. First strike (`0x008934d0`
+  enemy, `0x008934f0` player) uses texts 0x3003 and 0x3002 with no macro.
+  Capture (`0x00892870`) and the standard name window (`0x00897200`) put
+  a name in slot 0: `MsGetRamChrName` for capture, `TOGetSaveChrName`
+  for the standard window. Get-money (`0x00893660`) puts the gil in slot
+  0 as type 1 (a number), with text 0x3018 above 0, 0x3019 at 0 and
+  0x301a below (signed). The limit-type window (`0x008935f0`) puts the
+  name in slot 0 and `MsMenuGetText(1, kind + 0x1033, 0)` in slot 1, with
+  text 0x300f. The learning window (`0x00895320`) puts the name in slot
+  0, and in slot 1 the command's text `table + u16 *MsGetComData(com,
+  &table)`, with text 0x300d. `table` is a frame word, and some kinds of
+  `MsGetComData` leave it unset.
+- `TOOpenBtlWinMain(w)` (`0x008a8640`, jump table `0x008a8694`) and
+  `TOOpenBtlLimitBreak(w)` (`0x008a85a0`) both call `TOSeqInitScene(2)`
+  first and both return 1. For `MsCheckLeftWindow(i16 w+8)`,
+  TOOpenBtlWinMain starts scene `bnormalllay` on 2, nothing on 1 or 3,
+  and `bnormallay` otherwise. TOOpenBtlLimitBreak calls
+  `MsCheckLeftWindow` three times, starts `blimitlay` when the second
+  call returns 2, and sets `w+0x98` to `TOOpenBtlWinMain`.
+- `TOBtlElementLampFlags_00897650(chr, element)` (jump table
+  `0x0089769c`) returns the weak, absorb, immune or half flags of `chr`
+  for elements 0 to 3. For any other element it only replaces `al` with
+  the argument's top byte.
+- `KernelSlotMonsterName_198_00773780(i)` calls `Mon_GetName(rec, i)`
+  into `rec = *0x0112a034 + 0x198 + 0x1d8 i` and returns `rec`.
+- Not ported: `0x006492b0` and `0x006492e0` are tail jumps to
+  `debugLoad_00646b30` (`saves/%02d.SAV` through a FILE*) and
+  `debugSave`. `0x00647e10` is the autosave's call to the debug save.
+  `0x00703a20` is a thread loop that never returns.
+- The enemy limit bars (`0x0133f988`) are 8 records of 16 bytes: the
+  target width at `+0` and the shown width at `+4`. There is one per
+  battle character (`i32 0x0133f0ec` of them; `u16` ids at `0x0133f0f0`,
+  0xff for none). Only characters with `MsGetChrLimitBarFlag(id) == 1`
+  get one. `TOBtlInitEnemyLimit` (`0x00897af0`) clears the bars and then
+  sets both widths to `gauge * i16 0x025d0aa4 / max`. Its `idiv` has no
+  guard, so a max of 0 faults in the original. `TOBtlCtrlEnemyLimit`
+  (`0x00891220`) uses a target of 0 while the max is below 1. The shown
+  width then rises by 6 towards the target and stops there.
+- `TOBtlInitCtbWindow` (`0x008a0ce0`) clears the CTB state and fills its
+  16 rows of 0x18 bytes (`0x013404f8`) from `MsGetCTBlist`'s 4-byte
+  entries (`u8` id, `u16` ticks), plus the row pointers at `0x01340478`.
+- Wakka's and Auron's limit windows (`0x008974a0`, `0x00892740`) centre
+  their caption on 512 with `ToGetBtlEasyFontWidth`. Wakka calls
+  `TOGetBtlMenuTexAdrs()` (no arguments) after pushing the six words of
+  `TOTransImageHL(tex, 0x3f00, 0x13, 0, 0, 0x100, 0x100)`. Auron draws
+  the combination's buttons 30 apart at `ftol(remapY2(514) - 3)`.
+- `TOBtlDrawGetItemMessageWindow(item, n)` (`0x00893510`) picks text
+  0x3007, 0x3008, 0x3005 or 0x3006 for `n` = -1, 0, 1 or 2 and up. Below
+  -1 it passes `n` itself as the text.
+- `MenuScene_KeyPick_00a7b290` picks a scene track's key pair for
+  `0x00a7bbc0`. It takes key B before the track starts (`i16 +6 < 0`)
+  and at the last frame, and key A at frame 0. In between, keys that
+  match in their low 11 bits blend with `MenuScene_KeyEase`. Keys that
+  don't match switch from A to B when the ease reaches 0.5.
+- `TOBtlSetLibraWindowParam(chr)` (`0x0089a160`) fills the Libra
+  window's line ids (u16 at `0x0133f6b2`, the count at `0x0133f6b0`).
+  First come `0x1006 + k` for each status byte at 0xff, then `0x1011`
+  when byte 11 is 0. Then `0x1012 + k` for each 0xff byte of the 13-byte
+  `MsGetChrLibraName_0078fae0` list, and `0x1020 + k` for each set bit of
+  `MsGetChrLibraWord_0078fac0` except bit 9.
+- `TOBtlCtrlHelpWin` (`0x008912e0`) chooses the battle help line from
+  the command window at the current level (0xf0 bytes from
+  `0x0133c952`). That window holds the kind at `+0`, the command at
+  `+0xa`, the list at `+0x1e` and the cursor at `+0x40`. Commands 0x3024,
+  0x302a and 0x3123 show text 0x3014. 0x3002, 0x3117 and 0x3118 show the
+  change help for the entry under the cursor, and other commands show
+  the command help. An entry of 0xff closes the window. Kind 1 shows the
+  target's help, or for 0x3056 with target bits 0x38000 the name of
+  command 0x30ff.
+- `TOBtlDrawActiveChrCursor(chr)` (`0x00892590`) projects three points
+  around the character's head. Each point is a radius and height pair at
+  `0x0133fa08`, placed at the angle `0x0133fa7c`. The three screen
+  points make the cursor triangle. A projection with ST0 at or below 0
+  stops the draw (NaN does not stop it).
+- `TOBtlSetCallback(w)` (`0x008a0de0`) sets a battle window's callbacks
+  (open, wait, a third one, draw and init) from its kind, through a
+  byte-indexed jump table.
+- `TOBtlGetTargetPad(w)` (`0x0089d390`) runs the target cursor for one
+  frame. The cursor type (`MsBattleCursorType`, 0 to 3) picks four pad
+  masks: back, forward and two side switches. The original keeps these
+  in a frame table, so a type above 3 reads its stack. The index (`i16
+  0x0133d1fc`) wraps over the list's count (`0x0133d1f6`). A side switch
+  moves to the other target list (`0x0133d1d4` or `0x0133d180`), and
+  `TOBtlSearchRevNearTarget` returns the new index. The list word at the
+  index becomes the target bits, and the target is their highest bit
+  below 28. Trigger 0x40 cancels and 0x20 confirms with command 0x3115.
+- Still open from the system worklist: `TOBtlGetMainPad` (`0x0089c900`),
+  `TOBtlCtrlCtbWindow` (`0x0089ece0`), `TOBtlSetWindowLayout`
+  (`0x008a10d0`).

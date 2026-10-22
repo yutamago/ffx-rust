@@ -218,6 +218,27 @@ Cancel from the option list (0x23) waits on
 `TOMenuGetFirstReadEndFlag`, then on `TkMn2GetMainFrameRatio() >= 0x80`,
 and state 0x26 calls `TkMenuMainRemoveMenu(1)` on every call after that.
 
+`TkMenuDrawMain` (`0x008e0ba0`) draws the party rows and the footer. It
+skips a row `i` while its slide `i16 0x01871678[i]` is 0. Otherwise the
+row moves right by `f32(u16 Math_CosLookup(slide) * -1024 / 12288)` from
+`remapX2(145)`, and that sum stays an f64 for the row's x offsets. The
+row's y is `remapY2(200) + remapY2(90) * i`. The character is
+`TkMenuGetPlayerFromIndex2_008a9b00(i)`. Rows below
+`TkMenuGetPlayerPartyMask()` (the active party) get the four water-wave
+strips that `TkBtlEndDraw` also draws. Each row has the name (colour
+`MenuPlayer_DamageClass2`) and the HP and MP texts, built by `sprintf`
+(`"%5d/%5d"` and `"%4d/%4d"`, the max fetched first) into a 16-byte frame
+buffer. Then come the sphere level, centred by `ToGetBtlEasyDigitWidth2`,
+and the cursors. `TkMn2DrawCrossCursor` marks `g_TkMenuMainChoice`, the
+first party-order row (until a target is picked) and the target. Once a
+target is picked, the first row gets `TkMn2DrawStatiCursor` instead, on
+the frames where `TkMenuGetTimer() / 2` is odd. The Japanese offsets
+(`TOGetFFXLangJmp() == 0xb`) are frame words that are set once and never
+cleared, so later rows keep them. The footer holds the gil plate
+(`0x008a98b0` is a `jmp MsGetGIL`), the play time (`TOMenuDrawTimer`,
+kind 0x25 on odd `TkMenuGetTime()`, else 1) and the location name
+`AtelGetSaveDicName(AtelGetSaveDic(), MsGetSaveConfigEnglish())`.
+
 ## Item, shop and aeon lists
 
 The menu list at `0x01597770` has `0x200` 4-byte entries, count in

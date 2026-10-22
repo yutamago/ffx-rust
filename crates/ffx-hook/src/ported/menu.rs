@@ -4984,6 +4984,15 @@ ported! {
         let local = frame.at();
         tk::tk_btl_end_draw(&mut mem(), i, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkMenuDrawMain()`: the last `TkVU1SyncPath`'s `eax`.
+    TkMenuDrawMain @ 0x008e_0ba0 => extern "C" fn tk_menu_draw_main() -> u32 {
+        // sprintf's text (the original's is 16 bytes; HP/MP texts fit in
+        // 12) and ToGetBtlEasyDigitWidth2's width word
+        let mut frame = super::StackFrame::<9>::new();
+        let text = frame.at();
+        let width = text + 32;
+        tk::tk_menu_draw_main(&mut mem(), [text, width], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `TkBtlEndCtrl()` (menu slot 0x11's control: `TkMenuCloseAll` drops its `eax`).
     TkBtlEndCtrl @ 0x008b_a660 => extern "C" fn tk_btl_end_ctrl() {
         // MsGetSaveWeapon's name word

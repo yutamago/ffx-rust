@@ -26934,6 +26934,390 @@ pub mod bridge {
         call(mem, f, &[])
     }
 
+    /// `TkMenuDrawMain()` (`0x008e0ba0`, Fahrenheit's name): the main
+    /// menu's party rows and footer, between `TkVU1SyncPath`,
+    /// `TOMenuOpenPktBuffTmp`, `TODrawMenuBG` and `TOMenuDrawKickTmp`,
+    /// `TkVU1SyncPath` (`eax`, the last one's). u16 `0x025d1670` = 0x2c,
+    /// `0x025d1640` = 0x20.
+    ///
+    /// Row `i < TkMenuGetPlayerListMax2()` (signed) is drawn only while
+    /// its `i16 g_TkMenuMainRowSlide[i]` is not 0: it slides by
+    /// `f32(u16 Math_CosLookup(slide) * -1024 / 12288)` from
+    /// `f32(remapX2(145))`, the sum kept as an f64 `x`; `y =
+    /// remapY2(200) + remapY2(90) i`. The character is
+    /// `TkMenuGetPlayerFromIndex2(i)`. The row: frame shape -3 (texture row
+    /// `86 i`, `1109` wide at `remapX2(0) + x`), four
+    /// `DrawWaterWaveShapeC2` strips while `i < TkMenuGetPlayerPartyMask()`
+    /// (the party members), the name (`ToMakeBtlEasyEdgeFont`, colour
+    /// `MenuPlayer_DamageClass2`), HP and MP labels with
+    /// `sprintf("%5d/%5d" | "%4d/%4d", value, max)` into the 16-byte frame
+    /// buffer `text` (max asked first), two labels, the sphere level
+    /// (`TkMenuGetSP`, centred by `ToGetBtlEasyDigitWidth2` into `width`,
+    /// a frame word) and the cursors: `TkMn2DrawCrossCursor` on
+    /// `g_TkMenuMainChoice == chr`, and on the party-order rows
+    /// `g_TkMenuMainSwapFrom` (while `g_TkMenuMainSwapTo < 0`; after
+    /// that `TkMn2DrawStatiCursor` on the frames with `timer / 2` odd,
+    /// `TkMenuGetTimer`, signed division) and `g_TkMenuMainSwapTo`.
+    /// Japanese (`TOGetFFXLangJmp() == 0xb`) widens the HP/MP labels
+    /// (22, 1, shift 11) and swaps the level label's UV and offsets
+    /// (-35, 20, -10, 25); the offsets are set once and kept for the
+    /// later rows, as the original's frame words are.
+    ///
+    /// The footer: two `TODrawCrossBoxXYWHC2` boxes, `TkMn2DrawGillPlate`
+    /// with the gil (`0x008a98b0`, a `jmp MsGetGIL`), `TOMenuDrawTimer`
+    /// of `TkMenuGetTime()` (kind `0x25` on odd times, else 1), the
+    /// location plate `TOMkpShapeXYWHUVC2` -1, label 200 and the location
+    /// name `AtelGetSaveDicName(AtelGetSaveDic(), MsGetSaveConfigEnglish())`
+    /// (`TkMenuDraw1612Width`, `TOMkpCrossExtMesFontLClut`).
+    ///
+    /// x87: f64 in the original's order, rounded to f32 at every stored
+    /// argument; remaps run `h`, `w`, `y`, `x` as the original calls them.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one draw; x, y as in the original
+    pub fn tk_menu_draw_main<M: Mem>(
+        mem: &mut M,
+        [text, width]: [u32; 2],
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store, sub};
+        const K: f64 = 0.000_976_562_5;
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let rf = |mem: &mut M, remap: &mut dyn FnMut(&mut M, bool, f32) -> f64, y: bool, v: f32| {
+            store(remap(mem, y, v))
+        };
+        let count = call(mem, at(mem, 0x008a_9b50), &[]).cast_signed();
+        let sync = at(mem, 0x0088_ec60);
+        call(mem, sync, &[]);
+        call(mem, at(mem, 0x008b_ef30), &[]);
+        let left = f32::from_bits(rf(mem, remap, false, 145.0));
+        call(mem, at(mem, 0x008f_5c10), &[]);
+        let w16 = |mem: &mut M, a: u32, v: u16| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        w16(mem, 0x025d_1670, 0x2c);
+        w16(mem, 0x025d_1640, 0x20);
+        let shape = at(mem, 0x0090_3bb0);
+        let from_index = at(mem, 0x008a_9b00);
+        let lang = at(mem, 0x008a_c2f0);
+        let cross = at(mem, 0x008c_0670);
+        // the HP/MP widening (a, b, c) and the level label's (A, B, C, D)
+        let (mut wide, mut tall, mut shift) = (0f32, 0f32, 0f32);
+        let (mut ua, mut ub, mut xa, mut xb) = (0f32, 0f32, 0f32, 0f32);
+        let mut i = 0i32;
+        while i < count {
+            let slide_at = at(mem, 0x0187_1678).wrapping_add(i.cast_unsigned().wrapping_mul(2));
+            let slide = i32::from(mem.read::<i16>(slide_at));
+            if slide != 0 {
+                let cos = call(mem, at(mem, 0x0088_e750), &[slide.cast_unsigned()]) & 0xffff;
+                #[allow(clippy::cast_precision_loss)] // fild of a u16
+                let c = f64::from(cos as f32);
+                let slide_x = load(store(div(mul(mul(c, -512.0), 2.0), 12288.0)));
+                let chr = call(mem, from_index, &[i.cast_unsigned()]);
+                #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+                let fi = f64::from(i as f32);
+                let r90 = remap(mem, true, 90.0);
+                let down = mul(r90, fi);
+                let y = load(store(add(remap(mem, true, 200.0), down)));
+                let x = add(slide_x, f64::from(left));
+                // relative to the row: f32(remap(v) + base)
+                let rel = |mem: &mut M,
+                           remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                           dy: bool,
+                           v: f32| {
+                    store(add(remap(mem, dy, v), if dy { y } else { x }))
+                };
+                // the frame: shape -3 over the texture row 86 i
+                let row = mul(fi, 86.0);
+                let v1 = store(add(row, 72.0));
+                let v0 = store(add(row, 0.0));
+                let h = rf(mem, remap, true, 72.0);
+                let w = rf(mem, remap, false, 1109.0);
+                let sx = rel(mem, remap, false, 0.0);
+                let yb = store(y);
+                call(
+                    mem,
+                    shape,
+                    &[0xffff_fffd, sx, yb, w, h, 0, v0, 1109f32.to_bits(), v1],
+                );
+                let members = call(mem, at(mem, 0x008a_9b70), &[]).cast_signed();
+                if i < members {
+                    #[allow(clippy::cast_precision_loss)] // fild, then fstp dword
+                    let v = store(mul(f64::from(i.wrapping_add(1) as f32), 64.0));
+                    let xf = store(x);
+                    let wave = at(mem, 0x008e_7d30);
+                    let strips: [(f32, f32, f32, [u32; 2], bool); 4] = [
+                        (0.0, 50.0, -20.0, [0x00c5_6870, 0x1ac5_6870], false),
+                        (250.0, 50.0, -20.0, [0x1ac5_6870, 0x00c5_6870], true),
+                        (300.0, -80.0, -10.0, [0x00c5_6870, 0x33c5_6870], false),
+                        (550.0, -80.0, -10.0, [0x33c5_6870, 0x00c5_6870], true),
+                    ];
+                    for (u, ripple, phase, colours, right) in strips {
+                        let h = rf(mem, remap, true, 64.0);
+                        let w = rf(mem, remap, false, 250.0);
+                        let sx = if right {
+                            rel(mem, remap, false, 250.0)
+                        } else {
+                            xf
+                        };
+                        let args = [
+                            sx,
+                            yb,
+                            w,
+                            h,
+                            u.to_bits(),
+                            v,
+                            250f32.to_bits(),
+                            64f32.to_bits(),
+                            ripple.to_bits(),
+                            phase.to_bits(),
+                            colours[0],
+                            colours[1],
+                        ];
+                        call(mem, wave, &args);
+                    }
+                }
+                // the name
+                let class = call(mem, at(mem, 0x008a_9a70), &[chr]);
+                let ny = rel(mem, remap, true, 9.0);
+                let nx = rel(mem, remap, false, 160.0);
+                let name = call(mem, at(mem, 0x008a_c850), &[chr]);
+                call(
+                    mem,
+                    at(mem, 0x0090_5930),
+                    &[name, nx, ny, class, 0x3f51_eb85, 0x3f80_0000],
+                );
+                if call(mem, lang, &[]) == 0xb {
+                    (wide, tall, shift) = (22.0, 1.0, 11.0);
+                }
+                let (wide64, tall64) = (f64::from(wide), f64::from(tall));
+                // a label shape: h, w, then y and x beside the row
+                let label = |mem: &mut M,
+                             remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                             call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                             kind: u32,
+                             [sh, sw, dy, dx]: [f32; 4],
+                             uv: [u32; 4]| {
+                    let h = rf(mem, remap, true, sh);
+                    let w = rf(mem, remap, false, sw);
+                    let sy = rel(mem, remap, true, dy);
+                    let sx = rel(mem, remap, false, dx);
+                    call(
+                        mem,
+                        shape,
+                        &[kind, sx, sy, w, h, uv[0], uv[1], uv[2], uv[3]],
+                    );
+                };
+                let sprintf = mem.read::<u32>(at(mem, 0x00b0_c3dc));
+                let str_font = at(mem, 0x0090_1660);
+                // (kind, h, w, dy, dx, uv, value, max, format, text dy, text dx)
+                let f32_of = |v: f64| f32::from_bits(store(v));
+                let hp = (
+                    0x21,
+                    [
+                        f32_of(add(tall64, 23.0)),
+                        f32_of(add(wide64, 61.5)),
+                        5.0,
+                        490.0,
+                    ],
+                    [
+                        0x3eb2_0000,
+                        0x3c70_0000,
+                        store(mul(add(wide64, 436.0), K)),
+                        store(mul(add(tall64, 41.0), K)),
+                    ],
+                    [0x008a_98c0, 0x008a_9990, 0x00b6_684c],
+                    [6.0, 604.0],
+                );
+                let mp = (
+                    0x22,
+                    [23.0, f32_of(add(wide64, 49.0)), 32.0, 540.0],
+                    [
+                        0x3eff_0000,
+                        0x3c70_0000,
+                        store(mul(add(wide64, 570.0), K)),
+                        0x3d24_0000,
+                    ],
+                    [0x008a_9970, 0x008a_99b0, 0x00b6_6854],
+                    [34.0, 625.0],
+                );
+                for (kind, place, uv, [value, max, format], [ty, tx]) in [hp, mp] {
+                    label(mem, remap, call, kind, place, uv);
+                    let max = call(mem, at(mem, max), &[chr]);
+                    let value = call(mem, at(mem, value), &[chr]);
+                    call(mem, sprintf, &[text, at(mem, format), value, max]);
+                    let sy = rel(mem, remap, true, ty);
+                    let sx = store(add(add(remap(mem, false, tx), x), f64::from(shift)));
+                    call(mem, str_font, &[text, sx, sy, 0x25, 0x3f38_51ec, 0]);
+                }
+                label(
+                    mem,
+                    remap,
+                    call,
+                    0xffff_ffff,
+                    [33.0, 208.0, 28.0, 844.0],
+                    [0, 603f32.to_bits(), 208f32.to_bits(), 636f32.to_bits()],
+                );
+                let h = rf(mem, remap, true, 75.0);
+                let w = rf(mem, remap, false, 75.0);
+                let up = remap(mem, true, 3.0);
+                let sy = store(sub(y, up));
+                let sx = rel(mem, remap, false, 1038.0);
+                call(
+                    mem,
+                    shape,
+                    &[
+                        0x3d,
+                        sx,
+                        sy,
+                        w,
+                        h,
+                        0x3ef9_0000,
+                        0x3f16_c000,
+                        0x3f0f_4000,
+                        0x3f29_8000,
+                    ],
+                );
+                if call(mem, lang, &[]) == 0xb {
+                    (ua, ub, xa, xb) = (-35.0, 20.0, -10.0, 25.0);
+                }
+                // the sphere level's label
+                let u1 = store(mul(add(f64::from(ub), 978.0), K));
+                let u0 = store(mul(add(f64::from(ua), 834.0), K));
+                let h = rf(mem, remap, true, 26.0);
+                let w = rf(mem, remap, false, f32_of(add(f64::from(xb), 117.0)));
+                let sy = rel(mem, remap, true, 35.0);
+                let sx = rel(mem, remap, false, f32_of(add(f64::from(xa), 952.0)));
+                call(
+                    mem,
+                    shape,
+                    &[0x3d, sx, sy, w, h, u0, 0x3da8_0000, u1, 0x3de8_0000],
+                );
+                // the sphere level, centred on its width
+                let sp = at(mem, 0x008a_9b80);
+                let n = call(mem, sp, &[chr]);
+                call(
+                    mem,
+                    at(mem, 0x0090_5230),
+                    &[n, width, 0x3f2e_147b, 0x3f80_0000],
+                );
+                let sy = rel(mem, remap, true, 16.0);
+                let r = remap(mem, false, 1076.0);
+                let half = mul(load(mem.read::<u32>(width)), 0.5);
+                let sx = store(sub(add(r, x), half));
+                let n = call(mem, sp, &[chr]);
+                call(
+                    mem,
+                    at(mem, 0x0090_5820),
+                    &[n, sx, sy, 0, 0x3f2e_147b, 0x3f80_0000],
+                );
+                // the cursors
+                let cursor = |mem: &mut M,
+                              remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                              call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                              f: u32,
+                              [dy, dx]: [f32; 2]| {
+                    let sy = rel(mem, remap, true, dy);
+                    let sx = rel(mem, remap, false, dx);
+                    call(mem, f, &[sx, sy, 0]);
+                };
+                let global = |mem: &M, a: u32| mem.read::<u32>(mem.rebase(a));
+                if global(mem, 0x0187_154c) == chr {
+                    cursor(mem, remap, call, cross, [14.0, 150.0]);
+                }
+                let from = global(mem, 0x0187_155c);
+                if from.cast_signed() >= 0 && call(mem, from_index, &[from]) == chr {
+                    if global(mem, 0x0187_1560).cast_signed() < 0 {
+                        cursor(mem, remap, call, cross, [14.0, 150.0]);
+                    } else {
+                        let timer = call(mem, at(mem, 0x008a_9c60), &[]).cast_signed();
+                        if (timer / 2) & 1 != 0 {
+                            let stati = at(mem, 0x008c_13d0);
+                            cursor(mem, remap, call, stati, [9.0, 140.0]);
+                        }
+                    }
+                }
+                let to = global(mem, 0x0187_1560);
+                if to.cast_signed() >= 0 && call(mem, from_index, &[to]) == chr {
+                    cursor(mem, remap, call, cross, [14.0, 150.0]);
+                }
+            }
+            i += 1;
+        }
+        // the footer: (h, w, y, x) remapped in that order
+        let box4 = |mem: &mut M,
+                    remap: &mut dyn FnMut(&mut M, bool, f32) -> f64,
+                    [h, w, y, x]: [f32; 4]| {
+            [
+                rf(mem, remap, true, h),
+                rf(mem, remap, false, w),
+                rf(mem, remap, true, y),
+                rf(mem, remap, false, x),
+            ]
+        };
+        let boxes = at(mem, 0x008f_4b20);
+        let [h, w, y, x] = box4(mem, remap, [32.0, 600.0, 870.0, 639.0]);
+        call(mem, boxes, &[x, y, w, h, 0x00ff_ffff, 0x40ff_ffff]);
+        let gil = call(mem, at(mem, 0x008a_98b0), &[]);
+        let [h, w, y, x] = box4(mem, remap, [32.0, 1108.0, 870.0, 145.0]);
+        call(mem, at(mem, 0x008c_0a20), &[x, y, w, h, gil]);
+        let time = call(mem, at(mem, 0x008a_9c50), &[]);
+        let kind = if time & 1 != 0 { 0x25 } else { 1 };
+        let [h, w, y, x] = box4(mem, remap, [32.0, 325.0, 870.0, 145.0]);
+        call(mem, boxes, &[x, y, w, h, 0x40ff_ffff, 0x00ff_ffff]);
+        let ty = rf(mem, remap, true, 878.0);
+        let tx = rf(mem, remap, false, 270.0);
+        call(mem, at(mem, 0x008e_19f0), &[time, tx, ty, 0x25, kind]);
+        let [h, w, y, x] = box4(mem, remap, [55.0, 1130.0, 951.0, 145.0]);
+        let uv = [0, 544f32.to_bits(), 1600f32.to_bits(), 599f32.to_bits()];
+        call(
+            mem,
+            at(mem, 0x0090_3ee0),
+            &[
+                0xffff_ffff,
+                x,
+                y,
+                w,
+                h,
+                uv[0],
+                uv[1],
+                uv[2],
+                uv[3],
+                0x8080_8080,
+                0x0080_8080,
+            ],
+        );
+        let [h, w, y, x] = box4(mem, remap, [28.0, 360.0, 933.0, 145.0]);
+        call(
+            mem,
+            shape,
+            &[
+                200,
+                x,
+                y,
+                w,
+                h,
+                0x3f07_8000,
+                0x3eee_8000,
+                0x3f61_8000,
+                0x3efc_8000,
+            ],
+        );
+        let dic = call(mem, at(mem, 0x0086_c410), &[]);
+        let english = call(mem, at(mem, 0x0078_51d0), &[]);
+        let name = call(mem, at(mem, 0x0086_c430), &[dic, english]);
+        call(mem, at(mem, 0x008d_c9e0), &[name]);
+        let ny = rf(mem, remap, true, 956.0);
+        let nx = rf(mem, remap, false, 235.0);
+        call(
+            mem,
+            at(mem, 0x0090_16b0),
+            &[0, name, nx, ny, 0, 0x3f47_ae14, 0x3f80_0000],
+        );
+        call(mem, at(mem, 0x008b_ea20), &[]);
+        call(mem, sync, &[])
+    }
+
     /// `TkBtlEndCtrl()` (`0x008ba660`, Fahrenheit's name; jump table
     /// `0x008bb5d4` on `g_BtlEnd_State` `0x01869f08`, 0..=0x2b): the battle-end
     /// screen's control (menu slot 0x11's `+0` callback; `TkMenuCloseAll`

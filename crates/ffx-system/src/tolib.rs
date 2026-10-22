@@ -11347,6 +11347,223 @@ pub mod bridge {
         1
     }
 
+    /// `TOOpenBtlWinMain(w)` (`0x008a8640`, Fahrenheit's
+    /// `__TOOpenBtlWinMain`; jump table `0x008a8694` on
+    /// `MsCheckLeftWindow(i16 w+8)`): `TOSeqInitScene(2)`, then
+    /// `TOSeqStartScene(2, "bnormalllay")` for 2, nothing for 1 and 3 and
+    /// `"bnormallay"` for anything else; 1.
+    pub fn open_btl_win_main<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x008a_eec0, &[2]);
+        let chr = i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        let scene = match call(mem, 0x0078_f700, &[chr]) {
+            1 | 3 => return 1,
+            2 => 0x00b5_f064,
+            _ => 0x00b5_f058,
+        };
+        let scene = mem.rebase(scene);
+        call(mem, 0x008a_f0d0, &[2, scene]);
+        1
+    }
+
+    /// `TOOpenBtlLimitBreak(w)` (`0x008a85a0`, Fahrenheit's
+    /// `__TOOpenBtlLimitBreak`): `TOSeqInitScene(2)`; `MsCheckLeftWindow(i16
+    /// w+8)` three times (read each time), the second's 2 starting scene
+    /// `"blimitlay"` (`TOSeqStartScene(2, ..)`); `w+0x98` =
+    /// `TOOpenBtlWinMain`; 1.
+    pub fn open_btl_limit_break<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x008a_eec0, &[2]);
+        let chr = |mem: &M| i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        let c = chr(mem);
+        call(mem, 0x0078_f700, &[c]);
+        let c = chr(mem);
+        let side = call(mem, 0x0078_f700, &[c]);
+        if side == 2 {
+            let scene = mem.rebase(0x00b5_f09c);
+            call(mem, 0x008a_f0d0, &[side, scene]);
+        }
+        let c = chr(mem);
+        call(mem, 0x0078_f700, &[c]);
+        let next = mem.rebase(0x008a_8640);
+        mem.write(w.wrapping_add(0x98), next);
+        1
+    }
+
+    /// `TOBtlDrawFirstStrikeEnemyMessageWindow()` (`0x008934d0`) and
+    /// `TOBtlDrawFirstStrikePlayerMessageWindow()` (`0x008934f0`):
+    /// `TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(0x3003 | 0x3002, 0))`; 7.
+    pub fn btl_draw_first_strike_message_window<M: Mem>(
+        mem: &mut M,
+        enemy: bool,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let text = call(mem, 0x0078_f8f0, &[if enemy { 0x3003 } else { 0x3002 }, 0]);
+        call(mem, 0x0089_dba0, &[0, text]);
+        7
+    }
+
+    /// `TOBtlDrawCaptureMonsterMessageWindow(chr, mes)` (`0x00892870`,
+    /// `monster`: the name from `MsGetRamChrName`) and
+    /// `TOBtlDrawStdChrNameMessageWindow(chr, mes)` (`0x00897200`:
+    /// `TOGetSaveChrName`): macro 7 slot 0 the name (type 0), then
+    /// `TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(mes, 0))`; 7.
+    pub fn btl_draw_name_message_window<M: Mem>(
+        mem: &mut M,
+        monster: bool,
+        chr: u32,
+        mes: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x008b_57c0, &[7, 0, 0]);
+        let name = call(mem, if monster { 0x0079_af10 } else { 0x008a_c850 }, &[chr]);
+        call(mem, 0x008b_57f0, &[7, 0, name]);
+        let text = call(mem, 0x0078_f8f0, &[mes, 0]);
+        call(mem, 0x0089_dba0, &[0, text]);
+        7
+    }
+
+    /// `TOBtlDrawGetItemMessageWindow(item, n)` (`0x00893510`, Fahrenheit's
+    /// name): macro 7 slot 0 `item` (type 0x33), slot 1 the count `n`
+    /// (type 1), then `TOBtlOpenSimpleHelpMes(0, t)` with `t`
+    /// `MsGetRomBtlText(m, 0)` for `m` 0x3007 at -1, 0x3008 at 0, 0x3005 at
+    /// 1 and 0x3006 from 2 on; below -1 `t` is `n` itself; 7.
+    pub fn btl_draw_get_item_message_window<M: Mem>(
+        mem: &mut M,
+        item: u32,
+        n: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x008b_57c0, &[7, 0, 0x33]);
+        call(mem, 0x008b_57f0, &[7, 0, item]);
+        call(mem, 0x008b_57c0, &[7, 1, 1]);
+        call(mem, 0x008b_57f0, &[7, 1, n.cast_unsigned()]);
+        let text = match n {
+            -1 => call(mem, 0x0078_f8f0, &[0x3007, 0]),
+            0 => call(mem, 0x0078_f8f0, &[0x3008, 0]),
+            1 => call(mem, 0x0078_f8f0, &[0x3005, 0]),
+            2.. => call(mem, 0x0078_f8f0, &[0x3006, 0]),
+            _ => n.cast_unsigned(),
+        };
+        call(mem, 0x0089_dba0, &[0, text]);
+        7
+    }
+
+    /// `TOBtlDrawGetMoneyMessageWindow(gil)` (`0x00893660`, Fahrenheit's
+    /// name): macro 7 slot 0 the number `gil` (type 1), then
+    /// `TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(t, 0))` with `t` 0x3018
+    /// above 0, 0x3019 at 0 and 0x301a below (signed); 7.
+    pub fn btl_draw_get_money_message_window<M: Mem>(
+        mem: &mut M,
+        gil: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x008b_57c0, &[7, 0, 1]);
+        call(mem, 0x008b_57f0, &[7, 0, gil.cast_unsigned()]);
+        let mes = match gil.signum() {
+            1 => 0x3018,
+            0 => 0x3019,
+            _ => 0x301a,
+        };
+        let text = call(mem, 0x0078_f8f0, &[mes, 0]);
+        call(mem, 0x0089_dba0, &[0, text]);
+        7
+    }
+
+    /// `TOBtlDrawGetLimitTypeMessageWindow(chr, kind)` (`0x008935f0`,
+    /// Fahrenheit's name): macro 7 slot 0 `TOGetSaveChrName(chr)`, slot 1
+    /// `MsMenuGetText(1, kind + 0x1033, 0)` (both type 0), then
+    /// `TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(0x300f, 0))`; 7.
+    pub fn btl_draw_get_limit_type_message_window<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        kind: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x008b_57c0, &[7, 0, 0]);
+        let name = call(mem, 0x008a_c850, &[chr]);
+        call(mem, 0x008b_57f0, &[7, 0, name]);
+        call(mem, 0x008b_57c0, &[7, 1, 0]);
+        let text = call(mem, 0x0078_fcf0, &[1, kind.wrapping_add(0x1033), 0]);
+        call(mem, 0x008b_57f0, &[7, 1, text]);
+        let text = call(mem, 0x0078_f8f0, &[0x300f, 0]);
+        call(mem, 0x0089_dba0, &[0, text]);
+        7
+    }
+
+    /// `TOBtlDrawLearningMessageWindow(chr, com)` (`0x00895320`,
+    /// Fahrenheit's name): macro 7 slot 0 `TOGetSaveChrName(chr)`, slot 1
+    /// the command's name `table + u16 *MsGetComData(com, &table)` (`table`
+    /// the frame word `local`, both type 0), then
+    /// `TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(0x300d, 0))`; 7. The
+    /// kinds `MsGetComData` leaves `table` alone for read the word as the
+    /// frame had it.
+    pub fn btl_draw_learning_message_window<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        com: u32,
+        local: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x008b_57c0, &[7, 0, 0]);
+        let name = call(mem, 0x008a_c850, &[chr]);
+        call(mem, 0x008b_57f0, &[7, 0, name]);
+        let rec = call(mem, 0x0079_a4b0, &[com, local]);
+        let text = u32::from(mem.read::<u16>(rec)).wrapping_add(mem.read::<u32>(local));
+        call(mem, 0x008b_57c0, &[7, 1, 0]);
+        call(mem, 0x008b_57f0, &[7, 1, text]);
+        let text = call(mem, 0x0078_f8f0, &[0x300d, 0]);
+        call(mem, 0x0089_dba0, &[0, text]);
+        7
+    }
+
+    /// `TOBtlElementLampFlags_00897650(chr, element)` (`0x00897650`; jump
+    /// table `0x0089769c`): `MsMenuWeakElement_00790240`,
+    /// `MsMenuAbsElement_0078f910`, `MsMenuInvElement` or
+    /// `MsMenuHalfElement` of `chr` for `element` 0..=3 (its `eax`). Other
+    /// elements only replace `al` with the argument's top byte: `element &
+    /// !0xff | element >> 24` (`TOBtlDrawInfoWinElementLamp` reads `al`).
+    pub fn btl_element_lamp_flags<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        element: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = match element {
+            0 => 0x0079_0240,
+            1 => 0x0078_f910,
+            2 => 0x0078_fe80,
+            3 => 0x0078_fe40,
+            _ => return element & !0xff | element >> 24,
+        };
+        call(mem, f, &[chr])
+    }
+
+    /// `KernelSlotMonsterName_198_00773780(i)` (`0x00773780`, a kernel
+    /// menu accessor in a function table): `Mon_GetName(rec, i)` with `rec`
+    /// = `*0x0112a034 + 0x198 + 0x1d8 i`, then `rec` (the pointer read
+    /// again).
+    pub fn kernel_slot_monster_name<M: Mem>(
+        mem: &mut M,
+        i: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rec = |mem: &M| {
+            mem.read::<u32>(mem.rebase(0x0112_a034))
+                .wrapping_add(0x198)
+                .wrapping_add(i.wrapping_mul(0x1d8))
+        };
+        let dst = rec(mem);
+        call(mem, 0x0078_4260, &[dst, i]);
+        rec(mem)
+    }
+
     /// The battle gil window (Bribe, Zanmato's pay): `i16 0x01340458`
     /// the digit the cursor is on, `i16 0x01340456` the highest digit,
     /// `i32 0x0134045c` the party's gil, `0x01340460` the most that can be
