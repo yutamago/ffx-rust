@@ -13106,6 +13106,7 @@ fn r27b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             ctx_cell,
             [here, works + 0x238, rng.next()][rng.below(3) as usize],
         );
+        fill_both(a, b, rng, a.rebase(0x0132_6be0), 0x100);
         r22_case(
             a,
             b,
@@ -13133,7 +13134,7 @@ fn r27b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             r26_f32(rng, r)
         }
     };
-    for round in 0..160u32 {
+    for round in 0..320u32 {
         r27_reset(a, b, &stubs, |_| rng.next());
         for (x, kinds) in [(w, [0u8, 1, 2, 3, 5, 6, 7]), (p, [0u8, 1, 2, 3, 5, 6, 7])] {
             let hdr = alloc_both(a, b, 4);
@@ -13166,20 +13167,15 @@ fn r27b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
         poke(a, b, c + 0x1f0, f(rng, 8.0));
         poke(a, b, c + 0x1ec, f(rng, 80.0));
         poke(a, b, c + 0x1e4, [1u8, 1, 1, 0, 2][rng.below(5) as usize]);
-        poke(
-            a,
-            b,
-            c + 0x1e8,
-            [0xffffu16, 3, 0xffff][rng.below(3) as usize],
-        );
-        let bits = [0u16, 0, 0x20, 0x200][rng.below(4) as usize];
+        poke(a, b, c + 0x1e8, [0xffffu16, 3, 3][rng.below(3) as usize]);
+        let bits = [0u16, 0, 0, 0, 0x20, 0x200][rng.below(6) as usize];
         poke(
             a,
             b,
             w + 0x34,
             Mem::read::<u16>(a, w + 0x34) & !0x220 | bits,
         );
-        if rng.below(2) == 0 {
+        if rng.below(4) != 0 {
             poke(a, b, w + 0x36, Mem::read::<u8>(a, w + 0x36) & !8);
         }
         if rng.below(4) != 0 {
@@ -13196,7 +13192,332 @@ fn r27b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             |r| hp::atel_check_touch_talk(r, w, p, |r, at, args| r.0.call_f64(at, args).unwrap()),
         );
     }
+    r27_touch_talk_ties(a, b, &stubs, c, w, p, what);
     poke(a, b, ctx_cell, here);
+}
+
+/// `Atel_CheckTouchTalk_00866980`'s edges, which random positions rarely
+/// reach: exact ties of every compare (a 3-4-5 triangle), level 0 and NaN,
+/// a negative `dy`, the candidate ties and each skip flag, with
+/// `Math_FacingWithin` now a stand-in returning 1 or `0x100` (installed
+/// last: the random cases ran the real one). Type-1 workers `w` (the
+/// actor) and `p` (the player) in ctrl work `c`.
+#[allow(clippy::too_many_lines)] // one row per case
+fn r27_touch_talk_ties(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    stubs: &(u32, u32, Vec<(u32, u32)>),
+    c: u32,
+    w: u32,
+    p: u32,
+    what: &str,
+) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let face = r27_stubs(a, b, &[(0x0088_b780, 6, true)]);
+    let one = alloc_both(a, b, 4);
+    poke(a, b, one, 1u8);
+    for x in [w, p] {
+        poke(a, b, x, one);
+    }
+    let (mv, pmv) = (w + 0x558, p + 0x558);
+    let f = |v: f32| v.to_bits();
+    let nan = 0x7fc0_0000u32;
+    let up3 = f32::from_bits(3.0f32.to_bits() + 1);
+    // (name, actor y, player x, y, band, touch radius, level, talk reach
+    // parts (ctrl, move), flags +0x34, candidate id, candidate distance,
+    // facing)
+    #[allow(clippy::type_complexity)]
+    let cases: [(
+        &str,
+        u32,
+        u32,
+        u32,
+        u32,
+        u32,
+        u32,
+        (u32, u32),
+        u16,
+        u16,
+        u32,
+        u32,
+    ); 17] = [
+        (
+            "touch tie",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(-1.0),
+            (0, 0),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "touch over",
+            0,
+            f(up3),
+            0,
+            f(1.0),
+            f(5.0),
+            f(-1.0),
+            (0, 0),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "band tie",
+            0,
+            f(3.0),
+            f(1.0),
+            f(1.0),
+            f(5.0),
+            f(-1.0),
+            (0, 0),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "reach tie",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(3.0)),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "both",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            0,
+            0x100,
+        ),
+        (
+            "level 0",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            0,
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "level -0",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            0x8000_0000,
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "level nan",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            nan,
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "dy negative",
+            f(3.0),
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(2.0),
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "dy tie",
+            0,
+            f(3.0),
+            f(2.0),
+            f(9.0),
+            f(5.0),
+            f(2.0),
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "candidate tie",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(4.0)),
+            0,
+            3,
+            f(25.0),
+            1,
+        ),
+        (
+            "candidate nan",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(4.0)),
+            0,
+            3,
+            nan,
+            1,
+        ),
+        (
+            "candidate none",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            f(1.0),
+            1,
+        ),
+        (
+            "hidden 0x20",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(4.0)),
+            0x20,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "hidden 0x200",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(4.0)),
+            0x200,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "hidden 0x36",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            0,
+            1,
+        ),
+        (
+            "facing 0x100",
+            0,
+            f(3.0),
+            0,
+            f(1.0),
+            f(5.0),
+            f(1.0),
+            (f(2.0), f(4.0)),
+            0,
+            0xffff,
+            0,
+            0x100,
+        ),
+    ];
+    for (name, ay, x, y, band, r, level, (rc, rm), flags, id, best, facing) in cases {
+        r27_reset(a, b, stubs, |_| 7);
+        r27_reset(a, b, &face, |_| facing);
+        for (at, v) in [
+            (mv, 0),
+            (mv + 4, ay),
+            (mv + 8, 0),
+            (c + 0x218, x),
+            (c + 0x21c, y),
+            (c + 0x220, f(4.0)),
+            (mv + 0x1c, band),
+            (mv + 0x48, r),
+            (mv + 0x2c, level),
+            (c + 0x1f0, rc),
+            (mv + 0x40, rm),
+            (mv + 0x3c, f(0.5)),
+            (pmv + 0x34, f(1.0)),
+            (c + 0x1ec, best),
+        ] {
+            poke(a, b, at, v);
+        }
+        poke(a, b, c + 0x1e4, 1u8);
+        poke(a, b, c + 0x1e8, id);
+        poke(a, b, w + 0x2e, 9u16);
+        poke(a, b, w + 0xaa, 1u8);
+        poke(a, b, w + 0xab, 1u8);
+        poke(a, b, w + 0x34, flags);
+        poke(a, b, w + 0x36, if name == "hidden 0x36" { 8u16 } else { 0 });
+        r22_case(
+            a,
+            b,
+            0x0086_6980,
+            &[w, 0, p],
+            true,
+            &format!("Atel_CheckTouchTalk {what} {name}"),
+            |r| hp::atel_check_touch_talk(r, w, p, |r, at, args| r.0.call_f64(at, args).unwrap()),
+        );
+    }
 }
 
 #[test]

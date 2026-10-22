@@ -7511,6 +7511,9 @@ pub fn atel_event_remove_for_battle(h: &mut impl ffx_bridge::Host) -> u32 {
                 host_call(h, 0x0072_a120, &[stick]);
             }
         }
+        // `+0x9c` is tested again before each step, as the original does;
+        // none of the calls since the test above can clear it (they are
+        // not handed the worker), so these re-tests never fire
         if h.read::<u32>(w + 0x9c) == 0 {
             continue;
         }
