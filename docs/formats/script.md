@@ -2927,6 +2927,30 @@ and `0x006db800` / `0x006db8a0` (an 8-slot ring buffer per channel,
 `0x1e8` bytes apart, guarded by Win32 semaphores: push and pop for the
 thread `0x00703a20` serves) are left as platform code.
 
+Round 25 c: `AtelBGSepFade(volume, frames)` (`0x00861000`) is
+`Atel_TranslateBGSeps_00861020` without `all`. `Atel_StepSprites_008743e0`
+steps every active event sprite while they are shown (`0x01327144`,
+`0x01327f4c`) and no movie plays. `AtelDrawSemiTrans` (`0x00872ca0`)
+draws the guide map (`Yn_GuideMapProcEx(show)`): show for ctrl work 0's
+`+3` bit `0x20` without `0x10`, or `0x40`, when the save menu's first
+byte has `0x40`, or for `+3` bit 8; never while `+0x1f4` (unsigned) is
+below 3. `Atel_SetPartyMask_008623b0` keeps the three party members' bits
+in `g_AtelPartyMask` (`0x01326b7c`). `Atel_RegistVibrateSignal_00876590`
+sends a worker's sound and vibration curve as a signal when its `+0xab`
+allows sound `k`. `Native_DrawBarSegment_00855a30` draws one bar segment
+from the cursor `0x013259f4` (width `table(kind) * 0x013259f0 /
+0x013259e8`; the original traps on a zero divisor, the port gives 0).
+`Atel_BattleEndMapStart_008615b0(map)` queues the `"MAPR"` callback when
+the battle ended on another map (`g_AtelBattleEndOtherMap`, `0x01325b88`),
+else restores the map's render, guide map and FP state and ends the
+battle (`Yn_BattleEnd`). `Atel_SetMovieTexture_00873eb0(id, flags)`
+drives the save event's movie state (`+0xe0`: 1 set up, 3 new flags; 2..5
+busy, another id waits through `AtelSetOnMemoryMovieFileWait`).
+`round25c_fade_sprites_guide_party_bar_movie_match_the_original` covers
+them. `AtelOutputEncountStart` (`0x00885a80`) writes a separator line to a
+host-PC log (`AtelPCOpen2`/`AtelPCWrite`): debug; `0x006f3130` creates the
+Iggy pause menu (`FFIggyPauseMenu`) once: PC UI.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

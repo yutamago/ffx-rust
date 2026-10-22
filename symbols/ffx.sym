@@ -8606,6 +8606,7 @@
 0x00854f60 function Gu_DrawRectStrip          # fh switch:bsim1.00 0x710043d750
 0x00854fd0 function Gui_MemGraph              # fh v3:exact 0x00854fd0
 0x00855430 function Gui_ProgAvarage           # fh v3:exact 0x00855430
+0x00855a30 function Native_DrawBarSegment_00855a30 # (r25 c) one bar segment: width table(seg[4]) * 0x013259f0 / 0x013259e8, Gu_SetRgbaq + two Gu_SetXyzf2 from the cursor 0x013259f4; returns the width; caller caseD_8011; own name
 0x00855b30 function FFXUsbMouseInit              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'bind errr\\n'; Switch 0x71004499c0 FFXUsbMouseInit (symbols from Fahrenheit's server export)
 0x00855b90 function FFXUsbMouseRead              # layout+callees: sorts between FFXUsbMouseInit and FFXUsbMouseRead2, and its named callees match the Switch 0x7100449a70 FFXUsbMouseRead's (similarity 1.00: FFXSifCallRpc); symbols from Fahrenheit's server export
 0x00855bc0 function FFXUsbMouseRead2          # fh switch:bsim1.00 0x7100449ac0
@@ -9290,6 +9291,8 @@
 0x00861020 function Atel_TranslateBGSeps_00861020 # (r25 a) ctrl work 0's event separates table: SndSepVolumeTranslate(id, volume, frames) for background entries (flags 2, or 0xa with arg 3; not 0x30); 0x80 entries 0 or full frames by the save event's +0x28/0x40; else frames halved with +0x28; callers AtelBGSepFade, 0x00862470; own name
 0x00861160 function AtelBattleEndCallback     # fh v3:exact 0x00861100; (mode, v, map, end type): 0xc024 pushes 3; its 4th word is the 0 left from TkGetNowEventJumpMapNo(0), the end type (save +0xd0, != 6, == 1 game over), so the bridge passes 0
 0x00861550 function Atel_QueueBattleEndEffect_00861550 # name ours; cdecl (kind, v): 0x01326b40 = kind, 0x01326b44 = v, AtelRegistCallbackQue2(0, 0x00861f90, "EFF" 0x00b59944); kind != 0x121: g_AtelEffectState = 1; EAX the queue's; caller AtelBattleEndCallback; ported (ffx_script helpers, script round 24 e)
+0x008615b0 function Atel_BattleEndMapStart_008615b0 # (r25 c) other map: 0x01325b88 = 1 + "MAPR" callback 0x00861650; same map: render state, map id page, guide map, FP state, draw mask restored, guide map init, Yn_BattleEnd; caller AtelBattleEndCallback; own name
+0x008623b0 function Atel_SetPartyMask_008623b0 # (r25 c) g_AtelPartyMask = bits of MsGetSavePartyMember's three members (0xff = none); caller AtelBattleEndCallback; own name
 0x00862680 function AtelBindEff2OffSome_00862680 # structure: (worker, which): switches off the worker's bound effects (+0x9c) by kind: walk, water, breath, draw or all (op_et_bindeff2_*_off) and clears its flag bit; callers three bind natives; next to AtelBindEff2On; name ours; ported in helpers (script round 19)
 0x00862700 function AtelBindEff2On            # fh v3:exact 0x008626a0; (worker, kind): op_et_bindeff2 + _draw_on on +0x9c, then kind 0 _walk_on (+0x38 |= 0x20), 1 _breath_on (0x40), 2 _water_on (0x80); eax the last call's / 0x80 / kind - 2; ported in helpers (script round 23)
 0x00862780 function AtelBindElemOff           # fh v3:exact 0x00862720
@@ -9742,6 +9745,7 @@
 0x00873e60 function AtelSetMapIdPage          # fh v3:exact 0x00873e00
 0x00873e80 function AtelSetMenuOtakaraFlag    # fh v3:bsim1.00 0x00873e20
 0x00873e90 function AtelSetOnMemoryMovie      # fh v3:bsim1.00 0x00873e30
+0x00873eb0 function Atel_SetMovieTexture_00873eb0 # (r25 c) by the save event's movie state +0xe0: graphicSetTextureVideoInfo(id, flags & 0x80) and state 1 (+0xd8 id, +0xdc flags), or AtelSetOnMemoryMovieFileWait for another id, or state 3 with new flags; caller Native_01b0; own name
 0x00873f70 function AtelSetOnMemoryMovieFileWait # (movie, flags): graphicSetTextureVideoInfo(movie, flags & 0x80), then the save event record's +0xe0 = 1, +0xd8 = movie, +0xdc = flags; EAX the record; ported in helpers (script round 23 g); fh switch:bsim1.00 0x710044eb50
 0x00874000 function Atel_JumpToEntrance # (e): g_AtelMapIdPage = 1, +1 = e, +2 = 0xff, then TkSetEventJumpMapNo(TkGetNowEventJumpMapNo(), e); the last EAX; callers Native_8006; ported in helpers (script round 23 e); name ours
 0x00874030 function Atel_SetSaveEventE4 # (v): the save event record's +0xe4 = v; EAX the record; callers Native_01c3; ported in helpers (script round 23 e); name ours
@@ -9749,6 +9753,7 @@
 0x008741d0 function TkCdSizeKBCached_008741d0 # ours: () -> 0x00c52760 while not negative; else it becomes (TkCdSize(0x2a, 0) + 0x3ff) / 1024 (signed) + 0x20; ported (ffx_battle::minor, battle round 29)
 0x00874200 function MsSetSaveCommandWithPrefix # name from Fahrenheit (fh v3:exact+call.cs 0x00874190 cdecl); (chr, id, on) -> MsSetSaveCommand(chr, 0x3000 | id & 0xfff, on) (a jump); ported (ffx_battle::minor, battle round 29)
 0x008742b0 function AtelClearShape            # fh v3:exact 0x00874240
+0x008743e0 function Atel_StepSprites_008743e0 # (r25 c) with 0x01327144 and 0x01327f4c set and no movie (0x0086d940), every active event sprite steps (Atel_StepSpriteAnim_00874bf0); caller 0x00872bd0; own name
 0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0
 0x008747b0 function Atel_GetSprite             # (i 0..127): sprite record i (0x01327148, 0x1c bytes); name ours; ported in helpers (script round 14)
 0x008747f0 function Atel_ClearSprite           # (i): sprite record i's first byte = 0; name ours; ported in helpers (script round 14)
@@ -9806,6 +9811,7 @@
 0x00876440 function Atel_FindWorkerByOwner    # (owner) first active (+0xaa 1) worker of the current control with +0x9c == owner: u16 +0x2e, else -1; own name
 0x008764a0 function Atel_RequestOwnerTrigger_008764a0 # name ours; cdecl (owner, kind): ctrl work 0 current; Atel_FindWorkerByOwner(owner) >= 0: AtelRequestTrigger_008764f0(0xffff, worker, kind); context back; EAX the request's or 0; caller 0x0083d3b0; ported (ffx_script helpers, script round 24 e)
 0x008764f0 function AtelRequestTrigger_008764f0 # (from, to, kind) with ctrl work 0 current: AtelRegistSignalWithoutSameLevel(from, to, 0, AtelSoundTableGet_00876860(type, kind), TkGetVibrateCurve(type, kind, worker +0x44)) when the worker's +0xab has trigger bit kind; callers the trigger checks (from 0xffff); name ours; ported in helpers (script round 19)
+0x00876590 function Atel_RegistVibrateSignal_00876590 # (r25 c) ctrl work 0: worker i's sound k (AtelSoundTableGet_00876860) and TkGetVibrateCurve(type, k, +0x44); with both and +0xab bit k, AtelRegistSignalWithoutSameTag(from, i, 0, sound, curve); caller 0x00867c10; own name
 0x00876860 function AtelSoundTableGet_00876860   # structure: (kind, i) -> byte i of one of three tables (kind 1 at 0x00c52ac0, 2-3 at 0x00c52ac8, 5-6 at 0x00c52ad0), 0xff otherwise; callers the sound helpers before AtelCalcSound; name ours; ported in helpers (script round 13)
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
 0x00876950 function Snd3dFootRequest          # (req, 1, 0x100): the 3D footstep request SndKickFoot hands g_SndFoot3dCtrl +0x18 to; name ours
@@ -17041,6 +17047,7 @@
 0x01325b70 label    g_MsgLastIndex            # last message index looked up (written by Msg_Text, Msg_TextAlt, Msg_Text1, Msg_Get)
 0x01325b74 label    g_MsgNone                 # what the Msg_ lookups return without a message table (an empty string)
 0x01325b78 label    g_AtelSepLoadCount           # i32: entries in g_AtelSepLoadList (0..8); zeroed by 0x00866520, AtelInitSaveWork, AtelJumpGameOver; Atel_AddSepLoad appends
+0x01325b88 label g_AtelBattleEndOtherMap # (r25 c) u32: 1 when the battle ended on another map than the event jump's (Atel_BattleEndMapStart_008615b0)
 0x01325b90 label    g_AtelAlbhedDic              # two words written by AtelRegistAlbhedDic (0x0086e820)
 0x01325b98 label    g_TkScalePair             # 2 x f32 (Tk_GetScale)
 0x01325ba0 label    g_AtelCtrlWorks              # 7 ctrl works x 0x238 (AtelGetCtrlWork); g_ScriptContext follows; layout in ffx_script::vm::ctrl
@@ -17051,6 +17058,7 @@
 0x01326b6c label    g_AtelShopRatio              # written by AtelSetShopRatio (0x00870f60)
 0x01326b70 label    g_AtelEffectFlags            # 32 flags: AtelGetEffectFlag/AtelSetEffectFlag (bit mod 32), AtelAllClearEffectFlag
 0x01326b74 label    g_AtelMenuMask               # AtelGetMenuMask (0x0086be50), AtelClearAllMenuMask (0x00863620)
+0x01326b7c label g_AtelPartyMask # (r25 c) u32: bits of the three party members (Atel_SetPartyMask_008623b0)
 0x01326b80 label    g_AtelOverlayStatus          # u8: AtelSetOverlayStatus (0x00870900)
 0x01326b81 label    g_AtelNotAuronPatchFlag      # u8: cleared by AtelClearNotAuronPatchFlag (0x00863f90)
 0x01326b82 label    g_AtelMenuExecStatus         # i8: AtelSetMenuExecStatus; selects the bank of g_AtelMsgWindows (AtelGetMesWinWork)

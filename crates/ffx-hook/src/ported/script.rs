@@ -7182,4 +7182,37 @@ ported! {
         let mut frame = super::StackFrame::<128>::new();
         hp::atel_load_event_tex_list(&mut mem(), on, x, y, frame.at());
     }
+    /// `AtelBGSepFade(volume, frames)`.
+    AtelBGSepFade @ 0x0086_1000 => extern "C" fn h_861000(volume: u32, frames: u32) -> u32 {
+        hp::atel_bg_sep_fade(&mut mem(), volume, frames)
+    }
+    /// `Atel_StepSprites_008743e0()`.
+    Atel_StepSprites_008743e0 @ 0x0087_43e0 => extern "C" fn h_8743e0() {
+        hp::atel_step_sprites(&mut mem());
+    }
+    /// `AtelDrawSemiTrans()`.
+    AtelDrawSemiTrans @ 0x0087_2ca0 => extern "C" fn h_872ca0() {
+        hp::atel_draw_semi_trans(&mut mem());
+    }
+    /// `Atel_SetPartyMask_008623b0()`: the three members in a 3-word frame.
+    Atel_SetPartyMask_008623b0 @ 0x0086_23b0 => extern "C" fn h_8623b0() {
+        let mut frame = super::StackFrame::<3>::new();
+        hp::atel_set_party_mask(&mut mem(), frame.at());
+    }
+    /// `Atel_RegistVibrateSignal_00876590(from, i, k)`.
+    Atel_RegistVibrateSignal_00876590 @ 0x0087_6590 => extern "C" fn h_876590(from: u32, i: u32, k: u32) -> u32 {
+        hp::atel_regist_vibrate_signal(&mut mem(), from, i, k)
+    }
+    /// `Native_DrawBarSegment_00855a30(pos, seg)`.
+    Native_DrawBarSegment_00855a30 @ 0x0085_5a30 => extern "C" fn h_855a30(pos: u32, seg: u32) -> u32 {
+        hp::native_draw_bar_segment(&mut mem(), pos, seg)
+    }
+    /// `Atel_BattleEndMapStart_008615b0(map)`.
+    Atel_BattleEndMapStart_008615b0 @ 0x0086_15b0 => extern "C" fn h_8615b0(map: u32) -> u32 {
+        hp::atel_battle_end_map_start(&mut mem(), map)
+    }
+    /// `Atel_SetMovieTexture_00873eb0(id, flags)`.
+    Atel_SetMovieTexture_00873eb0 @ 0x0087_3eb0 => extern "C" fn h_873eb0(id: u32, flags: u32) -> u32 {
+        hp::atel_set_movie_texture(&mut mem(), id, flags)
+    }
 }

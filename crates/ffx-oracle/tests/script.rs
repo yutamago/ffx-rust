@@ -9821,3 +9821,313 @@ fn round25b_small_helpers_match_the_original() {
     r25b_cases(&mut a, &mut b, &mut rng, "snapshot");
     r25b_language(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Replaces `f` in both oracles with a stub that stores three words from
+/// cells into the addresses its three arguments hold; returns the first
+/// cell (the others follow).
+fn r25_out3_stub(a: &mut Oracle, b: &mut Oracle, f: u32) -> u32 {
+    let cells = alloc_both(a, b, 12);
+    let mut code = vec![];
+    for k in 0..3u8 {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x8b, 0x0d]); // mov eax,[esp+4+4k]; mov ecx,
+        code.extend((cells + u32::from(k) * 4).to_le_bytes());
+        code.extend([0x89, 0x08]); // mov [eax],ecx
+    }
+    code.push(0xc3);
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    cells
+}
+
+/// Round 25 c on one pair: the separates fade, the sprite steps, the
+/// guide map draw, the party mask, the bar segment, the battle-end map
+/// start and the movie texture (callees logged or stubbed).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r25c_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0088_6ff0, 3),
+            (0x0091_9d00, 1),
+            (0x0084_84c0, 4),
+            (0x0084_8680, 2),
+            (0x0090_9b90, 0),
+            (0x0088_d680, 0),
+            (0x0091_9da0, 1),
+            (0x0072_9a10, 1),
+            (0x0090_a2b0, 1),
+            (0x0091_9cd0, 0),
+            (0x0091_9a40, 0),
+            (0x0064_3aa0, 2),
+            (0x0087_3f70, 2),
+        ],
+    );
+    let works = a.rebase(0x0132_5ba0);
+    // AtelBGSepFade
+    let save = orig(a, 0x0088_c830, &[]);
+    orig(b, 0x0088_c830, &[]);
+    let old_hdr = Mem::read::<u32>(b, works + 0x48);
+    for round in 0..8u32 {
+        let hdr = r25_sep_header(a, b, rng, [3i32, 0, 9, 16][(round % 4) as usize]);
+        poke(a, b, works + 0x48, hdr);
+        let f = Mem::read::<u8>(b, works);
+        poke(a, b, works, f | 1);
+        poke(a, b, save + 0x28, u8::from(rng.below(2) == 0));
+        let (volume, frames) = (rng.next(), rng.below(0x200));
+        r22_case(
+            a,
+            b,
+            0x0086_1000,
+            &[volume, frames],
+            true,
+            &format!("AtelBGSepFade {what} {round}"),
+            |r| hp::atel_bg_sep_fade(r, volume, frames),
+        );
+    }
+    poke(a, b, works + 0x48, old_hdr);
+    // Atel_StepSprites
+    let sprites = a.rebase(0x0132_7148);
+    let anim = alloc_both(a, b, 0x100);
+    poke(a, b, anim + 4, 4i16);
+    for f in 0..8u32 {
+        poke(
+            a,
+            b,
+            anim + f * 8 + 0x12,
+            [0x100i16, 0x300, 0][rng.below(3) as usize],
+        );
+        poke(a, b, anim + f * 8 + 0x14, rng.next().to_le_bytes()[0]);
+    }
+    for round in 0..8u32 {
+        for i in 0..0x80u32 {
+            let s = sprites + i * 0x1c;
+            poke(a, b, s, u8::from(rng.below(3) == 0));
+            poke(a, b, s + 0xc, u16::try_from(rng.below(4)).unwrap());
+            poke(a, b, s + 0x14, anim);
+            poke(a, b, s + 0x18, rng.below(4) * 0x100);
+        }
+        poke(a, b, a.rebase(0x0132_7144), u32::from(round % 4 != 1));
+        poke(a, b, a.rebase(0x0132_7f4c), u32::from(round % 4 != 2));
+        r25_ret(a, b, 0x0086_d940, u32::from(round % 4 == 3));
+        r22_case(
+            a,
+            b,
+            0x0087_43e0,
+            &[],
+            false,
+            &format!("Atel_StepSprites {what} {round}"),
+            |r| {
+                hp::atel_step_sprites(r);
+                0
+            },
+        );
+    }
+    // AtelDrawSemiTrans
+    let menu = alloc_both(a, b, 4);
+    r25_ret(a, b, 0x0078_5290, menu);
+    for round in 0..40u32 {
+        let f = Mem::read::<u8>(b, works);
+        poke(a, b, works, (f & !1) | u8::from(round % 8 != 0));
+        fill_both(a, b, rng, works + 3, 1);
+        poke(
+            a,
+            b,
+            works + 0x1f4,
+            [0u32, 2, 3, 4, 0xffff_ffff, 0x8000_0000][rng.below(6) as usize],
+        );
+        fill_both(a, b, rng, menu, 1);
+        r25_ret(a, b, 0x0086_d940, u32::from(round % 8 == 1));
+        r22_case(
+            a,
+            b,
+            0x0087_2ca0,
+            &[],
+            false,
+            &format!("AtelDrawSemiTrans {what} {round}"),
+            |r| {
+                hp::atel_draw_semi_trans(r);
+                0
+            },
+        );
+    }
+    // Atel_SetPartyMask
+    let members = r25_out3_stub(a, b, 0x0078_52f0);
+    for round in 0..10u32 {
+        for k in 0..3 {
+            let v = [0xffu32, 0, 3, 7, 31, 33, 0x100][rng.below(7) as usize];
+            poke(a, b, members + k * 4, v);
+        }
+        fill_both(a, b, rng, a.rebase(0x0132_6b7c), 4);
+        r22_case(
+            a,
+            b,
+            0x0086_23b0,
+            &[],
+            false,
+            &format!("Atel_SetPartyMask {what} {round}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_set_party_mask(r, f);
+                0
+            },
+        );
+    }
+    // Native_DrawBarSegment
+    for round in 0..20u32 {
+        let pos = alloc_both(a, b, 8);
+        fill_both(a, b, rng, pos, 8);
+        let seg = alloc_both(a, b, 8);
+        fill_both(a, b, rng, seg, 8);
+        poke(a, b, seg + 4, [0u8, 1, 2, 0][(round % 4) as usize]);
+        r24_seq_stub(a, b, 0x0082_0580, 1, &[rng.below(0x40) + 1]);
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_59f0),
+            rng.below(0x400).cast_signed() - 0x100,
+        );
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_59e8),
+            [1i32, 7, -3, 0x100][rng.below(4) as usize],
+        );
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_59f4),
+            rng.below(0x200).cast_signed() - 0x80,
+        );
+        fill_both(a, b, rng, a.rebase(0x0132_59f8), 4);
+        r22_case(
+            a,
+            b,
+            0x0085_5a30,
+            &[pos, seg],
+            true,
+            &format!("Native_DrawBarSegment {what} {round}"),
+            |r| hp::native_draw_bar_segment(r, pos, seg),
+        );
+    }
+    // Atel_BattleEndMapStart
+    for round in 0..8u32 {
+        let map = rng.below(4);
+        r25_ret(
+            a,
+            b,
+            0x0088_d690,
+            if round % 2 == 0 { map } else { map + 1 },
+        );
+        fill_both(a, b, rng, a.rebase(0x0132_5b88), 4);
+        let g = Mem::read::<u8>(b, works + 1);
+        poke(a, b, works + 1, g ^ (rng.next().to_le_bytes()[0] & 0x80));
+        r22_case(
+            a,
+            b,
+            0x0086_15b0,
+            &[map],
+            true,
+            &format!("Atel_BattleEndMapStart {what} {round}"),
+            |r| hp::atel_battle_end_map_start(r, map),
+        );
+    }
+    // Atel_SetMovieTexture
+    for round in 0..24u32 {
+        poke(
+            a,
+            b,
+            save + 0xe0,
+            [0u32, 1, 2, 3, 5, 6, 0xffff_ffff][rng.below(7) as usize],
+        );
+        let id = rng.below(3);
+        let flags = [0u32, 0x80, 0x81][rng.below(3) as usize];
+        poke(a, b, save + 0xd8, rng.below(3));
+        poke(a, b, save + 0xdc, [0u32, 0x80, 0x81][rng.below(3) as usize]);
+        r22_case(
+            a,
+            b,
+            0x0087_3eb0,
+            &[id, flags],
+            true,
+            &format!("Atel_SetMovieTexture {what} {round}"),
+            |r| hp::atel_set_movie_texture(r, id, flags),
+        );
+    }
+}
+
+/// Round 25 c: `Atel_RegistVibrateSignal_00876590` over the workers of
+/// ctrl work 0 (the curve and the signal stubbed and logged).
+fn r25c_vibrate_signal(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    r24_log_stubs(a, b, &[(0x0086_ec40, 5)]);
+    let works = a.rebase(0x0132_5ba0);
+    let n = u32::from(Mem::read::<u16>(b, works + 0xc)).min(6);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let here = Mem::read::<u32>(b, ctx_cell);
+    let mut cases = 0;
+    for i in 0..n {
+        poke(a, b, ctx_cell, works);
+        let w = v::atel_get_basic_work(b, i.cast_signed());
+        orig(a, ATEL_GET_BASIC_WORK, &[i]);
+        poke(a, b, ctx_cell, here);
+        for k in [0u32, 1, 2, 3, 5, 7, 8, 9] {
+            fill_both(a, b, rng, w + 0xab, 1);
+            let curves = [0xffffu32, rng.below(0x40), rng.below(0x40)];
+            r24_seq_stub(a, b, 0x0087_63e0, 3, &curves[rng.below(3) as usize..]);
+            let from = rng.next();
+            // the ctrl work it comes back to: the snapshot's, or another
+            poke(
+                a,
+                b,
+                ctx_cell,
+                if k % 2 == 1 { works + 0x238 } else { here },
+            );
+            r22_case(
+                a,
+                b,
+                0x0087_6590,
+                &[from, i, k],
+                true,
+                &format!("Atel_RegistVibrateSignal {what} {i} {k}"),
+                |r| hp::atel_regist_vibrate_signal(r, from, i, k),
+            );
+            cases += 1;
+        }
+    }
+    eprintln!("round 25c: {cases} vibrate signal cases ({what})");
+}
+
+#[test]
+fn round25c_fade_sprites_guide_party_bar_movie_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0253);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r25c_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r25c_cases(&mut a, &mut b, &mut rng, "snapshot");
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r25c_vibrate_signal(&mut a, &mut b, &mut rng, "snapshot");
+}
