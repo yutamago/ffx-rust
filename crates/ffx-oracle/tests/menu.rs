@@ -19373,3 +19373,231 @@ fn menu_round33_name_entry_window_ctrl_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_target_window_draw_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0001) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    // results drawn at random for every case
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008a_9ad0u32, 1u8), // TkMenuGetPlayerFromIndex2
+        (0x008a_9bc0, 1),      // TkMenuGetSummonFromIndex
+        (0x008a_c850, 1),      // TOGetSaveChrName
+        (0x008a_9970, 1),      // TkMenuGetMP
+        (0x008a_99b0, 1),      // TkMenuGetMaxMP
+        (0x008a_98c0, 1),      // TkMenuGetHP
+        (0x008a_9990, 1),      // TkMenuGetMaxHP
+        (0x008a_99f0, 1),      // MenuPlayer_DamageClass
+        (0x008f_5f70, 5),      // TODrawMenuPlateXYWHType
+        (0x0090_3bb0, 9),      // TOMkpShapeXYWHUV
+        (0x0090_5550, 6),      // ToMakeBtlEasyDigit2
+        (0x0090_1660, 6),      // TOMkpCrossEasyStrFontSClut
+        (0x0090_5930, 6),      // ToMakeBtlEasyEdgeFont
+        (0x008c_0670, 3),      // TkMn2DrawCrossCursor
+        (0x008c_13d0, 3),      // TkMn2DrawStatiCursor
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let players = seq_stub(&mut t, 0x008a_9b30, log, 0, &[]);
+    let aeons = seq_stub(&mut t, 0x008a_9bf0, log, 0, &[]);
+    let ease = seq_stub(&mut t, 0x008d_30c0, log, 2, &[]);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let timer = seq_stub(&mut t, 0x008a_9c60, log, 0, &[]);
+    let (item_menu, single, mask) = (t.sym(0x0186_a408), t.sym(0x0186_a391), t.sym(0x0186_a3a4));
+    let w = t.alloc(&[0; 0x80]);
+    for case in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(w, 0x80);
+        let n = if case % 50 == 0 {
+            t.rng.pick(&[17u32, 33, 40, 0xffff_ffff, 0x8000_0000])
+        } else {
+            t.rng.below(13)
+        };
+        // the other list's count is never read
+        let other = t.rng.next();
+        let mode = t.rng.pick(&[0u32, 0, 1, 2, 0x100]);
+        t.put(w + 0x58, mode);
+        let (p, a) = if mode == 0 { (n, other) } else { (other, n) };
+        t.put(players, p);
+        t.put(aeons, a);
+        for o in [0x5c, 0x60] {
+            let v = t.rng.pick(&[0u32, 1, 1, 2, 0x101]);
+            t.put(w + o, v);
+        }
+        let row = t.rng.pick(&[0u16, 1, 2, 5, 8, 0xffff]);
+        t.put(w + 0x48, row);
+        let dir = t.rng.pick(&[0x8000u16, 0xffff, 0, 1, 0x7fff]);
+        t.put(w + 0x54, dir);
+        let v = t.rng.pick_or_any(&[
+            0,
+            1,
+            0x400,
+            0x800,
+            0x1000,
+            0xffff_f000,
+            0x7fff_ffff,
+            0x8000_0000,
+        ]);
+        t.put(ease, v);
+        let v = t.rng.pick_or_any(&[0xb, 0xb, 0, 1, 0x10b]);
+        t.put(lang, v);
+        let v = t
+            .rng
+            .pick_or_any(&[0, 1, 2, 3, 0xffff_ffff, 0xffff_fffd, 0x8000_0000]);
+        t.put(timer, v);
+        let v = t.rng.pick(&[0u32, 1, 2, 0x8000_0001]);
+        t.put(item_menu, v);
+        let v = t.rng.pick(&[0u8, 1, 1, 2, 0xff]);
+        t.put(single, v);
+        let v = t.rng.pick(&[0u16, 0xffff, 0x8001, 0x5555, 4]);
+        t.put(mask, v);
+        t.twin(
+            "MenuItem_TargetWindowDraw_008c80b0",
+            0x008c_80b0,
+            &[w],
+            VOID,
+            |o| {
+                tk::menu_item_target_window_draw(o, w, &mut ui_remap, &mut callback);
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_ctrl_main_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0002) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008b_e410u32, 0u8), // TOMenuGetControlPad
+        (0x008a_9860, 0),      // TkMenuGetCurrentPlayer
+        (0x008a_ad60, 1),      // TkMenuMainSetIgnoreJoinFlag
+        (0x008a_ae80, 1),      // TkMenuSetCurrentPlayerPos
+        (0x008d_df60, 1),      // TkMenuMainHelp
+        (0x008a_aeb0, 1),      // TkMenuSetHelpMessage
+        (0x008a_afc0, 0),      // TkMenuSetPrevPlayer2
+        (0x008a_af40, 0),      // TkMenuSetNextPlayer2
+        (0x008a_b260, 1),      // TkMn2SetMainFrameRatioDiff
+        (0x008a_9b00, 1),      // TkMenuGetPlayerFromIndex2_008a9b00
+        (0x008c_30d0, 0),      // TkMsSetSaveParamAll
+        (0x008a_9720, 2),      // TkMenuExchangePlayerPos
+        (0x008a_a410, 1),      // TkMenuMainFreeWindowGroup
+        (0x008a_9680, 1),      // TkMenuSetDrawShadeRatioStep
+        (0x008a_a100, 2),      // TkMenuMainActiveMenu
+        (0x008a_ad70, 1),      // TkMenuMainSleepMenu
+        (0x008a_ab20, 1),      // TkMenuMainRemoveMenu
+        (0x0088_6e80, 1),      // SndSepPlaySimple
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // TkMenuMainGetMaxOptions and MenuMain_OptionY keep ecx (the caller
+    // reads it after them): push ecx / pop ecx, and ecx = the argument
+    let options = t.alloc(&[0; 4]);
+    let code = [
+        &[0x51u8][..],
+        &seq_code(log, 0x008e_2280, 0, options, &[0x59]),
+    ]
+    .concat();
+    jump_stub(&mut t, 0x008e_2280, &code);
+    cells.push(options);
+    let mut picked = vec![];
+    for (f, n) in [
+        (0x008b_e470u32, 0u8), // TOMenuGetControlPadRep
+        (0x008b_e4b0, 0),      // TOMenuGetControlPadTrg
+        (0x008e_2290, 1),      // TkMenuMainGetOptionEnabled
+        (0x008e_2270, 1),      // TkMenuMainGetOptionMenu
+        (0x008e_24c0, 1),      // TkMenuMainOpenOption
+        (0x008a_9870, 0),      // TkMenuGetCurrentPlayerPos
+        (0x008a_9b30, 0),      // TkMenuGetPlayerListMax
+        (0x008a_9b50, 0),      // TkMenuGetPlayerListMax2
+        (0x0078_5380, 1),      // MsGetSavePlyJoin
+        (0x008a_98a0, 0),      // TkMenuGetDrawShadeRatio
+        (0x008a_8e50, 0),      // TOMenuGetFirstReadEndFlag
+        (0x008a_b230, 0),      // TkMn2GetMainFrameRatio
+    ] {
+        picked.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let option_y = seq_stub(&mut t, 0x008e_2260, log, 1, &[0x8b, 0x4c, 0x24, 0x04]);
+    picked.insert(4, option_y);
+    let m = t.alloc(&[0; 0x40]);
+    let (fade, busy, cursor, from, to, done) = (
+        t.sym(0x0187_1544),
+        t.sym(0x0187_1564),
+        t.sym(0x0187_1548),
+        t.sym(0x0187_155c),
+        t.sym(0x0187_1560),
+        t.sym(0x0187_1554),
+    );
+    let small = [0u32, 1, 2, 3, 4, 0xffff_ffff, 0x80, 0x7f];
+    for round in 0..12000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(m, 0x40);
+        // the input states twice as often
+        let state = if round % 40 == 39 {
+            t.rng.pick_or_any(&[0x27, 0x28, 0xffff_ffff])
+        } else if round % 2 == 0 {
+            t.rng.pick(&[4, 5, 7, 0xe, 0x13, 0x14])
+        } else {
+            round % 0x27
+        };
+        t.put(m + 0x1c, state);
+        let high = t.rng.next() & 0xffff_0000;
+        let rep = t.rng.pick_or_any(&[0, 0x1000, 0x4000, 0x4001, 0x5000, 0]) | high;
+        t.put(picked[0], rep);
+        let high = t.rng.next() & 0xffff_0000;
+        let trg = t.rng.pick_or_any(&[0, 0x20, 0x40, 0x60, 0]) | high;
+        t.put(picked[1], trg);
+        let v = t.rng.pick_or_any(&[0, 1]);
+        t.put(picked[2], v);
+        let v = t.rng.pick_or_any(&[6, 6, 0, 1]);
+        t.put(picked[3], v);
+        let v = t.rng.pick_or_any(&[0, 0, 1, 2, 2]);
+        t.put(picked[4], v);
+        let v = t.rng.pick_or_any(&[3, 9, 0]);
+        t.put(picked[5], v);
+        for &c in &picked[6..10] {
+            let v = t.rng.pick_or_any(&small);
+            t.put(c, v);
+        }
+        for &c in &picked[10..] {
+            let v = t
+                .rng
+                .pick_or_any(&[0, 1, 0x7f, 0x80, 0xffff_ffff, 0x8000_0000]);
+            t.put(c, v);
+        }
+        let v = t
+            .rng
+            .pick(&[0u16, 0xf55, 0xf56, 0xf57, 0x1000, 0x7f60, 0x7fff, 0xffff]);
+        t.put(fade, v);
+        let v = t.rng.pick(&[0u16, 0, 1, 0x100]);
+        t.put(busy, v);
+        let v = t.rng.pick(&[0u32, 0, 1, 0x100]);
+        t.put(done, v);
+        for c in [cursor, from, to] {
+            let v = t.rng.pick_or_any(&small);
+            t.put(c, v);
+        }
+        // the option count around the cursor
+        let v = t.rng.pick_or_any(&small);
+        t.put(cells[18], v);
+        t.twin("TkMenuCtrlMain", 0x008e_0350, &[m], U32, |o| {
+            w(tk::tk_menu_ctrl_main(o, m, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

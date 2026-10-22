@@ -4969,6 +4969,14 @@ ported! {
     MenuSummon_WindowDraw_008cebe0 @ 0x008c_ebe0 => extern "C" fn menu_summon_window_draw(w: u32) -> u32 {
         tk::menu_summon_window_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_TargetWindowDraw_008c80b0(w)` (a window draw: `TkMenuDrawLayer` drops its `eax`).
+    MenuItem_TargetWindowDraw_008c80b0 @ 0x008c_80b0 => extern "C" fn menu_item_target_window_draw(w: u32) {
+        tk::menu_item_target_window_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuCtrlMain(m)`: the original's `eax`.
+    TkMenuCtrlMain @ 0x008e_0350 => extern "C" fn tk_menu_ctrl_main(m: u32) -> u32 {
+        tk::tk_menu_ctrl_main(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `UpdateGearCustomizationMenuState(m)`: the original's `eax`.
     UpdateGearCustomizationMenuState @ 0x008d_5830 => extern "C" fn update_gear_customization_menu_state(m: u32) -> u32 {
         // MsGetSaveWeapon's name word

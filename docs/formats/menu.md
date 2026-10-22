@@ -193,6 +193,31 @@ records the widest option text in `0x01871550`; `0x01871558` is its
 slide (`0x3000` when `slide` is set), and the u16 rows at `0x01871668`
 (delay `4 * row`) and `0x01871678` (slide, 0) time the rows.
 
+`TkMenuCtrlMain` (`0x008e0350`, jump table `0x008e0afc` on `+0x1c`,
+0..0x26) is the main menu's control. Each call first adds 0xaa to the
+`u16` fade `0x01871544` and holds it at 0x1000 (a signed compare). State
+1 waits for the fade to reach 0x1000 and for `u16 0x01871564` to be 0.
+State 5 is the option list. Up and down wrap the cursor `0x01871548`
+over `TkMenuMainGetMaxOptions()`, and each move sets the help to
+`TkMenuMainHelp(menu)`. The original keeps the cursor in `ecx` across
+`MenuMain_OptionY` and `TkMenuMainGetMaxOptions`, which leave `ecx` alone.
+Confirming a disabled option plays sound `0x80000003`. Menu 6 (party
+order) goes to state 10 in the same call. An option whose
+`MenuMain_OptionY` is 0 opens at once. Kind 2 sets the ignore-join flag.
+Any other kind clears it and first moves the current player back into
+the party list. `TkMenuMainOpenOption`'s result picks the next state:
+3 is 0x1b, 9 is 0x1f and anything else 0x19. The party-order states keep
+the two rows in `0x0187155c` (picked first) and `0x01871560` (swap
+target), both -1 when unset. The first row moves down-first and the
+second up-first, and both wrap over `TkMenuGetPlayerListMax2()`. A row
+can only be confirmed for a member who joined
+(`MsGetSavePlyJoin(TkMenuGetPlayerFromIndex2_008a9b00(row))`), and the
+target must differ from the first. `TkMenuExchangePlayerPos(from, to)`
+swaps them, and leaving the party order saves (`MsSetSaveParamAll`).
+Cancel from the option list (0x23) waits on
+`TOMenuGetFirstReadEndFlag`, then on `TkMn2GetMainFrameRatio() >= 0x80`,
+and state 0x26 calls `TkMenuMainRemoveMenu(1)` on every call after that.
+
 ## Item, shop and aeon lists
 
 The menu list at `0x01597770` has `0x200` 4-byte entries, count in
@@ -1049,3 +1074,26 @@ shoulder buttons. Confirming with no target ends at once (5); with
 typed keys it asks first (7). Its "yes" lands past the sound of that
 ending, so it is silent. After the windows close it either moves on
 to the next aeon name (`getMegasAdding`, targets 15..17) or ends.
+
+`MenuItem_TargetWindowDraw_008c80b0` (the `+0x10` draw of
+`MenuItem_OpenTargetWindow`'s window) draws one plate per party member
+(`+0x58` 0) or aeon. Each row slides in on its own delay: `t = (s - 0.4
+- 0.05 i) / (0.6 - 0.06 n)`, clamped to 0..1. Here `s` is the window's
+open fraction `1 - MenuMn2_Ease(+0x52, +0x54) / 4096` and `n` the row
+count. The slide comes from the left (`remapX2(-1000) * (1 - t)`) when
+`+0x60` is 1 and from the right (`remapX2(1920 - 1000 t)`) otherwise. Rows
+start at `remapY2(240)` from the item menu (`0x0186a408` 1) or
+`remapY2(284)` from the ability menu, and are `remapY2(77)` apart, moving
+up a row for each row past 9. A row draws its plate (type `0xb`), a
+frame, the HP or MP label (`+0x5c` 1) and bar shapes, the current and
+maximum values and the name. The name is coloured by
+`MenuPlayer_DamageClass` when its bit is set in the target mask
+`u16 0x0186a3a4`, else colour 1. The mask is built by
+`MenuAbility_CommandTargetMask_008c6bc0`, bit `i` for row `i` with the
+bit rotating as in the loop. Once a row is in place (`t >= 1`) a
+one-target command (`0x0186a391` 1) draws the cross cursor on row
+`+0x48`. Otherwise every row gets the static cursor, blinking on
+`(TkMenuGetTimer() / 2 + i) & 1`. In Japanese the label shifts
+`(22, 1)`, and the shift persists from the first row that sees the
+language. The original's `eax` is the x87 status word or the cursor's
+result, and `TkMenuDrawLayer` drops it.
