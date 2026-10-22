@@ -4557,6 +4557,22 @@ ported! {
         nkz::bridge::sqs_init_wave_info(&mut mem(), src, a, &mut |_, f, a| call_cdecl(f, a));
     }
 
+    /// `AbmapState_ChangingNode()`: void.
+    AbmapState_ChangingNode @ 0x00a4_7d50 => extern "C" fn shim_abmap_state_changing_node() {
+        abmap::bridge::abmap_state_changing_node(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `AbmapDrawLinks_00a4b4b0()`: void.
+    AbmapDrawLinks_00a4b4b0 @ 0x00a4_b4b0 => extern "C" fn shim_abmap_draw_links() {
+        abmap::bridge::abmap_draw_links(&mut mem(), &mut |_, f, a| call_cdecl(f, a));
+    }
+
+    /// `SqsInitMusicInfo(src, _, a)`: void like `SqsInitWaveInfo` (no
+    /// caller reads `eax`).
+    SqsInitMusicInfo @ 0x0081_d340 => extern "C" fn shim_sqs_init_music_info(src: u32, _b: u32, a: u32) {
+        nkz::bridge::sqs_init_music_info(&mut mem(), src, a, &mut |_, f, a| call_cdecl(f, a));
+    }
+
     /// `rcVu0Add(a, b, c)`.
     rcVu0Add @ 0x0091_f650 => extern "C" fn shim_rc_vu0_add(a: u32, b: u32, c: u32) -> u32 {
         vu0::bridge::rc_vu0_op(&mut mem(), vu0::bridge::Vu0Op::Add3, a, b, c)

@@ -1305,7 +1305,7 @@
 0x00647d70	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataCheckCrc
 0x00647dd0	dead	unreachable from the entry point and every pointer table
 0x00647df0	dead	unreachable from the entry point and every pointer table
-0x00647e10	logic	default (no rule: ported to be safe)
+0x00647e10	debug	reviewed: SaveDataManager_instance then 0x6f1c40, which only calls SaveDataManager_debugSave_Internal (menu/system round 35)
 0x00647e40	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataManager_MarkAlbhedLoaded
 0x00647e80	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataGetCrc
 0x00647ee0	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataGetDialogState
@@ -1368,9 +1368,9 @@
 0x006491b0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00649220	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00649290	dead	unreachable from the entry point and every pointer table
-0x006492b0	logic	default (no rule: ported to be safe)
+0x006492b0	glue	reviewed: tail jump to debugLoad_00646b30 (saves/%02d.SAV via FILE*); only caller TkMenuCtrlSaveLoad (menu/system round 35)
 0x006492c0	debug	debug name: debugSavedataLoadAll
-0x006492e0	logic	default (no rule: ported to be safe)
+0x006492e0	glue	reviewed: tail jump to debugSave (menu/system round 35)
 0x00649330	dead	unreachable from the entry point and every pointer table
 0x00649360	dead	unreachable from the entry point and every pointer table
 0x006493c0	dead	unreachable from the entry point and every pointer table
@@ -2129,7 +2129,7 @@
 0x0067a4d0	glue	glue name (FMOD or the movie player): iSfxUnloadAllData
 0x0067a4e0	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync4)
 0x0067a500	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync1)
-0x0067a510	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync1)
+0x0067a510	glue	only called from glue code (MovieCdReadTaskLoop_0076e660)
 0x0067a530	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync)
 0x0067a550	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync)
 0x0067a570	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync3)
@@ -3974,7 +3974,7 @@
 0x006e9250	platform	reviewed: IggyPlayerOpenScaled: Iggy UI (field round 14)
 0x006e93f0	platform	reviewed: IggyPlayerOpen: Iggy UI (field round 14)
 0x006e9510	glue	calls Iggy _IggyPlayerCallbackResultPath@4, _IggyValueSetStringUTF8RS@20
-0x006e9570	logic	default (no rule: ported to be safe)
+0x006e9570	platform	reviewed: rcbgGuideMapSave: Iggy save-menu callback, jumps to 0x6e9870 (SaveDataGetLoc -> Iggy) (chara/main/map round 1)
 0x006e9590	glue	only called from glue code (IggyPlayerOpenScaled_006e9250 and 1 more)
 0x006e96c0	platform	reviewed: InitIggyHelper: Iggy UI (field round 14)
 0x006e9700	platform	only called from platform code (0x6e9870 and 1 more)
@@ -4534,7 +4534,7 @@
 0x00703910	glue	reviewed: calls a function pointer by argument count (system round 32)
 0x00703990	platform	imports CloseHandle, TerminateThread
 0x007039d0	platform	imports CloseHandle, TerminateThread
-0x00703a20	logic	default (no rule: ported to be safe)
+0x00703a20	platform	reviewed: thread loop that never returns, waits through WaitForSingleObject (menu/system round 35)
 0x00703a50	platform	imports ResumeThread, SetThreadPriority
 0x00703a90	logic	default (no rule: ported to be safe)
 0x00703ad0	dead	unreachable from the entry point and every pointer table
@@ -6089,7 +6089,7 @@
 0x0076e5e0	logic	default (no rule: ported to be safe)
 0x0076e630	platform	reviewed: read_thread_init: registers a background thread function (main round 13)
 0x0076e640	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_read_callback
-0x0076e660	logic	default (no rule: ported to be safe)
+0x0076e660	glue	glue name (FMOD or the movie player): MovieCdReadTaskLoop_0076e660
 0x0076e780	logic	default (no rule: ported to be safe)
 0x0076e890	dead	unreachable from the entry point and every pointer table
 0x0076e910	logic	default (no rule: ported to be safe)
@@ -12334,14 +12334,14 @@
 0x0087b0c0	debug	reviewed: worker-state debug print: sprintf + TkPutDebugFontString(P) 0x88f140/0x88f4c0, getters only, writes only the debug font state 0x1328a74 (menu round 29)
 0x0087b170	debug	only calls debug code (TkPutDebugFontStringP, TkPutDebugFontStringPEuc)
 0x0087b360	logic	default (no rule: ported to be safe)
-0x0087b3e0	logic	default (no rule: ported to be safe)
-0x0087b400	logic	default (no rule: ported to be safe)
-0x0087b420	logic	default (no rule: ported to be safe)
+0x0087b3e0	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
+0x0087b400	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
+0x0087b420	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
 0x0087b490	logic	default (no rule: ported to be safe)
-0x0087b520	logic	default (no rule: ported to be safe)
-0x0087b580	logic	default (no rule: ported to be safe)
-0x0087b5b0	logic	default (no rule: ported to be safe)
-0x0087b5e0	logic	default (no rule: ported to be safe)
+0x0087b520	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
+0x0087b580	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
+0x0087b5b0	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
+0x0087b5e0	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
 0x0087b610	logic	default (no rule: ported to be safe)
 0x0087b6b0	logic	default (no rule: ported to be safe)
 0x0087b710	logic	default (no rule: ported to be safe)
@@ -12351,10 +12351,10 @@
 0x0087b890	logic	default (no rule: ported to be safe)
 0x0087b8f0	logic	default (no rule: ported to be safe)
 0x0087b920	logic	default (no rule: ported to be safe)
-0x0087b980	logic	default (no rule: ported to be safe)
+0x0087b980	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
 0x0087b9c0	logic	default (no rule: ported to be safe)
-0x0087ba70	logic	default (no rule: ported to be safe)
-0x0087baa0	logic	default (no rule: ported to be safe)
+0x0087ba70	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
+0x0087baa0	debug	reviewed: worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)
 0x0087baf0	logic	default (no rule: ported to be safe)
 0x0087bb40	logic	default (no rule: ported to be safe)
 0x0087bb90	logic	default (no rule: ported to be safe)
@@ -17046,12 +17046,12 @@
 0x00a4fa30	logic	default (no rule: ported to be safe)
 0x00a4fb70	logic	default (no rule: ported to be safe)
 0x00a4fbe0	logic	default (no rule: ported to be safe)
-0x00a4fe40	logic	default (no rule: ported to be safe)
+0x00a4fe40	dead	reviewed: no call sites and no absolute reference in the image; twin of ported 0xa51340 (chara/main/map round 1)
 0x00a50290	logic	default (no rule: ported to be safe)
 0x00a505e0	logic	default (no rule: ported to be safe)
 0x00a50ed0	dead	reviewed: no call or absolute reference in the image (main round 15)
 0x00a51340	logic	default (no rule: ported to be safe)
-0x00a51560	logic	default (no rule: ported to be safe)
+0x00a51560	dead	reviewed: no call sites and no absolute reference in the image; twin of ported 0xa51340 (chara/main/map round 1)
 0x00a51720	glue	GS/DMA packet writer (graphicDrawUIAbmapElement; writes no game state): replaced by ffx-render
 0x00a521a0	logic	default (no rule: ported to be safe)
 0x00a53570	logic	default (no rule: ported to be safe)

@@ -167,7 +167,7 @@ class Runner:
         self.work = pathlib.Path(args.work).expanduser()
         self.tree = self.work / "tree"
         self.target = self.work / "target"
-        self.files = args.files
+        self.files = [self.relative(f) for f in args.files]
         cores = os.cpu_count() or 2
         self.jobs = args.jobs or max(1, cores // 2)
         self.threads = max(1, cores // self.jobs)
@@ -178,6 +178,19 @@ class Runner:
         self.env.pop("FFX_MUTANT", None)
         self.want = {}
         self.timeout = {}
+
+    def relative(self, f):
+        """`f` relative to the worktree. `tree / f` with an absolute `f` would
+        be `f` itself, so the mutants would land in the worktree, not in the
+        private copy: absolute paths inside the worktree are made relative,
+        others are refused."""
+        p = pathlib.Path(f).expanduser()
+        if not p.is_absolute():
+            return str(p)
+        try:
+            return str(p.resolve().relative_to(self.wt))
+        except ValueError:
+            sys.exit(f"{f}: not inside the worktree {self.wt}")
 
     # -- tree -------------------------------------------------------------
     def sync(self):

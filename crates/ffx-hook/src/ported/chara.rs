@@ -4,6 +4,7 @@
 use ffx_chara::attach::bridge as at;
 use ffx_chara::chr::bridge as c;
 use ffx_chara::cloth::bridge as cl;
+use ffx_chara::draw::bridge as dr;
 use ffx_chara::handle::bridge as h;
 use ffx_chara::id::bridge as id;
 use ffx_chara::layout as l;
@@ -1936,5 +1937,87 @@ ported! {
     /// `Ch_RomReadEventMGRPcb(req)`.
     Ch_RomReadEventMGRPcb @ 0x0082_a7d0 => extern "C" fn ch_rom_read_event_mgrp_cb(req: u32) -> u32 {
         sy::ch_rom_read_event_mgrp_cb(&mut mem(), req, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    // ---- chara-main-map round 1, group a
+    /// `Ch_DisposeAll()`: void (no caller reads `eax`).
+    Ch_DisposeAll @ 0x0082_68e0 => extern "C" fn ch_dispose_all() {
+        h::ch_dispose_all(&mut mem(), &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_Allocate2(key, v)`: the new character.
+    Ch_Allocate2 @ 0x0082_5650 => extern "C" fn ch_allocate2(key: u32, v: u32) -> u32 {
+        h::ch_allocate2(&mut mem(), key, v, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetShadeIDRelation(chr, v, frames)`: the walk's end.
+    Ch_SetShadeIDRelation @ 0x0082_b7a0 => extern "C" fn ch_set_shade_id_relation(chr: u32, v: f32, frames: u32) -> u32 {
+        c::ch_set_shade_id_relation(&mut mem(), chr, v, frames, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ModelSetAlpha(chr, i, a)`: the renderer's (or `fprintf`'s) `eax`.
+    Ch_ModelSetAlpha @ 0x0082_ae30 => extern "C" fn ch_model_set_alpha(chr: u32, i: u32, a: f32) -> u32 {
+        c::ch_model_set_alpha(&mut mem(), chr, i, a, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SoundFootEffect_008338d0(chr)`: the effect's `eax`.
+    Ch_SoundFootEffect_008338d0 @ 0x0083_38d0 => extern "C" fn ch_sound_foot_effect(chr: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ at::FOOT_EFFECT_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        at::ch_sound_foot_effect(&mut mem(), chr, s, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Chb_AttachMotionTBL_OLD(blk)`: void (its caller ignores `eax`).
+    Chb_AttachMotionTBL_OLD @ 0x0083_7fa0 => extern "C" fn chb_attach_motion_tbl_old(blk: u32) {
+        let mut frame = super::StackFrame::<{ h::ATTACH_MOTION_TBL_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        h::chb_attach_motion_tbl_old(&mut mem(), blk, s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_RomReadEventMGRP(file, x)`: the buffer, or 0.
+    Ch_RomReadEventMGRP @ 0x0082_a6e0 => extern "C" fn ch_rom_read_event_mgrp(file: u32, x: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ sy::ROM_READ_EVENT_MGRP_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        sy::ch_rom_read_event_mgrp(&mut mem(), file, x, s, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_IdShadeCalc(chr)`: void (no caller reads `eax`).
+    Ch_IdShadeCalc @ 0x0083_4110 => extern "C" fn ch_id_shade_calc(chr: u32) {
+        let mut frame = super::StackFrame::<{ id::ID_SHADE_CALC_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        id::ch_id_shade_calc(
+            &mut mem(),
+            chr,
+            s,
+            &mut |_, f, a| super::call_cdecl(f, a),
+            &mut |_, f, a| st0_cdecl(f, a),
+        );
+    }
+    // ---- chara-main-map round 1, group b
+    /// `Apply_Envelope(chr, all)`: void (no caller reads `eax`). Also runs
+    /// on the cloth job threads: its frame is per call.
+    Apply_Envelope @ 0x0083_2110 => extern "C" fn apply_envelope(chr: u32, all: u32) {
+        let mut frame = super::StackFrame::<{ dr::APPLY_ENVELOPE_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        dr::apply_envelope(&mut mem(), chr, all, s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_DrawMainForSituation()`: void.
+    Ch_DrawMainForSituation @ 0x0082_fe00 => extern "C" fn ch_draw_main_for_situation() {
+        let mut frame = super::StackFrame::<{ dr::DRAW_SITUATION_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        dr::ch_draw_main_for_situation(&mut mem(), s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_EffectPacketCreateMain(p)`: void.
+    Ch_EffectPacketCreateMain @ 0x0084_2c80 => extern "C" fn ch_effect_packet_create_main(p: u32) {
+        let mut frame = super::StackFrame::<{ sy::PACKET_CREATE_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        sy::ch_effect_packet_create_main(&mut mem(), p, s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    // ---- chara-main-map round 1, group c
+    /// `Ch_WorkRestore(chr, saved)`: the parent handle, or -1.
+    Ch_WorkRestore @ 0x0082_8620 => extern "C" fn ch_work_restore(chr: u32, saved: u32) -> u32 {
+        c::ch_work_restore(&mut mem(), chr, saved, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_PLightCalc(chr)`: void.
+    Ch_PLightCalc @ 0x0083_05a0 => extern "C" fn ch_plight_calc(chr: u32) {
+        let mut frame = super::StackFrame::<{ dr::PLIGHT_CALC_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        let mut call = |_: &mut _, f, a: &[u32]| super::call_cdecl(f, a);
+        let mut fcall = |_: &mut _, f, a: &[u32]| st0_cdecl(f, a);
+        let mut ci = |_: &mut _, f, a: &[f64]| ci_call(f, a);
+        let mut c = dr::PLightCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
+        dr::ch_plight_calc(&mut mem(), chr, s, &mut c);
     }
 }

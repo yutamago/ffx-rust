@@ -1677,4 +1677,101 @@ pub mod bridge {
         }
         DATA_LOADED.set(h, 1);
     }
+
+    /// `op_shape_draw_eamap(shape, key, slot, layer)` (`0x007f49e0`) and
+    /// the `.rdata` 16384.0 (`0x00b7b708`) the area-map key's vertex block
+    /// ends with.
+    pub const SHAPE_DRAW_EAMAP: u32 = 0x007f_49e0;
+    pub const K16384: u32 = 0x00b7_b708;
+    /// Bytes of work [`abmap_draw_nodes_eamap`] needs: the key
+    /// (`[ebp-0x100]`), the node matrix (`[ebp-0xc8]`), the view times
+    /// node matrix (`[ebp-0x88]`) and the vertex block (`[ebp-0x48]`).
+    pub const EAMAP_WORK: u32 = 0x100;
+
+    /// `AbmapDrawNodesEamap_00a51340()` (name ours; from the grid's draw
+    /// pass `0x00a54660`): every node of the grid into the area map.
+    /// The key (`work`, read by `op_shape_draw_eamap`): `u16 +2` 0x14,
+    /// colour `+4`, `+8` and `+0xc` 0, the matrix at `+0x10`, byte `+0x18`
+    /// 0, the vertex block at `+0x1c` (the EE zero register three times,
+    /// then `(r0.x, r0.y, 16384, 1)`). For node `n` (counted down from the
+    /// `i16` count `+2`, `i` the nodes left): with a kind (`u16 +6`, not
+    /// `0xffff`) its matrix (`AbmapMakeNodeMatrix(.., 1.0)`, times the view
+    /// `+0x113e0`), then the kind's (0x30-byte records from `+0xf828`)
+    /// first shape (`+0`, colour `0x80454545`) when the node's panel bits
+    /// (`+0x21`) hold bit `[+0x115bc]`, else its second (`+4`, colour
+    /// `0x80121212`) into slot `count - i + 0x35c`, and its third (`+8`,
+    /// colour 0) appended (slot -0x35e); without a kind only an empty quad
+    /// (shape 0, slot 0xffff). The layer is `[+0x116a4]`; the grid pointer
+    /// and its count are read again for each call.
+    pub fn abmap_draw_nodes_eamap<M, C>(mem: &mut M, work: u32, call: &mut C)
+    where
+        M: Mem,
+        C: FnMut(&mut M, u32, &[u32]) -> u32,
+    {
+        let (key, node_m, m) = (work, work + 0x38, work + 0x78);
+        let g = ABMAP.get(mem);
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(2)));
+        let bit = mem.read::<u8>(g.wrapping_add(0x115bc));
+        let bit = if u32::from(bit & 0x1f) < 8 {
+            1u8 << (bit & 0x1f)
+        } else {
+            0
+        };
+        let kinds = g.wrapping_add(0xf828);
+        let mut node = g.wrapping_add(0x808);
+        eamap_key(mem, key, m, work + 0xb8);
+        let draw = |mem: &mut M, call: &mut C, shape: u32, slot: u32| {
+            let g = ABMAP.get(mem);
+            let layer: u32 = mem.read(g.wrapping_add(0x116a4));
+            let f = mem.rebase(SHAPE_DRAW_EAMAP);
+            call(mem, f, &[shape, key, slot, layer]);
+        };
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            let kind = mem.read::<u16>(node.wrapping_add(6));
+            if kind == 0xffff {
+                draw(mem, call, 0, 0xffff);
+            } else {
+                let f = mem.rebase(MAKE_NODE_MATRIX);
+                call(mem, f, &[node_m, node, 1f32.to_bits()]);
+                let view = ABMAP.get(mem).wrapping_add(0x113e0);
+                let f = mem.rebase(MUL_MATRIX);
+                call(mem, f, &[m, view, node_m]);
+                let k = kinds.wrapping_add(u32::from(kind) * 0x30);
+                let (colour, shape) = if mem.read::<u8>(node.wrapping_add(0x21)) & bit != 0 {
+                    (0x8045_4545u32, mem.read::<u32>(k))
+                } else {
+                    (0x8012_1212, mem.read::<u32>(k.wrapping_add(4)))
+                };
+                mem.write(key + 4, colour);
+                let g = ABMAP.get(mem);
+                let count = i32::from(mem.read::<i16>(g.wrapping_add(2)));
+                let slot = count.wrapping_sub(left).wrapping_add(0x35c).cast_unsigned();
+                draw(mem, call, shape, slot);
+                mem.write(key + 4, 0u32);
+                let third: u32 = mem.read(k.wrapping_add(8));
+                draw(mem, call, third, (-0x35ei32).cast_unsigned());
+            }
+            node = node.wrapping_add(0x28);
+        }
+    }
+
+    /// The area-map key the eamap draws hand `op_shape_draw_eamap`: see
+    /// [`abmap_draw_nodes_eamap`]; `+0`, `+4` and the bytes after `+0x18`
+    /// are left as they were (the original's stack).
+    fn eamap_key(mem: &mut impl Mem, key: u32, m: u32, verts: u32) {
+        let r0: [u32; 4] = mem.read(mem.rebase(EE_R0));
+        mem.write(key + 2, 0x14u16);
+        mem.write(key + 8, [0u32, 0, m]);
+        mem.write(key + 0x18, 0u8);
+        mem.write(key + 0x1c, verts);
+        for row in 0..3 {
+            mem.write(verts + 16 * row, r0);
+        }
+        let k: f32 = mem.read(mem.rebase(K16384));
+        mem.write(
+            verts + 0x30,
+            [r0[0], r0[1], x87::round_trip(k).to_bits(), 1f32.to_bits()],
+        );
+    }
 }

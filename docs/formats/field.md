@@ -2496,3 +2496,20 @@ precision. Loading and storing a float through the x87 stack quiets a
 signalling NaN on the CPU (masked #IA); the oracle's emulator keeps it
 signalling, so those cases are not oracle-checked and the port follows
 the CPU. NaN arithmetic operands are left out.
+
+## Sphere grid: node change and links (chara-main-map round 1)
+
+- `AbmapState_ChangingNode()` (`0x00a47d50`): a node change lasts 40
+  frames of `u8 +0x11650`: the player tags on the node lerp from
+  `+0x11628` to `+0x1162c` by `frame / 40` (`f32` steps); on frame 19
+  the node takes its new kind (`+0x1164c` into its `+6`), the save is
+  stored and the link points recomputed (`+0x11668` = `0x016931a0`).
+  Unless `u16 0x01a8607e` holds it, the tags then snap to the end value
+  and the cursor's pending move (`+0x115b0`, `+0x115b4`) becomes its
+  current one.
+- `0x00a4b4b0` (`AbmapDrawLinks`, name ours): each link (0x14 bytes from
+  `+0xa808`: flags `+0xc`, point count `+0xd`, points `+0x10`) lit for
+  the grid's kind (`+0x115bc`) is drawn as a strip
+  (`AbmapDrawLinkStrip`) with colour word `[0x100, 0x200, 0, 1, 0x201,
+  0x101, 0x300][kind]` (`| 0x1000000` for the selected link `+0x115f8`;
+  the original's two jump tables), the others plainly (`0x00a51720`).

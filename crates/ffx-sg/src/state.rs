@@ -3698,4 +3698,120 @@ pub mod bridge {
         };
         call(h, tail, &[])
     }
+
+    // ---- chara-main-map round 1
+
+    /// `Cache_Dispose(kind, id, check)` (`0x00840250`), called through the
+    /// game.
+    pub const CACHE_DISPOSE: u32 = 0x0084_0250;
+
+    /// `Sg_CacheDisposeChr(id)` (`0x00840e60`; callers `ChN_DataDispose`,
+    /// `Ch_BlkDisposeHandle`, `Native_4021`): the character's four motion
+    /// groups (kind 2, keys `id | n << 16`, n 0..3) and its model data
+    /// (kind 1, key `id`) out of the cache, checked. EAX is the last
+    /// `Cache_Dispose`'s.
+    pub fn cache_dispose_chr(h: &mut impl ffx_bridge::Host, id: u32) -> u32 {
+        let f = h.rebase(CACHE_DISPOSE);
+        for n in 0..4u32 {
+            h.call(f, &[2, id | n << 16, 1]);
+        }
+        h.call(f, &[1, id, 1])
+    }
+
+    /// `Sg_EventjumpDispose`'s callees, all through the game: `dbgPrintf`,
+    /// `Sg_MemSetFast(v)` (`0x0083c520`), `Ch_DisposeAll` (`0x008268e0`),
+    /// `Ch_BlkDisposeAll` (`0x008259c0`), `Ch_DisposeAllMGRP`
+    /// (`0x00836a80`), `Sg_PLightDispose` (its thunk `0x00831a30`), and
+    /// the two log lines (`0x00b59e60`, `0x00b59e78`).
+    pub const MEM_SET_FAST: u32 = 0x0083_c520;
+    pub const CH_DISPOSE_ALL: u32 = 0x0082_68e0;
+    pub const CH_BLK_DISPOSE_ALL: u32 = 0x0082_59c0;
+    pub const CH_DISPOSE_ALL_MGRP: u32 = 0x0083_6a80;
+    pub const PLIGHT_DISPOSE: u32 = 0x0083_1a30;
+    pub const EVENTJUMP_DISPOSE_LOGS: [u32; 2] = [0x00b5_9e60, 0x00b5_9e78];
+
+    /// `Sg_EventjumpDispose()` (`0x0083b420`; callers `AtelEventRemove`,
+    /// `TkInitScene`): logs, `Sg_MemSetFast(0)`, then every character,
+    /// model block and event motion group goes, and the point lights;
+    /// logs again. EAX is the last `dbgPrintf`'s.
+    pub fn eventjump_dispose(h: &mut impl ffx_bridge::Host) -> u32 {
+        let f = h.rebase(SG_DBG_PRINTF);
+        let log = h.rebase(EVENTJUMP_DISPOSE_LOGS[0]);
+        h.call(f, &[log]);
+        let f = h.rebase(MEM_SET_FAST);
+        h.call(f, &[0]);
+        for sym in [
+            CH_DISPOSE_ALL,
+            CH_BLK_DISPOSE_ALL,
+            CH_DISPOSE_ALL_MGRP,
+            PLIGHT_DISPOSE,
+        ] {
+            let f = h.rebase(sym);
+            h.call(f, &[]);
+        }
+        let (f, log) = (h.rebase(SG_DBG_PRINTF), h.rebase(EVENTJUMP_DISPOSE_LOGS[1]));
+        h.call(f, &[log])
+    }
+
+    /// The callees of [`eventjump_cache_chrs`], all through the game:
+    /// `AtelGetBindpList(0)` (`0x0086ae20`), `Cache_ClearCheck`
+    /// (`0x00840120`), `Cache_ToTop(kind, id)` (`0x00840cf0`),
+    /// `Ch_RegMotionToTop` (`0x00837780`), `Cache_DisposeCheck`
+    /// (`0x00840440`), `0x00840ab0`, `Ch_RegMotionUse` (`0x00837790`),
+    /// `Ch_DataRead(id)` (`0x00829ef0`), `Ch_MgrpRead(id, 0)` (its thunk
+    /// `0x00836a40`) and `Ch_ReadSync` (`0x0082a5e0`).
+    pub const GET_BINDP_LIST: u32 = 0x0086_ae20;
+    pub const CACHE_CLEAR_CHECK: u32 = 0x0084_0120;
+    pub const CACHE_TO_TOP: u32 = 0x0084_0cf0;
+    pub const REG_MOTION_TO_TOP: u32 = 0x0083_7780;
+    pub const CACHE_DISPOSE_CHECK: u32 = 0x0084_0440;
+    pub const CACHE_EMPTY: u32 = 0x0084_0ab0;
+    pub const REG_MOTION_USE: u32 = 0x0083_7790;
+    pub const CH_DATA_READ: u32 = 0x0082_9ef0;
+    pub const CH_MGRP_READ: u32 = 0x0083_6a40;
+    pub const CH_READ_SYNC: u32 = 0x0082_a5e0;
+
+    /// `Sg_EventjumpCacheChrs_0083b670()` (name ours; caller
+    /// `Sg_EventjumpInit`): the characters of the event's bind list
+    /// (`AtelGetBindpList(0)`: `u16` count, then ids, walked from the last)
+    /// stay in the cache: after `Cache_ClearCheck` their model data and
+    /// motion groups go to the top (`Cache_ToTop(1, id)`, `(2, id)`), the
+    /// resident motions too, the rest is dropped (`Cache_DisposeCheck`,
+    /// `0x00840ab0`), then each is read again (`Ch_DataRead(id)`,
+    /// `Ch_MgrpRead(id, 0)`), and the reads are waited for
+    /// (`Ch_ReadSync(0)`, its `eax`).
+    pub fn eventjump_cache_chrs(h: &mut impl ffx_bridge::Host) -> u32 {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        let list = call(h, GET_BINDP_LIST, &[0]);
+        call(h, CACHE_CLEAR_CHECK, &[]);
+        let id = |h: &_, i: u32| u32::from(Mem::read::<u16>(h, list.wrapping_add(2 * i)));
+        let mut i = u32::from(h.read::<u16>(list));
+        while i != 0 {
+            let v = id(h, i);
+            call(h, CACHE_TO_TOP, &[1, v]);
+            let v = id(h, i);
+            call(h, CACHE_TO_TOP, &[2, v]);
+            i -= 1;
+        }
+        for sym in [
+            REG_MOTION_TO_TOP,
+            CACHE_DISPOSE_CHECK,
+            CACHE_EMPTY,
+            REG_MOTION_USE,
+        ] {
+            call(h, sym, &[]);
+        }
+        let mut i = u32::from(h.read::<u16>(list));
+        while i != 0 {
+            let v = id(h, i);
+            call(h, CH_DATA_READ, &[v]);
+            let v = id(h, i);
+            call(h, CH_MGRP_READ, &[v, 0]);
+            i -= 1;
+        }
+        call(h, CH_READ_SYNC, &[0])
+    }
 }

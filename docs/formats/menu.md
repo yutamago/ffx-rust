@@ -193,6 +193,52 @@ records the widest option text in `0x01871550`; `0x01871558` is its
 slide (`0x3000` when `slide` is set), and the u16 rows at `0x01871668`
 (delay `4 * row`) and `0x01871678` (slide, 0) time the rows.
 
+`TkMenuCtrlMain` (`0x008e0350`, jump table `0x008e0afc` on `+0x1c`,
+0..0x26) is the main menu's control. Each call first adds 0xaa to the
+`u16` fade `0x01871544` and holds it at 0x1000 (a signed compare). State
+1 waits for the fade to reach 0x1000 and for `u16 0x01871564` to be 0.
+State 5 is the option list. Up and down wrap the cursor `0x01871548`
+over `TkMenuMainGetMaxOptions()`, and each move sets the help to
+`TkMenuMainHelp(menu)`. The original keeps the cursor in `ecx` across
+`MenuMain_OptionY` and `TkMenuMainGetMaxOptions`, which leave `ecx` alone.
+Confirming a disabled option plays sound `0x80000003`. Menu 6 (party
+order) goes to state 10 in the same call. An option whose
+`MenuMain_OptionY` is 0 opens at once. Kind 2 sets the ignore-join flag.
+Any other kind clears it and first moves the current player back into
+the party list. `TkMenuMainOpenOption`'s result picks the next state:
+3 is 0x1b, 9 is 0x1f and anything else 0x19. The party-order states keep
+the two rows in `0x0187155c` (picked first) and `0x01871560` (swap
+target), both -1 when unset. The first row moves down-first and the
+second up-first, and both wrap over `TkMenuGetPlayerListMax2()`. A row
+can only be confirmed for a member who joined
+(`MsGetSavePlyJoin(TkMenuGetPlayerFromIndex2_008a9b00(row))`), and the
+target must differ from the first. `TkMenuExchangePlayerPos(from, to)`
+swaps them, and leaving the party order saves (`MsSetSaveParamAll`).
+Cancel from the option list (0x23) waits on
+`TOMenuGetFirstReadEndFlag`, then on `TkMn2GetMainFrameRatio() >= 0x80`,
+and state 0x26 calls `TkMenuMainRemoveMenu(1)` on every call after that.
+
+`TkMenuDrawMain` (`0x008e0ba0`) draws the party rows and the footer. It
+skips a row `i` while its slide `i16 0x01871678[i]` is 0. Otherwise the
+row moves right by `f32(u16 Math_CosLookup(slide) * -1024 / 12288)` from
+`remapX2(145)`, and that sum stays an f64 for the row's x offsets. The
+row's y is `remapY2(200) + remapY2(90) * i`. The character is
+`TkMenuGetPlayerFromIndex2_008a9b00(i)`. Rows below
+`TkMenuGetPlayerPartyMask()` (the active party) get the four water-wave
+strips that `TkBtlEndDraw` also draws. Each row has the name (colour
+`MenuPlayer_DamageClass2`) and the HP and MP texts, built by `sprintf`
+(`"%5d/%5d"` and `"%4d/%4d"`, the max fetched first) into a 16-byte frame
+buffer. Then come the sphere level, centred by `ToGetBtlEasyDigitWidth2`,
+and the cursors. `TkMn2DrawCrossCursor` marks `g_TkMenuMainChoice`, the
+first party-order row (until a target is picked) and the target. Once a
+target is picked, the first row gets `TkMn2DrawStatiCursor` instead, on
+the frames where `TkMenuGetTimer() / 2` is odd. The Japanese offsets
+(`TOGetFFXLangJmp() == 0xb`) are frame words that are set once and never
+cleared, so later rows keep them. The footer holds the gil plate
+(`0x008a98b0` is a `jmp MsGetGIL`), the play time (`TOMenuDrawTimer`,
+kind 0x25 on odd `TkMenuGetTime()`, else 1) and the location name
+`AtelGetSaveDicName(AtelGetSaveDic(), MsGetSaveConfigEnglish())`.
+
 ## Item, shop and aeon lists
 
 The menu list at `0x01597770` has `0x200` 4-byte entries, count in
@@ -560,6 +606,21 @@ when `get_hdd_word_518()` is not 3 and `get_hdd_status()` is 1.
 The page draw `MenuConfig_Draw(w)` (`0x008cb320`) kicks the packets
 (`TkMenuDrawKick` twice, `0x008c1790`, `TkMn2DrawInitPacket`), draws
 the rows and ends with `TkMn2DrawKickSyncPacket(w)`.
+`MenuConfig_Open_008cb3c0` starts the config menu. It keeps
+`MsGetSaveConfigEnglish()` in `0x0186a43c`, clears the state and the
+cursor `i8 0x0186a444`, and runs each row's `+0x10` callback. Rows
+(`0x0186a44c`, count `0x0186a448`) hold `+4` the number of values, `+8`
+the value, and `+0x10`/`+0x14` the draw and changed callbacks.
+`TkMenuCtrlConfig` (`0x008cb0e0`, jump table `0x008cb2e4`) is menu slot
+10's control. Repeat up and down move the cursor through
+`MenuParty_CursorPrev`/`Next`. Triggers 0x8000 and 0x2000 step the row's
+value down and up, wrapping, and call `+0x14`. Cancel compares the
+English option with the one kept at open. If it changed, the menu shows
+the swap notice (`MenuSubCmd_OpenC(TkMenuConfigMes(0x22), 0, 0)`) and
+runs the two international swap steps before closing. The close in
+state 0xb (`TkMenuMainSleepMenu(10)`, `TkMenuMainActiveMenu(1, 0)`,
+`TOMenuInitBrush`) repeats on every call.
+
 ## Characters and aeons
 
 `g_TkMenuPlayers` (`0x01841c14`) and `g_TkMenuSummons` (`0x01841c38`) are
@@ -614,6 +675,23 @@ Then `MenuSave_BuildIconSys(slot, time, dic)`,
 It returns `SaveDataUpdateIcon(dic)`. The frame is `0x16cc` bytes of
 `0x200`/`0x400`-byte text buffers; the port keeps the original's layout,
 so a text that fills its buffer runs on into the same neighbour.
+`TkMenuCloseSaveLoadScreen` (`0x008b3db0`) and `TkMenuJumpToLoadedScene`
+(`0x008b4ec0`) share one ending. When the menu mode has high bits it
+calls `TkMn2SetMainFrameRatioDiff(16)`. With the language swap flag and
+`0x01866240` both 1 it calls
+`TOSwapInternationalEnvInit(MsGetSaveConfigEnglish())`. `0x01866240` is
+cleared once `TOSwapInternationalEnvExecNonBlock()` returns 1. After a
+load the scene jump copies the save from `g_SaveFileBuffer`
+(`TkMenuCopyLoadedSave(TkGetSaveEventAddress(), ...)`), refreshes music,
+sound mode and HDD mode, stops the three save scenes and runs
+`eiAbmParaGet` through the 5-byte jump at `0x008a97e0`.
+`MenuSave_DrawMesBox_008b4920` draws a save window's message
+`TkMenuSaveMes(w+0x58 + 0x2001)`, sliding with the value from
+`GetGlobal01841c0c_008a98e0`. In Japanese config the box sits at
+`(0x200000 - 98 s) / 4096`. Otherwise it is centred on the text width
+from `TOGetMessageWH`: `((482 - width) s + ((0x1000 - s) << 9)) / 4096`,
+drawn with `TODrawMesBoxFit_008ff3e0`.
+
 ## Pad work records
 
 The Tk pad layer keeps a work record per pad (`Pad_UpdateFrame`
@@ -654,6 +732,16 @@ apart (mode 0); while it scrolls, rows 0..5 from `0x5a` (mode 2) and
 again `+0x46 * 0xec / 4096` higher (mode 1). Then the cursor at
 `0x5a + 0x30 (+0x48 - +0x32)` and the scroll bar `0x00902700(0x1e3,
 0x52, 0xa, 0xfc, top, shown, count)`.
+
+`TkMenuCtrlTuto` (`0x008db4e0`, jump table `0x008db748`) is menu slot
+0x16's control: a tutorial run on a tutorial save. Its entry in
+`0x00c5a868` (16 bytes per `g_TkMenuTutoChoice`) gives the menu slot to
+run (`+0`), the script request (`+4`, `TOMenuAtelReq(1, 0, +4)`) and the
+file to read (`+8`, `+0xc`, `TkCdReadNB`). It saves `g_SaveData`
+(0x68c0 bytes) into `0x0186ac60`, copies the read save's body (from
+`+0x40`) into `g_SaveData`, runs the slot until it leaves the active
+mask, then copies the saved data back and removes itself
+(`TkMenuMainRemoveMenu(0x16)`). The English option survives the swap.
 
 ## Help files
 
@@ -828,6 +916,55 @@ the spoils don't fit (`MsGetSaveWeaponAmount`) `0x0186a184` is set,
 otherwise each spoil is added (`MsAddEquipment_007ab910`). It ends with
 four `Math_SemicircleTable`s of radius 12 (`0x01869f90` 0x15 entries,
 `0x01869fc0` 0x79, `0x0186a0b8` 0x2c, `0x0186a118` 0x22).
+
+The battle-end list's entries are 14 bytes from `0x01869f20` (count
+byte at `0x01869f18`): `i16 +2` timer, `+4` kind, `+6` character and an
+`i8 +0xa` level-up flash counter. `TkBtlEndDraw(i)` (`0x008bc340`, jump
+table `0x008bd004`) draws entry `i`'s results row. Kinds 0 and 5 draw
+nothing. Kind 1 slides the row in from the left by `(u16
+Math_CosLookup(timer) * -512) / 4096` and kind 4 slides it out by
+`((u16 Math_SinLookup(0x1000 - timer) - 0x1000) << 9) / 4096`; any other
+kind stays put. The row sits at `x = remapX2(210) + slide`, `y =
+remapY2(90 i + 278)`. It is drawn between `TOMenuOpenPktBuffTmp` and
+`TOMenuDrawKickTmp`: a frame (shape -3 over texture rows `86 i .. 86 i +
+72`), four `DrawWaterWaveShapeC2` strips on texture row `64 (i + 1)`, a
+second frame, the name, the battle result (`BtlEnd_GetResult`), the
+sphere level centred on its `ToGetBtlEasyDigitWidth2` width, and the AP
+still needed (`MsGetNextAP - MsGetSaveNextAP`, or `"-----"` once
+`BtlEnd_GetSP` reaches 99). The strips' colour words (`0x00c56870`,
+`0x1ac56870`, `0x33c56870`) are plain numbers, not addresses. While the
+flash counter is positive, a plate `remapX2(100) * (k + 1)` wide marks
+the level-up (`k = clamp(15 - flash, 0, 2)`), gets its two labels at
+`k = 2`, and the counter drops by one each draw. In Japanese the result
+moves 20 left and the labels take other UVs and offsets.
+
+`TkBtlEndCtrl()` (`0x008ba660`, jump table `0x008bb5d4` on
+`g_BtlEnd_State` `0x01869f08`, 0..0x2b) runs the battle-end screen. It
+is menu slot 0x11's `+0` callback, and `TkMenuCloseAll` drops its `eax`.
+Each call first steps four `i16` fades by their speeds and holds them
+in 0..0x1000: `0x0186a0b4` (speed `0x0186a114`), `0x0186a160`
+(`0x0186a164`), `0x0186a168` (`0x0186a16c`) and `0x0186a170`
+(`0x0186a174`). `0x0186a178` grows by 0x100 up to 0x1000. The phases
+run in this order: level-ups (`BtlEnd_StepEntry` per entry), the AP
+count (`BtlEnd_CountApSteps`), the gil count (`BtlEnd_StepGil`), then
+the spoils. In each count, confirm finishes everything at once by
+calling the step until it returns 0. States 1 to 5 restart battle
+music 0x8a once the CD's `+8` callback (`GetCD`) reports it idle. The
+spoils list (state 0x20) has two sides in `0x0186a19c` (trigger 0x2000
+to side 1, 0x8000 back to side 0). Up and down move the side's cursor
+`0x0186a1a0[side]`. On side 0 they scroll the list one row
+(`0x0186a18c` to ±0x1000 at speed 0x333, target `0x0186a194`), and the
+shoulder pads (repeat bits 1 and 2 with pad 1 or 2) scroll six rows at
+speed 0x111. The gear list (0x25) does the same on side 1 and moves the
+equip slot `0x0186a1a4` on side 0. Its confirm swaps the spoil in
+(`MsExchangeSaveWeapon`) unless the gear's `MsGetSaveWeapon` record is
+in use (`+2`) and not free (`+6` 0xff). Trigger 0x100 checks the legend
+weapon (`TkBtlEndCheckLegendWeapon`: a notice at 0x22/0x28, else the
+fade-out 0x2a). The end (states 6 to 8) fades the screen to white
+(`AtelGetKeepPlayStatusNoStopFanfare`) or black, restarts field music
+unless `AtelCheckMenuOtakaraFlag`, sets `g_BtlEndCtrlDone` once the main
+fade is 0, and with `AtelIsKeepPlayStatusClear12` fades back in
+(`Sg_FadeIn(15)`).
 
 Two battle-end pages slide in by an integer `dx` (as `f32`, added to the
 remapped x): `BtlEnd_DrawGilPage_008bbb10` (`0x008bbb10`) draws the gil
@@ -1049,3 +1186,41 @@ shoulder buttons. Confirming with no target ends at once (5); with
 typed keys it asks first (7). Its "yes" lands past the sound of that
 ending, so it is silent. After the windows close it either moves on
 to the next aeon name (`getMegasAdding`, targets 15..17) or ends.
+
+`TkMenuOpenNameEntryWindow(aeon, target)` (`0x008c4250`) opens that
+window. A target outside 0..0x11 becomes -1 with `aeon` 1, the password
+entry: its help is text 0x200c, and languages 9 and 10 read the
+password list (`PasswordTextRead`). The window's callbacks are `+8
+0x008c3520`, `+0xc MenuNameEntry_WindowCtrl_008c3580`, `+0x10 0x008c3d00`
+and `+0x14 0x008c4490`. For a character (`aeon` 0) it also opens the
+character window (`+0x60`) and starts in the side column, row 3 in
+language 0 and row 1 otherwise. `MenuNameEntry_DrawKeys_008c4550` draws
+the key rows three to a line: x `remapX2(684, 1041, 1398)`, y
+`remapY2(420) + (i / 3) remapY2(471) / max(6, MenuItem_KeyRowCount())`.
+The row texts come from `u16` text id tables chosen by language and
+config (`0x00c5a2f0[page]`, `0x00c5a2c8`, `0x00c5a260`, `0x00c5a288`),
+or from the password list. Characters are one byte, two bytes from
+6..0x2f, and after 4 two bytes (second byte from 0x30) or three.
+
+`MenuItem_TargetWindowDraw_008c80b0` (the `+0x10` draw of
+`MenuItem_OpenTargetWindow`'s window) draws one plate per party member
+(`+0x58` 0) or aeon. Each row slides in on its own delay: `t = (s - 0.4
+- 0.05 i) / (0.6 - 0.06 n)`, clamped to 0..1. Here `s` is the window's
+open fraction `1 - MenuMn2_Ease(+0x52, +0x54) / 4096` and `n` the row
+count. The slide comes from the left (`remapX2(-1000) * (1 - t)`) when
+`+0x60` is 1 and from the right (`remapX2(1920 - 1000 t)`) otherwise. Rows
+start at `remapY2(240)` from the item menu (`0x0186a408` 1) or
+`remapY2(284)` from the ability menu, and are `remapY2(77)` apart, moving
+up a row for each row past 9. A row draws its plate (type `0xb`), a
+frame, the HP or MP label (`+0x5c` 1) and bar shapes, the current and
+maximum values and the name. The name is coloured by
+`MenuPlayer_DamageClass` when its bit is set in the target mask
+`u16 0x0186a3a4`, else colour 1. The mask is built by
+`MenuAbility_CommandTargetMask_008c6bc0`, bit `i` for row `i` with the
+bit rotating as in the loop. Once a row is in place (`t >= 1`) a
+one-target command (`0x0186a391` 1) draws the cross cursor on row
+`+0x48`. Otherwise every row gets the static cursor, blinking on
+`(TkMenuGetTimer() / 2 + i) & 1`. In Japanese the label shifts
+`(22, 1)`, and the shift persists from the first row that sees the
+language. The original's `eax` is the x87 status word or the cursor's
+result, and `TkMenuDrawLayer` drops it.

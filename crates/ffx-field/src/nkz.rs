@@ -158,6 +158,9 @@ pub const SQS_PLAY_MODE: Global<u32> = Global::new(0x012f_4144);
 pub const SQS_WAVE_INFO_DONE: Global<u32> = Global::new(0x012f_4140);
 /// The IOP address `SqsInitWaveInfo` sends the wave info to.
 pub const SQS_WAVE_INFO_DST: Global<u32> = Global::new(0x012f_4f88);
+/// Where `SqsInitMusicInfo` sends the music info by SIF DMA (the word
+/// after [`SQS_WAVE_INFO_DST`]).
+pub const SQS_MUSIC_INFO_DST: Global<u32> = Global::new(0x012f_4f8c);
 /// The straight stream's id (`SqsStraightStreamingStart` sends it).
 pub const SQS_STRAIGHT_STREAM: Global<u32> = Global::new(0x012f_4e70);
 /// The wave ids `SqsSeSeparateDataSend` loads (256 `u32`).
@@ -1406,6 +1409,33 @@ pub mod bridge {
         let buf = super::SQS_RPC_SEND.get(mem);
         mem.write(buf, a);
         sqs_call_rpc(mem, 4, call);
+    }
+
+    /// `SqsInitMusicInfo(src, _, a)` (`0x0081d340`; Switch name, callers
+    /// `TkInit`, `TkSqsLoadInfo_0088e3a0`): [`sqs_init_wave_info`] for
+    /// the music info: nothing once `0x012f4140` is set; else a source
+    /// sends 0x800 bytes by SIF DMA to `*0x012f4f8c` (then
+    /// `SqsSifDmaState(1, 1)`), and `a` goes to the send buffer for
+    /// `Sqs_CallRpc(5)`. No caller reads `eax`.
+    pub fn sqs_init_music_info<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        src: u32,
+        a: u32,
+        call: &mut C,
+    ) {
+        if super::SQS_WAVE_INFO_DONE.get(mem) != 0 {
+            return;
+        }
+        if src != 0 {
+            let dst = super::SQS_MUSIC_INFO_DST.get(mem);
+            let r = mem.rebase(super::SIF_DMA);
+            mem.write(r, [src, dst, 0x800, 0]);
+            super::SIF_DMA_ID.set(mem, 0);
+            sqs_sif_dma_state(mem, 1, call);
+        }
+        let buf = super::SQS_RPC_SEND.get(mem);
+        mem.write(buf, a);
+        sqs_call_rpc(mem, 5, call);
     }
 
     // ---- field round 40: separate SE wave data ----

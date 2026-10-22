@@ -507,6 +507,21 @@ fn visible(
         }
     });
     same(what, a, b);
+    // a monster by its number (chara-main-map round 1): actor m + 0x14
+    let (m, v) = (
+        rng.below(ACTORS - 0x14),
+        [0, 1, rng.next()][rng.below(3) as usize],
+    );
+    twin(
+        "MsSetMonsterVisible",
+        a,
+        b,
+        0x0079_69a0,
+        &[m, v],
+        ALL,
+        |o| vi::ms_set_monster_visible(o, &mut call, m, v),
+    );
+    same("MsSetMonsterVisible", a, b);
     let away = [0, 1, rng.next()][rng.below(3) as usize];
     if rng.below(4) == 0 {
         twin("MsSetEscapeFlagAll", a, b, 0x0078_de80, &[away], 0, |m| {

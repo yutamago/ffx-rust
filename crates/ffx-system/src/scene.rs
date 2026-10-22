@@ -634,4 +634,49 @@ pub mod bridge {
         }
         mem.write(first, packed);
     }
+
+    /// `MenuScene_KeyPick_00a7b290(keys, track, frame, frames, out)`
+    /// (`0x00a7b290`): a scene track's key pair (`u16 keys[track+8]` the
+    /// first, `keys[track+0xa]` the second, `A`/`B`) handed to
+    /// `0x00a7bbc0(key, from, to, t, out)` (its `eax`): `(*B, B, B, 0)`
+    /// while `i16 track+6` is negative or `frame == frames`, `(*A, A, A, 0)`
+    /// at `frame` 0; otherwise `t = f32(MenuScene_KeyEase(*B, frame,
+    /// frames))` (`fcall`, ST0) gives `(*A, B, A, t)` when the keys' low 11
+    /// bits match, else `(*B, B, B, 0)` from `t >= 0.5` on and `(*A, A, A,
+    /// 0)` below it or for NaN. `*B` is the key read on entry, `*A` the
+    /// one read after the ease (as the original keeps them).
+    pub fn menu_scene_key_pick<M: Mem>(
+        mem: &mut M,
+        [keys, track, frame, frames, out]: [u32; 5],
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) -> u32 {
+        let a = keys.wrapping_add(2 * u32::from(mem.read::<u16>(track.wrapping_add(8))));
+        let b = keys.wrapping_add(2 * u32::from(mem.read::<u16>(track.wrapping_add(0xa))));
+        let key_a = u32::from(mem.read::<u16>(a));
+        let key_b = u32::from(mem.read::<u16>(b));
+        let pick = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, k, p, q, t| {
+            call(mem, 0x00a7_bbc0, &[k, p, q, t, out])
+        };
+        if mem.read::<i16>(track.wrapping_add(6)) < 0 {
+            return pick(mem, &mut call, key_b, b, b, 0);
+        }
+        if frame == 0 {
+            return pick(mem, &mut call, key_a, a, a, 0);
+        }
+        if frame == frames {
+            return pick(mem, &mut call, key_b, b, b, 0);
+        }
+        let ease = u32::from(mem.read::<u16>(b));
+        let t = ffx_bridge::x87::store(fcall(mem, 0x00a7_c6f0, &[ease, frame, frames]));
+        let key_a = u32::from(mem.read::<u16>(a));
+        if (key_b ^ key_a).trailing_zeros() >= 11 {
+            return pick(mem, &mut call, key_a, b, a, t);
+        }
+        if f32::from_bits(t) >= 0.5 {
+            pick(mem, &mut call, key_b, b, b, 0)
+        } else {
+            pick(mem, &mut call, key_a, a, a, 0)
+        }
+    }
 }

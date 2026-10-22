@@ -19373,3 +19373,1004 @@ fn menu_round33_name_entry_window_ctrl_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_target_window_draw_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0001) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    // results drawn at random for every case
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008a_9ad0u32, 1u8), // TkMenuGetPlayerFromIndex2
+        (0x008a_9bc0, 1),      // TkMenuGetSummonFromIndex
+        (0x008a_c850, 1),      // TOGetSaveChrName
+        (0x008a_9970, 1),      // TkMenuGetMP
+        (0x008a_99b0, 1),      // TkMenuGetMaxMP
+        (0x008a_98c0, 1),      // TkMenuGetHP
+        (0x008a_9990, 1),      // TkMenuGetMaxHP
+        (0x008a_99f0, 1),      // MenuPlayer_DamageClass
+        (0x008f_5f70, 5),      // TODrawMenuPlateXYWHType
+        (0x0090_3bb0, 9),      // TOMkpShapeXYWHUV
+        (0x0090_5550, 6),      // ToMakeBtlEasyDigit2
+        (0x0090_1660, 6),      // TOMkpCrossEasyStrFontSClut
+        (0x0090_5930, 6),      // ToMakeBtlEasyEdgeFont
+        (0x008c_0670, 3),      // TkMn2DrawCrossCursor
+        (0x008c_13d0, 3),      // TkMn2DrawStatiCursor
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let players = seq_stub(&mut t, 0x008a_9b30, log, 0, &[]);
+    let aeons = seq_stub(&mut t, 0x008a_9bf0, log, 0, &[]);
+    let ease = seq_stub(&mut t, 0x008d_30c0, log, 2, &[]);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let timer = seq_stub(&mut t, 0x008a_9c60, log, 0, &[]);
+    let (item_menu, single, mask) = (t.sym(0x0186_a408), t.sym(0x0186_a391), t.sym(0x0186_a3a4));
+    let w = t.alloc(&[0; 0x80]);
+    for case in 0..1500 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(w, 0x80);
+        let n = if case % 50 == 0 {
+            t.rng.pick(&[17u32, 33, 40, 0xffff_ffff, 0x8000_0000])
+        } else {
+            t.rng.below(13)
+        };
+        // the other list's count is never read
+        let other = t.rng.next();
+        let mode = t.rng.pick(&[0u32, 0, 1, 2, 0x100]);
+        t.put(w + 0x58, mode);
+        let (p, a) = if mode == 0 { (n, other) } else { (other, n) };
+        t.put(players, p);
+        t.put(aeons, a);
+        for o in [0x5c, 0x60] {
+            let v = t.rng.pick(&[0u32, 1, 1, 2, 0x101]);
+            t.put(w + o, v);
+        }
+        let row = t.rng.pick(&[0u16, 1, 2, 5, 8, 0xffff]);
+        t.put(w + 0x48, row);
+        let dir = t.rng.pick(&[0x8000u16, 0xffff, 0, 1, 0x7fff]);
+        t.put(w + 0x54, dir);
+        let v = t.rng.pick_or_any(&[
+            0,
+            1,
+            0x400,
+            0x800,
+            0x1000,
+            0xffff_f000,
+            0x7fff_ffff,
+            0x8000_0000,
+        ]);
+        t.put(ease, v);
+        let v = t.rng.pick_or_any(&[0xb, 0xb, 0, 1, 0x10b]);
+        t.put(lang, v);
+        let v = t
+            .rng
+            .pick_or_any(&[0, 1, 2, 3, 0xffff_ffff, 0xffff_fffd, 0x8000_0000]);
+        t.put(timer, v);
+        let v = t.rng.pick(&[0u32, 1, 2, 0x8000_0001]);
+        t.put(item_menu, v);
+        let v = t.rng.pick(&[0u8, 1, 1, 2, 0xff]);
+        t.put(single, v);
+        let v = t.rng.pick(&[0u16, 0xffff, 0x8001, 0x5555, 4]);
+        t.put(mask, v);
+        t.twin(
+            "MenuItem_TargetWindowDraw_008c80b0",
+            0x008c_80b0,
+            &[w],
+            VOID,
+            |o| {
+                tk::menu_item_target_window_draw(o, w, &mut ui_remap, &mut callback);
+                0
+            },
+        );
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_ctrl_main_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0002) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008b_e410u32, 0u8), // TOMenuGetControlPad
+        (0x008a_9860, 0),      // TkMenuGetCurrentPlayer
+        (0x008a_ad60, 1),      // TkMenuMainSetIgnoreJoinFlag
+        (0x008a_ae80, 1),      // TkMenuSetCurrentPlayerPos
+        (0x008d_df60, 1),      // TkMenuMainHelp
+        (0x008a_aeb0, 1),      // TkMenuSetHelpMessage
+        (0x008a_afc0, 0),      // TkMenuSetPrevPlayer2
+        (0x008a_af40, 0),      // TkMenuSetNextPlayer2
+        (0x008a_b260, 1),      // TkMn2SetMainFrameRatioDiff
+        (0x008a_9b00, 1),      // TkMenuGetPlayerFromIndex2_008a9b00
+        (0x008c_30d0, 0),      // TkMsSetSaveParamAll
+        (0x008a_9720, 2),      // TkMenuExchangePlayerPos
+        (0x008a_a410, 1),      // TkMenuMainFreeWindowGroup
+        (0x008a_9680, 1),      // TkMenuSetDrawShadeRatioStep
+        (0x008a_a100, 2),      // TkMenuMainActiveMenu
+        (0x008a_ad70, 1),      // TkMenuMainSleepMenu
+        (0x008a_ab20, 1),      // TkMenuMainRemoveMenu
+        (0x0088_6e80, 1),      // SndSepPlaySimple
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // TkMenuMainGetMaxOptions and MenuMain_OptionY keep ecx (the caller
+    // reads it after them): push ecx / pop ecx, and ecx = the argument
+    let options = t.alloc(&[0; 4]);
+    let code = [
+        &[0x51u8][..],
+        &seq_code(log, 0x008e_2280, 0, options, &[0x59]),
+    ]
+    .concat();
+    jump_stub(&mut t, 0x008e_2280, &code);
+    cells.push(options);
+    let mut picked = vec![];
+    for (f, n) in [
+        (0x008b_e470u32, 0u8), // TOMenuGetControlPadRep
+        (0x008b_e4b0, 0),      // TOMenuGetControlPadTrg
+        (0x008e_2290, 1),      // TkMenuMainGetOptionEnabled
+        (0x008e_2270, 1),      // TkMenuMainGetOptionMenu
+        (0x008e_24c0, 1),      // TkMenuMainOpenOption
+        (0x008a_9870, 0),      // TkMenuGetCurrentPlayerPos
+        (0x008a_9b30, 0),      // TkMenuGetPlayerListMax
+        (0x008a_9b50, 0),      // TkMenuGetPlayerListMax2
+        (0x0078_5380, 1),      // MsGetSavePlyJoin
+        (0x008a_98a0, 0),      // TkMenuGetDrawShadeRatio
+        (0x008a_8e50, 0),      // TOMenuGetFirstReadEndFlag
+        (0x008a_b230, 0),      // TkMn2GetMainFrameRatio
+    ] {
+        picked.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let option_y = seq_stub(&mut t, 0x008e_2260, log, 1, &[0x8b, 0x4c, 0x24, 0x04]);
+    picked.insert(4, option_y);
+    let m = t.alloc(&[0; 0x40]);
+    let (fade, busy, cursor, from, to, done) = (
+        t.sym(0x0187_1544),
+        t.sym(0x0187_1564),
+        t.sym(0x0187_1548),
+        t.sym(0x0187_155c),
+        t.sym(0x0187_1560),
+        t.sym(0x0187_1554),
+    );
+    let small = [0u32, 1, 2, 3, 4, 0xffff_ffff, 0x80, 0x7f];
+    for round in 0..12000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        t.scramble_at(m, 0x40);
+        // the input states twice as often
+        let state = if round % 40 == 39 {
+            t.rng.pick_or_any(&[0x27, 0x28, 0xffff_ffff])
+        } else if round % 2 == 0 {
+            t.rng.pick(&[4, 5, 7, 0xe, 0x13, 0x14])
+        } else {
+            round % 0x27
+        };
+        t.put(m + 0x1c, state);
+        let high = t.rng.next() & 0xffff_0000;
+        let rep = t.rng.pick_or_any(&[0, 0x1000, 0x4000, 0x4001, 0x5000, 0]) | high;
+        t.put(picked[0], rep);
+        let high = t.rng.next() & 0xffff_0000;
+        let trg = t.rng.pick_or_any(&[0, 0x20, 0x40, 0x60, 0]) | high;
+        t.put(picked[1], trg);
+        let v = t.rng.pick_or_any(&[0, 1]);
+        t.put(picked[2], v);
+        let v = t.rng.pick_or_any(&[6, 6, 0, 1]);
+        t.put(picked[3], v);
+        let v = t.rng.pick_or_any(&[0, 0, 1, 2, 2]);
+        t.put(picked[4], v);
+        let v = t.rng.pick_or_any(&[3, 9, 0]);
+        t.put(picked[5], v);
+        for &c in &picked[6..10] {
+            let v = t.rng.pick_or_any(&small);
+            t.put(c, v);
+        }
+        for &c in &picked[10..] {
+            let v = t
+                .rng
+                .pick_or_any(&[0, 1, 0x7f, 0x80, 0xffff_ffff, 0x8000_0000]);
+            t.put(c, v);
+        }
+        let v = t
+            .rng
+            .pick(&[0u16, 0xf55, 0xf56, 0xf57, 0x1000, 0x7f60, 0x7fff, 0xffff]);
+        t.put(fade, v);
+        let v = t.rng.pick(&[0u16, 0, 1, 0x100]);
+        t.put(busy, v);
+        let v = t.rng.pick(&[0u32, 0, 1, 0x100]);
+        t.put(done, v);
+        for c in [cursor, from, to] {
+            let v = t.rng.pick_or_any(&small);
+            t.put(c, v);
+        }
+        // the option count around the cursor
+        let v = t.rng.pick_or_any(&small);
+        t.put(cells[18], v);
+        t.twin("TkMenuCtrlMain", 0x008e_0350, &[m], U32, |o| {
+            w(tk::tk_menu_ctrl_main(o, m, &mut callback))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_btl_end_draw_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0003) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x0088_e750u32, 1u8), // Math_CosLookup
+        (0x0088_e730, 1),      // Math_SinLookup
+        (0x008b_ef30, 0),      // TOMenuOpenPktBuffTmp
+        (0x0090_3bb0, 9),      // TOMkpShapeXYWHUV
+        (0x008e_7d30, 12),     // DrawWaterWaveShapeC2
+        (0x008a_c850, 1),      // TOGetSaveChrName
+        (0x0090_5930, 6),      // ToMakeBtlEasyEdgeFont
+        (0x008b_da10, 1),      // BtlEnd_GetResult
+        (0x0090_55c0, 6),      // ToMakeBtlEasyDigitRight
+        (0x008a_9b80, 1),      // TkMenuGetSP
+        (0x0090_5550, 6),      // ToMakeBtlEasyDigit2
+        (0x0090_1660, 6),      // TOMkpCrossEasyStrFontSClut
+        (0x0078_4e90, 1),      // MsGetNextAP
+        (0x0078_52b0, 1),      // MsGetSaveNextAP
+        (0x008f_5f70, 5),      // TODrawMenuPlateXYWHType
+        (0x008b_ea20, 0),      // TOMenuDrawKickTmp
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // ToGetBtlEasyDigitWidth2(value, &width, scale, extra): the width from
+    // a cell; the out pointer (a frame local) is not logged
+    let width = t.alloc(&[0; 4]);
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]; // mov eax, [esp+8]; mov edx, [width]
+    extra.extend(width.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let wcell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0090_5230, &[0, 2, 3], wcell, &extra);
+    jump_stub(&mut t, 0x0090_5230, &code);
+    let lang = seq_stub(&mut t, 0x008a_c2f0, log, 0, &[]);
+    let level = seq_stub(&mut t, 0x008b_da50, log, 1, &[]);
+    let list = t.sym(0x0186_9f20);
+    for round in 0..3000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let i = t.rng.pick(&[0u32, 1, 2, 3, 4, 5, 6, 7]);
+        let entry = list + 14 * i;
+        let b = t.rng.bytes(14);
+        t.put_bytes(entry, &b);
+        let kind = t.rng.pick(&[1u16, 1, 2, 3, 4, 4, 0, 5, 6, 0xffff, 0x8001]);
+        t.put(entry + 4, kind);
+        let flash = t.rng.pick(&[0u8, 1, 12, 13, 14, 15, 16, 0x7f, 0x80, 0xff]);
+        t.put(entry + 0xa, flash);
+        let cos = t.rng.pick_or_any(&[0, 0x1000, 0xffff, 0x8000, 0x1_0800]);
+        t.put(cells[0], cos);
+        let sin = t.rng.pick_or_any(&[0, 0x1000, 0xffff, 0x8000, 0x1_0800]);
+        t.put(cells[1], sin);
+        let v = t.rng.pick_or_any(&[0xb, 0xb, 0, 1]);
+        t.put(lang, v);
+        let v = t.rng.pick_or_any(&[98, 99, 100, 0, 0xffff_ffff]);
+        t.put(level, v);
+        let v = if round % 3 == 0 {
+            quiet_float(&mut t)
+        } else {
+            t.rng.pick(&[0f32, 24.0, 37.5, -8.0, 1e30]).to_bits()
+        };
+        t.put(width, v);
+        t.twin("TkBtlEndDraw", 0x008b_c340, &[i], U32, |o| {
+            w(tk::tk_btl_end_draw(
+                o,
+                i.cast_signed(),
+                local,
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_btl_end_ctrl_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0004) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008a_bd00u32, 0u8), // TODebugAddPadPrintFlag
+        (0x0088_6e80, 1),      // SndSepPlaySimple
+        (0x008b_e0a0, 0),      // MsExchangeSaveWeapon
+        (0x0088_6960, 1),      // SndMusicRead
+        (0x0088_6a20, 1),      // SndMusicStart
+        (0x0088_6eb0, 1),      // SndSepStop
+        (0x008b_e050, 1),      // SetEntries_01869f20
+        (0x008b_da60, 1),      // TkBtlEndGetText
+        (0x008b_dfe0, 2),      // TOSetPair_008bdfe0
+        (0x008a_f0d0, 2),      // TOSeqStartScene
+        (0x0064_48d0, 0),      // graphicUnlockScreenFadeColor
+        (0x0064_3900, 4),      // graphicSetScreenFadeColor
+        (0x0063_9280, 5),      // graphicAddScreenFadeTaskAfterRender
+        (0x0064_38e0, 1),      // graphicSetScreenFadeAlphaMode
+        (0x0064_1e20, 0),      // graphicLockScreenFadeColor
+        (0x008b_df60, 0),      // TOMenuFieldMusic_008bdf60
+        (0x0082_cb80, 1),      // Sg_FadeIn
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let mut picked = vec![];
+    for (f, n) in [
+        (0x008b_e410u32, 0u8), // TOMenuGetControlPad
+        (0x008b_e470, 0),      // TOMenuGetControlPadRep
+        (0x008b_e4b0, 0),      // TOMenuGetControlPadTrg
+        (0x008b_a5c0, 0),      // TkBtlEndCheckLegendWeapon
+        (0x008b_b690, 1),      // BtlEnd_StepEntry
+        (0x0086_bc20, 0),      // AtelIsKeepPlayStatusClear8
+        (0x0088_7b30, 0),      // TkSndReportStatus
+        (0x0088_63f0, 0),      // SndGetNowPlayMusic
+        (0x0088_7900, 1),      // SndSyncMusicStandby
+        (0x008b_da50, 1),      // BtlEnd_GetSP
+        (0x0064_1cb0, 0),      // graphicIsScreenFadeColorLocked
+        (0x0086_bc60, 0),      // AtelGetKeepPlayStatusNoStopFanfare
+        (0x0087_2b50, 0),      // AtelCheckMenuOtakaraFlag
+        (0x0086_bc10, 0),      // AtelIsKeepPlayStatusClear12
+    ] {
+        picked.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // BtlEnd_StepGil and BtlEnd_CountApSteps count down to 0 (the
+    // original loops until they do)
+    let mut countdown = vec![];
+    for f in [0x008b_a590u32, 0x008b_a550] {
+        let cell = t.alloc(&[0; 4]);
+        // cmp dword [cell], 0; je +6; dec dword [cell]: down to 0, then 0
+        let mut extra = vec![0x83, 0x3d];
+        extra.extend(cell.to_le_bytes());
+        extra.extend([0x00, 0x74, 0x06, 0xff, 0x0d]);
+        extra.extend(cell.to_le_bytes());
+        let code = seq_code(log, f, 0, cell, &extra);
+        jump_stub(&mut t, f, &code);
+        countdown.push(cell);
+    }
+    // the weapon records: MsGetSaveWeapon(id, &name) (the name word is
+    // a frame local: not logged) and BtlEnd_SelectedWeapon()
+    let record = t.alloc(&[0; 0x20]);
+    let wcell = t.alloc(&record.to_le_bytes());
+    let code = seq_code_of(log, 0x007a_bbd0, &[0], wcell, &[]);
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+    let scell = t.alloc(&record.to_le_bytes());
+    let code = seq_code(log, 0x008b_da80, 0, scell, &[]);
+    jump_stub(&mut t, 0x008b_da80, &code);
+    // GetCD() -> a record whose +8 callback is logged
+    let cd_cell = t.alloc(&[0; 4]);
+    let cd_fn = test_code(&mut t, &seq_code(log, 0x00cd_0008, 1, cd_cell, &[]));
+    let mut cd = vec![0u8; 0x10];
+    cd[8..12].copy_from_slice(&cd_fn.to_le_bytes());
+    let cd = t.alloc(&cd);
+    let cd_ret = t.alloc(&cd.to_le_bytes());
+    let code = seq_code(log, 0x0076_d0d0, 0, cd_ret, &[]);
+    jump_stub(&mut t, 0x0076_d0d0, &code);
+    let ids = t.alloc(&[0; 0x100]);
+    t.put(t.sym(0x025c_c580), ids + 0x40);
+    let state = t.sym(0x0186_9f08);
+    let small = [0u32, 1, 2, 5, 6, 0xffff_ffff];
+    for round in 0..20000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let s = if round % 50 == 49 {
+            t.rng.pick_or_any(&[0x2c, 0xffff_ffff])
+        } else if round % 2 == 0 {
+            t.rng
+                .pick(&[0x20u32, 0x20, 0x25, 0x25, 0x21, 0x26, 0x18, 0xc, 0xf, 0x15])
+        } else {
+            (round / 2) % 0x2c
+        };
+        t.put(state, s);
+        let v = t.rng.pick_or_any(&[0, 1, 2, 1, 2]);
+        t.put(picked[0], v);
+        let rep = t.rng.pick_or_any(&[0, 0x20, 0x1000, 0x4000, 1, 2, 3, 0x21]);
+        t.put(picked[1], rep);
+        let trg = t
+            .rng
+            .pick_or_any(&[0, 0x100, 0x20, 0x40, 0x8000, 0x2000, 0x10100, 0x60]);
+        t.put(picked[2], trg);
+        for &c in &picked[3..] {
+            let v = t.rng.pick_or_any(&[0, 1, 0x8a, 98, 99, 0xffff_ffff]);
+            t.put(c, v);
+        }
+        for &c in &countdown {
+            let v = 1 + t.rng.below(4);
+            t.put(c, v);
+        }
+        t.scramble_at(record, 0x20);
+        let v = t.rng.pick(&[0u8, 1, 0xff]);
+        t.put(record + 2, v);
+        let v = t.rng.pick(&[0u8, 0xff, 0xff, 1]);
+        t.put(record + 6, v);
+        t.scramble_at(ids, 0x100);
+        // the fades, their speeds and the counter
+        for (a, picks) in [
+            (
+                0x0186_a0b4u32,
+                &[0u16, 0x1000, 0xfff, 0x7f80, 0x8000, 0x10][..],
+            ),
+            (0x0186_a160, &[0, 0x1000, 0xf90, 0x7fff][..]),
+            (0x0186_a168, &[0, 0x1000, 0xf80, 0xffff][..]),
+            (0x0186_a170, &[0, 0x1000, 0xe00, 0x7e00][..]),
+            (0x0186_a178, &[0, 0xf00, 0xf01, 0x7f00][..]),
+            (0x0186_a114, &[0, 0x60, 0xff80][..]),
+            (0x0186_a164, &[0, 0x80, 0xff80][..]),
+            (0x0186_a16c, &[0, 0x80, 0xff80][..]),
+            (0x0186_a174, &[0, 0x200, 0xfe00][..]),
+        ] {
+            let v = t.rng.pick(picks);
+            t.put(t.sym(a), v);
+        }
+        // the word between two fades (a misread neighbour must show)
+        t.scramble(0x0186_a172, 2);
+        let v = t.rng.pick(&[0u8, 1, 2, 3, 4]);
+        t.put(t.sym(0x0186_9f18), v);
+        let v = t.rng.pick(&[0u8, 1]);
+        t.put(t.sym(0x0186_9f19), v);
+        t.scramble(0x0186_9f20, 14 * 4);
+        for a in [0x0186_9f14u32, 0x0186_a184] {
+            let v = t.rng.pick(&[0u32, 1]);
+            t.put(t.sym(a), v);
+        }
+        for a in [0x0231_0f70u32, 0x0231_0f72] {
+            let v = t.rng.pick(&[0u8, 0, 1]);
+            t.put(t.sym(a), v);
+        }
+        let v = t.rng.pick(&[5u32, 6, 7, 0]);
+        t.put(t.sym(0x0186_a17c), v);
+        let v = t.rng.pick(&[0u32, 3, 7, 8, 11, 12, 20]);
+        t.put(t.sym(0x0186_a188), v);
+        for a in [0x0186_a190u32, 0x0186_a194] {
+            let v = t
+                .rng
+                .pick(&[0u32, 1, 2, 6, 7, 13, 0xffff_ffff, 0xffff_fff7]);
+            t.put(t.sym(a), v);
+        }
+        let v = t
+            .rng
+            .pick(&[0u32, 0x1000, 0xffff_f000, 0x111, 0x333, 0x222]);
+        t.put(t.sym(0x0186_a18c), v);
+        let v = t.rng.pick(&[0x111u32, 0x333, 0x1000]);
+        t.put(t.sym(0x0186_a198), v);
+        let v = t.rng.pick(&[0u32, 0, 1, 1, 2]);
+        t.put(t.sym(0x0186_a19c), v);
+        // (cursor + top indexes the gear ids: small values only)
+        for k in 0..4 {
+            let v = t.rng.pick(&small);
+            t.put(t.sym(0x0186_a1a0) + 4 * k, v);
+        }
+        let v = t.rng.pick_or_any(&small);
+        t.put(t.sym(0x0186_a1a8), v);
+        t.twin("TkBtlEndCtrl", 0x008b_a660, &[], VOID, |o| {
+            tk::tk_btl_end_ctrl(o, local, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+/// A text of `n` bytes (any non-zero) and eight zeros: a two- or
+/// three-byte character can swallow the first zero and still stop.
+fn padded_text(t: &mut Twins, n: u32) -> u32 {
+    let mut v = text_of(t, n);
+    v.extend([0; 7]);
+    t.alloc(&v)
+}
+
+/// A key text of mixed characters: one byte, two (6..=0x2f), and after
+/// 4 two (a second byte from 0x30) or three, then zeros.
+fn mixed_key_text(t: &mut Twins) -> u32 {
+    let mut v = vec![];
+    for _ in 0..=t.rng.below(5) {
+        match t.rng.below(4) {
+            0 => v.push(0x41 + u8::try_from(t.rng.below(0x30)).unwrap_or(0)),
+            1 => v.extend([6 + u8::try_from(t.rng.below(0x2a)).unwrap_or(0), 0x55]),
+            2 => v.extend([4, t.rng.pick(&[0x30u8, 0x31, 0x80])]),
+            _ => v.extend([4, t.rng.pick(&[0x2fu8, 0x10]), 0x66]),
+        }
+    }
+    v.extend([0; 8]);
+    t.alloc(&v)
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_small_match_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0005) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x0082_66f0u32, 1u8), // Ch_Dispose
+        (0x008b_3d20, 0),      // TkMenuSaveLoad_PollCard_008b3d20
+        (0x008b_ef10, 2),      // TOMenuHelpSetExtMode
+        (0x008a_b260, 1),      // TkMn2SetMainFrameRatioDiff
+        (0x008b_0920, 1),      // TOSwapInternationalEnvInit
+        (0x008b_3d90, 0),      // TkMenuSaveLoadCloseWindow2
+        (0x008a_ad70, 1),      // TkMenuMainSleepMenu
+        (0x008a_a100, 2),      // TkMenuMainActiveMenu
+        (0x0064_3e70, 0),      // graphicSwitchGPUMode
+        (0x0088_6e80, 1),      // SndSepPlaySimple
+        (0x0088_c830, 0),      // TkGetSaveEventAddress
+        (0x008b_54a0, 2),      // TkMenuCopyLoadedSave
+        (0x008c_c170, 0),      // iMusicRefreshBgmType
+        (0x008d_e080, 1),      // TkMenuSaveMes
+        (0x008a_aeb0, 1),      // TkMenuSetHelpMessage
+        (0x0087_24f0, 0),      // TkRefreshSoundMode
+        (0x0087_24a0, 0),      // TkRefreshHdd
+        (0x008a_f4f0, 2),      // TOSeqStopScene
+        (0x008a_97e0, 0),      // eiAbmParaGet's thunk
+        (0x0079_0340, 0),      // PasswordTextRead
+        (0x008d_4ed0, 0),      // TkMn2InitStatusBG
+        (0x008d_2660, 1),      // TMn2SetStatusBGDiff
+        (0x008a_ab00, 1),      // TkMenuMainRegistWindow
+        (0x008c_43f0, 1),      // MenuNameEntry_OpenCharWindow
+        (0x008c_5050, 0),      // MenuNameEntry_LoadLayout
+        (0x008d_4920, 0),      // TkMn2GetStatusPos
+        (0x008c_4450, 0),      // MenuNameEntry_RegistWindow
+        (0x008a_c850, 1),      // TOGetSaveChrName
+        (0x008c_5280, 1),      // Menu_ParseItemKeys
+        (0x0088_ec60, 0),      // TkVU1SyncPath
+        (0x008b_ef30, 0),      // TOMenuOpenPktBuffTmp
+        (0x008f_f370, 4),      // TODrawMesBox_008ff370
+        (0x008f_f3e0, 4),      // TODrawMesBoxFit_008ff3e0
+        (0x008b_ea20, 0),      // TOMenuDrawKickTmp
+        (0x008b_e410, 0),      // TOMenuGetControlPad
+        (0x008c_ba60, 0),      // MenuParty_CursorPrev
+        (0x008c_ba20, 0),      // MenuParty_CursorNext
+        (0x008d_c9b0, 1),      // TkMenuConfigMes
+        (0x008e_3690, 3),      // MenuSubCmd_OpenC
+        (0x008b_0970, 1),      // TOSwapInternationalEnvInit_008b0970
+        (0x008e_2de0, 0),      // TOMenuCloseYesNoWindow
+        (0x0090_0f40, 0),      // TOMenuInitBrush
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let mut p = std::collections::HashMap::new();
+    for (f, n) in [
+        (0x0082_61b0u32, 1u8), // Ch_CheckHandle
+        (0x0078_51d0, 0),      // MsGetSaveConfigEnglish
+        (0x008a_b240, 0),      // TkMn2GetMenuMode
+        (0x008a_c390, 0),      // TOGetFFXLangSwapFlag
+        (0x008b_0500, 0),      // TOSwapInternationalEnvExecNonBlock
+        (0x008a_c2f0, 0),      // TOGetFFXLangJmp
+        (0x008a_a1a0, 0),      // TkMenuMainAllocWindow
+        (0x008c_5180, 0),      // MenuItem_KeyRowCount
+        (0x0079_02d0, 0),      // PasswordGetTotalIndex
+        (0x0079_02a0, 1),      // PasswordText_GetEntry_007902a0
+        (0x008b_edd0, 1),      // TOMenuGetNameMes
+        (0x008a_98e0, 0),      // GetGlobal01841c0c_008a98e0
+        (0x008b_e470, 0),      // TOMenuGetControlPadRep
+        (0x008b_e4b0, 0),      // TOMenuGetControlPadTrg
+        (0x008b_0440, 0),      // TOSwapInternationalEnvExecMenu
+    ] {
+        p.insert(f, seq_stub(&mut t, f, log, n, &[]));
+    }
+    // ToMakeBtlEasyFont(buf, x, y, alpha, scale, extra): the values and
+    // then the buffer's 4 bytes (the buffer is a frame local)
+    let l = log.to_le_bytes();
+    #[rustfmt::skip]
+    let extra: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x00][..], // mov eax, [esp+4]; mov eax, [eax]
+        &[0x8b, 0x0d], &l, &[0x89, 0x01],          // mov ecx, [log]; mov [ecx], eax
+        &[0x83, 0x05], &l, &[0x04],                // add dword [log], 4
+    ]
+    .concat();
+    let font_cell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0090_5ab0, &[1, 2, 3, 4, 5], font_cell, &extra);
+    jump_stub(&mut t, 0x0090_5ab0, &code);
+    // TOGetMessageWH(_, text, &w, &h, _, _): the width from a cell
+    let width = t.alloc(&[0; 4]);
+    #[rustfmt::skip]
+    let mut extra: Vec<u8> = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x15]; // mov eax, [esp+12]; mov edx, [width]
+    extra.extend(width.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let wh_cell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x008b_9650, &[0, 1, 4, 5], wh_cell, &extra);
+    jump_stub(&mut t, 0x008b_9650, &code);
+    // row callbacks (+0x10, +0x14) of the config rows
+    let row_cell = t.alloc(&[0; 4]);
+    let row_fn = test_code(&mut t, &seq_code(log, 0x00c0_0010, 1, row_cell, &[]));
+    let rows = t.alloc(&[0; 0x100]);
+    let rows_list = t.alloc(&[0; 0x20]);
+    for k in 0..8u32 {
+        t.put(rows_list + 4 * k, rows + 0x20 * k);
+        t.put(rows + 0x20 * k + 0x10, row_fn);
+        t.put(rows + 0x20 * k + 0x14, row_fn);
+    }
+    t.put(t.sym(0x0186_a44c), rows_list);
+    let window = t.alloc(&[0; 0x80]);
+    t.put(p[&0x008a_a1a0], window);
+    // the character buffer starts as the same non-zero junk on both
+    // sides (the original's in its frame): a missing terminator shows
+    let zero = |t: &mut Twins| {
+        let end = t.a.stack_range().end;
+        t.a.write(end - 0x1000, &[0xaau8; 0xf00]).unwrap();
+        t.b.write(local, &[0xaau8; 8]).unwrap();
+    };
+    for round in 0..4000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        for (&f, &c) in &p {
+            if f != 0x008a_a1a0 {
+                let v = t.rng.pick_or_any(&[0, 1, 2, 9, 0xa, 0xb]);
+                t.put(c, v);
+            }
+        }
+        let v = t.rng.pick(&[0u32, 1, 6, 7, 9]);
+        t.put(p[&0x008c_5180], v);
+        let v = t.rng.pick(&[0u32, 1, 3, 4]);
+        t.put(p[&0x0079_02d0], v);
+        // (each function runs every 8th round: alternate on round / 8)
+        let text = if (round / 8) % 2 == 0 {
+            mixed_key_text(&mut t)
+        } else {
+            let n = t.rng.below(6);
+            padded_text(&mut t, n)
+        };
+        t.put(p[&0x0079_02a0], text);
+        t.put(p[&0x008b_edd0], text);
+        let v = t.rng.pick(&[0u32, 1, 2]);
+        t.put(t.sym(0x0186_a25c), v);
+        let v = t.rng.pick(&[0u32, 3, 0xffff_ffff]);
+        t.put(t.sym(0x0186_a258), v);
+        for a in [0x0186_6240u32, 0x0186_a43c] {
+            let v = t.rng.pick(&[0u32, 1]);
+            t.put(t.sym(a), v);
+        }
+        let v = t.rng.pick(&[0u8, 1]);
+        t.put(t.sym(0x0186_628a), v);
+        // 22528: 0x200000 - 98 s is -4096 * 27 (truncation shows a +1)
+        let v = t
+            .rng
+            .pick_or_any(&[0, 1, 0x800, 0x1000, 0xffff_fffb, 22528]);
+        t.put(p[&0x008a_98e0], v);
+        t.scramble(0x0133_c910, 8);
+        let v = t.rng.pick(&[0f32, 100.0, 481.5, 600.0]).to_bits();
+        t.put(width, v);
+        t.scramble_at(rows, 0x100);
+        for k in 0..8u32 {
+            t.put(rows + 0x20 * k + 0x10, row_fn);
+            t.put(rows + 0x20 * k + 0x14, row_fn);
+            let v = t.rng.pick(&[1u32, 2, 3]);
+            t.put(rows + 0x20 * k + 4, v);
+            let v = t.rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff]);
+            t.put(rows + 0x20 * k + 8, v);
+        }
+        let v = t.rng.pick(&[0u32, 1, 3, 8]);
+        t.put(t.sym(0x0186_a448), v);
+        let v = t.rng.pick(&[0u8, 1, 7]);
+        t.put(t.sym(0x0186_a444), v);
+        match round % 8 {
+            0 => {
+                let chr = t.rng.next();
+                t.twin("TkCh_Dispose", 0x0087_22f0, &[chr], U32, |o| {
+                    w(tk::tk_ch_dispose(o, chr, &mut callback))
+                });
+            }
+            1 => {
+                let m = window;
+                t.twin("MenuConfig_Open_008cb3c0", 0x008c_b3c0, &[m], U32, |o| {
+                    w(tk::menu_config_open(o, m, &mut callback))
+                });
+            }
+            2 => t.twin("TkMenuCloseSaveLoadScreen", 0x008b_3db0, &[], U32, |o| {
+                w(tk::tk_menu_close_save_load_screen(o, &mut callback))
+            }),
+            3 => t.twin("TkMenuJumpToLoadedScene", 0x008b_4ec0, &[], U32, |o| {
+                w(tk::tk_menu_jump_to_loaded_scene(o, &mut callback))
+            }),
+            4 => {
+                let aeon = t.rng.pick_or_any(&[0, 1]);
+                let target = t
+                    .rng
+                    .pick(&[0u32, 3, 7, 8, 0x11, 0x12, 0xffff_ffff, 0x8000_0000]);
+                t.scramble_at(window, 0x80);
+                t.twin(
+                    "TkMenuOpenNameEntryWindow",
+                    0x008c_4250,
+                    &[aeon, target],
+                    U32,
+                    |o| {
+                        w(tk::tk_menu_open_name_entry_window(
+                            o,
+                            aeon,
+                            target.cast_signed(),
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+            5 => {
+                zero(&mut t);
+                t.twin(
+                    "MenuNameEntry_DrawKeys_008c4550",
+                    0x008c_4550,
+                    &[],
+                    U32,
+                    |o| {
+                        w(tk::menu_name_entry_draw_keys(
+                            o,
+                            local,
+                            &mut ui_remap,
+                            &mut callback,
+                        ))
+                    },
+                );
+            }
+            6 => {
+                let m = window;
+                let v = t.rng.pick(&[0u32, 1, 7, 0xffff_ffff]);
+                t.put(m + 0x58, v);
+                t.twin(
+                    "MenuSave_DrawMesBox_008b4920",
+                    0x008b_4920,
+                    &[m],
+                    U32,
+                    |o| w(tk::menu_save_draw_mes_box(o, m, local, &mut callback)),
+                );
+            }
+            _ => {
+                let m = window;
+                let s = t
+                    .rng
+                    .pick_or_any(&[0, 1, 2, 3, 3, 3, 4, 5, 6, 7, 8, 9, 0xa, 0xb, 0xc]);
+                t.put(m + 0x1c, s);
+                let v = t.rng.pick_or_any(&[0, 0x1000, 0x4000, 0x5000, 1]);
+                t.put(p[&0x008b_e470], v);
+                let v = t
+                    .rng
+                    .pick_or_any(&[0, 0x8000, 0x2000, 0xa000, 0x40, 0xa040, 1]);
+                t.put(p[&0x008b_e4b0], v);
+                t.twin("TkMenuCtrlConfig", 0x008c_b0e0, &[m], VOID, |o| {
+                    tk::tk_menu_ctrl_config(o, m, &mut callback);
+                    0
+                });
+            }
+        }
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+fn menu_round34_ctrl_tuto_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0006) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x0088_8e80u32, 3u8), // TkGetControlerTrigHist
+        (0x008c_a570, 1),      // TkMenuSetDummyControlerFlag
+        (0x0088_d190, 3),      // TkCdReadNB
+        (0x0078_5ed0, 1),      // MsSetSaveConfigEnglish
+        (0x008d_b7e0, 0),      // MenuTuto_RestoreNames
+        (0x008a_ae10, 0),      // TkMenuRefreshPartyList
+        (0x008a_97e0, 0),      // eiAbmParaGet's thunk
+        (0x008c_30d0, 0),      // TkMsSetSaveParamAll
+        (0x008b_e370, 3),      // TOMenuAtelReq
+        (0x008a_b260, 1),      // TkMn2SetMainFrameRatioDiff
+        (0x008a_a100, 2),      // TkMenuMainActiveMenu
+        (0x008a_9b30, 0),      // TkMenuGetPlayerListMax
+        (0x008a_9bf0, 0),      // TkMenuGetSummonListMax
+        (0x0088_6dd0, 1),      // SndSepLock
+        (0x008a_ab20, 1),      // TkMenuMainRemoveMenu
+        (0x0078_51d0, 0),      // MsGetSaveConfigEnglish
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let vcount = seq_stub(&mut t, 0x0088_7dc0, log, 0, &[]);
+    let first = seq_stub(&mut t, 0x008a_8e50, log, 0, &[]);
+    let sync = seq_stub(&mut t, 0x0088_d1c0, log, 1, &[]);
+    let mask = seq_stub(&mut t, 0x008a_a460, log, 0, &[]);
+    let buffer = t.alloc(&vec![0; 0x6a00]);
+    let buf_cell = seq_stub(&mut t, 0x008c_1b10, log, 0, &[]);
+    t.put(buf_cell, buffer);
+    let formats = [
+        (0x00b6_672cu32, 0u8),
+        (0x00b6_6744, 2),
+        (0x00b6_676c, 1),
+        (0x00b6_6780, 1),
+        (0x00b6_6798, 1),
+        (0x00b6_67b0, 0),
+        (0x00b6_67c4, 1),
+    ]
+    .map(|(f, n)| (t.sym(f), n));
+    printf_log_n(&mut t, log, &formats);
+    let m = t.alloc(&[0; 0x40]);
+    for round in 0..1200u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let s = if round % 30 == 29 {
+            t.rng.pick_or_any(&[0xb, 0xffff_ffff])
+        } else {
+            (round / 2) % 0xb
+        };
+        t.put(m + 0x1c, s);
+        let v = t.rng.pick(&[0u32, 1, 2, 4]);
+        t.put(vcount, v);
+        for c in [first, sync] {
+            let v = t.rng.pick(&[0u32, 1]);
+            t.put(c, v);
+        }
+        let v = t.rng.pick_or_any(&[0, 1, 2, 0x40_0000]);
+        t.put(mask, v);
+        let v = t.rng.pick(&[0u32, 1, 2]);
+        t.put(t.sym(0x0187_1528), v);
+        t.put(t.sym(0x0187_1520), buffer);
+        t.put(t.sym(0x0187_1524), buffer + 0x80);
+        if round % 4 == 0 {
+            t.scramble_at(buffer, 0x6a00);
+        }
+        t.twin("TkMenuCtrlTuto", 0x008d_b4e0, &[m], VOID, |o| {
+            tk::tk_menu_ctrl_tuto(o, m, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round35_main_draw_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0035_0ba0) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x0088_ec60u32, 0u8), // TkVU1SyncPath
+        (0x008b_ef30, 0),      // TOMenuOpenPktBuffTmp
+        (0x008f_5c10, 0),      // TODrawMenuBG
+        (0x0088_e750, 1),      // Math_CosLookup
+        (0x0090_3bb0, 9),      // TOMkpShapeXYWHUV
+        (0x008e_7d30, 12),     // DrawWaterWaveShapeC2
+        (0x008a_9a70, 1),      // MenuPlayer_DamageClass2
+        (0x008a_c850, 1),      // TOGetSaveChrName
+        (0x0090_5930, 6),      // ToMakeBtlEasyEdgeFont
+        (0x008a_9b80, 1),      // TkMenuGetSP
+        (0x0090_5820, 6),      // ToMakeBtlEasyEdgeDigit2
+        (0x008c_0670, 3),      // TkMn2DrawCrossCursor
+        (0x008c_13d0, 3),      // TkMn2DrawStatiCursor
+        (0x008f_4b20, 6),      // TODrawCrossBoxXYWHC2
+        (0x008a_98b0, 0),      // jmp MsGetGIL
+        (0x008c_0a20, 5),      // TkMn2DrawGillPlate
+        (0x008a_9c50, 0),      // TkMenuGetTime
+        (0x008e_19f0, 5),      // TOMenuDrawTimer
+        (0x0090_3ee0, 11),     // TOMkpShapeXYWHUVC2
+        (0x0086_c410, 0),      // AtelGetSaveDic
+        (0x0078_51d0, 0),      // MsGetSaveConfigEnglish
+        (0x0086_c430, 2),      // AtelGetSaveDicName
+        (0x008d_c9e0, 1),      // TkMenuDraw1612Width
+        (0x0090_16b0, 7),      // TOMkpCrossExtMesFontLClut
+        (0x008b_ea20, 0),      // TOMenuDrawKickTmp
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // the sprintf texts are logged as strings
+    let text_cell = t.alloc(&[0; 4]);
+    let code = seq_code_str_args(log, 0x0090_1660, &[1, 2, 3, 4, 5], text_cell);
+    jump_stub(&mut t, 0x0090_1660, &code);
+    // ToGetBtlEasyDigitWidth2(value, &width, scale, extra): the width from
+    // a cell; the out pointer (a frame local) is not logged
+    let width = t.alloc(&[0; 4]);
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]; // mov eax, [esp+8]; mov edx, [width]
+    extra.extend(width.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let wcell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0090_5230, &[0, 2, 3], wcell, &extra);
+    jump_stub(&mut t, 0x0090_5230, &code);
+    // TkMenuGetPlayerFromIndex2(i) = i ^ [key]: rows get their own characters
+    let key = t.alloc(&[0; 4]);
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x04, 0x33, 0x05]; // mov eax, [esp+4]; xor eax, [key]
+    extra.extend(key.to_le_bytes());
+    extra.push(0xc3); // ret
+    let code = seq_code(log, 0x008a_9b00, 1, key, &extra);
+    jump_stub(&mut t, 0x008a_9b00, &code);
+    let count = seq_stub(&mut t, 0x008a_9b50, log, 0, &[]);
+    let members = seq_stub(&mut t, 0x008a_9b70, log, 0, &[]);
+    // TOGetFFXLangJmp: [lang], then [lang] += [flip] (1: 0xb comes once,
+    // so the offsets a row keeps from an earlier one show)
+    let lang = t.alloc(&[0; 4]);
+    let flip = t.alloc(&[0; 4]);
+    let mut extra = vec![0xa1]; // mov eax, [lang]
+    extra.extend(lang.to_le_bytes());
+    extra.extend([0x8b, 0x15]); // mov edx, [flip]
+    extra.extend(flip.to_le_bytes());
+    extra.extend([0x01, 0x15]); // add [lang], edx
+    extra.extend(lang.to_le_bytes());
+    extra.push(0xc3); // ret
+    let code = seq_code(log, 0x008a_c2f0, 0, lang, &extra);
+    jump_stub(&mut t, 0x008a_c2f0, &code);
+    let timer = seq_stub(&mut t, 0x008a_9c60, log, 0, &[]);
+    let values: Vec<u32> = [0x008a_98c0u32, 0x008a_9990, 0x008a_9970, 0x008a_99b0]
+        .iter()
+        .map(|&f| seq_stub(&mut t, f, log, 1, &[]))
+        .collect();
+    let slides = t.sym(0x0187_1678);
+    let (choice, from, to) = (t.sym(0x0187_154c), t.sym(0x0187_155c), t.sym(0x0187_1560));
+    let rows = [0xffff_ffffu32, 0, 1, 2, 3, 5, 7, 8];
+    for round in 0..1200u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let n = t.rng.pick(&[0u32, 1, 3, 3, 5, 7, 8, 8, 0xffff_ffff]);
+        t.put(count, n);
+        let m = t.rng.pick(&[0u32, 1, 2, 3, 3, 8, 0xffff_ffff]);
+        t.put(members, m);
+        for k in 0..8 {
+            let v = t
+                .rng
+                .pick(&[0u16, 0, 1, 0x10, 0x400, 0x7fff, 0x8000, 0xfff0]);
+            t.put(slides + 2 * k, v);
+        }
+        let k = t.rng.pick(&[0u32, 0, 1, 2, 5]);
+        t.put(key, k);
+        for c in [choice, from, to] {
+            let v = t.rng.pick(&rows);
+            t.put(c, v);
+        }
+        let v = t.rng.pick(&[0xbu32, 0xb, 0, 1, 7, 9, 0xa]);
+        t.put(lang, v);
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(flip, v);
+        let v = t
+            .rng
+            .pick(&[0u32, 1, 2, 3, 0xffff_fffe, 0xffff_fffd, 0x8000_0000]);
+        t.put(timer, v);
+        // HP/MP: values whose "%5d/%5d" texts fit the original's 16 bytes
+        for &c in &values {
+            let v = t.rng.pick(&[0u32, 1, 999, 9999, 99_999, 0xffff_fffb]);
+            let v = if t.rng.below(2) == 0 {
+                v
+            } else {
+                t.rng.below(100_000)
+            };
+            t.put(c, v);
+        }
+        let v = if round % 3 == 0 {
+            quiet_float(&mut t)
+        } else {
+            t.rng.pick(&[0f32, 24.0, 37.5, -8.0, 1e30]).to_bits()
+        };
+        t.put(width, v);
+        t.twin("TkMenuDrawMain", 0x008e_0ba0, &[], U32, |o| {
+            w(tk::tk_menu_draw_main(
+                o,
+                [local, local + 32],
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

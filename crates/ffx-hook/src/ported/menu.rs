@@ -4969,6 +4969,79 @@ ported! {
     MenuSummon_WindowDraw_008cebe0 @ 0x008c_ebe0 => extern "C" fn menu_summon_window_draw(w: u32) -> u32 {
         tk::menu_summon_window_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `MenuItem_TargetWindowDraw_008c80b0(w)` (a window draw: `TkMenuDrawLayer` drops its `eax`).
+    MenuItem_TargetWindowDraw_008c80b0 @ 0x008c_80b0 => extern "C" fn menu_item_target_window_draw(w: u32) {
+        tk::menu_item_target_window_draw(&mut mem(), w, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuCtrlMain(m)`: the original's `eax`.
+    TkMenuCtrlMain @ 0x008e_0350 => extern "C" fn tk_menu_ctrl_main(m: u32) -> u32 {
+        tk::tk_menu_ctrl_main(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkBtlEndDraw(i)`: `TOMenuDrawKickTmp`'s `eax` (the kind for kinds 0 and 5).
+    TkBtlEndDraw @ 0x008b_c340 => extern "C" fn tk_btl_end_draw(i: i32) -> u32 {
+        // ToGetBtlEasyDigitWidth2's width word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_btl_end_draw(&mut mem(), i, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuDrawMain()`: the last `TkVU1SyncPath`'s `eax`.
+    TkMenuDrawMain @ 0x008e_0ba0 => extern "C" fn tk_menu_draw_main() -> u32 {
+        // sprintf's text (the original's is 16 bytes; HP/MP texts fit in
+        // 12) and ToGetBtlEasyDigitWidth2's width word
+        let mut frame = super::StackFrame::<9>::new();
+        let text = frame.at();
+        let width = text + 32;
+        tk::tk_menu_draw_main(&mut mem(), [text, width], &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkBtlEndCtrl()` (menu slot 0x11's control: `TkMenuCloseAll` drops its `eax`).
+    TkBtlEndCtrl @ 0x008b_a660 => extern "C" fn tk_btl_end_ctrl() {
+        // MsGetSaveWeapon's name word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_btl_end_ctrl(&mut mem(), local, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkCh_Dispose(chr)`: `Ch_Dispose`'s `eax`, or `Ch_CheckHandle`'s when it refuses.
+    TkCh_Dispose @ 0x0087_22f0 => extern "C" fn tk_ch_dispose(chr: u32) -> u32 {
+        tk::tk_ch_dispose(&mut mem(), chr, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuConfig_Open_008cb3c0(m)`: the last row callback's `eax`, else `m`.
+    MenuConfig_Open_008cb3c0 @ 0x008c_b3c0 => extern "C" fn menu_config_open(m: u32) -> u32 {
+        tk::menu_config_open(&mut mem(), m, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCloseSaveLoadScreen()`: the last call's `eax`.
+    TkMenuCloseSaveLoadScreen @ 0x008b_3db0 => extern "C" fn tk_menu_close_save_load_screen() -> u32 {
+        tk::tk_menu_close_save_load_screen(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuJumpToLoadedScene()`: `TkMenuMainSleepMenu`'s `eax`.
+    TkMenuJumpToLoadedScene @ 0x008b_4ec0 => extern "C" fn tk_menu_jump_to_loaded_scene() -> u32 {
+        tk::tk_menu_jump_to_loaded_scene(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuOpenNameEntryWindow(aeon, target)`: the window.
+    TkMenuOpenNameEntryWindow @ 0x008c_4250 => extern "C" fn tk_menu_open_name_entry_window(aeon: u32, target: i32) -> u32 {
+        tk::tk_menu_open_name_entry_window(&mut mem(), aeon, target, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuNameEntry_DrawKeys_008c4550()`: 0 or the password count.
+    MenuNameEntry_DrawKeys_008c4550 @ 0x008c_4550 => extern "C" fn menu_name_entry_draw_keys() -> u32 {
+        // the character buffer ToMakeBtlEasyFont draws
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::menu_name_entry_draw_keys(&mut mem(), local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `MenuSave_DrawMesBox_008b4920(w)`: `TkVU1SyncPath`'s `eax` (0 with nothing to draw).
+    MenuSave_DrawMesBox_008b4920 @ 0x008b_4920 => extern "C" fn menu_save_draw_mes_box(w: u32) -> u32 {
+        // TOGetMessageWH's width and height
+        let mut frame = super::StackFrame::<2>::new();
+        let local = frame.at();
+        tk::menu_save_draw_mes_box(&mut mem(), w, local, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `TkMenuCtrlConfig(m)` (a menu slot's control: `TkMenuCloseAll` drops its `eax`).
+    TkMenuCtrlConfig @ 0x008c_b0e0 => extern "C" fn tk_menu_ctrl_config(m: u32) {
+        tk::tk_menu_ctrl_config(&mut mem(), m, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `TkMenuCtrlTuto(m)` (a menu slot's control: `TkMenuCloseAll` drops its `eax`).
+    TkMenuCtrlTuto @ 0x008d_b4e0 => extern "C" fn tk_menu_ctrl_tuto(m: u32) {
+        tk::tk_menu_ctrl_tuto(&mut mem(), m, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `UpdateGearCustomizationMenuState(m)`: the original's `eax`.
     UpdateGearCustomizationMenuState @ 0x008d_5830 => extern "C" fn update_gear_customization_menu_state(m: u32) -> u32 {
         // MsGetSaveWeapon's name word

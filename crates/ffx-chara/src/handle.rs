@@ -801,8 +801,64 @@ pub mod bridge {
     pub const PC_READ: u32 = 0x0083_ae30;
     /// `Sg_MemSetAlign(align)` (main, `0x0083c4a0`).
     pub const MEM_SET_ALIGN: u32 = 0x0083_c4a0;
-    /// `Chb_AttachMotionTBL_OLD(blk)` (`0x00837fa0`; not ported).
+    /// `Chb_AttachMotionTBL_OLD(blk)` (`0x00837fa0`, below), called
+    /// through the game.
     pub const ATTACH_MOTION_TBL_OLD: u32 = 0x0083_7fa0;
+    /// Bytes of scratch [`chb_attach_motion_tbl_old`] needs: its path
+    /// (`[ebp-0x104]`, 0x100 bytes).
+    pub const ATTACH_MOTION_TBL_SCRATCH: u32 = 0x100;
+
+    /// `Chb_AttachMotionTBL_OLD(blk)` (`0x00837fa0`; only the host-PC
+    /// viewer path of `Ch_BlkGetHandle` calls it): reads
+    /// `"<dir>/inf/sysmot.tbl"` and `"<dir>/inf/relation.tbl"` (`dir` the
+    /// block's `+0xb8`; `Sg_PcRead`, path in `scratch`) into `+0x108` and
+    /// `+0x10c`. A table that was read is relocated: its first word, the
+    /// address it was built for, becomes its own, and when that moved it
+    /// the system table's words `+0xc`, `+0x14`, `+0x1c`, `+0x24` move by
+    /// the same amount, the relation table's `[+4]` words from `+0x10`
+    /// (the count read again at each step, compared signed). No caller
+    /// reads `eax`.
+    pub fn chb_attach_motion_tbl_old<M: Mem>(
+        mem: &mut M,
+        blk: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let read = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, file: &[u8]| {
+            let dir = c_string(mem, blk.wrapping_add(0xb8));
+            put_c_string(mem, scratch, &[dir.as_slice(), file].concat());
+            call(mem, mem.rebase(PC_READ), &[scratch])
+        };
+        let t = read(mem, call, b"/inf/sysmot.tbl");
+        mem.write(blk.wrapping_add(0x108), t);
+        if t != 0 {
+            let d = t.wrapping_sub(mem.read(t));
+            mem.write(t, t);
+            if d != 0 {
+                for o in [0xc, 0x14, 0x1c, 0x24] {
+                    let w: u32 = mem.read(t.wrapping_add(o));
+                    mem.write(t.wrapping_add(o), w.wrapping_add(d));
+                }
+            }
+        }
+        let t = read(mem, call, b"/inf/relation.tbl");
+        mem.write(blk.wrapping_add(0x10c), t);
+        if t == 0 {
+            return;
+        }
+        let d = t.wrapping_sub(mem.read(t));
+        mem.write(t, t);
+        if d == 0 {
+            return;
+        }
+        let mut i = 0i32;
+        while i < mem.read::<i32>(t.wrapping_add(4)) {
+            let at = t.wrapping_add(0x10).wrapping_add(4 * i.cast_unsigned());
+            let w: u32 = mem.read(at);
+            mem.write(at, w.wrapping_add(d));
+            i += 1;
+        }
+    }
     /// `Ch_DataRead(id)` (`0x00829ef0`; through the game: its scratch is
     /// the shim's).
     pub const DATA_READ: u32 = 0x0082_9ef0;
@@ -1174,6 +1230,51 @@ pub mod bridge {
         let r = call(mem, game(mem, INSTANCE_DESTROY_CLOTH_BUFFERS), &[buffers]);
         mem.write(at(0x834), 0u32);
         r
+    }
+
+    /// `Ch_Dispose(chr)` (`0x008266f0`), called through the game.
+    pub const DISPOSE: u32 = 0x0082_66f0;
+    /// `Ch_Allocate(key)` (`0x00824f90`), called through the game.
+    pub const ALLOCATE: u32 = 0x0082_4f90;
+
+    /// `Ch_DisposeAll()` (`0x008268e0`): with an array, `Ch_Dispose` on
+    /// each active character (the array and its count read again after
+    /// each call, as the walk's end), the array freed (`user_free`) and
+    /// both cleared. Nothing without an array. No caller reads `eax`.
+    pub fn ch_dispose_all<M: Mem>(mem: &mut M, call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let end = |mem: &M| {
+            let n = CHR_COUNT.get(mem).cast_unsigned();
+            CHR_ARRAY.get(mem).wrapping_add(n.wrapping_mul(l::SIZE))
+        };
+        let array = CHR_ARRAY.get(mem);
+        if array == 0 {
+            return;
+        }
+        let mut c = array;
+        while c != end(mem) {
+            if mem.read::<u8>(c.wrapping_add(l::ACTIVE)) != 0 {
+                call(mem, mem.rebase(DISPOSE), &[c]);
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+        let array = CHR_ARRAY.get(mem);
+        call(mem, mem.rebase(USER_FREE), &[array]);
+        CHR_ARRAY.set(mem, 0);
+        CHR_COUNT.set(mem, 0);
+    }
+
+    /// `Ch_Allocate2(key, v)` (`0x00825650`): `Ch_Allocate(key)` with `v`
+    /// in the new character's `+0x190` (what a bound child copies); returns
+    /// the character.
+    pub fn ch_allocate2<M: Mem>(
+        mem: &mut M,
+        key: u32,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let chr = call(mem, mem.rebase(ALLOCATE), &[key]);
+        mem.write(chr.wrapping_add(0x190), v);
+        chr
     }
 }
 

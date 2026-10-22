@@ -171,6 +171,15 @@ pub mod bridge {
         ms_set_chr_visible_req(mem, call, i, 2, v)
     }
 
+    /// `MsSetMonsterVisible_007969a0(m, v)` (name ours; caller
+    /// `Native_7127`): [`ms_set_chr_visible`] of monster `m` (actor `m +
+    /// 0x14`); returns `m + 0x14`.
+    pub fn ms_set_monster_visible<M: Mem>(mem: &mut M, call: Call<'_, M>, m: u32, v: u32) -> u32 {
+        let i = m.wrapping_add(0x14);
+        ms_set_chr_visible(mem, call, i, v);
+        i
+    }
+
     /// `MsSetChrVisibleAppear(i, v)` (`0x007966a0`): request 1 of
     /// [`ms_set_chr_visible_req`] (EAX its result).
     pub fn ms_set_chr_visible_appear<M: Mem>(

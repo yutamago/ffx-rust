@@ -7194,3 +7194,1113 @@ pub fn spline_get_near_point_init<H: ffx_bridge::Host>(
     let (lo, hi) = (total as u32, (total >> 32) as u32);
     host_call(h, 0x0062_fbf0, &[fmt, lo, hi]);
 }
+
+/// `AtelExec()` (`0x008666d0`, Fahrenheit's name; caller `0x00872bd0`):
+/// [`atel_exec_ctrl_works`] over ctrl works 0..6; `EAX` its result.
+pub fn atel_exec(h: &mut impl ffx_bridge::Host) -> u32 {
+    atel_exec_ctrl_works(h, 0, 6)
+}
+
+/// `AtelMenuExec()` (`0x0086dd60`, Fahrenheit's name; caller
+/// `AtelExecMenuCtrl`): [`atel_exec_ctrl_works`]
+/// over ctrl work 6, the menu's; `EAX` its result.
+pub fn atel_menu_exec(h: &mut impl ffx_bridge::Host) -> u32 {
+    atel_exec_ctrl_works(h, 6, 7)
+}
+
+/// `AtelLoadSourceData(slot, arg)` (`0x00879a70`, Fahrenheit's name;
+/// caller `AtelEventSetUp`): clears the slot's eight sizes
+/// (`0x01328778 + 0x20 * slot`), then for each of the first (at most 7)
+/// names in the event's file table (header `0x01328598[slot]`, table at
+/// `+0x40`: its first word is the byte length, the words are offsets from
+/// the table; the first names the directory) builds `debug/<dir>/<name>.src`
+/// (`AtelEventGetFilePath2`) unless the name starts with `/`, prints it
+/// (`TK:EVENTNAME`) and loads it (`0x00879b60`, the PS2 host-file loader,
+/// through the game). `EAX` 1, or 0 for an empty table.
+pub fn atel_load_source_data(h: &mut impl ffx_bridge::Host, slot: u32, arg: u32) -> u32 {
+    let hdr = h.read::<u32>(h.rebase(0x0132_8598).wrapping_add(slot.wrapping_mul(4)));
+    let sizes = h.rebase(0x0132_8778).wrapping_add(slot.wrapping_mul(0x20));
+    for k in 0..8 {
+        h.write(sizes + 4 * k, 0_u32);
+    }
+    let table = |h: &mut _| hdr.wrapping_add(Mem::read::<u32>(h, hdr + 0x40));
+    let t = table(h);
+    let count = (h.read::<u32>(t) >> 2).min(7);
+    if count == 0 {
+        return 0;
+    }
+    for i in 0..count {
+        let t = table(h);
+        let mut name = h.read::<u32>(t + 4 * i).wrapping_add(t);
+        let dir = h.read::<u32>(t).wrapping_add(t);
+        if h.read::<u8>(name) != b'/' {
+            let (debug, src) = (h.rebase(0x00b5_9148), h.rebase(0x00b5_c56c));
+            name = host_call(h, 0x0087_95b0, &[1, debug, dir, name, src]);
+        }
+        let fmt = h.rebase(0x00b5_c574);
+        host_call(h, 0x0062_f500, &[fmt, i, name]);
+        host_call(h, 0x0087_9b60, &[slot, arg, i, name]);
+    }
+    1
+}
+
+/// `AtelInitBasicWork(setup, clear)` (`0x0086cb00`, Fahrenheit's name;
+/// callers `AtelActorSetUp2`, `AtelBattleSetUp`, `AtelCommonSetUp`). The
+/// setup record holds eight words: active, worker index, three level
+/// values, header, code base, `+0x1c`. The worker (`AtelGetBasicWork`)
+/// gets header `+0`, code `+4`, `+8`, its index (`u16 +0x2e`) and
+/// `+0x0c..+0x28` zeroed; an active one is reset in full: its levels
+/// (`Atel_InitWorkerLevels_0086d300` with the three values, the low two
+/// also in byte `+0xae`), the flags (`+0x36`: battle bit `0x40` from the
+/// ctrl work's `+0x1a`, `0x800`; `+0x38`), scale 1 (`+0x94`), `+0xb4`
+/// -10000, `+0x40` -1, the move block (`+0x558`, types 5/6 `+0x284`; type 1
+/// also its `+0xae0..+0xb54` part) for types 1, 2, 3, 5, 6, the `+0xab`
+/// mask by type, the free signals (`Atel_InitFreeSignals_0086d510`), the
+/// variables zeroed when `clear` (the private area at `+0xb8`, else the
+/// code's at header `+0x2c`, header `+0x10` bytes), then signals 7 and 0
+/// to itself (`AtelRegistSignalMain`) and a decode at level 10. Its `EAX`
+/// (the index for an inactive worker, else `AtelDecodeSignal`'s leftover)
+/// is read by no caller.
+#[allow(clippy::too_many_lines)] // one store per field, as the original
+pub fn atel_init_basic_work(h: &mut impl ffx_bridge::Host, setup: u32, clear: u32) {
+    let mut rec = [0_u32; 8];
+    for (k, v) in (0_u32..).zip(&mut rec) {
+        *v = h.read(setup + 4 * k);
+    }
+    let [active, index, l0, l1, l2, header, code, x1c] = rec;
+    let w = super::atel_get_basic_work(h, index.cast_signed());
+    h.write(w + 4, code);
+    h.write(w, header);
+    h.write(w + 8, x1c);
+    write_u16(h, w + 0x2e, index);
+    for o in (0x0c..=0x28).step_by(4) {
+        h.write(w + o, 0_u32);
+    }
+    if active == 0 {
+        return;
+    }
+    let (zero, one) = (0_u32, 1.0_f32.to_bits());
+    h.write(w + 0xb8, 0_u32);
+    h.write(w + 0xc4, 0_u32);
+    #[allow(clippy::cast_possible_truncation)] // two nibbles
+    h.write(w + 0xae, ((l1 << 4) | (l0 & 0xf)) as u8);
+    for o in (0x48..=0x7c).step_by(4) {
+        h.write(w + o, zero);
+    }
+    atel_init_worker_levels(h, w, l0, l1, l2);
+    let w2 = super::atel_get_basic_work(h, index.cast_signed());
+    h.write(w2 + 0x94, one);
+    let flags = u32::from(h.read::<u16>(w + 0x36)) & 0xffc6 | 6;
+    write_u16(
+        h,
+        w + 0x38,
+        u32::from(h.read::<u16>(w + 0x38)) & 0xe020 | 0x20,
+    );
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    for o in [0x84, 0x80, 0x8c, 0x88] {
+        h.write(w + o, 0_u32);
+    }
+    h.write(w + 0x32, 0x040e_0000_u32);
+    h.write(w + 0x90, 0_u32);
+    write_u16(h, w + 0x36, flags);
+    h.write(w + 0xbc, 0_u32);
+    let flags = if h.read::<u16>(ctx + 0x1a) < 2 {
+        flags & 0xffbf
+    } else {
+        flags | 0x40
+    };
+    h.write(w + 0x94, one);
+    write_u16(h, w + 0x36, flags);
+    h.write(w + 0x98, zero);
+    h.write(w + 0xb4, (-10000.0_f32).to_bits());
+    write_u16(h, w + 0x36, flags & 0x7f | 0x800);
+    write_u16(h, w + 0xa8, 0);
+    h.write(w + 0x9c, 0_u32);
+    h.write(w + 0x3c, 0_u32);
+    h.write(w + 0xad, 0_u8);
+    h.write(w + 0x44, 0_u32);
+    h.write(w + 0xaf, 0xf_u8);
+    h.write(w + 0xaa, 0_u8);
+    h.write(w + 0x40, u32::MAX);
+    let kind = h.read::<u8>(h.read::<u32>(w));
+    let mv = match kind {
+        4 => 0,
+        5 | 6 => w + 0x284,
+        _ => w + 0x558,
+    };
+    if kind == 4 {
+        write_u16(h, w + 0x34, 0x48e);
+    }
+    if kind == 1 {
+        for k in 0..2 {
+            h.write(w + 0xaf4 + 4 * k, 0_u32);
+            h.write(w + 0xafc + 4 * k, 0_u32);
+            write_u16(h, w + 0xb04 + 2 * k, 0);
+            h.write(w + 0xb08 + 4 * k, 1_u32);
+        }
+        write_u16(h, w + 0xb14, 0);
+        write_u16(h, w + 0x34, u32::from(h.read::<u16>(w + 0x34)) | 0x80);
+        for o in (0xb18..=0xb54).step_by(4) {
+            h.write(w + o, zero);
+        }
+    }
+    if matches!(kind, 1 | 2 | 3 | 5 | 6) {
+        for o in (0..=0x24).step_by(4) {
+            h.write(mv + o, zero);
+        }
+        write_u16(h, mv + 0x28, 0xffff);
+        h.write(mv + 0x2c, (-1.0_f32).to_bits());
+        for o in [0x30, 0x34, 0x38] {
+            h.write(mv + o, zero);
+        }
+        // pi / 3
+        h.write(mv + 0x3c, 0x3f86_0a92_u32);
+        h.write(mv + 0x4c, 0x3f86_0a92_u32);
+        let [x44, x40, x48, x1c]: [f32; 4] = if kind == 1 {
+            [1.0, 2.0, 1.5, 5.0]
+        } else {
+            [0.0, 0.0, 1.0, -1.0]
+        };
+        h.write(mv + 0x44, x44.to_bits());
+        h.write(mv + 0x40, x40.to_bits());
+        h.write(mv + 0x48, x48.to_bits());
+        h.write(mv + 0x1c, x1c.to_bits());
+        if kind == 1 {
+            write_u16(h, w + 0xb16, 10);
+            for o in (0xae0..=0xaf0).step_by(4) {
+                h.write(w + o, 0_u32);
+            }
+        }
+    }
+    match h.read::<u8>(header) {
+        1 => h.write(w + 0xab, 0xf7_u8),
+        2 | 3 | 5 | 6 => h.write(w + 0xab, 0xff_u8),
+        4 => h.write(w + 0xab, 0_u8),
+        _ => {}
+    }
+    atel_init_free_signals(h, w);
+    if clear != 0 {
+        let hdr = h.read::<u32>(w);
+        let (mut at, mut len) = (0_u32, 0_u32);
+        let vars = h.read::<u32>(hdr + 0x2c);
+        if vars != 0 {
+            at = h.read::<u32>(w + 4).wrapping_add(vars);
+            len = h.read::<u32>(hdr + 0x10);
+        }
+        // the private area: always 0 here (stored above, and neither
+        // callee since writes it), kept as the original tests it
+        let private = h.read::<u32>(w + 0xb8);
+        if private != 0 {
+            len = h.read::<u32>(hdr + 0x10);
+            at = private;
+        }
+        if at != 0 && len.cast_signed() > 0 {
+            for k in 0..len {
+                h.write(at.wrapping_add(k), 0_u8);
+            }
+        }
+    }
+    let levels = [0x16c, 0x16a, 0x168].map(|o| u32::from(h.read::<u16>(w + o)));
+    let mut req = super::signal::Request([0xffff, index, 0, 7, 0, levels[0], levels[1], levels[2]]);
+    if index != 0xffff {
+        super::signal::atel_regist_signal_main(h, req);
+    }
+    req.0[4] = 1;
+    req.0[3] = 0;
+    if index != 0xffff {
+        super::signal::atel_regist_signal_main(h, req);
+    }
+    super::signal::atel_decode_signal(h, index, 10);
+}
+
+/// `AtelEventRemoveForBattle()` (`0x00865dc0`, Fahrenheit's name; callers
+/// `MsBtlReadSetScene`, native `0xc024`): before a battle, unlocks the
+/// separates (`SndSepLock(0)`), `Yn_BattleBegin`, hides the guide map,
+/// keeps `yiGetDrawMask` (`0x01326b78`), the effect stick state
+/// (`pppFpSaveStat` into the zeroed `0x01326be0`, 0x100 bytes), the lights
+/// (`Atel_SaveLights_0086db20`) and the guide map number (`0x01326b68`).
+/// When ctrl work 0 is in use it becomes current (`SndStopStream`) and each
+/// of its actors loses `+0x34` bit 2; the character-bound ones (`+0xaa` 1)
+/// release their model: speed 0 (`Ch_SetSp`, unless `+0x36` bit 6), flags
+/// cleared, the system motion groups noted in `+0x36` (`0x2000`/`0x4000`),
+/// the hide event kept in `+0xa0` (0 with `+0x38` bit 12), `Ch_SetResHide`
+/// (unless `+0x38` bit 11), the four effect sticks reset (`+0xb18`, every
+/// 0x10), then the motion groups (`+0x33` bit 1), the two attached models
+/// (`+0xaf4`/`+0xaf8`, bits 4 and 5) and with bit 0 the model itself
+/// (`+0x9c`) disposed, their data too when `MsBattleGetChrDisposeFlag`.
+/// The old ctrl work comes back. `EAX` the guide map number when ctrl work
+/// 0 is unused, else the old ctrl work.
+#[allow(clippy::too_many_lines)] // the original's three disposal steps
+pub fn atel_event_remove_for_battle(h: &mut impl ffx_bridge::Host) -> u32 {
+    host_call(h, 0x0088_6dd0, &[0]);
+    let dispose_data = host_call(h, 0x0078_1630, &[]);
+    host_call(h, 0x0091_9a20, &[]);
+    host_call(h, 0x0091_9d70, &[0]);
+    let mask = host_call(h, 0x0090_8960, &[]);
+    h.write(h.rebase(0x0132_6b78), mask);
+    let sticks = h.rebase(0x0132_6be0);
+    for k in 0..0x40 {
+        h.write(sticks + 4 * k, 0_u32);
+    }
+    host_call(h, 0x0072_a180, &[sticks]);
+    host_call(h, 0x0086_db20, &[]);
+    let map = host_call(h, 0x0091_9c70, &[]);
+    h.write(h.rebase(0x0132_6b68), map);
+    let works = h.rebase(0x0132_5ba0);
+    if h.read::<u8>(works) & 1 == 0 {
+        return map;
+    }
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let saved = h.read::<u32>(ctx);
+    let actors = h.read::<u16>(works + 0x0c);
+    h.write(ctx, works);
+    host_call(h, 0x0088_7780, &[]);
+    // `Ch_CheckHandle` 0 means a live model: dispose it, and its data
+    let release = |h: &mut _, chr: u32, data: u32| {
+        if host_call(h, 0x0082_61b0, &[chr]) == 0 {
+            host_call(h, 0x0082_66f0, &[chr]);
+        }
+        if dispose_data != 0 {
+            host_call(h, 0x0082_4f00, &[data, 0]);
+        }
+    };
+    let id = |h: &mut _, w: u32| u32::from(Mem::read::<u16>(h, w + 0xa8));
+    let and8 = |h: &mut _, at: u32, m: u8| {
+        let v = Mem::read::<u8>(h, at);
+        Mem::write(h, at, v & m);
+    };
+    for i in 0..i32::from(actors) {
+        let w = super::atel_get_basic_work(h, i);
+        write_u16(h, w + 0x34, u32::from(h.read::<u16>(w + 0x34)) & 0xfffb);
+        if h.read::<u8>(w + 0xaa) != 1 {
+            continue;
+        }
+        let chr = h.read::<u32>(w + 0x9c);
+        if chr != 0 && h.read::<u8>(w + 0x36) & 0x40 == 0 {
+            host_call(h, 0x0082_b840, &[chr, 0]);
+        }
+        and8(h, w + 0x33, 0xfb);
+        let v = h.read::<u32>(w + 0xb10);
+        h.write(w + 0xb10, v & !1);
+        write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) & 0x9fff);
+        h.write(w + 0xa0, 0_u32);
+        if h.read::<u32>(w + 0x9c) == 0 {
+            continue;
+        }
+        for (group, bit) in [(0, 0x2000), (2, 0x4000)] {
+            let g = id(h, w);
+            if host_call(h, 0x0083_6850, &[g, group]) != 0 {
+                write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) | bit);
+            }
+        }
+        let chr = h.read::<u32>(w + 0x9c);
+        let hide = host_call(h, 0x0082_ac20, &[chr]);
+        h.write(w + 0xa0, hide);
+        let f38 = h.read::<u16>(w + 0x38);
+        if f38 & 0x1000 != 0 {
+            h.write(w + 0xa0, 0_u32);
+        }
+        if f38 & 0x800 == 0 {
+            let chr = h.read::<u32>(w + 0x9c);
+            host_call(h, 0x0082_b4e0, &[chr, 0]);
+        }
+        write_u16(h, w + 0x38, u32::from(h.read::<u16>(w + 0x38)) & 0xf7ff);
+        for k in 0..4 {
+            let stick = u32::from(h.read::<u16>(w + 0xb18 + 0x10 * k)) & 0x7fff;
+            if stick != 0 {
+                host_call(h, 0x0072_a120, &[stick]);
+            }
+        }
+        // `+0x9c` is tested again before each step, as the original does;
+        // none of the calls since the test above can clear it (they are
+        // not handed the worker), so these re-tests never fire
+        if h.read::<u32>(w + 0x9c) == 0 {
+            continue;
+        }
+        if h.read::<u8>(w + 0x33) & 2 != 0 {
+            if h.read::<u8>(w + 0x36) & 0x40 == 0 {
+                for group in [0, 2] {
+                    let g = id(h, w);
+                    if host_call(h, 0x0083_6850, &[g, group]) != 0 {
+                        let g = id(h, w);
+                        host_call(h, 0x0083_6830, &[g, group]);
+                    }
+                }
+            }
+            and8(h, w + 0x33, 0xfd);
+        }
+        // the two attached models, bits 4 and 5
+        for (k, bit) in [(0_u32, 0x10_u8), (1, 0x20)] {
+            if h.read::<u32>(w + 0x9c) == 0 {
+                break;
+            }
+            if h.read::<u8>(w + 0x33) & bit != 0 {
+                let at = w + 0xaf4 + 4 * k;
+                let m = h.read::<u32>(at);
+                if h.read::<u8>(w + 0x36) & 0x40 == 0 && m != 0 {
+                    let data = u32::from(h.read::<u16>(w + 0xb04 + 2 * k));
+                    release(h, m, data);
+                    h.write(at, 0_u32);
+                }
+                and8(h, w + 0x33, !bit);
+            }
+        }
+        if h.read::<u32>(w + 0x9c) != 0
+            && h.read::<u8>(w + 0x33) & 1 != 0
+            && h.read::<u8>(w + 0x36) & 0x40 == 0
+        {
+            and8(h, w + 0x33, 0xfe);
+            for k in 0..2 {
+                let at = w + 0xaf4 + 4 * k;
+                let m = h.read::<u32>(at);
+                if m != 0 {
+                    let data = u32::from(h.read::<u16>(w + 0xb04 + 2 * k));
+                    release(h, m, data);
+                    h.write(at, 0_u32);
+                }
+            }
+            let chr = h.read::<u32>(w + 0x9c);
+            let data = id(h, w);
+            release(h, chr, data);
+            h.write(w + 0x9c, 0_u32);
+        }
+    }
+    h.write(ctx, saved);
+    saved
+}
+
+/// The move block of worker `w` (`+0x558`, types 5 and 6 `+0x284`, none
+/// for type 4).
+fn move_block(m: &impl Mem, w: u32) -> u32 {
+    match kind(m, w) {
+        4 => 0,
+        5 | 6 => w + 0x284,
+        _ => w + 0x558,
+    }
+}
+
+/// `Atel_CheckTouchTalk_00866980(w, _, player)` (name ours; caller
+/// `0x008666e0`, per actor): for a character-bound actor (`+0xaa` 1, else
+/// `EAX` 0) against the ctrl work's player position (`+0x218..+0x220`).
+/// Touch: within the height band (`|dy| < ` move `+0x1c`) and the radius
+/// (`LengthSq3(dx, 0, dz) <= (+0x48)²`) it sends itself trigger 3
+/// (`AtelRequestTrigger_008764f0(0xffff, id, 3)`, the `EAX` returned);
+/// `+0x34` bit 6 says whether it did, `+0x36` bit 0 is cleared. Talk (with
+/// `+0xab` bit 0 and the ctrl work's `+0x1e4` 1): within
+/// `(ctrl +0x1f0 + move +0x40)²` (squared distance with `dy` only when
+/// move `+0x2c` is negative, else the height band `+0x2c` applies), not
+/// hidden (`+0x34` bits 5 and 9, `+0x36` bit 3), nearer than the
+/// candidate so far (`+0x1ec`, none when `+0x1e8` is `0xffff`) and facing
+/// it (`Math_FacingWithin(player move +0x34, +0x3c, ...)`) it becomes the
+/// candidate: id into `+0x1e8`, distance into `+0x1ec`. `fcall` calls an
+/// original that returns in `ST0` (`Math_LengthSq3`, rebased address).
+#[allow(clippy::too_many_lines)] // the two checks
+pub fn atel_check_touch_talk<H: ffx_bridge::Host>(
+    h: &mut H,
+    w: u32,
+    player: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) -> u32 {
+    let copy = |v: u32| x87::store(x87::load(v));
+    let mv = move_block(h, w);
+    let pmv = move_block(h, player);
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let pos = |h: &mut H, ctx: u32| -> [u32; 6] {
+        [
+            copy(h.read(mv)),
+            copy(h.read(mv + 4)),
+            copy(h.read(mv + 8)),
+            copy(h.read(ctx + 0x218)),
+            copy(h.read(ctx + 0x21c)),
+            copy(h.read(ctx + 0x220)),
+        ]
+    };
+    let [px, py, pz, cx, cy, cz] = pos(h, ctx);
+    let band = copy(h.read(mv + 0x1c));
+    if h.read::<u8>(w + 0xaa) != 1 {
+        return 0;
+    }
+    let length_sq3 = h.rebase(0x0088_c3c0);
+    let diff = |a: u32, b: u32| x87::store(x87::sub(x87::load(a), x87::load(b)));
+    write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) & 0xfffe);
+    let dy = x87::store(x87::sub(x87::load(cy), x87::load(py)).abs());
+    let mut ret = 0;
+    let mut touched = 0;
+    let mut ctx = ctx;
+    if x87::load(band) > x87::load(dy) {
+        let (dz, dx) = (diff(cz, pz), diff(cx, px));
+        let l = x87::store(fcall(h, length_sq3, &[dx, 0, dz]));
+        let r = x87::load(h.read(mv + 0x48));
+        let r2 = x87::store(x87::mul(r, r));
+        if x87::load(r2) >= x87::load(l) {
+            touched = 1;
+            let id = u32::from(h.read::<u16>(w + 0x2e));
+            ret = host_call(h, 0x0087_64f0, &[0xffff, id, 3]);
+        }
+        ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    }
+    let f = u32::from(h.read::<u16>(w + 0x34));
+    write_u16(h, w + 0x34, f & !0x40 | touched << 6);
+    if h.read::<u8>(w + 0xab) & 1 == 0 || h.read::<u8>(ctx + 0x1e4) != 1 {
+        return ret;
+    }
+    let [px, py, pz, cx, cy, cz] = pos(h, ctx);
+    let level = x87::load(h.read(mv + 0x2c));
+    let below = level < 0.0;
+    let (dz, ey) = (diff(cz, pz), if below { diff(cy, py) } else { 0 });
+    let dx = diff(cx, px);
+    let l = x87::store(fcall(h, length_sq3, &[dx, ey, dz]));
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let reach = x87::store(x87::add(
+        x87::load(h.read(ctx + 0x1f0)),
+        x87::load(h.read(mv + 0x40)),
+    ));
+    let reach = x87::store(x87::mul(x87::load(reach), x87::load(reach)));
+    let (l64, flags) = (x87::load(l), h.read::<u16>(w + 0x34));
+    // every compare is false when unordered, as `fcomp` with `test ah, 0x41`
+    let in_reach = x87::load(reach) > l64
+        && flags & 0x20 == 0
+        && flags & 0x200 == 0
+        && h.read::<u8>(w + 0x36) & 8 == 0;
+    if !in_reach {
+        return ret;
+    }
+    if !below {
+        let dy = x87::store(x87::sub(x87::load(cy), x87::load(py)).abs());
+        let in_band = level > x87::load(dy);
+        if !in_band {
+            return ret;
+        }
+    }
+    let nearer = h.read::<u16>(ctx + 0x1e8) == 0xffff || x87::load(h.read(ctx + 0x1ec)) > l64;
+    if !nearer {
+        return ret;
+    }
+    let heading = copy(h.read(pmv + 0x34));
+    let tol = copy(h.read(mv + 0x3c));
+    if host_call(h, 0x0088_b780, &[heading, tol, cx, cz, px, pz]) == 0 {
+        return ret;
+    }
+    let id = h.read::<u16>(w + 0x2e);
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    h.write(ctx + 0x1ec, copy(l));
+    h.write(ctx + 0x1e8, id);
+    ret
+}
+
+/// `AtelExecMenuCtrl()` (`0x00873600`, Fahrenheit's name; caller
+/// `0x008a9ca0`): `AtelMenuExec`, then ctrl work 0's callback queue
+/// (`AtelExecCallbackQue(0)` when `AtelCheckCallbackQue(0)`); `EAX` the
+/// last call's.
+pub fn atel_exec_menu_ctrl(h: &mut impl ffx_bridge::Host) -> u32 {
+    host_call(h, 0x0086_dd60, &[]);
+    let queued = host_call(h, 0x0087_5000, &[0]);
+    if queued == 0 {
+        return queued;
+    }
+    host_call(h, 0x0087_50b0, &[0])
+}
+
+/// Writes an `AtelInitBasicWork` setup record (eight words) at `rec`.
+fn write_setup(h: &mut impl Mem, rec: u32, words: [u32; 8]) {
+    for (k, v) in (0_u32..).zip(words) {
+        h.write(rec + 4 * k, v);
+    }
+}
+
+/// `AtelCommonSetUp(ctrl, a, block, x34, x8, debug)` (`0x008759b0`,
+/// Fahrenheit's name; caller `TOMenuAtelStart`): registers the debug
+/// sources (`debug`: a count, then three words each, through
+/// `AtelSetUpSourceDebug`, flag `0x100000` for ctrl work 0 else
+/// `0x20000`), takes ctrl work `ctrl` for `block`
+/// (`AtelRequireCtrlWork(ctrl, block, a, -1)`, `+0x34` = `x34`), sets it up
+/// and makes it current, then sets up the block's workers
+/// (`AtelInitBasicWork` with clear, record `(active, i, ctrl, 0, i,
+/// AtelGetIndexWork(block, i), block, x8)`; the actors active, the other
+/// namespace entries not), each with its source debug work
+/// (`AtelInitSourceCodeDebugWork(i, debug)`), and `AtelInitActor`. `rec`
+/// is the record's frame (eight words); `EAX` `AtelInitActor`'s.
+pub fn atel_common_set_up(h: &mut impl ffx_bridge::Host, args: [u32; 6], rec: u32) -> u32 {
+    let [ctrl, a, block, x34, x8, debug] = args;
+    let actors = host_call(h, 0x0086_a650, &[block]).cast_signed();
+    let names = host_call(h, 0x0086_c190, &[block]).cast_signed();
+    if debug != 0 {
+        let mut j = 0_u32;
+        while j.cast_signed() < h.read::<i32>(debug) {
+            let e = debug + 4 + 12 * j;
+            let (e0, e1, e2) = (h.read::<u32>(e), h.read::<u32>(e + 4), h.read::<u32>(e + 8));
+            let flag = if ctrl == 0 { 0x0010_0000 } else { 0x0002_0000 };
+            host_call(h, 0x0088_5b00, &[e1, e2, x8, e0, flag]);
+            j += 1;
+        }
+    }
+    let c = host_call(h, 0x0086_ee10, &[ctrl, block, a, u32::MAX]);
+    h.write(c + 0x34, x34);
+    host_call(h, 0x0087_1190, &[ctrl]);
+    host_call(h, 0x0086_2d30, &[ctrl]);
+    let mut i = 0_i32;
+    for (active, end) in [(1, actors), (0, names)] {
+        while i < end {
+            let k = i.cast_unsigned();
+            let hdr = host_call(h, 0x0086_bb80, &[block, k]);
+            write_setup(h, rec, [active, k, ctrl, 0, k, hdr, block, x8]);
+            host_call(h, 0x0086_cb00, &[rec, 1]);
+            host_call(h, 0x0086_d670, &[k, debug]);
+            i += 1;
+        }
+    }
+    host_call(h, 0x0086_cae0, &[])
+}
+
+/// `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`
+/// (`0x008756d0`, Fahrenheit's name; caller `MsAtelSetUp`, which reads no
+/// `EAX`):
+/// takes ctrl work `ctrl` (`AtelRequireCtrlWork(ctrl, 0, a, -1)`; `+0x34`
+/// 0, `+0x54` the field getter `0x008756b0`) for the `n` script blocks in
+/// `blocks`, summing their actor counts into `+0x0c`, namespaces `+0x10`,
+/// `+0x14`/`+0x18`/`+0x16` from the block header getters; `+0x1f8` the
+/// blocks, `+0x1fc` `x8s`, `+0x30` `x30`, `+0x4c` `callback`. Set up and
+/// current, it gives every block's actors their basic work (record
+/// `(1, index, ctrl, block number, i, AtelGetIndexWork, block, x8s[k] or
+/// 0)`, no clear) and their variables (`AtelSetMyWorkAdrs` from `work`,
+/// advanced by `AtelGetMyWorkSize`), then the other namespace entries
+/// (active 0), then `MsAtelChrInit(ctrl)`, `AtelInitActor` and ctrl work 0
+/// current again (`EAX` that call's). `rec` is the record's frame.
+pub fn atel_battle_set_up(h: &mut impl ffx_bridge::Host, args: [u32; 8], rec: u32) -> u32 {
+    let [blocks, x8s, n, x30, work, a, ctrl, callback] = args;
+    let n = n.cast_signed();
+    let c = host_call(h, 0x0086_ee10, &[ctrl, 0, a, u32::MAX]);
+    h.write(c + 0x34, 0_u32);
+    h.write(c + 0x54, h.rebase(0x0087_56b0));
+    // actors, +0x14, +0x18, +0x16, namespaces
+    let mut sums = [0_u32; 5];
+    for k in 0..n.max(0).cast_unsigned() {
+        let b = h.read::<u32>(blocks.wrapping_add(4 * k));
+        for (s, f) in sums.iter_mut().zip([
+            0x0086_a650,
+            0x0086_bcb0,
+            0x0086_b020,
+            0x0086_a9e0,
+            0x0086_c190,
+        ]) {
+            *s = s.wrapping_add(host_call(h, f, &[b]));
+        }
+    }
+    let [actors, x14, x18, x16, names] = sums;
+    write_u16(h, c + 0x0c, actors);
+    write_u16(h, c + 0x10, names);
+    h.write(c + 0x4c, callback);
+    write_u16(h, c + 0x16, x16);
+    h.write(c + 0x1f8, blocks);
+    write_u16(h, c + 0x14, x14);
+    write_u16(h, c + 0x18, x18);
+    h.write(c + 0x1fc, x8s);
+    h.write(c + 0x30, x30);
+    host_call(h, 0x0087_1190, &[ctrl]);
+    host_call(h, 0x0086_2d30, &[ctrl]);
+    let block_of = |h: &mut _, k: u32| {
+        let b = Mem::read::<u32>(h, blocks.wrapping_add(4 * k));
+        let x8 = if x8s == 0 {
+            0
+        } else {
+            Mem::read::<u32>(h, x8s.wrapping_add(4 * k))
+        };
+        (b, x8)
+    };
+    let mut index = 0_u32;
+    let mut work = work;
+    for k in 0..n.max(0).cast_unsigned() {
+        let (b, x8) = block_of(h, k);
+        let actors = host_call(h, 0x0086_a650, &[b]).cast_signed();
+        host_call(h, 0x0086_c190, &[b]);
+        for i in 0..actors.max(0).cast_unsigned() {
+            let hdr = host_call(h, 0x0086_bb80, &[b, i]);
+            write_setup(h, rec, [1, index, ctrl, k, i, hdr, b, x8]);
+            host_call(h, 0x0086_cb00, &[rec, 0]);
+            host_call(h, 0x0087_0870, &[index, work]);
+            work = work.wrapping_add(host_call(h, 0x0086_c160, &[index]));
+            index += 1;
+        }
+    }
+    for k in 0..n.max(0).cast_unsigned() {
+        let (b, x8) = block_of(h, k);
+        let mut i = host_call(h, 0x0086_a650, &[b]).cast_signed();
+        let names = host_call(h, 0x0086_c190, &[b]).cast_signed();
+        while i < names {
+            let hdr = host_call(h, 0x0086_bb80, &[b, i.cast_unsigned()]);
+            write_setup(h, rec, [0, index, ctrl, k, i.cast_unsigned(), hdr, b, x8]);
+            host_call(h, 0x0086_cb00, &[rec, 0]);
+            i += 1;
+            index += 1;
+        }
+    }
+    host_call(h, 0x0079_76a0, &[ctrl]);
+    host_call(h, 0x0086_cae0, &[]);
+    host_call(h, 0x0086_2d30, &[0])
+}
+
+/// `Atel_CheckBoxTouch_00867c10(w, _)` (name ours; caller `0x008666e0`'s
+/// type-5 case): a box-shaped trigger. Two points relative to the actor's
+/// move block position: A (ctrl work `+0x228..+0x230`, or the target
+/// worker's move block `+0x10..+0x18` when move `+0x28` is not `0xffff`)
+/// and B, the player (`+0x218..+0x220`, or the target's position), turned
+/// by `-(move +0x34)` (`_CIsin`/`_CIcos`) into the box's frame. Each gets
+/// outcode bits against the box: x against `±(+0x30)` (1, 2), z against
+/// `±(+0x38)` (4, 8), y against `±(+0x1c)` when that is positive (0x10,
+/// 0x20). `+0x36` bit 0 is cleared. B inside sets `+0x34` bit 8 and counts
+/// as touching; outside, bit 8 is cleared and B touches when its height is
+/// within the band (or there is no band) and `LengthSq3` from B to its
+/// clamp onto the box is at most `(+0x48)²`. `+0x34` bit 6 keeps the
+/// touch; the actor's vibrate signals go to itself
+/// (`Atel_RegistVibrateSignal_00876590(0xffff, id, k)`): 5 on a new touch,
+/// 5 then 6 when the segment A..B crosses the box (no common outside bit)
+/// without a touch before, 6 when a touch ends. `EAX` the last signal's,
+/// else 0. `fcall` calls an original returning in `ST0`
+/// (`Math_LengthSq3`).
+#[allow(clippy::too_many_lines, clippy::similar_names)] // the original's two outcode passes
+pub fn atel_check_box_touch<H: super::run::NativeHost>(
+    h: &mut H,
+    w: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) -> u32 {
+    let copy = |v: u32| x87::store(x87::load(v));
+    let ld = x87::load;
+    let mv = move_block(h, w);
+    let [px, py, pz] = [0, 4, 8].map(|o| copy(h.read(mv + o)));
+    let hz = copy(h.read(mv + 0x38));
+    let hx = copy(h.read(mv + 0x30));
+    let angle = x87::store(x87::mul(ld(h.read(mv + 0x34)), -1.0));
+    let hy = copy(h.read(mv + 0x1c));
+    let target = h.read::<u16>(mv + 0x28);
+    let (a, b): ([u32; 3], [u32; 3]) = if target == 0xffff {
+        let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+        (
+            [0x228, 0x22c, 0x230].map(|o| copy(h.read(c + o))),
+            [0x218, 0x21c, 0x220].map(|o| copy(h.read(c + o))),
+        )
+    } else {
+        let o = super::atel_get_basic_work(h, i32::from(target));
+        let om = move_block(h, o);
+        (
+            [0x10, 0x14, 0x18].map(|k| copy(h.read(om + k))),
+            [0, 4, 8].map(|k| copy(h.read(om + k))),
+        )
+    };
+    let rel = |v: u32, p: u32| x87::store(x87::sub(ld(v), ld(p)));
+    let (ax, ay, az) = (rel(a[0], px), rel(a[1], py), rel(a[2], pz));
+    let (bx, by, bz) = (rel(b[0], px), rel(b[1], py), rel(b[2], pz));
+    let (sin, cos) = (h.rebase(0x0094_98c8), h.rebase(0x0094_98c2));
+    let s = x87::store(h.call_intrinsic1(sin, ld(angle)));
+    let c = x87::store(h.call_intrinsic1(cos, ld(angle)));
+    let ns = s ^ 0x8000_0000;
+    // into the box's frame: x' = c x - s z, z' = s x + c z
+    let az2 = x87::store(x87::add(x87::mul(ld(s), ld(ax)), x87::mul(ld(c), ld(az))));
+    let ax2 = x87::store(x87::add(x87::mul(ld(ax), ld(c)), x87::mul(ld(az), ld(ns))));
+    let bz2 = x87::store(x87::add(x87::mul(ld(s), ld(bx)), x87::mul(ld(c), ld(bz))));
+    let bx2 = x87::store(x87::add(x87::mul(ld(bz), ld(ns)), x87::mul(ld(c), ld(bx))));
+    write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) & 0xfffe);
+    // every compare is false when unordered
+    let (hx64, hz64, hy64) = (ld(hx), ld(hz), ld(hy));
+    let mut out_a = 0_u32;
+    if ld(ax2) >= hx64 {
+        out_a |= 1;
+    }
+    if -hx64 >= ld(ax2) {
+        out_a |= 2;
+    }
+    if ld(az2) >= hz64 {
+        out_a |= 4;
+    }
+    if -hz64 >= ld(az2) {
+        out_a |= 8;
+    }
+    if hy64 > 0.0 {
+        if ld(ay) >= hy64 {
+            out_a |= 0x10;
+        }
+        if -hy64 >= ld(ay) {
+            out_a |= 0x20;
+        }
+    }
+    let (mut cx, mut cz) = (bx2, bz2);
+    let mut out_b = 0_u32;
+    if ld(bx2) >= hx64 {
+        out_b |= 1;
+        cx = hx;
+    }
+    let nhx = x87::mul(hx64, -1.0);
+    if ld(bx2) <= nhx {
+        out_b |= 2;
+        cx = x87::store(nhx);
+    }
+    if ld(bz2) >= hz64 {
+        out_b |= 4;
+        cz = hz;
+    }
+    let nhz = x87::mul(hz64, -1.0);
+    if nhz >= ld(bz2) {
+        out_b |= 8;
+        cz = x87::store(nhz);
+    }
+    if hy64 > 0.0 {
+        if ld(by) >= hy64 {
+            out_b |= 0x10;
+        }
+        if ld(by) <= x87::mul(-1.0, hy64) {
+            out_b |= 0x20;
+        }
+    }
+    let crossing = out_a & out_b == 0 && out_a | out_b != 0;
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    let was = f34 >> 6 & 1;
+    let touched = if out_b == 0 {
+        write_u16(h, w + 0x34, f34 | 0x100);
+        true
+    } else {
+        write_u16(h, w + 0x34, f34 & 0xfeff);
+        let in_band = hy64 <= 0.0 || (hy64 >= ld(ay) && -hy64 <= ld(ay));
+        if in_band {
+            let dz = x87::store(x87::sub(ld(bz2), ld(cz)));
+            let dx = x87::store(x87::sub(ld(bx2), ld(cx)));
+            let l = x87::store(fcall(h, h.rebase(0x0088_c3c0), &[dx, 0, dz]));
+            let r = ld(h.read(mv + 0x48));
+            let r2 = x87::store(x87::mul(r, r));
+            ld(r2) >= ld(l)
+        } else {
+            false
+        }
+    };
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    write_u16(h, w + 0x34, f34 & !0x40 | u32::from(touched) << 6);
+    let signal = |h: &mut H, k: u32| {
+        let id = u32::from(Mem::read::<u16>(h, w + 0x2e));
+        host_call(h, 0x0087_6590, &[0xffff, id, k])
+    };
+    match (touched, was, crossing) {
+        (true, 0, _) => signal(h, 5),
+        (false, 0, true) => {
+            signal(h, 5);
+            signal(h, 6)
+        }
+        (false, 1, _) => signal(h, 6),
+        _ => 0,
+    }
+}
+
+/// `Atel_CheckLineTouch_008684b0(w, _, player)` (name ours; caller
+/// `0x008666e0`, the ctrl work's `+0x5c` callback, whose `EAX` its caller
+/// drops): a line-shaped trigger from the actor's move position P to move
+/// `+0x30` Q, against the player's step from A (ctrl work `+0x228`) to B
+/// (`+0x218`). When the player moved in x or z (or `+0x36` bit 0 asks), the
+/// step crossing the line (`Math_SegmentsCross(A, B, P, Q)`, its sign into
+/// `+0x36` bits 1/2) within the height band (`Math_CrossHeightGap` at most
+/// move `+0x1c`, any when that is not positive) sends trigger 4. Then B's
+/// nearest point N on P..Q (`Math_SegmentNearestT`): within `+0x48`
+/// (`Math_LengthSq3`, no y) and the band around N's height it touches
+/// (`+0x34` bit 6, trigger 3, trigger 5 on a new touch); else a crossing
+/// sends 5, and a crossing or an ended touch 6. Talk (`+0xab` bit 0, ctrl
+/// `+0x1e4` 1): within `(move +0x40 + ctrl +0x1f0)²` of N and the band, a
+/// candidate distance (`+0x1ec`, none when `+0x1e8` is `0xffff`) above
+/// that radius², and `Math_FacingWithin(player heading, +0x3c, B, N)`
+/// make it the candidate (`+0x1e8` id, `+0x1ec` the radius², as the
+/// original stores). `frame` holds the four vectors (16 words: A, Q, P, B,
+/// `w` 0) the math helpers get pointers to; `fcall` calls an original
+/// returning in `ST0` (rebased address).
+#[allow(clippy::too_many_lines, clippy::similar_names)] // the original's three steps
+pub fn atel_check_line_touch<H: ffx_bridge::Host>(
+    h: &mut H,
+    w: u32,
+    player: u32,
+    frame: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    let copy = |v: u32| x87::store(x87::load(v));
+    let ld = x87::load;
+    let mv = move_block(h, w);
+    let pmv = move_block(h, player);
+    let (va, vq, vp, vb) = (frame, frame + 0x10, frame + 0x20, frame + 0x30);
+    for k in 0..16 {
+        h.write(frame + 4 * k, 0_u32);
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let p = [0, 4, 8].map(|o| copy(h.read(mv + o)));
+    let q = [0x30, 0x34, 0x38].map(|o| copy(h.read(mv + o)));
+    let a = [0x228, 0x22c, 0x230].map(|o| copy(h.read(ctx + o)));
+    let b = [0x218, 0x21c, 0x220].map(|o| copy(h.read(ctx + o)));
+    for (base, v) in [(vp, p), (vq, q), (va, a), (vb, b)] {
+        for (k, x) in (0_u32..).zip(v) {
+            h.write(base + 4 * k, x);
+        }
+    }
+    let band = copy(h.read(mv + 0x1c));
+    let band64 = ld(band);
+    // `fucompp` with `test ah, 0x44`: unordered counts as moved
+    #[allow(clippy::float_cmp)] // the original's exact compare
+    let still = ld(a[0]) == ld(b[0]) && ld(a[2]) == ld(b[2]);
+    let mut crossed = false;
+    if !still || h.read::<u8>(w + 0x36) & 1 != 0 {
+        write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) & 0xfffe);
+        let side = host_call(h, 0x0088_9bb0, &[va, vb, vp, vq]).cast_signed();
+        if side != 0 {
+            let gap = x87::store(fcall(h, h.rebase(0x0088_9e90), &[va, vb, vp, vq]));
+            let within = band64 <= 0.0 || ld(gap) <= band64;
+            if within {
+                let f = u32::from(h.read::<u16>(w + 0x36));
+                let f = if side > 0 { f & 0xfffb | 2 } else { f & 0xfff9 };
+                write_u16(h, w + 0x36, f);
+                let id = u32::from(h.read::<u16>(w + 0x2e));
+                host_call(h, 0x0087_64f0, &[0xffff, id, 4]);
+                crossed = true;
+            }
+        }
+    }
+    let t = x87::store(fcall(h, h.rebase(0x0088_a040), &[vb, vp, vq]));
+    let t64 = ld(t);
+    let nx = x87::store(x87::add(
+        ld(p[0]),
+        x87::mul(x87::sub(ld(q[0]), ld(p[0])), t64),
+    ));
+    let ny = x87::store(x87::add(
+        x87::mul(x87::sub(ld(q[1]), ld(p[1])), t64),
+        ld(p[1]),
+    ));
+    let nz = x87::store(x87::add(
+        x87::mul(t64, x87::sub(ld(q[2]), ld(p[2]))),
+        ld(p[2]),
+    ));
+    let [bx, by, bz] = b;
+    let dz = x87::store(x87::sub(ld(nz), ld(bz)));
+    let dx = x87::store(x87::sub(ld(nx), ld(bx)));
+    let l = x87::store(fcall(h, h.rebase(0x0088_c3c0), &[dx, 0, dz]));
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    let r = ld(h.read(mv + 0x48));
+    let r2 = x87::store(x87::mul(r, r));
+    let was = f34 >> 6 & 1;
+    // B's height within the band around N's (any when the band is not
+    // positive); false on NaN
+    let in_band = |band64: f64| {
+        band64 <= 0.0 || (x87::add(ld(ny), band64) >= ld(by) && ld(by) >= x87::sub(ld(ny), band64))
+    };
+    let id = |h: &mut H| u32::from(Mem::read::<u16>(h, w + 0x2e));
+    if ld(r2) >= ld(l) && in_band(band64) {
+        write_u16(h, w + 0x34, f34 | 0x40);
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 3]);
+        if was == 0 {
+            let i = id(h);
+            host_call(h, 0x0087_64f0, &[0xffff, i, 5]);
+        }
+    } else {
+        write_u16(h, w + 0x34, f34 & 0xffbf);
+        if crossed {
+            let i = id(h);
+            host_call(h, 0x0087_64f0, &[0xffff, i, 5]);
+        }
+        if was == 1 || crossed {
+            let i = id(h);
+            host_call(h, 0x0087_64f0, &[0xffff, i, 6]);
+        }
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u8>(w + 0xab) & 1 == 0 || h.read::<u8>(ctx + 0x1e4) != 1 {
+        return;
+    }
+    let reach = x87::store(x87::add(ld(h.read(mv + 0x40)), ld(h.read(ctx + 0x1f0))));
+    let reach2 = x87::store(x87::mul(ld(reach), ld(reach)));
+    let near = ld(reach2) >= ld(l) && in_band(band64);
+    if !near {
+        return;
+    }
+    let free = h.read::<u16>(ctx + 0x1e8) == 0xffff || ld(h.read(ctx + 0x1ec)) > ld(reach2);
+    if !free {
+        return;
+    }
+    let heading = copy(h.read(pmv + 0x34));
+    let tol = copy(h.read(mv + 0x3c));
+    if host_call(h, 0x0088_b780, &[heading, tol, bx, bz, nx, nz]) == 0 {
+        return;
+    }
+    let i = h.read::<u16>(w + 0x2e);
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    h.write(ctx + 0x1ec, copy(reach2));
+    h.write(ctx + 0x1e8, i);
+}
+
+/// `Atel_CheckBoxTrigger_00866cc0(w, _, player)` (name ours; caller
+/// `0x008666e0`, whose `EAX` its caller drops): the box-shaped request
+/// trigger, the request-and-talk sibling of [`atel_check_box_touch`]. A
+/// (ctrl work `+0x228`) and B (the player, `+0x218`) relative to the move
+/// position, turned by `-(move +0x34)` (cosine first:
+/// `x' = x c - z s`, `z' = c z + s x`), get the same outcodes against
+/// `±(+0x30)`, `±(+0x38)` and `±(+0x1c)`. A crossing (no common outcode,
+/// not both inside) sends trigger 4 unless `+0x34` bit 8 (inside last
+/// time) is set. B inside sets bit 8 and touches; outside, bit 8 is
+/// cleared and it touches within the band (A's height) and `(+0x48)²` of
+/// its clamp. A touch sends 3 (and 5 when new); else a crossing without an
+/// earlier touch sends 5 then 6, an ended touch 6. Talk (`+0xab` bit 0,
+/// ctrl `+0x1e4` 1): B inside, or in the band and within
+/// `(move +0x40 + ctrl +0x1f0)²` of its clamp; a candidate distance above
+/// that radius² (any for `+0x1e8` `0xffff`) and
+/// `Math_FacingWithin(player heading, +0x3c, player x, z, actor x, z)`
+/// make it the candidate (`+0x1e8` id, `+0x1ec` the radius²). `fcall`
+/// calls an original returning in `ST0` (`Math_LengthSq3`).
+#[allow(clippy::too_many_lines, clippy::similar_names)] // the original's three steps
+pub fn atel_check_box_trigger<H: super::run::NativeHost>(
+    h: &mut H,
+    w: u32,
+    player: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    let copy = |v: u32| x87::store(x87::load(v));
+    let ld = x87::load;
+    let mv = move_block(h, w);
+    let pmv = move_block(h, player);
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let [px, py, pz] = [0, 4, 8].map(|o| copy(h.read(mv + o)));
+    let hz = copy(h.read(mv + 0x38));
+    let hx = copy(h.read(mv + 0x30));
+    let angle = copy(h.read(mv + 0x34)) ^ 0x8000_0000;
+    let hy = copy(h.read(mv + 0x1c));
+    let rel = |h: &mut H, o: u32, p: u32| x87::store(x87::sub(ld(h.read(ctx + o)), ld(p)));
+    let (ax, ay, az) = (rel(h, 0x228, px), rel(h, 0x22c, py), rel(h, 0x230, pz));
+    let (bx, by, bz) = (rel(h, 0x218, px), rel(h, 0x21c, py), rel(h, 0x220, pz));
+    let (sin, cos) = (h.rebase(0x0094_98c8), h.rebase(0x0094_98c2));
+    let c = x87::store(h.call_intrinsic1(cos, ld(angle)));
+    let s = x87::store(h.call_intrinsic1(sin, ld(angle)));
+    let az2 = x87::store(x87::add(x87::mul(ld(c), ld(az)), x87::mul(ld(s), ld(ax))));
+    let ax2 = x87::store(x87::sub(x87::mul(ld(ax), ld(c)), x87::mul(ld(az), ld(s))));
+    let bz2 = x87::store(x87::add(x87::mul(ld(c), ld(bz)), x87::mul(ld(s), ld(bx))));
+    write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) & 0xfffe);
+    let bx2 = x87::store(x87::sub(x87::mul(ld(c), ld(bx)), x87::mul(ld(s), ld(bz))));
+    // every compare is false when unordered
+    let (hx64, hz64, hy64) = (ld(hx), ld(hz), ld(hy));
+    let (nhx, nhz) = (hx ^ 0x8000_0000, hz ^ 0x8000_0000);
+    let mut out_a = 0_u32;
+    if ld(ax2) >= hx64 {
+        out_a |= 1;
+    }
+    if ld(nhx) >= ld(ax2) {
+        out_a |= 2;
+    }
+    if ld(az2) >= hz64 {
+        out_a |= 4;
+    }
+    if ld(nhz) >= ld(az2) {
+        out_a |= 8;
+    }
+    if hy64 > 0.0 {
+        if ld(ay) >= hy64 {
+            out_a |= 0x10;
+        }
+        if -hy64 >= ld(ay) {
+            out_a |= 0x20;
+        }
+    }
+    let (mut cx, mut cz) = (bx2, bz2);
+    let mut out_b = 0_u32;
+    if ld(bx2) >= hx64 {
+        out_b |= 1;
+        cx = hx;
+    }
+    if ld(nhx) >= ld(bx2) {
+        out_b |= 2;
+        cx = nhx;
+    }
+    if ld(bz2) >= hz64 {
+        out_b |= 4;
+        cz = hz;
+    }
+    if ld(nhz) >= ld(bz2) {
+        out_b |= 8;
+        cz = nhz;
+    }
+    if hy64 > 0.0 {
+        if ld(by) >= hy64 {
+            out_b |= 0x10;
+        }
+        if x87::mul(hy64, -1.0) >= ld(by) {
+            out_b |= 0x20;
+        }
+    }
+    let id = |h: &mut H| u32::from(Mem::read::<u16>(h, w + 0x2e));
+    let crossing = out_a & out_b == 0 && out_a | out_b != 0;
+    if crossing && h.read::<u8>(w + 0x35) & 1 == 0 {
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 4]);
+    }
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    let was = f34 >> 6 & 1;
+    // A's height within the band (any when the band is not positive)
+    let in_band = hy64 <= 0.0 || (ld(ay) <= hy64 && -hy64 <= ld(ay));
+    let length_sq3 = h.rebase(0x0088_c3c0);
+    let mut dist = |h: &mut H| {
+        let dz = x87::store(x87::sub(ld(bz2), ld(cz)));
+        let dx = x87::store(x87::sub(ld(bx2), ld(cx)));
+        x87::store(fcall(h, length_sq3, &[dx, 0, dz]))
+    };
+    let touched = if out_b == 0 {
+        write_u16(h, w + 0x34, f34 | 0x100);
+        true
+    } else {
+        write_u16(h, w + 0x34, f34 & 0xfeff);
+        in_band && {
+            let l = dist(h);
+            let r = ld(h.read(mv + 0x48));
+            ld(x87::store(x87::mul(r, r))) >= ld(l)
+        }
+    };
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    write_u16(h, w + 0x34, f34 & !0x40 | u32::from(touched) << 6);
+    if touched {
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 3]);
+        if was == 0 {
+            let i = id(h);
+            host_call(h, 0x0087_64f0, &[0xffff, i, 5]);
+        }
+    } else if crossing && was == 0 {
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 5]);
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 6]);
+    } else if was == 1 {
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 6]);
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u8>(w + 0xab) & 1 == 0 || h.read::<u8>(ctx + 0x1e4) != 1 {
+        return;
+    }
+    let reach = x87::store(x87::add(ld(h.read(mv + 0x40)), ld(h.read(ctx + 0x1f0))));
+    let reach2 = x87::store(x87::mul(ld(reach), ld(reach)));
+    if out_b != 0 {
+        if !in_band {
+            return;
+        }
+        let l = dist(h);
+        let near = ld(reach2) >= ld(l);
+        if !near {
+            return;
+        }
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let free = h.read::<u16>(ctx + 0x1e8) == 0xffff || ld(h.read(ctx + 0x1ec)) > ld(reach2);
+    if !free {
+        return;
+    }
+    let args = [
+        copy(h.read(pmv + 0x34)),
+        copy(h.read(mv + 0x3c)),
+        copy(h.read(ctx + 0x218)),
+        copy(h.read(ctx + 0x220)),
+        copy(h.read(mv)),
+        copy(h.read(mv + 8)),
+    ];
+    if host_call(h, 0x0088_b780, &args) == 0 {
+        return;
+    }
+    let i = h.read::<u16>(w + 0x2e);
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    h.write(ctx + 0x1ec, copy(reach2));
+    h.write(ctx + 0x1e8, i);
+}

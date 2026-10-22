@@ -24626,3 +24626,774 @@ fn round41_magic_update_matches_the_original_on_the_snapshot() {
     };
     round41_magic_update(&mut a, &mut b, &mut Xorshift(0x4041_0042));
 }
+
+/// Round 42 group A: the battle message windows, the battle window scene
+/// openers, `TOBtlElementLampFlags_00897650` and the kernel monster-name
+/// slot over logging stand-ins for every callee (results the next words
+/// of a table of small values, so the switches and sign tests come up).
+/// `MsGetComData` stores a test word through its name pointer (a stack
+/// word on both sides).
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round42_messages(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x100);
+    let cells = alloc(a, b, 0x10);
+    let seq = round38_seq(counter, table);
+    // MsGetComData(id, &table): [table] = cells[0]; the record is cells + 4
+    let mut com = store_through(1, cells);
+    com.push(0xb8); // mov eax, cells + 4
+    com.extend_from_slice(&(cells + 4).to_le_bytes());
+    let stands: Vec<Stand> = vec![
+        (0x0078_f8f0, vec![0, 1], vec![], seq.clone()), // MsGetRomBtlText
+        (0x0089_dba0, vec![0, 1], vec![], seq.clone()), // TOBtlOpenSimpleHelpMes
+        (0x008b_57c0, vec![0, 1, 2], vec![], seq.clone()), // TOBtlSetMacroCommandType
+        (0x008b_57f0, vec![0, 1, 2], vec![], seq.clone()), // TOBtlSetMacroCommandValue
+        (0x0079_af10, vec![0], vec![], seq.clone()),    // MsGetRamChrName
+        (0x008a_c850, vec![0], vec![], seq.clone()),    // TOGetSaveChrName
+        (0x0078_fcf0, vec![0, 1, 2], vec![], seq.clone()), // MsMenuGetText
+        (0x0079_a4b0, vec![0], vec![], com),            // MsGetComData
+        (0x0079_0240, vec![0], vec![], seq.clone()),    // MsMenuWeakElement_00790240
+        (0x0078_f910, vec![0], vec![], seq.clone()),    // MsMenuAbsElement_0078f910
+        (0x0078_fe80, vec![0], vec![], seq.clone()),    // MsMenuInvElement
+        (0x0078_fe40, vec![0], vec![], seq.clone()),    // MsMenuHalfElement
+        (0x0078_4260, vec![0, 1], vec![], seq.clone()), // Mon_GetName
+        (0x008a_eec0, vec![0], vec![], seq.clone()),    // TOSeqInitScene
+        (0x0078_f700, vec![0], vec![], seq.clone()),    // MsCheckLeftWindow
+        (0x008a_f0d0, vec![0, 1], vec![], seq),         // TOSeqStartScene
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        if let Some(&(_, n)) = arity.iter().find(|e| e.0 == sym) {
+            let n = if sym == 0x0079_a4b0 { 2 } else { n };
+            assert_eq!(args.len(), n, "{sym:#x} arguments");
+        }
+        eax(m, sym, args)
+    };
+    let local = b.stack_range().start + 0x100;
+    let w = alloc(a, b, 0xa0);
+    let kernel = a.rebase(0x0112_a034);
+    let small = [0u32, 1, 2, 3, 4, 5, u32::MAX, 0x8000_0000];
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x40 {
+            let v = if rng.next().is_multiple_of(4) {
+                rng.next()
+            } else {
+                small[(rng.next() % small.len() as u32) as usize]
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        for j in 0..4 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        for j in 0..0x28 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        let pick = |rng: &mut Xorshift| {
+            if rng.next().is_multiple_of(3) {
+                rng.next()
+            } else {
+                small[(rng.next() % small.len() as u32) as usize]
+            }
+        };
+        let (x, y) = (pick(rng), pick(rng));
+        let what = format!("round42 {k} {x:#x} {y:#x}");
+        let r = match k % 11 {
+            0 => (
+                eax(a, 0x0089_34d0, &[]),
+                t::btl_draw_first_strike_message_window(b, true, call),
+            ),
+            1 => (
+                eax(a, 0x0089_34f0, &[]),
+                t::btl_draw_first_strike_message_window(b, false, call),
+            ),
+            2 => (
+                eax(a, 0x0089_2870, &[x, y]),
+                t::btl_draw_name_message_window(b, true, x, y, call),
+            ),
+            3 => (
+                eax(a, 0x0089_7200, &[x, y]),
+                t::btl_draw_name_message_window(b, false, x, y, call),
+            ),
+            4 => (
+                eax(a, 0x0089_3660, &[x]),
+                t::btl_draw_get_money_message_window(b, x.cast_signed(), call),
+            ),
+            5 => (
+                eax(a, 0x0089_35f0, &[x, y]),
+                t::btl_draw_get_limit_type_message_window(b, x, y, call),
+            ),
+            6 => (
+                eax(a, 0x0089_5320, &[x, y]),
+                t::btl_draw_learning_message_window(b, x, y, local, call),
+            ),
+            7 => {
+                let element = if rng.next().is_multiple_of(2) {
+                    y
+                } else {
+                    rng.next() % 5
+                };
+                (
+                    eax(a, 0x0089_7650, &[x, element]),
+                    t::btl_element_lamp_flags(b, x, element, call),
+                )
+            }
+            8 => {
+                put(a, b, kernel, rng.next());
+                (
+                    eax(a, 0x0077_3780, &[x]),
+                    t::kernel_slot_monster_name(b, x, call),
+                )
+            }
+            9 => {
+                put(a, b, w + 8, (x % 6) as u16);
+                (eax(a, 0x008a_8640, &[w]), t::open_btl_win_main(b, w, call))
+            }
+            _ => {
+                put(a, b, w + 8, (x % 6) as u16);
+                (
+                    eax(a, 0x008a_85a0, &[w]),
+                    t::open_btl_limit_break(b, w, call),
+                )
+            }
+        };
+        assert_eq!(r.0, r.1, "{what}");
+        same_memory(&what, a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn round42_messages_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round42_messages(&mut a, &mut b, &mut Xorshift(0x4042_0011));
+}
+
+#[test]
+fn round42_messages_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round42_messages(&mut a, &mut b, &mut Xorshift(0x4042_0012));
+}
+
+/// Round 42 group B: the enemy limit bars, the CTB window's set-up, Wakka's
+/// and Auron's limit windows, the get-item message and the menu scene key
+/// pick, over logging stand-ins (results the next words of a table without
+/// 0: the originals divide by them unguarded) and the original remaps and
+/// `MenuScene_KeyEase`. Frame words (widths, the CTB count) are written by
+/// the stand-ins and not logged.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round42_windows(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x10);
+    let list = alloc(a, b, 0x40);
+    let seq = round38_seq(counter, table);
+    let mut ctb = vec![0xb8]; // mov eax, list
+    ctb.extend_from_slice(&list.to_le_bytes());
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0079_5250, all(1), vec![], seq.clone()), // MsGetChrLimitBarFlag
+        (0x0079_5550, all(1), vec![], seq.clone()), // MsGetChrLimitGauge
+        (0x0079_5590, all(1), vec![], seq.clone()), // MsGetChrLimitGaugeMax
+        (0x0079_a200, vec![], vec![], ctb),         // MsGetCTBlist
+        (0x008b_1020, vec![], vec![], seq.clone()), // TOTransTexture
+        (0x008a_c2c0, vec![], vec![], seq.clone()), // TOGetBtlMenuTexAdrs
+        (0x008b_0b10, all(7), vec![], seq.clone()), // TOTransImageHL
+        (0x0090_47c0, all(3), vec![], seq.clone()), // TOSetPktBuffAdrs
+        (0x0090_4600, vec![], vec![], seq.clone()), // TOOpenPktbuff
+        (0x008a_1e50, vec![], vec![], seq.clone()), // 0x008a1e50
+        (0x008a_e2f0, all(3), vec![], seq.clone()), // TOSeqDraw
+        (0x008a_e530, all(2), vec![], seq.clone()), // TOSeqGetSceneState_008ae530
+        (0x0078_f8f0, all(2), vec![], seq.clone()), // MsGetRomBtlText
+        // ToGetBtlEasyFontWidth(text, &width, ..): width = cells[0]
+        (
+            0x0090_5290,
+            vec![0, 2, 3, 4],
+            vec![],
+            store_through(1, cells),
+        ),
+        (0x0090_16b0, all(7), vec![], seq.clone()), // TOMkpCrossExtMesFontLClut
+        (0x008f_3930, vec![], vec![], seq.clone()), // TOClosePktbuff
+        (0x008f_5bc0, vec![], vec![], seq.clone()), // TODrawKick
+        (0x008b_1350, all(2), vec![], seq.clone()), // setButtonData
+        (0x0064_2ec0, all(2), vec![], seq.clone()), // graphicSetButtonIconScale
+        (0x0090_29b0, all(3), vec![], seq.clone()), // TOMkpPadButtonData
+        (0x0064_2c60, vec![], vec![], seq.clone()), // graphicResetButtonIconScale
+        (0x008b_1330, vec![], vec![], seq.clone()), // resetButtonData
+        (0x008b_57c0, all(3), vec![], seq.clone()), // TOBtlSetMacroCommandType
+        (0x008b_57f0, all(3), vec![], seq.clone()), // TOBtlSetMacroCommandValue
+        (0x0089_dba0, all(2), vec![], seq.clone()), // TOBtlOpenSimpleHelpMes
+        (0x00a7_bbc0, all(5), vec![], seq),         // 0x00a7bbc0
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        if let Some(&(_, n)) = arity.iter().find(|e| e.0 == sym) {
+            let n = match sym {
+                0x0079_a200 => 1,
+                0x0090_5290 => 5,
+                _ => n,
+            };
+            assert_eq!(args.len(), n, "{sym:#x} arguments");
+        }
+        eax(m, sym, args)
+    };
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call_f64(at, args).unwrap()
+    };
+    let local = b.stack_range().start + 0x100;
+    let g = |a: &Oracle, s: u32| a.rebase(s);
+    let words = [1u32, 2, 3, 5, 0x30, 0x7f, 0x1000, u32::MAX, 0xffff_fff0];
+    let keys = alloc(a, b, 0x40);
+    let track = alloc(a, b, 0x10);
+    let buttons = alloc(a, b, 0x40);
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x40 {
+            let v = if rng.next().is_multiple_of(5) {
+                rng.next() | 1
+            } else {
+                words[(rng.next() % words.len() as u32) as usize]
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        for j in 0..4 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        let what = format!("round42 b {k}");
+        let r = match k % 7 {
+            0 | 1 => {
+                let n = [-1i32, 0, 1, 3, 8, 8][(rng.next() % 6) as usize];
+                put(a, b, g(a, 0x0133_f0ec), n);
+                for j in 0..8 {
+                    let id = [0xffu16, 0xff, 0, 3, 0x14, 0x1ff][(rng.next() % 6) as usize];
+                    put(a, b, g(a, 0x0133_f0f0) + 2 * j, id);
+                }
+                for j in 0..0x20 {
+                    let v = if rng.next().is_multiple_of(2) {
+                        rng.next() % 0x100
+                    } else {
+                        rng.next()
+                    };
+                    put(a, b, g(a, 0x0133_f988) + 4 * j, v);
+                }
+                put(a, b, g(a, 0x025d_0aa4), rng.next() as u16);
+                if k % 7 == 0 {
+                    eax(a, 0x0089_7af0, &[]);
+                    t::init_enemy_limit(b, call);
+                } else {
+                    eax(a, 0x0089_1220, &[]);
+                    t::ctrl_enemy_limit(b, call);
+                }
+                (0, 0)
+            }
+            2 => {
+                for j in 0..0x10 {
+                    put(a, b, list + 4 * j, rng.next());
+                }
+                for j in 0..0x100 {
+                    put(a, b, g(a, 0x0134_0440) + 4 * j, rng.next());
+                }
+                eax(a, 0x008a_0ce0, &[]);
+                t::init_ctb_window(b, local, call);
+                (0, 0)
+            }
+            3 => {
+                put(
+                    a,
+                    b,
+                    g(a, 0x0133_c93f),
+                    [0u8, 1, 0x80][(rng.next() % 3) as usize],
+                );
+                let w = if rng.next().is_multiple_of(4) {
+                    round38_quiet(rng)
+                } else {
+                    [0f32, 100.0, 37.5, 600.0][(rng.next() % 4) as usize].to_bits()
+                };
+                put(a, b, cells, w);
+                // the scene state: 3 now and then
+                put(
+                    a,
+                    b,
+                    table + 4 * 7,
+                    [3u32, 3, 2, 0x103][(rng.next() % 4) as usize],
+                );
+                eax(a, 0x0089_74a0, &[]);
+                t::draw_wakka_limit_window(b, local, call);
+                (0, 0)
+            }
+            4 => {
+                let state = [2i16, 3, 4, 4, 5, -1][(rng.next() % 6) as usize];
+                put(a, b, g(a, 0x0133_d6f4), state);
+                put(a, b, g(a, 0x0133_d6f6), rng.next() as u16);
+                let from = [0i16, 0, 1, 3, -1][(rng.next() % 5) as usize];
+                put(a, b, g(a, 0x0133_d6fc), from);
+                let to = [0i32, 1, 2, 4, 6, -1][(rng.next() % 6) as usize];
+                put(a, b, g(a, 0x0133_d700), to);
+                for j in 0..0x10 {
+                    put(a, b, buttons + 4 * j, rng.next());
+                }
+                put(a, b, g(a, 0x0133_d704), buttons + 2);
+                put(a, b, cells, round38_quiet(rng));
+                eax(a, 0x0089_2740, &[]);
+                t::draw_auron_limit_window(b, local, call, fcall);
+                (0, 0)
+            }
+            5 => {
+                let item = rng.next();
+                let n = [-2i32, -1, 0, 1, 2, 7, i32::MIN][(rng.next() % 7) as usize];
+                (
+                    eax(a, 0x0089_3510, &[item, n.cast_unsigned()]),
+                    tolib::bridge::btl_draw_get_item_message_window(b, item, n, call),
+                )
+            }
+            _ => {
+                for j in 0..0x10 {
+                    let v = [0x1000u32, 0x2000, 0x3000, 0x4000, 0x2001, 0x0801, 0x0401]
+                        [(rng.next() % 7) as usize]
+                        | (rng.next() % 3) << 16;
+                    put(a, b, keys + 4 * j, v);
+                }
+                put(
+                    a,
+                    b,
+                    track,
+                    [rng.next(), rng.next(), rng.next(), rng.next()],
+                );
+                put(
+                    a,
+                    b,
+                    track + 6,
+                    [0u16, 1, 0x8000][(rng.next() % 3) as usize],
+                );
+                put(a, b, track + 8, (rng.next() % 0x20) as u16);
+                put(a, b, track + 10, (rng.next() % 0x20) as u16);
+                let frames = [0u32, 1, 4, 10, 30][(rng.next() % 5) as usize];
+                let frame = match rng.next() % 4 {
+                    0 => 0,
+                    1 => frames,
+                    _ => rng.next() % 31,
+                };
+                let out = rng.next();
+                let args = [keys, track, frame, frames, out];
+                (
+                    eax(a, 0x00a7_b290, &args),
+                    scene::bridge::menu_scene_key_pick(b, args, call, fcall),
+                )
+            }
+        };
+        assert_eq!(r.0, r.1, "{what}");
+        same_memory(&what, a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn round42_windows_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round42_windows(&mut a, &mut b, &mut Xorshift(0x4042_0021));
+}
+
+#[test]
+fn round42_windows_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round42_windows(&mut a, &mut b, &mut Xorshift(0x4042_0022));
+}
+
+/// A stand-in tail: `ST0` = the next f32 of `table` (`counter` counts).
+fn round42_fseq(counter: u32, table: u32) -> Vec<u8> {
+    // mov ecx, [counter]; fld dword [table + ecx*4]; inc dword [counter]
+    let mut v = vec![0x8b, 0x0d];
+    v.extend_from_slice(&counter.to_le_bytes());
+    v.extend_from_slice(&[0xd9, 0x04, 0x8d]);
+    v.extend_from_slice(&table.to_le_bytes());
+    v.extend_from_slice(&[0xff, 0x05]);
+    v.extend_from_slice(&counter.to_le_bytes());
+    v
+}
+
+/// Round 42 group C: the Libra window's lines, the battle help line, the
+/// active character's cursor and the battle window callbacks, over
+/// logging stand-ins. The projection logs the four words of its point,
+/// writes `cells[2..4]` as the screen point and returns the next float of
+/// the table in `ST0`, as `sinf`/`cosf` do.
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round42_btl(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x4000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x400);
+    let cells = alloc(a, b, 0x20);
+    let bytes = [alloc(a, b, 0x20), alloc(a, b, 0x20)];
+    let menu = alloc(a, b, 4);
+    let seq = round38_seq(counter, table);
+    let fseq = round42_fseq(counter, table);
+    let ret = |p: u32| {
+        let mut v = vec![0xb8];
+        v.extend_from_slice(&p.to_le_bytes());
+        v
+    };
+    let mut com = store_through(1, cells);
+    com.extend(ret(cells + 4));
+    #[rustfmt::skip]
+    let mut project = vec![
+        0x8b, 0x54, 0x24, 0x08, 0x8b, 0x0d, // mov edx, [esp+8]; mov ecx, [cursor]
+    ];
+    project.extend_from_slice(&cursor.to_le_bytes());
+    for k in 0..4u8 {
+        project.extend_from_slice(&[0x8b, 0x42, 4 * k, 0x89, 0x41, 4 * k]); // mov eax, [edx+4k]; mov [ecx+4k], eax
+    }
+    project.extend_from_slice(&[0x83, 0x05]);
+    project.extend_from_slice(&cursor.to_le_bytes());
+    project.push(0x10);
+    project.extend_from_slice(&[0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d]); // mov eax, [esp+4]; mov ecx, [cells+8]
+    project.extend_from_slice(&(cells + 8).to_le_bytes());
+    project.extend_from_slice(&[0x89, 0x08, 0x8b, 0x0d]); // mov [eax], ecx; mov ecx, [cells+12]
+    project.extend_from_slice(&(cells + 12).to_le_bytes());
+    project.extend_from_slice(&[0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    project.extend(fseq.clone());
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0079_add0, all(1), vec![], seq.clone()), // MsGetRamChrHP
+        (0x0079_adf0, all(1), vec![], seq.clone()), // MsGetRamChrHPmax
+        (0x0078_faa0, all(1), vec![], ret(bytes[0])), // MsMenuDefCountStatus
+        (0x0078_fae0, all(1), vec![], ret(bytes[1])), // MsGetChrLibraName_0078fae0
+        (0x0078_fac0, all(1), vec![], seq.clone()), // MsGetChrLibraWord_0078fac0
+        (0x0078_5290, vec![], vec![], ret(menu)),   // MsGetSaveMenu
+        (0x0078_f8f0, all(2), vec![], seq.clone()), // MsGetRomBtlText
+        (0x0089_9ec0, all(1), vec![], seq.clone()), // TOBtlSetDirectHelpMes
+        (0x0089_97c0, all(1), vec![], seq.clone()), // TOBtlSetChangeHelpMes
+        (0x0089_9970, all(1), vec![], seq.clone()), // TOBtlSetCommandHelpMes
+        (0x0079_a4b0, vec![0], vec![], com),        // MsGetComData
+        (0x0089_a8b0, all(1), vec![], seq.clone()), // TOBtlSetTargetHelpMes
+        (0x0079_50b0, all(2), vec![], seq.clone()), // MsGetChrHeadPos
+        (0x004c_eae0, all(1), vec![], fseq.clone()), // sinf
+        (0x004c_eac0, all(1), vec![], fseq),        // cosf
+        (0x0064_28f0, vec![], vec![], project), // graphicProject3DPointOntoScreenConsider2DScene
+        (0x0090_1190, all(8), vec![], seq.clone()), // TOMkpActiveChrCursor
+        (0x0078_f700, all(1), vec![], seq.clone()), // MsCheckLeftWindow
+        (0x008a_2030, all(1), vec![], seq),     // TOInitGilInput
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        if let Some(&(_, n)) = arity.iter().find(|e| e.0 == sym) {
+            let n = match sym {
+                0x0079_a4b0 | 0x0064_28f0 => 2,
+                _ => n,
+            };
+            assert_eq!(args.len(), n, "{sym:#x} arguments");
+        }
+        eax(m, sym, args)
+    };
+    let fcall = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        let at = m.rebase(sym);
+        m.call_f64(at, args).unwrap()
+    };
+    let local = b.stack_range().start + 0x100;
+    let g = |a: &Oracle, s: u32| a.rebase(s);
+    let w = alloc(a, b, 0x100);
+    let list = alloc(a, b, 0x40);
+    let words = [0u32, 1, 2, 3, 0xff, 0x3024, 0x8000, u32::MAX];
+    let floats = [0f32, 1.0, -1.0, 0.5, 300.0, -0.0, 1e-30];
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        let float_table = k % 4 == 2;
+        for j in 0..0x40 {
+            let v = if float_table {
+                if rng.next().is_multiple_of(5) {
+                    round38_quiet(rng)
+                } else {
+                    floats[(rng.next() % floats.len() as u32) as usize].to_bits()
+                }
+            } else if rng.next().is_multiple_of(4) {
+                rng.next()
+            } else {
+                words[(rng.next() % words.len() as u32) as usize]
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        for j in 0..8 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        let what = format!("round42 c {k}");
+        match k % 4 {
+            0 => {
+                for buf in bytes {
+                    for j in 0..0x20 {
+                        let v = [0u8, 0xff, 0xff, 1, 0x80][(rng.next() % 5) as usize];
+                        put(a, b, buf + j, v);
+                    }
+                }
+                put(a, b, table + 8, rng.next());
+                let n = [0u16, 0, 3, 0xffff, 0x7fff][(rng.next() % 5) as usize];
+                put(a, b, g(a, 0x0133_f6b0), n);
+                for j in 0..0x40 {
+                    put(a, b, g(a, 0x0133_f6aa) + 4 * j, rng.next());
+                }
+                let chr = rng.next();
+                eax(a, 0x0089_a160, &[chr]);
+                t::set_libra_window_param(b, chr, call);
+            }
+            1 => {
+                put(
+                    a,
+                    b,
+                    g(a, 0x023c_c088),
+                    [0xffu16, 0, 1, 0x1ff][(rng.next() % 4) as usize],
+                );
+                put(a, b, g(a, 0x025d_09d4), rng.next());
+                put(a, b, menu, rng.next());
+                let depth = [0i8, 1, 2, 3][(rng.next() % 4) as usize];
+                put(a, b, g(a, 0x023c_c092), depth);
+                let win = g(a, 0x0133_c952) + (0xf0 * i32::from(depth)).cast_unsigned();
+                put(a, b, win, [0u8, 0, 1, 1, 2][(rng.next() % 5) as usize]);
+                let commands = [
+                    0x3002u16, 0x3024, 0x302a, 0x302b, 0x3029, 0x3056, 0x3116, 0x3117, 0x3118,
+                    0x3119, 0x3123, 0x3124, 0x1000, 0xffff,
+                ];
+                put(
+                    a,
+                    b,
+                    win + 0xa,
+                    commands[(rng.next() % commands.len() as u32) as usize],
+                );
+                for j in 0..0x10 {
+                    let v = [0xffu16, 0xff, 1, 0x8001, 0x7fff][(rng.next() % 5) as usize];
+                    put(a, b, list + 2 * j, v);
+                }
+                put(a, b, win + 0x1e, list + 8);
+                put(
+                    a,
+                    b,
+                    win + 0x40,
+                    [0i16, 1, -1, 3][(rng.next() % 4) as usize],
+                );
+                put(
+                    a,
+                    b,
+                    g(a, 0x0133_d178),
+                    [0u32, 0x8000, 0x3_8000, 0x4_0000][(rng.next() % 4) as usize],
+                );
+                put(
+                    a,
+                    b,
+                    g(a, 0x0133_d0e0),
+                    [0u32, 1, 3, 4][(rng.next() % 4) as usize],
+                );
+                put(a, b, g(a, 0x0133_d1f4), rng.next() as u16);
+                put(a, b, g(a, 0x0133_c93c), rng.next() as u8);
+                eax(a, 0x0089_12e0, &[]);
+                t::ctrl_help_win(b, local, call);
+            }
+            2 => {
+                for j in 0..0x30 {
+                    let v = if rng.next().is_multiple_of(4) {
+                        round38_quiet(rng)
+                    } else {
+                        floats[(rng.next() % floats.len() as u32) as usize].to_bits()
+                    };
+                    put(a, b, g(a, 0x0133_fa08) + 4 * j, v);
+                }
+                put(a, b, g(a, 0x0133_f7d4), rng.next());
+                let chr = rng.next();
+                eax(a, 0x0089_2590, &[chr]);
+                t::draw_active_chr_cursor(b, chr, local, call, fcall);
+            }
+            _ => {
+                for j in 0..0x40 {
+                    put(a, b, w + 4 * j, rng.next());
+                }
+                let kind = match rng.next() % 4 {
+                    0 => rng.next() as u16,
+                    1 => 0,
+                    _ => (rng.next() % 0x18) as u16,
+                };
+                put(a, b, w + 6, kind);
+                put(
+                    a,
+                    b,
+                    w + 0xc,
+                    [0x3024u16, 0x3025, 0][(rng.next() % 3) as usize],
+                );
+                put(
+                    a,
+                    b,
+                    g(a, 0x0134_0452),
+                    [0u8, 1, 2][(rng.next() % 3) as usize],
+                );
+                eax(a, 0x008a_0de0, &[w]);
+                t::set_callback(b, w, call);
+            }
+        }
+        same_memory(&what, a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn round42_btl_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round42_btl(&mut a, &mut b, &mut Xorshift(0x4042_0031));
+}
+
+#[test]
+fn round42_btl_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round42_btl(&mut a, &mut b, &mut Xorshift(0x4042_0032));
+}
+
+/// Round 42 group D: `TOBtlGetTargetPad` over logging stand-ins. The
+/// cursor type stays in 0..=3 (higher ones read the original's frame);
+/// counts and the near-target search's index stay inside the target lists.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round42_target_pad(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x100);
+    let kind = alloc(a, b, 4);
+    let near = alloc(a, b, 4);
+    let seq = round38_seq(counter, table);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0078_0ce0, vec![], vec![], ret_cell(kind)), // MsBattleCursorType
+        (0x0089_90f0, vec![], vec![], ret_cell(near)), // TOBtlSearchRevNearTarget
+        (0x0088_6ba0, all(1), vec![], seq.clone()),    // SndPlayClick
+        (0x0079_2de0, all(2), vec![], seq.clone()),    // MsSetBtlTarget
+        (0x0079_2a40, all(1), vec![], seq.clone()),    // MsResetBtlTarget
+        (0x0089_a630, vec![], vec![], seq.clone()),    // TOBtlSetPrevAction
+        (0x0089_a330, all(2), vec![], seq),            // TOBtlSetNextAction
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        if let Some(&(_, n)) = arity.iter().find(|e| e.0 == sym) {
+            assert_eq!(args.len(), n, "{sym:#x} arguments");
+        }
+        eax(m, sym, args)
+    };
+    let g = |a: &Oracle, s: u32| a.rebase(s);
+    let w = alloc(a, b, 0x20);
+    let own = alloc(a, b, 0x40);
+    let pads = [
+        0u16, 0x1000, 0x2000, 0x4000, 0x8000, 0x20, 0x40, 0x60, 0x3000, 0xffff,
+    ];
+    let pick = |rng: &mut Xorshift, v: &[u16]| v[(rng.next() % v.len() as u32) as usize];
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x40 {
+            let v = [0u32, 1, 0xffff_ffff, 0x8000_0000, 5][(rng.next() % 5) as usize];
+            put(a, b, table + 4 * j, v);
+        }
+        put(a, b, kind, (rng.next() % 4) | (rng.next() & 0xff00));
+        put(a, b, near, (rng.next() % 8) | (rng.next() & 0xffff_0000));
+        for j in 0..0x10 {
+            let v = [rng.next(), 1, 0, 0x0800_0001][(rng.next() % 4) as usize];
+            put(a, b, own + 4 * j, v);
+        }
+        for j in 0..0x30 {
+            let v = [rng.next(), 1, 0][(rng.next() % 3) as usize];
+            put(a, b, g(a, 0x0133_d178) + 4 * j, v);
+        }
+        let ptr = [own, g(a, 0x0133_d180), g(a, 0x0133_d1d4)][(rng.next() % 3) as usize];
+        put(a, b, g(a, 0x0133_d1f8), ptr);
+        put(a, b, g(a, 0x0133_d1f6), (rng.next() % 8) as u16 + 1);
+        let index = [0u16, 1, 3, 7, 8, 0xffff][(rng.next() % 6) as usize];
+        put(a, b, g(a, 0x0133_d1fc), index);
+        put(a, b, g(a, 0x0133_d1fe), pick(rng, &[0, 1, 1, 2]));
+        put(a, b, g(a, 0x0133_d200), pick(rng, &[0, 1, 2]));
+        for at in [0x0133_d1d0u32, 0x0133_d17c] {
+            put(a, b, g(a, at), pick(rng, &[0, 1, 3, 8, 0xffff]));
+        }
+        for at in [0x025d_09d6u32, 0x025d_09d4] {
+            let v = if rng.next().is_multiple_of(3) {
+                rng.next() as u16
+            } else {
+                pick(rng, &pads)
+            };
+            put(a, b, g(a, at), v);
+        }
+        // a count past 0x7fff (a signed compare), the index kept in range
+        if k % 16 == 0 {
+            put(a, b, g(a, 0x0133_d1f6), 0x8001u16);
+            put(a, b, g(a, 0x0133_d1fc), pick(rng, &[1, 3]));
+            put(a, b, g(a, 0x025d_09d6), 0u16);
+        }
+        put(
+            a,
+            b,
+            g(a, 0x0133_d0e0),
+            [0u32, 3, 1, 2][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_d6e0),
+            [0u32, 1, 2][(rng.next() % 3) as usize],
+        );
+        put(a, b, g(a, 0x0133_d0d0), rng.next());
+        let depth = [0i8, 1, 2, 3][(rng.next() % 4) as usize];
+        put(a, b, g(a, 0x023c_c092), depth);
+        put(a, b, w + 8, rng.next());
+        let what = format!("round42 d {k}");
+        eax(a, 0x0089_d390, &[w]);
+        t::get_target_pad(b, w, call);
+        same_memory(&what, a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn round42_target_pad_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round42_target_pad(&mut a, &mut b, &mut Xorshift(0x4042_0041));
+}
+
+#[test]
+fn round42_target_pad_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round42_target_pad(&mut a, &mut b, &mut Xorshift(0x4042_0042));
+}
