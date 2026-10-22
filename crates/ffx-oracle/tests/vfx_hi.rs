@@ -2620,6 +2620,41 @@ fn op_random_slots_match_the_original() {
     }
 }
 
+/// `op1_md_draw(obj, init)` against the original: each of its seven
+/// paths a recorder of its two arguments that returns its own cell.
+#[test]
+fn op1_md_draw_matches_the_original() {
+    use ffx_vfx::hi_draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_5750);
+        let rets = p.alloc(0x20);
+        for (k, sym) in (0u32..).zip([
+            0x00a6_bae0u32,
+            0x00a6_bfe0,
+            0x00a6_b710,
+            0x00a6_c3d0,
+            0x00a6_acb0,
+            0x00a6_c8b0,
+            0x00a6_b220,
+        ]) {
+            p.set(rets + 4 * k, 0x1000 + k);
+            deref_recorder_with(&mut p, sym, &[0, 0], Some(rets + 4 * k));
+        }
+        let init = p.alloc(4);
+        for round in 0..2000 {
+            let f = rng.next() & rng.pick(&[0xffff_ffffu32, 0x2384, 0x0384, 0x0084, 0x0300, 0]);
+            p.set(init, f);
+            let obj = rng.next();
+            p.check(
+                &format!("op1_md_draw round {round} ({f:#x})"),
+                0x00a6_5750,
+                &[obj, init],
+                |m| Some(d::op1_md_draw(m, obj, init, &mut call_original)),
+            );
+        }
+    }
+}
+
 /// A stand-in at `sym` that returns the words of `table` in turn (one a
 /// call, wrapping after `n`); returns the call count's cell.
 fn sequence(p: &mut Pair, sym: u32, table: u32, n: u32) -> u32 {

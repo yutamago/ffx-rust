@@ -5677,6 +5677,11 @@ ported! {
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_DIS_POS_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
+    /// `pppDrawFilterDraw(obj, rec, prog)`: the scrolls, then the packet;
+    /// its `eax`.
+    pppDrawFilterDraw @ 0x0075_7280 => extern "C" fn ppp_draw_filter_draw(obj: u32, rec: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_draw_filter_draw(&mut mem(), obj, rec, prog, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppDrawFilterPacket_00756740(obj, tex, prog)`: its packet record and
     /// texture sizes in a buffer on this shim's stack (the frame pointer at
     /// its end).

@@ -11649,6 +11649,62 @@ fn opus_0582_break_make_matches_the_original() {
 }
 
 #[test]
+fn ppp_draw_filter_draw_matches_the_original() {
+    use draw::bridge as d;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_7280);
+        let rets = p.alloc(8);
+        far_recorder(&mut p, 0x00a4_46a0, &[0], Some(rets)); // is_ptr32_null
+        far_recorder(&mut p, 0x00a4_4700, &[0], Some(rets + 4)); // set_ptr32
+        deref_recorder(&mut p, 0x0075_6740, &[0, 0, 0]); // pppDrawFilterPacket
+        let (obj, rec, prog, k) = (p.alloc(0x200), p.alloc(0x40), p.alloc(0x20), p.alloc(0x10));
+        for round in 0..2000 {
+            p.fill(obj, 0x200, &mut rng);
+            p.fill(rec, 0x40, &mut rng);
+            p.set(prog + 0xc, k);
+            p.set(k + 4, rng.below(0x40) * 4);
+            p.set(rets, u32::from(rng.chance(30)));
+            p.set(rets + 4, rng.next());
+            let (w, h) = (rng.below(8), rng.below(8));
+            p.set(rec + 0xc, w);
+            p.set(rec + 0x10, h);
+            for (at, step) in [(0x1cu32, 0u32), (0x20, 1)] {
+                let v = match rng.below(4) {
+                    0 => rng.below(0x400),
+                    1 => rng.below(0x400).wrapping_neg(),
+                    2 => rng.next(),
+                    _ => step,
+                };
+                p.set(rec + at, v);
+            }
+            let wa = obj + 0xa0 + p.get::<u32>(k + 4);
+            for at in [4u32, 8] {
+                let v = match rng.below(3) {
+                    0 => rng.below(0x900),
+                    1 => rng.below(0x100).wrapping_neg(),
+                    _ => rng.next(),
+                };
+                p.set(wa + at, v);
+            }
+            p.check(
+                &format!("pppDrawFilterDraw round {round}"),
+                0x0075_7280,
+                &[obj, rec, prog],
+                |m| {
+                    Some(d::ppp_draw_filter_draw(
+                        m,
+                        obj,
+                        rec,
+                        prog,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
 #[allow(clippy::many_single_char_names)]
 fn z_crct_shp_draw_matches_the_original() {
     use mat::bridge as mt;

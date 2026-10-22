@@ -3042,4 +3042,53 @@ pub mod bridge {
         mem.write(obj.wrapping_add(8), ot);
         fun(mem, call, 0x007e_6a60, &[0x1a0])
     }
+
+    /// `pppDrawFilterDraw(obj, rec, prog)` (`0x00757280`, the
+    /// `pppDrawFilter` program's draw): its work area `w = obj + [[prog
+    /// +0xc] +4] + 0xa0` gets `set_ptr32(rec)` and two zero scroll words
+    /// while `is_ptr32_null(w[0])`; the scrolls `w[1]`, `w[2]` step by `rec
+    /// +0x1c`, `+0x20` and wrap into `[0, 256 rec +0xc)` and `[0, 256 rec
+    /// +0x10)` (one add below 0, one subtract at or past the end, unsigned
+    /// compares), then `pppDrawFilterPacket(obj, rec, prog)`. Callees
+    /// through `call`; returns the packet's `eax`.
+    pub fn ppp_draw_filter_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        rec: u32,
+        prog: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let work = |mem: &M| {
+            let k: u32 = mem.read(prog.wrapping_add(0xc));
+            obj.wrapping_add(0xa0)
+                .wrapping_add(mem.read::<u32>(k.wrapping_add(4)))
+        };
+        let w = work(mem);
+        let head: u32 = mem.read(w);
+        if fun(mem, call, 0x00a4_46a0, &[head]) != 0 {
+            let p = fun(mem, call, 0x00a4_4700, &[rec]);
+            mem.write(w, p);
+            mem.write(w.wrapping_add(8), 0u32);
+            mem.write(w.wrapping_add(4), 0u32);
+        }
+        let w = work(mem);
+        for (at, step) in [(4u32, 0x1cu32), (8, 0x20)] {
+            let s = mem
+                .read::<u32>(w.wrapping_add(at))
+                .wrapping_add(mem.read(rec.wrapping_add(step)));
+            mem.write(w.wrapping_add(at), s);
+        }
+        let ends = [0xcu32, 0x10].map(|o| mem.read::<u32>(rec.wrapping_add(o)) << 8);
+        for (at, end) in [4u32, 8].into_iter().zip(ends) {
+            let s: u32 = mem.read(w.wrapping_add(at));
+            if s.cast_signed() < 0 {
+                mem.write(w.wrapping_add(at), s.wrapping_add(end));
+            }
+            let s: u32 = mem.read(w.wrapping_add(at));
+            if s >= end {
+                mem.write(w.wrapping_add(at), s.wrapping_sub(end));
+            }
+        }
+        fun(mem, call, 0x0075_6740, &[obj, rec, prog])
+    }
 }

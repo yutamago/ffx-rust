@@ -1499,4 +1499,35 @@ pub mod bridge {
         go(mem, OP_SPR_FREE, &[], call);
         sink
     }
+
+    /// `op1_md_draw(obj, init)` (`0x00a65750`, Fahrenheit's name): picks a
+    /// draw path by the init block's flags `f = init[0]` and tail-jumps to
+    /// it with the same two arguments (through `call`), returning its
+    /// `eax`: `0x2000` `op_md_persp_00a6bae0`; else bit 2 with any of
+    /// `0x300` `op_md_x64_fog_00a6bfe0`, without `op_md_x64_00a6b710`; else
+    /// bit 7 (the low byte negative) with `0x300` `op_md_flag80_fog_00a6c3d0`,
+    /// without `op_md_flag80_00a6acb0`; else `op_md_one8_fog` with `0x300`,
+    /// `op_md_one8` without. (The original also stores `init` back into its
+    /// own argument slot before each jump, the value already there.)
+    pub fn op1_md_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f: u32 = mem.read(init);
+        let fog = f & 0x300 != 0;
+        let path = if f & 0x2000 != 0 {
+            0x00a6_bae0
+        } else if f & 4 != 0 {
+            if fog { 0x00a6_bfe0 } else { 0x00a6_b710 }
+        } else if f & 0x80 != 0 {
+            if fog { 0x00a6_c3d0 } else { 0x00a6_acb0 }
+        } else if fog {
+            0x00a6_c8b0
+        } else {
+            0x00a6_b220
+        };
+        go(mem, path, &[obj, init], call)
+    }
 }
