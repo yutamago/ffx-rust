@@ -204,3 +204,21 @@ harvest_test!(
         );
     }
 );
+// effects (round 47)
+harvest_test!(
+    ppp_ke_z_crct_draw,
+    0x0073_5160,
+    args = 3,
+    |m: &mut Oracle, s| {
+        // the local matrix (frame - 0x44) in stack scratch
+        let frame = m.stack_range().start + 0x144;
+        ffx_vfx::mat::bridge::ppp_ke_z_crct_draw(
+            m,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            frame,
+            &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        )
+    }
+);
