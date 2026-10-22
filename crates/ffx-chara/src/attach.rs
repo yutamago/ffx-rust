@@ -315,6 +315,33 @@ pub mod bridge {
         let (_, e) = elem_get_attr(mem, chr, id, None, offset);
         crate::matrix::bridge::ch_elem_get_matrix(mem, chr, e, out);
     }
+
+    /// `op_et_bindeff2_walk(chr, pos, 0, 0)` (`0x007fb740`), called through
+    /// the game.
+    pub const OP_ET_BINDEFF2_WALK: u32 = 0x007f_b740;
+    /// Bytes of scratch [`ch_sound_foot_effect`] needs: the two feet
+    /// (`[ebp-0x24]`, `[ebp-0x14]`).
+    pub const FOOT_EFFECT_SCRATCH: u32 = 0x20;
+
+    /// `Ch_SoundFootEffect_008338d0(chr)` (name ours; caller `Ch_Sound`'s
+    /// footstep events): optional positions 8 and 7 (`Ch_OptposGet`, the
+    /// feet) into `scratch + 0x10` and `scratch`; the walk effect
+    /// (`op_et_bindeff2_walk(chr, foot, 0, 0)`) at position 8 when 7's y is
+    /// below 8's, else at 7 (also when either y is NaN). EAX is the
+    /// effect's.
+    pub fn ch_sound_foot_effect<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (seven, eight) = (scratch, scratch + 0x10);
+        ch_optpos_get(mem, chr, 8, eight);
+        ch_optpos_get(mem, chr, 7, seven);
+        let (y8, y7) = (f(mem, eight + 4), f(mem, seven + 4));
+        let foot = if y7 < y8 { eight } else { seven };
+        call(mem, mem.rebase(OP_ET_BINDEFF2_WALK), &[chr, foot, 0, 0])
+    }
 }
 
 #[cfg(test)]

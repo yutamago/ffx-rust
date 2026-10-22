@@ -997,8 +997,43 @@ pub mod bridge {
         }
     }
 
-    /// `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`; not ported).
+    /// `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`, below),
+    /// called through the game.
     pub const SET_SHADE_ID_RELATION: u32 = 0x0082_b7a0;
+    /// `Ch_SetShadeID(chr, v, frames)` (`0x0082b720`), called through the
+    /// game.
+    pub const SET_SHADE_ID: u32 = 0x0082_b720;
+
+    /// `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`): every other
+    /// active character bound to `chr` (`+0x19c`) gets `Ch_SetShadeID(c,
+    /// v, frames)` (`v` through the x87, `fld`/`fstp`); the array and its
+    /// count are read again after each call, as the walk's end. EAX is that
+    /// end (`array + count * 0x880`).
+    pub fn ch_set_shade_id_relation<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        v: f32,
+        frames: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::handle::bridge::{CHR_ARRAY, CHR_COUNT};
+        let end = |mem: &M| {
+            let n = CHR_COUNT.get(mem).cast_unsigned();
+            CHR_ARRAY.get(mem).wrapping_add(n.wrapping_mul(l::SIZE))
+        };
+        let v = x87::load(v).to_bits();
+        let mut c = CHR_ARRAY.get(mem);
+        while c != end(mem) {
+            if mem.read::<u8>(c.wrapping_add(l::ACTIVE)) != 0
+                && c != chr
+                && mem.read::<u32>(c.wrapping_add(0x19c)) == chr
+            {
+                call(mem, mem.rebase(SET_SHADE_ID), &[c, v, frames]);
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+        c
+    }
 
     /// `Ch_SetShadeID(chr, v, frames)` (`0x0082b720`; callers
     /// `Ch_Allocate`, `Ch_SetShadeIDRelation`, `Ch_IdShadeCalc`,
@@ -1087,6 +1122,169 @@ pub mod bridge {
     /// (hide, instance) pairs.
     pub const F117_HIDE_COUNT: Global<i32> = Global::new(0x012f_fad4);
     pub const F117_HIDES: Global<[u32; 2]> = Global::new(0x023c_44c0);
+
+    /// `AtelGetEventCharHandleFromID(i)` (`0x0086b3a0`), called through the
+    /// game.
+    pub const EVENT_CHAR_HANDLE: u32 = 0x0086_b3a0;
+    /// The `+0x194` flag bits [`ch_work_restore`] takes from the saved copy.
+    pub const RESTORED_FLAGS: [u32; 14] = [
+        2,
+        4,
+        0x40,
+        0x80,
+        0x100,
+        0x800,
+        0x4_0000,
+        0x8_0000,
+        0x10_0000,
+        0x20_0000,
+        0x40_0000,
+        0x2000_0000,
+        0x4000_0000,
+        0x7fff_ffff,
+    ];
+    /// The `+0x198` flag bits it takes (after bit 1).
+    pub const RESTORED_FLAGS2: [u32; 5] = [4, 8, 0x80, 0x100, 0x200];
+
+    /// `Ch_WorkRestore(chr, saved)` (`0x00828620`; caller `0x0086e5b0`):
+    /// the character's state back from a saved copy, in the original's
+    /// order: position, target and second point (`+0xc..+0x38`), scale,
+    /// offset and ground normal (`+0x5c..+0x88`), shade multipliers
+    /// (`+0xbc..+0xc8`), speed to hit height (`+0x158..+0x174`, `+0x17c`,
+    /// through the x87), the mode bytes (`+0x180..+0x188` but the sound id
+    /// `+0x184`), some flag bits (`+0x194`: bits 0-2, 6-8, 11, 18-22, 29-31;
+    /// `+0x198`: bits 1-3, 7-9; merged one at a time as the original does),
+    /// the binding (`+0x1a0..+0x1b8`, the scale through the x87), effect
+    /// level and the 50 words from `+0x40c`, mouth and thicknesses
+    /// (`+0x4d4..+0x500`, the floats through the x87), `+0x6d8`, the `u16`
+    /// `+0x750`, the id floats `+0x814..+0x81c`, the fades (21 words from
+    /// `+0x330`) and 32 words from `+0x75c`. The parent (`+0x19c`) is the
+    /// event character of the bound id (`+0x1b8`, as it was before the
+    /// fades were copied; `AtelGetEventCharHandleFromID`), or none for -1.
+    /// EAX: that handle, or -1.
+    pub fn ch_work_restore<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        saved: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let copy = |mem: &mut M, o: u32| {
+            let v: u32 = mem.read(saved.wrapping_add(o));
+            mem.write(chr.wrapping_add(o), v);
+        };
+        let float = |mem: &mut M, o: u32| {
+            let v = x87::load(f(mem, saved.wrapping_add(o)));
+            mem.write(chr.wrapping_add(o), v);
+        };
+        let words = |mem: &mut M, o: u32, n: u32| {
+            for k in 0..n {
+                let v: u32 = mem.read(saved.wrapping_add(o + 4 * k));
+                mem.write(chr.wrapping_add(o + 4 * k), v);
+            }
+        };
+        for o in (0xc..=0x38).step_by(4).chain((0x5c..=0x88).step_by(4)) {
+            copy(mem, o);
+        }
+        for o in (0xbc..=0xc8).step_by(4) {
+            copy(mem, o);
+        }
+        for o in (0x158..=0x174).step_by(4).chain([0x17c]) {
+            float(mem, o);
+        }
+        for o in [0x180u32, 0x181, 0x182, 0x183, 0x185, 0x186, 0x187, 0x188] {
+            let v: u8 = mem.read(saved.wrapping_add(o));
+            mem.write(chr.wrapping_add(o), v);
+        }
+        let merge = |mem: &mut M, o: u32, first: u32, masks: &[u32], last_from_saved: bool| {
+            let (src, dst) = (saved.wrapping_add(o), chr.wrapping_add(o));
+            let d: u32 = mem.read(dst);
+            let mut u = d ^ ((d ^ mem.read::<u32>(src)) & first);
+            mem.write(dst, u);
+            for (k, &m) in masks.iter().enumerate() {
+                let s: u32 = mem.read(src);
+                u = if last_from_saved && k + 1 == masks.len() {
+                    ((s ^ u) & m) ^ s
+                } else {
+                    ((s ^ u) & m) ^ u
+                };
+                mem.write(dst, u);
+            }
+        };
+        merge(mem, l::FLAGS, 1, &RESTORED_FLAGS, true);
+        merge(mem, l::FLAGS2, 2, &RESTORED_FLAGS2, false);
+        for o in [0x1a0u32, 0x1a4, 0x1a8, 0x1ac, 0x1b0] {
+            copy(mem, o);
+        }
+        float(mem, 0x1b4);
+        copy(mem, 0x1b8);
+        copy(mem, 0x408);
+        words(mem, 0x40c, 0x32);
+        for o in [0x4d4u32, 0x4d8, 0x4dc, 0x4e0] {
+            copy(mem, o);
+        }
+        for o in [0x4e4u32, 0x4ec, 0x4f0, 0x4f4, 0x4f8, 0x4fc, 0x500] {
+            float(mem, o);
+        }
+        copy(mem, 0x6d8);
+        let v: u16 = mem.read(saved.wrapping_add(0x750));
+        mem.write(chr.wrapping_add(0x750), v);
+        let bound: u32 = mem.read(chr.wrapping_add(0x1b8));
+        for o in [0x814u32, 0x818, 0x81c] {
+            float(mem, o);
+        }
+        words(mem, 0x330, 0x15);
+        words(mem, 0x75c, 0x20);
+        if bound == u32::MAX {
+            mem.write(chr.wrapping_add(0x19c), 0u32);
+            return bound;
+        }
+        let h = call(mem, mem.rebase(EVENT_CHAR_HANDLE), &[bound]);
+        mem.write(chr.wrapping_add(0x19c), h);
+        h
+    }
+
+    /// `graphicCharacterInstanceSetMeshSegmentAlpha(inst, id, i, a)`
+    /// (`0x0063bc50`) and `Ch_ModelSetAlpha`'s error format.
+    pub const SET_MESH_SEGMENT_ALPHA: u32 = 0x0063_bc50;
+    pub const MODEL_SET_ALPHA_FORMAT: u32 = 0x00b5_97e8;
+
+    /// `Ch_ModelSetAlpha(chr, i, a)` (`0x0082ae30`): `a` (through the x87,
+    /// so a signalling NaN is quieted) into model `i`'s alpha (`+0x14` of
+    /// the 0x38-byte models at `+0x1bc`) and to the renderer
+    /// (`graphicCharacterInstanceSetMeshSegmentAlpha(+0x830, id, i, a)`),
+    /// whose `eax` it returns. For `i` not below the header's model count
+    /// (compared signed) it prints `"VIRTUOS ERROR: Ch_ModelSetAlpha..."`
+    /// to `stderr` instead and returns `fprintf`'s `eax`.
+    pub fn ch_model_set_alpha<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        i: u32,
+        a: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let hdr: u32 = mem.read(chr + 0x1c0);
+        if i.cast_signed() >= i32::from(mem.read::<u16>(hdr + 6)) {
+            let name: u32 = mem.read(chr + 4);
+            let f = mem.read(mem.rebase(IOB_FUNC_SLOT));
+            let iob = call(mem, f, &[]);
+            let f = mem.read(mem.rebase(FPRINTF_SLOT));
+            let fmt = mem.rebase(MODEL_SET_ALPHA_FORMAT);
+            return call(mem, f, &[iob.wrapping_add(0x40), fmt, name, i]);
+        }
+        let models: u32 = mem.read(chr + 0x1bc);
+        let a = x87::load(a);
+        mem.write(
+            models.wrapping_add(i.wrapping_mul(0x38)).wrapping_add(0x14),
+            a,
+        );
+        let id = u32::from(mem.read::<u16>(chr));
+        let inst: u32 = mem.read(chr + 0x830);
+        call(
+            mem,
+            mem.rebase(SET_MESH_SEGMENT_ALPHA),
+            &[inst, id, i, a.to_bits()],
+        )
+    }
 
     /// `Ch_ModelSetHide(chr, i, hide)` (`0x0082aea0`): bit 0 of `hide`
     /// into model `i`'s hide byte (`+0x18` of the 0x38-byte models at

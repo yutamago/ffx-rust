@@ -2301,6 +2301,33 @@ ported! {
     SG_UpdateMotion @ 0x0083_8c90 => extern "C" fn sg_update_motion(chr: u32, apply: u32) {
         seq::bridge::update_motion(&mut mem(), chr, apply);
     }
+    // ---- chara-main-map round 1
+    /// `Sg_CacheDisposeChr(id)`: the last `Cache_Dispose`'s `eax`.
+    Sg_CacheDisposeChr @ 0x0084_0e60 => extern "C" fn sg_cache_dispose_chr(id: u32) -> u32 {
+        state::bridge::cache_dispose_chr(&mut mem(), id)
+    }
+    /// `Sg_EventjumpDispose()`: the last `dbgPrintf`'s `eax`.
+    Sg_EventjumpDispose @ 0x0083_b420 => extern "C" fn sg_eventjump_dispose() -> u32 {
+        state::bridge::eventjump_dispose(&mut mem())
+    }
+    /// `Sg_EventjumpCacheChrs_0083b670()`: `Ch_ReadSync`'s `eax`.
+    Sg_EventjumpCacheChrs_0083b670 @ 0x0083_b670 => extern "C" fn sg_eventjump_cache_chrs() -> u32 {
+        state::bridge::eventjump_cache_chrs(&mut mem())
+    }
+    /// `AbmapDrawNodesEamap_00a51340()`: void.
+    AbmapDrawNodesEamap_00a51340 @ 0x00a5_1340 => extern "C" fn abmap_draw_nodes_eamap() {
+        // laid out and aligned as the original's frame (`ebp - 0x100` on 16)
+        #[repr(C, align(16))]
+        struct Work([u8; abmap::bridge::EAMAP_WORK as usize]);
+        let mut work = Work([0; abmap::bridge::EAMAP_WORK as usize]);
+        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        abmap::bridge::abmap_draw_nodes_eamap(&mut mem(), w, &mut |_, f, a| super::call_cdecl(f, a));
+        std::hint::black_box(&mut work);
+    }
+    /// `MovieCdReadTaskLoop_0076e660()`: void (its caller ignores `eax`).
+    MovieCdReadTaskLoop_0076e660 @ 0x0076_e660 => extern "C" fn movie_cd_read_task_loop() {
+        cdread::bridge::movie_cd_read_task_loop(&mut mem());
+    }
 }
 
 /// `Phyre_PTimerWin32_GetTime()` (`0x0042fd80`): the game's clock in

@@ -3919,6 +3919,10 @@ ported! {
     MsSetChrVisible @ 0x0079_6660 => extern "C" fn ms_set_chr_visible(i: u32, v: u32) -> u32 {
         visible::ms_set_chr_visible(&mut mem(), &mut call_ptr, i, v)
     }
+    /// `MsSetMonsterVisible_007969a0(m, v)`: `m + 0x14`.
+    MsSetMonsterVisible_007969a0 @ 0x0079_69a0 => extern "C" fn ms_set_monster_visible(m: u32, v: u32) -> u32 {
+        visible::ms_set_monster_visible(&mut mem(), &mut call_ptr, m, v)
+    }
     /// `MsSetChrVisibleAppear(i, v)`.
     MsSetChrVisibleAppear @ 0x0079_66a0 => extern "C" fn ms_set_chr_visible_appear(i: u32, v: u32) -> u32 {
         visible::ms_set_chr_visible_appear(&mut mem(), &mut call_ptr, i, v)

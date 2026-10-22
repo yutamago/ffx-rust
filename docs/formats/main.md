@@ -872,3 +872,22 @@ g_SplineNearSamples) / f32(i*i + 1))` (`0x01a85f34`); the spline at
 `TkMtCalcSpline`) gives three squared distances, each difference stored as
 an `f32`. Equal side distances end it at `t`; a `t` that leaves 0..1 ends
 it with `t` moved back as the result. The `f32` result is in `ST0`.
+
+## Event jumps, the area map and the movie read task (chara-main-map round 1)
+
+- `Sg_EventjumpDispose()` (`0x0083b420`) drops every character, model
+  block, event motion group and the point lights; `0x0083b670`
+  (`Sg_EventjumpCacheChrs`, name ours) keeps the event's bound characters
+  (`AtelGetBindpList(0)`) at the top of the cache and reads them again.
+  `Sg_CacheDisposeChr(id)` (`0x00840e60`) drops a character's four motion
+  groups and its model data.
+- `0x00a51340` (`AbmapDrawNodesEamap`, name ours) draws the sphere grid's
+  nodes into the area map through `op_shape_draw_eamap(shape, key, slot,
+  layer)`. The key: `u16 +2` 0x14, colour `+4`, the view times node
+  matrix at `+0x10`, a vertex block at `+0x1c` (the EE zero register three
+  times, then `(r0.x, r0.y, 16384, 1)`). Its two twins `0x00a4fe40` and
+  `0x00a51560` have no callers and no references in the image.
+- `0x0076e660` (`MovieCdReadTaskLoop`, name ours) is the movie library's
+  read task: it runs the task record's step (`[0x01128adc]`) while any of
+  the 64 read requests is busy, waiting on semaphore `0x02310c24` (with
+  the loading screen kept going while it is up).

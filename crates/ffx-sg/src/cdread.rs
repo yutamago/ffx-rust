@@ -559,4 +559,101 @@ pub mod bridge {
             h.call(f, &[1]);
         }
     }
+
+    /// `read_task_buff` (`0x01128adc`): the read task's record, whose first
+    /// word is the step it runs; the two semaphores (`0x02310c24` waited
+    /// on, `0x02310c28` signalled).
+    pub const READ_TASK_BUFF: Global<u32> = Global::new(0x0112_8adc);
+    pub const READ_SEMA: Global<u32> = Global::new(0x0231_0c24);
+    pub const BUSY_SEMA: Global<u32> = Global::new(0x0231_0c28);
+    /// The read task loop's callees, all through the game: `iSoundLoop`
+    /// (`0x0067a510`), `SignalSema` (`0x006f2ce0`), `TkSndIsStandbyVoice`
+    /// (`0x00887b20`), `dbgPrintf`, `0x00641c40`,
+    /// `graphicResetLoadingScreen` (`0x00642c80`), the semaphore poll
+    /// `0x006f2d50`, `graphicIsBattleMap` (`0x00641c20`),
+    /// `graphicGetIsBattleMap` (`0x00641bb0`), `0x00642c00`,
+    /// `graphicProcessPs2DataLoadingCallback` (`0x006427f0`), `TkSyncV`
+    /// (`0x00887f00`), `WaitSema` (`0x006f2d80`); the assertion texts
+    /// (`0x00b51f88`, `0x00b7c998`, `0x00b51fa0`).
+    pub const SOUND_LOOP: u32 = 0x0067_a510;
+    pub const SIGNAL_SEMA: u32 = 0x006f_2ce0;
+    pub const STANDBY_VOICE: u32 = 0x0088_7b20;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    pub const LOADING_ACTIVE: u32 = 0x0064_1c40;
+    pub const RESET_LOADING_SCREEN: u32 = 0x0064_2c80;
+    pub const POLL_SEMA: u32 = 0x006f_2d50;
+    pub const IS_BATTLE_MAP: u32 = 0x0064_1c20;
+    pub const GET_IS_BATTLE_MAP: u32 = 0x0064_1bb0;
+    pub const LOADING_SCREEN_STEP: u32 = 0x0064_2c00;
+    pub const LOADING_CALLBACK: u32 = 0x0064_27f0;
+    pub const TK_SYNC_V: u32 = 0x0088_7f00;
+    pub const WAIT_SEMA: u32 = 0x006f_2d80;
+    pub const STR_NO_TASK_BUFF: u32 = 0x00b5_1f88;
+    pub const STR_ZERO: u32 = 0x00b7_c998;
+    pub const STR_STANDBY_VOICE: u32 = 0x00b5_1fa0;
+
+    /// `MovieCdReadTaskLoop_0076e660()` (name ours; caller `0x0076c490`):
+    /// the movie library's read task. Without a task record it reports
+    /// (`movie_err`, line 0x6de) and goes on. Each pass: `iSoundLoop`, then
+    /// the first busy request (`+0x31`) signals the busy semaphore (and
+    /// reports line 0x6f9 when a voice is on standby); with none busy it
+    /// returns. Else the task's step runs (`[read_task_buff]()`); while the
+    /// loading screen is off (`0x00641c40` 0) it waits on the read
+    /// semaphore, else resets the loading screen and, unless the read
+    /// semaphore is already up (`0x006f2d50`), keeps the sound and the
+    /// loading screen going (`0x00642c00` off battle maps) until it is;
+    /// either way the loading callback and `TkSyncV(0)` end the pass. No
+    /// caller reads `eax`.
+    pub fn movie_cd_read_task_loop(h: &mut impl Host) {
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            Host::call(h, f, args)
+        };
+        let file = h.rebase(STR_LIBMSCD);
+        if READ_TASK_BUFF.get(h) == 0 {
+            let msg = h.rebase(STR_NO_TASK_BUFF);
+            call(h, MOVIE_ERR, &[msg, file, 0x6de]);
+        }
+        loop {
+            call(h, SOUND_LOOP, &[]);
+            let busy = (0..READ_Q_CNT).find(|&i| h.read::<u8>(record(h, i) + 0x31) != 0);
+            if busy.is_none() {
+                return;
+            }
+            let sema = BUSY_SEMA.get(h);
+            call(h, SIGNAL_SEMA, &[sema]);
+            if call(h, STANDBY_VOICE, &[]) != 0 {
+                let msg = h.rebase(STR_STANDBY_VOICE);
+                call(h, DBG_PRINTF, &[msg]);
+                let msg = h.rebase(STR_ZERO);
+                call(h, MOVIE_ERR, &[msg, file, 0x6f9]);
+            }
+            let task = READ_TASK_BUFF.get(h);
+            let step: u32 = h.read(task);
+            h.call(step, &[]);
+            if call(h, LOADING_ACTIVE, &[]) == 0 {
+                let sema = READ_SEMA.get(h);
+                call(h, WAIT_SEMA, &[sema]);
+            } else {
+                call(h, RESET_LOADING_SCREEN, &[]);
+                let sema = READ_SEMA.get(h);
+                if call(h, POLL_SEMA, &[sema]) == 0 {
+                    loop {
+                        call(h, SOUND_LOOP, &[]);
+                        if call(h, IS_BATTLE_MAP, &[]) == 0 && call(h, GET_IS_BATTLE_MAP, &[]) == 0
+                        {
+                            call(h, LOADING_SCREEN_STEP, &[]);
+                        }
+                        call(h, LOADING_CALLBACK, &[]);
+                        let sema = READ_SEMA.get(h);
+                        if call(h, POLL_SEMA, &[sema]) != 0 {
+                            break;
+                        }
+                    }
+                }
+            }
+            call(h, LOADING_CALLBACK, &[]);
+            call(h, TK_SYNC_V, &[0]);
+        }
+    }
 }

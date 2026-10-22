@@ -3404,4 +3404,180 @@ pub mod bridge {
         }
         mem.write(ABMAP.get(mem).wrapping_add(4), kept);
     }
+
+    // ---- chara-main-map round 1
+
+    /// `AbmapStoreSave` (`0x00a5bb70`), `eiAbmParaGet` (`0x00a54860`),
+    /// `AbmapCalcLinkPoints` (`0x00a5a800`), the `u16` that stops the
+    /// player tags from snapping (`0x01a8607e`), and the link point table
+    /// the grid's `+0x11668` points to after a change (`0x016931a0`).
+    pub const STORE_SAVE: u32 = 0x00a5_bb70;
+    pub const EI_ABM_PARA_GET: u32 = 0x00a5_4860;
+    pub const CALC_LINK_POINTS: u32 = 0x00a5_a800;
+    pub const CHANGING_HOLD: u32 = 0x01a8_607e;
+    pub const CHANGED_LINK_POINTS: u32 = 0x0169_31a0;
+
+    /// `AbmapState_ChangingNode()` (`0x00a47d50`): one frame of a node's
+    /// change on the sphere grid. With `t` the frame (`u8 +0x11650`), the
+    /// eight player tags (0x50 bytes from `+0x110c4`) above 0 on the node
+    /// (`u16 +8` = `+0x1164e`) move to `f32((to - from) * f32(t / 40) +
+    /// from)` (`to` `+0x1162c`, `from` `+0x11628`) and are placed again
+    /// (`AbmapPositionPlyTag(i)`). On frame 19 the save is stored, the
+    /// node takes its new kind (`u16 +0x1164c` into the node's `+6`), the
+    /// node goes to `+0x116a8`, `+0x116ac` is set, `+0x11668` points at the
+    /// changed link table and the link points are recomputed. The frame
+    /// counts on; unless held (`0x01a8607e`), the tags snap to `to` and
+    /// the cursor's pending move (`+0x115b0`, `+0x115b4`) becomes its
+    /// current one (`+0x115a8`, `+0x115ac`), cleared. The grid pointer is
+    /// read again after each call.
+    #[allow(clippy::too_many_lines)]
+    pub fn abmap_state_changing_node<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) {
+        use ffx_bridge::x87::{add, mul, sub};
+        let rf = |mem: &M, a: u32| f64::from(ffx_bridge::x87::round_trip(mem.read::<f32>(a)));
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let st = |x: f64| x as f32;
+        let g0 = ABMAP.get(mem);
+        let t = f64::from(mem.read::<u8>(g0.wrapping_add(0x11650)));
+        let g = ABMAP.get(mem);
+        let k = st(t / 40.0);
+        let v = st(add(
+            mul(
+                sub(
+                    rf(mem, g.wrapping_add(0x1162c)),
+                    rf(mem, g0.wrapping_add(0x11628)),
+                ),
+                f64::from(k),
+            ),
+            rf(mem, g0.wrapping_add(0x11628)),
+        ));
+        let tags = g.wrapping_add(0x110c4);
+        let mut cur = g;
+        for i in 0..8u32 {
+            let tag = tags.wrapping_add(0x50 * i);
+            if mem.read::<f32>(tag) > 0.0
+                && mem.read::<u16>(tag.wrapping_add(8))
+                    == mem.read::<u16>(cur.wrapping_add(0x1164e))
+            {
+                mem.write(tag, v);
+                let f = mem.rebase(POSITION_PLY_TAG);
+                call(mem, f, &[i]);
+                cur = ABMAP.get(mem);
+            }
+        }
+        if mem.read::<u8>(cur.wrapping_add(0x11650)) == 0x13 {
+            for sym in [STORE_SAVE, EI_ABM_PARA_GET] {
+                let f = mem.rebase(sym);
+                call(mem, f, &[]);
+            }
+            let g = ABMAP.get(mem);
+            let node = u32::from(mem.read::<u16>(g.wrapping_add(0x1164e)));
+            let kind: u16 = mem.read(g.wrapping_add(0x1164c));
+            mem.write(g.wrapping_add(0x80e).wrapping_add(node * 0x28), kind);
+            let g = ABMAP.get(mem);
+            let node = u32::from(mem.read::<u16>(g.wrapping_add(0x1164e)));
+            mem.write(g.wrapping_add(0x116a8), node);
+            let g = ABMAP.get(mem);
+            mem.write(g.wrapping_add(0x116ac), 1u32);
+            let g = ABMAP.get(mem);
+            let table = mem.rebase(CHANGED_LINK_POINTS);
+            mem.write(g.wrapping_add(0x11668), table);
+            let f = mem.rebase(CALC_LINK_POINTS);
+            call(mem, f, &[]);
+            cur = ABMAP.get(mem);
+        }
+        let frame: u8 = mem.read(cur.wrapping_add(0x11650));
+        mem.write(cur.wrapping_add(0x11650), frame.wrapping_add(1));
+        if mem.read::<u16>(mem.rebase(CHANGING_HOLD)) != 0 {
+            return;
+        }
+        let mut g = ABMAP.get(mem);
+        let tags = g.wrapping_add(0x110c4);
+        for i in 0..8u32 {
+            let tag = tags.wrapping_add(0x50 * i);
+            if mem.read::<f32>(tag) > 0.0
+                && mem.read::<u16>(tag.wrapping_add(8)) == mem.read::<u16>(g.wrapping_add(0x1164e))
+            {
+                let to = ffx_bridge::x87::round_trip(mem.read::<f32>(g.wrapping_add(0x1162c)));
+                mem.write(tag, to);
+                let f = mem.rebase(POSITION_PLY_TAG);
+                call(mem, f, &[i]);
+                g = ABMAP.get(mem);
+            }
+        }
+        let v: u32 = mem.read(g.wrapping_add(0x115b0));
+        mem.write(g.wrapping_add(0x115a8), v);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115b0), 0u32);
+        let g = ABMAP.get(mem);
+        let v: u32 = mem.read(g.wrapping_add(0x115b4));
+        mem.write(g.wrapping_add(0x115ac), v);
+        let g = ABMAP.get(mem);
+        mem.write(g.wrapping_add(0x115b4), 0u32);
+    }
+
+    /// `user_malloc`, `user_free` (its thunk `0x00687010`),
+    /// `AbmapDrawLinkStrip(p, points, n)` (`0x00a521a0`) and the plain
+    /// link draw `0x00a51720(p, points, n)`, all through the game.
+    pub const USER_MALLOC: u32 = 0x0068_7020;
+    pub const USER_FREE: u32 = 0x0068_7010;
+    pub const DRAW_LINK_STRIP: u32 = 0x00a5_21a0;
+    pub const DRAW_LINK: u32 = 0x00a5_1720;
+    /// The colour words of a lit link by sphere grid kind (`+0x115bc`,
+    /// 0..6; the original's two jump tables `0x00a4b750`, `0x00a4b76c`):
+    /// `0x1000000` more for the selected link.
+    pub const LINK_COLOURS: [u32; 7] = [0x100, 0x200, 0, 1, 0x201, 0x101, 0x300];
+
+    /// `AbmapDrawLinks_00a4b4b0()` (name ours; from the grid's draw pass
+    /// `0x00a54660`): every link of the grid (`i16 +4` of 0x14 bytes from
+    /// `+0xa808`) drawn through a fresh 0x1ec-byte block (`user_malloc`,
+    /// `+0x1e8` = 0x3000, freed after). A link lit for this grid (flags
+    /// `+0xc` hold bit `[+0x115bc]`, taken once) gets the kind's colour
+    /// word at `+0x140` (unchanged for kinds above 6; `0x1000000` more when
+    /// it is the selected link `+0x115f8`) and `AbmapDrawLinkStrip(block,
+    /// points +0x10, count +0xd)`; an unlit one copies `+0x160..+0x180` to
+    /// `+0x140` and goes to `0x00a51720` with the same arguments. No
+    /// caller reads `eax`.
+    pub fn abmap_draw_links<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) {
+        let f = mem.rebase(USER_MALLOC);
+        let blk = call(mem, f, &[0x1ec]);
+        let g = ABMAP.get(mem);
+        let shift = mem.read::<u8>(g.wrapping_add(0x115bc)) & 0x1f;
+        let bit = if shift < 8 { 1u8 << shift } else { 0 };
+        let mut left = i32::from(mem.read::<i16>(g.wrapping_add(4)));
+        mem.write(blk.wrapping_add(0x1e8), 0x3000u32);
+        let mut e = g.wrapping_add(0xa815);
+        while left != 0 {
+            left = left.wrapping_sub(1);
+            let points: u32 = mem.read(e.wrapping_add(3));
+            let n = u32::from(mem.read::<u8>(e));
+            if mem.read::<u8>(e.wrapping_sub(1)) & bit == 0 {
+                for k in 0..8u32 {
+                    let w: u32 = mem.read(blk.wrapping_add(0x160 + 4 * k));
+                    mem.write(blk.wrapping_add(0x140 + 4 * k), w);
+                }
+                let points: u32 = mem.read(e.wrapping_add(3));
+                let f = mem.rebase(DRAW_LINK);
+                call(mem, f, &[blk, points, n]);
+            } else {
+                let g = ABMAP.get(mem);
+                let selected = e.wrapping_sub(0xd) == mem.read::<u32>(g.wrapping_add(0x115f8));
+                let kind = usize::from(mem.read::<u8>(g.wrapping_add(0x115bc)));
+                if let Some(&c) = LINK_COLOURS.get(kind) {
+                    let c = if selected { c | 0x100_0000 } else { c };
+                    mem.write(blk.wrapping_add(0x140), c);
+                }
+                let f = mem.rebase(DRAW_LINK_STRIP);
+                call(mem, f, &[blk, points, n]);
+            }
+            e = e.wrapping_add(0x14);
+        }
+        let f = mem.rebase(USER_FREE);
+        call(mem, f, &[blk]);
+    }
 }

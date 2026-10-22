@@ -487,3 +487,70 @@ used sequence (`0x01300a08`, 100 x `0x14`) whose group `+0x10` is `old`
   models' three buffers, the `+0x874` table, texture animation, five
   blocks) and destroys its render and shadow instances; EAX is the cloth
   vertex buffers' destroy result.
+
+## Shades, models and reads (chara-main-map round 1)
+
+- `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`, `ffx_chara::chr`):
+  `Ch_SetShadeID` on every other active character bound to `chr`
+  (`+0x19c`). Like every walk over `g_ChrArray`, the array and its count
+  are read again after each call, as the walk's end.
+- `Ch_IdShadeCalc(chr)` (`0x00834110`, `ffx_chara::id`): with id shades on
+  and flag bit 18 (`+0x194`), the shade id is the length of a vector made
+  from the distances `+0x3c` to `+0x8c`, `+0x9c`, `+0xac`: normalized,
+  each component `1 - c`, normalized again, then times the id word's
+  shades 0..2 over 31; set over 3 frames. With id shades off, the
+  renderer's debug shade coefficient of `chr`'s instance, once per bound
+  character and once more (not while `g_ChrDrawDetached`).
+  `Sg_VectorGetLength` takes one word: the 3 pushed after it is unused.
+- `Ch_ModelSetAlpha(chr, i, a)` (`0x0082ae30`): model `i`'s `+0x14` and
+  the renderer's mesh segment alpha; `i` past the header's count prints
+  the `VIRTUOS ERROR` line to `stderr`.
+- `0x008338d0` (`Ch_SoundFootEffect_008338d0`, `ffx_chara::attach`): the
+  footstep events of `Ch_Sound` put the walk effect at optional position
+  8 when position 7's y is below 8's, else at 7 (also for a NaN).
+- `Ch_RomReadEventMGRP(file, x)` (`0x0082a6e0`, `ffx_chara::sys`): event
+  motion group `file`; a size of 0 falls back to the Eternal Calm group
+  `file / 18` (signed). The buffer is named `"[EventMotionGroup x]"`; the
+  read request carries `x` at `+0xc` and the buffer at `+0x10`
+  (`Ch_RomReadEventMGRPcb` hands both to `ChN_AddEventMgrp`).
+- `Chb_AttachMotionTBL_OLD(blk)` (`0x00837fa0`): the host-PC viewer's
+  `inf/sysmot.tbl` (`+0x108`) and `inf/relation.tbl` (`+0x10c`); each
+  table's first word is the address it was built for, and the tables
+  relocate their pointers (system: `+0xc`, `+0x14`, `+0x1c`, `+0x24`;
+  relation: `[+4]` words from `+0x10`) by the difference.
+- `Ch_DisposeAll()` (`0x008268e0`) and `Ch_Allocate2(key, v)`
+  (`0x00825650`, `v` into `+0x190`).
+- `Apply_Envelope(chr, all)` (`0x00832110`, `ffx_chara::draw`): skinning.
+  The header's skin entries (`u16` count `+8`, 12 bytes each from `+0x14`:
+  element, model, base element, kind, weight lists at `+8`) each run a
+  kernel with `inverse(base) x element` (element matrices at `+0x88`);
+  the weighted kernels for a non-zero kind. A model with `+0x34` set keeps
+  its kernel results in a cache (`+0x874`, a word per entry) and runs the
+  fast kernels after the first frame; models are skipped unless shown
+  (`+0x2c`) or `all`. In magic file `0x1b6` (characters `0x1114`,
+  `0x1064`) and `0x1b5` (`0x1063`) everything is skinned, the normals too
+  (entries from `+0x24`), and every model's normals are normalized.
+  Recompute requests: `g_ChrGuiCalcNormal` (`0x013009e0`), flag bits 0, 4,
+  and bit 3 while `g_ChrCalcNormalOnce` (`0x013009e4`) counts down.
+- `Ch_DrawMainForSituation()` (`0x0082fe00`): per shown character its
+  `+0x1d0` matrix scaled by 1000 is the world matrix; whole when every
+  model is skinned, else unskinned models get it times their base
+  element's matrix (model id by model id).
+- `Ch_EffectPacketCreateMain(p)` (`0x00842c80`): an effect packet from a
+  model's groups (12 bytes: word, MAT and state bytes, `u16` count, data
+  at `+8`): strips (bit 0 of the word byte) or triangles of 24 bytes whose
+  indices 0, 1 of each vertex pair may point back (bit 15: `(i & 0x7fff) *
+  4 / 3` halfwords before the pair).
+- `Ch_WorkRestore(chr, saved)` (`0x00828620`): which fields a character
+  takes back from a saved copy (the sym line lists them); the parent is
+  looked up again from the bound id (`AtelGetEventCharHandleFromID`).
+- `Ch_PLightCalc(chr)` (`0x008305a0`): point lights of 0x2c bytes
+  (position, colour `+0x10`, radius `+0x20`, exponent `+0x24`, enabled
+  `+0x28`, slot `i8` `+0x29`) add `att * colour` and `att * direction`
+  into the character's four light slots (`+0x384` colours, `+0x3c4`
+  directions, w = 1), `att = 1 - (dist / radius) ^ exponent`. The
+  renderer gets only the slot of the last light inside its radius, and
+  only when its position is not NaN and its exponent and attenuation stay
+  under `0x00c49714` (999999); else white light from above. Tunables in
+  `.data`: `0x00c496ec` radius scale, `0x00c496f0` colour scale,
+  `0x00c49700` largest colour component, `0x00c49704` direction scale.
