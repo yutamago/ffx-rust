@@ -2903,6 +2903,30 @@ offsets each) to `SndSetFootSep`. `round25a_reset_shapes_seps_setup_match_the_or
 covers them (only the workers of the first, `0xb58`-byte class have FP
 slots, so the test fills those only there).
 
+Round 25 b: `AtelAllClearCallbackQue` (`0x008b3cf0`) resets both card
+slots' load positions; `AtelExecVibrate(update)` (`0x008739a0`) sends
+twice the two vibration volumes to pad 0's actuators;
+`Atel_SetChrAltParts_008720e0(chr, on)` swaps a character's model parts 1
+and 2; `Atel_ApplyChrDir_00870360` and `Atel_SyncChrRot_00869f90` move a
+direction between a bound worker's position block (`+0x20`, `+0x34`
+wrapped by `Math_WrapAngle`) and its character;
+`Atel_SetSpriteScale_00874a80(i, x, y)` stores an event sprite's scale
+times 256 (`ftol2_sse`, low 16 bits); `Atel_StepSpriteAnim_00874bf0`
+advances a sprite's frame timer by `0x100` (its animation, from
+`get_ptr32_func(+0x14)`: frame count at `+4`, 8-byte frames whose length
+is at `+0x12` and loop flag `0x80` at `+0x14`); `Atel_LoadEventTexList_00874b70`
+loads the event's texture list. `Atel_SaveLights_0086db20` /
+`Atel_RestoreLights_0086e770` keep the four light colours and three
+directions in `g_AtelSavedLights` (`0x01326d00`) across a battle;
+`Atel_ResetTextLanguage_0086ece0` sets the text language back to the
+build's (`FFXGetAsiaMode`) at a game over and swaps the international data
+when that changed it. `round25b_small_helpers_match_the_original` covers
+them (the light functions on the snapshots only: the image has no scene).
+`SignalSema_copy_006f3000` (an exact copy of the platform `SignalSema`)
+and `0x006db800` / `0x006db8a0` (an 8-slot ring buffer per channel,
+`0x1e8` bytes apart, guarded by Win32 semaphores: push and pop for the
+thread `0x00703a20` serves) are left as platform code.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

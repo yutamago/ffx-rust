@@ -7132,4 +7132,54 @@ ported! {
     AtelEventRegistFootInfo @ 0x0086_5b80 => extern "C" fn h_865b80(hdr: u32) -> u32 {
         hp::atel_event_regist_foot_info(&mut mem(), hdr)
     }
+    /// `AtelAllClearCallbackQue()`.
+    AtelAllClearCallbackQue @ 0x008b_3cf0 => extern "C" fn h_8b3cf0() -> u32 {
+        hp::atel_all_clear_callback_que(&mut mem())
+    }
+    /// `AtelExecVibrate(update)`: the two volumes in a 2-word frame.
+    AtelExecVibrate @ 0x0087_39a0 => extern "C" fn h_8739a0(update: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        hp::atel_exec_vibrate(&mut mem(), update, frame.at())
+    }
+    /// `Atel_SetChrAltParts_008720e0(chr, on)`.
+    Atel_SetChrAltParts_008720e0 @ 0x0087_20e0 => extern "C" fn h_8720e0(chr: u32, on: u32) {
+        hp::atel_set_chr_alt_parts(&mut mem(), chr, on);
+    }
+    /// `Atel_ApplyChrDir_00870360(worker)`.
+    Atel_ApplyChrDir_00870360 @ 0x0087_0360 => extern "C" fn h_870360(w: u32) {
+        hp::atel_apply_chr_dir(&mut mem(), w);
+    }
+    /// `Atel_SetSpriteScale_00874a80(i, x f32, y f32)`.
+    Atel_SetSpriteScale_00874a80 @ 0x0087_4a80 => extern "C" fn h_874a80(i: u32, x: u32, y: u32) {
+        hp::atel_set_sprite_scale(&mut mem(), i, x, y);
+    }
+    /// `Atel_SyncChrRot_00869f90(worker)`: `Ch_GetRot` and
+    /// `Math_WrapAngle` through the game.
+    Atel_SyncChrRot_00869f90 @ 0x0086_9f90 => extern "C" fn h_869f90(w: u32) {
+        hp::atel_sync_chr_rot(&mut mem(), w, |m, f, args| {
+            super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, f), args)
+        });
+    }
+    /// `Atel_SaveLights_0086db20()`.
+    Atel_SaveLights_0086db20 @ 0x0086_db20 => extern "C" fn h_86db20() -> u32 {
+        hp::atel_save_lights(&mut mem())
+    }
+    /// `Atel_RestoreLights_0086e770()`.
+    Atel_RestoreLights_0086e770 @ 0x0086_e770 => extern "C" fn h_86e770() -> u32 {
+        hp::atel_restore_lights(&mut mem())
+    }
+    /// `Atel_ResetTextLanguage_0086ece0()`.
+    Atel_ResetTextLanguage_0086ece0 @ 0x0086_ece0 => extern "C" fn h_86ece0() {
+        hp::atel_reset_text_language(&mut mem());
+    }
+    /// `Atel_StepSpriteAnim_00874bf0(sprite)`.
+    Atel_StepSpriteAnim_00874bf0 @ 0x0087_4bf0 => extern "C" fn h_874bf0(s: u32) {
+        hp::atel_step_sprite_anim(&mut mem(), s);
+    }
+    /// `Atel_LoadEventTexList_00874b70(on, x, y)`: the path and its unify
+    /// buffer in one 512-byte frame.
+    Atel_LoadEventTexList_00874b70 @ 0x0087_4b70 => extern "C" fn h_874b70(on: u32, x: u32, y: u32) {
+        let mut frame = super::StackFrame::<128>::new();
+        hp::atel_load_event_tex_list(&mut mem(), on, x, y, frame.at());
+    }
 }

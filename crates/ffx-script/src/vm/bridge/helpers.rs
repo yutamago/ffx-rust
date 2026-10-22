@@ -4789,3 +4789,206 @@ pub fn atel_event_regist_foot_info(h: &mut impl ffx_bridge::Host, hdr: u32) -> u
     }
     hdr
 }
+
+/// `AtelAllClearCallbackQue()` (`0x008b3cf0`; caller `AtelInitTotal`):
+/// both card slots' load positions reset
+/// ([`tk_menu_save_load_clear_load_pos`] 0, 1). Returns the last one's
+/// `EAX`.
+pub fn atel_all_clear_callback_que(h: &mut impl ffx_bridge::Host) -> u32 {
+    tk_menu_save_load_clear_load_pos(h, 0);
+    tk_menu_save_load_clear_load_pos(h, 1)
+}
+
+/// `AtelExecVibrate(update)` (`0x008739a0`; caller `0x008a9ca0`): with
+/// `update` bit 0 the volumes are updated first
+/// ([`vibrate_update_volume`]); then pad 0's two actuators get twice the
+/// two vibration volumes (`TkGetVibrateVolume(&a, &b)` into `frame`, 8
+/// bytes: `Pad_SetActuatorFF(0, 0, 2a)`, `Pad_SetActuatorFE(0, 0, 2b)`).
+/// Returns the last call's `EAX`.
+pub fn atel_exec_vibrate(h: &mut impl ffx_bridge::Host, update: u32, frame: u32) -> u32 {
+    if update & 1 != 0 {
+        vibrate_update_volume(h);
+    }
+    host_call(h, 0x0087_5e10, &[frame, frame + 4]);
+    let a = h.read::<u32>(frame);
+    host_call(h, 0x0088_9490, &[0, 0, a.wrapping_add(a)]);
+    let b = h.read::<u32>(frame + 4);
+    host_call(h, 0x0088_94b0, &[0, 0, b.wrapping_add(b)])
+}
+
+/// `Atel_SetChrAltParts_008720e0(chr, on)` (name ours; caller
+/// `Native_7080`): with a character, `on` hides its model part 1 and shows
+/// part 2 (`Ch_ModelSetHide(chr, 1, 1)`, `(chr, 2, 0)`), else the other
+/// way round.
+pub fn atel_set_chr_alt_parts(h: &mut impl ffx_bridge::Host, chr: u32, on: u32) {
+    if chr == 0 {
+        return;
+    }
+    let on = u32::from(on != 0);
+    host_call(h, 0x0082_aea0, &[chr, 1, on]);
+    host_call(h, 0x0082_aea0, &[chr, 2, on ^ 1]);
+}
+
+/// `Atel_ApplyChrDir_00870360(worker)` (name ours; caller `0x008666e0`):
+/// a worker bound to its character (`+0xaa` 1, `+0x9c`) turns it to its
+/// position block's direction (`+0x20`, `Ch_SetDir`).
+pub fn atel_apply_chr_dir(h: &mut impl ffx_bridge::Host, w: u32) {
+    let p = pos_block(h, w);
+    let c = h.read::<u32>(w + 0x9c);
+    if h.read::<u8>(w + 0xaa) == 1 && c != 0 {
+        let d = x87::store(x87::load(h.read(p + 0x20)));
+        host_call(h, 0x0082_b190, &[c, d]);
+    }
+}
+
+/// `Atel_SetSpriteScale_00874a80(i, x, y)` (name ours; caller
+/// `Native_SpriteSetScale`): event sprite i (clamped to 0..=0x7f) gets
+/// the scale `(x*256, y*256)` as `u16` (`ftol2_sse`).
+pub fn atel_set_sprite_scale(m: &mut impl Mem, i: u32, x: u32, y: u32) {
+    let i = i.cast_signed().clamp(0, 0x7f).cast_unsigned();
+    let s = m.rebase(EVENT_SPRITES) + i * 0x1c;
+    let sx = x87::ftol(m, x87::mul(x87::load(x), 256.0));
+    m.write(s + 8, lo16(sx));
+    let sy = x87::ftol(m, x87::mul(256.0, x87::load(y)));
+    m.write(s + 0xa, lo16(sy));
+}
+
+/// `Atel_SyncChrRot_00869f90(worker)` (name ours; caller `0x008666e0`):
+/// a worker bound to its character takes the character's rotation,
+/// wrapped (`Math_WrapAngle(Ch_GetRot(chr))`, each through `fstp m32`),
+/// into its position block's `+0x34`. `fcall(m, f, args)` calls the
+/// original at `f` (an `ffx.sym` address) and returns its `ST0`.
+pub fn atel_sync_chr_rot<M: Mem>(
+    m: &mut M,
+    w: u32,
+    mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+) {
+    let p = pos_block(m, w);
+    let c = m.read::<u32>(w + 0x9c);
+    if m.read::<u8>(w + 0xaa) == 1 && c != 0 {
+        let r = x87::store(fcall(m, 0x0082_ace0, &[c]));
+        let r = x87::store(fcall(m, 0x0088_bc20, &[r]));
+        m.write(p + 0x34, r);
+    }
+}
+
+/// The low 16 bits of `v` (a `mov word` of a 32-bit register).
+fn lo16(v: u32) -> u16 {
+    let [a, b, _, _] = v.to_le_bytes();
+    u16::from_le_bytes([a, b])
+}
+
+/// The event's saved lights (`0x01326d00`): four colours, then three
+/// directions, 16 bytes each.
+const SAVED_LIGHTS: u32 = 0x0132_6d00;
+
+/// `Atel_SaveLights_0086db20()` (name ours; caller
+/// `AtelEventRemoveForBattle`): the four light colours
+/// (`Sg_LightGetColor(k, &saved[k])`) and three directions
+/// (`Sg_LightGetDir`) kept for the battle's end. Returns the last call's
+/// `EAX`.
+pub fn atel_save_lights(h: &mut impl ffx_bridge::Host) -> u32 {
+    let at = h.rebase(SAVED_LIGHTS);
+    for k in 0..4 {
+        host_call(h, 0x0083_60f0, &[k, at + k * 0x10]);
+    }
+    let mut r = 0;
+    for k in 0..3 {
+        r = host_call(h, 0x0083_61c0, &[k, at + 0x40 + k * 0x10]);
+    }
+    r
+}
+
+/// `Atel_RestoreLights_0086e770()` (name ours; caller
+/// `AtelBattleEndCallback`): the lights [`atel_save_lights`] kept, back
+/// (`Sg_LightSetColor`, `Sg_LightSetDir`). Returns the last call's `EAX`.
+pub fn atel_restore_lights(h: &mut impl ffx_bridge::Host) -> u32 {
+    let at = h.rebase(SAVED_LIGHTS);
+    for k in 0..4 {
+        host_call(h, 0x0083_6310, &[k, at + k * 0x10]);
+    }
+    let mut r = 0;
+    for k in 0..3 {
+        r = host_call(h, 0x0083_6430, &[k, at + 0x40 + k * 0x10]);
+    }
+    r
+}
+
+/// `Atel_ResetTextLanguage_0086ece0()` (name ours; caller
+/// `AtelJumpGameOver`): the text language back to the build's
+/// (`MsSetSaveConfigEnglish(FFXGetAsiaMode != 0)`); when that changed it,
+/// the international data swaps (`TOSwapInternationalEnvInit(english)`,
+/// then `TOSwapInternationalEnvExec` until it returns non-zero, with
+/// `TkSyncV(0)` and `FileReadMain` between tries).
+pub fn atel_reset_text_language(h: &mut impl ffx_bridge::Host) {
+    let was = host_call(h, 0x0078_51d0, &[]);
+    let asia = host_call(h, 0x0078_26a0, &[]);
+    host_call(h, 0x0078_5ed0, &[u32::from(asia != 0)]);
+    if host_call(h, 0x0078_51d0, &[]) == was {
+        return;
+    }
+    let english = host_call(h, 0x0078_51d0, &[]);
+    host_call(h, 0x008b_0920, &[english]);
+    if host_call(h, 0x008b_0340, &[]) != 0 {
+        return;
+    }
+    loop {
+        host_call(h, 0x0088_7f00, &[0]);
+        host_call(h, 0x0076_cfd0, &[]);
+        if host_call(h, 0x008b_0340, &[]) != 0 {
+            return;
+        }
+    }
+}
+
+/// `Atel_StepSpriteAnim_00874bf0(sprite)` (name ours; caller
+/// `0x008743e0`): an event sprite's animation (`get_ptr32_func(+0x14)`:
+/// frame count `i16` at `+4`, 8-byte frames with their length `i16` at
+/// `+0x12` and flags at `+0x14`) advances its timer (`+0x18`) by `0x100`;
+/// past the frame's length the next frame starts (`+0xc`, timer 0), and
+/// past the last frame the first, the sprite turning off (`+0` = 0)
+/// unless the last frame loops (flag `0x80`).
+pub fn atel_step_sprite_anim(h: &mut impl ffx_bridge::Host, s: u32) {
+    let p = h.read::<u32>(s + 0x14);
+    let data = host_call(h, 0x00a4_4650, &[p]);
+    let f = u32::from(h.read::<u16>(s + 0xc));
+    let t = h.read::<u32>(s + 0x18).wrapping_add(0x100);
+    let frame = data.wrapping_add(f * 8);
+    if t.cast_signed() < i32::from(h.read::<i16>(frame + 0x12)) {
+        h.write(s + 0x18, t);
+        return;
+    }
+    let mut next = f + 1;
+    if next.cast_signed() >= i32::from(h.read::<i16>(data + 4)) {
+        next = 0;
+        if h.read::<u8>(frame + 0x14) & 0x80 == 0 {
+            h.write(s, 0_u8);
+        }
+    }
+    h.write(s + 0xc, lo16(next));
+    h.write(s + 0x18, 0_u32);
+}
+
+/// `Atel_LoadEventTexList_00874b70(on, x, y)` (name ours; caller
+/// `Native_011a`): `0x01327144` = on, `0x01327f48` = `x - 0xa0 + on`,
+/// `0x023cbc5c` = y, `0x01327f4c` = 1; with `on` the event's texture list
+/// loads (`0x00639310` of `getEventLocTexListPath`, into `frame`'s first
+/// 256 bytes, its own local in the next) and `g_AtelEventTexListLoaded`
+/// is set.
+pub fn atel_load_event_tex_list(
+    h: &mut impl ffx_bridge::Host,
+    on: u32,
+    x: u32,
+    y: u32,
+    frame: u32,
+) {
+    h.write(h.rebase(0x0132_7f48), x.wrapping_sub(0xa0).wrapping_add(on));
+    h.write(h.rebase(0x0132_7144), on);
+    h.write(h.rebase(0x023c_bc5c), y);
+    h.write(h.rebase(0x0132_7f4c), 1_u32);
+    if on != 0 {
+        get_event_loc_tex_list_path(h, frame, frame + 0x100);
+        host_call(h, 0x0063_9310, &[frame]);
+        h.write(h.rebase(0x0132_7140), 1_u32);
+    }
+}

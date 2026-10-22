@@ -8921,14 +8921,19 @@ fn r25_ret(a: &mut Oracle, b: &mut Oracle, f: u32, v: u32) {
     }
 }
 
-/// Replaces `f` in both oracles with a stub that copies 64 bytes from its
-/// first argument into a fresh buffer and returns `0x77`: what a callee
-/// handed a pointer to a frame local saw. Returns the buffer.
+/// Replaces `f` in both oracles with a stub that copies the string its
+/// first argument points at (at most 64 bytes, its NUL included) into a
+/// fresh buffer and returns `0x77`: what a callee handed a pointer to a
+/// frame local saw (bytes after the NUL are frame leftovers). Returns
+/// the buffer.
 fn r25_copy_stub(a: &mut Oracle, b: &mut Oracle, f: u32) -> u32 {
     let buf = alloc_both(a, b, 0x40);
     let mut code = vec![0x56, 0x57, 0x8b, 0x74, 0x24, 0x0c, 0xbf]; // push esi; push edi; mov esi,[esp+0xc]; mov edi,
     code.extend(buf.to_le_bytes());
-    code.extend([0xb9, 0x40, 0, 0, 0, 0xf3, 0xa4, 0x5f, 0x5e]); // mov ecx,64; rep movsb; pop edi; pop esi
+    // mov ecx,64; l: lodsb; stosb; test al,al; loopnz l; pop edi; pop esi
+    code.extend([
+        0xb9, 0x40, 0, 0, 0, 0xac, 0xaa, 0x84, 0xc0, 0xe0, 0xfa, 0x5f, 0x5e,
+    ]);
     code.extend([0xb8, 0x77, 0, 0, 0, 0xc3]); // mov eax,0x77; ret
     let at = a.alloc_code(&code).unwrap();
     assert_eq!(b.alloc_code(&code).unwrap(), at);
@@ -8939,6 +8944,37 @@ fn r25_copy_stub(a: &mut Oracle, b: &mut Oracle, f: u32) -> u32 {
             .unwrap();
     }
     buf
+}
+
+/// `fiosUnifyFilename`'s stream prefix (none on the image) and its
+/// overflow message stubbed, as in round 24 a.
+fn r25_fios_prefix(a: &mut Oracle, b: &mut Oracle) {
+    let prefix = a.rebase(0x00cc_9698);
+    if Mem::read::<u32>(b, prefix) == 0 {
+        let s = alloc_both(a, b, 0x10);
+        for (k, &c) in (0u32..).zip(b"data/\0") {
+            poke(a, b, s + k, c);
+        }
+        poke(a, b, prefix, s);
+    }
+    r25_ret(a, b, 0x0043_52f0, 0);
+}
+
+/// Replaces `f` in both oracles with `fld dword [cell]; ret`, the cell
+/// holding `bits`; returns the cell (a float stand-in).
+fn r25_float_stub(a: &mut Oracle, b: &mut Oracle, f: u32, bits: u32) -> u32 {
+    let cell = alloc_both(a, b, 4);
+    poke(a, b, cell, bits);
+    let code: Vec<u8> = [&[0xd9, 0x05][..], &cell.to_le_bytes(), &[0xc3]].concat();
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    cell
 }
 
 /// An event header in both oracles whose separates table (`+0x2c` ->
@@ -9031,16 +9067,7 @@ fn r25a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
     let seen = r25_copy_stub(a, b, 0x0063_9330);
     let sprites = a.rebase(0x0132_7148);
     let lang = r24_lang_word(a, b);
-    // fiosUnifyFilename's stream prefix and overflow message, as in round 24 a
-    let prefix = a.rebase(0x00cc_9698);
-    if Mem::read::<u32>(b, prefix) == 0 {
-        let s = alloc_both(a, b, 0x10);
-        for (k, &c) in (0u32..).zip(b"data/\0") {
-            poke(a, b, s + k, c);
-        }
-        poke(a, b, prefix, s);
-    }
-    r25_ret(a, b, 0x0043_52f0, 0);
+    r25_fios_prefix(a, b);
     for (k, loaded) in [0u32, 1, 7].into_iter().enumerate() {
         fill_both(a, b, rng, sprites, 0x80 * 0x1c);
         fill_both(a, b, rng, seen, 0x40);
@@ -9307,6 +9334,7 @@ fn r25a_event_init(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &st
 
 /// Round 25 a: `AtelEventSetUpForBattleMusic` with its callees logged,
 /// ctrl work 0's bound workers given effects and type `0x5001`.
+#[allow(clippy::too_many_lines)] // the set-up of each round
 fn r25a_battle_music(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
     use ffx_script::vm::bridge::helpers as hp;
     r24_log_stubs(
@@ -9454,4 +9482,342 @@ fn round25a_reset_shapes_seps_setup_match_the_original() {
     r25a_event_init(&mut a, &mut b, &mut rng, "snapshot");
     let (mut a, mut b) = pair();
     r25a_battle_music(&mut a, &mut b, &mut rng, "snapshot");
+}
+
+/// Floats for the round 25 cases: zeros, halves, large, tiny, a quiet
+/// NaN, infinities.
+const R25_FLOATS: [u32; 14] = [
+    0,
+    0x8000_0000,
+    0x3f00_0000,
+    0xbfc0_0000,
+    0x4f00_0000,
+    0xcf00_0001,
+    0x4700_0000,
+    0x0000_0001,
+    0x7fc0_1234,
+    0x7f80_0000,
+    0xff80_0000,
+    0x4049_0fdb,
+    0x4b00_0001,
+    0xcb00_0003,
+];
+
+/// Round 25 b on one pair: the small helpers (callees logged or stubbed).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r25b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0088_8480, 2),
+            (0x0088_9490, 3),
+            (0x0088_94b0, 3),
+            (0x0082_aea0, 3),
+            (0x0082_b190, 2),
+        ],
+    );
+    r22_case(
+        a,
+        b,
+        0x008b_3cf0,
+        &[],
+        true,
+        &format!("AtelAllClearCallbackQue {what}"),
+        |r| hp::atel_all_clear_callback_que(r),
+    );
+    // AtelExecVibrate
+    let vib = a.rebase(0x0132_8270);
+    for round in 0..12u32 {
+        fill_both(a, b, rng, vib, 2);
+        poke(a, b, vib + 2, u8::from(round % 3 == 0));
+        let update = [0u32, 1, 2, 3][(round % 4) as usize];
+        r22_case(
+            a,
+            b,
+            0x0087_39a0,
+            &[update],
+            true,
+            &format!("AtelExecVibrate {what} {round}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_exec_vibrate(r, update, f)
+            },
+        );
+    }
+    // Atel_SetChrAltParts
+    for (k, (chr, on)) in [
+        (0u32, 1u32),
+        (0x1234, 0),
+        (0x5678, 1),
+        (0x9abc, 0x100),
+        (0, 0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        r22_case(
+            a,
+            b,
+            0x0087_20e0,
+            &[chr, on],
+            false,
+            &format!("Atel_SetChrAltParts {what} {k}"),
+            |r| {
+                hp::atel_set_chr_alt_parts(r, chr, on);
+                0
+            },
+        );
+    }
+    // Atel_ApplyChrDir, Atel_SyncChrRot
+    let rot = r25_float_stub(a, b, 0x0082_ace0, 0);
+    let fcall = |r: &mut Run, f: u32, args: &[u32]| {
+        let at = r.0.rebase(f);
+        r.0.call_f64(at, args).unwrap()
+    };
+    for round in 0..30u32 {
+        let w = alloc_both(a, b, 0x600);
+        fill_both(a, b, rng, w, 0x600);
+        let kind = alloc_both(a, b, 4);
+        poke(a, b, kind, [5u8, 6, 0, 7, 0xff][(round % 5) as usize]);
+        poke(a, b, w, kind);
+        poke(a, b, w + 0xaa, [1u8, 1, 0, 2][rng.below(4) as usize]);
+        poke(
+            a,
+            b,
+            w + 0x9c,
+            if rng.below(4) == 0 { 0 } else { rng.next() | 1 },
+        );
+        for off in [0x284u32, 0x558] {
+            poke(a, b, w + off + 0x20, R25_FLOATS[rng.below(12) as usize]);
+        }
+        // Math_WrapAngle steps by 2 pi: no infinities or huge angles
+        let angles = [
+            0u32,
+            0x8000_0000,
+            0x3f00_0000,
+            0xbfc0_0000,
+            0x42c8_0000,
+            0x40e0_0000,
+            0x4049_0fdb,
+            0xc1a0_0000,
+            0x7fc0_1234,
+        ];
+        poke(a, b, rot, angles[rng.below(9) as usize]);
+        r22_case(
+            a,
+            b,
+            0x0087_0360,
+            &[w],
+            false,
+            &format!("Atel_ApplyChrDir {what} {round}"),
+            |r| {
+                hp::atel_apply_chr_dir(r, w);
+                0
+            },
+        );
+        r22_case(
+            a,
+            b,
+            0x0086_9f90,
+            &[w],
+            false,
+            &format!("Atel_SyncChrRot {what} {round}"),
+            |r| {
+                hp::atel_sync_chr_rot(r, w, fcall);
+                0
+            },
+        );
+    }
+    // Atel_SetSpriteScale
+    for (k, i) in [
+        0u32,
+        5,
+        0x7f,
+        0x80,
+        0xffff_ffff,
+        0x8000_0000,
+        0x7fff_ffff,
+        64,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for _ in 0..4 {
+            let x = R25_FLOATS[rng.below(14) as usize];
+            let y = R25_FLOATS[rng.below(14) as usize];
+            r22_case(
+                a,
+                b,
+                0x0087_4a80,
+                &[i, x, y],
+                false,
+                &format!("Atel_SetSpriteScale {what} {k} {x:#x} {y:#x}"),
+                |r| {
+                    hp::atel_set_sprite_scale(r, i, x, y);
+                    0
+                },
+            );
+        }
+    }
+    // Atel_SaveLights, Atel_RestoreLights
+    // the light setters reach the scene, which the image lacks; the
+    // setters logged (their result is the renderer's)
+    r24_log_stubs(a, b, &[(0x0083_6310, 2), (0x0083_6430, 2)]);
+    let saved = a.rebase(0x0132_6d00);
+    for k in 0..if what == "image" { 0 } else { 3 } {
+        fill_both(a, b, rng, saved, 0x70);
+        for j in 0..0x1c {
+            poke(a, b, saved + j * 4, R25_FLOATS[rng.below(8) as usize]);
+        }
+        r22_case(
+            a,
+            b,
+            0x0086_e770,
+            &[],
+            true,
+            &format!("Atel_RestoreLights {what} {k}"),
+            |r| hp::atel_restore_lights(r),
+        );
+        fill_both(a, b, rng, saved, 0x70);
+        r22_case(
+            a,
+            b,
+            0x0086_db20,
+            &[],
+            true,
+            &format!("Atel_SaveLights {what} {k}"),
+            |r| hp::atel_save_lights(r),
+        );
+    }
+    // Atel_StepSpriteAnim
+    for round in 0..40u32 {
+        let data = alloc_both(a, b, 0x100);
+        let n = [1i16, 3, 6, 0, -1][rng.below(5) as usize];
+        poke(a, b, data + 4, n);
+        for f in 0..8u32 {
+            poke(
+                a,
+                b,
+                data + f * 8 + 0x12,
+                [0x100i16, 0x300, 0, -5, 0x7fff][rng.below(5) as usize],
+            );
+            poke(a, b, data + f * 8 + 0x14, rng.next().to_le_bytes()[0]);
+        }
+        let s = alloc_both(a, b, 0x1c);
+        fill_both(a, b, rng, s, 0x1c);
+        poke(a, b, s + 0x14, data);
+        poke(a, b, s + 0xc, u16::try_from(rng.below(7)).unwrap());
+        poke(
+            a,
+            b,
+            s + 0x18,
+            [0u32, 0x100, 0x200, 0xffff_ff00, 0x7fff_ff00][rng.below(5) as usize],
+        );
+        r22_case(
+            a,
+            b,
+            0x0087_4bf0,
+            &[s],
+            false,
+            &format!("Atel_StepSpriteAnim {what} {round}"),
+            |r| {
+                hp::atel_step_sprite_anim(r, s);
+                0
+            },
+        );
+    }
+    // Atel_LoadEventTexList
+    r25_fios_prefix(a, b);
+    let seen = r25_copy_stub(a, b, 0x0063_9310);
+    let lang = r24_lang_word(a, b);
+    for (k, on) in [0u32, 1, 0xffff_ffff].into_iter().enumerate() {
+        fill_both(a, b, rng, seen, 0x40);
+        fill_both(a, b, rng, a.rebase(0x0132_7140), 8);
+        poke(a, b, lang, rng.below(13));
+        let (x, y) = (rng.next(), rng.next());
+        r22_case(
+            a,
+            b,
+            0x0087_4b70,
+            &[on, x, y],
+            false,
+            &format!("Atel_LoadEventTexList {what} {k}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_load_event_tex_list(r, on, x, y, f);
+                0
+            },
+        );
+    }
+}
+
+/// Round 25 b: `Atel_ResetTextLanguage_0086ece0` with its callees stubbed:
+/// the language word before and after, the build's mode and how many
+/// tries the swap takes.
+fn r25b_language(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0078_5ed0, 1),
+            (0x008b_0920, 1),
+            (0x0088_7f00, 1),
+            (0x0076_cfd0, 0),
+        ],
+    );
+    for round in 0..16u32 {
+        let was = rng.below(2);
+        let after = if round % 4 == 0 {
+            was
+        } else {
+            was ^ (1 + rng.below(2) * 2)
+        };
+        r24_seq_stub(a, b, 0x0078_51d0, 0, &[was, after, rng.next()]);
+        r25_ret(a, b, 0x0078_26a0, [0u32, 1, 0x100][(round % 3) as usize]);
+        let tries = round / 4 % 3;
+        let mut exec = vec![0u32; tries as usize];
+        exec.push(1 + rng.below(3));
+        r24_seq_stub(a, b, 0x008b_0340, 0, &exec);
+        r22_case(
+            a,
+            b,
+            0x0086_ece0,
+            &[],
+            false,
+            &format!("Atel_ResetTextLanguage {what} {round}"),
+            |r| {
+                hp::atel_reset_text_language(r);
+                0
+            },
+        );
+    }
+}
+
+#[test]
+fn round25b_small_helpers_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0252);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r25b_cases(&mut a, &mut b, &mut rng, "image");
+        r25b_language(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r25b_cases(&mut a, &mut b, &mut rng, "snapshot");
+    r25b_language(&mut a, &mut b, &mut rng, "snapshot");
 }

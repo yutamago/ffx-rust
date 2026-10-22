@@ -9364,6 +9364,7 @@
 0x00869d60 function AtelFetchCommand          # (worker, level) -> opcode << 24 | u16 operand when the high bit is set, from the level's PC; Switch name (alphabetical slot before AtelFetchCommandMain and AtelFetchStackInteger); was Script_Fetch
 0x00869da0 function AtelFetchCommandMain      # (long, pc): AtelFetchCommand from a PC, the operand read also when long != 0 (Script_Run's breakpoints); Switch name by its alphabetical slot?
 0x00869df0 function Atel_SyncChrDir            # (worker): +0xaa 1 with a character (+0x9c): position block +0x20 = Ch_GetDir(chr) (fstp m32); type 4 has no block (writes through 0); name ours; ported in helpers (script round 23)
+0x00869f90 function Atel_SyncChrRot_00869f90 # (r25 b) a bound worker's position block +0x34 = Math_WrapAngle(Ch_GetRot(chr)); near copy of Atel_SyncChrDir; caller 0x008666e0; own name
 0x0086a000 function AtelFetchStackInteger     # (worker, stack) -> top slot as integer, not popped (opcode 2b); Switch name: between AtelFetchCommandMain and AtelFlushAlbhedDic (0x0086a040, which reads g_AtelAlbhedDic) in the alphabetical Atel layout
 0x0086a040 function AtelFlushAlbhedDic           # layout+callees: sorts between AtelFetchStackInteger and AtelForceMusicAllStop, and its named callees match the Switch 0x7100474620 AtelFlushAlbhedDic's (similarity 1.00: TkMsImportantSet); symbols from Fahrenheit's server export
 0x0086a0e0 function Atel_UcRestore             # (): AtelUcOff, then AtelUcOn when the ctrl work had control (+0 bits 0x22, read before) and +1 bit 2, +3 bits 0x84 are clear; then +0 bit 1 restored to its old value; natives 0x0031/0x0032 and the move natives; name ours; ported in helpers (script round 23)
@@ -9526,6 +9527,7 @@
 0x0086d9d0 function AtelGetSave20             # ours: the Switch BSim name TkGetLastEventJumpIndex belongs to 0x0088d610 (its alphabetical Tk slot, menu module): g_SaveData +0x20 (u8)
 0x0086d9e0 function Script_TopTwoInts         # (worker, stack) -> 1 when the top two slots are both integers (kind 1): Script_Run's integer or float choice for arithmetic and comparisons
 0x0086da10 function AtelJumpGameOver          # fh v3:exact+call.cs 0x0086d9a0 cdecl
+0x0086db20 function Atel_SaveLights_0086db20 # (r25 b) Sg_LightGetColor 0..3 / Sg_LightGetDir 0..2 into g_AtelSavedLights; caller AtelEventRemoveForBattle; own name
 0x0086db80 function Atel_CopyTurnAngles        # (worker, mask): the current level's turn block +0x38/+0x3c/+0x40 = position block +0x34/+0x30/+0x38 by mask bits 0..2 -> mask; name ours; ported in helpers (script round 15)
 0x0086dc10 function AtelLinkSigWorkNext       # (at, node): links a signal node after node/list head at (ffx_script::vm::bridge::signal)
 0x0086dc30 function AtelLinkSigWorkPrev       # (at, node): links a signal node before node at
@@ -9547,6 +9549,7 @@
 0x0086e440 function Script_PushVar            # (worker, stack, var, index): opcode 1f; f32 vars push AtelGetValueFloat as a float slot, others AtelGetValueInteger
 0x0086e4c0 function AtelRecoverFPFromBattle # (worker): type-1 workers only; every slot in use is stuck again as AtelBindFp does (a binding other than 1/4/5 returns at the first one) and, with bit 15, pppFpSetStickPos(fp, &(pos, 1.0)); ported in helpers (script round 23 h); fh v3:exact 0x0086e450
 0x0086e700 function AtelRecoverFromMenuCallback # (): g_AtelMenuExecStatus 0, Yn_GuideMapSetDispProg(1), the save event record's +0xd6 0, TkSetVibrateMask(k, 1) for k 1..7, g_AtelOverlayStatus 6; ported in helpers (script round 23 g); fh v3:exact 0x0086e690
+0x0086e770 function Atel_RestoreLights_0086e770 # (r25 b) Sg_LightSetColor / Sg_LightSetDir from g_AtelSavedLights; caller AtelBattleEndCallback; own name
 0x0086e820 function AtelRegistAlbhedDic       # fh v3:bsim1.00 0x0086e7b0
 0x0086e840 function AtelRegistBattleEndMovieFadeout # fh v3:bsim1.00 0x0086e7d0
 0x0086e860 function AtelRegistBreakPointer       # layout+callees: sorts between AtelRegistBattleEndMovieFadeout and AtelRegistSignal, and its named callees match the Switch 0x710046b6b0 AtelRegistBreakPointer's (similarity 1.00: AtelGetBasicWork); symbols from Fahrenheit's server export
@@ -9559,6 +9562,7 @@
 0x0086ebe0 function AtelRegistSignalWithoutSameLevel2# (request) -> 0 when the receiver has a request queued at that level, else AtelRegistSignalMain
 0x0086ec40 function AtelRegistSignalWithoutSameTag # fh switch:cg2 0x71008b9018
 0x0086ec80 function AtelRegistSignalWithoutSameTag2# (request) -> 0 when a request for that entry is queued, else AtelRegistSignalMain
+0x0086ece0 function Atel_ResetTextLanguage_0086ece0 # (r25 b) MsSetSaveConfigEnglish(FFXGetAsiaMode != 0); on a change TOSwapInternationalEnvInit/Exec (TkSyncV + FileReadMain until done); caller AtelJumpGameOver; own name
 0x0086ed40 function AtelRemoveCtrlWork        # fh v3:exact 0x0086ecd0
 0x0086ed80 function AtelRequestMapCamera # (set): with a camera worker (+0x18 u16 not 0xffff), the current entrance's record (TkGetNowEventJumpIndex, 32 bytes each in the table at +4, the end +8; 0x01325b50 without a table) camera +6 (i16); non-zero: AtelRegistSignalMain((0xffff, worker, 0, 1, camera), -1) and 1; else 0; ported in helpers (script round 23 i); fh v3:exact 0x0086ed10
 0x0086ee10 function AtelRequireCtrlWork       # fh v3:cg3 0x86eda0; (i, block, a, b): sets ctrl work i up for a script block -> the ctrl work; ported in helpers (script round 15)
@@ -9614,6 +9618,7 @@
 0x00870280 function AtelSetMCFPInWater        # fh v3:bsim1.00 0x00870220
 0x008702e0 function AtelSetMenuExecStatus     # fh v3:bsim1.00 0x00870280
 0x008702f0 function Atel_SetEffectFlag2        # (n): bit n of 0x01326b74 set -> the bit; name ours; ported in helpers (script round 14)
+0x00870360 function Atel_ApplyChrDir_00870360 # (r25 b) a bound worker's character turned to its position block's +0x20 (Ch_SetDir); caller 0x008666e0; own name
 0x008703b0 function AtelSetMoveHokanMode      # fh switch:bsim1.00 0x71004729f0; ported in helpers (script round 19)
 0x008703e0 function Atel_StartMoveBlock        # (worker, mask, mode, param): current level's move block (+0x5b8 + (+0x32)*0x4c) +0 = param, +2 = mode, +6 = 0 (u16), then Atel_ShareMoveBlock(worker, level, mask, mode) (its eax); Native_MoveStart's tail; name ours; ported in helpers (script round 23)
 0x00870440 function Atel_ShareMoveBlock        # (worker, level, mask, mode): level block (+0x12c + clamp(level)*0x4c) +0x44 = the level's move block +0x5b8 + level*0x4c; so for every level i <= level (7 with mode 0x20) with bit i in mask | 1 << level, with mode 0x100 only when the current block's +2 & 0xff80 is clear; clamp 0..1 for types 5/6 else 0..8; name ours; ported in helpers (script round 23)
@@ -9666,6 +9671,7 @@
 0x00871e50 function AtelUpdateWaterStatus     # fh v3:exact 0x00871df0
 0x00871f30 function AtelUpdateWindowStatus    # fh switch:cg2 0x710046cc00
 0x008720d0 function Atel_SetScriptByteGate    # (v) 0x00c526d4 = v, gating 0x008655b0 writing script context +0x1e6; own name
+0x008720e0 function Atel_SetChrAltParts_008720e0 # (r25 b) Ch_ModelSetHide(chr, 1, on) and (chr, 2, !on) for a character; caller Native_7080; own name
 0x00872160 function TkChSetBattleChrNum       # fh v3:exact 0x00872100
 0x00872190 function TkCh_Allocate             # fh v3:exact 0x00872130
 0x00872210 function TkCh_Allocate2            # fh v3:exact 0x008721b0
@@ -9750,8 +9756,11 @@
 0x008749b0 function Atel_SetSprite13           # (i, v): sprite i +0x13 = v; name ours; ported in helpers (script round 14)
 0x008749e0 function SetGlobal01327f4c_008749e0   # auto-port shape (store argument to global, cdecl): u32[&0x01327f4c] = a0; return a0; callers: ; name ours
 0x008749f0 function Atel_SetSpriteColor        # (i, r, g, b): g_EventSprites[i clamped 0..0x7f] +0x10/+0x11/+0x12 = r, g, b clamped 0..0xff; eax i*7; called by Native_SpriteSetColor; name ours; ported in helpers (script round 22)
+0x00874a80 function Atel_SetSpriteScale_00874a80 # (r25 b) event sprite i (0..0x7f) scale (x*256, y*256) as u16 at +8/+0xa (ftol2_sse); caller Native_SpriteSetScale; own name
 0x00874ad0 function Atel_SetSpriteAlpha        # (i, alpha): g_EventSprites[i clamped 0..0x7f] +1 = alpha clamped 0..0xff; eax i*7; called by Native_011e; name ours; ported in helpers (script round 22)
 0x00874b30 function Atel_SetSpritePos          # (i, x, y): sprite i +4, +6 (u16); name ours; ported in helpers (script round 14)
+0x00874b70 function Atel_LoadEventTexList_00874b70 # (r25 b) 0x01327144 = on, 0x01327f48 = x - 0xa0 + on, 0x023cbc5c = y, 0x01327f4c = 1; with on loads the event texture list (0x00639310 of getEventLocTexListPath) and sets g_AtelEventTexListLoaded; caller Native_011a; own name
+0x00874bf0 function Atel_StepSpriteAnim_00874bf0 # (r25 b) an event sprite's timer +0x18 += 0x100, next frame (+0xc) past the frame's length, off at the end unless flag 0x80; caller 0x008743e0; own name
 0x00874c50 function getEventLocTexListPath # cdecl (out): the event texture list path into out: /FFX_Data/GameData/PS3Data/event/<lang dir>obj/<g_EventName>/tex/TexList.txt (lang dir 0x00c52768[lang], "" with sins05, none past lang 10; bltz events: lang dir from the jump table 0x00874f84 inserted 7 bytes before bltz0000/0005/0006/0200/0201), then fiosUnifyFilename into a 256-byte local and sprintf_s back; EAX its length; lang 11 on map 0x79 sets 0x00c52768[11] = "cn/"; ported (ffx_script helpers, script round 24 a); fh v3:exact 0x00874be0
 0x00874fb0 function Atel_ClearRecords1327f50   # (): 32 records at 0x01327f50 (16 bytes): +0, +4, byte +8 cleared; name ours; ported in helpers (script round 14)
 0x00875000 function AtelCheckCallbackQue      # fh v3:cg2 0x874f80
@@ -17051,6 +17060,7 @@
 0x01326bdc label    g_AtelSepGroupMask           # u8: sound-separate groups selected (bit n set by 0x00870f70, cleared by 0x00863fc0); Atel_AddSepLoad tests (mask | 1) << 16 against the entry's flags; 0x00866520 clears it
 0x01326ce0 label    g_AtelEffectParams           # four words: AtelGetEffectParam (0x0086b050), AtelClearEffectParam (0x00863880)
 0x01326cf0 label    g_AtelMCFPInWater            # four words written by AtelSetMCFPInWater (0x00870280)
+0x01326d00 label g_AtelSavedLights # (r25 b) 4 light colours then 3 directions, 16 bytes each: Atel_SaveLights_0086db20 before a battle, Atel_RestoreLights_0086e770 after
 0x01326d70 label    g_AtelMsgWindows             # 2 banks x 8 message windows, 0x2c bytes: +0x14 state, +0x16 Msg_Flags, +0x18 display flags, +0x1d mode flags
 0x01327030 label    g_AtelSepLoadList            # 8 x (id u32, flags u32): sound separates to load (flags | 0x8000 = pending, 0x008638c0 queues those with fade 0xf0/0x78 (0x2000)/0x168 (0x4000) frames); Atel_AddSepLoad
 0x0132707c label    g_AtelSepQueueCount          # i32: sound separates queued by Atel_QueueSepLoads; the ids follow at 0x01327080 and the fades (frames) at 0x013270a0, both indexed from 1
