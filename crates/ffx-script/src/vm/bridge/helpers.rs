@@ -7113,3 +7113,84 @@ pub fn atel_event_get_file_path2(h: &mut impl ffx_bridge::Host, args: [u32; 5], 
     host_call(h, 0x0087_1950, &[out, ext]);
     out
 }
+
+/// The offsets of a vector's x, y, z.
+const XYZ: [u32; 3] = [0, 4, 8];
+
+/// `(a² + b²) + c²` of three `f32` words, in the original's order.
+fn sum_sq(a: u32, b: u32, c: u32) -> f64 {
+    let sq = |v: u32| x87::mul(x87::load(v), x87::load(v));
+    x87::add(x87::add(sq(a), sq(b)), sq(c))
+}
+
+/// `spline_get_near_point_init(spline, x, y, z, cubic)` (`0x00a44420`,
+/// Fahrenheit's name; callers `MsCameraMoveStep_007bcab0`,
+/// `MsCameraNearPoints_007c0d40`, `0x0093f900`): walks the spline (`+0`
+/// count, points from `+0x10`; `TkMtCalcSpline3` when `cubic`) in steps of
+/// `1 / (10 n)` from 0 while `t` stays at most 1, summing the chord
+/// lengths into `g_SplineNearSamples` and keeping the `t` of the sample
+/// nearest `(x, y, z)` (squared distance, starting from 999999) in
+/// `g_SplineNearT`; then `spline_get_near_point` refines it (its `ST0`
+/// dropped, the point into `frame + 0x20..0x2c`) and the length goes to
+/// `scePrintf` (its callers read no `EAX`). `frame` holds the original's
+/// locals: the previous point (`+0`), the next (`+0x10`), the offsets
+/// (`+0x20`). `fcall` calls an original that returns in `ST0` (rebased
+/// address, eight words).
+pub fn spline_get_near_point_init<H: ffx_bridge::Host>(
+    h: &mut H,
+    spline: u32,
+    p: [u32; 3],
+    cubic: u32,
+    frame: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    let samples = h.rebase(0x01a8_5f34);
+    let near_t = h.rebase(0x01a8_5f30);
+    let calc = if cubic == 0 { 0x0088_a4a0 } else { 0x0088_a4d0 };
+    let (prev, next, off) = (frame, frame + 0x10, frame + 0x20);
+    h.write(samples, 0_u32);
+    let mut best = x87::load(h.read(h.rebase(0x00b7_af48)));
+    let n = h.read::<u32>(spline);
+    let points = spline + 0x10;
+    let count = x87::store(f64::from(n.wrapping_mul(10).cast_signed()));
+    let step = x87::store(x87::div(1.0, x87::load(count)));
+    let mut t = 0_u32;
+    h.write(near_t, t);
+    host_call(h, calc, &[prev, points, n, t]);
+    loop {
+        host_call(h, calc, &[next, points, n, t]);
+        let q: [u32; 3] = XYZ.map(|o| h.read(next + o));
+        let d: [u32; 3] = core::array::from_fn(|k| {
+            let a = x87::load(q[k]);
+            x87::store(x87::sub(a, x87::load(h.read(prev + XYZ[k]))))
+        });
+        let len = x87::store(x87::sqrt(sum_sq(d[0], d[1], d[2])));
+        let total = x87::store(x87::add(x87::load(len), x87::load(h.read(samples))));
+        h.write(samples, total);
+        let e: [u32; 3] =
+            core::array::from_fn(|k| x87::store(x87::sub(x87::load(q[k]), x87::load(p[k]))));
+        for (k, &v) in (0u32..).zip(&e) {
+            h.write(off + 4 * k, v);
+        }
+        let dist = x87::load(x87::store(sum_sq(e[0], e[1], e[2])));
+        if best > dist {
+            best = dist;
+            h.write(near_t, x87::store(x87::load(t)));
+        }
+        for (k, &v) in (0u32..).zip(&q) {
+            h.write(prev + 4 * k, x87::store(x87::load(v)));
+        }
+        t = x87::store(x87::add(x87::load(t), x87::load(step)));
+        if 1.0 < x87::load(t) {
+            break;
+        }
+    }
+    let [x, y, z] = p.map(|v| x87::store(x87::load(v)));
+    let near = h.rebase(0x00a4_4120);
+    fcall(h, near, &[spline, x, y, z, off, off + 4, off + 8, cubic]);
+    let total = x87::load(h.read(samples)).to_bits();
+    let fmt = h.rebase(0x00b7_af28);
+    #[allow(clippy::cast_possible_truncation)] // the two halves
+    let (lo, hi) = (total as u32, (total >> 32) as u32);
+    host_call(h, 0x0062_fbf0, &[fmt, lo, hi]);
+}

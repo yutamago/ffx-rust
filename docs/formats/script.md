@@ -3084,6 +3084,19 @@ worker's own target and its eight line records (`+0x2e4`).
 `round26c_bind_splines_ctrl_works_lines_file_path_match_the_original`
 covers them.
 
+Round 26 d: `spline_get_near_point_init` (`0x00a44420`, Fahrenheit's
+name; from the camera's `MsCameraMoveStep_007bcab0`,
+`MsCameraNearPoints_007c0d40` and `0x0093f900`) walks the spline in steps
+of `f32(1 / f32(10 n))` while `t <= 1`, sums the chord lengths into
+`g_SplineNearSamples`, keeps the `t` of the sample nearest the point
+(squared distance, from 999999) in `g_SplineNearT`, and lets
+`spline_get_near_point` refine it. For two points the spline leaves its
+output unwritten at `t = 0`, so the original starts from whatever its
+stack held; the port's frame starts zeroed, and the test zeroes both.
+No caller reads its `EAX` (what `scePrintf` leaves).
+`round26d_spline_near_point_init_matches_the_original` covers it with the
+real spline functions.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

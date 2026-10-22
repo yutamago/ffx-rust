@@ -12513,3 +12513,71 @@ fn round26c_bind_splines_ctrl_works_lines_file_path_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r26c_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Round 26 d on one pair: the spline near-point search (its callees
+/// real).
+fn r26d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(20_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let spline = alloc_both(a, b, 0x10 + 0x10 * 8);
+    for round in 0..24u32 {
+        let n = [1u32, 2, 3, 4, 6][rng.below(5) as usize];
+        poke(a, b, spline, n);
+        for k in 0..4 * 8 {
+            poke(a, b, spline + 0x10 + 4 * k, r26_f32(rng, 50.0));
+        }
+        // now and then far from every sample (beyond the 999999 start)
+        let r = if round % 4 == 3 { 5000.0 } else { 60.0 };
+        let p = [r26_f32(rng, r), r26_f32(rng, r), r26_f32(rng, r)];
+        fill_both(a, b, rng, a.rebase(0x01a8_5f30), 4);
+        let cubic = [0u32, 1, 2][rng.below(3) as usize];
+        let mut args = vec![spline];
+        args.extend(p);
+        args.push(cubic);
+        r22_case(
+            a,
+            b,
+            0x00a4_4420,
+            &args,
+            false,
+            &format!("spline_get_near_point_init {what} {round} n {n} cubic {cubic}"),
+            |r| {
+                // the original's points start as its zeroed stack
+                // (`clear_stacks`): the spline leaves them unwritten for
+                // some counts at t = 0
+                let f = frame(r);
+                Mem::write_bytes(r.0, f, &[0; 0x30]);
+                hp::spline_get_near_point_init(r, spline, p, cubic, f, |r, at, args| {
+                    r.0.call_f64(at, args).unwrap()
+                });
+                0
+            },
+        );
+    }
+}
+
+#[test]
+fn round26d_spline_near_point_init_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0265);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r26d_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r26d_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

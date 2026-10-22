@@ -7377,4 +7377,12 @@ ported! {
         let mut frame = super::StackFrame::<0xc0>::new();
         hp::atel_event_get_file_path2(&mut mem(), [dirs, sub, alt, name, ext], frame.at())
     }
+    /// `spline_get_near_point_init(spline, x, y, z, cubic)`: the locals in
+    /// a 12-word frame, `spline_get_near_point` through the game.
+    spline_get_near_point_init @ 0x00a4_4420 => extern "C" fn h_a44420(spline: u32, x: u32, y: u32, z: u32, cubic: u32) {
+        let mut frame = super::StackFrame::<12>::new();
+        hp::spline_get_near_point_init(&mut mem(), spline, [x, y, z], cubic, frame.at(), |_, f, args| {
+            super::call_cdecl_f64(f, args)
+        });
+    }
 }
