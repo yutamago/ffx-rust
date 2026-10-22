@@ -990,6 +990,13 @@ ported! {
     op_chara_packet_size_get @ 0x0080_37c0 => extern "C" fn op_chara_packet_size_get(chr: u32, mode: u32, visible: u32) -> u32 {
         op::bridge::op_chara_packet_size_get(&mut mem(), chr, mode, visible, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `ppp_shape_center_0075c660(out, shape)`.
+    ppp_shape_center_0075c660 @ 0x0075_c660 => extern "C" fn ppp_shape_center(out: u32, shape: u32) -> u32 {
+        // the original's locals: 0x24 bytes below its ebp
+        let mut frame = super::StackFrame::<9>::new();
+        let ebp = frame.at() + 0x24;
+        prog::bridge::ppp_shape_center(&mut mem(), out, shape, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppKeOfsPt(obj, key, ctrl)`.
     pppKeOfsPt @ 0x0075_cd30 => extern "C" fn ppp_ke_ofs_pt(obj: u32, key: u32, ctrl: u32) {
         prog::bridge::ppp_ke_ofs_pt(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));
@@ -2764,6 +2771,10 @@ ported! {
         let at = frame.at();
         et::bridge::opus_change_chrhd_battle_to_ffx(&mut mem(), at)
     }
+    /// `op_effect_run_after()`.
+    op_effect_run_after @ 0x0080_0670 => extern "C" fn op_effect_run_after() -> u32 {
+        op::bridge::op_effect_run_after(&mut mem(), &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_effect_run_before()`.
     op_effect_run_before @ 0x0080_0610 => extern "C" fn op_effect_run_before() -> u32 {
         op::bridge::op_effect_run_before(&mut mem(), &mut |_, f, a| call_ptr(f, a))
@@ -3057,6 +3068,21 @@ ported! {
     opus_list_add_00801780 @ 0x0080_1780 => extern "C" fn opus_list_add(set: u32, id: u32, list: u32) -> u32 {
         #[allow(clippy::cast_possible_truncation)] // the u16 argument
         opus::bridge::opus_list_add(&mut mem(), set, id as u16, list)
+    }
+    /// `op_shape_draw_eamap(shape, key, slot)`.
+    op_shape_draw_eamap @ 0x007f_49e0 => extern "C" fn op_shape_draw_eamap(shape: u32, key: u32, slot: u32) -> u32 {
+        // the original's locals: 0x174 bytes below its ebp
+        let mut frame = super::StackFrame::<0x5d>::new();
+        let ebp = frame.at() + 0x174;
+        op::bridge::op_shape_draw_eamap(&mut mem(), shape, key, slot, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_weapon_shadow_00813410(host, battle)`.
+    opp_weapon_shadow_00813410 @ 0x0081_3410 => extern "C" fn opp_weapon_shadow(host: u32, battle: u32) -> u32 {
+        op::bridge::opp_weapon_shadow(&mut mem(), host, battle, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_main(battle)`.
+    opp_main @ 0x0080_bd50 => extern "C" fn opp_main(battle: u32) -> u32 {
+        opus::bridge::opp_main(&mut mem(), battle, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opu_main_host(battle, list)`.
     opu_main_host @ 0x0080_cc00 => extern "C" fn opu_main_host(battle: u32, list: u32) -> u32 {
@@ -5378,6 +5404,10 @@ ported! {
     vu_apply_matrix_00753310 @ 0x0075_3310 => extern "C" fn vu_apply_matrix_00753310(out: u32, m: u32, v: u32) -> u32 {
         vec::bridge::vu_apply_matrix(&mut mem(), out, m, v)
     }
+    /// `vu_mul_matrix_00753670(out, m, n)`.
+    vu_mul_matrix_00753670 @ 0x0075_3670 => extern "C" fn vu_mul_matrix_00753670(out: u32, m: u32, n: u32) -> u32 {
+        vec::bridge::vu_mul_matrix(&mut mem(), out, m, n)
+    }
     /// `op_et_astatus_effect_change(h, status)`.
     op_et_astatus_effect_change @ 0x007f_aed0 => extern "C" fn op_et_astatus_effect_change(h: u32, status: u32) -> u32 {
         et::bridge::op_et_astatus_effect_change(&mut mem(), h, status, &mut |_, f, a| call_ptr(f, a)).unwrap_or(0)
@@ -5571,6 +5601,17 @@ ported! {
     pppDrawShapeFieldRevEmit_00743b60 @ 0x0074_3b60 => extern "C" fn ppp_draw_shape_field_rev_emit(obj: u32, def: u32, ctrl: u32) -> u32 {
         draw::bridge::ppp_draw_shape_field_rev_emit(&mut mem(), obj, def, ctrl, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
+    /// `pppDrawShapeFieldRender_00741b90(obj, key, prog, area)`: its render request and matrices in a
+    /// buffer on this shim's stack (the frame pointer at its end).
+    pppDrawShapeFieldRender_00741b90 @ 0x0074_1b90 => extern "C" fn ppp_draw_shape_field_render(obj: u32, key: u32, prog: u32, area: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x2c0]);
+        let mut locals = Locals([0; 0x2c0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x2c0;
+        draw::bridge::ppp_draw_shape_field_render(&mut mem(), obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `pppDrawShapeFieldRevRender_00743280(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
     pppDrawShapeFieldRevRender_00743280 @ 0x0074_3280 => extern "C" fn ppp_draw_shape_field_rev_render(obj: u32, key: u32, prog: u32, area: u32) {
@@ -5667,6 +5708,22 @@ ported! {
         let mut frame = super::StackFrame::<17>::new();
         let ebp = frame.at() + 0x44;
         draw::bridge::ppp_draw_rain_alloc(&mut mem(), def, work, ebp, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
+    /// `pppDrawRainLines_00755430(obj, def, ctrl)`.
+    pppDrawRainLines_00755430 @ 0x0075_5430 => extern "C" fn ppp_draw_rain_lines(obj: u32, def: u32, ctrl: u32) -> u32 {
+        // the original's locals: 0x120 bytes below its ebp
+        let mut frame = super::StackFrame::<0x48>::new();
+        let ebp = frame.at() + 0x120;
+        draw::bridge::ppp_draw_rain_lines(&mut mem(), obj, def, ctrl, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawRainStep_00755a00(obj, def, ctrl)`: the words
+    /// `rcuiScaleVector_copy_00756600` reads past its arguments (the
+    /// caller's saved registers) go in as 0, as for `pppDrawRainAlloc`.
+    pppDrawRainStep_00755a00 @ 0x0075_5a00 => extern "C" fn ppp_draw_rain_step(obj: u32, def: u32, ctrl: u32) {
+        // the original's locals: the inverse camera matrix, below its ebp
+        let mut frame = super::StackFrame::<17>::new();
+        let ebp = frame.at() + 0x44;
+        draw::bridge::ppp_draw_rain_step(&mut mem(), obj, def, ctrl, ebp, [0; 3], &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
     }
     // ---- round 36 d ----
     /// `opu_init(no, data, owner, obj, n, _, show)`.

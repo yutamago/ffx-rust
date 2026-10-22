@@ -4271,3 +4271,1946 @@ pub fn atel_set_save_event_bit(h: &mut impl ffx_bridge::Host, n: u32) -> u32 {
     h.write(at, v);
     1
 }
+
+// ---- round 25 ----
+
+/// `AtelExecSoftWareReset()` (`0x008738d0`; callers `Sg_MainLoop`,
+/// `0x00872bd0`): with ctrl work 0 current, a soft reset is allowed when
+/// its flags allow one (`+0` bit 0 set, `+3` bit `0x80` and `+0x210`
+/// bit 2 clear, `+0x210` bit `0x40` set), no movie plays (`0x0086d940`
+/// returns 0, or `+3` has bits `0x3` clear), the map is not `0x15c`
+/// (`0x0086c1c0`) and no voice is on standby or loading. The ctrl work
+/// back, `TkSoftWareReset` runs when the reset mode word
+/// (`0x01327108`) is 2, or when allowed and `TkCheckSoftWareReset`
+/// says so. Returns the last callee's `EAX`.
+pub fn atel_exec_soft_ware_reset(h: &mut impl ffx_bridge::Host) -> u32 {
+    let old = super::atel_change_current_ctrl(h, 0);
+    let c = super::atel_get_cur_ctrl_work(h);
+    let mut ok = h.read::<u8>(c) & 1 != 0;
+    if host_call(h, 0x0086_d940, &[]) != 0 || h.read::<u8>(c + 3) & 3 != 0 {
+        ok = false;
+    }
+    ok &= h.read::<u8>(c + 3) & 0x80 == 0;
+    ok &= h.read::<u8>(c + 0x210) & 2 == 0;
+    ok &= host_call(h, 0x0086_c1c0, &[]) != 0x15c;
+    ok &= h.read::<u8>(c + 0x210) & 0x40 != 0;
+    ok &= host_call(h, 0x0088_7b20, &[]) == 0;
+    ok &= host_call(h, 0x0088_7b10, &[]) == 0;
+    let r = super::atel_set_current_ctrl(h, old);
+    if h.read::<u32>(h.rebase(0x0132_7108)) == 2 {
+        return host_call(h, 0x0087_2550, &[]);
+    }
+    if !ok {
+        return r;
+    }
+    let r = host_call(h, 0x0087_2350, &[]);
+    if r == 0 {
+        r
+    } else {
+        host_call(h, 0x0087_2550, &[])
+    }
+}
+
+/// `AtelClearShape()` (`0x008742b0`; callers `AtelInitTotal`,
+/// `AtelEventRemove`): every event sprite (`g_EventSprites`) reset (`+0`
+/// = `0x8000`, `+2` = 0, `+4` = 0, scale `0x100`/`0x100`, colour
+/// `0x80808080`; `is_ptr32_null(+0x14)` asked and ignored) and its six
+/// effect handles freed (`graphicVFXDestroy(i + k*10000, sprite)`, a
+/// 64-bit id with the sprite's address high). With a texture list loaded
+/// (`0x01327140`), the event's list path (`getEventLocTexListPath`, into
+/// the first 256 bytes of `frame`; its own local in the next 256) is
+/// unloaded (`graphicAtelUnloadTexture`). Then the list flag, `0x01327144`,
+/// `0x023cbc5c` = 0, `0x01327f48` = -0xa0, `0x01327f4c` = 1. Returns the
+/// last callee's `EAX`.
+pub fn atel_clear_shape(h: &mut impl ffx_bridge::Host, frame: u32) -> u32 {
+    let base = h.rebase(EVENT_SPRITES);
+    let mut r = 0;
+    for i in 0..0x80u32 {
+        let s = base + i * 0x1c;
+        h.write(s, 0x8000_u16);
+        h.write(s + 2, 0_u8);
+        h.write(s + 4, 0_u32);
+        h.write(s + 8, 0x0100_0100_u32);
+        h.write(s + 0x10, 0x8080_8080_u32);
+        let data = h.read::<u32>(s + 0x14);
+        host_call(h, 0x00a4_46a0, &[data]);
+        for k in 0..6u32 {
+            r = host_call(h, 0x0064_5280, &[k * 10_000 + i, s]);
+        }
+    }
+    let loaded = h.rebase(0x0132_7140);
+    if h.read::<u32>(loaded) != 0 {
+        get_event_loc_tex_list_path(h, frame, frame + 0x100);
+        r = host_call(h, 0x0063_9330, &[frame]);
+    }
+    h.write(loaded, 0_u32);
+    h.write(h.rebase(0x0132_7144), 0_u32);
+    h.write(h.rebase(0x0132_7f48), 0xffff_ff60_u32);
+    h.write(h.rebase(0x023c_bc5c), 0_u32);
+    h.write(h.rebase(0x0132_7f4c), 1_u32);
+    r
+}
+
+/// `Atel_TranslateBGSeps_00861020(volume, frames, all)` (name ours;
+/// callers `AtelBGSepFade`, `0x00862470`): with ctrl work 0 current and
+/// running (`+0` bit 0), every entry of its event's separates table
+/// (`+0x48` header) that is a background separate (flags bit 2, or bits
+/// 2 or 8 with `all`; not `0x30`) gets `SndSepVolumeTranslate(id,
+/// volume, t)`: t is `frames`, halved (`frames*128/256`, C division) with
+/// the save event's `+0x28` set; a flagged `0x80` entry gets 0 instead
+/// when `+0x28` is clear, the full `frames` when it and `0x40` are set. The ctrl work back. Returns that work, or the table's
+/// count when it is 0 or less, or the save event's address when ctrl
+/// work 0 is idle.
+pub fn atel_translate_bg_seps(
+    h: &mut impl ffx_bridge::Host,
+    volume: u32,
+    frames: u32,
+    all: u32,
+) -> u32 {
+    let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let works = h.rebase(CTRL_WORKS);
+    let old = h.read::<u32>(ctx);
+    h.write(ctx, works);
+    if h.read::<u8>(works) & 1 == 0 {
+        h.write(ctx, old);
+        return save;
+    }
+    let hdr = h.read::<u32>(works + 0x48);
+    let t = sep_table(h, hdr);
+    let n = if t == 0 { 0 } else { h.read::<i32>(t) };
+    if n <= 0 {
+        h.write(ctx, old);
+        return n.cast_unsigned();
+    }
+    for i in 0..n.cast_unsigned() {
+        let t = sep_table(h, hdr);
+        let id = if t == 0 {
+            0
+        } else {
+            h.read::<u32>(t + i * 8 + 4)
+        };
+        let t = sep_table(h, hdr);
+        let flags = if t == 0 {
+            0
+        } else {
+            h.read::<u32>(t + i * 8 + 8)
+        };
+        let mask = if all != 0 { 0xa } else { 2 };
+        if flags & 0x30 != 0 || flags & mask == 0 {
+            continue;
+        }
+        let fixed = if flags & 0x80 == 0 {
+            None
+        } else if h.read::<u8>(save + 0x28) == 0 {
+            Some(0)
+        } else if flags & 0x40 != 0 {
+            Some(frames)
+        } else {
+            None
+        };
+        let t = fixed.unwrap_or_else(|| {
+            let s = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            if h.read::<u8>(s + 0x28) == 0 {
+                frames
+            } else {
+                (frames.cast_signed().wrapping_shl(7) / 256).cast_unsigned()
+            }
+        });
+        host_call(h, 0x0088_6ff0, &[id, volume, t]);
+    }
+    h.write(ctx, old);
+    old
+}
+
+/// `AtelEventKickBGSep(header, fade)` (`0x008658d0`; callers
+/// `0x00862220`, `AtelEventSetUp`): with `fade`, the queued separates
+/// fade out first ([`atel_fade_out_queued_seps`]). Then every entry of the
+/// event header's separates table that is a background separate (flags
+/// bit 2) to start now (with `fade`: not flagged `0x80`; without: flagged
+/// 4), not `0x300`, and not pending in `g_AtelSepLoadList` under the
+/// same id, plays (`SndSepPlay(id, 0x3f, v)`): v the volume (0 with
+/// flags `0x30`, else `0x3f` with the save event's `+0x28`, `0x7f`
+/// without), 0 when flagged `0x1c00`; with a fade-in flag (`0x400` 0xf0,
+/// `0x800` 0x78, `0x1000` 0x168 frames) its volume goes to the volume
+/// (`SndSepVolumeTranslate(id, frames, volume)`).
+pub fn atel_event_kick_bg_sep(h: &mut impl ffx_bridge::Host, hdr: u32, fade: u32) {
+    let t = sep_table(h, hdr);
+    let n = if t == 0 { 0 } else { h.read::<i32>(t) };
+    if fade != 0 {
+        atel_fade_out_queued_seps(h);
+    }
+    let loads = h.rebase(SEP_LOAD_COUNT);
+    let list = h.rebase(SEP_LOAD_LIST);
+    for i in 0..n.max(0).cast_unsigned() {
+        let t = sep_table(h, hdr);
+        let id = if t == 0 {
+            0
+        } else {
+            h.read::<u32>(t + i * 8 + 4)
+        };
+        let t = sep_table(h, hdr);
+        let flags = if t == 0 {
+            0
+        } else {
+            h.read::<u32>(t + i * 8 + 8)
+        };
+        if flags & 2 == 0 {
+            continue;
+        }
+        let on = if fade != 0 {
+            flags & 0x80 == 0
+        } else {
+            flags & 4 != 0
+        };
+        if flags & 0x300 != 0 || !on {
+            continue;
+        }
+        let volume = if flags & 0x30 != 0 {
+            0
+        } else {
+            let s = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            if h.read::<u8>(s + 0x28) == 0 {
+                0x7f
+            } else {
+                0x3f
+            }
+        };
+        let start = if flags & 0x1c00 == 0 { volume } else { 0 };
+        let mut k = 0;
+        let mut pending = false;
+        while k < h.read::<i32>(loads) {
+            let e = list + k.cast_unsigned() * 8;
+            if h.read::<u32>(e + 4) & 0x8000 != 0 && h.read::<u32>(e) == id {
+                pending = true;
+                break;
+            }
+            k += 1;
+        }
+        if pending {
+            continue;
+        }
+        host_call(h, 0x0088_6e50, &[id, 0x3f, start]);
+        let mut frames = 0;
+        if flags & 0x400 != 0 {
+            frames = 0xf0;
+        }
+        if flags & 0x800 != 0 {
+            frames = 0x78;
+        }
+        if flags & 0x1000 != 0 {
+            frames = 0x168;
+        }
+        if frames != 0 {
+            host_call(h, 0x0088_6ff0, &[id, frames, volume]);
+        }
+    }
+}
+
+/// The position block of worker `w` by its kind (`*w`'s first byte: 5 or
+/// 6 at `+0x284`, others at `+0x558`; 4 has none, 0).
+fn worker_pos(h: &impl Mem, w: u32) -> u32 {
+    match h.read::<u8>(h.read::<u32>(w)) {
+        4 => 0,
+        5 | 6 => w + 0x284,
+        _ => w + 0x558,
+    }
+}
+
+/// `Atel_SetWorkerPosXZ_00870970(worker, x, z, keep)` (name ours; callers
+/// `Native_0012`, `Native_0125`): the worker's position block (by its
+/// kind) = `(x, 0, z)`; a bound character (`+0xaa` 1, `+0x9c`) moves
+/// there (`Ch_SetPos`) and its cloth resets. When the worker is the
+/// current ctrl work's player (`+0x2e` = ctx `+0xa`), the ctx's camera
+/// target (`+0x218..+0x224`) moves to `+0x228`, the position (w 1) takes
+/// its place, and back to `+0x228` too unless the worker has flag `0x10`
+/// at `+0x34` and `keep` is 0; the save event's encounter byte (`+0x10`)
+/// and dictionary index follow the character (0 without one). Unless the
+/// same flag and `keep` = 0, the position is also the block's start
+/// (`+0x10`). Then the ctx's `+2` bit `0x10`.
+pub fn atel_set_worker_pos_xz(h: &mut impl ffx_bridge::Host, w: u32, x: u32, z: u32, keep: u32) {
+    let p = worker_pos(h, w);
+    put_f32(h, p, x);
+    h.write(p + 4, 0_u32);
+    put_f32(h, p + 8, z);
+    let c = h.read::<u32>(w + 0x9c);
+    if h.read::<u8>(w + 0xaa) == 1 && c != 0 {
+        let (x, z) = (x87::store(x87::load(x)), x87::store(x87::load(z)));
+        host_call(h, CH_SET_POS, &[c, x, z]);
+        let c = h.read::<u32>(w + 0x9c);
+        host_call(h, CH_CLOTH_RESET, &[c]);
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u16>(w + 0x2e) == h.read::<u16>(ctx + 0xa) {
+        let p = worker_pos(h, w);
+        for k in 0..4 {
+            copy_f32(h, ctx + 0x218 + k * 4, ctx + 0x228 + k * 4);
+        }
+        for k in 0..3 {
+            copy_f32(h, p + k * 4, ctx + 0x218 + k * 4);
+        }
+        h.write(ctx + 0x224, 1f32.to_bits());
+        if h.read::<u8>(w + 0x34) & 0x10 == 0 || keep != 0 {
+            for k in 0..3 {
+                copy_f32(h, ctx + 0x218 + k * 4, ctx + 0x228 + k * 4);
+            }
+            h.write(ctx + 0x234, 1f32.to_bits());
+        }
+        let c = h.read::<u32>(w + 0x9c);
+        if c == 0 {
+            let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            h.write(save + 0x10, 0_u8);
+            atel_set_save_dic_index(h, 0);
+        } else {
+            let enc = host_call(h, CH_ID_GET_ENCOUNT, &[c]);
+            let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            h.write(save + 0x10, enc.to_le_bytes()[0]);
+            let c = h.read::<u32>(w + 0x9c);
+            let dic = host_call(h, CH_ID_GET_DICTIONARY, &[c]);
+            atel_set_save_dic_index(h, dic);
+        }
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u8>(w + 0x34) & 0x10 == 0 || keep != 0 {
+        for k in 0..3 {
+            copy_f32(h, p + k * 4, p + 0x10 + k * 4);
+        }
+    }
+    let f = h.read::<u8>(ctx + 2);
+    h.write(ctx + 2, f | 0x10);
+}
+
+/// `Ch_SetPos(chr, x, z)` (`0x0082b440`).
+const CH_SET_POS: u32 = 0x0082_b440;
+
+/// `AtelExecCtrlEventInit_008677a0(ctrl, battle)`: the event start of a
+/// ctrl work. With `battle`, `MsBattleExeClear`. The work's skip bit
+/// (`+0` bit 4) is set when the pad's newly pressed buttons (mapped,
+/// `Pad_MapButtons(0, 0, g_PadPressed)`; none from ctx `+8` = 2 on) hold
+/// `0x20` and the windows are busy ([`atel_windows_busy`] = 1). Each
+/// worker that has not finished its init (`+0x34` bit `0x10`) runs it
+/// (`Script_Run(w, 0, 1)`, ctx `+4` = its index); the work's `+0` bit 8
+/// says whether all have. Then every worker decodes its signals
+/// (`AtelDecodeSignal(i, -1)`), `op_event_effect_init`,
+/// [`atel_clear_pause_flag`](super::globals::atel_clear_pause_flag) and
+/// `+0x210` bit `0x10`; or, when one is still busy, the init count
+/// `+0x20c` goes up. The debug strings (`AtelPs2DebugString`, a bare
+/// `ret`, and the `sprintf`s into a local for it) are left out.
+pub fn atel_exec_ctrl_event_init(h: &mut impl ffx_bridge::Host, c: u32, battle: u32) {
+    if battle != 0 {
+        host_call(h, 0x0078_1530, &[]);
+    }
+    let f = h.read::<u8>(c);
+    h.write(c, f & 0xfb);
+    let n = u32::from(h.read::<u16>(c + 0xc));
+    let pad = if h.read::<i32>(h.rebase(SCRIPT_CONTEXT + 8)) < 2 {
+        let pressed = u32::from(h.read::<u16>(h.rebase(0x0132_70d0)));
+        host_call(h, 0x0088_8c40, &[0, 0, pressed]) & 0xffff
+    } else {
+        0
+    };
+    if pad & 0x20 != 0 && atel_windows_busy(h) == 1 {
+        let f = h.read::<u8>(c);
+        h.write(c, f | 4);
+    }
+    let index = h.rebase(SCRIPT_CONTEXT + 4);
+    let mut done = true;
+    for i in 0..n {
+        h.write(index, i);
+        let k = h.read::<i32>(index);
+        let w = super::atel_get_basic_work(h, k);
+        if h.read::<u8>(w + 0x34) & 0x10 == 0 {
+            host_call(h, 0x0086_41e0, &[w, 0, 1]);
+        }
+        done &= h.read::<u8>(w + 0x34) & 0x10 != 0;
+    }
+    let f = h.read::<u8>(c);
+    h.write(c, (f & !8) | (u8::from(done) << 3));
+    if done {
+        for i in 0..n {
+            host_call(h, 0x0086_53f0, &[i, u32::MAX]);
+        }
+        host_call(h, 0x007f_cc20, &[]);
+        super::globals::atel_clear_pause_flag(h);
+        let f = h.read::<u32>(c + 0x210);
+        h.write(c + 0x210, f | 0x10);
+    } else {
+        let k = h.read::<u32>(c + 0x20c);
+        h.write(c + 0x20c, k.wrapping_add(1));
+    }
+}
+
+/// `AtelEventSetUpForBattleMusic(…)` (`0x00866240`; callers
+/// `MsBattleExe`, `Native_c024`; their argument unread): the event set-up
+/// for a battle. No voice on standby; outside an encounter
+/// (`MsGetEncountType` 0) the battle-end status takes the save event's
+/// `+0xe4` over its bit 16; the music-keep byte `0x01326bdd` = status bit
+/// 10 clear; the `"MUSI"` callback `0x00862470` queued; vibration off on
+/// pads 1-3; the foot status pushed and cleared; no overlay;
+/// `yiPushRenderState`. With ctrl work 0 current, each worker loses its
+/// `+0x34` bit 4 and keeps its character's field and gravity modes
+/// (`+0xac`, `+0xb0`) and swap work (`+0xa4`; `+0x38` bit 8 sets `+0x33`
+/// bit `0x80`); a bound worker of type `0x5001` hides its four effects
+/// (`pppFpIDdispOff(+0xb18 + 16k & 0x7fff)`); ctrl work 0 gets `+3` bit
+/// `0x80`. Back on the old ctrl work, the UC goes off ([`atel_uc_off`]),
+/// and on again ([`atel_uc_on`]) when the old work had `+0` bits `0x22`
+/// and neither `+1` bit 4 nor `+3` bits `0x84` of the current one are
+/// set; the old work's `+0` bit 2 comes back. Last, ctrl work 0 current,
+/// an open guide map (`+1` bit `0x80`) closes (`Yn_GuideMapEnd`).
+pub fn atel_event_set_up_for_battle_music(h: &mut impl ffx_bridge::Host) {
+    host_call(h, 0x0088_7b50, &[0]);
+    let status = h.rebase(0x0132_6b48);
+    let s = if host_call(h, 0x0078_2a10, &[]) == 0 {
+        let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+        let s = (h.read::<u32>(status) & 0xfffe_ffff) | h.read::<u32>(save + 0xe4);
+        h.write(status, s);
+        s
+    } else {
+        h.read::<u32>(status)
+    };
+    h.write(h.rebase(0x0132_6bdd), u8::from((s >> 10) & 1 == 0));
+    let f = h.rebase(0x0086_2470);
+    let name = h.rebase(0x00b5_bdf4);
+    atel_regist_callback_que2(h, 0, f, name);
+    for pad in 1..4 {
+        host_call(h, 0x0087_5f60, &[pad, 0]);
+    }
+    host_call(h, 0x0088_6c40, &[]);
+    host_call(h, 0x0088_5e50, &[]);
+    h.write(h.rebase(0x0132_6b80), 0_u8);
+    host_call(h, 0x0090_9c60, &[]);
+    let works = h.rebase(CTRL_WORKS);
+    let n = h.read::<u16>(works + 0xc);
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let old = h.read::<u32>(ctx);
+    h.write(ctx, works);
+    for i in 0..i32::from(n) {
+        let w = super::atel_get_basic_work(h, i);
+        let f = h.read::<u16>(w + 0x34);
+        h.write(w + 0x34, f & 0xfffb);
+        let c = h.read::<u32>(w + 0x9c);
+        if c == 0 {
+            continue;
+        }
+        let mode = host_call(h, 0x0082_ab90, &[c]);
+        h.write(w + 0xac, mode.to_le_bytes()[0]);
+        let c = h.read::<u32>(w + 0x9c);
+        let grav = host_call(h, 0x0082_abc0, &[c]);
+        h.write(w + 0xb0, grav.to_le_bytes()[0]);
+        let c = h.read::<u32>(w + 0x9c);
+        let swap = host_call(h, 0x0082_8b30, &[c]);
+        let bit = h.read::<u8>(w + 0x38) & 8 != 0;
+        h.write(w + 0xa4, swap);
+        if bit {
+            let f = h.read::<u8>(w + 0x33);
+            h.write(w + 0x33, f | 0x80);
+        }
+    }
+    for i in 0..i32::from(n) {
+        let w = super::atel_get_basic_work(h, i);
+        if h.read::<u32>(w + 0x9c) == 0 || h.read::<u16>(w + 0xa8) != 0x5001 {
+            continue;
+        }
+        for k in 0..4 {
+            let id = u32::from(h.read::<u16>(w + FP_SLOTS + k * 0x10)) & 0x7fff;
+            if id != 0 {
+                host_call(h, 0x0072_9570, &[id]);
+            }
+        }
+    }
+    let c = h.read::<u32>(ctx);
+    let f = h.read::<u8>(c + 3);
+    h.write(c + 3, f | 0x80);
+    h.write(ctx, old);
+    let b = h.read::<u8>(old);
+    let keep = b & 2;
+    let on = b & 0x22 != 0;
+    atel_uc_off(h);
+    let mut cur = h.read::<u32>(ctx);
+    if h.read::<u8>(cur + 1) & 4 == 0 && h.read::<u8>(cur + 3) & 0x84 == 0 && on {
+        atel_uc_on(h);
+        cur = h.read::<u32>(ctx);
+    }
+    h.write(ctx, works);
+    let f = h.read::<u8>(cur);
+    h.write(cur, (f & !2) | keep);
+    let g = h.read::<u8>(works + 1);
+    if g & 0x80 != 0 {
+        h.write(works + 1, g & 0x7f);
+        host_call(h, 0x0091_9c60, &[]);
+    }
+    h.write(ctx, cur);
+}
+
+/// `AtelEventRegistFootInfo(header)` (`0x00865b80`; callers
+/// `AtelBattleEndCallback`, `AtelEventSetUp`): the footstep separates of
+/// the event header (`+0x2c` sub-header, its tables `+0x1c`, `+0x20`,
+/// `+0x30`, `+0x34`: 16 `u16` offsets each, to a count and that many
+/// 16-byte entries of four separates) go to `SndSetFootSep(kind, party,
+/// variation, sep)`, with kinds (0, 1, 4, 5), (2, 3, 6, 7), (8, 9, 4, 0xd)
+/// and (0xa, 0xb, 0xe, 0xf); kind 4 only for variation 0. Returns the
+/// header.
+pub fn atel_event_regist_foot_info(h: &mut impl ffx_bridge::Host, hdr: u32) -> u32 {
+    const TABLES: [(u32, [u32; 4]); 4] = [
+        (0x1c, [0, 1, 4, 5]),
+        (0x20, [2, 3, 6, 7]),
+        (0x30, [8, 9, 4, 0xd]),
+        (0x34, [0xa, 0xb, 0xe, 0xf]),
+    ];
+    for (off, kinds) in TABLES {
+        for party in 0..16u32 {
+            let sub = h.read::<u32>(hdr + 0x2c);
+            let sub = if sub == 0 { 0 } else { sub.wrapping_add(hdr) };
+            if sub == 0 {
+                continue;
+            }
+            let t = h.read::<u32>(sub + off);
+            if t == 0 {
+                continue;
+            }
+            let t = t.wrapping_add(hdr);
+            let e = u32::from(h.read::<u16>(t + party * 2));
+            let p = e.wrapping_add(t);
+            if e == 0 || p == 0 {
+                continue;
+            }
+            let n = h.read::<i32>(p);
+            for v in 0..n.max(0).cast_unsigned() {
+                let entry = p + 4 + v * 0x10;
+                for (k, &kind) in (0u32..).zip(&kinds) {
+                    if kind == 4 && v != 0 {
+                        continue;
+                    }
+                    let sep = h.read::<u32>(entry + k * 4);
+                    host_call(h, 0x0088_70e0, &[kind, party, v, sep]);
+                }
+            }
+        }
+    }
+    hdr
+}
+
+/// `AtelAllClearCallbackQue()` (`0x008b3cf0`; caller `AtelInitTotal`):
+/// both card slots' load positions reset
+/// ([`tk_menu_save_load_clear_load_pos`] 0, 1). Returns the last one's
+/// `EAX`.
+pub fn atel_all_clear_callback_que(h: &mut impl ffx_bridge::Host) -> u32 {
+    tk_menu_save_load_clear_load_pos(h, 0);
+    tk_menu_save_load_clear_load_pos(h, 1)
+}
+
+/// `AtelExecVibrate(update)` (`0x008739a0`; caller `0x008a9ca0`): with
+/// `update` bit 0 the volumes are updated first
+/// ([`vibrate_update_volume`]); then pad 0's two actuators get twice the
+/// two vibration volumes (`TkGetVibrateVolume(&a, &b)` into `frame`, 8
+/// bytes: `Pad_SetActuatorFF(0, 0, 2a)`, `Pad_SetActuatorFE(0, 0, 2b)`).
+/// Returns the last call's `EAX`.
+pub fn atel_exec_vibrate(h: &mut impl ffx_bridge::Host, update: u32, frame: u32) -> u32 {
+    if update & 1 != 0 {
+        vibrate_update_volume(h);
+    }
+    host_call(h, 0x0087_5e10, &[frame, frame + 4]);
+    let a = h.read::<u32>(frame);
+    host_call(h, 0x0088_9490, &[0, 0, a.wrapping_add(a)]);
+    let b = h.read::<u32>(frame + 4);
+    host_call(h, 0x0088_94b0, &[0, 0, b.wrapping_add(b)])
+}
+
+/// `Atel_SetChrAltParts_008720e0(chr, on)` (name ours; caller
+/// `Native_7080`): with a character, `on` hides its model part 1 and shows
+/// part 2 (`Ch_ModelSetHide(chr, 1, 1)`, `(chr, 2, 0)`), else the other
+/// way round.
+pub fn atel_set_chr_alt_parts(h: &mut impl ffx_bridge::Host, chr: u32, on: u32) {
+    if chr == 0 {
+        return;
+    }
+    let on = u32::from(on != 0);
+    host_call(h, 0x0082_aea0, &[chr, 1, on]);
+    host_call(h, 0x0082_aea0, &[chr, 2, on ^ 1]);
+}
+
+/// `Atel_ApplyChrDir_00870360(worker)` (name ours; caller `0x008666e0`):
+/// a worker bound to its character (`+0xaa` 1, `+0x9c`) turns it to its
+/// position block's direction (`+0x20`, `Ch_SetDir`).
+pub fn atel_apply_chr_dir(h: &mut impl ffx_bridge::Host, w: u32) {
+    let p = pos_block(h, w);
+    let c = h.read::<u32>(w + 0x9c);
+    if h.read::<u8>(w + 0xaa) == 1 && c != 0 {
+        let d = x87::store(x87::load(h.read(p + 0x20)));
+        host_call(h, 0x0082_b190, &[c, d]);
+    }
+}
+
+/// `Atel_SetSpriteScale_00874a80(i, x, y)` (name ours; caller
+/// `Native_SpriteSetScale`): event sprite i (clamped to 0..=0x7f) gets
+/// the scale `(x*256, y*256)` as `u16` (`ftol2_sse`).
+pub fn atel_set_sprite_scale(m: &mut impl Mem, i: u32, x: u32, y: u32) {
+    let i = i.cast_signed().clamp(0, 0x7f).cast_unsigned();
+    let s = m.rebase(EVENT_SPRITES) + i * 0x1c;
+    let sx = x87::ftol(m, x87::mul(x87::load(x), 256.0));
+    m.write(s + 8, lo16(sx));
+    let sy = x87::ftol(m, x87::mul(256.0, x87::load(y)));
+    m.write(s + 0xa, lo16(sy));
+}
+
+/// `Atel_SyncChrRot_00869f90(worker)` (name ours; caller `0x008666e0`):
+/// a worker bound to its character takes the character's rotation,
+/// wrapped (`Math_WrapAngle(Ch_GetRot(chr))`, each through `fstp m32`),
+/// into its position block's `+0x34`. `fcall(m, f, args)` calls the
+/// original at `f` (an `ffx.sym` address) and returns its `ST0`.
+pub fn atel_sync_chr_rot<M: Mem>(
+    m: &mut M,
+    w: u32,
+    mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+) {
+    let p = pos_block(m, w);
+    let c = m.read::<u32>(w + 0x9c);
+    if m.read::<u8>(w + 0xaa) == 1 && c != 0 {
+        let r = x87::store(fcall(m, 0x0082_ace0, &[c]));
+        let r = x87::store(fcall(m, 0x0088_bc20, &[r]));
+        m.write(p + 0x34, r);
+    }
+}
+
+/// The low 16 bits of `v` (a `mov word` of a 32-bit register).
+fn lo16(v: u32) -> u16 {
+    let [a, b, _, _] = v.to_le_bytes();
+    u16::from_le_bytes([a, b])
+}
+
+/// The event's saved lights (`0x01326d00`): four colours, then three
+/// directions, 16 bytes each.
+const SAVED_LIGHTS: u32 = 0x0132_6d00;
+
+/// `Atel_SaveLights_0086db20()` (name ours; caller
+/// `AtelEventRemoveForBattle`): the four light colours
+/// (`Sg_LightGetColor(k, &saved[k])`) and three directions
+/// (`Sg_LightGetDir`) kept for the battle's end. Returns the last call's
+/// `EAX`.
+pub fn atel_save_lights(h: &mut impl ffx_bridge::Host) -> u32 {
+    let at = h.rebase(SAVED_LIGHTS);
+    for k in 0..4 {
+        host_call(h, 0x0083_60f0, &[k, at + k * 0x10]);
+    }
+    let mut r = 0;
+    for k in 0..3 {
+        r = host_call(h, 0x0083_61c0, &[k, at + 0x40 + k * 0x10]);
+    }
+    r
+}
+
+/// `Atel_RestoreLights_0086e770()` (name ours; caller
+/// `AtelBattleEndCallback`): the lights [`atel_save_lights`] kept, back
+/// (`Sg_LightSetColor`, `Sg_LightSetDir`). Returns the last call's `EAX`.
+pub fn atel_restore_lights(h: &mut impl ffx_bridge::Host) -> u32 {
+    let at = h.rebase(SAVED_LIGHTS);
+    for k in 0..4 {
+        host_call(h, 0x0083_6310, &[k, at + k * 0x10]);
+    }
+    let mut r = 0;
+    for k in 0..3 {
+        r = host_call(h, 0x0083_6430, &[k, at + 0x40 + k * 0x10]);
+    }
+    r
+}
+
+/// `Atel_ResetTextLanguage_0086ece0()` (name ours; caller
+/// `AtelJumpGameOver`): the text language back to the build's
+/// (`MsSetSaveConfigEnglish(FFXGetAsiaMode != 0)`); when that changed it,
+/// the international data swaps (`TOSwapInternationalEnvInit(english)`,
+/// then `TOSwapInternationalEnvExec` until it returns non-zero, with
+/// `TkSyncV(0)` and `FileReadMain` between tries).
+pub fn atel_reset_text_language(h: &mut impl ffx_bridge::Host) {
+    let was = host_call(h, 0x0078_51d0, &[]);
+    let asia = host_call(h, 0x0078_26a0, &[]);
+    host_call(h, 0x0078_5ed0, &[u32::from(asia != 0)]);
+    if host_call(h, 0x0078_51d0, &[]) == was {
+        return;
+    }
+    let english = host_call(h, 0x0078_51d0, &[]);
+    host_call(h, 0x008b_0920, &[english]);
+    if host_call(h, 0x008b_0340, &[]) != 0 {
+        return;
+    }
+    loop {
+        host_call(h, 0x0088_7f00, &[0]);
+        host_call(h, 0x0076_cfd0, &[]);
+        if host_call(h, 0x008b_0340, &[]) != 0 {
+            return;
+        }
+    }
+}
+
+/// `Atel_StepSpriteAnim_00874bf0(sprite)` (name ours; caller
+/// `0x008743e0`): an event sprite's animation (`get_ptr32_func(+0x14)`:
+/// frame count `i16` at `+4`, 8-byte frames with their length `i16` at
+/// `+0x12` and flags at `+0x14`) advances its timer (`+0x18`) by `0x100`;
+/// past the frame's length the next frame starts (`+0xc`, timer 0), and
+/// past the last frame the first, the sprite turning off (`+0` = 0)
+/// unless the last frame loops (flag `0x80`).
+pub fn atel_step_sprite_anim(h: &mut impl ffx_bridge::Host, s: u32) {
+    let p = h.read::<u32>(s + 0x14);
+    let data = host_call(h, 0x00a4_4650, &[p]);
+    let f = u32::from(h.read::<u16>(s + 0xc));
+    let t = h.read::<u32>(s + 0x18).wrapping_add(0x100);
+    let frame = data.wrapping_add(f * 8);
+    if t.cast_signed() < i32::from(h.read::<i16>(frame + 0x12)) {
+        h.write(s + 0x18, t);
+        return;
+    }
+    let mut next = f + 1;
+    if next.cast_signed() >= i32::from(h.read::<i16>(data + 4)) {
+        next = 0;
+        if h.read::<u8>(frame + 0x14) & 0x80 == 0 {
+            h.write(s, 0_u8);
+        }
+    }
+    h.write(s + 0xc, lo16(next));
+    h.write(s + 0x18, 0_u32);
+}
+
+/// `Atel_LoadEventTexList_00874b70(on, x, y)` (name ours; caller
+/// `Native_011a`): `0x01327144` = on, `0x01327f48` = `x - 0xa0 + on`,
+/// `0x023cbc5c` = y, `0x01327f4c` = 1; with `on` the event's texture list
+/// loads (`0x00639310` of `getEventLocTexListPath`, into `frame`'s first
+/// 256 bytes, its own local in the next) and `g_AtelEventTexListLoaded`
+/// is set.
+pub fn atel_load_event_tex_list(
+    h: &mut impl ffx_bridge::Host,
+    on: u32,
+    x: u32,
+    y: u32,
+    frame: u32,
+) {
+    h.write(h.rebase(0x0132_7f48), x.wrapping_sub(0xa0).wrapping_add(on));
+    h.write(h.rebase(0x0132_7144), on);
+    h.write(h.rebase(0x023c_bc5c), y);
+    h.write(h.rebase(0x0132_7f4c), 1_u32);
+    if on != 0 {
+        get_event_loc_tex_list_path(h, frame, frame + 0x100);
+        host_call(h, 0x0063_9310, &[frame]);
+        h.write(h.rebase(0x0132_7140), 1_u32);
+    }
+}
+
+/// `AtelBGSepFade(volume, frames)` (`0x00861000`; callers
+/// `MsBattleProcess_Status_007917d0`, `Native_0143`, `Native_0144`): the
+/// background separates only ([`atel_translate_bg_seps`] with `all` 0).
+pub fn atel_bg_sep_fade(h: &mut impl ffx_bridge::Host, volume: u32, frames: u32) -> u32 {
+    atel_translate_bg_seps(h, volume, frames, 0)
+}
+
+/// `Atel_StepSprites_008743e0()` (name ours; caller `0x00872bd0`): with
+/// the event sprites shown (`0x01327144`, `0x01327f4c`) and no movie
+/// (`0x0086d940` 0), every active sprite's animation steps
+/// ([`atel_step_sprite_anim`]).
+pub fn atel_step_sprites(h: &mut impl ffx_bridge::Host) {
+    if h.read::<u32>(h.rebase(0x0132_7144)) == 0 || host_call(h, 0x0086_d940, &[]) != 0 {
+        return;
+    }
+    if h.read::<u32>(h.rebase(0x0132_7f4c)) == 0 {
+        return;
+    }
+    let base = h.rebase(EVENT_SPRITES);
+    for i in 0..0x80 {
+        let s = base + i * 0x1c;
+        if h.read::<u8>(s) != 0 {
+            atel_step_sprite_anim(h, s);
+        }
+    }
+}
+
+/// `AtelDrawSemiTrans()` (`0x00872ca0`; caller `Sg_MainLoop`): with ctrl
+/// work 0 running (`+0` bit 0) and no movie (`0x0086d940` 0), the guide
+/// map is drawn (`Yn_GuideMapProcEx(show)`): show when the work's `+3`
+/// has bit `0x20` without `0x10`, or `0x40`, and the save menu's first
+/// byte has bit `0x40`; or `+3` has `8`; and never before the work's
+/// `+0x1f4` reaches 3.
+pub fn atel_draw_semi_trans(h: &mut impl ffx_bridge::Host) {
+    let c = super::atel_get_ctrl_work(h, 0);
+    if h.read::<u8>(c) & 1 == 0 || host_call(h, 0x0086_d940, &[]) != 0 {
+        return;
+    }
+    let f = h.read::<u8>(c + 3);
+    let mut show = f & 0x20 != 0 && f & 0x10 == 0;
+    if f & 0x40 != 0 {
+        show = true;
+    }
+    let menu = host_call(h, 0x0078_5290, &[]);
+    show &= h.read::<u8>(menu) & 0x40 != 0;
+    if h.read::<u8>(c + 3) & 8 != 0 {
+        show = true;
+    }
+    show &= h.read::<u32>(c + 0x1f4) >= 3;
+    host_call(h, 0x0091_9d00, &[u32::from(show)]);
+}
+
+/// `Atel_SetPartyMask_008623b0()` (name ours; caller
+/// `AtelBattleEndCallback`): the party mask `0x01326b7c` = the bits of the
+/// three party members (`MsGetSavePartyMember(&a, &b, &c)` into `frame`,
+/// 12 bytes; `0xff` for an empty slot, bits taken mod 32).
+pub fn atel_set_party_mask(h: &mut impl ffx_bridge::Host, frame: u32) {
+    let mask = h.rebase(0x0132_6b7c);
+    h.write(mask, 0_u32);
+    host_call(h, 0x0078_52f0, &[frame, frame + 4, frame + 8]);
+    let mut m = h.read::<u32>(mask);
+    for k in 0..3 {
+        let v = h.read::<u32>(frame + k * 4);
+        if v != 0xff {
+            m |= 1u32.wrapping_shl(v);
+            h.write(mask, m);
+        }
+    }
+}
+
+/// `Atel_RegistVibrateSignal_00876590(from, i, k)` (name ours; caller
+/// `0x00867c10`): with ctrl work 0 current, worker `i`'s sound `k`
+/// (`AtelSoundTableGet_00876860(type, k)`) and vibration curve
+/// (`TkGetVibrateCurve(type, k, +0x44)`); when both exist and the
+/// worker's `+0xab` has bit `k` (of the low byte), a signal from `from`
+/// (`AtelRegistSignalWithoutSameTag(from, i, 0, sound, curve)`). The ctrl
+/// work back. Returns the signal's result, 0 without one.
+pub fn atel_regist_vibrate_signal(h: &mut impl ffx_bridge::Host, from: u32, i: u32, k: u32) -> u32 {
+    vibrate_signal(h, 0x0086_ec40, from, i, k, None)
+}
+
+/// `Native_DrawBarSegment_00855a30(pos, seg)` (name ours; caller
+/// `caseD_8011`): one segment of a bar: its width is `table(seg[4]) *
+/// 0x013259f0 / 0x013259e8` (`ReturnTableU32_00820580`, C division; 0
+/// where the original divides by zero), less the cursor `0x013259f4` for
+/// kind 0 (other kinds add the table value to `0x013259f8`); drawn in
+/// the segment's colour (`Gu_SetRgbaq(seg[5..8], 0xff)`) from the cursor
+/// to cursor + width (`Gu_SetXyzf2`, at `pos` (`i16` x, y) and `pos[3]`
+/// below), and the cursor moves on. Returns the width.
+pub fn native_draw_bar_segment(h: &mut impl ffx_bridge::Host, pos: u32, seg: u32) -> u32 {
+    let kind = h.read::<u8>(seg + 4);
+    let k = host_call(h, 0x0082_0580, &[u32::from(kind)]).cast_signed();
+    let num = h.read::<i32>(h.rebase(0x0132_59f0)).wrapping_mul(k);
+    let den = h.read::<i32>(h.rebase(0x0132_59e8));
+    let mut width = if den == 0 { 0 } else { num.wrapping_div(den) };
+    let cursor = h.rebase(0x0132_59f4);
+    if h.read::<u8>(seg + 4) == 0 {
+        width = width.wrapping_sub(h.read::<i32>(cursor));
+    } else {
+        let at = h.rebase(0x0132_59f8);
+        let v = h.read::<i32>(at).wrapping_add(k);
+        h.write(at, v);
+    }
+    let rgb = [5, 6, 7].map(|o| u32::from(h.read::<u8>(seg + o)));
+    host_call(h, 0x0084_84c0, &[rgb[0], rgb[1], rgb[2], 0xff]);
+    let x = i32::from(h.read::<i16>(pos));
+    let y = i32::from(h.read::<i16>(pos + 2));
+    let at = x.wrapping_add(h.read::<i32>(cursor));
+    host_call(h, 0x0084_8680, &[at.cast_unsigned(), y.cast_unsigned()]);
+    let y = i32::from(h.read::<i16>(pos + 2));
+    let bottom = i32::from(h.read::<i16>(pos + 6)).wrapping_add(y);
+    let next = h.read::<i32>(cursor).wrapping_add(width);
+    let x = i32::from(h.read::<i16>(pos)).wrapping_add(next);
+    h.write(cursor, next);
+    host_call(h, 0x0084_8680, &[x.cast_unsigned(), bottom.cast_unsigned()]);
+    width.cast_unsigned()
+}
+
+/// `Atel_BattleEndMapStart_008615b0(map)` (name ours; caller
+/// `AtelBattleEndCallback`): back on another map than the event jump's
+/// (`TkGetNowEventJumpMapNo`), `0x01325b88` = 1 and the callback
+/// `0x00861650` queued as `"MAPR"`. On the same map, `0x01325b88` = 0, the
+/// render state popped, the map id page (`TkGetNowEventJumpMapIdNo`),
+/// guide map number (`0x01326b68`), FP state (`pppFpLoadStat(0x01326be0)`)
+/// and draw mask (`0x01326b78`) restored; with ctrl work 0 current a
+/// guide map not open yet opens (`+1` bit `0x80`, `Yn_GuideMapInit`);
+/// then `Yn_BattleEnd`. Returns the last call's `EAX`.
+pub fn atel_battle_end_map_start(h: &mut impl ffx_bridge::Host, map: u32) -> u32 {
+    let flag = h.rebase(0x0132_5b88);
+    if map != host_call(h, 0x0088_d690, &[]) {
+        h.write(flag, 1_u32);
+        let f = h.rebase(0x0086_1650);
+        let name = h.rebase(0x00b5_be0c);
+        return atel_regist_callback_que2(h, 0, f, name);
+    }
+    h.write(flag, 0_u32);
+    host_call(h, 0x0090_9b90, &[]);
+    let page = host_call(h, 0x0088_d680, &[]);
+    host_call(h, 0x0087_3e60, &[page]);
+    let no = h.read::<u32>(h.rebase(0x0132_6b68));
+    host_call(h, 0x0091_9da0, &[no]);
+    let stat = h.rebase(0x0132_6be0);
+    host_call(h, 0x0072_9a10, &[stat]);
+    let mask = h.read::<u32>(h.rebase(0x0132_6b78));
+    host_call(h, 0x0090_a2b0, &[mask]);
+    let works = h.rebase(CTRL_WORKS);
+    let g = h.read::<u8>(works + 1);
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let old = h.read::<u32>(ctx);
+    h.write(ctx, works);
+    if g & 0x80 == 0 {
+        h.write(works + 1, g | 0x80);
+        host_call(h, 0x0091_9cd0, &[]);
+    }
+    h.write(ctx, old);
+    host_call(h, 0x0091_9a40, &[])
+}
+
+/// `Atel_SetMovieTexture_00873eb0(id, flags)` (name ours; caller
+/// `Native_01b0`): by the save event's movie state (`+0xe0`): outside 2..=5
+/// the movie texture is set up (`graphicSetTextureVideoInfo(id, flags &
+/// 0x80)`) and the state becomes 1 with the id and flags (`+0xd8`,
+/// `+0xdc`); inside, another id waits for its file
+/// (`AtelSetOnMemoryMovieFileWait(id, flags)`), and the same id with new
+/// flags sets state 3 and the flags. Returns the wait's `EAX`, else the
+/// save event's address.
+pub fn atel_set_movie_texture(h: &mut impl ffx_bridge::Host, id: u32, flags: u32) -> u32 {
+    let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+    if h.read::<u32>(save + 0xe0).wrapping_sub(2) > 3 {
+        host_call(h, 0x0064_3aa0, &[id, flags & 0x80]);
+        let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+        h.write(save + 0xe0, 1_u32);
+        h.write(save + 0xd8, id);
+        h.write(save + 0xdc, flags);
+        return save;
+    }
+    if id != h.read::<u32>(save + 0xd8) {
+        return host_call(h, 0x0087_3f70, &[id, flags]);
+    }
+    if flags != h.read::<u32>(save + 0xdc) {
+        h.write(save + 0xe0, 3_u32);
+        h.write(save + 0xdc, flags);
+    }
+    save
+}
+
+/// What [`atel_regist_vibrate_signal`] and
+/// [`atel_regist_vibrate_signal_with`] share: with ctrl work 0 current,
+/// worker `i`'s sound `k` and vibration curve (`curve`, or for a negative
+/// one `TkGetVibrateCurve(type, k, +0x44)`); with both and the worker's
+/// `+0xab` bit `k`, the signal `regist(from, i, 0, sound, curve)`.
+fn vibrate_signal(
+    h: &mut impl ffx_bridge::Host,
+    regist: u32,
+    from: u32,
+    i: u32,
+    k: u32,
+    curve: Option<u32>,
+) -> u32 {
+    let old = super::atel_change_current_ctrl(h, 0);
+    let w = super::atel_get_basic_work(h, i.cast_signed());
+    let t = super::atel_get_actor_type(h, i.cast_signed());
+    let snd = atel_sound_table_get(h, t, k);
+    let curve = match curve {
+        Some(c) if c.cast_signed() >= 0 => c,
+        _ => {
+            let id = h.read::<u32>(w + 0x44);
+            host_call(h, 0x0087_63e0, &[t, k, id])
+        }
+    };
+    let mut r = 0;
+    let bit = 1u32.wrapping_shl(k).to_le_bytes()[0];
+    if snd != 0xff && curve != 0xffff && h.read::<u8>(w + 0xab) & bit != 0 {
+        r = host_call(h, regist, &[from, i, 0, snd, curve]);
+    }
+    super::atel_set_current_ctrl(h, old);
+    r
+}
+
+/// `Atel_RegistVibrateSignalWith_008766d0(from, i, k, curve)` (name ours;
+/// caller `0x008680a0`): [`atel_regist_vibrate_signal`] with a given
+/// vibration curve (the worker's own for a negative one) and
+/// `AtelRegistSignal`.
+pub fn atel_regist_vibrate_signal_with(
+    h: &mut impl ffx_bridge::Host,
+    from: u32,
+    i: u32,
+    k: u32,
+    curve: u32,
+) -> u32 {
+    vibrate_signal(h, 0x0086_e990, from, i, k, Some(curve))
+}
+
+/// `AtelSetSndCameraPos()` (`0x00877470`; caller `AtelExecSound`): the
+/// camera matrix copied (`MsCopyCameraMatrix` into `0x013282c8`), the
+/// camera-matrix flag cleared (`g_AtelCameraMatrixFlag` = -1), and the
+/// sound listener matrix (`0x01328288`) made: with ctrl work 0's player
+/// worker (`+0xa` not `0xffff`), the inverse of the camera matrix with
+/// the player's position as translation, inverted again
+/// (`FFXVu0InversMatrix`, through `frame`, 64 bytes); without one, the
+/// camera matrix itself (`FFXVu0CopyMatrix`).
+pub fn atel_set_snd_camera_pos(h: &mut impl ffx_bridge::Host, frame: u32) {
+    let cam = h.rebase(0x0132_82c8);
+    let listener = h.rebase(0x0132_8288);
+    host_call(h, 0x007c_0070, &[cam]);
+    h.write(h.rebase(0x0132_8308), u32::MAX);
+    let old = super::atel_change_current_ctrl(h, 0);
+    let c = super::atel_get_cur_ctrl_work(h);
+    let player = h.read::<u16>(c + 0xa);
+    if player == 0xffff {
+        host_call(h, 0x006e_d360, &[listener, cam]);
+    } else {
+        host_call(h, 0x006e_d450, &[frame, cam]);
+        let player = h.read::<u16>(c + 0xa);
+        let w = super::atel_get_basic_work(h, i32::from(player));
+        let p = pos_block(h, w);
+        for k in 0..3 {
+            copy_f32(h, p + k * 4, frame + 0x30 + k * 4);
+        }
+        host_call(h, 0x006e_d450, &[listener, frame]);
+    }
+    super::atel_set_current_ctrl(h, old);
+}
+
+/// `Atel_TurnToPoint_0086f7f0(worker, x, y, z)` (name ours; caller
+/// `0x0086f8a0`): the yaw and pitch from the worker's position to `(x, y,
+/// z)` (`Math_YawPitchTo(&yaw, &pitch, pos, point)`, the two results in
+/// `frame`, 8 bytes; `yaw_pitch(h, args)` calls it with its eight words)
+/// into its current level's turn block (`+0x174` of level `+0x32`, at
+/// most 1 for types 5 and 6, 8 otherwise): `+0x20` yaw, `+0x24` pitch.
+pub fn atel_turn_to_point<H: ffx_bridge::Host>(
+    h: &mut H,
+    w: u32,
+    point: [u32; 3],
+    frame: u32,
+    yaw_pitch: impl FnOnce(&mut H, &[u32]) -> u32,
+) {
+    let level = u32::from(h.read::<u8>(w + 0x32));
+    let kind = h.read::<u8>(h.read::<u32>(w));
+    let level = if matches!(kind, 5 | 6) {
+        level.min(1)
+    } else {
+        level.min(8)
+    };
+    let turn = h.read::<u32>(w + level * 0x4c + 0x174);
+    let p = pos_block(h, w);
+    let mut args = [frame, frame + 4, 0, 0, 0, 0, 0, 0];
+    for k in 0..3 {
+        args[2 + k] = x87::store(x87::load(h.read(p + 4 * u32::try_from(k).unwrap_or(0))));
+        args[5 + k] = x87::store(x87::load(point[k]));
+    }
+    yaw_pitch(h, &args);
+    copy_f32(h, frame, turn + 0x20);
+    copy_f32(h, frame + 4, turn + 0x24);
+}
+
+/// `Atel_ShowSprite_008748a0(i, tex)` (name ours; caller
+/// `Native_SpriteShow`): event sprite i (clamped to 0..=0x7f) shows
+/// texture `tex` (`op_anm_tex0_set(tex, 0x1a00, 0x1b00)`, its data
+/// `set_ptr32(tex)` at `+0x14`): `+0` = `0xff01` (on, alpha `0xff`), `+3`
+/// = 1, colour `0x80808080`, frame and timer 0. With `0x023cbc5c` set and
+/// the texture list not loaded, it loads (as in
+/// [`atel_load_event_tex_list`]).
+pub fn atel_show_sprite(h: &mut impl ffx_bridge::Host, i: u32, tex: u32, frame: u32) {
+    let i = i.cast_signed().clamp(0, 0x7f).cast_unsigned();
+    let s = h.rebase(EVENT_SPRITES) + i * 0x1c;
+    host_call(h, 0x007e_cf50, &[tex, 0x1a00, 0x1b00]);
+    let data = host_call(h, 0x00a4_4700, &[tex]);
+    h.write(s + 0x14, data);
+    h.write(s, 0xff01_u16);
+    h.write(s + 0x10, 0x8080_8080_u32);
+    h.write(s + 3, 1_u8);
+    h.write(s + 0x18, 0_u32);
+    h.write(s + 0xc, 0_u16);
+    let loaded = h.rebase(0x0132_7140);
+    if h.read::<u32>(h.rebase(0x023c_bc5c)) != 0 && h.read::<u32>(loaded) == 0 {
+        get_event_loc_tex_list_path(h, frame, frame + 0x100);
+        host_call(h, 0x0063_9310, &[frame]);
+        h.write(loaded, 1_u32);
+    }
+}
+
+/// `AtelUpdateWaterStatus()` (`0x00871e50`; caller `AtelDrawNoTrans`):
+/// with ctrl work 0 current, the "in water" byte `0x01326b83`: outside a
+/// battle the map's status bit 0 (`yiGetMapStatus`, when not negative)
+/// goes to the save event's `+0x29`, and set it means 1; else, when ctrl
+/// work 0 has water (`+2` bit 0), 1 when the camera
+/// (`MsCameraGetPosNow(1, frame)`, 16 bytes) is not above the water level
+/// (`+0x208`: level <= camera y), else 0. The ctrl work back.
+pub fn atel_update_water_status(h: &mut impl ffx_bridge::Host, frame: u32) {
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let old = h.read::<u32>(ctx);
+    h.write(ctx, h.rebase(CTRL_WORKS));
+    let flag = h.rebase(0x0132_6b83);
+    let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+    if host_call(h, 0x0078_0c90, &[]) == 0 {
+        let st = host_call(h, 0x0090_8dd0, &[]);
+        if st.cast_signed() >= 0 {
+            h.write(save + 0x29, st.to_le_bytes()[0] & 1);
+        }
+        if h.read::<u8>(save + 0x29) != 0 {
+            h.write(flag, 1_u8);
+            h.write(ctx, old);
+            return;
+        }
+    }
+    let c = h.read::<u32>(ctx);
+    if h.read::<u8>(c + 2) & 1 == 0 {
+        h.write(flag, 0_u8);
+        h.write(ctx, old);
+        return;
+    }
+    host_call(h, 0x007b_d470, &[1, frame]);
+    let y = x87::load(h.read(frame + 4));
+    let c = h.read::<u32>(ctx);
+    let level = x87::load(h.read(c + 0x208));
+    h.write(ctx, old);
+    h.write(flag, u8::from(level <= y));
+}
+
+/// `AtelExec_Internal_871d10()` (`0x00871d70`; caller `0x008688f0`): the
+/// pad words of the frames since the last sync (`TkGetLastSyncVCounter`
+/// of them, history index `1 - n` up to 0) merged (`|`) into the words from `0x013270c0`: pad 1
+/// and pad 0 held (`TkGetControlerHist`), repeat, repeat 2, newly pressed
+/// (`g_PadPressed`) and trigger-repeat, each cleared first. (The original
+/// tests a constant code address first; its else branch never runs.)
+pub fn atel_exec_internal_871d10(h: &mut impl ffx_bridge::Host) {
+    let n = host_call(h, 0x0088_7dc0, &[]);
+    let words = h.rebase(0x0132_70c0);
+    for off in [4u32, 0, 8, 0xc, 0x10, 0x14] {
+        h.write(words + off, 0_u16);
+    }
+    let mut i = 1u32.wrapping_sub(n).cast_signed();
+    while i <= 0 {
+        let k = i.cast_unsigned();
+        for (off, f, pad) in [
+            (4u32, 0x0088_8d70, 1u32),
+            (0, 0x0088_8d70, 0),
+            (8, 0x0088_8e50, 0),
+            (0xc, 0x0088_8e30, 0),
+            (0x10, 0x0088_8e80, 0),
+            (0x14, 0x0088_8ea0, 0),
+        ] {
+            let v = lo16(host_call(h, f, &[pad, 0, k]));
+            let w = h.read::<u16>(words + off);
+            h.write(words + off, w | v);
+        }
+        i += 1;
+    }
+}
+
+/// `Atel_SetEventPathLang_00879430(to)` (name ours; caller
+/// `AtelUpdateFilePath`): the event path's language replacement
+/// (`g_AtelEventPathChg`, `0x013285b4`) cleared (`clear_read_chgname`) and
+/// set again for the text language (`TkGetLang`: 1 us, 2 fr, 3 es, 4 de,
+/// 5 it, 18 uk, any other jp; `set_read_chgname("/ffx/proj/event/xx/",
+/// to)`).
+pub fn atel_set_event_path_lang(h: &mut impl ffx_bridge::Host, to: u32) {
+    let cell = h.rebase(0x0132_85b4);
+    let old = h.read::<u32>(cell);
+    host_call(h, 0x00a4_2f30, &[old]);
+    let dir = match host_call(h, 0x0088_7d00, &[]) {
+        1 => 0x00b5_c110,
+        2 => 0x00b5_c138,
+        3 => 0x00b5_c160,
+        4 => 0x00b5_c124,
+        5 => 0x00b5_c14c,
+        18 => 0x00b5_c174,
+        _ => 0x00b5_c188,
+    };
+    let from = h.rebase(dir);
+    let r = host_call(h, 0x00a4_3220, &[from, to]);
+    h.write(cell, r);
+}
+
+/// `Atel_AddLoveParam_00865650(i, skip)` (name ours; caller
+/// `0x00867950`): in an event that counts affection (ctx `+2` bit `0x40`)
+/// and without `skip`, a bound worker `i` (`+0xaa` 1, a model) whose
+/// party member (`+0x40`, below 8, not disabled in
+/// `g_AtelLoveParamDisable`) is a woman or a man (`MsGetSaveChrFemale`,
+/// `MsGetSaveChrMan`) gains the event's affection (ctx `+4` or `+6`, `u16`)
+/// in the save event's `+0x2c + 4*member`, once per event jump id (bit
+/// `id` of the save event's words from `+0x4c`, 20 of them); ctx `+0x1e7`
+/// = the member.
+pub fn atel_add_love_param(h: &mut impl ffx_bridge::Host, i: u32, skip: u32) {
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let c = h.read::<u32>(ctx);
+    if h.read::<u8>(c + 2) & 0x40 == 0 || skip != 0 {
+        return;
+    }
+    let w = super::atel_get_basic_work(h, i.cast_signed());
+    if h.read::<u8>(w + 0xaa) != 1 || h.read::<u32>(w + 0x9c) == 0 {
+        return;
+    }
+    let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+    let w = super::atel_get_basic_work(h, i.cast_signed());
+    let m = h.read::<u32>(w + 0x40);
+    if m >= 8 || h.read::<u32>(h.rebase(0x0132_6b90)) & (1 << m) != 0 {
+        return;
+    }
+    let mut add = 0;
+    if host_call(h, 0x0078_4f60, &[m]) == 1 {
+        let c = h.read::<u32>(ctx);
+        add = u32::from(h.read::<u16>(c + 4));
+    }
+    if host_call(h, 0x0078_4f90, &[m]) == 1 {
+        let c = h.read::<u32>(ctx);
+        add = u32::from(h.read::<u16>(c + 6));
+    }
+    let id = host_call(h, 0x0088_d660, &[]).cast_signed();
+    let word = id / 32;
+    if word >= 20 {
+        return;
+    }
+    let bit = 1u32.wrapping_shl((id % 32).cast_unsigned());
+    let at = save
+        .wrapping_add(word.cast_unsigned().wrapping_mul(4))
+        .wrapping_add(0x4c);
+    let v = h.read::<u32>(at);
+    if v & bit != 0 {
+        return;
+    }
+    let c = h.read::<u32>(ctx);
+    h.write(at, v | bit);
+    let love = save + 0x2c + m * 4;
+    let l = h.read::<u32>(love);
+    h.write(love, l.wrapping_add(add));
+    h.write(c + 0x1e7, m.to_le_bytes()[0]);
+}
+
+/// `Atel_FindVarSlot_0087bc90(rec)` (name ours; caller `0x00884cc0`): for
+/// a variable reference `rec` (`+2` worker, `+4` kind in the top 4 bits
+/// and offset), finds the entry of the worker's level variable table
+/// (script header `+4`, level `+0x2e`'s `+0x38` offset, its `+2` count
+/// and `+0x14` 8-byte entries: kind and base, `u16` count at `+4`) of the
+/// same kind holding the offset (`base <= off < base + count * size`,
+/// `AtelGetValueIncValue(kind)`; kind-3 entries of storage 6 below the
+/// actor's limit skipped); then `rec+1` bit `0x80` and `+4` = entry index
+/// << 16 | element index. (A size of 0 traps in the original; 0 here.)
+pub fn atel_find_var_slot(h: &mut impl ffx_bridge::Host, rec: u32) {
+    let w = super::atel_get_basic_work(h, i32::from(h.read::<u16>(rec + 2)));
+    let hdr = h.read::<u32>(w + 4);
+    let level = u32::from(h.read::<u16>(w + 0x2e));
+    let c = h.read::<u32>(hdr + level * 4 + 0x38);
+    let n = i32::from(h.read::<u16>(c.wrapping_add(hdr) + 2));
+    let mut e = h.read::<u32>(c.wrapping_add(hdr) + 0x14).wrapping_add(hdr);
+    let v = h.read::<u32>(rec + 4);
+    let kind = v >> 28;
+    let off = v & 0x0fff_ffff;
+    for j in 0..n {
+        let ent = h.read::<u32>(e);
+        if ent >> 28 == kind {
+            let base = ent & 0x0fff_ffff;
+            let size = host_call(h, 0x0086_c6e0, &[kind]);
+            let end = u32::from(h.read::<u16>(e + 4))
+                .wrapping_mul(size)
+                .wrapping_add(base);
+            let mut skip = false;
+            if off & 0x0e00_0000 == 0x0600_0000 {
+                let wc = h.read::<u32>(w + 8);
+                if wc != 0 {
+                    let l = u32::from(h.read::<u16>(w + 0x2e)) << 4;
+                    let at = l.wrapping_add(h.read::<u32>(wc + 0x54)).wrapping_add(wc) + 0xc;
+                    skip = j < i32::from(h.read::<u16>(at));
+                }
+            }
+            if !skip && base <= off && end > off {
+                let q = (off & 0xf0ff_ffff).wrapping_sub(base & 0xf0ff_ffff);
+                let q = q.checked_div(size).unwrap_or(0);
+                let f = h.read::<u8>(rec + 1);
+                h.write(rec + 1, f | 0x80);
+                h.write(rec + 4, (q & 0xffff) | (j.cast_unsigned() << 16));
+                return;
+            }
+        }
+        e = e.wrapping_add(8);
+    }
+}
+
+/// `Atel_TurnToWorker_0086f8a0(worker, target)` (name ours; callers
+/// `Native_003c`, `0x00869510`): the worker's current turn block (as in
+/// [`atel_turn_to_point`]) records the target (`u16` at `+0`) and the
+/// worker turns to the target worker's position.
+pub fn atel_turn_to_worker<H: ffx_bridge::Host>(
+    h: &mut H,
+    w: u32,
+    target: u32,
+    frame: u32,
+    yaw_pitch: impl FnOnce(&mut H, &[u32]) -> u32,
+) {
+    let level = u32::from(h.read::<u8>(w + 0x32));
+    let kind = h.read::<u8>(h.read::<u32>(w));
+    let level = if matches!(kind, 5 | 6) {
+        level.min(1)
+    } else {
+        level.min(8)
+    };
+    let turn = h.read::<u32>(w + level * 0x4c + 0x174);
+    h.write(turn, lo16(target));
+    let t = super::atel_get_basic_work(h, target.cast_signed());
+    let p = pos_block(h, t);
+    let point = [0, 4, 8].map(|o| x87::store(x87::load(h.read(p + o))));
+    atel_turn_to_point(h, w, point, frame, yaw_pitch);
+}
+
+/// `Atel_SyncTurnEnd_00870dc0(worker, level)` (name ours; caller
+/// `0x008666e0`): a bound worker's character takes its rotation
+/// (`Ch_SetRot(chr, pos+0x34)`); then the level's turn (`level+0x48`:
+/// mode `u16` at `+2`, low 5 bits) ends (`Script_StopTurn(worker, -1)`,
+/// mode masked to `0x5000`, unless bit `0x4000`) when, for modes 3 and 4,
+/// the turn's `+0xc` is below its `+8`, or (any mode but 5) when the
+/// worker's direction (`pos+0x34`) is the turn's target `+0x20`, and with
+/// mode bits `0x80` / `0x40` also `+0x30`/`+0x24` and `+0x38`/`+0x28`.
+pub fn atel_sync_turn_end(h: &mut impl ffx_bridge::Host, w: u32, lvl: u32) {
+    let p = pos_block(h, w);
+    let t = h.read::<u32>(lvl + 0x48);
+    let mode = u32::from(h.read::<u16>(t + 2));
+    let c = h.read::<u32>(w + 0x9c);
+    if h.read::<u8>(w + 0xaa) == 1 && c != 0 {
+        let r = x87::store(x87::load(h.read(p + 0x34)));
+        host_call(h, 0x0082_b520, &[c, r]);
+    }
+    let m = mode & 0x1f;
+    if m == 5 {
+        return;
+    }
+    if m == 3 || m == 4 {
+        let a = x87::load(h.read(t + 0xc));
+        let b = x87::load(h.read(t + 8));
+        if a < b {
+            stop_turn_unless_held(h, w, t);
+        }
+    }
+    if !same_f32(h, t + 0x20, p + 0x34) {
+        return;
+    }
+    let f = h.read::<u16>(t + 2);
+    if f & 0x80 != 0 && !same_f32(h, t + 0x24, p + 0x30) {
+        return;
+    }
+    if f & 0x40 != 0 && !same_f32(h, t + 0x28, p + 0x38) {
+        return;
+    }
+    stop_turn_unless_held(h, w, t);
+}
+
+/// Whether the `f32`s at `a` and `b` compare equal (`fucompp`: NaN never,
+/// -0 and 0 alike).
+#[allow(clippy::float_cmp)] // the original's exact compare
+fn same_f32(m: &impl Mem, a: u32, b: u32) -> bool {
+    x87::load(m.read(a)) == x87::load(m.read(b))
+}
+
+/// Unless the turn `t`'s mode (`+2`) has bit `0x4000`, the mode keeps only
+/// `0x5000` and the worker's turn stops (`Script_StopTurn(w, -1)`).
+fn stop_turn_unless_held(h: &mut impl ffx_bridge::Host, w: u32, t: u32) {
+    let f = h.read::<u16>(t + 2);
+    if f & 0x4000 == 0 {
+        h.write(t + 2, f & 0x5000);
+        host_call(h, 0x0086_3fe0, &[w, u32::MAX]);
+    }
+}
+
+/// Copies the NUL-terminated string at `from` to `to`, its NUL included.
+fn copy_cstr(m: &mut impl Mem, from: u32, to: u32) {
+    let mut k = 0;
+    loop {
+        let c = m.read::<u8>(from.wrapping_add(k));
+        m.write(to.wrapping_add(k), c);
+        if c == 0 {
+            return;
+        }
+        k += 1;
+    }
+}
+
+/// `Atel_StreamSeek_00885bf0(start, count, sector, id, pos)` (name ours;
+/// caller `Native_01d6`): a sound stream's file name
+/// (`SndStreamPCName(id, frame)`, 16 bytes) becomes the CD's current
+/// stream name (`0x013300c0`); for `pos` -1 also the upper-cased DVD name
+/// (`0x013300a0`, `SndToUpper`), `0x01330098` = `0x78`, `*sector` = `0x19`,
+/// a count of 1 and the position `SndStreamDVDPos(0x504)`. Then the CD
+/// object (`GetCD`) selects `*sector` (its `+0x10`) and seeks twice (its
+/// `+4`: 0, then `(pos >> 16) + count`); `*start` = that sector and
+/// `*count` = the count (1 without one). Returns the second seek's result
+/// plus `pos & 0xffff`.
+pub fn atel_stream_seek(
+    h: &mut impl ffx_bridge::Host,
+    start: u32,
+    count: u32,
+    sector: u32,
+    id: u32,
+    mut pos: u32,
+    frame: u32,
+) -> u32 {
+    let mut n = if count == 0 { 1 } else { h.read::<u32>(count) };
+    host_call(h, 0x0088_7870, &[id, frame]);
+    let name = h.rebase(0x0133_00c0);
+    if pos == u32::MAX {
+        h.write(h.rebase(0x0133_0098), 0x78_u32);
+        let dvd = h.rebase(0x0133_00a0);
+        copy_cstr(h, frame, dvd);
+        copy_cstr(h, frame, name);
+        host_call(h, 0x0088_7940, &[dvd]);
+        pos = host_call(h, 0x0088_7790, &[0x504]);
+        h.write(sector, 0x19_u32);
+        n = 1;
+    } else {
+        copy_cstr(h, frame, name);
+    }
+    let cd = host_call(h, 0x0076_d0d0, &[]);
+    let select = h.read::<u32>(cd + 0x10);
+    let s = h.read::<u32>(sector);
+    h.call(select, &[s]);
+    let at = (pos >> 16).wrapping_add(n);
+    let seek = h.read::<u32>(cd + 4);
+    h.call(seek, &[0]);
+    let seek = h.read::<u32>(cd + 4);
+    let r = h.call(seek, &[at]).wrapping_add(pos & 0xffff);
+    if start != 0 {
+        h.write(start, at);
+    }
+    if count != 0 {
+        h.write(count, n);
+    }
+    r
+}
+
+/// `AtelJumpGameOver()` (`0x0086da10`; caller `AtelBattleEndCallback`):
+/// the game-over jump: the menus and battle reset (`TOReset1`,
+/// `MsBtlGetInit`), vibration stopped and masked, the event's and the
+/// playing music's replay points cleared (the playing music faded out
+/// over 0x78 frames), music `0x8a` stopped and cleared, no music number,
+/// every separate and sound stopped and the waves cleared
+/// (`SndClearWave(-2)`), no separates to load, no group mask, memory
+/// movie 6; ctrl work 0 flagged (`+0` bit `0x80`, `+0x210` bit 2) and
+/// current for the focus, blur and filter resets, the ripple effect off,
+/// the text language reset, `TOReset2`, `g_TkScalePair` = (2, 2) and the
+/// jump to map `0x17` (`AtelSetEventJump(0x17, 0)`); the ctrl work back.
+pub fn atel_jump_game_over(h: &mut impl ffx_bridge::Host) {
+    for f in [0x008a_de50, 0x0079_8b60, 0x0087_62f0] {
+        host_call(h, f, &[]);
+    }
+    host_call(h, 0x0087_5f60, &[u32::MAX, 1]);
+    if host_call(h, 0x0087_3b00, &[]).cast_signed() >= 0 {
+        let n = host_call(h, 0x0087_3b00, &[]);
+        host_call(h, 0x0088_69e0, &[n]);
+    }
+    if host_call(h, SND_GET_NOW_PLAY_MUSIC, &[]).cast_signed() >= 0 {
+        let n = host_call(h, SND_GET_NOW_PLAY_MUSIC, &[]);
+        host_call(h, 0x0088_69e0, &[n]);
+        let n = host_call(h, SND_GET_NOW_PLAY_MUSIC, &[]);
+        host_call(h, 0x0088_6af0, &[n, 0x78]);
+    }
+    host_call(h, 0x0088_6a60, &[0x8a]);
+    host_call(h, 0x0088_6800, &[0x8a]);
+    host_call(h, 0x0087_3d00, &[u32::MAX]);
+    host_call(h, 0x0088_6db0, &[]);
+    atel_stop_sound_all(h);
+    host_call(h, 0x0088_5ec0, &[0xffff_fffe]);
+    h.write(h.rebase(SEP_LOAD_COUNT), 0_u32);
+    h.write(h.rebase(SEP_GROUP_MASK), 0_u8);
+    host_call(h, 0x0087_3e90, &[6]);
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let old = h.read::<u32>(ctx);
+    let works = h.rebase(CTRL_WORKS);
+    let f = h.read::<u8>(works);
+    h.write(works, f | 0x80);
+    let f = h.read::<u32>(works + 0x210);
+    h.write(works + 0x210, f | 2);
+    h.write(ctx, works);
+    host_call(h, 0x0082_cb60, &[0]);
+    host_call(h, 0x0082_bee0, &[0]);
+    host_call(h, 0x0082_cc70, &[]);
+    host_call(h, 0x0090_8450, &[]);
+    atel_reset_text_language(h);
+    host_call(h, 0x008a_dee0, &[]);
+    let two = 2f32.to_bits();
+    h.write(h.rebase(0x0132_5b98), two);
+    h.write(h.rebase(0x0132_5b9c), two);
+    host_call(h, 0x0086_fec0, &[0x17, 0]);
+    h.write(ctx, old);
+}
+
+/// `Atel_KickBGSepsOnFlag_00865780(header, on)` (name ours; caller
+/// `0x00865740`): every background separate (flags bit 2) of the event
+/// header's table: one flagged `0x80` (starts later) stops without `on`
+/// and plays (`SndSepPlay(id, 0x3f, 0x7f)`) with it; one not flagged
+/// fades to `0x3f` with `on` and `0x7f` without over 12 frames
+/// (`SndSepVolumeTranslate`, not for flag `0x40`). In a running event
+/// (ctx `+2` bit 8, `+0x1f4` past 3), flag `0x100` without `on` or `0x200`
+/// with it plays the separate instead.
+pub fn atel_kick_bg_seps_on_flag(h: &mut impl ffx_bridge::Host, hdr: u32, on: u32) {
+    let t = sep_table(h, hdr);
+    let n = if t == 0 { 0 } else { h.read::<i32>(t) };
+    for i in 0..n.max(0).cast_unsigned() {
+        let t = sep_table(h, hdr);
+        let id = if t == 0 {
+            0
+        } else {
+            h.read::<u32>(t + i * 8 + 4)
+        };
+        let t = sep_table(h, hdr);
+        let flags = if t == 0 {
+            0
+        } else {
+            h.read::<u32>(t + i * 8 + 8)
+        };
+        if flags & 2 == 0 {
+            continue;
+        }
+        let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+        let mut force = false;
+        if h.read::<u8>(c + 2) & 8 != 0 && h.read::<u32>(c + 0x1f4) > 3 {
+            if flags & 0x100 != 0 && on == 0 {
+                force = true;
+            }
+            if flags & 0x200 != 0 && on != 0 {
+                force = true;
+            }
+        }
+        let play = if flags & 0x80 != 0 {
+            if on == 0 {
+                host_call(h, 0x0088_6eb0, &[id]);
+                force
+            } else {
+                if flags & 0x40 == 0 {
+                    host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+                }
+                true
+            }
+        } else if force {
+            true
+        } else {
+            if flags & 0x40 == 0 {
+                let v = if on == 0 { 0x7f } else { 0x3f };
+                host_call(h, 0x0088_6ff0, &[id, 0xc, v]);
+            }
+            false
+        };
+        if play {
+            host_call(h, 0x0088_6e50, &[id, 0x3f, 0x7f]);
+        }
+    }
+}
+
+/// `Native_GetChrOptPos_00a7a980(worker, _, stack, mode)` (name ours;
+/// caller `Native_5036`, mode 0): pops three variable words (z, y, x
+/// order: the last popped is x's), for mode 0 an attachment index, and a
+/// worker index; that worker's character gives a position (mode 0:
+/// `Ch_OptposGet(chr, index, frame)`; 1: point 0; 2: its `+0x6b4`
+/// vector) stored (`fstp m32`) into the variables that have an address
+/// (`AtelGetRealVarAdrs`). Without a character nothing is stored. (For
+/// another mode the original stores its uninitialised locals; `frame`
+/// then.) Returns 0.
+pub fn native_get_chr_opt_pos(
+    h: &mut impl ffx_bridge::Host,
+    w: u32,
+    s: u32,
+    mode: u32,
+    frame: u32,
+) -> u32 {
+    let vz = super::atel_pop_stack_integer(h, s);
+    let vy = super::atel_pop_stack_integer(h, s);
+    let vx = super::atel_pop_stack_integer(h, s);
+    let index = if mode == 0 {
+        super::atel_pop_stack_integer(h, s)
+    } else {
+        0
+    };
+    let wi = super::atel_pop_stack_integer(h, s);
+    let ax = super::atel_get_real_var_adrs(h, w, vx);
+    let ay = super::atel_get_real_var_adrs(h, w, vy);
+    let az = super::atel_get_real_var_adrs(h, w, vz);
+    let t = super::atel_get_basic_work(h, wi.cast_signed());
+    let chr = super::atel_get_char_handle(h, t);
+    if chr == 0 {
+        return 0;
+    }
+    match mode {
+        0 => {
+            host_call(h, 0x0083_54f0, &[chr, index, frame]);
+        }
+        1 => {
+            host_call(h, 0x0083_54f0, &[chr, 0, frame]);
+        }
+        2 => {
+            for k in 0..4 {
+                let v = h.read::<u32>(chr + 0x6b4 + k * 4);
+                h.write(frame + k * 4, v);
+            }
+        }
+        _ => {}
+    }
+    for (k, at) in (0u32..).zip([ax, ay, az]) {
+        if at != 0 {
+            copy_f32(h, frame + k * 4, at);
+        }
+    }
+    0
+}
+
+/// `Atel_ApplyPolarMove_008629c0(worker)` (name ours; caller
+/// `0x008666e0`): a worker bound as type 2..5 (`+0xaa`) moves by its
+/// polar step (`Math_PolarToVector(&d, r, yaw, pitch)`: r its position
+/// block's `+0xc`, a tenth for types 4 and 5; yaw `+0x20`, pitch `+0x24`;
+/// `d` in `frame`, 32 bytes) added to its position; type 2 then moves its
+/// camera there (`MsCameraSetRect(+0x3c, 1, &(x, y, z, 1))`, the vector at
+/// `frame + 0x10`) when its level's turn blocks (`+0x44`, `+0x48`) have a
+/// mode; types 4 and 5 re-bind (`AtelSetBindObject`).
+pub fn atel_apply_polar_move(h: &mut impl ffx_bridge::Host, w: u32, frame: u32) {
+    let b = h.read::<u8>(w + 0xaa);
+    if !(2..=5).contains(&b) {
+        return;
+    }
+    let level = u32::from(h.read::<u8>(w + 0x32));
+    let lv = super::script_worker_level(h, w, level.cast_signed());
+    let p = pos_block(h, w);
+    let mut r = x87::store(x87::load(h.read(p + 0xc)));
+    if b == 4 || b == 5 {
+        r = x87::store(x87::div(x87::load(r), 10.0));
+    }
+    let yaw = x87::store(x87::load(h.read(p + 0x20)));
+    let pitch = x87::store(x87::load(h.read(p + 0x24)));
+    host_call(h, 0x0088_a3a0, &[frame, r, yaw, pitch]);
+    let mut v = [0u32; 3];
+    for k in 0..3u32 {
+        let s = x87::add(
+            x87::load(h.read(p + k * 4)),
+            x87::load(h.read(frame + k * 4)),
+        );
+        v[k as usize] = x87::store(s);
+        h.write(p + k * 4, v[k as usize]);
+    }
+    match h.read::<u8>(w + 0xaa) {
+        2 => {
+            let a = h.read::<u32>(lv + 0x44);
+            let c = h.read::<u32>(lv + 0x48);
+            if h.read::<u16>(a + 2) != 0 || h.read::<u16>(c + 2) != 0 {
+                let rect = frame + 0x10;
+                for (k, x) in (0u32..).zip(v) {
+                    h.write(rect + k * 4, x);
+                }
+                h.write(rect + 12, 1f32.to_bits());
+                let cam = h.read::<u32>(w + 0x3c);
+                host_call(h, MS_CAMERA_SET_RECT, &[cam, 1, rect]);
+            }
+        }
+        4 | 5 => {
+            host_call(h, 0x0086_f4c0, &[w]);
+        }
+        _ => {}
+    }
+}
+
+/// `Atel_SetEventWaterFlag_00865740(on)` (name ours; caller
+/// `0x008682f0`): when the save event's "in water" byte (`+0x28`) is not
+/// `on` yet, it becomes `on` and the event's delayed background
+/// separates (ctx `+0x48`, [`atel_kick_bg_seps_on_flag`]) and water
+/// effects ([`atel_show_water_fps`]) follow.
+pub fn atel_set_event_water_flag(h: &mut impl ffx_bridge::Host, on: u32) {
+    let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+    if on == u32::from(h.read::<u8>(save + 0x28)) {
+        return;
+    }
+    h.write(save + 0x28, on.to_le_bytes()[0]);
+    let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let hdr = h.read::<u32>(c + 0x48);
+    if hdr != 0 {
+        atel_kick_bg_seps_on_flag(h, hdr, on);
+    }
+    atel_show_water_fps(h, on);
+}
+
+/// `AtelUpdateWindowStatus()` (`0x00871f30`; caller `0x008688f0`): each
+/// message window of the bank takes the window system's status
+/// (`TOGetWindowStatus(i)`, 4 read as 0); one shown with mode flag 2 makes
+/// the windows busy, the last open one (status 2) with mode flags `0x32`
+/// becomes the active one (`TOSetMessageWindowActive`, 0 without). With
+/// no message running (ctx `+0x1a` 0), the ctx's window countdown
+/// `+0x1ea` steps outside menus and battles (at 1 it clears `+3` bit
+/// `0x80` and ends), the ctx's `+1` bit 4 follows the busy state (cleared
+/// at once without `+1` bit 8), and on a change or the countdown's end
+/// the UC is turned off and back on as the ctx allows; `+3` bit `0x10`
+/// says whether the player's control is off. Returns the activation's
+/// `EAX`.
+pub fn atel_update_window_status(h: &mut impl ffx_bridge::Host) -> u32 {
+    let mut busy = false;
+    let mut active = 0u32;
+    for i in 0..8u32 {
+        // the window's status word (its `+0x14`; mode flags 9 bytes on)
+        let win = window(h, i);
+        let st = host_call(h, 0x0090_6c20, &[i]);
+        h.write(win, lo16(st));
+        if lo16(st) == 4 {
+            h.write(win, 0_u16);
+        }
+        let s = h.read::<u16>(win);
+        if s != 0 && h.read::<u8>(win + 9) & 2 != 0 {
+            busy = true;
+        }
+        if s == 2 && h.read::<u8>(win + 9) & 0x32 != 0 {
+            active = i;
+        }
+    }
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let mut c = h.read::<u32>(ctx);
+    if h.read::<u16>(c + 0x1a) == 0 {
+        let mut ended = false;
+        if h.read::<u8>(c + 0x1ea) != 0 {
+            if host_call(h, 0x0087_2b50, &[]) == 0
+                && h.read::<u8>(h.rebase(MENU_EXEC_STATUS)) == 0
+                && host_call(h, 0x0078_0c90, &[]) == 0
+            {
+                c = h.read::<u32>(ctx);
+                let v = h.read::<u8>(c + 0x1ea);
+                if v == 1 {
+                    let f = h.read::<u8>(c + 3);
+                    h.write(c + 3, f & 0x7f);
+                    ended = true;
+                    h.write(c + 0x1ea, 0_u8);
+                } else {
+                    h.write(c + 0x1ea, v.saturating_sub(1));
+                }
+            } else {
+                c = h.read::<u32>(ctx);
+            }
+        }
+        let f = h.read::<u8>(c + 1);
+        let was = f & 4 != 0;
+        if was != busy || ended {
+            if was != busy {
+                let f = if f & 8 == 0 {
+                    f & 0xfb
+                } else {
+                    (f & !4) | (u8::from(busy) << 2)
+                };
+                h.write(c + 1, f);
+            }
+            let b = h.read::<u8>(c);
+            let keep = b & 2;
+            let on = b & 0x22 != 0;
+            atel_uc_off(h);
+            c = h.read::<u32>(ctx);
+            if h.read::<u8>(c + 1) & 4 == 0 && h.read::<u8>(c + 3) & 0x84 == 0 && on {
+                atel_uc_on(h);
+                c = h.read::<u32>(ctx);
+            }
+            let f = h.read::<u8>(c);
+            h.write(c, (f & !2) | keep);
+        }
+        let off = h.read::<u8>(c + 1) & 4 != 0 || h.read::<u8>(c) & 2 == 0;
+        let f = h.read::<u8>(c + 3);
+        h.write(c + 3, (f & !0x10) | (u8::from(off) << 4));
+    }
+    host_call(h, 0x008a_f7d0, &[active])
+}
+
+/// `AtelUpdateBattleStatus()` (`0x00871bc0`; caller `0x00872bd0`): with
+/// ctrl work 0 current (left so) and running: a battle requested by its
+/// `+0x210` bit 2 is cleared first (`MsBattleExeClear`); the distance the
+/// ctx's camera target moved (`+0x218` against `+0x228`,
+/// `CIsqrt(Math_LengthSq3(d))`, `fcall` for those `ST0` results) is the
+/// walk step: for a player in control (`+0xa` set, `+0` bits 2 and 8,
+/// not `+0` bit `0x10`, not `+1` bits 1 and 4, not `+3` bits `0x84`, the
+/// event past frame 6) it counts toward the walk abilities
+/// (`MsWalkAbilityProcess`) and, with encounters on (`+0x210` bit 1
+/// without 4, the save event's `+0x13` bits 6), toward an encounter:
+/// outside battles, menus (`+3` bits 3), the sound's busy state
+/// (`0x00886630`) and CD reads (`GetCD()->+8(1)`), `MsBattleEncountExe(map
+/// (the forced one when set), the save event's group, step)`. Last, ctx
+/// `+1` loses bits 1 and 2.
+#[allow(clippy::verbose_bit_mask)] // the original's `+3` bits 0..1 test
+pub fn atel_update_battle_status<H: ffx_bridge::Host>(
+    h: &mut H,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    let cd = host_call(h, 0x0076_d0d0, &[]);
+    let mut amount = 0u32;
+    let mut encount = false;
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let works = h.rebase(CTRL_WORKS);
+    h.write(ctx, works);
+    if h.read::<u8>(works) & 1 != 0 {
+        let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+        let mut c = h.read::<u32>(ctx);
+        if h.read::<u8>(c + 0x210) & 2 != 0 {
+            host_call(h, 0x0078_1530, &[]);
+            c = h.read::<u32>(ctx);
+        }
+        let d = [0u32, 4, 8].map(|k| {
+            x87::store(x87::sub(
+                x87::load(h.read(c + 0x228 + k)),
+                x87::load(h.read(c + 0x218 + k)),
+            ))
+        });
+        let l = x87::store(fcall(h, 0x0088_c3c0, &d));
+        let dist = x87::store(fcall(h, 0x0088_c400, &[l]));
+        let c = h.read::<u32>(ctx);
+        let f0 = h.read::<u8>(c);
+        if h.read::<u16>(c + 0xa) != 0xffff && f0 & 2 != 0 {
+            let f1 = h.read::<u8>(c + 1);
+            if f1 & 4 == 0
+                && h.read::<u8>(c + 3) & 0x84 == 0
+                && f0 & 0x10 == 0
+                && f1 & 1 == 0
+                && f0 & 8 != 0
+                && h.read::<u32>(c + 0x1f4) > 6
+            {
+                let fl = h.read::<u32>(c + 0x210);
+                if fl & 1 != 0 && h.read::<u8>(save + 0x13) & 6 != 0 && fl & 4 == 0 {
+                    amount = dist;
+                    encount = true;
+                }
+                if host_call(h, 0x0078_0c90, &[]) == 0 {
+                    let c = h.read::<u32>(ctx);
+                    if h.read::<u8>(c + 3) & 3 == 0 {
+                        host_call(h, 0x0078_2d60, &[dist]);
+                    }
+                }
+            }
+        }
+        let go = host_call(h, 0x0078_0c90, &[]) == 0
+            && {
+                let c = h.read::<u32>(ctx);
+                h.read::<u8>(c + 3) & 3 == 0
+            }
+            && host_call(h, 0x0088_6630, &[]) == 0
+            && {
+                let f = h.read::<u32>(cd + 8);
+                h.call(f, &[1]) == 0
+            }
+            && encount;
+        if go {
+            let mut map = host_call(h, 0x0088_d690, &[]);
+            let forced = h.read::<i32>(h.rebase(FORCE_BATTLE_MAP));
+            if forced > 0 {
+                map = forced.cast_unsigned();
+            }
+            let save = host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+            let group = u32::from(h.read::<u8>(save + 0x10));
+            host_call(h, 0x0078_0d10, &[map, group, amount]);
+        }
+    }
+    let c = h.read::<u32>(ctx);
+    let f = h.read::<u8>(c + 1);
+    h.write(c + 1, f & 0xfc);
+}
+
+/// `Atel_InitWorkerLevels_0086d300(worker, a, b, c)` (name ours; caller
+/// `AtelInitBasicWork`): each level (2 for types 5 and 6, 9 otherwise)
+/// gets `a`, `b`, `c` at `+0x16c`, `+0x16a`, `+0x168` (`u16`) and is reset
+/// (`AtelResetLevel`); a type-1 worker's levels also get their move block
+/// (`+0x5b8 + 0x4c*l`, at `+0x170`: speed `0x5a`, `+0x10` 0, `+0x38` 1,
+/// `+0x3c`/`+0x40` pi) and turn block (`+0x864 + 0x44*l`, at `+0x174`:
+/// speed `0x5a`, `+0x10..+0x1c` pi/64).
+pub fn atel_init_worker_levels(h: &mut impl ffx_bridge::Host, w: u32, a: u32, b: u32, c: u32) {
+    let kind = |h: &mut _| -> u8 { kind_of(h, w) };
+    let set = |h: &mut _, l: u32| {
+        let at = w + l * 0x4c;
+        write_u16(h, at + 0x16c, a);
+        write_u16(h, at + 0x16a, b);
+        write_u16(h, at + 0x168, c);
+    };
+    if matches!(kind(h), 5 | 6) {
+        for i in 0..2 {
+            set(h, i.min(1));
+            host_call(h, 0x0086_39e0, &[w, i]);
+        }
+        return;
+    }
+    // (the original clamps the level by the type again here; it is not 5
+    // or 6 on this path, so level i is i)
+    for i in 0..9u32 {
+        let l = i;
+        set(h, l);
+        host_call(h, 0x0086_39e0, &[w, i]);
+        if kind(h) != 1 {
+            continue;
+        }
+        let at = w + l * 0x4c;
+        let mv = w + 0x5b8 + i * 0x4c;
+        let turn = w + 0x864 + i * 0x44;
+        h.write(at + 0x174, turn);
+        h.write(at + 0x170, mv);
+        h.write(mv + 4, 0x5a_u16);
+        h.write(mv + 6, 0_u16);
+        h.write(mv + 0x10, 0_u32);
+        let pi = h.read::<u32>(h.rebase(0x00b9_22d0));
+        let pi = x87::store(x87::load(pi));
+        h.write(mv + 0x3c, pi);
+        h.write(mv + 0x40, pi);
+        let step = x87::store(x87::load(h.read(h.rebase(0x00b5_be78))));
+        for k in 0..4 {
+            h.write(turn + 0x10 + k * 4, step);
+        }
+        h.write(turn + 4, 0x5a_u16);
+        h.write(turn + 6, 0_u16);
+        h.write(mv + 0x38, 1f32.to_bits());
+    }
+}
+
+/// The worker's type (its header's first byte).
+fn kind_of(m: &impl Mem, w: u32) -> u8 {
+    m.read::<u8>(m.read::<u32>(w))
+}
+
+/// The low 16 bits of `v` at `at`.
+fn write_u16(m: &mut impl Mem, at: u32, v: u32) {
+    m.write(at, lo16(v));
+}
+
+/// `Atel_CheckLineCross_008680a0(worker, _, target, rec)` (name ours;
+/// caller `0x00868020`): whether the line the target (a worker, or for
+/// `0xffff` the ctx's camera target) moved along since last frame (from
+/// its position block's `+0x10` to `+0`; the ctx's `+0x228` to `+0x218`)
+/// crosses the worker's line (`+0` to `+0x30`, `Math_SegmentsCross`; the
+/// four points in `frame`, 64 bytes): not checked when the target did not
+/// move in x and z unless the worker's `+0x36` bit 0 asks (then cleared).
+/// A crossing counts when the worker's height `+0x1c` is not positive or
+/// the crossing's height gap (`Math_CrossHeightGap`, through `fcall`) is
+/// at most it: without `rec`, `+0x36` bits 2/4 record the side and the
+/// worker's trigger 4 is requested (`AtelRequestTrigger_008764f0`); with
+/// one, `rec+4` = the side and a vibration signal is sent
+/// (`Atel_RegistVibrateSignalWith_008766d0`, curve `rec+2`; both called
+/// through the game).
+pub fn atel_check_line_cross<H: ffx_bridge::Host>(
+    h: &mut H,
+    w: u32,
+    target: u32,
+    rec: u32,
+    frame: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    let p = pos_block(h, w);
+    let (from, to) = if target == 0xffff {
+        let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+        (c + 0x228, c + 0x218)
+    } else {
+        let t = super::atel_get_basic_work(h, target.cast_signed());
+        let q = pos_block(h, t);
+        (q + 0x10, q)
+    };
+    let (a, b, c, d) = (frame, frame + 0x10, frame + 0x20, frame + 0x30);
+    for (dst, src) in [(a, from), (b, to), (c, p), (d, p + 0x30)] {
+        for k in 0..3 {
+            copy_f32(h, src + k * 4, dst + k * 4);
+        }
+    }
+    let height = x87::store(x87::load(h.read(p + 0x1c)));
+    let still = same_f32(h, b, a) && same_f32(h, b + 8, a + 8);
+    let f = h.read::<u16>(w + 0x36);
+    if still && f & 1 == 0 {
+        return;
+    }
+    h.write(w + 0x36, f & 0xfffe);
+    let side = host_call(h, 0x0088_9bb0, &[a, b, c, d]).cast_signed();
+    if side == 0 {
+        return;
+    }
+    let gap = x87::load(x87::store(fcall(h, 0x0088_9e90, &[a, b, c, d])));
+    let hgt = x87::load(height);
+    if !(hgt <= 0.0 || gap <= hgt) {
+        return;
+    }
+    let id = u32::from(h.read::<u16>(w + 0x2e));
+    if rec == 0 {
+        let f = h.read::<u16>(w + 0x36);
+        let f = if side > 0 {
+            (f & 0xfffb) | 2
+        } else {
+            f & 0xfff9
+        };
+        h.write(w + 0x36, f);
+        host_call(h, 0x0087_64f0, &[0xffff, id, 4]);
+    } else {
+        h.write(rec + 4, u8::from(side > 0));
+        let curve = u32::from(h.read::<u16>(rec + 2));
+        host_call(h, 0x0087_66d0, &[0xffff, id, 4, curve]);
+    }
+}

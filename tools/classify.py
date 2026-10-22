@@ -399,6 +399,14 @@ REVIEWED = {
     0x006f2d50: ("platform", "WaitForSingleObject(handle, 1) loop while WAIT_FAILED; returns whether the result is 0 (script round 24)"),
     0x008c1390: ("glue", "TkMn2DrawScissorRect: 5-byte jmp to TODrawScissorXYWH 0x8f9230 (hooked in system.rs) (menu round 32)"),
     0x0086a7f0: ("glue", "5-byte jmp to 0x7826a0, itself jmp FFXGetAsiaMode 0x887c20 (hooked in system.rs) (menu round 32)"),
+    0x006f3000: ("platform", "exact copy of SignalSema (ReleaseSemaphore wrapper) (script round 25)"),
+    0x006db800: ("platform", "8-slot ring buffer push guarded by WaitForSingleObject/ReleaseSemaphore, channels 0x1e8 apart (script round 25)"),
+    0x006db8a0: ("platform", "pop side of the semaphore-guarded ring buffer at 0x6db800 (script round 25)"),
+    0x006f3130: ("platform", "creates the Iggy pause menu (FFIggyPauseMenu) once into 0xce81fc; caller PhyreScene_initScene (script round 25)"),
+    0x00885a80: ("debug", "AtelOutputEncountStart: separator line to a host-PC log via AtelPCOpen2/Write/Close (script round 25)"),
+    0x00879b60: ("debug", "reads a host-PC file into a source buffer (AtelPCOpen, sceRead); caller AtelLoadSourceData (script round 25)"),
+    0x008c1790: ("glue", "5-byte jmp 0x88ec60 (TkVU1SyncPath -> sceGsSyncPath, already glue) (menu round 33)"),
+    0x008c30d0: ("glue", "jmp 0x786900, thunk to MsSetSaveParamAll (TkMsSetSaveParamAll) (menu round 33)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

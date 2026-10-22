@@ -300,4 +300,66 @@ pub mod bridge {
         }
         last
     }
+
+    /// The emulated VU0 register [`vu_mul_matrix`] leaves each row in
+    /// (`0x00c8f930`).
+    const VU_RESULT: ffx_bridge::Global<u32> = ffx_bridge::Global::new(0x00c8_f930);
+
+    /// `vu_mul_matrix_00753670(out, m, n)` (`0x00753670`, ours; called by
+    /// `pppKeShpTailPhtDraw`): `out = n m`, each of `n`'s rows through
+    /// `m` as [`vu_apply_matrix`] does one vector: `m`'s 16 words into the
+    /// row registers once, then per row `r` its 4 words into the vector
+    /// register, per lane `i` the accumulator `x m[0][i]`, `+= y m[1][i]`,
+    /// `+= z m[2][i]` (`f32` after each step) and `w m[3][i] + acc` into
+    /// the result register (`0x00c8f930`), copied to `out` row `r` before
+    /// the next row is read. `x` is `n`'s word read again after the copy,
+    /// the others the register's. Returns `out[15]`'s bits (the original's
+    /// `eax`).
+    #[allow(clippy::many_single_char_names)]
+    pub fn vu_mul_matrix<M: Mem>(mem: &mut M, out: u32, m: u32, n: u32) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store};
+        let (rows, vector, acc, res) = (
+            VU_ROWS.ptr(mem).addr,
+            VU_VECTOR.ptr(mem).addr,
+            VU_ACC.ptr(mem).addr,
+            VU_RESULT.ptr(mem).addr,
+        );
+        let copy = |mem: &mut M, to: u32, from: u32| {
+            let w: u32 = mem.read(from);
+            mem.write(to, w);
+        };
+        for i in 0..16 {
+            copy(mem, rows + 4 * i, m.wrapping_add(4 * i));
+        }
+        let row = |mem: &M, r: u32, i: u32| load(mem.read(rows + 0x10 * r + 4 * i));
+        let lane = |i: u32| acc + 4 * i;
+        let mut last = 0;
+        for r in 0..4u32 {
+            let v = n.wrapping_add(0x10 * r);
+            for i in 0..4 {
+                copy(mem, vector + 4 * i, v.wrapping_add(4 * i));
+            }
+            let x = load(mem.read(v));
+            for i in 0..4 {
+                mem.write(lane(i), store(mul(row(mem, 0, i), x)));
+            }
+            for k in 1..3 {
+                let s = load(mem.read(vector + 4 * k));
+                for i in 0..4 {
+                    let sum = add(mul(row(mem, k, i), s), load(mem.read(lane(i))));
+                    mem.write(lane(i), store(sum));
+                }
+            }
+            let w = load(mem.read(vector + 0xc));
+            for i in 0..4 {
+                let sum = add(mul(row(mem, 3, i), w), load(mem.read(lane(i))));
+                mem.write(res + 4 * i, store(sum));
+            }
+            for i in 0..4 {
+                last = mem.read::<u32>(res + 4 * i);
+                mem.write(out.wrapping_add(0x10 * r + 4 * i), last);
+            }
+        }
+        last
+    }
 }

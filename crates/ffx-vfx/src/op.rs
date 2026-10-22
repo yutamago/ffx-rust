@@ -4810,6 +4810,45 @@ pub mod bridge {
         0
     }
 
+    /// `op_effect_run_after()` (`0x00800670`, `MsEffectProcess`'s effect
+    /// frame): `op_oef2_tex_clut_cue_loop`, `op_oef2_tex_clut_ovl_trans(-1)`,
+    /// `op_oef2_sound_cue_loop`; unless the battle opus object has a pinned
+    /// frame (`+0x58`), its frame `+0x54` = the latched frame (`0x02332e8c`)
+    /// and [`EFFECT_RUN_LIMIT`] = `0x02332e90` + 0xf0000 (a pinned frame
+    /// leaves both alone); the listener (`0x0113fcd0`) from
+    /// `MsCopyCameraMatrix` and the matrix at `0x0113fd10` from
+    /// `MsCopyScreenMatrix`; `opu_main_host(0, 1)` and `opp_main(0)`; then,
+    /// unpinned (re-read, through the object pointer re-read too), the frame
+    /// is latched back; the limit cleared. Callees through `call`. Returns
+    /// 0.
+    pub fn op_effect_run_after<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        call(mem, g(mem, 0x007e_4720), &[]);
+        call(mem, g(mem, 0x007e_4e80), &[u32::MAX]);
+        call(mem, g(mem, 0x0080_0170), &[]);
+        let obj = crate::et::bridge::OPUS_BATTLE.get(mem);
+        if mem.read::<u32>(obj.wrapping_add(0x58)) == 0 {
+            let latched: u32 = mem.read(g(mem, 0x0233_2e8c));
+            mem.write(obj.wrapping_add(0x54), latched);
+            let base: u32 = mem.read(g(mem, 0x0233_2e90));
+            EFFECT_RUN_LIMIT.set(mem, base.wrapping_add(0xf_0000));
+        }
+        call(mem, g(mem, 0x007c_0070), &[g(mem, 0x0113_fcd0)]);
+        call(mem, g(mem, 0x007b_ba50), &[g(mem, 0x0113_fd10)]);
+        call(mem, g(mem, 0x0080_cc00), &[0, 1]);
+        call(mem, g(mem, 0x0080_bd50), &[0]);
+        let obj = crate::et::bridge::OPUS_BATTLE.get(mem);
+        if mem.read::<u32>(obj.wrapping_add(0x58)) == 0 {
+            let f: u32 = mem.read(obj.wrapping_add(0x54));
+            mem.write(g(mem, 0x0233_2e8c), f);
+        }
+        EFFECT_RUN_LIMIT.set(mem, 0);
+        0
+    }
+
     /// `op_anm_tex0_set_007ecf50(_, a, b)` (`0x007ecf50`; `0x007ecfa0` is
     /// the same code): the emulated `r1` (`0x00c8f528`) = `a & 0x3fff` and
     /// `(b & 0x3fff) << 5`, `r2`'s high word (`0x00c8f538`, `0x00c8f53c`)
@@ -5754,6 +5793,35 @@ pub mod bridge {
         ret
     }
 
+    /// `opp_weapon_shadow_00813410(host, battle)` (`0x00813410`, ours;
+    /// `opp_main`'s handler 5, `0x00c48e8c`): for the host's part (`+0x220`)
+    /// `battle +0x54` = `weaponShadowDraw_008138d0(part +0xbc, ftol(f32
+    /// part +0x44), battle +0x54, part +0xc8, part +0xa8, u16 part +0xc2)`
+    /// (through `call`), which it also returns.
+    pub fn opp_weapon_shadow<M: Mem>(
+        mem: &mut M,
+        host: u32,
+        battle: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let part = rd(mem, host.wrapping_add(0x220));
+        let t = f64::from(mem.read::<f32>(part.wrapping_add(0x44)));
+        let t = ffx_bridge::x87::ftol(mem, t);
+        let args = [
+            rd(mem, part.wrapping_add(0xbc)),
+            t,
+            rd(mem, battle.wrapping_add(0x54)),
+            rd(mem, part.wrapping_add(0xc8)),
+            rd(mem, part.wrapping_add(0xa8)),
+            u32::from(mem.read::<u16>(part.wrapping_add(0xc2))),
+        ];
+        let f = Global::<u32>::new(0x0081_38d0).ptr(mem).addr;
+        let r = call(mem, f, &args);
+        mem.write(battle.wrapping_add(0x54), r);
+        r
+    }
+
     /// `op_mul_m33(dst, b, c)` (`0x007e8b00`), the 3x3 part of a matrix
     /// product on the emulated VU0: after the debug trace (`dbgPrintf`,
     /// line 0x674) and the EE call parameters (`AsmEmuSetFuncParam0..3`:
@@ -5801,5 +5869,257 @@ pub mod bridge {
         }
         let regs: [u32; 16] = mem.read(rc);
         mem.write(dst, regs);
+    }
+
+    /// `op_shape_draw_eamap(shape, key, slot)` (`0x007f49e0`; the area-map
+    /// effects `0x00a4fe40`, `0x00a51340`, `0x00a51560`), `frame` the
+    /// original's `ebp`: puts one quad of `shape` (its eight `i16` corner
+    /// coordinates at `+0x20`, four `i16` UV words at `+0x30`, its colour
+    /// bytes at `shape + [+4]`) into the area map's render data
+    /// (`graphicAbmapGetVertexInfo(frame - 0x104, 3)`, `+0x94`). Nothing
+    /// (returns 0) on a skipped frame (`g_GraphicSkipFrame`), else 1.
+    ///
+    /// The view: `x0 = m30 / m3f - 2048 + 256`, `y0 = m34 / m3f - 2048 +
+    /// 208` (`m` = `[key +0x10]`), the screen size `w`, `h`
+    /// (`graphicFontGetScreenWH`, into `frame - 0x164`/`- 0x174`), `sx = w
+    /// / 512`, `sy = h / 416`, `a = m2c` (1 when 0), `rx = sy 4 a / (sx 3)`;
+    /// a corner `(x, y)` goes to `((x rx / 15 + x0) sx - w / 2, (y a / 15 +
+    /// y0) sy - h / 2, 1)`. The colour: the shape's bytes (0 without a
+    /// shape) times key bytes `+4..+7` / 128, then `r, g, b` / 255 and `a`
+    /// / 128 (`f32` at each step). UVs: `u0 = U0 / 4096`, `v0 = 1 - V0 /
+    /// 4096`, `u1 = u0 + U1 / 4096`, `v1 = v0 - V1 / 4096`.
+    ///
+    /// By `slot`: -0x35e appends the quad at the overlay list's vertex
+    /// count (`rd +0x70`: colours `+0x80`, positions `+0x78`, UVs `+0x84`;
+    /// six indices at `+0x88`, at `ftol(f32(count) 1.5)`; the counts `+0x70`
+    /// += 4, `+0x74` += 6); other negative slots write the overlay's quad
+    /// `-1 - slot`; 0xffff only appends six indices to the main list (`+4`
+    /// base, `+8` count, `+0x1c`) and to the overlay's; slots 0x35d and
+    /// up append to the main list and write quad `slot - 0x35d`, smaller
+    /// ones quad `slot` (colours `+0x14`, positions `+0xc`, UVs `+0x18`
+    /// through `graphicGetAbmapUV_006410a0(shape [+0x10] & 0x3fff, u, v,
+    /// ...)`, out words in the original's locals). Before a main-list quad,
+    /// a shape whose `+0x24` is 0xa0 is patched (`+0x24` = 0xb4, `+0x2a`,
+    /// `+0x2c`, `+0x2e` = 0xba, 0xb4, 0xba). Callees through `call`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn op_shape_draw_eamap<M: Mem>(
+        mem: &mut M,
+        shape: u32,
+        key: u32,
+        slot: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, ftol, mul, round_trip, store, sub};
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let f32_at = |mem: &M, a: u32| f64::from(f32::from_bits(mem.read::<u32>(a)));
+        let st = |x: f64| f64::from(f32::from_bits(store(x)));
+        let (corners, colour) = if shape == 0 {
+            (0, 0)
+        } else {
+            (
+                shape.wrapping_add(0x20),
+                shape.wrapping_add(rd(mem, shape.wrapping_add(4))),
+            )
+        };
+        if rd(mem, g(mem, 0x012f_b7d0)) != 0 {
+            return 0;
+        }
+        // the shape's instance (`+0x10` as an i64 plus `+0x14` above): its
+        // low word's 14 bits are the UV kind, the high word stays in the
+        // local the fourth UV's `v` goes to
+        let (kind, high) = if shape == 0 {
+            (0, 0)
+        } else {
+            let lo = rd(mem, shape.wrapping_add(0x10));
+            let hi = rd(mem, shape.wrapping_add(0x14));
+            (
+                lo & 0x3fff,
+                hi.wrapping_add((lo.cast_signed() >> 31).cast_unsigned()),
+            )
+        };
+        mem.write(frame.wrapping_sub(0x168), high);
+        let m = rd(mem, key.wrapping_add(0x10));
+        let w3 = f32_at(mem, m.wrapping_add(0x3c));
+        let x0 = st(add(
+            sub(div(f32_at(mem, m.wrapping_add(0x30)), w3), 2048.0),
+            256.0,
+        ));
+        let y0 = st(add(
+            sub(div(f32_at(mem, m.wrapping_add(0x34)), w3), 2048.0),
+            208.0,
+        ));
+        let info = frame.wrapping_sub(0x104);
+        let rdata = call(mem, g(mem, 0x0063_8fd0), &[info, 3]);
+        let (wp, hp) = (frame.wrapping_sub(0x164), frame.wrapping_sub(0x174));
+        call(mem, g(mem, 0x0064_0db0), &[wp, hp]);
+        for k in 0..0x40u32 {
+            mem.write(info.wrapping_add(4 * k), 0u32);
+        }
+        #[allow(clippy::cast_precision_loss)] // fild, then an f32 store
+        let wf = st(f64::from(rd(mem, wp).cast_signed()));
+        #[allow(clippy::cast_precision_loss)]
+        let hf = st(f64::from(rd(mem, hp).cast_signed()));
+        let sx = st(mul(0.001_953_125, wf));
+        let sy = st(div(hf, 416.0));
+        let a0 = st(f32_at(mem, m.wrapping_add(0x2c)));
+        let a = if a0 == 0.0 { 1.0 } else { a0 };
+        let rx = st(div(mul(mul(sy, 4.0), a), mul(sx, 3.0)));
+        let hw = st(mul(wf, 0.5));
+        let hh = st(mul(hf, 0.5));
+        let mut c = [0f64; 4];
+        if colour != 0 {
+            for (k, e) in (0u32..).zip(c.iter_mut()) {
+                *e = f64::from(mem.read::<u8>(colour.wrapping_add(k)));
+            }
+        }
+        let k128 = 0.007_812_5;
+        for (k, e) in (0u32..).zip(c.iter_mut()) {
+            let b = f64::from(mem.read::<u8>(key.wrapping_add(4 + k)));
+            *e = st(mul(mul(b, k128), *e));
+        }
+        let colours = |c: [f64; 4]| -> [u32; 4] {
+            [
+                store(div(c[0], 255.0)),
+                store(div(c[1], 255.0)),
+                store(div(c[2], 255.0)),
+                store(mul(c[3], k128)),
+            ]
+        };
+        let corner = |mem: &M, k: u32| f64::from(mem.read::<i16>(corners.wrapping_add(2 * k)));
+        // the quad's positions (x, y, 1) at `to`
+        let positions = |mem: &mut M, to: u32| {
+            for v in 0..4u32 {
+                let x = corner(mem, 2 * v);
+                let y = corner(mem, 2 * v + 1);
+                let px = store(sub(mul(add(div(mul(x, rx), 15.0), x0), sx), hw));
+                let py = store(sub(mul(add(div(mul(y, a), 15.0), y0), sy), hh));
+                mem.write(to.wrapping_add(0xc * v), [px, py, 1f32.to_bits()]);
+            }
+        };
+        let k12 = 0.000_244_140_625;
+        let uvs = |mem: &M| {
+            let u0 = st(mul(corner(mem, 8), k12));
+            let v0 = st(sub(1.0, st(mul(corner(mem, 9), k12))));
+            let u1 = st(add(st(mul(corner(mem, 10), k12)), u0));
+            let v1 = st(sub(v0, st(mul(corner(mem, 11), k12))));
+            (u0, v0, u1, v1)
+        };
+        let write4 = |mem: &mut M, to: u32, c: [u32; 4]| {
+            for v in 0..4u32 {
+                mem.write(to.wrapping_add(0x10 * v), c);
+            }
+        };
+        let f = |x: f64| store(x);
+        let quads = |mem: &M, at: u32| rd(mem, at);
+        // six indices `b, b+1, b+2, b+2, b+1, b+3` at `list + 2 n`
+        let indices = |mem: &mut M, list: u32, n: u32, b: u16| {
+            let at = list.wrapping_add(n.wrapping_mul(2));
+            let d = [0u16, 1, 2, 2, 1, 3];
+            for (k, e) in (0u32..).zip(d) {
+                mem.write(at.wrapping_add(2 * k), b.wrapping_add(e));
+            }
+        };
+        // `add dword [at], by`: the count read again after the indices
+        let bump = |mem: &mut M, at: u32, by: u32| {
+            let v = rd(mem, at);
+            mem.write(at, v.wrapping_add(by));
+        };
+        let main_append = |mem: &mut M, r: u32| {
+            let n = rd(mem, r.wrapping_add(8));
+            let list = rd(mem, r.wrapping_add(0x1c));
+            #[allow(clippy::cast_possible_truncation)] // the u16 base
+            let b = rd(mem, r.wrapping_add(4)) as u16;
+            indices(mem, list, n, b);
+            bump(mem, r.wrapping_add(4), 4);
+            bump(mem, r.wrapping_add(8), 6);
+        };
+        let r = rd(mem, rdata.wrapping_add(0x94));
+        let slot_i = slot.cast_signed();
+        if slot_i < 0 {
+            let cols = colours(c);
+            // the first vertex: the overlay's vertex count, or quad -1 - slot
+            let vertex = if slot_i == -0x35e {
+                rd(mem, r.wrapping_add(0x70))
+            } else {
+                (-1i32).wrapping_sub(slot_i).cast_unsigned().wrapping_mul(4)
+            };
+            write4(
+                mem,
+                quads(mem, r.wrapping_add(0x80)).wrapping_add(vertex.wrapping_mul(0x10)),
+                cols,
+            );
+            positions(
+                mem,
+                quads(mem, r.wrapping_add(0x78)).wrapping_add(vertex.wrapping_mul(0xc)),
+            );
+            let (u0, v0, u1, v1) = uvs(mem);
+            let uv = quads(mem, r.wrapping_add(0x84)).wrapping_add(vertex.wrapping_mul(8));
+            for (k, x) in (0u32..).zip([u0, v0, u1, v0, u0, v1, u1, v1]) {
+                mem.write(uv.wrapping_add(4 * k), f(x));
+            }
+            if slot_i == -0x35e {
+                let n = rd(mem, r.wrapping_add(0x70));
+                #[allow(clippy::cast_precision_loss)] // the u32 count as an f32
+                let count = st(f64::from(n));
+                let at = ftol(mem, mul(count, 1.5));
+                let list = rd(mem, r.wrapping_add(0x88));
+                #[allow(clippy::cast_possible_truncation)] // the u16 base
+                indices(mem, list, at, n as u16);
+                bump(mem, r.wrapping_add(0x70), 4);
+                bump(mem, r.wrapping_add(0x74), 6);
+            }
+            return 1;
+        }
+        if slot == 0xffff {
+            main_append(mem, r);
+            let r = rd(mem, rdata.wrapping_add(0x94));
+            let n = rd(mem, r.wrapping_add(0x74));
+            let list = rd(mem, r.wrapping_add(0x88));
+            let b = rd(mem, r.wrapping_add(0x70));
+            #[allow(clippy::cast_possible_truncation)] // the u16 base
+            indices(mem, list, n, b as u16);
+            bump(mem, r.wrapping_add(0x70), 4);
+            bump(mem, r.wrapping_add(0x74), 6);
+            return 1;
+        }
+        let mut quad = slot;
+        if slot_i >= 0x35d {
+            main_append(mem, r);
+            quad = slot.wrapping_sub(0x35d);
+        }
+        let cols = colours(c);
+        write4(
+            mem,
+            quads(mem, r.wrapping_add(0x14)).wrapping_add(quad.wrapping_mul(0x40)),
+            cols,
+        );
+        if mem.read::<u16>(corners.wrapping_add(4)) == 0xa0 {
+            mem.write(corners.wrapping_add(4), 0xb4u16);
+            mem.write(corners.wrapping_add(0xa), 0x00b4_00bau32);
+            mem.write(corners.wrapping_add(0xe), 0xbau16);
+        }
+        positions(
+            mem,
+            quads(mem, r.wrapping_add(0xc)).wrapping_add(quad.wrapping_mul(0x30)),
+        );
+        let (u0, v0, u1, v1) = uvs(mem);
+        let outs = [0x154u32, 0x14c, 0x15c, 0x170, 0x150, 0x158, 0x160, 0x168]
+            .map(|o| frame.wrapping_sub(o));
+        let uv_fn = g(mem, 0x0064_10a0);
+        for (k, (u, v)) in (0..4).zip([(u0, v0), (u1, v0), (u0, v1), (u1, v1)]) {
+            call(
+                mem,
+                uv_fn,
+                &[kind, f(u), f(v), outs[2 * k], outs[2 * k + 1]],
+            );
+        }
+        let uv = quads(mem, r.wrapping_add(0x18)).wrapping_add(quad.wrapping_mul(0x20));
+        for (k, &o) in (0u32..).zip(&outs) {
+            let x: f32 = mem.read(o);
+            mem.write(uv.wrapping_add(4 * k), round_trip(x));
+        }
+        1
     }
 }
