@@ -20236,3 +20236,141 @@ fn menu_round34_ctrl_tuto_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round35_main_draw_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0035_0ba0) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x0088_ec60u32, 0u8), // TkVU1SyncPath
+        (0x008b_ef30, 0),      // TOMenuOpenPktBuffTmp
+        (0x008f_5c10, 0),      // TODrawMenuBG
+        (0x0088_e750, 1),      // Math_CosLookup
+        (0x0090_3bb0, 9),      // TOMkpShapeXYWHUV
+        (0x008e_7d30, 12),     // DrawWaterWaveShapeC2
+        (0x008a_9a70, 1),      // MenuPlayer_DamageClass2
+        (0x008a_c850, 1),      // TOGetSaveChrName
+        (0x0090_5930, 6),      // ToMakeBtlEasyEdgeFont
+        (0x008a_9b80, 1),      // TkMenuGetSP
+        (0x0090_5820, 6),      // ToMakeBtlEasyEdgeDigit2
+        (0x008c_0670, 3),      // TkMn2DrawCrossCursor
+        (0x008c_13d0, 3),      // TkMn2DrawStatiCursor
+        (0x008f_4b20, 6),      // TODrawCrossBoxXYWHC2
+        (0x008a_98b0, 0),      // jmp MsGetGIL
+        (0x008c_0a20, 5),      // TkMn2DrawGillPlate
+        (0x008a_9c50, 0),      // TkMenuGetTime
+        (0x008e_19f0, 5),      // TOMenuDrawTimer
+        (0x0090_3ee0, 11),     // TOMkpShapeXYWHUVC2
+        (0x0086_c410, 0),      // AtelGetSaveDic
+        (0x0078_51d0, 0),      // MsGetSaveConfigEnglish
+        (0x0086_c430, 2),      // AtelGetSaveDicName
+        (0x008d_c9e0, 1),      // TkMenuDraw1612Width
+        (0x0090_16b0, 7),      // TOMkpCrossExtMesFontLClut
+        (0x008b_ea20, 0),      // TOMenuDrawKickTmp
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // the sprintf texts are logged as strings
+    let text_cell = t.alloc(&[0; 4]);
+    let code = seq_code_str_args(log, 0x0090_1660, &[1, 2, 3, 4, 5], text_cell);
+    jump_stub(&mut t, 0x0090_1660, &code);
+    // ToGetBtlEasyDigitWidth2(value, &width, scale, extra): the width from
+    // a cell; the out pointer (a frame local) is not logged
+    let width = t.alloc(&[0; 4]);
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x15]; // mov eax, [esp+8]; mov edx, [width]
+    extra.extend(width.to_le_bytes());
+    extra.extend([0x89, 0x10]); // mov [eax], edx
+    let wcell = t.alloc(&[0; 4]);
+    let code = seq_code_of(log, 0x0090_5230, &[0, 2, 3], wcell, &extra);
+    jump_stub(&mut t, 0x0090_5230, &code);
+    // TkMenuGetPlayerFromIndex2(i) = i ^ [key]: rows get their own characters
+    let key = t.alloc(&[0; 4]);
+    let mut extra = vec![0x8b, 0x44, 0x24, 0x04, 0x33, 0x05]; // mov eax, [esp+4]; xor eax, [key]
+    extra.extend(key.to_le_bytes());
+    extra.push(0xc3); // ret
+    let code = seq_code(log, 0x008a_9b00, 1, key, &extra);
+    jump_stub(&mut t, 0x008a_9b00, &code);
+    let count = seq_stub(&mut t, 0x008a_9b50, log, 0, &[]);
+    let members = seq_stub(&mut t, 0x008a_9b70, log, 0, &[]);
+    // TOGetFFXLangJmp: [lang], then [lang] += [flip] (1: 0xb comes once,
+    // so the offsets a row keeps from an earlier one show)
+    let lang = t.alloc(&[0; 4]);
+    let flip = t.alloc(&[0; 4]);
+    let mut extra = vec![0xa1]; // mov eax, [lang]
+    extra.extend(lang.to_le_bytes());
+    extra.extend([0x8b, 0x15]); // mov edx, [flip]
+    extra.extend(flip.to_le_bytes());
+    extra.extend([0x01, 0x15]); // add [lang], edx
+    extra.extend(lang.to_le_bytes());
+    extra.push(0xc3); // ret
+    let code = seq_code(log, 0x008a_c2f0, 0, lang, &extra);
+    jump_stub(&mut t, 0x008a_c2f0, &code);
+    let timer = seq_stub(&mut t, 0x008a_9c60, log, 0, &[]);
+    let values: Vec<u32> = [0x008a_98c0u32, 0x008a_9990, 0x008a_9970, 0x008a_99b0]
+        .iter()
+        .map(|&f| seq_stub(&mut t, f, log, 1, &[]))
+        .collect();
+    let slides = t.sym(0x0187_1678);
+    let (choice, from, to) = (t.sym(0x0187_154c), t.sym(0x0187_155c), t.sym(0x0187_1560));
+    let rows = [0xffff_ffffu32, 0, 1, 2, 3, 5, 7, 8];
+    for round in 0..1200u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let n = t.rng.pick(&[0u32, 1, 3, 3, 5, 7, 8, 8, 0xffff_ffff]);
+        t.put(count, n);
+        let m = t.rng.pick(&[0u32, 1, 2, 3, 3, 8, 0xffff_ffff]);
+        t.put(members, m);
+        for k in 0..8 {
+            let v = t
+                .rng
+                .pick(&[0u16, 0, 1, 0x10, 0x400, 0x7fff, 0x8000, 0xfff0]);
+            t.put(slides + 2 * k, v);
+        }
+        let k = t.rng.pick(&[0u32, 0, 1, 2, 5]);
+        t.put(key, k);
+        for c in [choice, from, to] {
+            let v = t.rng.pick(&rows);
+            t.put(c, v);
+        }
+        let v = t.rng.pick(&[0xbu32, 0xb, 0, 1, 7, 9, 0xa]);
+        t.put(lang, v);
+        let v = t.rng.pick(&[0u32, 0, 1]);
+        t.put(flip, v);
+        let v = t
+            .rng
+            .pick(&[0u32, 1, 2, 3, 0xffff_fffe, 0xffff_fffd, 0x8000_0000]);
+        t.put(timer, v);
+        // HP/MP: values whose "%5d/%5d" texts fit the original's 16 bytes
+        for &c in &values {
+            let v = t.rng.pick(&[0u32, 1, 999, 9999, 99_999, 0xffff_fffb]);
+            let v = if t.rng.below(2) == 0 {
+                v
+            } else {
+                t.rng.below(100_000)
+            };
+            t.put(c, v);
+        }
+        let v = if round % 3 == 0 {
+            quiet_float(&mut t)
+        } else {
+            t.rng.pick(&[0f32, 24.0, 37.5, -8.0, 1e30]).to_bits()
+        };
+        t.put(width, v);
+        t.twin("TkMenuDrawMain", 0x008e_0ba0, &[], U32, |o| {
+            w(tk::tk_menu_draw_main(
+                o,
+                [local, local + 32],
+                &mut ui_remap,
+                &mut callback,
+            ))
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}
