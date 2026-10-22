@@ -97,6 +97,45 @@ entries for one address (two branches porting the same function, now
 merged), or a `ported!` entry for an address hooked by hand in
 `crates/ffx-hook/src`. Keep one port and drop the other.
 
+### Argument slots
+
+`FFX_GAME_DIR=... python3 -I tools/check-argslots.py [--module M] [--all] [NAME...]`
+sits next to check-clobber and uses the same disassembly cache (about 5 s).
+It catches a second kind of thing a caller can depend on. cdecl leaves the
+argument words to the caller, and MSVC reuses them as scratch: `op_random`
+(0x7e6700) stores its result into its own argument slot (`fstp [ebp+8]`),
+and `opp_md_break_pieces` and `opus_mdc_break_make` then pass that word on
+as a stale argument word of `op_random_per` / `op_irandom_p`. The thunk
+gives a shim a copy of the arguments, so behind a plain shim the caller
+finds the operand there instead of the result.
+
+The check scans every hooked function's original for stores to `[ebp+8+k]`
+(ebp frame) or `[esp+4+k]` at the entry depth (aligned `and esp` frames and
+`mov ebx,esp` bases included), and for `lea` of such a slot. It then follows
+each call site from `call_sites.tsv` from the return address, on both sides
+of every branch and through jump tables, for up to 200 instructions or a
+`ret`/tail jump, tracking the caller's stack depth and any copies of `esp`
+in other registers. It reports a call site when the slot word is read, has
+its address taken, or is passed as an argument word to a later call whose
+callee reads that word (measured from the callee's code, tail jumps
+followed), before the caller overwrites or pops it. A shim reproduces the
+stores when it takes the caller's argument area: `fn shim(x: f32; slots: u32)`
+in `ported!` makes the thunk pass the address of the caller's first
+argument as an extra last stack word (cdecl and stdcall only), and the
+shim writes through it (`rand::bridge::op_random_in_slot`). To test such a
+shim, run a real original caller in both oracles and replace the callee in
+`b` by the bridge with `Oracle::stand_in` (vfx_hi.rs
+`op_random_shim_through_a_real_caller`).
+
+It exits 1 when an unhooked caller reads a slot whose shim does not
+reproduce the store. Callers that are hooked themselves never run their
+original code, so they are listed as notes (`[caller hooked]`). `--all`
+also lists the stores that no caller reads (about 1,200 hooked functions
+store into their argument slots). Limits: calls through function pointers
+are not in `call_sites.tsv`; indirect calls and imports are taken to pop
+nothing, so `[esp+X]` reads after a stdcall API or vtable call may be
+misplaced (`[ebp+D]` reads are exact).
+
 ## Build and test timing
 
 Builds and tests log their wall time, so a round can show how much of an

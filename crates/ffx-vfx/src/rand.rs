@@ -88,6 +88,24 @@ pub mod bridge {
         run(mem, x, super::positive)
     }
 
+    /// [`op_random`] as the original leaves its frame: the result also goes
+    /// to its argument's slot at `slot` (`fstp [ebp+8]`, then reloaded as
+    /// the result), where callers that read the word after the call find
+    /// it (`tools/check-argslots.py`).
+    pub fn op_random_in_slot(mem: &mut impl Mem, x: f32, slot: u32) -> f32 {
+        let v = op_random(mem, x);
+        mem.write(slot, v.to_bits());
+        v
+    }
+
+    /// [`op_random_p`] with its result also in its argument's slot, as
+    /// [`op_random_in_slot`].
+    pub fn op_random_p_in_slot(mem: &mut impl Mem, x: f32, slot: u32) -> f32 {
+        let v = op_random_p(mem, x);
+        mem.write(slot, v.to_bits());
+        v
+    }
+
     /// `op_spline_draw_path3(scale, spread)` (`0x007e67f0`; name by
     /// layout): a random value around a sign, through the emulated VU0
     /// as the original moves it. With `x = 2 draw - 3` (the `R` draw as

@@ -174,13 +174,17 @@ fn srand_program(obj: u32, key: u32, ctrl: u32, spread: Spread, kind: Kind) {
 
 ported! {
     // ---- rand ----
-    /// `op_random(x)`: a random value in `[-x, x)` from VU0's `R`.
-    op_random @ 0x007e_6700 => extern "C" fn op_random(x: f32) -> f32 {
-        rand::bridge::op_random(&mut mem(), x)
+    /// `op_random(x)`: a random value in `[-x, x)` from VU0's `R`, also
+    /// left in the caller's argument slot as the original leaves it
+    /// (`opus_mdc_break_make`'s `op_irandom_p` and
+    /// `opp_md_break_pieces`' `op_random_per` read it as stale words).
+    op_random @ 0x007e_6700 => extern "C" fn op_random(x: f32; slots: u32) -> f32 {
+        rand::bridge::op_random_in_slot(&mut mem(), x, slots)
     }
-    /// `op_random_p(x)`: a random value in `[0, x)`.
-    op_random_p @ 0x007e_6780 => extern "C" fn op_random_p(x: f32) -> f32 {
-        rand::bridge::op_random_p(&mut mem(), x)
+    /// `op_random_p(x)`: a random value in `[0, x)`, also left in the
+    /// caller's argument slot.
+    op_random_p @ 0x007e_6780 => extern "C" fn op_random_p(x: f32; slots: u32) -> f32 {
+        rand::bridge::op_random_p_in_slot(&mut mem(), x, slots)
     }
 
     // ---- rand programs ----

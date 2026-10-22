@@ -2450,50 +2450,57 @@ fn op_md_x64_draw_matches_the_original() {
     }
 }
 
-#[test]
-#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
-fn opp_md_break_pieces_matches_the_original() {
+/// Random inputs of `opp_md_break_pieces(src, out, rec)` (and `R`);
+/// returns the piece count and the kind.
+#[allow(clippy::cast_possible_truncation)]
+fn break_pieces_inputs(p: &mut Pair, rng: &mut Xorshift, [src, out, rec]: [u32; 3]) -> (i16, u16) {
     use ffx_vfx::rand::bridge::{R, SEEDED};
+    p.fill(src, 0x200, rng);
+    p.fill(out, 0x20 + 0x100 * 6, rng);
+    let n = rng.pick(&[0i16, 1, 2, 3, 5, -1]);
+    p.set(src + 0x10, n);
+    // the vertex table in the middle of the block, so that a
+    // negative vertex number stays inside it
+    p.set(src + 8, 0x160u32);
+    for v in 0..0x30 {
+        let x = rng.pick(&[0i16, 1, -1, 7, 100, -3000, 0x7fff, -0x8000]);
+        let x = if rng.chance(50) {
+            (rng.next() as i16) >> 4
+        } else {
+            x
+        };
+        p.set(src + 0x130 + 2 * v, x);
+    }
+    for k in 0..n.max(0).cast_unsigned() {
+        let e = src + 0x30 + 0x20 * u32::from(k);
+        for at in [0xc, 0xe, 0x10] {
+            p.set(e + at, rng.pick(&[0i16, 1, 2, 3, 4, 5, 6, -1, -8]));
+        }
+    }
+    for i in 0..0x20 {
+        let x = rng.pick(&[0i16, 1, 2, 16, 100, 0x1000, -50, -0x8000]);
+        let x = if rng.chance(30) {
+            (rng.next() as i16) >> 3
+        } else {
+            x
+        };
+        p.set(rec + 2 * i, x);
+    }
+    let kind = rng.pick(&[0u16, 0, 1, 1, 2]);
+    p.set(out + 0x12, kind);
+    p.put(R, 0x3f80_0000 | rng.below(0x80_0000));
+    p.put(SEEDED, u32::from(rng.chance(90)));
+    (n, kind)
+}
+
+#[test]
+fn opp_md_break_pieces_matches_the_original() {
     for mut p in Pair::all() {
         let mut rng = Xorshift(0x00a7_44e0);
         let (src, out, rec) = (p.alloc(0x200), p.alloc(0x20 + 0x100 * 6), p.alloc(0x40));
         let mut seen = [0u32; 3];
         for round in 0..1000 {
-            p.fill(src, 0x200, &mut rng);
-            p.fill(out, 0x20 + 0x100 * 6, &mut rng);
-            let n = rng.pick(&[0i16, 1, 2, 3, 5, -1]);
-            p.set(src + 0x10, n);
-            // the vertex table in the middle of the block, so that a
-            // negative vertex number stays inside it
-            p.set(src + 8, 0x160u32);
-            for v in 0..0x30 {
-                let x = rng.pick(&[0i16, 1, -1, 7, 100, -3000, 0x7fff, -0x8000]);
-                let x = if rng.chance(50) {
-                    (rng.next() as i16) >> 4
-                } else {
-                    x
-                };
-                p.set(src + 0x130 + 2 * v, x);
-            }
-            for k in 0..n.max(0).cast_unsigned() {
-                let e = src + 0x30 + 0x20 * u32::from(k);
-                for at in [0xc, 0xe, 0x10] {
-                    p.set(e + at, rng.pick(&[0i16, 1, 2, 3, 4, 5, 6, -1, -8]));
-                }
-            }
-            for i in 0..0x20 {
-                let x = rng.pick(&[0i16, 1, 2, 16, 100, 0x1000, -50, -0x8000]);
-                let x = if rng.chance(30) {
-                    (rng.next() as i16) >> 3
-                } else {
-                    x
-                };
-                p.set(rec + 2 * i, x);
-            }
-            let kind = rng.pick(&[0u16, 0, 1, 1, 2]);
-            p.set(out + 0x12, kind);
-            p.put(R, 0x3f80_0000 | rng.below(0x80_0000));
-            p.put(SEEDED, u32::from(rng.chance(90)));
+            let (n, kind) = break_pieces_inputs(&mut p, &mut rng, [src, out, rec]);
             check_deep_n(
                 &mut p,
                 &format!("opp_md_break_pieces round {round}"),
@@ -2516,6 +2523,100 @@ fn opp_md_break_pieces_matches_the_original() {
             }
         }
         assert!(seen.iter().all(|&s| s > 50), "{}: {seen:?}", p.name);
+    }
+}
+
+/// `op_random`'s shim through a real caller: the original
+/// `opp_md_break_pieces` reads `op_random`'s argument slot after the call
+/// (as `op_random_per`'s stale words, tools/check-argslots.py). `a` runs
+/// it with the original `op_random`, `b` with `op_random` replaced by
+/// what the shim runs (`op_random_in_slot` on the caller's slot); results
+/// and memory must match.
+#[test]
+fn op_random_shim_through_a_real_caller() {
+    use ffx_oracle::Returns;
+    use ffx_vfx::rand;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007e_6700);
+        let (src, out, rec) = (p.alloc(0x200), p.alloc(0x20 + 0x100 * 6), p.alloc(0x40));
+        let cell = p.alloc(8);
+        let at = p.sym(0x007e_6700);
+        p.b.stand_in(at, Returns::St0F32, cell, |s| {
+            let (x, slot) = (f32::from_bits(s.arg(0)), s.slot(0));
+            u64::from(rand::bridge::op_random_in_slot(s, x, slot).to_bits())
+        })
+        .unwrap();
+        // the stand-in's own bytes
+        p.b.clear_dirty();
+        let mut pieces = 0;
+        for round in 0..300 {
+            let (n, _) = break_pieces_inputs(&mut p, &mut rng, [src, out, rec]);
+            let what = format!("opp_md_break_pieces through op_random's shim, round {round}");
+            let f = p.sym(0x00a7_44e0);
+            let r = p.a.call(f, Conv::Cdecl, &[src, out, rec]).unwrap();
+            let mine = p.b.call(f, Conv::Cdecl, &[src, out, rec]).unwrap();
+            assert_eq!(r.eax, mine.eax, "{}: {what}: result", p.name);
+            // the stand-in's result cell is b's alone
+            p.set(cell, 0u32);
+            p.set(cell + 4, 0u32);
+            p.same(&what);
+            pieces += usize::from(n > 0);
+        }
+        assert!(pieces > 100, "{}: {pieces}", p.name);
+    }
+}
+
+/// `op_random` and `op_random_p` against their shims' bridges through a
+/// caller that reads the argument slot after the call (`push x; call;
+/// fstp [out]; pop [out + 4]`): `a` runs the original, `b` the bridge as a
+/// stand-in (`op_random_in_slot`, `op_random_p_in_slot`).
+#[test]
+fn op_random_slots_match_the_original() {
+    use ffx_oracle::Returns;
+    use ffx_vfx::rand::bridge::{self as rand, R, SEEDED};
+    for sym in [0x007e_6700u32, 0x007e_6780] {
+        for mut p in Pair::all() {
+            let mut rng = Xorshift(sym);
+            let (out, cell) = (p.alloc(8), p.alloc(8));
+            let at = p.sym(sym);
+            p.b.stand_in(at, Returns::St0F32, cell, move |s| {
+                let (x, slot) = (f32::from_bits(s.arg(0)), s.slot(0));
+                let v = if sym == 0x007e_6700 {
+                    rand::op_random_in_slot(s, x, slot)
+                } else {
+                    rand::op_random_p_in_slot(s, x, slot)
+                };
+                u64::from(v.to_bits())
+            })
+            .unwrap();
+            let caller = p.sym(THUNK);
+            let mut c = vec![0xff, 0x74, 0x24, 0x04]; // push [esp + 4]
+            c.push(0xe8); // call sym
+            let call_end = caller + u32::try_from(c.len()).unwrap() + 4;
+            c.extend(at.wrapping_sub(call_end).to_le_bytes());
+            c.extend([0xd9, 0x1d]); // fstp dword [out]
+            c.extend(out.to_le_bytes());
+            c.extend([0x8f, 0x05]); // pop dword [out + 4]
+            c.extend((out + 4).to_le_bytes());
+            c.push(0xc3);
+            p.a.write(caller, &c).unwrap();
+            p.b.write(caller, &c).unwrap();
+            p.b.clear_dirty();
+            p.a.clear_dirty();
+            for round in 0..2000 {
+                let x = rng.float();
+                if round % 3 == 0 {
+                    p.put(R, rng.next());
+                    p.put(SEEDED, u32::from(rng.chance(80)));
+                }
+                let what = format!("{sym:#x}({x:#x}) round {round}");
+                p.a.call(caller, Conv::Cdecl, &[x]).unwrap();
+                p.b.call(caller, Conv::Cdecl, &[x]).unwrap();
+                p.set(cell, 0u32);
+                p.set(cell + 4, 0u32);
+                p.same(&what);
+            }
+        }
     }
 }
 

@@ -681,6 +681,54 @@ impl Oracle {
         Ok(())
     }
 
+    /// Replaces the cdecl function at `addr` (rebased) by Rust, for running
+    /// an original caller against what a hooked callee does (a shim and
+    /// its bridge). When the emulated code reaches `addr`, `f` runs on the
+    /// process as the callee sees it ([`StandIn`]: the return address at
+    /// [`StandIn::esp`], the arguments above it) and its result goes to
+    /// the 8-byte `cell`; the bytes written at `addr` then return it as
+    /// `returns` says (`mov eax, [cell]` or `fld dword [cell]`) and `ret`.
+    /// `cell` is the test's own memory, so the same in both oracles of a
+    /// pair keeps their diff clean. A failed memory access in `f` stops
+    /// the call with that error.
+    ///
+    /// # Errors
+    /// On emulator errors.
+    pub fn stand_in(
+        &mut self,
+        addr: u32,
+        returns: Returns,
+        cell: u32,
+        mut f: impl FnMut(&mut StandIn<'_, '_>) -> u64 + 'static,
+    ) -> Result<()> {
+        let mut code = match returns {
+            Returns::Nothing => vec![],
+            Returns::Eax => vec![0xa1],
+            Returns::St0F32 => vec![0xd9, 0x05],
+            Returns::St0F64 => vec![0xdd, 0x05],
+        };
+        if returns != Returns::Nothing {
+            code.extend(cell.to_le_bytes());
+        }
+        code.push(0xc3);
+        self.write(addr, &code)?;
+        self.uc
+            .add_code_hook(u64::from(addr), u64::from(addr), move |uc, _, _| {
+                let mut s = StandIn { uc, fault: None };
+                let v = f(&mut s);
+                let fault = s.fault.take();
+                let r = match fault {
+                    Some(e) => Err(e),
+                    None => crt::write(uc, cell, &v.to_le_bytes()),
+                };
+                if let Err(e) = r {
+                    uc.get_data_mut().fault = Some(e);
+                    let _ = uc.emu_stop();
+                }
+            })?;
+        Ok(())
+    }
+
     /// Sets the x87 control word (precision and rounding) for later calls.
     ///
     /// # Errors
@@ -1138,6 +1186,77 @@ impl ffx_bridge::Mem for Oracle {
     fn write_bytes(&mut self, addr: u32, data: &[u8]) {
         self.write(addr, data)
             .unwrap_or_else(|e| panic!("write of {} bytes at {addr:#x}: {e}", data.len()));
+    }
+    fn image_base(&self) -> u32 {
+        self.uc.get_data().image_base
+    }
+}
+
+/// How a [`Oracle::stand_in`] returns its value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Returns {
+    /// Nothing (the cell is written but not read).
+    Nothing,
+    /// The low word in `eax`.
+    Eax,
+    /// The low word as an `f32` in ST0.
+    St0F32,
+    /// The value as an `f64` in ST0.
+    St0F64,
+}
+
+/// The emulated process as a Rust stand-in sees it ([`Oracle::stand_in`]):
+/// memory as a [`ffx_bridge::Mem`] and the callee's stack.
+pub struct StandIn<'a, 'u> {
+    uc: &'a mut Unicorn<'u, State>,
+    fault: Option<Error>,
+}
+
+impl StandIn<'_, '_> {
+    /// `esp` on entry: the return address is at `[esp]`.
+    #[must_use]
+    pub fn esp(&self) -> u32 {
+        u32::try_from(self.uc.reg_read(RegisterX86::ESP).unwrap_or(0)).unwrap_or(0)
+    }
+
+    /// The address of stack argument word `i` (`esp + 4 + 4i`).
+    #[must_use]
+    pub fn slot(&self, i: u32) -> u32 {
+        self.esp().wrapping_add(4 + 4 * i)
+    }
+
+    /// Stack argument word `i`.
+    #[must_use]
+    pub fn arg(&self, i: u32) -> u32 {
+        ffx_bridge::Mem::read(self, self.slot(i))
+    }
+}
+
+impl ffx_bridge::Mem for StandIn<'_, '_> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        if let Ok(v) = self.uc.mem_read_as_vec(u64::from(addr), out.len()) {
+            out.copy_from_slice(&v);
+            return;
+        }
+        for (i, b) in out.iter_mut().enumerate() {
+            let a = u64::from(addr) + i as u64;
+            *b = self
+                .uc
+                .mem_read_as_vec(a, 1)
+                .ok()
+                .and_then(|v| v.first().copied())
+                .or_else(|| {
+                    let p = self.uc.get_data().pages.as_ref()?;
+                    let (start, data) = p.chunk(a)?;
+                    data.get(usize::try_from(a - start).ok()?).copied()
+                })
+                .unwrap_or(0);
+        }
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        if let Err(e) = crt::write(self.uc, addr, data) {
+            self.fault.get_or_insert(e);
+        }
     }
     fn image_base(&self) -> u32 {
         self.uc.get_data().image_base
