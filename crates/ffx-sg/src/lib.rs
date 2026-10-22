@@ -22,6 +22,7 @@ pub mod quat;
 pub mod savecmd;
 pub mod scratch;
 pub mod seq;
+pub mod spline;
 pub mod state;
 pub mod triangle;
 pub mod vec;

@@ -5123,10 +5123,10 @@
 0x00783020 function MsBtlReadManage           # fh v3:exact+call.cs 0x007830d0 cdecl; ported (battle round 21): the read's state machine over g_BtlStatus 4-0x22 (jump table 0x0078361c, index bytes 0x00783660), then MsBtlReadCueManage (docs/formats/battle.md)
 0x00783680 function MsBtlReadMonster          # kernel monster name/texts -> actor +0x50/+0x90/+0x190, then requests mon_data; was Mon_LoadText; ported (battle round 21): status 0xd, from 0x0112a92a each monster slot with an ID and a file (directory 0x10, MsGetChrID): data shared with an earlier same ID (+0x48; +0x11 0, +0x14 j + 0x14), readBtlMonsterName, kernel texts +0x50/+0x90/+0x190 (0x3f/0xff/0x1ff bytes; tables by ID < 0x65, 0x65-0xb4, else), IDs 0xfe/0x11c/0x11f with g_BtlFileKind set: default name of kind 8/9/0xc; shared: Mon_AttachData; else Sg_MallocA "mon_data", async read (0x00783990, request +0xc slot), -1; none left: Mon_LoadAll, status 0xe, 0
 0x00783990 function MsBtlReadMonsterDone_00783990 # the monster file read's completion (MsBtlReadMonster's CD +0 callback; request +0xc the slot); name ours; ported (ffx_battle::read, battle round 33): Mon_AttachData(request+0xc), then jmp MsBtlReadMonster
-0x007839b0 function MsBtlReadMonsterProcess   # fh v3:exact 0x00783a60
+0x007839b0 function MsBtlReadMonsterProcess   # fh v3:exact 0x00783a60; (i) -> eax: no model (+0xe 0xffff) or +0x24 clear: 0xffff; +0x38, motions enabled, +0xdd7: +0x5c3 by kind +0x5c2 (0x14-0x16 g_BtlMonsterSlots, 0x17 0, else 1; jump table 0x00783ae4); regist, MsActionRequest(i,0xff,5,0,2,0), motion 0x27, then +0x43d bit 1: +0x3f0 0xff, +0x433 1, motion 0x31, else fade in and motion 0; MsStatusEffectCheck's eax; ported (ffx_battle::regist, battle round 35)
 0x00783b00 function Mon_AttachData            # monster file sections -> actor +0xf78 (script), +0xf7c, +0xf80 (stats), +0xf84; eax = g_BtlRead after the increment; MsRegistSEdata(mon, file+section 6) when +0x11 and count > 6; ported (ffx_battle::read, battle round 33)
-0x00783b90 function MsBtlReadPlayerModelProcess # fh v3:exact 0x00783c40
-0x00783bc0 function MsBtlReadPlayerProcess    # fh v3:exact 0x00783c70
+0x00783b90 function MsBtlReadPlayerModelProcess # fh v3:exact 0x00783c40; (i): MsBtlChrRegist(i, +4), MsStatusEffectCheck; ported (ffx_battle::regist, battle round 35)
+0x00783bc0 function MsBtlReadPlayerProcess    # fh v3:exact 0x00783c70; (i, mode): +0x40 1.0, +0x38, +0xdfc 0, +0x6fc -1, motions enabled, regist unless mode 2, op_et_bindeff2 for i < 8, action and motion 0x27; mode 6 escape position (0x32), 8 battle position, body hit 2 off, no status check (0), 10 (0x39), else 0x31; +0x44f 0, MsSetChrWeak(-1); +0xdce: +0x508 0 (mode 10 hidden), else +0x508 MsCheckBtlPos and the motion; ported (ffx_battle::regist, battle round 35)
 0x00783d80 function MsBtlReadScene            # (n): formation byte 2 selects the footstep sound bank ("foot_data"); was Battle_LoadFootData; ported (battle round 20)
 0x00783e00 function MsBtlReadSceneFree        # fh v3:exact 0x00783eb0; ours: g_BtlRead3 freed (Sg_FreeA(p, 5)) and cleared; ported (battle round 14)
 0x00783e20 function MsBtlReadSetScene         # formation file sections: 0 script 0x0112a9ac, 1 0x0112a9b4, 2 formation 0x0112a9c0, 3 positions 0x0112a9b0 (0x20-byte records); was Battle_InitSections; the file's text/font, "system_01" check; with g_BtlExeMode status 0 and 0, else the set-up and status 10 (event jump map = battle map) or 8; ported (battle round 22, ffx_battle::read)
@@ -5496,8 +5496,8 @@
 0x007935b0 function MsBtlChrInit              # fh v3:exact 0x007935c0
 0x00793630 function MsBtlChrInitMem              # layout: alphabetical run between MsBtlChrInit and MsBtlChrNumCheck (1 unnamed in the gap); Switch 0x71003459c0 MsBtlChrInitMem is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00793650 function MsBtlChrNumCheck          # fh v3:exact 0x00793660
-0x00793670 function MsBtlChrRegist            # fh v3:exact 0x00793680
-0x007938e0 function MsBtlWeaponRegist         # fh v3:exact 0x007938f0
+0x00793670 function MsBtlChrRegist            # fh v3:exact 0x00793680; (i, key) -> chr: draw packets, Ch_Allocate(key) without a character; number, height; placed at the battle position (new, g_BtlMapStarted or +0x506) with cloth reset, else Ch_GetPos read back; +0x4e4 thickness / +0x4e8 13/14 height unless +0x44c/+0x44d; motion speed, thickness, weight (-1 with +0xdce), dir, scale, bind scale, sp 0, alpha 1, effect level, Ch_SetCalcNorm2, motion file, MsSetChrEngine_00796f70, +0x4c resident ptr; opus_change_chrhd_ffx_to_battle; appears unless +0x43d bit 0/2 (bit 0, or bit 3 when new, set +0x423 bit 0); +0x1e: op_et_bindeff, +0x1f; ported (ffx_battle::regist, battle round 35)
+0x007938e0 function MsBtlWeaponRegist         # fh v3:exact 0x007938f0; (i, mode, k) -> chr: weapon k follows the save model (changed: Ch_Dispose, ChN_DataDispose(new model)); packets, Ch_Allocate; special record (kinds 0x1c/0x1d/0x1e flags, 0x1e as actor 0x1e at its owner, hidden); +0x2b/+0x2e/+0x32/+0x34, engine, owner +0x4b5, fade in or hide; MsAttachWeapon; mode 0 MsSetWeaponEffectAttribute; ported (ffx_battle::regist, battle round 35)
 0x00793ba0 function MsCalcChrDir              # fh v3:exact 0x00793bb0
 0x00793cb0 function MsCalcChrDirAll           # fh v3:exact 0x00793cc0; ported (battle round 20)
 0x00793cf0 function MsChangeMonsterDir        # fh v3:exact 0x00793d00
@@ -6674,6 +6674,7 @@
 0x007bff10 function MsCameraSetStartPos          # layout+callees: sorts between MsCameraSetScrDpt and MsCopyCameraMatrix, and its named callees match the Switch 0x710039ccc0 MsCameraSetStartPos's (similarity 1.00: MsVectorPolar2Rect, MsVectorRect2Polar); symbols from Fahrenheit's server export; (cam, side*, mv) -> cam: polar move (mv[0] 1): free lanes (mv[7] bits 0-2) +0x80.. from +0x60.., then MsVectorPolar2Rect into +0x70 with only five words pushed (VU vf4 yzw get its saved esi/ebp/return); else +0x70.. from +0x50.. and MsVectorRect2Polar; bits 3/4 free the roll/depth starts; ported (ffx_battle::camera, battle round 25)
 0x007c0010 function Cam_SetChannelSuspended      # (handle, on): sets the suspended byte of the matching channel slots
 0x007c0070 function MsCopyCameraMatrix        # fh v3:bsim1.00 0x007bfff0
+0x007c0120 function MsCameraLimits_007c0120    # name ours; (side, chan) -> eax moves: chan+4 limits (0x20 bytes from chan+0x90, re-read): 0/2 the x-z line limit (foot p from (+0x10,+0x14) and (+0x18,+0x1c), s = (dir.pos + +4)/+8; kind 2 p + +0xc*d, kind 0 p + soft(|d|)*d/|d| with soft = atan(v k)/k, stored on MsVectorGetSide's side); 1/3 the height range +0x18..+0x1c (3 linear by +0xc, 1 soft); 4/5 spline_get_near_point on chan+8 (5 cubic; t at chan+0x24) and pos = near + (pos - near) * chan+0x20 (MsMulVector's other words the caller's edi, esi, ebx); caller MsCameraMoveStep_007bcab0; ported (ffx_battle::camera, battle round 35)
 0x007c04b0 function MsGetCameraMatrix         # fh v3:bsim1.00 0x007c0430
 0x007c04c0 function MsNearRag                 # fh v3:exact 0x007c0440
 0x007c0540 function MsScreenInit              # fh v3:bsim1.00 0x007c04c0
@@ -7591,8 +7592,8 @@
 0x00824e10 function Sg_GlobalInitWind         # (): wind (0x012fbc44) = (0.01, 0, 0); Switch name, between Sg_GlobalGetWind and Sg_GsloadSetBase
 0x00824e30 function Sg_GlobalSetWind          # fh switch:bsim1.00 0x710041ed90
 0x00824e60 function Sg_MatrixApplyVec3        # (out, m, v): out[j] = m[j] v.x + m[4+j] v.y + m[8+j] v.z for four columns (stack cookie); the cloth helpers' matrix product, next to Sg_VecAdd
-0x00824f00 function ChN_DataDispose           # fh v3:exact 0x00824f90
-0x00824f90 function Ch_Allocate               # fh v3:bsim0.91 0x00825010
+0x00824f00 function ChN_DataDispose           # fh v3:exact 0x00824f90; (key, check) -> eax: logs ch_create_chrname(key); a character of that id in use (Ch_HandleFromId) -> -1 (yiAssert naming it with check set); else Ch_BlkGetHandleFast(key) disposed (Ch_BlkDispose, Sg_CacheDisposeChr(its id)) -> 0; ported (ffx_chara::handle, battle round 35)
+0x00824f90 function Ch_Allocate               # fh v3:bsim0.91 0x00825010; (key) -> chr: first free slot (+2 clear; none gives 0, written through), block Ch_BlkGetHandle(key) (missing: 0 when g_ChrAllocateErr set, clearing it, else block 1 with +0xf8 = 1), dbgPrintf with g_FFXIsDebug clear, cleared and set up (Ch_CbMapping, the Ch_Set* defaults, Cache_SetLock(1, key, 1/0) around SG_InitBones, textures, op_et_monster_init with FLAGS2 0x400 held), shadow mode by id>>12 (0-3: 1, 4-6: 0, 15: 3 + flag 0x40), g_ChrFlag2Ids flag 2, g_ChrIdFloats +0x814/+0x818, ids 0x1088/0x1089/0x108c flag2 0x80, 0x10a6/0x10b2-4/0x111e/0x1121-3/0x3004/0x3009-b flag2 0x200 (jump table 0x008255c0), rest pose with flag 0x200000 (+0x83c), render/shadow instances (graphicCharacterRegistToInstantiate, Ch_OnCharacterInstanceLoaded), +0x87c Rikku in magic file 0x113; ported (ffx_chara::handle, battle round 35)
 0x00825650 function Ch_Allocate2              # fh v3:exact 0x008256d0
 0x00825670 function Ch_Allocate_InitAll          # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[CHR WORK]'; Switch 0x710040ef70 Ch_Allocate_InitAll (symbols from Fahrenheit's server export)
 0x008256f0 function Ch_ArcMapping             # fh v3:exact 0x00825770
@@ -7611,7 +7612,7 @@
 0x00826230 function Ch_ChrMemHeapSet          # fh v3:exact 0x008262b0
 0x00826260 function Ch_ClothMeshDestroy       # fh v3:exact 0x008262e0
 0x00826340 function Ch_ClothMeshMapping       # fh v3:exact 0x008263c0
-0x008266f0 function Ch_Dispose                # fh v3:exact 0x00826770
+0x008266f0 function Ch_Dispose                # fh v3:exact 0x00826770; (chr) -> eax: inactive -> Ch_CheckHandle's -1; else logs, Ch_UnbindChildren, cloth job wait in magic file 0x113 (MagicFile_GetHandle != -1), Ch_ClutDispose, op_et_monster_free unless blk+0x70 bit 1, inactive, invisible, no longer player/g_ChrTidus, Ch_ClothMeshDestroy, frees the models' +4/+8/+0xc (header +6 count), the +0x874 table (header +8 entries), texanim (+0x6fc: chr_texanim_del(+0x700)), +0x328 +0x1bc +0x748 +0x6dc +0x32c, Ch_MemMoveSetTrigger, destroys +0x830/+0x838 (cleared) and the cloth vertex buffers +0x834 (cleared after; eax its result); ported (ffx_chara::handle, battle round 35)
 0x008268e0 function Ch_DisposeAll             # fh v3:exact 0x00826960
 0x00826950 function Ch_DrawMainEffect         # fh v3:exact 0x008269d0
 0x00826980 function Ch_ElemRemapping         # Switch name (0x7100410410): (chr, delta) adds delta to each element's data pointer but those at chr+0x1c8
@@ -13592,7 +13593,7 @@
 0x00a43de0 function sa_decode                 # fh switch:bsim1.00 0x7100857390
 0x00a43e10 function sa_get_decode_size           # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'not encode data\\n'; Switch 0x71008573d0 sa_get_decode_size (symbols from Fahrenheit's server export)
 0x00a43ff0 function set_movie_matrix_sub         # layout+callees: sorts between sa_get_decode_size and spline_get_near_point, and its named callees match the Switch 0x7100856de0 set_movie_matrix_sub's (similarity 0.60: MsCameraMatrix, MsSetCameraMatrix, yiRenderEnable); symbols from Fahrenheit's server export
-0x00a44120 function spline_get_near_point     # fh v3:exact 0x00a44120
+0x00a44120 function spline_get_near_point     # fh v3:exact 0x00a44120; (spline, x, y, z, &ox, &oy, &oz, cubic) -> f32 ST0: up to 0x28 steps d = f32(f32(10/g_SplineNearSamples)/f32(i*i+1)) moving g_SplineNearT towards the nearer of t-d, t+d against t (squared distances, each difference an f32); b == a: point at t, stop; the nearer side not nearer than t: point at t, go on; else t moves, its point out, leaving 0..1 returns f32(t back) with the old t's point; else returns t; ported (ffx_sg::spline, battle round 35)
 0x00a44420 function spline_get_near_point_init # fh v3:exact 0x00a44420
 0x00a445f0 function Native_d000 # 0xd000: (v): popped for an "abiritymap_debug(%d)" line through the empty dbgPrintf; 0; ported in native_mods (script round 21); name ours
 0x00a44650 function get_ptr32_func            # fh v3:bsim1.00 0x00a44650
@@ -16229,6 +16230,8 @@
 0x00c49470 label    g_SqsAdpcmCoefs              # PS-ADPCM filters, two i32 each (Sqs_DecodeAdpcm)
 0x00c49498 label    g_SqsBattleStream            # the battle streaming sound's id (SqsBattleStreamingDataSend: a +8, else b +8, else -1)
 0x00c494c8 label    g_CamFinishCount           # counts Native_CamMoveFinish (0x007b9b40) calls with magic 0x92; at 2 sets g_BtlRandomLatch and becomes -1
+0x00c494d8 label g_ChrFlag2Ids              # name ours; i16 pairs (0xc4 bytes): Ch_Allocate sets FLAGS bit 2 for these character ids
+0x00c495b0 label g_ChrIdFloats              # name ours; 13 entries (id u32, two f32): Ch_Allocate's +0x814/+0x818; the first entry's floats are the default (1.0, 0.5), the others by id (last match)
 0x00c49660 label    g_ChrKindTableArg         # i16 x 8: the argument Chr_TableIndex 0x0082a640 passes to g_CdLib_10 for each kind
 0x00c4967f label    g_ChrKindTableStride      # i8: Chr_TableIndex's index step per table entry
 0x00c49680 label g_ChrDefaultMoves           # Ch_MotionSetMoves(chr, slot, -1) stores entry [slot] (0, 1, 2, then zeros)
@@ -17422,6 +17425,8 @@
 0x01a85bb0 label    g_ReadChgName_From        # 16 u32 (FILE_NAME_CHG_TBL_CNT, read_debug.c): set_read_chgname(a, b) puts a in the first zero slot, b in g_ReadChgName_To; clear_read_chgname zeroes both
 0x01a85bf0 label    g_ReadChgName_To          # 16 u32: the b of set_read_chgname(a, b), beside g_ReadChgName_From
 0x01a85c30 label    g_PcFileName                 # the name PcFileName_00a42c00 builds and returns; name ours
+0x01a85f30 label g_SplineNearT              # name ours; f32: spline_get_near_point's parameter (0..1) kept between calls; spline_get_near_point_init sets it
+0x01a85f34 label g_SplineNearSamples        # name ours; f32: the near-point search's sample count (spline_get_near_point_init: ten per point); spline_get_near_point's first step 10 / it
 0x01a85f60 label g_AbmapDataLoaded            # u32: set once eiAbmDataInit 0x00a53de0 has loaded the grid data files; name ours
 0x01a860e0 label    g_AbmapNodeKinds             # the MsGetExcelData table AbmapFlagConnectedLinks looks node kinds up in (kind record +0x10 bit 0x8000 flags their links); name ours
 0x01a860fc label    g_AbmapMoveLimit             # the highest cost AbmapCalcMoveCost walks to (the cost's low 16 bits compared)

@@ -1324,9 +1324,9 @@ through the game.
 
 Battle-module logic functions (`symbols/classes.tsv`, the module as `tools/progress.py` places it) not yet replaced by a port in the hook table, regenerated each round (`~/ffx-work/agent-battle/m2.py`). *Blockers* are the function's own logic callees still unported; a function with none can be ported now. The module placement of unnamed functions is a guess by neighbourhood, so a few non-battle functions (start-up screens, the password and screen-aspect helpers) are counted here. `MsGetSaveConfigEnglish` (`0x007851d0`, 3 bytes) counts as ported though it is not hookable: its callers' ports call the Rust bridge.
 
-**7 functions, 3261 bytes** (6 named). By blockers: 1: 6, 3: 1.
+**1 functions, 285 bytes** (1 named). By blockers: 1: 1.
 
-The battle loop's top level still open (ported in round 34: the actors' set-up `MsSetRamChr` (party and monster actors), `MsSetRamMonData`, `MsSetRamChrData`, `Mon_LoadAll`, `MsSetChrVisibleBtl2Event`, the character set-up `MsSetChrEngine_00796f70`, the event-to-battle hand-over `MsBtlBridgeEvent2Btl`; in round 33: Battle_QueueCommand, setCameraMatrixToPhyreScene, MsAtelChrInit; the default names setDefaultPlayerName, resetDefaultPlayerNameStatus; the camera and character leaves Cam_SetScreenVector2_007bc750, MsCameraSetFocusList_007bf520, MsAtelCameraPolar_007bb5d0, MsBindChrToChr_00795c90, PasswordTextRead; Wakka's reels MsSetReelResult, MsGetReelResultKind_007b1710, MsGetReelTargets_007b1910; the cursors and overdrive bars getSparedLmtPos, MsGetChrLimitBarFlag, MsCalcCursorPos, MsBattleCursorCalc; the reads MsBattleReadDataNB (jump table 0x007821c0), MsBattleReadData, Mon_AttachData, MsBtlReadMonsterDone_00783990, MsAttachWeaponData_00784000, MsCDreadWeapon, MsBtlReadWeapon, MsCDreadWeaponDone_00783fc0; in round 32: the effect signal dispatcher and its damage step (MsEffectSignal_007b74d0, MsEffectSignalDamage_007b7680), the effect motions MsEffectChrMotionIn, MsEffectMagicMotion, the sound transfers MsRegistSEdata, MsSEPtransRegist, MsSetVoice, MsSoundStreamPlay, the splines MsMoveSpline, MsSplineRegist, the script target helpers MsSearchScriptTarget_007a8f60, MsSetCommandScriptTarget_007a8b40, the target lists MsGetTargetSortList, MsGetTargetLinkList, MsGetChrLinkSet_007b7440, MesSetChrTargetPosToLimitSparePosy, Mon_GetName, the reads MsEtEffectRead, MsRegMotionRead; in round 31: MsSetMove, MsGetTargetDist, the op_et_eff wrappers (MsSetChrEffect_0079eb10, MsSetChrEffect8, MsSetOwnerEffect8/7, MsEtCriticalEffect, MsEffectSetGuard, MsSetWeaponEffectAttribute, MsMagicEffectStart), the camera direction native and setter (MsAtelCameraDirVector_007bb210, MsCameraSetDirVector_007bce80), the PC battle camera native MsAtelCameraSetBtlPc_007badb0; in round 30: MsSetBtlPosReset, the encounter and walk-ability wrappers (MsBattleInitAtEvent, Enc_ResetAll, Enc_ResetSceneWeights, MsWalkAbilityProcess), MsDebugFullSummon, addMonDieSe, MsSetChrPos2D, MsEffectChrMotionOut, MsResetBtlTarget, MsSetBtlTarget, MsRestartMagicCamera, MsRegSEplay3, MsPauseChrEffectAll, MsEffectSignalAvoid, MsAtelBindCamera, a MsEffectSetMotion jump, the effect signals 1-8 helpers, MsSetBallSplineInit, MsEffectChrGetLoveLoveMax, MsSetChrExtraSlot, Enc_SetGroupWeight, MsResetSceneObjects, MsLineSideDist, MsGetCommandTarget2, MsGetSameTarget, MsActReCommand, MsChangeWeaponWakka, MsSetSaveCommandMenuPanel; in round 29: small leaves (the effect camera buffers, the screen camera byte, the reel entries, the VU0-style vector helpers, the language checks), two copies of vfx ports, the actor and save accessors and setters around MsGetChr (elements, Libra fields, motion bytes, the fly byte, the head position, gravity, rotation, lift height) and their wrappers (MsGetRomBtlText, MsSetChrVisibleMain, MsFieldItemGet(Mes), MsSetSavePartyMember, PasswordGetTotalIndex), the HP/MP adders, the equipment flag scans and free slot, MsExchangeSaveWeapon, MsEffectCameraGet, readBtlMonsterName, MsEffectReadStatInit, MsGetMapCenter, MsEffectSetSpeed, MsEffectCheckMotion2, MsChangeWeaponInvisible, MsGetDamageLimit, MsResetAvoidFlag, MsPauseChrEffect, MsEventEffectReadComplete, PasswordTextDispose, MsBattleDraw, the battle scripts' camera natives (move, shake, line filter, divide, eye area, focus, yaw, spline, battle camera, circle area) and their camera, the channel flag and circle area setters, the blur check, MsGetChrID, MsSet/GetCommandUse, the CTB list MsGetCTBlist, MsCheckLeftWindow, MsSetSavePlyJoin, Enc_ResetWeights, MsGetSaveCommandMenuPanel, MsSetChrShadow(Mode), MsSetChrTransparentVisible, Equip_RebuildWearers, MsBindCamera, MsSetChrStatInfo (7 KB, every property), MsSetDamageMotion, MsSaveAddAP, MsAtelRequestSystem, MsEffectSetMotion, MsGetChrMoveFrameRest; in round 28: `MsDebugFullCommand`, the camera request setters, `MsCameraSetSpline`(2), `MsAtelGetCameraID`, `MsGetComInfo`, `MsGetBasicDivide`, `MsGetDirDivide`, the results screen's weapon plate; `MsCameraProcess`, `MsScreenProcess` (run by the `gfx::live` wrapper) and `MsCameraProcess`' last steps in round 27, `MsCamSetBtl`, `MsCameraSetBtl`, `MsCameraMoveAcc`, `MsCameraMoveFrame`, `MsTransSpPos`, `MsSpCameraProcess`, `MsNumberDrawProcess` and `MsCameraProcess` leaves in round 26, the camera's `MsCameraMatrix`, `MsScreenMatrix`, shakes, screen moves and setters in round 25, `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below):
+The battle loop's top level still open (ported in round 35: the character registration `MsBtlChrRegist` and the read queue steps `MsBtlReadPlayerModelProcess`, `MsBtlReadMonsterProcess` (jump table 0x00783ae4), `MsBtlReadPlayerProcess`, `MsBtlWeaponRegist` (after chara's `Ch_Allocate`, `ChN_DataDispose`, `Ch_Dispose`, ported here), the camera limits `MsCameraLimits_007c0120` (after main's `spline_get_near_point`); in round 34: the actors' set-up `MsSetRamChr` (party and monster actors), `MsSetRamMonData`, `MsSetRamChrData`, `Mon_LoadAll`, `MsSetChrVisibleBtl2Event`, the character set-up `MsSetChrEngine_00796f70`, the event-to-battle hand-over `MsBtlBridgeEvent2Btl`; in round 33: Battle_QueueCommand, setCameraMatrixToPhyreScene, MsAtelChrInit; the default names setDefaultPlayerName, resetDefaultPlayerNameStatus; the camera and character leaves Cam_SetScreenVector2_007bc750, MsCameraSetFocusList_007bf520, MsAtelCameraPolar_007bb5d0, MsBindChrToChr_00795c90, PasswordTextRead; Wakka's reels MsSetReelResult, MsGetReelResultKind_007b1710, MsGetReelTargets_007b1910; the cursors and overdrive bars getSparedLmtPos, MsGetChrLimitBarFlag, MsCalcCursorPos, MsBattleCursorCalc; the reads MsBattleReadDataNB (jump table 0x007821c0), MsBattleReadData, Mon_AttachData, MsBtlReadMonsterDone_00783990, MsAttachWeaponData_00784000, MsCDreadWeapon, MsBtlReadWeapon, MsCDreadWeaponDone_00783fc0; in round 32: the effect signal dispatcher and its damage step (MsEffectSignal_007b74d0, MsEffectSignalDamage_007b7680), the effect motions MsEffectChrMotionIn, MsEffectMagicMotion, the sound transfers MsRegistSEdata, MsSEPtransRegist, MsSetVoice, MsSoundStreamPlay, the splines MsMoveSpline, MsSplineRegist, the script target helpers MsSearchScriptTarget_007a8f60, MsSetCommandScriptTarget_007a8b40, the target lists MsGetTargetSortList, MsGetTargetLinkList, MsGetChrLinkSet_007b7440, MesSetChrTargetPosToLimitSparePosy, Mon_GetName, the reads MsEtEffectRead, MsRegMotionRead; in round 31: MsSetMove, MsGetTargetDist, the op_et_eff wrappers (MsSetChrEffect_0079eb10, MsSetChrEffect8, MsSetOwnerEffect8/7, MsEtCriticalEffect, MsEffectSetGuard, MsSetWeaponEffectAttribute, MsMagicEffectStart), the camera direction native and setter (MsAtelCameraDirVector_007bb210, MsCameraSetDirVector_007bce80), the PC battle camera native MsAtelCameraSetBtlPc_007badb0; in round 30: MsSetBtlPosReset, the encounter and walk-ability wrappers (MsBattleInitAtEvent, Enc_ResetAll, Enc_ResetSceneWeights, MsWalkAbilityProcess), MsDebugFullSummon, addMonDieSe, MsSetChrPos2D, MsEffectChrMotionOut, MsResetBtlTarget, MsSetBtlTarget, MsRestartMagicCamera, MsRegSEplay3, MsPauseChrEffectAll, MsEffectSignalAvoid, MsAtelBindCamera, a MsEffectSetMotion jump, the effect signals 1-8 helpers, MsSetBallSplineInit, MsEffectChrGetLoveLoveMax, MsSetChrExtraSlot, Enc_SetGroupWeight, MsResetSceneObjects, MsLineSideDist, MsGetCommandTarget2, MsGetSameTarget, MsActReCommand, MsChangeWeaponWakka, MsSetSaveCommandMenuPanel; in round 29: small leaves (the effect camera buffers, the screen camera byte, the reel entries, the VU0-style vector helpers, the language checks), two copies of vfx ports, the actor and save accessors and setters around MsGetChr (elements, Libra fields, motion bytes, the fly byte, the head position, gravity, rotation, lift height) and their wrappers (MsGetRomBtlText, MsSetChrVisibleMain, MsFieldItemGet(Mes), MsSetSavePartyMember, PasswordGetTotalIndex), the HP/MP adders, the equipment flag scans and free slot, MsExchangeSaveWeapon, MsEffectCameraGet, readBtlMonsterName, MsEffectReadStatInit, MsGetMapCenter, MsEffectSetSpeed, MsEffectCheckMotion2, MsChangeWeaponInvisible, MsGetDamageLimit, MsResetAvoidFlag, MsPauseChrEffect, MsEventEffectReadComplete, PasswordTextDispose, MsBattleDraw, the battle scripts' camera natives (move, shake, line filter, divide, eye area, focus, yaw, spline, battle camera, circle area) and their camera, the channel flag and circle area setters, the blur check, MsGetChrID, MsSet/GetCommandUse, the CTB list MsGetCTBlist, MsCheckLeftWindow, MsSetSavePlyJoin, Enc_ResetWeights, MsGetSaveCommandMenuPanel, MsSetChrShadow(Mode), MsSetChrTransparentVisible, Equip_RebuildWearers, MsBindCamera, MsSetChrStatInfo (7 KB, every property), MsSetDamageMotion, MsSaveAddAP, MsAtelRequestSystem, MsEffectSetMotion, MsGetChrMoveFrameRest; in round 28: `MsDebugFullCommand`, the camera request setters, `MsCameraSetSpline`(2), `MsAtelGetCameraID`, `MsGetComInfo`, `MsGetBasicDivide`, `MsGetDirDivide`, the results screen's weapon plate; `MsCameraProcess`, `MsScreenProcess` (run by the `gfx::live` wrapper) and `MsCameraProcess`' last steps in round 27, `MsCamSetBtl`, `MsCameraSetBtl`, `MsCameraMoveAcc`, `MsCameraMoveFrame`, `MsTransSpPos`, `MsSpCameraProcess`, `MsNumberDrawProcess` and `MsCameraProcess` leaves in round 26, the camera's `MsCameraMatrix`, `MsScreenMatrix`, shakes, screen moves and setters in round 25, `MsMenuLimitSet`, `MsMenuLimitSet_007b0470` in round 24, `MsMenuGetText`, `MsMenuGetHelp`, `MsGetMenuChrInfo`, `MsEffectTerminate`, `SwapSaveGear`, `Battle_ScriptPlayMotion`, `getExcelBinSize` in round 23, `MsBtlReadSetScene`, `MsGetItem`, `BattleRewards_AddGear` in round 22, `MsBattleProcess`, `MsBattleInit`, `MsBtlReadManage`, `MsBtlReadMonster` in round 21, `MsBattleExe` in round 20; what is left of the battle loop's top level is listed below):
 
 None: the battle loop's top level is ported.
 
@@ -1334,40 +1334,58 @@ None: the battle loop's top level is ported.
 
 | Blockers | Bytes | Address | Name | Unported callees |
 |---|---|---|---|---|
-| 1 | 34 | `0x00783b90` | `MsBtlReadPlayerModelProcess` | MsBtlChrRegist |
 | 1 | 285 | `0x00787e00` | `MsEffectProcess` | op_effect_run_after |
-| 1 | 308 | `0x007839b0` | `MsBtlReadMonsterProcess` | MsBtlChrRegist |
-| 1 | 437 | `0x00783bc0` | `MsBtlReadPlayerProcess` | MsBtlChrRegist |
-| 1 | 615 | `0x00793670` | `MsBtlChrRegist` | Ch_Allocate |
-| 1 | 880 | `0x007c0120` | `FUN_007c0120` | spline_get_near_point |
-| 3 | 702 | `0x007938e0` | `MsBtlWeaponRegist` | ChN_DataDispose, Ch_Allocate, Ch_Dispose |
 
 </details>
-## M2 status (round 34)
+## M2 status (round 35)
 
-M2's battle table is down to 7 functions, 3,261 bytes. All of them are
-blocked on other modules; none is small enough to port here:
+M2's battle table is down to 1 function, 285 bytes:
 
-- **The character registration chain** (`MsBtlChrRegist` 615 B, then
-  `MsBtlReadPlayerModelProcess` 34, `MsBtlReadMonsterProcess` 308 and
-  `MsBtlReadPlayerProcess` 437; `MsBtlWeaponRegist` 702 too) waits on
-  chara's `Ch_Allocate` (`0x00824f90`). That is a large set-up of about
-  50 `Ch_*` calls, which itself waits on other modules; the chara row
-  reads "all remaining wait on other modules". `MsBtlWeaponRegist` also
-  waits on `ChN_DataDispose` (`0x00824f00`) and `Ch_Dispose`
-  (`0x008266f0`, 485 B). Their other callee, `MsSetChrEngine_00796f70`, is
-  ported this round. `Ch_EngineSetFast` (`0x00830370`) is a bare `ret`.
-- **`MsEffectProcess`** (285 B) waits on vfx's `op_effect_run_after`
-  (`0x00800670`, 121 B). That one waits on `opp_main` (`0x0080bd50`).
-- **`FUN_007c0120`** (880 B) waits on main's `spline_get_near_point`
-  (`0x00a44120`, 760 B). That one needs `TkMtCalcSpline` and
-  `TkMtCalcSpline3` (`0x0088a4a0`, `0x0088a4d0`): wrappers of the x87
-  spline evaluators `0x0088afd0` and `0x0088aa40`, about 1.4 KB, unported.
-- `MsBtlBridgeEvent2Btl` is ported: its script `Atel*` accessors were
-  ported by the script agent in round 23.
+- **`MsEffectProcess`** (`0x00787e00`, 285 B) waits on vfx's
+  `op_effect_run_after` (`0x00800670`, 121 B), which waits on `opp_main`
+  (`0x0080bd50`). The effects agent owns both.
 
-`ms_free` (`0x007cf8f0`) and `FUN_007cf970` count as debug (round 33
-verdicts).
+Ported this round: the character registration chain (`MsBtlChrRegist`,
+`MsBtlReadPlayerModelProcess`, `MsBtlReadMonsterProcess`,
+`MsBtlReadPlayerProcess`, `MsBtlWeaponRegist`, in `ffx_battle::regist`),
+after chara's `Ch_Allocate`, `ChN_DataDispose` and `Ch_Dispose`
+(`ffx_chara::handle`); and `MsCameraLimits_007c0120` (`FUN_007c0120`,
+`ffx_battle::camera`), after main's `spline_get_near_point`
+(`ffx_sg::spline`). The spline evaluators under it are menu's ports
+(menu round 32).
+
+## Round 35 notes
+
+- **`MsCameraLimits_007c0120`** applies a camera channel's limits
+  (`chan + 4` of them, 0x20 bytes each from `chan + 0x90`, jump table
+  `0x007c0490`): kinds 0 and 2 keep the x-z position on one side of a line
+  (2 pulls it linearly by `+0xc`, 0 by `atan(d k) / k` along the
+  offset), kinds 1 and 3 keep the height in `+0x18`..`+0x1c` (3 linearly,
+  1 soft), kinds 4 and 5 pull it towards the spline's near point (5 the
+  cubic spline; its parameter goes to `chan + 0x24`). EAX counts the
+  moves; `MsCameraMoveStep_007bcab0` stops the step when it is non-zero.
+- **`spline_get_near_point`** keeps its parameter in `g_SplineNearT`
+  (`0x01a85f30`) between calls and steps it by `f32(10 / samples) /
+  f32(i * i + 1)` (`g_SplineNearSamples`, `0x01a85f34`), at most 0x28
+  times. A step that leaves 0..1 returns `t` moved back, not the stored
+  one.
+- **`Ch_Allocate`** sets flag 2 for the ids in `g_ChrFlag2Ids`
+  (`0x00c494d8`), the two floats at `+0x814` from `g_ChrIdFloats`
+  (`0x00c495b0`, last match), FLAGS2 `0x80` for ids `0x1088`, `0x1089`,
+  `0x108c` and `0x200` for `0x10a6`, `0x10b2`-`0x10b4`, `0x111e`,
+  `0x1121`-`0x1123`, `0x3004`, `0x3009`-`0x300b` (jump table
+  `0x008255c0`). With no free slot it writes through a null character, as
+  the original does. `Ch_BlkGetHandle` (PC-file path) and `Ch_SetShadeID`
+  stay unported and go through the game.
+- **`MsBtlWeaponRegist`** passes the *new* model to `ChN_DataDispose`
+  after disposing the old character, so a changed weapon model disposes
+  its own block and the next `Ch_Allocate` reloads it from file.
+- **Tests.** `battle_regist.rs` runs each round on a fresh copy of the
+  battle snapshot (a new character takes heap the snapshot has little of);
+  the field snapshot has no battle actors and skips. `Sg_CacheDisposeChr`
+  and `user_free` are stand-ins there: both leave caller-stack bytes in
+  globals. The chara tests skip `Ch_Allocate` rounds whose `SG_InitBones`
+  needs `VirtualAlloc` (field snapshot: about half).
 
 ## Round 34 notes
 

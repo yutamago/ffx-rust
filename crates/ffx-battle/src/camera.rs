@@ -546,8 +546,9 @@ pub mod bridge {
     pub const CAMERA_MOVE_STEP: u32 = 0x007b_cab0;
     /// `spline_get_near_point_init(spline, x, y, z, kind)` (main).
     pub const NEAR_POINT_INIT: u32 = 0x00a4_4420;
-    /// `0x007c0120(side, channel)`: the channel's limits on the side's
-    /// position (not ported); non-zero stops the move step.
+    /// `MsCameraLimits_007c0120(side, channel)`: the channel's limits on
+    /// the side's position ([`ms_camera_limits`]); non-zero stops the move
+    /// step.
     pub const CAMERA_LIMITS: u32 = 0x007c_0120;
 
     /// `f`, an address of this build, where the game is loaded.
@@ -645,6 +646,215 @@ pub mod bridge {
         let v = store(add(load(mem.read(y)), load(speed)));
         mem.write(y, v);
         0
+    }
+
+    /// A camera channel's limit (0x20 bytes from `chan + 0x90`): its kind
+    /// and the seven floats after it (`+4`..`+0x1c`).
+    struct Limit {
+        kind: u32,
+        f: [f32; 7],
+    }
+
+    impl Limit {
+        fn read(mem: &impl Mem, at: u32) -> Self {
+            Self {
+                kind: mem.read(at),
+                f: std::array::from_fn(|k| {
+                    let o = 4 + 4 * u32::try_from(k).unwrap_or(0);
+                    f32::from_bits(mem.read(at.wrapping_add(o)))
+                }),
+            }
+        }
+        /// The float at byte offset `o` (4..0x1c).
+        fn at(&self, o: usize) -> f32 {
+            self.f[o / 4 - 1]
+        }
+    }
+
+    /// `f32(f32(atan(v * k)) / k)`, or 0 when `k` is 0: the soft limits'
+    /// overshoot (`_CIatan` through `atan`, as it stores).
+    fn soft(atan: &dyn Fn(f64) -> u32, v: f32, k: f32) -> f32 {
+        use ffx_bridge::x87::Reg;
+        if k == 0.0 {
+            return 0.0;
+        }
+        let a = f32::from_bits(atan(Reg::load(v).mul_m32(k).value()));
+        Reg::load(a).div_m32(k).store()
+    }
+
+    /// Kinds 0 and 2 of [`ms_camera_limits`]: the side's x-z position
+    /// against the line through `(+0x18, +0x1c)` along `(+0x10, +0x14)`.
+    /// With `s = f32(((+0x10 * x + z * +0x14) + +4) / +8)` (0 when `+8` is
+    /// 0) the foot is `p = (f32(+0x10 * s + +0x18), f32(s * +0x14 +
+    /// +0x1c))` and `d = position - p` (each an `f32`). Kind 2 pulls the
+    /// position to `p + +0xc * d`; kind 0 to `p + soft(|d|, +0xc) * d /
+    /// |d|` (`|d| = f32(sqrt(dx^2 + dz^2))`; not moved for `|d|` 0). The
+    /// pulled position is stored only on the side `MsVectorGetSide(+0x10,
+    /// +0x14, dx, dz)` reports (non-zero); returns whether it was.
+    #[allow(clippy::many_single_char_names)] // coordinates and terms
+    fn limit_line<M: Mem>(mem: &mut M, atan: &dyn Fn(f64) -> u32, side: u32, l: &Limit) -> bool {
+        use ffx_bridge::x87::{Reg, sqrt};
+        let pos = |mem: &M, o: u32| f32::from_bits(mem.read(side.wrapping_add(o)));
+        let (x, z) = (pos(mem, 0x50), pos(mem, 0x58));
+        let (k, along, dir_x, dir_z, base_x, base_z) = (
+            l.at(0xc),
+            l.at(8),
+            l.at(0x10),
+            l.at(0x14),
+            l.at(0x18),
+            l.at(0x1c),
+        );
+        let s = if along == 0.0 {
+            0.0
+        } else {
+            (Reg::load(dir_x).mul_m32(x) + Reg::load(z).mul_m32(dir_z))
+                .add_m32(l.at(4))
+                .div_m32(along)
+                .store()
+        };
+        let px = (Reg::load(dir_x) * Reg::load(s) + Reg::load(base_x)).store();
+        let pz = Reg::load(s).mul_m32(dir_z).add_m32(base_z).store();
+        let dx = (Reg::load(x) - Reg::load(px)).store();
+        let dz = (Reg::load(z) - Reg::load(pz)).store();
+        let (nx, nz) = if l.kind == 0 {
+            let (rx, rz) = (Reg::load(dx), Reg::load(dz));
+            let len = Reg::constant(sqrt((rx * rx + rz * rz).value())).store();
+            let a = soft(atan, len, k);
+            if len == 0.0 {
+                (px, pz)
+            } else {
+                let (ra, rl) = (Reg::load(a), Reg::load(len));
+                (
+                    (ra * rx / rl + Reg::load(px)).store(),
+                    (ra * rz / rl + Reg::load(pz)).store(),
+                )
+            }
+        } else {
+            (
+                (Reg::load(px) + Reg::load(k).mul_m32(dx)).store(),
+                (Reg::load(pz) + Reg::load(k).mul_m32(dz)).store(),
+            )
+        };
+        let args = [dir_x, dir_z, dx, dz].map(|v| Reg::load(v).store().to_bits());
+        if crate::vector::bridge::ms_vector_get_side(mem, args) == 0 {
+            return false;
+        }
+        mem.write(side.wrapping_add(0x50), nx.to_bits());
+        mem.write(side.wrapping_add(0x58), nz.to_bits());
+        true
+    }
+
+    /// Kinds 1 and 3 of [`ms_camera_limits`]: the side's height `y`
+    /// between `+0x18` and `+0x1c`. Kind 3: `u = f32(y - +0x18)` above 0
+    /// gives `y = f32(u * +0xc + +0x18)`, then `v = f32(y - +0x1c)` below
+    /// 0 `y = f32(v * +0xc + +0x1c)`. Kind 1: `u = f32(+0x18 - y)` above 0
+    /// gives `y = f32(+0x18 - soft(u, +0xc))`, then `v = f32(y - +0x1c)`
+    /// above 0 `y = f32(+0x1c + soft(v, +0xc))`. Returns how many moves.
+    #[allow(clippy::many_single_char_names)] // coordinates and terms
+    fn limit_height<M: Mem>(mem: &mut M, atan: &dyn Fn(f64) -> u32, side: u32, l: &Limit) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let at = side.wrapping_add(0x54);
+        let y = |mem: &M| f32::from_bits(mem.read(at));
+        let (k, low, high) = (l.at(0xc), l.at(0x18), l.at(0x1c));
+        let mut moves = 0;
+        if l.kind == 3 {
+            let u = Reg::load(y(mem)).sub_m32(low).store();
+            if u > 0.0 {
+                mem.write(at, Reg::load(u).mul_m32(k).add_m32(low).store().to_bits());
+                moves += 1;
+            }
+            let v = Reg::load(y(mem)).sub_m32(high).store();
+            if v < 0.0 {
+                mem.write(at, Reg::load(v).mul_m32(k).add_m32(high).store().to_bits());
+                moves += 1;
+            }
+            return moves;
+        }
+        let u = Reg::load(low).sub_m32(y(mem)).store();
+        if u > 0.0 {
+            let w = soft(atan, u, k);
+            mem.write(at, Reg::load(low).sub_m32(w).store().to_bits());
+            moves += 1;
+        }
+        let v = Reg::load(y(mem)).sub_m32(high).store();
+        if v > 0.0 {
+            let w = soft(atan, v, k);
+            mem.write(at, Reg::load(high).add_m32(w).store().to_bits());
+            moves += 1;
+        }
+        moves
+    }
+
+    /// `MsCameraLimits_007c0120(side, chan)` (`0x007c0120`, name ours;
+    /// [`CAMERA_LIMITS`], caller `MsCameraMoveStep_007bcab0`): the
+    /// channel's limits (`chan + 4` of them, re-read; [`Limit`]) on the
+    /// side's position (`side + 0x50`): kinds 0 and 2 [`limit_line`], 1
+    /// and 3 [`limit_height`], 4 and 5 the channel's spline (`chan + 8`):
+    /// the near point `n` of the position (`host.near_point`, kind 5
+    /// cubic) with its parameter at `chan + 0x24`, then the position
+    /// becomes `n + (position - n) * chan+0x20` (`MsSubPoint`,
+    /// `MsMulVector`, `MsAddPoint` on a frame local; the scale's other
+    /// words its caller's `edi`, `esi`, `ebx`, `regs`, or when not known
+    /// what `VF_B` holds). Other kinds do nothing. EAX: how many moves
+    /// (each spline limit counts one). `atan` is `_CIatan` of a double,
+    /// as it stores.
+    #[allow(clippy::many_single_char_names)] // coordinates and terms
+    pub fn ms_camera_limits(
+        mem: &mut crate::target::bridge::Dm<'_>,
+        host: &crate::target::bridge::Host<'_>,
+        atan: &dyn Fn(f64) -> u32,
+        side: u32,
+        chan: u32,
+        regs: Option<crate::target::bridge::Regs>,
+    ) -> u32 {
+        use crate::vector::bridge as v;
+        // the near point (its w never written) and the difference
+        mem.frame(0x20, |mem, frame| {
+            let (near, d) = (frame + 0x10, frame);
+            let mut moves = 0u32;
+            let mut slot = 0u32;
+            while slot < u32::from(mem.read::<u8>(chan.wrapping_add(4))) {
+                let l = Limit::read(mem, chan.wrapping_add(0x90 + 0x20 * slot));
+                match l.kind {
+                    0 | 2 => moves += u32::from(limit_line(mem, atan, side, &l)),
+                    1 | 3 => moves += limit_height(mem, atan, side, &l),
+                    4 | 5 => {
+                        let [x, y, z] =
+                            [0x50, 0x54, 0x58].map(|o| x87_copy(mem.read(side.wrapping_add(o))));
+                        let spline: u32 = mem.read(chan.wrapping_add(8));
+                        let args = [
+                            spline,
+                            x,
+                            y,
+                            z,
+                            near,
+                            near + 4,
+                            near + 8,
+                            u32::from(l.kind == 5),
+                        ];
+                        let t = (host.near_point)(mem, args);
+                        mem.write(chan.wrapping_add(0x24), t);
+                        let pos = side.wrapping_add(0x50);
+                        v::ms_sub_point(mem, d, pos, near);
+                        let scale = x87_copy(mem.read(chan.wrapping_add(0x20)));
+                        let b = match regs {
+                            Some(r) => [scale, r.edi, r.esi, r.ebx],
+                            None => {
+                                let mut w: [u32; 4] = v::VF_B.get(mem);
+                                w[0] = scale;
+                                w
+                            }
+                        };
+                        v::ms_mul_vector(mem, d, b);
+                        v::ms_add_point(mem, pos, near, d);
+                        moves += 1;
+                    }
+                    _ => {}
+                }
+                slot += 1;
+            }
+            moves
+        })
     }
 
     /// `MsCameraNearPoints_007c0d40(_, side, chan)` (`0x007c0d40`, name

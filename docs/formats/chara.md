@@ -470,3 +470,20 @@ fixes what pointed at it: `SG_RelocateGroup(new)`, the table entry, every
 used sequence (`0x01300a08`, 100 x `0x14`) whose group `+0x10` is `old`
 (data `+0` and group by `new - old`), and every active character whose
 `+0x7e8` is `old` (`Ch_MoveMgrp`). Names from the Switch build's call graph.
+
+## Allocation and disposal (battle round 35)
+
+- `Ch_Allocate(key)` (`0x00824f90`, `ffx_chara::handle`): first free slot
+  (`+2` clear), block `Ch_BlkGetHandle(key)` (missing: 0 back when
+  `g_ChrAllocateErr` was set, else block 1 with `+0xf8` set), cleared,
+  mapped (`Ch_CbMapping`) and given its defaults; `id >> 12` picks the
+  shadow mode (0-3: 1, 4-6: 0, 15: 3 and flag `0x40`). Id tables:
+  `g_ChrFlag2Ids` (`0x00c494d8`, FLAGS bit 2) and `g_ChrIdFloats`
+  (`0x00c495b0`, `+0x814`/`+0x818`). `+0x87c` marks Rikku (`0x3004`) in
+  magic file `0x113`.
+- `ChN_DataDispose(key, check)` (`0x00824f00`): -1 while a character of
+  that id is in use, else the block and its cache entry go.
+- `Ch_Dispose(chr)` (`0x008266f0`): frees what the character holds (the
+  models' three buffers, the `+0x874` table, texture animation, five
+  blocks) and destroys its render and shadow instances; EAX is the cloth
+  vertex buffers' destroy result.

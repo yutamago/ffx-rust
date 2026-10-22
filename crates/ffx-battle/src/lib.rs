@@ -55,6 +55,7 @@ pub mod predict;
 pub mod process;
 pub mod read;
 pub mod reel;
+pub mod regist;
 pub mod reward;
 pub mod rng;
 pub mod save;
