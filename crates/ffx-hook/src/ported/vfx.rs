@@ -5638,6 +5638,12 @@ ported! {
         draw::bridge::ppp_draw_filter_packet(&mut mem(), obj, tex, prog, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
+    /// `pppPartLoop()`: `Sg_GetDBuffDC`'s out word on this shim's stack.
+    pppPartLoop @ 0x0076_2240 => extern "C" fn ppp_part_loop() -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let ebp = frame.at() + 4;
+        ppp::bridge::ppp_part_loop(&mut mem(), ebp, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppDataRcv()`: its matrix in a buffer on this shim's stack (the
     /// frame pointer at its end).
     pppDataRcv @ 0x0076_14a0 => extern "C" fn ppp_data_rcv() {
@@ -5686,6 +5692,13 @@ ported! {
         let mut frame = super::StackFrame::<19>::new();
         let at = frame.at();
         prog::bridge::ppp_ke_hit_chk_px_b(&mut mem(), obj, key, ctrl, at);
+    }
+    /// `opus_0154_wave_draw(set, unit, a2, nos, lights, view, proj, a7)`.
+    opus_0154_wave_draw @ 0x007f_65d0 => extern "C" fn opus_0154_wave_draw(set: u32, unit: u32, a2: u32, nos: u32, lights: u32, view: u32, proj: u32, a7: u32) -> u32 {
+        // the original's locals, below its ebp
+        let mut frame = super::StackFrame::<0xa>::new();
+        let ebp = frame.at() + 0x28;
+        wave::bridge::opus_0154_wave_draw(&mut mem(), [set, unit, a2, nos, lights, view, proj, a7], ebp, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opus_0706_noise_draw(obj)`.
     opus_0706_noise_draw @ 0x007f_73d0 => extern "C" fn opus_0706_noise_draw(obj: u32) -> u32 {

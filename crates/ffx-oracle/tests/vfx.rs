@@ -26220,3 +26220,206 @@ fn r42d_data_rcv_matches_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r42e_wave_draw_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_65d0);
+        let cells = p.alloc(0x20);
+        let (spr_cell, malloc_cell, data_cell, free_cell) =
+            (cells, cells + 4, cells + 8, cells + 0xc);
+        let (spr, bufs) = (p.alloc(0x400), p.alloc(0x200));
+        p.set(spr_cell, spr);
+        far_recorder(&mut p, 0x007e_6a00, &[0], Some(spr_cell));
+        far_recorder(&mut p, 0x0068_6ff0, &[0, 0], Some(malloc_cell));
+        far_recorder(&mut p, 0x007f_67c0, &[0, 0, 0, 0, 0, 0, 0], None);
+        far_recorder(&mut p, 0x0080_2450, &[0, 0, 0, 0, 0], None);
+        lights_stand_in(&mut p, 0x0080_2bd0);
+        far_recorder(&mut p, 0x007e_8010, &[0, 0], None);
+        far_recorder(&mut p, 0x007e_83b0, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x007f_60b0, &[0, 0, 0], None);
+        far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(data_cell));
+        far_recorder(&mut p, 0x0071_2c30, &[0], None);
+        far_recorder(&mut p, 0x0071_2d00, &[0], None);
+        far_recorder(&mut p, 0x0071_0fd0, &[0, 0, 8, 0, 0], None);
+        far_recorder(&mut p, 0x0071_8610, &[0, 0, 8, 0], None);
+        far_recorder(&mut p, 0x0064_5600, &[0, 0], None);
+        far_recorder(&mut p, 0x007e_6a60, &[0], Some(free_cell));
+        let (unit, nos, lights) = (p.alloc(0x100), p.alloc(0x10), p.alloc(0x10));
+        let (shapes, index) = (p.sym(0x012e_9618), p.sym(0x012e_9620));
+        for round in 0..1500u32 {
+            p.fill(unit, 0x100, &mut rng);
+            for at in [0x3c, 0x4c] {
+                let v = if rng.chance(85) {
+                    ranged(&mut rng, -600.0, 600.0)
+                } else {
+                    rng.float()
+                };
+                p.set(unit + at, v);
+            }
+            p.fill(nos, 0x10, &mut rng);
+            p.fill(lights, 0x10, &mut rng);
+            let r = rng.next();
+            p.set(nos, rng.pick(&[0x33ffu32, 0x3400, 0x7400, 0x0100, r]));
+            p.fill(spr, 0x400, &mut rng);
+            let r = rng.next();
+            p.set(spr + 0x108, rng.pick(&[0x41u8, 0x42, 0x48, r as u8]));
+            p.set(spr + 0x100, rng.pick(&[0u8, 8, r as u8]));
+            p.fill(bufs, 0x200, &mut rng);
+            for k in 0..3u32 {
+                p.set(bufs + 0x80 * k + 8, rng.below(0x40));
+            }
+            let i = rng.below(2);
+            p.set(index, i);
+            for k in 0..2u32 {
+                p.set(
+                    shapes + 4 * k,
+                    if rng.chance(30) { 0 } else { bufs + 0x80 * k },
+                );
+            }
+            p.set(malloc_cell, bufs + 0x100);
+            p.set(data_cell, rng.pick(&[0u32, 0, 1, 0x100]));
+            let r = rng.next();
+            p.set(free_cell, r);
+            let args = [
+                rng.next(),
+                unit,
+                rng.next(),
+                nos,
+                lights,
+                rng.next(),
+                rng.next(),
+                rng.next(),
+            ];
+            // the request below the original's ebp: alike in both oracles
+            let w = 4 * 8;
+            let ebp = p.b.stack_range().end - 0x100 - w - 4 - 0x200 - w - 4 - 4;
+            for k in (0x10..=0x28).step_by(4) {
+                let v = rng.next();
+                p.set(ebp - k, v);
+            }
+            check_deep_n(
+                &mut p,
+                &format!("opus_0154_wave_draw round {round}"),
+                0x007f_65d0,
+                &args,
+                |o, frame| {
+                    Some(wave::bridge::opus_0154_wave_draw(
+                        o,
+                        args,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn r42f_part_loop_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0076_2240);
+        let cells = p.alloc(0x20);
+        let (dc_cell, run_cell, heap_cell, rcv_cell) = (cells, cells + 4, cells + 8, cells + 0xc);
+        let dc = p.alloc(0x200);
+        p.set(dc_cell, dc);
+        for (sym, words, ret) in [
+            (0x0082_0530u32, &[0u8][..], Some(dc_cell)),
+            (0x0076_0f30, &[], None),
+            (0x0072_9f70, &[], None),
+            (0x0072_99e0, &[0], None),
+            (0x0071_1f20, &[0], None),
+            (0x0071_23c0, &[0, 0, 0, 0, 0], None),
+            (0x0071_7410, &[0], None),
+            (0x006e_d5c0, &[0, 0, 0], None),
+            (0x0071_2250, &[0, 0], Some(run_cell)),
+            (0x0072_9f90, &[], None),
+            (0x0072_9850, &[], None),
+            (0x007f_f290, &[0, 0, 0], None),
+            (0x0072_9290, &[], Some(heap_cell)),
+            (0x0076_06f0, &[], None),
+            (0x0076_25a0, &[], None),
+            (0x0076_14a0, &[], Some(rcv_cell)),
+        ] {
+            far_recorder(&mut p, sym, words, ret);
+        }
+        // the part calls fold the env they see into `acc` and clobber it,
+        // as a real one may
+        let acc = p.alloc(4);
+        for (sym, words, ret) in [
+            (0x0071_1f20u32, &[0u8][..], None),
+            (0x0071_23c0, &[0, 0, 0, 0, 0], None),
+            (0x0071_2250, &[0, 0], Some(run_cell)),
+        ] {
+            let (rec, _) = deref_recorder_code(&mut p, words, ret);
+            let mut c = vec![0xa1]; // mov eax, [g_pppEnvSlot]
+            c.extend(p.sym(0x00c3_a4cc).to_le_bytes());
+            c.extend([0x8b, 0x08]); // mov ecx, [eax]
+            c.extend([0x31, 0x0d]); // xor [acc], ecx
+            c.extend(acc.to_le_bytes());
+            c.extend([0xd1, 0x05]); // rol dword [acc], 1
+            c.extend(acc.to_le_bytes());
+            c.extend([0xc7, 0x00, 0x5a, 0x5a, 0x5a, 0x5a]); // mov dword [eax], 0x5a5a5a5a
+            c.extend(rec);
+            let to = p.a.alloc_code(&c).unwrap();
+            assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+            let at = p.sym(sym);
+            let mut j = vec![0xe9]; // jmp to
+            j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+            p.a.write(at, &j).unwrap();
+            p.b.write(at, &j).unwrap();
+        }
+        let env_cell = p.alloc(4);
+        let g = |p: &Pair, a: u32| p.sym(a);
+        let (parts, progs, pdt) = (g(&p, 0x00d4_e390), g(&p, 0x010d_2524), g(&p, 0x00d4_bc30));
+        for round in 0..2000u32 {
+            p.fill(dc, 0x200, &mut rng);
+            p.set(
+                g(&p, 0x0230_fd38),
+                rng.pick(&[0u32, 0, 0, 0, 0, 0, 0, 0, 1, 2]),
+            );
+            p.set(g(&p, 0x00c3_a4cc), env_cell);
+            p.set(g(&p, 0x00ce_c218), u32::from(rng.chance(50)));
+            p.set(g(&p, 0x00d4_b7f8), rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff]));
+            let r = rng.next();
+            p.set(pdt, rng.pick(&[0u32, 1, r]));
+            p.set(g(&p, 0x00d4_b4c8), rng.pick(&[0u32, 1, 2, 3, 0xffff_ffff]));
+            for k in 0..3u32 {
+                let c = rng.pick(&[0u32, 1, 2, 0xffff_ffff, 0x8000_0000]);
+                p.set(parts + 0x80 * k, c);
+                p.set(progs + 0x50 * k, rng.below(4));
+            }
+            for k in 0..4u32 {
+                let v = rng.next();
+                p.set(pdt + 4 + 4 * k, v);
+            }
+            p.set(run_cell, u32::from(rng.chance(40)));
+            p.set(heap_cell, rng.next());
+            p.set(rcv_cell, rng.next());
+            for a in [
+                0x0230_fd2cu32,
+                0x00ce_c200,
+                0x00ce_c208,
+                0x00ce_c210,
+                0x010d_4d18,
+                0x010d_4d08,
+                0x00d4_b7ec,
+            ] {
+                let any = rng.next();
+                let v = rng.pick(&[0u32, 0x1b0_0000, 0x1b4_0000, 0x7fff_ffff, 0x8000_0000, any]);
+                p.set(g(&p, a), v);
+            }
+            p.set(g(&p, 0x00d4_b4d0), u32::from(rng.chance(30)));
+            check_deep_n(
+                &mut p,
+                &format!("pppPartLoop round {round}"),
+                0x0076_2240,
+                &[],
+                |o, frame| Some(ppp::bridge::ppp_part_loop(o, frame, &mut call_original)),
+            );
+        }
+    }
+}

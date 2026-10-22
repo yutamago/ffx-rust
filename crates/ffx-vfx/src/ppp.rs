@@ -855,4 +855,126 @@ pub mod bridge {
             fun(mem, 0x0076_b4f0, &[rpc]);
         }
     }
+
+    /// `pppPartLoop()` (`0x00762240`; `Sg_MainLoop`), `frame` the
+    /// original's `ebp` (`Sg_GetDBuffDC`'s out word at `frame - 4`): the
+    /// object count `g_pppObjectCount` cleared; unless `0x0230fd38` is set,
+    /// the draw buffer's two 0x60-byte blocks (`+0x60`, `+0x190`) copied to
+    /// `0x00d4e1b0`/`0x00d4e270`, the packet started, the env slot set to
+    /// `0x010d4cfc` (again before each part call), the point lights reset,
+    /// the heap display set up once (`0x00cec218`). With `0x00d4b7f8 > 1`
+    /// and a `pdt` (`0x00d4bc30`), each of the `0x00d4b4c8` parts at
+    /// `0x00d4e390` (0x80 apart; programs at `0x010d2524`, 0x50 apart) whose
+    /// countdown `+0` is negative, or reaches it now (then restarted:
+    /// `pppAllFreePObject`, `pppStartPart(part, 0x00d4b7ec, pdt[prog], 1,
+    /// 0)`), runs with its matrix (`pppSetMatrix`, view = camera x world,
+    /// its copy = screen x view, `pppRunPart(part, 0x30)`) and restarts
+    /// when that ends it. Then the lights, the packet and heap use (current
+    /// and peak, `op_heap_display_set` 0x601/0x603), with `0x00d4b4d0` the
+    /// crosshair and axes; last `pppDataRcv`, whose `eax` it returns.
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_part_loop<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(g(mem, a));
+        let wr = |mem: &mut M, a: u32, v: u32| {
+            let at = g(mem, a);
+            mem.write(at, v);
+        };
+        let mut fun = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = g(mem, f);
+            call(mem, f, args)
+        };
+        wr(mem, 0x0230_fd24, 0);
+        if rd(mem, 0x0230_fd38) == 0 {
+            let dc = fun(mem, 0x0082_0530, &[frame.wrapping_sub(4)]);
+            for (from, to) in [(0x60u32, 0x00d4_e1b0u32), (0x190, 0x00d4_e270)] {
+                let block: [u32; 0x18] = mem.read(dc.wrapping_add(from));
+                mem.write(g(mem, to), block);
+            }
+            fun(mem, 0x0076_0f30, &[]);
+            let env = g(mem, 0x010d_4cfc);
+            let set_env = |mem: &mut M| {
+                let slot = rd(mem, 0x00c3_a4cc);
+                mem.write(slot, env);
+            };
+            set_env(mem);
+            fun(mem, 0x0072_9f70, &[]);
+            if rd(mem, 0x00ce_c218) == 0 {
+                fun(mem, 0x0072_99e0, &[env]);
+            }
+            if rd(mem, 0x00d4_b7f8).cast_signed() > 1 && rd(mem, 0x00d4_bc30) != 0 {
+                let (mut part, mut prog) = (g(mem, 0x00d4_e390), g(mem, 0x010d_2524));
+                let mut i = 0i32;
+                while i < rd(mem, 0x00d4_b4c8).cast_signed() {
+                    let restart = |mem: &mut M, fun: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+                        set_env(mem);
+                        fun(mem, 0x0071_1f20, &[part]);
+                        set_env(mem);
+                        let k = mem.read::<u32>(prog);
+                        let pdt =
+                            mem.read::<u32>(g(mem, 0x00d4_bc30).wrapping_add(k.wrapping_mul(4)));
+                        let rate = rd(mem, 0x00d4_b7ec);
+                        fun(mem, 0x0071_23c0, &[part, rate, pdt, 1, 0]);
+                    };
+                    let count = mem.read::<u32>(part).cast_signed();
+                    let run = if count < 0 {
+                        true
+                    } else {
+                        let c = count.wrapping_sub(1);
+                        mem.write(part, c);
+                        if c < 0 {
+                            restart(mem, &mut fun);
+                        }
+                        c < 0
+                    };
+                    if run {
+                        fun(mem, 0x0071_7410, &[part]);
+                        let (view, camera, world) = (
+                            g(mem, 0x0230_ff20),
+                            g(mem, 0x0230_ff60),
+                            g(mem, 0x0230_ffa0),
+                        );
+                        fun(mem, 0x006e_d5c0, &[view, camera, world]);
+                        let (copy, screen) = (g(mem, 0x0230_fe20), g(mem, 0x0230_fe60));
+                        fun(mem, 0x006e_d5c0, &[copy, screen, view]);
+                        set_env(mem);
+                        if fun(mem, 0x0071_2250, &[part, 0x30]) != 0 {
+                            restart(mem, &mut fun);
+                        }
+                    }
+                    i += 1;
+                    part = part.wrapping_add(0x80);
+                    prog = prog.wrapping_add(0x50);
+                }
+            }
+            fun(mem, 0x0072_9f90, &[]);
+            fun(mem, 0x0072_9850, &[]);
+            let used = rd(mem, 0x0230_fd2c).wrapping_add(0xfe50_0000);
+            let size = match rd(mem, 0x00ce_c200) {
+                0 => 0xc_0000,
+                n => n,
+            };
+            fun(mem, 0x007f_f290, &[used, size, 0x601]);
+            wr(mem, 0x00ce_c204, used);
+            if rd(mem, 0x00ce_c208).cast_signed() < used.cast_signed() {
+                wr(mem, 0x00ce_c208, used);
+            }
+            let heap = rd(mem, 0x010d_4d18).wrapping_add(rd(mem, 0x010d_4d08));
+            let size = fun(mem, 0x0072_9290, &[]);
+            fun(mem, 0x007f_f290, &[heap, size, 0x603]);
+            wr(mem, 0x00ce_c20c, heap);
+            if rd(mem, 0x00ce_c210).cast_signed() < heap.cast_signed() {
+                wr(mem, 0x00ce_c210, heap);
+            }
+            if rd(mem, 0x00d4_b4d0) != 0 {
+                fun(mem, 0x0076_06f0, &[]);
+                fun(mem, 0x0076_25a0, &[]);
+            }
+        }
+        fun(mem, 0x0076_14a0, &[])
+    }
 }
