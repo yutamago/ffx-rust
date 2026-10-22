@@ -3273,6 +3273,56 @@ real spline functions.
   `g_AtelPartyMask` is set and hidden otherwise. Without `keep_motion`,
   `Ch_ResetMotion` runs unless `MagicFile_GetMagicId` (asked once per
   bound) is in `0x26e..=0x275`. It rereads `+0x9c` after every callee.
+- `Atel_MoveUpdate_00868990(w, level)` (`0x00868990`, from the per-actor
+  dispatcher `0x008666e0` for type-1 actors, before `0x00869510` and
+  `Atel_MoveStep_00870540`) advances the level's move record
+  (`*(level + 0x44)`) on the actor's move block P (position, speed
+  `+0xc`, yaw/pitch `+0x20`/`+0x24`). The record: `+0` level target, `+2`
+  flags (`& 0x7f` the mode; `0x8000` turn, `0x2000` with `0x8000`
+  retarget the level first through `Atel_SetLevelTarget_0086f940`,
+  `0x200` full-turn steps, `0x1000` arrived), `+4`/`+6` duration and
+  frame count (`i16`), `+8`/`+0xc` time and end, `+0x10` top speed,
+  `+0x14` spline, `+0x18` vertical speed, `+0x1c..` start, `+0x28..`
+  target, `+0x34` acceleration, `+0x3c`/`+0x40` turn steps. With a
+  positive duration, or in modes 7 and 9, the count goes up (not past
+  `0x7ffe`). Past the duration the turn scale is count / duration
+  (`f32(i16 / f64)`, at most 8), else 1. The modes come from the jump
+  table at `0x00869070`, indexed by mode - 1 (8, 10 and 11 share the
+  default):
+  - 1/2: (1 first sets the target height to P's.) With the turn flag the
+    actor turns towards the target: `Math_YawPitchTo` into two frame
+    words, then `Math_AngleStep` on yaw and pitch, by the steps times
+    the scale (2 pi with `0x200`). When P's x and z equal the target's
+    (ordered `fucom`), only the pitch changes: -pi when P is above the
+    target, else pi (NaN too). Then the speed is the top speed, unless
+    the distance (`CIsqrt(Math_LengthSq3(target - P))`, each result
+    stored as f32) is at most top / 10 (top / 1 for `+0xaa` 4 or 5).
+    Then the speed is 10 (or 1) times the distance, and arrived.
+  - 3/4: (3 like 1.) The speed grows by the acceleration. When the top
+    speed is above the braking bound `sqrt(2 a d)`, the speed goes to
+    0.001 if under it, else to the bound, then to at least 0.001. When it
+    isn't, the speed goes to at least 0.001. Either way it is then capped
+    at the top speed, except on the 0.001 floor taken after the bound.
+    Arrived within speed / 10.
+  - 5/6: the time over its end, clamped to 0..1 (NaN passes), samples
+    the spline (`Atel_CalcSpline_00862b20` / `Atel_CalcSpline3_00862b70`
+    into a frame vector). The actor turns to the point and its speed is
+    the distance. With no spline the time is set to end + 1 and the speed
+    to 0.
+  - 7: linear from start to target by time / end (1 when both are 0),
+    `1 - t` stored as f32 first. The time steps by 1, or by
+    `graphicVideoGetElapsedFrame` (as f32) while `g_WaitFramesByTime`
+    and `movie_have_camera` hold. Speed 0.
+  - 9: a jump. Until the count reaches the actor's `+0xb16` the scale is
+    0. After that the time steps by 1 and the scale is time / end, or 1
+    (arrived) at the end. x/z are linear, with `1 - k` unrounded. y is
+    `((a * 0.5 * k + vy) * k) + start y`. Speed 0.
+  - other modes: speed 0.
+
+  Every compare is false on NaN, matching the original's flag tests.
+  `Math_WrapAngle` (inside `Math_AngleStep`) never returns for an
+  infinite angle, in the game as in the oracle, so the tests keep angles
+  and turn steps finite.
 
 ### Verification
 

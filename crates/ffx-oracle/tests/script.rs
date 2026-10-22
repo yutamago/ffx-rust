@@ -15042,3 +15042,268 @@ fn round28b_actor_remove_and_restore_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r28b_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Replaces the spline `f` (`(out, curve, t)`) in both oracles with a stub
+/// that logs `f`, `curve` and `t` into the shared log of [`r27_stubs`]
+/// (cell `cell`) and writes the three words at `point` through `out` (a
+/// frame local of its caller).
+fn r28_spline_stub(a: &mut Oracle, b: &mut Oracle, cell: u32, f: u32, point: u32) {
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &cell.to_le_bytes()].concat(); // mov ecx, [cell]
+    code.extend([&[0xc7, 0x01][..], &f.to_le_bytes()].concat()); // mov [ecx], f
+    code.extend([0x8b, 0x44, 0x24, 0x08, 0x89, 0x41, 0x04]); // [ecx+4] = curve
+    code.extend([0x8b, 0x44, 0x24, 0x0c, 0x89, 0x41, 0x08]); // [ecx+8] = t
+    code.extend([0x83, 0xc1, 0x0c]); // add ecx, 12
+    code.extend([&[0x89, 0x0d][..], &cell.to_le_bytes()].concat()); // mov [cell], ecx
+    code.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    for k in 0..3u8 {
+        code.push(0xa1); // mov eax, [point + 4k]
+        code.extend((point + 4 * u32::from(k)).to_le_bytes());
+        code.extend([0x89, 0x42, 4 * k]); // mov [edx+4k], eax
+    }
+    code.push(0xc3);
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+}
+
+/// Round 28 c on one pair: `Atel_MoveUpdate_00868990` over every mode
+/// (0..11 and 0x7f) with the turn/arrive/retarget flags, durations and
+/// counts at their edges, floats from a pool with NaN, infinities, the
+/// 0.001 floor and equal positions; `Math_YawPitchTo`, `Math_AngleStep`,
+/// `Math_LengthSq3` and `CIsqrt` real, the retarget, the movie checks and
+/// the splines logged.
+#[allow(clippy::too_many_lines)] // one case loop
+fn r28c_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    // sequences: 0 movie_have_camera, 1 graphicVideoGetElapsedFrame
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0076_efc0, 0, true),
+            (0x0064_5d90, 0, true),
+            (0x0086_f940, 2, false),
+        ],
+    );
+    let point = alloc_both(a, b, 12);
+    r28_spline_stub(a, b, stubs.0, 0x0086_2b20, point);
+    r28_spline_stub(a, b, stubs.0, 0x0086_2b70, point);
+    let hdr = alloc_both(a, b, 4);
+    let w = alloc_both(a, b, 0xc00);
+    let level = alloc_both(a, b, 0x48);
+    let m = alloc_both(a, b, 0x48);
+    let wait = a.rebase(0x0112_a008);
+    let pool = [
+        0.0f32,
+        -0.0,
+        0.0005,
+        0.001,
+        0.002,
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        3.0,
+        10.0,
+        -1.0,
+        -2.5,
+        100.0,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NAN,
+        1e-30,
+    ];
+    let modes = [0u16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0x7f];
+    for round in 0..2500u32 {
+        // a pool value, or (one in four) a continuous one in -2..18
+        let pick = |rng: &mut Xorshift| {
+            if rng.below(4) == 0 {
+                f32::from(u16::try_from(rng.below(20_000)).unwrap()) / 1000.0 - 2.0
+            } else {
+                pool[rng.below(18) as usize]
+            }
+            .to_bits()
+        };
+        poke(a, b, w, hdr);
+        poke(a, b, hdr, [1u8, 1, 1, 5][rng.below(4) as usize]);
+        poke(a, b, w + 0xaa, [1u8, 4, 5, 0][rng.below(4) as usize]);
+        poke(a, b, w + 0xb16, [0u16, 3, 6, 0xffff][rng.below(4) as usize]);
+        poke(a, b, level + 0x44, m);
+        let mode = modes[(round % 14) as usize];
+        let mut flags = mode;
+        for bit in [0x8000u16, 0x2000, 0x200, 0x1000, 0x80, 0x4000] {
+            if rng.below(2) == 0 {
+                flags |= bit;
+            }
+        }
+        poke(
+            a,
+            b,
+            m,
+            rng.next().to_le_bytes()[0..2]
+                .try_into()
+                .map(u16::from_le_bytes)
+                .unwrap(),
+        );
+        poke(a, b, m + 2, flags);
+        poke(a, b, m + 4, [0i16, 5, -3, 1, 0x7fff][rng.below(5) as usize]);
+        poke(
+            a,
+            b,
+            m + 6,
+            [0i16, 4, 5, 6, 0x7ffd, 0x7ffe, -1, 40, -5, i16::MIN][rng.below(10) as usize],
+        );
+        for o in (8..0x44u32).step_by(4) {
+            let v = pick(rng);
+            poke(a, b, m + o, v);
+        }
+        poke(
+            a,
+            b,
+            m + 0x14,
+            if rng.below(3) == 0 { 0 } else { rng.next() | 1 },
+        );
+        let p = if Mem::read::<u8>(a, hdr) == 5 {
+            w + 0x284
+        } else {
+            w + 0x558
+        };
+        for o in (0..0x28u32).step_by(4) {
+            let v = pick(rng);
+            poke(a, b, p + o, v);
+        }
+        // Math_WrapAngle (in Math_AngleStep) spins for ever on an infinite
+        // angle, in the game as here: angles and turn steps stay finite
+        for at in [p + 0x20, p + 0x24, m + 0x3c, m + 0x40] {
+            let v = loop {
+                let v = pool[rng.below(18) as usize];
+                if !v.is_infinite() {
+                    break v.to_bits();
+                }
+            };
+            poke(a, b, at, v);
+        }
+        // equal positions now and then: the pitch-only turn
+        if rng.below(5) == 0 {
+            for o in [0u32, 8] {
+                let v = Mem::read::<u32>(a, m + 0x28 + o);
+                poke(a, b, p + o, v);
+            }
+            // an unordered height picks pi
+            if rng.below(3) == 0 {
+                poke(a, b, p + 4, f32::NAN);
+            }
+        }
+        // time at or past its end, and both zero (picked at random: the
+        // mode is round % 14)
+        match rng.below(7) {
+            0 => {
+                let v = Mem::read::<u32>(a, m + 0xc);
+                poke(a, b, m + 8, v);
+            }
+            1 => {
+                poke(a, b, m + 8, 0u32);
+                poke(a, b, m + 0xc, 0u32);
+            }
+            2 => {
+                poke(a, b, m + 8, 2.0f32);
+                poke(a, b, m + 0xc, 3.0f32);
+            }
+            _ => {}
+        }
+        for k in 0..3 {
+            let v = pick(rng);
+            poke(a, b, point + 4 * k, v);
+        }
+        // the target `d` away along x with (top speed, acceleration,
+        // `+0xaa`): top / near == d (1: near 1; 2: near 10), top == the
+        // braking bound sqrt(2 a d) (3), the arrival window speed / 10 (4)
+        // and speed / 10 == d (5)
+        if rng.below(3) == 0 {
+            let (top, acc, aa, d) = [
+                (2.0f32, 0.0f32, 4u8, 2.0f32),
+                (10.0, 0.0, 1, 1.0),
+                (1.0, 0.5, 1, 1.0),
+                (1.0, 10.0, 1, 0.105),
+                (10.0, 100.0, 1, 1.0),
+            ][rng.below(5) as usize];
+            poke(a, b, m + 0x10, top);
+            poke(a, b, m + 0x34, acc);
+            poke(a, b, w + 0xaa, aa);
+            poke(a, b, p + 0xc, 0.0f32);
+            poke(a, b, m + 0x28, 4.0f32);
+            poke(a, b, p, 4.0 - d);
+            for o in [4u32, 8] {
+                let v = Mem::read::<u32>(a, m + 0x28 + o);
+                poke(a, b, p + o, v);
+            }
+        }
+        // the speed bounds around the 0.001 floor (modes 3, 4)
+        if rng.below(3) == 0 {
+            poke(
+                a,
+                b,
+                m + 0x10,
+                [0.0005f32, 0.001, 0.0002][rng.below(3) as usize],
+            );
+            poke(
+                a,
+                b,
+                m + 0x34,
+                [0.0f32, 0.000_000_1, 0.0005][rng.below(3) as usize],
+            );
+            poke(
+                a,
+                b,
+                p + 0xc,
+                [0.001f32, 0.0002, 0.0, 0.0009][rng.below(4) as usize],
+            );
+        }
+        poke(a, b, wait, u32::from(rng.below(2) == 0));
+        r27_reset(a, b, &stubs, |s| match s {
+            0 => rng.below(2),
+            _ => [0u32, 1, 2, 7, 0x0100_0001, u32::MAX][rng.below(6) as usize],
+        });
+        let what = format!("Atel_MoveUpdate {what} {round} mode {flags:#x}");
+        r22_case(a, b, 0x0086_8990, &[w, level], false, &what, |r| {
+            let f = frame(r);
+            Mem::write(r.0, f, [0xa5u8; 0x20]);
+            hp::atel_move_update(r, w, level, f, |r, at, args| {
+                r.0.call_f64(at, args).unwrap()
+            });
+            0
+        });
+    }
+}
+
+#[test]
+fn round28c_move_update_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_028c);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r28c_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r28c_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

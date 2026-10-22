@@ -7423,6 +7423,12 @@ ported! {
     AtelEventRemoveForBattle @ 0x0086_5dc0 => extern "C" fn h_865dc0() -> u32 {
         hp::atel_event_remove_for_battle(&mut mem())
     }
+    /// `Atel_MoveUpdate_00868990(w, level)`: the turn outputs and the spline
+    /// point in a frame, the float maths called through the game.
+    Atel_MoveUpdate_00868990 @ 0x0086_8990 => extern "C" fn h_868990(w: u32, level: u32) {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_move_update(&mut mem(), w, level, frame.at(), |_, f, args| super::call_cdecl_f64(f, args));
+    }
     /// `Atel_CheckTouchTalk_00866980(worker, _, player)`: `Math_LengthSq3`
     /// through the game.
     Atel_CheckTouchTalk_00866980 @ 0x0086_6980 => extern "C" fn h_866980(w: u32, _unused: u32, player: u32) -> u32 {

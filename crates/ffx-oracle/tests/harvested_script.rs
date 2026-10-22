@@ -305,3 +305,21 @@ harvest_test!(
         hp::atel_draw_no_trans(&mut OracleHost(m), frame);
     }
 );
+
+// script round 28: the per-actor move update (turn outputs and spline point
+// in stack scratch; the port hands `fcall` the rebased address)
+harvest_test!(
+    atel_move_update,
+    0x0086_8990,
+    args = 2,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        hp::atel_move_update(
+            &mut OracleHost(m),
+            s.arg(0),
+            s.arg(1),
+            frame,
+            |h, at, args| h.0.call_f64(at, args).unwrap(),
+        );
+    }
+);
