@@ -2977,6 +2977,27 @@ variable reference to its table entry and element.
 them. `0x00879b60` reads a host-PC file into a source buffer
 (`AtelPCOpen`, `sceRead`; caller `AtelLoadSourceData`): debug.
 
+Round 25 e: `Atel_TurnToWorker_0086f8a0(worker, target)` records the
+target in the current turn block and turns to it;
+`Atel_SyncTurnEnd_00870dc0(worker, level)` gives the character the
+worker's rotation and ends the level's turn (`+0x48`, mode `u16` at `+2`,
+low 5 bits; mode 5 never ends here) once its direction is the target
+(exact `f32` compares, NaN never equal) or, for modes 3/4, its `+0xc`
+fell below `+8`. `Atel_StreamSeek_00885bf0` points the CD (`GetCD`, its
+`+0x10` select and `+4` seek) at a sound stream's sectors.
+`AtelJumpGameOver` (`0x0086da10`) resets music, sound, filters and the text
+language and jumps to map `0x17`. `Atel_KickBGSepsOnFlag_00865780(header,
+on)` stops or plays the delayed background separates and fades the others
+(`0x3f` with `on`, `0x7f` without, 12 frames). `Native_GetChrOptPos_00a7a980`
+(`Native_5036`, mode 0) stores a character's attachment point into three
+script variables. `Atel_ApplyPolarMove_008629c0` adds a polar step
+(`Math_PolarToVector`) to a bound worker's position and moves its camera
+(type 2) or re-binds it (types 4 and 5).
+`round25e_turns_stream_game_over_seps_match_the_original` covers them (the
+variables there avoid storage 5, the worker itself, and the field
+snapshot's workers with the debug heap's `0xcdcdcdcd` as character handle
+get one of the test's own).
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

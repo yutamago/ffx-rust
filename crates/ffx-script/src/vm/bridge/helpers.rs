@@ -5511,3 +5511,379 @@ pub fn atel_find_var_slot(h: &mut impl ffx_bridge::Host, rec: u32) {
         e = e.wrapping_add(8);
     }
 }
+
+/// `Atel_TurnToWorker_0086f8a0(worker, target)` (name ours; callers
+/// `Native_003c`, `0x00869510`): the worker's current turn block (as in
+/// [`atel_turn_to_point`]) records the target (`u16` at `+0`) and the
+/// worker turns to the target worker's position.
+pub fn atel_turn_to_worker<H: ffx_bridge::Host>(
+    h: &mut H,
+    w: u32,
+    target: u32,
+    frame: u32,
+    yaw_pitch: impl FnOnce(&mut H, &[u32]) -> u32,
+) {
+    let level = u32::from(h.read::<u8>(w + 0x32));
+    let kind = h.read::<u8>(h.read::<u32>(w));
+    let level = if matches!(kind, 5 | 6) {
+        level.min(1)
+    } else {
+        level.min(8)
+    };
+    let turn = h.read::<u32>(w + level * 0x4c + 0x174);
+    h.write(turn, lo16(target));
+    let t = super::atel_get_basic_work(h, target.cast_signed());
+    let p = pos_block(h, t);
+    let point = [0, 4, 8].map(|o| x87::store(x87::load(h.read(p + o))));
+    atel_turn_to_point(h, w, point, frame, yaw_pitch);
+}
+
+/// `Atel_SyncTurnEnd_00870dc0(worker, level)` (name ours; caller
+/// `0x008666e0`): a bound worker's character takes its rotation
+/// (`Ch_SetRot(chr, pos+0x34)`); then the level's turn (`level+0x48`:
+/// mode `u16` at `+2`, low 5 bits) ends (`Script_StopTurn(worker, -1)`,
+/// mode masked to `0x5000`, unless bit `0x4000`) when, for modes 3 and 4,
+/// the turn's `+0xc` is below its `+8`, or (any mode but 5) when the
+/// worker's direction (`pos+0x34`) is the turn's target `+0x20`, and with
+/// mode bits `0x80` / `0x40` also `+0x30`/`+0x24` and `+0x38`/`+0x28`.
+pub fn atel_sync_turn_end(h: &mut impl ffx_bridge::Host, w: u32, lvl: u32) {
+    let p = pos_block(h, w);
+    let t = h.read::<u32>(lvl + 0x48);
+    let mode = u32::from(h.read::<u16>(t + 2));
+    let c = h.read::<u32>(w + 0x9c);
+    if h.read::<u8>(w + 0xaa) == 1 && c != 0 {
+        let r = x87::store(x87::load(h.read(p + 0x34)));
+        host_call(h, 0x0082_b520, &[c, r]);
+    }
+    let m = mode & 0x1f;
+    if m == 5 {
+        return;
+    }
+    if m == 3 || m == 4 {
+        let a = x87::load(h.read(t + 0xc));
+        let b = x87::load(h.read(t + 8));
+        if a < b {
+            stop_turn_unless_held(h, w, t);
+        }
+    }
+    if !same_f32(h, t + 0x20, p + 0x34) {
+        return;
+    }
+    let f = h.read::<u16>(t + 2);
+    if f & 0x80 != 0 && !same_f32(h, t + 0x24, p + 0x30) {
+        return;
+    }
+    if f & 0x40 != 0 && !same_f32(h, t + 0x28, p + 0x38) {
+        return;
+    }
+    stop_turn_unless_held(h, w, t);
+}
+
+/// Whether the `f32`s at `a` and `b` compare equal (`fucompp`: NaN never,
+/// -0 and 0 alike).
+#[allow(clippy::float_cmp)] // the original's exact compare
+fn same_f32(m: &impl Mem, a: u32, b: u32) -> bool {
+    x87::load(m.read(a)) == x87::load(m.read(b))
+}
+
+/// Unless the turn `t`'s mode (`+2`) has bit `0x4000`, the mode keeps only
+/// `0x5000` and the worker's turn stops (`Script_StopTurn(w, -1)`).
+fn stop_turn_unless_held(h: &mut impl ffx_bridge::Host, w: u32, t: u32) {
+    let f = h.read::<u16>(t + 2);
+    if f & 0x4000 == 0 {
+        h.write(t + 2, f & 0x5000);
+        host_call(h, 0x0086_3fe0, &[w, u32::MAX]);
+    }
+}
+
+/// Copies the NUL-terminated string at `from` to `to`, its NUL included.
+fn copy_cstr(m: &mut impl Mem, from: u32, to: u32) {
+    let mut k = 0;
+    loop {
+        let c = m.read::<u8>(from.wrapping_add(k));
+        m.write(to.wrapping_add(k), c);
+        if c == 0 {
+            return;
+        }
+        k += 1;
+    }
+}
+
+/// `Atel_StreamSeek_00885bf0(start, count, sector, id, pos)` (name ours;
+/// caller `Native_01d6`): a sound stream's file name
+/// (`SndStreamPCName(id, frame)`, 16 bytes) becomes the CD's current
+/// stream name (`0x013300c0`); for `pos` -1 also the upper-cased DVD name
+/// (`0x013300a0`, `SndToUpper`), `0x01330098` = `0x78`, `*sector` = `0x19`,
+/// a count of 1 and the position `SndStreamDVDPos(0x504)`. Then the CD
+/// object (`GetCD`) selects `*sector` (its `+0x10`) and seeks twice (its
+/// `+4`: 0, then `(pos >> 16) + count`); `*start` = that sector and
+/// `*count` = the count (1 without one). Returns the second seek's result
+/// plus `pos & 0xffff`.
+pub fn atel_stream_seek(
+    h: &mut impl ffx_bridge::Host,
+    start: u32,
+    count: u32,
+    sector: u32,
+    id: u32,
+    mut pos: u32,
+    frame: u32,
+) -> u32 {
+    let mut n = if count == 0 { 1 } else { h.read::<u32>(count) };
+    host_call(h, 0x0088_7870, &[id, frame]);
+    let name = h.rebase(0x0133_00c0);
+    if pos == u32::MAX {
+        h.write(h.rebase(0x0133_0098), 0x78_u32);
+        let dvd = h.rebase(0x0133_00a0);
+        copy_cstr(h, frame, dvd);
+        copy_cstr(h, frame, name);
+        host_call(h, 0x0088_7940, &[dvd]);
+        pos = host_call(h, 0x0088_7790, &[0x504]);
+        h.write(sector, 0x19_u32);
+        n = 1;
+    } else {
+        copy_cstr(h, frame, name);
+    }
+    let cd = host_call(h, 0x0076_d0d0, &[]);
+    let select = h.read::<u32>(cd + 0x10);
+    let s = h.read::<u32>(sector);
+    h.call(select, &[s]);
+    let at = (pos >> 16).wrapping_add(n);
+    let seek = h.read::<u32>(cd + 4);
+    h.call(seek, &[0]);
+    let seek = h.read::<u32>(cd + 4);
+    let r = h.call(seek, &[at]).wrapping_add(pos & 0xffff);
+    if start != 0 {
+        h.write(start, at);
+    }
+    if count != 0 {
+        h.write(count, n);
+    }
+    r
+}
+
+/// `AtelJumpGameOver()` (`0x0086da10`; caller `AtelBattleEndCallback`):
+/// the game-over jump: the menus and battle reset (`TOReset1`,
+/// `MsBtlGetInit`), vibration stopped and masked, the event's and the
+/// playing music's replay points cleared (the playing music faded out
+/// over 0x78 frames), music `0x8a` stopped and cleared, no music number,
+/// every separate and sound stopped and the waves cleared
+/// (`SndClearWave(-2)`), no separates to load, no group mask, memory
+/// movie 6; ctrl work 0 flagged (`+0` bit `0x80`, `+0x210` bit 2) and
+/// current for the focus, blur and filter resets, the ripple effect off,
+/// the text language reset, `TOReset2`, `g_TkScalePair` = (2, 2) and the
+/// jump to map `0x17` (`AtelSetEventJump(0x17, 0)`); the ctrl work back.
+pub fn atel_jump_game_over(h: &mut impl ffx_bridge::Host) {
+    for f in [0x008a_de50, 0x0079_8b60, 0x0087_62f0] {
+        host_call(h, f, &[]);
+    }
+    host_call(h, 0x0087_5f60, &[u32::MAX, 1]);
+    if host_call(h, 0x0087_3b00, &[]).cast_signed() >= 0 {
+        let n = host_call(h, 0x0087_3b00, &[]);
+        host_call(h, 0x0088_69e0, &[n]);
+    }
+    if host_call(h, SND_GET_NOW_PLAY_MUSIC, &[]).cast_signed() >= 0 {
+        let n = host_call(h, SND_GET_NOW_PLAY_MUSIC, &[]);
+        host_call(h, 0x0088_69e0, &[n]);
+        let n = host_call(h, SND_GET_NOW_PLAY_MUSIC, &[]);
+        host_call(h, 0x0088_6af0, &[n, 0x78]);
+    }
+    host_call(h, 0x0088_6a60, &[0x8a]);
+    host_call(h, 0x0088_6800, &[0x8a]);
+    host_call(h, 0x0087_3d00, &[u32::MAX]);
+    host_call(h, 0x0088_6db0, &[]);
+    atel_stop_sound_all(h);
+    host_call(h, 0x0088_5ec0, &[0xffff_fffe]);
+    h.write(h.rebase(SEP_LOAD_COUNT), 0_u32);
+    h.write(h.rebase(SEP_GROUP_MASK), 0_u8);
+    host_call(h, 0x0087_3e90, &[6]);
+    let ctx = h.rebase(SCRIPT_CONTEXT);
+    let old = h.read::<u32>(ctx);
+    let works = h.rebase(CTRL_WORKS);
+    let f = h.read::<u8>(works);
+    h.write(works, f | 0x80);
+    let f = h.read::<u32>(works + 0x210);
+    h.write(works + 0x210, f | 2);
+    h.write(ctx, works);
+    host_call(h, 0x0082_cb60, &[0]);
+    host_call(h, 0x0082_bee0, &[0]);
+    host_call(h, 0x0082_cc70, &[]);
+    host_call(h, 0x0090_8450, &[]);
+    atel_reset_text_language(h);
+    host_call(h, 0x008a_dee0, &[]);
+    let two = 2f32.to_bits();
+    h.write(h.rebase(0x0132_5b98), two);
+    h.write(h.rebase(0x0132_5b9c), two);
+    host_call(h, 0x0086_fec0, &[0x17, 0]);
+    h.write(ctx, old);
+}
+
+/// `Atel_KickBGSepsOnFlag_00865780(header, on)` (name ours; caller
+/// `0x00865740`): every background separate (flags bit 2) of the event
+/// header's table: one flagged `0x80` (starts later) stops without `on`
+/// and plays (`SndSepPlay(id, 0x3f, 0x7f)`) with it; one not flagged
+/// fades to `0x3f` with `on` and `0x7f` without over 12 frames
+/// (`SndSepVolumeTranslate`, not for flag `0x40`). In a running event
+/// (ctx `+2` bit 8, `+0x1f4` past 3), flag `0x100` without `on` or `0x200`
+/// with it plays the separate instead.
+pub fn atel_kick_bg_seps_on_flag(h: &mut impl ffx_bridge::Host, hdr: u32, on: u32) {
+    let t = sep_table(h, hdr);
+    let n = if t == 0 { 0 } else { h.read::<i32>(t) };
+    for i in 0..n.max(0).cast_unsigned() {
+        let t = sep_table(h, hdr);
+        let id = if t == 0 {
+            0
+        } else {
+            h.read::<u32>(t + i * 8 + 4)
+        };
+        let t = sep_table(h, hdr);
+        let flags = if t == 0 {
+            0
+        } else {
+            h.read::<u32>(t + i * 8 + 8)
+        };
+        if flags & 2 == 0 {
+            continue;
+        }
+        let c = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+        let mut force = false;
+        if h.read::<u8>(c + 2) & 8 != 0 && h.read::<u32>(c + 0x1f4) > 3 {
+            if flags & 0x100 != 0 && on == 0 {
+                force = true;
+            }
+            if flags & 0x200 != 0 && on != 0 {
+                force = true;
+            }
+        }
+        let play = if flags & 0x80 != 0 {
+            if on == 0 {
+                host_call(h, 0x0088_6eb0, &[id]);
+                force
+            } else {
+                if flags & 0x40 == 0 {
+                    host_call(h, TK_GET_SAVE_EVENT_ADDRESS, &[]);
+                }
+                true
+            }
+        } else if force {
+            true
+        } else {
+            if flags & 0x40 == 0 {
+                let v = if on == 0 { 0x7f } else { 0x3f };
+                host_call(h, 0x0088_6ff0, &[id, 0xc, v]);
+            }
+            false
+        };
+        if play {
+            host_call(h, 0x0088_6e50, &[id, 0x3f, 0x7f]);
+        }
+    }
+}
+
+/// `Native_GetChrOptPos_00a7a980(worker, _, stack, mode)` (name ours;
+/// caller `Native_5036`, mode 0): pops three variable words (z, y, x
+/// order: the last popped is x's), for mode 0 an attachment index, and a
+/// worker index; that worker's character gives a position (mode 0:
+/// `Ch_OptposGet(chr, index, frame)`; 1: point 0; 2: its `+0x6b4`
+/// vector) stored (`fstp m32`) into the variables that have an address
+/// (`AtelGetRealVarAdrs`). Without a character nothing is stored. (For
+/// another mode the original stores its uninitialised locals; `frame`
+/// then.) Returns 0.
+pub fn native_get_chr_opt_pos(
+    h: &mut impl ffx_bridge::Host,
+    w: u32,
+    s: u32,
+    mode: u32,
+    frame: u32,
+) -> u32 {
+    let vz = super::atel_pop_stack_integer(h, s);
+    let vy = super::atel_pop_stack_integer(h, s);
+    let vx = super::atel_pop_stack_integer(h, s);
+    let index = if mode == 0 {
+        super::atel_pop_stack_integer(h, s)
+    } else {
+        0
+    };
+    let wi = super::atel_pop_stack_integer(h, s);
+    let ax = super::atel_get_real_var_adrs(h, w, vx);
+    let ay = super::atel_get_real_var_adrs(h, w, vy);
+    let az = super::atel_get_real_var_adrs(h, w, vz);
+    let t = super::atel_get_basic_work(h, wi.cast_signed());
+    let chr = super::atel_get_char_handle(h, t);
+    if chr == 0 {
+        return 0;
+    }
+    match mode {
+        0 => {
+            host_call(h, 0x0083_54f0, &[chr, index, frame]);
+        }
+        1 => {
+            host_call(h, 0x0083_54f0, &[chr, 0, frame]);
+        }
+        2 => {
+            for k in 0..4 {
+                let v = h.read::<u32>(chr + 0x6b4 + k * 4);
+                h.write(frame + k * 4, v);
+            }
+        }
+        _ => {}
+    }
+    for (k, at) in (0u32..).zip([ax, ay, az]) {
+        if at != 0 {
+            copy_f32(h, frame + k * 4, at);
+        }
+    }
+    0
+}
+
+/// `Atel_ApplyPolarMove_008629c0(worker)` (name ours; caller
+/// `0x008666e0`): a worker bound as type 2..5 (`+0xaa`) moves by its
+/// polar step (`Math_PolarToVector(&d, r, yaw, pitch)`: r its position
+/// block's `+0xc`, a tenth for types 4 and 5; yaw `+0x20`, pitch `+0x24`;
+/// `d` in `frame`, 32 bytes) added to its position; type 2 then moves its
+/// camera there (`MsCameraSetRect(+0x3c, 1, &(x, y, z, 1))`, the vector at
+/// `frame + 0x10`) when its level's turn blocks (`+0x44`, `+0x48`) have a
+/// mode; types 4 and 5 re-bind (`AtelSetBindObject`).
+pub fn atel_apply_polar_move(h: &mut impl ffx_bridge::Host, w: u32, frame: u32) {
+    let b = h.read::<u8>(w + 0xaa);
+    if !(2..=5).contains(&b) {
+        return;
+    }
+    let level = u32::from(h.read::<u8>(w + 0x32));
+    let lv = super::script_worker_level(h, w, level.cast_signed());
+    let p = pos_block(h, w);
+    let mut r = x87::store(x87::load(h.read(p + 0xc)));
+    if b == 4 || b == 5 {
+        r = x87::store(x87::div(x87::load(r), 10.0));
+    }
+    let yaw = x87::store(x87::load(h.read(p + 0x20)));
+    let pitch = x87::store(x87::load(h.read(p + 0x24)));
+    host_call(h, 0x0088_a3a0, &[frame, r, yaw, pitch]);
+    let mut v = [0u32; 3];
+    for k in 0..3u32 {
+        let s = x87::add(
+            x87::load(h.read(p + k * 4)),
+            x87::load(h.read(frame + k * 4)),
+        );
+        v[k as usize] = x87::store(s);
+        h.write(p + k * 4, v[k as usize]);
+    }
+    match h.read::<u8>(w + 0xaa) {
+        2 => {
+            let a = h.read::<u32>(lv + 0x44);
+            let c = h.read::<u32>(lv + 0x48);
+            if h.read::<u16>(a + 2) != 0 || h.read::<u16>(c + 2) != 0 {
+                let rect = frame + 0x10;
+                for (k, x) in (0u32..).zip(v) {
+                    h.write(rect + k * 4, x);
+                }
+                h.write(rect + 12, 1f32.to_bits());
+                let cam = h.read::<u32>(w + 0x3c);
+                host_call(h, MS_CAMERA_SET_RECT, &[cam, 1, rect]);
+            }
+        }
+        4 | 5 => {
+            host_call(h, 0x0086_f4c0, &[w]);
+        }
+        _ => {}
+    }
+}

@@ -7259,4 +7259,42 @@ ported! {
     Atel_FindVarSlot_0087bc90 @ 0x0087_bc90 => extern "C" fn h_87bc90(rec: u32) {
         hp::atel_find_var_slot(&mut mem(), rec);
     }
+    /// `Atel_TurnToWorker_0086f8a0(worker, target)`: yaw and pitch in a
+    /// 2-word frame, `Math_YawPitchTo` through `call_cdecl`.
+    Atel_TurnToWorker_0086f8a0 @ 0x0086_f8a0 => extern "C" fn h_86f8a0(w: u32, target: u32) {
+        let mut frame = super::StackFrame::<2>::new();
+        hp::atel_turn_to_worker(&mut mem(), w, target, frame.at(), |m, args| {
+            super::call_cdecl(ffx_bridge::Mem::rebase(m, 0x0088_b4d0), args)
+        });
+    }
+    /// `Atel_SyncTurnEnd_00870dc0(worker, level)`.
+    Atel_SyncTurnEnd_00870dc0 @ 0x0087_0dc0 => extern "C" fn h_870dc0(w: u32, lvl: u32) {
+        hp::atel_sync_turn_end(&mut mem(), w, lvl);
+    }
+    /// `Atel_StreamSeek_00885bf0(start, count, sector, id, pos)`: the name
+    /// in a 4-word frame.
+    Atel_StreamSeek_00885bf0 @ 0x0088_5bf0 => extern "C" fn h_885bf0(start: u32, count: u32, sector: u32, id: u32, pos: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_stream_seek(&mut mem(), start, count, sector, id, pos, frame.at())
+    }
+    /// `AtelJumpGameOver()`.
+    AtelJumpGameOver @ 0x0086_da10 => extern "C" fn h_86da10() {
+        hp::atel_jump_game_over(&mut mem());
+    }
+    /// `Atel_KickBGSepsOnFlag_00865780(header, on)`.
+    Atel_KickBGSepsOnFlag_00865780 @ 0x0086_5780 => extern "C" fn h_865780(hdr: u32, on: u32) {
+        hp::atel_kick_bg_seps_on_flag(&mut mem(), hdr, on);
+    }
+    /// `Native_GetChrOptPos_00a7a980(worker, _, stack, mode)`: the position
+    /// in a 4-word frame.
+    Native_GetChrOptPos_00a7a980 @ 0x00a7_a980 => extern "C" fn h_a7a980(w: u32, _unused: u32, s: u32, mode: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::native_get_chr_opt_pos(&mut mem(), w, s, mode, frame.at())
+    }
+    /// `Atel_ApplyPolarMove_008629c0(worker)`: the step and the camera
+    /// vector in an 8-word frame.
+    Atel_ApplyPolarMove_008629c0 @ 0x0086_29c0 => extern "C" fn h_8629c0(w: u32) {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_apply_polar_move(&mut mem(), w, frame.at());
+    }
 }
