@@ -747,6 +747,85 @@ pub fn native_7105_poll<H: NativeHost>(h: &mut H, w: u32, _a: u32, _s: u32) -> u
     }
 }
 
+/// `Native_7002_Poll` (`0x007a35c0`, `0x7002`, poll): 1 at once.
+pub fn native_7002_poll<H: NativeHost>(_h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    1
+}
+
+/// The start of `0x7043` and `0x70a9`: `(win)`: the argument word = win
+/// clamped to 0..6 (`Clamp0To6_007a86e0`), returned.
+fn clamped_window<H: NativeHost>(h: &mut H, a: u32, s: u32) -> u32 {
+    let v = pop(h, s);
+    let r = call(h, 0x007a_86e0, &[v]);
+    h.write(a, r);
+    r
+}
+
+/// `Native_7043` (`0x007a6a10`, `0x7043`, start): [`clamped_window`].
+pub fn native_7043<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
+    clamped_window(h, a, s)
+}
+
+/// `Native_70a9` (`0x007a6c50`, `0x70a9`, start): [`clamped_window`].
+pub fn native_70a9<H: NativeHost>(h: &mut H, _w: u32, a: u32, s: u32) -> u32 {
+    clamped_window(h, a, s)
+}
+
+/// `Native_704c_Poll` (`0x007a7cf0`, `0x704c`, poll): 5 once no actor in
+/// the argument word's bits is in motion (`MsAnyChrMotion_007a8be0`), else
+/// 0.
+pub fn native_704c_poll<H: NativeHost>(h: &mut H, _w: u32, a: u32, _s: u32) -> u32 {
+    let bits = h.read::<u32>(a);
+    if call(h, 0x007a_8be0, &[bits]) == 0 {
+        5
+    } else {
+        0
+    }
+}
+
+/// `Native_706d_Poll` (`0x007a6db0`, `0x706d`, poll): 0 while the music
+/// standby syncs (`SndSyncMusicStandby(0)`) outside the water
+/// (`g_BtlUnderwater`), else 5.
+pub fn native_706d_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    if call(h, 0x0088_7900, &[0]) != 0 && h.read::<u8>(h.rebase(0x0112_c9ce)) == 0 {
+        0
+    } else {
+        5
+    }
+}
+
+/// `Native_706d_Int` (`0x007a6ea0`, `0x706d`, third slot): outside the
+/// water and in a menuless battle status (`MsBattleStatusMenuless_007a8c20`)
+/// the stream in the first argument word plays for the first actor the
+/// second word selects (`Battle_FirstSelectedActor(actor, word 1, 0, 1)`,
+/// `MsSoundStreamPlay(that, word 0)`): 0; else 1.
+pub fn native_706d_int<H: NativeHost>(h: &mut H, w: u32, a: u32, _s: u32) -> u32 {
+    if h.read::<u8>(h.rebase(0x0112_c9ce)) != 0 || call(h, 0x007a_8c20, &[]) == 0 {
+        return 1;
+    }
+    let id = actor(h, w);
+    let sel = h.read::<u32>(a.wrapping_add(4));
+    let who = call(h, 0x0079_47f0, &[id, sel, 0, 1]);
+    let stream = h.read::<u32>(a);
+    call(h, 0x007a_0820, &[who, stream]);
+    0
+}
+
+/// `Native_70a2_Poll` (`0x007a7500`, `0x70a2`, poll): 0 without
+/// `g_BtlRegMotionFlag`; else 5 once `g_Native70a2Flag` (set by the start)
+/// is 0, clearing it (and 0) while it is set.
+pub fn native_70a2_poll<H: NativeHost>(h: &mut H, _w: u32, _a: u32, _s: u32) -> u32 {
+    if h.read::<u8>(h.rebase(0x0112_c9cf)) == 0 {
+        return 0;
+    }
+    let flag = h.rebase(0x0113_63e8);
+    if h.read::<u32>(flag) == 0 {
+        return 5;
+    }
+    h.write(flag, 0_u32);
+    0
+}
+
 /// `Native_7043_Poll` (`0x007a6a40`, `0x7043`, poll): on the handle in
 /// the argument word: 5 when `0x008b7ca0(h)` is 0; else 0 while
 /// `0x008b8530(h)` is 0, then `0x008ab8f0(h)` and 5.
@@ -1147,7 +1226,14 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
         0x007a_64c0 => Int(native_7064_poll),
         0x007a_65d0 => Int(native_7064_result),
         0x007a_6730 => Int(native_7105_poll),
+        0x007a_35c0 => Int(native_7002_poll),
+        0x007a_6a10 => Int(native_7043),
         0x007a_6a40 => Int(native_7043_poll),
+        0x007a_6c50 => Int(native_70a9),
+        0x007a_6db0 => Int(native_706d_poll),
+        0x007a_6ea0 => Int(native_706d_int),
+        0x007a_7500 => Int(native_70a2_poll),
+        0x007a_7cf0 => Int(native_704c_poll),
         0x007a_6ae0 => Int(native_70bf),
         0x007a_6cb0 => Int(native_70a9_poll),
         0x007a_6d00 => Int(native_706d),
@@ -1177,7 +1263,7 @@ pub fn find<H: NativeHost>(sym: u32) -> Option<Native<H>> {
 }
 
 /// Every handler [`find`] has, with whether it returns a float.
-pub const PORTED: [(u32, bool); 78] = [
+pub const PORTED: [(u32, bool); 85] = [
     (0x007a_2980, false),
     (0x007a_2ba0, false),
     (0x007a_2c10, false),
@@ -1256,4 +1342,11 @@ pub const PORTED: [(u32, bool); 78] = [
     (0x007a_85f0, false),
     (0x007a_8650, false),
     (0x007a_8680, false),
+    (0x007a_35c0, false),
+    (0x007a_6a10, false),
+    (0x007a_6c50, false),
+    (0x007a_6db0, false),
+    (0x007a_6ea0, false),
+    (0x007a_7500, false),
+    (0x007a_7cf0, false),
 ];

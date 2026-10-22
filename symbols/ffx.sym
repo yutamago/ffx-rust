@@ -5926,7 +5926,7 @@
 0x007a3530 function Native_7002                # 0x7002 start: (a, b) -> 0x00781c90(a, 1, b); ported in native_btl/native_msg (script round 8)
 0x007a3560 function Native_70f7 # 0x70f7: args (v int) -> v; appended to the u16 list 0x011363f0 (count 0x011363ec, 16 at most); ported in native_btl2 (script round 18); name ours
 0x007a35a0 function Native_ActorPlayMotion       # 0x7007: args (motion; bit 0x8000 = no blend) -> length in frames << 8 / speed; plays a motion on the script's battle actor (0x007a8fc0, 0x00837d00)
-0x007a35c0 function Native_7002_Poll             # native 0x7002 poll handler (g_NativeTables group 7 entry 0x2, ffx-script native_counts); 493 calls in the shipped scripts; name by id
+0x007a35c0 function Native_7002_Poll             # native 0x7002 poll handler (g_NativeTables group 7 entry 0x2, ffx-script native_counts); 493 calls in the shipped scripts; name by id; (script r28) returns 1; ported in native_btl2
 0x007a35d0 function Native_7102 # 0x7102: args (a int, b int) -> index of a (0xff none); actor b's +0x438 = it, +0x439 = 1; ported in native_btl2 (script round 18); name ours
 0x007a3650 function Native_70c3                # 0x70c3 (float): args (selector int) -> float: MsGetChrTargetDir(picked, 0) (0x007958c0) in degrees, as 0x70be; ported in native_btl (script round 12)
 0x007a36c0 function Native_706f                # 0x706f: 0x007a8fc0(worker, args, stack, 1); ported in native_btl/native_msg (script round 8)
@@ -6094,6 +6094,7 @@
 0x007a6950 function Native_7065 # 0x7065: SndStartStream() (0x00887630); 0; ported in native_mods (script round 21); name ours
 0x007a6960 function Native_7066 # 0x7066: jumps to 0x007b2c00; ported in native_mods (script round 21); name ours
 0x007a6970 function Native_7028              # 0x7028: (x, y, z): actor +0x3a0..+0x3a8 and its model's 0x0082b560(model, 7, z, y, x); 0; ported in native_btl/native_move (script round 10)
+0x007a6a10 function Native_7043 # (script r28) 0x7043 start: (win): argument word = Clamp0To6_007a86e0(win); -> it (table 0x00c42a58); ported in native_btl2; name ours
 0x007a6a30 function Native_7067 # 0x7067: msVoiceIsStreaming() != 0 (0x007b2be0); ported in native_mods (script round 21); name ours
 0x007a6a40 function Native_7043_Poll # 0x7043: poll: handle in the argument word; 5 when 0x008b7ca0(h) == 0; 0 while 0x008b8530(h) == 0; then 0x008ab8f0(h), 5; ported in native_btl2 (script round 18); name ours
 0x007a6a80 function Native_ActorGetId            # 0x7021: args (selector) -> id (+0xe, the ushort that 0x1xxx selectors match) of the first selected actor, -1 if none
@@ -6101,15 +6102,18 @@
 0x007a6ae0 function Native_70bf # 0x70bf: args (v f) -> 0; actor +0x3ac = v, 0x00832610(model, v) with a model; ported in native_btl2 (script round 18); name ours
 0x007a6b40 function Native_ActorGetSlotRef       # 0x70a1: args (selector) -> monster: actor +0xc byte; party: -6 - position in party list 0x0112c895 (18 entries); 0xff if none; ?meaning
 0x007a6bc0 function Native_706c # 0x706c: (sel, k): for the first actor x of sel, the record of its +0x14 actor: with +0xf2c set and k at most 0x1f, sound k (+0xeac + 4 k) plays (MsSEP3Dregist; ported in native_mods (script round 21); name ours
+0x007a6c50 function Native_70a9 # (script r28) 0x70a9 start: (win): argument word = Clamp0To6_007a86e0(win); -> it (table 0x00c430b8); ported in native_btl2; name ours
 0x007a6c70 function Native_70c0 # 0x70c0: (sel) -> 0x00794990(first of sel)'s ST0; ported in native_mods (script round 21); name ours
 0x007a6cb0 function Native_70a9_Poll # 0x70a9: poll: handle in the argument word; 5 when state 0x008b7ca0(h) == 0; 0x008ab8f0(h) and 5 when 0x008b8530(h) == 1 or (!0x008864b0() and state 3); else 0; ported in native_btl2 (script round 18); name ours
 0x007a6d00 function Native_706d # 0x706d: args (b int, a int) start: argument words = a, b; -> b; ported in native_btl2 (script round 18); name ours
 0x007a6d30 function Native_7037                # 0x7037: (b, a) -> 0x007ac840(actor, a, b, 1); ported in native_btl/native_msg (script round 8)
 0x007a6d70 function Native_702e                # 0x702e (float): (v) -> MsGetTargetDist(actor, v, 0), 0.0 without an actor; ported in native_btl/native_msg (script round 8)
+0x007a6db0 function Native_706d_Poll # (script r28) 0x706d poll: 0 while SndSyncMusicStandby(0) and not g_BtlUnderwater, else 5; not a function start in the dump; ported in native_btl2; name ours
 0x007a6dd0 function Native_7038                # 0x7038: (b, a): 0x007acb40(actor, a, b); ported in native_btl/native_move (script round 9)
 0x007a6e10 function Native_7044 # 0x7044: (win): TOCloseMessageWindow(win clamped 0..6) (0x008ab8f0); 0; ported in native_mods (script round 21); name ours
 0x007a6e40 function Native_7059                # 0x7059 (float): MsGetTargetDist(actor, v, 1); ported in native_btl/native_move (script round 9)
 0x007a6e80 function Native_7056 # 0x7056: (v): MsBattleSpecialInit(v) (0x0079de60); 0; ported in native_mods (script round 21); name ours
+0x007a6ea0 function Native_706d_Int # (script r28) 0x706d third slot: outside the water with MsBattleStatusMenuless_007a8c20: MsSoundStreamPlay(Battle_FirstSelectedActor(actor, word 1, 0, 1), word 0), 0; else 1; ported in native_btl2; name ours
 0x007a6ef0 function CT_703B_ret_setCommandDisabled # fh v3:exact 0x007a6f10 +CT_703B_ret_setCommandDisabled
 0x007a6f70 function Native_7032              # 0x7032: (selector, degrees): radians into +0x514/+0x518 of every picked actor, +0x512 = 1; 0; ported in native_btl/native_move (script round 10)
 0x007a7010 function Native_7070 # 0x7070: SetByte_00c58ef4(1) (0x0089bc60); 0; ported in native_mods (script round 21); name ours
@@ -6130,7 +6134,7 @@
 0x007a7470 function Native_707b                # 0x707b: (selector, k): 0x0079fd40(picked, k) (k 9 only when 0x007a8920(picked)); ported in native_btl/native_msg (script round 8)
 0x007a74e0 function Native_704d # 0x704d: 0 (xor eax, eax; ret); ported in native_mods (script round 21); name ours
 0x007a74f0 function Native_7050_Poll           # 0x7050 (poll): args (selector int) -> the args word: MsSetChrVisibleBtl2Event(worker, MsGetChrBit(actor, selector, 0, 1), -1) (0x007a89c0); ported in native_btl (script round 12)
-0x007a7500 function Native_70a2_Poll             # native 0x70a2 poll handler (g_NativeTables group 7 entry 0xa2, ffx-script native_counts); 193 calls in the shipped scripts; name by id
+0x007a7500 function Native_70a2_Poll             # native 0x70a2 poll handler (g_NativeTables group 7 entry 0xa2, ffx-script native_counts); 193 calls in the shipped scripts; name by id; (script r28) 0 without g_BtlRegMotionFlag, else 5 once g_Native70a2Flag is 0 (cleared while set, 0); ported in native_btl2
 0x007a7530 function Native_704e # 0x704e: args (v int) -> 0; actor +0x3f5 = +0x3f6 = v; ported in native_btl2 (script round 18); name ours
 0x007a7580 function Native_706a # 0x706a: args (selector int) -> 0 when +0xdc0 == 1 << index for the selected actor, else -1; ported in native_btl2 (script round 18); name ours
 0x007a75e0 function Native_70c8 # 0x70c8: (sel, a) -> 0x0079fda0(first of sel, a), 0 for none; ported in native_mods (script round 21); name ours
@@ -6162,6 +6166,7 @@
 0x007a7c20 function Native_70c5 # 0x70c5: 1 when the byte 0x0112c9f5 is set; ported in native_mods (script round 21); name ours
 0x007a7c40 function Native_7089 # 0x7089: (sel, se, frames) -> MsRegSEfade(first of sel, se, frames) (0x007a00d0), 0 for none; ported in native_mods (script round 21); name ours
 0x007a7cb0 function Native_70cc                # 0x70cc: (selector): actor +0xdc0 = the set; ported in native_btl/native_move (script round 9)
+0x007a7cf0 function Native_704c_Poll # (script r28) 0x704c poll: 5 once MsAnyChrMotion_007a8be0(argument word) is 0, else 0 (table 0x00c42aec); ported in native_btl2; name ours
 0x007a7d10 function Native_70eb # 0x70eb: brnd(0x11) (0x007988f0); ported in native_mods (script round 21); name ours
 0x007a7d20 function Native_7100 # 0x7100: (sel) -> 0x007a8be0(MsGetChrBit(actor, sel, 0, 1)) (0x00794330); ported in native_mods (script round 21); name ours
 0x007a7d60 function Native_70cd                # 0x70cd: (selector): actor +0xdc0 |= MsGetChrBit set; the set; ported in native_btl/native_move (script round 9)
@@ -9333,6 +9338,7 @@
 0x00862cc0 function AtelChangeBinaryHeader    # fh v3:exact 0x00862c60
 0x00862d30 function AtelChangeCurrentCtrl     # fh v3:exact 0x00862cd0
 0x00862d50 function Atel_GetBattleMapId        # (map) -> g_AtelForceBattleMapId when positive, else map; name ours; ported in helpers (script round 14)
+0x00862d70 function Atel_ReturnActorFromBattle_00862d70 # (script r28) (w, check): +0x38 & 0xfef3; skipped (with check) for the battle end actor (0x01326b54) of an end kind 3/4 (0x01326b4c); Ch_GetPos/Atel_SyncChrDir with old bit 2, Atel_RestoreActorModel_0086e5b0(old bits 3, 8), the model back at the block (y - 0.1 unless 0x20e5 on level 0x1cd6 at events 0x5be..0x5cd), cloth, dir, rot, foot sounds, AtelRecoverFPFromBattle, per-model fixes (3, 7, 0x5001, 0x107e/0x107f, 4, 0x20d9); +0xb10 bit 0, +0x38 bit 0; caller 0x00861850; own name
 0x008630c0 function Atel_SetRunInBattle_008630c0 # name ours; cdecl (): with ctrl work 0 +0 bit 0, every actor (+0xc) of ctrl work 0 gets +0x34 bit 2 (Script_Run runs it in battle), AtelGetBasicWork inlined on ctrl work 0 (same cache); EAX the last worker; caller AtelBattleEndCallback; ported (ffx_script helpers, script round 24 a)
 0x008632b0 function Script_LineActorSide         # (worker, key): types 5/6 only; status byte of the worker[0xb9] entry matching the actor id; 3 or not found -> -1; ported in helpers (script round 16)
 0x00863350 function Atel_EffectEndPoll # () -> for MsEventEffectGetStat() 0 or 6, g_AtelOverlayStatus = 4 and 5 (done), else 0 (jump table 0x0086337c); callers Native_00de_Poll; ported in helpers (script round 23 f); name ours
@@ -9402,10 +9408,12 @@
 0x00868460 function Atel_FadeOutQueuedSeps_00868460 # name ours; cdecl (): SndSepVolumeFadeOut(id, fade) for the g_AtelSepQueueCount queued separates (ids 0x01327080, fades 0x013270a0, from index 0), then the count 0; EAX the last fade's; caller AtelEventKickBGSep; ported (ffx_script helpers, script round 24 e)
 0x008684b0 function Atel_CheckLineTouch_008684b0 # (w, _, player), EAX unread: line trigger P (move +0) .. Q (move +0x30) vs the player's step A (ctrl +0x228) -> B (+0x218): when moved in x/z (or +0x36 bit 0) Math_SegmentsCross(A, B, P, Q) within the band (Math_CrossHeightGap <= move +0x1c, any when not positive) sets +0x36 bit 1 (positive side) or neither and sends trigger 4; B's nearest point N on P..Q (Math_SegmentNearestT): LengthSq3(N - B, no y) <= (+0x48)^2 and |By - Ny| within the band touches (+0x34 bit 6, trigger 3, 5 when new), else a crossing sends 5 and a crossing or ended touch 6; talk (+0xab bit 0, ctrl +0x1e4 1): within (move +0x40 + ctrl +0x1f0)^2 and the band, candidate +0x1ec above that radius^2 (or +0x1e8 0xffff) and Math_FacingWithin -> +0x1e8 id, +0x1ec the radius^2; frame vectors A, Q, P, B with w 0; caller 0x008666e0; name ours; ported in helpers (script round 27 e)
 0x008688f0 function Atel_ExecCtrlWorks_008688f0 # (from, to) 0x00871d70, then ctrl works from..to (signed) current with the index in 0x01326b30: state +8 0..2 runs the +0x4c callback when bit 0 (bit 3 of the then current work counts +0x1f4), states 1/2 -> 3; old ctrl work back, AtelUpdateWindowStatus; callers AtelExec, AtelMenuExec; own name; ported in helpers (script round 26)
+0x00868990 function Atel_MoveUpdate_00868990  # (script r28) (w, level): one frame of the move record *(level+0x44) on the move block (jump table 0x00869070 on +2 & 0x7f: 1/2 turn + approach, 3/4 accelerate/brake (floor 0.001), 5/6 spline, 7 lerp, 9 jump; else speed 0); caller 0x008666e0 (type-1 actors, before 0x00869510); own name
 0x008690a0 function AtelStartSignal           # (worker, node): starts a queued request at its level and entry
 0x008691d0 function AtelExecReturn            # fh v3:bsim1.00 0x00869170
 0x00869350 function AtelExecReturn2 # (i, level, reset): AtelExecReturn(i, level, reset) (a tail jump with the caller's three words; MsAtelRequestCancel/Exe pass i, 0, 0) when worker i's request level +0x32 is set; dupes.py exact family with AtelExecReturnForce2 (0x008694f0, dead); ported in helpers (script round 23 f); fh v3:bsim1.00 0x008692f0
 0x008694f0 function AtelExecReturnForce2         # layout+callees: sorts between AtelExecReturn2 and AtelFetchCommand, and its named callees match the Switch 0x710046abb0 AtelExecReturnForce2's (similarity 1.00: AtelExecReturn, AtelGetBasicWork); symbols from Fahrenheit's server export
+0x00869510 function Atel_TurnUpdate_00869510  # (script r28) (w, level): one frame of the turn record *(level+0x48) on the move block rotation +0x34/+0x30/+0x38 (jump table 0x00869d1c on +2 & 0x1f: 1/2/5 aim + Math_AngleStepMode (2 eased), 3 linear / 4 eased blend of base +0x20.. and delta +0x2c..; 0x1000 copies yaw/pitch to +0x20/+0x24); caller 0x008666e0 after 0x00868990; own name
 0x00869d60 function AtelFetchCommand          # (worker, level) -> opcode << 24 | u16 operand when the high bit is set, from the level's PC; Switch name (alphabetical slot before AtelFetchCommandMain and AtelFetchStackInteger); was Script_Fetch
 0x00869da0 function AtelFetchCommandMain      # (long, pc): AtelFetchCommand from a PC, the operand read also when long != 0 (Script_Run's breakpoints); Switch name by its alphabetical slot?
 0x00869df0 function Atel_SyncChrDir            # (worker): +0xaa 1 with a character (+0x9c): position block +0x20 = Ch_GetDir(chr) (fstp m32); type 4 has no block (writes through 0); name ours; ported in helpers (script round 23)
@@ -9595,6 +9603,7 @@
 0x0086e3f0 function AtelPushStackInteger      # (worker, stack, value): slot kind 1; full stack (19) drops it, g_AtelError = 0; depth not checked below 0; was Script_PushInt
 0x0086e440 function Script_PushVar            # (worker, stack, var, index): opcode 1f; f32 vars push AtelGetValueFloat as a float slot, others AtelGetValueInteger
 0x0086e4c0 function AtelRecoverFPFromBattle # (worker): type-1 workers only; every slot in use is stuck again as AtelBindFp does (a binding other than 1/4/5 returns at the first one) and, with bit 15, pppFpSetStickPos(fp, &(pos, 1.0)); ported in helpers (script round 23 h); fh v3:exact 0x0086e450
+0x0086e5b0 function Atel_RestoreActorModel_0086e5b0 # (script r28) (w, keep_motion, party): an actor with a model (+0x9c) rereads its system motion groups (+0x36 bits 0x4000/0x2000), Ch_WorkRestore(+0x9c, +0xa4), +0x33 bit 6 hides / +0x38 bit 12 shows it (TkHideAttachedChrs; the TK:Force Disable Hide dbgPrintf), party: shown by g_AtelPartyMask bit +0x40 (< 8), no keep_motion: Ch_ResetMotion unless magic id 0x26e..0x275; caller 0x00862d70 (args +0x38 bits 3, 8); own name
 0x0086e700 function AtelRecoverFromMenuCallback # (): g_AtelMenuExecStatus 0, Yn_GuideMapSetDispProg(1), the save event record's +0xd6 0, TkSetVibrateMask(k, 1) for k 1..7, g_AtelOverlayStatus 6; ported in helpers (script round 23 g); fh v3:exact 0x0086e690
 0x0086e770 function Atel_RestoreLights_0086e770 # (r25 b) Sg_LightSetColor / Sg_LightSetDir from g_AtelSavedLights; caller AtelBattleEndCallback; own name
 0x0086e820 function AtelRegistAlbhedDic       # fh v3:bsim1.00 0x0086e7b0
@@ -9756,9 +9765,9 @@
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
 0x00872b90 function AtelClearPreBgPage        # fh switch:bsim1.00 0x710044e730
-0x00872c90 function AtelDrawNoTrans           # fh v3:bsim1.00 0x00872c30
+0x00872c90 function AtelDrawNoTrans           # fh v3:bsim1.00 0x00872c30; (script r28) AtelUpdateWaterStatus then tail-jumps to AtelExecDrawShape; caller TkDrawNoTrans
 0x00872ca0 function AtelDrawSemiTrans         # fh v3:exact 0x00872c40
-0x00872d20 function AtelEventRemove           # fh v3:exact 0x00872cc0
+0x00872d20 function AtelEventRemove           # fh v3:exact 0x00872cc0; (script r28) ported: ctrl work 0 teardown when in use, then the guide map, the two message buffers 0x023cbd78/0x023cbd70, standby voice, movie, yiReset and a tail jump to Sg_EventjumpDispose via the thunk 0x00875940
 0x00872ef0 function AtelEventSetUp            # (event): reads the .ebp, its localized message table (Msg_LoadFile) and .ftc, starts its scripts; was Event_Load
 0x00873600 function AtelExecMenuCtrl # (): AtelMenuExec, then AtelExecCallbackQue(0) when AtelCheckCallbackQue(0); EAX the last call's; caller 0x008a9ca0; ported in helpers (script round 27 c); layout+callees: sorts between AtelEventSetUp and AtelGetBattleEndTagAlways, and its named callees match the Switch 0x710044f1b0 AtelExecMenuCtrl's (similarity 0.67: AtelCheckCallbackQue, AtelExecCallbackQue); symbols from Fahrenheit's server export
 0x00873620 function Atel_CheckPause_00873620 # () with ctrl work 0 current: the pause delay (0x0132713c) counts down; START held and pressed sets g_AtelPauseFlag; blockers (ctx bits 0/3, movie, 0x0086d940, effect busy, ctx +3/+1 bits, no actors, overlay 1..3, +0x210 bits) clear it; HDD error pauses; Movie_IsBusy and no TGS: Sg_MenuSetReserve(0x41000000 | hdd), ctx +0x210 bit 2, 0x013270f4 = 1; returns AtelSetCurrentCtrl's eax; caller 0x00872bd0; own name; ported in helpers (script round 26)
@@ -9803,7 +9812,7 @@
 0x00874200 function MsSetSaveCommandWithPrefix # name from Fahrenheit (fh v3:exact+call.cs 0x00874190 cdecl); (chr, id, on) -> MsSetSaveCommand(chr, 0x3000 | id & 0xfff, on) (a jump); ported (ffx_battle::minor, battle round 29)
 0x008742b0 function AtelClearShape            # fh v3:exact 0x00874240
 0x008743e0 function Atel_StepSprites_008743e0 # (r25 c) with 0x01327144 and 0x01327f4c set and no movie (0x0086d940), every active event sprite steps (Atel_StepSpriteAnim_00874bf0); caller 0x00872bd0; own name
-0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0
+0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0; (script r28) draws the event sprites (g_EventSprites) as VFX type 8 when 0x01327144, 0x01327f4c and no movie: render record 0x700000/rgb*alpha/0x1030/matrix in its frame, id index + (sprite << 32), InitVFXRenderDataAtelShp or updateVFXRenderDataAtelShp + six graphicVFX2DUpdate; map 0x17e hides sprites 5/11/17/21; caller AtelDrawNoTrans
 0x008747b0 function Atel_GetSprite             # (i 0..127): sprite record i (0x01327148, 0x1c bytes); name ours; ported in helpers (script round 14)
 0x008747f0 function Atel_ClearSprite           # (i): sprite record i's first byte = 0; name ours; ported in helpers (script round 14)
 0x008748a0 function Atel_ShowSprite_008748a0 # (r25 d) event sprite i (0..0x7f) on with texture tex (op_anm_tex0_set, set_ptr32 at +0x14), +0 0xff01, +3 1, colour 0x80808080; loads the event texture list when 0x023cbc5c is set; caller Native_SpriteShow; own name
@@ -9826,11 +9835,12 @@
 0x008751b0 function AtelRegistCallbackQue2    # fh v3:exact 0x00875130; ported in helpers (script round 16)
 0x00875220 function Atel_NameToLang1           # (src, dst): C string copy with 0x5a-0x73 down 10, 0x74-0x8d down 4, > R S to < j l; eax the NUL written; setDefaultPlayerName for language 1; name ours; ported in helpers (script round 22)
 0x00875370 function Atel_NameFromLang1         # (src, dst): Atel_NameToLang1's inverse (0x50-0x69 up 10, 0x70-0x89 up 4, < j l to > R S); setDefaultPlayerName for languages 9 and 10; name ours; ported in helpers (script round 22)
-0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0
+0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0; (script r28) on ctrl work 0, every +0xaa 1 actor TkCh_Disposes +0xaf4/+0xaf8 and its model +0x9c (+0x38 bit 4 cleared), slots zeroed; old ctrl work back (EAX AtelSetCurrentCtrl); caller AtelEventRemove
 0x008754e0 function AtelActorSetUp               # layout+callees: sorts between AtelActorRemove and AtelActorSetUp2, and its named callees match the Switch 0x710045f5d0 AtelActorSetUp's (similarity 1.00: AtelActorSetUp2); symbols from Fahrenheit's server export
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756b0 function GetFieldPtrb8_008756b0       # auto-port shape (return address of a field's target, cdecl): t0 = u32[(a0 + 0xb8)]; return (t0 + a1); callers: no direct caller; name ours
 0x008756d0 function AtelBattleSetUp # (blocks, x8s, n, x30, work, a, ctrl, callback): AtelRequireCtrlWork(ctrl, 0, a, -1); +0x34 0, +0x54 GetFieldPtrb8_008756b0, block sums into +0x0c actors/+0x14/+0x18/+0x16/+0x10 namespaces, +0x1f8 blocks, +0x1fc x8s, +0x30, +0x4c callback; set up and current; every block's actors AtelInitBasicWork(record (1, index, ctrl, k, i, AtelGetIndexWork, block, x8s[k] or 0), 0) with AtelSetMyWorkAdrs(index, work) and work += AtelGetMyWorkSize, then the other namespace entries (active 0); MsAtelChrInit(ctrl), AtelInitActor, AtelChangeCurrentCtrl(0) (EAX); caller MsAtelSetUp; ported in helpers (script round 27 c); fh v3:exact 0x00875650
+0x00875940 function Sg_EventjumpDispose_thunk_00875940 # (script r28) jmp Sg_EventjumpDispose (0x0083b420); AtelEventRemove tail-jumps here; own name
 0x00875950 function AtelCharSetUp                # layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f2d0 AtelCharSetUp's (similarity 1.00: AtelGetBinHdrExpandAddChr, AtelGetCtrlWork, AtelPs2DebugString, Sg_EventjumpInit); symbols from Fahrenheit's server export
 0x008759b0 function AtelCommonSetUp # (ctrl, a, block, x34, x8, debug): debug sources (count + 3 words each: AtelSetUpSourceDebug(e1, e2, x8, e0, 0x100000 for ctrl 0 else 0x20000)), AtelRequireCtrlWork(ctrl, block, a, -1) (+0x34 = x34), set up and current, then AtelInitBasicWork(record (active, i, ctrl, 0, i, AtelGetIndexWork(block, i), block, x8), clear) for the actors (active) and the other namespace entries, each with AtelInitSourceCodeDebugWork(i, debug); AtelInitActor's EAX; caller TOMenuAtelStart; ported in helpers (script round 27 c); layout+callees: sorts between AtelBattleSetUp and TkGetVibrateVolume, and its named callees match the Switch 0x710045f0b0 AtelCommonSetUp's (similarity 1.00: AtelChangeCurrentCtrl, AtelGetActorNumber, AtelGetIndexWork, AtelGetNamespaceNumber, AtelInitActor); symbols from Fahrenheit's server export
 0x00875af0 function Vibrate_BumpStream        # (k) stream k (clamped 0..7) u16 counter 0x01328170 + k*0x24 += 1, byte +2 = 0; record left in eax; own name
@@ -17183,7 +17193,9 @@
 0x01327135 label    g_AtelVoicePan            # u8: AtelSetVoicePan; 0x3f after an event set-up (0x00872ef0)
 0x01327138 label    g_AtelPauseFlag              # two words cleared by AtelClearPauseFlag (0x00872b70)
 0x01327140 label g_AtelEventTexListLoaded # (r25 a) u32: the event's texture list is loaded; AtelClearShape unloads it (graphicAtelUnloadTexture of getEventLocTexListPath) and clears it
-0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x14 data; drawn by 0x00874420
+0x01327144 label    g_AtelEventSpritesOn      # (script r28) event sprites shown: Atel_LoadEventTexList_00874b70 stores its on argument; tested by Atel_StepSprites_008743e0 and AtelExecDrawShape; own name
+0x01327148 label    g_EventSprites               # 128 x 0x1c: +0 active, +1 alpha, +4/+6 x/y, +8/+0xa scale*256, +0xc frame, +0x10 rgb, +0x13 drawn (0: skipped; the render record's +7), +0x14 data; drawn by 0x00874420
+0x01327f4c label    g_AtelEventSpritesSet     # (script r28) 1 once Atel_LoadEventTexList_00874b70 ran; tested by Atel_StepSprites_008743e0 and AtelExecDrawShape; own name
 0x01327f50 label    g_AtelCallbackQue            # entries of 0x100 bytes, first word non-zero = queued: AtelCheckCallbackQue(i) (0x00875000), AtelIsCallbackQue (entry 0)
 0x01328150 label    g_TkVibratePads           # 8 pads x 0x24: two 16-byte channels (+0 pointer, +4 u32, +8 u16, +0xa u8), +0x22 on; TkStopVibrate(All) zero all but the pointers
 0x01328270 label    g_TkVibrateVolume         # 2 x u8 (TkGetVibrateVolume reports them, 0 when g_TkVibrateOff)

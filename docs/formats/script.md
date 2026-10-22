@@ -1965,7 +1965,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x6089` | `Native_6089` | p8, p7, p6, p5, p4 f, p3, p2 f, p1 | int: MsScreenShake2(p8, p7, 9, p6, p5, p4, p3, p2, p1) (0x007c57b0); 0 | - | int `0x007b9630` (native_mods) |
 | `0x7000` | `Native_7000` | - | 0 (actor +0xdf2 = 0) | - | int `0x007a8620` (native_btl) |
 | `0x7001` | `Native_BtlSetFlagBded` | v | int: the byte 0x0112bded = v & 1; 0 | - | int `0x007a39d0` (native_mods) |
-| `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530` (native_btl), poll `0x007a35c0` (not ported) |
+| `0x7002` | `Native_7002` | a int, b int | the start's result; poll returns 1 at once | no | start `0x007a3530` (native_btl), poll `0x007a35c0` (native_btl2) |
 | `0x7003` | `Native_7003` | a int, b int | 0 (0x00795eb0(actor, 2, 0, -1, b, a)) | - | int `0x007a3d90` (native_btl) |
 | `0x7004` | `Native_7004` | v f | 0; the f32 0x0112bde4 = v | - | int `0x007a3aa0` (native_btl2) |
 | `0x7005` | `Native_BtlIsUnderwater` | - | int: the i8 at 0x0112c9ce | - | int `0x007a4550` (native_mods) |
@@ -2030,7 +2030,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x7040` | `Native_7040` | v int | int: 0x0079e8c0(actor, v); 0 without an actor | - | int `0x007a5610` (native_btl) |
 | `0x7041` | `Native_7041` | - | 0 | - | int `0x007a56d0` (native_btl) |
 | `0x7042` | `Native_7042` | win, k, x, y, anchor | int: 0x0112c250 = k; TODrawAMES(win clamped 0..6, text k, x, y, anchor) (0x0089b140) from the table at *0x0112a9b8 when there is one; 0 | - | int `0x007a6060` (native_mods) |
-| `0x7043` | `Native_7043_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | start `0x007a6a10` (not ported), poll `0x007a6a40` (native_btl2) |
+| `0x7043` | `Native_7043_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is set (then 0x008ab8f0(handle)); the handle is the argument word | start `0x007a6a10`, poll `0x007a6a40` (native_btl2) |
 | `0x7044` | `Native_7044` | win | int: TOCloseMessageWindow(win clamped 0..6) (0x008ab8f0); 0 | - | int `0x007a6e10` (native_mods) |
 | `0x7045` | `Native_7045` | sel | int: MsSetMove(first of sel, 0xc) (0x007a9fc0, ST0) over the double at 0x00b43d70, rounded to f32, truncated | - | int `0x007a4da0` (native_mods) |
 | `0x7046` | `Native_7046` | v int | 0: MsMoveSplineSet(v) (0x007ab140) | - | int `0x007a5220` (native_btl) |
@@ -2039,7 +2039,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x7049` | `Native_7049` | d int, c int, f f, a int | 0: 0x007ab010(d, actor, c, f, a) | - | int `0x007a55a0` (native_btl) |
 | `0x704a` | `Native_704a` | selector int | int: picked actors with +0x415 set | - | int `0x007a58d0` (native_btl) |
 | `0x704b` | `Native_704b` | selector int, motion int, b int | the args word: 1 when MsSetMotion(i, motion, b, 0, 1, worker, &out) (0x007ab360) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7640`, poll `0x007a7850` (native_btl) |
-| `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2), poll `0x007a7cf0` (not ported) |
+| `0x704c` | `Native_704c` | selector int | the argument word = MsGetChrBit(actor, selector, 0, 1), returned | - | start `0x007a7bf0` (native_btl2), poll `0x007a7cf0` (native_btl2) |
 | `0x704d` | `Native_704d` | - | int: 0 (xor eax, eax; ret) | - | int `0x007a74e0` (native_mods) |
 | `0x704e` | `Native_704e` | v int | 0; the actor's bytes +0x3f5 and +0x3f6 = v | - | int `0x007a7530` (native_btl2) |
 | `0x704f` | `Native_704f` | selector int, v int | 0; every actor below 31 in MsGetChrBit(actor, selector, 0, 1) gets the byte +0xddd = v | - | int `0x007a70c0` (native_btl2) |
@@ -2072,7 +2072,7 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x706a` | `Native_706a` | selector int | int: 0 when the selected actor's +0xdc0 is 1 << its index, else -1 | - | int `0x007a7580` (native_btl2) |
 | `0x706b` | `Native_706b` | selector int, a int, b int | 0 | - | int `0x007a84c0` (native_btl) |
 | `0x706c` | `Native_706c` | sel, k | int: for the first actor x of sel, the record of its +0x14 actor: with +0xf2c set and k at most 0x1f, sound k (+0xeac + 4 k) plays (MsSEP3Dregist(3, x, se, 0, 0), 0x007a0a30) unless it is 0 or the last one (0x0112c8e0, then updated); 0 | - | int `0x007a6bc0` (native_mods) |
-| `0x706d` | `Native_706d` | b int, a int | b; the argument words = a, b | - | start `0x007a6d00` (native_btl2), poll `0x007a6db0` and int `0x007a6ea0` (not ported) |
+| `0x706d` | `Native_706d` | b int, a int | b; the argument words = a, b | - | start `0x007a6d00` (native_btl2), poll `0x007a6db0` and int `0x007a6ea0` (native_btl2) |
 | `0x706e` | `Native_706e` | selector int, voice int | the args word: 1 when MsSetVoice(i, voice, 1, worker, &out) (0x007a0720) set out for any picked actor | until 0x007a8700(args) is done | start `0x007a7020`, poll `0x007a71f0` (native_btl) |
 | `0x706f` | `Native_706f` | as 0x007a8fc0(worker, args, stack, 1) | its result | - | int `0x007a36c0` (native_btl) |
 | `0x7070` | `Native_7070` | - | int: SetByte_00c58ef4(1) (0x0089bc60); 0 | - | int `0x007a7010` (native_mods) |
@@ -2125,14 +2125,14 @@ marked "not ported" runs in the original, and so does the handler of
 | `0x709f` | `Native_709f` | selector int | float: the selected actor's target direction (MsGetChrTargetDir 0x007958c0) minus its direction (MsGetChrDir 0x00794d20), in degrees | - | float `0x007a3460` (native_btl2) |
 | `0x70a0` | `Native_70a0` | v int | int: the old signed byte 0x0112c9fc; it becomes v & 1 | - | int `0x007a73d0` (native_btl2) |
 | `0x70a1` | `Native_ActorGetSlotRef` | selector int | int: the picked actor's +0xc, -6 - slot, or 0xff | - | int `0x007a6b40` (native_btl) |
-| `0x70a2` | `Native_70a2` | v int | the start's result (poll not ported) | its own poll | start `0x007a7440` (native_btl), poll `0x007a7500` (not ported) |
+| `0x70a2` | `Native_70a2` | v int | the start's result; the poll: 0 without `g_BtlRegMotionFlag`, else 5 once `g_Native70a2Flag` is 0 (cleared while set) | its own poll | start `0x007a7440` (native_btl), poll `0x007a7500` (native_btl2) |
 | `0x70a3` | `Native_70a3` | - | int: Battle_ScriptPlayMotion(worker, args, stack, 0) (0x007a8fc0) with the actor's +0x38 byte set to 1 for the call and put back; +0x3f3 = 1 when +0x434 is set; the old byte (sign-extended) | - | int `0x007a3730` (native_mods) |
 | `0x70a4` | `Native_70a4` | - | 0: 0x0079cca0() | - | int `0x007a7630` (native_btl) |
 | `0x70a5` | `Native_70a5` | x f, y f, z f | 0 | - | int `0x007a76f0` (native_btl) |
 | `0x70a6` | `Native_70a6` | v int | int: v; the byte 0x0112c9ff = v | - | int `0x007a77a0` (native_btl2) |
 | `0x70a7` | `Native_70a7` | sel, a | float: 0x007b2c90(first of sel, a)'s ST0 | - | float `0x007a54f0` (native_mods) |
 | `0x70a8` | `Native_70a8` | selector int, property int, value f | 0 | - | int `0x007a57e0` (native_btl) |
-| `0x70a9` | `Native_70a9_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is 1, or 0x008864b0() is 0 with state 3 (then 0x008ab8f0(handle)) | start `0x007a6c50` (not ported), poll `0x007a6cb0` (native_btl2) |
+| `0x70a9` | `Native_70a9_Poll` | - | 5 when done | until 0x008b7ca0(handle) is 0, or 0x008b8530(handle) is 1, or 0x008864b0() is 0 with state 3 (then 0x008ab8f0(handle)) | start `0x007a6c50`, poll `0x007a6cb0` (native_btl2) |
 | `0x70aa` | `Native_GetSelfProperty` | property int | int: the actor's own property | - | int `0x007a4ea0` (native_btl) |
 | `0x70ab` | `Native_SetActorProperty` | property int, value int | int: 0x007b4b70(actor, property, -13, value) | - | int `0x007a5360` (native_move) |
 | `0x70ac` | `Native_70ac` | i int | float: actor float property i | - | float `0x007a5650` (native_btl) |
@@ -3226,6 +3226,167 @@ real spline functions.
   raw x/z to the actor's position make it the candidate, with the
   radius² stored as its distance.
 
+### Helpers (script round 28)
+
+- `AtelExecDrawShape()` (`0x00874420`, Fahrenheit's name; caller
+  `AtelDrawNoTrans`, which reads no `EAX`) draws the event sprites
+  (`g_EventSprites`, `0x01327148`, 128 x `0x1c`) when
+  `g_AtelEventSpritesOn` (`0x01327144`) and `g_AtelEventSpritesSet`
+  (`0x01327f4c`, both written by `Atel_LoadEventTexList_00874b70`) are
+  set and no movie runs (`0x0086d940` 0). VFX type 8 is current for the
+  pass (`graphicVFXSetCurrentVFXType`, 4 after). A sprite is skipped
+  when it is off (`+0`), has no data (`is_ptr32_null(+0x14)`), is
+  sprite 5, 11, 17 or 21 on map `0x17e` (`g_GraphicMapId`), its frame
+  (`+0xc`; the frame's `i16` at data `+0x10 + 8 * frame` is the offset of
+  its part header) has no parts (`u16` at the header's `+2`), or `+0x13`
+  is 0. A drawn sprite's id is the 64-bit `index + (sprite address <<
+  32)`; `graphicVFXisAtelShpInstanced(id)` picks
+  `InitVFXRenderDataAtelShp(id, data, render, frame)` (create) or
+  `updateVFXRenderDataAtelShp` (same arguments) and then
+  `graphicVFX2DUpdate(id + k * 10000)` for k 0..5. The render record and
+  its matrix live in the caller's frame: `+0` `0x700000`, `+4..+6` the
+  rgb (`+0x10..+0x12`) times the alpha (`+1`) / 255, `+7` the sprite's
+  `+0x13`, `+8` 0, `+0xc` `0x1030`, `+0xe` 0, `+0x10` the matrix
+  (identity with x/y scale `+8`/`+0xa` / 256 and position `+4`/`+6`, all
+  exact in f32), `+0x18` byte 0, `+0x1c` 0. `+0x14` and `+0x19..+0x1b` stay
+  unwritten; `updateVFXRenderDataAtelShp` reads only `+4..+7`, `+0x10`
+  and `+0x1c`. The oracle test logs the two render-data calls by the
+  record's contents and the matrix behind `+0x10` (`r28_render_stub`),
+  not by the frame address, and fills the port's frame with junk so a
+  missing field write shows.
+- `AtelDrawNoTrans()` (`0x00872c90`, caller `TkDrawNoTrans`) is
+  `AtelUpdateWaterStatus` followed by a tail jump to `AtelExecDrawShape`;
+  the Rust one calls both ports with one frame.
+- `AtelActorRemove()` (`0x00875430`, caller `AtelEventRemove`) makes ctrl
+  work 0 current and set up, and for every character-bound actor (`+0xaa`
+  1) of its `+0xc` disposes of the two attachments (`+0xaf4`, `+0xaf8`)
+  and the model (`+0x9c`; `+0x38` bit 4 cleared) with `TkCh_Dispose`,
+  zeroing each slot. `EAX` is `AtelSetCurrentCtrl(old)`'s.
+- `Atel_RestoreActorModel_0086e5b0(w, keep_motion, party)` (`0x0086e5b0`,
+  from `0x00862d70`, which passes the actor's `+0x38` bits 3 and 8) undoes
+  `AtelEventRemoveForBattle` for an actor that still has a model: the
+  system motion groups it had (`+0x36` bits `0x4000` and `0x2000`: groups
+  2 and 0), `Ch_WorkRestore(+0x9c, +0xa4)`, then hide (`+0x33` bit 6) and
+  show (`+0x38` bit 12, with a `TK:Force Disable Hide` debug line) through
+  `Ch_SetHideEvent` and `TkHideAttachedChrs`, both bits cleared. With
+  `party` and `+0x40` below 8 (signed), the actor is shown when that bit of
+  `g_AtelPartyMask` is set and hidden otherwise. Without `keep_motion`,
+  `Ch_ResetMotion` runs unless `MagicFile_GetMagicId` (asked once per
+  bound) is in `0x26e..=0x275`. It rereads `+0x9c` after every callee.
+- `Atel_MoveUpdate_00868990(w, level)` (`0x00868990`, from the per-actor
+  dispatcher `0x008666e0` for type-1 actors, before `0x00869510` and
+  `Atel_MoveStep_00870540`) advances the level's move record
+  (`*(level + 0x44)`) on the actor's move block P (position, speed
+  `+0xc`, yaw/pitch `+0x20`/`+0x24`). The record: `+0` level target, `+2`
+  flags (`& 0x7f` the mode; `0x8000` turn, `0x2000` with `0x8000`
+  retarget the level first through `Atel_SetLevelTarget_0086f940`,
+  `0x200` full-turn steps, `0x1000` arrived), `+4`/`+6` duration and
+  frame count (`i16`), `+8`/`+0xc` time and end, `+0x10` top speed,
+  `+0x14` spline, `+0x18` vertical speed, `+0x1c..` start, `+0x28..`
+  target, `+0x34` acceleration, `+0x3c`/`+0x40` turn steps. With a
+  positive duration, or in modes 7 and 9, the count goes up (not past
+  `0x7ffe`). Past the duration the turn scale is count / duration
+  (`f32(i16 / f64)`, at most 8), else 1. The modes come from the jump
+  table at `0x00869070`, indexed by mode - 1 (8, 10 and 11 share the
+  default):
+  - 1/2: (1 first sets the target height to P's.) With the turn flag the
+    actor turns towards the target: `Math_YawPitchTo` into two frame
+    words, then `Math_AngleStep` on yaw and pitch, by the steps times
+    the scale (2 pi with `0x200`). When P's x and z equal the target's
+    (ordered `fucom`), only the pitch changes: -pi when P is above the
+    target, else pi (NaN too). Then the speed is the top speed, unless
+    the distance (`CIsqrt(Math_LengthSq3(target - P))`, each result
+    stored as f32) is at most top / 10 (top / 1 for `+0xaa` 4 or 5).
+    Then the speed is 10 (or 1) times the distance, and arrived.
+  - 3/4: (3 like 1.) The speed grows by the acceleration. When the top
+    speed is above the braking bound `sqrt(2 a d)`, the speed goes to
+    0.001 if under it, else to the bound, then to at least 0.001. When it
+    isn't, the speed goes to at least 0.001. Either way it is then capped
+    at the top speed, except on the 0.001 floor taken after the bound.
+    Arrived within speed / 10.
+  - 5/6: the time over its end, clamped to 0..1 (NaN passes), samples
+    the spline (`Atel_CalcSpline_00862b20` / `Atel_CalcSpline3_00862b70`
+    into a frame vector). The actor turns to the point and its speed is
+    the distance. With no spline the time is set to end + 1 and the speed
+    to 0.
+  - 7: linear from start to target by time / end (1 when both are 0),
+    `1 - t` stored as f32 first. The time steps by 1, or by
+    `graphicVideoGetElapsedFrame` (as f32) while `g_WaitFramesByTime`
+    and `movie_have_camera` hold. Speed 0.
+  - 9: a jump. Until the count reaches the actor's `+0xb16` the scale is
+    0. After that the time steps by 1 and the scale is time / end, or 1
+    (arrived) at the end. x/z are linear, with `1 - k` unrounded. y is
+    `((a * 0.5 * k + vy) * k) + start y`. Speed 0.
+  - other modes: speed 0.
+
+  Every compare is false on NaN, matching the original's flag tests.
+  `Math_WrapAngle` (inside `Math_AngleStep`) never returns for an
+  infinite angle, in the game as in the oracle, so the tests keep angles
+  and turn steps finite.
+- `Atel_TurnUpdate_00869510(w, level)` (`0x00869510`, the dispatcher's
+  next call) advances the level's turn record (`*(level + 0x48)`) on P's
+  rotation (`+0x34` yaw, `+0x30` pitch, `+0x38` roll). The record: `+0`
+  target worker, `+2` flags (`& 0x1f` the mode; `0x8000` aim at the move
+  record's target, `0x2000` with it `Atel_TurnToWorker_0086f8a0` first;
+  `0x800`/`0x400` the short way down/up, which is `Math_AngleStepMode`
+  mode 1/2 and the blend's -/+ 2 pi fix for positive/negative deltas;
+  `0x200` the alternative yaw step `+0x14`; `0x1000` copies yaw and
+  pitch into `+0x20`/`+0x24` at the end, in every mode), `+4`/`+6`
+  duration and count (a positive duration only), `+8`/`+0xc` time and
+  end, `+0x10`/`+0x18`/`+0x1c` steps, `+0x20..` base angles, `+0x2c..`
+  deltas. Aiming (`Math_YawPitchTo` into a frame) moves each delta by the
+  aim's change (`Math_WrapAngle(delta + aim - base)`). The jump table at
+  `0x00869d1c` is indexed by mode - 1; modes past 5 do nothing.
+  - 1, 2, 5: they also take the aim as the base and step yaw and pitch
+    towards it. The step is the yaw step (or the pitch step) times the
+    count scale and mode 2's ease `s`, as f32 at each product. Without the
+    aim flag they just add `+0x10`/`+0x18`/`+0x1c` (wrapped). Mode 2 first
+    advances its time by `+0xc` and clamps it to 0..1. At 1 it ends
+    (flags `& 0xffe1 | 1`) if the yaw already equals the base. Its ease
+    is `s = (1 - 4 (t - 0.5)²) * f32(0.6) + f32(0.4)`, which stays in
+    0.4..1.
+  - 3, 4: blend from base + delta at weight 0 to the base at 1. Mode 3's
+    weight is linear (time / end, 0 for an end of 0). Mode 4 eases it:
+    `2q²` below 0.5, else `1 - 2(1 - q)²`. At weight 1 or more the
+    rotation is the base. Mode 3 at exactly 0, and mode 4 at 0 or less,
+    give `wrap(base + delta)`. Otherwise it is
+    `wrap(base + (1 - w)(delta + fix))`: the yaw is stored as f32 after
+    the sum, the product and the add; pitch and roll only once.
+- `AtelEventRemove()` (`0x00872d20`, caller `TkInitScene`) tears the
+  event down when ctrl work 0 is in use. It calls 44 helpers in a fixed
+  order: shapes, pause flags, effects, the stream, battle requests, bind
+  masks, battle map, Albhed dictionary, end status, in-water FP, guide
+  map, vibration, menu status, music `0x8a`, `g_AtelExpandFTCAdrs`, the
+  save event's `+0xe4`/`+0xe8`, textures, fonts, motion requests, foot
+  sounds, `AtelActorRemove`, 3D sound and separate buffers, and lastly
+  ctrl work 0. Then, always: the event guide map, the message buffers
+  `0x023cbd78` and `0x023cbd70` (`TkFree` between two `FlushCache(0)`
+  calls), the standby voice, the movie, `yiReset`, and a tail jump to
+  `Sg_EventjumpDispose` through the thunk `0x00875940`.
+- `Atel_ReturnActorFromBattle_00862d70(w, check)` (`0x00862d70`, from
+  `0x00861850` with `check` 1 for each actor that still has its model and
+  `+0xb10` bit 0 clear) puts an actor back after a battle. `+0x38` loses
+  bits 2, 3 and 8. With `check`, the actor in `0x01326b54` is skipped
+  after a battle end of kind 3 or 4 (`0x01326b4c & 0xff`). Otherwise:
+  - with old bit 2, a character-bound actor first takes its model's
+    position and direction;
+  - `Atel_RestoreActorModel_0086e5b0(w, old bit 3, old bit 8)`;
+  - the model is set to the block's position (y 0.1 lower, except model
+    `0x20e5` on level hash `0x1cd6` at events `0x5be..=0x5cd`), cloth
+    reset, direction `+0x20`, rotation `+0x34`, foot sounds, and
+    `AtelRecoverFPFromBattle`;
+  - fixes by model id: 3 hides part 1 and shows part 2 (unless
+    `g_AtelNotAuronPatchFlag`); 7 sets part 1's hide from `+0xb14` bit 0;
+    `0x5001` shows its four effects. Outside event `0x8e8`, models
+    `0x107e`/`0x107f` loop motion `id << 16 | 0x1001`, and model 4 on
+    level `0x1ca` at events `0x8d9..=0x8f1` loops `0x41006`. Model
+    `0x20d9` before event `0x3f2` on level `0xfdd` plays `0x6004100a`
+    once.
+
+  Last, `+0xb10` and `+0x38` get bit 0. The save event's `+0xbec` is read
+  once at the start; the model pointer `+0x9c` is reread before every
+  call.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the
@@ -3292,8 +3453,10 @@ workers the init bit in both runs and compares the rest.
    `79`/`7a`): `Script_Run` calls no original script code but natives.
 2. Done for 1037 of the 1059 natives that `ffx script natives` lists. Not
    ported: 15 debug natives (marked in the table) and `0x7076`, which waits
-   on `MsSetBallSpline`'s port. Six more run one or two slots in the original
-   (their rows say which). The group-0 table at `0x00c50050` has 180 more
+   on `MsSetBallSpline`'s port. The last original slots of six more
+   (`0x7002`, `0x7043`, `0x704c`, `0x706d`, `0x70a2`, `0x70a9`) are Rust
+   since script round 28; three of them (`0x007a35c0`, `0x007a6db0`,
+   `0x007a7500`) wait for a dump refresh before they get a hook. The group-0 table at `0x00c50050` has 180 more
    entries that no script calls (179 with a Rust handler). Now: the VM's
    other helpers, by blocker count (`tools/worklist.py --module script`).
 3. Then a `Natives` implementation with no original code behind it, so
