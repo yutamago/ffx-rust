@@ -411,6 +411,9 @@ REVIEWED = {
     0x00884d90: ("debug", "script-debugger variables page line; reached only from AtelDebugDisplay_00883040, which has no callers (script round 26)"),
     0x008a97e0: ("glue", "5-byte jmp eiAbmParaGet (menu round 34)"),
     0x008c1b10: ("glue", "5-byte jmp TOMenuGetAbilitymapWorkAdrs (menu round 34)"),
+    0x00a4fe40: ("dead", "no call sites and no absolute reference in the image; twin of ported 0xa51340 (chara/main/map round 1)"),
+    0x00a51560: ("dead", "no call sites and no absolute reference in the image; twin of ported 0xa51340 (chara/main/map round 1)"),
+    0x006e9570: ("platform", "rcbgGuideMapSave: Iggy save-menu callback, jumps to 0x6e9870 (SaveDataGetLoc -> Iggy) (chara/main/map round 1)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

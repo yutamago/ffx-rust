@@ -2129,7 +2129,7 @@
 0x0067a4d0	glue	glue name (FMOD or the movie player): iSfxUnloadAllData
 0x0067a4e0	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync4)
 0x0067a500	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync1)
-0x0067a510	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync1)
+0x0067a510	glue	only called from glue code (MovieCdReadTaskLoop_0076e660)
 0x0067a530	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync)
 0x0067a550	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync)
 0x0067a570	glue	thin wrapper: only forwards to glue code (FmodManager_registCommandAsync3)
@@ -3974,7 +3974,7 @@
 0x006e9250	platform	reviewed: IggyPlayerOpenScaled: Iggy UI (field round 14)
 0x006e93f0	platform	reviewed: IggyPlayerOpen: Iggy UI (field round 14)
 0x006e9510	glue	calls Iggy _IggyPlayerCallbackResultPath@4, _IggyValueSetStringUTF8RS@20
-0x006e9570	logic	default (no rule: ported to be safe)
+0x006e9570	platform	reviewed: rcbgGuideMapSave: Iggy save-menu callback, jumps to 0x6e9870 (SaveDataGetLoc -> Iggy) (chara/main/map round 1)
 0x006e9590	glue	only called from glue code (IggyPlayerOpenScaled_006e9250 and 1 more)
 0x006e96c0	platform	reviewed: InitIggyHelper: Iggy UI (field round 14)
 0x006e9700	platform	only called from platform code (0x6e9870 and 1 more)
@@ -6089,7 +6089,7 @@
 0x0076e5e0	logic	default (no rule: ported to be safe)
 0x0076e630	platform	reviewed: read_thread_init: registers a background thread function (main round 13)
 0x0076e640	platform	platform name (files, CD/DVD emulation, allocators, threads, std::, exceptions): sa_read_callback
-0x0076e660	logic	default (no rule: ported to be safe)
+0x0076e660	glue	glue name (FMOD or the movie player): MovieCdReadTaskLoop_0076e660
 0x0076e780	logic	default (no rule: ported to be safe)
 0x0076e890	dead	unreachable from the entry point and every pointer table
 0x0076e910	logic	default (no rule: ported to be safe)
@@ -17046,12 +17046,12 @@
 0x00a4fa30	logic	default (no rule: ported to be safe)
 0x00a4fb70	logic	default (no rule: ported to be safe)
 0x00a4fbe0	logic	default (no rule: ported to be safe)
-0x00a4fe40	logic	default (no rule: ported to be safe)
+0x00a4fe40	dead	reviewed: no call sites and no absolute reference in the image; twin of ported 0xa51340 (chara/main/map round 1)
 0x00a50290	logic	default (no rule: ported to be safe)
 0x00a505e0	logic	default (no rule: ported to be safe)
 0x00a50ed0	dead	reviewed: no call or absolute reference in the image (main round 15)
 0x00a51340	logic	default (no rule: ported to be safe)
-0x00a51560	logic	default (no rule: ported to be safe)
+0x00a51560	dead	reviewed: no call sites and no absolute reference in the image; twin of ported 0xa51340 (chara/main/map round 1)
 0x00a51720	glue	GS/DMA packet writer (graphicDrawUIAbmapElement; writes no game state): replaced by ffx-render
 0x00a521a0	logic	default (no rule: ported to be safe)
 0x00a53570	logic	default (no rule: ported to be safe)
