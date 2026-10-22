@@ -1039,7 +1039,7 @@ pub mod bridge {
     /// byte by byte): word `k` is `c` byte `k`, then `r0` bytes `(k, 0, 1)`,
     /// `(1, 2, 3)`, `(2, 4, 5)`, `(3, 6, 7)` for `k` 0..3. With `r0` zero,
     /// the colour's bytes as words.
-    fn expand_colour(c: u32, r0: [u8; 8]) -> [u32; 4] {
+    pub(crate) fn expand_colour(c: u32, r0: [u8; 8]) -> [u32; 4] {
         let c = c.to_le_bytes();
         [
             u32::from_le_bytes([c[0], r0[0], r0[0], r0[1]]),

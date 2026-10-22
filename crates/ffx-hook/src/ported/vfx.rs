@@ -5973,6 +5973,29 @@ ported! {
     opu_dobj_draw_00814800 @ 0x0081_4800 => extern "C" fn opu_dobj_draw(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_dobj_draw(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_world(host, cmd)`: the next command.
+    opu_world @ 0x0080_1d00 => extern "C" fn opu_world(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_world(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_en_on(host, cmd)`: the next command.
+    opu_en_on @ 0x0081_61f0 => extern "C" fn opu_en_on(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_en_on(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_gline_00813020(host, set)`: `op_ot_add`'s `eax`.
+    opp_gline_00813020 @ 0x0081_3020 => extern "C" fn opp_gline(host: u32, set: u32) -> u32 {
+        opus::bridge::opp_gline(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_weapon_etc_008139b0(host, cmd)`: the next command.
+    opu_weapon_etc_008139b0 @ 0x0081_39b0 => extern "C" fn opu_weapon_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_weapon_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_clut_load(host, cmd)`: the next command; the CLUT count local
+    /// in this shim's frame.
+    opu_clut_load @ 0x0080_8000 => extern "C" fn opu_clut_load(host: u32, cmd: u32) -> u32 {
+        let mut frame = super::StackFrame::<1>::new();
+        let count = frame.at();
+        opus::bridge::opu_clut_load(&mut mem(), host, cmd, count, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opu_dvd(host, cmd)`: the next command.
     opu_dvd @ 0x0081_48c0 => extern "C" fn opu_dvd(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_dvd(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))

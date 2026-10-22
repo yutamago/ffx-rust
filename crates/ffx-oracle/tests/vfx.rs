@@ -28689,3 +28689,206 @@ fn round46b_shape_draws_match_the_original() {
         }
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn round46c_opus_commands_match_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_61f0);
+        let rets = p.alloc(0x80);
+        let r = |k: u32| rets + 4 * k;
+        let mut logs = vec![
+            // opu_world
+            far_recorder(&mut p, 0x007e_a730, &[0; 2], None),
+            far_recorder(&mut p, 0x007e_a700, &[0; 2], None),
+            far_recorder(&mut p, 0x007e_98b0, &[0; 5], None),
+            far_recorder(&mut p, 0x007e_83b0, &[0; 3], None),
+            far_recorder(&mut p, 0x007e_79a0, &[0; 3], None),
+            far_recorder(&mut p, 0x007e_8010, &[0; 2], None),
+            far_recorder(&mut p, 0x007e_8b00, &[0; 3], None),
+            // opu_en_on
+            far_recorder(&mut p, 0x0082_eb60, &[0; 2], None),
+            far_recorder(&mut p, 0x0079_6680, &[0], None),
+            far_recorder(&mut p, 0x0082_b2a0, &[0; 2], None),
+            far_recorder(&mut p, 0x0079_6660, &[0; 2], None),
+            far_recorder(&mut p, 0x0082_b2c0, &[0; 2], Some(r(0))),
+            far_recorder(&mut p, 0x009d_a3a0, &[], Some(r(1))),
+            far_recorder(&mut p, 0x009d_a3b0, &[], Some(r(2))),
+            far_recorder(&mut p, 0x0079_66a0, &[0; 2], None),
+            far_recorder(&mut p, 0x0078_2970, &[], Some(r(3))),
+            far_recorder(&mut p, 0x0082_6b80, &[0], Some(r(4))),
+            // opp_gline
+            far_recorder(&mut p, 0x0080_1060, &[0; 3], Some(r(5))),
+            far_recorder(&mut p, 0x0080_1f00, &[0; 2], Some(r(6))),
+            far_recorder(&mut p, 0x007e_9b50, &[0; 3], None),
+            far_recorder(&mut p, 0x007e_c420, &[0; 4], Some(r(7))),
+            // opu_weapon_etc
+            far_recorder(&mut p, 0x007f_f780, &[0; 2], Some(r(8))),
+            far_recorder(&mut p, 0x0081_3950, &[0; 4], None),
+            far_recorder(&mut p, 0x0080_0d60, &[0; 2], None),
+            far_recorder(&mut p, 0x0079_5b40, &[0; 2], Some(r(9))),
+            far_recorder(&mut p, 0x0083_3f80, &[0; 2], None),
+            far_recorder(&mut p, 0x0080_5430, &[0; 3], None),
+            far_recorder(&mut p, 0x0081_3480, &[0; 3], None),
+            far_recorder(&mut p, 0x007f_c9b0, &[0; 7], Some(r(10))),
+            far_recorder(&mut p, 0x007f_ca40, &[0], None),
+            far_recorder(&mut p, 0x0079_3f10, &[0; 2], None),
+            far_recorder(&mut p, 0x0079_62b0, &[0; 2], None),
+            // opu_clut_load
+            // (buf dereferenced: it points at the g_EtChr flags now and then)
+            far_recorder(&mut p, 0x0080_7870, &[0, 1, 0, 0, 0, 0], None),
+            far_recorder(&mut p, 0x0083_c710, &[0], None),
+            far_recorder(&mut p, 0x0080_7b20, &[0], Some(r(11))),
+            far_recorder(&mut p, 0x007f_f1d0, &[0; 2], None),
+            far_recorder(&mut p, 0x0080_79f0, &[0; 2], None),
+            far_recorder(&mut p, 0x007e_3810, &[0; 3], Some(r(12))),
+            far_recorder(&mut p, 0x007e_46b0, &[0; 2], None),
+            far_recorder(&mut p, 0x0083_c810, &[0], None),
+            far_recorder(&mut p, 0x0080_7e90, &[0; 3], None),
+            far_recorder(&mut p, 0x0080_7b70, &[0; 7], None),
+            far_recorder(&mut p, 0x007f_e970, &[0; 3], Some(r(13))),
+        ];
+        // Ch_TexGetClut's stand-in: the count r(14) to its out word, r(15)
+        // returned
+        let tex = p.sym(0x0083_cd20);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x0d]; // mov eax, [esp+0xc]; mov ecx, [count]
+        c.extend(r(14).to_le_bytes());
+        c.extend([0x89, 0x08, 0xa1]); // mov [eax], ecx; mov eax, [ret]
+        c.extend(r(15).to_le_bytes());
+        c.push(0xc3);
+        p.a.write(tex, &c).unwrap();
+        p.b.write(tex, &c).unwrap();
+        let (host, unit, other, cmd) = (
+            p.alloc(0x400),
+            p.alloc(0x104),
+            p.alloc(0x100),
+            p.alloc(0x10),
+        );
+        let (set, packet, clut, dst) =
+            (p.alloc(0x60), p.alloc(0x80), p.alloc(0x200), p.alloc(0x200));
+        let block = p.alloc(0x2_0000);
+        let count = p.alloc(4);
+        let (handles, chr, eff) = (p.sym(0x012a_8100), p.sym(0x012a_22c0), p.sym(0x012a_4100));
+        let (r0, battle, hidden) = (p.sym(0x00c8_f508), p.sym(0x012a_40c0), p.sym(0x00c6_4cdc));
+        let mut kinds = [0u32; 16];
+        for round in 0..4000u32 {
+            p.fill(rets, 0x80, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x104, &mut rng);
+            p.fill(other, 0x100, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            p.fill(packet, 0x80, &mut rng);
+            p.fill(clut, 0x200, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(hidden, 0u32);
+            for i in [0x40u32, 0x44, 0x48, 0x3c, 0x30, 0x34, 0x38] {
+                let x = if rng.chance(5) {
+                    rng.float()
+                } else {
+                    let v = f32::from(u16::try_from(rng.below(0x200)).unwrap()) / 8.0 - 16.0;
+                    v.to_bits()
+                };
+                p.set(unit + i, x);
+            }
+            let kind = rng.below(16);
+            kinds[kind as usize] += 1;
+            let flags = (rng.next() & 0x0fff) | (kind << 12);
+            p.set(host + 0x21a, u16::try_from(flags).unwrap());
+            p.set(host + 0x220, unit);
+            p.set(host + 0x21e, u8::from(rng.chance(50)));
+            p.set(host + 0x212, u16::from(rng.chance(30)));
+            if rng.chance(50) {
+                let b: u32 = p.get(battle);
+                p.set(host + 0x324, b);
+            }
+            let any_c = rng.below(0xf0);
+            let c = rng.pick(&[0u32, 1, 7, 8, 0x13, 0x14, 0x1f, 0x20, any_c]);
+            p.set(unit + 0x18, u8::try_from(c).unwrap());
+            for i in [c, 0, 1, 2, 5] {
+                let h = if rng.chance(30) { 0 } else { rng.next() | 1 };
+                p.set(handles + 4 * i, h);
+            }
+            let e = rng.below(0x200);
+            p.set(unit + 0x14, u16::try_from(e).unwrap());
+            let er = eff + 0x20 * e;
+            p.fill(er, 0x20, &mut rng);
+            p.set(er + 8, u8::try_from(rng.below(9)).unwrap());
+            p.set(er + 0x18, u8::try_from(rng.below(0xf0)).unwrap());
+            for i in 0..8 {
+                p.set(er + 0x10 + i, u8::try_from(rng.below(0x20)).unwrap());
+            }
+            p.set(unit + 0x1e, u8::try_from(rng.below(8)).unwrap());
+            p.set(cmd + 4, u8::try_from(rng.below(0x100)).unwrap());
+            let m = rng.pick(&[-2i16, 0, 1, 2, 3, 0x7fff]);
+            p.set(cmd + 2, m);
+            if rng.chance(50) {
+                p.set(cmd + 2, i16::try_from(rng.below(0x40)).unwrap() - 0x20);
+            }
+            // returns
+            let any = rng.next();
+            p.set(r(1), rng.pick(&[0x290u32, 0, any]));
+            p.set(r(2), rng.pick(&[0x77u32, 0x94, 0x253, 1]));
+            p.set(r(3), rng.pick(&[0x0105_0032u32, 0]));
+            p.set(r(4), rng.pick(&[2u32, 0, 3]));
+            p.set(r(5), other);
+            p.set(set + 0x54, packet);
+            if rng.chance(20) {
+                p.set(r(7), 0u32);
+            }
+            p.set(r(8), block);
+            p.set(r(9), rng.pick(&[0u32, any | 1]));
+            p.set(r(11), rng.pick(&[0u32, 0x40]));
+            p.set(r(12), clut);
+            p.set(clut + 2, u16::try_from(rng.below(0x80)).unwrap());
+            let any_i = rng.below(0xf0);
+            let i = rng.pick(&[u32::MAX, 0, any_i]);
+            p.set(r(13), i);
+            p.fill(chr.wrapping_add(i.wrapping_mul(0x20)), 0x20, &mut rng);
+            // buf: none, the record's flags word, or a buffer
+            let flags_word = chr.wrapping_add(i.wrapping_mul(0x20)) + 0x14;
+            p.set(unit + 0xbc, rng.pick(&[0, flags_word, flags_word, dst]));
+            // unmarked characters for nibble 0xb
+            for k in 0..0x20 {
+                if rng.chance(50) {
+                    p.set(host + k, 0u8);
+                }
+            }
+            let n = rng.pick(&[0u32, 0x10, 0x30, 0x100, 0x8000_0000, 7]);
+            p.set(r(14), n);
+            p.set(r(15), dst);
+            for (name, sym) in [
+                ("opu_world", 0x0080_1d00u32),
+                ("opu_en_on", 0x0081_61f0),
+                ("opp_gline", 0x0081_3020),
+                ("opu_weapon_etc", 0x0081_39b0),
+                ("opu_clut_load", 0x0080_8000),
+            ] {
+                let second = if sym == 0x0081_3020 { set } else { cmd };
+                p.check(
+                    &format!("{name} round {round}"),
+                    sym,
+                    &[host, second],
+                    |m| {
+                        let mut call = call_original;
+                        Some(match sym {
+                            0x0080_1d00 => o::opu_world(m, host, cmd, &mut call),
+                            0x0081_61f0 => o::opu_en_on(m, host, cmd, &mut call),
+                            0x0081_3020 => o::opp_gline(m, host, set, &mut call),
+                            0x0081_39b0 => o::opu_weapon_etc(m, host, cmd, &mut call),
+                            _ => {
+                                let keep: u32 = Mem::read(m, count);
+                                let r = o::opu_clut_load(m, host, cmd, count, &mut call);
+                                Mem::write(m, count, keep);
+                                r
+                            }
+                        })
+                    },
+                );
+            }
+        }
+        assert!(kinds.iter().all(|&k| k > 0), "{}", p.name);
+        logs.retain(|&log| p.get::<u32>(log) == 0);
+        assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
+    }
+}
