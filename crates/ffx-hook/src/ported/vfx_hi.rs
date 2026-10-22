@@ -188,6 +188,17 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x280;
         hi_opus::bridge::opus_0437_draw(&mut mem(), [packet, model, rec, u, d, acc, slot], frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_0582_break_make(b, list, m)`: the vertices
+    /// `FFXVu0ApplyMatrix` takes in a buffer on this shim's stack; `eax`
+    /// as `op_spr_free` leaves it.
+    opus_0582_break_make @ 0x00a7_1780 => extern "C" fn opus_0582_break_make(b: u32, list: u32, m: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x40]);
+        let mut locals = Locals([0; 0x40]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        hi_opus::bridge::opus_0582_break_make(&mut mem(), b, list, m, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_md_ref_nolight(obj, init, tex, scale, slot)`: its locals (the
     /// texture names, the counts) in a buffer on this shim's stack.
     op_md_ref_nolight @ 0x00a6_a6a0 => extern "C" fn op_md_ref_nolight(obj: u32, init: u32, tex: u32, scale: f32, slot: u32) -> u32 {

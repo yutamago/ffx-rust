@@ -11520,6 +11520,135 @@ fn opus_0437_draw_matches_the_original() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn opus_0582_break_make_matches_the_original() {
+    use ffx_vfx::hi_opus::bridge as h;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_1780);
+        let spr_cell = p.alloc(4);
+        deref_recorder_with(&mut p, 0x007e_6a00, &[0], Some(spr_cell));
+        deref_recorder_with(&mut p, 0x007e_6a60, &[0], None);
+        far_recorder(&mut p, 0x00a6_a0c0, &[0, 0, 0, 0], None); // op_md_list_bounds
+        let spr = p.alloc(0x100);
+        p.set(spr_cell, spr);
+        let list = p.alloc(0x10 + 0x10 * 3);
+        let models: Vec<u32> = (0..3).map(|_| p.alloc(0x800)).collect();
+        let mats: Vec<u32> = (0..3).map(|_| p.alloc(0x40)).collect();
+        let m = p.alloc(0x40);
+        let b = p.alloc(0x40 + 0x300 * 20);
+        let mut tris = 0;
+        for round in 0..300 {
+            fill_stacks(&mut p);
+            p.fill(spr, 0x100, &mut rng);
+            p.fill(b, 0x40 + 0x300 * 20, &mut rng);
+            for at in [m].into_iter().chain(mats.iter().copied()) {
+                for k in 0..16 {
+                    let x = ranged(&mut rng, -2.0, 2.0);
+                    p.set(at + 4 * k, x);
+                }
+                for k in [12u32, 13, 14] {
+                    let x = ranged(&mut rng, -300.0, 300.0);
+                    p.set(at + 4 * k, x);
+                }
+            }
+            let n = rng.pick(&[0u16, 1, 1, 2, 3]);
+            p.fill(list, 0x40, &mut rng);
+            p.set(list + 4, n);
+            let mut budget = 20u32;
+            for (e, (&model, &mat)) in models.iter().zip(&mats).enumerate() {
+                let e = u32::try_from(e).unwrap();
+                p.set(list + 0x10 + 0x10 * e, model);
+                p.set(list + 0x14 + 0x10 * e, mat);
+                p.fill(model, 0x800, &mut rng);
+                // 16 vertices at +0x600
+                p.set(model + 8, 0x600u32);
+                for v in 0..16 {
+                    for c in 0..3 {
+                        let x = if rng.chance(10) {
+                            finite(&mut rng)
+                        } else {
+                            ranged(&mut rng, -100.0, 100.0)
+                        };
+                        p.set(model + 0x600 + 0x10 * v + 4 * c, x);
+                    }
+                }
+                let mut g = model + 0x20;
+                for _ in 0..rng.below(3) {
+                    let k = rng
+                        .pick(&[0i16, 1, 2, 3, -1])
+                        .min(i16::try_from(budget / 3).unwrap());
+                    let k = if u32::try_from(k.max(0)).unwrap() * 3 > budget {
+                        0
+                    } else {
+                        k
+                    };
+                    p.set(g + 1, rng.pick(&[0u8, 1, 0xfe]));
+                    p.set(g + 2, k);
+                    for t in 0..u32::try_from(k.max(0)).unwrap() {
+                        let tri = g + 0x20 + 0x1c * t;
+                        for i in 0..3 {
+                            p.set(tri + 2 * i, rng.below(16) as u16);
+                        }
+                        for i in 0..6 {
+                            p.set(tri + 8 + 2 * i, rng.next() as u16);
+                        }
+                    }
+                    budget -= u32::try_from(k.max(0)).unwrap() * 3;
+                    g += 0x20 + 0x1c * u32::try_from(k.max(0)).unwrap();
+                }
+                p.set(g + 1, 0xffu8);
+            }
+            if rng.chance(15) {
+                // identity matrices and a triangle 2^100, -2^100, 1: the
+                // centre's sums cancel only in the original's order
+                for at in [m].into_iter().chain(mats.iter().copied()) {
+                    for k in 0..16 {
+                        p.set(at + 4 * k, if k % 5 == 0 { 1.0f32 } else { 0.0 });
+                    }
+                }
+                for &model in &models {
+                    for (v, x) in [(0u32, 2f32.powi(100)), (1, -(2f32.powi(100))), (2, 1.0)] {
+                        for c in 0..3 {
+                            p.set(model + 0x600 + 0x10 * v + 4 * c, x);
+                        }
+                    }
+                    let g = model + 0x20;
+                    if p.get::<u8>(g + 1) != 0xff && p.get::<i16>(g + 2) > 0 {
+                        for i in 0..3 {
+                            p.set(g + 0x20 + 2 * i, i as u16);
+                        }
+                    }
+                }
+            }
+            let before: u16 = p.get(b);
+            check_deep_n(
+                &mut p,
+                &format!("opus_0582_break_make round {round}"),
+                0x00a7_1780,
+                &[b, list, m],
+                |mm, frame| {
+                    Some(h::opus_0582_break_make(
+                        mm,
+                        b,
+                        list,
+                        m,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+            let made: u16 = p.get(b);
+            tris += usize::from(made != before && made != 0);
+        }
+        assert!(tris > 100, "{}: {tris}", p.name);
+    }
+}
+
+#[test]
 #[allow(clippy::many_single_char_names)]
 fn z_crct_shp_draw_matches_the_original() {
     use mat::bridge as mt;

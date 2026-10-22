@@ -1619,6 +1619,175 @@ pub mod bridge {
         ret
     }
 
+    /// `f64` 3 (`0x00b2c5c8`), 0.5 (`g_Vu0FixedRound`, `0x00b92220`),
+    /// 1000 (`0x00b0dba0`) and 0.0010000000474974513 (`0x00b47c68`).
+    const K_3_AT: u32 = 0x00b2_c5c8;
+    const K_HALF_F64: u32 = 0x00b9_2220;
+    const K_1000_AT: u32 = 0x00b0_dba0;
+    const K_MILLI: u32 = 0x00b4_7c68;
+    /// `get_ptr32_func` (`0x00a44650`) and `op_md_list_bounds_00a6a0c0`.
+    const GET_PTR32: u32 = 0x00a4_4650;
+    const OP_MD_LIST_BOUNDS: u32 = 0x00a6_a0c0;
+    /// The emulated VU0 register block `opus_0582_break_make` loads the
+    /// entry's matrix into (`0x00c8f810`, 16 words).
+    const VU0_BREAK_M: u32 = 0x00c8_f810;
+
+    /// `opus_0582_break_make(b, list, m)` (`0x00a71780`, Fahrenheit's
+    /// name; from `opp_0582_cmd_a70910`'s 0x4000): the `opus_0582` break
+    /// pieces of a model list. Each triangle of each entry's model becomes
+    /// six 0x80-byte pieces from `b + 0x40` (`u16 b` = their count, the
+    /// bounds `op_md_list_bounds(list, m, b + 0x20, b + 0x30)` after).
+    ///
+    /// `list` holds a `u16` entry count at `+4` and 16-byte entries from
+    /// `+0x10`: a model (`get_ptr32_func`; vertices of 16 bytes at
+    /// `model + [model +8]`, groups from `model + 0x20` until a group with
+    /// byte `+1` 0xff) and a matrix (`get_ptr32_func`). The matrix's
+    /// translation is scaled by 1000 (`f32`), `op_mul_m(s + 0x40, m,
+    /// matrix)` taken (the `op_spr_alloc(0x100)` scratch `s`), the
+    /// translation scaled back by 0.001 (`f32`), and `s + 0x40` copied to
+    /// the VU0 registers `0x00c8f810..`. A group holds its two words at
+    /// `+8` (to `s[0..2]` and every piece's `+0`), `i16 +2` triangles of
+    /// 0x1c bytes from `+0x20` (three `u16` vertex numbers, then six `u16`
+    /// texture coordinates / 4096), and the next group follows them.
+    ///
+    /// A triangle's vertices `A`, `B`, `C` (`xyz`, w 1) go through
+    /// `FFXVu0ApplyMatrix(v, s + 0x40, v)` in the frame; with the centre
+    /// `f32(((B + A) + C) / 3)` and the edge midpoints `f32((P + Q) x
+    /// 0.5)` (positions and texture coordinates alike), the six pieces are
+    /// the fan (centre, A, AB), (centre, AB, B), (centre, B, BC), (centre,
+    /// BC, C), (centre, C, CA), (centre, CA, A): each the group words and
+    /// 0 at `+0..+8`, the texture coordinates with 1.0 at `+0x10`, `+0x20`,
+    /// `+0x30`, the positions at `+0x40`, `+0x50`, `+0x60`, and their
+    /// centroid `f32(((P0 + P1) + P2) / 3)` with 0 at `+0x70`. All callees
+    /// through `call`; returns `op_spr_free`'s `eax`. The vertices lie below `frame` (the original's frame
+    /// pointer, down to `frame - 0x34`).
+    #[allow(clippy::too_many_lines)]
+    pub fn opus_0582_break_make<M: Mem>(
+        mem: &mut M,
+        b: u32,
+        list: u32,
+        m: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, div, load, mul, store};
+        let k = |mem: &M, at: u32| mem.read::<f64>(mem.rebase(at));
+        let (k3, half, k4096) = (k(mem, K_3_AT), k(mem, K_HALF_F64), k(mem, K_4096TH));
+        let (k1000, milli) = (k(mem, K_1000_AT), k(mem, K_MILLI));
+        let spr = go(mem, OP_SPR_ALLOC, &[0x100], call);
+        let mut out = b.wrapping_add(0x40);
+        let mut count = 0u32;
+        let mut i = 0u32;
+        while i < u32::from(mem.read::<u16>(list.wrapping_add(4))) {
+            let entry = list.wrapping_add(0x10 + 0x10 * i);
+            i += 1;
+            let w0: u32 = mem.read(entry);
+            let model = go(mem, GET_PTR32, &[w0], call);
+            let verts = model.wrapping_add(mem.read::<u32>(model.wrapping_add(8)));
+            let w1: u32 = mem.read(entry.wrapping_add(4));
+            let scale = |mem: &mut M, call: &mut _, c: f64| {
+                for at in [0x30u32, 0x34, 0x38] {
+                    let mx = go(mem, GET_PTR32, &[w1], call);
+                    let v = load(mem.read(mx.wrapping_add(at)));
+                    mem.write(mx.wrapping_add(at), store(mul(v, c)));
+                }
+            };
+            scale(mem, call, k1000);
+            let mx = go(mem, GET_PTR32, &[w1], call);
+            go(mem, OP_MUL_M, &[spr.wrapping_add(0x40), m, mx], call);
+            scale(mem, call, milli);
+            let words: [u32; 16] = mem.read(spr.wrapping_add(0x40));
+            let at = mem.rebase(VU0_BREAK_M);
+            mem.write(at, words);
+            let mut group = model.wrapping_add(0x20);
+            while mem.read::<u8>(group.wrapping_add(1)) != 0xff {
+                let head: [u32; 2] = mem.read(group.wrapping_add(8));
+                mem.write(spr, head);
+                let mut tri = group.wrapping_add(0x20);
+                let mut t = 0i32;
+                while t < i32::from(mem.read::<i16>(group.wrapping_add(2))) {
+                    t += 1;
+                    // the three vertices, w 1, through the matrix in the frame
+                    for (v, off) in (0u32..).zip([0x14u32, 0x24, 0x34]) {
+                        let n = u32::from(mem.read::<u16>(tri.wrapping_add(2 * v)));
+                        let src = verts.wrapping_add(n << 4);
+                        let at = frame.wrapping_sub(off);
+                        for c in 0..3 {
+                            let x = store(load(mem.read(src.wrapping_add(4 * c))));
+                            mem.write(at.wrapping_add(4 * c), x);
+                        }
+                        mem.write(at.wrapping_add(0xc), 1.0f32);
+                    }
+                    let mm = spr.wrapping_add(0x40);
+                    for off in [0x14u32, 0x24, 0x34] {
+                        let at = frame.wrapping_sub(off);
+                        go(mem, FFX_VU0_APPLY_MATRIX, &[at, mm, at], call);
+                    }
+                    let vertex = |mem: &M, off: u32| {
+                        let at = frame.wrapping_sub(off);
+                        [0u32, 4, 8, 0xc].map(|c| load(mem.read(at.wrapping_add(c))))
+                    };
+                    let (pa, pb, pc) = (vertex(mem, 0x14), vertex(mem, 0x24), vertex(mem, 0x34));
+                    let mid = |x: [f64; 4], y: [f64; 4]| {
+                        [0, 1, 2, 3].map(|c| store(mul(add(x[c], y[c]), half)))
+                    };
+                    let centre =
+                        [0, 1, 2, 3].map(|c| store(div(add(add(pb[c], pa[c]), pc[c]), k3)));
+                    let corner = |x: [f64; 4]| x.map(store);
+                    let (ca, cb, cc) = (corner(pa), corner(pb), corner(pc));
+                    let (ab, bc, cca) = (mid(pa, pb), mid(pb, pc), mid(pc, pa));
+                    let uv = [8u32, 0xa, 0xc, 0xe, 0x10, 0x12].map(|o| {
+                        let raw = u32::from(mem.read::<u16>(tri.wrapping_add(o)));
+                        load(store(mul(f64::from(raw), k4096)))
+                    });
+                    let tuv = |k: usize| [store(uv[2 * k]), store(uv[2 * k + 1])];
+                    let (ua, ub, uc) = (tuv(0), tuv(1), tuv(2));
+                    let cuv = [0, 1].map(|c| store(div(add(add(uv[2 + c], uv[c]), uv[4 + c]), k3)));
+                    let muv = |x: usize, y: usize| {
+                        [0, 1].map(|c| store(mul(add(uv[2 * x + c], uv[2 * y + c]), half)))
+                    };
+                    let (uab, ubc, uca) = (muv(0, 1), muv(1, 2), muv(2, 0));
+                    let pieces = [
+                        ([centre, ca, ab], [cuv, ua, uab]),
+                        ([centre, ab, cb], [cuv, uab, ub]),
+                        ([centre, cb, bc], [cuv, ub, ubc]),
+                        ([centre, bc, cc], [cuv, ubc, uc]),
+                        ([centre, cc, cca], [cuv, uc, uca]),
+                        ([centre, cca, ca], [cuv, uca, ua]),
+                    ];
+                    for (pos, tex) in pieces {
+                        mem.write(out, [head[0], head[1], 0]);
+                        for (v, (q, t)) in (0u32..).zip(pos.iter().zip(tex)) {
+                            mem.write(
+                                out.wrapping_add(0x10 + 0x10 * v),
+                                [t[0], t[1], 1.0f32.to_bits()],
+                            );
+                            mem.write(out.wrapping_add(0x40 + 0x10 * v), *q);
+                        }
+                        let mid3 = [0usize, 1, 2].map(|c| {
+                            let s = add(add(load(pos[0][c]), load(pos[1][c])), load(pos[2][c]));
+                            store(div(s, k3))
+                        });
+                        mem.write(out.wrapping_add(0x70), [mid3[0], mid3[1], mid3[2], 0]);
+                        out = out.wrapping_add(0x80);
+                    }
+                    count = count.wrapping_add(6);
+                    tri = tri.wrapping_add(0x1c);
+                }
+                group = tri;
+            }
+        }
+        #[allow(clippy::cast_possible_truncation)] // the low half
+        mem.write(b, count as u16);
+        go(
+            mem,
+            OP_MD_LIST_BOUNDS,
+            &[list, m, b.wrapping_add(0x20), b.wrapping_add(0x30)],
+            call,
+        );
+        go(mem, OP_SPR_FREE, &[0x100], call)
+    }
+
     /// The render data's zero translation (`+0x2c`, `+0x1c`, `+0xc`),
     /// `+0x3c` 1, `+0x80` 0 and its bounds -100000..100000 (`+0x98..`).
     fn finish_render_data(mem: &mut impl Mem, rd: u32) {
