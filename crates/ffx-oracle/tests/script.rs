@@ -12685,7 +12685,7 @@ fn round26d_spline_near_point_init_matches_the_original() {
 /// work (index `index`): a random setup record (header `hdr`, code base
 /// `code`, level values `levels`: the ctrl work, table and header index each
 /// level's signals load, `u16`s with random high halves; `+8` `x8`) and
-/// every `clear`.
+/// every `clear`, or the `(active, clear)` in `forced`.
 #[allow(clippy::too_many_arguments)] // the record's parts
 fn r27_init_case(
     a: &mut Oracle,
@@ -12696,18 +12696,22 @@ fn r27_init_case(
     code: u32,
     levels: [u32; 3],
     x8: u32,
+    forced: Option<(u32, u32)>,
     what: &str,
 ) {
     use ffx_script::vm::bridge::helpers as hp;
     let rec = alloc_both(a, b, 0x20);
-    let active = [1u32, 1, 1, 0, 0x100][rng.below(5) as usize];
+    let mut active = [1u32, 1, 1, 0, 0x100][rng.below(5) as usize];
+    let mut clear = [0u32, 1, 2][rng.below(3) as usize];
+    if let Some((x, y)) = forced {
+        (active, clear) = (x, y);
+    }
     let levels = levels.map(|v| v & 0xffff | rng.next() & 0xffff_0000);
     for (k, v) in (0u32..).zip([
         active, index, levels[0], levels[1], levels[2], hdr, code, x8,
     ]) {
         poke(a, b, rec + 4 * k, v);
     }
-    let clear = [0u32, 1, 2][rng.below(3) as usize];
     poke(a, b, a.rebase(v::CACHE_WORK.sym), 0u32);
     r22_case(
         a,
@@ -12858,7 +12862,14 @@ fn r27a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
         );
         poke(a, b, hdr + 0x2c, [0u32, 0x10, 0x80][rng.below(3) as usize]);
         let index = [0u32, 0, 0, 3, 0xffff, 0x1_0000][rng.below(6) as usize];
-        let levels = [rng.below(7), rng.below(4), rng.below(4)];
+        // ctrl works past 7 too (the image's are all zero there): bit 3
+        // of the first value shows in `+0xae`
+        let l0 = if round % 4 == 3 {
+            8 + rng.below(8)
+        } else {
+            rng.below(7)
+        };
+        let levels = [l0, rng.below(4), rng.below(4)];
         let x8 = rng.next();
         r27_init_case(
             a,
@@ -12869,9 +12880,28 @@ fn r27a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             code,
             levels,
             x8,
+            None,
             &format!("{what} {round} kind {kind}"),
         );
     }
+    // variables at code + offset = 0 (the offset wraps): nothing cleared
+    // (index 0xffff: no signal)
+    let hdr = alloc_both(a, b, 0x40);
+    poke(a, b, hdr, 2u8);
+    poke(a, b, hdr + 0x10, 0x20u32);
+    poke(a, b, hdr + 0x2c, code.wrapping_neg());
+    r27_init_case(
+        a,
+        b,
+        rng,
+        0xffff,
+        hdr,
+        code,
+        [0, 0, 0],
+        0,
+        Some((1, 1)),
+        &format!("{what} variables at 0"),
+    );
 }
 
 /// Round 27 a on the real workers of a snapshot's ctrl works in use:
@@ -12893,6 +12923,7 @@ fn r27a_workers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
                 code,
                 levels,
                 Mem::read::<u32>(b, w + 8),
+                None,
                 &format!("snapshot ctrl {c:#x} worker {i}"),
             );
             n += 1;
