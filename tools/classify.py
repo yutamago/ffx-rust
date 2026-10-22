@@ -405,6 +405,8 @@ REVIEWED = {
     0x006f3130: ("platform", "creates the Iggy pause menu (FFIggyPauseMenu) once into 0xce81fc; caller PhyreScene_initScene (script round 25)"),
     0x00885a80: ("debug", "AtelOutputEncountStart: separator line to a host-PC log via AtelPCOpen2/Write/Close (script round 25)"),
     0x00879b60: ("debug", "reads a host-PC file into a source buffer (AtelPCOpen, sceRead); caller AtelLoadSourceData (script round 25)"),
+    0x008c1790: ("glue", "5-byte jmp 0x88ec60 (TkVU1SyncPath -> sceGsSyncPath, already glue) (menu round 33)"),
+    0x008c30d0: ("glue", "jmp 0x786900, thunk to MsSetSaveParamAll (TkMsSetSaveParamAll) (menu round 33)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

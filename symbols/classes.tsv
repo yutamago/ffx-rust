@@ -5657,7 +5657,7 @@
 0x00756320	logic	default (no rule: ported to be safe)
 0x007564d0	dead	unreachable from the entry point and every pointer table
 0x007565b0	dead	unreachable from the entry point and every pointer table
-0x00756600	logic	debug-sounding name, but used by logic: 0x755a00, pppDrawRainAlloc_00756320
+0x00756600	logic	debug-sounding name, but used by logic: pppDrawRainAlloc_00756320, pppDrawRainStep_00755a00
 0x007566a0	logic	default (no rule: ported to be safe)
 0x007566d0	logic	default (no rule: ported to be safe)
 0x007566e0	logic	default (no rule: ported to be safe)
