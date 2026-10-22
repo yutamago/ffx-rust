@@ -94,6 +94,11 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x60;
         hi_opus::bridge::opus_0437_poly_check(&mut mem(), list, b, dots, m, limit, [0; 2], frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_0279_draw(obj, init, rec, _, tex)`: `eax` the last
+    /// `g_GsRegisterSink` read.
+    opus_0279_draw @ 0x00a7_0210 => extern "C" fn opus_0279_draw(obj: u32, init: u32, rec: u32, _unused: u32, tex: u32) -> u32 {
+        hi_draw::bridge::opus_0279_draw(&mut mem(), obj, init, rec, tex, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_vertex_normal_point44_ffx(obj, model, work, chr)`: its locals
     /// in a buffer on this shim's stack.
     op_vertex_normal_point44_ffx @ 0x00a6_d380 => extern "C" fn op_vertex_normal_point44_ffx(_obj: u32, model: u32, work: u32, chr: u32) -> u32 {

@@ -936,4 +936,117 @@ pub mod bridge {
         mem.write(init.wrapping_add(0x2c), old_34);
         old_34
     }
+
+    const OP_SPR_ALLOC: u32 = 0x007e_6a00;
+    const OP_SPR_FREE: u32 = 0x007e_6a60;
+    const OP_VERTEX_NORMAL_POINT44_FFX_2: u32 = 0x00a6_d670;
+    const OP_REFRECTION_ST_FLOAT: u32 = 0x00a6_cfb0;
+    /// `g_EtChrHandles` (`0x012a8100`): 240 character handles.
+    const ET_CHR_HANDLES: u32 = 0x012a_8100;
+    /// `f64` 16 (`g_Vu0FixedScale`, `0x00b313a0`).
+    const K_16: u32 = 0x00b3_13a0;
+    /// The emulated EE's `r0` (`g_Ee_Gpr`, `0x00c8f508`).
+    const EE_R0: u32 = 0x00c8_f508;
+    /// `g_Vu0_VfMove` (`0x00c8f980`), the VU0 register the colour goes
+    /// through.
+    const VF_MOVE: u32 = 0x00c8_f980;
+
+    /// The four words the EE makes of a colour word `c` and `r0`
+    /// (`pextlb` then `pextlh` with `r0`, as `opus_0279_draw` emulates them
+    /// byte by byte): word `k` is `c` byte `k`, then `r0` bytes `(k, 0, 1)`,
+    /// `(1, 2, 3)`, `(2, 4, 5)`, `(3, 6, 7)` for `k` 0..3. With `r0` zero,
+    /// the colour's bytes as words.
+    fn expand_colour(c: u32, r0: [u8; 8]) -> [u32; 4] {
+        let c = c.to_le_bytes();
+        [
+            u32::from_le_bytes([c[0], r0[0], r0[0], r0[1]]),
+            u32::from_le_bytes([c[1], r0[1], r0[2], r0[3]]),
+            u32::from_le_bytes([c[2], r0[2], r0[4], r0[5]]),
+            u32::from_le_bytes([c[3], r0[3], r0[6], r0[7]]),
+        ]
+    }
+
+    /// `opus_0279_draw(obj, init, rec, _, tex)` (`0x00a70210`, from
+    /// `opp_mdc_draw_a6f4d0`): a refracting character model. `w =
+    /// op_spr_alloc(0x1800)`, `[obj] |= 4`, `p = op_md_spr_init_x64(obj,
+    /// init, w)`; with `a` the RGBA bytes of `op_ffxambient_to_omdambient()`
+    /// and `t = f32(byte p +0x4c / 128)`, colour `w +0x370 + 4k` = `byte p
+    /// +0x1c + k x (1 - t) + a[k] x t` (exact). `w +0x390` = `(i16 obj +0x12
+    /// << 5) + [p +4]`, `+0x394` = `[p +4]`, `+0x400` = `(i16 obj +0x14 <<
+    /// 4) + [w +0x390]`; `op_vertex_normal_point44_ffx_2(obj, p, w,
+    /// g_EtChrHandles[byte rec +0x18])`, `op_refrection_st_float(obj, p, w,
+    /// [w +0x400], ftol(f32 rec +0x3c x 16), byte tex +0xa << 4, byte tex
+    /// +0xb << 4)`. Each tag of type 0x10 from `obj + [obj +4]` (0x20
+    /// bytes each): `w +0x1f0` 0x8001, `+0x1f8` 0x12412412, `+0x120` `[tex]`,
+    /// the colour word `[tag +4 + g_pppColorConShift]` (the shift then 0)
+    /// expanded with `r0` ([`expand_colour`]) into the EE's `v0`, and as
+    /// `f32`s of the signed words into `g_Vu0_VfMove` and `w +0x2e0`. Spins
+    /// while the GS is busy, `op_spr_free()`. Returns `eax` as left: the
+    /// last `g_GsRegisterSink` read. Callees through `call`.
+    pub fn opus_0279_draw<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        init: u32,
+        rec: u32,
+        tex: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let w = go(mem, OP_SPR_ALLOC, &[0x1800], call);
+        mem.write(obj, mem.read::<u32>(obj) | 4);
+        let p = go(mem, OP_MD_SPR_INIT_X64, &[obj, init, w], call);
+        let ambient = go(mem, OP_FFXAMBIENT_TO_OMDAMBIENT, &[], call).to_le_bytes();
+        let k: f64 = mem.read(mem.rebase(K_128TH));
+        let t = f64::from(mem.read::<u8>(p.wrapping_add(0x4c))) * k;
+        // rounded to f32 through a local, exact (a byte / 128)
+        let t = x87::load(x87::store(t));
+        let s = 1.0 - t;
+        for (i, &a) in (0u32..).zip(&ambient) {
+            let own = f64::from(mem.read::<u8>(p.wrapping_add(0x1c + i)));
+            // a byte times a multiple of 1/128 plus another: exact
+            let c = own * s + f64::from(a) * t;
+            mem.write(w.wrapping_add(0x370 + 4 * i), x87::store(c));
+        }
+        vertex_area(mem, obj, w, p.wrapping_add(4), 5);
+        let n = i32::from(mem.read::<i16>(obj.wrapping_add(0x14))).cast_unsigned();
+        let area: u32 = mem.read(w.wrapping_add(0x390));
+        mem.write(w.wrapping_add(0x400), (n << 4).wrapping_add(area));
+        let who = u32::from(mem.read::<u8>(rec.wrapping_add(0x18)));
+        let chr: u32 = mem.read(mem.rebase(ET_CHR_HANDLES).wrapping_add(4 * who));
+        go(mem, OP_VERTEX_NORMAL_POINT44_FFX_2, &[obj, p, w, chr], call);
+        let k16: f64 = mem.read(mem.rebase(K_16));
+        let scale = x87::ftol(
+            mem,
+            x87::mul(x87::load(mem.read(rec.wrapping_add(0x3c))), k16),
+        );
+        let du = u32::from(mem.read::<u8>(tex.wrapping_add(0xa))) << 4;
+        let dv = u32::from(mem.read::<u8>(tex.wrapping_add(0xb))) << 4;
+        let out: u32 = mem.read(w.wrapping_add(0x400));
+        go(
+            mem,
+            OP_REFRECTION_ST_FLOAT,
+            &[obj, p, w, out, scale, du, dv],
+            call,
+        );
+        let shift = crate::rand::bridge::COLOR_CON_SHIFT;
+        let (r0, v0, vf) = (mem.rebase(EE_R0), mem.rebase(EE_V0), mem.rebase(VF_MOVE));
+        let mut tag = obj.wrapping_add(mem.read(obj.wrapping_add(4)));
+        while mem.read::<u8>(tag.wrapping_add(1)) == 0x10 {
+            mem.write(w.wrapping_add(0x1f0), 0x8001u32);
+            mem.write(w.wrapping_add(0x1f8), 0x1241_2412u32);
+            mem.write(w.wrapping_add(0x120), mem.read::<u32>(tex));
+            let c: u32 = mem.read(shift.get(mem).wrapping_add(tag).wrapping_add(4));
+            let words = expand_colour(c, mem.read(r0));
+            mem.write(v0, words);
+            shift.set(mem, 0);
+            #[allow(clippy::cast_precision_loss)] // fild, then an f32 store
+            let f = words.map(|x| x.cast_signed() as f32);
+            mem.write(vf, f);
+            mem.write(w.wrapping_add(0x2e0), f);
+            tag = tag.wrapping_add(0x20);
+        }
+        gs_wait(mem);
+        let sink: u32 = mem.read(mem.rebase(GS_REGISTER_SINK));
+        go(mem, OP_SPR_FREE, &[], call);
+        sink
+    }
 }

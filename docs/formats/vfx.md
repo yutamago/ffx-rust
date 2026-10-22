@@ -784,6 +784,26 @@ Tags start at `obj + [obj +4]`, type `i8 +1`. The draw paths spin while
   `[init +0x20]` is restored, but `[init +0x2c]` gets the old `[init
   +0x34]`, which is also the `eax` left.
 
+### `opus_0279` draw
+
+`opus_0279_draw(obj, init, rec, _, tex)` (`0x00a70210`, from
+`opp_mdc_draw_a6f4d0`) draws a refracting character model:
+`op_spr_alloc(0x1800)` gives `w`, `[obj] |= 4`, `p =
+op_md_spr_init_x64(obj, init, w)`, the colour as in `op_md_chara_path3`
+but from `p +0x1c` and `p +0x4c`, `w +0x390`/`+0x394` as there, `w +0x400 =
+(i16 obj +0x14 << 4) + [w +0x390]`; `op_vertex_normal_point44_ffx_2(obj,
+p, w, g_EtChrHandles[byte rec +0x18])`, `op_refrection_st_float(obj, p, w,
+[w +0x400], ftol(rec +0x3c x 16), byte tex +0xa << 4, byte tex +0xb <<
+4)`. Each 0x20-byte tag of type 0x10 from `obj + [obj +4]` sets `w +0x1f0`
+0x8001, `+0x1f8` 0x12412412, `+0x120` `[tex]`, and expands its colour word
+`[tag +4 + g_pppColorConShift]` (the shift then 0) the PS2 way: the byte
+moves the original does are `pextlb` then `pextlh` with `r0`, so with `c`
+the colour's bytes and `r` `r0`'s, the EE's `v0` gets the words `(c0, r0,
+r0, r1)`, `(c1, r1, r2, r3)`, `(c2, r2, r4, r5)`, `(c3, r3, r6, r7)` (bytes,
+low first): with `r0` zero the colour's channels. Those words as `f32`s of
+signed integers go to `g_Vu0_VfMove` and `w +0x2e0`. After the GS wait
+and `op_spr_free`, `eax` is the last `g_GsRegisterSink` read.
+
 ### `opus_0283` draw
 
 `opus_0283_draw(obj, rec)` (`0x00a76770`, kind 0x1000 of

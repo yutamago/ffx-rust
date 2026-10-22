@@ -2217,3 +2217,71 @@ fn opus_0437_poly_check_matches_the_original() {
         assert!(seen.iter().all(|&s| s > 30), "{}: {seen:?}", p.name);
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn opus_0279_draw_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a7_0210);
+        // the set-up callees logged: op_md_spr_init_x64 hands out `model`,
+        // the light and refraction passes are checked on their own
+        let (cell, model) = (p.alloc(4), p.alloc(0x60));
+        p.set(cell, model);
+        let inits = deref_recorder_with(&mut p, 0x00a6_9940, &[0, 0, 0], Some(cell));
+        let lights = deref_recorder(&mut p, 0x00a6_d670, &[0, 0, 0, 0]);
+        let refr = deref_recorder(&mut p, 0x00a6_cfb0, &[0, 0, 0, 0, 0, 0, 0]);
+        let (obj, init, rec, tex) = (p.alloc(0x400), p.alloc(0x60), p.alloc(0x100), p.alloc(0x10));
+        let spr = p.alloc(0x2000);
+        let (r0, v0, shift) = (p.sym(0x00c8_f508), p.sym(0x00c8_f528), p.sym(0x00c8_b500));
+        let handles = p.sym(0x012a_8100);
+        let mut seen = 0;
+        for round in 0..800 {
+            spr_top(&mut p, &mut rng, spr);
+            scene_lights(&mut p, &mut rng);
+            p.fill(obj, 0x400, &mut rng);
+            p.fill(model, 0x60, &mut rng);
+            p.fill(rec, 0x100, &mut rng);
+            p.fill(tex, 0x10, &mut rng);
+            p.fill(handles, 0x3c0, &mut rng);
+            // r0 is zero in the game; any bytes here, to pin the expansion
+            if round % 4 == 0 {
+                p.fill(r0, 0x10, &mut rng);
+            } else {
+                p.set(r0, [0u32; 4]);
+            }
+            p.fill(v0, 0x10, &mut rng);
+            p.set(shift, rng.pick(&[0u32, 0, 4, 8, 0x20]));
+            let scale = if rng.chance(10) {
+                rng.float()
+            } else {
+                near(&mut rng, 0.0)
+            };
+            p.set(rec + 0x3c, scale);
+            p.set(obj + 4, 0x20u32);
+            let n = rng.below(5);
+            for i in 0..n {
+                p.set(obj + 0x21 + 0x20 * i, 0x10u8);
+            }
+            p.set(obj + 0x21 + 0x20 * n, rng.pick(&[0u8, 0x11, 0xff]));
+            seen += n;
+            check_deep_n(
+                &mut p,
+                &format!("opus_0279_draw round {round}"),
+                0x00a7_0210,
+                &[obj, init, rec, 0, tex],
+                |o, _| {
+                    Some(hi_draw::bridge::opus_0279_draw(
+                        o,
+                        obj,
+                        init,
+                        rec,
+                        tex,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(seen > 400, "{}: {seen}", p.name);
+        let _ = (inits, lights, refr);
+    }
+}
