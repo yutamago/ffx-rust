@@ -997,8 +997,43 @@ pub mod bridge {
         }
     }
 
-    /// `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`; not ported).
+    /// `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`, below),
+    /// called through the game.
     pub const SET_SHADE_ID_RELATION: u32 = 0x0082_b7a0;
+    /// `Ch_SetShadeID(chr, v, frames)` (`0x0082b720`), called through the
+    /// game.
+    pub const SET_SHADE_ID: u32 = 0x0082_b720;
+
+    /// `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`): every other
+    /// active character bound to `chr` (`+0x19c`) gets `Ch_SetShadeID(c,
+    /// v, frames)` (`v` through the x87, `fld`/`fstp`); the array and its
+    /// count are read again after each call, as the walk's end. EAX is that
+    /// end (`array + count * 0x880`).
+    pub fn ch_set_shade_id_relation<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        v: f32,
+        frames: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use crate::handle::bridge::{CHR_ARRAY, CHR_COUNT};
+        let end = |mem: &M| {
+            let n = CHR_COUNT.get(mem).cast_unsigned();
+            CHR_ARRAY.get(mem).wrapping_add(n.wrapping_mul(l::SIZE))
+        };
+        let v = x87::load(v).to_bits();
+        let mut c = CHR_ARRAY.get(mem);
+        while c != end(mem) {
+            if mem.read::<u8>(c.wrapping_add(l::ACTIVE)) != 0
+                && c != chr
+                && mem.read::<u32>(c.wrapping_add(0x19c)) == chr
+            {
+                call(mem, mem.rebase(SET_SHADE_ID), &[c, v, frames]);
+            }
+            c = c.wrapping_add(l::SIZE);
+        }
+        c
+    }
 
     /// `Ch_SetShadeID(chr, v, frames)` (`0x0082b720`; callers
     /// `Ch_Allocate`, `Ch_SetShadeIDRelation`, `Ch_IdShadeCalc`,
@@ -1087,6 +1122,49 @@ pub mod bridge {
     /// (hide, instance) pairs.
     pub const F117_HIDE_COUNT: Global<i32> = Global::new(0x012f_fad4);
     pub const F117_HIDES: Global<[u32; 2]> = Global::new(0x023c_44c0);
+
+    /// `graphicCharacterInstanceSetMeshSegmentAlpha(inst, id, i, a)`
+    /// (`0x0063bc50`) and `Ch_ModelSetAlpha`'s error format.
+    pub const SET_MESH_SEGMENT_ALPHA: u32 = 0x0063_bc50;
+    pub const MODEL_SET_ALPHA_FORMAT: u32 = 0x00b5_97e8;
+
+    /// `Ch_ModelSetAlpha(chr, i, a)` (`0x0082ae30`): `a` (through the x87,
+    /// so a signalling NaN is quieted) into model `i`'s alpha (`+0x14` of
+    /// the 0x38-byte models at `+0x1bc`) and to the renderer
+    /// (`graphicCharacterInstanceSetMeshSegmentAlpha(+0x830, id, i, a)`),
+    /// whose `eax` it returns. For `i` not below the header's model count
+    /// (compared signed) it prints `"VIRTUOS ERROR: Ch_ModelSetAlpha..."`
+    /// to `stderr` instead and returns `fprintf`'s `eax`.
+    pub fn ch_model_set_alpha<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        i: u32,
+        a: f32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let hdr: u32 = mem.read(chr + 0x1c0);
+        if i.cast_signed() >= i32::from(mem.read::<u16>(hdr + 6)) {
+            let name: u32 = mem.read(chr + 4);
+            let f = mem.read(mem.rebase(IOB_FUNC_SLOT));
+            let iob = call(mem, f, &[]);
+            let f = mem.read(mem.rebase(FPRINTF_SLOT));
+            let fmt = mem.rebase(MODEL_SET_ALPHA_FORMAT);
+            return call(mem, f, &[iob.wrapping_add(0x40), fmt, name, i]);
+        }
+        let models: u32 = mem.read(chr + 0x1bc);
+        let a = x87::load(a);
+        mem.write(
+            models.wrapping_add(i.wrapping_mul(0x38)).wrapping_add(0x14),
+            a,
+        );
+        let id = u32::from(mem.read::<u16>(chr));
+        let inst: u32 = mem.read(chr + 0x830);
+        call(
+            mem,
+            mem.rebase(SET_MESH_SEGMENT_ALPHA),
+            &[inst, id, i, a.to_bits()],
+        )
+    }
 
     /// `Ch_ModelSetHide(chr, i, hide)` (`0x0082aea0`): bit 0 of `hide`
     /// into model `i`'s hide byte (`+0x18` of the 0x38-byte models at

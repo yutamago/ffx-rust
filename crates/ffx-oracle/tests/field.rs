@@ -12688,6 +12688,19 @@ fn round39_cases(t: &mut Twin, rng: &mut Xorshift, rounds: u32) {
             |o| o.void(0x0081_d3f0, &[src, 7, a]),
             |m| nkz::bridge::sqs_init_wave_info(m, src, a, call),
         );
+        // its music twin (chara-main-map round 1)
+        queue(t, rng);
+        t.set(nkz::SQS_WAVE_INFO_DONE, u32::from(rng.below(4) == 0));
+        t.set(nkz::SQS_MUSIC_INFO_DST, rng.next());
+        t.set(nkz::SIF_DMA_ID, rng.next());
+        t.fill(dma, 0x20, rng);
+        let src = rng.below(2) * rng.next();
+        let a = rng.next();
+        t.same(
+            "SqsInitMusicInfo",
+            |o| o.void(0x0081_d340, &[src, 7, a]),
+            |m| nkz::bridge::sqs_init_music_info(m, src, a, call),
+        );
     }
 }
 

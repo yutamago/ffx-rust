@@ -94,6 +94,99 @@ pub mod bridge {
     pub fn ch_id_get_shade_field(mem: &impl Mem, chr: u32, k: u32) -> u32 {
         (ch_id_get_shade(mem, chr) >> (5 * k)) & 0x1f
     }
+
+    /// `graphicCharacterLightingSetShadeCoeff_debug(inst)` (`0x0063cec0`),
+    /// `Sg_VectorGetLength2(a, b)` (`0x008366a0`, ST0),
+    /// `Sg_VectorGetLength(v, n)` (`0x00836670`, ST0), `FFXVu0Normalize(dst,
+    /// src)` (`0x006ed6f0`) and `Ch_SetShadeID(chr, v, frames)`
+    /// (`0x0082b720`), all through the game.
+    pub const SET_SHADE_COEFF_DEBUG: u32 = 0x0063_cec0;
+    pub const VECTOR_GET_LENGTH2: u32 = 0x0083_66a0;
+    pub const VECTOR_GET_LENGTH: u32 = 0x0083_6670;
+    pub const VU0_NORMALIZE: u32 = 0x006e_d6f0;
+    pub const SET_SHADE_ID: u32 = 0x0082_b720;
+    /// Bytes of scratch [`ch_id_shade_calc`] needs: its vector
+    /// (`[ebp-0x14]`; `w` is never written, as in the original).
+    pub const ID_SHADE_CALC_SCRATCH: u32 = 0x10;
+
+    /// `Ch_IdShadeCalc(chr)` (`0x00834110`; caller `Ch_CalcMiddle_Batch`).
+    /// - Id shades off ([`ID_SHADE_ON`], `Sg_IdExistShade`): unless
+    ///   `g_ChrDrawDetached`, `chr`'s instance (`+0x830`) gets the
+    ///   renderer's debug shade coefficient once per other active character
+    ///   bound to it (`+0x19c`; the array re-read after each call, as the
+    ///   walk's end) and once more.
+    /// - Id shades on, with flag bit 18 (`+0x194`): the distances from
+    ///   `+0x3c` to `+0x8c`, `+0x9c`, `+0xac` (`Sg_VectorGetLength2`, as
+    ///   `f32`) make a vector in `scratch`, normalized, each component
+    ///   `1 - c`, normalized again, scaled by the id word's shades 0, 1, 2
+    ///   over 31 (`f32(shade) / 31.0 * c`, in 53 bits); its length
+    ///   (`Sg_VectorGetLength(v, 3)`) is the shade id, set over 3 frames
+    ///   (`Ch_SetShadeID`).
+    ///
+    /// No caller reads `eax`.
+    pub fn ch_id_shade_calc<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use crate::handle::bridge::{CHR_ARRAY, CHR_COUNT};
+        if ID_SHADE_ON.get(mem) == 0 {
+            if crate::sys::bridge::DRAW_DETACHED.get(mem) != 0 {
+                return;
+            }
+            let end = |mem: &M| {
+                let n = CHR_COUNT.get(mem).cast_unsigned();
+                CHR_ARRAY.get(mem).wrapping_add(n.wrapping_mul(l::SIZE))
+            };
+            let coeff = mem.rebase(SET_SHADE_COEFF_DEBUG);
+            let mut c = CHR_ARRAY.get(mem);
+            while c != end(mem) {
+                if mem.read::<u8>(c.wrapping_add(l::ACTIVE)) != 0
+                    && c != chr
+                    && mem.read::<u32>(c.wrapping_add(0x19c)) == chr
+                {
+                    let inst: u32 = mem.read(chr.wrapping_add(0x830));
+                    call(mem, coeff, &[inst]);
+                }
+                c = c.wrapping_add(l::SIZE);
+            }
+            let inst: u32 = mem.read(chr.wrapping_add(0x830));
+            call(mem, coeff, &[inst]);
+            return;
+        }
+        if mem.read::<u32>(chr.wrapping_add(l::FLAGS)) & 0x4_0000 == 0 {
+            return;
+        }
+        let v = scratch;
+        let from = chr.wrapping_add(0x3c);
+        for (k, off) in [0x8cu32, 0x9c, 0xac].into_iter().enumerate() {
+            let len2 = mem.rebase(VECTOR_GET_LENGTH2);
+            let d = fcall(mem, len2, &[from, chr.wrapping_add(off)]);
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            mem.write(v + 4 * k as u32, d as f32);
+        }
+        let normalize = mem.rebase(VU0_NORMALIZE);
+        call(mem, normalize, &[v, v]);
+        for k in 0..3 {
+            let c: f32 = mem.read(v + 4 * k);
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            mem.write(v + 4 * k, (1.0 - f64::from(c)) as f32);
+        }
+        call(mem, normalize, &[v, v]);
+        for k in 0..3 {
+            #[allow(clippy::cast_precision_loss, clippy::cast_possible_wrap)] // fild of 0..=31
+            let shade = ch_id_get_shade_field(mem, chr, k) as i32 as f32;
+            let c: f32 = mem.read(v + 4 * k);
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            mem.write(v + 4 * k, (f64::from(shade) / 31.0 * f64::from(c)) as f32);
+        }
+        let len = mem.rebase(VECTOR_GET_LENGTH);
+        #[allow(clippy::cast_possible_truncation)] // fstp dword
+        let s = fcall(mem, len, &[v, 3]) as f32;
+        call(mem, mem.rebase(SET_SHADE_ID), &[chr, s.to_bits(), 3]);
+    }
 }
 
 #[cfg(test)]

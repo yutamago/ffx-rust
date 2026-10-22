@@ -9529,3 +9529,427 @@ fn round36_blk_get_handle_on(t: &mut Twin) {
         t.name
     );
 }
+
+// ---- chara-main-map round 1
+
+/// Code at `sym` (both oracles): a jump to `code`.
+fn jump_to(t: &mut Twin, sym: u32, code: &[u8]) {
+    let at = t.a.alloc_code(code).unwrap();
+    assert_eq!(t.b.alloc_code(code).unwrap(), at);
+    let f = t.a.rebase(sym);
+    let mut jmp = vec![0xe9];
+    jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+    t.put(f, &jmp);
+}
+
+/// A stand-in at `sym` that logs its first `n` arguments and, the first
+/// time after `flag` was set, decrements the word `count` (`dec` = (count,
+/// flag)), so the caller's walk sees the array change; returns 0.
+fn log_dec_stub(t: &mut Twin, fk: &Fakes, sym: u32, n: u8, dec: Option<(u32, u32)>) {
+    log_dec_move_stub(t, fk, sym, n, dec, None);
+}
+
+/// [`log_dec_stub`] that also moves the array word `array` one character
+/// on with the decrement (the walk's end stays where it was).
+fn log_dec_move_stub(
+    t: &mut Twin,
+    fk: &Fakes,
+    sym: u32,
+    n: u8,
+    dec: Option<(u32, u32)>,
+    array: Option<u32>,
+) {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
+    for k in 0..n {
+        // mov eax, [esp + 4 + 4k]; mov [ecx + 4k], eax
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    c.extend([0x83, 0x05]);
+    c.extend(fk.log.to_le_bytes());
+    c.push(4 * n); // add dword [log], 4n
+    if let Some((count, flag)) = dec {
+        c.extend([0x83, 0x3d]);
+        c.extend(flag.to_le_bytes());
+        let skip: u8 = if array.is_some() { 0x1a } else { 0x10 };
+        c.extend([0x00, 0x74, skip]); // cmp dword [flag], 0; je past
+        if let Some(a) = array {
+            c.extend([0x81, 0x05]);
+            c.extend(a.to_le_bytes());
+            c.extend(l::SIZE.to_le_bytes()); // add dword [array], 0x880
+        }
+        c.extend([0xff, 0x0d]);
+        c.extend(count.to_le_bytes()); // dec dword [count]
+        c.extend([0xc7, 0x05]);
+        c.extend(flag.to_le_bytes());
+        c.extend(0u32.to_le_bytes()); // mov dword [flag], 0
+    }
+    c.extend([0x33, 0xc0, 0xc3]); // xor eax, eax; ret
+    jump_to(t, sym, &c);
+}
+
+/// A stand-in at `sym` that logs the C string its argument `arg` (0-based)
+/// points at, then returns the word at `ret`, which grows by `step`.
+fn cstr_stub(t: &mut Twin, fk: &Fakes, sym: u32, arg: u8, ret: u32, step: u32) {
+    cstr_args_stub(t, fk, sym, &[], arg, (ret, step));
+}
+
+/// [`cstr_stub`] that logs its arguments `args` (0-based) first.
+fn cstr_args_stub(
+    t: &mut Twin,
+    fk: &Fakes,
+    sym: u32,
+    args: &[u8],
+    arg: u8,
+    (ret, step): (u32, u32),
+) {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
+    for &i in args {
+        // mov eax, [esp + 4 + 4i]; mov [ecx], eax; add ecx, 4
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * i, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+    }
+    c.extend([0x8b, 0x54, 0x24, 4 + 4 * arg]); // mov edx, [esp + 4 + 4arg]
+    // copy up to the NUL: mov al, [edx]; mov [ecx], al; inc edx; inc ecx;
+    // test al, al; jnz back
+    c.extend([0x8a, 0x02, 0x88, 0x01, 0x42, 0x41, 0x84, 0xc0, 0x75, 0xf6]);
+    c.extend([0x89, 0x0d]);
+    c.extend(fk.log.to_le_bytes()); // mov [log], ecx
+    c.push(0xa1);
+    c.extend(ret.to_le_bytes()); // mov eax, [ret]
+    c.extend([0x81, 0x05]);
+    c.extend(ret.to_le_bytes());
+    c.extend(step.to_le_bytes()); // add dword [ret], step
+    c.push(0xc3);
+    jump_to(t, sym, &c);
+}
+
+/// A stand-in at `sym` that logs its arguments `args` (0-based), then
+/// `words` words from `from` bytes into its pointer argument `p`, and
+/// returns `0x1234`.
+fn deref_stub(t: &mut Twin, fk: &Fakes, sym: u32, args: &[u8], (p, from): (u8, u8), words: u8) {
+    let code = deref_code(fk, args, (p, from), words);
+    jump_to(t, sym, &code);
+}
+
+fn deref_code(fk: &Fakes, args: &[u8], (p, from): (u8, u8), words: u8) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
+    let n = u8::try_from(args.len()).unwrap();
+    for (k, &i) in (0u8..).zip(args) {
+        // mov eax, [esp + 4 + 4i]; mov [ecx + 4k], eax
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * i, 0x89, 0x41, 4 * k]);
+    }
+    c.extend([0x8b, 0x44, 0x24, 4 + 4 * p]); // mov eax, [esp + 4 + 4p]
+    for k in 0..words {
+        // mov edx, [eax + from + 4k]; mov [ecx + 4n + 4k], edx
+        c.extend([0x8b, 0x50, from + 4 * k, 0x89, 0x51, 4 * (n + k)]);
+    }
+    c.extend([0x83, 0x05]);
+    c.extend(fk.log.to_le_bytes());
+    c.push(4 * (n + words)); // add dword [log], ...
+    c.push(0xb8);
+    c.extend(0x1234u32.to_le_bytes()); // mov eax, 0x1234
+    c.push(0xc3);
+    c
+}
+
+#[test]
+fn cmm1_a_matches_the_original() {
+    for mut t in twins() {
+        cmm1_a_on(&mut t);
+    }
+}
+
+/// Chara-main-map round 1, group a: `Ch_DisposeAll`, `Ch_Allocate2`,
+/// `Ch_SetShadeIDRelation`, `Ch_ModelSetAlpha`, the footstep effect
+/// `0x008338d0`, `Chb_AttachMotionTBL_OLD`, `Ch_RomReadEventMGRP`,
+/// `Ch_IdShadeCalc`. Their callees outside the chara module are logging
+/// stand-ins (pointers to the original's stack logged by what they point
+/// at); the math ones (`Sg_VectorGetLength*`, `FFXVu0Normalize`) run as
+/// the originals. The ports' scratch is on the Rust oracle's stack, which
+/// the memory compare leaves out, as it does the original's.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)] // t, c, v, i, a, x
+fn cmm1_a_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x00c3_a001);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fcall = |m: &mut Oracle, f: u32, a: &[u32]| m.call_f64(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let frame = t.b.stack_range().start + 0x400;
+    let (count, array) = (t.a.rebase(h::CHR_COUNT.sym), t.a.rebase(h::CHR_ARRAY.sym));
+    let chrs = live_characters(t, &mut rng);
+    // the renderer and effect callees
+    let _ = fk.fake(t, 0x0063_bc50, 1, 4); // SetMeshSegmentAlpha
+    let _ = fk.fake(t, 0x0063_cec0, 2, 1); // SetShadeCoeff_debug
+    deref_stub(t, &fk, 0x007f_b740, &[0, 2, 3], (1, 0), 4); // op_et_bindeff2_walk(chr, foot, 0, 0)
+    let reads = t.alloc(4);
+    cstr_stub(t, &fk, 0x0083_ae30, 0, reads, 0); // Sg_PcRead
+    // Ch_RomReadEventMGRP's callees: the CD library, the heap, names
+    let mut cd = Vec::new();
+    for (g, n) in [(0x0231_0c50u32, 1u8), (0x0231_0c54, 1), (0x0231_0c98, 2)] {
+        let (code, ret) = fk.fake_code(t, 0x20 + (g & 0xff), n);
+        let at = t.a.rebase(g);
+        t.put_u32(at, code);
+        cd.push(ret);
+    }
+    let lib = deref_code(&fk, &[0, 1, 2], (3, 0xc), 2); // g_CdLib(file, buf, cb, &req)
+    let lib = {
+        let at = t.a.alloc_code(&lib).unwrap();
+        assert_eq!(t.b.alloc_code(&lib).unwrap(), at);
+        at
+    };
+    let at = t.a.rebase(0x0231_0c40);
+    t.put_u32(at, lib);
+    let eternal = fk.fake(t, 0x0067_ab30, 3, 1);
+    let eternal_size = fk.fake(t, 0x0067_aa70, 4, 1);
+    let _ = fk.fake(t, 0x0083_c4a0, 5, 1); // Sg_MemSetAlign
+    let heap = t.alloc(0x40);
+    let malloc = fk.fake_alloc(t, 0x0068_7020, 6, 0x10);
+    t.put_u32(malloc, heap);
+    let none = t.alloc(4);
+    cstr_args_stub(t, &fk, 0x0083_c580, &[0, 2], 1, (none, 0)); // Sg_MemSetStr(p, name, -1)
+    let _ = fk.fake(t, 0x0068_7010, 10, 1); // user_free
+    let flag = t.alloc(4);
+    let _ = fk.fake(t, 0x0083_c590, 7, 2); // Sg_MemSetType
+    let _ = fk.fake(t, 0x0062_f500, 8, 3); // dbgPrintf(fmt, r, buf)
+    let mut reach = [0u32; 12];
+    for round in 0..40u32 {
+        fk.reset(t);
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        // Ch_SetShadeIDRelation: some characters bound to chr; at times the
+        // stand-in shortens the array
+        let dec = round % 5 == 4;
+        log_dec_stub(t, &fk, 0x0082_b720, 3, dec.then_some((count, flag)));
+        t.put_u32(flag, 1);
+        let (n0, a0) = (h::CHR_COUNT.get(&t.b), h::CHR_ARRAY.get(&t.b));
+        let n0u = u32::try_from(n0).unwrap();
+        for i in 0..n0u {
+            let c = a0 + i * l::SIZE;
+            // the walk must not step past a shortened end: the last slot
+            // stays unbound then
+            let bind = rng.next().is_multiple_of(3) && !(dec && i + 1 == n0u);
+            let other: u32 = rd(&t.b, c + 0x19c);
+            t.put_u32(
+                c + 0x19c,
+                if bind {
+                    chr
+                } else {
+                    other ^ u32::from(other == chr)
+                },
+            );
+            reach[6] += u32::from(bind && rd::<u8>(&t.b, c + 2) != 0 && c != chr);
+        }
+        let v = FLOATS[rng.next() as usize % FLOATS.len()];
+        let frames = INTS[rng.next() as usize % INTS.len()];
+        t.check(
+            &format!("Ch_SetShadeIDRelation {round}"),
+            0x0082_b7a0,
+            &[chr, v, frames],
+            |m| {
+                Res::Int(c::ch_set_shade_id_relation(
+                    m,
+                    chr,
+                    fl(v),
+                    frames,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        t.put_u32(count, n0.cast_unsigned());
+        // Ch_IdShadeCalc: ids off (detached or not), on with and without
+        // flag bit 18; Ch_SetShadeID a plain logger
+        log_dec_stub(t, &fk, 0x0082_b720, 3, None);
+        t.put(
+            t.a.rebase(id::ID_SHADE_ON.sym),
+            &[[0u8, 1, 0xff][round as usize % 3]],
+        );
+        t.put_u32(t.a.rebase(0x012f_b7d8), [0, 0, 1, 2][round as usize % 4]);
+        // the vector's w, which the original leaves as its stack had it
+        t.b.write(frame + 0xc, &1f32.to_bits().to_le_bytes())
+            .unwrap();
+        let flags: u32 = rd(&t.b, chr + l::FLAGS);
+        t.put_u32(chr + l::FLAGS, flags ^ (rng.next() & 0x4_0000));
+        for off in [0x3cu32, 0x8c, 0x9c, 0xac] {
+            for k in 0..3 {
+                let x = match rng.next() % 8 {
+                    0 => FLOATS[rng.next() as usize % FLOATS.len()],
+                    1 => 0,
+                    #[allow(clippy::cast_precision_loss)]
+                    _ => ((rng.next() % 2000) as f32 - 1000.0).to_bits(),
+                };
+                t.put_u32(chr + off + 4 * k, x);
+            }
+        }
+        t.put_u32(chr + l::PID, rng.next());
+        let on = rd::<i8>(&t.b, t.b.rebase(id::ID_SHADE_ON.sym)) != 0;
+        reach[usize::from(on)] += 1;
+        reach[2] += u32::from(on && rd::<u32>(&t.b, chr + l::FLAGS) & 0x4_0000 != 0);
+        t.check(
+            &format!("Ch_IdShadeCalc {round}"),
+            0x0083_4110,
+            &[chr],
+            |m| {
+                id::ch_id_shade_calc(
+                    m,
+                    chr,
+                    frame,
+                    &mut |m, f, a| call(m, f, a),
+                    &mut |m, f, a| fcall(m, f, a),
+                );
+                Res::Void
+            },
+        );
+        // Ch_ModelSetAlpha: a made-up model list
+        let nm = 1 + rng.next() % 4;
+        let hdr = t.alloc(8);
+        t.put(hdr + 6, &u16::try_from(nm).unwrap().to_le_bytes());
+        let models = random_block(t, &mut rng, 0x38 * 4);
+        let (old_hdr, old_models): (u32, u32) = (rd(&t.b, chr + 0x1c0), rd(&t.b, chr + 0x1bc));
+        t.put_u32(chr + 0x1c0, hdr);
+        t.put_u32(chr + 0x1bc, models);
+        // the error message's name
+        let old_name: u32 = rd(&t.b, chr + 4);
+        let name = t.alloc(16);
+        t.put(name, b"c001\0");
+        t.put_u32(chr + 4, name);
+        let i = [0, 1, nm - 1, nm, nm + 3, u32::MAX][rng.next() as usize % 6];
+        let a = FLOATS[rng.next() as usize % FLOATS.len()];
+        reach[3] += u32::from(i < nm);
+        t.check(
+            &format!("Ch_ModelSetAlpha {round}"),
+            0x0082_ae30,
+            &[chr, i, a],
+            |m| {
+                Res::Int(c::ch_model_set_alpha(m, chr, i, fl(a), &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        t.put_u32(chr + 0x1c0, old_hdr);
+        t.put_u32(chr + 0x1bc, old_models);
+        t.put_u32(chr + 4, old_name);
+        // the footstep effect: feet 7 and 8 set, empty, NaN
+        for k in [7u32, 8] {
+            for c in 0..4 {
+                let x = match rng.next() % 6 {
+                    0 => 0,
+                    1 => FLOATS[rng.next() as usize % FLOATS.len()],
+                    #[allow(clippy::cast_precision_loss)]
+                    _ => ((rng.next() % 200) as f32 - 100.0).to_bits(),
+                };
+                t.put_u32(chr + 0x524 + 16 * k + 4 * c, x);
+            }
+        }
+        t.check(&format!("foot effect {round}"), 0x0083_38d0, &[chr], |m| {
+            Res::Int(ffx_chara::attach::bridge::ch_sound_foot_effect(
+                m,
+                chr,
+                frame,
+                &mut |m, f, a| call(m, f, a),
+            ))
+        });
+        // Chb_AttachMotionTBL_OLD: no tables, either, both; built for
+        // their own address or another
+        let blk = random_block(t, &mut rng, l::BLK_SIZE);
+        t.put(blk + 0xb8, b"/ffx/proj2/chr/prot/mon/m042\0");
+        let tables = t.alloc(0x200);
+        let (t1, t2) = (tables, tables + 0x100);
+        t.put(tables, &random(&mut rng, 0x200));
+        for (tb, moved) in [(t1, rng.next() % 4), (t2, rng.next() % 4)] {
+            let first = match moved {
+                0 => tb,
+                1 => tb - 1,
+                _ => rng.next(),
+            };
+            t.put_u32(tb, first);
+        }
+        let n = [0u32, 1, 5, 0x30, u32::MAX][rng.next() as usize % 5];
+        t.put_u32(t2 + 4, n);
+        let (first, second) = match round % 4 {
+            0 => (0, 0),
+            1 => (t1, 0),
+            2 => (0, t2),
+            _ => (t1, t2),
+        };
+        t.put_u32(reads, first);
+        // the stand-in adds `step` after the first call
+        cstr_stub(t, &fk, 0x0083_ae30, 0, reads, second.wrapping_sub(first));
+        t.check(
+            &format!("Chb_AttachMotionTBL_OLD {round}"),
+            0x0083_7fa0,
+            &[blk],
+            |m| {
+                h::chb_attach_motion_tbl_old(m, blk, frame, &mut |m, f, a| call(m, f, a));
+                Res::Void
+            },
+        );
+        // Ch_RomReadEventMGRP: sizes 0 (Eternal Calm or not), 0x10, others
+        t.put_u32(cd[1], [0, 0, 0x10, 0x11, 0x2345][rng.next() as usize % 5]);
+        t.put_u32(eternal, [0, 1, 0x100][rng.next() as usize % 3]);
+        t.put_u32(eternal_size, [0, 0x10, 0x800][rng.next() as usize % 3]);
+        t.put_u32(cd[2], rng.next());
+        t.put_u32(malloc, heap);
+        let file = [rng.next(), rng.next() % 0x300, 18 * 7, u32::MAX - 20][rng.next() as usize % 4];
+        let x = [rng.next(), 0, 7, u32::MAX][rng.next() as usize % 4];
+        reach[4] += u32::from(rd::<u32>(&t.b, cd[1]) == 0);
+        t.check(
+            &format!("Ch_RomReadEventMGRP {round}"),
+            0x0082_a6e0,
+            &[file, x],
+            |m| {
+                Res::Int(sy::ch_rom_read_event_mgrp(
+                    m,
+                    file,
+                    x,
+                    frame,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        // Ch_Allocate2: Ch_Allocate a stand-in returning a block
+        let block = t.alloc(0x200);
+        let ret = fk.fake(t, 0x0082_4f90, 9, 1);
+        t.put_u32(ret, block);
+        let (key, v) = (rng.next(), rng.next());
+        t.check(
+            &format!("Ch_Allocate2 {round}"),
+            0x0082_5650,
+            &[key, v],
+            |m| Res::Int(h::ch_allocate2(m, key, v, &mut |m, f, a| call(m, f, a))),
+        );
+        // Ch_DisposeAll: a new array (or none); Ch_Dispose a logger that
+        // at times shortens it; user_free a logger
+        let n = rng.next() % 5;
+        let arr = if round % 6 == 5 {
+            0
+        } else {
+            t.alloc(l::SIZE as usize * 5)
+        };
+        if arr != 0 {
+            for k in 0..n {
+                t.put(
+                    arr + k * l::SIZE + 2,
+                    &[u8::from(!rng.next().is_multiple_of(3))],
+                );
+            }
+        }
+        let (keep_n, keep_a) = (h::CHR_COUNT.get(&t.b), h::CHR_ARRAY.get(&t.b));
+        t.put_u32(count, n);
+        t.put_u32(array, arr);
+        let dec = round % 3 == 1;
+        if dec && n > 0 && arr != 0 {
+            t.put(arr + (n - 1) * l::SIZE + 2, &[0]);
+        }
+        let moves = (round % 6 == 4).then_some(array);
+        log_dec_move_stub(t, &fk, 0x0082_66f0, 1, dec.then_some((count, flag)), moves);
+        t.put_u32(flag, 1);
+        t.check(&format!("Ch_DisposeAll {round}"), 0x0082_68e0, &[], |m| {
+            h::ch_dispose_all(m, &mut |m, f, a| call(m, f, a));
+            Res::Void
+        });
+        reach[5] += u32::from(arr != 0);
+        t.put_u32(count, keep_n.cast_unsigned());
+        t.put_u32(array, keep_a);
+    }
+    eprintln!("{}: cmm1 a reach {reach:?}", t.name);
+}

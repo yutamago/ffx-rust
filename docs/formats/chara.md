@@ -487,3 +487,36 @@ used sequence (`0x01300a08`, 100 x `0x14`) whose group `+0x10` is `old`
   models' three buffers, the `+0x874` table, texture animation, five
   blocks) and destroys its render and shadow instances; EAX is the cloth
   vertex buffers' destroy result.
+
+## Shades, models and reads (chara-main-map round 1)
+
+- `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`, `ffx_chara::chr`):
+  `Ch_SetShadeID` on every other active character bound to `chr`
+  (`+0x19c`). Like every walk over `g_ChrArray`, the array and its count
+  are read again after each call, as the walk's end.
+- `Ch_IdShadeCalc(chr)` (`0x00834110`, `ffx_chara::id`): with id shades on
+  and flag bit 18 (`+0x194`), the shade id is the length of a vector made
+  from the distances `+0x3c` to `+0x8c`, `+0x9c`, `+0xac`: normalized,
+  each component `1 - c`, normalized again, then times the id word's
+  shades 0..2 over 31; set over 3 frames. With id shades off, the
+  renderer's debug shade coefficient of `chr`'s instance, once per bound
+  character and once more (not while `g_ChrDrawDetached`).
+  `Sg_VectorGetLength` takes one word: the 3 pushed after it is unused.
+- `Ch_ModelSetAlpha(chr, i, a)` (`0x0082ae30`): model `i`'s `+0x14` and
+  the renderer's mesh segment alpha; `i` past the header's count prints
+  the `VIRTUOS ERROR` line to `stderr`.
+- `0x008338d0` (`Ch_SoundFootEffect_008338d0`, `ffx_chara::attach`): the
+  footstep events of `Ch_Sound` put the walk effect at optional position
+  8 when position 7's y is below 8's, else at 7 (also for a NaN).
+- `Ch_RomReadEventMGRP(file, x)` (`0x0082a6e0`, `ffx_chara::sys`): event
+  motion group `file`; a size of 0 falls back to the Eternal Calm group
+  `file / 18` (signed). The buffer is named `"[EventMotionGroup x]"`; the
+  read request carries `x` at `+0xc` and the buffer at `+0x10`
+  (`Ch_RomReadEventMGRPcb` hands both to `ChN_AddEventMgrp`).
+- `Chb_AttachMotionTBL_OLD(blk)` (`0x00837fa0`): the host-PC viewer's
+  `inf/sysmot.tbl` (`+0x108`) and `inf/relation.tbl` (`+0x10c`); each
+  table's first word is the address it was built for, and the tables
+  relocate their pointers (system: `+0xc`, `+0x14`, `+0x1c`, `+0x24`;
+  relation: `[+4]` words from `+0x10`) by the difference.
+- `Ch_DisposeAll()` (`0x008268e0`) and `Ch_Allocate2(key, v)`
+  (`0x00825650`, `v` into `+0x190`).

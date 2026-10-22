@@ -353,6 +353,81 @@ pub mod bridge {
         0
     }
 
+    /// `isEternalCalmMgrp(n)` (`0x0067ab30`), `getEternalCalmMgrpSize(n)`
+    /// (`0x0067aa70`, platform), `Ch_RomReadEventMGRPcb` (`0x0082a7d0`)
+    /// and the `"SG:RomRead:%s %x\n"` format (`0x00b596b8`).
+    pub const IS_ETERNAL_CALM_MGRP: u32 = 0x0067_ab30;
+    pub const ETERNAL_CALM_MGRP_SIZE: u32 = 0x0067_aa70;
+    pub const ROM_READ_EVENT_MGRP_CB: u32 = 0x0082_a7d0;
+    pub const ROM_READ_FORMAT: u32 = 0x00b5_96b8;
+    /// Bytes of scratch `ch_rom_read_event_mgrp` needs: the read request
+    /// (`[ebp-0x60]`) and the block's name (`[ebp-0x44]`).
+    pub const ROM_READ_EVENT_MGRP_SCRATCH: u32 = 0x60;
+
+    /// `Ch_RomReadEventMGRP(file, x)` (`0x0082a6e0`; caller
+    /// `0x00837650`): queues the read of event motion group `file`. After
+    /// `g_CdLib_10(12)` its size is `g_CdLib_14(file)`; a size of 0 falls
+    /// back to the Eternal Calm group `file / 18` (`isEternalCalmMgrp`,
+    /// `getEternalCalmMgrpSize`). No size, or 0x10, returns 0. Else a
+    /// buffer (`Sg_MemSetAlign(0x40)`, `user_malloc(size)`) named
+    /// `"[EventMotionGroup <x>]"` (`Sg_MemSetStr`, type 3),
+    /// `g_CdLib_98(file, buffer)` (logged with `dbgPrintf`), and the read
+    /// (`g_CdLib(file, buffer, Ch_RomReadEventMGRPcb, &request)`, the
+    /// request's `+0xc` = `x`, `+0x10` = the buffer; the original leaves
+    /// the rest of it uninitialised). The request and the name go in
+    /// `scratch` ([`ROM_READ_EVENT_MGRP_SCRATCH`] bytes; the original's
+    /// stack). Returns the buffer.
+    pub fn ch_rom_read_event_mgrp<M: Mem>(
+        mem: &mut M,
+        file: u32,
+        x: u32,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let f = CD_LIB_10.get(mem);
+        call(mem, f, &[12]);
+        let f = CD_LIB_14.get(mem);
+        let mut size = call(mem, f, &[file]);
+        if size == 0 {
+            let n = (file.cast_signed() / 18).cast_unsigned();
+            if call(mem, mem.rebase(IS_ETERNAL_CALM_MGRP), &[n]) == 0 {
+                return 0;
+            }
+            size = call(mem, mem.rebase(ETERNAL_CALM_MGRP_SIZE), &[n]);
+            if size == 0 {
+                return 0;
+            }
+        }
+        if size == 0x10 {
+            return 0;
+        }
+        call(
+            mem,
+            mem.rebase(crate::texture::bridge::MEM_SET_ALIGN),
+            &[0x40],
+        );
+        let buf = call(mem, mem.rebase(crate::handle::bridge::USER_MALLOC), &[size]);
+        let name = format!("[EventMotionGroup {}]", x.cast_signed());
+        let name_at = scratch + 0x1c;
+        crate::handle::bridge::put_c_string(mem, name_at, name.as_bytes());
+        let set_str = mem.rebase(crate::handle::bridge::MEM_SET_STR);
+        call(mem, set_str, &[buf, name_at, u32::MAX]);
+        call(mem, mem.rebase(MEM_SET_TYPE), &[buf, 3]);
+        let f = CD_LIB_98.get(mem);
+        let r = call(mem, f, &[file, buf]);
+        let fmt = mem.rebase(ROM_READ_FORMAT);
+        call(
+            mem,
+            mem.rebase(crate::handle::bridge::DBG_PRINTF),
+            &[fmt, r, buf],
+        );
+        mem.write(scratch + 0xc, [x, buf]);
+        let f = CD_LIB.get(mem);
+        let cb = mem.rebase(ROM_READ_EVENT_MGRP_CB);
+        call(mem, f, &[file, buf, cb, scratch]);
+        buf
+    }
+
     /// `Ch_*Get*` of an `i8` setting, sign-extended.
     pub fn get_i8(mem: &impl Mem, g: Global<i8>) -> i32 {
         i32::from(g.get(mem))

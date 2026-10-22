@@ -5605,6 +5605,7 @@
 0x007968b0 function MsSetPlayersVisible_007968b0 # ours: (v) -> 0x12: MsSetChrVisible(i, v) for i 0..0x12; ported (ffx_battle::minor, battle round 29)
 0x007968e0 function MsSetChrWeight            # fh v3:exact 0x007968f0
 0x00796940 function MsSetDirThetaMode         # fh v3:exact 0x00796950
+0x007969a0 function MsSetMonsterVisible_007969a0 # (m, v): MsSetChrVisible(m + 0x14, v), returns m + 0x14 (monster actors 0x14..); caller Native_7127; name ours; ported (ffx_battle::visible, chara-main-map round 1)
 0x007969c0 function Ch_SetCalcNorm2           # (holder) on = holder +0x3c or +0x3d byte set; Ch_SetCalcNorm2_00835780(holder[0], on) when holder[0]; returns on. fh: switch:cg3 0x71008ad4c8
 0x007969f0 function MsSetTargetDir            # fh v3:exact 0x00796a00
 0x00796b40 function getAllPCEquips               # layout+callees: sorts between MsSetTargetDir and getSparedLmtPos, and its named callees match the Switch 0x710034cef0 getAllPCEquips's (similarity 0.75: MsGetSaveChrArmorModel, MsGetSaveChrWeaponModel, ch_create_name); symbols from Fahrenheit's server export
@@ -7433,6 +7434,7 @@
 0x0081cfd0 function SqsDataSendingCompleted   # fh v3:exact 0x0081d0e0; ported (field round 36): (wait) -> 1 when SqsSifDmaState(1, wait) >= 0, else 0
 0x0081d2c0 function SqsEeSoundCreateTime         # str-match switch: only user of 1 string(s) held once by both builds, e.g. '2001/10/19 (Fri)  14:01:57'; Switch 0x7100409e70 SqsEeSoundCreateTime (symbols from Fahrenheit's server export)
 0x0081d2e0 function SndGetGlobal012f4e78_0081d2e0 # auto-port shape (return global u32, cdecl): t0 = u32[&0x012f4e78]; return t0; callers: SndIopEioErrorStatus; name ours
+0x0081d340 function SqsInitMusicInfo           # Switch 0x71004075b0 SqsInitMusicInfo (sorts before SqsInitMusicInfoHdd; SqsInitWaveInfo's twin); (src, _, a): nothing once 0x012f4140 is set; else src (when set) by SIF DMA (0x800 bytes to *0x012f4f8c, SqsSifDmaState(1, 1)), a to g_SqsRpcSend, Sqs_CallRpc(5); callers TkInit, TkSqsLoadInfo_0088e3a0 ignore eax; ported (ffx_field::nkz, chara-main-map round 1)
 0x0081d3c0 function SqsInitMusicInfoHdd       # fh v3:cg3 0x81d4d0; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(7); returns its eax
 0x0081d3f0 function SqsInitWaveInfo              # layout: alphabetical run between SqsInitMusicInfoHdd and SqsInitWaveInfoHdd (1 unnamed in the gap); Switch 0x71004074e0 SqsInitWaveInfo is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); ported (field round 39): (src, _, a): nothing once 0x012f4140 is set; else src (when set) by SIF DMA (0x5000 bytes to *0x012f4f88, SqsSifDmaState(1, 1)), a to g_SqsRpcSend, Sqs_CallRpc(4); callers ignore eax (the early return leaves theirs)
 0x0081d470 function SqsInitWaveInfoHdd        # fh v3:cg4 0x81d580; ported (field round 36): (path) strcpy to g_SqsRpcSend, Sqs_CallRpc(6); returns its eax
@@ -7600,7 +7602,7 @@
 0x00824e60 function Sg_MatrixApplyVec3        # (out, m, v): out[j] = m[j] v.x + m[4+j] v.y + m[8+j] v.z for four columns (stack cookie); the cloth helpers' matrix product, next to Sg_VecAdd
 0x00824f00 function ChN_DataDispose           # fh v3:exact 0x00824f90; (key, check) -> eax: logs ch_create_chrname(key); a character of that id in use (Ch_HandleFromId) -> -1 (yiAssert naming it with check set); else Ch_BlkGetHandleFast(key) disposed (Ch_BlkDispose, Sg_CacheDisposeChr(its id)) -> 0; ported (ffx_chara::handle, battle round 35)
 0x00824f90 function Ch_Allocate               # fh v3:bsim0.91 0x00825010; (key) -> chr: first free slot (+2 clear; none gives 0, written through), block Ch_BlkGetHandle(key) (missing: 0 when g_ChrAllocateErr set, clearing it, else block 1 with +0xf8 = 1), dbgPrintf with g_FFXIsDebug clear, cleared and set up (Ch_CbMapping, the Ch_Set* defaults, Cache_SetLock(1, key, 1/0) around SG_InitBones, textures, op_et_monster_init with FLAGS2 0x400 held), shadow mode by id>>12 (0-3: 1, 4-6: 0, 15: 3 + flag 0x40), g_ChrFlag2Ids flag 2, g_ChrIdFloats +0x814/+0x818, ids 0x1088/0x1089/0x108c flag2 0x80, 0x10a6/0x10b2-4/0x111e/0x1121-3/0x3004/0x3009-b flag2 0x200 (jump table 0x008255c0), rest pose with flag 0x200000 (+0x83c), render/shadow instances (graphicCharacterRegistToInstantiate, Ch_OnCharacterInstanceLoaded), +0x87c Rikku in magic file 0x113; ported (ffx_chara::handle, battle round 35)
-0x00825650 function Ch_Allocate2              # fh v3:exact 0x008256d0
+0x00825650 function Ch_Allocate2              # fh v3:exact 0x008256d0; (key, v): Ch_Allocate(key) with v in +0x190, returns the character; ported (ffx_chara::handle, chara-main-map round 1)
 0x00825670 function Ch_Allocate_InitAll          # str-match switch: only user of 1 string(s) held once by both builds, e.g. '[CHR WORK]'; Switch 0x710040ef70 Ch_Allocate_InitAll (symbols from Fahrenheit's server export)
 0x008256f0 function Ch_ArcMapping             # fh v3:exact 0x00825770
 0x00825760 function Ch_BlkAllocate_00825760      # (name, size) -> a free g_ChrBlk slot (0x4b words), user_malloc'd and registered (Sg_MemSetStr/Type, Ch_CbArcMapping), "SG:Ch_BlkAllocate %x", "SG:monster effect size %s=%d"; caller Ch_BlkGetHandle; own name from the message
@@ -7619,7 +7621,7 @@
 0x00826260 function Ch_ClothMeshDestroy       # fh v3:exact 0x008262e0
 0x00826340 function Ch_ClothMeshMapping       # fh v3:exact 0x008263c0
 0x008266f0 function Ch_Dispose                # fh v3:exact 0x00826770; (chr) -> eax: inactive -> Ch_CheckHandle's -1; else logs, Ch_UnbindChildren, cloth job wait in magic file 0x113 (MagicFile_GetHandle != -1), Ch_ClutDispose, op_et_monster_free unless blk+0x70 bit 1, inactive, invisible, no longer player/g_ChrTidus, Ch_ClothMeshDestroy, frees the models' +4/+8/+0xc (header +6 count), the +0x874 table (header +8 entries), texanim (+0x6fc: chr_texanim_del(+0x700)), +0x328 +0x1bc +0x748 +0x6dc +0x32c, Ch_MemMoveSetTrigger, destroys +0x830/+0x838 (cleared) and the cloth vertex buffers +0x834 (cleared after; eax its result); ported (ffx_chara::handle, battle round 35)
-0x008268e0 function Ch_DisposeAll             # fh v3:exact 0x00826960
+0x008268e0 function Ch_DisposeAll             # fh v3:exact 0x00826960; Ch_Dispose on each active character (array re-read after each), user_free(array), g_ChrArray = g_ChrCount = 0; ported (ffx_chara::handle, chara-main-map round 1)
 0x00826950 function Ch_DrawMainEffect         # fh v3:exact 0x008269d0
 0x00826980 function Ch_ElemRemapping         # Switch name (0x7100410410): (chr, delta) adds delta to each element's data pointer but those at chr+0x1c8
 0x008269e0 function Ch_FunctionHistoryDump    # fh v3:exact 0x00826a60
@@ -7674,7 +7676,7 @@
 0x0082a5f0 function Ch_RomDataReadInit        # fh v3:exact 0x0082a670
 0x0082a640 function Chr_TableIndex           # finds id & 0xfff in the kind's .tbl
 0x0082a6c0 function Ch_RomReadChrCB           # fh v3:exact 0x0082a740
-0x0082a6e0 function Ch_RomReadEventMGRP       # fh switch:cg3 0x7100419120
+0x0082a6e0 function Ch_RomReadEventMGRP       # fh switch:cg3 0x7100419120; (file, x): g_CdLib_10(12), size g_CdLib_14(file) (0: Eternal Calm group file/18 via isEternalCalmMgrp/getEternalCalmMgrpSize), 0x10 or none -> 0; else user_malloc buffer '[EventMotionGroup x]' type 3, g_CdLib_98, dbgPrintf, g_CdLib(file, buf, Ch_RomReadEventMGRPcb, &req{+0xc x, +0x10 buf}); returns buf; ported (ffx_chara::sys, chara-main-map round 1)
 0x0082a7d0 function Ch_RomReadEventMGRPcb     # fh switch:bsim1.00 0x71004190f0
 0x0082a7f0 function Ch_RomReadEventMGRPsync   # fh switch:bsim1.00 0x7100419100
 0x0082a890 function Ch_AddGrav                # fh switch:bsim1.00 0x710041dc20
@@ -7722,7 +7724,7 @@
 0x0082add0 function Ch_ModelGetHide           # fh v3:exact 0x0082ae50
 0x0082adf0 function Ch_ModelGetNromPtr        # (chr, i): model i (chr +0x1bc, 0x38 bytes each) +4; Switch name, in name order between Ch_ModelGetHide and Ch_ModelSetAlpha
 0x0082ae10 function Ch_ModelGetVtexPtr        # (chr, i): model i +8; Switch name, in name order before Ch_ModelSetAlpha
-0x0082ae30 function Ch_ModelSetAlpha          # fh v3:exact 0x0082aeb0
+0x0082ae30 function Ch_ModelSetAlpha          # fh v3:exact 0x0082aeb0; (chr, i, a): model i's +0x14 alpha and graphicCharacterInstanceSetMeshSegmentAlpha(+0x830, id, i, a); i >= count (signed): VIRTUOS ERROR fprintf to stderr; ported (ffx_chara::chr, chara-main-map round 1)
 0x0082aea0 function Ch_ModelSetHide           # fh v3:exact 0x0082af20
 0x0082afb0 function Ch_MotionSetHokan         # fh v3:exact 0x0082b030
 0x0082afe0 function Ch_MotionSetMoves         # (chr, slot, motion): chr +0x75c[slot]; -1 = default table 0x00c49680; was Chr_SetAutoMotion
@@ -7762,7 +7764,7 @@
 0x0082b5d0 function Ch_SetShadeCol            # fh v3:exact 0x0082b650
 0x0082b6e0 function Ch_SetShadeColEffect      # fh v3:exact 0x0082b760
 0x0082b720 function Ch_SetShadeID             # fh v3:exact 0x0082b7a0; (chr, v, frames) -> eax: Chr_FadeSet(+0x36c), Ch_SetShadeIDRelation, shade colour from +0x330/+0x33c/+0x348 and coefficient v on +0x830; ported (ffx_chara::chr, battle round 36)
-0x0082b7a0 function Ch_SetShadeIDRelation        # layout: alphabetical run between Ch_SetShadeID and Ch_SetShadowMode (1 unnamed in the gap); Switch 0x710041def0 Ch_SetShadeIDRelation is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
+0x0082b7a0 function Ch_SetShadeIDRelation        # layout: alphabetical run between Ch_SetShadeID and Ch_SetShadowMode (1 unnamed in the gap); Switch 0x710041def0 Ch_SetShadeIDRelation is the only unused name of that source file sorting there (symbols from Fahrenheit's server export); Ch_SetShadeID(c, v, frames) on every other active character bound to chr (+0x19c); eax the walk's end; ported (ffx_chara::chr, chara-main-map round 1)
 0x0082b820 function Ch_SetShadowMode          # fh v3:exact 0x0082b8a0
 0x0082b840 function Ch_SetSp                  # fh v3:bsim1.00 0x0082b8c0
 0x0082b860 function Ch_SetSpecularAlpha       # fh v3:bsim1.00 0x0082b8e0
@@ -7958,6 +7960,7 @@
 0x008337f0 function Ch_CheckNbBattleChr       # fh v3:bsim1.00 0x00833870
 0x00833800 function Ch_ClothResetAll         # Switch name (0x71004161d0): Ch_ClothReset on every active character
 0x00833860 function Ch_ClothResetRelation     # fh v3:exact 0x008338e0
+0x008338d0 function Ch_SoundFootEffect_008338d0 # (chr): Ch_OptposGet 8 and 7 (the feet), op_et_bindeff2_walk(chr, foot, 0, 0) at 8 when 7's y is below 8's, else 7; caller Ch_Sound's footstep events; name ours; ported (ffx_chara::attach, chara-main-map round 1)
 0x00833940 function Ch_Set7f8                # ours: (chr, a, b) +0x7f8 = a, +0x7fc = b
 0x00833960 function Ch_ElemCalcQuaternion     # fh v3:exact 0x008339e0
 0x00833a70 function Ch_ElemGetAttr            # (model, point id, &bone, &offset): searches the chr def +0x6c list (16-byte entries, id & 0x3fff) -> bone index and scaled offset; was Chr_FindAttachPoint
@@ -7983,7 +7986,7 @@
 0x008340a0 function Ch_GuiSetMouthTh          # (v): i16 0x00c49718 = v clamped to 0..200; Switch name, in name order after Ch_GuiSetCalcNormAll
 0x008340d0 function Ch_GuiSetTalk             # (a, b): bytes 0x013008d9 = a, 0x013008da = b; Switch name, in name order before Ch_IdEnableShade
 0x008340f0 function Ch_IdEnableShade          # fh v3:bsim1.00 0x00834170
-0x00834110 function Ch_IdShadeCalc               # layout+callees: sorts between Ch_IdEnableShade and Ch_MotEvent, and its named callees match the Switch 0x7100415b50 Ch_IdShadeCalc's (similarity 0.60: Ch_IdGetShade0, Ch_IdGetShade1, Ch_IdGetShade2, Ch_SetShadeID, FFXVu0Normalize); symbols from Fahrenheit's server export
+0x00834110 function Ch_IdShadeCalc               # layout+callees: sorts between Ch_IdEnableShade and Ch_MotEvent, and its named callees match the Switch 0x7100415b50 Ch_IdShadeCalc's (similarity 0.60: Ch_IdGetShade0, Ch_IdGetShade1, Ch_IdGetShade2, Ch_SetShadeID, FFXVu0Normalize); symbols from Fahrenheit's server export; id shades off: debug shade coeff of chr's instance per bound character and once more (not while g_ChrDrawDetached); on with +0x194 bit 18: shade id from the distances +0x3c to +0x8c/+0x9c/+0xac (normalized, 1 - c, normalized, x id shade k / 31), Ch_SetShadeID(chr, length, 3); ported (ffx_chara::id, chara-main-map round 1)
 0x008342c0 function Ch_ElemInMotion          # ours: (chr, e) 1 if e is in the +0x758 list (u16 count +2, list +8; any element without one), bounded by the element count
 0x00834350 function Ch_MotEvent                  # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SG:Motev:%d:%s:TYPE=%s(%d) i=%d frame=%d frame_lastev=%d id='; Switch 0x7100415e00 Ch_MotEvent (symbols from Fahrenheit's server export)
 0x008344f0 function Ch_Mouth                     # (chr): the mouth animation (rand-driven when talking, by the global mode 0x013008d9 or chr +0x4d4), Ch_OptposGetElement; the Switch Ch_Mouth (rand, called by Ch_CalcMiddle_Batch) sorts between Ch_MotEvent and Ch_MouthGetAutoTalk, as here
@@ -8095,7 +8098,7 @@
 0x00837ac0 function Ch_SetSequence            # (actor, character << 16 | number): finds the motion in the character's sequences; was SG_SetMotion
 0x00837d00 function Ch_SetSysMotion           # per-slot motion tables of the character definition; was SG_PlaySlotMotion
 0x00837e10 function Ch_SetSysMotion_ViewerAnimation # layout: alphabetical run between Ch_SetSysMotion and Chb_AttachMotionTBL_OLD (1 unnamed in the gap); Switch 0x7100422d40 Ch_SetSysMotion_ViewerAnimation is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
-0x00837fa0 function Chb_AttachMotionTBL_OLD   # fh v3:bsim0.95 0x00838020
+0x00837fa0 function Chb_AttachMotionTBL_OLD   # fh v3:bsim0.95 0x00838020; (blk): Sg_PcRead '<+0xb8>/inf/sysmot.tbl' into +0x108 and '/inf/relation.tbl' into +0x10c, each relocated by its first word; only Ch_BlkGetHandle's host-PC viewer path; ported (ffx_chara::handle, chara-main-map round 1)
 0x00838060 function ch_create_chrname         # "%s:%c%03d"; was Chr_IdName
 0x008380b0 function ch_create_chrpath         # ours: sprintf "/ffx/proj2/chr/data/%s/%c%03d" (section name, kind letter, id & 0xfff) into 0x01301758, returns it; next to ch_create_chrname (Switch has no path variant)
 0x00838100 function ch_create_name            # fh v3:exact 0x00838180
