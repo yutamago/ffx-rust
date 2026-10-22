@@ -19682,3 +19682,190 @@ fn menu_round34_btl_end_draw_matches_the_original() {
     }
     eprintln!("{} calls", t.calls);
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn menu_round34_btl_end_ctrl_matches_the_original() {
+    use ffx_menu::tk::bridge as tk;
+    let Some(mut t) = setup_any(0x0034_0004) else {
+        return;
+    };
+    let log = seq_log(&mut t);
+    let start = Mem::read::<u32>(&t.a, log);
+    let local = t.b.stack_range().start + 0x100;
+    let mut cells = vec![];
+    for (f, n) in [
+        (0x008a_bd00u32, 0u8), // TODebugAddPadPrintFlag
+        (0x0088_6e80, 1),      // SndSepPlaySimple
+        (0x008b_e0a0, 0),      // MsExchangeSaveWeapon
+        (0x0088_6960, 1),      // SndMusicRead
+        (0x0088_6a20, 1),      // SndMusicStart
+        (0x0088_6eb0, 1),      // SndSepStop
+        (0x008b_e050, 1),      // SetEntries_01869f20
+        (0x008b_da60, 1),      // TkBtlEndGetText
+        (0x008b_dfe0, 2),      // TOSetPair_008bdfe0
+        (0x008a_f0d0, 2),      // TOSeqStartScene
+        (0x0064_48d0, 0),      // graphicUnlockScreenFadeColor
+        (0x0064_3900, 4),      // graphicSetScreenFadeColor
+        (0x0063_9280, 5),      // graphicAddScreenFadeTaskAfterRender
+        (0x0064_38e0, 1),      // graphicSetScreenFadeAlphaMode
+        (0x0064_1e20, 0),      // graphicLockScreenFadeColor
+        (0x008b_df60, 0),      // TOMenuFieldMusic_008bdf60
+        (0x0082_cb80, 1),      // Sg_FadeIn
+    ] {
+        cells.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    let mut picked = vec![];
+    for (f, n) in [
+        (0x008b_e410u32, 0u8), // TOMenuGetControlPad
+        (0x008b_e470, 0),      // TOMenuGetControlPadRep
+        (0x008b_e4b0, 0),      // TOMenuGetControlPadTrg
+        (0x008b_a5c0, 0),      // TkBtlEndCheckLegendWeapon
+        (0x008b_b690, 1),      // BtlEnd_StepEntry
+        (0x0086_bc20, 0),      // AtelIsKeepPlayStatusClear8
+        (0x0088_7b30, 0),      // TkSndReportStatus
+        (0x0088_63f0, 0),      // SndGetNowPlayMusic
+        (0x0088_7900, 1),      // SndSyncMusicStandby
+        (0x008b_da50, 1),      // BtlEnd_GetSP
+        (0x0064_1cb0, 0),      // graphicIsScreenFadeColorLocked
+        (0x0086_bc60, 0),      // AtelGetKeepPlayStatusNoStopFanfare
+        (0x0087_2b50, 0),      // AtelCheckMenuOtakaraFlag
+        (0x0086_bc10, 0),      // AtelIsKeepPlayStatusClear12
+    ] {
+        picked.push(seq_stub(&mut t, f, log, n, &[]));
+    }
+    // BtlEnd_StepGil and BtlEnd_CountApSteps count down to 0 (the
+    // original loops until they do)
+    let mut countdown = vec![];
+    for f in [0x008b_a590u32, 0x008b_a550] {
+        let cell = t.alloc(&[0; 4]);
+        // cmp dword [cell], 0; je +6; dec dword [cell]: down to 0, then 0
+        let mut extra = vec![0x83, 0x3d];
+        extra.extend(cell.to_le_bytes());
+        extra.extend([0x00, 0x74, 0x06, 0xff, 0x0d]);
+        extra.extend(cell.to_le_bytes());
+        let code = seq_code(log, f, 0, cell, &extra);
+        jump_stub(&mut t, f, &code);
+        countdown.push(cell);
+    }
+    // the weapon records: MsGetSaveWeapon(id, &name) (the name word is
+    // a frame local: not logged) and BtlEnd_SelectedWeapon()
+    let record = t.alloc(&[0; 0x20]);
+    let wcell = t.alloc(&record.to_le_bytes());
+    let code = seq_code_of(log, 0x007a_bbd0, &[0], wcell, &[]);
+    jump_stub(&mut t, 0x007a_bbd0, &code);
+    let scell = t.alloc(&record.to_le_bytes());
+    let code = seq_code(log, 0x008b_da80, 0, scell, &[]);
+    jump_stub(&mut t, 0x008b_da80, &code);
+    // GetCD() -> a record whose +8 callback is logged
+    let cd_cell = t.alloc(&[0; 4]);
+    let cd_fn = test_code(&mut t, &seq_code(log, 0x00cd_0008, 1, cd_cell, &[]));
+    let mut cd = vec![0u8; 0x10];
+    cd[8..12].copy_from_slice(&cd_fn.to_le_bytes());
+    let cd = t.alloc(&cd);
+    let cd_ret = t.alloc(&cd.to_le_bytes());
+    let code = seq_code(log, 0x0076_d0d0, 0, cd_ret, &[]);
+    jump_stub(&mut t, 0x0076_d0d0, &code);
+    let ids = t.alloc(&[0; 0x100]);
+    t.put(t.sym(0x025c_c580), ids + 0x40);
+    let state = t.sym(0x0186_9f08);
+    let small = [0u32, 1, 2, 5, 6, 0xffff_ffff];
+    for round in 0..20000u32 {
+        t.put(log, start);
+        reroll(&mut t, &cells);
+        let s = if round % 50 == 49 {
+            t.rng.pick_or_any(&[0x2c, 0xffff_ffff])
+        } else if round % 2 == 0 {
+            t.rng
+                .pick(&[0x20u32, 0x20, 0x25, 0x25, 0x21, 0x26, 0x18, 0xc, 0xf, 0x15])
+        } else {
+            (round / 2) % 0x2c
+        };
+        t.put(state, s);
+        let v = t.rng.pick_or_any(&[0, 1, 2, 1, 2]);
+        t.put(picked[0], v);
+        let rep = t.rng.pick_or_any(&[0, 0x20, 0x1000, 0x4000, 1, 2, 3, 0x21]);
+        t.put(picked[1], rep);
+        let trg = t
+            .rng
+            .pick_or_any(&[0, 0x100, 0x20, 0x40, 0x8000, 0x2000, 0x10100, 0x60]);
+        t.put(picked[2], trg);
+        for &c in &picked[3..] {
+            let v = t.rng.pick_or_any(&[0, 1, 0x8a, 98, 99, 0xffff_ffff]);
+            t.put(c, v);
+        }
+        for &c in &countdown {
+            let v = 1 + t.rng.below(4);
+            t.put(c, v);
+        }
+        t.scramble_at(record, 0x20);
+        let v = t.rng.pick(&[0u8, 1, 0xff]);
+        t.put(record + 2, v);
+        let v = t.rng.pick(&[0u8, 0xff, 0xff, 1]);
+        t.put(record + 6, v);
+        t.scramble_at(ids, 0x100);
+        // the fades, their speeds and the counter
+        for (a, picks) in [
+            (
+                0x0186_a0b4u32,
+                &[0u16, 0x1000, 0xfff, 0x7f80, 0x8000, 0x10][..],
+            ),
+            (0x0186_a160, &[0, 0x1000, 0xf90, 0x7fff][..]),
+            (0x0186_a168, &[0, 0x1000, 0xf80, 0xffff][..]),
+            (0x0186_a170, &[0, 0x1000, 0xe00, 0x7e00][..]),
+            (0x0186_a178, &[0, 0xf00, 0xf01, 0x7f00][..]),
+            (0x0186_a114, &[0, 0x60, 0xff80][..]),
+            (0x0186_a164, &[0, 0x80, 0xff80][..]),
+            (0x0186_a16c, &[0, 0x80, 0xff80][..]),
+            (0x0186_a174, &[0, 0x200, 0xfe00][..]),
+        ] {
+            let v = t.rng.pick(picks);
+            t.put(t.sym(a), v);
+        }
+        // the word between two fades (a misread neighbour must show)
+        t.scramble(0x0186_a172, 2);
+        let v = t.rng.pick(&[0u8, 1, 2, 3, 4]);
+        t.put(t.sym(0x0186_9f18), v);
+        let v = t.rng.pick(&[0u8, 1]);
+        t.put(t.sym(0x0186_9f19), v);
+        t.scramble(0x0186_9f20, 14 * 4);
+        for a in [0x0186_9f14u32, 0x0186_a184] {
+            let v = t.rng.pick(&[0u32, 1]);
+            t.put(t.sym(a), v);
+        }
+        for a in [0x0231_0f70u32, 0x0231_0f72] {
+            let v = t.rng.pick(&[0u8, 0, 1]);
+            t.put(t.sym(a), v);
+        }
+        let v = t.rng.pick(&[5u32, 6, 7, 0]);
+        t.put(t.sym(0x0186_a17c), v);
+        let v = t.rng.pick(&[0u32, 3, 7, 8, 11, 12, 20]);
+        t.put(t.sym(0x0186_a188), v);
+        for a in [0x0186_a190u32, 0x0186_a194] {
+            let v = t
+                .rng
+                .pick(&[0u32, 1, 2, 6, 7, 13, 0xffff_ffff, 0xffff_fff7]);
+            t.put(t.sym(a), v);
+        }
+        let v = t
+            .rng
+            .pick(&[0u32, 0x1000, 0xffff_f000, 0x111, 0x333, 0x222]);
+        t.put(t.sym(0x0186_a18c), v);
+        let v = t.rng.pick(&[0x111u32, 0x333, 0x1000]);
+        t.put(t.sym(0x0186_a198), v);
+        let v = t.rng.pick(&[0u32, 0, 1, 1, 2]);
+        t.put(t.sym(0x0186_a19c), v);
+        // (cursor + top indexes the gear ids: small values only)
+        for k in 0..4 {
+            let v = t.rng.pick(&small);
+            t.put(t.sym(0x0186_a1a0) + 4 * k, v);
+        }
+        let v = t.rng.pick_or_any(&small);
+        t.put(t.sym(0x0186_a1a8), v);
+        t.twin("TkBtlEndCtrl", 0x008b_a660, &[], VOID, |o| {
+            tk::tk_btl_end_ctrl(o, local, &mut callback);
+            0
+        });
+    }
+    eprintln!("{} calls", t.calls);
+}

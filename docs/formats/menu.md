@@ -875,6 +875,34 @@ the level-up (`k = clamp(15 - flash, 0, 2)`), gets its two labels at
 `k = 2`, and the counter drops by one each draw. In Japanese the result
 moves 20 left and the labels take other UVs and offsets.
 
+`TkBtlEndCtrl()` (`0x008ba660`, jump table `0x008bb5d4` on
+`g_BtlEnd_State` `0x01869f08`, 0..0x2b) runs the battle-end screen. It
+is menu slot 0x11's `+0` callback, and `TkMenuCloseAll` drops its `eax`.
+Each call first steps four `i16` fades by their speeds and holds them
+in 0..0x1000: `0x0186a0b4` (speed `0x0186a114`), `0x0186a160`
+(`0x0186a164`), `0x0186a168` (`0x0186a16c`) and `0x0186a170`
+(`0x0186a174`). `0x0186a178` grows by 0x100 up to 0x1000. The phases
+run in this order: level-ups (`BtlEnd_StepEntry` per entry), the AP
+count (`BtlEnd_CountApSteps`), the gil count (`BtlEnd_StepGil`), then
+the spoils. In each count, confirm finishes everything at once by
+calling the step until it returns 0. States 1 to 5 restart battle
+music 0x8a once the CD's `+8` callback (`GetCD`) reports it idle. The
+spoils list (state 0x20) has two sides in `0x0186a19c` (trigger 0x2000
+to side 1, 0x8000 back to side 0). Up and down move the side's cursor
+`0x0186a1a0[side]`. On side 0 they scroll the list one row
+(`0x0186a18c` to ±0x1000 at speed 0x333, target `0x0186a194`), and the
+shoulder pads (repeat bits 1 and 2 with pad 1 or 2) scroll six rows at
+speed 0x111. The gear list (0x25) does the same on side 1 and moves the
+equip slot `0x0186a1a4` on side 0. Its confirm swaps the spoil in
+(`MsExchangeSaveWeapon`) unless the gear's `MsGetSaveWeapon` record is
+in use (`+2`) and not free (`+6` 0xff). Trigger 0x100 checks the legend
+weapon (`TkBtlEndCheckLegendWeapon`: a notice at 0x22/0x28, else the
+fade-out 0x2a). The end (states 6 to 8) fades the screen to white
+(`AtelGetKeepPlayStatusNoStopFanfare`) or black, restarts field music
+unless `AtelCheckMenuOtakaraFlag`, sets `g_BtlEndCtrlDone` once the main
+fade is 0, and with `AtelIsKeepPlayStatusClear12` fades back in
+(`Sg_FadeIn(15)`).
+
 Two battle-end pages slide in by an integer `dx` (as `f32`, added to the
 remapped x): `BtlEnd_DrawGilPage_008bbb10` (`0x008bbb10`) draws the gil
 plate (`(210, 700)` size `740 x 60`, sheet cell 12) and two

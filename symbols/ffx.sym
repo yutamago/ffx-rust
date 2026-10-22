@@ -10989,7 +10989,7 @@
 0x008ba550 function BtlEnd_CountApSteps      # (), eax: BtlEnd_CountApStep_008ba4e0(i16 entry +6, k) for each entry k of g_TkBtlEndList (count re-read each time), results or-ed: 1 while any AP are left; caller TkBtlEndCtrl; ported in menu round 29; name ours
 0x008ba590 function BtlEnd_StepGil            # (): step [0x01869f10] (or the whole rest [0x01869f14] when not below it, unsigned) off the rest, paid with BtlEnd_AddGil (MsPayGIL(-x)): so g_TkBtlEndGil counts gil; returns 1 while some remains; name ours
 0x008ba5c0 function TkBtlEndCheckLegendWeapon # fh switch:cg2 0x71004b2420; (), eax = count: the six weapon spoil slots (u16 0x02310f8e) whose MsGetSaveWeapon record is in use (+2) with flags +3 & 0xd; exactly one: its name (MsGetSaveWeaponName) as macro 7's value (TOMacroSetType/Value(7, 0, ..), TOResetMessageVars(7)) and TkBtlEndGetText(0x401b), else 0x401c, into g_BtlEndLegendText; ported in menu round 29
-0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620
+0x008ba660 function TkBtlEndCtrl              # fh v3:exact 0x008ba620; () void (menu slot 0x11's +0 control, TkMenuCloseAll drops eax): battle-end screen step, jump table 0x008bb5d4 on g_BtlEnd_State (0..0x2b); first the i16 fades 0x0186a0b4/0x0186a160/0x0186a168/0x0186a170 += their speeds 0x0186a114/0x0186a164/0x0186a16c/0x0186a174 (held 0..0x1000), 0x0186a178 += 0x100 (max 0x1000), TODebugAddPadPrintFlag on trigger 0x100; 0/9/10 level-ups (BtlEnd_StepEntry), 1-5 battle music 0x8a (GetCD +8 callback), 0xb-0xf AP count (BtlEnd_CountApSteps, confirm finishes), 0x10-0x19 gil (BtlEnd_StepGil), 0x1a-0x1f spoils text ("scene6"), 0x20/0x21 spoils list (side 0x0186a19c, legend weapon 0x100 -> 0x2a/0x22), 0x24-0x27 gear swap (MsExchangeSaveWeapon), 0x22/0x23 and 0x28/0x29 notices, 0x2a/0x2b and 0x1b fade out -> 6/7 screen fade and field music -> 8 (g_BtlEndCtrlDone, Sg_FadeIn(15)); ported in menu round 34
 0x008bb690 function BtlEnd_StepEntry         # (i) -> 1 in state 2/5: g_TkBtlEndList entry i (i16 +2 timer, +4 state, +6 chr): 0/3 timer-1, below 0 -> 1 (timer 0; state 0 returns 0 at once)/4; 1/4 timer+0xe3, from 0x1000 -> 2/5 (timer 0x1000); 2 timer 0x1000; then BtlEnd_GetSP(chr) >= 99: SetTable_02310f20(chr, 0); jump table 0x008bb77c; caller TkBtlEndCtrl; ported in menu round 24; name ours
 0x008bbb10 function BtlEnd_DrawGilPage_008bbb10 # (dx int): battle-end gil page shifted by f32(dx): TODrawMenuPlateXYWHType(remapX2(210)+dx, remapY2(700), remapX2(740), remapY2(60), 2), TODrawSheetCell_008f8bb0(12, remapX2(365)+dx, remapY2(712), remapX2(430), remapY2(36)), TkMn2DrawGillPlate rows (remapX2(210)+dx, remapY2(786) / remapY2(838), remapX2(740), remapY2(32)) with the gil won [0x01869f14] and MsGetGIL() (via 0x008bda30); ported in menu round 30; name ours
 0x008bbca0 function BtlEnd_DrawItemPage_008bbca0 # (dx int): battle-end item page: left = remapX2(210)+dx, y = remapY2(270); TODrawScissorXYWH(0, 0, 0x200, 0x1a0); plate (left, y - remapY2(86), remapX2(740), remapY2(60), 2), sheet cell 11; per item i < i8 0x02310f70: plate (.., 4), DrawCrossMenuIconItemName(u16 0x02310f74[i], left, y, 0), count u8 0x02310f84[i] by ToGetBtlEasyDigitWidth2/ToMakeBtlEasyEdgeDigit2 at remapX2(637) + left - width/2, remapY2(14) + y, scale 0.68; y += remapY2(84); ported in menu round 30; name ours
@@ -17336,11 +17336,22 @@
 0x01869f10 label    g_TkBtlEndGil             # u32 step, u32 gil left to count (BtlEnd_InitGilStep); gil, not AP: BtlEnd_StepGil pays each step with MsPayGIL(-step), the total is result 19 (g_TkBtlEndGilWon), and 0x008bbb10 draws +4 beside MsGetGIL(); was g_TkBtlEndAp
 0x01869f18 label    g_TkBtlEndList            # u8 count, 14-byte entries from +8 (BtlEnd_CompactList)
 0x01869fbc label    g_TkBtlEndFlag            # BtlEnd_SetFlag
+0x0186a0b4 label g_BtlEndFadeMain         # i16 battle-end screen fade (0..0x1000), speed i16 0x0186a114; TkBtlEndCtrl states 0x11 (waits 0x1000) and 8 (waits 0); name ours
+0x0186a114 label g_BtlEndFadeMainSpeed    # i16 step of g_BtlEndFadeMain per TkBtlEndCtrl call (0xff80 to fade out); name ours
+0x0186a160 label g_BtlEndFadeGil          # i16 fade (0..0x1000), speed i16 0x0186a164 (0x80 in, 0xff80 out); TkBtlEndCtrl states 0x16, 0x1b; name ours
+0x0186a168 label g_BtlEndFadeSpoils       # i16 fade (0..0x1000), speed i16 0x0186a16c; TkBtlEndCtrl states 0x1e, 0x2b; name ours
+0x0186a170 label g_BtlEndFadeNotice       # i16 fade (0..0x1000), speed i16 0x0186a174 (0x200 in, 0xfe00 out); TkBtlEndCtrl states 0x12, 0x15, 0x23, 0x29; name ours
+0x0186a178 label g_BtlEndFadeTicker       # i16 +0x100 per TkBtlEndCtrl call up to 0x1000; name ours
+0x0186a17c label g_BtlEndTextFrames       # i32 TkBtlEndCtrl state 0x15 frame count of text 0x4014 (moves on past 6); name ours
 0x0186a188 label g_BtlEndSpoilWeaponCount  # i32: weapon spoils on the results screen (BtlEnd_DrawWeaponPlate_008be0d0 0x008be0d9)
 0x0186a18c label g_BtlEndSpoilWeaponRows   # i32: the weapon list's offset in 1/4096 rows (BtlEnd_DrawWeaponPlate_008be0d0 0x008be10c)
 0x0186a190 label g_BtlEndSpoilWeaponTop # u32: the weapon spoil list's first shown row (MsExchangeSaveWeapon)
+0x0186a194 label g_BtlEndSpoilWeaponTarget # i32 the row the spoils/gear list scrolls to (TkBtlEndCtrl 0x21/0x26 copy it into g_BtlEndSpoilWeaponTop); name ours
+0x0186a198 label g_BtlEndSpoilWeaponSpeed # i32 scroll step of g_BtlEndSpoilWeaponRows (0x333 one row, 0x111 six rows); name ours
+0x0186a19c label g_BtlEndSpoilWeaponSide  # i32 0 spoils, 1 gear (TkBtlEndCtrl triggers 0x2000/0x8000); name ours
 0x0186a1a0 label g_BtlEndSpoilWeaponCursor # u32: the cursor row (MsExchangeSaveWeapon adds it to g_BtlEndSpoilWeaponTop)
 0x0186a1a4 label g_BtlEndEquipSlot # u32: index into the u16 slots at 0x02310f8e (MsExchangeSaveWeapon)
+0x0186a1a8 label g_BtlEndSwapping         # i32 1 while TkBtlEndCtrl's gear list (state 0x25) is open; name ours
 0x0186a228 label    g_MenuHelpExtMode         # first argument of TOMenuHelpSetExtMode
 0x0186a238 label    g_TkMn2DrawY              # MenuMn2_StepDrawY adds 16
 0x0186a23c label    g_TkMenuSummonGrowMax     # SetSummonGrowMax, once: summon growth records (8 bytes) before the first with byte +7 set

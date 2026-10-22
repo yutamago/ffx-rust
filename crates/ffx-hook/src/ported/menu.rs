@@ -4984,6 +4984,13 @@ ported! {
         let local = frame.at();
         tk::tk_btl_end_draw(&mut mem(), i, local, &mut |_, y, v| ui_remap(y, v), &mut |_, f, a| call_ptr(f, a))
     }
+    /// `TkBtlEndCtrl()` (menu slot 0x11's control: `TkMenuCloseAll` drops its `eax`).
+    TkBtlEndCtrl @ 0x008b_a660 => extern "C" fn tk_btl_end_ctrl() {
+        // MsGetSaveWeapon's name word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        tk::tk_btl_end_ctrl(&mut mem(), local, &mut |_, f, a| call_ptr(f, a));
+    }
     /// `UpdateGearCustomizationMenuState(m)`: the original's `eax`.
     UpdateGearCustomizationMenuState @ 0x008d_5830 => extern "C" fn update_gear_customization_menu_state(m: u32) -> u32 {
         // MsGetSaveWeapon's name word

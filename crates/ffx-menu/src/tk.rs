@@ -26933,6 +26933,652 @@ pub mod bridge {
         let f = at(mem, 0x008b_ea20);
         call(mem, f, &[])
     }
+
+    /// `TkBtlEndCtrl()` (`0x008ba660`, Fahrenheit's name; jump table
+    /// `0x008bb5d4` on `g_BtlEnd_State` `0x01869f08`, 0..=0x2b): the battle-end
+    /// screen's control (menu slot 0x11's `+0` callback; `TkMenuCloseAll`
+    /// drops its `eax`). Each call first reads the pads (`u16`), calls
+    /// `TODebugAddPadPrintFlag` on trigger 0x100 alone, and steps the
+    /// `i16` fades `0x0186a0b4`, `0x0186a160`, `0x0186a168`, `0x0186a170`
+    /// by their speeds (`+0x60`, `+4`, `+4`, `+4`), each held in
+    /// `0..=0x1000`, and `0x0186a178` by 0x100 up to 0x1000. States
+    /// (`=>` runs the next one in the same call; "stores" marks the ones
+    /// written first):
+    /// - 0 stores 9 => 9: with level-ups (`[0x01869f19]`) stores 10 =>
+    ///   10, else => 0x10; 10 steps every entry (`BtlEnd_StepEntry`) and
+    ///   goes on to 0xb when all are done;
+    /// - 1 0 or 2 by `AtelIsKeepPlayStatusClear8`; 2 3; 3 waits on
+    ///   `TkSndReportStatus` and the CD's `+8(1)` callback (`GetCD`), 4;
+    ///   4 reads music 0x8a unless playing (5, else 0); 5 starts it once
+    ///   `SndSyncMusicStandby(0)` is 0, 0;
+    /// - 0xb stores 0xc, sound `0x80000018` if an entry's sphere level is
+    ///   below 99 => 0xc counts AP (`BtlEnd_CountApSteps`; confirm
+    ///   finishes it), 0xd; 0xd stops the sound, 0xe; 0xe waits for
+    ///   confirm, `SetEntries_01869f20(3)`, 0xf; 0xf steps the entries
+    ///   (the last one done sets speed `0x0186a164` 0x80), 0x14; 0x10
+    ///   0x11; 0x11-0x13 fade the gil panel in and wait for confirm, 0x14;
+    /// - 0x14 the gil text pair (0x4006), 0x15; 0x15 counts 7 frames of
+    ///   text 0x4014 (`0x025cc590`), 0x16; 0x16 0x17; 0x17 (sound
+    ///   `0x80000018` while gil is left) stores 0x18 => 0x18 counts gil
+    ///   (`BtlEnd_StepGil`, confirm finishes it) => 0x19 (stored); 0x19
+    ///   stops the sound and, with room for the spoils, sets text 0x4005,
+    ///   0x1a; 0x1a waits for confirm: 0x1c with spoils left over, else
+    ///   0x1b;
+    /// - 0x1b/0x2b wait for their fade to reach 0, 6; 6 stores 7 => 7 ends
+    ///   the screen (screen fade to white or black, field music unless
+    ///   `AtelCheckMenuOtakaraFlag`), 8; 8 once `0x0186a0b4` is 0 sets
+    ///   `g_BtlEndCtrlDone` and, when `AtelIsKeepPlayStatusClear12`,
+    ///   fades in (`Sg_FadeIn(15)`) every call;
+    /// - 0x1c (`TOSeqStartScene(1, "scene6")`) and 0x1d set the spoils
+    ///   text pair (0x4009), 0x1e; 0x1e waits, 0x1f; 0x1f 0x20;
+    /// - 0x20 the spoils list (top `0x0186a190`, cursor
+    ///   `0x0186a1a0[side]`, side `0x0186a19c`): 0x100 checks the legend
+    ///   weapon (0x2a, or 0x22 with sound `0x80000003`), confirm on an
+    ///   empty slot 0x24, moves scroll by one (0x21, speed 0x333) or by
+    ///   six with the shoulder pads (`pad` 1/2, speed 0x111); 0x21 scrolls
+    ///   `0x0186a18c` to 0 => 0x20; 0x24 sets `0x0186a1a8` => 0x25;
+    /// - 0x25 the gear list the same way (equip slot `0x0186a1a4` on side
+    ///   0): confirm swaps (`MsExchangeSaveWeapon`) unless the weapon in
+    ///   use is kept, cancel and swap => 0x27; 0x26 scrolls => 0x25; 0x27
+    ///   clears `0x0186a1a8`, 0x20; 0x22/0x28 fade a notice in, 0x23/0x29
+    ///   wait for any trigger, back to 0x20 (top from `0x0186a194`) or
+    ///   0x25; 0x2a fades out, 0x2b.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::cognitive_complexity,
+        clippy::many_single_char_names
+    )] // one state machine; g, h, s as in the others
+    pub fn tk_btl_end_ctrl<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let set = |mem: &mut M, a: u32, v: u32| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let h = |mem: &M, a: u32| -> i16 { mem.read(mem.rebase(a)) };
+        let set_h = |mem: &mut M, a: u32, v: u16| {
+            let a = mem.rebase(a);
+            mem.write(a, v);
+        };
+        let f = at(mem, 0x008b_e410);
+        let pad = call(mem, f, &[]) & 0xffff;
+        let f = at(mem, 0x008b_e470);
+        let rep = call(mem, f, &[]) & 0xffff;
+        let f = at(mem, 0x008b_e4b0);
+        let trg = call(mem, f, &[]) & 0xffff;
+        for (fade, speed) in [
+            (0x0186_a0b4, 0x0186_a114),
+            (0x0186_a160, 0x0186_a164),
+            (0x0186_a168, 0x0186_a16c),
+        ] {
+            step_fade(mem, fade, speed);
+        }
+        let v = h(mem, 0x0186_a178).wrapping_add(0x100);
+        set_h(mem, 0x0186_a178, v.cast_unsigned());
+        if v > 0x1000 {
+            set_h(mem, 0x0186_a178, 0x1000);
+        }
+        step_fade(mem, 0x0186_a170, 0x0186_a174);
+        if trg == 0x100 {
+            let f = at(mem, 0x008a_bd00);
+            call(mem, f, &[]);
+        }
+        let (state, top, side, cursor) = (0x0186_9f08, 0x0186_a190, 0x0186_a19c, 0x0186_a1a0);
+        let (rows, speed, target) = (0x0186_a18c, 0x0186_a198, 0x0186_a194);
+        let sound = at(mem, 0x0088_6e80);
+        let snd = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, id: u32| {
+            call(mem, sound, &[id]);
+        };
+        let count = |mem: &M| i32::from(mem.read::<u8>(mem.rebase(0x0186_9f18)));
+        let (get_text, set_pair) = (at(mem, 0x008b_da60), at(mem, 0x008b_dfe0));
+        // the shoulder-pad jump of six rows: the new top, or None when it
+        // stays (`0x0186a194` written either way)
+        let jump = |mem: &mut M, up: bool| -> Option<u32> {
+            let t = g(mem, top).cast_signed();
+            let v = if up {
+                t.wrapping_sub(6).max(0)
+            } else {
+                let last = g(mem, 0x0186_a188).cast_signed().wrapping_sub(6);
+                let v = t.wrapping_add(6);
+                set(mem, target, v.cast_unsigned());
+                if v >= last { last.max(0) } else { v }
+            };
+            set(mem, target, v.cast_unsigned());
+            (v != t).then_some(v.cast_unsigned())
+        };
+        // the scroll of states 0x21 and 0x26: true once it arrived
+        let scroll = |mem: &mut M| -> bool {
+            let r = g(mem, rows).cast_signed();
+            let s = g(mem, speed).cast_signed();
+            if r > 0 {
+                let r = r.wrapping_sub(s);
+                set(mem, rows, r.cast_unsigned());
+                r <= 0
+            } else {
+                let r = r.wrapping_add(s);
+                set(mem, rows, r.cast_unsigned());
+                r >= 0
+            }
+        };
+        let mut s = g(mem, state);
+        loop {
+            match s {
+                0 => {
+                    set(mem, state, 9);
+                    s = 9;
+                }
+                9 => {
+                    if mem.read::<u8>(at(mem, 0x0186_9f19)) == 0 {
+                        s = 0x10;
+                        continue;
+                    }
+                    set(mem, state, 10);
+                    s = 10;
+                }
+                10 | 0xf => {
+                    let mut done = 1;
+                    let mut i = 0;
+                    let f = at(mem, 0x008b_b690);
+                    while i < count(mem) {
+                        let r = call(mem, f, &[i.cast_unsigned()]);
+                        if s == 0xf && i == count(mem) - 1 && r != 0 {
+                            set_h(mem, 0x0186_a164, 0x80);
+                        }
+                        done &= r;
+                        i += 1;
+                    }
+                    if done != 0 {
+                        set(mem, state, if s == 10 { 0xb } else { 0x14 });
+                    }
+                    return;
+                }
+                1 => {
+                    let f = at(mem, 0x0086_bc20);
+                    let v = if call(mem, f, &[]) == 0 { 0 } else { 2 };
+                    set(mem, state, v);
+                    return;
+                }
+                2 => {
+                    set(mem, state, 3);
+                    return;
+                }
+                3 => {
+                    let f = at(mem, 0x0076_d0d0);
+                    let cd = call(mem, f, &[]);
+                    let f = at(mem, 0x0088_7b30);
+                    if call(mem, f, &[]) != 0 {
+                        return;
+                    }
+                    let f = mem.read::<u32>(cd.wrapping_add(8));
+                    if call(mem, f, &[1]) == 0 {
+                        set(mem, state, 4);
+                    }
+                    return;
+                }
+                4 => {
+                    let f = at(mem, 0x0088_63f0);
+                    if call(mem, f, &[]) == 0x8a {
+                        set(mem, state, 0);
+                    } else {
+                        let f = at(mem, 0x0088_6960);
+                        call(mem, f, &[0x8a]);
+                        set(mem, state, 5);
+                    }
+                    return;
+                }
+                5 => {
+                    let f = at(mem, 0x0088_7900);
+                    if call(mem, f, &[0]) == 0 {
+                        let f = at(mem, 0x0088_6a20);
+                        call(mem, f, &[0x8a]);
+                        set(mem, state, 0);
+                    }
+                    return;
+                }
+                0xb | 0xc => {
+                    if s == 0xb {
+                        set(mem, state, 0xc);
+                        let f = at(mem, 0x008b_da50);
+                        let list = at(mem, 0x0186_9f26);
+                        let mut i = 0;
+                        while i < count(mem) {
+                            let at_chr = list.wrapping_add(i.cast_unsigned() * 14);
+                            let chr = i32::from(mem.read::<i16>(at_chr)).cast_unsigned();
+                            if call(mem, f, &[chr]).cast_signed() < 99 {
+                                snd(mem, call, 0x8000_0018);
+                                break;
+                            }
+                            i += 1;
+                        }
+                    }
+                    let f = at(mem, 0x008b_a550);
+                    if call(mem, f, &[]) == 0 {
+                        set(mem, state, 0xd);
+                    }
+                    if rep & 0x20 != 0 {
+                        snd(mem, call, 0x8000_0001);
+                        while call(mem, f, &[]) != 0 {}
+                        set(mem, state, 0xd);
+                    }
+                    return;
+                }
+                0xd => {
+                    let f = at(mem, 0x0088_6eb0);
+                    call(mem, f, &[0x8000_0018]);
+                    set(mem, state, 0xe);
+                    return;
+                }
+                0xe => {
+                    if rep & 0x20 != 0 {
+                        snd(mem, call, 0x8000_0001);
+                        let f = at(mem, 0x008b_e050);
+                        call(mem, f, &[3]);
+                        set(mem, state, 0xf);
+                    }
+                    return;
+                }
+                0x10 => {
+                    set(mem, state, 0x11);
+                    return;
+                }
+                0x11 => {
+                    if h(mem, 0x0186_a0b4) == 0x1000 {
+                        set_h(mem, 0x0186_a174, 0x200);
+                        set(mem, state, 0x12);
+                    }
+                    return;
+                }
+                0x12 | 0x16 | 0x1e => {
+                    let (fade, next) = match s {
+                        0x12 => (0x0186_a170, 0x13),
+                        0x16 => (0x0186_a160, 0x17),
+                        _ => (0x0186_a168, 0x1f),
+                    };
+                    if h(mem, fade) == 0x1000 {
+                        set(mem, state, next);
+                    }
+                    return;
+                }
+                0x13 => {
+                    if rep & 0x20 != 0 {
+                        snd(mem, call, 0x8000_0001);
+                        set_h(mem, 0x0186_a174, 0xfe00);
+                        set_h(mem, 0x0186_a164, 0x80);
+                        set(mem, state, 0x14);
+                    }
+                    return;
+                }
+                0x14 => {
+                    set(mem, 0x0186_a17c, 0);
+                    set(mem, state, 0x15);
+                    let text = call(mem, get_text, &[0x4006]);
+                    call(mem, set_pair, &[0, text]);
+                    return;
+                }
+                0x15 => {
+                    if h(mem, 0x0186_a170) != 0 {
+                        return;
+                    }
+                    let n = g(mem, 0x0186_a17c).wrapping_add(1);
+                    set(mem, 0x0186_a17c, n);
+                    let text = call(mem, get_text, &[0x4014]);
+                    set(mem, 0x025c_c590, text);
+                    set(mem, 0x0186_a180, 0x105);
+                    if g(mem, 0x0186_a17c).cast_signed() <= 6 {
+                        return;
+                    }
+                    if mem.read::<u8>(at(mem, 0x0231_0f70)) == 0
+                        && mem.read::<u8>(at(mem, 0x0231_0f72)) == 0
+                    {
+                        set_h(mem, 0x0186_a174, 0x200);
+                    }
+                    set(mem, state, 0x16);
+                    return;
+                }
+                0x17 | 0x18 => {
+                    if s == 0x17 {
+                        if g(mem, 0x0186_9f14) != 0 {
+                            snd(mem, call, 0x8000_0018);
+                        }
+                        set(mem, state, 0x18);
+                    }
+                    let f = at(mem, 0x008b_a590);
+                    if call(mem, f, &[]) != 0 {
+                        if rep & 0x20 != 0 {
+                            snd(mem, call, 0x8000_0001);
+                            while call(mem, f, &[]) != 0 {}
+                            set(mem, state, 0x19);
+                        }
+                        return;
+                    }
+                    set(mem, state, 0x19);
+                    s = 0x19;
+                }
+                0x19 => {
+                    let f = at(mem, 0x0088_6eb0);
+                    call(mem, f, &[0x8000_0018]);
+                    if g(mem, 0x0186_a184) == 0 {
+                        let text = call(mem, get_text, &[0x4005]);
+                        set(mem, 0x025c_c594, text);
+                    }
+                    set(mem, state, 0x1a);
+                    return;
+                }
+                0x1a => {
+                    if rep & 0x20 == 0 {
+                        return;
+                    }
+                    snd(mem, call, 0x8000_0001);
+                    set_h(mem, 0x0186_a164, 0xff80);
+                    set_h(mem, 0x0186_a174, 0xfe00);
+                    if g(mem, 0x0186_a184) != 0 {
+                        set(mem, state, 0x1c);
+                    } else {
+                        set_h(mem, 0x0186_a114, 0xff80);
+                        set(mem, state, 0x1b);
+                    }
+                    return;
+                }
+                0x1b | 0x2b => {
+                    let fade = if s == 0x1b { 0x0186_a160 } else { 0x0186_a168 };
+                    if h(mem, fade) == 0 {
+                        set(mem, state, 6);
+                    }
+                    return;
+                }
+                0x1c => {
+                    let (f, name) = (at(mem, 0x008a_f0d0), at(mem, 0x00b6_55f0));
+                    call(mem, f, &[1, name]);
+                    set_h(mem, 0x0186_a16c, 0x80);
+                    let text = call(mem, get_text, &[0x4009]);
+                    call(mem, set_pair, &[0, text]);
+                    set(mem, state, 0x1e);
+                    return;
+                }
+                0x1d => {
+                    set_h(mem, 0x0186_a16c, 0x80);
+                    let first = call(mem, get_text, &[0x4009]);
+                    let second = call(mem, get_text, &[0x4009]);
+                    call(mem, set_pair, &[second, first]);
+                    set(mem, state, 0x1e);
+                    return;
+                }
+                0x1f => {
+                    set(mem, state, 0x20);
+                    return;
+                }
+                0x22 | 0x28 => {
+                    set_h(mem, 0x0186_a174, 0x200);
+                    set(mem, state, s + 1);
+                    return;
+                }
+                0x23 | 0x29 => {
+                    if trg != 0 && h(mem, 0x0186_a170) == 0x1000 {
+                        set_h(mem, 0x0186_a174, 0xfe00);
+                        if s == 0x23 {
+                            let t = g(mem, target);
+                            set(mem, top, t);
+                            set(mem, state, 0x20);
+                        } else {
+                            set(mem, state, 0x25);
+                        }
+                    }
+                    return;
+                }
+                0x27 => {
+                    set(mem, 0x0186_a1a8, 0);
+                    set(mem, state, 0x20);
+                    return;
+                }
+                0x2a => {
+                    set_h(mem, 0x0186_a114, 0xff80);
+                    set_h(mem, 0x0186_a16c, 0xff80);
+                    set(mem, state, 0x2b);
+                    return;
+                }
+                6 | 7 => {
+                    if s == 6 {
+                        set(mem, state, 7);
+                    }
+                    let f = at(mem, 0x0064_1cb0);
+                    let locked = call(mem, f, &[]) != 0;
+                    if locked {
+                        let f = at(mem, 0x0064_48d0);
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x0086_bc60);
+                    let c = if call(mem, f, &[]) == 0 {
+                        0
+                    } else {
+                        0x3f80_0000
+                    };
+                    let f = at(mem, 0x0064_3900);
+                    call(mem, f, &[c, c, c, 0x3f80_0000]);
+                    let f = at(mem, 0x0063_9280);
+                    call(mem, f, &[c, c, c, 0x3f80_0000, 0]);
+                    let f = at(mem, 0x0064_38e0);
+                    call(mem, f, &[0]);
+                    if locked {
+                        let f = at(mem, 0x0064_1e20);
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x0087_2b50);
+                    if call(mem, f, &[]) == 0 {
+                        let f = at(mem, 0x008b_df60);
+                        call(mem, f, &[]);
+                        set(mem, state, 8);
+                    }
+                    return;
+                }
+                8 => {
+                    if h(mem, 0x0186_a0b4) != 0 {
+                        return;
+                    }
+                    let done = at(mem, 0x00c5_a068);
+                    mem.write(done, 1u8);
+                    let f = at(mem, 0x0086_bc10);
+                    if call(mem, f, &[]) == 0 {
+                        return;
+                    }
+                    let f = at(mem, 0x0064_1cb0);
+                    let locked = call(mem, f, &[]) != 0;
+                    if locked {
+                        let f = at(mem, 0x0064_48d0);
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x0064_3900);
+                    call(mem, f, &[0, 0, 0, 0x3f80_0000]);
+                    let f = at(mem, 0x0064_38e0);
+                    call(mem, f, &[0]);
+                    let f = at(mem, 0x0063_9280);
+                    call(mem, f, &[0, 0, 0, 0x3f80_0000, 0]);
+                    if locked {
+                        let f = at(mem, 0x0064_1e20);
+                        call(mem, f, &[]);
+                    }
+                    let f = at(mem, 0x0082_cb80);
+                    call(mem, f, &[0xf]);
+                    return;
+                }
+                0x21 | 0x26 => {
+                    if !scroll(mem) {
+                        return;
+                    }
+                    s = if s == 0x21 { 0x20 } else { 0x25 };
+                    set(mem, state, s);
+                    let t = g(mem, target);
+                    set(mem, rows, 0);
+                    set(mem, top, t);
+                }
+                0x24 => {
+                    set(mem, 0x0186_a1a8, 1);
+                    set(mem, state, 0x25);
+                    s = 0x25;
+                }
+                0x20 | 0x25 => {
+                    let gear = s == 0x25;
+                    if trg & 0x100 != 0 {
+                        let f = at(mem, 0x008b_a5c0);
+                        if call(mem, f, &[]) == 0 {
+                            snd(mem, call, 0x8000_0001);
+                            s = 0x2a;
+                        } else {
+                            snd(mem, call, 0x8000_0003);
+                            s = if gear { 0x28 } else { 0x22 };
+                        }
+                        set(mem, state, s);
+                        continue;
+                    }
+                    if !gear && trg & 0x20 != 0 {
+                        let f = at(mem, 0x008b_da80);
+                        let w = call(mem, f, &[]);
+                        if mem.read::<u8>(w.wrapping_add(6)) == 0xff {
+                            snd(mem, call, 0x8000_0001);
+                            set(mem, state, 0x24);
+                        } else {
+                            snd(mem, call, 0x8000_0003);
+                        }
+                        return;
+                    }
+                    if trg & 0x40 != 0 {
+                        if gear {
+                            snd(mem, call, 0x8000_0004);
+                            s = 0x27;
+                            continue;
+                        }
+                        snd(mem, call, 0x8000_0003);
+                        return;
+                    }
+                    if gear && trg & 0x20 != 0 {
+                        let row = g(mem, cursor).wrapping_add(g(mem, top));
+                        let ids = g(mem, 0x025c_c580);
+                        let id = u32::from(mem.read::<u16>(ids.wrapping_add(row.wrapping_mul(2))));
+                        let f = at(mem, 0x007a_bbd0);
+                        let w = call(mem, f, &[id, local]);
+                        if mem.read::<u8>(w.wrapping_add(6)) != 0xff
+                            && mem.read::<u8>(w.wrapping_add(2)) != 0
+                        {
+                            snd(mem, call, 0x8000_0003);
+                            return;
+                        }
+                        snd(mem, call, 0x8000_0001);
+                        let f = at(mem, 0x008b_e0a0);
+                        call(mem, f, &[]);
+                        s = 0x27;
+                        continue;
+                    }
+                    let next = if gear { 0x26 } else { 0x21 };
+                    if rep & 0x1000 != 0 || rep & 0x4000 != 0 {
+                        let down = rep & 0x1000 == 0;
+                        let k = g(mem, side);
+                        // the gear list's side 0 moves the equip slot
+                        let (slot, scrolls) = if gear && k == 0 {
+                            (0x0186_a1a4, false)
+                        } else if !gear && k != 0 {
+                            (cursor + 4 * k, false)
+                        } else {
+                            (cursor, true)
+                        };
+                        let c = if down {
+                            g(mem, slot).cast_signed().wrapping_add(1)
+                        } else {
+                            g(mem, slot).cast_signed().wrapping_sub(1)
+                        };
+                        set(mem, slot, c.cast_unsigned());
+                        // one bound each way: down `< 6`, up `jns`
+                        if (down && c < 6) || (!down && c >= 0) {
+                            snd(mem, call, 0x8000_0001);
+                            return;
+                        }
+                        set(mem, slot, if down { 5 } else { 0 });
+                        if !scrolls {
+                            return;
+                        }
+                        let t = g(mem, top).cast_signed();
+                        let last = g(mem, 0x0186_a188).cast_signed().wrapping_sub(7);
+                        if (down && t > last) || (!down && t <= 0) {
+                            return;
+                        }
+                        let t = (if down { t + 1 } else { t - 1 }).cast_unsigned();
+                        let r = if down { 0x1000 } else { 0xffff_f000 };
+                        if gear && !down {
+                            snd(mem, call, 0x8000_0001);
+                            set(mem, rows, r);
+                            set(mem, target, t);
+                            set(mem, speed, 0x333);
+                            set(mem, state, next);
+                            set(mem, top, t);
+                        } else {
+                            set(mem, rows, r);
+                            set(mem, top, t);
+                            set(mem, target, t);
+                            set(mem, speed, 0x333);
+                            snd(mem, call, 0x8000_0001);
+                            set(mem, state, next);
+                        }
+                        s = next;
+                        continue;
+                    }
+                    if !gear && trg & 0x8000 != 0 {
+                        if g(mem, side) == 1 {
+                            set(mem, side, 0);
+                            snd(mem, call, 0x8000_0001);
+                        }
+                        return;
+                    }
+                    if !gear && trg & 0x2000 != 0 {
+                        if g(mem, side) == 0 {
+                            set(mem, side, 1);
+                            snd(mem, call, 0x8000_0001);
+                        }
+                        return;
+                    }
+                    // six rows with the shoulder pads: the spoils on side
+                    // 0 and pad 1/2, the gear on side 1
+                    let k = g(mem, side);
+                    let ok = |pad_needed: u32| {
+                        if gear {
+                            k != 0
+                        } else {
+                            k == 0 && pad == pad_needed
+                        }
+                    };
+                    let r = if rep & 1 != 0 && ok(1) && jump(mem, true).is_some() {
+                        0xffff_f000
+                    } else if rep & 2 != 0 && ok(2) && jump(mem, false).is_some() {
+                        0x1000
+                    } else {
+                        return;
+                    };
+                    snd(mem, call, 0x8000_0001);
+                    set(mem, rows, r);
+                    set(mem, speed, 0x111);
+                    set(mem, state, next);
+                    s = next;
+                }
+                _ => return,
+            }
+        }
+    }
+
+    /// `fade += speed` on two `i16` words, held in `0..=0x1000`.
+    fn step_fade<M: Mem>(mem: &mut M, fade: u32, speed: u32) {
+        let (fade, speed) = (mem.rebase(fade), mem.rebase(speed));
+        let v = mem
+            .read::<u16>(fade)
+            .wrapping_add(mem.read::<u16>(speed))
+            .cast_signed();
+        mem.write(fade, v.cast_unsigned());
+        if v > 0x1000 {
+            mem.write(fade, 0x1000u16);
+        } else if v < 0 {
+            mem.write(fade, 0u16);
+        }
+    }
 }
 
 #[cfg(test)]
