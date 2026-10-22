@@ -9119,6 +9119,78 @@ fn op_effect_run_after_matches_the_original() {
     }
 }
 
+#[test]
+fn ppp_shape_center_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0075_c660);
+        let (shape, out, scratch) = (p.alloc(0x2000), p.alloc(0x10), p.alloc(0x40));
+        for round in 0..400 {
+            p.fill(shape, 0x2000, &mut rng);
+            p.fill(out, 0x10, &mut rng);
+            p.set(shape + 4, 0x40u32);
+            p.set(shape + 8, 0x1800u32);
+            // up to six groups of every type (odd and negative ones only
+            // skip their header), then one that ends any count left
+            let mut at = shape + 0x40;
+            let mut total = 0i32;
+            for _ in 0..rng.below(7) {
+                let kind = rng.pick(&[0u8, 0, 2, 2, 4, 4, 6, 6, 1, 3, 7, 0x80]);
+                let n = rng.pick(&[0i16, 1, 2, 3, 5, -1]);
+                p.set(at + 1, kind);
+                p.set(at + 2, n);
+                total += i32::from(n);
+                let stride = match kind {
+                    0 => 0x14,
+                    2 => 0x20,
+                    4 => 0x18,
+                    6 => 0x28,
+                    _ => 0,
+                };
+                at += 0x10;
+                if n > 0 {
+                    for _ in 0..n {
+                        for j in 0..4u32 {
+                            let v = u16::try_from(rng.below(64)).unwrap();
+                            let first = if kind < 4 { 0xc } else { 0x10 };
+                            p.set(at + first + 2 * j, v);
+                        }
+                        at += stride;
+                    }
+                }
+            }
+            p.set(at + 1, 1u8);
+            p.set(at + 2, 0x7fffi16);
+            let count = match rng.below(4) {
+                0 => total,
+                1 => total + 1,
+                2 => total - 1,
+                _ => -1,
+            };
+            p.set(
+                shape + 0x10,
+                i16::try_from(count.clamp(-0x8000, 0x7fff)).unwrap(),
+            );
+            p.check(
+                &format!("ppp_shape_center round {round}"),
+                0x0075_c660,
+                &[out, shape],
+                |o| {
+                    let keep = o.read(scratch, 0x40).unwrap();
+                    let r = prog::bridge::ppp_shape_center(
+                        o,
+                        out,
+                        shape,
+                        scratch + 0x30,
+                        &mut call_original,
+                    );
+                    o.write(scratch, &keep).unwrap();
+                    Some(r)
+                },
+            );
+        }
+    }
+}
+
 /// A float in `[lo, hi)` with 16 fraction bits, as bits.
 fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
     #[allow(clippy::cast_precision_loss)]

@@ -2326,6 +2326,80 @@ pub mod bridge {
         }
     }
 
+    /// `ppp_shape_center_0075c660(out, shape)` (`0x0075c660`, ours; called by
+    /// [`ppp_ke_ofs_pt`]): the mean of a shape's polygon centres. The
+    /// shape: `i16` polygon count at `+0x10`, the polygon groups at
+    /// `shape + [+4]`, the vertices (three `i16`s, 6 bytes) at `shape +
+    /// [+8]`. A group (byte `+1` its type, `i16` `+2` its count) has its
+    /// polygons from `+0x10`: type 0 (stride 0x14) and 2 (0x20) triangles
+    /// with their vertex numbers (`u16`) at `+0xc`, `+0xe`, `+0x10`; type 4
+    /// (0x18) and 6 (0x28) quads with theirs at `+0x10`..`+0x16` (jump
+    /// table `0x0075cd08`; other types only skip the header). Groups are
+    /// walked while the count left (`+0x10` less each group's count) is
+    /// positive. Each centre is the vertices' sum (`f32`, exact) through
+    /// `FFXVu0DivVectorXYZ(c, c, 3 or 4)` and is added to the sum
+    /// (`FFXVu0AddVector`); a positive `+0x10` then divides the sum by
+    /// that count, its `w` becomes 1 and `FFXVu0CopyVector(out, sum)`.
+    ///
+    /// The original's locals at `frame` (its `ebp`): the sum at `-0x24`,
+    /// the centre at `-0x14` (`w` 0). Callees through `call`; returns what
+    /// `FFXVu0CopyVector` leaves in `eax`.
+    #[allow(clippy::many_single_char_names)]
+    pub fn ppp_shape_center<M: Mem>(
+        mem: &mut M,
+        out: u32,
+        shape: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let (sum, c) = (frame.wrapping_sub(0x24), frame.wrapping_sub(0x14));
+        mem.write(frame.wrapping_sub(8), 0u32);
+        mem.write(sum, [0u32; 4]);
+        let (div, add) = (g(mem, 0x006e_d420), g(mem, 0x006e_d290));
+        let verts = shape.wrapping_add(mem.read(shape.wrapping_add(8)));
+        let mut group = shape.wrapping_add(mem.read(shape.wrapping_add(4)));
+        let mut left = i32::from(mem.read::<i16>(shape.wrapping_add(0x10)));
+        while left > 0 {
+            let kind = mem.read::<u8>(group.wrapping_add(1));
+            let (stride, first, n) = match kind {
+                0 => (0x14, 0xc, 3u32),
+                2 => (0x20, 0xc, 3),
+                4 => (0x18, 0x10, 4),
+                6 => (0x28, 0x10, 4),
+                _ => (0, 0, 0),
+            };
+            let mut poly = group.wrapping_add(0x10);
+            if n != 0 {
+                let mut k = 0i32;
+                while k < i32::from(mem.read::<i16>(group.wrapping_add(2))) {
+                    let mut v = [0f32; 3];
+                    for j in 0..n {
+                        let i: u16 = mem.read(poly.wrapping_add(first + 2 * j));
+                        let at = verts.wrapping_add(u32::from(i) * 6);
+                        for (x, o) in v.iter_mut().zip([0u32, 2, 4]) {
+                            *x += f32::from(mem.read::<i16>(at.wrapping_add(o)));
+                        }
+                    }
+                    mem.write(c, v);
+                    let by = if n == 3 { 3f32 } else { 4f32 };
+                    call(mem, div, &[c, c, by.to_bits()]);
+                    call(mem, add, &[sum, sum, c]);
+                    poly = poly.wrapping_add(stride);
+                    k += 1;
+                }
+            }
+            left -= i32::from(mem.read::<i16>(group.wrapping_add(2)));
+            group = poly;
+        }
+        let count = mem.read::<i16>(shape.wrapping_add(0x10));
+        if count > 0 {
+            call(mem, div, &[sum, sum, f32::from(count).to_bits()]);
+        }
+        mem.write(sum.wrapping_add(0xc), 1f32);
+        call(mem, g(mem, 0x006e_d370), &[out, sum])
+    }
+
     /// `pppKeAcmCic(obj, key)` (`0x0075b690`): unless the key's byte `+4`
     /// is 2, `0x00644be0(0, 1)` (the renderer's) through `call`.
     pub fn ppp_ke_acm_cic<M: Mem>(

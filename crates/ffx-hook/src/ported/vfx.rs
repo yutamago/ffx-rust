@@ -990,6 +990,13 @@ ported! {
     op_chara_packet_size_get @ 0x0080_37c0 => extern "C" fn op_chara_packet_size_get(chr: u32, mode: u32, visible: u32) -> u32 {
         op::bridge::op_chara_packet_size_get(&mut mem(), chr, mode, visible, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `ppp_shape_center_0075c660(out, shape)`.
+    ppp_shape_center_0075c660 @ 0x0075_c660 => extern "C" fn ppp_shape_center(out: u32, shape: u32) -> u32 {
+        // the original's locals: 0x24 bytes below its ebp
+        let mut frame = super::StackFrame::<9>::new();
+        let ebp = frame.at() + 0x24;
+        prog::bridge::ppp_shape_center(&mut mem(), out, shape, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppKeOfsPt(obj, key, ctrl)`.
     pppKeOfsPt @ 0x0075_cd30 => extern "C" fn ppp_ke_ofs_pt(obj: u32, key: u32, ctrl: u32) {
         prog::bridge::ppp_ke_ofs_pt(&mut mem(), obj, key, ctrl, &mut |_, f, a| call_ptr(f, a));

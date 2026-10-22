@@ -4192,6 +4192,7 @@
 0x0075c500 function pppPointLoop              # ppp program table record "pppPointLoop" (0x00c3b570) +0x8 step; "pppPointLoop" (0x00c3cc18) +0x8 step
 0x0075c5a0 function pppPointLoopCon           # ppp program table record "pppPointLoop" (0x00c3b570) +0x1c set-up; "pppPointLoop" (0x00c3cc18) +0x1c set-up
 0x0075c5d0 function pppPointLoopCon2          # ppp program table record "pppPointLoop" (0x00c3b570) +0x20 second set-up; "pppPointLoop" (0x00c3cc18) +0x20 second set-up
+0x0075c660 function ppp_shape_center_0075c660 # ours: (out, shape): mean of the shape's polygon centres (groups at shape+[+4], types 0/2 triangles, 4/6 quads via jump table 0x0075cd08, i16 vertices at shape+[+8]; FFXVu0DivVectorXYZ by 3/4 then by i16 +0x10, w 1, FFXVu0CopyVector); called by pppKeOfsPt with area +0xb0 (prog::bridge::ppp_shape_center)
 0x0075cd30 function pppKeOfsPt                # ppp program table record "pppKeOfsPt" step
 0x0075cdf0 function pppKeOfsPtCon             # ppp program table record "pppKeOfsPt" (0x00c3d690) +0x1c set-up; "pppKeOfsPt" (0x00c3d690) +0x20 second set-up
 0x0075ce30 function pppAngle                  # fh v3:exact 0x0075cf20
