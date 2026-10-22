@@ -8950,6 +8950,126 @@ fn opu_main_host_matches_the_original() {
     }
 }
 
+#[test]
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn opp_main_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_bd50);
+        // the SPR stack: one block from the bottom
+        let spr = p.alloc(0x600);
+        p.put(op::bridge::SPR_TOP, 0i8);
+        let stack = p.sym(op::bridge::SPR_STACK.sym);
+        p.set(stack, spr);
+        // MsBattleChrStart and Sg_GetCurExecFrames from cells; dbgPrintf
+        // recorded
+        let cells = p.alloc(0x20);
+        deref_recorder_with(&mut p, 0x0078_0cb0, &[], Some(cells));
+        far_recorder(&mut p, 0x0082_d7e0, &[], Some(cells + 4));
+        dbg_printf_recorder(&mut p, 0);
+        // the callbacks: plain (records host, battle, host +0x2c4 and a
+        // count, and g_VfxPass), toggle (flips the part's +0x19 bit 7 after
+        // the swap) and skip (bumps the host's +0x218: the list index is
+        // re-read)
+        let pass = p.sym(0x0113_335c);
+        let base = p.sym(HOST_HANDLERS);
+        let (h_plain, h_toggle, h_skip) = (base, base + 0x40, base + 0x60);
+        let mut code = vec![0u8; 0x80];
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xa3];
+        c.extend((cells + 8).to_le_bytes());
+        c.extend([0x8b, 0x4c, 0x24, 0x08, 0x89, 0x0d]);
+        c.extend((cells + 0xc).to_le_bytes());
+        c.extend([0x8b, 0x90, 0xc4, 0x02, 0, 0, 0x89, 0x15]);
+        c.extend((cells + 0x14).to_le_bytes());
+        c.extend([0xff, 0x05]);
+        c.extend((cells + 0x10).to_le_bytes());
+        c.extend([0x8b, 0x15]);
+        c.extend(pass.to_le_bytes());
+        c.extend([0x89, 0x15]);
+        c.extend((cells + 0x18).to_le_bytes());
+        c.push(0xc3);
+        code[..c.len()].copy_from_slice(&c);
+        let t = [
+            0x8b, 0x44, 0x24, 0x04, 0x8b, 0x88, 0x20, 0x02, 0, 0, 0x80, 0x71, 0x19, 0x80, 0xc3,
+        ];
+        code[0x40..0x40 + t.len()].copy_from_slice(&t);
+        let k = [
+            0x8b, 0x44, 0x24, 0x04, 0x66, 0xff, 0x80, 0x18, 0x02, 0, 0, 0xc3,
+        ];
+        code[0x60..0x60 + k.len()].copy_from_slice(&k);
+        p.a.write(base, &code).unwrap();
+        p.b.write(base, &code).unwrap();
+        let own = p.sym(0x00c4_8e78);
+        let overlay = p.alloc(0x200);
+        let pick = |rng: &mut Xorshift| match rng.below(8) {
+            0..4 => h_plain,
+            4 | 5 => h_toggle,
+            _ => h_skip,
+        };
+        let ob = p.sym(et::bridge::OPUS_BATTLE.sym);
+        let (b, e, list, parts) = (
+            p.alloc(0x100),
+            p.alloc(0x80),
+            p.alloc(0x40),
+            p.alloc(0x1000),
+        );
+        let (g1, g2, g3) = (p.sym(0x0113_fcd0), p.sym(0x0113_fd10), p.sym(0x0113_fd50));
+        let (regs, r0) = (p.sym(0x00c8_f528), p.sym(0x00c8_f508));
+        let (s0, s1) = (p.sym(0x0232_2780), p.sym(0x0232_2781));
+        for round in 0..1200 {
+            // the game's own handlers, a null one now and then
+            for i in 0..0x80u32 {
+                let h = if rng.chance(8) { 0 } else { pick(&mut rng) };
+                p.set(own + 4 * i, h);
+                p.set(overlay + 4 * i, pick(&mut rng));
+            }
+            p.fill(b, 0x100, &mut rng);
+            p.fill(g1, 0x40, &mut rng);
+            p.fill(g2, 0x40, &mut rng);
+            p.fill(g3, 0x40, &mut rng);
+            p.fill(regs, 0x40, &mut rng);
+            // the emulated zero register, now and then not, but the list
+            // index (+0x218) starts at 0 or 1
+            if rng.chance(4) {
+                p.fill(r0, 0x10, &mut rng);
+                let w: u32 = p.get(r0 + 8);
+                p.set(r0 + 8, (w & 0xffff_0000) | rng.below(2));
+            } else {
+                p.set(r0, [0u32; 4]);
+            }
+            p.set(s0, u8::try_from(rng.below(4)).unwrap());
+            p.set(s1, u8::try_from(rng.below(4)).unwrap());
+            p.set(cells, u32::from(rng.chance(2)));
+            p.set(cells + 4, rng.pick(&[0u32, 0, 1, 2]));
+            p.set(pass, rng.pick(&[0u32, 7]));
+            let battle = rng.below(4);
+            p.set(ob + 4 * battle, b);
+            p.set(b + 0x50, e);
+            p.set(e + 0x78, overlay);
+            // up to eight parts (0..15), ending at a negative word; a skip
+            // over the end may run one part more
+            p.set(b + 0x1c, list);
+            p.set(list, [0xffff_ffffu32; 16]);
+            let n = rng.below(9);
+            for k in 0..n {
+                p.set(list + 2 * k, u16::try_from(rng.below(16)).unwrap());
+            }
+            p.set(list + 2 * n, rng.pick(&[0xffffu16, 0x8000, 0xfff0]));
+            p.set(list + 2 * n + 2, rng.pick(&[0xffffu16, 0x8000, 3]));
+            p.set(b + 0x20, parts);
+            p.fill(parts, 0x1000, &mut rng);
+            p.put(op::bridge::SPR_TOP, 0i8);
+            let bw = battle | if round % 7 == 0 { 0xabcd_0000 } else { 0 };
+            p.check("opp_main", 0x0080_bd50, &[bw], |o| {
+                Some(opus::bridge::opp_main(
+                    &mut Capped::new(o),
+                    bw,
+                    &mut |c: &mut Capped<Oracle>, f, a| call_original(c.m, f, a),
+                ))
+            });
+        }
+    }
+}
+
 /// A float in `[lo, hi)` with 16 fraction bits, as bits.
 fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
     #[allow(clippy::cast_precision_loss)]
