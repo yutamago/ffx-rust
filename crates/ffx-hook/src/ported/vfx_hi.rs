@@ -155,6 +155,55 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x30;
         hi_opus::bridge::opp_md_break_pieces(&mut mem(), src, out, rec, [0; 2], frame, &mut |_, f, a| super::call_cdecl_f32(f, a))
     }
+    /// `opus_0582_break_draw(b, src, rec, unit, m5, m6, hold)`: its locals
+    /// (the counts and the name the data buffer takes) in a buffer on this
+    /// shim's stack; `op_deg_get` through the game; `eax` 0.
+    opus_0582_break_draw @ 0x00a7_2380 => extern "C" fn opus_0582_break_draw(b: u32, src: u32, rec: u32, unit: u32, m5: u32, m6: u32, hold: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x150]);
+        let mut locals = Locals([0; 0x150]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x150;
+        hi_opus::bridge::opus_0582_break_draw(&mut mem(), [b, src, rec, unit, m5, m6, hold], frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| super::call_cdecl_f32(f, a))
+    }
+    /// `opus_0582_draw(b, rec, unit, m4, m5, m6)`: its locals (the counts,
+    /// the texture name, the vectors `FFXVu0ApplyMatrix` takes) in a
+    /// buffer on this shim's stack; `eax` 0.
+    opus_0582_draw @ 0x00a7_0d70 => extern "C" fn opus_0582_draw(b: u32, rec: u32, unit: u32, m4: u32, m5: u32, m6: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x180]);
+        let mut locals = Locals([0; 0x180]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x180;
+        hi_opus::bridge::opus_0582_draw(&mut mem(), [b, rec, unit, m4, m5, m6], frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_0437_draw(packet, model, rec, u, d, acc, slot)`: its locals
+    /// (the colour vectors, the counts, the texture names) in a buffer on
+    /// this shim's stack; `eax` the running vertex count.
+    opus_0437_draw @ 0x00a6_e650 => extern "C" fn opus_0437_draw(packet: u32, model: u32, rec: u32, u: u32, d: u32, acc: u32, slot: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x280]);
+        let mut locals = Locals([0; 0x280]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        hi_opus::bridge::opus_0437_draw(&mut mem(), [packet, model, rec, u, d, acc, slot], frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_0582_break_make(b, list, m)`: the vertices
+    /// `FFXVu0ApplyMatrix` takes in a buffer on this shim's stack; `eax`
+    /// as `op_spr_free` leaves it.
+    opus_0582_break_make @ 0x00a7_1780 => extern "C" fn opus_0582_break_make(b: u32, list: u32, m: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x40]);
+        let mut locals = Locals([0; 0x40]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        hi_opus::bridge::opus_0582_break_make(&mut mem(), b, list, m, frame, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `op1_md_draw(obj, init)`: the draw path by `init`'s flags, through
+    /// the game; its `eax`.
+    op1_md_draw @ 0x00a6_5750 => extern "C" fn op1_md_draw(obj: u32, init: u32) -> u32 {
+        hi_draw::bridge::op1_md_draw(&mut mem(), obj, init, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_md_ref_nolight(obj, init, tex, scale, slot)`: its locals (the
     /// texture names, the counts) in a buffer on this shim's stack.
     op_md_ref_nolight @ 0x00a6_a6a0 => extern "C" fn op_md_ref_nolight(obj: u32, init: u32, tex: u32, scale: f32, slot: u32) -> u32 {

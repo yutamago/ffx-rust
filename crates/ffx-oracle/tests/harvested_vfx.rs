@@ -170,3 +170,13 @@ harvest_test!(
         );
     }
 );
+harvest_test!(
+    op_random_in_slot,
+    0x007e_6700,
+    // no argument words: the caller's stack from the argument up is
+    // compared, so the result the original leaves in its slot is too
+    args = 0,
+    |m: &mut Oracle, s| {
+        ffx_vfx::rand::bridge::op_random_in_slot(m, s.arg_f32(0), s.regs.esp + 4)
+    }
+);

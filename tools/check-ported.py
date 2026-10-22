@@ -30,9 +30,10 @@ SHIM = re.compile(r'^\s*(\w+) @ 0x([0-9a-f_]+) =>\s*extern "([\w-]+)" fn \w+\(([
 
 
 def popped(abi, args):
-    """Bytes the callee pops for a shim's signature."""
+    """Bytes the callee pops for a shim's signature (without the caller's
+    argument slots after `;`, which only the thunk passes)."""
     sizes = [8 if t.split(":", 1)[1].strip() in ("u64", "i64", "f64") else 4
-             for t in args.split(",") if ":" in t]
+             for t in args.split(";")[0].split(",") if ":" in t]
     skip = {"C": len(sizes), "stdcall": 0, "thiscall": 1, "fastcall": 2}[abi]
     return sum(sizes[skip:])
 

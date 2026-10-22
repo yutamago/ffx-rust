@@ -168,6 +168,12 @@ pub(crate) const fn stack_words(abi: &str, sizes: &[usize]) -> usize {
     words
 }
 
+/// Whether a shim may take the caller's argument slots (`ported!`): the
+/// extra last argument must be a stack word, so not thiscall or fastcall.
+pub(crate) const fn slots_abi(abi: &str) -> bool {
+    matches!(abi.as_bytes(), b"C" | b"cdecl" | b"stdcall")
+}
+
 /// Whether the callee pops its stack arguments (everything but cdecl).
 pub(crate) const fn callee_pops(abi: &str) -> bool {
     !matches!(abi.as_bytes(), b"C" | b"cdecl")
@@ -317,11 +323,19 @@ pub(crate) fn call_thiscall(f: u32, this: u32, a: &[u32]) -> u32 {
 /// `ported! { /// doc  Name @ 0xADDR => extern "C" fn shim(args) -> ret { body } ... }`:
 /// the shims, a register-saving thunk for each ([`Saved`]), and the
 /// module's `hooks()`.
+///
+/// `fn shim(args; slots: u32)` also hands the shim the address of the
+/// caller's stack arguments (`slots`, not an argument of the original): the
+/// thunk passes the shim a copy of the arguments, so an original that
+/// stores into its own argument slots (MSVC reuses them as scratch, and
+/// `op_random` leaves its result there) needs its shim to write them
+/// through `slots` for callers that read the word after the call
+/// (`tools/check-argslots.py`). cdecl and stdcall only.
 macro_rules! ported {
-    ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:literal fn $shim:ident($($arg:ident: $ty:ty),*) $(-> $ret:ty)? $body:block )*) => {
+    ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:literal fn $shim:ident($($arg:ident: $ty:ty),* $(; $slots:ident: $sty:ty)?) $(-> $ret:ty)? $body:block )*) => {
         $(
             $(#[$doc])*
-            unsafe extern $abi fn $shim($($arg: $ty),*) $(-> $ret)? $body
+            unsafe extern $abi fn $shim($($arg: $ty,)* $($slots: $sty)?) $(-> $ret)? $body
         )*
 
         /// This module's replacements.
@@ -331,7 +345,7 @@ macro_rules! ported {
                 name: stringify!($name),
                 address: $addr,
                 prologue: &[],
-                replacement: $crate::ported::thunk!($abi, $shim, ($($ty),*), ($($ret)?)),
+                replacement: $crate::ported::thunk!($abi, $shim, ($($ty),*), ($($ret)?) $(, $slots)?),
                 original: None,
                 steal: 0,
             }),*]
@@ -376,13 +390,54 @@ macro_rules! thunk {
         }
         thunk as *const () as usize
     }};
+    // the same, with the address of the caller's arguments as the shim's
+    // last (extra) stack argument: pushed first, at `esp + 4` on entry
+    ($abi:literal, $shim:ident, ($($ty:ty),*), ($($ret:ty)?), $slots:ident) => {{
+        type Ret = $crate::ported::thunk!(@ret $($ret)?);
+        const WORDS: usize = $crate::ported::stack_words($abi, &[$(::core::mem::size_of::<$ty>()),*]);
+        const EAX: usize = <Ret as $crate::ported::Saved>::EAX as usize;
+        const EDX: usize = <Ret as $crate::ported::Saved>::EDX as usize;
+        const SAVED: usize = 1 + EAX + EDX;
+        const POPS: usize = $crate::ported::callee_pops($abi) as usize;
+        const _: () = assert!(
+            $crate::ported::slots_abi($abi),
+            "argument slots only for cdecl and stdcall shims"
+        );
+        #[unsafe(naked)]
+        unsafe extern "C" fn thunk() {
+            ::core::arch::naked_asm!(
+                ".if {eax}", "push eax", ".endif",
+                "push ecx",
+                ".if {edx}", "push edx", ".endif",
+                // esp as it was before this push, moved up to the first argument
+                "push esp",
+                "add dword ptr [esp], {to_args}",
+                ".rept {words}", "push dword ptr [esp + {from}]", ".endr",
+                "call {shim}",
+                ".if {pops} == 0", "add esp, {bytes} + 4", ".endif",
+                ".if {edx}", "pop edx", ".endif",
+                "pop ecx",
+                ".if {eax}", "pop eax", ".endif",
+                ".if {pops}", "ret {bytes}", ".else", "ret", ".endif",
+                eax = const EAX,
+                edx = const EDX,
+                words = const WORDS,
+                to_args = const 4 * SAVED + 4,
+                from = const 4 * (SAVED + WORDS + 1),
+                bytes = const 4 * WORDS,
+                pops = const POPS,
+                shim = sym $shim,
+            )
+        }
+        thunk as *const () as usize
+    }};
     (@ret) => { () };
     (@ret $ret:ty) => { $ret };
 }
 /// Off the game's architecture (host builds, clippy) the shim itself.
 #[cfg(not(target_arch = "x86"))]
 macro_rules! thunk {
-    ($abi:literal, $shim:ident, ($($ty:ty),*), ($($ret:ty)?)) => {
+    ($abi:literal, $shim:ident, ($($ty:ty),*), ($($ret:ty)?) $(, $slots:ident)?) => {
         $shim as *const () as usize
     };
 }

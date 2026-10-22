@@ -2558,6 +2558,77 @@ pub mod bridge {
         go(mem, 0x0064_5330, &ID)
     }
 
+    /// `opp_0706_cmd_007fa6d0(obj, cmd)` (`0x007fa6d0`, name ours): the
+    /// `opus_0706` effect's command by the object's kind (`u16 obj +0x21a &
+    /// 0xf000`): 0x1000 `opus_0706_acc_update(op_oef2_a_get(oef, 2, i16
+    /// cmd[1]), i16 cmd[2])` with the part's oef2 (`obj +0x360[rec +0x1e]`,
+    /// `rec` = `obj +0x220`), `cmd + 6`; 0x2000 `opus_0706_noise_update(rec,
+    /// i16 cmd[1])`, `cmd + 4`; else `cmd`. Callees through `call` (the
+    /// updates take only their first word).
+    pub fn opp_0706_cmd<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        cmd: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = sym(mem, at);
+            call(mem, f, args)
+        };
+        let rec: u32 = mem.read(obj.wrapping_add(0x220));
+        let slot = u32::from(mem.read::<u8>(rec.wrapping_add(0x1e)));
+        let oef: u32 = mem.read(obj.wrapping_add(0x360 + 4 * slot));
+        let half =
+            |mem: &M, at: u32| i32::from(mem.read::<i16>(cmd.wrapping_add(at))).cast_unsigned();
+        match mem.read::<u16>(obj.wrapping_add(0x21a)) & 0xf000 {
+            0x1000 => {
+                let n = half(mem, 2);
+                let eff = go(mem, 0x007e_3810, &[oef, 2, n]);
+                let k = half(mem, 4);
+                go(mem, 0x007f_a800, &[eff, k]);
+                cmd.wrapping_add(6)
+            }
+            0x2000 => {
+                let k = half(mem, 2);
+                go(mem, 0x007f_a750, &[rec, k]);
+                cmd.wrapping_add(4)
+            }
+            _ => cmd,
+        }
+    }
+
+    /// `opu_fake_env_model_draw_007117c0(id, a1..a7, slot)` (`0x007117c0`,
+    /// name ours): the fake environment model of instance `(slot, id +
+    /// (slot >> 31))`, for `slot` 0..2 and no skipped frame
+    /// (`g_GraphicSkipFrame`), else it returns `slot`. With render data:
+    /// `updateVFXRenderData_FakeEnvModel` with the nine arguments, then
+    /// `graphicVFXUpdate`, whose `eax` is returned; without,
+    /// `initVFXRenderDataBuffer_FakeEnvModel` with them (its `eax`).
+    /// Callees through `call`.
+    pub fn opu_fake_env_model_draw<M: Mem>(
+        mem: &mut M,
+        args: [u32; 9],
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let mut go = |mem: &mut M, at: u32, args: &[u32]| {
+            let f = sym(mem, at);
+            call(mem, f, args)
+        };
+        let slot = args[8];
+        // `cdq; add; adc`: the id less one for a negative slot
+        let hi = args[0].wrapping_add((slot.cast_signed() >> 31).cast_unsigned());
+        let skip: u32 = mem.read(sym(mem, 0x012f_b7d0));
+        if skip != 0 || slot > 2 {
+            return slot;
+        }
+        if go(mem, 0x0064_53d0, &[slot, hi]) != 0 {
+            go(mem, 0x0071_cf90, &args);
+            go(mem, 0x0064_58a0, &[slot, hi])
+        } else {
+            go(mem, 0x0071_6620, &args)
+        }
+    }
+
     /// `0x007fa750` (`opus_0706_noise_update`, ours) `(eff)`: the 0706
     /// noise's renderer instance `(1, 0x2c2)`. With render data, the
     /// update scale is `eff`'s `f32 +0x40` / 4096 / 16 x 12; without, the

@@ -174,13 +174,17 @@ fn srand_program(obj: u32, key: u32, ctrl: u32, spread: Spread, kind: Kind) {
 
 ported! {
     // ---- rand ----
-    /// `op_random(x)`: a random value in `[-x, x)` from VU0's `R`.
-    op_random @ 0x007e_6700 => extern "C" fn op_random(x: f32) -> f32 {
-        rand::bridge::op_random(&mut mem(), x)
+    /// `op_random(x)`: a random value in `[-x, x)` from VU0's `R`, also
+    /// left in the caller's argument slot as the original leaves it
+    /// (`opus_mdc_break_make`'s `op_irandom_p` and
+    /// `opp_md_break_pieces`' `op_random_per` read it as stale words).
+    op_random @ 0x007e_6700 => extern "C" fn op_random(x: f32; slots: u32) -> f32 {
+        rand::bridge::op_random_in_slot(&mut mem(), x, slots)
     }
-    /// `op_random_p(x)`: a random value in `[0, x)`.
-    op_random_p @ 0x007e_6780 => extern "C" fn op_random_p(x: f32) -> f32 {
-        rand::bridge::op_random_p(&mut mem(), x)
+    /// `op_random_p(x)`: a random value in `[0, x)`, also left in the
+    /// caller's argument slot.
+    op_random_p @ 0x007e_6780 => extern "C" fn op_random_p(x: f32; slots: u32) -> f32 {
+        rand::bridge::op_random_p_in_slot(&mut mem(), x, slots)
     }
 
     // ---- rand programs ----
@@ -5672,6 +5676,24 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x280;
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_DIS_POS_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
+    }
+    /// `pppDrawRainDraw(obj, def, ctrl)`: the work area also into the
+    /// caller's `ctrl` slot, as the original leaves it; the lines' `eax`.
+    pppDrawRainDraw @ 0x0075_62c0 => extern "C" fn ppp_draw_rain_draw(obj: u32, def: u32, ctrl: u32; slots: u32) -> u32 {
+        draw::bridge::ppp_draw_rain_draw(&mut mem(), obj, def, ctrl, slots.wrapping_add(8), &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opp_0706_cmd_007fa6d0(obj, cmd)`: the next command.
+    opp_0706_cmd_007fa6d0 @ 0x007f_a6d0 => extern "C" fn opp_0706_cmd(obj: u32, cmd: u32) -> u32 {
+        small::bridge::opp_0706_cmd(&mut mem(), obj, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_fake_env_model_draw_007117c0(id, a1..a7, slot)`.
+    opu_fake_env_model_draw_007117c0 @ 0x0071_17c0 => extern "C" fn opu_fake_env_model_draw(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
+        small::bridge::opu_fake_env_model_draw(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawFilterDraw(obj, rec, prog)`: the scrolls, then the packet;
+    /// its `eax`.
+    pppDrawFilterDraw @ 0x0075_7280 => extern "C" fn ppp_draw_filter_draw(obj: u32, rec: u32, prog: u32) -> u32 {
+        draw::bridge::ppp_draw_filter_draw(&mut mem(), obj, rec, prog, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawFilterPacket_00756740(obj, tex, prog)`: its packet record and
     /// texture sizes in a buffer on this shim's stack (the frame pointer at
