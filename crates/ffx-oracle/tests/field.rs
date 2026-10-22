@@ -23466,3 +23466,170 @@ fn cmm2_map_on_a_snapshot_matches_the_original() {
     let mut rng = Xorshift(0x00c3_d202);
     cmm2_map_cases(&mut t, &mut rng, 300);
 }
+
+/// A stand-in logging (at `[log]`, a cursor) its argument words `args`,
+/// then `n` words from each pointer argument of `derefs`; returns the word
+/// at `rv`.
+fn cursor_log_stub(log: u32, rv: u32, args: &[u8], derefs: &[(u8, u8)]) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend_from_slice(&log.to_le_bytes()); // mov ecx, [log]
+    for &i in args {
+        // mov eax, [esp + 4 + 4i]; mov [ecx], eax; add ecx, 4
+        c.extend_from_slice(&[0x8b, 0x44, 0x24, 4 + 4 * i, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+    }
+    for &(i, n) in derefs {
+        c.extend_from_slice(&[0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp + 4 + 4i]
+        for k in 0..n {
+            // mov eax, [edx + 4k]; mov [ecx], eax; add ecx, 4
+            c.extend_from_slice(&[0x8b, 0x42, 4 * k, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+        }
+    }
+    c.extend_from_slice(&[0x89, 0x0d]);
+    c.extend_from_slice(&log.to_le_bytes()); // mov [log], ecx
+    c.push(0xa1);
+    c.extend_from_slice(&rv.to_le_bytes()); // mov eax, [rv]
+    c.push(0xc3);
+    c
+}
+
+/// Chara-main-map round 2 on `t`: `yiRectMakeTex_00911fc0` with the whole
+/// 256 x 256 and with regions (11-bit spans, the object's own words for
+/// the offsets), bounds from `yiBoundsMinMax` (a stand-in copying cells)
+/// or from two corners (ordered both ways, equal, NaN), scales and bounds
+/// with NaNs and zero spans. Every callee is a logging stand-in: the
+/// matrix, the bounds and `yiPolyTexMapXZ`'s eighth word (the original's
+/// saved `edi`, the oracle's `0x33333333`) are logged by value.
+#[allow(clippy::too_many_lines)]
+fn cmm2_make_tex_cases(t: &mut Twin, rng: &mut Xorshift, cases: u32) {
+    use ffx_field::yipoly::{self as yp, make_tex as k};
+    let (log, rv, pkt) = (t.alloc(4 + 4 * 256), t.alloc(4), t.alloc(4));
+    let (bmin, bmax) = (t.alloc(16), t.alloc(16));
+    // yiBoundsMinMax(obj, min, max): logs obj, copies the two cells
+    let mut bounds = vec![0x8b, 0x0d];
+    bounds.extend_from_slice(&log.to_le_bytes());
+    bounds.extend_from_slice(&[0x8b, 0x44, 0x24, 4, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+    bounds.extend_from_slice(&[0x89, 0x0d]);
+    bounds.extend_from_slice(&log.to_le_bytes());
+    for (arg, cell) in [(8u8, bmin), (12, bmax)] {
+        bounds.extend_from_slice(&[0x8b, 0x54, 0x24, arg]); // mov edx, [esp + arg]
+        for k in 0..4u8 {
+            bounds.push(0xa1);
+            bounds.extend_from_slice(&(cell + 4 * u32::from(k)).to_le_bytes()); // mov eax, [cell]
+            bounds.extend_from_slice(&[0x89, 0x42, 4 * k]); // mov [edx + 4k], eax
+        }
+    }
+    bounds.push(0xc3);
+    t.cave_from(
+        0,
+        &[
+            (Some(k::BOUNDS_MIN_MAX), bounds),
+            (
+                Some(k::GS_SYNC_PATH),
+                cursor_log_stub(log, rv, &[0, 1], &[]),
+            ),
+            (Some(k::GS1_TRANSFER), cursor_log_stub(log, rv, &[], &[])),
+            (
+                Some(k::TEX_TARGET_CLEAR),
+                cursor_log_stub(log, rv, &[0, 1, 2, 3], &[]),
+            ),
+            (Some(k::ZERO_A), cursor_log_stub(log, rv, &[0], &[])),
+            (Some(k::ZERO_B), cursor_log_stub(log, rv, &[0], &[])),
+            (Some(k::PACKET_GET_PTR), cursor_log_stub(log, pkt, &[], &[])),
+            (
+                Some(k::MD_X64_DRAW),
+                cursor_log_stub(log, rv, &[0, 2], &[(1, 16)]),
+            ),
+            (Some(k::SET_DRAW_FRAME), cursor_log_stub(log, rv, &[], &[])),
+            (
+                Some(k::POLY_TEX_MAP_XZ),
+                cursor_log_stub(log, rv, &[0, 3, 4, 5, 6, 7], &[(1, 4), (2, 4)]),
+            ),
+        ],
+    );
+    let call = &mut |m: &mut Oracle, f: u32, a: &[u32]| m.call(f, Conv::Cdecl, a).unwrap().eax;
+    let f = |rng: &mut Xorshift| match rng.below(12) {
+        0 => [0x7fc0_0000u32, 0xffc0_0000, 0x7f80_0000, 0, 0x8000_0000][rng.below(5) as usize],
+        // full mantissas: the f32 roundings show
+        1..=4 => {
+            #[allow(clippy::cast_precision_loss)]
+            let x = (rng.next() as f32 / u32::MAX as f32 - 0.5) * 977.0;
+            x.to_bits()
+        }
+        _ => float_in(rng, -500, 500),
+    };
+    let (obj, ca, cb, r) = (t.alloc(16), t.alloc(16), t.alloc(16), t.alloc(16));
+    for _ in 0..cases {
+        let start = log + 4;
+        t.put(log, start);
+        t.put(rv, rng.next());
+        t.put(pkt, rng.next());
+        t.fill(obj, 16, rng);
+        for k in 0..4 {
+            let lo = f(rng);
+            t.put(bmin + 4 * k, lo);
+            // a zero span at times
+            let hi = if rng.below(8) == 0 { lo } else { f(rng) };
+            t.put(bmax + 4 * k, hi);
+            t.put(ca + 4 * k, f(rng));
+            let same: u32 = Mem::read(&t.b, ca + 4 * k);
+            // the same value, or the same with the other sign of zero
+            let other = match rng.below(8) {
+                0 => same,
+                1 if same.trailing_zeros() >= 31 => same ^ 0x8000_0000,
+                _ => f(rng),
+            };
+            t.put(cb + 4 * k, other);
+        }
+        let (a, b) = match rng.below(4) {
+            0 => (0, cb),
+            1 => (ca, 0),
+            _ => (ca, cb),
+        };
+        let span = |rng: &mut Xorshift| {
+            let lo = rng.below(0x800);
+            let hi = rng.below(0x800);
+            hi << 16 | lo | (rng.next() & 0xf800_f800)
+        };
+        let u = if rng.below(3) == 0 { 0 } else { span(rng) };
+        let v = span(rng);
+        let mt = yp::MakeTex {
+            obj,
+            a,
+            b,
+            scale: f(rng),
+            height: rng.next(),
+            tbp: rng.next(),
+            u,
+            v,
+        };
+        t.same(
+            "yiRectMakeTex",
+            |o| {
+                o.eax(
+                    0x0091_1fc0,
+                    &[r, obj, a, b, mt.scale, mt.height, mt.tbp, u, v],
+                )
+            },
+            |m| {
+                let w = m.stack_range().start + 0x400;
+                yp::yi_rect_make_tex(m, r, mt, 0x3333_3333, w, call)
+            },
+        );
+    }
+}
+
+#[test]
+fn cmm2_make_tex_matches_the_original() {
+    let Some(mut t) = Twin::image() else { return };
+    let mut rng = Xorshift(0x00c3_d211);
+    cmm2_make_tex_cases(&mut t, &mut rng, 400);
+}
+
+#[test]
+fn cmm2_make_tex_on_a_snapshot_matches_the_original() {
+    let Some(mut t) = Twin::snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c3_d212);
+    cmm2_make_tex_cases(&mut t, &mut rng, 200);
+}

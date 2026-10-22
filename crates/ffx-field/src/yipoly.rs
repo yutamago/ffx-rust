@@ -1091,3 +1091,160 @@ fn yi_malloc_plain<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
 ) -> u32 {
     crate::model::bridge::rc_alloc(mem, call, size)
 }
+
+// ---- chara-main-map round 2
+
+/// `yiRectMakeTex_00911fc0`'s callees, through the game: `yiBoundsMinMax(obj,
+/// min, max)`, `sceGsSyncPath(0, 0)`, `op_gs1_transfer()`,
+/// `yiTexTargetClear(tbp, u, w, h)`, `yiZero_0090cff0(r)`,
+/// `yiZero_0090cee0(r)`, `Sg_PacketGetPtr()`, `op_md_x64_draw_00a69300(obj,
+/// m, packet)`, `yiSetDrawFrame()`, `yiPolyTexMapXZ(obj, min, max, _,
+/// height, tbp, u, v)`.
+pub mod make_tex {
+    pub const BOUNDS_MIN_MAX: u32 = 0x0091_30f0;
+    pub const GS_SYNC_PATH: u32 = 0x0062_f880;
+    pub const GS1_TRANSFER: u32 = 0x007e_b580;
+    pub const TEX_TARGET_CLEAR: u32 = 0x0091_26f0;
+    pub const ZERO_A: u32 = 0x0090_cff0;
+    pub const ZERO_B: u32 = 0x0090_cee0;
+    pub const PACKET_GET_PTR: u32 = 0x0083_b650;
+    pub const MD_X64_DRAW: u32 = 0x00a6_9300;
+    pub const SET_DRAW_FRAME: u32 = 0x0091_2590;
+    pub const POLY_TEX_MAP_XZ: u32 = 0x0091_2b70;
+    /// `f64` 0.5, `f32` -1.0 (`g_ChrClothFlip`) and `f64` 1000.
+    pub const HALF: u32 = 0x00b9_2220;
+    pub const FLIP: u32 = 0x00b9_2340;
+    pub const DEPTH: u32 = 0x00b0_dba0;
+    /// Bytes of scratch [`super::yi_rect_make_tex`] needs: the matrix
+    /// (`[ebp-0x64]`), the bounds' max (`[ebp-0x24]`) and min
+    /// (`[ebp-0x14]`), as the original's frame holds them.
+    pub const SCRATCH: u32 = 0x60;
+}
+
+/// The arguments of [`yi_rect_make_tex`] past the map context: the
+/// object, the optional corners, the scale (`f32` bits), the height, the
+/// target `TEX0` base, the region's u and v words (u 0: the whole 256 x
+/// 256, and the object's own first words for the offsets).
+#[derive(Debug, Clone, Copy)]
+pub struct MakeTex {
+    pub obj: u32,
+    pub a: u32,
+    pub b: u32,
+    pub scale: u32,
+    pub height: u32,
+    pub tbp: u32,
+    pub u: u32,
+    pub v: u32,
+}
+
+/// `yiRectMakeTex_00911fc0(r, obj, a, b, scale, height, tbp, u, v)`
+/// (`0x00911fc0`, name ours; the body of `yiRectToOMD_maketex` and
+/// `yiRectToOMD_maketex_old`): draws the object's packet from above into
+/// a texture region and maps its triangles' UVs onto it.
+///
+/// The region is `u`/`v`'s 11-bit spans (`hi - lo + 1`), or 256 x 256
+/// for `u` 0. The bounds are `yiBoundsMinMax`'s, or with both corners
+/// `a` and `b` their x and z, ordered (the second is the max only when
+/// greater; NaN keeps the first). An orthographic matrix looks down y
+/// (z negated): x by `w / (max.x - min.x) * scale`, z by `-h / dz *
+/// scale`, the region's centre (`((word >> 1) & 0x3ff) + 0x800` of `u`,
+/// `v`, or of the object's first two words for `u` 0) minus the bounds'
+/// centre scaled, depth `1000 - min.y`; each step stored as `f32` where
+/// the original stores. Then the GS path is synced, the target cleared,
+/// the object drawn (`op_md_x64_draw`), and `yiPolyTexMapXZ(obj, min,
+/// max, scale, height, tbp, u, junk)`. Its eighth word the original never
+/// pushes: it is the word above its seven, this function's saved `edi`
+/// (the caller's register), `junk` here. Both callers push eight words,
+/// so `v` is their stale stack too. Returns 0.
+#[allow(clippy::too_many_lines)]
+pub fn yi_rect_make_tex<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+    mem: &mut M,
+    r: u32,
+    t: MakeTex,
+    junk: u32,
+    scratch: u32,
+    call: &mut C,
+) -> u32 {
+    use ffx_bridge::x87::Reg;
+    use make_tex as k;
+    let g = |mem: &M, f: u32| mem.rebase(f);
+    let ld = |mem: &M, a: u32| Reg::load(mem.read::<f32>(a));
+    let (w, h) = if t.u == 0 {
+        (0x100i32, 0x100i32)
+    } else {
+        let span = |x: u32| {
+            ((x >> 16 & 0x7ff).wrapping_sub(x & 0x7ff))
+                .wrapping_add(1)
+                .cast_signed()
+        };
+        (span(t.u), span(t.v))
+    };
+    let (mat, max, min) = (scratch, scratch + 0x40, scratch + 0x50);
+    call(mem, g(mem, k::BOUNDS_MIN_MAX), &[t.obj, min, max]);
+    if t.a != 0 && t.b != 0 {
+        for o in [0u32, 8] {
+            let (pa, pb) = (t.a.wrapping_add(o), t.b.wrapping_add(o));
+            // fcompp b vs a: a is the min only when b is greater
+            let (lo, hi) = if ld(mem, pb).value() > ld(mem, pa).value() {
+                (pa, pb)
+            } else {
+                (pb, pa)
+            };
+            let (lo, hi) = (ld(mem, lo).store(), ld(mem, hi).store());
+            mem.write(min + o, lo);
+            mem.write(max + o, hi);
+        }
+    }
+    // z flipped: the new min z is -max z, the new max -min z
+    let neg_min_z = Reg::load(-ld(mem, min + 8).store());
+    mem.write(min + 8, -ld(mem, max + 8).store());
+    let neg_min_z = Reg::load(neg_min_z.store());
+    mem.write(max + 8, neg_min_z.store());
+    let dx = ld(mem, max).sub_m32(mem.read(min));
+    #[allow(clippy::cast_precision_loss)] // fild of a small int
+    let fi = |x: i32| Reg::load(Reg::constant(f64::from(x)).store());
+    let scale = Reg::load(f32::from_bits(t.scale));
+    let sx = ((fi(w) / dx) * scale).store();
+    let dz = neg_min_z.sub_m32(mem.read(min + 8));
+    let sz = (scale * (fi(h) / dz)).store();
+    let (ux, vy) = if t.u == 0 {
+        (
+            mem.read::<u32>(t.obj),
+            mem.read::<u32>(t.obj.wrapping_add(4)),
+        )
+    } else {
+        (t.u, t.v)
+    };
+    let centre = |x: u32| ((x >> 1 & 0x3ff) + 0x800).cast_signed();
+    let half = Reg::constant(mem.read::<f64>(g(mem, k::HALF)));
+    let cx = Reg::load((dx * half).add_m32(mem.read(min)).store());
+    let tx = fi(centre(ux)).sub_m32(cx.mul_m32(sx).store()).store();
+    let cz = Reg::load((dz * half).add_m32(mem.read(min + 8)).store());
+    let ty = fi(centre(vy)).sub_m32(cz.mul_m32(sz).store()).store();
+    let depth = Reg::constant(mem.read::<f64>(g(mem, k::DEPTH)))
+        .sub_m32(mem.read(min + 4))
+        .store();
+    let flip = ld(mem, g(mem, k::FLIP)).store();
+    let mut m = [0f32; 16];
+    (m[0], m[6], m[9], m[12], m[13], m[14], m[15]) = (sx, flip, -sz, tx, ty, depth, 1.0);
+    mem.write(mat, m);
+    let sync = g(mem, k::GS_SYNC_PATH);
+    call(mem, sync, &[0, 0]);
+    call(mem, g(mem, k::GS1_TRANSFER), &[]);
+    call(mem, sync, &[0, 0]);
+    let (wu, hu) = (w.cast_unsigned(), h.cast_unsigned());
+    call(mem, g(mem, k::TEX_TARGET_CLEAR), &[t.tbp, t.u, wu, hu]);
+    call(mem, g(mem, k::ZERO_A), &[r]);
+    call(mem, g(mem, k::ZERO_B), &[r]);
+    let packet = call(mem, g(mem, k::PACKET_GET_PTR), &[]);
+    call(mem, g(mem, k::MD_X64_DRAW), &[t.obj, mat, packet]);
+    call(mem, sync, &[0, 0]);
+    call(mem, g(mem, k::SET_DRAW_FRAME), &[]);
+    let s = scale.store().to_bits();
+    call(
+        mem,
+        g(mem, k::POLY_TEX_MAP_XZ),
+        &[t.obj, min, max, s, t.height, t.tbp, t.u, junk],
+    );
+    0
+}
