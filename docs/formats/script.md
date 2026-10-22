@@ -3215,6 +3215,16 @@ real spline functions.
   current candidate's distance with the talk radius² rather than with the
   distance, and stores that radius² as the candidate's distance. The
   dispatcher's caller (`0x00865208`) ignores `EAX`.
+- `Atel_CheckBoxTrigger_00866cc0(w, _, player)` (`0x00866cc0`, same
+  dispatcher) is the box-shaped request trigger, `0x00867c10`'s sibling:
+  the same rotation (angle negated with `fchs`, cosine computed first),
+  outcodes and clamp, but a crossing sends trigger 4 unless `+0x34` bit 8
+  says B was inside last time, a touch sends 3 (and 5 when new), and the
+  talk candidate test follows: B inside the box, or in the band and
+  within `(move +0x40 + ctrl +0x1f0)²` of its clamp, a candidate
+  distance above that radius² and `Math_FacingWithin` from the player's
+  raw x/z to the actor's position make it the candidate, with the
+  radius² stored as its distance.
 
 ### Verification
 

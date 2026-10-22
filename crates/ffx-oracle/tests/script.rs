@@ -14244,3 +14244,430 @@ fn round27e_line_touch_matches_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r27e_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Round 27 f on one pair: `Atel_CheckBoxTrigger_00866cc0` on a ctrl work
+/// of its own, the trigger requests logged: random boxes, angles and
+/// points (NaNs mixed in), the real `Math_FacingWithin` for the first half
+/// and a stand-in (0, 1, `0x100`) after; then exact face, band, radius,
+/// talk and candidate ties at angle 0 (box 2 x (1) x 2).
+#[allow(clippy::too_many_lines)] // the random part, then the ties
+fn r27f_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let at = a.rebase(TRAMPOLINE);
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+        Mem::write_bytes(o, at, &TRAMPOLINE_CODE);
+    }
+    let stubs = r27_stubs(a, b, &[(0x0087_64f0, 3, true)]);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let here = Mem::read::<u32>(a, ctx_cell);
+    let c = alloc_both(a, b, 0x240);
+    poke(a, b, ctx_cell, c);
+    let (w, p) = (alloc_both(a, b, 0xb58), alloc_both(a, b, 0xb58));
+    let nan = 0x7fc0_0000u32;
+    let f = |rng: &mut Xorshift, r: f32| {
+        if rng.below(32) == 0 {
+            nan
+        } else {
+            r26_f32(rng, r)
+        }
+    };
+    let mvo = |a: &Oracle, x: u32| {
+        if matches!(Mem::read::<u8>(a, Mem::read::<u32>(a, x)), 5 | 6) {
+            x + 0x284
+        } else {
+            x + 0x558
+        }
+    };
+    let mut face = None;
+    for round in 0..600u32 {
+        if round == 300 {
+            face = Some(r27_stubs(a, b, &[(0x0088_b780, 6, true)]));
+        }
+        r27_reset(a, b, &stubs, |_| rng.next());
+        if let Some(face) = &face {
+            r27_reset(a, b, face, |_| [0u32, 1, 1, 0x100][rng.below(4) as usize]);
+        }
+        for x in [w, p] {
+            let hdr = alloc_both(a, b, 4);
+            poke(a, b, hdr, [0u8, 1, 2, 3, 5, 6, 7][rng.below(7) as usize]);
+            fill_both(a, b, rng, x + 4, 0xb54);
+            poke(a, b, x, hdr);
+        }
+        let (mv, pmv) = (mvo(a, w), mvo(a, p));
+        for k in 0..3 {
+            poke(a, b, mv + 4 * k, f(rng, 3.0));
+            poke(a, b, c + 0x218 + 4 * k, f(rng, 6.0));
+            poke(a, b, c + 0x228 + 4 * k, f(rng, 6.0));
+        }
+        let half = |rng: &mut Xorshift| {
+            if rng.below(8) == 0 {
+                f(rng, 2.0)
+            } else {
+                (r26_f32(rng, 2.0) & 0x7fff_ffff).max(0x3f00_0000)
+            }
+        };
+        let (hx, hz) = (half(rng), half(rng));
+        poke(a, b, mv + 0x30, hx);
+        poke(a, b, mv + 0x38, hz);
+        poke(a, b, mv + 0x1c, f(rng, 4.0));
+        poke(a, b, mv + 0x34, f(rng, 4.0));
+        poke(a, b, mv + 0x48, f(rng, 4.0));
+        poke(a, b, mv + 0x40, f(rng, 3.0));
+        poke(a, b, mv + 0x3c, f(rng, 3.0));
+        poke(a, b, pmv + 0x34, f(rng, 3.0));
+        poke(a, b, c + 0x1f0, f(rng, 3.0));
+        poke(a, b, c + 0x1ec, f(rng, 40.0));
+        poke(a, b, c + 0x1e4, [1u8, 1, 1, 0, 2][rng.below(5) as usize]);
+        poke(a, b, c + 0x1e8, [0xffffu16, 3][rng.below(2) as usize]);
+        if rng.below(4) != 0 {
+            poke(a, b, w + 0xab, Mem::read::<u8>(a, w + 0xab) | 1);
+        }
+        let junk = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0086_6cc0,
+            &[w, junk, p],
+            false,
+            &format!("Atel_CheckBoxTrigger {what} {round}"),
+            |r| {
+                hp::atel_check_box_trigger(r, w, p, |r, at, args| r.0.call_f64(at, args).unwrap());
+                0
+            },
+        );
+    }
+    // the ties: angle 0, box 2 x (1) x 2, the facing stand-in 1
+    let face = r27_stubs(a, b, &[(0x0088_b780, 6, true)]);
+    let one = alloc_both(a, b, 4);
+    poke(a, b, one, 1u8);
+    for x in [w, p] {
+        poke(a, b, x, one);
+    }
+    let (mv, pmv) = (w + 0x558, p + 0x558);
+    // (name, A, B, half height, radius, talk parts, candidate id and
+    // distance, +0x34)
+    #[allow(clippy::type_complexity)]
+    let cases: [(
+        &str,
+        [f32; 3],
+        [f32; 3],
+        f32,
+        f32,
+        (f32, f32),
+        u16,
+        f32,
+        u16,
+    ); 22] = [
+        (
+            "inside",
+            [0.0; 3],
+            [1.0, 0.0, 1.0],
+            1.0,
+            0.0,
+            (1.0, 1.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "on +x",
+            [9.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            1.0,
+            0.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "on -x",
+            [9.0, 0.0, 0.0],
+            [-2.0, 0.0, 0.0],
+            1.0,
+            0.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0x40,
+        ),
+        (
+            "on +z",
+            [0.0, 0.0, -9.0],
+            [0.0, 0.0, 2.0],
+            1.0,
+            0.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "on -z",
+            [0.0, 0.0, 9.0],
+            [0.0, 0.0, -2.0],
+            1.0,
+            0.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0x40,
+        ),
+        (
+            "on +y",
+            [0.0, -9.0, 0.0],
+            [0.0, 1.0, 0.0],
+            1.0,
+            0.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "on -y",
+            [0.0, 9.0, 0.0],
+            [0.0, -1.0, 0.0],
+            1.0,
+            0.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0x40,
+        ),
+        (
+            "A on +x",
+            [2.0, 0.0, 0.0],
+            [9.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "A on -x",
+            [-2.0, 0.0, 0.0],
+            [-9.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "A on +z",
+            [0.0, 0.0, 2.0],
+            [0.0, 0.0, 9.0],
+            1.0,
+            1.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "A on -z",
+            [0.0, 0.0, -2.0],
+            [0.0, 0.0, -9.0],
+            1.0,
+            1.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "A on +y",
+            [0.0, 1.0, 0.0],
+            [0.0, 5.0, 0.0],
+            1.0,
+            f32::NAN,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "A on -y",
+            [0.0, -1.0, 0.0],
+            [0.0, -5.0, 0.0],
+            1.0,
+            f32::NAN,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "band 0, B y 0",
+            [0.0; 3],
+            [1.0, 0.0, 1.0],
+            0.0,
+            1.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "band 0, A high",
+            [0.0, 5.0, 0.0],
+            [3.0, 0.0, 0.0],
+            0.0,
+            1.0,
+            (1.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "band top",
+            [0.0, 1.0, 0.0],
+            [3.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            (1.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "band bottom",
+            [0.0, -1.0, 0.0],
+            [3.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            (1.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "radius tie",
+            [0.0; 3],
+            [3.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "talk tie",
+            [0.0; 3],
+            [3.0, 0.0, 0.0],
+            1.0,
+            0.5,
+            (0.5, 0.5),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "candidate tie",
+            [0.0; 3],
+            [1.0, 0.0, 1.0],
+            1.0,
+            0.0,
+            (1.0, 2.0),
+            3,
+            9.0,
+            0,
+        ),
+        (
+            "cross",
+            [9.0, 0.0, 0.0],
+            [-9.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0,
+        ),
+        (
+            "cross, was inside",
+            [9.0, 0.0, 0.0],
+            [-9.0, 0.0, 0.0],
+            1.0,
+            1.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+            0x140,
+        ),
+    ];
+    for (name, pa, pb, hy, r, (rm, rc), id, best, bits) in cases {
+        r27_reset(a, b, &stubs, |_| 0x1234);
+        r27_reset(a, b, &face, |_| 1);
+        for (k, v) in (0u32..).zip(pa) {
+            poke(a, b, c + 0x228 + 4 * k, v.to_bits());
+        }
+        for (k, v) in (0u32..).zip(pb) {
+            poke(a, b, c + 0x218 + 4 * k, v.to_bits());
+        }
+        for (at, v) in [
+            (mv, 0.0),
+            (mv + 4, 0.0),
+            (mv + 8, 0.0),
+            (mv + 0x30, 2.0),
+            (mv + 0x38, 2.0),
+            (mv + 0x34, 0.0),
+            (mv + 0x1c, hy),
+            (mv + 0x48, r),
+            (mv + 0x40, rm),
+            (c + 0x1f0, rc),
+            (mv + 0x3c, 0.5),
+            (pmv + 0x34, 1.0),
+            (c + 0x1ec, best),
+        ] {
+            poke(a, b, at, v.to_bits());
+        }
+        poke(a, b, c + 0x1e4, 1u8);
+        poke(a, b, c + 0x1e8, id);
+        poke(a, b, w + 0x2e, 9u16);
+        poke(a, b, w + 0xab, 1u8);
+        poke(a, b, w + 0x34, bits);
+        r22_case(
+            a,
+            b,
+            0x0086_6cc0,
+            &[w, 0, p],
+            false,
+            &format!("Atel_CheckBoxTrigger {what} {name}"),
+            |r| {
+                hp::atel_check_box_trigger(r, w, p, |r, at, args| r.0.call_f64(at, args).unwrap());
+                0
+            },
+        );
+    }
+    poke(a, b, ctx_cell, here);
+}
+
+#[test]
+fn round27f_box_trigger_matches_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_027f);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r27f_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r27f_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

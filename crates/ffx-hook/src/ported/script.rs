@@ -7437,4 +7437,9 @@ ported! {
         let mut frame = super::StackFrame::<16>::new();
         hp::atel_check_line_touch(&mut mem(), w, player, frame.at(), |_, f, args| super::call_cdecl_f64(f, args));
     }
+    /// `Atel_CheckBoxTrigger_00866cc0(worker, _, player)`:
+    /// `Math_LengthSq3` through the game.
+    Atel_CheckBoxTrigger_00866cc0 @ 0x0086_6cc0 => extern "C" fn h_866cc0(w: u32, _unused: u32, player: u32) {
+        hp::atel_check_box_trigger(&mut mem(), w, player, |_, f, args| super::call_cdecl_f64(f, args));
+    }
 }

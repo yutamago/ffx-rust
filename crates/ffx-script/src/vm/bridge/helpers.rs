@@ -8125,3 +8125,182 @@ pub fn atel_check_line_touch<H: ffx_bridge::Host>(
     h.write(ctx + 0x1ec, copy(reach2));
     h.write(ctx + 0x1e8, i);
 }
+
+/// `Atel_CheckBoxTrigger_00866cc0(w, _, player)` (name ours; caller
+/// `0x008666e0`, whose `EAX` its caller drops): the box-shaped request
+/// trigger, the request-and-talk sibling of [`atel_check_box_touch`]. A
+/// (ctrl work `+0x228`) and B (the player, `+0x218`) relative to the move
+/// position, turned by `-(move +0x34)` (cosine first:
+/// `x' = x c - z s`, `z' = c z + s x`), get the same outcodes against
+/// `±(+0x30)`, `±(+0x38)` and `±(+0x1c)`. A crossing (no common outcode,
+/// not both inside) sends trigger 4 unless `+0x34` bit 8 (inside last
+/// time) is set. B inside sets bit 8 and touches; outside, bit 8 is
+/// cleared and it touches within the band (A's height) and `(+0x48)²` of
+/// its clamp. A touch sends 3 (and 5 when new); else a crossing without an
+/// earlier touch sends 5 then 6, an ended touch 6. Talk (`+0xab` bit 0,
+/// ctrl `+0x1e4` 1): B inside, or in the band and within
+/// `(move +0x40 + ctrl +0x1f0)²` of its clamp; a candidate distance above
+/// that radius² (any for `+0x1e8` `0xffff`) and
+/// `Math_FacingWithin(player heading, +0x3c, player x, z, actor x, z)`
+/// make it the candidate (`+0x1e8` id, `+0x1ec` the radius²). `fcall`
+/// calls an original returning in `ST0` (`Math_LengthSq3`).
+#[allow(clippy::too_many_lines, clippy::similar_names)] // the original's three steps
+pub fn atel_check_box_trigger<H: super::run::NativeHost>(
+    h: &mut H,
+    w: u32,
+    player: u32,
+    mut fcall: impl FnMut(&mut H, u32, &[u32]) -> f64,
+) {
+    let copy = |v: u32| x87::store(x87::load(v));
+    let ld = x87::load;
+    let mv = move_block(h, w);
+    let pmv = move_block(h, player);
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let [px, py, pz] = [0, 4, 8].map(|o| copy(h.read(mv + o)));
+    let hz = copy(h.read(mv + 0x38));
+    let hx = copy(h.read(mv + 0x30));
+    let angle = copy(h.read(mv + 0x34)) ^ 0x8000_0000;
+    let hy = copy(h.read(mv + 0x1c));
+    let rel = |h: &mut H, o: u32, p: u32| x87::store(x87::sub(ld(h.read(ctx + o)), ld(p)));
+    let (ax, ay, az) = (rel(h, 0x228, px), rel(h, 0x22c, py), rel(h, 0x230, pz));
+    let (bx, by, bz) = (rel(h, 0x218, px), rel(h, 0x21c, py), rel(h, 0x220, pz));
+    let (sin, cos) = (h.rebase(0x0094_98c8), h.rebase(0x0094_98c2));
+    let c = x87::store(h.call_intrinsic1(cos, ld(angle)));
+    let s = x87::store(h.call_intrinsic1(sin, ld(angle)));
+    let az2 = x87::store(x87::add(x87::mul(ld(c), ld(az)), x87::mul(ld(s), ld(ax))));
+    let ax2 = x87::store(x87::sub(x87::mul(ld(ax), ld(c)), x87::mul(ld(az), ld(s))));
+    let bz2 = x87::store(x87::add(x87::mul(ld(c), ld(bz)), x87::mul(ld(s), ld(bx))));
+    write_u16(h, w + 0x36, u32::from(h.read::<u16>(w + 0x36)) & 0xfffe);
+    let bx2 = x87::store(x87::sub(x87::mul(ld(c), ld(bx)), x87::mul(ld(s), ld(bz))));
+    // every compare is false when unordered
+    let (hx64, hz64, hy64) = (ld(hx), ld(hz), ld(hy));
+    let (nhx, nhz) = (hx ^ 0x8000_0000, hz ^ 0x8000_0000);
+    let mut out_a = 0_u32;
+    if ld(ax2) >= hx64 {
+        out_a |= 1;
+    }
+    if ld(nhx) >= ld(ax2) {
+        out_a |= 2;
+    }
+    if ld(az2) >= hz64 {
+        out_a |= 4;
+    }
+    if ld(nhz) >= ld(az2) {
+        out_a |= 8;
+    }
+    if hy64 > 0.0 {
+        if ld(ay) >= hy64 {
+            out_a |= 0x10;
+        }
+        if -hy64 >= ld(ay) {
+            out_a |= 0x20;
+        }
+    }
+    let (mut cx, mut cz) = (bx2, bz2);
+    let mut out_b = 0_u32;
+    if ld(bx2) >= hx64 {
+        out_b |= 1;
+        cx = hx;
+    }
+    if ld(nhx) >= ld(bx2) {
+        out_b |= 2;
+        cx = nhx;
+    }
+    if ld(bz2) >= hz64 {
+        out_b |= 4;
+        cz = hz;
+    }
+    if ld(nhz) >= ld(bz2) {
+        out_b |= 8;
+        cz = nhz;
+    }
+    if hy64 > 0.0 {
+        if ld(by) >= hy64 {
+            out_b |= 0x10;
+        }
+        if x87::mul(hy64, -1.0) >= ld(by) {
+            out_b |= 0x20;
+        }
+    }
+    let id = |h: &mut H| u32::from(Mem::read::<u16>(h, w + 0x2e));
+    let crossing = out_a & out_b == 0 && out_a | out_b != 0;
+    if crossing && h.read::<u8>(w + 0x35) & 1 == 0 {
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 4]);
+    }
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    let was = f34 >> 6 & 1;
+    // A's height within the band (any when the band is not positive)
+    let in_band = hy64 <= 0.0 || (ld(ay) <= hy64 && -hy64 <= ld(ay));
+    let length_sq3 = h.rebase(0x0088_c3c0);
+    let mut dist = |h: &mut H| {
+        let dz = x87::store(x87::sub(ld(bz2), ld(cz)));
+        let dx = x87::store(x87::sub(ld(bx2), ld(cx)));
+        x87::store(fcall(h, length_sq3, &[dx, 0, dz]))
+    };
+    let touched = if out_b == 0 {
+        write_u16(h, w + 0x34, f34 | 0x100);
+        true
+    } else {
+        write_u16(h, w + 0x34, f34 & 0xfeff);
+        in_band && {
+            let l = dist(h);
+            let r = ld(h.read(mv + 0x48));
+            ld(x87::store(x87::mul(r, r))) >= ld(l)
+        }
+    };
+    let f34 = u32::from(h.read::<u16>(w + 0x34));
+    write_u16(h, w + 0x34, f34 & !0x40 | u32::from(touched) << 6);
+    if touched {
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 3]);
+        if was == 0 {
+            let i = id(h);
+            host_call(h, 0x0087_64f0, &[0xffff, i, 5]);
+        }
+    } else if crossing && was == 0 {
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 5]);
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 6]);
+    } else if was == 1 {
+        let i = id(h);
+        host_call(h, 0x0087_64f0, &[0xffff, i, 6]);
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    if h.read::<u8>(w + 0xab) & 1 == 0 || h.read::<u8>(ctx + 0x1e4) != 1 {
+        return;
+    }
+    let reach = x87::store(x87::add(ld(h.read(mv + 0x40)), ld(h.read(ctx + 0x1f0))));
+    let reach2 = x87::store(x87::mul(ld(reach), ld(reach)));
+    if out_b != 0 {
+        if !in_band {
+            return;
+        }
+        let l = dist(h);
+        let near = ld(reach2) >= ld(l);
+        if !near {
+            return;
+        }
+    }
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    let free = h.read::<u16>(ctx + 0x1e8) == 0xffff || ld(h.read(ctx + 0x1ec)) > ld(reach2);
+    if !free {
+        return;
+    }
+    let args = [
+        copy(h.read(pmv + 0x34)),
+        copy(h.read(mv + 0x3c)),
+        copy(h.read(ctx + 0x218)),
+        copy(h.read(ctx + 0x220)),
+        copy(h.read(mv)),
+        copy(h.read(mv + 8)),
+    ];
+    if host_call(h, 0x0088_b780, &args) == 0 {
+        return;
+    }
+    let i = h.read::<u16>(w + 0x2e);
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    h.write(ctx + 0x1ec, copy(reach2));
+    h.write(ctx + 0x1e8, i);
+}
