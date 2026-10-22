@@ -5933,6 +5933,30 @@ ported! {
     opp_mdc @ 0x0080_e030 => extern "C" fn opp_mdc(host: u32, set: u32) -> u32 {
         opus::bridge::opp_mdc(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opp_mdc_wave_0080df10(host, set)`.
+    opp_mdc_wave_0080df10 @ 0x0080_df10 => extern "C" fn opp_mdc_wave(host: u32, set: u32) -> u32 {
+        opus::bridge::opp_mdc_wave(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_mdc_size_get_mimic(mode)`.
+    opus_mdc_size_get_mimic @ 0x0080_f580 => extern "C" fn opus_mdc_size_get_mimic(mode: u32) -> u32 {
+        opus::bridge::opus_mdc_size_get_mimic(&mut mem(), mode, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opus_mdc_make_mimic(out, mode, table)`: `out`, or 0.
+    opus_mdc_make_mimic @ 0x0080_f460 => extern "C" fn opus_mdc_make_mimic(out: u32, mode: u32, table: u32) -> u32 {
+        opus::bridge::opus_mdc_make_mimic(&mut mem(), out, mode, table, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_dobj_draw_00814800(host, cmd)`: the next command.
+    opu_dobj_draw_00814800 @ 0x0081_4800 => extern "C" fn opu_dobj_draw(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_dobj_draw(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_dvd(host, cmd)`: the next command.
+    opu_dvd @ 0x0081_48c0 => extern "C" fn opu_dvd(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_dvd(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_en_lock(host, cmd)`: the next command.
+    opu_en_lock @ 0x0081_6030 => extern "C" fn opu_en_lock(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_en_lock(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `pppKeBornRnd4(obj, key, ctrl)` (`0x00758ae0`): the local vector in
     /// this shim's frame.
     pppKeBornRnd4 @ 0x0075_8ae0 => extern "C" fn ppp_ke_born_rnd4(obj: u32, key: u32, ctrl: u32) {

@@ -937,6 +937,89 @@ pub mod bridge {
         old_34
     }
 
+    /// `op_md_ref_nolight(obj, init, tex, scale, slot)` (`0x00a6a6a0`).
+    const OP_MD_REF_NOLIGHT: u32 = 0x00a6_a6a0;
+    /// `f64` 1.0 (`0x00b92248`).
+    const K_ONE: u32 = 0x00b9_2248;
+
+    /// `op1_mdc_ref_nolight(list, init, m, view, _, tex, scale, m2)`
+    /// (`0x00a68e10`, from `opp_mdc_draw_a6f4d0`): `op1_mdc_draw`'s twin
+    /// for the refracting packets. `[init +0x20]` is pointed at the local
+    /// matrix `frame - 0xc4` and `[init +0x2c]` at `frame - 0x44`; `view`
+    /// (or `g_Op3dListener` when 0) is copied to `frame - 0x84`
+    /// (`op_m_copy`), whose `z` translation (`f32 +0x38`) loses 1.0 for the
+    /// magic files 0x1b5 and 0x1b6 (`MagicFile_GetMagicId`, asked twice for
+    /// any other). For each of the `u16 list +4` entries (reread; 16 bytes
+    /// from `list + 0x10`: packet, matrix): the matrix's translation times
+    /// 1000 (each an `f32`), `op_mul_m(frame - 0x44, m, matrix)`,
+    /// `op_mul_m(frame - 0xc4, frame - 0x84, frame - 0x44)`,
+    /// `op_mul_m(frame - 0x44, m2, matrix)`, the translation times 0.001,
+    /// then `op_md_ref_nolight(packet, init, tex, scale, i)`. Both `[init
+    /// +0x20]` and `[init +0x2c]` get the old `[init +0x20]` back; the
+    /// result is `[init +0x34]` then. Callees through `call`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn op1_mdc_ref_nolight<M: Mem>(
+        mem: &mut M,
+        list: u32,
+        init: u32,
+        m: u32,
+        view: u32,
+        tex: u32,
+        scale: u32,
+        m2: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let (world, eye, local) = (
+            frame.wrapping_sub(0xc4),
+            frame.wrapping_sub(0x84),
+            frame.wrapping_sub(0x44),
+        );
+        let old_20: u32 = mem.read(init.wrapping_add(0x20));
+        mem.write(init.wrapping_add(0x20), world);
+        mem.write(init.wrapping_add(0x2c), local);
+        let view = if view == 0 {
+            mem.rebase(OP_3D_LISTENER)
+        } else {
+            view
+        };
+        go(mem, OP_M_COPY, &[eye, view], call);
+        let id = go(mem, MAGIC_FILE_GET_MAGIC_ID, &[], call);
+        if id == 0x1b5 || go(mem, MAGIC_FILE_GET_MAGIC_ID, &[], call) == 0x1b6 {
+            let z = eye.wrapping_add(0x38);
+            let one: f64 = mem.read(mem.rebase(K_ONE));
+            let v = x87::store(x87::load(mem.read(z)) - one);
+            mem.write(z, v);
+        }
+        let up: f64 = mem.read(mem.rebase(K_1000));
+        let down: f64 = mem.read(mem.rebase(K_1000TH));
+        // `fld dword; fstp dword`: the scale as the FPU passes it on
+        let scale = x87::store(x87::load(scale));
+        let mut at = list.wrapping_add(0x10);
+        let mut i = 0i32;
+        while i < i32::from(mem.read::<u16>(list.wrapping_add(4))) {
+            scale_translation(mem, at, up);
+            let tm = ptr32(mem.read(at.wrapping_add(4)));
+            go(mem, OP_MUL_M, &[local, m, tm], call);
+            go(mem, OP_MUL_M, &[world, eye, local], call);
+            let tm = ptr32(mem.read(at.wrapping_add(4)));
+            go(mem, OP_MUL_M, &[local, m2, tm], call);
+            scale_translation(mem, at, down);
+            let packet = ptr32(mem.read(at));
+            go(
+                mem,
+                OP_MD_REF_NOLIGHT,
+                &[packet, init, tex, scale, i.cast_unsigned()],
+                call,
+            );
+            i += 1;
+            at = at.wrapping_add(0x10);
+        }
+        mem.write(init.wrapping_add(0x2c), old_20);
+        mem.write(init.wrapping_add(0x20), old_20);
+        mem.read(init.wrapping_add(0x34))
+    }
+
     const OP_SPR_ALLOC: u32 = 0x007e_6a00;
     const OP_SPR_FREE: u32 = 0x007e_6a60;
     const OP_VERTEX_NORMAL_POINT44_FFX_2: u32 = 0x00a6_d670;

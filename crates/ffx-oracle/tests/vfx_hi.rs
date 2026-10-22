@@ -2824,3 +2824,97 @@ fn md_ref_nolight_matches_the_original() {
         );
     }
 }
+
+// ---- round 46 ------------------------------------------------------------
+
+#[test]
+fn round46a_op1_mdc_ref_nolight_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_8e10);
+        let (list, init, m, view, m2, tex) = (
+            p.alloc(0x50),
+            p.alloc(0x60),
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x40),
+            p.alloc(0x10),
+        );
+        let mats = [p.alloc(0x40), p.alloc(0x40), p.alloc(0x40), p.alloc(0x40)];
+        // op_md_ref_nolight's stand-in copies the two matrices [init +0x20]
+        // and [init +0x2c] point at (locals of the caller) to `seen`, then
+        // logs (packet, init words 0..11, tex, scale, i)
+        let seen = p.alloc(0x80);
+        let mut prefix = vec![
+            0x56, 0x57, 0x51, // push esi; push edi; push ecx
+            0x8b, 0x44, 0x24, 0x14, // mov eax, [esp + 0x14] (init)
+            0x8b, 0x70, 0x20, // mov esi, [eax + 0x20]
+            0xbf, // mov edi, seen
+        ];
+        prefix.extend(seen.to_le_bytes());
+        prefix.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]); // mov ecx, 16; rep movsd
+        prefix.extend([0x8b, 0x70, 0x2c]); // mov esi, [eax + 0x2c]
+        prefix.extend([0xb9, 0x10, 0, 0, 0, 0xf3, 0xa5]);
+        prefix.extend([0x59, 0x5f, 0x5e]); // pop ecx; pop edi; pop esi
+        let log = prefixed_recorder(&mut p, 0x00a6_a6a0, &prefix, &[0, 11, 0, 0, 0], None);
+        let id = p.alloc(4);
+        let ids = deref_recorder_with(&mut p, 0x009d_a3b0, &[], Some(id));
+        let listener = p.sym(0x0113_fcd0);
+        let mut counts = [0u32; 4];
+        for _ in 0..1000 {
+            p.fill(init, 0x60, &mut rng);
+            for at in [m, view, m2] {
+                matrix(&mut p, &mut rng, at);
+            }
+            if !p.snapshot() || rng.chance(50) {
+                matrix(&mut p, &mut rng, listener);
+            }
+            for &at in &mats {
+                matrix(&mut p, &mut rng, at);
+            }
+            p.fill(list, 0x50, &mut rng);
+            p.fill(tex, 0x10, &mut rng);
+            let n = rng.below(4);
+            counts[n as usize] += 1;
+            p.set(list + 4, u16::try_from(n).unwrap());
+            for k in 0..n {
+                let e = list + 0x10 + 0x10 * k;
+                let mat = rng.pick(&mats);
+                p.set(e + 4, mat);
+            }
+            let any = rng.next();
+            p.set(id, rng.pick(&[0x1b5u32, 0x1b6, 0x1b4, 0x1b7, any]));
+            let v = if rng.chance(30) { 0 } else { view };
+            let scale = if rng.chance(10) {
+                rng.float()
+            } else {
+                finite(&mut rng)
+            };
+            let junk = rng.next();
+            check_deep_n(
+                &mut p,
+                "op1_mdc_ref_nolight",
+                0x00a6_8e10,
+                &[list, init, m, v, junk, tex, scale, m2],
+                |o, frame| {
+                    Some(hi_draw::bridge::op1_mdc_ref_nolight(
+                        o,
+                        list,
+                        init,
+                        m,
+                        v,
+                        tex,
+                        scale,
+                        m2,
+                        frame,
+                        &mut call_original,
+                    ))
+                },
+            );
+        }
+        assert!(
+            counts.iter().all(|&c| c > 0) && p.get::<u32>(log) > 0 && p.get::<u32>(ids) > 0,
+            "{}",
+            p.name
+        );
+    }
+}

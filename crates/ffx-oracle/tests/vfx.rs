@@ -28293,3 +28293,246 @@ fn round44a_opu_unit_etc_matches_the_original() {
         assert!(seen.iter().all(|&n| n > 20), "{}: {seen:?}", p.name);
     }
 }
+
+// ---- round 46 ---------------------------------------------------------
+
+#[test]
+fn round46a_opp_mdc_wave_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_df10);
+        let rets = p.alloc(0x10);
+        let logs = [
+            far_recorder(&mut p, 0x0080_62c0, &[0; 6], None), // opus_rt_m_chara
+            far_recorder(&mut p, 0x0080_1f00, &[0, 0], Some(rets)), // opus_parent_get
+            far_recorder(&mut p, 0x007e_83b0, &[0, 0, 0], None), // op_mul_m
+            far_recorder(&mut p, 0x0080_e160, &[0; 5], Some(rets + 4)), // packet_set
+            far_recorder(&mut p, 0x0080_e2f0, &[0; 5], None), // wave light set-up
+            far_recorder(&mut p, 0x00a6_8c90, &[0; 5], Some(rets + 8)), // op1_mdc_draw
+        ];
+        let (host, unit, set, shape) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x60), p.alloc(4));
+        let vu = p.sym(0x00c8_f528);
+        for round in 0..1000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(rets, 0x10, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(set, 0x60, &mut rng);
+            p.fill(shape, 4, &mut rng);
+            p.fill(vu, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            p.set(unit + 0xa8, shape);
+            let k = if rng.chance(10) {
+                0x7fc0_0001
+            } else {
+                finite(&mut rng)
+            };
+            p.set(unit + 0x3c, k);
+            p.check(
+                &format!("opp_mdc_wave round {round}"),
+                0x0080_df10,
+                &[host, set],
+                |m| Some(o::opp_mdc_wave(m, host, set, &mut call_original)),
+            );
+            for log in logs {
+                assert_eq!(p.get::<u32>(log), if log == logs[2] { 2 } else { 1 });
+            }
+        }
+    }
+}
+
+#[test]
+fn round46a_mimic_mdc_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0080_f460);
+        let rets = p.alloc(0x20);
+        let osu_log = far_recorder(&mut p, 0x0080_0f60, &[0; 4], Some(rets)); // opus_get_osu_by_draw
+        let logs = [
+            far_recorder(&mut p, 0x0082_add0, &[0, 0], Some(rets + 4)), // Ch_ModelGetHide
+            far_recorder(&mut p, 0x00a4_4700, &[0], Some(rets + 8)),    // set_ptr32
+            far_recorder(&mut p, 0x0083_0450, &[0, 0], Some(rets + 0xc)), // CalcSize
+            far_recorder(&mut p, 0x0083_0490, &[0, 0, 0], None),        // CreateEffectPacket
+            far_recorder(&mut p, 0x00a6_9f10, &[0, 0, 0], Some(rets + 0x10)), // op_md_vn_index
+        ];
+        let (osu, src, out, words) = (p.alloc(0x100), p.alloc(0x500), p.alloc(0x100), p.alloc(8));
+        let mut seen = [0u32; 3];
+        for round in 0..1500u32 {
+            p.fill(rets, 0x20, &mut rng);
+            p.fill(osu, 0x100, &mut rng);
+            p.fill(src, 0x500, &mut rng);
+            p.fill(out, 0x100, &mut rng);
+            p.fill(words, 8, &mut rng);
+            p.set(osu + 0xbc, src);
+            p.set(src, words);
+            p.set(src + 4, words + 4);
+            let n = rng.pick(&[0u16, 1, 2, 3, 5, 8]);
+            p.set(src + 0xe, n);
+            let any = rng.next();
+            p.set(rets, if rng.chance(15) { 0 } else { osu });
+            p.set(rets + 4, rng.pick(&[0u32, 1, any]));
+            p.set(
+                rets + 0xc,
+                rng.pick(&[0u32, 1, 0xf, 0x10, 0x11, 0xfff_fff1, any]),
+            );
+            let mode = rng.pick(&[0u32, 1, 2, 2, 3, any]);
+            let table = rng.next();
+            let r = p.check(
+                &format!("opus_mdc_size_get_mimic round {round}"),
+                0x0080_f580,
+                &[mode],
+                |m| Some(o::opus_mdc_size_get_mimic(m, mode, &mut call_original)),
+            );
+            seen[0] += u32::from(r != 0);
+            let r = p.check(
+                &format!("opus_mdc_make_mimic round {round}"),
+                0x0080_f460,
+                &[out, mode, table],
+                |m| {
+                    Some(o::opus_mdc_make_mimic(
+                        m,
+                        out,
+                        mode,
+                        table,
+                        &mut call_original,
+                    ))
+                },
+            );
+            seen[1] += u32::from(r != 0);
+            seen[2] += u32::from(p.get::<u32>(logs[4]) != 0);
+        }
+        assert!(
+            seen.iter().all(|&c| c > 0) && p.get::<u32>(osu_log) > 0,
+            "{}: {seen:?}",
+            p.name
+        );
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round46a_opu_commands_match_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_48c0);
+        let rets = p.alloc(0x40);
+        // opu_dobj_draw's callees
+        let dobj = [
+            far_recorder(&mut p, 0x0090_8420, &[0, 0], None), // yiDObjToOMD
+            far_recorder(&mut p, 0x007e_a700, &[0, 0], None), // op_unit_m_scale
+            far_recorder(&mut p, 0x007e_9850, &[0; 4], None), // op_rt_m
+            far_recorder(&mut p, 0x0080_1f00, &[0, 0], Some(rets)), // opus_parent_get
+            far_recorder(&mut p, 0x007e_83b0, &[0, 0, 0], None), // op_mul_m
+            far_recorder(&mut p, 0x00a6_9300, &[0, 0, 0], None), // op_md_x64_draw
+        ];
+        // opu_dvd's
+        let dvd = [
+            far_recorder(&mut p, 0x0082_9ef0, &[0], None), // Ch_DataRead
+            far_recorder(&mut p, 0x0082_a040, &[0], Some(rets + 4)), // Ch_DataReadSync
+            far_recorder(&mut p, 0x0083_6a40, &[0, 0], None), // Ch_MgrpRead_thunk
+            far_recorder(&mut p, 0x0083_6a50, &[0, 0], Some(rets + 4)), // ..MGRPsync
+            far_recorder(&mut p, 0x0083_6870, &[0, 0], None), // ChN_ReadSystemMGRP
+            far_recorder(&mut p, 0x0082_4f90, &[0], None), // Ch_Allocate
+            far_recorder(&mut p, 0x007f_eaa0, &[0], Some(rets + 8)), // op_et_chr_index_by_no
+            far_recorder(&mut p, 0x0082_6b70, &[0], Some(rets + 0xc)), // render instance
+            far_recorder(&mut p, 0x0063_c390, &[0, 0], None), // SetVisible
+            far_recorder(&mut p, 0x0082_66f0, &[0], None), // Ch_Dispose
+            far_recorder(&mut p, 0x0082_4f00, &[0, 0], None), // ChN_DataDispose
+            far_recorder(&mut p, 0x0083_6830, &[0, 0], None), // ChN_DisposeSystemMGRP
+        ];
+        // opu_en_lock's
+        let lock = [
+            far_recorder(&mut p, 0x007f_cfb0, &[0], Some(rets + 0x10)), // opus_chr_handle_nth
+            far_recorder(&mut p, 0x007f_e970, &[0, 0, 0], Some(rets + 0x14)), // status index
+            far_recorder(&mut p, 0x0086_aee0, &[0], Some(rets + 0x18)), // AtelGetCharHandle..
+            far_recorder(&mut p, 0x0078_8e10, &[0], Some(rets + 0x1c)), // MsGetSummonerNum
+            far_recorder(&mut p, 0x0079_5b40, &[0, 0], Some(rets + 0x20)), // MsGetWeaponHandle
+        ];
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x10));
+        let (chr, eff, handles) = (p.sym(0x012a_22c0), p.sym(0x012a_4100), p.sym(0x012a_8100));
+        let debug = p.sym(0x0232_2790);
+        let mut kinds = [0u32; 16];
+        for round in 0..3000u32 {
+            p.fill(rets, 0x40, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x10, &mut rng);
+            for i in [0x3cu32, 0x30, 0x34, 0x38] {
+                let x = if rng.chance(10) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(unit + i, x);
+            }
+            p.set(host + 0x220, unit);
+            let kind = rng.below(16);
+            kinds[kind as usize] += 1;
+            let flags = (rng.next() & 0x0fff) | (kind << 12);
+            p.set(host + 0x21a, u16::try_from(flags).unwrap());
+            p.set(host + 0x21e, u8::from(rng.chance(50)));
+            p.set(debug, u8::from(rng.chance(60)));
+            let e = rng.below(0x200);
+            p.set(unit + 0x14, u16::try_from(e).unwrap());
+            p.fill(eff + 0x20 * e, 0x20, &mut rng);
+            if rng.chance(30) {
+                p.set(eff + 0x20 * e + 0x10, 0xffu8);
+            }
+            // a character index, -1 now and then
+            let i = {
+                let (a, b) = (rng.below(0xf0), rng.below(0xf0));
+                rng.pick(&[u32::MAX, 0, 1, a, b])
+            };
+            p.set(rets + 8, i);
+            p.set(rets + 0x14, i);
+            let c = chr.wrapping_add(i.wrapping_mul(0x20));
+            p.fill(c, 0x20, &mut rng);
+            if rng.chance(30) {
+                p.set(c, 0u32);
+            }
+            let n = rng.below(0xf0);
+            // the handle index of nibbles 2 and 3 stays in the table; the
+            // others take any i16 (signed jumps and numbers)
+            let word = if matches!(kind, 2 | 3) || rng.chance(30) {
+                n
+            } else {
+                rng.below(0x1_0000)
+            };
+            p.set(cmd + 2, u16::try_from(word).unwrap());
+            if rng.chance(50) {
+                p.set(handles + 4 * n, 0u32);
+            }
+            // opu_dvd's selector: 0..5 mostly, and out of range
+            let sel = rng.pick(&[0i16, 1, 2, 3, 4, 5, 6, -1, 0x7fff]);
+            let any = rng.next();
+            p.set(rets + 4, rng.pick(&[0u32, 1, 2, any]));
+            p.set(rets + 0x1c, rng.pick(&[0u32, 0x1f, 0x20, 0x21, 0xff, any]));
+            p.set(rets + 0x20, rng.pick(&[0u32, 1, any]));
+            p.check(
+                &format!("opu_dobj_draw round {round}"),
+                0x0081_4800,
+                &[host, cmd],
+                |m| Some(o::opu_dobj_draw(m, host, cmd, &mut call_original)),
+            );
+            p.check(
+                &format!("opu_en_lock round {round}"),
+                0x0081_6030,
+                &[host, cmd],
+                |m| Some(o::opu_en_lock(m, host, cmd, &mut call_original)),
+            );
+            p.set(cmd + 2, sel);
+            p.check(
+                &format!("opu_dvd round {round}"),
+                0x0081_48c0,
+                &[host, cmd],
+                |m| Some(o::opu_dvd(m, host, cmd, &mut call_original)),
+            );
+        }
+        assert!(kinds.iter().all(|&k| k > 0), "{}", p.name);
+        for log in dobj.iter().chain(&dvd).chain(&lock) {
+            assert!(p.get::<u32>(*log) > 0, "{}: {log:#x}", p.name);
+        }
+    }
+}

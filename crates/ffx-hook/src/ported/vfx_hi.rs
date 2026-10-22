@@ -305,6 +305,17 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0xd0;
         hi_draw::bridge::op1_mdc_draw(&mut mem(), list, init, m, view, frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `op1_mdc_ref_nolight(list, init, m, view, _, tex, scale, m2)`: its
+    /// three matrices in a buffer on this shim's stack (`[init +0x20]` and
+    /// `[init +0x2c]` point into it during the call).
+    op1_mdc_ref_nolight @ 0x00a6_8e10 => extern "C" fn op1_mdc_ref_nolight(list: u32, init: u32, m: u32, view: u32, _unused: u32, tex: u32, scale: u32, m2: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0xd0]);
+        let mut locals = Locals([0; 0xd0]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0xd0;
+        hi_draw::bridge::op1_mdc_ref_nolight(&mut mem(), list, init, m, view, tex, scale, m2, frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_refrection_st_float(obj, model, _, out, scale, du, dv)`: its
     /// locals in a buffer on this shim's stack.
     op_refrection_st_float @ 0x00a6_cfb0 => extern "C" fn op_refrection_st_float(obj: u32, model: u32, _unused: u32, out: u32, scale: u32, du: u32, dv: u32) -> u32 {
