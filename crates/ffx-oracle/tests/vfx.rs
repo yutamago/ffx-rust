@@ -29362,3 +29362,189 @@ fn round47a_mdc_make_and_size_match_the_original() {
         assert!(seen.iter().all(|&c| c > 5), "{}: {seen:?}", p.name);
     }
 }
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round47c_opu_encount_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_7e30);
+        let rets = p.alloc(0x40);
+        let r = |k: u32| rets + 4 * k;
+        let mut logs = vec![
+            far_recorder(&mut p, 0x007f_f780, &[0; 2], Some(r(0))), // op_malloc
+            far_recorder(&mut p, 0x007e_3810, &[0; 3], Some(r(1))), // op_oef2_a_get
+            far_recorder(&mut p, 0x007f_8480, &[0], None),          // encount0_init
+            far_recorder(&mut p, 0x007f_81e0, &[0; 3], None),       // encount0_draw
+            far_recorder(&mut p, 0x0080_1060, &[0; 3], Some(r(2))), // opus_no_get
+            far_recorder(&mut p, 0x007e_a700, &[0; 2], None),       // op_unit_m_scale
+            far_recorder(&mut p, 0x0080_1f00, &[0; 2], Some(r(3))), // opus_parent_get
+            far_recorder(&mut p, 0x007e_8010, &[0; 2], None),       // op_m_copy
+            far_recorder(&mut p, 0x0093_d960, &[0; 10], None),      // FFXSamp0ViewScreenMatrix
+            far_recorder(&mut p, 0x007e_b320, &[0; 4], Some(r(7))), // after_ot3d_set
+            far_recorder(&mut p, 0x0078_1650, &[], Some(r(4))),     // MsBattleStartReady
+            far_recorder(&mut p, 0x007f_8e30, &[0; 3], Some(r(5))), // encount4_size_get
+            far_recorder(&mut p, 0x0063_9490, &[], None),           // graphicBrokenScreenReset
+            far_recorder(&mut p, 0x007f_8930, &[0; 5], None),       // encount4_init
+            far_recorder(&mut p, 0x007f_8570, &[0; 6], Some(r(6))), // encount4_calc
+            far_recorder(&mut p, 0x007e_b410, &[0; 4], Some(r(8))), // op_func_final_set
+            far_recorder(&mut p, 0x007f_9280, &[0; 2], None),       // encount5_make
+            far_recorder(&mut p, 0x007f_8e80, &[0; 5], None),       // encount5_draw
+        ];
+        let (host, unit, cmd) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x20));
+        let (block, buf) = (p.alloc(0x100), p.alloc(0x100));
+        let r0 = p.sym(0x00c8_f508);
+        let mut ops = [0u32; 16];
+        for round in 0..3000u32 {
+            p.fill(rets, 0x40, &mut rng);
+            p.fill(host, 0x400, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(cmd, 0x20, &mut rng);
+            p.fill(block, 0x100, &mut rng);
+            p.fill(buf, 0x100, &mut rng);
+            p.fill(r0, 0x10, &mut rng);
+            p.set(host + 0x220, unit);
+            p.set(unit + 0x1e, u8::try_from(rng.below(0x28)).unwrap());
+            p.set(unit + 0xbc, if rng.chance(40) { 0 } else { buf });
+            for at in [0x40, 0x44] {
+                let x = if rng.chance(30) {
+                    finite(&mut rng)
+                } else {
+                    let v = f32::from(u16::try_from(rng.below(0x1000)).unwrap()) / 3.0 - 600.0;
+                    v.to_bits()
+                };
+                p.set(unit + at, x);
+            }
+            let op = rng.pick(&[-0x8000i16, -1, 14, 15, 0x7fff]);
+            let op = if rng.chance(90) {
+                i16::try_from(rng.below(14)).unwrap()
+            } else {
+                op
+            };
+            if let Ok(k) = usize::try_from(op) {
+                ops[k.min(15)] += 1;
+            }
+            p.set(cmd + 2, op);
+            let any = rng.next();
+            p.set(r(0), block);
+            p.set(r(4), rng.pick(&[0u32, 1, any]));
+            p.set(r(6), rng.pick(&[0u32, 1, any]));
+            p.check(
+                &format!("opu_encount {op} round {round}"),
+                0x007f_7e30,
+                &[host, cmd],
+                |m| Some(o::opu_encount(m, host, cmd, &mut call_original)),
+            );
+        }
+        assert!(ops.iter().take(14).all(|&k| k > 0), "{}: {ops:?}", p.name);
+        logs.retain(|&log| p.get::<u32>(log) == 0);
+        assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
+    }
+}
+
+/// A stand-in at `sym` (through a jump) returning the `f32`s of `table` in
+/// turn in `ST0` (`count` the call number at `table + 0x20`, four values)
+/// and logging its first `n` argument words of call `c` at `table + 0x30 +
+/// 0x10 k + 4 c` (`table` 0x30 + 0x10 n bytes).
+fn float_seq_stand_in(p: &mut Pair, sym: u32, n: u8, table: u32) {
+    let count = table + 0x20;
+    let mut c = vec![0x8b, 0x0d]; // mov ecx, [count]
+    c.extend(count.to_le_bytes());
+    c.extend([0x83, 0xe1, 0x03]); // and ecx, 3
+    for k in 0..n {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k]); // mov eax, [esp + 4 + 4k]
+        c.extend([0x89, 0x04, 0x8d]); // mov [log + ecx * 4], eax
+        c.extend((table + 0x30 + 0x10 * u32::from(k)).to_le_bytes());
+    }
+    c.extend([0xd9, 0x04, 0x8d]); // fld dword [table + ecx * 4]
+    c.extend(table.to_le_bytes());
+    c.extend([0xff, 0x05]); // inc dword [count]
+    c.extend(count.to_le_bytes());
+    c.push(0xc3);
+    let to = p.a.alloc_code(&c).unwrap();
+    assert_eq!(p.b.alloc_code(&c).unwrap(), to);
+    let at = p.sym(sym);
+    let mut j = vec![0xe9]; // jmp to
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    p.a.write(at, &j).unwrap();
+    p.b.write(at, &j).unwrap();
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round47c_opu_vran_etc_matches_the_original() {
+    use opus::bridge as o;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0081_abe0);
+        let (rnd, spline) = (p.alloc(0x50), p.alloc(0x50));
+        float_seq_stand_in(&mut p, 0x007e_6700, 1, rnd); // op_random
+        float_seq_stand_in(&mut p, 0x007e_67f0, 2, spline); // op_spline_draw_path3
+        let mut logs = vec![
+            far_recorder(&mut p, 0x007e_a6d0, &[0], None), // op_unit_m
+            far_recorder(&mut p, 0x007e_9850, &[0; 4], None), // op_rt_m
+            far_recorder(&mut p, 0x007e_79a0, &[0; 3], None), // op_apply_m_w1
+            far_recorder(&mut p, 0x007e_a850, &[0; 3], None), // op_xyz_scale
+            far_recorder(&mut p, 0x007e_7be0, &[0; 3], None), // op_rot_m_y_apply
+        ];
+        let (host, cmd) = (p.alloc(0x400), p.alloc(0x20));
+        let unit = p.alloc(0x1_0010);
+        let gpr = p.sym(0x00c8_f508);
+        let (vf, shift) = (p.sym(0x00c8_f970), p.sym(0x00c8_b500));
+        let mut kinds = [0u32; 4];
+        for round in 0..3000u32 {
+            p.fill(host, 0x400, &mut rng);
+            p.fill(cmd, 0x20, &mut rng);
+            p.fill(unit, 0x100, &mut rng);
+            p.fill(gpr, 0x40, &mut rng);
+            p.fill(vf, 0x20, &mut rng);
+            for t in [rnd, spline] {
+                for i in 0..4 {
+                    let v = if rng.chance(10) {
+                        rng.float()
+                    } else {
+                        finite(&mut rng)
+                    };
+                    p.set(t + 4 * i, v);
+                }
+                p.set(t + 0x20, 0u32);
+            }
+            p.set(host + 0x220, unit);
+            // (no signalling NaNs: the emulator keeps what fld quiets)
+            for at in (0x30..0x70).step_by(4) {
+                let v = if rng.chance(10) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(unit + at, v);
+            }
+            let off = rng.pick(&[0x40u16, 0x44, 0x9c, 0x1000, 0xfffc]);
+            p.set(cmd + 0xe, off);
+            p.set(unit + u32::from(off), finite(&mut rng));
+            let kind = rng.below(4);
+            kinds[kind as usize] += 1;
+            let flags = (rng.next() & 0x0fff) | ((kind + u32::from(kind == 3) * 5) << 12);
+            p.set(host + 0x21a, u16::try_from(flags & 0xffff).unwrap());
+            // the shifted stores: in place, a little off, or onto g_Ee_Gpr +0x24
+            let alias = (gpr + 0x24).wrapping_sub(unit + 0x40);
+            p.set(shift, rng.pick(&[0u32, 0, 8, 0x20, alias]));
+            p.check(
+                &format!("opu_vran_etc {kind} round {round}"),
+                0x0081_abe0,
+                &[host, cmd],
+                |m| {
+                    Some(o::opu_vran_etc(
+                        m,
+                        host,
+                        cmd,
+                        &mut call_original,
+                        &mut call_original_f,
+                    ))
+                },
+            );
+        }
+        assert!(kinds.iter().all(|&k| k > 0), "{}", p.name);
+        logs.retain(|&log| p.get::<u32>(log) == 0);
+        assert!(logs.is_empty(), "{}: unreached {logs:x?}", p.name);
+    }
+}

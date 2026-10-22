@@ -6023,6 +6023,14 @@ ported! {
     opp_gline_00813020 @ 0x0081_3020 => extern "C" fn opp_gline(host: u32, set: u32) -> u32 {
         opus::bridge::opp_gline(&mut mem(), host, set, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opu_encount(host, cmd)`: the next command.
+    opu_encount @ 0x007f_7e30 => extern "C" fn opu_encount(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_encount(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `opu_vran_etc(host, cmd)`: the next command.
+    opu_vran_etc @ 0x0081_abe0 => extern "C" fn opu_vran_etc(host: u32, cmd: u32) -> u32 {
+        opus::bridge::opu_vran_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
+    }
     /// `opu_weapon_etc_008139b0(host, cmd)`: the next command.
     opu_weapon_etc_008139b0 @ 0x0081_39b0 => extern "C" fn opu_weapon_etc(host: u32, cmd: u32) -> u32 {
         opus::bridge::opu_weapon_etc(&mut mem(), host, cmd, &mut |_, f, a| call_ptr(f, a))
