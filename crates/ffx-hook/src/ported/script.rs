@@ -1762,6 +1762,10 @@ ported! {
     Native_Cam_605d @ 0x007b_8f10 => extern "C" fn n_7b8f10(w: u32, a: u32, s: u32) -> u32 {
         native_cam::native_cam_605d(&mut mem(), w, a, s)
     }
+    /// `Native_Cam_6076(worker, args, stack)`.
+    Native_Cam_6076 @ 0x007b_8fe0 => extern "C" fn n_7b8fe0(w: u32, a: u32, s: u32) -> u32 {
+        native_cam::native_cam_6076(&mut mem(), w, a, s)
+    }
     /// `Native_CamResume(worker, args, stack)`.
     Native_CamResume @ 0x007b_8f30 => extern "C" fn n_7b8f30(w: u32, a: u32, s: u32) -> u32 {
         native_cam::native_cam_resume(&mut mem(), w, a, s)
@@ -4960,6 +4964,22 @@ ported! {
     Native_7043_Poll @ 0x007a_6a40 => extern "C" fn n_7a6a40(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_7043_poll(&mut mem(), w, a, s)
     }
+    /// `Native_7043(worker, args, stack)`.
+    Native_7043 @ 0x007a_6a10 => extern "C" fn n_7a6a10(w: u32, a: u32, s: u32) -> u32 {
+        native_btl2::native_7043(&mut mem(), w, a, s)
+    }
+    /// `Native_70a9(worker, args, stack)`.
+    Native_70a9 @ 0x007a_6c50 => extern "C" fn n_7a6c50(w: u32, a: u32, s: u32) -> u32 {
+        native_btl2::native_70a9(&mut mem(), w, a, s)
+    }
+    /// `Native_706d_Int(worker, args, stack)`.
+    Native_706d_Int @ 0x007a_6ea0 => extern "C" fn n_7a6ea0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl2::native_706d_int(&mut mem(), w, a, s)
+    }
+    /// `Native_704c_Poll(worker, args, stack)`.
+    Native_704c_Poll @ 0x007a_7cf0 => extern "C" fn n_7a7cf0(w: u32, a: u32, s: u32) -> u32 {
+        native_btl2::native_704c_poll(&mut mem(), w, a, s)
+    }
     /// `Native_70bf(worker, args, stack)`.
     Native_70bf @ 0x007a_6ae0 => extern "C" fn n_7a6ae0(w: u32, a: u32, s: u32) -> u32 {
         native_btl2::native_70bf(&mut mem(), w, a, s)
@@ -7190,6 +7210,16 @@ ported! {
     Atel_StepSprites_008743e0 @ 0x0087_43e0 => extern "C" fn h_8743e0() {
         hp::atel_step_sprites(&mut mem());
     }
+    /// `AtelExecDrawShape()`: the render record and matrix in a frame.
+    AtelExecDrawShape @ 0x0087_4420 => extern "C" fn h_874420() {
+        let mut frame = super::StackFrame::<24>::new();
+        hp::atel_exec_draw_shape(&mut mem(), frame.at());
+    }
+    /// `AtelDrawNoTrans()`: water status and event sprites, one frame.
+    AtelDrawNoTrans @ 0x0087_2c90 => extern "C" fn h_872c90() {
+        let mut frame = super::StackFrame::<24>::new();
+        hp::atel_draw_no_trans(&mut mem(), frame.at());
+    }
     /// `AtelDrawSemiTrans()`.
     AtelDrawSemiTrans @ 0x0087_2ca0 => extern "C" fn h_872ca0() {
         hp::atel_draw_semi_trans(&mut mem());
@@ -7401,9 +7431,37 @@ ported! {
     AtelInitBasicWork @ 0x0086_cb00 => extern "C" fn h_86cb00(setup: u32, clear: u32) {
         hp::atel_init_basic_work(&mut mem(), setup, clear);
     }
+    /// `AtelEventRemove()`: `EAX` the tail-called `Sg_EventjumpDispose`'s.
+    AtelEventRemove @ 0x0087_2d20 => extern "C" fn h_872d20() -> u32 {
+        hp::atel_event_remove(&mut mem())
+    }
+    /// `Atel_ReturnActorFromBattle_00862d70(w, check)`.
+    Atel_ReturnActorFromBattle_00862d70 @ 0x0086_2d70 => extern "C" fn h_862d70(w: u32, check: u32) {
+        hp::atel_return_actor_from_battle(&mut mem(), w, check);
+    }
+    /// `AtelActorRemove()`.
+    AtelActorRemove @ 0x0087_5430 => extern "C" fn h_875430() -> u32 {
+        hp::atel_actor_remove(&mut mem())
+    }
+    /// `Atel_RestoreActorModel_0086e5b0(w, keep_motion, party)`.
+    Atel_RestoreActorModel_0086e5b0 @ 0x0086_e5b0 => extern "C" fn h_86e5b0(w: u32, keep_motion: u32, party: u32) {
+        hp::atel_restore_actor_model(&mut mem(), w, keep_motion, party);
+    }
     /// `AtelEventRemoveForBattle()`.
     AtelEventRemoveForBattle @ 0x0086_5dc0 => extern "C" fn h_865dc0() -> u32 {
         hp::atel_event_remove_for_battle(&mut mem())
+    }
+    /// `Atel_MoveUpdate_00868990(w, level)`: the turn outputs and the spline
+    /// point in a frame, the float maths called through the game.
+    Atel_MoveUpdate_00868990 @ 0x0086_8990 => extern "C" fn h_868990(w: u32, level: u32) {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_move_update(&mut mem(), w, level, frame.at(), |_, f, args| super::call_cdecl_f64(f, args));
+    }
+    /// `Atel_TurnUpdate_00869510(w, level)`: the aim outputs in a frame, the
+    /// float maths called through the game.
+    Atel_TurnUpdate_00869510 @ 0x0086_9510 => extern "C" fn h_869510(w: u32, level: u32) {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_turn_update(&mut mem(), w, level, frame.at(), |_, f, args| super::call_cdecl_f64(f, args));
     }
     /// `Atel_CheckTouchTalk_00866980(worker, _, player)`: `Math_LengthSq3`
     /// through the game.

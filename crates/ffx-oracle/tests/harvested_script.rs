@@ -280,3 +280,63 @@ harvest_test!(
         })
     }
 );
+
+// script round 28: the event sprites' draw (the render record and its
+// matrix in stack scratch, which the diff leaves out)
+harvest_test!(
+    atel_exec_draw_shape,
+    0x0087_4420,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        let frame = m.stack_range().start + 0x100;
+        // void: the original's EAX is the stack cookie check's leftover
+        hp::atel_exec_draw_shape(&mut OracleHost(m), frame);
+    }
+);
+
+// script round 28: the water status and the event sprites (one frame in
+// stack scratch; void: the tail-called draw leaves the cookie check's EAX)
+harvest_test!(
+    atel_draw_no_trans,
+    0x0087_2c90,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        let frame = m.stack_range().start + 0x100;
+        hp::atel_draw_no_trans(&mut OracleHost(m), frame);
+    }
+);
+
+// script round 28: the per-actor move update (turn outputs and spline point
+// in stack scratch; the port hands `fcall` the rebased address)
+harvest_test!(
+    atel_move_update,
+    0x0086_8990,
+    args = 2,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        hp::atel_move_update(
+            &mut OracleHost(m),
+            s.arg(0),
+            s.arg(1),
+            frame,
+            |h, at, args| h.0.call_f64(at, args).unwrap(),
+        );
+    }
+);
+
+// script round 28: the per-actor turn update (aim outputs in stack scratch)
+harvest_test!(
+    atel_turn_update,
+    0x0086_9510,
+    args = 2,
+    |m: &mut Oracle, s| {
+        let frame = m.stack_range().start + 0x100;
+        hp::atel_turn_update(
+            &mut OracleHost(m),
+            s.arg(0),
+            s.arg(1),
+            frame,
+            |h, at, args| h.0.call_f64(at, args).unwrap(),
+        );
+    }
+);

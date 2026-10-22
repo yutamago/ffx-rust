@@ -534,4 +534,60 @@ pub mod bridge {
             (c.call)(mem, g(mem, SET_LIGHT_MATRIX), &[inst, dirs, colours]);
         }
     }
+
+    /// `Ch_SysDrawSetSituation(v)` (`0x00830cd0`), `Ch_DrawMainForSituation`
+    /// (`0x0082fe00`), `Apply_Envelope` (`0x00832110`), `Sg_ClothStep`
+    /// (`0x00822de0`), `Sg_ClothPlaceAnchors` (`0x0082dbc0`): through the
+    /// game.
+    pub const SYS_DRAW_SET_SITUATION: u32 = 0x0083_0cd0;
+    pub const DRAW_MAIN_FOR_SITUATION: u32 = 0x0082_fe00;
+    pub const APPLY_ENVELOPE: u32 = 0x0083_2110;
+    pub const CLOTH_STEP: u32 = 0x0082_2de0;
+    pub const CLOTH_PLACE_ANCHORS: u32 = 0x0082_dbc0;
+    /// The magic file whose effect draws the characters' situation pass.
+    pub const SITUATION_MAGIC: u32 = 0x23d;
+
+    /// `Ch_DrawMainEffect(v)` (`0x00826950`; caller `rcefChrDraw_00930630`):
+    /// `Ch_SysDrawSetSituation(v)`, the situation pass
+    /// (`Ch_DrawMainForSituation`) in magic file `0x23d`, then a tail call
+    /// `Ch_SysDrawSetSituation(0)` (the original writes the 0 into its
+    /// argument slot, which the caller does not read again); its result.
+    pub fn ch_draw_main_effect<M: Mem>(
+        mem: &mut M,
+        v: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        call(mem, g(mem, SYS_DRAW_SET_SITUATION), &[v]);
+        if call(mem, g(mem, MAGIC_GET_ID), &[]) == SITUATION_MAGIC {
+            call(mem, g(mem, DRAW_MAIN_FOR_SITUATION), &[]);
+        }
+        call(mem, g(mem, SYS_DRAW_SET_SITUATION), &[0])
+    }
+
+    /// `Ch_Cloth_PerCharacter(chars, count)` (`0x0082e390`; the job
+    /// `JobSchedule_Ch_Cloth_PerCharacter` queues, run on the job
+    /// workers): for each of the `*count` characters in the pointer array
+    /// `chars` (the count read again after each, compared signed),
+    /// `Apply_Envelope(c, 0)`, `Sg_ClothStep(c)` and, unless
+    /// `g_ChrDrawDetached`, `Sg_ClothPlaceAnchors(c)`. No caller reads
+    /// `eax`.
+    pub fn ch_cloth_per_character<M: Mem>(
+        mem: &mut M,
+        chars: u32,
+        count: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        let mut i = 0i32;
+        while i < mem.read::<i32>(count) {
+            let c: u32 = mem.read(chars.wrapping_add(i.cast_unsigned().wrapping_mul(4)));
+            call(mem, g(mem, APPLY_ENVELOPE), &[c, 0]);
+            call(mem, g(mem, CLOTH_STEP), &[c]);
+            if crate::sys::bridge::DRAW_DETACHED.get(mem) == 0 {
+                call(mem, g(mem, CLOTH_PLACE_ANCHORS), &[c]);
+            }
+            i = i.wrapping_add(1);
+        }
+    }
 }

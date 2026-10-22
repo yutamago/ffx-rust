@@ -2020,4 +2020,54 @@ ported! {
         let mut c = dr::PLightCalls { call: &mut call, fcall: &mut fcall, ci: &mut ci };
         dr::ch_plight_calc(&mut mem(), chr, s, &mut c);
     }
+    // ---- chara-main-map round 2, group a
+    /// `Ch_ModelCalcSizeEffectPacket(chr, i)`: the packet size (callers
+    /// read it).
+    Ch_ModelCalcSizeEffectPacket @ 0x0083_0450 => extern "C" fn ch_model_calc_size_effect_packet(chr: u32, i: u32) -> u32 {
+        sy::ch_model_calc_size_effect_packet(&mut mem(), chr, i, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ModelCreateEffectPacket(chr, i, p)`: `Ch_EffectPacketCreateMain`'s
+    /// `eax`.
+    Ch_ModelCreateEffectPacket @ 0x0083_0490 => extern "C" fn ch_model_create_effect_packet(chr: u32, i: u32, p: u32) -> u32 {
+        sy::ch_model_create_effect_packet(&mut mem(), chr, i, p, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_ReadEventMgrpAsync_00837650(x)`: `Ch_RomReadEventMGRP`'s result.
+    Ch_ReadEventMgrpAsync_00837650 @ 0x0083_7650 => extern "C" fn ch_read_event_mgrp_async(x: u32) -> u32 {
+        mo::bridge::ch_read_event_mgrp_async(&mut mem(), x, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_Sound(chr, ev)`: void (no caller reads `eax`).
+    Ch_Sound @ 0x0083_5860 => extern "C" fn ch_sound(chr: u32, ev: u32) {
+        at::ch_sound(&mut mem(), chr, ev, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_DrawMainEffect(v)`: `Ch_SysDrawSetSituation`'s `eax`.
+    Ch_DrawMainEffect @ 0x0082_6950 => extern "C" fn ch_draw_main_effect(v: u32) -> u32 {
+        dr::ch_draw_main_effect(&mut mem(), v, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_InitAll()`: void.
+    Ch_InitAll @ 0x0082_6ea0 => extern "C" fn ch_init_all() {
+        let mut frame = super::StackFrame::<{ h::INIT_ALL_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        h::ch_init_all(&mut mem(), s, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    /// `Ch_Cloth_PerCharacter(chars, count)`: void; a job on the worker
+    /// threads (no scratch).
+    Ch_Cloth_PerCharacter @ 0x0082_e390 => extern "C" fn ch_cloth_per_character(chars: u32, count: u32) {
+        dr::ch_cloth_per_character(&mut mem(), chars, count, &mut |_, f, a| super::call_cdecl(f, a));
+    }
+    // ---- chara-main-map round 2, group b
+    /// `InsideTriangle(chr, pos, model, code, &u, &v, &w, &dist)`: the
+    /// triangle in `ax` (`Ch_PreCalcActiveClothMesh` stores it), `0xffff`
+    /// for none.
+    InsideTriangle @ 0x0082_8c10 => extern "C" fn inside_triangle(chr: u32, pos: u32, model: u32, code: u32, u: u32, v: u32, w: u32, dist: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ cl::INSIDE_TRIANGLE_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        let out = cl::TriangleOut { u, v, w, dist };
+        cl::inside_triangle(&mut mem(), chr, pos, model, code, out, s, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    // ---- chara-main-map round 2, group c
+    /// `chr_texanim_main_sub_new(i, name, draw)`: void (no caller reads
+    /// `eax`); `TexAnim_SetMaterialsChar` takes 12 words.
+    chr_texanim_main_sub_new @ 0x0077_f360 => extern "C" fn chr_texanim_main_sub_new(i: u32, name: u32, draw: u32) {
+        ta::chr_texanim_main_sub_new(&mut mem(), i, name, draw, &mut |_, f, a| super::call_cdecl(f, a));
+    }
 }

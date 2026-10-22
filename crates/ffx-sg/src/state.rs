@@ -3814,4 +3814,530 @@ pub mod bridge {
         }
         call(h, CH_READ_SYNC, &[0])
     }
+    // ---- chara-main-map round 2
+
+    /// The callees of [`chr_move_push_apart`], through the game:
+    /// `Sg_IdChrMove(chr)`, `Sg_ChrSortByZ(n)`, `Sg_VectorGetLengthXZ(a,
+    /// b)` (`ST0`), `Sg_ChrPushApart(a, b, reach, dist)` and
+    /// `Atel_RequestOwnerTrigger_008764a0(chr, kind)`.
+    pub const ID_CHR_MOVE: u32 = 0x0083_e5f0;
+    pub const CHR_SORT_BY_Z: u32 = 0x0083_eb30;
+    pub const VECTOR_GET_LENGTH_XZ: u32 = 0x0083_e3e0;
+    pub const CHR_PUSH_APART: u32 = 0x0083_ecd0;
+    pub const REQUEST_OWNER_TRIGGER: u32 = 0x0087_64a0;
+    /// Its constants, `f64` 0.5 and 2.
+    pub const PUSH_HALF: Global<f64> = Global::new(0x00b9_2220);
+    pub const PUSH_TWO: Global<f64> = Global::new(0x00b9_2270);
+
+    /// A character the pass takes: active (`+2`) and not hidden (`+0x180`
+    /// clear, or `+0x181` set).
+    fn push_visible(h: &impl Mem, c: u32) -> bool {
+        h.read::<u8>(c.wrapping_add(2)) != 0
+            && (h.read::<u8>(c.wrapping_add(0x180)) == 0
+                || h.read::<u8>(c.wrapping_add(0x181)) != 0)
+    }
+
+    /// `Sg_ChrMovePushApart_0083d3b0()` (name ours; caller `Ch_CalcMain`):
+    /// each frame's moves of the field characters, then keeping them
+    /// apart. Over the characters the pass takes ([`push_visible`]; the
+    /// array and count are read again only after one it takes):
+    ///
+    /// 1. Their "pushed" flag (`+0x194` bit 14) is cleared.
+    /// 2. Up to two rounds: those without bit 8 are listed in
+    ///    [`PUSH_CHRS`]; each moves by its step (`+0x4c`: with bit 7 all
+    ///    three, else `Sg_IdChrMove` and the step's y), the step is zeroed,
+    ///    its reach (`+0x4e8`) is `(+0x64 + +0x5c) * 0.5 * +0x4e4` and its
+    ///    height above its floor (`+0x520`) `y - +0x51c`, or `+0x6a8` when
+    ///    that is 0. The list sorted by z, each pair closer than their
+    ///    reaches in the z and x boxes (2 reaches each way; past the first
+    ///    in z ends that one's pairs), and for two climbing characters (bit
+    ///    30) with overlapping heights (`+0x520` within the other's
+    ///    `+0x698`; NaNs pass), whose reaches' sum (`f32`) is above their
+    ///    distance (`Sg_VectorGetLengthXZ`; NaN too) is pushed apart
+    ///    (`Sg_ChrPushApart`); a pusher (bit 9, `+0x154` not 0) marks the
+    ///    other pushed. The count is read again after every call. A second
+    ///    round runs only when something moved.
+    /// 3. A newly pushed character (bit 14 without bit 15) gets its
+    ///    owner's trigger 2 (`Atel_RequestOwnerTrigger`), and bit 15 takes
+    ///    bit 14.
+    ///
+    /// No caller reads `eax`.
+    #[allow(clippy::too_many_lines, clippy::float_cmp)]
+    pub fn chr_move_push_apart<H: ffx_bridge::Host>(
+        h: &mut H,
+        fcall: &mut impl FnMut(&mut H, u32, &[u32]) -> f64,
+    ) {
+        use crate::seq::bridge::{CHR_ARRAY, CHR_COUNT};
+        use ffx_bridge::x87::Reg;
+        let call = |h: &mut H, f: u32, args: &[u32]| {
+            let f = h.rebase(f);
+            h.call(f, args)
+        };
+        let ld = |h: &H, a: u32| Reg::load(h.read::<f32>(a));
+        let flags = |h: &H, c: u32| h.read::<u32>(c.wrapping_add(0x194));
+        let end = |count: u32, array: u32| array.wrapping_add(count.wrapping_mul(0x880));
+        let list = h.rebase(PUSH_CHRS);
+        let slot = |i: i32| list.wrapping_add(i.cast_unsigned().wrapping_mul(4));
+        let (mut count, mut array) = (CHR_COUNT.get(h), CHR_ARRAY.get(h));
+        let mut c = array;
+        while c != end(count, array) {
+            if push_visible(h, c) {
+                let f = flags(h, c);
+                h.write(c.wrapping_add(0x194), f & !0x4000);
+                (array, count) = (CHR_ARRAY.get(h), CHR_COUNT.get(h));
+            }
+            c = c.wrapping_add(0x880);
+        }
+        let mut round = 0;
+        loop {
+            let mut n = 0i32;
+            PUSH_CHR_COUNT.set(h, 0);
+            let mut c = array;
+            while c != end(count, array) {
+                if push_visible(h, c) {
+                    if flags(h, c) & 0x100 == 0 {
+                        h.write(slot(n), c);
+                        n += 1;
+                        PUSH_CHR_COUNT.set(h, n);
+                    }
+                    let at = |o: u32| c.wrapping_add(o);
+                    if h.read::<u8>(at(0x194)) & 0x80 != 0 {
+                        for k in 0..3 {
+                            let v = ld(h, at(0x4c + 4 * k)).add_m32(h.read(at(0xc + 4 * k)));
+                            h.write(at(0xc + 4 * k), v.store());
+                        }
+                    } else {
+                        call(h, ID_CHR_MOVE, &[c]);
+                        let v = ld(h, at(0x50)).add_m32(h.read(at(0x10)));
+                        h.write(at(0x10), v.store());
+                        n = PUSH_CHR_COUNT.get(h);
+                    }
+                    for o in [0x54u32, 0x50, 0x4c] {
+                        h.write(at(o), 0f32);
+                    }
+                    let r = ld(h, at(0x64)).add_m32(h.read(at(0x5c)));
+                    let r = (r * Reg::constant(PUSH_HALF.get(h))).mul_m32(h.read(at(0x4e4)));
+                    h.write(at(0x4e8), r.store());
+                    let floor: f32 = h.read(at(0x51c));
+                    let height = if floor == 0.0 {
+                        ld(h, at(0x6a8)).store()
+                    } else {
+                        ld(h, at(0x10)).sub_m32(floor).store()
+                    };
+                    h.write(at(0x520), height);
+                    (array, count) = (CHR_ARRAY.get(h), CHR_COUNT.get(h));
+                }
+                c = c.wrapping_add(0x880);
+            }
+            let mut moved = 0u32;
+            call(h, CHR_SORT_BY_Z, &[n.cast_unsigned()]);
+            if n > 0 {
+                let two = Reg::constant(PUSH_TWO.get(h));
+                let mut i = 0i32;
+                loop {
+                    let a: u32 = h.read(slot(i));
+                    let mut j = i + 1;
+                    while j < n {
+                        let b: u32 = h.read(slot(j));
+                        let ra = ld(h, a.wrapping_add(0x4e8)) * two;
+                        let rb = two.mul_m32(h.read(b.wrapping_add(0x4e8)));
+                        // past a's box in z: no later one reaches it either
+                        let az = ld(h, a.wrapping_add(0x14)) + ra;
+                        let bz = ld(h, b.wrapping_add(0x14)) - rb;
+                        if bz.value() > az.value() {
+                            break;
+                        }
+                        j += 1;
+                        let (ax, bx) = (ld(h, a.wrapping_add(0xc)), ld(h, b.wrapping_add(0xc)));
+                        if (bx - rb).value() > (ax + ra).value()
+                            || (bx + rb).value() < (ax - ra).value()
+                        {
+                            continue;
+                        }
+                        if flags(h, a) & 0x4000_0000 != 0 && flags(h, b) & 0x4000_0000 != 0 {
+                            let (a520, b698) =
+                                (ld(h, a.wrapping_add(0x520)), ld(h, b.wrapping_add(0x698)));
+                            let (a698, b520) =
+                                (ld(h, a.wrapping_add(0x698)), ld(h, b.wrapping_add(0x520)));
+                            if b698.value() < a520.value() || b520.value() > a698.value() {
+                                continue;
+                            }
+                        }
+                        let reach = ld(h, a.wrapping_add(0x4e8))
+                            .add_m32(h.read(b.wrapping_add(0x4e8)))
+                            .store();
+                        let (pa, pb) = (a.wrapping_add(0xc), b.wrapping_add(0xc));
+                        let f = h.rebase(VECTOR_GET_LENGTH_XZ);
+                        let dist = Reg::constant(fcall(h, f, &[pa, pb])).store();
+                        // on when reach > dist, or either is NaN
+                        if reach <= dist {
+                            continue;
+                        }
+                        moved = moved.wrapping_add(call(
+                            h,
+                            CHR_PUSH_APART,
+                            &[a, b, reach.to_bits(), dist.to_bits()],
+                        ));
+                        for (p, q) in [(a, b), (b, a)] {
+                            if flags(h, p) & 0x200 != 0
+                                && h.read::<f32>(p.wrapping_add(0x154)) != 0.0
+                            {
+                                let f = flags(h, q);
+                                h.write(q.wrapping_add(0x194), f | 0x4000);
+                            }
+                        }
+                        n = PUSH_CHR_COUNT.get(h);
+                    }
+                    i += 1;
+                    if i >= n {
+                        break;
+                    }
+                }
+                array = CHR_ARRAY.get(h);
+            }
+            round += 1;
+            if moved == 0 {
+                break;
+            }
+            count = CHR_COUNT.get(h);
+            if round >= 2 {
+                break;
+            }
+        }
+        count = CHR_COUNT.get(h);
+        let mut c = array;
+        while c != end(count, array) {
+            if push_visible(h, c) {
+                let f = flags(h, c);
+                if f & 0x4000 != 0 && f & 0x8000 == 0 {
+                    call(h, REQUEST_OWNER_TRIGGER, &[c, 2]);
+                }
+                let f = flags(h, c);
+                h.write(c.wrapping_add(0x194), (((f << 1) ^ f) & 0x8000) ^ f);
+                (array, count) = (CHR_ARRAY.get(h), CHR_COUNT.get(h));
+            }
+            c = c.wrapping_add(0x880);
+        }
+    }
+
+    /// The callees of [`eventjump_init`] not named above, through the game.
+    pub const GET_SCREEN_FADE_COLOR: u32 = 0x0064_1390;
+    pub const SET_SCREEN_FADE_COLOR: u32 = 0x0064_3900;
+    pub const SET_SCREEN_FADE_LAST_REASON: u32 = 0x0064_3940;
+    pub const LOCK_SCREEN_FADE_COLOR: u32 = 0x0064_1e20;
+    /// The resets and switches it calls in order, each with its one word
+    /// (`None`: no argument), up to `Sg_SetMapAlphaFast(1)` and
+    /// `Ch_DrawSetShadowSemi(0)` (`SetByte_012fb8fd`).
+    pub const EVENTJUMP_INIT_FIRST: [(u32, Option<u32>); 12] = [
+        (0x0083_c520, Some(0)), // Sg_MemSetFast
+        (0x0082_cc70, None),    // Sg_FilterReset
+        (0x0082_cce0, None),    // Sg_FlashReset
+        (0x0082_ccf0, None),    // Sg_FocusReset
+        (0x0082_bcd0, None),    // Sg_AccInitAll
+        (0x0082_0440, Some(1)), // Sg_EnableCalcMap
+        (0x0082_0400, Some(1)), // Sg_EnableDrawMap
+        (0x0082_0460, Some(1)), // Sg_EnableDrawMenu
+        (0x0082_03e0, Some(1)), // Sg_EnableCalcChr
+        (0x0082_03c0, Some(1)), // Sg_EnableDrawChr
+        (0x0082_1b00, Some(1)), // Sg_SetMapAlphaFast
+        (0x0082_1b20, Some(0)), // SetByte_012fb8fd (Ch_DrawSetShadowSemi)
+    ];
+    pub const PLAYER_SET_DIR_FIX: u32 = 0x0082_d990;
+    pub const CH_SYS_DRAW_SET_SITUATION: u32 = 0x0083_0cd0;
+    pub const SET_SUIMEN: u32 = 0x0083_6640;
+    pub const SET_WATER_LIMIT: u32 = 0x0083_6660;
+    pub const LIGHT_SET: u32 = 0x0083_6520;
+    /// The four default lights (`Light_Set(i, r, g, b, pitch, yaw)`).
+    pub const EVENTJUMP_LIGHTS: [[u32; 6]; 4] = [
+        [0, 0x53, 0x53, 0x53, 0x82, 0x4c],
+        [1, 0x37, 0x37, 0x37, 0x136, 0xe],
+        [2, 0x12, 0x12, 0xd, 0x82, 0x11c],
+        [3, 0x50, 0x5a, 0x69, 0, 0],
+    ];
+    /// The calls after the lights, in order, with their words.
+    pub const EVENTJUMP_INIT_LAST: [(u32, &[u32]); 9] = [
+        (0x0082_dab0, &[1]),          // Sg_SetCameraFollow
+        (0x0082_4e10, &[]),           // Sg_GlobalInitWind
+        (0x0083_0150, &[1]),          // Sg_SetMovieGomiAvoid
+        (0x0083_0100, &[0, 0, 0]),    // Ch_DrawSetShadowColor
+        (0x0083_0120, &[0xe1, 0x2d]), // Ch_DrawSetShadowDir
+        (0x0083_e8d0, &[]),           // Sg_IdEventInitAll
+        (0x0082_d8d0, &[]),           // Sg_PlayerInitDefault
+        (0x0082_1ae0, &[1]),          // Sg_SetKeepFps
+        (0x0083_b670, &[]),           // Sg_EventjumpCacheChrs_0083b670
+    ];
+    pub const CH_ALLOCATE_INIT_ALL: u32 = 0x0082_5670;
+    /// The water's default height and limit, `f32` 1e6.
+    pub const NO_WATER: Global<f32> = Global::new(0x00b2_be08);
+    /// `"SG:EventjumpInit %d-----\n"` and `"SG:done.-----\n"`.
+    pub const EVENTJUMP_INIT_LOGS: [u32; 2] = [0x00b5_9e94, 0x00b5_9eb0];
+
+    /// `Sg_EventjumpInit(n)` (`0x0083b460`; callers `AtelActorSetUp2`,
+    /// `AtelCharSetUp`): a new event's scene state. Logs `n`; the screen
+    /// fade keeps its colour (`graphicGetScreenFadeColor` into `scratch`,
+    /// no alpha; the original's blue lands in its own argument slot, which
+    /// neither caller reads) at full alpha, reason 2, locked; the filters,
+    /// flash, focus and accumulators reset, the map, menu and characters
+    /// calculated and drawn, the map opaque, no shadow semi-transparency,
+    /// no player direction fix (0, 0.0), situation 0, no water (1e6 both),
+    /// the default lights, camera follow, wind, movie filter, black
+    /// shadows from (0xe1, 0x2d), the event ids and player defaults, frame
+    /// keeping, the bind list's characters cached, and `n` characters (at
+    /// least 10) allocated. Logs again: that `dbgPrintf`'s `eax`.
+    pub fn eventjump_init(h: &mut impl ffx_bridge::Host, n: u32, scratch: u32) -> u32 {
+        use ffx_bridge::x87::Reg;
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        let log = h.rebase(EVENTJUMP_INIT_LOGS[0]);
+        call(h, SG_DBG_PRINTF, &[log, n]);
+        let (r, g, b) = (scratch, scratch + 4, scratch + 8);
+        call(h, GET_SCREEN_FADE_COLOR, &[r, g, b, 0]);
+        // fld / fstp dword: the colour as the x87 copies it
+        let rgb = [r, g, b].map(|p| Reg::load(h.read::<f32>(p)).store().to_bits());
+        call(
+            h,
+            SET_SCREEN_FADE_COLOR,
+            &[rgb[0], rgb[1], rgb[2], 1f32.to_bits()],
+        );
+        call(h, SET_SCREEN_FADE_LAST_REASON, &[2]);
+        call(h, LOCK_SCREEN_FADE_COLOR, &[]);
+        let n = n.cast_signed().max(10).cast_unsigned();
+        for (f, arg) in EVENTJUMP_INIT_FIRST {
+            match arg {
+                Some(v) => call(h, f, &[v]),
+                None => call(h, f, &[]),
+            };
+        }
+        call(h, PLAYER_SET_DIR_FIX, &[0, 0f32.to_bits()]);
+        call(h, CH_SYS_DRAW_SET_SITUATION, &[0]);
+        let water = Reg::load(NO_WATER.get(h)).store().to_bits();
+        call(h, SET_SUIMEN, &[water]);
+        let water = Reg::load(NO_WATER.get(h)).store().to_bits();
+        call(h, SET_WATER_LIMIT, &[water]);
+        for light in EVENTJUMP_LIGHTS {
+            call(h, LIGHT_SET, &light);
+        }
+        for (f, args) in EVENTJUMP_INIT_LAST {
+            call(h, f, args);
+        }
+        call(h, CH_ALLOCATE_INIT_ALL, &[n]);
+        let log = h.rebase(EVENTJUMP_INIT_LOGS[1]);
+        call(h, SG_DBG_PRINTF, &[log])
+    }
+
+    /// `HandleSaveDataScreen`'s callees, through the game.
+    pub mod save_screen {
+        pub const IS_SCREEN_CLOSED: u32 = 0x0064_8100;
+        pub const GET_FADE_LAST_REASON: u32 = 0x0064_13e0;
+        pub const IS_LOADING_ALBHED: u32 = 0x0064_8070;
+        pub const IS_FADE_COLOR_LOCKED: u32 = 0x0064_1cb0;
+        pub const UNLOCK_FADE_COLOR: u32 = 0x0064_48d0;
+        pub const SET_FADE_COLOR: u32 = 0x0064_3900;
+        pub const SET_FADE_ALPHA_MODE: u32 = 0x0064_38e0;
+        pub const SET_FADE_LAST_REASON: u32 = 0x0064_3940;
+        pub const LOCK_FADE_COLOR: u32 = 0x0064_1e20;
+        pub const IS_BUSY: u32 = 0x0064_8040;
+        pub const INPUT_CLEAR: u32 = 0x0063_0c30;
+        pub const GET_SCREEN_STATE: u32 = 0x0064_7f70;
+        pub const TK_GET_CONTROLER_HIST: u32 = 0x0088_8d70;
+        pub const IS_SAVING_FINISHED: u32 = 0x0064_80f0;
+        pub const DEBUG_LOAD_ALL: u32 = 0x0064_92c0;
+        pub const MEMSET_THUNK: u32 = 0x0094_964c;
+        pub const SPRINTF_SLOT: u32 = 0x00b0_c3dc;
+        pub const SET_SAVE_DATA_INFO: u32 = 0x0064_86c0;
+        pub const UPDATE_ICON: u32 = 0x0064_8920;
+        pub const TO_SAVE: u32 = 0x0064_87a0;
+        pub const SET_STATE: u32 = 0x0064_8710;
+        pub const CLOSE_SAVE_LOAD_SCREEN: u32 = 0x008b_3db0;
+        pub const SET_SCREEN_STATE: u32 = 0x0064_86e0;
+        pub const IS_SAVE: u32 = 0x0064_80d0;
+        pub const PRE_SAVE: u32 = 0x008b_50b0;
+        pub const IS_SAVE_ENABLED: u32 = 0x0064_80e0;
+        pub const TO_LOAD: u32 = 0x0064_8760;
+        pub const IS_LOADING_FINISHED: u32 = 0x0064_8090;
+        pub const GET_DIALOG_STATE: u32 = 0x0064_7ee0;
+        pub const IS_LOADING_SUCCESSFUL: u32 = 0x0064_80a0;
+        pub const IS_OPERATION_CANCELED: u32 = 0x0064_80c0;
+        pub const IS_ALBHED_LOADED: u32 = 0x0082_2540;
+        pub const MARK_ALBHED_LOADED: u32 = 0x0064_7e40;
+        pub const IS_DELETING_FINISHED: u32 = 0x0064_8060;
+        pub const RESET_TO_IDLE: u32 = 0x0064_8530;
+        pub const CLEAR_FORCE_PLACE_ID: u32 = 0x0086_38b0;
+        pub const LOADED_CHOICE: u32 = 0x0082_2480;
+        pub const JUMP_TO_LOADED_SCENE: u32 = 0x008b_4ec0;
+        /// `"Description: "`, `"%s%d"`, `"Save Data "` and the title
+        /// (`0x00b590c8`) of the debug saves.
+        pub const DESCRIPTION: u32 = 0x00b5_90a4;
+        pub const FORMAT: u32 = 0x00b5_90b4;
+        pub const SAVE_DATA: u32 = 0x00b5_90bc;
+        pub const TITLE: u32 = 0x00b5_90c8;
+    }
+    /// `i32`: the debug save-everything slot (-1 off; a pressed button on
+    /// the save screen starts it at 0, 200 slots).
+    pub const SAVE_DEBUG_SLOT: Global<i32> = Global::new(0x00c4_94cc);
+    /// `u32`: set, a finished delete closes the screen instead of saving
+    /// again (cleared then; nothing sets it).
+    pub const SAVE_CLOSE_AFTER_DELETE: Global<u32> = Global::new(0x012f_b7c8);
+    /// `u32` `g_SaveLoadedPending`: 1 after a successful load.
+    pub const SAVE_LOADED_PENDING: Global<u32> = Global::new(0x012f_b8c0);
+    /// Bytes of scratch [`handle_save_data_screen`] needs: the debug
+    /// description (`[ebp-0x44]`).
+    pub const SAVE_SCREEN_SCRATCH: u32 = 0x40;
+
+    /// `HandleSaveDataScreen()` (`0x0081ff80`; caller `Sg_MainLoop`): the
+    /// save/load screen's frame while it is open. Without a fade reason
+    /// (and no Al Bhed load) the fade becomes black, opaque, reason 1,
+    /// locked; input is cleared while saving is busy. By screen state:
+    /// - 1: a button (`TkGetControlerHist(0, 0, 0)` negative) starts the
+    ///   debug save of every slot; that runs a slot per frame once the last
+    ///   save finished (`debugSavedataLoadAll(slot)`: 0 saves it as
+    ///   `"Description: <slot>"`, else data state 2) up to 200, then
+    ///   closes (state 3). Otherwise a save (`TkMenuPreSave`; not enabled:
+    ///   state 3) or a load starts, state 2. Input is cleared.
+    /// - 2: a finished load with no dialog closes the screen when it failed
+    ///   or was cancelled, else marks the load pending (when the Al Bhed
+    ///   check gives -1); a finished save closes it; either way state 3. A
+    ///   finished delete saves again, or with [`SAVE_CLOSE_AFTER_DELETE`]
+    ///   (cleared) goes to state 3.
+    /// - 3: back to idle, state 4, no forced place.
+    /// - 4: with a load pending, the choice (`0x00822480`) 1 reopens the
+    ///   screen (state 1), 2 jumps to the loaded scene (state 0); without,
+    ///   state 0.
+    ///
+    /// No caller reads `eax`.
+    #[allow(clippy::too_many_lines)]
+    pub fn handle_save_data_screen(h: &mut impl ffx_bridge::Host, scratch: u32) {
+        use save_screen as s;
+        let call = |h: &mut _, f: u32, args: &[u32]| {
+            let f = Mem::rebase(h, f);
+            ffx_bridge::Host::call(h, f, args)
+        };
+        if call(h, s::IS_SCREEN_CLOSED, &[]) != 0 {
+            return;
+        }
+        if call(h, s::GET_FADE_LAST_REASON, &[]) == 0 && call(h, s::IS_LOADING_ALBHED, &[]) == 0 {
+            if call(h, s::IS_FADE_COLOR_LOCKED, &[]) != 0 {
+                call(h, s::UNLOCK_FADE_COLOR, &[]);
+            }
+            call(h, s::SET_FADE_COLOR, &[0, 0, 0, 1f32.to_bits()]);
+            call(h, s::SET_FADE_ALPHA_MODE, &[0]);
+            call(h, s::SET_FADE_LAST_REASON, &[1]);
+            call(h, s::LOCK_FADE_COLOR, &[]);
+        }
+        if call(h, s::IS_BUSY, &[]) != 0 {
+            call(h, s::INPUT_CLEAR, &[]);
+        }
+        if call(h, s::GET_SCREEN_STATE, &[]) == 1 {
+            if lo8(call(h, s::TK_GET_CONTROLER_HIST, &[0, 0, 0])).cast_signed() < 0 {
+                SAVE_DEBUG_SLOT.set(h, 0);
+                call(h, s::INPUT_CLEAR, &[]);
+                return;
+            }
+            let slot = SAVE_DEBUG_SLOT.get(h);
+            if slot < 0 {
+                if call(h, s::IS_SAVE, &[]) == 0 {
+                    call(h, s::TO_LOAD, &[]);
+                } else {
+                    call(h, s::PRE_SAVE, &[]);
+                    call(h, s::TO_SAVE, &[]);
+                    if call(h, s::IS_SAVE_ENABLED, &[]) == 0 {
+                        call(h, s::SET_SCREEN_STATE, &[3]);
+                        call(h, s::INPUT_CLEAR, &[]);
+                        return;
+                    }
+                }
+                call(h, s::SET_SCREEN_STATE, &[2]);
+            } else if slot == 0 || call(h, s::IS_SAVING_FINISHED, &[]) != 0 {
+                let slot = SAVE_DEBUG_SLOT.get(h).cast_unsigned();
+                if call(h, s::DEBUG_LOAD_ALL, &[slot]) == 0 {
+                    call(h, s::MEMSET_THUNK, &[scratch, 0, 0x40]);
+                    let sprintf: u32 = h.read(h.rebase(s::SPRINTF_SLOT));
+                    let slot = SAVE_DEBUG_SLOT.get(h).cast_unsigned();
+                    let (fmt, desc) = (h.rebase(s::FORMAT), h.rebase(s::DESCRIPTION));
+                    ffx_bridge::Host::call(h, sprintf, &[scratch, fmt, desc, slot]);
+                    let (title, name) = (h.rebase(s::TITLE), h.rebase(s::SAVE_DATA));
+                    call(h, s::SET_SAVE_DATA_INFO, &[title, name, scratch]);
+                    call(h, s::UPDATE_ICON, &[0]);
+                    call(h, s::TO_SAVE, &[]);
+                } else {
+                    call(h, s::SET_STATE, &[2]);
+                }
+                let slot = SAVE_DEBUG_SLOT.get(h).wrapping_add(1);
+                SAVE_DEBUG_SLOT.set(h, slot);
+                if slot >= 200 {
+                    SAVE_DEBUG_SLOT.set(h, -1);
+                    call(h, s::CLOSE_SAVE_LOAD_SCREEN, &[]);
+                    call(h, s::SET_SCREEN_STATE, &[3]);
+                    call(h, s::INPUT_CLEAR, &[]);
+                    return;
+                }
+            }
+            call(h, s::INPUT_CLEAR, &[]);
+            return;
+        }
+        let next = match call(h, s::GET_SCREEN_STATE, &[]) {
+            2 => {
+                if call(h, s::IS_LOADING_FINISHED, &[]) != 0
+                    && call(h, s::GET_DIALOG_STATE, &[]) == 0
+                {
+                    if call(h, s::IS_LOADING_SUCCESSFUL, &[]) == 0
+                        || call(h, s::IS_OPERATION_CANCELED, &[]) != 0
+                    {
+                        call(h, s::CLOSE_SAVE_LOAD_SCREEN, &[]);
+                    } else if call(h, s::IS_ALBHED_LOADED, &[]) == u32::MAX {
+                        SAVE_LOADED_PENDING.set(h, 1);
+                        call(h, s::MARK_ALBHED_LOADED, &[]);
+                    }
+                    call(h, s::SET_SCREEN_STATE, &[3]);
+                }
+                if call(h, s::IS_SAVING_FINISHED, &[]) != 0
+                    && call(h, s::GET_DIALOG_STATE, &[]) == 0
+                {
+                    call(h, s::CLOSE_SAVE_LOAD_SCREEN, &[]);
+                    call(h, s::SET_SCREEN_STATE, &[3]);
+                }
+                if call(h, s::IS_DELETING_FINISHED, &[]) == 0
+                    || call(h, s::GET_DIALOG_STATE, &[]) != 0
+                {
+                    return;
+                }
+                if SAVE_CLOSE_AFTER_DELETE.get(h) == 0 {
+                    call(h, s::TO_SAVE, &[]);
+                    return;
+                }
+                SAVE_CLOSE_AFTER_DELETE.set(h, 0);
+                3
+            }
+            _ if call(h, s::GET_SCREEN_STATE, &[]) == 3 => {
+                call(h, s::RESET_TO_IDLE, &[]);
+                call(h, s::SET_SCREEN_STATE, &[4]);
+                call(h, s::CLEAR_FORCE_PLACE_ID, &[]);
+                return;
+            }
+            _ => {
+                if call(h, s::GET_SCREEN_STATE, &[]) != 4 {
+                    return;
+                }
+                if SAVE_LOADED_PENDING.get(h) != 0 {
+                    match call(h, s::LOADED_CHOICE, &[]) {
+                        1 => {
+                            call(h, s::SET_SCREEN_STATE, &[1]);
+                            SAVE_LOADED_PENDING.set(h, 0);
+                        }
+                        2 => {
+                            call(h, s::SET_SCREEN_STATE, &[0]);
+                            call(h, s::JUMP_TO_LOADED_SCENE, &[]);
+                            SAVE_LOADED_PENDING.set(h, 0);
+                        }
+                        _ => {}
+                    }
+                    return;
+                }
+                0
+            }
+        };
+        call(h, s::SET_SCREEN_STATE, &[next]);
+    }
 }

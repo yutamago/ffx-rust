@@ -4370,6 +4370,33 @@ ported! {
         nkz::bridge::sqs_cmd_anmm_oef(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
     }
 
+    // ---- chara-main-map round 2
+    /// `yiRectMakeTex_00911fc0(r, obj, a, b, scale, height, tbp, u, v)`: 0.
+    /// `v` is the callers' stale stack word, copied as the original reads
+    /// it; `yiPolyTexMapXZ`'s eighth word, which the original takes from
+    /// its saved `edi` (the caller's register, which no shim sees), goes
+    /// in as 0, as the vfx shims do with such words.
+    yiRectMakeTex_00911fc0 @ 0x0091_1fc0 => extern "C" fn shim_yi_rect_make_tex(r: u32, obj: u32, a: u32, b: u32, scale: u32, height: u32, tbp: u32, u: u32, v: u32) -> u32 {
+        let mut w = super::StackFrame::<{ ffx_field::yipoly::make_tex::SCRATCH as usize / 4 }>::new();
+        let t = ffx_field::yipoly::MakeTex { obj, a, b, scale, height, tbp, u, v };
+        ffx_field::yipoly::yi_rect_make_tex(&mut mem(), r, t, 0, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsCmdAnmmOefFrames_0081b9b0(ctx, cmd)`: the next command.
+    SqsCmdAnmmOefFrames_0081b9b0 @ 0x0081_b9b0 => extern "C" fn shim_sqs_cmd_anmm_oef_frames(ctx: u32, cmd: u32) -> u32 {
+        nkz::bridge::sqs_cmd_anmm_oef_frames(&mut mem(), ctx, cmd, &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsCmdFlash_0081bef0(ctx, cmd)`: `cmd + 4`; the packed colour in a
+    /// frame of its own.
+    SqsCmdFlash_0081bef0 @ 0x0081_bef0 => extern "C" fn shim_sqs_cmd_flash(ctx: u32, cmd: u32) -> u32 {
+        let mut w = super::StackFrame::<{ nkz::bridge::FLASH_SCRATCH as usize / 4 }>::new();
+        nkz::bridge::sqs_cmd_flash(&mut mem(), ctx, cmd, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+    /// `SqsFlashFinal_0081c2a0(unit, cmd)`: `op_flash_path3`'s `eax`.
+    SqsFlashFinal_0081c2a0 @ 0x0081_c2a0 => extern "C" fn shim_sqs_flash_final(unit: u32, cmd: u32) -> u32 {
+        let mut w = super::StackFrame::<{ nkz::bridge::FLASH_SCRATCH as usize / 4 }>::new();
+        nkz::bridge::sqs_flash_final(&mut mem(), unit, cmd, w.at(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
     /// `SqsCmdAnmmParam(ctx, cmd)`.
     SqsCmdAnmmParam @ 0x0081_c160 => extern "C" fn shim_sqs_cmd_anmm_param(ctx: u32, cmd: u32) -> u32 {
         nkz::bridge::sqs_cmd_anmm_param(&mut mem(), ctx, cmd, &mut |_, f, a| call_float(f, a))

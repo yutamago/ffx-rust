@@ -618,6 +618,309 @@ pub mod bridge {
             }
         }
     }
+    /// `crt_memset_thunk` (`0x0094964c`), `passThisTriangle(c, model,
+    /// group, part, tri)` (`0x00829870`), `FFXVu0ApplyMatrix(dst, m, v)`
+    /// (`0x006ed2e0`), `Sg_VecSub(out, a, b)` (`0x00824da0`),
+    /// `Sg_VecCross(out, a, b)` (`0x008295a0`), `Sg_VecDot(a, b, &out)`
+    /// (`0x00824d40`) and `dbgPrintf` (`0x0062f500`): through the game.
+    pub const MEMSET_THUNK: u32 = 0x0094_964c;
+    pub const PASS_THIS_TRIANGLE: u32 = 0x0082_9870;
+    pub const VU0_APPLY_MATRIX: u32 = 0x006e_d2e0;
+    pub const VEC_SUB: u32 = 0x0082_4da0;
+    pub const VEC_CROSS: u32 = 0x0082_95a0;
+    pub const VEC_DOT: u32 = 0x0082_4d40;
+    pub const DBG_PRINTF: u32 = 0x0062_f500;
+    /// `"no points! %s %d %d\n"`.
+    pub const NO_POINTS_FORMAT: u32 = 0x00b5_9224;
+    /// [`inside_triangle`]'s candidates, up to [`TRI_MAX`]: barycentric
+    /// coordinates (u, v, w; 16 bytes each), distances from the plane
+    /// (squared), signed distances.
+    pub const TRI_BARY: u32 = 0x023c_5d00;
+    pub const TRI_DIST: u32 = 0x023c_5100;
+    pub const TRI_SIGNED: u32 = 0x023c_4500;
+    pub const TRI_MAX: i32 = 0x300;
+    /// Its constants: the determinant's limit (`f64` of `f32` 1e-5), the
+    /// first range (-0.1 ..= 1.1), the first "nearest" (2^30), the range's
+    /// growth per pass (`f64` of `f32` 0.2) and the factor a second pass's
+    /// triangle must beat (15).
+    pub const K_DET_EPS: Global<f64> = Global::new(0x00b3_8cc0);
+    pub const K_LO: Global<f32> = Global::new(0x00b5_9644);
+    pub const K_HI: Global<f32> = Global::new(0x00b4_3d28);
+    pub const K_FAR: Global<f32> = Global::new(0x00b5_9640);
+    pub const K_STEP: Global<f64> = Global::new(0x00b3_eb60);
+    pub const K_15: Global<f64> = Global::new(0x00b9_22c0);
+    /// Bytes of scratch [`inside_triangle`] needs: its frame below `ebp`
+    /// (vectors at the original's offsets, `ebp - 0x148` at `scratch`).
+    pub const INSIDE_TRIANGLE_SCRATCH: u32 = 0x148;
+
+    /// The pointers of [`inside_triangle`]: the four outputs.
+    #[derive(Debug, Clone, Copy)]
+    pub struct TriangleOut {
+        pub u: u32,
+        pub v: u32,
+        pub w: u32,
+        /// The signed distance, or 0 for none.
+        pub dist: u32,
+    }
+
+    /// `InsideTriangle(chr, pos, model, code, &u, &v, &w, &dist)`
+    /// (`0x00828c10`; caller `Ch_PreCalcActiveClothMesh`): the triangle of
+    /// `model`'s cloth group `code % 100` (part `code / 100`) that `pos`
+    /// lies over, as barycentric coordinates and, with `dist`, the signed
+    /// distance from its plane. `model` and `code` are `u16`.
+    ///
+    /// No model, or a group past the model's count (`u16` `+0x18` of its
+    /// first word), returns `0xffff` at once. The group (`model +0x2c`
+    /// table) has its matrix at `+0`, triangle count `i16` `+0x40`
+    /// (at most 0x300), vertex indices `+0x44` (3 `i16`) and ids `+0x48`.
+    ///
+    /// 1. The three candidate tables are cleared (`memset`). For each
+    ///    triangle `passThisTriangle` accepts, its vertices (`i16` x, y, z
+    ///    from the model's `+8`, as `f32`, w 1; through the group matrix
+    ///    when header `+8` is set) give the normal n = (v1 - v0) x
+    ///    (v2 - v0) and t = (n.pos - n.v0) / n.n. The squared distance
+    ///    t (n.pos - n.v0) is kept, and with `dist` +-sqrt of it (minus
+    ///    unless 0 < t). The foot p = pos - t n gives the coordinates:
+    ///    Cramer's rule on the vertices when |det(v0, v1, v2)| > 1e-5,
+    ///    else areas against the unit normal; w = (1 - u) - v.
+    /// 2. Up to 50 passes, the range growing by 0.2 each way per pass:
+    ///    the nearest accepted triangle with u, v, w in the range (NaNs
+    ///    pass). Once one is found, one more pass may replace it with a
+    ///    triangle whose distance * 15 is still nearer; then it is final.
+    ///
+    /// The coordinates are copied out even when nothing was found (the
+    /// 16 bytes before the table then). Nothing found: `dbgPrintf("no
+    /// points! ...")`, `0xffff`. Else `dist` gets the signed distance and
+    /// the result is the triangle in `ax` (the upper half `dist`'s).
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+    pub fn inside_triangle<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        pos: u32,
+        model: u32,
+        code: u32,
+        out: TriangleOut,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{Reg, sqrt, store};
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        // the original's frame slot `ebp - off`
+        let at = |off: u32| scratch + INSIDE_TRIANGLE_SCRATCH - off;
+        let ld = |mem: &M, a: u32| Reg::load(mem.read::<f32>(a));
+        let (model, code) = (model & 0xffff, code & 0xffff);
+        let (part, group) = (code / 100, code % 100);
+        let no_points = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let name: u32 = mem.read(chr.wrapping_add(4));
+            call(
+                mem,
+                g(mem, DBG_PRINTF),
+                &[g(mem, NO_POINTS_FORMAT), name, model, code],
+            );
+        };
+        call(mem, g(mem, MEMSET_THUNK), &[g(mem, TRI_BARY), 0, 0x3000]);
+        call(mem, g(mem, MEMSET_THUNK), &[g(mem, TRI_DIST), 0, 0xc00]);
+        call(mem, g(mem, MEMSET_THUNK), &[g(mem, TRI_SIGNED), 0, 0xc00]);
+        let hdr: u32 = mem.read(chr.wrapping_add(0x1c0));
+        if u32::from(mem.read::<u16>(hdr.wrapping_add(6))) <= model {
+            return 0xffff;
+        }
+        let entry = |mem: &M| {
+            let models: u32 = mem.read(chr.wrapping_add(0x1bc));
+            models.wrapping_add(model * 0x38)
+        };
+        let first: u32 = mem.read(entry(mem));
+        if u32::from(mem.read::<u16>(first.wrapping_add(0x18))) <= group {
+            return 0xffff;
+        }
+        let groups: u32 = mem.read(entry(mem).wrapping_add(0x2c));
+        let grp: u32 = if groups == 0 {
+            0
+        } else {
+            mem.read(groups.wrapping_add(4 * group))
+        };
+        if grp == 0 {
+            no_points(mem, call);
+            return 0xffff;
+        }
+        let count = i32::from(mem.read::<i16>(grp.wrapping_add(0x40))).min(TRI_MAX);
+        let (bary, dists, signed) = (g(mem, TRI_BARY), g(mem, TRI_DIST), g(mem, TRI_SIGNED));
+        let (v0, v1, v2) = (at(0x14), at(0x34), at(0x24));
+        let (nrm, p) = (at(0x44), at(0x54));
+        for i in 0..count.max(0).cast_unsigned() {
+            let ids: u32 = mem.read(grp.wrapping_add(0x48));
+            let tri = u32::from(mem.read::<u16>(ids.wrapping_add(2 * i)));
+            let c = u32::from(mem.read::<u16>(chr));
+            if call(
+                mem,
+                g(mem, PASS_THIS_TRIANGLE),
+                &[c, model, group, part, tri],
+            ) == 0
+            {
+                continue;
+            }
+            // the vertices, as the original's fild / fstp dword
+            let first: u32 = mem.read(entry(mem));
+            let vtx: u32 = mem.read(first.wrapping_add(8));
+            let idx: u32 = mem.read(grp.wrapping_add(0x44));
+            for (k, v) in [v0, v1, v2].into_iter().enumerate() {
+                #[allow(clippy::cast_possible_truncation)] // 0..3
+                let k = k as u32;
+                let ix = i32::from(mem.read::<i16>(idx.wrapping_add(6 * i + 2 * k)));
+                let base = vtx.wrapping_add(ix.wrapping_mul(6).cast_unsigned());
+                for c in 0..3 {
+                    let x = mem.read::<i16>(base.wrapping_add(2 * c));
+                    mem.write(v + 4 * c, f32::from(x));
+                }
+                mem.write(v + 12, 1f32);
+            }
+            let hdr: u32 = mem.read(chr.wrapping_add(0x1c0));
+            if mem.read::<u16>(hdr.wrapping_add(8)) != 0 {
+                for v in [v0, v1, v2] {
+                    call(mem, g(mem, VU0_APPLY_MATRIX), &[v, grp, v]);
+                }
+            }
+            let (e1, e2) = (at(0xb4), at(0x94));
+            call(mem, g(mem, VEC_SUB), &[e1, v1, v0]);
+            call(mem, g(mem, VEC_SUB), &[e2, v2, v0]);
+            call(mem, g(mem, VEC_CROSS), &[nrm, e1, e2]);
+            let (d0, dp, nn) = (at(0x12c), at(0xe8), at(0xe4));
+            call(mem, g(mem, VEC_DOT), &[nrm, v0, d0]);
+            call(mem, g(mem, VEC_DOT), &[nrm, pos, dp]);
+            let dp = (ld(mem, dp) - ld(mem, d0)).store();
+            call(mem, g(mem, VEC_DOT), &[nrm, nrm, nn]);
+            let t = (Reg::load(dp) / ld(mem, nn)).store();
+            let e = (Reg::load(dp) * Reg::load(t)).store();
+            for c in 0..3 {
+                let x = ld(mem, pos.wrapping_add(4 * c)) - ld(mem, nrm + 4 * c) * Reg::load(t);
+                mem.write(p + 4 * c, x.store());
+            }
+            if out.dist != 0 {
+                let s = f32::from_bits(store(sqrt(f64::from(e))));
+                // fldz; fcomp t: the plus sign only when 0 < t
+                let s = if 0.0 < t { s } else { -s };
+                mem.write(signed + 4 * i, s);
+            }
+            let [x0, y0, z0] = [0, 4, 8].map(|o| ld(mem, v0 + o));
+            let [x1, y1, z1] = [0, 4, 8].map(|o| ld(mem, v1 + o));
+            let [x2, y2, z2] = [0, 4, 8].map(|o| ld(mem, v2 + o));
+            let a = y2 * z0 - z2 * y0;
+            let b = z2 * y1 - y2 * z1;
+            let cz = (y0 * z1 - z0 * y1) * x2;
+            let det = (x1 * a + x0 * b + cz).store();
+            let det_abs = f64::from(det).abs();
+            let [px, py, pz] = [0, 4, 8].map(|o| ld(mem, p + o));
+            let (u, v) = if det_abs > K_DET_EPS.get(mem) {
+                // Cramer's rule
+                let inv = Reg::load((Reg::ONE / Reg::load(det)).store());
+                let ex = y2 * x1 - y1 * x2;
+                let gx = x2 * z1 - z2 * x1;
+                let u = (gx * py + (ex * pz + px * b)) * inv;
+                let hx = x2 * y0 - y2 * x0;
+                let lx = z2 * x0 - x2 * z0;
+                let v = (px * a + hx * pz + py * lx) * inv;
+                (u.store(), v.store())
+            } else {
+                // the plane through the origin: areas against the unit normal
+                let s = Reg::load(ld(mem, nn).sqrt().store());
+                let un = at(0x64);
+                for c in 0..3 {
+                    mem.write(un + 4 * c, (ld(mem, nrm + 4 * c) / s).store());
+                }
+                let (dd, ea, eb, ec) = (at(0x140), at(0xa4), at(0xd4), at(0x74));
+                call(mem, g(mem, VEC_DOT), &[un, nrm, dd]);
+                call(mem, g(mem, VEC_SUB), &[ea, v0, p]);
+                call(mem, g(mem, VEC_SUB), &[eb, v1, p]);
+                call(mem, g(mem, VEC_SUB), &[ec, v2, p]);
+                let (xa, xb) = (at(0x84), at(0xc4));
+                call(mem, g(mem, VEC_CROSS), &[xa, eb, ec]);
+                call(mem, g(mem, VEC_CROSS), &[xb, ec, ea]);
+                let (a1, a2) = (at(0x138), at(0x100));
+                call(mem, g(mem, VEC_DOT), &[un, xa, a1]);
+                call(mem, g(mem, VEC_DOT), &[un, xb, a2]);
+                let dd = ld(mem, dd);
+                ((ld(mem, a1) / dd).store(), (ld(mem, a2) / dd).store())
+            };
+            let w = (Reg::ONE - Reg::load(u) - Reg::load(v)).store();
+            mem.write(bary + 16 * i, u);
+            mem.write(bary + 16 * i + 4, v);
+            mem.write(bary + 16 * i + 8, w);
+            mem.write(dists + 4 * i, e);
+        }
+        // the passes
+        let far = K_FAR.get(mem);
+        let (step, k15) = (Reg::constant(K_STEP.get(mem)), Reg::constant(K_15.get(mem)));
+        let (mut lo, mut hi) = (K_LO.get(mem), K_HI.get(mem));
+        let mut state = 0u32;
+        let mut best = far;
+        let mut found: i32 = -1;
+        for _ in 0..50 {
+            if state == 0 {
+                best = far;
+            }
+            if count > 0 {
+                let c = u32::from(mem.read::<u16>(chr));
+                let ids: u32 = mem.read(grp.wrapping_add(0x48));
+                let (lo64, hi64) = (f64::from(lo), f64::from(hi));
+                // a coordinate fails only below lo or above hi (NaN passes:
+                // the fcom flags of an unordered compare)
+                let inside = |mem: &M, a: u32| {
+                    use std::cmp::Ordering::{Greater, Less};
+                    let x = ld(mem, a).value();
+                    x.partial_cmp(&hi64) != Some(Greater) && x.partial_cmp(&lo64) != Some(Less)
+                };
+                for i in 0..count.cast_unsigned() {
+                    let tri = u32::from(mem.read::<u16>(ids.wrapping_add(2 * i)));
+                    if call(
+                        mem,
+                        g(mem, PASS_THIS_TRIANGLE),
+                        &[c, model, group, part, tri],
+                    ) == 0
+                    {
+                        continue;
+                    }
+                    let e = bary + 16 * i;
+                    if !(inside(mem, e) && inside(mem, e + 4) && inside(mem, e + 8)) {
+                        continue;
+                    }
+                    let d = ld(mem, dists + 4 * i);
+                    let best64 = Reg::load(best).value();
+                    if state == 1 {
+                        if (d * k15).value() < best64 {
+                            best = d.store();
+                            found = i.cast_signed();
+                            state = 2;
+                        }
+                    } else if d.value() < best64 {
+                        found = i.cast_signed();
+                        best = d.store();
+                    }
+                }
+            }
+            if found != -1 {
+                if state != 0 {
+                    break;
+                }
+                state = 1;
+            }
+            lo = (Reg::load(lo) - step).store();
+            hi = (Reg::load(hi) + step).store();
+        }
+        let src = bary.wrapping_add(found.cast_unsigned().wrapping_mul(16));
+        for (o, dst) in [(0, out.u), (4, out.v), (8, out.w)] {
+            let x = crate::x87::load(mem.read::<f32>(src.wrapping_add(o)));
+            mem.write(dst, x);
+        }
+        if found == -1 {
+            no_points(mem, call);
+            return 0xffff;
+        }
+        if out.dist != 0 {
+            let s = crate::x87::load(mem.read::<f32>(signed + 4 * found.cast_unsigned()));
+            mem.write(out.dist, s);
+        }
+        (out.dist & 0xffff_0000) | (found.cast_unsigned() & 0xffff)
+    }
 }
 
 #[cfg(test)]

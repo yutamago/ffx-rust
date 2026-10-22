@@ -1191,6 +1191,20 @@ pub mod bridge {
         call(mem, mem.rebase(0x0082_a7f0), &[i])
     }
 
+    /// `Ch_ReadEventMgrpAsync_00837650(x)` (`0x00837650`; callers
+    /// `Chr_LoadMotionGroup`, `Native_5065`): [`ch_read_event_mgrp`]
+    /// through the asynchronous reader, `Ch_RomReadEventMGRP(index, x)`;
+    /// its result.
+    pub fn ch_read_event_mgrp_async<M: Mem>(
+        mem: &mut M,
+        x: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let v = call(mem, mem.rebase(0x0086_c1c0), &[x]);
+        let i = call(mem, mem.rebase(0x0086_5890), &[v, x]);
+        call(mem, mem.rebase(0x0082_a6e0), &[i, x])
+    }
+
     /// `Ch_IsShadowHidden(chr)` (`0x008303a0`): points both globals at the
     /// save data's `+0xd2`; in battle, a character whose byte `+0x186` is
     /// neither 2 nor 3 gets that byte, else 0.

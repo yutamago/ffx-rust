@@ -1276,6 +1276,80 @@ pub mod bridge {
         mem.write(chr.wrapping_add(0x190), v);
         chr
     }
+
+    /// `Ch_RomDataReadInit()` (`0x0082a5f0`), `Ch_DrawInitAll()`
+    /// (`0x0082ed30`), `sg_getdbname(kind)` (`0x00829c90`),
+    /// `Sg_PcReadD(path)` (`0x0083ae50`), `Sg_PcReadGetLen()`
+    /// (`0x0083ae70`), `dbgPrintf` (`0x0062f500`), `Ch_DisposeAll`
+    /// (`0x008268e0`), `Sg_InitLight()` (`0x008360b0`), `Sg_InitCamera()`
+    /// (`0x0083f780`): through the game.
+    pub const ROM_DATA_READ_INIT: u32 = 0x0082_a5f0;
+    pub const DRAW_INIT_ALL: u32 = 0x0082_ed30;
+    pub const GET_DB_NAME: u32 = 0x0082_9c90;
+    pub const PC_READ_D: u32 = 0x0083_ae50;
+    pub const PC_READ_GET_LEN: u32 = 0x0083_ae70;
+    pub const DISPOSE_ALL: u32 = 0x0082_68e0;
+    pub const INIT_LIGHT: u32 = 0x0083_60b0;
+    pub const INIT_CAMERA: u32 = 0x0083_f780;
+    /// `"/ffx/proj2/chr/common/%s.tbl"` and `"sizeof(CHR)=%x\n"`.
+    pub const DEBUG_TBL_FORMAT: u32 = 0x00b5_95a4;
+    pub const SIZEOF_FORMAT: u32 = 0x00b5_95c4;
+    /// `u32` cleared by `Ch_InitAll` (after the seven debug model counts).
+    pub const DEBUG_MODEL_COUNT_8: Global<u32> = Global::new(0x012f_bca4);
+    /// Bytes of scratch [`ch_init_all`] needs: the path (`[ebp-0x68]`).
+    pub const INIT_ALL_SCRATCH: u32 = 0x68;
+
+    /// `Ch_InitAll()` (`0x00826ea0`; caller `Sg_MainInit`): the 40 model
+    /// blocks cleared (`memclear`, 12000 bytes) and marked free (`-1`
+    /// first words), `Ch_RomDataReadInit`, no character array, the eighth
+    /// debug count cleared, `Ch_DrawInitAll`. Then for the seven model
+    /// kinds, with `g_FFXIsDebug` (read each time) the debug model list
+    /// `/ffx/proj2/chr/common/<sg_getdbname(kind)>.tbl` read from the PC
+    /// (`sprintf` into `scratch`, `Sg_PcReadD`) and its length / 0x80 as
+    /// the count, else both 0. Then `dbgPrintf("sizeof(CHR)=%x\n",
+    /// 0x880)`, `Ch_DisposeAll`, `Sg_InitLight`, `Sg_InitCamera`. No caller
+    /// reads `eax`.
+    pub fn ch_init_all<M: Mem>(
+        mem: &mut M,
+        scratch: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let g = |mem: &M, f: u32| mem.rebase(f);
+        let blocks = CHR_BLK.ptr(mem).addr;
+        call(mem, g(mem, MEMCLEAR), &[blocks, 12000]);
+        // the original walks up to g_GuScreenSize, right after the blocks
+        let end = g(mem, 0x023c_bbe0);
+        let mut b = blocks;
+        while b.cast_signed() < end.cast_signed() {
+            mem.write(b, u32::MAX);
+            b = b.wrapping_add(l::BLK_SIZE);
+        }
+        call(mem, g(mem, ROM_DATA_READ_INIT), &[]);
+        CHR_ARRAY.set(mem, 0);
+        CHR_COUNT.set(mem, 0);
+        DEBUG_MODEL_COUNT_8.set(mem, 0);
+        call(mem, g(mem, DRAW_INIT_ALL), &[]);
+        let models = DEBUG_MODELS.ptr(mem).addr;
+        let counts = DEBUG_MODEL_COUNTS.ptr(mem).addr;
+        let sprintf: u32 = mem.read(g(mem, SPRINTF_SLOT));
+        for kind in 0..7u32 {
+            if IS_DEBUG.get(mem) == 0 {
+                mem.write(models + 4 * kind, 0u32);
+                mem.write(counts + 4 * kind, 0u32);
+                continue;
+            }
+            let name = call(mem, g(mem, GET_DB_NAME), &[kind]);
+            call(mem, sprintf, &[scratch, g(mem, DEBUG_TBL_FORMAT), name]);
+            let list = call(mem, g(mem, PC_READ_D), &[scratch]);
+            mem.write(models + 4 * kind, list);
+            let len = call(mem, g(mem, PC_READ_GET_LEN), &[]);
+            mem.write(counts + 4 * kind, len >> 7);
+        }
+        call(mem, g(mem, DBG_PRINTF), &[g(mem, SIZEOF_FORMAT), l::SIZE]);
+        call(mem, g(mem, DISPOSE_ALL), &[]);
+        call(mem, g(mem, INIT_LIGHT), &[]);
+        call(mem, g(mem, INIT_CAMERA), &[]);
+    }
 }
 
 #[cfg(test)]
