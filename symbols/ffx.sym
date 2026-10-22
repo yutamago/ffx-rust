@@ -6865,6 +6865,7 @@
 0x007e5f30 function CopyFields_007e5f30          # auto-port shape (several stores: copy into field, cdecl): t0 = u32[&0x00c8f508]; u32[a0] = t0; t1 = u32[&0x00c8f50c]; u32[(a0 + 0x4)] = t1; t2 = u32[&0x00c8f510]; u32[(a0 + 0x8)] = t2; t3 = u32[&0x00c8f514]; u32[(a0 + 0xc)] = t3; u16[a0] = (a1 & 0xffff); u16[(a0 + 0x2)] = (a2 & 0xffff); u16[(a0 + 0x4)] = (a3 & 0xffff); u16[(a0 + 0x6)] = 0xffff; return 0xffff; callers: ; name ours
 0x007e5f80 function op_trail_push_007e5f80    # ours: (ring, point, life) -> u16 ring +4: n times (the ring size) advance the head and store the 16-byte point, count up to n, life to +0xa, flag 0x8000 redoes the trail lengths (w = distance sum from the head; _CIsqrt); ring laid out by CopyFields_007e5f30; called by 0x0081b9b0 (call_sites.tsv); ported r36 (vfx, small::bridge::op_trail_push)
 0x007e6110 function op_trail_add_007e6110     # ours: (ring, point, fill, life) -> 0: fill 0 one push as op_trail_push, else the point behind the oldest while the ring is not full; then the lengths with flag 0x8000; called by 0x008171a0 twice (call_sites.tsv); ported r36 (vfx, small::bridge::op_trail_add)
+0x007e62e0 function op_mmenu_display_007e62e0 # ours: (): tail jmp opd_mmenu_display when g_OpDebugMode and 0x023227c7 are set; no caller and no pointer in the image (r48)
 0x007e63a0 function op_num                    # fh v3:bsim1.00 0x007e62b0
 0x007e63b0 function op_num_char_256           # fh v3:bsim1.00 0x007e62c0
 0x007e6440 function op_num_display            # fh v3:bsim1.00 0x007e6350
@@ -13895,7 +13896,7 @@
 0x00a5ea30 function opd_num_put_float_00a5ea30 # ours: opd_num's %f emitter (0xa5d59a, a qword argument, digits before/after the point); only caller opd_num; r47 proposed debug
 0x00a5eea0 function opd_num_put_hex_00a5eea0  # ours: opd_num's %x emitter (0xa5d4ec); only caller opd_num; r47 proposed debug
 0x00a5f040 function opd_num_put_text_00a5f040 # ours: opd_num's plain-text emitter (0xa5d464, for characters other than % and $); only caller opd_num; r47 proposed debug
-0x00a611b0 function opd_mmenu_display            # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'manipulator'; Switch 0x7100868c00 opd_mmenu_display (symbols from Fahrenheit's server export)
+0x00a611b0 function opd_mmenu_display         # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'manipulator'; Switch 0x7100868c00 opd_mmenu_display (symbols from Fahrenheit's server export); r48 dead: only reached by the uncalled wrapper op_mmenu_display_007e62e0 (jne at 0x7e62f0), no other jump, call or pointer
 0x00a62330 function opd_camera_printf            # str-match switch: only user of 6 string(s) held once by both builds, e.g. '\\t%f, %f, %f\\t// at  (dist, y, deg)\\n'; Switch 0x7100864fb0 opd_camera_printf (symbols from Fahrenheit's server export)
 0x00a624e0 function opd_camera_to_local          # layout+callees: sorts between opd_camera_printf and opd_display, and its named callees match the Switch 0x7100864e80 opd_camera_to_local's (similarity 1.00: op_deg_get); symbols from Fahrenheit's server export
 0x00a629b0 function opd_display                  # str-match switch: only user of 10 string(s) held once by both builds, e.g. 'eb:%4d:%4d'; Switch 0x7100864160 opd_display (symbols from Fahrenheit's server export)
