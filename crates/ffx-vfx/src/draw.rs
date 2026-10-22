@@ -2181,4 +2181,140 @@ pub mod bridge {
             fun(mem, call, USE_OPTIMIZED_SHADER, &[lo, hi]);
         }
     }
+
+    /// `pppDrawFilterPacket_00756740(obj, tex, prog)` (`0x00756740`, name
+    /// ours; called by `pppDrawFilterDraw`), `frame` the original's `ebp`:
+    /// a full-screen textured sprite as a packet at `g_PppPacketPos` (the
+    /// packet record `{start, cursor, 0x7fffffff}` at `frame - 0x58`, the
+    /// texture's log2 sizes at `frame - 0x68`, `- 0x60`, `- 0x5c`): its
+    /// colour from the work area `[[prog+0xc]]` through the EE
+    /// ([`crate::mdl::bridge::ee_colour_at`]), `rcbgTexGetLog2Size(tex
+    /// +0xc, tex +0x10, ...)`, `TEX0` from `tex +4`/`+8` and those sizes,
+    /// the blend bytes `tex +0x24`/`+0x25`, the UVs from the second work
+    /// area's `i32 +0xa4`/`+0xa8` (/ 256) and `tex +0x14`/`+0x18` over the
+    /// size (`u32 +0xc`/`+0x10`), the instance, and corners -1/1 (-1.1/1.1
+    /// in x when `g_pppFpWide`). `prcPacketDataClose` ends it; the
+    /// position moves past it, and `op_func_final_set(0x00756d20, start,
+    /// 0, 1)`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_draw_filter_packet<M: Mem>(
+        mem: &mut M,
+        obj: u32,
+        tex: u32,
+        prog: u32,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{add, div, load, mul, store};
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let offs = rd(mem, prog.wrapping_add(0xc));
+        let (first, second) = (rd(mem, offs), rd(mem, offs.wrapping_add(4)));
+        let packet = g(mem, PACKET_POS);
+        let start = rd(mem, packet);
+        let rec = frame.wrapping_sub(0x58);
+        let q = start.wrapping_add(0x10);
+        mem.write(rec, [start, q, 0x7fff_ffff]);
+        let colour = crate::mdl::bridge::ee_colour_at(mem, obj.wrapping_add(first), false, call);
+        let shift = g(mem, COLOR_SHIFT);
+        mem.write(
+            frame.wrapping_sub(0x70).wrapping_add(rd(mem, shift)),
+            colour,
+        );
+        mem.write(shift, 0u32);
+        let logs = [0x68u32, 0x60, 0x5c].map(|o| frame.wrapping_sub(o));
+        let (w, h) = (
+            rd(mem, tex.wrapping_add(0xc)),
+            rd(mem, tex.wrapping_add(0x10)),
+        );
+        fun(mem, call, 0x0092_0050, &[w, h, logs[0], logs[1], logs[2]]);
+        let w4 = |mem: &mut M, at: u32, words: &[u32]| {
+            for (k, &v) in (0u32..).zip(words) {
+                mem.write(q.wrapping_add(at + 4 * k), v);
+            }
+        };
+        w4(mem, 0, &[6, 0x1000_0000, 0xe, 0]);
+        // TEX0: tbp, tbw, psm, tw, th, tcc, tfx, from the texture and its sizes
+        let sext = |mem: &M, a: u32| i64::from(rd(mem, a).cast_signed()).cast_unsigned();
+        let mut tex0 = u64::from(rd(mem, tex.wrapping_add(8)));
+        tex0 = tex0 << 7 | sext(mem, logs[1]);
+        tex0 = tex0 << 4 | sext(mem, logs[0]);
+        tex0 = tex0 << 12 | sext(mem, logs[2]);
+        tex0 = (tex0 | 0x8000_0010_04c0) << 14 | u64::from(rd(mem, tex.wrapping_add(4)));
+        mem.write(q.wrapping_add(0x10), tex0);
+        let blend = [0x24u32, 0x25].map(|o| u32::from(mem.read::<u8>(tex.wrapping_add(o))));
+        let colour = rd(mem, frame.wrapping_sub(0x70));
+        w4(mem, 0x18, &[6, 0, blend[0], blend[1], 0x42, 0, colour, 0]);
+        w4(
+            mem,
+            0x38,
+            &[
+                1,
+                0,
+                0,
+                0,
+                8,
+                0,
+                0x3_000f,
+                0,
+                0x47,
+                0,
+                0x3100_0108,
+                1,
+                0x4e,
+                0,
+                1,
+                0x40ab_4000,
+                0x5353,
+                0,
+            ],
+        );
+        let k = 0.003_906_25;
+        let int = |mem: &M, o: u32| {
+            let v = rd(mem, obj.wrapping_add(second).wrapping_add(o)).cast_signed();
+            load(store(f64::from(v)))
+        };
+        let size = |mem: &M, o: u32| load(store(f64::from(rd(mem, tex.wrapping_add(o)))));
+        let u0 = store(div(mul(int(mem, 0xa4), k), size(mem, 0xc)));
+        let v0 = store(div(mul(int(mem, 0xa8), k), size(mem, 0x10)));
+        let [lo, hi] = instance(mem, obj);
+        let wide = crate::fp::bridge::WIDE.get(mem) != 0;
+        let left = if wide { 0xbf8c_cccd } else { 0xbf80_0000 };
+        w4(mem, 0x80, &[u0, v0, lo, hi, left, 0xbf80_0000, 0, 0]);
+        let u1 = store(div(
+            add(mul(int(mem, 0xa4), k), size(mem, 0x14)),
+            size(mem, 0xc),
+        ));
+        let v1 = store(div(
+            add(mul(k, int(mem, 0xa8)), size(mem, 0x18)),
+            size(mem, 0x10),
+        ));
+        w4(mem, 0xa0, &[u1, v1]);
+        let right = if wide { 0x3f8c_cccd } else { 0x3f80_0000 };
+        w4(
+            mem,
+            0xb0,
+            &[
+                right,
+                0x3f80_0000,
+                0,
+                0,
+                1,
+                0x1000_0000,
+                0xe,
+                0,
+                0x3100_0108,
+                0,
+                0x4e,
+                0,
+            ],
+        );
+        mem.write(rec.wrapping_add(4), q.wrapping_add(0xe0));
+        fun(mem, call, 0x0076_6b90, &[rec]);
+        let end = rd(mem, rec.wrapping_add(4)).wrapping_add(0x10);
+        mem.write(rec.wrapping_add(4), end);
+        mem.write(packet, end);
+        let start = rd(mem, rec);
+        let draw = g(mem, 0x0075_6d20);
+        fun(mem, call, 0x007e_b410, &[draw, start, 0, 1]);
+    }
 }

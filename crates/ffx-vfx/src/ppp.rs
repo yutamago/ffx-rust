@@ -573,4 +573,286 @@ pub mod bridge {
     pub fn ppp_get_rot_matrix_z(mem: &mut impl Mem, out: u32, angle: i32) {
         rot(mem, out, angle, super::rot_z);
     }
+
+    /// `pppDataRcv()` (`0x007614a0`; `pppPartDraw` and `pppPartLoop`),
+    /// `frame` the original's `ebp` (its matrix at `frame - 0x44`): after
+    /// `rpc_read(0x00e524a8)`, takes the `pmcom` queue's entries (8 bytes
+    /// `{command, data}` at `0x010d4d28`, read index `0x010d5528` up to
+    /// `g_KePmcomQueueIndex`, wrapping at 0x100) until it is empty or
+    /// `0x00d52390` is set, each after `eidprintfPrint` and followed by
+    /// another `rpc_read`:
+    /// - 1, 2: the render state (`0x00d4b500`, 0x180 bytes, to
+    ///   `0x00d4b680`); 1 copies four vectors on (`lmemcpy`) and always
+    ///   builds the camera (`g_pppCameraMatrix` = camera x the received
+    ///   matrix with y flipped and `+0x38` scaled by `0x00d4b700`) and
+    ///   screen matrix (`FFXSamp0ViewScreenMatrix`, scale x 512), 2 copies
+    ///   the battle camera instead when `0x00d4b7f8` is 1; then the
+    ///   `0x00d4b4c8` records at `0x00d4e3a0` (0x80 apart) get `0x00d4b7ec`
+    ///   and, with `0x00d4b7f0`, `0x00d4e378` = `60 / it x 0x107 - 0x83`.
+    /// - 3: `pppSendPacket` of the init reply, `pppSendWait`.
+    /// - 4, 8: an `rsd` record (`0x00d4ca40 + 0x20 i16 +0x18`): sizes, the
+    ///   data and its two offsets; 4 then `pppDataSetTex_007628c0`, 8
+    ///   `pppDataLastPair_00761250`; `g_pppPmcomTexFirst` = -1.
+    /// - 5, 9: a shape (`0x00d4b828`, `0x00d4db40`); 5 resets the texture
+    ///   animation. 7: a `vsf` (`0x00d4ba28`, `0x00d4dd40`). 10:
+    ///   `pppSetPmcom2Texture_007629e0(data, 1)`.
+    /// - 11: a new `pdt`: `pppFreeAllEnvObjects`, `pppInitPdt(data,
+    ///   0x00c3e780, 0)`, the bounds reset, `FlushCache(0)`, the load count
+    ///   `0x00d4b4c0` up.
+    /// - 16, 21, 22: flags and copies after a `dbgPrintf`; 23
+    ///   `AtelMapLoad(0x00d4b818)`; -1 nothing; anything else a
+    ///   `dbgPrintf`.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+    pub fn ppp_data_rcv<M: Mem>(
+        mem: &mut M,
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{load, mul, round_trip, store};
+        use ffx_system::stub::ptr32;
+        let g = |mem: &M, a: u32| Global::<u32>::new(a).ptr(mem).addr;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(g(mem, a));
+        let wr = |mem: &mut M, a: u32, v: u32| {
+            let at = g(mem, a);
+            mem.write(at, v);
+        };
+        let mut fun = |mem: &mut M, f: u32, args: &[u32]| {
+            let f = g(mem, f);
+            call(mem, f, args)
+        };
+        let rpc = g(mem, 0x00e5_24a8);
+        fun(mem, 0x0076_b4f0, &[rpc]);
+        loop {
+            let i = rd(mem, 0x010d_5528);
+            if rd(mem, 0x010d_552c) == i {
+                return;
+            }
+            let entry = g(mem, 0x010d_4d28).wrapping_add(i.wrapping_mul(8));
+            let next = i.wrapping_add(1);
+            wr(
+                mem,
+                0x010d_5528,
+                if next.cast_signed() >= 0x100 { 0 } else { next },
+            );
+            if entry == 0 || rd(mem, 0x00d5_2390) != 0 {
+                return;
+            }
+            fun(mem, 0x0076_b8d0, &[]);
+            let cmd = mem.read::<u32>(entry).cast_signed();
+            let data = |mem: &M| mem.read::<u32>(entry.wrapping_add(4));
+            let print = |mem: &mut M,
+                         fun: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32,
+                         fmt: u32,
+                         args: &[u32]| {
+                let mut a = vec![g(mem, fmt)];
+                a.extend_from_slice(args);
+                fun(mem, 0x0062_fbf0, &a);
+            };
+            let debug = |mem: &mut M, fun: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, msg: u32| {
+                let m = g(mem, msg);
+                fun(mem, 0x0062_f500, &[m]);
+            };
+            match cmd {
+                -1 => {}
+                1 | 2 => {
+                    if cmd == 1 {
+                        let wide = |mem: &M, a: u32| {
+                            let d = load(rd(mem, a)).to_bits();
+                            #[allow(clippy::cast_possible_truncation)] // the halves
+                            [d as u32, (d >> 32) as u32]
+                        };
+                        let (x, y) = (wide(mem, 0x00d4_b580), wide(mem, 0x00d4_b584));
+                        print(mem, &mut fun, 0x00b5_1854, &[x[0], x[1], y[0], y[1]]);
+                    }
+                    let state: [u32; 0x60] = mem.read(g(mem, 0x00d4_b500));
+                    mem.write(g(mem, 0x00d4_b680), state);
+                    if cmd == 2 {
+                        print(mem, &mut fun, 0x00b5_1868, &[]);
+                    } else {
+                        for (to, from) in [
+                            (0x00d4_e3d0u32, 0x00d4_b6c0u32),
+                            (0x00d4_e3e0, 0x00d4_b6d0),
+                            (0x00d4_e3f0, 0x00d4_b6e0),
+                            (0x0230_fd50, 0x00d4_b6f0),
+                        ] {
+                            let (to, from) = (g(mem, to), g(mem, from));
+                            fun(mem, 0x0076_b0f0, &[to, from, 4]);
+                        }
+                    }
+                    let (screen, camera) = (g(mem, 0x0230_fe60), g(mem, 0x0230_ff60));
+                    if cmd == 2 && rd(mem, 0x00d4_b7f8) == 1 {
+                        fun(mem, 0x007b_ba50, &[screen]);
+                        fun(mem, 0x007c_0070, &[camera]);
+                    } else {
+                        let flip = frame.wrapping_sub(0x44);
+                        fun(mem, 0x006e_d9a0, &[flip]);
+                        let y = round_trip(f32::from_bits(rd(mem, 0x00b9_2340)));
+                        mem.write(flip.wrapping_add(0x14), y);
+                        let state = g(mem, 0x00d4_b680);
+                        fun(mem, 0x006e_d5c0, &[camera, state, flip]);
+                        let scale = load(rd(mem, 0x00d4_b700));
+                        let z = load(mem.read(camera.wrapping_add(0x38)));
+                        mem.write(camera.wrapping_add(0x38), store(mul(z, scale)));
+                        fun(mem, 0x006e_d5c0, &[camera, flip, camera]);
+                        let scale = load(rd(mem, 0x00d4_b700));
+                        let far = store(mul(mul(scale, 65536.0), load(rd(mem, 0x00d4_b704))));
+                        let one = 1f32.to_bits();
+                        let args = [
+                            screen,
+                            store(mul(scale, 512.0)),
+                            one,
+                            round_trip(f32::from_bits(rd(mem, 0x00b5_1a18))).to_bits(),
+                            rd(mem, 0x00b5_1a20),
+                            rd(mem, 0x00b5_1a20),
+                            one,
+                            round_trip(f32::from_bits(rd(mem, 0x00b5_1a24))).to_bits(),
+                            one,
+                            far,
+                        ];
+                        fun(mem, 0x0093_d960, &args);
+                        if cmd == 1 {
+                            let s = store(mul(load(rd(mem, 0x00d4_b700)), 512.0));
+                            wr(mem, 0x00c3_e720, s);
+                        }
+                    }
+                    let n = rd(mem, 0x00d4_b4c8).cast_signed();
+                    let v = rd(mem, 0x00d4_b7ec);
+                    let base = g(mem, 0x00d4_e3a0);
+                    for k in 0..n.max(0).cast_unsigned() {
+                        mem.write(base.wrapping_add(0x80 * k), v);
+                    }
+                    let d = rd(mem, 0x00d4_b7f0).cast_signed();
+                    if d != 0 {
+                        let r = 60i32.wrapping_div(d).wrapping_mul(0x107).wrapping_sub(0x83);
+                        wr(mem, 0x00d4_e378, r.cast_unsigned());
+                    }
+                }
+                3 => {
+                    print(mem, &mut fun, 0x00b5_1878, &[]);
+                    let reply = g(mem, 0x00b5_188c);
+                    fun(mem, 0x0076_b3d0, &[rpc, reply, 0, 0]);
+                    fun(mem, 0x0076_b4a0, &[]);
+                    print(mem, &mut fun, 0x00b5_1894, &[]);
+                }
+                4 | 8 => {
+                    let d = data(mem);
+                    print(mem, &mut fun, 0x00b5_18b0, &[d]);
+                    let src = ptr32(data(mem));
+                    let no = i32::from(mem.read::<i16>(src.wrapping_add(0x18)));
+                    print(mem, &mut fun, 0x00b5_18d0, &[no.cast_unsigned()]);
+                    let rec = g(mem, 0x00d4_ca40).wrapping_add(no.cast_unsigned() << 5);
+                    mem.write(rec.wrapping_add(0x1c), ptr32(src));
+                    for (to, from) in [(0u32, 0x12u32), (4, 0x14), (8, 0x10)] {
+                        let v = i32::from(mem.read::<i16>(src.wrapping_add(from)));
+                        mem.write(rec.wrapping_add(to), v);
+                    }
+                    for (to, from) in [(0x14u32, 8u32), (0x18, 0xc)] {
+                        let v = mem.read::<u32>(src.wrapping_add(from)).wrapping_add(src);
+                        mem.write(rec.wrapping_add(to), ptr32(v));
+                    }
+                    let (a, b) = (rec.wrapping_add(0xc), rec.wrapping_add(0x10));
+                    let rsd = ptr32(mem.read(rec.wrapping_add(0x1c)));
+                    if mem.read::<u32>(entry) == 4 {
+                        let first = rd(mem, 0x010d_4cf4);
+                        fun(mem, 0x0076_28c0, &[rsd, first, a, b]);
+                    } else {
+                        fun(mem, 0x0076_1250, &[rsd, a, b]);
+                    }
+                    wr(mem, 0x010d_4cf4, u32::MAX);
+                }
+                5 | 9 => {
+                    let d = data(mem);
+                    print(mem, &mut fun, 0x00b5_18ec, &[d]);
+                    let src = ptr32(data(mem));
+                    let no = mem.read::<u32>(src);
+                    let shape = ptr32(data(mem));
+                    mem.write(g(mem, 0x00d4_b828).wrapping_add(no.wrapping_mul(4)), shape);
+                    let tex = ptr32(src.wrapping_add(0x10));
+                    mem.write(g(mem, 0x00d4_db40).wrapping_add(no.wrapping_mul(4)), tex);
+                    if mem.read::<u32>(entry) == 5 {
+                        let count = rd(mem, 0x00d4_be34);
+                        let at = g(mem, 0x00d4_be2c).wrapping_add(count.wrapping_mul(12));
+                        let v = mem.read::<u32>(at);
+                        let hi = v.cast_signed().wrapping_shr(31).cast_unsigned();
+                        fun(mem, 0x007e_cf30, &[ptr32(tex), v, hi]);
+                    }
+                }
+                7 => {
+                    let d = data(mem);
+                    print(mem, &mut fun, 0x00b5_190c, &[d]);
+                    let src = ptr32(data(mem));
+                    let no = mem.read::<u32>(src);
+                    let vsf = ptr32(data(mem));
+                    mem.write(g(mem, 0x00d4_ba28).wrapping_add(no.wrapping_mul(4)), vsf);
+                    let at = g(mem, 0x00d4_dd40).wrapping_add(no.wrapping_mul(8));
+                    let w: u16 = mem.read(src.wrapping_add(4));
+                    mem.write(at, w);
+                    let h: u16 = mem.read(src.wrapping_add(8));
+                    mem.write(at.wrapping_add(2), h);
+                    mem.write(at.wrapping_add(4), ptr32(src.wrapping_add(0xc)));
+                }
+                10 => {
+                    print(mem, &mut fun, 0x00b5_192c, &[]);
+                    let tex = ptr32(data(mem));
+                    fun(mem, 0x0076_29e0, &[tex, 1]);
+                }
+                11 => {
+                    let d = data(mem);
+                    print(mem, &mut fun, 0x00b5_1948, &[d]);
+                    fun(mem, 0x0076_05d0, &[]);
+                    let pdt = ptr32(data(mem));
+                    wr(mem, 0x00d4_bc30, pdt);
+                    let programs = g(mem, 0x00c3_e780);
+                    fun(mem, 0x0071_20f0, &[pdt, programs, 0]);
+                    let max = round_trip(f32::from_bits(rd(mem, 0x00b1_7504))).to_bits();
+                    let hundred = round_trip(f32::from_bits(rd(mem, 0x00b3_04f8))).to_bits();
+                    for (at, v) in [
+                        (0x010d_2528u32, max),
+                        (0x00d4_e3b0, max),
+                        (0x010d_2520, 0),
+                        (0x00d4_e390, 0),
+                        (0x010d_2530, hundred),
+                        (0x010d_2524, 0),
+                        (0x010d_252c, hundred),
+                        (0x00d4_b4c8, 1),
+                        (0x00d4_e3b8, hundred),
+                        (0x00d4_b4c4, 1),
+                        (0x00d4_e3b4, hundred),
+                        (0x0230_fd38, 0),
+                    ] {
+                        wr(mem, at, v);
+                    }
+                    fun(mem, 0x0062_f4c0, &[0]);
+                    let n = rd(mem, 0x00d4_b4c0).wrapping_add(1);
+                    wr(mem, 0x00d4_b4c0, n);
+                }
+                16 => {
+                    debug(mem, &mut fun, 0x00b5_1968);
+                    let at = g(mem, 0x00d4_e3ad);
+                    mem.write(at, 1u8);
+                }
+                21 => {
+                    debug(mem, &mut fun, 0x00b5_1980);
+                    let v = rd(mem, 0x00d4_b808);
+                    wr(mem, 0x00d4_b810, v);
+                    let v = rd(mem, 0x00d4_b80c);
+                    wr(mem, 0x00d4_b814, v);
+                }
+                22 => {
+                    debug(mem, &mut fun, 0x00b5_198c);
+                    let v = rd(mem, 0x00d4_b800);
+                    wr(mem, 0x00d4_b804, v);
+                    let at = g(mem, 0x00d5_249e);
+                    mem.write(at, 1u8);
+                }
+                23 => {
+                    let map = rd(mem, 0x00d4_b818);
+                    fun(mem, 0x0086_dca0, &[map]);
+                }
+                0xfe => debug(mem, &mut fun, 0x00b5_19a0),
+                _ => debug(mem, &mut fun, 0x00b5_19bc),
+            }
+            fun(mem, 0x0076_b4f0, &[rpc]);
+        }
+    }
 }

@@ -5626,6 +5626,29 @@ ported! {
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_DIS_POS_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
+    /// `pppDrawFilterPacket_00756740(obj, tex, prog)`: its packet record and
+    /// texture sizes in a buffer on this shim's stack (the frame pointer at
+    /// its end).
+    pppDrawFilterPacket_00756740 @ 0x0075_6740 => extern "C" fn ppp_draw_filter_packet(obj: u32, tex: u32, prog: u32) {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x70]);
+        let mut locals = Locals([0; 0x70]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x70;
+        draw::bridge::ppp_draw_filter_packet(&mut mem(), obj, tex, prog, frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
+    /// `pppDataRcv()`: its matrix in a buffer on this shim's stack (the
+    /// frame pointer at its end).
+    pppDataRcv @ 0x0076_14a0 => extern "C" fn ppp_data_rcv() {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x48]);
+        let mut locals = Locals([0; 0x48]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x48;
+        ppp::bridge::ppp_data_rcv(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a));
+        std::hint::black_box(&mut locals);
+    }
     /// `pppDrawRainAlloc_00756320(def, work)`: the three words
     /// `rcuiScaleVector_copy_00756600` reads past its arguments (the
     /// caller's saved registers) go in as 0, as for `opu_sloop`.
