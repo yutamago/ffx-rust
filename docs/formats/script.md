@@ -3015,6 +3015,32 @@ worker's line at a small enough height gap.
 `round25f_water_windows_battle_levels_lines_match_the_original` covers
 them.
 
+Round 26 a: `AtelBattleEndCallback` (`0x00861160`) brings the field back
+after a battle. End type 6 resets the renderer (`PostReset(1)`) and fades
+to opaque black; end type 1 without `g_AtelBattleEndStatus` bit 9 jumps
+to the game over; anything else queues the return callbacks (`CAMERA`
+unless status bit 14 in battle mode 1, then by the status's low byte,
+jump table `0x00861408`: 1 nothing, 2 `MOVIE` with `+8`/`+0xc` copied to
+`0x01326b38`, 3/4 the end effect `0x00861550`; then `SNDCLR`, `SNDREG`,
+the map start `0x008615b0`, `CHRREG`, `EFFDONE` for kind 3, `DONE`, and
+`DONE2` or, outside kinds 1..4 or mode 1, the menu reserve `0x40010002`
+with message area 2). The status is copied to `+4` first and reset to
+`0x10001` last; ctrl work 0 is current throughout and the caller's comes
+back. `Atel_RunCtrlWorkers_00867950(event, input, clear)` runs every
+worker of the current ctrl work once (`Script_Run(w, event +8, input)`;
+without input only workers with `+0x36` bits 7-8), handles the talk
+choice from the pad (`+0x1e4`, `+0x1e6`, `+0x1e8`; affection and trigger
+for a chosen worker), decodes the signals (moving pending levels `+0x36`
+bits 9-10 down to 7-8, or counting 7-8 down) and repeats while a result
+has a bit outside 14-15; bit 15 sets ctx `+8` = 3. `AtelUpdateFilePath`
+(`0x00879f00`) picks the event directory by `AtelGetEventMode` (jump
+table `0x0087a2b8`) and `TkGetLang` (byte tables `0x0087a2f0`.. into
+word tables `0x0087a2d0`..; the language order is jp, us, fr, es, de, it,
+`0x12` uk, while the strings sit jp, us, de, fr, it, es, uk).
+`round26a_battle_end_ctrl_pass_file_path_match_the_original` covers them
+with every callee a logged stand-in; some stand-ins switch the ctrl work
+or move the choice to show which reads the original repeats.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

@@ -7324,4 +7324,18 @@ ported! {
             super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, f), args)
         });
     }
+
+    // script round 26
+    /// `AtelBattleEndCallback(mode, v, map, end)`.
+    AtelBattleEndCallback @ 0x0086_1160 => extern "C" fn h_861160(mode: u32, v: u32, map: u32, end: u32) -> u32 {
+        hp::atel_battle_end_callback(&mut mem(), mode, v, map, end)
+    }
+    /// `Atel_RunCtrlWorkers_00867950(event, input, clear)`.
+    Atel_RunCtrlWorkers_00867950 @ 0x0086_7950 => extern "C" fn h_867950(event: u32, input: u32, clear: u32) -> u32 {
+        hp::atel_run_ctrl_workers(&mut mem(), event, input, clear)
+    }
+    /// `AtelUpdateFilePath()`.
+    AtelUpdateFilePath @ 0x0087_9f00 => extern "C" fn h_879f00() -> u32 {
+        hp::atel_update_file_path(&mut mem())
+    }
 }
