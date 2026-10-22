@@ -13890,6 +13890,10 @@
 0x00a5dff0 function opd_num_word_128             # layout: alphabetical run between opd_num_vdisp and opd_num_word_256 (1 unnamed in the gap); Switch 0x710086bd60 opd_num_word_128 is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00a5e0c0 function opd_num_word_256          # fh switch:bsim1.00 0x710086be20
 0x00a5e2b0 function opd_num_xy_set            # fh v3:exact 0x00a5e2b0
+0x00a5e880 function opd_num_put_dec_00a5e880  # ours: opd_num's %d emitter (called at 0xa5d5db for "d" with the digit count, the text cursor 0x02322760 and 0x02286140); only caller opd_num (inlined in the Switch opd_num, 2912 B); debug number printer, r47 proposed debug
+0x00a5ea30 function opd_num_put_float_00a5ea30 # ours: opd_num's %f emitter (0xa5d59a, a qword argument, digits before/after the point); only caller opd_num; r47 proposed debug
+0x00a5eea0 function opd_num_put_hex_00a5eea0  # ours: opd_num's %x emitter (0xa5d4ec); only caller opd_num; r47 proposed debug
+0x00a5f040 function opd_num_put_text_00a5f040 # ours: opd_num's plain-text emitter (0xa5d464, for characters other than % and $); only caller opd_num; r47 proposed debug
 0x00a611b0 function opd_mmenu_display            # str-match switch: only user of 3 string(s) held once by both builds, e.g. 'manipulator'; Switch 0x7100868c00 opd_mmenu_display (symbols from Fahrenheit's server export)
 0x00a62330 function opd_camera_printf            # str-match switch: only user of 6 string(s) held once by both builds, e.g. '\\t%f, %f, %f\\t// at  (dist, y, deg)\\n'; Switch 0x7100864fb0 opd_camera_printf (symbols from Fahrenheit's server export)
 0x00a624e0 function opd_camera_to_local          # layout+callees: sorts between opd_camera_printf and opd_display, and its named callees match the Switch 0x7100864e80 opd_camera_to_local's (similarity 1.00: op_deg_get); symbols from Fahrenheit's server export
