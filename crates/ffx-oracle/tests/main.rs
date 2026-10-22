@@ -9909,3 +9909,271 @@ fn near_point_snapshot() {
     let mut rng = Xorshift(0x35a4_4121);
     near_point_cases(&mut a, &mut b, &mut rng, 800);
 }
+
+// ---- chara-main-map round 1
+
+/// `code` in both oracles, with a jump to it at `sym`.
+fn cmm_stub(a: &mut Oracle, b: &mut Oracle, sym: u32, code: &[u8]) {
+    let at = a.alloc_code(code).unwrap();
+    assert_eq!(b.alloc_code(code).unwrap(), at);
+    let f = a.rebase(sym);
+    let mut j = vec![0xe9];
+    j.extend(at.wrapping_sub(f + 5).to_le_bytes());
+    put(a, b, f, j[0]);
+    for (k, byte) in j.iter().enumerate().skip(1) {
+        put(a, b, f + u32::try_from(k).unwrap(), *byte);
+    }
+}
+
+/// `op_shape_draw_eamap(shape, key, slot, layer)` as a stand-in logging
+/// at `[log]`: shape, slot, layer, the key's `u16 +2`, words `+4`, `+8`,
+/// `+0xc`, byte `+0x18`, then the 16 words at `[key +0x10]` and at
+/// `[key +0x1c]` (the key is on the original's stack); returns 0.
+fn eamap_stand_in(log: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(log.to_le_bytes()); // mov ecx, [log]
+    for i in [0u8, 2, 3] {
+        // mov eax, [esp + 4 + 4i]; mov [ecx], eax; add ecx, 4
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * i, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+    }
+    c.extend([0x8b, 0x54, 0x24, 0x08]); // mov edx, [esp + 8]
+    c.extend([0x0f, 0xb7, 0x42, 0x02, 0x89, 0x01, 0x83, 0xc1, 0x04]); // movzx eax, word [edx+2]
+    for o in [4u8, 8, 0xc] {
+        c.extend([0x8b, 0x42, o, 0x89, 0x01, 0x83, 0xc1, 0x04]); // mov eax, [edx+o]
+    }
+    c.extend([0x0f, 0xb6, 0x42, 0x18, 0x89, 0x01, 0x83, 0xc1, 0x04]); // movzx eax, byte [edx+0x18]
+    for o in [0x10u8, 0x1c] {
+        c.extend([0x8b, 0x44, 0x24, 0x08, 0x8b, 0x50, o]); // mov eax, [esp+8]; mov edx, [eax+o]
+        for k in 0..16u8 {
+            // mov eax, [edx + 4k]; mov [ecx], eax; add ecx, 4
+            c.extend([0x8b, 0x42, 4 * k, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+        }
+    }
+    c.extend([0x89, 0x0d]);
+    c.extend(log.to_le_bytes()); // mov [log], ecx
+    c.extend([0x33, 0xc0, 0xc3]); // xor eax, eax; ret
+    c
+}
+
+/// A stand-in returning the word at `slot`, which then grows by `step`.
+fn counting_stand_in(slot: u32, step: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(slot.to_le_bytes()); // mov eax, [slot]
+    c.extend([0x81, 0x05]);
+    c.extend(slot.to_le_bytes());
+    c.extend(step.to_le_bytes()); // add dword [slot], step
+    c.push(0xc3);
+    c
+}
+
+/// A stand-in that clears the byte at the address the word at `list`
+/// points to, then moves `list` on by 4 (a list of the busy bytes to end,
+/// one per call); returns 0.
+fn clearing_stand_in(list: u32, log: u32) -> Vec<u8> {
+    // [log] = its argument
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xa3];
+    c.extend(log.to_le_bytes()); // mov eax, [esp+4]; mov [log], eax
+    c.extend([0x8b, 0x0d]);
+    c.extend(list.to_le_bytes()); // mov ecx, [list]
+    c.extend([0x8b, 0x01, 0xc6, 0x00, 0x00]); // mov eax, [ecx]; mov byte [eax], 0
+    c.extend([0x83, 0x05]);
+    c.extend(list.to_le_bytes());
+    c.push(4); // add dword [list], 4
+    c.extend([0x33, 0xc0, 0xc3]);
+    c
+}
+
+/// Chara-main-map round 1, main group: `Sg_CacheDisposeChr`,
+/// `Sg_EventjumpDispose`, `0x0083b670`, `0x00a51340` (a made-up sphere
+/// grid; the node matrices and the view product as the originals, the
+/// area-map draw a stand-in logging its key) and the movie read task loop
+/// `0x0076e660` (its callees recorders; `TkSyncV` ends one busy request
+/// per pass, so the loop ends).
+#[allow(clippy::too_many_lines)]
+fn cmm1_main_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: u32) {
+    use ffx_sg::cdread::bridge as cd;
+    use ffx_sg::state::bridge as st;
+    let log = a.rebase(REC_LOG);
+    let ret = |a: &Oracle, k: u32| a.rebase(REC_RETS) + 4 * k;
+    let stands = [
+        (st::CACHE_DISPOSE, 3),
+        (st::SG_DBG_PRINTF, 1),
+        (st::MEM_SET_FAST, 1),
+        (st::CH_DISPOSE_ALL, 0),
+        (st::CH_BLK_DISPOSE_ALL, 0),
+        (st::CH_DISPOSE_ALL_MGRP, 0),
+        (st::PLIGHT_DISPOSE, 0),
+        (st::GET_BINDP_LIST, 1),
+        (st::CACHE_CLEAR_CHECK, 0),
+        (st::CACHE_TO_TOP, 2),
+        (st::REG_MOTION_TO_TOP, 0),
+        (st::CACHE_DISPOSE_CHECK, 0),
+        (st::CACHE_EMPTY, 0),
+        (st::REG_MOTION_USE, 0),
+        (st::CH_DATA_READ, 1),
+        (st::CH_MGRP_READ, 2),
+        (st::CH_READ_SYNC, 1),
+    ];
+    for (k, &(sym, n)) in (1u32..).zip(&stands) {
+        recorder(a, b, k, sym, n, 0);
+    }
+    let movie = [
+        (cd::MOVIE_ERR, 3),
+        (cd::SOUND_LOOP, 0),
+        (cd::SIGNAL_SEMA, 1),
+        (cd::STANDBY_VOICE, 0),
+        (cd::LOADING_ACTIVE, 0),
+        (cd::RESET_LOADING_SCREEN, 0),
+        (cd::IS_BATTLE_MAP, 0),
+        (cd::GET_IS_BATTLE_MAP, 0),
+        (cd::LOADING_SCREEN_STEP, 0),
+        (cd::LOADING_CALLBACK, 0),
+        (cd::WAIT_SEMA, 1),
+    ];
+    for (k, &(sym, n)) in (20u32..).zip(&movie) {
+        recorder(a, b, k, sym, n, 0);
+    }
+    // the task's step: a recorder of its own at slot 40's code
+    recorder(a, b, 40, 0x0062_f4c0, 0, 0);
+    let step = a.rebase(REC_CODE) + 0x60 * 40;
+    let poll = alloc(a, b, 4);
+    cmm_stub(a, b, cd::POLL_SEMA, &counting_stand_in(poll, 1));
+    let busy_list = alloc(a, b, 4);
+    let sync_arg = alloc(a, b, 4);
+    cmm_stub(a, b, cd::TK_SYNC_V, &clearing_stand_in(busy_list, sync_arg));
+    let elog = alloc(a, b, 8);
+    let ebuf = alloc(a, b, 0x8000);
+    cmm_stub(a, b, 0x007f_49e0, &eamap_stand_in(elog));
+    let grid = alloc(a, b, 0x1_1700);
+    let abmap = a.rebase(0x0230_5834);
+    for _ in 0..rounds {
+        put(a, b, log, 0u32);
+        for k in 1..60 {
+            let at = ret(a, k);
+            put(a, b, at, rng.next());
+        }
+        let id = rng.next();
+        twin("Sg_CacheDisposeChr", a, b, 0x0084_0e60, &[id], |m| {
+            st::cache_dispose_chr(&mut H(m), id)
+        });
+        put(a, b, log, 0u32);
+        twin("Sg_EventjumpDispose", a, b, 0x0083_b420, &[], |m| {
+            st::eventjump_dispose(&mut H(m))
+        });
+        // the bind list: 0 to 5 ids
+        put(a, b, log, 0u32);
+        let n = rng.below(6);
+        let list = block(a, b, rng, 2 * 8);
+        put(a, b, list, u16::try_from(n).unwrap());
+        let at = ret(a, 8);
+        put(a, b, at, list);
+        twin("Sg_EventjumpCacheChrs", a, b, 0x0083_b670, &[], |m| {
+            st::eventjump_cache_chrs(&mut H(m))
+        });
+        // ---- the grid's nodes into the area map
+        put(a, b, log, 0u32);
+        put(a, b, elog, ebuf);
+        let nodes = rng.below(6);
+        for k in 0..0x1_1700 / 4 {
+            let v = rng.next();
+            let v = if v & 0x7f80_0000 == 0x7f80_0000 {
+                v & 0xbfff_ffff
+            } else {
+                v
+            };
+            put(a, b, grid + 4 * k, v);
+        }
+        put(a, b, grid + 2, i16::try_from(nodes).unwrap());
+        for i in 0..nodes {
+            let node = grid + 0x808 + 0x28 * i;
+            let kind: u16 = if rng.below(4) == 0 {
+                0xffff
+            } else {
+                u16::try_from(rng.below(3)).unwrap()
+            };
+            put(a, b, node + 6, kind);
+            for k in 0..3 {
+                #[allow(clippy::cast_precision_loss)]
+                let v = (rng.below(2000) as f32 - 1000.0).to_bits();
+                put(a, b, node + 4 * k + 8, v);
+            }
+        }
+        for k in 0..16 {
+            #[allow(clippy::cast_precision_loss)]
+            let v = (rng.below(200) as f32 / 50.0 - 2.0).to_bits();
+            put(a, b, grid + 0x113e0 + 4 * k, v);
+        }
+        put(a, b, grid + 0x115bc, u8::try_from(rng.below(10)).unwrap());
+        put(a, b, abmap, grid);
+        // the EE zero register the key's vertex block copies
+        let r0 = a.rebase(0x00c8_f508);
+        for k in 0..4 {
+            put(a, b, r0 + 4 * k, rng.next() & 0x3fff_ffff);
+        }
+        twin("AbmapDrawNodesEamap", a, b, 0x00a5_1340, &[], |m| {
+            let w = m.stack_range().start + 0x400;
+            ffx_sg::abmap::bridge::abmap_draw_nodes_eamap(m, w, &mut |m, f, args| {
+                m.call(f, Conv::Cdecl, args).unwrap().eax
+            });
+        });
+        // ---- the movie read task: some busy requests, each ended by a
+        // TkSyncV; without a task record none
+        put(a, b, log, 0u32);
+        let chans = a.rebase(0x0112_7c80);
+        let task = if rng.below(6) == 0 {
+            0
+        } else {
+            block(a, b, rng, 8)
+        };
+        if task != 0 {
+            put(a, b, task, step);
+        }
+        let mut busy = Vec::new();
+        for i in 0..64u32 {
+            let on = task != 0 && rng.below(24) == 0;
+            put(a, b, chans + 0x38 * i + 0x31, u8::from(on));
+            if on {
+                busy.push(chans + 0x38 * i + 0x31);
+            }
+        }
+        let spare = alloc(a, b, 4);
+        let ends = alloc(a, b, 4 * (busy.len() + 4));
+        for (k, &p) in (0u32..).zip(busy.iter().chain([spare; 4].iter())) {
+            put(a, b, ends + 4 * k, p);
+        }
+        put(a, b, busy_list, ends);
+        put(
+            a,
+            b,
+            poll,
+            [0u32, 0u32.wrapping_sub(2), 1][rng.below(3) as usize],
+        );
+        put(a, b, a.rebase(0x0112_8adc), task);
+        for (k, v) in [(23, 0u32), (24, 1), (26, 0), (27, 0)] {
+            let at = ret(a, k);
+            let r = rng.below(3);
+            put(a, b, at, if r == 0 { v ^ 1 } else { v });
+        }
+        twin("MovieCdReadTaskLoop", a, b, 0x0076_e660, &[], |m| {
+            cd::movie_cd_read_task_loop(&mut H(m));
+        });
+    }
+}
+
+#[test]
+fn cmm1_main_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c3_a1a1);
+    cmm1_main_cases(&mut a, &mut b, &mut rng, 60);
+}
+
+#[test]
+fn cmm1_main_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    let mut rng = Xorshift(0x00c3_a1a2);
+    cmm1_main_cases(&mut a, &mut b, &mut rng, 30);
+}
