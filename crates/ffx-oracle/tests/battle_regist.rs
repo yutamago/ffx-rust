@@ -260,7 +260,8 @@ fn regist_matches_the_original_on_a_snapshot() {
     let mut rng = Xorshift(0x0035_3670);
     let mut c = call;
     let mut reach = [0u32; 8];
-    for round in 0..150u32 {
+    let (mut player_rounds, mut monster_rounds) = (0usize, 0usize);
+    for round in 0..210u32 {
         let (mut a, mut b) = fresh(&exe, &pages);
         let v = b.stack_range().start + 0x400;
         let i = live[rng.below(u32::try_from(live.len()).unwrap()) as usize];
@@ -305,7 +306,11 @@ fn regist_matches_the_original_on_a_snapshot() {
                 );
             }
             2 => {
-                let model = [0, 1, 1, 0xffff][rng.below(4) as usize];
+                let model = if round % 10 == 7 {
+                    1
+                } else {
+                    [0, 1, 1, 0xffff][rng.below(4) as usize]
+                };
                 poke(&mut a, &mut b, actor + 0x24, &[u8::from(rng.below(4) != 0)]);
                 poke(
                     &mut a,
@@ -313,6 +318,15 @@ fn regist_matches_the_original_on_a_snapshot() {
                     actor + 0xdd7,
                     &[u8::from(rng.below(3) != 0)],
                 );
+                // every slot kind in turn, with its slot taken (0x17: 0)
+                if round % 10 == 7 {
+                    monster_rounds += 1;
+                    let kind = [0x14, 0x15, 0x16, 0x17, 0x18][(monster_rounds - 1) % 5];
+                    poke(&mut a, &mut b, actor + 0x5c2, &[kind]);
+                    poke(&mut a, &mut b, actor + 0x5c3, &[0x77]);
+                    poke(&mut a, &mut b, actor + 0xdd7, &[1]);
+                    poke(&mut a, &mut b, actor + 0x24, &[1]);
+                }
                 poke(
                     &mut a,
                     &mut b,
@@ -320,6 +334,10 @@ fn regist_matches_the_original_on_a_snapshot() {
                     &u16::try_from(model).unwrap().to_le_bytes(),
                 );
                 reach[2] += u32::from(model != 0xffff && byte(&b, actor + 0x24) != 0);
+                // at times a new character, for the monster's own model
+                if rng.below(3) == 0 {
+                    poke(&mut a, &mut b, actor, &[0; 4]);
+                }
                 twin(
                     "MsBtlReadMonsterProcess",
                     &mut a,
@@ -331,7 +349,30 @@ fn regist_matches_the_original_on_a_snapshot() {
                 );
             }
             3 => {
-                let mode = [0, 1, 2, 6, 8, 10][rng.below(6) as usize];
+                // actors 7 and 8 at times, either side of the effect
+                // binding's bound (mode 2 keeps their characters); else
+                // every mode in turn, with and without +0xdce
+                let (i, mode, dce) = if round % 20 == 3 {
+                    ([7, 8][rng.below(2) as usize], 2, 0)
+                } else {
+                    player_rounds += 1;
+                    let mode = [0, 1, 2, 6, 8, 10][(player_rounds - 1) % 6];
+                    (i, mode, u8::from(((player_rounds - 1) / 6) % 2 == 1))
+                };
+                let actor = ffx_battle::actor::bridge::ms_get_chr(&b, i);
+                poke(&mut a, &mut b, actor + 0xdce, &[dce]);
+                if mode == 10 {
+                    // registered as appearing, so mode 10's hiding shows
+                    poke(&mut a, &mut b, actor + 0x43d, &[0]);
+                }
+                // the character away from its battle place
+                let chr = word(&b, actor);
+                if chr != 0 && chr != 0xcdcd_cdcd && a.read(chr, 0x880).is_ok() {
+                    for k in 0..3 {
+                        let v = small_float(&mut rng);
+                        poke(&mut a, &mut b, chr + ffx_chara::layout::POS + 4 * k, &v);
+                    }
+                }
                 if rng.below(3) == 0 {
                     poke(&mut a, &mut b, actor, &[0; 4]);
                 }
@@ -377,12 +418,27 @@ fn regist_matches_the_original_on_a_snapshot() {
                     let at = o.rebase(0x0082_5a40);
                     o.stub_return(at, blk).unwrap();
                 }
-                let sub = rng.below(4);
+                let sub = if round % 10 == 4 { 0 } else { rng.below(4) };
                 match sub {
-                    // a changed model: the old character disposed
+                    // a changed model: the old character disposed; at
+                    // times another live character has the new model's id
                     0 => {
                         poke(&mut a, &mut b, w + 4, &rng.next().to_le_bytes());
                         reach[4] += u32::from(word(&b, w) != 0);
+                        let save = u32::from(byte(&b, actor + k + 0x592));
+                        let ex = ffx_battle::exchange::bridge::ms_get_save_weapon_model;
+                        let model = ex(&mut b, save);
+                        assert_eq!(ex(&mut a, save), model);
+                        let old = word(&b, w);
+                        let in_use = live
+                            .iter()
+                            .map(|&j| word(&b, ffx_battle::actor::bridge::ms_get_chr(&b, j)))
+                            .find(|&c| c != old);
+                        if let Some(c) = in_use.filter(|_| model != 0 && round % 20 == 4) {
+                            let id = u16::try_from(model).unwrap();
+                            poke(&mut a, &mut b, c, &id.to_le_bytes());
+                            reach[0] += 0x100;
+                        }
                     }
                     // no character yet: a new one for the model
                     1 => poke(&mut a, &mut b, w, &[0; 4]),
@@ -403,6 +459,18 @@ fn regist_matches_the_original_on_a_snapshot() {
                 }
                 scramble(&mut a, &mut b, &mut rng, w);
                 poke(&mut a, &mut b, actor + 0x1d, &[u8::from(rng.below(2) == 0)]);
+                if special != 0 && rng.below(2) == 0 {
+                    // the special record's link bytes cleared (the
+                    // original sets +0x12 and +0x15)
+                    poke(&mut a, &mut b, special + 0x12, &[0, 0, 0, 0, 0]);
+                }
+                if rng.below(2) == 0 {
+                    // the owner's attribute effects to start (mode 0)
+                    poke(&mut a, &mut b, actor + 0xdcd, &[0]);
+                    poke(&mut a, &mut b, actor + 0x5d9, &[0xf]);
+                    poke(&mut a, &mut b, actor + 0xe90, &[0; 16]);
+                    reach[0] += 0x1_0000;
+                }
                 reach[5] += u32::from(special != 0);
                 twin(
                     "MsBtlWeaponRegist",

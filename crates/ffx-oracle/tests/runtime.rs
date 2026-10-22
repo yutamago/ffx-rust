@@ -273,6 +273,75 @@ fn common_imports_run_on(o: &mut Oracle) {
     assert_eq!(call(o, "Sleep", Conv::Stdcall, &[10]), 0);
 }
 
+/// `VirtualAlloc` hands out fresh zeroed regions at the same addresses on
+/// two oracles in the same state, commits inside them, describes them to
+/// `VirtualQuery` and releases them once (battle round 36).
+#[test]
+fn virtual_alloc_is_deterministic() {
+    let mut a = oracles();
+    let mut b = oracles();
+    for ((_, a), (_, b)) in a.iter_mut().zip(b.iter_mut()) {
+        virtual_alloc_on(a, b);
+    }
+}
+
+fn virtual_alloc_on(a: &mut Oracle, b: &mut Oracle) {
+    let call = |o: &mut Oracle, name: &str, args: &[u32]| {
+        let at = o.import_stub(name).unwrap_or_else(|| panic!("no {name}"));
+        o.call(at, Conv::Stdcall, args).unwrap().eax
+    };
+    let mut bases = Vec::new();
+    for (size, kind, protect) in [
+        (0x1_2345, 0x10_3000, 4),
+        (0x3000, 0x2000, 1),
+        (1, 0x3000, 4),
+    ] {
+        let p = call(a, "VirtualAlloc", &[0, size, kind, protect]);
+        assert_eq!(call(b, "VirtualAlloc", &[0, size, kind, protect]), p);
+        assert_ne!(p, 0);
+        assert_eq!(p % 0x1_0000, 0, "64 KB aligned");
+        assert!(bases.iter().all(|&(q, n)| p >= q + n), "after the others");
+        let n = size.next_multiple_of(0x1000);
+        assert_eq!(
+            a.read(p + n - 4, 4).unwrap(),
+            [0; 4],
+            "zeroed to the page end"
+        );
+        a.write(p, &[7]).unwrap();
+        bases.push((p, n));
+    }
+    let (p, n) = bases[1];
+    assert_eq!(
+        call(a, "VirtualAlloc", &[p + 0x1010, 0x10, 0x1000, 4]),
+        p + 0x1000
+    );
+    let info = a.alloc(0x1c).unwrap();
+    assert_eq!(call(a, "VirtualQuery", &[p + 0x1010, info, 0x1c]), 0x1c);
+    let words: Vec<u32> = a
+        .read(info, 0x1c)
+        .unwrap()
+        .chunks(4)
+        .map(|w| u32::from_le_bytes(w.try_into().unwrap()))
+        .collect();
+    assert_eq!(words, [p + 0x1000, p, 4, n - 0x1000, 0x1000, 4, 0x2_0000]);
+    // the image is not described
+    let image = a.image_base();
+    assert_eq!(call(a, "VirtualQuery", &[image, info, 0x1c]), 0);
+    assert_eq!(
+        call(a, "VirtualFree", &[p + 0x1000, 0, 0x8000]),
+        0,
+        "not the base"
+    );
+    assert_eq!(call(a, "VirtualFree", &[p, 0x1000, 0x4000]), 1, "decommit");
+    assert_eq!(call(a, "VirtualFree", &[p, 0, 0x8000]), 1);
+    assert_eq!(call(a, "VirtualFree", &[p, 0, 0x8000]), 0, "released twice");
+    assert_eq!(a.read(p, 1).unwrap(), [7], "still mapped");
+    // a released region is not handed out again
+    let q = call(a, "VirtualAlloc", &[0, 0x1000, 0x3000, 4]);
+    assert!(bases.iter().all(|&(r, n)| q >= r + n));
+    assert_eq!(call(a, "VirtualAlloc", &[0, 0, 0x3000, 4]), 0, "size 0");
+}
+
 /// A failed assertion stops the call with its message.
 #[test]
 fn wassert_stops_the_call() {

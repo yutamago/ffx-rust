@@ -120,6 +120,13 @@ ported! {
     Ch_BlkGetHandleFast @ 0x0082_5ea0 => extern "C" fn ch_blk_get_handle_fast(key: u32) -> u32 {
         h::ch_blk_get_handle_fast(&mem(), key)
     }
+    /// `Ch_BlkGetHandle(key)`: the model block (EAX), loaded or made; its
+    /// path strings in a frame of its own.
+    Ch_BlkGetHandle @ 0x0082_5a40 => extern "C" fn ch_blk_get_handle(key: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ h::BLK_GET_HANDLE_FRAME as usize / 4 }>::new();
+        let at = frame.at();
+        h::ch_blk_get_handle(&mut mem(), key, at, &mut |_, f, a| super::call_cdecl(f, a))
+    }
     /// `Ch_CheckHandle(chr)`: 0 for an active character, else -1.
     Ch_CheckHandle @ 0x0082_61b0 => extern "C" fn ch_check_handle(chr: u32) -> i32 {
         h::ch_check_handle(&mem(), chr)
@@ -1558,6 +1565,10 @@ ported! {
     /// `Ch_SetShadeCol(chr, r, g, b, frames)`.
     Ch_SetShadeCol @ 0x0082_b5d0 => extern "C" fn ch_set_shade_col(chr: u32, r: f32, g: f32, b: f32, frames: u32) -> u32 {
         c::ch_set_shade_col(&mut mem(), chr, [r, g, b], frames, &mut |_, f, a| super::call_cdecl(f, a))
+    }
+    /// `Ch_SetShadeID(chr, v, frames)`: the last call's EAX.
+    Ch_SetShadeID @ 0x0082_b720 => extern "C" fn ch_set_shade_id(chr: u32, v: f32, frames: u32) -> u32 {
+        c::ch_set_shade_id(&mut mem(), chr, v, frames, &mut |_, f, a| super::call_cdecl(f, a))
     }
     /// `Ch_EnableSetTexture(v)`: the old value.
     Ch_EnableSetTexture @ 0x0083_0330 => extern "C" fn ch_enable_set_texture(v: u32) -> i32 {

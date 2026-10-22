@@ -9815,7 +9815,32 @@ fn near_point_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, rounds: 
                 v.to_bits()
             }
         });
-        let cubic = [0u32, 1, 0x100][rng.below(3) as usize];
+        let mut cubic = [0u32, 1, 0x100][rng.below(3) as usize];
+        let (mut t, mut pos, mut samples) = (t, pos, samples);
+        if round == 0 {
+            // The squared distance's sum order: for these x, y, z,
+            // f32((x² + y²) + z²) != f32(x² + (y² + z²)) (a 53-bit sum
+            // next to an f32 midpoint). The quadratic spline of 5 points
+            // p0 = p1 = (x, y, z), p2 far, p3 = p4 = (z, y, x) gives those
+            // two points at t 0 and 1 (the first step 0.5 from t 0.5,
+            // samples 20) and a farther one at t, so the other order swaps
+            // `a` and `b` and the step goes the other way.
+            let [x, y, z] = [0x42d6_cf83u32, 0x3f0a_2a36, 0x3adc_b08d];
+            let far = 0x447a_0000;
+            for (k, p) in [[x, y, z], [x, y, z], [far; 3], [z, y, x], [z, y, x]]
+                .into_iter()
+                .enumerate()
+            {
+                let at = spline + 0x10 + 0x10 * u32::try_from(k).unwrap();
+                for (w, v) in (0u32..).zip(p.into_iter().chain([0])) {
+                    put(a, b, at + 4 * w, v);
+                }
+            }
+            put(a, b, spline, 5);
+            (t, pos, samples, cubic) = (0x3f00_0000, [0; 3], 0x41a0_0000, 0);
+            set(a, b, sp::NEAR_SAMPLES, samples);
+            set(a, b, sp::NEAR_T, t);
+        }
         for k in 0..4 {
             put(a, b, outs + 4 * k, rng.next() & 0xbfff_ffff);
         }

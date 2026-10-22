@@ -997,6 +997,34 @@ pub mod bridge {
         }
     }
 
+    /// `Ch_SetShadeIDRelation(chr, v, frames)` (`0x0082b7a0`; not ported).
+    pub const SET_SHADE_ID_RELATION: u32 = 0x0082_b7a0;
+
+    /// `Ch_SetShadeID(chr, v, frames)` (`0x0082b720`; callers
+    /// `Ch_Allocate`, `Ch_SetShadeIDRelation`, `Ch_IdShadeCalc`,
+    /// `Native_5088`): the shade-id fade (`+0x36c`) to `v` over `frames`
+    /// (`Chr_FadeSet`), `Ch_SetShadeIDRelation(chr, v, frames)`, then the
+    /// renderer's shade colour from the colour fades' current values
+    /// (`+0x330`, `+0x33c`, `+0x348`) and its shade coefficient `v` on
+    /// the instance (`+0x830`). Each float goes through the x87 (`fld`,
+    /// `fstp`). EAX is the last call's.
+    pub fn ch_set_shade_id<M: Mem>(
+        mem: &mut M,
+        chr: u32,
+        v: f32,
+        frames: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        chr_fade_set(mem, chr + 0x36c, x87::load(v), frames.cast_signed());
+        let v = x87::load(v).to_bits();
+        call(mem, mem.rebase(SET_SHADE_ID_RELATION), &[chr, v, frames]);
+        let inst: u32 = mem.read(chr + 0x830);
+        let [r, g, b] = [0x330, 0x33c, 0x348].map(|o| x87::load(f(mem, chr + o)).to_bits());
+        call(mem, mem.rebase(SET_SHADE_COLOR), &[inst, r, g, b]);
+        let inst: u32 = mem.read(chr + 0x830);
+        call(mem, mem.rebase(SET_SHADE_COEFF), &[inst, v])
+    }
+
     /// `Ch_CalcLight(chr, &coeff)` (`0x0083c6f0`): the renderer's shade
     /// coefficient of the instance (`+0x830`).
     pub fn ch_calc_light<M: Mem>(

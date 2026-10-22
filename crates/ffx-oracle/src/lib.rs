@@ -707,6 +707,18 @@ impl Oracle {
         alloc(&mut self.uc, len as u64)
     }
 
+    /// Maps zeroed read-write memory at a fixed place (whole pages around
+    /// `addr..addr + len`), for tests of code that writes through a null
+    /// or made-up pointer (the null page itself, say). Pages already
+    /// mapped, or in the snapshot, are left as they are.
+    ///
+    /// # Errors
+    /// On emulator errors.
+    pub fn map_zeroed(&mut self, addr: u32, len: u32) -> Result<()> {
+        let end = (u64::from(addr) + u64::from(len)).next_multiple_of(PAGE);
+        map_unknown(&mut self.uc, u64::from(addr) & !(PAGE - 1), end)
+    }
+
     /// Copies machine code into executable emulated memory (a test's own
     /// thunks); it stays until the oracle is dropped.
     ///
@@ -1467,6 +1479,22 @@ fn gap(taken: &mut Vec<(u64, u64)>, size: u64) -> Result<u64> {
         }
     }
     Err(Error::NoRoom(size))
+}
+
+/// Maps zeroed read-write pages over `from..end` (page-aligned) where
+/// neither the oracle nor the snapshot has memory.
+fn map_unknown(uc: &mut Unicorn<State>, from: u64, end: u64) -> Result<()> {
+    let pages = uc.get_data().pages.clone();
+    let mut page = from;
+    while page < end {
+        let known = uc.mem_read_as_vec(page, 1).is_ok()
+            || pages.as_ref().is_some_and(|p| p.chunk(page).is_some());
+        if !known {
+            uc.mem_map(page, PAGE, Prot::READ | Prot::WRITE)?;
+        }
+        page += PAGE;
+    }
+    Ok(())
 }
 
 /// Maps the snapshot chunk holding `addr`; false when the snapshot has none.

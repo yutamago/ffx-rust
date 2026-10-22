@@ -197,6 +197,37 @@ The smoke test maps `FFX.exe` with `DONT_RESOLVE_DLL_REFERENCES` (no game
 code runs), installs the hooks, and calls the original addresses, which now
 run Rust.
 
+### Virtual memory in the oracle
+
+`KERNEL32!VirtualAlloc`, `VirtualFree` and `VirtualQuery` have stand-ins
+in the oracle (`crates/ffx-oracle/src/win32.rs`, battle round 36), so code
+that grows a heap past what the snapshot left (the bone allocator under
+`SG_InitBones` on the field snapshot) runs instead of stopping at an
+unstubbed import:
+
+- `VirtualAlloc(0, size, ..)` maps a new zeroed read-write region (size
+  rounded up to pages, protection ignored) at the lowest 64 KB-aligned gap
+  from `0x10000000` up that neither the oracle's memory nor the snapshot
+  (mapped yet or not) uses. Two oracles in the same state get the same
+  addresses for the same calls, so original and port stay comparable.
+  `MEM_TOP_DOWN` is ignored.
+- A fixed address commits: inside a region handed out it returns the page;
+  elsewhere (memory the game reserved before the snapshot) the pages that
+  are neither mapped nor in the snapshot are mapped zeroed.
+- `VirtualFree` never unmaps (an address is never handed out twice):
+  `MEM_RELEASE` of a region's base marks it released, a second release or
+  one not at the base fails; decommits keep the bytes; memory from before
+  the snapshot always succeeds.
+- `VirtualQuery` describes only the regions handed out (committed,
+  private, read-write, from the page to the region's end; free once
+  released) and returns 0 for anything else, which the game's allocators
+  take as "don't release".
+
+`Oracle::map_zeroed(addr, len)` maps zeroed pages at a fixed place for
+tests of code that writes through a null or made-up pointer (the null
+character `Ch_Allocate` uses when every slot is taken). Pages already
+mapped or in the snapshot stay as they are.
+
 ### Harvested call states
 
 Parity tests can run on real calls instead of hand-built inputs

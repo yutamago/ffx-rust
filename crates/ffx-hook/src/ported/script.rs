@@ -7324,4 +7324,65 @@ ported! {
             super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, f), args)
         });
     }
+
+    // script round 26
+    /// `AtelBattleEndCallback(mode, v, map, end)`.
+    AtelBattleEndCallback @ 0x0086_1160 => extern "C" fn h_861160(mode: u32, v: u32, map: u32, end: u32) -> u32 {
+        hp::atel_battle_end_callback(&mut mem(), mode, v, map, end)
+    }
+    /// `Atel_RunCtrlWorkers_00867950(event, input, clear)`.
+    Atel_RunCtrlWorkers_00867950 @ 0x0086_7950 => extern "C" fn h_867950(event: u32, input: u32, clear: u32) -> u32 {
+        hp::atel_run_ctrl_workers(&mut mem(), event, input, clear)
+    }
+    /// `AtelUpdateFilePath()`.
+    AtelUpdateFilePath @ 0x0087_9f00 => extern "C" fn h_879f00() -> u32 {
+        hp::atel_update_file_path(&mut mem())
+    }
+    /// `Atel_CheckPause_00873620()`.
+    Atel_CheckPause_00873620 @ 0x0087_3620 => extern "C" fn h_873620() -> u32 {
+        hp::atel_check_pause(&mut mem())
+    }
+    /// `AtelInitTotal()`.
+    AtelInitTotal @ 0x0086_d6d0 => extern "C" fn h_86d6d0() -> u32 {
+        hp::atel_init_total(&mut mem())
+    }
+    /// `Atel_MoveStep_00870540(worker, level)`: `_CIsin`/`_CIcos` through
+    /// the game's import thunks.
+    Atel_MoveStep_00870540 @ 0x0087_0540 => extern "C" fn h_870540(w: u32, level: u32) {
+        hp::atel_move_step(&mut mem(), w, level);
+    }
+    /// `AtelBindElemOff(worker, i)`.
+    AtelBindElemOff @ 0x0086_2780 => extern "C" fn h_862780(w: u32, i: u32) -> u32 {
+        hp::atel_bind_elem_off(&mut mem(), w, i)
+    }
+    /// `Atel_CalcSpline_00862b20(out, curve, t)`.
+    Atel_CalcSpline_00862b20 @ 0x0086_2b20 => extern "C" fn h_862b20(out: u32, curve: u32, t: u32) -> u32 {
+        hp::atel_calc_spline(&mut mem(), out, curve, t)
+    }
+    /// `Atel_CalcSpline3_00862b70(out, curve, t)`.
+    Atel_CalcSpline3_00862b70 @ 0x0086_2b70 => extern "C" fn h_862b70(out: u32, curve: u32, t: u32) -> u32 {
+        hp::atel_calc_spline3(&mut mem(), out, curve, t)
+    }
+    /// `Atel_ExecCtrlWorks_008688f0(from, to)`.
+    Atel_ExecCtrlWorks_008688f0 @ 0x0086_88f0 => extern "C" fn h_8688f0(from: u32, to: u32) -> u32 {
+        hp::atel_exec_ctrl_works(&mut mem(), from, to)
+    }
+    /// `Atel_CheckLineCrosses_00868020(worker, x)`.
+    Atel_CheckLineCrosses_00868020 @ 0x0086_8020 => extern "C" fn h_868020(w: u32, x: u32) -> u32 {
+        hp::atel_check_line_crosses(&mut mem(), w, x)
+    }
+    /// `AtelEventGetFilePath2(dirs, sub, alt, name, ext)`: the three
+    /// 256-byte locals in a frame.
+    AtelEventGetFilePath2 @ 0x0087_95b0 => extern "C" fn h_8795b0(dirs: u32, sub: u32, alt: u32, name: u32, ext: u32) -> u32 {
+        let mut frame = super::StackFrame::<0xc0>::new();
+        hp::atel_event_get_file_path2(&mut mem(), [dirs, sub, alt, name, ext], frame.at())
+    }
+    /// `spline_get_near_point_init(spline, x, y, z, cubic)`: the locals in
+    /// a 12-word frame, `spline_get_near_point` through the game.
+    spline_get_near_point_init @ 0x00a4_4420 => extern "C" fn h_a44420(spline: u32, x: u32, y: u32, z: u32, cubic: u32) {
+        let mut frame = super::StackFrame::<12>::new();
+        hp::spline_get_near_point_init(&mut mem(), spline, [x, y, z], cubic, frame.at(), |_, f, args| {
+            super::call_cdecl_f64(f, args)
+        });
+    }
 }
