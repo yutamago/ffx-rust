@@ -26461,7 +26461,7 @@ fn r42g_ke_mdl_bmp_draw_body_matches_the_original() {
                 p.set(a + 1, if bad && rng.chance(50) { 4u8 } else { 3 });
                 p.set(b + 1, if bad { 1u8 } else { 2 });
                 p.set(a + 2, n);
-                for t in 0..i32::from(n.max(0)) as u32 {
+                for t in 0..i32::from(n.max(0)).cast_unsigned() {
                     let tri = a + 0x10 + 0x28 * t;
                     for o in (0xcu32..0x12).step_by(2).chain((0x20..0x26).step_by(2)) {
                         p.set(tri + o, rng.below(16) as u16);
