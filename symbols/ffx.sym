@@ -13903,7 +13903,7 @@
 0x00a70d70 function opus_0582_draw            # fh switch:cg4 0x7100871b30
 0x00a71780 function opus_0582_break_make      # fh switch:cg4 0x71008725b0
 0x00a72310 function opus_0582_break_bytes_00a72310 # ours: (list) -> 0x40 + 0x300 per element of every tag (0x20 + 0x1c n bytes) up to each packet's end tag (type byte 0xff); caller opp_0582_cmd_a70910 kind 0x4000
-0x00a72380 function opus_0582_break_draw      # fh switch:cg4 0x7100872d90
+0x00a72380 function opus_0582_break_draw      # fh switch:cg4 0x7100872d90; (b, src, rec, unit, m5, m6, hold) from opp_0582_cmd_a70910 0x7000: sparks from the flagged pieces of src (0x80 bytes from +0x30) into b's ring of 48-byte entries (b[1] % b[0]; op_random, op_deg_get), aged and drawn as points of the instance (0, b) (one 9000-point "NoTexture" segment), returns 0 (hi_opus::bridge::opus_0582_break_draw)
 0x00a72b80 function opus_0582_dot_draw        # fh switch:cg4 0x7100873570
 0x00a73740 function opus_0582_dot_set_00a73740   # ours: (b, rec) -> rec+0xc8: entry b[1] % b[0] of the opus_0582 dot buffer from the part: radii +0x40/+0x48 / 256, height +0x94, scale +0x3c / 16, u16 angle ftol(+0x30), step ftol(ftol(+0x34) / 256), spread ftol(+0x38) (>= 0), life ftol(+0x4c) + 16, colour +0xc8, fade 8; opp_0582_cmd_a70910 kind 0x2000
 0x00a73810 function opp2_optic_laser             # cg-match switch rerun lead, min 3 votes (call-sequence LCS against the Switch/v3 build): 0x710086ca60 opp2_optic_laser, 3 votes, round 1

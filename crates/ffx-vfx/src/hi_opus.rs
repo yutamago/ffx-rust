@@ -798,4 +798,339 @@ pub mod bridge {
         }
         eax
     }
+
+    /// `f64` 1/256 (`0x00b50198`).
+    const K_256TH: u32 = 0x00b5_0198;
+    /// `f64` 1/64 (`0x00b51648`).
+    const K_64TH: u32 = 0x00b5_1648;
+    /// `f32` 2 (`0x00b92268`).
+    const K_2: u32 = 0x00b9_2268;
+    /// `f32` 0.5 (`0x00b92194`).
+    const K_HALF: u32 = 0x00b9_2194;
+    /// `g_pppSinTable` (`0x00c44bf0`): 4096 `f32` sines over a turn.
+    const SIN_TABLE: u32 = 0x00c4_4bf0;
+    /// `g_pppFillMatrix` (`0x0230fca0`).
+    const FILL_MATRIX: u32 = 0x0230_fca0;
+    /// `g_GsRegisterSink` (`0x023056e8`): bit 8 set while the GS is busy.
+    const GS_REGISTER_SINK: u32 = 0x0230_56e8;
+    /// The emulated VU0 registers the draw loads: `param5` (16 words),
+    /// `param6` (16 words) and the unit's position (4 words).
+    const VU0_M5: u32 = 0x00c8_f850;
+    const VU0_M6: u32 = 0x00c8_f890;
+    const VU0_POS: u32 = 0x00c8_f8e0;
+    /// The `opus_0582` break piece count (points and indices) of its one
+    /// segment.
+    const BREAK_PTS: u32 = 9000;
+
+    const OP_SPR_ALLOC: u32 = 0x007e_6a00;
+    const OP_SPR_FREE: u32 = 0x007e_6a60;
+    const GET_RENDER_DATA: u32 = 0x0064_53d0;
+    const ALPHA_FUNCTION: u32 = 0x0071_2c30;
+    const VFX_CREATE: u32 = 0x0064_4de0;
+    const VFX_CREATE_DATA_BUFFER: u32 = 0x0064_5040;
+    const VFX_SETUP: u32 = 0x0064_5780;
+    const VFX_DESTROY: u32 = 0x0064_5280;
+    const OP_PAIR_INDEX: u32 = 0x00a7_0ce0;
+    const GET_BUFFER_FOR_SEGMENT: u32 = 0x0063_fdb0;
+    const MEMSET: u32 = 0x0094_964c;
+    const FFX_VU0_MUL_MATRIX: u32 = 0x006e_d5c0;
+    const VFX_SET_VISIBLE: u32 = 0x0064_5710;
+    const VFX_UPDATE: u32 = 0x0064_58a0;
+    const OP_GS1_TRANSFER: u32 = 0x007e_b580;
+    /// `f32` -100000 (`g_ScissorOutside`, `0x00b368b8`) and 100000
+    /// (`0x00b10f50`): the render data's bounds.
+    const SCISSOR_OUTSIDE: u32 = 0x00b3_68b8;
+    const K_100000: u32 = 0x00b1_0f50;
+    /// `"NoTexture"` (`g_StrNoTexture`, `0x00b41b50`).
+    const NO_TEXTURE: u32 = 0x00b4_1b50;
+
+    /// `opus_0582_break_draw(b, src, rec, unit, m5, m6, hold)`
+    /// (`0x00a72380`, Fahrenheit's name; from `opp_0582_cmd_a70910`'s
+    /// 0x7000): the `opus_0582` break sparks. `b` holds a capacity
+    /// `b[0]`, a running count `b[1]` and 48-byte entries from `b +
+    /// 0x10`; `src` the 0x80-byte pieces of another unit's break buffer
+    /// (`u16` count at `src`, piece `j`'s position at `src +0xb0 + 0x80 j`
+    /// and its flag byte at `src +0x49 + 0x80 j`).
+    ///
+    /// The instance `(0, b)` is made when it has no render data
+    /// (`graphicVFXCreate` with `calculateVFXSP_AlphaFunction(rec +0xc2)`,
+    /// `graphicVFXCreateDataBuffer` of one segment of 9000 points and
+    /// indices named `"NoTexture"`, render data `+0xb8` = 0,
+    /// `graphicVFXSetup` or `graphicVFXDestroy`, `op_pair_index`); with
+    /// none after that it returns at once (the `op_spr_alloc(0x1300)`
+    /// scratch is not freed then). The VU0 registers get `m5`
+    /// (`0x00c8f850`), `m6` (`0x00c8f890`) and `unit +0x90..` (`0x00c8f8e0`).
+    ///
+    /// Unless `hold`: per piece with its flag byte set, `ftol(rec +0x3c)`
+    /// is added to a carry; while it is positive, `k = (carry - 1) / 256 +
+    /// 1` new entries are written (and the carry drops by `256 k`), each at
+    /// `b[1] % b[0]` (then `b[1]` + 1), with `p` the piece's position:
+    /// - `+0x10` `f32(op_random(2) + p.x)`, `+0x14` `f32(rec +0x40 / 256)`,
+    ///   `+0x18` `f32(rec +0x44 / 4096)`;
+    /// - `+8` `f32(op_random(2) + (unit +0x30 - unit +0x34))` (after
+    ///   `op_deg_get(unit +0x94, unit +0x98, p.y, p.z, entry + 8)`
+    ///   through `fcall`, which stores its length there);
+    /// - `+0xc` `f32((op_random(f32(rec +0x48 / 64)) + rec +0x48) / 256)`;
+    /// - `u16 +0x1c` `ftol(deg)`, `u16 +0x1e` `ftol(i16 ftol(op_random(rec
+    ///   +0x34) + rec +0x30) / 256)`;
+    /// - `+0x20..+0x2c` `unit +0x90..` (through the emulated `v0`,
+    ///   `0x00c8f528`), `u16 +0` `ftol(rec +0x4c)`.
+    ///
+    /// The scratch keeps two copies of the emulated `r0` at `+0x1020` and
+    /// its `+0x10` twice at `+0x1040`. With the segment
+    /// (`graphicDynGeoMemManagerGetBufferForSegment`, else return), each
+    /// live entry (`u16 +0` not 0) is one point: unless `hold` it ages
+    /// (`+0x1c` += `+0x1e`, `+0` - 1, `+8` += `+0xc`, `+0x14` += `+0x18`
+    /// as `f32`, `+0x10` += that, alpha `u8 +2` = `(life << 2)` below 32
+    /// else 0x80); the point is `(+0x20 + +0x10, sin a * +8 + +0x24,
+    /// cos a * +8 + +0x28)` with `a = +0x1c & 0xfff` (`g_pppSinTable`,
+    /// cosine a quarter turn on), colour 0.5, 0.5, 0.5, alpha / 256, index in
+    /// order. The point and index counts are set, the tails cleared
+    /// (`memset`, through `call`), and the render data gets
+    /// `FFXVu0MulMatrix(rd, g_pppFillMatrix, m6)`, a zero translation,
+    /// `+0x80` = 0, bounds -100000..100000, `graphicVFXSetVisible`,
+    /// `graphicVFXUpdate`; then the wait for the GS (`g_GsRegisterSink`
+    /// bit 8), `op_gs1_transfer` and `op_spr_free(0x1300)`. Other callees
+    /// through `call`; `op_random` is ours. Returns 0 (`eax`).
+    ///
+    /// `b[0]` 0 with a piece to add divides by zero in the original (a
+    /// crash); here the entry index is then 0. The locals the callees
+    /// take by address lie below `frame` (the original's frame pointer,
+    /// down to `frame - 0x14c`).
+    #[allow(clippy::too_many_lines, clippy::too_many_arguments)]
+    pub fn opus_0582_break_draw<M: Mem>(
+        mem: &mut M,
+        [b, src, rec, unit, m5, m6, hold]: [u32; 7],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        fcall: &mut impl FnMut(&mut M, u32, &[u32]) -> f32,
+    ) -> u32 {
+        use crate::rand::bridge::op_random;
+        use ffx_bridge::x87::{add, ftol, load, mul, store, sub};
+        let local = |off: u32| frame.wrapping_sub(off);
+        let spr = go(mem, OP_SPR_ALLOC, &[0x1300], call);
+        let mut rd = go(mem, GET_RENDER_DATA, &[0, b], call);
+        if rd == 0 {
+            mem.write(local(0x14c), 0u32);
+            let s = mem.rebase(NO_TEXTURE);
+            let (name, tail): (u64, u16) = (mem.read(s), mem.read(s.wrapping_add(8)));
+            mem.write(local(0x104), name);
+            mem.write(local(0xfc), tail);
+            let a = u32::from(mem.read::<u8>(rec.wrapping_add(0xc2)));
+            mem.write(local(0x144), BREAK_PTS);
+            mem.write(local(0x148), BREAK_PTS);
+            let alpha = go(mem, ALPHA_FUNCTION, &[a], call);
+            go(mem, VFX_CREATE, &[0, b, alpha], call);
+            let args = [
+                0,
+                b,
+                1,
+                local(0x144),
+                local(0x148),
+                local(0x104),
+                local(0x14c),
+            ];
+            go(mem, VFX_CREATE_DATA_BUFFER, &args, call);
+            let made = go(mem, GET_RENDER_DATA, &[0, b], call);
+            if made != 0 {
+                mem.write(made.wrapping_add(0xb8), 0u32);
+            }
+            if go(mem, VFX_SETUP, &[0, b], call) == 0 {
+                go(mem, VFX_DESTROY, &[0, b], call);
+            }
+            rd = go(mem, GET_RENDER_DATA, &[0, b], call);
+            if rd == 0 {
+                return 0;
+            }
+            go(mem, OP_PAIR_INDEX, &[0, b], call);
+        }
+        let copy = |mem: &mut M, to: u32, from: u32, words: u32| {
+            for k in 0..words {
+                let v: u32 = mem.read(from.wrapping_add(4 * k));
+                let at = mem.rebase(to).wrapping_add(4 * k);
+                mem.write(at, v);
+            }
+        };
+        copy(mem, VU0_M5, m5, 16);
+        copy(mem, VU0_M6, m6, 16);
+        copy(mem, VU0_POS, unit.wrapping_add(0x90), 4);
+        let f = |mem: &M, at: u32| mem.read::<u32>(at);
+        let k256: f64 = mem.read(mem.rebase(K_256TH));
+        let k4096: f64 = mem.read(mem.rebase(K_4096TH));
+        let k64: f64 = mem.read(mem.rebase(K_64TH));
+        if hold == 0 {
+            let two = f32::from_bits(store(load(mem.read(mem.rebase(K_2)))));
+            let mut carry = 0i32;
+            // the count is reread after each piece
+            let mut j = 0u32;
+            while j < u32::from(mem.read::<u16>(src)) {
+                let pos = src.wrapping_add(0xb0).wrapping_add(0x80 * j);
+                j += 1;
+                if mem.read::<u8>(pos.wrapping_sub(0x67)) == 0 {
+                    continue;
+                }
+                carry = carry
+                    .wrapping_add(ftol(mem, load(f(mem, rec.wrapping_add(0x3c)))).cast_signed());
+                if carry <= 0 {
+                    continue;
+                }
+                let k = ((carry.cast_unsigned() - 1) >> 8) + 1;
+                carry = carry.wrapping_sub((k << 8).cast_signed());
+                for _ in 0..k {
+                    let i = mem
+                        .read::<u32>(b.wrapping_add(4))
+                        .checked_rem(mem.read::<u32>(b))
+                        .unwrap_or(0);
+                    let e = b.wrapping_add(0x10).wrapping_add(0x30 * i);
+                    let r = op_random(mem, two);
+                    mem.write(
+                        e.wrapping_add(0x10),
+                        store(add(f64::from(r), load(f(mem, pos)))),
+                    );
+                    let v = store(mul(load(f(mem, rec.wrapping_add(0x40))), k256));
+                    mem.write(e.wrapping_add(0x14), v);
+                    let v = store(mul(load(f(mem, rec.wrapping_add(0x44))), k4096));
+                    mem.write(e.wrapping_add(0x18), v);
+                    let args = [
+                        store(load(f(mem, unit.wrapping_add(0x94)))),
+                        store(load(f(mem, unit.wrapping_add(0x98)))),
+                        store(load(f(mem, pos.wrapping_add(4)))),
+                        store(load(f(mem, pos.wrapping_add(8)))),
+                        e.wrapping_add(8),
+                    ];
+                    let deg = mem.rebase(OP_DEG_GET);
+                    let deg = fcall(mem, deg, &args);
+                    let r = op_random(mem, two);
+                    let d = sub(
+                        load(f(mem, unit.wrapping_add(0x30))),
+                        load(f(mem, unit.wrapping_add(0x34))),
+                    );
+                    mem.write(e.wrapping_add(8), store(add(f64::from(r), d)));
+                    let s = store(mul(load(f(mem, rec.wrapping_add(0x48))), k64));
+                    let r = op_random(mem, f32::from_bits(s));
+                    let v = mul(
+                        add(f64::from(r), load(f(mem, rec.wrapping_add(0x48)))),
+                        k256,
+                    );
+                    mem.write(e.wrapping_add(0xc), store(v));
+                    #[allow(clippy::cast_possible_truncation)] // the low half
+                    let w = ftol(mem, f64::from(deg)) as u16;
+                    mem.write(e.wrapping_add(0x1c), w);
+                    let x = f32::from_bits(store(load(f(mem, rec.wrapping_add(0x34)))));
+                    let r = op_random(mem, x);
+                    let v = ftol(mem, add(f64::from(r), load(f(mem, rec.wrapping_add(0x30)))));
+                    #[allow(clippy::cast_possible_truncation)] // cwde of the low half
+                    let v = f64::from((v as u16).cast_signed());
+                    #[allow(clippy::cast_possible_truncation)] // the low half
+                    let w = ftol(mem, mul(v, k256)) as u16;
+                    mem.write(e.wrapping_add(0x1e), w);
+                    let v0 = mem.rebase(EE_COPY);
+                    let p: [u32; 4] = mem.read(unit.wrapping_add(0x90));
+                    mem.write(v0, p);
+                    let p: [u32; 4] = mem.read(v0);
+                    mem.write(e.wrapping_add(0x20), p);
+                    #[allow(clippy::cast_possible_truncation)] // the low half
+                    let w = ftol(mem, load(f(mem, rec.wrapping_add(0x4c)))) as u16;
+                    mem.write(e, w);
+                    let n: u32 = mem.read(b.wrapping_add(4));
+                    mem.write(b.wrapping_add(4), n.wrapping_add(1));
+                }
+            }
+        }
+        let r0 = mem.rebase(EE_R0);
+        for at in [0x1020u32, 0x1030] {
+            let v: [u32; 4] = mem.read(r0);
+            mem.write(spr.wrapping_add(at), v);
+        }
+        mem.write(spr.wrapping_add(0x1040), spr.wrapping_add(0x10));
+        mem.write(spr.wrapping_add(0x1044), spr.wrapping_add(0x10));
+        if go(
+            mem,
+            GET_BUFFER_FOR_SEGMENT,
+            &[rd, 0, BREAK_PTS, BREAK_PTS],
+            call,
+        ) == 0
+        {
+            return 0;
+        }
+        let g: u32 = mem.read(rd.wrapping_add(0x94));
+        let mut pts: u32 = mem.read(g.wrapping_add(0xc));
+        let mut col: u32 = mem.read(g.wrapping_add(0x14));
+        let mut idx: u32 = mem.read(g.wrapping_add(0x1c));
+        let half = store(load(mem.read(mem.rebase(K_HALF))));
+        let sin =
+            |mem: &M, a: u32| -> f64 { load(mem.read(mem.rebase(SIN_TABLE).wrapping_add(4 * a))) };
+        let mut n = 0u32;
+        let mut i = 0u32;
+        while i < mem.read::<u32>(b) {
+            let e = b.wrapping_add(0x10).wrapping_add(0x30 * i);
+            i += 1;
+            let life: u16 = mem.read(e);
+            if life == 0 {
+                continue;
+            }
+            let r = |mem: &M, o: u32| load(mem.read(e.wrapping_add(o)));
+            if hold == 0 {
+                let step: u16 = mem.read(e.wrapping_add(0x1e));
+                let a: u16 = mem.read(e.wrapping_add(0x1c));
+                mem.write(e.wrapping_add(0x1c), a.wrapping_add(step));
+                let left = life.wrapping_sub(1);
+                mem.write(e, left);
+                mem.write(e.wrapping_add(8), store(add(r(mem, 0xc), r(mem, 8))));
+                let t = store(add(r(mem, 0x18), r(mem, 0x14)));
+                mem.write(e.wrapping_add(0x14), t);
+                mem.write(e.wrapping_add(0x10), store(add(load(t), r(mem, 0x10))));
+                #[allow(clippy::cast_possible_truncation)] // the low byte
+                let alpha = if left < 0x20 { (left as u8) << 2 } else { 0x80 };
+                mem.write(e.wrapping_add(2), alpha);
+            }
+            let a = u32::from(mem.read::<u16>(e.wrapping_add(0x1c)) & 0xfff);
+            mem.write(pts, store(add(r(mem, 0x20), r(mem, 0x10))));
+            let y = add(mul(sin(mem, a), r(mem, 8)), r(mem, 0x24));
+            mem.write(pts.wrapping_add(4), store(y));
+            let z = add(mul(sin(mem, (a + 0x400) & 0xfff), r(mem, 8)), r(mem, 0x28));
+            mem.write(pts.wrapping_add(8), store(z));
+            for at in [8u32, 4, 0] {
+                mem.write(col.wrapping_add(at), half);
+            }
+            let alpha = f64::from(mem.read::<u8>(e.wrapping_add(2)));
+            mem.write(col.wrapping_add(0xc), store(alpha * k256));
+            #[allow(clippy::cast_possible_truncation)] // a u16 index
+            mem.write(idx, n as u16);
+            n = n.wrapping_add(1);
+            idx = idx.wrapping_add(2);
+            pts = pts.wrapping_add(0xc);
+            col = col.wrapping_add(0x10);
+        }
+        let g: u32 = mem.read(rd.wrapping_add(0x94));
+        mem.write(g.wrapping_add(4), n);
+        let g: u32 = mem.read(rd.wrapping_add(0x94));
+        mem.write(g.wrapping_add(8), n);
+        let rest = BREAK_PTS.wrapping_sub(n);
+        go(mem, MEMSET, &[pts, 0, rest.wrapping_mul(0xc)], call);
+        go(mem, MEMSET, &[idx, 0, rest.wrapping_mul(2)], call);
+        let fill = mem.rebase(FILL_MATRIX);
+        go(mem, FFX_VU0_MUL_MATRIX, &[rd, fill, m6], call);
+        for at in [0x2c, 0x1c, 0xc] {
+            mem.write(rd.wrapping_add(at), 0.0f32);
+        }
+        mem.write(rd.wrapping_add(0x3c), 1.0f32);
+        mem.write(rd.wrapping_add(0x80), 0u32);
+        for (k, ats) in [
+            (SCISSOR_OUTSIDE, [0x98, 0x9c, 0xa0]),
+            (K_100000, [0xa4, 0xa8, 0xac]),
+        ] {
+            let v = store(load(mem.read(mem.rebase(k))));
+            for at in ats {
+                mem.write(rd.wrapping_add(at), v);
+            }
+        }
+        go(mem, VFX_SET_VISIBLE, &[0, b, 1], call);
+        go(mem, VFX_UPDATE, &[0, b], call);
+        let sink = mem.rebase(GS_REGISTER_SINK);
+        while mem.read::<u32>(sink) & 0x100 != 0 {}
+        go(mem, OP_GS1_TRANSFER, &[], call);
+        go(mem, OP_SPR_FREE, &[0x1300], call);
+        0
+    }
 }
