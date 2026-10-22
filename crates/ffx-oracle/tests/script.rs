@@ -12680,3 +12680,249 @@ fn round26d_spline_near_point_init_matches_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r26d_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Round 27 a, `AtelInitBasicWork` on one worker `w` of the current ctrl
+/// work (index `index`): a random setup record (header `hdr`, code base
+/// `code`, level values `levels`: the ctrl work, table and header index each
+/// level's signals load, `u16`s with random high halves; `+8` `x8`) and
+/// every `clear`.
+#[allow(clippy::too_many_arguments)] // the record's parts
+fn r27_init_case(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    rng: &mut Xorshift,
+    index: u32,
+    hdr: u32,
+    code: u32,
+    levels: [u32; 3],
+    x8: u32,
+    what: &str,
+) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let rec = alloc_both(a, b, 0x20);
+    let active = [1u32, 1, 1, 0, 0x100][rng.below(5) as usize];
+    let levels = levels.map(|v| v & 0xffff | rng.next() & 0xffff_0000);
+    for (k, v) in (0u32..).zip([
+        active, index, levels[0], levels[1], levels[2], hdr, code, x8,
+    ]) {
+        poke(a, b, rec + 4 * k, v);
+    }
+    let clear = [0u32, 1, 2][rng.below(3) as usize];
+    poke(a, b, a.rebase(v::CACHE_WORK.sym), 0u32);
+    r22_case(
+        a,
+        b,
+        0x0086_cb00,
+        &[rec, clear],
+        false,
+        &format!("AtelInitBasicWork {what} active {active} index {index:#x} clear {clear}"),
+        |r| {
+            hp::atel_init_basic_work(r, rec, clear);
+            0
+        },
+    );
+}
+
+/// Round 27 a on one pair: the two ctrl-work wrappers, the event source
+/// loader (the PS2 host-file loader `0x00879b60` and `printf` logged) and,
+/// on the image, `AtelInitBasicWork` on a synthetic ctrl work of one
+/// worker, every type.
+#[allow(clippy::too_many_lines)] // one block per function
+fn r27a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    let log_cell = r24_log_stubs(
+        a,
+        b,
+        &[(0x0087_1d70, 0), (0x0087_1f30, 0), (0x0062_f500, 3)],
+    );
+    let log = Mem::read::<u32>(a, log_cell);
+    let load = r26_cell_stub(a, b, 0x0087_9b60, 4);
+    // AtelExec, AtelMenuExec: each work's callback logs its work
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let here = Mem::read::<u32>(a, ctx_cell);
+    let works = a.rebase(0x0132_5ba0);
+    let saved: Vec<u8> = (0..7 * 0x238)
+        .map(|k| Mem::read::<u8>(a, works + k))
+        .collect();
+    let tag = r25_log_fn(a, b, 0x4c, 1);
+    for round in 0..32u32 {
+        poke(a, b, log_cell, log);
+        for i in 0..7 {
+            let c = works + i * 0x238;
+            fill_both(a, b, rng, c, 1);
+            poke(a, b, c + 8, [0u8, 1, 2, 3, 4, 0x81][rng.below(6) as usize]);
+            fill_both(a, b, rng, c + 0x1f4, 4);
+            poke(a, b, c + 0x4c, tag);
+        }
+        poke(
+            a,
+            b,
+            ctx_cell,
+            [0u32, works, rng.next()][rng.below(3) as usize],
+        );
+        let menu = round % 2 == 1;
+        r22_case(
+            a,
+            b,
+            if menu { 0x0086_dd60 } else { 0x0086_66d0 },
+            &[],
+            true,
+            &format!("AtelExec/AtelMenuExec {what} {round} menu {menu}"),
+            |r| {
+                if menu {
+                    hp::atel_menu_exec(r)
+                } else {
+                    hp::atel_exec(r)
+                }
+            },
+        );
+    }
+    for (k, &v) in (0u32..).zip(&saved) {
+        poke(a, b, works + k, v);
+    }
+    poke(a, b, ctx_cell, here);
+    // AtelLoadSourceData: a file table of n names (+ 0..3 in the length
+    // word), the first the directory, some absolute
+    let names: [&[u8]; 5] = [b"bika0300", b"/abs/x.ebp", b"zz", b"", b"a.b"];
+    let headers = a.rebase(0x0132_8598);
+    for round in 0..40u32 {
+        poke(a, b, log_cell, log);
+        poke(a, b, load.0, load.1);
+        poke(a, b, load.2, rng.next());
+        // the one caller (`AtelEventSetUp`) passes 0; the header table has
+        // seven slots (the eighth word is `g_AtelEventPathChg`, and slot
+        // 7's sizes would be the path buffer `0x01328858`)
+        let slot = [0u32, 0, 1, 2, 6][rng.below(5) as usize];
+        let hdr = alloc_both(a, b, 0x400);
+        let tab = 0x60u32;
+        poke(a, b, hdr + 0x40, tab);
+        let n = [0u32, 1, 2, 3, 7, 8, 12][rng.below(7) as usize];
+        let len = 4 * n + rng.below(4);
+        poke(a, b, hdr + tab, len);
+        for k in 0..n {
+            let off = len + 0x20 * k;
+            if k > 0 {
+                poke(a, b, hdr + tab + 4 * k, off);
+            }
+            let s = names[rng.below(5) as usize];
+            for (j, &c) in (0u32..).zip(s.iter().chain(&[0])) {
+                poke(a, b, hdr + tab + off + j, c);
+            }
+        }
+        poke(a, b, headers + 4 * slot, hdr);
+        fill_both(a, b, rng, a.rebase(0x0132_8778) + 0x20 * slot, 0x20);
+        let arg = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0087_9a70,
+            &[slot, arg],
+            true,
+            &format!("AtelLoadSourceData {what} {round} slot {slot} len {len:#x}"),
+            |r| hp::atel_load_source_data(r, slot, arg),
+        );
+    }
+    if what != "image" {
+        return;
+    }
+    // AtelInitBasicWork: one worker slot, so every index but 0 gives
+    // worker 0 too; 0xffff sends no signal
+    let c = alloc_both(a, b, 0x240);
+    let w = alloc_both(a, b, 0xc00);
+    poke(a, b, c + 0x10, 1u16);
+    poke(a, b, c + 0x0c, 1u16);
+    poke(a, b, c + 0x1c, w);
+    poke(a, b, ctx_cell, c);
+    let code = alloc_both(a, b, 0x100);
+    for round in 0..72u32 {
+        // random where the function stores (so each store shows), zero
+        // elsewhere: the real callees follow the rest as pointers
+        Mem::write_bytes(a, w, &[0; 0xc00]);
+        Mem::write_bytes(b, w, &[0; 0xc00]);
+        for (from, len) in [(0, 0xc8), (0x284, 0x50), (0x558, 0x50), (0xae0, 0x78)] {
+            fill_both(a, b, rng, w + from, len);
+        }
+        fill_both(a, b, rng, code, 0x100);
+        poke(a, b, c + 0x1a, [0u16, 1, 2, 0x100][rng.below(4) as usize]);
+        let kind = [0u8, 1, 2, 3, 4, 5, 6, 7, 0x81][(round % 9) as usize];
+        let hdr = alloc_both(a, b, 0x40);
+        poke(a, b, hdr, kind);
+        poke(
+            a,
+            b,
+            hdr + 0x10,
+            [0u32, 1, 7, 0x40, 0x8000_0000][rng.below(5) as usize],
+        );
+        poke(a, b, hdr + 0x2c, [0u32, 0x10, 0x80][rng.below(3) as usize]);
+        let index = [0u32, 0, 0, 3, 0xffff, 0x1_0000][rng.below(6) as usize];
+        let levels = [rng.below(7), rng.below(4), rng.below(4)];
+        let x8 = rng.next();
+        r27_init_case(
+            a,
+            b,
+            rng,
+            index,
+            hdr,
+            code,
+            levels,
+            x8,
+            &format!("{what} {round} kind {kind}"),
+        );
+    }
+}
+
+/// Round 27 a on the real workers of a snapshot's ctrl works in use:
+/// `AtelInitBasicWork` on each with its own header and code.
+fn r27a_workers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) -> u32 {
+    let mut n = 0;
+    for c in in_use(b) {
+        make_current(a, b, c);
+        for (i, w) in (0u32..).zip(real_workers(a, b)) {
+            let hdr = Mem::read::<u32>(b, w);
+            let code = Mem::read::<u32>(b, w + 4);
+            let levels = [0x16c, 0x16a, 0x168].map(|o| u32::from(Mem::read::<u16>(b, w + o)));
+            r27_init_case(
+                a,
+                b,
+                rng,
+                i,
+                hdr,
+                code,
+                levels,
+                Mem::read::<u32>(b, w + 8),
+                &format!("snapshot ctrl {c:#x} worker {i}"),
+            );
+            n += 1;
+        }
+    }
+    n
+}
+
+#[test]
+fn round27a_exec_source_init_basic_work_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_027a);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r27a_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r27a_cases(&mut a, &mut b, &mut rng, "snapshot");
+    let n = r27a_workers(&mut a, &mut b, &mut rng);
+    eprintln!("round 27a: {n} snapshot workers");
+    assert!(n > 0);
+}

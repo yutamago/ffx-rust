@@ -3097,6 +3097,46 @@ No caller reads its `EAX` (what `scePrintf` leaves).
 `round26d_spline_near_point_init_matches_the_original` covers it with the
 real spline functions.
 
+### Helpers (script round 27)
+
+- `AtelExec` (`0x008666d0`) and `AtelMenuExec` (`0x0086dd60`) run
+  `Atel_ExecCtrlWorks_008688f0` over ctrl works 0..6 and 6..7 (the
+  menu's); Fahrenheit's names (Switch BSim matches).
+- `AtelLoadSourceData(slot, arg)` (`0x00879a70`) is the PS2 debug loader of
+  an event's script sources. `g_AtelEventHeaders` (`0x01328598`, seven
+  slots; the eighth word is `g_AtelEventPathChg`) holds each slot's binary
+  header; its `+0x40` is the offset of a file table whose first word is
+  both its byte length and the offset of the directory name (the first
+  name). The first `min(length / 4, 7)` names become
+  `debug/<dir>/<name>.src` (`AtelEventGetFilePath2`) unless they start with
+  `/`, are printed (`TK:EVENTNAME:%d:%s`) and loaded by
+  `Atel_LoadSourceFile_00879b60` into `g_AtelSourceBuffers[slot * 8 + i]`
+  (`0x01328698`), the size into `g_AtelSourceSizes` (`0x01328778`, zeroed
+  first). `EAX` 1, or 0 for an empty table. Its only caller,
+  `AtelEventSetUp`, passes slot 0.
+- `AtelInitBasicWork(setup, clear)` (`0x0086cb00`) sets a worker up from an
+  eight-word record: active, worker index, the three level values (ctrl
+  work, table and header index of each level's signals, `u16`), header,
+  code base, `+8`. Every worker gets `+0`, `+4`, `+8`, its index at `+0x2e`
+  and `+0x0c..+0x28` zeroed. An active one is reset: `+0xae` = the low
+  nibbles of the first two level values, `+0x48..+0x7c`, the levels
+  (`Atel_InitWorkerLevels_0086d300`), scale 1.0 at `+0x94`, `+0x38` to
+  `& 0xe020 | 0x20`, `+0x32` = `0x040e0000` (so `+0x34` = `0x040e`; type 4
+  `0x048e`, type 1 ORs in `0x80`), `+0x36` to
+  `(& 0xffc6 | 6, 0x40 when the ctrl work's +0x1a >= 2) & 0x7f | 0x800`,
+  `+0xb4` -10000.0, `+0x40` -1, `+0xaf` 15. Types 1, 2, 3, 5, 6 reset their
+  move block (`+0x558`, types 5/6 `+0x284`): zeros, `+0x28` `0xffff`,
+  `+0x2c` -1.0, `+0x3c`/`+0x4c` pi/3, and `+0x40`/`+0x44`/`+0x48`/`+0x1c`
+  2, 1, 1.5, 5 for type 1 (which also clears `+0xaf4..+0xb54`, sets
+  `+0xb08`/`+0xb0c` to 1 and `+0xb16` to 10) or 0, 0, 1, -1. `+0xab` is
+  `0xf7` (type 1), `0xff` (2, 3, 5, 6) or 0 (4). After the free signals
+  (`Atel_InitFreeSignals_0086d510`), `clear` zeroes the variables (header
+  `+0x10` bytes at the code base + header `+0x2c`; the `+0xb8` area it
+  would prefer is always 0 here, cleared above). Then two signals to
+  itself (`AtelRegistSignalMain`: level 7 entry 0, then level 0 entry 1;
+  none for index `0xffff`) and `AtelDecodeSignal(index, 10)`. Callers read
+  no `EAX`.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

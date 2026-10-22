@@ -7385,4 +7385,20 @@ ported! {
             super::call_cdecl_f64(f, args)
         });
     }
+    /// `AtelExec()`.
+    AtelExec @ 0x0086_66d0 => extern "C" fn h_8666d0() -> u32 {
+        hp::atel_exec(&mut mem())
+    }
+    /// `AtelMenuExec()`.
+    AtelMenuExec @ 0x0086_dd60 => extern "C" fn h_86dd60() -> u32 {
+        hp::atel_menu_exec(&mut mem())
+    }
+    /// `AtelLoadSourceData(slot, arg)`.
+    AtelLoadSourceData @ 0x0087_9a70 => extern "C" fn h_879a70(slot: u32, arg: u32) -> u32 {
+        hp::atel_load_source_data(&mut mem(), slot, arg)
+    }
+    /// `AtelInitBasicWork(setup, clear)`.
+    AtelInitBasicWork @ 0x0086_cb00 => extern "C" fn h_86cb00(setup: u32, clear: u32) {
+        hp::atel_init_basic_work(&mut mem(), setup, clear);
+    }
 }

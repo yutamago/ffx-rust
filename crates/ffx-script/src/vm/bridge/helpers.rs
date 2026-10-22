@@ -7194,3 +7194,219 @@ pub fn spline_get_near_point_init<H: ffx_bridge::Host>(
     let (lo, hi) = (total as u32, (total >> 32) as u32);
     host_call(h, 0x0062_fbf0, &[fmt, lo, hi]);
 }
+
+/// `AtelExec()` (`0x008666d0`, Fahrenheit's name; caller `0x00872bd0`):
+/// [`atel_exec_ctrl_works`] over ctrl works 0..6; `EAX` its result.
+pub fn atel_exec(h: &mut impl ffx_bridge::Host) -> u32 {
+    atel_exec_ctrl_works(h, 0, 6)
+}
+
+/// `AtelMenuExec()` (`0x0086dd60`, Fahrenheit's name; caller
+/// `AtelExecMenuCtrl`): [`atel_exec_ctrl_works`]
+/// over ctrl work 6, the menu's; `EAX` its result.
+pub fn atel_menu_exec(h: &mut impl ffx_bridge::Host) -> u32 {
+    atel_exec_ctrl_works(h, 6, 7)
+}
+
+/// `AtelLoadSourceData(slot, arg)` (`0x00879a70`, Fahrenheit's name;
+/// caller `AtelEventSetUp`): clears the slot's eight sizes
+/// (`0x01328778 + 0x20 * slot`), then for each of the first (at most 7)
+/// names in the event's file table (header `0x01328598[slot]`, table at
+/// `+0x40`: its first word is the byte length, the words are offsets from
+/// the table; the first names the directory) builds `debug/<dir>/<name>.src`
+/// (`AtelEventGetFilePath2`) unless the name starts with `/`, prints it
+/// (`TK:EVENTNAME`) and loads it (`0x00879b60`, the PS2 host-file loader,
+/// through the game). `EAX` 1, or 0 for an empty table.
+pub fn atel_load_source_data(h: &mut impl ffx_bridge::Host, slot: u32, arg: u32) -> u32 {
+    let hdr = h.read::<u32>(h.rebase(0x0132_8598).wrapping_add(slot.wrapping_mul(4)));
+    let sizes = h.rebase(0x0132_8778).wrapping_add(slot.wrapping_mul(0x20));
+    for k in 0..8 {
+        h.write(sizes + 4 * k, 0_u32);
+    }
+    let table = |h: &mut _| hdr.wrapping_add(Mem::read::<u32>(h, hdr + 0x40));
+    let t = table(h);
+    let count = (h.read::<u32>(t) >> 2).min(7);
+    if count == 0 {
+        return 0;
+    }
+    for i in 0..count {
+        let t = table(h);
+        let mut name = h.read::<u32>(t + 4 * i).wrapping_add(t);
+        let dir = h.read::<u32>(t).wrapping_add(t);
+        if h.read::<u8>(name) != b'/' {
+            let (debug, src) = (h.rebase(0x00b5_9148), h.rebase(0x00b5_c56c));
+            name = host_call(h, 0x0087_95b0, &[1, debug, dir, name, src]);
+        }
+        let fmt = h.rebase(0x00b5_c574);
+        host_call(h, 0x0062_f500, &[fmt, i, name]);
+        host_call(h, 0x0087_9b60, &[slot, arg, i, name]);
+    }
+    1
+}
+
+/// `AtelInitBasicWork(setup, clear)` (`0x0086cb00`, Fahrenheit's name;
+/// callers `AtelActorSetUp2`, `AtelBattleSetUp`, `AtelCommonSetUp`). The
+/// setup record holds eight words: active, worker index, three level
+/// values, header, code base, `+0x1c`. The worker (`AtelGetBasicWork`)
+/// gets header `+0`, code `+4`, `+8`, its index (`u16 +0x2e`) and
+/// `+0x0c..+0x28` zeroed; an active one is reset in full: its levels
+/// (`Atel_InitWorkerLevels_0086d300` with the three values, the low two
+/// also in byte `+0xae`), the flags (`+0x36`: battle bit `0x40` from the
+/// ctrl work's `+0x1a`, `0x800`; `+0x38`), scale 1 (`+0x94`), `+0xb4`
+/// -10000, `+0x40` -1, the move block (`+0x558`, types 5/6 `+0x284`; type 1
+/// also its `+0xae0..+0xb54` part) for types 1, 2, 3, 5, 6, the `+0xab`
+/// mask by type, the free signals (`Atel_InitFreeSignals_0086d510`), the
+/// variables zeroed when `clear` (the private area at `+0xb8`, else the
+/// code's at header `+0x2c`, header `+0x10` bytes), then signals 7 and 0
+/// to itself (`AtelRegistSignalMain`) and a decode at level 10. Its `EAX`
+/// (the index for an inactive worker, else `AtelDecodeSignal`'s leftover)
+/// is read by no caller.
+#[allow(clippy::too_many_lines)] // one store per field, as the original
+pub fn atel_init_basic_work(h: &mut impl ffx_bridge::Host, setup: u32, clear: u32) {
+    let mut rec = [0_u32; 8];
+    for (k, v) in (0_u32..).zip(&mut rec) {
+        *v = h.read(setup + 4 * k);
+    }
+    let [active, index, l0, l1, l2, header, code, x1c] = rec;
+    let w = super::atel_get_basic_work(h, index.cast_signed());
+    h.write(w + 4, code);
+    h.write(w, header);
+    h.write(w + 8, x1c);
+    write_u16(h, w + 0x2e, index);
+    for o in (0x0c..=0x28).step_by(4) {
+        h.write(w + o, 0_u32);
+    }
+    if active == 0 {
+        return;
+    }
+    let (zero, one) = (0_u32, 1.0_f32.to_bits());
+    h.write(w + 0xb8, 0_u32);
+    h.write(w + 0xc4, 0_u32);
+    #[allow(clippy::cast_possible_truncation)] // two nibbles
+    h.write(w + 0xae, ((l1 << 4) | (l0 & 0xf)) as u8);
+    for o in (0x48..=0x7c).step_by(4) {
+        h.write(w + o, zero);
+    }
+    atel_init_worker_levels(h, w, l0, l1, l2);
+    let w2 = super::atel_get_basic_work(h, index.cast_signed());
+    h.write(w2 + 0x94, one);
+    let flags = u32::from(h.read::<u16>(w + 0x36)) & 0xffc6 | 6;
+    write_u16(
+        h,
+        w + 0x38,
+        u32::from(h.read::<u16>(w + 0x38)) & 0xe020 | 0x20,
+    );
+    let ctx = h.read::<u32>(h.rebase(SCRIPT_CONTEXT));
+    for o in [0x84, 0x80, 0x8c, 0x88] {
+        h.write(w + o, 0_u32);
+    }
+    h.write(w + 0x32, 0x040e_0000_u32);
+    h.write(w + 0x90, 0_u32);
+    write_u16(h, w + 0x36, flags);
+    h.write(w + 0xbc, 0_u32);
+    let flags = if h.read::<u16>(ctx + 0x1a) < 2 {
+        flags & 0xffbf
+    } else {
+        flags | 0x40
+    };
+    h.write(w + 0x94, one);
+    write_u16(h, w + 0x36, flags);
+    h.write(w + 0x98, zero);
+    h.write(w + 0xb4, (-10000.0_f32).to_bits());
+    write_u16(h, w + 0x36, flags & 0x7f | 0x800);
+    write_u16(h, w + 0xa8, 0);
+    h.write(w + 0x9c, 0_u32);
+    h.write(w + 0x3c, 0_u32);
+    h.write(w + 0xad, 0_u8);
+    h.write(w + 0x44, 0_u32);
+    h.write(w + 0xaf, 0xf_u8);
+    h.write(w + 0xaa, 0_u8);
+    h.write(w + 0x40, u32::MAX);
+    let kind = h.read::<u8>(h.read::<u32>(w));
+    let mv = match kind {
+        4 => 0,
+        5 | 6 => w + 0x284,
+        _ => w + 0x558,
+    };
+    if kind == 4 {
+        write_u16(h, w + 0x34, 0x48e);
+    }
+    if kind == 1 {
+        for k in 0..2 {
+            h.write(w + 0xaf4 + 4 * k, 0_u32);
+            h.write(w + 0xafc + 4 * k, 0_u32);
+            write_u16(h, w + 0xb04 + 2 * k, 0);
+            h.write(w + 0xb08 + 4 * k, 1_u32);
+        }
+        write_u16(h, w + 0xb14, 0);
+        write_u16(h, w + 0x34, u32::from(h.read::<u16>(w + 0x34)) | 0x80);
+        for o in (0xb18..=0xb54).step_by(4) {
+            h.write(w + o, zero);
+        }
+    }
+    if matches!(kind, 1 | 2 | 3 | 5 | 6) {
+        for o in (0..=0x24).step_by(4) {
+            h.write(mv + o, zero);
+        }
+        write_u16(h, mv + 0x28, 0xffff);
+        h.write(mv + 0x2c, (-1.0_f32).to_bits());
+        for o in [0x30, 0x34, 0x38] {
+            h.write(mv + o, zero);
+        }
+        // pi / 3
+        h.write(mv + 0x3c, 0x3f86_0a92_u32);
+        h.write(mv + 0x4c, 0x3f86_0a92_u32);
+        let [x44, x40, x48, x1c]: [f32; 4] = if kind == 1 {
+            [1.0, 2.0, 1.5, 5.0]
+        } else {
+            [0.0, 0.0, 1.0, -1.0]
+        };
+        h.write(mv + 0x44, x44.to_bits());
+        h.write(mv + 0x40, x40.to_bits());
+        h.write(mv + 0x48, x48.to_bits());
+        h.write(mv + 0x1c, x1c.to_bits());
+        if kind == 1 {
+            write_u16(h, w + 0xb16, 10);
+            for o in (0xae0..=0xaf0).step_by(4) {
+                h.write(w + o, 0_u32);
+            }
+        }
+    }
+    match h.read::<u8>(header) {
+        1 => h.write(w + 0xab, 0xf7_u8),
+        2 | 3 | 5 | 6 => h.write(w + 0xab, 0xff_u8),
+        4 => h.write(w + 0xab, 0_u8),
+        _ => {}
+    }
+    atel_init_free_signals(h, w);
+    if clear != 0 {
+        let hdr = h.read::<u32>(w);
+        let (mut at, mut len) = (0_u32, 0_u32);
+        let vars = h.read::<u32>(hdr + 0x2c);
+        if vars != 0 {
+            at = h.read::<u32>(w + 4).wrapping_add(vars);
+            len = h.read::<u32>(hdr + 0x10);
+        }
+        let private = h.read::<u32>(w + 0xb8);
+        if private != 0 {
+            len = h.read::<u32>(hdr + 0x10);
+            at = private;
+        }
+        if at != 0 && len.cast_signed() > 0 {
+            for k in 0..len {
+                h.write(at.wrapping_add(k), 0_u8);
+            }
+        }
+    }
+    let levels = [0x16c, 0x16a, 0x168].map(|o| u32::from(h.read::<u16>(w + o)));
+    let mut req = super::signal::Request([0xffff, index, 0, 7, 0, levels[0], levels[1], levels[2]]);
+    if index != 0xffff {
+        super::signal::atel_regist_signal_main(h, req);
+    }
+    req.0[4] = 1;
+    req.0[3] = 0;
+    if index != 0xffff {
+        super::signal::atel_regist_signal_main(h, req);
+    }
+    super::signal::atel_decode_signal(h, index, 10);
+}
