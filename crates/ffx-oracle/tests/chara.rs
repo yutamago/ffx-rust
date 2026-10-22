@@ -9542,6 +9542,14 @@ fn jump_to(t: &mut Twin, sym: u32, code: &[u8]) {
     t.put(f, &jmp);
 }
 
+/// Code at `sym` (both oracles): a jump to `at`, code already there.
+fn point_to(t: &mut Twin, sym: u32, at: u32) {
+    let f = t.a.rebase(sym);
+    let mut jmp = vec![0xe9];
+    jmp.extend(at.wrapping_sub(f + 5).to_le_bytes());
+    t.put(f, &jmp);
+}
+
 /// A stand-in at `sym` that logs its first `n` arguments and, the first
 /// time after `flag` was set, decrements the word `count` (`dec` = (count,
 /// flag)), so the caller's walk sees the array change; returns 0.
@@ -9559,6 +9567,12 @@ fn log_dec_move_stub(
     dec: Option<(u32, u32)>,
     array: Option<u32>,
 ) {
+    let c = log_dec_move_code(fk, n, dec, array);
+    jump_to(t, sym, &c);
+}
+
+/// The code of [`log_dec_move_stub`].
+fn log_dec_move_code(fk: &Fakes, n: u8, dec: Option<(u32, u32)>, array: Option<u32>) -> Vec<u8> {
     let mut c = vec![0x8b, 0x0d];
     c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
     for k in 0..n {
@@ -9585,7 +9599,7 @@ fn log_dec_move_stub(
         c.extend(0u32.to_le_bytes()); // mov dword [flag], 0
     }
     c.extend([0x33, 0xc0, 0xc3]); // xor eax, eax; ret
-    jump_to(t, sym, &c);
+    c
 }
 
 /// A stand-in at `sym` that logs the C string its argument `arg` (0-based)
@@ -10475,4 +10489,242 @@ fn cmm1_c_on(t: &mut Twin) {
         reach[2] += n;
     }
     eprintln!("{}: cmm1 c reach {reach:?}", t.name);
+}
+
+// ---- chara-main-map round 2
+
+#[test]
+fn cmm2_a_matches_the_original() {
+    for mut t in twins() {
+        cmm2_a_on(&mut t);
+    }
+}
+
+/// A stand-in at `sym` that logs its argument words `args` (0-based) and
+/// copies the C string of argument `src` into the buffer of argument
+/// `dst` (`sprintf` without the formatting); returns 0.
+fn copy_str_stub(t: &mut Twin, fk: &Fakes, sym: Option<u32>, args: &[u8], dst: u8, src: u8) -> u32 {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
+    for &i in args {
+        // mov eax, [esp + 4 + 4i]; mov [ecx], eax; add ecx, 4
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * i, 0x89, 0x01, 0x83, 0xc1, 0x04]);
+    }
+    c.extend([0x89, 0x0d]);
+    c.extend(fk.log.to_le_bytes()); // mov [log], ecx
+    c.extend([0x8b, 0x54, 0x24, 4 + 4 * src]); // mov edx, [esp + 4 + 4src]
+    c.extend([0x8b, 0x4c, 0x24, 4 + 4 * dst]); // mov ecx, [esp + 4 + 4dst]
+    // mov al, [edx]; mov [ecx], al; inc edx; inc ecx; test al, al; jnz back
+    c.extend([0x8a, 0x02, 0x88, 0x01, 0x42, 0x41, 0x84, 0xc0, 0x75, 0xf6]);
+    c.extend([0x33, 0xc0, 0xc3]); // xor eax, eax; ret
+    match sym {
+        Some(s) => {
+            jump_to(t, s, &c);
+            0
+        }
+        None => twin_code(t, &c),
+    }
+}
+
+/// Chara-main-map round 2, group a: `Ch_ModelCalcSizeEffectPacket`,
+/// `Ch_ModelCreateEffectPacket`, `Ch_ReadEventMgrpAsync_00837650`,
+/// `Ch_Sound` (all of its jump table and both high bytes),
+/// `Ch_DrawMainEffect`, `Ch_Cloth_PerCharacter` (a callee shortening the
+/// count) and `Ch_InitAll` (debug on, off, and switched off mid-walk).
+/// Callees are logging stand-ins, except the event-jump and motion-index
+/// lookups, which run as the originals.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn cmm2_a_on(t: &mut Twin) {
+    use ffx_chara::attach::bridge as at;
+    use ffx_chara::draw::bridge as dr;
+    use ffx_chara::motion::bridge as mo;
+    let mut rng = Xorshift(0x00c3_a201);
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let fk = Fakes::new(t);
+    let frame = t.b.stack_range().start + 0x400;
+    let chrs = live_characters(t, &mut rng);
+    // the effect packet's callees
+    let _ = fk.fake(t, 0x0084_5ca0, 1, 2); // sg_setvtex_and_normal
+    let _ = fk.fake(t, 0x0083_13f0, 2, 1); // Ch_TextureSetTex0
+    let set_ptr = fk.fake(t, 0x0084_5710, 3, 1);
+    let create = fk.fake(t, 0x0084_2c80, 4, 1);
+    let size = fk.fake(t, 0x0084_5700, 5, 0);
+    // Ch_RomReadEventMGRP
+    let mgrp = fk.fake(t, 0x0082_a6e0, 6, 2);
+    // Ch_Sound's callees
+    let sound = fk.fake(t, 0x0083_d900, 7, 2); // Ch_IdGetSound (and the left word)
+    let _ = fk.fake(t, 0x0088_66b0, 8, 4); // SndKickFoot
+    let _ = fk.fake(t, 0x0083_38d0, 9, 1); // the footstep effect
+    let dump = fk.fake(t, 0x0083_3f50, 10, 0); // Ch_GetDumpMotEv
+    // dbgPrintf: as many words as each call pushes
+    let (dbg7, _) = fk.fake_code(t, 11, 7);
+    let (dbg5, _) = fk.fake_code(t, 24, 5);
+    let (dbg2, _) = fk.fake_code(t, 25, 2);
+    let _ = fk.fake(t, 0x0079_fe30, 12, 2); // MsChrSePlayAlive
+    // Ch_DrawMainEffect's
+    let situation = fk.fake(t, 0x0083_0cd0, 13, 1);
+    let magic = fk.fake(t, 0x009d_a3b0, 14, 0);
+    let _ = fk.fake(t, 0x0082_fe00, 15, 0);
+    // Ch_Cloth_PerCharacter's: Sg_ClothStep shortens the count at times
+    let _ = fk.fake(t, 0x0083_2110, 16, 2);
+    let _ = fk.fake(t, 0x0082_dbc0, 17, 1);
+    let flag = t.alloc(4);
+    let count = t.alloc(4);
+    let step = twin_code(t, &log_dec_move_code(&fk, 1, None, None));
+    let step_dec = twin_code(t, &log_dec_move_code(&fk, 1, Some((count, flag)), None));
+    // Ch_InitAll's
+    let _ = fk.fake(t, 0x0082_a5f0, 18, 0); // Ch_RomDataReadInit
+    let _ = fk.fake(t, 0x0082_ed30, 19, 0); // Ch_DrawInitAll
+    let sprintf = copy_str_stub(t, &fk, None, &[2], 0, 1);
+    let slot = t.a.rebase(0x00b0_c3dc);
+    let reads = t.alloc(4);
+    cstr_stub(t, &fk, 0x0083_ae50, 0, reads, 0x40); // Sg_PcReadD
+    let len = fk.fake(t, 0x0083_ae70, 20, 0);
+    let _ = fk.fake(t, 0x0082_68e0, 21, 0); // Ch_DisposeAll
+    let _ = fk.fake(t, 0x0083_60b0, 22, 0); // Sg_InitLight
+    let _ = fk.fake(t, 0x0083_f780, 23, 0); // Sg_InitCamera
+    let debug = t.a.rebase(0x0133_c910);
+    let detached = t.a.rebase(0x012f_b7d8);
+    let enable = t.a.rebase(0x0130_07e8);
+    let name = twin_code(t, &log_dec_move_code(&fk, 1, None, None));
+    let name_dec = twin_code(t, &log_dec_move_code(&fk, 1, Some((debug, flag)), None));
+    let mut reach = [0u32; 24];
+    for round in 0..96u32 {
+        fk.reset(t);
+        let chr = chrs[rng.next() as usize % chrs.len()];
+        // ---- the effect packets: a made-up model table
+        // the table in the middle of its block: negative indices read it too
+        let models = random_block(t, &mut rng, 0x38 * 6) + 0x38 * 2;
+        let keep_models: u32 = rd(&t.b, chr + 0x1bc);
+        t.put_u32(chr + 0x1bc, models);
+        let i = [0, 1, 3, u32::MAX, u32::MAX - 1][rng.next() as usize % 5];
+        for r in [set_ptr, create, size] {
+            t.put_u32(r, rng.next());
+        }
+        t.check(
+            &format!("Ch_ModelCalcSizeEffectPacket {round}"),
+            0x0083_0450,
+            &[chr, i],
+            |m| {
+                Res::Int(sy::ch_model_calc_size_effect_packet(
+                    m,
+                    chr,
+                    i,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        t.put(enable, &[[0u8, 1, 0xff][round as usize % 3]]);
+        let p = rng.next();
+        t.check(
+            &format!("Ch_ModelCreateEffectPacket {round}"),
+            0x0083_0490,
+            &[chr, i, p],
+            |m| {
+                Res::Int(sy::ch_model_create_effect_packet(
+                    m,
+                    chr,
+                    i,
+                    p,
+                    &mut |m, f, a| call(m, f, a),
+                ))
+            },
+        );
+        t.put_u32(chr + 0x1bc, keep_models);
+        // ---- the asynchronous event motion group
+        t.put_u32(mgrp, rng.next());
+        let x = [rng.next(), 0, 1, u32::MAX][rng.next() as usize % 4];
+        t.check(
+            &format!("Ch_ReadEventMgrpAsync {round}"),
+            0x0083_7650,
+            &[x],
+            |m| {
+                Res::Int(mo::ch_read_event_mgrp_async(m, x, &mut |m, f, a| {
+                    call(m, f, a)
+                }))
+            },
+        );
+        // ---- Ch_Sound: every low byte 0..=0x12, high bytes 0, 1, 2, 0x81,
+        // 0xff; four events a round
+        for k in 0..4u32 {
+            let low = (round * 4 + k) % 0x13;
+            let high = [0u32, 0, 0, 0, 1, 2, 0x81, 0xff][rng.next() as usize % 8];
+            let ev = low | high << 8 | (rng.next() & 0xffff_0000);
+            t.put_u32(chr + 0x82c, rng.next());
+            let fl194: u32 = rd(&t.b, chr + 0x194);
+            t.put_u32(chr + 0x194, fl194 ^ (rng.next() & 0x2000_0000));
+            t.put_u32(sound, rng.next());
+            t.put_u32(dump, [0, 1, 0x100][rng.next() as usize % 3]);
+            reach[(high & 3) as usize] += 1;
+            reach[4] +=
+                u32::from(rd::<u32>(&t.b, dump) != 0 && high == 0 && (low == 4 || low >= 0xc));
+            reach[11] +=
+                u32::from(high == 0 && low == 4 && rd::<u32>(&t.b, chr + 0x82c) & 0x18 == 0x18);
+            point_to(t, 0x0062_f500, if low == 4 { dbg7 } else { dbg5 });
+            t.check(&format!("Ch_Sound {ev:#x}"), 0x0083_5860, &[chr, ev], |m| {
+                at::ch_sound(m, chr, ev, &mut |m, f, a| call(m, f, a));
+                Res::Void
+            });
+        }
+        // ---- Ch_DrawMainEffect
+        t.put_u32(situation, rng.next());
+        t.put_u32(
+            magic,
+            [0x23d, 0x23c, 0x23e, 0x1_023d][rng.next() as usize % 4],
+        );
+        let v = rng.next();
+        reach[5] += u32::from(rd::<u32>(&t.b, magic) == 0x23d);
+        t.check(
+            &format!("Ch_DrawMainEffect {round}"),
+            0x0082_6950,
+            &[v],
+            |m| Res::Int(dr::ch_draw_main_effect(m, v, &mut |m, f, a| call(m, f, a))),
+        );
+        // ---- Ch_Cloth_PerCharacter: up to 5 pointers, counts 0, -1, n
+        let n = rng.next() % 6;
+        let ptrs = random_block(t, &mut rng, 4 * 6);
+        let c = [n, 0, u32::MAX, n][round as usize % 4];
+        t.put_u32(count, c);
+        let dec = round % 3 == 2 && c != 0 && c != u32::MAX;
+        point_to(t, 0x0082_2de0, if dec { step_dec } else { step });
+        t.put_u32(flag, 1);
+        t.put_u32(detached, [0, 0, 1, 2][rng.next() as usize % 4]);
+        reach[6] += u32::from(dec);
+        t.check(
+            &format!("Ch_Cloth_PerCharacter {round}"),
+            0x0082_e390,
+            &[ptrs, count],
+            |m| {
+                dr::ch_cloth_per_character(m, ptrs, count, &mut |m, f, a| call(m, f, a));
+                Res::Void
+            },
+        );
+        // ---- Ch_InitAll: debug off, on, or switched off by sg_getdbname
+        let blk = t.a.rebase(h::CHR_BLK.sym);
+        let keep_blk = Oracle::read(&mut t.b, blk, 12000).unwrap();
+        let (keep_n, keep_a) = (h::CHR_COUNT.get(&t.b), h::CHR_ARRAY.get(&t.b));
+        let keep_slot: u32 = rd(&t.b, slot);
+        t.put_u32(slot, sprintf);
+        // stale blocks and counts, so every clear shows
+        t.put(blk, &random(&mut rng, 12000));
+        t.put_u32(t.a.rebase(0x012f_bca4), rng.next());
+        let mode = round % 4;
+        t.put_u32(debug, [0, 1, 2, 1][mode as usize]);
+        point_to(t, 0x0082_9c90, if mode == 3 { name_dec } else { name });
+        point_to(t, 0x0062_f500, dbg2);
+        t.put_u32(flag, 1);
+        t.put_u32(reads, rng.next());
+        t.put_u32(len, rng.next());
+        reach[7 + mode as usize] += 1;
+        t.check(&format!("Ch_InitAll {round}"), 0x0082_6ea0, &[], |m| {
+            h::ch_init_all(m, frame, &mut |m, f, a| call(m, f, a));
+            Res::Void
+        });
+        t.put(blk, &keep_blk);
+        t.put_u32(t.a.rebase(h::CHR_COUNT.sym), keep_n.cast_unsigned());
+        t.put_u32(t.a.rebase(h::CHR_ARRAY.sym), keep_a);
+        t.put_u32(slot, keep_slot);
+        t.put_u32(debug, 0);
+    }
+    eprintln!("{}: cmm2 a reach {reach:?}", t.name);
 }
