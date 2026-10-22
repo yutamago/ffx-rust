@@ -945,3 +945,107 @@ at y 295..363, or `TOMenuGetStatusMes(0x17)` when there is none, and
 the picked gear at y 659..727. `shop` selects where the pick comes from:
 the shop table (`MenuWShop_GetRecord`) or the item list
 (`MsGetSaveWeapon`).
+
+`MenuSummon_WindowDraw_008cebe0` (the `+0x10` step of the aeon menu's
+window) slides the aeon list by `MenuMn2_Ease(i16 +0x52, i16 +0x54) *
+384 / 4096` (0 while `+0x54` is negative). It draws the face slide at
+(236, 347.5), 200 x 200, from the three ease words `0x023cc3c8`,
+`0x023cc3c4`, `0x023cc3c0`, then the list with the window's `i8 +0x45`
+as the cursor.
+
+`UpdateGearCustomizationMenuState` (`0x008d5830`, jump tables
+`0x008d5cfc` and `0x008d5d34`) runs the customize menu from
+`0x0186aa68`. The gear list (`m`, weapon ids `u16 [0x0186aa38]`) leads
+to the ability list (`0x0186aa34`, rows index `g_TkMenuItemList`). A
+gear `MenuEquip_IsSelectable` refuses gets a yes/no notice. An ability
+item's kind byte (`+2`) picks the notice: 0xb goes on to the confirm
+window (`0x21`, choices `0xb`/`0xc`), 0xe, 0xf and 0x10 give messages
+6, 0x1d and 0x1b, anything else 0x1c. Confirming (row 0) adds the
+ability (`MenuKaizou_AddAbility`), renames the weapon and uses up `u8
++6` of item `u16 +4` from the record `TkMn2GetKaizou() + 8 * byte +3`.
+The names before and after go to `0x0186aa70` and `0x0186aab0`. When
+the name stays the same the message is 0x1e, else 0x1f. Some states
+run the next one in the same call without storing it (2 -> 3 or 5,
+7 -> 9 or 11, 12 -> 13); 3 and 9 only store 4 and 10.
+
+`TkMenuCtrlLimit` (`0x008d0460`, jump table `0x008d0974`) drives the
+overdrive menu with two lists: the overdrives (`0x0186a714`, scroll and
+cursor saved per character at `0x0186a720`/`0x0186a760`) and the modes
+(`0x0186a718`, `g_TkMenuLimitScrolls`/`g_TkMenuLimitCursors`). Both are
+stored as `i32` and read back as `u16`. In state 3 the sub-command
+cursor previews its list, opening it or refreshing it, and closes the
+other one. A pick goes to 8 (overdrives) or 4 (modes) without storing
+it, and a cancel goes to 10. Picking a mode plays 0x80000003 when the
+character already has it, else 0x80000064, then `TkMn2SetOverDriveId`.
+Left/right (repeat bit with the pad held on exactly that direction)
+switches the character while a list is up; it reads the list window
+even when it is gone. The original keeps both window globals in `ecx`
+and `edx` from its last loads; the callees it makes in between
+(`TkMenuLimitClear*`/`Close*`) keep them.
+
+`MenuSummon_GrowWindowDraw_008cdba0` draws the aeon growth window. The
+picked item (`g_TkMenuItemList[i16 +0x48]`) shows its requirement window
+when its byte `+2` is set; the requirement is the growth record
+`TkMn2GetSummonGrow() + 8 * byte +3` (item `u16 +4`, count `u8 +6`). The
+caption plate on the right starts at `remapX2(740)` or right after the
+caption text, whichever is further right. The two meet exactly at the
+boundary, so the comparison's tie goes either way. The remap scales are
+`.rdata` constants (x 512/1920, y 416/1080), so the `ftol`s of the
+requirement window's position are fixed numbers.
+
+`TkMenuCtrlEquip` (`0x008cf020`, jump table `0x008cf5f0`) fades the menu
+in through `0x0186a614` (step `0x0186a618`, clamped to 0..=0x1000). When
+an item is picked it tries it on first (state 20): it keeps the old gear
+in `0x0186a628` and compares HP and MP with the values kept per
+character at `0x0186a694`/`0x0186a6b4`. If either drops, it puts the old
+gear back and asks with `TkMn2ArmsMes(0xe)` (HP), `0xf` (MP) or `0x10`
+(both). Yes equips the item for good (state 23) and keeps the new HP/MP;
+no goes back to the list. `rep & 0x5000` toggles between weapons and
+armour (`g_TkMenuEquipAltMode`).
+
+`MenuItem_ListWindowCtrl_008c6dd0` (`0x008c6dd0`, jump table
+`0x008c73d4`) is the two-column variant of `TkMenuListWindowCtrl`: an
+item is `column + 2 * row`, with the column word of each pick level at
+`+0x58 + 4 * k` and the item count at `+0x94`. Pad bits 0x8000 and
+0x2000 switch columns. Going down clears the column when the item would
+be past the end, and so do the page-down scroll ends (states 15 and 16).
+Each pick level saves its top at `+0x58 + 4 * (u8 +0x42 + k)`. Its shim
+returns the original's `eax` (`TkMenuListWindowCtrl`'s is void).
+
+`MenuWShop_Ctrl_008d6e40` (`0x008d6e40`, jump table `0x008d74c0`) is
+the weapon shop with buy and sell lists. Like `TkMenuCtrlWShop` it loads
+file 0x2f first, here parts 0, 2 and 4: the sizes go to `0x0186ab04`
+(part 0), `0x0186ab0c` (part 2) and `0x0186ab08` (part 4). The parts are
+laid out from `0x008c1b10()` at 64-byte steps (`0x0186aba4`,
+`0x0186aba8`, `g_TkMenuWShopTable`). The four sub-windows are
+`g_TkMenuWShopSubWindows[0..4]`: the buy list, the sell list, the buy
+count and the sell confirm. A purchase that leaves a party member worse
+off asks with `TkMenuMainMes(0x31)`, `0x32` or `0x33` (by
+`MenuWShop_EquipLoss`, else `0x28`) before `MenuWShop_EquipBought`.
+Selling an item whose byte `+3` is clear is refused with message 0x36
+(no item, or a weapon with `byte +3 & 0xd`), 0x35 (weapon byte `+5`
+set) or 0x34. A sale pays `MenuShop_WeaponSellPrice` through
+`MsPayGIL(-price)` after `Equip_RebuildWearers`.
+
+`TkMenuCtrlSummon` (`0x008cc330`, jump table `0x008cca28`) runs the aeon
+menu. The command list's rows map to actions through the byte table
+`0x0186a5b0` (0 status, 1 growth items, 2 stats). Aeons past 13 cannot
+use growth items. A growth item of kind 4 teaches a command
+(`MsSetSaveCommand(aeon, item, 1)`) and uses up the record's items; the
+other kinds explain why not (5 message 8, 7 message 6, others 7). A stat
+row grows through `MenuSummon_GrowStat(row, aeon)` when its bit is in
+`g_TkMenuSummonGrowMask`, else the notice says whether the items are
+there (`g_TkMenuSummonAffordMask`: message 9, else 6). Stat names come
+from `g_NkzAeonStats + 0xc` in 28-byte rows.
+
+`MenuNameEntry_WindowCtrl_008c3580` (the name entry window's `+0xc`
+control, jump tables `0x008c3c94` and `0x008c3cc4`) moves the cursor
+over a grid of 15-cell key rows (`g_TkMenuItemCell`) and a side column
+(`0x0186a270` set, cursor `0x0186a26c`, entries from
+`MenuItem_CursorTable`, kind at `+2`: 0..2 switch the key page, 3 ends,
+4 deletes, 5 loads the target's keys). It wraps the cell back into the
+grid before and after each frame. Japanese flips the key page with the
+shoulder buttons. Confirming with no target ends at once (5); with
+typed keys it asks first (7). Its "yes" lands past the sound of that
+ending, so it is silent. After the windows close it either moves on
+to the next aeon name (`getMegasAdding`, targets 15..17) or ends.
