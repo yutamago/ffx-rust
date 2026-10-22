@@ -7098,4 +7098,230 @@ ported! {
     Atel_SetSaveEventBit_008700e0 @ 0x0087_00e0 => extern "C" fn h_8700e0(n: u32) -> u32 {
         hp::atel_set_save_event_bit(&mut mem(), n)
     }
+    /// `AtelExecSoftWareReset()`.
+    AtelExecSoftWareReset @ 0x0087_38d0 => extern "C" fn h_8738d0() -> u32 {
+        hp::atel_exec_soft_ware_reset(&mut mem())
+    }
+    /// `AtelClearShape()`: the texture list path and its unify buffer in
+    /// one 512-byte frame.
+    AtelClearShape @ 0x0087_42b0 => extern "C" fn h_8742b0() -> u32 {
+        let mut frame = super::StackFrame::<128>::new();
+        hp::atel_clear_shape(&mut mem(), frame.at())
+    }
+    /// `Atel_TranslateBGSeps_00861020(volume, frames, all)`.
+    Atel_TranslateBGSeps_00861020 @ 0x0086_1020 => extern "C" fn h_861020(volume: u32, frames: u32, all: u32) -> u32 {
+        hp::atel_translate_bg_seps(&mut mem(), volume, frames, all)
+    }
+    /// `AtelEventKickBGSep(header, fade)`.
+    AtelEventKickBGSep @ 0x0086_58d0 => extern "C" fn h_8658d0(hdr: u32, fade: u32) {
+        hp::atel_event_kick_bg_sep(&mut mem(), hdr, fade);
+    }
+    /// `Atel_SetWorkerPosXZ_00870970(worker, x f32, z f32, keep)`.
+    Atel_SetWorkerPosXZ_00870970 @ 0x0087_0970 => extern "C" fn h_870970(w: u32, x: u32, z: u32, keep: u32) {
+        hp::atel_set_worker_pos_xz(&mut mem(), w, x, z, keep);
+    }
+    /// `AtelExecCtrlEventInit_008677a0(ctrl, battle)`.
+    AtelExecCtrlEventInit_008677a0 @ 0x0086_77a0 => extern "C" fn h_8677a0(c: u32, battle: u32) {
+        hp::atel_exec_ctrl_event_init(&mut mem(), c, battle);
+    }
+    /// `AtelEventSetUpForBattleMusic()`.
+    AtelEventSetUpForBattleMusic @ 0x0086_6240 => extern "C" fn h_866240() {
+        hp::atel_event_set_up_for_battle_music(&mut mem());
+    }
+    /// `AtelEventRegistFootInfo(header)`.
+    AtelEventRegistFootInfo @ 0x0086_5b80 => extern "C" fn h_865b80(hdr: u32) -> u32 {
+        hp::atel_event_regist_foot_info(&mut mem(), hdr)
+    }
+    /// `AtelAllClearCallbackQue()`.
+    AtelAllClearCallbackQue @ 0x008b_3cf0 => extern "C" fn h_8b3cf0() -> u32 {
+        hp::atel_all_clear_callback_que(&mut mem())
+    }
+    /// `AtelExecVibrate(update)`: the two volumes in a 2-word frame.
+    AtelExecVibrate @ 0x0087_39a0 => extern "C" fn h_8739a0(update: u32) -> u32 {
+        let mut frame = super::StackFrame::<2>::new();
+        hp::atel_exec_vibrate(&mut mem(), update, frame.at())
+    }
+    /// `Atel_SetChrAltParts_008720e0(chr, on)`.
+    Atel_SetChrAltParts_008720e0 @ 0x0087_20e0 => extern "C" fn h_8720e0(chr: u32, on: u32) {
+        hp::atel_set_chr_alt_parts(&mut mem(), chr, on);
+    }
+    /// `Atel_ApplyChrDir_00870360(worker)`.
+    Atel_ApplyChrDir_00870360 @ 0x0087_0360 => extern "C" fn h_870360(w: u32) {
+        hp::atel_apply_chr_dir(&mut mem(), w);
+    }
+    /// `Atel_SetSpriteScale_00874a80(i, x f32, y f32)`.
+    Atel_SetSpriteScale_00874a80 @ 0x0087_4a80 => extern "C" fn h_874a80(i: u32, x: u32, y: u32) {
+        hp::atel_set_sprite_scale(&mut mem(), i, x, y);
+    }
+    /// `Atel_SyncChrRot_00869f90(worker)`: `Ch_GetRot` and
+    /// `Math_WrapAngle` through the game.
+    Atel_SyncChrRot_00869f90 @ 0x0086_9f90 => extern "C" fn h_869f90(w: u32) {
+        hp::atel_sync_chr_rot(&mut mem(), w, |m, f, args| {
+            super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, f), args)
+        });
+    }
+    /// `Atel_SaveLights_0086db20()`.
+    Atel_SaveLights_0086db20 @ 0x0086_db20 => extern "C" fn h_86db20() -> u32 {
+        hp::atel_save_lights(&mut mem())
+    }
+    /// `Atel_RestoreLights_0086e770()`.
+    Atel_RestoreLights_0086e770 @ 0x0086_e770 => extern "C" fn h_86e770() -> u32 {
+        hp::atel_restore_lights(&mut mem())
+    }
+    /// `Atel_ResetTextLanguage_0086ece0()`.
+    Atel_ResetTextLanguage_0086ece0 @ 0x0086_ece0 => extern "C" fn h_86ece0() {
+        hp::atel_reset_text_language(&mut mem());
+    }
+    /// `Atel_StepSpriteAnim_00874bf0(sprite)`.
+    Atel_StepSpriteAnim_00874bf0 @ 0x0087_4bf0 => extern "C" fn h_874bf0(s: u32) {
+        hp::atel_step_sprite_anim(&mut mem(), s);
+    }
+    /// `Atel_LoadEventTexList_00874b70(on, x, y)`: the path and its unify
+    /// buffer in one 512-byte frame.
+    Atel_LoadEventTexList_00874b70 @ 0x0087_4b70 => extern "C" fn h_874b70(on: u32, x: u32, y: u32) {
+        let mut frame = super::StackFrame::<128>::new();
+        hp::atel_load_event_tex_list(&mut mem(), on, x, y, frame.at());
+    }
+    /// `AtelBGSepFade(volume, frames)`.
+    AtelBGSepFade @ 0x0086_1000 => extern "C" fn h_861000(volume: u32, frames: u32) -> u32 {
+        hp::atel_bg_sep_fade(&mut mem(), volume, frames)
+    }
+    /// `Atel_StepSprites_008743e0()`.
+    Atel_StepSprites_008743e0 @ 0x0087_43e0 => extern "C" fn h_8743e0() {
+        hp::atel_step_sprites(&mut mem());
+    }
+    /// `AtelDrawSemiTrans()`.
+    AtelDrawSemiTrans @ 0x0087_2ca0 => extern "C" fn h_872ca0() {
+        hp::atel_draw_semi_trans(&mut mem());
+    }
+    /// `Atel_SetPartyMask_008623b0()`: the three members in a 3-word frame.
+    Atel_SetPartyMask_008623b0 @ 0x0086_23b0 => extern "C" fn h_8623b0() {
+        let mut frame = super::StackFrame::<3>::new();
+        hp::atel_set_party_mask(&mut mem(), frame.at());
+    }
+    /// `Atel_RegistVibrateSignal_00876590(from, i, k)`.
+    Atel_RegistVibrateSignal_00876590 @ 0x0087_6590 => extern "C" fn h_876590(from: u32, i: u32, k: u32) -> u32 {
+        hp::atel_regist_vibrate_signal(&mut mem(), from, i, k)
+    }
+    /// `Native_DrawBarSegment_00855a30(pos, seg)`.
+    Native_DrawBarSegment_00855a30 @ 0x0085_5a30 => extern "C" fn h_855a30(pos: u32, seg: u32) -> u32 {
+        hp::native_draw_bar_segment(&mut mem(), pos, seg)
+    }
+    /// `Atel_BattleEndMapStart_008615b0(map)`.
+    Atel_BattleEndMapStart_008615b0 @ 0x0086_15b0 => extern "C" fn h_8615b0(map: u32) -> u32 {
+        hp::atel_battle_end_map_start(&mut mem(), map)
+    }
+    /// `Atel_SetMovieTexture_00873eb0(id, flags)`.
+    Atel_SetMovieTexture_00873eb0 @ 0x0087_3eb0 => extern "C" fn h_873eb0(id: u32, flags: u32) -> u32 {
+        hp::atel_set_movie_texture(&mut mem(), id, flags)
+    }
+    /// `Atel_RegistVibrateSignalWith_008766d0(from, i, k, curve)`.
+    Atel_RegistVibrateSignalWith_008766d0 @ 0x0087_66d0 => extern "C" fn h_8766d0(from: u32, i: u32, k: u32, curve: u32) -> u32 {
+        hp::atel_regist_vibrate_signal_with(&mut mem(), from, i, k, curve)
+    }
+    /// `AtelSetSndCameraPos()`: the matrix in a 16-word frame.
+    AtelSetSndCameraPos @ 0x0087_7470 => extern "C" fn h_877470() {
+        let mut frame = super::StackFrame::<16>::new();
+        hp::atel_set_snd_camera_pos(&mut mem(), frame.at());
+    }
+    /// `Atel_TurnToPoint_0086f7f0(worker, x, y, z)`: yaw and pitch in a
+    /// 2-word frame, `Math_YawPitchTo`'s eight words through `call_cdecl`.
+    Atel_TurnToPoint_0086f7f0 @ 0x0086_f7f0 => extern "C" fn h_86f7f0(w: u32, x: u32, y: u32, z: u32) {
+        let mut frame = super::StackFrame::<2>::new();
+        hp::atel_turn_to_point(&mut mem(), w, [x, y, z], frame.at(), |m, args| {
+            super::call_cdecl(ffx_bridge::Mem::rebase(m, 0x0088_b4d0), args)
+        });
+    }
+    /// `Atel_ShowSprite_008748a0(i, tex)`: the path and its unify buffer in
+    /// one 512-byte frame.
+    Atel_ShowSprite_008748a0 @ 0x0087_48a0 => extern "C" fn h_8748a0(i: u32, tex: u32) {
+        let mut frame = super::StackFrame::<128>::new();
+        hp::atel_show_sprite(&mut mem(), i, tex, frame.at());
+    }
+    /// `AtelUpdateWaterStatus()`: the camera position in a 4-word frame.
+    AtelUpdateWaterStatus @ 0x0087_1e50 => extern "C" fn h_871e50() {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_update_water_status(&mut mem(), frame.at());
+    }
+    /// `AtelExec_Internal_871d10()`.
+    AtelExec_Internal_871d10 @ 0x0087_1d70 => extern "C" fn h_871d70() {
+        hp::atel_exec_internal_871d10(&mut mem());
+    }
+    /// `Atel_SetEventPathLang_00879430(to)`.
+    Atel_SetEventPathLang_00879430 @ 0x0087_9430 => extern "C" fn h_879430(to: u32) {
+        hp::atel_set_event_path_lang(&mut mem(), to);
+    }
+    /// `Atel_AddLoveParam_00865650(i, skip)`.
+    Atel_AddLoveParam_00865650 @ 0x0086_5650 => extern "C" fn h_865650(i: u32, skip: u32) {
+        hp::atel_add_love_param(&mut mem(), i, skip);
+    }
+    /// `Atel_FindVarSlot_0087bc90(rec)`.
+    Atel_FindVarSlot_0087bc90 @ 0x0087_bc90 => extern "C" fn h_87bc90(rec: u32) {
+        hp::atel_find_var_slot(&mut mem(), rec);
+    }
+    /// `Atel_TurnToWorker_0086f8a0(worker, target)`: yaw and pitch in a
+    /// 2-word frame, `Math_YawPitchTo` through `call_cdecl`.
+    Atel_TurnToWorker_0086f8a0 @ 0x0086_f8a0 => extern "C" fn h_86f8a0(w: u32, target: u32) {
+        let mut frame = super::StackFrame::<2>::new();
+        hp::atel_turn_to_worker(&mut mem(), w, target, frame.at(), |m, args| {
+            super::call_cdecl(ffx_bridge::Mem::rebase(m, 0x0088_b4d0), args)
+        });
+    }
+    /// `Atel_SyncTurnEnd_00870dc0(worker, level)`.
+    Atel_SyncTurnEnd_00870dc0 @ 0x0087_0dc0 => extern "C" fn h_870dc0(w: u32, lvl: u32) {
+        hp::atel_sync_turn_end(&mut mem(), w, lvl);
+    }
+    /// `Atel_StreamSeek_00885bf0(start, count, sector, id, pos)`: the name
+    /// in a 4-word frame.
+    Atel_StreamSeek_00885bf0 @ 0x0088_5bf0 => extern "C" fn h_885bf0(start: u32, count: u32, sector: u32, id: u32, pos: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_stream_seek(&mut mem(), start, count, sector, id, pos, frame.at())
+    }
+    /// `AtelJumpGameOver()`.
+    AtelJumpGameOver @ 0x0086_da10 => extern "C" fn h_86da10() {
+        hp::atel_jump_game_over(&mut mem());
+    }
+    /// `Atel_KickBGSepsOnFlag_00865780(header, on)`.
+    Atel_KickBGSepsOnFlag_00865780 @ 0x0086_5780 => extern "C" fn h_865780(hdr: u32, on: u32) {
+        hp::atel_kick_bg_seps_on_flag(&mut mem(), hdr, on);
+    }
+    /// `Native_GetChrOptPos_00a7a980(worker, _, stack, mode)`: the position
+    /// in a 4-word frame.
+    Native_GetChrOptPos_00a7a980 @ 0x00a7_a980 => extern "C" fn h_a7a980(w: u32, _unused: u32, s: u32, mode: u32) -> u32 {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::native_get_chr_opt_pos(&mut mem(), w, s, mode, frame.at())
+    }
+    /// `Atel_ApplyPolarMove_008629c0(worker)`: the step and the camera
+    /// vector in an 8-word frame.
+    Atel_ApplyPolarMove_008629c0 @ 0x0086_29c0 => extern "C" fn h_8629c0(w: u32) {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_apply_polar_move(&mut mem(), w, frame.at());
+    }
+    /// `Atel_SetEventWaterFlag_00865740(on)`.
+    Atel_SetEventWaterFlag_00865740 @ 0x0086_5740 => extern "C" fn h_865740(on: u32) {
+        hp::atel_set_event_water_flag(&mut mem(), on);
+    }
+    /// `AtelUpdateWindowStatus()`.
+    AtelUpdateWindowStatus @ 0x0087_1f30 => extern "C" fn h_871f30() -> u32 {
+        hp::atel_update_window_status(&mut mem())
+    }
+    /// `AtelUpdateBattleStatus()`: `Math_LengthSq3` and `CIsqrt` through
+    /// the game.
+    AtelUpdateBattleStatus @ 0x0087_1bc0 => extern "C" fn h_871bc0() {
+        hp::atel_update_battle_status(&mut mem(), |m, f, args| {
+            super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, f), args)
+        });
+    }
+    /// `Atel_InitWorkerLevels_0086d300(worker, a, b, c)`.
+    Atel_InitWorkerLevels_0086d300 @ 0x0086_d300 => extern "C" fn h_86d300(w: u32, a: u32, b: u32, c: u32) {
+        hp::atel_init_worker_levels(&mut mem(), w, a, b, c);
+    }
+    /// `Atel_CheckLineCross_008680a0(worker, _, target, rec)`: the four
+    /// points in a 16-word frame, `Math_CrossHeightGap` through the game.
+    Atel_CheckLineCross_008680a0 @ 0x0086_80a0 => extern "C" fn h_8680a0(w: u32, _unused: u32, target: u32, rec: u32) {
+        let mut frame = super::StackFrame::<16>::new();
+        hp::atel_check_line_cross(&mut mem(), w, target, rec, frame.at(), |m, f, args| {
+            super::call_cdecl_f64(ffx_bridge::Mem::rebase(m, f), args)
+        });
+    }
 }
