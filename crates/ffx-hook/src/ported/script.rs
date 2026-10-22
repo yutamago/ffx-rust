@@ -7385,4 +7385,61 @@ ported! {
             super::call_cdecl_f64(f, args)
         });
     }
+    /// `AtelExec()`.
+    AtelExec @ 0x0086_66d0 => extern "C" fn h_8666d0() -> u32 {
+        hp::atel_exec(&mut mem())
+    }
+    /// `AtelMenuExec()`.
+    AtelMenuExec @ 0x0086_dd60 => extern "C" fn h_86dd60() -> u32 {
+        hp::atel_menu_exec(&mut mem())
+    }
+    /// `AtelLoadSourceData(slot, arg)`.
+    AtelLoadSourceData @ 0x0087_9a70 => extern "C" fn h_879a70(slot: u32, arg: u32) -> u32 {
+        hp::atel_load_source_data(&mut mem(), slot, arg)
+    }
+    /// `AtelInitBasicWork(setup, clear)`.
+    AtelInitBasicWork @ 0x0086_cb00 => extern "C" fn h_86cb00(setup: u32, clear: u32) {
+        hp::atel_init_basic_work(&mut mem(), setup, clear);
+    }
+    /// `AtelEventRemoveForBattle()`.
+    AtelEventRemoveForBattle @ 0x0086_5dc0 => extern "C" fn h_865dc0() -> u32 {
+        hp::atel_event_remove_for_battle(&mut mem())
+    }
+    /// `Atel_CheckTouchTalk_00866980(worker, _, player)`: `Math_LengthSq3`
+    /// through the game.
+    Atel_CheckTouchTalk_00866980 @ 0x0086_6980 => extern "C" fn h_866980(w: u32, _unused: u32, player: u32) -> u32 {
+        hp::atel_check_touch_talk(&mut mem(), w, player, |_, f, args| super::call_cdecl_f64(f, args))
+    }
+    /// `AtelExecMenuCtrl()`.
+    AtelExecMenuCtrl @ 0x0087_3600 => extern "C" fn h_873600() -> u32 {
+        hp::atel_exec_menu_ctrl(&mut mem())
+    }
+    /// `AtelCommonSetUp(ctrl, a, block, x34, x8, debug)`: the setup record
+    /// in an eight-word frame.
+    AtelCommonSetUp @ 0x0087_59b0 => extern "C" fn h_8759b0(ctrl: u32, a: u32, block: u32, x34: u32, x8: u32, debug: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_common_set_up(&mut mem(), [ctrl, a, block, x34, x8, debug], frame.at())
+    }
+    /// `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`: the
+    /// setup record in an eight-word frame.
+    AtelBattleSetUp @ 0x0087_56d0 => extern "C" fn h_8756d0(blocks: u32, x8s: u32, n: u32, x30: u32, work: u32, a: u32, ctrl: u32, callback: u32) -> u32 {
+        let mut frame = super::StackFrame::<8>::new();
+        hp::atel_battle_set_up(&mut mem(), [blocks, x8s, n, x30, work, a, ctrl, callback], frame.at())
+    }
+    /// `Atel_CheckBoxTouch_00867c10(worker, _)`: `Math_LengthSq3` through
+    /// the game.
+    Atel_CheckBoxTouch_00867c10 @ 0x0086_7c10 => extern "C" fn h_867c10(w: u32, _unused: u32) -> u32 {
+        hp::atel_check_box_touch(&mut mem(), w, |_, f, args| super::call_cdecl_f64(f, args))
+    }
+    /// `Atel_CheckLineTouch_008684b0(worker, _, player)`: the four vectors
+    /// in a 16-word frame, the math helpers through the game.
+    Atel_CheckLineTouch_008684b0 @ 0x0086_84b0 => extern "C" fn h_8684b0(w: u32, _unused: u32, player: u32) {
+        let mut frame = super::StackFrame::<16>::new();
+        hp::atel_check_line_touch(&mut mem(), w, player, frame.at(), |_, f, args| super::call_cdecl_f64(f, args));
+    }
+    /// `Atel_CheckBoxTrigger_00866cc0(worker, _, player)`:
+    /// `Math_LengthSq3` through the game.
+    Atel_CheckBoxTrigger_00866cc0 @ 0x0086_6cc0 => extern "C" fn h_866cc0(w: u32, _unused: u32, player: u32) {
+        hp::atel_check_box_trigger(&mut mem(), w, player, |_, f, args| super::call_cdecl_f64(f, args));
+    }
 }

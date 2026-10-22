@@ -3097,6 +3097,135 @@ No caller reads its `EAX` (what `scePrintf` leaves).
 `round26d_spline_near_point_init_matches_the_original` covers it with the
 real spline functions.
 
+### Helpers (script round 27)
+
+- `AtelExec` (`0x008666d0`) and `AtelMenuExec` (`0x0086dd60`) run
+  `Atel_ExecCtrlWorks_008688f0` over ctrl works 0..6 and 6..7 (the
+  menu's); Fahrenheit's names (Switch BSim matches).
+- `AtelLoadSourceData(slot, arg)` (`0x00879a70`) is the PS2 debug loader of
+  an event's script sources. `g_AtelEventHeaders` (`0x01328598`, seven
+  slots; the eighth word is `g_AtelEventPathChg`) holds each slot's binary
+  header; its `+0x40` is the offset of a file table whose first word is
+  both its byte length and the offset of the directory name (the first
+  name). The first `min(length / 4, 7)` names become
+  `debug/<dir>/<name>.src` (`AtelEventGetFilePath2`) unless they start with
+  `/`, are printed (`TK:EVENTNAME:%d:%s`) and loaded by
+  `Atel_LoadSourceFile_00879b60` into `g_AtelSourceBuffers[slot * 8 + i]`
+  (`0x01328698`), the size into `g_AtelSourceSizes` (`0x01328778`, zeroed
+  first). `EAX` 1, or 0 for an empty table. Its only caller,
+  `AtelEventSetUp`, passes slot 0.
+- `AtelInitBasicWork(setup, clear)` (`0x0086cb00`) sets a worker up from an
+  eight-word record: active, worker index, the three level values (ctrl
+  work, table and header index of each level's signals, `u16`), header,
+  code base, `+8`. Every worker gets `+0`, `+4`, `+8`, its index at `+0x2e`
+  and `+0x0c..+0x28` zeroed. An active one is reset: `+0xae` = the low
+  nibbles of the first two level values, `+0x48..+0x7c`, the levels
+  (`Atel_InitWorkerLevels_0086d300`), scale 1.0 at `+0x94`, `+0x38` to
+  `& 0xe020 | 0x20`, `+0x32` = `0x040e0000` (so `+0x34` = `0x040e`; type 4
+  `0x048e`, type 1 ORs in `0x80`), `+0x36` to
+  `(& 0xffc6 | 6, 0x40 when the ctrl work's +0x1a >= 2) & 0x7f | 0x800`,
+  `+0xb4` -10000.0, `+0x40` -1, `+0xaf` 15. Types 1, 2, 3, 5, 6 reset their
+  move block (`+0x558`, types 5/6 `+0x284`): zeros, `+0x28` `0xffff`,
+  `+0x2c` -1.0, `+0x3c`/`+0x4c` pi/3, and `+0x40`/`+0x44`/`+0x48`/`+0x1c`
+  2, 1, 1.5, 5 for type 1 (which also clears `+0xaf4..+0xb54`, sets
+  `+0xb08`/`+0xb0c` to 1 and `+0xb16` to 10) or 0, 0, 1, -1. `+0xab` is
+  `0xf7` (type 1), `0xff` (2, 3, 5, 6) or 0 (4). After the free signals
+  (`Atel_InitFreeSignals_0086d510`), `clear` zeroes the variables (header
+  `+0x10` bytes at the code base + header `+0x2c`; the `+0xb8` area it
+  would prefer is always 0 here, cleared above). Then two signals to
+  itself (`AtelRegistSignalMain`: level 7 entry 0, then level 0 entry 1;
+  none for index `0xffff`) and `AtelDecodeSignal(index, 10)`. Callers read
+  no `EAX`.
+- `AtelEventRemoveForBattle()` (`0x00865dc0`) runs before a battle: it
+  keeps the field's draw mask (`g_AtelBattleDrawMask`, `0x01326b78`), effect
+  stick state (`g_AtelBattleStickState`, `0x01326be0`, 0x100 bytes), lights
+  and guide map number (`g_AtelBattleGuideMapNo`, `0x01326b68`), and when
+  ctrl work 0 is in use makes it current and lets each character-bound
+  actor (`+0xaa` 1) release its model: speed 0, `+0x33` bit 2 and
+  `+0xb10` bit 0 cleared, `+0x36` `& 0x9fff` then `0x2000`/`0x4000` for
+  the system motion groups 0 and 2 it has, the hide event in `+0xa0` (0
+  with `+0x38` bit 12), `Ch_SetResHide(0)` unless `+0x38` bit 11, the four
+  effect sticks (`+0xb18`, every 0x10 bytes, `& 0x7fff`), then the motion
+  groups (`+0x33` bit 1), the attachments `+0xaf4`/`+0xaf8` (bits 4 and 5,
+  data ids `+0xb04`/`+0xb06`) and with bit 0 both attachments and the model
+  itself (`+0x9c`, data id `+0xa8`); the data go too when
+  `MsBattleGetChrDisposeFlag`. Each disposal skips actors with `+0x36`
+  bit 6 (an actor sharing a model). `EAX` the guide map number, or the old
+  ctrl work when ctrl work 0 is in use.
+- `Atel_CheckTouchTalk_00866980(w, _, player)` (`0x00866980`, per actor
+  from `0x008666e0`) checks a character-bound actor against the player
+  position (ctrl work `+0x218..+0x220`). Touch: `|dy|` under the move
+  block's `+0x1c` and `LengthSq3(dx, 0, dz)` at most `(+0x48)²` send it
+  trigger 3 (`AtelRequestTrigger_008764f0(0xffff, id, 3)`, whose `EAX` it
+  returns); `+0x34` bit 6 records it, `+0x36` bit 0 is cleared. Talk (actor
+  `+0xab` bit 0, ctrl work `+0x1e4` 1): the squared distance (with `dy`
+  only when the move block's `+0x2c` is negative; otherwise `|dy|` must be
+  under `+0x2c`) under `(ctrl +0x1f0 + move +0x40)²`, `+0x34` bits 5 and 9
+  and `+0x36` bit 3 clear, nearer than the candidate (`+0x1ec`, any when
+  `+0x1e8` is `0xffff`) and `Math_FacingWithin(player heading, +0x3c, ...)`
+  make it the talk candidate (`+0x1e8` id, `+0x1ec` distance). Every float
+  compare skips on NaN.
+- `AtelExecMenuCtrl` (`0x00873600`) runs `AtelMenuExec` and ctrl work 0's
+  callback queue. The two set-ups build each worker's
+  `AtelInitBasicWork` record in their frame:
+  `(active, index, ctrl work, block number, i, AtelGetIndexWork(block, i),
+  block, +8)`. `AtelCommonSetUp(ctrl, a, block, x34, x8, debug)`
+  (`0x008759b0`, the menu's ctrl work from `TOMenuAtelStart`) registers the
+  debug sources, takes ctrl work `ctrl` for one block (`+0x34` = `x34`),
+  and sets up its actors (active, variables cleared) and then its other
+  namespace entries (inactive), each with its source debug work.
+  `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`
+  (`0x008756d0`, from `MsAtelSetUp`) takes ctrl work `ctrl` for `n`
+  blocks: the actor, namespace and `+0x14`/`+0x16`/`+0x18` counts are the
+  sums over the blocks, `+0x1f8`/`+0x1fc` the block and `+8` arrays,
+  `+0x54` the field getter `0x008756b0`, `+0x4c` the callback. All blocks'
+  actors come first (numbered on across blocks, variables at `work`,
+  advanced by `AtelGetMyWorkSize`), then all blocks' other entries; then
+  `MsAtelChrInit(ctrl)`, `AtelInitActor` and ctrl work 0 current again.
+- `Atel_CheckBoxTouch_00867c10(w, _)` (`0x00867c10`, from the per-actor
+  dispatcher `0x008666e0`, which returns its `EAX`) is the box-shaped touch
+  trigger. Points A (ctrl work `+0x228..+0x230`) and B (the player,
+  `+0x218..+0x220`), or a target worker's move block `+0x10..` and
+  position when move `+0x28` is not `0xffff`, are taken relative to the
+  actor's move position and turned by `-(move +0x34)`
+  (`x' = c x - s z`, `z' = s x + c z`, each product and sum in 53 bits,
+  stored as f32). Outcodes: x against `±(+0x30)` (bits 1, 2), z against
+  `±(+0x38)` (4, 8), y against `±(+0x1c)` when it is positive (0x10,
+  0x20), every compare inclusive and false on NaN. B inside the box sets
+  `+0x34` bit 8 and touches; outside, bit 8 is cleared and B touches when
+  its height is within the band (or the band is not positive) and the
+  squared distance to its clamp onto the box (`Math_LengthSq3`, no y) is
+  at most `(+0x48)²`. `+0x34` bit 6 keeps the touch, and the vibrate
+  signals go to the actor itself: 5 on a new touch, 5 then 6 when A..B
+  crosses the box (no outcode bit in common) without an earlier touch, 6
+  when a touch ends. `EAX` the last signal's, else 0.
+- `Atel_CheckLineTouch_008684b0(w, _, player)` (`0x008684b0`, same
+  dispatcher) is the line-shaped trigger, from the actor's move position P
+  to move `+0x30` Q. It hands the menu math helpers pointers to four
+  vectors in its frame (A, Q, P, B, `w` zeroed). When the player's step
+  A..B (ctrl work `+0x228` to `+0x218`) moved in x or z, or `+0x36` bit 0
+  asks, a crossing (`Math_SegmentsCross`) within the band
+  (`Math_CrossHeightGap` at most move `+0x1c`, any when that is not
+  positive) records its side in `+0x36` bits 1/2 and sends trigger 4. The
+  touch test uses B's nearest point N on P..Q (`Math_SegmentNearestT`,
+  N = P + t (Q - P) in 53 bits): squared distance (no y) within `(+0x48)²`
+  and `|By - Ny|` within the band. A touch sends 3 (and 5 when new); no
+  touch sends 5 after a crossing and 6 after a crossing or an ended touch.
+  The talk candidate test mirrors `0x00866980`'s but uses N, compares the
+  current candidate's distance with the talk radius² rather than with the
+  distance, and stores that radius² as the candidate's distance. The
+  dispatcher's caller (`0x00865208`) ignores `EAX`.
+- `Atel_CheckBoxTrigger_00866cc0(w, _, player)` (`0x00866cc0`, same
+  dispatcher) is the box-shaped request trigger, `0x00867c10`'s sibling:
+  the same rotation (angle negated with `fchs`, cosine computed first),
+  outcodes and clamp, but a crossing sends trigger 4 unless `+0x34` bit 8
+  says B was inside last time, a touch sends 3 (and 5 when new), and the
+  talk candidate test follows: B inside the box, or in the band and
+  within `(move +0x40 + ctrl +0x1f0)²` of its clamp, a candidate
+  distance above that radius² and `Math_FacingWithin` from the player's
+  raw x/z to the actor's position make it the candidate, with the
+  radius² stored as its distance.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the
