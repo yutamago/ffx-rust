@@ -424,6 +424,11 @@ REVIEWED = {
     0x0087b980: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
     0x0087ba70: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
     0x0087baa0: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x006492b0: ("glue", "tail jump to debugLoad_00646b30 (saves/%02d.SAV via FILE*); only caller TkMenuCtrlSaveLoad (menu/system round 35)"),
+    0x006492e0: ("glue", "tail jump to debugSave (menu/system round 35)"),
+    0x00647e10: ("debug", "SaveDataManager_instance then 0x6f1c40, which only calls SaveDataManager_debugSave_Internal (menu/system round 35)"),
+    0x00703a20: ("platform", "thread loop that never returns, waits through WaitForSingleObject (menu/system round 35)"),
+    0x008a98b0: ("glue", "bare jmp MsGetGIL (TkMenuGetGil_008a98b0) (menu/system round 35)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match

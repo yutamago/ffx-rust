@@ -1305,7 +1305,7 @@
 0x00647d70	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataCheckCrc
 0x00647dd0	dead	unreachable from the entry point and every pointer table
 0x00647df0	dead	unreachable from the entry point and every pointer table
-0x00647e10	logic	default (no rule: ported to be safe)
+0x00647e10	debug	reviewed: SaveDataManager_instance then 0x6f1c40, which only calls SaveDataManager_debugSave_Internal (menu/system round 35)
 0x00647e40	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataManager_MarkAlbhedLoaded
 0x00647e80	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataGetCrc
 0x00647ee0	platform	platform name (PC port: input, saves, loaders, app lifecycle): SaveDataGetDialogState
@@ -1368,9 +1368,9 @@
 0x006491b0	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00649220	debug	unreachable from the entry point and every pointer table; debug name or strings
 0x00649290	dead	unreachable from the entry point and every pointer table
-0x006492b0	logic	default (no rule: ported to be safe)
+0x006492b0	glue	reviewed: tail jump to debugLoad_00646b30 (saves/%02d.SAV via FILE*); only caller TkMenuCtrlSaveLoad (menu/system round 35)
 0x006492c0	debug	debug name: debugSavedataLoadAll
-0x006492e0	logic	default (no rule: ported to be safe)
+0x006492e0	glue	reviewed: tail jump to debugSave (menu/system round 35)
 0x00649330	dead	unreachable from the entry point and every pointer table
 0x00649360	dead	unreachable from the entry point and every pointer table
 0x006493c0	dead	unreachable from the entry point and every pointer table
@@ -4534,7 +4534,7 @@
 0x00703910	glue	reviewed: calls a function pointer by argument count (system round 32)
 0x00703990	platform	imports CloseHandle, TerminateThread
 0x007039d0	platform	imports CloseHandle, TerminateThread
-0x00703a20	logic	default (no rule: ported to be safe)
+0x00703a20	platform	reviewed: thread loop that never returns, waits through WaitForSingleObject (menu/system round 35)
 0x00703a50	platform	imports ResumeThread, SetThreadPriority
 0x00703a90	logic	default (no rule: ported to be safe)
 0x00703ad0	dead	unreachable from the entry point and every pointer table
