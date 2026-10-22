@@ -14722,7 +14722,9 @@ fn r28_render_stub(a: &mut Oracle, b: &mut Oracle, cell: u32, f: u32) {
 /// whose frames have 0, 1, 2 or -1 parts, one at a negative offset), the
 /// map that hides four sprites, the three gates; the VFX type and 2D
 /// update calls logged by their arguments, the instance check from a
-/// sequence, the two render-data calls by the record's contents.
+/// sequence, the two render-data calls by the record's contents; then
+/// `AtelDrawNoTrans` every fourth round.
+#[allow(clippy::too_many_lines)] // one case loop
 fn r28a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
     use ffx_script::vm::bridge::helpers as hp;
     for o in [&mut *a, &mut *b] {
@@ -14810,6 +14812,25 @@ fn r28a_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             },
         );
         logged.push((Mem::read::<u32>(b, stubs.0) - stubs.1) / 4);
+        if round % 4 == 0 {
+            // AtelDrawNoTrans: the water status (real) and the same draw
+            r27_reset(a, b, &stubs, |_| [0u32, 1][rng.below(2) as usize]);
+            fill_both(a, b, rng, a.rebase(0x0132_6b83), 1);
+            r22_case(
+                a,
+                b,
+                0x0087_2c90,
+                &[],
+                false,
+                &format!("AtelDrawNoTrans {what} {round}"),
+                |r| {
+                    let f = frame(r);
+                    Mem::write(r.0, f, [0xa5u8; 0x60]);
+                    hp::atel_draw_no_trans(r, f);
+                    0
+                },
+            );
+        }
     }
     eprintln!("round 28a {what}: log words per round {logged:?}");
     assert!(logged.iter().filter(|&&n| n > 200).count() >= 8);
@@ -14836,4 +14857,188 @@ fn round28a_draw_shape_matches_the_original() {
     let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r28a_cases(&mut a, &mut b, &mut rng, "snapshot");
+}
+
+/// Round 28 b on one pair: `AtelActorRemove` (ctrl work, workers and the
+/// old ctrl work from sequences, the disposals logged) and
+/// `Atel_RestoreActorModel_0086e5b0` (every callee logged, the magic
+/// file ids from a sequence across the `0x26e..=0x275` edges).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r28b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+    }
+    // sequences: 0 AtelChangeCurrentCtrl, 1 AtelGetCurCtrlWork,
+    // 2 AtelSetCurrentCtrl, 3 MagicFile_GetMagicId
+    let stubs = r27_stubs(
+        a,
+        b,
+        &[
+            (0x0086_2d30, 1, true),
+            (0x0086_aff0, 0, true),
+            (0x0086_f730, 1, true),
+            (0x009d_a3b0, 0, true),
+            (0x0087_1190, 1, false),
+            (0x0087_22f0, 1, false),
+            (0x0083_6870, 2, false),
+            (0x0082_8620, 2, false),
+            (0x0082_b2c0, 2, false),
+            (0x0087_2380, 2, false),
+            (0x0062_f500, 2, false),
+            (0x0082_b080, 1, false),
+        ],
+    );
+    let c = alloc_both(a, b, 0x240);
+    let workers: Vec<u32> = (0..8).map(|_| alloc_both(a, b, 0xb00)).collect();
+    // AtelGetBasicWork(i) = table[i] (0x400 entries: counts past 0xff)
+    let table = alloc_both(a, b, 0x1000);
+    let mut code = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x04, 0x85]; // mov eax, [esp+4]; mov eax, [table + eax*4]
+    code.extend(table.to_le_bytes());
+    code.push(0xc3);
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(0x0086_a830);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    // Ch_WorkRestore also stores [chr_after] into workers[0] +0x9c before
+    // its logging stub: the port must reread the model after it
+    let chr_after = alloc_both(a, b, 4);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(0x0082_8620);
+        let mut rel = [0u8; 4];
+        rel.copy_from_slice(&o.read(entry + 1, 4).unwrap());
+        let log_stub = (entry + 5).wrapping_add(u32::from_le_bytes(rel));
+        let mut code = vec![0xa1]; // mov eax, [chr_after]
+        code.extend(chr_after.to_le_bytes());
+        code.extend([0xa3]); // mov [w + 0x9c], eax
+        code.extend((workers[0] + 0x9c).to_le_bytes());
+        let here = o.alloc_code(&[0; 16]).unwrap();
+        code.push(0xe9);
+        code.extend(
+            log_stub
+                .wrapping_sub(here + u32::try_from(code.len()).unwrap() + 4)
+                .to_le_bytes(),
+        );
+        o.write(here, &code).unwrap();
+        let rel = here.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    let pointer = |rng: &mut Xorshift| if rng.below(3) == 0 { 0 } else { rng.next() | 1 };
+    for round in 0..40u32 {
+        for &w in &workers {
+            fill_both(a, b, rng, w, 0xb00);
+            poke(a, b, w + 0xaa, [0u8, 1, 1, 2][rng.below(4) as usize]);
+            for at in [0xaf4, 0xaf8, 0x9c] {
+                let v = pointer(rng);
+                poke(a, b, w + at, v);
+            }
+        }
+        let n = if round % 8 == 7 {
+            0x101 + rng.below(8)
+        } else {
+            rng.below(9)
+        };
+        poke(a, b, c + 0xc, u16::try_from(n).unwrap());
+        let shift = rng.below(8);
+        for k in 0..0x400u32 {
+            poke(a, b, table + 4 * k, workers[((k + shift) % 8) as usize]);
+        }
+        r27_reset(a, b, &stubs, |s| match s {
+            1 => c,
+            _ => rng.next(),
+        });
+        r22_case(
+            a,
+            b,
+            0x0087_5430,
+            &[],
+            true,
+            &format!("AtelActorRemove {what} {round}"),
+            |r| hp::atel_actor_remove(r),
+        );
+    }
+    let w = workers[0];
+    let mask = a.rebase(0x0132_6b7c);
+    let ids = [0x26d_u32, 0x26e, 0x271, 0x275, 0x276, 0, u32::MAX];
+    for round in 0..64u32 {
+        fill_both(a, b, rng, w, 0xb00);
+        fill_both(a, b, rng, mask, 4);
+        let chr = if round % 8 == 0 { 0 } else { rng.next() | 1 };
+        poke(a, b, w + 0x9c, chr);
+        let slot = [-1i32, 0, 3, 7, 8, 9, 31, 0x21, i32::MIN][rng.below(9) as usize];
+        poke(a, b, w + 0x40, slot);
+        r27_reset(a, b, &stubs, |_| ids[rng.below(7) as usize]);
+        // the two magic ids across both edges, every other round
+        let pairs = [
+            (0x26d_u32, 0x275_u32),
+            (0x26e, 0x275),
+            (0x26e, 0x276),
+            (0x275, 0x26e),
+            (0x276, 0x274),
+        ];
+        if round % 2 == 0 {
+            let (x, y) = pairs[(round / 2 % 5) as usize];
+            poke(a, b, stubs.2[3].1, x);
+            poke(a, b, stubs.2[3].1 + 4, y);
+        }
+        poke(
+            a,
+            b,
+            chr_after,
+            if round % 5 == 0 {
+                0
+            } else {
+                chr ^ (round & 1) << 4
+            },
+        );
+        let args = [
+            w,
+            if round % 2 == 0 {
+                0
+            } else {
+                [0u32, 1, 0x100][rng.below(3) as usize]
+            },
+            [0u32, 1, 0x100][rng.below(3) as usize],
+        ];
+        r22_case(
+            a,
+            b,
+            0x0086_e5b0,
+            &args,
+            false,
+            &format!("Atel_RestoreActorModel {what} {round} {args:x?}"),
+            |r| {
+                hp::atel_restore_actor_model(r, args[0], args[1], args[2]);
+                0
+            },
+        );
+    }
+}
+
+#[test]
+fn round28b_actor_remove_and_restore_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_028b);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r28b_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r28b_cases(&mut a, &mut b, &mut rng, "snapshot");
 }

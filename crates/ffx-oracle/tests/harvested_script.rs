@@ -293,3 +293,15 @@ harvest_test!(
         hp::atel_exec_draw_shape(&mut OracleHost(m), frame);
     }
 );
+
+// script round 28: the water status and the event sprites (one frame in
+// stack scratch; void: the tail-called draw leaves the cookie check's EAX)
+harvest_test!(
+    atel_draw_no_trans,
+    0x0087_2c90,
+    args = 0,
+    |m: &mut Oracle, _s| {
+        let frame = m.stack_range().start + 0x100;
+        hp::atel_draw_no_trans(&mut OracleHost(m), frame);
+    }
+);

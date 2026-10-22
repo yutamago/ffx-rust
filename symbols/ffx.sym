@@ -9587,6 +9587,7 @@
 0x0086e3f0 function AtelPushStackInteger      # (worker, stack, value): slot kind 1; full stack (19) drops it, g_AtelError = 0; depth not checked below 0; was Script_PushInt
 0x0086e440 function Script_PushVar            # (worker, stack, var, index): opcode 1f; f32 vars push AtelGetValueFloat as a float slot, others AtelGetValueInteger
 0x0086e4c0 function AtelRecoverFPFromBattle # (worker): type-1 workers only; every slot in use is stuck again as AtelBindFp does (a binding other than 1/4/5 returns at the first one) and, with bit 15, pppFpSetStickPos(fp, &(pos, 1.0)); ported in helpers (script round 23 h); fh v3:exact 0x0086e450
+0x0086e5b0 function Atel_RestoreActorModel_0086e5b0 # (script r28) (w, keep_motion, party): an actor with a model (+0x9c) rereads its system motion groups (+0x36 bits 0x4000/0x2000), Ch_WorkRestore(+0x9c, +0xa4), +0x33 bit 6 hides / +0x38 bit 12 shows it (TkHideAttachedChrs; the TK:Force Disable Hide dbgPrintf), party: shown by g_AtelPartyMask bit +0x40 (< 8), no keep_motion: Ch_ResetMotion unless magic id 0x26e..0x275; caller 0x00862d70 (args +0x38 bits 3, 8); own name
 0x0086e700 function AtelRecoverFromMenuCallback # (): g_AtelMenuExecStatus 0, Yn_GuideMapSetDispProg(1), the save event record's +0xd6 0, TkSetVibrateMask(k, 1) for k 1..7, g_AtelOverlayStatus 6; ported in helpers (script round 23 g); fh v3:exact 0x0086e690
 0x0086e770 function Atel_RestoreLights_0086e770 # (r25 b) Sg_LightSetColor / Sg_LightSetDir from g_AtelSavedLights; caller AtelBattleEndCallback; own name
 0x0086e820 function AtelRegistAlbhedDic       # fh v3:bsim1.00 0x0086e7b0
@@ -9748,7 +9749,7 @@
 0x00872b60 function AtelClearMenuOtakaraFlag  # fh v3:bsim1.00 0x00872b00
 0x00872b70 function AtelClearPauseFlag        # fh v3:bsim1.00 0x00872b10
 0x00872b90 function AtelClearPreBgPage        # fh switch:bsim1.00 0x710044e730
-0x00872c90 function AtelDrawNoTrans           # fh v3:bsim1.00 0x00872c30
+0x00872c90 function AtelDrawNoTrans           # fh v3:bsim1.00 0x00872c30; (script r28) AtelUpdateWaterStatus then tail-jumps to AtelExecDrawShape; caller TkDrawNoTrans
 0x00872ca0 function AtelDrawSemiTrans         # fh v3:exact 0x00872c40
 0x00872d20 function AtelEventRemove           # fh v3:exact 0x00872cc0
 0x00872ef0 function AtelEventSetUp            # (event): reads the .ebp, its localized message table (Msg_LoadFile) and .ftc, starts its scripts; was Event_Load
@@ -9818,7 +9819,7 @@
 0x008751b0 function AtelRegistCallbackQue2    # fh v3:exact 0x00875130; ported in helpers (script round 16)
 0x00875220 function Atel_NameToLang1           # (src, dst): C string copy with 0x5a-0x73 down 10, 0x74-0x8d down 4, > R S to < j l; eax the NUL written; setDefaultPlayerName for language 1; name ours; ported in helpers (script round 22)
 0x00875370 function Atel_NameFromLang1         # (src, dst): Atel_NameToLang1's inverse (0x50-0x69 up 10, 0x70-0x89 up 4, < j l to > R S); setDefaultPlayerName for languages 9 and 10; name ours; ported in helpers (script round 22)
-0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0
+0x00875430 function AtelActorRemove           # fh v3:exact 0x008753b0; (script r28) on ctrl work 0, every +0xaa 1 actor TkCh_Disposes +0xaf4/+0xaf8 and its model +0x9c (+0x38 bit 4 cleared), slots zeroed; old ctrl work back (EAX AtelSetCurrentCtrl); caller AtelEventRemove
 0x008754e0 function AtelActorSetUp               # layout+callees: sorts between AtelActorRemove and AtelActorSetUp2, and its named callees match the Switch 0x710045f5d0 AtelActorSetUp's (similarity 1.00: AtelActorSetUp2); symbols from Fahrenheit's server export
 0x00875510 function AtelActorSetUp2           # (..., messages, messages2, ...): script context +0x34 = messages, +0x38 = section 5 (or messages); was Event_InitScripts
 0x008756b0 function GetFieldPtrb8_008756b0       # auto-port shape (return address of a field's target, cdecl): t0 = u32[(a0 + 0xb8)]; return (t0 + a1); callers: no direct caller; name ours

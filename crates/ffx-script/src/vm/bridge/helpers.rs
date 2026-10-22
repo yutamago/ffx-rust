@@ -5107,6 +5107,15 @@ pub fn atel_exec_draw_shape(h: &mut impl ffx_bridge::Host, frame: u32) {
     host_call(h, 0x0064_5670, &[4]);
 }
 
+/// `AtelDrawNoTrans()` (`0x00872c90`; caller `TkDrawNoTrans`): the water
+/// status ([`atel_update_water_status`]), then the event sprites
+/// ([`atel_exec_draw_shape`], a tail jump: no `EAX` worth keeping). Both
+/// use `frame` (0x60 bytes) in turn.
+pub fn atel_draw_no_trans(h: &mut impl ffx_bridge::Host, frame: u32) {
+    atel_update_water_status(h, frame);
+    atel_exec_draw_shape(h, frame);
+}
+
 /// The low and high words of `v`.
 #[allow(clippy::cast_possible_truncation)] // the halves
 const fn split64(v: u64) -> (u32, u32) {
@@ -7843,6 +7852,105 @@ pub fn atel_common_set_up(h: &mut impl ffx_bridge::Host, args: [u32; 6], rec: u3
         }
     }
     host_call(h, 0x0086_cae0, &[])
+}
+
+/// `AtelActorRemove()` (`0x00875430`, Fahrenheit's name; caller
+/// `AtelEventRemove`): with ctrl work 0 current and set up
+/// (`AtelChangeCurrentCtrl(0)`, `AtelSetUpCtrlWork(0)`), every
+/// character-bound actor (`+0xaa` 1) of its `+0xc` disposes of its two
+/// attachments (`+0xaf4`, `+0xaf8`) and its model (`+0x9c`, clearing
+/// `+0x38` bit 4) through `TkCh_Dispose`, each slot zeroed. The old ctrl
+/// work is current again; `EAX` that call's.
+pub fn atel_actor_remove(h: &mut impl ffx_bridge::Host) -> u32 {
+    let old = host_call(h, 0x0086_2d30, &[0]);
+    host_call(h, 0x0087_1190, &[0]);
+    let c = host_call(h, 0x0086_aff0, &[]);
+    let n = u32::from(h.read::<u16>(c + 0xc));
+    for i in 0..n {
+        let w = host_call(h, 0x0086_a830, &[i]);
+        if h.read::<u8>(w + 0xaa) != 1 {
+            continue;
+        }
+        for slot in [w + 0xaf4, w + 0xaf8] {
+            let chr = h.read::<u32>(slot);
+            if chr != 0 {
+                host_call(h, 0x0087_22f0, &[chr]);
+                h.write(slot, 0_u32);
+            }
+        }
+        let chr = h.read::<u32>(w + 0x9c);
+        if chr != 0 {
+            host_call(h, 0x0087_22f0, &[chr]);
+            write_u16(h, w + 0x38, u32::from(h.read::<u16>(w + 0x38)) & 0xffef);
+            h.write(w + 0x9c, 0_u32);
+        }
+    }
+    host_call(h, 0x0086_f730, &[old])
+}
+
+/// `Atel_RestoreActorModel_0086e5b0(w, keep_motion, party)` (name ours;
+/// caller `0x00862d70`, the actors' return from a battle, which reads no
+/// `EAX`): an actor with a model (`+0x9c`) gets back the system motion
+/// groups it had (`+0x36` bit `0x4000`: group 2, `0x2000`: group 0,
+/// `ChN_ReadSystemMGRP(+0xa8, group)`) and its saved work
+/// (`Ch_WorkRestore(+0x9c, +0xa4)`). `+0x33` bit 6 hides it (and its
+/// attachments, `TkHideAttachedChrs`) and is cleared; `+0x38` bit 12
+/// shows it (a `dbgPrintf` line with `+0x2e`) and is cleared. With
+/// `party` and `+0x40` below 8, it is shown when `+0x40`'s bit is in
+/// `g_AtelPartyMask`, else hidden. Without `keep_motion` its motion is
+/// reset (`Ch_ResetMotion`) unless the magic file id
+/// (`MagicFile_GetMagicId`, asked twice) is `0x26e..=0x275`.
+pub fn atel_restore_actor_model(
+    h: &mut impl ffx_bridge::Host,
+    w: u32,
+    keep_motion: u32,
+    party: u32,
+) {
+    if h.read::<u32>(w + 0x9c) == 0 {
+        return;
+    }
+    for (bit, group) in [(0x4000, 2), (0x2000, 0)] {
+        if h.read::<u16>(w + 0x36) & bit != 0 {
+            host_call(h, 0x0083_6870, &[u32::from(h.read::<u16>(w + 0xa8)), group]);
+        }
+    }
+    host_call(
+        h,
+        0x0082_8620,
+        &[h.read::<u32>(w + 0x9c), h.read::<u32>(w + 0xa4)],
+    );
+    let hide = |h: &mut _, chr: u32, on: u32| {
+        host_call(h, 0x0082_b2c0, &[chr, on]);
+        host_call(h, 0x0087_2380, &[w, on]);
+    };
+    let chr = h.read::<u32>(w + 0x9c);
+    if chr != 0 && h.read::<u8>(w + 0x33) & 0x40 != 0 {
+        hide(h, chr, 1);
+    }
+    h.write(w + 0x33, h.read::<u8>(w + 0x33) & 0xbf);
+    if h.read::<u32>(w + 0x9c) != 0 && h.read::<u16>(w + 0x38) & 0x1000 != 0 {
+        let fmt = h.rebase(0x00b5_bda0);
+        host_call(h, 0x0062_f500, &[fmt, u32::from(h.read::<u16>(w + 0x2e))]);
+        let chr = h.read::<u32>(w + 0x9c);
+        hide(h, chr, 0);
+    }
+    write_u16(h, w + 0x38, u32::from(h.read::<u16>(w + 0x38)) & 0xefff);
+    if party != 0 {
+        let chr = h.read::<u32>(w + 0x9c);
+        let slot = h.read::<i32>(w + 0x40);
+        if chr != 0 && slot < 8 {
+            let mask = h.read::<u32>(h.rebase(0x0132_6b7c));
+            let off = mask & 1u32.wrapping_shl(slot.cast_unsigned()) == 0;
+            hide(h, chr, u32::from(off));
+        }
+    }
+    if keep_motion == 0 {
+        let id = host_call(h, 0x009d_a3b0, &[]).cast_signed();
+        if id >= 0x26e && host_call(h, 0x009d_a3b0, &[]).cast_signed() <= 0x275 {
+            return;
+        }
+        host_call(h, 0x0082_b080, &[h.read::<u32>(w + 0x9c)]);
+    }
 }
 
 /// `AtelBattleSetUp(blocks, x8s, n, x30, work, a, ctrl, callback)`

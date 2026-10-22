@@ -7195,6 +7195,11 @@ ported! {
         let mut frame = super::StackFrame::<24>::new();
         hp::atel_exec_draw_shape(&mut mem(), frame.at());
     }
+    /// `AtelDrawNoTrans()`: water status and event sprites, one frame.
+    AtelDrawNoTrans @ 0x0087_2c90 => extern "C" fn h_872c90() {
+        let mut frame = super::StackFrame::<24>::new();
+        hp::atel_draw_no_trans(&mut mem(), frame.at());
+    }
     /// `AtelDrawSemiTrans()`.
     AtelDrawSemiTrans @ 0x0087_2ca0 => extern "C" fn h_872ca0() {
         hp::atel_draw_semi_trans(&mut mem());
@@ -7405,6 +7410,14 @@ ported! {
     /// `AtelInitBasicWork(setup, clear)`.
     AtelInitBasicWork @ 0x0086_cb00 => extern "C" fn h_86cb00(setup: u32, clear: u32) {
         hp::atel_init_basic_work(&mut mem(), setup, clear);
+    }
+    /// `AtelActorRemove()`.
+    AtelActorRemove @ 0x0087_5430 => extern "C" fn h_875430() -> u32 {
+        hp::atel_actor_remove(&mut mem())
+    }
+    /// `Atel_RestoreActorModel_0086e5b0(w, keep_motion, party)`.
+    Atel_RestoreActorModel_0086e5b0 @ 0x0086_e5b0 => extern "C" fn h_86e5b0(w: u32, keep_motion: u32, party: u32) {
+        hp::atel_restore_actor_model(&mut mem(), w, keep_motion, party);
     }
     /// `AtelEventRemoveForBattle()`.
     AtelEventRemoveForBattle @ 0x0086_5dc0 => extern "C" fn h_865dc0() -> u32 {

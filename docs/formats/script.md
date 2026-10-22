@@ -3254,6 +3254,25 @@ real spline functions.
   record's contents and the matrix behind `+0x10` (`r28_render_stub`),
   not by the frame address, and fills the port's frame with junk so a
   missing field write shows.
+- `AtelDrawNoTrans()` (`0x00872c90`, caller `TkDrawNoTrans`) is
+  `AtelUpdateWaterStatus` followed by a tail jump to `AtelExecDrawShape`;
+  the Rust one calls both ports with one frame.
+- `AtelActorRemove()` (`0x00875430`, caller `AtelEventRemove`) makes ctrl
+  work 0 current and set up, and for every character-bound actor (`+0xaa`
+  1) of its `+0xc` disposes of the two attachments (`+0xaf4`, `+0xaf8`)
+  and the model (`+0x9c`; `+0x38` bit 4 cleared) with `TkCh_Dispose`,
+  zeroing each slot. `EAX` is `AtelSetCurrentCtrl(old)`'s.
+- `Atel_RestoreActorModel_0086e5b0(w, keep_motion, party)` (`0x0086e5b0`,
+  from `0x00862d70`, which passes the actor's `+0x38` bits 3 and 8) undoes
+  `AtelEventRemoveForBattle` for an actor that still has a model: the
+  system motion groups it had (`+0x36` bits `0x4000` and `0x2000`: groups
+  2 and 0), `Ch_WorkRestore(+0x9c, +0xa4)`, then hide (`+0x33` bit 6) and
+  show (`+0x38` bit 12, with a `TK:Force Disable Hide` debug line) through
+  `Ch_SetHideEvent` and `TkHideAttachedChrs`, both bits cleared. With
+  `party` and `+0x40` below 8 (signed), the actor is shown when that bit of
+  `g_AtelPartyMask` is set and hidden otherwise. Without `keep_motion`,
+  `Ch_ResetMotion` runs unless `MagicFile_GetMagicId` (asked once per
+  bound) is in `0x26e..=0x275`. It rereads `+0x9c` after every callee.
 
 ### Verification
 
