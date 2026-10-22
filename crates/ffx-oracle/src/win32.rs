@@ -98,6 +98,13 @@ pub(crate) enum Win32 {
     /// `CreateFileW/A`: no files here; `INVALID_HANDLE_VALUE` with
     /// `ERROR_FILE_NOT_FOUND`.
     CreateFile,
+    /// `VirtualAlloc(address, size, type, protect)`: a new region
+    /// ([`virtual_alloc`]).
+    VirtualAlloc,
+    /// `VirtualFree(address, size, type)`.
+    VirtualFree,
+    /// `VirtualQuery(address, info, len)`.
+    VirtualQuery,
 }
 
 /// The handles handed out, the last error and the semaphores' counts.
@@ -108,6 +115,8 @@ pub(crate) struct Objects {
     semaphores: std::collections::HashMap<u32, i32>,
     /// The bytes each open `CryptCreateHash` handle has been given.
     hashes: std::collections::HashMap<u32, Vec<u8>>,
+    /// The regions `VirtualAlloc` handed out: base, size, not released.
+    regions: Vec<(u32, u32, bool)>,
 }
 
 /// First handle value (small, aligned like the kernel's).
@@ -173,6 +182,9 @@ pub(crate) fn lookup(dll: &str, name: &str) -> Option<(Win32, u8)> {
         "HeapFree" | "HeapValidate" => (One, 3),
         "GetProcessHeap" => (GetProcessHeap, 0),
         "HeapAlloc" => (HeapAlloc, 3),
+        "VirtualAlloc" => (VirtualAlloc, 4),
+        "VirtualFree" => (VirtualFree, 3),
+        "VirtualQuery" => (VirtualQuery, 3),
         "HeapReAlloc" => (HeapReAlloc, 4),
         "HeapSize" => (HeapSize, 3),
         "TlsAlloc" => (TlsAlloc, 0),
@@ -414,6 +426,138 @@ fn utf16z(s: &str) -> Vec<u8> {
         .chain([0])
         .flat_map(u16::to_le_bytes)
         .collect()
+}
+
+/// `MEM_COMMIT`, `MEM_RESERVE`, `MEM_RELEASE`, `MEM_FREE`, `MEM_PRIVATE`.
+const MEM_COMMIT: u32 = 0x1000;
+const MEM_RESERVE: u32 = 0x2000;
+const MEM_RELEASE: u32 = 0x8000;
+const MEM_FREE: u32 = 0x1_0000;
+const MEM_PRIVATE: u32 = 0x2_0000;
+/// `PAGE_READWRITE`.
+const PAGE_READWRITE: u32 = 4;
+/// `ERROR_INVALID_PARAMETER`, `ERROR_INVALID_ADDRESS`.
+const ERROR_INVALID_PARAMETER: u32 = 87;
+const ERROR_INVALID_ADDRESS: u32 = 487;
+
+/// The `VirtualAlloc` region holding `addr`: its index.
+fn region_of(uc: &Unicorn<State>, addr: u32) -> Option<usize> {
+    uc.get_data()
+        .win32
+        .regions
+        .iter()
+        .position(|&(base, size, _)| addr.wrapping_sub(base) < size)
+}
+
+/// `VirtualAlloc(address, size, type, protect)`. Address 0 (any type with
+/// `MEM_RESERVE` or `MEM_COMMIT`) maps a new zeroed region of `size`
+/// rounded up to pages, read-write whatever `protect` asks, at the lowest
+/// 64 KB-aligned gap from `0x10000000` up that neither the oracle's
+/// memory nor the snapshot (mapped or not yet) uses; `MEM_TOP_DOWN` is
+/// ignored. The same calls on two oracles in the same state hand out the
+/// same addresses. A fixed address commits pages the game reserved: in a
+/// region handed out here (live) or anywhere else, where the pages that
+/// are neither mapped nor in the snapshot (reserved, not committed, when
+/// it was taken) are mapped zeroed; it returns the page. A released
+/// region's address or a size of 0 fails (`ERROR_INVALID_ADDRESS`,
+/// `ERROR_INVALID_PARAMETER`).
+fn virtual_alloc(uc: &mut Unicorn<State>, addr: u32, size: u32, kind: u32) -> Result<u32> {
+    if size == 0 || kind & (MEM_COMMIT | MEM_RESERVE) == 0 {
+        set_error(uc, ERROR_INVALID_PARAMETER);
+        return Ok(0);
+    }
+    if addr != 0 {
+        if let Some(i) = region_of(uc, addr) {
+            if uc.get_data().win32.regions[i].2 {
+                return Ok(addr & !0xfff);
+            }
+            set_error(uc, ERROR_INVALID_ADDRESS);
+            return Ok(0);
+        }
+        let first = u64::from(addr & !0xfff);
+        let end = (u64::from(addr) + u64::from(size)).next_multiple_of(crate::PAGE);
+        crate::map_unknown(uc, first, end)?;
+        return Ok(addr & !0xfff);
+    }
+    let len = u64::from(size).next_multiple_of(crate::PAGE);
+    let mut taken: Vec<(u64, u64)> = uc
+        .mem_regions()?
+        .iter()
+        .map(|r| (r.begin, r.end + 1))
+        .collect();
+    if let Some(p) = &uc.get_data().pages {
+        for r in &p.snapshot.regions {
+            taken.push((u64::from(r.base), u64::from(r.base) + u64::from(r.size)));
+        }
+    }
+    let Ok(base) = crate::gap(&mut taken, len) else {
+        set_error(uc, 8); // ERROR_NOT_ENOUGH_MEMORY
+        return Ok(0);
+    };
+    uc.mem_map(
+        base,
+        len,
+        unicorn_engine::Prot::READ | unicorn_engine::Prot::WRITE,
+    )?;
+    let base = u32::try_from(base).expect("32-bit gap");
+    let len = u32::try_from(len).expect("32-bit size");
+    uc.get_data_mut().win32.regions.push((base, len, true));
+    Ok(base)
+}
+
+/// `VirtualFree(address, size, type)`: memory stays mapped and keeps its
+/// bytes (so an address is never handed out twice and both oracles stay
+/// alike). `MEM_RELEASE` of a region handed out here marks it released;
+/// releasing inside one but not at its base, or a released one again,
+/// fails (`ERROR_INVALID_ADDRESS`). A decommit, or a release of memory
+/// the game reserved before the snapshot, succeeds.
+fn virtual_free(uc: &mut Unicorn<State>, addr: u32, kind: u32) -> u32 {
+    let Some(i) = region_of(uc, addr) else {
+        return 1;
+    };
+    let r = &mut uc.get_data_mut().win32.regions[i];
+    if !r.2 || (kind == MEM_RELEASE && addr != r.0) {
+        set_error(uc, ERROR_INVALID_ADDRESS);
+        return 0;
+    }
+    if kind == MEM_RELEASE {
+        r.2 = false;
+    }
+    1
+}
+
+/// `VirtualQuery(address, info, len)`: a `MEMORY_BASIC_INFORMATION` (0x1c
+/// bytes) for an address in a region `VirtualAlloc` handed out (committed
+/// read-write private memory from its page to the region's end, or free
+/// once released). Other memory (the image, the snapshot's own regions,
+/// the oracle's) is not described: 0, so callers take it as unknown.
+fn virtual_query(uc: &mut Unicorn<State>, addr: u32, info: u32, len: u32) -> Result<u32> {
+    let Some(i) = region_of(uc, addr) else {
+        set_error(uc, ERROR_INVALID_PARAMETER);
+        return Ok(0);
+    };
+    if len < 0x1c {
+        set_error(uc, 24); // ERROR_BAD_LENGTH
+        return Ok(0);
+    }
+    let (base, size, live) = uc.get_data().win32.regions[i];
+    let page = addr & !0xfff;
+    let words = if live {
+        [
+            page,
+            base,
+            PAGE_READWRITE,
+            base + size - page,
+            MEM_COMMIT,
+            PAGE_READWRITE,
+            MEM_PRIVATE,
+        ]
+    } else {
+        [page, 0, 0, base + size - page, MEM_FREE, 1, 0] // PAGE_NOACCESS
+    };
+    let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_le_bytes()).collect();
+    write(uc, info, &bytes)?;
+    Ok(0x1c)
 }
 
 const EXE_PATH: &str = "C:\\FFX\\FFX.exe";
@@ -815,6 +959,9 @@ pub(crate) fn run(uc: &mut Unicorn<State>, api: Win32) -> Result<u32> {
             set_error(uc, 2);
             u32::MAX
         }
+        Win32::VirtualAlloc => virtual_alloc(uc, a[0], a[1], a[2])?,
+        Win32::VirtualFree => virtual_free(uc, a[0], a[2]),
+        Win32::VirtualQuery => virtual_query(uc, a[0], a[1], a[2])?,
         Win32::CryptDestroyHash => {
             u32::from(uc.get_data_mut().win32.hashes.remove(&a[0]).is_some())
         }

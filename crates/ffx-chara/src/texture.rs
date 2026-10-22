@@ -255,6 +255,9 @@ pub mod bridge {
 
     /// The callees of `Ch_ClutDispose`.
     pub const STATUS_STONE: u32 = 0x007f_cc80;
+    /// `"%s:status_stone=%d(Dispose)\n"` (`dbgPrintf` with the name and
+    /// the first answer).
+    pub const STONE_FORMAT: u32 = 0x00b5_a3fc;
     pub const GET_LIGHT_VALUE: u32 = 0x0083_cb90;
     pub const CALC_LIGHT: u32 = 0x0083_c6f0;
     pub const CLUT_ENABLE: u32 = 0x0083_c940;
@@ -273,7 +276,8 @@ pub mod bridge {
 
     /// `Ch_ClutDispose(chr)` (`0x0083c810`): a character's own clut
     /// (`+0x704`) goes unless it is petrified (`op_get_chr_status_stone`,
-    /// asked twice as the original): the light recalculated
+    /// asked twice as the original, the first answer logged with the name
+    /// at `+4`, [`STONE_FORMAT`]): the light recalculated
     /// (`Ch_CalcLight(chr, Ch_GetLightValue(chr))`), cluts off, the block
     /// freed; the renderer told when `Ch_ClutDisposeCheck()`; and a colour
     /// change pending on its instance is undone on weapon (6, 0)
@@ -287,7 +291,10 @@ pub mod bridge {
         if mem.read::<u32>(chr + 0x704) == 0 {
             return 0;
         }
-        call(mem, mem.rebase(STATUS_STONE), &[chr]);
+        let stone = call(mem, mem.rebase(STATUS_STONE), &[chr]);
+        let name: u32 = mem.read(chr + 4);
+        let printf = mem.rebase(crate::handle::bridge::DBG_PRINTF);
+        call(mem, printf, &[mem.rebase(STONE_FORMAT), name, stone]);
         let stone = call(mem, mem.rebase(STATUS_STONE), &[chr]);
         if stone != 0 {
             return stone;
