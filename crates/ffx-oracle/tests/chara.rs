@@ -10728,3 +10728,375 @@ fn cmm2_a_on(t: &mut Twin) {
     }
     eprintln!("{}: cmm2 a reach {reach:?}", t.name);
 }
+
+/// A stand-in at `sym` that logs its first `n` arguments and returns bit 0
+/// of the word at `bits`, rotating it left by one each call.
+fn bits_stub(t: &mut Twin, fk: &Fakes, sym: u32, n: u8, bits: u32) {
+    let mut c = vec![0x8b, 0x0d];
+    c.extend(fk.log.to_le_bytes()); // mov ecx, [log]
+    for k in 0..n {
+        // mov eax, [esp + 4 + 4k]; mov [ecx + 4k], eax
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 * k]);
+    }
+    c.extend([0x83, 0x05]);
+    c.extend(fk.log.to_le_bytes());
+    c.push(4 * n); // add dword [log], 4n
+    c.push(0xa1);
+    c.extend(bits.to_le_bytes()); // mov eax, [bits]
+    c.extend([0xd1, 0x05]);
+    c.extend(bits.to_le_bytes()); // rol dword [bits], 1
+    c.extend([0x83, 0xe0, 0x01, 0xc3]); // and eax, 1; ret
+    jump_to(t, sym, &c);
+}
+
+#[test]
+fn cmm2_b_matches_the_original() {
+    for mut t in twins() {
+        cmm2_b_on(&mut t);
+    }
+}
+
+/// Chara-main-map round 2, group b: `InsideTriangle` on made-up models:
+/// cloth groups of up to 0x301 triangles over small integer vertices (at
+/// times all in one plane through the origin, so the determinant is 0),
+/// through a group matrix or not, `passThisTriangle` a stand-in taking
+/// triangles by the bits of a random word, positions with NaNs and
+/// infinities now and then; no model, no group, no group table, and the
+/// signed distance asked for or not. The vector callees run as the
+/// originals.
+#[allow(clippy::too_many_lines, clippy::many_single_char_names)]
+fn cmm2_b_on(t: &mut Twin) {
+    let mut rng = Xorshift(0x00c3_b201);
+    let fk = Fakes::new(t);
+    let bits = t.alloc(4);
+    bits_stub(t, &fk, 0x0082_9870, 5, bits);
+    let _ = fk.fake(t, 0x0062_f500, 1, 4); // dbgPrintf
+    let small = |rng: &mut Xorshift, span: u32| {
+        #[allow(clippy::cast_possible_wrap)]
+        let v = (rng.next() % (2 * span + 1)) as i32 - span as i32;
+        i16::try_from(v).unwrap()
+    };
+    // a float in -1..1 with a random mantissa (or one of FLOATS, 1 in 16)
+    let wild = |rng: &mut Xorshift, scale: f32| {
+        if rng.next().is_multiple_of(16) {
+            FLOATS[rng.next() as usize % FLOATS.len()]
+        } else {
+            #[allow(clippy::cast_possible_truncation)]
+            let x = (f64::from(rng.next()) / f64::from(u32::MAX) * 2.0 - 1.0) as f32 * scale;
+            x.to_bits()
+        }
+    };
+    let mut reach = [0u32; 8];
+    for round in 0..200u32 {
+        fk.reset(t);
+        let chr = random_block(t, &mut rng, l::SIZE);
+        let name = t.alloc(8);
+        t.put(name, b"c042\0");
+        t.put_u32(chr + 4, name);
+        let models = 3u32;
+        let hdr = t.alloc(0x10);
+        t.put(hdr + 6, &u16::try_from(models).unwrap().to_le_bytes());
+        t.put(hdr + 8, &[u8::from(round % 3 != 0), 0]);
+        t.put_u32(chr + 0x1c0, hdr);
+        let table = t.alloc(0x38 * models as usize);
+        t.put_u32(chr + 0x1bc, table);
+        let flat = round % 4 == 3;
+        // far rounds: the matrix moves everything about 1e6 away, so
+        // Cramer's rule cancels (the sums' order shows in the f32 results)
+        let far = round % 6 == 5;
+        let shift = [
+            1.0e6f32 + f32::from_bits(wild(&mut rng, 1.0e5)),
+            2.0e6,
+            -1.5e6,
+        ];
+        let span = [3u32, 20, 100][rng.next() as usize % 3];
+        let groups = 16u16;
+        for m in 0..models {
+            let entry = table + 0x38 * m;
+            let first = t.alloc(0x20);
+            t.put(first + 0x18, &groups.to_le_bytes());
+            t.put_u32(entry, first);
+            // 12 vertices; the buffer pointer at the seventh, so indices
+            // run -6..=5
+            let nv = 12u32;
+            let vtx = t.alloc(6 * nv as usize);
+            for k in 0..nv {
+                let x = small(&mut rng, span);
+                let y = small(&mut rng, span);
+                let z = if flat { 0 } else { small(&mut rng, span) };
+                for (o, c) in [x, y, z].into_iter().enumerate() {
+                    t.put(
+                        vtx + 6 * k + 2 * u32::try_from(o).unwrap(),
+                        &c.to_le_bytes(),
+                    );
+                }
+            }
+            // the vertices: the model's first word's +8
+            t.put_u32(first + 8, vtx + 6 * 6);
+            let tbl = if m == 2 {
+                0
+            } else {
+                t.alloc(4 * usize::from(groups))
+            };
+            t.put_u32(entry + 0x2c, tbl);
+            if tbl == 0 {
+                continue;
+            }
+            for gi in 0..u32::from(groups) {
+                if gi == 4 {
+                    t.put_u32(tbl + 4 * gi, 0);
+                    continue;
+                }
+                let n: i16 = match rng.next() % 8 {
+                    0 => 0,
+                    1 => -1,
+                    2 => 0x301,
+                    3 => 1,
+                    _ => i16::try_from(2 + rng.next() % 40).unwrap(),
+                };
+                let tris = u32::try_from(n.clamp(0, 0x300)).unwrap();
+                let grp = t.alloc(0x50);
+                // the matrix: about the unit matrix, random mantissas (two
+                // different NaNs and the like now and then); flat rounds
+                // keep the plane through the origin (no translation)
+                for r in 0..4u32 {
+                    for c in 0..4u32 {
+                        let v = if r == 3 && c == 3 {
+                            1f32.to_bits()
+                        } else if r == 3 && flat {
+                            0
+                        } else if r == 3 && far {
+                            shift[c as usize].to_bits()
+                        } else if far && r != c {
+                            0
+                        } else if r == c {
+                            (1.5 + f32::from_bits(wild(&mut rng, 0.5))).to_bits()
+                        } else {
+                            wild(&mut rng, 1.0)
+                        };
+                        t.put_u32(grp + 16 * r + 4 * c, v);
+                    }
+                }
+                t.put(grp + 0x40, &n.to_le_bytes());
+                let idx = t.alloc(6 * tris as usize + 2);
+                let ids = t.alloc(2 * tris as usize + 2);
+                for k in 0..tris {
+                    for j in 0..3 {
+                        let ix = i16::try_from(rng.next() % nv).unwrap() - 6;
+                        t.put(idx + 6 * k + 2 * j, &ix.to_le_bytes());
+                    }
+                    t.put(
+                        ids + 2 * k,
+                        &u16::try_from(rng.next() & 0xffff).unwrap().to_le_bytes(),
+                    );
+                }
+                t.put_u32(grp + 0x44, idx);
+                t.put_u32(grp + 0x48, ids);
+                t.put_u32(tbl + 4 * gi, grp);
+            }
+        }
+        // the point: near the vertices, random mantissas
+        let pos = t.alloc(16);
+        #[allow(clippy::cast_precision_loss)]
+        for k in 0..4u32 {
+            let x = wild(&mut rng, span as f32 * 1.5);
+            let x = if far && k < 3 {
+                (shift[k as usize] + f32::from_bits(x)).to_bits()
+            } else {
+                x
+            };
+            t.put_u32(pos + 4 * k, x);
+        }
+        let model = [0u32, 1, 0x1_0000, 2, 3, 0xffff][rng.next() as usize % 6];
+        let group = [0u32, 1, 2, 3, 4, 5, 11, 12, 15, 16, 17][rng.next() as usize % 11];
+        let code = group + 100 * (rng.next() % 3) + (rng.next() & 0xffff_0000);
+        t.put_u32(
+            bits,
+            [rng.next(), u32::MAX, rng.next() | rng.next()][rng.next() as usize % 3],
+        );
+        let dist = round % 5 != 4;
+        reach[usize::from(flat)] += 1;
+        let got = inside_triangle_check(
+            t,
+            &format!("InsideTriangle {round}"),
+            chr,
+            pos,
+            model,
+            code,
+            dist,
+        );
+        reach[2] += u32::from(got != 0xffff);
+    }
+    // crafted cases: one model, one group, every triangle accepted
+    let craft = |t: &mut Twin, what: &str, verts: &[[i16; 3]], matrix: [f32; 4], pos: [f32; 3]| {
+        let chr = random_block(t, &mut Xorshift(0x0bad_cafe), l::SIZE);
+        let name = t.alloc(8);
+        t.put(name, b"c043\0");
+        t.put_u32(chr + 4, name);
+        let hdr = t.alloc(0x10);
+        t.put(hdr + 6, &1u16.to_le_bytes());
+        let apply = matrix.iter().any(|&x| x.to_bits() != 1f32.to_bits());
+        t.put(hdr + 8, &u16::from(apply).to_le_bytes());
+        t.put_u32(chr + 0x1c0, hdr);
+        let entry = t.alloc(0x38);
+        t.put_u32(chr + 0x1bc, entry);
+        let first = t.alloc(0x20);
+        t.put(first + 0x18, &1u16.to_le_bytes());
+        t.put_u32(entry, first);
+        let vtx = t.alloc(6 * verts.len());
+        for (k, v) in verts.iter().enumerate() {
+            for (o, c) in v.iter().enumerate() {
+                t.put(
+                    vtx + u32::try_from(6 * k + 2 * o).unwrap(),
+                    &c.to_le_bytes(),
+                );
+            }
+        }
+        t.put_u32(first + 8, vtx);
+        let tbl = t.alloc(4);
+        t.put_u32(entry + 0x2c, tbl);
+        let grp = t.alloc(0x50);
+        for r in 0..4u32 {
+            for c in 0..4u32 {
+                let v = if r == c { matrix[r as usize] } else { 0.0 };
+                t.put_u32(grp + 16 * r + 4 * c, v.to_bits());
+            }
+        }
+        let n = u32::try_from(verts.len() / 3).unwrap();
+        t.put(grp + 0x40, &u16::try_from(n).unwrap().to_le_bytes());
+        let idx = t.alloc(6 * n as usize);
+        let ids = t.alloc(2 * n as usize);
+        for k in 0..3 * n {
+            t.put(idx + 2 * k, &u16::try_from(k).unwrap().to_le_bytes());
+        }
+        t.put_u32(grp + 0x44, idx);
+        t.put_u32(grp + 0x48, ids);
+        t.put_u32(tbl, grp);
+        let p = t.alloc(16);
+        for (k, x) in pos.iter().enumerate() {
+            t.put_u32(p + 4 * u32::try_from(k).unwrap(), x.to_bits());
+        }
+        t.put_u32(bits, u32::MAX);
+        inside_triangle_check(t, what, chr, p, 0, 0, true)
+    };
+    let unit = [1.0f32; 4];
+    // A: the near triangle exactly on both bounds of the first pass
+    // (u = f32(1.1), v = f32(-0.1)), a farther one inside (distance 2,
+    // not 15 times farther)
+    let a = craft(
+        t,
+        "InsideTriangle bounds",
+        &[
+            [0, 0, 10],
+            [10, 0, 10],
+            [0, 10, 10],
+            [-5, -5, 13],
+            [5, -5, 13],
+            [-5, 5, 13],
+        ],
+        unit,
+        [-1.0, 0.0, 11.0],
+    );
+    // B: one found in the first pass (distance 4), a second-pass winner
+    // (distance 1, 15 times nearer), then one nearer than the first only
+    let b = craft(
+        t,
+        "InsideTriangle second pass",
+        &[
+            [-5, -5, 4],
+            [5, -5, 4],
+            [-5, 5, 4],
+            [2, -5, 1],
+            [12, -5, 1],
+            [2, 5, 1],
+            [2, -5, 2],
+            [12, -5, 2],
+            [2, 5, 2],
+        ],
+        unit,
+        [0.0, 0.0, 0.0],
+    );
+    // C: a nearer triangle at u = 1.4, inside the range only from the
+    // third pass on
+    let c = craft(
+        t,
+        "InsideTriangle third pass",
+        &[
+            [-5, -5, 4],
+            [5, -5, 4],
+            [-5, 5, 4],
+            [2, 2, 1],
+            [12, 2, 1],
+            [2, 12, 1],
+        ],
+        unit,
+        [0.0, 0.0, 0.0],
+    );
+    // D: a flat triangle scaled by 1e9: n.n overflows, the distance is 0
+    // and the coordinates are NaN (which pass)
+    let d = craft(
+        t,
+        "InsideTriangle NaN coordinates",
+        &[[1, 1, 0], [9, 2, 0], [3, 8, 0]],
+        [1e9, 1e9, 1e9, 1.0],
+        [4.0e9, 4.0e9, 0.0],
+    );
+    // E: the determinant exactly the limit, f32(1e-5)
+    let e = craft(
+        t,
+        "InsideTriangle determinant at the limit",
+        &[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        [1e-5, 1.0, 1.0, 1.0],
+        [3.3e-6, 0.3, 0.4],
+    );
+    eprintln!(
+        "{}: cmm2 b reach {reach:?}, crafted {a:#x} {b:#x} {c:#x} {d:#x} {e:#x}",
+        t.name
+    );
+}
+
+/// `InsideTriangle` on both oracles with fresh outputs (`dist` or not);
+/// the port's result.
+fn inside_triangle_check(
+    t: &mut Twin,
+    what: &str,
+    chr: u32,
+    pos: u32,
+    model: u32,
+    code: u32,
+    dist: bool,
+) -> u32 {
+    use ffx_chara::cloth::bridge as cl;
+    let call = |m: &mut Oracle, f: u32, a: &[u32]| m.call_cdecl(f, a).unwrap();
+    let frame = t.b.stack_range().start + 0x400;
+    let mut rng = Xorshift(0x0005_eed5 ^ chr);
+    let outs = random_block(t, &mut rng, 16);
+    // stale candidate tables, so every clear shows
+    for (g, n) in [
+        (cl::TRI_BARY, 0x3000),
+        (cl::TRI_DIST, 0xc00),
+        (cl::TRI_SIGNED, 0xc00),
+    ] {
+        let at = t.a.rebase(g);
+        t.put(at, &random(&mut rng, n));
+    }
+    let out = cl::TriangleOut {
+        u: outs,
+        v: outs + 4,
+        w: outs + 8,
+        dist: if dist { outs + 12 } else { 0 },
+    };
+    let mut got = 0;
+    t.check(
+        what,
+        0x0082_8c10,
+        &[chr, pos, model, code, out.u, out.v, out.w, out.dist],
+        |m| {
+            got = cl::inside_triangle(m, chr, pos, model, code, out, frame, &mut |m, f, a| {
+                call(m, f, a)
+            });
+            Res::Int(got)
+        },
+    );
+    got & 0xffff
+}

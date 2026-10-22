@@ -7655,7 +7655,7 @@
 0x00828b30 function Ch_WorkSwap               # fh v3:exact 0x00828bb0
 0x00828b60 function Ch_ElemInit              # ours: (elem) data 0, +0x144 = 1, local (+8) and global (+0x88) matrices identity, +0xe4..+0x100 = 0, +0x104..+0x110 = 1.0; called by SG_InitBones
 0x00828be0 function Chr_ModelEntry           # ours: (i, base, version) -> base + i * (24 for versions 0x831..0x1313, else 40)
-0x00828c10 function InsideTriangle            # fh v3:exact 0x00828c90
+0x00828c10 function InsideTriangle            # fh v3:exact 0x00828c90; ported in ffx_chara::cloth (chara-main-map round 2): returns the triangle in ax (upper half = the dist pointer's), 0xffff for none; two phases (candidates, then up to 50 widening passes of the range -0.1..1.1 by 0.2, a second pass may take a 15x nearer one)
 0x008295a0 function Sg_VecCross               # (out, a, b): out = a x b, a component at a time; beside the triangle tests (passThisTriangle)
 0x008295e0 function characterChange           # fh switch:cg2 0x7100410c00
 0x00829800 function Angle_Wrap_00829800       # the same code as Angle_Wrap (0x0082db50): into -pi..pi in steps of 2pi, each stored as f32; a copy in another file
@@ -17675,6 +17675,9 @@
 0x023c44c0 label    g_ChrF117Hides            # 4 x (hide, renderer instance), Ch_ModelSetHide's queue (count g_ChrF117HideCount)
 0x023c44e0 label    g_ChrCount                   # number of field characters in g_ChrArray
 0x023c44e4 label    g_ChrArray                   # field characters, 0x880 bytes each (byte +2 = active)
+0x023c4500 label    g_ClothTriSigned           # f32[0x300]: InsideTriangle 0x00828c10's signed plane distances per candidate triangle; name ours
+0x023c5100 label    g_ClothTriDist             # f32[0x300]: InsideTriangle 0x00828c10's squared plane distances per candidate triangle; name ours
+0x023c5d00 label    g_ClothTriBary             # 0x300 x 16 bytes: InsideTriangle 0x00828c10's barycentric coordinates (u, v, w) per candidate triangle; name ours
 0x023c8d00 label g_ChrBlk                    # 40 character model blocks of 0x12c bytes (Ch_BlkGetHandleFast); chr +0x1c4 points at one: +0x1c thickness, +0x30 scale, +0x71 name, +0xb8 directory, +0x124/+0x128 resident data
 0x023cbbe0 label    g_GuScreenSize            # i32 height, width: Gu_SetXyzf2 centres in 4096 by them
 0x023cbbf0 label    g_SgFrame                    # main loop frame counter: Sg_MainLoop increments it and passes it to sceGsSwapDBuffDc; yiGetFCount returns it * 2

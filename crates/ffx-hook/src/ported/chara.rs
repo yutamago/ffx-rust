@@ -2054,4 +2054,14 @@ ported! {
     Ch_Cloth_PerCharacter @ 0x0082_e390 => extern "C" fn ch_cloth_per_character(chars: u32, count: u32) {
         dr::ch_cloth_per_character(&mut mem(), chars, count, &mut |_, f, a| super::call_cdecl(f, a));
     }
+    // ---- chara-main-map round 2, group b
+    /// `InsideTriangle(chr, pos, model, code, &u, &v, &w, &dist)`: the
+    /// triangle in `ax` (`Ch_PreCalcActiveClothMesh` stores it), `0xffff`
+    /// for none.
+    InsideTriangle @ 0x0082_8c10 => extern "C" fn inside_triangle(chr: u32, pos: u32, model: u32, code: u32, u: u32, v: u32, w: u32, dist: u32) -> u32 {
+        let mut frame = super::StackFrame::<{ cl::INSIDE_TRIANGLE_SCRATCH as usize / 4 }>::new();
+        let s = frame.at();
+        let out = cl::TriangleOut { u, v, w, dist };
+        cl::inside_triangle(&mut mem(), chr, pos, model, code, out, s, &mut |_, f, a| super::call_cdecl(f, a))
+    }
 }
