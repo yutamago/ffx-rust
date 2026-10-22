@@ -6597,3 +6597,347 @@ pub fn atel_update_file_path(h: &mut impl ffx_bridge::Host) -> u32 {
     host_call(h, 0x0087_9430, &[path]);
     path
 }
+
+/// `g_AtelPauseFlag` (`0x01327138`) and the pause delay after it.
+const PAUSE_FLAG: u32 = 0x0132_7138;
+
+/// `Atel_CheckPause_00873620()` (name ours; caller `0x00872bd0`): with
+/// ctrl work 0 current, decides whether START opens the pause menu. The
+/// delay (`g_AtelPauseFlag + 4`) counts down; START (`0x800`) held and
+/// newly pressed with the delay run out sets the pause flag. Every
+/// blocker clears the flag and restarts the delay at 12 (0 for no actors
+/// and for `+0x210` bit 3 clear): ctx bit 0 or 3 clear (bit 0 also
+/// forbids the menu), a movie (`movie_run_check`), `0x0086d940` or ctx
+/// `+3` bits `0x3`, a busy effect (`Atel_EffectIdlePoll(0)` = 0), ctx `+3`
+/// bit 7 or `+1` bit 2, no actors, overlay status 1..3, `+0x210` bit 4 or
+/// 3 clear, `+0x210` bit 1. Without blockers or a pause, an HDD error
+/// (`get_hdd_err`, not yet flagged) pauses with the error flag. When
+/// `Movie_IsBusy` reports 1 and the TGS flag is clear, a pause opens the
+/// menu (`Sg_MenuSetReserve(0x41000000 | hdd)`, ctx `+0x210` bit 2,
+/// `0x013270f4` = 1); then, and whenever `Movie_IsBusy` is 0, the flag
+/// and delay reset. The ctrl work is put back; returns its `EAX`.
+pub fn atel_check_pause(h: &mut impl ffx_bridge::Host) -> u32 {
+    let pad = host_call(h, 0x0086_af70, &[]) & 0xfff;
+    let pad_t = host_call(h, 0x0086_af30, &[]) & 0xfff;
+    let old = host_call(h, 0x0086_2d30, &[0]);
+    let c = host_call(h, 0x0086_aff0, &[]);
+    let flag = h.rebase(PAUSE_FLAG);
+    let delay = flag + 4;
+    let block = |h: &mut _, d: u32| {
+        ffx_bridge::Mem::write(h, flag, 0_u32);
+        ffx_bridge::Mem::write(h, delay, d);
+    };
+    let f = h.read::<u32>(c + 0x210);
+    h.write(c + 0x210, f & !4);
+    let mut d = h.read::<u32>(delay);
+    if d != 0 {
+        d -= 1;
+        h.write(delay, d);
+    }
+    let mut hdd = 0;
+    let b0 = h.read::<u8>(c);
+    let mut ok = true;
+    if b0 & 1 == 0 {
+        d = 0xc;
+        block(h, 0xc);
+        ok = false;
+    }
+    if pad == 0x800 && pad_t == 0x800 && d == 0 {
+        h.write(flag, 1_u32);
+    }
+    if b0 & 8 == 0 {
+        block(h, 0xc);
+        ok = false;
+    }
+    if host_call(h, 0x0076_f060, &[]) != 0 {
+        block(h, 0xc);
+        ok = false;
+    }
+    if host_call(h, 0x0086_d940, &[]) != 0 || h.read::<u8>(c + 3) & 3 != 0 {
+        block(h, 0xc);
+        ok = false;
+    }
+    if host_call(h, 0x0086_33a0, &[0]) == 0 {
+        block(h, 0xc);
+        ok = false;
+    }
+    if h.read::<u8>(c + 3) & 0x80 != 0 || h.read::<u8>(c + 1) & 4 != 0 {
+        block(h, 0xc);
+        ok = false;
+    }
+    if host_call(h, 0x0086_c510, &[]) == 0 {
+        block(h, 0);
+        ok = false;
+    }
+    if host_call(h, 0x0086_c200, &[]).wrapping_sub(1) <= 2 {
+        block(h, 0xc);
+        ok = false;
+    }
+    let g = h.read::<u32>(c + 0x210);
+    if g & 0x10 == 0 {
+        block(h, 0xc);
+        ok = false;
+    }
+    if g & 8 == 0 {
+        block(h, 0);
+        ok = false;
+    }
+    if g & 2 != 0 {
+        block(h, 0xc);
+        ok = false;
+    } else if ok
+        && h.read::<u32>(flag) == 0
+        && host_call(h, 0x0088_d5f0, &[]) == 0
+        && host_call(h, 0x0077_7e80, &[]) != 0
+    {
+        hdd = 1;
+        h.write(flag, 1_u32);
+        host_call(h, 0x0088_eb70, &[1]);
+    }
+    let menu = host_call(h, 0x0088_d6d0, &[]) == 0 && ok;
+    if host_call(h, 0x0076_ed10, &[]) != 0 {
+        if !menu || h.read::<u32>(flag) == 0 {
+            return host_call(h, 0x0086_f730, &[old]);
+        }
+        host_call(h, 0x0082_1750, &[hdd | 0x4100_0000]);
+        let f = h.read::<u32>(c + 0x210);
+        h.write(c + 0x210, f | 4);
+        h.write(h.rebase(0x0132_70f4), 1_u32);
+    }
+    h.write(delay, 0xc_u32);
+    h.write(flag, 0_u32);
+    host_call(h, 0x0086_f730, &[old])
+}
+
+/// `AtelInitTotal()` (`0x0086d6d0`; caller `TkInit`): the script system's
+/// reset. The scale pair 2, 2; the callback queue cleared; shop ratio 100;
+/// the four in-water words -1; pause, event mode `0xff`, the window bank,
+/// the records, the basic-work cache, `0x00874830`, the BG page, the
+/// treasure flag, the Al Bhed dictionary, the forced battle map (-1), the
+/// bind masks, the separates queue; half-turn angle 179; vibration,
+/// expand FTC 0, music -1, movie state, `TkMenuDummy`; overlay status,
+/// error and `0x01327078` 0; the sync-V callback 2 = `0x0086ca20`; the
+/// battle-end status `0x10001` and effect state 0, `0x01327070`/`74` 0;
+/// native tables 0..15 empty, then groups 1, 0, 12, 6, 9, 5, 4, 11, 7, 8,
+/// 13 set; game speed 1; the seven ctrl works' bit 0 and `+0x48` cleared
+/// and ctrl work 0 current; `0x00873ba0`, `AtelInitCalcSound` and
+/// `Atel_ParseHex("0x0")`, whose `EAX` it returns.
+pub fn atel_init_total(h: &mut impl ffx_bridge::Host) -> u32 {
+    let two = 2.0_f32.to_bits();
+    for at in [0x0132_5b98, 0x0132_5b9c] {
+        h.write(h.rebase(at), two);
+    }
+    host_call(h, 0x008b_3cf0, &[]);
+    h.write(h.rebase(0x0132_6b6c), 100_u32);
+    for k in 0..4 {
+        h.write(h.rebase(0x0132_6cf0) + 4 * k, u32::MAX);
+    }
+    host_call(h, 0x0087_2b70, &[]);
+    host_call(h, 0x0087_3e40, &[0xff]);
+    h.write(h.rebase(MENU_EXEC_STATUS), 0_u8);
+    host_call(h, 0x0087_4fb0, &[]);
+    h.write(h.rebase(BASIC_WORK_CACHE), 0_u32);
+    host_call(h, 0x0087_4830, &[]);
+    host_call(h, 0x0087_2b90, &[]);
+    host_call(h, 0x0087_2b60, &[]);
+    h.write(h.rebase(0x0132_5b90), 0_u32);
+    h.write(h.rebase(0x0132_5b94), 0_u32);
+    h.write(h.rebase(FORCE_BATTLE_MAP), u32::MAX);
+    host_call(h, 0x0086_0f50, &[]);
+    h.write(h.rebase(SEP_QUEUE_COUNT), 0_u32);
+    host_call(h, 0x0087_3e50, &[179.0_f32.to_bits()]);
+    host_call(h, 0x0087_5e80, &[]);
+    host_call(h, 0x0087_3cf0, &[0]);
+    host_call(h, 0x0087_3d00, &[u32::MAX]);
+    host_call(h, 0x0087_3c00, &[]);
+    host_call(h, 0x008a_9710, &[]);
+    h.write(h.rebase(0x0132_6b80), 0_u8);
+    h.write(h.rebase(0x0132_70d8), 0_u32);
+    h.write(h.rebase(0x0132_7078), 0_u32);
+    let sync = h.rebase(0x0086_ca20);
+    host_call(h, 0x0088_8790, &[2, sync]);
+    h.write(h.rebase(BATTLE_END_STATUS), 0x0001_0001_u32);
+    h.write(h.rebase(0x0132_6b58), 0_u32);
+    h.write(h.rebase(0x0132_7070), 0_u32);
+    h.write(h.rebase(0x0132_7074), 0_u32);
+    for group in 0..0x10 {
+        host_call(h, 0x0087_7880, &[group, 0]);
+    }
+    for (group, table) in [
+        (1, 0x00c5_2be0),
+        (0, 0x00c5_0050),
+        (0xc, 0x00c5_2dd8),
+        (6, 0x00c4_3998),
+        (9, 0x00c5_d8c0),
+        (5, 0x00c8_91f8),
+        (4, 0x00c8_8d88),
+        (0xb, 0x00c4_0e30),
+        (7, 0x00c4_2628),
+        (8, 0x00c5_dc90),
+        (0xd, 0x00c8_5eb0),
+    ] {
+        let table = h.rebase(table);
+        host_call(h, 0x0087_7880, &[group, table]);
+    }
+    let works = h.rebase(CTRL_WORKS);
+    let c = |i: u32| works + i * 0x238;
+    for i in 0..7 {
+        let f = h.read::<u8>(c(i));
+        h.write(c(i), f & 0xfe);
+    }
+    h.write(h.rebase(0x0132_6bd8), 1.0_f32.to_bits());
+    for i in 0..7 {
+        h.write(c(i) + 0x48, 0_u32);
+    }
+    h.write(h.rebase(SCRIPT_CONTEXT), works);
+    host_call(h, 0x0087_3ba0, &[]);
+    host_call(h, 0x0087_7420, &[]);
+    let zero = h.rebase(0x00b5_bd9c);
+    host_call(h, 0x0087_7660, &[zero])
+}
+
+/// Whether the `f32` at `a` is below the one at `b` (`fcompp` on
+/// `fld b; fld a`: false for NaN).
+fn below_f32(m: &impl Mem, a: u32, b: u32) -> bool {
+    x87::load(m.read(a)) < x87::load(m.read(b))
+}
+
+/// `fld m32`/`fstp m32` of `at`'s word: the value as passed.
+fn arg_f32(m: &impl Mem, at: u32) -> u32 {
+    x87::store(x87::load(m.read(at)))
+}
+
+/// `Atel_MoveStep_00870540(worker, level)` (name ours; caller
+/// `0x008666e0`): one frame of the level's move (`level +0x44`, mode `u16
+/// +2`) for the worker's character. A bound character (`+0xaa` 1, `+0x9c`)
+/// takes the position block's speed (`+0xc`, 0 for mode 0) through
+/// `Ch_SetSp`, after, by `Ch_GetFieldMode` and the move kind (`+2 &
+/// 0x7f`), a vertical part (`Ch_SetVelY`: sin of `+0x24` times the speed,
+/// the speed times its cos, for field mode 2 and kinds 2, 4; for kinds 5,
+/// 6 cos times speed, its sin times 10, the speed times 10) or the
+/// block's position (`TkCh_SetPos`, speed 0, kinds 7, 9). Then by kind:
+/// 0 puts the bound character at the move's target (`+0x28`, mode bit
+/// 11, which it clears; bindings 4, 5 `AtelSetBindObject`); 5, 6 stop
+/// when the time (`+0xc`) is below the length (`+8`), clearing the mode
+/// and `+0x14`; 7, 9 the same, putting the target into the position
+/// block; the rest stop inside the radius `+0x38` around the target
+/// (`Atel_InRadiusXYZ` with mode bit 10, else `Atel_InRadiusXZ`), and mode
+/// bit 12 stops a move kind left (keeping bit 11).
+pub fn atel_move_step<H: super::run::NativeHost>(h: &mut H, w: u32, level: u32) {
+    let p = pos_block(h, w);
+    let mv = h.read::<u32>(level + 0x44);
+    let mut sp = if h.read::<u16>(mv + 2) == 0 {
+        0
+    } else {
+        arg_f32(h, p + 0xc)
+    };
+    let chr = h.read::<u32>(w + 0x9c);
+    if h.read::<u8>(w + 0xaa) == 1 && chr != 0 {
+        let sin = h.rebase(0x0094_98c8);
+        let cos = h.rebase(0x0094_98c2);
+        let angle = |h: &H| x87::load(h.read(p + 0x24));
+        let mode = host_call(h, 0x0082_ab90, &[chr]);
+        let kind = h.read::<u16>(mv + 2) & 0x7f;
+        let step = match (mode, kind) {
+            (2, _) | (0, 2 | 4) => 1,
+            (0, 5 | 6) => 2,
+            (0, 7 | 9) => 3,
+            _ => 0,
+        };
+        match step {
+            1 => {
+                let s = x87::store(h.call_intrinsic1(sin, angle(h)));
+                let vy = x87::store(x87::mul(x87::load(s), x87::load(sp)));
+                let c = x87::store(h.call_intrinsic1(cos, angle(h)));
+                sp = x87::store(x87::mul(x87::load(c), x87::load(sp)));
+                host_call(h, 0x0082_b920, &[chr, vy]);
+            }
+            2 => {
+                let c = x87::store(h.call_intrinsic1(cos, angle(h)));
+                let u = x87::store(x87::mul(x87::load(c), x87::load(sp)));
+                let s = x87::store(h.call_intrinsic1(sin, angle(h)));
+                let ten = h.read::<f64>(h.rebase(0x00b9_22b0));
+                let vy = x87::store(x87::mul(x87::mul(x87::load(s), x87::load(u)), ten));
+                sp = x87::store(x87::mul(x87::load(u), ten));
+                host_call(h, 0x0082_b920, &[chr, vy]);
+            }
+            3 => {
+                sp = 0;
+                let (x, y, z) = (arg_f32(h, p), arg_f32(h, p + 4), arg_f32(h, p + 8));
+                host_call(h, 0x0087_2310, &[chr, x, y, z]);
+            }
+            _ => {}
+        }
+        let chr = h.read::<u32>(w + 0x9c);
+        host_call(h, 0x0082_b840, &[chr, sp]);
+    }
+    move_step_end(h, w, mv, p);
+}
+
+/// The second half of [`atel_move_step`]: the move's end by its kind.
+fn move_step_end(h: &mut impl ffx_bridge::Host, w: u32, mv: u32, p: u32) {
+    let f = h.read::<u16>(mv + 2);
+    match f & 0x7f {
+        0 => match h.read::<u8>(w + 0xaa) {
+            1 => {
+                let chr = h.read::<u32>(w + 0x9c);
+                if chr != 0 && f & 0x800 != 0 {
+                    let (x, y, z) = (
+                        arg_f32(h, mv + 0x28),
+                        arg_f32(h, mv + 0x2c),
+                        arg_f32(h, mv + 0x30),
+                    );
+                    host_call(h, 0x0087_2310, &[chr, x, y, z]);
+                    let f = h.read::<u16>(mv + 2);
+                    h.write(mv + 2, f & 0xf7ff);
+                }
+            }
+            4 | 5 => {
+                host_call(h, 0x0086_f4c0, &[w]);
+            }
+            _ => {}
+        },
+        5 | 6 => {
+            if below_f32(h, mv + 0xc, mv + 8) {
+                host_call(h, 0x0086_3e10, &[w, u32::MAX]);
+                h.write(mv + 2, 0_u16);
+                h.write(mv + 0x14, 0_u32);
+            }
+        }
+        7 | 9 => {
+            if below_f32(h, mv + 0xc, mv + 8) {
+                host_call(h, 0x0086_3e10, &[w, u32::MAX]);
+                h.write(mv + 2, 0_u16);
+                for k in [0, 4, 8] {
+                    let v = arg_f32(h, mv + 0x28 + k);
+                    h.write(p + k, v);
+                }
+            }
+        }
+        _ => {
+            let r = arg_f32(h, mv + 0x38);
+            let (x, y, z) = (
+                arg_f32(h, mv + 0x28),
+                arg_f32(h, mv + 0x2c),
+                arg_f32(h, mv + 0x30),
+            );
+            let test = if f & 0x400 != 0 {
+                0x0086_3440
+            } else {
+                0x0086_34b0
+            };
+            if host_call(h, test, &[r, w, x, y, z]) != 0 {
+                if h.read::<u16>(mv + 2) & 0x7f != 0 {
+                    host_call(h, 0x0086_3e10, &[w, u32::MAX]);
+                }
+                h.write(mv + 2, 0_u16);
+            }
+            let f = h.read::<u16>(mv + 2);
+            if f & 0x1000 != 0 && f & 0x7f != 0 {
+                host_call(h, 0x0086_3e10, &[w, u32::MAX]);
+                let f = h.read::<u16>(mv + 2);
+                h.write(mv + 2, f & 0x800);
+            }
+        }
+    }
+}

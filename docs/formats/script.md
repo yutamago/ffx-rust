@@ -3041,6 +3041,31 @@ word tables `0x0087a2d0`..; the language order is jp, us, fr, es, de, it,
 with every callee a logged stand-in; some stand-ins switch the ctrl work
 or move the choice to show which reads the original repeats.
 
+Round 26 b: `Atel_CheckPause_00873620` (caller `0x00872bd0`) decides, with
+ctrl work 0 current, whether START opens the pause menu: the delay word
+after `g_AtelPauseFlag` counts down, START held and pressed (`0x800` in
+both pad words) with the delay at 0 sets the flag, and each blocker (ctx
+bits 0 and 3, a movie, `0x0086d940` or ctx `+3` bits 0-1, a busy effect,
+ctx `+3` bit 7 or `+1` bit 2, no actors, overlay status 1..3, `+0x210`
+bits 4, 3 and 1) clears the flag and restarts the delay at 12 (at 0 for no
+actors and `+0x210` bit 3). An HDD error with nothing blocking pauses and
+sets the error flag. With `Movie_IsBusy` and no TGS flag a set flag
+becomes `Sg_MenuSetReserve(0x41000000 | hdd)`, `+0x210` bit 2 and
+`0x013270f4` = 1. `AtelInitTotal` (`0x0086d6d0`) resets the script
+globals and registers the native tables (groups 1, 0, 12, 6, 9, 5, 4, 11,
+7, 8, 13 after clearing 0..15). `Atel_MoveStep_00870540` (caller
+`0x008666e0`) runs one frame of a level's move for the bound character:
+the speed (`Ch_SetSp`) after a vertical part (`Ch_SetVelY` from `_CIsin`
+/ `_CIcos` of the position block's `+0x24`; jump table `0x00870830` on
+the move kind minus 2 in field mode 0) or a position (`TkCh_SetPos`),
+then the move's end by kind (byte table `0x00870860` into `0x00870850`):
+time below length for kinds 5-6 and 7-9, the radius `+0x38` otherwise.
+Its `EAX` is a leftover (the x87 status word on some paths) that the
+caller does not read. `round26b_pause_init_total_move_step_match_the_original`
+covers them. `0x00882d50` and `0x00884d90` draw lines of the script
+debugger's pages (`TkPutDebugFontString*`); they are reached only from
+`AtelDebugDisplay_00883040`, which nothing calls, so they stay unported.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

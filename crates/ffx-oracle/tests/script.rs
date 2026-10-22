@@ -11898,3 +11898,373 @@ fn round26a_battle_end_ctrl_pass_file_path_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r26a_cases(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Code that XORs the `u16` at `[ptr] + off` with the word in `val` (a
+/// stand-in that moves what the original must read again).
+fn r26_xor16(ptr: u32, off: u8, val: u32) -> Vec<u8> {
+    let mut code = vec![0xa1];
+    code.extend(ptr.to_le_bytes());
+    code.extend([0x66, 0x8b, 0x0d]);
+    code.extend(val.to_le_bytes());
+    code.extend([0x66, 0x31, 0x48, off]);
+    code
+}
+
+/// [`r26_xor16`] for a `u32` at `[ptr] + off` (`off` below `0x80`, or
+/// `0x9c` through a 32-bit displacement).
+fn r26_xor32(ptr: u32, off: u32, val: u32) -> Vec<u8> {
+    let mut code = vec![0xa1];
+    code.extend(ptr.to_le_bytes());
+    code.extend([0x8b, 0x0d]);
+    code.extend(val.to_le_bytes());
+    code.extend([0x31, 0x88]);
+    code.extend(off.to_le_bytes());
+    code
+}
+
+/// `f` replaced in both oracles by a stand-in that logs `f` and its first
+/// `n` stack words (as [`r24_log_stubs`], into a log of its own) and
+/// returns the word in a cell. Returns `(log cell, log start, value
+/// cell)`; the caller restarts the log and sets the value per case.
+fn r26_cell_stub(a: &mut Oracle, b: &mut Oracle, f: u32, n: u8) -> (u32, u32, u32) {
+    let log = alloc_both(a, b, 0x1000);
+    let cell = alloc_both(a, b, 8);
+    poke(a, b, cell, log);
+    let val = cell + 4;
+    let mut code: Vec<u8> = [&[0x8b, 0x0d][..], &cell.to_le_bytes()].concat();
+    code.extend([&[0xc7, 0x01][..], &f.to_le_bytes()].concat());
+    for k in 0..n {
+        code.extend([0x8b, 0x44, 0x24, 4 + 4 * k, 0x89, 0x41, 4 + 4 * k]);
+    }
+    code.extend([0x83, 0xc1, 4 + 4 * n]);
+    code.extend([&[0x89, 0x0d][..], &cell.to_le_bytes()].concat());
+    code.extend([&[0xa1][..], &val.to_le_bytes(), &[0xc3]].concat());
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    (cell, log, val)
+}
+
+/// A random `f32` in `-r..r` (never a NaN).
+fn r26_f32(rng: &mut Xorshift, r: f32) -> u32 {
+    #[allow(clippy::cast_precision_loss)] // a random fraction
+    let t = rng.below(0x1_0000) as f32 / 65536.0;
+    ((t * 2.0 - 1.0) * r).to_bits()
+}
+
+/// Round 26 b on one pair: the pause check, the script reset and the move
+/// step (callees as stand-ins; the CRT's sin and cos real).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r26b_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    // the CRT intrinsics' trampoline for the bridge's sin and cos
+    let at = a.rebase(TRAMPOLINE);
+    for o in [&mut *a, &mut *b] {
+        o.set_max_instructions(2_000_000);
+        Mem::write_bytes(o, at, &TRAMPOLINE_CODE);
+    }
+    // Atel_CheckPause_00873620
+    let log_cell = r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0086_2d30, 1),
+            (0x0086_f730, 1),
+            (0x0088_eb70, 1),
+            (0x0082_1750, 1),
+        ],
+    );
+    let log = Mem::read::<u32>(a, log_cell);
+    let flag = a.rebase(0x0132_7138);
+    // the stand-ins' cells: the ctrl work the actor count's stand-in
+    // XORs `+0x210` of, and with what
+    let xc = alloc_both(a, b, 8);
+    let idle_stub = r26_cell_stub(a, b, 0x0086_33a0, 1);
+    let actors_stub = r26_cell_stub(a, b, 0x0086_c510, 0);
+    r26_wrap(a, b, 0x0086_c510, &r26_xor32(xc, 0x210, xc + 4));
+    for round in 0..600u32 {
+        poke(a, b, log_cell, log);
+        for (cell, start, _) in [idle_stub, actors_stub] {
+            poke(a, b, cell, start);
+        }
+        let c = r26_ctrl(a, b, rng);
+        // a ctrl work and callees that allow the pause, then (mostly) one
+        // blocker
+        let open = round % 5 != 0;
+        let blocker = if open { rng.below(32) } else { 99 };
+        let set = |a: &mut Oracle, b: &mut Oracle, at: u32, on: u32, off: u32| {
+            let v = Mem::read::<u32>(b, at) & !off | on;
+            poke(a, b, at, v);
+        };
+        if open {
+            set(a, b, c, 9, 0);
+            set(a, b, c, 0, 0x8304_0000 | 0x0400);
+            set(a, b, c + 0x210, 0x18, 2);
+        }
+        match blocker {
+            0 => set(a, b, c, 0, 1),
+            1 => set(a, b, c, 0, 8),
+            2 => set(a, b, c, 0x100_0000, 0),
+            3 => set(a, b, c, 0x8000_0000, 0),
+            4 => set(a, b, c, 0x400, 0),
+            5 => set(a, b, c + 0x210, 0, 0x10),
+            6 => set(a, b, c + 0x210, 0, 8),
+            7 => set(a, b, c + 0x210, 2, 0),
+            _ => {}
+        }
+        let call = |rng: &mut Xorshift, k: u32, on: u32, off: u32| {
+            if blocker == k || !open && rng.below(4) == 0 {
+                on
+            } else {
+                off
+            }
+        };
+        r25_ret(a, b, 0x0086_aff0, c);
+        let start = [0x800u32, 0x800, 0x1800, 0x801, 0][rng.below(5) as usize];
+        r25_ret(a, b, 0x0086_af70, start | rng.next() & 0xffff_0000);
+        let start = [0x800u32, 0x800, 0x8800, 0x400][rng.below(4) as usize];
+        r25_ret(a, b, 0x0086_af30, start);
+        let v = call(rng, 8, 1, 0);
+        r25_ret(a, b, 0x0076_f060, v);
+        let v = call(rng, 9, 2, 0);
+        r25_ret(a, b, 0x0086_d940, v);
+        let idle = [1u32, 3][rng.below(2) as usize];
+        let v = call(rng, 10, 0, idle);
+        poke(a, b, idle_stub.2, v);
+        let v = call(rng, 11, 0, 5);
+        poke(a, b, actors_stub.2, v);
+        poke(a, b, xc, c);
+        poke(
+            a,
+            b,
+            xc + 4,
+            [0u32, 0, 0, 0, 4, 0x10, 0xff][rng.below(7) as usize],
+        );
+        let (on, off) = (rng.below(3) + 1, [0u32, 4, u32::MAX][rng.below(3) as usize]);
+        let v = call(rng, 12, on, off);
+        r25_ret(a, b, 0x0086_c200, v);
+        let v = [0u32, 0, 1][rng.below(3) as usize];
+        r25_ret(a, b, 0x0088_d5f0, v);
+        let v = [0u32, 7][rng.below(2) as usize];
+        r25_ret(a, b, 0x0077_7e80, v);
+        let v = call(rng, 13, 1, 0);
+        r25_ret(a, b, 0x0088_d6d0, v);
+        let v = [0u32, 1, 1, 2][rng.below(4) as usize];
+        r25_ret(a, b, 0x0076_ed10, v);
+        poke(a, b, flag, [0u32, 0, 1, 2][rng.below(4) as usize]);
+        poke(a, b, flag + 4, [0u32, 0, 1, 2, 0xc][rng.below(5) as usize]);
+        fill_both(a, b, rng, a.rebase(0x0132_70f4), 4);
+        r22_case(
+            a,
+            b,
+            0x0087_3620,
+            &[],
+            true,
+            &format!("Atel_CheckPause {what} {round} blocker {blocker}"),
+            |r| hp::atel_check_pause(r),
+        );
+    }
+    // Atel_MoveStep_00870540
+    let log_cell = r24_log_stubs(
+        a,
+        b,
+        &[
+            (0x0082_b920, 2),
+            (0x0087_2310, 4),
+            (0x0082_b840, 2),
+            (0x0086_f4c0, 1),
+            (0x0086_3e10, 2),
+        ],
+    );
+    let log = Mem::read::<u32>(a, log_cell);
+    // the move and the worker for the stand-ins, and what they XOR in
+    let cells = alloc_both(a, b, 0x10);
+    let (mv_cell, mv_x, w_cell, w_x) = (cells, cells + 4, cells + 8, cells + 0xc);
+    for f in [0x0087_2310, 0x0086_3e10] {
+        r26_wrap(a, b, f, &r26_xor16(mv_cell, 2, mv_x));
+    }
+    for f in [0x0082_b920, 0x0087_2310] {
+        r26_wrap(a, b, f, &r26_xor32(w_cell, 0x9c, w_x));
+    }
+    let stubs = [
+        r26_cell_stub(a, b, 0x0082_ab90, 1),
+        r26_cell_stub(a, b, 0x0086_3440, 5),
+        r26_cell_stub(a, b, 0x0086_34b0, 5),
+    ];
+    for f in [0x0082_ab90, 0x0086_3440, 0x0086_34b0] {
+        r26_wrap(a, b, f, &r26_xor16(mv_cell, 2, mv_x));
+    }
+    let w = alloc_both(a, b, 0xb60);
+    let hdr = alloc_both(a, b, 0x10);
+    let mv = alloc_both(a, b, 0x40);
+    let level = alloc_both(a, b, 0x50);
+    let ten = a.rebase(0x00b9_22b0);
+    assert_eq!(Mem::read::<f64>(a, ten), 10.0);
+    for round in 0..480u32 {
+        poke(a, b, log_cell, log);
+        let kind = [0u8, 1, 2, 4, 5, 6][rng.below(6) as usize];
+        fill_both(a, b, rng, w + 0x90, 0x20);
+        poke(a, b, hdr, kind);
+        poke(a, b, w, hdr);
+        poke(a, b, level + 0x44, mv);
+        let m = if kind == 4 {
+            0
+        } else {
+            let k = [0u16, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0x40, 0x7f][rng.below(15) as usize];
+            k | (u16::try_from(rng.next() >> 16).unwrap() & 0xff80)
+        };
+        poke(a, b, mv + 2, m);
+        for off in [8u32, 0xc, 0x28, 0x2c, 0x30, 0x38] {
+            poke(a, b, mv + off, r26_f32(rng, 40.0));
+        }
+        fill_both(a, b, rng, mv + 0x14, 4);
+        if rng.below(4) == 0 {
+            let t = Mem::read::<u32>(b, mv + 8);
+            poke(a, b, mv + 0xc, t);
+        }
+        if kind != 4 {
+            let p = if kind == 5 || kind == 6 {
+                w + 0x284
+            } else {
+                w + 0x558
+            };
+            for k in 0..10 {
+                poke(a, b, p + 4 * k, r26_f32(rng, 30.0));
+            }
+        }
+        let bind = if kind == 4 {
+            [0u8, 2, 4, 5][rng.below(4) as usize]
+        } else {
+            [1u8, 1, 1, 0, 4, 5][rng.below(6) as usize]
+        };
+        poke(a, b, w + 0xaa, bind);
+        let chr = if rng.below(5) == 0 { 0 } else { rng.next() | 1 };
+        poke(a, b, w + 0x9c, chr);
+        for (cell, start, _) in stubs {
+            poke(a, b, cell, start);
+        }
+        poke(a, b, stubs[0].2, [0u32, 0, 2, 1, 3][rng.below(5) as usize]);
+        for stub in &stubs[1..] {
+            poke(a, b, stub.2, rng.below(2));
+        }
+        poke(a, b, mv_cell, mv);
+        poke(a, b, w_cell, w);
+        let x = [0u32, 0, 0x7f, 0x800, 0x1000, 0x400][rng.below(6) as usize];
+        poke(a, b, mv_x, x);
+        poke(a, b, w_x, if rng.below(4) == 0 { 0x10 } else { 0 });
+        r22_case(
+            a,
+            b,
+            0x0087_0540,
+            &[w, level],
+            false,
+            &format!("Atel_MoveStep {what} {round} kind {kind} mode {m:#x} bind {bind}"),
+            |r| {
+                hp::atel_move_step(r, w, level);
+                0
+            },
+        );
+    }
+}
+
+/// `AtelInitTotal` on one pair: callees logged, then (fresh pairs) real.
+fn r26b_init_total(a: &mut Oracle, b: &mut Oracle, stubbed: bool, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    // what it clears holds something else first
+    let mut rng = Xorshift(0x5eed_0263);
+    for at in [
+        0x0132_5b90,
+        0x0132_5b94,
+        0x0132_707c,
+        0x0132_70d8,
+        0x0132_7078,
+        0x0132_6b58,
+        0x0132_7070,
+        0x0132_7074,
+        0x0132_6b80,
+        0x0132_6b82,
+    ] {
+        let at = a.rebase(at);
+        fill_both(a, b, &mut rng, at, 4);
+    }
+    let works = a.rebase(0x0132_5ba0);
+    for i in 0..7 {
+        fill_both(a, b, &mut rng, works + i * 0x238, 1);
+        fill_both(a, b, &mut rng, works + i * 0x238 + 0x48, 4);
+    }
+    if stubbed {
+        r24_log_stubs(
+            a,
+            b,
+            &[
+                (0x008b_3cf0, 0),
+                (0x0087_2b70, 0),
+                (0x0087_3e40, 1),
+                (0x0087_4fb0, 0),
+                (0x0087_4830, 0),
+                (0x0087_2b90, 0),
+                (0x0087_2b60, 0),
+                (0x0086_0f50, 0),
+                (0x0087_3e50, 1),
+                (0x0087_5e80, 0),
+                (0x0087_3cf0, 1),
+                (0x0087_3d00, 1),
+                (0x0087_3c00, 0),
+                (0x008a_9710, 0),
+                (0x0088_8790, 2),
+                (0x0087_7880, 2),
+                (0x0087_3ba0, 0),
+                (0x0087_7420, 0),
+                (0x0087_7660, 1),
+            ],
+        );
+    }
+    r22_case(
+        a,
+        b,
+        0x0086_d6d0,
+        &[],
+        true,
+        &format!("AtelInitTotal {what} stubbed {stubbed}"),
+        |r| hp::atel_init_total(r),
+    );
+}
+
+#[test]
+fn round26b_pause_init_total_move_step_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0262);
+    // the image's real callees read through null pointers
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r26b_init_total(&mut a, &mut b, true, "image");
+    }
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r26b_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    for stubbed in [true, false] {
+        let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+        let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+        r26b_init_total(&mut a, &mut b, stubbed, "snapshot");
+    }
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r26b_cases(&mut a, &mut b, &mut rng, "snapshot");
+}

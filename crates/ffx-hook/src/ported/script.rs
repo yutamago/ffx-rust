@@ -7338,4 +7338,17 @@ ported! {
     AtelUpdateFilePath @ 0x0087_9f00 => extern "C" fn h_879f00() -> u32 {
         hp::atel_update_file_path(&mut mem())
     }
+    /// `Atel_CheckPause_00873620()`.
+    Atel_CheckPause_00873620 @ 0x0087_3620 => extern "C" fn h_873620() -> u32 {
+        hp::atel_check_pause(&mut mem())
+    }
+    /// `AtelInitTotal()`.
+    AtelInitTotal @ 0x0086_d6d0 => extern "C" fn h_86d6d0() -> u32 {
+        hp::atel_init_total(&mut mem())
+    }
+    /// `Atel_MoveStep_00870540(worker, level)`: `_CIsin`/`_CIcos` through
+    /// the game's import thunks.
+    Atel_MoveStep_00870540 @ 0x0087_0540 => extern "C" fn h_870540(w: u32, level: u32) {
+        hp::atel_move_step(&mut mem(), w, level);
+    }
 }
