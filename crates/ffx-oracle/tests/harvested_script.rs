@@ -148,7 +148,7 @@ harvest_test!(
     0x0086_29c0,
     args = 1,
     |m: &mut Oracle, s| {
-        hp::atel_apply_polar_move(&mut OracleHost(m), s.arg(0), s.regs.esp - 0x800)
+        hp::atel_apply_polar_move(&mut OracleHost(m), s.arg(0), s.regs.esp - 0x800);
     }
 );
 harvest_test!(
@@ -182,6 +182,6 @@ harvest_test!(
             s.arg(3),
             frame,
             fcall_host,
-        )
+        );
     }
 );

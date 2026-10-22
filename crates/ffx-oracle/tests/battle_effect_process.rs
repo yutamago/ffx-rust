@@ -54,7 +54,7 @@ fn cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     let own_funcs = mn::OVERLAY_FUNCS.get(b);
     let real = !synthetic && own_funcs != 0 && a.read(own_funcs, 0x14).is_ok();
     let log = scratch(a, b, 4);
-    let ring = scratch(a, b, 0x4000);
+    let log_ring = scratch(a, b, 0x4000);
     let magic_ret = scratch(a, b, 4);
     let zero = scratch(a, b, 4);
     let flush = logger(a, b, log, 1, zero);
@@ -97,7 +97,7 @@ fn cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, synthetic: bool) {
     };
     let mut reach = [0u32; 4];
     for round in 0..120u32 {
-        poke(a, b, log, &ring.to_le_bytes());
+        poke(a, b, log, &log_ring.to_le_bytes());
         let phase = [0, 1, 0, 1, 2, 0x8000_0000][rng.below(6) as usize];
         let own = real && round % 10 == 3 && phase < 2;
         let funcs = if own { own_funcs } else { tables[0] };
