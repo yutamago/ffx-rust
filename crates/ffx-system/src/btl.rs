@@ -3147,4 +3147,135 @@ pub mod bridge {
             mem.write(w.wrapping_add(0x94), 0u32);
         }
     }
+
+    /// `TOBtlGetTargetPad(w)` (`0x0089d390`, Fahrenheit's name): one frame of
+    /// the target cursor. Its direction masks come from
+    /// `MsBattleCursorType()` (u8, 0..=3; the original's frame table, `dec,
+    /// inc, switch, switch`: 0 `0x1000, 0x4000, 0x8000, 0x2000`, 1 `0x4000,
+    /// 0x1000, 0x8000, 0x2000`, 2 `0x2000, 0x8000, 0x1000, 0x4000`, 3
+    /// `0x8000, 0x2000, 0x1000, 0x4000`; higher types read past it into the
+    /// frame, here no masks). The repeat pad (`u16 0x025d09d6`) moves the
+    /// index `i16 0x0133d1fc` and wraps it over `u16 0x0133d1f6` entries;
+    /// the trigger pad (`u16 0x025d09d4`) on a switch mask while `u16
+    /// 0x0133d1fe` is 1 swaps the side `u16 0x0133d200` (0 to the list at
+    /// `0x0133d1d4` of `i16 0x0133d1d0`, else to `0x0133d180` of `i16
+    /// 0x0133d17c`, when it has entries): `0x0133d202` the old index, the
+    /// list pointer `0x0133d1f8`, the index `TOBtlSearchRevNearTarget()`. A
+    /// moved index or side clicks (`SndPlayClick(1)`). The target bits are
+    /// the list's word at the index (`g_BtlTargetSelMask`), the target
+    /// `g_BtlTargetChr` their highest bit below 28 (0xff unless
+    /// `0x0133d0e0` is 0 or 3), the window of level `g_BtlActionDepth`
+    /// keeps index, side and bits (`+0x40`, `+0xd2`, `+0xd6`), and
+    /// `MsSetBtlTarget(u16 g_BtlActionList, bits)`. With `0x0133d6e0` 1 the
+    /// trigger becomes 0x20; then 0x40 cancels (`MsResetBtlTarget(i16
+    /// w+8)`, `TOBtlSetPrevAction()`, click 4) and 0x20 confirms
+    /// (`TOBtlSetNextAction(i16 w+8, 0x3115)`, click 1, or 3 when it is
+    /// negative).
+    #[allow(clippy::too_many_lines)]
+    pub fn get_target_pad<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        const MASKS: [[u16; 4]; 4] = [
+            [0x1000, 0x4000, 0x8000, 0x2000],
+            [0x4000, 0x1000, 0x8000, 0x2000],
+            [0x2000, 0x8000, 0x1000, 0x4000],
+            [0x8000, 0x2000, 0x1000, 0x4000],
+        ];
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let index_at = at(mem, 0x0133_d1fc);
+        let side_at = at(mem, 0x0133_d200);
+        let count_at = at(mem, 0x0133_d1f6);
+        let list_at = at(mem, 0x0133_d1f8);
+        let pad = at(mem, 0x025d_09d4);
+        let kind = call(mem, 0x0078_0ce0, &[]) & 0xff;
+        let masks = MASKS.get(kind as usize).copied().unwrap_or([0; 4]);
+        let mut side = mem.read::<u16>(side_at);
+        let mut index = mem.read::<u16>(index_at);
+        let (old_index, old_side) = (index, side);
+        let repeat = mem.read::<u16>(at(mem, 0x025d_09d6));
+        if masks[0] & repeat != 0 {
+            index = index.wrapping_sub(1);
+            mem.write(index_at, index);
+        }
+        if masks[1] & repeat != 0 {
+            index = index.wrapping_add(1);
+            mem.write(index_at, index);
+        }
+        let count = mem.read::<u16>(count_at);
+        if index.cast_signed() < 0 {
+            index = count.wrapping_sub(1);
+            mem.write(index_at, index);
+        }
+        if index.cast_signed() >= count.cast_signed() {
+            index = 0;
+            mem.write(index_at, index);
+        }
+        let trigger = mem.read::<u16>(pad);
+        if (masks[2] & trigger != 0 || masks[3] & trigger != 0)
+            && mem.read::<u16>(at(mem, 0x0133_d1fe)) == 1
+        {
+            let (n_at, list, to) = if side == 0 {
+                (0x0133_d1d0, 0x0133_d1d4, 1)
+            } else {
+                (0x0133_d17c, 0x0133_d180, 0)
+            };
+            let n = mem.read::<i16>(at(mem, n_at));
+            if n > 0 {
+                mem.write(count_at, n);
+                let list = at(mem, list);
+                mem.write(list_at, list);
+                #[allow(clippy::cast_possible_truncation)] // ax
+                let found = call(mem, 0x0089_90f0, &[]) as u16;
+                mem.write(at(mem, 0x0133_d202), index);
+                side = to;
+                mem.write(side_at, side);
+                index = found;
+                mem.write(index_at, index);
+            }
+        }
+        if index != old_index || side != old_side {
+            call(mem, 0x0088_6ba0, &[1]);
+            side = mem.read::<u16>(side_at);
+            index = mem.read::<u16>(index_at);
+        }
+        let list = mem.read::<u32>(list_at);
+        let slot = i32::from(index.cast_signed())
+            .wrapping_mul(4)
+            .cast_unsigned();
+        let bits = mem.read::<u32>(list.wrapping_add(slot));
+        mem.write(at(mem, 0x0133_d178), bits);
+        let target_at = at(mem, 0x0133_d1f4);
+        let action = mem.read::<u32>(at(mem, 0x0133_d0e0));
+        if action != 0 && action != 3 {
+            mem.write(target_at, 0xffu16);
+        } else {
+            for c in 0..28u16 {
+                if bits & 1 << c != 0 {
+                    mem.write(target_at, c);
+                }
+            }
+        }
+        let depth = i32::from(mem.read::<i8>(at(mem, 0x023c_c092))).wrapping_mul(0xf0);
+        let win = at(mem, 0x0133_c952).wrapping_add(depth.cast_unsigned());
+        mem.write(win.wrapping_add(0x40), index);
+        let action_chr = u32::from(mem.read::<u16>(at(mem, 0x0133_d0d0)));
+        mem.write(win.wrapping_add(0xd6), bits);
+        mem.write(win.wrapping_add(0xd2), side);
+        call(mem, 0x0079_2de0, &[action_chr, bits]);
+        if mem.read::<u32>(at(mem, 0x0133_d6e0)) == 1 {
+            mem.write(pad, 0x20u16);
+        }
+        let trigger = mem.read::<u8>(pad);
+        let chr = i32::from(mem.read::<i16>(w.wrapping_add(8))).cast_unsigned();
+        if trigger & 0x40 != 0 {
+            call(mem, 0x0079_2a40, &[chr]);
+            call(mem, 0x0089_a630, &[]);
+            call(mem, 0x0088_6ba0, &[4]);
+        } else if trigger & 0x20 != 0 {
+            let r = call(mem, 0x0089_a330, &[chr, 0x3115]);
+            call(mem, 0x0088_6ba0, &[if r.cast_signed() < 0 { 3 } else { 1 }]);
+        }
+    }
 }

@@ -1869,3 +1869,15 @@ pushed as literals (no relocation entries), not addresses.
 - `TOBtlSetCallback(w)` (`0x008a0de0`) sets a battle window's callbacks
   (open, wait, a third one, draw and init) from its kind, through a
   byte-indexed jump table.
+- `TOBtlGetTargetPad(w)` (`0x0089d390`) runs the target cursor for one
+  frame. The cursor type (`MsBattleCursorType`, 0 to 3) picks four pad
+  masks: back, forward and two side switches. The original keeps these
+  in a frame table, so a type above 3 reads its stack. The index (`i16
+  0x0133d1fc`) wraps over the list's count (`0x0133d1f6`). A side switch
+  moves to the other target list (`0x0133d1d4` or `0x0133d180`), and
+  `TOBtlSearchRevNearTarget` returns the new index. The list word at the
+  index becomes the target bits, and the target is their highest bit
+  below 28. Trigger 0x40 cancels and 0x20 confirms with command 0x3115.
+- Still open from the system worklist: `TOBtlGetMainPad` (`0x0089c900`),
+  `TOBtlCtrlCtbWindow` (`0x0089ece0`), `TOBtlSetWindowLayout`
+  (`0x008a10d0`).

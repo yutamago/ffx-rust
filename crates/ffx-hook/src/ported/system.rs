@@ -1375,6 +1375,10 @@ ported! {
     TOBtlSetCallback @ 0x008a_0de0 => extern "C" fn to_btl_set_callback(w: u32) {
         btl::bridge::set_callback(&mut mem(), w, call_sym);
     }
+    /// `TOBtlGetTargetPad(w)` (its caller returns 0 itself).
+    TOBtlGetTargetPad @ 0x0089_d390 => extern "C" fn to_btl_get_target_pad(w: u32) {
+        btl::bridge::get_target_pad(&mut mem(), w, call_sym);
+    }
     /// `TOBtlDrawGetMoneyMessageWindow(gil)`.
     TOBtlDrawGetMoneyMessageWindow @ 0x0089_3660 => extern "C" fn to_btl_draw_get_money(gil: i32) -> u32 {
         tolib::bridge::btl_draw_get_money_message_window(&mut mem(), gil, call_sym)

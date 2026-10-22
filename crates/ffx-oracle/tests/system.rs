@@ -25278,3 +25278,122 @@ fn round42_btl_matches_the_original_on_the_snapshot() {
     };
     round42_btl(&mut a, &mut b, &mut Xorshift(0x4042_0032));
 }
+
+/// Round 42 group D: `TOBtlGetTargetPad` over logging stand-ins. The
+/// cursor type stays in 0..=3 (higher ones read the original's frame);
+/// counts and the near-target search's index stay inside the target lists.
+#[allow(clippy::cast_possible_truncation, clippy::many_single_char_names)]
+fn round42_target_pad(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use btl::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x100);
+    let kind = alloc(a, b, 4);
+    let near = alloc(a, b, 4);
+    let seq = round38_seq(counter, table);
+    let all = |n: u8| (0..n).collect::<Vec<u8>>();
+    let stands: Vec<Stand> = vec![
+        (0x0078_0ce0, vec![], vec![], ret_cell(kind)), // MsBattleCursorType
+        (0x0089_90f0, vec![], vec![], ret_cell(near)), // TOBtlSearchRevNearTarget
+        (0x0088_6ba0, all(1), vec![], seq.clone()),    // SndPlayClick
+        (0x0079_2de0, all(2), vec![], seq.clone()),    // MsSetBtlTarget
+        (0x0079_2a40, all(1), vec![], seq.clone()),    // MsResetBtlTarget
+        (0x0089_a630, vec![], vec![], seq.clone()),    // TOBtlSetPrevAction
+        (0x0089_a330, all(2), vec![], seq),            // TOBtlSetNextAction
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        if let Some(&(_, n)) = arity.iter().find(|e| e.0 == sym) {
+            assert_eq!(args.len(), n, "{sym:#x} arguments");
+        }
+        eax(m, sym, args)
+    };
+    let g = |a: &Oracle, s: u32| a.rebase(s);
+    let w = alloc(a, b, 0x20);
+    let own = alloc(a, b, 0x40);
+    let pads = [
+        0u16, 0x1000, 0x2000, 0x4000, 0x8000, 0x20, 0x40, 0x60, 0x3000, 0xffff,
+    ];
+    let pick = |rng: &mut Xorshift, v: &[u16]| v[(rng.next() % v.len() as u32) as usize];
+    for k in 0..4000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x40 {
+            let v = [0u32, 1, 0xffff_ffff, 0x8000_0000, 5][(rng.next() % 5) as usize];
+            put(a, b, table + 4 * j, v);
+        }
+        put(a, b, kind, (rng.next() % 4) | (rng.next() & 0xff00));
+        put(a, b, near, (rng.next() % 8) | (rng.next() & 0xffff_0000));
+        for j in 0..0x10 {
+            let v = [rng.next(), 1, 0, 0x0800_0001][(rng.next() % 4) as usize];
+            put(a, b, own + 4 * j, v);
+        }
+        for j in 0..0x30 {
+            let v = [rng.next(), 1, 0][(rng.next() % 3) as usize];
+            put(a, b, g(a, 0x0133_d178) + 4 * j, v);
+        }
+        let ptr = [own, g(a, 0x0133_d180), g(a, 0x0133_d1d4)][(rng.next() % 3) as usize];
+        put(a, b, g(a, 0x0133_d1f8), ptr);
+        put(a, b, g(a, 0x0133_d1f6), (rng.next() % 8) as u16 + 1);
+        let index = [0u16, 1, 3, 7, 8, 0xffff][(rng.next() % 6) as usize];
+        put(a, b, g(a, 0x0133_d1fc), index);
+        put(a, b, g(a, 0x0133_d1fe), pick(rng, &[0, 1, 1, 2]));
+        put(a, b, g(a, 0x0133_d200), pick(rng, &[0, 1, 2]));
+        for at in [0x0133_d1d0u32, 0x0133_d17c] {
+            put(a, b, g(a, at), pick(rng, &[0, 1, 3, 8, 0xffff]));
+        }
+        for at in [0x025d_09d6u32, 0x025d_09d4] {
+            let v = if rng.next().is_multiple_of(3) {
+                rng.next() as u16
+            } else {
+                pick(rng, &pads)
+            };
+            put(a, b, g(a, at), v);
+        }
+        // a count past 0x7fff (a signed compare), the index kept in range
+        if k % 16 == 0 {
+            put(a, b, g(a, 0x0133_d1f6), 0x8001u16);
+            put(a, b, g(a, 0x0133_d1fc), pick(rng, &[1, 3]));
+            put(a, b, g(a, 0x025d_09d6), 0u16);
+        }
+        put(
+            a,
+            b,
+            g(a, 0x0133_d0e0),
+            [0u32, 3, 1, 2][(rng.next() % 4) as usize],
+        );
+        put(
+            a,
+            b,
+            g(a, 0x0133_d6e0),
+            [0u32, 1, 2][(rng.next() % 3) as usize],
+        );
+        put(a, b, g(a, 0x0133_d0d0), rng.next());
+        let depth = [0i8, 1, 2, 3][(rng.next() % 4) as usize];
+        put(a, b, g(a, 0x023c_c092), depth);
+        put(a, b, w + 8, rng.next());
+        let what = format!("round42 d {k}");
+        eax(a, 0x0089_d390, &[w]);
+        t::get_target_pad(b, w, call);
+        same_memory(&what, a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn round42_target_pad_matches_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round42_target_pad(&mut a, &mut b, &mut Xorshift(0x4042_0041));
+}
+
+#[test]
+fn round42_target_pad_matches_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round42_target_pad(&mut a, &mut b, &mut Xorshift(0x4042_0042));
+}
