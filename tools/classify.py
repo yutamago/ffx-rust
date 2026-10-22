@@ -414,6 +414,16 @@ REVIEWED = {
     0x00a4fe40: ("dead", "no call sites and no absolute reference in the image; twin of ported 0xa51340 (chara/main/map round 1)"),
     0x00a51560: ("dead", "no call sites and no absolute reference in the image; twin of ported 0xa51340 (chara/main/map round 1)"),
     0x006e9570: ("platform", "rcbgGuideMapSave: Iggy save-menu callback, jumps to 0x6e9870 (SaveDataGetLoc -> Iggy) (chara/main/map round 1)"),
+    0x0087b3e0: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087b400: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087b420: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087b520: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087b580: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087b5b0: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087b5e0: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087b980: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087ba70: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
+    0x0087baa0: ("debug", "worker debug-page line printer; referenced only from table 0xc53770 via 0xc5455c <- 0xc545d0 <- 0x87f390, whose only caller 0x87d690 has no caller or data ref (script round 27)"),
 }
 
 # (category, name regex, evidence, highest address or None); first match
