@@ -3678,6 +3678,112 @@ pub mod bridge {
         }
     }
 
+    /// `opp_main(battle)` (`0x0080bd50`, called by `op_effect_run_after`):
+    /// runs the draw list of battle `battle` (`g_OpusBattle[battle]`, low
+    /// 16 bits; `g_VfxPass` = 1 for battle 1, 0 at the end). The host
+    /// record comes from the SPR stack (`op_spr_alloc(0x400)`): `g_Ee_Gpr`'s
+    /// `r0` at `+0x210`, `+0x212` = 1 when both bytes `0x02322780`/`81`
+    /// share a bit or `Sg_GetCurExecFrames` is 0, `+0x21e` = 1 when
+    /// `MsBattleChrStart`, the listener (`0x0113fcd0`) at `+0x280` and the
+    /// matrix at `0x0113fd10` at `+0x2c0` (both through the emulated
+    /// registers at `0x00c8f528`, the first without their word 0).
+    ///
+    /// The draw list `[battle +0x1c]` holds `i16` part numbers ending at a
+    /// negative one, indexed by the host's `+0x218` (re-read each time:
+    /// the callbacks may move it). For part `n` (`+0x214` = `n`, `+0x220` =
+    /// `[battle +0x20] + 0x100 n`), with part byte `+0x19` bit 7 the matrix
+    /// at `0x0113fd50` goes in at `+0x2c0` for its call and the one at
+    /// `0x0113fd10` comes back after. Part byte `+0xbb` picks the callback
+    /// `(host, battle)`: with bit 7 `[[battle +0x50] +0x78][low 7 bits]`
+    /// (no null check), else `0x00c48e78[byte]`, which when null only
+    /// prints a warning (`dbgPrintf`).
+    ///
+    /// Callees through `call`. Returns `eax` as the original leaves it:
+    /// the terminating list word, zero-extended (`op_spr_free` keeps
+    /// `eax`; the caller does not read it).
+    #[allow(clippy::many_single_char_names)]
+    pub fn opp_main<M: Mem>(
+        mem: &mut M,
+        battle: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let battle = battle & 0xffff;
+        let pass = g(mem, 0x0113_335c);
+        if battle == 1 {
+            mem.write(pass, 1u32);
+        }
+        let alloc = g(mem, 0x007e_6a00);
+        let host = call(mem, alloc, &[0x400]);
+        let h = |o: u32| host.wrapping_add(o);
+        let ob = OPUS_BATTLE.ptr(mem).addr;
+        let b: u32 = mem.read(ob + 4 * battle);
+        let parts: u32 = mem.read(b.wrapping_add(0x20));
+        let r0 = crate::ppp::bridge::R0.ptr(mem).addr;
+        for i in 0..4u32 {
+            let x: u32 = mem.read(r0 + 4 * i);
+            mem.write(h(0x210 + 4 * i), x);
+        }
+        let s0: u8 = mem.read(g(mem, 0x0232_2780));
+        let s1: u8 = mem.read(g(mem, 0x0232_2781));
+        let still = if s0 & s1 != 0 {
+            true
+        } else {
+            let frames = g(mem, 0x0082_d7e0);
+            call(mem, frames, &[]) == 0
+        };
+        mem.write(h(0x212), u16::from(still));
+        let start = g(mem, 0x0078_0cb0);
+        if call(mem, start, &[]) != 0 {
+            mem.write(h(0x21e), 1u8);
+        }
+        let (listener, normal, marked) = (
+            g(mem, 0x0113_fcd0),
+            g(mem, 0x0113_fd10),
+            g(mem, 0x0113_fd50),
+        );
+        ee_copy64(mem, listener, h(0x280), false);
+        ee_copy64(mem, normal, h(0x2c0), true);
+        let list: u32 = mem.read(b.wrapping_add(0x1c));
+        let own = g(mem, 0x00c4_8e78);
+        let end = loop {
+            let idx = i32::from(mem.read::<i16>(h(0x218))).cast_unsigned();
+            let v: u16 = mem.read(list.wrapping_add(idx.wrapping_mul(2)));
+            if v.cast_signed() < 0 {
+                break v;
+            }
+            mem.write(h(0x214), v);
+            let part = parts.wrapping_add(i32::from(v.cast_signed()).cast_unsigned() << 8);
+            mem.write(h(0x220), part);
+            if mem.read::<u8>(part.wrapping_add(0x19)) & 0x80 != 0 {
+                ee_copy64(mem, marked, h(0x2c0), true);
+            }
+            let sel: u8 = mem.read(part.wrapping_add(0xbb));
+            let fp = if sel & 0x80 != 0 {
+                let e: u32 = mem.read(b.wrapping_add(0x50));
+                let t: u32 = mem.read(e.wrapping_add(0x78));
+                Some(mem.read::<u32>(t.wrapping_add(4 * u32::from(sel & 0x7f))))
+            } else {
+                Some(mem.read::<u32>(own + 4 * u32::from(sel))).filter(|&f| f != 0)
+            };
+            if let Some(fp) = fp {
+                call(mem, fp, &[host, b]);
+            } else {
+                let text = g(mem, 0x00b5_8a50);
+                let dbg = g(mem, 0x0062_f500);
+                call(mem, dbg, &[text]);
+            }
+            let i: u16 = mem.read(h(0x218));
+            mem.write(h(0x218), i.wrapping_add(1));
+            if mem.read::<u8>(part.wrapping_add(0x19)) & 0x80 != 0 {
+                ee_copy64(mem, normal, h(0x2c0), true);
+            }
+        };
+        let free = g(mem, 0x007e_6a60);
+        call(mem, free, &[0x400]);
+        mem.write(pass, 0u32);
+        u32::from(end)
+    }
+
     /// `opu_main_host(battle, list)` (`0x0080cc00`): runs the opus units
     /// of battle `battle` (`g_OpusBattle[battle]`, `g_VfxPass` = 1 for
     /// battle 1). The host record comes from the SPR stack
