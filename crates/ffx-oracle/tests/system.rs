@@ -24626,3 +24626,164 @@ fn round41_magic_update_matches_the_original_on_the_snapshot() {
     };
     round41_magic_update(&mut a, &mut b, &mut Xorshift(0x4041_0042));
 }
+
+/// Round 42 group A: the battle message windows, the battle window scene
+/// openers, `TOBtlElementLampFlags_00897650` and the kernel monster-name
+/// slot over logging stand-ins for every callee (results the next words
+/// of a table of small values, so the switches and sign tests come up).
+/// `MsGetComData` stores a test word through its name pointer (a stack
+/// word on both sides).
+#[allow(
+    clippy::too_many_lines,
+    clippy::cast_possible_truncation,
+    clippy::many_single_char_names
+)]
+fn round42_messages(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
+    use tolib::bridge as t;
+    let log = alloc(a, b, 0x1000);
+    let cursor = alloc(a, b, 4);
+    let counter = alloc(a, b, 4);
+    let table = alloc(a, b, 0x100);
+    let cells = alloc(a, b, 0x10);
+    let seq = round38_seq(counter, table);
+    // MsGetComData(id, &table): [table] = cells[0]; the record is cells + 4
+    let mut com = store_through(1, cells);
+    com.push(0xb8); // mov eax, cells + 4
+    com.extend_from_slice(&(cells + 4).to_le_bytes());
+    let stands: Vec<Stand> = vec![
+        (0x0078_f8f0, vec![0, 1], vec![], seq.clone()), // MsGetRomBtlText
+        (0x0089_dba0, vec![0, 1], vec![], seq.clone()), // TOBtlOpenSimpleHelpMes
+        (0x008b_57c0, vec![0, 1, 2], vec![], seq.clone()), // TOBtlSetMacroCommandType
+        (0x008b_57f0, vec![0, 1, 2], vec![], seq.clone()), // TOBtlSetMacroCommandValue
+        (0x0079_af10, vec![0], vec![], seq.clone()),    // MsGetRamChrName
+        (0x008a_c850, vec![0], vec![], seq.clone()),    // TOGetSaveChrName
+        (0x0078_fcf0, vec![0, 1, 2], vec![], seq.clone()), // MsMenuGetText
+        (0x0079_a4b0, vec![0], vec![], com),            // MsGetComData
+        (0x0079_0240, vec![0], vec![], seq.clone()),    // MsMenuWeakElement_00790240
+        (0x0078_f910, vec![0], vec![], seq.clone()),    // MsMenuAbsElement_0078f910
+        (0x0078_fe80, vec![0], vec![], seq.clone()),    // MsMenuInvElement
+        (0x0078_fe40, vec![0], vec![], seq.clone()),    // MsMenuHalfElement
+        (0x0078_4260, vec![0, 1], vec![], seq.clone()), // Mon_GetName
+        (0x008a_eec0, vec![0], vec![], seq.clone()),    // TOSeqInitScene
+        (0x0078_f700, vec![0], vec![], seq.clone()),    // MsCheckLeftWindow
+        (0x008a_f0d0, vec![0, 1], vec![], seq),         // TOSeqStartScene
+    ];
+    round38_stands(a, b, cursor, 0, &stands);
+    let arity: Vec<(u32, usize)> = stands.iter().map(|s| (s.0, s.1.len())).collect();
+    let call = |m: &mut Oracle, sym: u32, args: &[u32]| {
+        if let Some(&(_, n)) = arity.iter().find(|e| e.0 == sym) {
+            let n = if sym == 0x0079_a4b0 { 2 } else { n };
+            assert_eq!(args.len(), n, "{sym:#x} arguments");
+        }
+        eax(m, sym, args)
+    };
+    let local = b.stack_range().start + 0x100;
+    let w = alloc(a, b, 0xa0);
+    let kernel = a.rebase(0x0112_a034);
+    let small = [0u32, 1, 2, 3, 4, 5, u32::MAX, 0x8000_0000];
+    for k in 0..3000u32 {
+        put(a, b, cursor, log);
+        put(a, b, counter, 0u32);
+        for j in 0..0x40 {
+            let v = if rng.next().is_multiple_of(4) {
+                rng.next()
+            } else {
+                small[(rng.next() % small.len() as u32) as usize]
+            };
+            put(a, b, table + 4 * j, v);
+        }
+        for j in 0..4 {
+            put(a, b, cells + 4 * j, rng.next());
+        }
+        for j in 0..0x28 {
+            put(a, b, w + 4 * j, rng.next());
+        }
+        let pick = |rng: &mut Xorshift| {
+            if rng.next().is_multiple_of(3) {
+                rng.next()
+            } else {
+                small[(rng.next() % small.len() as u32) as usize]
+            }
+        };
+        let (x, y) = (pick(rng), pick(rng));
+        let what = format!("round42 {k} {x:#x} {y:#x}");
+        let r = match k % 11 {
+            0 => (
+                eax(a, 0x0089_34d0, &[]),
+                t::btl_draw_first_strike_message_window(b, true, call),
+            ),
+            1 => (
+                eax(a, 0x0089_34f0, &[]),
+                t::btl_draw_first_strike_message_window(b, false, call),
+            ),
+            2 => (
+                eax(a, 0x0089_2870, &[x, y]),
+                t::btl_draw_name_message_window(b, true, x, y, call),
+            ),
+            3 => (
+                eax(a, 0x0089_7200, &[x, y]),
+                t::btl_draw_name_message_window(b, false, x, y, call),
+            ),
+            4 => (
+                eax(a, 0x0089_3660, &[x]),
+                t::btl_draw_get_money_message_window(b, x.cast_signed(), call),
+            ),
+            5 => (
+                eax(a, 0x0089_35f0, &[x, y]),
+                t::btl_draw_get_limit_type_message_window(b, x, y, call),
+            ),
+            6 => (
+                eax(a, 0x0089_5320, &[x, y]),
+                t::btl_draw_learning_message_window(b, x, y, local, call),
+            ),
+            7 => {
+                let element = if rng.next().is_multiple_of(2) {
+                    y
+                } else {
+                    rng.next() % 5
+                };
+                (
+                    eax(a, 0x0089_7650, &[x, element]),
+                    t::btl_element_lamp_flags(b, x, element, call),
+                )
+            }
+            8 => {
+                put(a, b, kernel, rng.next());
+                (
+                    eax(a, 0x0077_3780, &[x]),
+                    t::kernel_slot_monster_name(b, x, call),
+                )
+            }
+            9 => {
+                put(a, b, w + 8, (x % 6) as u16);
+                (eax(a, 0x008a_8640, &[w]), t::open_btl_win_main(b, w, call))
+            }
+            _ => {
+                put(a, b, w + 8, (x % 6) as u16);
+                (
+                    eax(a, 0x008a_85a0, &[w]),
+                    t::open_btl_limit_break(b, w, call),
+                )
+            }
+        };
+        assert_eq!(r.0, r.1, "{what}");
+        same_memory(&what, a, b);
+        settle(a, b);
+    }
+}
+
+#[test]
+fn round42_messages_match_the_original_synthetic() {
+    let Some((mut a, mut b)) = synthetic() else {
+        return;
+    };
+    round42_messages(&mut a, &mut b, &mut Xorshift(0x4042_0011));
+}
+
+#[test]
+fn round42_messages_match_the_original_on_the_snapshot() {
+    let Some((mut a, mut b)) = snapshot() else {
+        return;
+    };
+    round42_messages(&mut a, &mut b, &mut Xorshift(0x4042_0012));
+}

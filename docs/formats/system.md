@@ -1786,3 +1786,38 @@ pushed as literals (no relocation entries), not addresses.
   the CD instead. `MagicSqrt_009dbe10(src, dst)` (`0x009dbe10`,
   `g_MagicImports` slot 300) stores `sqrt(*src)` as `f32` and returns
   `dst`.
+
+## Round 42
+
+- The battle message windows return 7 and end in
+  `TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(mes, 0))`. Before that they
+  fill macro window 7 with `TOBtlSetMacroCommandType(7, slot, type)` and
+  `TOBtlSetMacroCommandValue(7, slot, v)`. First strike (`0x008934d0`
+  enemy, `0x008934f0` player) uses texts 0x3003 and 0x3002 with no macro.
+  Capture (`0x00892870`) and the standard name window (`0x00897200`) put
+  a name in slot 0: `MsGetRamChrName` for capture, `TOGetSaveChrName`
+  for the standard window. Get-money (`0x00893660`) puts the gil in slot
+  0 as type 1 (a number), with text 0x3018 above 0, 0x3019 at 0 and
+  0x301a below (signed). The limit-type window (`0x008935f0`) puts the
+  name in slot 0 and `MsMenuGetText(1, kind + 0x1033, 0)` in slot 1, with
+  text 0x300f. The learning window (`0x00895320`) puts the name in slot
+  0, and in slot 1 the command's text `table + u16 *MsGetComData(com,
+  &table)`, with text 0x300d. `table` is a frame word, and some kinds of
+  `MsGetComData` leave it unset.
+- `TOOpenBtlWinMain(w)` (`0x008a8640`, jump table `0x008a8694`) and
+  `TOOpenBtlLimitBreak(w)` (`0x008a85a0`) both call `TOSeqInitScene(2)`
+  first and both return 1. For `MsCheckLeftWindow(i16 w+8)`,
+  TOOpenBtlWinMain starts scene `bnormalllay` on 2, nothing on 1 or 3,
+  and `bnormallay` otherwise. TOOpenBtlLimitBreak calls
+  `MsCheckLeftWindow` three times, starts `blimitlay` when the second
+  call returns 2, and sets `w+0x98` to `TOOpenBtlWinMain`.
+- `TOBtlElementLampFlags_00897650(chr, element)` (jump table
+  `0x0089769c`) returns the weak, absorb, immune or half flags of `chr`
+  for elements 0 to 3. For any other element it only replaces `al` with
+  the argument's top byte.
+- `KernelSlotMonsterName_198_00773780(i)` calls `Mon_GetName(rec, i)`
+  into `rec = *0x0112a034 + 0x198 + 0x1d8 i` and returns `rec`.
+- Not ported: `0x006492b0` and `0x006492e0` are tail jumps to
+  `debugLoad_00646b30` (`saves/%02d.SAV` through a FILE*) and
+  `debugSave`. `0x00647e10` is the autosave's call to the debug save.
+  `0x00703a20` is a thread loop that never returns.

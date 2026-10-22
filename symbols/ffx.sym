@@ -2047,6 +2047,7 @@
 0x006461f0 function Text_DecodeCharWestern    # (src, pos, out) -> pos + bytes: character code -> UTF-8 via ffxsjistbl_us.bin, codes < 0xc0 only (a jump table of offsets)
 0x00646910 function InitSysModuleEncoding        # layout+callees: sorts between DecodingGamecodeJPCHKR and MallocAndReadGamecode, and its named callees match the Switch 0x71001c2c00 InitSysModuleEncoding's (similarity 1.00: MallocAndReadGamecode, TOGetFFXLang); symbols from Fahrenheit's server export
 0x00646920 function MallocAndReadGamecode     # loads ffx_encoding/ffxsjistbl_<lang>.bin into g_CharsetCjk/g_CharsetWestern; was Text_LoadCharset
+0x00646b30 function debugLoad_00646b30         # (slot, buf, size): reads "/FFX_Data/GameData/PS3Data/saves/" + sprintf("%02d", slot) + ".SAV" through a FILE* (debugSave's partner); name ours
 0x00646df0 function debugSave                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SKS_DEBUG: Problem opening the file "%s" \\n'; Switch 0x7100223e20 debugSave (symbols from Fahrenheit's server export)
 0x00647220 function SwapHeaderF00_00647220 # cdecl(p) -> 0x1320: u16s of p[0xf00..0xf10] and u32s of p[0xf10..0xf18] byte-swapped; callers 0x006477f0, 0x006479b0 (save data); name ours
 0x006473d0 function SwapHalves_006473d0 # cdecl(p) -> 0x340: the u16s of p[0..0x200] and p[0x300..0x340] byte-swapped (big-endian data); callers 0x006477f0, 0x006479b0; name ours
@@ -2058,6 +2059,7 @@
 0x00647c90 function GetU32_01325ac4 # () -> u32 at 0x01325ac4; name ours
 0x00647cb0 function ReturnConst_00647cb0 # () -> 0x6900; name ours
 0x00647d70 function SaveDataCheckCrc          # fh call.cs cdecl
+0x00647e10 function AutoSave_DebugSave_00647e10 # cdecl(a) -> 0 / -1: SaveDataManager_instance(), then thiscall 0x006f1c40(a) on it (which only calls SaveDataManager_debugSave_Internal_6f0650); 0 when its al is nonzero, else -1; caller 0x00869e40 on gNeedAutoSave; name ours
 0x00647e40 function SaveDataManager_MarkAlbhedLoaded # (): manager +0 = 1 (SetWord0_006f1db0); HandleSaveDataScreen calls it when SaveDataIsAlbhedLoaded is -1 after a load (docs/formats/save.md); name ours
 0x00647e80 function SaveDataGetCrc            # fh switch:bsim1.00 0x7100224890
 0x00647ee0 function SaveDataGetDialogState    # fh v3:cg3 0x648090
@@ -2112,7 +2114,9 @@
 0x00649180 function debugPrintString             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SKS_DEBUG: %s: %s\\n'; Switch 0x7100224120 debugPrintString (symbols from Fahrenheit's server export)
 0x006491b0 function debugPrintStringToHex        # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SKS_DEBUG: %s: 0x'; Switch 0x7100224000 debugPrintStringToHex (symbols from Fahrenheit's server export)
 0x00649220 function debugPrintStringToUTF8       # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'SKS_DEBUG: %s: UTF8:'; Switch 0x71002240a0 debugPrintStringToUTF8 (symbols from Fahrenheit's server export)
+0x006492b0 function debugLoad_Thunk_006492b0   # push ebp; mov ebp, esp; pop ebp; jmp debugLoad_00646b30 (the caller's arguments passed on); TkMenuCtrlSaveLoad's load (1 caller); name ours
 0x006492c0 function debugSavedataLoadAll      # fh switch:bsim1.00 0x7100223fe0
+0x006492e0 function debugSave_Thunk_006492e0   # push ebp; mov ebp, esp; pop ebp; jmp debugSave (the caller's arguments passed on); TkMenuCtrlSaveLoad's save (1 caller); name ours
 0x00649d53 function Catch_All_00649f03        # fh v3:cg2 0x649f03 Catch_All@00649f03
 0x0064b7a0 function Phyre_PCluster_create_PMaterialSet # stdcall (count): Phyre_PCluster_create(count, 0x00c998e8 PMaterialSet descriptor, 0); a template instance, PhyreEngine code, left original. fh: yiGetRootMatrix (switch bsim1.00 0x710052c6a0, a wrong match: no callers here, the body is not yi code)
 0x0064b7e0 function Phyre_PCluster_create_PTexture2D # stdcall (count): Phyre_PCluster_create(count, 0x00ca37d0 PTexture2D descriptor, 0); PhyreEngine code, left original. fh: yiSetRootMatrix (switch bsim1.00, a wrong match)
@@ -3251,6 +3255,7 @@
 0x00703230 function RadialBlur_initialize        # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'RadialBlur_capturedFrame'; Switch 0x710026c6b0 RadialBlur::initialize (symbols from Fahrenheit's server export)
 0x00703750 function CopyFloats4_00703750 # thiscall(this; src), ret 4: 4 floats from src to this+4 through the x87 stack, returns src; caller 0x006c3970; name ours
 0x007037e0 function CopyFloats2_007037e0 # thiscall(this; src), ret 4: 2 floats from src to this+0x14 through the x87 stack, returns src; caller 0x006c3970; name ours
+0x00703a20 function ThreadLoop_00703a20        # fastcall(this): never returns: forever 0x006db8a0(this+0x10) on *0x00cdede4 (WaitForSingleObject import 0x00b0c0f8), 0x00703910 on its result, 0x006db800(result, this+0x10); no callers (a thread entry); name ours
 0x00703a90 function Thread_JoinClose # thiscall: with a handle at +4: WaitForSingleObject(it, INFINITE), CloseHandle, +4 = +8 = 0; name ours
 0x00703bc0 function cdc_Vector_CanNormalize3  # thiscall(v): al = 1 when (x²+y²)+z² (stored f32) is not NaN (_isnan), finite (_finite) and > FLT_MIN (0x00b4cf60); only caller cdc_Vector_SafeNormalize3; name ours
 0x00704200 function cdc_Vector_SafeNormalize3 # fh v3:exact 0x007042f0 cdc::Vector::SafeNormalize3
@@ -4777,6 +4782,7 @@
 0x00773720 function KernelSaveCommand_3023_00773720# cdecl(chr): MsGetSaveCommand(chr, 0x3023); kernel menu accessor (table entry); name ours
 0x00773740 function KernelSaveCommand_311e_00773740# cdecl(chr): MsGetSaveCommand(chr, 0x311e); kernel menu accessor (table entry); name ours
 0x00773760 function KernelSaveCommand_3024_00773760# cdecl(chr): MsGetSaveCommand(chr, 0x3024); kernel menu accessor (table entry); name ours
+0x00773780 function KernelSlotMonsterName_198_00773780 # cdecl(i) -> eax: Mon_GetName(rec, i), rec = *0x0112a034 + 0x198 + 0x1d8 i (read again for eax); kernel menu accessor (function table entry, file offset 0x83fc08); ported in system round 42; name ours
 0x007737c0 function KernelSaveCommand_3025_007737c0# cdecl(chr): MsGetSaveCommand(chr, 0x3025); kernel menu accessor (table entry); name ours
 0x007737e0 function KernelSaveCommand_3026_007737e0# cdecl(chr): MsGetSaveCommand(chr, 0x3026); kernel menu accessor (table entry); name ours
 0x00773800 function KernelSetEventByte_00773800 # cdecl(i, v): MsGetSaveEventFlag()[i] = v; name ours
@@ -10477,24 +10483,24 @@
 0x00892320 function TOBtlCtrlTidusLimitWindow # fh v3:exact 0x00892290; (): i16 state 0x0133d734 as Auron's (btidu scene, result 0x0133d6f3, MsMenuLimitSet_007b0470(0, ..)); state 4: marker i16 0x0133d742 moves by step 0x0133d744 between start 0x0133d736 and start + length 0x0133d73a (bouncing, the step turned); a press (TkGetControlerTrigHist bit 0x20, held or new) inside 0x0133d73c..0x0133d73e is state 5, elsewhere click 3, marker back to the start, step made positive; ported (system r38, btl::bridge::ctrl_tidus_limit_window)
 0x00892590 function TOBtlDrawActiveChrCursor  # fh v3:exact 0x00892500
 0x00892740 function TOBtlDrawAuronLimitWindow # fh v3:exact 0x008926b0
-0x00892870 function TOBtlDrawCaptureMonsterMessageWindow # fh call.cs cdecl
+0x00892870 function TOBtlDrawCaptureMonsterMessageWindow # fh call.cs cdecl; (chr, mes) -> 7: macro 7 slot 0 MsGetRamChrName(chr), TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(mes, 0)); ported in system round 42
 0x008928b0 function TOBtlDrawChangeSeqAnm0    # fh v3:exact 0x00892820
 0x00892910 function TOBtlDrawCrossLimitGauge  # fh v3:exact 0x00892880
 0x00892cb0 function TOBtlDrawCrossParamPlate  # fh v3:cg13 0x892c20; (chr, x, y): battle HP/MP plate: frame, TOBtlDrawCrossLimitGauge(chr, x, y, w, h) (five words; Ghidra shows two), HP/MP labels 0xe9/0xea, ToMakeBtlEasyEdgeDigitRight (six words) with the HP colour from MsCalcWeakLevel; ported (system round 33, chr_plate.rs)
 0x00893290 function TOBtlDrawDamageValue2     # fh v3:exact 0x00893200; (): i16 count 0x0133f108 of 16-byte entries at 0x0133f110 (i16 x, y, kind, value, rgba); digits 0..9 TOMakePktBtlDamageNumRGBA, 0x3d..0x3a icons 0..3 TOMakePktBtlIconA; magic 0x11b skips kind 3; 9999/99999 flags 0x01133390/94 unlock achievements 0x12/0x15; returns 0; ported (system round 35)
 0x008933c0 function TOBtlDrawEnemyLimit       # fh v3:exact 0x00893330
-0x008934d0 function TOBtlDrawFirstStrikeEnemyMessageWindow # fh call.cs cdecl
-0x008934f0 function TOBtlDrawFirstStrikePlayerMessageWindow # fh call.cs cdecl
+0x008934d0 function TOBtlDrawFirstStrikeEnemyMessageWindow # fh call.cs cdecl; () -> 7: TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(0x3003, 0)); ported in system round 42
+0x008934f0 function TOBtlDrawFirstStrikePlayerMessageWindow # fh call.cs cdecl; () -> 7: TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(0x3002, 0)); ported in system round 42
 0x00893510 function TOBtlDrawGetItemMessageWindow # fh v3:exact+call.cs 0x00893480 cdecl
-0x008935f0 function TOBtlDrawGetLimitTypeMessageWindow # fh v3:exact+call.cs 0x00893560 cdecl
-0x00893660 function TOBtlDrawGetMoneyMessageWindow # fh v3:exact+call.cs 0x008935d0 cdecl
+0x008935f0 function TOBtlDrawGetLimitTypeMessageWindow # fh v3:exact+call.cs 0x00893560 cdecl; (chr, kind) -> 7: macro 7 slots 0/1 TOGetSaveChrName(chr), MsMenuGetText(1, kind + 0x1033, 0); text 0x300f; ported in system round 42
+0x00893660 function TOBtlDrawGetMoneyMessageWindow # fh v3:exact+call.cs 0x008935d0 cdecl; (gil) -> 7: macro 7 slot 0 the number (type 1), text 0x3018 / 0x3019 / 0x301a for gil > 0 / 0 / < 0 (signed); ported in system round 42
 0x008936d0 function TOBtlDrawHelpWin          # fh v3:exact 0x00893640; cdecl(): battle help band and frame, then g_BtlHelpText at remapX2(235)/Y2(101), scrolling (g_BtlHelpScroll -0.8 a frame, wraps by width+20) when wider than remapX2(435) and the info window is shown or libra auto is not 0; closed (g_BtlHelpWinOpen != 1) resets the scroll; ported (system round 28)
 0x00893a30 function TOBtlDrawInfoWin          # fh v3:exact 0x008939a0
 0x008947c0 function TOBtlDrawInfoWinBack         # layout: alphabetical run between TOBtlDrawInfoWin and TOBtlDrawInfoWinElementLamp (1 unnamed in the gap); Switch 0x710049f400 TOBtlDrawInfoWinBack is the only unused name of that source file sorting there (symbols from Fahrenheit's server export)
 0x00894b40 function TOBtlDrawInfoWinElementLamp # fh v3:cg4 0x894ab0
 0x00895140 function TOBtlDrawInfoWinMes       # fh v3:exact 0x008950b0; cdecl(): libra auto off, 0x0133c93d and menu bit 0x400: the four info lines (0x0133f618, 0x1c each) via TOMkpCrossExtMesFontLClut inside OpenFontScissor of the i16 box 0x0133f694; ported (system round 28)
 0x00895240 function TOBtlDrawInfoWinStatus    # fh v3:exact 0x008951b0; (_, x, y): status cycle tick (0x14 frames per entry) and the entry text centred in X2(380) (ToMakeBtlEasyEdgeFont 0.78); ported (system round 37)
-0x00895320 function TOBtlDrawLearningMessageWindow # fh v3:exact+call.cs 0x00895290 cdecl
+0x00895320 function TOBtlDrawLearningMessageWindow # fh v3:exact+call.cs 0x00895290 cdecl; (chr, com) -> 7: macro 7 slots 0/1 TOGetSaveChrName(chr), table + u16 *MsGetComData(com, &table) (a frame word); text 0x300d; ported in system round 42
 0x00895390 function TOBtlDrawLibraWindow      # fh v3:exact 0x00895300
 0x00895480 function TOBtlDrawLimitGauge       # fh v3:exact 0x008953f0
 0x008955e0 function BtlDrawRatio_008955e0       # (): with 0x0133f77c set, 0x00901490(f32 0x0133f794, i16 0x0133f780 + 15, i16 0x0133f782 - 20, 0x80008080 below 1.0 else 0x80808080); 0x0133c93f refreshes y = ftol(graphicUiRemapY2(350)); ported (system round 34); name ours
@@ -10503,10 +10509,11 @@
 0x00895ae0 function TOBtlDrawScanWinElementLamp # fh v3:cg4 0x895a50
 0x008960e0 function TOBtlDrawStatusLimitGauge # fh v3:exact 0x00896050
 0x00896450 function TOBtlDrawStatusWin        # fh v3:exact 0x008963c0; (): scissor, per party slot of 0x0133f7ac (x0 X2(1231), y0 Y2(835 + 52k)) by mode 0x0133d782: name (MsGetRamChrName, ToMakeBtlEasyEdgeFont 0.68), mode 3 command frame (0x023cc088), limit gauge TOBtlDrawStatusLimitGauge (+0x38), HP/MP labels 0xe9/0xea (language 11 sizes), shown HP/MP; modes 0/1 marked frame (0x0133d178 bits), label, value, '/' (0x00b8f88c) and max; mode 2 statuses cycling every 20 frames (MsMenuGetText(1, id, 1)); ported (system r38, btl::bridge::StatusWindow)
-0x00897200 function TOBtlDrawStdChrNameMessageWindow # fh call.cs cdecl
+0x00897200 function TOBtlDrawStdChrNameMessageWindow # fh call.cs cdecl; (chr, mes) -> 7: macro 7 slot 0 TOGetSaveChrName(chr), TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(mes, 0)); ported in system round 42
 0x00897240 function TOBtlDrawTidusLimitWindow # fh v3:exact 0x008971b0
 0x008974a0 function TOBtlDrawWakkaLimitWindow    # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x71004a1710 TOBtlDrawWakkaLimitWindow, 3 votes, round 1
 0x008975a0 function TOBtlFinishCommand           # callees: its named callees match the Switch 0x7100499780 TOBtlFinishCommand's (similarity 1.00: MsGetSaveConfigCursorSave, MsSetBtlCommand, TOBtlMemoryCursorPos, TOControlMsSetMenuCommand, TOSeqInitAllScene); symbols from Fahrenheit's server export
+0x00897650 function TOBtlElementLampFlags_00897650 # cdecl(chr, element) -> eax: jump table 0x0089769c: MsMenuWeakElement_00790240 / MsMenuAbsElement_0078f910 / MsMenuInvElement / MsMenuHalfElement of chr for element 0..3; else al = the element's top byte (eax = element & ~0xff | element >> 24; Ghidra's 'param_2 >> 0x18' drops the rest); caller TOBtlDrawInfoWinElementLamp reads al; ported in system round 42; name ours
 0x008976f0 function TOBtlGetChrName           # fh v3:cg6 0x897660
 0x00897700 function TOBtlGetChrParamFontColor    # layout+callees: sorts between TOBtlGetChrName and TOBtlInit, and its named callees match the Switch 0x71004a1c60 TOBtlGetChrParamFontColor's (similarity 1.00: MsCalcWeakLevel); symbols from Fahrenheit's server export
 0x00897770 function TOBtlLibraGetState        # g_MagicImports slot 373 (1 overlay): (i16) 0x0133f6a8; hidden from the dump
@@ -10641,9 +10648,9 @@
 0x008a7dc0 function TODrawWaitBtlWinWeapon    # fh v3:cg5 0x8a7d70 __TODrawWaitBtlWinWeapon
 0x008a84d0 function TOInitBtlWinChange        # fh v3:cg2 0x8a8480 __TOInitBtlWinChange; cdecl(w) -> 0: change-window state 0x01340800 (8 words) cleared, u16 3 and i16 w+8 at its start, u16 w+0x42 = 0, w+0x20 = TOGetSaveWindow(w+8, 10, 0x0134080c), TOSeqInitScene(2), TOSeqStartScene(2, "bclose" 0x00b5f094); ported (system r39, tolib::bridge::init_btl_win_change)
 0x008a8550 function TOKickOpenLimitBreakSecond   # layout+callees: sorts between TOInitBtlWinChange and TOOpenBtlLimitBreak, and its named callees match the Switch 0x71004ae790 TOKickOpenLimitBreakSecond's (similarity 1.00: MsCheckLeftWindow, TOSeqInitScene, TOSeqStartScene); symbols from Fahrenheit's server export
-0x008a85a0 function TOOpenBtlLimitBreak       # fh v3:cg2 0x8a8550 __TOOpenBtlLimitBreak
+0x008a85a0 function TOOpenBtlLimitBreak       # fh v3:cg2 0x8a8550 __TOOpenBtlLimitBreak; (w) -> 1: TOSeqInitScene(2), MsCheckLeftWindow(i16 w+8) three times (the second's 2 starts "blimitlay"), w+0x98 = TOOpenBtlWinMain; ported in system round 42
 0x008a8620 function TOOpenBtlWinLeft             # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'bleftwlay'; Switch 0x71004a8d60 __TOOpenBtlWinLeft (symbols from Fahrenheit's server export); ported (system round 37)
-0x008a8640 function TOOpenBtlWinMain          # fh v3:cg2 0x8a85f0 __TOOpenBtlWinMain
+0x008a8640 function TOOpenBtlWinMain          # fh v3:cg2 0x8a85f0 __TOOpenBtlWinMain; (w) -> 1: TOSeqInitScene(2), jump table 0x008a8694 on MsCheckLeftWindow(i16 w+8): 2 TOSeqStartScene(2, "bnormalllay"), 1/3 nothing, else "bnormallay"; ported in system round 42
 0x008a86d0 function TOOpenBtlWinRight            # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'brightwlay'; Switch 0x71004a7f50 __TOOpenBtlWinRight (symbols from Fahrenheit's server export); ported (system round 37)
 0x008a87a0 function TOWaitBtlWinChange           # layout+callees: sorts between TOOpenBtlWinRight and TOWaitBtlWinInputGil, and its named callees match the Switch 0x71004abb20 TOWaitBtlWinChange's (similarity 1.00: TOBtlGetChangePad); symbols from Fahrenheit's server export; cdecl(w) -> 1: TOBtlGetChangePad(w) unless f32 w+0xe0 is below 0.3f32 (a NaN runs it); ported (system r40, tolib::bridge::wait_btl_win Change)
 0x008a87d0 function TOWaitBtlWinInputGil      # fh v3:cg3 0x8a8780 __TOWaitBtlWinInputGil; cdecl(w) -> 1 idle / 0: gil window on pad trigger u16 0x025d09d6 (0x0133d6e0 == 1: chr 0xe pays 1, others cancel); 0x8000/0x2000 move the digit i16 0x01340458 (wraps 0..i16 0x01340456), 0x1000/0x4000 add/take 10^digit (stack table 1..1e8) with clicks below the most i32 0x01340460 / above 0; amount 0x01340464 clamped, left 0x01340468 = gil 0x0134045c - amount; 0x20 TOBtlSetNextAction(w+8, *(w+0x20)) == 1: 0x023cc038 = amount (>= 1 for auto chr 0xe), 0x01340440 = amount, click 1, else click 3; 0x40 with g_BtlActionDepth > 0: both 0, TOBtlSetPrevAction, ++byte w+1, click 4; ported (system r39, tolib::bridge::wait_btl_win_input_gil)
