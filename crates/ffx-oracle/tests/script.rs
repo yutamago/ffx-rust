@@ -14032,7 +14032,192 @@ fn r27e_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
             },
         );
     }
+    r27e_ties(a, b, &stubs, c, w, p, what);
     poke(a, b, ctx_cell, here);
+}
+
+/// `Atel_CheckLineTouch_008684b0`'s edges on the line P (0,0,0) .. Q
+/// (10,0,0) (`Math_FacingWithin` the stand-in, returning 1): exact radius,
+/// talk and candidate ties (distance 3 from (5,_,3)), band 0, the band's
+/// edges, an infinite band over an infinite Q height (N's height minus the
+/// band is NaN), a crossing step with x unchanged, and crossings whose
+/// height gap is the band exactly, found with the original
+/// `Math_CrossHeightGap`; half of them where swapping P and Q rounds the
+/// gap differently.
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)] // one row per case
+fn r27e_ties(
+    a: &mut Oracle,
+    b: &mut Oracle,
+    stubs: &(u32, u32, Vec<(u32, u32)>),
+    c: u32,
+    w: u32,
+    p: u32,
+    what: &str,
+) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let face = r27_stubs(a, b, &[(0x0088_b780, 6, true)]);
+    let one = alloc_both(a, b, 4);
+    poke(a, b, one, 1u8);
+    for x in [w, p] {
+        poke(a, b, x, one);
+    }
+    let (mv, pmv) = (w + 0x558, p + 0x558);
+    let inf = f32::INFINITY;
+    // (name, P, Q, A, B, band, radius, talk parts, candidate id, distance)
+    #[allow(clippy::type_complexity)]
+    let mut cases: Vec<(
+        String,
+        [f32; 3],
+        [f32; 3],
+        [f32; 3],
+        [f32; 3],
+        f32,
+        f32,
+        (f32, f32),
+        u16,
+        f32,
+    )> = vec![];
+    let (pp, qq, near) = ([0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [5.0, 0.0, 3.0]);
+    for (name, bb, band, r, talk, id, best) in [
+        ("touch tie", near, 1.0, 3.0, (0.0, 0.0), 0xffff, 0.0),
+        ("talk tie", near, 1.0, 1.0, (1.0, 2.0), 0xffff, 0.0),
+        ("candidate tie", near, 1.0, 1.0, (1.0, 2.0), 3, 9.0),
+        ("band 0", [5.0, 0.5, 3.0], 0.0, 3.0, (1.0, 3.0), 0xffff, 0.0),
+        (
+            "band top",
+            [5.0, 0.5, 3.0],
+            0.5,
+            3.0,
+            (1.0, 3.0),
+            0xffff,
+            0.0,
+        ),
+        (
+            "band bottom",
+            [5.0, -0.5, 3.0],
+            0.5,
+            3.0,
+            (1.0, 3.0),
+            0xffff,
+            0.0,
+        ),
+    ] {
+        cases.push((name.into(), pp, qq, bb, bb, band, r, talk, id, best));
+    }
+    cases.push((
+        "band inf".into(),
+        pp,
+        [1.0, inf, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        inf,
+        1.0,
+        (0.0, 0.0),
+        0xffff,
+        0.0,
+    ));
+    cases.push((
+        "cross, x same".into(),
+        pp,
+        qq,
+        [5.0, 1.0, -1.0],
+        [5.0, 1.0, 1.0],
+        0.0,
+        0.0,
+        (0.0, 0.0),
+        0xffff,
+        0.0,
+    ));
+    // crossings with the gap as the band: vectors in both oracles for the
+    // original Math_CrossHeightGap
+    let vecs = alloc_both(a, b, 0x40);
+    let mut rng = Xorshift(0x5eed_27e9);
+    let mut found = [0, 0];
+    for _ in 0..400 {
+        let r3 = |rng: &mut Xorshift, s: f32| [0, 1, 2].map(|_| f32::from_bits(r26_f32(rng, s)));
+        let (pa, pb) = (r3(&mut rng, 4.0), r3(&mut rng, 4.0));
+        let (ppx, pqx) = (r3(&mut rng, 4.0), r3(&mut rng, 4.0));
+        let gap = |a: &mut Oracle, b: &mut Oracle, v: [[f32; 3]; 4]| {
+            for (k, x) in (0u32..).zip(v) {
+                for (j, y) in (0u32..).zip(x) {
+                    poke(a, b, vecs + 0x10 * k + 4 * j, y.to_bits());
+                }
+            }
+            let f = a.rebase(0x0088_9e90);
+            #[allow(clippy::cast_possible_truncation)] // the f32 it returns
+            let g = a
+                .call_f64(f, &[vecs, vecs + 0x10, vecs + 0x20, vecs + 0x30])
+                .unwrap() as f32;
+            g
+        };
+        let g = gap(a, b, [pa, pb, ppx, pqx]);
+        let swapped = gap(a, b, [pa, pb, pqx, ppx]);
+        settle(a, b);
+        if !(g > 0.0) || !(swapped > 0.0) {
+            continue;
+        }
+        let k = usize::from(g.to_bits() != swapped.to_bits());
+        if found[k] >= 4 {
+            continue;
+        }
+        found[k] += 1;
+        let band = if k == 1 { g.min(swapped) } else { g };
+        cases.push((
+            format!("gap band {k} {}", found[k]),
+            ppx,
+            pqx,
+            pa,
+            pb,
+            band,
+            0.0,
+            (0.0, 0.0),
+            0xffff,
+            0.0,
+        ));
+    }
+    assert!(found[0] > 0 && found[1] > 0, "{what}: gap cases {found:?}");
+    for (name, pp, qq, pa, pb, band, r, (rm, rc), id, best) in cases {
+        r27_reset(a, b, stubs, |_| 7);
+        r27_reset(a, b, &face, |_| 1);
+        for (base, v) in [(mv, pp), (mv + 0x30, qq), (c + 0x228, pa), (c + 0x218, pb)] {
+            for (k, x) in (0u32..).zip(v) {
+                poke(a, b, base + 4 * k, x.to_bits());
+            }
+        }
+        for (at, v) in [
+            (mv + 0x1c, band),
+            (mv + 0x48, r),
+            (mv + 0x40, rm),
+            (c + 0x1f0, rc),
+            (mv + 0x3c, 0.5),
+            (pmv + 0x34, 1.0),
+            (c + 0x1ec, best),
+        ] {
+            poke(a, b, at, v.to_bits());
+        }
+        poke(a, b, c + 0x1e4, 1u8);
+        poke(a, b, c + 0x1e8, id);
+        poke(a, b, w + 0x2e, 9u16);
+        poke(a, b, w + 0xab, 1u8);
+        poke(a, b, w + 0x34, 0u16);
+        poke(a, b, w + 0x36, 0u16);
+        r22_case(
+            a,
+            b,
+            0x0086_84b0,
+            &[w, 0, p],
+            false,
+            &format!("Atel_CheckLineTouch {what} {name}"),
+            |r| {
+                let fr = frame(r);
+                hp::atel_check_line_touch(r, w, p, fr, |r, at, args| {
+                    r.0.call_f64(at, args).unwrap()
+                });
+                0
+            },
+        );
+    }
 }
 
 #[test]
