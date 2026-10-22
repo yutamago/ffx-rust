@@ -7387,6 +7387,8 @@ pub fn atel_init_basic_work(h: &mut impl ffx_bridge::Host, setup: u32, clear: u3
             at = h.read::<u32>(w + 4).wrapping_add(vars);
             len = h.read::<u32>(hdr + 0x10);
         }
+        // the private area: always 0 here (stored above, and neither
+        // callee since writes it), kept as the original tests it
         let private = h.read::<u32>(w + 0xb8);
         if private != 0 {
             len = h.read::<u32>(hdr + 0x10);
