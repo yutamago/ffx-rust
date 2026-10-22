@@ -23260,6 +23260,633 @@ pub mod bridge {
             }
         }
     }
+    /// `MenuSummon_WindowDraw_008cebe0(w)` (`0x008cebe0`, the `+0x10`
+    /// draw step of `MenuSummon_OpenWindow`'s window; name ours):
+    /// `TkMenuGetCurrentSummon()` (result unused); the list's slide `dx =
+    /// MenuMn2_Ease(i16 +0x52, i16 +0x54) * 384 / 4096` (truncated; 0
+    /// while `i16 +0x54 < 0`); `0x008e71d0(2)`;
+    /// `MenuSummon_DrawFaceSlide(remapX2(236), remapY2(347.5),
+    /// remapX2(200), remapY2(200), [0x023cc3c8], [0x023cc3c4],
+    /// [0x023cc3c0])` (the three words read first, the remaps last to
+    /// first); tail `MenuSummon_DrawList_008ce130(dx, 0, i8 +0x45)`: its
+    /// `eax`.
+    #[allow(clippy::many_single_char_names)] // the face slide's x, y, w, h
+    pub fn menu_summon_window_draw<M: Mem>(
+        mem: &mut M,
+        w: u32,
+        remap: &mut impl FnMut(&mut M, bool, f32) -> f64,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::store;
+        let r = |mem: &M, f: u32| mem.rebase(f);
+        let f = r(mem, 0x008a_9880);
+        call(mem, f, &[]);
+        let dir = mem.read::<i16>(w.wrapping_add(0x54));
+        let dx = if dir < 0 {
+            0
+        } else {
+            let t = mem.read::<i16>(w.wrapping_add(0x52));
+            let f = r(mem, 0x008d_30c0);
+            let args = [i32::from(t).cast_unsigned(), i32::from(dir).cast_unsigned()];
+            let eased = call(mem, f, &args).cast_signed();
+            eased.wrapping_mul(384) / 4096
+        };
+        let f = r(mem, 0x008e_71d0);
+        call(mem, f, &[2]);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let (next, cur, t) = (
+            g(mem, 0x023c_c3c0),
+            g(mem, 0x023c_c3c4),
+            g(mem, 0x023c_c3c8),
+        );
+        let h = store(remap(mem, true, 200.0));
+        let width = store(remap(mem, false, 200.0));
+        let y = store(remap(mem, true, 347.5));
+        let x = store(remap(mem, false, 236.0));
+        let f = r(mem, 0x008d_34a0);
+        call(mem, f, &[x, y, width, h, t, cur, next]);
+        let cursor = i32::from(mem.read::<i8>(w.wrapping_add(0x45))).cast_unsigned();
+        let f = r(mem, 0x008c_e130);
+        call(mem, f, &[dx.cast_unsigned(), 0, cursor])
+    }
+
+    /// The customize menu's state (`UpdateGearCustomizationMenuState`).
+    pub const KAIZOU_STATE: Global<u32> = Global::new(0x0186_aa68);
+
+    /// `strcpy(to, from)` byte by byte, as the originals inline it.
+    fn copy_str(mem: &mut impl Mem, to: u32, from: u32) {
+        let mut i = 0u32;
+        loop {
+            let c: u8 = mem.read(from.wrapping_add(i));
+            mem.write(to.wrapping_add(i), c);
+            if c == 0 {
+                return;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// Whether two C strings differ (the inlined `strcmp`'s result tested
+    /// against 0).
+    fn str_differs(mem: &impl Mem, left: u32, right: u32) -> bool {
+        let mut i = 0u32;
+        loop {
+            let (x, y): (u8, u8) = (
+                mem.read(left.wrapping_add(i)),
+                mem.read(right.wrapping_add(i)),
+            );
+            if x != y {
+                return true;
+            }
+            if x == 0 {
+                return false;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// `UpdateGearCustomizationMenuState(m)` (`0x008d5830`, Fahrenheit's
+    /// name; jump tables `0x008d5cfc` on [`KAIZOU_STATE`] 0..=13 and
+    /// `0x008d5d34` on an item kind): the customize menu's step after
+    /// `TkMn2StepStatusBG()`. `m` is the gear list window (row `i16
+    /// +0x48`, answer `i8 +0x45`); `[0x0186aa38]` its `u16` weapon ids,
+    /// [`KAIZOU_WINDOW2`] the ability item list. States (`=>` runs the
+    /// next one in the same call without storing it):
+    /// - 0 => 2 (stored); 1 help `TkMenuMainHelp(7)`,
+    ///   `TkMenuRestartSelFileWindow(m)`, `TMn2SetStatusBGDiff(-341)`, 2
+    ///   (stored) => 2;
+    /// - 2 `TkMenuListWindowCtrl_008b44b0(m)`; picked (`+0x45 > 0`):
+    ///   `MenuEquip_IsSelectable(id, 0)` sound `0x80000001` => 5, else
+    ///   sound `0x80000003` and the yes/no window
+    ///   `TkMenuOpenSubCmdWindow(TOMenuGetSummonMes(byte +3 of
+    ///   MsGetSaveWeapon(id) & 0xc ? 0x1a : 0x1b), 0, 0)` (its `+0x3e` 4)
+    ///   => 3; 3 stores 4; 4 and 10 wait on the yes/no window
+    ///   (`TkMn2GetListMax2`, answered: `TOMenuCloseYesNoWindow`, 1 or 6);
+    /// - 5 `TMn2SetStatusBGDiff(341)`, `MenuKaizou_OpenListWindow(row)`; 6
+    ///   `MenuKaizou_RestartWindow2`, `MenuKaizou_BuildList(row)`; both 7;
+    /// - 7 waits on the ability list: cancelled 8; picked:
+    ///   `TkMn2SetMacroParam(1, 0x35, item id)`, by the item's kind byte
+    ///   `+2` 0xb sound `0x80000001` => 11, else the message
+    ///   (0xe 6, 0xf 0x1d, 0x10 0x1b, else 0x1c) in a yes/no window after
+    ///   sound `0x80000003` => 9; 9 stores 10;
+    /// - 8 `TkMn2SeqStopScene("scene23")`, `TkMenuKaizouCloseWindow2`,
+    ///   `TkMn2InitStatusBG`, 1;
+    /// - 11 the confirm window `(0x21, 0xb, 0xc)` (`+0x3e` 4, `+0x37` 0),
+    ///   12; 12 waits on it (cancelled 6, row 1 sound `0x80000001` 6, row
+    ///   0 => 13; `dbgPrintf` lines);
+    /// - 13 customizes the weapon of [`KAIZOU_WINDOW`]'s row: name into
+    ///   `0x0186aa70` (`0x40` bytes), `MenuKaizou_AddAbility(weapon, item id)`,
+    ///   `MsSetWeaponName`, `MsSaveItemUse(u16 +4, -u8 +6)` of record
+    ///   `TkMn2GetKaizou() + 8 * item byte +3`, sound `0x80000063`, the
+    ///   new name into `0x0186aab0`; message 0x1e (same name) or
+    ///   0x1f with macro params 0 and 2 the names, 10.
+    ///
+    /// `eax` is the original's: the last call's, the state the dispatch
+    /// ran with, or a window pointer with its low byte replaced by the
+    /// answer.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one state machine
+    pub fn update_gear_customization_menu_state<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        local: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let g = |mem: &M, a: u32| -> u32 { mem.read(mem.rebase(a)) };
+        let step = at(mem, 0x008d_3280);
+        let mut eax = call(mem, step, &[]);
+        let mut state = KAIZOU_STATE.get(mem);
+        let (sound, mes, open) = (
+            at(mem, 0x0088_6e80),
+            at(mem, 0x008b_eeb0),
+            at(mem, 0x008e_33a0),
+        );
+        let (list_max2, close) = (at(mem, 0x008e_3390), at(mem, 0x008e_2de0));
+        let (weapon, macro_param, dbg) = (
+            at(mem, 0x007a_bbd0),
+            at(mem, 0x008c_2c60),
+            at(mem, 0x0062_f500),
+        );
+        let row = |mem: &M, w: u32| i32::from(mem.read::<i16>(w.wrapping_add(0x48)));
+        // the u16 weapon id of a gear list row
+        let gear_id = |mem: &M, r: i32| -> u32 {
+            let list = g(mem, 0x0186_aa38);
+            u32::from(mem.read::<u16>(list.wrapping_add(r.cast_unsigned().wrapping_mul(2))))
+        };
+        // entry `k` of g_TkMenuItemList ({u16 id, u8 kind, u8 record})
+        let item =
+            |mem: &M, k: i32| at(mem, 0x0159_7770).wrapping_add(k.cast_unsigned().wrapping_mul(4));
+        // the yes/no window after `TkMenuOpenSubCmdWindow`
+        let yes_no = |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32| {
+            let w = call(mem, list_max2, &[]);
+            mem.write(w.wrapping_add(0x3e), 4u8);
+            w
+        };
+        loop {
+            match state {
+                0 | 1 => {
+                    if state == 1 {
+                        let f = at(mem, 0x008d_df60);
+                        let help = call(mem, f, &[7]);
+                        let f = at(mem, 0x008a_aeb0);
+                        call(mem, f, &[help]);
+                        let f = at(mem, 0x008b_5530);
+                        call(mem, f, &[m]);
+                        let f = at(mem, 0x008d_2660);
+                        call(mem, f, &[0xffff_feab]);
+                    }
+                    KAIZOU_STATE.set(mem, 2);
+                    state = 2;
+                    eax = state;
+                }
+                2 => {
+                    let f = at(mem, 0x008b_44b0);
+                    let r = call(mem, f, &[m]);
+                    if mem.read::<i8>(m.wrapping_add(0x45)) <= 0 {
+                        return r;
+                    }
+                    let id = gear_id(mem, row(mem, m));
+                    let f = at(mem, 0x008d_5750);
+                    if call(mem, f, &[id, 0]) == 0 {
+                        call(mem, sound, &[0x8000_0003]);
+                        let id = gear_id(mem, row(mem, m));
+                        let rec = call(mem, weapon, &[id, local]);
+                        let kind = if mem.read::<u8>(rec.wrapping_add(3)) & 0xc == 0 {
+                            0x1b
+                        } else {
+                            0x1a
+                        };
+                        let text = call(mem, mes, &[kind]);
+                        mem.write(local, text);
+                        call(mem, open, &[text, 0, 0]);
+                        yes_no(mem, call);
+                        state = 3;
+                    } else {
+                        call(mem, sound, &[0x8000_0001]);
+                        state = 5;
+                    }
+                    eax = state;
+                }
+                3 => {
+                    KAIZOU_STATE.set(mem, 4);
+                    return eax;
+                }
+                4 | 10 => {
+                    let w = call(mem, list_max2, &[]);
+                    if w == 0 || mem.read::<u8>(w.wrapping_add(0x45)) == 0 {
+                        return w;
+                    }
+                    let r = call(mem, close, &[]);
+                    KAIZOU_STATE.set(mem, if state == 4 { 1 } else { 6 });
+                    return r;
+                }
+                5 => {
+                    let f = at(mem, 0x008d_2660);
+                    call(mem, f, &[0x155]);
+                    let f = at(mem, 0x008d_6ce0);
+                    let r = call(mem, f, &[row(mem, m).cast_unsigned()]);
+                    KAIZOU_STATE.set(mem, 7);
+                    return r;
+                }
+                6 => {
+                    let f = at(mem, 0x008d_6e00);
+                    call(mem, f, &[]);
+                    let f = at(mem, 0x008d_6dd0);
+                    let r = call(mem, f, &[row(mem, m).cast_unsigned()]);
+                    KAIZOU_STATE.set(mem, 7);
+                    return r;
+                }
+                7 => {
+                    let w = KAIZOU_WINDOW2.get(mem);
+                    let answer: u8 = mem.read(w.wrapping_add(0x45));
+                    eax = (eax & 0xffff_ff00) | u32::from(answer);
+                    if answer.cast_signed() < 0 {
+                        KAIZOU_STATE.set(mem, 8);
+                        return eax;
+                    }
+                    if answer == 0 {
+                        return eax;
+                    }
+                    let entry = item(mem, row(mem, w));
+                    let id = u32::from(mem.read::<u16>(entry));
+                    call(mem, macro_param, &[1, 0x35, id]);
+                    let id = match mem.read::<u8>(entry.wrapping_add(2)) {
+                        0xb => {
+                            call(mem, sound, &[0x8000_0001]);
+                            state = 0xb;
+                            eax = state;
+                            continue;
+                        }
+                        0xe => 6,
+                        0xf => 0x1d,
+                        0x10 => 0x1b,
+                        _ => 0x1c,
+                    };
+                    let text = call(mem, mes, &[id]);
+                    call(mem, sound, &[0x8000_0003]);
+                    call(mem, open, &[text, 0, 0]);
+                    yes_no(mem, call);
+                    state = 9;
+                    eax = state;
+                }
+                8 => {
+                    let f = at(mem, 0x008c_2c10);
+                    let scene = at(mem, 0x00b6_6320);
+                    call(mem, f, &[scene]);
+                    let f = at(mem, 0x008d_57d0);
+                    call(mem, f, &[]);
+                    let f = at(mem, 0x008d_4ed0);
+                    let r = call(mem, f, &[]);
+                    KAIZOU_STATE.set(mem, 1);
+                    return r;
+                }
+                9 => {
+                    KAIZOU_STATE.set(mem, 10);
+                    return eax;
+                }
+                0xb => {
+                    let texts = [0x21, 0xb, 0xc].map(|id| call(mem, mes, &[id]));
+                    call(mem, open, &texts);
+                    let w = yes_no(mem, call);
+                    mem.write(w.wrapping_add(0x37), 0u8);
+                    KAIZOU_STATE.set(mem, 0xc);
+                    return w;
+                }
+                0xc => {
+                    let w = call(mem, list_max2, &[]);
+                    let answer: u8 = mem.read(w.wrapping_add(0x45));
+                    let (close_fmt, sel_fmt) = (at(mem, 0x00b6_6328), at(mem, 0x00b6_6338));
+                    if answer.cast_signed() < 0 {
+                        call(mem, dbg, &[close_fmt]);
+                        let answer = i32::from(mem.read::<i8>(w.wrapping_add(0x45)));
+                        call(mem, dbg, &[sel_fmt, answer.cast_unsigned()]);
+                        let r = call(mem, close, &[]);
+                        KAIZOU_STATE.set(mem, 6);
+                        return r;
+                    }
+                    if answer == 0 {
+                        return w & 0xffff_ff00;
+                    }
+                    let answer = i32::from(answer.cast_signed()).cast_unsigned();
+                    call(mem, dbg, &[sel_fmt, answer]);
+                    let picked = row(mem, w);
+                    call(mem, close, &[]);
+                    if picked != 0 {
+                        call(mem, sound, &[0x8000_0001]);
+                        let f = at(mem, 0x00b6_6348);
+                        let r = call(mem, dbg, &[f]);
+                        KAIZOU_STATE.set(mem, 6);
+                        return r;
+                    }
+                    state = 0xd;
+                    eax = state;
+                }
+                0xd => {
+                    let k = row(mem, KAIZOU_WINDOW2.get(mem));
+                    let f = at(mem, 0x008c_1b70);
+                    let records = call(mem, f, &[]);
+                    let entry = item(mem, k);
+                    let rec = records.wrapping_add(
+                        u32::from(mem.read::<u8>(entry.wrapping_add(3))).wrapping_mul(8),
+                    );
+                    let names = [at(mem, 0x0186_aa70), at(mem, 0x0186_aab0)];
+                    let id = gear_id(mem, row(mem, KAIZOU_WINDOW.get(mem)));
+                    let gear = call(mem, weapon, &[id, local]);
+                    let name = mem.read(local);
+                    copy_str(mem, names[0], name);
+                    let f = at(mem, 0x008d_5680);
+                    let ability = u32::from(mem.read::<u16>(entry));
+                    call(mem, f, &[gear, ability]);
+                    let f = at(mem, 0x0079_93b0);
+                    call(mem, f, &[gear]);
+                    let f = at(mem, 0x0079_0550);
+                    let used = u32::from(mem.read::<u16>(rec.wrapping_add(4)));
+                    let n = u32::from(mem.read::<u8>(rec.wrapping_add(6))).wrapping_neg();
+                    call(mem, f, &[used, n]);
+                    let f = at(mem, 0x00b6_6354);
+                    call(mem, dbg, &[f]);
+                    call(mem, sound, &[0x8000_0063]);
+                    let id = gear_id(mem, row(mem, KAIZOU_WINDOW.get(mem)));
+                    call(mem, weapon, &[id, local]);
+                    let name = mem.read(local);
+                    copy_str(mem, names[1], name);
+                    let id = if str_differs(mem, names[1], names[0]) {
+                        0x1f
+                    } else {
+                        0x1e
+                    };
+                    let text = call(mem, mes, &[id]);
+                    call(mem, macro_param, &[0, 0, names[0]]);
+                    call(mem, macro_param, &[2, 0, names[1]]);
+                    call(mem, open, &[text, 0, 0]);
+                    let w = yes_no(mem, call);
+                    KAIZOU_STATE.set(mem, 10);
+                    return w;
+                }
+                _ => return eax,
+            }
+        }
+    }
+
+    /// `TkMenuCtrlLimit(m)` (`0x008d0460`, Fahrenheit's name; jump table
+    /// `0x008d0974` on `+0x1c` 0..=12): the overdrive menu's step after
+    /// the three pad reads (`pad`, `rep`). `w1` and `w2` are
+    /// [`LIMIT_WINDOW`] (the overdrive list, saved scroll and cursor
+    /// `0x0186a720`/`0x0186a760`, `u16` read, `i32` stored, per character) and [`LIMIT_WINDOW2`] (the mode list,
+    /// [`LIMIT_SCROLLS`]/[`LIMIT_CURSORS`]) as the original last loaded
+    /// them (its callees here keep `ecx`/`edx`). States (`=>` runs the
+    /// next without storing it):
+    /// - 0 stores 7 then 3, 1 stores 3, 2 `TkMenuRestartSubCmdWindow2`
+    ///   and 3; all run 3;
+    /// - 3 previews the sub-command row (`i16 +0x48` of
+    ///   `g_TkMenuSubCmdWindow`): row 0 opens or refreshes (`TkMn2RefreshList(0)`)
+    ///   the overdrive list for the current player (a new one gets `+0x45`
+    ///   -1), sets `+0x30` = `TkMn2GetListMax()`, `+0x32`/`+0x34` the saved
+    ///   scroll, `+0x48` the saved cursor and closes the mode list; row 1
+    ///   the same for the mode list (`TkMn2RefreshList(1)`), closing the
+    ///   overdrive list. Then by the answer `i8 +0x45`: picked row 0 => 8,
+    ///   row 1 => 4, cancelled => 10;
+    /// - 4, 5 `TkMenuLimitClearWindow2` and 6; 6 with `w2` waits on the
+    ///   mode list: picked sound `0x80000003` (the mode it has) or
+    ///   `0x80000064` (a new one), `TkMn2RefreshList(1)`,
+    ///   `TkMn2SetOverDriveId(chr, item id)`, tail
+    ///   `TkMenuLimitClearWindow2`; cancelled saves scroll and cursor, 2;
+    ///   else (or without `w2`) the member flip;
+    /// - 7, 8 `TkMenuLimitClearWindow` and 9; 9 with `w1` answered
+    ///   (`+0x45` not 0) saves scroll and cursor, `+0x45` -1, 2; else the
+    ///   member flip;
+    /// - 10 stores 11, 11 stores 12, 12 `TkMenuMainSleepMenu(0x15)`, tail
+    ///   `TkMenuMainActiveMenu(1, 0)`.
+    ///
+    /// The member flip (more than one member and `TkMenuGetHelpRatio2`):
+    /// `rep & 4` with `pad == 4` (previous) or `rep & 8` with `pad == 8`
+    /// (next): sound `0x80000004`, the list's scroll and cursor saved for
+    /// the current player (the list read even when it is gone), the
+    /// player flipped, `TkMn2RefreshList`, and with the list open its
+    /// fields reloaded for the new player, tail `TkMn2DrawSelItemsHelp`.
+    /// `eax` is the original's.
+    #[allow(clippy::too_many_lines, clippy::many_single_char_names)] // one state machine
+    pub fn tk_menu_ctrl_limit<M: Mem>(
+        mem: &mut M,
+        m: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        let at = |mem: &M, f: u32| mem.rebase(f);
+        let pads = [0x008b_e410, 0x008b_e470, 0x008b_e4b0].map(|f| {
+            let f = at(mem, f);
+            call(mem, f, &[]) & 0xffff
+        });
+        let (pad, rep) = (pads[0], pads[1]);
+        let state_at = m.wrapping_add(0x1c);
+        let set = |mem: &mut M, state: u32| mem.write(state_at, state);
+        let mut state: u32 = mem.read(state_at);
+        if state > 0xc {
+            return state;
+        }
+        let (player, refresh, list_max) = (
+            at(mem, 0x008a_9860),
+            at(mem, 0x008c_2360),
+            at(mem, 0x008c_1bb0),
+        );
+        let sound = at(mem, 0x0088_6e80);
+        // the two lists: window, saved scrolls, saved cursors, refresh kind
+        let lists = [
+            (LIMIT_WINDOW, 0x0186_a720u32, 0x0186_a760u32, 0u32),
+            (LIMIT_WINDOW2, 0x0186_a7a0, 0x0186_a7e0, 1),
+        ];
+        let slot =
+            |mem: &M, table: u32, chr: u32| mem.rebase(table).wrapping_add(chr.wrapping_mul(4));
+        // a list's +0x30/+0x32/+0x34/+0x48 from TkMn2GetListMax and the saved words of `chr`
+        let reload = |mem: &mut M, w: u32, n: u32, k: usize, chr: u32| {
+            let (_, scrolls, cursors, _) = lists[k];
+            let scroll: u16 = mem.read(slot(mem, scrolls, chr));
+            #[allow(clippy::cast_possible_truncation)] // the original's 16-bit store
+            mem.write(w.wrapping_add(0x30), n as u16);
+            mem.write(w.wrapping_add(0x32), scroll);
+            let scroll: u16 = mem.read(slot(mem, scrolls, chr));
+            mem.write(w.wrapping_add(0x34), scroll);
+            let cursor: u16 = mem.read(slot(mem, cursors, chr));
+            mem.write(w.wrapping_add(0x48), cursor);
+        };
+        // a list's scroll and cursor saved for `chr`
+        let save = |mem: &mut M, w: u32, k: usize, chr: u32| {
+            let (_, scrolls, cursors, _) = lists[k];
+            let scroll = i32::from(mem.read::<i16>(w.wrapping_add(0x32)));
+            mem.write(slot(mem, scrolls, chr), scroll);
+            let cursor = i32::from(mem.read::<i16>(w.wrapping_add(0x48)));
+            mem.write(slot(mem, cursors, chr), cursor);
+            cursor.cast_unsigned()
+        };
+        // the member flip on list `k`
+        let flip =
+            |mem: &mut M, call: &mut dyn FnMut(&mut M, u32, &[u32]) -> u32, k: usize| -> u32 {
+                let f = at(mem, 0x008a_9b30);
+                let members = call(mem, f, &[]);
+                if members.cast_signed() <= 1 {
+                    return members;
+                }
+                let f = at(mem, 0x008a_b220);
+                let ratio = call(mem, f, &[]);
+                if ratio == 0 {
+                    return ratio;
+                }
+                let to = if rep & 4 != 0 && pad == 4 {
+                    0x008a_afa0
+                } else if rep & 8 != 0 && pad == 8 {
+                    0x008a_af10
+                } else {
+                    return rep;
+                };
+                let (window, _, _, kind) = lists[k];
+                let chr = call(mem, player, &[]);
+                call(mem, sound, &[0x8000_0004]);
+                let w = window.get(mem);
+                save(mem, w, k, chr);
+                let f = at(mem, to);
+                call(mem, f, &[]);
+                let chr = call(mem, player, &[]);
+                let r = call(mem, refresh, &[kind]);
+                let w = window.get(mem);
+                if w == 0 {
+                    return r;
+                }
+                let n = call(mem, list_max, &[]);
+                let w = window.get(mem);
+                reload(mem, w, n, k, chr);
+                let f = at(mem, 0x008d_1a20);
+                call(mem, f, &[w])
+            };
+        let mut w1 = LIMIT_WINDOW.get(mem);
+        let mut w2 = LIMIT_WINDOW2.get(mem);
+        loop {
+            match state {
+                0..=2 => {
+                    if state == 0 {
+                        set(mem, 7);
+                    }
+                    if state == 2 {
+                        let f = at(mem, 0x008e_49d0);
+                        call(mem, f, &[]);
+                        w1 = LIMIT_WINDOW.get(mem);
+                        w2 = LIMIT_WINDOW2.get(mem);
+                    }
+                    set(mem, 3);
+                    state = 3;
+                }
+                3 => {
+                    let sub: u32 = mem.read(at(mem, 0x023c_c128));
+                    let row = i32::from(mem.read::<i16>(sub.wrapping_add(0x48)));
+                    let answer = i32::from(mem.read::<i8>(sub.wrapping_add(0x45)));
+                    if row == 0 || row == 1 {
+                        let k = row.cast_unsigned() as usize;
+                        let (window, _, _, kind) = lists[k];
+                        let chr = call(mem, player, &[]);
+                        if window.get(mem) == 0 {
+                            let f = at(mem, if k == 0 { 0x008d_0d50 } else { 0x008d_0dd0 });
+                            call(mem, f, &[chr]);
+                            let w = window.get(mem);
+                            mem.write(w.wrapping_add(0x45), 0xffu8);
+                        } else {
+                            call(mem, refresh, &[kind]);
+                        }
+                        let n = call(mem, list_max, &[]);
+                        let w = window.get(mem);
+                        reload(mem, w, n, k, chr);
+                        // the other list closes
+                        let f = at(mem, if k == 0 { 0x008d_0cb0 } else { 0x008d_0c90 });
+                        call(mem, f, &[]);
+                        if k == 0 {
+                            w1 = w;
+                            w2 = LIMIT_WINDOW2.get(mem);
+                        } else {
+                            w2 = w;
+                            w1 = LIMIT_WINDOW.get(mem);
+                        }
+                    }
+                    state = match answer {
+                        a if a > 0 && row == 0 => 8,
+                        a if a > 0 && row == 1 => 4,
+                        a if a < 0 => 10,
+                        a => return a.cast_unsigned(),
+                    };
+                }
+                4..=6 => {
+                    let clear = at(mem, 0x008d_1b70);
+                    for _ in state..6 {
+                        call(mem, clear, &[]);
+                        set(mem, 6);
+                    }
+                    if w2 == 0 {
+                        return flip(mem, call, 1);
+                    }
+                    let chr = call(mem, player, &[]);
+                    let w = LIMIT_WINDOW2.get(mem);
+                    let answer: i8 = mem.read(w.wrapping_add(0x45));
+                    if answer > 0 {
+                        let dbg = at(mem, 0x0062_f500);
+                        let f = at(mem, 0x00b6_5ed8);
+                        call(mem, dbg, &[f]);
+                        let item_id = |mem: &M| {
+                            let w = LIMIT_WINDOW2.get(mem);
+                            let k =
+                                i32::from(mem.read::<i16>(w.wrapping_add(0x48))).cast_unsigned();
+                            let entry = at(mem, 0x0159_7770).wrapping_add(k.wrapping_mul(4));
+                            u32::from(mem.read::<u16>(entry))
+                        };
+                        let id = item_id(mem);
+                        let kind = at(mem, 0x008c_1bf0);
+                        if call(mem, kind, &[chr]) == id {
+                            call(mem, sound, &[0x8000_0003]);
+                        } else {
+                            let have = call(mem, kind, &[chr]);
+                            let f = at(mem, 0x00b6_5eec);
+                            call(mem, dbg, &[f, have, id]);
+                            call(mem, sound, &[0x8000_0064]);
+                        }
+                        call(mem, refresh, &[1]);
+                        let f = at(mem, 0x008c_2c90);
+                        let id = item_id(mem);
+                        call(mem, f, &[chr, id]);
+                        return call(mem, clear, &[]);
+                    }
+                    if answer < 0 {
+                        let cursor = save(mem, w, 1, chr);
+                        set(mem, 2);
+                        return cursor;
+                    }
+                    return flip(mem, call, 1);
+                }
+                7..=9 => {
+                    let clear = at(mem, 0x008d_1b50);
+                    for _ in state..9 {
+                        call(mem, clear, &[]);
+                        set(mem, 9);
+                    }
+                    if w1 != 0 && mem.read::<u8>(w1.wrapping_add(0x45)) != 0 {
+                        let chr = call(mem, player, &[]);
+                        let w = LIMIT_WINDOW.get(mem);
+                        save(mem, w, 0, chr);
+                        mem.write(w.wrapping_add(0x45), 0xffu8);
+                        set(mem, 2);
+                        return chr;
+                    }
+                    return flip(mem, call, 0);
+                }
+                _ => {
+                    if state == 10 {
+                        set(mem, 0xb);
+                    }
+                    if state <= 0xb {
+                        set(mem, 0xc);
+                    }
+                    let f = at(mem, 0x008a_ad70);
+                    call(mem, f, &[0x15]);
+                    let f = at(mem, 0x008a_a100);
+                    return call(mem, f, &[1, 0]);
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]

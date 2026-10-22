@@ -945,3 +945,40 @@ at y 295..363, or `TOMenuGetStatusMes(0x17)` when there is none, and
 the picked gear at y 659..727. `shop` selects where the pick comes from:
 the shop table (`MenuWShop_GetRecord`) or the item list
 (`MsGetSaveWeapon`).
+
+`MenuSummon_WindowDraw_008cebe0` (the `+0x10` step of the aeon menu's
+window) slides the aeon list by `MenuMn2_Ease(i16 +0x52, i16 +0x54) *
+384 / 4096` (0 while `+0x54` is negative). It draws the face slide at
+(236, 347.5), 200 x 200, from the three ease words `0x023cc3c8`,
+`0x023cc3c4`, `0x023cc3c0`, then the list with the window's `i8 +0x45`
+as the cursor.
+
+`UpdateGearCustomizationMenuState` (`0x008d5830`, jump tables
+`0x008d5cfc` and `0x008d5d34`) runs the customize menu from
+`0x0186aa68`. The gear list (`m`, weapon ids `u16 [0x0186aa38]`) leads
+to the ability list (`0x0186aa34`, rows index `g_TkMenuItemList`). A
+gear `MenuEquip_IsSelectable` refuses gets a yes/no notice. An ability
+item's kind byte (`+2`) picks the notice: 0xb goes on to the confirm
+window (`0x21`, choices `0xb`/`0xc`), 0xe, 0xf and 0x10 give messages
+6, 0x1d and 0x1b, anything else 0x1c. Confirming (row 0) adds the
+ability (`MenuKaizou_AddAbility`), renames the weapon and uses up `u8
++6` of item `u16 +4` from the record `TkMn2GetKaizou() + 8 * byte +3`.
+The names before and after go to `0x0186aa70` and `0x0186aab0`. When
+the name stays the same the message is 0x1e, else 0x1f. Some states
+run the next one in the same call without storing it (2 -> 3 or 5,
+7 -> 9 or 11, 12 -> 13); 3 and 9 only store 4 and 10.
+
+`TkMenuCtrlLimit` (`0x008d0460`, jump table `0x008d0974`) drives the
+overdrive menu with two lists: the overdrives (`0x0186a714`, scroll and
+cursor saved per character at `0x0186a720`/`0x0186a760`) and the modes
+(`0x0186a718`, `g_TkMenuLimitScrolls`/`g_TkMenuLimitCursors`). Both are
+stored as `i32` and read back as `u16`. In state 3 the sub-command
+cursor previews its list, opening it or refreshing it, and closes the
+other one. A pick goes to 8 (overdrives) or 4 (modes) without storing
+it, and a cancel goes to 10. Picking a mode plays 0x80000003 when the
+character already has it, else 0x80000064, then `TkMn2SetOverDriveId`.
+Left/right (repeat bit with the pad held on exactly that direction)
+switches the character while a list is up; it reads the list window
+even when it is gone. The original keeps both window globals in `ecx`
+and `edx` from its last loads; the callees it makes in between
+(`TkMenuLimitClear*`/`Close*`) keep them.
