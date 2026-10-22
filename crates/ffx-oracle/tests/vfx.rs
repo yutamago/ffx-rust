@@ -27130,12 +27130,12 @@ fn r42a_shape_renders_match_the_original() {
             0x0074_44a0,
             d::FIELD_SPD_RENDER,
         ),
-        ("pppDrawShapeCameraRender", 0x0074_5740, d::CAMERA_RENDER),
         (
             "pppDrawShapeFieldGlobalRender",
-            0x0074_67b0,
+            0x0074_5740,
             d::FIELD_GLOBAL_RENDER,
         ),
+        ("pppDrawShapeCameraRender", 0x0074_67b0, d::CAMERA_RENDER),
         (
             "pppDrawShapeCameraDisPosRender",
             0x0074_79d0,
@@ -28533,6 +28533,159 @@ fn round46a_opu_commands_match_the_original() {
         assert!(kinds.iter().all(|&k| k > 0), "{}", p.name);
         for log in dobj.iter().chain(&dvd).chain(&lock) {
             assert!(p.get::<u32>(*log) > 0, "{}: {log:#x}", p.name);
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn round46b_shape_draws_match_the_original() {
+    use draw::bridge as d;
+    let draws = [
+        ("pppDrawShapeFieldDraw", 0x0074_2cc0u32, d::FIELD_DRAW),
+        ("pppDrawShapeFieldRevDraw", 0x0074_4040, d::FIELD_REV_DRAW),
+        ("pppDrawShapeFieldSpdDraw", 0x0074_5210, d::FIELD_SPD_DRAW),
+        (
+            "pppDrawShapeFieldGlobalDraw",
+            0x0074_6320,
+            d::FIELD_GLOBAL_DRAW,
+        ),
+        ("pppDrawShapeCameraDraw", 0x0074_7540, d::CAMERA_DRAW),
+        (
+            "pppDrawShapeCameraDisPosDraw",
+            0x0074_8790,
+            d::CAMERA_DIS_POS_DRAW,
+        ),
+    ];
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x0074_4040);
+        let rets = p.alloc(0x20);
+        let null = far_recorder(&mut p, 0x00a4_46a0, &[0], Some(rets)); // is_ptr32_null
+        let data = far_recorder(&mut p, 0x0064_53d0, &[0, 0], Some(rets + 4)); // render data
+        let alpha = far_recorder(&mut p, 0x0071_2c30, &[0], Some(rets + 8)); // alpha function
+        let init = far_recorder(&mut p, 0x0071_13d0, &[0; 5], None); // InitVFXRenderDataShapeField
+        let on = far_recorder(&mut p, 0x0074_3030, &[], Some(rets + 0xc)); // RenderOn
+        let mut logs = Vec::new();
+        for (_, _, v) in &draws {
+            logs.push([
+                far_recorder(&mut p, v.alloc, &[0; 3], Some(rets + 0x10)),
+                far_recorder(&mut p, v.emit, &[0; 3], None),
+                far_recorder(&mut p, v.render, &[0; 4], None),
+                // (obj, key, area) for the field draw, else (key, area)
+                far_recorder(
+                    &mut p,
+                    v.step,
+                    if v.field { &[0; 3] } else { &[0; 2] },
+                    None,
+                ),
+            ]);
+        }
+        let (obj, key, prog, offsets) = (p.alloc(0x600), p.alloc(0x100), p.alloc(0x10), p.alloc(8));
+        let (cell, shape, parts) = (p.alloc(4), p.alloc(0x40), p.alloc(0xb0 * 8));
+        let tables = [p.alloc(0x400), p.alloc(0x400)];
+        let (env_slot, env, entries, tex) = (
+            p.alloc(4),
+            p.alloc(0x40),
+            p.alloc(0x4_0000),
+            p.alloc(0xc0) + 0x40,
+        );
+        let part = p.alloc(0x40);
+        p.put(heap::bridge::ENV_SLOT, env_slot);
+        p.set(env_slot, env);
+        p.set(env + 0x24, entries);
+        let (program, stop, current) = (p.sym(0x0230_fd20), p.sym(0x0230_fd34), p.sym(0x0230_ffe4));
+        let (map, yiq, skip) = (p.sym(0x012f_bc40), p.sym(0x00c3_a504), p.sym(0x012f_b7d0));
+        for round in 0..3000u32 {
+            let (name, sym, v) = draws[(round % 6) as usize];
+            p.fill(rets, 0x20, &mut rng);
+            for r in [0u32, 4, 0xc, 0x10] {
+                let w = u32::from(rng.chance(50));
+                p.set(rets + r, w);
+            }
+            p.fill(obj, 0x600, &mut rng);
+            p.fill(key, 0x100, &mut rng);
+            p.fill(shape, 0x40, &mut rng);
+            p.fill(parts, 0xb0 * 8, &mut rng);
+            p.fill(tex - 0x40, 0xc0, &mut rng);
+            p.fill(part, 0x40, &mut rng);
+            for &t in &tables {
+                p.fill(t, 0x400, &mut rng);
+            }
+            p.set(prog + 0xc, offsets);
+            let off = 4 * rng.below(0x40);
+            p.set(offsets, off);
+            p.set(offsets + 4, 2 * rng.below(0x100));
+            let area = obj + 0xa0 + off;
+            p.set(obj + 8, cell);
+            p.set(cell, shape);
+            p.set(area + 0x40, parts);
+            p.set(area + v.table, tables[0]);
+            if let Some(at) = v.vectors {
+                p.set(area + at, tables[1]);
+            }
+            p.set(area + v.flag, u32::from(rng.chance(30)));
+            let limit = rng.pick(&[0u32, 1, 4, 0x10, 0x40]);
+            p.set(area + v.limit, limit);
+            // frames around the shape's end and the table's length
+            let end = rng.pick(&[0x1000u32, 0x8000, 0x4_0000]);
+            p.set(shape + 0x14, end);
+            let any = [
+                rng.below(end),
+                (rng.below(0x40) << 12) | rng.below(0x1000),
+                0u32.wrapping_sub(rng.below(0x8000)),
+            ];
+            let frame = rng.pick(&[end - 0x1000, end, end - 0x1001, any[0], any[1], any[2]]);
+            p.set(obj + 0xc, frame);
+            let n = rng.pick(&[0u32, 1, 3, 8, u32::MAX]);
+            p.set(key + 8, n);
+            for i in 0..8 {
+                let b = rng.pick(&[0u8, 0, 0, 1, 2, 3]);
+                p.set(parts + i * v.record, b);
+            }
+            let no = if rng.chance(10) {
+                0xffff
+            } else {
+                rng.below(0x100)
+            };
+            p.set(key + 4, no);
+            p.set(entries + 4 * no, if rng.chance(10) { 0 } else { tex });
+            // the tag at a signed offset (the texture sits 0x40 into its block)
+            // (clear of the offset word itself)
+            let at = rng.pick(&[-0x40i16, -0x24, -0x8, 0x14, 0x18, 0x1c, 0x30]);
+            p.set(tex + 0x10, at);
+            let at = i32::from(at).cast_unsigned();
+            p.set(tex.wrapping_add(at) + 4, rng.below(0x20));
+            for i in 0..3 {
+                let x = if rng.chance(10) {
+                    rng.float()
+                } else {
+                    finite(&mut rng)
+                };
+                p.set(key + 0x40 + 4 * i, x);
+            }
+            let prog_no = rng.pick(&[0u32, 3, 0x10, u32::MAX, 0x8000_0000]);
+            p.set(program, prog_no);
+            p.set(stop, u32::from(rng.chance(25)));
+            p.set(current, part);
+            p.set(part + 0x1d, u8::from(rng.chance(25)));
+            p.set(map, if rng.chance(50) { 0xdbu32 } else { 0x77 });
+            p.set(yiq, if rng.chance(50) { 0x12u32 } else { 4 });
+            p.set(skip, u32::from(rng.chance(25)));
+            p.check(
+                &format!("{name} round {round}"),
+                sym,
+                &[obj, key, prog],
+                |m| {
+                    d::ppp_draw_shape_draw(m, &v, obj, key, prog, &mut call_original);
+                    None
+                },
+            );
+        }
+        for log in [null, data, alpha, init, on]
+            .into_iter()
+            .chain(logs.iter().flatten().copied())
+        {
+            assert!(p.get::<u32>(log) > 0, "{}: {log:#x}", p.name);
         }
     }
 }

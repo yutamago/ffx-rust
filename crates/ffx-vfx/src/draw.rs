@@ -2158,15 +2158,16 @@ pub mod bridge {
         key: 0xb0,
         ..FIELD_REV_RENDER
     };
-    /// `0x007467b0`, `pppDrawShapeFieldGlobalDraw`'s render (its particles
-    /// are 0xb0 bytes, yet it steps by 0xa0 like the field draws).
-    pub const FIELD_GLOBAL_RENDER: ShapeRender = ShapeRender {
+    /// `0x007467b0`, `pppDrawShapeCameraDraw`'s render (its 0xa0-byte
+    /// particles stepped like the field draws').
+    pub const CAMERA_RENDER: ShapeRender = ShapeRender {
         key: 0xb0,
         colours: 0x4c,
         ..FIELD_REV_RENDER
     };
-    /// `0x00745740`, `pppDrawShapeCameraDraw`'s render.
-    pub const CAMERA_RENDER: ShapeRender = ShapeRender {
+    /// `0x00745740`, `pppDrawShapeFieldGlobalDraw`'s render (0xb0-byte
+    /// particles).
+    pub const FIELD_GLOBAL_RENDER: ShapeRender = ShapeRender {
         key: 0xc0,
         colours: 0x4c,
         stride: 0xb0,
@@ -2186,7 +2187,8 @@ pub mod bridge {
             q: 0x48,
         },
     };
-    /// `0x007479d0`, `pppDrawShapeCameraDisPosDraw`'s render.
+    /// `0x007479d0`, `pppDrawShapeCameraDisPosDraw`'s render ([`CAMERA_RENDER`]
+    /// with positions relative to the world).
     pub const CAMERA_DIS_POS_RENDER: ShapeRender = ShapeRender {
         key: 0xb0,
         colours: 0x4c,
@@ -3120,5 +3122,247 @@ pub mod bridge {
             }
         }
         fun(mem, call, 0x0075_6740, &[obj, rec, prog])
+    }
+
+    /// A shape field or camera draw's differences: its callees, work-area
+    /// layout and particle records.
+    #[derive(Debug, Clone, Copy)]
+    pub struct ShapeDraw {
+        /// The buffer set-up `(obj, key, prog)`.
+        pub alloc: u32,
+        /// The emitter `(obj, key, prog)`.
+        pub emit: u32,
+        /// The render `(obj, key, prog, area)`.
+        pub render: u32,
+        /// The particle step `(key, area)` (`(obj, key, area)` with
+        /// `field`).
+        pub step: u32,
+        /// The work-area word set once the frame table is filled.
+        pub flag: u32,
+        /// The work-area word holding the frame table's length.
+        pub limit: u32,
+        /// The work-area word holding the frame table (four `u16`s a
+        /// frame).
+        pub table: u32,
+        /// The work-area word holding a second table of the key's vector
+        /// `+0x40..+0x48` (and 0.0), 16 bytes a frame.
+        pub vectors: Option<u32>,
+        /// The particle record size.
+        pub record: u32,
+        /// `pppDrawShapeFieldDraw`: the render data only while
+        /// `pppShapeFieldRenderOn_00743030()`, its alpha function with
+        /// 0x800 on map 0xdb in YIQ mode 0x12, no render on a skipped
+        /// frame, the step taking `obj` too.
+        pub field: bool,
+        /// The camera draws: nothing after the frame table while the ppp
+        /// steps are stopped, the step unconditional otherwise.
+        pub camera: bool,
+    }
+
+    /// `pppDrawShapeFieldDraw` (`0x00742cc0`).
+    pub const FIELD_DRAW: ShapeDraw = ShapeDraw {
+        alloc: 0x0074_2f20,
+        emit: 0x0074_2750,
+        render: 0x0074_1b90,
+        step: 0x0074_2980,
+        flag: 0x58,
+        limit: 0x54,
+        table: 0x50,
+        vectors: None,
+        record: 0xa0,
+        field: true,
+        camera: false,
+    };
+    /// `pppDrawShapeFieldRevDraw` (`0x00744040`).
+    pub const FIELD_REV_DRAW: ShapeDraw = ShapeDraw {
+        alloc: 0x0074_4260,
+        emit: 0x0074_3b60,
+        render: 0x0074_3280,
+        step: 0x0074_3da0,
+        field: false,
+        ..FIELD_DRAW
+    };
+    /// `pppDrawShapeFieldSpdDraw` (`0x00745210`).
+    pub const FIELD_SPD_DRAW: ShapeDraw = ShapeDraw {
+        alloc: 0x0074_54a0,
+        emit: 0x0074_4d80,
+        render: 0x0074_44a0,
+        step: 0x0074_4f60,
+        flag: 0x5c,
+        limit: 0x58,
+        vectors: Some(0x54),
+        ..FIELD_REV_DRAW
+    };
+    /// `pppDrawShapeFieldGlobalDraw` (`0x00746320`).
+    pub const FIELD_GLOBAL_DRAW: ShapeDraw = ShapeDraw {
+        alloc: 0x0074_6540,
+        emit: 0x0074_5f70,
+        render: 0x0074_5740,
+        step: 0x0074_60b0,
+        flag: 0x54,
+        limit: 0x50,
+        table: 0x4c,
+        record: 0xb0,
+        ..FIELD_REV_DRAW
+    };
+    /// `pppDrawShapeCameraDraw` (`0x00747540`).
+    pub const CAMERA_DRAW: ShapeDraw = ShapeDraw {
+        alloc: 0x0074_7760,
+        emit: 0x0074_7090,
+        render: 0x0074_67b0,
+        step: 0x0074_72b0,
+        record: 0xa0,
+        camera: true,
+        ..FIELD_GLOBAL_DRAW
+    };
+    /// `pppDrawShapeCameraDisPosDraw` (`0x00748790`).
+    pub const CAMERA_DIS_POS_DRAW: ShapeDraw = ShapeDraw {
+        alloc: 0x0074_89b0,
+        emit: 0x0074_82e0,
+        render: 0x0074_79d0,
+        step: 0x0074_8500,
+        ..CAMERA_DRAW
+    };
+
+    /// The shape field and camera draws (`pppDrawShapeFieldDraw`,
+    /// `...FieldRevDraw`, `...FieldSpdDraw`, `...FieldGlobalDraw`,
+    /// `...CameraDraw`, `...CameraDisPosDraw`; cdecl `(obj, key, prog)`,
+    /// the ppp program records' draws). The work area `area = obj + 0xa0 +
+    /// [[prog +0xc]]` (which the originals also leave in an argument slot;
+    /// their only caller, `pppRunPartStd`, pushes its words afresh), the
+    /// shape `[[obj +8]]`. Nothing for the key's texture `+4` 0xffff or a
+    /// null environment entry (`[[g_pppEnvSlot] +0x24]` at it). Without
+    /// render data for the instance (`g_pppCurrentProgram`, `obj` plus its
+    /// sign), `InitVFXRenderDataShapeField(instance, &entry, [key +8],
+    /// calculateVFXSP_AlphaFunction(byte texture tag +4))`. A null
+    /// particle buffer (`area +0x40`) gets `alloc` (nothing more when that
+    /// fails). While the table is not yet filled and frame `t` = `[obj
+    /// +0xc] / 4096` is below its length, the four `u16`s at `obj + 0xa0 +
+    /// [[prog +0xc] +4]` go to frame `t` of the table (and the key's vector
+    /// to the second one). From the shape's last frame (`[shape +0x14]` -
+    /// 0x1000) on, a live particle (bit 0 of a record among `[key +8]`)
+    /// holds the frame back by 0x1000, and the table counts as filled.
+    /// Then `emit` (ppp steps running, the part's `+0x1d` clear), the
+    /// render and the step (steps running). Callees through `call`.
+    #[allow(clippy::too_many_lines)]
+    pub fn ppp_draw_shape_draw<M: Mem>(
+        mem: &mut M,
+        v: &ShapeDraw,
+        obj: u32,
+        key: u32,
+        prog: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        use ffx_bridge::x87::{load, store};
+        use ffx_system::stub::ptr32;
+        let rd = |mem: &M, a: u32| mem.read::<u32>(a);
+        let offsets = rd(mem, prog.wrapping_add(0xc));
+        let area = obj.wrapping_add(0xa0).wrapping_add(rd(mem, offsets));
+        let shape = ptr32(rd(mem, ptr32(rd(mem, obj.wrapping_add(8)))));
+        let tex_no = rd(mem, key.wrapping_add(4));
+        if tex_no == 0xffff {
+            return;
+        }
+        let entries = |mem: &M| rd(mem, rd(mem, rd(mem, g(mem, ENV_SLOT))).wrapping_add(0x24));
+        let tex = ptr32(rd(mem, entries(mem).wrapping_add(tex_no.wrapping_mul(4))));
+        if tex == 0 {
+            return;
+        }
+        let instance = |mem: &M| {
+            let lo = rd(mem, g(mem, CURRENT_PROGRAM));
+            // `cdq; add eax, 0; adc edx, obj`
+            (
+                lo,
+                obj.wrapping_add((lo.cast_signed() >> 31).cast_unsigned()),
+            )
+        };
+        if !v.field || fun(mem, call, 0x0074_3030, &[]) != 0 {
+            let (lo, hi) = instance(mem);
+            if fun(mem, call, 0x0064_53d0, &[lo, hi]) == 0 {
+                let tag = tex.wrapping_add(
+                    i32::from(mem.read::<i16>(tex.wrapping_add(0x10))).cast_unsigned(),
+                );
+                let a = mem.read::<u8>(
+                    tag.wrapping_add(rd(mem, tag.wrapping_add(4)))
+                        .wrapping_add(4),
+                );
+                let mut alpha = fun(mem, call, 0x0071_2c30, &[u32::from(a)]);
+                if v.field
+                    && rd(mem, g(mem, 0x012f_bc40)) == 0xdb
+                    && rd(mem, g(mem, 0x00c3_a504)) == 0x12
+                {
+                    alpha |= 0x800;
+                }
+                let no = rd(mem, key.wrapping_add(4));
+                let entry = entries(mem).wrapping_add(no.wrapping_mul(4));
+                let (lo, hi) = instance(mem);
+                let count = rd(mem, key.wrapping_add(8));
+                fun(mem, call, 0x0071_13d0, &[lo, hi, entry, count, alpha]);
+            }
+        }
+        let parts = rd(mem, area.wrapping_add(0x40));
+        if fun(mem, call, 0x00a4_46a0, &[parts]) != 0
+            && fun(mem, call, v.alloc, &[obj, key, prog]) == 0
+        {
+            return;
+        }
+        // `cdq; and edx, 0xfff; add; sar 12`: rounded toward zero
+        let t = (rd(mem, obj.wrapping_add(0xc)).cast_signed() / 4096).cast_unsigned();
+        if rd(mem, area.wrapping_add(v.flag)) == 0 && t < rd(mem, area.wrapping_add(v.limit)) {
+            let offsets = rd(mem, prog.wrapping_add(0xc));
+            let src = obj
+                .wrapping_add(rd(mem, offsets.wrapping_add(4)))
+                .wrapping_add(0xa0);
+            for k in 0..4u32 {
+                let h: u16 = mem.read(src.wrapping_add(2 * k));
+                let table = ptr32(rd(mem, area.wrapping_add(v.table)));
+                mem.write(table.wrapping_add(t.wrapping_mul(8)).wrapping_add(2 * k), h);
+            }
+            if let Some(at) = v.vectors {
+                let row = t.wrapping_mul(16);
+                for k in 0..3u32 {
+                    let x = store(load(rd(mem, key.wrapping_add(0x40 + 4 * k))));
+                    let table = ptr32(rd(mem, area.wrapping_add(at)));
+                    mem.write(table.wrapping_add(row).wrapping_add(4 * k), x);
+                }
+                let table = ptr32(rd(mem, area.wrapping_add(at)));
+                mem.write(table.wrapping_add(row).wrapping_add(0xc), 0u32);
+            }
+        }
+        let last = rd(mem, shape.wrapping_add(0x14)).wrapping_sub(0x1000);
+        if rd(mem, obj.wrapping_add(0xc)).cast_signed() >= last.cast_signed() {
+            let n = rd(mem, key.wrapping_add(8)).cast_signed();
+            let first = ptr32(rd(mem, area.wrapping_add(0x40)));
+            let live = (0..n).any(|i| {
+                let at = first.wrapping_add(i.cast_unsigned().wrapping_mul(v.record));
+                mem.read::<u8>(at) & 1 != 0
+            });
+            if live {
+                let f = rd(mem, obj.wrapping_add(0xc));
+                mem.write(obj.wrapping_add(0xc), f.wrapping_sub(0x1000));
+            }
+            mem.write(area.wrapping_add(v.flag), 1u32);
+        }
+        let running = |mem: &M| rd(mem, g(mem, STOP)) == 0;
+        if v.camera && !running(mem) {
+            return;
+        }
+        if running(mem) {
+            let part = crate::prog::bridge::CURRENT_PART.get(mem);
+            if mem.read::<u8>(part.wrapping_add(0x1d)) == 0 {
+                fun(mem, call, v.emit, &[obj, key, prog]);
+            }
+        }
+        if !v.field || rd(mem, g(mem, 0x012f_b7d0)) == 0 {
+            fun(mem, call, v.render, &[obj, key, prog, area]);
+        }
+        // the camera draws step without a second look at the stop flag
+        if v.camera || running(mem) {
+            if v.field {
+                fun(mem, call, v.step, &[obj, key, area]);
+            } else {
+                fun(mem, call, v.step, &[key, area]);
+            }
+        }
     }
 }

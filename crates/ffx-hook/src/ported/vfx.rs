@@ -5644,26 +5644,26 @@ ported! {
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_SPD_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
-    /// `pppDrawShapeCameraRender_00745740(obj, key, prog, area)`: its render request and matrices in a
+    /// `pppDrawShapeFieldGlobalRender_00745740(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
-    pppDrawShapeCameraRender_00745740 @ 0x0074_5740 => extern "C" fn ppp_draw_shape_camera_render(obj: u32, key: u32, prog: u32, area: u32) {
+    pppDrawShapeFieldGlobalRender_00745740 @ 0x0074_5740 => extern "C" fn ppp_draw_shape_field_global_render(obj: u32, key: u32, prog: u32, area: u32) {
         #[repr(C, align(16))]
         struct Locals([u8; 0x240]);
         let mut locals = Locals([0; 0x240]);
         #[allow(clippy::cast_possible_truncation)] // a 32-bit process
         let frame = locals.0.as_mut_ptr() as u32 + 0x240;
-        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_GLOBAL_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
-    /// `pppDrawShapeFieldGlobalRender_007467b0(obj, key, prog, area)`: its render request and matrices in a
+    /// `pppDrawShapeCameraRender_007467b0(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
-    pppDrawShapeFieldGlobalRender_007467b0 @ 0x0074_67b0 => extern "C" fn ppp_draw_shape_field_global_render(obj: u32, key: u32, prog: u32, area: u32) {
+    pppDrawShapeCameraRender_007467b0 @ 0x0074_67b0 => extern "C" fn ppp_draw_shape_camera_render(obj: u32, key: u32, prog: u32, area: u32) {
         #[repr(C, align(16))]
         struct Locals([u8; 0x280]);
         let mut locals = Locals([0; 0x280]);
         #[allow(clippy::cast_possible_truncation)] // a 32-bit process
         let frame = locals.0.as_mut_ptr() as u32 + 0x280;
-        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_GLOBAL_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
+        draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
         std::hint::black_box(&mut locals);
     }
     /// `pppDrawShapeCameraDisPosRender_007479d0(obj, key, prog, area)`: its render request and matrices in a
@@ -5689,6 +5689,30 @@ ported! {
     /// `opu_fake_env_model_draw_007117c0(id, a1..a7, slot)`.
     opu_fake_env_model_draw_007117c0 @ 0x0071_17c0 => extern "C" fn opu_fake_env_model_draw(a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32, a6: u32, a7: u32, a8: u32) -> u32 {
         small::bridge::opu_fake_env_model_draw(&mut mem(), [a0, a1, a2, a3, a4, a5, a6, a7, a8], &mut |_, f, a| call_ptr(f, a))
+    }
+    /// `pppDrawShapeFieldDraw(obj, key, prog)`.
+    pppDrawShapeFieldDraw @ 0x0074_2cc0 => extern "C" fn ppp_draw_shape_field_draw(obj: u32, key: u32, prog: u32) {
+        draw::bridge::ppp_draw_shape_draw(&mut mem(), &draw::bridge::FIELD_DRAW, obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldRevDraw(obj, key, prog)`.
+    pppDrawShapeFieldRevDraw @ 0x0074_4040 => extern "C" fn ppp_draw_shape_field_rev_draw(obj: u32, key: u32, prog: u32) {
+        draw::bridge::ppp_draw_shape_draw(&mut mem(), &draw::bridge::FIELD_REV_DRAW, obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldSpdDraw(obj, key, prog)`.
+    pppDrawShapeFieldSpdDraw @ 0x0074_5210 => extern "C" fn ppp_draw_shape_field_spd_draw(obj: u32, key: u32, prog: u32) {
+        draw::bridge::ppp_draw_shape_draw(&mut mem(), &draw::bridge::FIELD_SPD_DRAW, obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeFieldGlobalDraw(obj, key, prog)`.
+    pppDrawShapeFieldGlobalDraw @ 0x0074_6320 => extern "C" fn ppp_draw_shape_field_global_draw(obj: u32, key: u32, prog: u32) {
+        draw::bridge::ppp_draw_shape_draw(&mut mem(), &draw::bridge::FIELD_GLOBAL_DRAW, obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeCameraDraw(obj, key, prog)`.
+    pppDrawShapeCameraDraw @ 0x0074_7540 => extern "C" fn ppp_draw_shape_camera_draw(obj: u32, key: u32, prog: u32) {
+        draw::bridge::ppp_draw_shape_draw(&mut mem(), &draw::bridge::CAMERA_DRAW, obj, key, prog, &mut |_, f, a| call_ptr(f, a));
+    }
+    /// `pppDrawShapeCameraDisPosDraw(obj, key, prog)`.
+    pppDrawShapeCameraDisPosDraw @ 0x0074_8790 => extern "C" fn ppp_draw_shape_camera_dis_pos_draw(obj: u32, key: u32, prog: u32) {
+        draw::bridge::ppp_draw_shape_draw(&mut mem(), &draw::bridge::CAMERA_DIS_POS_DRAW, obj, key, prog, &mut |_, f, a| call_ptr(f, a));
     }
     /// `pppDrawFilterDraw(obj, rec, prog)`: the scrolls, then the packet;
     /// its `eax`.
