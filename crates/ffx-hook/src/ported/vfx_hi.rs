@@ -177,6 +177,17 @@ ported! {
         let frame = locals.0.as_mut_ptr() as u32 + 0x180;
         hi_opus::bridge::opus_0582_draw(&mut mem(), [b, rec, unit, m4, m5, m6], frame, &mut |_, f, a| call_ptr(f, a))
     }
+    /// `opus_0437_draw(packet, model, rec, u, d, acc, slot)`: its locals
+    /// (the colour vectors, the counts, the texture names) in a buffer on
+    /// this shim's stack; `eax` the running vertex count.
+    opus_0437_draw @ 0x00a6_e650 => extern "C" fn opus_0437_draw(packet: u32, model: u32, rec: u32, u: u32, d: u32, acc: u32, slot: u32) -> u32 {
+        #[repr(C, align(16))]
+        struct Locals([u8; 0x280]);
+        let mut locals = Locals([0; 0x280]);
+        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
+        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        hi_opus::bridge::opus_0437_draw(&mut mem(), [packet, model, rec, u, d, acc, slot], frame, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `op_md_ref_nolight(obj, init, tex, scale, slot)`: its locals (the
     /// texture names, the counts) in a buffer on this shim's stack.
     op_md_ref_nolight @ 0x00a6_a6a0 => extern "C" fn op_md_ref_nolight(obj: u32, init: u32, tex: u32, scale: f32, slot: u32) -> u32 {

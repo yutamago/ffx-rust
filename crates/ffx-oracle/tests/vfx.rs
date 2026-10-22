@@ -11090,13 +11090,14 @@ fn render_stubs(p: &mut Pair) -> RenderStubs {
     }
 }
 
-/// Zeroes the emulated stack below the oracles' call area in both, so
-/// that words a callee reads from the original's frame before it writes
-/// them are the same on both sides.
-fn zero_stacks(p: &mut Pair) {
+/// Fills the emulated stack below the oracles' call area in both with
+/// the same non-zero bytes, so that words a callee reads from the
+/// original's frame before it writes them are the same on both sides (and
+/// a missing terminator shows).
+fn fill_stacks(p: &mut Pair) {
     let end = p.a.stack_range().end;
     assert_eq!(p.b.stack_range().end, end);
-    let z = vec![0u8; 0x1e00];
+    let z = vec![0xa5u8; 0x1e00];
     p.a.write(end - 0x2000, &z).unwrap();
     p.b.write(end - 0x2000, &z).unwrap();
 }
@@ -11132,7 +11133,7 @@ fn opus_0582_break_draw_matches_the_original() {
         let mut seen = [0u32; 4];
         let mut spawned = 0;
         for round in 0..600 {
-            zero_stacks(&mut p);
+            fill_stacks(&mut p);
             p.set(sink, 0u32);
             for (at, len) in [(rd, 0x100), (geo, 0x100), (spr, 0x1300)] {
                 p.fill(at, len, &mut rng);
@@ -11281,7 +11282,7 @@ fn opus_0582_draw_matches_the_original() {
         let (m4, m5, m6) = (p.alloc(0x40), p.alloc(0x40), p.alloc(0x40));
         let mut seen = [0u32; 3];
         for round in 0..500 {
-            zero_stacks(&mut p);
+            fill_stacks(&mut p);
             p.set(sink, 0u32);
             for (at, len) in [
                 (rd, 0x100),
@@ -11387,6 +11388,132 @@ fn opus_0582_draw_matches_the_original() {
             // made or found, and with pieces
             seen[usize::from(c0 == 0)] += 1;
             seen[2] += u32::from(pieces > 0);
+        }
+        assert!(seen.iter().all(|&s| s > 20), "{}: {seen:?}", p.name);
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation
+)]
+fn opus_0437_draw_matches_the_original() {
+    use ffx_vfx::hi_opus::bridge as h;
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x00a6_e650);
+        let RenderStubs {
+            cells,
+            pend,
+            setup_ret,
+            seg_ret,
+            made,
+        } = render_stubs(&mut p);
+        deref_recorder_with(&mut p, 0x0064_5600, &[0, 0], None); // graphicVFXPath3Update
+        let rets = p.alloc(0x20);
+        let (w_ret, amb, tex_ret, valid, req_ret) =
+            (rets, rets + 4, rets + 8, rets + 0xc, rets + 0x10);
+        far_recorder(&mut p, 0x00a6_9940, &[0, 0, 0], Some(w_ret)); // op_md_spr_init_x64
+        far_recorder(&mut p, 0x00a6_8ff0, &[], Some(amb)); // op_ffxambient_to_omdambient
+        far_wide_recorder(&mut p, 0x00a6_d890, &[0, 0, 0, 4, 4, 4, 0], None);
+        far_recorder(&mut p, 0x0063_fd70, &[], Some(valid)); // graphicDynGeoFillBufferIsValid
+        far_recorder(&mut p, 0x0072_8660, &[0], Some(req_ret)); // getFillBufferRequest
+        // graphicVFXIsTextureLoaded(name, found, ..): "tex9\0" into found,
+        // then a recorder of the name and its other words
+        let (rec_code, _) = deref_recorder_code(&mut p, &[8, 0, 0, 0, 0, 0], Some(tex_ret));
+        let to = p.a.alloc_code(&rec_code).unwrap();
+        assert_eq!(p.b.alloc_code(&rec_code).unwrap(), to);
+        let at = p.sym(0x0064_5400);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08]; // mov eax, [esp + 8]
+        c.extend([0xc7, 0x00]); // mov dword [eax], "tex9"
+        c.extend(*b"tex9");
+        c.extend([0xc7, 0x40, 0x04, 0, 0, 0, 0]); // mov dword [eax + 4], 0
+        c.push(0xe9); // jmp recorder
+        c.extend(
+            to.wrapping_sub(at + u32::try_from(c.len()).unwrap() + 4)
+                .to_le_bytes(),
+        );
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        let sink = p.sym(0x0230_56e8);
+        let skip = p.sym(0x012f_b7d0);
+        let hidden = p.sym(0x022f_b3dc);
+        let buffers = p.sym(0x022f_b3e0);
+        let view_at = p.sym(0x0233_2ea4);
+        let spr = p.alloc(0x1800);
+        p.set(cells + 0x18, spr);
+        let (rd, geo) = (p.alloc(0x100), p.alloc(0x100));
+        let (packet, model, d) = (p.alloc(0x400), p.alloc(0x100), p.alloc(0x100));
+        let (w, wm, view) = (p.alloc(0x100), p.alloc(0x40), p.alloc(0x40));
+        let (chr, names, req) = (p.alloc(0x10), p.alloc(0x10), p.alloc(0x40));
+        let mut seen = [0u32; 4];
+        for round in 0..500 {
+            fill_stacks(&mut p);
+            p.set(sink, 0u32);
+            for (at, len) in [
+                (rd, 0x100),
+                (geo, 0x100),
+                (spr, 0x1800),
+                (packet, 0x400),
+                (model, 0x100),
+                (d, 0x100),
+                (w, 0x100),
+                (req, 0x40),
+            ] {
+                p.fill(at, len, &mut rng);
+            }
+            for at in [wm, view] {
+                for k in 0..16 {
+                    let x = finite(&mut rng);
+                    p.set(at + 4 * k, x);
+                }
+            }
+            p.set(rd + 0x94, geo);
+            p.set(w_ret, w);
+            p.set(w + 0x2c, wm);
+            p.set(view_at, view);
+            p.set(packet + 4, rng.below(0x300));
+            p.set(amb, rng.next());
+            p.set(valid, u32::from(rng.chance(60)));
+            p.set(req_ret, req);
+            p.set(tex_ret, u32::from(rng.chance(50)));
+            p.set(skip, u32::from(rng.chance(20)));
+            p.set(hidden, chr);
+            p.set(chr + 4, names);
+            let name: &[u8; 8] = rng.pick(&[
+                b"m100\0\0\0\0",
+                b"m101\0\0\0\0",
+                b"m10\0\0\0\0\0",
+                b"m1000\0\0\0",
+            ]);
+            p.a.write(names, name).unwrap();
+            p.b.write(names, name).unwrap();
+            for k in 0..5 {
+                let v = rng.next();
+                p.set(buffers + 4 * k, v);
+            }
+            let rd0 = |rng: &mut Xorshift| if rng.chance(25) { 0 } else { rd };
+            let (c0, q0) = (rd0(&mut rng), rd0(&mut rng));
+            p.set(cells, c0);
+            p.set(made, rd0(&mut rng));
+            p.set(pend, q0);
+            p.set(setup_ret, u32::from(rng.chance(70)));
+            p.set(seg_ret, u32::from(!rng.chance(10)));
+            let slot = rng.pick(&[0u32, 1, 2, 3, 4, u32::MAX]);
+            let acc = rng.below(1000);
+            let args = [packet, model, rng.next(), rng.next(), d, acc, slot];
+            let skipped: u32 = p.get(skip);
+            check_deep_n(
+                &mut p,
+                &format!("opus_0437_draw round {round}"),
+                0x00a6_e650,
+                &args,
+                |mm, frame| Some(h::opus_0437_draw(mm, args, frame, &mut call_original)),
+            );
+            seen[usize::from(c0 == 0)] += 1;
+            seen[2] += u32::from(skipped != 0 && c0 != 0);
+            seen[3] += u32::from(c0 == 0 && p.get::<u32>(cells) != 0);
         }
         assert!(seen.iter().all(|&s| s > 20), "{}: {seen:?}", p.name);
     }

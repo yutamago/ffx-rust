@@ -1407,6 +1407,218 @@ pub mod bridge {
         0
     }
 
+    /// `f64` 1/128 (`0x00b170b8`).
+    const K_128TH: u32 = 0x00b1_70b8;
+    /// `g_AlphaScaleNormal` (`0x00b501c0`, `f32` 256).
+    const ALPHA_SCALE_NORMAL: u32 = 0x00b5_01c0;
+    /// `g_GraphicSkipFrame` (`0x012fb7d0`).
+    const GRAPHIC_SKIP_FRAME: u32 = 0x012f_b7d0;
+    /// `g_MagicHiddenChr` (`0x022fb3dc`) and `g_MagicBuffersA`
+    /// (`0x022fb3e0`).
+    const MAGIC_HIDDEN_CHR: u32 = 0x022f_b3dc;
+    const MAGIC_BUFFERS_A: u32 = 0x022f_b3e0;
+    /// The word at `0x02332ea4`: the matrix `opus_0437_draw` multiplies
+    /// the model's by.
+    const OP_0437_VIEW: u32 = 0x0233_2ea4;
+    /// `"m100"` (`0x00b7c454`) and the two texture names (31 bytes with
+    /// the NUL): `"13476_19_0_0_512_512.dds.phyre"` for a hidden character
+    /// named `m100`, else `"13376_..."`.
+    const M100: u32 = 0x00b7_c454;
+    const TEX_13476: u32 = 0x00b7_c45c;
+    const TEX_13376: u32 = 0x00b7_c47c;
+    const OP_MD_SPR_INIT_X64: u32 = 0x00a6_9940;
+    const OP_FFXAMBIENT_TO_OMDAMBIENT: u32 = 0x00a6_8ff0;
+    const OP_0437_VERTEX_NORMAL_POINT44_FFX: u32 = 0x00a6_d890;
+    const IS_TEXTURE_LOADED: u32 = 0x0064_5400;
+    const FILL_BUFFER_IS_VALID: u32 = 0x0063_fd70;
+    const GET_FILL_BUFFER_REQUEST: u32 = 0x0072_8660;
+
+    /// `opus_0437_draw(packet, model, rec, _, d, acc, slot)` (`0x00a6e650`,
+    /// Fahrenheit's name; from `opp_0437_cmd_a6dbe0`): one `opus_0437`
+    /// model part as the instance `(slot, 0x1b5 + (slot >> 31))`, returning
+    /// `acc` plus its vertex count `n = i16 packet +0x10` (`acc` alone when
+    /// it has no render data, 0 without its segment).
+    ///
+    /// With the frame skipped (`g_GraphicSkipFrame`) and the instance made
+    /// it returns `acc` at once. Else the `op_spr_alloc(0x1800)` scratch `s`
+    /// and `w = op_md_spr_init_x64(packet, model, s)`; with `t = f32(w
+    /// +0x4c / 128)`, `g = f32(model +0x4c / 128)` (read before) and the
+    /// ambient `a = op_ffxambient_to_omdambient()`'s bytes: `s +0x370..` =
+    /// `f32(c (1 - t) + a t)` for the colour bytes `c = w +0x1c..+0x1f`;
+    /// `s +0x390` = `i16 packet +0x12 << 5` + `w[1]`, `+0x394` = `w[1]`,
+    /// `+0x400` = `i16 packet +0x14 << 4` + `s +0x390`. Then
+    /// `op_0437_vertex_normal_point44_ffx(packet, w, s, base, mul1, mul0,
+    /// slot)` with the frame's `base` = `f32(a g + c (1 - g))`, `mul1` =
+    /// the bytes `w +0x18..` / 128, `mul0` = (256, 256, 256, `f32(byte
+    /// packet [+4] + 7)`); `s +0x420` = `d +0xc`, `+0x424` = `acc`, `+0x430`
+    /// = `d + 0x30`.
+    ///
+    /// Without render data at the start the instance is made: a name copied
+    /// from the two texture names (by `strcmp(g_MagicHiddenChr +4,
+    /// "m100")`), replaced by `graphicVFXIsTextureLoaded`'s when it finds
+    /// one, `graphicVFXCreate(.., 0x100048)`, `graphicVFXCreateDataBuffer`
+    /// of one segment of `3n` points and indices. With render data: its
+    /// geometry `+0x24` = 0, the segment
+    /// (`graphicDynGeoMemManagerGetBufferForSegment`, else return 0 with
+    /// the scratch kept), a fill request when the fill buffer is valid
+    /// (`getFillBufferRequest(n)`: kind 5, the geometry, `packet`, `d`, `w
+    /// +0x38`, `g_MagicBuffersA[slot]`, `acc`), the matrix `[w +0x2c]` times
+    /// `[0x02332ea4]` and `g_pppFillMatrix` into the render data,
+    /// `graphicVFXSetVisible`, then `graphicVFXSetup` for a new instance
+    /// or `graphicVFXPath3Update`. Then the GS wait and `op_spr_free(0x1800)`.
+    /// All callees through `call`. The locals the callees take by address
+    /// lie below `frame` (the original's frame pointer, down to `frame -
+    /// 0x270`).
+    #[allow(clippy::too_many_lines)]
+    pub fn opus_0437_draw<M: Mem>(
+        mem: &mut M,
+        [packet, model, _rec, _u, d, acc, slot]: [u32; 7],
+        frame: u32,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        use ffx_bridge::x87::{add, load, mul, store, sub};
+        let local = |off: u32| frame.wrapping_sub(off);
+        let k128: f64 = mem.read(mem.rebase(K_128TH));
+        let byte = |mem: &M, at: u32| f64::from(mem.read::<u8>(at));
+        let g = load(store(mul(byte(mem, model.wrapping_add(0x4c)), k128)));
+        // `cdq; add 0; adc 0x1b5`: 0x1b4 for a negative slot
+        let (lo, hi) = (
+            slot,
+            0x1b5u32.wrapping_add((slot.cast_signed() >> 31).cast_unsigned()),
+        );
+        let made = go(mem, GET_RENDER_DATA, &[lo, hi], call) == 0;
+        if mem.read::<u32>(mem.rebase(GRAPHIC_SKIP_FRAME)) != 0 && !made {
+            return acc;
+        }
+        let spr = go(mem, OP_SPR_ALLOC, &[0x1800], call);
+        let w = go(mem, OP_MD_SPR_INIT_X64, &[packet, model, spr], call);
+        let amb = go(mem, OP_FFXAMBIENT_TO_OMDAMBIENT, &[], call);
+        let a = |k: u32| f64::from((amb >> (8 * k)) & 0xff);
+        let t = load(store(mul(byte(mem, w.wrapping_add(0x4c)), k128)));
+        let mix = |c: f64, a: f64, t: f64| store(add(mul(c, sub(1.0, t)), mul(a, t)));
+        for k in 0..4 {
+            let c = byte(mem, w.wrapping_add(0x1c + k));
+            mem.write(spr.wrapping_add(0x370 + 4 * k), mix(c, a(k), t));
+        }
+        let w1: u32 = mem.read(w.wrapping_add(4));
+        let n12 = i32::from(mem.read::<i16>(packet.wrapping_add(0x12))).cast_unsigned();
+        let at390 = (n12 << 5).wrapping_add(w1);
+        mem.write(spr.wrapping_add(0x390), at390);
+        mem.write(spr.wrapping_add(0x394), w1);
+        let n14 = i32::from(mem.read::<i16>(packet.wrapping_add(0x14))).cast_unsigned();
+        mem.write(spr.wrapping_add(0x400), (n14 << 4).wrapping_add(at390));
+        let (base, mul1, mul0) = (local(0x214), local(0x234), local(0x224));
+        for k in 0..4 {
+            let c = byte(mem, w.wrapping_add(0x1c + k));
+            mem.write(base.wrapping_add(4 * k), mix(c, a(k), g));
+            let m = byte(mem, w.wrapping_add(0x18 + k));
+            mem.write(mul1.wrapping_add(4 * k), store(mul(m, k128)));
+        }
+        let full = store(load(mem.read(mem.rebase(ALPHA_SCALE_NORMAL))));
+        for k in 0..3 {
+            mem.write(mul0.wrapping_add(4 * k), full);
+        }
+        let off: u32 = mem.read(packet.wrapping_add(4));
+        let b7 = byte(mem, off.wrapping_add(packet).wrapping_add(7));
+        mem.write(local(0x218), store(b7));
+        let args = [packet, w, spr, base, mul1, mul0, slot];
+        go(mem, OP_0437_VERTEX_NORMAL_POINT44_FFX, &args, call);
+        mem.write(
+            spr.wrapping_add(0x420),
+            mem.read::<u32>(d.wrapping_add(0xc)),
+        );
+        mem.write(spr.wrapping_add(0x424), acc);
+        mem.write(spr.wrapping_add(0x430), d.wrapping_add(0x30));
+        let w38: u32 = mem.read(w.wrapping_add(0x38));
+        let buffer: u32 = mem.read(mem.rebase(MAGIC_BUFFERS_A).wrapping_add(4 * slot));
+        let n = i32::from(mem.read::<i16>(packet.wrapping_add(0x10))).cast_unsigned();
+        let mut ret = acc;
+        if made {
+            mem.write(local(0x270), n.wrapping_mul(3));
+            mem.write(local(0x264), n.wrapping_mul(3));
+            mem.write(local(0x260), 1u32);
+            let chr: u32 = mem.read(mem.rebase(MAGIC_HIDDEN_CHR));
+            let name_at: u32 = mem.read(chr.wrapping_add(4));
+            let m100 = mem.rebase(M100);
+            let mut i = 0;
+            let same = loop {
+                let (x, y) = (
+                    mem.read::<u8>(name_at.wrapping_add(i)),
+                    mem.read::<u8>(m100.wrapping_add(i)),
+                );
+                if x != y {
+                    break false;
+                }
+                if x == 0 {
+                    break true;
+                }
+                i += 1;
+            };
+            let from = mem.rebase(if same { TEX_13476 } else { TEX_13376 });
+            let name = local(0x104);
+            for i in 0..31 {
+                let b: u8 = mem.read(from.wrapping_add(i));
+                mem.write(name.wrapping_add(i), b);
+            }
+            let found = local(0x204);
+            if go(mem, IS_TEXTURE_LOADED, &[name, found, 0, 0, 0, 0], call) != 0 {
+                let mut i = 0;
+                loop {
+                    let b: u8 = mem.read(found.wrapping_add(i));
+                    mem.write(name.wrapping_add(i), b);
+                    if b == 0 {
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            go(mem, VFX_CREATE, &[lo, hi, 0x10_0048], call);
+            let args = [lo, hi, 1, local(0x270), local(0x264), name, local(0x260)];
+            go(mem, VFX_CREATE_DATA_BUFFER, &args, call);
+        }
+        let rd = go(mem, GET_RENDER_DATA, &[lo, hi], call);
+        if rd != 0 {
+            let geo: u32 = mem.read(rd.wrapping_add(0x94));
+            mem.write(geo.wrapping_add(0x24), 0u32);
+            let geo: u32 = mem.read(rd.wrapping_add(0x94));
+            let counts: [u32; 2] = mem.read(geo.wrapping_add(4));
+            if go(
+                mem,
+                GET_BUFFER_FOR_SEGMENT,
+                &[rd, 0, counts[0], counts[1]],
+                call,
+            ) == 0
+            {
+                return 0;
+            }
+            if go(mem, FILL_BUFFER_IS_VALID, &[], call) != 0 {
+                let req = go(mem, GET_FILL_BUFFER_REQUEST, &[n], call);
+                mem.write(req, 5u8);
+                let geo: u32 = mem.read(rd.wrapping_add(0x94));
+                mem.write(req.wrapping_add(0x10), [geo, packet, d, w38, buffer, acc]);
+            }
+            ret = acc.wrapping_add(n);
+            let m: u32 = mem.read(w.wrapping_add(0x2c));
+            let words: [u32; 16] = mem.read(m);
+            mem.write(rd, words);
+            let view: u32 = mem.read(mem.rebase(OP_0437_VIEW));
+            let m: u32 = mem.read(w.wrapping_add(0x2c));
+            go(mem, FFX_VU0_MUL_MATRIX, &[rd, view, m], call);
+            let fm = mem.rebase(FILL_MATRIX);
+            go(mem, FFX_VU0_MUL_MATRIX, &[rd, fm, rd], call);
+            go(mem, VFX_SET_VISIBLE, &[lo, hi, 1], call);
+            if made {
+                go(mem, VFX_SETUP, &[lo, hi], call);
+            } else {
+                go(mem, VFX_PATH3_UPDATE, &[lo, hi], call);
+            }
+        }
+        let sink = mem.rebase(GS_REGISTER_SINK);
+        while mem.read::<u32>(sink) & 0x100 != 0 {}
+        go(mem, OP_SPR_FREE, &[0x1800], call);
+        ret
+    }
+
     /// The render data's zero translation (`+0x2c`, `+0x1c`, `+0xc`),
     /// `+0x3c` 1, `+0x80` 0 and its bounds -100000..100000 (`+0x98..`).
     fn finish_render_data(mem: &mut impl Mem, rd: u32) {
