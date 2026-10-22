@@ -1821,3 +1821,28 @@ pushed as literals (no relocation entries), not addresses.
   `debugLoad_00646b30` (`saves/%02d.SAV` through a FILE*) and
   `debugSave`. `0x00647e10` is the autosave's call to the debug save.
   `0x00703a20` is a thread loop that never returns.
+- The enemy limit bars (`0x0133f988`) are 8 records of 16 bytes: the
+  target width at `+0` and the shown width at `+4`. There is one per
+  battle character (`i32 0x0133f0ec` of them; `u16` ids at `0x0133f0f0`,
+  0xff for none). Only characters with `MsGetChrLimitBarFlag(id) == 1`
+  get one. `TOBtlInitEnemyLimit` (`0x00897af0`) clears the bars and then
+  sets both widths to `gauge * i16 0x025d0aa4 / max`. Its `idiv` has no
+  guard, so a max of 0 faults in the original. `TOBtlCtrlEnemyLimit`
+  (`0x00891220`) uses a target of 0 while the max is below 1. The shown
+  width then rises by 6 towards the target and stops there.
+- `TOBtlInitCtbWindow` (`0x008a0ce0`) clears the CTB state and fills its
+  16 rows of 0x18 bytes (`0x013404f8`) from `MsGetCTBlist`'s 4-byte
+  entries (`u8` id, `u16` ticks), plus the row pointers at `0x01340478`.
+- Wakka's and Auron's limit windows (`0x008974a0`, `0x00892740`) centre
+  their caption on 512 with `ToGetBtlEasyFontWidth`. Wakka calls
+  `TOGetBtlMenuTexAdrs()` (no arguments) after pushing the six words of
+  `TOTransImageHL(tex, 0x3f00, 0x13, 0, 0, 0x100, 0x100)`. Auron draws
+  the combination's buttons 30 apart at `ftol(remapY2(514) - 3)`.
+- `TOBtlDrawGetItemMessageWindow(item, n)` (`0x00893510`) picks text
+  0x3007, 0x3008, 0x3005 or 0x3006 for `n` = -1, 0, 1 or 2 and up. Below
+  -1 it passes `n` itself as the text.
+- `MenuScene_KeyPick_00a7b290` picks a scene track's key pair for
+  `0x00a7bbc0`. It takes key B before the track starts (`i16 +6 < 0`)
+  and at the last frame, and key A at frame 0. In between, keys that
+  match in their low 11 bits blend with `MenuScene_KeyEase`. Keys that
+  don't match switch from A to B when the ease reaches 0.5.

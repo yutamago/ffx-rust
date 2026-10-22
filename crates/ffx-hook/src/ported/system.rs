@@ -1316,6 +1316,43 @@ ported! {
     TOBtlDrawStdChrNameMessageWindow @ 0x0089_7200 => extern "C" fn to_btl_draw_std_chr_name(chr: u32, mes: u32) -> u32 {
         tolib::bridge::btl_draw_name_message_window(&mut mem(), false, chr, mes, call_sym)
     }
+    /// `TOBtlDrawGetItemMessageWindow(item, n)`.
+    TOBtlDrawGetItemMessageWindow @ 0x0089_3510 => extern "C" fn to_btl_draw_get_item(item: u32, n: i32) -> u32 {
+        tolib::bridge::btl_draw_get_item_message_window(&mut mem(), item, n, call_sym)
+    }
+    /// `TOBtlInitEnemyLimit()` (callers drop `eax`).
+    TOBtlInitEnemyLimit @ 0x0089_7af0 => extern "C" fn to_btl_init_enemy_limit() {
+        btl::bridge::init_enemy_limit(&mut mem(), call_sym);
+    }
+    /// `TOBtlCtrlEnemyLimit()` (callers drop `eax`).
+    TOBtlCtrlEnemyLimit @ 0x0089_1220 => extern "C" fn to_btl_ctrl_enemy_limit() {
+        btl::bridge::ctrl_enemy_limit(&mut mem(), call_sym);
+    }
+    /// `TOBtlInitCtbWindow()` (callers drop `eax`).
+    TOBtlInitCtbWindow @ 0x008a_0ce0 => extern "C" fn to_btl_init_ctb_window() {
+        // MsGetCTBlist's count word
+        let mut frame = super::StackFrame::<1>::new();
+        let local = frame.at();
+        btl::bridge::init_ctb_window(&mut mem(), local, call_sym);
+    }
+    /// `TOBtlDrawWakkaLimitWindow()` (callers drop `eax`).
+    TOBtlDrawWakkaLimitWindow @ 0x0089_74a0 => extern "C" fn to_btl_draw_wakka_limit_window() {
+        // ToGetBtlEasyFontWidth's width word
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        btl::bridge::draw_wakka_limit_window(&mut mem(), width, call_sym);
+    }
+    /// `TOBtlDrawAuronLimitWindow()` (callers drop `eax`).
+    TOBtlDrawAuronLimitWindow @ 0x0089_2740 => extern "C" fn to_btl_draw_auron_limit_window() {
+        // ToGetBtlEasyFontWidth's width word
+        let mut frame = super::StackFrame::<1>::new();
+        let width = frame.at();
+        btl::bridge::draw_auron_limit_window(&mut mem(), width, call_sym, fcall);
+    }
+    /// `MenuScene_KeyPick_00a7b290(keys, track, frame, frames, out)`: `0x00a7bbc0`'s `eax`.
+    MenuScene_KeyPick_00a7b290 @ 0x00a7_b290 => extern "C" fn menu_scene_key_pick(keys: u32, track: u32, frame: u32, frames: u32, out: u32) -> u32 {
+        scene::bridge::menu_scene_key_pick(&mut mem(), [keys, track, frame, frames, out], call_sym, fcall)
+    }
     /// `TOBtlDrawGetMoneyMessageWindow(gil)`.
     TOBtlDrawGetMoneyMessageWindow @ 0x0089_3660 => extern "C" fn to_btl_draw_get_money(gil: i32) -> u32 {
         tolib::bridge::btl_draw_get_money_message_window(&mut mem(), gil, call_sym)

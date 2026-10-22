@@ -11429,6 +11429,32 @@ pub mod bridge {
         7
     }
 
+    /// `TOBtlDrawGetItemMessageWindow(item, n)` (`0x00893510`, Fahrenheit's
+    /// name): macro 7 slot 0 `item` (type 0x33), slot 1 the count `n`
+    /// (type 1), then `TOBtlOpenSimpleHelpMes(0, t)` with `t`
+    /// `MsGetRomBtlText(m, 0)` for `m` 0x3007 at -1, 0x3008 at 0, 0x3005 at
+    /// 1 and 0x3006 from 2 on; below -1 `t` is `n` itself; 7.
+    pub fn btl_draw_get_item_message_window<M: Mem>(
+        mem: &mut M,
+        item: u32,
+        n: i32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) -> u32 {
+        call(mem, 0x008b_57c0, &[7, 0, 0x33]);
+        call(mem, 0x008b_57f0, &[7, 0, item]);
+        call(mem, 0x008b_57c0, &[7, 1, 1]);
+        call(mem, 0x008b_57f0, &[7, 1, n.cast_unsigned()]);
+        let text = match n {
+            -1 => call(mem, 0x0078_f8f0, &[0x3007, 0]),
+            0 => call(mem, 0x0078_f8f0, &[0x3008, 0]),
+            1 => call(mem, 0x0078_f8f0, &[0x3005, 0]),
+            2.. => call(mem, 0x0078_f8f0, &[0x3006, 0]),
+            _ => n.cast_unsigned(),
+        };
+        call(mem, 0x0089_dba0, &[0, text]);
+        7
+    }
+
     /// `TOBtlDrawGetMoneyMessageWindow(gil)` (`0x00893660`, Fahrenheit's
     /// name): macro 7 slot 0 the number `gil` (type 1), then
     /// `TOBtlOpenSimpleHelpMes(0, MsGetRomBtlText(t, 0))` with `t` 0x3018

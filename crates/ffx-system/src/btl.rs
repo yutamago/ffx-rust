@@ -2620,4 +2620,240 @@ pub mod bridge {
             self.full_scissor()
         }
     }
+
+    /// The enemy limit bars: `i32 0x0133f0ec` battle characters, their
+    /// `u16` ids at `0x0133f0f0` (0xff: none), and a 16-byte record each
+    /// from `0x0133f988` (`+0` the target width, `+4` the shown one).
+    const LIMIT_COUNT: u32 = 0x0133_f0ec;
+    const LIMIT_IDS: u32 = 0x0133_f0f0;
+    const LIMIT_BARS: u32 = 0x0133_f988;
+    /// `i16` full width of a limit bar.
+    const LIMIT_BAR_WIDTH: u32 = 0x025d_0aa4;
+
+    /// `gauge * width / max` of battle character `id` (signed; the
+    /// original's `idiv` faults on 0 and `i32::MIN / -1`, here 0 and
+    /// `i32::MIN`). `max` is asked after `gauge`, as the original does.
+    fn limit_width<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        id: u32,
+    ) -> i32 {
+        let gauge = call(mem, 0x0079_5550, &[id]).cast_signed();
+        let width = i32::from(mem.read::<i16>(mem.rebase(LIMIT_BAR_WIDTH)));
+        let max = call(mem, 0x0079_5590, &[id]).cast_signed();
+        gauge
+            .wrapping_mul(width)
+            .checked_div(max)
+            .unwrap_or(if max == 0 { 0 } else { i32::MIN })
+    }
+
+    /// Battle character `k`'s id when it has a limit bar
+    /// (`MsGetChrLimitBarFlag(id) == 1`), read again for each callee.
+    fn limit_id<M: Mem>(mem: &M, k: u32) -> u32 {
+        u32::from(mem.read::<u16>(mem.rebase(LIMIT_IDS).wrapping_add(2 * k)))
+    }
+
+    /// `TOBtlInitEnemyLimit()` (`0x00897af0`): the 0x80 bytes of bars
+    /// cleared, then for each character with a bar both widths set to
+    /// `MsGetChrLimitGauge(id) * i16 0x025d0aa4 / MsGetChrLimitGaugeMax(id)`.
+    pub fn init_enemy_limit<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let bars = mem.rebase(LIMIT_BARS);
+        mem.write_bytes(bars, &[0; 0x80]);
+        let mut k = 0u32;
+        while k.cast_signed() < mem.read::<i32>(mem.rebase(LIMIT_COUNT)) {
+            let id = limit_id(mem, k);
+            if id != 0xff && call(mem, 0x0079_5250, &[id]) == 1 {
+                let id = limit_id(mem, k);
+                let w = limit_width(mem, &mut call, id);
+                let rec = bars.wrapping_add(16 * k);
+                mem.write(rec, w);
+                mem.write(rec.wrapping_add(4), w);
+            }
+            k += 1;
+        }
+    }
+
+    /// `TOBtlCtrlEnemyLimit()` (`0x00891220`, Fahrenheit's name): each
+    /// character with a bar gets the target width (0 while
+    /// `MsGetChrLimitGaugeMax(id) <= 0`, else as [`init_enemy_limit`]),
+    /// and the shown width rises 6 towards it, never past it (signed).
+    pub fn ctrl_enemy_limit<M: Mem>(mem: &mut M, mut call: impl FnMut(&mut M, u32, &[u32]) -> u32) {
+        let bars = mem.rebase(LIMIT_BARS);
+        let mut k = 0u32;
+        while k.cast_signed() < mem.read::<i32>(mem.rebase(LIMIT_COUNT)) {
+            let id = limit_id(mem, k);
+            if id != 0xff && call(mem, 0x0079_5250, &[id]) == 1 {
+                let rec = bars.wrapping_add(16 * k);
+                let id = limit_id(mem, k);
+                let target = if call(mem, 0x0079_5590, &[id]).cast_signed() < 1 {
+                    0
+                } else {
+                    let id = limit_id(mem, k);
+                    limit_width(mem, &mut call, id)
+                };
+                mem.write(rec, target);
+                let shown_at = rec.wrapping_add(4);
+                let shown = mem.read::<i32>(shown_at);
+                if shown < target {
+                    mem.write(shown_at, shown.wrapping_add(6));
+                }
+                if mem.read::<i32>(shown_at) > target {
+                    mem.write(shown_at, target);
+                }
+            }
+            k += 1;
+        }
+    }
+
+    /// `TOBtlInitCtbWindow()` (`0x008a0ce0`, Fahrenheit's name): the CTB
+    /// window's state cleared (u8 `0x01340446`, u16 `0x0134044c`,
+    /// `0x01340450`, `0x01340444`, `0x01340448`, u32 `0x01340470`), its 16
+    /// 0x18-byte rows at `0x013404f8` and the 0x80-byte row pointer table
+    /// `0x01340478` zeroed, then row `k` from `MsGetCTBlist(local)`'s entry
+    /// `k` (4 bytes: `u8 +0` id, `u16 +2` ticks): `+0` 1, `+1` the id, `+4`
+    /// and `+8` the ticks (u32), `+0xc`/`+0xd` `k`, `+0xe` 0, u16 `+0x10` 0,
+    /// u16 `+0x12` `0x16 k`, `+0x14` 0; the table points at the rows.
+    pub fn init_ctb_window<M: Mem>(
+        mem: &mut M,
+        local: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let a = at(mem, 0x0134_0446);
+        mem.write(a, 0u8);
+        for g in [0x0134_044c, 0x0134_0450, 0x0134_0444, 0x0134_0448] {
+            let a = at(mem, g);
+            mem.write(a, 0u16);
+        }
+        let a = at(mem, 0x0134_0470);
+        mem.write(a, 0u32);
+        let rows = at(mem, 0x0134_04f8);
+        mem.write_bytes(rows, &[0; 0x300]);
+        let table = at(mem, 0x0134_0478);
+        mem.write_bytes(table, &[0; 0x80]);
+        let list = call(mem, 0x0079_a200, &[local]);
+        for k in 0..16u32 {
+            let e = list.wrapping_add(4 * k);
+            let row = rows.wrapping_add(0x18 * k);
+            let id = mem.read::<u8>(e);
+            let ticks = u32::from(mem.read::<u16>(e.wrapping_add(2)));
+            #[allow(clippy::cast_possible_truncation)] // k < 16
+            let kb = k as u8;
+            mem.write(row, 1u8);
+            mem.write(row.wrapping_add(1), id);
+            mem.write(row.wrapping_add(4), ticks);
+            let ticks = u32::from(mem.read::<u16>(e.wrapping_add(2)));
+            mem.write(row.wrapping_add(8), ticks);
+            mem.write(row.wrapping_add(0x10), 0u16);
+            mem.write(row.wrapping_add(0xc), kb);
+            mem.write(row.wrapping_add(0xd), kb);
+            mem.write(row.wrapping_add(0xe), 0u8);
+            #[allow(clippy::cast_possible_truncation)] // k < 16
+            mem.write(row.wrapping_add(0x12), (k * 0x16) as u16);
+            mem.write(row.wrapping_add(0x14), 0u32);
+        }
+        for k in 0..16u32 {
+            mem.write(table.wrapping_add(4 * k), rows.wrapping_add(0x18 * k));
+        }
+    }
+
+    /// A limit window's caption centred on 512: `MsGetRomBtlText(mes, 0)`
+    /// measured by `ToGetBtlEasyFontWidth(text, width, 0, 0.78, 1)` into
+    /// the frame word `width`, then `TOMkpCrossExtMesFontLClut(0, text,
+    /// f32((512 - width) / 2), y, 0, 0.78, 1)`; `y` is asked between the
+    /// two (its remap runs there).
+    fn limit_caption<M: Mem>(
+        mem: &mut M,
+        call: &mut impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mes: u32,
+        width: u32,
+        y: &mut dyn FnMut(&mut M) -> u32,
+    ) {
+        use ffx_bridge::x87::{load, mul, store, sub};
+        let scale = [0.78f32, 1.0].map(f32::to_bits);
+        let text = call(mem, 0x0078_f8f0, &[mes, 0]);
+        call(mem, 0x0090_5290, &[text, width, 0, scale[0], scale[1]]);
+        let y = y(mem);
+        let x = store(mul(sub(512.0, load(mem.read::<u32>(width))), 0.5));
+        call(mem, 0x0090_16b0, &[0, text, x, y, 0, scale[0], scale[1]]);
+    }
+
+    /// `TOBtlDrawWakkaLimitWindow()` (`0x008974a0`): while u8
+    /// `0x0133c93f` is set, `TOTransTexture()`,
+    /// `TOTransImageHL(TOGetBtlMenuTexAdrs(), 0x3f00, 0x13, 0, 0, 0x100,
+    /// 0x100)` (the six words pushed before the address call),
+    /// `TOSetPktBuffAdrs(0x1f00000, 0x100000, 0xf0000)` (plain numbers),
+    /// `TOOpenPktbuff()`, `0x008a1e50()`, `TOSeqDraw(2, 4, 1)`; while
+    /// `TOSeqGetSceneState_008ae530(2, "bwakk")` is 3 the caption 0x3013 at
+    /// y 71; `TOClosePktbuff()`, `TODrawKick()`.
+    pub fn draw_wakka_limit_window<M: Mem>(
+        mem: &mut M,
+        width: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+    ) {
+        if mem.read::<u8>(mem.rebase(0x0133_c93f)) == 0 {
+            return;
+        }
+        call(mem, 0x008b_1020, &[]);
+        let tex = call(mem, 0x008a_c2c0, &[]);
+        call(mem, 0x008b_0b10, &[tex, 0x3f00, 0x13, 0, 0, 0x100, 0x100]);
+        call(mem, 0x0090_47c0, &[0x01f0_0000, 0x0010_0000, 0x000f_0000]);
+        call(mem, 0x0090_4600, &[]);
+        call(mem, 0x008a_1e50, &[]);
+        call(mem, 0x008a_e2f0, &[2, 4, 1]);
+        let name = mem.rebase(0x00b5_ed2c);
+        if call(mem, 0x008a_e530, &[2, name]) == 3 {
+            limit_caption(mem, &mut call, 0x3013, width, &mut |_| 71f32.to_bits());
+        }
+        call(mem, 0x008f_3930, &[]);
+        call(mem, 0x008f_5bc0, &[]);
+    }
+
+    /// `TOBtlDrawAuronLimitWindow()` (`0x00892740`, Fahrenheit's name):
+    /// in Auron's states 3 and 4 (`i16 0x0133d6f4`), the combination's
+    /// buttons from `i16 0x0133d6fc` (signed) below `i32 0x0133d700`: button
+    /// `b = u16 [0x0133d704][i]` drawn by `setButtonData(-1, b)`,
+    /// `graphicSetButtonIconScale(1.5, 1.5)`, `TOMkpPadButtonData(b, i16
+    /// 0x0133d6f6 - 46 + 30 i, ftol(remapY2(514) - 3))`,
+    /// `graphicResetButtonIconScale()`, `resetButtonData()`; then the
+    /// caption 0x3011 at `remapY2(186)`. `fcall` calls an original that
+    /// returns in ST0 (the remap).
+    #[allow(clippy::many_single_char_names)] // i, b, x, y as in the original
+    pub fn draw_auron_limit_window<M: Mem>(
+        mem: &mut M,
+        width: u32,
+        mut call: impl FnMut(&mut M, u32, &[u32]) -> u32,
+        mut fcall: impl FnMut(&mut M, u32, &[u32]) -> f64,
+    ) {
+        use ffx_bridge::x87::{ftol, store, sub};
+        let at = |mem: &M, a: u32| mem.rebase(a);
+        let state = i32::from(mem.read::<i16>(at(mem, AURON_STATE)));
+        if state.wrapping_sub(3).cast_unsigned() > 1 {
+            return;
+        }
+        let mut i = i32::from(mem.read::<i16>(at(mem, 0x0133_d6fc)));
+        while i < mem.read::<i32>(at(mem, 0x0133_d700)) {
+            let button = |mem: &M| {
+                let list = mem.read::<u32>(at(mem, 0x0133_d704));
+                u32::from(mem.read::<u16>(list.wrapping_add(2 * i.cast_unsigned())))
+            };
+            let b = button(mem);
+            call(mem, 0x008b_1350, &[u32::MAX, b]);
+            let scale = 1.5f32.to_bits();
+            call(mem, 0x0064_2ec0, &[scale, scale]);
+            let r = fcall(mem, 0x0064_4820, &[514f32.to_bits()]);
+            let y = ftol(mem, sub(r, 3.0));
+            let x = i32::from(mem.read::<i16>(at(mem, 0x0133_d6f6)))
+                .wrapping_sub(0x2e)
+                .wrapping_add(i.wrapping_mul(30));
+            let b = button(mem);
+            call(mem, 0x0090_29b0, &[b, x.cast_unsigned(), y]);
+            call(mem, 0x0064_2c60, &[]);
+            call(mem, 0x008b_1330, &[]);
+            i = i.wrapping_add(1);
+        }
+        limit_caption(mem, &mut call, 0x3011, width, &mut |mem| {
+            store(fcall(mem, 0x0064_4820, &[186f32.to_bits()]))
+        });
+    }
 }
