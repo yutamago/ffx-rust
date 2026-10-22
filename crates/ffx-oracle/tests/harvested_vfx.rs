@@ -180,3 +180,27 @@ harvest_test!(
         ffx_vfx::rand::bridge::op_random_in_slot(m, s.arg_f32(0), s.regs.esp + 4)
     }
 );
+
+// effects: opu_world (round 46)
+harvest_test!(opu_world, 0x0080_1d00, args = 2, |m: &mut Oracle, s| {
+    ffx_vfx::opus::bridge::opu_world(m, s.arg(0), s.arg(1), &mut |m, f, a| {
+        m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax
+    })
+});
+
+// effects: pppDrawShapeCameraDraw (round 46; no caller reads its eax)
+harvest_test!(
+    ppp_draw_shape_camera_draw,
+    0x0074_7540,
+    args = 3,
+    |m: &mut Oracle, s| {
+        ffx_vfx::draw::bridge::ppp_draw_shape_draw(
+            m,
+            &ffx_vfx::draw::bridge::CAMERA_DRAW,
+            s.arg(0),
+            s.arg(1),
+            s.arg(2),
+            &mut |m, f, a| m.call(f, ffx_oracle::Conv::Cdecl, a).unwrap().eax,
+        );
+    }
+);
