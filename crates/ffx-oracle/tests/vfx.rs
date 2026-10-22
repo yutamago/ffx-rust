@@ -9339,6 +9339,147 @@ fn ppp_draw_rain_step_matches_the_original() {
     }
 }
 
+#[test]
+#[allow(clippy::too_many_lines, clippy::cast_possible_truncation)]
+fn op_shape_draw_eamap_matches_the_original() {
+    for mut p in Pair::all() {
+        let mut rng = Xorshift(0x007f_49e0);
+        let cells = p.alloc(0x10);
+        let (rd_cell, w_cell, h_cell) = (cells, cells + 4, cells + 8);
+        let logs = [far_recorder(&mut p, 0x0063_8fd0, &[0, 0], Some(rd_cell))];
+        // graphicGetAbmapUV_006410a0(kind, u, v, &u, &v): copies u and v
+        // out (finite, no signalling NaNs from stack garbage) and keeps
+        // the kind in a cell
+        // (for an odd kind the fourth call, the one whose v goes to the
+        // original's local at ebp - 0x168, writes nothing, as the real one
+        // does for a kind past its table: the local keeps its word)
+        let kind_cell = cells + 0xc;
+        let frame = p.b.stack_range().end - 0x100 - 12 - 4 - 0x200 - 12 - 4 - 4;
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xa3]; // mov eax, [esp+4]; mov [kind], eax
+        c.extend(kind_cell.to_le_bytes());
+        c.extend([0xa8, 0x01, 0x74, 0x0b]); // test al, 1; jz +11
+        c.extend([0x81, 0x7c, 0x24, 0x14]); // cmp dword [esp+0x14], frame - 0x168
+        c.extend((frame - 0x168).to_le_bytes());
+        c.extend([0x75, 0x01, 0xc3]); // jne +1; ret
+        c.extend([0x8b, 0x44, 0x24, 0x10, 0x8b, 0x4c, 0x24, 0x08, 0x89, 0x08]); // u out
+        c.extend([0x8b, 0x44, 0x24, 0x14, 0x8b, 0x4c, 0x24, 0x0c, 0x89, 0x08]); // v out
+        c.push(0xc3);
+        let at = p.sym(0x0064_10a0);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        // graphicFontGetScreenWH(&w, &h) from two cells
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x0d]; // mov eax, [esp+4]; mov ecx, [w]
+        c.extend(w_cell.to_le_bytes());
+        c.extend([0x89, 0x08, 0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d]); // mov [eax], ecx; ...
+        c.extend(h_cell.to_le_bytes());
+        c.extend([0x89, 0x08, 0xc3]);
+        let at = p.sym(0x0064_0db0);
+        p.a.write(at, &c).unwrap();
+        p.b.write(at, &c).unwrap();
+        let (shape, key, m, rdata, r) = (
+            p.alloc(0x60),
+            p.alloc(0x20),
+            p.alloc(0x40),
+            p.alloc(0xa0),
+            p.alloc(0xa0),
+        );
+        let (cols, pos, uvs, list) = (
+            p.alloc(0x40 * 9),
+            p.alloc(0x30 * 9),
+            p.alloc(0x20 * 9),
+            p.alloc(0x100),
+        );
+        let (cols2, pos2, uvs2, list2) = (
+            p.alloc(0x40 * 9),
+            p.alloc(0x30 * 9),
+            p.alloc(0x20 * 9),
+            p.alloc(0x100),
+        );
+        let skip = p.sym(0x012f_b7d0);
+        for round in 0..2000u32 {
+            for log in logs {
+                p.set(log, 0u32);
+            }
+            p.fill(shape, 0x60, &mut rng);
+            p.set(shape + 4, rng.pick(&[0x40u32, 0x50, 0x5c]));
+            // the instance's high word: no NaN pattern
+            p.set(shape + 0x14, rng.below(0x100));
+            for k in 0..12u32 {
+                let v = rng.pick(&[0i16, 1, -1, 15, 0x7fff, -0x8000]);
+                let v = if rng.chance(50) {
+                    (rng.next() & 0xffff) as i16
+                } else {
+                    v
+                };
+                p.set(shape + 0x20 + 2 * k, v);
+            }
+            // the corner word the main-list quads patch
+            if rng.chance(25) {
+                p.set(shape + 0x24, 0xa0u16);
+            }
+            p.fill(key, 0x20, &mut rng);
+            p.set(key + 0x10, m);
+            for k in 0..16u32 {
+                let x = match rng.below(20) {
+                    0 => 0,
+                    1 => rng.float(),
+                    _ => ranged(&mut rng, -3000.0, 3000.0),
+                };
+                p.set(m + 4 * k, x);
+            }
+            if rng.chance(20) {
+                p.set(m + 0x2c, rng.pick(&[0u32, 0x8000_0000]));
+            }
+            p.set(rd_cell, rdata);
+            p.fill(rdata, 0xa0, &mut rng);
+            p.set(rdata + 0x94, r);
+            p.fill(r, 0xa0, &mut rng);
+            for (o, v) in [
+                (0xcu32, pos),
+                (0x14, cols),
+                (0x18, uvs),
+                (0x1c, list),
+                (0x78, pos2),
+                (0x80, cols2),
+                (0x84, uvs2),
+                (0x88, list2),
+            ] {
+                p.set(r + o, v);
+            }
+            let any = rng.next();
+            p.set(r + 4, rng.pick(&[0u32, 4, 0xfffe, any]));
+            p.set(r + 8, rng.below(0x30));
+            p.set(r + 0x70, 4 * rng.below(8) + u32::from(rng.chance(10)));
+            p.set(r + 0x74, rng.below(0x30));
+            p.set(w_cell, rng.pick(&[1280u32, 1920, 640, 0, 0xffff_fc00]));
+            p.set(h_cell, rng.pick(&[720u32, 1080, 416, 0]));
+            p.set(skip, u32::from(rng.chance(5)));
+            let slot = match rng.below(8) {
+                0 | 1 => (-0x35ei32).cast_unsigned(),
+                2 => (-1 - rng.below(8).cast_signed()).cast_unsigned(),
+                3 => 0xffff,
+                4 | 5 => rng.below(9),
+                _ => 0x35d + rng.below(9),
+            };
+            // no shape: only the index lists (0xffff) read nothing of it
+            let sh = if slot == 0xffff && rng.chance(30) {
+                0
+            } else {
+                shape
+            };
+            check_deep3(
+                &mut p,
+                &format!("op_shape_draw_eamap round {round}"),
+                0x007f_49e0,
+                [sh, key, slot],
+                |o, frame| {
+                    op::bridge::op_shape_draw_eamap(o, sh, key, slot, frame, &mut call_original)
+                },
+            );
+        }
+    }
+}
+
 /// A float in `[lo, hi)` with 16 fraction bits, as bits.
 fn ranged(rng: &mut Xorshift, lo: f32, hi: f32) -> u32 {
     #[allow(clippy::cast_precision_loss)]

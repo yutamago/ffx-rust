@@ -3069,6 +3069,13 @@ ported! {
         #[allow(clippy::cast_possible_truncation)] // the u16 argument
         opus::bridge::opus_list_add(&mut mem(), set, id as u16, list)
     }
+    /// `op_shape_draw_eamap(shape, key, slot)`.
+    op_shape_draw_eamap @ 0x007f_49e0 => extern "C" fn op_shape_draw_eamap(shape: u32, key: u32, slot: u32) -> u32 {
+        // the original's locals: 0x174 bytes below its ebp
+        let mut frame = super::StackFrame::<0x5d>::new();
+        let ebp = frame.at() + 0x174;
+        op::bridge::op_shape_draw_eamap(&mut mem(), shape, key, slot, ebp, &mut |_, f, a| call_ptr(f, a))
+    }
     /// `opp_main(battle)`.
     opp_main @ 0x0080_bd50 => extern "C" fn opp_main(battle: u32) -> u32 {
         opus::bridge::opp_main(&mut mem(), battle, &mut |_, f, a| call_ptr(f, a))
