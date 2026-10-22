@@ -10131,3 +10131,487 @@ fn round25c_fade_sprites_guide_party_bar_movie_match_the_original() {
     let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
     r25c_vibrate_signal(&mut a, &mut b, &mut rng, "snapshot");
 }
+
+/// Replaces `f(side, out)` in both oracles with a stub that stores a
+/// cell's word at `out + 4` (`MsCameraGetPosNow`'s y), keeps `side` in
+/// the next word and returns 0; returns the cell.
+fn r25_cam_y_stub(a: &mut Oracle, b: &mut Oracle, f: u32) -> u32 {
+    let cell = alloc_both(a, b, 8);
+    let code: Vec<u8> = [
+        &[0x8b, 0x44, 0x24, 0x04, 0xa3][..], // mov eax,[esp+4]; mov [cell+4],eax (the side)
+        &(cell + 4).to_le_bytes(),
+        &[0x8b, 0x44, 0x24, 0x08, 0x8b, 0x0d], // mov eax,[esp+8]; mov ecx,
+        &cell.to_le_bytes(),
+        &[0x89, 0x48, 0x04, 0x31, 0xc0, 0xc3], // mov [eax+4],ecx; xor eax,eax; ret
+    ]
+    .concat();
+    let at = a.alloc_code(&code).unwrap();
+    assert_eq!(b.alloc_code(&code).unwrap(), at);
+    for o in [&mut *a, &mut *b] {
+        let entry = o.rebase(f);
+        let rel = at.wrapping_sub(entry + 5);
+        o.write(entry, &[&[0xe9][..], &rel.to_le_bytes()].concat())
+            .unwrap();
+    }
+    cell
+}
+
+/// Finite floats for matrices and positions (no NaNs: the inverse would
+/// spread them, a case of its own).
+const R25_FINITE: [u32; 8] = [
+    0,
+    0x3f80_0000,
+    0xbf80_0000,
+    0x4120_0000,
+    0x3e80_0000,
+    0xc2c8_0000,
+    0x4049_0fdb,
+    0x8000_0000,
+];
+
+/// Round 25 d on one pair: the turn to a point, the sprite show, the water
+/// status, the pad history, the event path language (callees logged or
+/// stubbed).
+#[allow(clippy::too_many_lines)] // one block per function
+fn r25d_cases(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    // Atel_TurnToPoint
+    let yaw_pitch = |r: &mut Run, args: &[u32]| {
+        let f = r.0.rebase(0x0088_b4d0);
+        r.0.call(f, Conv::Cdecl, args).unwrap().eax
+    };
+    for round in 0..24u32 {
+        let w = alloc_both(a, b, 0x600);
+        fill_both(a, b, rng, w + 4, 0x5fc);
+        let kind = alloc_both(a, b, 4);
+        poke(a, b, kind, [5u8, 6, 0, 7][(round % 4) as usize]);
+        poke(a, b, w, kind);
+        poke(
+            a,
+            b,
+            w + 0x32,
+            [0u8, 1, 2, 5, 8, 9, 0xff][rng.below(7) as usize],
+        );
+        for l in 0..9 {
+            let t = alloc_both(a, b, 0x30);
+            fill_both(a, b, rng, t, 0x30);
+            poke(a, b, w + 0x174 + l * 0x4c, t);
+        }
+        for off in [0x284u32, 0x558] {
+            for k in 0..3 {
+                poke(a, b, w + off + k * 4, R25_FINITE[rng.below(8) as usize]);
+            }
+        }
+        let point = [0u32; 3].map(|_| R25_FINITE[rng.below(8) as usize]);
+        r22_case(
+            a,
+            b,
+            0x0086_f7f0,
+            &[w, point[0], point[1], point[2]],
+            false,
+            &format!("Atel_TurnToPoint {what} {round}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_turn_to_point(r, w, point, f, yaw_pitch);
+                0
+            },
+        );
+    }
+    // Atel_ShowSprite
+    r24_log_stubs(a, b, &[(0x007e_cf50, 3), (0x00a4_4700, 1)]);
+    r25_fios_prefix(a, b);
+    let seen = r25_copy_stub(a, b, 0x0063_9310);
+    let lang = r24_lang_word(a, b);
+    for (k, i) in [0u32, 3, 0x7f, 0x80, 0xffff_fff0, 0x7fff_ffff]
+        .into_iter()
+        .enumerate()
+    {
+        fill_both(a, b, rng, seen, 0x40);
+        poke(a, b, a.rebase(0x023c_bc5c), u32::from(k % 3 != 0));
+        poke(a, b, a.rebase(0x0132_7140), u32::from(k % 2 == 0));
+        poke(a, b, lang, rng.below(13));
+        let tex = rng.next();
+        let s = a.rebase(0x0132_7148) + i.cast_signed().clamp(0, 0x7f).cast_unsigned() * 0x1c;
+        fill_both(a, b, rng, s, 0x1c);
+        r22_case(
+            a,
+            b,
+            0x0087_48a0,
+            &[i, tex],
+            false,
+            &format!("Atel_ShowSprite {what} {k}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_show_sprite(r, i, tex, f);
+                0
+            },
+        );
+    }
+    // AtelUpdateWaterStatus
+    let cam_y = r25_cam_y_stub(a, b, 0x007b_d470);
+    let works = a.rebase(0x0132_5ba0);
+    let save = orig(a, 0x0088_c830, &[]);
+    orig(b, 0x0088_c830, &[]);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let levels = [0u32, 0x3f80_0000, 0xbf80_0000, 0x4120_0000, 0x7fc0_0000];
+    for round in 0..40u32 {
+        r25_ret(a, b, 0x0078_0c90, [1u32, 0, 0, 2][(round % 4) as usize]);
+        r25_ret(
+            a,
+            b,
+            0x0090_8dd0,
+            [0u32, 1, 3, 0xffff_ffff, 2][rng.below(5) as usize],
+        );
+        fill_both(a, b, rng, save + 0x29, 1);
+        if rng.below(2) == 0 {
+            poke(a, b, save + 0x29, 0u8);
+        }
+        fill_both(a, b, rng, works + 2, 1);
+        poke(a, b, works + 0x208, levels[rng.below(5) as usize]);
+        poke(a, b, cam_y, levels[rng.below(5) as usize]);
+        fill_both(a, b, rng, a.rebase(0x0132_6b83), 1);
+        if round % 3 == 0 {
+            poke(a, b, ctx_cell, works + 0x238);
+        }
+        r22_case(
+            a,
+            b,
+            0x0087_1e50,
+            &[],
+            false,
+            &format!("AtelUpdateWaterStatus {what} {round}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_update_water_status(r, f);
+                0
+            },
+        );
+    }
+    // AtelExec_Internal_871d10
+    for round in 0..8u32 {
+        r25_ret(
+            a,
+            b,
+            0x0088_7dc0,
+            [0u32, 1, 2, 3, 0xffff_ffff][rng.below(5) as usize],
+        );
+        for f in [
+            0x0088_8d70,
+            0x0088_8e50,
+            0x0088_8e30,
+            0x0088_8e80,
+            0x0088_8ea0,
+        ] {
+            let vals: Vec<u32> = (0..8).map(|_| rng.next()).collect();
+            r24_seq_stub(a, b, f, 3, &vals);
+        }
+        fill_both(a, b, rng, a.rebase(0x0132_70c0), 0x18);
+        r22_case(
+            a,
+            b,
+            0x0087_1d70,
+            &[],
+            false,
+            &format!("AtelExec_Internal_871d10 {what} {round}"),
+            |r| {
+                hp::atel_exec_internal_871d10(r);
+                0
+            },
+        );
+    }
+    // Atel_SetEventPathLang
+    r24_log_stubs(a, b, &[(0x00a4_2f30, 1), (0x00a4_3220, 2)]);
+    for l in (0..20u32).chain([0xffff_ffff, 0x100]) {
+        r25_ret(a, b, 0x0088_7d00, l);
+        fill_both(a, b, rng, a.rebase(0x0132_85b4), 4);
+        let to = rng.next();
+        r22_case(
+            a,
+            b,
+            0x0087_9430,
+            &[to],
+            false,
+            &format!("Atel_SetEventPathLang {what} {l}"),
+            |r| {
+                hp::atel_set_event_path_lang(r, to);
+                0
+            },
+        );
+    }
+}
+
+/// Round 25 d on the snapshot's workers: the vibration signal with a
+/// curve, the listener matrix, the affection and the variable slots.
+#[allow(clippy::too_many_lines)] // one block per function
+fn r25d_workers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift, what: &str) {
+    use ffx_script::vm::bridge::helpers as hp;
+    let frame = |r: &Run| r.0.stack_range().start + 0x100;
+    let works = a.rebase(0x0132_5ba0);
+    let ctx_cell = a.rebase(0x0132_6b28);
+    let here = Mem::read::<u32>(b, ctx_cell);
+    let n = u32::from(Mem::read::<u16>(b, works + 0xc)).min(6);
+    // Atel_RegistVibrateSignalWith
+    r24_log_stubs(a, b, &[(0x0086_e990, 5)]);
+    for i in 0..n {
+        poke(a, b, ctx_cell, works);
+        let w = v::atel_get_basic_work(b, i.cast_signed());
+        orig(a, ATEL_GET_BASIC_WORK, &[i]);
+        for k in [0u32, 1, 3, 7, 8] {
+            fill_both(a, b, rng, w + 0xab, 1);
+            let curve = [0xffff_ffffu32, 0xffff, 3, 0x8000_0000, 0x10, 0][rng.below(6) as usize];
+            r24_seq_stub(
+                a,
+                b,
+                0x0087_63e0,
+                3,
+                &[[0xffffu32, 5][rng.below(2) as usize]],
+            );
+            poke(
+                a,
+                b,
+                ctx_cell,
+                if k % 2 == 1 { works + 0x238 } else { here },
+            );
+            let from = rng.next();
+            r22_case(
+                a,
+                b,
+                0x0087_66d0,
+                &[from, i, k, curve],
+                true,
+                &format!("Atel_RegistVibrateSignalWith {what} {i} {k}"),
+                |r| hp::atel_regist_vibrate_signal_with(r, from, i, k, curve),
+            );
+        }
+    }
+    // AtelSetSndCameraPos
+    r24_log_stubs(a, b, &[(0x007c_0070, 1)]);
+    let cam = a.rebase(0x0132_82c8);
+    for round in 0..8u32 {
+        for k in 0..16 {
+            poke(a, b, cam + k * 4, R25_FINITE[rng.below(8) as usize]);
+        }
+        for k in [0u32, 5, 10, 15] {
+            poke(a, b, cam + k * 4, 0x3f80_0000u32);
+        }
+        let player = if round % 3 == 0 || n == 0 {
+            0xffffu16
+        } else {
+            u16::try_from(rng.below(n)).unwrap()
+        };
+        poke(a, b, works + 0xa, player);
+        poke(
+            a,
+            b,
+            ctx_cell,
+            if round % 2 == 1 { works + 0x238 } else { here },
+        );
+        r22_case(
+            a,
+            b,
+            0x0087_7470,
+            &[],
+            false,
+            &format!("AtelSetSndCameraPos {what} {round}"),
+            |r| {
+                let f = frame(r);
+                hp::atel_set_snd_camera_pos(r, f);
+                0
+            },
+        );
+    }
+    // Atel_AddLoveParam
+    poke(a, b, ctx_cell, here);
+    let c = here;
+    let save = orig(a, 0x0088_c830, &[]);
+    orig(b, 0x0088_c830, &[]);
+    let cn = u32::from(Mem::read::<u16>(b, c + 0xc)).min(6);
+    let mut cases = 0;
+    for round in 0..96u32 {
+        if cn == 0 {
+            break;
+        }
+        let i = rng.below(cn);
+        let w = v::atel_get_basic_work(b, i.cast_signed());
+        orig(a, ATEL_GET_BASIC_WORK, &[i]);
+        poke(
+            a,
+            b,
+            w + 0xaa,
+            [0u8, 1, 1, 1, 2, 1, 1, 1][(round % 8) as usize],
+        );
+        if rng.below(6) == 0 {
+            poke(a, b, w + 0x9c, 0u32);
+        } else if Mem::read::<u32>(b, w + 0x9c) == 0 {
+            poke(a, b, w + 0x9c, 0x1234u32);
+        }
+        poke(
+            a,
+            b,
+            w + 0x40,
+            [0u32, 1, 3, 7, 0, 5, 8, 0xffff_ffff][(round % 8) as usize],
+        );
+        let f = Mem::read::<u8>(b, c + 2);
+        poke(
+            a,
+            b,
+            c + 2,
+            if round % 5 == 0 { f & !0x40 } else { f | 0x40 },
+        );
+        fill_both(a, b, rng, c + 4, 4);
+        poke(
+            a,
+            b,
+            a.rebase(0x0132_6b90),
+            [0u32, 0, 0, 0x2, 0xff, 0x80][rng.below(6) as usize],
+        );
+        r25_ret(a, b, 0x0078_4f60, [1u32, 0, 1, 2][rng.below(4) as usize]);
+        r25_ret(a, b, 0x0078_4f90, [0u32, 1, 1, 2][rng.below(4) as usize]);
+        r25_ret(
+            a,
+            b,
+            0x0088_d660,
+            [0u32, 5, 31, 32, 63, 639, 640, 0xffff_ffff, 0xffff_ffc0][if round % 6 == 5 {
+                8
+            } else {
+                rng.below(9) as usize
+            }],
+        );
+        fill_both(a, b, rng, save + 0x2c, 0x20);
+        fill_both(a, b, rng, save + 0x4c, 0x50);
+        let skip = u32::from(round % 7 == 3);
+        r22_case(
+            a,
+            b,
+            0x0086_5650,
+            &[i, skip],
+            false,
+            &format!("Atel_AddLoveParam {what} {round}"),
+            |r| {
+                hp::atel_add_love_param(r, i, skip);
+                0
+            },
+        );
+        cases += 1;
+    }
+    // Atel_FindVarSlot: worker 0's script header replaced by one of ours,
+    // the reference aimed at an entry's first, last, past-the-end or a
+    // middle element
+    if cn > 0 {
+        let w = v::atel_get_basic_work(b, 0);
+        orig(a, ATEL_GET_BASIC_WORK, &[0]);
+        let sizes = [1u32, 1, 2, 2, 4, 4, 4, 1];
+        for round in 0..64u32 {
+            let hdr = alloc_both(a, b, 0x400);
+            let level = rng.below(3);
+            poke(a, b, w + 0x2e, u16::try_from(level).unwrap());
+            poke(a, b, w + 4, hdr);
+            poke(a, b, hdr + 0x38 + level * 4, 0x100u32);
+            let ne = [1u16, 2, 4, 8][rng.below(4) as usize];
+            poke(a, b, hdr + 0x102, ne);
+            poke(a, b, hdr + 0x114, 0x200u32);
+            let storage = [0u32, 0x0600_0000, 0x0200_0000, 0x0e00_0000][(round % 4) as usize];
+            let mut ents = vec![];
+            for e in 0..8u32 {
+                let kind = rng.below(8);
+                // a base just below bit 24 now and then: the element
+                // index masks bits 24-27 off both
+                let base = if round % 8 == 7 {
+                    storage | 0x00ff_fff0 | (rng.below(4) * 4)
+                } else {
+                    storage | (rng.below(0x40) * 4)
+                };
+                let count = 1 + rng.below(7);
+                poke(a, b, hdr + 0x200 + e * 8, (kind << 28) | base);
+                poke(a, b, hdr + 0x204 + e * 8, u16::try_from(count).unwrap());
+                ents.push((kind, base, count));
+            }
+            if rng.below(3) != 0 {
+                let wc = alloc_both(a, b, 0x100);
+                fill_both(a, b, rng, wc + 0x60, 0x40);
+                for k in 0..3u32 {
+                    poke(
+                        a,
+                        b,
+                        wc + 0x60 + k * 0x10 + 0xc,
+                        u16::try_from(rng.below(5)).unwrap(),
+                    );
+                }
+                poke(a, b, wc + 0x54, 0x60u32);
+                poke(a, b, w + 8, wc);
+            } else {
+                poke(a, b, w + 8, 0u32);
+            }
+            let rec = alloc_both(a, b, 8);
+            fill_both(a, b, rng, rec, 2);
+            poke(a, b, rec + 2, 0u16);
+            let ti = rng.below(u32::from(ne));
+            let t = ents[ti as usize];
+            // the actor's limit right at the entry now and then
+            if Mem::read::<u32>(b, w + 8) != 0 && rng.below(2) == 0 {
+                let wc = Mem::read::<u32>(b, w + 8);
+                poke(
+                    a,
+                    b,
+                    wc + 0x60 + level * 0x10 + 0xc,
+                    u16::try_from(ti).unwrap(),
+                );
+            }
+            let span = t.2 * sizes[t.0 as usize];
+            let at = [
+                0,
+                span - 1,
+                span,
+                rng.below(span),
+                span + 1,
+                rng.below(span),
+            ][rng.below(6) as usize];
+            let v = if round % 9 == 8 {
+                (rng.below(8) << 28) | storage | rng.below(0x140)
+            } else {
+                (t.0 << 28) | (t.1 + at)
+            };
+            poke(a, b, rec + 4, v);
+            r22_case(
+                a,
+                b,
+                0x0087_bc90,
+                &[rec],
+                false,
+                &format!("Atel_FindVarSlot {what} {round}"),
+                |r| {
+                    hp::atel_find_var_slot(r, rec);
+                    0
+                },
+            );
+        }
+    }
+    eprintln!("round 25d: {cases} affection cases ({what})");
+}
+
+#[test]
+fn round25d_turn_sprite_water_pad_lang_love_vars_match_the_original() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let exe = PathBuf::from(dir).join("FFX.exe");
+    let mut rng = Xorshift(0x5eed_0254);
+    {
+        let mut a = Oracle::load(&exe).unwrap();
+        let mut b = Oracle::load(&exe).unwrap();
+        r25d_cases(&mut a, &mut b, &mut rng, "image");
+    }
+    let Some(snap) = std::env::var_os("FFX_SNAPSHOT") else {
+        eprintln!("FFX_SNAPSHOT is not set; the snapshot part skipped");
+        return;
+    };
+    let pages = Pages::read(PathBuf::from(snap)).unwrap();
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r25d_cases(&mut a, &mut b, &mut rng, "snapshot");
+    let mut a = Oracle::from_snapshot(&exe, &pages).unwrap();
+    let mut b = Oracle::from_snapshot(&exe, &pages).unwrap();
+    r25d_workers(&mut a, &mut b, &mut rng, "snapshot");
+}

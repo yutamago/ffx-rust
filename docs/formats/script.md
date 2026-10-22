@@ -2951,6 +2951,32 @@ them. `AtelOutputEncountStart` (`0x00885a80`) writes a separator line to a
 host-PC log (`AtelPCOpen2`/`AtelPCWrite`): debug; `0x006f3130` creates the
 Iggy pause menu (`FFIggyPauseMenu`) once: PC UI.
 
+Round 25 d: `Atel_RegistVibrateSignalWith_008766d0` is the round 25 c
+vibration signal with a given curve (the worker's own for a negative
+one) and `AtelRegistSignal`. `AtelSetSndCameraPos` (`0x00877470`) makes
+the sound listener matrix `0x01328288`: the camera matrix with the
+player's position as translation (two `FFXVu0InversMatrix` through a
+local), or the camera matrix itself without a player.
+`Atel_TurnToPoint_0086f7f0` stores `Math_YawPitchTo`'s yaw and pitch
+from the worker to a point in its turn block (`+0x174` of its level,
+clamped to 1 for types 5/6, 8 else). `Atel_ShowSprite_008748a0` turns an
+event sprite on with a texture. `AtelUpdateWaterStatus` (`0x00871e50`)
+keeps `g_AtelInWater` (`0x01326b83`): the map's flag (save event `+0x29`
+from `yiGetMapStatus` outside battles), or the camera's y against ctrl
+work 0's water level `+0x208` (level <= y; NaN counts as above).
+`AtelExec_Internal_871d10` (`0x00871d70`) merges the pad history of the
+frames since the last sync into `g_AtelPadHeld` and the words after it.
+`Atel_SetEventPathLang_00879430` points `/ffx/proj/event/xx/` at the text
+language's directory (jump table `0x00879508` with the byte index table
+`0x00879524`: 1 us, 2 fr, 3 es, 4 de, 5 it, 18 uk, else jp).
+`Atel_AddLoveParam_00865650` adds an event's affection (ctx `+4` for
+women, `+6` for men) to a party member once per event jump id (bits from
+the save event's `+0x4c`). `Atel_FindVarSlot_0087bc90` resolves a
+variable reference to its table entry and element.
+`round25d_turn_sprite_water_pad_lang_love_vars_match_the_original` covers
+them. `0x00879b60` reads a host-PC file into a source buffer
+(`AtelPCOpen`, `sceRead`; caller `AtelLoadSourceData`): debug.
+
 ### Verification
 
 `crates/ffx-oracle/tests/script.rs` runs the original `Script_Run` and the

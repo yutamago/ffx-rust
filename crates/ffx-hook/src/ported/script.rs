@@ -7215,4 +7215,48 @@ ported! {
     Atel_SetMovieTexture_00873eb0 @ 0x0087_3eb0 => extern "C" fn h_873eb0(id: u32, flags: u32) -> u32 {
         hp::atel_set_movie_texture(&mut mem(), id, flags)
     }
+    /// `Atel_RegistVibrateSignalWith_008766d0(from, i, k, curve)`.
+    Atel_RegistVibrateSignalWith_008766d0 @ 0x0087_66d0 => extern "C" fn h_8766d0(from: u32, i: u32, k: u32, curve: u32) -> u32 {
+        hp::atel_regist_vibrate_signal_with(&mut mem(), from, i, k, curve)
+    }
+    /// `AtelSetSndCameraPos()`: the matrix in a 16-word frame.
+    AtelSetSndCameraPos @ 0x0087_7470 => extern "C" fn h_877470() {
+        let mut frame = super::StackFrame::<16>::new();
+        hp::atel_set_snd_camera_pos(&mut mem(), frame.at());
+    }
+    /// `Atel_TurnToPoint_0086f7f0(worker, x, y, z)`: yaw and pitch in a
+    /// 2-word frame, `Math_YawPitchTo`'s eight words through `call_cdecl`.
+    Atel_TurnToPoint_0086f7f0 @ 0x0086_f7f0 => extern "C" fn h_86f7f0(w: u32, x: u32, y: u32, z: u32) {
+        let mut frame = super::StackFrame::<2>::new();
+        hp::atel_turn_to_point(&mut mem(), w, [x, y, z], frame.at(), |m, args| {
+            super::call_cdecl(ffx_bridge::Mem::rebase(m, 0x0088_b4d0), args)
+        });
+    }
+    /// `Atel_ShowSprite_008748a0(i, tex)`: the path and its unify buffer in
+    /// one 512-byte frame.
+    Atel_ShowSprite_008748a0 @ 0x0087_48a0 => extern "C" fn h_8748a0(i: u32, tex: u32) {
+        let mut frame = super::StackFrame::<128>::new();
+        hp::atel_show_sprite(&mut mem(), i, tex, frame.at());
+    }
+    /// `AtelUpdateWaterStatus()`: the camera position in a 4-word frame.
+    AtelUpdateWaterStatus @ 0x0087_1e50 => extern "C" fn h_871e50() {
+        let mut frame = super::StackFrame::<4>::new();
+        hp::atel_update_water_status(&mut mem(), frame.at());
+    }
+    /// `AtelExec_Internal_871d10()`.
+    AtelExec_Internal_871d10 @ 0x0087_1d70 => extern "C" fn h_871d70() {
+        hp::atel_exec_internal_871d10(&mut mem());
+    }
+    /// `Atel_SetEventPathLang_00879430(to)`.
+    Atel_SetEventPathLang_00879430 @ 0x0087_9430 => extern "C" fn h_879430(to: u32) {
+        hp::atel_set_event_path_lang(&mut mem(), to);
+    }
+    /// `Atel_AddLoveParam_00865650(i, skip)`.
+    Atel_AddLoveParam_00865650 @ 0x0086_5650 => extern "C" fn h_865650(i: u32, skip: u32) {
+        hp::atel_add_love_param(&mut mem(), i, skip);
+    }
+    /// `Atel_FindVarSlot_0087bc90(rec)`.
+    Atel_FindVarSlot_0087bc90 @ 0x0087_bc90 => extern "C" fn h_87bc90(rec: u32) {
+        hp::atel_find_var_slot(&mut mem(), rec);
+    }
 }

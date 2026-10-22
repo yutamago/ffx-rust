@@ -9338,6 +9338,7 @@
 0x008654c0 function AtelFreeSignal            # (worker index, node): back to the free list
 0x00865580 function AtelDisposeFPForBattle       # layout+callees: sorts between AtelDecodeSignal and AtelEnterMenuCallback, and its named callees match the Switch 0x71004707e0 AtelDisposeFPForBattle's (similarity 1.00: pppFpResetStick); symbols from Fahrenheit's server export
 0x008655e0 function AtelEnterMenuCallback # cdecl (): Yn_GuideMapSetDispProg(0), TkSetVibrateMask(1..7, 0), MsEventEffectFree, g_AtelMenuExecStatus = 1 and Atel_ResetMsgWindowBank_00863c90(1), TkMenuClearDummyControler, g_AtelOverlayStatus = 3; ported (ffx_script helpers, script round 24 d); fh v3:exact 0x00865580
+0x00865650 function Atel_AddLoveParam_00865650 # (r25 d) with ctx +2 bit 0x40, a bound worker's party member (+0x40 < 8, not in g_AtelLoveParamDisable) gains the event's affection (ctx +4 woman, +6 man) in the save event +0x2c, once per event jump id (bits from +0x4c); ctx +0x1e7 = member; caller 0x00867950; own name
 0x00865890 function AtelEventGetMotionIndex   # fh switch:bsim1.00 0x7100473870
 0x008658b0 function AtelEventGetNowCtrlTopId  # fh switch:bsim1.00 0x710046fdd0
 0x008658d0 function AtelEventKickBGSep        # fh v3:exact 0x00865870
@@ -9592,6 +9593,7 @@
 0x0086f730 function AtelSetCurrentCtrl        # fh v3:bsim1.00 0x0086f6c0
 0x0086f750 function Atel_SetLevelVectorsXZ # (worker, a f, c f): Atel_SetLevelVectors(worker, a, 0.0, c); callers Native_0014; ported in helpers (script round 23 f); name ours
 0x0086f780 function Atel_SetLevelVectors       # (worker, a f, b f, c f): the current level's +0x5e0..+0x5e8 = a, b, c, +0x5d4..+0x5dc = the position (+0x284 types 5/6, +0x558 else; type 4 reads 0); EAX level*0x4c; name ours; ported in helpers (script round 13)
+0x0086f7f0 function Atel_TurnToPoint_0086f7f0 # (r25 d) Math_YawPitchTo(&yaw, &pitch, worker pos, point) into the current level's turn block (+0x174, level clamped 1 for types 5/6, 8 else) +0x20/+0x24; caller 0x0086f8a0; own name
 0x0086f940 function Atel_SetLevelTarget_0086f940 # name ours; cdecl (worker, i): the level's turn block (+0x170 + level*0x4c, level clamped) +0 = i (u16), Atel_SetLevelVectors(worker, worker i's position); callers Native_003b (calls the Rust one), 0x00868990; ported (ffx_script helpers, script round 24 d)
 0x0086f9e0 function AtelSetDolby # (on): bit 7 (Dolby) of MsGetSaveMenu()'s word = on, SndSetSoundMode(Dolby 0, bit 0 1, else 2), TkSetControlerActuatorMode(0, 0, bit 4); the last EAX; callers Native_023a, Gui_MovieDebugProc; ported in helpers (script round 23 e); layout+callees: sorts between AtelSetCurrentCtrl and AtelSetEffectFlag, and its named callees match the Switch 0x7100474730 AtelSetDolby's (similarity 1.00: MsGetSaveMenu, SndSetSoundMode, TkSetControlerActuatorMode); symbols from Fahrenheit's server export
 0x0086fa40 function AtelSetEffectFlag         # fh v3:bsim1.00 0x0086f9d0
@@ -9757,6 +9759,7 @@
 0x00874420 function AtelExecDrawShape         # fh v3:exact 0x008743b0
 0x008747b0 function Atel_GetSprite             # (i 0..127): sprite record i (0x01327148, 0x1c bytes); name ours; ported in helpers (script round 14)
 0x008747f0 function Atel_ClearSprite           # (i): sprite record i's first byte = 0; name ours; ported in helpers (script round 14)
+0x008748a0 function Atel_ShowSprite_008748a0 # (r25 d) event sprite i (0..0x7f) on with texture tex (op_anm_tex0_set, set_ptr32 at +0x14), +0 0xff01, +3 1, colour 0x80808080; loads the event texture list when 0x023cbc5c is set; caller Native_SpriteShow; own name
 0x00874970 function Atel_SetSpriteFlag         # (i, on): sprite i +3 = on != 0; name ours; ported in helpers (script round 14)
 0x008749b0 function Atel_SetSprite13           # (i, v): sprite i +0x13 = v; name ours; ported in helpers (script round 14)
 0x008749e0 function SetGlobal01327f4c_008749e0   # auto-port shape (store argument to global, cdecl): u32[&0x01327f4c] = a0; return a0; callers: ; name ours
@@ -9812,6 +9815,7 @@
 0x008764a0 function Atel_RequestOwnerTrigger_008764a0 # name ours; cdecl (owner, kind): ctrl work 0 current; Atel_FindWorkerByOwner(owner) >= 0: AtelRequestTrigger_008764f0(0xffff, worker, kind); context back; EAX the request's or 0; caller 0x0083d3b0; ported (ffx_script helpers, script round 24 e)
 0x008764f0 function AtelRequestTrigger_008764f0 # (from, to, kind) with ctrl work 0 current: AtelRegistSignalWithoutSameLevel(from, to, 0, AtelSoundTableGet_00876860(type, kind), TkGetVibrateCurve(type, kind, worker +0x44)) when the worker's +0xab has trigger bit kind; callers the trigger checks (from 0xffff); name ours; ported in helpers (script round 19)
 0x00876590 function Atel_RegistVibrateSignal_00876590 # (r25 c) ctrl work 0: worker i's sound k (AtelSoundTableGet_00876860) and TkGetVibrateCurve(type, k, +0x44); with both and +0xab bit k, AtelRegistSignalWithoutSameTag(from, i, 0, sound, curve); caller 0x00867c10; own name
+0x008766d0 function Atel_RegistVibrateSignalWith_008766d0 # (r25 d) Atel_RegistVibrateSignal_00876590 with a given curve (TkGetVibrateCurve for a negative one) and AtelRegistSignal; caller 0x008680a0; own name
 0x00876860 function AtelSoundTableGet_00876860   # structure: (kind, i) -> byte i of one of three tables (kind 1 at 0x00c52ac0, 2-3 at 0x00c52ac8, 5-6 at 0x00c52ad0), 0xff otherwise; callers the sound helpers before AtelCalcSound; name ours; ported in helpers (script round 13)
 0x00876930 function AtelCalcSound             # fh switch:bsim1.00 0x7100478700
 0x00876950 function Snd3dFootRequest          # (req, 1, 0x100): the 3D footstep request SndKickFoot hands g_SndFoot3dCtrl +0x18 to; name ours
@@ -9957,6 +9961,7 @@
 0x008793b0 function Native_c051                # 0xc051: args (on) -> TkSetTGS(on != 0) (0x0088ec10); on != 0; ported in native_chr (script round 12)
 0x008793e0 function Native_c052                # 0xc052: no args -> jumps to 0x0088d6d0; ported in native_chr (script round 12)
 0x008793f0 function Native_c053                # 0xc053: no args -> four popped and dropped; 0; ported in native_chr (script round 12)
+0x00879430 function Atel_SetEventPathLang_00879430 # (r25 d) clear_read_chgname(g_AtelEventPathChg) then set_read_chgname("/ffx/proj/event/<lang>/", to) by TkGetLang (1 us, 2 fr, 3 es, 4 de, 5 it, 18 uk, else jp; jump table 0x00879508/0x00879524); caller AtelUpdateFilePath; own name
 0x008795b0 function AtelEventGetFilePath2     # fh v3:exact 0x00879530
 0x008796f0 function AtelEventGetMotionPath       # layout+callees: sorts between AtelEventGetFilePath2 and AtelGetEventName, and its named callees match the Switch 0x71004869d0 AtelEventGetMotionPath's (similarity 1.00: AtelEventGetFilePath2, AtelGetEventName); symbols from Fahrenheit's server export
 0x00879750 function AtelReturnTableU32_00879750  # auto-port shape (return table u32, cdecl): t0 = u32[((a0 * 0x4) + &0x01328598)]; return t0; callers: AtelEventSetUp; name ours
@@ -9980,6 +9985,7 @@
 0x00879e70 function AtelRemovePS2Debug           # layout+callees: sorts between AtelLoadSourceData and AtelUpdateFilePath, and its named callees match the Switch 0x7100486ff0 AtelRemovePS2Debug's (similarity 1.00: user_free); symbols from Fahrenheit's server export
 0x00879f00 function AtelUpdateFilePath        # fh v3:exact 0x00879e80
 0x0087a440 function TkMemDump                    # str-match switch: only user of 1 string(s) held once by both builds, e.g. '\\n%p:%08x '; Switch 0x7100487370 TkMemDump (symbols from Fahrenheit's server export)
+0x0087bc90 function Atel_FindVarSlot_0087bc90 # (r25 d) finds a variable reference's entry and element in the worker's level variable table (kind, base, count; AtelGetValueIncValue size): rec+1 bit 0x80, +4 = entry << 16 | element; caller 0x00884cc0; own name
 0x0087bdcd function AtelDebugCtrl                # cg-match switch lead (call-sequence LCS against the Switch/v3 build): 0x710047bae0 AtelDebugCtrl, 2 votes, round 2
 0x0087ddd0 function AtelDebugDrawRect         # fh switch:bsim1.00 0x710047b940
 0x0087f4a0 function AtelDebugPage_Book_0087f4a0  # a page of AtelDebugDisplay: "Book%02d" with "On" / "Off"; own name
@@ -17062,6 +17068,7 @@
 0x01326b80 label    g_AtelOverlayStatus          # u8: AtelSetOverlayStatus (0x00870900)
 0x01326b81 label    g_AtelNotAuronPatchFlag      # u8: cleared by AtelClearNotAuronPatchFlag (0x00863f90)
 0x01326b82 label    g_AtelMenuExecStatus         # i8: AtelSetMenuExecStatus; selects the bank of g_AtelMsgWindows (AtelGetMesWinWork)
+0x01326b83 label g_AtelInWater # (r25 d) u8: 1 when the camera is not above ctrl work 0's water level (+0x208) or the map is flagged (save event +0x29); AtelUpdateWaterStatus
 0x01326b84 label    g_AtelBattleEndMovieFadeout  # three words written by AtelRegistBattleEndMovieFadeout (0x0086e840)
 0x01326b90 label    g_AtelLoveParamDisable       # cleared by AtelClearLoveParamDisable (0x00863ae0)
 0x01326bd8 label    g_GameSpeed                  # f32: Script_Run multiplies a worker's speed (+0x94) by it into its accumulator (+0x98)
@@ -17103,6 +17110,7 @@
 0x01328310 label    g_AtelSnd3dVolumeDiffRatio   # f32: AtelSetSnd3dVolumeDiffRatio (0x00877450); zeroed by AtelClearSnd3dWorkAll
 0x01328318 label    g_AtelSnd3dWork              # 16 x 0x24 bytes; AtelClearSnd3dWorkAll (0x00877330) clears +0, +4, +0x20 (u16) of each
 0x01328558 label    g_NativeTables            # per-group native function tables
+0x013285b4 label g_AtelEventPathChg # (r25 d) u32: the event path's set_read_chgname handle (Atel_SetEventPathLang_00879430)
 0x0132f580 label    g_TkDeci2Send             # i8 (TkIsDeci2Send)
 0x0132f690 label    g_SndFootSepWork          # footstep sound tables 0x0132f690..0x0132ff10, by kind (SndGetFootSepWork): 0 f690, 1 f790, 5 f890, 8 fad0, 9 fbd0, 13 fcd0 are [16][4] u32; 2 f990, 3 f9d0, 6 fa10, 7 fa50, 4 fa90, 10 fdd0, 11 fe10, 14 fe50, 15 fe90, 12 fed0 are [16] u32
 0x0132ff10 label    g_TkSndVoiceFlags         # u32 voice read in progress; next words: shout busy (0x0132ff14), VAG stream busy (0x0132ff18), g_TkSndStandbyVoice (0x0132ff1c) (SndStartShoutStream sets ff14, SndStartStream ff18)
